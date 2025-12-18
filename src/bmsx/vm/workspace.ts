@@ -2,7 +2,6 @@ import { extractErrorMessage } from '../lua/luavalue';
 import type { HttpResponse, StorageService } from '../platform';
 import { type BmsxCartridge, type RomLuaAsset } from '../rompack/rompack';
 import { BmsxVMRuntime } from './vm_runtime';
-import { materializeLuaAssetSource } from './lua_source';
 import { $ } from '../core/game';
 import { VMLuaResourceCreationRequest, VMResourceDescriptor } from './types';
 
@@ -132,28 +131,20 @@ export function collectWorkspaceOverrides(params: { cart: BmsxCartridge; project
 		let bestSource: string = null;
 		let bestUpdatedAt = asset.update_timestamp ?? 0;
 		let bestPath: string = null;
-		const storageKey = buildWorkspaceStorageKey(root, dirtyPath);
-		const storedDirty = storage.getItem(storageKey);
-		const canonicalKey = buildWorkspaceStorageKey(root, cartPath);
-		const storedCanonical = storage.getItem(canonicalKey);
-		if (storedDirty === null && storedCanonical === null) {
-			continue;
-		}
-		const romSource = materializeLuaAssetSource(asset, $.rompack.rom);
-		const considerStored = (raw: string, path: string, key: string): void => {
+		const considerStored = (raw: string, path: string, storageKey: string): void => {
 			let parsed: WorkspaceStoragePayload;
 			try {
 				parsed = JSON.parse(raw) as WorkspaceStoragePayload;
 			} catch {
-				storage.removeItem(key);
+				storage.removeItem(storageKey);
 				return;
 			}
 			if (!parsed || typeof parsed.contents !== 'string' || typeof parsed.updatedAt !== 'number') {
-				storage.removeItem(key);
+				storage.removeItem(storageKey);
 				return;
 			}
-			if (parsed.contents === romSource) {
-				storage.removeItem(key);
+			if (parsed.contents === asset.src) {
+				storage.removeItem(storageKey);
 				return;
 			}
 			if (parsed.updatedAt <= bestUpdatedAt) {
@@ -162,10 +153,14 @@ export function collectWorkspaceOverrides(params: { cart: BmsxCartridge; project
 			bestSource = parsed.contents;
 			bestUpdatedAt = parsed.updatedAt;
 			bestPath = path;
-			};
+		};
+		const storageKey = buildWorkspaceStorageKey(root, dirtyPath);
+		const storedDirty = storage.getItem(storageKey);
 		if (storedDirty !== null) {
 			considerStored(storedDirty, dirtyPath, storageKey);
 		}
+		const canonicalKey = buildWorkspaceStorageKey(root, cartPath);
+		const storedCanonical = storage.getItem(canonicalKey);
 		if (storedCanonical !== null) {
 			considerStored(storedCanonical, cartPath, canonicalKey);
 		}
@@ -423,8 +418,7 @@ async function fetchWorkspaceCanonicalLua(cart: BmsxCartridge, root: string): Pr
 			if (!result) {
 				return null;
 			}
-			const romSource = materializeLuaAssetSource(asset, $.rompack.rom);
-			if (result.contents === romSource) {
+			if (result.contents === asset.src) {
 				return null;
 			}
 			const updatedAt = typeof result.updatedAt === 'number' ? result.updatedAt : asset.update_timestamp ?? 0;
@@ -651,15 +645,12 @@ export async function applyWorkspaceOverridesToCart(params: { cart: BmsxCartridg
 		const canonicalUpdatedAt = canonicalCandidate ? resolveOverrideUpdatedAt(canonicalCandidate, romTimestamp) : -1;
 
 		let activeDirtyCandidate = dirtyCandidate ?? undefined;
-		if (dirtyCandidate) {
-			const romSource = materializeLuaAssetSource(asset, $.rompack.rom);
-			if (dirtyCandidate.record.source === romSource) {
-				activeDirtyCandidate = undefined;
-				if (root) {
-					const dirtyPath = buildWorkspaceDirtyEntryPath(root, filePath);
-					const staleKey = buildWorkspaceStorageKey(root, dirtyPath);
-					storage.removeItem(staleKey);
-				}
+		if (dirtyCandidate && dirtyCandidate.record.source === asset.src) {
+			activeDirtyCandidate = undefined;
+			if (root) {
+				const dirtyPath = buildWorkspaceDirtyEntryPath(root, filePath);
+				const staleKey = buildWorkspaceStorageKey(root, dirtyPath);
+				storage.removeItem(staleKey);
 			}
 		}
 

@@ -12,7 +12,7 @@ import { RenderPassLibrary } from "../render/backend/renderpasslib";
 import { ensureBrowserBackendFactory } from "../render/backend/browser_backend_factory";
 import type { GameViewHost, Platform, PlatformExitEvent } from '../platform';
 import { setMicrotaskQueue } from '../platform';
-import { asset_id, Identifiable, Identifier, Registerable, RomPack, type vec3, type vec2, GAME_FPS } from "../rompack/rompack";
+import { asset_id, Identifiable, Identifier, Registerable, RomPack, type RomLuaAsset, type vec3, type vec2, GAME_FPS } from "../rompack/rompack";
 import { BinaryCompressor } from "../serializer/bincompressor";
 import { Reviver, Savegame, Serializer } from "../serializer/gameserializer";
 import { Service } from "./service";
@@ -38,7 +38,6 @@ import { ActionEffectRegistry } from '../action_effects/effect_registry';
 import { InputSource, KeyModifier } from '../input/playerinput';
 import { deep_clone } from '../utils/deep_clone';
 import { shallowcopy } from '../utils/shallowcopy';
-import { rebuildCartPathIndex } from '../rompack/cart_index';
 // No direct space helpers needed here; Spaces are revived as part of the world.
 
 const globalScope: any = typeof window !== 'undefined' ? window : globalThis;
@@ -79,21 +78,38 @@ export const runGate: GateGroup = taskGate.group('run:main');
  * We need this separation because the IDE/workspace can apply overrides, hot-reload sources, and otherwise mutate
  * the active cart while the ROM pack should remain pristine (e.g. for "reset workspace" or comparing against ROM).
  *
- * Important: `path2lua` is a derived runtime index built from `chunk2lua`, and must keep pointing at the same
- * `RomLuaAsset` objects to preserve identity across the VM + workspace pipeline.
+ * Important: The cart stores the same `RomLuaAsset` objects in both `chunk2lua` and `path2lua` for fast lookup.
+ * A generic deep clone duplicates those objects independently per map, breaking identity between the indices.
+ * That identity is relied on across the VM + workspace pipeline (edits/overrides can originate from either map).
  */
 function cloneCartForRuntime(cart: RomPack['cart']): RomPack['cart'] {
+	const clones = new Map<RomLuaAsset, RomLuaAsset>();
+	const cloneAsset = (asset: RomLuaAsset): RomLuaAsset => {
+		const existing = clones.get(asset);
+		if (existing) {
+			return existing;
+		}
+		const cloned = deep_clone(asset);
+		clones.set(asset, cloned);
+		return cloned;
+	};
+
 	const clonedCart: RomPack['cart'] = {
 		...cart,
 		chunk2lua: {},
 		path2lua: {},
 	};
 
-	for (const [chunkName, asset] of Object.entries(cart.chunk2lua)) {
-		clonedCart.chunk2lua[chunkName] = deep_clone(asset);
+	for (const chunkName of Object.keys(cart.chunk2lua)) {
+		const asset = cart.chunk2lua[chunkName];
+		clonedCart.chunk2lua[chunkName] = cloneAsset(asset);
 	}
 
-	rebuildCartPathIndex(clonedCart);
+	for (const path of Object.keys(cart.path2lua)) {
+		const asset = cart.path2lua[path];
+		clonedCart.path2lua[path] = cloneAsset(asset);
+	}
+
 	return clonedCart;
 }
 
@@ -385,7 +401,6 @@ export class Game {
 		$debug = this._debug;
 
 		if (rompack.cart?.entry_path) {
-			rebuildCartPathIndex(rompack.cart);
 			this._cart = cloneCartForRuntime(rompack.cart); // Mutable runtime cart: keep ROM-pack cart pristine.
 		}
 		GameView.imgassets = rompack.img;

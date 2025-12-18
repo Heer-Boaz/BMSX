@@ -420,14 +420,6 @@ export class LuaInterpreter {
 		return encodeBinary(chunk);
 	}
 
-	public executeBinaryChunkFromBuffer(buffer: ArrayBufferLike, byteOffset: number = 0, byteLength: number = buffer.byteLength - byteOffset): LuaValue[] {
-		return this.executeBinaryChunk(new Uint8Array(buffer, byteOffset, byteLength));
-	}
-
-	public executeBinaryChunkFromView(view: ArrayBufferView, byteOffset: number = 0, byteLength: number = view.byteLength - byteOffset): LuaValue[] {
-		return this.executeBinaryChunk(new Uint8Array(view.buffer, view.byteOffset + byteOffset, byteLength));
-	}
-
 	public executeBinaryChunk(compiled: Uint8Array): LuaValue[] {
 		const decoded = decodeBinary(compiled) as LuaChunk;
 		this.chunkDefinitions.set(decoded.range.chunkName, decoded.definitions);

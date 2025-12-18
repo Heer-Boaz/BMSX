@@ -1,5 +1,4 @@
 import { type RectBounds, type AudioMeta, type GLTFMaterial, type GLTFModel, type ImgMeta, type Polygon, type RomAsset, type RomAssetListPayload, type RomImgAsset, type RomLuaAsset, type RomManifest, type RomMeta, type RomPack, type TextureSource, type color_arr } from '../../src/bmsx/rompack/rompack';
-import { rebuildCartPathIndex } from '../../src/bmsx/rompack/cart_index';
 import { decodeBinary, decodeuint8arr, toF32, typedArrayFromBytes } from '../../src/bmsx/serializer/binencoder';
 
 export function parseMetaFromBuffer(to_parse: ArrayBuffer): RomMeta {
@@ -249,7 +248,6 @@ export async function loadResources(rom: ArrayBuffer, opts?: { loadImageFromBuff
 	await Promise.all(assets.map(a => load(rom, a, result, opts)));
 
 	if (cart) {
-		rebuildCartPathIndex(cart);
 		if (!manifest.lua.entry_path) {
 			throw new Error('Cart manifest is missing lua.entry_path.');
 		}
@@ -538,10 +536,13 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
 			break;
 		case 'lua':
 			try {
+				const sliced = new Uint8Array(rom, res.start, res.end - res.start);
 				const luaAsset: RomLuaAsset = {
 					...res,
+					src: decodeuint8arr(sliced),
 				} as RomLuaAsset;
 				romResult.cart.chunk2lua[res.chunk_name] = luaAsset;
+				romResult.cart.path2lua[res.source_path] = luaAsset;
 			} catch (err: any) {
 				throw new Error(`Failed to load 'lua' from rom: ${err.message}.`);
 			}
