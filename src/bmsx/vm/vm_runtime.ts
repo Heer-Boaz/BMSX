@@ -7,7 +7,7 @@ import type { LuaDefinitionInfo } from '../lua/lua_ast';
 import { LuaEnvironment } from '../lua/luaenvironment';
 import { LuaError, LuaRuntimeError, LuaSyntaxError } from '../lua/luaerrors';
 import { LuaHandlerCache, } from '../lua/luahandler_cache';
-import { LuaInterpreter, type ExecutionSignal, } from '../lua/luaruntime';
+import { LuaExecutionThread, LuaInterpreter, type ExecutionSignal, VmSliceResult, } from '../lua/luaruntime';
 import type { LuaFunctionValue, LuaTable, LuaValue, StackTraceFrame } from '../lua/luavalue';
 import {
 	convertToError,
@@ -178,6 +178,8 @@ export class BmsxVMRuntime extends Service {
 	private shortcutDisposers: Array<() => void> = [];
 	private globalInputUnsubscribe: (() => void) = null;
 	private luaInterpreter!: LuaInterpreter;
+	private updateThread: LuaExecutionThread = null;
+	private static readonly UPDATE_STATEMENT_BUDGET = 10_000;
 	private luaInitFunction: LuaFunctionValue = null;
 	private luaNewGameFunction: LuaFunctionValue = null;
 	private luaUpdateFunction: LuaFunctionValue = null;
@@ -815,7 +817,26 @@ export class BmsxVMRuntime extends Service {
 		try {
 			if (Object.values($.rompack.cart.chunk2lua).length > 0) {
 				if (this.luaUpdateFunction !== null) {
-					this.invokeLuaFunction(this.luaUpdateFunction, [state.deltaSeconds]);
+					if (this.updateThread === null) {
+						this.updateThread = this.createLuaExecutionThread(this.luaUpdateFunction, [state.deltaSeconds]);
+					}
+
+					const budget = BmsxVMRuntime.UPDATE_STATEMENT_BUDGET;
+					const sliceResult = this.updateThread.isYielded ? this.updateThread.resumeSlice(budget) : this.updateThread.runSlice(budget);
+					if (sliceResult === VmSliceResult.Done) {
+						this.updateThread = null;
+					}
+					else if (sliceResult === VmSliceResult.Pause) {
+						const pause = this.updateThread.takePause();
+						this.updateThread = null;
+						this.onLuaDebuggerPause(pause as LuaDebuggerPauseSignal);
+					}
+					else if (sliceResult === VmSliceResult.Fault) {
+						const fault = this.updateThread.takeFault();
+						this.updateThread = null;
+						state.luaFaulted = true;
+						this.handleLuaError(fault);
+					}
 				}
 			} else {
 				$.rompack.cart.update(state.deltaSeconds);
@@ -872,7 +893,7 @@ export class BmsxVMRuntime extends Service {
 			// No try catch here; caller handles faults
 			this.overlayRenderBackend.setDefaultLayer('world');
 			if (this.luaVmGate.ready) {
-				if (this.debuggerPaused || this.luaRuntimeFailed || this.faultSnapshot) {
+				if (this.updateThread !== null || this.debuggerPaused || this.luaRuntimeFailed || this.faultSnapshot) {
 					this.overlayRenderBackend.playbackRenderQueue(this.preservedRenderQueue);
 				}
 				else {
@@ -1210,6 +1231,7 @@ export class BmsxVMRuntime extends Service {
 		interpreter.attachDebugger(this.debuggerController);
 		interpreter.clearLastFaultEnvironment();
 		this.luaInterpreter = interpreter;
+		this.updateThread = null;
 		this.luaInitFunction = null;
 		this.luaNewGameFunction = null;
 		this.luaUpdateFunction = null;
@@ -1551,6 +1573,7 @@ export class BmsxVMRuntime extends Service {
 		interpreter.attachDebugger(this.debuggerController);
 		interpreter.clearLastFaultEnvironment();
 		this.luaInterpreter = interpreter;
+		this.updateThread = null;
 		this.luaInitFunction = null;
 		this.luaNewGameFunction = null;
 		this.luaUpdateFunction = null;
@@ -1614,6 +1637,14 @@ export class BmsxVMRuntime extends Service {
 	private invokeLuaFunction(fn: LuaFunctionValue, args: unknown[]): LuaValue[] {
 		const luaArgs = args.map((value) => this.luaJsBridge.toLua(value));
 		return fn.call(luaArgs);
+	}
+
+	private createLuaExecutionThread(fn: LuaFunctionValue, args: ReadonlyArray<unknown>): LuaExecutionThread {
+		const luaArgs: LuaValue[] = [];
+		for (let index = 0; index < args.length; index += 1) {
+			luaArgs.push(this.luaJsBridge.toLua(args[index]));
+		}
+		return this.luaInterpreter.createFunctionExecutionThread(fn, luaArgs);
 	}
 
 	public handleLuaError(whatever: unknown): void {

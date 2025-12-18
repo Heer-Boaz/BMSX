@@ -70,6 +70,14 @@ export type LuaCallFrame = {
 };
 
 const EMPTY_VALUES: LuaValue[] = Object.freeze([]) as unknown as LuaValue[];
+const EMPTY_CALLSTACK: ReadonlyArray<LuaCallFrame> = Object.freeze([]) as unknown as ReadonlyArray<LuaCallFrame>;
+
+export const enum VmSliceResult {
+	Done = 0,
+	Yield = 1,
+	Pause = 2,
+	Fault = 3,
+}
 
 export type ExecutionSignal =
 	| null
@@ -93,17 +101,14 @@ export type ExecutionSignal =
 		readonly resume: () => ExecutionSignal;
 	};
 
-export type LuaDebuggerState = {
-	getPendingException(): LuaRuntimeError | LuaSyntaxError;
-	getResumeStrategy(): LuaExceptionResumeStrategy;
-	setResumeStrategy(strategy: LuaExceptionResumeStrategy): void;
-	markPendingException(error: LuaRuntimeError | LuaSyntaxError): void;
-	resumeFromPause(targetDepth: number): ExecutionSignal;
-};
-
 type PauseSignal = Extract<ExecutionSignal, { kind: 'pause' }>;
 type YieldSignal = Extract<ExecutionSignal, { kind: 'yield' }>;
-
+type MutableYieldSignal = {
+	kind: 'yield';
+	location: { chunk: string; line: number; column: number };
+	callStack: ReadonlyArray<LuaCallFrame>;
+	resume: (instructionBudget: number) => ExecutionSignal;
+};
 type NestedInterpreterState = {
 	frameStack: ExecutionFrame[];
 	envStack: LuaEnvironment[];
@@ -131,76 +136,67 @@ const NORMAL_SIGNAL: ExecutionSignal = null;
 const RETURN_SIGNAL: ExecutionSignal = Object.freeze({ kind: 'return' } as const);
 
 export class LuaExecutionThread {
-	private readonly interpreter: LuaInterpreter;
 	private readonly runImpl: (instructionBudget: number | null) => ExecutionSignal;
-	private completed = false;
+	private yielded: YieldSignal = null;
+	private paused: PauseSignal = null;
+	private fault: Error = null;
 
-	constructor(interpreter: LuaInterpreter, runImpl: (instructionBudget: number | null) => ExecutionSignal) {
-		this.interpreter = interpreter;
+	constructor(runImpl: (instructionBudget: number | null) => ExecutionSignal) {
 		this.runImpl = runImpl;
 	}
 
-	public run(options?: { instructionBudget?: number }): ExecutionSignal {
-		const budget = options ? (options.instructionBudget ?? null) : null;
-		const signal = this.runImpl(budget);
-		if (signal !== null && signal.kind === 'yield') {
-			return this.decorateYield(signal as YieldSignal);
+	public runSlice(instructionBudget: number | null): VmSliceResult {
+		try {
+			const signal = this.runImpl(instructionBudget);
+			return this.consumeSignal(signal);
+		} catch (error) {
+			this.fault = error as Error;
+			return VmSliceResult.Fault;
 		}
-		if (signal !== null && signal.kind === 'pause') {
-			return this.decoratePause(signal as PauseSignal);
+	}
+
+	public resumeSlice(instructionBudget: number): VmSliceResult {
+		try {
+			const yielded = this.yielded;
+			this.yielded = null;
+			const signal = yielded.resume(instructionBudget);
+			return this.consumeSignal(signal);
+		} catch (error) {
+			this.fault = error as Error;
+			return VmSliceResult.Fault;
 		}
-		this.completed = true;
+	}
+
+	private consumeSignal(signal: ExecutionSignal): VmSliceResult {
+		if (!signal) {
+			return VmSliceResult.Done;
+		}
+		switch (signal.kind) {
+			case 'yield':
+				this.yielded = signal as YieldSignal;
+				return VmSliceResult.Yield;
+			case 'pause':
+				this.paused = signal as PauseSignal;
+				return VmSliceResult.Pause;
+			default:
+				return VmSliceResult.Done;
+		}
+	}
+
+	public get isYielded(): boolean {
+		return this.yielded !== null;
+	}
+
+	public takePause(): PauseSignal {
+		const signal = this.paused;
+		this.paused = null;
 		return signal;
 	}
 
-	private decorateYield(signal: YieldSignal): YieldSignal {
-		return {
-			kind: 'yield',
-			location: signal.location,
-			callStack: signal.callStack,
-			resume: (instructionBudget: number) => {
-				const resumed = signal.resume(instructionBudget);
-				if (resumed !== null && resumed.kind === 'yield') {
-					return this.decorateYield(resumed as YieldSignal);
-				}
-				if (resumed !== null && resumed.kind === 'pause') {
-					return this.decoratePause(resumed as PauseSignal);
-				}
-				this.completed = true;
-				return resumed;
-			},
-		};
-	}
-
-	private decoratePause(signal: PauseSignal): PauseSignal {
-		return {
-			kind: 'pause',
-			reason: signal.reason,
-			location: signal.location,
-			callStack: signal.callStack,
-			exception: signal.exception,
-			message: signal.message,
-			toString: signal.toString,
-			resume: () => {
-				const resumed = signal.resume();
-				if (resumed !== null && resumed.kind === 'yield') {
-					return this.decorateYield(resumed as YieldSignal);
-				}
-				if (resumed !== null && resumed.kind === 'pause') {
-					return this.decoratePause(resumed as PauseSignal);
-				}
-				this.completed = true;
-				return resumed;
-			},
-		};
-	}
-
-	public get isComplete(): boolean {
-		return this.completed;
-	}
-
-	public get programCounter(): number {
-		return this.interpreter.programCounter;
+	public takeFault(): Error {
+		const fault = this.fault;
+		this.fault = null;
+		return fault;
 	}
 }
 
@@ -237,9 +233,9 @@ class LuaScriptFunction implements LuaFunctionValue {
 	public readonly name: string;
 	public readonly range: LuaSourceRange;
 	private readonly interpreter: LuaInterpreter;
-	private readonly expression: LuaFunctionExpression;
-	private readonly closure: LuaEnvironment;
-	private readonly implicitSelfName: string;
+	public readonly expression: LuaFunctionExpression;
+	public readonly closure: LuaEnvironment;
+	public readonly implicitSelfName: string;
 
 	constructor(expression: LuaFunctionExpression, closure: LuaEnvironment, name: string, implicitSelfName: string, interpreter: LuaInterpreter) {
 		this.name = name;
@@ -361,7 +357,9 @@ export class LuaInterpreter {
 	private programCounterValue = 0;
 	private readonly programCounterStack: number[] = [];
 	private instructionBudgetRemaining: number | null = null;
-
+	private yieldTargetDepth = 0;
+	private readonly yieldLocation = { chunk: '<chunk>', line: 0, column: 0 };
+	private readonly yieldSignal: MutableYieldSignal;
 	private readonly luaValueListScratch: LuaValue[][] = [];
 	private luaValueListScratchIndex = 0;
 	private readonly returnValueBuffer: LuaValue[] = [];
@@ -395,6 +393,12 @@ export class LuaInterpreter {
 		this.packageLoaded = createLuaTable();
 		this.initializeBuiltins();
 		this._chunkEnvironment = LuaEnvironment.createChild(this.globals);
+		this.yieldSignal = {
+			kind: 'yield',
+			location: this.yieldLocation,
+			callStack: EMPTY_CALLSTACK,
+			resume: (instructionBudget: number) => this.runFrameLoop(this.yieldTargetDepth, instructionBudget),
+		};
 	}
 
 	public execute(source: string, chunkName: string): LuaValue[] {
@@ -947,12 +951,12 @@ export class LuaInterpreter {
 
 	private createYieldSignal(targetDepth: number): YieldSignal {
 		const range = this.activeStatementRange ?? this.lastStatementRange ?? this.fallbackSourceRange();
-		return {
-			kind: 'yield',
-			location: { chunk: range.chunkName, line: range.start.line, column: range.start.column },
-			callStack: this.snapshotCallStack(),
-			resume: (instructionBudget: number) => this.runFrameLoop(targetDepth, instructionBudget),
-		};
+		this.yieldTargetDepth = targetDepth;
+		this.yieldLocation.chunk = range.chunkName;
+		this.yieldLocation.line = range.start.line;
+		this.yieldLocation.column = range.start.column;
+		this.yieldSignal.callStack = this.snapshotCallStack();
+		return this.yieldSignal;
 	}
 
 	private wrapPauseSignal(signal: PauseSignal, continuation: (resumed: ExecutionSignal) => ExecutionSignal): PauseSignal {
@@ -3126,6 +3130,89 @@ export class LuaInterpreter {
 		return this._currentCallRange;
 	}
 
+	public createFunctionExecutionThread(functionValue: LuaFunctionValue, args: ReadonlyArray<LuaValue>): LuaExecutionThread {
+		if (functionValue instanceof LuaNativeFunction) {
+			return new LuaExecutionThread(() => {
+				functionValue.call(args);
+				return NORMAL_SIGNAL;
+			});
+		}
+		if (functionValue instanceof LuaScriptFunction) {
+			let started = false;
+			let startingDepth = 0;
+			let expression: LuaFunctionExpression = null;
+			let closure: LuaEnvironment = null;
+			let name = '';
+			let implicitSelfName: string = null;
+			let callRange: LuaSourceRange = null;
+			let activationEnvironment: LuaEnvironment = null;
+			let varargValues: LuaValue[] = [];
+
+			return new LuaExecutionThread((instructionBudget) => {
+				if (!started) {
+					started = true;
+					startingDepth = this.frameStack.length;
+					expression = functionValue.expression;
+					closure = functionValue.closure;
+					name = functionValue.name;
+					implicitSelfName = functionValue.implicitSelfName;
+					callRange = this._currentCallRange ?? expression.range;
+
+					activationEnvironment = LuaEnvironment.createChild(closure);
+					const parameters = expression.parameters;
+					let argumentIndex = 0;
+					if (implicitSelfName !== null) {
+						const selfValue = argumentIndex < args.length ? args[argumentIndex] : null;
+						activationEnvironment.set(implicitSelfName, selfValue);
+						argumentIndex += 1;
+					}
+					for (const parameter of parameters) {
+						const value = argumentIndex < args.length ? args[argumentIndex] : null;
+						activationEnvironment.set(parameter.name, value, parameter.range);
+						argumentIndex += 1;
+					}
+					varargValues.length = 0;
+					if (expression.hasVararg) {
+						const extras: LuaValue[] = [];
+						for (let index = argumentIndex; index < args.length; index += 1) {
+							extras.push(args[index]);
+						}
+						varargValues = extras;
+					}
+					const scope = this.createLabelScope(expression.body.body, null);
+					this.pushStatementsFrame({
+						statements: expression.body.body,
+						environment: activationEnvironment,
+						varargs: varargValues,
+						scope,
+						boundary: 'function',
+						callRange,
+						callName: name,
+					});
+				}
+
+				const signal = this.runFrameLoop(startingDepth, instructionBudget);
+				if (!signal) return NORMAL_SIGNAL;
+
+				switch (signal.kind) {
+					case 'return':
+						this.consumeReturnValues();
+						return NORMAL_SIGNAL;
+					case 'break':
+						throw this.runtimeErrorAt(expression.range, `Cannot break from function '${name}'.`);
+					case 'goto':
+						throw this.runtimeErrorAt(signal.origin.range, `Label '${signal.label}' not found in function '${name}'.`);
+					default: return signal;
+				}
+			});
+		}
+
+		return new LuaExecutionThread(() => {
+			functionValue.call(args);
+			return NORMAL_SIGNAL;
+		});
+	}
+
 	public invokeScriptFunction(expression: LuaFunctionExpression, closure: LuaEnvironment, name: string, args: ReadonlyArray<LuaValue>, implicitSelfName: string): LuaValue[] {
 		const activationEnvironment = LuaEnvironment.createChild(closure);
 		const callRange = this._currentCallRange ?? expression.range;
@@ -3163,28 +3250,24 @@ export class LuaInterpreter {
 		let suspended = false;
 		try {
 			const signal = this.runFrameLoop(startingDepth);
-			if (signal !== null && signal.kind === 'pause') {
+			if (signal?.kind === 'pause') {
 				suspended = true;
 				const wrapped = this.wrapPauseSignal(signal, (resumed) => {
-					if (resumed !== null && resumed.kind === 'pause') {
-						return resumed;
+					if (!resumed) return resumed;
+					switch (resumed.kind) {
+						case 'return':
+							return resumed;
+						case 'break':
+							throw this.runtimeErrorAt(expression.range, `Cannot break from function '${name}'.`);
+						case 'goto':
+							throw this.runtimeErrorAt(resumed.origin.range, `Label '${resumed.label}' not found in function '${name}'.`);
+						default:
+							return resumed;
 					}
-					this.finalizeFunctionExecution(startingDepth);
-					if (resumed !== null && resumed.kind === 'return') {
-						return resumed;
-					}
-					if (resumed !== null && resumed.kind === 'break') {
-						throw this.runtimeErrorAt(expression.range, `Cannot break from function '${name}'.`);
-					}
-					if (resumed !== null && resumed.kind === 'goto') {
-						throw this.runtimeErrorAt(resumed.origin.range, `Label '${resumed.label}' not found in function '${name}'.`);
-					}
-					return resumed;
 				});
 				throw wrapped;
 			}
-			const result = this.resolveFunctionSignal(signal, expression, name);
-			return result;
+			return this.resolveFunctionSignal(signal, expression, name);
 		} catch (error) {
 			if (!isLuaDebuggerPauseSignal(error)) {
 				this.recordFaultCallStack();
@@ -3201,16 +3284,17 @@ export class LuaInterpreter {
 	}
 
 	private resolveFunctionSignal(signal: ExecutionSignal, expression: LuaFunctionExpression, name: string): LuaValue[] {
-		if (signal !== null && signal.kind === 'return') {
-			return this.consumeReturnValues();
+		if (!signal) return [];
+		switch (signal.kind) {
+			case 'return':
+				return this.consumeReturnValues();
+			case 'break':
+				throw this.runtimeErrorAt(expression.range, `Cannot break from function '${name}'.`);
+			case 'goto':
+				throw this.runtimeErrorAt(signal.origin.range, `Label '${signal.label}' not found in function '${name}'.`);
+			default:
+				return [];
 		}
-		if (signal !== null && signal.kind === 'break') {
-			throw this.runtimeErrorAt(expression.range, `Cannot break from function '${name}'.`);
-		}
-		if (signal !== null && signal.kind === 'goto') {
-			throw this.runtimeErrorAt(signal.origin.range, `Label '${signal.label}' not found in function '${name}'.`);
-		}
-		return [];
 	}
 
 	private validateReservedIdentifiers(statements: ReadonlyArray<LuaStatement>): void {
@@ -3307,19 +3391,19 @@ export class LuaInterpreter {
 		this.globals.set(this.canonicalize('package'), this.packageTable);
 		this.globals.set(this.canonicalize('require'), new LuaNativeFunction(this.canonicalize('require'), (args) => this.invokeRequireBuiltin(args)));
 
-			this.globals.set(this.canonicalize('print'), new LuaNativeFunction(this.canonicalize('print'), (args) => {
-				const parts: string[] = [];
-				for (const value of args) {
-					parts.push(this.toLuaString(value));
-				}
+		this.globals.set(this.canonicalize('print'), new LuaNativeFunction(this.canonicalize('print'), (args) => {
+			const parts: string[] = [];
+			for (const value of args) {
+				parts.push(this.toLuaString(value));
+			}
 			if (parts.length === 0) {
 				this.outputHandler('');
 			}
-				else {
-					this.outputHandler(parts.join('\t'));
-				}
-				return EMPTY_VALUES;
-			}));
+			else {
+				this.outputHandler(parts.join('\t'));
+			}
+			return EMPTY_VALUES;
+		}));
 
 		// array(...): create a native JS array (0-based) and expose it to Lua as a native value.
 		// - array(a, b, c) -> native Array [a, b, c]
@@ -3668,11 +3752,11 @@ export class LuaInterpreter {
 			const span = upperInt - lowerInt + 1;
 			return [lowerInt + Math.floor(randomValue * span)];
 		}));
-			mathTable.set(this.canonicalize('randomseed'), new LuaNativeFunction(this.canonicalize('randomseed'), (args) => {
-				const seedValue = args.length > 0 ? this.expectNumber(args[0], 'math.randomseed expects a number.', null) : $.platform.clock.now();
-				this.randomSeedValue = Math.floor(seedValue) >>> 0;
-				return EMPTY_VALUES;
-			}));
+		mathTable.set(this.canonicalize('randomseed'), new LuaNativeFunction(this.canonicalize('randomseed'), (args) => {
+			const seedValue = args.length > 0 ? this.expectNumber(args[0], 'math.randomseed expects a number.', null) : $.platform.clock.now();
+			this.randomSeedValue = Math.floor(seedValue) >>> 0;
+			return EMPTY_VALUES;
+		}));
 		mathTable.set(this.canonicalize('pi'), Math.PI);
 		this.globals.set(this.canonicalize('math'), mathTable);
 
@@ -4089,7 +4173,7 @@ export class LuaInterpreter {
 		this.globals.set(this.canonicalize('string'), stringTable);
 
 		const tableLibrary = createLuaTable();
-			tableLibrary.set(this.canonicalize('insert'), new LuaNativeFunction(this.canonicalize('insert'), (args) => {
+		tableLibrary.set(this.canonicalize('insert'), new LuaNativeFunction(this.canonicalize('insert'), (args) => {
 			if (args.length < 2) {
 				throw this.runtimeError('table.insert expects at least two arguments.');
 			}
@@ -4105,20 +4189,20 @@ export class LuaInterpreter {
 			else {
 				position = Math.floor(this.expectNumber(args[1], 'table.insert position must be a number.', null));
 				value = args[2];
-				}
-				this.tableInsert(target, value, position);
-				return EMPTY_VALUES;
-			}));
+			}
+			this.tableInsert(target, value, position);
+			return EMPTY_VALUES;
+		}));
 
-			tableLibrary.set(this.canonicalize('remove'), new LuaNativeFunction(this.canonicalize('remove'), (args) => {
+		tableLibrary.set(this.canonicalize('remove'), new LuaNativeFunction(this.canonicalize('remove'), (args) => {
 			if (args.length === 0 || !(isLuaTable(args[0]))) {
 				throw this.runtimeError('table.remove expects a table as the first argument.');
 			}
 			const target = args[0] as LuaTable;
-				const position = args.length > 1 ? Math.floor(this.expectNumber(args[1], 'table.remove position must be a number.', null)) : null;
-				const removed = this.tableRemove(target, position);
-				return removed === null ? EMPTY_VALUES : [removed];
-			}));
+			const position = args.length > 1 ? Math.floor(this.expectNumber(args[1], 'table.remove position must be a number.', null)) : null;
+			const removed = this.tableRemove(target, position);
+			return removed === null ? EMPTY_VALUES : [removed];
+		}));
 
 		tableLibrary.set(this.canonicalize('concat'), new LuaNativeFunction(this.canonicalize('concat'), (args) => {
 			if (args.length === 0 || !(isLuaTable(args[0]))) {
@@ -4161,7 +4245,7 @@ export class LuaInterpreter {
 			return [table];
 		}));
 
-			tableLibrary.set(this.canonicalize('unpack'), new LuaNativeFunction(this.canonicalize('unpack'), (args) => {
+		tableLibrary.set(this.canonicalize('unpack'), new LuaNativeFunction(this.canonicalize('unpack'), (args) => {
 			if (args.length === 0 || !(isLuaTable(args[0]))) {
 				throw this.runtimeError('table.unpack expects a table as the first argument.');
 			}
@@ -4179,17 +4263,17 @@ export class LuaInterpreter {
 				}
 				return fallback;
 			};
-				const startIndex = Math.max(1, Math.min(length, normalizeIndex(startIndexRaw, 1)));
-				const endIndex = Math.max(0, Math.min(length, normalizeIndex(endIndexRaw, length)));
-				if (endIndex < startIndex) {
-					return EMPTY_VALUES;
-				}
-				const result = this.allocateValueList();
-				for (let index = startIndex; index <= endIndex; index += 1) {
-					result.push(target.get(index));
-				}
-				return result;
-			}));
+			const startIndex = Math.max(1, Math.min(length, normalizeIndex(startIndexRaw, 1)));
+			const endIndex = Math.max(0, Math.min(length, normalizeIndex(endIndexRaw, length)));
+			if (endIndex < startIndex) {
+				return EMPTY_VALUES;
+			}
+			const result = this.allocateValueList();
+			for (let index = startIndex; index <= endIndex; index += 1) {
+				result.push(target.get(index));
+			}
+			return result;
+		}));
 
 		// table.fromnative(value): convert a native Array (or LuaNativeValue wrapping one) into a Lua table.
 		// Numeric slots become 1-based Lua indices; the original native Array is kept on __native for pass-through.
