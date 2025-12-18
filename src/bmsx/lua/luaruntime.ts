@@ -61,7 +61,6 @@ import { $ } from '../core/game';
 import { BmsxVMRuntime } from '../vm/vm_runtime';
 import { isLuaHandlerFunction } from './luahandler_cache';
 import { LuaInteropAdapter } from '../vm/lua_js_bridge';
-import { decodeBinary, encodeBinary } from '../serializer/binencoder';
 
 export type LuaCallFrame = {
 	readonly functionName: string;
@@ -411,19 +410,8 @@ export class LuaInterpreter {
 	}
 
 	public execute(source: string, chunkName: string): LuaValue[] {
-		const compiled = this.compileChunkToBinary(source, chunkName);
-		return this.executeBinaryChunk(compiled);
-	}
-
-	public compileChunkToBinary(source: string, chunkName: string): Uint8Array {
 		const chunk = this.prepareChunk(source, chunkName);
-		return encodeBinary(chunk);
-	}
-
-	public executeBinaryChunk(compiled: Uint8Array): LuaValue[] {
-		const decoded = decodeBinary(compiled) as LuaChunk;
-		this.chunkDefinitions.set(decoded.range.chunkName, decoded.definitions);
-		return this.executeChunk(decoded);
+		return this.executeChunk(chunk);
 	}
 
 	private prepareChunk(source: string, chunkName: string): LuaChunk {
