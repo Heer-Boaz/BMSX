@@ -2,33 +2,27 @@
 import type { BootArgs, RomPack } from '../../src/bmsx/rompack/rompack';
 import { constructPlatformFromViewHostHandle } from '../../src/bmsx_hostplatform/platform';
 import { createAudioContext, startAudioOnIos } from './bootaudio';
-import { getSubBufferFromBufferWithMeta, getZippedRomAndRomLabelFromBlob, loadAssetList, loadResources, parseMetaFromBuffer } from './bootresources';
 
 const HAS_DOM_ENVIRONMENT = typeof document !== 'undefined' && document !== null;
-declare const __BOOTROM_CANONICALIZATION__: BootArgs['canonicalization'];
 const initialStartingGamepadIndex: number = null;
 
 declare global {
 	interface Window {
-		getRomNameFromUrlParameter: () => string;
 		getRomFromUrlParameter: () => string;
+		getRomNameFromUrlParameter: () => string;
 		bootrom: {
-			rom: RomPack;
-			engineRom: RomPack;
-			cartRom: RomPack;
+			cart: RomPack;
+			engine_assets: RomPack;
 			debug: boolean;
-			romname: string;
 			sndcontext: AudioContext;
 			snd_unlocked: boolean;
 			gainnode: GainNode;
 			theshowsover: boolean;
 			startingGamepadIndex: number;
 			enableOnscreenGamepad: boolean;
-			set defusr(rom: RomPack);
-			usr: (x: number) => number;
-			bload: (url: string, mode?: 'auto' | 'engine' | 'cart') => Promise<RomPack>;
-			loadEngineRom: (url: string) => Promise<RomPack>;
-			loadCartRom: (url: string) => Promise<RomPack>;
+			loadCart: (url: string) => Promise<RomPack>;
+			loadEngineAssets: (url: string) => Promise<RomPack>;
+			start: () => Promise<void>;
 			outputError: (errormsg: string) => void;
 			resizeHandler: () => void;
 		};
@@ -36,68 +30,20 @@ declare global {
 	}
 
 	// Add globalThis augmentation so `globalThis.bootrom = ...` type checks
-	var getRomNameFromUrlParameter: () => string;
 	var getRomFromUrlParameter: () => string;
+	var getRomNameFromUrlParameter: () => string;
 	var bootrom: Object;
+	var bmsx: typeof import('../../src/bmsx/index');
 	var __bmsx_sourceMaps: Map<string, unknown> | undefined;
-}
-
-function registerInlineSourceMapFromInjectedScript(scriptText: string): void {
-	// The cart bundle is injected via <script>.textContent, so the browser debugger
-	// can't fetch original TS sources from disk. We store the inline sourcemap here
-	// so runtime error formatting can map stack frames back to TS.
-	const sourceUrlMatch = scriptText.match(/^[ \t]*\/\/# sourceURL=(.+)$/m);
-	const mapMatch = scriptText.match(/\/\/# sourceMappingURL=data:application\/json;base64,([A-Za-z0-9+/=]+)/);
-	if (!sourceUrlMatch || !mapMatch) {
-		return;
-	}
-	const sourceUrl = sourceUrlMatch[1].trim();
-	// atob is available in the browser; this function is only used when we have a DOM.
-	const mapJson = JSON.parse(atob(mapMatch[1])) as unknown;
-	const g = globalThis as unknown as { __bmsx_sourceMaps?: Map<string, unknown> };
-	if (!g.__bmsx_sourceMaps) {
-		g.__bmsx_sourceMaps = new Map<string, unknown>();
-	}
-	g.__bmsx_sourceMaps.set(sourceUrl, mapJson);
 }
 
 /**
  * Function that initializes the boot ROM and starts the game.
- * @param {RomPack} rom - The boot ROM pack.
+ * @param {RomPack} rom - The cart ROM pack.
  * @param {AudioContext} sndcontext - The audio context for the boot ROM.
  * @param {GainNode} gainnode - The gain node for the boot ROM.
  * @returns {void}
  */
-declare var h406A: (args: BootArgs) => Promise<void>;
-
-function mergeRecords<T>(primary: Record<string, T>, fallback?: Record<string, T>): Record<string, T> {
-	return {
-		...(fallback ?? {}),
-		...(primary ?? {}),
-	};
-}
-
-function combineRompacks(engineRom: RomPack, cartRom: RomPack): RomPack {
-	if (!engineRom) {
-		return cartRom;
-	}
-
-	const combined: RomPack = {
-		...engineRom,
-		...cartRom,
-		rom: cartRom.rom,
-		img: mergeRecords(cartRom.img, engineRom.img),
-		audio: mergeRecords(cartRom.audio, engineRom.audio),
-		model: mergeRecords(cartRom.model, engineRom.model),
-		data: mergeRecords(cartRom.data, engineRom.data),
-		audioevents: mergeRecords(cartRom.audioevents, engineRom.audioevents),
-		cart: cartRom.cart ?? engineRom.cart,
-		project_root_path: cartRom.project_root_path ?? engineRom.project_root_path,
-		code: cartRom.code ?? engineRom.code,
-		canonicalization: cartRom.canonicalization ?? engineRom.canonicalization,
-	};
-	return combined;
-}
 
 /**
  * Object representing the boot ROM.
@@ -106,32 +52,30 @@ export const bootrom = {
 	/**
 	 * This section of code defines the boot ROM object and its properties and methods.
 	 *
-	 * @property {RomPack} rom - The boot ROM pack.
+	 * @property {RomPack} cart - The cart ROM pack.
+	 * @property {RomPack} engine_assets - The engine asset pack.
 	 * @property {boolean} debug - A flag indicating whether debug mode is enabled.
-	 * @property {string} romname - The name of the boot ROM pack.
 	 * @property {AudioContext} sndcontext - The audio context for the boot ROM.
 	 * @property {GainNode} gainnode - The gain node for the boot ROM.
 	 * @property {boolean} theshowsover - A flag indicating whether the boot animation has ended.
 	 * @property {boolean} snd_unlocked - A flag indicating whether the audio has been unlocked.
 	 *
-	 * @function defusr - Sets the boot ROM pack.
-	 * @param {RomPack} rom - The boot ROM pack.
-	 *
-	 * @function usr - Loads the boot ROM and starts the game.
-	 * @param {number} x - The value to return after the game is started.
-	 * @returns {number} 255 after the game is started.
-	 *
-	 * @function bload - Asynchronously loads a ROM pack from the specified URL.
+	 * @function loadCart - Asynchronously loads a cart ROM pack from the specified URL.
 	 * @param {string} url - The URL of the ROM pack to load.
 	 * @returns {Promise<RomPack>} A Promise that resolves to the loaded ROM pack, or null if the loading failed.
 	 *
-	 * @var {boolean} snd_unlocked - A flag indicating whether the audio has been unlocked.
+	 * @function loadEngineAssets - Asynchronously loads the engine asset pack.
+	 * @param {string} url - The URL of the asset pack to load.
+	 * @returns {Promise<RomPack>} A Promise that resolves to the loaded asset pack.
+	 *
+	 * @function start - Starts the game using the loaded cart and engine assets.
+	 * @returns {Promise<void>} Resolves when startup finishes.
+	 *
+	* @var {boolean} snd_unlocked - A flag indicating whether the audio has been unlocked.
 	 */
-	rom: null as RomPack,
-	engineRom: null as RomPack,
-	cartRom: null as RomPack,
+	cart: null as RomPack,
+	engine_assets: null as RomPack,
 	debug: false,
-	romname: undefined as string, // Currently, used for fetching the megarom Javascript for debug mode
 	sndcontext: null as AudioContext,
 	snd_unlocked: false,
 	gainnode: null as GainNode,
@@ -140,24 +84,12 @@ export const bootrom = {
 	enableOnscreenGamepad: false as BootArgs['enableOnscreenGamepad'],
 	platform: null as BootArgs['platform'],
 	viewHost: null as BootArgs['viewHost'],
-	canonicalization: __BOOTROM_CANONICALIZATION__,
 
 	/**
-	 * Sets the boot ROM pack.
-	 * @param {RomPack} rom - The boot ROM pack.
+	 * Starts the game.
+	 * @returns A Promise that resolves when startup finishes.
 	 */
-	set defusr(rom: RomPack) {
-		bootrom.rom = rom;
-		bootrom.cartRom = rom;
-		bootrom.engineRom = null;
-	},
-
-	/**
-	 * Loads the boot ROM and starts the game.
-	 * @param x - The value to return after the game is started.
-	 * @returns 255 after the game is started.
-	 */
-	usr(x: number): number {
+	start(): Promise<void> {
 		try {
 			const remove = (selector: string) => {
 				if (!HAS_DOM_ENVIRONMENT) return;
@@ -183,7 +115,7 @@ export const bootrom = {
 				document.body.classList.add('game-started'); // Change background color of body
 			};
 
-			if (!h406A) throw new Error(`h406A(${x}) is not defined!`); // h406A is the main function that starts the game engine
+			const entry = globalThis.bmsx.startCart;
 			if (HAS_DOM_ENVIRONMENT) {
 				const gamescreen = document.getElementById('gamescreen');
 				if (!(gamescreen instanceof HTMLElement)) {
@@ -210,8 +142,8 @@ export const bootrom = {
 			if (!platform) {
 				throw new Error('[bootrom] Platform not initialized before starting the game.');
 			}
-			Promise.resolve(h406A({
-				rompack: bootrom.rom!,
+			return Promise.resolve(entry({
+				rompack: bootrom.cart,
 				sndcontext: bootrom.sndcontext,
 				gainnode: bootrom.gainnode,
 				debug: this.debug,
@@ -219,13 +151,11 @@ export const bootrom = {
 				enableOnscreenGamepad: bootrom.enableOnscreenGamepad,
 				platform,
 				viewHost: bootrom.viewHost,
-				canonicalization: __BOOTROM_CANONICALIZATION__,
 			} as BootArgs)).then(() => {
 				wrapup();
-				bootrom.rom = undefined;
-				delete bootrom.rom;
+				bootrom.cart = undefined;
+				delete bootrom.cart;
 			});
-			return 255;
 		} catch (err) {
 			throw err;
 		}
@@ -236,8 +166,7 @@ export const bootrom = {
 	 * @param url - The URL of the ROM pack to load.
 	 * @returns A Promise that resolves to the loaded ROM pack, or null if the loading failed.
 	 */
-	async bload(url: string, mode: 'auto' | 'engine' | 'cart' = 'auto'): Promise<RomPack> {
-		const loadKind = mode === 'auto' ? 'cart' : mode;
+	async loadCart(url: string): Promise<RomPack> {
 		if (typeof window !== 'undefined') {
 			window.onunhandledrejection = (event: PromiseRejectionEvent) => {
 				event.preventDefault();
@@ -275,21 +204,6 @@ export const bootrom = {
 			});
 		};
 
-		if (loadKind === 'engine') {
-			try {
-				const response_array = await fetchRom();
-				const ziprom_and_label = await getZippedRomAndRomLabelFromBlob(response_array);
-				// @ts-ignore
-				const inflated = pako.inflate(ziprom_and_label.zipped_rom).buffer;
-				const enginePack = await loadResources(inflated);
-				enginePack.canonicalization = __BOOTROM_CANONICALIZATION__;
-				bootrom.engineRom = enginePack;
-				return enginePack;
-			} catch (err) {
-				throw 'Failed to load engine ROM:\n' + err;
-			}
-		}
-
 		return new Promise((resolve, reject) => {
 			let loadedRomPack: RomPack = null;
 			let romlabel_bloburl: string = null;
@@ -317,30 +231,26 @@ export const bootrom = {
 			}
 
 			fetchRom()
-				.then((response_array: ArrayBuffer) => getZippedRomAndRomLabelFromBlob(response_array))
-				.then((ziprom_and_label: { zipped_rom: ArrayBuffer, romlabel: string }) => {
+				.then((response_array: ArrayBuffer) => splitRomLabel(response_array))
+				.then((ziprom_and_label: { zipped_rom: ArrayBuffer, romlabel?: ArrayBuffer }) => {
 					if (ziprom_and_label.romlabel) {
-						romlabel_bloburl = ziprom_and_label.romlabel;
+						romlabel_bloburl = getImageUrlFromBuffer(ziprom_and_label.romlabel);
 						replaceBMSXImgWithRomLabel();
 					}
-					// const compressed = new Uint8Array(ziprom_and_label.zipped_rom);
-					// return BinaryCompressor.decompressBinary(compressed).buffer;
 					// @ts-ignore
 					return pako.inflate(ziprom_and_label.zipped_rom).buffer;
 				})
-				.then(rom => loadResources(rom))
+				.then(rom => {
+					const engine = globalThis as typeof globalThis & { bmsx: typeof import('../../src/bmsx/index') };
+					return engine.bmsx.loadRomPackFromBuffer(rom);
+				})
 				.then((loadResult: any) => {
 					loadedRomPack = loadResult;
-					loadedRomPack.canonicalization = __BOOTROM_CANONICALIZATION__;
-					const combinedPack = combineRompacks(bootrom.engineRom, loadedRomPack);
-					bootrom.cartRom = loadedRomPack;
-					bootrom.rom = combinedPack;
-					loadedRomPack = combinedPack;
+					bootrom.cart = loadedRomPack;
 					return awaitBootComplete().then(() => {  // Return the promise and chain the replace after animation ends
 						replaceBMSXImgWithRomLabel();
 					});
 				})
-				.then(() => loadScript(loadedRomPack!))
 				.then(() => {
 					setLoaderText('Press any key, button or touch screen to start...');
 					return awaitPressedAnyKeyPromise();
@@ -360,12 +270,18 @@ export const bootrom = {
 		});
 	},
 
-	loadEngineRom(url: string) {
-		return this.bload(url, 'engine');
-	},
-
-	loadCartRom(url: string) {
-		return this.bload(url, 'cart');
+	async loadEngineAssets(url: string): Promise<RomPack> {
+		const response = await fetchBuffer(url).catch(err => {
+			throw new Error(`Error while fetching engine assets: "${err.message}"`);
+		});
+		const split = splitRomLabel(response);
+		// @ts-ignore
+		const inflated = pako.inflate(split.zipped_rom).buffer;
+		const engine = globalThis as typeof globalThis & { bmsx: typeof import('../../src/bmsx/index') };
+		const assets = await engine.bmsx.loadRomPackFromBuffer(inflated);
+		engine.bmsx.setEngineAssets(assets);
+		bootrom.engine_assets = assets;
+		return assets;
 	},
 
 	outputError(error: Error | string) {
@@ -399,10 +315,20 @@ if (typeof globalThis !== 'undefined') {
 		const rom = getParameterByName('rom');
 		return rom && rom !== '' ? rom : null;
 	}
-
 	globalThis.getRomNameFromUrlParameter = (): string => {
-		const rom_name = getParameterByName('romname');
-		return rom_name && rom_name !== '' ? rom_name : null;
+		const romName = getParameterByName('romname');
+		if (romName && romName !== '') {
+			return romName;
+		}
+		const rom = getParameterByName('rom');
+		if (!rom || rom.length === 0) {
+			return null;
+		}
+		const basename = rom.split('/').pop();
+		if (!basename || basename.length === 0) {
+			return null;
+		}
+		return basename.replace(/\.debug\.rom$/i, '').replace(/\.rom$/i, '');
 	}
 }
 
@@ -413,6 +339,43 @@ function getParameterByName(name: string, url: string = window.location.href) {
 	if (!results) return null;
 	if (!results[2]) return '';
 	return decodeURIComponent(results[2].replace(/\+/g, ' '));
+}
+
+function splitPng(blob: ArrayBuffer): { png?: ArrayBuffer; rest: ArrayBuffer } {
+	const u8 = new Uint8Array(blob);
+	if (
+		u8[0] !== 0x89 || u8[1] !== 0x50 || u8[2] !== 0x4E || u8[3] !== 0x47 ||
+		u8[4] !== 0x0D || u8[5] !== 0x0A || u8[6] !== 0x1A || u8[7] !== 0x0A
+	) {
+		return { rest: blob };
+	}
+	let p = 8;
+	while (p + 8 <= u8.length) {
+		const len = (u8[p] << 24) | (u8[p + 1] << 16) | (u8[p + 2] << 8) | u8[p + 3];
+		p += 4;
+		const type = (u8[p] << 24) | (u8[p + 1] << 16) | (u8[p + 2] << 8) | u8[p + 3];
+		p += 4;
+		const end = p + len + 4;
+		if (type === 0x49454E44) {
+			const png = u8.slice(0, end).buffer;
+			const rest = u8.slice(end).buffer;
+			return { png, rest };
+		}
+		p = end;
+	}
+	throw new Error('PNG IEND chunk not found');
+}
+
+function splitRomLabel(blob: ArrayBuffer): { zipped_rom: ArrayBuffer; romlabel?: ArrayBuffer } {
+	const { png, rest } = splitPng(blob);
+	if (png) {
+		return { zipped_rom: rest, romlabel: png };
+	}
+	return { zipped_rom: blob, romlabel: undefined };
+}
+
+function getImageUrlFromBuffer(buffer: ArrayBuffer): string {
+	return URL.createObjectURL(new Blob([new Uint8Array(buffer)], { type: 'image/png' }));
 }
 
 /**
@@ -433,31 +396,6 @@ async function awaitBootComplete(): Promise<void> {
 		if (bootrom.debug) resolve(); // Resolve immediately in debug-mode
 	});
 	return result;
-}
-
-/**
- * Asynchronously loads the script from the given `RomPack` object and adds it to the document head.
- * @param rom - The `RomPack` object containing the script to load.
- * @param romname - The name of the ROM.
- * @returns A Promise that resolves when the script has been loaded and added to the document head.
- * If an error occurs during loading, the Promise is rejected with an error message.
- */
-async function loadScript(rom: RomPack): Promise<void> {
-	if (!HAS_DOM_ENVIRONMENT) {
-		return;
-	}
-	if (!rom.code || rom.code.length === 0) {
-		return;
-	}
-	try {
-		registerInlineSourceMapFromInjectedScript(rom.code);
-		const romcode = document.createElement('script');
-		romcode.async = false;
-		romcode.textContent = rom.code;
-		document.head.appendChild(romcode);
-	} catch (err) {
-		throw new Error(`ROM source loading failed: ${err.message}`);
-	}
 }
 
 /**
@@ -602,5 +540,3 @@ async function fetchBuffer(url: string): Promise<ArrayBuffer> {
 		throw new Error(`Failed @fetchBuffer for URL "${url}": ${err.message}`);
 	}
 }
-
-export { getSubBufferFromBufferWithMeta, getZippedRomAndRomLabelFromBlob, loadAssetList, loadResources, parseMetaFromBuffer };

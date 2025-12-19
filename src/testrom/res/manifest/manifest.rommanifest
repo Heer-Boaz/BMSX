@@ -1,5 +1,13 @@
 {
     "title": "The Test Rompack!",
     "short_name": "Testrompack",
-    "rom_name": "testrom"
+    "rom_name": "testrom",
+    "vm": {
+        "viewport": { "width": 256, "height": 212 },
+        "canonicalization": "lower",
+        "namespace": "testrom"
+    },
+    "lua": {
+        "entry_path": "entry.lua"
+    }
 }

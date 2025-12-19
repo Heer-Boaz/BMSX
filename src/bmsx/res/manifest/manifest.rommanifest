@@ -1,5 +1,13 @@
 {
-	"title": "BMSX Engine",
-	"short_name": "BMSX",
-	"rom_name": "engine"
+	"title": "BMSX Engine Assets",
+	"short_name": "BMSX Assets",
+	"rom_name": "engine.assets",
+	"vm": {
+		"viewport": { "width": 256, "height": 212 },
+		"canonicalization": "lower",
+		"namespace": "bmsx"
+	},
+	"lua": {
+		"entry_path": "__engine_assets__.lua"
+	}
 }

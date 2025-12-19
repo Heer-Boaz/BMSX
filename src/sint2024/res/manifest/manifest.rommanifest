@@ -1,5 +1,13 @@
 {
     "title": "Sinterklaas 2024",
     "short_name": "Sint 2024",
-    "rom_name": "sint24"
+    "rom_name": "sint24",
+    "vm": {
+        "viewport": { "width": 256, "height": 212 },
+        "canonicalization": "lower",
+        "namespace": "sint24"
+    },
+    "lua": {
+        "entry_path": "cart.lua"
+    }
 }

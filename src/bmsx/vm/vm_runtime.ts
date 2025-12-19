@@ -1768,6 +1768,25 @@ export class BmsxVMRuntime extends Service {
 				}
 			}
 		}
+		const projectRootPath = $.rompack.project_root_path;
+		const normalizedRoot = projectRootPath && projectRootPath.length > 0
+			? projectRootPath.replace(/^\.?\//, '')
+			: '';
+		if (luaFrames.length > 0) {
+			for (const frame of luaFrames) {
+				const source = frame.source;
+				if (!source || source.length === 0) {
+					continue;
+				}
+				const normalizedSource = source.replace(/^\.?\//, '');
+				const workspaceRelative = normalizedSource.startsWith('src/')
+					? normalizedSource
+					: (normalizedRoot.length > 0 && normalizedSource.startsWith(`${normalizedRoot}/`))
+						? normalizedSource
+						: (normalizedRoot.length > 0 ? `${normalizedRoot}/${normalizedSource}` : normalizedSource);
+				frame.pathPath = workspaceRelative;
+			}
+		}
 		let stackText: string = null;
 		if (this.includeJsStackTraces && error instanceof Error && typeof error.stack === 'string') {
 			stackText = error.stack;

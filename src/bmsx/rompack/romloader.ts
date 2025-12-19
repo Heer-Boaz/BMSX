@@ -1,5 +1,29 @@
-import { type RectBounds, type AudioMeta, type GLTFMaterial, type GLTFModel, type ImgMeta, type Polygon, type RomAsset, type RomAssetListPayload, type RomImgAsset, type RomLuaAsset, type RomManifest, type RomMeta, type RomPack, type TextureSource, type color_arr } from '../../src/bmsx/rompack/rompack';
-import { decodeBinary, decodeuint8arr, toF32, typedArrayFromBytes } from '../../src/bmsx/serializer/binencoder';
+import type {
+	RectBounds,
+	AudioMeta,
+	GLTFMaterial,
+	GLTFModel,
+	ImgMeta,
+	Polygon,
+	RomAsset,
+	RomAssetListPayload,
+	RomImgAsset,
+	RomLuaAsset,
+	RomManifest,
+	RomMeta,
+	RomPack,
+	TextureSource,
+	color_arr,
+} from './rompack';
+import { decodeBinary, decodeuint8arr, toF32, typedArrayFromBytes } from '../serializer/binencoder';
+import { generateAtlasName } from '../render/gameview';
+
+export type RomLoadOptions = {
+	loadImageFromBuffer?: (buffer: ArrayBuffer) => Promise<TextureSource>;
+	loadAudioFromBuffer?: (buffer: ArrayBuffer) => Promise<any>;
+	loadDataFromBuffer?: (buffer: ArrayBuffer) => Promise<any>;
+	loadModelFromBuffer?: (buffer: ArrayBuffer, textures?: ArrayBuffer) => Promise<any>;
+};
 
 export function parseMetaFromBuffer(to_parse: ArrayBuffer): RomMeta {
 	const bytearray = new Uint8Array(to_parse);
@@ -10,16 +34,13 @@ export function parseMetaFromBuffer(to_parse: ArrayBuffer): RomMeta {
 	if (footerOffset < 16) {
 		throw new Error('ROM file too small for metadata footer');
 	}
-	try {
-		const dv = new DataView(to_parse, footerOffset, 16);
-		metaOffset = Number(dv.getBigUint64(0, true));
-		metaLength = Number(dv.getBigUint64(8, true));
-		if (metaOffset < 0 || metaLength <= 0 || metaOffset + metaLength > bytearray.length)
-			throw new Error('Invalid ROM metadata footer');
-		return { start: metaOffset, end: metaOffset + metaLength };
-	} catch (error: any) {
-		throw new Error(`Failed to parse ROM metadata: ${error.message}\n${to_parse.byteLength} bytes, footerOffset: ${footerOffset}, metaOffset: ${metaOffset === -1 ? '<unknown>' : metaOffset}, metaLength: ${metaLength === -1 ? '<unknown>' : metaLength}.`);
+	const dv = new DataView(to_parse, footerOffset, 16);
+	metaOffset = Number(dv.getBigUint64(0, true));
+	metaLength = Number(dv.getBigUint64(8, true));
+	if (metaOffset < 0 || metaLength <= 0 || metaOffset + metaLength > bytearray.length) {
+		throw new Error('Invalid ROM metadata footer');
 	}
+	return { start: metaOffset, end: metaOffset + metaLength };
 }
 
 function getSubBufferAsPerMeta(buffer: ArrayBuffer, meta: RomMeta): ArrayBuffer {
@@ -33,7 +54,6 @@ export function getSubBufferFromBufferWithMeta(buffer: ArrayBuffer): ArrayBuffer
 
 function splitPng(blob: ArrayBuffer): { png?: ArrayBuffer; rest: ArrayBuffer } {
 	const u8 = new Uint8Array(blob);
-	const IEND = 0x49454E44;
 	if (
 		u8[0] !== 0x89 || u8[1] !== 0x50 || u8[2] !== 0x4E || u8[3] !== 0x47 ||
 		u8[4] !== 0x0D || u8[5] !== 0x0A || u8[6] !== 0x1A || u8[7] !== 0x0A
@@ -47,7 +67,7 @@ function splitPng(blob: ArrayBuffer): { png?: ArrayBuffer; rest: ArrayBuffer } {
 		const type = (u8[p] << 24) | (u8[p + 1] << 16) | (u8[p + 2] << 8) | u8[p + 3];
 		p += 4;
 		const end = p + len + 4;
-		if (type === IEND) {
+		if (type === 0x49454E44) {
 			const png = u8.slice(0, end).buffer;
 			const rest = u8.slice(end).buffer;
 			return { png, rest };
@@ -57,15 +77,10 @@ function splitPng(blob: ArrayBuffer): { png?: ArrayBuffer; rest: ArrayBuffer } {
 	throw new Error('PNG IEND chunk not found');
 }
 
-export async function getZippedRomAndRomLabelFromBlob(blob_buffer: ArrayBuffer): Promise<{ zipped_rom: ArrayBuffer, romlabel: string }> {
-	try {
-		const { png, rest } = splitPng(blob_buffer);
-		if (png !== undefined) {
-			const label = getImageURL(png);
-			return { zipped_rom: rest, romlabel: label };
-		}
-	} catch (e) {
-		console.warn('PNG split from ROM\n', e);
+export function getZippedRomAndRomLabelFromBlob(blob_buffer: ArrayBuffer): { zipped_rom: ArrayBuffer, romlabel?: ArrayBuffer } {
+	const { png, rest } = splitPng(blob_buffer);
+	if (png) {
+		return { zipped_rom: rest, romlabel: png };
 	}
 	return { zipped_rom: blob_buffer, romlabel: undefined };
 }
@@ -74,8 +89,8 @@ export async function loadAssetList(rom: ArrayBuffer): Promise<{ assets: RomAsse
 	const sliced = new Uint8Array(getSubBufferFromBufferWithMeta(rom));
 	const decoded = decodeBinary(sliced) as RomAssetListPayload;
 	const assetList = decoded.assets;
-	const projectRootPath = decoded.projectRootPath ?? null;
-	const manifest = decoded.manifest as RomManifest;
+	const projectRootPath = decoded.projectRootPath;
+	const manifest = decoded.manifest;
 
 	function flipPolygons(polys: Polygon[], flipH: boolean, flipV: boolean, imgW: number, imgH: number): Polygon[] {
 		return polys.map(poly => {
@@ -130,15 +145,11 @@ export async function loadAssetList(rom: ArrayBuffer): Promise<{ assets: RomAsse
 			fliphv: []
 		} as { original: number[]; fliph: number[]; flipv: number[]; fliphv: number[] };
 
-		// Texcoords are stored in the same order as the quad vertices generated
-		// by bvec.set: top-left, bottom-left, top-right, top-right, bottom-left,
-		// bottom-right.
 		const left = texcoords[0];
 		const top = texcoords[1];
 		const bottom = texcoords[3];
 		const right = texcoords[4];
 
-		// Horizontal flip swaps the left and right coordinates
 		result.fliph.push(
 			right, top,
 			right, bottom,
@@ -147,7 +158,6 @@ export async function loadAssetList(rom: ArrayBuffer): Promise<{ assets: RomAsse
 			right, bottom,
 			left, bottom
 		);
-		// Vertical flip swaps the top and bottom coordinates
 		result.flipv.push(
 			left, bottom,
 			left, top,
@@ -156,7 +166,6 @@ export async function loadAssetList(rom: ArrayBuffer): Promise<{ assets: RomAsse
 			left, top,
 			right, top
 		);
-		// Flip both horizontally and vertically
 		result.fliphv.push(
 			right, bottom,
 			right, top,
@@ -204,8 +213,6 @@ export async function loadAssetList(rom: ArrayBuffer): Promise<{ assets: RomAsse
 				case 'audio':
 					asset.audiometa = decodedMeta as AudioMeta;
 					break;
-				case 'code':
-					break;
 				case 'data':
 					break;
 				case 'model':
@@ -218,84 +225,10 @@ export async function loadAssetList(rom: ArrayBuffer): Promise<{ assets: RomAsse
 	return { assets: assetList, projectRootPath, manifest };
 }
 
-export async function loadResources(rom: ArrayBuffer, opts?: { loadImageFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadSourceFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadAudioFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadDataFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadModelFromBuffer?: (buffer: ArrayBuffer, textures?: ArrayBuffer) => Promise<any> }): Promise<RomPack> {
-	const { assets, projectRootPath, manifest } = await loadAssetList(rom);
-	const cart: RomPack['cart'] | null = manifest?.lua ? {
-		path2lua: {},
-		entry_path: manifest?.lua.entry_path,
-		namespace: manifest?.vm.namespace,
-		new_game: null,
-		init: null,
-		update: null,
-		draw: null,
-	} : null;
-	const result: RomPack = {
-		rom: rom,
-		img: {},
-		audio: {},
-		model: {},
-		data: {},
-		code: null,
-
-		audioevents: {},
-		cart,
-		project_root_path: projectRootPath,
-		manifest,
-		canonicalization: manifest?.vm?.canonicalization ?? 'none',
-	};
-
-	await Promise.all(assets.map(a => load(rom, a, result, opts)));
-
-	if (cart) {
-		if (!manifest.lua.entry_path) {
-			throw new Error('Cart manifest is missing lua.entry_path.');
-		}
-		if (!cart.path2lua[manifest.lua.entry_path]) {
-			throw new Error(`Entry Lua asset not found at path '${manifest.lua.entry_path}'.`);
-		}
-	}
-	return Promise.resolve<RomPack>(result);
-}
-
-function getImageURL(buffer: ArrayBuffer): string {
-	// When opened via file:// some browsers restrict blob: URLs or handle them
-	// differently which can cause image loading to fail (see error about
-	// "Failed to load image's URL: blob:file:///..."). Prefer a data: URL
-	// fallback when running from the file protocol to avoid that problem.
-	try {
-		if (typeof window !== 'undefined' && window.location && window.location.protocol === 'file:') {
-			const u8 = new Uint8Array(buffer);
-			// Convert Uint8Array to base64 in chunks to avoid call-size limits
-			const CHUNK = 0x8000;
-			let index = 0;
-			let binary = '';
-			while (index < u8.length) {
-				const slice = u8.subarray(index, Math.min(index + CHUNK, u8.length));
-				binary += String.fromCharCode.apply(null, Array.from(slice));
-				index += CHUNK;
-			}
-			return 'data:image/png;base64,' + btoa(binary);
-		}
-	} catch (e) {
-		// ignore and fall back to blob URL
-		// (we prefer not to throw here because callers expect a URL string)
-		// console.warn('getImageURL file:// fallback failed, using blob URL', e);
-	}
-
-	return URL.createObjectURL(new Blob([new Uint8Array(buffer)], { type: 'image/png' }));
-}
-
 async function getImageFromBuffer(buffer: ArrayBuffer): Promise<ImageBitmap> {
-	return loadImage(getImageURL(buffer));
+	const blob = new Blob([new Uint8Array(buffer)], { type: 'image/png' });
+	return createImageBitmap(blob, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' } as any);
 }
-
-// async function getImageFromBuffer(buffer: ArrayBuffer, options?: { flipY?: boolean }): Promise<TextureSource> {
-// 	if (typeof createImageBitmap === 'function') {
-// 		const bmp = await createImageBitmap(new Blob([new Uint8Array(buffer)], { type: 'image/png' }), { imageOrientation: options?.flipY ? 'flipY' : 'none', premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
-// 		return bmp as TextureSource;
-// 	}
-// 	throw new Error('Unable to create image from buffer');
-// }
 
 async function loadDataFromBuffer(buffer: ArrayBuffer): Promise<any> {
 	return decodeBinary(new Uint8Array(buffer));
@@ -310,14 +243,14 @@ export async function loadModelFromBuffer(asset_id: string, buffer: ArrayBuffer,
 			const u8 = new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
 			if (componentType === 5125) return typedArrayFromBytes(u8, Uint32Array);
 			if (componentType === 5123) return typedArrayFromBytes(u8, Uint16Array);
-			if (componentType === 5121) return new Uint8Array(u8.buffer, u8.byteOffset, u8.byteLength);  // Add this
+			if (componentType === 5121) return new Uint8Array(u8.buffer, u8.byteOffset, u8.byteLength);
 			if (u8.byteLength % 4 === 0) return typedArrayFromBytes(u8, Uint32Array);
 			return typedArrayFromBytes(u8, Uint16Array);
 		}
 		if (Array.isArray(v)) {
 			if (componentType === 5125) return new Uint32Array(v);
 			if (componentType === 5123) return new Uint16Array(v);
-			if (componentType === 5121) return new Uint8Array(v);  // Add this
+			if (componentType === 5121) return new Uint8Array(v);
 			return (v.length && v.length > 65535) ? new Uint32Array(v) : new Uint16Array(v);
 		}
 		return undefined;
@@ -331,7 +264,6 @@ export async function loadModelFromBuffer(asset_id: string, buffer: ArrayBuffer,
 		indices: toIndices(m.indices, m.indexComponentType),
 		indexComponentType: m.indexComponentType,
 		materialIndex: m.materialIndex,
-		// Images
 		imageURIs: m.imageURIs ? m.imageURIs.map((uri: any) => {
 			if (typeof uri === 'string') return uri;
 			if (ArrayBuffer.isView(uri)) {
@@ -372,22 +304,10 @@ export async function loadModelFromBuffer(asset_id: string, buffer: ArrayBuffer,
 	}
 
 	function textureIndexToTextureObject(index: number): number {
-		if (index === undefined || index === null) return undefined;
-		if (typeof index !== 'number') {
-			console.warn(`Invalid texture index type: ${typeof index}. Expected a number.`);
-			return undefined;
-		}
-		// Remap the texture index to the actual texture object
 		const remapped = textures?.[index];
 		if (remapped === undefined) {
-			console.warn(`Invalid texture index ${index}. Using undefined texture.`);
-			console.log(`Available textures: ${textures ? textures.join(', ') : 'none'}`);
-			console.log(`Available materials: ${materials ? materials.map((m, i) => `${i}: ${JSON.stringify(m)}`).join(', ') : 'none'}`);
-			console.log(`Remapped texture for index ${index}: ${JSON.stringify(remapped)}`);
-
-			return undefined;
+			throw new Error(`Invalid texture index ${index} for model "${asset_id}".`);
 		}
-		// console.log(`Remapped texture for index ${index} to ${remapped}: ${imageBuffers?.[remapped].byteLength} bytes`);
 		return remapped;
 	}
 
@@ -441,17 +361,16 @@ export async function loadModelFromBuffer(asset_id: string, buffer: ArrayBuffer,
 async function fromAsset(romImgAsset: RomImgAsset, rompack: RomPack, options?: { flipY?: boolean; }): Promise<ImageBitmap | TextureSource> {
 	let source: TextureSource | ImageBitmap | Promise<ImageBitmap>;
 	if (options?.flipY) {
-		source = romImgAsset._imgbinYFlipped as TextureSource; // Use the private _imgbinYFlipped property
+		source = romImgAsset._imgbinYFlipped as TextureSource;
 	} else {
-		source = romImgAsset._imgbin as TextureSource; // Use the private _imgbin property
+		source = romImgAsset._imgbin as TextureSource;
 	}
 	if (source) return source;
 
-	// If the image was packed into an atlas, extract its region and cache the result in the `_imgbin` property
 	const imgmeta = romImgAsset.imgmeta;
 	if (!source && imgmeta.atlassed) {
-		// const atlas = rompack.img[generateAtlasName(imgmeta.atlasid)]?._imgbin; // Atlas should have a populated _imgbin property
-		const atlas = rompack.img['_atlas']?._imgbin as TextureSource; // Atlas should have a populated _imgbin property
+		const atlasName = generateAtlasName(imgmeta.atlasid ?? 0);
+		const atlas = rompack.img[atlasName]._imgbin as TextureSource;
 		if (!atlas) throw new Error(`Texture atlas image not found for atlas ID ${imgmeta.atlasid}`);
 		const coords = imgmeta.texcoords;
 		if (!coords) throw new Error(`No texture coordinates for atlassed image '${romImgAsset.resid}'`);
@@ -461,7 +380,6 @@ async function fromAsset(romImgAsset: RomImgAsset, rompack: RomPack, options?: {
 		const minU = Math.min(...xs), maxU = Math.max(...xs);
 		const minV = Math.min(...ys), maxV = Math.max(...ys);
 
-		// Convert to pixel coordinates and clamp inside atlas bounds
 		const offsetX = Math.floor(minU * atlas.width);
 		const offsetY = Math.floor(minV * atlas.height);
 		const imgWidth = Math.max(1, Math.min(atlas.width - offsetX, Math.round((maxU - minU) * atlas.width)));
@@ -472,7 +390,6 @@ async function fromAsset(romImgAsset: RomImgAsset, rompack: RomPack, options?: {
 		canvas.height = imgHeight;
 		const ctx = canvas.getContext('2d')!;
 		ctx.drawImage(atlas as ImageBitmap, offsetX, offsetY, imgWidth, imgHeight, 0, 0, imgWidth, imgHeight);
-		// Convert canvas to ImageBitmap asynchronously
 		source = createImageBitmap(canvas, {
 			imageOrientation: options?.flipY ? 'flipY' : 'none',
 			premultiplyAlpha: 'none',
@@ -484,7 +401,12 @@ async function fromAsset(romImgAsset: RomImgAsset, rompack: RomPack, options?: {
 	return source;
 }
 
-async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: { loadImageFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadSourceFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadAudioFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadDataFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadModelFromBuffer?: (buffer: ArrayBuffer, textures?: ArrayBuffer) => Promise<any> }, _seenPaths?: Set<string>, _loadFSMFromBuffer?: (buffer: ArrayBuffer) => Promise<any>): Promise<void> {
+async function load(
+	rom: ArrayBuffer,
+	res: RomAsset,
+	romResult: RomPack,
+	opts?: RomLoadOptions
+): Promise<void> {
 	switch (res.type) {
 		case 'image':
 		case 'atlas': {
@@ -511,76 +433,43 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
 			break;
 		}
 		case 'audio':
-			try {
-				if (opts && opts.loadAudioFromBuffer) {
-					romResult.audio[res.resid] = await opts.loadAudioFromBuffer(rom.slice(res.start, res.end));
-				} else {
-					romResult.audio[res.resid] = res;
-				}
-			} catch (err: any) {
-				throw new Error(`Failed to load 'audio' from rom: ${err.message}.`);
+			if (opts && opts.loadAudioFromBuffer) {
+				romResult.audio[res.resid] = await opts.loadAudioFromBuffer(rom.slice(res.start, res.end));
+			} else {
+				romResult.audio[res.resid] = res;
 			}
 			break;
-		case 'code':
-			try {
-				if (opts && opts.loadSourceFromBuffer) {
-					romResult.code = await opts.loadSourceFromBuffer(rom.slice(res.start, res.end));
-				} else {
-					const sliced = new Uint8Array(rom, res.start, res.end - res.start);
-					romResult.code = decodeuint8arr(sliced);
-				}
-			} catch (err: any) {
-				throw new Error(`Failed to load 'code' from rom: ${err.message}.`);
+		case 'lua': {
+			const sliced = new Uint8Array(rom, res.start, res.end - res.start);
+			const luaAsset: RomLuaAsset = {
+				...res,
+				src: decodeuint8arr(sliced),
+			} as RomLuaAsset;
+			romResult.cart.path2lua[res.source_path] = luaAsset;
+			break;
+		}
+		case 'model': {
+			const texBuf = (res.texture_start != null && res.texture_end != null) ? rom.slice(res.texture_start, res.texture_end) : undefined;
+			if (opts && opts.loadModelFromBuffer) {
+				romResult.model[res.resid] = await opts.loadModelFromBuffer(rom.slice(res.start, res.end), texBuf);
+			} else {
+				romResult.model[res.resid] = await loadModelFromBuffer(res.resid, rom.slice(res.start, res.end), texBuf);
 			}
 			break;
-		case 'lua':
-			try {
-				const sliced = new Uint8Array(rom, res.start, res.end - res.start);
-				const luaAsset: RomLuaAsset = {
-					...res,
-					src: decodeuint8arr(sliced),
-				} as RomLuaAsset;
-				romResult.cart.path2lua[res.source_path] = luaAsset;
-			} catch (err: any) {
-				throw new Error(`Failed to load 'lua' from rom: ${err.message}.`);
-			}
-			break;
-		case 'model':
-			try {
-				let model: GLTFModel;
-				const texBuf = (res.texture_start != null && res.texture_end != null) ? rom.slice(res.texture_start, res.texture_end) : undefined;
-				if (opts && opts.loadModelFromBuffer) {
-					model = await opts.loadModelFromBuffer(rom.slice(res.start, res.end));
-				} else {
-					model = await loadModelFromBuffer(res.resid, rom.slice(res.start, res.end), texBuf);
-				}
-				romResult.model[res.resid] = model;
-			} catch (err: any) {
-				throw new Error(`Failed to load 'model' from rom: ${err.message}.`);
-			}
-			break;
+		}
 		case 'data':
-			try {
-				if (opts && opts.loadDataFromBuffer) {
-					const data = await opts.loadDataFromBuffer(rom.slice(res.start, res.end));
-					romResult.data[res.resid] = data;
-				} else {
-					const data = await loadDataFromBuffer(rom.slice(res.start, res.end));
-					romResult.data[res.resid] = data;
-				}
-			} catch (err: any) {
-				throw new Error(`Failed to load 'data' from rom: ${err.message}.`);
+			if (opts && opts.loadDataFromBuffer) {
+				const data = await opts.loadDataFromBuffer(rom.slice(res.start, res.end));
+				romResult.data[res.resid] = data;
+			} else {
+				const data = await loadDataFromBuffer(rom.slice(res.start, res.end));
+				romResult.data[res.resid] = data;
 			}
 			break;
 		case 'aem': {
-			try {
-				const u8 = new Uint8Array(rom.slice(res.start, res.end));
-				const audioevents = decodeBinary(u8);
-				romResult.audioevents[res.resid] = audioevents;
-				console.info(`Loaded audio event map '${res.resid}' with ${Object.keys(audioevents).length} entries.`);
-			} catch (err: any) {
-				throw new Error(`Failed to load 'aem' from rom: ${err.message}.`);
-			}
+			const u8 = new Uint8Array(rom.slice(res.start, res.end));
+			const audioevents = decodeBinary(u8);
+			romResult.audioevents[res.resid] = audioevents;
 			break;
 		}
 		case 'romlabel':
@@ -590,67 +479,31 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
 	}
 }
 
-function loadImage(src: string): ImageBitmap | PromiseLike<ImageBitmap> {
-	// Use an async IIFE so we can return a Promise<ImageBitmap>
-	return (async function (): Promise<ImageBitmap> {
-		// Prefer fetch + createImageBitmap when possible (handles data: and blob: URLs well)
-		if (typeof fetch === 'function' && typeof createImageBitmap === 'function') {
-			try {
-				const resp = await fetch(src);
-				if (resp.ok) {
-					const blob = await resp.blob();
-					// Use conservative image creation options
-					// (Some envs accept the options object, others ignore it)
-					return await createImageBitmap(blob, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' } as any);
-				}
-			} catch (e) {
-				// fall through to Image element fallback
-			}
-		}
+export async function loadRomPackFromBuffer(rom: ArrayBuffer, opts?: RomLoadOptions): Promise<RomPack> {
+	const { assets, projectRootPath, manifest } = await loadAssetList(rom);
+	const cart: RomPack['cart'] = {
+		path2lua: {},
+		entry_path: manifest.lua.entry_path,
+		namespace: manifest.vm.namespace,
+		new_game: null,
+		init: null,
+		update: null,
+		draw: null,
+	};
+	const result: RomPack = {
+		rom: rom,
+		img: {},
+		audio: {},
+		model: {},
+		data: {},
+		audioevents: {},
+		cart,
+		project_root_path: projectRootPath,
+		manifest,
+		canonicalization: manifest.vm.canonicalization,
+	};
 
-		// Fallback: load via HTMLImageElement then convert to ImageBitmap
-		return await new Promise<ImageBitmap>((resolve, reject) => {
-			if (typeof Image === 'undefined') {
-				reject(new Error('Image is not available in this environment; cannot load image.'));
-				return;
-			}
+	await Promise.all(assets.map(a => load(rom, a, result, opts)));
 
-			const img = new Image();
-			img.crossOrigin = 'anonymous';
-			img.onload = () => {
-				try {
-					// If createImageBitmap exists, use it on the Image element
-					if (typeof createImageBitmap === 'function') {
-						createImageBitmap(img, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' } as any).then(resolve).catch(reject);
-						return;
-					}
-
-					// As a last resort, draw into a canvas and attempt to createImageBitmap from it
-					const canvas = document.createElement('canvas');
-					canvas.width = img.width;
-					canvas.height = img.height;
-					const ctx = canvas.getContext('2d');
-					if (!ctx) {
-						reject(new Error('2D canvas context not available; cannot create ImageBitmap fallback.'));
-						return;
-					}
-					ctx.drawImage(img, 0, 0);
-
-					if (typeof createImageBitmap === 'function') {
-						createImageBitmap(canvas).then(resolve).catch(reject);
-						return;
-					}
-
-					// If createImageBitmap is still not available, fail explicitly.
-					reject(new Error('createImageBitmap is not available; cannot convert loaded image to ImageBitmap.'));
-				} catch (err) {
-					reject(err);
-				}
-			};
-			img.onerror = () => {
-				reject(new Error('Failed to load image: ' + src));
-			};
-			img.src = src;
-		});
-	})();
+	return result;
 }

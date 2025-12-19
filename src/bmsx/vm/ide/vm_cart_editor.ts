@@ -3729,23 +3729,6 @@ export function buildResourceViewerState(descriptor: VMResourceDescriptor): Reso
 			}
 			break;
 		}
-		case 'code': {
-			const dataEntry = data?.[descriptor.asset_id];
-			if (typeof dataEntry === 'string') {
-				appendResourceViewerLines(lines, ['-- Code --', '']);
-				appendResourceViewerLines(lines, dataEntry.split(/\r?\n/));
-			} else if (dataEntry !== undefined) {
-				const json = safeJsonStringify(dataEntry);
-				appendResourceViewerLines(lines, ['-- Code --', '']);
-				appendResourceViewerLines(lines, json.split(/\r?\n/));
-			} else if (typeof rompack.code === 'string') {
-				appendResourceViewerLines(lines, ['-- Game Code --', '']);
-				appendResourceViewerLines(lines, rompack.code.split(/\r?\n/));
-			} else {
-				error = `Code asset '${descriptor.asset_id}' unavailable.`;
-			}
-			break;
-		}
 		case 'data': {
 			const dataEntry = data?.[descriptor.asset_id];
 			if (dataEntry !== undefined) {

@@ -3,6 +3,7 @@ short_name: Test Cart
 rom_name: testcart
 vm:
   viewport: {width: 256, height: 212}
+  canonicalization: lower
   namespace: testcart
 lua:
   entry_path: testcart.lua

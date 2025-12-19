@@ -1,5 +1,13 @@
 {
     "title": "Diamand Slijpen",
     "short_name": "diamand",
-    "rom_name": "diamand"
+    "rom_name": "diamand",
+    "vm": {
+        "viewport": { "width": 256, "height": 212 },
+        "canonicalization": "lower",
+        "namespace": "diamand"
+    },
+    "lua": {
+        "entry_path": "cart.lua"
+    }
 }

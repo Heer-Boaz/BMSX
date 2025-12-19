@@ -3,6 +3,7 @@ short_name: 'emptycart'
 rom_name: 'emptycart'
 vm:
   viewport: {width: 256, height: 212}
+  canonicalization: lower
   namespace: 'emptycart'
 lua:
   entry_path: entry.lua

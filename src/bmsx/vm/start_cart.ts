@@ -1,4 +1,5 @@
 import { $, type BootArgs, type InputMap, type WorldConfiguration, shallowcopy, } from '../index';
+import { mergeEngineAssets } from '../rompack/engine_assets';
 import { createBmsxVMModule } from './module';
 import { VMFont, VMFontVariant } from './font';
 import type { CartManifest } from '../rompack/rompack';
@@ -17,10 +18,8 @@ function deriveVMOptions(manifest: CartManifest) {
 }
 
 export async function startCart(args: BootArgs): Promise<void> {
-	const manifest = args.rompack.manifest;
-	if (!manifest) {
-		throw new Error('[start_cart] Cart manifest not found in rompack.');
-	}
+	const runtimeRompack = mergeEngineAssets(args.rompack);
+	const manifest = runtimeRompack.manifest;
 	const { viewport, } = deriveVMOptions(manifest);
 	const module = createBmsxVMModule();
 
@@ -30,7 +29,7 @@ export async function startCart(args: BootArgs): Promise<void> {
 	};
 
 	await $.init({
-		rompack: args.rompack,
+		rompack: runtimeRompack,
 		worldConfig,
 		sndcontext: args.sndcontext,
 		gainnode: args.gainnode,
@@ -53,7 +52,7 @@ export async function startCart(args: BootArgs): Promise<void> {
 	await applyWorkspaceOverridesToCart({ cart: $.cart, storage: $.platform.storage, includeServer: true });
 	const runtime = BmsxVMRuntime.createInstance({
 		playerIndex: args.startingGamepadIndex ?? 1,
-		canonicalization: $.rompack.canonicalization,
+		canonicalization: runtimeRompack.canonicalization,
 		viewport,
 	});
 

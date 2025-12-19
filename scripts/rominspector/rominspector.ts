@@ -9,7 +9,7 @@ import * as pako from 'pako';
 import { PNG } from 'pngjs';
 import type { asset_type, AudioMeta, GLTFModel, ImgMeta, RomAsset, RomMeta } from '../../src/bmsx/rompack/rompack';
 import { decodeBinary } from '../../src/bmsx/serializer/binencoder';
-import { getZippedRomAndRomLabelFromBlob, loadAssetList, loadModelFromBuffer as loadGLTFModelFromBuffer, parseMetaFromBuffer, loadResources } from '../bootrom/bootresources';
+import { getZippedRomAndRomLabelFromBlob, loadAssetList, loadModelFromBuffer as loadGLTFModelFromBuffer, parseMetaFromBuffer, loadRomPackFromBuffer } from '../../src/bmsx/rompack/romloader';
 import { generateAtlasName } from '../rompacker/atlasbuilder';
 import { asciiWaveBraille, generateBrailleAsciiArt, generatePixelPerfectAsciiArt, parseWav, renderBufferBar, renderSummaryBar } from './asciiart';
 
@@ -41,40 +41,12 @@ function formatByteSize(size: number): string {
 	return i === 0 ? `${size} ${units[0]}` : `${n.toFixed(2)} ${units[i]}`;
 }
 
-function decodeuint8arr(buf: Uint8Array): string {
-	return new TextDecoder().decode(buf);
-}
-
 async function nodeImageLoader(buffer: ArrayBuffer) {
 	return PNG.sync.read(Buffer.from(buffer.slice(0)));
 }
 
 async function loadAudio(buffer: ArrayBuffer) {
 	return buffer.slice(0);
-}
-
-async function loadSourceFromBuffer(buf: ArrayBuffer): Promise<string> {
-	if (!(buf instanceof ArrayBuffer)) {
-		console.error('loadSourceFromBuffer expects an ArrayBuffer, got:', buf);
-		throw new Error('Invalid buffer type');
-	}
-	if (buf.byteLength === 0) {
-		console.error('loadSourceFromBuffer received an empty buffer');
-		return '';
-	}
-	// If the buffer is already a string, return it directly
-	if (typeof buf === 'string') {
-		return buf;
-	}
-
-	// First create a copy of the ArrayBuffer to avoid issues with shared memory
-	let copyBuffer = new ArrayBuffer(buf.byteLength);
-	copyBuffer = buf.slice(0);
-
-	// Use TextDecoder to decode the ArrayBuffer directly
-	const decoded = decodeuint8arr(new Uint8Array(copyBuffer));
-
-	return decoded;
 }
 
 async function loadDataFromBuffer(buf: ArrayBuffer): Promise<any> {
@@ -122,7 +94,7 @@ async function loadAssets(rombin: Buffer | ArrayBuffer) {
 			process.exit(1);
 		}
 		// @ts-ignore
-		({ assets } = await loadAssetList(rombin));
+		({ assets } = await loadAssetList(arrayBuffer));
 
 		console.log('ROM pack metadata and resources loaded successfully.');
 
@@ -222,7 +194,8 @@ async function loadRompackFromFile(romfile: string): Promise<Buffer> {
 	if (!zipped_rom || zipped_rom.byteLength === 0) {
 		throw new Error(`ROM file "${romfile}" is empty or invalid.`);
 	}
-	console.log(`Loaded ROM file "${romfile}" with label: ${romlabel || 'No label'}`);
+	const labelInfo = romlabel ? `${formatByteSize(romlabel.byteLength)} PNG label` : 'No label';
+	console.log(`Loaded ROM file "${romfile}" with label: ${labelInfo}`);
 
 	function isPakoCompressed(raw: Uint8Array): boolean {
 		// Gzip: 1F 8B
@@ -300,8 +273,7 @@ async function main() {
 	const audioCount = assetList.filter(a => a.type === 'audio')?.length ?? 0;
 	const dataCount = assetList.filter(a => a.type === 'data')?.length ?? 0;
 	const modelCount = assetList.filter(a => a.type === 'model')?.length ?? 0;
-	const codeCount = assetList.filter(a => a.type === 'code')?.length ?? 0;
-	const otherCount = assetList.filter(a => a.type !== 'image' && a.type !== 'audio' && a.type !== 'code' && a.type !== 'model')?.length ?? 0;
+	const otherCount = assetList.filter(a => a.type !== 'image' && a.type !== 'audio' && a.type !== 'model')?.length ?? 0;
 
 	// --- Blessed UI ---
 	const screen = blessed.screen({
@@ -352,7 +324,6 @@ async function main() {
 			if (typeof a.metabuffer_start === 'number' && typeof a.metabuffer_end === 'number') size += a.metabuffer_end - a.metabuffer_start;
 			return sum + size;
 		}, 0);
-		const codeSize = assetList.reduce((sum, a) => a.type === 'code' ? sum + (a.end - a.start) : sum, 0);
 		const totalSize = rombin.byteLength;
 
 		const barLength = getBarLength(typeof screen.width === 'number' ? screen.width : 120);
@@ -371,9 +342,6 @@ async function main() {
 					break;
 				case 'audio':
 					colorTag = '{light-blue-fg}';
-					break;
-				case 'code':
-					colorTag = '{light-white-fg}';
 					break;
 				case 'data':
 					colorTag = '{light-green-fg}';
@@ -399,19 +367,17 @@ async function main() {
 		const audioSizePercent = (audioSize / totalSize * 100).toFixed(1);
 		const dataSizePercent = (dataSize / totalSize * 100).toFixed(1);
 		const modelSizePercent = (modelSize / totalSize * 100).toFixed(1);
-		const codeSizePercent = (codeSize / totalSize * 100).toFixed(1);
 		const atlasSizePercent = (atlasSize / totalSize * 100).toFixed(1);
 		const metaSizePercent = (metaBuf.byteLength / totalSize * 100).toFixed(1);
 
 		return `Total assets: ${assetList?.length ?? 0} (images: ${imageAssets?.length ?? 0
-			}, audio: ${audioCount}, data: ${dataCount}, models: ${modelCount}, code: ${codeCount}, other: ${otherCount}) \n` +
+			}, audio: ${audioCount}, data: ${dataCount}, models: ${modelCount}, other: ${otherCount}) \n` +
 			`Buffer: ${renderSummaryBar(summaryRegions, totalSize, barLength)}\n` +
 			`Total size: ${formatByteSize(totalSize)} | ` +
 			`Images: ${formatByteSize(imagesSize)} (${imageSizePercent}%) | ` +
 			`Audio: ${formatByteSize(audioSize)} (${audioSizePercent}%) | ` +
 			`Data: ${formatByteSize(dataSize)} (${dataSizePercent}%) | ` +
 			`Models: ${formatByteSize(modelSize)} (${modelSizePercent}%) | ` +
-			`Code: ${formatByteSize(codeSize)} (${codeSizePercent}%) | ` +
 			`Atlas: ${formatByteSize(atlasSize)} (${atlasSizePercent}%) | ` +
 			`Metadata: ${formatByteSize(metaBuf.byteLength)} (${metaSizePercent}%)`;
 	}
@@ -585,9 +551,9 @@ async function main() {
 						} catch { /* fall back below */ }
 					}
 					if (!rendered) {
-						// Fallback: reconstruct via bootrom loader (populates RomImgAsset._imgbin)
+						// Fallback: reconstruct via ROM loader (populates RomImgAsset._imgbin)
 						try {
-							const rom = await loadResources(
+							const rom = await loadRomPackFromBuffer(
 								// @ts-ignore
 								rombin as any,
 								{ loadImageFromBuffer: async (ab: ArrayBuffer) => PNG.sync.read(Buffer.from(ab.slice(0))) }
@@ -775,27 +741,6 @@ async function main() {
 				} else {
 					asciiArt = 'No mesh data';
 				}
-				break;
-			case 'code': {
-				let code = '';
-				// Load the code buffer from the ROM pack
-				// @ts-ignore
-				code = await loadSourceFromBuffer(rombin.slice(selected.start, selected.end));
-				const sourceMapUrlIndex = code.indexOf('sourceMappingURL=');
-				metadataLines.push(`Characters in code: ${formatNumber(code.length - (sourceMapUrlIndex !== -1 ? code.length - sourceMapUrlIndex : 0))}`);
-				metadataLines.push(`Sourcemap: ${sourceMapUrlIndex !== -1 ? 'Yes' : 'No'}`);
-
-				if (!code || code.length === 0) {
-					code = '[No code buffer available]';
-				} else {
-					// Show the first 1000 characters of the code
-					code = code.slice(0, 1000);
-					if (code.length >= 1000) {
-						code += ' ... (truncated)';
-					}
-				}
-				asciiArt = `{gray-fg}###########################################\n${code}\n###########################################{/gray-fg}`;
-			}
 				break;
 		}
 

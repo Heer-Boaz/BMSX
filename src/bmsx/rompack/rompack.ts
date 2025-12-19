@@ -7,26 +7,25 @@ import { InputMap } from '../input/inputtypes';
 export const GAME_FPS = 50;
 
 export interface RomPack {
-	rom: ArrayBuffer; // The binary buffer of the ROM pack, containing all assets, including images, audio and code. ALWAYS PRESENT DURING GAME!
+	rom: ArrayBuffer; // The binary buffer of the ROM pack, containing all assets. ALWAYS PRESENT DURING GAME!
 	img: id2imgres; // Reference to the loaded image assets in the ROM pack, including metadata and the cached binary payload. ALWAYS PRESENT DURING GAME!
 	audio: id2res; // Reference to the loaded audio assets in the ROM pack, including metadata. ALWAYS PRESENT DURING GAME!
 	model: id2model; // Reference to the loaded model assets in the ROM pack, including metadata. ALWAYS PRESENT DURING GAME!
 	cart: BmsxCartridge; // Cartridge data bundled with the ROM pack, including Lua assets.
 	data: id2data; // Reference to the loaded data assets in the ROM pack, including metadata. ALWAYS PRESENT DURING GAME!
-	code: string; // The loaded game code in the ROM pack. ALWAYS PRESENT DURING GAME!
 	audioevents: id2audioevent; // Reference to the loaded audio event assets in the ROM pack, including metadata. ALWAYS PRESENT DURING GAME!
 	project_root_path: string; // Workspace-relative cart root path for resolving filesystem writes.
 	canonicalization: CanonicalizationType; // Canonicalization type for Lua identifiers in this ROM pack.
-	manifest?: RomManifest; // The manifest of the ROM pack, if present.
+	manifest: RomManifest; // The manifest of the ROM pack.
 }
 
 export type RomAssetListPayload = {
 	assets: RomAsset[];
-	projectRootPath?: string;
-	manifest?: RomManifest;
+	projectRootPath: string;
+	manifest: RomManifest;
 };
 
-export type asset_type = 'image' | 'audio' | 'code' | 'data' | 'atlas' | 'romlabel' | 'model' | 'aem' | 'lua';
+export type asset_type = 'image' | 'audio' | 'data' | 'atlas' | 'romlabel' | 'model' | 'aem' | 'lua';
 export type asset_id = string;
 
 /**
@@ -375,9 +374,9 @@ export type CartManifest = {
 	title?: string;
 	short_name?: string;
 	rom_name?: string;
-	vm?: {
-		viewport?: Viewport;
-		canonicalization?: CanonicalizationType;
+	vm: {
+		viewport: Viewport;
+		canonicalization: CanonicalizationType;
 		namespace: string;
 	};
 	input?: {

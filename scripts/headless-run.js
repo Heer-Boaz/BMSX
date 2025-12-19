@@ -9,82 +9,39 @@ if (args.length === 0) {
 
 const romFolder = args[0];
 
-const cartRoots = {
-	luademo: 'src/carts/luademo',
-	luashell: 'src/luashell',
-	testcart: 'src/carts/testcart',
-	emptycart: 'src/carts/emptycart',
-	2025: 'src/carts/2025',
-};
-
-// Map folder name -> rom base filename when rommanifest differs from folder name
 const romFilenameMap = {
 	ella2023: 'yiear',
 };
 
-if (!cartRoots[romFolder]) {
-	const romBase = romFilenameMap[romFolder] || romFolder;
-	const romPath = `dist/${romBase}.debug.rom`;
-	const timelinePath = `src/${romFolder}/test/${romFolder}_demo.json`;
-	const inputModulePath = `src/${romFolder}/test/${romFolder}_assert_results.mjs`;
-	let result = child.spawnSync('npm', ['run', 'build:game:headless', romFolder], { stdio: 'inherit' });
-	if (result.status !== 0) {
-		console.error('Error: build:game:headless failed.');
-		process.exit(result.status || 1);
-	}
-	const headlessArgs = ['dist/headless_debug.js', '--rom', romPath];
-	if (fs.existsSync(timelinePath)) {
-		headlessArgs.push('--input-timeline', timelinePath);
-	} else {
-		console.warn(`[headless-run] Optional input timeline not found at ${timelinePath}. Running without a timeline.`);
-	}
-	if (fs.existsSync(inputModulePath)) {
-		headlessArgs.push('--input-module', inputModulePath);
-	}
-	result = child.spawnSync('node', headlessArgs, { stdio: 'inherit' });
-	if (result.status !== 0) {
-		console.error('Error: headless runner failed.');
-		process.exit(result.status || 1);
-	}
-	process.exit(0);
+const cartRootCandidates = [
+	`src/carts/${romFolder}`,
+	`src/${romFolder}`,
+];
+const cartRoot = cartRootCandidates.find(candidate => fs.existsSync(candidate));
+if (!cartRoot) {
+	console.error(`Error: cart folder "${romFolder}" not found under src/carts or src.`);
+	process.exit(1);
 }
-
-const cartRoot = cartRoots[romFolder];
 const cartResPath = `${cartRoot}/res`;
-const engineRomPath = 'dist/engine.debug.rom';
+const romBase = romFilenameMap[romFolder] || romFolder;
+const romPath = `dist/${romBase}.debug.rom`;
 const engineRuntimePath = 'dist/engine.js';
+const engineAssetsPath = 'dist/engine.assets.rom';
+const timelinePath = `${cartRoot}/test/${romFolder}_demo.json`;
+const inputModulePath = `${cartRoot}/test/${romFolder}_assert_results.mjs`;
 
-let result = child.spawnSync('npx', [
-	'tsx',
-	'scripts/rompacker/rompacker.ts',
-	'--mode', 'engine',
-	'--debug',
-	'--force',
-	'--nodeploy',
-	'--skiptypecheck',
-	'--platform', 'headless',
-	'-romname', 'engine',
-	'-title', 'BMSX Engine',
-	'-bootloaderpath', './src/bmsx/console/default_cart',
-	'-respath', './src/bmsx/res'
-], { stdio: 'inherit' });
+let result = child.spawnSync('npm', ['run', 'build:engine:debug'], { stdio: 'inherit' });
 if (result.status !== 0) {
-	console.error('Error: engine build failed.');
+	console.error('Error: build:engine:debug failed.');
 	process.exit(result.status || 1);
 }
-
 
 result = child.spawnSync('npx', [
 	'tsx',
 	'scripts/rompacker/rompacker.ts',
 	'--debug',
 	'--force',
-	'--nodeploy',
-	'--skiptypecheck',
-	'--platform', 'headless',
 	'-romname', romFolder,
-	'-title', romFolder,
-	'-bootloaderpath', `./${cartRoot}`,
 	'-respath', `./${cartResPath}`
 ], { stdio: 'inherit' });
 if (result.status !== 0) {
@@ -92,12 +49,12 @@ if (result.status !== 0) {
 	process.exit(result.status || 1);
 }
 
-const romBase = romFilenameMap[romFolder] || romFolder;
-const romPath = `dist/${romBase}.debug.rom`;
-const timelinePath = `${cartRoot}/test/${romFolder}_demo.json`;
-const inputModulePath = `${cartRoot}/test/${romFolder}_assert_results.mjs`;
-
-const headlessArgs = ['dist/headless_debug.js', '--rom', romPath, '--engine', engineRomPath, '--engine-runtime', engineRuntimePath];
+const headlessArgs = [
+	'dist/headless_debug.js',
+	'--rom', romPath,
+	'--engine-runtime', engineRuntimePath,
+	'--engine-assets', engineAssetsPath,
+];
 if (fs.existsSync(timelinePath)) {
 	headlessArgs.push('--input-timeline', timelinePath);
 } else {

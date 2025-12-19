@@ -104,6 +104,28 @@ export function normalizeWorkspacePath(input: string): string {
 	return stack.join('/');
 }
 
+const CART_ROOT_SEGMENT = 'src/carts/';
+const ENGINE_RES_SEGMENT = 'src/bmsx/res';
+const DEFAULT_CART_BOOTLOADER_SEGMENT = 'src/bmsx/vm/default_cart';
+
+function isCartPath(path?: string): boolean {
+	if (!path || path.length === 0) return false;
+	const normalized = normalizeWorkspacePath(path);
+	return normalized.includes(CART_ROOT_SEGMENT);
+}
+
+function isEngineResPath(path?: string): boolean {
+	if (!path || path.length === 0) return false;
+	const normalized = normalizeWorkspacePath(path);
+	return normalized === ENGINE_RES_SEGMENT || normalized.startsWith(`${ENGINE_RES_SEGMENT}/`);
+}
+
+function isDefaultCartBootloader(path?: string): boolean {
+	if (!path || path.length === 0) return false;
+	const normalized = normalizeWorkspacePath(path);
+	return normalized === DEFAULT_CART_BOOTLOADER_SEGMENT || normalized.startsWith(`${DEFAULT_CART_BOOTLOADER_SEGMENT}/`);
+}
+
 function toWorkspaceRelativePath(filepath: string): string {
 	if (!filepath || filepath.length === 0) {
 		throw new Error('Cannot convert empty filepath to workspace-relative path.');
@@ -757,10 +779,14 @@ export async function getResMetaList(respaths: string[], romname?: string, optio
 
 	EXTRA_LUA_SCAN_SKIP.add(WORKSPACE_STATE_DIR_NAME);
 	const arrayOfFiles: string[] = [];
-	const includeCode = options.includeCode !== false;
+	const virtualRoot = normalizeVirtualRootPath(options.virtualRoot);
+	const cartProject = isCartPath(virtualRoot) || respaths.some(isCartPath);
+	const includeCode = options.includeCode !== false && !cartProject;
+	const scanRoots = cartProject
+		? respaths.filter(path => !isEngineResPath(path))
+		: respaths;
 	const extraLuaRoots = options.extraLuaPaths ?? [];
 	const seenPaths = new Set<string>();
-	const virtualRoot = normalizeVirtualRootPath(options.virtualRoot);
 
 	const pushFile = (filepath: string) => {
 		const normalized = resolve(filepath);
@@ -769,7 +795,7 @@ export async function getResMetaList(respaths: string[], romname?: string, optio
 		arrayOfFiles.push(filepath);
 	};
 
-	for (const respath of respaths) {
+	for (const respath of scanRoots) {
 		const files = await getFiles(respath) ?? [];
 		for (const file of files) {
 			pushFile(file);
@@ -1816,8 +1842,9 @@ export const shouldCheckFile = (filename: string, checkCodeFiles: boolean, check
 export async function isRebuildRequired(romname: string, bootloaderPath: string, resPath: string, options: ResourceScanOptions = {}): Promise<boolean> {
 	const romFilePath = `./dist/${romname}.rom`;
 	const minifiedJsFilePath = `./rom/${romname}.js`;
-	const includeCode = options.includeCode !== false;
 	const extraLuaRoots = options.extraLuaPaths ?? [];
+	const cartProject = isCartPath(resPath) || isCartPath(bootloaderPath) || isDefaultCartBootloader(bootloaderPath);
+	const includeCode = options.includeCode !== false && !cartProject;
 
 	async function checkPaths() {
 		try {
@@ -1876,7 +1903,7 @@ export async function isRebuildRequired(romname: string, bootloaderPath: string,
 		return false;
 	};
 
-	const shouldCheckCodeFiles = (dir: string) => dir.startsWith(bootloaderPath);
+	const shouldCheckCodeFiles = (dir: string) => includeCode && dir.startsWith(bootloaderPath);
 	const shouldCheckAssets = (dir: string) => dir.startsWith(resPath);
 
 	const extraChecks: Array<Promise<boolean>> = [];
@@ -1891,8 +1918,56 @@ export async function isRebuildRequired(romname: string, bootloaderPath: string,
 
 	const extraNeedsRebuild = extraChecks.length > 0 ? await Promise.all(extraChecks).then(results => results.some(Boolean)) : false;
 
+	const bootloaderNeedsRebuild = includeCode
+		? await shouldRebuild(bootloaderPath, shouldCheckCodeFiles(bootloaderPath), shouldCheckAssets(bootloaderPath))
+		: false;
+	const resNeedsRebuild = await shouldRebuild(resPath, shouldCheckCodeFiles(resPath), shouldCheckAssets(resPath));
+	const engineNeedsRebuild = cartProject ? false : await shouldRebuild('src/bmsx', true, false);
+
 	return extraNeedsRebuild ||
-		await shouldRebuild(bootloaderPath, shouldCheckCodeFiles(bootloaderPath), shouldCheckAssets(bootloaderPath)) ||
-		await shouldRebuild(resPath, shouldCheckCodeFiles(resPath), shouldCheckAssets(resPath)) ||
-		await shouldRebuild('src/bmsx', true, false);
+		bootloaderNeedsRebuild ||
+		resNeedsRebuild ||
+		engineNeedsRebuild;
+}
+
+export async function isEngineRuntimeRebuildRequired(outFilePath: string = './dist/engine.js'): Promise<boolean> {
+	let outputStats: Stats;
+	try {
+		outputStats = await stat(outFilePath);
+	} catch {
+		return true;
+	}
+
+	const outputMtime = outputStats.mtime;
+
+	const shouldRebuild = async (dir: string): Promise<boolean> => {
+		try {
+			await access(dir);
+		} catch {
+			throw new Error(`Directory "${dir}" can't be accessed!`);
+		}
+		const entries = await readdir(dir, { withFileTypes: true });
+
+		for (const entry of entries) {
+			const entryPath = join(dir, entry.name);
+			if (entry.isDirectory()) {
+				if (entry.name === '_ignore' || entry.name === 'node_modules' || isWorkspaceStateDirectory(entry.name)) {
+					continue;
+				}
+				if (await shouldRebuild(entryPath)) {
+					return true;
+				}
+			} else {
+				if (shouldCheckFile(entry.name, true, false)) {
+					const entryStats = await stat(entryPath);
+					if (entryStats.mtime > outputMtime) {
+						return true;
+					}
+				}
+			}
+		}
+		return false;
+	};
+
+	return await shouldRebuild('src/bmsx');
 }

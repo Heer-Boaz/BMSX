@@ -5,16 +5,12 @@ import { pathToFileURL } from 'node:url';
 import { inflate } from 'pako';
 import { createCanvas, Image, loadImage } from 'canvas';
 
-import { type BootArgs, type RomPack, type TextureSource } from '../../../src/bmsx/rompack/rompack';
-import { getZippedRomAndRomLabelFromBlob, loadResources } from '../bootresources';
+import { type BootArgs, type RomPack } from '../../../src/bmsx/rompack/rompack';
 import { HeadlessPlatformServices } from '../../../src/bmsx_hostplatform/headless/platform_headless';
 import { CLIPlatformServices } from '../../../src/bmsx_hostplatform/cli/platform_cli';
 import type { Platform, InputEvt } from '../../../src/bmsx_hostplatform/platform';
 
 declare const __BOOTROM_TARGET__: 'cli' | 'headless';
-declare const __BOOTROM_ROM_NAME__: string;
-declare const __BOOTROM_DEBUG__: boolean;
-declare const __BOOTROM_CANONICALIZATION__: BootArgs['canonicalization'];
 
 interface LaunchOptions {
 	romPath?: string;
@@ -23,13 +19,15 @@ interface LaunchOptions {
 	inputTimelinePath?: string;
 	inputModulePath?: string;
 	ttlMs?: number;
-	engineRomPath?: string;
 	engineRuntimePath?: string;
+	engineAssetsPath?: string;
 }
 
 interface BootGlobals {
-	h406A?: (args: BootArgs) => Promise<void>;
+	bmsx?: EngineNamespace;
 }
+
+type EngineNamespace = typeof import('../../../src/bmsx/index');
 
 interface InputTimelineEntry {
 	frame?: number;
@@ -165,8 +163,8 @@ function printHelp(): void {
 	console.log('  --ttl <seconds>          Auto-terminate after the given number of seconds (default 10).');
 	console.log('  --input-timeline <file>  JSON timeline of InputEvt entries to schedule.');
 	console.log('  --input-module <file>    JS/TS module exporting a scheduler for custom input logic.');
-	console.log('  --engine <path>          Optional engine ROM to merge when cart lacks code.');
 	console.log('  --engine-runtime <path>  JS runtime bundle for the engine (defaults to dist/engine.js).');
+	console.log('  --engine-assets <path>   Engine asset pack ROM (defaults to dist/engine.assets.rom).');
 	console.log('  --help, -h               Show this help message.');
 }
 
@@ -232,17 +230,17 @@ function parseArgs(argv: string[]): LaunchOptions {
 			index += 2;
 			continue;
 		}
-		if (arg === '--engine') {
-			const next = argv[index + 1];
-			if (!next) throw new Error('Expected path after --engine.');
-			options.engineRomPath = next;
-			index += 2;
-			continue;
-		}
 		if (arg === '--engine-runtime') {
 			const next = argv[index + 1];
 			if (!next) throw new Error('Expected path after --engine-runtime.');
 			options.engineRuntimePath = next;
+			index += 2;
+			continue;
+		}
+		if (arg === '--engine-assets') {
+			const next = argv[index + 1];
+			if (!next) throw new Error('Expected path after --engine-assets.');
+			options.engineAssetsPath = next;
 			index += 2;
 			continue;
 		}
@@ -414,12 +412,10 @@ async function handleWorkspaceFetch(descriptor: WorkspaceFetchDescriptor, worksp
 }
 
 function resolveRomPath(options: LaunchOptions): string {
-	const defaultName = __BOOTROM_DEBUG__ ? `${__BOOTROM_ROM_NAME__}.debug.rom` : `${__BOOTROM_ROM_NAME__}.rom`;
-	const defaultPath = path.resolve(__dirname, defaultName);
 	if (options.romPath) {
 		return path.resolve(options.romPath);
 	}
-	return defaultPath;
+	throw new Error('ROM path is required. Pass --rom <path>.');
 }
 
 async function readRomFile(filePath: string): Promise<ArrayBuffer> {
@@ -434,19 +430,46 @@ async function readRomFile(filePath: string): Promise<ArrayBuffer> {
 	}
 }
 
+function splitPng(blob: ArrayBuffer): { png?: ArrayBuffer; rest: ArrayBuffer } {
+	const u8 = new Uint8Array(blob);
+	if (
+		u8[0] !== 0x89 || u8[1] !== 0x50 || u8[2] !== 0x4E || u8[3] !== 0x47 ||
+		u8[4] !== 0x0D || u8[5] !== 0x0A || u8[6] !== 0x1A || u8[7] !== 0x0A
+	) {
+		return { rest: blob };
+	}
+	let p = 8;
+	while (p + 8 <= u8.length) {
+		const len = (u8[p] << 24) | (u8[p + 1] << 16) | (u8[p + 2] << 8) | u8[p + 3];
+		p += 4;
+		const type = (u8[p] << 24) | (u8[p + 1] << 16) | (u8[p + 2] << 8) | u8[p + 3];
+		p += 4;
+		const end = p + len + 4;
+		if (type === 0x49454E44) {
+			const png = u8.slice(0, end).buffer;
+			const rest = u8.slice(end).buffer;
+			return { png, rest };
+		}
+		p = end;
+	}
+	throw new Error('PNG IEND chunk not found');
+}
+
+function splitRomLabel(blob: ArrayBuffer): { zipped_rom: ArrayBuffer; romlabel?: ArrayBuffer } {
+	const { png, rest } = splitPng(blob);
+	if (png) {
+		return { zipped_rom: rest, romlabel: png };
+	}
+	return { zipped_rom: blob, romlabel: undefined };
+}
+
 async function loadRomPack(arrayBuffer: ArrayBuffer): Promise<RomPack> {
-	const zipped = await getZippedRomAndRomLabelFromBlob(arrayBuffer);
+	const zipped = splitRomLabel(arrayBuffer);
 	const zippedView = new Uint8Array(zipped.zipped_rom);
 	const inflatedBytes = inflate(zippedView);
 	const romBuffer = inflatedBytes.buffer.slice(inflatedBytes.byteOffset, inflatedBytes.byteOffset + inflatedBytes.byteLength);
-	const rompack = await loadResources(romBuffer, {
-		loadImageFromBuffer: async (buffer: ArrayBuffer): Promise<TextureSource> => {
-			const image = await loadImage(Buffer.from(buffer));
-			return image as TextureSource;
-		},
-	});
-	rompack.canonicalization = __BOOTROM_CANONICALIZATION__;
-	return rompack;
+	const globals = globalThis as BootGlobals & { bmsx: EngineNamespace };
+	return globals.bmsx.loadRomPackFromBuffer(romBuffer);
 }
 
 async function scheduleInputTimelineFromFile(filePath: string, frameIntervalMs: number, postInput: (evt: InputEvt) => void, logger: (msg: string) => void): Promise<void> {
@@ -544,39 +567,6 @@ function sanitizeTime(value: number, index: number): number {
 	return value;
 }
 
-function executeRomCode(source: string, label: string): void {
-	if (source.length === 0) {
-		throw new Error('ROM pack does not contain executable code.');
-	}
-	const wrapped = new Function('globalScope', `${source}\n//# sourceURL=${label}`);
-	wrapped(globalThis as Record<string, unknown>);
-}
-
-function mergeRecords<T>(primary: Record<string, T>, fallback?: Record<string, T>): Record<string, T> {
-	return {
-		...(fallback ?? {}),
-		...(primary ?? {}),
-	};
-}
-
-function combineRompacks(engineRom: RomPack, cartRom: RomPack): RomPack {
-	const combined: RomPack = {
-		...engineRom,
-		...cartRom,
-		rom: cartRom.rom,
-		img: mergeRecords(cartRom.img, engineRom.img),
-		audio: mergeRecords(cartRom.audio, engineRom.audio),
-		model: mergeRecords(cartRom.model, engineRom.model),
-		data: mergeRecords(cartRom.data, engineRom.data),
-		audioevents: mergeRecords(cartRom.audioevents, engineRom.audioevents),
-		project_root_path: cartRom.project_root_path ?? engineRom.project_root_path ,
-		code: cartRom.code ?? engineRom.code ,
-		canonicalization: cartRom.canonicalization ?? engineRom.canonicalization,
-		manifest: cartRom.manifest ?? engineRom.manifest,
-	};
-	return combined;
-}
-
 async function loadEngineRuntimeFromFile(filePath: string): Promise<void> {
 	try {
 		const script = await fs.readFile(filePath, 'utf8');
@@ -609,49 +599,26 @@ function createPlatform(frameIntervalMs: number): Platform {
 	throw new Error(`Unsupported boot platform: ${__BOOTROM_TARGET__}`);
 }
 
-async function prepareRuntime(rompack: RomPack, cliOptions: LaunchOptions, romPath: string): Promise<{ rompack: RomPack; entry: (args: BootArgs) => Promise<void> }> {
+async function prepareRuntime(cliOptions: LaunchOptions, romPath: string): Promise<EngineNamespace> {
 	ensureHostEnvironment();
 	const globals = globalThis as BootGlobals;
-	if (typeof rompack.code === 'string' && rompack.code.length > 0) {
-		executeRomCode(rompack.code, `${__BOOTROM_ROM_NAME__}.${__BOOTROM_TARGET__}.js`);
-		const entry = globals.h406A;
-		if (typeof entry !== 'function') {
-			throw new Error('Bootloader entry point h406A not registered by ROM code.');
-		}
-		return { rompack, entry };
-	}
-
 	const romDirectory = path.resolve(path.dirname(romPath));
-	const engineRomPath = cliOptions.engineRomPath
-		? path.resolve(cliOptions.engineRomPath)
-		: path.join(romDirectory, __BOOTROM_DEBUG__ ? 'engine.debug.rom' : 'engine.rom');
 	const engineRuntimePath = cliOptions.engineRuntimePath
 		? path.resolve(cliOptions.engineRuntimePath)
 		: path.join(romDirectory, 'engine.js');
 
-	let engineRom: RomPack = null;
-	try {
-		const engineBuffer = await readRomFile(engineRomPath);
-		engineRom = await loadRomPack(engineBuffer);
-		console.log(`[bootrom:${__BOOTROM_TARGET__}] Loaded engine ROM from ${engineRomPath}`);
-	} catch (err: any) {
-		console.warn(`[bootrom:${__BOOTROM_TARGET__}] Engine ROM not loaded (${err?.message ?? err}). Continuing without engine assets.`);
-	}
-
 	await loadEngineRuntimeFromFile(engineRuntimePath);
-	const entry = globals.h406A;
-	if (typeof entry !== 'function') {
-		throw new Error('Engine runtime did not register h406A entry point.');
+	const runtime = globals.bmsx;
+	if (!runtime) {
+		throw new Error('Engine runtime did not register the bmsx namespace.');
 	}
-
-	const combined = combineRompacks(engineRom, rompack);
-	return { rompack: combined, entry };
+	return runtime;
 }
 
 async function main(): Promise<void> {
 	const cliOptions = parseArgs(process.argv.slice(2));
 	const romPath = resolveRomPath(cliOptions);
-	let debugFlag = __BOOTROM_DEBUG__;
+	let debugFlag = false;
 	if (typeof cliOptions.debugOverride === 'boolean') {
 		debugFlag = cliOptions.debugOverride;
 	}
@@ -661,9 +628,18 @@ async function main(): Promise<void> {
 	}
 
 	console.log(`[bootrom:${__BOOTROM_TARGET__}] Loading ROM: ${romPath}`);
+	const runtime = await prepareRuntime(cliOptions, romPath);
+	const romDirectory = path.resolve(path.dirname(romPath));
+	const engineAssetsPath = cliOptions.engineAssetsPath
+		? path.resolve(cliOptions.engineAssetsPath)
+		: path.join(romDirectory, 'engine.assets.rom');
+	console.log(`[bootrom:${__BOOTROM_TARGET__}] Loading engine assets: ${engineAssetsPath}`);
+	const engineAssetsBuffer = await readRomFile(engineAssetsPath);
+	const engineAssets = await loadRomPack(engineAssetsBuffer);
+	runtime.setEngineAssets(engineAssets);
+
 	const buffer = await readRomFile(romPath);
-	const rompack = await loadRomPack(buffer);
-	const { rompack: activeRompack, entry } = await prepareRuntime(rompack, cliOptions, romPath);
+	const activeRompack = await loadRomPack(buffer);
 	const workspaceRoot = path.resolve(path.dirname(romPath), '..');
 	installWorkspaceFetchBridge(workspaceRoot);
 
@@ -696,14 +672,13 @@ async function main(): Promise<void> {
 		rompack: activeRompack,
 		platform,
 		viewHost: platform.gameviewHost,
-		canonicalization: __BOOTROM_CANONICALIZATION__,
 	};
 	if (debugFlag) {
 		bootArgs.debug = true;
 	}
 
 	console.log(`[bootrom:${__BOOTROM_TARGET__}] Starting game (debug=${debugFlag}, frameIntervalMs=${frameInterval}).`);
-	await entry(bootArgs);
+	await runtime.startCart(bootArgs);
 	console.log(`[bootrom:${__BOOTROM_TARGET__}] Game loop running. Press Ctrl+C to exit.`);
 }
 

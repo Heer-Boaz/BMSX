@@ -39,6 +39,53 @@ function normalizeMappedSourcePathForEditor(source: string): string {
 	return `./${normalized}`;
 }
 
+function ensureDotSlashPrefix(source: string): string {
+	if (!source || source.length === 0) {
+		return source;
+	}
+	if (source.startsWith('./') || source.startsWith('../') || source.startsWith('/')) {
+		return source;
+	}
+	if (/^[A-Za-z]:[\\/]/.test(source) || source.startsWith('\\\\')) {
+		return source;
+	}
+	return `./${source}`;
+}
+
+const DIST_OUTPUT_PATHS = new Map<string, string>([
+	['engine.js', 'dist/engine.js'],
+	['game.html', 'dist/game.html'],
+	['game_debug.html', 'dist/game_debug.html'],
+	['headless.js', 'dist/headless.js'],
+	['headless_debug.js', 'dist/headless_debug.js'],
+	['cli.js', 'dist/cli.js'],
+	['cli_debug.js', 'dist/cli_debug.js'],
+]);
+
+function mapDistOutputPath(source: string): string {
+	const normalized = source.replace(/^\.?\//, '');
+	const mapped = DIST_OUTPUT_PATHS.get(normalized);
+	return mapped ? mapped : source;
+}
+
+function normalizeJsStackSourceForDisplay(source: string): string {
+	if (!source || source.length === 0) {
+		return source;
+	}
+	if (source.startsWith('http://') || source.startsWith('https://') || source.startsWith('file://')) {
+		const withoutScheme = source.replace(/^[a-z]+:\/\//i, '');
+		const pathStart = withoutScheme.indexOf('/');
+		const pathWithQuery = pathStart >= 0 ? withoutScheme.slice(pathStart) : '';
+		const pathOnly = pathWithQuery.split(/[?#]/, 1)[0];
+		if (pathOnly.length === 0) {
+			return source;
+		}
+		const normalized = pathOnly.startsWith('/') ? pathOnly.slice(1) : pathOnly;
+		return ensureDotSlashPrefix(mapDistOutputPath(normalized));
+	}
+	return ensureDotSlashPrefix(mapDistOutputPath(source));
+}
+
 function mapJsFrameToOriginalSource(frame: StackTraceFrame): StackTraceFrame {
 	if (frame.origin !== 'js') {
 		return frame;
@@ -203,7 +250,7 @@ export function parseJsStackLine(line: string): StackTraceFrame {
 
 
 export function formatRuntimeErrorLocation(path: string, line: number, column: number): string {
-	let label = path && path.length > 0 ? path : '';
+	let label = path && path.length > 0 ? ensureDotSlashPrefix(path) : '';
 	if (line !== null && line !== undefined) {
 		const suffix = column !== null && column !== undefined ? `${line}:${column}` : `${line}`;
 		label = label.length > 0 ? `${label}:${suffix}` : `${suffix}`;
@@ -229,6 +276,32 @@ export function collectRuntimeStackFrames(details: RuntimeErrorDetails, includeJ
 
 export function formatRuntimeStackFrame(frame: StackTraceFrame): string {
 	const originLabel = frame.origin === 'lua' ? '' : 'JS';
+	const luaDisplaySource = frame.pathPath && frame.pathPath.length > 0 ? frame.pathPath : frame.source;
+	const sourceLabel = frame.origin === 'js'
+		? normalizeJsStackSourceForDisplay(frame.source)
+		: ensureDotSlashPrefix(luaDisplaySource);
+	let location = '';
+	if (sourceLabel && sourceLabel.length > 0) {
+		location = sourceLabel;
+	}
+	if (frame.line !== null) {
+		location = location.length > 0 ? `${location}:${frame.line}` : `${frame.line}`;
+		if (frame.column !== null) {
+			location += `:${frame.column}`;
+		}
+	}
+	if (frame.origin === 'js') {
+		if (frame.functionName && frame.functionName.length > 0) {
+			const suffix = location.length > 0 ? `(${location})` : '';
+			return originLabel.length > 0 ? `[${originLabel}] ${frame.functionName}${suffix}` : `${frame.functionName}${suffix}`;
+		}
+		if (location.length > 0) {
+			return originLabel.length > 0 ? `[${originLabel}] ${location}` : location;
+		}
+		const fallback = sourceLabel && sourceLabel.length > 0 ? sourceLabel : '(anonymous)';
+		return originLabel.length > 0 ? `[${originLabel}] ${fallback}` : fallback;
+	}
+
 	let name = frame.functionName && frame.functionName.length > 0 ? frame.functionName : '';
 	if (name.length === 0) {
 		if (frame.raw && frame.raw.length > 0) {
@@ -239,16 +312,6 @@ export function formatRuntimeStackFrame(frame: StackTraceFrame): string {
 	}
 	if (name.length === 0) {
 		name = '(anonymous)';
-	}
-	let location = '';
-	if (frame.source && frame.source.length > 0) {
-		location = frame.source;
-	}
-	if (frame.line !== null) {
-		location = location.length > 0 ? `${location}:${frame.line}` : `${frame.line}`;
-		if (frame.column !== null) {
-			location += `:${frame.column}`;
-		}
 	}
 	const suffix = location.length > 0 ? `(${location})` : '';
 	return originLabel.length > 0 ? `[${originLabel}] ${name}${suffix}` : `${name}${suffix}`;

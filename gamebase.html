@@ -143,6 +143,7 @@
 				<canvas id="gamescreen" hidden></canvas>
 			</div>
 		</div>
+		<script src="engine.js"></script>
 		<script id="bootrom">//#bootromjs</script>
 		<script id="pacojs" distributedby="http://nodeca.github.io/pako/">//#zipjs</script>
 		<script id="bload-script">
@@ -150,9 +151,9 @@
 			window.onload = async function () {
 				try {
 					const romurl = getRomFromUrlParameter() ?? '#outfile';
-					const h406A = await bootrom.bload(`./${romurl}`);
-					bootrom.defusr = h406A;
-					bootrom.usr(0);
+					await bootrom.loadEngineAssets('./engine.assets.rom');
+					await bootrom.loadCart(`./${romurl}`);
+					await bootrom.start();
 				} catch (err) {
 					bootrom.outputError('Failed to boot rom.\n' + err.stack ?? err);
 				}

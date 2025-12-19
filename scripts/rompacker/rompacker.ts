@@ -4,7 +4,7 @@ import pc from 'picocolors';
 import { Presets, SingleBar } from 'cli-progress';
 
 import { validateAudioEventReferences } from './audioeventvalidator';
-import { buildBootromScriptIfNewer, buildEngineRuntime, buildGameHtmlAndManifest, buildResourceList, createAtlasses, deployToServer, esbuild, finalizeRompack, generateRomAssets, getNodeLauncherFilename, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired, typecheckBeforeBuild, typecheckGameWithDts } from './rompacker-core';
+import { buildBootromScriptIfNewer, buildEngineRuntime, buildGameHtmlAndManifest, buildResourceList, createAtlasses, deployToServer, esbuild, finalizeRompack, generateRomAssets, getNodeLauncherFilename, getResMetaList, getResourcesList, getRomManifest, isEngineRuntimeRebuildRequired, isRebuildRequired, typecheckBeforeBuild, typecheckGameWithDts } from './rompacker-core';
 import type { RomPackerMode, RomPackerOptions, RomPackerTarget } from './rompacker.rompack';
 import type { CanonicalizationType, RomManifest } from '../../src/bmsx/rompack/rompack';
 
@@ -384,9 +384,6 @@ function parseOptions(args: string[]): ParsedOptions {
 
 	const isEngineMode = (mode === 'engine');
 	let shouldBundleCartCode = !isEngineMode && cartBootloaderFound;
-	if (!isEngineMode && bootloaderFallbackApplied) {
-		shouldBundleCartCode = true;
-	}
 
 	const cartRootCandidates: Array<string> = [
 		bootloader_path,
@@ -665,10 +662,10 @@ async function main() {
 		let { title, rom_name, bootloader_path, respath, force, debug, buildreslist, deploy, useTextureAtlas, enginedts, usePkgTsconfig, skipTypecheck, platform, canonicalization, mode, shouldBundleCartCode, extraLuaRoots, bootloaderFallbackPath } = parseOptions(args);
 		if (!shouldBundleCartCode && mode !== 'engine') {
 			progress.removeTasks(bundlerTasks);
-			progress.removeTasks(typecheckTasks);
 			removeTaskNamesFromList(romBuildTasks, bundlerTasks);
 		}
 		const isEngineMode = mode === 'engine';
+		const romPackDebug = isEngineMode ? false : debug;
 		const normalizedBootloader = normalizePathKey(bootloader_path);
 		const cartRootFromRes = respath ? normalizePathKey(join(respath, '..')) : null;
 		const projectRootFromRes = cartRootFromRes ? cartRootFromRes.replace(/^\.\//, '') : '';
@@ -704,7 +701,7 @@ async function main() {
 			}
 			await buildResourceList(resourceRoots, rom_name || undefined, {
 				extraLuaPaths: Array.from(extraLuaPathSet),
-				includeCode: isEngineMode || shouldBundleCartCode,
+				includeCode: shouldBundleCartCode,
 				virtualRoot,
 				resolveAtlasIndex: false,
 			});
@@ -739,7 +736,7 @@ async function main() {
 		logBullet('Resources', resourceRoots.length === 1
 			? pc.white(resourceRoots[0])
 			: `${pc.white(resourceRoots[0])} ${pc.dim('+ common ' + resourceRoots[1])}`);
-		if (bootloaderFallbackPath) {
+		if (bootloaderFallbackPath && !isEngineMode) {
 			logWarn(`Bootloader not found for ROM "${rom_name}". Using default cart bootloader at ${pc.white(bootloaderFallbackPath)}.`);
 		}
 		let pkgTsconfigPath: string;
@@ -780,6 +777,56 @@ async function main() {
 		logBullet('Typecheck', skipTypecheck ? pc.red('skipped') : pc.green('enabled'));
 		logBullet('Build', debug ? pc.cyan('DEBUG') : pc.blue('NON-DEBUG'));
 
+		const includeCode = shouldBundleCartCode;
+		const engineResPath = commonResPath;
+		const engineProjectRoot = normalizePathKey(join(engineResPath, '..'));
+		const engineProjectRootPath = engineProjectRoot.replace(/^\.\//, '');
+		const engineVirtualRoot = engineProjectRootPath;
+		const engineBootloaderPath = normalizePathKey('./src/bmsx/vm/default_cart');
+		const engineRuntimeNeedsRebuild = force || await isEngineRuntimeRebuildRequired();
+
+		if (!isEngineMode) {
+			const engineManifest = await getRomManifest(engineResPath);
+			if (!engineManifest) throw new Error(`Rom manifest not found at "${engineResPath}"!`);
+			const engineRomName = engineManifest.rom_name ?? 'engine.assets';
+			const engineAssetsNeedRebuild = force || await isRebuildRequired(engineRomName, engineBootloaderPath, engineResPath, {
+				includeCode: false,
+				extraLuaPaths: [],
+				resolveAtlasIndex: false,
+			});
+			if (engineRuntimeNeedsRebuild || engineAssetsNeedRebuild) {
+				logDivider('Engine');
+				if (engineRuntimeNeedsRebuild) {
+					logInfo('Build engine runtime');
+					await buildEngineRuntime({ debug });
+				}
+				if (engineAssetsNeedRebuild) {
+					logInfo(`Build engine assets (${engineRomName})`);
+					const previousCanonicalization = LUA_CANONICALIZATION;
+					const engineCanonicalization = engineManifest.vm.canonicalization ?? previousCanonicalization;
+					LUA_CANONICALIZATION = engineCanonicalization;
+					try {
+						const engineResMetaList = await getResMetaList([engineResPath], engineRomName, {
+							includeCode: false,
+							extraLuaPaths: [],
+							virtualRoot: engineVirtualRoot,
+							resolveAtlasIndex: true,
+						});
+						const engineResources = await getResourcesList(engineResMetaList);
+						if (GENERATE_AND_USE_TEXTURE_ATLAS) {
+							await createAtlasses(engineResources);
+						}
+						validateAudioEventReferences(engineResources);
+						const engineRomAssets = await generateRomAssets(engineResources);
+						await finalizeRompack(engineRomAssets, engineRomName, false, { projectRootPath: engineProjectRootPath, manifest: engineManifest });
+						logOk(`Engine assets ready → ${pc.white(`dist/${engineRomName}.rom`)}`);
+					} finally {
+						LUA_CANONICALIZATION = previousCanonicalization;
+					}
+				}
+			}
+		}
+
 		let rebuildRequired = true;
 		if (force) {
 			progress.removeTasks(rebuildCheckTasks);
@@ -800,7 +847,6 @@ async function main() {
 		progress.showInitial();
 
 		if (!force) {
-			const includeCode = isEngineMode || shouldBundleCartCode;
 			rebuildRequired = await progress.runWithDetail('Check timestamps', () => isRebuildRequired(rom_name, bootloader_path, respath, { includeCode, extraLuaPaths: Array.from(extraLuaPathSet), resolveAtlasIndex: false }));
 			if (!rebuildRequired && resourceRoots.length > 1) {
 				for (let i = 1; i < resourceRoots.length; i++) {
@@ -810,6 +856,9 @@ async function main() {
 					rebuildRequired = rebuildRequired || needs;
 					if (rebuildRequired) break;
 				}
+			}
+			if (isEngineMode && engineRuntimeNeedsRebuild) {
+				rebuildRequired = true;
 			}
 			if (!rebuildRequired) {
 				logInfo('Rebuild skipped: game rom is newer than code/assets (use --force to override)');
@@ -828,11 +877,11 @@ async function main() {
 		rom_name = romManifest?.rom_name ?? rom_name;
 		title = romManifest?.title ?? title;
 		short_name = romManifest?.short_name ?? short_name;
-		romOutputPath = `dist/${rom_name}${debug ? '.debug' : ''}.rom`;
+		romOutputPath = `dist/${rom_name}${romPackDebug ? '.debug' : ''}.rom`;
 
 		if (rebuildRequired) {
 			// Type-check engine and game prior to bundling unless skipped
-			if (!skipTypecheck && (isEngineMode || shouldBundleCartCode)) {
+			if (!skipTypecheck) {
 				const tsProject = pkgTsconfigPath;
 				const stepLogs: string[] = [];
 				const push = (text: string) => text && stepLogs.push(text);
@@ -853,7 +902,9 @@ async function main() {
 			}
 			const tsProject = pkgTsconfigPath;
 			if (isEngineMode) {
-				await progress.runWithOutput('Build engine runtime', () => buildEngineRuntime({ debug }));
+				if (engineRuntimeNeedsRebuild) {
+					await progress.runWithOutput('Build engine runtime', () => buildEngineRuntime({ debug }));
+				}
 			} else if (shouldBundleCartCode) {
 				const stepLogs: string[] = [];
 				try {
@@ -866,7 +917,7 @@ async function main() {
 			}
 			await progress.taskCompleted();
 			const romResMetaList = await progress.runWithDetail('Scan resources', () => getResMetaList(resourceRoots, rom_name, {
-				includeCode: isEngineMode || shouldBundleCartCode,
+				includeCode,
 				extraLuaPaths: Array.from(extraLuaPathSet),
 				virtualRoot,
 				resolveAtlasIndex: true,
@@ -887,7 +938,7 @@ async function main() {
 			const romAssets = await progress.runWithDetail('Generate ROM assets', () => generateRomAssets(resources, message => progress.setDetail(message)));
 			await progress.taskCompleted();
 
-			await progress.runWithDetail('Finalize ROM pack', () => finalizeRompack(romAssets, rom_name, debug, { projectRootPath, manifest: romManifest, status: message => progress.setDetail(message) }));
+			await progress.runWithDetail('Finalize ROM pack', () => finalizeRompack(romAssets, rom_name, romPackDebug, { projectRootPath, manifest: romManifest, status: message => progress.setDetail(message) }));
 			await progress.taskCompleted();
 		}
 

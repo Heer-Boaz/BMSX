@@ -909,14 +909,11 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		this.textures['_atlas_dynamic_fallback'] = dynamicFallback;
 		const engineAtlasName = generateAtlasName(ENGINE_ATLAS_INDEX);
 		const engineAtlas = GameView.imgassets[engineAtlasName];
-		let engineTexture: TextureHandle = null;
-		if (engineAtlas) {
-			const engineAtlasImage = await engineAtlas._imgbin;
-			engineTexture = this.backend.createTexture(engineAtlasImage, {});
-		} else {
-			engineTexture = dynamicFallback;
+		if (!engineAtlas) {
+			throw new Error(`[GameView] Engine atlas '${engineAtlasName}' missing.`);
 		}
-		this.textures[ENGINE_ATLAS_TEXTURE_KEY] = engineTexture;
+		const engineAtlasImage = await engineAtlas._imgbin;
+		this.textures[ENGINE_ATLAS_TEXTURE_KEY] = this.backend.createTexture(engineAtlasImage, {});
 		// Default material textures for meshes
 		this.textures['_default_albedo'] = this.backend.createSolidTexture2D(1, 1, [1, 1, 1, 1]);
 		// Normal map default (0.5,0.5,1.0)
