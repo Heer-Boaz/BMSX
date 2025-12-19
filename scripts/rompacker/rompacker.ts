@@ -4,12 +4,15 @@ import pc from 'picocolors';
 import { Presets, SingleBar } from 'cli-progress';
 
 import { validateAudioEventReferences } from './audioeventvalidator';
-import { buildBootromScriptIfNewer, buildEngineRuntime, buildGameHtmlAndManifest, buildResourceList, createAtlasses, deployToServer, esbuild, finalizeRompack, generateRomAssets, getNodeLauncherFilename, getResMetaList, getResourcesList, getRomManifest, isEngineRuntimeRebuildRequired, isRebuildRequired, typecheckBeforeBuild, typecheckGameWithDts } from './rompacker-core';
+import { buildBootromScriptIfNewer, buildEngineRuntime, buildGameHtmlAndManifest, buildResourceList, commonResPath, createAtlasses, deployToServer, esbuild, finalizeRompack, GENERATE_AND_USE_TEXTURE_ATLAS, generateRomAssets, getNodeLauncherFilename, getResMetaList, getResourcesList, getRomManifest, isEngineRuntimeRebuildRequired, isRebuildRequired, LUA_CANONICALIZATION, setAtlasFlag, setLuaCanonicalization, typecheckBeforeBuild, typecheckGameWithDts } from './rompacker-core';
 import type { RomPackerMode, RomPackerOptions, RomPackerTarget } from './rompacker.rompack';
 import type { CanonicalizationType, RomManifest } from '../../src/bmsx/rompack/rompack';
 
 import { join, isAbsolute } from 'node:path';
 import { existsSync, statSync } from 'node:fs';
+
+// CASE_INSENSITIVE_LUA and its setter are declared earlier in the file to avoid
+// temporal-dead-zone issues when they are used during module initialization.
 
 const glyph = {
 	info: pc.blue('ℹ'),
@@ -22,12 +25,6 @@ const glyph = {
 };
 const labelWidth = 14;
 type ParsedOptions = RomPackerOptions & { bootloaderFallbackPath?: string };
-
-// Command line parameter for texture atlas usage
-export let GENERATE_AND_USE_TEXTURE_ATLAS = true;
-// Define common assets path
-export const commonResPath = `./src/bmsx/res`;
-export let LUA_CANONICALIZATION: CanonicalizationType = 'none';
 
 const KNOWN_FLAGS = new Set<string>([
 	'-romname',
@@ -675,9 +672,8 @@ async function main() {
 			: (projectRootFromBoot.length > 0 ? projectRootFromBoot : null);
 		const virtualRoot = projectRootPath;
 
-		GENERATE_AND_USE_TEXTURE_ATLAS = useTextureAtlas;
 		setAtlasFlag(useTextureAtlas);
-		LUA_CANONICALIZATION = canonicalization;
+		setLuaCanonicalization(canonicalization);
 
 		let resourceRoots: string[] = [];
 		const extraLuaPathSet = new Set<string>(extraLuaRoots.map(normalizePathKey));
@@ -804,7 +800,7 @@ async function main() {
 					logInfo(`Build engine assets (${engineRomName})`);
 					const previousCanonicalization = LUA_CANONICALIZATION;
 					const engineCanonicalization = engineManifest.vm.canonicalization ?? previousCanonicalization;
-					LUA_CANONICALIZATION = engineCanonicalization;
+					setLuaCanonicalization(engineCanonicalization);
 					try {
 						const engineResMetaList = await getResMetaList([engineResPath], engineRomName, {
 							includeCode: false,
@@ -821,7 +817,7 @@ async function main() {
 						await finalizeRompack(engineRomAssets, engineRomName, false, { projectRootPath: engineProjectRootPath, manifest: engineManifest });
 						logOk(`Engine assets ready → ${pc.white(`dist/${engineRomName}.rom`)}`);
 					} finally {
-						LUA_CANONICALIZATION = previousCanonicalization;
+						setLuaCanonicalization(previousCanonicalization);
 					}
 				}
 			}
@@ -1002,12 +998,4 @@ async function main() {
 	}
 }
 
-main(); export function setAtlasFlag(enabled: boolean): void {
-	GENERATE_AND_USE_TEXTURE_ATLAS = enabled;
-}
-export function getAtlasFlag(): boolean {
-	return GENERATE_AND_USE_TEXTURE_ATLAS;
-}
-export const ENGINE_ATLAS_INDEX = 254; // Keep in sync with src/bmsx/render/atlas.ts
-// CASE_INSENSITIVE_LUA and its setter are declared earlier in the file to avoid
-// temporal-dead-zone issues when they are used during module initialization.
+main();

@@ -2,7 +2,8 @@ type BufferRegion = { start: number; end: number; colorTag: string; label: strin
 
 const LEFT_BLOCKS = ['▏', '▎', '▍', '▌', '▋', '▊', '▉', '█'];
 const SLIVER_THRESHOLD = 1 / 16;
-const quantizeCoverage = (value: number) => Math.min(8, Math.max(0, Math.floor(value * 8 + 1e-7)));
+const quantizeCoverage = (value: number) => Math.min(8, Math.max(0, Math.round(value * 8 + 1e-7)));
+const GAP_FG_TAG = '{black-fg}';
 
 const HEX_TABLE = Array.from({ length: 256 }, (_, i) => i.toString(16).padStart(2, '0'));
 const FG_CACHE = new Map<number, string>();
@@ -19,7 +20,7 @@ const SRGB_TO_LINEAR = (() => {
 
 /**
  * Renders a buffer bar with fractional rendering at the boundaries and full blocks in the interior.
- * Overlapping regions are handled by priority, where the first region in the array takes precedence.
+ * Overlapping regions are shown by layering a foreground sliver over a background region per cell.
  *
  * @param unfilteredRegions - Array of regions to render, each with a start, end, color tag, and label.
  * @param totalSize - The total size of the buffer being represented.
@@ -63,82 +64,67 @@ export function renderBufferBar(
 		const idx = quantize(coverage);
 		return idx === 0 ? '' : LEFT_BLOCKS[idx - 1];
 	};
-	const findHigherOverlap = (cellStart: number, cellEnd: number, current: BufferRegion) => {
+	for (let cell = 0; cell < barLength; cell++) {
+		const cellStart = cell * cellSize;
+		const cellEnd = cellStart + cellSize;
+
+		let fgRegion: BufferRegion = null;
+		let bgRegion: BufferRegion = null;
+		let fgStart = 0;
+		let fgEnd = 0;
+
 		for (const region of regions) {
-			if (region === current) break;
-			if (region.start < cellEnd && region.end > cellStart) return region;
-		}
-		return null;
-	};
-
-	for (const region of regions) {
-		const startFloat = region.start / cellSize;
-		const endFloat = region.end / cellSize;
-		const regionStartCell = Math.floor(startFloat);
-		const regionEndCell = Math.floor(endFloat);
-		const leftFrac = startFloat - regionStartCell;
-		const rightFrac = endFloat - regionEndCell;
-		const startCell = Math.max(0, Math.min(barLength - 1, regionStartCell));
-		const endCell = Math.max(0, Math.min(barLength - 1, regionEndCell));
-
-		for (let i = startCell + 1; i < endCell; i++) {
-			if (cellChars[i] === defaultCellChar) {
-				cellChars[i] = '█';
-				cellColors[i] = region.colorTag;
+			const segStart = Math.max(region.start, cellStart);
+			const segEnd = Math.min(region.end, cellEnd);
+			const overlap = segEnd - segStart;
+			if (overlap <= 0) continue;
+			if (!fgRegion) {
+				if (overlap / cellSize < SLIVER_THRESHOLD) continue;
+				fgRegion = region;
+				fgStart = segStart;
+				fgEnd = segEnd;
+				continue;
 			}
+			bgRegion = region;
+			break;
 		}
 
-		const startCellStart = startCell * cellSize;
-		const startCellEnd = startCellStart + cellSize;
+		if (!fgRegion) continue;
 
-		if (cellChars[startCell] === defaultCellChar) {
-			if (startCell === endCell) {
-				const overlapWidth = Math.max(0, Math.min(startCellEnd, region.end) - Math.max(startCellStart, region.start));
-				const coverage = overlapWidth / cellSize;
-				if (coverage >= SLIVER_THRESHOLD) {
-					const glyph = glyphForCoverage(coverage);
-					if (glyph) {
-						cellChars[startCell] = glyph;
-						const higher = findHigherOverlap(startCellStart, startCellEnd, region);
-						if (higher && higher.start < region.end) {
-							cellColors[startCell] = toBackground(region.colorTag) + higher.colorTag;
-						} else {
-							cellColors[startCell] = region.colorTag;
-						}
-					}
-				}
-			} else {
-				const coverage = Math.max(0, 1 - leftFrac);
-				if (coverage >= SLIVER_THRESHOLD) {
-					const glyph = glyphForCoverage(coverage);
-					if (glyph) {
-						cellChars[startCell] = glyph;
-						const higher = findHigherOverlap(startCellStart, startCellEnd, region);
-						if (higher) {
-							cellColors[startCell] = toBackground(region.colorTag) + higher.colorTag;
-						} else {
-							cellColors[startCell] = region.colorTag;
-						}
-					}
-				}
+		const leftFrac = (fgStart - cellStart) / cellSize;
+		const rightFrac = (fgEnd - cellStart) / cellSize;
+		const coverage = rightFrac - leftFrac;
+
+		if (coverage <= 0) continue;
+
+		if (coverage >= 1 - 1e-7) {
+			cellChars[cell] = '█';
+			cellColors[cell] = fgRegion.colorTag;
+			continue;
+		}
+
+		const leftGap = leftFrac;
+		const rightGap = 1 - rightFrac;
+		const alignRight = leftGap > 0 && (rightGap <= 0 || rightGap < leftGap);
+
+		if (alignRight) {
+			if (leftGap < SLIVER_THRESHOLD) {
+				cellChars[cell] = '█';
+				cellColors[cell] = fgRegion.colorTag;
+				continue;
 			}
-		}
-
-		if (endCell !== startCell && cellChars[endCell] === defaultCellChar) {
-			const endCellStart = endCell * cellSize;
-			const endCellEnd = endCellStart + cellSize;
-			const coverage = Math.max(0, rightFrac);
-			if (coverage >= SLIVER_THRESHOLD) {
-				const glyph = glyphForCoverage(coverage);
-				if (glyph) {
-					cellChars[endCell] = glyph;
-					const higher = findHigherOverlap(endCellStart, endCellEnd, region);
-					if (higher && higher.start < region.end) {
-						cellColors[endCell] = toBackground(region.colorTag) + higher.colorTag;
-					} else {
-						cellColors[endCell] = region.colorTag;
-					}
-				}
+			const glyph = glyphForCoverage(leftGap);
+			if (glyph) {
+				cellChars[cell] = glyph;
+				const gapFg = bgRegion ? bgRegion.colorTag : GAP_FG_TAG;
+				cellColors[cell] = toBackground(fgRegion.colorTag) + gapFg;
+			}
+		} else {
+			if (coverage < SLIVER_THRESHOLD) continue;
+			const glyph = glyphForCoverage(coverage);
+			if (glyph) {
+				cellChars[cell] = glyph;
+				cellColors[cell] = (bgRegion ? toBackground(bgRegion.colorTag) : '') + fgRegion.colorTag;
 			}
 		}
 	}
@@ -170,9 +156,7 @@ export function renderBufferBar(
 }
 
 /**
- * Renders a simple summary bar with only full blocks.
- * No partial blocks are used; each region cell is either fully filled or empty.
- * Overlapping regions are handled by priority (first region in the array is shown).
+ * Renders a simple summary bar using the same overlap layering as renderBufferBar.
  */
 export function renderSummaryBar(
 	regions: Array<{ start: number, end: number, colorTag: string, label: string }>,

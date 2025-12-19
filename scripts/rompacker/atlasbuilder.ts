@@ -1,7 +1,8 @@
 import type { Canvas, CanvasRenderingContext2D } from 'canvas';
 import type { AtlasTexcoords, ImageResource } from './rompacker.rompack';
 import { resolve as resolvePath, sep as pathSep } from 'path';
-import { commonResPath, ENGINE_ATLAS_INDEX } from './rompacker';
+import { commonResPath } from './rompacker-core';
+import { ENGINE_ATLAS_INDEX } from './rompacker-core';
 import { generateAtlasName } from '../../src/bmsx/rompack/engine_assets';
 export { generateAtlasName };
 
@@ -425,15 +426,9 @@ export function createOptimizedAtlas(imageResources: ImageResource[]): Canvas {
 	];
 
 	for (const packer of packers) {
-		try {
-			const clonedRects = rects.map(rect => ({ width: rect.width as number, height: rect.height as number, id: rect.id }));
-			const packed = packer.fn(clonedRects, ATLAS_MAX_SIZE_IN_PIXELS, ATLAS_MAX_SIZE_IN_PIXELS);
-			results.push(packed);
-		}
-		catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
-			console.warn(`[AtlasBuilder] ${packer.name} failed: ${message}`);
-		}
+		const clonedRects = rects.map(rect => ({ width: rect.width as number, height: rect.height as number, id: rect.id }));
+		const packed = packer.fn(clonedRects, ATLAS_MAX_SIZE_IN_PIXELS, ATLAS_MAX_SIZE_IN_PIXELS);
+		results.push(packed);
 	}
 
 	if (results.length === 0) {

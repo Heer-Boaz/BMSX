@@ -6,7 +6,6 @@ import { atlasIndexResolver, createOptimizedAtlas, generateAtlasName } from './a
 import { BoundingBoxExtractor } from './boundingbox_extractor';
 import { loadGLTFModel } from './gltfloader';
 import type { AtlasResource, ImageResource, Resource, resourcetype, RomPackerTarget } from './rompacker.rompack';
-import { GENERATE_AND_USE_TEXTURE_ATLAS, LUA_CANONICALIZATION } from './rompacker';
 // @ts-ignore
 const { build } = require('esbuild');
 // @ts-ignore
@@ -1971,3 +1970,19 @@ export async function isEngineRuntimeRebuildRequired(outFilePath: string = './di
 
 	return await shouldRebuild('src/bmsx');
 }
+export function setAtlasFlag(enabled: boolean): void {
+	GENERATE_AND_USE_TEXTURE_ATLAS = enabled;
+}
+
+export const ENGINE_ATLAS_INDEX = 254; // Keep in sync with src/bmsx/render/atlas.ts// Command line parameter for texture atlas usage
+
+export let GENERATE_AND_USE_TEXTURE_ATLAS = true;
+// Define common assets path
+export const commonResPath = `./src/bmsx/res`;
+
+export let LUA_CANONICALIZATION: CanonicalizationType = 'none';
+
+export function setLuaCanonicalization(type: CanonicalizationType): void {
+	LUA_CANONICALIZATION = type;
+}
+
