@@ -10,12 +10,11 @@ import { SkyboxPipelineState } from '../backend/pipeline_interfaces';
 import { TEXTURE_UNIT_SKYBOX } from '../backend/webgl/webgl.constants';
 import { WebGLBackend } from '../backend/webgl/webgl_backend';
 import { TextureKey } from '../texturemanager';
-import { GameView } from '../gameview';
 import type { TextureSource } from '../../rompack/rompack';
 import { SkyboxImageIds } from '../shared/render_types';
 
 function resolveSkyboxImage(assetId: string): Promise<TextureSource> {
-	const asset = GameView.imgassets[assetId];
+	const asset = $.rompack.img[assetId];
 	if (!asset) {
 		throw new Error(`[SkyboxPipeline] Skybox image '${assetId}' not found.`);
 	}

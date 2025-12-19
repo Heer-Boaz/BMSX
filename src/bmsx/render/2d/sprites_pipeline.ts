@@ -28,7 +28,7 @@ import {
 	ZCOORD_MAX,
 	ZCOORDS_SIZE
 } from '../backend/webgl/webgl.constants';
-import { ENGINE_ATLAS_TEXTURE_KEY, GameView } from '../gameview';
+import { ENGINE_ATLAS_TEXTURE_KEY } from 'bmsx/rompack/engine_assets';
 import { $ } from '../../core/game';
 import { bvec } from './vertexutils2d';
 import type { WebGLBackend } from '../backend/webgl/webgl_backend';
@@ -266,7 +266,7 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 export function drawImg(options: ImgRenderSubmission): void {
 	const { imgid } = options;
 	if (imgid === 'none') return;
-	const asset = GameView.imgassets[imgid];
+	const asset = $.rompack.img[imgid];
 	if (!asset) {
 		throw new Error(`[Sprite Pipeline] drawImg called with unknown image id '${imgid}'.`);
 	}

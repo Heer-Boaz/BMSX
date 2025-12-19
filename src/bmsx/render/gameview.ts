@@ -1,11 +1,10 @@
 import { BFont } from '../core/font';
 import { $ } from '../core/game';
 import { Registry } from '../core/registry';
-import { GateGroup, taskGate } from '../core/taskgate';
 import { multiply_vec, multiply_vec2 } from '../utils/vector_operations';
 import { shallowcopy } from '../utils/shallowcopy';
 import { Input } from '../input/input';
-import type { id2imgres, vec2 } from '../rompack/rompack';
+import type { vec2 } from '../rompack/rompack';
 import { type RegisterablePersistent } from '../rompack/rompack';
 import * as SpritesPipeline from './2d/sprites_pipeline';
 import * as MeshPipeline from './3d/mesh_pipeline';
@@ -37,36 +36,7 @@ import type {
 	GlyphRenderSubmission,
 	SkyboxImageIds,
 } from './shared/render_types';
-
-/**
- * Reserved atlas metadata for engine/runtime resources.
- *
- * Atlas indices are stored in packed sprite metadata and must fit in an
- * unsigned byte. We reserve index 254 for engine assets so carts can safely
- * use lower indices without risk of collision.
- */
-export const ENGINE_ATLAS_INDEX = 254;
-/**
- * Texture dictionary key used by GameView to cache the engine atlas texture.
- */
-
-export const ENGINE_ATLAS_TEXTURE_KEY = '_atlas_engine';
-
-// Global gate used to coordinate rendering. When blocked, frames are skipped.
-export const renderGate: GateGroup = taskGate.group('render:main');
-
-const atlasNameCache = new Map<number, string>(); // Cache for atlas names to avoid regenerating them for each request
-export function generateAtlasName(atlasIndex: number): string {
-	// Check if the atlas name is already cached
-	if (atlasNameCache.has(atlasIndex)) {
-		return atlasNameCache.get(atlasIndex)!;
-	}
-	// Generate a new atlas name and cache it
-	const idxStr = atlasIndex.toString().padStart(2, '0');
-	const atlasName = atlasIndex === 0 ? '_atlas' : `_atlas_${idxStr}`;
-	atlasNameCache.set(atlasIndex, atlasName);
-	return atlasName;
-}
+import { renderGate, generateAtlasName, ENGINE_ATLAS_INDEX, ENGINE_ATLAS_TEXTURE_KEY } from '../rompack/engine_assets';
 
 const PRESENTATION_PASS_IDS = ['skybox', 'meshbatch', 'particles', 'sprites', 'crt'];
 
@@ -151,7 +121,6 @@ export class GameView implements RegisterablePersistent, RenderContext {
 
 	public readonly host: GameViewHost;
 	public readonly surface: GameViewCanvas;
-	public static imgassets: id2imgres = {};
 	private static fullscreenKeyListenerUnsub: (() => void) = null;
 	private static windowedKeyListenerUnsub: (() => void) = null;
 	public accessor default_font: BFont;
@@ -898,7 +867,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		return this._backend;
 	}
 	public async initializeDefaultTextures(): Promise<void> {
-		const atlas = GameView.imgassets['_atlas'];
+		const atlas = $.rompack.img['_atlas'];
 		if (!atlas) {
 			throw new Error("[GameView] Default atlas '_atlas' missing while initializing textures.");
 		}
@@ -908,7 +877,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		this.textures['_atlas_dynamic'] = dynamicFallback;
 		this.textures['_atlas_dynamic_fallback'] = dynamicFallback;
 		const engineAtlasName = generateAtlasName(ENGINE_ATLAS_INDEX);
-		const engineAtlas = GameView.imgassets[engineAtlasName];
+		const engineAtlas = $.rompack.img[engineAtlasName];
 		if (!engineAtlas) {
 			throw new Error(`[GameView] Engine atlas '${engineAtlasName}' missing.`);
 		}
@@ -947,7 +916,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 			return;
 		}
 		const atlasName = generateAtlasName(index);
-		const atlas = GameView.imgassets[atlasName];
+		const atlas = $.rompack[atlasName];
 		if (!atlas) {
 			throw new Error(`[GameView] Dynamic atlas '${atlasName}' not found.`);
 		}

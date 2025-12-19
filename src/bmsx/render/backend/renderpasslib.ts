@@ -21,7 +21,7 @@ import { AnyBackend, CRTPipelineState, FogUniforms, FrameSharedState, GPUBackend
 import { checkWebGLError } from './webgl/webgl.helpers';
 import { WebGLBackend } from './webgl/webgl_backend';
 import { registerHeadlessPasses } from '../headless/headless_render_passes';
-import { ENGINE_ATLAS_TEXTURE_KEY } from '../gameview';
+import { ENGINE_ATLAS_TEXTURE_KEY } from 'bmsx/rompack/engine_assets';
 
 // Type-safe pass state map used by this registry (compile-time only)
 type PassStateTypes = {

@@ -6,7 +6,8 @@ import { Input } from "../input/input";
 import type { InputMap, VibrationParams } from "../input/inputtypes";
 import { ActionState, ActionStateQuery } from '../input/inputtypes';
 import { PhysicsWorld } from '../physics/physicsworld';
-import { GameView, renderGate } from "../render/gameview";
+import { GameView } from "../render/gameview";
+import { renderGate } from 'bmsx/rompack/engine_assets';
 import { TextureManager } from "../render/texturemanager";
 import { RenderPassLibrary } from "../render/backend/renderpasslib";
 import { ensureBrowserBackendFactory } from "../render/backend/browser_backend_factory";
@@ -397,7 +398,6 @@ export class Game {
 		if (rompack.cart?.entry_path) {
 			this._cart = cloneCartForRuntime(rompack.cart); // Mutable runtime cart: keep ROM-pack cart pristine.
 		}
-		GameView.imgassets = rompack.img;
 		EventEmitter.instance; // Init event emitter
 		Input.initialize(startingGamepadIndex); // Init input module
 		if (enableOnscreenGamepad || this.input.isOnscreenGamepadEnabled) {

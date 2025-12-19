@@ -25,7 +25,7 @@ export type RomAssetListPayload = {
 	manifest: RomManifest;
 };
 
-export type asset_type = 'image' | 'audio' | 'data' | 'atlas' | 'romlabel' | 'model' | 'aem' | 'lua';
+export type asset_type = 'image' | 'audio' | 'data' | 'atlas' | 'romlabel' | 'model' | 'aem' | 'lua' | 'code';
 export type asset_id = string;
 
 /**

@@ -1876,7 +1876,7 @@ function new_game()
 end
 
 function update(_dt)
-	assert(false)
+	-- assert(false)
 end
 
 function draw()
