@@ -182,7 +182,7 @@ export class TextureManager implements RegisterablePersistent {
 	public acquireCubemap(options: {
 		name: string,
 		streamed?: boolean;
-		delayMs?: number;
+		delay_ms?: number;
 		assetBarrier?: AssetBarrier<TextureHandle>,
 		// loaders and face ids may be null intentionally (some faces left unset)
 		faceLoaders: readonly (Promise<TextureSource>)[],
@@ -191,7 +191,7 @@ export class TextureManager implements RegisterablePersistent {
 		fallbackColor: color_arr,
 	}): TextureKey {
 		if (!this.backend) throw new Error('TextureManager backend not set');
-		const { name, faceIdsForKey, desc, fallbackColor, assetBarrier, faceLoaders, delayMs } = options;
+		const { name, faceIdsForKey, desc, fallbackColor, assetBarrier, faceLoaders, delay_ms } = options;
 
 		const key = this.makeCubemapKey(name, faceIdsForKey, desc);
 
@@ -204,7 +204,7 @@ export class TextureManager implements RegisterablePersistent {
 
 		if (!streamed) {
 			this.launchCubemapReplacement(key, async () => {
-				if (delayMs) await new Promise(r => setTimeout(r, delayMs));
+				if (delay_ms) await new Promise(r => setTimeout(r, delay_ms));
 
 				// Find first provided loader (if any) to pick face size
 				const firstProvidedIndex = faceLoaders.findIndex(p => p != null);
@@ -236,7 +236,7 @@ export class TextureManager implements RegisterablePersistent {
 			}, assetBarrier, `cubemap:${name}`);
 		} else {
 			this.launchCubemapReplacement(key, async () => {
-				if (delayMs) await new Promise(r => setTimeout(r, delayMs));
+				if (delay_ms) await new Promise(r => setTimeout(r, delay_ms));
 
 				// Determine size from first available loader (or use 1)
 				const firstProvidedIndex = faceLoaders.findIndex(p => p != null);

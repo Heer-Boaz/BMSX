@@ -56,7 +56,7 @@ export abstract class Fighter extends SpriteObject {
 	private readonly tagFacade = {
 		add_tags: (...tags: string[]) => this.addTags(...tags),
 		remove_tags: (...tags: string[]) => this.removeTags(...tags),
-		has_gameplay_tag: (tag: string) => this.hasTag(tag),
+		has_gameplay_tag: (tag: string) => this.has_tag(tag),
 	};
 
 	public get isAttacking(): boolean { return this.stateTags.has('state.attacking'); }
@@ -74,7 +74,7 @@ export abstract class Fighter extends SpriteObject {
 		for (const tag of tags) this.stateTags.delete(tag);
 	}
 
-	public hasTag(tag: string): boolean {
+	public has_tag(tag: string): boolean {
 		return this.stateTags.has(tag);
 	}
 

@@ -504,7 +504,7 @@ export class Reviver {
 }
 
 type VoiceState = { id: string; offset: number; params: ModulationParams; priority: number };
-type VoiceQueueItem = { id: string; params: ModulationParams; priority: number; cooldownMs?: number; actorId?: Identifier };
+type VoiceQueueItem = { id: string; params: ModulationParams; priority: number; cooldown_ms?: number; actorId?: Identifier };
 type SoundMasterState = {
 	sfxVoices: VoiceState[];
 	uiVoices: VoiceState[];
@@ -514,7 +514,7 @@ type SoundMasterState = {
 };
 
 type ViewState = {
-	dynamicAtlasIndex: number;
+	secondaryAtlasIndex: number;
 	activeCameraId: string;
 	skyboxFaceIds: SkyboxImageIds;
 };
@@ -541,7 +541,7 @@ export class Savegame {
 		// Capture current view state
 		const view = $.view as GameView;
 		const viewState: ViewState = {
-			dynamicAtlasIndex: view.dynamicAtlas,
+			secondaryAtlasIndex: view.secondaryAtlas,
 			activeCameraId: $.world.activeCameraId ,
 			skyboxFaceIds: view.skyboxFaceIds,
 		};
@@ -553,8 +553,8 @@ export class Savegame {
 		const view = $.view as GameView;
 		// Restore view state
 		if (this.viewState) {
-			if (this.viewState.dynamicAtlasIndex !== undefined) {
-				view.dynamicAtlas = this.viewState.dynamicAtlasIndex;
+			if (this.viewState.secondaryAtlasIndex !== undefined) {
+				view.secondaryAtlas = this.viewState.secondaryAtlasIndex;
 			}
 			$.world.activeCameraId = this.viewState.activeCameraId;
 			if (this.viewState.skyboxFaceIds) {
@@ -575,18 +575,18 @@ export class Savegame {
 		// Capture queues via AudioEventManager and convert to VoiceQueueItem shape
 		const qs = $.aem.getQueues();
 		SMState.sfxQueue = qs.sfx.map(q => ({
-			id: q.audioId,
-			params: (q.modulationParams ?? (q.modulationPreset !== undefined ? ($.rompack.data[q.modulationPreset] as ModulationParams) : {} as ModulationParams)),
+			id: q.audio_id,
+			params: (q.modulation_params ?? (q.modulation_preset !== undefined ? ($.rompack.data[q.modulation_preset] as ModulationParams) : {} as ModulationParams)),
 			priority: q.priority ?? 0,
-			cooldownMs: q.cooldownMs,
-			actorId: q.payloadActorId,
+			cooldown_ms: q.cooldown_ms,
+			actorId: q.payload_actor_id,
 		}));
 		SMState.uiQueue = qs.ui.map(q => ({
-			id: q.audioId,
-			params: (q.modulationParams ?? (q.modulationPreset !== undefined ? ($.rompack.data[q.modulationPreset] as ModulationParams) : {} as ModulationParams)),
+			id: q.audio_id,
+			params: (q.modulation_params ?? (q.modulation_preset !== undefined ? ($.rompack.data[q.modulation_preset] as ModulationParams) : {} as ModulationParams)),
 			priority: q.priority ?? 0,
-			cooldownMs: q.cooldownMs,
-			actorId: q.payloadActorId,
+			cooldown_ms: q.cooldown_ms,
+			actorId: q.payload_actor_id,
 		}));
 
 		return { SMState };
@@ -613,8 +613,8 @@ export class Savegame {
 			void $.sndmaster.play(v.id, { params, priority: v.priority });
 		}
 		const aem = $.aem;
-		const sfx = (SMState.sfxQueue || []).map(q => ({ audioId: q.id, modulationParams: q.params, priority: q.priority, cooldownMs: q.cooldownMs, payloadActorId: q.actorId }));
-		const ui = (SMState.uiQueue || []).map(q => ({ audioId: q.id, modulationParams: q.params, priority: q.priority, cooldownMs: q.cooldownMs, payloadActorId: q.actorId }));
+		const sfx = (SMState.sfxQueue || []).map(q => ({ audio_id: q.id, modulation_params: q.params, priority: q.priority, cooldown_ms: q.cooldown_ms, payload_actor_id: q.actorId }));
+		const ui = (SMState.uiQueue || []).map(q => ({ audio_id: q.id, modulation_params: q.params, priority: q.priority, cooldown_ms: q.cooldown_ms, payload_actor_id: q.actorId }));
 		aem.restoreQueues({ sfx, ui });
 	}
 }

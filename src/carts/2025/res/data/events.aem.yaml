@@ -1,7 +1,7 @@
 events:
     story.node.enter:
         channel: music
-        maxVoices: 1
+        max_voices: 1
         rules:
             - when:
                   and:
@@ -10,10 +10,10 @@ events:
                       - equals:
                             last_combat_monster_imgid: monster_snoozer
               go:
-                  musicTransition:
-                      audioId: m07
+                  music_transition:
+                      audio_id: m07
                       sync: immediate
-                      fadeMs: 250
+                      fade_ms: 250
             - when:
                   and:
                       - equals:
@@ -21,110 +21,110 @@ events:
                       - equals:
                             last_combat_monster_imgid: monster_spiegel
               go:
-                  musicTransition:
-                      audioId: m05
+                  music_transition:
+                      audio_id: m05
                       sync: immediate
-                      fadeMs: 250
+                      fade_ms: 250
             - when:
                   equals:
                       bg: titel
               go:
-                  musicTransition:
-                      audioId: m02
+                  music_transition:
+                      audio_id: m02
                       sync: immediate
-                      fadeMs: 250
+                      fade_ms: 250
             - when:
                   equals:
                       bg: igor
               go:
-                  musicTransition:
-                      audioId: m02
+                  music_transition:
+                      audio_id: m02
                       sync: immediate
-                      fadeMs: 250
+                      fade_ms: 250
             - when:
                   equals:
                       bg: sint_blij
               go:
-                  musicTransition:
-                      audioId: m02
+                  music_transition:
+                      audio_id: m02
                       sync: immediate
-                      fadeMs: 250
+                      fade_ms: 250
             - when:
                   equals:
                       label: 'ORDEEL DES SINTS'
               go:
-                  musicTransition:
-                      audioId: m02
+                  music_transition:
+                      audio_id: m02
                       sync: immediate
-                      fadeMs: 250
+                      fade_ms: 250
             - when:
                   equals:
                       node_id: intro
               go:
-                  musicTransition:
-                      audioId: m05
+                  music_transition:
+                      audio_id: m05
                       sync: immediate
-                      fadeMs: 250
+                      fade_ms: 250
             - when:
                   in:
                       label: ['MONDAY', 'MONDAY AFTERNOON']
               go:
-                  musicTransition:
-                      audioId: m05
+                  music_transition:
+                      audio_id: m05
                       sync: immediate
-                      fadeMs: 250
+                      fade_ms: 250
             - when:
                   equals:
                       label: 'MONDAY EVENING'
               go:
-                  musicTransition:
-                      audioId: m04
+                  music_transition:
+                      audio_id: m04
                       sync: immediate
-                      fadeMs: 250
+                      fade_ms: 250
             - when:
                   equals:
                       label: 'MONDAY NIGHT'
               go:
-                  musicTransition:
-                      audioId: m04
+                  music_transition:
+                      audio_id: m04
                       sync: immediate
-                      fadeMs: 250
+                      fade_ms: 250
             - when:
                   equals:
                       label: 'TUESDAY MORNING'
               go:
-                  musicTransition:
-                      audioId: m06
+                  music_transition:
+                      audio_id: m06
                       sync: immediate
-                      fadeMs: 250
+                      fade_ms: 250
 
     combat.start:
         channel: music
-        maxVoices: 1
+        max_voices: 1
         rules:
             - when:
                   equals:
                       monster_imgid: monster_snoozer
               go:
-                  musicTransition:
-                      audioId: m16
+                  music_transition:
+                      audio_id: m16
                       sync: immediate
-                      fadeMs: 200
+                      fade_ms: 200
             - when:
                   equals:
                       monster_imgid: monster_spiegel
               go:
-                  musicTransition:
-                      audioId: m35
+                  music_transition:
+                      audio_id: m35
                       sync: immediate
-                      fadeMs: 200
+                      fade_ms: 200
 
     combat.end:
         channel: music
-        maxVoices: 1
+        max_voices: 1
         rules:
             - go:
-                  musicTransition:
-                      audioId: m17
+                  music_transition:
+                      audio_id: m17
                       sync: immediate
-                      fadeMs: 150
+                      fade_ms: 150

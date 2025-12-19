@@ -75,7 +75,7 @@ export interface TimerHandle {
 export interface Clock {
 	now(): MonoTime;
 	dateNow(): number;
-	scheduleOnce: (delayMs: number, cb: (t: MonoTime) => void) => TimerHandle;
+	scheduleOnce: (delay_ms: number, cb: (t: MonoTime) => void) => TimerHandle;
 }
 
 export interface FrameLoop {

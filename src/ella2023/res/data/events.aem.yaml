@@ -1,28 +1,28 @@
 events:
     combat.attack:
         channel: sfx
-        maxVoices: 1
+        max_voices: 1
         policy: replace
         rules:
             - when:
                   equals:
                       weaponClass: heavy
               go:
-                  audioId: kick
-                  modulationPreset: modulationparams.attacksfx
+                  audio_id: kick
+                  modulation_preset: modulationparams.attacksfx
                   priority: 1
-                  cooldownMs: 40
+                  cooldown_ms: 40
             - when:
                   equals:
                       weaponClass: light
               go:
-                  audioId: punch
-                  modulationPreset: modulationparams.attacksfx
+                  audio_id: punch
+                  modulation_preset: modulationparams.attacksfx
                   priority: 1
-                  cooldownMs: 40
+                  cooldown_ms: 40
     combat.hit:
         channel: sfx
-        maxVoices: 1
+        max_voices: 1
         policy: replace
         rules:
             - when:
@@ -30,46 +30,46 @@ events:
                       weaponClass: light
               go:
                   # Randomized pick between two light-hit variants, avoid immediate repeat
-                  oneOf:
+                  one_of:
                       - {
-                            audioId: hit1,
-                            modulationPreset: modulationparams.hitsfx,
+                            audio_id: hit1,
+                            modulation_preset: modulationparams.hitsfx,
                             weight: 2,
                         }
                       - {
-                            audioId: hit2,
-                            modulationPreset: modulationparams.hitsfx,
+                            audio_id: hit2,
+                            modulation_preset: modulationparams.hitsfx,
                             weight: 1,S
                         }
                   pick: weighted
-                  avoidRepeat: true
+                  avoid_repeat: true
                   # priority/cooldown can be specified per choice above if needed
             - when:
                   equals:
                       weaponClass: heavy
               go:
-                  audioId: hit2
-                  modulationPreset: modulationparams.hitsfx
+                  audio_id: hit2
+                  modulation_preset: modulationparams.hitsfx
                   priority: 2
     humiliated_animation_start:
         channel: sfx
-        maxVoices: 1
+        max_voices: 1
         rules:
             - go:
-                  audioId: stuk
+                  audio_id: stuk
                   priority: 10
     # --- Demonstration events showcasing new matcher features ---
     demo.in_operator:
         channel: sfx
-        maxVoices: 1
+        max_voices: 1
         rules:
             - when:
-                  # IN-alias: anyOf / in both supported
+                  # IN-alias: any_of / in both supported
                   in:
                       material: [wood, stone, metal]
               go:
-                  audioId: hit1
-                  modulationPreset: modulationparams.hitsfx
+                  audio_id: hit1
+                  modulation_preset: modulationparams.hitsfx
 
     demo.or_and_not:
         channel: sfx
@@ -82,116 +82,116 @@ events:
                   not:
                       equals: { material: barrier }
               go:
-                  audioId: hit2
-                  modulationPreset: modulationparams.hitsfx
+                  audio_id: hit2
+                  modulation_preset: modulationparams.hitsfx
 
     demo.random_uniform:
         channel: sfx
         rules:
             - go:
                   # Uniform random, avoid repeating last choice
-                  oneOf:
+                  one_of:
                       - {
-                            audioId: hit1,
-                            modulationPreset: modulationparams.hitsfx,
+                            audio_id: hit1,
+                            modulation_preset: modulationparams.hitsfx,
                         }
                       - {
-                            audioId: hit2,
-                            modulationPreset: modulationparams.hitsfx,
+                            audio_id: hit2,
+                            modulation_preset: modulationparams.hitsfx,
                         }
                   pick: uniform
-                  avoidRepeat: true
+                  avoid_repeat: true
 
     demo.random_weighted:
         channel: sfx
         rules:
             - go:
                   # Weighted random: prefer hit2 (3:1)
-                  oneOf:
+                  one_of:
                       - {
-                            audioId: hit1,
-                            modulationPreset: modulationparams.hitsfx,
+                            audio_id: hit1,
+                            modulation_preset: modulationparams.hitsfx,
                             weight: 1,
                         }
                       - {
-                            audioId: hit2,
-                            modulationPreset: modulationparams.hitsfx,
+                            audio_id: hit2,
+                            modulation_preset: modulationparams.hitsfx,
                             weight: 3,
                         }
                   pick: weighted
-                  avoidRepeat: true
+                  avoid_repeat: true
 
-    # --- Music examples using musicTransition ---
+    # --- Music examples using music_transition ---
     music.enter_explore:
         channel: music
-        maxVoices: 1
+        max_voices: 1
         rules:
             - go:
-                  musicTransition:
-                      audioId: trainen # explore/ambient theme
+                  music_transition:
+                      audio_id: trainen # explore/ambient theme
                       sync: loop # align to current loop boundary if something is already playing
-                      fadeMs: 300
+                      fade_ms: 300
 
     music.enter_combat:
         channel: music
-        maxVoices: 1
+        max_voices: 1
         rules:
             - go:
-                  musicTransition:
-                      audioId: knokken # combat theme
+                  music_transition:
+                      audio_id: knokken # combat theme
                       sync: loop # wait for source loop wrap, then switch
-                      fadeMs: 250
-                      startAtLoopStart: true # skip target intro if it has a loop point
+                      fade_ms: 250
+                      start_at_loop_start: true # skip target intro if it has a loop point
 
     music.leave_combat:
         channel: music
-        maxVoices: 1
+        max_voices: 1
         rules:
             - go:
-                  musicTransition:
-                      audioId: trainen # back to explore
+                  music_transition:
+                      audio_id: trainen # back to explore
                       sync: loop
-                      fadeMs: 300
+                      fade_ms: 300
 
     music.victory:
         channel: music
-        maxVoices: 1
+        max_voices: 1
         rules:
             - go:
-                  musicTransition:
+                  music_transition:
                       sync:
                           stinger: vernederdans # play stinger immediately
-                          returnTo: trainen
-                      audioId: trainen # then return to explore theme
-                      fadeMs: 200
+                          return_to: trainen
+                      audio_id: trainen # then return to explore theme
+                      fade_ms: 200
     music.victory_alt:
         channel: music
-        maxVoices: 1
+        max_voices: 1
         rules:
             - go:
-                  musicTransition:
+                  music_transition:
                       sync:
                           stinger: vernederdans # play stinger immediately
-                          returnTo: trainen # then return to explore theme
-                      #   audioId: trainen
-                      fadeMs: 200
+                          return_to: trainen # then return to explore theme
+                      #   audio_id: trainen
+                      fade_ms: 200
 
     music.gameover:
         channel: music
-        maxVoices: 1
+        max_voices: 1
         rules:
             - go:
-                  musicTransition:
-                      audioId: gameover # game over music
+                  music_transition:
+                      audio_id: gameover # game over music
                       sync: immediate # start right away
-                      fadeMs: 150
+                      fade_ms: 150
 
     music.cutscene_intro:
         channel: music
-        maxVoices: 1
+        max_voices: 1
         rules:
             - go:
-                  musicTransition:
-                      audioId: start # title/intro theme
-                      sync: { delayMs: 500 } # delay start by 0.5s (e.g., after sfx)
-                      fadeMs: 400
+                  music_transition:
+                      audio_id: start # title/intro theme
+                      sync: { delay_ms: 500 } # delay start by 0.5s (e.g., after sfx)
+                      fade_ms: 400

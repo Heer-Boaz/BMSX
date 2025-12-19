@@ -8,7 +8,7 @@ type ModulationInput = RandomModulationParams | ModulationParams;
 
 export interface SoundMasterPlayRequest {
 	params?: RandomModulationParams | ModulationParams;
-	modulationPreset?: asset_id;
+	modulation_preset?: asset_id;
 	priority?: number;
 }
 
@@ -80,8 +80,8 @@ const MIN_GAIN = 0.0001;
 const DEFAULT_DECODE_CONCURRENCY = 4;
 const DEFAULT_MAX_VOICES: Record<AudioType, number> = { sfx: 16, music: 1, ui: 8 };
 
-type MusicTransitionStingerSync = { stinger: asset_id; returnTo?: asset_id; returnToPrevious?: boolean };
-type MusicTransitionDelaySync = { delayMs: number };
+type MusicTransitionStingerSync = { stinger: asset_id; return_to?: asset_id; return_to_previous?: boolean };
+type MusicTransitionDelaySync = { delay_ms: number };
 type MusicTransitionSync = 'immediate' | 'loop' | MusicTransitionDelaySync | MusicTransitionStingerSync;
 
 function isMusicTransitionStingerSync(sync: MusicTransitionSync): sync is MusicTransitionStingerSync {
@@ -89,7 +89,7 @@ function isMusicTransitionStingerSync(sync: MusicTransitionSync): sync is MusicT
 }
 
 function isMusicTransitionDelaySync(sync: MusicTransitionSync): sync is MusicTransitionDelaySync {
-	return typeof sync === 'object' && (sync as MusicTransitionDelaySync).delayMs !== undefined;
+	return typeof sync === 'object' && (sync as MusicTransitionDelaySync).delay_ms !== undefined;
 }
 
 export class SoundMaster implements RegisterablePersistent {
@@ -284,7 +284,7 @@ export class SoundMaster implements RegisterablePersistent {
 		if (!options) return {};
 		if (this.isPlayRequest(options)) {
 			const req = options as SoundMasterPlayRequest;
-			return { params: req.params, modulationPreset: req.modulationPreset, priority: req.priority };
+			return { params: req.params, modulation_preset: req.modulation_preset, priority: req.priority };
 		}
 		return { params: options as (RandomModulationParams | ModulationParams) };
 	}
@@ -292,7 +292,7 @@ export class SoundMaster implements RegisterablePersistent {
 	private isPlayRequest(options: unknown): options is SoundMasterPlayRequest {
 		if (!options || typeof options !== 'object') return false;
 		const obj = options as Record<string, unknown>;
-		return ('params' in obj) || ('priority' in obj) || ('modulationPreset' in obj);
+		return ('params' in obj) || ('priority' in obj) || ('modulation_preset' in obj);
 	}
 
 	private resolvePlayParams(options: ModulationInput): ModulationParams {
@@ -399,10 +399,10 @@ export class SoundMaster implements RegisterablePersistent {
 	public play(id: asset_id, options?: SoundMasterPlayRequest | ModulationParams | RandomModulationParams): Promise<VoiceId> {
 		const request = this.normalizePlayRequest(options);
 		let sourceParams = request.params;
-		if (!sourceParams && request.modulationPreset !== undefined) {
-			sourceParams = this.resolveModulationPreset(request.modulationPreset);
+		if (!sourceParams && request.modulation_preset !== undefined) {
+			sourceParams = this.resolveModulationPreset(request.modulation_preset);
 			if (!sourceParams) {
-				console.warn(`SoundMaster: Missing modulation preset '${String(request.modulationPreset)}' for ${String(id)}`);
+				console.warn(`SoundMaster: Missing modulation preset '${String(request.modulation_preset)}' for ${String(id)}`);
 			}
 		}
 		const params = this.resolvePlayParams(sourceParams);
@@ -805,21 +805,21 @@ export class SoundMaster implements RegisterablePersistent {
 	public requestMusicTransition(opts: {
 		to: asset_id;
 		sync?: MusicTransitionSync;
-		fadeMs?: number;
-		startAtLoopStart?: boolean;
-		startFresh?: boolean;
+		fade_ms?: number;
+		start_at_loop_start?: boolean;
+		start_fresh?: boolean;
 	}): void {
 		const sync = opts.sync !== undefined ? opts.sync : 'immediate';
-		const fadeMs = opts.fadeMs !== undefined ? opts.fadeMs : 250;
-		const startAtLoopStart = opts.startAtLoopStart !== undefined ? opts.startAtLoopStart : false;
-		const startFresh = opts.startFresh !== undefined ? opts.startFresh : false;
+		const fade_ms = opts.fade_ms !== undefined ? opts.fade_ms : 250;
+		const start_at_loop_start = opts.start_at_loop_start !== undefined ? opts.start_at_loop_start : false;
+		const start_fresh = opts.start_fresh !== undefined ? opts.start_fresh : false;
 
 		if (this.musicTransitionTimer !== null) {
 			clearTimeout(this.musicTransitionTimer);
 			this.musicTransitionTimer = null;
 		}
 
-		if (!isMusicTransitionStingerSync(sync) && !startFresh && this.currentTrackByType('music') === opts.to) {
+		if (!isMusicTransitionStingerSync(sync) && !start_fresh && this.currentTrackByType('music') === opts.to) {
 			return;
 		}
 
@@ -828,7 +828,7 @@ export class SoundMaster implements RegisterablePersistent {
 			if (!this.isAudioType(stingerType)) {
 				throw new Error(`[SoundMaster] Audio asset '${String(sync.stinger)}' has unknown audio type.`);
 			}
-			if (sync.returnToPrevious) {
+			if (sync.return_to_previous) {
 				const previousId = this.currentTrackByType('music');
 				const previousOffset = this.currentTimeByType('music') ?? 0;
 				this.pendingStingerReturnTo = previousId !== null ? previousId : opts.to;
@@ -841,13 +841,13 @@ export class SoundMaster implements RegisterablePersistent {
 						const target = this.pendingStingerReturnTo;
 						this.pendingStingerReturnTo = null;
 						if (target !== null) {
-							this.startMusicWithFade(target, fadeMs, startAtLoopStart, previousOffset);
+							this.startMusicWithFade(target, fade_ms, start_at_loop_start, previousOffset);
 						}
 					});
 				}).catch(() => {});
 				return;
 			}
-			const returnTarget = sync.returnTo !== undefined ? sync.returnTo : opts.to;
+			const returnTarget = sync.return_to !== undefined ? sync.return_to : opts.to;
 			this.pendingStingerReturnTo = returnTarget;
 			this.stop('music', 'all');
 			this.play(sync.stinger).then(voiceId => {
@@ -858,7 +858,7 @@ export class SoundMaster implements RegisterablePersistent {
 					const target = this.pendingStingerReturnTo;
 					this.pendingStingerReturnTo = null;
 					if (target !== null) {
-						this.startMusicWithFade(target, fadeMs, startAtLoopStart);
+						this.startMusicWithFade(target, fade_ms, start_at_loop_start);
 					}
 				});
 			}).catch(() => {});
@@ -866,34 +866,34 @@ export class SoundMaster implements RegisterablePersistent {
 		}
 
 		if (sync === 'immediate') {
-			this.startMusicWithFade(opts.to, fadeMs, startAtLoopStart, startFresh ? 0 : undefined);
+			this.startMusicWithFade(opts.to, fade_ms, start_at_loop_start, start_fresh ? 0 : undefined);
 			return;
 		}
 
 		if (isMusicTransitionDelaySync(sync)) {
-			const delayMs = sync.delayMs >= 0 ? sync.delayMs : 0;
+			const delay_ms = sync.delay_ms >= 0 ? sync.delay_ms : 0;
 			this.musicTransitionTimer = setTimeout(() => {
 				this.musicTransitionTimer = null;
-				this.startMusicWithFade(opts.to, fadeMs, startAtLoopStart, startFresh ? 0 : undefined);
-			}, delayMs);
+				this.startMusicWithFade(opts.to, fade_ms, start_at_loop_start, start_fresh ? 0 : undefined);
+			}, delay_ms);
 			return;
 		}
 
 		const currentRecord = this.getCurrentRecord('music');
 		if (!currentRecord) {
-			this.startMusicWithFade(opts.to, fadeMs, startAtLoopStart, startFresh ? 0 : undefined);
+			this.startMusicWithFade(opts.to, fade_ms, start_at_loop_start, start_fresh ? 0 : undefined);
 			return;
 		}
 
 		const duration = currentRecord.clip.duration;
 		if (!(duration > 0)) {
-			this.startMusicWithFade(opts.to, fadeMs, startAtLoopStart, startFresh ? 0 : undefined);
+			this.startMusicWithFade(opts.to, fade_ms, start_at_loop_start, start_fresh ? 0 : undefined);
 			return;
 		}
 
 		const nowOffset = this.currentTimeByType('music');
 		if (nowOffset === null) {
-			this.startMusicWithFade(opts.to, fadeMs, startAtLoopStart, startFresh ? 0 : undefined);
+			this.startMusicWithFade(opts.to, fade_ms, start_at_loop_start, start_fresh ? 0 : undefined);
 			return;
 		}
 
@@ -906,7 +906,7 @@ export class SoundMaster implements RegisterablePersistent {
 		const delaySec = Math.max(0, boundary - offsetMod);
 		this.musicTransitionTimer = setTimeout(() => {
 			this.musicTransitionTimer = null;
-			this.startMusicWithFade(opts.to, fadeMs, startAtLoopStart, startFresh ? 0 : undefined);
+			this.startMusicWithFade(opts.to, fade_ms, start_at_loop_start, start_fresh ? 0 : undefined);
 		}, Math.floor(delaySec * 1000));
 	}
 
@@ -917,10 +917,10 @@ export class SoundMaster implements RegisterablePersistent {
 		return record && !record.finalized ? record : null;
 	}
 
-	private startMusicWithFade(target: asset_id, fadeMs: number, startAtLoopStart: boolean, startAtSeconds?: number): void {
+	private startMusicWithFade(target: asset_id, fade_ms: number, start_at_loop_start: boolean, startAtSeconds?: number): void {
 		const meta = this.getAudioMetaOrThrow(target);
-		const baseOffset = startAtSeconds !== undefined ? startAtSeconds : ((startAtLoopStart && meta.loop !== undefined && meta.loop !== null) ? meta.loop : 0);
-		const fadeSec = Math.max(0, fadeMs) / 1000;
+		const baseOffset = startAtSeconds !== undefined ? startAtSeconds : ((start_at_loop_start && meta.loop !== undefined && meta.loop !== null) ? meta.loop : 0);
+		const fadeSec = Math.max(0, fade_ms) / 1000;
 		const oldHandle = this.currentVoiceByType.music;
 		const oldRecord = oldHandle ? this.voiceRecordByHandle.get(oldHandle) : undefined;
 
@@ -935,8 +935,8 @@ export class SoundMaster implements RegisterablePersistent {
 				});
 				if (voiceId !== null && oldRecord && !oldRecord.finalized) {
 					oldRecord.handle.rampGainLinear(MIN_GAIN, fadeSec);
-					if (fadeMs > 0) {
-						setTimeout(() => this.stopVoiceRecord('music', oldRecord), fadeMs);
+					if (fade_ms > 0) {
+						setTimeout(() => this.stopVoiceRecord('music', oldRecord), fade_ms);
 					} else {
 						this.stopVoiceRecord('music', oldRecord);
 					}

@@ -45,7 +45,7 @@
 						"pause"
 					]
 				},
-				"maxVoices": {
+				"max_voices": {
 					"type": "integer",
 					"minimum": 1
 				},
@@ -75,10 +75,10 @@
 										"go": {
 											"type": "object",
 											"required": [
-												"musicTransition"
+												"music_transition"
 											],
 											"properties": {
-												"musicTransition": {
+												"music_transition": {
 													"type": "object"
 												}
 											}
@@ -123,7 +123,7 @@
 					"type": "object",
 					"additionalProperties": true
 				},
-				"anyOf": {
+				"any_of": {
 					"type": "object",
 					"additionalProperties": {
 						"$ref": "#/definitions/stringArray"
@@ -135,7 +135,7 @@
 						"$ref": "#/definitions/stringArray"
 					}
 				},
-				"hasTag": {
+				"has_tag": {
 					"$ref": "#/definitions/stringArray"
 				},
 				"and": {
@@ -157,7 +157,7 @@
 			"additionalProperties": true
 		},
 		"audioActionSpec": {
-			"oneOf": [
+			"one_of": [
 				{
 					"$ref": "#/definitions/audioAction"
 				},
@@ -172,50 +172,50 @@
 		"audioAction": {
 			"type": "object",
 			"properties": {
-				"audioId": {
+				"audio_id": {
 					"$ref": "#/definitions/asset_id"
 				},
-				"modulationPreset": {
+				"modulation_preset": {
 					"type": "string"
 				},
 				"priority": {
 					"type": "number",
 					"minimum": 0
 				},
-				"cooldownMs": {
+				"cooldown_ms": {
 					"type": "number",
 					"minimum": 0
 				}
 			},
 			"required": [
-				"audioId"
+				"audio_id"
 			],
 			"additionalProperties": false
 		},
 		"audioActionOneOfSpec": {
 			"type": "object",
 			"properties": {
-				"oneOf": {
+				"one_of": {
 					"type": "array",
 					"items": {
-						"anyOf": [
+						"any_of": [
 							{
 								"$ref": "#/definitions/asset_id"
 							},
 							{
 								"type": "object",
 								"properties": {
-									"audioId": {
+									"audio_id": {
 										"$ref": "#/definitions/asset_id"
 									},
-									"modulationPreset": {
+									"modulation_preset": {
 										"type": "string"
 									},
 									"priority": {
 										"type": "number",
 										"minimum": 0
 									},
-									"cooldownMs": {
+									"cooldown_ms": {
 										"type": "number",
 										"minimum": 0
 									},
@@ -225,7 +225,7 @@
 									}
 								},
 								"required": [
-									"audioId"
+									"audio_id"
 								],
 								"additionalProperties": false
 							}
@@ -239,43 +239,43 @@
 						"weighted"
 					]
 				},
-				"avoidRepeat": {
+				"avoid_repeat": {
 					"type": "boolean"
 				}
 			},
 			"required": [
-				"oneOf"
+				"one_of"
 			],
 			"additionalProperties": false
 		},
 		"musicTransitionSpec": {
 			"type": "object",
 			"properties": {
-				"musicTransition": {
+				"music_transition": {
 					"type": "object",
 					"properties": {
-						"audioId": {
+						"audio_id": {
 							"$ref": "#/definitions/asset_id"
 						},
 						"sync": {
 							"$ref": "#/definitions/musicTransitionSync"
 						},
-						"fadeMs": {
+						"fade_ms": {
 							"type": "number",
 							"minimum": 0
 						},
-						"startAtLoopStart": {
+						"start_at_loop_start": {
 							"type": "boolean"
 						},
-						"startFresh": {
+						"start_fresh": {
 							"type": "boolean"
 						}
 					},
 					"additionalProperties": false,
-					"anyOf": [
+					"any_of": [
 						{
 							"required": [
-								"audioId"
+								"audio_id"
 							]
 						},
 						{
@@ -292,12 +292,12 @@
 				}
 			},
 			"required": [
-				"musicTransition"
+				"music_transition"
 			],
 			"additionalProperties": false
 		},
 		"musicTransitionSync": {
-			"oneOf": [
+			"one_of": [
 				{
 					"type": "string",
 					"enum": [
@@ -308,13 +308,13 @@
 				{
 					"type": "object",
 					"properties": {
-						"delayMs": {
+						"delay_ms": {
 							"type": "number",
 							"minimum": 0
 						}
 					},
 					"required": [
-						"delayMs"
+						"delay_ms"
 					],
 					"additionalProperties": false
 				},
@@ -329,10 +329,10 @@
 				"stinger": {
 					"$ref": "#/definitions/asset_id"
 				},
-				"returnTo": {
+				"return_to": {
 					"$ref": "#/definitions/asset_id"
 				},
-				"returnToPrevious": {
+				"return_to_previous": {
 					"type": "boolean"
 				}
 			},
@@ -344,8 +344,8 @@
 				{
 					"not": {
 						"required": [
-							"returnTo",
-							"returnToPrevious"
+							"return_to",
+							"return_to_previous"
 						]
 					}
 				}
