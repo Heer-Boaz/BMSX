@@ -7,7 +7,6 @@ import type { InputMap, VibrationParams } from "../input/inputtypes";
 import { ActionState, ActionStateQuery } from '../input/inputtypes';
 import { PhysicsWorld } from '../physics/physicsworld';
 import { GameView } from "../render/gameview";
-import { renderGate } from 'bmsx/rompack/engine_assets';
 import { TextureManager } from "../render/texturemanager";
 import { RenderPassLibrary } from "../render/backend/renderpasslib";
 import { ensureBrowserBackendFactory } from "../render/backend/browser_backend_factory";
@@ -72,6 +71,7 @@ const REWIND_BUFFER_WRITE_FREQUENCY = 1; // Frames
 
 // Gate to block the game update/run loop (used when loading/hydrating game state)
 export const runGate: GateGroup = taskGate.group('run:main');
+export const renderGate: GateGroup = taskGate.group('render:main');
 
 /**
  * Creates the mutable runtime cart (`$.cart`) from the packed baseline (`$.rompack.cart`).
@@ -864,4 +864,4 @@ export var $: EngineCore = new EngineCore()!;
 // Expose legacy global `$` for scripts that expect a global symbol (e.g. bootrom/html glue)
 // We intentionally write to the global scope we resolved earlier so both browser and
 // node-headless runtimes have the same behaviour.
-(globalScope as any).$ = $;
+(globalScope as any).$ = $;// Global gate used to coordinate rendering. When blocked, frames are skipped.

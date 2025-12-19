@@ -19,8 +19,8 @@ import {
 	RESOLUTION_VECTOR_SIZE,
 	SPRITE_DRAW_OFFSET,
 	TEXCOORD_COMPONENTS,
-	TEXTURE_UNIT_ATLAS,
-	TEXTURE_UNIT_ATLAS_DYNAMIC,
+	TEXTURE_UNIT_ATLAS_PRIMARY,
+	TEXTURE_UNIT_ATLAS_SECONDARY,
 	TEXTURE_UNIT_ATLAS_ENGINE,
 	TEXTURECOORDS_SIZE,
 	VERTICES_PER_SPRITE,
@@ -117,8 +117,8 @@ export function setupDefaultUniformValues(backend: WebGLBackend, canvasSize: vec
 	spriteShaderData.resolutionVector[0] = canvasSize[0];
 	spriteShaderData.resolutionVector[1] = canvasSize[1];
 	gl.uniform2fv(resolutionLocation, spriteShaderData.resolutionVector);
-	gl.uniform1i(texture0Location, TEXTURE_UNIT_ATLAS);
-	gl.uniform1i(texture1Location, TEXTURE_UNIT_ATLAS_DYNAMIC);
+	gl.uniform1i(texture0Location, TEXTURE_UNIT_ATLAS_PRIMARY);
+	gl.uniform1i(texture1Location, TEXTURE_UNIT_ATLAS_SECONDARY);
 	gl.uniform1i(texture2Location, TEXTURE_UNIT_ATLAS_ENGINE);
 }
 
@@ -201,13 +201,13 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 	set1f('u_ditherIntensity', state.psxDither2dIntensity);
 
 
-	if (state.atlasTex) {
-		context.activeTexUnit = TEXTURE_UNIT_ATLAS;
-		context.bind2DTex(state.atlasTex);
+	if (state.atlasPrimaryTex) {
+		context.activeTexUnit = TEXTURE_UNIT_ATLAS_PRIMARY;
+		context.bind2DTex(state.atlasPrimaryTex);
 	}
-	if (state.atlasDynamicTex) {
-		context.activeTexUnit = TEXTURE_UNIT_ATLAS_DYNAMIC;
-		context.bind2DTex(state.atlasDynamicTex);
+	if (state.atlasSecondaryTex) {
+		context.activeTexUnit = TEXTURE_UNIT_ATLAS_SECONDARY;
+		context.bind2DTex(state.atlasSecondaryTex);
 	}
 	if (state.atlasEngineTex) {
 		context.activeTexUnit = TEXTURE_UNIT_ATLAS_ENGINE;
@@ -408,11 +408,11 @@ export function registerSpritesPass_WebGL(registry: RenderPassLibrary): void {
 			const ambient = lighting?.ambient;
 			const ambientColor: [number, number, number] = ambient ? [ambient.color[0], ambient.color[1], ambient.color[2]] : [0, 0, 0];
 			const ambientIntensity = ambient?.intensity ?? 0;
-			const atlasTexture = gv.textures['_atlas'];
+			const atlasTexture = gv.textures['_atlas_primary'];
 			if (!atlasTexture) {
-				throw new Error("[SpritesPipeline] Texture '_atlas' missing from view textures.");
+				throw new Error("[SpritesPipeline] Texture '_atlas_primary' missing from view textures.");
 			}
-			const dynamicAtlasTexture = gv.textures['_atlas_dynamic'];
+			const secondaryAtlasTexture = gv.textures['_atlas_secondary'];
 			const engineAtlasTexture = gv.textures[ENGINE_ATLAS_TEXTURE_KEY];
 			const spriteState: RenderPassStateRegistry['sprites'] = {
 				width,
@@ -420,8 +420,8 @@ export function registerSpritesPass_WebGL(registry: RenderPassLibrary): void {
 				baseWidth,
 				baseHeight,
 				// Provide atlas textures for direct binding in render step when needed
-				atlasTex: atlasTexture,
-				atlasDynamicTex: dynamicAtlasTexture,
+				atlasPrimaryTex: atlasTexture,
+				atlasSecondaryTex: secondaryAtlasTexture,
 				atlasEngineTex: engineAtlasTexture,
 				ambientEnabledDefault: gv.spriteAmbientEnabledDefault,
 				ambientFactorDefault: gv.spriteAmbientFactorDefault,

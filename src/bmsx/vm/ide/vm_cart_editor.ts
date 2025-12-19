@@ -2202,7 +2202,7 @@ export function refreshResourceCatalog(): void {
 	const augmented = descriptors.slice();
 	const rompack = $.rompack;
 	const img = rompack.img;
-	const atlasKeys = Object.keys(img).filter(key => key === '_atlas' || key.startsWith('atlas'));
+	const atlasKeys = Object.keys(img).filter(key => key === '_atlas_primary' || key.startsWith('atlas'));
 	for (const key of atlasKeys) {
 		if (augmented.some(entry => entry.asset_id === key)) {
 			continue;

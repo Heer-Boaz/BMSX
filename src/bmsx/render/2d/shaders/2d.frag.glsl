@@ -62,10 +62,7 @@ void main() {
 		case ENGINE_ATLAS_ID:
 			texColor = texture(u_texture2, v_texcoord);
 			break;
-		case 1u: // Use the second texture if atlas ID is 1
-			texColor = texture(u_texture1, v_texcoord);
-			break;
-		default: // Default to the dynamic atlas for any other atlas ID
+		default: // Default to the secondary atlas for any other atlas ID
 			texColor = texture(u_texture1, v_texcoord);
 			break;
 		}

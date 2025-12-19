@@ -158,8 +158,8 @@ export class RenderPassLibrary {
 				console.warn(`[validate] ${pass.name}: backend lacks uniform buffer binding API`);
 			}
 			if (passId === 'sprites') {
-				if (!gv.textures['_atlas']) console.warn(`[validate] ${pass.name}: texture '_atlas' missing`);
-				if (!gv.textures['_atlas_dynamic']) console.warn(`[validate] ${pass.name}: texture '_atlas_dynamic' missing`);
+				if (!gv.textures['_atlas_primary']) console.warn(`[validate] ${pass.name}: texture '_atlas_primary' missing`);
+				if (!gv.textures['_atlas_secondary']) console.warn(`[validate] ${pass.name}: texture '_atlas_secondary' missing`);
 				if (!gv.textures[ENGINE_ATLAS_TEXTURE_KEY]) console.warn(`[validate] ${pass.name}: engine atlas texture missing`);
 			}
 			if (passId === 'meshbatch') {

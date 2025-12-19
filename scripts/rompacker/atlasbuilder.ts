@@ -2,6 +2,9 @@ import type { Canvas, CanvasRenderingContext2D } from 'canvas';
 import type { AtlasTexcoords, ImageResource } from './rompacker.rompack';
 import { resolve as resolvePath, sep as pathSep } from 'path';
 import { commonResPath, ENGINE_ATLAS_INDEX } from './rompacker';
+import { generateAtlasName } from '../../src/bmsx/rompack/engine_assets';
+export { generateAtlasName };
+
 // @ts-ignore
 const { createCanvas } = require('canvas');
 
@@ -16,11 +19,6 @@ const ATLAS_IMAGE_PADDING = 1;
 
 export type Rect = { width: number; height: number; id: number; };
 export type Bin = { x: number; y: number; width: number; height: number; };
-
-export function generateAtlasName(atlasIndex: number): string {
-	const idxStr = atlasIndex.toString().padStart(2, '0');
-	return atlasIndex === 0 ? '_atlas' : `_atlas_${idxStr}`;
-}
 
 export function atlasIndexResolver(filepath: string, current?: number) {
 	const abs = resolvePath(filepath);

@@ -256,8 +256,8 @@ export interface SpritesPipelineState {
 	height: number;
 	baseWidth: number;
 	baseHeight: number;
-	atlasTex?: TextureHandle;
-	atlasDynamicTex?: TextureHandle;
+	atlasPrimaryTex?: TextureHandle;
+	atlasSecondaryTex?: TextureHandle;
 	atlasEngineTex?: TextureHandle;
 	ambientEnabledDefault: boolean;
 	ambientFactorDefault: number;

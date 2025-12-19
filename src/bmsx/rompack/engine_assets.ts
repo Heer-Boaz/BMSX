@@ -1,4 +1,3 @@
-import { GateGroup, taskGate } from '../core/taskgate';
 import type { RomPack } from './rompack';
 
 let engineAssets: RomPack;
@@ -46,9 +45,6 @@ export const ENGINE_ATLAS_INDEX = 254;
  * Texture dictionary key used by GameView to cache the engine atlas texture.
  */
 export const ENGINE_ATLAS_TEXTURE_KEY = '_atlas_engine';
-// Global gate used to coordinate rendering. When blocked, frames are skipped.
-
-export const renderGate: GateGroup = taskGate.group('render:main');
 const atlasNameCache = new Map<number, string>(); // Cache for atlas names to avoid regenerating them for each request
 export function generateAtlasName(atlasIndex: number): string {
 	// Check if the atlas name is already cached
@@ -57,7 +53,7 @@ export function generateAtlasName(atlasIndex: number): string {
 	}
 	// Generate a new atlas name and cache it
 	const idxStr = atlasIndex.toString().padStart(2, '0');
-	const atlasName = atlasIndex === 0 ? '_atlas' : `_atlas_${idxStr}`;
+	const atlasName = `_atlas_${idxStr}`;
 	atlasNameCache.set(atlasIndex, atlasName);
 	return atlasName;
 }

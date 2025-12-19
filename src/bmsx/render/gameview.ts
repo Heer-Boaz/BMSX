@@ -36,7 +36,8 @@ import type {
 	GlyphRenderSubmission,
 	SkyboxImageIds,
 } from './shared/render_types';
-import { renderGate, generateAtlasName, ENGINE_ATLAS_INDEX, ENGINE_ATLAS_TEXTURE_KEY } from '../rompack/engine_assets';
+import { generateAtlasName, ENGINE_ATLAS_INDEX, ENGINE_ATLAS_TEXTURE_KEY } from '../rompack/engine_assets';
+import { renderGate } from 'bmsx/core/engine_core';
 
 const PRESENTATION_PASS_IDS = ['skybox', 'meshbatch', 'particles', 'sprites', 'crt'];
 
@@ -153,7 +154,8 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	private lightingSystem: LightingSystem = null;
 	public offscreenCanvasSize!: vec2;
 	public textures: { [k: string]: unknown } = {};
-	private _dynamicAtlasIndex: number = null;
+	private _primaryAtlasIndex: number = null;
+	private _secondaryAtlasIndex: number = null;
 	public pipelineRegistry?: RenderPassLibrary;
 	private presentationPassTokens: RenderPassToken[] = [];
 	private presentationEnabled = true;
@@ -867,15 +869,10 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		return this._backend;
 	}
 	public async initializeDefaultTextures(): Promise<void> {
-		const atlas = $.rompack.img['_atlas'];
-		if (!atlas) {
-			throw new Error("[GameView] Default atlas '_atlas' missing while initializing textures.");
-		}
-		const atlasImage = await atlas._imgbin;
-		this.textures['_atlas'] = this.backend.createTexture(atlasImage, {});
-		const dynamicFallback = this.backend.createSolidTexture2D(1, 1, [1, 1, 1, 1]);
-		this.textures['_atlas_dynamic'] = dynamicFallback;
-		this.textures['_atlas_dynamic_fallback'] = dynamicFallback;
+		const fallback = this.backend.createSolidTexture2D(1, 1, [1, 1, 1, 1]);
+		this.textures['_atlas_primary'] = fallback; // Start with fallback to avoid undefined states and race conditions
+		this.textures['_atlas_secondary'] = fallback;
+		this.textures['_atlas_fallback'] = fallback;
 		const engineAtlasName = generateAtlasName(ENGINE_ATLAS_INDEX);
 		const engineAtlas = $.rompack.img[engineAtlasName];
 		if (!engineAtlas) {
@@ -906,24 +903,33 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	}
 	public setSkybox(images: SkyboxImageIds): void { SkyboxPipeline.setSkyboxImages(images); }
 	public get skyboxFaceIds(): SkyboxImageIds { return SkyboxPipeline.skyboxFaceIds; }
-	public get dynamicAtlas(): number { return this._dynamicAtlasIndex; }
-	public set dynamicAtlas(index: number) {
-		if (this._dynamicAtlasIndex === index) return;
+	private setAtlasIndex(indexKey: '_primaryAtlasIndex' | '_secondaryAtlasIndex', index: number | null): void {
+		if (this[indexKey] === index) return;
+		const atlas_id = indexKey === '_primaryAtlasIndex' ? '_atlas_primary' : '_atlas_secondary';
 		if (index == null) {
-			this._dynamicAtlasIndex = null;
-			const fallback = this.textures['_atlas_dynamic_fallback'] as TextureHandle;
-			this.textures['_atlas_dynamic'] = fallback;
+			this[indexKey] = null;
+			const fallback = this.textures['_atlas_fallback'] as TextureHandle;
+			this.textures[atlas_id] = fallback;
 			return;
 		}
 		const atlasName = generateAtlasName(index);
-		const atlas = $.rompack[atlasName];
+		const atlas = $.rompack.img[atlasName];
 		if (!atlas) {
-			throw new Error(`[GameView] Dynamic atlas '${atlasName}' not found.`);
+			throw new Error(`[GameView] atlas '${atlasName}' not found.`);
 		}
-		this.textures['_atlas_dynamic'] = this.backend.createTexture(atlas._imgbin, {});
-		this._dynamicAtlasIndex = index;
+		this.textures[atlas_id] = this.backend.createTexture(atlas._imgbin, {});
+		this[indexKey] = index;
 	}
 
+	public get primaryAtlas(): number { return this._primaryAtlasIndex; }
+	public set primaryAtlas(index: number) {
+		this.setAtlasIndex('_primaryAtlasIndex', index)
+	}
+
+	public get secondaryAtlas(): number { return this._secondaryAtlasIndex; }
+	public set secondaryAtlas(index: number) {
+		this.setAtlasIndex('_secondaryAtlasIndex', index)
+	}
 
 	// Texture binding helpers
 	get activeTexUnit(): number {
