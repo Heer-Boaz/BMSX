@@ -1,5 +1,5 @@
 import type { Identifiable } from '../rompack/rompack';
-import { $ } from './game';
+import { $ } from './engine_core';
 
 export type EventPayload = Record<string, any>;
 

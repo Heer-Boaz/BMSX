@@ -1,7 +1,7 @@
 import { ECSystem, TickGroup } from './ecsystem';
 import type { World } from '../core/world';
 import { Collider2DComponent } from '../component/collisioncomponents';
-import { $ } from '../core/game';
+import { $ } from '../core/engine_core';
 import { Service } from '../core/service';
 import type { RectBounds, Polygon, vec2arr } from '../rompack/rompack';
 import type { WorldObject } from '../core/object/worldobject';

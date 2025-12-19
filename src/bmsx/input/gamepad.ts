@@ -2,7 +2,7 @@ import { getPressedState, makeButtonState, resetObject } from './input';
 import type { ButtonState, InputHandler, KeyOrButtonId2ButtonState, VibrationParams } from './inputtypes';
 import type { InputDevice } from '../platform';
 import { DualSenseHID } from './dualsensehid';
-import { $ } from '../core/game';
+import { $ } from '../core/engine_core';
 
 
 export class GamepadInput implements InputHandler {

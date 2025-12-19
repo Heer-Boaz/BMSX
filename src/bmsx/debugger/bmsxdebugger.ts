@@ -16,7 +16,7 @@ import { createObjectTableElement } from './objectpropertydialog';
 import { ObjectPropertyDialog, refreshAllObjectPropertyDialogs } from './objectpropertydialogimproved';
 import { StateMachineVisualizer } from './statemachinevisualizer';
 import { CustomVisualComponent } from '../component/customvisual_component';
-import { $ } from '../core/game';
+import { $ } from '../core/engine_core';
 const DEBUG_ELEMENT_ID = 'debug_element_id';
 const PHYSICS_OVERLAY_ID = 'physics_overlay_canvas';
 

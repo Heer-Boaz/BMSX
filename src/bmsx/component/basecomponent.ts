@@ -1,5 +1,5 @@
 import { EventEmitter } from '../core/eventemitter';
-import { $ } from '../core/game';
+import { $ } from '../core/engine_core';
 import { type WorldObject, type WorldObjectConstructorBaseOrAbstract } from '../core/object/worldobject';
 import { Registry } from '../core/registry';
 import type { Disposable, Identifiable, Identifier, Native, Registerable } from '../rompack/rompack';

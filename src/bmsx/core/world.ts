@@ -15,7 +15,7 @@ import { CameraObject } from './object/cameraobject';
 import { WorldObject, WorldObjectEvents, type WorldObjectEventPayloads } from './object/worldobject';
 import { AmbientLightObject, LightObject } from './object/lightobject';
 import { Registry } from "./registry";
-import { $ } from './game';
+import { $ } from './engine_core';
 import type { Component, ComponentConstructor } from "../component/basecomponent";
 import { Space, initial_world_spaces } from './space';
 import { EventEmitter, EventPort, eventsOf } from './eventemitter';

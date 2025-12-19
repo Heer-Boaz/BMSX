@@ -1,5 +1,5 @@
 import { ECSystem, TickGroup } from '../ecs/ecsystem';
-import { $ } from '../core/game';
+import { $ } from '../core/engine_core';
 import type { World } from '../core/world';
 import { Collision2DSystem } from '../ecs/overlap2d_system';
 

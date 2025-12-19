@@ -1,4 +1,4 @@
-import { $ } from '../core/game';
+import { $ } from '../core/engine_core';
 import { ECSystem, TickGroup } from './ecsystem';
 import { ActionEffectComponent } from '../component/actioneffectcomponent';
 import { BmsxVMRuntime } from '../vm/vm_runtime';

@@ -57,7 +57,7 @@ import {
 	type LuaNativeMemberHandle
 } from './luavalue';
 import { LuaDebuggerController, type LuaDebuggerPauseReason } from './luadebugger';
-import { $ } from '../core/game';
+import { $ } from '../core/engine_core';
 import { BmsxVMRuntime } from '../vm/vm_runtime';
 import { isLuaHandlerFunction } from './luahandler_cache';
 import { LuaInteropAdapter } from '../vm/lua_js_bridge';

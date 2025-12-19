@@ -1,6 +1,6 @@
 import { EventEmitter, EventHandler } from '../core/eventemitter';
 import type { GameEvent } from '../core/game_event';
-import { $ } from '../core/game';
+import { $ } from '../core/engine_core';
 import { Registry } from '../core/registry';
 import type {
 	asset_id,
@@ -47,6 +47,7 @@ export interface AudioCaseMatcher {
 }
 
 export interface AudioAction {
+	kind: 'action';
 	audioId: AudioId;
 	modulationPreset?: asset_id;
 	priority?: number;
@@ -66,38 +67,49 @@ export type AudioActionPickStrategy = 'uniform' | 'weighted';
  */
 
 export interface AudioActionOneOfSpec {
+	kind: 'oneof';
 	oneOf: (AudioActionWeighted | AudioId)[];
 	pick?: AudioActionPickStrategy;
 	avoidRepeat?: boolean;
 }
 
-export type AudioStingerSpec = { stinger: AudioId; returnTo?: AudioId; returnToPrevious?: boolean; };
-export type AudioDelaySpec = { delayMs: number; };
+export type AudioStingerSpec = {
+	kind: 'stinger';
+	stinger: AudioId;
+	returnTo?: AudioId;
+	returnToPrevious?: boolean;
+};
+
+export type AudioDelaySpec = {
+	kind: 'delay';
+	delayMs: number;
+};
+
 export type AudioSyncMode = 'immediate' | 'loop' | AudioDelaySpec | AudioStingerSpec;
 // Music transition (engine-level) — no BPM required
 
 export interface MusicTransitionSpec {
-	musicTransition: {
-		audioId: AudioId;
-		/**
-			 * How to schedule the transition:
-			 * - 'immediate': switch now
-			 * - 'loop': switch at next loop boundary of current track (uses audiometa.loop)
-			 * - { delayMs }: switch after delay
-		 * - { stinger, returnTo?: AudioId, returnToPrevious?: boolean }: play stinger immediately, then switch to either a specific id (returnTo) or the previously playing music (returnToPrevious). Specify at most one of these follow-up targets.
-			 */
-			sync?: AudioSyncMode;
-			fadeMs?: number;
-			/** If true and target has a loop point, start at its loopStart (skip intro) */
-			startAtLoopStart?: boolean;
-		/** If true, start target at t=0 (fresh) instead of resuming an offset */
-		startFresh?: boolean;
-	};
+	kind: 'musictransition';
+	audioId: AudioId;
+	/**
+		 * How to schedule the transition:
+		 * - 'immediate': switch now
+		 * - 'loop': switch at next loop boundary of current track (uses audiometa.loop)
+		 * - { delayMs }: switch after delay
+	 * - { stinger, returnTo?: AudioId, returnToPrevious?: boolean }: play stinger immediately, then switch to either a specific id (returnTo) or the previously playing music (returnToPrevious). Specify at most one of these follow-up targets.
+		 */
+	sync?: AudioSyncMode;
+	fadeMs?: number;
+	/** If true and target has a loop point, start at its loopStart (skip intro) */
+	startAtLoopStart?: boolean;
+	/** If true, start target at t=0 (fresh) instead of resuming an offset */
+	startFresh?: boolean;
 }
 
 export type AudioActionSpec = AudioAction | AudioActionOneOfSpec | MusicTransitionSpec;
 
 export interface AudioEventRule {
+	kind: 'rule';
 	when?: AudioCaseMatcher;
 	go: AudioActionSpec;
 }
@@ -121,7 +133,17 @@ export interface AudioHandleContext {
 
 export type AudioHandler = (ctx: AudioHandleContext) => boolean;
 
-export type AudioEventQueueItem = { name: string; audioId: asset_id; modulationPreset?: asset_id; modulationParams?: RandomModulationParams | ModulationParams; priority?: number; cooldownMs?: number; enqueuedAt?: number; payloadActorId?: Identifier };
+export type AudioEventQueueItem = {
+	name: string;
+	audioId: asset_id;
+	modulationPreset?: asset_id;
+	modulationParams?: RandomModulationParams | ModulationParams;
+	priority?: number;
+	cooldownMs?: number;
+	enqueuedAt?: number;
+	payloadActorId?: Identifier
+};
+
 export type AudioEventQueue = AudioEventQueueItem[];
 export type AudioEventQueuePartialForDeserialization = Partial<AudioEventQueueItem>[];
 
@@ -308,14 +330,13 @@ export class AudioEventManager implements RegisterablePersistent {
 			const r = entry.rules[i];
 			if (!this.ruleMatches(r, payload)) continue;
 			const d = r.go;
-			if (d && typeof d === 'object' && 'musicTransition' in d && d.musicTransition) {
-				const mt = d.musicTransition;
+			if (d && typeof d === 'object' && d.kind === 'musictransition') {
 				$.sndmaster.requestMusicTransition({
-					to: mt.audioId,
-					sync: mt.sync,
-					fadeMs: mt.fadeMs,
-					startAtLoopStart: mt.startAtLoopStart,
-					startFresh: mt.startFresh,
+					to: d.audioId,
+					sync: d.sync,
+					fadeMs: d.fadeMs,
+					startAtLoopStart: d.startAtLoopStart,
+					startFresh: d.startFresh,
 				});
 				return true;
 			}
@@ -500,10 +521,10 @@ export class AudioEventManager implements RegisterablePersistent {
 		const weights: number[] = [];
 		for (const it of items) {
 			if (typeof it === 'string' || typeof it === 'number') {
-				actions.push({ audioId: it });
+				actions.push({ kind: 'action', audioId: it });
 				weights.push(1);
 			} else {
-				actions.push({ audioId: it.audioId, modulationPreset: it.modulationPreset, priority: it.priority, cooldownMs: it.cooldownMs });
+				actions.push({ kind: 'action', audioId: it.audioId, modulationPreset: it.modulationPreset, priority: it.priority, cooldownMs: it.cooldownMs });
 				const w = (it as { weight?: number }).weight;
 				weights.push(w != null ? Math.max(0, Number(w)) : 1);
 			}

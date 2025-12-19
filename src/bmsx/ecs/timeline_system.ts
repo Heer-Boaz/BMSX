@@ -1,7 +1,7 @@
 import type { World } from '../core/world';
 import { ECSystem, TickGroup } from './ecsystem';
 import { TimelineComponent } from '../component/timeline_component';
-import { $ } from '../core/game';
+import { $ } from '../core/engine_core';
 
 export class TimelineSystem extends ECSystem {
 	constructor(priority: number = 0) {

@@ -26,7 +26,7 @@ import { requestSemanticRefresh } from './intellisense';
 import { resetBlink } from './render/render_caret';
 import { listResources } from '../workspace';
 import { BmsxVMRuntime } from '../vm_runtime';
-import { $ } from '../../core/game';
+import { $ } from '../../core/engine_core';
 import { PieceTreeBuffer } from './piece_tree_buffer';
 
 function resolvePath(descriptor: VMResourceDescriptor | null): string {

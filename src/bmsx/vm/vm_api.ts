@@ -1,4 +1,4 @@
-import { $, runGate } from '../core/game';
+import { $, runGate } from '../core/engine_core';
 import { Input } from '../input/input';
 import type { PlayerInput } from '../input/playerinput';
 import type {

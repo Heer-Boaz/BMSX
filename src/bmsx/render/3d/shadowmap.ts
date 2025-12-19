@@ -1,4 +1,4 @@
-import { $ } from '../../core/game';
+import { $ } from '../../core/engine_core';
 import * as GLR from '../backend/webgl/gl_resources';
 
 export class ShadowMap {

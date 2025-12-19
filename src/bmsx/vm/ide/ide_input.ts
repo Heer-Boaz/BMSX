@@ -1,4 +1,4 @@
-import { $ } from '../../core/game';
+import { $ } from '../../core/engine_core';
 import { CHARACTER_CODES, CHARACTER_MAP } from './character_map';
 import { applyDocumentFormatting, copySelectionToClipboard, cutLineToClipboard, cutSelectionToClipboard, insertText, pasteFromClipboard, writeClipboard } from './text_editing_and_selection';
 import { resetBlink } from './render/render_caret';

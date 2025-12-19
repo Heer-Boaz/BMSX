@@ -1,4 +1,4 @@
-import { $ } from './game';
+import { $ } from './engine_core';
 
 export type GlyphMap = Record<string, string>;
 

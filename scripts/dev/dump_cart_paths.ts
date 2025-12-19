@@ -1,7 +1,7 @@
+import { loadAssetList } from 'bmsx';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
-import { getZippedRomAndRomLabelFromBlob, loadAssetList } from '../bootrom/bootresources';
 import pako from 'pako';
 
 async function main(): Promise<void> {

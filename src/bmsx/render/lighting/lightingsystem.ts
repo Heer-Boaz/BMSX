@@ -1,5 +1,5 @@
 import { Float32ArrayPool } from '../../utils/pool';
-import { $ } from '../../core/game';
+import { $ } from '../../core/engine_core';
 import type { AmbientLight, DirectionalLight, PointLight } from '../3d/light';
 import { DirectionalLightObject, PointLightObject } from '../../core/object/lightobject';
 import * as MeshPipeline from '../3d/mesh_pipeline';

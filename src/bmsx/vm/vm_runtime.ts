@@ -1,4 +1,4 @@
-import { $ } from '../core/game';
+import { $ } from '../core/engine_core';
 import { Service } from '../core/service';
 import { taskGate } from '../core/taskgate';
 import { Input } from '../input/input';

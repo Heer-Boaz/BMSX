@@ -3,7 +3,7 @@ import { EventEmitter } from '../core/eventemitter';
 import { excludeclassfromsavegame } from '../serializer/serializationhooks';
 import { DefaultECSPipelineRegistry as ECSReg } from '../ecs/pipeline';
 import { attachHudPanel, makeHudPanelDraggable } from './hudpanel';
-import { $ } from '../core/game';
+import { $ } from '../core/engine_core';
 
 const HUD_ID = 'bmsx-ecs-hud';
 

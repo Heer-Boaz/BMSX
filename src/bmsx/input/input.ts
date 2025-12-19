@@ -1,6 +1,6 @@
 ﻿import { EventEmitter, EventPort, eventsOf } from '../core/eventemitter';
 import type { GameEvent } from '../core/game_event';
-import { $ } from '../core/game';
+import { $ } from '../core/engine_core';
 import { Registry } from '../core/registry';
 import { toggleRenderHUD } from '../debugger/renderhud';
 import { toggleECSHUD } from '../debugger/ecshud';

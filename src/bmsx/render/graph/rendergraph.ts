@@ -6,7 +6,7 @@
  * topological order. This file intentionally avoids touching existing pipeline
  * code so migration can be incremental.
  */
-import { $ } from '../../core/game';
+import { $ } from '../../core/engine_core';
 import { taskGate } from '../../core/taskgate';
 import { color_arr } from '../../rompack/rompack';
 import { Camera } from '../3d/camera3d';

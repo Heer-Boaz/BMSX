@@ -1,4 +1,4 @@
-import { $ } from '../../core/game';
+import { $ } from '../../core/engine_core';
 import * as constants from './constants';
 import { clamp } from '../../utils/clamp';
 import { VMScrollbar } from './scrollbar';

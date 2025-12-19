@@ -1,6 +1,6 @@
 // Mesh pipeline (formerly glview.3d) inlined from legacy module.
 // Handles 3D mesh rendering, instancing, morph targets, skinning, fog, and lighting UBO management.
-import { $ } from '../../core/game';
+import { $ } from '../../core/engine_core';
 import type { Mesh } from './mesh';
 import { Float32ArrayPool } from '../../utils/pool';
 import type { vec3arr } from '../../rompack/rompack';

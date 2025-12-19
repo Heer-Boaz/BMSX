@@ -3,7 +3,7 @@ import { Registry } from '../core/registry';
 import { GateGroup, taskGate } from '../core/taskgate';
 import { color_arr, GLTFModel, Identifier, Index2GpuTexture, RegisterablePersistent, type RomImgAsset, type TextureSource } from '../rompack/rompack';
 import { GPUBackend, TextureHandle, TextureParams } from './backend/pipeline_interfaces';
-import { $ } from '../core/game';
+import { $ } from '../core/engine_core';
 import { generateAtlasName } from 'bmsx/rompack/engine_assets';
 
 export interface ModelTextureIdentifier {

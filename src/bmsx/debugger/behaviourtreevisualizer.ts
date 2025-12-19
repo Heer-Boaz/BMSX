@@ -1,7 +1,7 @@
 // BehaviourTreeVisualizer extracted from bmsxdebugger.ts
 import { BTNode } from '../ai/behaviourtree';
 import { Component, componenttags_postprocessing, type ComponentAttachOptions } from '../component/basecomponent';
-import { $ } from '../core/game';
+import { $ } from '../core/engine_core';
 import type { Identifier } from '../rompack/rompack';
 import { excludeclassfromsavegame } from '../serializer/serializationhooks';
 import { FloatingDialog } from './bmsxdebugger';

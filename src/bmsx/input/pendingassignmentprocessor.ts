@@ -1,4 +1,4 @@
-import { $ } from '../core/game';
+import { $ } from '../core/engine_core';
 import { GamepadInput } from './gamepad';
 import { Input } from './input';
 import type { BGamepadButton, InputHandler } from './inputtypes';

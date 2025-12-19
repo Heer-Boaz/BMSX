@@ -7,11 +7,11 @@ import { createMinimalSourceMapConsumer, InlineSourceMap, MinimalSourceMapConsum
 type InlineSourceMapRegistry = Map<string, InlineSourceMap>;
 
 function getInlineSourceMapRegistry(): InlineSourceMapRegistry {
-	return (globalThis as unknown as { __bmsx_sourceMaps?: InlineSourceMapRegistry }).__bmsx_sourceMaps;
+	return (globalThis as { __bmsx_sourceMaps?: InlineSourceMapRegistry }).__bmsx_sourceMaps;
 }
 
 function getInlineSourceMapConsumerCache(): Map<string, MinimalSourceMapConsumer> {
-	const g = globalThis as unknown as { __bmsx_sourceMapConsumers?: Map<string, MinimalSourceMapConsumer> };
+	const g = globalThis as { __bmsx_sourceMapConsumers?: Map<string, MinimalSourceMapConsumer> };
 	if (!g.__bmsx_sourceMapConsumers) {
 		g.__bmsx_sourceMapConsumers = new Map<string, MinimalSourceMapConsumer>();
 	}

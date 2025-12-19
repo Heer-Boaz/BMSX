@@ -1,4 +1,4 @@
-import { $ } from '../core/game';
+import { $ } from '../core/engine_core';
 import { getPressedState, Input, makeButtonState, resetObject } from './input';
 import type { ButtonState, InputHandler, KeyboardButtonId, KeyOrButtonId2ButtonState, VibrationParams } from './inputtypes';
 

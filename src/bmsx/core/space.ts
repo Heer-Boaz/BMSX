@@ -1,6 +1,6 @@
 import { type Identifier, vec3 } from '../rompack/rompack';
 import { insavegame, excludepropfromsavegame, onload, type RevivableObjectArgs } from '../serializer/serializationhooks';
-import { $ } from './game';
+import { $ } from './engine_core';
 import { WorldObject } from './object/worldobject';
 import type { SpawnReason } from './world';
 import { DEFAULT_ZCOORD } from '../render/backend/webgl/webgl.constants';

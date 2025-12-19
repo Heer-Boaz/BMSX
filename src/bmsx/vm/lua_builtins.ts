@@ -1,4 +1,4 @@
-import { $ } from '../core/game';
+import { $ } from '../core/engine_core';
 import { Input } from '../input/input';
 import { InputMap } from '../input/inputtypes';
 import { LuaEnvironment } from '../lua/luaenvironment';

@@ -1,4 +1,4 @@
-import { $ } from '../core/game';
+import { $ } from '../core/engine_core';
 
 /**
  * Shows a download dialog for the current save state.

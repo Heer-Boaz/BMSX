@@ -1,4 +1,4 @@
-import { $ } from '../core/game';
+import { $ } from '../core/engine_core';
 import type { PlayerInput } from '../input/playerinput';
 import { ECSystem, TickGroup } from './ecsystem';
 import type { WorldObject } from '../core/object/worldobject';

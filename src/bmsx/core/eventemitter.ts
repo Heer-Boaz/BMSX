@@ -1,6 +1,6 @@
 import { Identifiable, Identifier, type RegisterablePersistent } from '../rompack/rompack';
 import { Registry } from "./registry";
-import { $ } from './game';
+import { $ } from './engine_core';
 import { HandlerRegistry } from './handlerregistry';
 import { create_gameevent, EventPayload, GameEvent } from './game_event';
 export { create_gameevent as createGameEvent, EventPayload, GameEvent } from './game_event';

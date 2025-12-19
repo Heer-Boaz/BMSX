@@ -11,7 +11,7 @@ import type {
 	OnscreenGamepadPlatformSession,
 	OnscreenPointerEvent,
 } from '../platform';
-import { $ } from '../core/game';
+import { $ } from '../core/engine_core';
 
 export type {
 	OnscreenGamepadControlKind,

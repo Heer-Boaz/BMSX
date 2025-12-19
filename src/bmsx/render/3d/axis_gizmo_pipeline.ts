@@ -1,4 +1,4 @@
-import { $ } from '../../core/game';
+import { $ } from '../../core/engine_core';
 import axisFS from './shaders/axis_gizmo.frag.glsl';
 import axisVS from './shaders/axis_gizmo.vert.glsl';
 import { RenderPassLibrary } from '../backend/renderpasslib';

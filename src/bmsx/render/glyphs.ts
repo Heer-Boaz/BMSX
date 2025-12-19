@@ -1,5 +1,5 @@
 import { BFont } from '../core/font';
-import { $ } from '../core/game';
+import { $ } from '../core/engine_core';
 import type { ImgRenderSubmission, RectRenderSubmission, RenderLayer, color } from './shared/render_types';
 
 const CHAR_CACHE: string[] = (() => {

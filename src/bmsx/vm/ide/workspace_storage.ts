@@ -1,4 +1,4 @@
-import { $ } from '../../core/game';
+import { $ } from '../../core/engine_core';
 import type { VMResourceDescriptor } from '../types';
 import { ide_state, WORKSPACE_AUTOSAVE_INTERVAL_MS } from './ide_state';
 import type { CodeTabContext, Position, EditorSnapshot } from './types';

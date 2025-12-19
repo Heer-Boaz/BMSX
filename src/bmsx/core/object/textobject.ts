@@ -1,6 +1,6 @@
 import { wrapGlyphs } from '../../render/glyphs';
 import { BFont } from '../font';
-import { $ } from '../game';
+import { $ } from '../engine_core';
 import { insavegame, type RevivableObjectArgs } from '../../serializer/serializationhooks';
 import { WorldObject } from './worldobject';
 import { RectBounds } from '../../rompack/rompack';

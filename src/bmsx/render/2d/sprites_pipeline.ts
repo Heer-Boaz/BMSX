@@ -29,7 +29,7 @@ import {
 	ZCOORDS_SIZE
 } from '../backend/webgl/webgl.constants';
 import { ENGINE_ATLAS_TEXTURE_KEY } from 'bmsx/rompack/engine_assets';
-import { $ } from '../../core/game';
+import { $ } from '../../core/engine_core';
 import { bvec } from './vertexutils2d';
 import type { WebGLBackend } from '../backend/webgl/webgl_backend';
 import { makePipelineBuildDesc, shaderModule } from '../backend/shader_module';

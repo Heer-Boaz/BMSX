@@ -6,7 +6,7 @@
  * 0x0DF2 = DualSense Edge
  * 0x09cc = DualShock 4
  */
-import { $ } from '../core/game';
+import { $ } from '../core/engine_core';
 import type { PlatformHIDDevice, PlatformHIDInputReportEvent } from '../platform';
 
 

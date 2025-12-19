@@ -1,4 +1,4 @@
-import { $ } from '../../core/game';
+import { $ } from '../../core/engine_core';
 import { CHARACTER_CODES, CHARACTER_MAP } from './character_map';
 import * as constants from './constants';
 import { ide_state } from './ide_state';

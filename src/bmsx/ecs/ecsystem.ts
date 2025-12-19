@@ -1,7 +1,7 @@
 import { PositionUpdateAxisComponent, ScreenBoundaryComponent, TileCollisionComponent } from "../component/collisioncomponents";
 import { TransformComponent } from "../component/transformcomponent";
 import type { World } from "../core/world";
-import { $ } from "../core/game";
+import { $ } from "../core/engine_core";
 import type { WorldObject } from "../core/object/worldobject";
 import { MeshComponent } from "../component/mesh_component";
 import { mod } from '../utils/mod';

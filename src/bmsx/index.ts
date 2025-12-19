@@ -14,7 +14,7 @@ export * from './core/assetbarrier';
 export * from './core/eventemitter';
 export * from './core/eventtimeline';
 export * from './core/font';
-export * from './core/game';
+export * from './core/engine_core';
 export * from './core/gameoptions';
 export * from './core/object/cameraobject';
 export * from './core/object/lightobject';

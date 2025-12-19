@@ -19,16 +19,16 @@ let modal: blessed.Widgets.BoxElement = null;
 let filteredAssetList: RomAsset[] = [];
 let assetList: RomAsset[] = [];
 
-function formatNumber(n: number): string {
-	const units = ['', 'K', 'M', 'G', 'T', 'P', 'E', 'Z', 'Y'];
-	let i = 0;
-	let num = n;
-	while (num >= 1000 && i < units.length - 1) {
-		num /= 1000;
-		i++;
-	}
-	return i === 0 ? `${n}` : `${num.toFixed(2)}${units[i]}`;
-}
+// function formatNumber(n: number): string {
+// 	const units = ['', 'K', 'M', 'G', 'T', 'P', 'E', 'Z', 'Y'];
+// 	let i = 0;
+// 	let num = n;
+// 	while (num >= 1000 && i < units.length - 1) {
+// 		num /= 1000;
+// 		i++;
+// 	}
+// 	return i === 0 ? `${n}` : `${num.toFixed(2)}${units[i]}`;
+// }
 
 function formatByteSize(size: number): string {
 	const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];

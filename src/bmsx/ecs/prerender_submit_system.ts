@@ -1,7 +1,7 @@
 import { ECSystem, TickGroup } from "./ecsystem";
 import type { World } from "../core/world";
 import type { Space } from "../core/space";
-import { $ } from "../core/game";
+import { $ } from "../core/engine_core";
 import { excludeclassfromsavegame } from '../serializer/serializationhooks';
 import { CustomVisualComponent } from "../component/customvisual_component";
 

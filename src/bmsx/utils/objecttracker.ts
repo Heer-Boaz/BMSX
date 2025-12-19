@@ -1,5 +1,5 @@
 import type { Identifier } from '../rompack/rompack';
-import { $ } from '../core/game';
+import { $ } from '../core/engine_core';
 import { WorldObject } from "../core/object/worldobject";
 
 /**

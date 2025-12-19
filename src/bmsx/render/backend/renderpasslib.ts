@@ -1,4 +1,4 @@
-import { $ } from '../../core/game';
+import { $ } from '../../core/engine_core';
 import { color_arr } from '../../rompack/rompack';
 import { registerSpritesPass_WebGL } from '../2d/sprites_pipeline';
 import { registerSpritesPass_WebGPU } from '../2d/sprites_pipeline.wgpu';

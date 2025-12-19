@@ -1,5 +1,5 @@
 import { Registry } from '../core/registry';
-import { $ } from '../core/game';
+import { $ } from '../core/engine_core';
 import { Input } from '../input/input';
 import { Identifiable, Identifier } from '../rompack/rompack';
 import { insavegame, onload, type RevivableObjectArgs } from '../serializer/serializationhooks';

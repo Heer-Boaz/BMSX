@@ -1,4 +1,4 @@
-import { $ } from '../core/game';
+import { $ } from '../core/engine_core';
 import { EventEmitter, type EventPayload } from '../core/eventemitter';
 import { create_gameevent, type GameEvent } from '../core/game_event';
 import { excludeclassfromsavegame, type RevivableObjectArgs } from '../serializer/serializationhooks';

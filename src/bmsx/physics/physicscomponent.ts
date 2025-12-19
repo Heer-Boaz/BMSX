@@ -1,5 +1,5 @@
 import { Component, type ComponentAttachOptions } from '../component/basecomponent';
-import { $ } from '../core/game';
+import { $ } from '../core/engine_core';
 import { WorldObject } from '../core/object/worldobject';
 import { new_vec3 } from '../utils/vector_operations';
 import type { Oriented } from '../rompack/rompack';

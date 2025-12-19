@@ -4,7 +4,7 @@ import { StateMachineController } from "../../fsm/fsmcontroller";
 import type { ConstructorWithFSMProperty, Stateful } from "../../fsm/fsmtypes";
 import { ConcreteOrAbstractConstructor, Direction, vec3, type RectBounds, type Identifier, type vec2, type Facing, type Polygon, type Native } from "../../rompack/rompack";
 import { excludepropfromsavegame, insavegame, type RevivableObjectArgs, onload } from '../../serializer/serializationhooks';
-import { $ } from '../game';
+import { $ } from '../engine_core';
 import type { Space } from '../space';
 import { ObjectTracker } from "../../utils/objecttracker";
 import { new_vec2, new_vec3 } from '../../utils/vector_operations';

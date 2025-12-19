@@ -1,4 +1,4 @@
-import { $ } from '../core/game';
+import { $ } from '../core/engine_core';
 import type { GameEvent } from '../core/game_event';
 import { WorldObject, WorldObjectEventPayloads } from "../core/object/worldobject";
 import { new_vec2, set_inplace_vec2 } from '../utils/vector_operations';

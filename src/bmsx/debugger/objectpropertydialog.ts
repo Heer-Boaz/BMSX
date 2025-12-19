@@ -1,4 +1,4 @@
-import { $ } from '../core/game';
+import { $ } from '../core/engine_core';
 import { Serializer } from '../serializer/gameserializer';
 import { FloatingDialog } from './bmsxdebugger';
 

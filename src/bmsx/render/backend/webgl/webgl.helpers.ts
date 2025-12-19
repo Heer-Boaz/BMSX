@@ -1,4 +1,4 @@
-import { $ } from '../../../core/game';
+import { $ } from '../../../core/engine_core';
 import { M4 } from '../../3d/math3d';
 
 // Global toggle for WebGL error checking. Disable in normal builds for performance.

@@ -1,6 +1,6 @@
 // Skybox pipeline (formerly glview.skybox) inlined from legacy module.
 import { AssetBarrier } from '../../core/assetbarrier';
-import { $ } from '../../core/game';
+import { $ } from '../../core/engine_core';
 import { taskGate } from '../../core/taskgate';
 import skyboxFS from '../3d/shaders/skybox.frag.glsl';
 import skyboxVS from '../3d/shaders/skybox.vert.glsl';

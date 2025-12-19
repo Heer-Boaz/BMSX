@@ -401,12 +401,7 @@ async function fromAsset(romImgAsset: RomImgAsset, rompack: RomPack, options?: {
 	return source;
 }
 
-async function load(
-	rom: ArrayBuffer,
-	res: RomAsset,
-	romResult: RomPack,
-	opts?: RomLoadOptions
-): Promise<void> {
+async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: RomLoadOptions) {
 	switch (res.type) {
 		case 'image':
 		case 'atlas': {

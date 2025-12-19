@@ -7,7 +7,7 @@ import type {
 	RectRenderSubmission,
 	RenderLayer
 } from '../render/shared/render_types';
-import { $ } from '../core/game';
+import { $ } from '../core/engine_core';
 import { consumeOverlayFrame, publishOverlayFrame, type EditorOverlayFrame } from '../render/editor/editor_overlay_queue';
 import type { Viewport } from '../rompack/rompack';
 import { copySpriteQueueForPlayback } from '../render/shared/render_queues';

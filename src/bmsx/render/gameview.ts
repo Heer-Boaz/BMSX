@@ -1,5 +1,5 @@
 import { BFont } from '../core/font';
-import { $ } from '../core/game';
+import { $ } from '../core/engine_core';
 import { Registry } from '../core/registry';
 import { multiply_vec, multiply_vec2 } from '../utils/vector_operations';
 import { shallowcopy } from '../utils/shallowcopy';

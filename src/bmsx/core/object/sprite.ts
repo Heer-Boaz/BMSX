@@ -3,7 +3,7 @@ import { insavegame, type RevivableObjectArgs } from '../../serializer/serializa
 import { WorldObject } from "./worldobject";
 import { SpriteComponent } from '../../component/sprite_component';
 import { Collider2DComponent } from '../../component/collisioncomponents';
-import { $ } from '../game';
+import { $ } from '../engine_core';
 import { TimelinePlayOptions } from '../..';
 import { color } from '../../render/shared/render_types';
 

@@ -1,6 +1,6 @@
 import { insavegame, type RevivableObjectArgs } from '../serializer/serializationhooks';
 import { WorldObject } from '../core/object/worldobject';
-import { $, } from '../core/game';
+import { $, } from '../core/engine_core';
 import { ZCOORD_MAX } from '../render/backend/webgl/webgl.constants';
 import { BFont } from '../core/font';
 import type { RenderProducerContext } from '../component/customvisual_component';

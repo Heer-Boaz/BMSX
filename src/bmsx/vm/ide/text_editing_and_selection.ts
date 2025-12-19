@@ -11,7 +11,7 @@
  * - Multi-line editing with selection support
  */
 
-import { $ } from '../../core/game';
+import { $ } from '../../core/engine_core';
 import { clamp } from '../../utils/clamp';
 import { ide_state } from './ide_state';
 import type { EditContext, Position } from './types';

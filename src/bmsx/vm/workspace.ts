@@ -2,7 +2,7 @@ import { extractErrorMessage } from '../lua/luavalue';
 import type { HttpResponse, StorageService } from '../platform';
 import { type BmsxCartridge, type RomLuaAsset } from '../rompack/rompack';
 import { BmsxVMRuntime } from './vm_runtime';
-import { $ } from '../core/game';
+import { $ } from '../core/engine_core';
 import { VMLuaResourceCreationRequest, VMResourceDescriptor } from './types';
 
 export const WORKSPACE_FILE_ENDPOINT = '/__bmsx__/lua';

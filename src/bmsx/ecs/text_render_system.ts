@@ -4,7 +4,7 @@ import { TextComponent } from '../component/text_component';
 import { TransformComponent } from '../component/transformcomponent';
 import type { WorldObject } from '../core/object/worldobject';
 import { excludeclassfromsavegame } from '../serializer/serializationhooks';
-import { $ } from '../core/game';
+import { $ } from '../core/engine_core';
 
 @excludeclassfromsavegame
 export class TextRenderSystem extends ECSystem {

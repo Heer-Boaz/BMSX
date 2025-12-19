@@ -1,4 +1,4 @@
-import { $ } from '../../core/game';
+import { $ } from '../../core/engine_core';
 
 import particleFS from '../3d/shaders/particle.frag.glsl';
 import particleVS from '../3d/shaders/particle.vert.glsl';

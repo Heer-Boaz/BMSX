@@ -13,7 +13,7 @@
 
 import { type ModulationParams } from "../audio/soundmaster";
 import { Space } from '../core/space';
-import { $ } from '../core/game';
+import { $ } from '../core/engine_core';
 import type { BmsxVMState } from '../vm/types';
 import { Registry } from "../core/registry";
 import { GameView } from '../render/gameview';

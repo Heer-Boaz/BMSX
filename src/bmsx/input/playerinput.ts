@@ -3,7 +3,7 @@ import { Input, InputStateManager, makeActionState, makeButtonState } from './in
 import type { ActionState, ActionStateQuery, BGamepadButton, ButtonId, ButtonState, GamepadBinding, GamepadInputMapping, InputHandler, InputMap, KeyboardBinding, KeyboardInputMapping, PointerBinding, PointerInputMapping, VibrationParams } from './inputtypes';
 import { KeyboardInput } from './keyboardinput';
 import { ContextStack, MappingContext } from './context';
-import { $ } from '../core/game';
+import { $ } from '../core/engine_core';
 import { clamp } from '../utils/clamp';
 import { GAME_FPS } from '../rompack/rompack';
 import { deep_clone } from '../utils/deep_clone';

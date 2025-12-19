@@ -1,5 +1,5 @@
 import { Component, type ComponentAttachOptions } from '../component/basecomponent';
-import { $ } from '../core/game';
+import { $ } from '../core/engine_core';
 import { create_gameevent } from '../core/game_event';
 import { M4, V4 } from '../render/3d/math3d';
 import type { asset_id, GLTFModel, GLTFMesh, GLTFAnimation, GLTFAnimationSampler, GLTFNode, color_arr, vec3arr, vec4arr } from '../rompack/rompack';

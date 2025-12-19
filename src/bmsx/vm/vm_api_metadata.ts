@@ -1,4 +1,4 @@
-import type { Game } from '../core/game';
+import type { EngineCore } from '../core/engine_core';
 import type { BmsxVMApi } from './vm_api';
 
 export type VMApiParameterMetadata = {
@@ -14,7 +14,7 @@ export type VMApiMethodMetadata = {
 	readonly returnDescription?: string;
 };
 
-type VMApiMemberName = keyof BmsxVMApi & { $: Game };
+type VMApiMemberName = keyof BmsxVMApi & { $: EngineCore };
 
 export const VM_API_METHOD_METADATA = {
 	$: {

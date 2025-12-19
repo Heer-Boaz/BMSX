@@ -1,6 +1,6 @@
 import { ECSystem, TickGroup } from './ecsystem';
 import type { World } from '../core/world';
-import { $ } from '../core/game';
+import { $ } from '../core/engine_core';
 import { SpriteComponent } from '../component/sprite_component';
 import type { WorldObject } from '../core/object/worldobject';
 import { TransformComponent } from '../component/transformcomponent';

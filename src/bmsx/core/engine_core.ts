@@ -49,7 +49,7 @@ global = globalScope; // Ensure global is defined
 var $rompack: RomPack; // For internal use by get Game.rompack
 export var $debug: boolean;
 
-export interface GameInitArgs {
+export interface EngineStartupOptions {
 	rompack: RomPack;
 	worldConfig: WorldConfiguration;
 	sndcontext?: AudioContext;
@@ -111,7 +111,7 @@ function cloneCartForRuntime(cart: RomPack['cart']): RomPack['cart'] {
 /**
  * Represents the main game loop and manages the game state.
  */
-export class Game {
+export class EngineCore {
 	private _debug: boolean = false;
 	private initialized: boolean = false; // Indicates if the game has been initialized
 	/**
@@ -373,7 +373,7 @@ export class Game {
 	 * @param gainnode - The gain node used for controlling the volume of sounds.
 	 * @param debug - Whether to enable debug mode. Defaults to false.
 	 */
-	public async init(init: GameInitArgs): Promise<Game> {
+	public async init(init: EngineStartupOptions): Promise<EngineCore> {
 		const { rompack, worldConfig, sndcontext, gainnode, debug = false, startingGamepadIndex = null, enableOnscreenGamepad = false, ecsPipeline, platform, viewHost } = init;
 		if (!platform) {
 			throw new Error('[Game] Platform services not provided. Pass a Platform instance in GameInitArgs.');
@@ -859,7 +859,7 @@ export class Game {
 	}
 }
 
-export var $: Game = new Game()!;
+export var $: EngineCore = new EngineCore()!;
 
 // Expose legacy global `$` for scripts that expect a global symbol (e.g. bootrom/html glue)
 // We intentionally write to the global scope we resolved earlier so both browser and

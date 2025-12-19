@@ -1,4 +1,4 @@
-import type { AudioAction, AudioActionOneOfSpec, AudioDelaySpec, AudioEventRule, AudioStingerSpec } from '../../src/bmsx';
+import type { AudioAction, AudioDelaySpec, AudioEventRule, AudioStingerSpec } from '../../src/bmsx';
 import type { Resource } from './rompacker.rompack';
 // @ts-ignore
 const yaml = require('js-yaml');
@@ -65,18 +65,6 @@ export function validateAudioEventReferences(resources: Resource[]): void {
 	const warnings: string[] = [];
 	const musicTransitionsWithFallback = new Set<string>();
 
-	function asStingerSync(sync: unknown): AudioStingerSpec | null {
-		if (!sync || typeof sync !== 'object') return null;
-		const stingerSync = sync as AudioStingerSpec;
-		return stingerSync.stinger !== undefined ? stingerSync : null;
-	}
-
-	function asDelaySync(sync: unknown): AudioDelaySpec | null {
-		if (!sync || typeof sync !== 'object') return null;
-		const delaySync = sync as AudioDelaySpec;
-		return delaySync.delayMs !== undefined ? delaySync : null;
-	}
-
 	function collectKeys(obj: Record<string, unknown>, prefix: string, depth: number): void {
 		if (depth < 0) return;
 		for (const key of Object.keys(obj)) {
@@ -91,15 +79,6 @@ export function validateAudioEventReferences(resources: Resource[]): void {
 
 	function makeRuleKey(file: string, event: string, ruleIndex: number): string {
 		return `${file}:${event ?? '<root>'}#rule${ruleIndex}`;
-	}
-
-	function eventHasMusicTransition(ev: Record<string, unknown>): boolean {
-		const rules = ev.rules;
-		if (!Array.isArray(rules)) return false;
-		return rules.some(rule => {
-			const action = rule.do;
-			return action && typeof action === 'object' && 'musicTransition' in action;
-		});
 	}
 
 	function checkAction(ref: AudioAction, ctx: { file: string; event?: string; ruleIndex?: number; choiceIndex?: number }): void {
@@ -151,38 +130,37 @@ export function validateAudioEventReferences(resources: Resource[]): void {
 			if (!rule || typeof rule !== 'object') return;
 			const act = rule.go;
 			if (!act) { errors.push(`Missing 'do' action at ${file}${eventName ? `:${eventName}` : ''}#rule${ri}`); return; }
-				if (typeof act === 'object' && 'musicTransition' in act && act.musicTransition) {
-					const mt = act.musicTransition;
-					const sync = mt.sync;
+				if (typeof act === 'object' && act.kind === 'musictransition') {
+					const sync = act.sync;
 					const ruleKey = makeRuleKey(file, eventName, ri);
-					const stingerSync = asStingerSync(sync);
+					const stingerSync = sync as AudioStingerSpec;
 					if (stingerSync && (stingerSync.returnTo !== undefined || stingerSync.returnToPrevious)) {
 						musicTransitionsWithFallback.add(ruleKey);
 					}
-					checkAction({ audioId: mt.audioId }, { file, event: eventName, ruleIndex: ri });
+					checkAction({  kind: 'action', audioId: act.audioId }, { file, event: eventName, ruleIndex: ri });
 					// Basic value checks
-				if (mt.fadeMs !== undefined && (!(typeof mt.fadeMs === 'number') || mt.fadeMs < 0)) {
+				if (act.fadeMs !== undefined && (!(typeof act.fadeMs === 'number') || act.fadeMs < 0)) {
 					errors.push(`Invalid fadeMs at ${file}${eventName ? `:${eventName}` : ''}#rule${ri}: must be >= 0`);
 				}
-				if (mt.startAtLoopStart && mt.startFresh) {
+				if (act.startAtLoopStart && act.startFresh) {
 					errors.push(`Ambiguous musicTransition at ${file}${eventName ? `:${eventName}` : ''}#rule${ri}: startAtLoopStart and startFresh cannot both be true`);
 				}
 					if (sync && typeof sync === 'object') {
-						const stingerSync = asStingerSync(sync);
-						const delaySync = asDelaySync(sync);
+						const stingerSync = sync as AudioStingerSpec;
+						const delaySync = sync as AudioDelaySpec;
 						if (stingerSync && delaySync) {
 							errors.push(`Ambiguous musicTransition at ${file}${eventName ? `:${eventName}` : ''}#rule${ri}: sync cannot specify both stinger and delayMs`);
 						}
 						if (stingerSync) {
-							checkAction({ audioId: stingerSync.stinger }, { file, event: eventName, ruleIndex: ri });
-							if (stingerSync.returnTo !== undefined) checkAction({ audioId: stingerSync.returnTo }, { file, event: eventName, ruleIndex: ri });
+							checkAction({ kind: 'action', audioId: stingerSync.stinger }, { file, event: eventName, ruleIndex: ri });
+							if (stingerSync.returnTo !== undefined) checkAction({ kind: 'action', audioId: stingerSync.returnTo }, { file, event: eventName, ruleIndex: ri });
 							if (stingerSync.returnTo !== undefined && stingerSync.returnToPrevious) {
 								errors.push(`Ambiguous musicTransition at ${file}${eventName ? `:${eventName}` : ''}#rule${ri}: provide either returnTo or returnToPrevious, not both`);
 							}
-							if (mt.audioId !== undefined && stingerSync.returnTo !== undefined && stingerSync.returnTo !== mt.audioId) {
+							if (act.audioId !== undefined && stingerSync.returnTo !== undefined && stingerSync.returnTo !== act.audioId) {
 								errors.push(`Ambiguous musicTransition at ${file}${eventName ? `:${eventName}` : ''}#rule${ri}: 'audioId' (post-stinger target) conflicts with 'returnTo' (two targets specified)`);
-							} else if (mt.audioId !== undefined && stingerSync.returnTo !== undefined) {
-								warnings.push(`Redundant musicTransition at ${file}${eventName ? `:${eventName}` : ''}#rule${ri}: 'audioId' and 'returnTo' both target '${mt.audioId}'. Consider removing one.`);
+							} else if (act.audioId !== undefined && stingerSync.returnTo !== undefined) {
+								warnings.push(`Redundant musicTransition at ${file}${eventName ? `:${eventName}` : ''}#rule${ri}: 'audioId' and 'returnTo' both target '${act.audioId}'. Consider removing one.`);
 							}
 						} else if (!delaySync) {
 							// Unknown object props in sync → error
@@ -191,13 +169,13 @@ export function validateAudioEventReferences(resources: Resource[]): void {
 					}
 				return;
 			}
-			if (typeof act === 'object' && (act as AudioActionOneOfSpec).oneOf && Array.isArray((act as AudioActionOneOfSpec).oneOf)) {
-				(act as AudioActionOneOfSpec).oneOf.forEach((item: any, ci: number) => {
+			if (typeof act === 'object' && act.kind === 'oneof') {
+				act.oneOf.forEach((item: any, ci: number) => {
 					if (typeof item === 'string') {
-						checkAction({ audioId: item }, { file, event: eventName, ruleIndex: ri, choiceIndex: ci });
+						checkAction({ kind: 'action', audioId: item }, { file, event: eventName, ruleIndex: ri, choiceIndex: ci });
 					} else if (item && typeof item === 'object') {
-						checkAction({ audioId: item.audioId, modulationPreset: item.modulationPreset, priority: item.priority, cooldownMs: item.cooldownMs }, { file, event: eventName, ruleIndex: ri, choiceIndex: ci });
-						const weight = (item as { weight?: unknown }).weight;
+						checkAction({ kind: 'action', audioId: item.audioId, modulationPreset: item.modulationPreset, priority: item.priority, cooldownMs: item.cooldownMs }, { file, event: eventName, ruleIndex: ri, choiceIndex: ci });
+						const weight = item.weight;
 						if (weight !== undefined && (typeof weight !== 'number' || weight < 0)) {
 							errors.push(`Invalid weight '${weight}' at ${file}${eventName ? `:${eventName}` : ''}#rule${ri}[${ci}]: expected number >= 0`);
 						}
@@ -206,7 +184,8 @@ export function validateAudioEventReferences(resources: Resource[]): void {
 					}
 				});
 			} else {
-				checkAction({ audioId: (act as AudioAction).audioId, modulationPreset: (act as AudioAction).modulationPreset, priority: (act as AudioAction).priority, cooldownMs: (act as AudioAction).cooldownMs }, { file, event: eventName, ruleIndex: ri });
+				const actObj = act as AudioAction;
+				checkAction({ kind: 'action', audioId: actObj.audioId, modulationPreset: actObj.modulationPreset, priority: actObj.priority, cooldownMs: actObj.cooldownMs }, { file, event: eventName, ruleIndex: ri });
 			}
 		});
 	}
@@ -226,7 +205,7 @@ export function validateAudioEventReferences(resources: Resource[]): void {
 			errors.push(`Event '${eventName ?? '<root>'}' in ${fileTag} is missing a 'rules' array.`);
 			return;
 		}
-		if (eventHasMusicTransition(evObj) && evObj.channel !== 'music') {
+		if (evObj.kind === 'musictransition' && evObj.channel !== 'music') {
 			errors.push(`Event '${eventName ?? '<root>'}' in ${fileTag} uses musicTransition but channel is not 'music'.`);
 		}
 		validateRules(evObj.rules as AudioEventRule[], fileTag, eventName);

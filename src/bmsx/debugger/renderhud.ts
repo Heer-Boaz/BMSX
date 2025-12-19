@@ -5,7 +5,7 @@ import * as MeshPipeline from '../render/3d/mesh_pipeline';
 import * as ParticlesPipeline from '../render/3d/particles_pipeline';
 import { RegisterablePersistent } from '../rompack/rompack';
 import { excludeclassfromsavegame } from '../serializer/serializationhooks';
-import { $ } from '../core/game';
+import { $ } from '../core/engine_core';
 
 import { attachHudPanel, makeHudPanelDraggable } from './hudpanel';
 

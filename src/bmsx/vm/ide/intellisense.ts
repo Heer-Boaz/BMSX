@@ -23,7 +23,7 @@ import { isLuaCommentContext, wrapOverlayLine } from './text_utils';
 import type { ApiCompletionMetadata, CodeTabContext, LuaCompletionItem, PointerSnapshot } from './types';
 import type { RomLuaAsset } from '../../rompack/rompack';
 import { Pool } from '../../utils/pool';
-import { $ } from '../../core/game';
+import { $ } from '../../core/engine_core';
 import { KEYWORDS } from '../../lua/luatoken';
 import { getTextSnapshot, splitText } from './source_text';
 export const VM_PREVIEW_MAX_ENTRIES = 12;

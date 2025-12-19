@@ -1,4 +1,4 @@
-import { $ } from '../core/game';
+import { $ } from '../core/engine_core';
 import { normalizeDecoratedClassName } from '../utils/decorators';
 import { deep_clone } from '../utils/deep_clone';
 import { computeBlueprintSignature, cloneBlueprint } from '../utils/blueprint';

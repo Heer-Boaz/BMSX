@@ -2,9 +2,11 @@
 import type { BootArgs, RomPack } from '../../src/bmsx/rompack/rompack';
 import { constructPlatformFromViewHostHandle } from '../../src/bmsx_hostplatform/platform';
 import { createAudioContext, startAudioOnIos } from './bootaudio';
+import type * as _BMSX from '../../src/bmsx/index';
 
 const HAS_DOM_ENVIRONMENT = typeof document !== 'undefined' && document !== null;
 const initialStartingGamepadIndex: number = null;
+type BMSX = typeof _BMSX;
 
 declare global {
 	interface Window {
@@ -33,7 +35,7 @@ declare global {
 	var getRomFromUrlParameter: () => string;
 	var getRomNameFromUrlParameter: () => string;
 	var bootrom: Object;
-	var bmsx: typeof import('../../src/bmsx/index');
+	var bmsx: BMSX;
 	var __bmsx_sourceMaps: Map<string, unknown> | undefined;
 }
 
@@ -241,7 +243,7 @@ export const bootrom = {
 					return pako.inflate(ziprom_and_label.zipped_rom).buffer;
 				})
 				.then(rom => {
-					const engine = globalThis as typeof globalThis & { bmsx: typeof import('../../src/bmsx/index') };
+					const engine = globalThis as typeof globalThis & { bmsx: BMSX };
 					return engine.bmsx.loadRomPackFromBuffer(rom);
 				})
 				.then((loadResult: any) => {
@@ -277,7 +279,7 @@ export const bootrom = {
 		const split = splitRomLabel(response);
 		// @ts-ignore
 		const inflated = pako.inflate(split.zipped_rom).buffer;
-		const engine = globalThis as typeof globalThis & { bmsx: typeof import('../../src/bmsx/index') };
+		const engine = globalThis as typeof globalThis & { bmsx: BMSX };
 		const assets = await engine.bmsx.loadRomPackFromBuffer(inflated);
 		engine.bmsx.setEngineAssets(assets);
 		bootrom.engine_assets = assets;

@@ -1,4 +1,4 @@
-import { $ } from '../core/game';
+import { $ } from '../core/engine_core';
 import type { World } from '../core/world';
 import { ECSystem, TickGroup } from '../ecs/ecsystem';
 import type { NodeSpec } from '../ecs/pipeline';

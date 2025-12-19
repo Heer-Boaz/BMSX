@@ -1,4 +1,4 @@
-import { $ } from '../core/game';
+import { $ } from '../core/engine_core';
 import { BmsxVMRuntime } from './vm_runtime';
 import { clearWorkspaceSessionState } from './ide/workspace_storage';
 import { ide_state } from './ide/ide_state';

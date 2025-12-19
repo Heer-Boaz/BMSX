@@ -5,7 +5,7 @@ import { excludepropfromsavegame, insavegame } from '../serializer/serialization
 import type { TimelinePlayOptions } from './timeline_component';
 import { new_vec2 } from '../utils/vector_operations';
 import { Collider2DComponent } from './collisioncomponents';
-import { $ } from '../core/game';
+import { $ } from '../core/engine_core';
 import { WorldObject } from '../core/object/worldobject';
 import { color, FlipOptions, RenderLayer } from '../render/shared/render_types';
 
