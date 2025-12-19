@@ -16,7 +16,7 @@ import type {
 	color_arr,
 } from './rompack';
 import { decodeBinary, decodeuint8arr, toF32, typedArrayFromBytes } from '../serializer/binencoder';
-import { generateAtlasName } from '../render/gameview';
+import { generateAtlasName } from './engine_assets';
 
 export type RomLoadOptions = {
 	loadImageFromBuffer?: (buffer: ArrayBuffer) => Promise<TextureSource>;
