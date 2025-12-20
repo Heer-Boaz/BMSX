@@ -236,8 +236,7 @@ export const bootrom = {
 
 			fetchRom()
 				.then((response_array: ArrayBuffer) => {
-					if (!response_array) {
-						// No ROM loaded
+					if (response_array) {
 						const split = splitRomLabel(response_array);
 						if (split.romlabel) {
 							romlabel_bloburl = getImageUrlFromBuffer(split.romlabel);
