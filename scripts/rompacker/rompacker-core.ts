@@ -27,6 +27,10 @@ const { finished } = require('stream/promises');
 // @ts-ignore
 const { encodeBinary } = require('../../src/bmsx/serializer/binencoder');
 // @ts-ignore
+const { LuaLexer } = require('../../src/bmsx/lua/lualexer');
+// @ts-ignore
+const { LuaParser } = require('../../src/bmsx/lua/luaparser');
+// @ts-ignore
 const pako = require('pako');
 // @ts-ignore
 const minify = require('@node-minify/core');
@@ -670,6 +674,15 @@ export function parseImageMeta(filenameWithoutExt: string): {
 export function zip(content: Buffer): Uint8Array {
 	const toCompress = new Uint8Array(content);
 	return pako.deflate(toCompress, { level: 9 });
+}
+
+function compileLuaChunkBuffer(source: string, path: string): Buffer {
+	const lexer = new LuaLexer(source, path, { canonicalizeIdentifiers: LUA_CANONICALIZATION });
+	const tokens = lexer.scanTokens();
+	const parser = new LuaParser(tokens, path, source);
+	const chunk = parser.parseChunk();
+	const encoded = encodeBinary(chunk);
+	return Buffer.from(encoded);
 }
 
 /**
@@ -1338,10 +1351,12 @@ export async function generateRomAssets(resources: Resource[], reportProgress?: 
 				}
 				const luaSourcePath = sourcePath && sourcePath.length > 0 ? sourcePath : toWorkspaceRelativePath(res.filepath);
 				const normalizedPath = normalizeWorkspacePath(luaSourcePath);
+				const compiled_buffer = compileLuaChunkBuffer(buffer.toString('utf8'), normalizedPath);
 				romAssets.push({
 					resid,
 					type,
 					buffer,
+					compiled_buffer,
 					source_path: normalizedPath,
 					normalized_source_path: normalizedPath,
 					update_timestamp: res.update_timestamp,
@@ -1624,6 +1639,12 @@ export async function finalizeRompack(
 				asset.end = offset + mainBuffer.length;
 				await writeBuffer(mainBuffer);
 			}
+			if (asset.compiled_buffer && asset.compiled_buffer.length > 0) {
+				const compiledBuffer = Buffer.from(asset.compiled_buffer);
+				asset.compiled_start = offset;
+				asset.compiled_end = offset + compiledBuffer.length;
+				await writeBuffer(compiledBuffer);
+			}
 			if (asset.texture_buffer && asset.texture_buffer.length > 0) {
 				const textureBuffer = Buffer.from(asset.texture_buffer);
 				asset.texture_start = offset;
@@ -1641,6 +1662,7 @@ export async function finalizeRompack(
 			delete asset.imgmeta;
 			delete asset.audiometa;
 			delete asset.buffer;
+			delete asset.compiled_buffer;
 			delete asset.texture_buffer;
 		}
 

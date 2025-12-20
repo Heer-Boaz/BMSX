@@ -4,7 +4,7 @@ import { taskGate } from '../core/taskgate';
 import { Input } from '../input/input';
 import { KeyModifier } from '../input/playerinput';
 import type { InputMap } from '../input/inputtypes';
-import type { LuaDefinitionInfo } from '../lua/lua_ast';
+import type { LuaChunk, LuaDefinitionInfo } from '../lua/lua_ast';
 import { LuaEnvironment } from '../lua/luaenvironment';
 import { LuaError, LuaRuntimeError, LuaSyntaxError } from '../lua/luaerrors';
 import { LuaHandlerCache, } from '../lua/luahandler_cache';
@@ -25,7 +25,7 @@ import type { Viewport, BmsxCartridgeBlob, CartridgeIndex } from '../rompack/rom
 import { CanonicalizationType } from '../rompack/rompack';
 import { AssetSourceStack, type RawAssetSource } from '../rompack/asset_source';
 import { applyRuntimeAssetLayer, buildRuntimeAssetLayer } from '../rompack/romloader';
-import { decodeuint8arr } from '../serializer/binencoder';
+import { decodeBinary, decodeuint8arr } from '../serializer/binencoder';
 import { createIdentifierCanonicalizer } from '../lua/identifier_canonicalizer';
 import { clamp_fallback } from '../utils/clamp';
 import { BmsxVMApi } from './vm_api';
@@ -1716,6 +1716,19 @@ export class BmsxVMRuntime extends Service {
 		setLuaTableCaseInsensitiveKeys(this._canonicalization !== 'none');
 	}
 
+	private loadLuaChunkForPath(path: string): LuaChunk {
+		const asset = $.luaSources.path2lua[path];
+		if (asset.src !== asset.base_src) {
+			return this.luaInterpreter.compileChunk(asset.src, path);
+		}
+		if (asset.compiled_start === undefined || asset.compiled_end === undefined) {
+			return this.luaInterpreter.compileChunk(asset.src, path);
+		}
+		const compiledEntry = { ...asset, start: asset.compiled_start, end: asset.compiled_end };
+		const bytes = $.assetSource.getBytes(compiledEntry);
+		return decodeBinary(bytes) as LuaChunk;
+	}
+
 	private bootLuaProgram() {
 		const entryAsset = $.luaSources.path2lua[$.luaSources.entry_path];
 		this.cartEntryAvailable = !!entryAsset;
@@ -1733,16 +1746,11 @@ export class BmsxVMRuntime extends Service {
 			throw new Error('[BmsxVMRuntime] Cannot boot Lua program: entry asset has no path name.');
 		}
 
-		const source = this.resourceSourceForChunk(path);
-		if (!source || source.length === 0) {
-			throw new Error(`[BmsxVMRuntime] Cannot boot Lua program: entry path '${path}' has no source code.`);
-		}
-
 		this._luaPath = path;
 
 		try {
 			const moduleId = $.luaSources.path2lua[path].source_path;
-			const chunk = interpreter.compileChunk(source, path);
+			const chunk = this.loadLuaChunkForPath(path);
 			interpreter.loadChunk(chunk);
 			const results = interpreter.executeChunk(chunk);
 			this.luaJsBridge.wrapLuaExecutionResults(moduleId, results);
@@ -2172,14 +2180,13 @@ export class BmsxVMRuntime extends Service {
 			return pending === null ? true : pending;
 		}
 		const asset = $.luaSources.path2lua[record.path];
-		const source = this.resourceSourceForChunk(asset.source_path);
 		this.luaModuleLoadingKeys.add(record.packageKey);
 		packageLoaded.set(record.packageKey, true);
 		const previousPath = this._luaPath;
 		this._luaPath = record.path;
 		try {
 			const moduleId = asset.source_path; // Keep redirects aligned with source paths
-			const chunk = interpreter.compileChunk(source, record.path);
+			const chunk = this.loadLuaChunkForPath(record.path);
 			interpreter.loadChunk(chunk);
 			const results = interpreter.executeChunk(chunk);
 			this.luaJsBridge.wrapLuaExecutionResults(moduleId, results);
