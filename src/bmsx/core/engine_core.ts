@@ -12,7 +12,7 @@ import { RenderPassLibrary } from "../render/backend/renderpasslib";
 import { ensureBrowserBackendFactory } from "../render/backend/browser_backend_factory";
 import type { GameViewHost, Platform, PlatformExitEvent } from '../platform';
 import { setMicrotaskQueue } from '../platform';
-import { asset_id, Identifiable, Identifier, Registerable, RomPack, type RomLuaAsset, type vec3, type vec2, GAME_FPS } from "../rompack/rompack";
+import { asset_id, CartOverlay, CartRuntime, CartridgePayloads, ENGINE_ATLAS_INDEX, Identifiable, Identifier, Registerable, RomAsset, RomPack, type RomLuaAsset, type vec3, type vec2, GAME_FPS } from "../rompack/rompack";
 import { BinaryCompressor } from "../serializer/bincompressor";
 import { Reviver, Savegame, Serializer } from "../serializer/gameserializer";
 import { Service } from "./service";
@@ -50,6 +50,8 @@ export var $debug: boolean;
 
 export interface EngineStartupOptions {
 	rompack: RomPack;
+	payloads: CartridgePayloads;
+	cartOverlay?: CartOverlay;
 	worldConfig: WorldConfiguration;
 	sndcontext?: AudioContext;
 	gainnode?: GainNode;
@@ -83,7 +85,7 @@ export const renderGate: GateGroup = taskGate.group('render:main');
  * A generic deep clone duplicates those objects independently per map, breaking identity between the indices.
  * That identity is relied on across the VM + workspace pipeline (edits/overrides can originate from either map).
  */
-function cloneCartForRuntime(cart: RomPack['cart']): RomPack['cart'] {
+function cloneCartForRuntime(cart: CartRuntime): CartRuntime {
 	const clones = new Map<RomLuaAsset, RomLuaAsset>();
 	const cloneAsset = (asset: RomLuaAsset): RomLuaAsset => {
 		const existing = clones.get(asset);
@@ -106,6 +108,34 @@ function cloneCartForRuntime(cart: RomPack['cart']): RomPack['cart'] {
 	}
 
 	return clonedCart;
+}
+
+function applyCartOverlay(cart: CartRuntime, overlay: CartOverlay): void {
+	for (const path of overlay.deletes) {
+		delete cart.path2lua[path];
+	}
+	for (const asset of Object.values(overlay.cart.path2lua)) {
+		cart.path2lua[asset.source_path] = asset;
+		cart.path2lua[asset.normalized_source_path] = asset;
+	}
+}
+
+function resolvePrimaryAtlasIndex(rompack: RomPack): number | null {
+	let selected: number = null;
+	const prefix = '_atlas_';
+	for (const key of Object.keys(rompack.img)) {
+		if (!key.startsWith(prefix)) {
+			continue;
+		}
+		const index = parseInt(key.slice(prefix.length), 10);
+		if (index === ENGINE_ATLAS_INDEX) {
+			continue;
+		}
+		if (selected === null || index < selected) {
+			selected = index;
+		}
+	}
+	return selected;
 }
 
 /**
@@ -136,7 +166,8 @@ export class EngineCore {
 
 	public get deltatime_seconds(): number { return this.deltatime / 1000; }
 
-	private _cart: RomPack['cart'];
+	private _cart: CartRuntime;
+	private _payloads: CartridgePayloads = null;
 
 	/**
 	 * The accumulated time in milliseconds.
@@ -222,6 +253,10 @@ export class EngineCore {
 	private initialWorldConfigSnapshot: WorldConfiguration = null;
 
 	public get rompack(): RomPack { return $rompack!; }
+	public get payloads(): CartridgePayloads { return this._payloads; }
+	public getAssetPayload(asset: RomAsset): ArrayBuffer {
+		return this._payloads[asset.payload_id].slice(asset.start, asset.end);
+	}
 
 	public get world(): World { return this.registry.get<World>('world')!; }
 
@@ -246,13 +281,13 @@ export class EngineCore {
 	 * The cart only includes the source Lua files of the cart. All other assets are referenced from the original ROM pack (note: pack !== cart).
 	 * Note that `start_cart.ts` applies workspace overrides before initializing the game instance.
 	 */
-	public get cart(): RomPack['cart'] { return this._cart; }
+	public get cart(): CartRuntime { return this._cart; }
 
 	/**
 	 * Gets the original unpacked cart associated with the ROM. Used to clear (reset) the workspace of any overrides applied via the workspace.
 	 * The cart only includes the source Lua files of the cart. All other assets are referenced from the original ROM pack (note: pack !== cart).
 	 */
-	public get clean_cart(): RomPack['cart'] { return this.rompack.cart; }
+	public get clean_cart(): CartRuntime { return this.rompack.cart; }
 
 	public emit(event: GameEvent): void;
 	public emit(event_name: string, emitter: Identifiable, payload?: EventPayload): void;
@@ -374,7 +409,7 @@ export class EngineCore {
 	 * @param debug - Whether to enable debug mode. Defaults to false.
 	 */
 	public async init(init: EngineStartupOptions): Promise<EngineCore> {
-		const { rompack, worldConfig, sndcontext, gainnode, debug = false, startingGamepadIndex = null, enableOnscreenGamepad = false, ecsPipeline, platform, viewHost } = init;
+		const { rompack, payloads, cartOverlay, worldConfig, sndcontext, gainnode, debug = false, startingGamepadIndex = null, enableOnscreenGamepad = false, ecsPipeline, platform, viewHost } = init;
 		if (!platform) {
 			throw new Error('[Game] Platform services not provided. Pass a Platform instance in GameInitArgs.');
 		}
@@ -383,6 +418,7 @@ export class EngineCore {
 			throw new Error('[Game] Platform did not expose a GameViewHost. Provide one in GameInitArgs.');
 		}
 		$rompack = rompack;
+		this._payloads = payloads;
 		platform.gameviewHost = resolvedViewHost;
 		this._platform = platform;
 		setMicrotaskQueue(platform.microtasks);
@@ -395,8 +431,11 @@ export class EngineCore {
 		this._debug = debug ?? this._debug;
 		$debug = this._debug;
 
-		if (rompack.cart?.entry_path) {
+		if (rompack.cart.entry_path) {
 			this._cart = cloneCartForRuntime(rompack.cart); // Mutable runtime cart: keep ROM-pack cart pristine.
+			if (cartOverlay) {
+				applyCartOverlay(this._cart, cartOverlay);
+			}
 		}
 		EventEmitter.instance; // Init event emitter
 		Input.initialize(startingGamepadIndex); // Init input module
@@ -423,6 +462,10 @@ export class EngineCore {
 		gview.initializePresentationPassTokens();
 		gview.init();
 		await gview.initializeDefaultTextures();
+		const primaryAtlasIndex = resolvePrimaryAtlasIndex(rompack);
+		if (primaryAtlasIndex !== null) {
+			gview.primaryAtlas = primaryAtlasIndex;
+		}
 
 		const modulationResolver: ModulationPresetResolver = {
 			resolve: (key: asset_id) => {
@@ -570,6 +613,10 @@ export class EngineCore {
 
 			PhysicsWorld.rebuild();
 			await this.view.initializeDefaultTextures();
+			const primaryAtlasIndex = resolvePrimaryAtlasIndex(this.rompack);
+			if (primaryAtlasIndex !== null) {
+				this.view.primaryAtlas = primaryAtlasIndex;
+			}
 		}
 		finally {
 			this.wasupdated = true;

@@ -374,7 +374,7 @@ export function resolveSerializedDescriptor(serialized: SerializedDescriptor): V
 	if (!serialized) {
 		return null;
 	}
-	const asset = $.rompack.cart.path2lua[serialized.path];
+	const asset = $.cart.path2lua[serialized.path];
 	return asset ? { path: serialized.path, type: serialized.type } : null;
 }
 
@@ -705,7 +705,7 @@ export async function persistDirtyContextEntries(entries: Map<string, DirtyConte
 }
 
 export function loadCleanSrc(path: string) {
-	const asset = $.rompack.cart.path2lua[path];
+	const asset = $.cart.path2lua[path];
 	if (!asset) {
 		return '';
 	}

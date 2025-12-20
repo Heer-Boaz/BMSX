@@ -613,16 +613,16 @@ local function build_director_fsm()
 		initial = 'boot',
 		states = {
 			boot = {
-					entering_state = function(self)
-						self.stats = { planning = 0, opdekin = 0, rust = 0, makeup = 0 }
-						self.inline_pages = {}
-						self.inline_next = ''
-						self.just_finished_combat = false
-						self.last_combat_monster_imgid = nil
-						self.skip_combat_fade_in = false
-						self.skip_transition_fade = false
-						self.fade_hold_black = false
-						clear_text(text_main_id)
+				entering_state = function(self)
+					self.stats = { planning = 0, opdekin = 0, rust = 0, makeup = 0 }
+					self.inline_pages = {}
+					self.inline_next = ''
+					self.just_finished_combat = false
+					self.last_combat_monster_imgid = nil
+					self.skip_combat_fade_in = false
+					self.skip_transition_fade = false
+					self.fade_hold_black = false
+					clear_text(text_main_id)
 					clear_text(text_choice_id)
 					clear_text(text_prompt_id)
 					clear_text(text_transition_id)
@@ -631,16 +631,16 @@ local function build_director_fsm()
 					return '/run_node'
 				end,
 			},
-					run_node = {
-						entering_state = function(self)
-							local node = story[self.node_id]
-							local just_finished_combat = self.just_finished_combat
-							$.emit('story.node.enter', 'world', { node_id = self.node_id, node_kind = node.kind, bg = node.bg, label = node.label, just_finished_combat = just_finished_combat, last_combat_monster_imgid = self.last_combat_monster_imgid })
-							self.just_finished_combat = false
-							if node.kind == 'transition' then
-								return '/transition'
-							end
-						if node.kind == 'dialogue' or node.kind == 'dialogue_inline' then
+			run_node = {
+				entering_state = function(self)
+					local node = story[self.node_id]
+					local just_finished_combat = self.just_finished_combat
+					$.emit('story.node.enter', 'world', { node_id = self.node_id, node_kind = node.kind, bg = node.bg, label = node.label, just_finished_combat = just_finished_combat, last_combat_monster_imgid = self.last_combat_monster_imgid })
+					self.just_finished_combat = false
+					if node.kind == 'transition' then
+						return '/transition'
+					end
+					if node.kind == 'dialogue' or node.kind == 'dialogue_inline' then
 						return '/dialogue'
 					end
 					if node.kind == 'ending' then
@@ -652,15 +652,15 @@ local function build_director_fsm()
 					if node.kind == 'choice' then
 						return '/choice'
 					end
-						if node.kind == 'fade' then
-							return '/fade'
+					if node.kind == 'fade' then
+						return '/fade'
+					end
+					if node.kind == 'combat' then
+						$.emit('combat.start', 'world', { node_id = self.node_id, monster_imgid = node.monster_imgid })
+						if self.skip_combat_fade_in then
+							self.skip_combat_fade_in = false
+							return '/combat_init'
 						end
-						if node.kind == 'combat' then
-							$.emit('combat.start', 'world', { node_id = self.node_id, monster_imgid = node.monster_imgid })
-							if self.skip_combat_fade_in then
-								self.skip_combat_fade_in = false
-								return '/combat_init'
-							end
 						return '/combat_fade_in'
 					end
 				end,
@@ -684,13 +684,13 @@ local function build_director_fsm()
 						stop_on_exit = true,
 						play_options = { rewind = true, snap_to_start = true },
 					},
-					},
-					entering_state = function(self)
-						local node = story[self.node_id]
-						clear_text(text_main_id)
-						clear_text(text_choice_id)
-						clear_text(text_prompt_id)
-						set_text_lines(text_transition_id, { node.label }, false)
+				},
+				entering_state = function(self)
+					local node = story[self.node_id]
+					clear_text(text_main_id)
+					clear_text(text_choice_id)
+					clear_text(text_prompt_id)
+					set_text_lines(text_transition_id, { node.label }, false)
 					self:reset_text_colors()
 					local transition_text = world_object(text_transition_id)
 					self.transition_center_x = transition_text.centered_block_x
@@ -822,13 +822,13 @@ local function build_director_fsm()
 					bg.colorize = { r = 1, g = 1, b = 1, a = 1 }
 				end,
 			},
-				bg_only = {
-					entering_state = function(self)
-						local node = story[self.node_id]
-						self:apply_background(node.bg)
-						local bg = world_object(bg_id)
-						bg.visible = true
-						bg.colorize = { r = 1, g = 1, b = 1, a = 1 }
+			bg_only = {
+				entering_state = function(self)
+					local node = story[self.node_id]
+					self:apply_background(node.bg)
+					local bg = world_object(bg_id)
+					bg.visible = true
+					bg.colorize = { r = 1, g = 1, b = 1, a = 1 }
 					self:hide_combat_sprites()
 					clear_text(text_main_id)
 					clear_text(text_choice_id)
@@ -867,13 +867,13 @@ local function build_director_fsm()
 						stop_on_exit = true,
 						play_options = { rewind = true, snap_to_start = true },
 					},
-					},
-					entering_state = function(self)
-						local node = story[self.node_id]
-						clear_text(text_main_id)
-						clear_text(text_choice_id)
-						clear_text(text_prompt_id)
-						clear_text(text_transition_id)
+				},
+				entering_state = function(self)
+					local node = story[self.node_id]
+					clear_text(text_main_id)
+					clear_text(text_choice_id)
+					clear_text(text_prompt_id)
+					clear_text(text_transition_id)
 					clear_text(text_results_id)
 					self:reset_text_colors()
 					local next_node = story[node.next]
@@ -960,13 +960,13 @@ local function build_director_fsm()
 						stop_on_exit = true,
 						play_options = { rewind = true, snap_to_start = true },
 					},
-					},
-					entering_state = function(self)
-						clear_text(text_main_id)
-						clear_text(text_choice_id)
-						clear_text(text_prompt_id)
-						clear_text(text_transition_id)
-						clear_text(text_results_id)
+				},
+				entering_state = function(self)
+					clear_text(text_main_id)
+					clear_text(text_choice_id)
+					clear_text(text_prompt_id)
+					clear_text(text_transition_id)
+					clear_text(text_results_id)
 					self:hide_combat_sprites()
 					local bg = world_object(bg_id)
 					bg.visible = true
@@ -1015,13 +1015,13 @@ local function build_director_fsm()
 						stop_on_exit = true,
 						play_options = { rewind = true, snap_to_start = true },
 					},
-					},
-					entering_state = function(self)
-						clear_text(text_main_id)
-						clear_text(text_choice_id)
-						clear_text(text_prompt_id)
-						clear_text(text_transition_id)
-					end,
+				},
+				entering_state = function(self)
+					clear_text(text_main_id)
+					clear_text(text_choice_id)
+					clear_text(text_prompt_id)
+					clear_text(text_transition_id)
+				end,
 				on = {
 					['timeline.end.' .. combat_fade_timeline_id] = {
 						go = function(self)
@@ -1030,12 +1030,12 @@ local function build_director_fsm()
 					},
 				},
 			},
-				combat_init = {
-					entering_state = function(self)
-						local node = story[self.node_id]
-						clear_text(text_transition_id)
-						clear_text(text_results_id)
-						self:reset_text_colors()
+			combat_init = {
+				entering_state = function(self)
+					local node = story[self.node_id]
+					clear_text(text_transition_id)
+					clear_text(text_results_id)
+					self:reset_text_colors()
 
 					local bg = world_object(bg_id)
 					bg.visible = false
@@ -1080,13 +1080,13 @@ local function build_director_fsm()
 					return '/combat_round'
 				end,
 			},
-				combat_round = {
-					entering_state = function(self)
-						local node = story[self.node_id]
-						clear_text(text_transition_id)
-						clear_text(text_results_id)
-						local bg = world_object(bg_id)
-						bg.visible = false
+			combat_round = {
+				entering_state = function(self)
+					local node = story[self.node_id]
+					clear_text(text_transition_id)
+					clear_text(text_results_id)
+					local bg = world_object(bg_id)
+					bg.visible = false
 					local monster = world_object(combat_monster_id)
 					monster.imgid = node.monster_imgid
 					monster.visible = true
@@ -1356,17 +1356,17 @@ local function build_director_fsm()
 					all_out.y = self.all_out_origin_y
 				end,
 			},
-					combat_results_setup = {
-						entering_state = function(self)
-							local node = story[self.node_id]
-							local rewards = self:resolve_combat_rewards(node)
-							$.emit('combat.end', 'world', { node_id = self.node_id, monster_imgid = node.monster_imgid })
-							self.just_finished_combat = true
-							self.last_combat_monster_imgid = node.monster_imgid
-							self:apply_effects(rewards)
+			combat_results_setup = {
+				entering_state = function(self)
+					local node = story[self.node_id]
+					local rewards = self:resolve_combat_rewards(node)
+					$.emit('combat.end', 'world', { node_id = self.node_id, monster_imgid = node.monster_imgid })
+					self.just_finished_combat = true
+					self.last_combat_monster_imgid = node.monster_imgid
+					self:apply_effects(rewards)
 
-						clear_text(text_main_id)
-						clear_text(text_choice_id)
+					clear_text(text_main_id)
+					clear_text(text_choice_id)
 					clear_text(text_prompt_id)
 					clear_text(text_transition_id)
 
@@ -1580,12 +1580,12 @@ local function build_director_fsm()
 					bg.colorize = { r = 1, g = 1, b = 1, a = 1 }
 				end,
 			},
-				dialogue = {
-					entering_state = function(self)
-						local node = story[self.node_id]
-						self:apply_background(node.bg)
-						world_object(bg_id).visible = true
-						self:reset_text_colors()
+			dialogue = {
+				entering_state = function(self)
+					local node = story[self.node_id]
+					self:apply_background(node.bg)
+					world_object(bg_id).visible = true
+					self:reset_text_colors()
 					if node.kind == 'dialogue_inline' then
 						self.pages = self.inline_pages
 					else
@@ -1597,6 +1597,8 @@ local function build_director_fsm()
 					self:update_dialogue_prompt()
 				end,
 				tick = function(self)
+					write('BLADIEBLAP', 100, 100, 1000, 10)
+
 					local main = world_object(text_main_id)
 					if main.is_typing then
 						main.type_next()
@@ -1632,12 +1634,12 @@ local function build_director_fsm()
 					},
 				},
 			},
-				ending = {
-					entering_state = function(self)
-						local node = story[self.node_id]
-						self:apply_background(node.bg)
-						world_object(bg_id).visible = true
-						self:reset_text_colors()
+			ending = {
+				entering_state = function(self)
+					local node = story[self.node_id]
+					self:apply_background(node.bg)
+					world_object(bg_id).visible = true
+					self:reset_text_colors()
 					clear_text(text_transition_id)
 					clear_text(text_choice_id)
 					clear_text(text_prompt_id)
@@ -1705,13 +1707,13 @@ local function build_director_fsm()
 					},
 				}
 			},
-				choice = {
-					entering_state = function(self)
-						local node = story[self.node_id]
-						self:apply_background(node.bg)
-						world_object(bg_id).visible = true
-						self:reset_text_colors()
-						self:setup_choice_menu(node)
+			choice = {
+				entering_state = function(self)
+					local node = story[self.node_id]
+					self:apply_background(node.bg)
+					world_object(bg_id).visible = true
+					self:reset_text_colors()
+					self:setup_choice_menu(node)
 				end,
 				tick = function(self)
 					local main = world_object(text_main_id)

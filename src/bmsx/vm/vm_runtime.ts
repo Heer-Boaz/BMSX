@@ -1,8 +1,10 @@
 import { $ } from '../core/engine_core';
 import { Service } from '../core/service';
 import { taskGate } from '../core/taskgate';
+import type { WorldConfiguration } from '../core/world';
 import { Input } from '../input/input';
 import { KeyModifier } from '../input/playerinput';
+import type { InputMap } from '../input/inputtypes';
 import type { LuaDefinitionInfo } from '../lua/lua_ast';
 import { LuaEnvironment } from '../lua/luaenvironment';
 import { LuaError, LuaRuntimeError, LuaSyntaxError } from '../lua/luaerrors';
@@ -20,14 +22,15 @@ import {
 } from '../lua/luavalue';
 import type { InputEvt, StorageService } from '../platform/platform';
 import { publishOverlayFrame } from '../render/editor/editor_overlay_queue';
-import type { LifeCycleHandlerName, Viewport, } from '../rompack/rompack';
+import type { BootArgs, LifeCycleHandlerName, Viewport, } from '../rompack/rompack';
 import { CanonicalizationType } from '../rompack/rompack';
+import type { RuntimeAssetBuildResult } from '../rompack/romloader';
 import { createIdentifierCanonicalizer } from '../lua/identifier_canonicalizer';
 import { clamp_fallback } from '../utils/clamp';
 import { BmsxVMApi } from './vm_api';
 import { TerminalMode } from './terminal_mode';
 import { VMRenderFacade } from './vm_render_facade';
-import type { VMFontVariant } from './font';
+import { VMFont, type VMFontVariant } from './font';
 import { createVMCartEditor, getSourceForChunk, type VMCartEditor, setExecutionStopHighlight, clearExecutionStopHighlights, } from './ide/vm_cart_editor';
 import { VM_TOGGLE_KEY, EDITOR_TOGGLE_GAMEPAD_BUTTONS, EDITOR_TOGGLE_KEY, GAME_PAUSE_KEY } from './ide/constants';
 import { clearNativeMemberCompletionCache } from './ide/intellisense';
@@ -49,6 +52,7 @@ import {
 import { BmsxVMStorage } from './storage';
 import type { BmsxVMRuntimeOptions, BmsxVMState, VMLuaBuiltinDescriptor, VMLuaMemberCompletion, LuaMarshalContext } from './types';
 import { getWorkspaceCachedSource } from './workspace_cache';
+import { applyWorkspaceOverridesToCart } from './workspace';
 import { LuaDebuggerController, type LuaDebuggerSessionMetrics } from '../lua/luadebugger';
 import { ide_state } from './ide/ide_state';
 import { getBasePipelineSpecOverrideForIdeOrTerminal, ideExtSpec, terminalExtSpec, vmExtSpec } from './vm_systems';
@@ -113,6 +117,12 @@ type DebuggerStepOrigin = { path: string; line: number; depth: number };
 
 export var api: BmsxVMApi; // Initialized in BmsxVMRuntime constructor
 
+type RuntimeInitParams = {
+	boot: BootArgs;
+	assets: RuntimeAssetBuildResult;
+	worldConfig: WorldConfiguration;
+};
+
 export class BmsxVMRuntime extends Service {
 	private static _instance: BmsxVMRuntime = null;
 	private static readonly LUA_SNAPSHOT_EXCLUDED_GLOBALS = new Set<string>(['print', 'type', 'tostring', 'tonumber', 'setmetatable', 'getmetatable', 'require', 'pairs', 'ipairs', 'serialize', 'deserialize', 'math', 'string', 'os', 'table', 'coroutine', 'debug', 'package', 'api',
@@ -130,6 +140,44 @@ export class BmsxVMRuntime extends Service {
 			throw new Error('[BmsxVMRuntime] Instance already exists.');
 		}
 		return new BmsxVMRuntime(options);
+	}
+
+	public static async init(params: RuntimeInitParams): Promise<void> {
+		const { boot, assets, worldConfig } = params;
+		const { rompack, payloads, cartOverlay, cartIndex } = assets;
+		await $.init({
+			rompack,
+			payloads,
+			cartOverlay,
+			worldConfig,
+			sndcontext: boot.sndcontext,
+			gainnode: boot.gainnode,
+			debug: boot.debug,
+			startingGamepadIndex: boot.startingGamepadIndex,
+			enableOnscreenGamepad: boot.enableOnscreenGamepad,
+			platform: boot.platform,
+			viewHost: boot.viewHost,
+		});
+
+		$.view.default_font = new VMFont();
+
+		const inputMappingPerPlayer = cartIndex.manifest.input ?? { 1: { keyboard: null, gamepad: null, pointer: null } as InputMap };
+		for (const playerIndexStr of Object.keys(inputMappingPerPlayer)) {
+			const playerIndex = parseInt(playerIndexStr, 10);
+			const inputMapping = inputMappingPerPlayer[playerIndex];
+			$.set_inputmap(playerIndex, inputMapping);
+		}
+
+		await applyWorkspaceOverridesToCart({ cart: $.cart, storage: $.platform.storage, includeServer: true });
+
+		const runtime = BmsxVMRuntime.createInstance({
+			playerIndex: boot.startingGamepadIndex ?? 1,
+			canonicalization: cartIndex.manifest.vm.canonicalization,
+			viewport: cartIndex.manifest.vm.viewport,
+		});
+
+		await runtime.boot();
+		$.start();
 	}
 
 	public static get instance(): BmsxVMRuntime {
@@ -672,7 +720,7 @@ export class BmsxVMRuntime extends Service {
 			if (this.hasCompletedInitialBoot) { // Subsequent boot: reset to fresh world
 				await $.reset_to_fresh_world();
 			}
-			api.cartdata($.rompack.cart.namespace);
+			api.cartdata($.cart.namespace);
 			this.bootLuaProgram();
 			this.hasCompletedInitialBoot = true;
 		}
@@ -819,7 +867,7 @@ export class BmsxVMRuntime extends Service {
 			return;
 		}
 		try {
-			if (Object.values($.rompack.cart.path2lua).length > 0) {
+			if (Object.values($.cart.path2lua).length > 0) {
 				if (this.luaUpdateFunction !== null) {
 					if (this.updateThread === null) {
 						this.updateThread = this.createLuaExecutionThread(this.luaUpdateFunction, [state.deltaSeconds]);
@@ -843,7 +891,7 @@ export class BmsxVMRuntime extends Service {
 					}
 				}
 			} else {
-				$.rompack.cart.update(state.deltaSeconds);
+				$.cart.update(state.deltaSeconds);
 			}
 		} catch (error) {
 			if (isLuaDebuggerPauseSignal(error)) {
@@ -983,7 +1031,7 @@ export class BmsxVMRuntime extends Service {
 	}
 
 	private async resetRuntimeToFreshState() {
-		const asset = $.rompack.cart.path2lua[$.rompack.cart.entry_path];
+		const asset = $.cart.path2lua[$.cart.entry_path];
 		this._luaPath = asset.source_path;
 		this.luaVmInitialized = false;
 		await this.boot();
@@ -1006,7 +1054,7 @@ export class BmsxVMRuntime extends Service {
 		// cooperation to restore.
 		const savedRuntimeFailed = snapshot.luaRuntimeFailed === true;
 
-		api.cartdata($.rompack.cart.namespace);
+		api.cartdata($.cart.namespace);
 		if (snapshot.storage !== undefined) {
 			this.storage.restore(snapshot.storage);
 		}
@@ -1052,7 +1100,7 @@ export class BmsxVMRuntime extends Service {
 		const previousChunkTables = this.captureChunkTables(binding);
 		const previousGlobals = this.captureGlobalStateForReload();
 		const interpreter = this.luaInterpreter;
-		const hotModuleId = $.rompack.cart.path2lua[binding].source_path;
+		const hotModuleId = $.cart.path2lua[binding].source_path;
 		interpreter.clearLastFaultEnvironment();
 		const results = interpreter.execute(params.source, binding);
 		this.luaJsBridge.wrapLuaExecutionResults(hotModuleId, results);
@@ -1100,7 +1148,7 @@ export class BmsxVMRuntime extends Service {
 
 	public reloadLuaProgramState(options: { runInit?: boolean; }): void {
 		const runInit = options.runInit !== false;
-		const binding = $.rompack.cart.path2lua[$.rompack.cart.entry_path];
+		const binding = $.cart.path2lua[$.cart.entry_path];
 		this._luaPath = binding.source_path;
 		if (!this.luaInterpreter) {
 			if (!this.bootLuaProgram()) {
@@ -1165,7 +1213,7 @@ export class BmsxVMRuntime extends Service {
 	}
 
 	private refreshLuaModulesOnResume(resumeModuleId: string): void {
-		const paths = Object.keys($.rompack.cart.path2lua);
+		const paths = Object.keys($.cart.path2lua);
 		for (let index = 0; index < paths.length; index += 1) {
 			const moduleId = paths[index];
 			if (resumeModuleId && moduleId === resumeModuleId) {
@@ -1245,7 +1293,7 @@ export class BmsxVMRuntime extends Service {
 		registerApiBuiltins(interpreter);
 		interpreter.setReservedIdentifiers(this.apiFunctionNames);
 
-		const moduleId = $.rompack.cart.path2lua[binding.source_path].source_path;
+		const moduleId = $.cart.path2lua[binding.source_path].source_path;
 		const results = interpreter.execute(params.source, binding.source_path);
 		this.luaJsBridge.wrapLuaExecutionResults(moduleId, results);
 		this.cacheChunkEnvironment(binding.source_path, moduleId);
@@ -1557,9 +1605,9 @@ export class BmsxVMRuntime extends Service {
 	}
 
 	private bootLuaProgram() {
-		const entryAsset = $.rompack.cart.path2lua[$.rompack.cart.entry_path];
+		const entryAsset = $.cart.path2lua[$.cart.entry_path];
 		if (!entryAsset) {
-			throw new Error(`[BmsxVMRuntime] Cannot boot Lua program: no entry asset found at path '${$.rompack.cart.entry_path}'.`);
+			throw new Error(`[BmsxVMRuntime] Cannot boot Lua program: no entry asset found at path '${$.cart.entry_path}'.`);
 		}
 		const path = entryAsset.source_path;
 		if (!path || path.length === 0) {
@@ -1588,7 +1636,7 @@ export class BmsxVMRuntime extends Service {
 		try {
 			registerApiBuiltins(interpreter);
 			interpreter.setReservedIdentifiers(this.apiFunctionNames);
-			const moduleId = $.rompack.cart.path2lua[path].source_path;
+			const moduleId = $.cart.path2lua[path].source_path;
 			const results = interpreter.execute(source, path);
 			this.luaJsBridge.wrapLuaExecutionResults(moduleId, results);
 			this.cacheChunkEnvironment(path, moduleId);
@@ -1894,7 +1942,7 @@ export class BmsxVMRuntime extends Service {
 	private cacheChunkEnvironment(path: string, moduleId?: string): void {
 		const environment = this.luaInterpreter.pathEnvironment;
 		const definitions = this.luaInterpreter.getChunkDefinitions(path);
-		const asset = $.rompack.cart.path2lua[path];
+		const asset = $.cart.path2lua[path];
 		const effectiveModuleId = moduleId ?? asset.source_path;
 		this.pruneRemovedChunkFunctionExports(path, environment, definitions, this.luaInterpreter.globalEnvironment);
 		this.installFunctionRedirectsForChunk(effectiveModuleId, environment, definitions);
@@ -1989,7 +2037,7 @@ export class BmsxVMRuntime extends Service {
 		if (this.luaModuleIndexBuilt) {
 			return;
 		}
-		const aliases = buildLuaModuleAliases($.rompack.cart);
+		const aliases = buildLuaModuleAliases($.cart);
 		this.luaModuleAliases.clear();
 		for (const [key, record] of aliases) {
 			this.luaModuleAliases.set(key, record);
@@ -2015,7 +2063,7 @@ export class BmsxVMRuntime extends Service {
 			const pending = packageLoaded.get(record.packageKey);
 			return pending === null ? true : pending;
 		}
-		const asset = $.rompack.cart.path2lua[record.path];
+		const asset = $.cart.path2lua[record.path];
 		const source = this.resourceSourceForChunk(asset.source_path);
 		this.luaModuleLoadingKeys.add(record.packageKey);
 		packageLoaded.set(record.packageKey, true);
@@ -2062,7 +2110,7 @@ export class BmsxVMRuntime extends Service {
 		const previousChunkTables = this.captureChunkTables(path);
 		const previousGlobals = this.captureGlobalStateForReload();
 		const source = sourceOverride ? sourceOverride : this.resourceSourceForChunk(path);
-		const asset = $.rompack.cart.path2lua[path];
+		const asset = $.cart.path2lua[path];
 		const moduleId = asset.source_path; // Stable ids for redirect caches
 		const results = interpreter.execute(source, path);
 		this.luaJsBridge.wrapLuaExecutionResults(moduleId, results);

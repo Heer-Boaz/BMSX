@@ -6,12 +6,19 @@ import { InputMap } from '../input/inputtypes';
 
 export const GAME_FPS = 50;
 
+export type CartridgeLayerId = 'system' | 'cart' | 'overlay';
+export type CartridgePayloads = Partial<Record<CartridgeLayerId, ArrayBuffer>>;
+export type BmsxCartridgeBlob = ArrayBuffer | Uint8Array;
+export type BmsxCartridge = ArrayBuffer;
+
+export type RomAssetOp = 'delete';
+
 export interface RomPack {
-	rom: ArrayBuffer; // The binary buffer of the ROM pack, containing all assets. ALWAYS PRESENT DURING GAME!
+	// Runtime asset pack resolved for the engine. Raw cartridge bytes live outside of this structure.
 	img: id2imgres; // Reference to the loaded image assets in the ROM pack, including metadata and the cached binary payload. ALWAYS PRESENT DURING GAME!
 	audio: id2res; // Reference to the loaded audio assets in the ROM pack, including metadata. ALWAYS PRESENT DURING GAME!
 	model: id2model; // Reference to the loaded model assets in the ROM pack, including metadata. ALWAYS PRESENT DURING GAME!
-	cart: BmsxCartridge; // Cartridge data bundled with the ROM pack, including Lua assets.
+	cart: CartRuntime; // Cartridge data bundled with the ROM pack, including Lua assets.
 	data: id2data; // Reference to the loaded data assets in the ROM pack, including metadata. ALWAYS PRESENT DURING GAME!
 	audioevents: id2audioevent; // Reference to the loaded audio event assets in the ROM pack, including metadata. ALWAYS PRESENT DURING GAME!
 	project_root_path: string; // Workspace-relative cart root path for resolving filesystem writes.
@@ -34,6 +41,7 @@ export type asset_id = string;
 export interface RomAsset {
 	resid: asset_id; // The resource ID of the asset.
 	type: asset_type; // The type of the asset.
+	op?: RomAssetOp; // Optional patch operation for this asset.
 	start?: number; // The optional start offset of the asset in the ROM. (e.g., atlassed images don't have a start offset, as they are part of an atlas)
 	end?: number; // The optional end offset of the asset in the ROM. (e.g., atlassed images don't have an end offset, as they are part of an atlas)
 	metabuffer_start?: number; // Optional start offset of binary-encoded per-asset metadata in the buffer
@@ -47,6 +55,7 @@ export interface RomAsset {
 	source_path?: string; // Relative filesystem path for the asset when applicable (e.g., Lua source files).
 	normalized_source_path?: string; // Normalized absolute-ish source path for this asset.
 	update_timestamp?: number; // Last update timestamp for the asset, used for dev hot-reload.
+	payload_id?: CartridgeLayerId; // Cartridge layer backing this asset's raw bytes.
 }
 
 export interface RomImgAsset extends RomAsset {
@@ -82,11 +91,19 @@ export type LuaId = asset_id;
 
 export type RomManifest = CartManifest;
 
+export type CartridgeIndex = {
+	assets: RomAsset[];
+	projectRootPath: string;
+	manifest: RomManifest;
+};
+
 /**
  * Arguments passed from the bootloader to the game constructor.
  */
 export interface BootArgs {
-	rompack: RomPack;
+	cartridge: BmsxCartridge;
+	engineAssets: BmsxCartridge;
+	workspaceOverlay?: BmsxCartridge;
 	sndcontext?: AudioContext;
 	gainnode?: GainNode;
 	debug?: boolean;
@@ -391,11 +408,16 @@ export type LifeCycleHandlerName = keyof LifeCycleHandlers;
 
 export type LifeCycleHandlerManifest = Partial<Record<LifeCycleHandlerName, string>>;
 
-export type BmsxCartridge = LifeCycleHandlers & {
+export type CartRuntime = LifeCycleHandlers & {
 	path2lua: Record<string, RomLuaAsset>; // Mapping from normalized source paths to Lua assets for fast lookup.
 	entry_path: string;
 	namespace: string;
 }
+
+export type CartOverlay = {
+	cart: CartRuntime;
+	deletes: string[];
+};
 
 export type CartManifest = {
 	title?: string;

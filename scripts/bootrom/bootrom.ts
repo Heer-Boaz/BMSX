@@ -1,5 +1,5 @@
 // IMPORTANT: IMPORTS TO `bmsx/blabla` ARE NOT ALLOWED!!!!!! THIS WILL CAUSE PROBLEMS WITH .GLSL FILES BEING INCLUDED AND THE ROMPACKER CANNOT HANDLE THIS!!!!!
-import type { BootArgs, RomPack } from '../../src/bmsx/rompack/rompack';
+import type { BootArgs } from '../../src/bmsx/rompack/rompack';
 import { constructPlatformFromViewHostHandle } from '../../src/bmsx_hostplatform/platform';
 import { createAudioContext, startAudioOnIos } from './bootaudio';
 import type * as _BMSX from '../../src/bmsx/index';
@@ -13,8 +13,8 @@ declare global {
 		getRomFromUrlParameter: () => string;
 		getRomNameFromUrlParameter: () => string;
 		bootrom: {
-			cart: RomPack;
-			engine_assets: RomPack;
+			cartridge: ArrayBuffer;
+			engineAssets: ArrayBuffer;
 			debug: boolean;
 			sndcontext: AudioContext;
 			snd_unlocked: boolean;
@@ -22,8 +22,8 @@ declare global {
 			theshowsover: boolean;
 			startingGamepadIndex: number;
 			enableOnscreenGamepad: boolean;
-			loadCart: (url: string) => Promise<RomPack>;
-			loadEngineAssets: (url: string) => Promise<RomPack>;
+			loadCart: (url: string) => Promise<ArrayBuffer>;
+			loadEngineAssets: (url: string) => Promise<ArrayBuffer>;
 			start: () => Promise<void>;
 			outputError: (errormsg: string) => void;
 			resizeHandler: () => void;
@@ -41,7 +41,7 @@ declare global {
 
 /**
  * Function that initializes the boot ROM and starts the game.
- * @param {RomPack} rom - The cart ROM pack.
+ * @param {ArrayBuffer} rom - The cart ROM blob.
  * @param {AudioContext} sndcontext - The audio context for the boot ROM.
  * @param {GainNode} gainnode - The gain node for the boot ROM.
  * @returns {void}
@@ -54,29 +54,29 @@ export const bootrom = {
 	/**
 	 * This section of code defines the boot ROM object and its properties and methods.
 	 *
-	 * @property {RomPack} cart - The cart ROM pack.
-	 * @property {RomPack} engine_assets - The engine asset pack.
+	 * @property {ArrayBuffer} cartridge - The cart ROM blob.
+	 * @property {ArrayBuffer} engineAssets - The engine asset blob.
 	 * @property {boolean} debug - A flag indicating whether debug mode is enabled.
 	 * @property {AudioContext} sndcontext - The audio context for the boot ROM.
 	 * @property {GainNode} gainnode - The gain node for the boot ROM.
 	 * @property {boolean} theshowsover - A flag indicating whether the boot animation has ended.
 	 * @property {boolean} snd_unlocked - A flag indicating whether the audio has been unlocked.
 	 *
-	 * @function loadCart - Asynchronously loads a cart ROM pack from the specified URL.
+	 * @function loadCart - Asynchronously loads a cart ROM blob from the specified URL.
 	 * @param {string} url - The URL of the ROM pack to load.
-	 * @returns {Promise<RomPack>} A Promise that resolves to the loaded ROM pack, or null if the loading failed.
+	 * @returns {Promise<ArrayBuffer>} A Promise that resolves to the loaded ROM blob, or null if the loading failed.
 	 *
-	 * @function loadEngineAssets - Asynchronously loads the engine asset pack.
+	 * @function loadEngineAssets - Asynchronously loads the engine asset blob.
 	 * @param {string} url - The URL of the asset pack to load.
-	 * @returns {Promise<RomPack>} A Promise that resolves to the loaded asset pack.
+	 * @returns {Promise<ArrayBuffer>} A Promise that resolves to the loaded asset blob.
 	 *
 	 * @function start - Starts the game using the loaded cart and engine assets.
 	 * @returns {Promise<void>} Resolves when startup finishes.
 	 *
 	* @var {boolean} snd_unlocked - A flag indicating whether the audio has been unlocked.
 	 */
-	cart: null as RomPack,
-	engine_assets: null as RomPack,
+	cartridge: null as ArrayBuffer,
+	engineAssets: null as ArrayBuffer,
 	debug: false,
 	sndcontext: null as AudioContext,
 	snd_unlocked: false,
@@ -145,7 +145,8 @@ export const bootrom = {
 				throw new Error('[bootrom] Platform not initialized before starting the game.');
 			}
 			return Promise.resolve(entry({
-				rompack: bootrom.cart,
+				cartridge: bootrom.cartridge,
+				engineAssets: bootrom.engineAssets,
 				sndcontext: bootrom.sndcontext,
 				gainnode: bootrom.gainnode,
 				debug: this.debug,
@@ -155,8 +156,8 @@ export const bootrom = {
 				viewHost: bootrom.viewHost,
 			} as BootArgs)).then(() => {
 				wrapup();
-				bootrom.cart = undefined;
-				delete bootrom.cart;
+				bootrom.cartridge = undefined;
+				delete bootrom.cartridge;
 			});
 		} catch (err) {
 			throw err;
@@ -168,7 +169,7 @@ export const bootrom = {
 	 * @param url - The URL of the ROM pack to load.
 	 * @returns A Promise that resolves to the loaded ROM pack, or null if the loading failed.
 	 */
-	async loadCart(url: string): Promise<RomPack> {
+	async loadCart(url: string): Promise<ArrayBuffer> {
 		if (typeof window !== 'undefined') {
 			window.onunhandledrejection = (event: PromiseRejectionEvent) => {
 				event.preventDefault();
@@ -207,7 +208,7 @@ export const bootrom = {
 		};
 
 		return new Promise((resolve, reject) => {
-			let loadedRomPack: RomPack = null;
+			let loadedRomBlob: ArrayBuffer = null;
 			let romlabel_bloburl: string = null;
 
 			function replaceBMSXImgWithRomLabel() {
@@ -233,23 +234,15 @@ export const bootrom = {
 			}
 
 			fetchRom()
-				.then((response_array: ArrayBuffer) => splitRomLabel(response_array))
-				.then((ziprom_and_label: { zipped_rom: ArrayBuffer, romlabel?: ArrayBuffer }) => {
-					if (ziprom_and_label.romlabel) {
-						romlabel_bloburl = getImageUrlFromBuffer(ziprom_and_label.romlabel);
+				.then((response_array: ArrayBuffer) => {
+					const split = splitRomLabel(response_array);
+					if (split.romlabel) {
+						romlabel_bloburl = getImageUrlFromBuffer(split.romlabel);
 						replaceBMSXImgWithRomLabel();
 					}
-					// @ts-ignore
-					return pako.inflate(ziprom_and_label.zipped_rom).buffer;
-				})
-				.then(rom => {
-					const engine = globalThis as typeof globalThis & { bmsx: BMSX };
-					return engine.bmsx.loadRomPackFromBuffer(rom);
-				})
-				.then((loadResult: any) => {
-					loadedRomPack = loadResult;
-					bootrom.cart = loadedRomPack;
-					return awaitBootComplete().then(() => {  // Return the promise and chain the replace after animation ends
+					loadedRomBlob = response_array;
+					bootrom.cartridge = loadedRomBlob;
+					return awaitBootComplete().then(() => {
 						replaceBMSXImgWithRomLabel();
 					});
 				})
@@ -257,7 +250,7 @@ export const bootrom = {
 					setLoaderText('Press any key, button or touch screen to start...');
 					return awaitPressedAnyKeyPromise();
 				})
-				.then(() => resolve(loadedRomPack))
+				.then(() => resolve(loadedRomBlob))
 				.catch(err => {
 					reject(err);
 					// if (typeof err === 'string') {
@@ -272,18 +265,12 @@ export const bootrom = {
 		});
 	},
 
-	async loadEngineAssets(url: string): Promise<RomPack> {
+	async loadEngineAssets(url: string): Promise<ArrayBuffer> {
 		const response = await fetchBuffer(url).catch(err => {
 			throw new Error(`Error while fetching engine assets: "${err.message}"`);
 		});
-		const split = splitRomLabel(response);
-		// @ts-ignore
-		const inflated = pako.inflate(split.zipped_rom).buffer;
-		const engine = globalThis as typeof globalThis & { bmsx: BMSX };
-		const assets = await engine.bmsx.loadRomPackFromBuffer(inflated);
-		engine.bmsx.setEngineAssets(assets);
-		bootrom.engine_assets = assets;
-		return assets;
+		bootrom.engineAssets = response;
+		return response;
 	},
 
 	outputError(error: Error | string) {

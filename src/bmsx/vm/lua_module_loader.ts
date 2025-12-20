@@ -1,4 +1,4 @@
-import type { BmsxCartridge } from '../rompack/rompack';
+import type { CartRuntime } from '../rompack/rompack';
 
 export type LuaRequireModuleRecord = {
 	packageKey: string;
@@ -52,7 +52,7 @@ function registerLuaModuleAliases(
 	register(`${baseDots}.lua`);
 }
 
-export function buildLuaModuleAliases(cart: BmsxCartridge): Map<string, LuaRequireModuleRecord> {
+export function buildLuaModuleAliases(cart: CartRuntime): Map<string, LuaRequireModuleRecord> {
 	const aliases = new Map<string, LuaRequireModuleRecord>();
 	const luaAssets = cart.path2lua;
 	for (const assetId of Object.keys(luaAssets)) {

@@ -1,7 +1,7 @@
 import { $ } from '../core/engine_core';
 import { AudioPlaybackParams, AudioService, AudioClipHandle, VoiceHandle, RngService } from '../platform';
 import { Registry } from '../core/registry';
-import { asset_id, AudioMeta, AudioType, AudioTypes, id2res, RegisterablePersistent } from '../rompack/rompack';
+import { asset_id, AudioMeta, AudioType, AudioTypes, CartridgeLayerId, id2res, RegisterablePersistent, RomAsset } from '../rompack/rompack';
 
 export type VoiceId = number;
 type ModulationInput = RandomModulationParams | ModulationParams;
@@ -56,11 +56,12 @@ export interface ModulationPresetResolver {
 	resolve(key: asset_id): RandomModulationParams | ModulationParams;
 }
 
-interface RomAudioResource {
+type RomAudioResource = RomAsset & {
 	start: number;
 	end: number;
 	audiometa: AudioMeta;
-}
+	payload_id: CartridgeLayerId;
+};
 
 interface PausedSnapshot {
 	id: asset_id;
@@ -220,7 +221,8 @@ export class SoundMaster implements RegisterablePersistent {
 			if (!meta) {
 				throw new Error(`[SoundMaster] Audio resource '${String(key)}' is missing audio metadata.`);
 			}
-			map[key] = { start, end, audiometa: meta };
+			const payload_id = (value as { payload_id?: CartridgeLayerId }).payload_id as CartridgeLayerId;
+			map[key] = { ...value, start, end, audiometa: meta, payload_id };
 		}
 		return map;
 	}
@@ -261,11 +263,7 @@ export class SoundMaster implements RegisterablePersistent {
 		if (!resource) {
 			throw new Error(`SoundMaster: missing track resource for ${String(id)}`);
 		}
-		if (!$.rompack) {
-			throw new Error('SoundMaster: rompack not loaded.');
-		}
-		const rom = $.rompack.rom;
-		const slice = rom.slice(resource.start, resource.end);
+		const slice = $.getAssetPayload(resource);
 		const promise = this.decode(slice)
 			.then(clip => {
 				this.clips[id] = clip;

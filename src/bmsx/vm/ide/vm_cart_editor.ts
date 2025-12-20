@@ -1958,7 +1958,7 @@ export function commitRename(payload: RenameCommitPayload): RenameCommitResult {
 }
 
 export function findResourceDescriptorForChunk(path: string): VMResourceDescriptor | null {
-	const asset = $.rompack.cart.path2lua[path];
+	const asset = $.cart.path2lua[path];
 	return asset ? { asset_id: asset.resid, path: asset.normalized_source_path, type: asset.type } : null;
 }
 

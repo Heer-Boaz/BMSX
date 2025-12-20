@@ -2,10 +2,9 @@ import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
-import { inflate } from 'pako';
 import { createCanvas, Image, loadImage } from 'canvas';
 
-import { type BootArgs, type RomPack } from '../../../src/bmsx/rompack/rompack';
+import { type BootArgs } from '../../../src/bmsx/rompack/rompack';
 import { HeadlessPlatformServices } from '../../../src/bmsx_hostplatform/headless/platform_headless';
 import { CLIPlatformServices } from '../../../src/bmsx_hostplatform/cli/platform_cli';
 import type { Platform, InputEvt } from '../../../src/bmsx_hostplatform/platform';
@@ -430,48 +429,6 @@ async function readRomFile(filePath: string): Promise<ArrayBuffer> {
 	}
 }
 
-function splitPng(blob: ArrayBuffer): { png?: ArrayBuffer; rest: ArrayBuffer } {
-	const u8 = new Uint8Array(blob);
-	if (
-		u8[0] !== 0x89 || u8[1] !== 0x50 || u8[2] !== 0x4E || u8[3] !== 0x47 ||
-		u8[4] !== 0x0D || u8[5] !== 0x0A || u8[6] !== 0x1A || u8[7] !== 0x0A
-	) {
-		return { rest: blob };
-	}
-	let p = 8;
-	while (p + 8 <= u8.length) {
-		const len = (u8[p] << 24) | (u8[p + 1] << 16) | (u8[p + 2] << 8) | u8[p + 3];
-		p += 4;
-		const type = (u8[p] << 24) | (u8[p + 1] << 16) | (u8[p + 2] << 8) | u8[p + 3];
-		p += 4;
-		const end = p + len + 4;
-		if (type === 0x49454E44) {
-			const png = u8.slice(0, end).buffer;
-			const rest = u8.slice(end).buffer;
-			return { png, rest };
-		}
-		p = end;
-	}
-	throw new Error('PNG IEND chunk not found');
-}
-
-function splitRomLabel(blob: ArrayBuffer): { zipped_rom: ArrayBuffer; romlabel?: ArrayBuffer } {
-	const { png, rest } = splitPng(blob);
-	if (png) {
-		return { zipped_rom: rest, romlabel: png };
-	}
-	return { zipped_rom: blob, romlabel: undefined };
-}
-
-async function loadRomPack(arrayBuffer: ArrayBuffer): Promise<RomPack> {
-	const zipped = splitRomLabel(arrayBuffer);
-	const zippedView = new Uint8Array(zipped.zipped_rom);
-	const inflatedBytes = inflate(zippedView);
-	const romBuffer = inflatedBytes.buffer.slice(inflatedBytes.byteOffset, inflatedBytes.byteOffset + inflatedBytes.byteLength);
-	const globals = globalThis as BootGlobals & { bmsx: EngineNamespace };
-	return globals.bmsx.loadRomPackFromBuffer(romBuffer);
-}
-
 async function scheduleInputTimelineFromFile(filePath: string, frameIntervalMs: number, postInput: (evt: InputEvt) => void, logger: (msg: string) => void): Promise<void> {
 	const resolved = path.resolve(filePath);
 	const content = await fs.readFile(resolved, 'utf8');
@@ -635,11 +592,8 @@ async function main(): Promise<void> {
 		: path.join(romDirectory, 'engine.assets.rom');
 	console.log(`[bootrom:${__BOOTROM_TARGET__}] Loading engine assets: ${engineAssetsPath}`);
 	const engineAssetsBuffer = await readRomFile(engineAssetsPath);
-	const engineAssets = await loadRomPack(engineAssetsBuffer);
-	runtime.setEngineAssets(engineAssets);
 
 	const buffer = await readRomFile(romPath);
-	const activeRompack = await loadRomPack(buffer);
 	const workspaceRoot = path.resolve(path.dirname(romPath), '..');
 	installWorkspaceFetchBridge(workspaceRoot);
 
@@ -669,7 +623,8 @@ async function main(): Promise<void> {
 	}, ttlMs);
 
 	const bootArgs: BootArgs = {
-		rompack: activeRompack,
+		cartridge: buffer,
+		engineAssets: engineAssetsBuffer,
 		platform,
 		viewHost: platform.gameviewHost,
 	};

@@ -1,4 +1,4 @@
-import { $, BFont, BGamepadButton, World, BootArgs, GamepadInputMapping, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, StateMachineBlueprint, build_fsm, type State, WorldConfiguration } from 'bmsx';
+import { $, BFont, BGamepadButton, World, BootArgs, GamepadInputMapping, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, StateMachineBlueprint, build_fsm, type State, WorldConfiguration, buildRuntimeAssets } from 'bmsx';
 import { quiz } from './quiz';
 import { BitmapId } from './resourceids';
 import { sint } from './sint';
@@ -6,7 +6,7 @@ import { sint } from './sint';
 const _global = (window || globalThis) as { h406A?: (args: BootArgs) => Promise<void> };
 
 
-_global['h406A'] = (args: BootArgs): Promise<void> => {
+_global['h406A'] = async (args: BootArgs): Promise<void> => {
 	const { platform } = args;
 	if (!platform) {
 		throw new Error('[Bootloader:sint2024] Platform services not provided. Ensure the host injects a Platform instance before starting the game.');
@@ -16,8 +16,15 @@ _global['h406A'] = (args: BootArgs): Promise<void> => {
 	if (!viewHost) {
 		throw new Error('[Bootloader:sint2024] View host not provided by Platform.');
 	}
-	return $.init({
-		rompack: args.rompack,
+	const assets = await buildRuntimeAssets({
+		cartridge: args.cartridge,
+		engineAssets: args.engineAssets,
+		workspaceOverlay: args.workspaceOverlay,
+	});
+	await $.init({
+		rompack: assets.rompack,
+		payloads: assets.payloads,
+		cartOverlay: assets.cartOverlay,
 		worldConfig,
 		sndcontext: args.sndcontext,
 		gainnode: args.gainnode,
@@ -26,12 +33,11 @@ _global['h406A'] = (args: BootArgs): Promise<void> => {
 		enableOnscreenGamepad: args.enableOnscreenGamepad,
 		platform,
 		viewHost,
-	}).then(() => {
-		// set input map previously done in do_one_time_game_init
-		$.set_inputmap(1, { keyboard: keyboardInputMapping, gamepad: gamepadInputMapping, });
-		$.view.default_font = new BFont(BitmapId);
-		$.start();
 	});
+	// set input map previously done in do_one_time_game_init
+	$.set_inputmap(1, { keyboard: keyboardInputMapping, gamepad: gamepadInputMapping, });
+	$.view.default_font = new BFont(BitmapId);
+	$.start();
 };
 
 const actions = ['up', 'right', 'down', 'left', 'a', 'b'] as const;
