@@ -873,6 +873,8 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		this.textures['_atlas_primary'] = fallback; // Start with fallback to avoid undefined states and race conditions
 		this.textures['_atlas_secondary'] = fallback;
 		this.textures['_atlas_fallback'] = fallback;
+		this._primaryAtlasIndex = null;
+		this._secondaryAtlasIndex = null;
 		const engineAtlasName = generateAtlasName(ENGINE_ATLAS_INDEX);
 		const engineAtlas = $.assets.img[engineAtlasName];
 		if (!engineAtlas) {
