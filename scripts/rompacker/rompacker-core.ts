@@ -1985,4 +1985,3 @@ export let LUA_CANONICALIZATION: CanonicalizationType = 'none';
 export function setLuaCanonicalization(type: CanonicalizationType): void {
 	LUA_CANONICALIZATION = type;
 }
-
