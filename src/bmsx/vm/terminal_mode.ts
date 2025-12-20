@@ -419,7 +419,9 @@ export class TerminalMode {
 		try {
 			let results: LuaValue[] = [];
 			try {
-				results = interpreter.execute(source, 'console');
+				const chunk = interpreter.compileChunk(source, 'console');
+				interpreter.loadChunk(chunk);
+				results = interpreter.executeChunk(chunk);
 			}
 			catch (error) {
 				throw error;

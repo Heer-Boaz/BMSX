@@ -1215,7 +1215,9 @@ export class BmsxVMRuntime extends Service {
 		const interpreter = this.luaInterpreter;
 		const hotModuleId = $.luaSources.path2lua[binding].source_path;
 		interpreter.clearLastFaultEnvironment();
-		const results = interpreter.execute(params.source, binding);
+		const chunk = interpreter.compileChunk(params.source, binding);
+		interpreter.loadChunk(chunk);
+		const results = interpreter.executeChunk(chunk);
 		this.luaJsBridge.wrapLuaExecutionResults(hotModuleId, results);
 		this.cacheChunkEnvironment(binding, hotModuleId);
 		this.restoreChunkState(interpreter.pathEnvironment, previousChunkState);
@@ -1402,7 +1404,9 @@ export class BmsxVMRuntime extends Service {
 		this.assignInterpreter(interpreter);
 
 		const moduleId = $.luaSources.path2lua[binding.source_path].source_path;
-		const results = interpreter.execute(params.source, binding.source_path);
+		const chunk = interpreter.compileChunk(params.source, binding.source_path);
+		interpreter.loadChunk(chunk);
+		const results = interpreter.executeChunk(chunk);
 		this.luaJsBridge.wrapLuaExecutionResults(moduleId, results);
 		this.cacheChunkEnvironment(binding.source_path, moduleId);
 		this.luaVmInitialized = true;
@@ -1738,7 +1742,9 @@ export class BmsxVMRuntime extends Service {
 
 		try {
 			const moduleId = $.luaSources.path2lua[path].source_path;
-			const results = interpreter.execute(source, path);
+			const chunk = interpreter.compileChunk(source, path);
+			interpreter.loadChunk(chunk);
+			const results = interpreter.executeChunk(chunk);
 			this.luaJsBridge.wrapLuaExecutionResults(moduleId, results);
 			this.cacheChunkEnvironment(path, moduleId);
 			this.luaVmInitialized = true;
@@ -2173,7 +2179,9 @@ export class BmsxVMRuntime extends Service {
 		this._luaPath = record.path;
 		try {
 			const moduleId = asset.source_path; // Keep redirects aligned with source paths
-			const results = interpreter.execute(source, record.path);
+			const chunk = interpreter.compileChunk(source, record.path);
+			interpreter.loadChunk(chunk);
+			const results = interpreter.executeChunk(chunk);
 			this.luaJsBridge.wrapLuaExecutionResults(moduleId, results);
 			this.cacheChunkEnvironment(record.path, moduleId);
 			const moduleValue = results.length > 0 && results[0] !== null ? results[0] : true;
@@ -2214,7 +2222,9 @@ export class BmsxVMRuntime extends Service {
 		const source = sourceOverride ? sourceOverride : this.resourceSourceForChunk(path);
 		const asset = $.luaSources.path2lua[path];
 		const moduleId = asset.source_path; // Stable ids for redirect caches
-		const results = interpreter.execute(source, path);
+		const chunk = interpreter.compileChunk(source, path);
+		interpreter.loadChunk(chunk);
+		const results = interpreter.executeChunk(chunk);
 		this.luaJsBridge.wrapLuaExecutionResults(moduleId, results);
 		this.cacheChunkEnvironment(path, moduleId);
 		if (!sharedWithEntry) {
