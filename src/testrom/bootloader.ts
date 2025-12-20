@@ -1,4 +1,4 @@
-import { BFont, BGamepadButton, BootArgs, GamepadInputMapping, KeyboardButton, KeyboardInputMapping, Input, $, WorldConfiguration, buildRuntimeAssets } from 'bmsx';
+import { BFont, BGamepadButton, BootArgs, GamepadInputMapping, KeyboardButton, KeyboardInputMapping, Input, $, WorldConfiguration } from 'bmsx';
 import { createTestromModule } from './worldmodule';
 import { BitmapId } from './resourceids';
 // Ensure FSM blueprint is registered
@@ -21,15 +21,10 @@ globalTarget.h406A = async (args: BootArgs): Promise<any> => {
 	}
 	const worldConfiguration: WorldConfiguration = { viewportSize: { width: 320, height: 240 }, fsmId: 'testrom_world_fsm', modules: [createTestromModule()] };
 
-	const assets = await buildRuntimeAssets({
-		cartridge: args.cartridge,
-		engineAssets: args.engineAssets,
-		workspaceOverlay: args.workspaceOverlay,
-	});
 	await $.init({
-		rompack: assets.rompack,
-		payloads: assets.payloads,
-		cartOverlay: assets.cartOverlay,
+		engineRom: args.engineAssets,
+		cartridge: args.cartridge,
+		workspaceOverlay: args.workspaceOverlay,
 		worldConfig: worldConfiguration,
 		sndcontext: args.sndcontext,
 		gainnode: args.gainnode,
@@ -41,7 +36,6 @@ globalTarget.h406A = async (args: BootArgs): Promise<any> => {
 	});
 	$.view.default_font = new BFont(BitmapId);
 	$.set_inputmap(1, { keyboard: keyboardInputMapping, gamepad: gamepadInputMapping, pointer: Input.clonePointerMapping() });
-	$.start();
 };
 
 const actions = ['up', 'right', 'down', 'left', 'panleft', 'panright', 'switch_camera', 'bla', 'blap', 'moveforward', 'movebackward', 'turnleft', 'turnright', 'rotateleft', 'rotateright', 'panup', 'pandown', 'pitchup', 'pitchdown', 'toggleprojection', 'fire'] as const;

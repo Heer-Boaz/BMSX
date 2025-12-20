@@ -132,11 +132,11 @@ export class SpriteComponent extends Component<WorldObject> {
 			return;
 		}
 
-		const entry = $.rompack.img[id];
+		const entry = $.assets.img[id];
 		if (!entry) {
 			const ownerId = this.parent.id;
 			const componentId = this.id;
-			throw new Error(`[SpriteComponent] Sprite asset '${id}' not found in rompack (object='${ownerId}', component='${componentId}').`);
+			throw new Error(`[SpriteComponent] Sprite asset '${id}' not found in assets (object='${ownerId}', component='${componentId}').`);
 		}
 		const imgmeta = entry['imgmeta'];
 		if (!imgmeta) {

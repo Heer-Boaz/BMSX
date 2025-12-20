@@ -420,7 +420,7 @@ export class TextureManager implements RegisterablePersistent {
 		const imgmeta = romImgAsset.imgmeta;
 		if (!source && imgmeta.atlassed) {
 			const atlasKey = generateAtlasName(imgmeta.atlasid ?? 0);
-			const atlasAsset = $.rompack.img[atlasKey];
+			const atlasAsset = $.assets.img[atlasKey];
 			const atlas = atlasAsset?._imgbin as ImageBitmap;
 			if (!atlas) throw new Error(`Texture atlas image not found for atlas ID ${imgmeta.atlasid}`);
 			const coords = imgmeta.texcoords;

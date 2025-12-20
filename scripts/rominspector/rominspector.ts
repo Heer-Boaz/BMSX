@@ -9,7 +9,7 @@ import * as pako from 'pako';
 import { PNG } from 'pngjs';
 import type { asset_type, AudioMeta, GLTFModel, ImgMeta, RomAsset, RomMeta } from '../../src/bmsx/rompack/rompack';
 import { decodeBinary } from '../../src/bmsx/serializer/binencoder';
-import { getZippedRomAndRomLabelFromBlob, loadAssetList, loadModelFromBuffer as loadGLTFModelFromBuffer, parseMetaFromBuffer, loadRomPackFromBuffer } from '../../src/bmsx/rompack/romloader';
+import { getZippedRomAndRomLabelFromBlob, loadAssetList, loadModelFromBuffer as loadGLTFModelFromBuffer, parseMetaFromBuffer, loadRuntimeAssetsFromBuffer } from '../../src/bmsx/rompack/romloader';
 import { generateAtlasName } from '../rompacker/atlasbuilder';
 import { asciiWaveBraille, generateBrailleAsciiArt, generatePixelPerfectAsciiArt, parseWav, renderBufferBar, renderSummaryBar } from './asciiart';
 
@@ -553,7 +553,7 @@ async function main() {
 					if (!rendered) {
 						// Fallback: reconstruct via ROM loader (populates RomImgAsset._imgbin)
 						try {
-							const rom = await loadRomPackFromBuffer(
+							const rom = await loadRuntimeAssetsFromBuffer(
 								// @ts-ignore
 								rombin as any,
 								{ loadImageFromBuffer: async (ab: ArrayBuffer) => PNG.sync.read(Buffer.from(ab.slice(0))) }

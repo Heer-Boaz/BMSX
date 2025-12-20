@@ -160,7 +160,7 @@ export function initializeVMCartEditor(viewport: Viewport): void {
 	ide_state.fontVariant = runtime.activeIdeFontVariant;
 	constants.setIdeThemeVariant(constants.DEFAULT_THEME);
 	ide_state.themeVariant = constants.getActiveIdeThemeVariant();
-	ide_state.canonicalization = $.rompack.canonicalization;
+	ide_state.canonicalization = $.assets.canonicalization;
 	ide_state.caseInsensitive = ide_state.canonicalization !== 'none';
 	ide_state.preMutationSource = null;
 	applyViewportSize(viewport);
@@ -172,7 +172,7 @@ export function initializeVMCartEditor(viewport: Viewport): void {
 	ide_state.resourceSearchField = createInlineTextField();
 	ide_state.lineJumpField = createInlineTextField();
 	ide_state.createResourceField = createInlineTextField();
-	initializeWorkspaceStorage($.rompack.project_root_path);
+	initializeWorkspaceStorage($.assets.project_root_path);
 	applySearchFieldText(ide_state.searchQuery, true);
 	applySymbolSearchFieldText(ide_state.symbolSearchQuery, true);
 	applyResourceSearchFieldText(ide_state.resourceSearchQuery, true);
@@ -206,7 +206,7 @@ export function initializeVMCartEditor(viewport: Viewport): void {
 		characterAdvance: (char) => ide_state.font.advance(char),
 		get lineHeight(): number { return ide_state.font.lineHeight; },
 		getActiveCodeTabContext: () => getActiveCodeTabContext(),
-		resolveHoverPath: (ctx: CodeTabContext) => ctx.descriptor?.path,
+		resolveHoverPath: (ctx: CodeTabContext) => (ctx ? ctx.descriptor.path : '<anynomous>'), // TODO: Still needed?
 		getSemanticDefinitions: () => getActiveSemanticDefinitions(),
 		getLuaModuleAliases: (path) => getLuaModuleAliases(path),
 		getMemberCompletionItems: (request) => buildMemberCompletionItems(request),
@@ -251,10 +251,7 @@ export function initializeVMCartEditor(viewport: Viewport): void {
 }
 
 export function getSourceForChunk(path: string): string {
-	const asset = $.cart.path2lua[path];
-	if (!asset) {
-		return '';
-	}
+	const asset = $.luaSources.path2lua[path];
 	const context = findCodeTabContext(path);
 	if (context) {
 		if (context.id === ide_state.activeCodeTabContextId) {
@@ -1958,7 +1955,7 @@ export function commitRename(payload: RenameCommitPayload): RenameCommitResult {
 }
 
 export function findResourceDescriptorForChunk(path: string): VMResourceDescriptor | null {
-	const asset = $.cart.path2lua[path];
+	const asset = $.luaSources.path2lua[path];
 	return asset ? { asset_id: asset.resid, path: asset.normalized_source_path, type: asset.type } : null;
 }
 
@@ -2200,8 +2197,8 @@ export function refreshResourceCatalog(): void {
 		return;
 	}
 	const augmented = descriptors.slice();
-	const rompack = $.rompack;
-	const img = rompack.img;
+	const assets = $.assets;
+	const img = assets.img;
 	const atlasKeys = Object.keys(img).filter(key => key === '_atlas_primary' || key.startsWith('atlas'));
 	for (const key of atlasKeys) {
 		if (augmented.some(entry => entry.asset_id === key)) {
@@ -2725,7 +2722,7 @@ export function performHotReloadAndResume(): boolean {
 	console.log('[IDE] Performing hot-reload and resume');
 	scheduleRuntimeTask(async () => {
 		console.log('[IDE] Applying workspace overrides to cart before resume');
-		await applyWorkspaceOverridesToCart({ cart: $.cart, storage: $.platform.storage, includeServer: true });
+		await applyWorkspaceOverridesToCart({ cart: $.luaSources, storage: $.platform.storage, includeServer: true });
 		console.log('[IDE] Capturing runtime snapshot for resume');
 		const snapshot = runtime.captureCurrentState();
 		console.log('[IDE] Clear execution stop highlights before resume');
@@ -3193,7 +3190,11 @@ export async function save(): Promise<void> {
 	}
 	const source = getTextSnapshot(ide_state.buffer);
 	const descriptor = context.descriptor;
-	const targetPath = descriptor?.path;
+	let targetPath = descriptor?.path;
+	if (!targetPath) {
+		openCreateResourcePrompt();
+		return;
+	}
 	try {
 		if (targetPath) {
 			await saveLuaResourceSource(targetPath, source);
@@ -3710,13 +3711,13 @@ export function buildResourceViewerState(descriptor: VMResourceDescriptor): Reso
 		scroll: 0,
 	};
 	let error: string = null;
-	const rompack = $.rompack;
+	const assets = $.assets;
 	lines.push('');
-	const data = rompack.data;
-	const img = rompack.img;
-	const audioTable = rompack.audio;
-	const modelTable = rompack.model;
-	const audioevents = rompack.audioevents;
+	const data = assets.data;
+	const img = assets.img;
+	const audioTable = assets.audio;
+	const modelTable = assets.model;
+	const audioevents = assets.audioevents;
 	switch (descriptor.type) {
 		case 'lua': {
 			const path = descriptor.path ?? descriptor.asset_id;

@@ -1,6 +1,6 @@
 import { extractErrorMessage } from '../lua/luavalue';
 import type { HttpResponse, StorageService } from '../platform';
-import { type CartRuntime, type RomLuaAsset } from '../rompack/rompack';
+import type { LuaSourceRecord, LuaSourceRegistry } from './lua_sources';
 import { BmsxVMRuntime } from './vm_runtime';
 import { $ } from '../core/engine_core';
 import { VMLuaResourceCreationRequest, VMResourceDescriptor } from './types';
@@ -17,7 +17,7 @@ type WorkspaceStoragePayload = { contents: string; updatedAt: number };
 type WorkspaceWinnerKind = 'override' | 'canonical' | 'rom';
 
 export async function saveLuaResourceSource(path: string, source: string): Promise<void> {
-	const cart = $.cart;
+	const cart = $.luaSources;
 	const asset = cart.path2lua[path];
 	const absPath = asset.source_path;
 	await persistLuaSourceToFilesystem(absPath, source);
@@ -35,19 +35,20 @@ export async function createLuaResource(request: VMLuaResourceCreationRequest): 
 	const fileName = slashIndex === -1 ? path : path.slice(slashIndex + 1);
 	const baseName = fileName.endsWith('.lua') ? fileName.slice(0, -4) : fileName;
 	const asset_id = baseName;
-	const asset: RomLuaAsset = {
+	const asset: LuaSourceRecord = {
 		resid: asset_id,
 		type: 'lua',
 		src: contents,
+		base_src: contents,
 		source_path: path,
 		normalized_source_path: path,
 		update_timestamp: $.platform.clock.dateNow(),
 	};
-	const registerAsset = (cart: CartRuntime): void => {
+	const registerAsset = (cart: LuaSourceRegistry): void => {
 		cart.path2lua![asset.source_path] = asset;
 		cart.path2lua![asset.normalized_source_path] = asset;
 	};
-	registerAsset($.cart);
+	registerAsset($.luaSources);
 	BmsxVMRuntime.instance.invalidateLuaModuleIndex();
 	const filesystemPath = asset.source_path;
 	await persistLuaSourceToFilesystem(filesystemPath, contents);
@@ -114,7 +115,7 @@ export function buildWorkspaceStorageKey(projectRootPath: string, relativePath: 
 	return `${WORKSPACE_STORAGE_PREFIX}:${projectRootPath}:${relativePath}`;
 }
 
-export function collectWorkspaceOverrides(params: { cart: CartRuntime; projectRootPath: string; storage: StorageService; }): Map<string, WorkspaceOverrideRecord> {
+export function collectWorkspaceOverrides(params: { cart: LuaSourceRegistry; projectRootPath: string; storage: StorageService; }): Map<string, WorkspaceOverrideRecord> {
 	const overrides = new Map<string, WorkspaceOverrideRecord>();
 	const rootRaw = params.projectRootPath;
 	if (!rootRaw) {
@@ -173,7 +174,7 @@ function resolveOverrideUpdatedAt(record: WorkspaceOverrideRecord, fallback: num
 }
 
 function resolveWorkspacePathForIo(path: string, projectRootPath?: string): string {
-	const root = projectRootPath ?? $.rompack.project_root_path;
+	const root = projectRootPath ?? $.assets.project_root_path;
 	if (path.startsWith('/') || /^[A-Za-z]:[\\/]/.test(path)) {
 		return path;
 	}
@@ -367,8 +368,8 @@ export async function mergeWorkspaceOverrides(
 	return merged;
 }
 
-export async function fetchWorkspaceOverridesPriority(cart: CartRuntime): Promise<Map<string, WorkspaceOverrideRecord>> {
-	const root = $.rompack.project_root_path;
+export async function fetchWorkspaceOverridesPriority(cart: LuaSourceRegistry): Promise<Map<string, WorkspaceOverrideRecord>> {
+	const root = $.assets.project_root_path;
 	try {
 		const serverOverrides = await fetchWorkspaceDirtyLuaOverrides(cart, root);
 		return serverOverrides;
@@ -378,7 +379,7 @@ export async function fetchWorkspaceOverridesPriority(cart: CartRuntime): Promis
 	}
 }
 
-export async function fetchWorkspaceDirtyLuaOverrides(cart: CartRuntime, root: string): Promise<Map<string, WorkspaceOverrideRecord>> {
+export async function fetchWorkspaceDirtyLuaOverrides(cart: LuaSourceRegistry, root: string): Promise<Map<string, WorkspaceOverrideRecord>> {
 	const tasks: Array<Promise<{ contents: string; path: string; filePath: string; updatedAt?: number }>> = [];
 	// Fetching dirty files from backend is best-effort. Missing files do NOT mean we should
 	// discard in-memory dirty edits; they simply yield no extra overrides.
@@ -407,7 +408,7 @@ export async function fetchWorkspaceDirtyLuaOverrides(cart: CartRuntime, root: s
 	return overrides;
 }
 
-async function fetchWorkspaceCanonicalLua(cart: CartRuntime, root: string): Promise<Map<string, WorkspaceOverrideRecord>> {
+async function fetchWorkspaceCanonicalLua(cart: LuaSourceRegistry, root: string): Promise<Map<string, WorkspaceOverrideRecord>> {
 	const tasks: Array<Promise<WorkspaceOverrideRecord>> = [];
 	for (const asset of Object.values(cart.path2lua)) {
 		const canonicalPath = resolveWorkspacePathForIo(asset.normalized_source_path, root);
@@ -622,11 +623,11 @@ export function persistWorkspaceOverridesToLocalStorage(storage: StorageService,
 //   disk (server). We deterministically pick the freshest by timestamp with a priority order of dirty > canonical > ROM.
 // - The winning source is applied to the running cart and written back to storage (both canonical and dirty slots when
 //   relevant). If the winner is fresher than the server canonical file we push it back to disk to converge the state.
-export async function applyWorkspaceOverridesToCart(params: { cart: CartRuntime; storage: StorageService; includeServer?: boolean }): Promise<Set<string>> {
+export async function applyWorkspaceOverridesToCart(params: { cart: LuaSourceRegistry; storage: StorageService; includeServer?: boolean }): Promise<Set<string>> {
 	const { cart, storage } = params;
 	const includeServer = params.includeServer !== false;
 	const changed = new Set<string>();
-	const root = $.rompack.project_root_path;
+	const root = $.assets.project_root_path;
 
 	const localOverrides = collectWorkspaceOverrides({ cart, projectRootPath: root, storage });
 	const serverOverrides = includeServer ? await fetchWorkspaceOverridesPriority(cart) : new Map<string, WorkspaceOverrideRecord>();
@@ -669,9 +670,9 @@ export async function applyWorkspaceOverridesToCart(params: { cart: CartRuntime;
 		}
 
 		// Keep `path2lua` and `path2lua` in sync.
-		// The VM executes sources via `$.cart.path2lua[...]` (see `BmsxVMRuntime.resourceSourceForChunk()`), while
+		// The VM executes sources via `$.luaSources.path2lua[...]` (see `BmsxVMRuntime.resourceSourceForChunk()`), while
 		// workspace merges/overrides are keyed by path via `path2lua[...]`. These two maps are expected to point at
-		// the same `RomLuaAsset` objects, but a naive cart clone can break that identity, so we always set both here.
+		// the same `LuaSourceRecord` objects, so we always set both here.
 		const nextSource = winner.record.source;
 		const pathBinding = cart.path2lua[asset.source_path];
 		if (asset.src !== nextSource || pathBinding.src !== nextSource) {
@@ -706,8 +707,8 @@ export async function applyWorkspaceOverridesToCart(params: { cart: CartRuntime;
 	return changed;
 }
 
-export async function clearWorkspaceArtifacts(cart: CartRuntime, storage: StorageService): Promise<void> {
-	const root = $.rompack.project_root_path;
+export async function clearWorkspaceArtifacts(cart: LuaSourceRegistry, storage: StorageService): Promise<void> {
+	const root = $.assets.project_root_path;
 	for (const asset of Object.values(cart.path2lua)) {
 		const cartPath = asset.normalized_source_path;
 		const dirtyPath = buildWorkspaceDirtyEntryPath(root, cartPath);
@@ -721,8 +722,8 @@ export async function clearWorkspaceArtifacts(cart: CartRuntime, storage: Storag
 	await deleteWorkspaceFile(statePath);
 }
 
-async function clearWorkspaceDirtyFiles(cart: CartRuntime, storage: StorageService): Promise<void> {
-	const root = $.rompack.project_root_path;
+async function clearWorkspaceDirtyFiles(cart: LuaSourceRegistry, storage: StorageService): Promise<void> {
+	const root = $.assets.project_root_path;
 	const scratchPaths = await collectScratchWorkspaceDirtyPaths(root);
 	for (const asset of Object.values(cart.path2lua)) {
 		const cartPath = asset.normalized_source_path;
@@ -740,19 +741,19 @@ async function clearWorkspaceDirtyFiles(cart: CartRuntime, storage: StorageServi
 
 export async function resetWorkspaceDirtyBuffersAndStorage(): Promise<void> {
 	const runtime = BmsxVMRuntime.instance;
-	await clearWorkspaceDirtyFiles($.cart, runtime.storageService);
+	await clearWorkspaceDirtyFiles($.luaSources, runtime.storageService);
 	runtime.editor.clearWorkspaceDirtyBuffers();
 }
 
 export async function nukeWorkspaceState(): Promise<void> {
 	const runtime = BmsxVMRuntime.instance;
-	await clearWorkspaceArtifacts($.cart, runtime.storageService);
+	await clearWorkspaceArtifacts($.luaSources, runtime.storageService);
 	runtime.editor.clearWorkspaceDirtyBuffers();
 }
 
 export function listResources(): VMResourceDescriptor[] {
 	const descriptors: VMResourceDescriptor[] = [];
-	for (const asset of Object.values($.cart.path2lua)) {
+	for (const asset of Object.values($.luaSources.path2lua)) {
 		const path = asset.normalized_source_path;
 		descriptors.push({ path, type: asset.type, asset_id: asset.resid });
 	}

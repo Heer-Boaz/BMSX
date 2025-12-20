@@ -4,7 +4,7 @@ import { clearWorkspaceSessionState } from './ide/workspace_storage';
 import { ide_state } from './ide/ide_state';
 import { buildWorkspaceDirtyEntryPath, buildWorkspaceStorageKey, nukeWorkspaceState, resetWorkspaceDirtyBuffersAndStorage } from './workspace';
 import { collectRuntimeStackFrames, formatRuntimeErrorLocation, formatRuntimeStackFrame } from './runtime_error_util';
-import { RomLuaAsset } from '../rompack/rompack';
+import type { LuaSourceRecord } from './lua_sources';
 
 type PathEntryKind = 'rom' | 'saved' | 'dirty' | 'saved_dirty' | 'unsaved';
 
@@ -210,9 +210,9 @@ export class TerminalCommandDispatcher {
 			: null;
 		const debuggerLabel = suspension ? `${suspension.reason} @ ${suspensionLocation ?? suspension.location.path}` : 'idle';
 		const faultLabel = this.runtime.hasRuntimeFailed ? 'FAULTED' : 'OK';
-		const root = $.rompack.project_root_path;
+		const root = $.assets.project_root_path;
 		const lines: string[] = [];
-		lines.push(`Cart: ${$.rompack.project_root_path} (${$.cart.namespace})`);
+		lines.push(`Cart: ${$.assets.project_root_path} (${$.luaSources.namespace})`);
 		lines.push(`Lua VM: ${vmState} | Entry: ${pathLabel}`);
 		lines.push(`Status: ${faultLabel} | Debugger: ${debuggerLabel}`);
 		lines.push(`Canonicalization: ${this.runtime.canonicalization}`);
@@ -400,9 +400,9 @@ export class TerminalCommandDispatcher {
 		return unsaved;
 	}
 
-	private collectWorkspaceEntryFlags(luaAssets: Array<RomLuaAsset>): Map<string, { hasSaved: boolean; hasDirty: boolean; hasUnsaved: boolean }> {
+	private collectWorkspaceEntryFlags(luaAssets: Array<LuaSourceRecord>): Map<string, { hasSaved: boolean; hasDirty: boolean; hasUnsaved: boolean }> {
 		const flags = new Map<string, { hasSaved: boolean; hasDirty: boolean; hasUnsaved: boolean }>();
-		const root = $.rompack.project_root_path;
+		const root = $.assets.project_root_path;
 		const storage = $.platform.storage;
 		if (!root || !storage) {
 			return flags;
@@ -445,7 +445,7 @@ export class TerminalCommandDispatcher {
 		const includeRom = mode === '-ROM' || mode === '-ALL' || !mode;
 		const includeSaved = mode === '-SAVED' || mode === '-ALL' || !mode;
 		const includeDirty = mode === '-DIRTY' || mode === '-ALL' || !mode;
-		const luaAssets = Object.values($.cart.path2lua);
+		const luaAssets = Object.values($.luaSources.path2lua);
 		if (includeRom) {
 			for (const asset of luaAssets) {
 				const path = asset.source_path ?? 'help!!';

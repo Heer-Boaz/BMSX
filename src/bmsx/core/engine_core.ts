@@ -12,7 +12,10 @@ import { RenderPassLibrary } from "../render/backend/renderpasslib";
 import { ensureBrowserBackendFactory } from "../render/backend/browser_backend_factory";
 import type { GameViewHost, Platform, PlatformExitEvent } from '../platform';
 import { setMicrotaskQueue } from '../platform';
-import { asset_id, CartOverlay, CartRuntime, CartridgePayloads, ENGINE_ATLAS_INDEX, Identifiable, Identifier, Registerable, RomAsset, RomPack, type RomLuaAsset, type vec3, type vec2, GAME_FPS } from "../rompack/rompack";
+import { asset_id, Identifiable, Identifier, Registerable, RuntimeAssets, type vec3, type vec2, GAME_FPS, type BmsxCartridgeBlob } from "../rompack/rompack";
+import { AssetSourceStack, type RawAssetSource } from '../rompack/asset_source';
+import { buildRuntimeAssetLayer, normalizeCartridgeBlob, parseCartridgeIndex, type RuntimeAssetLayer } from '../rompack/romloader';
+import type { LuaSourceRegistry } from '../vm/lua_sources';
 import { BinaryCompressor } from "../serializer/bincompressor";
 import { Reviver, Savegame, Serializer } from "../serializer/gameserializer";
 import { Service } from "./service";
@@ -33,10 +36,10 @@ import type { NodeSpec } from "../ecs/pipeline";
 import { collectEcsPipelineExtensionsFromWorldModules, } from "../ecs/extensions";
 import { gameplaySpec } from './pipelines/gameplay_pipeline';
 import { BmsxVMRuntime } from '../vm/vm_runtime';
+import { createBmsxVMModule } from '../vm/module';
 import type { GPUBackend } from '../render/backend/pipeline_interfaces';
 import { ActionEffectRegistry } from '../action_effects/effect_registry';
 import { InputSource, KeyModifier } from '../input/playerinput';
-import { deep_clone } from '../utils/deep_clone';
 import { shallowcopy } from '../utils/shallowcopy';
 // No direct space helpers needed here; Spaces are revived as part of the world.
 
@@ -45,14 +48,13 @@ global = globalScope; // Ensure global is defined
 
 // Register global variables
 // Note that $ is defined at the bottom of the code file
-var $rompack: RomPack; // For internal use by get Game.rompack
 export var $debug: boolean;
 
 export interface EngineStartupOptions {
-	rompack: RomPack;
-	payloads: CartridgePayloads;
-	cartOverlay?: CartOverlay;
-	worldConfig: WorldConfiguration;
+	engineRom: BmsxCartridgeBlob;
+	cartridge?: BmsxCartridgeBlob;
+	workspaceOverlay?: BmsxCartridgeBlob;
+	worldConfig?: WorldConfiguration;
 	sndcontext?: AudioContext;
 	gainnode?: GainNode;
 	debug?: boolean;
@@ -74,69 +76,6 @@ const REWIND_BUFFER_WRITE_FREQUENCY = 1; // Frames
 // Gate to block the game update/run loop (used when loading/hydrating game state)
 export const runGate: GateGroup = taskGate.group('run:main');
 export const renderGate: GateGroup = taskGate.group('render:main');
-
-/**
- * Creates the mutable runtime cart (`$.cart`) from the packed baseline (`$.rompack.cart`).
- *
- * We need this separation because the IDE/workspace can apply overrides, hot-reload sources, and otherwise mutate
- * the active cart while the ROM pack should remain pristine (e.g. for "reset workspace" or comparing against ROM).
- *
- * Important: The cart stores the same `RomLuaAsset` objects in both `path2lua` and `path2lua` for fast lookup.
- * A generic deep clone duplicates those objects independently per map, breaking identity between the indices.
- * That identity is relied on across the VM + workspace pipeline (edits/overrides can originate from either map).
- */
-function cloneCartForRuntime(cart: CartRuntime): CartRuntime {
-	const clones = new Map<RomLuaAsset, RomLuaAsset>();
-	const cloneAsset = (asset: RomLuaAsset): RomLuaAsset => {
-		const existing = clones.get(asset);
-		if (existing) {
-			return existing;
-		}
-		const cloned = deep_clone(asset);
-		clones.set(asset, cloned);
-		return cloned;
-	};
-
-	const clonedCart: RomPack['cart'] = {
-		...cart,
-		path2lua: {},
-	};
-
-	for (const path of Object.keys(cart.path2lua)) {
-		const asset = cart.path2lua[path];
-		clonedCart.path2lua[path] = cloneAsset(asset);
-	}
-
-	return clonedCart;
-}
-
-function applyCartOverlay(cart: CartRuntime, overlay: CartOverlay): void {
-	for (const path of overlay.deletes) {
-		delete cart.path2lua[path];
-	}
-	for (const asset of Object.values(overlay.cart.path2lua)) {
-		cart.path2lua[asset.source_path] = asset;
-		cart.path2lua[asset.normalized_source_path] = asset;
-	}
-}
-
-function resolvePrimaryAtlasIndex(rompack: RomPack): number | null {
-	let selected: number = null;
-	const prefix = '_atlas_';
-	for (const key of Object.keys(rompack.img)) {
-		if (!key.startsWith(prefix)) {
-			continue;
-		}
-		const index = parseInt(key.slice(prefix.length), 10);
-		if (index === ENGINE_ATLAS_INDEX) {
-			continue;
-		}
-		if (selected === null || index < selected) {
-			selected = index;
-		}
-	}
-	return selected;
-}
 
 /**
  * Represents the main game loop and manages the game state.
@@ -166,8 +105,13 @@ export class EngineCore {
 
 	public get deltatime_seconds(): number { return this.deltatime / 1000; }
 
-	private _cart: CartRuntime;
-	private _payloads: CartridgePayloads = null;
+	private _assets: RuntimeAssets = null;
+	private _assetSource: RawAssetSource = null;
+	private _luaSources: LuaSourceRegistry = null;
+	private _engineLayer: RuntimeAssetLayer = null;
+	private _workspaceOverlay: BmsxCartridgeBlob = null;
+	private _sndcontext: AudioContext = null;
+	private _gainnode: GainNode = null;
 
 	/**
 	 * The accumulated time in milliseconds.
@@ -252,10 +196,16 @@ export class EngineCore {
 	private _pipelineExt: NodeSpec[] = null; // These nodes override the base spec when set during runtime. Note that these are not extended with module nodes, as the modules are already included in the base spec at init time.
 	private initialWorldConfigSnapshot: WorldConfiguration = null;
 
-	public get rompack(): RomPack { return $rompack!; }
-	public get payloads(): CartridgePayloads { return this._payloads; }
-	public getAssetPayload(asset: RomAsset): ArrayBuffer {
-		return this._payloads[asset.payload_id].slice(asset.start, asset.end);
+	public get assets(): RuntimeAssets { return this._assets; }
+	public get assetSource(): RawAssetSource { return this._assetSource; }
+	public get luaSources(): LuaSourceRegistry { return this._luaSources; }
+	public get engineLayer(): RuntimeAssetLayer { return this._engineLayer; }
+	public get workspaceOverlay(): BmsxCartridgeBlob { return this._workspaceOverlay; }
+	public setLuaSources(sources: LuaSourceRegistry): void {
+		this._luaSources = sources;
+	}
+	public setAssetSource(source: RawAssetSource): void {
+		this._assetSource = source;
 	}
 
 	public get world(): World { return this.registry.get<World>('world')!; }
@@ -274,20 +224,6 @@ export class EngineCore {
 	public get ae_registry(): ActionEffectRegistry { return ActionEffectRegistry.instance; }
 	public get platform(): Platform { return this._platform!; }
 
-	/**
-	 * Returns the current cart (Rompack !== cart) associated with the game, including any overrides applied via the workspace.
-	 * This is the effective cart used by the game during runtime.
-	 * The cart may differ from the original ROM pack cart if workspace overrides have been applied.
-	 * The cart only includes the source Lua files of the cart. All other assets are referenced from the original ROM pack (note: pack !== cart).
-	 * Note that `start_cart.ts` applies workspace overrides before initializing the game instance.
-	 */
-	public get cart(): CartRuntime { return this._cart; }
-
-	/**
-	 * Gets the original unpacked cart associated with the ROM. Used to clear (reset) the workspace of any overrides applied via the workspace.
-	 * The cart only includes the source Lua files of the cart. All other assets are referenced from the original ROM pack (note: pack !== cart).
-	 */
-	public get clean_cart(): CartRuntime { return this.rompack.cart; }
 
 	public emit(event: GameEvent): void;
 	public emit(event_name: string, emitter: Identifiable, payload?: EventPayload): void;
@@ -399,77 +335,10 @@ export class EngineCore {
 		this.initialized = false;
 	}
 
-	/**
-	 * Inits the game on boot.
-	 * @param rom - The ROM pack containing game assets.
-	 * @param model - The model object that manages the game state.
-	 * @param view - The view object that manages the game display.
-	 * @param sndcontext - The audio context used for playing sounds.
-	 * @param gainnode - The gain node used for controlling the volume of sounds.
-	 * @param debug - Whether to enable debug mode. Defaults to false.
-	 */
-	public async init(init: EngineStartupOptions): Promise<EngineCore> {
-		const { rompack, payloads, cartOverlay, worldConfig, sndcontext, gainnode, debug = false, startingGamepadIndex = null, enableOnscreenGamepad = false, ecsPipeline, platform, viewHost } = init;
-		if (!platform) {
-			throw new Error('[Game] Platform services not provided. Pass a Platform instance in GameInitArgs.');
-		}
-		const resolvedViewHost = viewHost ?? platform.gameviewHost;
-		if (!resolvedViewHost) {
-			throw new Error('[Game] Platform did not expose a GameViewHost. Provide one in GameInitArgs.');
-		}
-		$rompack = rompack;
-		this._payloads = payloads;
-		platform.gameviewHost = resolvedViewHost;
-		this._platform = platform;
-		setMicrotaskQueue(platform.microtasks);
-		this.running = false;
-		this._paused = false;
-		this.wasupdated = true;
-		this.update_interval_ms = 1000 / this.target_fps;
-		this.rewindBuffer = new RewindBuffer(this.target_fps, this.REWINDBUFFER_LENGTH_SECONDS);
-
-		this._debug = debug ?? this._debug;
-		$debug = this._debug;
-
-		if (rompack.cart.entry_path) {
-			this._cart = cloneCartForRuntime(rompack.cart); // Mutable runtime cart: keep ROM-pack cart pristine.
-			if (cartOverlay) {
-				applyCartOverlay(this._cart, cartOverlay);
-			}
-		}
-		EventEmitter.instance; // Init event emitter
-		Input.initialize(startingGamepadIndex); // Init input module
-		if (enableOnscreenGamepad || this.input.isOnscreenGamepadEnabled) {
-			this.input.enableOnscreenGamepad();
-		}
-
-		if (typeof document !== 'undefined') {
-			ensureBrowserBackendFactory();
-		}
-		const viewportInput = worldConfig.viewportSize as { width?: number; height?: number; x?: number; y?: number };
-		const viewportSize = { x: (viewportInput.width ?? viewportInput.x)!, y: (viewportInput.height ?? viewportInput.y)! }; // Ugly and needs to be refactored in the GameView
-		const gview = new GameView({
-			viewportSize,
-			host: resolvedViewHost,
-		});
-		this._view = gview;
-		const gpuBackend = await resolvedViewHost.createBackend() as GPUBackend;
-		gview.backend = gpuBackend;
-		new TextureManager(gpuBackend);
-		const pipelineRegistry = new RenderPassLibrary(gpuBackend);
-		pipelineRegistry.registerBuiltin(gpuBackend);
-		gview.pipelineRegistry = pipelineRegistry;
-		gview.initializePresentationPassTokens();
-		gview.init();
-		await gview.initializeDefaultTextures();
-		const primaryAtlasIndex = resolvePrimaryAtlasIndex(rompack);
-		if (primaryAtlasIndex !== null) {
-			gview.primaryAtlas = primaryAtlasIndex;
-		}
-
-		const modulationResolver: ModulationPresetResolver = {
+	private buildModulationResolver(assets: RuntimeAssets): ModulationPresetResolver {
+		return {
 			resolve: (key: asset_id) => {
-				const data = rompack.data;
+				const data = assets.data;
 				const segments = key.split('.');
 				let cursor: unknown = data;
 				for (let i = 0; i < segments.length; i++) {
@@ -490,21 +359,104 @@ export class EngineCore {
 				}
 			},
 		};
-		await SoundMaster.instance.init(rompack.audio, GameOptions.volumePercentage, modulationResolver);
-		if (sndcontext) {
+	}
+
+	public async refreshAudioAssets(): Promise<void> {
+		const resolver = this.buildModulationResolver(this._assets);
+		await SoundMaster.instance.init(this._assets.audio, GameOptions.volumePercentage, resolver);
+		AudioEventManager.instance.init(this._assets.audioevents, null);
+	}
+
+	/**
+	 * Inits the game on boot.
+	 * @param rom - The ROM pack containing game assets.
+	 * @param model - The model object that manages the game state.
+	 * @param view - The view object that manages the game display.
+	 * @param sndcontext - The audio context used for playing sounds.
+	 * @param gainnode - The gain node used for controlling the volume of sounds.
+	 * @param debug - Whether to enable debug mode. Defaults to false.
+	 */
+	public async init(init: EngineStartupOptions): Promise<EngineCore> {
+		const { engineRom, cartridge, workspaceOverlay, worldConfig, sndcontext, gainnode, debug = false, startingGamepadIndex = null, enableOnscreenGamepad = false, ecsPipeline, platform, viewHost } = init;
+		if (!platform) {
+			throw new Error('[Game] Platform services not provided. Pass a Platform instance in GameInitArgs.');
+		}
+		const resolvedViewHost = viewHost ?? platform.gameviewHost;
+		if (!resolvedViewHost) {
+			throw new Error('[Game] Platform did not expose a GameViewHost. Provide one in GameInitArgs.');
+		}
+		this._sndcontext = sndcontext ?? null;
+		this._gainnode = gainnode ?? null;
+		const engineLayer = await buildRuntimeAssetLayer({ blob: engineRom, id: 'system' });
+		this._engineLayer = engineLayer;
+		this._workspaceOverlay = workspaceOverlay ?? null;
+		this._assets = engineLayer.assets;
+		this._assetSource = new AssetSourceStack([{ id: engineLayer.id, index: engineLayer.index, payload: engineLayer.payload }]);
+		platform.gameviewHost = resolvedViewHost;
+		this._platform = platform;
+		setMicrotaskQueue(platform.microtasks);
+		this.running = false;
+		this._paused = false;
+		this.wasupdated = true;
+		this.update_interval_ms = 1000 / this.target_fps;
+		this.rewindBuffer = new RewindBuffer(this.target_fps, this.REWINDBUFFER_LENGTH_SECONDS);
+
+		this._debug = debug ?? this._debug;
+		$debug = this._debug;
+
+		EventEmitter.instance; // Init event emitter
+		Input.initialize(startingGamepadIndex); // Init input module
+		if (enableOnscreenGamepad || this.input.isOnscreenGamepadEnabled) {
+			this.input.enableOnscreenGamepad();
+		}
+
+		if (typeof document !== 'undefined') {
+			ensureBrowserBackendFactory();
+		}
+		let resolvedWorldConfig = worldConfig;
+		if (!resolvedWorldConfig) {
+			let viewport = engineLayer.index.manifest.vm.viewport;
+			if (cartridge) {
+				const cartNormalized = normalizeCartridgeBlob(cartridge);
+				const cartIndex = await parseCartridgeIndex(cartNormalized.payload);
+				viewport = cartIndex.manifest.vm.viewport;
+			}
+			resolvedWorldConfig = {
+				viewportSize: shallowcopy(viewport),
+				modules: [createBmsxVMModule()],
+			};
+		}
+		const viewportInput = resolvedWorldConfig.viewportSize as { width?: number; height?: number; x?: number; y?: number };
+		const viewportSize = { x: (viewportInput.width ?? viewportInput.x)!, y: (viewportInput.height ?? viewportInput.y)! }; // Ugly and needs to be refactored in the GameView
+		const gview = new GameView({
+			viewportSize,
+			host: resolvedViewHost,
+		});
+		this._view = gview;
+		const gpuBackend = await resolvedViewHost.createBackend() as GPUBackend;
+		gview.backend = gpuBackend;
+		new TextureManager(gpuBackend);
+		const pipelineRegistry = new RenderPassLibrary(gpuBackend);
+		pipelineRegistry.registerBuiltin(gpuBackend);
+		gview.pipelineRegistry = pipelineRegistry;
+		gview.initializePresentationPassTokens();
+		gview.init();
+		await gview.initializeDefaultTextures();
+
+		await this.refreshAudioAssets();
+		if (this._sndcontext) {
 			try {
-				await PSG.init(sndcontext, GameOptions.volumePercentage, gainnode);
+				await PSG.init(this._sndcontext, GameOptions.volumePercentage, this._gainnode);
 			} catch (error) {
 				console.error("Failed to initialize PSG:", error);
 			}
 		}
-		AudioEventManager.instance.init(rompack.audioevents, null);
 
 		// Init the model to populate states (and do other init stuff) and
 		// Init all the stuff that is game-specific. Placed here to reduce boilerplating
-		if (!worldConfig) throw new Error('World configuration not passed to game init!');
-		this.initialWorldConfigSnapshot = worldConfig;
-		new World(worldConfig);
+		if (!resolvedWorldConfig) throw new Error('World configuration not passed to game init!');
+		this.initialWorldConfigSnapshot = resolvedWorldConfig;
+		new World(resolvedWorldConfig);
 		Input.instance.bind();
 		// Register built-in ECS systems; allow modules to register extensions on boot
 		registerBuiltinECS();
@@ -534,6 +486,7 @@ export class EngineCore {
 			this.removeWillExit = $.platform.lifecycle.onWillExit(this.onBeforeUnload);
 		}
 		this.initialized = true; // Mark the game as initialized
+		await BmsxVMRuntime.init(cartridge);
 		// SoundMaster.instance.volume = 0;
 		return this!; // Allow chaining
 	}
@@ -613,10 +566,6 @@ export class EngineCore {
 
 			PhysicsWorld.rebuild();
 			await this.view.initializeDefaultTextures();
-			const primaryAtlasIndex = resolvePrimaryAtlasIndex(this.rompack);
-			if (primaryAtlasIndex !== null) {
-				this.view.primaryAtlas = primaryAtlasIndex;
-			}
 		}
 		finally {
 			this.wasupdated = true;

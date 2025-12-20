@@ -34,10 +34,10 @@ export class SpriteObject extends WorldObject {
 	public set imgid(id: string) {
 		const comp = this.sprite_component;
 		comp.imgid = id;
-		const entry = $.rompack.img[id];
+		const entry = $.assets.img[id];
 		if (!entry) {
 			if (id === 'none') { this.updateHitareas(); return; }
-			throw new Error(`[SpriteObject:${this.id}] Sprite asset '${id}' not found in rompack.`);
+			throw new Error(`[SpriteObject:${this.id}] Sprite asset '${id}' not found in assets.`);
 		}
 		const imgmeta = entry.imgmeta;
 		if (!imgmeta) {
@@ -58,9 +58,9 @@ export class SpriteObject extends WorldObject {
 			collider.set_local_poly(null);
 			return;
 		}
-		const entry = $.rompack.img[id];
+		const entry = $.assets.img[id];
 		if (!entry) {
-			throw new Error(`[SpriteObject:${this.id}] Sprite asset '${id}' not found in rompack.`);
+			throw new Error(`[SpriteObject:${this.id}] Sprite asset '${id}' not found in assets.`);
 		}
 		const imgmeta = entry.imgmeta;
 		if (!imgmeta) {

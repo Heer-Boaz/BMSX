@@ -168,7 +168,7 @@ export function registerApiBuiltins(interpreter: LuaInterpreter): void {
 		const targetPlayer = args.length >= 2
 			? resolvePlayerIndex(args[1], 'set_input_map')
 			: runtime.playerIndex;
-		const moduleId = $.cart.path2lua[runtime.currentPath].source_path;
+		const moduleId = $.luaSources.path2lua[runtime.currentPath].source_path;
 		const marshalCtx = { moduleId, path: [] };
 		const mappingValue = runtime.luaJsBridge.convertFromLua(mappingTable, marshalCtx) as InputMap;
 		if (!mappingValue || typeof mappingValue !== 'object') {
@@ -245,7 +245,7 @@ export function registerApiBuiltins(interpreter: LuaInterpreter): void {
 				? `${name}(${displayParams.join(', ')})${returnTypeSuffix}`
 				: `${name}()${returnTypeSuffix}`;
 			const native = new LuaNativeFunction(`api.${name}`, (args) => {
-				const moduleId = $.cart.path2lua[runtime.currentPath].source_path;
+				const moduleId = $.luaSources.path2lua[runtime.currentPath].source_path;
 				const baseCtx = { moduleId, path: [] };
 				const jsArgs = Array.from(args, (arg, index) => runtime.luaJsBridge.convertFromLua(arg, runtime.extendMarshalContext(baseCtx, `arg${index}`)));
 				try {
@@ -479,7 +479,7 @@ function exposeEngineObjects(env: LuaEnvironment): void {
 		['game', $],
 		['$', $],
 		['registry', $.registry],
-		['rompack', $.rompack],
+		['assets', $.assets],
 	];
 	for (const [name, object] of entries) {
 		// const luaValue = BmsxVMRuntime.instance.luaJsBridge.jsToLua(object);

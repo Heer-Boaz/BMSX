@@ -266,7 +266,7 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 export function drawImg(options: ImgRenderSubmission): void {
 	const { imgid } = options;
 	if (imgid === 'none') return;
-	const asset = $.rompack.img[imgid];
+	const asset = $.assets.img[imgid];
 	if (!asset) {
 		throw new Error(`[Sprite Pipeline] drawImg called with unknown image id '${imgid}'.`);
 	}

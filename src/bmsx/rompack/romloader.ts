@@ -8,21 +8,19 @@ import type {
 	RomAsset,
 	RomAssetListPayload,
 	RomImgAsset,
-	RomLuaAsset,
 	RomManifest,
 	RomMeta,
-	RomPack,
+	RuntimeAssets,
 	TextureSource,
 	BmsxCartridgeBlob,
-	CartridgePayloads,
 	CartridgeIndex,
 	CartridgeLayerId,
-	CartOverlay,
 	color_arr,
 } from './rompack';
-import { decodeBinary, decodeuint8arr, toF32, typedArrayFromBytes } from '../serializer/binencoder';
+import { decodeBinary, toF32, typedArrayFromBytes } from '../serializer/binencoder';
 import { generateAtlasName } from './rompack';
 import { inflate } from 'pako';
+import { AssetSourceStack, type RawAssetSource } from './asset_source';
 
 export type RomLoadOptions = {
 	loadImageFromBuffer?: (buffer: ArrayBuffer) => Promise<TextureSource>;
@@ -409,7 +407,7 @@ export async function loadModelFromBuffer(asset_id: string, buffer: ArrayBuffer,
 	return { name: asset_id, meshes, materials, animations, imageURIs: obj.imageURIs, imageOffsets: obj.imageOffsets, imageBuffers, textures, nodes, scenes, scene, skins };
 }
 
-async function fromAsset(romImgAsset: RomImgAsset, rompack: RomPack, options?: { flipY?: boolean; }): Promise<ImageBitmap | TextureSource> {
+async function fromAsset(romImgAsset: RomImgAsset, assets: RuntimeAssets, options?: { flipY?: boolean; }): Promise<ImageBitmap | TextureSource> {
 	let source: TextureSource | ImageBitmap | Promise<ImageBitmap>;
 	if (options?.flipY) {
 		source = romImgAsset._imgbinYFlipped as TextureSource;
@@ -421,7 +419,7 @@ async function fromAsset(romImgAsset: RomImgAsset, rompack: RomPack, options?: {
 	const imgmeta = romImgAsset.imgmeta;
 	if (!source && imgmeta.atlassed) {
 		const atlasName = generateAtlasName(imgmeta.atlasid ?? 0);
-		const atlas = rompack.img[atlasName]._imgbin as TextureSource;
+		const atlas = assets.img[atlasName]._imgbin as TextureSource;
 		if (!atlas) throw new Error(`Texture atlas image not found for atlas ID ${imgmeta.atlasid}`);
 		const coords = imgmeta.texcoords;
 		if (!coords) throw new Error(`No texture coordinates for atlassed image '${romImgAsset.resid}'`);
@@ -448,24 +446,27 @@ async function fromAsset(romImgAsset: RomImgAsset, rompack: RomPack, options?: {
 		});
 	}
 
-	if (!source) throw new Error(`Image asset '${romImgAsset.resid}' has no image data`);
+	if (!source) {
+		console.warn(`Rom image asset '${romImgAsset.resid}' has no image data loaded`);
+		// throw new Error(`Image asset '${romImgAsset.resid}' has no image data`);
+	}
 	return source;
 }
 
-async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: RomLoadOptions, payloadId?: CartridgeLayerId) {
+async function load(source: RawAssetSource, res: RomAsset, assets: RuntimeAssets, opts?: RomLoadOptions) {
 	if (res.op === 'delete') {
 		return;
 	}
-	const baseAsset = { ...res, payload_id: payloadId };
+	const baseAsset = res;
 	switch (res.type) {
 		case 'image':
 		case 'atlas': {
 			let img: TextureSource = undefined;
 			if (!baseAsset.imgmeta?.atlassed) {
 				if (opts && opts.loadImageFromBuffer) {
-					img = await opts.loadImageFromBuffer(rom.slice(baseAsset.start, baseAsset.end));
+					img = await opts.loadImageFromBuffer(source.getBuffer(baseAsset));
 				} else {
-					img = await getImageFromBuffer(rom.slice(baseAsset.start, baseAsset.end));
+					img = await getImageFromBuffer(source.getBuffer(baseAsset));
 				}
 			}
 			const imgAsset: RomImgAsset = {
@@ -473,210 +474,134 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
 				_imgbin: img,
 				_imgbinYFlipped: undefined,
 				get imgbin() {
-					return fromAsset(this, romResult);
+					return fromAsset(this, assets);
 				},
 				get imgbinYFlipped() {
-					return fromAsset(this, romResult, { flipY: true });
+					return fromAsset(this, assets, { flipY: true });
 				},
 			};
-			romResult.img[res.resid] = imgAsset;
+			assets.img[res.resid] = imgAsset;
 			break;
 		}
 		case 'audio':
 			if (opts && opts.loadAudioFromBuffer) {
-				romResult.audio[res.resid] = await opts.loadAudioFromBuffer(rom.slice(baseAsset.start, baseAsset.end));
+				assets.audio[res.resid] = await opts.loadAudioFromBuffer(source.getBuffer(baseAsset));
 			} else {
-				romResult.audio[res.resid] = baseAsset;
+				assets.audio[res.resid] = baseAsset;
 			}
 			break;
-		case 'lua': {
-			const sliced = new Uint8Array(rom, baseAsset.start, baseAsset.end - baseAsset.start);
-			const luaAsset: RomLuaAsset = {
-				...baseAsset,
-				src: decodeuint8arr(sliced),
-			} as RomLuaAsset;
-			romResult.cart.path2lua[baseAsset.source_path] = luaAsset;
-			romResult.cart.path2lua[baseAsset.normalized_source_path] = luaAsset;
-			break;
-		}
 		case 'model': {
-			const texBuf = (baseAsset.texture_start != null && baseAsset.texture_end != null) ? rom.slice(baseAsset.texture_start, baseAsset.texture_end) : undefined;
+			const texBuf = (baseAsset.texture_start != null && baseAsset.texture_end != null)
+				? source.getBuffer({ ...baseAsset, start: baseAsset.texture_start, end: baseAsset.texture_end })
+				: undefined;
 			if (opts && opts.loadModelFromBuffer) {
-				romResult.model[res.resid] = await opts.loadModelFromBuffer(rom.slice(baseAsset.start, baseAsset.end), texBuf);
+				assets.model[res.resid] = await opts.loadModelFromBuffer(source.getBuffer(baseAsset), texBuf);
 			} else {
-				romResult.model[res.resid] = await loadModelFromBuffer(res.resid, rom.slice(baseAsset.start, baseAsset.end), texBuf);
+				assets.model[res.resid] = await loadModelFromBuffer(res.resid, source.getBuffer(baseAsset), texBuf);
 			}
 			break;
 		}
 		case 'data':
 			if (opts && opts.loadDataFromBuffer) {
-				const data = await opts.loadDataFromBuffer(rom.slice(baseAsset.start, baseAsset.end));
-				romResult.data[res.resid] = data;
+				const data = await opts.loadDataFromBuffer(source.getBuffer(baseAsset));
+				assets.data[res.resid] = data;
 			} else {
-				const data = await loadDataFromBuffer(rom.slice(baseAsset.start, baseAsset.end));
-				romResult.data[res.resid] = data;
+				const data = await loadDataFromBuffer(source.getBuffer(baseAsset));
+				assets.data[res.resid] = data;
 			}
 			break;
 		case 'aem': {
-			const u8 = new Uint8Array(rom.slice(baseAsset.start, baseAsset.end));
+			const u8 = source.getBytes(baseAsset);
 			const audioevents = decodeBinary(u8);
-			romResult.audioevents[res.resid] = audioevents;
+			assets.audioevents[res.resid] = audioevents;
 			break;
 		}
+		case 'lua':
+		case 'code':
 		case 'romlabel':
 			break;
 		default:
-			throw new Error(`Unrecognised resource type in rom: ${res.type}, while processing rompack!`);
+			throw new Error(`Unrecognised resource type in rom: ${res.type}, while processing runtime assets!`);
 	}
 }
 
-export async function loadRomPackFromIndex(rom: ArrayBuffer, index: CartridgeIndex, opts?: RomLoadOptions, payloadId?: CartridgeLayerId): Promise<RomPack> {
-	const cart: RomPack['cart'] = {
-		path2lua: {},
-		entry_path: index.manifest.lua.entry_path,
-		namespace: index.manifest.vm.namespace,
-		new_game: null,
-		init: null,
-		update: null,
-		draw: null,
-	};
-	const result: RomPack = {
+export type RuntimeAssetLayer = {
+	id: CartridgeLayerId;
+	index: CartridgeIndex;
+	payload: ArrayBuffer;
+	assets: RuntimeAssets;
+};
+
+async function loadRuntimeAssetsFromSource(source: RawAssetSource, index: CartridgeIndex, opts?: RomLoadOptions): Promise<RuntimeAssets> {
+	const assets: RuntimeAssets = {
 		img: {},
 		audio: {},
 		model: {},
 		data: {},
 		audioevents: {},
-		cart,
 		project_root_path: index.projectRootPath,
 		manifest: index.manifest,
 		canonicalization: index.manifest.vm.canonicalization,
 	};
-
-	await Promise.all(index.assets.map(a => load(rom, a, result, opts, payloadId)));
-
-	return result;
+	const entries = source.list();
+	await Promise.all(entries.map(entry => load(source, entry, assets, opts)));
+	return assets;
 }
 
-export async function loadRomPackFromBuffer(rom: ArrayBuffer, opts?: RomLoadOptions, payloadId?: CartridgeLayerId): Promise<RomPack> {
+export async function loadRuntimeAssetsFromBuffer(rom: ArrayBuffer, opts?: RomLoadOptions, payloadId: CartridgeLayerId = 'cart'): Promise<RuntimeAssets> {
 	const index = await parseCartridgeIndex(rom);
-	return loadRomPackFromIndex(rom, index, opts, payloadId);
+	const source = new AssetSourceStack([{ id: payloadId, index, payload: rom }]);
+	return loadRuntimeAssetsFromSource(source, index, opts);
 }
 
-export type RomPackLayer = {
-	pack: RomPack;
-	index: CartridgeIndex;
-};
+export async function buildRuntimeAssetLayer(params: { blob: BmsxCartridgeBlob; id: CartridgeLayerId; opts?: RomLoadOptions }): Promise<RuntimeAssetLayer> {
+	const normalized = normalizeCartridgeBlob(params.blob);
+	const index = await parseCartridgeIndex(normalized.payload);
+	const source = new AssetSourceStack([{ id: params.id, index, payload: normalized.payload }]);
+	const assets = await loadRuntimeAssetsFromSource(source, index, params.opts);
+	return { id: params.id, index, payload: normalized.payload, assets };
+}
 
-export type RuntimeAssetBuildResult = {
-	rompack: RomPack;
-	payloads: CartridgePayloads;
-	cartOverlay?: CartOverlay;
-	cartIndex: CartridgeIndex;
-};
-
-function applyAssetLayer(target: RomPack, layer: RomPackLayer): void {
+export function applyRuntimeAssetLayer(target: RuntimeAssets, layer: RuntimeAssetLayer): void {
 	for (const asset of layer.index.assets) {
-		let map: Record<string, any> = null;
-		switch (asset.type) {
-			case 'image':
-			case 'atlas':
-				map = target.img;
-				break;
-			case 'audio':
-				map = target.audio;
-				break;
-			case 'model':
-				map = target.model;
-				break;
-			case 'data':
-				map = target.data;
-				break;
-			case 'aem':
-				map = target.audioevents;
-				break;
-			default:
-				break;
-		}
-		if (!map) {
+		if (asset.op !== 'delete') {
 			continue;
 		}
-		if (asset.op === 'delete') {
-			delete map[asset.resid];
-			continue;
-		}
-		map[asset.resid] = (map === target.img ? layer.pack.img : map === target.audio ? layer.pack.audio : map === target.model ? layer.pack.model : map === target.data ? layer.pack.data : layer.pack.audioevents)[asset.resid];
+		removeRuntimeAsset(target, asset);
 	}
+	Object.assign(target.img, layer.assets.img);
+	Object.assign(target.audio, layer.assets.audio);
+	Object.assign(target.model, layer.assets.model);
+	Object.assign(target.data, layer.assets.data);
+	Object.assign(target.audioevents, layer.assets.audioevents);
+	target.project_root_path = layer.assets.project_root_path;
+	target.manifest = layer.assets.manifest;
+	target.canonicalization = layer.assets.canonicalization;
 }
 
-export function mergeRomPackLayers(params: { system: RomPackLayer; cart: RomPackLayer; overlay?: RomPackLayer; }): { pack: RomPack; cartOverlay?: CartOverlay } {
-	const { system, cart, overlay } = params;
-	const merged: RomPack = {
-		img: {},
-		audio: {},
-		model: {},
-		data: {},
-		audioevents: {},
-		cart: cart.pack.cart,
-		project_root_path: cart.pack.project_root_path,
-		manifest: cart.pack.manifest,
-		canonicalization: cart.pack.canonicalization,
-	};
-	applyAssetLayer(merged, system);
-	applyAssetLayer(merged, cart);
-	if (overlay) {
-		applyAssetLayer(merged, overlay);
+function removeRuntimeAsset(target: RuntimeAssets, asset: RomAsset): void {
+	switch (asset.type) {
+		case 'atlas':
+		case 'image':
+			delete target.img[asset.resid];
+			return;
+		case 'audio':
+			delete target.audio[asset.resid];
+			return;
+		case 'model':
+			delete target.model[asset.resid];
+			return;
+		case 'data':
+			delete target.data[asset.resid];
+			return;
+		case 'aem':
+			delete target.audioevents[asset.resid];
+			return;
+		case 'lua':
+		case 'code':
+		case 'romlabel':
+			return;
+		default:
+			throw new Error(`Unrecognised resource type in rom: ${asset.type}, while removing runtime assets!`);
 	}
-
-	let cartOverlay: CartOverlay = null;
-	if (overlay) {
-		const deletes: string[] = [];
-		for (const asset of overlay.index.assets) {
-			if (asset.type !== 'lua') {
-				continue;
-			}
-			if (asset.op !== 'delete') {
-				continue;
-			}
-			deletes.push(asset.source_path);
-			if (asset.normalized_source_path !== asset.source_path) {
-				deletes.push(asset.normalized_source_path);
-			}
-		}
-		cartOverlay = { cart: overlay.pack.cart, deletes };
-	}
-
-	return { pack: merged, cartOverlay };
-}
-
-export async function buildRuntimeAssets(params: { cartridge: BmsxCartridgeBlob; engineAssets: BmsxCartridgeBlob; workspaceOverlay?: BmsxCartridgeBlob; }): Promise<RuntimeAssetBuildResult> {
-	const cartNormalized = normalizeCartridgeBlob(params.cartridge);
-	const cartIndex = await parseCartridgeIndex(cartNormalized.payload);
-	const cartPack = await loadRomPackFromIndex(cartNormalized.payload, cartIndex, undefined, 'cart');
-
-	const engineNormalized = normalizeCartridgeBlob(params.engineAssets);
-	const engineIndex = await parseCartridgeIndex(engineNormalized.payload);
-	const enginePack = await loadRomPackFromIndex(engineNormalized.payload, engineIndex, undefined, 'system');
-
-	let overlayLayer: RomPackLayer = null;
-	let overlayPayload: ArrayBuffer = null;
-	if (params.workspaceOverlay) {
-		const overlayNormalized = normalizeCartridgeBlob(params.workspaceOverlay);
-		const overlayIndex = await parseCartridgeIndex(overlayNormalized.payload);
-		const overlayPack = await loadRomPackFromIndex(overlayNormalized.payload, overlayIndex, undefined, 'overlay');
-		overlayLayer = { pack: overlayPack, index: overlayIndex };
-		overlayPayload = overlayNormalized.payload;
-	}
-
-	const { pack: mergedPack, cartOverlay } = mergeRomPackLayers({
-		system: { pack: enginePack, index: engineIndex },
-		cart: { pack: cartPack, index: cartIndex },
-		overlay: overlayLayer,
-	});
-
-	const payloads: CartridgePayloads = { system: engineNormalized.payload, cart: cartNormalized.payload };
-	if (overlayPayload) {
-		payloads.overlay = overlayPayload;
-	}
-
-	return { rompack: mergedPack, payloads, cartOverlay, cartIndex };
 }

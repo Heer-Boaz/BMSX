@@ -350,7 +350,7 @@ export class AudioEventManager implements RegisterablePersistent {
 
 		// voice policy / priority handling per channel
 		const channel = entry.channel ?? 'sfx';
-		const audioAsset = $.rompack.audio[action.audio_id];
+		const audioAsset = $.assets.audio[action.audio_id];
 		if (!audioAsset) {
 			throw new Error(`[AudioEventManager] Audio asset '${action.audio_id}' not found.`);
 		}

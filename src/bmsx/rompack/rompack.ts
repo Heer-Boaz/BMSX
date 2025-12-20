@@ -9,16 +9,15 @@ export const GAME_FPS = 50;
 export type CartridgeLayerId = 'system' | 'cart' | 'overlay';
 export type CartridgePayloads = Partial<Record<CartridgeLayerId, ArrayBuffer>>;
 export type BmsxCartridgeBlob = ArrayBuffer | Uint8Array;
-export type BmsxCartridge = ArrayBuffer;
+export type BmsxCartridge = BmsxCartridgeBlob;
 
 export type RomAssetOp = 'delete';
 
-export interface RomPack {
-	// Runtime asset pack resolved for the engine. Raw cartridge bytes live outside of this structure.
+export interface RuntimeAssets {
+	// Runtime asset cache resolved for the engine. Raw cartridge bytes live outside of this structure.
 	img: id2imgres; // Reference to the loaded image assets in the ROM pack, including metadata and the cached binary payload. ALWAYS PRESENT DURING GAME!
 	audio: id2res; // Reference to the loaded audio assets in the ROM pack, including metadata. ALWAYS PRESENT DURING GAME!
 	model: id2model; // Reference to the loaded model assets in the ROM pack, including metadata. ALWAYS PRESENT DURING GAME!
-	cart: CartRuntime; // Cartridge data bundled with the ROM pack, including Lua assets.
 	data: id2data; // Reference to the loaded data assets in the ROM pack, including metadata. ALWAYS PRESENT DURING GAME!
 	audioevents: id2audioevent; // Reference to the loaded audio event assets in the ROM pack, including metadata. ALWAYS PRESENT DURING GAME!
 	project_root_path: string; // Workspace-relative cart root path for resolving filesystem writes.
@@ -101,7 +100,7 @@ export type CartridgeIndex = {
  * Arguments passed from the bootloader to the game constructor.
  */
 export interface BootArgs {
-	cartridge: BmsxCartridge;
+	cartridge?: BmsxCartridge;
 	engineAssets: BmsxCartridge;
 	workspaceOverlay?: BmsxCartridge;
 	sndcontext?: AudioContext;
@@ -397,28 +396,6 @@ export type TextureSource = unknown & { close?(): void; width: number; height: n
 export type Viewport = { width: number; height: number; };
 export type CanonicalizationType = 'none' | 'upper' | 'lower';
 
-export type LifeCycleHandlers = {
-	new_game: (() => void);
-	init: (() => void);
-	update: ((deltaSeconds: number) => void);
-	draw: (() => void);
-};
-
-export type LifeCycleHandlerName = keyof LifeCycleHandlers;
-
-export type LifeCycleHandlerManifest = Partial<Record<LifeCycleHandlerName, string>>;
-
-export type CartRuntime = LifeCycleHandlers & {
-	path2lua: Record<string, RomLuaAsset>; // Mapping from normalized source paths to Lua assets for fast lookup.
-	entry_path: string;
-	namespace: string;
-}
-
-export type CartOverlay = {
-	cart: CartRuntime;
-	deletes: string[];
-};
-
 export type CartManifest = {
 	title?: string;
 	short_name?: string;
@@ -438,26 +415,6 @@ export type CartManifest = {
 		entry_path: string;
 	};
 };
-// import type { RomPack } from './rompack';
-// let engineAssets: RomPack;
-// export function setEngineAssets(pack: RomPack): void {
-// 	engineAssets = pack;
-// }
-// export function getEngineAssets(): RomPack {
-// 	return engineAssets;
-// }
-// export function mergeEngineAssets(bullshit: RomPack): RomPack {
-// 	function merge(primary: Record<string, any>, fallback: Record<string, any>){
-// 		return { ...fallback, ...primary };
-// 	}
-// 	const engine = engineAssets;
-// 	const merged: RomPack = {
-// 		...engine,
-// 		...bullshit,
-// 		rom: bullshit.rom,
-// 		img: merge(bullshit.img, engine.img),
-// 		audio: merge(bullshit.audio, engine.audio),
-// 		model: merge(bullshit.model, engine.model),
 // 		data: merge(bullshit.data, engine.data),
 // 		audioevents: merge(bullshit.audioevents, engine.audioevents),
 // 		cart: bullshit.cart,

@@ -135,9 +135,9 @@ export class MeshComponent extends Component {
 	}
 
 	private tryLoadModelAndBuild(): void {
-		const rom = $.rompack.model;
+		const rom = $.assets.model;
 		if (!rom) {
-			throw new Error(`[MeshComponent] ROM pack not loaded when constructing '${this.id}'.`);
+			throw new Error(`[MeshComponent] Assets not loaded when constructing '${this.id}'.`);
 		}
 		const model = rom[this.modelId];
 		if (!model) {
@@ -1189,9 +1189,9 @@ export class MeshComponent extends Component {
 		if (this._runtime) delete this._runtime;
 
 		if (rt?.model_id !== undefined) this.modelId = rt.model_id;
-		const rom = $.rompack.model;
+		const rom = $.assets.model;
 		if (!rom) {
-			throw new Error(`[MeshComponent] ROM pack unavailable during onLoad for '${this.id}'.`);
+			throw new Error(`[MeshComponent] Assets unavailable during onLoad for '${this.id}'.`);
 		}
 		const loaded = rom[this.modelId] ?? this.model;
 		if (!loaded) {

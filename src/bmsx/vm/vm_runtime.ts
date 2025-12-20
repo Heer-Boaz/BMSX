@@ -1,7 +1,6 @@
 import { $ } from '../core/engine_core';
 import { Service } from '../core/service';
 import { taskGate } from '../core/taskgate';
-import type { WorldConfiguration } from '../core/world';
 import { Input } from '../input/input';
 import { KeyModifier } from '../input/playerinput';
 import type { InputMap } from '../input/inputtypes';
@@ -22,9 +21,11 @@ import {
 } from '../lua/luavalue';
 import type { InputEvt, StorageService } from '../platform/platform';
 import { publishOverlayFrame } from '../render/editor/editor_overlay_queue';
-import type { BootArgs, LifeCycleHandlerName, Viewport, } from '../rompack/rompack';
+import type { Viewport, BmsxCartridgeBlob, CartridgeIndex } from '../rompack/rompack';
 import { CanonicalizationType } from '../rompack/rompack';
-import type { RuntimeAssetBuildResult } from '../rompack/romloader';
+import { AssetSourceStack, type RawAssetSource } from '../rompack/asset_source';
+import { applyRuntimeAssetLayer, buildRuntimeAssetLayer } from '../rompack/romloader';
+import { decodeuint8arr } from '../serializer/binencoder';
 import { createIdentifierCanonicalizer } from '../lua/identifier_canonicalizer';
 import { clamp_fallback } from '../utils/clamp';
 import { BmsxVMApi } from './vm_api';
@@ -53,11 +54,14 @@ import { BmsxVMStorage } from './storage';
 import type { BmsxVMRuntimeOptions, BmsxVMState, VMLuaBuiltinDescriptor, VMLuaMemberCompletion, LuaMarshalContext } from './types';
 import { getWorkspaceCachedSource } from './workspace_cache';
 import { applyWorkspaceOverridesToCart } from './workspace';
+import type { LuaSourceRecord, LuaSourceRegistry } from './lua_sources';
 import { LuaDebuggerController, type LuaDebuggerSessionMetrics } from '../lua/luadebugger';
 import { ide_state } from './ide/ide_state';
 import { getBasePipelineSpecOverrideForIdeOrTerminal, ideExtSpec, terminalExtSpec, vmExtSpec } from './vm_systems';
 import type { ParsedLuaChunk } from './ide/lua_parse';
 import { RenderSubmission } from '../render/backend/pipeline_interfaces';
+import { Msx1Colors } from '../systems/msx';
+import type { RectRenderSubmission } from '../render/shared/render_types';
 
 export const VM_BUTTON_ACTIONS: ReadonlyArray<string> = [
 	'left',
@@ -75,6 +79,8 @@ export const VM_BUTTON_ACTIONS: ReadonlyArray<string> = [
 	'rb',
 	'lb',
 ];
+
+type LuaLifecycleHandlerName = 'new_game' | 'init' | 'update' | 'draw';
 
 // Flip back to 'msx' to restore default font in vm/editor
 export const EDITOR_FONT_VARIANT: VMFontVariant = 'tiny';
@@ -117,11 +123,6 @@ type DebuggerStepOrigin = { path: string; line: number; depth: number };
 
 export var api: BmsxVMApi; // Initialized in BmsxVMRuntime constructor
 
-type RuntimeInitParams = {
-	boot: BootArgs;
-	assets: RuntimeAssetBuildResult;
-	worldConfig: WorldConfiguration;
-};
 
 export class BmsxVMRuntime extends Service {
 	private static _instance: BmsxVMRuntime = null;
@@ -142,42 +143,105 @@ export class BmsxVMRuntime extends Service {
 		return new BmsxVMRuntime(options);
 	}
 
-	public static async init(params: RuntimeInitParams): Promise<void> {
-		const { boot, assets, worldConfig } = params;
-		const { rompack, payloads, cartOverlay, cartIndex } = assets;
-		await $.init({
-			rompack,
-			payloads,
-			cartOverlay,
-			worldConfig,
-			sndcontext: boot.sndcontext,
-			gainnode: boot.gainnode,
-			debug: boot.debug,
-			startingGamepadIndex: boot.startingGamepadIndex,
-			enableOnscreenGamepad: boot.enableOnscreenGamepad,
-			platform: boot.platform,
-			viewHost: boot.viewHost,
-		});
-
+	public static async init(cartridge?: BmsxCartridgeBlob): Promise<void> {
+		const engineLayer = $.engineLayer;
+		const playerIndex = Input.instance.startupGamepadIndex ?? 1;
 		$.view.default_font = new VMFont();
 
-		const inputMappingPerPlayer = cartIndex.manifest.input ?? { 1: { keyboard: null, gamepad: null, pointer: null } as InputMap };
-		for (const playerIndexStr of Object.keys(inputMappingPerPlayer)) {
-			const playerIndex = parseInt(playerIndexStr, 10);
-			const inputMapping = inputMappingPerPlayer[playerIndex];
-			$.set_inputmap(playerIndex, inputMapping);
+		if (!cartridge) {
+			const luaSources: LuaSourceRegistry = {
+				path2lua: {},
+				entry_path: engineLayer.index.manifest.lua.entry_path,
+				namespace: engineLayer.index.manifest.vm.namespace,
+			};
+			$.setLuaSources(luaSources);
+			const runtime = BmsxVMRuntime.createInstance({
+				playerIndex,
+				canonicalization: engineLayer.index.manifest.vm.canonicalization,
+				viewport: engineLayer.index.manifest.vm.viewport,
+			});
+			await runtime.boot();
+			$.start();
+			return;
 		}
 
-		await applyWorkspaceOverridesToCart({ cart: $.cart, storage: $.platform.storage, includeServer: true });
+		const cartLayer = await buildRuntimeAssetLayer({ blob: cartridge, id: 'cart' });
+		applyRuntimeAssetLayer($.assets, cartLayer);
+		const overlayBlob = $.workspaceOverlay;
+		const overlayLayer = overlayBlob ? await buildRuntimeAssetLayer({ blob: overlayBlob, id: 'overlay' }) : null;
+		if (overlayLayer) {
+			applyRuntimeAssetLayer($.assets, overlayLayer);
+		}
+		const layers = [];
+		if (overlayLayer) {
+			layers.push({ id: overlayLayer.id, index: overlayLayer.index, payload: overlayLayer.payload });
+		}
+		layers.push({ id: cartLayer.id, index: cartLayer.index, payload: cartLayer.payload });
+		layers.push({ id: engineLayer.id, index: engineLayer.index, payload: engineLayer.payload });
+		const assetSource = new AssetSourceStack(layers);
+		$.setAssetSource(assetSource);
+		await $.refreshAudioAssets();
+		$.view.primaryAtlas = 0;
+
+		const cartSource = new AssetSourceStack([{ id: cartLayer.id, index: cartLayer.index, payload: cartLayer.payload }]);
+		const luaSources = BmsxVMRuntime.buildLuaSources({
+			cartSource,
+			assetSource,
+			index: cartLayer.index,
+		});
+		$.setLuaSources(luaSources);
+
+		const inputMappingPerPlayer = cartLayer.index.manifest.input ?? { 1: { keyboard: null, gamepad: null, pointer: null } as InputMap };
+		for (const playerIndexStr of Object.keys(inputMappingPerPlayer)) {
+			const mappedIndex = parseInt(playerIndexStr, 10);
+			const inputMapping = inputMappingPerPlayer[mappedIndex];
+			$.set_inputmap(mappedIndex, inputMapping);
+		}
+
+		await applyWorkspaceOverridesToCart({ cart: $.luaSources, storage: $.platform.storage, includeServer: true });
 
 		const runtime = BmsxVMRuntime.createInstance({
-			playerIndex: boot.startingGamepadIndex ?? 1,
-			canonicalization: cartIndex.manifest.vm.canonicalization,
-			viewport: cartIndex.manifest.vm.viewport,
+			playerIndex,
+			canonicalization: cartLayer.index.manifest.vm.canonicalization,
+			viewport: cartLayer.index.manifest.vm.viewport,
 		});
-
 		await runtime.boot();
 		$.start();
+	}
+
+	private static buildLuaSources(params: { cartSource: RawAssetSource; assetSource: RawAssetSource; index: CartridgeIndex }): LuaSourceRegistry {
+		const { cartSource, assetSource, index } = params;
+		const registry: LuaSourceRegistry = {
+			path2lua: {},
+			entry_path: index.manifest.lua.entry_path,
+			namespace: index.manifest.vm.namespace,
+		};
+
+		for (const asset of index.assets) {
+			if (asset.type !== 'lua') {
+				continue;
+			}
+			const baseEntry = cartSource.getEntry(asset.resid);
+			if (!baseEntry) {
+				continue;
+			}
+			const activeEntry = assetSource.getEntry(asset.resid);
+			if (!activeEntry) {
+				continue;
+			}
+			const baseSrc = decodeuint8arr(cartSource.getBytes(baseEntry));
+			const src = decodeuint8arr(assetSource.getBytes(activeEntry));
+			const luaAsset: LuaSourceRecord = {
+				...activeEntry,
+				src,
+				base_src: baseSrc,
+				update_timestamp: activeEntry.update_timestamp,
+			};
+			registry.path2lua[luaAsset.source_path] = luaAsset;
+			registry.path2lua[luaAsset.normalized_source_path] = luaAsset;
+		}
+
+		return registry;
 	}
 
 	public static get instance(): BmsxVMRuntime {
@@ -188,6 +252,10 @@ export class BmsxVMRuntime extends Service {
 		// No defense against multiple calls; let it throw if misused.
 		BmsxVMRuntime._instance.dispose();
 		BmsxVMRuntime._instance = null;
+	}
+
+	public setCartEntryAvailable(value: boolean): void {
+		this.cartEntryAvailable = value;
 	}
 
 	public readonly storage: BmsxVMStorage;
@@ -273,6 +341,7 @@ export class BmsxVMRuntime extends Service {
 		this.faultOverlayNeedsFlush = false;
 	}
 	private hasCompletedInitialBoot = false;
+	private cartEntryAvailable = true;
 	private readonly _canonicalization: CanonicalizationType;
 	private readonly canonicalizeIdentifierFn: (value: string) => string;
 	public get canonicalization(): CanonicalizationType {
@@ -287,7 +356,7 @@ export class BmsxVMRuntime extends Service {
 		BmsxVMRuntime._instance = this;
 		this.playerIndex = options.playerIndex;
 		this.storageService = $.platform.storage;
-		this.storage = new BmsxVMStorage(this.storageService, $.cart.namespace);
+		this.storage = new BmsxVMStorage(this.storageService, $.luaSources.namespace);
 		const resolvedCanonicalization = options.canonicalization ?? 'none';
 		this._canonicalization = resolvedCanonicalization;
 		this.canonicalizeIdentifierFn = createIdentifierCanonicalizer(this._canonicalization);
@@ -328,6 +397,27 @@ export class BmsxVMRuntime extends Service {
 
 	private configureInterpreter(interpreter: LuaInterpreter): void {
 		interpreter.requireHandler = (ctx, module) => this.requireLuaModule(ctx, module);
+	}
+
+	private createLuaInterpreter(): LuaInterpreter {
+		const interpreter = new LuaInterpreter(this.luaJsBridge, this._canonicalization);
+		this.configureInterpreter(interpreter);
+		interpreter.attachDebugger(this.debuggerController);
+		interpreter.clearLastFaultEnvironment();
+		registerApiBuiltins(interpreter);
+		interpreter.setReservedIdentifiers(this.apiFunctionNames);
+		return interpreter;
+	}
+
+	private assignInterpreter(interpreter: LuaInterpreter): void {
+		this.luaInterpreter = interpreter;
+		this.updateThread = null;
+		this.luaInitFunction = null;
+		this.luaNewGameFunction = null;
+		this.luaUpdateFunction = null;
+		this.luaDrawFunction = null;
+		this.luaRuntimeFailed = false;
+		this.luaVmInitialized = false;
 	}
 
 	private pollVMHotkeys(): void {
@@ -719,8 +809,9 @@ export class BmsxVMRuntime extends Service {
 			this.editor.clearRuntimeErrorOverlay();
 			if (this.hasCompletedInitialBoot) { // Subsequent boot: reset to fresh world
 				await $.reset_to_fresh_world();
+				$.view.primaryAtlas = 0;
 			}
-			api.cartdata($.cart.namespace);
+			api.cartdata($.luaSources.namespace);
 			this.bootLuaProgram();
 			this.hasCompletedInitialBoot = true;
 		}
@@ -853,6 +944,10 @@ export class BmsxVMRuntime extends Service {
 		if (state.updateExecuted) {
 			return;
 		}
+		if (!this.cartEntryAvailable) {
+			state.updateExecuted = true;
+			return;
+		}
 		if (!this.luaVmGate.ready) {
 			state.updateExecuted = true;
 			return;
@@ -867,7 +962,7 @@ export class BmsxVMRuntime extends Service {
 			return;
 		}
 		try {
-			if (Object.values($.cart.path2lua).length > 0) {
+			if (Object.values($.luaSources.path2lua).length > 0) {
 				if (this.luaUpdateFunction !== null) {
 					if (this.updateThread === null) {
 						this.updateThread = this.createLuaExecutionThread(this.luaUpdateFunction, [state.deltaSeconds]);
@@ -890,8 +985,6 @@ export class BmsxVMRuntime extends Service {
 						this.handleLuaError(fault);
 					}
 				}
-			} else {
-				$.cart.update(state.deltaSeconds);
 			}
 		} catch (error) {
 			if (isLuaDebuggerPauseSignal(error)) {
@@ -939,19 +1032,39 @@ export class BmsxVMRuntime extends Service {
 		}
 	}
 
+	private drawBlueScreen(): void {
+		const viewport = $.view.viewportSize;
+		const rect: RectRenderSubmission = {
+			kind: 'fill',
+			area: {
+				left: 0,
+				top: 0,
+				right: viewport.x,
+				bottom: viewport.y,
+				z: 0,
+			},
+			color: Msx1Colors[4],
+		};
+		this.overlayRenderBackend.rect(rect);
+	}
+
 	private drawGameFrame(): void {
 		try {
 			this.overlayRenderBackend.beginFrame();
 			// No try catch here; caller handles faults
 			this.overlayRenderBackend.setDefaultLayer('world');
+			if (!this.cartEntryAvailable) {
+				this.drawBlueScreen();
+				this.preservedRenderQueue = this.overlayRenderBackend.captureCurrentFrameRenderQueue();
+				return;
+			}
 			if (this.luaVmGate.ready) {
 				if (this.updateThread !== null || this.debuggerPaused || this.luaRuntimeFailed || this.faultSnapshot) {
 					this.overlayRenderBackend.playbackRenderQueue(this.preservedRenderQueue);
 				}
 				else {
-					const interpreter = this.luaInterpreter;
 					try {
-						interpreter.pushProgramCounter();
+						this.luaInterpreter.pushProgramCounter();
 						this.invokeLuaFunction(this.luaDrawFunction, []);
 						this.preservedRenderQueue = this.overlayRenderBackend.captureCurrentFrameRenderQueue();
 					} catch (error) {
@@ -963,7 +1076,7 @@ export class BmsxVMRuntime extends Service {
 							this.handleLuaError(error);
 						}
 					} finally {
-						interpreter.popProgramCounter();
+						this.luaInterpreter.popProgramCounter();
 					}
 				}
 			}
@@ -1031,7 +1144,7 @@ export class BmsxVMRuntime extends Service {
 	}
 
 	private async resetRuntimeToFreshState() {
-		const asset = $.cart.path2lua[$.cart.entry_path];
+		const asset = $.luaSources.path2lua[$.luaSources.entry_path];
 		this._luaPath = asset.source_path;
 		this.luaVmInitialized = false;
 		await this.boot();
@@ -1054,7 +1167,7 @@ export class BmsxVMRuntime extends Service {
 		// cooperation to restore.
 		const savedRuntimeFailed = snapshot.luaRuntimeFailed === true;
 
-		api.cartdata($.cart.namespace);
+		api.cartdata($.luaSources.namespace);
 		if (snapshot.storage !== undefined) {
 			this.storage.restore(snapshot.storage);
 		}
@@ -1100,7 +1213,7 @@ export class BmsxVMRuntime extends Service {
 		const previousChunkTables = this.captureChunkTables(binding);
 		const previousGlobals = this.captureGlobalStateForReload();
 		const interpreter = this.luaInterpreter;
-		const hotModuleId = $.cart.path2lua[binding].source_path;
+		const hotModuleId = $.luaSources.path2lua[binding].source_path;
 		interpreter.clearLastFaultEnvironment();
 		const results = interpreter.execute(params.source, binding);
 		this.luaJsBridge.wrapLuaExecutionResults(hotModuleId, results);
@@ -1123,10 +1236,10 @@ export class BmsxVMRuntime extends Service {
 
 	private bindLifecycleHandlers(): void {
 		const env = this.luaInterpreter.globalEnvironment;
-		this.luaNewGameFunction = this.getLuaGlobalValue(env, 'new_game' satisfies LifeCycleHandlerName) as LuaFunctionValue;
-		this.luaInitFunction = this.getLuaGlobalValue(env, 'init' satisfies LifeCycleHandlerName) as LuaFunctionValue;
-		this.luaUpdateFunction = this.getLuaGlobalValue(env, 'update' satisfies LifeCycleHandlerName) as LuaFunctionValue;
-		this.luaDrawFunction = this.getLuaGlobalValue(env, 'draw' satisfies LifeCycleHandlerName) as LuaFunctionValue;
+		this.luaNewGameFunction = this.getLuaGlobalValue(env, 'new_game' satisfies LuaLifecycleHandlerName) as LuaFunctionValue;
+		this.luaInitFunction = this.getLuaGlobalValue(env, 'init' satisfies LuaLifecycleHandlerName) as LuaFunctionValue;
+		this.luaUpdateFunction = this.getLuaGlobalValue(env, 'update' satisfies LuaLifecycleHandlerName) as LuaFunctionValue;
+		this.luaDrawFunction = this.getLuaGlobalValue(env, 'draw' satisfies LuaLifecycleHandlerName) as LuaFunctionValue;
 	}
 
 	private runLuaLifecycleHandler(kind: 'init' | 'new_game'): boolean {
@@ -1148,7 +1261,14 @@ export class BmsxVMRuntime extends Service {
 
 	public reloadLuaProgramState(options: { runInit?: boolean; }): void {
 		const runInit = options.runInit !== false;
-		const binding = $.cart.path2lua[$.cart.entry_path];
+		let binding = $.luaSources.path2lua[$.luaSources.entry_path] as LuaSourceRecord;
+		if (!binding) {
+			// This can happen if there is no Lua entry point defined in the cart. For example, when there is no cart loaded and the player still tried to write code and run it.
+			// Luckily, this is not a fatal error as the description will point towards `__engine_assets__.lua`
+			// binding =  { source_path: $.luaSources.entry_path, resid: $.luaSources.entry_path, type: 'lua', src: '', normalized_source_path: $.luaSources.entry_path, update_timestamp: $.platform.clock.dateNow(), base_src: '' };
+			console.info(`[BmsxVMRuntime] No Lua entry point defined; cannot reload program. Please save the entry point and try again.`);
+			return;
+		}
 		this._luaPath = binding.source_path;
 		if (!this.luaInterpreter) {
 			if (!this.bootLuaProgram()) {
@@ -1197,7 +1317,7 @@ export class BmsxVMRuntime extends Service {
 	}
 
 	private reinitializeLuaProgramFromSnapshot(snapshot: BmsxVMState, options: { runInit: boolean; hotReload: boolean }): void {
-		const binding = $.cart.path2lua[$.cart.entry_path];
+		const binding = $.luaSources.path2lua[$.luaSources.entry_path];
 		const source = this.resourceSourceForChunk(binding.source_path);
 
 		this._luaPath = binding.source_path;
@@ -1213,7 +1333,7 @@ export class BmsxVMRuntime extends Service {
 	}
 
 	private refreshLuaModulesOnResume(resumeModuleId: string): void {
-		const paths = Object.keys($.cart.path2lua);
+		const paths = Object.keys($.luaSources.path2lua);
 		for (let index = 0; index < paths.length; index += 1) {
 			const moduleId = paths[index];
 			if (resumeModuleId && moduleId === resumeModuleId) {
@@ -1262,7 +1382,7 @@ export class BmsxVMRuntime extends Service {
 	private initializeLuaInterpreterFromSnapshot(params: { source: string; path: string; snapshot: BmsxVMState; runInit: boolean; hotReload: boolean }): void {
 		const snapshot = params.snapshot;
 		const savedRuntimeFailed = snapshot.luaRuntimeFailed === true;
-		const binding = $.cart.path2lua[params.path];
+		const binding = $.luaSources.path2lua[params.path];
 		if (params.hotReload) {
 			this.hotReloadProgramEntry({ source: params.source, path: binding.source_path });
 			if (params.runInit && !savedRuntimeFailed) {
@@ -1278,22 +1398,10 @@ export class BmsxVMRuntime extends Service {
 
 		// Path not used right now, but might be useful for loading game state later
 		this.resetLuaInteroperabilityState();
-		const interpreter = new LuaInterpreter(this.luaJsBridge, this._canonicalization);
-		this.configureInterpreter(interpreter);
-		interpreter.attachDebugger(this.debuggerController);
-		interpreter.clearLastFaultEnvironment();
-		this.luaInterpreter = interpreter;
-		this.updateThread = null;
-		this.luaInitFunction = null;
-		this.luaNewGameFunction = null;
-		this.luaUpdateFunction = null;
-		this.luaDrawFunction = null;
-		this.luaRuntimeFailed = false;
+		const interpreter = this.createLuaInterpreter();
+		this.assignInterpreter(interpreter);
 
-		registerApiBuiltins(interpreter);
-		interpreter.setReservedIdentifiers(this.apiFunctionNames);
-
-		const moduleId = $.cart.path2lua[binding.source_path].source_path;
+		const moduleId = $.luaSources.path2lua[binding.source_path].source_path;
 		const results = interpreter.execute(params.source, binding.source_path);
 		this.luaJsBridge.wrapLuaExecutionResults(moduleId, results);
 		this.cacheChunkEnvironment(binding.source_path, moduleId);
@@ -1605,9 +1713,16 @@ export class BmsxVMRuntime extends Service {
 	}
 
 	private bootLuaProgram() {
-		const entryAsset = $.cart.path2lua[$.cart.entry_path];
+		const entryAsset = $.luaSources.path2lua[$.luaSources.entry_path];
+		this.cartEntryAvailable = !!entryAsset;
+
+		this.resetLuaInteroperabilityState();
+		const interpreter = this.createLuaInterpreter();
+		this.assignInterpreter(interpreter);
+
 		if (!entryAsset) {
-			throw new Error(`[BmsxVMRuntime] Cannot boot Lua program: no entry asset found at path '${$.cart.entry_path}'.`);
+			this._luaPath = null;
+			return false;
 		}
 		const path = entryAsset.source_path;
 		if (!path || path.length === 0) {
@@ -1619,24 +1734,10 @@ export class BmsxVMRuntime extends Service {
 			throw new Error(`[BmsxVMRuntime] Cannot boot Lua program: entry path '${path}' has no source code.`);
 		}
 
-		this.resetLuaInteroperabilityState();
-		const interpreter = new LuaInterpreter(this.luaJsBridge, this._canonicalization);
-		this.configureInterpreter(interpreter);
-		interpreter.attachDebugger(this.debuggerController);
-		interpreter.clearLastFaultEnvironment();
-		this.luaInterpreter = interpreter;
-		this.updateThread = null;
-		this.luaInitFunction = null;
-		this.luaNewGameFunction = null;
-		this.luaUpdateFunction = null;
-		this.luaDrawFunction = null;
 		this._luaPath = path;
-		this.luaRuntimeFailed = false;
 
 		try {
-			registerApiBuiltins(interpreter);
-			interpreter.setReservedIdentifiers(this.apiFunctionNames);
-			const moduleId = $.cart.path2lua[path].source_path;
+			const moduleId = $.luaSources.path2lua[path].source_path;
 			const results = interpreter.execute(source, path);
 			this.luaJsBridge.wrapLuaExecutionResults(moduleId, results);
 			this.cacheChunkEnvironment(path, moduleId);
@@ -1675,6 +1776,7 @@ export class BmsxVMRuntime extends Service {
 
 			// Reload the program source from the cartridge and reset the world
 			await $.reset_to_fresh_world();
+			$.view.primaryAtlas = 0;
 			try {
 				this.reloadLuaProgramState({ runInit: options?.runInit !== false });
 			} catch (error) {
@@ -1816,7 +1918,7 @@ export class BmsxVMRuntime extends Service {
 				}
 			}
 		}
-		const projectRootPath = $.rompack.project_root_path;
+		const projectRootPath = $.assets.project_root_path;
 		const normalizedRoot = projectRootPath && projectRootPath.length > 0
 			? projectRootPath.replace(/^\.?\//, '')
 			: '';
@@ -1878,7 +1980,7 @@ export class BmsxVMRuntime extends Service {
 		}
 		const results = fn.call(luaArgs);
 		const output: unknown[] = [];
-		const moduleId = $.cart.path2lua[this._luaPath].source_path;
+		const moduleId = $.luaSources.path2lua[this._luaPath].source_path;
 		const baseCtx = { moduleId, path: [] };
 		for (let i = 0; i < results.length; i += 1) {
 			output.push(this.luaJsBridge.convertFromLua(results[i], this.extendMarshalContext(baseCtx, `ret${i}`)));
@@ -1942,7 +2044,7 @@ export class BmsxVMRuntime extends Service {
 	private cacheChunkEnvironment(path: string, moduleId?: string): void {
 		const environment = this.luaInterpreter.pathEnvironment;
 		const definitions = this.luaInterpreter.getChunkDefinitions(path);
-		const asset = $.cart.path2lua[path];
+		const asset = $.luaSources.path2lua[path];
 		const effectiveModuleId = moduleId ?? asset.source_path;
 		this.pruneRemovedChunkFunctionExports(path, environment, definitions, this.luaInterpreter.globalEnvironment);
 		this.installFunctionRedirectsForChunk(effectiveModuleId, environment, definitions);
@@ -2037,7 +2139,7 @@ export class BmsxVMRuntime extends Service {
 		if (this.luaModuleIndexBuilt) {
 			return;
 		}
-		const aliases = buildLuaModuleAliases($.cart);
+		const aliases = buildLuaModuleAliases($.luaSources);
 		this.luaModuleAliases.clear();
 		for (const [key, record] of aliases) {
 			this.luaModuleAliases.set(key, record);
@@ -2063,7 +2165,7 @@ export class BmsxVMRuntime extends Service {
 			const pending = packageLoaded.get(record.packageKey);
 			return pending === null ? true : pending;
 		}
-		const asset = $.cart.path2lua[record.path];
+		const asset = $.luaSources.path2lua[record.path];
 		const source = this.resourceSourceForChunk(asset.source_path);
 		this.luaModuleLoadingKeys.add(record.packageKey);
 		packageLoaded.set(record.packageKey, true);
@@ -2110,7 +2212,7 @@ export class BmsxVMRuntime extends Service {
 		const previousChunkTables = this.captureChunkTables(path);
 		const previousGlobals = this.captureGlobalStateForReload();
 		const source = sourceOverride ? sourceOverride : this.resourceSourceForChunk(path);
-		const asset = $.cart.path2lua[path];
+		const asset = $.luaSources.path2lua[path];
 		const moduleId = asset.source_path; // Stable ids for redirect caches
 		const results = interpreter.execute(source, path);
 		this.luaJsBridge.wrapLuaExecutionResults(moduleId, results);
@@ -2128,10 +2230,9 @@ export class BmsxVMRuntime extends Service {
 	}
 
 	public resourceSourceForChunk(path: string): string {
-		// The runtime reads sources from `$.cart.path2lua`. Keep the cart's `path2lua` and `path2lua` indices
-		// pointing at the same `RomLuaAsset` objects (see `cloneCartForRuntime()` in `core/game.ts`), or ensure that
-		// any code mutating sources updates both indices; otherwise the VM can execute stale code after an override.
-		const binding = $.cart.path2lua[path];
+		// The runtime reads sources from `$.luaSources.path2lua`. Keep the path indices pointing at the same
+		// LuaSourceRecord objects (or update both indices together) to avoid stale code after overrides.
+		const binding = $.luaSources.path2lua[path];
 		if (!binding) return null; // This can happen for non-existent paths, such as debugger tabs that don't refer to real paths
 		const cached = getWorkspaceCachedSource(binding.normalized_source_path);
 		if (cached !== null) {

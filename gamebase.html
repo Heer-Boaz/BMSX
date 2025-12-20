@@ -150,9 +150,9 @@
 			//#debug
 			window.onload = async function () {
 				try {
-					const romurl = getRomFromUrlParameter() ?? '#outfile';
+					const romurl = null;//getRomFromUrlParameter() ?? '#outfile';
 					await bootrom.loadEngineAssets('./engine.assets.rom');
-					await bootrom.loadCart(`./${romurl}`);
+					await bootrom.loadCart(`./${romurl ?? ''}`);
 					await bootrom.start();
 				} catch (err) {
 					bootrom.outputError('Failed to boot rom.\n' + err.stack ?? err);

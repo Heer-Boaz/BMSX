@@ -1,29 +1,18 @@
-import { type BootArgs, type WorldConfiguration, shallowcopy } from '../index';
-import { createBmsxVMModule } from './module';
-import type { CartManifest } from '../rompack/rompack';
-import { buildRuntimeAssets } from '../rompack/romloader';
-import { BmsxVMRuntime } from './vm_runtime';
+import { type BootArgs, $ } from '../index';
 
 export const DEFAULT_VM_FONT_VARIANT = 'msx';
 
 export async function startCart(args: BootArgs): Promise<void> {
-	const assets = await buildRuntimeAssets({
+	await $.init({
+		engineRom: args.engineAssets,
 		cartridge: args.cartridge,
-		engineAssets: args.engineAssets,
 		workspaceOverlay: args.workspaceOverlay,
-	});
-	const manifest = assets.cartIndex.manifest as CartManifest;
-	const viewport = manifest.vm.viewport;
-	const module = createBmsxVMModule();
-
-	const worldConfig: WorldConfiguration = {
-		viewportSize: shallowcopy(viewport),
-		modules: [module],
-	};
-
-	await BmsxVMRuntime.init({
-		boot: args,
-		assets,
-		worldConfig,
+		sndcontext: args.sndcontext,
+		gainnode: args.gainnode,
+		debug: args.debug,
+		startingGamepadIndex: args.startingGamepadIndex,
+		enableOnscreenGamepad: args.enableOnscreenGamepad,
+		platform: args.platform,
+		viewHost: args.viewHost,
 	});
 }

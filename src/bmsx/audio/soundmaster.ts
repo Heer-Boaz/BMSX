@@ -263,7 +263,7 @@ export class SoundMaster implements RegisterablePersistent {
 		if (!resource) {
 			throw new Error(`SoundMaster: missing track resource for ${String(id)}`);
 		}
-		const slice = $.getAssetPayload(resource);
+		const slice = $.assetSource.getBuffer(resource);
 		const promise = this.decode(slice)
 			.then(clip => {
 				this.clips[id] = clip;

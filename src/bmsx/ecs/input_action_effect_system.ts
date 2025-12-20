@@ -24,7 +24,7 @@ let assetProgramsValidated = false;
 
 function validatePrimaryAssetsOnBoot(): void {
 	if (assetProgramsValidated) return;
-	const data = $.rompack.data;
+	const data = $.assets.data;
 	const entries = Object.keys(data);
 	for (let i = 0; i < entries.length; i++) {
 		const key = entries[i]!;
@@ -356,7 +356,7 @@ export class InputActionEffectSystem extends ECSystem {
 			throw new Error(`[InputActionEffectSystem] Program '${programId}' is marked as missing.`);
 		}
 
-		const data = $.rompack.data[programId as keyof typeof $.rompack.data];
+		const data = $.assets.data[programId as keyof typeof $.assets.data];
 		if (!isInputActionEffectProgram(data)) {
 			this.missingProgramIds.add(programId);
 			throw new Error(`[InputActionEffectSystem] Program '${programId}' not found or invalid.`);

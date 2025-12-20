@@ -1,4 +1,4 @@
-import { $, BFont, BGamepadButton, World, BootArgs, GamepadInputMapping, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, StateMachineBlueprint, build_fsm, type State, WorldConfiguration, buildRuntimeAssets } from 'bmsx';
+import { $, BFont, BGamepadButton, World, BootArgs, GamepadInputMapping, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, StateMachineBlueprint, build_fsm, type State, WorldConfiguration } from 'bmsx';
 import { quiz } from './quiz';
 import { BitmapId } from './resourceids';
 import { sint } from './sint';
@@ -16,15 +16,10 @@ _global['h406A'] = async (args: BootArgs): Promise<void> => {
 	if (!viewHost) {
 		throw new Error('[Bootloader:sint2024] View host not provided by Platform.');
 	}
-	const assets = await buildRuntimeAssets({
-		cartridge: args.cartridge,
-		engineAssets: args.engineAssets,
-		workspaceOverlay: args.workspaceOverlay,
-	});
 	await $.init({
-		rompack: assets.rompack,
-		payloads: assets.payloads,
-		cartOverlay: assets.cartOverlay,
+		engineRom: args.engineAssets,
+		cartridge: args.cartridge,
+		workspaceOverlay: args.workspaceOverlay,
 		worldConfig,
 		sndcontext: args.sndcontext,
 		gainnode: args.gainnode,
@@ -37,7 +32,6 @@ _global['h406A'] = async (args: BootArgs): Promise<void> => {
 	// set input map previously done in do_one_time_game_init
 	$.set_inputmap(1, { keyboard: keyboardInputMapping, gamepad: gamepadInputMapping, });
 	$.view.default_font = new BFont(BitmapId);
-	$.start();
 };
 
 const actions = ['up', 'right', 'down', 'left', 'a', 'b'] as const;

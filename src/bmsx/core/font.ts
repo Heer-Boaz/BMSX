@@ -138,7 +138,7 @@ export class BFont {
 
 	/**
 	 * Creates a new instance of the `BFont` class.
-	 * @param glyphmap A mapping from characters to rompack image ids.
+	 * @param glyphmap A mapping from characters to assets image ids.
 	 * @param advancePadding Extra pixels added to glyph advance.
 	 */
 	constructor(glyphmap?: GlyphMap, advancePadding: number = 0) {
@@ -186,9 +186,9 @@ export class BFont {
 			return glyph;
 		}
 		const imgid = this.char_to_img(char);
-		const entry = $.rompack.img[imgid];
+		const entry = $.assets.img[imgid];
 		if (!entry || !entry.imgmeta) {
-			throw new Error(`[VMFont] Glyph asset "${imgid}" for character "${char}" not found in rompack.`);
+			throw new Error(`[VMFont] Glyph asset "${imgid}" for character "${char}" not found in assets.`);
 		}
 		const width = entry.imgmeta.width;
 		const height = entry.imgmeta.height;

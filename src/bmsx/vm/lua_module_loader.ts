@@ -1,4 +1,4 @@
-import type { CartRuntime } from '../rompack/rompack';
+import type { LuaSourceRegistry } from './lua_sources';
 
 export type LuaRequireModuleRecord = {
 	packageKey: string;
@@ -52,9 +52,9 @@ function registerLuaModuleAliases(
 	register(`${baseDots}.lua`);
 }
 
-export function buildLuaModuleAliases(cart: CartRuntime): Map<string, LuaRequireModuleRecord> {
+export function buildLuaModuleAliases(sources: LuaSourceRegistry): Map<string, LuaRequireModuleRecord> {
 	const aliases = new Map<string, LuaRequireModuleRecord>();
-	const luaAssets = cart.path2lua;
+	const luaAssets = sources.path2lua;
 	for (const assetId of Object.keys(luaAssets)) {
 		const asset = luaAssets[assetId];
 		if (!asset || asset.type !== 'lua') {

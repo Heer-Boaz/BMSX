@@ -1597,7 +1597,7 @@ local function build_director_fsm()
 					self:update_dialogue_prompt()
 				end,
 				tick = function(self)
-					write('BLADIEBLAP', 100, 100, 1000, 10)
+					-- write('BLADIEBLAP', 100, 100, 1000, 10)
 
 					local main = world_object(text_main_id)
 					if main.is_typing then

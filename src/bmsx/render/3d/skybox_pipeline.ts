@@ -14,7 +14,7 @@ import type { TextureSource } from '../../rompack/rompack';
 import { SkyboxImageIds } from '../shared/render_types';
 
 function resolveSkyboxImage(assetId: string): Promise<TextureSource> {
-	const asset = $.rompack.img[assetId];
+	const asset = $.assets.img[assetId];
 	if (!asset) {
 		throw new Error(`[SkyboxPipeline] Skybox image '${assetId}' not found.`);
 	}

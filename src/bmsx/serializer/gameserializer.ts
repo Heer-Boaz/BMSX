@@ -581,14 +581,14 @@ export class Savegame {
 		const qs = $.aem.getQueues();
 		SMState.sfxQueue = qs.sfx.map(q => ({
 			id: q.audio_id,
-			params: (q.modulation_params ?? (q.modulation_preset !== undefined ? ($.rompack.data[q.modulation_preset] as ModulationParams) : {} as ModulationParams)),
+			params: (q.modulation_params ?? (q.modulation_preset !== undefined ? ($.assets.data[q.modulation_preset] as ModulationParams) : {} as ModulationParams)),
 			priority: q.priority ?? 0,
 			cooldown_ms: q.cooldown_ms,
 			actorId: q.payload_actor_id,
 		}));
 		SMState.uiQueue = qs.ui.map(q => ({
 			id: q.audio_id,
-			params: (q.modulation_params ?? (q.modulation_preset !== undefined ? ($.rompack.data[q.modulation_preset] as ModulationParams) : {} as ModulationParams)),
+			params: (q.modulation_params ?? (q.modulation_preset !== undefined ? ($.assets.data[q.modulation_preset] as ModulationParams) : {} as ModulationParams)),
 			priority: q.priority ?? 0,
 			cooldown_ms: q.cooldown_ms,
 			actorId: q.payload_actor_id,

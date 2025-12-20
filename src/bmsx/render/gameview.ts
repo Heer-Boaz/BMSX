@@ -874,7 +874,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		this.textures['_atlas_secondary'] = fallback;
 		this.textures['_atlas_fallback'] = fallback;
 		const engineAtlasName = generateAtlasName(ENGINE_ATLAS_INDEX);
-		const engineAtlas = $.rompack.img[engineAtlasName];
+		const engineAtlas = $.assets.img[engineAtlasName];
 		if (!engineAtlas) {
 			throw new Error(`[GameView] Engine atlas '${engineAtlasName}' missing.`);
 		}
@@ -913,7 +913,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 			return;
 		}
 		const atlasName = generateAtlasName(index);
-		const atlas = $.rompack.img[atlasName];
+		const atlas = $.assets.img[atlasName];
 		if (!atlas) {
 			throw new Error(`[GameView] atlas '${atlasName}' not found.`);
 		}

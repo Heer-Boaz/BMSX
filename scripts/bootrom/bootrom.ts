@@ -203,7 +203,8 @@ export const bootrom = {
 
 		const fetchRom = () => {
 			return fetchBuffer(url).catch(err => {
-				throw new Error(`Error while fetching ROM: "${err.message}"`);
+				console.error(`Error while fetching ROM: "${err.message}"`);
+				// We do not reject here, allowing the engine core to handle the missing cartridge by itself (showing a blank screen, like a retro-style computer with no cart inserted).
 			});
 		};
 
@@ -235,13 +236,18 @@ export const bootrom = {
 
 			fetchRom()
 				.then((response_array: ArrayBuffer) => {
-					const split = splitRomLabel(response_array);
-					if (split.romlabel) {
-						romlabel_bloburl = getImageUrlFromBuffer(split.romlabel);
-						replaceBMSXImgWithRomLabel();
+					if (!response_array) {
+						// No ROM loaded
+						const split = splitRomLabel(response_array);
+						if (split.romlabel) {
+							romlabel_bloburl = getImageUrlFromBuffer(split.romlabel);
+							replaceBMSXImgWithRomLabel();
+						}
+						loadedRomBlob = response_array;
+						bootrom.cartridge = loadedRomBlob;
+					} else {
+						bootrom.cartridge = null;
 					}
-					loadedRomBlob = response_array;
-					bootrom.cartridge = loadedRomBlob;
 					return awaitBootComplete().then(() => {
 						replaceBMSXImgWithRomLabel();
 					});
@@ -253,14 +259,6 @@ export const bootrom = {
 				.then(() => resolve(loadedRomBlob))
 				.catch(err => {
 					reject(err);
-					// if (typeof err === 'string') {
-					// 	reject(err);
-					// } else if (err instanceof Error) {
-					// 	reject(err);
-					// } else {
-					// 	reject('Unknown error during bload.');
-					// }
-					// reject('[bload] Top-level error:\n' + err);
 				});
 		});
 	},

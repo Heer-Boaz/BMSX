@@ -44,7 +44,11 @@ function resolveSource(descriptor: VMResourceDescriptor | null): string {
 
 export function createEntryTabContext(): CodeTabContext {
 	const luaDescriptors = listResources().filter(r => r.type === 'lua');
-	const descriptor = luaDescriptors.find(r => r.path === $.cart.entry_path);
+	let descriptor = luaDescriptors.find(r => r.path === $.luaSources.entry_path)
+	if (!descriptor) {
+		console.warn(`Entry Lua source not found: ${$.luaSources.entry_path}`);
+		descriptor = { type: 'lua', path: null };
+	}
 	return createLuaCodeTabContext(descriptor);
 }
 
@@ -466,6 +470,9 @@ export function findCodeTabContext(path: string): CodeTabContext {
 }
 
 export function computeResourceTabTitle(descriptor: VMResourceDescriptor): string {
+	if (!descriptor || !descriptor.path) {
+		return '<anonymous>';
+	}
 	const parts = descriptor.path.split('/').filter(part => part.length > 0);
 	if (parts.length > 0) {
 		return parts[parts.length - 1];

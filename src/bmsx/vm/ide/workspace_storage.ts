@@ -343,6 +343,10 @@ export async function restoreWorkspaceSessionFromDisk(): Promise<void> {
 
 export async function applyWorkspaceAutosavePayload(payload: WorkspaceAutosavePayload): Promise<void> {
 	const entryContext = createEntryTabContext();
+	if (!entryContext) {
+		console.warn('[VMCartEditor] Cannot restore workspace session: entry Lua source not found.');
+		return;
+	}
 	ide_state.codeTabContexts.clear();
 	if (entryContext) {
 		ide_state.codeTabContexts.set(entryContext.id, entryContext);
@@ -374,7 +378,7 @@ export function resolveSerializedDescriptor(serialized: SerializedDescriptor): V
 	if (!serialized) {
 		return null;
 	}
-	const asset = $.cart.path2lua[serialized.path];
+	const asset = $.luaSources.path2lua[serialized.path];
 	return asset ? { path: serialized.path, type: serialized.type } : null;
 }
 
@@ -705,7 +709,7 @@ export async function persistDirtyContextEntries(entries: Map<string, DirtyConte
 }
 
 export function loadCleanSrc(path: string) {
-	const asset = $.cart.path2lua[path];
+	const asset = $.luaSources.path2lua[path];
 	if (!asset) {
 		return '';
 	}

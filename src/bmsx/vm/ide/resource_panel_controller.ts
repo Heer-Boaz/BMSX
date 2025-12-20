@@ -269,8 +269,8 @@ export class ResourcePanelController {
 		}
 		// Augment with atlas entries (moved from editor)
 		const augmented = descriptors.slice();
-		const rompack = $.rompack;
-		const img = rompack.img;
+		const assets = $.assets;
+		const img = assets.img;
 		const atlasKeys = Object.keys(img);
 		for (const key of atlasKeys) {
 			if (augmented.some(entry => entry.asset_id === key)) continue;
