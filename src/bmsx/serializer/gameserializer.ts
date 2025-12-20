@@ -514,6 +514,7 @@ type SoundMasterState = {
 };
 
 type ViewState = {
+	primaryAtlasIndex: number;
 	secondaryAtlasIndex: number;
 	activeCameraId: string;
 	skyboxFaceIds: SkyboxImageIds;
@@ -541,6 +542,7 @@ export class Savegame {
 		// Capture current view state
 		const view = $.view as GameView;
 		const viewState: ViewState = {
+			primaryAtlasIndex: view.primaryAtlas,
 			secondaryAtlasIndex: view.secondaryAtlas,
 			activeCameraId: $.world.activeCameraId ,
 			skyboxFaceIds: view.skyboxFaceIds,
@@ -553,6 +555,9 @@ export class Savegame {
 		const view = $.view as GameView;
 		// Restore view state
 		if (this.viewState) {
+			if (this.viewState.primaryAtlasIndex !== undefined) {
+				view.primaryAtlas = this.viewState.primaryAtlasIndex;
+			}
 			if (this.viewState.secondaryAtlasIndex !== undefined) {
 				view.secondaryAtlas = this.viewState.secondaryAtlasIndex;
 			}

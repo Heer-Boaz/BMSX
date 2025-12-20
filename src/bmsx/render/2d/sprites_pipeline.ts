@@ -28,7 +28,7 @@ import {
 	ZCOORD_MAX,
 	ZCOORDS_SIZE
 } from '../backend/webgl/webgl.constants';
-import { ENGINE_ATLAS_TEXTURE_KEY } from 'bmsx/rompack/engine_assets';
+import { ENGINE_ATLAS_TEXTURE_KEY } from 'bmsx/rompack/rompack';
 import { $ } from '../../core/engine_core';
 import { bvec } from './vertexutils2d';
 import type { WebGLBackend } from '../backend/webgl/webgl_backend';

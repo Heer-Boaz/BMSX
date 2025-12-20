@@ -117,7 +117,6 @@ export * from './render/backend/webgl/webgl_backend';
 export * from './render/glyphs';
 export * from './rompack/rompack';
 export * from './rompack/romloader';
-export * from './rompack/engine_assets';
 export * from './serializer/bincompressor';
 export * from './serializer/binencoder';
 export * from './serializer/gameserializer';

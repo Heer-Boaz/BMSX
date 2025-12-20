@@ -4,7 +4,7 @@ import { GateGroup, taskGate } from '../core/taskgate';
 import { color_arr, GLTFModel, Identifier, Index2GpuTexture, RegisterablePersistent, type RomImgAsset, type TextureSource } from '../rompack/rompack';
 import { GPUBackend, TextureHandle, TextureParams } from './backend/pipeline_interfaces';
 import { $ } from '../core/engine_core';
-import { generateAtlasName } from 'bmsx/rompack/engine_assets';
+import { generateAtlasName } from 'bmsx/rompack/rompack';
 
 export interface ModelTextureIdentifier {
 	modelName: string;

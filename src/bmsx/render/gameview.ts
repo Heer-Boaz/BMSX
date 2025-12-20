@@ -36,7 +36,7 @@ import type {
 	GlyphRenderSubmission,
 	SkyboxImageIds,
 } from './shared/render_types';
-import { generateAtlasName, ENGINE_ATLAS_INDEX, ENGINE_ATLAS_TEXTURE_KEY } from '../rompack/engine_assets';
+import { generateAtlasName, ENGINE_ATLAS_INDEX, ENGINE_ATLAS_TEXTURE_KEY } from 'bmsx/rompack/rompack';
 import { renderGate } from 'bmsx/core/engine_core';
 
 const PRESENTATION_PASS_IDS = ['skybox', 'meshbatch', 'particles', 'sprites', 'crt'];

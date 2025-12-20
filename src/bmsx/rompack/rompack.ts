@@ -147,6 +147,33 @@ export interface RegisterablePersistent extends Registerable {
 	registrypersistent: true;
 }
 
+/**
+ * Reserved atlas metadata for engine/runtime resources.
+ *
+ * Atlas indices are stored in packed sprite metadata and must fit in an
+ * unsigned byte. We reserve index 254 for engine assets so carts can safely
+ * use lower indices without risk of collision.
+ */
+export const ENGINE_ATLAS_INDEX = 254;
+
+/**
+ * Texture dictionary key used by GameView to cache the engine atlas texture.
+ */
+export const ENGINE_ATLAS_TEXTURE_KEY = '_atlas_engine';
+const atlasNameCache = new Map<number, string>(); // Cache for atlas names to avoid regenerating them for each request
+
+export function generateAtlasName(atlasIndex: number): string {
+	// Check if the atlas name is already cached
+	if (atlasNameCache.has(atlasIndex)) {
+		return atlasNameCache.get(atlasIndex)!;
+	}
+	// Generate a new atlas name and cache it
+	const idxStr = atlasIndex.toString().padStart(2, '0');
+	const atlasName = `_atlas_${idxStr}`;
+	atlasNameCache.set(atlasIndex, atlasName);
+	return atlasName;
+}
+
 /*
  * Enum representing the type of an audio asset.
  */
@@ -389,3 +416,32 @@ export type CartManifest = {
 		entry_path: string;
 	};
 };
+// import type { RomPack } from './rompack';
+// let engineAssets: RomPack;
+// export function setEngineAssets(pack: RomPack): void {
+// 	engineAssets = pack;
+// }
+// export function getEngineAssets(): RomPack {
+// 	return engineAssets;
+// }
+// export function mergeEngineAssets(bullshit: RomPack): RomPack {
+// 	function merge(primary: Record<string, any>, fallback: Record<string, any>){
+// 		return { ...fallback, ...primary };
+// 	}
+// 	const engine = engineAssets;
+// 	const merged: RomPack = {
+// 		...engine,
+// 		...bullshit,
+// 		rom: bullshit.rom,
+// 		img: merge(bullshit.img, engine.img),
+// 		audio: merge(bullshit.audio, engine.audio),
+// 		model: merge(bullshit.model, engine.model),
+// 		data: merge(bullshit.data, engine.data),
+// 		audioevents: merge(bullshit.audioevents, engine.audioevents),
+// 		cart: bullshit.cart,
+// 		project_root_path: bullshit.project_root_path,
+// 		canonicalization: bullshit.canonicalization,
+// 		manifest: bullshit.manifest,
+// 	};
+// 	return merged;
+// }
