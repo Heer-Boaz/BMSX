@@ -1,4 +1,4 @@
-import type { LuaChunk, LuaSourceRange, LuaStatement } from '../../lua/lua_ast';
+import type { LuaChunk, LuaSourceRange, LuaStatement } from '../lua/lua_ast';
 
 export type LuaInstruction = {
 	readonly kind: 'statement';

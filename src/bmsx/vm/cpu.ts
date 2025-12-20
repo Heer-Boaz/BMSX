@@ -27,7 +27,7 @@ import { isLuaDebuggerPauseSignal } from '../lua/luavalue';
 import type { LuaDebuggerController, LuaDebuggerPauseReason } from '../lua/luadebugger';
 import type { LuaRuntimeError, LuaSyntaxError } from '../lua/luaerrors';
 import type { ExecutionSignal, LuaCallFrame } from '../lua/luaruntime';
-import { VmRam, type LuaInstruction } from './ide/ram';
+import { VmRam, type LuaInstruction } from './ram';
 
 const NORMAL_SIGNAL: ExecutionSignal = null;
 

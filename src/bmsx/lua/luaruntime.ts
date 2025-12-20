@@ -60,7 +60,7 @@ import { BmsxVMRuntime } from '../vm/vm_runtime';
 import { isLuaHandlerFunction } from './luahandler_cache';
 import { LuaInteropAdapter } from '../vm/lua_js_bridge';
 import { LuaCpu, type ExecutionFrame, type StatementsFrame, type LabelScope, type FrameBoundary, type LuaCpuHost } from '../vm/cpu';
-import { VmRam } from '../vm/ide/ram';
+import { VmRam } from '../vm/ram';
 
 export type LuaCallFrame = {
 	readonly functionName: string;
