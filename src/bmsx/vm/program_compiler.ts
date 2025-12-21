@@ -274,6 +274,18 @@ class FunctionBuilder {
 		return base;
 	}
 
+	private allocLocal(): number {
+		const reg = this.localCount;
+		this.localCount += 1;
+		if (this.tempTop < this.localCount) {
+			this.tempTop = this.localCount;
+		}
+		if (this.tempTop > this.maxStack) {
+			this.maxStack = this.tempTop;
+		}
+		return reg;
+	}
+
 	private withRange(range: LuaSourceRange, fn: () => void): void {
 		const previous = this.currentRange;
 		this.currentRange = range;
@@ -648,9 +660,9 @@ class FunctionBuilder {
 		this.pushScope();
 		const indexReg = this.declareLocal(statement.variable.name);
 		this.compileExpressionInto(statement.start, indexReg, 1);
-		const limitReg = this.allocTemp();
+		const limitReg = this.allocLocal();
 		this.compileExpressionInto(statement.limit, limitReg, 1);
-		const stepReg = this.allocTemp();
+		const stepReg = this.allocLocal();
 		if (statement.step) {
 			this.compileExpressionInto(statement.step, stepReg, 1);
 		} else {

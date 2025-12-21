@@ -2936,8 +2936,18 @@ export class BmsxVMRuntime extends Service {
 		if (cached) {
 			return cached;
 		}
+		const isArray = Array.isArray(value);
+		const arrayValue = isArray ? (value as unknown[]) : null;
 		const wrapper = createNativeObject(value, {
 			get: (key) => {
+				if (isArray && typeof key === 'number' && Number.isInteger(key) && key >= 1) {
+					const index = key - 1;
+					if (index >= arrayValue.length) {
+						return null;
+					}
+					const rawValue = arrayValue[index];
+					return rawValue === undefined ? null : this.toVmValue(rawValue);
+				}
 				const prop = this.resolveNativeKey(key);
 				if (!prop) {
 					throw new Error('Attempted to index native object with unsupported key.');
@@ -2952,6 +2962,12 @@ export class BmsxVMRuntime extends Service {
 				return this.toVmValue(rawValue);
 			},
 			set: (key, entryValue) => {
+				if (isArray && typeof key === 'number' && Number.isInteger(key) && key >= 1) {
+					const index = key - 1;
+					const ctx = this.buildVmContext();
+					arrayValue[index] = this.toNativeValue(entryValue, ctx, new WeakMap());
+					return;
+				}
 				const prop = this.resolveNativeKey(key);
 				if (!prop) {
 					throw new Error('Attempted to assign native object with unsupported key.');
@@ -2963,7 +2979,7 @@ export class BmsxVMRuntime extends Service {
 				const ctx = this.buildVmContext();
 				(value as Record<string, unknown>)[prop] = this.toNativeValue(entryValue, ctx, new WeakMap());
 			},
-			len: Array.isArray(value) ? () => (value as unknown[]).length : undefined,
+			len: isArray ? () => arrayValue.length : undefined,
 		});
 		this.nativeObjectCache.set(value, wrapper);
 		return wrapper;
