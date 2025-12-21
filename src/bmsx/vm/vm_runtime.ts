@@ -339,6 +339,8 @@ export class BmsxVMRuntime extends Service {
 	private readonly nativeObjectCache = new WeakMap<object, NativeObject>();
 	private readonly nativeFunctionCache = new WeakMap<Function, NativeFunction>();
 	private readonly nativeMemberCache = new WeakMap<object, Map<string, NativeFunction>>();
+	private readonly vmTableIds = new WeakMap<Table, number>();
+	private nextVmTableId = 1;
 	public nativeMemberCompletionCache: WeakMap<object, { dot?: VMLuaMemberCompletion[]; colon?: VMLuaMemberCompletion[] }> = new WeakMap();
 	public readonly pathSemanticCache: Map<string, { source: string; model: LuaSemanticModel; definitions: ReadonlyArray<LuaDefinitionInfo>; parsed?: ParsedLuaChunk; lines?: readonly string[]; analysis?: FileSemanticData }> = new Map();
 
@@ -2758,6 +2760,17 @@ export class BmsxVMRuntime extends Service {
 		return null;
 	}
 
+	private getOrAssignVmTableId(table: Table): number {
+		const existing = this.vmTableIds.get(table);
+		if (existing !== undefined) {
+			return existing;
+		}
+		const id = this.nextVmTableId;
+		this.vmTableIds.set(table, id);
+		this.nextVmTableId += 1;
+		return id;
+	}
+
 	private isPlainObject(value: unknown): value is Record<string, unknown> {
 		if (value === null || typeof value !== 'object') {
 			return false;
@@ -2868,6 +2881,8 @@ export class BmsxVMRuntime extends Service {
 		if (cached !== undefined) {
 			return cached;
 		}
+		const tableId = this.getOrAssignVmTableId(table);
+		const tableContext = this.extendMarshalContext(context, `table${tableId}`);
 		const entries = table.entriesArray();
 		if (entries.length === 0) {
 			const empty: Record<string, unknown> = {};
@@ -2895,7 +2910,7 @@ export class BmsxVMRuntime extends Service {
 			for (let index = 0; index < numericEntries.length; index += 1) {
 				const entry = numericEntries[index];
 				const segment = this.describeMarshalSegment(entry.key);
-				const nextContext = segment ? this.extendMarshalContext(context, segment) : context;
+				const nextContext = segment ? this.extendMarshalContext(tableContext, segment) : tableContext;
 				result[entry.key - 1] = this.toNativeValue(entry.value, nextContext, visited);
 			}
 			return result;
@@ -2905,13 +2920,13 @@ export class BmsxVMRuntime extends Service {
 		for (let index = 0; index < numericEntries.length; index += 1) {
 			const entry = numericEntries[index];
 			const segment = this.describeMarshalSegment(entry.key);
-			const nextContext = segment ? this.extendMarshalContext(context, segment) : context;
+			const nextContext = segment ? this.extendMarshalContext(tableContext, segment) : tableContext;
 			objectResult[String(entry.key)] = this.toNativeValue(entry.value, nextContext, visited);
 		}
 		for (let index = 0; index < otherEntries.length; index += 1) {
 			const entry = otherEntries[index];
 			const segment = this.describeMarshalSegment(entry.key);
-			const nextContext = segment ? this.extendMarshalContext(context, segment) : context;
+			const nextContext = segment ? this.extendMarshalContext(tableContext, segment) : tableContext;
 			objectResult[String(entry.key)] = this.toNativeValue(entry.value, nextContext, visited);
 		}
 		return objectResult;
