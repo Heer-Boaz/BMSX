@@ -22,9 +22,7 @@ import type {
 	LuaIndexExpression,
 	LuaLocalAssignmentStatement,
 	LuaLocalFunctionStatement,
-	LuaGotoStatement,
 	LuaMemberExpression,
-	LuaBreakStatement,
 	LuaRepeatStatement,
 	LuaReturnStatement,
 	LuaStatement,
@@ -59,7 +57,7 @@ import { $ } from '../core/engine_core';
 import { BmsxVMRuntime } from '../vm/vm_runtime';
 import { isLuaHandlerFunction } from './luahandler_cache';
 import { LuaInteropAdapter } from '../vm/lua_js_bridge';
-import { LuaCpu, type ExecutionFrame, type StatementsFrame, type LabelScope, type FrameBoundary, type LuaCpuHost } from '../vm/cpu';
+import { VMCPU, type ExecutionFrame, type StatementsFrame, type LabelScope, type FrameBoundary, type LuaCpuHost, type LuaInstruction } from '../vm/cpu';
 import { VmRam } from '../vm/ram';
 
 export type LuaCallFrame = {
@@ -82,8 +80,8 @@ export const enum VmSliceResult {
 export type ExecutionSignal =
 	| null
 	| { readonly kind: 'return' }
-	| { readonly kind: 'break'; readonly origin: LuaStatement }
-	| { readonly kind: 'goto'; readonly label: string; readonly origin: LuaGotoStatement }
+	| { readonly kind: 'break'; readonly originRange: LuaSourceRange }
+	| { readonly kind: 'goto'; readonly label: string; readonly originRange: LuaSourceRange }
 	| {
 		readonly kind: 'yield';
 		readonly location: { path: string; line: number; column: number };
@@ -305,8 +303,8 @@ export class LuaInterpreter implements LuaCpuHost {
 	private readonly packageLoaded: LuaTable;
 	private _requireHandler: ((interpreter: LuaInterpreter, moduleName: string) => LuaValue) = null;
 	private _outputHandler: ((text: string) => void) = (text: string) => { console.log(text); BmsxVMRuntime.instance.terminal.appendStdout(text); };
-	private readonly ram: VmRam;
-	private readonly cpu: LuaCpu;
+	private readonly ram: VmRam<LuaStatement, LuaInstruction>;
+	private readonly cpu: VMCPU;
 
 	public constructor(adapter: LuaInteropAdapter, canonicalization: CanonicalizationType = 'none') {
 		this.globals = LuaEnvironment.createRoot();
@@ -320,8 +318,8 @@ export class LuaInterpreter implements LuaCpuHost {
 		this.packageLoaded = createLuaTable();
 		this.initializeBuiltins();
 		this._pathEnvironment = LuaEnvironment.createChild(this.globals);
-		this.ram = new VmRam();
-		this.cpu = new LuaCpu(this.ram, this);
+		this.ram = new VmRam<LuaStatement, LuaInstruction>();
+		this.cpu = new VMCPU(this.ram, this);
 		this.yieldSignal = {
 			kind: 'yield',
 			location: this.yieldLocation,
@@ -347,7 +345,7 @@ export class LuaInterpreter implements LuaCpuHost {
 	}
 
 	public loadChunk(chunk: LuaChunk): void {
-		this.ram.loadChunk(chunk);
+		this.cpu.loadChunk(chunk);
 	}
 
 	public setReservedIdentifiers(names: Iterable<string>) {
@@ -522,11 +520,10 @@ export class LuaInterpreter implements LuaCpuHost {
 				return signal;
 			}
 			if (signal !== null && signal.kind === 'break') {
-				const breakStatement = signal.origin as LuaBreakStatement;
-				throw this.runtimeErrorAt(breakStatement.range, 'Unexpected break outside of loop.');
+				throw this.runtimeErrorAt(signal.originRange, 'Unexpected break outside of loop.');
 			}
 			if (signal !== null && signal.kind === 'goto') {
-				throw this.runtimeErrorAt(signal.origin.range, `Label '${signal.label}' not found.`);
+				throw this.runtimeErrorAt(signal.originRange, `Label '${signal.label}' not found.`);
 			}
 			if (signal !== null && signal.kind === 'pause') {
 				suspended = true;
@@ -966,12 +963,11 @@ export class LuaInterpreter implements LuaCpuHost {
 		}
 		if (signal !== null && signal.kind === 'break') {
 			this.finalizeChunkExecution(context.pathScope, context.savedState, context.nested);
-			const breakStatement = signal.origin as LuaBreakStatement;
-			throw this.runtimeErrorAt(breakStatement.range, 'Unexpected break outside of loop.');
+			throw this.runtimeErrorAt(signal.originRange, 'Unexpected break outside of loop.');
 		}
 		if (signal !== null && signal.kind === 'goto') {
 			this.finalizeChunkExecution(context.pathScope, context.savedState, context.nested);
-			throw this.runtimeErrorAt(signal.origin.range, `Label '${signal.label}' not found.`);
+			throw this.runtimeErrorAt(signal.originRange, `Label '${signal.label}' not found.`);
 		}
 		this.finalizeChunkExecution(context.pathScope, context.savedState, context.nested);
 		return NORMAL_SIGNAL;
@@ -2715,7 +2711,7 @@ public fallbackSourceRange(): LuaSourceRange {
 							case 'break':
 								throw this.runtimeErrorAt(expression.range, `Cannot break from function '${name}'.`);
 							case 'goto':
-								throw this.runtimeErrorAt(signal.origin.range, `Label '${signal.label}' not found in function '${name}'.`);
+								throw this.runtimeErrorAt(signal.originRange, `Label '${signal.label}' not found in function '${name}'.`);
 							default:
 								return signal;
 						}
@@ -2781,7 +2777,7 @@ public fallbackSourceRange(): LuaSourceRange {
 						case 'break':
 							throw this.runtimeErrorAt(expression.range, `Cannot break from function '${name}'.`);
 						case 'goto':
-							throw this.runtimeErrorAt(resumed.origin.range, `Label '${resumed.label}' not found in function '${name}'.`);
+							throw this.runtimeErrorAt(resumed.originRange, `Label '${resumed.label}' not found in function '${name}'.`);
 						default:
 							return resumed;
 					}
@@ -2812,7 +2808,7 @@ public fallbackSourceRange(): LuaSourceRange {
 			case 'break':
 				throw this.runtimeErrorAt(expression.range, `Cannot break from function '${name}'.`);
 			case 'goto':
-				throw this.runtimeErrorAt(signal.origin.range, `Label '${signal.label}' not found in function '${name}'.`);
+				throw this.runtimeErrorAt(signal.originRange, `Label '${signal.label}' not found in function '${name}'.`);
 			default:
 				return [];
 		}
