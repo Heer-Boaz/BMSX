@@ -4,7 +4,7 @@ import type { CodeTabContext, SearchMatch, SymbolSearchResult } from './types';
 import type { LuaSourceRange } from '../../lua/lua_ast';
 import { normalizeEndingsAndSplitLines } from './text_utils';
 import { listResources } from '../workspace';
-import { BmsxVMRuntime } from '../vm_runtime';
+import { BmsxVMRuntime } from '../vm_tooling_runtime';
 import { VMCodeLayout } from './code_layout';
 import { LuaSemanticWorkspace, Decl } from './semantic_model';
 import type { TextBuffer } from './text_buffer';

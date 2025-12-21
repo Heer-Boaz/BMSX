@@ -6,7 +6,7 @@ import { getActiveResourceViewer, getCodeAreaBounds, resourceViewerTextCapacity,
 import { resourceViewerClampScroll } from '../ide_input';
 import { ide_state } from '../ide_state';
 import { drawEditorText, drawEditorColoredText } from '../text_renderer';
-import { api } from '../../vm_runtime';
+import { api } from '../../vm_tooling_runtime';
 import { measureText, wrapOverlayLine } from '../text_utils';
 import * as constants from '../constants';
 import { renderErrorOverlayText } from './render_error_overlay';

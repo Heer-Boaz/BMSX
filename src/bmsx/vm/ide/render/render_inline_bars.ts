@@ -4,7 +4,7 @@ import * as constants from '../constants';
 import type { TextField } from '../types';
 import { ide_state } from '../ide_state';
 import { caretX, getFieldText, measureRange, selectionRange } from '../inline_text_field';
-import { api } from '../../vm_runtime';
+import { api } from '../../vm_tooling_runtime';
 import { drawEditorText } from '../text_renderer';
 import { getCreateResourceBarHeight, getResourceSearchBarHeight, getSearchBarHeight, isResourceSearchCompactMode, resourceSearchEntryHeight, resourceSearchVisibleResultCount } from '../vm_cart_editor';
 import { measureText } from '../text_utils';

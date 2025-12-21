@@ -25,7 +25,7 @@ import { measureText } from './text_utils';
 import { requestSemanticRefresh } from './intellisense';
 import { resetBlink } from './render/render_caret';
 import { listResources } from '../workspace';
-import { BmsxVMRuntime } from '../vm_runtime';
+import { BmsxVMRuntime } from '../vm_tooling_runtime';
 import { $ } from '../../core/engine_core';
 import { PieceTreeBuffer } from './piece_tree_buffer';
 

@@ -2,7 +2,7 @@ import type { LuaDefinitionInfo, LuaDefinitionKind, LuaMemberExpression, LuaSour
 import { LuaSyntaxKind, type LuaAssignmentStatement, type LuaCallExpression, type LuaExpression, type LuaIdentifierExpression, type LuaIndexExpression, type LuaLocalAssignmentStatement, type LuaStatement } from '../../lua/lua_ast';
 import { LuaEnvironment } from '../../lua/luaenvironment';
 import { LuaLexer } from '../../lua/lualexer';
-import { createIdentifierCanonicalizer } from '../../lua/identifier_canonicalizer';
+import { createIdentifierCanonicalizer } from '../../utils/identifier_canonicalizer';
 import type { ParsedLuaChunk } from './lua_parse';
 import type { LuaSyntaxError } from '../../lua/luaerrors';
 import { getCachedLuaParse } from './lua_analysis_cache';
@@ -10,7 +10,7 @@ import { LuaInterpreter } from '../../lua/luaruntime';
 import { extractErrorMessage, isLuaFunctionValue, isLuaTable, LuaFunctionValue, LuaNativeValue, LuaTable, LuaValue, resolveNativeTypeName } from '../../lua/luavalue';
 import { BmsxVMApi } from '../vm_api';
 import { VM_API_METHOD_METADATA } from '../vm_api_metadata';
-import { BmsxVMRuntime } from '../vm_runtime';
+import { BmsxVMRuntime } from '../vm_tooling_runtime';
 import type { VMLuaBuiltinDescriptor, VMLuaDefinitionLocation, VMLuaDefinitionRange, VMLuaHoverRequest, VMLuaHoverResult, VMLuaHoverScope, VMLuaMemberCompletion, LuaMemberCompletionRequest, VMLuaSymbolEntry, VMLuaSymbolKind } from '../types';
 import { ScratchBatchPooled } from '../../utils/scratchbatch';
 import { resolveDefinitionLocationForExpression, type ProjectReferenceEnvironment } from './code_reference';
@@ -1683,12 +1683,11 @@ export function listLuaSymbols(path: string): VMLuaSymbolEntry[] {
 
 export function listLuaModuleSymbols(moduleName: string): VMLuaSymbolEntry[] {
 	const runtime = BmsxVMRuntime.instance;
-	runtime.ensureLuaModuleIndex();
-	const record = runtime.luaModuleAliases.get(moduleName);
-	if (!record) {
+	const path = runtime.vmModuleAliases.get(moduleName);
+	if (!path) {
 		return [];
 	}
-	return listLuaSymbols(record.path);
+	return listLuaSymbols(path);
 }
 
 export function listLuaBuiltinFunctions(): VMLuaBuiltinDescriptor[] {

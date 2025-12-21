@@ -10,7 +10,7 @@ import type { StackTraceFrame } from '../../../lua/luavalue';
 import type { RectBounds } from '../../../rompack/rompack';
 import { Msx1Colors } from '../../../systems/msx';
 import { pointInRect } from '../../../utils/rect_operations';
-import { api, BmsxVMRuntime } from '../../vm_runtime';
+import { api, BmsxVMRuntime } from '../../vm_tooling_runtime';
 import { clampCursorColumn, centerCursorVertically, revealCursor } from '../caret';
 import * as constants from '../constants';
 import { cloneRuntimeErrorDetails, rebuildRuntimeErrorOverlayView } from '../runtime_error_overlay';

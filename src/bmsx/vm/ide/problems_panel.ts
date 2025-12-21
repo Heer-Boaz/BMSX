@@ -5,7 +5,7 @@ import { clamp } from '../../utils/clamp';
 import { getVisibleProblemsPanelHeight, statusAreaHeight, getTabBarTotalHeight, gotoDiagnostic } from './vm_cart_editor';
 import * as constants from './constants';
 import { ide_state } from './ide_state';
-import { api } from '../vm_runtime';
+import { api } from '../vm_tooling_runtime';
 import { drawEditorText } from './text_renderer';
 import { markDiagnosticsDirty } from './diagnostics';
 import { resetBlink } from './render/render_caret';
