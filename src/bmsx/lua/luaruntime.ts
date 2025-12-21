@@ -57,8 +57,12 @@ import { $ } from '../core/engine_core';
 import { BmsxVMRuntime } from '../vm/vm_runtime';
 import { isLuaHandlerFunction } from './luahandler_cache';
 import { LuaInteropAdapter } from '../vm/lua_js_bridge';
-import { VMCPU, type ExecutionFrame, type StatementsFrame, type LabelScope, type FrameBoundary, type LuaCpuHost, type LuaInstruction } from '../vm/cpu';
-import { VmRam } from '../vm/ram';
+
+type ExecutionFrame = any;
+type StatementsFrame = any;
+type LabelScope = any;
+type FrameBoundary = 'path' | 'function';
+type LuaInstruction = any;
 
 export type LuaCallFrame = {
 	readonly functionName: string;
@@ -268,7 +272,7 @@ type ResolvedAssignmentTarget =
 	| { readonly kind: 'native-member'; readonly target: LuaNativeValue; readonly key: string }
 	| { readonly kind: 'native-index'; readonly target: LuaNativeValue; readonly key: LuaValue };
 
-export class LuaInterpreter implements LuaCpuHost {
+export class LuaInterpreter {
 	private readonly globals: LuaEnvironment;
 	private currentChunk: string;
 	private randomSeedValue: number;
@@ -303,8 +307,15 @@ export class LuaInterpreter implements LuaCpuHost {
 	private readonly packageLoaded: LuaTable;
 	private _requireHandler: ((interpreter: LuaInterpreter, moduleName: string) => LuaValue) = null;
 	private _outputHandler: ((text: string) => void) = (text: string) => { console.log(text); BmsxVMRuntime.instance.terminal.appendStdout(text); };
-	private readonly ram: VmRam<LuaStatement, LuaInstruction>;
-	private readonly cpu: VMCPU;
+	private instructionBudgetRemaining: number | null = null;
+	private frameStack: ExecutionFrame[] = [];
+	private envStack: LuaEnvironment[] = [];
+	private callStack: any[] = [];
+	private _programCounter = 0;
+	private programCounterStack: number[] = [];
+	private lastStatementRange: LuaSourceRange = null;
+	private activeStatementRange: LuaSourceRange = null;
+	private activeStatementFrame: StatementsFrame = null;
 
 	public constructor(adapter: LuaInteropAdapter, canonicalization: CanonicalizationType = 'none') {
 		this.globals = LuaEnvironment.createRoot();
@@ -318,8 +329,6 @@ export class LuaInterpreter implements LuaCpuHost {
 		this.packageLoaded = createLuaTable();
 		this.initializeBuiltins();
 		this._pathEnvironment = LuaEnvironment.createChild(this.globals);
-		this.ram = new VmRam<LuaStatement, LuaInstruction>();
-		this.cpu = new VMCPU(this.ram, this);
 		this.yieldSignal = {
 			kind: 'yield',
 			location: this.yieldLocation,
@@ -345,7 +354,8 @@ export class LuaInterpreter implements LuaCpuHost {
 	}
 
 	public loadChunk(chunk: LuaChunk): void {
-		this.cpu.loadChunk(chunk);
+		void chunk;
+		throw new Error('Interpreter CPU is disabled.');
 	}
 
 	public setReservedIdentifiers(names: Iterable<string>) {
@@ -381,15 +391,16 @@ export class LuaInterpreter implements LuaCpuHost {
 	}
 
 	public get programCounter(): number {
-		return this.cpu.programCounter;
+		return this._programCounter;
 	}
 
 	public set programCounter(value: number) {
-		this.cpu.programCounter = value;
+		this._programCounter = value;
 	}
 
 	public advanceProgramCounter(): number {
-		return this.cpu.advanceProgramCounter();
+		this._programCounter += 1;
+		return this._programCounter;
 	}
 
 	public allocateValueList(): LuaValue[] {
@@ -410,11 +421,14 @@ export class LuaInterpreter implements LuaCpuHost {
 	}
 
 	public pushProgramCounter(): number {
-		return this.cpu.pushProgramCounter();
+		this.programCounterStack.push(this._programCounter);
+		return this._programCounter;
 	}
 
 	public popProgramCounter(): number {
-		return this.cpu.popProgramCounter();
+		const value = this.programCounterStack.pop();
+		this._programCounter = value;
+		return this._programCounter;
 	}
 
 	private invokeRequireBuiltin(args: ReadonlyArray<LuaValue>): LuaValue[] {
@@ -472,35 +486,35 @@ export class LuaInterpreter implements LuaCpuHost {
 	}
 
 	private beginChunkExecution(path: LuaChunk): ChunkExecutionContext {
-		const nested = this.cpu.frameStack.length > 0;
+		const nested = this.frameStack.length > 0;
 		const savedState: NestedInterpreterState | null = nested ? {
-			frameStack: Array.from(this.cpu.frameStack),
-			envStack: Array.from(this.cpu.envStack),
+			frameStack: Array.from(this.frameStack),
+			envStack: Array.from(this.envStack),
 			pathEnvironment: this._pathEnvironment,
 			currentChunk: this.currentChunk,
 			valueNameCache: this.valueNameCache,
 			lastFaultCallStack: this._lastFaultCallStack,
 			lastFaultDepth: this.lastFaultDepth,
 			lastFaultEnvironment: this._lastFaultEnvironment,
-			callStackLength: this.cpu.callStack.length,
+			callStackLength: this.callStack.length,
 			currentCallRange: this._currentCallRange,
-			programCounter: this.cpu.programCounter,
-			programCounterStack: Array.from(this.cpu.programCounterStack),
-			lastStatementRange: this.cpu.lastStatementRange,
+			programCounter: this._programCounter,
+			programCounterStack: Array.from(this.programCounterStack),
+			lastStatementRange: this.lastStatementRange,
 		} : null;
 
 		this.valueNameCache = new WeakMap<object | Function, string>();
 		this.currentChunk = path.range.path;
 		const pathScope = LuaEnvironment.createChild(this.globals);
 		this._pathEnvironment = pathScope;
-		this.cpu.envStack.length = 0;
-		this.cpu.frameStack.length = 0;
+		this.envStack.length = 0;
+		this.frameStack.length = 0;
 		this._lastFaultCallStack = [];
 		this.lastFaultDepth = 0;
-		this.cpu.programCounterStack.length = 0;
-		this.cpu.lastStatementRange = null;
-		const rootScope = this.cpu.createLabelScope(path.body, null);
-		this.cpu.pushStatementsFrame({
+		this.programCounterStack.length = 0;
+		this.lastStatementRange = null;
+		const rootScope = this.createLabelScope(path.body, null);
+		this.pushStatementsFrame({
 			statements: path.body,
 			environment: pathScope,
 			varargs: [],
@@ -599,7 +613,7 @@ export class LuaInterpreter implements LuaCpuHost {
 	}
 
 	public markFaultEnvironment(): void {
-		this._lastFaultEnvironment = this.cpu.envStack.length > 0 ? this.cpu.envStack[this.cpu.envStack.length - 1] : null;
+		this._lastFaultEnvironment = this.envStack.length > 0 ? this.envStack[this.envStack.length - 1] : null;
 		this.recordFaultCallStack();
 	}
 
@@ -646,20 +660,20 @@ export class LuaInterpreter implements LuaCpuHost {
 	}
 
 	public recordFaultCallStack(): void {
-		const depth = this.cpu.callStack.length;
+		const depth = this.callStack.length;
 		if (depth === 0) {
 			this._lastFaultCallStack = [];
 			this.lastFaultDepth = 0;
 			return;
 		}
-		const snapshot = this.cpu.callStack.map(frame => ({
+		const snapshot = this.callStack.map(frame => ({
 			functionName: frame.functionName,
 			source: frame.source,
 			line: frame.line,
 			column: frame.column,
 		}));
 		let snapshotDepth = snapshot.length;
-		const innermostRange = this.cpu.activeStatementRange ?? this.cpu.lastStatementRange;
+		const innermostRange = this.activeStatementRange ?? this.lastStatementRange;
 		if (innermostRange) {
 			const innermost = snapshot[snapshot.length - 1];
 			const alreadyCaptured =
@@ -687,11 +701,13 @@ export class LuaInterpreter implements LuaCpuHost {
 	}
 
 	private createLabelScope(statements: ReadonlyArray<LuaStatement>, parent: LabelScope): LabelScope {
-		return this.cpu.createLabelScope(statements, parent);
+		void statements;
+		void parent;
+		return {} as LabelScope;
 	}
 
 	private popFrame(): ExecutionFrame {
-		return this.cpu.popFrame();
+		return this.frameStack.pop();
 	}
 
 	private pushStatementsFrame(config: {
@@ -703,25 +719,43 @@ export class LuaInterpreter implements LuaCpuHost {
 		readonly callRange: LuaSourceRange;
 		readonly callName?: string;
 	}): void {
-		this.cpu.pushStatementsFrame(config);
+		this.frameStack.push(config as ExecutionFrame);
+	}
+
+	private stepFrame(_frame: ExecutionFrame): ExecutionSignal {
+		void _frame;
+		throw new Error('Interpreter CPU is disabled.');
+	}
+
+	private popUntilBoundary(): void {
+		this.frameStack.length = 0;
+	}
+
+	private tryConsumeBreak(): boolean {
+		return false;
+	}
+
+	private tryConsumeGoto(_instruction: LuaInstruction): boolean {
+		void _instruction;
+		return false;
 	}
 
 	private runFrameLoop(targetDepth: number = 0, instructionBudget: number | null = null): ExecutionSignal {
 		const ownsBudget = instructionBudget !== null;
-		const previousBudget = this.cpu.instructionBudgetRemaining;
+		const previousBudget = this.instructionBudgetRemaining;
 		if (ownsBudget) {
-			this.cpu.instructionBudgetRemaining = instructionBudget;
+			this.instructionBudgetRemaining = instructionBudget;
 		}
 		try {
-			while (this.cpu.frameStack.length > targetDepth) {
-				if (this.cpu.instructionBudgetRemaining !== null && this.cpu.instructionBudgetRemaining <= 0) {
+			while (this.frameStack.length > targetDepth) {
+				if (this.instructionBudgetRemaining !== null && this.instructionBudgetRemaining <= 0) {
 					return this.createYieldSignal(targetDepth);
 				}
-				const frame = this.cpu.frameStack[this.cpu.frameStack.length - 1];
+				const frame = this.frameStack[this.frameStack.length - 1];
 				const scratchIndex = this.luaValueListScratchIndex;
 				let signal: ExecutionSignal;
 					try {
-						signal = this.cpu.stepFrame(frame);
+						signal = this.stepFrame(frame);
 					} catch (error) {
 						if (isLuaDebuggerPauseSignal(error)) {
 							return this.bindPauseResume(error as PauseSignal, targetDepth);
@@ -729,7 +763,7 @@ export class LuaInterpreter implements LuaCpuHost {
 						if (error instanceof LuaRuntimeError || error instanceof LuaSyntaxError) {
 							this.markFaultEnvironment();
 							this.markPendingException(error);
-							const range = this.cpu.activeStatementRange ?? this.cpu.lastStatementRange ?? this.fallbackSourceRange();
+							const range = this.activeStatementRange ?? this.lastStatementRange ?? this.fallbackSourceRange();
 							const pause = this.createPauseSignal('exception', range, error);
 							return this.bindPauseResume(pause, targetDepth);
 						}
@@ -741,7 +775,7 @@ export class LuaInterpreter implements LuaCpuHost {
 					return this.bindPauseResume(signal as PauseSignal, targetDepth);
 				}
 				if (signal === null) {
-					if (this.cpu.instructionBudgetRemaining !== null && this.cpu.instructionBudgetRemaining <= 0) {
+					if (this.instructionBudgetRemaining !== null && this.instructionBudgetRemaining <= 0) {
 						return this.createYieldSignal(targetDepth);
 					}
 					continue;
@@ -751,7 +785,7 @@ export class LuaInterpreter implements LuaCpuHost {
 					return this.bindPauseResume(processed as PauseSignal, targetDepth);
 				}
 				if (processed === null) {
-					if (this.cpu.instructionBudgetRemaining !== null && this.cpu.instructionBudgetRemaining <= 0) {
+					if (this.instructionBudgetRemaining !== null && this.instructionBudgetRemaining <= 0) {
 						return this.createYieldSignal(targetDepth);
 					}
 					continue;
@@ -761,7 +795,7 @@ export class LuaInterpreter implements LuaCpuHost {
 			return NORMAL_SIGNAL;
 		} finally {
 			if (ownsBudget) {
-				this.cpu.instructionBudgetRemaining = previousBudget;
+				this.instructionBudgetRemaining = previousBudget;
 			}
 		}
 	}
@@ -776,18 +810,18 @@ export class LuaInterpreter implements LuaCpuHost {
 				return current;
 			}
 			if (current.kind === 'return') {
-				this.cpu.popUntilBoundary();
+				this.popUntilBoundary();
 				return current;
 			}
 			if (current.kind === 'break') {
-				if (this.cpu.tryConsumeBreak()) {
+				if (this.tryConsumeBreak()) {
 					current = NORMAL_SIGNAL;
 					continue;
 				}
 				return current;
 			}
 			if (current.kind === 'goto') {
-				if (this.cpu.tryConsumeGoto(current)) {
+				if (this.tryConsumeGoto(current)) {
 					current = NORMAL_SIGNAL;
 					continue;
 				}
@@ -798,7 +832,7 @@ export class LuaInterpreter implements LuaCpuHost {
 	}
 
 	private snapshotCallStack(): ReadonlyArray<LuaCallFrame> {
-		const snapshot = this.cpu.callStack.map(frame => ({
+		const snapshot = this.callStack.map(frame => ({
 			functionName: frame.functionName,
 			source: frame.source,
 			line: frame.line,
@@ -830,7 +864,7 @@ export class LuaInterpreter implements LuaCpuHost {
 	}
 
 	private createYieldSignal(targetDepth: number): YieldSignal {
-		const range = this.cpu.activeStatementRange ?? this.cpu.lastStatementRange ?? this.fallbackSourceRange();
+		const range = this.activeStatementRange ?? this.lastStatementRange ?? this.fallbackSourceRange();
 		this.yieldTargetDepth = targetDepth;
 		this.yieldLocation.path = range.path;
 		this.yieldLocation.line = range.start.line;
@@ -905,14 +939,14 @@ export class LuaInterpreter implements LuaCpuHost {
 
 	public markPendingException(error: LuaRuntimeError | LuaSyntaxError): void {
 		this._pendingDebuggerException = error;
-		const frame = this.cpu.activeStatementFrame;
+		const frame = this.activeStatementFrame;
 		this.pendingExceptionFrame = frame ? { frame, index: frame.index } : null;
 	}
 
 	private skipPendingExceptionFrame(): void {
 		if (this.pendingExceptionFrame !== null) {
 			const { frame, index } = this.pendingExceptionFrame;
-			if (this.cpu.frameStack.includes(frame)) {
+			if (this.frameStack.includes(frame)) {
 				frame.index = index + 1;
 			}
 			this.pendingExceptionFrame = null;
@@ -920,20 +954,20 @@ export class LuaInterpreter implements LuaCpuHost {
 	}
 
 	private finalizeFunctionExecution(startingDepth: number): void {
-		while (this.cpu.frameStack.length > startingDepth) {
+		while (this.frameStack.length > startingDepth) {
 			this.popFrame();
 		}
 	}
 
 	private finalizeChunkExecution(pathScope: LuaEnvironment, savedState: NestedInterpreterState | null, nested: boolean): void {
 		if (nested) {
-			this.cpu.frameStack.length = 0;
-			this.cpu.envStack.length = 0;
+			this.frameStack.length = 0;
+			this.envStack.length = 0;
 			for (const frame of savedState.frameStack) {
-				this.cpu.frameStack.push(frame);
+				this.frameStack.push(frame);
 			}
 			for (const env of savedState.envStack) {
-				this.cpu.envStack.push(env);
+				this.envStack.push(env);
 			}
 			this._pathEnvironment = savedState.pathEnvironment;
 			this.currentChunk = savedState.currentChunk;
@@ -942,17 +976,17 @@ export class LuaInterpreter implements LuaCpuHost {
 			this.lastFaultDepth = savedState.lastFaultDepth;
 			this._lastFaultEnvironment = savedState.lastFaultEnvironment;
 			this._currentCallRange = savedState.currentCallRange;
-			this.cpu.programCounter = savedState.programCounter;
-			this.cpu.programCounterStack.length = 0;
+			this._programCounter = savedState.programCounter;
+			this.programCounterStack.length = 0;
 			for (const pc of savedState.programCounterStack) {
-				this.cpu.programCounterStack.push(pc);
+				this.programCounterStack.push(pc);
 			}
-			this.cpu.lastStatementRange = savedState.lastStatementRange;
-			this.cpu.callStack.length = savedState.callStackLength;
+			this.lastStatementRange = savedState.lastStatementRange;
+			this.callStack.length = savedState.callStackLength;
 			return;
 		}
-		this.cpu.frameStack.length = 0;
-		this.cpu.envStack.length = 0;
+		this.frameStack.length = 0;
+		this.envStack.length = 0;
 		this._pathEnvironment = pathScope;
 	}
 
@@ -2600,7 +2634,7 @@ public fallbackSourceRange(): LuaSourceRange {
 		// Script functions already push a frame inside invokeScriptFunction().
 		return this.withCurrentCallRange(range, () => {
 			if (functionValue instanceof LuaNativeFunction) {
-				this.cpu.callStack.push({
+				this.callStack.push({
 					functionName: functionValue.name && functionValue.name.length > 0 ? functionValue.name : null,
 					source: range.path,
 					line: range.start.line,
@@ -2615,7 +2649,7 @@ public fallbackSourceRange(): LuaSourceRange {
 					}
 					throw error;
 				} finally {
-					this.cpu.callStack.pop();
+					this.callStack.pop();
 				}
 			}
 			return functionValue.call(args);
@@ -2659,7 +2693,7 @@ public fallbackSourceRange(): LuaSourceRange {
 					try {
 						if (!started) {
 							started = true;
-							startingDepth = this.cpu.frameStack.length;
+							startingDepth = this.frameStack.length;
 							expression = functionValue.expression;
 							closure = functionValue.closure;
 							name = functionValue.name;
@@ -2751,7 +2785,7 @@ public fallbackSourceRange(): LuaSourceRange {
 			}
 			varargValues = extras;
 		}
-		const startingDepth = this.cpu.frameStack.length;
+		const startingDepth = this.frameStack.length;
 		const scope = this.createLabelScope(expression.body.body, null);
 		this.pushStatementsFrame({
 			statements: expression.body.body,

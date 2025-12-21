@@ -27,12 +27,13 @@ import {
 	isAltDown
 } from './ide/ide_input';
 import { CompletionController } from './ide/completion_controller';
-import { collectLuaModuleAliases, valueToString, listLuaObjectMembers } from './ide/intellisense';
+import { collectLuaModuleAliases, listLuaObjectMembers } from './ide/intellisense';
 import { consumeIdeKey, shouldRepeatKeyFromPlayer } from './ide/ide_input';
 import type { Viewport } from '../rompack/rompack';
 import { BmsxVMRuntime } from './vm_runtime';
 import { TerminalCommandDispatcher as TerminalCommandDispatcher } from './terminal_commands';
-import { extractErrorMessage, LuaValue } from '../lua/luavalue';
+import { extractErrorMessage } from '../lua/luavalue';
+import type { Value } from './cpu';
 import { LuaMemberCompletionRequest } from './types';
 import type { MutableTextPosition, TextBuffer } from './ide/text_buffer';
 
@@ -408,39 +409,16 @@ export class TerminalMode {
 		if (source.length === 0) {
 			return;
 		}
-		const interpreter = this.runtime.interpreter;
-
-		// Temporarily redirect print output to console mode
-		const previousOutputHandler = interpreter.outputHandler;
-		interpreter.outputHandler = (text: string) => {
-			this.appendStdout(text);
-		};
 
 		try {
-			let results: LuaValue[] = [];
-			try {
-				const chunk = interpreter.compileChunk(source, 'console');
-				interpreter.loadChunk(chunk);
-				results = interpreter.executeChunk(chunk);
-			}
-			catch (error) {
-				throw error;
-			}
+			const results: Value[] = this.runtime.runVmConsoleChunk(source);
 			if (results.length > 0) {
-				const summary = results.map(value => valueToString(value)).join('\t');
+				const summary = results.map(value => this.runtime.formatVmValue(value)).join('\t');
 				this.appendStdout(summary);
 			}
 		}
 		catch (error) {
 			this.appendStderr(extractErrorMessage(error));
-		}
-		finally {
-			// Restore previous output handler
-			if (previousOutputHandler !== undefined) {
-				interpreter.outputHandler = previousOutputHandler;
-			} else {
-				interpreter.outputHandler = null;
-			}
 		}
 	}
 

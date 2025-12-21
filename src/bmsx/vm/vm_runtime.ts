@@ -8,8 +8,8 @@ import type { LuaChunk, LuaDefinitionInfo } from '../lua/lua_ast';
 import { LuaEnvironment } from '../lua/luaenvironment';
 import { LuaError, LuaRuntimeError, LuaSyntaxError } from '../lua/luaerrors';
 import { LuaHandlerCache, } from '../lua/luahandler_cache';
-import { LuaExecutionThread, LuaInterpreter, type ExecutionSignal, VmSliceResult, } from '../lua/luaruntime';
-import type { LuaFunctionValue, LuaTable, LuaValue, StackTraceFrame } from '../lua/luavalue';
+import { LuaInterpreter, type ExecutionSignal } from '../lua/luaruntime';
+import type { LuaFunctionValue, LuaValue, StackTraceFrame } from '../lua/luavalue';
 import {
 	convertToError,
 	extractErrorMessage,
@@ -29,6 +29,7 @@ import { decodeBinary, decodeuint8arr } from '../serializer/binencoder';
 import { createIdentifierCanonicalizer } from '../lua/identifier_canonicalizer';
 import { clamp_fallback } from '../utils/clamp';
 import { BmsxVMApi } from './vm_api';
+import { VMCPU, Table, type Closure, type Value, RunResult, createNativeFunction, createNativeObject, isNativeFunction, isNativeObject, type NativeFunction, type NativeObject } from './cpu';
 import { TerminalMode } from './terminal_mode';
 import { VMRenderFacade } from './vm_render_facade';
 import { VMFont, type VMFontVariant } from './font';
@@ -39,7 +40,7 @@ import { type FaultSnapshot } from './ide/render/render_error_overlay';
 import { type LuaSemanticModel, type FileSemanticData } from './ide/semantic_model';
 import { setEditorCaseInsensitivity } from './ide/text_renderer';
 import type { RuntimeErrorDetails } from './ide/types';
-import { isLuaScriptError, registerApiBuiltins, seedDefaultLuaBuiltins } from './lua_builtins';
+import { registerApiBuiltins, seedDefaultLuaBuiltins } from './lua_builtins';
 import { LuaFunctionRedirectCache } from './lua_handler_registry';
 import { LuaEntrySnapshot, LuaJsBridge } from './lua_js_bridge';
 import { buildLuaModuleAliases, type LuaRequireModuleRecord } from './lua_module_loader';
@@ -62,6 +63,9 @@ import type { ParsedLuaChunk } from './ide/lua_parse';
 import { RenderSubmission } from '../render/backend/pipeline_interfaces';
 import { Msx1Colors } from '../systems/msx';
 import type { RectRenderSubmission } from '../render/shared/render_types';
+import { compileLuaChunkToProgram, appendLuaChunkToProgram } from './program_compiler';
+import { IO_ARG0_OFFSET, IO_BUFFER_BASE, IO_COMMAND_STRIDE, IO_CMD_PRINT, IO_WRITE_PTR_ADDR, VM_IO_MEMORY_SIZE } from './vm_io';
+import { VmHandlerCache } from './vm_handler_cache';
 
 export const VM_BUTTON_ACTIONS: ReadonlyArray<string> = [
 	'left',
@@ -79,8 +83,6 @@ export const VM_BUTTON_ACTIONS: ReadonlyArray<string> = [
 	'rb',
 	'lb',
 ];
-
-type LuaLifecycleHandlerName = 'new_game' | 'init' | 'update' | 'draw';
 
 // Flip back to 'msx' to restore default font in vm/editor
 export const EDITOR_FONT_VARIANT: VMFontVariant = 'tiny';
@@ -294,12 +296,14 @@ export class BmsxVMRuntime extends Service {
 	private shortcutDisposers: Array<() => void> = [];
 	private globalInputUnsubscribe: (() => void) = null;
 	private luaInterpreter!: LuaInterpreter;
-	private updateThread: LuaExecutionThread = null;
 	private static readonly UPDATE_STATEMENT_BUDGET = 10_000;
-	private luaInitFunction: LuaFunctionValue = null;
-	private luaNewGameFunction: LuaFunctionValue = null;
-	private luaUpdateFunction: LuaFunctionValue = null;
-	private luaDrawFunction: LuaFunctionValue = null;
+	private vmInitClosure: Closure = null;
+	private vmNewGameClosure: Closure = null;
+	private vmUpdateClosure: Closure = null;
+	private vmDrawClosure: Closure = null;
+	private pendingVmCall: 'update' | 'draw' = null;
+	private readonly cpuMemory: Value[];
+	private readonly cpu: VMCPU;
 	private _luaPath: string = null;
 	public get currentPath(): string {
 		return this._luaPath;
@@ -316,7 +320,6 @@ export class BmsxVMRuntime extends Service {
 	private currentFrameState: VMFrameState = null;
 	private pendingLuaWarnings: string[] = [];
 	public readonly luaModuleAliases: Map<string, LuaRequireModuleRecord> = new Map();
-	private readonly luaModuleLoadingKeys: Set<string> = new Set();
 	private luaModuleIndexBuilt = false;
 	public readonly luaChunkEnvironmentsByPath: Map<string, LuaEnvironment> = new Map();
 	public readonly pathFunctionDefinitionKeys: Map<string, Set<string>> = new Map();
@@ -327,11 +330,21 @@ export class BmsxVMRuntime extends Service {
 		(fn, thisArg, args) => this.invokeLuaHandler(fn, thisArg, args),
 		(error, meta) => this.handleLuaHandlerError(error, meta),
 	);
+	private readonly vmHandlerCache = new VmHandlerCache(
+		(fn, thisArg, args) => this.invokeVmHandler(fn, thisArg, args),
+		(error, meta) => this.handleVmHandlerError(error, meta),
+	);
+	private readonly vmModuleProtos = new Map<string, number>();
+	private readonly vmModuleCache = new Map<string, Value>();
+	private readonly nativeObjectCache = new WeakMap<object, NativeObject>();
+	private readonly nativeFunctionCache = new WeakMap<Function, NativeFunction>();
+	private readonly nativeMemberCache = new WeakMap<object, Map<string, NativeFunction>>();
 	public nativeMemberCompletionCache: WeakMap<object, { dot?: VMLuaMemberCompletion[]; colon?: VMLuaMemberCompletion[] }> = new WeakMap();
 	public readonly pathSemanticCache: Map<string, { source: string; model: LuaSemanticModel; definitions: ReadonlyArray<LuaDefinitionInfo>; parsed?: ParsedLuaChunk; lines?: readonly string[]; analysis?: FileSemanticData }> = new Map();
 
 	private readonly luaVmGate = taskGate.group('console:lua_vm');
 	private handledLuaErrors = new WeakSet<any>();
+	private lastVmCallStack: StackTraceFrame[] = [];
 	public faultSnapshot: FaultSnapshot = null;
 	private faultOverlayNeedsFlush = false;
 	public get doesFaultOverlayNeedFlush(): boolean {
@@ -364,6 +377,12 @@ export class BmsxVMRuntime extends Service {
 		setEditorCaseInsensitivity(this._canonicalization !== 'none');
 		this.luaJsBridge = new LuaJsBridge(this, this.luaHandlerCache);
 		this.terminal = new TerminalMode(this);
+		this.cpuMemory = new Array<Value>(VM_IO_MEMORY_SIZE);
+		for (let index = 0; index < this.cpuMemory.length; index += 1) {
+			this.cpuMemory[index] = null;
+		}
+		this.cpuMemory[IO_WRITE_PTR_ADDR] = 0;
+		this.cpu = new VMCPU(this.cpuMemory);
 		this.enableEvents();
 
 		api = new BmsxVMApi({
@@ -392,6 +411,14 @@ export class BmsxVMRuntime extends Service {
 				path: path,
 			};
 		}
+		if (this.lastVmCallStack.length > 0) {
+			const frame = this.lastVmCallStack[0];
+			return {
+				line: frame.line,
+				column: frame.column,
+				path: frame.source,
+			};
+		}
 		return { line: null, column: null, path: null };
 	}
 
@@ -411,11 +438,11 @@ export class BmsxVMRuntime extends Service {
 
 	private assignInterpreter(interpreter: LuaInterpreter): void {
 		this.luaInterpreter = interpreter;
-		this.updateThread = null;
-		this.luaInitFunction = null;
-		this.luaNewGameFunction = null;
-		this.luaUpdateFunction = null;
-		this.luaDrawFunction = null;
+		this.vmInitClosure = null;
+		this.vmNewGameClosure = null;
+		this.vmUpdateClosure = null;
+		this.vmDrawClosure = null;
+		this.pendingVmCall = null;
 		this.luaRuntimeFailed = false;
 		this.luaVmInitialized = false;
 	}
@@ -963,26 +990,20 @@ export class BmsxVMRuntime extends Service {
 		}
 		try {
 			if (Object.values($.luaSources.path2lua).length > 0) {
-				if (this.luaUpdateFunction !== null) {
-					if (this.updateThread === null) {
-						this.updateThread = this.createLuaExecutionThread(this.luaUpdateFunction, [state.deltaSeconds]);
+				if (this.pendingVmCall && this.pendingVmCall !== 'update') {
+					state.updateExecuted = true;
+					return;
+				}
+				if (this.vmUpdateClosure !== null) {
+					if (!this.pendingVmCall) {
+						this.cpu.call(this.vmUpdateClosure, [state.deltaSeconds], 0);
+						this.pendingVmCall = 'update';
 					}
-
 					const budget = BmsxVMRuntime.UPDATE_STATEMENT_BUDGET;
-					const sliceResult = this.updateThread.isYielded ? this.updateThread.resumeSlice(budget) : this.updateThread.runSlice(budget);
-					if (sliceResult === VmSliceResult.Done) {
-						this.updateThread = null;
-					}
-					else if (sliceResult === VmSliceResult.Pause) {
-						const pause = this.updateThread.takePause();
-						this.updateThread = null;
-						this.onLuaDebuggerPause(pause as LuaDebuggerPauseSignal);
-					}
-					else if (sliceResult === VmSliceResult.Fault) {
-						const fault = this.updateThread.takeFault();
-						this.updateThread = null;
-						state.luaFaulted = true;
-						this.handleLuaError(fault);
+					const result = this.cpu.run(budget);
+					this.processVmIo();
+					if (result === RunResult.Halted) {
+						this.pendingVmCall = null;
 					}
 				}
 			}
@@ -1059,13 +1080,22 @@ export class BmsxVMRuntime extends Service {
 				return;
 			}
 			if (this.luaVmGate.ready) {
-				if (this.updateThread !== null || this.debuggerPaused || this.luaRuntimeFailed || this.faultSnapshot) {
+				if (this.pendingVmCall === 'update' || this.debuggerPaused || this.luaRuntimeFailed || this.faultSnapshot) {
 					this.overlayRenderBackend.playbackRenderQueue(this.preservedRenderQueue);
 				}
 				else {
 					try {
-						this.luaInterpreter.pushProgramCounter();
-						this.invokeLuaFunction(this.luaDrawFunction, []);
+						if (this.vmDrawClosure !== null) {
+							if (!this.pendingVmCall) {
+								this.cpu.call(this.vmDrawClosure, [], 0);
+								this.pendingVmCall = 'draw';
+							}
+							const result = this.cpu.run(BmsxVMRuntime.UPDATE_STATEMENT_BUDGET);
+							this.processVmIo();
+							if (result === RunResult.Halted) {
+								this.pendingVmCall = null;
+							}
+						}
 						this.preservedRenderQueue = this.overlayRenderBackend.captureCurrentFrameRenderQueue();
 					} catch (error) {
 						this.preservedRenderQueue = this.overlayRenderBackend.captureCurrentFrameRenderQueue();
@@ -1075,8 +1105,6 @@ export class BmsxVMRuntime extends Service {
 						} else {
 							this.handleLuaError(error);
 						}
-					} finally {
-						this.luaInterpreter.popProgramCounter();
 					}
 				}
 			}
@@ -1203,52 +1231,53 @@ export class BmsxVMRuntime extends Service {
 		this.luaRuntimeFailed = false;
 		publishOverlayFrame(null);
 		this.resumeLuaProgramState(snapshot);
-		this.luaVmInitialized = this.luaInterpreter !== null;
+		this.luaVmInitialized = true;
 	}
 
 	private hotReloadProgramEntry(params: { path: string; source: string; }): void {
 		const preserveRuntimeFailure = this.luaRuntimeFailed || (this.pauseCoordinator.hasSuspension() && this.pauseCoordinator.getPendingException() !== null);
 		const binding = params.path;
-		const previousChunkState = this.captureChunkState(binding);
-		const previousChunkTables = this.captureChunkTables(binding);
-		const previousGlobals = this.captureGlobalStateForReload();
 		const interpreter = this.luaInterpreter;
-		const hotModuleId = $.luaSources.path2lua[binding].source_path;
 		interpreter.clearLastFaultEnvironment();
 		const chunk = interpreter.compileChunk(params.source, binding);
-		interpreter.loadChunk(chunk);
-		const results = interpreter.executeChunk(chunk);
-		this.luaJsBridge.wrapLuaExecutionResults(hotModuleId, results);
-		this.cacheChunkEnvironment(binding, hotModuleId);
-		this.restoreChunkState(interpreter.pathEnvironment, previousChunkState);
-		this.restoreChunkTables(interpreter.pathEnvironment, previousChunkTables);
-		this.restoreGlobalStateForReload(previousGlobals);
-		this.refreshPackageLoadedEntry(binding, results);
-		const moduleValue = results.length > 0 && results[0] !== null ? results[0] : true;
-		this.rebindChunkEnvironmentHandlers(hotModuleId);
-		this.rebindModuleExportHandlers(hotModuleId, moduleValue);
+		const modules = this.buildVmModuleChunks(binding);
+		const { program, entryProtoIndex, moduleProtoMap } = compileLuaChunkToProgram(chunk, modules);
+		this.cpu.setProgram(program);
+		this.vmModuleProtos.clear();
+		for (const [modulePath, protoIndex] of moduleProtoMap.entries()) {
+			this.vmModuleProtos.set(modulePath, protoIndex);
+		}
+		this.vmModuleCache.clear();
+		this.cpuMemory[IO_WRITE_PTR_ADDR] = 0;
+		this.cpu.start(entryProtoIndex);
+		this.pendingVmCall = null;
+		this.cpu.instructionBudgetRemaining = null;
+		this.cpu.run(null);
+		this.processVmIo();
 		this.bindLifecycleHandlers();
 		this.luaRuntimeFailed = preserveRuntimeFailure;
 		this._luaPath = binding;
 		this.luaVmInitialized = true;
-		this.refreshLuaModulesOnResume(binding);
 		clearNativeMemberCompletionCache();
 		this.clearEditorErrorOverlaysIfNoFault();
 	}
 
 	private bindLifecycleHandlers(): void {
-		const env = this.luaInterpreter.globalEnvironment;
-		this.luaNewGameFunction = this.getLuaGlobalValue(env, 'new_game' satisfies LuaLifecycleHandlerName) as LuaFunctionValue;
-		this.luaInitFunction = this.getLuaGlobalValue(env, 'init' satisfies LuaLifecycleHandlerName) as LuaFunctionValue;
-		this.luaUpdateFunction = this.getLuaGlobalValue(env, 'update' satisfies LuaLifecycleHandlerName) as LuaFunctionValue;
-		this.luaDrawFunction = this.getLuaGlobalValue(env, 'draw' satisfies LuaLifecycleHandlerName) as LuaFunctionValue;
+		const globals = this.cpu.globals;
+		this.vmNewGameClosure = globals.get(this.canonicalizeIdentifier('new_game')) as Closure;
+		this.vmInitClosure = globals.get(this.canonicalizeIdentifier('init')) as Closure;
+		this.vmUpdateClosure = globals.get(this.canonicalizeIdentifier('update')) as Closure;
+		this.vmDrawClosure = globals.get(this.canonicalizeIdentifier('draw')) as Closure;
 	}
 
 	private runLuaLifecycleHandler(kind: 'init' | 'new_game'): boolean {
-		const fn = kind === 'init' ? this.luaInitFunction : this.luaNewGameFunction;
+		const fn = kind === 'init' ? this.vmInitClosure : this.vmNewGameClosure;
 		try {
-			if (!fn) throw new Error(`Lua lifecycle handler '${kind}' is not defined.`);
-			this.invokeLuaFunction(fn, []);
+			if (!fn) throw new Error(`VM lifecycle handler '${kind}' is not defined.`);
+			this.cpu.call(fn, [], 0);
+			this.cpu.instructionBudgetRemaining = null;
+			this.cpu.run(null);
+			this.processVmIo();
 			return true;
 		}
 		catch (error) {
@@ -1289,7 +1318,7 @@ export class BmsxVMRuntime extends Service {
 				}
 			}
 		}
-		this.luaVmInitialized = this.luaInterpreter !== null;
+		this.luaVmInitialized = true;
 	}
 
 	private resumeLuaProgramState(snapshot: BmsxVMState): void {
@@ -1345,42 +1374,6 @@ export class BmsxVMRuntime extends Service {
 		}
 	}
 
-	private rebindChunkEnvironmentHandlers(moduleId: string): void {
-		const env = this.luaInterpreter.pathEnvironment;
-		const visited = new WeakSet<LuaTable>();
-		for (const [key, value] of env.entries()) {
-			const path = [key];
-			if (value !== null && value !== undefined) {
-				this.rebindHandlersFromLuaValue(moduleId, value, path, visited);
-			}
-		}
-	}
-
-	private rebindHandlersFromLuaValue(
-		moduleId: string,
-		value: LuaValue,
-		path: ReadonlyArray<string>,
-		visited: WeakSet<LuaTable>,
-	): void {
-		if (isLuaFunctionValue(value)) {
-			this.luaHandlerCache.rebind(moduleId, path, value);
-			return;
-		}
-		if (!isLuaTable(value)) {
-			return;
-		}
-		const table = value as LuaTable;
-		if (visited.has(table)) {
-			return;
-		}
-		visited.add(table);
-		for (const [rawKey, entry] of table.entriesArray()) {
-			const segment = typeof rawKey === 'string' ? rawKey : String(rawKey);
-			const nextPath = path.length === 0 ? [segment] : [...path, segment];
-			this.rebindHandlersFromLuaValue(moduleId, entry, nextPath, visited);
-		}
-	}
-
 	private initializeLuaInterpreterFromSnapshot(params: { source: string; path: string; snapshot: BmsxVMState; runInit: boolean; hotReload: boolean }): void {
 		const snapshot = params.snapshot;
 		const savedRuntimeFailed = snapshot.luaRuntimeFailed === true;
@@ -1403,12 +1396,22 @@ export class BmsxVMRuntime extends Service {
 		const interpreter = this.createLuaInterpreter();
 		this.assignInterpreter(interpreter);
 
-		const moduleId = $.luaSources.path2lua[binding.source_path].source_path;
+		this.resetVmState();
 		const chunk = interpreter.compileChunk(params.source, binding.source_path);
-		interpreter.loadChunk(chunk);
-		const results = interpreter.executeChunk(chunk);
-		this.luaJsBridge.wrapLuaExecutionResults(moduleId, results);
-		this.cacheChunkEnvironment(binding.source_path, moduleId);
+		const modules = this.buildVmModuleChunks(binding.source_path);
+		const { program, entryProtoIndex, moduleProtoMap } = compileLuaChunkToProgram(chunk, modules);
+		this.cpu.setProgram(program);
+		this.vmModuleProtos.clear();
+		for (const [modulePath, protoIndex] of moduleProtoMap.entries()) {
+			this.vmModuleProtos.set(modulePath, protoIndex);
+		}
+		this.vmModuleCache.clear();
+		this.cpuMemory[IO_WRITE_PTR_ADDR] = 0;
+		this.cpu.start(entryProtoIndex);
+		this.pendingVmCall = null;
+		this.cpu.instructionBudgetRemaining = null;
+		this.cpu.run(null);
+		this.processVmIo();
 		this.luaVmInitialized = true;
 
 		this.bindLifecycleHandlers();
@@ -1545,92 +1548,6 @@ export class BmsxVMRuntime extends Service {
 		return count > 0 ? { root: snapshotRoot, objects: ctx.objects } : null;
 	}
 
-	private captureChunkState(path: string): LuaEntrySnapshot {
-		const env = this.luaChunkEnvironmentsByPath.get(path);
-		if (!env) {
-			return null;
-		}
-		return this.captureLuaEntryCollection(env.entries());
-	}
-
-	private captureChunkTables(path: string): Map<string, LuaTable> {
-		const env = this.luaChunkEnvironmentsByPath.get(path);
-		if (!env) {
-			return null;
-		}
-		const tables = new Map<string, LuaTable>();
-		for (const [name, value] of env.entries()) {
-			if (typeof name === 'string' && isLuaTable(value)) {
-				tables.set(name, value);
-			}
-		}
-		return tables;
-	}
-
-	private restoreChunkState(env: LuaEnvironment, snapshot: LuaEntrySnapshot): void {
-		if (!env || !snapshot) {
-			return;
-		}
-		const entries = this.luaJsBridge.materializeLuaEntrySnapshot(snapshot);
-		for (const [name, value] of entries) {
-			if (!name) {
-				continue;
-			}
-			const existing = env.get(name);
-			if (isLuaFunctionValue(existing)) {
-				continue;
-			}
-			if (isLuaTable(existing) && isLuaTable(value)) {
-				this.luaJsBridge.applyLuaTableSnapshot(existing, value);
-				continue;
-			}
-			env.set(name, value);
-		}
-	}
-
-	private restoreChunkTables(env: LuaEnvironment, previousTables: Map<string, LuaTable>): void {
-		if (!env || !previousTables || previousTables.size === 0) {
-			return;
-		}
-		const visited = new WeakSet<LuaTable>();
-		for (const [name, freshValue] of env.entries()) {
-			if (typeof name !== 'string' || !isLuaTable(freshValue)) {
-				continue;
-			}
-			const previous = previousTables.get(name);
-			if (!previous) {
-				continue;
-			}
-			this.luaJsBridge.mergeLuaTablePreservingState(previous, freshValue, visited);
-			env.set(name, previous);
-		}
-	}
-
-	private captureGlobalStateForReload(): LuaEntrySnapshot {
-		return this.captureLuaEntryCollection(this.luaInterpreter.enumerateGlobalEntries());
-	}
-
-	private restoreGlobalStateForReload(globals: LuaEntrySnapshot): void {
-		if (!globals) {
-			return;
-		}
-		const entries = this.luaJsBridge.materializeLuaEntrySnapshot(globals);
-		for (const [name, value] of entries) {
-			if (!name || this.apiFunctionNames.has(name) || BmsxVMRuntime.LUA_SNAPSHOT_EXCLUDED_GLOBALS.has(name)) {
-				continue;
-			}
-			const existing = this.luaInterpreter.getGlobal(name);
-			if (isLuaFunctionValue(existing)) {
-				continue;
-			}
-			if (isLuaTable(existing) && isLuaTable(value)) {
-				this.luaJsBridge.applyLuaTableSnapshot(existing, value);
-				continue;
-			}
-			this.luaInterpreter.setGlobal(name, value);
-		}
-	}
-
 	private shouldSkipLuaSnapshotEntry(name: string, value: LuaValue): boolean {
 		if (!name || this.apiFunctionNames.has(name)) {
 			return true;
@@ -1716,6 +1633,718 @@ export class BmsxVMRuntime extends Service {
 		setLuaTableCaseInsensitiveKeys(this._canonicalization !== 'none');
 	}
 
+	private resetVmState(): void {
+		this.pendingVmCall = null;
+		this.vmInitClosure = null;
+		this.vmNewGameClosure = null;
+		this.vmUpdateClosure = null;
+		this.vmDrawClosure = null;
+		this.cpu.instructionBudgetRemaining = null;
+		this.cpu.globals.clear();
+		this.vmModuleCache.clear();
+		this.vmModuleProtos.clear();
+		for (let index = 0; index < this.cpuMemory.length; index += 1) {
+			this.cpuMemory[index] = null;
+		}
+		this.cpuMemory[IO_WRITE_PTR_ADDR] = 0;
+		this.seedVmGlobals();
+	}
+
+	private registerVmGlobal(name: string, value: Value): void {
+		const key = this.canonicalizeIdentifier(name);
+		this.cpu.globals.set(key, value);
+	}
+
+	private seedVmGlobals(): void {
+		const mathTable = new Table(0, 0);
+		mathTable.set('abs', createNativeFunction('math.abs', (args) => {
+			const value = args[0] as number;
+			return [Math.abs(value)];
+		}));
+		mathTable.set('ceil', createNativeFunction('math.ceil', (args) => {
+			const value = args[0] as number;
+			return [Math.ceil(value)];
+		}));
+		mathTable.set('floor', createNativeFunction('math.floor', (args) => {
+			const value = args[0] as number;
+			return [Math.floor(value)];
+		}));
+		mathTable.set('max', createNativeFunction('math.max', (args) => {
+			let result = args[0] as number;
+			for (let index = 1; index < args.length; index += 1) {
+				const value = args[index] as number;
+				if (value > result) {
+					result = value;
+				}
+			}
+			return [result];
+		}));
+		mathTable.set('min', createNativeFunction('math.min', (args) => {
+			let result = args[0] as number;
+			for (let index = 1; index < args.length; index += 1) {
+				const value = args[index] as number;
+				if (value < result) {
+					result = value;
+				}
+			}
+			return [result];
+		}));
+		mathTable.set('pi', Math.PI);
+
+		this.registerVmGlobal('math', mathTable);
+		this.registerVmGlobal('type', createNativeFunction('type', (args) => {
+			const value = args.length > 0 ? args[0] : null;
+			return [this.vmTypeOf(value)];
+		}));
+		this.registerVmGlobal('tostring', createNativeFunction('tostring', (args) => {
+			const value = args.length > 0 ? args[0] : null;
+			return [this.vmToString(value)];
+		}));
+		this.registerVmGlobal('tonumber', createNativeFunction('tonumber', (args) => {
+			if (args.length === 0) {
+				return [null];
+			}
+			const value = args[0];
+			if (typeof value === 'number') {
+				return [value];
+			}
+			if (typeof value === 'string') {
+				if (args.length >= 2) {
+					const baseValue = Math.floor(args[1] as number);
+					if (baseValue >= 2 && baseValue <= 36) {
+						const parsed = parseInt(value.trim(), baseValue);
+						return Number.isFinite(parsed) ? [parsed] : [null];
+					}
+				}
+				const converted = Number(value);
+				return Number.isFinite(converted) ? [converted] : [null];
+			}
+			return [null];
+		}));
+		this.registerVmGlobal('require', createNativeFunction('require', (args) => {
+			const moduleName = (args[0] as string).trim();
+			return [this.requireVmModule(moduleName)];
+		}));
+		this.registerVmGlobal('array', createNativeFunction('array', (args) => {
+			const ctx = this.buildVmContext();
+			let result: unknown[] = [];
+			if (args.length === 1 && args[0] instanceof Table) {
+				result = this.createNativeArrayFromTable(args[0], ctx);
+			} else {
+				result = new Array(args.length);
+				for (let index = 0; index < args.length; index += 1) {
+					result[index] = this.toNativeValue(args[index], ctx, new WeakMap());
+				}
+			}
+			return [this.getOrCreateNativeObject(result)];
+		}));
+		this.registerVmGlobal('print', createNativeFunction('print', (args) => {
+			const parts: string[] = [];
+			for (let index = 0; index < args.length; index += 1) {
+				parts.push(this.formatVmValue(args[index]));
+			}
+			this.terminal.appendStdout(parts.length === 0 ? '' : parts.join('\t'));
+			return [];
+		}));
+
+		const stringTable = new Table(0, 0);
+		stringTable.set('len', createNativeFunction('string.len', (args) => {
+			const text = args[0] as string;
+			return [text.length];
+		}));
+		stringTable.set('upper', createNativeFunction('string.upper', (args) => {
+			const text = args[0] as string;
+			return [text.toUpperCase()];
+		}));
+		stringTable.set('lower', createNativeFunction('string.lower', (args) => {
+			const text = args[0] as string;
+			return [text.toLowerCase()];
+		}));
+		stringTable.set('sub', createNativeFunction('string.sub', (args) => {
+			const text = args[0] as string;
+			const length = text.length;
+			const normalizeIndex = (value: number): number => {
+				const integer = Math.floor(value);
+				if (integer > 0) {
+					return integer;
+				}
+				if (integer < 0) {
+					return length + integer + 1;
+				}
+				return 1;
+			};
+			const startArg = args.length > 1 ? (args[1] as number) : 1;
+			const endArg = args.length > 2 ? (args[2] as number) : length;
+			let startIndex = normalizeIndex(startArg);
+			let endIndex = normalizeIndex(endArg);
+			if (startIndex < 1) {
+				startIndex = 1;
+			}
+			if (endIndex > length) {
+				endIndex = length;
+			}
+			if (endIndex < startIndex) {
+				return [''];
+			}
+			return [text.substring(startIndex - 1, endIndex)];
+		}));
+		stringTable.set('find', createNativeFunction('string.find', (args) => {
+			const source = args[0] as string;
+			const pattern = args.length > 1 ? (args[1] as string) : '';
+			const startIndex = args.length > 2 ? Math.max(1, Math.floor(args[2] as number)) - 1 : 0;
+			const position = source.indexOf(pattern, startIndex);
+			if (position === -1) {
+				return [null];
+			}
+			const first = position + 1;
+			const last = first + pattern.length - 1;
+			return [first, last];
+		}));
+		stringTable.set('byte', createNativeFunction('string.byte', (args) => {
+			const source = args[0] as string;
+			const positionArg = args.length > 1 ? (args[1] as number) : 1;
+			const position = Math.floor(positionArg) - 1;
+			if (position < 0 || position >= source.length) {
+				return [null];
+			}
+			return [source.charCodeAt(position)];
+		}));
+		stringTable.set('char', createNativeFunction('string.char', (args) => {
+			if (args.length === 0) {
+				return [''];
+			}
+			let result = '';
+			for (let index = 0; index < args.length; index += 1) {
+				const code = args[index] as number;
+				result += String.fromCharCode(Math.floor(code));
+			}
+			return [result];
+		}));
+		stringTable.set('format', createNativeFunction('string.format', (args) => {
+			const template = args[0] as string;
+			const formatted = this.formatVmString(template, args, 1);
+			return [formatted];
+		}));
+		this.registerVmGlobal('string', stringTable);
+
+		const members = this.collectApiMembers();
+		for (const { name, kind, descriptor } of members) {
+			if (kind === 'method') {
+				const callable = descriptor.value as (...args: unknown[]) => unknown;
+				const native = createNativeFunction(`api.${name}`, (args) => {
+					const ctx = this.buildVmContext();
+					const visited = new WeakMap<Table, unknown>();
+					const jsArgs: unknown[] = [];
+					for (let index = 0; index < args.length; index += 1) {
+						const nextCtx = this.extendMarshalContext(ctx, `arg${index}`);
+						jsArgs.push(this.toNativeValue(args[index], nextCtx, visited));
+					}
+					try {
+						const result = callable.apply(api, jsArgs);
+						return this.wrapNativeResult(result);
+					} catch (error) {
+						const message = extractErrorMessage(error);
+						throw this.createApiRuntimeError(`[api.${name}] ${message}`);
+					}
+				});
+				this.registerVmGlobal(name, native);
+				continue;
+			}
+			if (descriptor.get) {
+				const getter = descriptor.get;
+				const native = createNativeFunction(`api.${name}`, () => {
+					try {
+						const result = getter.call(api);
+						return this.wrapNativeResult(result);
+					} catch (error) {
+						const message = extractErrorMessage(error);
+						throw this.createApiRuntimeError(`[api.${name}] ${message}`);
+					}
+				});
+				this.registerVmGlobal(name, native);
+			}
+		}
+
+		this.exposeVmObjects();
+	}
+
+	private vmTypeOf(value: Value): string {
+		if (value === null) {
+			return 'nil';
+		}
+		if (typeof value === 'boolean') {
+			return 'boolean';
+		}
+		if (typeof value === 'number') {
+			return 'number';
+		}
+		if (typeof value === 'string') {
+			return 'string';
+		}
+		if (value instanceof Table) {
+			return 'table';
+		}
+		if (isNativeFunction(value)) {
+			return 'function';
+		}
+		if (isNativeObject(value)) {
+			return 'native';
+		}
+		return 'function';
+	}
+
+	private createNativeArrayFromTable(table: Table, context: LuaMarshalContext): unknown[] {
+		const entries = table.entriesArray();
+		const output: unknown[] = [];
+		for (let index = 0; index < entries.length; index += 1) {
+			const [key, value] = entries[index];
+			if (typeof key === 'number' && Number.isInteger(key) && key >= 1) {
+				output[key - 1] = this.toNativeValue(value, this.extendMarshalContext(context, String(key)), new WeakMap());
+				continue;
+			}
+			output.push(this.toNativeValue(value, context, new WeakMap()));
+		}
+		return output;
+	}
+
+	private collectApiMembers(): Array<{ name: string; kind: 'method' | 'getter'; descriptor: PropertyDescriptor }> {
+		const map = new Map<string, { kind: 'method' | 'getter'; descriptor: PropertyDescriptor }>();
+		let prototype: object = Object.getPrototypeOf(api);
+		while (prototype && prototype !== Object.prototype) {
+			for (const name of Object.getOwnPropertyNames(prototype)) {
+				if (name === 'constructor') continue;
+				const descriptor = Object.getOwnPropertyDescriptor(prototype, name);
+				if (!descriptor || map.has(name)) continue;
+				if (typeof descriptor.value === 'function') {
+					map.set(name, { kind: 'method', descriptor });
+				} else if (descriptor.get) {
+					map.set(name, { kind: 'getter', descriptor });
+				}
+			}
+			prototype = Object.getPrototypeOf(prototype);
+		}
+		return Array.from(map.entries(), ([name, value]) => ({ name, kind: value.kind, descriptor: value.descriptor }));
+	}
+
+	private exposeVmObjects(): void {
+		const entries: Array<[string, object]> = [
+			['world', $.world],
+			['game', $],
+			['$', $],
+			['registry', $.registry],
+			['assets', $.assets],
+		];
+		for (const [name, object] of entries) {
+			this.registerVmGlobal(name, this.getOrCreateNativeObject(object));
+		}
+	}
+
+	private vmToString(value: Value): string {
+		if (value === null) {
+			return 'nil';
+		}
+		if (typeof value === 'boolean') {
+			return value ? 'true' : 'false';
+		}
+		if (typeof value === 'number') {
+			return Number.isFinite(value) ? value.toString() : 'nan';
+		}
+		if (typeof value === 'string') {
+			return value;
+		}
+		if (value instanceof Table) {
+			return 'table';
+		}
+		if (isNativeFunction(value)) {
+			return 'function';
+		}
+		if (isNativeObject(value)) {
+			return 'native';
+		}
+		return 'function';
+	}
+
+	public formatVmValue(value: Value): string {
+		return this.vmToString(value);
+	}
+
+	private formatVmString(template: string, args: ReadonlyArray<Value>, argStart: number): string {
+		let argumentIndex = argStart;
+		let output = '';
+
+		const takeArgument = (): Value => {
+			const value = argumentIndex < args.length ? args[argumentIndex] : null;
+			argumentIndex += 1;
+			return value;
+		};
+
+		const readInteger = (startIndex: number): { found: boolean; value: number; nextIndex: number } => {
+			let cursor = startIndex;
+			while (cursor < template.length) {
+				const code = template.charCodeAt(cursor);
+				if (code < 48 || code > 57) {
+					break;
+				}
+				cursor += 1;
+			}
+			if (cursor === startIndex) {
+				return { found: false, value: 0, nextIndex: startIndex };
+			}
+			return { found: true, value: parseInt(template.slice(startIndex, cursor), 10), nextIndex: cursor };
+		};
+
+		for (let index = 0; index < template.length; index += 1) {
+			const current = template.charAt(index);
+			if (current !== '%') {
+				output += current;
+				continue;
+			}
+			if (index === template.length - 1) {
+				throw this.createApiRuntimeError('string.format incomplete format specifier.');
+			}
+			if (template.charAt(index + 1) === '%') {
+				output += '%';
+				index += 1;
+				continue;
+			}
+
+			let cursor = index + 1;
+			const flags = { leftAlign: false, plus: false, space: false, zeroPad: false, alternate: false };
+			while (true) {
+				const flag = template.charAt(cursor);
+				if (flag === '-') {
+					flags.leftAlign = true;
+					cursor += 1;
+					continue;
+				}
+				if (flag === '+') {
+					flags.plus = true;
+					cursor += 1;
+					continue;
+				}
+				if (flag === ' ') {
+					flags.space = true;
+					cursor += 1;
+					continue;
+				}
+				if (flag === '0') {
+					flags.zeroPad = true;
+					cursor += 1;
+					continue;
+				}
+				if (flag === '#') {
+					flags.alternate = true;
+					cursor += 1;
+					continue;
+				}
+				break;
+			}
+
+			let width: number = null;
+			if (template.charAt(cursor) === '*') {
+				const widthArg = Math.trunc(takeArgument() as number);
+				if (widthArg < 0) {
+					flags.leftAlign = true;
+					width = -widthArg;
+				} else {
+					width = widthArg;
+				}
+				cursor += 1;
+			} else {
+				const parsedWidth = readInteger(cursor);
+				if (parsedWidth.found) {
+					width = parsedWidth.value;
+					cursor = parsedWidth.nextIndex;
+				}
+			}
+
+			let precision: number = null;
+			if (template.charAt(cursor) === '.') {
+				cursor += 1;
+				if (template.charAt(cursor) === '*') {
+					const precisionArg = Math.trunc(takeArgument() as number);
+					precision = precisionArg >= 0 ? precisionArg : null;
+					cursor += 1;
+				} else {
+					const parsedPrecision = readInteger(cursor);
+					precision = parsedPrecision.found ? parsedPrecision.value : 0;
+					cursor = parsedPrecision.nextIndex;
+				}
+			}
+
+			while (template.charAt(cursor) === 'l' || template.charAt(cursor) === 'L' || template.charAt(cursor) === 'h') {
+				cursor += 1;
+			}
+
+			const specifier = template.charAt(cursor);
+			if (specifier.length === 0) {
+				throw this.createApiRuntimeError('string.format incomplete format specifier.');
+			}
+
+			const signPrefix = (value: number): string => {
+				if (value < 0) {
+					return '-';
+				}
+				if (flags.plus) {
+					return '+';
+				}
+				if (flags.space) {
+					return ' ';
+				}
+				return '';
+			};
+
+			const applyPadding = (content: string, sign: string, prefix: string, allowZeroPadding: boolean): string => {
+				const totalLength = sign.length + prefix.length + content.length;
+				if (width !== null && totalLength < width) {
+					const paddingLength = width - totalLength;
+					if (flags.leftAlign) {
+						return `${sign}${prefix}${content}${' '.repeat(paddingLength)}`;
+					}
+					const padChar = allowZeroPadding ? '0' : ' ';
+					if (padChar === '0') {
+						return `${sign}${prefix}${'0'.repeat(paddingLength)}${content}`;
+					}
+					return `${' '.repeat(paddingLength)}${sign}${prefix}${content}`;
+				}
+				return `${sign}${prefix}${content}`;
+			};
+
+			switch (specifier) {
+				case 's': {
+					const value = takeArgument();
+					let text = value === null ? 'nil' : this.vmToString(value);
+					if (precision !== null) {
+						text = text.substring(0, precision);
+					}
+					output += applyPadding(text, '', '', false);
+					break;
+				}
+				case 'c': {
+					const value = takeArgument() as number;
+					const character = String.fromCharCode(Math.trunc(value));
+					output += applyPadding(character, '', '', false);
+					break;
+				}
+				case 'd':
+				case 'i':
+				case 'u':
+				case 'o':
+				case 'x':
+				case 'X': {
+					let number = takeArgument() as number;
+					let integerValue = Math.trunc(number);
+					const unsigned = specifier === 'u' || specifier === 'o' || specifier === 'x' || specifier === 'X';
+					if (unsigned) {
+						integerValue = integerValue >>> 0;
+					}
+					const negative = !unsigned && integerValue < 0;
+					const sign = negative ? '-' : (specifier === 'd' || specifier === 'i') ? signPrefix(integerValue) : '';
+					const magnitude = negative ? -integerValue : integerValue;
+					let base = 10;
+					if (specifier === 'o') {
+						base = 8;
+					}
+					if (specifier === 'x' || specifier === 'X') {
+						base = 16;
+					}
+					let digits = Math.trunc(magnitude).toString(base);
+					if (specifier === 'X') {
+						digits = digits.toUpperCase();
+					}
+					if (precision !== null) {
+						const required = Math.max(precision, 0);
+						if (digits.length < required) {
+							digits = '0'.repeat(required - digits.length) + digits;
+						}
+						if (precision === 0 && magnitude === 0) {
+							digits = '';
+						}
+					}
+					let prefix = '';
+					if (flags.alternate) {
+						if ((specifier === 'x' || specifier === 'X') && magnitude !== 0) {
+							prefix = specifier === 'x' ? '0x' : '0X';
+						}
+						if (specifier === 'o') {
+							if (digits.length === 0) {
+								digits = '0';
+							} else if (digits.charAt(0) !== '0') {
+								digits = `0${digits}`;
+							}
+						}
+					}
+					const allowZeroPad = flags.zeroPad && !flags.leftAlign && precision === null;
+					output += applyPadding(digits, sign, prefix, allowZeroPad);
+					break;
+				}
+				case 'f':
+				case 'F': {
+					const number = takeArgument() as number;
+					const sign = signPrefix(number);
+					const fractionDigits = precision !== null ? Math.max(0, precision) : 6;
+					const text = Math.abs(number).toFixed(fractionDigits);
+					const formatted = flags.alternate && fractionDigits === 0 && text.indexOf('.') === -1 ? `${text}.` : text;
+					const allowZeroPad = flags.zeroPad && !flags.leftAlign;
+					output += applyPadding(formatted, sign, '', allowZeroPad);
+					break;
+				}
+				case 'e':
+				case 'E': {
+					const number = takeArgument() as number;
+					const sign = signPrefix(number);
+					const fractionDigits = precision !== null ? Math.max(0, precision) : 6;
+					let text = Math.abs(number).toExponential(fractionDigits);
+					if (specifier === 'E') {
+						text = text.toUpperCase();
+					}
+					const allowZeroPad = flags.zeroPad && !flags.leftAlign;
+					output += applyPadding(text, sign, '', allowZeroPad);
+					break;
+				}
+				case 'g':
+				case 'G': {
+					const number = takeArgument() as number;
+					const sign = signPrefix(number);
+					const significant = precision === null ? 6 : precision === 0 ? 1 : precision;
+					let text = Math.abs(number).toPrecision(significant);
+					if (!flags.alternate) {
+						if (text.indexOf('e') !== -1 || text.indexOf('E') !== -1) {
+							const parts = text.split(/e/i);
+							let mantissa = parts[0];
+							const exponent = parts[1];
+							if (mantissa.indexOf('.') !== -1) {
+								while (mantissa.endsWith('0')) {
+									mantissa = mantissa.slice(0, -1);
+								}
+								if (mantissa.endsWith('.')) {
+									mantissa = mantissa.slice(0, -1);
+								}
+							}
+							text = `${mantissa}e${exponent}`;
+						} else if (text.indexOf('.') !== -1) {
+							while (text.endsWith('0')) {
+								text = text.slice(0, -1);
+							}
+							if (text.endsWith('.')) {
+								text = text.slice(0, -1);
+							}
+						}
+					}
+					if (specifier === 'G') {
+						text = text.toUpperCase();
+					}
+					const allowZeroPad = flags.zeroPad && !flags.leftAlign;
+					output += applyPadding(text, sign, '', allowZeroPad);
+					break;
+				}
+				case 'q': {
+					const value = takeArgument();
+					const raw = value === null ? 'nil' : this.vmToString(value);
+					let escaped = '"';
+					for (let charIndex = 0; charIndex < raw.length; charIndex += 1) {
+						const code = raw.charCodeAt(charIndex);
+						switch (code) {
+							case 10:
+								escaped += '\\n';
+								break;
+							case 13:
+								escaped += '\\r';
+								break;
+							case 9:
+								escaped += '\\t';
+								break;
+							case 92:
+								escaped += '\\\\';
+								break;
+							case 34:
+								escaped += '\\"';
+								break;
+							default:
+								if (code < 32 || code === 127) {
+									const decimal = code.toString(10);
+									escaped += `\\${decimal.padStart(3, '0')}`;
+								} else {
+									escaped += raw.charAt(charIndex);
+								}
+								break;
+						}
+					}
+					escaped += '"';
+					output += applyPadding(escaped, '', '', false);
+					break;
+				}
+				default:
+					throw this.createApiRuntimeError(`string.format unsupported format specifier '%${specifier}'.`);
+			}
+
+			index = cursor;
+		}
+
+		return output;
+	}
+
+	private processVmIo(): void {
+		const memory = this.cpuMemory;
+		const count = memory[IO_WRITE_PTR_ADDR] as number;
+		if (!count) {
+			return;
+		}
+		const base = IO_BUFFER_BASE;
+		for (let index = 0; index < count; index += 1) {
+			const cmdBase = base + index * IO_COMMAND_STRIDE;
+			const cmd = memory[cmdBase] as number;
+			switch (cmd) {
+				case IO_CMD_PRINT: {
+					const arg = memory[cmdBase + IO_ARG0_OFFSET];
+					const text = this.formatVmValue(arg);
+					this.terminal.appendStdout(text);
+					break;
+				}
+				default:
+					throw new Error(`Unknown VM IO command: ${cmd}.`);
+			}
+		}
+		memory[IO_WRITE_PTR_ADDR] = 0;
+	}
+
+	private logVmDebugState(): void {
+		if (!this.cpu.hasFrames()) {
+			return;
+		}
+		const debug = this.cpu.getDebugState();
+		const instr = debug.instr;
+		const op = (instr >>> 24) & 0xff;
+		const a = (instr >>> 16) & 0xff;
+		const b = (instr >>> 8) & 0xff;
+		const c = instr & 0xff;
+		const ra = debug.registers[a];
+		const rb = (b & 0x80) !== 0 ? this.cpu.getConst(b & 0x7f) : debug.registers[b];
+		const rc = (c & 0x80) !== 0 ? this.cpu.getConst(c & 0x7f) : debug.registers[c];
+		console.info(`[BmsxVMRuntime] VM debug: pc=${debug.pc} op=${op} a=${a} b=${b} c=${c} ra=${this.formatVmValue(ra)} rb=${this.formatVmValue(rb)} rc=${this.formatVmValue(rc)}`);
+	}
+
+	private buildVmStackFrames(): StackTraceFrame[] {
+		const callStack = this.cpu.getCallStack();
+		const frames: StackTraceFrame[] = [];
+		for (let index = callStack.length - 1; index >= 0; index -= 1) {
+			const entry = callStack[index];
+			const range = this.cpu.getDebugRange(entry.pc);
+			const source = range ? range.path : this._luaPath;
+			const line = range ? range.start.line : null;
+			const column = range ? range.start.column : null;
+			frames.push({
+				origin: 'lua',
+				functionName: null,
+				source,
+				line,
+				column,
+				raw: buildLuaFrameRawLabel(null, source),
+			});
+		}
+		return frames;
+	}
+
 	private loadLuaChunkForPath(path: string): LuaChunk {
 		const asset = $.luaSources.path2lua[path];
 		if (asset.src !== asset.base_src) {
@@ -1729,7 +2358,32 @@ export class BmsxVMRuntime extends Service {
 		return decodeBinary(bytes) as LuaChunk;
 	}
 
-	private bootLuaProgram() {
+	private buildVmModuleChunks(entryPath: string): Array<{ path: string; chunk: LuaChunk }> {
+		const entryAsset = $.luaSources.path2lua[entryPath];
+		const entryKey = entryAsset ? (entryAsset.normalized_source_path ?? entryAsset.source_path ?? entryPath) : entryPath;
+		const modules: Array<{ path: string; chunk: LuaChunk }> = [];
+		const seen = new Set<string>();
+		const luaAssets = Object.values($.luaSources.path2lua);
+		for (const asset of luaAssets) {
+			if (!asset || asset.type !== 'lua') {
+				continue;
+			}
+			const key = asset.normalized_source_path ?? asset.source_path;
+			if (!key || seen.has(key)) {
+				continue;
+			}
+			seen.add(key);
+			if (key === entryKey) {
+				continue;
+			}
+			const source = this.resourceSourceForChunk(asset.source_path);
+			const chunk = this.luaInterpreter.compileChunk(source, asset.source_path);
+			modules.push({ path: key, chunk });
+		}
+		return modules;
+	}
+
+	private bootLuaProgram(options?: { preserveState?: boolean; sourceOverride?: { path: string; source: string } }): boolean {
 		const entryAsset = $.luaSources.path2lua[$.luaSources.entry_path];
 		this.cartEntryAvailable = !!entryAsset;
 
@@ -1747,27 +2401,42 @@ export class BmsxVMRuntime extends Service {
 		}
 
 		this._luaPath = path;
+		if (!options?.preserveState) {
+			this.resetVmState();
+		}
 
 		try {
-			const moduleId = $.luaSources.path2lua[path].source_path;
-			const chunk = this.loadLuaChunkForPath(path);
-			interpreter.loadChunk(chunk);
-			const results = interpreter.executeChunk(chunk);
-			this.luaJsBridge.wrapLuaExecutionResults(moduleId, results);
-			this.cacheChunkEnvironment(path, moduleId);
+			const chunk = options?.sourceOverride
+				? this.luaInterpreter.compileChunk(options.sourceOverride.source, options.sourceOverride.path)
+				: this.loadLuaChunkForPath(path);
+			const modules = this.buildVmModuleChunks(path);
+			const { program, entryProtoIndex, moduleProtoMap } = compileLuaChunkToProgram(chunk, modules);
+			this.cpu.setProgram(program);
+			this.vmModuleProtos.clear();
+			for (const [modulePath, protoIndex] of moduleProtoMap.entries()) {
+				this.vmModuleProtos.set(modulePath, protoIndex);
+			}
+			this.vmModuleCache.clear();
+			this.cpuMemory[IO_WRITE_PTR_ADDR] = 0;
+			this.cpu.start(entryProtoIndex);
+			this.pendingVmCall = null;
+			this.cpu.instructionBudgetRemaining = null;
+			this.cpu.run(null);
+			this.processVmIo();
 			this.luaVmInitialized = true;
 		}
 		catch (error) {
 			console.info(`[BmsxVMRuntime] Lua boot '${path}' failed.`);
+			this.logVmDebugState();
 			this.handleLuaError(error);
-			return;
+			return false;
 		}
 
 		this.bindLifecycleHandlers();
 
 		const ok = this.runLuaLifecycleHandler('init');
 		if (!ok) {
-			return;
+			return false;
 		}
 		return this.runLuaLifecycleHandler('new_game');
 	}
@@ -1792,6 +2461,7 @@ export class BmsxVMRuntime extends Service {
 			await $.reset_to_fresh_world();
 			$.view.primaryAtlas = 0;
 			try {
+				this.resetVmState();
 				this.reloadLuaProgramState({ runInit: options?.runInit !== false });
 			} catch (error) {
 				this.handleLuaError(error);
@@ -1800,19 +2470,6 @@ export class BmsxVMRuntime extends Service {
 		finally {
 			this.luaVmGate.end(vmToken);
 		}
-	}
-
-	private invokeLuaFunction(fn: LuaFunctionValue, args: unknown[]): LuaValue[] {
-		const luaArgs = args.map((value) => this.luaJsBridge.toLua(value));
-		return fn.call(luaArgs);
-	}
-
-	private createLuaExecutionThread(fn: LuaFunctionValue, args: ReadonlyArray<unknown>): LuaExecutionThread {
-		const luaArgs: LuaValue[] = [];
-		for (let index = 0; index < args.length; index += 1) {
-			luaArgs.push(this.luaJsBridge.toLua(args[index]));
-		}
-		return this.luaInterpreter.createFunctionExecutionThread(fn, luaArgs);
 	}
 
 	public handleLuaError(whatever: unknown): void {
@@ -1828,6 +2485,8 @@ export class BmsxVMRuntime extends Service {
 		if (this.handledLuaErrors.has(error)) {
 			return;
 		}
+		this.logVmDebugState();
+		this.lastVmCallStack = this.buildVmStackFrames();
 
 		// Extract message and location info
 		const message = sanitizeLuaErrorMessage(extractErrorMessage(error));
@@ -1932,6 +2591,9 @@ export class BmsxVMRuntime extends Service {
 				}
 			}
 		}
+		if (luaFrames.length === 0 && this.lastVmCallStack.length > 0) {
+			luaFrames = this.lastVmCallStack.slice();
+		}
 		const projectRootPath = $.assets.project_root_path;
 		const normalizedRoot = projectRootPath && projectRootPath.length > 0
 			? projectRootPath.replace(/^\.?\//, '')
@@ -1975,15 +2637,18 @@ export class BmsxVMRuntime extends Service {
 		return new LuaRuntimeError(message, path, line, column);
 	}
 
-	private getLuaGlobalValue(env: LuaEnvironment, name: string): LuaValue {
-		if (!name) {
-			return null;
-		}
-		return env.get(this.canonicalizeIdentifier(name));
-	}
-
 	public canonicalizeIdentifier(name: string): string {
 		return this.canonicalizeIdentifierFn(name);
+	}
+
+	public runVmConsoleChunk(source: string): Value[] {
+		const chunk = this.luaInterpreter.compileChunk(source, 'console');
+		const currentProgram = this.cpu.getProgram();
+		const compiled = appendLuaChunkToProgram(currentProgram, chunk);
+		this.cpu.setProgram(compiled.program);
+		const results = this.callVmFunction({ protoIndex: compiled.entryProtoIndex, upvalues: [] }, []);
+		this.processVmIo();
+		return results;
 	}
 
 	public callLuaFunction(fn: LuaFunctionValue, args: unknown[]): unknown[] {
@@ -2000,6 +2665,41 @@ export class BmsxVMRuntime extends Service {
 			output.push(this.luaJsBridge.convertFromLua(results[i], this.extendMarshalContext(baseCtx, `ret${i}`)));
 		}
 		return output;
+	}
+
+	private callVmFunction(fn: Closure, args: Value[]): Value[] {
+		const depth = this.cpu.getFrameDepth();
+		this.cpu.callExternal(fn, args);
+		const previousBudget = this.cpu.instructionBudgetRemaining;
+		this.cpu.instructionBudgetRemaining = null;
+		this.cpu.runUntilDepth(depth);
+		this.cpu.instructionBudgetRemaining = previousBudget;
+		return this.cpu.lastReturnValues;
+	}
+
+	private invokeVmHandler(fn: Closure, thisArg: unknown, args: ReadonlyArray<unknown>): unknown {
+		const callArgs: Value[] = [];
+		if (thisArg !== undefined) {
+			callArgs.push(this.toVmValue(thisArg));
+		}
+		for (let index = 0; index < args.length; index += 1) {
+			callArgs.push(this.toVmValue(args[index]));
+		}
+		const results = this.callVmFunction(fn, callArgs);
+		if (results.length === 0) {
+			return undefined;
+		}
+		const ctx = this.buildVmContext();
+		return this.toNativeValue(results[0], ctx, new WeakMap());
+	}
+
+	private handleVmHandlerError(error: unknown, meta?: { hid: string; moduleId: string; path?: string }): void {
+		const wrappedError = convertToError(error);
+		if (meta && meta.hid && !wrappedError.message.startsWith(`[${meta.hid}]`)) {
+			wrappedError.message = `[${meta.hid}] ${wrappedError.message}`;
+		}
+		this.handleLuaError(wrappedError);
+		throw wrappedError;
 	}
 
 	private invokeLuaHandler(fn: LuaFunctionValue, thisArg: unknown, args: ReadonlyArray<unknown>): unknown {
@@ -2037,116 +2737,300 @@ export class BmsxVMRuntime extends Service {
 		};
 	}
 
-	private refreshPackageLoadedEntry(packageKey: string, results: ReadonlyArray<LuaValue>): void {
-		const packageLoaded = this.luaInterpreter.packageLoadedTable;
-		const moduleValue = results.length > 0 && results[0] !== null ? results[0] : true;
-		packageLoaded.set(packageKey, moduleValue);
+	private buildVmContext(): LuaMarshalContext {
+		let moduleId = 'vm';
+		if (this._luaPath) {
+			const binding = $.luaSources.path2lua[this._luaPath];
+			if (binding) {
+				moduleId = binding.source_path;
+			}
+		}
+		return { moduleId, path: [] };
 	}
 
-	private rebindModuleExportHandlers(moduleId: string, moduleValue: LuaValue): void {
-		const visited = new WeakSet<LuaTable>();
-		// Align with wrapLuaExecutionResults() which wraps returned values under ['return', '<index>'].
-		this.rebindHandlersFromLuaValue(moduleId, moduleValue, ['return', '0'], visited);
+	private describeMarshalSegment(key: Value): string {
+		if (typeof key === 'string') {
+			return key;
+		}
+		if (typeof key === 'number') {
+			return String(key);
+		}
+		return null;
+	}
+
+	private isPlainObject(value: unknown): value is Record<string, unknown> {
+		if (value === null || typeof value !== 'object') {
+			return false;
+		}
+		const proto = Object.getPrototypeOf(value);
+		return proto === Object.prototype || proto === null;
+	}
+
+	private resolveNativeTypeName(value: object | Function): string {
+		if (typeof value === 'function') {
+			const name = value.name;
+			if (typeof name === 'string' && name.length > 0) {
+				return name;
+			}
+			return 'Function';
+		}
+		const descriptor = (value as { constructor?: unknown }).constructor;
+		if (typeof descriptor === 'function') {
+			const constructorFn = descriptor as { name?: unknown };
+			if (constructorFn && typeof constructorFn.name === 'string' && constructorFn.name.length > 0) {
+				return constructorFn.name;
+			}
+		}
+		return 'Object';
+	}
+
+	private resolveNativeKey(key: Value): string {
+		if (typeof key === 'string') {
+			return key;
+		}
+		if (typeof key === 'number' && Number.isInteger(key)) {
+			return String(key);
+		}
+		return null;
+	}
+
+	private toVmValue(value: unknown): Value {
+		if (value === undefined || value === null) {
+			return null;
+		}
+		if (typeof value === 'boolean' || typeof value === 'number' || typeof value === 'string') {
+			return value;
+		}
+		if (isNativeObject(value as Value)) {
+			return value as Value;
+		}
+		if (isNativeFunction(value as Value)) {
+			return value as Value;
+		}
+		if (value instanceof Table) {
+			return value;
+		}
+		if (Array.isArray(value)) {
+			return this.getOrCreateNativeObject(value);
+		}
+		if (typeof value === 'function') {
+			return this.getOrCreateNativeFunction(value);
+		}
+		if (this.isPlainObject(value)) {
+			const table = new Table(0, 0);
+			for (const [prop, entry] of Object.entries(value)) {
+				table.set(prop, this.toVmValue(entry));
+			}
+			return table;
+		}
+		if (value instanceof Map) {
+			const table = new Table(0, 0);
+			for (const [key, entry] of value.entries()) {
+				table.set(this.toVmValue(key), this.toVmValue(entry));
+			}
+			return table;
+		}
+		return this.getOrCreateNativeObject(value as object);
+	}
+
+	private toNativeValue(value: Value, context: LuaMarshalContext, visited: WeakMap<Table, unknown>): unknown {
+		if (value === null || typeof value === 'boolean' || typeof value === 'number' || typeof value === 'string') {
+			return value;
+		}
+		if (value instanceof Table) {
+			return this.vmTableToNative(value, context, visited);
+		}
+		if (isNativeObject(value)) {
+			return value.raw;
+		}
+		if (isNativeFunction(value)) {
+			return (...args: unknown[]) => {
+				const vmArgs: Value[] = [];
+				for (let index = 0; index < args.length; index += 1) {
+					vmArgs.push(this.toVmValue(args[index]));
+				}
+				const results = value.invoke(vmArgs);
+				if (results.length === 0) {
+					return undefined;
+				}
+				return this.toNativeValue(results[0], context, new WeakMap());
+			};
+		}
+		const handler = this.vmHandlerCache.getOrCreate(value as Closure, {
+			moduleId: context.moduleId,
+			path: context.path,
+		});
+		return handler;
+	}
+
+	private vmTableToNative(table: Table, context: LuaMarshalContext, visited: WeakMap<Table, unknown>): unknown {
+		const cached = visited.get(table);
+		if (cached !== undefined) {
+			return cached;
+		}
+		const entries = table.entriesArray();
+		if (entries.length === 0) {
+			const empty: Record<string, unknown> = {};
+			visited.set(table, empty);
+			return empty;
+		}
+		const numericEntries: Array<{ key: number; value: Value }> = [];
+		const otherEntries: Array<{ key: Value; value: Value }> = [];
+		let maxNumericIndex = 0;
+		for (let index = 0; index < entries.length; index += 1) {
+			const [key, entryValue] = entries[index];
+			if (typeof key === 'number' && Number.isInteger(key) && key >= 1) {
+				numericEntries.push({ key, value: entryValue });
+				if (key > maxNumericIndex) {
+					maxNumericIndex = key;
+				}
+				continue;
+			}
+			otherEntries.push({ key, value: entryValue });
+		}
+		const isSequential = numericEntries.length === entries.length && numericEntries.length === maxNumericIndex;
+		if (isSequential) {
+			const result: unknown[] = new Array(maxNumericIndex);
+			visited.set(table, result);
+			for (let index = 0; index < numericEntries.length; index += 1) {
+				const entry = numericEntries[index];
+				const segment = this.describeMarshalSegment(entry.key);
+				const nextContext = segment ? this.extendMarshalContext(context, segment) : context;
+				result[entry.key - 1] = this.toNativeValue(entry.value, nextContext, visited);
+			}
+			return result;
+		}
+		const objectResult: Record<string, unknown> = {};
+		visited.set(table, objectResult);
+		for (let index = 0; index < numericEntries.length; index += 1) {
+			const entry = numericEntries[index];
+			const segment = this.describeMarshalSegment(entry.key);
+			const nextContext = segment ? this.extendMarshalContext(context, segment) : context;
+			objectResult[String(entry.key)] = this.toNativeValue(entry.value, nextContext, visited);
+		}
+		for (let index = 0; index < otherEntries.length; index += 1) {
+			const entry = otherEntries[index];
+			const segment = this.describeMarshalSegment(entry.key);
+			const nextContext = segment ? this.extendMarshalContext(context, segment) : context;
+			objectResult[String(entry.key)] = this.toNativeValue(entry.value, nextContext, visited);
+		}
+		return objectResult;
+	}
+
+	private wrapNativeResult(result: unknown): Value[] {
+		if (Array.isArray(result)) {
+			const values: Value[] = [];
+			for (let index = 0; index < result.length; index += 1) {
+				values.push(this.toVmValue(result[index]));
+			}
+			return values;
+		}
+		if (result === undefined) {
+			return [];
+		}
+		return [this.toVmValue(result)];
+	}
+
+	private getOrCreateNativeObject(value: object): NativeObject {
+		const cached = this.nativeObjectCache.get(value);
+		if (cached) {
+			return cached;
+		}
+		const wrapper = createNativeObject(value, {
+			get: (key) => {
+				const prop = this.resolveNativeKey(key);
+				if (!prop) {
+					throw new Error('Attempted to index native object with unsupported key.');
+				}
+				const rawValue = (value as Record<string, unknown>)[prop];
+				if (rawValue === undefined) {
+					return null;
+				}
+				if (typeof rawValue === 'function') {
+					return this.getOrCreateNativeMethod(value, prop);
+				}
+				return this.toVmValue(rawValue);
+			},
+			set: (key, entryValue) => {
+				const prop = this.resolveNativeKey(key);
+				if (!prop) {
+					throw new Error('Attempted to assign native object with unsupported key.');
+				}
+				if (entryValue === null) {
+					delete (value as Record<string, unknown>)[prop];
+					return;
+				}
+				const ctx = this.buildVmContext();
+				(value as Record<string, unknown>)[prop] = this.toNativeValue(entryValue, ctx, new WeakMap());
+			},
+			len: Array.isArray(value) ? () => (value as unknown[]).length : undefined,
+		});
+		this.nativeObjectCache.set(value, wrapper);
+		return wrapper;
+	}
+
+	private getOrCreateNativeFunction(fn: Function): NativeFunction {
+		const cached = this.nativeFunctionCache.get(fn);
+		if (cached) {
+			return cached;
+		}
+		const name = this.resolveNativeTypeName(fn);
+		const wrapper = createNativeFunction(name, (args) => {
+			const ctx = this.buildVmContext();
+			const visited = new WeakMap<Table, unknown>();
+			const jsArgs: unknown[] = [];
+			for (let index = 0; index < args.length; index += 1) {
+				jsArgs.push(this.toNativeValue(args[index], ctx, visited));
+			}
+			const result = fn.apply(undefined, jsArgs);
+			return this.wrapNativeResult(result);
+		});
+		this.nativeFunctionCache.set(fn, wrapper);
+		return wrapper;
+	}
+
+	private getOrCreateNativeMethod(target: object, key: string): NativeFunction {
+		let bucket = this.nativeMemberCache.get(target);
+		if (!bucket) {
+			bucket = new Map<string, NativeFunction>();
+			this.nativeMemberCache.set(target, bucket);
+		}
+		const cached = bucket.get(key);
+		if (cached) {
+			return cached;
+		}
+		const name = `${this.resolveNativeTypeName(target)}.${key}`;
+		const wrapper = createNativeFunction(name, (args) => {
+			const ctx = this.buildVmContext();
+			const visited = new WeakMap<Table, unknown>();
+			const jsArgs: unknown[] = [];
+			let startIndex = 0;
+			if (args.length > 0) {
+				const first = this.toNativeValue(args[0], ctx, visited);
+				if (first === target) {
+					startIndex = 1;
+				} else {
+					jsArgs.push(first);
+				}
+			}
+			for (let index = startIndex; index < args.length; index += 1) {
+				jsArgs.push(this.toNativeValue(args[index], ctx, visited));
+			}
+			const member = (target as Record<string, unknown>)[key];
+			if (typeof member !== 'function') {
+				throw new Error(`Property '${key}' is not callable.`);
+			}
+			const result = (member as (...inner: unknown[]) => unknown).apply(target, jsArgs);
+			return this.wrapNativeResult(result);
+		});
+		bucket.set(key, wrapper);
+		return wrapper;
 	}
 
 	public invalidateLuaModuleIndex(): void {
 		this.luaModuleIndexBuilt = false;
 		this.luaModuleAliases.clear();
 		this.pathSemanticCache.clear();
-	}
-
-	private cacheChunkEnvironment(path: string, moduleId?: string): void {
-		const environment = this.luaInterpreter.pathEnvironment;
-		const definitions = this.luaInterpreter.getChunkDefinitions(path);
-		const asset = $.luaSources.path2lua[path];
-		const effectiveModuleId = moduleId ?? asset.source_path;
-		this.pruneRemovedChunkFunctionExports(path, environment, definitions, this.luaInterpreter.globalEnvironment);
-		this.installFunctionRedirectsForChunk(effectiveModuleId, environment, definitions);
-		this.luaJsBridge.wrapDynamicChunkFunctions(effectiveModuleId, environment, path);
-		this.luaChunkEnvironmentsByPath.set(path, environment);
-		this.luaChunkEnvironmentsByPath.set(asset.normalized_source_path, environment);
-	}
-
-	private collectChunkFunctionDefinitionKeys(definitions: ReadonlyArray<LuaDefinitionInfo>): Set<string> {
-		const keys = new Set<string>();
-		if (!definitions) {
-			return keys;
-		}
-		for (let index = 0; index < definitions.length; index += 1) {
-			const entry = definitions[index];
-			if (entry.kind !== 'function') {
-				continue;
-			}
-			if (!entry.namePath || entry.namePath.length === 0) {
-				continue;
-			}
-			const key = entry.namePath.join('.');
-			if (key.length > 0) {
-				keys.add(key);
-			}
-		}
-		return keys;
-	}
-
-	private pruneRemovedChunkFunctionExports(
-		normalizedChunk: string,
-		environment: LuaEnvironment,
-		definitions: ReadonlyArray<LuaDefinitionInfo>,
-		globalEnv: LuaEnvironment,
-	): void {
-		if (!environment) {
-			return;
-		}
-		const previousKeys = this.pathFunctionDefinitionKeys.get(normalizedChunk);
-		const currentKeys = this.collectChunkFunctionDefinitionKeys(definitions);
-		if (previousKeys && previousKeys.size > 0) {
-			for (const key of previousKeys) {
-				if (!currentKeys.has(key)) {
-					const path = key.split('.');
-					this.clearExportInEnvironment(environment, path);
-					this.clearExportInEnvironment(globalEnv, path);
-				}
-			}
-		}
-		this.pathFunctionDefinitionKeys.set(normalizedChunk, currentKeys);
-	}
-
-	private installFunctionRedirectsForChunk(
-		moduleId: string,
-		environment: LuaEnvironment,
-		definitions: ReadonlyArray<LuaDefinitionInfo>,
-	): void {
-		const definitionKeys = this.collectChunkFunctionDefinitionKeys(definitions);
-		if (definitionKeys.size === 0) {
-			return;
-		}
-		for (const key of definitionKeys) {
-			const segments = key.split('.');
-			this.luaJsBridge.wrapFunctionByPath(moduleId, environment, segments);
-		}
-	}
-
-	private clearExportInEnvironment(env: LuaEnvironment, pathParts: ReadonlyArray<string>): void {
-		if (!env || !pathParts || pathParts.length === 0) {
-			return;
-		}
-		if (pathParts.length === 1) {
-			env.set(pathParts[0], null);
-			return;
-		}
-		const first = env.get(pathParts[0]);
-		if (first === null || !isLuaTable(first)) {
-			return;
-		}
-		let current: LuaTable = first;
-		for (let index = 1; index < pathParts.length - 1; index += 1) {
-			const nextValue = current.get(pathParts[index]);
-			if (nextValue === null || !isLuaTable(nextValue)) {
-				return;
-			}
-			current = nextValue;
-		}
-		current.set(pathParts[pathParts.length - 1], null);
 	}
 
 	public ensureLuaModuleIndex(): void {
@@ -2161,54 +3045,33 @@ export class BmsxVMRuntime extends Service {
 		this.luaModuleIndexBuilt = true;
 	}
 
-	private requireLuaModule(interpreter: LuaInterpreter, moduleName: string): LuaValue {
+	private requireVmModule(moduleName: string): Value {
 		this.ensureLuaModuleIndex();
-		if (!moduleName || moduleName.length === 0) {
-			throw this.createApiRuntimeError(`require(moduleName) received an invalid module name '${moduleName}'.`);
-		}
 		const record = this.luaModuleAliases.get(moduleName);
 		if (!record) {
-			throw this.createApiRuntimeError(`Module '${moduleName}' not found.`);
+			throw this.createApiRuntimeError(`require('${moduleName}') failed: module not found.`);
 		}
-		const packageLoaded = interpreter.packageLoadedTable;
-		const cached = packageLoaded.get(record.packageKey);
-		if (cached !== null) {
+		const cacheKey = record.path;
+		const cached = this.vmModuleCache.get(cacheKey);
+		if (cached !== undefined) {
 			return cached;
 		}
-		if (this.luaModuleLoadingKeys.has(record.packageKey)) {
-			const pending = packageLoaded.get(record.packageKey);
-			return pending === null ? true : pending;
+		const protoIndex = this.vmModuleProtos.get(cacheKey);
+		if (protoIndex === undefined) {
+			throw this.createApiRuntimeError(`require('${moduleName}') failed: module not compiled.`);
 		}
-		const asset = $.luaSources.path2lua[record.path];
-		this.luaModuleLoadingKeys.add(record.packageKey);
-		packageLoaded.set(record.packageKey, true);
-		const previousPath = this._luaPath;
-		this._luaPath = record.path;
-		try {
-			const moduleId = asset.source_path; // Keep redirects aligned with source paths
-			const chunk = this.loadLuaChunkForPath(record.path);
-			interpreter.loadChunk(chunk);
-			const results = interpreter.executeChunk(chunk);
-			this.luaJsBridge.wrapLuaExecutionResults(moduleId, results);
-			this.cacheChunkEnvironment(record.path, moduleId);
-			const moduleValue = results.length > 0 && results[0] !== null ? results[0] : true;
-			packageLoaded.set(record.packageKey, moduleValue);
-			this.rebindChunkEnvironmentHandlers(moduleId);
-			this.rebindModuleExportHandlers(moduleId, moduleValue);
-			return moduleValue;
-		}
-		catch (error) {
-			packageLoaded.delete(record.packageKey);
-			if (isLuaScriptError(error)) {
-				throw error;
-			}
-			const message = extractErrorMessage(error);
-			throw this.createApiRuntimeError(message);
-		}
-		finally {
-			this.luaModuleLoadingKeys.delete(record.packageKey);
-			this._luaPath = previousPath;
-		}
+		this.vmModuleCache.set(cacheKey, true);
+		const results = this.callVmFunction({ protoIndex, upvalues: [] }, []);
+		const value = results.length > 0 ? results[0] : null;
+		const cachedValue = value === null ? true : value;
+		this.vmModuleCache.set(cacheKey, cachedValue);
+		return cachedValue;
+	}
+
+	private requireLuaModule(_interpreter: LuaInterpreter, moduleName: string): LuaValue {
+		void _interpreter;
+		void moduleName;
+		throw this.createApiRuntimeError('require(moduleName) is not available in VM execution.');
 	}
 
 	private refreshLuaHandlersForChunk(path: string, sourceOverride?: string): void {
@@ -2219,30 +3082,8 @@ export class BmsxVMRuntime extends Service {
 	}
 
 	private reloadGenericLuaChunk(path: string, sourceOverride?: string): void {
-		const interpreter = this.luaInterpreter;
-		const previousEnv = this.luaChunkEnvironmentsByPath.get(path);
-		const entryEnv = this._luaPath ? this.luaChunkEnvironmentsByPath.get(this._luaPath) : null;
-		const sharedWithEntry = path !== this._luaPath && !!previousEnv && previousEnv === entryEnv;
-		const previousChunkState = this.captureChunkState(path);
-		const previousChunkTables = this.captureChunkTables(path);
-		const previousGlobals = this.captureGlobalStateForReload();
 		const source = sourceOverride ? sourceOverride : this.resourceSourceForChunk(path);
-		const asset = $.luaSources.path2lua[path];
-		const moduleId = asset.source_path; // Stable ids for redirect caches
-		const chunk = interpreter.compileChunk(source, path);
-		interpreter.loadChunk(chunk);
-		const results = interpreter.executeChunk(chunk);
-		this.luaJsBridge.wrapLuaExecutionResults(moduleId, results);
-		this.cacheChunkEnvironment(path, moduleId);
-		if (!sharedWithEntry) {
-			this.restoreChunkState(interpreter.pathEnvironment, previousChunkState);
-			this.restoreChunkTables(interpreter.pathEnvironment, previousChunkTables);
-			this.restoreGlobalStateForReload(previousGlobals);
-		}
-		this.refreshPackageLoadedEntry(path, results);
-		const moduleValue = results.length > 0 && results[0] !== null ? results[0] : true;
-		this.rebindChunkEnvironmentHandlers(moduleId);
-		this.rebindModuleExportHandlers(moduleId, moduleValue);
+		this.luaInterpreter.compileChunk(source, path);
 		this.luaGenericChunksExecuted.add(path);
 	}
 
