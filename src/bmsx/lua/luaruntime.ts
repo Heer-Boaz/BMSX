@@ -2595,8 +2595,6 @@ public fallbackSourceRange(): LuaSourceRange {
 		return 'function';
 	}
 
-
-
 	private invokeFunction(functionValue: LuaFunctionValue, args: ReadonlyArray<LuaValue>, range: LuaSourceRange): LuaValue[] {
 		// Ensure native calls appear in the call stack with the call-site location.
 		// Script functions already push a frame inside invokeScriptFunction().
