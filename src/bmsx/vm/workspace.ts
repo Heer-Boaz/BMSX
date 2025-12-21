@@ -1,7 +1,7 @@
 import { extractErrorMessage } from '../lua/luavalue';
 import type { HttpResponse, StorageService } from '../platform';
 import type { LuaSourceRecord, LuaSourceRegistry } from './lua_sources';
-import { BmsxVMRuntime } from './vm_runtime';
+import { BmsxVMRuntime } from './vm_tooling_runtime';
 import { $ } from '../core/engine_core';
 import { VMLuaResourceCreationRequest, VMResourceDescriptor } from './types';
 
@@ -49,7 +49,7 @@ export async function createLuaResource(request: VMLuaResourceCreationRequest): 
 		cart.path2lua![asset.normalized_source_path] = asset;
 	};
 	registerAsset($.luaSources);
-	BmsxVMRuntime.instance.invalidateLuaModuleIndex();
+	BmsxVMRuntime.instance.invalidateVmModuleAliases();
 	const filesystemPath = asset.source_path;
 	await persistLuaSourceToFilesystem(filesystemPath, contents);
 	BmsxVMRuntime.instance.markSourceChunkAsDirty(asset.source_path);

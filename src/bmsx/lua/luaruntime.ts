@@ -40,7 +40,7 @@ import { LuaRuntimeError, LuaSyntaxError } from './luaerrors';
 import { LuaLexer } from './lualexer';
 import { type CanonicalizationType } from '../rompack/rompack';
 import { LuaParser } from './luaparser';
-import { createIdentifierCanonicalizer } from './identifier_canonicalizer';
+import { createIdentifierCanonicalizer } from '../utils/identifier_canonicalizer';
 import { LuaFunctionValue, LuaValue, LuaTable, LuaNativeValue } from './luavalue';
 import {
 	createLuaNativeMemberHandle,
@@ -54,7 +54,7 @@ import {
 } from './luavalue';
 import { LuaDebuggerController, type LuaDebuggerPauseReason } from './luadebugger';
 import { $ } from '../core/engine_core';
-import { BmsxVMRuntime } from '../vm/vm_runtime';
+import { BmsxVMRuntime } from '../vm/vm_tooling_runtime';
 import { isLuaHandlerFunction } from './luahandler_cache';
 import { LuaInteropAdapter } from '../vm/lua_js_bridge';
 

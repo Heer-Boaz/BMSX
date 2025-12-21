@@ -30,7 +30,7 @@ import { CompletionController } from './ide/completion_controller';
 import { collectLuaModuleAliases, listLuaObjectMembers } from './ide/intellisense';
 import { consumeIdeKey, shouldRepeatKeyFromPlayer } from './ide/ide_input';
 import type { Viewport } from '../rompack/rompack';
-import { BmsxVMRuntime } from './vm_runtime';
+import { BmsxVMRuntime } from './vm_tooling_runtime';
 import { TerminalCommandDispatcher as TerminalCommandDispatcher } from './terminal_commands';
 import { extractErrorMessage } from '../lua/luavalue';
 import type { Value } from './cpu';

@@ -28,13 +28,11 @@ import { buildFSMDefinition } from '../fsm/fsmlibrary';
 import { VMRenderFacade } from './vm_render_facade';
 import { ActionEffectComponent } from '../component/actioneffectcomponent';
 import type { ActionEffectDefinition } from '../action_effects/effect_types';
-import { BmsxVMRuntime } from './vm_runtime';
 import { instantiateBehaviorTree, behaviorTreeExists, Blackboard, type BehaviorTreeID, type ConstructorWithBTProperty, BehaviorTreeDefinition } from '../ai/behaviourtree';
 import { Component, ComponentTypenameToCtor, type ComponentAttachOptions } from '../component/basecomponent';
 import { ActionEffectRegistry, RegisterEffectOptions } from '../action_effects/effect_registry';
 import { SpriteObject } from '../core/object/sprite';
 import { TextObject } from '../core/object/textobject';
-import { LuaTable } from '../lua/luavalue';
 import { Timeline, TimelineDefinition } from '../timeline/timeline';
 
 type AudioPlayOptions = RandomModulationParams | ModulationParams | SoundMasterPlayRequest;
@@ -42,6 +40,12 @@ type AudioPlayOptions = RandomModulationParams | ModulationParams | SoundMasterP
 export type BmsxVMApiOptions = {
 	playerindex: number;
 	storage: BmsxVMStorage;
+	runtime: BmsxVMRuntimeBridge;
+};
+
+export type BmsxVMRuntimeBridge = {
+	getRuntime: () => unknown;
+	reboot: () => void;
 };
 
 const VM_TAB_SPACES = 2;
@@ -56,14 +60,14 @@ const POINTER_ACTIONS: readonly string[] = [
 
 const excludedClassOverrideKeys = new Set(['def_id', 'class', 'defaults', 'metatable', 'constructor', 'prototype', 'super']);
 
-type LuaExtendedClass<TBase extends ConcreteOrAbstractConstructor<any>> =
+type VmExtendedClass<TBase extends ConcreteOrAbstractConstructor<any>> =
 	TBase & Native & {
 		def_id: Identifier; // Id of the definition this class was registered with
-		class?: (Partial<TBase extends new (...args: any) => infer R ? R : TBase extends abstract new (...args: any) => infer R ? R : any> & LuaTable); // Reference to Lua class that overrides this native class (if any). LuaTable entries can override properties of the base class.
-		defaults?: Record<string, any>; // Default property values to apply when constructing instances of this class. Will not include Lua methods/properties and is separate from 'class' to avoid polluting the prototype with instance data. In addition, class overrides are applied after defaults so that overrides can set default values for properties defined in Lua classes.
+		class?: (Partial<TBase extends new (...args: any) => infer R ? R : TBase extends abstract new (...args: any) => infer R ? R : any> & Record<string, unknown>); // Script class overrides applied to native instances.
+		defaults?: Record<string, any>; // Default property values to apply when constructing instances of this class. Will not include override methods/properties and is separate from 'class' to avoid polluting the prototype with instance data. In addition, class overrides are applied after defaults so that overrides can set default values for properties defined in scripts.
 	};
 
-type EntityExtensions = LuaExtendedClass<typeof WorldObject | typeof SpriteObject | typeof Component | typeof Service> & {
+type EntityExtensions = VmExtendedClass<typeof WorldObject | typeof SpriteObject | typeof Component | typeof Service> & {
 	fsms?: Identifier[];
 	components?: string[];
 	effects?: string[];
@@ -75,6 +79,7 @@ type AnyFunction = (...args: any[]) => any;
 export class BmsxVMApi {
 	private readonly playerindex: number;
 	private readonly storage: BmsxVMStorage;
+	private readonly runtimeBridge: BmsxVMRuntimeBridge;
 	private readonly font: VMFont;
 	private readonly defaultPrintColorIndex = 15;
 	private readonly serviceExts = new Map<string, EntityExtensions>();
@@ -97,23 +102,24 @@ export class BmsxVMApi {
 		}
 		this.playerindex = options.playerindex;
 		this.storage = options.storage;
+		this.runtimeBridge = options.runtime;
 		this.font = new VMFont();
 		this.reset_print_cursor();
 	}
 
 	/**
-	 * Apply Lua class overrides to a constructed instance.
+	 * Apply script class overrides to a constructed instance.
 	 *
 	 * Filters out non-instance keys (def_id, class, defaults) and bulk-assigns the
 	 * remaining properties to the instance. This mimics Object.assign(instance, overrides).
 	 *
-	 * Caveat: when Lua overrides lifecycle methods (notably onspawn), a straight overwrite
+	 * Caveat: when overrides replace lifecycle methods (notably onspawn), a straight overwrite
 	 * would drop the native behavior (activation/registration/FSM start). To keep the
-	 * engine wiring intact, function overrides run the original first and then the Lua
-	 * version. The Lua result wins if it returns something. This mirrors how Lua’s
-	 * `:` syntax would still pass `self` while letting the base work run.
+	 * engine wiring intact, function overrides run the original first and then the override
+	 * version. The override result wins if it returns something. This mirrors how a
+	 * script `:` call would still pass `self` while letting the base work run.
 	 */
-	private applyClassOverrides<T>(instance: T, classTable: Partial<T> & LuaTable): void {
+	private applyClassOverrides<T>(instance: T, classTable: Partial<T> & Record<string, unknown>): void {
 		if (!classTable) return; // No overrides to apply
 		// Filter out non-instance override keys, then bulk-assign.
 		const overrides: Record<string, any> = {};
@@ -513,11 +519,10 @@ export class BmsxVMApi {
 		this.serviceExts.set(descriptor.def_id, descriptor);
 	}
 
-	private resolveLuaClassLocalId(ext: EntityExtensions): string {
-		const classTable = ext.class as LuaTable;
+	private resolveClassLocalId(ext: EntityExtensions): string {
+		const classTable = ext.class as { id?: string };
 		if (!classTable) return ext.def_id;
-		const resolved = this.runtime.interpreter.resolveValueName(classTable);
-		return resolved ?? ext.def_id;
+		return classTable.id ?? ext.def_id;
 	}
 
 	/**
@@ -561,7 +566,7 @@ export class BmsxVMApi {
 
 		// See whether this is a component type whose extension we have defined
 		const ext = this.componentExts.get(component_or_type);
-		const idLocal = ext ? this.resolveLuaClassLocalId(ext) : undefined;
+		const idLocal = ext ? this.resolveClassLocalId(ext) : undefined;
 		const instance = Component.newComponent(component_or_type, { parent_or_id: obj, id_local: idLocal } as ComponentAttachOptions);
 		this.applyObjectExtensionAndOverrides(ext, instance);
 		obj.add_component(instance);
@@ -780,13 +785,13 @@ export class BmsxVMApi {
 		return runGate;
 	}
 
-	public get runtime(): BmsxVMRuntime {
-		return BmsxVMRuntime.instance!;
+	public get runtime(): unknown {
+		return this.runtimeBridge.getRuntime();
 	}
 
 	public reboot(): void {
 		console.log('[BMSX VM API] Reboot requested.');
-		BmsxVMRuntime.instance.reloadProgramAndResetWorld(); // Reboot to initial state
+		this.runtimeBridge.reboot(); // Reboot to initial state
 		console.log('[BMSX VM API] Reboot completed.');
 	}
 
