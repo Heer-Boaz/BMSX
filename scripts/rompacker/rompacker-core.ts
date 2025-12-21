@@ -2,6 +2,7 @@ import { glsl } from "esbuild-plugin-glsl";
 // @ts-ignore
 import type { Stats } from 'fs';
 import type { asset_type, AudioMeta, CanonicalizationType, GLTFMesh, ImgMeta, Polygon, RomAsset, RomAssetListPayload, RomManifest } from '../../src/bmsx/rompack/rompack';
+import type { LuaChunk } from '../../src/bmsx/lua/lua_ast';
 import { atlasIndexResolver, createOptimizedAtlas, generateAtlasName } from './atlasbuilder';
 import { BoundingBoxExtractor } from './boundingbox_extractor';
 import { loadGLTFModel } from './gltfloader';
@@ -25,11 +26,15 @@ const { finished } = require('stream/promises');
 // Import encodeBinary from the public API surface
 // Use direct path to avoid pulling entire engine via public alias during Node execution
 // @ts-ignore
-const { encodeBinary } = require('../../src/bmsx/serializer/binencoder');
+const { encodeBinary, decodeBinary } = require('../../src/bmsx/serializer/binencoder');
 // @ts-ignore
 const { LuaLexer } = require('../../src/bmsx/lua/lualexer');
 // @ts-ignore
 const { LuaParser } = require('../../src/bmsx/lua/luaparser');
+// @ts-ignore
+const { compileLuaChunkToProgram } = require('../../src/bmsx/vm/program_compiler');
+// @ts-ignore
+const { VM_PROGRAM_ASSET_ID, buildModuleAliasesFromPaths, encodeProgramAsset } = require('../../src/bmsx/vm/vm_program_asset');
 // @ts-ignore
 const pako = require('pako');
 // @ts-ignore
@@ -1469,6 +1474,72 @@ export async function generateRomAssets(resources: Resource[], reportProgress?: 
 		}
 	}
 	return romAssets;
+}
+
+export function appendVmProgramAsset(assetList: RomAsset[], manifest: RomManifest): void {
+	if (!manifest || !manifest.lua || !manifest.lua.entry_path) {
+		throw new Error('[RomPacker] Manifest is missing lua.entry_path; cannot build VM program asset.');
+	}
+	const entryPath = manifest.lua.entry_path;
+	if (assetList.some(asset => asset.resid === VM_PROGRAM_ASSET_ID)) {
+		throw new Error(`[RomPacker] VM program asset id '${VM_PROGRAM_ASSET_ID}' already exists in asset list.`);
+	}
+	const luaAssets = assetList.filter(asset => asset.type === 'lua');
+	if (luaAssets.length === 0) {
+		throw new Error('[RomPacker] No Lua assets found; cannot build VM program asset.');
+	}
+	const entryAsset = luaAssets.find(asset => asset.source_path === entryPath);
+	if (!entryAsset) {
+		throw new Error(`[RomPacker] Lua entry '${entryPath}' not found in asset list.`);
+	}
+
+	const chunksByPath = new Map<string, LuaChunk>();
+	const modulePaths: string[] = [];
+	let entryChunk: LuaChunk = null;
+	for (const asset of luaAssets) {
+		if (!asset.compiled_buffer || asset.compiled_buffer.length === 0) {
+			throw new Error(`[RomPacker] Lua asset '${asset.resid}' is missing its compiled buffer.`);
+		}
+		const decoded = decodeBinary(new Uint8Array(asset.compiled_buffer)) as LuaChunk;
+		const path = asset.normalized_source_path ?? asset.source_path;
+		chunksByPath.set(path, decoded);
+		modulePaths.push(path);
+		if (asset === entryAsset) {
+			entryChunk = decoded;
+		}
+	}
+
+	const modules: Array<{ path: string; chunk: LuaChunk }> = [];
+	for (const asset of luaAssets) {
+		if (asset === entryAsset) {
+			continue;
+		}
+		const path = asset.normalized_source_path ?? asset.source_path;
+		const chunk = chunksByPath.get(path);
+		modules.push({ path, chunk });
+	}
+
+	const compiled = compileLuaChunkToProgram(entryChunk, modules);
+	const program = compiled.program;
+	const programAsset = {
+		entryProtoIndex: compiled.entryProtoIndex,
+		program: {
+			code: new Uint8Array(program.code.buffer, program.code.byteOffset, program.code.byteLength),
+			constPool: program.constPool,
+			protos: program.protos,
+			debugRanges: program.debugRanges,
+		},
+		moduleProtos: Array.from(compiled.moduleProtoMap.entries(), ([path, protoIndex]) => ({ path, protoIndex })),
+		moduleAliases: buildModuleAliasesFromPaths(modulePaths),
+	};
+
+	const buffer = Buffer.from(encodeProgramAsset(programAsset));
+	assetList.push({
+		resid: VM_PROGRAM_ASSET_ID,
+		type: 'data',
+		buffer,
+		source_path: VM_PROGRAM_ASSET_ID,
+	});
 }
 
 /**

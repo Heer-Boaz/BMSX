@@ -4,7 +4,7 @@ import pc from 'picocolors';
 import { Presets, SingleBar } from 'cli-progress';
 
 import { validateAudioEventReferences } from './audioeventvalidator';
-import { buildBootromScriptIfNewer, buildEngineRuntime, buildGameHtmlAndManifest, buildResourceList, commonResPath, createAtlasses, deployToServer, esbuild, finalizeRompack, GENERATE_AND_USE_TEXTURE_ATLAS, generateRomAssets, getNodeLauncherFilename, getResMetaList, getResourcesList, getRomManifest, isEngineRuntimeRebuildRequired, isRebuildRequired, LUA_CANONICALIZATION, setAtlasFlag, setLuaCanonicalization, typecheckBeforeBuild, typecheckGameWithDts } from './rompacker-core';
+import { appendVmProgramAsset, buildBootromScriptIfNewer, buildEngineRuntime, buildGameHtmlAndManifest, buildResourceList, commonResPath, createAtlasses, deployToServer, esbuild, finalizeRompack, GENERATE_AND_USE_TEXTURE_ATLAS, generateRomAssets, getNodeLauncherFilename, getResMetaList, getResourcesList, getRomManifest, isEngineRuntimeRebuildRequired, isRebuildRequired, LUA_CANONICALIZATION, setAtlasFlag, setLuaCanonicalization, typecheckBeforeBuild, typecheckGameWithDts } from './rompacker-core';
 import type { RomPackerMode, RomPackerOptions, RomPackerTarget } from './rompacker.rompack';
 import type { CanonicalizationType, RomManifest } from '../../src/bmsx/rompack/rompack';
 
@@ -814,6 +814,7 @@ async function main() {
 						}
 						validateAudioEventReferences(engineResources);
 						const engineRomAssets = await generateRomAssets(engineResources);
+						appendVmProgramAsset(engineRomAssets, engineManifest);
 						await finalizeRompack(engineRomAssets, engineRomName, false, { projectRootPath: engineProjectRootPath, manifest: engineManifest });
 						logOk(`Engine assets ready → ${pc.white(`dist/${engineRomName}.rom`)}`);
 					} finally {
@@ -932,6 +933,7 @@ async function main() {
 			validateAudioEventReferences(resources);
 
 			const romAssets = await progress.runWithDetail('Generate ROM assets', () => generateRomAssets(resources, message => progress.setDetail(message)));
+			appendVmProgramAsset(romAssets, romManifest);
 			await progress.taskCompleted();
 
 			await progress.runWithDetail('Finalize ROM pack', () => finalizeRompack(romAssets, rom_name, romPackDebug, { projectRootPath, manifest: romManifest, status: message => progress.setDetail(message) }));
