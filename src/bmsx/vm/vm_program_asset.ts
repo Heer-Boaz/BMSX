@@ -8,6 +8,7 @@ export type EncodedProgram = {
 	constPool: Value[];
 	protos: Proto[];
 	debugRanges: ReadonlyArray<SourceRange | null>;
+	protoIds: string[];
 };
 
 export type VmProgramAsset = {
@@ -31,6 +32,7 @@ export function inflateProgram(encoded: EncodedProgram): Program {
 		constPool: encoded.constPool,
 		protos: encoded.protos,
 		debugRanges: encoded.debugRanges,
+		protoIds: encoded.protoIds,
 	};
 }
 

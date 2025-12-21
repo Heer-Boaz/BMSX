@@ -4,6 +4,7 @@ import {
 	LuaSyntaxKind,
 	LuaTableFieldKind,
 	LuaUnaryOperator,
+	type LuaAssignableExpression,
 	type LuaAssignmentStatement,
 	type LuaCallExpression,
 	type LuaChunk,
@@ -11,8 +12,11 @@ import {
 	type LuaFunctionExpression,
 	type LuaIdentifierExpression,
 	type LuaIfStatement,
+	type LuaIndexExpression,
 	type LuaLocalAssignmentStatement,
+	type LuaMemberExpression,
 	type LuaStatement,
+	type LuaStringLiteralExpression,
 	type LuaSourceRange,
 	type LuaTableConstructorExpression,
 	type LuaWhileStatement,
@@ -31,6 +35,10 @@ export type ProgramModule = {
 	chunk: LuaChunk;
 };
 
+type CompileOptions = {
+	baseProgram?: Program;
+};
+
 type LoopContext = {
 	breakJumps: number[];
 };
@@ -41,6 +49,9 @@ class ProgramBuilder {
 	public readonly protos: Proto[] = [];
 	public readonly protoCode: Uint32Array[] = [];
 	public readonly protoRanges: ReadonlyArray<SourceRange | null>[] = [];
+	public readonly protoIds: string[] = [];
+	private readonly protoIdMap: Map<string, number> = new Map();
+	private readonly assignedProtoIds: Set<string> = new Set();
 
 	public constructor(baseConstPool: ReadonlyArray<Value> | null = null) {
 		this.constPool = baseConstPool ? Array.from(baseConstPool) : [];
@@ -63,12 +74,35 @@ class ProgramBuilder {
 		return index;
 	}
 
-	public addProto(proto: Proto, code: Uint32Array, ranges: ReadonlyArray<SourceRange | null>): number {
+	public addProto(proto: Proto, code: Uint32Array, ranges: ReadonlyArray<SourceRange | null>, protoId: string): number {
+		if (this.assignedProtoIds.has(protoId)) {
+			throw new Error(`[ProgramBuilder] Duplicate proto id '${protoId}'.`);
+		}
+		this.assignedProtoIds.add(protoId);
+		const existing = this.protoIdMap.get(protoId);
+		if (existing !== undefined) {
+			this.protos[existing] = proto;
+			this.protoCode[existing] = code;
+			this.protoRanges[existing] = ranges;
+			this.protoIds[existing] = protoId;
+			return existing;
+		}
 		const index = this.protos.length;
 		this.protos.push(proto);
 		this.protoCode.push(code);
 		this.protoRanges.push(ranges);
+		this.protoIds.push(protoId);
+		this.protoIdMap.set(protoId, index);
 		return index;
+	}
+
+	public seedProto(proto: Proto, code: Uint32Array, ranges: ReadonlyArray<SourceRange | null>, protoId: string): void {
+		const index = this.protos.length;
+		this.protos.push(proto);
+		this.protoCode.push(code);
+		this.protoRanges.push(ranges);
+		this.protoIds.push(protoId);
+		this.protoIdMap.set(protoId, index);
 	}
 
 	public buildProgram(): Program {
@@ -81,6 +115,9 @@ class ProgramBuilder {
 		let offset = 0;
 		for (let i = 0; i < this.protoCode.length; i += 1) {
 			const chunk = this.protoCode[i];
+			if (!chunk) {
+				throw new Error(`[ProgramBuilder] Missing code for proto index ${i}.`);
+			}
 			const ranges = this.protoRanges[i];
 			this.protos[i].entryPC = offset;
 			fullCode.set(chunk, offset);
@@ -94,6 +131,7 @@ class ProgramBuilder {
 			constPool: this.constPool,
 			protos: this.protos,
 			debugRanges: fullRanges,
+			protoIds: this.protoIds,
 		};
 	}
 
@@ -106,9 +144,23 @@ class ProgramBuilder {
 	}
 }
 
+const buildModuleRootId = (moduleId: string): string => `module:${moduleId}`;
+
+const buildEntryProtoId = (moduleId: string): string => `${buildModuleRootId(moduleId)}/entry`;
+
+const buildModuleProtoId = (moduleId: string): string => `${buildModuleRootId(moduleId)}/module`;
+
+const buildAnonymousHint = (range: LuaSourceRange): string =>
+	`anon:${range.start.line}:${range.start.column}:${range.end.line}:${range.end.column}`;
+
+const buildProtoId = (parentId: string, hint: string | null, range: LuaSourceRange): string =>
+	`${parentId}/${hint ?? buildAnonymousHint(range)}`;
+
 class FunctionBuilder {
 	private readonly program: ProgramBuilder;
 	private readonly parent: FunctionBuilder | null;
+	private readonly moduleId: string;
+	private readonly protoId: string;
 	private readonly code: number[] = [];
 	private readonly ranges: Array<SourceRange | null> = [];
 	private readonly localStacks = new Map<string, number[]>();
@@ -120,10 +172,13 @@ class FunctionBuilder {
 	private localCount = 0;
 	private tempTop = 0;
 	private maxStack = 0;
+	private localFunctionCounters = new Map<string, number>();
 
-	constructor(program: ProgramBuilder, parent: FunctionBuilder | null) {
+	constructor(program: ProgramBuilder, parent: FunctionBuilder | null, params: { moduleId: string; protoId: string }) {
 		this.program = program;
 		this.parent = parent;
+		this.moduleId = params.moduleId;
+		this.protoId = params.protoId;
 	}
 
 	public compileChunk(chunk: LuaChunk): void {
@@ -396,14 +451,21 @@ class FunctionBuilder {
 			const lastIndex = values.length - 1;
 			for (let i = 0; i < lastIndex; i += 1) {
 				const reg = this.allocTemp();
-				this.compileExpressionInto(values[i], reg, 1);
+				const expr = values[i];
+				const hint = expr.kind === LuaSyntaxKind.FunctionExpression && i < names.length
+					? this.createLocalFunctionHint(names[i].name)
+					: null;
+				this.compileExpressionInto(expr, reg, 1, hint);
 				valueRegs.push(reg);
 			}
 			const remaining = names.length - lastIndex;
 			const lastExpr = values[lastIndex];
 			const lastReg = this.allocTemp();
 			const wantsMulti = remaining > 1 && this.isMultiReturnExpression(lastExpr);
-			this.compileExpressionInto(lastExpr, lastReg, wantsMulti ? 0 : 1);
+			const lastHint = lastExpr.kind === LuaSyntaxKind.FunctionExpression && lastIndex < names.length
+				? this.createLocalFunctionHint(names[lastIndex].name)
+				: null;
+			this.compileExpressionInto(lastExpr, lastReg, wantsMulti ? 0 : 1, lastHint);
 			valueRegs.push(lastReg);
 			if (wantsMulti) {
 				for (let i = 1; i < remaining; i += 1) {
@@ -425,7 +487,8 @@ class FunctionBuilder {
 
 	private compileAssignment(statement: LuaAssignmentStatement): void {
 		const targets = this.compileAssignmentTargets(statement.left);
-		const values = this.compileAssignmentValues(statement.right, targets.length);
+		const targetPaths = statement.left.map((expr) => extractAssignmentPath(expr as LuaAssignableExpression));
+		const values = this.compileAssignmentValues(statement.right, targets.length, targetPaths);
 		for (let i = 0; i < targets.length; i += 1) {
 			const target = targets[i];
 			const valueReg = values[i] ?? this.emitNilTemp();
@@ -477,22 +540,27 @@ class FunctionBuilder {
 		return targets;
 	}
 
-	private compileAssignmentValues(expressions: ReadonlyArray<LuaExpression>, targetCount: number): number[] {
+	private compileAssignmentValues(expressions: ReadonlyArray<LuaExpression>, targetCount: number, targetPaths: ReadonlyArray<ReadonlyArray<string> | null>): number[] {
 		const values: number[] = [];
 		if (expressions.length === 0) {
 			return values;
 		}
 		const lastIndex = expressions.length - 1;
 		for (let i = 0; i < lastIndex; i += 1) {
+			const expr = expressions[i];
+			const path = targetPaths[i];
+			const hint = expr.kind === LuaSyntaxKind.FunctionExpression && path ? buildAssignmentHint(path) : null;
 			const reg = this.allocTemp();
-			this.compileExpressionInto(expressions[i], reg, 1);
+			this.compileExpressionInto(expr, reg, 1, hint);
 			values.push(reg);
 		}
 		const remaining = targetCount - lastIndex;
 		const lastExpr = expressions[lastIndex];
 		const baseReg = this.allocTemp();
 		const wantsMulti = remaining > 1 && this.isMultiReturnExpression(lastExpr);
-		this.compileExpressionInto(lastExpr, baseReg, wantsMulti ? 0 : 1);
+		const lastPath = targetPaths[lastIndex];
+		const lastHint = lastExpr.kind === LuaSyntaxKind.FunctionExpression && lastPath ? buildAssignmentHint(lastPath) : null;
+		this.compileExpressionInto(lastExpr, baseReg, wantsMulti ? 0 : 1, lastHint);
 		values.push(baseReg);
 		if (wantsMulti) {
 			for (let i = 1; i < remaining; i += 1) {
@@ -697,17 +765,21 @@ class FunctionBuilder {
 
 	private compileLocalFunction(statement: any): void {
 		const reg = this.declareLocal(statement.name.name);
-		const protoIndex = compileFunctionExpression(this.program, statement.functionExpression, this, false);
+		const hint = this.createLocalFunctionHint(statement.name.name);
+		const protoId = this.createChildProtoId(hint, statement.functionExpression.range);
+		const protoIndex = compileFunctionExpression(this.program, statement.functionExpression, this, false, protoId, this.moduleId);
 		this.emitABx(OpCode.CLOSURE, reg, protoIndex);
 	}
 
 	private compileFunctionDeclaration(statement: any): void {
 		const fnExpr = statement.functionExpression as LuaFunctionExpression;
 		const methodName: string = statement.name.methodName;
-		const protoIndex = compileFunctionExpression(this.program, fnExpr, this, methodName && methodName.length > 0);
+		const identifiers = statement.name.identifiers as string[];
+		const hint = buildDeclarationHint(identifiers, methodName);
+		const protoId = this.createChildProtoId(hint, fnExpr.range);
+		const protoIndex = compileFunctionExpression(this.program, fnExpr, this, methodName && methodName.length > 0, protoId, this.moduleId);
 		const closureReg = this.allocTemp();
 		this.emitABx(OpCode.CLOSURE, closureReg, protoIndex);
-		const identifiers = statement.name.identifiers as string[];
 		if (identifiers.length === 0) {
 			throw new Error('Function declaration missing name.');
 		}
@@ -753,7 +825,7 @@ class FunctionBuilder {
 		this.emitABC(OpCode.SETT, baseReg, this.encodeConstOperand(keyConst), closureReg);
 	}
 
-	private compileExpressionInto(expression: LuaExpression, target: number, resultCount: number): void {
+	private compileExpressionInto(expression: LuaExpression, target: number, resultCount: number, protoIdHint: string | null = null): void {
 		this.withRange(expression.range, () => {
 			switch (expression.kind) {
 				case LuaSyntaxKind.NumericLiteralExpression:
@@ -793,7 +865,8 @@ class FunctionBuilder {
 					this.emitABC(OpCode.VARARG, target, resultCount, 0);
 					return;
 				case LuaSyntaxKind.FunctionExpression: {
-					const protoIndex = compileFunctionExpression(this.program, expression as LuaFunctionExpression, this, false);
+					const protoId = this.createChildProtoId(protoIdHint, expression.range);
+					const protoIndex = compileFunctionExpression(this.program, expression as LuaFunctionExpression, this, false, protoId, this.moduleId);
 					this.emitABx(OpCode.CLOSURE, target, protoIndex);
 					return;
 				}
@@ -1128,6 +1201,19 @@ class FunctionBuilder {
 		this.emitLoadNil(reg, 1);
 		this.emitABC(OpCode.RET, reg, 1, 0);
 	}
+
+	private createLocalFunctionHint(name: string): string {
+		const count = (this.localFunctionCounters.get(name) ?? 0) + 1;
+		this.localFunctionCounters.set(name, count);
+		if (count === 1) {
+			return `local:${name}`;
+		}
+		return `local:${name}#${count}`;
+	}
+
+	private createChildProtoId(hint: string | null, range: LuaSourceRange): string {
+		return buildProtoId(this.protoId, hint, range);
+	}
 }
 
 function opForAssignment(operator: LuaAssignmentOperator): OpCode {
@@ -1149,8 +1235,61 @@ function opForAssignment(operator: LuaAssignmentOperator): OpCode {
 	}
 }
 
-function compileFunctionExpression(program: ProgramBuilder, expression: LuaFunctionExpression, parent: FunctionBuilder | null, implicitSelf: boolean): number {
-	const builder = new FunctionBuilder(program, parent);
+const buildNamePath = (parts: ReadonlyArray<string>): string => parts.join('.');
+
+const buildDeclarationHint = (identifiers: ReadonlyArray<string>, methodName: string): string => {
+	const parts = identifiers.length > 0 ? identifiers.slice() : [];
+	if (methodName && methodName.length > 0) {
+		parts.push(methodName);
+	}
+	return `decl:${buildNamePath(parts)}`;
+};
+
+const buildAssignmentHint = (path: ReadonlyArray<string>): string =>
+	`assign:${buildNamePath(path)}`;
+
+const extractTableKeyFromExpression = (expression: LuaExpression): string | null => {
+	switch (expression.kind) {
+		case LuaSyntaxKind.StringLiteralExpression:
+			return (expression as LuaStringLiteralExpression).value;
+		case LuaSyntaxKind.IdentifierExpression:
+			return (expression as LuaIdentifierExpression).name;
+		default:
+			return null;
+	}
+};
+
+const extractAssignmentPath = (expression: LuaAssignableExpression): string[] | null => {
+	switch (expression.kind) {
+		case LuaSyntaxKind.IdentifierExpression:
+			return [(expression as LuaIdentifierExpression).name];
+		case LuaSyntaxKind.MemberExpression: {
+			const member = expression as LuaMemberExpression;
+			const basePath = extractAssignmentPath(member.base as LuaAssignableExpression);
+			if (!basePath) {
+				return null;
+			}
+			return [...basePath, member.identifier];
+		}
+		case LuaSyntaxKind.IndexExpression: {
+			const indexExpr = expression as LuaIndexExpression;
+			const basePath = extractAssignmentPath(indexExpr.base as LuaAssignableExpression);
+			if (!basePath) {
+				return null;
+			}
+			const key = extractTableKeyFromExpression(indexExpr.index);
+			if (!key) {
+				return null;
+			}
+			return [...basePath, key];
+		}
+		default:
+			return null;
+	}
+};
+
+function compileFunctionExpression(program: ProgramBuilder, expression: LuaFunctionExpression, parent: FunctionBuilder | null, implicitSelf: boolean, protoId: string, moduleId: string): number {
+	const builder = new FunctionBuilder(program, parent, { moduleId, protoId });
 	builder.compileFunctionExpression(expression, implicitSelf);
 	const code = builder.getCode();
 	const ranges = builder.getRanges();
@@ -1161,7 +1300,7 @@ function compileFunctionExpression(program: ProgramBuilder, expression: LuaFunct
 		isVararg: expression.hasVararg,
 		maxStack: builder.getMaxStack(),
 		upvalueDescs: builder.getUpvalueDescs(),
-	}, code, ranges);
+	}, code, ranges, protoId);
 	return protoIndex;
 }
 
@@ -1183,20 +1322,26 @@ function cloneProto(proto: Proto): Proto {
 
 function createProgramBuilderFromProgram(base: Program): ProgramBuilder {
 	const builder = new ProgramBuilder(base.constPool);
+	const protoIds = base.protoIds;
+	if (!protoIds || protoIds.length !== base.protos.length) {
+		throw new Error('[ProgramBuilder] Base program proto ids missing or mismatched.');
+	}
 	for (let index = 0; index < base.protos.length; index += 1) {
 		const proto = base.protos[index];
 		const start = proto.entryPC;
 		const end = start + proto.codeLen;
 		const code = base.code.slice(start, end);
 		const ranges = base.debugRanges.slice(start, end);
-		builder.addProto(cloneProto(proto), code, ranges);
+		builder.seedProto(cloneProto(proto), code, ranges, protoIds[index]);
 	}
 	return builder;
 }
 
-export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray<ProgramModule> = []): CompiledProgram {
-	const programBuilder = new ProgramBuilder();
-	const entryBuilder = new FunctionBuilder(programBuilder, null);
+export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray<ProgramModule> = [], options: CompileOptions = {}): CompiledProgram {
+	const programBuilder = options.baseProgram ? createProgramBuilderFromProgram(options.baseProgram) : new ProgramBuilder();
+	const moduleId = chunk.range.path;
+	const entryProtoId = buildEntryProtoId(moduleId);
+	const entryBuilder = new FunctionBuilder(programBuilder, null, { moduleId, protoId: entryProtoId });
 	entryBuilder.compileChunk(chunk);
 	const entryCode = entryBuilder.getCode();
 	const entryRanges = entryBuilder.getRanges();
@@ -1207,10 +1352,11 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 		isVararg: false,
 		maxStack: entryBuilder.getMaxStack(),
 		upvalueDescs: entryBuilder.getUpvalueDescs(),
-	}, entryCode, entryRanges);
+	}, entryCode, entryRanges, entryProtoId);
 	const moduleProtoMap = new Map<string, number>();
 	for (const module of modules) {
-		const builder = new FunctionBuilder(programBuilder, null);
+		const moduleProtoId = buildModuleProtoId(module.path);
+		const builder = new FunctionBuilder(programBuilder, null, { moduleId: module.path, protoId: moduleProtoId });
 		builder.compileChunk(module.chunk);
 		const code = builder.getCode();
 		const ranges = builder.getRanges();
@@ -1221,7 +1367,7 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 			isVararg: false,
 			maxStack: builder.getMaxStack(),
 			upvalueDescs: builder.getUpvalueDescs(),
-		}, code, ranges);
+		}, code, ranges, moduleProtoId);
 		moduleProtoMap.set(module.path, protoIndex);
 	}
 	const program = programBuilder.buildProgram();
@@ -1230,7 +1376,9 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 
 export function appendLuaChunkToProgram(base: Program, chunk: LuaChunk): { program: Program; entryProtoIndex: number } {
 	const programBuilder = createProgramBuilderFromProgram(base);
-	const entryBuilder = new FunctionBuilder(programBuilder, null);
+	const moduleId = chunk.range.path;
+	const entryProtoId = buildEntryProtoId(moduleId);
+	const entryBuilder = new FunctionBuilder(programBuilder, null, { moduleId, protoId: entryProtoId });
 	entryBuilder.compileChunk(chunk);
 	const entryCode = entryBuilder.getCode();
 	const entryRanges = entryBuilder.getRanges();
@@ -1241,7 +1389,7 @@ export function appendLuaChunkToProgram(base: Program, chunk: LuaChunk): { progr
 		isVararg: false,
 		maxStack: entryBuilder.getMaxStack(),
 		upvalueDescs: entryBuilder.getUpvalueDescs(),
-	}, entryCode, entryRanges);
+	}, entryCode, entryRanges, entryProtoId);
 	const program = programBuilder.buildProgram();
 	return { program, entryProtoIndex };
 }

@@ -1528,6 +1528,7 @@ export function appendVmProgramAsset(assetList: RomAsset[], manifest: RomManifes
 			constPool: program.constPool,
 			protos: program.protos,
 			debugRanges: program.debugRanges,
+			protoIds: program.protoIds,
 		},
 		moduleProtos: Array.from(compiled.moduleProtoMap.entries(), ([path, protoIndex]) => ({ path, protoIndex })),
 		moduleAliases: buildModuleAliasesFromPaths(modulePaths),

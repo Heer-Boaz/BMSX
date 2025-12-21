@@ -49,6 +49,7 @@ export type Program = {
 	constPool: Value[];
 	protos: Proto[];
 	debugRanges: ReadonlyArray<SourceRange | null>;
+	protoIds: string[];
 };
 
 export type Proto = {

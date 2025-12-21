@@ -302,6 +302,7 @@ export class BmsxVMRuntime {
 	private vmUpdateClosure: Closure = null;
 	private vmDrawClosure: Closure = null;
 	private pendingVmCall: 'update' | 'draw' = null;
+	private pendingProgramReload: { runInit?: boolean } = null;
 	private readonly cpuMemory: Value[];
 	private readonly cpu: VMCPU;
 	private _luaPath: string = null;
@@ -877,6 +878,7 @@ export class BmsxVMRuntime {
 		if (!this.tickEnabled) {
 			return;
 		}
+		this.processPendingProgramReload();
 		if (this.isOverlayActive()) {
 			return;
 		}
@@ -890,6 +892,7 @@ export class BmsxVMRuntime {
 		if (!this.tickEnabled) {
 			return;
 		}
+		this.processPendingProgramReload();
 		if (this.isOverlayActive()) {
 			return;
 		}
@@ -907,6 +910,7 @@ export class BmsxVMRuntime {
 		if (!this.tickEnabled) {
 			return;
 		}
+		this.processPendingProgramReload();
 		if (this.currentFrameState !== null) {
 			return;
 		}
@@ -933,6 +937,7 @@ export class BmsxVMRuntime {
 		if (!this.tickEnabled) {
 			return;
 		}
+		this.processPendingProgramReload();
 		if (this.currentFrameState !== null) {
 			return;
 		}
@@ -1130,6 +1135,22 @@ export class BmsxVMRuntime {
 		this.currentFrameState = null;
 	}
 
+	public requestProgramReload(options?: { runInit?: boolean }): void {
+		this.pendingProgramReload = { runInit: options?.runInit };
+	}
+
+	private processPendingProgramReload(): void {
+		if (!this.pendingProgramReload) {
+			return;
+		}
+		if (this.currentFrameState || this.pendingVmCall) {
+			return;
+		}
+		const options = this.pendingProgramReload;
+		this.pendingProgramReload = null;
+		this.reloadLuaProgramState({ runInit: options.runInit });
+	}
+
 	public dispose(): void {
 		this.disposeShortcutHandlers();
 		this.terminal.deactivate();
@@ -1245,7 +1266,7 @@ export class BmsxVMRuntime {
 		interpreter.clearLastFaultEnvironment();
 		const chunk = interpreter.compileChunk(params.source, binding);
 		const modules = this.buildVmModuleChunks(binding);
-		const { program, entryProtoIndex, moduleProtoMap } = compileLuaChunkToProgram(chunk, modules);
+		const { program, entryProtoIndex, moduleProtoMap } = compileLuaChunkToProgram(chunk, modules, { baseProgram: this.cpu.getProgram() });
 		this.cpu.setProgram(program);
 		this.vmModuleProtos.clear();
 		for (const [modulePath, protoIndex] of moduleProtoMap.entries()) {

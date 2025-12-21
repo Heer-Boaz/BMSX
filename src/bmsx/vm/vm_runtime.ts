@@ -7,13 +7,14 @@ import { AssetSourceStack } from '../rompack/asset_source';
 import { applyRuntimeAssetLayer, buildRuntimeAssetLayer } from '../rompack/romloader';
 import { createIdentifierCanonicalizer } from '../utils/identifier_canonicalizer';
 import type { StorageService } from '../platform/platform';
-import { VMCPU, Table, type Closure, type Value, RunResult, createNativeFunction, createNativeObject, isNativeFunction, isNativeObject, type NativeFunction, type NativeObject } from './cpu';
+import { VMCPU, Table, type Closure, type Program, type Value, RunResult, createNativeFunction, createNativeObject, isNativeFunction, isNativeObject, type NativeFunction, type NativeObject } from './cpu';
 import { BmsxVMApi } from './vm_api';
 import { BmsxVMStorage } from './storage';
 import { VMFont } from './font';
 import { IO_ARG0_OFFSET, IO_BUFFER_BASE, IO_COMMAND_STRIDE, IO_CMD_PRINT, IO_WRITE_PTR_ADDR, VM_IO_MEMORY_SIZE } from './vm_io';
 import { VmHandlerCache } from './vm_handler_cache';
 import { VM_PROGRAM_ASSET_ID, inflateProgram, type VmProgramAsset } from './vm_program_asset';
+import { reindexProgram } from './program_reindex';
 import type { VmRuntimeOptions, VmMarshalContext, VmRuntimeError } from './vm_core_types';
 
 export const VM_BUTTON_ACTIONS: ReadonlyArray<string> = [
@@ -54,6 +55,7 @@ export type VmRuntimeState = {
 	vmDrawClosure: Closure | null;
 	pendingVmCall: 'update' | 'draw' | null;
 	currentFrameState: VmFrameState | null;
+	pendingProgramReload: { runInit?: boolean } | null;
 	vmModuleAliases: Map<string, string>;
 	vmModuleProtos: Map<string, number>;
 	vmModuleCache: Map<string, Value>;
@@ -116,6 +118,7 @@ export function createVmRuntime(options: VmRuntimeOptions): VmRuntimeState {
 		vmDrawClosure: null,
 		pendingVmCall: null,
 		currentFrameState: null,
+		pendingProgramReload: null,
 		vmModuleAliases: new Map(),
 		vmModuleProtos: new Map(),
 		vmModuleCache: new Map(),
@@ -239,6 +242,7 @@ export const tickUpdate = (): void => {
 	if (!vmRuntime.tickEnabled) {
 		return;
 	}
+	processPendingProgramReload();
 	if (vmRuntime.currentFrameState !== null) {
 		return;
 	}
@@ -255,6 +259,7 @@ export const tickDraw = (): void => {
 	if (!vmRuntime.tickEnabled) {
 		return;
 	}
+	processPendingProgramReload();
 	if (!vmRuntime.currentFrameState) {
 		return;
 	}
@@ -315,14 +320,77 @@ export const abandonFrameState = (): void => {
 	vmRuntime.currentFrameState = null;
 };
 
-const loadProgramFromAsset = (): number => {
+const mapModuleProtoIndices = (asset: VmProgramAsset, incomingProtoIds: ReadonlyArray<string>, protoIdToIndex: Map<string, number>): void => {
+	vmRuntime.vmModuleProtos.clear();
+	for (const entry of asset.moduleProtos) {
+		const protoId = incomingProtoIds[entry.protoIndex];
+		const mappedIndex = protoIdToIndex.get(protoId);
+		if (mappedIndex === undefined) {
+			throw new Error(`[VMRuntime] Module proto '${protoId}' missing after reindex.`);
+		}
+		vmRuntime.vmModuleProtos.set(entry.path, mappedIndex);
+	}
+};
+
+const loadProgramFromAsset = (baseProgram?: Program): number => {
 	const programAsset = $.assets.data[VM_PROGRAM_ASSET_ID] as VmProgramAsset;
 	if (!programAsset) {
 		throw new Error(`[VMRuntime] Program asset '${VM_PROGRAM_ASSET_ID}' missing.`);
 	}
-	const program = inflateProgram(programAsset.program);
+	const incomingProgram = inflateProgram(programAsset.program);
+	if (baseProgram) {
+		const reindexed = reindexProgram(incomingProgram, baseProgram.protoIds);
+		const program = reindexed.program;
+		const entryProtoId = incomingProgram.protoIds[programAsset.entryProtoIndex];
+		const entryProtoIndex = reindexed.protoIdToIndex.get(entryProtoId);
+		if (entryProtoIndex === undefined) {
+			throw new Error(`[VMRuntime] Entry proto '${entryProtoId}' missing after reindex.`);
+		}
+		vmRuntime.cpu.setProgram(program);
+		mapModuleProtoIndices(programAsset, incomingProgram.protoIds, reindexed.protoIdToIndex);
+		vmRuntime.vmModuleAliases.clear();
+		for (const entry of programAsset.moduleAliases) {
+			vmRuntime.vmModuleAliases.set(entry.alias, entry.path);
+		}
+		vmRuntime.vmModuleCache.clear();
+		return entryProtoIndex;
+	}
+	const program = incomingProgram;
 	loadProgram(programAsset, program);
 	return programAsset.entryProtoIndex;
+};
+
+const applyProgramReload = (options?: { runInit?: boolean }): void => {
+	vmRuntime.vmInitialized = false;
+	const entryProtoIndex = loadProgramFromAsset(vmRuntime.cpu.getProgram());
+	vmRuntime.cpu.start(entryProtoIndex);
+	vmRuntime.pendingVmCall = null;
+	vmRuntime.cpu.instructionBudgetRemaining = null;
+	vmRuntime.cpu.run(null);
+	processVmIo();
+	vmRuntime.vmInitialized = true;
+	bindLifecycleHandlers();
+	if (options?.runInit !== false) {
+		runVmLifecycleHandler('init');
+		runVmLifecycleHandler('new_game');
+	}
+};
+
+const processPendingProgramReload = (): void => {
+	if (!vmRuntime.pendingProgramReload) {
+		return;
+	}
+	if (vmRuntime.currentFrameState || vmRuntime.pendingVmCall) {
+		return;
+	}
+	const options = vmRuntime.pendingProgramReload;
+	vmRuntime.pendingProgramReload = null;
+	const vmToken = vmGate.begin({ blocking: true, tag: 'reload_program' });
+	try {
+		applyProgramReload(options);
+	} finally {
+		vmGate.end(vmToken);
+	}
 };
 
 export const loadProgram = (asset: VmProgramAsset, program = inflateProgram(asset.program)): void => {
@@ -359,6 +427,7 @@ const runVmLifecycleHandler = (kind: 'init' | 'new_game'): void => {
 
 const resetVmState = (): void => {
 	vmRuntime.pendingVmCall = null;
+	vmRuntime.pendingProgramReload = null;
 	vmRuntime.vmInitClosure = null;
 	vmRuntime.vmNewGameClosure = null;
 	vmRuntime.vmUpdateClosure = null;
@@ -1424,6 +1493,22 @@ export const reloadProgramAndResetWorld = async (options?: { runInit?: boolean }
 	}
 };
 
+export const requestProgramReload = (options?: { runInit?: boolean }): void => {
+	vmRuntime.pendingProgramReload = { runInit: options?.runInit };
+};
+
+export const reloadProgramPreservingState = (options?: { runInit?: boolean }): void => {
+	if (vmRuntime.currentFrameState || vmRuntime.pendingVmCall) {
+		throw new Error('[VMRuntime] Program reload requested while a frame is active.');
+	}
+	const vmToken = vmGate.begin({ blocking: true, tag: 'reload_program' });
+	try {
+		applyProgramReload(options);
+	} finally {
+		vmGate.end(vmToken);
+	}
+};
+
 export const BmsxVMRuntime = {
 	get instance() {
 		return vmRuntime;
@@ -1436,6 +1521,8 @@ export const BmsxVMRuntime = {
 	tickDraw,
 	abandonFrameState,
 	setVmPrintHandler,
+	requestProgramReload,
+	reloadProgramPreservingState,
 	reloadProgramAndResetWorld,
 	loadProgram,
 };

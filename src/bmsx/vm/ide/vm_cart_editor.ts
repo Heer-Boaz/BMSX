@@ -2726,8 +2726,8 @@ export function performHotReloadAndResume(): boolean {
 		console.log('[IDE] Capturing runtime snapshot for resume');
 		const snapshot = runtime.captureCurrentState();
 		console.log('[IDE] Clear execution stop highlights before resume');
-		snapshot.luaRuntimeFailed = false;
-		console.log('[IDE] Resuming from captured snapshot');
+		runtime.clearFaultState();
+		console.log('[IDE] Resuming from snapshot after hot reload');
 		await runtime.resumeFromSnapshot(snapshot);
 		if (shouldUpdateGeneration) {
 			console.log('[IDE] Updating applied generation after resume');
