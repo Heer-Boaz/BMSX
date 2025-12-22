@@ -36,6 +36,7 @@ const { compileLuaChunkToProgram } = require('../../src/bmsx/vm/program_compiler
 // @ts-ignore
 const { VM_PROGRAM_ASSET_ID, buildModuleAliasesFromPaths, encodeProgramAsset } = require('../../src/bmsx/vm/vm_program_asset');
 // @ts-ignore
+// @ts-ignore
 const pako = require('pako');
 // @ts-ignore
 const minify = require('@node-minify/core');
@@ -1477,17 +1478,17 @@ export async function generateRomAssets(resources: Resource[], reportProgress?: 
 }
 
 export function appendVmProgramAsset(assetList: RomAsset[], manifest: RomManifest): void {
+	if (assetList.some(asset => asset.resid === VM_PROGRAM_ASSET_ID)) {
+		return;
+	}
+	const luaAssets = assetList.filter(asset => asset.type === 'lua');
+	if (luaAssets.length === 0) {
+		return;
+	}
 	if (!manifest || !manifest.lua || !manifest.lua.entry_path) {
 		throw new Error('[RomPacker] Manifest is missing lua.entry_path; cannot build VM program asset.');
 	}
 	const entryPath = manifest.lua.entry_path;
-	if (assetList.some(asset => asset.resid === VM_PROGRAM_ASSET_ID)) {
-		throw new Error(`[RomPacker] VM program asset id '${VM_PROGRAM_ASSET_ID}' already exists in asset list.`);
-	}
-	const luaAssets = assetList.filter(asset => asset.type === 'lua');
-	if (luaAssets.length === 0) {
-		throw new Error('[RomPacker] No Lua assets found; cannot build VM program asset.');
-	}
 	const entryAsset = luaAssets.find(asset => asset.source_path === entryPath);
 	if (!entryAsset) {
 		throw new Error(`[RomPacker] Lua entry '${entryPath}' not found in asset list.`);

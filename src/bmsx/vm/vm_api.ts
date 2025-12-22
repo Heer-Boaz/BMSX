@@ -120,7 +120,6 @@ export class BmsxVMApi {
 	 * script `:` call would still pass `self` while letting the base work run.
 	 */
 	private applyClassOverrides<T>(instance: T, classTable: Partial<T> & Record<string, unknown>): void {
-		if (!classTable) return; // No overrides to apply
 		// Filter out non-instance override keys, then bulk-assign.
 		const overrides: Record<string, any> = {};
 		// For function overrides, run the original first to preserve engine lifecycle (e.g. onspawn),
@@ -129,8 +128,8 @@ export class BmsxVMApi {
 			if (excludedClassOverrideKeys.has(key)) continue;
 			const existing = instance[key];
 			if (typeof value === 'function' && typeof existing === 'function') {
-				const baseFn: AnyFunction = existing;
-				const overrideFn: AnyFunction = value;
+				const baseFn = existing as AnyFunction;
+				const overrideFn = value as AnyFunction;
 				overrides[key] = (...args: any[]) => {
 					const baseResult = baseFn.apply(instance, args);
 					const overrideResult = overrideFn.apply(instance, args);

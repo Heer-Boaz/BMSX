@@ -1877,8 +1877,15 @@ function new_game()
 	spawn_object(director_def_id, { id = director_instance_id })
 end
 
+local function test()
+	-- print "bla"
+	-- assert(false)
+end
+
 function update(_dt)
 	-- assert(false)
+	-- print(a.b + 3)
+	test()
 end
 
 function draw()

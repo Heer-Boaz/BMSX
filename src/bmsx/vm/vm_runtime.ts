@@ -2,19 +2,22 @@ import { $ } from '../core/engine_core';
 import { taskGate } from '../core/taskgate';
 import { Input } from '../input/input';
 import type { InputMap } from '../input/inputtypes';
-import type { BmsxCartridgeBlob } from '../rompack/rompack';
+import type { BmsxCartridgeBlob, RomAsset } from '../rompack/rompack';
 import { AssetSourceStack } from '../rompack/asset_source';
 import { applyRuntimeAssetLayer, buildRuntimeAssetLayer } from '../rompack/romloader';
 import { createIdentifierCanonicalizer } from '../utils/identifier_canonicalizer';
 import type { StorageService } from '../platform/platform';
+import type { LuaChunk } from '../lua/lua_ast';
+import { decodeBinary } from '../serializer/binencoder';
 import { VMCPU, Table, type Closure, type Program, type Value, RunResult, createNativeFunction, createNativeObject, isNativeFunction, isNativeObject, type NativeFunction, type NativeObject } from './cpu';
 import { BmsxVMApi } from './vm_api';
 import { BmsxVMStorage } from './storage';
 import { VMFont } from './font';
 import { IO_ARG0_OFFSET, IO_BUFFER_BASE, IO_COMMAND_STRIDE, IO_CMD_PRINT, IO_WRITE_PTR_ADDR, VM_IO_MEMORY_SIZE } from './vm_io';
 import { VmHandlerCache } from './vm_handler_cache';
-import { VM_PROGRAM_ASSET_ID, inflateProgram, type VmProgramAsset } from './vm_program_asset';
+import { VM_PROGRAM_ASSET_ID, buildModuleAliasesFromPaths, inflateProgram, type VmProgramAsset } from './vm_program_asset';
 import { reindexProgram } from './program_reindex';
+import { compileLuaChunkToProgram, type ProgramModule } from './program_compiler';
 import type { VmRuntimeOptions, VmMarshalContext, VmRuntimeError } from './vm_core_types';
 
 export const VM_BUTTON_ACTIONS: ReadonlyArray<string> = [
@@ -202,7 +205,7 @@ export async function initVmRuntime(cartridge?: BmsxCartridgeBlob): Promise<void
 const bootVmProgram = (options?: { runInit?: boolean }): void => {
 	vmRuntime.vmInitialized = false;
 	resetVmState();
-	const entryProtoIndex = loadProgramFromAsset();
+	const entryProtoIndex = loadProgramFromAssets();
 	vmRuntime.cpu.start(entryProtoIndex);
 	vmRuntime.pendingVmCall = null;
 	vmRuntime.cpu.instructionBudgetRemaining = null;
@@ -326,16 +329,22 @@ const mapModuleProtoIndices = (asset: VmProgramAsset, incomingProtoIds: Readonly
 		const protoId = incomingProtoIds[entry.protoIndex];
 		const mappedIndex = protoIdToIndex.get(protoId);
 		if (mappedIndex === undefined) {
-			throw new Error(`[VMRuntime] Module proto '${protoId}' missing after reindex.`);
+			continue;
 		}
 		vmRuntime.vmModuleProtos.set(entry.path, mappedIndex);
 	}
 };
 
-const loadProgramFromAsset = (baseProgram?: Program): number => {
+const decodeLuaChunk = (asset: RomAsset): LuaChunk => {
+	const compiledEntry = { ...asset, start: asset.compiled_start, end: asset.compiled_end };
+	const bytes = $.assetSource.getBytes(compiledEntry);
+	return decodeBinary(bytes) as LuaChunk;
+};
+
+const loadProgramFromProgramAsset = (baseProgram?: Program): number | null => {
 	const programAsset = $.assets.data[VM_PROGRAM_ASSET_ID] as VmProgramAsset;
 	if (!programAsset) {
-		throw new Error(`[VMRuntime] Program asset '${VM_PROGRAM_ASSET_ID}' missing.`);
+		return null;
 	}
 	const incomingProgram = inflateProgram(programAsset.program);
 	if (baseProgram) {
@@ -355,14 +364,66 @@ const loadProgramFromAsset = (baseProgram?: Program): number => {
 		vmRuntime.vmModuleCache.clear();
 		return entryProtoIndex;
 	}
-	const program = incomingProgram;
-	loadProgram(programAsset, program);
+	vmRuntime.cpu.setProgram(incomingProgram);
+	vmRuntime.vmModuleProtos.clear();
+	for (const entry of programAsset.moduleProtos) {
+		vmRuntime.vmModuleProtos.set(entry.path, entry.protoIndex);
+	}
+	vmRuntime.vmModuleAliases.clear();
+	for (const entry of programAsset.moduleAliases) {
+		vmRuntime.vmModuleAliases.set(entry.alias, entry.path);
+	}
+	vmRuntime.vmModuleCache.clear();
 	return programAsset.entryProtoIndex;
+};
+
+const loadProgramFromSources = (baseProgram?: Program): number => {
+	const entryPath = $.assets.manifest.lua.entry_path;
+	const luaAssets = $.assetSource.list('lua');
+	if (luaAssets.length === 0) {
+		throw new Error('[VMRuntime] No Lua assets found; cannot build VM program.');
+	}
+	const entryAsset = luaAssets.find(asset => asset.source_path === entryPath || asset.normalized_source_path === entryPath);
+	if (!entryAsset) {
+		throw new Error(`[VMRuntime] Lua entry '${entryPath}' not found in asset list.`);
+	}
+	const entryChunk = decodeLuaChunk(entryAsset);
+	const modules: ProgramModule[] = [];
+	const modulePaths: string[] = [];
+	for (const asset of luaAssets) {
+		const path = asset.normalized_source_path ?? asset.source_path;
+		modulePaths.push(path);
+		if (asset === entryAsset) {
+			continue;
+		}
+		const chunk = decodeLuaChunk(asset);
+		modules.push({ path, chunk });
+	}
+	const compiled = compileLuaChunkToProgram(entryChunk, modules, baseProgram ? { baseProgram } : {});
+	vmRuntime.cpu.setProgram(compiled.program);
+	vmRuntime.vmModuleProtos.clear();
+	for (const [modulePath, protoIndex] of compiled.moduleProtoMap.entries()) {
+		vmRuntime.vmModuleProtos.set(modulePath, protoIndex);
+	}
+	vmRuntime.vmModuleAliases.clear();
+	for (const entry of buildModuleAliasesFromPaths(modulePaths)) {
+		vmRuntime.vmModuleAliases.set(entry.alias, entry.path);
+	}
+	vmRuntime.vmModuleCache.clear();
+	return compiled.entryProtoIndex;
+};
+
+const loadProgramFromAssets = (baseProgram?: Program): number => {
+	const entryProtoIndex = loadProgramFromProgramAsset(baseProgram);
+	if (entryProtoIndex !== null) {
+		return entryProtoIndex;
+	}
+	return loadProgramFromSources(baseProgram);
 };
 
 const applyProgramReload = (options?: { runInit?: boolean }): void => {
 	vmRuntime.vmInitialized = false;
-	const entryProtoIndex = loadProgramFromAsset(vmRuntime.cpu.getProgram());
+	const entryProtoIndex = loadProgramFromAssets(vmRuntime.cpu.getProgram());
 	vmRuntime.cpu.start(entryProtoIndex);
 	vmRuntime.pendingVmCall = null;
 	vmRuntime.cpu.instructionBudgetRemaining = null;
@@ -391,19 +452,6 @@ const processPendingProgramReload = (): void => {
 	} finally {
 		vmGate.end(vmToken);
 	}
-};
-
-export const loadProgram = (asset: VmProgramAsset, program = inflateProgram(asset.program)): void => {
-	vmRuntime.cpu.setProgram(program);
-	vmRuntime.vmModuleProtos.clear();
-	for (const entry of asset.moduleProtos) {
-		vmRuntime.vmModuleProtos.set(entry.path, entry.protoIndex);
-	}
-	vmRuntime.vmModuleAliases.clear();
-	for (const entry of asset.moduleAliases) {
-		vmRuntime.vmModuleAliases.set(entry.alias, entry.path);
-	}
-	vmRuntime.vmModuleCache.clear();
 };
 
 const bindLifecycleHandlers = (): void => {
@@ -1524,5 +1572,4 @@ export const BmsxVMRuntime = {
 	requestProgramReload,
 	reloadProgramPreservingState,
 	reloadProgramAndResetWorld,
-	loadProgram,
 };

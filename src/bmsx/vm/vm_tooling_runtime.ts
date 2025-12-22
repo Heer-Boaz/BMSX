@@ -24,7 +24,7 @@ import type { Viewport, BmsxCartridgeBlob, CartridgeIndex } from '../rompack/rom
 import { CanonicalizationType } from '../rompack/rompack';
 import { AssetSourceStack, type RawAssetSource } from '../rompack/asset_source';
 import { applyRuntimeAssetLayer, buildRuntimeAssetLayer } from '../rompack/romloader';
-import { decodeBinary, decodeuint8arr } from '../serializer/binencoder';
+import { decodeuint8arr } from '../serializer/binencoder';
 import { createIdentifierCanonicalizer } from '../utils/identifier_canonicalizer';
 import { clamp_fallback } from '../utils/clamp';
 import { BmsxVMApi } from './vm_api';
@@ -64,7 +64,7 @@ import type { RectRenderSubmission } from '../render/shared/render_types';
 import { compileLuaChunkToProgram, appendLuaChunkToProgram } from './program_compiler';
 import { IO_ARG0_OFFSET, IO_BUFFER_BASE, IO_COMMAND_STRIDE, IO_CMD_PRINT, IO_WRITE_PTR_ADDR, VM_IO_MEMORY_SIZE } from './vm_io';
 import { VmHandlerCache } from './vm_handler_cache';
-import { VM_PROGRAM_ASSET_ID, inflateProgram, type VmProgramAsset } from './vm_program_asset';
+import { buildModuleAliasesFromPaths } from './vm_program_asset';
 
 export const VM_BUTTON_ACTIONS: ReadonlyArray<string> = [
 	'left',
@@ -1265,12 +1265,16 @@ export class BmsxVMRuntime {
 		const interpreter = this.luaInterpreter;
 		interpreter.clearLastFaultEnvironment();
 		const chunk = interpreter.compileChunk(params.source, binding);
-		const modules = this.buildVmModuleChunks(binding);
+		const { modules, modulePaths } = this.buildVmModuleChunks(binding);
 		const { program, entryProtoIndex, moduleProtoMap } = compileLuaChunkToProgram(chunk, modules, { baseProgram: this.cpu.getProgram() });
 		this.cpu.setProgram(program);
 		this.vmModuleProtos.clear();
 		for (const [modulePath, protoIndex] of moduleProtoMap.entries()) {
 			this.vmModuleProtos.set(modulePath, protoIndex);
+		}
+		this.vmModuleAliases.clear();
+		for (const entry of buildModuleAliasesFromPaths(modulePaths)) {
+			this.vmModuleAliases.set(entry.alias, entry.path);
 		}
 		this.vmModuleCache.clear();
 		this.cpuMemory[IO_WRITE_PTR_ADDR] = 0;
@@ -1423,12 +1427,16 @@ export class BmsxVMRuntime {
 
 		this.resetVmState();
 		const chunk = interpreter.compileChunk(params.source, binding.source_path);
-		const modules = this.buildVmModuleChunks(binding.source_path);
+		const { modules, modulePaths } = this.buildVmModuleChunks(binding.source_path);
 		const { program, entryProtoIndex, moduleProtoMap } = compileLuaChunkToProgram(chunk, modules);
 		this.cpu.setProgram(program);
 		this.vmModuleProtos.clear();
 		for (const [modulePath, protoIndex] of moduleProtoMap.entries()) {
 			this.vmModuleProtos.set(modulePath, protoIndex);
+		}
+		this.vmModuleAliases.clear();
+		for (const entry of buildModuleAliasesFromPaths(modulePaths)) {
+			this.vmModuleAliases.set(entry.alias, entry.path);
 		}
 		this.vmModuleCache.clear();
 		this.cpuMemory[IO_WRITE_PTR_ADDR] = 0;
@@ -2370,23 +2378,11 @@ export class BmsxVMRuntime {
 		return frames;
 	}
 
-	private loadLuaChunkForPath(path: string): LuaChunk {
-		const asset = $.luaSources.path2lua[path];
-		if (asset.src !== asset.base_src) {
-			return this.luaInterpreter.compileChunk(asset.src, path);
-		}
-		if (asset.compiled_start === undefined || asset.compiled_end === undefined) {
-			return this.luaInterpreter.compileChunk(asset.src, path);
-		}
-		const compiledEntry = { ...asset, start: asset.compiled_start, end: asset.compiled_end };
-		const bytes = $.assetSource.getBytes(compiledEntry);
-		return decodeBinary(bytes) as LuaChunk;
-	}
-
-	private buildVmModuleChunks(entryPath: string): Array<{ path: string; chunk: LuaChunk }> {
+	private buildVmModuleChunks(entryPath: string): { modules: Array<{ path: string; chunk: LuaChunk }>; modulePaths: string[] } {
 		const entryAsset = $.luaSources.path2lua[entryPath];
 		const entryKey = entryAsset ? (entryAsset.normalized_source_path ?? entryAsset.source_path ?? entryPath) : entryPath;
 		const modules: Array<{ path: string; chunk: LuaChunk }> = [];
+		const modulePaths: string[] = [];
 		const seen = new Set<string>();
 		const luaAssets = Object.values($.luaSources.path2lua);
 		for (const asset of luaAssets) {
@@ -2398,6 +2394,7 @@ export class BmsxVMRuntime {
 				continue;
 			}
 			seen.add(key);
+			modulePaths.push(key);
 			if (key === entryKey) {
 				continue;
 			}
@@ -2405,22 +2402,7 @@ export class BmsxVMRuntime {
 			const chunk = this.luaInterpreter.compileChunk(source, asset.source_path);
 			modules.push({ path: key, chunk });
 		}
-		return modules;
-	}
-
-	private loadProgramFromAsset(): number {
-		const programAsset = $.assets.data[VM_PROGRAM_ASSET_ID] as VmProgramAsset;
-		const program = inflateProgram(programAsset.program);
-		this.cpu.setProgram(program);
-		this.vmModuleProtos.clear();
-		for (const entry of programAsset.moduleProtos) {
-			this.vmModuleProtos.set(entry.path, entry.protoIndex);
-		}
-		this.vmModuleAliases.clear();
-		for (const entry of programAsset.moduleAliases) {
-			this.vmModuleAliases.set(entry.alias, entry.path);
-		}
-		return programAsset.entryProtoIndex;
+		return { modules, modulePaths };
 	}
 
 	private bootLuaProgram(options?: { preserveState?: boolean; sourceOverride?: { path: string; source: string } }): boolean {
@@ -2446,7 +2428,20 @@ export class BmsxVMRuntime {
 		}
 
 		try {
-			const entryProtoIndex = this.loadProgramFromAsset();
+			const entryPath = options?.sourceOverride?.path ?? path;
+			const entrySource = options?.sourceOverride?.source ?? this.resourceSourceForChunk(entryPath);
+			const entryChunk = interpreter.compileChunk(entrySource, entryPath);
+			const { modules, modulePaths } = this.buildVmModuleChunks(entryPath);
+			const { program, entryProtoIndex, moduleProtoMap } = compileLuaChunkToProgram(entryChunk, modules);
+			this.cpu.setProgram(program);
+			this.vmModuleProtos.clear();
+			for (const [modulePath, protoIndex] of moduleProtoMap.entries()) {
+				this.vmModuleProtos.set(modulePath, protoIndex);
+			}
+			this.vmModuleAliases.clear();
+			for (const entry of buildModuleAliasesFromPaths(modulePaths)) {
+				this.vmModuleAliases.set(entry.alias, entry.path);
+			}
 			this.vmModuleCache.clear();
 			this.cpuMemory[IO_WRITE_PTR_ADDR] = 0;
 			this.cpu.start(entryProtoIndex);
