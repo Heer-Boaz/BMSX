@@ -10,7 +10,7 @@ import * as SpritesPipeline from './2d/sprites_pipeline';
 import * as MeshPipeline from './3d/mesh_pipeline';
 import * as ParticlesPipeline from './3d/particles_pipeline';
 import * as SkyboxPipeline from './3d/skybox_pipeline';
-import type { AtmosphereParams, GPUBackend, RenderContext, RenderSubmission, RenderSubmitQueue, TextureHandle } from './backend/pipeline_interfaces';
+import type { AtmosphereParams, BackendContext, GPUBackend, RenderContext, RenderSubmission, RenderSubmitQueue, TextureHandle } from './backend/pipeline_interfaces';
 import { RenderPassLibrary } from './backend/renderpasslib';
 import { type RenderPassToken } from './backend/pipeline_interfaces';
 import { RenderGraphRuntime, buildFrameData, updateExternalFrameTiming } from './graph/rendergraph';
@@ -139,8 +139,8 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	public canvas_dy: number;
 	public canvasScale: number;
 
-	private _nativeCtx: unknown = null; // The underlying native rendering context (e.g. WebGL2RenderingContext or GPUDevice)
-	public get nativeCtx(): unknown {
+	private _nativeCtx: BackendContext = null; // The underlying native rendering context (e.g. WebGL2RenderingContext or GPUDevice)
+	public get nativeCtx(): BackendContext {
 		return this._nativeCtx;
 	}
 	private _backend: GPUBackend = null;
@@ -153,7 +153,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	public renderGraph: RenderGraphRuntime = null;
 	private lightingSystem: LightingSystem = null;
 	public offscreenCanvasSize!: vec2;
-	public textures: { [k: string]: unknown } = {};
+	public textures: { [k: string]: TextureHandle } = {};
 	private _primaryAtlasIndex: number = null;
 	private _secondaryAtlasIndex: number = null;
 	public pipelineRegistry?: RenderPassLibrary;
@@ -161,8 +161,8 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	private presentationEnabled = true;
 	// Texture binding cache
 	private _activeTexUnit: number = null;
-	private _activeTexture2D: unknown = null;
-	private _activeCubemap: unknown = null;
+	private _activeTexture2D: TextureHandle = null;
+	private _activeCubemap: TextureHandle = null;
 	// CRT/post flags (used by passes)
 	public applyNoise = true;
 	public applyColorBleed = true;

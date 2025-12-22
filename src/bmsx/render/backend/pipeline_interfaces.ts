@@ -9,7 +9,8 @@ import type { WebGPUBackend } from './webgpu/webgpu_backend';
 
 export type TextureFormat = 'rgba8unorm' | 'bgra8unorm' | 'rgb8unorm' | 'depth24plus' | 'depth32float' | string | number;
 export type TextureHandle = WebGLTexture | GPUTexture;
-export type BufferHandle = WebGLBuffer | GPUBuffer | unknown;
+export type BufferHandle = WebGLBuffer | GPUBuffer | null;
+export type BackendContext =  WebGL2RenderingContext | GPUCanvasContext | null;
 // ---- Unified "FBO" a.k.a. render target ------------------------------------
 
 export type RenderTargetHandle =
@@ -117,7 +118,7 @@ export type AnyBackend = WebGLBackend | WebGPUBackend | GPUBackend;
 export interface GPUBackend {
 	// Discriminator for runtime backend flavor
 	type: 'webgl2' | 'webgpu' | 'headless';
-	context: unknown;
+	context: BackendContext;
 
 	// Optional WebGL-like texture binding helpers (implemented by WebGL backend).
 	// These allow higher-level code (GameView / render graph) to perform texture
