@@ -218,6 +218,11 @@ export class Table {
 	}
 }
 
+// Pool constants for frame/register reuse
+const MAX_POOLED_FRAMES = 32;
+const MAX_POOLED_REGISTER_ARRAYS = 64;
+const MAX_REGISTER_ARRAY_SIZE = 256;
+
 export class VMCPU {
 	public instructionBudgetRemaining: number | null = null;
 	public lastReturnValues: Value[] = [];
@@ -229,10 +234,82 @@ export class VMCPU {
 	private program: Program = null;
 	private readonly frames: CallFrame[] = [];
 	private readonly valueScratch: Value[] = [];
+	private readonly returnScratch: Value[] = [];
+
+	// Frame pooling: avoid allocating new CallFrame objects per call
+	private readonly framePool: CallFrame[] = [];
+
+	// Register array pooling: keyed by size bucket (power of 2)
+	private readonly registerPool: Map<number, Value[][]> = new Map();
 
 	constructor(memory: Value[]) {
 		this.memory = memory;
 		this.globals = new Table(0, 0);
+	}
+
+	// Acquire a register array of at least `size` slots, reusing pooled arrays when possible
+	private acquireRegisters(size: number): Value[] {
+		// Round up to next power of 2 for bucketing (min 8)
+		const bucket = Math.max(8, 1 << (32 - Math.clz32(size - 1)));
+		let pool = this.registerPool.get(bucket);
+		if (pool && pool.length > 0) {
+			const regs = pool.pop()!;
+			// Clear only the portion we need
+			for (let i = 0; i < size; i++) regs[i] = null;
+			return regs;
+		}
+		// Allocate new array at bucket size
+		const regs = new Array<Value>(bucket);
+		for (let i = 0; i < bucket; i++) regs[i] = null;
+		return regs;
+	}
+
+	// Release a register array back to the pool
+	private releaseRegisters(regs: Value[]): void {
+		const bucket = regs.length;
+		if (bucket > MAX_REGISTER_ARRAY_SIZE) return; // Don't pool oversized arrays
+		let pool = this.registerPool.get(bucket);
+		if (!pool) {
+			pool = [];
+			this.registerPool.set(bucket, pool);
+		}
+		if (pool.length < MAX_POOLED_REGISTER_ARRAYS) {
+			pool.push(regs);
+		}
+	}
+
+	// Acquire a CallFrame from pool or create new
+	private acquireFrame(): CallFrame {
+		if (this.framePool.length > 0) {
+			return this.framePool.pop()!;
+		}
+		return {
+			protoIndex: 0,
+			pc: 0,
+			registers: [],
+			varargs: [],
+			closure: null!,
+			openUpvalues: new Map<number, Upvalue>(),
+			returnBase: 0,
+			returnCount: 0,
+			top: 0,
+			captureReturns: false,
+			callSitePc: 0,
+		};
+	}
+
+	// Release a CallFrame back to pool
+	private releaseFrame(frame: CallFrame): void {
+		// Release register array
+		this.releaseRegisters(frame.registers);
+		// Clear varargs (reuse array)
+		frame.varargs.length = 0;
+		// Clear upvalues map (reuse map)
+		frame.openUpvalues.clear();
+		// Pool the frame if not at capacity
+		if (this.framePool.length < MAX_POOLED_FRAMES) {
+			this.framePool.push(frame);
+		}
 	}
 
 	public setProgram(program: Program): void {
@@ -592,10 +669,21 @@ export class VMCPU {
 				return;
 			}
 			case OpCode.RET: {
-				const results = this.collectReturnValues(frame, a, b);
-				this.lastReturnValues = results;
+				// Collect return values into scratch buffer (avoids allocation)
+				const scratch = this.returnScratch;
+				scratch.length = 0;
+				const total = b === 0 ? Math.max(frame.top - a, 0) : b;
+				for (let index = 0; index < total; index += 1) {
+					scratch.push(frame.registers[a + index]);
+				}
+				// Copy to lastReturnValues (public API expects persistent array)
+				this.lastReturnValues.length = scratch.length;
+				for (let i = 0; i < scratch.length; i++) {
+					this.lastReturnValues[i] = scratch[i];
+				}
 				this.closeUpvalues(frame);
 				this.frames.pop();
+				this.releaseFrame(frame);
 				if (this.frames.length === 0) {
 					return;
 				}
@@ -603,7 +691,7 @@ export class VMCPU {
 					return;
 				}
 				const caller = this.frames[this.frames.length - 1];
-				this.writeReturnValues(caller, frame.returnBase, frame.returnCount, results);
+				this.writeReturnValues(caller, frame.returnBase, frame.returnCount, scratch);
 				return;
 			}
 			case OpCode.LOAD_MEM:
@@ -619,34 +707,31 @@ export class VMCPU {
 
 	private pushFrame(closure: Closure, args: Value[], returnBase: number, returnCount: number, captureReturns: boolean, callSitePc: number): void {
 		const proto = this.program.protos[closure.protoIndex];
-		const registers = new Array<Value>(proto.maxStack);
-		for (let index = 0; index < registers.length; index += 1) {
-			registers[index] = null;
-		}
-		const varargs: Value[] = [];
+		const frame = this.acquireFrame();
+		frame.protoIndex = closure.protoIndex;
+		frame.pc = proto.entryPC;
+		frame.registers = this.acquireRegisters(proto.maxStack);
+		frame.closure = closure;
+		frame.returnBase = returnBase;
+		frame.returnCount = returnCount;
+		frame.top = proto.numParams;
+		frame.captureReturns = captureReturns;
+		frame.callSitePc = callSitePc;
+
+		// Copy args into registers
+		const registers = frame.registers;
 		let argIndex = 0;
 		for (let index = 0; index < proto.numParams; index += 1) {
 			registers[index] = argIndex < args.length ? args[argIndex] : null;
 			argIndex += 1;
 		}
+		// Handle varargs
 		if (proto.isVararg) {
+			const varargs = frame.varargs;
 			for (let index = argIndex; index < args.length; index += 1) {
 				varargs.push(args[index]);
 			}
 		}
-		const frame: CallFrame = {
-			protoIndex: closure.protoIndex,
-			pc: proto.entryPC,
-			registers,
-			varargs,
-			closure,
-			openUpvalues: new Map<number, Upvalue>(),
-			returnBase,
-			returnCount,
-			top: proto.numParams,
-			captureReturns,
-			callSitePc,
-		};
 		this.frames.push(frame);
 	}
 
@@ -691,15 +776,6 @@ export class VMCPU {
 			return;
 		}
 		upvalue.value = value;
-	}
-
-	private collectReturnValues(frame: CallFrame, start: number, count: number): Value[] {
-		const result: Value[] = [];
-		const total = count === 0 ? Math.max(frame.top - start, 0) : count;
-		for (let index = 0; index < total; index += 1) {
-			result.push(frame.registers[start + index]);
-		}
-		return result;
 	}
 
 	private writeReturnValues(frame: CallFrame, base: number, count: number, values: Value[]): void {
