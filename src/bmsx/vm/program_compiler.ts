@@ -1090,6 +1090,12 @@ class FunctionBuilder {
 		if (this.tryCompilePrintCall(expression, target)) {
 			return;
 		}
+		if (this.tryCompilePeekCall(expression, target)) {
+			return;
+		}
+		if (this.tryCompilePokeCall(expression, target)) {
+			return;
+		}
 		const hasMethod = expression.methodName && expression.methodName.length > 0;
 		const argCount = expression.arguments.length;
 		const lastArg = argCount > 0 ? expression.arguments[argCount - 1] : null;
@@ -1144,6 +1150,43 @@ class FunctionBuilder {
 			this.emitLoadNil(argReg, 1);
 		}
 		this.emitIoCommand(IO_CMD_PRINT, [argReg]);
+		this.emitLoadNil(target, 1);
+		return true;
+	}
+
+	private tryCompilePeekCall(expression: LuaCallExpression, target: number): boolean {
+		if (expression.methodName && expression.methodName.length > 0) {
+			return false;
+		}
+		if (expression.callee.kind !== LuaSyntaxKind.IdentifierExpression) {
+			return false;
+		}
+		const name = (expression.callee as LuaIdentifierExpression).name;
+		if (name !== 'peek') {
+			return false;
+		}
+		const addrReg = this.allocTemp();
+		this.compileExpressionInto(expression.arguments[0], addrReg, 1);
+		this.emitABC(OpCode.LOAD_MEM, target, addrReg, 0);
+		return true;
+	}
+
+	private tryCompilePokeCall(expression: LuaCallExpression, target: number): boolean {
+		if (expression.methodName && expression.methodName.length > 0) {
+			return false;
+		}
+		if (expression.callee.kind !== LuaSyntaxKind.IdentifierExpression) {
+			return false;
+		}
+		const name = (expression.callee as LuaIdentifierExpression).name;
+		if (name !== 'poke') {
+			return false;
+		}
+		const addrReg = this.allocTemp();
+		const valueReg = this.allocTemp();
+		this.compileExpressionInto(expression.arguments[0], addrReg, 1);
+		this.compileExpressionInto(expression.arguments[1], valueReg, 1);
+		this.emitABC(OpCode.STORE_MEM, valueReg, addrReg, 0);
 		this.emitLoadNil(target, 1);
 		return true;
 	}

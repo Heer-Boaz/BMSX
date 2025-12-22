@@ -20,6 +20,8 @@ export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<VMLuaBuiltinDescriptor
 	{ name: 'pairs', params: ['table'], signature: 'pairs(t)' },
 	{ name: 'pcall', params: ['func', 'arg...'], signature: 'pcall(f, ...)' },
 	{ name: 'print', params: ['...'], signature: 'print(...)' },
+	{ name: 'peek', params: ['addr'], signature: 'peek(addr)' },
+	{ name: 'poke', params: ['addr', 'value'], signature: 'poke(addr, value)' },
 	{ name: 'rawequal', params: ['v1', 'v2'], signature: 'rawequal(v1, v2)' },
 	{ name: 'rawget', params: ['table', 'index'], signature: 'rawget(table, index)' },
 	{ name: 'rawset', params: ['table', 'index', 'value'], signature: 'rawset(table, index, value)' },
@@ -57,7 +59,7 @@ export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<VMLuaBuiltinDescriptor
 	{ name: 'os.time', params: ['table?'], signature: 'os.time([table])' },
 ];
 
-const DEFAULT_LUA_BUILTIN_IDENTIFIER_EXTRAS = ['package', 'math.pi'];
+const DEFAULT_LUA_BUILTIN_IDENTIFIER_EXTRAS = ['package', 'math.pi', 'SYS_CART_PRESENT', 'SYS_BOOT_CART'];
 
 export const DEFAULT_LUA_BUILTIN_NAMES: ReadonlyArray<string> = (() => {
 	const names = new Set<string>();

@@ -17,8 +17,8 @@ function new_game()
 end
 
 function update(dt)
-	if cart_present() then
-		boot_cart()
+	if peek(SYS_CART_PRESENT) == 1 then
+		poke(SYS_BOOT_CART, 1)
 	end
 end
 

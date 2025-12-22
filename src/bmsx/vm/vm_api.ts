@@ -34,19 +34,13 @@ import { ActionEffectRegistry, RegisterEffectOptions } from '../action_effects/e
 import { SpriteObject } from '../core/object/sprite';
 import { TextObject } from '../core/object/textobject';
 import { Timeline, TimelineDefinition } from '../timeline/timeline';
+import { BmsxVMRuntime } from './vm_tooling_runtime';
 
 type AudioPlayOptions = RandomModulationParams | ModulationParams | SoundMasterPlayRequest;
 
 export type BmsxVMApiOptions = {
-	playerindex: number;
 	storage: BmsxVMStorage;
-	runtime: BmsxVMRuntimeBridge;
-};
-
-export type BmsxVMRuntimeBridge = {
-	getRuntime: () => unknown;
-	reboot: () => void;
-	bootCart: () => void;
+	runtime: BmsxVMRuntime;
 };
 
 const VM_TAB_SPACES = 2;
@@ -80,7 +74,6 @@ type AnyFunction = (...args: any[]) => any;
 export class BmsxVMApi {
 	private readonly playerindex: number;
 	private readonly storage: BmsxVMStorage;
-	private readonly runtimeBridge: BmsxVMRuntimeBridge;
 	private readonly font: VMFont;
 	private readonly defaultPrintColorIndex = 15;
 	private readonly serviceExts = new Map<string, EntityExtensions>();
@@ -91,6 +84,7 @@ export class BmsxVMApi {
 	private textCursorHomeX = 0;
 	private textCursorColorIndex = 0;
 	private renderBackend: VMRenderFacade = new VMRenderFacade();
+	private _runtime: BmsxVMRuntime;
 
 	constructor(options: BmsxVMApiOptions) {
 		const view = $.view;
@@ -101,9 +95,8 @@ export class BmsxVMApi {
 		if (viewport.x <= 0 || viewport.y <= 0) {
 			throw new Error('Invalid viewport size.');
 		}
-		this.playerindex = options.playerindex;
 		this.storage = options.storage;
-		this.runtimeBridge = options.runtime;
+		this._runtime = options.runtime;
 		this.font = new VMFont();
 		this.reset_print_cursor();
 	}
@@ -414,14 +407,6 @@ export class BmsxVMApi {
 
 	public cartdata(namespace: string): void {
 		this.storage.setNamespace(namespace);
-	}
-
-	public cart_present(): boolean {
-		return $.assets.project_root_path !== $.engineLayer.index.projectRootPath;
-	}
-
-	public boot_cart(): void {
-		this.runtimeBridge.bootCart();
 	}
 
 	public dset(index: number, value: number): void {
@@ -794,13 +779,13 @@ export class BmsxVMApi {
 		return runGate;
 	}
 
-	public get runtime(): unknown {
-		return this.runtimeBridge.getRuntime();
+	public get runtime(): BmsxVMRuntime {
+		return this._runtime;
 	}
 
 	public reboot(): void {
 		console.log('[BMSX VM API] Reboot requested.');
-		this.runtimeBridge.reboot(); // Reboot to initial state
+		this.runtime.reloadProgramAndResetWorld(); // Reboot to initial state
 		console.log('[BMSX VM API] Reboot completed.');
 	}
 

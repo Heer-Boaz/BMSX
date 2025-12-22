@@ -224,17 +224,6 @@ export const VM_API_METHOD_METADATA = {
 		],
 		returnType: 'void',
 	},
-	cart_present: {
-		description: 'Returns true when a cartridge program is available.',
-		parameters: [],
-		returnType: 'boolean',
-		returnDescription: 'True when a cartridge is loaded.',
-	},
-	boot_cart: {
-		description: 'Boots the active cartridge program.',
-		parameters: [],
-		returnType: 'void',
-	},
 	dset: {
 		description: 'Writes a number to persistent cart storage.',
 		parameters: [

@@ -62,7 +62,7 @@ import { RenderSubmission } from '../render/backend/pipeline_interfaces';
 import { Msx1Colors } from '../systems/msx';
 import type { RectRenderSubmission } from '../render/shared/render_types';
 import { compileLuaChunkToProgram, appendLuaChunkToProgram } from './program_compiler';
-import { IO_ARG0_OFFSET, IO_BUFFER_BASE, IO_COMMAND_STRIDE, IO_CMD_PRINT, IO_WRITE_PTR_ADDR, VM_IO_MEMORY_SIZE } from './vm_io';
+import { IO_ARG0_OFFSET, IO_BUFFER_BASE, IO_COMMAND_STRIDE, IO_CMD_PRINT, IO_SYS_BOOT_CART, IO_SYS_CART_PRESENT, IO_WRITE_PTR_ADDR, VM_IO_MEMORY_SIZE } from './vm_io';
 import { VmHandlerCache } from './vm_handler_cache';
 import { buildModuleAliasesFromPaths } from './vm_program_asset';
 
@@ -128,7 +128,7 @@ export var api: BmsxVMApi; // Initialized in BmsxVMRuntime constructor
 
 export class BmsxVMRuntime {
 	private static _instance: BmsxVMRuntime = null;
-	private static readonly LUA_SNAPSHOT_EXCLUDED_GLOBALS = new Set<string>(['print', 'type', 'tostring', 'tonumber', 'setmetatable', 'getmetatable', 'require', 'pairs', 'ipairs', 'serialize', 'deserialize', 'math', 'string', 'os', 'table', 'coroutine', 'debug', 'package', 'api',
+	private static readonly LUA_SNAPSHOT_EXCLUDED_GLOBALS = new Set<string>(['print', 'type', 'tostring', 'tonumber', 'setmetatable', 'getmetatable', 'require', 'pairs', 'ipairs', 'serialize', 'deserialize', 'math', 'string', 'os', 'table', 'coroutine', 'debug', 'package', 'api', 'peek', 'poke', 'SYS_CART_PRESENT', 'SYS_BOOT_CART',
 	]);
 	/**
 	 * Preserved render queue when a fault occurs
@@ -426,17 +426,8 @@ export class BmsxVMRuntime {
 		this.cpu = new VMCPU(this.cpuMemory);
 
 		api = new BmsxVMApi({
-			playerindex: this.playerIndex,
 			storage: this.storage,
-			runtime: {
-				getRuntime: () => this,
-				reboot: () => {
-					void this.reloadProgramAndResetWorld();
-				},
-				bootCart: () => {
-					this.requestCartBoot();
-				},
-			},
+			runtime: this,
 		});
 		this.editor = createVMCartEditor(options.viewport);
 		this.overlayResolutionMode = 'viewport';
@@ -1195,7 +1186,28 @@ export class BmsxVMRuntime {
 		this.pendingProgramReload = { runInit: options?.runInit };
 	}
 
+	private isEngineProgramActive(): boolean {
+		return $.luaSources === this.engineLuaSources;
+	}
+
+	private syncSystemRegisters(): void {
+		this.cpuMemory[IO_SYS_CART_PRESENT] = $.assets.project_root_path !== $.engineLayer.index.projectRootPath ? 1 : 0;
+	}
+
+	private pollSystemBootRequest(): void {
+		if (!this.isEngineProgramActive()) {
+			return;
+		}
+		if (!this.cpuMemory[IO_SYS_BOOT_CART]) {
+			return;
+		}
+		this.cpuMemory[IO_SYS_BOOT_CART] = 0;
+		this.requestCartBoot();
+	}
+
 	private processPendingCartBoot(): void {
+		this.syncSystemRegisters();
+		this.pollSystemBootRequest();
 		if (!this.pendingCartBoot) {
 			return;
 		}
@@ -1752,6 +1764,8 @@ export class BmsxVMRuntime {
 			this.cpuMemory[index] = null;
 		}
 		this.cpuMemory[IO_WRITE_PTR_ADDR] = 0;
+		this.cpuMemory[IO_SYS_CART_PRESENT] = 0;
+		this.cpuMemory[IO_SYS_BOOT_CART] = 0;
 		this.seedVmGlobals();
 	}
 
@@ -1797,6 +1811,17 @@ export class BmsxVMRuntime {
 		mathTable.set('pi', Math.PI);
 
 		this.registerVmGlobal('math', mathTable);
+		this.registerVmGlobal('SYS_CART_PRESENT', IO_SYS_CART_PRESENT);
+		this.registerVmGlobal('SYS_BOOT_CART', IO_SYS_BOOT_CART);
+		this.registerVmGlobal('peek', createNativeFunction('peek', (args) => {
+			const address = args[0] as number;
+			return [this.cpuMemory[address]];
+		}));
+		this.registerVmGlobal('poke', createNativeFunction('poke', (args) => {
+			const address = args[0] as number;
+			this.cpuMemory[address] = args[1];
+			return [];
+		}));
 		this.registerVmGlobal('type', createNativeFunction('type', (args) => {
 			const value = args.length > 0 ? args[0] : null;
 			return [this.vmTypeOf(value)];
