@@ -236,7 +236,12 @@ export interface StorageService {
 	removeItem(k: string): void;
 }
 
-export type ClipboardPermissionState = 'unknown' | 'prompt' | 'granted' | 'denied';
+export const enum ClipboardPermissionState {
+	Unknown = -1,
+	Prompt = 0,
+	Granted = 1,
+	Denied = 2,
+}
 
 export interface ClipboardService {
 	isSupported(): boolean;

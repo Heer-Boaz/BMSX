@@ -46,6 +46,7 @@ export class VmHandlerCache {
 		}
 
 		const moduleId = this.normalizeModuleId(ctx.moduleId);
+		const pathText = this.pathToText(ctx.path);
 		const key = this.resolveKey(moduleId, ctx.path);
 		if (!key) {
 			throw new Error(`[VmHandlerCache] Unable to resolve handler key for module '${moduleId}'.`);
@@ -59,7 +60,6 @@ export class VmHandlerCache {
 			return existing.handler;
 		}
 
-		const pathText = this.pathToText(ctx.path);
 		const handler = this.createHandler(hid, moduleId, pathText, fn);
 		const record: HandlerRecord = {
 			handler,
@@ -206,10 +206,24 @@ export class VmHandlerCache {
 		if (!path || path.length === 0) {
 			return null;
 		}
-		return path.join('.');
+		let result = '';
+		for (let index = 0; index < path.length; index += 1) {
+			const segment = path[index];
+			result += `${segment.length}:${segment}`;
+			if (index < path.length - 1) {
+				result += '|';
+			}
+		}
+		return result;
 	}
 
 	private buildHid(moduleId: string, key: string): string {
 		return `${moduleId}::${key}`;
 	}
+}
+
+export function isVmHandlerFunction(candidate: unknown): candidate is VmHandlerFn {
+	return typeof candidate === 'function'
+		&& Object.prototype.hasOwnProperty.call(candidate, '__hid')
+		&& Object.prototype.hasOwnProperty.call(candidate, '__hmod');
 }

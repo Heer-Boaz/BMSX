@@ -147,7 +147,7 @@ class MemoryStorage implements StorageService {
 }
 
 class HeadlessClipboardService implements ClipboardService {
-	private readonly writeState: ClipboardPermissionState = 'granted';
+	private readonly writeState: ClipboardPermissionState = ClipboardPermissionState.Granted;
 
 	isSupported(): boolean {
 		return true;

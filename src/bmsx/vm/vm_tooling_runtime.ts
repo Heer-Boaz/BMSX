@@ -2931,15 +2931,13 @@ export class BmsxVMRuntime {
 			}
 			otherEntries.push({ key, value: entryValue });
 		}
-		const isSequential = numericEntries.length === entries.length && numericEntries.length === maxNumericIndex;
-		if (isSequential) {
+		const hasOnlyNumeric = otherEntries.length === 0;
+		if (hasOnlyNumeric && numericEntries.length > 0) {
 			const result: unknown[] = new Array(maxNumericIndex);
 			visited.set(table, result);
-			for (let index = 0; index < numericEntries.length; index += 1) {
-				const entry = numericEntries[index];
-				const segment = this.describeMarshalSegment(entry.key);
-				const nextContext = segment ? this.extendMarshalContext(tableContext, segment) : tableContext;
-				result[entry.key - 1] = this.toNativeValue(entry.value, nextContext, visited);
+			for (let index = 1; index <= maxNumericIndex; index += 1) {
+				const nextContext = this.extendMarshalContext(tableContext, String(index));
+				result[index - 1] = this.toNativeValue(table.get(index), nextContext, visited);
 			}
 			return result;
 		}

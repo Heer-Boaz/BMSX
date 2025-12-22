@@ -111,9 +111,10 @@ class BrowserClock implements Clock {
 		const id = window.setTimeout(() => {
 			if (!active) return;
 			active = false;
-			try { cb(this.now()); } catch(e) { /* swallow errors from callbacks */
-			throw e;
-			console.warn(`[BrowserClock] Error in scheduled callback: ${e}`); }
+			try { cb(this.now()); } catch (e) { /* swallow errors from callbacks */
+				throw e;
+				console.warn(`[BrowserClock] Error in scheduled callback: ${e}`);
+			}
 		}, delayMs);
 		return {
 			cancel: () => {
@@ -134,13 +135,12 @@ class BrowserFrameLoop implements FrameLoop {
 		const loop = (t: number) => {
 			if (!alive) return;
 			tick(t);
-			window.dispatchEvent(new Event('frame'));
+			// window.dispatchEvent(new Event('frame'));
 			this.req = window.requestAnimationFrame(loop);
 		};
 		this.req = window.requestAnimationFrame(loop);
 		return {
 			stop: () => {
-				alive = false;
 				if (this.req !== 0) window.cancelAnimationFrame(this.req);
 			},
 		};
@@ -198,10 +198,15 @@ class BrowserStorage implements StorageService {
 
 type ClipboardPermissionName = 'clipboard-write';
 
-type ClipboardAvailability = 'unknown' | 'allowed' | 'blocked';
+// type ClipboardAvailability = 'unknown' | 'allowed' | 'blocked';
+const enum ClipboardAvailability {
+	Unknown = 0,
+	Allowed = 1,
+	Blocked = 2,
+}
 
 class BrowserClipboardService implements ClipboardService {
-	private writeStatus: ClipboardAvailability = 'unknown';
+	private writeStatus: ClipboardAvailability = ClipboardAvailability.Unknown;
 	private clipboardBlocked = false;
 	private lastClipboardBlockCheckMs = 0;
 	private readonly clipboardDetectionIntervalMs = 1000;
@@ -219,17 +224,17 @@ class BrowserClipboardService implements ClipboardService {
 		}
 		const clipboard = this.systemClipboard();
 		if (!clipboard || typeof clipboard.writeText !== 'function') {
-			this.writeStatus = 'blocked';
+			this.writeStatus = ClipboardAvailability.Blocked;
 			throw new Error('[BrowserClipboardService] Clipboard write is unavailable in this context.');
 		}
 		try {
 			await clipboard.writeText(text);
-			this.writeStatus = 'allowed';
+			this.writeStatus = ClipboardAvailability.Allowed;
 			this.clipboardBlocked = false;
 			this.lastClipboardBlockCheckMs = now;
 		}
 		catch (error) {
-			this.writeStatus = 'blocked';
+			this.writeStatus = ClipboardAvailability.Blocked;
 			if (this.detectClipboardBlock(error)) {
 				throw new Error('[BrowserClipboardService] Clipboard write was blocked by the browser.');
 			}
@@ -247,45 +252,33 @@ class BrowserClipboardService implements ClipboardService {
 	async requestWritePermission(): Promise<ClipboardPermissionState> {
 		const permission = await this.queryPermission('clipboard-write');
 		this.writeStatus = this.fromPermissionState(permission, this.writeStatus);
-		if (this.writeStatus !== 'blocked') {
+		if (this.writeStatus !== ClipboardAvailability.Blocked) {
 			this.clipboardBlocked = false;
 		}
 		return this.toPermissionState(this.writeStatus);
 	}
 
 	private systemClipboard(): Clipboard {
-		if (typeof navigator === 'undefined' || !navigator.clipboard) {
-			return null;
-		}
-		if (typeof window !== 'undefined' && window.isSecureContext !== true) {
-			return null;
-		}
 		return navigator.clipboard;
 	}
 
 	private async queryPermission(name: ClipboardPermissionName): Promise<ClipboardPermissionState> {
-		if (typeof navigator === 'undefined') {
-			return 'unknown';
-		}
 		const permissions = (navigator as Navigator & { permissions?: Permissions }).permissions;
-		if (!permissions || typeof permissions.query !== 'function') {
-			return 'unknown';
-		}
 		try {
 			const status = await permissions.query({ name: name as PermissionName });
 			if (status.state === 'granted') {
-				return 'granted';
+				return ClipboardPermissionState.Granted;
 			}
 			if (status.state === 'denied') {
-				return 'denied';
+				return ClipboardPermissionState.Denied;
 			}
-			return 'prompt';
+			return ClipboardPermissionState.Prompt;
 		}
 		catch (error) {
 			if (this.detectClipboardBlock(error)) {
-				return 'denied';
+				return ClipboardPermissionState.Denied;
 			}
-			return 'unknown';
+			return ClipboardPermissionState.Unknown;
 		}
 	}
 
@@ -364,23 +357,23 @@ class BrowserClipboardService implements ClipboardService {
 	}
 
 	private toPermissionState(status: ClipboardAvailability): ClipboardPermissionState {
-		if (status === 'allowed') {
-			return 'granted';
+		if (status === ClipboardAvailability.Allowed) {
+			return ClipboardPermissionState.Granted;
 		}
-		if (status === 'blocked') {
-			return 'denied';
+		if (status === ClipboardAvailability.Blocked) {
+			return ClipboardPermissionState.Denied;
 		}
-		return 'unknown';
+		return ClipboardPermissionState.Unknown;
 	}
 
 	private fromPermissionState(state: ClipboardPermissionState, current: ClipboardAvailability): ClipboardAvailability {
-		if (state === 'granted') {
-			return 'allowed';
+		if (state === ClipboardPermissionState.Granted) {
+			return ClipboardAvailability.Allowed;
 		}
-		if (state === 'denied') {
-			return 'blocked';
+		if (state === ClipboardPermissionState.Denied) {
+			return ClipboardAvailability.Blocked;
 		}
-		return current === 'allowed' ? 'allowed' : 'unknown';
+		return current === ClipboardAvailability.Allowed ? ClipboardAvailability.Allowed : ClipboardAvailability.Unknown;
 	}
 }
 
@@ -924,12 +917,12 @@ export class BrowserOnscreenGamepadPlatform implements OnscreenGamepadPlatform {
 				element.hidden = false;
 			}
 			const container = this.findContainerForElement(id);
-		if (container) {
-			container.hidden = false;
-			container.setAttribute('aria-hidden', 'false');
-			container.classList.remove('hidden');
-			container.removeAttribute('hidden');
-		}
+			if (container) {
+				container.hidden = false;
+				container.setAttribute('aria-hidden', 'false');
+				container.classList.remove('hidden');
+				container.removeAttribute('hidden');
+			}
 			const isDpad = id.indexOf('d-pad-') === 0;
 			const textElement = isDpad ? null : this.optionalElement(`${id}_text`);
 			if (!isDpad && !textElement) {
@@ -1182,11 +1175,11 @@ export class BrowserGameViewHost implements GameViewHost {
 	public readonly surface: BrowserGameViewCanvas;
 	private readonly overlays = new Map<string, BrowserOverlayHandle>();
 	private readonly listenerCache = new WeakMap<HostEventListenerTarget, EventListenerOrEventListenerObject>();
-	 private readonly viewportCapability: ViewportMetricsProvider;
-	 private readonly overlayCapability: OverlayManager;
-	 private readonly windowEventsCapability: WindowEventHub;
-	 private readonly displayModeCapability: DisplayModeController;
-	 private readonly gamepadHandlesCapability: OnscreenGamepadHandleProvider;
+	private readonly viewportCapability: ViewportMetricsProvider;
+	private readonly overlayCapability: OverlayManager;
+	private readonly windowEventsCapability: WindowEventHub;
+	private readonly displayModeCapability: DisplayModeController;
+	private readonly gamepadHandlesCapability: OnscreenGamepadHandleProvider;
 
 	public constructor(canvas: HTMLCanvasElement) {
 		if (!(canvas instanceof HTMLCanvasElement)) {
@@ -1311,7 +1304,7 @@ export class BrowserGameViewHost implements GameViewHost {
 	}
 
 	private getOverlayInternal(id: string): OverlayHandle {
-		return this.overlays.get(id) ;
+		return this.overlays.get(id);
 	}
 
 	public getCapability<T extends GameViewHostCapabilityId>(capability: T): GameViewHostCapabilityMap[T] {

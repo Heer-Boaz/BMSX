@@ -14,7 +14,7 @@ import { BmsxVMApi } from './vm_api';
 import { BmsxVMStorage } from './storage';
 import { VMFont } from './font';
 import { IO_ARG0_OFFSET, IO_BUFFER_BASE, IO_COMMAND_STRIDE, IO_CMD_PRINT, IO_WRITE_PTR_ADDR, VM_IO_MEMORY_SIZE } from './vm_io';
-import { VmHandlerCache } from './vm_handler_cache';
+import { VmHandlerCache, isVmHandlerFunction } from './vm_handler_cache';
 import { VM_PROGRAM_ASSET_ID, buildModuleAliasesFromPaths, inflateProgram, type VmProgramAsset } from './vm_program_asset';
 import { reindexProgram } from './program_reindex';
 import { compileLuaChunkToProgram, type ProgramModule } from './program_compiler';
@@ -66,8 +66,10 @@ export type VmRuntimeState = {
 	nativeObjectCache: WeakMap<object, NativeObject>;
 	nativeFunctionCache: WeakMap<Function, NativeFunction>;
 	nativeMemberCache: WeakMap<object, Map<string, NativeFunction>>;
+	nativeMetatables: WeakMap<NativeObject, Table | null>;
 	vmTableIds: WeakMap<Table, number>;
 	nextVmTableId: number;
+	randomSeedValue: number;
 	printHandler: (text: string) => void;
 	tickEnabled: boolean;
 	vmInitialized: boolean;
@@ -129,8 +131,10 @@ export function createVmRuntime(options: VmRuntimeOptions): VmRuntimeState {
 		nativeObjectCache: new WeakMap(),
 		nativeFunctionCache: new WeakMap(),
 		nativeMemberCache: new WeakMap(),
+		nativeMetatables: new WeakMap(),
 		vmTableIds: new WeakMap(),
 		nextVmTableId: 1,
+		randomSeedValue: $.platform.clock.now(),
 		printHandler: (text: string) => console.log(text),
 		tickEnabled: true,
 		vmInitialized: false,
@@ -485,6 +489,8 @@ const resetVmState = (): void => {
 	vmRuntime.vmModuleCache.clear();
 	vmRuntime.vmModuleAliases.clear();
 	vmRuntime.vmModuleProtos.clear();
+	vmRuntime.nativeMetatables = new WeakMap();
+	vmRuntime.randomSeedValue = $.platform.clock.now();
 	for (let index = 0; index < vmRuntime.cpuMemory.length; index += 1) {
 		vmRuntime.cpuMemory[index] = null;
 	}
@@ -496,6 +502,140 @@ const registerVmGlobal = (name: string, value: Value): void => {
 	const key = vmRuntime.canonicalizeIdentifier(name);
 	vmRuntime.cpu.globals.set(key, value);
 };
+
+function isVmTruthy(value: Value): boolean {
+	return value !== null && value !== false;
+}
+
+function nextVmRandom(): number {
+	vmRuntime.randomSeedValue = (vmRuntime.randomSeedValue * 1664525 + 1013904223) % 4294967296;
+	return vmRuntime.randomSeedValue / 4294967296;
+}
+
+function getVmMetatable(value: Value): Table | null {
+	if (value instanceof Table) {
+		return value.getMetatable();
+	}
+	if (isNativeObject(value)) {
+		return vmRuntime.nativeMetatables.get(value) ?? null;
+	}
+	return null;
+}
+
+function setVmMetatable(value: Value, metatable: Table | null): void {
+	if (value instanceof Table) {
+		value.setMetatable(metatable);
+		return;
+	}
+	if (isNativeObject(value)) {
+		if (metatable === null) {
+			vmRuntime.nativeMetatables.delete(value);
+			return;
+		}
+		vmRuntime.nativeMetatables.set(value, metatable);
+		return;
+	}
+	throw new Error('setmetatable expects a table or native value.');
+}
+
+function callVmValue(fn: Value, args: Value[]): Value[] {
+	if (isNativeFunction(fn)) {
+		return fn.invoke(args);
+	}
+	return callVmFunction(fn as Closure, args);
+}
+
+function defaultSortCompare(left: Value, right: Value): number {
+	if (typeof left === 'number' && typeof right === 'number') {
+		if (left === right) {
+			return 0;
+		}
+		return left < right ? -1 : 1;
+	}
+	const leftText = vmToString(left);
+	const rightText = vmToString(right);
+	if (leftText === rightText) {
+		return 0;
+	}
+	return leftText < rightText ? -1 : 1;
+}
+
+function enumerateNativeKeys(target: object): Value[] {
+	const keys: Value[] = [];
+	for (const property of Object.keys(target)) {
+		const numeric = Number(property);
+		if (Number.isInteger(numeric) && String(numeric) === property) {
+			keys.push(numeric);
+		} else {
+			keys.push(property);
+		}
+	}
+	return keys;
+}
+
+function createNativePairsIterator(target: NativeObject): Value[] {
+	const keys = enumerateNativeKeys(target.raw as Record<string, unknown>);
+	let pointer = 0;
+	const iterator = createNativeFunction('native_pairs_iterator', (iteratorArgs) => {
+		const nativeTarget = iteratorArgs.length > 0 ? iteratorArgs[0] : null;
+		if (nativeTarget !== target) {
+			return [null];
+		}
+		if (pointer >= keys.length) {
+			return [null];
+		}
+		const key = keys[pointer];
+		pointer += 1;
+		const value = target.get(key);
+		return [key, value];
+	});
+	return [iterator, target, null];
+}
+
+function createNativeIpairsIterator(target: NativeObject): Value[] {
+	let pointer = 0;
+	const iterator = createNativeFunction('native_ipairs_iterator', (iteratorArgs) => {
+		const nativeTarget = iteratorArgs.length > 0 ? iteratorArgs[0] : null;
+		if (nativeTarget !== target) {
+			return [null];
+		}
+		pointer += 1;
+		const value = target.get(pointer);
+		if (value === null) {
+			return [null];
+		}
+		return [pointer, value];
+	});
+	return [iterator, target, null];
+}
+
+function tableInsert(target: Table, value: Value, position: number | null): void {
+	const length = target.length();
+	const targetIndex = position === null ? length + 1 : Math.max(1, Math.min(length + 1, position));
+	for (let index = length; index >= targetIndex; index -= 1) {
+		const current = target.get(index);
+		target.set(index + 1, current);
+	}
+	target.set(targetIndex, value);
+}
+
+function tableRemove(target: Table, position: number | null): Value {
+	const length = target.length();
+	if (length === 0) {
+		return null;
+	}
+	const targetIndex = position === null ? length : position;
+	if (targetIndex < 1 || targetIndex > length) {
+		return null;
+	}
+	const removed = target.get(targetIndex);
+	for (let index = targetIndex; index < length; index += 1) {
+		const next = target.get(index + 1);
+		target.set(index, next);
+	}
+	target.set(length, null);
+	return removed;
+}
 
 const seedVmGlobals = (): void => {
 	const mathTable = new Table(0, 0);
@@ -530,6 +670,38 @@ const seedVmGlobals = (): void => {
 			}
 		}
 		return [result];
+	}));
+	mathTable.set('sqrt', createNativeFunction('math.sqrt', (args) => {
+		const value = args[0] as number;
+		if (value < 0) {
+			throw createVmRuntimeError('math.sqrt cannot operate on negative numbers.');
+		}
+		return [Math.sqrt(value)];
+	}));
+	mathTable.set('random', createNativeFunction('math.random', (args) => {
+		const randomValue = nextVmRandom();
+		if (args.length === 0) {
+			return [randomValue];
+		}
+		if (args.length === 1) {
+			const upper = Math.floor(args[0] as number);
+			if (upper < 1) {
+				throw createVmRuntimeError('math.random upper bound must be positive.');
+			}
+			return [Math.floor(randomValue * upper) + 1];
+		}
+		const lower = Math.floor(args[0] as number);
+		const upper = Math.floor(args[1] as number);
+		if (upper < lower) {
+			throw createVmRuntimeError('math.random upper bound must be greater than or equal to lower bound.');
+		}
+		const span = upper - lower + 1;
+		return [lower + Math.floor(randomValue * span)];
+	}));
+	mathTable.set('randomseed', createNativeFunction('math.randomseed', (args) => {
+		const seedValue = args.length > 0 ? (args[0] as number) : $.platform.clock.now();
+		vmRuntime.randomSeedValue = Math.floor(seedValue) >>> 0;
+		return [];
 	}));
 	mathTable.set('pi', Math.PI);
 
@@ -587,6 +759,181 @@ const seedVmGlobals = (): void => {
 		}
 		vmRuntime.printHandler(parts.length === 0 ? '' : parts.join('\t'));
 		return [];
+	}));
+	registerVmGlobal('assert', createNativeFunction('assert', (args) => {
+		const condition = args.length > 0 ? args[0] : null;
+		if (isVmTruthy(condition)) {
+			return Array.from(args);
+		}
+		const messageValue = args.length > 1 ? args[1] : 'assertion failed!';
+		const message = typeof messageValue === 'string' ? messageValue : vmToString(messageValue);
+		throw createVmRuntimeError(message);
+	}));
+	registerVmGlobal('error', createNativeFunction('error', (args) => {
+		const value = args.length > 0 ? args[0] : 'nil';
+		const message = typeof value === 'string' ? value : vmToString(value);
+		throw createVmRuntimeError(message);
+	}));
+	registerVmGlobal('rawequal', createNativeFunction('rawequal', (args) => {
+		if (args.length < 2) {
+			return [false];
+		}
+		return [args[0] === args[1]];
+	}));
+	registerVmGlobal('rawget', createNativeFunction('rawget', (args) => {
+		const table = args[0] as Table;
+		const key = args.length > 1 ? args[1] : null;
+		return [table.get(key)];
+	}));
+	registerVmGlobal('rawset', createNativeFunction('rawset', (args) => {
+		const table = args[0] as Table;
+		const key = args[1];
+		const value = args.length >= 3 ? args[2] : null;
+		table.set(key, value);
+		return [table];
+	}));
+	registerVmGlobal('pcall', createNativeFunction('pcall', (args) => {
+		const fn = args.length > 0 ? args[0] : null;
+		const functionArgs = args.slice(1);
+		try {
+			const result = callVmValue(fn, functionArgs);
+			return [true, ...result];
+		} catch (error) {
+			return [false, toError(error).message];
+		}
+	}));
+	registerVmGlobal('xpcall', createNativeFunction('xpcall', (args) => {
+		const fn = args.length > 0 ? args[0] : null;
+		const messageHandler = args.length > 1 ? args[1] : null;
+		const functionArgs = args.slice(2);
+		try {
+			const result = callVmValue(fn, functionArgs);
+			return [true, ...result];
+		} catch (error) {
+			const formatted = toError(error).message;
+			const handlerResult = callVmValue(messageHandler, [formatted]);
+			const first = handlerResult.length > 0 ? handlerResult[0] : null;
+			return [false, first];
+		}
+	}));
+	registerVmGlobal('select', createNativeFunction('select', (args) => {
+		if (args.length === 0) {
+			throw createVmRuntimeError('select expects at least one argument.');
+		}
+		const selector = args[0];
+		const valueCount = args.length - 1;
+		if (selector === '#') {
+			return [valueCount];
+		}
+		const index = Math.floor(selector as number);
+		let start = index;
+		if (index < 0) {
+			start = valueCount + index + 1;
+		}
+		if (start < 1) {
+			start = 1;
+		}
+		const result: Value[] = [];
+		for (let i = start; i <= valueCount; i += 1) {
+			result.push(args[i]);
+		}
+		return result;
+	}));
+	const nextFn = createNativeFunction('next', (args) => {
+		const table = args[0] as Table;
+		const lastKey = args.length > 1 ? args[1] : null;
+		const entries = table.entriesArray();
+		if (entries.length === 0) {
+			return [null];
+		}
+		if (lastKey === null) {
+			const [firstKey, firstValue] = entries[0];
+			return [firstKey, firstValue];
+		}
+		let returnNext = false;
+		for (const [key, value] of entries) {
+			if (returnNext) {
+				return [key, value];
+			}
+			if (key === lastKey) {
+				returnNext = true;
+			}
+		}
+		return [null];
+	});
+	registerVmGlobal('next', nextFn);
+	registerVmGlobal('pairs', createNativeFunction('pairs', (args) => {
+		const target = args[0];
+		const metatable = getVmMetatable(target);
+		if (metatable) {
+			const handler = metatable.get('__pairs');
+			if (handler !== null) {
+				const result = callVmValue(handler, [target]);
+				if (result.length < 2) {
+					throw createVmRuntimeError('__pairs metamethod must return at least two values.');
+				}
+				return result;
+			}
+		}
+		if (target instanceof Table) {
+			return [nextFn, target, null];
+		}
+		if (isNativeObject(target)) {
+			return createNativePairsIterator(target);
+		}
+		throw createVmRuntimeError('pairs expects a table or native value argument.');
+	}));
+	registerVmGlobal('ipairs', createNativeFunction('ipairs', (args) => {
+		const target = args[0];
+		const metatable = getVmMetatable(target);
+		if (metatable) {
+			const handler = metatable.get('__ipairs');
+			if (handler !== null) {
+				const result = callVmValue(handler, [target]);
+				if (result.length < 2) {
+					throw createVmRuntimeError('__ipairs metamethod must return at least two values.');
+				}
+				return result;
+			}
+		}
+		if (target instanceof Table) {
+			const table = target;
+			const iterator = createNativeFunction('ipairs_iterator', (iteratorArgs) => {
+				const tableArg = iteratorArgs.length > 0 ? iteratorArgs[0] : null;
+				if (tableArg !== table) {
+					return [null];
+				}
+				const previousIndex = iteratorArgs.length > 1 ? (iteratorArgs[1] as number) : 0;
+				const nextIndex = previousIndex + 1;
+				const value = table.get(nextIndex);
+				if (value === null) {
+					return [null];
+				}
+				return [nextIndex, value];
+			});
+			return [iterator, table, null];
+		}
+		if (isNativeObject(target)) {
+			return createNativeIpairsIterator(target);
+		}
+		throw createVmRuntimeError('ipairs expects a table or native value argument.');
+	}));
+	registerVmGlobal('setmetatable', createNativeFunction('setmetatable', (args) => {
+		const target = args[0];
+		const metatable = args.length > 1 ? args[1] : null;
+		if (metatable !== null && !(metatable instanceof Table)) {
+			throw createVmRuntimeError('setmetatable expects a table or nil as the second argument.');
+		}
+		setVmMetatable(target, metatable as Table | null);
+		return [target];
+	}));
+	registerVmGlobal('getmetatable', createNativeFunction('getmetatable', (args) => {
+		const target = args[0];
+		const metatable = getVmMetatable(target);
+		if (metatable === null) {
+			return [null];
+		}
+		return [metatable];
 	}));
 
 	const stringTable = new Table(0, 0);
@@ -668,6 +1015,196 @@ const seedVmGlobals = (): void => {
 		return [formatted];
 	}));
 	registerVmGlobal('string', stringTable);
+
+	const tableLib = new Table(0, 0);
+	tableLib.set('insert', createNativeFunction('table.insert', (args) => {
+		const target = args[0] as Table;
+		let position: number = null;
+		let value: Value = null;
+		if (args.length < 2) {
+			throw createVmRuntimeError('table.insert expects a table and a value.');
+		}
+		if (args.length === 2) {
+			value = args[1];
+		} else {
+			position = Math.floor(args[1] as number);
+			value = args[2];
+		}
+		tableInsert(target, value, position);
+		return [];
+	}));
+	tableLib.set('remove', createNativeFunction('table.remove', (args) => {
+		const target = args[0] as Table;
+		const position = args.length > 1 ? Math.floor(args[1] as number) : null;
+		const removed = tableRemove(target, position);
+		return removed === null ? [] : [removed];
+	}));
+	tableLib.set('concat', createNativeFunction('table.concat', (args) => {
+		const target = args[0] as Table;
+		const separator = args.length > 1 && typeof args[1] === 'string' ? (args[1] as string) : '';
+		const length = target.length();
+		const normalizeIndex = (value: number, fallback: number): number => {
+			const integer = Math.floor(value);
+			if (integer > 0) {
+				return integer;
+			}
+			if (integer < 0) {
+				return length + integer + 1;
+			}
+			return fallback;
+		};
+		const startIndexRaw = args.length > 2 ? (args[2] as number) : 1;
+		const endIndexRaw = args.length > 3 ? (args[3] as number) : length;
+		const startIndex = Math.max(1, Math.min(length, normalizeIndex(startIndexRaw, 1)));
+		const endIndex = Math.max(0, Math.min(length, normalizeIndex(endIndexRaw, length)));
+		if (endIndex < startIndex) {
+			return [''];
+		}
+		const parts: string[] = [];
+		for (let index = startIndex; index <= endIndex; index += 1) {
+			const value = target.get(index);
+			parts.push(value === null ? '' : vmToString(value));
+		}
+		return [parts.join(separator)];
+	}));
+	tableLib.set('pack', createNativeFunction('table.pack', (args) => {
+		const table = new Table(0, 0);
+		for (let index = 0; index < args.length; index += 1) {
+			table.set(index + 1, args[index]);
+		}
+		table.set('n', args.length);
+		return [table];
+	}));
+	tableLib.set('unpack', createNativeFunction('table.unpack', (args) => {
+		const target = args[0] as Table;
+		const length = target.length();
+		const normalizeIndex = (value: number, fallback: number): number => {
+			const integer = Math.floor(value);
+			if (integer > 0) {
+				return integer;
+			}
+			if (integer < 0) {
+				return length + integer + 1;
+			}
+			return fallback;
+		};
+		const startIndexRaw = args.length > 1 ? (args[1] as number) : 1;
+		const endIndexRaw = args.length > 2 ? (args[2] as number) : length;
+		const startIndex = Math.max(1, Math.min(length, normalizeIndex(startIndexRaw, 1)));
+		const endIndex = Math.max(0, Math.min(length, normalizeIndex(endIndexRaw, length)));
+		if (endIndex < startIndex) {
+			return [];
+		}
+		const values: Value[] = [];
+		for (let index = startIndex; index <= endIndex; index += 1) {
+			values.push(target.get(index));
+		}
+		return values;
+	}));
+	tableLib.set('sort', createNativeFunction('table.sort', (args) => {
+		const target = args[0] as Table;
+		const comparator = args.length > 1 && args[1] !== null ? args[1] : null;
+		const length = target.length();
+		const values: Value[] = [];
+		for (let index = 1; index <= length; index += 1) {
+			values.push(target.get(index));
+		}
+		values.sort((left, right) => {
+			if (comparator !== null) {
+				const response = callVmValue(comparator, [left, right]);
+				const first = response.length > 0 ? response[0] : null;
+				return first === true ? -1 : 1;
+			}
+			return defaultSortCompare(left, right);
+		});
+		for (let index = 1; index <= length; index += 1) {
+			target.set(index, values[index - 1]);
+		}
+		return [target];
+	}));
+	tableLib.set('fromnative', createNativeFunction('table.fromnative', (args) => {
+		if (args.length === 0) {
+			return [new Table(0, 0)];
+		}
+		const source = args[0];
+		if (source instanceof Table) {
+			return [source];
+		}
+		if (!isNativeObject(source)) {
+			return [new Table(0, 0)];
+		}
+		const nativeValue = source.raw;
+		if (!Array.isArray(nativeValue)) {
+			return [new Table(0, 0)];
+		}
+		const table = new Table(0, 0);
+		const array = nativeValue as unknown[];
+		for (let index = 0; index < array.length; index += 1) {
+			table.set(index + 1, toVmValue(array[index]));
+		}
+		table.set('__native', source);
+		return [table];
+	}));
+	registerVmGlobal('table', tableLib);
+
+	const osTable = new Table(0, 0);
+	osTable.set('time', createNativeFunction('os.time', (args) => {
+		if (args.length === 0) {
+			return [Math.floor($.platform.clock.now() / 1000)];
+		}
+		const tableArg = args[0] as Table;
+		const year = tableArg.get('year') as number;
+		if (year === null) {
+			throw createVmRuntimeError('os.time table requires year.');
+		}
+		const month = tableArg.get('month') as number;
+		if (month === null) {
+			throw createVmRuntimeError('os.time table requires month.');
+		}
+		const day = tableArg.get('day') as number;
+		if (day === null) {
+			throw createVmRuntimeError('os.time table requires day.');
+		}
+		const hourValue = tableArg.get('hour') as number;
+		const minValue = tableArg.get('min') as number;
+		const secValue = tableArg.get('sec') as number;
+		const hour = hourValue === null ? 0 : hourValue;
+		const min = minValue === null ? 0 : minValue;
+		const sec = secValue === null ? 0 : secValue;
+		const date = new Date(year, month - 1, day, hour, min, sec);
+		return [Math.floor(date.getTime() / 1000)];
+	}));
+	osTable.set('date', createNativeFunction('os.date', (args) => {
+		const formatValue = args.length > 0 ? args[0] : null;
+		const timestampValue = args.length > 1 ? (args[1] as number) : null;
+		const timestamp = timestampValue === null ? Math.floor($.platform.clock.now() / 1000) : Math.floor(timestampValue);
+		const date = new Date(timestamp * 1000);
+		if (formatValue === null) {
+			return [date.toISOString()];
+		}
+		if (typeof formatValue !== 'string') {
+			throw createVmRuntimeError('os.date expects a format string.');
+		}
+		const format = formatValue as string;
+		if (format === '*t') {
+			const table = new Table(0, 0);
+			table.set('year', date.getUTCFullYear());
+			table.set('month', date.getUTCMonth() + 1);
+			table.set('day', date.getUTCDate());
+			table.set('hour', date.getUTCHours());
+			table.set('min', date.getUTCMinutes());
+			table.set('sec', date.getUTCSeconds());
+			table.set('isdst', false);
+			return [table];
+		}
+		return [date.toISOString()];
+	}));
+	osTable.set('difftime', createNativeFunction('os.difftime', (args) => {
+		const t2 = args.length > 0 ? (args[0] as number) : 0;
+		const t1 = args.length > 1 ? (args[1] as number) : 0;
+		return [t2 - t1];
+	}));
+	registerVmGlobal('os', osTable);
 
 	const members = collectApiMembers();
 	for (const { name, kind, descriptor } of members) {
@@ -1242,11 +1779,36 @@ const toVmValue = (value: unknown): Value => {
 		return getOrCreateNativeObject(value);
 	}
 	if (typeof value === 'function') {
+		if (isVmHandlerFunction(value)) {
+			const binding = vmRuntime.vmHandlerCache.unwrap(value);
+			if (binding) {
+				return binding.fn;
+			}
+		}
 		return getOrCreateNativeFunction(value);
 	}
-	if (isPlainObject(value)) {
+	if (value instanceof Set) {
 		const table = new Table(0, 0);
-		for (const [prop, entry] of Object.entries(value)) {
+		let index = 1;
+		for (const entry of value.values()) {
+			table.set(index, toVmValue(entry));
+			index += 1;
+		}
+		return table;
+	}
+	if (isPlainObject(value)) {
+		const record = value as Record<string, unknown>;
+		if (record.__bmsx_table__ === 'map' && Array.isArray(record.entries)) {
+			const entries = record.entries as Array<{ key: unknown; value: unknown }>;
+			const table = new Table(0, 0);
+			for (let index = 0; index < entries.length; index += 1) {
+				const entry = entries[index];
+				table.set(toVmValue(entry.key), toVmValue(entry.value));
+			}
+			return table;
+		}
+		const table = new Table(0, 0);
+		for (const [prop, entry] of Object.entries(record)) {
 			table.set(prop, toVmValue(entry));
 		}
 		return table;
@@ -1298,6 +1860,13 @@ const vmTableToNative = (table: Table, context: VmMarshalContext, visited: WeakM
 	}
 	const tableId = getOrAssignVmTableId(table);
 	const tableContext = extendMarshalContext(context, `table${tableId}`);
+	const nativeRef = table.get('__native') ?? table.get('__native__');
+	if (nativeRef !== null) {
+		if (isNativeObject(nativeRef)) {
+			return nativeRef.raw;
+		}
+		return toNativeValue(nativeRef, tableContext, visited);
+	}
 	const entries = table.entriesArray();
 	if (entries.length === 0) {
 		const empty: Record<string, unknown> = {};
@@ -1320,14 +1889,12 @@ const vmTableToNative = (table: Table, context: VmMarshalContext, visited: WeakM
 	}
 
 	const hasOnlyNumeric = otherEntries.length === 0;
-	const isSequential = hasOnlyNumeric && maxNumericIndex === numericEntries.length;
-	if (isSequential) {
+	if (hasOnlyNumeric && numericEntries.length > 0) {
 		const result = new Array(maxNumericIndex);
 		visited.set(table, result);
-		for (let index = 0; index < numericEntries.length; index += 1) {
-			const entry = numericEntries[index];
-			const nextContext = extendMarshalContext(tableContext, String(entry.key));
-			result[entry.key - 1] = toNativeValue(entry.value, nextContext, visited);
+		for (let index = 1; index <= maxNumericIndex; index += 1) {
+			const nextContext = extendMarshalContext(tableContext, String(index));
+			result[index - 1] = toNativeValue(table.get(index), nextContext, visited);
 		}
 		return result;
 	}
@@ -1368,36 +1935,58 @@ const getOrCreateNativeObject = (value: object): NativeObject => {
 	if (existing) {
 		return existing;
 	}
+	const isArray = Array.isArray(value);
+	const arrayValue = isArray ? (value as unknown[]) : null;
 
 	const wrapper = createNativeObject(value, {
 		get: (key) => {
+			if (isArray && typeof key === 'number' && Number.isInteger(key)) {
+				const index = key - 1;
+				if (index < 0 || index >= arrayValue.length) {
+					return null;
+				}
+				const rawValue = arrayValue[index];
+				return rawValue === undefined ? null : toVmValue(rawValue);
+			}
 			const prop = resolveNativeKey(key);
 			if (!prop) {
-				return null;
+				throw new Error('Attempted to index native object with unsupported key.');
 			}
 			const rawValue = (value as Record<string, unknown>)[prop];
 			if (typeof rawValue === 'function') {
+				if (isVmHandlerFunction(rawValue)) {
+					const binding = vmRuntime.vmHandlerCache.unwrap(rawValue);
+					if (binding) {
+						return binding.fn;
+					}
+				}
 				return getOrCreateNativeMethod(value, prop);
 			}
-			return rawValue === undefined ? null : toVmValue(rawValue);
+			if (rawValue === undefined) {
+				const typeName = resolveNativeTypeName(value);
+				throw new Error(`Attempted to index missing native member '${prop}' on ${typeName}.`);
+			}
+			return toVmValue(rawValue);
 		},
 		set: (key, entryValue) => {
+			if (isArray && typeof key === 'number' && Number.isInteger(key)) {
+				const index = key - 1;
+				if (index < 0) {
+					throw new Error('Array index must be positive.');
+				}
+				arrayValue[index] = toNativeValue(entryValue, buildVmContext(), new WeakMap());
+				return;
+			}
 			const prop = resolveNativeKey(key);
 			if (!prop) {
-				return;
+				throw new Error('Attempted to assign native object with unsupported key.');
+			}
+			if (isArray && prop === 'length') {
+				throw new Error('Cannot assign length on native Array from VM.');
 			}
 			(value as Record<string, unknown>)[prop] = toNativeValue(entryValue, buildVmContext(), new WeakMap());
 		},
-		len: () => {
-			if (Array.isArray(value)) {
-				return value.length;
-			}
-			const rawValue = (value as { length?: unknown }).length;
-			if (typeof rawValue === 'number') {
-				return rawValue;
-			}
-			return null;
-		},
+		len: isArray ? () => arrayValue.length : undefined,
 	});
 	vmRuntime.nativeObjectCache.set(value, wrapper);
 	return wrapper;
@@ -1467,6 +2056,7 @@ const callVmFunction = (fn: Closure, args: Value[]): Value[] => {
 	vmRuntime.cpu.instructionBudgetRemaining = null;
 	vmRuntime.cpu.runUntilDepth(depth);
 	vmRuntime.cpu.instructionBudgetRemaining = previousBudget;
+	processVmIo();
 	return vmRuntime.cpu.lastReturnValues;
 };
 
@@ -1499,15 +2089,21 @@ const createNativeArrayFromTable = (table: Table, context: VmMarshalContext): un
 	const tableContext = extendMarshalContext(context, `table${tableId}`);
 	const entries = table.entriesArray();
 	const output: unknown[] = [];
+	let maxNumericIndex = 0;
 	for (let index = 0; index < entries.length; index += 1) {
 		const [key, value] = entries[index];
 		if (typeof key === 'number' && Number.isInteger(key) && key >= 1) {
-			output[key - 1] = toNativeValue(value, extendMarshalContext(tableContext, String(key)), new WeakMap());
+			if (key > maxNumericIndex) {
+				maxNumericIndex = key;
+			}
 			continue;
 		}
 		const segment = describeMarshalSegment(key);
 		const nextContext = segment ? extendMarshalContext(tableContext, segment) : tableContext;
 		output.push(toNativeValue(value, nextContext, new WeakMap()));
+	}
+	for (let index = 1; index <= maxNumericIndex; index += 1) {
+		output[index - 1] = toNativeValue(table.get(index), extendMarshalContext(tableContext, String(index)), new WeakMap());
 	}
 	return output;
 };

@@ -109,19 +109,13 @@ export class LuaJsBridge implements LuaInteropAdapter {
 			}
 			otherEntries.push({ key, value: entryValue });
 		}
-		const isSequential = numericEntries.length === entries.length && numericEntries.length === maxNumericIndex;
-		if (isSequential) {
+		const hasOnlyNumeric = otherEntries.length === 0;
+		if (hasOnlyNumeric && numericEntries.length > 0) {
 			const result: unknown[] = new Array(maxNumericIndex);
 			visited.set(table, result);
-			for (let index = 0; index < numericEntries.length; index += 1) {
-				const entry = numericEntries[index];
-				const segment = this.describeMarshalSegment(entry.key);
-				const converted = this.luaValueToJsWithVisited(
-					entry.value,
-					segment ? this.vmRuntime.extendMarshalContext(tableContext, segment) : tableContext,
-					visited,
-				);
-				result[entry.key - 1] = converted;
+			for (let index = 1; index <= maxNumericIndex; index += 1) {
+				const nextContext = this.vmRuntime.extendMarshalContext(tableContext, String(index));
+				result[index - 1] = this.luaValueToJsWithVisited(table.get(index), nextContext, visited);
 			}
 			return result;
 		}

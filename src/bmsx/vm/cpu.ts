@@ -143,6 +143,7 @@ type CallFrame = {
 export class Table {
 	private readonly array: Value[];
 	private readonly map: Map<Value, Value>;
+	private metatable: Table | null = null;
 
 	constructor(arraySize: number, _hashSize: number) {
 		this.array = new Array(arraySize);
@@ -202,6 +203,14 @@ export class Table {
 			entries.push(entry);
 		}
 		return entries;
+	}
+
+	public getMetatable(): Table | null {
+		return this.metatable;
+	}
+
+	public setMetatable(metatable: Table | null): void {
+		this.metatable = metatable;
 	}
 
 	private isArrayIndex(key: Value): boolean {
