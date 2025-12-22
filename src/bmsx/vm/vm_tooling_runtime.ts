@@ -121,6 +121,7 @@ class DebugPauseCoordinator {
 }
 
 type DebuggerStepOrigin = { path: string; line: number; depth: number };
+type VmProgramSource = 'engine' | 'cart';
 
 export var api: BmsxVMApi; // Initialized in BmsxVMRuntime constructor
 
@@ -149,17 +150,23 @@ export class BmsxVMRuntime {
 		const playerIndex = Input.instance.startupGamepadIndex ?? 1;
 		$.view.default_font = new VMFont();
 
+		const engineSource = new AssetSourceStack([{ id: engineLayer.id, index: engineLayer.index, payload: engineLayer.payload }]);
+		const engineLuaSources = BmsxVMRuntime.buildLuaSources({
+			cartSource: engineSource,
+			assetSource: engineSource,
+			index: engineLayer.index,
+		});
+
 		if (!cartridge) {
-			const luaSources: LuaSourceRegistry = {
-				path2lua: {},
-				entry_path: engineLayer.index.manifest.lua.entry_path,
-				namespace: engineLayer.index.manifest.vm.namespace,
-			};
-			$.setLuaSources(luaSources);
+			$.setLuaSources(engineLuaSources);
 			const runtime = BmsxVMRuntime.createInstance({
 				playerIndex,
 				canonicalization: engineLayer.index.manifest.vm.canonicalization,
 				viewport: engineLayer.index.manifest.vm.viewport,
+			});
+			runtime.configureProgramSources({
+				engineSources: engineLuaSources,
+				engineCanonicalization: engineLayer.index.manifest.vm.canonicalization,
 			});
 			await runtime.boot();
 			$.start();
@@ -185,12 +192,11 @@ export class BmsxVMRuntime {
 		$.view.primaryAtlas = 0;
 
 		const cartSource = new AssetSourceStack([{ id: cartLayer.id, index: cartLayer.index, payload: cartLayer.payload }]);
-		const luaSources = BmsxVMRuntime.buildLuaSources({
+		const cartLuaSources = BmsxVMRuntime.buildLuaSources({
 			cartSource,
 			assetSource,
 			index: cartLayer.index,
 		});
-		$.setLuaSources(luaSources);
 
 		const inputMappingPerPlayer = cartLayer.index.manifest.input ?? { 1: { keyboard: null, gamepad: null, pointer: null } as InputMap };
 		for (const playerIndexStr of Object.keys(inputMappingPerPlayer)) {
@@ -199,12 +205,19 @@ export class BmsxVMRuntime {
 			$.set_inputmap(mappedIndex, inputMapping);
 		}
 
-		await applyWorkspaceOverridesToCart({ cart: $.luaSources, storage: $.platform.storage, includeServer: true });
+		await applyWorkspaceOverridesToCart({ cart: cartLuaSources, storage: $.platform.storage, includeServer: true });
+		$.setLuaSources(engineLuaSources);
 
 		const runtime = BmsxVMRuntime.createInstance({
 			playerIndex,
-			canonicalization: cartLayer.index.manifest.vm.canonicalization,
+			canonicalization: engineLayer.index.manifest.vm.canonicalization,
 			viewport: cartLayer.index.manifest.vm.viewport,
+		});
+		runtime.configureProgramSources({
+			engineSources: engineLuaSources,
+			cartSources: cartLuaSources,
+			engineCanonicalization: engineLayer.index.manifest.vm.canonicalization,
+			cartCanonicalization: cartLayer.index.manifest.vm.canonicalization,
 		});
 		await runtime.boot();
 		$.start();
@@ -257,6 +270,31 @@ export class BmsxVMRuntime {
 
 	public setCartEntryAvailable(value: boolean): void {
 		this.cartEntryAvailable = value;
+	}
+
+	private configureProgramSources(params: {
+		engineSources: LuaSourceRegistry;
+		cartSources?: LuaSourceRegistry;
+		engineCanonicalization: CanonicalizationType;
+		cartCanonicalization?: CanonicalizationType;
+	}): void {
+		this.engineLuaSources = params.engineSources;
+		this.cartLuaSources = params.cartSources ?? null;
+		this.engineCanonicalization = params.engineCanonicalization;
+		this.cartCanonicalization = params.cartCanonicalization ?? params.engineCanonicalization;
+		this.pendingCartBoot = false;
+	}
+
+	private activateProgramSource(source: VmProgramSource): void {
+		const luaSources = source === 'engine' ? this.engineLuaSources : this.cartLuaSources;
+		const canonicalization = source === 'engine' ? this.engineCanonicalization : this.cartCanonicalization;
+		$.setLuaSources(luaSources);
+		this.applyCanonicalization(canonicalization);
+		api.cartdata(luaSources.namespace);
+	}
+
+	private requestCartBoot(): void {
+		this.pendingCartBoot = true;
 	}
 
 	public readonly storage: BmsxVMStorage;
@@ -357,8 +395,13 @@ export class BmsxVMRuntime {
 	}
 	private hasCompletedInitialBoot = false;
 	private cartEntryAvailable = true;
-	private readonly _canonicalization: CanonicalizationType;
-	private readonly canonicalizeIdentifierFn: (value: string) => string;
+	private pendingCartBoot = false;
+	private engineLuaSources: LuaSourceRegistry = null;
+	private cartLuaSources: LuaSourceRegistry = null;
+	private engineCanonicalization: CanonicalizationType = null;
+	private cartCanonicalization: CanonicalizationType = null;
+	private _canonicalization: CanonicalizationType;
+	private canonicalizeIdentifierFn: (value: string) => string;
 	public get canonicalization(): CanonicalizationType {
 		return this._canonicalization;
 	}
@@ -372,10 +415,7 @@ export class BmsxVMRuntime {
 		this.storageService = $.platform.storage;
 		this.storage = new BmsxVMStorage(this.storageService, $.luaSources.namespace);
 		const resolvedCanonicalization = options.canonicalization ?? 'none';
-		this._canonicalization = resolvedCanonicalization;
-		this.canonicalizeIdentifierFn = createIdentifierCanonicalizer(this._canonicalization);
-		setLuaTableCaseInsensitiveKeys(this._canonicalization !== 'none');
-		setEditorCaseInsensitivity(this._canonicalization !== 'none');
+		this.applyCanonicalization(resolvedCanonicalization);
 		this.luaJsBridge = new LuaJsBridge(this, this.luaHandlerCache);
 		this.terminal = new TerminalMode(this);
 		this.cpuMemory = new Array<Value>(VM_IO_MEMORY_SIZE);
@@ -393,6 +433,9 @@ export class BmsxVMRuntime {
 				reboot: () => {
 					void this.reloadProgramAndResetWorld();
 				},
+				bootCart: () => {
+					this.requestCartBoot();
+				},
 			},
 		});
 		this.editor = createVMCartEditor(options.viewport);
@@ -405,6 +448,13 @@ export class BmsxVMRuntime {
 		this.subscribeGlobalDebuggerHotkeys();
 		this.setDebuggerBreakpoints(ide_state.breakpoints);
 		$.pipeline_ext = vmExtSpec; // Activate base VM pipeline extensions by default (for ticking the VM and drawing the VM)
+	}
+
+	private applyCanonicalization(canonicalization: CanonicalizationType): void {
+		this._canonicalization = canonicalization;
+		this.canonicalizeIdentifierFn = createIdentifierCanonicalizer(this._canonicalization);
+		setLuaTableCaseInsensitiveKeys(this._canonicalization !== 'none');
+		setEditorCaseInsensitivity(this._canonicalization !== 'none');
 	}
 
 	private extractErrorLocation(error: unknown): { line: number; column: number; path: string } {
@@ -878,6 +928,7 @@ export class BmsxVMRuntime {
 		if (!this.tickEnabled) {
 			return;
 		}
+		this.processPendingCartBoot();
 		this.processPendingProgramReload();
 		if (this.isOverlayActive()) {
 			return;
@@ -892,6 +943,7 @@ export class BmsxVMRuntime {
 		if (!this.tickEnabled) {
 			return;
 		}
+		this.processPendingCartBoot();
 		this.processPendingProgramReload();
 		if (this.isOverlayActive()) {
 			return;
@@ -910,6 +962,7 @@ export class BmsxVMRuntime {
 		if (!this.tickEnabled) {
 			return;
 		}
+		this.processPendingCartBoot();
 		this.processPendingProgramReload();
 		if (this.currentFrameState !== null) {
 			return;
@@ -923,6 +976,7 @@ export class BmsxVMRuntime {
 		if (!this.tickEnabled) {
 			return;
 		}
+		this.processPendingCartBoot();
 		if (!this.currentFrameState) {
 			return;
 		}
@@ -937,6 +991,7 @@ export class BmsxVMRuntime {
 		if (!this.tickEnabled) {
 			return;
 		}
+		this.processPendingCartBoot();
 		this.processPendingProgramReload();
 		if (this.currentFrameState !== null) {
 			return;
@@ -950,6 +1005,7 @@ export class BmsxVMRuntime {
 		if (!this.tickEnabled) {
 			return;
 		}
+		this.processPendingCartBoot();
 		if (!this.currentFrameState) {
 			return;
 		}
@@ -1139,6 +1195,21 @@ export class BmsxVMRuntime {
 		this.pendingProgramReload = { runInit: options?.runInit };
 	}
 
+	private processPendingCartBoot(): void {
+		if (!this.pendingCartBoot) {
+			return;
+		}
+		if (!this.luaVmGate.ready) {
+			return;
+		}
+		if (this.currentFrameState || this.pendingVmCall) {
+			return;
+		}
+		this.pendingCartBoot = false;
+		this.activateProgramSource('cart');
+		void this.reloadProgramAndResetWorld();
+	}
+
 	private processPendingProgramReload(): void {
 		if (!this.pendingProgramReload) {
 			return;
@@ -1324,7 +1395,7 @@ export class BmsxVMRuntime {
 		let binding = $.luaSources.path2lua[$.luaSources.entry_path] as LuaSourceRecord;
 		if (!binding) {
 			// This can happen if there is no Lua entry point defined in the cart. For example, when there is no cart loaded and the player still tried to write code and run it.
-			// Luckily, this is not a fatal error as the description will point towards `__engine_assets__.lua`
+			// Luckily, this is not a fatal error as the description will point towards `res/code/system_program.lua`
 			// binding =  { source_path: $.luaSources.entry_path, resid: $.luaSources.entry_path, type: 'lua', src: '', normalized_source_path: $.luaSources.entry_path, update_timestamp: $.platform.clock.dateNow(), base_src: '' };
 			console.info(`[BmsxVMRuntime] No Lua entry point defined; cannot reload program. Please save the entry point and try again.`);
 			return;
@@ -1668,6 +1739,7 @@ export class BmsxVMRuntime {
 
 	private resetVmState(): void {
 		this.pendingVmCall = null;
+		this.pendingCartBoot = false;
 		this.vmInitClosure = null;
 		this.vmNewGameClosure = null;
 		this.vmUpdateClosure = null;
@@ -2487,7 +2559,7 @@ export class BmsxVMRuntime {
 			this.luaChunkEnvironmentsByPath.clear();
 			this.luaGenericChunksExecuted.clear();
 
-			// Reload the program source from the cartridge and reset the world
+			// Reload the active program source and reset the world
 			await $.reset_to_fresh_world();
 			$.view.primaryAtlas = 0;
 			try {

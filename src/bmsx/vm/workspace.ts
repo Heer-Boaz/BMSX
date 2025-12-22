@@ -175,14 +175,17 @@ function resolveOverrideUpdatedAt(record: WorkspaceOverrideRecord, fallback: num
 
 function resolveWorkspacePathForIo(path: string, projectRootPath?: string): string {
 	const root = projectRootPath ?? $.assets.project_root_path;
+	const normalizedPath = path.replace(/^\.?\//, '');
 	if (path.startsWith('/') || /^[A-Za-z]:[\\/]/.test(path)) {
 		return path;
+	}
+	if (normalizedPath.startsWith('src/')) {
+		return normalizedPath;
 	}
 	if (!root) {
 		return path;
 	}
 	const normalizedRoot = root.replace(/^\.?\//, '');
-	const normalizedPath = path.replace(/^\.?\//, '');
 	if (normalizedPath.startsWith(normalizedRoot)) {
 		return normalizedPath;
 	}

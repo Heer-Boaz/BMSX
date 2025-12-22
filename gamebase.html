@@ -155,7 +155,7 @@
 					await bootrom.loadCart(`./${romurl ?? ''}`);
 					await bootrom.start();
 				} catch (err) {
-					bootrom.outputError('Failed to boot rom.\n' + err.stack ?? err);
+					bootrom.outputError('Failed to boot rom.\n' + err.stack ?? err ?? 'No error information available :-(');
 				}
 			}
 		</script>

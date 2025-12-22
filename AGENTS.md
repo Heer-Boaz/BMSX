@@ -63,14 +63,14 @@ Coding policies: *no defensive checks, trust the types, trust proper initializat
 	Also avoid code like this:
 	```typescript
 	private doSomething(): void {
-		this?.someProperty?.doAction(); // Avoid optional chaining for properties that should always be defined
+		this?.someProperty?.doAction(); // Avoid optional chaining for properties that should always be defined, otherwise it hides potential bugs
 	}
 	```
 	Instead, do this:
 	```typescript
 	interface SomeType {
 		doAction(): void;
-		doOptionalAction?(): void; // Optional method
+		doOptionalAction?(): void; // Optional method, so optional chaining is acceptable here! Don't think that optional chaining is always bad, it's only bad when used to hide potential bugs or simplify initialization logic!
 	}
 
 	private doSomething(): void {
@@ -116,6 +116,31 @@ Coding policies: *no defensive checks, trust the types, trust proper initializat
 	function smartFunction(value: string[]): string[] {
 		// (...)
 		return value; // Assume value is always a valid, non-empty array, or handle empty arrays as needed without returning null
+	}
+	```
+	Another example for the same:
+	```typescript
+	function ensureActiveCodeTabMatchesLuaSources(): void {
+		const context = getActiveCodeTabContext();
+		const activePath = context && context.descriptor ? context.descriptor.path : null;
+		if (activePath && $.luaSources.path2lua[activePath]) {
+			return;
+		}
+		// (...)
+		openLuaCodeTab({ path: entryPath, type: 'lua', asset_id: entryAsset.resid });
+	}
+	```
+	Should be:
+	```typescript
+	function ensureActiveCodeTabMatchesLuaSources(): void {
+		const context = getActiveCodeTabContext();
+		const activePath = context?.descriptor?.path;
+		if (activePath && $.luaSources.path2lua[activePath]) {
+			return;
+		}
+		// (...)
+		openLuaCodeTab({ path: entryPath, type: 'lua', asset_id: entryAsset.resid });
+	}
 	}
 	```
 

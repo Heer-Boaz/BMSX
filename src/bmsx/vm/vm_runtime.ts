@@ -2,8 +2,8 @@ import { $ } from '../core/engine_core';
 import { taskGate } from '../core/taskgate';
 import { Input } from '../input/input';
 import type { InputMap } from '../input/inputtypes';
-import type { BmsxCartridgeBlob, RomAsset } from '../rompack/rompack';
-import { AssetSourceStack } from '../rompack/asset_source';
+import type { BmsxCartridgeBlob, RomAsset, RomManifest } from '../rompack/rompack';
+import { AssetSourceStack, type RawAssetSource } from '../rompack/asset_source';
 import { applyRuntimeAssetLayer, buildRuntimeAssetLayer } from '../rompack/romloader';
 import { createIdentifierCanonicalizer } from '../utils/identifier_canonicalizer';
 import type { StorageService } from '../platform/platform';
@@ -44,6 +44,8 @@ export type VmFrameState = {
 	deltaSeconds: number;
 };
 
+type VmProgramSource = 'engine' | 'active';
+
 export type VmRuntimeState = {
 	playerIndex: number;
 	storageService: StorageService;
@@ -59,6 +61,8 @@ export type VmRuntimeState = {
 	pendingVmCall: 'update' | 'draw' | null;
 	currentFrameState: VmFrameState | null;
 	pendingProgramReload: { runInit?: boolean } | null;
+	pendingCartBoot: boolean;
+	programSource: VmProgramSource;
 	vmModuleAliases: Map<string, string>;
 	vmModuleProtos: Map<string, number>;
 	vmModuleCache: Map<string, Value>;
@@ -78,7 +82,7 @@ export type VmRuntimeState = {
 export let vmRuntime: VmRuntimeState = null;
 export let api: BmsxVMApi;
 
-const vmGate = taskGate.group('console:vm');
+const vmGate = taskGate.group('vm');
 
 const toError = (error: unknown): Error =>
 	error instanceof Error ? error : new Error(String(error));
@@ -106,6 +110,9 @@ export function createVmRuntime(options: VmRuntimeOptions): VmRuntimeState {
 			reboot: () => {
 				void reloadProgramAndResetWorld();
 			},
+			bootCart: () => {
+				requestCartBoot();
+			},
 		},
 	});
 
@@ -124,6 +131,8 @@ export function createVmRuntime(options: VmRuntimeOptions): VmRuntimeState {
 		pendingVmCall: null,
 		currentFrameState: null,
 		pendingProgramReload: null,
+		pendingCartBoot: false,
+		programSource: 'engine',
 		vmModuleAliases: new Map(),
 		vmModuleProtos: new Map(),
 		vmModuleCache: new Map(),
@@ -206,8 +215,63 @@ export async function initVmRuntime(cartridge?: BmsxCartridgeBlob): Promise<void
 	$.start();
 }
 
+type ProgramSourceContext = {
+	manifest: RomManifest;
+	assetSource: RawAssetSource;
+};
+
+const resolveProgramManifest = (): RomManifest => {
+	if (vmRuntime.programSource === 'engine') {
+		return $.engineLayer.index.manifest;
+	}
+	return $.assets.manifest;
+};
+
+const resolveProgramAsset = (): VmProgramAsset => {
+	if (vmRuntime.programSource === 'engine') {
+		return $.engineLayer.assets.data[VM_PROGRAM_ASSET_ID] as VmProgramAsset;
+	}
+	return $.assets.data[VM_PROGRAM_ASSET_ID] as VmProgramAsset;
+};
+
+const resolveProgramSourceContext = (): ProgramSourceContext => {
+	if (vmRuntime.programSource === 'engine') {
+		const engineLayer = $.engineLayer;
+		const assetSource = new AssetSourceStack([{ id: engineLayer.id, index: engineLayer.index, payload: engineLayer.payload }]);
+		return { manifest: engineLayer.index.manifest, assetSource };
+	}
+	return { manifest: $.assets.manifest, assetSource: $.assetSource };
+};
+
+const syncRuntimeCanonicalization = (): void => {
+	const manifest = resolveProgramManifest();
+	const canonicalization = manifest.vm.canonicalization ?? 'none';
+	vmRuntime.canonicalization = canonicalization;
+	vmRuntime.canonicalizeIdentifier = createIdentifierCanonicalizer(canonicalization);
+};
+
+function requestCartBoot(): void {
+	vmRuntime.programSource = 'active';
+	vmRuntime.pendingCartBoot = true;
+}
+
+function processPendingCartBoot(): void {
+	if (!vmRuntime.pendingCartBoot) {
+		return;
+	}
+	if (!vmGate.ready) {
+		return;
+	}
+	if (vmRuntime.currentFrameState || vmRuntime.pendingVmCall) {
+		return;
+	}
+	vmRuntime.pendingCartBoot = false;
+	void reloadProgramAndResetWorld();
+}
+
 const bootVmProgram = (options?: { runInit?: boolean }): void => {
 	vmRuntime.vmInitialized = false;
+	syncRuntimeCanonicalization();
 	resetVmState();
 	const entryProtoIndex = loadProgramFromAssets();
 	vmRuntime.cpu.start(entryProtoIndex);
@@ -249,6 +313,7 @@ export const tickUpdate = (): void => {
 	if (!vmRuntime.tickEnabled) {
 		return;
 	}
+	processPendingCartBoot();
 	processPendingProgramReload();
 	if (vmRuntime.currentFrameState !== null) {
 		return;
@@ -339,14 +404,13 @@ const mapModuleProtoIndices = (asset: VmProgramAsset, incomingProtoIds: Readonly
 	}
 };
 
-const decodeLuaChunk = (asset: RomAsset): LuaChunk => {
+const decodeLuaChunk = (source: RawAssetSource, asset: RomAsset): LuaChunk => {
 	const compiledEntry = { ...asset, start: asset.compiled_start, end: asset.compiled_end };
-	const bytes = $.assetSource.getBytes(compiledEntry);
+	const bytes = source.getBytes(compiledEntry);
 	return decodeBinary(bytes) as LuaChunk;
 };
 
-const loadProgramFromProgramAsset = (baseProgram?: Program): number | null => {
-	const programAsset = $.assets.data[VM_PROGRAM_ASSET_ID] as VmProgramAsset;
+const loadProgramFromProgramAsset = (programAsset: VmProgramAsset, baseProgram?: Program): number | null => {
 	if (!programAsset) {
 		return null;
 	}
@@ -381,9 +445,9 @@ const loadProgramFromProgramAsset = (baseProgram?: Program): number | null => {
 	return programAsset.entryProtoIndex;
 };
 
-const loadProgramFromSources = (baseProgram?: Program): number => {
-	const entryPath = $.assets.manifest.lua.entry_path;
-	const luaAssets = $.assetSource.list('lua');
+const loadProgramFromSources = (context: ProgramSourceContext, baseProgram?: Program): number => {
+	const entryPath = context.manifest.lua.entry_path;
+	const luaAssets = context.assetSource.list('lua');
 	if (luaAssets.length === 0) {
 		throw new Error('[VMRuntime] No Lua assets found; cannot build VM program.');
 	}
@@ -391,7 +455,7 @@ const loadProgramFromSources = (baseProgram?: Program): number => {
 	if (!entryAsset) {
 		throw new Error(`[VMRuntime] Lua entry '${entryPath}' not found in asset list.`);
 	}
-	const entryChunk = decodeLuaChunk(entryAsset);
+	const entryChunk = decodeLuaChunk(context.assetSource, entryAsset);
 	const modules: ProgramModule[] = [];
 	const modulePaths: string[] = [];
 	for (const asset of luaAssets) {
@@ -400,7 +464,7 @@ const loadProgramFromSources = (baseProgram?: Program): number => {
 		if (asset === entryAsset) {
 			continue;
 		}
-		const chunk = decodeLuaChunk(asset);
+		const chunk = decodeLuaChunk(context.assetSource, asset);
 		modules.push({ path, chunk });
 	}
 	const compiled = compileLuaChunkToProgram(entryChunk, modules, baseProgram ? { baseProgram } : {});
@@ -418,11 +482,11 @@ const loadProgramFromSources = (baseProgram?: Program): number => {
 };
 
 const loadProgramFromAssets = (baseProgram?: Program): number => {
-	const entryProtoIndex = loadProgramFromProgramAsset(baseProgram);
+	const entryProtoIndex = loadProgramFromProgramAsset(resolveProgramAsset(), baseProgram);
 	if (entryProtoIndex !== null) {
 		return entryProtoIndex;
 	}
-	return loadProgramFromSources(baseProgram);
+	return loadProgramFromSources(resolveProgramSourceContext(), baseProgram);
 };
 
 const applyProgramReload = (options?: { runInit?: boolean }): void => {
@@ -480,6 +544,7 @@ const runVmLifecycleHandler = (kind: 'init' | 'new_game'): void => {
 const resetVmState = (): void => {
 	vmRuntime.pendingVmCall = null;
 	vmRuntime.pendingProgramReload = null;
+	vmRuntime.pendingCartBoot = false;
 	vmRuntime.vmInitClosure = null;
 	vmRuntime.vmNewGameClosure = null;
 	vmRuntime.vmUpdateClosure = null;

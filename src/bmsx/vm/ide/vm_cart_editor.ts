@@ -1460,6 +1460,7 @@ export function shutdown(): void {
 }
 
 export function activate(): void {
+	ensureActiveCodeTabMatchesLuaSources();
 	ide_state.input.applyOverrides(true, captureKeys);
 	if (ide_state.activeCodeTabContextId) {
 		const existingTab = ide_state.tabs.find(candidate => candidate.id === ide_state.activeCodeTabContextId);
@@ -1516,6 +1517,23 @@ export function activate(): void {
 		});
 		if (rendered) BmsxVMRuntime.instance.flushedFaultOverlay();
 	}
+}
+
+function ensureActiveCodeTabMatchesLuaSources(): void {
+	const context = getActiveCodeTabContext();
+	const activePath = context?.descriptor?.path;
+	if (activePath && $.luaSources.path2lua[activePath]) {
+		return;
+	}
+	const entryPath = $.luaSources.entry_path;
+	if (!entryPath) {
+		return;
+	}
+	const entryAsset = $.luaSources.path2lua[entryPath];
+	if (!entryAsset) {
+		return;
+	}
+	openLuaCodeTab({ path: entryPath, type: 'lua', asset_id: entryAsset.resid });
 }
 
 export function applyEditorCrtDimming(): void {

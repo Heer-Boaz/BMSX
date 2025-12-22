@@ -46,6 +46,7 @@ export type BmsxVMApiOptions = {
 export type BmsxVMRuntimeBridge = {
 	getRuntime: () => unknown;
 	reboot: () => void;
+	bootCart: () => void;
 };
 
 const VM_TAB_SPACES = 2;
@@ -413,6 +414,14 @@ export class BmsxVMApi {
 
 	public cartdata(namespace: string): void {
 		this.storage.setNamespace(namespace);
+	}
+
+	public cart_present(): boolean {
+		return $.assets.project_root_path !== $.engineLayer.index.projectRootPath;
+	}
+
+	public boot_cart(): void {
+		this.runtimeBridge.bootCart();
 	}
 
 	public dset(index: number, value: number): void {
