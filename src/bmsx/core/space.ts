@@ -94,12 +94,11 @@ export class Space {
 		const spawnPos = pos ? { x: pos.x, y: pos.y, z: pos.z } : undefined;
 		// BeginPlay: call onspawn once with an explicit reason; transfer/move paths pass skip=true.
 		const skip = opts?.skipOnSpawn ?? false;
-		const reason = (typeof opts === 'object' && opts !== null && !(opts instanceof Boolean)) ? opts.reason : undefined;
-		if (!skip) { o.onspawn?.(spawnPos, { reason: reason ?? 'fresh' }); }
+		if (!skip) { o.onspawn?.(spawnPos, { reason: opts?.reason ?? 'fresh' }); }
 		world.dispatchWorldLifecycleSlot(o, 'spawn', {
 			world,
 			spaceId: this.id,
-			reason: reason ?? 'fresh',
+			reason: opts?.reason ?? 'fresh',
 			position: spawnPos,
 		});
 
@@ -134,8 +133,6 @@ export class Space {
 	 * so pooled workflows can reuse it without reallocations.
 	 */
 	public despawn(o: WorldObject, skip_ondespawn_event: boolean = false): void {
-
-
 		this.disposeWorldObject(o, skip_ondespawn_event);
 	}
 
