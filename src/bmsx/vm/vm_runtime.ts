@@ -1441,11 +1441,10 @@ const getOrCreateNativeMethod = (target: object, key: string): NativeFunction =>
 		let startIndex = 0;
 		if (args.length > 0) {
 			const first = toNativeValue(args[0], ctx, visited);
-			if (first === target) {
-				startIndex = 1;
-			} else {
+			if (first !== target) {
 				jsArgs.push(first);
 			}
+			startIndex = 1;
 		}
 		for (let index = startIndex; index < args.length; index += 1) {
 			jsArgs.push(toNativeValue(args[index], ctx, visited));
@@ -1496,15 +1495,19 @@ const handleVmHandlerError = (error: unknown, meta?: { hid: string; moduleId: st
 };
 
 const createNativeArrayFromTable = (table: Table, context: VmMarshalContext): unknown[] => {
+	const tableId = getOrAssignVmTableId(table);
+	const tableContext = extendMarshalContext(context, `table${tableId}`);
 	const entries = table.entriesArray();
 	const output: unknown[] = [];
 	for (let index = 0; index < entries.length; index += 1) {
 		const [key, value] = entries[index];
 		if (typeof key === 'number' && Number.isInteger(key) && key >= 1) {
-			output[key - 1] = toNativeValue(value, extendMarshalContext(context, String(key)), new WeakMap());
+			output[key - 1] = toNativeValue(value, extendMarshalContext(tableContext, String(key)), new WeakMap());
 			continue;
 		}
-		output.push(toNativeValue(value, context, new WeakMap()));
+		const segment = describeMarshalSegment(key);
+		const nextContext = segment ? extendMarshalContext(tableContext, segment) : tableContext;
+		output.push(toNativeValue(value, nextContext, new WeakMap()));
 	}
 	return output;
 };

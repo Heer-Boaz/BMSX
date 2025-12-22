@@ -223,6 +223,7 @@ export class EventEmitter implements RegisterablePersistent {
 		const event = arg0;
 		const eventName = event.type;
 		const emitter = event.emitter;
+		// console.log(`[EventEmitter] Emitting event '${eventName}' from emitter '${emitter?.id ?? 'global'}' with payload:`, payload ?? '(no payload)');
 		const self = EventEmitter.instance;
 			// let anyoneSubscribed = false;
 			const deliver = (set?: ListenerSet) => {

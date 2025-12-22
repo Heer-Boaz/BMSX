@@ -1927,15 +1927,19 @@ export class BmsxVMRuntime {
 	}
 
 	private createNativeArrayFromTable(table: Table, context: LuaMarshalContext): unknown[] {
+		const tableId = this.getOrAssignVmTableId(table);
+		const tableContext = this.extendMarshalContext(context, `table${tableId}`);
 		const entries = table.entriesArray();
 		const output: unknown[] = [];
 		for (let index = 0; index < entries.length; index += 1) {
 			const [key, value] = entries[index];
 			if (typeof key === 'number' && Number.isInteger(key) && key >= 1) {
-				output[key - 1] = this.toNativeValue(value, this.extendMarshalContext(context, String(key)), new WeakMap());
+				output[key - 1] = this.toNativeValue(value, this.extendMarshalContext(tableContext, String(key)), new WeakMap());
 				continue;
 			}
-			output.push(this.toNativeValue(value, context, new WeakMap()));
+			const segment = this.describeMarshalSegment(key);
+			const nextContext = segment ? this.extendMarshalContext(tableContext, segment) : tableContext;
+			output.push(this.toNativeValue(value, nextContext, new WeakMap()));
 		}
 		return output;
 	}
@@ -3062,11 +3066,10 @@ export class BmsxVMRuntime {
 			let startIndex = 0;
 			if (args.length > 0) {
 				const first = this.toNativeValue(args[0], ctx, visited);
-				if (first === target) {
-					startIndex = 1;
-				} else {
+				if (first !== target) {
 					jsArgs.push(first);
 				}
+				startIndex = 1;
 			}
 			for (let index = startIndex; index < args.length; index += 1) {
 				jsArgs.push(this.toNativeValue(args[index], ctx, visited));
