@@ -80,37 +80,46 @@ VMApi& VMRuntime::api() {
 }
 
 void VMRuntime::boot(Program* program, int entryProtoIndex) {
+	std::cerr << "[VMRuntime] boot: program=" << program << " entryProtoIndex=" << entryProtoIndex << std::endl;
 	m_program = program;
 	m_cpu.setProgram(program);
 
 	// Start execution at entry point
+	std::cerr << "[VMRuntime] boot: starting CPU at entry point..." << std::endl;
 	m_cpu.start(entryProtoIndex);
 
 	// Run until halted to execute top-level code
+	std::cerr << "[VMRuntime] boot: running top-level code..." << std::endl;
 	m_cpu.run();
+	std::cerr << "[VMRuntime] boot: top-level code executed" << std::endl;
 
-	// Cache callback functions
-	Value updateVal = m_cpu.globals.get(std::string("_update"));
+	// Cache callback functions (use Lua-style names: update, draw, init)
+	Value updateVal = m_cpu.globals.get(std::string("update"));
 	if (auto cls = std::get_if<std::shared_ptr<Closure>>(&updateVal)) {
 		m_updateFn = *cls;
+		std::cerr << "[VMRuntime] boot: found update" << std::endl;
 	}
 
-	Value drawVal = m_cpu.globals.get(std::string("_draw"));
+	Value drawVal = m_cpu.globals.get(std::string("draw"));
 	if (auto cls = std::get_if<std::shared_ptr<Closure>>(&drawVal)) {
 		m_drawFn = *cls;
+		std::cerr << "[VMRuntime] boot: found draw" << std::endl;
 	}
 
-	Value initVal = m_cpu.globals.get(std::string("_init"));
+	Value initVal = m_cpu.globals.get(std::string("init"));
 	if (auto cls = std::get_if<std::shared_ptr<Closure>>(&initVal)) {
 		m_initFn = *cls;
+		std::cerr << "[VMRuntime] boot: found init" << std::endl;
 	}
 
-	// Call _init if present
+	// Call init if present
 	if (m_initFn) {
+		std::cerr << "[VMRuntime] boot: calling init..." << std::endl;
 		callLuaFunction(*m_initFn, {});
 	}
 
 	m_vmInitialized = true;
+	std::cerr << "[VMRuntime] boot: VM initialized!" << std::endl;
 }
 
 void VMRuntime::tickUpdate() {

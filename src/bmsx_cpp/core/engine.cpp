@@ -280,6 +280,7 @@ bool EngineCore::bootWithoutCart() {
     }
 
     m_rom_loaded = true;  // Engine is running (with system program)
+    start();  // Start the engine tick/render loop
     return true;
 }
 
