@@ -20,7 +20,7 @@ import { PendingAssignmentProcessor } from './pendingassignmentprocessor';
 import { ControllerAssignmentUI } from '../ui/controller_assignment_ui';
 import { PlayerInput, InputSource } from './playerinput';
 import { PointerInput } from './pointerinput';
-import type { DeviceKind, InputDevice, InputEvt } from '../platform';
+import type { DeviceKind, InputDevice, InputEvt, SubscriptionHandle } from '../platform';
 
 import type { GameViewCanvas } from '../platform';
 
@@ -409,7 +409,7 @@ export class Input implements RegisterablePersistent {
 
 	// Spawn-once guard for UI controller
 	private uiControllerSpawned = false;
-	private platformInputUnsubscribe: (() => void) = null;
+	private platformInputUnsubscribe: SubscriptionHandle = null;
 	private readonly platformInputListener = (event: InputEvt): void => {
 		this.handleInputEvent(event);
 	};
@@ -700,7 +700,7 @@ export class Input implements RegisterablePersistent {
 		if (this.platformInputUnsubscribe) {
 			const previous = this.platformInputUnsubscribe;
 			this.platformInputUnsubscribe = null;
-			previous();
+			previous.unsubscribe();
 		}
 		const hub = $.platform.input;
 		const devices = hub.devices();
@@ -714,7 +714,7 @@ export class Input implements RegisterablePersistent {
 		if (!this.platformInputUnsubscribe) return;
 		const unsubscribe = this.platformInputUnsubscribe;
 		this.platformInputUnsubscribe = null;
-		unsubscribe();
+		unsubscribe.unsubscribe();
 	}
 
 	private registerPlatformDevice(device: InputDevice): void {

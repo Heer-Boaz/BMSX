@@ -6,6 +6,8 @@ import {
 	VoiceHandle,
 	VoiceEndedEvent,
 	AudioFilterParams,
+	SubscriptionHandle,
+	createSubscriptionHandle,
 } from '../platform';
 
 class WebClip implements AudioClipHandle {
@@ -93,19 +95,19 @@ class WebVoice implements VoiceHandle {
 		};
 	}
 
-	onEnded(cb: (e: VoiceEndedEvent) => void): () => void {
+	onEnded(cb: (e: VoiceEndedEvent) => void): SubscriptionHandle {
 		const handler = () => cb({ clippedAt: this.ctx.currentTime });
 		this.src.addEventListener('ended', handler);
 		const unsub = () => this.src.removeEventListener('ended', handler);
 		this.endedUnsubs.push(unsub);
-		return () => {
+		return createSubscriptionHandle(() => {
 			const retained: Array<() => void> = [];
 			for (let i = 0; i < this.endedUnsubs.length; i++) {
 				if (this.endedUnsubs[i] !== unsub) retained.push(this.endedUnsubs[i]);
 			}
 			this.endedUnsubs = retained;
 			unsub();
-		};
+		});
 	}
 
 	private minRampInterval(): number {

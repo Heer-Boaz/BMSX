@@ -21,6 +21,8 @@ import {
 	GameViewHostCapabilityMap,
 	OnscreenGamepadHandles,
 	MicrotaskQueue,
+	SubscriptionHandle,
+	createSubscriptionHandle,
 } from 'bmsx/platform';
 import { HeadlessPlatformServices, HeadlessPlatformOptions } from '../headless/platform_headless';
 import { HeadlessGameViewHost } from 'bmsx/render/headless/headless_view';
@@ -46,8 +48,8 @@ function readTerminalDimensions(fallback: TerminalDimensions, override?: Partial
 }
 
 class CLIWindowEventHub implements WindowEventHub {
-	subscribe(_type: any, _listener: any, _options?: any): () => void {
-		return () => void 0;
+	subscribe(_type: any, _listener: any, _options?: any): SubscriptionHandle {
+		return createSubscriptionHandle(() => void 0);
 	}
 }
 
@@ -55,8 +57,8 @@ class CLIDisplayModeController implements DisplayModeController {
 	isSupported(): boolean { return false; }
 	isFullscreen(): boolean { return false; }
 	async setFullscreen(_enabled: boolean): Promise<void> { }
-	onChange(_listener: (isFullscreen: boolean) => void): () => void {
-		return () => void 0;
+	onChange(_listener: (isFullscreen: boolean) => void): SubscriptionHandle {
+		return createSubscriptionHandle(() => void 0);
 	}
 }
 

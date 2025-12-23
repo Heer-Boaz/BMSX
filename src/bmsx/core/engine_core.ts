@@ -10,7 +10,7 @@ import { GameView } from "../render/gameview";
 import { TextureManager } from "../render/texturemanager";
 import { RenderPassLibrary } from "../render/backend/renderpasslib";
 import { ensureBrowserBackendFactory } from "../render/backend/browser_backend_factory";
-import type { GameViewHost, Platform, PlatformExitEvent } from '../platform';
+import type { GameViewHost, Platform, PlatformExitEvent, SubscriptionHandle } from '../platform';
 import { setMicrotaskQueue } from '../platform';
 import { asset_id, Identifiable, Identifier, Registerable, RuntimeAssets, type vec3, type vec2, GAME_FPS, type BmsxCartridgeBlob } from "../rompack/rompack";
 import { AssetSourceStack, type RawAssetSource } from '../rompack/asset_source';
@@ -190,7 +190,7 @@ export class EngineCore {
 	 */
 	public debug_runSingleFrameAndPause!: boolean;
 
-	private removeWillExit: (() => void) = null;
+	private removeWillExit: SubscriptionHandle = null;
 	private _pipelineSpec: NodeSpec[] = []; // Note that the base spec already includes extensions, and is already a clone
 	private _pipelineOverride: NodeSpec[] = []; // These nodes override the base spec when set during runtime. So they really replace the base spec until cleared.
 	private _pipelineExt: NodeSpec[] = null; // These nodes override the base spec when set during runtime. Note that these are not extended with module nodes, as the modules are already included in the base spec at init time.
@@ -721,7 +721,7 @@ export class EngineCore {
 			this.sndmaster.stopMusic();
 		});
 		if (this.removeWillExit) {
-			this.removeWillExit();
+			this.removeWillExit.unsubscribe();
 			this.removeWillExit = null;
 		}
 	}

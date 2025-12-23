@@ -18,7 +18,7 @@ import {
 	setLuaTableCaseInsensitiveKeys,
 	type LuaDebuggerPauseSignal
 } from '../lua/luavalue';
-import type { InputEvt, StorageService } from '../platform/platform';
+import type { InputEvt, StorageService, SubscriptionHandle } from '../platform/platform';
 import { publishOverlayFrame } from '../render/editor/editor_overlay_queue';
 import type { Viewport, BmsxCartridgeBlob, CartridgeIndex } from '../rompack/rompack';
 import { CanonicalizationType } from '../rompack/rompack';
@@ -333,7 +333,7 @@ export class BmsxVMRuntime {
 
 	private readonly consoleHotkeyLatch = new Map<string, number>();
 	private shortcutDisposers: Array<() => void> = [];
-	private globalInputUnsubscribe: (() => void) = null;
+	private globalInputUnsubscribe: SubscriptionHandle = null;
 	private luaInterpreter!: LuaInterpreter;
 	private static readonly UPDATE_STATEMENT_BUDGET = 10_000;
 	private vmInitClosure: Closure = null;
@@ -531,9 +531,9 @@ export class BmsxVMRuntime {
 		if (!this.globalInputUnsubscribe) {
 			return;
 		}
-		const unsubscribe = this.globalInputUnsubscribe;
+		const handle = this.globalInputUnsubscribe;
 		this.globalInputUnsubscribe = null;
-		unsubscribe();
+		handle.unsubscribe();
 	}
 
 	private onGlobalInputEvent(event: InputEvt): void {

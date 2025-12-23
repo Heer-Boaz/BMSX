@@ -33,6 +33,8 @@ import {
 	HostEventOptions,
 	GameViewHostCapabilityId,
 	GameViewHostCapabilityMap,
+	SubscriptionHandle,
+	createSubscriptionHandle,
 } from 'bmsx/platform';
 import { HeadlessGameViewHost } from 'bmsx/render/headless/headless_view';
 
@@ -84,16 +86,16 @@ class HeadlessLifecycle implements Lifecycle {
 	private readonly exitHandlers = new Set<(event: PlatformExitEvent) => void>();
 	private exitHooksAttached = false;
 
-	onVisibilityChange(_cb: (visible: boolean) => void): () => void {
-		return () => void 0;
+	onVisibilityChange(_cb: (visible: boolean) => void): SubscriptionHandle {
+		return createSubscriptionHandle(() => void 0);
 	}
 
-	onWillExit(cb: (event: PlatformExitEvent) => void): () => void {
+	onWillExit(cb: (event: PlatformExitEvent) => void): SubscriptionHandle {
 		this.exitHandlers.add(cb);
 		this.attachExitHooks();
-		return () => {
+		return createSubscriptionHandle(() => {
 			this.exitHandlers.delete(cb);
-		};
+		});
 	}
 
 	private attachExitHooks(): void {
@@ -186,9 +188,9 @@ class HeadlessInputHub implements InputHub {
 		new HeadlessInputDevice('keyboard:0', 'keyboard'),
 		new HeadlessInputDevice('virtual:0', 'virtual'),
 	];
-	subscribe(fn: (e: InputEvt) => void): () => void {
+	subscribe(fn: (e: InputEvt) => void): SubscriptionHandle {
 		this.subscribers.add(fn);
-		return () => { this.subscribers.delete(fn); };
+		return createSubscriptionHandle(() => { this.subscribers.delete(fn); });
 	}
 	post(e: InputEvt): void {
 		for (const fn of this.subscribers) fn(e);
@@ -225,9 +227,9 @@ class SilentVoice implements VoiceHandle {
 	readonly startedAt = 0;
 	readonly startOffset = 0;
 	private readonly endListeners = new Set<(e: { clippedAt: number; }) => void>();
-	onEnded(cb: (e: { clippedAt: number; }) => void): () => void {
+	onEnded(cb: (e: { clippedAt: number; }) => void): SubscriptionHandle {
 		this.endListeners.add(cb);
-		return () => { this.endListeners.delete(cb); };
+		return createSubscriptionHandle(() => { this.endListeners.delete(cb); });
 	}
 	setGainLinear(_v: number): void { }
 	rampGainLinear(_target: number, _durationSec: number): void { }
@@ -277,8 +279,8 @@ export interface HeadlessPlatformOptions {
 }
 
 class NoopWindowEventHub implements WindowEventHub {
-	subscribe(_type: HostWindowEventType, _listener: HostEventListenerTarget, _options?: HostEventOptions): () => void {
-		return () => void 0;
+	subscribe(_type: HostWindowEventType, _listener: HostEventListenerTarget, _options?: HostEventOptions): SubscriptionHandle {
+		return createSubscriptionHandle(() => void 0);
 	}
 }
 

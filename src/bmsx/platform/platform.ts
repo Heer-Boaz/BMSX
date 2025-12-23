@@ -272,8 +272,8 @@ export interface PlatformExitEvent {
 }
 
 export interface Lifecycle {
-	onVisibilityChange(cb: (visible: boolean) => void): () => void;
-	onWillExit(cb: (event: PlatformExitEvent) => void): () => void;
+	onVisibilityChange(cb: (visible: boolean) => void): SubscriptionHandle;
+	onWillExit(cb: (event: PlatformExitEvent) => void): SubscriptionHandle;
 }
 
 export interface StorageService {
@@ -445,14 +445,14 @@ export interface OverlayManager {
 }
 
 export interface WindowEventHub {
-	subscribe(type: HostWindowEventType, listener: HostEventListenerTarget, options?: HostEventOptions): () => void;
+	subscribe(type: HostWindowEventType, listener: HostEventListenerTarget, options?: HostEventOptions): SubscriptionHandle;
 }
 
 export interface DisplayModeController {
 	isSupported(): boolean;
 	isFullscreen(): boolean;
 	setFullscreen(enabled: boolean): Promise<void>;
-	onChange(listener: (isFullscreen: boolean) => void): () => void;
+	onChange(listener: (isFullscreen: boolean) => void): SubscriptionHandle;
 }
 
 export interface OnscreenGamepadHandleProvider {

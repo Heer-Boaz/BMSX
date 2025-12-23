@@ -33,6 +33,8 @@ import {
 	OnscreenGamepadHandleProvider,
 	GameViewHostCapabilityId,
 	GameViewHostCapabilityMap,
+	SubscriptionHandle,
+	createSubscriptionHandle,
 } from 'bmsx/platform';
 import { WebAudioService } from './web_audio';
 import type { GamepadControlHandle, GameViewCanvas, GameViewHost, HostEventListenerTarget, HostEventOptions, HostWindowEventType, OnscreenGamepadHandles, OverlayHandle, SurfaceBounds, ViewportDimensions } from '../platform';
@@ -148,17 +150,17 @@ class BrowserFrameLoop implements FrameLoop {
 }
 
 class BrowserLifecycle implements Lifecycle {
-	onVisibilityChange(cb: (visible: boolean) => void): () => void {
+	onVisibilityChange(cb: (visible: boolean) => void): SubscriptionHandle {
 		const handler = () => {
 			cb(!document.hidden);
 		};
 		document.addEventListener('visibilitychange', handler, { passive: true });
-		return () => {
+		return createSubscriptionHandle(() => {
 			document.removeEventListener('visibilitychange', handler);
-		};
+		});
 	}
 
-	onWillExit(cb: (event: PlatformExitEvent) => void): () => void {
+	onWillExit(cb: (event: PlatformExitEvent) => void): SubscriptionHandle {
 		const toExitEvent = (domEvent: BeforeUnloadEvent): PlatformExitEvent => ({
 			preventDefault: () => domEvent.preventDefault(),
 			setReturnMessage: (message: string) => { domEvent.returnValue = message; },
@@ -175,10 +177,10 @@ class BrowserLifecycle implements Lifecycle {
 		};
 		window.addEventListener('beforeunload', beforeUnload);
 		window.addEventListener('pagehide', pageHide);
-		return () => {
+		return createSubscriptionHandle(() => {
 			window.removeEventListener('beforeunload', beforeUnload);
 			window.removeEventListener('pagehide', pageHide);
-		};
+		});
 	}
 }
 
@@ -587,11 +589,11 @@ class BrowserInputHub implements InputHub {
 		this.scanInitialGamepads();
 	}
 
-	subscribe(fn: (e: InputEvt) => void): () => void {
+	subscribe(fn: (e: InputEvt) => void): SubscriptionHandle {
 		this.subs.add(fn);
-		return () => {
+		return createSubscriptionHandle(() => {
 			this.subs.delete(fn);
-		};
+		});
 	}
 
 	post(e: InputEvt): void {
@@ -1202,11 +1204,11 @@ export class BrowserGameViewHost implements GameViewHost {
 			getOverlay: (id: string) => this.getOverlayInternal(id),
 		};
 		this.windowEventsCapability = {
-			subscribe: (type: HostWindowEventType, listener: HostEventListenerTarget, options?: HostEventOptions) => {
+			subscribe: (type: HostWindowEventType, listener: HostEventListenerTarget, options?: HostEventOptions): SubscriptionHandle => {
 				const domListener = this.getDomListener(listener);
 				const domOptions = toDomOptions(options);
 				window.addEventListener(type, domListener, domOptions);
-				return () => window.removeEventListener(type, domListener, domOptions);
+				return createSubscriptionHandle(() => window.removeEventListener(type, domListener, domOptions));
 			},
 		};
 		this.displayModeCapability = {
@@ -1219,10 +1221,10 @@ export class BrowserGameViewHost implements GameViewHost {
 					await document.exitFullscreen().catch((e) => { console.warn(`Failed to exit fullscreen mode: ${e}`); });
 				}
 			},
-			onChange: (listener: (isFullscreen: boolean) => void) => {
+			onChange: (listener: (isFullscreen: boolean) => void): SubscriptionHandle => {
 				const handler = () => listener(document.fullscreenElement === document.documentElement);
 				document.addEventListener('fullscreenchange', handler);
-				return () => document.removeEventListener('fullscreenchange', handler);
+				return createSubscriptionHandle(() => document.removeEventListener('fullscreenchange', handler));
 			},
 		};
 		this.gamepadHandlesCapability = {

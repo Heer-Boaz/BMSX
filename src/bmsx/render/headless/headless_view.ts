@@ -10,7 +10,9 @@ import type {
 	GameViewHostCapabilityId,
 	GameViewHostCapabilityMap,
 	WindowEventHub,
+	SubscriptionHandle,
 } from '../../platform';
+import { createSubscriptionHandle } from '../../platform';
 import { HeadlessGPUBackend } from './headless_backend';
 
 class HeadlessOverlay implements OverlayHandle {
@@ -47,8 +49,8 @@ class HeadlessGameViewCanvas implements GameViewCanvas {
 }
 
 class HeadlessWindowEventHub implements WindowEventHub {
-	subscribe(): () => void {
-		return () => void 0;
+	subscribe(): SubscriptionHandle {
+		return createSubscriptionHandle(() => void 0);
 	}
 }
 

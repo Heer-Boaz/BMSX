@@ -47,7 +47,7 @@ import type { EditorUndoRecord } from './editor_undo';
 import type { CanonicalizationType, RectBounds } from '../../rompack/rompack';
 import type { ReferenceCatalogEntry } from './code_reference';
 import { VMCodeLayout } from './code_layout';
-import type { TimerHandle } from '../../platform';
+import type { TimerHandle, SubscriptionHandle } from '../../platform';
 import type { DebuggerExecutionState } from './ide_debugger';
 import type { LuaDebuggerSessionMetrics } from '../../lua/luadebugger';
 import { VM_TOGGLE_KEY, EDITOR_TOGGLE_KEY, ESCAPE_KEY, getActiveIdeThemeVariant } from './constants';
@@ -291,7 +291,7 @@ export interface IdeState {
 	workspaceAutosaveHandle: TimerHandle | { cancel(): void };
 	workspaceAutosaveRunning: boolean;
 	workspaceAutosaveQueued: boolean;
-	disposeWorkspaceExitListener: (() => void);
+	disposeWorkspaceExitListener: SubscriptionHandle;
 	serverWorkspaceConnected: boolean;
 }
 

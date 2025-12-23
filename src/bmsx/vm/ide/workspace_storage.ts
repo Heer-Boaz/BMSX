@@ -245,7 +245,7 @@ function attachWorkspaceExitHandler(): void {
 function detachWorkspaceExitHandler(): void {
 	if (ide_state.disposeWorkspaceExitListener) {
 		try {
-			ide_state.disposeWorkspaceExitListener();
+			ide_state.disposeWorkspaceExitListener.unsubscribe();
 		} catch {
 			// ignore
 		}

@@ -1,5 +1,5 @@
 import { $ } from '../core/engine_core';
-import { AudioPlaybackParams, AudioService, AudioClipHandle, VoiceHandle, RngService } from '../platform';
+import { AudioPlaybackParams, AudioService, AudioClipHandle, VoiceHandle, RngService, SubscriptionHandle } from '../platform';
 import { Registry } from '../core/registry';
 import { asset_id, AudioMeta, AudioType, AudioTypes, CartridgeLayerId, id2res, RegisterablePersistent, RomAsset } from '../rompack/rompack';
 
@@ -73,7 +73,7 @@ interface PausedSnapshot {
 interface ActiveVoiceRecord extends ActiveVoiceInfo {
 	handle: VoiceHandle;
 	clip: AudioClipHandle;
-	endedUnsub: (() => void);
+	endedUnsub: SubscriptionHandle;
 	finalized: boolean;
 }
 
@@ -479,7 +479,7 @@ export class SoundMaster implements RegisterablePersistent {
 	private onVoiceEnded(type: AudioType, record: ActiveVoiceRecord): void {
 		if (record.finalized) return;
 		if (record.endedUnsub) {
-			record.endedUnsub();
+			record.endedUnsub.unsubscribe();
 			record.endedUnsub = null;
 		}
 		this.removeRecord(type, record.voiceId);
@@ -542,7 +542,7 @@ export class SoundMaster implements RegisterablePersistent {
 		if (record.finalized) return;
 		this.removeRecord(type, record.voiceId);
 		if (record.endedUnsub) {
-			record.endedUnsub();
+			record.endedUnsub.unsubscribe();
 			record.endedUnsub = null;
 		}
 		try { record.handle.stop(); } catch (error) { console.error('[SoundMaster] Failed to stop voice:', error); }

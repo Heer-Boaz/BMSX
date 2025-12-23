@@ -26,6 +26,7 @@ import type {
 	ViewportMetrics,
 	ViewportMetricsProvider,
 	OnscreenGamepadHandleProvider,
+	SubscriptionHandle,
 } from '../platform';
 import type {
 	RectRenderSubmission,
@@ -71,21 +72,21 @@ export class GameView implements RegisterablePersistent, RenderContext {
 
 	private disposeReactiveSubscriptions(): void {
 		if (GameView.fullscreenKeyListenerUnsub) {
-			GameView.fullscreenKeyListenerUnsub();
+			GameView.fullscreenKeyListenerUnsub.unsubscribe();
 			GameView.fullscreenKeyListenerUnsub = null;
 		}
 		if (GameView.windowedKeyListenerUnsub) {
-			GameView.windowedKeyListenerUnsub();
+			GameView.windowedKeyListenerUnsub.unsubscribe();
 			GameView.windowedKeyListenerUnsub = null;
 		}
 		while (this.reactiveDisposables.length > 0) {
-			const dispose = this.reactiveDisposables.pop();
-			if (dispose) dispose();
+			const sub = this.reactiveDisposables.pop();
+			if (sub) sub.unsubscribe();
 		}
 	}
 
-	private registerReactive(dispose: () => void): void {
-		this.reactiveDisposables.push(dispose);
+	private registerReactive(sub: SubscriptionHandle): void {
+		this.reactiveDisposables.push(sub);
 	}
 
 	private getViewportMetricsProvider(): ViewportMetricsProvider {
@@ -122,10 +123,10 @@ export class GameView implements RegisterablePersistent, RenderContext {
 
 	public readonly host: GameViewHost;
 	public readonly surface: GameViewCanvas;
-	private static fullscreenKeyListenerUnsub: (() => void) = null;
-	private static windowedKeyListenerUnsub: (() => void) = null;
+	private static fullscreenKeyListenerUnsub: SubscriptionHandle = null;
+	private static windowedKeyListenerUnsub: SubscriptionHandle = null;
 	public accessor default_font: BFont;
-	private readonly reactiveDisposables: (() => void)[] = [];
+	private readonly reactiveDisposables: SubscriptionHandle[] = [];
 
 	public windowSize: vec2;
 	public availableWindowSize: vec2;
@@ -732,7 +733,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 			return;
 		}
 		if (GameView.fullscreenKeyListenerUnsub) {
-			GameView.fullscreenKeyListenerUnsub();
+			GameView.fullscreenKeyListenerUnsub.unsubscribe();
 		}
 		GameView.fullscreenKeyListenerUnsub = events.subscribe('keyup', GameView.triggerFullScreenOnFakeUserEvent);
 	}
@@ -774,7 +775,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 			}
 		}
 		if (GameView.fullscreenKeyListenerUnsub) {
-			GameView.fullscreenKeyListenerUnsub();
+			GameView.fullscreenKeyListenerUnsub.unsubscribe();
 			GameView.fullscreenKeyListenerUnsub = null;
 		}
 	}
@@ -786,7 +787,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 			return;
 		}
 		if (GameView.windowedKeyListenerUnsub) {
-			GameView.windowedKeyListenerUnsub();
+			GameView.windowedKeyListenerUnsub.unsubscribe();
 		}
 		GameView.windowedKeyListenerUnsub = events.subscribe('keyup', GameView.triggerWindowedOnFakeUserEvent);
 	}
@@ -815,7 +816,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 			}
 		}
 		if (GameView.windowedKeyListenerUnsub) {
-			GameView.windowedKeyListenerUnsub();
+			GameView.windowedKeyListenerUnsub.unsubscribe();
 			GameView.windowedKeyListenerUnsub = null;
 		}
 	}
