@@ -106,8 +106,9 @@ end
 hero = {}
 hero.__index = hero
 
-function hero:onspawn(spawn_pos)
-	print('[debug] onspawn native=' .. tostring(self.__native__) .. ' play_ani=' .. tostring(self.play_ani))
+local function hero_on_spawn(self, event)
+	local spawn_pos = event.pos
+	print('[debug] spawn event native=' .. tostring(self.__native__) .. ' play_ani=' .. tostring(self.play_ani))
 	print('[debug] define_timeline value=' .. tostring(self.timelines.define) .. ' type=' .. type(self.timelines.define))
 	local timeline_component = self.timelines
 	print('[debug] timeline_component=' .. tostring(timeline_component) .. ' type=' .. type(timeline_component) .. ' has_define=' .. tostring(timeline_component and timeline_component.define) .. ' has_play=' .. tostring(timeline_component and timeline_component.play))
@@ -129,8 +130,8 @@ function hero:onspawn(spawn_pos)
 	self.events:on({
 		event = 'demo.timeline.frame',
 		subscriber = self,
-		handler = function(event)
-			local label = event.label
+		handler = function(evt)
+			local label = evt.label
 			if label == 'peak' then
 				self.tempo_ready = false
 			elseif label == 'rise' or label == 'reset' then
@@ -139,6 +140,8 @@ function hero:onspawn(spawn_pos)
 		end,
 	})
 end
+
+hero.on_spawn = hero_on_spawn
 
 function hero:emit_move(dx, dy)
 	local payload = { x = self.x, y = self.y, dx = dx, dy = dy }
@@ -267,7 +270,8 @@ end
 local collision_target = {}
 collision_target.__index = collision_target
 
-function collision_target:onspawn(spawn_pos)
+local function collision_target_on_spawn(self, event)
+	local spawn_pos = event.pos
 	self.label = 'collision target'
 	self.sx = 16
 	self.sy = 16
@@ -297,6 +301,8 @@ function collision_target:onspawn(spawn_pos)
 		end,
 	})
 end
+
+collision_target.on_spawn = collision_target_on_spawn
 
 function collision_target:cooldown_flash(dt)
 	self.hit_flash = math.max(0, self.hit_flash - dt)

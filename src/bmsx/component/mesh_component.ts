@@ -540,10 +540,10 @@ export class MeshComponent extends Component {
 
 	private dispatchMeshAnimationEvent(event: string, payload: Record<string, unknown>, scope?: 'self' | 'global'): void {
 		const parent = this.parent;
-		const busEvent = create_gameevent({ type: event, emitter: parent, ...(payload ?? {}) });
+		const busEvent = create_gameevent({ type: event, emitter: parent, payload });
 		$.emit(busEvent);
 		const name = scope === 'self' ? `$${event}` : event;
-		const fsmEvent = create_gameevent({ type: name, emitter: parent, ...(payload ?? {}) });
+		const fsmEvent = create_gameevent({ type: name, emitter: parent, payload });
 		parent.sc.dispatch_event(fsmEvent);
 	}
 

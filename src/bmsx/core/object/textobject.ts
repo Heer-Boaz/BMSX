@@ -58,26 +58,14 @@ export class TextObject extends WorldObject {
 	}
 
 	/**
-	 * Sets the text from an array of lines, wraps the text, and initializes the display properties.
+	 * Sets the text, wraps it, and initializes the display properties.
 	 *
-	 * @param lines - An array of strings where each string represents a line of text.
-	 *
-	 * This method performs the following steps:
-	 * 1. Combines the lines into a single string with newline characters.
-	 * 2. Wraps the combined text.
-	 * 3. Initializes the `fullTextLines` with the wrapped lines.
-	 * 4. Initializes the `displayedLines` as an array of empty strings with the same length as `fullTextLines`.
-	 * 5. Resets the `currentLineIndex` and `currentCharIndex` to 0.
-	 * 6. Sets the `isTyping` flag to true.
-	 * 7. Calculates the centered block X position.
-	 * 8. Updates the displayed text.
+	 * @param textOrLines - A string containing the text to display (use newlines to separate lines),
+	 *                      or an iterable of strings (e.g., Lua table) where each element is a line.
 	 */
-	public set_text(lines: string | string[]): void {
-		if (typeof lines === 'string') {
-			lines = [lines];
-		}
-		const combined = lines.join('\n');
-		const wrappedLines = wrapGlyphs(combined, this.maximum_characters_per_line);
+	public set_text(textOrLines: string | Iterable<string>): void {
+		const text = typeof textOrLines === 'string' ? textOrLines : Array.from(textOrLines).join('\n');
+		const wrappedLines = wrapGlyphs(text, this.maximum_characters_per_line);
 
 		this.full_text_lines = wrappedLines;
 		this.displayed_lines = this.full_text_lines.map(() => '');

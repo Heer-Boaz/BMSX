@@ -35,6 +35,8 @@ export type WorldObjectEventPayloads = {
 };
 
 export const WorldObjectEvents = {
+	Spawn: 'spawn',
+	Despawn: 'despawn',
 	LeaveScreen: 'screen.leave',
 	LeavingScreen: 'screen.leaving',
 	WallCollide: 'wallcollide',
@@ -620,6 +622,9 @@ export class WorldObject implements vec3, ComponentContainer, Stateful, Native {
 		}
 		// Revive and transfer: do not mutate flags or controller; revived state is already set by deserialization,
 		// and transfers should not trigger BeginPlay again.
+
+		// Emit spawn event for scripts/Lua to hook into
+		this.events.emit(WorldObjectEvents.Spawn, { pos: spawningPos, reason });
 	}
 
 	/** BeginPlay-style activation entry; mirrors onspawn behavior. */
@@ -659,6 +664,8 @@ export class WorldObject implements vec3, ComponentContainer, Stateful, Native {
 	public ondespawn(): void {
 		this.active = false;
 		this.eventhandling_enabled = false;
+		// Emit despawn event for scripts/Lua to hook into
+		this.events.emit(WorldObjectEvents.Despawn);
 	}
 
 	/**

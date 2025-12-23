@@ -446,7 +446,7 @@ local function stat_label(stat_id)
 		return 'Planning'
 	end
 	if stat_id == 'opdekin' then
-		return 'Opdekin'
+		return 'Op-de-kin'
 	end
 	if stat_id == 'rust' then
 		return 'Rust'
@@ -478,11 +478,8 @@ end
 
 local function set_text_lines(text_object_id, lines, typed)
 	local text_obj = world_object(text_object_id)
-	if type(lines) == 'table' then
-		text_obj.set_text(array(lines))
-	else
-		text_obj.set_text(lines)
-	end
+	-- Convert table to newline-separated string (portable to C++)
+	text_obj.set_text(lines)
 	if typed then
 		return
 	end

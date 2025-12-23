@@ -55,6 +55,12 @@ const POINTER_ACTIONS: readonly string[] = [
 
 const excludedClassOverrideKeys = new Set(['def_id', 'class', 'defaults', 'metatable', 'constructor', 'prototype', 'super']);
 
+// Event handler keys that should be registered as event listeners instead of method overrides
+const eventHandlerKeys: Record<string, string> = {
+	'on_spawn': 'spawn',
+	'on_despawn': 'despawn',
+};
+
 type VmExtendedClass<TBase extends ConcreteOrAbstractConstructor<any>> =
 	TBase & Native & {
 		def_id: Identifier; // Id of the definition this class was registered with
@@ -107,21 +113,29 @@ export class BmsxVMApi {
 	 * Filters out non-instance keys (def_id, class, defaults) and bulk-assigns the
 	 * remaining properties to the instance. This mimics Object.assign(instance, overrides).
 	 *
-	 * Caveat: when overrides replace lifecycle methods (notably onspawn), a straight overwrite
-	 * would drop the native behavior (activation/registration/FSM start). To keep the
-	 * engine wiring intact, function overrides run the original first and then the override
-	 * version. The override result wins if it returns something. This mirrors how a
-	 * script `:` call would still pass `self` while letting the base work run.
+	 * Event handlers (on_spawn, on_despawn, etc.) are registered as event listeners
+	 * instead of method overrides, ensuring native lifecycle always runs first.
 	 */
-	private applyClassOverrides<T>(instance: T, classTable?: Partial<T> & Record<string, unknown>): void {
+	private applyClassOverrides<T extends { events?: { on: (spec: any) => void } }>(instance: T, classTable?: Partial<T> & Record<string, unknown>): void {
 		if (!classTable) return;
-		// Filter out non-instance override keys, then bulk-assign.
 		const overrides: Record<string, any> = {};
-		// For function overrides, run the original first to preserve engine lifecycle (e.g. onspawn),
-		// then run the Lua override and let its return value win when defined.
 		for (const [key, value] of Object.entries(classTable)) {
 			if (excludedClassOverrideKeys.has(key)) continue;
-			const existing = instance[key];
+
+			// Check if this is an event handler that should be registered as a listener
+			const eventName = eventHandlerKeys[key];
+			if (eventName && typeof value === 'function' && instance.events) {
+				const handler = value as AnyFunction;
+				instance.events.on({
+					event: eventName,
+					subscriber: instance,
+					handler: (event: any) => handler.call(instance, instance, event),
+				});
+				continue;
+			}
+
+			// Regular property/method override
+			const existing = (instance as any)[key];
 			if (typeof value === 'function' && typeof existing === 'function') {
 				const baseFn = existing as AnyFunction;
 				const overrideFn = value as AnyFunction;
