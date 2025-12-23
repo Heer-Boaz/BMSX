@@ -57,6 +57,8 @@ export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<VMLuaBuiltinDescriptor
 	{ name: 'os.date', params: ['format?', 'time?'], signature: 'os.date([format [, time]])' },
 	{ name: 'os.difftime', params: ['t2', 't1?'], signature: 'os.difftime(t2 [, t1])' },
 	{ name: 'os.time', params: ['table?'], signature: 'os.time([table])' },
+	{ name: 'SYS_CART_PRESENT', params: [], signature: 'SYS_CART_PRESENT', description: 'System register address; reads as 1 when a cart is available.' },
+	{ name: 'SYS_BOOT_CART', params: [], signature: 'SYS_BOOT_CART', description: 'System register address; write 1 to boot the cart.' },
 ];
 
 const DEFAULT_LUA_BUILTIN_IDENTIFIER_EXTRAS = ['package', 'math.pi', 'SYS_CART_PRESENT', 'SYS_BOOT_CART'];

@@ -24,7 +24,6 @@ import {
 	createLuaCodeTabContext,
 	getActiveCodeTabContext,
 	storeActiveCodeTabContext,
-	activateCodeEditorTab,
 	initializeTabs,
 	setTabDirty,
 	updateActiveContextDirtyFlag,
@@ -233,19 +232,11 @@ export function initializeVMCartEditor(viewport: Viewport): void {
 	ide_state.codeHorizontalScrollbarVisible = false;
 	ide_state.cachedVisibleRowCount = 1;
 	ide_state.cachedVisibleColumnCount = 1;
-	const entryContext = createEntryTabContext();
-	if (entryContext) {
-		ide_state.codeTabContexts.set(entryContext.id, entryContext);
-	}
-	initializeTabs(entryContext);
+	initializeTabs();
 	resetResourcePanelState();
-	if (entryContext) {
-		activateCodeEditorTab(entryContext.id);
-	}
 	ide_state.desiredColumn = ide_state.cursorColumn;
 	assertMonospace();
-	const initialContext = entryContext ? ide_state.codeTabContexts.get(entryContext.id) : null;
-	ide_state.lastSavedSource = initialContext ? initialContext.lastSavedSource : '';
+	ide_state.lastSavedSource = '';
 	ide_state.navigationHistory.current = createNavigationEntry();
 	ide_state.initialized = true;
 }
@@ -1460,7 +1451,6 @@ export function shutdown(): void {
 }
 
 export function activate(): void {
-	ensureActiveCodeTabMatchesLuaSources();
 	ide_state.input.applyOverrides(true, captureKeys);
 	if (ide_state.activeCodeTabContextId) {
 		const existingTab = ide_state.tabs.find(candidate => candidate.id === ide_state.activeCodeTabContextId);
@@ -1517,23 +1507,6 @@ export function activate(): void {
 		});
 		if (rendered) BmsxVMRuntime.instance.flushedFaultOverlay();
 	}
-}
-
-function ensureActiveCodeTabMatchesLuaSources(): void {
-	const context = getActiveCodeTabContext();
-	const activePath = context?.descriptor?.path;
-	if (activePath && $.luaSources.path2lua[activePath]) {
-		return;
-	}
-	const entryPath = $.luaSources.entry_path;
-	if (!entryPath) {
-		return;
-	}
-	const entryAsset = $.luaSources.path2lua[entryPath];
-	if (!entryAsset) {
-		return;
-	}
-	openLuaCodeTab({ path: entryPath, type: 'lua', asset_id: entryAsset.resid });
 }
 
 export function applyEditorCrtDimming(): void {

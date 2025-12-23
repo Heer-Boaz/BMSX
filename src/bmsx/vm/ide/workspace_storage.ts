@@ -22,7 +22,7 @@ import {
 	WORKSPACE_DIRTY_DIR,
 } from '../workspace';
 import { openLuaCodeTab, restoreSnapshot, setFontVariant } from './vm_cart_editor';
-import { createEntryTabContext, initializeTabs, setTabDirty, updateActiveContextDirtyFlag } from './editor_tabs';
+import { initializeTabs, setTabDirty, updateActiveContextDirtyFlag } from './editor_tabs';
 import { VMFontVariant } from '../font';
 import { getTextSnapshot } from './source_text';
 import { clearWorkspaceCachedSources, deleteWorkspaceCachedSources, getWorkspaceCachedSource, listWorkspaceCachedPaths, setWorkspaceCachedSources } from '../workspace_cache';
@@ -342,16 +342,8 @@ export async function restoreWorkspaceSessionFromDisk(): Promise<void> {
 }
 
 export async function applyWorkspaceAutosavePayload(payload: WorkspaceAutosavePayload): Promise<void> {
-	const entryContext = createEntryTabContext();
-	if (!entryContext) {
-		console.warn('[VMCartEditor] Cannot restore workspace session: entry Lua source not found.');
-		return;
-	}
 	ide_state.codeTabContexts.clear();
-	if (entryContext) {
-		ide_state.codeTabContexts.set(entryContext.id, entryContext);
-	}
-	initializeTabs(entryContext);
+	initializeTabs();
 	const runtime = BmsxVMRuntime.instance;
 	if (payload.fontVariant) {
 		if (runtime) {

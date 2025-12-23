@@ -11,7 +11,53 @@
  * expects the platform to expose a concrete implementation capable of delivering pointer events,
  * tracking focus/blur transitions, and mapping host-specific hit testing to canonical control IDs.
  * This is fundamental for layout — the renderer explicitly negotiates canvas space with these controls.
+ *
+ * Design note: This interface is deliberately C++-portable. Patterns like SubscriptionHandle (instead
+ * of closure returns) and optional sync methods alongside async ones facilitate a future libretro port.
  */
+
+/**
+ * Handle returned by subscription-based APIs. Unlike closure-based unsubscribe patterns,
+ * this object model maps cleanly to C++ (where closures require heap allocation).
+ *
+ * C++ equivalent:
+ * ```cpp
+ * struct SubscriptionHandle {
+ *     uint32_t id;
+ *     bool active;
+ *     void unsubscribe();
+ * };
+ * ```
+ */
+export interface SubscriptionHandle {
+	/** Unique identifier for this subscription within its parent hub. */
+	readonly id: number;
+	/** True if the subscription is still active (not yet unsubscribed). */
+	readonly active: boolean;
+	/** Remove the subscription. Safe to call multiple times. */
+	unsubscribe(): void;
+}
+
+let nextSubscriptionId = 1;
+
+/**
+ * Creates a SubscriptionHandle that wraps a simple cleanup function.
+ * Utility for platform implementations transitioning from closure-based patterns.
+ */
+export function createSubscriptionHandle(cleanup: () => void): SubscriptionHandle {
+	const id = nextSubscriptionId++;
+	let active = true;
+	return {
+		id,
+		get active() { return active; },
+		unsubscribe() {
+			if (!active) return;
+			active = false;
+			cleanup();
+		},
+	};
+}
+
 export interface MicrotaskQueue {
 	schedule(task: () => void): void;
 }
@@ -114,7 +160,7 @@ export interface VoiceEndedEvent {
 export interface VoiceHandle {
 	readonly startedAt: number;
 	readonly startOffset: number;
-	onEnded(cb: (e: VoiceEndedEvent) => void): () => void;
+	onEnded(cb: (e: VoiceEndedEvent) => void): SubscriptionHandle;
 	setGainLinear(v: number): void;
 	rampGainLinear(target: number, durationSec: number): void;
 	setFilter(p: AudioFilterParams): void;
@@ -170,7 +216,7 @@ export interface InputDevice {
 }
 
 export interface InputHub {
-	subscribe(fn: (e: InputEvt) => void): () => void;
+	subscribe(fn: (e: InputEvt) => void): SubscriptionHandle;
 	post(e: InputEvt): void;
 	devices(): InputDevice[];
 	setKeyboardCapture(handler: (code: string) => boolean): void;

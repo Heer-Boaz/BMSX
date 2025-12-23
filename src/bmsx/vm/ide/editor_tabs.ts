@@ -216,6 +216,9 @@ export function getActiveTabKind(): EditorTabKind {
 }
 
 export function isCodeTabActive(): boolean {
+	if (!ide_state.activeTabId) {
+		return false;
+	}
 	return getActiveTabKind() === 'lua_editor';
 }
 
@@ -228,6 +231,9 @@ export function isEditableCodeTab(): boolean {
 }
 
 export function isResourceViewActive(): boolean {
+	if (!ide_state.activeTabId) {
+		return false;
+	}
 	return getActiveTabKind() === 'resource_view';
 }
 

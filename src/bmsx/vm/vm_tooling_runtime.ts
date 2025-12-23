@@ -190,6 +190,7 @@ export class BmsxVMRuntime {
 		$.setAssetSource(assetSource);
 		await $.refreshAudioAssets();
 		$.view.primaryAtlas = 0;
+		$.assets.project_root_path = cartLayer.index.projectRootPath;
 
 		const cartSource = new AssetSourceStack([{ id: cartLayer.id, index: cartLayer.index, payload: cartLayer.payload }]);
 		const cartLuaSources = BmsxVMRuntime.buildLuaSources({
