@@ -16,6 +16,7 @@
 #include "assets.h"
 #include "../platform.h"
 #include "../render/gameview.h"
+#include "../ecs/ecsystem.h"
 #include <memory>
 
 namespace bmsx {
@@ -67,6 +68,7 @@ public:
     Registry& registry() { return Registry::instance(); }
     RuntimeAssets& assets() { return m_assets; }
     Clock* clock() { return m_platform ? m_platform->clock() : nullptr; }
+    ECSystemManager& systemManager() { return m_system_manager; }
 
     // Time
     f64 totalTime() const { return m_total_time; }
@@ -75,9 +77,15 @@ public:
     f64 fps() const { return m_fps; }
 
     // ROM loading
-    bool loadRom(const u8* data, size_t size);
+    bool loadEngineAssets(const u8* data, size_t size);  // Load engine.assets.rom first
+    bool loadEngineAssetsFromPath(const char* path);     // Load engine assets from file
+    bool loadRom(const u8* data, size_t size);            // Load game cartridge ROM
     void unloadRom();
     bool romLoaded() const { return m_rom_loaded; }
+    bool engineAssetsLoaded() const { return m_engine_assets_loaded; }
+
+    // Boot engine without cart - uses VM program from engine assets (system_program.lua)
+    bool bootWithoutCart();
 
     // Object spawning (convenience methods like TypeScript $)
     void spawn(WorldObject* obj, const Vec3* pos = nullptr);
@@ -106,11 +114,15 @@ private:
     void updateWorld(f64 deltaTime);
     void renderTestPattern();  // Visual test when no ROM loaded
     void uploadTexturesToBackend();  // Upload asset textures to GPU backend
+    void registerVMSystems();  // Register BMSX VM systems
+    void bootVMFromProgram();  // Boot VM with pre-compiled program from ROM
 
     Platform* m_platform = nullptr;
     std::unique_ptr<World> m_world;
     std::unique_ptr<GameView> m_view;
     RuntimeAssets m_assets;
+    ECSystemManager m_system_manager;
+    std::vector<std::unique_ptr<ECSystem>> m_vm_systems;  // Owned VM systems
 
     EngineState m_state = EngineState::Uninitialized;
 
@@ -120,7 +132,10 @@ private:
     f64 m_fps = 60.0;
 
     bool m_rom_loaded = false;
+    bool m_engine_assets_loaded = false;
     std::vector<u8> m_rom_data;
+    std::vector<u8> m_engine_assets_data;
+    RuntimeAssets m_engine_assets;  // Base engine assets (fonts, UI sprites, etc.)
 
     static EngineCore* s_instance;
 };

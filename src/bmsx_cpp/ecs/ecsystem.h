@@ -13,11 +13,13 @@
 #include <vector>
 #include <memory>
 #include <functional>
+#include <unordered_map>
 
 namespace bmsx {
 
 // Forward declarations
 class World;
+class WorldObject;
 
 /* ============================================================================
  * TickGroup enumeration
@@ -140,6 +142,27 @@ public:
 class PrePositionSystem : public ECSystem {
 public:
     explicit PrePositionSystem(i32 priority = 0)
+        : ECSystem(TickGroup::Physics, priority) {}
+
+    void update(World& world) override;
+};
+
+// BoundarySystem: Runs screen boundary checks and emits events
+class BoundarySystem : public ECSystem {
+public:
+    explicit BoundarySystem(i32 priority = 5)
+        : ECSystem(TickGroup::Physics, priority) {}
+
+    void update(World& world) override;
+
+private:
+    std::unordered_map<WorldObject*, Vec2> m_prev;
+};
+
+// TileCollisionSystem: Resolves tile collisions
+class TileCollisionSystem : public ECSystem {
+public:
+    explicit TileCollisionSystem(i32 priority = 10)
         : ECSystem(TickGroup::Physics, priority) {}
 
     void update(World& world) override;

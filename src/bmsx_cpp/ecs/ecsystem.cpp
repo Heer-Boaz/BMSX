@@ -6,6 +6,7 @@
 #include "../core/world.h"
 #include "../core/engine.h"
 #include <algorithm>
+#include <cmath>
 
 namespace bmsx {
 
@@ -165,7 +166,105 @@ void StateMachineSystem::update(World& world) {
 
 void PrePositionSystem::update(World& world) {
     // Capture old positions for collision resolution
+    // Would iterate PositionUpdateAxisComponent instances
     (void)world;
+}
+
+void BoundarySystem::update(World& world) {
+    i32 width = world.gameWidth();
+    i32 height = world.gameHeight();
+    
+    // Would iterate ScreenBoundaryComponent instances
+    for (auto* obj : world.objects()) {
+        if (!obj->active) continue;
+        
+        auto it = m_prev.find(obj);
+        Vec2 prev = it != m_prev.end() ? it->second : Vec2{obj->x(), obj->y()};
+        
+        f32 oldx = prev.x;
+        f32 oldy = prev.y;
+        f32 newx = obj->x();
+        f32 newy = obj->y();
+        f32 sizeX = obj->sx();
+        f32 sizeY = obj->sy();
+        
+        // X-axis boundary checks
+        if (newx < oldx) {
+            if (newx + sizeX < 0) {
+                obj->events->emit("screen.leave", {{"d", "left"}});
+            } else if (newx < 0) {
+                obj->events->emit("screen.leaving", {{"d", "left"}});
+            }
+        } else if (newx > oldx) {
+            if (newx >= static_cast<f32>(width)) {
+                obj->events->emit("screen.leave", {{"d", "right"}});
+            } else if (newx + sizeX >= static_cast<f32>(width)) {
+                obj->events->emit("screen.leaving", {{"d", "right"}});
+            }
+        }
+        
+        // Y-axis boundary checks
+        if (newy < oldy) {
+            if (newy + sizeY < 0) {
+                obj->events->emit("screen.leave", {{"d", "up"}});
+            } else if (newy < 0) {
+                obj->events->emit("screen.leaving", {{"d", "up"}});
+            }
+        } else if (newy > oldy) {
+            if (newy >= static_cast<f32>(height)) {
+                obj->events->emit("screen.leave", {{"d", "down"}});
+            } else if (newy + sizeY >= static_cast<f32>(height)) {
+                obj->events->emit("screen.leaving", {{"d", "down"}});
+            }
+        }
+        
+        m_prev[obj] = Vec2{obj->x(), obj->y()};
+    }
+}
+
+void TileCollisionSystem::update(World& world) {
+    constexpr i32 TILE_SIZE = 16; // Would come from config
+    
+    // Would iterate TileCollisionComponent instances
+    for (auto* obj : world.objects()) {
+        if (!obj->active) continue;
+        
+        // Would get old position from component
+        f32 oldx = obj->x();
+        f32 oldy = obj->y();
+        f32 newx = obj->x();
+        f32 newy = obj->y();
+        
+        // X axis movement
+        if (newx < oldx) {
+            if (world.collidesWithTile(obj, "left")) {
+                obj->events->emit("wallcollide", {{"d", "left"}});
+                newx += static_cast<f32>(TILE_SIZE) - std::fmod(newx, static_cast<f32>(TILE_SIZE));
+            }
+            obj->setX(newx);
+        } else if (newx > oldx) {
+            if (world.collidesWithTile(obj, "right")) {
+                obj->events->emit("wallcollide", {{"d", "right"}});
+                newx -= std::fmod(newx, static_cast<f32>(TILE_SIZE));
+            }
+            obj->setX(newx);
+        }
+        
+        // Y axis movement
+        if (newy < oldy) {
+            if (world.collidesWithTile(obj, "up")) {
+                obj->events->emit("wallcollide", {{"d", "up"}});
+                newy += static_cast<f32>(TILE_SIZE) - std::fmod(newy, static_cast<f32>(TILE_SIZE));
+            }
+            obj->setY(newy);
+        } else if (newy > oldy) {
+            if (world.collidesWithTile(obj, "down")) {
+                obj->events->emit("wallcollide", {{"d", "down"}});
+                newy -= std::fmod(newy, static_cast<f32>(TILE_SIZE));
+            }
+            obj->setY(newy);
+        }
+    }
 }
 
 void PhysicsWorldStepSystem::update(World& world) {

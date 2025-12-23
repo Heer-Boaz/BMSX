@@ -3,8 +3,12 @@
  */
 
 #include "engine.h"
+#include "../vm/vm_systems.h"
+#include "../vm/vm_runtime.h"
 #include <algorithm>
 #include <cmath>
+#include <fstream>
+#include <iostream>
 
 namespace bmsx {
 
@@ -57,6 +61,9 @@ bool EngineCore::initialize(Platform* platform) {
 
     // Register World in the registry
     registry().registerObject(m_world.get());
+
+    // Register VM systems (mirrors TypeScript createBmsxVMModule)
+    registerVMSystems();
 
     m_state = EngineState::Initialized;
     return true;
@@ -121,11 +128,21 @@ void EngineCore::tick(f64 deltaTime) {
         m_fps = 1.0 / deltaTime;
     }
 
-    // Process input
-    processInput();
+    // Begin frame for system stats
+    m_system_manager.beginFrame();
 
-    // Update world
-    updateWorld(deltaTime);
+    // Process input (Input phase systems)
+    m_system_manager.updatePhase(*m_world, TickGroup::Input);
+
+    // Update world - phases up through ModeResolution (includes ActionEffect)
+    m_system_manager.updatePhase(*m_world, TickGroup::ActionEffect);
+    m_system_manager.updatePhase(*m_world, TickGroup::ModeResolution);
+
+    // Physics phase
+    m_system_manager.updatePhase(*m_world, TickGroup::Physics);
+
+    // Animation phase
+    m_system_manager.updatePhase(*m_world, TickGroup::Animation);
 
     // Process microtasks
     if (m_platform && m_platform->microtaskQueue()) {
@@ -153,9 +170,15 @@ void EngineCore::render() {
             renderTestPattern();
         }
 
+        // Run presentation phase systems (VM draw, etc.)
+        m_system_manager.updatePhase(*m_world, TickGroup::Presentation);
+
         m_view->drawGame();
         m_view->endFrame();
     }
+
+    // Event flush phase
+    m_system_manager.updatePhase(*m_world, TickGroup::EventFlush);
 }
 
 void EngineCore::processInput() {
@@ -176,19 +199,147 @@ void EngineCore::updateWorld(f64 deltaTime) {
     m_world->run(deltaTime);
 }
 
+bool EngineCore::loadEngineAssets(const u8* data, size_t size) {
+    m_engine_assets.clear();
+    m_engine_assets_data.assign(data, data + size);
+
+    // Load engine assets from ROM
+    if (!loadAssetsFromRom(data, size, m_engine_assets)) {
+        m_engine_assets_data.clear();
+        return false;
+    }
+
+    m_engine_assets_loaded = true;
+    return true;
+}
+
+bool EngineCore::loadEngineAssetsFromPath(const char* path) {
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
+    if (!file) {
+        return false;
+    }
+
+    size_t size = file.tellg();
+    file.seekg(0);
+
+    std::vector<u8> data(size);
+    if (!file.read(reinterpret_cast<char*>(data.data()), size)) {
+        return false;
+    }
+
+    return loadEngineAssets(data.data(), data.size());
+}
+
+bool EngineCore::bootWithoutCart() {
+    // Boot engine with only engine assets (no cartridge)
+    // This runs the system_program.lua which displays "insert cart"
+
+    if (!m_engine_assets_loaded) {
+        std::cerr << "[BMSX] bootWithoutCart: engine assets not loaded" << std::endl;
+        return false;
+    }
+
+    // Check if engine assets have a VM program
+    if (!m_engine_assets.hasVmProgram()) {
+        std::cerr << "[BMSX] bootWithoutCart: no VM program in engine assets" << std::endl;
+        return false;
+    }
+
+    std::cerr << "[BMSX] bootWithoutCart: VM program found, booting..." << std::endl;
+
+    // Copy engine assets as the active assets
+    // Note: We can't move vmProgram since engine_assets must stay valid
+    // Instead, we reference the engine assets directly when booting VM
+    m_assets.img = m_engine_assets.img;
+    m_assets.audio = m_engine_assets.audio;
+    m_assets.model = m_engine_assets.model;
+    m_assets.data = m_engine_assets.data;
+    m_assets.audioevents = m_engine_assets.audioevents;
+    m_assets.atlasTextures = m_engine_assets.atlasTextures;
+    m_assets.manifest = m_engine_assets.manifest;
+    m_assets.projectRootPath = m_engine_assets.projectRootPath;
+    // Don't copy vmProgram - use engine_assets.vmProgram directly below
+
+    // Upload textures to backend
+    uploadTexturesToBackend();
+
+    // Boot the VM with the engine's system program
+    if (m_engine_assets.vmProgram && m_engine_assets.vmProgram->program) {
+        // Create VMRuntime instance if it doesn't exist
+        if (!VMRuntime::hasInstance()) {
+            VMRuntimeOptions options;
+            options.playerIndex = 1;
+            options.viewport.x = m_engine_assets.manifest.viewportWidth > 0 ? m_engine_assets.manifest.viewportWidth : 256;
+            options.viewport.y = m_engine_assets.manifest.viewportHeight > 0 ? m_engine_assets.manifest.viewportHeight : 224;
+            VMRuntime::createInstance(options);
+        }
+
+        // Boot the VM with the pre-compiled program from engine assets
+        VMRuntime& runtime = VMRuntime::instance();
+        runtime.boot(m_engine_assets.vmProgram->program.get(), m_engine_assets.vmProgram->entryProtoIndex);
+    }
+
+    m_rom_loaded = true;  // Engine is running (with system program)
+    return true;
+}
+
 bool EngineCore::loadRom(const u8* data, size_t size) {
     unloadRom();
 
     m_rom_data.assign(data, data + size);
 
-    // Load assets from ROM
-    if (!loadAssetsFromRom(data, size, m_assets)) {
+    // Start with engine assets as base (if loaded)
+    if (m_engine_assets_loaded) {
+        // Copy engine assets as base layer
+        m_assets.img = m_engine_assets.img;
+        m_assets.audio = m_engine_assets.audio;
+        m_assets.model = m_engine_assets.model;
+        m_assets.data = m_engine_assets.data;
+        m_assets.audioevents = m_engine_assets.audioevents;
+        m_assets.atlasTextures = m_engine_assets.atlasTextures;
+        // VM program and manifest come from cartridge, not engine
+    }
+
+    // Load cartridge assets from ROM (overwrites engine assets with same ID)
+    RuntimeAssets cartAssets;
+    if (!loadAssetsFromRom(data, size, cartAssets)) {
         m_rom_data.clear();
+        m_assets.clear();
         return false;
     }
 
+    // Merge cartridge assets on top of engine assets
+    for (auto& [id, asset] : cartAssets.img) {
+        m_assets.img[id] = std::move(asset);
+    }
+    for (auto& [id, asset] : cartAssets.audio) {
+        m_assets.audio[id] = std::move(asset);
+    }
+    for (auto& [id, asset] : cartAssets.model) {
+        m_assets.model[id] = std::move(asset);
+    }
+    for (auto& [id, asset] : cartAssets.data) {
+        m_assets.data[id] = std::move(asset);
+    }
+    for (auto& [id, asset] : cartAssets.audioevents) {
+        m_assets.audioevents[id] = std::move(asset);
+    }
+    for (auto& [id, asset] : cartAssets.atlasTextures) {
+        m_assets.atlasTextures[id] = std::move(asset);
+    }
+
+    // VM program and manifest always come from cartridge
+    m_assets.vmProgram = std::move(cartAssets.vmProgram);
+    m_assets.manifest = std::move(cartAssets.manifest);
+    m_assets.projectRootPath = std::move(cartAssets.projectRootPath);
+
     // Upload textures to backend
     uploadTexturesToBackend();
+
+    // Boot the VM if we have a pre-compiled program
+    if (m_assets.hasVmProgram()) {
+        bootVMFromProgram();
+    }
 
     m_rom_loaded = true;
     return true;
@@ -327,6 +478,50 @@ void EngineCore::renderTestPattern() {
             Color::white()
         );
     }
+}
+
+void EngineCore::registerVMSystems() {
+    // Register BMSX VM systems (mirrors TypeScript createBmsxVMModule)
+    // Priority determines execution order within each tick group
+
+    // Cart systems
+    m_vm_systems.push_back(std::make_unique<BmsxCartUpdateSystem>(100));
+    m_vm_systems.push_back(std::make_unique<BmsxCartDrawSystem>(100));
+
+    // IDE systems
+    m_vm_systems.push_back(std::make_unique<BmsxIDEInputSystem>(100));
+    m_vm_systems.push_back(std::make_unique<BmsxIDEUpdateSystem>(100));
+    m_vm_systems.push_back(std::make_unique<BmsxIDEDrawSystem>(100));
+
+    // Terminal systems
+    m_vm_systems.push_back(std::make_unique<BmsxTerminalInputSystem>(100));
+    m_vm_systems.push_back(std::make_unique<BmsxTerminalUpdateSystem>(100));
+    m_vm_systems.push_back(std::make_unique<BmsxTerminalDrawSystem>(100));
+
+    // Register all systems with the manager
+    for (auto& sys : m_vm_systems) {
+        m_system_manager.registerSystem(sys.get());
+    }
+}
+
+void EngineCore::bootVMFromProgram() {
+    // Get the pre-compiled program from assets
+    if (!m_assets.vmProgram || !m_assets.vmProgram->program) {
+        return;
+    }
+
+    // Create VMRuntime instance if it doesn't exist
+    if (!VMRuntime::hasInstance()) {
+        VMRuntimeOptions options;
+        options.playerIndex = 1;
+        options.viewport.x = m_assets.manifest.viewportWidth > 0 ? m_assets.manifest.viewportWidth : 256;
+        options.viewport.y = m_assets.manifest.viewportHeight > 0 ? m_assets.manifest.viewportHeight : 224;
+        VMRuntime::createInstance(options);
+    }
+
+    // Boot the VM with the pre-compiled program
+    VMRuntime& runtime = VMRuntime::instance();
+    runtime.boot(m_assets.vmProgram->program.get(), m_assets.vmProgram->entryProtoIndex);
 }
 
 } // namespace bmsx

@@ -190,6 +190,11 @@ bool retro_load_game(const struct retro_game_info* game) {
 
     logging.log(RETRO_LOG_INFO, "[BMSX] Loading game: %s\n", game->path ? game->path : "(memory)");
 
+    // Try to load engine assets from the same directory as the ROM
+    if (game->path) {
+        g_platform->tryLoadEngineAssets(game->path);
+    }
+
     if (game->data && game->size > 0) {
         return g_platform->loadRom(static_cast<const uint8_t*>(game->data), game->size);
     } else if (game->path) {

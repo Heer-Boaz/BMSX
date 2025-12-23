@@ -85,7 +85,36 @@ bool LibretroPlatform::loadRom(const uint8_t* data, size_t size) {
     return true;
 }
 
+void LibretroPlatform::tryLoadEngineAssets(const char* romPath) {
+    // Extract directory from ROM path
+    std::string pathStr(romPath);
+    size_t lastSlash = pathStr.find_last_of("/\\");
+    std::string directory = (lastSlash != std::string::npos) ? pathStr.substr(0, lastSlash + 1) : "";
+    std::string engineAssetsPath = directory + "engine.assets.rom";
+
+    // Try to load engine assets (optional - not fatal if missing)
+    std::ifstream engineFile(engineAssetsPath, std::ios::binary | std::ios::ate);
+    if (engineFile) {
+        size_t engineSize = engineFile.tellg();
+        engineFile.seekg(0);
+        std::vector<uint8_t> engineData(engineSize);
+        if (engineFile.read(reinterpret_cast<char*>(engineData.data()), engineSize)) {
+            if (m_engine && m_engine->loadEngineAssets(engineData.data(), engineData.size())) {
+                log(RETRO_LOG_INFO, "[BMSX] Engine assets loaded (%zu bytes) from: %s\n", engineSize, engineAssetsPath.c_str());
+            } else {
+                log(RETRO_LOG_WARN, "[BMSX] Failed to parse engine assets: %s\n", engineAssetsPath.c_str());
+            }
+        }
+    } else {
+        log(RETRO_LOG_INFO, "[BMSX] No engine assets found at: %s (continuing without)\n", engineAssetsPath.c_str());
+    }
+}
+
 bool LibretroPlatform::loadRomFromPath(const char* path) {
+    // Load engine assets first (if available in same directory)
+    tryLoadEngineAssets(path);
+
+    // Load the game ROM
     std::ifstream file(path, std::ios::binary | std::ios::ate);
     if (!file) {
         log(RETRO_LOG_ERROR, "[BMSX] Failed to open ROM file: %s\n", path);
@@ -106,10 +135,47 @@ bool LibretroPlatform::loadRomFromPath(const char* path) {
 
 bool LibretroPlatform::loadEmptyCart() {
     unloadRom();
-    m_rom_loaded = true;
 
-    // Start engine with empty cart (no ROM data)
-    log(RETRO_LOG_INFO, "[BMSX] Empty cart loaded\n");
+    // Try to load engine assets from dist directory (default location)
+    // TODO: Make this configurable via core options
+    const char* engineAssetsPaths[] = {
+        "dist/engine.assets.rom",
+        "./engine.assets.rom",
+        "../engine.assets.rom",
+        nullptr
+    };
+
+    bool assetsLoaded = false;
+    for (int i = 0; engineAssetsPaths[i] != nullptr; i++) {
+        std::ifstream file(engineAssetsPaths[i], std::ios::binary | std::ios::ate);
+        if (file) {
+            size_t size = file.tellg();
+            file.seekg(0);
+            std::vector<uint8_t> data(size);
+            if (file.read(reinterpret_cast<char*>(data.data()), size)) {
+                if (m_engine && m_engine->loadEngineAssets(data.data(), data.size())) {
+                    log(RETRO_LOG_INFO, "[BMSX] Engine assets loaded from: %s\n", engineAssetsPaths[i]);
+                    assetsLoaded = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (!assetsLoaded) {
+        log(RETRO_LOG_WARN, "[BMSX] No engine assets found, running without system program\n");
+    }
+
+    // Boot engine with engine assets (runs system_program.lua)
+    if (assetsLoaded && m_engine && m_engine->bootWithoutCart()) {
+        log(RETRO_LOG_INFO, "[BMSX] Booted with engine system program\n");
+        m_rom_loaded = true;
+        return true;
+    }
+
+    // Fallback: just mark as loaded to show test pattern
+    m_rom_loaded = true;
+    log(RETRO_LOG_INFO, "[BMSX] Empty cart loaded (test pattern mode)\n");
     return true;
 }
 

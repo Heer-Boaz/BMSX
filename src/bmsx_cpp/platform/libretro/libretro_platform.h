@@ -155,6 +155,7 @@ public:
     bool loadRomFromPath(const char* path);
     bool loadEmptyCart();
     void unloadRom();
+    void tryLoadEngineAssets(const char* romPath);  // Try to load engine.assets.rom from ROM directory
 
     // Emulation control
     void reset();

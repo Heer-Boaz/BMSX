@@ -41,8 +41,19 @@ public:
     EventPort() = default;
     ~EventPort() = default;
 
-    // TODO: Implement event messaging (event name -> handlers)
-    // For now, just a placeholder
+    // Event emission with key-value parameters
+    template<typename T = std::string>
+    void emit(const std::string& eventName, std::initializer_list<std::pair<std::string, T>> params = {}) {
+        // TODO: Implement actual event dispatch
+        (void)eventName;
+        (void)params;
+    }
+    
+    // Overload for string-variant pairs
+    void emit(const std::string& eventName, std::initializer_list<std::pair<const char*, const char*>> params) {
+        (void)eventName;
+        (void)params;
+    }
 };
 
 // Identifier is defined in registry.h
@@ -65,34 +76,9 @@ enum class SpawnReason {
 // Forward declaration - actual definition in ecs/ecsystem.h
 enum class TickGroup : i32;
 
-/* ============================================================================
- * Component - Base class for all components
- *
- * Components are attached to WorldObjects and provide modular functionality.
- * Components do NOT have tick() - ticking is done by Systems.
- * ============================================================================ */
-
-class Component : public Registerable {
-public:
-    virtual ~Component() = default;
-
-    Identifier id;
-    Identifier id_local;  // Local identifier within the parent object
-    WorldObject* parent = nullptr;
-
-    // Lifecycle hooks called by WorldObject
-    virtual void on_attach() {}
-    virtual void on_detach() {}
-    virtual void onloadSetup() {}  // Called after component is added for late-init
-    void unbind();
-
-    // Type name for serialization/reflection (static per-class)
-    virtual std::string_view typeName() const = 0;
-    static constexpr std::string_view staticTypeName() { return "Component"; }
-
-    // Registerable interface
-    const Identifier& registryId() const override { return id; }
-};
+// Component is defined in component/component.h
+// Forward declared here to avoid circular dependencies
+class Component;
 
 /* ============================================================================
  * ComponentContainer interface - for objects that hold components
@@ -176,6 +162,10 @@ public:
     bool tickEnabled = false;      // Alias for tick_enabled (mirrors TS property)
     bool visible = true;           // Should be rendered
     bool eventhandling_enabled = false;
+    
+    // Player index for multiplayer/input assignment
+    i32 player_index = 1;
+    i32 playerIndex() const { return player_index; }
 
     // ─────────────────────────────────────────────────────────────────────────
     // Disposal
@@ -225,7 +215,7 @@ public:
 
     template<typename T>
     T* getFirstComponent() {
-        std::string key = std::string(T::staticTypeName());
+        std::string key = std::string(T::typeName());
         auto it = componentMap.find(key);
         if (it != componentMap.end() && !it->second.empty()) {
             return static_cast<T*>(it->second[0]);
@@ -236,7 +226,7 @@ public:
     template<typename T>
     std::vector<T*> getComponents() {
         std::vector<T*> result;
-        std::string key = std::string(T::staticTypeName());
+        std::string key = std::string(T::typeName());
         auto it = componentMap.find(key);
         if (it != componentMap.end()) {
             for (auto* c : it->second) {
@@ -248,7 +238,7 @@ public:
 
     template<typename T>
     bool hasComponent() const {
-        std::string key = std::string(T::staticTypeName());
+        std::string key = std::string(T::typeName());
         auto it = componentMap.find(key);
         return it != componentMap.end() && !it->second.empty();
     }
@@ -382,10 +372,33 @@ public:
     // Returns objects from active space
     std::vector<WorldObject*> objects(const ObjectScope& scope = {true});
 
+    // Returns pairs of (object, component) for all objects that have component T
+    template<typename T>
+    std::vector<std::pair<WorldObject*, T*>> objectsWithComponents(const ObjectScope& scope = {true}) {
+        std::vector<std::pair<WorldObject*, T*>> result;
+        for (auto* obj : objects(scope)) {
+            T* comp = obj->getFirstComponent<T>();
+            if (comp) {
+                result.push_back({obj, comp});
+            }
+        }
+        return result;
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // Physics
     // ─────────────────────────────────────────────────────────────────────────
     void stepPhysics(f64 dt);
+    
+    // Tile collision query (used by TileCollisionSystem)
+    bool collidesWithTile(WorldObject* obj, const std::string& direction) const;
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Game dimensions
+    // ─────────────────────────────────────────────────────────────────────────
+    i32 gameWidth() const { return _gameWidth; }
+    i32 gameHeight() const { return _gameHeight; }
+    void setGameDimensions(i32 w, i32 h) { _gameWidth = w; _gameHeight = h; }
 
     // ─────────────────────────────────────────────────────────────────────────
     // Main update loop (drives Systems, NOT individual object tick()!)
@@ -417,6 +430,10 @@ private:
 
     // Current tick phase
     TickGroup _currentPhase = TickGroup::Input;
+    
+    // Game dimensions (screen/viewport size)
+    i32 _gameWidth = 256;
+    i32 _gameHeight = 240;
 };
 
 } // namespace bmsx

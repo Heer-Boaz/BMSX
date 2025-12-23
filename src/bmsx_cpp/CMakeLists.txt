@@ -57,7 +57,32 @@ add_library(bmsx_core STATIC
     core/world.cpp
     core/assets.cpp
     core/binencoder.cpp
-    core/fsm.cpp
+
+    # Timeline systems
+    timeline/timeline.cpp
+
+    # FSM systems
+    fsm/statedefinition.cpp
+    fsm/state.cpp
+    fsm/fsmcontroller.cpp
+    fsm/fsmlibrary.cpp
+
+    # Input systems
+    input/inputstatemanager.cpp
+    input/playerinput.cpp
+    input/actionparser.cpp
+    input/input.cpp
+    input/keyboardinput.cpp
+    input/gamepadinput.cpp
+
+    # Component systems
+    component/component.cpp
+    component/collisioncomponents.cpp
+    component/transformcomponent.cpp
+    component/actioneffectcomponent.cpp
+
+    # Action effects
+    action_effects/input_action_effect_compiler.cpp
 
     # Render systems
     render/backend.cpp
@@ -69,6 +94,14 @@ add_library(bmsx_core STATIC
 
     # ECS systems
     ecs/ecsystem.cpp
+    ecs/input_action_effect_system.cpp
+
+    # VM (Lua bytecode interpreter)
+    vm/cpu.cpp
+    vm/vm_api.cpp
+    vm/vm_runtime.cpp
+    vm/vm_systems.cpp
+    vm/program_loader.cpp
 )
 
 # Required for linking static library into shared library

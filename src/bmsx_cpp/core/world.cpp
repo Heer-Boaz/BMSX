@@ -10,19 +10,11 @@
 
 #include "world.h"
 #include "engine.h"
+#include "../component/component.h"
 #include <algorithm>
 #include <stdexcept>
 
 namespace bmsx {
-
-/* ============================================================================
- * Component implementation
- * ============================================================================ */
-
-void Component::unbind() {
-    // Remove from registry
-    Registry::instance().deregister(this);
-}
 
 /* ============================================================================
  * WorldObject implementation
@@ -82,7 +74,7 @@ void WorldObject::markForDisposal() {
 }
 
 void WorldObject::addComponentInternal(std::unique_ptr<Component> comp) {
-    comp->parent = this;
+    comp->setParent(this);
     Component* ptr = comp.get();
     components.push_back(std::move(comp));
 
@@ -91,8 +83,7 @@ void WorldObject::addComponentInternal(std::unique_ptr<Component> comp) {
     componentMap[key].push_back(ptr);
 
     // Late-init hooks
-    ptr->onloadSetup();
-    ptr->on_attach();
+    ptr->onAttach();
 }
 
 void WorldObject::removeComponent(Component* comp) {
@@ -110,8 +101,7 @@ void WorldObject::removeComponent(Component* comp) {
     // Remove from components vector
     for (auto it = components.begin(); it != components.end(); ++it) {
         if (it->get() == comp) {
-            comp->on_detach();
-            comp->unbind();
+            comp->detach();
             components.erase(it);
             break;
         }
@@ -181,8 +171,7 @@ void WorldObject::dispose() {
 
     // Dispose all components
     for (auto& comp : components) {
-        comp->on_detach();
-        comp->unbind();
+        comp->dispose();
     }
     components.clear();
     componentMap.clear();
@@ -457,6 +446,15 @@ void World::stepPhysics(f64 dt) {
     (void)dt;
     // TODO: Integrate physics engine (e.g., Jolt, Rapier)
     // For now, this is a placeholder for the physics step
+}
+
+bool World::collidesWithTile(WorldObject* obj, const std::string& direction) const {
+    (void)obj;
+    (void)direction;
+    // TODO: Implement actual tile collision detection using tilemap data
+    // This is a placeholder - real implementation would check against
+    // the active space's tilemap collision layer
+    return false;
 }
 
 void World::run(f64 deltaTime) {

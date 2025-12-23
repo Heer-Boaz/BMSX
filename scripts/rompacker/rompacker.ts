@@ -802,6 +802,7 @@ async function main() {
 					const engineCanonicalization = engineManifest.vm.canonicalization ?? previousCanonicalization;
 					setLuaCanonicalization(engineCanonicalization);
 					try {
+						// Note: includeCode:false skips JS rebuild check, but we still compile Lua to VM program
 						const engineResMetaList = await getResMetaList([engineResPath], engineRomName, {
 							includeCode: false,
 							extraLuaPaths: [],
@@ -814,6 +815,8 @@ async function main() {
 						}
 						validateAudioEventReferences(engineResources);
 						const engineRomAssets = await generateRomAssets(engineResources);
+						// Compile system_program.lua into VM bytecode for C++ engine
+						appendVmProgramAsset(engineRomAssets, engineManifest);
 						await finalizeRompack(engineRomAssets, engineRomName, false, { projectRootPath: engineProjectRootPath, manifest: engineManifest });
 						logOk(`Engine assets ready → ${pc.white(`dist/${engineRomName}.rom`)}`);
 					} finally {

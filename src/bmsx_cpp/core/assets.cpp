@@ -4,9 +4,11 @@
 
 #include "assets.h"
 #include "binencoder.h"
+#include "../vm/program_loader.h"
 #include <cstring>
 #include <stdexcept>
 #include <zlib.h>
+#include <iostream>
 
 // stb_image for PNG decoding
 #include "../vendor/stb_image.h"
@@ -63,6 +65,7 @@ void RuntimeAssets::clear() {
     model.clear();
     data.clear();
     audioevents.clear();
+    vmProgram.reset();
     projectRootPath.clear();
     manifest = RomManifest{};
 }
@@ -238,18 +241,20 @@ bool loadAssetsFromRom(const u8* buffer, size_t size, RuntimeAssets& assets) {
     }
 
     const auto& assetArray = payload.at("assets").asArray();
+    std::cerr << "[BMSX] Loading " << assetArray.size() << " assets from ROM" << std::endl;
 
     for (const auto& assetValue : assetArray) {
         if (!assetValue.isObject()) continue;
 
         const auto& asset = assetValue.asObject();
 
-        std::string assetId = asset.count("id") ? asset.at("id").asString() : "";
+        // ROM format uses 'resid' for asset ID, not 'id'
+        std::string assetId = asset.count("resid") ? asset.at("resid").asString() : "";
         std::string assetType = asset.count("type") ? asset.at("type").asString() : "";
 
-        // Get buffer offsets
-        i32 bufStart = asset.count("buffer_start") ? asset.at("buffer_start").toI32() : -1;
-        i32 bufEnd = asset.count("buffer_end") ? asset.at("buffer_end").toI32() : -1;
+        // ROM format uses 'start'/'end', not 'buffer_start'/'buffer_end'
+        i32 bufStart = asset.count("start") ? asset.at("start").toI32() : -1;
+        i32 bufEnd = asset.count("end") ? asset.at("end").toI32() : -1;
         i32 metaBufStart = asset.count("metabuffer_start") ? asset.at("metabuffer_start").toI32() : -1;
         i32 metaBufEnd = asset.count("metabuffer_end") ? asset.at("metabuffer_end").toI32() : -1;
 
@@ -354,9 +359,26 @@ bool loadAssetsFromRom(const u8* buffer, size_t size, RuntimeAssets& assets) {
             assets.audio[assetId] = std::move(audioAsset);
         }
         else if (assetType == "data") {
+            std::cerr << "[BMSX] Data asset found: id='" << assetId << "' bufStart=" << bufStart << " bufEnd=" << bufEnd << std::endl;
             if (bufStart >= 0 && bufEnd > bufStart) {
-                std::vector<u8> dataBlob(romData + bufStart, romData + bufEnd);
-                assets.data[assetId] = std::move(dataBlob);
+                // Check if this is the VM program asset
+                if (assetId == VM_PROGRAM_ASSET_ID) {
+                    std::cerr << "[BMSX] Loading VM program asset (" << (bufEnd - bufStart) << " bytes)" << std::endl;
+                    try {
+                        // Load pre-compiled Lua bytecode program
+                        assets.vmProgram = ProgramLoader::load(romData + bufStart, bufEnd - bufStart);
+                        if (assets.vmProgram) {
+                            std::cerr << "[BMSX] VM program loaded successfully!" << std::endl;
+                        } else {
+                            std::cerr << "[BMSX] VM program load returned nullptr!" << std::endl;
+                        }
+                    } catch (const std::exception& e) {
+                        std::cerr << "[BMSX] VM program load FAILED: " << e.what() << std::endl;
+                    }
+                } else {
+                    std::vector<u8> dataBlob(romData + bufStart, romData + bufEnd);
+                    assets.data[assetId] = std::move(dataBlob);
+                }
             }
         }
     }

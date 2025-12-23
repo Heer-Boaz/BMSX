@@ -241,10 +241,61 @@ async function loadRompackFromFile(romfile: string): Promise<Buffer> {
 	return rombin as Buffer;
 }
 
+/**
+ * Print asset list to stdout in a tabular format (CLI mode).
+ */
+function printAssetList(assets: RomAsset[]): void {
+	// Group assets by type
+	const byType = new Map<string, RomAsset[]>();
+	for (const asset of assets) {
+		const type = asset.type ?? 'unknown';
+		if (!byType.has(type)) byType.set(type, []);
+		byType.get(type)!.push(asset);
+	}
+
+	// Summary
+	console.log('\n=== Asset Summary ===');
+	console.log(`Total assets: ${assets.length}`);
+	for (const [type, list] of byType) {
+		const totalSize = list.reduce((sum, a) => {
+			let size = 0;
+			if (typeof a.start === 'number' && typeof a.end === 'number') size += a.end - a.start;
+			if (typeof a.metabuffer_start === 'number' && typeof a.metabuffer_end === 'number') size += a.metabuffer_end - a.metabuffer_start;
+			return sum + size;
+		}, 0);
+		console.log(`  ${type}: ${list.length} assets (${formatByteSize(totalSize)})`);
+	}
+
+	// Detailed list
+	console.log('\n=== Asset List ===');
+	console.log('TYPE       | ID                                           | BUFFER RANGE          | SIZE');
+	console.log('-'.repeat(100));
+
+	for (const asset of assets) {
+		const type = (asset.type ?? 'unknown').padEnd(10);
+		const id = (asset.resid ?? '-').slice(0, 44).padEnd(44);
+		let bufferRange = '-';
+		let size = 0;
+		if (typeof asset.start === 'number' && typeof asset.end === 'number') {
+			bufferRange = `${asset.start}-${asset.end}`;
+			size = asset.end - asset.start;
+		}
+		if (typeof asset.metabuffer_start === 'number' && typeof asset.metabuffer_end === 'number') {
+			size += asset.metabuffer_end - asset.metabuffer_start;
+		}
+		console.log(`${type} | ${id} | ${bufferRange.padEnd(21)} | ${formatByteSize(size)}`);
+	}
+}
+
 async function main() {
-	const romfile = process.argv[2];
+	const args = process.argv.slice(2);
+	const listAssetsFlag = args.includes('--list-assets');
+	const romfile = args.find(arg => !arg.startsWith('--'));
+
 	if (!romfile) {
-		console.error('Usage: npx tsx scripts/rominspector.ts <romfile>');
+		console.error('Usage: npx tsx scripts/rominspector.ts <romfile> [--list-assets]');
+		console.error('Options:');
+		console.error('  --list-assets    Print asset list to stdout without opening UI');
 		process.exit(1);
 	}
 
@@ -268,6 +319,12 @@ async function main() {
 
 	const { metaBuf, metadataOffset, metadataLength } = getMetadataBuffer(rombin, rommeta);
 	assetList = await loadAssets(rombin);
+
+	// Handle --list-assets flag: print assets and exit without UI
+	if (listAssetsFlag) {
+		printAssetList(assetList);
+		process.exit(0);
+	}
 
 	const imageAssets = assetList.filter(a => a.type === 'image') ?? [];
 	const audioCount = assetList.filter(a => a.type === 'audio')?.length ?? 0;

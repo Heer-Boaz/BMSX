@@ -7,12 +7,14 @@
  * - model: 3D model assets
  * - data: Generic data assets (JSON, etc.)
  * - audioevents: Audio event definitions
+ * - vmProgram: Pre-compiled Lua bytecode program
  */
 
 #ifndef BMSX_ASSETS_H
 #define BMSX_ASSETS_H
 
 #include "types.h"
+#include "../vm/program_loader.h"
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -21,6 +23,9 @@
 #include <array>
 
 namespace bmsx {
+
+// VM program asset ID (matches TypeScript VM_PROGRAM_ASSET_ID)
+constexpr const char* VM_PROGRAM_ASSET_ID = "__vm_program__";
 
 /* ============================================================================
  * Asset identifiers (string-based, like TypeScript)
@@ -176,6 +181,9 @@ public:
     // Atlas textures (atlasid -> ImgAsset with full texture data)
     std::unordered_map<i32, ImgAsset> atlasTextures;
 
+    // Pre-compiled VM program (loaded from __vm_program__ asset)
+    std::unique_ptr<VmProgramAsset> vmProgram;
+
     // Project metadata
     std::string projectRootPath;
     RomManifest manifest;
@@ -202,6 +210,7 @@ public:
     bool hasAudio(const AssetId& id) const { return audio.find(id) != audio.end(); }
     bool hasModel(const AssetId& id) const { return model.find(id) != model.end(); }
     bool hasData(const AssetId& id) const { return data.find(id) != data.end(); }
+    bool hasVmProgram() const { return vmProgram != nullptr; }
 };
 
 /* ============================================================================
