@@ -1,8 +1,0 @@
-/home/boaz/BMSX/src/bmsx_cpp/build/CMakeFiles/bmsx_core.dir
-/home/boaz/BMSX/src/bmsx_cpp/build/CMakeFiles/bmsx_libretro.dir
-/home/boaz/BMSX/src/bmsx_cpp/build/CMakeFiles/edit_cache.dir
-/home/boaz/BMSX/src/bmsx_cpp/build/CMakeFiles/rebuild_cache.dir
-/home/boaz/BMSX/src/bmsx_cpp/build/CMakeFiles/list_install_components.dir
-/home/boaz/BMSX/src/bmsx_cpp/build/CMakeFiles/install.dir
-/home/boaz/BMSX/src/bmsx_cpp/build/CMakeFiles/install/local.dir
-/home/boaz/BMSX/src/bmsx_cpp/build/CMakeFiles/install/strip.dir

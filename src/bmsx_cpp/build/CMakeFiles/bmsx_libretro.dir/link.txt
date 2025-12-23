@@ -1,1 +1,0 @@
-/usr/bin/c++ -fPIC -g -shared -Wl,-soname,bmsx_libretro.so -o bmsx_libretro.so CMakeFiles/bmsx_libretro.dir/platform/libretro/libretro_platform.cpp.o CMakeFiles/bmsx_libretro.dir/platform/libretro/libretro_entry.cpp.o  libbmsx_core.a /usr/lib/x86_64-linux-gnu/libz.so 
