@@ -6,7 +6,11 @@
 
 #include "state.h"
 #include "fsmlibrary.h"
+#include "../core/registry.h"
+#include "../core/world.h"
+#include "../component/timelinecomponent.h"
 #include <algorithm>
+#include <cctype>
 #include <stdexcept>
 #include <iostream>
 #include <sstream>
@@ -16,6 +20,21 @@ namespace bmsx {
 // Static member initialization
 State::Diagnostics State::diagnostics = {};
 std::unordered_map<Identifier, std::vector<std::string>> State::TraceMap;
+
+namespace {
+
+bool isNoopString(const std::string& value) {
+	if (value.empty()) {
+		return false;
+	}
+	std::string normalized = value;
+	std::transform(normalized.begin(), normalized.end(), normalized.begin(), [](unsigned char c) {
+		return static_cast<char>(std::tolower(c));
+	});
+	return normalized == "no-op" || normalized == "noop" || normalized == "no_op";
+}
+
+} // namespace
 
 // ============================================================================
 // Constructor
@@ -152,8 +171,7 @@ void State::start() {
 
         std::optional<Identifier> startNext;
         if (startStateDef->entering_state) {
-            (*startStateDef->entering_state)(startInstance, nullptr);
-            // Note: entering_state is void, no return value
+            startNext = (*startStateDef->entering_state)(startInstance, nullptr);
         }
         startInstance->transitionToNextStateIfProvided(startNext);
     });
@@ -166,6 +184,9 @@ void State::reset(bool initializing) {
     // Reset history
     _histHead = 0;
     _histSize = 0;
+
+    auto* def = definitionOrThrow();
+    data = def->data;
 
     // Reset current state to initial
     auto initial = start_state_id();
@@ -278,7 +299,10 @@ void State::runChecksForCurrentState() {
 
     for (const auto& rc : def->run_checks) {
         auto result = handleStateTransition(rc);
-        if (result) break; // First passing check wins
+        if (result) {
+            transitionToNextStateIfProvided(result);
+            break; // First passing check wins
+        }
     }
 }
 
@@ -313,7 +337,7 @@ bool State::dispatch_event(const GameEvent& event) {
     auto* def = definitionOrThrow();
     auto it = def->on.find(event.type);
     if (it != def->on.end()) {
-        auto result = handleStateTransition(it->second);
+        auto result = handleStateTransition(it->second, &event);
         if (result) {
             transitionToNextStateIfProvided(result);
             return true;
@@ -328,7 +352,7 @@ bool State::dispatch_event(const GameEvent& event) {
 // ============================================================================
 
 void State::transition_to(const Identifier& state_id) {
-    transitionToState(state_id);
+    transition_to_path(state_id);
 }
 
 void State::transition_to_path(const std::string& path) {
@@ -424,8 +448,7 @@ void State::transitionToState(const Identifier& state_id, TransitionExecutionMod
         // Enter handler
         std::optional<Identifier> next;
         if (curDef->entering_state) {
-            (*curDef->entering_state)(cur, nullptr);
-            // Note: entering_state is void in this implementation
+            next = (*curDef->entering_state)(cur, nullptr);
         }
         cur->transitionToNextStateIfProvided(next);
     });
@@ -460,12 +483,12 @@ bool State::checkStateGuardConditions(const Identifier& target_state_id) {
 }
 
 void State::transitionToNextStateIfProvided(const std::optional<Identifier>& next_state) {
-    if (next_state && !next_state->empty()) {
-        transitionToState(*next_state);
+    if (next_state && !next_state->empty() && !isNoopString(*next_state)) {
+        transition_to(*next_state);
     }
 }
 
-std::optional<Identifier> State::handleStateTransition(const StateEventDefinition& handler) {
+std::optional<Identifier> State::handleStateTransition(const StateEventDefinition& handler, const GameEvent* event) {
     // Check guard
     if (handler.guard) {
         if (!(*handler.guard)(this, handler.target.value_or(""))) {
@@ -482,7 +505,8 @@ std::optional<Identifier> State::handleStateTransition(const StateEventDefinitio
     if (handler.handler) {
         GameEvent emptyEvent;
         emptyEvent.type = "__fsm.synthetic__";
-        return (*handler.handler)(this, emptyEvent);
+        const GameEvent& actual = event ? *event : emptyEvent;
+        return (*handler.handler)(this, actual);
     }
 
     return std::nullopt;
@@ -551,6 +575,9 @@ std::vector<Identifier> State::getHistorySnapshot() const {
 // ============================================================================
 
 std::string State::path() const {
+    if (is_root()) {
+        return "/";
+    }
     std::vector<std::string> segments;
     const State* node = this;
     while (node && !node->is_root()) {
@@ -560,8 +587,11 @@ std::string State::path() const {
     std::reverse(segments.begin(), segments.end());
 
     std::ostringstream oss;
+    oss << "/";
     for (size_t i = 0; i < segments.size(); ++i) {
-        if (i > 0) oss << '/';
+        if (i > 0) {
+            oss << "/";
+        }
         oss << segments[i];
     }
     return oss.str();
@@ -859,10 +889,8 @@ void State::appendTraceEntry(const Identifier& machineId, const std::string& mes
 // ============================================================================
 
 TimelineHost* State::timelineHost() {
-    // In the full implementation, target_id would resolve to an object
-    // that implements TimelineHost. For now, return nullptr.
-    // This will need to be connected to the actual game object system.
-    return nullptr;
+    auto* obj = Registry::instance().get<WorldObject>(target_id);
+    return obj->getFirstComponent<TimelineComponent>();
 }
 
 std::vector<StateTimelineBinding>& State::ensureTimelineDefinitions() {

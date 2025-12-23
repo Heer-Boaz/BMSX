@@ -82,6 +82,8 @@ add_library(bmsx_core STATIC
     component/collisioncomponents.cpp
     component/transformcomponent.cpp
     component/actioneffectcomponent.cpp
+    component/spritecomponent.cpp
+    component/timelinecomponent.cpp
 
     # Action effects
     action_effects/input_action_effect_compiler.cpp
@@ -105,6 +107,7 @@ add_library(bmsx_core STATIC
     vm/vm_api.cpp
     vm/vm_runtime.cpp
     vm/vm_systems.cpp
+    vm/vm_objects.cpp
     vm/program_loader.cpp
 )
 

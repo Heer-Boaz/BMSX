@@ -14,6 +14,7 @@ namespace bmsx {
 // Forward declarations
 class VMApi;
 class VMStorage;
+struct VmProgramAsset;
 
 /**
  * Standard button actions for gamepad/keyboard input.
@@ -94,6 +95,7 @@ public:
 	 * Boot the VM with a compiled program.
 	 */
 	void boot(Program* program, int entryProtoIndex);
+	void boot(const VmProgramAsset& asset);
 
 	/**
 	 * Tick the VM update phase (called by BmsxCartUpdateSystem).
@@ -219,6 +221,8 @@ private:
 	void setupBuiltins();
 	void executeUpdateCallback();
 	void executeDrawCallback();
+	Value requireVmModule(const std::string& moduleName);
+	std::string formatVmString(const std::string& templateStr, const std::vector<Value>& args, size_t argStart) const;
 
 	static VMRuntime* s_instance;
 
@@ -248,6 +252,10 @@ private:
 	std::optional<std::shared_ptr<Closure>> m_updateFn;
 	std::optional<std::shared_ptr<Closure>> m_drawFn;
 	std::optional<std::shared_ptr<Closure>> m_initFn;
+
+	std::unordered_map<std::string, int> m_vmModuleProtos;
+	std::unordered_map<std::string, std::string> m_vmModuleAliases;
+	std::unordered_map<std::string, Value> m_vmModuleCache;
 };
 
 } // namespace bmsx

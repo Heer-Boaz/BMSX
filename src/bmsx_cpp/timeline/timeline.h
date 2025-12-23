@@ -147,6 +147,7 @@ struct TimelinePlayOptions {
     std::optional<i32> start_frame;
     std::optional<TimelinePlaybackMode> mode;
     std::optional<bool> rewind;
+    std::optional<bool> snap_to_start;
 };
 
 /* ============================================================================

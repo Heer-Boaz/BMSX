@@ -95,7 +95,7 @@ using KeyToComponentMap = std::unordered_map<std::string, std::vector<Component*
  * - Behavior is driven by StateMachineController (sc)
  * ============================================================================ */
 
-class WorldObject : public Registerable {
+class WorldObject : public Registerable, public Stateful {
 public:
     WorldObject();
     explicit WorldObject(const Identifier& id);
@@ -106,6 +106,7 @@ public:
     // ─────────────────────────────────────────────────────────────────────────
     Identifier id;
     const Identifier& registryId() const override { return id; }
+    Identifier getId() const override { return id; }
 
     // ─────────────────────────────────────────────────────────────────────────
     // Position (vec3)
@@ -185,6 +186,8 @@ public:
 
     // Accessor for state controller (mirrors TypeScript property)
     StateMachineController* stateController() { return sc.get(); }
+    StateMachineController* getStateMachineController() override { return sc.get(); }
+    bool isEventHandlingEnabled() const override { return eventhandling_enabled; }
 
     // ─────────────────────────────────────────────────────────────────────────
     // Rendering
@@ -215,10 +218,10 @@ public:
 
     template<typename T>
     T* getFirstComponent() {
-        std::string key = std::string(T::typeName());
-        auto it = componentMap.find(key);
-        if (it != componentMap.end() && !it->second.empty()) {
-            return static_cast<T*>(it->second[0]);
+        for (auto& comp : components) {
+            if (auto* typed = dynamic_cast<T*>(comp.get())) {
+                return typed;
+            }
         }
         return nullptr;
     }
@@ -226,11 +229,9 @@ public:
     template<typename T>
     std::vector<T*> getComponents() {
         std::vector<T*> result;
-        std::string key = std::string(T::typeName());
-        auto it = componentMap.find(key);
-        if (it != componentMap.end()) {
-            for (auto* c : it->second) {
-                result.push_back(static_cast<T*>(c));
+        for (auto& comp : components) {
+            if (auto* typed = dynamic_cast<T*>(comp.get())) {
+                result.push_back(typed);
             }
         }
         return result;
@@ -238,10 +239,15 @@ public:
 
     template<typename T>
     bool hasComponent() const {
-        std::string key = std::string(T::typeName());
-        auto it = componentMap.find(key);
-        return it != componentMap.end() && !it->second.empty();
+        for (const auto& comp : components) {
+            if (dynamic_cast<T*>(comp.get())) {
+                return true;
+            }
+        }
+        return false;
     }
+
+    Component* getComponentById(const std::string& id);
 
     // ─────────────────────────────────────────────────────────────────────────
     // Lifecycle methods (concrete implementations, NOT virtual overrides!)

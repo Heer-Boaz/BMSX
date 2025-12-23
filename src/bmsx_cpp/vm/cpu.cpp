@@ -518,7 +518,12 @@ void VMCPU::executeInstruction(CallFrame& frame, uint32_t instr) {
 				pushFrame(*cls, m_valueScratch, a, c, false, frame.pc - 1);
 				return;
 			}
-			throw std::runtime_error("Attempted to call a non-function value.");
+			std::string message = "Attempted to call a non-function value.";
+			auto range = getDebugRange(frame.pc - 1);
+			if (range.has_value()) {
+				message += " at " + range->path + ":" + std::to_string(range->startLine);
+			}
+			throw std::runtime_error(message);
 		}
 
 		case OpCode::RET: {

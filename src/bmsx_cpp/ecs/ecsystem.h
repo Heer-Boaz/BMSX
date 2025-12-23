@@ -204,6 +204,15 @@ public:
     void update(World& world) override;
 };
 
+// TimelineSystem: Ticks TimelineComponent instances
+class TimelineSystem : public ECSystem {
+public:
+    explicit TimelineSystem(i32 priority = 0)
+        : ECSystem(TickGroup::Animation, priority) {}
+
+    void update(World& world) override;
+};
+
 // RenderSubmitSystem: Submits objects for rendering
 class RenderSubmitSystem : public ECSystem {
 public:

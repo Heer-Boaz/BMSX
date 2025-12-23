@@ -35,18 +35,18 @@ public:
         return inst;
     }
 
-    // Register a definition
+    // Register a definition tree (root + children)
     void registerDefinition(std::unique_ptr<StateDefinition> def);
     void registerDefinition(const Identifier& id, std::unique_ptr<StateDefinition> def);
 
-    // Retrieve a definition
+    // Retrieve a definition (root or child)
     StateDefinition* get(const Identifier& id);
     const StateDefinition* get(const Identifier& id) const;
 
     // Check if definition exists
     bool has(const Identifier& id) const;
 
-    // Remove a definition
+    // Remove a definition tree by root id
     void unregister(const Identifier& id);
 
     // Clear all definitions
@@ -59,14 +59,14 @@ public:
     template<typename Func>
     void forEach(Func&& fn) {
         for (auto& [id, def] : definitions) {
-            fn(id, def.get());
+            fn(id, def);
         }
     }
 
     template<typename Func>
     void forEach(Func&& fn) const {
         for (const auto& [id, def] : definitions) {
-            fn(id, def.get());
+            fn(id, def);
         }
     }
 
@@ -83,7 +83,11 @@ private:
     StateDefinitions(StateDefinitions&&) = delete;
     StateDefinitions& operator=(StateDefinitions&&) = delete;
 
-    std::unordered_map<Identifier, std::unique_ptr<StateDefinition>> definitions;
+    void registerDefinitionTree(StateDefinition* root);
+    void unregisterDefinitionTree(StateDefinition* root);
+
+    std::unordered_map<Identifier, StateDefinition*> definitions;
+    std::unordered_map<Identifier, std::unique_ptr<StateDefinition>> roots;
 };
 
 /**
@@ -209,6 +213,7 @@ public:
     FSMBuilder& state(const Identifier& stateId, std::function<void(FSMBuilder&)> configure);
 
     // State handlers (applied to current state)
+    FSMBuilder& onEnter(StateEnterHandler handler);
     FSMBuilder& onEnter(StateExitHandler handler);
     FSMBuilder& onExit(StateExitHandler handler);
     FSMBuilder& onTick(StateTickHandler handler);

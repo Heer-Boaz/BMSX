@@ -295,7 +295,7 @@ private:
     // ─────────────────────────────────────────────────────────────────────────
     // Event handling
     // ─────────────────────────────────────────────────────────────────────────
-    std::optional<Identifier> handleStateTransition(const StateEventDefinition& handler);
+    std::optional<Identifier> handleStateTransition(const StateEventDefinition& handler, const GameEvent* event = nullptr);
     std::optional<Identifier> handleStateTransition(const TickCheckDefinition& handler);
 
     // ─────────────────────────────────────────────────────────────────────────

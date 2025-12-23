@@ -74,7 +74,7 @@ public:
     // State lifecycle handlers
     // ─────────────────────────────────────────────────────────────────────────
     std::optional<StateTickHandler> tick;
-    std::optional<StateExitHandler> entering_state;
+    std::optional<StateEnterHandler> entering_state;
     std::optional<StateExitHandler> exiting_state;
     std::optional<StateEventHandler> process_input;
 

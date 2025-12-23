@@ -76,6 +76,7 @@ using TransitionTarget = Identifier;
  * ============================================================================ */
 
 using StateEventHandler = std::function<std::optional<TransitionTarget>(State*, const GameEvent&)>;
+using StateEnterHandler = std::function<std::optional<TransitionTarget>(State*, const EventPayload*)>;
 using StateExitHandler = std::function<void(State*, const EventPayload*)>;
 using StateTickHandler = std::function<std::optional<TransitionTarget>(State*)>;
 

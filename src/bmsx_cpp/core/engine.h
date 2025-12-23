@@ -116,6 +116,7 @@ private:
     void updateWorld(f64 deltaTime);
     void renderTestPattern();  // Visual test when no ROM loaded
     void uploadTexturesToBackend();  // Upload asset textures to GPU backend
+    void registerCoreSystems();  // Register engine core systems
     void registerVMSystems();  // Register BMSX VM systems
     void bootVMFromProgram();  // Boot VM with pre-compiled program from ROM
 
@@ -125,6 +126,7 @@ private:
     std::unique_ptr<BFont> m_default_font;
     RuntimeAssets m_assets;
     ECSystemManager m_system_manager;
+    std::vector<std::unique_ptr<ECSystem>> m_core_systems;  // Owned core systems
     std::vector<std::unique_ptr<ECSystem>> m_vm_systems;  // Owned VM systems
 
     EngineState m_state = EngineState::Uninitialized;

@@ -11,6 +11,7 @@
 #include "world.h"
 #include "engine.h"
 #include "../component/component.h"
+#include "../component/timelinecomponent.h"
 #include <algorithm>
 #include <stdexcept>
 
@@ -108,6 +109,15 @@ void WorldObject::removeComponent(Component* comp) {
     }
 }
 
+Component* WorldObject::getComponentById(const std::string& id) {
+    for (auto& comp : components) {
+        if (comp->id == id || comp->idLocal == id) {
+            return comp.get();
+        }
+    }
+    return nullptr;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Lifecycle methods - these mirror TypeScript exactly
 // ─────────────────────────────────────────────────────────────────────────────
@@ -145,6 +155,7 @@ void WorldObject::activate() {
     // Enable flags
     eventhandling_enabled = true;
     tick_enabled = true;
+    tickEnabled = true;
     active = true;
 
     // Start FSM
@@ -158,6 +169,7 @@ void WorldObject::deactivate() {
     active = false;
     eventhandling_enabled = false;
     tick_enabled = false;
+    tickEnabled = false;
     if (sc) {
         sc->pause();
     }
@@ -200,8 +212,9 @@ void WorldObject::unbind() {
 }
 
 void WorldObject::addAutoComponents() {
-    // In TypeScript this uses decorators to auto-attach components
-    // In C++ we'd need a different mechanism (static registry per class)
+    ComponentAttachOptions opts;
+    opts.parent = this;
+    addComponent<TimelineComponent>(opts);
 }
 
 void WorldObject::initializeLinkedFSMs() {

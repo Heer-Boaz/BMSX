@@ -2,11 +2,14 @@
 
 #include "cpu.h"
 #include <string>
+#include <unordered_map>
+#include <vector>
 
 namespace bmsx {
 
 // Forward declarations
 class VMRuntime;
+class WorldObject;
 
 /**
  * Pointer button indices for mouse/touch input.
@@ -55,7 +58,7 @@ struct VMPointerWheel {
 class VMApi {
 public:
 	explicit VMApi(VMRuntime& runtime);
-	~VMApi() = default;
+	~VMApi();
 
 	// Non-copyable
 	VMApi(const VMApi&) = delete;
@@ -217,6 +220,16 @@ private:
 
 	void reset_print_cursor();
 	std::string pointer_action(VMPointerButton button) const;
+
+	struct VmWorldObjectDefinition {
+		std::string defId;
+		std::shared_ptr<Table> classTable;
+		std::shared_ptr<Table> defaults;
+		std::vector<std::string> fsms;
+	};
+
+	std::vector<std::unique_ptr<WorldObject>> m_spawnedObjects;
+	std::unordered_map<std::string, VmWorldObjectDefinition> m_worldObjectDefs;
 };
 
 } // namespace bmsx

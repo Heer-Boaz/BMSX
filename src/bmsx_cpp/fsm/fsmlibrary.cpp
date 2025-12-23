@@ -15,23 +15,27 @@ namespace bmsx {
 
 void StateDefinitions::registerDefinition(std::unique_ptr<StateDefinition> def) {
     if (!def) return;
-    registerDefinition(def->def_id, std::move(def));
+    Identifier id = def->def_id;
+    registerDefinition(id, std::move(def));
 }
 
 void StateDefinitions::registerDefinition(const Identifier& id, std::unique_ptr<StateDefinition> def) {
     if (!def) return;
+    unregister(id);
     def->def_id = id;
-    definitions[id] = std::move(def);
+    auto* rootPtr = def.get();
+    roots[id] = std::move(def);
+    registerDefinitionTree(rootPtr);
 }
 
 StateDefinition* StateDefinitions::get(const Identifier& id) {
     auto it = definitions.find(id);
-    return (it != definitions.end()) ? it->second.get() : nullptr;
+    return (it != definitions.end()) ? it->second : nullptr;
 }
 
 const StateDefinition* StateDefinitions::get(const Identifier& id) const {
     auto it = definitions.find(id);
-    return (it != definitions.end()) ? it->second.get() : nullptr;
+    return (it != definitions.end()) ? it->second : nullptr;
 }
 
 bool StateDefinitions::has(const Identifier& id) const {
@@ -39,11 +43,17 @@ bool StateDefinitions::has(const Identifier& id) const {
 }
 
 void StateDefinitions::unregister(const Identifier& id) {
-    definitions.erase(id);
+    auto rootIt = roots.find(id);
+    if (rootIt == roots.end()) {
+        return;
+    }
+    unregisterDefinitionTree(rootIt->second.get());
+    roots.erase(rootIt);
 }
 
 void StateDefinitions::clear() {
     definitions.clear();
+    roots.clear();
 }
 
 std::vector<StateDefinitions::Identifier> StateDefinitions::getAllIds() const {
@@ -53,6 +63,27 @@ std::vector<StateDefinitions::Identifier> StateDefinitions::getAllIds() const {
         ids.push_back(id);
     }
     return ids;
+}
+
+void StateDefinitions::registerDefinitionTree(StateDefinition* root) {
+    if (!root) return;
+    auto registerNode = [&](auto&& self, StateDefinition* node) -> void {
+        definitions[node->def_id] = node;
+        node->root = root;
+        for (auto& [childId, childDef] : node->states) {
+            childDef->parent = node;
+            self(self, childDef.get());
+        }
+    };
+    registerNode(registerNode, root);
+}
+
+void StateDefinitions::unregisterDefinitionTree(StateDefinition* root) {
+    if (!root) return;
+    definitions.erase(root->def_id);
+    for (auto& [childId, childDef] : root->states) {
+        unregisterDefinitionTree(childDef.get());
+    }
 }
 
 // ============================================================================
@@ -295,9 +326,18 @@ FSMBuilder& FSMBuilder::state(const Identifier& stateId, std::function<void(FSMB
     return end();
 }
 
-FSMBuilder& FSMBuilder::onEnter(StateExitHandler handler) {
+FSMBuilder& FSMBuilder::onEnter(StateEnterHandler handler) {
     ensureContext();
     currentContext->def->entering_state = handler;
+    return *this;
+}
+
+FSMBuilder& FSMBuilder::onEnter(StateExitHandler handler) {
+    ensureContext();
+    currentContext->def->entering_state = [handler](State* state, const EventPayload* payload) -> std::optional<TransitionTarget> {
+        handler(state, payload);
+        return std::nullopt;
+    };
     return *this;
 }
 

@@ -63,6 +63,9 @@ bool EngineCore::initialize(Platform* platform) {
     // Register World in the registry
     registry().registerObject(m_world.get());
 
+    // Register core systems (state machines, timelines, render submit)
+    registerCoreSystems();
+
     // Register VM systems (mirrors TypeScript createBmsxVMModule)
     registerVMSystems();
 
@@ -279,7 +282,7 @@ bool EngineCore::bootWithoutCart() {
 
         // Boot the VM with the pre-compiled program from engine assets
         VMRuntime& runtime = VMRuntime::instance();
-        runtime.boot(m_engine_assets.vmProgram->program.get(), m_engine_assets.vmProgram->entryProtoIndex);
+        runtime.boot(*m_engine_assets.vmProgram);
     }
 
     m_rom_loaded = true;  // Engine is running (with system program)
@@ -508,6 +511,16 @@ void EngineCore::registerVMSystems() {
     }
 }
 
+void EngineCore::registerCoreSystems() {
+    m_core_systems.push_back(std::make_unique<StateMachineSystem>(50));
+    m_core_systems.push_back(std::make_unique<TimelineSystem>(0));
+    m_core_systems.push_back(std::make_unique<RenderSubmitSystem>(0));
+
+    for (auto& sys : m_core_systems) {
+        m_system_manager.registerSystem(sys.get());
+    }
+}
+
 void EngineCore::bootVMFromProgram() {
     // Get the pre-compiled program from assets
     if (!m_assets.vmProgram || !m_assets.vmProgram->program) {
@@ -525,7 +538,7 @@ void EngineCore::bootVMFromProgram() {
 
     // Boot the VM with the pre-compiled program
     VMRuntime& runtime = VMRuntime::instance();
-    runtime.boot(m_assets.vmProgram->program.get(), m_assets.vmProgram->entryProtoIndex);
+    runtime.boot(*m_assets.vmProgram);
 }
 
 } // namespace bmsx

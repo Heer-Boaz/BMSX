@@ -5,6 +5,7 @@
 #include "ecsystem.h"
 #include "../core/world.h"
 #include "../core/engine.h"
+#include "../component/timelinecomponent.h"
 #include <algorithm>
 #include <cmath>
 
@@ -285,6 +286,14 @@ void TransformSystem::update(World& world) {
 void MeshAnimationSystem::update(World& world) {
     // Step GLTF-based mesh animations
     (void)world;
+}
+
+void TimelineSystem::update(World& world) {
+    f64 dt = EngineCore::instance().deltaTime();
+    for (auto* obj : world.objects()) {
+        if (!obj->active) continue;
+        obj->getFirstComponent<TimelineComponent>()->tick_active(dt);
+    }
 }
 
 void RenderSubmitSystem::update(World& world) {
