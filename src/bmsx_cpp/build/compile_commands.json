@@ -1,0 +1,74 @@
+[
+{
+  "directory": "/home/boaz/BMSX/src/bmsx_cpp/build",
+  "command": "/usr/bin/c++  -I/home/boaz/BMSX/src/bmsx_cpp -I/home/boaz/BMSX/src/bmsx_cpp/.. -g -std=gnu++20 -fPIC -Wall -Wextra -Wpedantic -o CMakeFiles/bmsx_core.dir/platform.cpp.o -c /home/boaz/BMSX/src/bmsx_cpp/platform.cpp",
+  "file": "/home/boaz/BMSX/src/bmsx_cpp/platform.cpp",
+  "output": "CMakeFiles/bmsx_core.dir/platform.cpp.o"
+},
+{
+  "directory": "/home/boaz/BMSX/src/bmsx_cpp/build",
+  "command": "/usr/bin/c++  -I/home/boaz/BMSX/src/bmsx_cpp -I/home/boaz/BMSX/src/bmsx_cpp/.. -g -std=gnu++20 -fPIC -Wall -Wextra -Wpedantic -o CMakeFiles/bmsx_core.dir/subscription.cpp.o -c /home/boaz/BMSX/src/bmsx_cpp/subscription.cpp",
+  "file": "/home/boaz/BMSX/src/bmsx_cpp/subscription.cpp",
+  "output": "CMakeFiles/bmsx_core.dir/subscription.cpp.o"
+},
+{
+  "directory": "/home/boaz/BMSX/src/bmsx_cpp/build",
+  "command": "/usr/bin/c++  -I/home/boaz/BMSX/src/bmsx_cpp -I/home/boaz/BMSX/src/bmsx_cpp/.. -g -std=gnu++20 -fPIC -Wall -Wextra -Wpedantic -o CMakeFiles/bmsx_core.dir/core/types.cpp.o -c /home/boaz/BMSX/src/bmsx_cpp/core/types.cpp",
+  "file": "/home/boaz/BMSX/src/bmsx_cpp/core/types.cpp",
+  "output": "CMakeFiles/bmsx_core.dir/core/types.cpp.o"
+},
+{
+  "directory": "/home/boaz/BMSX/src/bmsx_cpp/build",
+  "command": "/usr/bin/c++  -I/home/boaz/BMSX/src/bmsx_cpp -I/home/boaz/BMSX/src/bmsx_cpp/.. -g -std=gnu++20 -fPIC -Wall -Wextra -Wpedantic -o CMakeFiles/bmsx_core.dir/core/engine.cpp.o -c /home/boaz/BMSX/src/bmsx_cpp/core/engine.cpp",
+  "file": "/home/boaz/BMSX/src/bmsx_cpp/core/engine.cpp",
+  "output": "CMakeFiles/bmsx_core.dir/core/engine.cpp.o"
+},
+{
+  "directory": "/home/boaz/BMSX/src/bmsx_cpp/build",
+  "command": "/usr/bin/c++  -I/home/boaz/BMSX/src/bmsx_cpp -I/home/boaz/BMSX/src/bmsx_cpp/.. -g -std=gnu++20 -fPIC -Wall -Wextra -Wpedantic -o CMakeFiles/bmsx_core.dir/core/registry.cpp.o -c /home/boaz/BMSX/src/bmsx_cpp/core/registry.cpp",
+  "file": "/home/boaz/BMSX/src/bmsx_cpp/core/registry.cpp",
+  "output": "CMakeFiles/bmsx_core.dir/core/registry.cpp.o"
+},
+{
+  "directory": "/home/boaz/BMSX/src/bmsx_cpp/build",
+  "command": "/usr/bin/c++  -I/home/boaz/BMSX/src/bmsx_cpp -I/home/boaz/BMSX/src/bmsx_cpp/.. -g -std=gnu++20 -fPIC -Wall -Wextra -Wpedantic -o CMakeFiles/bmsx_core.dir/core/world.cpp.o -c /home/boaz/BMSX/src/bmsx_cpp/core/world.cpp",
+  "file": "/home/boaz/BMSX/src/bmsx_cpp/core/world.cpp",
+  "output": "CMakeFiles/bmsx_core.dir/core/world.cpp.o"
+},
+{
+  "directory": "/home/boaz/BMSX/src/bmsx_cpp/build",
+  "command": "/usr/bin/c++  -I/home/boaz/BMSX/src/bmsx_cpp -I/home/boaz/BMSX/src/bmsx_cpp/.. -g -std=gnu++20 -fPIC -Wall -Wextra -Wpedantic -o CMakeFiles/bmsx_core.dir/core/assets.cpp.o -c /home/boaz/BMSX/src/bmsx_cpp/core/assets.cpp",
+  "file": "/home/boaz/BMSX/src/bmsx_cpp/core/assets.cpp",
+  "output": "CMakeFiles/bmsx_core.dir/core/assets.cpp.o"
+},
+{
+  "directory": "/home/boaz/BMSX/src/bmsx_cpp/build",
+  "command": "/usr/bin/c++  -I/home/boaz/BMSX/src/bmsx_cpp -I/home/boaz/BMSX/src/bmsx_cpp/.. -g -std=gnu++20 -fPIC -Wall -Wextra -Wpedantic -o CMakeFiles/bmsx_core.dir/core/fsm.cpp.o -c /home/boaz/BMSX/src/bmsx_cpp/core/fsm.cpp",
+  "file": "/home/boaz/BMSX/src/bmsx_cpp/core/fsm.cpp",
+  "output": "CMakeFiles/bmsx_core.dir/core/fsm.cpp.o"
+},
+{
+  "directory": "/home/boaz/BMSX/src/bmsx_cpp/build",
+  "command": "/usr/bin/c++  -I/home/boaz/BMSX/src/bmsx_cpp -I/home/boaz/BMSX/src/bmsx_cpp/.. -g -std=gnu++20 -fPIC -Wall -Wextra -Wpedantic -o CMakeFiles/bmsx_core.dir/render/backend.cpp.o -c /home/boaz/BMSX/src/bmsx_cpp/render/backend.cpp",
+  "file": "/home/boaz/BMSX/src/bmsx_cpp/render/backend.cpp",
+  "output": "CMakeFiles/bmsx_core.dir/render/backend.cpp.o"
+},
+{
+  "directory": "/home/boaz/BMSX/src/bmsx_cpp/build",
+  "command": "/usr/bin/c++  -I/home/boaz/BMSX/src/bmsx_cpp -I/home/boaz/BMSX/src/bmsx_cpp/.. -g -std=gnu++20 -fPIC -Wall -Wextra -Wpedantic -o CMakeFiles/bmsx_core.dir/render/gameview.cpp.o -c /home/boaz/BMSX/src/bmsx_cpp/render/gameview.cpp",
+  "file": "/home/boaz/BMSX/src/bmsx_cpp/render/gameview.cpp",
+  "output": "CMakeFiles/bmsx_core.dir/render/gameview.cpp.o"
+},
+{
+  "directory": "/home/boaz/BMSX/src/bmsx_cpp/build",
+  "command": "/usr/bin/c++ -Dbmsx_libretro_EXPORTS -I/home/boaz/BMSX/src/bmsx_cpp/platform/libretro -I/home/boaz/BMSX/src/bmsx_cpp -I/home/boaz/BMSX/src/bmsx_cpp/.. -g -std=gnu++20 -fPIC -Wall -Wextra -Wpedantic -o CMakeFiles/bmsx_libretro.dir/platform/libretro/libretro_platform.cpp.o -c /home/boaz/BMSX/src/bmsx_cpp/platform/libretro/libretro_platform.cpp",
+  "file": "/home/boaz/BMSX/src/bmsx_cpp/platform/libretro/libretro_platform.cpp",
+  "output": "CMakeFiles/bmsx_libretro.dir/platform/libretro/libretro_platform.cpp.o"
+},
+{
+  "directory": "/home/boaz/BMSX/src/bmsx_cpp/build",
+  "command": "/usr/bin/c++ -Dbmsx_libretro_EXPORTS -I/home/boaz/BMSX/src/bmsx_cpp/platform/libretro -I/home/boaz/BMSX/src/bmsx_cpp -I/home/boaz/BMSX/src/bmsx_cpp/.. -g -std=gnu++20 -fPIC -Wall -Wextra -Wpedantic -o CMakeFiles/bmsx_libretro.dir/platform/libretro/libretro_entry.cpp.o -c /home/boaz/BMSX/src/bmsx_cpp/platform/libretro/libretro_entry.cpp",
+  "file": "/home/boaz/BMSX/src/bmsx_cpp/platform/libretro/libretro_entry.cpp",
+  "output": "CMakeFiles/bmsx_libretro.dir/platform/libretro/libretro_entry.cpp.o"
+}
+]

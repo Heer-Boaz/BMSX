@@ -15,6 +15,7 @@
 #include "registry.h"
 #include "assets.h"
 #include "../platform.h"
+#include "../render/gameview.h"
 #include <memory>
 
 namespace bmsx {
@@ -61,7 +62,8 @@ public:
 
     // Core subsystems (like TypeScript $)
     Platform* platform() { return m_platform; }
-    World& world() { return *m_world; }
+    World* world() { return m_world.get(); }
+    GameView* view() { return m_view.get(); }
     Registry& registry() { return Registry::instance(); }
     RuntimeAssets& assets() { return m_assets; }
 
@@ -101,9 +103,11 @@ public:
 private:
     void processInput();
     void updateWorld(f64 deltaTime);
+    void renderTestPattern();  // Visual test when no ROM loaded
 
     Platform* m_platform = nullptr;
     std::unique_ptr<World> m_world;
+    std::unique_ptr<GameView> m_view;
     RuntimeAssets m_assets;
 
     EngineState m_state = EngineState::Uninitialized;

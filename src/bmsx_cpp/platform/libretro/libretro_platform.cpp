@@ -3,6 +3,7 @@
  */
 
 #include "libretro_platform.h"
+#include "../../core/types.h"
 #include <cstring>
 #include <cstdarg>
 #include <fstream>
@@ -33,11 +34,22 @@ LibretroPlatform::LibretroPlatform() {
     // Initialize controller devices
     m_controller_devices.fill(RETRO_DEVICE_JOYPAD);
 
+    // Create and initialize the engine
+    m_engine = std::make_unique<EngineCore>();
+    m_engine->initialize(this);
+
     log(RETRO_LOG_INFO, "[BMSX] Platform initialized\n");
 }
 
 LibretroPlatform::~LibretroPlatform() {
     unloadRom();
+
+    // Shutdown engine before destroying platform components
+    if (m_engine) {
+        m_engine->shutdown();
+        m_engine.reset();
+    }
+
     log(RETRO_LOG_INFO, "[BMSX] Platform destroyed\n");
 }
 
@@ -60,11 +72,15 @@ bool LibretroPlatform::loadRom(const uint8_t* data, size_t size) {
     unloadRom();
 
     m_rom_data.assign(data, data + size);
+
+    // Load ROM into engine
+    if (m_engine && !m_engine->loadRom(data, size)) {
+        log(RETRO_LOG_ERROR, "[BMSX] Failed to load ROM into engine\n");
+        m_rom_data.clear();
+        return false;
+    }
+
     m_rom_loaded = true;
-
-    // TODO: Parse ROM header, initialize game state
-    // This is where you'd integrate with the actual BMSX engine
-
     log(RETRO_LOG_INFO, "[BMSX] ROM loaded (%zu bytes)\n", size);
     return true;
 }
@@ -92,13 +108,17 @@ bool LibretroPlatform::loadEmptyCart() {
     unloadRom();
     m_rom_loaded = true;
 
-    // Initialize with empty cart state
+    // Start engine with empty cart (no ROM data)
     log(RETRO_LOG_INFO, "[BMSX] Empty cart loaded\n");
     return true;
 }
 
 void LibretroPlatform::unloadRom() {
     if (m_rom_loaded) {
+        // Unload from engine
+        if (m_engine) {
+            m_engine->unloadRom();
+        }
         m_rom_data.clear();
         m_rom_loaded = false;
         log(RETRO_LOG_INFO, "[BMSX] ROM unloaded\n");
@@ -106,12 +126,17 @@ void LibretroPlatform::unloadRom() {
 }
 
 void LibretroPlatform::reset() {
-    // TODO: Reset game state
+    // Reset engine state
+    if (m_engine && m_rom_loaded) {
+        m_engine->stop();
+        // Re-initialize world, keep ROM loaded
+        m_engine->start();
+    }
     log(RETRO_LOG_INFO, "[BMSX] Game reset\n");
 }
 
 void LibretroPlatform::runFrame() {
-    if (!m_rom_loaded) return;
+    if (!m_rom_loaded || !m_engine) return;
 
     // Clear audio buffer
     m_audio_buffer.clear();
@@ -124,18 +149,19 @@ void LibretroPlatform::runFrame() {
         clock->advanceFrame(m_av_info.timing.fps);
     }
 
-    // Process microtasks
-    m_microtask_queue->flush();
+    // Calculate delta time (1/fps in seconds)
+    f64 dt = m_av_info.timing.fps > 0 ? 1.0 / m_av_info.timing.fps : 1.0 / 60.0;
 
-    // Run frame logic
-    if (auto* frameLoop = dynamic_cast<LibretroFrameLoop*>(m_frame_loop.get())) {
-        frameLoop->tick([this]() {
-            // TODO: Actual game update logic
-        });
+    // Start engine if not running
+    if (!m_engine->isRunning() && m_engine->state() == EngineState::Initialized) {
+        m_engine->start();
     }
 
+    // Update game logic
+    m_engine->tick(dt);
+
     // Render
-    renderFrame();
+    m_engine->render();
 
     // Collect audio
     processAudio();
@@ -144,28 +170,6 @@ void LibretroPlatform::runFrame() {
 void LibretroPlatform::pollInput() {
     if (auto* inputHub = dynamic_cast<LibretroInputHub*>(m_input_hub.get())) {
         inputHub->poll();
-    }
-}
-
-void LibretroPlatform::renderFrame() {
-    // TODO: Render actual game graphics to m_framebuffer
-    // For now, just fill with a test pattern
-
-    uint32_t* fb = m_framebuffer.data;
-    unsigned w = m_framebuffer.width;
-    unsigned h = m_framebuffer.height;
-
-    static uint8_t frame_counter = 0;
-    frame_counter++;
-
-    for (unsigned y = 0; y < h; y++) {
-        for (unsigned x = 0; x < w; x++) {
-            // Simple test pattern: gradient with animated offset
-            uint8_t r = static_cast<uint8_t>((x + frame_counter) & 0xFF);
-            uint8_t g = static_cast<uint8_t>((y + frame_counter) & 0xFF);
-            uint8_t b = static_cast<uint8_t>(((x ^ y) + frame_counter) & 0xFF);
-            fb[y * w + x] = (r << 16) | (g << 8) | b;
-        }
     }
 }
 
@@ -296,12 +300,12 @@ void LibretroInputHub::poll() {
 }
 
 SubscriptionHandle LibretroInputHub::subscribe(std::function<void(const InputEvt&)> handler) {
-    int id = m_next_handle_id++;
     m_handlers.push_back(handler);
+    size_t idx = m_handlers.size() - 1;
 
-    return SubscriptionHandle::create(id, [this, idx = m_handlers.size() - 1]() {
+    return SubscriptionHandle::create([this, idx]() {
         if (idx < m_handlers.size()) {
-            m_handlers.erase(m_handlers.begin() + idx);
+            m_handlers.erase(m_handlers.begin() + static_cast<ptrdiff_t>(idx));
         }
     });
 }
@@ -388,6 +392,24 @@ LibretroGameViewHost::LibretroGameViewHost(Framebuffer& framebuffer)
     : m_framebuffer(framebuffer) {
 }
 
+std::unique_ptr<GPUBackend> LibretroGameViewHost::createBackend() {
+    return std::make_unique<SoftwareBackend>(
+        m_framebuffer.data,
+        static_cast<i32>(m_framebuffer.width),
+        static_cast<i32>(m_framebuffer.height),
+        static_cast<i32>(m_framebuffer.pitch)
+    );
+}
+
+void LibretroGameViewHost::updateBackendFramebuffer(SoftwareBackend* backend) {
+    backend->setFramebuffer(
+        m_framebuffer.data,
+        static_cast<i32>(m_framebuffer.width),
+        static_cast<i32>(m_framebuffer.height),
+        static_cast<i32>(m_framebuffer.pitch)
+    );
+}
+
 void* LibretroGameViewHost::getCapability(std::string_view name) {
     // TODO: Return capabilities like viewport-metrics, etc.
     (void)name;
@@ -397,37 +419,13 @@ void* LibretroGameViewHost::getCapability(std::string_view name) {
 SubscriptionHandle LibretroGameViewHost::onResize(std::function<void(const ResizeEvt&)> handler) {
     // Libretro doesn't really have dynamic resizing, but we keep the interface
     (void)handler;
-    return SubscriptionHandle::create(0, [](){});
+    return SubscriptionHandle::create([](){});
 }
 
 SubscriptionHandle LibretroGameViewHost::onFocusChange(std::function<void(bool)> handler) {
     // Libretro handles focus at frontend level
     (void)handler;
-    return SubscriptionHandle::create(0, [](){});
-}
-
-/* ============================================================================
- * DefaultLifecycle implementation (for completeness)
- * ============================================================================ */
-
-DefaultLifecycle::DefaultLifecycle() = default;
-DefaultLifecycle::~DefaultLifecycle() = default;
-
-SubscriptionHandle DefaultLifecycle::onWillExit(std::function<void()> handler) {
-    int id = m_next_handle_id++;
-    m_handlers.push_back(handler);
-
-    return SubscriptionHandle::create(id, [this, idx = m_handlers.size() - 1]() {
-        if (idx < m_handlers.size()) {
-            m_handlers.erase(m_handlers.begin() + idx);
-        }
-    });
-}
-
-void DefaultLifecycle::triggerExit() {
-    for (const auto& handler : m_handlers) {
-        handler();
-    }
+    return SubscriptionHandle::create([](){});
 }
 
 } // namespace bmsx

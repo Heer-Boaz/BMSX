@@ -1,0 +1,2 @@
+/usr/bin/ar qc libbmsx_core.a CMakeFiles/bmsx_core.dir/platform.cpp.o CMakeFiles/bmsx_core.dir/subscription.cpp.o CMakeFiles/bmsx_core.dir/core/types.cpp.o CMakeFiles/bmsx_core.dir/core/engine.cpp.o CMakeFiles/bmsx_core.dir/core/registry.cpp.o CMakeFiles/bmsx_core.dir/core/world.cpp.o CMakeFiles/bmsx_core.dir/core/assets.cpp.o CMakeFiles/bmsx_core.dir/core/fsm.cpp.o CMakeFiles/bmsx_core.dir/render/backend.cpp.o CMakeFiles/bmsx_core.dir/render/gameview.cpp.o
+/usr/bin/ranlib libbmsx_core.a

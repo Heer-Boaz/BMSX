@@ -26,12 +26,18 @@ class World;
  * Registerable interface - any object that can be registered
  * ============================================================================ */
 
+// Type alias for identifiers
+using Identifier = std::string;
+
 class Registerable {
 public:
     virtual ~Registerable() = default;
 
-    // Unique identifier (required)
-    virtual const std::string& getId() const = 0;
+    // Unique identifier (required) - matches TypeScript registryId
+    virtual const Identifier& registryId() const = 0;
+
+    // Helper that returns registryId (for compatibility)
+    const std::string& getId() const { return registryId(); }
 
     // Whether this object persists across clear() calls
     virtual bool isRegistryPersistent() const { return false; }

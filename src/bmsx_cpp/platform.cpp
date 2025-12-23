@@ -33,12 +33,12 @@ DefaultLifecycle::DefaultLifecycle() = default;
 DefaultLifecycle::~DefaultLifecycle() = default;
 
 SubscriptionHandle DefaultLifecycle::onWillExit(std::function<void()> handler) {
-    int id = m_next_handle_id++;
     m_handlers.push_back(handler);
+    size_t idx = m_handlers.size() - 1;
 
-    return SubscriptionHandle::create(id, [this, idx = m_handlers.size() - 1]() {
+    return SubscriptionHandle::create([this, idx]() {
         if (idx < m_handlers.size()) {
-            m_handlers.erase(m_handlers.begin() + idx);
+            m_handlers.erase(m_handlers.begin() + static_cast<ptrdiff_t>(idx));
         }
     });
 }

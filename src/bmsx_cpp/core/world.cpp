@@ -1,21 +1,38 @@
 /*
  * world.cpp - World and Space implementation
+ *
+ * This mirrors the TypeScript World/Space/WorldObject architecture.
+ * Key points:
+ * - WorldObject has NO tick() or paint() - those are handled by Systems
+ * - Lifecycle methods (onspawn, ondespawn, activate, deactivate, dispose) are
+ *   concrete implementations that mirror the TypeScript behavior
  */
 
 #include "world.h"
+#include "engine.h"
 #include <algorithm>
 #include <stdexcept>
 
 namespace bmsx {
 
 /* ============================================================================
+ * Component implementation
+ * ============================================================================ */
+
+void Component::unbind() {
+    // Remove from registry
+    Registry::instance().deregister(this);
+}
+
+/* ============================================================================
  * WorldObject implementation
  * ============================================================================ */
 
-static u64 s_nextObjectId = 1;
+u64 WorldObject::s_nextId = 1;
 
 WorldObject::WorldObject() {
-    id = "obj_" + std::to_string(s_nextObjectId++);
+    id = generateId();
+    // sc and events created during activate()
 }
 
 WorldObject::WorldObject(const Identifier& objId)
@@ -23,7 +40,59 @@ WorldObject::WorldObject(const Identifier& objId)
 }
 
 WorldObject::~WorldObject() {
-    dispose();
+    if (!_disposed) {
+        dispose();
+    }
+}
+
+Identifier WorldObject::generateId() {
+    // Mirror TypeScript: "ClassName_uniqueNumber"
+    // In C++ we don't have runtime class name reflection easily,
+    // so we use a generic prefix. Subclasses can override.
+    return "obj_" + std::to_string(s_nextId++);
+}
+
+Vec3 WorldObject::center() const {
+    return {
+        _pos.x + _size.x / 2.0f,
+        _pos.y + _size.y / 2.0f,
+        _pos.z + _size.z / 2.0f
+    };
+}
+
+void WorldObject::setX(f32 v) {
+    _pos.x = v;
+    // In TypeScript, setting x might trigger component updates via @update_tagged_components
+    // For C++ we'd need to implement a similar mechanism if needed
+}
+
+void WorldObject::setY(f32 v) {
+    _pos.y = v;
+}
+
+void WorldObject::setZ(f32 v) {
+    _pos.z = v;
+    // Mark depth sort dirty
+    $().world()->markDepthDirtyForObjectId(id);
+}
+
+void WorldObject::markForDisposal() {
+    _dispose_flag = true;
+    deactivate();
+}
+
+void WorldObject::addComponentInternal(std::unique_ptr<Component> comp) {
+    comp->parent = this;
+    Component* ptr = comp.get();
+    components.push_back(std::move(comp));
+
+    // Add to type map
+    std::string key = std::string(ptr->typeName());
+    componentMap[key].push_back(ptr);
+
+    // Late-init hooks
+    ptr->onloadSetup();
+    ptr->on_attach();
 }
 
 void WorldObject::removeComponent(Component* comp) {
@@ -33,46 +102,115 @@ void WorldObject::removeComponent(Component* comp) {
     if (mapIt != componentMap.end()) {
         auto& vec = mapIt->second;
         vec.erase(std::remove(vec.begin(), vec.end(), comp), vec.end());
+        if (vec.empty()) {
+            componentMap.erase(mapIt);
+        }
     }
 
     // Remove from components vector
     for (auto it = components.begin(); it != components.end(); ++it) {
         if (it->get() == comp) {
-            comp->detach();
+            comp->on_detach();
+            comp->unbind();
             components.erase(it);
             break;
         }
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Lifecycle methods - these mirror TypeScript exactly
+// ─────────────────────────────────────────────────────────────────────────────
+
 void WorldObject::onspawn(const Vec3* pos, SpawnReason reason) {
-    (void)reason;
     if (pos) {
-        setPosition(*pos);
+        setX_nonotify(pos->x);
+        setY_nonotify(pos->y);
+        setZ_nonotify(pos->z);
     }
+
+    if (reason == SpawnReason::Fresh) {
+        // Fresh spawn: full BeginPlay
+        activate();
+    }
+    // Revive and transfer: do not mutate flags or controller
 }
 
 void WorldObject::ondespawn() {
-    // Override in subclasses
+    active = false;
+    eventhandling_enabled = false;
+    // Events would be emitted here in TypeScript
 }
 
-void WorldObject::tick(f64 dt) {
-    // Tick all components
-    for (auto& comp : components) {
-        comp->tick(dt);
+void WorldObject::activate() {
+    // Register in registry
+    Registry::instance().registerObject(this);
+
+    // Initialize linked FSMs
+    initializeLinkedFSMs();
+
+    // Add auto-components
+    addAutoComponents();
+
+    // Enable flags
+    eventhandling_enabled = true;
+    tick_enabled = true;
+    active = true;
+
+    // Start FSM
+    if (sc) {
+        sc->tickEnabled = true;
+        sc->start();
     }
 }
 
-void WorldObject::paint() {
-    // Override in subclasses for custom rendering
+void WorldObject::deactivate() {
+    active = false;
+    eventhandling_enabled = false;
+    tick_enabled = false;
+    if (sc) {
+        sc->pause();
+    }
 }
 
 void WorldObject::dispose() {
+    if (_disposed) return;
+    _disposed = true;
+
+    deactivate();
+
+    // Dispose all components
     for (auto& comp : components) {
-        comp->detach();
+        comp->on_detach();
+        comp->unbind();
     }
     components.clear();
     componentMap.clear();
+
+    // Dispose FSM
+    if (sc) {
+        sc->dispose();
+    }
+
+    unbind();
+}
+
+void WorldObject::bind() {
+    Registry::instance().registerObject(this);
+}
+
+void WorldObject::unbind() {
+    Registry::instance().deregister(this);
+}
+
+void WorldObject::addAutoComponents() {
+    // In TypeScript this uses decorators to auto-attach components
+    // In C++ we'd need a different mechanism (static registry per class)
+}
+
+void WorldObject::initializeLinkedFSMs() {
+    // In TypeScript this uses decorators (@assign_fsm, @build_fsm)
+    // In C++ we'd need a different mechanism
 }
 
 /* ============================================================================
@@ -87,22 +225,16 @@ Space::~Space() {
     clear();
 }
 
-void Space::spawn(WorldObject* obj, const Vec3* pos, SpawnReason reason) {
-    if (!obj) {
-        throw std::runtime_error("Cannot spawn null object");
-    }
-
+void Space::addObject(WorldObject* obj) {
     objects.push_back(obj);
     objectsById[obj->id] = obj;
     depthSortDirty = true;
-
-    obj->onspawn(pos, reason);
 }
 
-void Space::despawn(WorldObject* obj, bool skipOnDespawn) {
+void Space::removeObject(WorldObject* obj, bool skipOnDespawn) {
     auto it = std::find(objects.begin(), objects.end(), obj);
     if (it == objects.end()) {
-        return; // Not in this space
+        return;
     }
 
     if (!skipOnDespawn) {
@@ -135,7 +267,7 @@ void Space::sortByDepth() {
 
     std::stable_sort(objects.begin(), objects.end(),
         [](const WorldObject* a, const WorldObject* b) {
-            return a->z < b->z;
+            return a->z() < b->z();
         });
 
     depthSortDirty = false;
@@ -152,25 +284,30 @@ World::World() {
 }
 
 World::~World() {
-    clearAllSpaces();
+    // Clear all spaces
+    for (auto& space : _spaces) {
+        space->clear();
+    }
+    _spaces.clear();
+    _spaceMap.clear();
 }
 
 Space* World::addSpace(const Identifier& spaceId) {
-    if (spaceMap.find(spaceId) != spaceMap.end()) {
+    if (_spaceMap.find(spaceId) != _spaceMap.end()) {
         throw std::runtime_error("Space '" + spaceId + "' already exists");
     }
 
     auto space = std::make_unique<Space>(spaceId);
     Space* ptr = space.get();
-    spaceMap[spaceId] = ptr;
-    spaces.push_back(std::move(space));
+    _spaceMap[spaceId] = ptr;
+    _spaces.push_back(std::move(space));
 
     return ptr;
 }
 
 void World::removeSpace(const Identifier& spaceId) {
-    auto mapIt = spaceMap.find(spaceId);
-    if (mapIt == spaceMap.end()) {
+    auto mapIt = _spaceMap.find(spaceId);
+    if (mapIt == _spaceMap.end()) {
         return;
     }
 
@@ -178,179 +315,158 @@ void World::removeSpace(const Identifier& spaceId) {
 
     // Remove all objects from objToSpaceMap
     for (auto* obj : space->objects) {
-        objToSpaceMap.erase(obj->id);
+        _objToSpaceMap.erase(obj->id);
     }
 
-    // Clear the space
     space->clear();
 
     // Remove from vector
-    for (auto it = spaces.begin(); it != spaces.end(); ++it) {
+    for (auto it = _spaces.begin(); it != _spaces.end(); ++it) {
         if (it->get() == space) {
-            spaces.erase(it);
+            _spaces.erase(it);
             break;
         }
     }
 
-    spaceMap.erase(spaceId);
+    _spaceMap.erase(spaceId);
 
     // Update active space if needed
-    if (activeSpace == space) {
-        activeSpace = spaces.empty() ? nullptr : spaces[0].get();
-        activeSpaceId = activeSpace ? activeSpace->id : "";
+    if (_activeSpace == space) {
+        _activeSpace = _spaces.empty() ? nullptr : _spaces[0].get();
+        _activeSpaceId = _activeSpace ? _activeSpace->id : "";
     }
 }
 
 Space* World::getSpace(const Identifier& spaceId) {
-    auto it = spaceMap.find(spaceId);
-    return it != spaceMap.end() ? it->second : nullptr;
+    auto it = _spaceMap.find(spaceId);
+    return it != _spaceMap.end() ? it->second : nullptr;
 }
 
 void World::setActiveSpace(const Identifier& spaceId) {
-    Space* space = getSpace(spaceId);
-    if (!space) {
-        throw std::runtime_error("Space '" + spaceId + "' does not exist");
+    auto space = getSpace(spaceId);
+    if (space) {
+        _activeSpace = space;
+        _activeSpaceId = spaceId;
     }
-
-    activeSpaceId = spaceId;
-    activeSpace = space;
 }
 
-void World::spawn(WorldObject* obj, const Vec3* pos, SpawnReason reason) {
-    if (!activeSpace) {
-        throw std::runtime_error("No active space to spawn object into");
+void World::spawn(WorldObject* obj, const Identifier& spaceId, const Vec3* pos) {
+    Space* space = getSpace(spaceId);
+    if (!space) {
+        throw std::runtime_error("Space '" + spaceId + "' not found");
     }
 
-    if (objToSpaceMap.find(obj->id) != objToSpaceMap.end() && reason == SpawnReason::Fresh) {
-        throw std::runtime_error("Object '" + obj->id + "' already exists in a space");
+    space->addObject(obj);
+    _objToSpaceMap[obj->id] = spaceId;
+
+    obj->onspawn(pos, SpawnReason::Fresh);
+}
+
+void World::despawn(WorldObject* obj) {
+    auto it = _objToSpaceMap.find(obj->id);
+    if (it == _objToSpaceMap.end()) {
+        return;
     }
 
-    activeSpace->spawn(obj, pos, reason);
-    objToSpaceMap[obj->id] = activeSpaceId;
+    Space* space = getSpace(it->second);
+    if (space) {
+        space->removeObject(obj);
+    }
 
-    WorldLifecycleContext ctx;
-    ctx.world = this;
-    ctx.spaceId = activeSpaceId;
-    ctx.reason = reason;
-    if (pos) ctx.position = *pos;
-
-    dispatchLifecycleSlot(obj, "spawn", ctx);
+    _objToSpaceMap.erase(obj->id);
 }
 
 void World::despawnFromAllSpaces(WorldObject* obj) {
-    for (auto& sp : spaces) {
-        if (sp->contains(obj->id)) {
-            sp->despawn(obj, false);
-            break;
-        }
-    }
-    objToSpaceMap.erase(obj->id);
-}
-
-void World::despawnFromActiveSpace(WorldObject* obj) {
-    if (activeSpace && activeSpace->contains(obj->id)) {
-        activeSpace->despawn(obj, false);
-        objToSpaceMap.erase(obj->id);
-    }
-}
-
-void World::transfer(WorldObject* obj, const Identifier& toSpaceId) {
-    Space* toSpace = getSpace(toSpaceId);
-    if (!toSpace) {
-        throw std::runtime_error("Target space '" + toSpaceId + "' does not exist");
-    }
-
-    // Find current space
-    auto fromIt = objToSpaceMap.find(obj->id);
-    if (fromIt == objToSpaceMap.end()) {
-        throw std::runtime_error("Object '" + obj->id + "' is not in any space");
-    }
-
-    Space* fromSpace = getSpace(fromIt->second);
-    if (fromSpace == toSpace) {
-        return; // Already in target space
-    }
-
-    // Despawn from old space (skip lifecycle)
-    fromSpace->despawn(obj, true);
-
-    // Spawn in new space (skip lifecycle)
-    toSpace->spawn(obj, nullptr, SpawnReason::Transfer);
-
-    // Update mapping
-    objToSpaceMap[obj->id] = toSpaceId;
-}
-
-void World::destroy(WorldObject* obj) {
-    despawnFromAllSpaces(obj);
-
-    WorldLifecycleContext ctx;
-    ctx.world = this;
-
-    dispatchLifecycleSlot(obj, "dispose", ctx);
+    // In BMSX, an object can only be in one space at a time
+    despawn(obj);
     obj->dispose();
 }
 
+void World::transferObject(WorldObject* obj, const Identifier& toSpaceId) {
+    auto fromIt = _objToSpaceMap.find(obj->id);
+    if (fromIt == _objToSpaceMap.end()) {
+        return;
+    }
+
+    Space* fromSpace = getSpace(fromIt->second);
+    Space* toSpace = getSpace(toSpaceId);
+
+    if (!toSpace) {
+        throw std::runtime_error("Target space '" + toSpaceId + "' not found");
+    }
+
+    if (fromSpace) {
+        fromSpace->removeObject(obj, true); // Skip ondespawn for transfer
+    }
+
+    toSpace->addObject(obj);
+    _objToSpaceMap[obj->id] = toSpaceId;
+
+    // Call onspawn with transfer reason
+    obj->onspawn(nullptr, SpawnReason::Transfer);
+}
+
+bool World::exists(const Identifier& objId) const {
+    return _objToSpaceMap.find(objId) != _objToSpaceMap.end();
+}
+
 WorldObject* World::getObject(const Identifier& objId) {
-    auto spaceIt = objToSpaceMap.find(objId);
-    if (spaceIt == objToSpaceMap.end()) {
+    auto it = _objToSpaceMap.find(objId);
+    if (it == _objToSpaceMap.end()) {
         return nullptr;
     }
 
-    Space* space = getSpace(spaceIt->second);
+    Space* space = const_cast<World*>(this)->getSpace(it->second);
     return space ? space->get(objId) : nullptr;
 }
 
 Space* World::getSpaceOfObject(const Identifier& objId) {
-    auto it = objToSpaceMap.find(objId);
-    if (it == objToSpaceMap.end()) {
+    auto it = _objToSpaceMap.find(objId);
+    if (it == _objToSpaceMap.end()) {
         return nullptr;
     }
     return getSpace(it->second);
 }
 
-void World::dispatchLifecycleSlot(WorldObject* obj, const std::string& slot, const WorldLifecycleContext& ctx) {
-    // TODO: Implement handler registry dispatch like in TypeScript
-    // For now, this is a stub that can be extended
-    (void)obj;
-    (void)slot;
-    (void)ctx;
+void World::markDepthDirtyForObjectId(const Identifier& objId) {
+    Space* space = getSpaceOfObject(objId);
+    if (space) {
+        space->depthSortDirty = true;
+    }
 }
 
-void World::tick(f64 dt) {
-    if (paused) return;
+void World::run(f64 deltaTime) {
+    (void)deltaTime;  // Used by systems
 
-    // Tick all objects in active space
-    if (activeSpace) {
-        // Copy vector in case objects are added/removed during tick
-        std::vector<WorldObject*> toTick = activeSpace->objects;
+    // In TypeScript, World.run() drives the system manager through phases:
+    // 1. Input
+    // 2. ActionEffect
+    // 3. ModeResolution (FSM tick)
+    // 4. Physics
+    // 5. Animation
+    // 6. Presentation
+    // 7. EventFlush
 
-        for (auto* obj : toTick) {
-            if (!obj->markedForDisposal) {
-                obj->tick(dt);
-            }
-        }
+    // Phase 3: ModeResolution - tick FSMs
+    _currentPhase = TickGroup::ModeResolution;
+    if (sc) {
+        sc->tick();
+    }
 
-        // Clean up disposed objects
-        for (auto it = activeSpace->objects.begin(); it != activeSpace->objects.end(); ) {
-            if ((*it)->markedForDisposal) {
-                WorldObject* obj = *it;
-                it = activeSpace->objects.erase(it);
-                activeSpace->objectsById.erase(obj->id);
-                objToSpaceMap.erase(obj->id);
-                obj->dispose();
+    // For libretro, we'll need to implement the system manager
+    // and call systems.updatePhase(world, phase) for each phase
+
+    // Clean up disposed objects
+    if (_activeSpace) {
+        for (auto it = _activeSpace->objects.begin(); it != _activeSpace->objects.end(); ) {
+            if ((*it)->disposeFlag()) {
+                despawnFromAllSpaces(*it);
+                it = _activeSpace->objects.begin(); // Restart after removal
             } else {
                 ++it;
             }
         }
     }
-}
-
-void World::clearAllSpaces() {
-    for (auto& sp : spaces) {
-        sp->clear();
-    }
-    objToSpaceMap.clear();
 }
 
 } // namespace bmsx

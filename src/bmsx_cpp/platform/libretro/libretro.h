@@ -173,10 +173,6 @@ struct retro_input_descriptor {
     const char *description;
 };
 
-struct retro_log_callback {
-    void (*log)(enum retro_log_level level, const char *fmt, ...);
-};
-
 enum retro_log_level {
     RETRO_LOG_DEBUG = 0,
     RETRO_LOG_INFO,
@@ -185,14 +181,18 @@ enum retro_log_level {
     RETRO_LOG_DUMMY = INT_MAX
 };
 
-struct retro_rumble_interface {
-    bool (*set_rumble_state)(unsigned port, enum retro_rumble_effect effect, uint16_t strength);
+struct retro_log_callback {
+    void (*log)(enum retro_log_level level, const char *fmt, ...);
 };
 
 enum retro_rumble_effect {
     RETRO_RUMBLE_STRONG = 0,
     RETRO_RUMBLE_WEAK = 1,
     RETRO_RUMBLE_DUMMY = INT_MAX
+};
+
+struct retro_rumble_interface {
+    bool (*set_rumble_state)(unsigned port, enum retro_rumble_effect effect, uint16_t strength);
 };
 
 /* Callbacks */

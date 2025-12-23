@@ -11,6 +11,8 @@
 
 #include "libretro.h"
 #include "../../platform.h"
+#include "../../core/engine.h"
+#include "../../render/backend.h"
 #include <vector>
 #include <array>
 #include <memory>
@@ -37,6 +39,31 @@ struct Framebuffer {
 
 private:
     std::vector<uint32_t> buffer;
+};
+
+/* ============================================================================
+ * LibretroGameViewHost - GameView host for libretro
+ * ============================================================================ */
+
+class LibretroGameViewHost : public GameViewHost {
+public:
+    explicit LibretroGameViewHost(Framebuffer& framebuffer);
+
+    // GameViewHost interface
+    void* getCapability(std::string_view name) override;
+    SubscriptionHandle onResize(std::function<void(const ResizeEvt&)> handler) override;
+    SubscriptionHandle onFocusChange(std::function<void(bool)> handler) override;
+    int width() override { return m_framebuffer.width; }
+    int height() override { return m_framebuffer.height; }
+
+    // Create a SoftwareBackend bound to the framebuffer
+    std::unique_ptr<GPUBackend> createBackend() override;
+
+    // Update backend when framebuffer changes
+    void updateBackendFramebuffer(SoftwareBackend* backend);
+
+private:
+    Framebuffer& m_framebuffer;
 };
 
 /* ============================================================================
@@ -137,6 +164,9 @@ public:
     const Framebuffer& getFramebuffer() const { return m_framebuffer; }
     const AudioBuffer& getAudioBuffer() const { return m_audio_buffer; }
 
+    // Engine access
+    EngineCore* engine() { return m_engine.get(); }
+
     // Save states
     size_t getStateSize() const;
     bool saveState(void* data, size_t size);
@@ -164,7 +194,6 @@ public:
 
 private:
     void pollInput();
-    void renderFrame();
     void processAudio();
     void log(retro_log_level level, const char* fmt, ...);
 
@@ -187,13 +216,16 @@ private:
     // Controller configuration
     std::array<unsigned, 4> m_controller_devices{};
 
+    // Engine instance
+    std::unique_ptr<EngineCore> m_engine;
+
     // Platform components
     std::unique_ptr<Clock> m_clock;
     std::unique_ptr<FrameLoop> m_frame_loop;
     std::unique_ptr<Lifecycle> m_lifecycle;
     std::unique_ptr<InputHub> m_input_hub;
     std::unique_ptr<AudioService> m_audio_service;
-    std::unique_ptr<GameViewHost> m_gameview_host;
+    std::unique_ptr<LibretroGameViewHost> m_gameview_host;
     std::unique_ptr<MicrotaskQueue> m_microtask_queue;
 
     // ROM data (kept in memory)
@@ -308,25 +340,6 @@ public:
 private:
     std::function<void(double, double)> m_callback;
     bool m_running = false;
-};
-
-/* ============================================================================
- * LibretroGameViewHost - GameView host for libretro
- * ============================================================================ */
-
-class LibretroGameViewHost : public GameViewHost {
-public:
-    explicit LibretroGameViewHost(Framebuffer& framebuffer);
-
-    // GameViewHost interface
-    void* getCapability(std::string_view name) override;
-    SubscriptionHandle onResize(std::function<void(const ResizeEvt&)> handler) override;
-    SubscriptionHandle onFocusChange(std::function<void(bool)> handler) override;
-    int width() override { return m_framebuffer.width; }
-    int height() override { return m_framebuffer.height; }
-
-private:
-    Framebuffer& m_framebuffer;
 };
 
 } // namespace bmsx

@@ -169,6 +169,24 @@ struct Color {
                static_cast<u32>(a * 255);
     }
 
+    // Convert to ARGB32 format (common for framebuffers)
+    u32 toARGB32() const {
+        u8 ai = static_cast<u8>(std::min(1.0f, std::max(0.0f, a)) * 255.0f);
+        u8 ri = static_cast<u8>(std::min(1.0f, std::max(0.0f, r)) * 255.0f);
+        u8 gi = static_cast<u8>(std::min(1.0f, std::max(0.0f, g)) * 255.0f);
+        u8 bi = static_cast<u8>(std::min(1.0f, std::max(0.0f, b)) * 255.0f);
+        return (ai << 24) | (ri << 16) | (gi << 8) | bi;
+    }
+
+    // Convert to RGBA32 format
+    u32 toRGBA32() const {
+        u8 ri = static_cast<u8>(std::min(1.0f, std::max(0.0f, r)) * 255.0f);
+        u8 gi = static_cast<u8>(std::min(1.0f, std::max(0.0f, g)) * 255.0f);
+        u8 bi = static_cast<u8>(std::min(1.0f, std::max(0.0f, b)) * 255.0f);
+        u8 ai = static_cast<u8>(std::min(1.0f, std::max(0.0f, a)) * 255.0f);
+        return (ri << 24) | (gi << 16) | (bi << 8) | ai;
+    }
+
     // Predefined colors
     static Color white() { return {1.0f, 1.0f, 1.0f, 1.0f}; }
     static Color black() { return {0.0f, 0.0f, 0.0f, 1.0f}; }

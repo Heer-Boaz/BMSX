@@ -10,10 +10,12 @@
 
 #include "subscription.h"
 #include "core/types.h"
+#include "render/backend.h"
 #include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <memory>
 
 namespace bmsx {
 
@@ -153,6 +155,10 @@ public:
     virtual SubscriptionHandle onFocusChange(std::function<void(bool)> handler) = 0;
     virtual i32 width() = 0;
     virtual i32 height() = 0;
+
+    // Create a GPU backend for rendering (platform-specific implementation)
+    // Returns nullptr if the platform doesn't provide its own backend
+    virtual std::unique_ptr<GPUBackend> createBackend() { return nullptr; }
 };
 
 /* ============================================================================
