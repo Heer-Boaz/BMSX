@@ -1,0 +1,334 @@
+/*
+ * libretro_platform.h - BMSX Platform implementation for libretro
+ *
+ * This header defines the LibretroPlatform class that bridges the BMSX engine
+ * with the libretro API, allowing the engine to run in RetroArch and other
+ * libretro frontends.
+ */
+
+#ifndef BMSX_LIBRETRO_PLATFORM_H
+#define BMSX_LIBRETRO_PLATFORM_H
+
+#include "libretro.h"
+#include "../../platform.h"
+#include <vector>
+#include <array>
+#include <memory>
+
+namespace bmsx {
+
+/* ============================================================================
+ * Framebuffer for video output
+ * ============================================================================ */
+
+struct Framebuffer {
+    uint32_t* data = nullptr;
+    unsigned width = 0;
+    unsigned height = 0;
+    size_t pitch = 0;
+
+    void resize(unsigned w, unsigned h) {
+        width = w;
+        height = h;
+        pitch = w * sizeof(uint32_t);
+        buffer.resize(w * h);
+        data = buffer.data();
+    }
+
+private:
+    std::vector<uint32_t> buffer;
+};
+
+/* ============================================================================
+ * Audio buffer for audio output
+ * ============================================================================ */
+
+struct AudioBuffer {
+    const int16_t* data = nullptr;
+    size_t samples = 0;
+
+    void clear() {
+        samples = 0;
+    }
+
+    void write(const int16_t* src, size_t num_samples) {
+        if (num_samples > buffer.size() / 2) {
+            buffer.resize(num_samples * 2);
+        }
+        std::copy(src, src + num_samples * 2, buffer.begin());
+        data = buffer.data();
+        samples = num_samples;
+    }
+
+    void reserve(size_t max_samples) {
+        buffer.resize(max_samples * 2); // stereo
+    }
+
+private:
+    std::vector<int16_t> buffer;
+};
+
+/* ============================================================================
+ * Input state management
+ * ============================================================================ */
+
+struct InputState {
+    static constexpr unsigned MAX_PLAYERS = 4;
+    static constexpr unsigned BUTTONS_PER_PLAYER = 16;
+
+    // Current button state per player
+    std::array<uint16_t, MAX_PLAYERS> buttons{};
+
+    // Analog stick state per player (-32768 to 32767)
+    std::array<int16_t, MAX_PLAYERS * 4> analog{}; // left X, left Y, right X, right Y
+
+    void clear() {
+        buttons.fill(0);
+        analog.fill(0);
+    }
+
+    bool isPressed(unsigned player, unsigned button) const {
+        if (player >= MAX_PLAYERS || button >= BUTTONS_PER_PLAYER) return false;
+        return (buttons[player] & (1 << button)) != 0;
+    }
+
+    void setButton(unsigned player, unsigned button, bool pressed) {
+        if (player >= MAX_PLAYERS || button >= BUTTONS_PER_PLAYER) return;
+        if (pressed) {
+            buttons[player] |= (1 << button);
+        } else {
+            buttons[player] &= ~(1 << button);
+        }
+    }
+};
+
+/* ============================================================================
+ * LibretroPlatform - Main platform implementation
+ * ============================================================================ */
+
+class LibretroPlatform : public Platform {
+public:
+    LibretroPlatform();
+    ~LibretroPlatform() override;
+
+    // Libretro callback setters
+    void setEnvironmentCallback(retro_environment_t cb) { m_environ_cb = cb; }
+    void setVideoCallback(retro_video_refresh_t cb) { m_video_cb = cb; }
+    void setAudioBatchCallback(retro_audio_sample_batch_t cb) { m_audio_batch_cb = cb; }
+    void setInputPollCallback(retro_input_poll_t cb) { m_input_poll_cb = cb; }
+    void setInputStateCallback(retro_input_state_t cb) { m_input_state_cb = cb; }
+    void setLogCallback(void (*cb)(enum retro_log_level, const char*, ...)) { m_log_cb = cb; }
+
+    // Configuration
+    void setAVInfo(const retro_system_av_info& info);
+    void setControllerDevice(unsigned port, unsigned device);
+
+    // ROM management
+    bool loadRom(const uint8_t* data, size_t size);
+    bool loadRomFromPath(const char* path);
+    bool loadEmptyCart();
+    void unloadRom();
+
+    // Emulation control
+    void reset();
+    void runFrame();
+
+    // State access
+    const Framebuffer& getFramebuffer() const { return m_framebuffer; }
+    const AudioBuffer& getAudioBuffer() const { return m_audio_buffer; }
+
+    // Save states
+    size_t getStateSize() const;
+    bool saveState(void* data, size_t size);
+    bool loadState(const void* data, size_t size);
+
+    // Cheats
+    void resetCheats();
+    void setCheat(unsigned index, bool enabled, const char* code);
+
+    // Memory access
+    void* getSaveRAM();
+    size_t getSaveRAMSize() const;
+    void* getSystemRAM();
+    size_t getSystemRAMSize() const;
+
+    // Platform interface implementation
+    Clock* clock() override { return m_clock.get(); }
+    FrameLoop* frameLoop() override { return m_frame_loop.get(); }
+    Lifecycle* lifecycle() override { return m_lifecycle.get(); }
+    InputHub* inputHub() override { return m_input_hub.get(); }
+    AudioService* audioService() override { return m_audio_service.get(); }
+    GameViewHost* gameviewHost() override { return m_gameview_host.get(); }
+    MicrotaskQueue* microtaskQueue() override { return m_microtask_queue.get(); }
+    std::string_view type() override { return "libretro"; }
+
+private:
+    void pollInput();
+    void renderFrame();
+    void processAudio();
+    void log(retro_log_level level, const char* fmt, ...);
+
+    // Libretro callbacks
+    retro_environment_t m_environ_cb = nullptr;
+    retro_video_refresh_t m_video_cb = nullptr;
+    retro_audio_sample_batch_t m_audio_batch_cb = nullptr;
+    retro_input_poll_t m_input_poll_cb = nullptr;
+    retro_input_state_t m_input_state_cb = nullptr;
+    void (*m_log_cb)(enum retro_log_level, const char*, ...) = nullptr;
+
+    // Output buffers
+    Framebuffer m_framebuffer;
+    AudioBuffer m_audio_buffer;
+    InputState m_input_state;
+
+    // AV info
+    retro_system_av_info m_av_info{};
+
+    // Controller configuration
+    std::array<unsigned, 4> m_controller_devices{};
+
+    // Platform components
+    std::unique_ptr<Clock> m_clock;
+    std::unique_ptr<FrameLoop> m_frame_loop;
+    std::unique_ptr<Lifecycle> m_lifecycle;
+    std::unique_ptr<InputHub> m_input_hub;
+    std::unique_ptr<AudioService> m_audio_service;
+    std::unique_ptr<GameViewHost> m_gameview_host;
+    std::unique_ptr<MicrotaskQueue> m_microtask_queue;
+
+    // ROM data (kept in memory)
+    std::vector<uint8_t> m_rom_data;
+
+    // Save RAM
+    std::vector<uint8_t> m_save_ram;
+
+    // System RAM (if exposed)
+    std::vector<uint8_t> m_system_ram;
+
+    bool m_rom_loaded = false;
+};
+
+/* ============================================================================
+ * LibretroInputHub - Input handling for libretro
+ * ============================================================================ */
+
+class LibretroInputHub : public InputHub {
+public:
+    explicit LibretroInputHub(LibretroPlatform* platform);
+
+    void poll();
+    void setInputStateCallback(retro_input_state_t cb) { m_input_state_cb = cb; }
+
+    // InputHub interface
+    SubscriptionHandle subscribe(std::function<void(const InputEvt&)> handler) override;
+    std::optional<InputEvt> nextEvt() override;
+    void clearEvtQ() override;
+
+private:
+    LibretroPlatform* m_platform;
+    retro_input_state_t m_input_state_cb = nullptr;
+    std::vector<InputEvt> m_event_queue;
+    std::vector<std::function<void(const InputEvt&)>> m_handlers;
+    int m_next_handle_id = 1;
+
+    // Previous state for edge detection
+    InputState m_prev_state;
+};
+
+/* ============================================================================
+ * LibretroAudioService - Audio handling for libretro
+ * ============================================================================ */
+
+class LibretroAudioService : public AudioService {
+public:
+    explicit LibretroAudioService(LibretroPlatform* platform);
+
+    void setAudioBatchCallback(retro_audio_sample_batch_t cb) { m_audio_batch_cb = cb; }
+
+    // Collect audio samples from all voices
+    void collectSamples(AudioBuffer& buffer);
+
+    // AudioService interface
+    Voice* createVoice() override;
+    void destroyVoice(Voice* voice) override;
+    MasterVolume* masterVolume() override { return &m_master_volume; }
+    std::string name() override { return "libretro"; }
+    bool ready() override { return true; }
+    float sampleRate() override { return m_sample_rate; }
+
+private:
+    LibretroPlatform* m_platform;
+    retro_audio_sample_batch_t m_audio_batch_cb = nullptr;
+    float m_sample_rate = 44100.0f;
+
+    class LibretroMasterVolume : public MasterVolume {
+    public:
+        float get() override { return m_volume; }
+        void set(float vol) override { m_volume = vol; }
+    private:
+        float m_volume = 1.0f;
+    };
+
+    LibretroMasterVolume m_master_volume;
+    std::vector<std::unique_ptr<Voice>> m_voices;
+};
+
+/* ============================================================================
+ * LibretroClock - Time management for libretro
+ * ============================================================================ */
+
+class LibretroClock : public Clock {
+public:
+    LibretroClock();
+
+    void advanceFrame(double fps);
+
+    // Clock interface
+    double now() override { return m_current_time; }
+    double origin() override { return 0.0; }
+    double elapsed() override { return m_current_time; }
+
+private:
+    double m_current_time = 0.0;
+};
+
+/* ============================================================================
+ * LibretroFrameLoop - Frame loop for libretro
+ * ============================================================================ */
+
+class LibretroFrameLoop : public FrameLoop {
+public:
+    void tick(std::function<void()> callback);
+
+    // FrameLoop interface
+    void start(std::function<void(double, double)> callback) override;
+    void stop() override;
+    bool isRunning() override { return m_running; }
+
+private:
+    std::function<void(double, double)> m_callback;
+    bool m_running = false;
+};
+
+/* ============================================================================
+ * LibretroGameViewHost - GameView host for libretro
+ * ============================================================================ */
+
+class LibretroGameViewHost : public GameViewHost {
+public:
+    explicit LibretroGameViewHost(Framebuffer& framebuffer);
+
+    // GameViewHost interface
+    void* getCapability(std::string_view name) override;
+    SubscriptionHandle onResize(std::function<void(const ResizeEvt&)> handler) override;
+    SubscriptionHandle onFocusChange(std::function<void(bool)> handler) override;
+    int width() override { return m_framebuffer.width; }
+    int height() override { return m_framebuffer.height; }
+
+private:
+    Framebuffer& m_framebuffer;
+};
+
+} // namespace bmsx
+
+#endif // BMSX_LIBRETRO_PLATFORM_H
