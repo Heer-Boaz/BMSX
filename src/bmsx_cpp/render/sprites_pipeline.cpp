@@ -8,6 +8,7 @@
 #include "gameview.h"
 #include "../core/engine.h"
 #include "../core/assets.h"
+#include "../core/rompack.h"
 #include <cmath>
 
 namespace bmsx {
@@ -207,27 +208,16 @@ void renderSpriteBatch(GPUBackend* backend, GameView* context) {
 
         if (!imgmeta) return;
 
-        // Look up the image asset for texture data
         const auto* imgAsset = assets.getImg(options.imgid);
-        if (!imgAsset || !imgAsset->textureHandle) {
-            // Fallback: draw colored rectangle for missing textures
-            i32 x = static_cast<i32>(options.pos.x);
-            i32 y = static_cast<i32>(options.pos.y);
-            i32 w = static_cast<i32>(16 * options.scale.x);
-            i32 h = static_cast<i32>(16 * options.scale.y);
-            softBackend->fillRect(x, y, w, h, options.colorize);
-            return;
-        }
-
-        // Get texture handle (atlas or standalone)
-        TextureHandle tex = reinterpret_cast<TextureHandle>(imgAsset->textureHandle);
         const auto& meta = imgAsset->meta;
 
-        if (meta.atlassed && meta.atlasid >= 0) {
-            auto atlasIt = assets.atlasTextures.find(meta.atlasid);
-            if (atlasIt != assets.atlasTextures.end() && atlasIt->second.textureHandle) {
-                tex = reinterpret_cast<TextureHandle>(atlasIt->second.textureHandle);
-            }
+        TextureHandle tex = nullptr;
+        if (meta.atlassed) {
+            const std::string atlasName = generateAtlasName(meta.atlasid);
+            const auto* atlasAsset = assets.getImg(atlasName);
+            tex = reinterpret_cast<TextureHandle>(atlasAsset->textureHandle);
+        } else {
+            tex = reinterpret_cast<TextureHandle>(imgAsset->textureHandle);
         }
 
         // Get UV coordinates based on flip options
@@ -235,7 +225,14 @@ void renderSpriteBatch(GPUBackend* backend, GameView* context) {
         meta.getUVRect(u0, v0, u1, v1, options.flip.flip_h, options.flip.flip_v);
 
         auto* softTex = static_cast<SoftwareTexture*>(tex);
-        if (!softTex) return;
+        if (!softTex) {
+            i32 x = static_cast<i32>(options.pos.x);
+            i32 y = static_cast<i32>(options.pos.y);
+            i32 w = static_cast<i32>(16 * options.scale.x);
+            i32 h = static_cast<i32>(16 * options.scale.y);
+            softBackend->fillRect(x, y, w, h, options.colorize);
+            return;
+        }
 
         // Calculate source rectangle from UVs
         i32 srcX = static_cast<i32>(u0 * softTex->width);

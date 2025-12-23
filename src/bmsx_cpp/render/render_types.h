@@ -16,6 +16,7 @@
 namespace bmsx {
 
 // Color is already defined in types.h
+class BFont;
 
 /* ============================================================================
  * Flip options for sprites
@@ -109,7 +110,9 @@ struct GlyphRenderSubmission {
     f32 y = 0.0f;
     f32 z = 950.0f;  // Default Z for UI text
     std::string text;
-    // font pointer
+    BFont* font = nullptr;
+    i32 glyph_start = 0;
+    i32 glyph_end = -1;
     Color color{1.0f, 1.0f, 1.0f, 1.0f};
     Color background_color{0.0f, 0.0f, 0.0f, 0.0f};
     i32 wrap_chars = 0;

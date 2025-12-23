@@ -21,6 +21,7 @@
 #include <memory>
 #include <optional>
 #include <array>
+#include <algorithm>
 
 namespace bmsx {
 
@@ -49,10 +50,10 @@ struct ImgMeta {
 
     // Texture coordinates for sprite rendering (matches TypeScript ImgMeta)
     // Each array is [u0, v0, u1, v1, u2, v2, u3, v3] for quad vertices
-    std::array<f32, 8> texcoords{0, 0, 0, 1, 1, 0, 1, 1};       // Normal
-    std::array<f32, 8> texcoords_fliph{1, 0, 1, 1, 0, 0, 0, 1}; // Flipped horizontal
-    std::array<f32, 8> texcoords_flipv{0, 1, 0, 0, 1, 1, 1, 0}; // Flipped vertical
-    std::array<f32, 8> texcoords_fliphv{1, 1, 1, 0, 0, 1, 0, 0}; // Flipped both
+    std::array<f32, 12> texcoords{0, 0, 0, 1, 1, 0, 1, 0, 0, 1, 1, 1};       // Normal
+    std::array<f32, 12> texcoords_fliph{1, 0, 1, 1, 0, 0, 0, 0, 1, 1, 0, 1};  // Flipped horizontal
+    std::array<f32, 12> texcoords_flipv{0, 1, 0, 0, 1, 1, 1, 1, 0, 0, 1, 0};  // Flipped vertical
+    std::array<f32, 12> texcoords_fliphv{1, 1, 1, 0, 0, 1, 0, 1, 1, 0, 0, 0}; // Flipped both
 
     // Bounding box (for sprites with transparency, collision)
     struct BoundingBox {
@@ -70,8 +71,12 @@ struct ImgMeta {
     void getUVRect(f32& u0, f32& v0, f32& u1, f32& v1, bool flipH = false, bool flipV = false) const {
         const auto& tc = flipH ? (flipV ? texcoords_fliphv : texcoords_fliph)
                                : (flipV ? texcoords_flipv : texcoords);
-        u0 = tc[0]; v0 = tc[1];
-        u1 = tc[4]; v1 = tc[5];  // Bottom-right corner
+        const f32 umin = std::min({tc[0], tc[2], tc[4], tc[6], tc[8], tc[10]});
+        const f32 umax = std::max({tc[0], tc[2], tc[4], tc[6], tc[8], tc[10]});
+        const f32 vmin = std::min({tc[1], tc[3], tc[5], tc[7], tc[9], tc[11]});
+        const f32 vmax = std::max({tc[1], tc[3], tc[5], tc[7], tc[9], tc[11]});
+        u0 = umin; v0 = vmin;
+        u1 = umax; v1 = vmax;
     }
 };
 

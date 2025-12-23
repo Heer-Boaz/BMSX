@@ -15,6 +15,17 @@
 
 namespace bmsx {
 
+static void updateFlippedTexcoords(ImgMeta& meta) {
+    const f32 left = meta.texcoords[0];
+    const f32 top = meta.texcoords[1];
+    const f32 bottom = meta.texcoords[3];
+    const f32 right = meta.texcoords[4];
+
+    meta.texcoords_fliph = {right, top, right, bottom, left, top, left, top, right, bottom, left, bottom};
+    meta.texcoords_flipv = {left, bottom, left, top, right, bottom, right, bottom, left, top, right, top};
+    meta.texcoords_fliphv = {right, bottom, right, top, left, bottom, left, bottom, right, top, left, top};
+}
+
 /* ============================================================================
  * RuntimeAssets implementation
  * ============================================================================ */
@@ -65,6 +76,7 @@ void RuntimeAssets::clear() {
     model.clear();
     data.clear();
     audioevents.clear();
+    atlasTextures.clear();
     vmProgram.reset();
     projectRootPath.clear();
     manifest = RomManifest{};
@@ -275,27 +287,10 @@ bool loadAssetsFromRom(const u8* buffer, size_t size, RuntimeAssets& assets) {
                     // Load texcoords
                     if (imgMeta.count("texcoords") && imgMeta.at("texcoords").isArray()) {
                         const auto& tc = imgMeta.at("texcoords").asArray();
-                        for (size_t i = 0; i < std::min(tc.size(), size_t(8)); ++i) {
-                            imgAsset.meta.texcoords[i] = static_cast<f32>(tc[i].toNumber());
+                        for (size_t i = 0; i < 12; ++i) {
+                            imgAsset.meta.texcoords[i] = static_cast<f32>(tc.at(i).toNumber());
                         }
-                    }
-                    if (imgMeta.count("texcoords_fliph") && imgMeta.at("texcoords_fliph").isArray()) {
-                        const auto& tc = imgMeta.at("texcoords_fliph").asArray();
-                        for (size_t i = 0; i < std::min(tc.size(), size_t(8)); ++i) {
-                            imgAsset.meta.texcoords_fliph[i] = static_cast<f32>(tc[i].toNumber());
-                        }
-                    }
-                    if (imgMeta.count("texcoords_flipv") && imgMeta.at("texcoords_flipv").isArray()) {
-                        const auto& tc = imgMeta.at("texcoords_flipv").asArray();
-                        for (size_t i = 0; i < std::min(tc.size(), size_t(8)); ++i) {
-                            imgAsset.meta.texcoords_flipv[i] = static_cast<f32>(tc[i].toNumber());
-                        }
-                    }
-                    if (imgMeta.count("texcoords_fliphv") && imgMeta.at("texcoords_fliphv").isArray()) {
-                        const auto& tc = imgMeta.at("texcoords_fliphv").asArray();
-                        for (size_t i = 0; i < std::min(tc.size(), size_t(8)); ++i) {
-                            imgAsset.meta.texcoords_fliphv[i] = static_cast<f32>(tc[i].toNumber());
-                        }
+                        updateFlippedTexcoords(imgAsset.meta);
                     }
 
                     // Load bounding box
@@ -329,13 +324,8 @@ bool loadAssetsFromRom(const u8* buffer, size_t size, RuntimeAssets& assets) {
                 }
             }
 
-            // Store as atlas or regular image
-            if (assetType == "atlas") {
-                i32 atlasId = asset.count("atlasid") ? asset.at("atlasid").toI32() : 0;
-                assets.atlasTextures[atlasId] = std::move(imgAsset);
-            } else {
-                assets.img[assetId] = std::move(imgAsset);
-            }
+            // Store atlas assets as regular images (matches TypeScript runtime)
+            assets.img[assetId] = std::move(imgAsset);
         }
         else if (assetType == "audio") {
             AudioAsset audioAsset;

@@ -57,6 +57,8 @@ add_library(bmsx_core STATIC
     core/world.cpp
     core/assets.cpp
     core/binencoder.cpp
+    core/rompack.cpp
+    core/font.cpp
 
     # Timeline systems
     timeline/timeline.cpp
@@ -91,6 +93,7 @@ add_library(bmsx_core STATIC
     render/sprites_pipeline.cpp
     render/renderpasslib.cpp
     render/rendergraph.cpp
+    render/glyphs.cpp
 
     # ECS systems
     ecs/ecsystem.cpp
@@ -98,6 +101,7 @@ add_library(bmsx_core STATIC
 
     # VM (Lua bytecode interpreter)
     vm/cpu.cpp
+    vm/font.cpp
     vm/vm_api.cpp
     vm/vm_runtime.cpp
     vm/vm_systems.cpp

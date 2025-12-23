@@ -21,6 +21,8 @@
 
 namespace bmsx {
 
+class BFont;
+
 /* ============================================================================
  * Engine state
  * ============================================================================ */
@@ -120,6 +122,7 @@ private:
     Platform* m_platform = nullptr;
     std::unique_ptr<World> m_world;
     std::unique_ptr<GameView> m_view;
+    std::unique_ptr<BFont> m_default_font;
     RuntimeAssets m_assets;
     ECSystemManager m_system_manager;
     std::vector<std::unique_ptr<ECSystem>> m_vm_systems;  // Owned VM systems

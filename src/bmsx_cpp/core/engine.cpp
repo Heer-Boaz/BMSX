@@ -5,6 +5,7 @@
 #include "engine.h"
 #include "../vm/vm_systems.h"
 #include "../vm/vm_runtime.h"
+#include "../vm/font.h"
 #include <algorithm>
 #include <cmath>
 #include <fstream>
@@ -210,6 +211,8 @@ bool EngineCore::loadEngineAssets(const u8* data, size_t size) {
     }
 
     m_engine_assets_loaded = true;
+    m_default_font = std::make_unique<VMFont>(m_engine_assets);
+    m_view->default_font = m_default_font.get();
     return true;
 }
 

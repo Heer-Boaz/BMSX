@@ -9,15 +9,13 @@
 #include "sprites_pipeline.h"
 #include "renderpasslib.h"
 #include "rendergraph.h"
+#include "glyphs.h"
 #include "../core/engine.h"
 #include <algorithm>
 #include <cmath>
 #include <cstring>
 
 namespace bmsx {
-
-// Forward declaration of local helper
-static void doRenderGlyphs(const GlyphRenderSubmission& s, BFont* font);
 
 /* ============================================================================
  * GameView implementation
@@ -65,10 +63,8 @@ void GameView::initializeRenderer() {
 
     // glyphs -> renderGlyphs (uses font + sprite rendering)
     renderer.submit.glyphs = [this](const GlyphRenderSubmission& s) {
-        // Get font (use default if not specified)
-        BFont* font = default_font;
-        // Render each character as a sprite via SpritesPipeline
-        doRenderGlyphs(s, font);
+        BFont* font = s.font ? s.font : default_font;
+        renderGlyphs(this, s, font);
     };
 
     // particle -> ParticlesPipeline (TODO)
@@ -418,64 +414,6 @@ void GameView::dispose() {
 
 void GameView::reset() {
     // Nothing to reset - queues are managed by RenderQueues module
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Glyph rendering helper
-//
-// Mirrors TypeScript glyphs.ts renderGlyphs function.
-// Renders text using sprite submission for each glyph.
-// ─────────────────────────────────────────────────────────────────────────────
-
-static void doRenderGlyphs(const GlyphRenderSubmission& s, BFont* font) {
-    (void)font; // Will be used when font system is implemented
-
-    f32 x = s.x;
-    f32 y = s.y;
-    f32 z = s.z;
-
-    for (char c : s.text) {
-        std::string glyphId;
-
-        // Map character to glyph image ID (Konami-style font mapping)
-        if (c >= 'A' && c <= 'Z') {
-            glyphId = std::string("letter_") + static_cast<char>(c - 'A' + 'a');
-        } else if (c >= 'a' && c <= 'z') {
-            glyphId = std::string("letter_") + c;
-        } else if (c >= '0' && c <= '9') {
-            glyphId = std::string("letter_") + c;
-        } else if (c == ' ') {
-            x += 8;  // Space width (from font)
-            continue;
-        } else if (c == '.') {
-            glyphId = "letter_dot";
-        } else if (c == ',') {
-            glyphId = "letter_comma";
-        } else if (c == '!') {
-            glyphId = "letter_exclamation";
-        } else if (c == '?') {
-            glyphId = "letter_question";
-        } else if (c == ':') {
-            glyphId = "letter_colon";
-        } else if (c == '-') {
-            glyphId = "letter_streep";
-        } else {
-            x += 8;  // Unknown character, skip
-            continue;
-        }
-
-        // Submit sprite for this glyph
-        ImgRenderSubmission sprite;
-        sprite.imgid = glyphId;
-        sprite.pos = {x, y, z};
-        sprite.colorize = s.color;
-        sprite.layer = s.layer;
-
-        SpritesPipeline::drawImg(sprite);
-
-        // Advance by glyph width (TODO: get from font/imgmeta)
-        x += 8;
-    }
 }
 
 } // namespace bmsx
