@@ -57,9 +57,10 @@ void LibretroPlatform::setAVInfo(const retro_system_av_info& info) {
     m_av_info = info;
     m_framebuffer.resize(info.geometry.base_width, info.geometry.base_height);
 
-    if (auto* audio = dynamic_cast<LibretroAudioService*>(m_audio_service.get())) {
-        // Update sample rate if needed
-    }
+    auto* view = m_engine->view();
+    view->setViewportSize(static_cast<i32>(info.geometry.base_width), static_cast<i32>(info.geometry.base_height));
+    auto* backend = static_cast<SoftwareBackend*>(view->backend());
+    static_cast<LibretroGameViewHost*>(m_gameview_host.get())->updateBackendFramebuffer(backend);
 }
 
 void LibretroPlatform::setControllerDevice(unsigned port, unsigned device) {

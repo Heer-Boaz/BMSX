@@ -1,5 +1,7 @@
 #include "vm_api.h"
 #include "vm_runtime.h"
+#include "../core/engine.h"
+#include <array>
 
 namespace bmsx {
 
@@ -11,6 +13,29 @@ static const std::vector<std::string> POINTER_ACTIONS = {
 	"pointer_back",
 	"pointer_forward",
 };
+
+static const std::array<Color, 16> MSX1_PALETTE = {
+	Color::fromRGBA8(0, 0, 0, 0),
+	Color::fromRGBA8(0, 0, 0, 255),
+	Color::fromRGBA8(0, 241, 20, 255),
+	Color::fromRGBA8(68, 249, 86, 255),
+	Color::fromRGBA8(85, 79, 255, 255),
+	Color::fromRGBA8(128, 111, 255, 255),
+	Color::fromRGBA8(250, 80, 51, 255),
+	Color::fromRGBA8(12, 255, 255, 255),
+	Color::fromRGBA8(255, 81, 52, 255),
+	Color::fromRGBA8(255, 115, 86, 255),
+	Color::fromRGBA8(226, 210, 4, 255),
+	Color::fromRGBA8(242, 217, 71, 255),
+	Color::fromRGBA8(4, 212, 19, 255),
+	Color::fromRGBA8(231, 80, 229, 255),
+	Color::fromRGBA8(208, 208, 208, 255),
+	Color::fromRGBA8(255, 255, 255, 255),
+};
+
+static const Color& paletteColor(int index) {
+	return MSX1_PALETTE[static_cast<size_t>(index)];
+}
 
 VMApi::VMApi(VMRuntime& runtime)
 	: m_runtime(runtime)
@@ -56,6 +81,21 @@ void VMApi::registerAllFunctions() {
 		int z = static_cast<int>(asNumber(args[4]));
 		int colorIndex = static_cast<int>(asNumber(args[5]));
 		rectfill(x0, y0, x1, y1, z, colorIndex);
+		return {};
+	});
+
+	m_runtime.registerNativeFunction("write", [this](const std::vector<Value>& args) -> std::vector<Value> {
+		const std::string& text = asString(args.at(0));
+		int x = args.size() > 1 ? static_cast<int>(asNumber(args[1])) : m_textCursorX;
+		int y = args.size() > 2 ? static_cast<int>(asNumber(args[2])) : m_textCursorY;
+		int z = args.size() > 3 ? static_cast<int>(asNumber(args[3])) : 0;
+		int colorIndex = args.size() > 4 ? static_cast<int>(asNumber(args[4])) : m_textCursorColorIndex;
+		bool autoAdvance = args.size() <= 1;
+		write(text, x, y, z, colorIndex);
+		if (autoAdvance) {
+			m_textCursorX = m_textCursorHomeX;
+			m_textCursorY += 8;
+		}
 		return {};
 	});
 
@@ -173,21 +213,34 @@ int VMApi::display_height() const {
 	return m_runtime.viewport().y;
 }
 
-void VMApi::cls(int /*colorIndex*/) {
-	// TODO: Submit clear command to render backend
+void VMApi::cls(int colorIndex) {
+	auto* view = EngineCore::instance().view();
+	RectBounds area{0.0f, 0.0f, static_cast<f32>(display_width()), static_cast<f32>(display_height())};
+	view->fillRectangle(area, paletteColor(colorIndex), RenderLayer::World);
 	reset_print_cursor();
 }
 
-void VMApi::rect(int /*x0*/, int /*y0*/, int /*x1*/, int /*y1*/, int /*z*/, int /*colorIndex*/) {
-	// TODO: Submit rect command to render backend
+void VMApi::rect(int x0, int y0, int x1, int y1, int /*z*/, int colorIndex) {
+	auto* view = EngineCore::instance().view();
+	RectBounds area{static_cast<f32>(x0), static_cast<f32>(y0), static_cast<f32>(x1), static_cast<f32>(y1)};
+	view->drawRectangle(area, paletteColor(colorIndex), RenderLayer::World);
 }
 
-void VMApi::rectfill(int /*x0*/, int /*y0*/, int /*x1*/, int /*y1*/, int /*z*/, int /*colorIndex*/) {
-	// TODO: Submit filled rect command to render backend
+void VMApi::rectfill(int x0, int y0, int x1, int y1, int /*z*/, int colorIndex) {
+	auto* view = EngineCore::instance().view();
+	RectBounds area{static_cast<f32>(x0), static_cast<f32>(y0), static_cast<f32>(x1), static_cast<f32>(y1)};
+	view->fillRectangle(area, paletteColor(colorIndex), RenderLayer::World);
 }
 
-void VMApi::write(const std::string& /*text*/, int /*x*/, int /*y*/, int /*z*/, int /*colorIndex*/) {
-	// TODO: Submit text command to render backend
+void VMApi::write(const std::string& text, int x, int y, int z, int colorIndex) {
+	auto* view = EngineCore::instance().view();
+	GlyphRenderSubmission submission;
+	submission.text = text;
+	submission.x = static_cast<f32>(x);
+	submission.y = static_cast<f32>(y);
+	submission.z = static_cast<f32>(z);
+	submission.color = paletteColor(colorIndex);
+	view->renderer.submit.glyphs(submission);
 }
 
 // ==========================================================================

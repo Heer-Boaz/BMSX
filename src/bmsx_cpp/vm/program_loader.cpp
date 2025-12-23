@@ -46,18 +46,13 @@ std::unique_ptr<Program> extractProgram(const BinValue& programObj) {
 		proto.entryPC = protoObj["entryPC"].toI32();
 		proto.isVararg = protoObj["isVararg"].asBool();
 
-		// Upvalues (may be null if proto has no upvalues)
-		const auto& upvaluesVal = protoObj["upvalues"];
-		if (upvaluesVal.isArray()) {
-			const auto& upvaluesArr = upvaluesVal.asArray();
-			proto.upvalues.reserve(upvaluesArr.size());
-			for (const auto& uvObj : upvaluesArr) {
-				UpvalueDesc uv;
-				const auto& isLocalVal = uvObj["isLocal"];
-				uv.isLocal = isLocalVal.isBool() ? isLocalVal.asBool() : (isLocalVal.toI32() != 0);
-				uv.index = uvObj["index"].toI32();
-				proto.upvalues.push_back(uv);
-			}
+		const auto& upvaluesArr = protoObj["upvalueDescs"].asArray();
+		proto.upvalues.reserve(upvaluesArr.size());
+		for (const auto& uvObj : upvaluesArr) {
+			UpvalueDesc uv;
+			uv.isLocal = uvObj["inStack"].asBool();
+			uv.index = uvObj["index"].toI32();
+			proto.upvalues.push_back(uv);
 		}
 
 		program->protos.push_back(std::move(proto));

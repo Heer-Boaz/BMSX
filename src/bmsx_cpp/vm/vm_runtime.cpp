@@ -69,6 +69,7 @@ VMRuntime::VMRuntime(const VMRuntimeOptions& options)
 
 	// Setup builtin functions
 	setupBuiltins();
+	m_api->registerAllFunctions();
 }
 
 VMRuntime::~VMRuntime() {
