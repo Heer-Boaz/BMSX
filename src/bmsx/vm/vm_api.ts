@@ -53,19 +53,13 @@ const POINTER_ACTIONS: readonly string[] = [
 	'pointer_forward',
 ] as const;
 
-const excludedClassOverrideKeys = new Set(['def_id', 'class', 'defaults', 'metatable', 'constructor', 'prototype', 'super']);
-
-// Event handler keys that should be registered as event listeners instead of method overrides
-const eventHandlerKeys: Record<string, string> = {
-	'on_spawn': 'spawn',
-	'on_despawn': 'despawn',
-};
+const excludedClassAddonKeys = new Set(['def_id', 'class', 'defaults', 'metatable', 'constructor', 'prototype', 'super']);
 
 type VmExtendedClass<TBase extends ConcreteOrAbstractConstructor<any>> =
 	TBase & Native & {
 		def_id: Identifier; // Id of the definition this class was registered with
-		class?: (Partial<TBase extends new (...args: any) => infer R ? R : TBase extends abstract new (...args: any) => infer R ? R : any> & Record<string, unknown>); // Script class overrides applied to native instances.
-		defaults?: Record<string, any>; // Default property values to apply when constructing instances of this class. Will not include override methods/properties and is separate from 'class' to avoid polluting the prototype with instance data. In addition, class overrides are applied after defaults so that overrides can set default values for properties defined in scripts.
+		class?: (Partial<TBase extends new (...args: any) => infer R ? R : TBase extends abstract new (...args: any) => infer R ? R : any> & Record<string, unknown>); // Script class addons applied to native instances.
+		defaults?: Record<string, any>; // Default property values to apply when constructing instances of this class. Will not include addon methods/properties and is separate from 'class' to avoid polluting the prototype with instance data. In addition, class addons are applied after defaults so that addons can set default values for properties defined in scripts.
 	};
 
 type EntityExtensions = VmExtendedClass<typeof WorldObject | typeof SpriteObject | typeof Component | typeof Service> & {
@@ -75,7 +69,7 @@ type EntityExtensions = VmExtendedClass<typeof WorldObject | typeof SpriteObject
 	bts?: BehaviorTreeID[];
 };
 
-type AnyFunction = (...args: any[]) => any;
+// (removed AnyFunction alias - no longer used)
 
 export class BmsxVMApi {
 	private readonly playerindex: number;
@@ -108,47 +102,27 @@ export class BmsxVMApi {
 	}
 
 	/**
-	 * Apply script class overrides to a constructed instance.
+	 * Apply script class addons to a constructed instance.
 	 *
-	 * Filters out non-instance keys (def_id, class, defaults) and bulk-assigns the
-	 * remaining properties to the instance. This mimics Object.assign(instance, overrides).
-	 *
-	 * Event handlers (on_spawn, on_despawn, etc.) are registered as event listeners
-	 * instead of method overrides, ensuring native lifecycle always runs first.
+	 * Filters out non-instance keys (def_id, class, defaults) and attaches the
+	 * remaining properties to the instance as Lua-only dynamic fields. IMPORTANT:
+	 * existing native properties or methods on the instance are NOT overridden or
+	 * wrapped by addons; they are skipped to preserve native behaviour and C++
+	 * portability.
 	 */
-	private applyClassOverrides<T extends { events?: { on: (spec: any) => void } }>(instance: T, classTable?: Partial<T> & Record<string, unknown>): void {
+	private applyClassAddons<T extends object>(instance: T, classTable?: Partial<T> & Record<string, unknown>): void {
 		if (!classTable) return;
-		const overrides: Record<string, any> = {};
+		const addons: Record<string, any> = {};
 		for (const [key, value] of Object.entries(classTable)) {
-			if (excludedClassOverrideKeys.has(key)) continue;
+			if (excludedClassAddonKeys.has(key)) continue;
 
-			// Check if this is an event handler that should be registered as a listener
-			const eventName = eventHandlerKeys[key];
-			if (eventName && typeof value === 'function' && instance.events) {
-				const handler = value as AnyFunction;
-				instance.events.on({
-					event: eventName,
-					subscriber: instance,
-					handler: (event: any) => handler.call(instance, instance, event),
-				});
-				continue;
-			}
+			// Skip any name that already exists on the native instance. We do not
+			// attempt to override or wrap native methods/properties in C++.
+			if (key in instance) continue;
 
-			// Regular property/method override
-			const existing = (instance as any)[key];
-			if (typeof value === 'function' && typeof existing === 'function') {
-				const baseFn = existing as AnyFunction;
-				const overrideFn = value as AnyFunction;
-				overrides[key] = (...args: any[]) => {
-					const baseResult = baseFn.apply(instance, args);
-					const overrideResult = overrideFn.apply(instance, args);
-					return overrideResult === undefined ? baseResult : overrideResult;
-				};
-				continue;
-			}
-			overrides[key] = value;
+			addons[key] = value;
 		}
-		Object.assign(instance, overrides);
+		Object.assign(instance, addons);
 	}
 
 	public display_width(): number {
@@ -538,8 +512,8 @@ export class BmsxVMApi {
 	 *
 	 * Behavior:
 	 * - Looks up the descriptor registered via define_service(definition).
-	 * - Instantiates Service. If a Lua class override exists, uses its `id` as instance id.
-	 * - Applies `defaults` to the instance, then applies Lua class overrides (if any).
+	 * - Instantiates Service. If a Lua class addon exists, uses its `id` as instance id.
+	 * - Applies `defaults` to the instance, then applies Lua class addons (if any).
 	 * - Attaches any FSMs declared on the descriptor to the Service's state controller.
 	 *
 	 * @param definition_id The id of the registered service definition to instantiate.
@@ -551,7 +525,7 @@ export class BmsxVMApi {
 		// Default the id of the instance to the Lua-class' definition id and otherwise defaults to the definition id
 		const instance = new Service({ id: ext?.class?.id ?? definition_id, deferBind: defer_bind ?? false });
 		// Apply definition
-		this.applyObjectExtensionAndOverrides(ext, instance, undefined);
+		this.applyObjectExtensionAndAddons(ext, instance, undefined);
 		return instance;
 	}
 
@@ -576,7 +550,7 @@ export class BmsxVMApi {
 		const ext = this.componentExts.get(component_or_type);
 		const idLocal = ext ? this.resolveClassLocalId(ext) : undefined;
 		const instance = Component.newComponent(component_or_type, { parent_or_id: obj, id_local: idLocal } as ComponentAttachOptions);
-		this.applyObjectExtensionAndOverrides(ext, instance);
+		this.applyObjectExtensionAndAddons(ext, instance);
 		obj.add_component(instance);
 	}
 
@@ -587,14 +561,14 @@ export class BmsxVMApi {
 
 	/**
 	 * Apply an entity extension descriptor to a constructed instance,
-	 * then apply any user-supplied overrides.
+	 * then apply any user-supplied addons.
 	 *
 	 * Behavior:
 	 * - If an extension descriptor is provided, apply its `defaults` to the instance.
-	 * - Apply Lua class overrides from `ext.class` (filtered to instance fields).
+	 * - Apply Lua class addons from `ext.class` (filtered to instance fields).
 	 * - Attach any declared components, FSMs and action effects to the instance.
 	 * - Attach any declared behavior trees.
-	 * - After processing the extension descriptor, apply the `overrides` object last so
+	 * - After processing the extension descriptor, apply the `addons` object last so
 	 *   that user-specified properties take precedence.
 	 *
 	 * Notes:
@@ -603,12 +577,12 @@ export class BmsxVMApi {
 	 *
 	 * @param ext Optional extension descriptor returned from define_world_object/define_service/etc.
 	 * @param instance The constructed instance to modify
-	 * @param overrides Optional final overrides to apply to the instance (applied last)
+	 * @param addons Optional final addons to apply to the instance (applied last)
 	 */
-	private applyObjectExtensionAndOverrides(ext: EntityExtensions, instance: any, overrides?: Partial<any>): void {
+	private applyObjectExtensionAndAddons(ext: EntityExtensions, instance: any, addons?: Partial<any>): void {
 		if (ext) {
 			if (ext.defaults) { Object.assign(instance, ext.defaults); }
-			this.applyClassOverrides(instance, ext.class); // Apply Lua class overrides
+			this.applyClassAddons(instance, ext.class); // Apply Lua class addons
 
 			if (ext.components) {
 				for (let i = 0; i < ext.components.length; i += 1) { this.attach_component(instance, ext.components[i]); }
@@ -628,10 +602,10 @@ export class BmsxVMApi {
 				for (let i = 0; i < ext.bts.length; i += 1) { instance.add_btree(ext.bts[i]); }
 			}
 		}
-		// Apply overrides (these are applied last to take precedence and are distinct from definition overrides)
-		if (overrides) {
+		// Apply addons (these are applied last to take precedence and are distinct from definition addons)
+		if (addons) {
 			// TODO: FILTER!!
-			Object.assign(instance, overrides);
+			Object.assign(instance, addons);
 		}
 	}
 
@@ -640,26 +614,26 @@ export class BmsxVMApi {
 	 *
 	 * Behavior:
 	 * - Looks up the world-object extensions registered via define_world_object(definition).
-	 * - Creates a new WorldObject. Instance id defaults to the Lua class override id (if present)
-	 *   and can be overridden via overrides.id.
-	 * - Applies descriptor defaults, then Lua class overrides to the instance.
+	 * - Creates a new WorldObject. Instance id defaults to the Lua class addon id (if present)
+	 *   and can be added-on via addons.id.
+	 * - Applies descriptor defaults, then Lua class addons to the instance.
 	 * - Attaches declared components, FSMs, effects, and behavior trees from the descriptor.
-	 * - Finally applies user-supplied overrides so they take precedence, then spawns the object
-	 *   into the world, honoring overrides.pos if provided.
+	 * - Finally applies user-supplied addons so they take precedence, then spawns the object
+	 *   into the world, honoring addons.pos if provided.
 	 *
 	 * @param definition_id The id used when registering the world object definition.
-	 * @param overrides Optional partial properties to apply last; may include id and pos.
+	 * @param addons Optional partial properties to apply last; may include id and pos.
 	 * @returns The id of the spawned object.
 	 */
-	public spawn_object(definition_id: Identifier, overrides?: Partial<WorldObject>): WorldObject {
+	public spawn_object(definition_id: Identifier, addons?: Partial<WorldObject>): WorldObject {
 		const ext = this.worldObjectExts.get(definition_id);
-		// Default the id of the instance to the Lua-class' definition id if not overridden
-		const instance = new WorldObject({ id: overrides?.id ?? ext?.class?.id, constructReason: undefined });
+		// Default the id of the instance to the Lua-class' definition id if not added-on
+		const instance = new WorldObject({ id: addons?.id ?? ext?.class?.id, constructReason: undefined });
 
 		// Apply definition
-		this.applyObjectExtensionAndOverrides(ext, instance, overrides);
+		this.applyObjectExtensionAndAddons(ext, instance, addons);
 
-		$.world.spawn(instance, overrides?.pos, { reason: 'fresh' });
+		$.world.spawn(instance, addons?.pos, { reason: 'fresh' });
 		return instance;
 	}
 
@@ -668,25 +642,25 @@ export class BmsxVMApi {
 	 *
 	 * Behavior:
 	 * - Looks up the sprite-object extensions registered via define_world_object(definition).
-	 * - Creates a new SpriteObject. Instance id defaults to the Lua class override id (if present)
-	 *   and can be overridden via overrides.id.
-	 * - Applies descriptor defaults, then Lua class overrides to the instance.
+	 * - Creates a new SpriteObject. Instance id defaults to the Lua class addon id (if present)
+	 *   and can be added-on via addons.id.
+	 * - Applies descriptor defaults, then Lua class addons to the instance.
 	 * - Attaches declared components, FSMs, effects, and behavior trees from the descriptor.
-	 * - Finally applies user-supplied overrides so they take precedence, then spawns the sprite
-	 *   into the world, honoring overrides.pos if provided.
+	 * - Finally applies user-supplied addons so they take precedence, then spawns the sprite
+	 *   into the world, honoring addons.pos if provided.
 	 *
 	 * @param definition_id The id used when registering the sprite definition.
-	 * @param overrides Optional partial properties to apply last; may include id and pos.
+	 * @param addons Optional partial properties to apply last; may include id and pos.
 	 * @returns The id of the spawned sprite instance.
 	 */
-	public spawn_sprite(definition_id: Identifier, overrides?: Partial<SpriteObject>): SpriteObject {
+	public spawn_sprite(definition_id: Identifier, addons?: Partial<SpriteObject>): SpriteObject {
 		const ext = this.worldObjectExts.get(definition_id);
-		// Default the id of the instance to the Lua-class' definition_id if not overridden
-		const instance = new SpriteObject({ id: overrides?.id ?? ext?.class?.id, constructReason: undefined });
+		// Default the id of the instance to the Lua-class' definition_id if not added-on
+		const instance = new SpriteObject({ id: addons?.id ?? ext?.class?.id, constructReason: undefined });
 		// Apply definition
-		this.applyObjectExtensionAndOverrides(ext, instance, overrides);
+		this.applyObjectExtensionAndAddons(ext, instance, addons);
 
-		$.world.spawn(instance, overrides?.pos, { reason: 'fresh' });
+		$.world.spawn(instance, addons?.pos, { reason: 'fresh' });
 		return instance;
 	}
 
@@ -695,24 +669,24 @@ export class BmsxVMApi {
 	 *
 	 * Behavior:
 	 * - Looks up the textobject extensions registered via define_world_object(definition).
-	 * - Creates a new TextObject. Instance id defaults to the Lua class override id (if present)
-	 *   and can be overridden via overrides.id.
-	 * - Applies descriptor defaults, then Lua class overrides to the instance.
+	 * - Creates a new TextObject. Instance id defaults to the Lua class addon id (if present)
+	 *   and can be added-on via addons.id.
+	 * - Applies descriptor defaults, then Lua class addons to the instance.
 	 * - Attaches declared components, FSMs, effects, and behavior trees from the descriptor.
-	 * - Finally applies user-supplied overrides so they take precedence, then spawns the textobject
-	 *   into the world, honoring overrides.pos if provided.
+	 * - Finally applies user-supplied addons so they take precedence, then spawns the textobject
+	 *   into the world, honoring addons.pos if provided.
 	 *
 	 * @param definition_id The id used when registering the textobject definition.
-	 * @param overrides Optional partial properties to apply last; may include id and pos.
+	 * @param addons Optional partial properties to apply last; may include id and pos.
 	 * @returns The id of the spawned textobject instance.
 	 */
-	public spawn_textobject(definition_id: Identifier, overrides?: Partial<TextObject>): TextObject {
+	public spawn_textobject(definition_id: Identifier, addons?: Partial<TextObject>): TextObject {
 		const ext = this.worldObjectExts.get(definition_id);
-		const instance = new TextObject({ id: overrides?.id ?? ext?.class?.id ?? definition_id, constructReason: undefined });
+		const instance = new TextObject({ id: addons?.id ?? ext?.class?.id ?? definition_id, constructReason: undefined });
 		// Apply definition
-		this.applyObjectExtensionAndOverrides(ext, instance, overrides);
+		this.applyObjectExtensionAndAddons(ext, instance, addons);
 
-		$.world.spawn(instance, overrides?.pos, { reason: 'fresh' });
+		$.world.spawn(instance, addons?.pos, { reason: 'fresh' });
 		return instance;
 	}
 
