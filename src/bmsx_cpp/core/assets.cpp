@@ -3,8 +3,13 @@
  */
 
 #include "assets.h"
+#include "binencoder.h"
 #include <cstring>
 #include <stdexcept>
+#include <zlib.h>
+
+// stb_image for PNG decoding
+#include "../vendor/stb_image.h"
 
 namespace bmsx {
 
@@ -95,24 +100,266 @@ RomMeta parseRomMeta(const u8* buffer, size_t size) {
     };
 }
 
+// Check if buffer has PNG signature
+static bool isPNG(const u8* data, size_t size) {
+    if (size < 8) return false;
+    return data[0] == 0x89 && data[1] == 0x50 && data[2] == 0x4E && data[3] == 0x47 &&
+           data[4] == 0x0D && data[5] == 0x0A && data[6] == 0x1A && data[7] == 0x0A;
+}
+
+// Find end of PNG file (returns size of PNG, or 0 if not valid)
+static size_t findPNGEnd(const u8* data, size_t size) {
+    if (!isPNG(data, size)) return 0;
+
+    size_t pos = 8;
+    while (pos + 8 <= size) {
+        u32 len = (data[pos] << 24) | (data[pos+1] << 16) | (data[pos+2] << 8) | data[pos+3];
+        pos += 4;
+        u32 type = (data[pos] << 24) | (data[pos+1] << 16) | (data[pos+2] << 8) | data[pos+3];
+        pos += 4;
+        size_t chunkEnd = pos + len + 4;  // +4 for CRC
+        if (chunkEnd > size) return 0;
+        if (type == 0x49454E44) {  // IEND
+            return chunkEnd;
+        }
+        pos = chunkEnd;
+    }
+    return 0;
+}
+
+// Decompress zlib data
+static std::vector<u8> zlibDecompress(const u8* data, size_t size) {
+    // Start with estimate of 4x compression ratio
+    std::vector<u8> output(size * 4);
+    uLongf outputLen = output.size();
+
+    while (true) {
+        int result = uncompress(output.data(), &outputLen, data, static_cast<uLong>(size));
+        if (result == Z_OK) {
+            output.resize(outputLen);
+            return output;
+        }
+        if (result == Z_BUF_ERROR) {
+            // Need more space
+            output.resize(output.size() * 2);
+            outputLen = output.size();
+        } else {
+            throw std::runtime_error("zlib decompression failed");
+        }
+    }
+}
+
+// Check if ROM has valid metadata footer
+static bool hasRomMetaFooter(const u8* buffer, size_t size) {
+    if (size < 16) return false;
+
+    const u8* footer = buffer + size - 16;
+    u64 metaOffset = 0;
+    u64 metaLength = 0;
+
+    for (int i = 0; i < 8; i++) {
+        metaOffset |= static_cast<u64>(footer[i]) << (i * 8);
+    }
+    for (int i = 0; i < 8; i++) {
+        metaLength |= static_cast<u64>(footer[8 + i]) << (i * 8);
+    }
+
+    return metaOffset + metaLength <= size && metaLength > 0;
+}
+
 bool loadAssetsFromRom(const u8* buffer, size_t size, RuntimeAssets& assets) {
-    // TODO: Implement full ROM parsing
-    // This is a stub that needs to match the TypeScript romloader.ts
+    assets.clear();
 
-    // For now, just parse the meta to validate the ROM
-    RomMeta meta = parseRomMeta(buffer, size);
+    // Step 1: Check for optional PNG label at start, skip it if present
+    const u8* romData = buffer;
+    size_t romSize = size;
 
-    // The metadata section contains JSON with asset list
-    // Parse it and load assets from the ROM buffer
+    size_t pngEnd = findPNGEnd(buffer, size);
+    if (pngEnd > 0) {
+        romData = buffer + pngEnd;
+        romSize = size - pngEnd;
+    }
 
-    // This is where you'd:
-    // 1. Decompress if needed (pako/zlib in TS)
-    // 2. Parse asset list JSON
-    // 3. Extract each asset from the ROM buffer
-    // 4. Decode images (PNG), audio (WAV/MP3), etc.
+    // Step 2: Check if data is compressed (no valid footer = compressed)
+    std::vector<u8> decompressed;
+    if (!hasRomMetaFooter(romData, romSize)) {
+        decompressed = zlibDecompress(romData, romSize);
+        romData = decompressed.data();
+        romSize = decompressed.size();
 
-    (void)meta;
-    (void)assets;
+        if (!hasRomMetaFooter(romData, romSize)) {
+            throw std::runtime_error("Invalid ROM payload after decompression");
+        }
+    }
+
+    // Step 3: Parse metadata to get asset list
+    RomMeta meta = parseRomMeta(romData, romSize);
+    const u8* metaData = romData + meta.start;
+    size_t metaSize = meta.end - meta.start;
+
+    BinValue assetListPayload = decodeBinary(metaData, metaSize);
+    if (!assetListPayload.isObject()) {
+        throw std::runtime_error("ROM asset list is not an object");
+    }
+
+    const auto& payload = assetListPayload.asObject();
+
+    // Get project root path
+    if (payload.count("projectRootPath")) {
+        assets.projectRootPath = payload.at("projectRootPath").asString();
+    }
+
+    // Get manifest
+    if (payload.count("manifest") && payload.at("manifest").isObject()) {
+        const auto& manifestObj = payload.at("manifest").asObject();
+        if (manifestObj.count("name")) assets.manifest.name = manifestObj.at("name").asString();
+        if (manifestObj.count("version")) assets.manifest.version = manifestObj.at("version").asString();
+        if (manifestObj.count("author")) assets.manifest.author = manifestObj.at("author").asString();
+        if (manifestObj.count("description")) assets.manifest.description = manifestObj.at("description").asString();
+
+        if (manifestObj.count("vm") && manifestObj.at("vm").isObject()) {
+            const auto& vmObj = manifestObj.at("vm").asObject();
+            if (vmObj.count("viewport") && vmObj.at("viewport").isObject()) {
+                const auto& vpObj = vmObj.at("viewport").asObject();
+                if (vpObj.count("width")) assets.manifest.viewportWidth = vpObj.at("width").toI32();
+                if (vpObj.count("height")) assets.manifest.viewportHeight = vpObj.at("height").toI32();
+            }
+        }
+
+        if (manifestObj.count("lua") && manifestObj.at("lua").isObject()) {
+            const auto& luaObj = manifestObj.at("lua").asObject();
+            if (luaObj.count("entry_path")) assets.manifest.entryPoint = luaObj.at("entry_path").asString();
+        }
+    }
+
+    // Step 4: Load assets
+    if (!payload.count("assets") || !payload.at("assets").isArray()) {
+        return true;  // No assets, but valid ROM
+    }
+
+    const auto& assetArray = payload.at("assets").asArray();
+
+    for (const auto& assetValue : assetArray) {
+        if (!assetValue.isObject()) continue;
+
+        const auto& asset = assetValue.asObject();
+
+        std::string assetId = asset.count("id") ? asset.at("id").asString() : "";
+        std::string assetType = asset.count("type") ? asset.at("type").asString() : "";
+
+        // Get buffer offsets
+        i32 bufStart = asset.count("buffer_start") ? asset.at("buffer_start").toI32() : -1;
+        i32 bufEnd = asset.count("buffer_end") ? asset.at("buffer_end").toI32() : -1;
+        i32 metaBufStart = asset.count("metabuffer_start") ? asset.at("metabuffer_start").toI32() : -1;
+        i32 metaBufEnd = asset.count("metabuffer_end") ? asset.at("metabuffer_end").toI32() : -1;
+
+        if (assetType == "image" || assetType == "atlas") {
+            ImgAsset imgAsset;
+            imgAsset.id = assetId;
+
+            // Load image metadata
+            if (metaBufStart >= 0 && metaBufEnd > metaBufStart) {
+                BinValue metaVal = decodeBinary(romData + metaBufStart, metaBufEnd - metaBufStart);
+                if (metaVal.isObject()) {
+                    const auto& imgMeta = metaVal.asObject();
+                    imgAsset.meta.width = imgMeta.count("width") ? imgMeta.at("width").toI32() : 0;
+                    imgAsset.meta.height = imgMeta.count("height") ? imgMeta.at("height").toI32() : 0;
+                    imgAsset.meta.atlassed = imgMeta.count("atlassed") && imgMeta.at("atlassed").isBool() && imgMeta.at("atlassed").asBool();
+                    imgAsset.meta.atlasid = imgMeta.count("atlasid") ? imgMeta.at("atlasid").toI32() : -1;
+
+                    // Load texcoords
+                    if (imgMeta.count("texcoords") && imgMeta.at("texcoords").isArray()) {
+                        const auto& tc = imgMeta.at("texcoords").asArray();
+                        for (size_t i = 0; i < std::min(tc.size(), size_t(8)); ++i) {
+                            imgAsset.meta.texcoords[i] = static_cast<f32>(tc[i].toNumber());
+                        }
+                    }
+                    if (imgMeta.count("texcoords_fliph") && imgMeta.at("texcoords_fliph").isArray()) {
+                        const auto& tc = imgMeta.at("texcoords_fliph").asArray();
+                        for (size_t i = 0; i < std::min(tc.size(), size_t(8)); ++i) {
+                            imgAsset.meta.texcoords_fliph[i] = static_cast<f32>(tc[i].toNumber());
+                        }
+                    }
+                    if (imgMeta.count("texcoords_flipv") && imgMeta.at("texcoords_flipv").isArray()) {
+                        const auto& tc = imgMeta.at("texcoords_flipv").asArray();
+                        for (size_t i = 0; i < std::min(tc.size(), size_t(8)); ++i) {
+                            imgAsset.meta.texcoords_flipv[i] = static_cast<f32>(tc[i].toNumber());
+                        }
+                    }
+                    if (imgMeta.count("texcoords_fliphv") && imgMeta.at("texcoords_fliphv").isArray()) {
+                        const auto& tc = imgMeta.at("texcoords_fliphv").asArray();
+                        for (size_t i = 0; i < std::min(tc.size(), size_t(8)); ++i) {
+                            imgAsset.meta.texcoords_fliphv[i] = static_cast<f32>(tc[i].toNumber());
+                        }
+                    }
+
+                    // Load bounding box
+                    if (imgMeta.count("boundingbox") && imgMeta.at("boundingbox").isObject()) {
+                        const auto& bbObj = imgMeta.at("boundingbox").asObject();
+                        if (bbObj.count("original") && bbObj.at("original").isObject()) {
+                            const auto& origBB = bbObj.at("original").asObject();
+                            imgAsset.meta.boundingbox.x = origBB.count("left") ? origBB.at("left").toI32() : 0;
+                            imgAsset.meta.boundingbox.y = origBB.count("top") ? origBB.at("top").toI32() : 0;
+                            imgAsset.meta.boundingbox.width = (origBB.count("right") ? origBB.at("right").toI32() : 0) - imgAsset.meta.boundingbox.x;
+                            imgAsset.meta.boundingbox.height = (origBB.count("bottom") ? origBB.at("bottom").toI32() : 0) - imgAsset.meta.boundingbox.y;
+                        }
+                    }
+                }
+            }
+
+            // Load image pixel data
+            if (bufStart >= 0 && bufEnd > bufStart) {
+                const u8* imgData = romData + bufStart;
+                size_t imgSize = bufEnd - bufStart;
+
+                int width, height, channels;
+                u8* pixels = stbi_load_from_memory(imgData, static_cast<int>(imgSize),
+                                                   &width, &height, &channels, 4);  // Force RGBA
+
+                if (pixels) {
+                    imgAsset.meta.width = width;
+                    imgAsset.meta.height = height;
+                    imgAsset.pixels.assign(pixels, pixels + width * height * 4);
+                    stbi_image_free(pixels);
+                }
+            }
+
+            // Store as atlas or regular image
+            if (assetType == "atlas") {
+                i32 atlasId = asset.count("atlasid") ? asset.at("atlasid").toI32() : 0;
+                assets.atlasTextures[atlasId] = std::move(imgAsset);
+            } else {
+                assets.img[assetId] = std::move(imgAsset);
+            }
+        }
+        else if (assetType == "audio") {
+            AudioAsset audioAsset;
+            audioAsset.id = assetId;
+
+            // Load audio metadata
+            if (metaBufStart >= 0 && metaBufEnd > metaBufStart) {
+                BinValue metaVal = decodeBinary(romData + metaBufStart, metaBufEnd - metaBufStart);
+                if (metaVal.isObject()) {
+                    const auto& audioMeta = metaVal.asObject();
+                    audioAsset.meta.duration = audioMeta.count("duration") ? static_cast<f32>(audioMeta.at("duration").toNumber()) : 0.0f;
+                    audioAsset.meta.sampleRate = audioMeta.count("sampleRate") ? audioMeta.at("sampleRate").toI32() : 44100;
+                    audioAsset.meta.channels = audioMeta.count("channels") ? audioMeta.at("channels").toI32() : 2;
+                    audioAsset.meta.isMusic = audioMeta.count("isMusic") && audioMeta.at("isMusic").isBool() && audioMeta.at("isMusic").asBool();
+                }
+            }
+
+            // TODO: Decode audio data (MP3, WAV, OGG)
+            // For now, skip actual audio loading
+
+            assets.audio[assetId] = std::move(audioAsset);
+        }
+        else if (assetType == "data") {
+            if (bufStart >= 0 && bufEnd > bufStart) {
+                std::vector<u8> dataBlob(romData + bufStart, romData + bufEnd);
+                assets.data[assetId] = std::move(dataBlob);
+            }
+        }
+    }
 
     return true;
 }

@@ -66,7 +66,7 @@ struct RectRenderSubmission {
 // Image/sprite render
 struct ImgRenderSubmission {
     std::string imgid;
-    Vec2 pos{0.0f, 0.0f};
+    Vec3 pos{0.0f, 0.0f, 0.0f};  // x, y, z (z for depth sorting)
     Vec2 scale{1.0f, 1.0f};
     FlipOptions flip;
     Color colorize{1.0f, 1.0f, 1.0f, 1.0f};  // Tint color (white = no tint)

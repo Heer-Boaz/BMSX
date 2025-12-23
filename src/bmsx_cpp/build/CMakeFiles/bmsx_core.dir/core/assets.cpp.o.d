@@ -213,5 +213,9 @@ CMakeFiles/bmsx_core.dir/core/assets.cpp.o: \
  /usr/include/c++/13/bits/ranges_uninitialized.h \
  /usr/include/c++/13/bits/ranges_algobase.h \
  /usr/include/c++/13/pstl/glue_memory_defs.h \
- /usr/include/c++/13/pstl/execution_defs.h /usr/include/c++/13/cstring \
- /usr/include/string.h /usr/include/strings.h
+ /usr/include/c++/13/pstl/execution_defs.h \
+ /home/boaz/BMSX/src/bmsx_cpp/core/binencoder.h \
+ /usr/include/c++/13/cstring /usr/include/string.h /usr/include/strings.h \
+ /usr/include/zlib.h /usr/include/zconf.h \
+ /home/boaz/BMSX/src/bmsx_cpp/core/../vendor/stb_image.h \
+ /usr/include/c++/13/stdlib.h

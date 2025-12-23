@@ -66,6 +66,7 @@ public:
     GameView* view() { return m_view.get(); }
     Registry& registry() { return Registry::instance(); }
     RuntimeAssets& assets() { return m_assets; }
+    Clock* clock() { return m_platform ? m_platform->clock() : nullptr; }
 
     // Time
     f64 totalTime() const { return m_total_time; }
@@ -104,6 +105,7 @@ private:
     void processInput();
     void updateWorld(f64 deltaTime);
     void renderTestPattern();  // Visual test when no ROM loaded
+    void uploadTexturesToBackend();  // Upload asset textures to GPU backend
 
     Platform* m_platform = nullptr;
     std::unique_ptr<World> m_world;

@@ -211,6 +211,30 @@ core/assets.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/bmsx_core.dir/build.make CMakeFiles/bmsx_core.dir/core/assets.cpp.s
 .PHONY : core/assets.cpp.s
 
+core/binencoder.o: core/binencoder.cpp.o
+.PHONY : core/binencoder.o
+
+# target to build an object file
+core/binencoder.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/bmsx_core.dir/build.make CMakeFiles/bmsx_core.dir/core/binencoder.cpp.o
+.PHONY : core/binencoder.cpp.o
+
+core/binencoder.i: core/binencoder.cpp.i
+.PHONY : core/binencoder.i
+
+# target to preprocess a source file
+core/binencoder.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/bmsx_core.dir/build.make CMakeFiles/bmsx_core.dir/core/binencoder.cpp.i
+.PHONY : core/binencoder.cpp.i
+
+core/binencoder.s: core/binencoder.cpp.s
+.PHONY : core/binencoder.s
+
+# target to generate assembly for a file
+core/binencoder.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/bmsx_core.dir/build.make CMakeFiles/bmsx_core.dir/core/binencoder.cpp.s
+.PHONY : core/binencoder.cpp.s
+
 core/engine.o: core/engine.cpp.o
 .PHONY : core/engine.o
 
@@ -330,6 +354,30 @@ core/world.s: core/world.cpp.s
 core/world.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/bmsx_core.dir/build.make CMakeFiles/bmsx_core.dir/core/world.cpp.s
 .PHONY : core/world.cpp.s
+
+ecs/ecsystem.o: ecs/ecsystem.cpp.o
+.PHONY : ecs/ecsystem.o
+
+# target to build an object file
+ecs/ecsystem.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/bmsx_core.dir/build.make CMakeFiles/bmsx_core.dir/ecs/ecsystem.cpp.o
+.PHONY : ecs/ecsystem.cpp.o
+
+ecs/ecsystem.i: ecs/ecsystem.cpp.i
+.PHONY : ecs/ecsystem.i
+
+# target to preprocess a source file
+ecs/ecsystem.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/bmsx_core.dir/build.make CMakeFiles/bmsx_core.dir/ecs/ecsystem.cpp.i
+.PHONY : ecs/ecsystem.cpp.i
+
+ecs/ecsystem.s: ecs/ecsystem.cpp.s
+.PHONY : ecs/ecsystem.s
+
+# target to generate assembly for a file
+ecs/ecsystem.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/bmsx_core.dir/build.make CMakeFiles/bmsx_core.dir/ecs/ecsystem.cpp.s
+.PHONY : ecs/ecsystem.cpp.s
 
 platform.o: platform.cpp.o
 .PHONY : platform.o
@@ -451,6 +499,102 @@ render/gameview.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/bmsx_core.dir/build.make CMakeFiles/bmsx_core.dir/render/gameview.cpp.s
 .PHONY : render/gameview.cpp.s
 
+render/render_queues.o: render/render_queues.cpp.o
+.PHONY : render/render_queues.o
+
+# target to build an object file
+render/render_queues.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/bmsx_core.dir/build.make CMakeFiles/bmsx_core.dir/render/render_queues.cpp.o
+.PHONY : render/render_queues.cpp.o
+
+render/render_queues.i: render/render_queues.cpp.i
+.PHONY : render/render_queues.i
+
+# target to preprocess a source file
+render/render_queues.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/bmsx_core.dir/build.make CMakeFiles/bmsx_core.dir/render/render_queues.cpp.i
+.PHONY : render/render_queues.cpp.i
+
+render/render_queues.s: render/render_queues.cpp.s
+.PHONY : render/render_queues.s
+
+# target to generate assembly for a file
+render/render_queues.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/bmsx_core.dir/build.make CMakeFiles/bmsx_core.dir/render/render_queues.cpp.s
+.PHONY : render/render_queues.cpp.s
+
+render/rendergraph.o: render/rendergraph.cpp.o
+.PHONY : render/rendergraph.o
+
+# target to build an object file
+render/rendergraph.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/bmsx_core.dir/build.make CMakeFiles/bmsx_core.dir/render/rendergraph.cpp.o
+.PHONY : render/rendergraph.cpp.o
+
+render/rendergraph.i: render/rendergraph.cpp.i
+.PHONY : render/rendergraph.i
+
+# target to preprocess a source file
+render/rendergraph.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/bmsx_core.dir/build.make CMakeFiles/bmsx_core.dir/render/rendergraph.cpp.i
+.PHONY : render/rendergraph.cpp.i
+
+render/rendergraph.s: render/rendergraph.cpp.s
+.PHONY : render/rendergraph.s
+
+# target to generate assembly for a file
+render/rendergraph.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/bmsx_core.dir/build.make CMakeFiles/bmsx_core.dir/render/rendergraph.cpp.s
+.PHONY : render/rendergraph.cpp.s
+
+render/renderpasslib.o: render/renderpasslib.cpp.o
+.PHONY : render/renderpasslib.o
+
+# target to build an object file
+render/renderpasslib.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/bmsx_core.dir/build.make CMakeFiles/bmsx_core.dir/render/renderpasslib.cpp.o
+.PHONY : render/renderpasslib.cpp.o
+
+render/renderpasslib.i: render/renderpasslib.cpp.i
+.PHONY : render/renderpasslib.i
+
+# target to preprocess a source file
+render/renderpasslib.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/bmsx_core.dir/build.make CMakeFiles/bmsx_core.dir/render/renderpasslib.cpp.i
+.PHONY : render/renderpasslib.cpp.i
+
+render/renderpasslib.s: render/renderpasslib.cpp.s
+.PHONY : render/renderpasslib.s
+
+# target to generate assembly for a file
+render/renderpasslib.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/bmsx_core.dir/build.make CMakeFiles/bmsx_core.dir/render/renderpasslib.cpp.s
+.PHONY : render/renderpasslib.cpp.s
+
+render/sprites_pipeline.o: render/sprites_pipeline.cpp.o
+.PHONY : render/sprites_pipeline.o
+
+# target to build an object file
+render/sprites_pipeline.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/bmsx_core.dir/build.make CMakeFiles/bmsx_core.dir/render/sprites_pipeline.cpp.o
+.PHONY : render/sprites_pipeline.cpp.o
+
+render/sprites_pipeline.i: render/sprites_pipeline.cpp.i
+.PHONY : render/sprites_pipeline.i
+
+# target to preprocess a source file
+render/sprites_pipeline.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/bmsx_core.dir/build.make CMakeFiles/bmsx_core.dir/render/sprites_pipeline.cpp.i
+.PHONY : render/sprites_pipeline.cpp.i
+
+render/sprites_pipeline.s: render/sprites_pipeline.cpp.s
+.PHONY : render/sprites_pipeline.s
+
+# target to generate assembly for a file
+render/sprites_pipeline.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/bmsx_core.dir/build.make CMakeFiles/bmsx_core.dir/render/sprites_pipeline.cpp.s
+.PHONY : render/sprites_pipeline.cpp.s
+
 subscription.o: subscription.cpp.o
 .PHONY : subscription.o
 
@@ -475,6 +619,30 @@ subscription.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/bmsx_core.dir/build.make CMakeFiles/bmsx_core.dir/subscription.cpp.s
 .PHONY : subscription.cpp.s
 
+vendor/stb_impl.o: vendor/stb_impl.cpp.o
+.PHONY : vendor/stb_impl.o
+
+# target to build an object file
+vendor/stb_impl.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/bmsx_core.dir/build.make CMakeFiles/bmsx_core.dir/vendor/stb_impl.cpp.o
+.PHONY : vendor/stb_impl.cpp.o
+
+vendor/stb_impl.i: vendor/stb_impl.cpp.i
+.PHONY : vendor/stb_impl.i
+
+# target to preprocess a source file
+vendor/stb_impl.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/bmsx_core.dir/build.make CMakeFiles/bmsx_core.dir/vendor/stb_impl.cpp.i
+.PHONY : vendor/stb_impl.cpp.i
+
+vendor/stb_impl.s: vendor/stb_impl.cpp.s
+.PHONY : vendor/stb_impl.s
+
+# target to generate assembly for a file
+vendor/stb_impl.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/bmsx_core.dir/build.make CMakeFiles/bmsx_core.dir/vendor/stb_impl.cpp.s
+.PHONY : vendor/stb_impl.cpp.s
+
 # Help Target
 help:
 	@echo "The following are some of the valid targets for this Makefile:"
@@ -492,6 +660,9 @@ help:
 	@echo "... core/assets.o"
 	@echo "... core/assets.i"
 	@echo "... core/assets.s"
+	@echo "... core/binencoder.o"
+	@echo "... core/binencoder.i"
+	@echo "... core/binencoder.s"
 	@echo "... core/engine.o"
 	@echo "... core/engine.i"
 	@echo "... core/engine.s"
@@ -507,6 +678,9 @@ help:
 	@echo "... core/world.o"
 	@echo "... core/world.i"
 	@echo "... core/world.s"
+	@echo "... ecs/ecsystem.o"
+	@echo "... ecs/ecsystem.i"
+	@echo "... ecs/ecsystem.s"
 	@echo "... platform.o"
 	@echo "... platform.i"
 	@echo "... platform.s"
@@ -522,9 +696,24 @@ help:
 	@echo "... render/gameview.o"
 	@echo "... render/gameview.i"
 	@echo "... render/gameview.s"
+	@echo "... render/render_queues.o"
+	@echo "... render/render_queues.i"
+	@echo "... render/render_queues.s"
+	@echo "... render/rendergraph.o"
+	@echo "... render/rendergraph.i"
+	@echo "... render/rendergraph.s"
+	@echo "... render/renderpasslib.o"
+	@echo "... render/renderpasslib.i"
+	@echo "... render/renderpasslib.s"
+	@echo "... render/sprites_pipeline.o"
+	@echo "... render/sprites_pipeline.i"
+	@echo "... render/sprites_pipeline.s"
 	@echo "... subscription.o"
 	@echo "... subscription.i"
 	@echo "... subscription.s"
+	@echo "... vendor/stb_impl.o"
+	@echo "... vendor/stb_impl.i"
+	@echo "... vendor/stb_impl.s"
 .PHONY : help
 
 

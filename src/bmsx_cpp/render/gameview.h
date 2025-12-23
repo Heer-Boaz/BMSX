@@ -10,45 +10,25 @@
 
 #include "backend.h"
 #include "render_types.h"
+#include "render_queues.h"
 #include "../core/registry.h"
 #include "../subscription.h"
 #include <memory>
-#include <vector>
+#include <unordered_map>
 #include <functional>
+#include <string>
 
 namespace bmsx {
 
-/* ============================================================================
- * Render submission queue
- *
- * Collects render commands during a frame, sorted by layer and Z-order.
- * ============================================================================ */
-
-class RenderQueue {
-public:
-    void submitSprite(const ImgRenderSubmission& submission);
-    void submitRect(const RectRenderSubmission& submission);
-    void submitPoly(const PolyRenderSubmission& submission);
-    void submitGlyphs(const GlyphRenderSubmission& submission);
-
-    void clear();
-    void sortByDepth();
-
-    // Access for rendering
-    const std::vector<ImgRenderSubmission>& sprites() const { return m_sprites; }
-    const std::vector<RectRenderSubmission>& rects() const { return m_rects; }
-    const std::vector<PolyRenderSubmission>& polys() const { return m_polys; }
-    const std::vector<GlyphRenderSubmission>& glyphs() const { return m_glyphs; }
-
-private:
-    std::vector<ImgRenderSubmission> m_sprites;
-    std::vector<RectRenderSubmission> m_rects;
-    std::vector<PolyRenderSubmission> m_polys;
-    std::vector<GlyphRenderSubmission> m_glyphs;
-};
+// Forward declarations
+class BFont;
+class RenderPassLibrary;
+class RenderGraphRuntime;
 
 /* ============================================================================
  * Atmosphere parameters (fog, etc.)
+ *
+ * Mirrors TypeScript AtmosphereParams.
  * ============================================================================ */
 
 struct AtmosphereParams {
@@ -63,27 +43,12 @@ struct AtmosphereParams {
 };
 
 /* ============================================================================
- * CRT post-processing options
- * ============================================================================ */
-
-struct CRTOptions {
-    bool applyNoise = true;
-    f32 noiseIntensity = 0.4f;
-    bool applyColorBleed = true;
-    std::array<f32, 3> colorBleed = {0.02f, 0.0f, 0.0f};
-    bool applyScanlines = true;
-    bool applyBlur = true;
-    bool applyGlow = true;
-    bool applyFringing = true;
-    bool applyAperture = true;
-    f32 blurIntensity = 0.6f;
-    std::array<f32, 3> glowColor = {0.12f, 0.10f, 0.09f};
-};
-
-/* ============================================================================
  * GameView - Main rendering view
  *
- * IMPORTANT: Unlike TypeScript, we don't have separate canvas/offscreen sizes.
+ * Mirrors TypeScript GameView class structure.
+ * The renderer.submit functions route to the appropriate pipeline
+ * (e.g., SpritesPipeline, MeshPipeline, etc.).
+ *
  * For libretro, viewportSize IS the framebuffer size.
  * ============================================================================ */
 
@@ -101,27 +66,49 @@ public:
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Backend management
+    // Backend management (mirrors TypeScript backend getter/setter)
     // ─────────────────────────────────────────────────────────────────────────
     void setBackend(std::unique_ptr<GPUBackend> backend);
     GPUBackend* backend() { return m_backend.get(); }
+    const GPUBackend* backend() const { return m_backend.get(); }
     BackendType backendType() const;
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Viewport
+    // Viewport and canvas sizes (mirrors TypeScript properties)
     // ─────────────────────────────────────────────────────────────────────────
-    Vec2 viewportSize() const { return m_viewportSize; }
+    Vec2 viewportSize;       // The logical game resolution (e.g. 256x212 for MSX2)
+    Vec2 canvasSize;         // The backing buffer size
+    Vec2 offscreenCanvasSize;// Offscreen render target size
+    Vec2 windowSize;         // Available window size
+    Vec2 availableWindowSize;
+    f32 viewportScale = 1.0f;
+    f32 canvasScale = 1.0f;
+    f32 dx = 0.0f;
+    f32 dy = 0.0f;
+    f32 canvas_dx = 0.0f;
+    f32 canvas_dy = 0.0f;
+
     void setViewportSize(i32 width, i32 height);
+    void configureRenderTargets(const Vec2* viewport, const Vec2* canvas, const Vec2* offscreen);
 
     // ─────────────────────────────────────────────────────────────────────────
     // Frame rendering
     // ─────────────────────────────────────────────────────────────────────────
+    void init();
     void beginFrame();
     void drawGame();
     void endFrame();
 
     // ─────────────────────────────────────────────────────────────────────────
     // Render submission (mirrors TypeScript renderer.submit)
+    //
+    // These functions route to the appropriate pipeline:
+    // - sprite -> SpritesPipeline.drawImg
+    // - rect   -> SpritesPipeline.fillRectangle / drawRectangle
+    // - poly   -> SpritesPipeline.drawPolygon
+    // - glyphs -> renderGlyphs (uses sprite rendering internally)
+    // - particle -> ParticlesPipeline.submit_particle
+    // - mesh   -> MeshPipeline.submitMesh
     // ─────────────────────────────────────────────────────────────────────────
     struct Renderer {
         struct Submit {
@@ -129,39 +116,81 @@ public:
             std::function<void(const RectRenderSubmission&)> rect;
             std::function<void(const PolyRenderSubmission&)> poly;
             std::function<void(const GlyphRenderSubmission&)> glyphs;
+            std::function<void(const ParticleRenderSubmission&)> particle;
+            std::function<void(const MeshRenderSubmission&)> mesh;
         } submit;
     };
     Renderer renderer;
 
-    // Direct submission methods (used internally and by components)
-    void submitSprite(const ImgRenderSubmission& submission);
-    void submitRect(const RectRenderSubmission& submission);
-    void submitPoly(const PolyRenderSubmission& submission);
-    void submitGlyphs(const GlyphRenderSubmission& submission);
-
-    // Convenience methods (mirror TypeScript)
-    void fillRectangle(const RectBounds& area, const Color& color);
-    void drawRectangle(const RectBounds& area, const Color& color);
-    void drawLine(i32 x0, i32 y0, i32 x1, i32 y1, const Color& color);
+    // ─────────────────────────────────────────────────────────────────────────
+    // Textures map (mirrors TypeScript textures property)
+    // ─────────────────────────────────────────────────────────────────────────
+    std::unordered_map<std::string, TextureHandle> textures;
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Post-processing settings
+    // Atlas management (mirrors TypeScript primaryAtlas/secondaryAtlas)
     // ─────────────────────────────────────────────────────────────────────────
-    CRTOptions crtOptions;
+    i32 primaryAtlas() const { return m_primaryAtlasIndex; }
+    void setPrimaryAtlas(i32 index);
+
+    i32 secondaryAtlas() const { return m_secondaryAtlasIndex; }
+    void setSecondaryAtlas(i32 index);
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Pipeline registry (mirrors TypeScript pipelineRegistry)
+    // ─────────────────────────────────────────────────────────────────────────
+    RenderPassLibrary* pipelineRegistry() { return m_pipelineRegistry.get(); }
+    void setPipelineRegistry(std::unique_ptr<RenderPassLibrary> registry);
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Font (mirrors TypeScript default_font)
+    // ─────────────────────────────────────────────────────────────────────────
+    BFont* default_font = nullptr;
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Post-processing settings (mirrors TypeScript properties exactly)
+    // ─────────────────────────────────────────────────────────────────────────
     bool crt_postprocessing_enabled = true;
     bool psx_dither_2d_enabled = true;
     f32 psx_dither2d_intensity = 1.0f;
 
+    // CRT effect toggles and parameters (mirrors TypeScript GameView)
+    bool applyNoise = true;
+    bool applyColorBleed = true;
+    bool applyScanlines = true;
+    bool applyBlur = true;
+    bool applyGlow = true;
+    bool applyFringing = true;
+    bool applyAperture = true;
+    f32 noiseIntensity = 0.4f;
+    std::array<f32, 3> colorBleed = {0.02f, 0.0f, 0.0f};
+    f32 blurIntensity = 0.6f;
+    std::array<f32, 3> glowColor = {0.12f, 0.10f, 0.09f};
+
     // ─────────────────────────────────────────────────────────────────────────
-    // Sprite ambient settings
+    // Sprite ambient settings (mirrors TypeScript)
     // ─────────────────────────────────────────────────────────────────────────
     bool spriteAmbientEnabledDefault = false;
     f32 spriteAmbientFactorDefault = 1.0f;
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Atmosphere
+    // Viewport type for IDE (mirrors TypeScript viewportTypeIde)
+    // ─────────────────────────────────────────────────────────────────────────
+    enum class ViewportType { Viewport, Offscreen };
+    ViewportType viewportTypeIde = ViewportType::Viewport;
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Atmosphere (fog) (mirrors TypeScript)
     // ─────────────────────────────────────────────────────────────────────────
     AtmosphereParams atmosphere;
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Texture binding helpers (mirrors TypeScript activeTexUnit etc.)
+    // ─────────────────────────────────────────────────────────────────────────
+    i32 activeTexUnit() const { return m_activeTexUnit; }
+    void setActiveTexUnit(i32 unit);
+    void bind2DTex(TextureHandle tex);
+    void bindCubemapTex(TextureHandle tex);
 
     // ─────────────────────────────────────────────────────────────────────────
     // Lifecycle
@@ -171,19 +200,48 @@ public:
     void dispose();
     void reset();
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // Render graph (mirrors TypeScript renderGraph)
+    // ─────────────────────────────────────────────────────────────────────────
+    void rebuildGraph();
+    RenderGraphRuntime* renderGraph() { return m_renderGraph.get(); }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Ambient control API (mirrors TypeScript best-practice toggles)
+    // ─────────────────────────────────────────────────────────────────────────
+    void setSkyboxTintExposure(const std::array<f32, 3>& tint, f32 exposure = 1.0f);
+    void setParticlesAmbient(i32 mode, f32 factor = 1.0f);
+    void setSpritesAmbient(bool enabled, f32 factor = 1.0f);
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Convenience methods for drawing primitives
+    // These use renderer.submit internally, matching TypeScript behavior.
+    // ─────────────────────────────────────────────────────────────────────────
+    void fillRectangle(const RectBounds& area, const Color& color, RenderLayer layer = RenderLayer::World);
+    void drawRectangle(const RectBounds& area, const Color& color, RenderLayer layer = RenderLayer::World);
+    void drawLine(i32 x0, i32 y0, i32 x1, i32 y1, const Color& color, RenderLayer layer = RenderLayer::World);
+
 private:
     void initializeRenderer();
-    void executeRenderPasses();
-    void renderSprites();
-    void renderRects();
-    void renderPolys();
-    void renderGlyphs();
+    void setAtlasIndex(bool isPrimary, i32 index);
+    void applyCRTPostProcessing();
 
     std::unique_ptr<GPUBackend> m_backend;
-    Vec2 m_viewportSize;
+    std::unique_ptr<RenderPassLibrary> m_pipelineRegistry;
+    std::unique_ptr<RenderGraphRuntime> m_renderGraph;
 
-    RenderQueue m_worldQueue;
-    RenderQueue m_uiQueue;
+    i32 m_primaryAtlasIndex = -1;
+    i32 m_secondaryAtlasIndex = -1;
+    i32 m_activeTexUnit = -1;
+    TextureHandle m_activeTexture2D = nullptr;
+    TextureHandle m_activeCubemap = nullptr;
+
+    // CRT post-processing scratch buffer
+    std::vector<u32> m_crtScratchBuffer;
+
+    // Frame timing
+    i32 m_renderFrameIndex = 0;
+    f64 m_lastRenderTimeSeconds = 0.0;
 };
 
 } // namespace bmsx

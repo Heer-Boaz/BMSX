@@ -4,8 +4,12 @@
 CMakeFiles/bmsx_libretro.dir/platform/libretro/libretro_entry.cpp.o: /home/boaz/BMSX/src/bmsx_cpp/platform/libretro/libretro_entry.cpp \
   /home/boaz/BMSX/src/bmsx_cpp/platform.h \
   /home/boaz/BMSX/src/bmsx_cpp/core/registry.h \
+  /home/boaz/BMSX/src/bmsx_cpp/core/types.h \
+  /home/boaz/BMSX/src/bmsx_cpp/utils/feature_queue.h \
+  /home/boaz/BMSX/src/bmsx_cpp/utils/scratchbatch.h \
   /home/boaz/BMSX/src/bmsx_cpp/render/backend.h \
   /home/boaz/BMSX/src/bmsx_cpp/render/gameview.h \
+  /home/boaz/BMSX/src/bmsx_cpp/render/render_queues.h \
   /home/boaz/BMSX/src/bmsx_cpp/render/render_types.h \
   /home/boaz/BMSX/src/bmsx_cpp/core/assets.h \
   /home/boaz/BMSX/src/bmsx_cpp/core/engine.h \
@@ -23,6 +27,7 @@ CMakeFiles/bmsx_libretro.dir/platform/libretro/libretro_entry.cpp.o: /home/boaz/
   /usr/include/alloca.h \
   /usr/include/asm-generic/errno-base.h \
   /usr/include/asm-generic/errno.h \
+  /usr/include/c++/13/algorithm \
   /usr/include/c++/13/array \
   /usr/include/c++/13/backward/auto_ptr.h \
   /usr/include/c++/13/backward/binders.h \
@@ -77,6 +82,7 @@ CMakeFiles/bmsx_libretro.dir/platform/libretro/libretro_entry.cpp.o: /home/boaz/
   /usr/include/c++/13/bits/predefined_ops.h \
   /usr/include/c++/13/bits/ptr_traits.h \
   /usr/include/c++/13/bits/range_access.h \
+  /usr/include/c++/13/bits/ranges_algo.h \
   /usr/include/c++/13/bits/ranges_algobase.h \
   /usr/include/c++/13/bits/ranges_base.h \
   /usr/include/c++/13/bits/ranges_cmp.h \
@@ -101,6 +107,7 @@ CMakeFiles/bmsx_libretro.dir/platform/libretro/libretro_entry.cpp.o: /home/boaz/
   /usr/include/c++/13/bits/stl_iterator_base_types.h \
   /usr/include/c++/13/bits/stl_pair.h \
   /usr/include/c++/13/bits/stl_raw_storage_iter.h \
+  /usr/include/c++/13/bits/stl_relops.h \
   /usr/include/c++/13/bits/stl_tempbuf.h \
   /usr/include/c++/13/bits/stl_uninitialized.h \
   /usr/include/c++/13/bits/stl_vector.h \
@@ -149,6 +156,7 @@ CMakeFiles/bmsx_libretro.dir/platform/libretro/libretro_entry.cpp.o: /home/boaz/
   /usr/include/c++/13/optional \
   /usr/include/c++/13/ostream \
   /usr/include/c++/13/pstl/execution_defs.h \
+  /usr/include/c++/13/pstl/glue_algorithm_defs.h \
   /usr/include/c++/13/pstl/glue_memory_defs.h \
   /usr/include/c++/13/pstl/pstl_config.h \
   /usr/include/c++/13/stdexcept \
@@ -160,6 +168,7 @@ CMakeFiles/bmsx_libretro.dir/platform/libretro/libretro_entry.cpp.o: /home/boaz/
   /usr/include/c++/13/type_traits \
   /usr/include/c++/13/typeinfo \
   /usr/include/c++/13/unordered_map \
+  /usr/include/c++/13/utility \
   /usr/include/c++/13/variant \
   /usr/include/c++/13/vector \
   /usr/include/ctype.h \
@@ -288,8 +297,12 @@ CMakeFiles/bmsx_libretro.dir/platform/libretro/libretro_entry.cpp.o: /home/boaz/
 CMakeFiles/bmsx_libretro.dir/platform/libretro/libretro_platform.cpp.o: /home/boaz/BMSX/src/bmsx_cpp/platform/libretro/libretro_platform.cpp \
   /home/boaz/BMSX/src/bmsx_cpp/platform.h \
   /home/boaz/BMSX/src/bmsx_cpp/core/registry.h \
+  /home/boaz/BMSX/src/bmsx_cpp/core/types.h \
+  /home/boaz/BMSX/src/bmsx_cpp/utils/feature_queue.h \
+  /home/boaz/BMSX/src/bmsx_cpp/utils/scratchbatch.h \
   /home/boaz/BMSX/src/bmsx_cpp/render/backend.h \
   /home/boaz/BMSX/src/bmsx_cpp/render/gameview.h \
+  /home/boaz/BMSX/src/bmsx_cpp/render/render_queues.h \
   /home/boaz/BMSX/src/bmsx_cpp/render/render_types.h \
   /home/boaz/BMSX/src/bmsx_cpp/core/assets.h \
   /home/boaz/BMSX/src/bmsx_cpp/core/engine.h \
@@ -390,6 +403,7 @@ CMakeFiles/bmsx_libretro.dir/platform/libretro/libretro_platform.cpp.o: /home/bo
   /usr/include/c++/13/bits/stl_iterator_base_types.h \
   /usr/include/c++/13/bits/stl_pair.h \
   /usr/include/c++/13/bits/stl_raw_storage_iter.h \
+  /usr/include/c++/13/bits/stl_relops.h \
   /usr/include/c++/13/bits/stl_tempbuf.h \
   /usr/include/c++/13/bits/stl_uninitialized.h \
   /usr/include/c++/13/bits/stl_vector.h \
@@ -452,6 +466,7 @@ CMakeFiles/bmsx_libretro.dir/platform/libretro/libretro_platform.cpp.o: /home/bo
   /usr/include/c++/13/type_traits \
   /usr/include/c++/13/typeinfo \
   /usr/include/c++/13/unordered_map \
+  /usr/include/c++/13/utility \
   /usr/include/c++/13/variant \
   /usr/include/c++/13/vector \
   /usr/include/ctype.h \
@@ -582,8 +597,6 @@ CMakeFiles/bmsx_libretro.dir/platform/libretro/libretro_platform.cpp.o: /home/bo
 
 /usr/include/x86_64-linux-gnu/c++/13/bits/basic_file.h:
 
-/usr/include/c++/13/pstl/glue_algorithm_defs.h:
-
 /usr/include/c++/13/istream:
 
 /usr/include/c++/13/fstream:
@@ -593,8 +606,6 @@ CMakeFiles/bmsx_libretro.dir/platform/libretro/libretro_platform.cpp.o: /home/bo
 /usr/include/c++/13/bits/fstream.tcc:
 
 /usr/include/c++/13/bits/codecvt.h:
-
-/usr/include/c++/13/algorithm:
 
 /home/boaz/BMSX/src/bmsx_cpp/platform/libretro/libretro_platform.cpp:
 
@@ -618,7 +629,19 @@ CMakeFiles/bmsx_libretro.dir/platform/libretro/libretro_platform.cpp.o: /home/bo
 
 /usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h:
 
-/usr/include/c++/13/debug/assertions.h:
+/usr/include/x86_64-linux-gnu/c++/13/bits/c++allocator.h:
+
+/usr/include/x86_64-linux-gnu/bits/xopen_lim.h:
+
+/usr/include/x86_64-linux-gnu/c++/13/bits/atomic_word.h:
+
+/usr/include/x86_64-linux-gnu/bits/wordsize.h:
+
+/usr/include/x86_64-linux-gnu/bits/wctype-wchar.h:
+
+/usr/include/x86_64-linux-gnu/bits/wchar.h:
+
+/usr/include/x86_64-linux-gnu/bits/waitflags.h:
 
 /usr/include/c++/13/cstdlib:
 
@@ -635,8 +658,6 @@ CMakeFiles/bmsx_libretro.dir/platform/libretro/libretro_platform.cpp.o: /home/bo
 /usr/include/x86_64-linux-gnu/bits/floatn.h:
 
 /usr/include/x86_64-linux-gnu/bits/types/struct_itimerspec.h:
-
-/usr/include/x86_64-linux-gnu/c++/13/bits/c++allocator.h:
 
 /usr/include/x86_64-linux-gnu/sys/syscall.h:
 
@@ -664,6 +685,12 @@ CMakeFiles/bmsx_libretro.dir/platform/libretro/libretro_platform.cpp.o: /home/bo
 
 /usr/include/c++/13/bits/stl_tempbuf.h:
 
+/usr/include/c++/13/bits/stl_relops.h:
+
+/usr/include/x86_64-linux-gnu/bits/types/struct___jmp_buf_tag.h:
+
+/usr/include/x86_64-linux-gnu/bits/types/clockid_t.h:
+
 /usr/include/x86_64-linux-gnu/bits/types/struct_sched_param.h:
 
 /usr/include/asm-generic/errno.h:
@@ -686,10 +713,6 @@ CMakeFiles/bmsx_libretro.dir/platform/libretro/libretro_platform.cpp.o: /home/bo
 
 /usr/include/c++/13/cstddef:
 
-/usr/include/c++/13/bits/stl_pair.h:
-
-/usr/include/x86_64-linux-gnu/bits/errno.h:
-
 /usr/include/c++/13/bits/uses_allocator.h:
 
 /usr/include/c++/13/bits/postypes.h:
@@ -708,9 +731,7 @@ CMakeFiles/bmsx_libretro.dir/platform/libretro/libretro_platform.cpp.o: /home/bo
 
 /usr/include/c++/13/bits/ranges_base.h:
 
-/usr/include/c++/13/bits/stl_function.h:
-
-/usr/include/c++/13/bits/ranges_algobase.h:
+/usr/include/c++/13/bits/ostream_insert.h:
 
 /usr/include/c++/13/bits/range_access.h:
 
@@ -726,25 +747,21 @@ CMakeFiles/bmsx_libretro.dir/platform/libretro/libretro_platform.cpp.o: /home/bo
 
 /usr/include/c++/13/bits/ranges_uninitialized.h:
 
-/usr/include/c++/13/bits/stl_heap.h:
-
 /usr/include/c++/13/bits/std_abs.h:
 
 /usr/include/c++/13/bits/parse_numbers.h:
-
-/usr/include/c++/13/bits/ostream_insert.h:
 
 /usr/include/c++/13/bits/ostream.tcc:
 
 /usr/include/c++/13/numbers:
 
-/usr/include/c++/13/cwctype:
+/usr/include/c++/13/bits/stl_function.h:
 
 /usr/include/c++/13/bits/move.h:
 
-/usr/include/c++/13/variant:
+/usr/include/c++/13/cerrno:
 
-/usr/include/c++/13/bits/locale_facets.h:
+/usr/include/x86_64-linux-gnu/bits/stdint-least.h:
 
 /usr/include/c++/13/bits/predefined_ops.h:
 
@@ -754,7 +771,9 @@ CMakeFiles/bmsx_libretro.dir/platform/libretro/libretro_platform.cpp.o: /home/bo
 
 /usr/include/c++/13/bits/align.h:
 
-/usr/include/x86_64-linux-gnu/bits/waitflags.h:
+/usr/include/x86_64-linux-gnu/bits/types/mbstate_t.h:
+
+/usr/include/c++/13/bits/unique_ptr.h:
 
 /usr/include/x86_64-linux-gnu/bits/long-double.h:
 
@@ -764,31 +783,9 @@ CMakeFiles/bmsx_libretro.dir/platform/libretro/libretro_platform.cpp.o: /home/bo
 
 /usr/include/c++/13/bits/concept_check.h:
 
-/usr/include/c++/13/cerrno:
-
-/usr/include/x86_64-linux-gnu/bits/stdint-least.h:
-
-/usr/include/c++/13/bits/unique_ptr.h:
-
-/usr/include/x86_64-linux-gnu/bits/types/mbstate_t.h:
-
-/usr/include/x86_64-linux-gnu/sys/single_threaded.h:
-
-/home/boaz/BMSX/src/bmsx_cpp/core/engine.h:
-
-/usr/include/c++/13/bits/allocated_ptr.h:
-
-/usr/include/c++/13/bit:
-
-/usr/include/c++/13/bits/basic_string.tcc:
-
 /usr/include/c++/13/cstdarg:
 
 /usr/include/c++/13/backward/auto_ptr.h:
-
-/usr/include/c++/13/bits/iterator_concepts.h:
-
-/usr/include/c++/13/bits/stringfwd.h:
 
 /usr/include/c++/13/bits/shared_ptr.h:
 
@@ -800,7 +797,11 @@ CMakeFiles/bmsx_libretro.dir/platform/libretro/libretro_platform.cpp.o: /home/bo
 
 /usr/include/x86_64-linux-gnu/bits/types/sigset_t.h:
 
-/usr/include/c++/13/backward/binders.h:
+/usr/include/c++/13/variant:
+
+/usr/include/x86_64-linux-gnu/bits/waitstatus.h:
+
+/usr/include/c++/13/bits/exception_defines.h:
 
 /usr/include/c++/13/bits/memoryfwd.h:
 
@@ -810,13 +811,35 @@ CMakeFiles/bmsx_libretro.dir/platform/libretro/libretro_platform.cpp.o: /home/bo
 
 /usr/include/x86_64-linux-gnu/bits/types/locale_t.h:
 
-/usr/include/x86_64-linux-gnu/bits/wctype-wchar.h:
+/usr/include/c++/13/bits/ranges_algobase.h:
+
+/home/boaz/BMSX/src/bmsx_cpp/utils/scratchbatch.h:
 
 /home/boaz/BMSX/src/bmsx_cpp/core/assets.h:
 
-/usr/include/x86_64-linux-gnu/bits/xopen_lim.h:
+/home/boaz/BMSX/src/bmsx_cpp/platform/libretro/libretro.h:
+
+/usr/include/c++/13/bits/functional_hash.h:
+
+/usr/include/errno.h:
+
+/home/boaz/BMSX/src/bmsx_cpp/utils/feature_queue.h:
+
+/usr/include/c++/13/backward/binders.h:
+
+/usr/include/alloca.h:
+
+/usr/include/c++/13/bits/basic_string.tcc:
+
+/usr/include/c++/13/bits/allocated_ptr.h:
+
+/usr/include/c++/13/bit:
+
+/home/boaz/BMSX/src/bmsx_cpp/core/fsm.h:
 
 /usr/include/c++/13/bits/stl_raw_storage_iter.h:
+
+/usr/include/c++/13/algorithm:
 
 /home/boaz/BMSX/src/bmsx_cpp/core/registry.h:
 
@@ -824,19 +847,45 @@ CMakeFiles/bmsx_libretro.dir/platform/libretro/libretro_platform.cpp.o: /home/bo
 
 /usr/include/c++/13/bits/node_handle.h:
 
+/home/boaz/BMSX/src/bmsx_cpp/render/backend.h:
+
 /home/boaz/BMSX/src/bmsx_cpp/render/gameview.h:
 
 /home/boaz/BMSX/src/bmsx_cpp/subscription.h:
 
-/usr/include/c++/13/bits/exception_defines.h:
+/usr/include/c++/13/array:
 
-/usr/include/x86_64-linux-gnu/bits/waitstatus.h:
+/usr/include/c++/13/bits/hash_bytes.h:
 
-/home/boaz/BMSX/src/bmsx_cpp/render/backend.h:
+/usr/include/c++/13/bits/stl_iterator_base_funcs.h:
 
-/usr/include/x86_64-linux-gnu/sys/select.h:
+/usr/include/asm-generic/errno-base.h:
 
-/usr/include/c++/13/cwchar:
+/usr/include/x86_64-linux-gnu/c++/13/bits/ctype_base.h:
+
+/usr/include/c++/13/bits/ranges_util.h:
+
+/home/boaz/BMSX/src/bmsx_cpp/render/render_types.h:
+
+/usr/include/c++/13/cstring:
+
+/usr/include/x86_64-linux-gnu/sys/single_threaded.h:
+
+/home/boaz/BMSX/src/bmsx_cpp/core/engine.h:
+
+/usr/include/c++/13/bits/stringfwd.h:
+
+/usr/include/c++/13/bits/iterator_concepts.h:
+
+/usr/include/c++/13/tuple:
+
+/usr/include/c++/13/bits/nested_exception.h:
+
+/usr/include/c++/13/bits/basic_ios.tcc:
+
+/usr/include/c++/13/pstl/execution_defs.h:
+
+/home/boaz/BMSX/src/bmsx_cpp/platform/libretro/libretro_entry.cpp:
 
 /usr/include/c++/13/bits/atomic_lockfree_defines.h:
 
@@ -848,37 +897,7 @@ CMakeFiles/bmsx_libretro.dir/platform/libretro/libretro_platform.cpp.o: /home/bo
 
 /usr/include/x86_64-linux-gnu/bits/types/struct_timeval.h:
 
-/home/boaz/BMSX/src/bmsx_cpp/platform/libretro/libretro_entry.cpp:
-
-/usr/include/alloca.h:
-
-/home/boaz/BMSX/src/bmsx_cpp/core/fsm.h:
-
-/home/boaz/BMSX/src/bmsx_cpp/render/render_types.h:
-
-/usr/include/c++/13/cstring:
-
-/usr/include/c++/13/ext/aligned_buffer.h:
-
-/usr/include/locale.h:
-
-/usr/include/c++/13/bits/utility.h:
-
-/usr/include/x86_64-linux-gnu/bits/pthreadtypes-arch.h:
-
-/usr/include/c++/13/tuple:
-
-/usr/include/c++/13/bits/nested_exception.h:
-
-/usr/include/c++/13/bits/basic_ios.tcc:
-
-/usr/include/c++/13/pstl/execution_defs.h:
-
-/home/boaz/BMSX/src/bmsx_cpp/platform/libretro/libretro.h:
-
-/usr/include/c++/13/bits/functional_hash.h:
-
-/usr/include/errno.h:
+/usr/include/c++/13/bits/locale_facets.h:
 
 /usr/include/c++/13/bits/basic_ios.h:
 
@@ -887,6 +906,18 @@ CMakeFiles/bmsx_libretro.dir/platform/libretro/libretro_platform.cpp.o: /home/bo
 /usr/include/c++/13/bits/basic_string.h:
 
 /usr/include/x86_64-linux-gnu/bits/endianness.h:
+
+/usr/include/c++/13/bits/shared_ptr_base.h:
+
+/usr/include/wchar.h:
+
+/usr/include/c++/13/bits/ranges_algo.h:
+
+/usr/include/c++/13/bits/invoke.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h:
+
+/usr/include/x86_64-linux-gnu/bits/environments.h:
 
 /usr/include/x86_64-linux-gnu/c++/13/bits/ctype_inline.h:
 
@@ -912,14 +943,6 @@ CMakeFiles/bmsx_libretro.dir/platform/libretro/libretro_platform.cpp.o: /home/bo
 
 /usr/include/c++/13/bits/cxxabi_forced.h:
 
-/usr/include/x86_64-linux-gnu/c++/13/bits/ctype_base.h:
-
-/usr/include/c++/13/bits/ranges_util.h:
-
-/usr/include/c++/13/bits/stl_iterator_base_funcs.h:
-
-/usr/include/asm-generic/errno-base.h:
-
 /usr/include/c++/13/bits/localefwd.h:
 
 /usr/include/c++/13/bits/cxxabi_init_exception.h:
@@ -929,6 +952,10 @@ CMakeFiles/bmsx_libretro.dir/platform/libretro/libretro_platform.cpp.o: /home/bo
 /usr/include/c++/13/typeinfo:
 
 /usr/include/c++/13/bits/exception.h:
+
+/usr/include/c++/13/bits/memory_resource.h:
+
+/usr/include/c++/13/streambuf:
 
 /usr/include/x86_64-linux-gnu/bits/stdlib-float.h:
 
@@ -940,10 +967,6 @@ CMakeFiles/bmsx_libretro.dir/platform/libretro/libretro_platform.cpp.o: /home/bo
 
 /usr/include/c++/13/optional:
 
-/usr/include/c++/13/array:
-
-/usr/include/c++/13/bits/hash_bytes.h:
-
 /usr/include/x86_64-linux-gnu/bits/types/error_t.h:
 
 /usr/include/c++/13/bits/hashtable.h:
@@ -954,27 +977,35 @@ CMakeFiles/bmsx_libretro.dir/platform/libretro/libretro_platform.cpp.o: /home/bo
 
 /usr/include/c++/13/bits/locale_classes.tcc:
 
-/usr/include/c++/13/bits/ranges_algo.h:
+/usr/include/x86_64-linux-gnu/sys/select.h:
 
-/usr/include/c++/13/bits/invoke.h:
+/usr/include/c++/13/cwchar:
 
-/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h:
+/usr/include/c++/13/cwctype:
 
-/usr/include/x86_64-linux-gnu/bits/environments.h:
+/home/boaz/BMSX/src/bmsx_cpp/render/render_queues.h:
 
-/usr/include/c++/13/streambuf:
+/usr/include/c++/13/debug/assertions.h:
 
-/usr/include/c++/13/bits/memory_resource.h:
+/usr/include/c++/13/bits/stl_pair.h:
 
-/usr/include/c++/13/bits/shared_ptr_base.h:
+/usr/include/x86_64-linux-gnu/bits/errno.h:
 
-/usr/include/wchar.h:
+/usr/include/c++/13/ext/aligned_buffer.h:
+
+/usr/include/locale.h:
+
+/usr/include/c++/13/bits/utility.h:
+
+/usr/include/x86_64-linux-gnu/bits/pthreadtypes-arch.h:
 
 /usr/include/c++/13/ext/alloc_traits.h:
 
 /usr/include/c++/13/new:
 
 /usr/include/c++/13/ext/concurrence.h:
+
+/usr/include/c++/13/pstl/glue_algorithm_defs.h:
 
 /usr/include/c++/13/ext/string_conversions.h:
 
@@ -1009,6 +1040,10 @@ CMakeFiles/bmsx_libretro.dir/platform/libretro/libretro_platform.cpp.o: /home/bo
 /usr/include/c++/13/bits/allocator.h:
 
 /usr/include/c++/13/unordered_map:
+
+/usr/include/c++/13/bits/stl_heap.h:
+
+/usr/include/c++/13/utility:
 
 /usr/include/c++/13/vector:
 
@@ -1088,8 +1123,6 @@ CMakeFiles/bmsx_libretro.dir/platform/libretro/libretro_platform.cpp.o: /home/bo
 
 /usr/include/x86_64-linux-gnu/bits/types/cookie_io_functions_t.h:
 
-/usr/include/x86_64-linux-gnu/bits/wchar.h:
-
 /usr/include/x86_64-linux-gnu/bits/locale.h:
 
 /usr/include/c++/13/climits:
@@ -1134,10 +1167,6 @@ CMakeFiles/bmsx_libretro.dir/platform/libretro/libretro_platform.cpp.o: /home/bo
 
 /usr/include/x86_64-linux-gnu/bits/types/__sigset_t.h:
 
-/usr/include/x86_64-linux-gnu/bits/types/struct___jmp_buf_tag.h:
-
-/usr/include/x86_64-linux-gnu/bits/types/clockid_t.h:
-
 /usr/include/c++/13/ext/atomicity.h:
 
 /usr/include/x86_64-linux-gnu/bits/types/struct_tm.h:
@@ -1153,7 +1182,3 @@ CMakeFiles/bmsx_libretro.dir/platform/libretro/libretro_platform.cpp.o: /home/bo
 /home/boaz/BMSX/src/bmsx_cpp/platform.h:
 
 /usr/include/x86_64-linux-gnu/bits/unistd_ext.h:
-
-/usr/include/x86_64-linux-gnu/bits/wordsize.h:
-
-/usr/include/x86_64-linux-gnu/c++/13/bits/atomic_word.h:

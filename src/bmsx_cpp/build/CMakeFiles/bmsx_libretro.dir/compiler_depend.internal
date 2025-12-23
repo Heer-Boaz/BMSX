@@ -5,8 +5,12 @@ CMakeFiles/bmsx_libretro.dir/platform/libretro/libretro_entry.cpp.o
  /home/boaz/BMSX/src/bmsx_cpp/platform/libretro/libretro_entry.cpp
  /home/boaz/BMSX/src/bmsx_cpp/platform.h
  /home/boaz/BMSX/src/bmsx_cpp/core/registry.h
+ /home/boaz/BMSX/src/bmsx_cpp/core/types.h
+ /home/boaz/BMSX/src/bmsx_cpp/utils/feature_queue.h
+ /home/boaz/BMSX/src/bmsx_cpp/utils/scratchbatch.h
  /home/boaz/BMSX/src/bmsx_cpp/render/backend.h
  /home/boaz/BMSX/src/bmsx_cpp/render/gameview.h
+ /home/boaz/BMSX/src/bmsx_cpp/render/render_queues.h
  /home/boaz/BMSX/src/bmsx_cpp/render/render_types.h
  /home/boaz/BMSX/src/bmsx_cpp/core/assets.h
  /home/boaz/BMSX/src/bmsx_cpp/core/engine.h
@@ -24,6 +28,7 @@ CMakeFiles/bmsx_libretro.dir/platform/libretro/libretro_entry.cpp.o
  /usr/include/alloca.h
  /usr/include/asm-generic/errno-base.h
  /usr/include/asm-generic/errno.h
+ /usr/include/c++/13/algorithm
  /usr/include/c++/13/array
  /usr/include/c++/13/backward/auto_ptr.h
  /usr/include/c++/13/backward/binders.h
@@ -78,6 +83,7 @@ CMakeFiles/bmsx_libretro.dir/platform/libretro/libretro_entry.cpp.o
  /usr/include/c++/13/bits/predefined_ops.h
  /usr/include/c++/13/bits/ptr_traits.h
  /usr/include/c++/13/bits/range_access.h
+ /usr/include/c++/13/bits/ranges_algo.h
  /usr/include/c++/13/bits/ranges_algobase.h
  /usr/include/c++/13/bits/ranges_base.h
  /usr/include/c++/13/bits/ranges_cmp.h
@@ -102,6 +108,7 @@ CMakeFiles/bmsx_libretro.dir/platform/libretro/libretro_entry.cpp.o
  /usr/include/c++/13/bits/stl_iterator_base_types.h
  /usr/include/c++/13/bits/stl_pair.h
  /usr/include/c++/13/bits/stl_raw_storage_iter.h
+ /usr/include/c++/13/bits/stl_relops.h
  /usr/include/c++/13/bits/stl_tempbuf.h
  /usr/include/c++/13/bits/stl_uninitialized.h
  /usr/include/c++/13/bits/stl_vector.h
@@ -150,6 +157,7 @@ CMakeFiles/bmsx_libretro.dir/platform/libretro/libretro_entry.cpp.o
  /usr/include/c++/13/optional
  /usr/include/c++/13/ostream
  /usr/include/c++/13/pstl/execution_defs.h
+ /usr/include/c++/13/pstl/glue_algorithm_defs.h
  /usr/include/c++/13/pstl/glue_memory_defs.h
  /usr/include/c++/13/pstl/pstl_config.h
  /usr/include/c++/13/stdexcept
@@ -161,6 +169,7 @@ CMakeFiles/bmsx_libretro.dir/platform/libretro/libretro_entry.cpp.o
  /usr/include/c++/13/type_traits
  /usr/include/c++/13/typeinfo
  /usr/include/c++/13/unordered_map
+ /usr/include/c++/13/utility
  /usr/include/c++/13/variant
  /usr/include/c++/13/vector
  /usr/include/ctype.h
@@ -290,8 +299,12 @@ CMakeFiles/bmsx_libretro.dir/platform/libretro/libretro_platform.cpp.o
  /home/boaz/BMSX/src/bmsx_cpp/platform/libretro/libretro_platform.cpp
  /home/boaz/BMSX/src/bmsx_cpp/platform.h
  /home/boaz/BMSX/src/bmsx_cpp/core/registry.h
+ /home/boaz/BMSX/src/bmsx_cpp/core/types.h
+ /home/boaz/BMSX/src/bmsx_cpp/utils/feature_queue.h
+ /home/boaz/BMSX/src/bmsx_cpp/utils/scratchbatch.h
  /home/boaz/BMSX/src/bmsx_cpp/render/backend.h
  /home/boaz/BMSX/src/bmsx_cpp/render/gameview.h
+ /home/boaz/BMSX/src/bmsx_cpp/render/render_queues.h
  /home/boaz/BMSX/src/bmsx_cpp/render/render_types.h
  /home/boaz/BMSX/src/bmsx_cpp/core/assets.h
  /home/boaz/BMSX/src/bmsx_cpp/core/engine.h
@@ -392,6 +405,7 @@ CMakeFiles/bmsx_libretro.dir/platform/libretro/libretro_platform.cpp.o
  /usr/include/c++/13/bits/stl_iterator_base_types.h
  /usr/include/c++/13/bits/stl_pair.h
  /usr/include/c++/13/bits/stl_raw_storage_iter.h
+ /usr/include/c++/13/bits/stl_relops.h
  /usr/include/c++/13/bits/stl_tempbuf.h
  /usr/include/c++/13/bits/stl_uninitialized.h
  /usr/include/c++/13/bits/stl_vector.h
@@ -454,6 +468,7 @@ CMakeFiles/bmsx_libretro.dir/platform/libretro/libretro_platform.cpp.o
  /usr/include/c++/13/type_traits
  /usr/include/c++/13/typeinfo
  /usr/include/c++/13/unordered_map
+ /usr/include/c++/13/utility
  /usr/include/c++/13/variant
  /usr/include/c++/13/vector
  /usr/include/ctype.h

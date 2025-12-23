@@ -18,6 +18,7 @@
 #include <vector>
 #include <memory>
 #include <optional>
+#include <array>
 
 namespace bmsx {
 
@@ -38,22 +39,35 @@ using DataId = AssetId;
 struct ImgMeta {
     i32 width = 0;
     i32 height = 0;
-    i32 atlasX = 0;       // Position in atlas
-    i32 atlasY = 0;
-    std::string atlasId;  // Which atlas this image belongs to
-    bool isAtlased = false;
+    bool atlassed = false;           // Whether this image is part of an atlas
+    i32 atlasid = -1;                 // Which atlas this image belongs to (0=primary, 1=secondary, 254=engine)
 
-    // Bounding box (for sprites with transparency)
-    i32 bbX = 0;
-    i32 bbY = 0;
-    i32 bbWidth = 0;
-    i32 bbHeight = 0;
+    // Texture coordinates for sprite rendering (matches TypeScript ImgMeta)
+    // Each array is [u0, v0, u1, v1, u2, v2, u3, v3] for quad vertices
+    std::array<f32, 8> texcoords{0, 0, 0, 1, 1, 0, 1, 1};       // Normal
+    std::array<f32, 8> texcoords_fliph{1, 0, 1, 1, 0, 0, 0, 1}; // Flipped horizontal
+    std::array<f32, 8> texcoords_flipv{0, 1, 0, 0, 1, 1, 1, 0}; // Flipped vertical
+    std::array<f32, 8> texcoords_fliphv{1, 1, 1, 0, 0, 1, 0, 0}; // Flipped both
 
-    // UV coordinates (normalized 0-1)
-    f32 u0 = 0.0f;
-    f32 v0 = 0.0f;
-    f32 u1 = 1.0f;
-    f32 v1 = 1.0f;
+    // Bounding box (for sprites with transparency, collision)
+    struct BoundingBox {
+        i32 x = 0;
+        i32 y = 0;
+        i32 width = 0;
+        i32 height = 0;
+    } boundingbox;
+
+    // Center point for rotation/positioning
+    f32 centerX = 0.0f;
+    f32 centerY = 0.0f;
+
+    // Helper to get UV rect (u0, v0, u1, v1) for simple blitting
+    void getUVRect(f32& u0, f32& v0, f32& u1, f32& v1, bool flipH = false, bool flipV = false) const {
+        const auto& tc = flipH ? (flipV ? texcoords_fliphv : texcoords_fliph)
+                               : (flipV ? texcoords_flipv : texcoords);
+        u0 = tc[0]; v0 = tc[1];
+        u1 = tc[4]; v1 = tc[5];  // Bottom-right corner
+    }
 };
 
 /* ============================================================================
@@ -68,7 +82,7 @@ struct ImgAsset {
     std::vector<u8> pixels;
 
     // GPU texture handle (set by renderer)
-    u32 textureHandle = 0;
+    uintptr_t textureHandle = 0;
     bool uploaded = false;
 };
 
@@ -158,6 +172,9 @@ public:
     std::unordered_map<AssetId, ModelAsset> model;
     std::unordered_map<AssetId, std::vector<u8>> data;  // Generic binary data
     std::unordered_map<AssetId, AudioEventEntry> audioevents;
+
+    // Atlas textures (atlasid -> ImgAsset with full texture data)
+    std::unordered_map<i32, ImgAsset> atlasTextures;
 
     // Project metadata
     std::string projectRootPath;

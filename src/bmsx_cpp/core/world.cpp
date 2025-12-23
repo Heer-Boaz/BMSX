@@ -195,6 +195,13 @@ void WorldObject::dispose() {
     unbind();
 }
 
+void WorldObject::submitForRendering(GameView* view) {
+    (void)view;
+    // Default implementation does nothing
+    // Subclasses with sprites/meshes override this to submit to RenderQueues
+    // In TypeScript, this is typically done via SpriteComponent
+}
+
 void WorldObject::bind() {
     Registry::instance().registerObject(this);
 }
@@ -433,6 +440,23 @@ void World::markDepthDirtyForObjectId(const Identifier& objId) {
     if (space) {
         space->depthSortDirty = true;
     }
+}
+
+std::vector<WorldObject*> World::objects(const ObjectScope& scope) {
+    std::vector<WorldObject*> result;
+    if (!_activeSpace) return result;
+
+    for (auto* obj : _activeSpace->objects) {
+        if (scope.activeOnly && !obj->active) continue;
+        result.push_back(obj);
+    }
+    return result;
+}
+
+void World::stepPhysics(f64 dt) {
+    (void)dt;
+    // TODO: Integrate physics engine (e.g., Jolt, Rapier)
+    // For now, this is a placeholder for the physics step
 }
 
 void World::run(f64 deltaTime) {

@@ -10,5 +10,6 @@
 		"./schemas/audio-events.schema.json": "**.aem.yaml",
 		"./schemas/rommanifest.schema.json": "**.rommanifest",
 	},
-	"chatgpt.openOnStartup": true
+	"chatgpt.openOnStartup": true,
+	"cmake.sourceDirectory": "/home/boaz/BMSX/src/bmsx_cpp"
 }

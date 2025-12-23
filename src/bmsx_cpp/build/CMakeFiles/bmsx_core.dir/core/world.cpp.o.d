@@ -217,6 +217,8 @@ CMakeFiles/bmsx_core.dir/core/world.cpp.o: \
  /home/boaz/BMSX/src/bmsx_cpp/core/registry.h \
  /home/boaz/BMSX/src/bmsx_cpp/core/fsm.h \
  /home/boaz/BMSX/src/bmsx_cpp/core/../subscription.h \
+ /home/boaz/BMSX/src/bmsx_cpp/core/../ecs/ecsystem.h \
+ /home/boaz/BMSX/src/bmsx_cpp/core/../ecs/../core/types.h \
  /home/boaz/BMSX/src/bmsx_cpp/core/engine.h \
  /home/boaz/BMSX/src/bmsx_cpp/core/assets.h \
  /home/boaz/BMSX/src/bmsx_cpp/core/../platform.h \
@@ -226,6 +228,11 @@ CMakeFiles/bmsx_core.dir/core/world.cpp.o: \
  /home/boaz/BMSX/src/bmsx_cpp/core/../render/../core/types.h \
  /home/boaz/BMSX/src/bmsx_cpp/core/../render/gameview.h \
  /home/boaz/BMSX/src/bmsx_cpp/core/../render/backend.h \
- /home/boaz/BMSX/src/bmsx_cpp/core/../render/../core/registry.h \
+ /home/boaz/BMSX/src/bmsx_cpp/core/../render/render_queues.h \
+ /home/boaz/BMSX/src/bmsx_cpp/core/../render/../utils/feature_queue.h \
+ /home/boaz/BMSX/src/bmsx_cpp/core/../render/../utils/scratchbatch.h \
+ /home/boaz/BMSX/src/bmsx_cpp/core/../render/../utils/../core/types.h \
  /usr/include/c++/13/algorithm /usr/include/c++/13/bits/ranges_algo.h \
- /usr/include/c++/13/pstl/glue_algorithm_defs.h
+ /usr/include/c++/13/pstl/glue_algorithm_defs.h \
+ /usr/include/c++/13/utility /usr/include/c++/13/bits/stl_relops.h \
+ /home/boaz/BMSX/src/bmsx_cpp/core/../render/../core/registry.h

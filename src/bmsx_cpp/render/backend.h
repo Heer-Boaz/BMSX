@@ -50,6 +50,16 @@ struct FrameStats {
 };
 
 /* ============================================================================
+ * Software texture storage
+ * ============================================================================ */
+
+struct SoftwareTexture {
+    std::vector<u32> data;  // ARGB32 pixels
+    i32 width = 0;
+    i32 height = 0;
+};
+
+/* ============================================================================
  * Render pass description
  * ============================================================================ */
 
@@ -193,11 +203,6 @@ private:
     FrameStats m_stats;
 
     // Texture storage
-    struct SoftwareTexture {
-        std::vector<u32> data;
-        i32 width = 0;
-        i32 height = 0;
-    };
     std::vector<std::unique_ptr<SoftwareTexture>> m_textures;
 
     // Depth buffer (optional)

@@ -223,11 +223,20 @@ CMakeFiles/bmsx_libretro.dir/platform/libretro/libretro_entry.cpp.o: \
  /home/boaz/BMSX/src/bmsx_cpp/platform/libretro/../../core/world.h \
  /home/boaz/BMSX/src/bmsx_cpp/platform/libretro/../../core/registry.h \
  /home/boaz/BMSX/src/bmsx_cpp/platform/libretro/../../core/fsm.h \
+ /home/boaz/BMSX/src/bmsx_cpp/platform/libretro/../../core/../ecs/ecsystem.h \
+ /home/boaz/BMSX/src/bmsx_cpp/platform/libretro/../../core/../ecs/../core/types.h \
  /home/boaz/BMSX/src/bmsx_cpp/platform/libretro/../../core/assets.h \
  /home/boaz/BMSX/src/bmsx_cpp/platform/libretro/../../core/../platform.h \
  /home/boaz/BMSX/src/bmsx_cpp/platform/libretro/../../core/../render/gameview.h \
  /home/boaz/BMSX/src/bmsx_cpp/platform/libretro/../../core/../render/backend.h \
  /home/boaz/BMSX/src/bmsx_cpp/platform/libretro/../../core/../render/render_types.h \
+ /home/boaz/BMSX/src/bmsx_cpp/platform/libretro/../../core/../render/render_queues.h \
+ /home/boaz/BMSX/src/bmsx_cpp/platform/libretro/../../core/../render/../utils/feature_queue.h \
+ /home/boaz/BMSX/src/bmsx_cpp/platform/libretro/../../core/../render/../utils/scratchbatch.h \
+ /home/boaz/BMSX/src/bmsx_cpp/platform/libretro/../../core/../render/../utils/../core/types.h \
+ /usr/include/c++/13/algorithm /usr/include/c++/13/bits/ranges_algo.h \
+ /usr/include/c++/13/pstl/glue_algorithm_defs.h \
+ /usr/include/c++/13/utility /usr/include/c++/13/bits/stl_relops.h \
  /home/boaz/BMSX/src/bmsx_cpp/platform/libretro/../../core/../render/../core/registry.h \
  /home/boaz/BMSX/src/bmsx_cpp/platform/libretro/../../render/backend.h \
  /usr/include/c++/13/cstring /usr/include/string.h /usr/include/strings.h \

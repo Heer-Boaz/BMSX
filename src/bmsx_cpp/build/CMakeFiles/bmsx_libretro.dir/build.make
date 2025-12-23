@@ -109,6 +109,7 @@ bmsx_libretro.so: CMakeFiles/bmsx_libretro.dir/platform/libretro/libretro_platfo
 bmsx_libretro.so: CMakeFiles/bmsx_libretro.dir/platform/libretro/libretro_entry.cpp.o
 bmsx_libretro.so: CMakeFiles/bmsx_libretro.dir/build.make
 bmsx_libretro.so: libbmsx_core.a
+bmsx_libretro.so: /usr/lib/x86_64-linux-gnu/libz.so
 bmsx_libretro.so: CMakeFiles/bmsx_libretro.dir/link.txt
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/boaz/BMSX/src/bmsx_cpp/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Linking CXX shared library bmsx_libretro.so"
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/bmsx_libretro.dir/link.txt --verbose=$(VERBOSE)

@@ -218,17 +218,52 @@ CMakeFiles/bmsx_core.dir/render/gameview.cpp.o: \
  /usr/include/c++/13/bits/ranges_algobase.h \
  /usr/include/c++/13/pstl/glue_memory_defs.h \
  /usr/include/c++/13/pstl/execution_defs.h \
+ /home/boaz/BMSX/src/bmsx_cpp/render/render_queues.h \
+ /home/boaz/BMSX/src/bmsx_cpp/render/../utils/feature_queue.h \
+ /home/boaz/BMSX/src/bmsx_cpp/render/../utils/scratchbatch.h \
+ /home/boaz/BMSX/src/bmsx_cpp/render/../utils/../core/types.h \
+ /usr/include/c++/13/algorithm /usr/include/c++/13/bits/ranges_algo.h \
+ /usr/include/c++/13/pstl/glue_algorithm_defs.h \
+ /usr/include/c++/13/utility /usr/include/c++/13/bits/stl_relops.h \
  /home/boaz/BMSX/src/bmsx_cpp/render/../core/registry.h \
  /home/boaz/BMSX/src/bmsx_cpp/render/../core/types.h \
  /home/boaz/BMSX/src/bmsx_cpp/render/../subscription.h \
+ /home/boaz/BMSX/src/bmsx_cpp/render/sprites_pipeline.h \
+ /home/boaz/BMSX/src/bmsx_cpp/render/renderpasslib.h \
+ /usr/include/c++/13/any \
+ /home/boaz/BMSX/src/bmsx_cpp/render/rendergraph.h \
  /home/boaz/BMSX/src/bmsx_cpp/render/../core/engine.h \
  /home/boaz/BMSX/src/bmsx_cpp/render/../core/world.h \
  /home/boaz/BMSX/src/bmsx_cpp/render/../core/registry.h \
  /home/boaz/BMSX/src/bmsx_cpp/render/../core/fsm.h \
+ /home/boaz/BMSX/src/bmsx_cpp/render/../core/../ecs/ecsystem.h \
+ /home/boaz/BMSX/src/bmsx_cpp/render/../core/../ecs/../core/types.h \
  /home/boaz/BMSX/src/bmsx_cpp/render/../core/assets.h \
  /home/boaz/BMSX/src/bmsx_cpp/render/../core/../platform.h \
  /home/boaz/BMSX/src/bmsx_cpp/render/../core/../core/types.h \
  /home/boaz/BMSX/src/bmsx_cpp/render/../core/../render/backend.h \
  /home/boaz/BMSX/src/bmsx_cpp/render/../core/../render/gameview.h \
- /usr/include/c++/13/algorithm /usr/include/c++/13/bits/ranges_algo.h \
- /usr/include/c++/13/pstl/glue_algorithm_defs.h
+ /usr/include/c++/13/cmath /usr/include/math.h \
+ /usr/include/x86_64-linux-gnu/bits/math-vector.h \
+ /usr/include/x86_64-linux-gnu/bits/libm-simd-decl-stubs.h \
+ /usr/include/x86_64-linux-gnu/bits/flt-eval-method.h \
+ /usr/include/x86_64-linux-gnu/bits/fp-logb.h \
+ /usr/include/x86_64-linux-gnu/bits/fp-fast.h \
+ /usr/include/x86_64-linux-gnu/bits/mathcalls-helper-functions.h \
+ /usr/include/x86_64-linux-gnu/bits/mathcalls.h \
+ /usr/include/x86_64-linux-gnu/bits/mathcalls-narrow.h \
+ /usr/include/x86_64-linux-gnu/bits/iscanonical.h \
+ /usr/include/c++/13/bits/specfun.h /usr/include/c++/13/limits \
+ /usr/include/c++/13/tr1/gamma.tcc \
+ /usr/include/c++/13/tr1/special_function_util.h \
+ /usr/include/c++/13/tr1/bessel_function.tcc \
+ /usr/include/c++/13/tr1/beta_function.tcc \
+ /usr/include/c++/13/tr1/ell_integral.tcc \
+ /usr/include/c++/13/tr1/exp_integral.tcc \
+ /usr/include/c++/13/tr1/hypergeometric.tcc \
+ /usr/include/c++/13/tr1/legendre_function.tcc \
+ /usr/include/c++/13/tr1/modified_bessel_func.tcc \
+ /usr/include/c++/13/tr1/poly_hermite.tcc \
+ /usr/include/c++/13/tr1/poly_laguerre.tcc \
+ /usr/include/c++/13/tr1/riemann_zeta.tcc /usr/include/c++/13/cstring \
+ /usr/include/string.h /usr/include/strings.h

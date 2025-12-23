@@ -187,8 +187,48 @@ bool EngineCore::loadRom(const u8* data, size_t size) {
         return false;
     }
 
+    // Upload textures to backend
+    uploadTexturesToBackend();
+
     m_rom_loaded = true;
     return true;
+}
+
+void EngineCore::uploadTexturesToBackend() {
+    if (!m_view || !m_view->backend()) return;
+
+    auto* backend = m_view->backend();
+
+    // Upload atlas textures
+    for (auto& [atlasId, imgAsset] : m_assets.atlasTextures) {
+        if (!imgAsset.pixels.empty() && imgAsset.meta.width > 0 && imgAsset.meta.height > 0) {
+            TextureParams params;
+            TextureHandle handle = backend->createTexture(
+                imgAsset.pixels.data(),
+                imgAsset.meta.width,
+                imgAsset.meta.height,
+                params
+            );
+            imgAsset.textureHandle = reinterpret_cast<uintptr_t>(handle);
+            imgAsset.uploaded = true;
+        }
+    }
+
+    // Upload individual image textures (for non-atlassed images)
+    for (auto& [id, imgAsset] : m_assets.img) {
+        if (!imgAsset.meta.atlassed && !imgAsset.pixels.empty() &&
+            imgAsset.meta.width > 0 && imgAsset.meta.height > 0) {
+            TextureParams params;
+            TextureHandle handle = backend->createTexture(
+                imgAsset.pixels.data(),
+                imgAsset.meta.width,
+                imgAsset.meta.height,
+                params
+            );
+            imgAsset.textureHandle = reinterpret_cast<uintptr_t>(handle);
+            imgAsset.uploaded = true;
+        }
+    }
 }
 
 void EngineCore::unloadRom() {
@@ -215,8 +255,8 @@ void EngineCore::renderTestPattern() {
     // This is shown when no ROM is loaded
 
     f32 t = static_cast<f32>(m_total_time);
-    i32 w = static_cast<i32>(m_view->viewportSize().x);
-    i32 h = static_cast<i32>(m_view->viewportSize().y);
+    i32 w = static_cast<i32>(m_view->viewportSize.x);
+    i32 h = static_cast<i32>(m_view->viewportSize.y);
 
     // Background gradient using filled rects
     for (i32 y = 0; y < h; y += 8) {

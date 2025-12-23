@@ -15,6 +15,12 @@ option(BMSX_BUILD_TESTS "Build unit tests" OFF)
 option(BMSX_ENABLE_LTO "Enable Link Time Optimization" OFF)
 
 # =============================================================================
+# Find zlib (for ROM decompression)
+# =============================================================================
+
+find_package(ZLIB REQUIRED)
+
+# =============================================================================
 # Compiler flags
 # =============================================================================
 
@@ -41,17 +47,28 @@ add_library(bmsx_core STATIC
     platform.cpp
     subscription.cpp
 
+    # Vendor (header-only implementations)
+    vendor/stb_impl.cpp
+
     # Core systems
     core/types.cpp
     core/engine.cpp
     core/registry.cpp
     core/world.cpp
     core/assets.cpp
+    core/binencoder.cpp
     core/fsm.cpp
 
     # Render systems
     render/backend.cpp
     render/gameview.cpp
+    render/render_queues.cpp
+    render/sprites_pipeline.cpp
+    render/renderpasslib.cpp
+    render/rendergraph.cpp
+
+    # ECS systems
+    ecs/ecsystem.cpp
 )
 
 # Required for linking static library into shared library
@@ -61,6 +78,8 @@ target_include_directories(bmsx_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/..
 )
+
+target_link_libraries(bmsx_core PUBLIC ZLIB::ZLIB)
 
 # =============================================================================
 # Libretro core (shared library)

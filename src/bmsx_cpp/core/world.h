@@ -16,6 +16,7 @@
 #include "registry.h"
 #include "fsm.h"
 #include "../subscription.h"
+#include "../ecs/ecsystem.h"
 #include <string>
 #include <vector>
 #include <unordered_map>
@@ -29,6 +30,7 @@ class World;
 class Space;
 class WorldObject;
 class Component;
+class GameView;
 
 /* ============================================================================
  * EventPort - Simple event messaging between objects (placeholder)
@@ -56,18 +58,12 @@ enum class SpawnReason {
 };
 
 /* ============================================================================
- * Tick groups (matches TypeScript TickGroup enum)
+ * TickGroup enum - defined in ecs/ecsystem.h
+ * Forward declared here to avoid circular dependencies.
  * ============================================================================ */
 
-enum class TickGroup {
-    Input,
-    ActionEffect,
-    ModeResolution,
-    Physics,
-    Animation,
-    Presentation,
-    EventFlush
-};
+// Forward declaration - actual definition in ecs/ecsystem.h
+enum class TickGroup : i32;
 
 /* ============================================================================
  * Component - Base class for all components
@@ -177,6 +173,7 @@ public:
     // ─────────────────────────────────────────────────────────────────────────
     bool active = false;           // Part of world and participating in gameplay
     bool tick_enabled = false;     // Systems should advance time-based logic
+    bool tickEnabled = false;      // Alias for tick_enabled (mirrors TS property)
     bool visible = true;           // Should be rendered
     bool eventhandling_enabled = false;
 
@@ -195,6 +192,14 @@ public:
     // State Machine Controller (FSM)
     // ─────────────────────────────────────────────────────────────────────────
     std::unique_ptr<StateMachineController> sc;
+
+    // Accessor for state controller (mirrors TypeScript property)
+    StateMachineController* stateController() { return sc.get(); }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Rendering
+    // ─────────────────────────────────────────────────────────────────────────
+    virtual void submitForRendering(class GameView* view);
 
     // ─────────────────────────────────────────────────────────────────────────
     // Events
@@ -365,6 +370,22 @@ public:
 
     // Mark depth sorting dirty for an object
     void markDepthDirtyForObjectId(const Identifier& objId);
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Object iteration (mirrors TypeScript world.objects())
+    // ─────────────────────────────────────────────────────────────────────────
+    struct ObjectScope {
+        bool activeOnly = true;
+        // TODO: Add component filter support
+    };
+
+    // Returns objects from active space
+    std::vector<WorldObject*> objects(const ObjectScope& scope = {true});
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Physics
+    // ─────────────────────────────────────────────────────────────────────────
+    void stepPhysics(f64 dt);
 
     // ─────────────────────────────────────────────────────────────────────────
     // Main update loop (drives Systems, NOT individual object tick()!)
