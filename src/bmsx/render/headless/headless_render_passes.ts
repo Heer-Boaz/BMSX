@@ -30,9 +30,11 @@ function registerFramePasses(registry: RenderPassLibrary): void {
 
 type Snapshot = string[];
 
-let previousSpriteSnapshot: Snapshot;
-let previousMeshSnapshot: Snapshot;
-let previousParticleSnapshot: Snapshot;
+let previousSpriteSnapshot: Snapshot = [];
+let previousMeshSnapshot: Snapshot = [];
+let previousParticleSnapshot: Snapshot = [];
+
+let diffMatrix = new Uint32Array(0);
 
 const headlessFallbackParticleState: ParticlePipelineState = {
 	width: FALLBACK_CAMERA.width,
@@ -65,21 +67,59 @@ function translationFromMatrix(m: Float32Array): string {
 }
 
 function computeDiff(previous: Snapshot, current: Snapshot): Snapshot {
-	if (!previous) return current.map((line) => `+ ${line}`);
-	const max = Math.max(previous.length, current.length);
-	const diff: Snapshot = [];
-	for (let i = 0; i < max; i += 1) {
-		const prevLine = previous[i];
-		const nextLine = current[i];
-		if (prevLine === nextLine) continue;
-		if (prevLine === undefined) {
-			diff.push(`+ ${nextLine}`);
-		} else if (nextLine === undefined) {
-			diff.push(`- ${prevLine}`);
-		} else {
-			diff.push(`~ ${nextLine}`);
+	const prevCount = previous.length;
+	const currCount = current.length;
+	if (prevCount === 0) return current.map((line) => `+ ${line}`);
+	if (currCount === 0) return previous.map((line) => `- ${line}`);
+
+	const cols = currCount + 1;
+	const rows = prevCount + 1;
+	const needed = rows * cols;
+	if (diffMatrix.length < needed) diffMatrix = new Uint32Array(needed);
+
+	const table = diffMatrix;
+	const lastRow = rows - 1;
+	const lastCol = cols - 1;
+	const lastRowOffset = lastRow * cols;
+	for (let j = 0; j < cols; j += 1) table[lastRowOffset + j] = 0;
+	for (let i = 0; i < rows; i += 1) table[i * cols + lastCol] = 0;
+
+	// LCS diff to keep insertions/removals from shifting every subsequent line.
+	for (let i = prevCount - 1; i >= 0; i -= 1) {
+		const rowOffset = i * cols;
+		const nextRowOffset = (i + 1) * cols;
+		for (let j = currCount - 1; j >= 0; j -= 1) {
+			if (previous[i] === current[j]) {
+				table[rowOffset + j] = table[nextRowOffset + j + 1] + 1;
+			} else {
+				const skipPrev = table[nextRowOffset + j];
+				const skipCurr = table[rowOffset + j + 1];
+				table[rowOffset + j] = skipPrev >= skipCurr ? skipPrev : skipCurr;
+			}
 		}
 	}
+
+	const diff: Snapshot = [];
+	let i = 0;
+	let j = 0;
+	while (i < prevCount && j < currCount) {
+		if (previous[i] === current[j]) {
+			i += 1;
+			j += 1;
+			continue;
+		}
+		const skipPrev = table[(i + 1) * cols + j];
+		const skipCurr = table[i * cols + j + 1];
+		if (skipPrev >= skipCurr) {
+			diff.push(`- ${previous[i]}`);
+			i += 1;
+		} else {
+			diff.push(`+ ${current[j]}`);
+			j += 1;
+		}
+	}
+	for (; i < prevCount; i += 1) diff.push(`- ${previous[i]}`);
+	for (; j < currCount; j += 1) diff.push(`+ ${current[j]}`);
 	return diff;
 }
 
