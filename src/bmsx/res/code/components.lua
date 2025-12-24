@@ -332,7 +332,7 @@ end
 function CustomVisualComponent:submit_sprite(desc)
 	local pos = desc.pos or desc.position
 	local flip = desc.flip or {}
-	sprite(desc.imgid, pos.x, pos.y, pos.z, {
+	put_sprite(desc.imgid, pos.x, pos.y, pos.z, {
 		scale = desc.scale,
 		flip_h = flip.flip_h,
 		flip_v = flip.flip_v,
@@ -345,25 +345,25 @@ function CustomVisualComponent:submit_rect(desc)
 	local color = desc.color
 	if desc.kind == "stroke" then
 		if type(color) == "table" then
-			error("CustomVisualComponent: stroke rect requires palette color index")
+			error("CustomVisualComponent: stroke rectangle requires palette color index")
 		end
-		rect(area.left, area.top, area.right, area.bottom, area.z, color)
+		put_rect(area.left, area.top, area.right, area.bottom, area.z, color)
 	else
 		if type(color) == "table" then
-			rectfill_color(area.left, area.top, area.right, area.bottom, area.z, color)
+			put_rectfillcolor(area.left, area.top, area.right, area.bottom, area.z, color)
 		else
-			rectfill(area.left, area.top, area.right, area.bottom, area.z, color)
+			put_rectfill(area.left, area.top, area.right, area.bottom, area.z, color)
 		end
 	end
 end
 
 function CustomVisualComponent:submit_poly(desc)
 	local thickness = desc.thickness
-	poly(desc.points, desc.z, desc.color, thickness)
+	put_poly(desc.points, desc.z, desc.color, thickness)
 end
 
 function CustomVisualComponent:submit_mesh(desc)
-	mesh(desc.mesh, desc.matrix, {
+	put_mesh(desc.mesh, desc.matrix, {
 		joint_matrices = desc.joint_matrices,
 		morph_weights = desc.morph_weights,
 		receive_shadow = desc.receive_shadow,
@@ -371,7 +371,7 @@ function CustomVisualComponent:submit_mesh(desc)
 end
 
 function CustomVisualComponent:submit_particle(desc)
-	particle(desc.position, desc.size, desc.color, {
+	put_particle(desc.position, desc.size, desc.color, {
 		texture = desc.texture,
 		ambient_mode = desc.ambient_mode,
 		ambient_factor = desc.ambient_factor,

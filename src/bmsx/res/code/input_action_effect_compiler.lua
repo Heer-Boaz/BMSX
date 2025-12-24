@@ -126,7 +126,7 @@ local function compile_predicate(binding)
 		for i = 1, #mode_items do
 			local entry = mode_items[i]
 			local matches = env.owner.sc:matches_state_path(entry.path)
-			if entry.not then
+			if entry["not"] then
 				if matches then
 					return false
 				end

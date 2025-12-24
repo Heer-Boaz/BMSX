@@ -129,7 +129,7 @@ export class BmsxVMApi {
 		this.reset_print_cursor();
 	}
 
-	public rect(x0: number, y0: number, x1: number, y1: number, z: number, colorindex: number): void {
+	public put_rect(x0: number, y0: number, x1: number, y1: number, z: number, colorindex: number): void {
 		const rect: RectRenderSubmission = {
 			kind: 'rect',
 			area: {
@@ -144,7 +144,7 @@ export class BmsxVMApi {
 		this.renderBackend.rect(rect);
 	}
 
-	public rectfill(x0: number, y0: number, x1: number, y1: number, z: number, colorindex: number): void {
+	public put_rectfill(x0: number, y0: number, x1: number, y1: number, z: number, colorindex: number): void {
 		const rect: RectRenderSubmission = {
 			kind: 'fill',
 			area: {
@@ -159,7 +159,7 @@ export class BmsxVMApi {
 		this.renderBackend.rect(rect);
 	}
 
-	public rectfill_color(x0: number, y0: number, x1: number, y1: number, z: number, colorvalue: number | color): void {
+	public put_rectfillcolor(x0: number, y0: number, x1: number, y1: number, z: number, colorvalue: number | color): void {
 		const resolved = this.resolve_color(colorvalue);
 		const rect: RectRenderSubmission = {
 			kind: 'fill',
@@ -175,7 +175,7 @@ export class BmsxVMApi {
 		this.renderBackend.rect(rect);
 	}
 
-	public sprite(img_id: string, x: number, y: number, z: number, options?: { scale?: number | { x: number; y: number }; flip_h?: boolean; flip_v?: boolean; colorize?: color, }): void {
+	public put_sprite(img_id: string, x: number, y: number, z: number, options?: { scale?: number | { x: number; y: number }; flip_h?: boolean; flip_v?: boolean; colorize?: color, }): void {
 		const scaleValue = options?.scale ?? 1;
 		const scale = typeof scaleValue === 'number' ? { x: scaleValue, y: scaleValue } : scaleValue;
 		const submission: ImgRenderSubmission = {
@@ -188,7 +188,7 @@ export class BmsxVMApi {
 		this.renderBackend.sprite(submission);
 	}
 
-	public poly(points: Polygon, z: number, colorindex: number, thickness?: number, layer?: RenderLayer): void {
+	public put_poly(points: Polygon, z: number, colorindex: number, thickness?: number, layer?: RenderLayer): void {
 		const submission: PolyRenderSubmission = {
 			points,
 			z,
@@ -199,7 +199,7 @@ export class BmsxVMApi {
 		this.renderBackend.poly(submission);
 	}
 
-	public mesh(mesh: MeshRenderSubmission['mesh'], matrix: MeshRenderSubmission['matrix'], options?: Omit<MeshRenderSubmission, 'mesh' | 'matrix'>): void {
+	public put_mesh(mesh: MeshRenderSubmission['mesh'], matrix: MeshRenderSubmission['matrix'], options?: Omit<MeshRenderSubmission, 'mesh' | 'matrix'>): void {
 		const submission: MeshRenderSubmission = {
 			mesh,
 			matrix,
@@ -210,7 +210,7 @@ export class BmsxVMApi {
 		this.renderBackend.mesh(submission);
 	}
 
-	public particle(position: vec3arr, size: number, colorvalue: number | color, options?: Omit<ParticleRenderSubmission, 'position' | 'size' | 'color'>): void {
+	public put_particle(position: vec3arr, size: number, colorvalue: number | color, options?: Omit<ParticleRenderSubmission, 'position' | 'size' | 'color'>): void {
 		const submission: ParticleRenderSubmission = {
 			position,
 			size,

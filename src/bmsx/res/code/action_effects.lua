@@ -126,15 +126,14 @@ end
 
 function ActionEffectComponent:advance_time(dt_ms)
 	self.time_ms = self.time_ms + dt_ms
-	for id, until in pairs(self.cooldown_until) do
-		if self.time_ms >= until then
+	for id, until_time in pairs(self.cooldown_until) do
+		if self.time_ms >= until_time then
 			self.cooldown_until[id] = nil
 		end
 	end
 end
 
 function ActionEffectComponent:tick(dt)
-end
 end
 
 function ActionEffectComponent:grant_effect(definition)
@@ -165,8 +164,8 @@ function ActionEffectComponent:trigger(id, opts)
 	ActionEffects.validate(id, payload)
 
 	local now = self.time_ms
-	local until = self.cooldown_until[id]
-	if until ~= nil and now < until then
+	local until_time = self.cooldown_until[id]
+	if until_time ~= nil and now < until_time then
 		return "on_cooldown"
 	end
 
@@ -185,11 +184,11 @@ function ActionEffectComponent:trigger(id, opts)
 end
 
 function ActionEffectComponent:cooldown_remaining(id)
-	local until = self.cooldown_until[id]
-	if until == nil then
+	local until_time = self.cooldown_until[id]
+	if until_time == nil then
 		return nil
 	end
-	local remaining = until - self.time_ms
+	local remaining = until_time - self.time_ms
 	if remaining <= 0 then
 		return nil
 	end

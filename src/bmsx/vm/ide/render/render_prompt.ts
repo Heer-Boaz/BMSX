@@ -11,7 +11,7 @@ export function drawActionPromptOverlay(): void {
 	if (!prompt) {
 		return;
 	}
-	api.rectfill_color(0, 0, ide_state.viewportWidth, ide_state.viewportHeight, undefined, constants.ACTION_OVERLAY_COLOR);
+	api.put_rectfillcolor(0, 0, ide_state.viewportWidth, ide_state.viewportHeight, undefined, constants.ACTION_OVERLAY_COLOR);
 
 	let messageLines: string[];
 	let primaryLabel: string;
@@ -67,8 +67,8 @@ export function drawActionPromptOverlay(): void {
 	const right = left + dialogWidth;
 	const bottom = top + dialogHeight;
 
-	api.rectfill(left, top, right, bottom, undefined, constants.ACTION_DIALOG_BACKGROUND_COLOR);
-	api.rect(left, top, right, bottom, undefined, constants.ACTION_DIALOG_BORDER_COLOR);
+	api.put_rectfill(left, top, right, bottom, undefined, constants.ACTION_DIALOG_BACKGROUND_COLOR);
+	api.put_rect(left, top, right, bottom, undefined, constants.ACTION_DIALOG_BORDER_COLOR);
 
 	let textY = top + paddingY;
 	const textX = left + paddingX;
@@ -80,22 +80,22 @@ export function drawActionPromptOverlay(): void {
 	const buttonY = bottom - paddingY - buttonHeight;
 	let buttonX = left + paddingX;
 	const saveBounds: RectBounds = { left: buttonX, top: buttonY, right: buttonX + primaryWidth, bottom: buttonY + buttonHeight };
-	api.rectfill(saveBounds.left, saveBounds.top, saveBounds.right, saveBounds.bottom, undefined, constants.ACTION_BUTTON_BACKGROUND);
-	api.rect(saveBounds.left, saveBounds.top, saveBounds.right, saveBounds.bottom, undefined, constants.ACTION_DIALOG_BORDER_COLOR);
+	api.put_rectfill(saveBounds.left, saveBounds.top, saveBounds.right, saveBounds.bottom, undefined, constants.ACTION_BUTTON_BACKGROUND);
+	api.put_rect(saveBounds.left, saveBounds.top, saveBounds.right, saveBounds.bottom, undefined, constants.ACTION_DIALOG_BORDER_COLOR);
 	drawEditorText(ide_state.font, primaryLabel, saveBounds.left + constants.HEADER_BUTTON_PADDING_X, saveBounds.top + constants.HEADER_BUTTON_PADDING_Y, undefined, constants.ACTION_BUTTON_TEXT);
 	ide_state.actionPromptButtons.saveAndContinue = saveBounds;
 	buttonX = saveBounds.right + buttonSpacing;
 
 	const continueBounds: RectBounds = { left: buttonX, top: buttonY, right: buttonX + secondaryWidth, bottom: buttonY + buttonHeight };
-	api.rectfill(continueBounds.left, continueBounds.top, continueBounds.right, continueBounds.bottom, undefined, constants.ACTION_BUTTON_BACKGROUND);
-	api.rect(continueBounds.left, continueBounds.top, continueBounds.right, continueBounds.bottom, undefined, constants.ACTION_DIALOG_BORDER_COLOR);
+	api.put_rectfill(continueBounds.left, continueBounds.top, continueBounds.right, continueBounds.bottom, undefined, constants.ACTION_BUTTON_BACKGROUND);
+	api.put_rect(continueBounds.left, continueBounds.top, continueBounds.right, continueBounds.bottom, undefined, constants.ACTION_DIALOG_BORDER_COLOR);
 	drawEditorText(ide_state.font, secondaryLabel, continueBounds.left + constants.HEADER_BUTTON_PADDING_X, continueBounds.top + constants.HEADER_BUTTON_PADDING_Y, undefined, constants.ACTION_BUTTON_TEXT);
 	ide_state.actionPromptButtons.continue = continueBounds;
 	buttonX = continueBounds.right + buttonSpacing;
 
 	const cancelBounds: RectBounds = { left: buttonX, top: buttonY, right: buttonX + cancelWidth, bottom: buttonY + buttonHeight };
-	api.rectfill(cancelBounds.left, cancelBounds.top, cancelBounds.right, cancelBounds.bottom, undefined, constants.COLOR_HEADER_BUTTON_DISABLED_BACKGROUND);
-	api.rect(cancelBounds.left, cancelBounds.top, cancelBounds.right, cancelBounds.bottom, undefined, constants.ACTION_DIALOG_BORDER_COLOR);
+	api.put_rectfill(cancelBounds.left, cancelBounds.top, cancelBounds.right, cancelBounds.bottom, undefined, constants.COLOR_HEADER_BUTTON_DISABLED_BACKGROUND);
+	api.put_rect(cancelBounds.left, cancelBounds.top, cancelBounds.right, cancelBounds.bottom, undefined, constants.ACTION_DIALOG_BORDER_COLOR);
 	drawEditorText(ide_state.font, cancelLabel, cancelBounds.left + constants.HEADER_BUTTON_PADDING_X, cancelBounds.top + constants.HEADER_BUTTON_PADDING_Y, undefined, constants.COLOR_HEADER_BUTTON_TEXT);
 	ide_state.actionPromptButtons.cancel = cancelBounds;
 }

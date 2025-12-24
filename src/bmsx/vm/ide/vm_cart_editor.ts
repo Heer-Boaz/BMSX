@@ -198,8 +198,8 @@ export function initializeVMCartEditor(viewport: Viewport): void {
 		revealCursor: () => revealCursor(),
 		measureText: (text) => measureText(text),
 		drawText: (text, x, y, color) => drawEditorText(ide_state.font, text, x, y, undefined, color),
-		fillRect: (left, top, right, bottom, color) => api.rectfill(left, top, right, bottom, undefined, color),
-		strokeRect: (left, top, right, bottom, color) => api.rect(left, top, right, bottom, undefined, color),
+		fillRect: (left, top, right, bottom, color) => api.put_rectfill(left, top, right, bottom, undefined, color),
+		strokeRect: (left, top, right, bottom, color) => api.put_rect(left, top, right, bottom, undefined, color),
 		getCursorScreenInfo: () => ide_state.cursorScreenInfo,
 		characterAdvance: (char) => ide_state.font.advance(char),
 		get lineHeight(): number { return ide_state.font.lineHeight; },
@@ -758,8 +758,8 @@ export function drawHoverTooltip(codeTop: number, codeBottom: number, textLeft: 
 	if (bubbleTop + bubbleHeight > codeBottom) {
 		bubbleTop = Math.max(codeTop, codeBottom - bubbleHeight);
 	}
-	api.rectfill_color(bubbleLeft, bubbleTop, bubbleLeft + bubbleWidth, bubbleTop + bubbleHeight, undefined, constants.HOVER_TOOLTIP_BACKGROUND);
-	api.rect(bubbleLeft, bubbleTop, bubbleLeft + bubbleWidth, bubbleTop + bubbleHeight, undefined, constants.HOVER_TOOLTIP_BORDER);
+	api.put_rectfillcolor(bubbleLeft, bubbleTop, bubbleLeft + bubbleWidth, bubbleTop + bubbleHeight, undefined, constants.HOVER_TOOLTIP_BACKGROUND);
+	api.put_rect(bubbleLeft, bubbleTop, bubbleLeft + bubbleWidth, bubbleTop + bubbleHeight, undefined, constants.HOVER_TOOLTIP_BORDER);
 	for (let i = 0; i < visibleLines.length; i += 1) {
 		const lineY = bubbleTop + constants.HOVER_TOOLTIP_PADDING_Y + i * ide_state.lineHeight;
 		drawEditorText(ide_state.font, visibleLines[i], bubbleLeft + constants.HOVER_TOOLTIP_PADDING_X, lineY, undefined, constants.COLOR_STATUS_TEXT);
@@ -1357,7 +1357,7 @@ export function draw(): void {
 	ide_state.codeVerticalScrollbarVisible = false;
 	ide_state.codeHorizontalScrollbarVisible = false;
 	const frameColor = Msx1Colors[constants.COLOR_FRAME];
-	api.rectfill_color(0, 0, ide_state.viewportWidth, ide_state.viewportHeight, undefined, { r: frameColor.r, g: frameColor.g, b: frameColor.b, a: frameColor.a });
+	api.put_rectfillcolor(0, 0, ide_state.viewportWidth, ide_state.viewportHeight, undefined, { r: frameColor.r, g: frameColor.g, b: frameColor.b, a: frameColor.a });
 
 	renderTopBar();
 
