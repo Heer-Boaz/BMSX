@@ -29,14 +29,11 @@ import { BmsxVMRuntime } from '../vm_tooling_runtime';
 import { $ } from '../../core/engine_core';
 import { PieceTreeBuffer } from './piece_tree_buffer';
 
-function resolvePath(descriptor: VMResourceDescriptor | null): string {
-	if (!descriptor) {
-		return '<anynomous>';
-	}
-	return descriptor.path ?? '<anynomous>';
+function resolvePath(descriptor: VMResourceDescriptor): string {
+	return descriptor.path;
 }
 
-function resolveSource(descriptor: VMResourceDescriptor | null): string {
+function resolveSource(descriptor: VMResourceDescriptor): string {
 	const runtime = BmsxVMRuntime.instance;
 	const path = resolvePath(descriptor);
 	return runtime.resourceSourceForChunk(path);
@@ -44,18 +41,14 @@ function resolveSource(descriptor: VMResourceDescriptor | null): string {
 
 export function createEntryTabContext(): CodeTabContext {
 	const luaDescriptors = listResources().filter(r => r.type === 'lua');
-	let descriptor = luaDescriptors.find(r => r.path === $.luaSources.entry_path)
-	if (!descriptor) {
-		console.warn(`Entry Lua source not found: ${$.luaSources.entry_path}`);
-		descriptor = { type: 'lua', path: null };
-	}
+	const descriptor = luaDescriptors.find(r => r.path === $.luaSources.entry_path)!;
 	return createLuaCodeTabContext(descriptor);
 }
 
 export function createLuaCodeTabContext(descriptor: VMResourceDescriptor): CodeTabContext {
 	const title = computeResourceTabTitle(descriptor);
 	const initialSource = resolveSource(descriptor);
-	const buffer = new PieceTreeBuffer(initialSource ?? '');
+	const buffer = new PieceTreeBuffer(initialSource);
 	return {
 		id: `lua:${descriptor.path}`,
 		title,
@@ -77,19 +70,17 @@ export function createLuaCodeTabContext(descriptor: VMResourceDescriptor): CodeT
 		dirty: false,
 		runtimeErrorOverlay: null,
 		executionStopRow: null,
+		readOnly: descriptor.readOnly === true,
 		textVersion: buffer.version,
 	};
 }
 
 export function getActiveCodeTabContext(): CodeTabContext {
-	return ide_state.codeTabContexts?.get(ide_state.activeCodeTabContextId) ;
+	return ide_state.codeTabContexts.get(ide_state.activeCodeTabContextId)!;
 }
 
 export function storeActiveCodeTabContext(): void {
 	const context = getActiveCodeTabContext();
-	if (!context) {
-		return;
-	}
 	context.buffer = ide_state.buffer;
 	context.cursorRow = ide_state.cursorRow;
 	context.cursorColumn = ide_state.cursorColumn;
@@ -111,10 +102,7 @@ export function storeActiveCodeTabContext(): void {
 }
 
 export function activateCodeEditorTab(tabId: string): void {
-	const context = ide_state.codeTabContexts.get(tabId);
-	if (!context) {
-		return;
-	}
+	const context = ide_state.codeTabContexts.get(tabId)!;
 	ide_state.activeCodeTabContextId = tabId;
 	ide_state.activeContextReadOnly = context.readOnly === true;
 	ide_state.undoStack = context.undoStack;
@@ -182,43 +170,22 @@ export function initializeTabs(initialContext: CodeTabContext = null): void {
 }
 
 export function setTabDirty(tabId: string, dirty: boolean): void {
-	const tab = ide_state.tabs.find(candidate => candidate.id === tabId);
-	if (!tab) {
-		return;
-	}
+	const tab = ide_state.tabs.find(candidate => candidate.id === tabId)!;
 	tab.dirty = dirty;
 }
 
 export function updateActiveContextDirtyFlag(): void {
 	const context = getActiveCodeTabContext();
-	if (!context) {
-		return;
-	}
 	context.dirty = ide_state.dirty;
 	setTabDirty(context.id, context.dirty);
 }
 
 export function getActiveTabKind(): EditorTabKind {
-	if (!ide_state.activeTabId) {
-		return 'lua_editor';
-	}
-	const active = ide_state.tabs.find(tab => tab.id === ide_state.activeTabId) ;
-	if (active) {
-		return active.kind;
-	}
-	if (ide_state.tabs.length > 0) {
-		const first = ide_state.tabs[0];
-		ide_state.activeTabId = first.id;
-		return first.kind;
-	}
-	ide_state.activeTabId = null;
-	return 'lua_editor';
+	const active = ide_state.tabs.find(tab => tab.id === ide_state.activeTabId)!;
+	return active.kind;
 }
 
 export function isCodeTabActive(): boolean {
-	if (!ide_state.activeTabId) {
-		return false;
-	}
 	return getActiveTabKind() === 'lua_editor';
 }
 
@@ -231,17 +198,11 @@ export function isEditableCodeTab(): boolean {
 }
 
 export function isResourceViewActive(): boolean {
-	if (!ide_state.activeTabId) {
-		return false;
-	}
 	return getActiveTabKind() === 'resource_view';
 }
 
 export function setActiveTab(tabId: string): void {
-	const tab = ide_state.tabs.find(candidate => candidate.id === tabId);
-	if (!tab) {
-		return;
-	}
+	const tab = ide_state.tabs.find(candidate => candidate.id === tabId)!;
 	const isSameTab = ide_state.activeTabId === tabId;
 	const navigationCheckpoint = !isSameTab && tab.kind === 'lua_editor'
 		? beginNavigationCapture()
@@ -275,17 +236,12 @@ export function setActiveTab(tabId: string): void {
 }
 
 export function activateCodeTab(): void {
-	const codeTab = ide_state.tabs.find(candidate => candidate.kind === 'lua_editor');
-	if (codeTab) {
-		setActiveTab(codeTab.id);
-	}
+	const codeTab = ide_state.tabs.find(candidate => candidate.kind === 'lua_editor')!;
+	setActiveTab(codeTab.id);
 }
 
 export function closeTab(tabId: string): void {
 	const index = ide_state.tabs.findIndex(tab => tab.id === tabId);
-	if (index === -1) {
-		return;
-	}
 	if (ide_state.tabDragState && ide_state.tabDragState.tabId === tabId) {
 		endTabDrag();
 	}
@@ -322,15 +278,7 @@ export function cycleTab(direction: number): void {
 		return;
 	}
 	const count = ide_state.tabs.length;
-	let currentIndex = ide_state.tabs.findIndex(tab => tab.id === ide_state.activeTabId);
-	if (currentIndex === -1) {
-		const fallbackIndex = direction > 0 ? 0 : count - 1;
-		const fallback = ide_state.tabs[fallbackIndex];
-		if (fallback) {
-			setActiveTab(fallback.id);
-		}
-		return;
-	}
+	const currentIndex = ide_state.tabs.findIndex(tab => tab.id === ide_state.activeTabId);
 	let nextIndex = currentIndex + direction;
 	nextIndex = ((nextIndex % count) + count) % count;
 	if (nextIndex === currentIndex) {
@@ -403,10 +351,7 @@ export function beginTabDrag(tabId: string, pointerX: number): void {
 }
 
 export function updateTabDrag(pointerX: number, pointerY: number): void {
-	const state = ide_state.tabDragState;
-	if (!state) {
-		return;
-	}
+	const state = ide_state.tabDragState!;
 	const distance = Math.abs(pointerX - state.startX);
 	if (!state.hasDragged && distance < constants.TAB_DRAG_ACTIVATION_THRESHOLD) {
 		return;
@@ -417,9 +362,6 @@ export function updateTabDrag(pointerX: number, pointerY: number): void {
 	}
 	const layout = computeTabLayout();
 	const currentIndex = layout.findIndex(item => item.id === state.tabId);
-	if (currentIndex === -1) {
-		return;
-	}
 	const dragged = layout[currentIndex];
 	const pointerLeft = pointerX - state.pointerOffset;
 	const pointerCenter = pointerLeft + Math.max(dragged.width, 1) * 0.5;
@@ -446,29 +388,20 @@ export function updateTabDrag(pointerX: number, pointerY: number): void {
 		return;
 	}
 	const tabIndex = ide_state.tabs.findIndex(entry => entry.id === state.tabId);
-	if (tabIndex === -1) {
-		return;
-	}
 	const removed = ide_state.tabs.splice(tabIndex, 1);
 	const tab = removed[0];
-	if (!tab) {
-		return;
-	}
 	const targetIndex = clamp(desiredIndex, 0, ide_state.tabs.length);
 	ide_state.tabs.splice(targetIndex, 0, tab);
 }
 
 export function endTabDrag(): void {
-	if (!ide_state.tabDragState) {
-		return;
-	}
 	ide_state.tabDragState = null;
 }
 
 export function findCodeTabContext(path: string): CodeTabContext {
 	for (const context of ide_state.codeTabContexts.values()) {
 		const descriptor = context.descriptor;
-		if (descriptor?.path === path) {
+		if (descriptor.path === path) {
 			return context;
 		}
 	}
@@ -476,9 +409,6 @@ export function findCodeTabContext(path: string): CodeTabContext {
 }
 
 export function computeResourceTabTitle(descriptor: VMResourceDescriptor): string {
-	if (!descriptor || !descriptor.path) {
-		return '<anonymous>';
-	}
 	const parts = descriptor.path.split('/').filter(part => part.length > 0);
 	if (parts.length > 0) {
 		return parts[parts.length - 1];

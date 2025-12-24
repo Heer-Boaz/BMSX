@@ -3850,7 +3850,16 @@ export class BmsxVMRuntime {
 		return binding.src;
 	}
 
-	private resolveLuaSourceRecord(path: string): LuaSourceRecord {
+	public listLuaSourceRegistries(): Array<{ registry: LuaSourceRegistry; readOnly: boolean }> {
+		const registries: Array<{ registry: LuaSourceRegistry; readOnly: boolean }> = [];
+		if (this.cartLuaSources) {
+			registries.push({ registry: this.cartLuaSources, readOnly: false });
+		}
+		registries.push({ registry: this.engineLuaSources, readOnly: true });
+		return registries;
+	}
+
+	public resolveLuaSourceRecord(path: string): LuaSourceRecord {
 		return $.luaSources.path2lua[path]
 			?? this.cartLuaSources?.path2lua[path]
 			?? this.engineLuaSources?.path2lua[path]

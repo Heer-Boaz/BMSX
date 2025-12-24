@@ -10,7 +10,6 @@ import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } 
 import { ide_state } from './ide_state';
 import { bottomMargin, codeViewportTop, focusEditorFromResourcePanel, listResourcesStrict, openLuaCodeTab, openResourceViewerTab } from './vm_cart_editor';
 import { measureText } from './text_utils';
-import { extractErrorMessage } from '../../lua/luavalue';
 
 export interface ResourcePanelScrollbars {
 	resourceVertical: VMScrollbar;
@@ -20,7 +19,7 @@ export interface ResourcePanelScrollbars {
 export class ResourcePanelController {
 	public visible = false;
 	public focused = false;
-	private widthRatio: number = null;
+	private widthRatio: number;
 	private filterMode: 'lua_only' | 'all' = 'lua_only';
 	public lineHeight: number;
 	private charAdvance: number;
@@ -48,6 +47,7 @@ export class ResourcePanelController {
 			this.resourceVertical = new VMScrollbar('resourceVertical', 'vertical');
 			this.resourceHorizontal = new VMScrollbar('resourceHorizontal', 'horizontal');
 		}
+		this.widthRatio = this.defaultRatio();
 	}
 
 	public setFontMetrics(lineHeight: number, charAdvance: number): void {
@@ -64,7 +64,7 @@ export class ResourcePanelController {
 	togglePanel(): void { this.visible ? this.hide() : this.show(); }
 
 	show(): void {
-		const desiredRatio = this.widthRatio ?? this.defaultRatio();
+		const desiredRatio = this.widthRatio;
 		const clamped = this.clampRatio(desiredRatio);
 		const widthPx = this.computePixelWidth(clamped);
 		if (clamped <= 0 || widthPx <= 0) {
@@ -78,7 +78,6 @@ export class ResourcePanelController {
 	}
 
 	hide(): void {
-		if (!this.visible) return;
 		this.visible = false;
 		this.focused = false;
 		this.resetState();
@@ -99,7 +98,6 @@ export class ResourcePanelController {
 
 	// === Keyboard ===
 	handleKeyboard(): void {
-		if (!this.visible) return;
 		const { ctrlDown, metaDown, shiftDown } = { ctrlDown: isCtrlDown(), metaDown: isMetaDown(), shiftDown: isShiftDown() };
 		if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressed('KeyR')) {
 			consumeIdeKey('KeyR');
@@ -176,8 +174,6 @@ export class ResourcePanelController {
 	}
 
 	setSelectionIndex(index: number): void {
-		if (!this.visible) return;
-		if (!Number.isFinite(index)) return;
 		const next = clamp(Math.trunc(index), -1, Math.max(-1, this.items.length - 1));
 		if (next === this.selectionIndex) return;
 		this.selectionIndex = next;
@@ -186,27 +182,23 @@ export class ResourcePanelController {
 	}
 
 	setHoverIndex(index: number): void {
-		if (!this.visible) { this.hoverIndex = -1; return; }
-		if (!Number.isFinite(index) || index < 0 || index >= this.items.length) { this.hoverIndex = -1; return; }
+		if (index < 0 || index >= this.items.length) { this.hoverIndex = -1; return; }
 		this.hoverIndex = index;
 	}
 
 	setScroll(scroll: number): void {
-		if (!this.visible) return;
 		const capacity = this.lineCapacity();
 		const maxScroll = Math.max(0, this.items.length - capacity);
 		this.scroll = clamp(scroll, 0, maxScroll);
 	}
 
 	setHScroll(scroll: number): void {
-		if (!this.visible) return;
 		const maxScroll = this.computeMaxHScroll();
 		this.hscroll = clamp(scroll, 0, maxScroll);
 		this.clampHScroll();
 	}
 
 	scrollBy(amount: number): void {
-		if (!this.visible) return;
 		const capacity = this.lineCapacity();
 		if (capacity <= 0) { this.scroll = 0; return; }
 		const maxScroll = Math.max(0, this.items.length - capacity);
@@ -220,8 +212,7 @@ export class ResourcePanelController {
 	}
 
 	setRatioFromViewportX(viewportX: number, viewportWidth: number): boolean {
-		const vw = viewportWidth > 0 ? viewportWidth : 1;
-		const requestedRatio = viewportX / vw;
+		const requestedRatio = viewportX / viewportWidth;
 		const clampedRatio = this.clampRatio(requestedRatio);
 		const pixelWidth = this.computePixelWidth(clampedRatio);
 		if (pixelWidth <= 0) {
@@ -254,19 +245,7 @@ export class ResourcePanelController {
 			index: this.selectionIndex,
 			scroll: this.scroll,
 		} as const;
-		let descriptors: VMResourceDescriptor[];
-		try {
-			descriptors = listResourcesStrict();
-		} catch (error) {
-			const message = extractErrorMessage(error);
-			ide_state.showMessage(`Failed to enumerate resources: ${message}`, constants.COLOR_STATUS_WARNING, 3.0);
-			// count omitted
-			this.items = [{ line: `<failed to load resources: ${message}>`, contentStartColumn: 0, descriptor: null }];
-			this.scroll = 0;
-			this.selectionIndex = 0;
-			this.pendingSelectionAssetId = null;
-			return;
-		}
+		const descriptors = listResourcesStrict();
 		// Augment with atlas entries (moved from editor)
 		const augmented = descriptors.slice();
 		const assets = $.assets;
@@ -310,14 +289,12 @@ export class ResourcePanelController {
 
 	private matchesFilter(descriptor: VMResourceDescriptor): boolean {
 		if (this.filterMode !== 'lua_only') return true;
-		if (!descriptor) return false;
-		if (descriptor.type === 'lua') return true;
-		return false;
+		return descriptor.type === 'lua';
 	}
 
 	private buildItems(entries: VMResourceDescriptor[]): ResourceBrowserItem[] {
 		const items: ResourceBrowserItem[] = [];
-		if (!entries || entries.length === 0) {
+		if (entries.length === 0) {
 			const placeholder = this.filterMode === 'lua_only' ? '<no lua resources>' : '<no resources>';
 			items.push({ line: placeholder, contentStartColumn: 0, descriptor: null });
 			return items;
@@ -325,12 +302,10 @@ export class ResourcePanelController {
 		type Dir = { name: string; children: Map<string, Dir>; files: { name: string; descriptor: VMResourceDescriptor }[] };
 		const root: Dir = { name: '.', children: new Map(), files: [] };
 		for (const entry of entries) {
-			const rawPath = typeof entry.path === 'string' && entry.path.length > 0
-				? entry.path
-				: (entry.asset_id ?? '');
+			const rawPath = entry.path;
 			const normalized = rawPath.replace(/\\/g, '/');
 			const parts = normalized.split('/').filter(part => part.length > 0 && part !== '.');
-			const fallbackName = rawPath.length > 0 ? rawPath : (entry.asset_id ?? '<resource>');
+			const fallbackName = rawPath;
 			if (parts.length === 0) {
 				root.files.push({ name: fallbackName, descriptor: entry });
 				continue;
@@ -354,9 +329,6 @@ export class ResourcePanelController {
 			let cursor = directory;
 			while (cursor.files.length === 0 && cursor.children.size === 1) {
 				const iterator = cursor.children.values().next();
-				if (!iterator.value) {
-					break;
-				}
 				const next = iterator.value as Dir;
 				segments.push(next.name);
 				cursor = next;
@@ -404,7 +376,6 @@ export class ResourcePanelController {
 	}
 
 	private applyPendingSelection(): void {
-		if (!this.visible) return;
 		const asset_id = this.pendingSelectionAssetId;
 		if (!asset_id) return;
 		const index = this.findIndexByAssetId(asset_id);
@@ -429,7 +400,6 @@ export class ResourcePanelController {
 	}
 
 	private moveSelection(delta: number): void {
-		if (!this.visible) return;
 		const count = this.items.length;
 		if (count === 0) { this.selectionIndex = -1; return; }
 		let next: number;
@@ -444,8 +414,6 @@ export class ResourcePanelController {
 	}
 
 	private scrollHorizontal(amount: number): void {
-		if (!this.visible) return;
-		if (!Number.isFinite(amount) || amount === 0) return;
 		const maxScroll = this.computeMaxHScroll();
 		if (maxScroll <= 0) { this.hscroll = 0; return; }
 		const next = clamp(this.hscroll + amount, 0, maxScroll);
@@ -501,8 +469,7 @@ export class ResourcePanelController {
 	}
 
 	private getWidth(): number {
-		if (!this.visible) return 0;
-		const ratio = this.clampRatio(this.widthRatio ?? this.defaultRatio());
+		const ratio = this.clampRatio(this.widthRatio);
 		const width = this.computePixelWidth(ratio);
 		if (width <= 0) return 0;
 		this.widthRatio = ratio;
@@ -524,7 +491,7 @@ export class ResourcePanelController {
 
 	public clampHScroll(): void {
 		const maxScroll = this.computeMaxHScroll();
-		const current = Number.isFinite(this.hscroll) ? this.hscroll : 0;
+		const current = this.hscroll;
 		this.hscroll = clamp(current, 0, maxScroll);
 	}
 
@@ -542,15 +509,13 @@ export class ResourcePanelController {
 		const minEditorRatio = constants.RESOURCE_PANEL_MIN_EDITOR_RATIO;
 		const availableForPanel = Math.max(0, 1 - minEditorRatio);
 		const maxRatio = Math.max(minRatio, Math.min(constants.RESOURCE_PANEL_MAX_RATIO, availableForPanel));
-		let resolved = ratio ?? constants.RESOURCE_PANEL_DEFAULT_RATIO;
-		if (!Number.isFinite(resolved)) resolved = constants.RESOURCE_PANEL_DEFAULT_RATIO;
+		let resolved = ratio;
 		if (resolved < minRatio) resolved = minRatio;
 		if (resolved > maxRatio) resolved = maxRatio;
 		return resolved;
 	}
 
 	private computePixelWidth(ratio: number): number {
-		if (!Number.isFinite(ratio) || ratio <= 0 || ide_state.viewportWidth <= 0) return 0;
 		return Math.floor(ide_state.viewportWidth * ratio);
 	}
 

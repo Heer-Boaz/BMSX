@@ -287,19 +287,16 @@ export class CrossFileRenameManager {
 
 	public applyRenameToChunk(path: string, ranges: readonly LuaSourceRange[], newName: string, activePath: string): number {
 		const context = this.ensureCodeTabContextForChunk(path);
-		if (!context) {
+		if (path === activePath) {
 			return 0;
 		}
-		if (activePath && path === activePath) {
+		if (context.readOnly === true) {
 			return 0;
 		}
 		const lines = this.getContextLinesForRename(context);
 		const matches: SearchMatch[] = [];
 		for (let index = 0; index < ranges.length; index += 1) {
-			const match = convertRangeToSearchMatch(ranges[index], lines);
-			if (match) {
-				matches.push(match);
-			}
+			matches.push(convertRangeToSearchMatch(ranges[index]));
 		}
 		if (matches.length === 0) {
 			return 0;
@@ -349,10 +346,7 @@ export class CrossFileRenameManager {
 		if (existing) {
 			return existing;
 		}
-		const descriptor = findResourceDescriptorForChunk(path);
-		if (!descriptor) {
-			return null;
-		}
+		const descriptor = findResourceDescriptorForChunk(path)!;
 		const contextId: string = `lua:${descriptor.path}`;
 		let context = this.deps.getCodeTabContext(contextId) ;
 		if (!context) {
@@ -363,20 +357,9 @@ export class CrossFileRenameManager {
 	}
 }
 
-export function convertRangeToSearchMatch(range: LuaSourceRange, lines: readonly string[]): SearchMatch {
-	if (!range) {
-		return null;
-	}
-	const rowIndex = range.start.line - 1;
-	if (rowIndex < 0 || rowIndex >= lines.length) {
-		return null;
-	}
-	const line = lines[rowIndex] ?? '';
-	const startColumn = Math.max(0, range.start.column - 1);
-	const endInclusive = Math.max(startColumn, range.end.column - 1);
-	const endExclusive = Math.min(line.length, endInclusive + 1);
-	if (endExclusive <= startColumn) {
-		return null;
-	}
-	return { row: rowIndex, start: startColumn, end: endExclusive };
+export function convertRangeToSearchMatch(range: LuaSourceRange): SearchMatch {
+	const row = range.start.line - 1;
+	const start = range.start.column - 1;
+	const end = range.end.column;
+	return { row, start, end };
 }

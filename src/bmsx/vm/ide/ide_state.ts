@@ -439,7 +439,7 @@ export const ide_state: IdeState = {
 	createResourcePath: '',
 	createResourceError: null,
 	createResourceWorking: false,
-	lastCreateResourceDirectory: null,
+	lastCreateResourceDirectory: '',
 	symbolCatalog: [],
 	referenceCatalog: [],
 	symbolCatalogContext: null,

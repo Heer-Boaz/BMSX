@@ -755,11 +755,20 @@ export async function nukeWorkspaceState(): Promise<void> {
 }
 
 export function listResources(): VMResourceDescriptor[] {
-	const descriptors: VMResourceDescriptor[] = [];
-	for (const asset of Object.values($.luaSources.path2lua)) {
-		const path = asset.normalized_source_path;
-		descriptors.push({ path, type: asset.type, asset_id: asset.resid });
+	const descriptorsByPath = new Map<string, VMResourceDescriptor>();
+	const registries = BmsxVMRuntime.instance.listLuaSourceRegistries();
+	for (const entry of registries) {
+		const registry = entry.registry;
+		const readOnly = entry.readOnly;
+		for (const asset of Object.values(registry.path2lua)) {
+			const path = asset.normalized_source_path;
+			if (descriptorsByPath.has(path)) {
+				continue;
+			}
+			descriptorsByPath.set(path, { path, type: asset.type, asset_id: asset.resid, readOnly });
+		}
 	}
+	const descriptors = Array.from(descriptorsByPath.values());
 	descriptors.sort((left, right) => left.path.localeCompare(right.path));
 	return descriptors;
 }

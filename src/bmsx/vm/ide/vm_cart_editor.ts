@@ -241,28 +241,17 @@ export function initializeVMCartEditor(viewport: Viewport): void {
 }
 
 export function getSourceForChunk(path: string): string {
-	const asset = $.luaSources.path2lua[path];
+	const asset = BmsxVMRuntime.instance.resolveLuaSourceRecord(path);
 	const context = findCodeTabContext(path);
 	if (context) {
 		if (context.id === ide_state.activeCodeTabContextId) {
 			return getTextSnapshot(ide_state.buffer);
 		}
-		if (context.buffer) {
-			return getTextSnapshot(context.buffer);
-		}
-		if (context.lastSavedSource.length > 0) {
-			return context.lastSavedSource;
-		}
+		return getTextSnapshot(context.buffer);
 	}
-	const dirtyPath = (() => {
-		try {
-			return buildDirtyFilePath(asset.normalized_source_path);
-		} catch {
-			return null;
-		}
-	})();
-	const cached = getWorkspaceCachedSource(asset.normalized_source_path) ?? (dirtyPath ? getWorkspaceCachedSource(dirtyPath) : null);
-	if (typeof cached === 'string') {
+	const dirtyPath = buildDirtyFilePath(asset.normalized_source_path);
+	const cached = getWorkspaceCachedSource(asset.normalized_source_path) ?? getWorkspaceCachedSource(dirtyPath);
+	if (cached !== null) {
 		return cached;
 	}
 	return asset.src;
@@ -786,11 +775,7 @@ export function focusChunkSource(path: string): void {
 }
 
 export function listResourcesStrict(): VMResourceDescriptor[] {
-	const descriptors = listResources();
-	if (!Array.isArray(descriptors)) {
-		throw new Error('[VMCartEditor] Resource enumeration returned an invalid result.');
-	}
-	return descriptors;
+	return listResources();
 }
 
 export function openResourceDescriptor(descriptor: VMResourceDescriptor): void {
@@ -1682,30 +1667,28 @@ export function normalizeCreateResourceRequest(rawPath: string): { path: string;
 }
 
 export function determineCreateResourceDefaultPath(): string {
-	if (ide_state.lastCreateResourceDirectory && ide_state.lastCreateResourceDirectory.length > 0) {
-		return ide_state.lastCreateResourceDirectory;
+	const lastDirectory = ide_state.lastCreateResourceDirectory;
+	if (lastDirectory.length > 0) {
+		return lastDirectory;
 	}
 	const activeContext = getActiveCodeTabContext();
-	if (activeContext && activeContext.descriptor && typeof activeContext.descriptor.path === 'string' && activeContext.descriptor.path.length > 0) {
-		return ensureDirectorySuffix(activeContext.descriptor.path);
+	const activePath = activeContext.descriptor.path;
+	if (activePath.length > 0) {
+		return ensureDirectorySuffix(activePath);
 	}
-	let descriptors: VMResourceDescriptor[] = [];
-	try {
-		descriptors = listResources();
-	} catch (error) {
-		descriptors = [];
+	const descriptors = listResources();
+	const firstEditableLua = descriptors.find(entry => entry.type === 'lua' && entry.readOnly !== true && entry.path.length > 0);
+	if (firstEditableLua) {
+		return ensureDirectorySuffix(firstEditableLua.path);
 	}
-	const firstLua = descriptors.find(entry => entry.type === 'lua' && typeof entry.path === 'string' && entry.path.length > 0);
-	if (firstLua && typeof firstLua.path === 'string') {
+	const firstLua = descriptors.find(entry => entry.type === 'lua' && entry.path.length > 0);
+	if (firstLua) {
 		return ensureDirectorySuffix(firstLua.path);
 	}
 	return './';
 }
 
 export function ensureDirectorySuffix(path: string): string {
-	if (!path || path.length === 0) {
-		return '';
-	}
 	const slashIndex = path.lastIndexOf('/');
 	if (slashIndex === -1) {
 		return '';
@@ -1884,9 +1867,6 @@ export function commitRename(payload: RenameCommitPayload): RenameCommitResult {
 	type RangeBucket = { path: string; ranges: LuaSourceRange[]; seen: Set<string> };
 	const rangeMap = new Map<string, RangeBucket>();
 	const addRange = (range: LuaSourceRange): void => {
-		if (!range || !range.start || !range.end) {
-			return;
-		}
 		const path = range.path ?? activePath;
 		let bucket = rangeMap.get(path);
 		if (!bucket) {
@@ -1906,9 +1886,7 @@ export function commitRename(payload: RenameCommitPayload): RenameCommitResult {
 	for (let index = 0; index < references.length; index += 1) {
 		addRange(references[index].range);
 	}
-	if (activePath) {
-		rangeMap.delete(activePath);
-	}
+	rangeMap.delete(activePath);
 
 	if (sortedMatches.length > 0) {
 		prepareUndo('rename', false);
@@ -1945,8 +1923,15 @@ export function commitRename(payload: RenameCommitPayload): RenameCommitResult {
 }
 
 export function findResourceDescriptorForChunk(path: string): VMResourceDescriptor | null {
-	const asset = $.luaSources.path2lua[path];
-	return asset ? { asset_id: asset.resid, path: asset.normalized_source_path, type: asset.type } : null;
+	const runtime = BmsxVMRuntime.instance;
+	const registries = runtime.listLuaSourceRegistries();
+	for (const entry of registries) {
+		const asset = entry.registry.path2lua[path];
+		if (asset) {
+			return { asset_id: asset.resid, path: asset.normalized_source_path, type: asset.type, readOnly: entry.readOnly };
+		}
+	}
+	return null;
 }
 
 export function getCrossFileRenameDependencies(): CrossFileRenameDependencies {
@@ -2473,7 +2458,7 @@ export function pointerHitsHoverTarget(snapshot: PointerSnapshot, tooltip: CodeH
 }
 
 export function buildProjectReferenceContext(context: CodeTabContext): { environment: ProjectReferenceEnvironment; path: string; } {
-	const path = context?.descriptor?.path ?? '<anynomous>';
+	const path = context.descriptor.path;
 	const environment: ProjectReferenceEnvironment = {
 		activeContext: context,
 		activeLines: splitText(getTextSnapshot(ide_state.buffer)),
@@ -3541,6 +3526,7 @@ export function openLuaCodeTab(descriptor: VMResourceDescriptor): void {
 		ide_state.codeTabContexts.set(tabId, context);
 	}
 	const context = ide_state.codeTabContexts.get(tabId);
+	context.readOnly = descriptor.readOnly === true;
 	if (!tab) {
 		const dirty = context ? context.dirty : false;
 		tab = {
@@ -3942,7 +3928,7 @@ export function openDebugPanelTab(kind: DebugPanelKind): void {
 		context = {
 			id: tabId,
 			title,
-			descriptor: null,
+			descriptor: { path: `debug/${kind}`, type: 'lua', readOnly: true },
 			buffer,
 			cursorRow: 0,
 			cursorColumn: 0,

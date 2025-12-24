@@ -701,11 +701,7 @@ export async function persistDirtyContextEntries(entries: Map<string, DirtyConte
 }
 
 export function loadCleanSrc(path: string) {
-	const asset = $.luaSources.path2lua[path];
-	if (!asset) {
-		return '';
-	}
-	return BmsxVMRuntime.instance.resourceSourceForChunk(asset.source_path);
+	return BmsxVMRuntime.instance.resourceSourceForChunk(path);
 }
 
 export function clearWorkspaceDirtyBuffers(): void {

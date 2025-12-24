@@ -6,6 +6,7 @@ export type VMResourceDescriptor = {
 	path: string;
 	type: string;
 	asset_id?: asset_id;
+	readOnly?: boolean;
 };
 
 export type VMLuaResourceCreationRequest = {
