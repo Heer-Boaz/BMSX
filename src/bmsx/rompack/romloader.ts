@@ -447,8 +447,8 @@ async function fromAsset(romImgAsset: RomImgAsset, assets: RuntimeAssets, option
 	}
 
 	if (!source) {
-		console.warn(`Rom image asset '${romImgAsset.resid}' has no image data loaded`);
-		// throw new Error(`Image asset '${romImgAsset.resid}' has no image data`);
+		// console.warn(`Rom image asset '${romImgAsset.resid}' has no image data loaded`);
+		throw new Error(`Image asset '${romImgAsset.resid}' has no image data`);
 	}
 	return source;
 }
@@ -469,17 +469,23 @@ async function load(source: RawAssetSource, res: RomAsset, assets: RuntimeAssets
 					img = await getImageFromBuffer(source.getBuffer(baseAsset));
 				}
 			}
-			const imgAsset: RomImgAsset = {
+			const imgAsset = {
 				...baseAsset,
 				_imgbin: img,
 				_imgbinYFlipped: undefined,
-				get imgbin() {
-					return fromAsset(this, assets);
+			} as RomImgAsset;
+			Object.defineProperty(imgAsset, 'imgbin', {
+				enumerable: false,
+				get: function () {
+					return fromAsset(this as RomImgAsset, assets);
 				},
-				get imgbinYFlipped() {
-					return fromAsset(this, assets, { flipY: true });
+			});
+			Object.defineProperty(imgAsset, 'imgbinYFlipped', {
+				enumerable: false,
+				get: function () {
+					return fromAsset(this as RomImgAsset, assets, { flipY: true });
 				},
-			};
+			});
 			assets.img[res.resid] = imgAsset;
 			break;
 		}
