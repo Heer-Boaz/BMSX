@@ -54,21 +54,10 @@ add_library(bmsx_core STATIC
     core/types.cpp
     core/engine.cpp
     core/registry.cpp
-    core/world.cpp
     core/assets.cpp
     core/binencoder.cpp
     core/rompack.cpp
     core/font.cpp
-    core/textobject.cpp
-
-    # Timeline systems
-    timeline/timeline.cpp
-
-    # FSM systems
-    fsm/statedefinition.cpp
-    fsm/state.cpp
-    fsm/fsmcontroller.cpp
-    fsm/fsmlibrary.cpp
 
     # Input systems
     input/inputstatemanager.cpp
@@ -77,17 +66,6 @@ add_library(bmsx_core STATIC
     input/input.cpp
     input/keyboardinput.cpp
     input/gamepadinput.cpp
-
-    # Component systems
-    component/component.cpp
-    component/collisioncomponents.cpp
-    component/transformcomponent.cpp
-    component/actioneffectcomponent.cpp
-    component/spritecomponent.cpp
-    component/timelinecomponent.cpp
-
-    # Action effects
-    action_effects/input_action_effect_compiler.cpp
 
     # Render systems
     render/backend.cpp
@@ -98,16 +76,11 @@ add_library(bmsx_core STATIC
     render/rendergraph.cpp
     render/glyphs.cpp
 
-    # ECS systems
-    ecs/ecsystem.cpp
-    ecs/input_action_effect_system.cpp
-
     # VM (Lua bytecode interpreter)
     vm/cpu.cpp
     vm/font.cpp
     vm/vm_api.cpp
     vm/vm_runtime.cpp
-    vm/vm_systems.cpp
     vm/program_loader.cpp
 )
 

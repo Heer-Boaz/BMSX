@@ -3,7 +3,7 @@
  */
 
 #include "engine.h"
-#include "../vm/vm_systems.h"
+#include "../input/input.h"
 #include "../vm/vm_runtime.h"
 #include "../vm/font.h"
 #include <algorithm>
@@ -17,7 +17,6 @@ EngineCore* EngineCore::s_instance = nullptr;
 
 EngineCore::EngineCore() {
     s_instance = this;
-    m_world = std::make_unique<World>();
 }
 
 EngineCore::~EngineCore() {
@@ -60,14 +59,7 @@ bool EngineCore::initialize(Platform* platform) {
 
     m_view->bind();
 
-    // Register World in the registry
-    registry().registerObject(m_world.get());
-
-    // Register core systems (state machines, timelines, render submit)
-    registerCoreSystems();
-
-    // Register VM systems (mirrors TypeScript createBmsxVMModule)
-    registerVMSystems();
+    Input::instance().initialize();
 
     m_state = EngineState::Initialized;
     return true;
@@ -132,21 +124,15 @@ void EngineCore::tick(f64 deltaTime) {
         m_fps = 1.0 / deltaTime;
     }
 
-    // Begin frame for system stats
-    m_system_manager.beginFrame();
-
-    // Process input (Input phase systems)
-    m_system_manager.updatePhase(*m_world, TickGroup::Input);
-
-    // Update world - phases up through ModeResolution (includes ActionEffect)
-    m_system_manager.updatePhase(*m_world, TickGroup::ActionEffect);
-    m_system_manager.updatePhase(*m_world, TickGroup::ModeResolution);
-
-    // Physics phase
-    m_system_manager.updatePhase(*m_world, TickGroup::Physics);
-
-    // Animation phase
-    m_system_manager.updatePhase(*m_world, TickGroup::Animation);
+    Input::instance().pollInput();
+    if (VMRuntime::hasInstance()) {
+        VMRuntime& runtime = VMRuntime::instance();
+        runtime.tickIdeInput();
+        runtime.tickTerminalInput();
+        runtime.tickUpdate();
+        runtime.tickIDE();
+        runtime.tickTerminalMode();
+    }
 
     // Process microtasks
     if (m_platform && m_platform->microtaskQueue()) {
@@ -166,12 +152,6 @@ void EngineCore::render() {
         return;
     }
 
-    // Sort by depth before rendering
-    Space* active = m_world->activeSpace();
-    if (active) {
-        active->sortByDepth();
-    }
-
     // Render through GameView
     if (m_view) {
         m_view->beginFrame();
@@ -181,35 +161,18 @@ void EngineCore::render() {
             renderTestPattern();
         }
 
-        // Run presentation phase systems (VM draw, etc.)
-        m_system_manager.updatePhase(*m_world, TickGroup::Presentation);
+        if (VMRuntime::hasInstance()) {
+            VMRuntime& runtime = VMRuntime::instance();
+            runtime.tickDraw();
+            runtime.tickIDEDraw();
+            runtime.tickTerminalModeDraw();
+        }
 
         m_view->drawGame();
         m_view->endFrame();
     }
 
-    // Event flush phase
-    m_system_manager.updatePhase(*m_world, TickGroup::EventFlush);
-
     m_presentation_pending = false;
-}
-
-void EngineCore::processInput() {
-    if (!m_platform || !m_platform->inputHub()) {
-        return;
-    }
-
-    auto* inputHub = m_platform->inputHub();
-
-    // Process all pending input events
-    while (auto evt = inputHub->nextEvt()) {
-        // TODO: Dispatch input event to game systems
-        (void)evt;
-    }
-}
-
-void EngineCore::updateWorld(f64 deltaTime) {
-    m_world->run(deltaTime);
 }
 
 bool EngineCore::loadEngineAssets(const u8* data, size_t size) {
@@ -286,11 +249,13 @@ bool EngineCore::bootWithoutCart() {
             options.playerIndex = 1;
             options.viewport.x = m_engine_assets.manifest.viewportWidth > 0 ? m_engine_assets.manifest.viewportWidth : 256;
             options.viewport.y = m_engine_assets.manifest.viewportHeight > 0 ? m_engine_assets.manifest.viewportHeight : 224;
+            options.canonicalization = m_engine_assets.manifest.canonicalization;
             VMRuntime::createInstance(options);
         }
 
         // Boot the VM with the pre-compiled program from engine assets
         VMRuntime& runtime = VMRuntime::instance();
+        runtime.setCanonicalization(m_engine_assets.manifest.canonicalization);
         runtime.boot(*m_engine_assets.vmProgram);
     }
 
@@ -402,19 +367,9 @@ void EngineCore::unloadRom() {
     if (m_rom_loaded) {
         m_rom_data.clear();
         m_assets.clear();
-        // Recreate world
-        m_world = std::make_unique<World>();
         registry().clear();
         m_rom_loaded = false;
     }
-}
-
-void EngineCore::spawn(WorldObject* obj, const Vec3* pos) {
-    m_world->spawn(obj, m_world->activeSpaceId(), pos);
-}
-
-void EngineCore::exile(WorldObject* obj) {
-    m_world->despawnFromAllSpaces(obj);
 }
 
 void EngineCore::renderTestPattern() {
@@ -496,40 +451,6 @@ void EngineCore::renderTestPattern() {
     }
 }
 
-void EngineCore::registerVMSystems() {
-    // Register BMSX VM systems (mirrors TypeScript createBmsxVMModule)
-    // Priority determines execution order within each tick group
-
-    // Cart systems
-    m_vm_systems.push_back(std::make_unique<BmsxCartUpdateSystem>(100));
-    m_vm_systems.push_back(std::make_unique<BmsxCartDrawSystem>(100));
-
-    // IDE systems
-    m_vm_systems.push_back(std::make_unique<BmsxIDEInputSystem>(100));
-    m_vm_systems.push_back(std::make_unique<BmsxIDEUpdateSystem>(100));
-    m_vm_systems.push_back(std::make_unique<BmsxIDEDrawSystem>(100));
-
-    // Terminal systems
-    m_vm_systems.push_back(std::make_unique<BmsxTerminalInputSystem>(100));
-    m_vm_systems.push_back(std::make_unique<BmsxTerminalUpdateSystem>(100));
-    m_vm_systems.push_back(std::make_unique<BmsxTerminalDrawSystem>(100));
-
-    // Register all systems with the manager
-    for (auto& sys : m_vm_systems) {
-        m_system_manager.registerSystem(sys.get());
-    }
-}
-
-void EngineCore::registerCoreSystems() {
-    m_core_systems.push_back(std::make_unique<StateMachineSystem>(50));
-    m_core_systems.push_back(std::make_unique<TimelineSystem>(0));
-    m_core_systems.push_back(std::make_unique<RenderSubmitSystem>(0));
-
-    for (auto& sys : m_core_systems) {
-        m_system_manager.registerSystem(sys.get());
-    }
-}
-
 void EngineCore::bootVMFromProgram() {
     // Get the pre-compiled program from assets
     if (!m_assets.vmProgram || !m_assets.vmProgram->program) {
@@ -542,11 +463,13 @@ void EngineCore::bootVMFromProgram() {
         options.playerIndex = 1;
         options.viewport.x = m_assets.manifest.viewportWidth > 0 ? m_assets.manifest.viewportWidth : 256;
         options.viewport.y = m_assets.manifest.viewportHeight > 0 ? m_assets.manifest.viewportHeight : 224;
+        options.canonicalization = m_assets.manifest.canonicalization;
         VMRuntime::createInstance(options);
     }
 
     // Boot the VM with the pre-compiled program
     VMRuntime& runtime = VMRuntime::instance();
+    runtime.setCanonicalization(m_assets.manifest.canonicalization);
     runtime.boot(*m_assets.vmProgram);
 }
 

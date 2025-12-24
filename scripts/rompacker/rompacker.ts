@@ -6,7 +6,7 @@ import { Presets, SingleBar } from 'cli-progress';
 import { validateAudioEventReferences } from './audioeventvalidator';
 import { appendVmProgramAsset, buildBootromScriptIfNewer, buildEngineRuntime, buildGameHtmlAndManifest, buildResourceList, commonResPath, createAtlasses, deployToServer, esbuild, finalizeRompack, GENERATE_AND_USE_TEXTURE_ATLAS, generateRomAssets, getNodeLauncherFilename, getResMetaList, getResourcesList, getRomManifest, isEngineRuntimeRebuildRequired, isRebuildRequired, LUA_CANONICALIZATION, setAtlasFlag, setLuaCanonicalization, typecheckBeforeBuild, typecheckGameWithDts } from './rompacker-core';
 import type { RomPackerMode, RomPackerOptions, RomPackerTarget } from './rompacker.rompack';
-import type { CanonicalizationType, RomManifest } from '../../src/bmsx/rompack/rompack';
+import type { CanonicalizationType, RomAsset, RomManifest } from '../../src/bmsx/rompack/rompack';
 
 import { join, isAbsolute } from 'node:path';
 import { existsSync, statSync } from 'node:fs';
@@ -935,7 +935,22 @@ async function main() {
 			validateAudioEventReferences(resources);
 
 			const romAssets = await progress.runWithDetail('Generate ROM assets', () => generateRomAssets(resources, message => progress.setDetail(message)));
-			appendVmProgramAsset(romAssets, romManifest);
+			let extraLuaAssets: RomAsset[] = [];
+			if (!isEngineMode) {
+				const engineLuaMetaList = await getResMetaList([engineResPath], undefined, {
+					includeCode: false,
+					extraLuaPaths: [],
+					virtualRoot: engineVirtualRoot,
+					resolveAtlasIndex: false,
+				});
+				const engineLuaOnly = engineLuaMetaList.filter(entry => entry.type === 'lua');
+				if (engineLuaOnly.length > 0) {
+					const engineLuaResources = await getResourcesList(engineLuaOnly);
+					const engineLuaAssets = await generateRomAssets(engineLuaResources);
+					extraLuaAssets = engineLuaAssets.filter(asset => asset.type === 'lua');
+				}
+			}
+			appendVmProgramAsset(romAssets, romManifest, { extraLuaAssets });
 			await progress.taskCompleted();
 
 			await progress.runWithDetail('Finalize ROM pack', () => finalizeRompack(romAssets, rom_name, romPackDebug, { projectRootPath, manifest: romManifest, status: message => progress.setDetail(message) }));

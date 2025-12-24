@@ -3,6 +3,7 @@
 #include "vm_io.h"
 #include "program_loader.h"
 #include "../core/engine.h"
+#include <array>
 #include <algorithm>
 #include <cmath>
 #include <cctype>
@@ -63,6 +64,7 @@ VMRuntime::VMRuntime(const VMRuntimeOptions& options)
 	, m_cpu(m_memory)
 	, m_playerIndex(options.playerIndex)
 	, m_viewport(options.viewport)
+	, m_canonicalization(options.canonicalization)
 {
 	// Initialize I/O memory region
 	std::fill(m_memory.begin(), m_memory.end(), std::monostate{});
@@ -134,25 +136,25 @@ void VMRuntime::boot(Program* program, int entryProtoIndex) {
 	std::cerr << "[VMRuntime] boot: top-level code executed" << std::endl;
 
 	// Cache callback functions (use Lua-style names: update, draw, init, new_game)
-	Value updateVal = m_cpu.globals.get(std::string("update"));
+	Value updateVal = m_cpu.globals.get(canonicalizeIdentifier("update"));
 	if (auto cls = std::get_if<std::shared_ptr<Closure>>(&updateVal)) {
 		m_updateFn = *cls;
 		std::cerr << "[VMRuntime] boot: found update" << std::endl;
 	}
 
-	Value drawVal = m_cpu.globals.get(std::string("draw"));
+	Value drawVal = m_cpu.globals.get(canonicalizeIdentifier("draw"));
 	if (auto cls = std::get_if<std::shared_ptr<Closure>>(&drawVal)) {
 		m_drawFn = *cls;
 		std::cerr << "[VMRuntime] boot: found draw" << std::endl;
 	}
 
-	Value initVal = m_cpu.globals.get(std::string("init"));
+	Value initVal = m_cpu.globals.get(canonicalizeIdentifier("init"));
 	if (auto cls = std::get_if<std::shared_ptr<Closure>>(&initVal)) {
 		m_initFn = *cls;
 		std::cerr << "[VMRuntime] boot: found init" << std::endl;
 	}
 
-	Value newGameVal = m_cpu.globals.get(std::string("new_game"));
+	Value newGameVal = m_cpu.globals.get(canonicalizeIdentifier("new_game"));
 	if (auto cls = std::get_if<std::shared_ptr<Closure>>(&newGameVal)) {
 		m_newGameFn = *cls;
 		std::cerr << "[VMRuntime] boot: found new_game" << std::endl;
@@ -167,6 +169,7 @@ void VMRuntime::boot(Program* program, int entryProtoIndex) {
 	std::cerr << "[VMRuntime] boot: calling init..." << std::endl;
 	callLuaFunction(*m_initFn, {});
 	std::cerr << "[VMRuntime] boot: calling new_game..." << std::endl;
+	callEngineModuleMember("reset", {});
 	callLuaFunction(*m_newGameFn, {});
 
 	m_vmInitialized = true;
@@ -276,36 +279,34 @@ void VMRuntime::applyState(const VMState& state) {
 std::vector<Value> VMRuntime::callLuaFunction(std::shared_ptr<Closure> fn, const std::vector<Value>& args) {
 	int depthBefore = m_cpu.getFrameDepth();
 	m_cpu.callExternal(fn, args);
+	std::optional<int> previousBudget = m_cpu.instructionBudgetRemaining;
+	m_cpu.instructionBudgetRemaining = std::nullopt;
 	m_cpu.runUntilDepth(depthBefore);
+	m_cpu.instructionBudgetRemaining = previousBudget;
 	return m_cpu.lastReturnValues;
 }
 
 Value VMRuntime::getGlobal(const std::string& name) const {
-	return m_cpu.globals.get(name);
+	return m_cpu.globals.get(canonicalizeIdentifier(name));
 }
 
 void VMRuntime::setGlobal(const std::string& name, const Value& value) {
-	m_cpu.globals.set(name, value);
+	m_cpu.globals.set(canonicalizeIdentifier(name), value);
 }
 
 void VMRuntime::registerNativeFunction(const std::string& name, NativeFunctionInvoke fn) {
 	auto nativeFn = createNativeFunction(name, std::move(fn));
-	m_cpu.globals.set(name, nativeFn);
+	m_cpu.globals.set(canonicalizeIdentifier(name), nativeFn);
+}
+
+void VMRuntime::setCanonicalization(CanonicalizationType canonicalization) {
+	m_canonicalization = canonicalization;
 }
 
 Value VMRuntime::requireVmModule(const std::string& moduleName) {
-	auto trimWhitespace = [](const std::string& input) -> std::string {
-		size_t start = input.find_first_not_of(" \t\n\r");
-		if (start == std::string::npos) {
-			return "";
-		}
-		size_t end = input.find_last_not_of(" \t\n\r");
-		return input.substr(start, end - start + 1);
-	};
-	const std::string trimmed = trimWhitespace(moduleName);
-	const auto aliasIt = m_vmModuleAliases.find(trimmed);
+	const auto aliasIt = m_vmModuleAliases.find(moduleName);
 	if (aliasIt == m_vmModuleAliases.end()) {
-		throw std::runtime_error("require('" + trimmed + "') failed: module not found.");
+		throw std::runtime_error("require('" + moduleName + "') failed: module not found.");
 	}
 	const std::string& path = aliasIt->second;
 	const auto cachedIt = m_vmModuleCache.find(path);
@@ -314,7 +315,7 @@ Value VMRuntime::requireVmModule(const std::string& moduleName) {
 	}
 	const auto protoIt = m_vmModuleProtos.find(path);
 	if (protoIt == m_vmModuleProtos.end()) {
-		throw std::runtime_error("require('" + trimmed + "') failed: module not compiled.");
+		throw std::runtime_error("require('" + moduleName + "') failed: module not compiled.");
 	}
 	m_vmModuleCache[path] = true;
 	auto closure = std::make_shared<Closure>();
@@ -324,6 +325,13 @@ Value VMRuntime::requireVmModule(const std::string& moduleName) {
 	Value cachedValue = isNil(value) ? Value{true} : value;
 	m_vmModuleCache[path] = cachedValue;
 	return cachedValue;
+}
+
+std::vector<Value> VMRuntime::callEngineModuleMember(const std::string& name, const std::vector<Value>& args) {
+	auto engineModule = std::get<std::shared_ptr<Table>>(requireVmModule("engine"));
+	Value key = canonicalizeIdentifier(name);
+	auto member = std::get<std::shared_ptr<Closure>>(engineModule->get(key));
+	return callLuaFunction(member, args);
 }
 
 std::string VMRuntime::formatVmString(const std::string& templateStr, const std::vector<Value>& args, size_t argStart) const {
@@ -648,6 +656,23 @@ std::string VMRuntime::formatVmString(const std::string& templateStr, const std:
 	}
 
 	return output;
+}
+
+std::string VMRuntime::canonicalizeIdentifier(const std::string& value) const {
+	if (m_canonicalization == CanonicalizationType::None) {
+		return value;
+	}
+	std::string result = value;
+	if (m_canonicalization == CanonicalizationType::Upper) {
+		for (char& ch : result) {
+			ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+		}
+		return result;
+	}
+	for (char& ch : result) {
+		ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+	}
+	return result;
 }
 
 std::regex VMRuntime::buildLuaPatternRegex(const std::string& pattern) const {
@@ -1054,7 +1079,12 @@ void VMRuntime::setupBuiltins() {
 
 	registerNativeFunction("require", [this](const std::vector<Value>& args) -> std::vector<Value> {
 		const std::string& moduleName = std::get<std::string>(args.at(0));
-		return {requireVmModule(moduleName)};
+		size_t start = moduleName.find_first_not_of(" \t\n\r");
+		if (start == std::string::npos) {
+			return {requireVmModule("")};
+		}
+		size_t end = moduleName.find_last_not_of(" \t\n\r");
+		return {requireVmModule(moduleName.substr(start, end - start + 1))};
 	});
 
 	registerNativeFunction("array", [](const std::vector<Value>& args) -> std::vector<Value> {
@@ -1417,8 +1447,8 @@ void VMRuntime::setupBuiltins() {
 				return {std::monostate{}};
 			}
 			std::smatch match;
-			auto begin = state->source.begin() + static_cast<std::string::difference_type>(state->index);
-			if (!std::regex_search(begin, state->source.end(), match, state->regex)) {
+			auto begin = state->source.cbegin() + static_cast<std::string::difference_type>(state->index);
+			if (!std::regex_search(begin, state->source.cend(), match, state->regex)) {
 				return {std::monostate{}};
 			}
 			size_t matchStart = state->index + static_cast<size_t>(match.position());
@@ -1658,25 +1688,57 @@ void VMRuntime::setupBuiltins() {
 		}
 		return {ipairsIterator, target, 0.0};
 	});
+
+	static const std::array<const char*, 19> engineBuiltins = {
+		"define_fsm",
+		"define_world_object",
+		"define_service",
+		"define_component",
+		"define_effect",
+		"new_timeline",
+		"spawn_object",
+		"spawn_sprite",
+		"spawn_textobject",
+		"create_service",
+		"service",
+		"object",
+		"attach_component",
+		"configure_ecs",
+		"apply_default_pipeline",
+		"register",
+		"deregister",
+		"grant_effect",
+		"trigger_effect",
+	};
+	for (const char* name : engineBuiltins) {
+		registerNativeFunction(name, [this, name](const std::vector<Value>& args) -> std::vector<Value> {
+			return callEngineModuleMember(name, args);
+		});
+	}
 }
 
 void VMRuntime::executeUpdateCallback(double deltaSeconds) {
-	if (!m_updateFn) {
-		return;
-	}
+	bool shouldRunEngineUpdate = !m_updateFn.has_value();
 	if (m_pendingVmCall != PendingCall::None && m_pendingVmCall != PendingCall::Update) {
 		return;
 	}
 
 	try {
-		if (m_pendingVmCall == PendingCall::None) {
-			m_cpu.call(*m_updateFn, {deltaSeconds}, 0);
-			m_pendingVmCall = PendingCall::Update;
+		if (m_updateFn) {
+			if (m_pendingVmCall == PendingCall::None) {
+				m_cpu.call(*m_updateFn, {deltaSeconds}, 0);
+				m_pendingVmCall = PendingCall::Update;
+			}
+			RunResult result = m_cpu.run(UPDATE_STATEMENT_BUDGET);
+			processIOCommands();
+			if (result == RunResult::Halted) {
+				m_pendingVmCall = PendingCall::None;
+				shouldRunEngineUpdate = true;
+			}
 		}
-		RunResult result = m_cpu.run(UPDATE_STATEMENT_BUDGET);
-		processIOCommands();
-		if (result == RunResult::Halted) {
-			m_pendingVmCall = PendingCall::None;
+		if (shouldRunEngineUpdate) {
+			callEngineModuleMember("update", {deltaSeconds});
+			processIOCommands();
 		}
 	} catch (const std::exception& e) {
 		std::cerr << "[VMRuntime] Error in update: " << e.what() << std::endl;
@@ -1685,22 +1747,27 @@ void VMRuntime::executeUpdateCallback(double deltaSeconds) {
 }
 
 void VMRuntime::executeDrawCallback() {
-	if (!m_drawFn) {
-		return;
-	}
+	bool shouldRunEngineDraw = !m_drawFn.has_value();
 	if (m_pendingVmCall != PendingCall::None && m_pendingVmCall != PendingCall::Draw) {
 		return;
 	}
 
 	try {
-		if (m_pendingVmCall == PendingCall::None) {
-			m_cpu.call(*m_drawFn, {}, 0);
-			m_pendingVmCall = PendingCall::Draw;
+		if (m_drawFn) {
+			if (m_pendingVmCall == PendingCall::None) {
+				m_cpu.call(*m_drawFn, {}, 0);
+				m_pendingVmCall = PendingCall::Draw;
+			}
+			RunResult result = m_cpu.run(UPDATE_STATEMENT_BUDGET);
+			processIOCommands();
+			if (result == RunResult::Halted) {
+				m_pendingVmCall = PendingCall::None;
+				shouldRunEngineDraw = true;
+			}
 		}
-		RunResult result = m_cpu.run(UPDATE_STATEMENT_BUDGET);
-		processIOCommands();
-		if (result == RunResult::Halted) {
-			m_pendingVmCall = PendingCall::None;
+		if (shouldRunEngineDraw) {
+			callEngineModuleMember("draw", {});
+			processIOCommands();
 		}
 	} catch (const std::exception& e) {
 		std::cerr << "[VMRuntime] Error in draw: " << e.what() << std::endl;

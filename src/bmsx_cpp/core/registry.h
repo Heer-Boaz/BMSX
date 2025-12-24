@@ -18,10 +18,6 @@
 
 namespace bmsx {
 
-// Forward declarations
-class WorldObject;
-class World;
-
 /* ============================================================================
  * Registerable interface - any object that can be registered
  * ============================================================================ */

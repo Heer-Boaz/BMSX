@@ -3,12 +3,34 @@ import { InputMap } from '../input/inputtypes';
 import { LuaEnvironment } from '../lua/luaenvironment';
 import { LuaError, LuaRuntimeError, LuaSyntaxError } from '../lua/luaerrors';
 import { LuaInterpreter, LuaNativeFunction } from '../lua/luaruntime';
-import { extractErrorMessage, LuaNativeValue } from '../lua/luavalue';
+import { extractErrorMessage, LuaFunctionValue, LuaNativeValue } from '../lua/luavalue';
 import { isLuaTable, LuaTable, LuaValue } from '../lua/luavalue';
 import { arrayify } from '../utils/arrayify';
 import { VM_API_METHOD_METADATA } from './vm_api_metadata';
 import { api, BmsxVMRuntime } from './vm_tooling_runtime';
 import type { VMLuaBuiltinDescriptor } from './types';
+
+export const ENGINE_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<VMLuaBuiltinDescriptor> = [
+	{ name: 'define_fsm', params: ['id', 'blueprint'], signature: 'define_fsm(id, blueprint)' },
+	{ name: 'define_world_object', params: ['definition'], signature: 'define_world_object(definition)' },
+	{ name: 'define_service', params: ['definition'], signature: 'define_service(definition)' },
+	{ name: 'define_component', params: ['definition'], signature: 'define_component(definition)' },
+	{ name: 'define_effect', params: ['definition', 'opts?'], signature: 'define_effect(definition [, opts])' },
+	{ name: 'new_timeline', params: ['def'], signature: 'new_timeline(def)' },
+	{ name: 'spawn_object', params: ['definition_id', 'addons?'], signature: 'spawn_object(definition_id [, addons])' },
+	{ name: 'spawn_sprite', params: ['definition_id', 'addons?'], signature: 'spawn_sprite(definition_id [, addons])' },
+	{ name: 'spawn_textobject', params: ['definition_id', 'addons?'], signature: 'spawn_textobject(definition_id [, addons])' },
+	{ name: 'create_service', params: ['definition_id', 'addons?'], signature: 'create_service(definition_id [, addons])' },
+	{ name: 'service', params: ['id'], signature: 'service(id)' },
+	{ name: 'object', params: ['id'], signature: 'object(id)' },
+	{ name: 'attach_component', params: ['object_or_id', 'component_or_type'], signature: 'attach_component(object_or_id, component_or_type)' },
+	{ name: 'configure_ecs', params: ['nodes'], signature: 'configure_ecs(nodes)' },
+	{ name: 'apply_default_pipeline', params: [], signature: 'apply_default_pipeline()' },
+	{ name: 'register', params: ['value'], signature: 'register(value)' },
+	{ name: 'deregister', params: ['id'], signature: 'deregister(id)' },
+	{ name: 'grant_effect', params: ['object_id', 'effect_id'], signature: 'grant_effect(object_id, effect_id)' },
+	{ name: 'trigger_effect', params: ['object_id', 'effect_id', 'options?'], signature: 'trigger_effect(object_id, effect_id [, options])' },
+];
 
 export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<VMLuaBuiltinDescriptor> = [
 	{ name: 'assert', params: ['value', 'message?'], signature: 'assert(value [, message])' },
@@ -56,6 +78,7 @@ export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<VMLuaBuiltinDescriptor
 	{ name: 'os.date', params: ['format?', 'time?'], signature: 'os.date([format [, time]])' },
 	{ name: 'os.difftime', params: ['t2', 't1?'], signature: 'os.difftime(t2 [, t1])' },
 	{ name: 'os.time', params: ['table?'], signature: 'os.time([table])' },
+	...ENGINE_LUA_BUILTIN_FUNCTIONS,
 	{ name: 'SYS_CART_PRESENT', params: [], signature: 'SYS_CART_PRESENT', description: 'System register address; reads as 1 when a cart is available.' },
 	{ name: 'SYS_BOOT_CART', params: [], signature: 'SYS_BOOT_CART', description: 'System register address; write 1 to boot the cart.' },
 ];
@@ -209,7 +232,26 @@ export function registerApiBuiltins(interpreter: LuaInterpreter): void {
 		}
 	}
 
+	registerEngineBuiltins(interpreter);
 	exposeEngineObjects(env);
+}
+
+function registerEngineBuiltins(interpreter: LuaInterpreter): void {
+	const runtime = BmsxVMRuntime.instance;
+	const env = interpreter.globalEnvironment;
+	const requireName = runtime.canonicalizeIdentifier('require');
+	const callEngineMember = (name: string, args: ReadonlyArray<LuaValue>): ReadonlyArray<LuaValue> => {
+		const requireFn = interpreter.getGlobal(requireName) as LuaFunctionValue;
+		const engineValue = requireFn.call(['engine']);
+		const engineTable = engineValue[0] as LuaTable;
+		const member = engineTable.get(runtime.canonicalizeIdentifier(name)) as LuaFunctionValue;
+		return member.call(args);
+	};
+	for (let index = 0; index < ENGINE_LUA_BUILTIN_FUNCTIONS.length; index += 1) {
+		const name = ENGINE_LUA_BUILTIN_FUNCTIONS[index].name;
+		const native = new LuaNativeFunction(name, (args) => callEngineMember(name, args));
+		registerLuaGlobal(env, name, native);
+	}
 }
 
 export function registerLuaBuiltin(metadata: VMLuaBuiltinDescriptor): void {

@@ -1,6 +1,3 @@
-local engine = require("engine")
-local object = engine.object
-
 local director_def_id = 'p3.director'
 local director_instance_id = 'p3.director.instance'
 local director_fsm_id = 'p3.director.fsm'
@@ -609,7 +606,7 @@ function director:setup_choice_menu(node)
 end
 
 local function build_director_fsm()
-	engine.define_fsm(director_fsm_id, {
+	define_fsm(director_fsm_id, {
 		initial = 'boot',
 		states = {
 			boot = {
@@ -673,7 +670,7 @@ local function build_director_fsm()
 							for i = 0, overgang_frame_count - 1 do
 								frames[#frames + 1] = i
 							end
-							return engine.new_timeline({
+							return new_timeline({
 								id = overgang_timeline_id,
 								frames = frames,
 								ticks_per_frame = overgang_ticks_per_frame,
@@ -782,7 +779,7 @@ local function build_director_fsm()
 							for i = 0, overgang_fade_in_frames - 1 do
 								frames[#frames + 1] = i
 							end
-							return engine.new_timeline({
+							return new_timeline({
 								id = overgang_post_fade_in_timeline_id,
 								frames = frames,
 								ticks_per_frame = overgang_ticks_per_frame,
@@ -856,7 +853,7 @@ local function build_director_fsm()
 							for i = 0, fade_frame_count - 1 do
 								frames[#frames + 1] = i
 							end
-							return engine.new_timeline({
+							return new_timeline({
 								id = fade_timeline_id,
 								frames = frames,
 								ticks_per_frame = fade_ticks_per_frame,
@@ -949,7 +946,7 @@ local function build_director_fsm()
 							for i = 0, combat_fade_frame_count - 1 do
 								frames[#frames + 1] = i
 							end
-							return engine.new_timeline({
+							return new_timeline({
 								id = combat_fade_timeline_id,
 								frames = frames,
 								ticks_per_frame = combat_fade_ticks_per_frame,
@@ -1004,7 +1001,7 @@ local function build_director_fsm()
 							for i = 0, combat_fade_frame_count - 1 do
 								frames[#frames + 1] = i
 							end
-							return engine.new_timeline({
+							return new_timeline({
 								id = combat_fade_timeline_id,
 								frames = frames,
 								ticks_per_frame = combat_fade_ticks_per_frame,
@@ -1149,7 +1146,7 @@ local function build_director_fsm()
 							for i = 0, combat_hit_frame_count - 1 do
 								frames[#frames + 1] = i
 							end
-							return engine.new_timeline({
+							return new_timeline({
 								id = combat_hit_timeline_id,
 								frames = frames,
 								ticks_per_frame = combat_hit_ticks_per_frame,
@@ -1210,7 +1207,7 @@ local function build_director_fsm()
 							for i = 0, combat_dodge_frame_count - 1 do
 								frames[#frames + 1] = i
 							end
-							return engine.new_timeline({
+							return new_timeline({
 								id = combat_dodge_timeline_id,
 								frames = frames,
 								ticks_per_frame = combat_dodge_ticks_per_frame,
@@ -1299,7 +1296,7 @@ local function build_director_fsm()
 							for i = 0, combat_all_out_frame_count - 1 do
 								frames[#frames + 1] = i
 							end
-							return engine.new_timeline({
+							return new_timeline({
 								id = combat_all_out_timeline_id,
 								frames = frames,
 								ticks_per_frame = combat_all_out_ticks_per_frame,
@@ -1421,7 +1418,7 @@ local function build_director_fsm()
 							for i = 0, combat_results_fade_in_frames - 1 do
 								frames[#frames + 1] = i
 							end
-							return engine.new_timeline({
+							return new_timeline({
 								id = combat_results_fade_in_timeline_id,
 								frames = frames,
 								ticks_per_frame = combat_results_fade_in_ticks_per_frame,
@@ -1475,7 +1472,7 @@ local function build_director_fsm()
 							for i = 0, combat_results_fade_out_frames - 1 do
 								frames[#frames + 1] = i
 							end
-							return engine.new_timeline({
+							return new_timeline({
 								id = combat_results_fade_out_timeline_id,
 								frames = frames,
 								ticks_per_frame = combat_results_fade_out_ticks_per_frame,
@@ -1540,7 +1537,7 @@ local function build_director_fsm()
 							for i = 0, combat_exit_fade_in_frames - 1 do
 								frames[#frames + 1] = i
 							end
-							return engine.new_timeline({
+							return new_timeline({
 								id = combat_exit_fade_in_timeline_id,
 								frames = frames,
 								ticks_per_frame = combat_exit_fade_in_ticks_per_frame,
@@ -1761,7 +1758,7 @@ local function build_director_fsm()
 end
 
 local function register_director()
-	engine.define_world_object({
+	define_world_object({
 		def_id = director_def_id,
 		class = director,
 		fsms = { director_fsm_id },
@@ -1799,7 +1796,6 @@ function init()
 end
 
 function new_game()
-	engine.reset()
 	local w = display_width()
 	local h = display_height()
 	local line_height = 16
@@ -1810,7 +1806,7 @@ function new_game()
 	local choice_top = h - (line_height * (prompt_lines + choice_lines))
 	local main_top = h - (line_height * (prompt_lines + choice_lines + main_lines))
 
-	engine.spawn_sprite('p3.bg.def', {
+	spawn_sprite('p3.bg.def', {
 		id = bg_id,
 		pos = { x = 0, y = 0, z = 0 },
 		imgid = 'none',
@@ -1818,27 +1814,27 @@ function new_game()
 	})
 
 	local horizontal_margin = w / 10
-	engine.spawn_textobject('p3.text.main.def', {
+	spawn_textobject('p3.text.main.def', {
 		id = text_main_id,
 		dimensions = { left = horizontal_margin, right = w - horizontal_margin, top = main_top, bottom = choice_top },
 		pos = { z = 1000 },
 	})
-	engine.spawn_textobject('p3.text.choice.def', {
+	spawn_textobject('p3.text.choice.def', {
 		id = text_choice_id,
 		dimensions = { left = horizontal_margin, right = w - horizontal_margin, top = choice_top, bottom = prompt_top },
 		pos = { z = 1001 },
 	})
-	engine.spawn_textobject('p3.text.prompt.def', {
+	spawn_textobject('p3.text.prompt.def', {
 		id = text_prompt_id,
 		dimensions = { left = horizontal_margin, right = w - horizontal_margin, top = prompt_top, bottom = h },
 		pos = { z = 1002 },
 	})
-	engine.spawn_textobject('p3.text.transition.def', {
+	spawn_textobject('p3.text.transition.def', {
 		id = text_transition_id,
 		dimensions = { left = 0, right = w, top = (h / 2) - (line_height * 2), bottom = (h / 2) + (line_height * 2) },
 		pos = { z = 900 },
 	})
-	engine.spawn_textobject('p3.text.results.def', {
+	spawn_textobject('p3.text.results.def', {
 		id = text_results_id,
 		dimensions = { left = horizontal_margin, right = w - (w / 3), top = line_height * 2, bottom = h - (h / 3) },
 		pos = { z = 1003 },
@@ -1850,32 +1846,32 @@ function new_game()
 	clear_text(text_transition_id)
 	clear_text(text_results_id)
 
-	engine.spawn_sprite('p3.combat.monster.def', {
+	spawn_sprite('p3.combat.monster.def', {
 		id = combat_monster_id,
 		pos = { x = 0, y = 0, z = 200 },
 		imgid = 'monster_snoozer',
 		visible = false,
 	})
-	engine.spawn_sprite('p3.combat.maya_a.def', {
+	spawn_sprite('p3.combat.maya_a.def', {
 		id = combat_maya_a_id,
 		pos = { x = 0, y = 0, z = 300 },
 		imgid = 'maya_a',
 		visible = false,
 	})
-	engine.spawn_sprite('p3.combat.maya_b.def', {
+	spawn_sprite('p3.combat.maya_b.def', {
 		id = combat_maya_b_id,
 		pos = { x = 0, y = 0, z = 300 },
 		imgid = 'maya_b',
 		visible = false,
 	})
-	engine.spawn_sprite('p3.combat.all_out.def', {
+	spawn_sprite('p3.combat.all_out.def', {
 		id = combat_all_out_id,
 		pos = { x = 0, y = 0, z = 800 },
 		imgid = 'all_out',
 		visible = false,
 	})
 
-	engine.spawn_object(director_def_id, { id = director_instance_id })
+	spawn_object(director_def_id, { id = director_instance_id })
 end
 
 local function test()
@@ -1887,9 +1883,7 @@ function update(_dt)
 	-- assert(false)
 	-- print(a.b + 3)
 	test()
-	engine.update($.deltatime)
 end
 
 function draw()
-	engine.draw()
 end

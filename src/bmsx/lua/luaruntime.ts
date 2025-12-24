@@ -2853,25 +2853,17 @@ public fallbackSourceRange(): LuaSourceRange {
 		for (const statement of statements) {
 			switch (statement.kind) {
 				case LuaSyntaxKind.LocalAssignmentStatement: {
-					const localAssignment = statement as LuaLocalAssignmentStatement;
-					for (const name of localAssignment.names) {
-						this.ensureIdentifierNotReserved(name.name, name.range);
-					}
 					break;
 				}
 				case LuaSyntaxKind.LocalFunctionStatement: {
 					const localFunc = statement as LuaLocalFunctionStatement;
-					this.ensureIdentifierNotReserved(localFunc.name.name, localFunc.name.range);
 					this.validateFunctionExpression(localFunc.functionExpression);
 					break;
 				}
 				case LuaSyntaxKind.FunctionDeclarationStatement: {
 					const funcDecl = statement as LuaFunctionDeclarationStatement;
-					if (funcDecl.name.identifiers.length > 0) {
+					if (funcDecl.name.identifiers.length === 1 && !funcDecl.name.methodName) {
 						this.ensureIdentifierNotReserved(funcDecl.name.identifiers[0], funcDecl.range);
-					}
-					if (funcDecl.name.methodName) {
-						this.ensureIdentifierNotReserved(funcDecl.name.methodName, funcDecl.range);
 					}
 					this.validateFunctionExpression(funcDecl.functionExpression);
 					break;

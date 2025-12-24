@@ -16,14 +16,17 @@ bmsx_cpp/
 │   ├── types.cpp
 │   ├── registry.h              # Global object registry (mirrors TS Registry)
 │   ├── registry.cpp
-│   ├── world.h                 # World, Space, WorldObject, Component
-│   ├── world.cpp
-│   ├── fsm.h                   # StateMachineController (stub)
-│   ├── fsm.cpp
 │   ├── assets.h                # RuntimeAssets (img, audio, model, data)
 │   ├── assets.cpp
 │   ├── engine.h                # EngineCore with global $ accessor
 │   └── engine.cpp
+├── vm/
+│   ├── cpu.h                    # Lua bytecode VM
+│   ├── cpu.cpp
+│   ├── vm_runtime.h             # VM lifecycle + builtins
+│   ├── vm_runtime.cpp
+│   ├── vm_api.h                 # Lua API bindings
+│   └── vm_api.cpp
 └── platform/
     └── libretro/
         ├── libretro.h          # Libretro API header
@@ -32,39 +35,13 @@ bmsx_cpp/
         └── libretro_platform.cpp
 ```
 
-## Architecture (mirrors TypeScript)
+## Architecture (VM-first)
 
-**IMPORTANT**: This C++ code mirrors the TypeScript architecture exactly!
+The C++ runtime focuses on the Lua bytecode VM and render/input subsystems.
 
-- `WorldObject` does **NOT** have `tick()` or `paint()` methods
-- Ticking is done by `World.run()` which drives Systems through phases
-- Rendering is done by Components and Systems
-- Behavior is driven by `StateMachineController` (FSM)
-
-| TypeScript               | C++                      | Description                              |
-| ------------------------ | ------------------------ | ---------------------------------------- |
-| `EngineCore` / `$`       | `EngineCore` / `$()`     | Global engine accessor                   |
-| `World`                  | `World`                  | Container for Spaces, drives tick phases |
-| `Space`                  | `Space`                  | Container for WorldObjects (level/scene) |
-| `WorldObject`            | `WorldObject`            | Game object with components (NO tick!)   |
-| `Component`              | `Component`              | Behavior/data attached to objects        |
-| `StateMachineController` | `StateMachineController` | FSM manager per object                   |
-| `Registry`               | `Registry`               | Global object lookup by ID               |
-| `RuntimeAssets`          | `RuntimeAssets`          | Loaded assets (img, audio, etc.)         |
-| `Platform`               | `Platform`               | Host abstraction (input, audio, video)   |
-| `SubscriptionHandle`     | `SubscriptionHandle`     | Event unsubscription handle              |
-
-### Tick Phases (World.run)
-
-The TypeScript `World.run()` drives updates through phases, NOT individual object `tick()` calls:
-
-1. **Input** - Input processing
-2. **ActionEffect** - Ability/montage updates
-3. **ModeResolution** - FSM ticks (`sc.tick()`)
-4. **Physics** - Physics/collision
-5. **Animation** - Animation controllers
-6. **Presentation** - Render prep, audio, UI
-7. **EventFlush** - Event flush, debug hooks
+- `EngineCore` drives `VMRuntime` update/draw directly each frame.
+- Rendering happens through `GameView` + render queues.
+- Input is polled through the `Input` singleton.
 
 ## Building
 

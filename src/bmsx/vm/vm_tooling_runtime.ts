@@ -39,7 +39,7 @@ import { type FaultSnapshot } from './ide/render/render_error_overlay';
 import { type LuaSemanticModel, type FileSemanticData } from './ide/semantic_model';
 import { setEditorCaseInsensitivity } from './ide/text_renderer';
 import type { RuntimeErrorDetails } from './ide/types';
-import { registerApiBuiltins, seedDefaultLuaBuiltins } from './lua_builtins';
+import { ENGINE_LUA_BUILTIN_FUNCTIONS, registerApiBuiltins, seedDefaultLuaBuiltins } from './lua_builtins';
 import { LuaFunctionRedirectCache } from './lua_handler_registry';
 import { LuaEntrySnapshot, LuaJsBridge } from './lua_js_bridge';
 import {
@@ -1052,6 +1052,7 @@ export class BmsxVMRuntime {
 			return;
 		}
 		try {
+			let shouldRunEngineUpdate = this.vmUpdateClosure === null;
 			if (this.pendingVmCall && this.pendingVmCall !== 'update') {
 				state.updateExecuted = true;
 				return;
@@ -1066,7 +1067,12 @@ export class BmsxVMRuntime {
 				this.processVmIo();
 				if (result === RunResult.Halted) {
 					this.pendingVmCall = null;
+					shouldRunEngineUpdate = true;
 				}
+			}
+			if (shouldRunEngineUpdate) {
+				this.callEngineModuleMember('update', [$.deltatime]);
+				this.processVmIo();
 			}
 		} catch (error) {
 			if (isLuaDebuggerPauseSignal(error)) {
@@ -1146,6 +1152,7 @@ export class BmsxVMRuntime {
 				}
 				else {
 					try {
+						let shouldRunEngineDraw = this.vmDrawClosure === null;
 						if (this.vmDrawClosure !== null) {
 							if (!this.pendingVmCall) {
 								this.cpu.call(this.vmDrawClosure, [], 0);
@@ -1155,7 +1162,12 @@ export class BmsxVMRuntime {
 							this.processVmIo();
 							if (result === RunResult.Halted) {
 								this.pendingVmCall = null;
+								shouldRunEngineDraw = true;
 							}
+						}
+						if (shouldRunEngineDraw) {
+							this.callEngineModuleMember('draw', []);
+							this.processVmIo();
 						}
 						this.preservedRenderQueue = this.overlayRenderBackend.captureCurrentFrameRenderQueue();
 					} catch (error) {
@@ -1390,6 +1402,9 @@ export class BmsxVMRuntime {
 		const fn = kind === 'init' ? this.vmInitClosure : this.vmNewGameClosure;
 		try {
 			if (!fn) throw new Error(`VM lifecycle handler '${kind}' is not defined.`);
+			if (kind === 'new_game') {
+				this.callEngineModuleMember('reset', []);
+			}
 			this.cpu.call(fn, [], 0);
 			this.cpu.instructionBudgetRemaining = null;
 			this.cpu.run(null);
@@ -1777,6 +1792,13 @@ export class BmsxVMRuntime {
 	private registerVmGlobal(name: string, value: Value): void {
 		const key = this.canonicalizeIdentifier(name);
 		this.cpu.globals.set(key, value);
+	}
+
+	private callEngineModuleMember(name: string, args: ReadonlyArray<Value>): Value[] {
+		const engine = this.requireVmModule('engine') as Table;
+		const key = this.canonicalizeIdentifier(name);
+		const member = engine.get(key) as Closure;
+		return this.callVmFunction(member, args as Value[]);
 	}
 
 	private seedVmGlobals(): void {
@@ -2466,6 +2488,11 @@ export class BmsxVMRuntime {
 			}
 			return [ipairsIterator, target, 0];
 		}));
+
+		for (let index = 0; index < ENGINE_LUA_BUILTIN_FUNCTIONS.length; index += 1) {
+			const name = ENGINE_LUA_BUILTIN_FUNCTIONS[index].name;
+			this.registerVmGlobal(name, createNativeFunction(name, (args) => this.callEngineModuleMember(name, args)));
+		}
 
 		const members = this.collectApiMembers();
 		for (const { name, kind, descriptor } of members) {

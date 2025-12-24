@@ -26,6 +26,13 @@ static void updateFlippedTexcoords(ImgMeta& meta) {
     meta.texcoords_fliphv = {right, bottom, right, top, left, bottom, left, bottom, right, top, left, top};
 }
 
+static CanonicalizationType parseCanonicalization(const std::string& value) {
+	if (value == "none") return CanonicalizationType::None;
+	if (value == "upper") return CanonicalizationType::Upper;
+	if (value == "lower") return CanonicalizationType::Lower;
+	throw std::runtime_error("Unknown canonicalization value: " + value);
+}
+
 /* ============================================================================
  * RuntimeAssets implementation
  * ============================================================================ */
@@ -80,6 +87,7 @@ void RuntimeAssets::clear() {
     vmProgram.reset();
     projectRootPath.clear();
     manifest = RomManifest{};
+    canonicalization = CanonicalizationType::None;
 }
 
 /* ============================================================================
@@ -234,6 +242,8 @@ bool loadAssetsFromRom(const u8* buffer, size_t size, RuntimeAssets& assets) {
 
         if (manifestObj.count("vm") && manifestObj.at("vm").isObject()) {
             const auto& vmObj = manifestObj.at("vm").asObject();
+            assets.manifest.canonicalization = parseCanonicalization(vmObj.at("canonicalization").asString());
+            assets.canonicalization = assets.manifest.canonicalization;
             if (vmObj.count("viewport") && vmObj.at("viewport").isObject()) {
                 const auto& vpObj = vmObj.at("viewport").asObject();
                 if (vpObj.count("width")) assets.manifest.viewportWidth = vpObj.at("width").toI32();

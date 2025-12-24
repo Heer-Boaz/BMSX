@@ -246,34 +246,34 @@ InputMap Input::getDefaultInputMapping() {
 	InputMap map;
 	
 	// Keyboard mappings
-	map.keyboard["up"] = {{.id = "ArrowUp"}, {.id = "KeyW"}};
-	map.keyboard["down"] = {{.id = "ArrowDown"}, {.id = "KeyS"}};
-	map.keyboard["left"] = {{.id = "ArrowLeft"}, {.id = "KeyA"}};
-	map.keyboard["right"] = {{.id = "ArrowRight"}, {.id = "KeyD"}};
-	map.keyboard["a"] = {{.id = "KeyZ"}, {.id = "Space"}};
-	map.keyboard["b"] = {{.id = "KeyX"}};
-	map.keyboard["x"] = {{.id = "KeyC"}};
-	map.keyboard["y"] = {{.id = "KeyV"}};
-	map.keyboard["l1"] = {{.id = "KeyQ"}};
-	map.keyboard["r1"] = {{.id = "KeyE"}};
-	map.keyboard["start"] = {{.id = "Enter"}};
-	map.keyboard["select"] = {{.id = "Escape"}};
+	map.keyboard["up"] = {{.id = "ArrowUp", .modifiers = std::nullopt}, {.id = "KeyW", .modifiers = std::nullopt}};
+	map.keyboard["down"] = {{.id = "ArrowDown", .modifiers = std::nullopt}, {.id = "KeyS", .modifiers = std::nullopt}};
+	map.keyboard["left"] = {{.id = "ArrowLeft", .modifiers = std::nullopt}, {.id = "KeyA", .modifiers = std::nullopt}};
+	map.keyboard["right"] = {{.id = "ArrowRight", .modifiers = std::nullopt}, {.id = "KeyD", .modifiers = std::nullopt}};
+	map.keyboard["a"] = {{.id = "KeyZ", .modifiers = std::nullopt}, {.id = "Space", .modifiers = std::nullopt}};
+	map.keyboard["b"] = {{.id = "KeyX", .modifiers = std::nullopt}};
+	map.keyboard["x"] = {{.id = "KeyC", .modifiers = std::nullopt}};
+	map.keyboard["y"] = {{.id = "KeyV", .modifiers = std::nullopt}};
+	map.keyboard["l1"] = {{.id = "KeyQ", .modifiers = std::nullopt}};
+	map.keyboard["r1"] = {{.id = "KeyE", .modifiers = std::nullopt}};
+	map.keyboard["start"] = {{.id = "Enter", .modifiers = std::nullopt}};
+	map.keyboard["select"] = {{.id = "Escape", .modifiers = std::nullopt}};
 	
 	// Gamepad mappings (direct 1:1)
-	map.gamepad["up"] = {{.id = "up"}};
-	map.gamepad["down"] = {{.id = "down"}};
-	map.gamepad["left"] = {{.id = "left"}};
-	map.gamepad["right"] = {{.id = "right"}};
-	map.gamepad["a"] = {{.id = "a"}};
-	map.gamepad["b"] = {{.id = "b"}};
-	map.gamepad["x"] = {{.id = "x"}};
-	map.gamepad["y"] = {{.id = "y"}};
-	map.gamepad["l1"] = {{.id = "l1"}};
-	map.gamepad["r1"] = {{.id = "r1"}};
-	map.gamepad["l2"] = {{.id = "l2"}};
-	map.gamepad["r2"] = {{.id = "r2"}};
-	map.gamepad["start"] = {{.id = "start"}};
-	map.gamepad["select"] = {{.id = "select"}};
+	map.gamepad["up"] = {{.id = "up", .threshold = std::nullopt}};
+	map.gamepad["down"] = {{.id = "down", .threshold = std::nullopt}};
+	map.gamepad["left"] = {{.id = "left", .threshold = std::nullopt}};
+	map.gamepad["right"] = {{.id = "right", .threshold = std::nullopt}};
+	map.gamepad["a"] = {{.id = "a", .threshold = std::nullopt}};
+	map.gamepad["b"] = {{.id = "b", .threshold = std::nullopt}};
+	map.gamepad["x"] = {{.id = "x", .threshold = std::nullopt}};
+	map.gamepad["y"] = {{.id = "y", .threshold = std::nullopt}};
+	map.gamepad["l1"] = {{.id = "l1", .threshold = std::nullopt}};
+	map.gamepad["r1"] = {{.id = "r1", .threshold = std::nullopt}};
+	map.gamepad["l2"] = {{.id = "l2", .threshold = std::nullopt}};
+	map.gamepad["r2"] = {{.id = "r2", .threshold = std::nullopt}};
+	map.gamepad["start"] = {{.id = "start", .threshold = std::nullopt}};
+	map.gamepad["select"] = {{.id = "select", .threshold = std::nullopt}};
 	
 	return map;
 }

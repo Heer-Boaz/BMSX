@@ -2,6 +2,7 @@
 
 #include "cpu.h"
 #include "vm_io.h"
+#include "../core/types.h"
 #include <functional>
 #include <memory>
 #include <optional>
@@ -46,6 +47,7 @@ struct Viewport {
 struct VMRuntimeOptions {
 	int playerIndex = 1;
 	Viewport viewport{256, 224};
+	CanonicalizationType canonicalization = CanonicalizationType::None;
 };
 
 /**
@@ -215,6 +217,8 @@ public:
 	 */
 	void registerNativeFunction(const std::string& name, NativeFunctionInvoke fn);
 
+	void setCanonicalization(CanonicalizationType canonicalization);
+
 private:
 	enum class PendingCall {
 		None,
@@ -229,11 +233,13 @@ private:
 	void executeUpdateCallback(double deltaSeconds);
 	void executeDrawCallback();
 	Value requireVmModule(const std::string& moduleName);
+	std::vector<Value> callEngineModuleMember(const std::string& name, const std::vector<Value>& args);
 	std::regex buildLuaPatternRegex(const std::string& pattern) const;
 	std::string translateLuaPatternEscape(char token, bool inClass) const;
 	std::string vmToString(const Value& value) const;
 	double nextVmRandom();
 	std::string formatVmString(const std::string& templateStr, const std::vector<Value>& args, size_t argStart) const;
+	std::string canonicalizeIdentifier(const std::string& value) const;
 
 	static VMRuntime* s_instance;
 	static constexpr int UPDATE_STATEMENT_BUDGET = 1'000'000;
@@ -249,6 +255,7 @@ private:
 	// Configuration
 	int m_playerIndex = 1;
 	Viewport m_viewport{256, 224};
+	CanonicalizationType m_canonicalization = CanonicalizationType::None;
 
 	// State flags
 	bool m_vmInitialized = false;

@@ -163,6 +163,7 @@ struct RomManifest {
 
     i32 viewportWidth = 256;
     i32 viewportHeight = 224;
+	CanonicalizationType canonicalization = CanonicalizationType::None;
 
     std::string entryPoint;  // Main Lua file
 };
@@ -192,6 +193,7 @@ public:
     // Project metadata
     std::string projectRootPath;
     RomManifest manifest;
+	CanonicalizationType canonicalization = CanonicalizationType::None;
 
     // Asset access
     ImgAsset* getImg(const AssetId& id);

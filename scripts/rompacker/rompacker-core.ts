@@ -1477,11 +1477,28 @@ export async function generateRomAssets(resources: Resource[], reportProgress?: 
 	return romAssets;
 }
 
-export function appendVmProgramAsset(assetList: RomAsset[], manifest: RomManifest): void {
+export function appendVmProgramAsset(assetList: RomAsset[], manifest: RomManifest, options: { extraLuaAssets?: RomAsset[] } = {}): void {
 	if (assetList.some(asset => asset.resid === VM_PROGRAM_ASSET_ID)) {
 		return;
 	}
-	const luaAssets = assetList.filter(asset => asset.type === 'lua');
+	const baseLuaAssets = assetList.filter(asset => asset.type === 'lua');
+	const luaAssets = baseLuaAssets.slice();
+	const extraLuaAssets = options.extraLuaAssets ?? [];
+	if (extraLuaAssets.length > 0) {
+		const seenPaths = new Set<string>();
+		for (const asset of baseLuaAssets) {
+			const path = asset.normalized_source_path ?? asset.source_path;
+			seenPaths.add(path);
+		}
+		for (const asset of extraLuaAssets) {
+			const path = asset.normalized_source_path ?? asset.source_path;
+			if (seenPaths.has(path)) {
+				continue;
+			}
+			seenPaths.add(path);
+			luaAssets.push(asset);
+		}
+	}
 	if (luaAssets.length === 0) {
 		return;
 	}
