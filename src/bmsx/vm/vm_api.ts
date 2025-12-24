@@ -188,6 +188,37 @@ export class BmsxVMApi {
 		this.renderBackend.sprite(submission);
 	}
 
+	public put_glyphs(glyphs: string | string[], x: number, y: number, z: number, options?: {
+		font?: VMFont;
+		color?: number | color;
+		background_color?: number | color;
+		wrap_chars?: number;
+		center_block_width?: number;
+		glyph_start?: number;
+		glyph_end?: number;
+		align?: CanvasTextAlign;
+		baseline?: CanvasTextBaseline;
+		layer?: RenderLayer;
+	}): void {
+		const submission: GlyphRenderSubmission = {
+			glyphs,
+			x,
+			y,
+			z,
+			font: options?.font,
+			color: options?.color !== undefined ? this.resolve_color(options.color) : undefined,
+			background_color: options?.background_color !== undefined ? this.resolve_color(options.background_color) : undefined,
+			wrap_chars: options?.wrap_chars,
+			center_block_width: options?.center_block_width,
+			glyph_start: options?.glyph_start,
+			glyph_end: options?.glyph_end,
+			align: options?.align,
+			baseline: options?.baseline,
+			layer: options?.layer,
+		};
+		this.renderBackend.glyphs(submission);
+	}
+
 	public put_poly(points: Polygon, z: number, colorindex: number, thickness?: number, layer?: RenderLayer): void {
 		const submission: PolyRenderSubmission = {
 			points,

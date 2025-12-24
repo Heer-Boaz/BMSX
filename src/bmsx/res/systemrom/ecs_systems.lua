@@ -334,13 +334,16 @@ function textrendersystem:update(world)
 			y = t.position.y + offset.y
 			z = t.position.z + offset.z
 		end
-		if tc.font and type(tc.color) == "number" then
-			write_with_font(tc.text, x, y, z, tc.color, tc.font)
-		elseif type(tc.color) == "table" then
-			write_color(tc.text, x, y, z, tc.color)
-		else
-			write(tc.text, x, y, z, tc.color)
-		end
+		put_glyphs(tc.text, x, y, z, {
+			font = tc.font,
+			color = tc.color,
+			background_color = tc.background_color,
+			wrap_chars = tc.wrap_chars,
+			center_block_width = tc.center_block_width,
+			align = tc.align,
+			baseline = tc.baseline,
+			layer = tc.layer,
+		})
 		::continue::
 	end
 end

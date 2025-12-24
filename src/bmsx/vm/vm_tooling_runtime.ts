@@ -335,7 +335,7 @@ export class BmsxVMRuntime {
 	private shortcutDisposers: Array<() => void> = [];
 	private globalInputUnsubscribe: SubscriptionHandle = null;
 	private luaInterpreter!: LuaInterpreter;
-	private static readonly UPDATE_STATEMENT_BUDGET = 10_000;
+	private static readonly UPDATE_STATEMENT_BUDGET = 1_000_000;
 	private vmInitClosure: Closure = null;
 	private vmNewGameClosure: Closure = null;
 	private vmUpdateClosure: Closure = null;
@@ -1052,22 +1052,20 @@ export class BmsxVMRuntime {
 			return;
 		}
 		try {
-			if (Object.values($.luaSources.path2lua).length > 0) {
-				if (this.pendingVmCall && this.pendingVmCall !== 'update') {
-					state.updateExecuted = true;
-					return;
+			if (this.pendingVmCall && this.pendingVmCall !== 'update') {
+				state.updateExecuted = true;
+				return;
+			}
+			if (this.vmUpdateClosure !== null) {
+				if (!this.pendingVmCall) {
+					this.cpu.call(this.vmUpdateClosure, [state.deltaSeconds], 0);
+					this.pendingVmCall = 'update';
 				}
-				if (this.vmUpdateClosure !== null) {
-					if (!this.pendingVmCall) {
-						this.cpu.call(this.vmUpdateClosure, [state.deltaSeconds], 0);
-						this.pendingVmCall = 'update';
-					}
-					const budget = BmsxVMRuntime.UPDATE_STATEMENT_BUDGET;
-					const result = this.cpu.run(budget);
-					this.processVmIo();
-					if (result === RunResult.Halted) {
-						this.pendingVmCall = null;
-					}
+				const budget = BmsxVMRuntime.UPDATE_STATEMENT_BUDGET;
+				const result = this.cpu.run(budget);
+				this.processVmIo();
+				if (result === RunResult.Halted) {
+					this.pendingVmCall = null;
 				}
 			}
 		} catch (error) {

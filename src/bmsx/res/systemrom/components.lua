@@ -267,6 +267,10 @@ function textcomponent.new(opts)
 	self.font = opts.font
 	self.color = opts.color or { r = 1, g = 1, b = 1, a = 1 }
 	self.background_color = opts.background_color
+	self.wrap_chars = opts.wrap_chars
+	self.center_block_width = opts.center_block_width
+	self.align = opts.align
+	self.baseline = opts.baseline
 	self.offset = opts.offset or { x = 0, y = 0, z = 0 }
 	self.layer = opts.layer or "world"
 	return self
@@ -379,13 +383,18 @@ function customvisualcomponent:submit_particle(desc)
 end
 
 function customvisualcomponent:submit_glyphs(desc)
-	if desc.font and type(desc.color) == "number" then
-		write_with_font(desc.glyphs, desc.x, desc.y, desc.z, desc.color, desc.font)
-	elseif type(desc.color) == "table" then
-		write_color(desc.glyphs, desc.x, desc.y, desc.z, desc.color)
-	else
-		write(desc.glyphs, desc.x, desc.y, desc.z, desc.color)
-	end
+	put_glyphs(desc.glyphs, desc.x, desc.y, desc.z, {
+		font = desc.font,
+		color = desc.color,
+		background_color = desc.background_color,
+		wrap_chars = desc.wrap_chars,
+		center_block_width = desc.center_block_width,
+		glyph_start = desc.glyph_start,
+		glyph_end = desc.glyph_end,
+		align = desc.align,
+		baseline = desc.baseline,
+		layer = desc.layer,
+	})
 end
 
 -- inputintentcomponent: declarative input -> state bindings
