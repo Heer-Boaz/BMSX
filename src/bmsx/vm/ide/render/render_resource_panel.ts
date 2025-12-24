@@ -2,7 +2,7 @@ import type { RectBounds } from '../../../rompack/rompack';
 import type { ResourcePanelController } from '../resource_panel_controller';
 import { Msx1Colors } from '../../../systems/msx';
 import { clamp } from '../../../utils/clamp';
-import { getActiveResourceViewer, getCodeAreaBounds, resourceViewerTextCapacity, resourceViewerImageLayout, ensureResourceViewerSprite, hideResourceViewerSprite } from '../vm_cart_editor';
+import { getActiveResourceViewer, getCodeAreaBounds, resourceViewerTextCapacity, resourceViewerImageLayout } from '../vm_cart_editor';
 import { resourceViewerClampScroll } from '../ide_input';
 import { ide_state } from '../ide_state';
 import { drawEditorText, drawEditorColoredText } from '../text_renderer';
@@ -166,10 +166,10 @@ export function drawResourceViewer(): void {
 	const layout = resourceViewerImageLayout(viewer);
 	let textTop = contentTop;
 	if (layout && viewer.image) {
-		ensureResourceViewerSprite(viewer.image.asset_id, { left: layout.left, top: layout.top, scale: layout.scale });
+		// ensureResourceViewerSprite(viewer.image.asset_id, { left: layout.left, top: layout.top, scale: layout.scale });
 		textTop = layout.bottom + ide_state.lineHeight;
 	} else {
-		hideResourceViewerSprite();
+		// hideResourceViewerSprite();
 	}
 	if (capacity <= 0) {
 		if (viewer.lines.length > 0) {

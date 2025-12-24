@@ -9,10 +9,12 @@ import {
 	type LuaCallExpression,
 	type LuaChunk,
 	type LuaExpression,
+	type LuaForGenericStatement,
 	type LuaFunctionExpression,
 	type LuaIdentifierExpression,
 	type LuaIfStatement,
 	type LuaIndexExpression,
+	type LuaLabelStatement,
 	type LuaLocalAssignmentStatement,
 	type LuaMemberExpression,
 	type LuaStatement,
@@ -20,6 +22,7 @@ import {
 	type LuaSourceRange,
 	type LuaTableConstructorExpression,
 	type LuaWhileStatement,
+	type LuaGotoStatement,
 } from '../lua/lua_ast';
 import { OpCode, type Program, type Proto, type UpvalueDesc, type Value, type SourceRange } from './cpu';
 import { IO_ARG0_OFFSET, IO_BUFFER_BASE, IO_COMMAND_STRIDE, IO_CMD_PRINT, IO_WRITE_PTR_ADDR } from './vm_io';
@@ -153,8 +156,10 @@ const buildModuleProtoId = (moduleId: string): string => `${buildModuleRootId(mo
 const buildAnonymousHint = (range: LuaSourceRange): string =>
 	`anon:${range.start.line}:${range.start.column}:${range.end.line}:${range.end.column}`;
 
-const buildProtoId = (parentId: string, hint: string | null, range: LuaSourceRange): string =>
-	`${parentId}/${hint ?? buildAnonymousHint(range)}`;
+const buildProtoId = (parentId: string, hint: string | null, range: LuaSourceRange): string => {
+	if (!hint) throw new Error('Proto hint is required and defensive programming is not allowed.');
+	return `${parentId}/${hint ?? buildAnonymousHint(range)}`;
+}
 
 class FunctionBuilder {
 	private readonly program: ProgramBuilder;
@@ -168,6 +173,8 @@ class FunctionBuilder {
 	private readonly upvalueDescs: UpvalueDesc[] = [];
 	private readonly upvalueMap = new Map<string, number>();
 	private readonly loopStack: LoopContext[] = [];
+	private readonly labelPositions = new Map<string, number>();
+	private readonly pendingLabelJumps = new Map<string, number[]>();
 	private currentRange: SourceRange | null = null;
 	private localCount = 0;
 	private tempTop = 0;
@@ -189,6 +196,7 @@ class FunctionBuilder {
 		}
 		this.popScope();
 		this.withRange(chunk.range, () => this.emitDefaultReturn());
+		this.finalizeLabels();
 	}
 
 	public compileFunctionExpression(expression: LuaFunctionExpression, implicitSelf: boolean): void {
@@ -205,17 +213,7 @@ class FunctionBuilder {
 		}
 		this.popScope();
 		this.withRange(expression.range, () => this.emitDefaultReturn());
-	}
-
-	public buildProto(entryPC = 0, numParams = 0, isVararg = false): Proto {
-		return {
-			entryPC,
-			codeLen: this.code.length,
-			numParams,
-			isVararg,
-			maxStack: this.maxStack,
-			upvalueDescs: this.upvalueDescs,
-		};
+		this.finalizeLabels();
 	}
 
 	public getCode(): Uint32Array {
@@ -232,10 +230,6 @@ class FunctionBuilder {
 
 	public getMaxStack(): number {
 		return this.maxStack;
-	}
-
-	public getLocalCount(): number {
-		return this.localCount;
 	}
 
 	private pushScope(): void {
@@ -256,6 +250,14 @@ class FunctionBuilder {
 
 	private resetTemps(): void {
 		this.tempTop = this.localCount;
+	}
+
+	private finalizeLabels(): void {
+		if (this.pendingLabelJumps.size === 0) {
+			return;
+		}
+		const labels = Array.from(this.pendingLabelJumps.keys()).sort();
+		throw new Error(`Missing label(s): ${labels.join(', ')}`);
 	}
 
 	private declareLocal(name: string): number {
@@ -419,6 +421,9 @@ class FunctionBuilder {
 				case LuaSyntaxKind.ForNumericStatement:
 					this.compileForNumeric(statement);
 					return;
+				case LuaSyntaxKind.ForGenericStatement:
+					this.compileForGeneric(statement as LuaForGenericStatement);
+					return;
 				case LuaSyntaxKind.DoStatement:
 					this.pushScope();
 					for (let i = 0; i < statement.block.body.length; i += 1) {
@@ -436,8 +441,14 @@ class FunctionBuilder {
 				case LuaSyntaxKind.FunctionDeclarationStatement:
 					this.compileFunctionDeclaration(statement);
 					return;
+				case LuaSyntaxKind.GotoStatement:
+					this.compileGoto(statement as LuaGotoStatement);
+					return;
+				case LuaSyntaxKind.LabelStatement:
+					this.compileLabel(statement as LuaLabelStatement);
+					return;
 				default:
-					throw new Error(`Unsupported statement kind: ${statement.kind}`);
+					throw new Error(`Unsupported statement kind: ${(statement as LuaStatement).kind}`);
 			}
 		});
 	}
@@ -753,6 +764,97 @@ class FunctionBuilder {
 			this.patchJump(ctx.breakJumps[i], this.code.length);
 		}
 		this.popScope();
+	}
+
+	private compileForGeneric(statement: LuaForGenericStatement): void {
+		this.pushScope();
+		const valueTargets: Array<ReadonlyArray<string> | null> = new Array(statement.iterators.length).fill(null);
+		const iteratorValues = this.compileAssignmentValues(statement.iterators, 3, valueTargets);
+		const iteratorReg = this.allocLocal();
+		const stateReg = this.allocLocal();
+		const controlReg = this.allocLocal();
+		const iteratorDefaults = [iteratorReg, stateReg, controlReg];
+		for (let i = 0; i < iteratorDefaults.length; i += 1) {
+			const targetReg = iteratorDefaults[i];
+			const valueReg = iteratorValues[i];
+			if (valueReg !== undefined) {
+				this.emitABC(OpCode.MOV, targetReg, valueReg, 0);
+			} else {
+				this.emitLoadNil(targetReg, 1);
+			}
+		}
+
+		const loopVars: number[] = [];
+		for (let i = 0; i < statement.variables.length; i += 1) {
+			loopVars.push(this.declareLocal(statement.variables[i].name));
+		}
+
+		const resultCount = loopVars.length;
+		const argCount = 2;
+		const callBlockSize = Math.max(resultCount, argCount + 1);
+		const callBase = this.allocTempBlock(callBlockSize);
+		const loopStart = this.code.length;
+		this.emitABC(OpCode.MOV, callBase, iteratorReg, 0);
+		this.emitABC(OpCode.MOV, callBase + 1, stateReg, 0);
+		this.emitABC(OpCode.MOV, callBase + 2, controlReg, 0);
+		this.emitABC(OpCode.CALL, callBase, argCount, resultCount);
+
+		const nilConst = this.program.constIndex(null);
+		const nilOperand = this.encodeConstOperand(nilConst);
+		this.emitABC(OpCode.EQ, 1, callBase, nilOperand);
+		const jumpOut = this.emitJumpPlaceholder();
+
+		for (let i = 0; i < loopVars.length; i += 1) {
+			this.emitABC(OpCode.MOV, loopVars[i], callBase + i, 0);
+		}
+		this.emitABC(OpCode.MOV, controlReg, loopVars[0], 0);
+
+		const ctx: LoopContext = { breakJumps: [] };
+		this.loopStack.push(ctx);
+		for (let i = 0; i < statement.block.body.length; i += 1) {
+			this.compileStatement(statement.block.body[i]);
+			this.resetTemps();
+		}
+		this.loopStack.pop();
+		this.emitAsBx(OpCode.JMP, 0, loopStart - (this.code.length + 1));
+		this.patchJump(jumpOut, this.code.length);
+		for (let i = 0; i < ctx.breakJumps.length; i += 1) {
+			this.patchJump(ctx.breakJumps[i], this.code.length);
+		}
+		this.popScope();
+	}
+
+	private compileGoto(statement: LuaGotoStatement): void {
+		const label = statement.label;
+		const target = this.labelPositions.get(label);
+		const jumpIndex = this.emitJumpPlaceholder();
+		if (target !== undefined) {
+			this.patchJump(jumpIndex, target);
+			return;
+		}
+		let jumps = this.pendingLabelJumps.get(label);
+		if (!jumps) {
+			jumps = [];
+			this.pendingLabelJumps.set(label, jumps);
+		}
+		jumps.push(jumpIndex);
+	}
+
+	private compileLabel(statement: LuaLabelStatement): void {
+		const label = statement.label;
+		if (this.labelPositions.has(label)) {
+			throw new Error(`Duplicate label '${label}'.`);
+		}
+		const target = this.code.length;
+		this.labelPositions.set(label, target);
+		const jumps = this.pendingLabelJumps.get(label);
+		if (!jumps) {
+			return;
+		}
+		for (let i = 0; i < jumps.length; i += 1) {
+			this.patchJump(jumps[i], target);
+		}
+		this.pendingLabelJumps.delete(label);
 	}
 
 	private compileBreak(): void {

@@ -2,32 +2,6 @@ import type { LuaFunctionValue } from '../lua/luavalue';
 import type { asset_id, CanonicalizationType, Viewport } from '../rompack/rompack';
 import { LuaEntrySnapshot } from './lua_js_bridge';
 
-export const enum BmsxVMPointerButton {
-	Primary = 0,
-	Secondary = 1,
-	Auxiliary = 2,
-	Back = 3,
-	Forward = 4,
-}
-
-export type VMPointerVector = {
-	x: number;
-	y: number;
-	valid: boolean;
-};
-
-export type VMPointerViewport = {
-	x: number;
-	y: number;
-	valid: boolean;
-	inside: boolean;
-};
-
-export type VMPointerWheel = {
-	value: number;
-	valid: boolean;
-};
-
 export type VMResourceDescriptor = {
 	path: string;
 	type: string;

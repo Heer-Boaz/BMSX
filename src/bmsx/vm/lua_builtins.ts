@@ -1,5 +1,4 @@
 import { $ } from '../core/engine_core';
-import { Input } from '../input/input';
 import { InputMap } from '../input/inputtypes';
 import { LuaEnvironment } from '../lua/luaenvironment';
 import { LuaError, LuaRuntimeError, LuaSyntaxError } from '../lua/luaerrors';
@@ -8,7 +7,7 @@ import { extractErrorMessage, LuaNativeValue } from '../lua/luavalue';
 import { isLuaTable, LuaTable, LuaValue } from '../lua/luavalue';
 import { arrayify } from '../utils/arrayify';
 import { VM_API_METHOD_METADATA } from './vm_api_metadata';
-import { api, BmsxVMRuntime, VM_BUTTON_ACTIONS } from './vm_tooling_runtime';
+import { api, BmsxVMRuntime } from './vm_tooling_runtime';
 import type { VMLuaBuiltinDescriptor } from './types';
 
 export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<VMLuaBuiltinDescriptor> = [
@@ -84,93 +83,13 @@ export function registerApiBuiltins(interpreter: LuaInterpreter): void {
 	runtime.apiFunctionNames.clear();
 
 	const env = interpreter.globalEnvironment;
-	const resolveButtonAction = (value: LuaValue, fnName: string): string => {
-		if (typeof value !== 'number' || Number.isNaN(value)) {
-			throw runtime.createApiRuntimeError(`${fnName}(button [, player]) expects a numeric button index.`);
-		}
-		const index = Math.trunc(value);
-		if (index < 0 || index >= VM_BUTTON_ACTIONS.length) {
-			throw runtime.createApiRuntimeError(`${fnName}(button [, player]) button index must be between 0 and ${VM_BUTTON_ACTIONS.length - 1}.`);
-		}
-		return VM_BUTTON_ACTIONS[index];
-	};
-
-	const resolvePlayerIndex = (value: LuaValue, fnName: string): number => {
-		if (value === undefined || value === null) {
-			throw runtime.createApiRuntimeError(`${fnName}(button [, player]) expects the optional player index to be numeric.`);
-		}
-		if (typeof value !== 'number' || Number.isNaN(value)) {
-			throw runtime.createApiRuntimeError(`${fnName}(button [, player]) expects the optional player index to be numeric.`);
-		}
-		const normalized = Math.trunc(value);
-		if (normalized < 0) {
-			throw runtime.createApiRuntimeError(`${fnName}(button [, player]) player index cannot be negative.`);
-		}
-		return normalized + 1;
-	};
-
-	const registerButtonFunction = (fnName: 'btn' | 'btnp' | 'btnr', modifier: string) => {
-		const native = new LuaNativeFunction(fnName, (args) => {
-			if (args.length === 0) {
-				throw runtime.createApiRuntimeError(`${fnName}(button [, player]) requires at least one argument.`);
-			}
-			const action = resolveButtonAction(args[0], fnName);
-			const playerIndex = resolvePlayerIndex(args.length >= 2 ? args[1] : undefined, fnName);
-			let hasBinding = false;
-			try {
-				const playerInput = Input.instance.getPlayerInput(playerIndex);
-				const inputMap = playerInput.inputMap;
-				if (inputMap) {
-					const keyboardBindings = inputMap.keyboard?.[action];
-					const gamepadBindings = inputMap.gamepad?.[action];
-					const pointerBindings = inputMap.pointer?.[action];
-					hasBinding = Boolean(
-						(keyboardBindings && keyboardBindings.length > 0) ||
-						(gamepadBindings && gamepadBindings.length > 0) ||
-						(pointerBindings && pointerBindings.length > 0)
-					);
-				}
-			} catch {
-				hasBinding = false;
-				throw runtime.createApiRuntimeError(`${fnName}(button [, player]) expects a valid input mapping to be defined.`);
-			}
-			if (!hasBinding) {
-				return [false];
-			}
-			const actionDefinition = `${action}${modifier}`;
-			try {
-				const triggered = api.action_triggered(actionDefinition, playerIndex);
-				return [triggered];
-			} catch (error) {
-				if (error instanceof Error && /unknown actions/i.test(error.message)) {
-					throw runtime.createApiRuntimeError(`${fnName}(button [, player]) unknown action '${actionDefinition}'`);
-				}
-				throw error;
-			}
-		});
-		registerLuaGlobal(env, fnName, native);
-		registerLuaBuiltin({
-			name: fnName,
-			params: ['button', 'player?'],
-			signature: `${fnName}(button [, player])`,
-			parameterDescriptions: [
-				'Button index (0=left,1=right,2=up,3=down,4=O,5=X).',
-				'Optional player index (0-based).',
-			],
-		});
-	};
-
-	registerButtonFunction('btn', '[p]');
-	registerButtonFunction('btnp', '[gp]');
-	registerButtonFunction('btnr', '[jr]');
-
 	const setInputMapNative = new LuaNativeFunction('set_input_map', (args) => {
 		if (args.length === 0 || !isLuaTable(args[0])) {
 			throw runtime.createApiRuntimeError('set_input_map(mapping [, player]) requires a table as the first argument.');
 		}
 		const mappingTable = args[0] as LuaTable;
 		const targetPlayer = args.length >= 2
-			? resolvePlayerIndex(args[1], 'set_input_map')
+			? Number(args[1])
 			: runtime.playerIndex;
 		const moduleId = $.luaSources.path2lua[runtime.currentPath].source_path;
 		const marshalCtx = { moduleId, path: [] };
@@ -209,14 +128,6 @@ export function registerApiBuiltins(interpreter: LuaInterpreter): void {
 			continue;
 		}
 		if (kind === 'method') {
-			switch (name) {
-				case 'btn':
-				case 'btnp':
-				case 'btnr':
-				case 'set_input_map':
-					// Already registered above
-					continue;
-			}
 			const callable = descriptor.value;
 			if (typeof callable !== 'function') {
 				throw runtime.createApiRuntimeError(`API method '${name}' is not callable.`);
@@ -315,20 +226,16 @@ export function registerLuaBuiltin(metadata: VMLuaBuiltinDescriptor): void {
 	for (let index = 0; index < sourceParams.length; index += 1) {
 		const raw = sourceParams[index];
 		const description = index < sourceDescriptions.length ? sourceDescriptions[index] : null;
-		if (typeof raw !== 'string') {
+		if (typeof raw !== 'string' || raw.trim().length === 0) {
 			throw new Error(`Invalid Lua builtin parameter at index ${index} for '${normalizedName}'.`);
 		}
-		const trimmed = raw.trim();
-		if (trimmed.length === 0) {
-			throw new Error(`Invalid Lua builtin parameter at index ${index} for '${normalizedName}'.`);
-		}
-		if (trimmed === '...' || trimmed.endsWith('...')) {
-			params.push(trimmed);
+		if (raw === '...' || raw.endsWith('...')) {
+			params.push(raw);
 			normalizedDescriptions.push(description);
 			continue;
 		}
-		if (trimmed.endsWith('?')) {
-			const base = trimmed.slice(0, -1);
+		if (raw.endsWith('?')) {
+			const base = raw.slice(0, -1);
 			if (base.length > 0) {
 				params.push(base);
 				normalizedDescriptions.push(description);
@@ -336,7 +243,7 @@ export function registerLuaBuiltin(metadata: VMLuaBuiltinDescriptor): void {
 			}
 			continue;
 		}
-		params.push(trimmed);
+		params.push(raw);
 		normalizedDescriptions.push(description);
 	}
 	if (Array.isArray(metadata.optionalParams)) {
@@ -479,14 +386,9 @@ export function isLuaScriptError(error: unknown): error is LuaError | LuaRuntime
 
 function exposeEngineObjects(env: LuaEnvironment): void {
 	const entries: Array<[string, any]> = [
-		['world', $.world],
-		['game', $],
 		['$', $],
-		['registry', $.registry],
-		['assets', $.assets],
 	];
 	for (const [name, object] of entries) {
-		// const luaValue = BmsxVMRuntime.instance.luaJsBridge.jsToLua(object);
 		registerLuaGlobal(env, name, new LuaNativeValue(object));
 	}
 }

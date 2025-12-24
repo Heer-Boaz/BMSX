@@ -13,7 +13,6 @@ import { drawEditorText } from './text_renderer';
 import { Msx1Colors } from '../../systems/msx';
 import { EventEmitter, type ListenerSet } from '../../core/eventemitter';
 import { Registry } from '../../core/registry';
-import { SpriteComponent } from '../../component/sprite_component';
 import { renderCodeArea } from './render/render_code_area';
 import { clamp } from '../../utils/clamp';
 import { CompletionController } from './completion_controller';
@@ -1380,7 +1379,7 @@ export function draw(): void {
 	if (isResourceViewActive()) {
 		drawResourceViewer();
 	} else {
-		hideResourceViewerSprite();
+		// hideResourceViewerSprite();
 		drawCreateResourceBar();
 		drawSearchBar();
 		renderResourceSearchBar();
@@ -4101,60 +4100,6 @@ export function resourceViewerTextCapacity(viewer: ResourceViewerState): number 
 	}
 	const availableHeight = Math.max(0, bounds.codeBottom - textTop);
 	return Math.max(0, Math.floor(availableHeight / ide_state.lineHeight));
-}
-
-export function ensureResourceViewerSprite(asset_id: string, layout: { left: number; top: number; scale: number }): void {
-	if (!ide_state.resourceViewerSpriteId) {
-		ide_state.resourceViewerSpriteId = 'resource_viewer_sprite';
-	}
-	const spriteId = ide_state.resourceViewerSpriteId;
-	let object = api.world_object(spriteId);
-	// if (!object) {
-	// 	api.spawn_object('WorldObject', {
-	// 		id: spriteId,
-	// 		position: { x: layout.left, y: layout.top, z: 0 },
-	// 		components: [
-	// 			{
-	// 				class: 'SpriteComponent',
-	// 				options: {
-	// 					id_local: 'viewer_sprite',
-	// 					imgid: asset_id,
-	// 					layer: 'ui',
-	// 				},
-	// 			},
-	// 		],
-	// 	});
-	// 	object = api.world_object(spriteId);
-	// }
-	if (!object) {
-		return;
-	}
-	const sprite = object.get_component_by_local_id(SpriteComponent, 'viewer_sprite');
-	if (!sprite) {
-		return;
-	}
-	if (ide_state.resourceViewerSpriteAsset !== asset_id) {
-		sprite.imgid = asset_id;
-		ide_state.resourceViewerSpriteAsset = asset_id;
-	}
-	if (ide_state.resourceViewerSpriteScale !== layout.scale) {
-		sprite.scale.x = layout.scale;
-		sprite.scale.y = layout.scale;
-		ide_state.resourceViewerSpriteScale = layout.scale;
-	}
-	object.x = layout.left;
-	object.y = layout.top;
-	object.visible = true;
-}
-
-export function hideResourceViewerSprite(): void {
-	if (!ide_state.resourceViewerSpriteId) {
-		return;
-	}
-	const object = api.world_object(ide_state.resourceViewerSpriteId);
-	if (object) {
-		object.visible = false;
-	}
 }
 
 export function recordEditContext(kind: 'insert' | 'delete' | 'replace', text: string): void {

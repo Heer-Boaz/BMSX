@@ -14,26 +14,10 @@ import type {
 import { Msx1Colors } from '../systems/msx';
 import { VMFont } from './font';
 import { BmsxVMStorage } from './storage';
-import { BmsxVMPointerButton, VMPointerVector, VMPointerViewport, VMPointerWheel } from './types';
 import type { RandomModulationParams, ModulationParams, SoundMasterPlayRequest } from '../audio/soundmaster';
-import type { ConcreteOrAbstractConstructor, Identifier, Native, Registerable, Polygon, vec3arr } from '../rompack/rompack';
-import type { World } from '../core/world';
-import { Service } from '../core/service';
-import type { EventPayload } from '../core/eventemitter';
-import { EventTimeline } from '../core/eventtimeline';
-import { WorldObject } from '../core/object/worldobject';
-import type { StateMachineBlueprint } from '../fsm/fsmtypes';
+import type { Polygon, vec3arr } from '../rompack/rompack';
 import { taskGate, GateGroup } from '../core/taskgate';
-import { buildFSMDefinition } from '../fsm/fsmlibrary';
 import { VMRenderFacade } from './vm_render_facade';
-import { ActionEffectComponent } from '../component/actioneffectcomponent';
-import type { ActionEffectDefinition } from '../action_effects/effect_types';
-import { instantiateBehaviorTree, behaviorTreeExists, Blackboard, type BehaviorTreeID, type ConstructorWithBTProperty, BehaviorTreeDefinition } from '../ai/behaviourtree';
-import { Component, ComponentTypenameToCtor, type ComponentAttachOptions } from '../component/basecomponent';
-import { ActionEffectRegistry, RegisterEffectOptions } from '../action_effects/effect_registry';
-import { SpriteObject } from '../core/object/sprite';
-import { TextObject } from '../core/object/textobject';
-import { Timeline, TimelineDefinition } from '../timeline/timeline';
 import { BmsxVMRuntime } from './vm_tooling_runtime';
 
 type AudioPlayOptions = RandomModulationParams | ModulationParams | SoundMasterPlayRequest;
@@ -45,40 +29,11 @@ export type BmsxVMApiOptions = {
 
 const VM_TAB_SPACES = 2;
 
-const POINTER_ACTIONS: readonly string[] = [
-	'pointer_primary',
-	'pointer_secondary',
-	'pointer_aux',
-	'pointer_back',
-	'pointer_forward',
-] as const;
-
-const excludedClassAddonKeys = new Set(['def_id', 'class', 'defaults', 'metatable', 'constructor', 'prototype', 'super', '__index']);
-
-type VmExtendedClass<TBase extends ConcreteOrAbstractConstructor<any>> =
-	TBase & Native & {
-		def_id: Identifier; // Id of the definition this class was registered with
-		class?: (Partial<TBase extends new (...args: any) => infer R ? R : TBase extends abstract new (...args: any) => infer R ? R : any> & Record<string, unknown>); // Script class addons applied to native instances.
-		defaults?: Record<string, any>; // Default property values to apply when constructing instances of this class. Will not include addon methods/properties and is separate from 'class' to avoid polluting the prototype with instance data. In addition, class addons are applied after defaults so that addons can set default values for properties defined in scripts.
-	};
-
-type EntityExtensions = VmExtendedClass<typeof WorldObject | typeof SpriteObject | typeof Component | typeof Service> & {
-	fsms?: Identifier[];
-	components?: string[];
-	effects?: string[];
-	bts?: BehaviorTreeID[];
-};
-
-// (removed AnyFunction alias - no longer used)
-
 export class BmsxVMApi {
 	private readonly playerindex: number;
 	private readonly storage: BmsxVMStorage;
 	private readonly font: VMFont;
 	private readonly defaultPrintColorIndex = 15;
-	private readonly serviceExts = new Map<string, EntityExtensions>();
-	private readonly worldObjectExts = new Map<string, EntityExtensions>();
-	private readonly componentExts = new Map<string, EntityExtensions>();
 	private textCursorX = 0;
 	private textCursorY = 0;
 	private textCursorHomeX = 0;
@@ -101,42 +56,12 @@ export class BmsxVMApi {
 		this.reset_print_cursor();
 	}
 
-	/**
-	 * Apply script class addons to a constructed instance.
-	 *
-	 * Filters out reserved keys and attaches the remaining properties to the
-	 * instance as Lua-only dynamic fields.
-	 */
-	private applyClassAddons<T extends object>(instance: T, classTable?: Partial<T> & Record<string, unknown>): void {
-		if (!classTable) return;
-		const target = instance as Record<string, unknown>;
-		for (const [key, value] of Object.entries(classTable)) {
-			if (excludedClassAddonKeys.has(key)) continue;
-			target[key] = value;
-		}
-	}
-
 	public display_width(): number {
 		return $.view.viewportSize.x;
 	}
 
 	public display_height(): number {
 		return $.view.viewportSize.y;
-	}
-
-	public mousebtn(button: BmsxVMPointerButton): boolean {
-		const state = this.get_player_input().getActionState(this.pointer_action(button));
-		return state.pressed;
-	}
-
-	public mousebtnp(button: BmsxVMPointerButton): boolean {
-		const state = this.get_player_input().getActionState(this.pointer_action(button));
-		return state.guardedjustpressed;
-	}
-
-	public mousebtnr(button: BmsxVMPointerButton): boolean {
-		const state = this.get_player_input().getActionState(this.pointer_action(button));
-		return state.justreleased;
 	}
 
 	public get keyboard() {
@@ -151,80 +76,41 @@ export class BmsxVMApi {
 		return playerInput;
 	}
 
-	private pointer_action(button: BmsxVMPointerButton): string {
-		const action = POINTER_ACTIONS[button];
-		if (!action) {
-			throw new Error(`Pointer button index ${button} outside supported range 0-${POINTER_ACTIONS.length - 1}.`);
-		}
-		return action;
-	}
-
-	public mousepos(): VMPointerViewport {
-		return this.pointer_viewport_position();
-	}
-
-	public pointer_screen_position(): VMPointerVector {
-		const state = this.get_player_input().getActionState('pointer_position');
-		const coords = state.value2d;
-		if (!coords) {
-			return { x: 0, y: 0, valid: false };
-		}
-		return { x: coords[0], y: coords[1], valid: true };
-	}
-
-	public pointer_delta(): VMPointerVector {
-		const state = this.get_player_input().getActionState('pointer_delta');
-		const delta = state.value2d;
-		if (!delta) {
-			return { x: 0, y: 0, valid: false };
-		}
-		return { x: delta[0], y: delta[1], valid: true };
-	}
-
-	public pointer_viewport_position(): VMPointerViewport {
-		return this.pointer_viewport_position_internal();
-	}
-
-	public mousewheel(): VMPointerWheel {
-		const state = this.get_player_input().getActionState('pointer_wheel');
-		const value = typeof state.value === 'number' ? state.value : 0;
-		const valid = typeof state.value === 'number';
-		return { value, valid };
-	}
-
 	public stat(index: number): number {
 		if (!Number.isFinite(index)) {
 			throw new Error('stat index must be finite.');
 		}
-		const value = Math.trunc(index);
-		switch (value) {
-			case 32: {
-				const viewport = this.pointer_viewport_position_internal();
-				if (!viewport.valid) {
-					return 0;
-				}
-				return Math.floor(viewport.x);
-			}
-			case 33: {
-				const viewport = this.pointer_viewport_position_internal();
-				if (!viewport.valid) {
-					return 0;
-				}
-				return Math.floor(viewport.y);
-			}
-			case 34: {
-				return this.compute_pointer_button_mask();
-			}
-			case 36: {
-				const wheel = this.mousewheel();
-				if (!wheel.valid) {
-					return 0;
-				}
-				return Math.floor(wheel.value);
-			}
-			default:
-				return 0;
-		}
+		throw new Error('stat is not implemented.');
+
+		// const value = Math.trunc(index);
+		// switch (value) {
+		// 	case 32: {
+		// 		const viewport = this.pointer_viewport_position_internal();
+		// 		if (!viewport.valid) {
+		// 			return 0;
+		// 		}
+		// 		return Math.floor(viewport.x);
+		// 	}
+		// 	case 33: {
+		// 		const viewport = this.pointer_viewport_position_internal();
+		// 		if (!viewport.valid) {
+		// 			return 0;
+		// 		}
+		// 		return Math.floor(viewport.y);
+		// 	}
+		// 	case 34: {
+		// 		return this.compute_pointer_button_mask();
+		// 	}
+		// 	case 36: {
+		// 		const wheel = this.mousewheel();
+		// 		if (!wheel.valid) {
+		// 			return 0;
+		// 		}
+		// 		return Math.floor(wheel.value);
+		// 	}
+		// 	default:
+		// 		return 0;
+		// }
 	}
 
 	public cls(colorindex: number = 0): void {
@@ -447,327 +333,6 @@ export class BmsxVMApi {
 		$.sndmaster.resume();
 	}
 
-	public get world(): World {
-		return $.world;
-	}
-
-	public world_object(id: Identifier): WorldObject {
-		return $.world.getFromCurrentSpace(id);
-	}
-
-	public get world_objects(): WorldObject[] {
-		return $.world.allObjectsFromSpaces;
-	}
-
-	public attach_fsm(id: Identifier, machine_id: Identifier): void {
-		const obj = $.world.getWorldObject(id);
-		obj.sc.add_statemachine(machine_id, obj.id);
-	}
-
-	public attach_bt(object_id: Identifier, tree_id: BehaviorTreeID): void {
-		if (typeof tree_id !== 'string' || tree_id.trim().length === 0) throw new Error('attach_bt requires a non-empty behavior tree id.');
-		if (!behaviorTreeExists(tree_id)) throw new Error(`Behavior tree '${tree_id}' is not registered.`);
-		const obj = $.world.getWorldObject(object_id);
-		if (!obj) throw new Error(`World object '${object_id}' not found.`);
-		const ctor = obj.constructor as ConstructorWithBTProperty;
-		const linked = ctor.linkedBTs ?? new Set<BehaviorTreeID>();
-		if (!linked.has(tree_id)) {
-			const next = new Set(linked);
-			next.add(tree_id);
-			ctor.linkedBTs = next;
-		}
-
-		const contexts = obj.btreecontexts;
-		if (!contexts[tree_id]) {
-			contexts[tree_id] = {
-				tree_id: tree_id,
-				running: true,
-				root: instantiateBehaviorTree(tree_id),
-				blackboard: new Blackboard({ id: tree_id }),
-			};
-		}
-	}
-
-	public define_component(descriptor: EntityExtensions): void {
-		const defId = descriptor.def_id;
-		if (!ComponentTypenameToCtor.has(defId)) {
-			class LuaComponent extends Component<any> {
-				public static override get typename(): string { return defId; }
-				constructor(opts: ComponentAttachOptions) {
-					super(opts);
-				}
-			}
-			Component.registerComponentType(defId, LuaComponent);
-		}
-		this.componentExts.set(descriptor.def_id, descriptor);
-	}
-
-	public define_world_object(descriptor: EntityExtensions): void {
-		this.worldObjectExts.set(descriptor.def_id, descriptor);
-	}
-
-	public define_service(descriptor: EntityExtensions): void {
-		this.serviceExts.set(descriptor.def_id, descriptor);
-	}
-
-	private resolveClassLocalId(ext: EntityExtensions): string {
-		const classTable = ext.class as { id?: string };
-		if (!classTable) return ext.def_id;
-		return classTable.id ?? ext.def_id;
-	}
-
-	/**
-	 * Create a Service instance from a previously defined service descriptor.
-	 *
-	 * Behavior:
-	 * - Looks up the descriptor registered via define_service(definition).
-	 * - Instantiates Service. If a Lua class addon exists, uses its `id` as instance id.
-	 * - Applies `defaults` to the instance, then applies Lua class addons (if any).
-	 * - Attaches any FSMs declared on the descriptor to the Service's state controller.
-	 *
-	 * @param definition_id The id of the registered service definition to instantiate.
-	 * @param defer_bind Optional flag forwarded to Service constructor to defer binding.
-	 * @returns The id of the created service instance.
-	 */
-	public create_service(definition_id: Identifier, defer_bind?: boolean): Service {
-		const ext = this.serviceExts.get(definition_id);
-		// Default the id of the instance to the Lua-class' definition id and otherwise defaults to the definition id
-		const instance = new Service({ id: ext?.class?.id ?? definition_id, deferBind: defer_bind ?? false });
-		// Apply definition
-		this.applyObjectExtensionAndAddons(ext, instance, undefined);
-		return instance;
-	}
-
-	public attach_component(object_or_id: WorldObject | Identifier, component_or_type: Component | Identifier): void {
-		let obj: WorldObject;
-		if (typeof object_or_id === 'string') {
-			obj = $.world.getWorldObject(object_or_id);
-			if (!obj) {
-				throw new Error(`World object '${object_or_id}' not found.`);
-			}
-		} else {
-			obj = object_or_id;
-		}
-
-		// Early out when given an instance
-		if (typeof component_or_type === 'object') {
-			component_or_type.attach(obj);
-			return;
-		}
-
-		// See whether this is a component type whose extension we have defined
-		const ext = this.componentExts.get(component_or_type);
-		const id_local = ext ? this.resolveClassLocalId(ext) : undefined;
-		const instance = Component.newComponent(component_or_type, { parent_or_id: obj, id_local: id_local } as ComponentAttachOptions);
-		this.applyObjectExtensionAndAddons(ext, instance);
-		obj.add_component(instance);
-	}
-
-	public define_effect(descriptor: ActionEffectDefinition, opts?: RegisterEffectOptions<any>): void {
-		if (!descriptor.id) throw new Error('Action effect definition must have a valid id.');
-		ActionEffectRegistry.instance.register(descriptor, opts);
-	}
-
-	/**
-	 * Apply an entity extension descriptor to a constructed instance,
-	 * then apply any user-supplied addons.
-	 *
-	 * Behavior:
-	 * - If an extension descriptor is provided, apply its `defaults` to the instance.
-	 * - Apply Lua class addons from `ext.class`.
-	 * - Attach any declared components, FSMs and action effects to the instance.
-	 * - Attach any declared behavior trees.
-	 * - After processing the extension descriptor, apply the `addons` object last so
-	 *   that user-specified properties take precedence.
-	 *
-	 * Notes:
-	 * - This function does not spawn the object into the world; it only configures
-	 *   the instance. Callers are expected to call `$.world.spawn` or similar when ready.
-	 *
-	 * @param ext Optional extension descriptor returned from define_world_object/define_service/etc.
-	 * @param instance The constructed instance to modify
-	 * @param addons Optional final addons to apply to the instance (applied last)
-	 */
-	private applyObjectExtensionAndAddons(ext: EntityExtensions, instance: any, addons?: Partial<any>): void {
-		if (ext) {
-			if (ext.defaults) { Object.assign(instance, ext.defaults); }
-			this.applyClassAddons(instance, ext.class); // Apply Lua class addons
-
-			if (ext.components) {
-				for (let i = 0; i < ext.components.length; i += 1) { this.attach_component(instance, ext.components[i]); }
-			}
-			if (ext.fsms) {
-				for (let i = 0; i < ext.fsms.length; i += 1) { instance.sc.add_statemachine(ext.fsms[i], instance.id); }
-			}
-			if (ext.effects && ext.effects.length > 0) {
-				let effectComponent = instance.get_unique_component(ActionEffectComponent);
-				if (!effectComponent) {
-					effectComponent = new ActionEffectComponent({ parent_or_id: instance });
-					instance.add_component(effectComponent);
-				}
-				for (let i = 0; i < ext.effects.length; i += 1) { effectComponent.grant_effect_by_id(ext.effects[i]); }
-			}
-			if (ext.bts) {
-				for (let i = 0; i < ext.bts.length; i += 1) { instance.add_btree(ext.bts[i]); }
-			}
-		}
-		// Apply addons (these are applied last to take precedence and are distinct from definition addons)
-		if (addons) {
-			// TODO: FILTER!!
-			Object.assign(instance, addons);
-		}
-	}
-
-	/**
-	 * Spawn a WorldObject instance from a previously defined descriptor.
-	 *
-	 * Behavior:
-	 * - Looks up the world-object extensions registered via define_world_object(definition).
-	 * - Creates a new WorldObject. Instance id defaults to the Lua class addon id (if present)
-	 *   and can be added-on via addons.id.
-	 * - Applies descriptor defaults, then Lua class addons to the instance.
-	 * - Attaches declared components, FSMs, effects, and behavior trees from the descriptor.
-	 * - Finally applies user-supplied addons so they take precedence, then spawns the object
-	 *   into the world, honoring addons.pos if provided.
-	 *
-	 * @param definition_id The id used when registering the world object definition.
-	 * @param addons Optional partial properties to apply last; may include id and pos.
-	 * @returns The id of the spawned object.
-	 */
-	public spawn_object(definition_id: Identifier, addons?: Partial<WorldObject>): WorldObject {
-		const ext = this.worldObjectExts.get(definition_id);
-		// Default the id of the instance to the Lua-class' definition id if not added-on
-		const instance = new WorldObject({ id: addons?.id ?? ext?.class?.id, constructReason: undefined });
-
-		// Apply definition
-		this.applyObjectExtensionAndAddons(ext, instance, addons);
-
-		$.world.spawn(instance, addons?.pos, { reason: 'fresh' });
-		return instance;
-	}
-
-	/**
-	 * Spawn a SpriteObject instance from a previously defined sprite descriptor.
-	 *
-	 * Behavior:
-	 * - Looks up the sprite-object extensions registered via define_world_object(definition).
-	 * - Creates a new SpriteObject. Instance id defaults to the Lua class addon id (if present)
-	 *   and can be added-on via addons.id.
-	 * - Applies descriptor defaults, then Lua class addons to the instance.
-	 * - Attaches declared components, FSMs, effects, and behavior trees from the descriptor.
-	 * - Finally applies user-supplied addons so they take precedence, then spawns the sprite
-	 *   into the world, honoring addons.pos if provided.
-	 *
-	 * @param definition_id The id used when registering the sprite definition.
-	 * @param addons Optional partial properties to apply last; may include id and pos.
-	 * @returns The id of the spawned sprite instance.
-	 */
-	public spawn_sprite(definition_id: Identifier, addons?: Partial<SpriteObject>): SpriteObject {
-		const ext = this.worldObjectExts.get(definition_id);
-		// Default the id of the instance to the Lua-class' definition_id if not added-on
-		const instance = new SpriteObject({ id: addons?.id ?? ext?.class?.id, constructReason: undefined });
-		// Apply definition
-		this.applyObjectExtensionAndAddons(ext, instance, addons);
-
-		$.world.spawn(instance, addons?.pos, { reason: 'fresh' });
-		return instance;
-	}
-
-	/**
-	 * Spawn a TextObject instance from a previously defined textobject descriptor.
-	 *
-	 * Behavior:
-	 * - Looks up the textobject extensions registered via define_world_object(definition).
-	 * - Creates a new TextObject. Instance id defaults to the Lua class addon id (if present)
-	 *   and can be added-on via addons.id.
-	 * - Applies descriptor defaults, then Lua class addons to the instance.
-	 * - Attaches declared components, FSMs, effects, and behavior trees from the descriptor.
-	 * - Finally applies user-supplied addons so they take precedence, then spawns the textobject
-	 *   into the world, honoring addons.pos if provided.
-	 *
-	 * @param definition_id The id used when registering the textobject definition.
-	 * @param addons Optional partial properties to apply last; may include id and pos.
-	 * @returns The id of the spawned textobject instance.
-	 */
-	public spawn_textobject(definition_id: Identifier, addons?: Partial<TextObject>): TextObject {
-		const ext = this.worldObjectExts.get(definition_id);
-		const instance = new TextObject({ id: addons?.id ?? ext?.class?.id ?? definition_id, constructReason: undefined });
-		// Apply definition
-		this.applyObjectExtensionAndAddons(ext, instance, addons);
-
-		$.world.spawn(instance, addons?.pos, { reason: 'fresh' });
-		return instance;
-	}
-
-	public grant_effect(object_id: Identifier, effect_id: string): void {
-		if (typeof effect_id !== 'string' || effect_id.trim().length === 0) {
-			throw new Error('grant_effect requires a non-empty effect id.');
-		}
-		const obj = $.world.getWorldObject(object_id);
-		const component = obj.get_unique_component(ActionEffectComponent);
-		if (!component) {
-			throw new Error(`World object '${object_id}' does not have an ActionEffectComponent.`);
-		}
-		const effect = ActionEffectRegistry.instance.get(effect_id);
-		if (!effect) {
-			throw new Error(`Action effect '${effect_id}' is not registered.`);
-		}
-		component.grant_effect(effect);
-	}
-
-	public trigger_effect(object_id: Identifier, effect_id: string, options?: { payload?: object }) {
-		if (typeof effect_id !== 'string' || effect_id.trim().length === 0) {
-			throw new Error('trigger_effect requires a non-empty effect id.');
-		}
-		const obj = $.world.getWorldObject(object_id);
-		const component = obj.get_unique_component(ActionEffectComponent);
-		if (!component) {
-			throw new Error(`World object '${object_id}' does not have an ActionEffectComponent.`);
-		}
-		const trimmedId = effect_id.trim() as any;
-		const payload = options?.payload as any;
-		const result = payload !== undefined
-			? component.trigger(trimmedId, { payload })
-			: component.trigger(trimmedId);
-		return result;
-	}
-
-	public new_timeline(def: TimelineDefinition<any>): Timeline {
-		if (!def) {
-			throw new Error('new_timeline requires a valid timeline definition object.');
-		}
-		return new Timeline(def);
-	}
-
-	public rget(id: Identifier): Registerable {
-		if (typeof id !== 'string' || id.length === 0) {
-			throw new Error('rget id must be a non-empty string.');
-		}
-		return $.registry.get(id);
-	}
-
-	public service(id: Identifier): Service {
-		if (typeof id !== 'string' || id.length === 0) {
-			throw new Error('service id must be a non-empty string.');
-		}
-		return $.registry.get<Service>(id);
-	}
-
-	public emit(event_name: string, emitter_or_id?: Identifier | Registerable, payload?: EventPayload): void {
-		if (typeof event_name !== 'string' || event_name.length === 0) {
-			throw new Error('emit requires a non-empty event name.');
-		}
-		const emitter = typeof emitter_or_id === 'string' ? $.get(emitter_or_id) : emitter_or_id;
-		// if (!emitter) {
-		// 	throw new Error(`emit requires a non-empty emitter and '${emitter_or_id}' not found.`);
-		// }
-		$.emit(event_name, emitter, payload);
-	}
-
-	public get timelines(): EventTimeline[] {
-		return Array.from($.registry.iterate(EventTimeline));
-	}
-
 	public taskgate(name: string): GateGroup {
 		return taskGate.group(name);
 	}
@@ -784,58 +349,6 @@ export class BmsxVMApi {
 		console.log('[BMSX VM API] Reboot requested.');
 		this.runtime.reloadProgramAndResetWorld(); // Reboot to initial state
 		console.log('[BMSX VM API] Reboot completed.');
-	}
-
-	public define_fsm(id: string, blueprint: StateMachineBlueprint): void {
-		buildFSMDefinition(id, blueprint);
-	}
-
-	public define_bt(_descriptor: BehaviorTreeDefinition): void {
-		// Behavior tree definitions are registered via buildBehaviorTreeDefinition
-		throw new Error('BMSX VM API define_bt is not implemented; use the behavior tree library functions instead.');
-	}
-
-	private pointer_viewport_position_internal(): VMPointerViewport {
-		const screen = this.pointer_screen_position();
-		if (!screen.valid) {
-			return { x: 0, y: 0, valid: false, inside: false };
-		}
-		const view = $.view;
-		if (!view) {
-			throw new Error('Game view not initialised.');
-		}
-		const rect = view.surface.measureDisplay();
-		const width = rect.width;
-		const height = rect.height;
-		if (width <= 0 || height <= 0) {
-			return { x: 0, y: 0, valid: false, inside: false };
-		}
-		const relativeX = screen.x - rect.left;
-		const relativeY = screen.y - rect.top;
-		const inside = relativeX >= 0 && relativeX < width && relativeY >= 0 && relativeY < height;
-		const viewportX = (relativeX / width) * this.display_width();
-		const viewportY = (relativeY / height) * this.display_height();
-		return { x: viewportX, y: viewportY, valid: true, inside };
-	}
-
-	private compute_pointer_button_mask(): number {
-		let mask = 0;
-		if (this.mousebtn(BmsxVMPointerButton.Primary)) {
-			mask |= 1;
-		}
-		if (this.mousebtn(BmsxVMPointerButton.Secondary)) {
-			mask |= 2;
-		}
-		if (this.mousebtn(BmsxVMPointerButton.Auxiliary)) {
-			mask |= 4;
-		}
-		if (this.mousebtn(BmsxVMPointerButton.Back)) {
-			mask |= 8;
-		}
-		if (this.mousebtn(BmsxVMPointerButton.Forward)) {
-			mask |= 16;
-		}
-		return mask;
 	}
 
 	private expand_tabs(text: string): string {
