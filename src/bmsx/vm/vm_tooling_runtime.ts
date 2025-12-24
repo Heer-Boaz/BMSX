@@ -2243,31 +2243,65 @@ export class BmsxVMRuntime {
 		this.registerVmGlobal('os', osTable);
 
 		const nextFn = createNativeFunction('next', (args) => {
-			const target = args[0] as Table;
+			const target = args[0];
 			const key = args.length > 1 ? args[1] : null;
-			const entry = target.nextEntry(key);
-			if (entry === null) {
-				return [null];
+			if (target instanceof Table) {
+				const entry = target.nextEntry(key);
+				if (entry === null) {
+					return [null];
+				}
+				return [entry[0], entry[1]];
 			}
-			return [entry[0], entry[1]];
+			if (isNativeObject(target)) {
+				const entry = this.nextNativeEntry(target, key);
+				if (entry === null) {
+					return [null];
+				}
+				return [entry[0], entry[1]];
+			}
+			throw this.createApiRuntimeError('next expects a table or native object.');
 		});
 		const ipairsIterator = createNativeFunction('ipairs.iterator', (args) => {
-			const target = args[0] as Table;
+			const target = args[0];
 			const index = args[1] as number;
 			const nextIndex = Math.floor(index) + 1;
-			const value = target.get(nextIndex);
-			if (value === null) {
-				return [null];
+			if (target instanceof Table) {
+				const value = target.get(nextIndex);
+				if (value === null) {
+					return [null];
+				}
+				return [nextIndex, value];
 			}
-			return [nextIndex, value];
+			if (isNativeObject(target)) {
+				const raw = target.raw as object;
+				if (Array.isArray(raw)) {
+					const value = (raw as unknown[])[nextIndex - 1];
+					if (value === undefined || value === null) {
+						return [null];
+					}
+					return [nextIndex, this.toVmValue(value)];
+				}
+				const value = (raw as Record<string, unknown>)[String(nextIndex)];
+				if (value === undefined || value === null) {
+					return [null];
+				}
+				return [nextIndex, this.toVmValue(value)];
+			}
+			throw this.createApiRuntimeError('ipairs expects a table or native object.');
 		});
 		this.registerVmGlobal('next', nextFn);
 		this.registerVmGlobal('pairs', createNativeFunction('pairs', (args) => {
-			const target = args[0] as Table;
+			const target = args[0];
+			if (!(target instanceof Table) && !isNativeObject(target)) {
+				throw this.createApiRuntimeError('pairs expects a table or native object.');
+			}
 			return [nextFn, target, null];
 		}));
 		this.registerVmGlobal('ipairs', createNativeFunction('ipairs', (args) => {
-			const target = args[0] as Table;
+			const target = args[0];
+			if (!(target instanceof Table) && !isNativeObject(target)) {
+				throw this.createApiRuntimeError('ipairs expects a table or native object.');
+			}
 			return [ipairsIterator, target, 0];
 		}));
 
@@ -2486,11 +2520,11 @@ export class BmsxVMRuntime {
 			['game', $],
 			['$', $],
 			['registry', $.registry],
-			['assets', $.assets],
 		];
 		for (const [name, object] of entries) {
 			this.registerVmGlobal(name, this.getOrCreateNativeObject(object));
 		}
+		this.registerVmGlobal('assets', this.getOrCreateAssetsNativeObject());
 	}
 
 	private vmToString(value: Value): string {
@@ -3310,6 +3344,100 @@ export class BmsxVMRuntime {
 		return null;
 	}
 
+	private parseNativeKeyFromString(key: string): Value {
+		const numeric = Number(key);
+		if (Number.isInteger(numeric) && String(numeric) === key) {
+			return numeric;
+		}
+		return key;
+	}
+
+	private nativeKeysEqual(left: Value, right: Value): boolean {
+		if (left === right) {
+			return true;
+		}
+		if (typeof left === 'number' && typeof right === 'string') {
+			return right === String(left);
+		}
+		if (typeof left === 'string' && typeof right === 'number') {
+			return left === String(right);
+		}
+		return false;
+	}
+
+	private collectNativeKeys(raw: object): Value[] {
+		const keys: Value[] = [];
+		if (Array.isArray(raw)) {
+			const arr = raw as unknown[];
+			const arrRecord = arr as unknown as Record<string, unknown>;
+			for (let index = 0; index < arr.length; index += 1) {
+				const value = arr[index];
+				if (value === undefined || value === null) {
+					continue;
+				}
+				keys.push(index + 1);
+			}
+			const ownKeys = Object.keys(arr);
+			for (const key of ownKeys) {
+				const numeric = Number(key);
+				if (Number.isInteger(numeric) && String(numeric) === key && numeric >= 0 && numeric < arr.length) {
+					continue;
+				}
+				const value = arrRecord[key];
+				if (value === undefined || value === null) {
+					continue;
+				}
+				keys.push(this.parseNativeKeyFromString(key));
+			}
+			return keys;
+		}
+		const obj = raw as Record<string, unknown>;
+		for (const key of Object.keys(obj)) {
+			const value = obj[key];
+			if (value === undefined || value === null) {
+				continue;
+			}
+			keys.push(this.parseNativeKeyFromString(key));
+		}
+		return keys;
+	}
+
+	private readNativeRawValue(raw: object, key: Value): unknown {
+		if (Array.isArray(raw)) {
+			if (typeof key === 'number' && Number.isInteger(key) && key >= 1) {
+				return (raw as unknown[])[key - 1];
+			}
+			const rawRecord = raw as unknown as Record<string, unknown>;
+			return rawRecord[String(key)];
+		}
+		const rawRecord = raw as unknown as Record<string, unknown>;
+		return rawRecord[String(key)];
+	}
+
+	private nextNativeEntry(target: NativeObject, after: Value): [Value, Value] | null {
+		const raw = target.raw as object;
+		const keys = this.collectNativeKeys(raw);
+		if (keys.length === 0) {
+			return null;
+		}
+		let nextIndex = 0;
+		if (after !== null) {
+			nextIndex = -1;
+			for (let index = 0; index < keys.length; index += 1) {
+				if (this.nativeKeysEqual(keys[index], after)) {
+					nextIndex = index + 1;
+					break;
+				}
+			}
+			if (nextIndex < 0 || nextIndex >= keys.length) {
+				return null;
+			}
+		}
+		const key = keys[nextIndex];
+		const value = this.readNativeRawValue(raw, key);
+		return [key, this.toVmValue(value)];
+	}
+
 	private getOrAssignVmTableId(table: Table): number {
 		const existing = this.vmTableIds.get(table);
 		if (existing !== undefined) {
@@ -3355,6 +3483,49 @@ export class BmsxVMRuntime {
 			return String(key);
 		}
 		return null;
+	}
+
+	private getOrCreateAssetsNativeObject(): NativeObject {
+		const assets = $.assets;
+		const cached = this.nativeObjectCache.get(assets);
+		if (cached) {
+			return cached;
+		}
+		const assetsRecord = assets as unknown as Record<string, unknown>;
+		const assetMapKeys = new Set<string>(['img', 'audio', 'model', 'data', 'audioevents']);
+		const wrapper = createNativeObject(assets, {
+			get: (key) => {
+				const prop = this.resolveNativeKey(key);
+				if (!prop) {
+					throw new Error('Attempted to index native object with unsupported key.');
+				}
+				const rawValue = assetsRecord[prop];
+				if (rawValue === undefined) {
+					return null;
+				}
+				if (assetMapKeys.has(prop)) {
+					return this.getOrCreateNativeObject(rawValue as object);
+				}
+				if (typeof rawValue === 'function') {
+					return this.getOrCreateNativeMethod(assets, prop);
+				}
+				return this.toVmValue(rawValue);
+			},
+			set: (key, entryValue) => {
+				const prop = this.resolveNativeKey(key);
+				if (!prop) {
+					throw new Error('Attempted to assign native object with unsupported key.');
+				}
+				if (entryValue === null) {
+					delete assetsRecord[prop];
+					return;
+				}
+				const ctx = this.buildVmContext();
+				assetsRecord[prop] = this.toNativeValue(entryValue, ctx, new WeakMap());
+			},
+		});
+		this.nativeObjectCache.set(assets, wrapper);
+		return wrapper;
 	}
 
 	private toVmValue(value: unknown): Value {

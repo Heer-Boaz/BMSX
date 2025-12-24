@@ -138,7 +138,7 @@ function textobject:draw()
 		local y = dims.top + line_height * (i - 1)
 		if self.highlighted_line_index ~= nil and self.highlighted_line_index == (i - 1) then
 			local margin = self.char_width / 2
-			rectfill_color(dims.left - margin, y - margin, dims.right + margin, y + line_height - margin, self.z, {
+			put_rectfillcolor(dims.left - margin, y - margin, dims.right + margin, y + line_height - margin, self.z, {
 				r = highlight.r,
 				g = highlight.g,
 				b = highlight.b,

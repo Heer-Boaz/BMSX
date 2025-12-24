@@ -1887,7 +1887,7 @@ function update(_dt)
 	-- assert(false)
 	-- print(a.b + 3)
 	test()
-	engine.update(game.deltatime)
+	engine.update($.deltatime)
 end
 
 function draw()

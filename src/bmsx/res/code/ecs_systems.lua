@@ -369,7 +369,7 @@ function spriterendersystem:update(world)
 			y = t.position.y + offset.y
 			z = t.position.z + offset.z
 		end
-		sprite(sc.imgid, x, y, z, {
+		put_sprite(sc.imgid, x, y, z, {
 			scale = sc.scale,
 			flip_h = sc.flip.flip_h,
 			flip_v = sc.flip.flip_v,
@@ -393,7 +393,7 @@ function meshrendersystem:update(world)
 		if obj.visible == false or not mc.enabled then
 			goto continue
 		end
-		mesh(mc.mesh, mc.matrix, {
+		put_mesh(mc.mesh, mc.matrix, {
 			joint_matrices = mc.joint_matrices,
 			morph_weights = mc.morph_weights,
 			receive_shadow = mc.receive_shadow,

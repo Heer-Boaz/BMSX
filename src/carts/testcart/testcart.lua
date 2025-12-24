@@ -494,13 +494,13 @@ local function draw_hero(hero)
 	local touching = hero.overlapping
 	local basecolor = blinking and 8 or (ready and 10 or 12)
 	local color = touching and 2 or basecolor
-	rectfill(hero.x, hero.y, hero.x + hero.sx, hero.y + hero.sy, 0, color)
+	put_rectfill(hero.x, hero.y, hero.x + hero.sx, hero.y + hero.sy, 0, color)
 end
 
 local function draw_collision_target(target)
 	local flash = target.hit_flash
 	local color = flash > 0 and 9 or 3
-	rectfill(target.x, target.y, target.x + target.sx, target.y + target.sy, 0, color)
+	put_rectfill(target.x, target.y, target.x + target.sx, target.y + target.sy, 0, color)
 end
 
 local function draw_hud(hero)

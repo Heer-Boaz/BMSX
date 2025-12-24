@@ -74,7 +74,7 @@ function spriteobject:draw()
 		return
 	end
 	local offset = sc.offset
-	sprite(sc.imgid, self.x + offset.x, self.y + offset.y, self.z + offset.z, {
+	put_sprite(sc.imgid, self.x + offset.x, self.y + offset.y, self.z + offset.z, {
 		scale = sc.scale,
 		flip_h = sc.flip.flip_h,
 		flip_v = sc.flip.flip_v,
