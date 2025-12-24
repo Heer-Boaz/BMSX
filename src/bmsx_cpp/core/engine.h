@@ -135,6 +135,7 @@ private:
     f64 m_delta_time = 0.0;
     u64 m_frame_count = 0;
     f64 m_fps = 60.0;
+    bool m_presentation_pending = false;
 
     bool m_rom_loaded = false;
     bool m_engine_assets_loaded = false;

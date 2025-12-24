@@ -152,10 +152,17 @@ void EngineCore::tick(f64 deltaTime) {
     if (m_platform && m_platform->microtaskQueue()) {
         m_platform->microtaskQueue()->flush();
     }
+
+    m_presentation_pending = true;
 }
 
 void EngineCore::render() {
     if (m_state != EngineState::Running && m_state != EngineState::Paused) {
+        return;
+    }
+
+    const bool shouldPresent = (m_state == EngineState::Paused) || m_presentation_pending;
+    if (!shouldPresent) {
         return;
     }
 
@@ -183,6 +190,8 @@ void EngineCore::render() {
 
     // Event flush phase
     m_system_manager.updatePhase(*m_world, TickGroup::EventFlush);
+
+    m_presentation_pending = false;
 }
 
 void EngineCore::processInput() {
