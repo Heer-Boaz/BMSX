@@ -8,6 +8,6 @@
 		"namespace": "bmsx"
 	},
 	"lua": {
-		"entry_path": "res/code/system_program.lua"
+		"entry_path": "res/systemrom/system_program.lua"
 	}
 }
