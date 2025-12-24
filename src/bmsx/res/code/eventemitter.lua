@@ -32,6 +32,10 @@ end
 
 EventEmitter.instance = EventEmitter.new()
 
+function EventEmitter:create_gameevent(spec)
+	return create_gameevent(spec)
+end
+
 function EventEmitter:events_of(emitter)
 	local port = port_cache[emitter]
 	if not port then

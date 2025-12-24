@@ -58,6 +58,7 @@ end
 
 local state = {}
 state.__index = state
+local resolve_handler_transition
 
 local function clone_defaults(source)
 	local out = {}
@@ -81,6 +82,60 @@ function state.new(definition, target, parent)
 	self.root = parent and parent.root or self
 	self.timeline_bindings = nil
 	return self
+end
+
+local function resolve_state_key(definition, state_id)
+	local states = definition.states
+	if not states then
+		error("state '" .. definition.id .. "' does not define substates.")
+	end
+	if states[state_id] then
+		return state_id
+	end
+	local underscore = "_" .. state_id
+	if states[underscore] then
+		return underscore
+	end
+	local hash = "#" .. state_id
+	if states[hash] then
+		return hash
+	end
+	return nil
+end
+
+local function resolve_state_def(parent, state_id)
+	local key = resolve_state_key(parent.definition, state_id)
+	if not key then
+		error("state '" .. state_id .. "' not defined under '" .. parent.id .. "'")
+	end
+	return key, parent.definition.states[key]
+end
+
+local function ensure_state_instance(parent, key, definition)
+	local child = parent.states[key]
+	if not child then
+		child = state.new(definition, parent.target, parent)
+		parent.states[key] = child
+	end
+	return child
+end
+
+local function resolve_state_instance(parent, state_id)
+	local child = parent.states[state_id]
+	if child then
+		return child, state_id
+	end
+	local underscore = "_" .. state_id
+	child = parent.states[underscore]
+	if child then
+		return child, underscore
+	end
+	local hash = "#" .. state_id
+	child = parent.states[hash]
+	if child then
+		return child, hash
+	end
+	return nil, nil
 end
 
 function state:timeline(id)
@@ -146,7 +201,7 @@ function state:start()
 	self.started = true
 	self:activate_timelines()
 	if self.definition.entering_state then
-		self.definition.entering_state(self.target, self)
+		resolve_handler_transition(self.definition.entering_state, self.target, self)
 	end
 	local initial = self.definition.initial
 	if initial then
@@ -155,34 +210,83 @@ function state:start()
 end
 
 function state:transition_to(state_id)
-	local next_def = self.definition.states[state_id]
-	assert(next_def, "state '" .. state_id .. "' not defined under '" .. self.id .. "'")
+	local key, next_def = resolve_state_def(self, state_id)
+	if self.current_id == key then
+		return
+	end
+	if next_def.is_concurrent then
+		error("Cannot transition to parallel state '" .. key .. "'!")
+	end
 
+	local old_state = nil
 	if self.current_id then
-		local old_state = self.states[self.current_id]
+		old_state = self.states[self.current_id]
+		local guards = old_state.definition.transition_guards
+		if guards and guards.can_exit then
+			if not guards.can_exit(self.target, old_state) then
+				return
+			end
+		end
+	end
+
+	local child = ensure_state_instance(self, key, next_def)
+	local enter_guards = next_def.transition_guards
+	if enter_guards and enter_guards.can_enter then
+		if not enter_guards.can_enter(self.target, child) then
+			return
+		end
+	end
+
+	if old_state then
 		old_state:deactivate_timelines()
 		if old_state.definition.exiting_state then
 			old_state.definition.exiting_state(self.target, old_state)
 		end
 	end
 
-	self.current_id = state_id
-	local child = self.states[state_id]
-	if not child then
-		child = state.new(next_def, self.target, self)
-		self.states[state_id] = child
-	end
+	self.current_id = key
 	child:start()
 end
 
 function state:transition_to_path(path)
-	local current = self
-	for part in string.gmatch(path, "[^/]+") do
-		current:transition_to(part)
-		current = current.states[part]
-		if not current then
-			break
+	if type(path) == "table" then
+		if #path == 0 then
+			error("Empty path is invalid.")
 		end
+		local ctx = self
+		for i = 1, #path do
+			local seg = path[i]
+			local key, def = resolve_state_def(ctx, seg)
+			local child = ensure_state_instance(ctx, key, def)
+			if not child.definition.is_concurrent and ctx.current_id ~= key then
+				ctx:transition_to(key)
+				child = ctx.states[key]
+			end
+			ctx = child
+		end
+		return
+	end
+
+	local spec = state.parse_fs_path(path)
+	if not spec.abs and spec.up == 0 and #spec.segs == 0 then
+		error("Empty path is invalid.")
+	end
+	local ctx = spec.abs and self.root or self
+	for i = 1, spec.up do
+		if not ctx.parent then
+			error("Path '" .. path .. "' attempts to go above root.")
+		end
+		ctx = ctx.parent
+	end
+	for i = 1, #spec.segs do
+		local seg = spec.segs[i]
+		local key, def = resolve_state_def(ctx, seg)
+		local child = ensure_state_instance(ctx, key, def)
+		if not child.definition.is_concurrent and ctx.current_id ~= key then
+			ctx:transition_to(key)
+			child = ctx.states[key]
+		end
+		ctx = child
 	end
 end
 
@@ -202,15 +306,15 @@ function state.parse_fs_path(input)
 	if len == 0 then
 		return { abs = false, up = 0, segs = {} }
 	end
-	if input:sub(i, i) == "/" then
+	if string.sub(input, i, i) == "/" then
 		abs = true
 		i = i + 1
 	end
 	if not abs then
-		if input:sub(i, i + 1) == "./" then
+		if string.sub(input, i, i + 1) == "./" then
 			i = i + 2
 		else
-			while input:sub(i, i + 2) == "../" do
+			while string.sub(input, i, i + 2) == "../" do
 				up = up + 1
 				i = i + 3
 			end
@@ -233,19 +337,19 @@ function state.parse_fs_path(input)
 	end
 
 	while i <= len do
-		local c = input:sub(i, i)
+		local c = string.sub(input, i, i)
 		if c == "/" then
 			i = i + 1
-		elseif c == "[" and input:sub(i + 1, i + 1) == "\"" then
+		elseif c == "[" and string.sub(input, i + 1, i + 1) == "\"" then
 			i = i + 2
 			local seg = ""
 			local closed = false
 			while i <= len do
-				local ch = input:sub(i, i)
+				local ch = string.sub(input, i, i)
 				i = i + 1
 				if ch == "\\" then
 					if i <= len then
-						local esc = input:sub(i, i)
+						local esc = string.sub(input, i, i)
 						i = i + 1
 						if esc == "\"" then
 							seg = seg .. "\""
@@ -256,7 +360,7 @@ function state.parse_fs_path(input)
 						end
 					end
 				elseif ch == "\"" then
-					if input:sub(i, i) == "]" then
+					if string.sub(input, i, i) == "]" then
 						i = i + 1
 						closed = true
 						break
@@ -273,10 +377,10 @@ function state.parse_fs_path(input)
 			push_seg(seg)
 		else
 			local start = i
-			while i <= len and input:sub(i, i) ~= "/" do
+			while i <= len and string.sub(input, i, i) ~= "/" do
 				i = i + 1
 			end
-			push_seg(input:sub(start, i - 1))
+			push_seg(string.sub(input, start, i - 1))
 		end
 	end
 
@@ -303,11 +407,11 @@ function state:matches_state_path(path)
 		local ctx = start
 		for i = 1, #segments do
 			local seg = segments[i]
-			local child = ctx.states[seg]
+			local child, key = resolve_state_instance(ctx, seg)
 			if not child then
 				return false
 			end
-			if not child.definition.is_concurrent and ctx.current_id ~= seg then
+			if not child.definition.is_concurrent and ctx.current_id ~= key then
 				return false
 			end
 			if i == #segments then
@@ -333,7 +437,7 @@ function state:matches_state_path(path)
 	return match_segments(ctx, spec.segs)
 end
 
-local function resolve_handler_transition(handler, target, state, payload)
+resolve_handler_transition = function(handler, target, state, payload)
 	local t = type(handler)
 	if t == "string" then
 		state:transition_to_path(handler)
@@ -364,15 +468,30 @@ function state:dispatch_event(event_or_name, payload)
 		event_name = event_or_name.type
 		data = event_or_name
 	end
-	local handler = self.definition.on[event_name]
-	if resolve_handler_transition(handler, self.target, self, data) then
-		return true
-	end
-	if self.current_id then
+	if next(self.states) ~= nil and self.current_id then
 		local child = self.states[self.current_id]
-		if child and child:dispatch_event(event_name, data) then
+		if not child then
+			error("current child '" .. self.current_id .. "' not found in '" .. self.id .. "'")
+		end
+		if child:dispatch_event(event_name, data) then
 			return true
 		end
+		for _, concurrent in pairs(self.states) do
+			if concurrent.definition.is_concurrent and concurrent ~= child then
+				if concurrent:dispatch_event(event_name, data) then
+					return true
+				end
+			end
+		end
+	end
+
+	local current = self
+	while current do
+		local handler = current.definition.on[event_name]
+		if resolve_handler_transition(handler, current.target, current, data) then
+			return true
+		end
+		current = current.parent
 	end
 	return false
 end
@@ -384,15 +503,30 @@ function state:dispatch_input_event(event_or_name, payload)
 		event_name = event_or_name.type
 		data = event_or_name
 	end
-	local handler = self.definition.input_event_handlers[event_name]
-	if resolve_handler_transition(handler, self.target, self, data) then
-		return true
-	end
-	if self.current_id then
+	if next(self.states) ~= nil and self.current_id then
 		local child = self.states[self.current_id]
-		if child and child:dispatch_input_event(event_name, data) then
+		if not child then
+			error("current child '" .. self.current_id .. "' not found in '" .. self.id .. "'")
+		end
+		if child:dispatch_input_event(event_name, data) then
 			return true
 		end
+		for _, concurrent in pairs(self.states) do
+			if concurrent.definition.is_concurrent and concurrent ~= child then
+				if concurrent:dispatch_input_event(event_name, data) then
+					return true
+				end
+			end
+		end
+	end
+
+	local current = self
+	while current do
+		local handler = current.definition.input_event_handlers[event_name]
+		if resolve_handler_transition(handler, current.target, current, data) then
+			return true
+		end
+		current = current.parent
 	end
 	return false
 end
