@@ -119,9 +119,9 @@ export class WorldObject implements vec3, ComponentContainer, Stateful, Native {
 	}
 
 	/** Returns the component of a given type that matches the supplied local id. */
-	get_component_by_local_id<T extends Component>(constructor: ComponentConstructor<T>, idLocal: Identifier): T {
+	get_component_by_local_id<T extends Component>(constructor: ComponentConstructor<T>, id_local: Identifier): T {
 		for (const c of this.components) {
-			if (c instanceof constructor && c.id_local === idLocal) return c as T;
+			if (c instanceof constructor && c.id_local === id_local) return c as T;
 		}
 		return undefined;
 	}

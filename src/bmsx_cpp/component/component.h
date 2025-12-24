@@ -40,7 +40,7 @@ using KeyToComponentMap = std::unordered_map<std::string, std::vector<Component*
 struct ComponentAttachOptions {
 	WorldObject* parent = nullptr;
 	std::string parentId;  // Alternative: parent id for deferred resolution
-	std::string idLocal;   // Human-friendly, per-owner suffix (e.g., 'left', 'primary')
+	std::string id_local;   // Human-friendly, per-owner suffix (e.g., 'left', 'primary')
 };
 
 /* ============================================================================
@@ -66,7 +66,7 @@ public:
 
 	// Instance members
 	std::string id;
-	std::string idLocal;
+	std::string id_local;
 	std::string type;
 	
 protected:

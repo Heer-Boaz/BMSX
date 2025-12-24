@@ -57,8 +57,8 @@ export type ComponentId = `${Identifier}_${Identifier}` | `${Identifier}_${Ident
 
 /**
  * Options for constructing or attaching a component.
- * - `idLocal` lets callers specify a human-friendly, per-owner suffix (e.g., 'left', 'primary')
- *   without needing to know the parent id. The final id becomes `${parentid}_${Type}_${idLocal}`.
+ * - `id_local` lets callers specify a human-friendly, per-owner suffix (e.g., 'left', 'primary')
+ *   without needing to know the parent id. The final id becomes `${parentid}_${Type}_${id_local}`.
  */
 export type ComponentAttachOptions = RevivableObjectArgs & { parent_or_id: WorldObject | Identifier, id_local?: string };
 

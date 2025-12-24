@@ -21,7 +21,7 @@ std::unordered_set<ComponentTag> Component::s_tagsPost;
 Component::Component(const ComponentAttachOptions& opts)
 	: m_parent(opts.parent)
 	, m_enabled(true)
-	, idLocal(opts.idLocal)
+	, id_local(opts.id_local)
 {
 	// Determine the type name from the actual class
 	type = typeName();
@@ -30,8 +30,8 @@ Component::Component(const ComponentAttachOptions& opts)
 	if (m_parent) {
 		const std::string& parentId = m_parent->id;
 		id = parentId + "_" + type;
-		if (!idLocal.empty()) {
-			id += "_" + idLocal;
+		if (!id_local.empty()) {
+			id += "_" + id_local;
 		}
 	}
 }

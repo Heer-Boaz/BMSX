@@ -21,8 +21,8 @@ Collider2DComponent::Collider2DComponent(const Collider2DComponentOptions& opts)
 	, generateOverlapEvents(opts.generateOverlapEvents)
 	, spaceEvents(opts.spaceEvents)
 {
-	if (idLocal.empty()) {
-		idLocal = "collider2d";
+	if (id_local.empty()) {
+		id_local = "collider2d";
 	}
 }
 

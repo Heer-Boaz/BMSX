@@ -232,7 +232,7 @@ std::string InputActionEffectSystem::resolveProgramKey(
 std::string InputActionEffectSystem::describeInlineProgram(InputActionEffectComponent& component) {
 	std::string ownerId = component.parent() ? component.parent()->id : "<unattached>";
 	std::string componentId = !component.id.empty() ? component.id :
-		!component.idLocal.empty() ? component.idLocal :
+		!component.id_local.empty() ? component.id_local :
 		component.name();
 	return "inline:" + ownerId + ":" + componentId;
 }

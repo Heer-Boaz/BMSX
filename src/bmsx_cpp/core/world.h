@@ -17,6 +17,7 @@
 #include "fsm.h"
 #include "../subscription.h"
 #include "../ecs/ecsystem.h"
+#include <any>
 #include <string>
 #include <vector>
 #include <unordered_map>
@@ -198,6 +199,14 @@ public:
     // Events
     // ─────────────────────────────────────────────────────────────────────────
     std::unique_ptr<EventPort> events;
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Dynamic fields (Lua-only addons)
+    // ─────────────────────────────────────────────────────────────────────────
+    std::unordered_map<std::string, std::any> dynamicFields;
+    void setDynamicProperty(const std::string& key, const std::any& value);
+    std::any getDynamicProperty(const std::string& key) const;
+    bool hasDynamicProperty(const std::string& key) const;
 
     // ─────────────────────────────────────────────────────────────────────────
     // Components

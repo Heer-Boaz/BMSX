@@ -11,6 +11,7 @@
 #include "world.h"
 #include "engine.h"
 #include "../component/component.h"
+#include "../component/spritecomponent.h"
 #include "../component/timelinecomponent.h"
 #include <algorithm>
 #include <stdexcept>
@@ -111,11 +112,27 @@ void WorldObject::removeComponent(Component* comp) {
 
 Component* WorldObject::getComponentById(const std::string& id) {
     for (auto& comp : components) {
-        if (comp->id == id || comp->idLocal == id) {
+        if (comp->id == id || comp->id_local == id) {
             return comp.get();
         }
     }
     return nullptr;
+}
+
+void WorldObject::setDynamicProperty(const std::string& key, const std::any& value) {
+    dynamicFields[key] = value;
+}
+
+std::any WorldObject::getDynamicProperty(const std::string& key) const {
+    auto it = dynamicFields.find(key);
+    if (it == dynamicFields.end()) {
+        return std::any{};
+    }
+    return it->second;
+}
+
+bool WorldObject::hasDynamicProperty(const std::string& key) const {
+    return dynamicFields.find(key) != dynamicFields.end();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -197,10 +214,17 @@ void WorldObject::dispose() {
 }
 
 void WorldObject::submitForRendering(GameView* view) {
-    (void)view;
-    // Default implementation does nothing
-    // Subclasses with sprites/meshes override this to submit to RenderQueues
-    // In TypeScript, this is typically done via SpriteComponent
+    auto* sprite = getFirstComponent<SpriteComponent>();
+    if (!sprite) {
+        return;
+    }
+    ImgRenderSubmission submission;
+    submission.imgid = sprite->imgid;
+    submission.pos = pos();
+    submission.scale = sprite->scale;
+    submission.flip = sprite->flip;
+    submission.colorize = sprite->colorize;
+    view->renderer.submit.sprite(submission);
 }
 
 void WorldObject::bind() {

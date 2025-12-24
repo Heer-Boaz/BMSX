@@ -3,6 +3,7 @@
 #include "cpu.h"
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace bmsx {
@@ -230,6 +231,23 @@ private:
 
 	std::vector<std::unique_ptr<WorldObject>> m_spawnedObjects;
 	std::unordered_map<std::string, VmWorldObjectDefinition> m_worldObjectDefs;
+
+	std::unordered_map<const WorldObject*, std::unordered_map<std::string, std::shared_ptr<NativeFunction>>> m_methodCache;
+	std::unordered_map<const WorldObject*, std::shared_ptr<NativeObject>> m_nativeHandles;
+
+	std::shared_ptr<NativeObject> getNativeHandle(WorldObject* obj);
+	Value getObjectProperty(WorldObject* obj, const std::string& key);
+	Value getNativeProperty(WorldObject* obj, const std::string& key);
+	void setObjectProperty(WorldObject* obj, const std::string& key, const Value& value);
+	bool setNativeProperty(WorldObject* obj, const std::string& key, const Value& value);
+	bool isNativeProperty(WorldObject* obj, const std::string& key) const;
+	Value getCachedMethod(WorldObject* obj, const std::string& key, NativeFunctionInvoke invoke);
+
+	void applyTableToObject(WorldObject* obj, const std::shared_ptr<Table>& table,
+	                        const std::unordered_set<std::string>* exclusions = nullptr);
+	void applyClassAddons(WorldObject* obj, const std::shared_ptr<Table>& table,
+	                      const std::unordered_set<std::string>* exclusions = nullptr);
+	void callObjectHook(WorldObject* obj, const std::string& hook, const std::vector<Value>& args);
 };
 
 } // namespace bmsx

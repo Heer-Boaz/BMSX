@@ -53,7 +53,7 @@ const POINTER_ACTIONS: readonly string[] = [
 	'pointer_forward',
 ] as const;
 
-const excludedClassAddonKeys = new Set(['def_id', 'class', 'defaults', 'metatable', 'constructor', 'prototype', 'super']);
+const excludedClassAddonKeys = new Set(['def_id', 'class', 'defaults', 'metatable', 'constructor', 'prototype', 'super', '__index']);
 
 type VmExtendedClass<TBase extends ConcreteOrAbstractConstructor<any>> =
 	TBase & Native & {
@@ -104,25 +104,16 @@ export class BmsxVMApi {
 	/**
 	 * Apply script class addons to a constructed instance.
 	 *
-	 * Filters out non-instance keys (def_id, class, defaults) and attaches the
-	 * remaining properties to the instance as Lua-only dynamic fields. IMPORTANT:
-	 * existing native properties or methods on the instance are NOT overridden or
-	 * wrapped by addons; they are skipped to preserve native behaviour and C++
-	 * portability.
+	 * Filters out reserved keys and attaches the remaining properties to the
+	 * instance as Lua-only dynamic fields.
 	 */
 	private applyClassAddons<T extends object>(instance: T, classTable?: Partial<T> & Record<string, unknown>): void {
 		if (!classTable) return;
-		const addons: Record<string, any> = {};
+		const target = instance as Record<string, unknown>;
 		for (const [key, value] of Object.entries(classTable)) {
 			if (excludedClassAddonKeys.has(key)) continue;
-
-			// Skip any name that already exists on the native instance. We do not
-			// attempt to override or wrap native methods/properties in C++.
-			if (key in instance) continue;
-
-			addons[key] = value;
+			target[key] = value;
 		}
-		Object.assign(instance, addons);
 	}
 
 	public display_width(): number {
@@ -548,8 +539,8 @@ export class BmsxVMApi {
 
 		// See whether this is a component type whose extension we have defined
 		const ext = this.componentExts.get(component_or_type);
-		const idLocal = ext ? this.resolveClassLocalId(ext) : undefined;
-		const instance = Component.newComponent(component_or_type, { parent_or_id: obj, id_local: idLocal } as ComponentAttachOptions);
+		const id_local = ext ? this.resolveClassLocalId(ext) : undefined;
+		const instance = Component.newComponent(component_or_type, { parent_or_id: obj, id_local: id_local } as ComponentAttachOptions);
 		this.applyObjectExtensionAndAddons(ext, instance);
 		obj.add_component(instance);
 	}
@@ -565,7 +556,7 @@ export class BmsxVMApi {
 	 *
 	 * Behavior:
 	 * - If an extension descriptor is provided, apply its `defaults` to the instance.
-	 * - Apply Lua class addons from `ext.class` (filtered to instance fields).
+	 * - Apply Lua class addons from `ext.class`.
 	 * - Attach any declared components, FSMs and action effects to the instance.
 	 * - Attach any declared behavior trees.
 	 * - After processing the extension descriptor, apply the `addons` object last so

@@ -59,6 +59,7 @@ add_library(bmsx_core STATIC
     core/binencoder.cpp
     core/rompack.cpp
     core/font.cpp
+    core/textobject.cpp
 
     # Timeline systems
     timeline/timeline.cpp
@@ -107,7 +108,6 @@ add_library(bmsx_core STATIC
     vm/vm_api.cpp
     vm/vm_runtime.cpp
     vm/vm_systems.cpp
-    vm/vm_objects.cpp
     vm/program_loader.cpp
 )
 
