@@ -27,12 +27,12 @@ function StateDefinition.new(id, def, root, parent)
 	self.on = def and def.on or {}
 	self.tick = def and def.tick or nil
 	self.entering_state = def and def.entering_state or nil
-	self.exiting_state = def and def.exiting_state or nil
+	self.exiting_state = def and (def.exiting_state or def.leaving_state) or nil
 	self.run_checks = def and def.run_checks or nil
 	self.input_event_handlers = def and def.input_event_handlers or {}
 	self.process_input = def and def.process_input or nil
 	self.is_concurrent = def and def.is_concurrent or false
-	self.input_eval = def and def.input_eval or "all"
+	self.input_eval = def and def.input_eval or nil
 	self.event_list = def and def.event_list or nil
 	self.timelines = def and def.timelines or nil
 	self.transition_guards = def and def.transition_guards or nil
@@ -79,11 +79,72 @@ function State.new(definition, target, parent)
 	self.started = false
 	self.parent = parent
 	self.root = parent and parent.root or self
+	self.timeline_bindings = nil
 	return self
+end
+
+function State:timeline(id)
+	return self.target:get_timeline(id)
+end
+
+function State:create_timeline_binding(key, config)
+	return {
+		id = config.id or key,
+		create = config.create,
+		autoplay = config.autoplay ~= false,
+		stop_on_exit = config.stop_on_exit ~= false,
+		play_options = config.play_options,
+		defined = false,
+	}
+end
+
+function State:ensure_timeline_definitions()
+	if not self.timeline_bindings then
+		local defs = self.definition.timelines or {}
+		local bindings = {}
+		for key, config in pairs(defs) do
+			bindings[#bindings + 1] = self:create_timeline_binding(key, config)
+		end
+		self.timeline_bindings = bindings
+	end
+	local bindings = self.timeline_bindings
+	for i = 1, #bindings do
+		local binding = bindings[i]
+		if not binding.defined then
+			local timeline = binding.create()
+			self.target:define_timeline(timeline)
+			binding.defined = true
+		end
+	end
+	return bindings
+end
+
+function State:activate_timelines()
+	local bindings = self:ensure_timeline_definitions()
+	for i = 1, #bindings do
+		local binding = bindings[i]
+		if binding.autoplay then
+			self.target:play_timeline(binding.id, binding.play_options)
+		end
+	end
+end
+
+function State:deactivate_timelines()
+	local bindings = self.timeline_bindings
+	if not bindings then
+		return
+	end
+	for i = 1, #bindings do
+		local binding = bindings[i]
+		if binding.stop_on_exit then
+			self.target:stop_timeline(binding.id)
+		end
+	end
 end
 
 function State:start()
 	self.started = true
+	self:activate_timelines()
 	if self.definition.entering_state then
 		self.definition.entering_state(self.target, self)
 	end
@@ -99,6 +160,7 @@ function State:transition_to(state_id)
 
 	if self.current_id then
 		local old_state = self.states[self.current_id]
+		old_state:deactivate_timelines()
 		if old_state.definition.exiting_state then
 			old_state.definition.exiting_state(self.target, old_state)
 		end
@@ -188,7 +250,60 @@ function State:dispatch_input_event(event_or_name, payload)
 	return false
 end
 
+function State:resolve_input_eval_mode()
+	local node = self
+	while node do
+		local mode = node.definition.input_eval
+		if mode == "first" or mode == "all" then
+			return mode
+		end
+		node = node.parent
+	end
+	return "all"
+end
+
+function State:process_input_events()
+	local handlers = self.definition.input_event_handlers
+	if not handlers then
+		return
+	end
+	local player_index = self.target.player_index or 1
+	local eval_mode = self:resolve_input_eval_mode()
+	for pattern, handler in pairs(handlers) do
+		if action_triggered(pattern, player_index) then
+			local handled = resolve_handler_transition(handler, self.target, self, { type = pattern, player_index = player_index })
+			if handled and eval_mode == "first" then
+				return
+			end
+		end
+	end
+end
+
+function State:process_input()
+	self:process_input_events()
+	if self.definition.process_input then
+		local result = self.definition.process_input(self.target, self)
+		if type(result) == "string" then
+			self:transition_to_path(result)
+		end
+	end
+end
+
 function State:tick(dt)
+	if self.current_id then
+		local child = self.states[self.current_id]
+		if child then
+			child:tick(dt)
+		end
+	end
+	if self.definition.is_concurrent then
+		for id, child in pairs(self.states) do
+			if id ~= self.current_id then
+				child:tick(dt)
+			end
+		end
+	end
+	self:process_input()
 	if self.definition.tick then
 		local result = self.definition.tick(self.target, self, dt)
 		if type(result) == "string" then
@@ -202,19 +317,6 @@ function State:tick(dt)
 			if type(result) == "string" then
 				self:transition_to_path(result)
 				break
-			end
-		end
-	end
-	if self.current_id then
-		local child = self.states[self.current_id]
-		if child then
-			child:tick(dt)
-		end
-	end
-	if self.definition.is_concurrent then
-		for id, child in pairs(self.states) do
-			if id ~= self.current_id then
-				child:tick(dt)
 			end
 		end
 	end

@@ -2,7 +2,9 @@
 -- Base component primitives for system ROM
 
 local eventemitter = require("eventemitter")
+local timeline = require("timeline")
 local EventEmitter = eventemitter.EventEmitter
+local Timeline = timeline.Timeline
 
 local Component = {}
 Component.__index = Component
@@ -88,7 +90,9 @@ function SpriteComponent.new(opts)
 	local self = setmetatable(Component.new(opts), SpriteComponent)
 	self.imgid = opts and opts.imgid or "none"
 	self.flip = { flip_h = false, flip_v = false }
-	self.colorize = opts and opts.colorize or { r = 255, g = 255, b = 255, a = 1 }
+	self.colorize = opts and opts.colorize or { r = 1, g = 1, b = 1, a = 1 }
+	self.scale = opts and opts.scale or { x = 1, y = 1 }
+	self.offset = opts and opts.offset or { x = 0, y = 0, z = 0 }
 	return self
 end
 
@@ -122,36 +126,108 @@ setmetatable(TimelineComponent, { __index = Component })
 function TimelineComponent.new(opts)
 	opts = opts or {}
 	opts.type_name = "TimelineComponent"
+	opts.unique = true
 	local self = setmetatable(Component.new(opts), TimelineComponent)
-	self.timelines = {}
+	self.registry = {}
+	self.active = {}
+	self.listeners = {}
 	return self
 end
 
-function TimelineComponent:define(id, def)
-	if def == nil then
-		local key = id.id or id.name or id
-		self.timelines[key] = id
-		return
-	end
-	self.timelines[id] = def
+function TimelineComponent:define(definition)
+	local instance = definition.__is_timeline and definition or Timeline.new(definition)
+	self.registry[instance.id] = { instance = instance }
 end
 
 function TimelineComponent:get(id)
-	return self.timelines[id]
+	local entry = self.registry[id]
+	return entry and entry.instance or nil
 end
 
 function TimelineComponent:play(id, opts)
-	local t = self.timelines[id]
-	if t and t.play then
-		t.play(opts)
+	local entry = self.registry[id]
+	if not entry then
+		error("[TimelineComponent] Unknown timeline '" .. id .. "' on '" .. self.parent.id .. "'")
 	end
+	local instance = entry.instance
+	local rewind = true
+	local snap = true
+	if opts ~= nil then
+		if opts.rewind ~= nil then
+			rewind = opts.rewind
+		end
+		if opts.snap_to_start ~= nil then
+			snap = opts.snap_to_start
+		end
+	end
+	if rewind then
+		instance:rewind()
+	end
+	if snap and instance.length > 0 then
+		self:process_events(entry, instance:snap_to_start())
+	end
+	self.active[id] = true
+	return instance
 end
 
 function TimelineComponent:stop(id)
-	local t = self.timelines[id]
-	if t and t.stop then
-		t.stop()
+	self.active[id] = nil
+end
+
+function TimelineComponent:tick_active(dt)
+	for id in pairs(self.active) do
+		local entry = self.registry[id]
+		local events = entry.instance:tick(dt)
+		if #events > 0 then
+			self:process_events(entry, events)
+		end
 	end
+end
+
+function TimelineComponent:process_events(entry, events)
+	local owner = self.parent
+	for i = 1, #events do
+		local evt = events[i]
+		if evt.kind == "frame" then
+			local payload = {
+				timeline_id = entry.instance.id,
+				frame_index = evt.current,
+				frame_value = evt.value,
+				rewound = evt.rewound,
+				reason = evt.reason,
+				direction = evt.direction,
+			}
+			self:emit_frameevent(owner, payload)
+		else
+			local payload = {
+				timeline_id = entry.instance.id,
+				mode = evt.mode,
+				wrapped = evt.wrapped,
+			}
+			self:emit_endevent(owner, payload)
+			if evt.mode == "once" then
+				self.active[entry.instance.id] = nil
+			end
+		end
+	end
+end
+
+function TimelineComponent:emit_frameevent(owner, payload)
+	self:dispatch_timeline_events(owner, "timeline.frame", payload)
+end
+
+function TimelineComponent:emit_endevent(owner, payload)
+	self:dispatch_timeline_events(owner, "timeline.end", payload)
+end
+
+function TimelineComponent:dispatch_timeline_events(owner, base_type, payload)
+	local base_event = eventemitter.create_gameevent({ type = base_type, emitter = owner, timeline_id = payload.timeline_id, frame_index = payload.frame_index, frame_value = payload.frame_value, rewound = payload.rewound, reason = payload.reason, direction = payload.direction, mode = payload.mode, wrapped = payload.wrapped })
+	owner.events:emit_event(base_event)
+	owner.sc:dispatch_event(base_event)
+	local scoped_type = base_type .. "." .. payload.timeline_id
+	local scoped_event = eventemitter.create_gameevent({ type = scoped_type, emitter = owner, timeline_id = payload.timeline_id, frame_index = payload.frame_index, frame_value = payload.frame_value, rewound = payload.rewound, reason = payload.reason, direction = payload.direction, mode = payload.mode, wrapped = payload.wrapped })
+	owner.events:emit_event(scoped_event)
+	owner.sc:dispatch_event(scoped_event)
 end
 
 return {

@@ -11,7 +11,8 @@ setmetatable(SpriteObject, { __index = WorldObject })
 local BASE_SPRITE_ID = "base_sprite"
 local PRIMARY_COLLIDER_ID = "primary"
 
-local function apply_image_metadata(self, meta)
+local function apply_image_metadata(self, id)
+	local meta = assets.img[id].imgmeta
 	self.sx = meta.width
 	self.sy = meta.height
 end
@@ -22,7 +23,6 @@ function SpriteObject.new(opts)
 	self.flip_h = false
 	self.flip_v = false
 	self.imgid = "none"
-	self.colorize = { r = 255, g = 255, b = 255, a = 1 }
 	self.animations = {}
 	self.current_animation = nil
 
@@ -38,7 +38,15 @@ end
 function SpriteObject:set_image(id, meta)
 	self.imgid = id
 	self.sprite_component.imgid = id
-	apply_image_metadata(self, meta)
+	if id == "none" then
+		return
+	end
+	if meta then
+		self.sx = meta.width
+		self.sy = meta.height
+	else
+		apply_image_metadata(self, id)
+	end
 end
 
 function SpriteObject:play_ani(id, opts)
@@ -55,6 +63,23 @@ end
 
 function SpriteObject:resume_ani(id)
 	self:play_ani(id)
+end
+
+function SpriteObject:draw()
+	if not self.visible then
+		return
+	end
+	local sc = self.sprite_component
+	if sc.imgid == "none" then
+		return
+	end
+	local offset = sc.offset
+	sprite(sc.imgid, self.x + offset.x, self.y + offset.y, self.z + offset.z, {
+		scale = sc.scale,
+		flip_h = sc.flip.flip_h,
+		flip_v = sc.flip.flip_v,
+		colorize = sc.colorize,
+	})
 end
 
 return SpriteObject

@@ -36,6 +36,7 @@ function WorldObject.new(opts)
 	self.active = opts.active or false
 	self.tick_enabled = opts.tick_enabled or false
 	self.eventhandling_enabled = opts.eventhandling_enabled or false
+	self.player_index = opts.player_index or 1
 	self.components = {}
 	self.component_map = {}
 	self.space_id = opts.space_id

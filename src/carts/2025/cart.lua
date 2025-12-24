@@ -1,3 +1,6 @@
+local engine = require("engine")
+local object = engine.object
+
 local director_def_id = 'p3.director'
 local director_instance_id = 'p3.director.instance'
 local director_fsm_id = 'p3.director.fsm'
@@ -367,7 +370,7 @@ local story = {
 					{ label = '\"MEER MAKEUP!\"', outcome = 'dodge', points = 0 },
 					{ label = '\"Ik luister naar mijn moeder.\"', outcome = 'hit', points = 1 },
 				},
-			},S
+			},
 		},
 		rewards = {
 			{ { stat = 'makeup', add = 3 } },
@@ -477,9 +480,9 @@ local function arc01(u)
 end
 
 local function set_text_lines(text_object_id, lines, typed)
-	local text_obj = world_object(text_object_id)
+	local text_obj = object(text_object_id)
 	-- Convert table to newline-separated string (portable to C++)
-	text_obj.set_text(lines)
+	text_obj:set_text(lines)
 	if typed then
 		return
 	end
@@ -490,12 +493,12 @@ end
 
 local function clear_text(text_object_id)
 	set_text_lines(text_object_id, {}, false)
-	local text_obj = world_object(text_object_id)
+	local text_obj = object(text_object_id)
 	text_obj.highlighted_line_index = nil
 end
 
 local function finish_text(text_object_id)
-	local text_obj = world_object(text_object_id)
+	local text_obj = object(text_object_id)
 	text_obj.displayed_lines = text_obj.full_text_lines
 	text_obj.text = text_obj.full_text_lines
 	text_obj.is_typing = false
@@ -508,8 +511,8 @@ function director:apply_background(id)
 	if id == nil then
 		return
 	end
-	local bg = world_object(bg_id)
-	bg.imgid = id
+	local bg = object(bg_id)
+	bg:set_image(id)
 end
 
 function director:set_prompt_line(text)
@@ -517,11 +520,11 @@ function director:set_prompt_line(text)
 end
 
 function director:reset_text_colors()
-	world_object(text_main_id).text_color = { r = 1, g = 1, b = 1, a = 1 }
-	world_object(text_choice_id).text_color = { r = 1, g = 1, b = 1, a = 1 }
-	world_object(text_prompt_id).text_color = { r = 1, g = 1, b = 1, a = 1 }
-	world_object(text_transition_id).text_color = { r = 1, g = 1, b = 1, a = 1 }
-	world_object(text_results_id).text_color = { r = 1, g = 1, b = 1, a = 1 }
+	object(text_main_id).text_color = { r = 1, g = 1, b = 1, a = 1 }
+	object(text_choice_id).text_color = { r = 1, g = 1, b = 1, a = 1 }
+	object(text_prompt_id).text_color = { r = 1, g = 1, b = 1, a = 1 }
+	object(text_transition_id).text_color = { r = 1, g = 1, b = 1, a = 1 }
+	object(text_results_id).text_color = { r = 1, g = 1, b = 1, a = 1 }
 end
 
 function director:apply_effects(effects)
@@ -532,10 +535,10 @@ function director:apply_effects(effects)
 end
 
 function director:hide_combat_sprites()
-	world_object(combat_monster_id).visible = false
-	world_object(combat_maya_a_id).visible = false
-	world_object(combat_maya_b_id).visible = false
-	world_object(combat_all_out_id).visible = false
+	object(combat_monster_id).visible = false
+	object(combat_maya_a_id).visible = false
+	object(combat_maya_b_id).visible = false
+	object(combat_all_out_id).visible = false
 end
 
 function director:apply_combat_round(node)
@@ -551,7 +554,7 @@ end
 
 function director:update_combat_hover()
 	self.combat_hover_time = self.combat_hover_time + game.deltatime_seconds
-	local monster = world_object(combat_monster_id)
+	local monster = object(combat_monster_id)
 	local u = (self.combat_hover_time / combat_monster_hover_period_seconds) + 0.25
 	local wave = smoothstep(pingpong01(u))
 	local offset = (wave - 0.5) * 2 * combat_monster_hover_amp
@@ -569,7 +572,7 @@ function director:show_dialogue_page(typed)
 end
 
 function director:is_typing()
-	return world_object(text_main_id).is_typing
+	return object(text_main_id).is_typing
 end
 
 function director:skip_typing()
@@ -583,7 +586,7 @@ function director:skip_typing()
 end
 
 function director:update_dialogue_prompt()
-	local main = world_object(text_main_id)
+	local main = object(text_main_id)
 	if main.is_typing then
 		self:set_prompt_line('(B) skip')
 		return
@@ -606,7 +609,7 @@ function director:setup_choice_menu(node)
 end
 
 local function build_director_fsm()
-	define_fsm(director_fsm_id, {
+	engine.define_fsm(director_fsm_id, {
 		initial = 'boot',
 		states = {
 			boot = {
@@ -670,7 +673,7 @@ local function build_director_fsm()
 							for i = 0, overgang_frame_count - 1 do
 								frames[#frames + 1] = i
 							end
-							return new_timeline({
+							return engine.new_timeline({
 								id = overgang_timeline_id,
 								frames = frames,
 								ticks_per_frame = overgang_ticks_per_frame,
@@ -689,17 +692,17 @@ local function build_director_fsm()
 					clear_text(text_prompt_id)
 					set_text_lines(text_transition_id, { node.label }, false)
 					self:reset_text_colors()
-					local transition_text = world_object(text_transition_id)
+					local transition_text = object(text_transition_id)
 					self.transition_center_x = transition_text.centered_block_x
 					self.transition_target_bg = story[node.next].bg
 					transition_text.centered_block_x = display_width()
-					local bg = world_object(bg_id)
+					local bg = object(bg_id)
 					bg.visible = true
 					local c = 1
 					if self.skip_transition_fade then
 						c = 0
 					end
-					bg.colorize = { r = c, g = c, b = c, a = 1 }
+					bg.sprite_component.colorize = { r = c, g = c, b = c, a = 1 }
 					if self.skip_transition_fade then
 						self:apply_background(self.transition_target_bg)
 					end
@@ -708,9 +711,9 @@ local function build_director_fsm()
 					['timeline.frame.' .. overgang_timeline_id] = {
 						go = function(self, _state, event)
 							local frame_index = event.frame_index
-							local bg = world_object(bg_id)
+							local bg = object(bg_id)
 							if self.skip_transition_fade then
-								bg.colorize = { r = 0, g = 0, b = 0, a = 1 }
+								bg.sprite_component.colorize = { r = 0, g = 0, b = 0, a = 1 }
 							else
 								if frame_index == (overgang_fade_out_frames - 1) then
 									self:apply_background(self.transition_target_bg)
@@ -730,7 +733,7 @@ local function build_director_fsm()
 									local u = (frame_index - fade_in_start) / (overgang_fade_in_frames - 1)
 									c = u
 								end
-								bg.colorize = { r = c, g = c, b = c, a = 1 }
+								bg.sprite_component.colorize = { r = c, g = c, b = c, a = 1 }
 							end
 							local center_x = self.transition_center_x
 							local start_x = display_width()
@@ -746,7 +749,7 @@ local function build_director_fsm()
 								local u = out_index / (overgang_out_frames - 1)
 								x = center_x + (end_x - center_x) * u
 							end
-							local transition_text = world_object(text_transition_id)
+							local transition_text = object(text_transition_id)
 							transition_text.centered_block_x = x
 						end,
 					},
@@ -779,7 +782,7 @@ local function build_director_fsm()
 							for i = 0, overgang_fade_in_frames - 1 do
 								frames[#frames + 1] = i
 							end
-							return new_timeline({
+							return engine.new_timeline({
 								id = overgang_post_fade_in_timeline_id,
 								frames = frames,
 								ticks_per_frame = overgang_ticks_per_frame,
@@ -793,39 +796,39 @@ local function build_director_fsm()
 				},
 				entering_state = function(self)
 					clear_text(text_transition_id)
-					local bg = world_object(bg_id)
+					local bg = object(bg_id)
 					bg.visible = true
-					bg.colorize = { r = 0, g = 0, b = 0, a = 1 }
+					bg.sprite_component.colorize = { r = 0, g = 0, b = 0, a = 1 }
 				end,
 				on = {
 					['timeline.frame.' .. overgang_post_fade_in_timeline_id] = {
 						go = function(self, _state, event)
 							local u = event.frame_index / (overgang_fade_in_frames - 1)
 							local c = smoothstep(u)
-							local bg = world_object(bg_id)
-							bg.colorize = { r = c, g = c, b = c, a = 1 }
+							local bg = object(bg_id)
+							bg.sprite_component.colorize = { r = c, g = c, b = c, a = 1 }
 						end,
 					},
 					['timeline.end.' .. overgang_post_fade_in_timeline_id] = {
 						go = function(self)
-							local bg = world_object(bg_id)
-							bg.colorize = { r = 1, g = 1, b = 1, a = 1 }
+							local bg = object(bg_id)
+							bg.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
 							return '/run_node'
 						end,
 					},
 				},
 				leaving_state = function(self)
-					local bg = world_object(bg_id)
-					bg.colorize = { r = 1, g = 1, b = 1, a = 1 }
+					local bg = object(bg_id)
+					bg.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
 				end,
 			},
 			bg_only = {
 				entering_state = function(self)
 					local node = story[self.node_id]
 					self:apply_background(node.bg)
-					local bg = world_object(bg_id)
+					local bg = object(bg_id)
 					bg.visible = true
-					bg.colorize = { r = 1, g = 1, b = 1, a = 1 }
+					bg.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
 					self:hide_combat_sprites()
 					clear_text(text_main_id)
 					clear_text(text_choice_id)
@@ -853,7 +856,7 @@ local function build_director_fsm()
 							for i = 0, fade_frame_count - 1 do
 								frames[#frames + 1] = i
 							end
-							return new_timeline({
+							return engine.new_timeline({
 								id = fade_timeline_id,
 								frames = frames,
 								ticks_per_frame = fade_ticks_per_frame,
@@ -881,9 +884,9 @@ local function build_director_fsm()
 					else
 						self.fade_target_bg = next_node.bg
 					end
-					local bg = world_object(bg_id)
+					local bg = object(bg_id)
 					bg.visible = true
-					bg.colorize = { r = 1, g = 1, b = 1, a = 1 }
+					bg.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
 				end,
 				on = {
 					['timeline.frame.' .. fade_timeline_id] = {
@@ -909,8 +912,8 @@ local function build_director_fsm()
 									end
 								end
 							end
-							local bg = world_object(bg_id)
-							bg.colorize = { r = c, g = c, b = c, a = 1 }
+							local bg = object(bg_id)
+							bg.sprite_component.colorize = { r = c, g = c, b = c, a = 1 }
 						end,
 					},
 					['timeline.end.' .. fade_timeline_id] = {
@@ -929,12 +932,12 @@ local function build_director_fsm()
 					},
 				},
 				leaving_state = function(self)
-					local bg = world_object(bg_id)
+					local bg = object(bg_id)
 					local c = 1
 					if self.fade_hold_black then
 						c = 0
 					end
-					bg.colorize = { r = c, g = c, b = c, a = 1 }
+					bg.sprite_component.colorize = { r = c, g = c, b = c, a = 1 }
 					self.fade_hold_black = false
 				end,
 			},
@@ -946,7 +949,7 @@ local function build_director_fsm()
 							for i = 0, combat_fade_frame_count - 1 do
 								frames[#frames + 1] = i
 							end
-							return new_timeline({
+							return engine.new_timeline({
 								id = combat_fade_timeline_id,
 								frames = frames,
 								ticks_per_frame = combat_fade_ticks_per_frame,
@@ -965,9 +968,9 @@ local function build_director_fsm()
 					clear_text(text_transition_id)
 					clear_text(text_results_id)
 					self:hide_combat_sprites()
-					local bg = world_object(bg_id)
+					local bg = object(bg_id)
 					bg.visible = true
-					bg.colorize = { r = 1, g = 1, b = 1, a = 1 }
+					bg.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
 				end,
 				on = {
 					['timeline.frame.' .. combat_fade_timeline_id] = {
@@ -978,8 +981,8 @@ local function build_director_fsm()
 								local u = frame_index / (combat_fade_out_frames - 1)
 								c = 1 - smoothstep(u)
 							end
-							local bg = world_object(bg_id)
-							bg.colorize = { r = c, g = c, b = c, a = 1 }
+							local bg = object(bg_id)
+							bg.sprite_component.colorize = { r = c, g = c, b = c, a = 1 }
 						end,
 					},
 					['timeline.end.' .. combat_fade_timeline_id] = {
@@ -989,8 +992,8 @@ local function build_director_fsm()
 					},
 				},
 				leaving_state = function(self)
-					local bg = world_object(bg_id)
-					bg.colorize = { r = 0, g = 0, b = 0, a = 1 }
+					local bg = object(bg_id)
+					bg.sprite_component.colorize = { r = 0, g = 0, b = 0, a = 1 }
 				end,
 			},
 			combat_fade_out = {
@@ -1001,7 +1004,7 @@ local function build_director_fsm()
 							for i = 0, combat_fade_frame_count - 1 do
 								frames[#frames + 1] = i
 							end
-							return new_timeline({
+							return engine.new_timeline({
 								id = combat_fade_timeline_id,
 								frames = frames,
 								ticks_per_frame = combat_fade_ticks_per_frame,
@@ -1034,7 +1037,7 @@ local function build_director_fsm()
 					clear_text(text_results_id)
 					self:reset_text_colors()
 
-					local bg = world_object(bg_id)
+					local bg = object(bg_id)
 					bg.visible = false
 
 					self.combat_round_index = 1
@@ -1042,10 +1045,10 @@ local function build_director_fsm()
 					self.combat_max_points = #node.rounds
 					self.combat_hover_time = 0
 
-					local monster = world_object(combat_monster_id)
-					monster.imgid = node.monster_imgid
+					local monster = object(combat_monster_id)
+					monster:set_image(node.monster_imgid)
 					monster.visible = true
-					monster.colorize = { r = 1, g = 1, b = 1, a = 1 }
+					monster.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
 					monster.x = (display_width() * 0.65) - (monster.sx / 2)
 					monster.y = (display_height() * 0.25) - (monster.sy / 2)
 					monster.z = 200
@@ -1053,22 +1056,22 @@ local function build_director_fsm()
 					self.combat_monster_base_x = monster.x
 					self.combat_monster_base_y = monster.y
 
-					local maya_a = world_object(combat_maya_a_id)
-					maya_a.imgid = 'maya_a'
+					local maya_a = object(combat_maya_a_id)
+					maya_a:set_image('maya_a')
 					maya_a.visible = true
 					maya_a.x = 0
 					maya_a.y = display_height() - maya_a.sy
 					maya_a.z = 300
 
-					local all_out = world_object(combat_all_out_id)
-					all_out.imgid = 'all_out'
+					local all_out = object(combat_all_out_id)
+					all_out:set_image('all_out')
 					all_out.visible = false
 					all_out.x = 0
 					all_out.y = 0
 					all_out.z = 800
 
-					local maya_b = world_object(combat_maya_b_id)
-					maya_b.imgid = 'maya_b'
+					local maya_b = object(combat_maya_b_id)
+					maya_b:set_image('maya_b')
 					maya_b.visible = false
 					maya_b.x = display_width() - maya_b.sx
 					maya_b.y = display_height() - maya_b.sy
@@ -1082,27 +1085,27 @@ local function build_director_fsm()
 					local node = story[self.node_id]
 					clear_text(text_transition_id)
 					clear_text(text_results_id)
-					local bg = world_object(bg_id)
+					local bg = object(bg_id)
 					bg.visible = false
-					local monster = world_object(combat_monster_id)
-					monster.imgid = node.monster_imgid
+					local monster = object(combat_monster_id)
+					monster:set_image(node.monster_imgid)
 					monster.visible = true
-					local maya_a = world_object(combat_maya_a_id)
-					maya_a.imgid = 'maya_a'
+					local maya_a = object(combat_maya_a_id)
+					maya_a:set_image('maya_a')
 					maya_a.visible = true
-					world_object(combat_all_out_id).visible = false
-					world_object(combat_maya_b_id).visible = false
+					object(combat_all_out_id).visible = false
+					object(combat_maya_b_id).visible = false
 					self:apply_combat_round(node)
 				end,
 				tick = function(self)
 					self:update_combat_hover()
-					local main = world_object(text_main_id)
+					local main = object(text_main_id)
 					if main.is_typing then
-						main.type_next()
+						main:type_next()
 						return
 					end
 					self:set_prompt_line('(A) select')
-					local choice_text = world_object(text_choice_id)
+					local choice_text = object(text_choice_id)
 					choice_text.highlighted_line_index = self.choice_index - 1
 				end,
 				input_eval = 'first',
@@ -1120,7 +1123,7 @@ local function build_director_fsm()
 						end,
 					},
 					['b[jp]'] = {
-						go = function(self) seLf:skip_typing() end
+						go = function(self) self:skip_typing() end
 					},
 					['a[jp]'] = {
 						go = function(self)
@@ -1146,7 +1149,7 @@ local function build_director_fsm()
 							for i = 0, combat_hit_frame_count - 1 do
 								frames[#frames + 1] = i
 							end
-							return new_timeline({
+							return engine.new_timeline({
 								id = combat_hit_timeline_id,
 								frames = frames,
 								ticks_per_frame = combat_hit_ticks_per_frame,
@@ -1170,26 +1173,26 @@ local function build_director_fsm()
 					['timeline.frame.' .. combat_hit_timeline_id] = {
 						go = function(self, _state, event)
 							local frame_index = event.frame_index
-							local monster = world_object(combat_monster_id)
+							local monster = object(combat_monster_id)
 							local hold_in = 3
 							local hold_out = 3
 							local flash_end = combat_hit_frame_count - hold_out
 							if frame_index < hold_in or frame_index >= flash_end then
-								monster.colorize = { r = 1, g = 1, b = 1, a = 1 }
+								monster.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
 								return
 							end
 							local flash_index = frame_index - hold_in
 							if (flash_index % 2) == 0 then
-								monster.colorize = { r = 1, g = 1, b = 1, a = 1 }
+								monster.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
 							else
-								monster.colorize = { r = 1, g = 0.2, b = 0.2, a = 1 }
+								monster.sprite_component.colorize = { r = 1, g = 0.2, b = 0.2, a = 1 }
 							end
 						end,
 					},
 					['timeline.end.' .. combat_hit_timeline_id] = {
 						go = function(self)
-							local monster = world_object(combat_monster_id)
-							monster.colorize = { r = 1, g = 1, b = 1, a = 1 }
+							local monster = object(combat_monster_id)
+							monster.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
 							local node = story[self.node_id]
 							if self.combat_round_index > #node.rounds then
 								return '/combat_all_out_prompt'
@@ -1207,7 +1210,7 @@ local function build_director_fsm()
 							for i = 0, combat_dodge_frame_count - 1 do
 								frames[#frames + 1] = i
 							end
-							return new_timeline({
+							return engine.new_timeline({
 								id = combat_dodge_timeline_id,
 								frames = frames,
 								ticks_per_frame = combat_dodge_ticks_per_frame,
@@ -1231,7 +1234,7 @@ local function build_director_fsm()
 				on = {
 					['timeline.frame.' .. combat_dodge_timeline_id] = {
 						go = function(self, _state, event)
-							local monster = world_object(combat_monster_id)
+							local monster = object(combat_monster_id)
 							local frame_index = event.frame_index
 							local hold_in = 4
 							local hold_out = 4
@@ -1246,7 +1249,7 @@ local function build_director_fsm()
 					},
 					['timeline.end.' .. combat_dodge_timeline_id] = {
 						go = function(self)
-							local monster = world_object(combat_monster_id)
+							local monster = object(combat_monster_id)
 							monster.x = self.combat_monster_base_x
 							local node = story[self.node_id]
 							if self.combat_round_index > #node.rounds then
@@ -1267,18 +1270,18 @@ local function build_director_fsm()
 				end,
 				tick = function(self)
 					self:update_combat_hover()
-					local main = world_object(text_main_id)
+					local main = object(text_main_id)
 					if main.is_typing then
-						main.type_next()
+						main:type_next()
 						return
 					end
 					self:set_prompt_line('(A) ATTACK')
-					world_object(text_choice_id).highlighted_line_index = 0
+					object(text_choice_id).highlighted_line_index = 0
 				end,
 				input_eval = 'first',
 				input_event_handlers = {
 					['b[jp]'] = {
-						go = function(self) seLf:skip_typing() end
+						go = function(self) self:skip_typing() end
 					},
 					['a[jp]'] = {
 						go = function(self)
@@ -1296,7 +1299,7 @@ local function build_director_fsm()
 							for i = 0, combat_all_out_frame_count - 1 do
 								frames[#frames + 1] = i
 							end
-							return new_timeline({
+							return engine.new_timeline({
 								id = combat_all_out_timeline_id,
 								frames = frames,
 								ticks_per_frame = combat_all_out_ticks_per_frame,
@@ -1315,8 +1318,8 @@ local function build_director_fsm()
 					clear_text(text_prompt_id)
 					clear_text(text_transition_id)
 					clear_text(text_results_id)
-					local all_out = world_object(combat_all_out_id)
-					all_out.get_component_by_id('base_sprite').scale = { x = 1, y = 1 }
+					local all_out = object(combat_all_out_id)
+					all_out:get_component_by_id('base_sprite').scale = { x = 1, y = 1 }
 					all_out.visible = true
 					all_out.x = 0
 					all_out.y = 0
@@ -1328,11 +1331,11 @@ local function build_director_fsm()
 						go = function(self, _state, event)
 							local frame_index = event.frame_index
 							local dx, dy = all_out_shake(frame_index)
-							local all_out = world_object(combat_all_out_id)
+							local all_out = object(combat_all_out_id)
 							local u = (frame_index / combat_all_out_pulse_period_frames) + 0.25
 							local pulse = smoothstep(pingpong01(u))
 							local s = 1 + (((pulse * 2) - 1) * combat_all_out_pulse_amp)
-							all_out.get_component_by_id('base_sprite').scale = { x = s, y = s }
+							all_out:get_component_by_id('base_sprite').scale = { x = s, y = s }
 							local ox = (all_out.sx * (s - 1)) / 2
 							local oy = (all_out.sy * (s - 1)) / 2
 							all_out.x = self.all_out_origin_x + dx - ox
@@ -1346,8 +1349,8 @@ local function build_director_fsm()
 					},
 				},
 				leaving_state = function(self)
-					local all_out = world_object(combat_all_out_id)
-					all_out.get_component_by_id('base_sprite').scale = { x = 1, y = 1 }
+					local all_out = object(combat_all_out_id)
+					all_out:get_component_by_id('base_sprite').scale = { x = 1, y = 1 }
 					all_out.visible = false
 					all_out.x = self.all_out_origin_x
 					all_out.y = self.all_out_origin_y
@@ -1367,33 +1370,33 @@ local function build_director_fsm()
 					clear_text(text_prompt_id)
 					clear_text(text_transition_id)
 
-					local monster = world_object(combat_monster_id)
+					local monster = object(combat_monster_id)
 					monster.visible = false
-					local maya_a = world_object(combat_maya_a_id)
+					local maya_a = object(combat_maya_a_id)
 					maya_a.visible = false
-					local all_out = world_object(combat_all_out_id)
+					local all_out = object(combat_all_out_id)
 					all_out.visible = false
 
-					local bg = world_object(bg_id)
-					local bg_sprite = bg.get_component_by_id('base_sprite')
+					local bg = object(bg_id)
+					local bg_sprite = bg:get_component_by_id('base_sprite')
 					self.combat_results_prev_bg_imgid = bg.imgid
 					self.combat_results_prev_bg_scale_x = bg_sprite.scale.x
 					self.combat_results_prev_bg_scale_y = bg_sprite.scale.y
 					bg.visible = true
-					bg.imgid = 'whitepixel'
+					bg:set_image('whitepixel')
 					bg.x = 0
 					bg.y = 0
 					bg_sprite.scale = { x = display_width(), y = display_height() }
-					bg.colorize = { r = combat_results_bg_r, g = combat_results_bg_g, b = combat_results_bg_b, a = 0 }
+					bg.sprite_component.colorize = { r = combat_results_bg_r, g = combat_results_bg_g, b = combat_results_bg_b, a = 0 }
 
-					local maya_b = world_object(combat_maya_b_id)
-					maya_b.imgid = 'maya_b'
+					local maya_b = object(combat_maya_b_id)
+					maya_b:set_image('maya_b')
 					maya_b.visible = true
 					self.combat_results_maya_target_x = display_width() - maya_b.sx
 					self.combat_results_maya_start_x = display_width()
 					maya_b.x = self.combat_results_maya_start_x
 					maya_b.y = display_height() - maya_b.sy
-					maya_b.colorize = { r = 1, g = 1, b = 1, a = 0 }
+					maya_b.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 0 }
 					maya_b.z = 300
 
 					local lines = { 'Combat Results:' }
@@ -1402,7 +1405,7 @@ local function build_director_fsm()
 						lines[#lines + 1] = stat_label(effect.stat) .. ' +' .. effect.add
 					end
 					set_text_lines(text_results_id, lines, false)
-					local results = world_object(text_results_id)
+					local results = object(text_results_id)
 					results.text_color = { r = 1, g = 1, b = 1, a = 0 }
 					self.combat_results_text_target_x = results.centered_block_x / 2
 					self.combat_results_text_start_x = -display_width()
@@ -1418,7 +1421,7 @@ local function build_director_fsm()
 							for i = 0, combat_results_fade_in_frames - 1 do
 								frames[#frames + 1] = i
 							end
-							return new_timeline({
+							return engine.new_timeline({
 								id = combat_results_fade_in_timeline_id,
 								frames = frames,
 								ticks_per_frame = combat_results_fade_in_ticks_per_frame,
@@ -1435,12 +1438,12 @@ local function build_director_fsm()
 						go = function(self, _state, event)
 							local u = event.frame_index / (combat_results_fade_in_frames - 1)
 							local a = smoothstep(u)
-							local bg = world_object(bg_id)
-							bg.colorize = { r = combat_results_bg_r, g = combat_results_bg_g, b = combat_results_bg_b, a = combat_results_bg_a * a }
-							local maya_b = world_object(combat_maya_b_id)
-							maya_b.colorize = { r = 1, g = 1, b = 1, a = a }
+							local bg = object(bg_id)
+							bg.sprite_component.colorize = { r = combat_results_bg_r, g = combat_results_bg_g, b = combat_results_bg_b, a = combat_results_bg_a * a }
+							local maya_b = object(combat_maya_b_id)
+							maya_b.sprite_component.colorize = { r = 1, g = 1, b = 1, a = a }
 							maya_b.x = self.combat_results_maya_start_x + (self.combat_results_maya_target_x - self.combat_results_maya_start_x) * a
-							local results = world_object(text_results_id)
+							local results = object(text_results_id)
 							results.text_color = { r = 1, g = 1, b = 1, a = a }
 							results.centered_block_x = self.combat_results_text_start_x + (self.combat_results_text_target_x - self.combat_results_text_start_x) * a
 						end,
@@ -1472,7 +1475,7 @@ local function build_director_fsm()
 							for i = 0, combat_results_fade_out_frames - 1 do
 								frames[#frames + 1] = i
 							end
-							return new_timeline({
+							return engine.new_timeline({
 								id = combat_results_fade_out_timeline_id,
 								frames = frames,
 								ticks_per_frame = combat_results_fade_out_ticks_per_frame,
@@ -1495,24 +1498,24 @@ local function build_director_fsm()
 						go = function(self, _state, event)
 							local u = event.frame_index / (combat_results_fade_out_frames - 1)
 							local a = 1 - smoothstep(u)
-							local bg = world_object(bg_id)
-							bg.colorize = { r = combat_results_bg_r, g = combat_results_bg_g, b = combat_results_bg_b, a = combat_results_bg_a * a }
-							local maya_b = world_object(combat_maya_b_id)
-							maya_b.colorize = { r = 1, g = 1, b = 1, a = a }
-							local results = world_object(text_results_id)
+							local bg = object(bg_id)
+							bg.sprite_component.colorize = { r = combat_results_bg_r, g = combat_results_bg_g, b = combat_results_bg_b, a = combat_results_bg_a * a }
+							local maya_b = object(combat_maya_b_id)
+							maya_b.sprite_component.colorize = { r = 1, g = 1, b = 1, a = a }
+							local results = object(text_results_id)
 							results.text_color = { r = 1, g = 1, b = 1, a = a }
 						end,
 					},
 					['timeline.end.' .. combat_results_fade_out_timeline_id] = {
 						go = function(self)
-							world_object(combat_maya_b_id).visible = false
+							object(combat_maya_b_id).visible = false
 							clear_text(text_results_id)
-							local bg = world_object(bg_id)
-							local bg_sprite = bg.get_component_by_id('base_sprite')
+							local bg = object(bg_id)
+							local bg_sprite = bg:get_component_by_id('base_sprite')
 							bg.visible = false
-							bg.imgid = self.combat_results_prev_bg_imgid
+							bg:set_image(self.combat_results_prev_bg_imgid)
 							bg_sprite.scale = { x = self.combat_results_prev_bg_scale_x, y = self.combat_results_prev_bg_scale_y }
-							bg.colorize = { r = 1, g = 1, b = 1, a = 1 }
+							bg.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
 							self:hide_combat_sprites()
 							local next_kind = story[self.node_id].kind
 							if next_kind == 'transition' then
@@ -1537,7 +1540,7 @@ local function build_director_fsm()
 							for i = 0, combat_exit_fade_in_frames - 1 do
 								frames[#frames + 1] = i
 							end
-							return new_timeline({
+							return engine.new_timeline({
 								id = combat_exit_fade_in_timeline_id,
 								frames = frames,
 								ticks_per_frame = combat_exit_fade_in_ticks_per_frame,
@@ -1550,38 +1553,38 @@ local function build_director_fsm()
 					},
 				},
 				entering_state = function(self)
-					local bg = world_object(bg_id)
+					local bg = object(bg_id)
 					self:apply_background(self.combat_exit_target_bg)
 					bg.visible = true
-					bg.colorize = { r = 0, g = 0, b = 0, a = 1 }
+					bg.sprite_component.colorize = { r = 0, g = 0, b = 0, a = 1 }
 				end,
 				on = {
 					['timeline.frame.' .. combat_exit_fade_in_timeline_id] = {
 						go = function(self, _state, event)
 							local u = event.frame_index / (combat_exit_fade_in_frames - 1)
 							local c = smoothstep(u)
-							local bg = world_object(bg_id)
-							bg.colorize = { r = c, g = c, b = c, a = 1 }
+							local bg = object(bg_id)
+							bg.sprite_component.colorize = { r = c, g = c, b = c, a = 1 }
 						end,
 					},
 					['timeline.end.' .. combat_exit_fade_in_timeline_id] = {
 						go = function(self)
-							local bg = world_object(bg_id)
-							bg.colorize = { r = 1, g = 1, b = 1, a = 1 }
+							local bg = object(bg_id)
+							bg.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
 							return '/run_node'
 						end,
 					},
 				},
 				leaving_state = function(self)
-					local bg = world_object(bg_id)
-					bg.colorize = { r = 1, g = 1, b = 1, a = 1 }
+					local bg = object(bg_id)
+					bg.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
 				end,
 			},
 			dialogue = {
 				entering_state = function(self)
 					local node = story[self.node_id]
 					self:apply_background(node.bg)
-					world_object(bg_id).visible = true
+					object(bg_id).visible = true
 					self:reset_text_colors()
 					if node.kind == 'dialogue_inline' then
 						self.pages = self.inline_pages
@@ -1596,16 +1599,16 @@ local function build_director_fsm()
 				tick = function(self)
 					-- write('BLADIEBLAP', 100, 100, 1000, 10)
 
-					local main = world_object(text_main_id)
+					local main = object(text_main_id)
 					if main.is_typing then
-						main.type_next()
+						main:type_next()
 					end
 					self:update_dialogue_prompt()
 				end,
 				input_eval = 'first',
 				input_event_handlers = {
 					['b[jp]'] = {
-						go = function(self) seLf:skip_typing() end
+						go = function(self) self:skip_typing() end
 					},
 					['a[jp]'] = {
 						go = function(self)
@@ -1635,7 +1638,7 @@ local function build_director_fsm()
 				entering_state = function(self)
 					local node = story[self.node_id]
 					self:apply_background(node.bg)
-					world_object(bg_id).visible = true
+					object(bg_id).visible = true
 					self:reset_text_colors()
 					clear_text(text_transition_id)
 					clear_text(text_choice_id)
@@ -1675,9 +1678,9 @@ local function build_director_fsm()
 					self:show_dialogue_page(node.typed)
 				end,
 				tick = function(self)
-					local main = world_object(text_main_id)
+					local main = object(text_main_id)
 					if main.is_typing then
-						main.type_next()
+						main:type_next()
 						return
 					end
 					if self.page_index < #self.pages then
@@ -1689,7 +1692,7 @@ local function build_director_fsm()
 				input_eval = 'first',
 				input_event_handlers = {
 					['b[jp]'] = {
-						go = function(self) seLf:skip_typing() end
+						go = function(self) self:skip_typing() end
 					},
 					['a[jp]'] = {
 						go = function(self)
@@ -1708,15 +1711,15 @@ local function build_director_fsm()
 				entering_state = function(self)
 					local node = story[self.node_id]
 					self:apply_background(node.bg)
-					world_object(bg_id).visible = true
+					object(bg_id).visible = true
 					self:reset_text_colors()
 					self:setup_choice_menu(node)
 				end,
 				tick = function(self)
-					local main = world_object(text_main_id)
-					local choice_text = world_object(text_choice_id)
+					local main = object(text_main_id)
+					local choice_text = object(text_choice_id)
 					if main.is_typing then
-						main.type_next()
+						main:type_next()
 						choice_text.highlighted_line_index = nil
 					else
 						self:set_prompt_line('(A) select')
@@ -1737,7 +1740,7 @@ local function build_director_fsm()
 						end,
 					},
 					['b[jp]'] = {
-						go = function(self) seLf:skip_typing() end
+						go = function(self) self:skip_typing() end
 					},
 					['a[jp]'] = {
 						go = function(self)
@@ -1758,7 +1761,7 @@ local function build_director_fsm()
 end
 
 local function register_director()
-	define_world_object({
+	engine.define_world_object({
 		def_id = director_def_id,
 		class = director,
 		fsms = { director_fsm_id },
@@ -1796,6 +1799,7 @@ function init()
 end
 
 function new_game()
+	engine.reset()
 	local w = display_width()
 	local h = display_height()
 	local line_height = 16
@@ -1806,7 +1810,7 @@ function new_game()
 	local choice_top = h - (line_height * (prompt_lines + choice_lines))
 	local main_top = h - (line_height * (prompt_lines + choice_lines + main_lines))
 
-	spawn_sprite('p3.bg.def', {
+	engine.spawn_sprite('p3.bg.def', {
 		id = bg_id,
 		pos = { x = 0, y = 0, z = 0 },
 		imgid = 'none',
@@ -1814,27 +1818,27 @@ function new_game()
 	})
 
 	local horizontal_margin = w / 10
-	spawn_textobject('p3.text.main.def', {
+	engine.spawn_textobject('p3.text.main.def', {
 		id = text_main_id,
 		dimensions = { left = horizontal_margin, right = w - horizontal_margin, top = main_top, bottom = choice_top },
 		pos = { z = 1000 },
 	})
-	spawn_textobject('p3.text.choice.def', {
+	engine.spawn_textobject('p3.text.choice.def', {
 		id = text_choice_id,
 		dimensions = { left = horizontal_margin, right = w - horizontal_margin, top = choice_top, bottom = prompt_top },
 		pos = { z = 1001 },
 	})
-	spawn_textobject('p3.text.prompt.def', {
+	engine.spawn_textobject('p3.text.prompt.def', {
 		id = text_prompt_id,
 		dimensions = { left = horizontal_margin, right = w - horizontal_margin, top = prompt_top, bottom = h },
 		pos = { z = 1002 },
 	})
-	spawn_textobject('p3.text.transition.def', {
+	engine.spawn_textobject('p3.text.transition.def', {
 		id = text_transition_id,
 		dimensions = { left = 0, right = w, top = (h / 2) - (line_height * 2), bottom = (h / 2) + (line_height * 2) },
 		pos = { z = 900 },
 	})
-	spawn_textobject('p3.text.results.def', {
+	engine.spawn_textobject('p3.text.results.def', {
 		id = text_results_id,
 		dimensions = { left = horizontal_margin, right = w - (w / 3), top = line_height * 2, bottom = h - (h / 3) },
 		pos = { z = 1003 },
@@ -1846,32 +1850,32 @@ function new_game()
 	clear_text(text_transition_id)
 	clear_text(text_results_id)
 
-	spawn_sprite('p3.combat.monster.def', {
+	engine.spawn_sprite('p3.combat.monster.def', {
 		id = combat_monster_id,
 		pos = { x = 0, y = 0, z = 200 },
 		imgid = 'monster_snoozer',
 		visible = false,
 	})
-	spawn_sprite('p3.combat.maya_a.def', {
+	engine.spawn_sprite('p3.combat.maya_a.def', {
 		id = combat_maya_a_id,
 		pos = { x = 0, y = 0, z = 300 },
 		imgid = 'maya_a',
 		visible = false,
 	})
-	spawn_sprite('p3.combat.maya_b.def', {
+	engine.spawn_sprite('p3.combat.maya_b.def', {
 		id = combat_maya_b_id,
 		pos = { x = 0, y = 0, z = 300 },
 		imgid = 'maya_b',
 		visible = false,
 	})
-	spawn_sprite('p3.combat.all_out.def', {
+	engine.spawn_sprite('p3.combat.all_out.def', {
 		id = combat_all_out_id,
 		pos = { x = 0, y = 0, z = 800 },
 		imgid = 'all_out',
 		visible = false,
 	})
 
-	spawn_object(director_def_id, { id = director_instance_id })
+	engine.spawn_object(director_def_id, { id = director_instance_id })
 end
 
 local function test()
@@ -1883,7 +1887,9 @@ function update(_dt)
 	-- assert(false)
 	-- print(a.b + 3)
 	test()
+	engine.update(game.deltatime)
 end
 
 function draw()
+	engine.draw()
 end

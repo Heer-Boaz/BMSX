@@ -289,12 +289,13 @@ export class BmsxVMApi {
 		this.renderBackend.rect(rect);
 	}
 
-	public sprite(img_id: string, x: number, y: number, z: number, options?: { scale?: number; flip_h?: boolean; flip_v?: boolean; colorize?: color, }): void {
-		const scale = options?.scale ?? 1;
+	public sprite(img_id: string, x: number, y: number, z: number, options?: { scale?: number | { x: number; y: number }; flip_h?: boolean; flip_v?: boolean; colorize?: color, }): void {
+		const scaleValue = options?.scale ?? 1;
+		const scale = typeof scaleValue === 'number' ? { x: scaleValue, y: scaleValue } : scaleValue;
 		const submission: ImgRenderSubmission = {
 			imgid: img_id,
 			pos: { x, y, z },
-			scale: { x: scale, y: scale },
+			scale,
 			flip: options?.flip_h || options?.flip_v ? { flip_h: options?.flip_h === true, flip_v: options?.flip_v === true } : undefined,
 			colorize: options?.colorize,
 		};
@@ -341,6 +342,23 @@ export class BmsxVMApi {
 		if (autoAdvance) {
 			this.advance_print_cursor(font.lineHeight);
 		}
+	}
+
+	public write_color(text: string, x?: number, y?: number, z?: number, colorvalue?: number | color): void {
+		const hasExplicitPosition = x !== undefined && y !== undefined;
+		if (hasExplicitPosition) {
+			this.textCursorHomeX = x;
+			this.textCursorX = this.textCursorHomeX;
+			this.textCursorY = y;
+		}
+		if (typeof colorvalue === 'number') {
+			this.textCursorColorIndex = colorvalue;
+		}
+		const baseX = this.textCursorX;
+		const baseY = this.textCursorY;
+		const color = colorvalue !== undefined ? this.resolve_color(colorvalue) : this.palette_color(this.textCursorColorIndex);
+		this.draw_multiline_text(text, baseX, baseY, z, color, this.font);
+		this.advance_print_cursor(this.font.lineHeight);
 	}
 
 	public write_with_font(text: string, x?: number, y?: number, z?: number, colorindex?: number, font?: VMFont): void {

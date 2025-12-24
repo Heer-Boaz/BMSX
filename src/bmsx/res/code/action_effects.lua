@@ -133,6 +133,10 @@ function ActionEffectComponent:advance_time(dt_ms)
 	end
 end
 
+function ActionEffectComponent:tick(dt)
+	self:advance_time(dt)
+end
+
 function ActionEffectComponent:grant_effect(definition)
 	self.definitions[definition.id] = definition
 end

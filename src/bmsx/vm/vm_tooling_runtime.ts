@@ -2481,28 +2481,34 @@ export class BmsxVMRuntime {
 	}
 
 	private buildVmModuleChunks(entryPath: string): { modules: Array<{ path: string; chunk: LuaChunk }>; modulePaths: string[] } {
-		const entryAsset = $.luaSources.path2lua[entryPath];
+		const entryAsset = this.resolveLuaSourceRecord(entryPath);
 		const entryKey = entryAsset ? (entryAsset.normalized_source_path ?? entryAsset.source_path ?? entryPath) : entryPath;
 		const modules: Array<{ path: string; chunk: LuaChunk }> = [];
 		const modulePaths: string[] = [];
 		const seen = new Set<string>();
-		const luaAssets = Object.values($.luaSources.path2lua);
-		for (const asset of luaAssets) {
-			if (!asset || asset.type !== 'lua') {
+		const registries = this.resolveModuleRegistries();
+		for (const registry of registries) {
+			if (!registry) {
 				continue;
 			}
-			const key = asset.normalized_source_path ?? asset.source_path;
-			if (!key || seen.has(key)) {
-				continue;
+			const luaAssets = Object.values(registry.path2lua);
+			for (const asset of luaAssets) {
+				if (!asset || asset.type !== 'lua') {
+					continue;
+				}
+				const key = asset.normalized_source_path ?? asset.source_path;
+				if (!key || seen.has(key)) {
+					continue;
+				}
+				seen.add(key);
+				modulePaths.push(key);
+				if (key === entryKey) {
+					continue;
+				}
+				const source = this.resourceSourceForChunk(asset.source_path);
+				const chunk = this.luaInterpreter.compileChunk(source, asset.source_path);
+				modules.push({ path: key, chunk });
 			}
-			seen.add(key);
-			modulePaths.push(key);
-			if (key === entryKey) {
-				continue;
-			}
-			const source = this.resourceSourceForChunk(asset.source_path);
-			const chunk = this.luaInterpreter.compileChunk(source, asset.source_path);
-			modules.push({ path: key, chunk });
 		}
 		return { modules, modulePaths };
 	}
@@ -2581,7 +2587,6 @@ export class BmsxVMRuntime {
 
 			// Full reboot starts from a clean Lua path environment cache to avoid merging
 			// stale per-path tables (from previously loaded modules) into the fresh program.
-			this.luaChunkEnvironmentsByPath.clear();
 			this.luaChunkEnvironmentsByPath.clear();
 			this.luaGenericChunksExecuted.clear();
 
@@ -3207,10 +3212,27 @@ export class BmsxVMRuntime {
 		return cachedValue;
 	}
 
-	private requireLuaModule(_interpreter: LuaInterpreter, moduleName: string): LuaValue {
-		void _interpreter;
-		void moduleName;
-		throw this.createApiRuntimeError('require(moduleName) is not available in VM execution.');
+	private requireLuaModule(interpreter: LuaInterpreter, moduleName: string): LuaValue {
+		const canonicalName = this.canonicalizeIdentifierFn(moduleName);
+		const path = this.vmModuleAliases.get(moduleName) ?? this.vmModuleAliases.get(canonicalName);
+		if (!path) {
+			throw this.createApiRuntimeError(`require('${moduleName}') failed: module not found.`);
+		}
+		const loaded = interpreter.packageLoadedTable.get(path);
+		if (loaded !== undefined && loaded !== null) {
+			return loaded;
+		}
+		interpreter.packageLoadedTable.set(path, true);
+		const source = this.resourceSourceForChunk(path);
+		if (!source) {
+			throw this.createApiRuntimeError(`require('${moduleName}') failed: module source unavailable.`);
+		}
+		const chunk = interpreter.compileChunk(source, path);
+		const results = interpreter.executeChunk(chunk);
+		const value = results.length > 0 ? results[0] : null;
+		const cachedValue = value === null ? true : value;
+		interpreter.packageLoadedTable.set(path, cachedValue);
+		return cachedValue;
 	}
 
 	private refreshLuaHandlersForChunk(path: string, sourceOverride?: string): void {
@@ -3229,12 +3251,26 @@ export class BmsxVMRuntime {
 	public resourceSourceForChunk(path: string): string {
 		// The runtime reads sources from `$.luaSources.path2lua`. Keep the path indices pointing at the same
 		// LuaSourceRecord objects (or update both indices together) to avoid stale code after overrides.
-		const binding = $.luaSources.path2lua[path];
+		const binding = this.resolveLuaSourceRecord(path);
 		if (!binding) return null; // This can happen for non-existent paths, such as debugger tabs that don't refer to real paths
 		const cached = getWorkspaceCachedSource(binding.normalized_source_path);
 		if (cached !== null) {
 			return cached;
 		}
 		return binding.src;
+	}
+
+	private resolveLuaSourceRecord(path: string): LuaSourceRecord {
+		return $.luaSources.path2lua[path]
+			?? this.cartLuaSources?.path2lua[path]
+			?? this.engineLuaSources?.path2lua[path]
+			?? null;
+	}
+
+	private resolveModuleRegistries(): LuaSourceRegistry[] {
+		if (this.cartLuaSources && $.luaSources === this.cartLuaSources) {
+			return [this.cartLuaSources, this.engineLuaSources];
+		}
+		return [$.luaSources];
 	}
 }
