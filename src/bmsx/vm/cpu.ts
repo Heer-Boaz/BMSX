@@ -213,6 +213,45 @@ export class Table {
 		this.metatable = metatable;
 	}
 
+	public nextEntry(after: Value): [Value, Value] | null {
+		if (after === null) {
+			for (let index = 0; index < this.array.length; index += 1) {
+				const value = this.array[index];
+				if (value !== null && value !== undefined) {
+					return [index + 1, value];
+				}
+			}
+			for (const entry of this.map.entries()) {
+				return entry;
+			}
+			return null;
+		}
+		if (this.isArrayIndex(after)) {
+			const startIndex = (after as number);
+			for (let index = startIndex; index < this.array.length; index += 1) {
+				const value = this.array[index];
+				if (value !== null && value !== undefined) {
+					return [index + 1, value];
+				}
+			}
+			for (const entry of this.map.entries()) {
+				return entry;
+			}
+			return null;
+		}
+		let seen = false;
+		for (const entry of this.map.entries()) {
+			if (!seen) {
+				if (entry[0] === after) {
+					seen = true;
+				}
+				continue;
+			}
+			return entry;
+		}
+		return null;
+	}
+
 	private isArrayIndex(key: Value): boolean {
 		return typeof key === 'number' && Number.isInteger(key) && key >= 1;
 	}
@@ -262,6 +301,26 @@ export class VMCPU {
 		const regs = new Array<Value>(bucket);
 		for (let i = 0; i < bucket; i++) regs[i] = null;
 		return regs;
+	}
+
+	private resolveTableIndex(table: Table, key: Value): Value {
+		let current = table;
+		for (let depth = 0; depth < 32; depth += 1) {
+			const value = current.get(key);
+			if (value !== null) {
+				return value;
+			}
+			const metatable = current.getMetatable();
+			if (metatable === null) {
+				return null;
+			}
+			const indexer = metatable.get('__index');
+			if (!(indexer instanceof Table)) {
+				return null;
+			}
+			current = indexer;
+		}
+		throw new Error('Metatable __index loop detected.');
 	}
 
 	// Release a register array back to the pool
@@ -449,7 +508,7 @@ export class VMCPU {
 				const table = frame.registers[b];
 				const key = this.readRK(frame, c);
 				if (table instanceof Table) {
-					this.setRegister(frame, a, table.get(key));
+					this.setRegister(frame, a, this.resolveTableIndex(table, key));
 					return;
 				}
 				if (isNativeObject(table)) {

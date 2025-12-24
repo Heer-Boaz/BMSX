@@ -156,9 +156,9 @@ const buildModuleProtoId = (moduleId: string): string => `${buildModuleRootId(mo
 const buildAnonymousHint = (range: LuaSourceRange): string =>
 	`anon:${range.start.line}:${range.start.column}:${range.end.line}:${range.end.column}`;
 
-const buildProtoId = (parentId: string, hint: string | null, range: LuaSourceRange): string => {
+const buildProtoId = (parentId: string, hint: string): string => {
 	if (!hint) throw new Error('Proto hint is required and defensive programming is not allowed.');
-	return `${parentId}/${hint ?? buildAnonymousHint(range)}`;
+	return `${parentId}/${hint}`;
 }
 
 class FunctionBuilder {
@@ -868,7 +868,7 @@ class FunctionBuilder {
 	private compileLocalFunction(statement: any): void {
 		const reg = this.declareLocal(statement.name.name);
 		const hint = this.createLocalFunctionHint(statement.name.name);
-		const protoId = this.createChildProtoId(hint, statement.functionExpression.range);
+		const protoId = this.createChildProtoId(hint);
 		const protoIndex = compileFunctionExpression(this.program, statement.functionExpression, this, false, protoId, this.moduleId);
 		this.emitABx(OpCode.CLOSURE, reg, protoIndex);
 	}
@@ -878,7 +878,7 @@ class FunctionBuilder {
 		const methodName: string = statement.name.methodName;
 		const identifiers = statement.name.identifiers as string[];
 		const hint = buildDeclarationHint(identifiers, methodName);
-		const protoId = this.createChildProtoId(hint, fnExpr.range);
+		const protoId = this.createChildProtoId(hint);
 		const protoIndex = compileFunctionExpression(this.program, fnExpr, this, methodName && methodName.length > 0, protoId, this.moduleId);
 		const closureReg = this.allocTemp();
 		this.emitABx(OpCode.CLOSURE, closureReg, protoIndex);
@@ -967,7 +967,7 @@ class FunctionBuilder {
 					this.emitABC(OpCode.VARARG, target, resultCount, 0);
 					return;
 				case LuaSyntaxKind.FunctionExpression: {
-					const protoId = this.createChildProtoId(protoIdHint, expression.range);
+					const protoId = this.createChildProtoId(protoIdHint ?? buildAnonymousHint(expression.range));
 					const protoIndex = compileFunctionExpression(this.program, expression as LuaFunctionExpression, this, false, protoId, this.moduleId);
 					this.emitABx(OpCode.CLOSURE, target, protoIndex);
 					return;
@@ -1356,8 +1356,8 @@ class FunctionBuilder {
 		return `local:${name}#${count}`;
 	}
 
-	private createChildProtoId(hint: string | null, range: LuaSourceRange): string {
-		return buildProtoId(this.protoId, hint, range);
+	private createChildProtoId(hint: string): string {
+		return buildProtoId(this.protoId, hint);
 	}
 }
 

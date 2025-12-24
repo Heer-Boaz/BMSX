@@ -486,7 +486,7 @@ export class World implements Stateful, RegisterablePersistent {
 	 * Runs the current state of the world by calling the `run` method of the current state.
 	 * @returns {void} Nothing.
 	 */
-	public run(deltaTime: number): void {
+	public run(deltaTime: number, runPresentation: boolean = true): void {
 		this.systems.beginFrame();
 		GameplayEventRecorder.instance.beginFrame($.turnCounter);
 
@@ -512,13 +512,15 @@ export class World implements Stateful, RegisterablePersistent {
 			this._currentPhase = TickGroup.Animation;
 			this.systems.updatePhase(this, TickGroup.Animation);
 
-			// Phase 6: Presentation (render prep, audio/FX/UI)
-			this._currentPhase = TickGroup.Presentation;
-			this.systems.updatePhase(this, TickGroup.Presentation);
+			if (runPresentation) {
+				// Phase 6: Presentation (render prep, audio/FX/UI)
+				this._currentPhase = TickGroup.Presentation;
+				this.systems.updatePhase(this, TickGroup.Presentation);
 
-			// Phase 7: Event flush / debugging hooks
-			this._currentPhase = TickGroup.EventFlush;
-			this.systems.updatePhase(this, TickGroup.EventFlush);
+				// Phase 7: Event flush / debugging hooks
+				this._currentPhase = TickGroup.EventFlush;
+				this.systems.updatePhase(this, TickGroup.EventFlush);
+			}
 		} finally {
 			this._currentPhase = null;
 		}
@@ -561,8 +563,8 @@ export class World implements Stateful, RegisterablePersistent {
 		return out;
 	}
 
-	public runTickGroups(groups: ReadonlyArray<TickGroup>): void {
-		this.systems.beginFrame();
+	public runTickGroups(groups: ReadonlyArray<TickGroup>, beginFrame: boolean = true): void {
+		if (beginFrame) this.systems.beginFrame();
 		for (const group of groups) {
 			this._currentPhase = group;
 			this.systems.updatePhase(this, group);
