@@ -166,7 +166,7 @@ function registerSpritePass(registry: RenderPassLibrary): void {
 			const spriteState = state as SpritesPipelineState;
 			const count = beginSpriteQueue();
 			const snapshot: Snapshot = [
-				`draws=${count} viewport=${spriteState.width}x${spriteState.height} base=${spriteState.baseWidth}x${spriteState.baseHeight} ambient_default=disabled`,
+				`draws=${count} viewport=${spriteState.width}x${spriteState.height} base=${spriteState.baseWidth}x${spriteState.baseHeight}`,
 			];
 			if (count > 0) {
 				let index = 0;
@@ -179,7 +179,7 @@ function registerSpritePass(registry: RenderPassLibrary): void {
 					const flipV = options.flip?.flip_v ? 'V' : '-';
 					const atlas = imgmeta.atlasid ?? 'na';
 					// Ambient sprites are disabled in the runtime; logging follows suit until a new approach is added.
-					snapshot.push(`[sprite#${index}] id=${options.imgid} layer=${layer} pos=${pos} scale=${scale} flip=${flipH}${flipV} ambient=disabled atlas=${atlas}`);
+					snapshot.push(`[sprite#${index}] id=${options.imgid} layer=${layer} pos=${pos} scale=${scale} flip=${flipH}${flipV} atlas=${atlas}`);
 					index += 1;
 				});
 			}

@@ -748,8 +748,17 @@ class FunctionBuilder {
 			this.emitLoadConst(stepReg, 1);
 		}
 		const loopStart = this.code.length;
+		const zeroConst = this.program.constIndex(0);
+		const zeroOperand = this.encodeConstOperand(zeroConst);
+		this.emitABC(OpCode.LT, 0, zeroOperand, stepReg);
+		const jumpToNegativeCheck = this.emitJumpPlaceholder();
 		this.emitABC(OpCode.LT, 1, limitReg, indexReg);
-		const jumpOut = this.emitJumpPlaceholder();
+		const jumpOutPositive = this.emitJumpPlaceholder();
+		const jumpToBody = this.emitJumpPlaceholder();
+		this.patchJump(jumpToNegativeCheck, this.code.length);
+		this.emitABC(OpCode.LT, 1, indexReg, limitReg);
+		const jumpOutNegative = this.emitJumpPlaceholder();
+		this.patchJump(jumpToBody, this.code.length);
 		const ctx: LoopContext = { breakJumps: [] };
 		this.loopStack.push(ctx);
 		for (let i = 0; i < statement.block.body.length; i += 1) {
@@ -759,7 +768,8 @@ class FunctionBuilder {
 		this.loopStack.pop();
 		this.emitABC(OpCode.ADD, indexReg, indexReg, stepReg);
 		this.emitAsBx(OpCode.JMP, 0, loopStart - (this.code.length + 1));
-		this.patchJump(jumpOut, this.code.length);
+		this.patchJump(jumpOutPositive, this.code.length);
+		this.patchJump(jumpOutNegative, this.code.length);
 		for (let i = 0; i < ctx.breakJumps.length; i += 1) {
 			this.patchJump(ctx.breakJumps[i], this.code.length);
 		}

@@ -38,7 +38,7 @@ function EventEmitter:events_of(emitter)
 		port = setmetatable({ emitter = emitter }, EventPort)
 		port_cache[emitter] = port
 	end
-	return porta
+	return port
 end
 
 function EventEmitter:on(spec)

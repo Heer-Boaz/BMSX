@@ -2236,6 +2236,12 @@ export class BmsxVMRuntime {
 		}));
 		this.registerVmGlobal('table', tableLibrary);
 
+		const osTable = new Table(0, 0);
+		osTable.set('clock', createNativeFunction('os.clock', () => {
+			return [$.platform.clock.now() / 1000];
+		}));
+		this.registerVmGlobal('os', osTable);
+
 		const nextFn = createNativeFunction('next', (args) => {
 			const target = args[0] as Table;
 			const key = args.length > 1 ? args[1] : null;
