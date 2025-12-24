@@ -186,6 +186,153 @@ function State:transition_to_path(path)
 	end
 end
 
+State._path_cache = {}
+State._path_cache_max = 256
+
+function State.parse_fs_path(input)
+	local cached = State._path_cache[input]
+	if cached then
+		return cached
+	end
+	local len = #input
+	local i = 1
+	local abs = false
+	local up = 0
+	local segs = {}
+	if len == 0 then
+		return { abs = false, up = 0, segs = {} }
+	end
+	if input:sub(i, i) == "/" then
+		abs = true
+		i = i + 1
+	end
+	if not abs then
+		if input:sub(i, i + 1) == "./" then
+			i = i + 2
+		else
+			while input:sub(i, i + 2) == "../" do
+				up = up + 1
+				i = i + 3
+			end
+		end
+	end
+
+	local function push_seg(seg)
+		if seg == "" or seg == "." then
+			return
+		end
+		if seg == ".." then
+			if #segs > 0 then
+				table.remove(segs)
+			else
+				up = up + 1
+			end
+			return
+		end
+		segs[#segs + 1] = seg
+	end
+
+	while i <= len do
+		local c = input:sub(i, i)
+		if c == "/" then
+			i = i + 1
+		elseif c == "[" and input:sub(i + 1, i + 1) == "\"" then
+			i = i + 2
+			local seg = ""
+			local closed = false
+			while i <= len do
+				local ch = input:sub(i, i)
+				i = i + 1
+				if ch == "\\" then
+					if i <= len then
+						local esc = input:sub(i, i)
+						i = i + 1
+						if esc == "\"" then
+							seg = seg .. "\""
+						elseif esc == "/" then
+							seg = seg .. "/"
+						else
+							seg = seg .. esc
+						end
+					end
+				elseif ch == "\"" then
+					if input:sub(i, i) == "]" then
+						i = i + 1
+						closed = true
+						break
+					else
+						error("Unterminated quoted segment in path '" .. input .. "'.")
+					end
+				else
+					seg = seg .. ch
+				end
+			end
+			if not closed then
+				error("Unterminated quoted segment in path '" .. input .. "'.")
+			end
+			push_seg(seg)
+		else
+			local start = i
+			while i <= len and input:sub(i, i) ~= "/" do
+				i = i + 1
+			end
+			push_seg(input:sub(start, i - 1))
+		end
+	end
+
+	local cache_count = 0
+	for _ in pairs(State._path_cache) do
+		cache_count = cache_count + 1
+	end
+	if cache_count >= State._path_cache_max then
+		for key in pairs(State._path_cache) do
+			State._path_cache[key] = nil
+			break
+		end
+	end
+	local rec = { abs = abs, up = up, segs = segs }
+	State._path_cache[input] = rec
+	return rec
+end
+
+function State:matches_state_path(path)
+	local function match_segments(start, segments)
+		if #segments == 0 then
+			return false
+		end
+		local ctx = start
+		for i = 1, #segments do
+			local seg = segments[i]
+			local child = ctx.states[seg]
+			if not child then
+				return false
+			end
+			if not child.definition.is_concurrent and ctx.current_id ~= seg then
+				return false
+			end
+			if i == #segments then
+				return true
+			end
+			ctx = child
+		end
+		return false
+	end
+
+	if type(path) == "table" then
+		return match_segments(self, path)
+	end
+
+	local spec = State.parse_fs_path(path)
+	local ctx = spec.abs and self.root or self
+	for i = 1, spec.up do
+		if not ctx.parent then
+			return false
+		end
+		ctx = ctx.parent
+	end
+	return match_segments(ctx, spec.segs)
+end
+
 local function resolve_handler_transition(handler, target, state, payload)
 	local t = type(handler)
 	if t == "string" then
@@ -424,6 +571,23 @@ function StateMachineController:transition_to(path)
 	end
 	local machine = self.statemachines[machine_id]
 	machine:transition_to_path(state_path)
+end
+
+function StateMachineController:matches_state_path(path)
+	local machine_id, state_path = path:match("^(.-):/(.+)$")
+	if machine_id then
+		local machine = self.statemachines[machine_id]
+		if not machine then
+			return false
+		end
+		return machine:matches_state_path(state_path)
+	end
+	for _, machine in pairs(self.statemachines) do
+		if machine:matches_state_path(path) then
+			return true
+		end
+	end
+	return false
 end
 
 function StateMachineController:pause()

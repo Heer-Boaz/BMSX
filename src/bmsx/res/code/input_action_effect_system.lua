@@ -1,0 +1,383 @@
+-- input_action_effect_system.lua
+-- Input intent + input action effect ECS system
+
+local ecs = require("ecs")
+local action_effects = require("action_effects")
+local compiler = require("input_action_effect_compiler")
+local dsl = require("input_action_effect_dsl")
+local InputIntentComponent = "InputIntentComponent"
+local InputActionEffectComponent = "InputActionEffectComponent"
+local ActionEffectComponent = "ActionEffectComponent"
+
+local asset_programs_validated = false
+
+local function validate_primary_assets_on_boot()
+	if asset_programs_validated then
+		return
+	end
+	for id, value in pairs(assets.data) do
+		if dsl.is_input_action_effect_program(value) then
+			compiler.validate_program_effects(value, id)
+		end
+	end
+	asset_programs_validated = true
+end
+
+local InputActionEffectSystem = {}
+InputActionEffectSystem.__index = InputActionEffectSystem
+setmetatable(InputActionEffectSystem, { __index = ecs.ECSystem })
+
+function InputActionEffectSystem.new(priority)
+	local self = setmetatable(ecs.ECSystem.new(ecs.TickGroup.Input, priority or 0), InputActionEffectSystem)
+	self.compiled_by_id = {}
+	self.inline_compiled = setmetatable({}, { __mode = "k" })
+	self.validated_inline = setmetatable({}, { __mode = "k" })
+	self.resolved_programs = {}
+	self.missing_program_ids = {}
+	self.pattern_cache = {}
+	self.pattern_cache_max = 256
+	self.custom_match_scratch = {}
+	self.binding_latch = {}
+	self.frame_latch_touched = {}
+	self.__ecs_id = "inputActionEffectSystem"
+	validate_primary_assets_on_boot()
+	return self
+end
+
+function InputActionEffectSystem:update(world)
+	self.frame_latch_touched = {}
+	self:process_input_intents(world)
+	self:process_input_action_programs(world)
+	for key in pairs(self.binding_latch) do
+		if not self.frame_latch_touched[key] then
+			self.binding_latch[key] = nil
+		end
+	end
+end
+
+function InputActionEffectSystem:process_input_intents(world)
+	for obj, component in world:objects_with_components(InputIntentComponent, { scope = "active" }) do
+		if obj.tick_enabled == false then
+			goto continue
+		end
+		if not component.bindings or #component.bindings == 0 then
+			goto continue
+		end
+		local player_index = self:resolve_intent_player_index(component, obj)
+		for i = 1, #component.bindings do
+			self:evaluate_intent_binding(obj, player_index, component.bindings[i])
+		end
+		::continue::
+	end
+end
+
+function InputActionEffectSystem:process_input_action_programs(world)
+	for obj, component in world:objects_with_components(InputActionEffectComponent, { scope = "active" }) do
+		if obj.tick_enabled == false then
+			goto continue
+		end
+		local program = self:resolve_compiled_program(component)
+		local program_key = self:resolve_program_key(component, obj)
+
+		local player_index = obj.player_index or 1
+		local effects = obj:get_component(ActionEffectComponent)
+		if (not effects) and program.uses_effect_triggers then
+			error("[InputActionEffectSystem] Program '" .. program_key .. "' triggers effects but object '" .. obj.id .. "' has no ActionEffectComponent.")
+		end
+
+		local owner_id = effects and effects.parent.id or obj.id
+		local env = {
+			owner = obj,
+			owner_id = owner_id,
+			player_index = player_index,
+			effects = effects,
+			queued_events = {},
+		}
+
+		self:evaluate_program(program, env, program_key)
+		local queued = env.queued_events
+		for i = 1, #queued do
+			local evt = queued[i]
+			if not evt.emitter then
+				evt.emitter = obj
+			end
+			obj.sc:dispatch_event(evt)
+		end
+		::continue::
+	end
+end
+
+function InputActionEffectSystem:evaluate_intent_binding(owner, player_index, binding)
+	local action = binding.action
+	if not action then
+		return
+	end
+	local state = $.get_action_state(player_index, action)
+	if state.justpressed and binding.press then
+		self:run_intent_assignments(owner, player_index, binding, "press", binding.press)
+	end
+	if state.pressed and binding.hold then
+		self:run_intent_assignments(owner, player_index, binding, "hold", binding.hold)
+	end
+	if state.justreleased and binding.release then
+		self:run_intent_assignments(owner, player_index, binding, "release", binding.release)
+	end
+end
+
+function InputActionEffectSystem:run_intent_assignments(owner, player_index, binding, edge, spec)
+	local assignments = spec
+	if type(spec) ~= "table" or spec.path then
+		assignments = { spec }
+	end
+	for i = 1, #assignments do
+		local assignment = assignments[i]
+		local path = assignment.path
+		local should_clear = assignment.clear == true or (assignment.value == nil and edge == "release")
+		local resolved_value = should_clear and nil or (assignment.value == nil and (edge == "hold" or edge == "press") or assignment.value)
+		self:assign_owner_path(owner, path, resolved_value, should_clear)
+		if assignment.consume == true then
+			$.consume_action(player_index, binding.action)
+		end
+	end
+end
+
+local function deep_clone(value)
+	if type(value) ~= "table" then
+		return value
+	end
+	local out = {}
+	for k, v in pairs(value) do
+		out[k] = deep_clone(v)
+	end
+	return out
+end
+
+function InputActionEffectSystem:assign_owner_path(owner, path, value, clear)
+	local segments = {}
+	for part in string.gmatch(path, "[^%.]+") do
+		segments[#segments + 1] = part
+	end
+	local target = owner
+	for i = 1, #segments - 1 do
+		local key = segments[i]
+		local next_table = target[key]
+		if type(next_table) ~= "table" then
+			next_table = {}
+			target[key] = next_table
+		end
+		target = next_table
+	end
+	local final_key = segments[#segments]
+	if clear then
+		target[final_key] = nil
+		return
+	end
+	if type(value) == "table" then
+		target[final_key] = deep_clone(value)
+		return
+	end
+	target[final_key] = value
+end
+
+function InputActionEffectSystem:resolve_intent_player_index(component, owner)
+	local explicit = component.player_index or 0
+	local fallback = owner.player_index or 0
+	local resolved = explicit > 0 and explicit or fallback
+	if resolved <= 0 then
+		error("[InputActionEffectSystem] Unable to resolve player index for object '" .. (owner.id or "<unknown>") .. "'.")
+	end
+	return resolved
+end
+
+function InputActionEffectSystem:resolve_program_key(component, owner)
+	if component.program_id then
+		return component.program_id
+	end
+	return "inline:" .. owner.id
+end
+
+function InputActionEffectSystem:describe_inline_program(component)
+	local owner_id = component.parent and component.parent.id or "<unattached>"
+	local component_id = component.id or component.id_local or component.type_name or "component"
+	return "inline:" .. owner_id .. ":" .. component_id
+end
+
+function InputActionEffectSystem:evaluate_program(program, env, program_key)
+	local bindings = program.bindings
+	for i = 1, #bindings do
+		local binding = bindings[i]
+		if not binding.predicate(env) then
+			goto continue
+		end
+
+		local binding_key = self:make_binding_key(env.owner_id, program_key, env.player_index, binding, i)
+		local armed = self.binding_latch[binding_key] == true
+		if armed then
+			self.frame_latch_touched[binding_key] = true
+		end
+
+		local press_matched = binding.press and binding.press(env) or false
+		local hold_matched = binding.hold and binding.hold(env) or false
+		local release_matched = binding.release and binding.release(env) or false
+		local custom_edges = binding.custom_edges
+		if not armed and not press_matched and not hold_matched and not release_matched and #custom_edges == 0 then
+			goto continue
+		end
+
+		local scratch = self:ensure_scratch(#custom_edges)
+		for j = 1, #custom_edges do
+			scratch[j] = custom_edges[j].match(env)
+		end
+
+		local matched = false
+		local function run_effect(effect)
+			if not effect then
+				return false
+			end
+			effect(env)
+			return true
+		end
+
+		if press_matched then
+			matched = true
+			if binding.press_effect then
+				if run_effect(binding.press_effect) then
+					self.binding_latch[binding_key] = true
+					self.frame_latch_touched[binding_key] = true
+				end
+			else
+				self.binding_latch[binding_key] = true
+				self.frame_latch_touched[binding_key] = true
+			end
+		end
+		if hold_matched then
+			matched = true
+			if binding.hold_effect then
+				run_effect(binding.hold_effect)
+			end
+			self.binding_latch[binding_key] = true
+			self.frame_latch_touched[binding_key] = true
+		end
+		if release_matched and armed then
+			if binding.release_effect and run_effect(binding.release_effect) then
+				matched = true
+			elseif binding.release_effect == nil then
+				matched = true
+			end
+			self.binding_latch[binding_key] = nil
+		end
+
+		for j = 1, #custom_edges do
+			if scratch[j] then
+				local effect = custom_edges[j].effect
+				if effect then
+					if run_effect(effect) then
+						matched = true
+					end
+				else
+					matched = true
+				end
+			end
+		end
+
+		if matched and program.eval_mode == "first" then
+			return
+		end
+
+		::continue::
+	end
+end
+
+function InputActionEffectSystem:make_binding_key(owner_id, program_key, player_index, binding, index)
+	local name = binding.name or ("#" .. index)
+	return owner_id .. "|" .. program_key .. "|p" .. player_index .. "|" .. name .. "|" .. index
+end
+
+function InputActionEffectSystem:ensure_scratch(size)
+	local scratch = self.custom_match_scratch
+	while #scratch < size do
+		scratch[#scratch + 1] = false
+	end
+	return scratch
+end
+
+function InputActionEffectSystem:resolve_compiled_program(component)
+	if component.program then
+		local program = component.program
+		if not self.validated_inline[program] then
+			compiler.validate_program_effects(program, self:describe_inline_program(component))
+			self.validated_inline[program] = true
+		end
+		local compiled = self.inline_compiled[program]
+		if not compiled then
+			compiled = compiler.compile_program(program, function(pattern)
+				return self:parse_pattern(pattern)
+			end)
+			self.inline_compiled[program] = compiled
+		end
+		return compiled
+	end
+
+	local program_id = component.program_id
+	if not program_id then
+		error("[InputActionEffectSystem] Component on '" .. (component.parent and component.parent.id or "<unknown>") .. "' is missing program_id.")
+	end
+
+	local compiled = self.compiled_by_id[program_id]
+	if compiled then
+		return compiled
+	end
+
+	local program = self:resolve_program_by_id(program_id)
+	compiled = compiler.compile_program(program, function(pattern)
+		return self:parse_pattern(pattern)
+	end)
+	self.compiled_by_id[program_id] = compiled
+	return compiled
+end
+
+function InputActionEffectSystem:resolve_program_by_id(program_id)
+	if self.resolved_programs[program_id] then
+		return self.resolved_programs[program_id]
+	end
+	if self.missing_program_ids[program_id] then
+		error("[InputActionEffectSystem] Program '" .. program_id .. "' is marked as missing.")
+	end
+	local data = assets.data[program_id]
+	if not dsl.is_input_action_effect_program(data) then
+		self.missing_program_ids[program_id] = true
+		error("[InputActionEffectSystem] Program '" .. program_id .. "' not found or invalid.")
+	end
+	self.resolved_programs[program_id] = data
+	return data
+end
+
+function InputActionEffectSystem:parse_pattern(pattern)
+	local predicate = self.pattern_cache[pattern]
+	if predicate then
+		return predicate
+	end
+	predicate = function(env)
+		return action_triggered(pattern, env.player_index)
+	end
+	self.pattern_cache[pattern] = predicate
+	if self.pattern_cache_max and (function()
+		local count = 0
+		for _ in pairs(self.pattern_cache) do
+			count = count + 1
+		end
+		return count
+	end)() > self.pattern_cache_max then
+		for key in pairs(self.pattern_cache) do
+			if key ~= pattern then
+				self.pattern_cache[key] = nil
+				break
+			end
+		end
+	end
+	return predicate
+end
+
+return {
+	InputActionEffectSystem = InputActionEffectSystem,
+}

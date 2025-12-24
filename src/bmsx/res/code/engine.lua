@@ -7,10 +7,15 @@ local SpriteObject = require("sprite")
 local TextObject = require("textobject")
 local fsmlibrary = require("fsmlibrary")
 local action_effects = require("action_effects")
+local components = require("components")
+local Service = require("service")
+local registry = require("registry")
 
 local world = world_module.instance
 
 local definitions = {}
+local service_definitions = {}
+local component_definitions = {}
 
 local excluded_class_keys = {
 	def_id = true,
@@ -56,6 +61,40 @@ local function apply_addons(instance, addons, skip_keys)
 	end
 end
 
+local function ensure_component_type(def_id, def)
+	if components.ComponentRegistry[def_id] then
+		return
+	end
+	local LuaComponent = {}
+	LuaComponent.__index = LuaComponent
+	setmetatable(LuaComponent, { __index = components.Component })
+	function LuaComponent.new(opts)
+		opts = opts or {}
+		opts.type_name = def_id
+		local self = setmetatable(components.Component.new(opts), LuaComponent)
+		apply_class_addons(self, def and def.class)
+		return self
+	end
+	components.register_component(def_id, LuaComponent)
+end
+
+local function attach_components(instance, list)
+	if not list then
+		return
+	end
+	for i = 1, #list do
+		local entry = list[i]
+		if type(entry) == "string" then
+			local comp = components.new_component(entry, { parent = instance })
+			instance:add_component(comp)
+		elseif type(entry) == "table" and entry.type_name then
+			local comp = entry
+			comp.parent = instance
+			instance:add_component(comp)
+		end
+	end
+end
+
 local function attach_fsms(instance, fsms)
 	if not fsms then
 		return
@@ -91,6 +130,7 @@ local function apply_definition(instance, def, addons, skip_key)
 	if def then
 		apply_defaults(instance, def.defaults, skip_key)
 		apply_class_addons(instance, def.class)
+		attach_components(instance, def.components)
 		attach_fsms(instance, def.fsms)
 		attach_effects(instance, def.effects)
 		attach_bts(instance, def.bts)
@@ -110,6 +150,19 @@ end
 
 function Engine.define_world_object(definition)
 	definitions[definition.def_id] = definition
+end
+
+function Engine.define_service(definition)
+	service_definitions[definition.def_id] = definition
+end
+
+function Engine.define_component(definition)
+	component_definitions[definition.def_id] = definition
+	ensure_component_type(definition.def_id, definition)
+end
+
+function Engine.define_effect(definition, opts)
+	action_effects.register_effect(definition, opts)
 end
 
 function Engine.new_timeline(def)
@@ -155,8 +208,39 @@ function Engine.spawn_textobject(definition_id, addons)
 	return instance
 end
 
+function Engine.create_service(definition_id, addons)
+	local def = service_definitions[definition_id]
+	local class_table = def and def.class or nil
+	local instance_id = (addons and addons.id) or (class_table and class_table.id) or definition_id
+	local instance = Service.new({ id = instance_id })
+	apply_definition(instance, def, addons)
+	registry.instance:register(instance)
+	if def and def.auto_activate then
+		instance:activate()
+	end
+	return instance
+end
+
+function Engine.service(id)
+	return registry.instance:get(id)
+end
+
 function Engine.object(id)
 	return world:get(id)
+end
+
+function Engine.attach_component(object_or_id, component_or_type)
+	local obj = type(object_or_id) == "string" and world:get(object_or_id) or object_or_id
+	if type(component_or_type) == "table" and component_or_type.type_name then
+		obj:add_component(component_or_type)
+		return component_or_type
+	end
+	if type(component_or_type) == "string" then
+		local comp = components.new_component(component_or_type, { parent = obj })
+		obj:add_component(comp)
+		return comp
+	end
+	error("attach_component expects a component instance or type name")
 end
 
 function Engine.update(dt)
@@ -169,6 +253,50 @@ end
 
 function Engine.reset()
 	world:clear()
+	registry.instance:clear()
+end
+
+function Engine.configure_ecs(nodes)
+	return world:configure_pipeline(nodes)
+end
+
+function Engine.apply_default_pipeline()
+	return world:apply_default_pipeline()
+end
+
+function Engine.register(value)
+	registry.instance:register(value)
+end
+
+function Engine.deregister(id)
+	registry.instance:deregister(id)
+end
+
+function Engine.grant_effect(object_id, effect_id)
+	local obj = world:get(object_id)
+	local component = obj:get_component("ActionEffectComponent")
+	if not component then
+		error("World object '" .. object_id .. "' does not have an ActionEffectComponent.")
+	end
+	component:grant_effect_by_id(effect_id)
+end
+
+function Engine.trigger_effect(object_id, effect_id, options)
+	local obj = world:get(object_id)
+	local component = obj:get_component("ActionEffectComponent")
+	if not component then
+		error("World object '" .. object_id .. "' does not have an ActionEffectComponent.")
+	end
+	local payload = options and options.payload or nil
+	if payload ~= nil then
+		return component:trigger(effect_id, { payload = payload })
+	end
+	return component:trigger(effect_id)
+end
+
+if not world._ecs_pipeline_built then
+	world._ecs_pipeline_built = true
+	world:apply_default_pipeline()
 end
 
 return Engine

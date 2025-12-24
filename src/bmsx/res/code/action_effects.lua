@@ -134,7 +134,7 @@ function ActionEffectComponent:advance_time(dt_ms)
 end
 
 function ActionEffectComponent:tick(dt)
-	self:advance_time(dt)
+end
 end
 
 function ActionEffectComponent:grant_effect(definition)
@@ -197,5 +197,6 @@ function ActionEffectComponent:cooldown_remaining(id)
 end
 
 ActionEffects.ActionEffectComponent = ActionEffectComponent
+components.register_component("ActionEffectComponent", ActionEffectComponent)
 
 return ActionEffects

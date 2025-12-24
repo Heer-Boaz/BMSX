@@ -26,6 +26,7 @@ function WorldObject.new(opts)
 	local self = setmetatable({}, WorldObject)
 	opts = opts or {}
 	self.id = opts.id or "worldobject"
+	self.type_name = "WorldObject"
 	self.x = opts.x or 0
 	self.y = opts.y or 0
 	self.z = opts.z or 0
@@ -41,6 +42,7 @@ function WorldObject.new(opts)
 	self.component_map = {}
 	self.space_id = opts.space_id
 	self._dispose_flag = false
+	self.dispose_flag = false
 	self._disposed = false
 	self.events = eventemitter.events_of(self)
 	local definition = opts.definition or (opts.fsm_id and fsmlibrary.get(opts.fsm_id))
@@ -104,6 +106,17 @@ function WorldObject:get_components(type_name)
 		end
 	end
 	return out
+end
+
+function WorldObject:get_unique_component(type_name)
+	local list = self.component_map[component_key(type_name)]
+	if not list or #list == 0 then
+		return nil
+	end
+	if #list > 1 then
+		error("Multiple '" .. component_key(type_name) .. "' components attached to '" .. self.id .. "'")
+	end
+	return list[1]
 end
 
 function WorldObject:has_component(type_name)
@@ -237,6 +250,7 @@ end
 
 function WorldObject:mark_for_disposal()
 	self._dispose_flag = true
+	self.dispose_flag = true
 	self:deactivate()
 end
 

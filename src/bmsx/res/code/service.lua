@@ -5,6 +5,8 @@ local eventemitter = require("eventemitter")
 local fsm = require("fsm")
 local fsmlibrary = require("fsmlibrary")
 
+local registry = require("registry")
+
 local Service = {}
 Service.__index = Service
 
@@ -12,6 +14,8 @@ function Service.new(opts)
 	local self = setmetatable({}, Service)
 	opts = opts or {}
 	self.id = opts.id or "service"
+	self.type_name = "Service"
+	self.registrypersistent = opts.registrypersistent ~= false
 	self.active = false
 	self.tick_enabled = true
 	self.eventhandling_enabled = false
@@ -46,6 +50,7 @@ function Service:dispose()
 	self:disable_events()
 	eventemitter.EventEmitter.instance:remove_subscriber(self)
 	self.sc:dispose()
+	registry.instance:deregister(self, true)
 end
 
 return Service

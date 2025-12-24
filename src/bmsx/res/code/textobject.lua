@@ -2,6 +2,7 @@
 -- Text object with typewriter effect for system ROM
 
 local WorldObject = require("worldobject")
+local components = require("components")
 
 local TextObject = {}
 TextObject.__index = TextObject
@@ -44,6 +45,13 @@ function TextObject.new(opts)
 	self.char_width = opts.char_width or DEFAULT_CHAR_WIDTH
 	self.line_height = opts.line_height or DEFAULT_LINE_HEIGHT
 	self:set_dimensions(self.dimensions)
+	self.custom_visual = components.CustomVisualComponent.new({
+		parent = self,
+		producer = function()
+			self:draw()
+		end,
+	})
+	self:add_component(self.custom_visual)
 	return self
 end
 
