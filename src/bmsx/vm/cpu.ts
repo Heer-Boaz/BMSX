@@ -386,10 +386,22 @@ export class VMCPU {
 	}
 
 	public call(closure: Closure, args: Value[] = [], returnCount: number = 0): void {
+		if (closure === null) {
+			throw new Error('Attempted to call a nil value.');
+		}
+		if (typeof closure.protoIndex !== 'number') {
+			throw new Error('Attempted to call a non-function value.');
+		}
 		this.pushFrame(closure, args, 0, returnCount, false, this.program.protos[closure.protoIndex].entryPC);
 	}
 
 	public callExternal(closure: Closure, args: Value[] = []): void {
+		if (closure === null) {
+			throw new Error('Attempted to call a nil value.');
+		}
+		if (typeof closure.protoIndex !== 'number') {
+			throw new Error('Attempted to call a non-function value.');
+		}
 		this.pushFrame(closure, args, 0, 0, true, this.program.protos[closure.protoIndex].entryPC);
 	}
 
@@ -620,25 +632,41 @@ export class VMCPU {
 			case OpCode.NOT:
 				this.setRegister(frame, a, !this.isTruthy(frame.registers[b]));
 				return;
-			case OpCode.LEN: {
-				const value = frame.registers[b];
-				if (typeof value === 'string') {
-					this.setRegister(frame, a, value.length);
-					return;
-				}
-				if (value instanceof Table) {
-					this.setRegister(frame, a, value.length());
-					return;
-				}
-				if (isNativeObject(value)) {
-					if (!value.len) {
-						throw new Error('Length operator expects a native object with a length.');
+				case OpCode.LEN: {
+					const value = frame.registers[b];
+					if (typeof value === 'string') {
+						this.setRegister(frame, a, value.length);
+						return;
 					}
-					this.setRegister(frame, a, value.len());
-					return;
+					if (value instanceof Table) {
+						this.setRegister(frame, a, value.length());
+						return;
+					}
+					if (isNativeObject(value)) {
+						if (!value.len) {
+							const stack = this.getCallStack()
+								.map(entry => {
+									const range = this.getDebugRange(entry.pc);
+									if (!range) return '<unknown>';
+									return `${range.path}:${range.start.line}:${range.start.column}`;
+								})
+								.reverse()
+								.join(' <- ');
+							throw new Error(`Length operator expects a native object with a length. stack=${stack}`);
+						}
+						this.setRegister(frame, a, value.len());
+						return;
+					}
+					const stack = this.getCallStack()
+						.map(entry => {
+							const range = this.getDebugRange(entry.pc);
+							if (!range) return '<unknown>';
+							return `${range.path}:${range.start.line}:${range.start.column}`;
+						})
+						.reverse()
+						.join(' <- ');
+					throw new Error(`Length operator expects a string or table. stack=${stack}`);
 				}
-				throw new Error('Length operator expects a string or table.');
-			}
 			case OpCode.BNOT: {
 				const value = frame.registers[b] as number;
 				this.setRegister(frame, a, ~value);
@@ -719,10 +747,16 @@ export class VMCPU {
 				for (let index = 0; index < argCount; index += 1) {
 					args.push(frame.registers[a + 1 + index]);
 				}
+				if (callee === null) {
+					throw new Error('Attempted to call a nil value.');
+				}
 				if (isNativeFunction(callee)) {
 					const results = callee.invoke(args);
 					this.writeReturnValues(frame, a, c, results);
 					return;
+				}
+				if (typeof (callee as Closure).protoIndex !== 'number') {
+					throw new Error('Attempted to call a non-function value.');
 				}
 				this.pushFrame(callee as Closure, args, a, c, false, frame.pc - 1);
 				return;

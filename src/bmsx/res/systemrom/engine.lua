@@ -254,6 +254,7 @@ end
 function engine.reset()
 	world:clear()
 	registry.instance:clear()
+	world:apply_default_pipeline()
 end
 
 function engine.configure_ecs(nodes)

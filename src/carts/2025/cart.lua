@@ -1772,7 +1772,7 @@ local function register_director()
 			stats = { planning = 0, opdekin = 0, rust = 0, makeup = 0 },
 			inline_pages = {},
 			inline_next = '',
-			pages = 0,
+			pages = {},
 			transition_center_x = 0,
 			transition_target_bg = story.title.bg,
 			fade_target_bg = story.title.bg,

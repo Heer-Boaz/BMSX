@@ -2004,14 +2004,19 @@ export class BmsxVMRuntime {
 			}
 			return [this.getOrCreateNativeObject(result)];
 		}));
-		this.registerVmGlobal('print', createNativeFunction('print', (args) => {
-			const parts: string[] = [];
-			for (let index = 0; index < args.length; index += 1) {
-				parts.push(this.formatVmValue(args[index]));
-			}
-			this.terminal.appendStdout(parts.length === 0 ? '' : parts.join('\t'));
-			return [];
-		}));
+			this.registerVmGlobal('print', createNativeFunction('print', (args) => {
+				const parts: string[] = [];
+				for (let index = 0; index < args.length; index += 1) {
+					parts.push(this.formatVmValue(args[index]));
+				}
+				const text = parts.length === 0 ? '' : parts.join('\t');
+				this.terminal.appendStdout(text);
+				if ($.view.backendType === 'headless') {
+					// eslint-disable-next-line no-console
+					console.log(text);
+				}
+				return [];
+			}));
 
 		const stringTable = new Table(0, 0);
 		stringTable.set('len', createNativeFunction('string.len', (args) => {
@@ -2057,14 +2062,167 @@ export class BmsxVMRuntime {
 		stringTable.set('find', createNativeFunction('string.find', (args) => {
 			const source = args[0] as string;
 			const pattern = args.length > 1 ? (args[1] as string) : '';
-			const startIndex = args.length > 2 ? Math.max(1, Math.floor(args[2] as number)) - 1 : 0;
-			const position = source.indexOf(pattern, startIndex);
-			if (position === -1) {
+			const length = source.length;
+			const normalizeIndex = (value: number): number => {
+				const integer = Math.floor(value);
+				if (integer > 0) {
+					return integer;
+				}
+				if (integer < 0) {
+					return length + integer + 1;
+				}
+				return 1;
+			};
+			const startIndex = args.length > 2 ? normalizeIndex(args[2] as number) : 1;
+			if (startIndex > length) {
 				return [null];
 			}
-			const first = position + 1;
-			const last = first + pattern.length - 1;
+			const plain = args.length > 3 && args[3] === true;
+			if (plain) {
+				const position = source.indexOf(pattern, Math.max(0, startIndex - 1));
+				if (position === -1) {
+					return [null];
+				}
+				const first = position + 1;
+				const last = first + pattern.length - 1;
+				return [first, last];
+			}
+			const regexBase = this.buildLuaPatternRegex(pattern);
+			const regex = new RegExp(regexBase.source);
+			const slice = source.slice(Math.max(0, startIndex - 1));
+			const match = regex.exec(slice);
+			if (!match) {
+				return [null];
+			}
+			const first = (startIndex - 1) + match.index + 1;
+			const last = first + match[0].length - 1;
+			if (match.length > 1) {
+				const output: Value[] = [first, last];
+				for (let index = 1; index < match.length; index += 1) {
+					const value = match[index];
+					output.push(value === undefined ? null : value);
+				}
+				return output;
+			}
 			return [first, last];
+		}));
+		stringTable.set('match', createNativeFunction('string.match', (args) => {
+			const source = args[0] as string;
+			const pattern = args.length > 1 ? (args[1] as string) : '';
+			const length = source.length;
+			const normalizeIndex = (value: number): number => {
+				const integer = Math.floor(value);
+				if (integer > 0) {
+					return integer;
+				}
+				if (integer < 0) {
+					return length + integer + 1;
+				}
+				return 1;
+			};
+			const startIndex = args.length > 2 ? normalizeIndex(args[2] as number) : 1;
+			if (startIndex > length) {
+				return [null];
+			}
+			const regexBase = this.buildLuaPatternRegex(pattern);
+			const regex = new RegExp(regexBase.source);
+			const slice = source.slice(Math.max(0, startIndex - 1));
+			const match = regex.exec(slice);
+			if (!match) {
+				return [null];
+			}
+			if (match.length > 1) {
+				const output: Value[] = [];
+				for (let index = 1; index < match.length; index += 1) {
+					const value = match[index];
+					output.push(value === undefined ? null : value);
+				}
+				return output.length > 0 ? output : [match[0]];
+			}
+			return [match[0]];
+		}));
+		stringTable.set('gsub', createNativeFunction('string.gsub', (args) => {
+			const source = args[0] as string;
+			const pattern = args.length > 1 ? (args[1] as string) : '';
+			const replacement = args.length > 2 ? args[2] : '';
+			const maxReplacements = args.length > 3 && args[3] !== null
+				? Math.max(0, Math.floor(args[3] as number))
+				: Number.POSITIVE_INFINITY;
+
+			const regex = this.buildLuaPatternRegex(pattern);
+			regex.lastIndex = 0;
+
+			let count = 0;
+			let result = '';
+			let lastIndex = 0;
+
+			const renderReplacement = (match: RegExpExecArray): string => {
+				if (typeof replacement === 'string' || typeof replacement === 'number') {
+					const template = String(replacement);
+					return template.replace(/%([0-9%])/g, (_full, token) => {
+						if (token === '%') {
+							return '%';
+						}
+						const index = parseInt(token, 10);
+						if (!Number.isFinite(index)) {
+							return token;
+						}
+						if (index === 0) {
+							return match[0] ?? '';
+						}
+						const value = match[index];
+						return value === undefined ? '' : value;
+					});
+				}
+				if (replacement instanceof Table) {
+					const key = match.length > 1 ? (match[1] === undefined ? null : match[1]) : match[0];
+					const mapped = replacement.get(key);
+					return mapped === null ? match[0] : this.vmToString(mapped);
+				}
+				if (isNativeFunction(replacement) || (replacement !== null && typeof replacement === 'object' && 'protoIndex' in replacement)) {
+					const fnArgs: Value[] = [];
+					if (match.length > 1) {
+						for (let index = 1; index < match.length; index += 1) {
+							const value = match[index];
+							fnArgs.push(value === undefined ? null : value);
+						}
+						if (fnArgs.length === 0) {
+							fnArgs.push(match[0]);
+						}
+					} else {
+						fnArgs.push(match[0]);
+					}
+					const results = callVmValue(replacement, fnArgs);
+					const value = results.length > 0 ? results[0] : null;
+					if (value === null || value === false) {
+						return match[0];
+					}
+					return this.vmToString(value);
+				}
+				throw this.createApiRuntimeError('string.gsub replacement must be a string, number, function, or table.');
+			};
+
+			while (count < maxReplacements) {
+				const match = regex.exec(source);
+				if (!match) {
+					break;
+				}
+				const start = match.index;
+				const end = start + match[0].length;
+				result += source.slice(lastIndex, start);
+				result += renderReplacement(match);
+				lastIndex = end;
+				count += 1;
+				if (match[0].length === 0) {
+					regex.lastIndex += 1;
+					if (regex.lastIndex > source.length) {
+						break;
+					}
+				}
+			}
+
+			result += source.slice(lastIndex);
+			return [result, count];
 		}));
 		stringTable.set('gmatch', createNativeFunction('string.gmatch', (args) => {
 			const source = args[0] as string;
@@ -2293,13 +2451,16 @@ export class BmsxVMRuntime {
 			throw this.createApiRuntimeError('ipairs expects a table or native object.');
 		});
 		this.registerVmGlobal('next', nextFn);
-		this.registerVmGlobal('pairs', createNativeFunction('pairs', (args) => {
-			const target = args[0];
-			if (!(target instanceof Table) && !isNativeObject(target)) {
-				throw this.createApiRuntimeError('pairs expects a table or native object.');
-			}
-			return [nextFn, target, null];
-		}));
+			this.registerVmGlobal('pairs', createNativeFunction('pairs', (args) => {
+				const target = args[0];
+				if (!(target instanceof Table) && !isNativeObject(target)) {
+					const stack = this.buildVmStackFrames()
+						.map(frame => `${frame.source ?? '<unknown>'}:${frame.line ?? '?'}:${frame.column ?? '?'}`)
+						.join(' <- ');
+					throw this.createApiRuntimeError(`pairs expects a table or native object (got ${this.formatVmValue(target)}). stack=${stack}`);
+				}
+				return [nextFn, target, null];
+			}));
 		this.registerVmGlobal('ipairs', createNativeFunction('ipairs', (args) => {
 			const target = args[0];
 			if (!(target instanceof Table) && !isNativeObject(target)) {
@@ -2886,12 +3047,16 @@ export class BmsxVMRuntime {
 			const cmdBase = base + index * IO_COMMAND_STRIDE;
 			const cmd = memory[cmdBase] as number;
 			switch (cmd) {
-				case IO_CMD_PRINT: {
-					const arg = memory[cmdBase + IO_ARG0_OFFSET];
-					const text = this.formatVmValue(arg);
-					this.terminal.appendStdout(text);
-					break;
-				}
+					case IO_CMD_PRINT: {
+						const arg = memory[cmdBase + IO_ARG0_OFFSET];
+						const text = this.formatVmValue(arg);
+						this.terminal.appendStdout(text);
+						if ($.view.backendType === 'headless') {
+							// eslint-disable-next-line no-console
+							console.log(text);
+						}
+						break;
+					}
 				default:
 					throw new Error(`Unknown VM IO command: ${cmd}.`);
 			}

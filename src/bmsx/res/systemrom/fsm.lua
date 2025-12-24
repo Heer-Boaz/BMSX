@@ -41,7 +41,7 @@ function statedefinition.new(id, def, root, parent)
 		for state_id, state_def in pairs(def.states) do
 			local child = statedefinition.new(state_id, state_def, self.root, self)
 			self.states[state_id] = child
-			if not self.initial and start_state_prefixes[state_id:sub(1, 1)] then
+			if not self.initial and start_state_prefixes[string.sub(state_id, 1, 1)] then
 				self.initial = state_id
 			end
 		end
@@ -202,7 +202,7 @@ local function resolve_event_payload(event)
 end
 
 local function trim_string(value)
-	return (value:gsub("^%s*(.-)%s*$", "%1"))
+	return (string.match(value, "^%s*(.-)%s*$"))
 end
 
 local function is_no_op_string(value)
@@ -470,42 +470,44 @@ end
 
 function state:with_critical_section(fn)
 	self:enter_critical_section()
-	local results = { pcall(fn) }
+	local results = table.pack(pcall(fn))
 	self:leave_critical_section()
 	if not results[1] then
 		error(results[2])
 	end
-	return results[2]
+	return table.unpack(results, 2, results.n)
 end
 
-function state:process_transition_queue()
-	if self.is_processing_queue then
-		return
-	end
-	self.is_processing_queue = true
-	local ok, err = pcall(function()
-		for i = 1, #self.transition_queue do
-			local t = self.transition_queue[i]
-			if should_trace_transitions() then
-				self:run_with_transition_context(
-					function()
-						return self:hydrate_context(t.diag, "queue-drain", "queued-execution")
-					end,
-					function()
-						self:transition_to_state(t.path, "deferred")
-					end
-				)
-			else
-				self:transition_to_state(t.path, "deferred")
-			end
+	function state:process_transition_queue()
+		if self.is_processing_queue then
+			return
 		end
-		self.transition_queue = {}
-	end)
-	self.is_processing_queue = false
-	if not ok then
-		error(err)
+		self.is_processing_queue = true
+		local results = table.pack(pcall(function()
+			local i = 1
+			while i <= #self.transition_queue do
+				local t = self.transition_queue[i]
+				if should_trace_transitions() then
+					self:run_with_transition_context(
+						function()
+							return self:hydrate_context(t.diag, "queue-drain", "queued-execution")
+						end,
+						function()
+							self:transition_to_state(t.path, "deferred")
+						end
+					)
+				else
+					self:transition_to_state(t.path, "deferred")
+				end
+				i = i + 1
+			end
+			self.transition_queue = {}
+		end))
+		self.is_processing_queue = false
+		if not results[1] then
+			error(results[2])
+		end
 	end
-end
 
 function state:run_with_transition_context(factory, fn)
 	if not should_trace_transitions() then
@@ -518,7 +520,7 @@ function state:run_with_transition_context(factory, fn)
 		self._transition_context_stack = stack
 	end
 	stack[#stack + 1] = ctx
-	local results = { pcall(fn, ctx) }
+	local results = table.pack(pcall(fn, ctx))
 	stack[#stack] = nil
 	if #stack == 0 then
 		self._transition_context_stack = nil
@@ -526,7 +528,7 @@ function state:run_with_transition_context(factory, fn)
 	if not results[1] then
 		error(results[2])
 	end
-	return results[2]
+	return table.unpack(results, 2, results.n)
 end
 
 function state:peek_transition_context()
@@ -1728,17 +1730,19 @@ function statemachinecontroller:bind_machine(machine)
 	for i = 1, #events do
 		local event = events[i]
 		local key = machine.localdef_id .. ":" .. event.name
-		if not self._event_subscriptions[key] then
-			local disposer = machine.target.events:on({
-				event = event.name,
-				handler = function(evt)
-					self:auto_dispatch(evt)
-				end,
-				subscriber = machine.target,
-				persistent = true,
-			})
-			self._event_subscriptions[key] = disposer
+		if self._event_subscriptions[key] then
+			goto continue
 		end
+		local disposer = machine.target.events:on({
+			event = event.name,
+			handler = function(evt)
+				self:auto_dispatch(evt)
+			end,
+			subscriber = machine.target,
+			persistent = true,
+		})
+		self._event_subscriptions[key] = disposer
+		::continue::
 	end
 end
 
@@ -1835,7 +1839,7 @@ function statemachinecontroller:dispatch_event(event)
 end
 
 function statemachinecontroller:transition_to(path)
-	local machine_id, state_path = path:match("^(.-):/(.+)$")
+	local machine_id, state_path = string.match(path, "^(.-):/(.+)$")
 	if not machine_id then
 		machine_id = path
 		state_path = path
@@ -1848,7 +1852,7 @@ function statemachinecontroller:transition_to(path)
 end
 
 function statemachinecontroller:matches_state_path(path)
-	local machine_id, state_path = path:match("^(.-):/(.+)$")
+	local machine_id, state_path = string.match(path, "^(.-):/(.+)$")
 	if machine_id then
 		local machine = self.statemachines[machine_id]
 		if not machine then
@@ -1865,9 +1869,9 @@ function statemachinecontroller:matches_state_path(path)
 end
 
 function statemachinecontroller:switch_to(path)
-	local sep_index = path:find(":/", 1, true)
-	local machine_id = sep_index and path:sub(1, sep_index - 1) or path
-	local state_path = sep_index and path:sub(sep_index + 2) or nil
+	local sep_index = string.find(path, ":/", 1, true)
+	local machine_id = sep_index and string.sub(path, 1, sep_index - 1) or path
+	local state_path = sep_index and string.sub(path, sep_index + 2) or nil
 	local machine = self.statemachines[machine_id]
 	if not machine then
 		error("no machine with id '" .. tostring(machine_id) .. "'")
