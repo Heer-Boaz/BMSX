@@ -1,0 +1,171 @@
+-- eventemitter.lua
+-- Lightweight event emitter + per-emitter event port
+
+local EventEmitter = {}
+EventEmitter.__index = EventEmitter
+
+local EventPort = {}
+EventPort.__index = EventPort
+
+local port_cache = setmetatable({}, { __mode = "k" })
+
+local function create_gameevent(spec)
+	local event = {
+		type = spec.type,
+		emitter = spec.emitter,
+		timestamp = spec.timestamp or (os.clock() * 1000),
+	}
+	for k, v in pairs(spec) do
+		if k ~= "type" and k ~= "emitter" and k ~= "timestamp" then
+			event[k] = v
+		end
+	end
+	return event
+end
+
+function EventEmitter.new()
+	return setmetatable({
+		listeners = {},
+		any_listeners = {},
+	}, EventEmitter)
+end
+
+EventEmitter.instance = EventEmitter.new()
+
+function EventEmitter:events_of(emitter)
+	local port = port_cache[emitter]
+	if not port then
+		port = setmetatable({ emitter = emitter }, EventPort)
+		port_cache[emitter] = port
+	end
+	return port
+end
+
+function EventEmitter:on(spec)
+	local name = spec.event_name or spec.event
+	local list = self.listeners[name]
+	if not list then
+		list = {}
+		self.listeners[name] = list
+	end
+	list[#list + 1] = {
+		handler = spec.handler,
+		subscriber = spec.subscriber,
+		emitter = spec.emitter,
+		persistent = spec.persistent,
+	}
+end
+
+function EventEmitter:off(event_name, handler, emitter)
+	local list = self.listeners[event_name]
+	if not list then
+		return
+	end
+	for i = #list, 1, -1 do
+		local entry = list[i]
+		if entry.handler == handler and entry.emitter == emitter then
+			table.remove(list, i)
+		end
+	end
+end
+
+function EventEmitter:on_any(handler, persistent)
+	self.any_listeners[#self.any_listeners + 1] = { handler = handler, persistent = persistent }
+end
+
+function EventEmitter:off_any(handler, force_persistent)
+	for i = #self.any_listeners, 1, -1 do
+		local entry = self.any_listeners[i]
+		if entry.handler == handler and (force_persistent or not entry.persistent) then
+			table.remove(self.any_listeners, i)
+		end
+	end
+end
+
+function EventEmitter:emit(arg0, emitter, payload)
+	local event
+	if type(arg0) == "table" then
+		event = arg0
+	else
+		local spec = { type = arg0, emitter = emitter }
+		if payload ~= nil then
+			if type(payload) == "table" and payload.type == nil then
+				for k, v in pairs(payload) do
+					spec[k] = v
+				end
+			else
+				spec.payload = payload
+			end
+		end
+		event = create_gameevent(spec)
+	end
+
+	local list = self.listeners[event.type]
+	if list then
+		for i = 1, #list do
+			local entry = list[i]
+			local filter = entry.emitter
+			if filter == nil or filter == event.emitter or filter == (event.emitter and event.emitter.id) then
+				entry.handler(event)
+			end
+		end
+	end
+
+	for i = 1, #self.any_listeners do
+		self.any_listeners[i].handler(event)
+	end
+end
+
+function EventEmitter:remove_subscriber(subscriber, force_persistent)
+	for _, list in pairs(self.listeners) do
+		for i = #list, 1, -1 do
+			local entry = list[i]
+			if entry.subscriber == subscriber and (force_persistent or not entry.persistent) then
+				table.remove(list, i)
+			end
+		end
+	end
+end
+
+function EventEmitter:clear()
+	for _, list in pairs(self.listeners) do
+		for i = #list, 1, -1 do
+			if not list[i].persistent then
+				table.remove(list, i)
+			end
+		end
+	end
+	for i = #self.any_listeners, 1, -1 do
+		if not self.any_listeners[i].persistent then
+			table.remove(self.any_listeners, i)
+		end
+	end
+end
+
+function EventPort:on(spec)
+	spec.emitter = spec.emitter or self.emitter.id or self.emitter
+	EventEmitter.instance:on(spec)
+	local name = spec.event_name or spec.event
+	return function()
+		EventEmitter.instance:off(name, spec.handler, spec.emitter)
+	end
+end
+
+function EventPort:emit(event_name, payload)
+	EventEmitter.instance:emit(event_name, self.emitter, payload)
+end
+
+function EventPort:emit_event(event)
+	event.emitter = event.emitter or self.emitter
+	EventEmitter.instance:emit(event)
+	return event
+end
+
+return {
+	EventEmitter = EventEmitter,
+	EventPort = EventPort,
+	events_of = function(emitter)
+		return EventEmitter.instance:events_of(emitter)
+	end,
+	create_gameevent = create_gameevent,
+}
