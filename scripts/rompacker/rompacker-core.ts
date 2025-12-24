@@ -1761,10 +1761,8 @@ export async function finalizeRompack(
 
 	await finished(writer);
 	const romBinary = await readFile(tempFile);
-	const compressed = Buffer.from(zip(romBinary));
-	const finalPayload = romlabelBuffer
-		? Buffer.concat([romlabelBuffer, compressed])
-		: compressed;
+	const payload = debug ? romBinary : Buffer.from(zip(romBinary));
+	const finalPayload = romlabelBuffer ? Buffer.concat([romlabelBuffer, payload]) : payload;
 
 	await writeFile(distPath, finalPayload);
 	await unlink(tempFile);

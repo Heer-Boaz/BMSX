@@ -5,6 +5,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <regex>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -215,16 +216,27 @@ public:
 	void registerNativeFunction(const std::string& name, NativeFunctionInvoke fn);
 
 private:
+	enum class PendingCall {
+		None,
+		Update,
+		Draw,
+	};
+
 	explicit VMRuntime(const VMRuntimeOptions& options);
 	~VMRuntime();
 
 	void setupBuiltins();
-	void executeUpdateCallback();
+	void executeUpdateCallback(double deltaSeconds);
 	void executeDrawCallback();
 	Value requireVmModule(const std::string& moduleName);
+	std::regex buildLuaPatternRegex(const std::string& pattern) const;
+	std::string translateLuaPatternEscape(char token, bool inClass) const;
+	std::string vmToString(const Value& value) const;
+	double nextVmRandom();
 	std::string formatVmString(const std::string& templateStr, const std::vector<Value>& args, size_t argStart) const;
 
 	static VMRuntime* s_instance;
+	static constexpr int UPDATE_STATEMENT_BUDGET = 1'000'000;
 
 	// VM core
 	std::vector<Value> m_memory;
@@ -252,6 +264,9 @@ private:
 	std::optional<std::shared_ptr<Closure>> m_updateFn;
 	std::optional<std::shared_ptr<Closure>> m_drawFn;
 	std::optional<std::shared_ptr<Closure>> m_initFn;
+	std::optional<std::shared_ptr<Closure>> m_newGameFn;
+	PendingCall m_pendingVmCall = PendingCall::None;
+	uint32_t m_vmRandomSeedValue = 0;
 
 	std::unordered_map<std::string, int> m_vmModuleProtos;
 	std::unordered_map<std::string, std::string> m_vmModuleAliases;

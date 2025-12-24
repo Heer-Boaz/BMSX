@@ -2,11 +2,11 @@
 
 #include <cstdint>
 #include <functional>
-#include <map>
 #include <memory>
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -127,6 +127,7 @@ struct NativeObject {
 	std::function<Value(const Value&)> get;
 	std::function<void(const Value&, const Value&)> set;
 	std::function<int()> len; // optional
+	std::function<std::optional<std::pair<Value, Value>>(const Value&)> next; // optional
 };
 
 /**
@@ -136,9 +137,10 @@ inline std::shared_ptr<NativeObject> createNativeObject(
 	void* raw,
 	std::function<Value(const Value&)> get,
 	std::function<void(const Value&, const Value&)> set,
-	std::function<int()> len = nullptr
+	std::function<int()> len = nullptr,
+	std::function<std::optional<std::pair<Value, Value>>(const Value&)> next = nullptr
 ) {
-	return std::make_shared<NativeObject>(NativeObject{raw, std::move(get), std::move(set), std::move(len)});
+	return std::make_shared<NativeObject>(NativeObject{raw, std::move(get), std::move(set), std::move(len), std::move(next)});
 }
 
 /**
@@ -285,6 +287,7 @@ public:
 	int length() const;
 	void clear();
 	std::vector<std::pair<Value, Value>> entries() const;
+	std::optional<std::pair<Value, Value>> nextEntry(const Value& after) const;
 
 	std::shared_ptr<Table> getMetatable() const { return m_metatable; }
 	void setMetatable(std::shared_ptr<Table> mt) { m_metatable = std::move(mt); }
@@ -292,9 +295,10 @@ public:
 private:
 	bool isArrayIndex(const Value& key) const;
 	int toArrayIndex(const Value& key) const;
+	std::optional<size_t> findMapIndex(const Value& key) const;
 
 	std::vector<Value> m_array;
-	std::map<Value, Value> m_map; // Using std::map for stable ordering
+	std::vector<std::pair<Value, Value>> m_map;
 	std::shared_ptr<Table> m_metatable;
 };
 
@@ -347,6 +351,7 @@ private:
 	void writeReturnValues(CallFrame& frame, int base, int count, const std::vector<Value>& values);
 	void setRegister(CallFrame& frame, int index, const Value& value);
 	Value readRK(CallFrame& frame, int operand);
+	Value resolveTableIndex(const std::shared_ptr<Table>& table, const Value& key);
 
 	// Frame pooling
 	std::unique_ptr<CallFrame> acquireFrame();

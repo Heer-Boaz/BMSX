@@ -1,5 +1,7 @@
 #include "cpu.h"
 #include <cmath>
+#include <cstdlib>
+#include <limits>
 #include <sstream>
 #include <stdexcept>
 
@@ -13,24 +15,29 @@ std::string valueToString(const Value& v) {
 	return std::visit([](auto&& arg) -> std::string {
 		using T = std::decay_t<decltype(arg)>;
 		if constexpr (std::is_same_v<T, std::monostate>) {
-			return "nil";
+			return "null";
 		} else if constexpr (std::is_same_v<T, bool>) {
 			return arg ? "true" : "false";
 		} else if constexpr (std::is_same_v<T, double>) {
-			// Format number without trailing zeros
+			if (!std::isfinite(arg)) {
+				if (std::isnan(arg)) {
+					return "NaN";
+				}
+				return arg < 0 ? "-Infinity" : "Infinity";
+			}
 			std::ostringstream oss;
 			oss << arg;
 			return oss.str();
 		} else if constexpr (std::is_same_v<T, std::string>) {
 			return arg;
 		} else if constexpr (std::is_same_v<T, std::shared_ptr<Table>>) {
-			return "table";
+			return "[object Object]";
 		} else if constexpr (std::is_same_v<T, std::shared_ptr<Closure>>) {
-			return "function";
+			return "[object Object]";
 		} else if constexpr (std::is_same_v<T, std::shared_ptr<NativeFunction>>) {
-			return "function";
+			return "[object Object]";
 		} else if constexpr (std::is_same_v<T, std::shared_ptr<NativeObject>>) {
-			return "userdata";
+			return "[object Object]";
 		} else {
 			return "unknown";
 		}
@@ -67,14 +74,14 @@ Value Table::get(const Value& key) const {
 		if (index >= 0 && index < static_cast<int>(m_array.size())) {
 			return m_array[index];
 		}
-		return std::monostate{}; // nil
+		return std::monostate{};
 	}
 
-	auto it = m_map.find(key);
-	if (it != m_map.end()) {
-		return it->second;
+	auto mapIndex = findMapIndex(key);
+	if (mapIndex.has_value()) {
+		return m_map[*mapIndex].second;
 	}
-	return std::monostate{}; // nil
+	return std::monostate{};
 }
 
 void Table::set(const Value& key, const Value& value) {
@@ -89,11 +96,18 @@ void Table::set(const Value& key, const Value& value) {
 		}
 	}
 
+	auto mapIndex = findMapIndex(key);
 	if (isNil(value)) {
-		m_map.erase(key);
-	} else {
-		m_map[key] = value;
+		if (mapIndex.has_value()) {
+			m_map.erase(m_map.begin() + static_cast<std::ptrdiff_t>(*mapIndex));
+		}
+		return;
 	}
+	if (mapIndex.has_value()) {
+		m_map[*mapIndex].second = value;
+		return;
+	}
+	m_map.emplace_back(key, value);
 }
 
 int Table::length() const {
@@ -123,12 +137,57 @@ std::vector<std::pair<Value, Value>> Table::entries() const {
 		}
 	}
 
-	// Hash entries
-	for (const auto& [k, v] : m_map) {
-		result.emplace_back(k, v);
+	for (const auto& entry : m_map) {
+		result.push_back(entry);
 	}
 
 	return result;
+}
+
+std::optional<std::pair<Value, Value>> Table::nextEntry(const Value& after) const {
+	if (isNil(after)) {
+		for (size_t i = 0; i < m_array.size(); ++i) {
+			if (!isNil(m_array[i])) {
+				return std::make_pair(static_cast<double>(i + 1), m_array[i]);
+			}
+		}
+		if (!m_map.empty()) {
+			return m_map.front();
+		}
+		return std::nullopt;
+	}
+	if (isArrayIndex(after)) {
+		int startIndex = static_cast<int>(std::get<double>(after));
+		for (int i = startIndex; i < static_cast<int>(m_array.size()); ++i) {
+			if (!isNil(m_array[static_cast<size_t>(i)])) {
+				return std::make_pair(static_cast<double>(i + 1), m_array[static_cast<size_t>(i)]);
+			}
+		}
+		if (!m_map.empty()) {
+			return m_map.front();
+		}
+		return std::nullopt;
+	}
+	bool seen = false;
+	for (const auto& entry : m_map) {
+		if (!seen) {
+			if (entry.first == after) {
+				seen = true;
+			}
+			continue;
+		}
+		return entry;
+	}
+	return std::nullopt;
+}
+
+std::optional<size_t> Table::findMapIndex(const Value& key) const {
+	for (size_t i = 0; i < m_map.size(); ++i) {
+		if (m_map[i].first == key) {
+			return i;
+		}
+	}
+	return std::nullopt;
 }
 
 // =============================================================================
@@ -155,10 +214,16 @@ void VMCPU::start(int entryProtoIndex, const std::vector<Value>& args) {
 }
 
 void VMCPU::call(std::shared_ptr<Closure> closure, const std::vector<Value>& args, int returnCount) {
+	if (!closure) {
+		throw std::runtime_error("Attempted to call a nil value.");
+	}
 	pushFrame(closure, args, 0, returnCount, false, m_program->protos[closure->protoIndex].entryPC);
 }
 
 void VMCPU::callExternal(std::shared_ptr<Closure> closure, const std::vector<Value>& args) {
+	if (!closure) {
+		throw std::runtime_error("Attempted to call a nil value.");
+	}
 	pushFrame(closure, args, 0, 0, true, m_program->protos[closure->protoIndex].entryPC);
 }
 
@@ -174,20 +239,26 @@ RunResult VMCPU::runUntilDepth(int targetDepth, std::optional<int> instructionBu
 		instructionBudgetRemaining = instructionBudget;
 	}
 
-	while (static_cast<int>(m_frames.size()) > targetDepth) {
-		if (instructionBudgetRemaining.has_value() && *instructionBudgetRemaining <= 0) {
-			if (ownsBudget) {
-				instructionBudgetRemaining = previousBudget;
+	RunResult result = RunResult::Halted;
+	try {
+		while (static_cast<int>(m_frames.size()) > targetDepth) {
+			if (instructionBudgetRemaining.has_value() && *instructionBudgetRemaining <= 0) {
+				result = RunResult::Yielded;
+				break;
 			}
-			return RunResult::Yielded;
+			step();
 		}
-		step();
+	} catch (...) {
+		if (ownsBudget) {
+			instructionBudgetRemaining = previousBudget;
+		}
+		throw;
 	}
 
 	if (ownsBudget) {
 		instructionBudgetRemaining = previousBudget;
 	}
-	return RunResult::Halted;
+	return result;
 }
 
 void VMCPU::step() {
@@ -269,7 +340,7 @@ void VMCPU::executeInstruction(CallFrame& frame, uint32_t instr) {
 			const Value& table = frame.registers[b];
 			Value key = readRK(frame, c);
 			if (auto tbl = std::get_if<std::shared_ptr<Table>>(&table)) {
-				setRegister(frame, a, (*tbl)->get(key));
+				setRegister(frame, a, resolveTableIndex(*tbl, key));
 				return;
 			}
 			if (auto obj = std::get_if<std::shared_ptr<NativeObject>>(&table)) {
@@ -411,12 +482,40 @@ void VMCPU::executeInstruction(CallFrame& frame, uint32_t instr) {
 			}
 			if (auto obj = std::get_if<std::shared_ptr<NativeObject>>(&val)) {
 				if (!(*obj)->len) {
-					throw std::runtime_error("Length operator expects a native object with a length.");
+					std::string stack;
+					auto callStack = getCallStack();
+					for (auto it = callStack.rbegin(); it != callStack.rend(); ++it) {
+						const auto& entry = *it;
+						const auto range = getDebugRange(entry.second);
+						if (!stack.empty()) {
+							stack += " <- ";
+						}
+						if (range.has_value()) {
+							stack += range->path + ":" + std::to_string(range->startLine) + ":" + std::to_string(range->startColumn);
+						} else {
+							stack += "<unknown>";
+						}
+					}
+					throw std::runtime_error("Length operator expects a native object with a length. stack=" + stack);
 				}
 				setRegister(frame, a, static_cast<double>((*obj)->len()));
 				return;
 			}
-			throw std::runtime_error("Length operator expects a string or table.");
+			std::string stack;
+			auto callStack = getCallStack();
+			for (auto it = callStack.rbegin(); it != callStack.rend(); ++it) {
+				const auto& entry = *it;
+				const auto range = getDebugRange(entry.second);
+				if (!stack.empty()) {
+					stack += " <- ";
+				}
+				if (range.has_value()) {
+					stack += range->path + ":" + std::to_string(range->startLine) + ":" + std::to_string(range->startColumn);
+				} else {
+					stack += "<unknown>";
+				}
+			}
+			throw std::runtime_error("Length operator expects a string or table. stack=" + stack);
 		}
 
 		case OpCode::BNOT: {
@@ -436,9 +535,36 @@ void VMCPU::executeInstruction(CallFrame& frame, uint32_t instr) {
 		}
 
 		case OpCode::LT: {
-			double left = asNumber(readRK(frame, b));
-			double right = asNumber(readRK(frame, c));
-			bool ok = left < right;
+			Value leftValue = readRK(frame, b);
+			Value rightValue = readRK(frame, c);
+			bool ok = false;
+			if (std::holds_alternative<std::string>(leftValue) && std::holds_alternative<std::string>(rightValue)) {
+				ok = std::get<std::string>(leftValue) < std::get<std::string>(rightValue);
+			} else {
+				auto toNumber = [](const Value& value) -> double {
+					if (auto* n = std::get_if<double>(&value)) {
+						return *n;
+					}
+					if (auto* b = std::get_if<bool>(&value)) {
+						return *b ? 1.0 : 0.0;
+					}
+					if (isNil(value)) {
+						return 0.0;
+					}
+					if (auto* s = std::get_if<std::string>(&value)) {
+						char* end = nullptr;
+						double parsed = std::strtod(s->c_str(), &end);
+						if (end == s->c_str()) {
+							return std::numeric_limits<double>::quiet_NaN();
+						}
+						return parsed;
+					}
+					return std::numeric_limits<double>::quiet_NaN();
+				};
+				double left = toNumber(leftValue);
+				double right = toNumber(rightValue);
+				ok = left < right;
+			}
 			if (ok != (a != 0)) {
 				frame.pc += 1;
 			}
@@ -446,9 +572,36 @@ void VMCPU::executeInstruction(CallFrame& frame, uint32_t instr) {
 		}
 
 		case OpCode::LE: {
-			double left = asNumber(readRK(frame, b));
-			double right = asNumber(readRK(frame, c));
-			bool ok = left <= right;
+			Value leftValue = readRK(frame, b);
+			Value rightValue = readRK(frame, c);
+			bool ok = false;
+			if (std::holds_alternative<std::string>(leftValue) && std::holds_alternative<std::string>(rightValue)) {
+				ok = std::get<std::string>(leftValue) <= std::get<std::string>(rightValue);
+			} else {
+				auto toNumber = [](const Value& value) -> double {
+					if (auto* n = std::get_if<double>(&value)) {
+						return *n;
+					}
+					if (auto* b = std::get_if<bool>(&value)) {
+						return *b ? 1.0 : 0.0;
+					}
+					if (isNil(value)) {
+						return 0.0;
+					}
+					if (auto* s = std::get_if<std::string>(&value)) {
+						char* end = nullptr;
+						double parsed = std::strtod(s->c_str(), &end);
+						if (end == s->c_str()) {
+							return std::numeric_limits<double>::quiet_NaN();
+						}
+						return parsed;
+					}
+					return std::numeric_limits<double>::quiet_NaN();
+				};
+				double left = toNumber(leftValue);
+				double right = toNumber(rightValue);
+				ok = left <= right;
+			}
 			if (ok != (a != 0)) {
 				frame.pc += 1;
 			}
@@ -509,12 +662,21 @@ void VMCPU::executeInstruction(CallFrame& frame, uint32_t instr) {
 			for (int i = 0; i < argCount; ++i) {
 				m_valueScratch.push_back(frame.registers[a + 1 + i]);
 			}
+			if (isNil(callee)) {
+				throw std::runtime_error("Attempted to call a nil value.");
+			}
 			if (auto nfn = std::get_if<std::shared_ptr<NativeFunction>>(&callee)) {
+				if (!*nfn) {
+					throw std::runtime_error("Attempted to call a nil value.");
+				}
 				std::vector<Value> results = (*nfn)->invoke(m_valueScratch);
 				writeReturnValues(frame, a, c, results);
 				return;
 			}
 			if (auto cls = std::get_if<std::shared_ptr<Closure>>(&callee)) {
+				if (!*cls) {
+					throw std::runtime_error("Attempted to call a nil value.");
+				}
 				pushFrame(*cls, m_valueScratch, a, c, false, frame.pc - 1);
 				return;
 			}
@@ -556,19 +718,13 @@ void VMCPU::executeInstruction(CallFrame& frame, uint32_t instr) {
 
 		case OpCode::LOAD_MEM: {
 			int addr = static_cast<int>(asNumber(frame.registers[b]));
-			if (addr >= 0 && addr < static_cast<int>(m_memory.size())) {
-				setRegister(frame, a, m_memory[addr]);
-			} else {
-				setRegister(frame, a, std::monostate{});
-			}
+			setRegister(frame, a, m_memory[addr]);
 			return;
 		}
 
 		case OpCode::STORE_MEM: {
 			int addr = static_cast<int>(asNumber(frame.registers[b]));
-			if (addr >= 0 && addr < static_cast<int>(m_memory.size())) {
-				m_memory[addr] = frame.registers[a];
-			}
+			m_memory[addr] = frame.registers[a];
 			return;
 		}
 
@@ -653,6 +809,26 @@ Value VMCPU::readUpvalue(const std::shared_ptr<Upvalue>& upvalue) {
 		return upvalue->frame->registers[upvalue->index];
 	}
 	return upvalue->value;
+}
+
+Value VMCPU::resolveTableIndex(const std::shared_ptr<Table>& table, const Value& key) {
+	std::shared_ptr<Table> current = table;
+	for (int depth = 0; depth < 32; ++depth) {
+		Value value = current->get(key);
+		if (!isNil(value)) {
+			return value;
+		}
+		auto mt = current->getMetatable();
+		if (!mt) {
+			return std::monostate{};
+		}
+		Value indexer = mt->get(std::string("__index"));
+		if (!std::holds_alternative<std::shared_ptr<Table>>(indexer)) {
+			return std::monostate{};
+		}
+		current = std::get<std::shared_ptr<Table>>(indexer);
+	}
+	throw std::runtime_error("Metatable __index loop detected.");
 }
 
 void VMCPU::writeUpvalue(const std::shared_ptr<Upvalue>& upvalue, const Value& value) {

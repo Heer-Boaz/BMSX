@@ -1,253 +1,90 @@
 #pragma once
 
 #include "cpu.h"
+#include "font.h"
+#include "../core/types.h"
+#include "../render/render_types.h"
+#include <array>
+#include <memory>
+#include <optional>
 #include <string>
-#include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 namespace bmsx {
 
-// Forward declarations
 class VMRuntime;
-class WorldObject;
 
-/**
- * Pointer button indices for mouse/touch input.
- */
-enum class VMPointerButton : int {
-	Primary = 0,
-	Secondary = 1,
-	Aux = 2,
-	Back = 3,
-	Forward = 4
-};
-
-/**
- * Pointer position in viewport coordinates.
- */
-struct VMPointerViewport {
-	int x = 0;
-	int y = 0;
-};
-
-/**
- * Pointer position as floating point.
- */
-struct VMPointerVector {
-	float x = 0.0f;
-	float y = 0.0f;
-};
-
-/**
- * Mouse wheel delta.
- */
-struct VMPointerWheel {
-	float x = 0.0f;
-	float y = 0.0f;
-};
-
-/**
- * VMApi - the API exposed to Lua scripts.
- *
- * Provides functions for:
- * - Display (display_width, display_height, cls, rect, etc.)
- * - Input (mousebtn, mousepos, action_triggered, etc.)
- * - Audio (sfx, music, etc.)
- * - World/objects (spawn_object, world_object, etc.)
- */
 class VMApi {
 public:
 	explicit VMApi(VMRuntime& runtime);
 	~VMApi();
 
-	// Non-copyable
-	VMApi(const VMApi&) = delete;
-	VMApi& operator=(const VMApi&) = delete;
-
-	/**
-	 * Register all API functions as globals in the VM.
-	 */
 	void registerAllFunctions();
 
-	// ==========================================================================
-	// Display functions
-	// ==========================================================================
-
-	/**
-	 * Get display width in pixels.
-	 */
 	int display_width() const;
-
-	/**
-	 * Get display height in pixels.
-	 */
 	int display_height() const;
-
-	/**
-	 * Clear the screen with a palette color.
-	 */
-	void cls(int colorIndex = 0);
-
-	/**
-	 * Draw a rectangle outline.
-	 */
-	void rect(int x0, int y0, int x1, int y1, int z, int colorIndex);
-
-	/**
-	 * Draw a filled rectangle.
-	 */
-	void rectfill(int x0, int y0, int x1, int y1, int z, int colorIndex);
-
-	/**
-	 * Draw text at position.
-	 */
-	void write(const std::string& text, int x, int y, int z, int colorIndex);
-
-	// ==========================================================================
-	// Input functions
-	// ==========================================================================
-
-	/**
-	 * Check if mouse button is pressed.
-	 */
-	bool mousebtn(VMPointerButton button) const;
-
-	/**
-	 * Check if mouse button was just pressed this frame.
-	 */
-	bool mousebtnp(VMPointerButton button) const;
-
-	/**
-	 * Check if mouse button was just released this frame.
-	 */
-	bool mousebtnr(VMPointerButton button) const;
-
-	/**
-	 * Get mouse position in viewport coordinates.
-	 */
-	VMPointerViewport mousepos() const;
-
-	/**
-	 * Get mouse position in screen coordinates.
-	 */
-	VMPointerVector pointer_screen_position() const;
-
-	/**
-	 * Get mouse movement delta.
-	 */
-	VMPointerVector pointer_delta() const;
-
-	/**
-	 * Get mouse wheel delta.
-	 */
-	VMPointerWheel mousewheel() const;
-
-	/**
-	 * Check if an action was triggered this frame.
-	 */
-	bool action_triggered(const std::string& actionDefinition, int playerIndex = 1) const;
-
-	// ==========================================================================
-	// Audio functions
-	// ==========================================================================
-
-	/**
-	 * Play a sound effect.
-	 */
-	void sfx(const std::string& id);
-
-	/**
-	 * Stop sound effects.
-	 */
-	void stop_sfx();
-
-	/**
-	 * Play music.
-	 */
-	void music(const std::string& id);
-
-	/**
-	 * Stop music.
-	 */
-	void stop_music();
-
-	// ==========================================================================
-	// Storage functions
-	// ==========================================================================
-
-	/**
-	 * Initialize cart data namespace.
-	 */
-	void cartdata(const std::string& ns);
-
-	/**
-	 * Set persistent data value.
-	 */
-	void dset(int index, double value);
-
-	/**
-	 * Get persistent data value.
-	 */
-	double dget(int index) const;
-
-	// ==========================================================================
-	// System functions
-	// ==========================================================================
-
-	/**
-	 * Get system stat.
-	 */
 	double stat(int index) const;
 
-	/**
-	 * Reboot the VM.
-	 */
+	void cls(int colorIndex = 0);
+	void put_rect(int x0, int y0, int x1, int y1, int z, int colorIndex);
+	void put_rectfill(int x0, int y0, int x1, int y1, int z, int colorIndex);
+	void put_rectfillcolor(int x0, int y0, int x1, int y1, int z, const Color& color);
+	void put_sprite(const ImgRenderSubmission& submission);
+	void put_poly(const PolyRenderSubmission& submission);
+	void put_mesh(const MeshRenderSubmission& submission);
+	void put_particle(const ParticleRenderSubmission& submission);
+
+	void write(const std::string& text, std::optional<int> x, std::optional<int> y,
+	           std::optional<int> z, std::optional<int> colorIndex);
+	void write_color(const std::string& text, std::optional<int> x, std::optional<int> y,
+	                 std::optional<int> z, const Value& colorValue);
+	void write_with_font(const std::string& text, std::optional<int> x, std::optional<int> y,
+	                     std::optional<int> z, std::optional<int> colorIndex, VMFont* font);
+	void write_inline_with_font(const std::string& text, int x, int y, int z, int colorIndex, VMFont* font);
+	void write_inline_span_with_font(const std::string& text, int start, int end,
+	                                 int x, int y, int z, int colorIndex, VMFont* font);
+
+	bool action_triggered(const std::string& actionDefinition, std::optional<int> playerIndex) const;
+
+	void cartdata(const std::string& ns);
+	void dset(int index, double value);
+	double dget(int index) const;
+
+	void sfx(const std::string& id);
+	void stop_sfx();
+	void music(const std::string& id);
+	void stop_music();
+	void set_master_volume(double volume);
+	void pause_audio();
+	void resume_audio();
 	void reboot();
 
 private:
 	VMRuntime& m_runtime;
+	std::unique_ptr<VMFont> m_font;
 
-	// Text cursor state
 	int m_textCursorX = 0;
 	int m_textCursorY = 0;
 	int m_textCursorHomeX = 0;
-	int m_textCursorColorIndex = 15;
+	int m_textCursorColorIndex = 0;
+	int m_defaultPrintColorIndex = 15;
 
-	// Persistent storage
 	std::string m_cartDataNamespace;
 	std::vector<double> m_persistentData;
+
 	static constexpr int PERSISTENT_DATA_SIZE = 256;
 
+	std::string expand_tabs(const std::string& text) const;
+	void draw_multiline_text(const std::string& text, int x, int y, int z, const Color& color, VMFont& font);
+	void advance_print_cursor(int lineHeight);
 	void reset_print_cursor();
-	std::string pointer_action(VMPointerButton button) const;
 
-	struct VmWorldObjectDefinition {
-		std::string defId;
-		std::shared_ptr<Table> classTable;
-		std::shared_ptr<Table> defaults;
-		std::vector<std::string> fsms;
-	};
-
-	std::vector<std::unique_ptr<WorldObject>> m_spawnedObjects;
-	std::unordered_map<std::string, VmWorldObjectDefinition> m_worldObjectDefs;
-
-	std::unordered_map<const WorldObject*, std::unordered_map<std::string, std::shared_ptr<NativeFunction>>> m_methodCache;
-	std::unordered_map<const WorldObject*, std::shared_ptr<NativeObject>> m_nativeHandles;
-
-	std::shared_ptr<NativeObject> getNativeHandle(WorldObject* obj);
-	Value getObjectProperty(WorldObject* obj, const std::string& key);
-	Value getNativeProperty(WorldObject* obj, const std::string& key);
-	void setObjectProperty(WorldObject* obj, const std::string& key, const Value& value);
-	bool setNativeProperty(WorldObject* obj, const std::string& key, const Value& value);
-	bool isNativeProperty(WorldObject* obj, const std::string& key) const;
-	Value getCachedMethod(WorldObject* obj, const std::string& key, NativeFunctionInvoke invoke);
-
-	void applyTableToObject(WorldObject* obj, const std::shared_ptr<Table>& table,
-	                        const std::unordered_set<std::string>* exclusions = nullptr);
-	void applyClassAddons(WorldObject* obj, const std::shared_ptr<Table>& table,
-	                      const std::unordered_set<std::string>* exclusions = nullptr);
-	void callObjectHook(WorldObject* obj, const std::string& hook, const std::vector<Value>& args);
+	Color palette_color(int index) const;
+	Color resolve_color(const Value& value) const;
+	RenderLayer resolve_layer(const Value& value) const;
+	std::vector<Vec2> read_polygon(const Value& value) const;
+	Vec3 read_vec3(const Value& value) const;
+	std::array<f32, 16> read_matrix(const Value& value) const;
 };
 
 } // namespace bmsx
