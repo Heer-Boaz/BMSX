@@ -1,10 +1,10 @@
 -- state.lua
--- Re-export FSM State pieces for convenience
+-- re-export fsm state pieces for convenience
 
 local fsm = require("fsm")
 
 return {
-	State = fsm.State,
-	StateDefinition = fsm.StateDefinition,
-	StateMachineController = fsm.StateMachineController,
+	state = fsm.state,
+	statedefinition = fsm.statedefinition,
+	statemachinecontroller = fsm.statemachinecontroller,
 }

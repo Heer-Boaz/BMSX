@@ -1,5 +1,5 @@
 -- input_action_effect_compiler.lua
--- Compile input action effect programs into executable bindings
+-- compile input action effect programs into executable bindings
 
 local action_effects = require("action_effects")
 local eventemitter = require("eventemitter")
@@ -25,7 +25,7 @@ end
 local function execute_effect_trigger(env, id, payload)
 	local effects = env.effects
 	if not effects then
-		error("[InputActionEffectCompiler] Effect trigger '" .. id .. "' attempted without ActionEffectComponent on '" .. env.owner_id .. "'.")
+		error("[inputactioneffectcompiler] effect trigger '" .. id .. "' attempted without actioneffectcomponent on '" .. env.owner_id .. "'.")
 	end
 	if payload == nil then
 		return effects:trigger(id)
@@ -74,7 +74,7 @@ local function compile_effect(effect, slot, analysis)
 		local nested = compile_effect_list(effect.commands, slot, analysis)
 		return nested
 	end
-	error("[InputActionEffectCompiler] Unknown effect in slot '" .. (slot or "unknown") .. "'.")
+	error("[inputactioneffectcompiler] unknown effect in slot '" .. (slot or "unknown") .. "'.")
 end
 
 local function compile_effect_list(spec, slot, analysis)
@@ -157,7 +157,7 @@ local function compile_binding(binding, parse)
 	local predicate = compile_predicate(binding)
 	local on = binding.on
 	if not on then
-		error("[InputActionEffectCompiler] Binding '" .. (binding.name or "(unnamed)") .. "' is missing an 'on' clause.")
+		error("[inputactioneffectcompiler] binding '" .. (binding.name or "(unnamed)") .. "' is missing an 'on' clause.")
 	end
 	local press = on.press and parse(on.press) or nil
 	local hold = on.hold and parse(on.hold) or nil
@@ -277,7 +277,7 @@ function validate_program_effects(program, program_id)
 		local binding_name = binding.name or ("#" .. i)
 		local table_go = binding.go
 		if not table_go then
-			error("[InputActionEffectProgramValidation] Program '" .. program_id .. "' binding '" .. binding_name .. "' missing effect table.")
+			error("[inputactioneffectprogramvalidation] program '" .. program_id .. "' binding '" .. binding_name .. "' missing effect table.")
 		end
 		validate_effect_spec(table_go.press, { program_id = program_id, binding_name = binding_name, slot = "press" })
 		validate_effect_spec(table_go.hold, { program_id = program_id, binding_name = binding_name, slot = "hold" })

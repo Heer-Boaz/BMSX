@@ -1,28 +1,28 @@
 -- registry.lua
--- Lightweight registry for Lua engine objects/services
+-- lightweight registry for lua engine objects/services
 
-local Registry = {}
-Registry.__index = Registry
+local registry = {}
+registry.__index = registry
 
-function Registry.new()
-	local self = setmetatable({}, Registry)
+function registry.new()
+	local self = setmetatable({}, registry)
 	self._registry = {}
 	return self
 end
 
-function Registry:get(id)
+function registry:get(id)
 	return self._registry[id]
 end
 
-function Registry:has(id)
+function registry:has(id)
 	return self._registry[id] ~= nil
 end
 
-function Registry:register(entity)
+function registry:register(entity)
 	self._registry[entity.id] = entity
 end
 
-function Registry:deregister(id_or_entity, remove_persistent)
+function registry:deregister(id_or_entity, remove_persistent)
 	local id = type(id_or_entity) == "string" and id_or_entity or id_or_entity.id
 	local entity = self._registry[id]
 	if entity and entity.registrypersistent and not remove_persistent then
@@ -32,7 +32,7 @@ function Registry:deregister(id_or_entity, remove_persistent)
 	return true
 end
 
-function Registry:get_persistent_entities()
+function registry:get_persistent_entities()
 	local out = {}
 	for _, entity in pairs(self._registry) do
 		if entity.registrypersistent then
@@ -42,7 +42,7 @@ function Registry:get_persistent_entities()
 	return out
 end
 
-function Registry:clear()
+function registry:clear()
 	for id, entity in pairs(self._registry) do
 		if not entity.registrypersistent then
 			self._registry[id] = nil
@@ -50,7 +50,7 @@ function Registry:clear()
 	end
 end
 
-function Registry:get_registered_entities()
+function registry:get_registered_entities()
 	local out = {}
 	for _, entity in pairs(self._registry) do
 		out[#out + 1] = entity
@@ -58,7 +58,7 @@ function Registry:get_registered_entities()
 	return out
 end
 
-function Registry:iterate(type_name, persistent_only)
+function registry:iterate(type_name, persistent_only)
 	return coroutine.wrap(function()
 		for _, entity in pairs(self._registry) do
 			if not persistent_only or entity.registrypersistent then
@@ -71,6 +71,6 @@ function Registry:iterate(type_name, persistent_only)
 end
 
 return {
-	Registry = Registry,
-	instance = Registry.new(),
+	registry = registry,
+	instance = registry.new(),
 }

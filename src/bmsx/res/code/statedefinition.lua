@@ -1,5 +1,5 @@
 -- statedefinition.lua
--- Alias to FSM definitions
+-- alias to fsm definitions
 
 local fsm = require("fsm")
-return fsm.StateDefinition
+return fsm.statedefinition

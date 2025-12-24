@@ -1,5 +1,5 @@
 -- input_action_effect_dsl.lua
--- Input action effect program schema helpers
+-- input action effect program schema helpers
 
 local function is_input_action_effect_program(value)
 	return type(value) == "table" and type(value.bindings) == "table"

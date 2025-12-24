@@ -1,14 +1,14 @@
 -- engine.lua
--- Lua engine facade for system ROM
+-- lua engine facade for system rom
 
 local world_module = require("world")
-local WorldObject = require("worldobject")
-local SpriteObject = require("sprite")
-local TextObject = require("textobject")
+local worldobject = require("worldobject")
+local spriteobject = require("sprite")
+local textobject = require("textobject")
 local fsmlibrary = require("fsmlibrary")
 local action_effects = require("action_effects")
 local components = require("components")
-local Service = require("service")
+local service = require("service")
 local registry = require("registry")
 
 local world = world_module.instance
@@ -62,20 +62,20 @@ local function apply_addons(instance, addons, skip_keys)
 end
 
 local function ensure_component_type(def_id, def)
-	if components.ComponentRegistry[def_id] then
+	if components.componentregistry[def_id] then
 		return
 	end
-	local LuaComponent = {}
-	LuaComponent.__index = LuaComponent
-	setmetatable(LuaComponent, { __index = components.Component })
-	function LuaComponent.new(opts)
+	local luacomponent = {}
+	luacomponent.__index = luacomponent
+	setmetatable(luacomponent, { __index = components.component })
+	function luacomponent.new(opts)
 		opts = opts or {}
 		opts.type_name = def_id
-		local self = setmetatable(components.Component.new(opts), LuaComponent)
+		local self = setmetatable(components.component.new(opts), luacomponent)
 		apply_class_addons(self, def and def.class)
 		return self
 	end
-	components.register_component(def_id, LuaComponent)
+	components.register_component(def_id, luacomponent)
 end
 
 local function attach_components(instance, list)
@@ -109,7 +109,7 @@ local function attach_effects(instance, effects)
 	if not effects or #effects == 0 then
 		return
 	end
-	local component = action_effects.ActionEffectComponent.new({ parent = instance })
+	local component = action_effects.actioneffectcomponent.new({ parent = instance })
 	instance:add_component(component)
 	for i = 1, #effects do
 		component:grant_effect_by_id(effects[i])
@@ -142,49 +142,49 @@ local function apply_definition(instance, def, addons, skip_key)
 	apply_addons(instance, addons, skip_keys)
 end
 
-local Engine = {}
+local engine = {}
 
-function Engine.define_fsm(id, blueprint)
+function engine.define_fsm(id, blueprint)
 	fsmlibrary.register(id, blueprint)
 end
 
-function Engine.define_world_object(definition)
+function engine.define_world_object(definition)
 	definitions[definition.def_id] = definition
 end
 
-function Engine.define_service(definition)
+function engine.define_service(definition)
 	service_definitions[definition.def_id] = definition
 end
 
-function Engine.define_component(definition)
+function engine.define_component(definition)
 	component_definitions[definition.def_id] = definition
 	ensure_component_type(definition.def_id, definition)
 end
 
-function Engine.define_effect(definition, opts)
+function engine.define_effect(definition, opts)
 	action_effects.register_effect(definition, opts)
 end
 
-function Engine.new_timeline(def)
+function engine.new_timeline(def)
 	local timeline = require("timeline")
-	return timeline.Timeline.new(def)
+	return timeline.timeline.new(def)
 end
 
-function Engine.spawn_object(definition_id, addons)
+function engine.spawn_object(definition_id, addons)
 	local def = definitions[definition_id]
 	local class_table = def and def.class or nil
 	local instance_id = (addons and addons.id) or (class_table and class_table.id) or definition_id
-	local instance = WorldObject.new({ id = instance_id })
+	local instance = worldobject.new({ id = instance_id })
 	apply_definition(instance, def, addons)
 	world:spawn(instance, addons and addons.pos)
 	return instance
 end
 
-function Engine.spawn_sprite(definition_id, addons)
+function engine.spawn_sprite(definition_id, addons)
 	local def = definitions[definition_id]
 	local class_table = def and def.class or nil
 	local instance_id = (addons and addons.id) or (class_table and class_table.id) or definition_id
-	local instance = SpriteObject.new({ id = instance_id })
+	local instance = spriteobject.new({ id = instance_id })
 	apply_definition(instance, def, addons, "imgid")
 	local imgid = (addons and addons.imgid) or (def and def.defaults and def.defaults.imgid)
 	if imgid then
@@ -194,11 +194,11 @@ function Engine.spawn_sprite(definition_id, addons)
 	return instance
 end
 
-function Engine.spawn_textobject(definition_id, addons)
+function engine.spawn_textobject(definition_id, addons)
 	local def = definitions[definition_id]
 	local class_table = def and def.class or nil
 	local instance_id = (addons and addons.id) or (class_table and class_table.id) or definition_id
-	local instance = TextObject.new({ id = instance_id })
+	local instance = textobject.new({ id = instance_id })
 	apply_definition(instance, def, addons, "dimensions")
 	local dims = (addons and addons.dimensions) or (def and def.defaults and def.defaults.dimensions)
 	if dims then
@@ -208,11 +208,11 @@ function Engine.spawn_textobject(definition_id, addons)
 	return instance
 end
 
-function Engine.create_service(definition_id, addons)
+function engine.create_service(definition_id, addons)
 	local def = service_definitions[definition_id]
 	local class_table = def and def.class or nil
 	local instance_id = (addons and addons.id) or (class_table and class_table.id) or definition_id
-	local instance = Service.new({ id = instance_id })
+	local instance = service.new({ id = instance_id })
 	apply_definition(instance, def, addons)
 	registry.instance:register(instance)
 	if def and def.auto_activate then
@@ -221,15 +221,15 @@ function Engine.create_service(definition_id, addons)
 	return instance
 end
 
-function Engine.service(id)
+function engine.service(id)
 	return registry.instance:get(id)
 end
 
-function Engine.object(id)
+function engine.object(id)
 	return world:get(id)
 end
 
-function Engine.attach_component(object_or_id, component_or_type)
+function engine.attach_component(object_or_id, component_or_type)
 	local obj = type(object_or_id) == "string" and world:get(object_or_id) or object_or_id
 	if type(component_or_type) == "table" and component_or_type.type_name then
 		obj:add_component(component_or_type)
@@ -243,49 +243,49 @@ function Engine.attach_component(object_or_id, component_or_type)
 	error("attach_component expects a component instance or type name")
 end
 
-function Engine.update(dt)
+function engine.update(dt)
 	world:update(dt)
 end
 
-function Engine.draw()
+function engine.draw()
 	world:draw()
 end
 
-function Engine.reset()
+function engine.reset()
 	world:clear()
 	registry.instance:clear()
 end
 
-function Engine.configure_ecs(nodes)
+function engine.configure_ecs(nodes)
 	return world:configure_pipeline(nodes)
 end
 
-function Engine.apply_default_pipeline()
+function engine.apply_default_pipeline()
 	return world:apply_default_pipeline()
 end
 
-function Engine.register(value)
+function engine.register(value)
 	registry.instance:register(value)
 end
 
-function Engine.deregister(id)
+function engine.deregister(id)
 	registry.instance:deregister(id)
 end
 
-function Engine.grant_effect(object_id, effect_id)
+function engine.grant_effect(object_id, effect_id)
 	local obj = world:get(object_id)
-	local component = obj:get_component("ActionEffectComponent")
+	local component = obj:get_component("actioneffectcomponent")
 	if not component then
-		error("World object '" .. object_id .. "' does not have an ActionEffectComponent.")
+		error("world object '" .. object_id .. "' does not have an actioneffectcomponent.")
 	end
 	component:grant_effect_by_id(effect_id)
 end
 
-function Engine.trigger_effect(object_id, effect_id, options)
+function engine.trigger_effect(object_id, effect_id, options)
 	local obj = world:get(object_id)
-	local component = obj:get_component("ActionEffectComponent")
+	local component = obj:get_component("actioneffectcomponent")
 	if not component then
-		error("World object '" .. object_id .. "' does not have an ActionEffectComponent.")
+		error("world object '" .. object_id .. "' does not have an actioneffectcomponent.")
 	end
 	local payload = options and options.payload or nil
 	if payload ~= nil then
@@ -299,4 +299,4 @@ if not world._ecs_pipeline_built then
 	world:apply_default_pipeline()
 end
 
-return Engine
+return engine

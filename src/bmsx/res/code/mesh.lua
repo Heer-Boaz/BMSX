@@ -1,8 +1,8 @@
 -- mesh.lua
--- Simple mesh container for system ROM
+-- simple mesh container for system rom
 
-local Mesh = {}
-Mesh.__index = Mesh
+local mesh = {}
+mesh.__index = mesh
 
 local function vec_slice(tbl, step)
 	local len = #tbl
@@ -13,8 +13,8 @@ local function vec_slice(tbl, step)
 	return out
 end
 
-function Mesh.new(opts)
-	local self = setmetatable({}, Mesh)
+function mesh.new(opts)
+	local self = setmetatable({}, mesh)
 	opts = opts or {}
 	self.name = opts.meshname or ""
 	self.positions = opts.positions or {}
@@ -25,56 +25,56 @@ function Mesh.new(opts)
 	self.tangents = opts.tangents
 	self.indices = opts.indices
 	self.color = opts.color or { r = 255, g = 255, b = 255, a = 1 }
-	self.atlas_id = opts.atlasId or 255
+	self.atlas_id = opts.atlasid or 255
 	self.material = opts.material
-	self.morphPositions = opts.morphPositions
-	self.morphNormals = opts.morphNormals
-	self.morphTangents = opts.morphTangents
-	self.morphWeights = opts.morphWeights or {}
-	self.jointIndices = opts.jointIndices
-	self.jointWeights = opts.jointWeights
+	self.morphpositions = opts.morphpositions
+	self.morphnormals = opts.morphnormals
+	self.morphtangents = opts.morphtangents
+	self.morphweights = opts.morphweights or {}
+	self.jointindices = opts.jointindices
+	self.jointweights = opts.jointweights
 	self.bounding_center = { 0, 0, 0 }
 	self.bounding_radius = 0
 	self:update_bounds()
 	return self
 end
 
-function Mesh:vertex_count()
+function mesh:vertex_count()
 	return math.floor(#self.positions / 3)
 end
 
-function Mesh:has_texcoords()
+function mesh:has_texcoords()
 	return #self.texcoords >= self:vertex_count() * 2
 end
 
-function Mesh:has_normals()
+function mesh:has_normals()
 	return self.normals and #self.normals >= self:vertex_count() * 3
 end
 
-function Mesh:update_bounds()
+function mesh:update_bounds()
 	if #self.positions < 3 then
 		self.bounding_center = { 0, 0, 0 }
 		self.bounding_radius = 0
 		return
 	end
 
-	local minX, minY, minZ = math.huge, math.huge, math.huge
-	local maxX, maxY, maxZ = -math.huge, -math.huge, -math.huge
+	local minx, miny, minz = math.huge, math.huge, math.huge
+	local maxx, maxy, maxz = -math.huge, -math.huge, -math.huge
 
 	for i = 1, #self.positions, 3 do
 		local x, y, z = self.positions[i], self.positions[i + 1], self.positions[i + 2]
-		if x < minX then minX = x end
-		if y < minY then minY = y end
-		if z < minZ then minZ = z end
-		if x > maxX then maxX = x end
-		if y > maxY then maxY = y end
-		if z > maxZ then maxZ = z end
+		if x < minx then minx = x end
+		if y < miny then miny = y end
+		if z < minz then minz = z end
+		if x > maxx then maxx = x end
+		if y > maxy then maxy = y end
+		if z > maxz then maxz = z end
 	end
 
 	self.bounding_center = {
-		(minX + maxX) * 0.5,
-		(minY + maxY) * 0.5,
-		(minZ + maxZ) * 0.5,
+		(minx + maxx) * 0.5,
+		(miny + maxy) * 0.5,
+		(minz + maxz) * 0.5,
 	}
 
 	local max_dist_sq = 0
@@ -90,8 +90,8 @@ function Mesh:update_bounds()
 	self.bounding_radius = math.sqrt(max_dist_sq)
 end
 
-function Mesh:vertices()
+function mesh:vertices()
 	return vec_slice(self.positions, 3)
 end
 
-return Mesh
+return mesh

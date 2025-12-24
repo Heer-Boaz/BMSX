@@ -1,21 +1,21 @@
 -- action_effects.lua
--- Action effect registry + runtime component
+-- action effect registry + runtime component
 
 local eventemitter = require("eventemitter")
 local components = require("components")
-local Component = components.Component
+local component = components.component
 
-local ActionEffects = {}
+local actioneffects = {}
 
-ActionEffects.EffectType = {
-	SPAWN = "spawn",
-	DESPAWN = "despawn",
-	DAMAGE = "damage",
-	HEAL = "heal",
-	MOVE = "move",
-	PLAY_SOUND = "play_sound",
-	PLAY_ANIMATION = "play_animation",
-	EMIT_EVENT = "emit_event",
+actioneffects.effecttype = {
+	spawn = "spawn",
+	despawn = "despawn",
+	damage = "damage",
+	heal = "heal",
+	move = "move",
+	play_sound = "play_sound",
+	play_animation = "play_animation",
+	emit_event = "emit_event",
 }
 
 local registry = {
@@ -24,7 +24,7 @@ local registry = {
 	validators = {},
 }
 
-function ActionEffects.register_effect(definition, opts)
+function actioneffects.register_effect(definition, opts)
 	if type(definition) == "string" then
 		local id = definition
 		if type(opts) == "table" then
@@ -47,18 +47,18 @@ function ActionEffects.register_effect(definition, opts)
 	return definition
 end
 
-function ActionEffects.get(id)
+function actioneffects.get(id)
 	return registry.definitions[id]
 end
 
-function ActionEffects.has(id)
+function actioneffects.has(id)
 	return registry.definitions[id] ~= nil
 end
 
-function ActionEffects.validate(id, payload)
+function actioneffects.validate(id, payload)
 	local schema = registry.schemas[id]
 	if schema and not schema.validate(payload) then
-		error("ActionEffect payload failed schema for '" .. id .. "'")
+		error("actioneffect payload failed schema for '" .. id .. "'")
 	end
 	local validator = registry.validators[id]
 	if validator then
@@ -66,7 +66,7 @@ function ActionEffects.validate(id, payload)
 	end
 end
 
-function ActionEffects.execute(id, context, ...)
+function actioneffects.execute(id, context, ...)
 	local def = registry.definitions[id]
 	return def.handler(context, ...)
 end
@@ -93,8 +93,8 @@ local function create_owner_event(owner, event_type, payload)
 	return eventemitter.create_gameevent(base)
 end
 
-ActionEffects.register_effect(ActionEffects.EffectType.MOVE, {
-	id = ActionEffects.EffectType.MOVE,
+actioneffects.register_effect(actioneffects.effecttype.move, {
+	id = actioneffects.effecttype.move,
 	handler = function(context, dx, dy)
 		local target = context.target
 		target.x = target.x + dx
@@ -102,29 +102,29 @@ ActionEffects.register_effect(ActionEffects.EffectType.MOVE, {
 	end,
 })
 
-ActionEffects.register_effect(ActionEffects.EffectType.PLAY_ANIMATION, {
-	id = ActionEffects.EffectType.PLAY_ANIMATION,
+actioneffects.register_effect(actioneffects.effecttype.play_animation, {
+	id = actioneffects.effecttype.play_animation,
 	handler = function(context, anim_id)
 		context.target:play_ani(anim_id)
 	end,
 })
 
-local ActionEffectComponent = {}
-ActionEffectComponent.__index = ActionEffectComponent
-setmetatable(ActionEffectComponent, { __index = Component })
+local actioneffectcomponent = {}
+actioneffectcomponent.__index = actioneffectcomponent
+setmetatable(actioneffectcomponent, { __index = component })
 
-function ActionEffectComponent.new(opts)
+function actioneffectcomponent.new(opts)
 	opts = opts or {}
-	opts.type_name = "ActionEffectComponent"
+	opts.type_name = "actioneffectcomponent"
 	opts.unique = true
-	local self = setmetatable(Component.new(opts), ActionEffectComponent)
+	local self = setmetatable(component.new(opts), actioneffectcomponent)
 	self.definitions = {}
 	self.cooldown_until = {}
 	self.time_ms = 0
 	return self
 end
 
-function ActionEffectComponent:advance_time(dt_ms)
+function actioneffectcomponent:advance_time(dt_ms)
 	self.time_ms = self.time_ms + dt_ms
 	for id, until_time in pairs(self.cooldown_until) do
 		if self.time_ms >= until_time then
@@ -133,35 +133,35 @@ function ActionEffectComponent:advance_time(dt_ms)
 	end
 end
 
-function ActionEffectComponent:tick(dt)
+function actioneffectcomponent:tick(dt)
 end
 
-function ActionEffectComponent:grant_effect(definition)
+function actioneffectcomponent:grant_effect(definition)
 	self.definitions[definition.id] = definition
 end
 
-function ActionEffectComponent:grant_effect_by_id(id)
+function actioneffectcomponent:grant_effect_by_id(id)
 	local definition = registry.definitions[id]
 	self:grant_effect(definition)
 end
 
-function ActionEffectComponent:revoke_effect(id)
+function actioneffectcomponent:revoke_effect(id)
 	self.definitions[id] = nil
 	self.cooldown_until[id] = nil
 end
 
-function ActionEffectComponent:has_effect(id)
+function actioneffectcomponent:has_effect(id)
 	return self.definitions[id] ~= nil
 end
 
-function ActionEffectComponent:trigger(id, opts)
+function actioneffectcomponent:trigger(id, opts)
 	local definition = self.definitions[id]
 	if not definition then
 		return "failed"
 	end
 	local payload = opts and opts.payload
 	local args = opts and opts.args or {}
-	ActionEffects.validate(id, payload)
+	actioneffects.validate(id, payload)
 
 	local now = self.time_ms
 	local until_time = self.cooldown_until[id]
@@ -183,7 +183,7 @@ function ActionEffectComponent:trigger(id, opts)
 	return "ok"
 end
 
-function ActionEffectComponent:cooldown_remaining(id)
+function actioneffectcomponent:cooldown_remaining(id)
 	local until_time = self.cooldown_until[id]
 	if until_time == nil then
 		return nil
@@ -195,7 +195,7 @@ function ActionEffectComponent:cooldown_remaining(id)
 	return remaining
 end
 
-ActionEffects.ActionEffectComponent = ActionEffectComponent
-components.register_component("ActionEffectComponent", ActionEffectComponent)
+actioneffects.actioneffectcomponent = actioneffectcomponent
+components.register_component("actioneffectcomponent", actioneffectcomponent)
 
-return ActionEffects
+return actioneffects

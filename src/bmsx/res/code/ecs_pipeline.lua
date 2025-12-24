@@ -1,36 +1,36 @@
 -- ecs_pipeline.lua
--- ECS pipeline registry and builder for Lua engine
+-- ecs pipeline registry and builder for lua engine
 
 local ecs = require("ecs")
 
-local ECSPipelineRegistry = {}
-ECSPipelineRegistry.__index = ECSPipelineRegistry
+local ecspipelineregistry = {}
+ecspipelineregistry.__index = ecspipelineregistry
 
-function ECSPipelineRegistry.new()
-	local self = setmetatable({}, ECSPipelineRegistry)
+function ecspipelineregistry.new()
+	local self = setmetatable({}, ecspipelineregistry)
 	self._descs = {}
 	self._last_diagnostics = nil
 	return self
 end
 
-function ECSPipelineRegistry:register(desc)
+function ecspipelineregistry:register(desc)
 	if self._descs[desc.id] then
-		error("ECSPipelineRegistry: duplicate id '" .. desc.id .. "'")
+		error("ecspipelineregistry: duplicate id '" .. desc.id .. "'")
 	end
 	self._descs[desc.id] = desc
 end
 
-function ECSPipelineRegistry:register_many(descs)
+function ecspipelineregistry:register_many(descs)
 	for i = 1, #descs do
 		self:register(descs[i])
 	end
 end
 
-function ECSPipelineRegistry:get(id)
+function ecspipelineregistry:get(id)
 	return self._descs[id]
 end
 
-function ECSPipelineRegistry:build(world, nodes)
+function ecspipelineregistry:build(world, nodes)
 	local t0 = $.platform.clock.now()
 	local filtered = {}
 	for i = 1, #nodes do
@@ -45,7 +45,7 @@ function ECSPipelineRegistry:build(world, nodes)
 		local n = filtered[i]
 		local d = self._descs[n.ref]
 		if not d then
-			error("ECSPipelineRegistry: unknown system ref '" .. n.ref .. "'")
+			error("ecspipelineregistry: unknown system ref '" .. n.ref .. "'")
 		end
 		resolved[#resolved + 1] = {
 			ref = n.ref,
@@ -102,13 +102,13 @@ function ECSPipelineRegistry:build(world, nodes)
 	return diag
 end
 
-function ECSPipelineRegistry:get_last_diagnostics()
+function ecspipelineregistry:get_last_diagnostics()
 	return self._last_diagnostics
 end
 
-local DefaultECSPipelineRegistry = ECSPipelineRegistry.new()
+local defaultecspipelineregistry = ecspipelineregistry.new()
 
 return {
-	ECSPipelineRegistry = ECSPipelineRegistry,
-	DefaultECSPipelineRegistry = DefaultECSPipelineRegistry,
+	ecspipelineregistry = ecspipelineregistry,
+	defaultecspipelineregistry = defaultecspipelineregistry,
 }

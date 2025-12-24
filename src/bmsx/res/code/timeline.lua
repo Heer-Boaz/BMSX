@@ -1,11 +1,11 @@
 -- timeline.lua
--- Timeline runtime for system ROM
+-- timeline runtime for system rom
 
-local TIMELINE_START_INDEX = -1
+local timeline_start_index = -1
 
-local Timeline = {}
-Timeline.__index = Timeline
-Timeline.__is_timeline = true
+local timeline = {}
+timeline.__index = timeline
+timeline.__is_timeline = true
 
 local function expand_frames(frames, repetitions)
 	if repetitions <= 1 then
@@ -24,8 +24,8 @@ local function expand_frames(frames, repetitions)
 	return out
 end
 
-function Timeline.new(def)
-	local self = setmetatable({}, Timeline)
+function timeline.new(def)
+	local self = setmetatable({}, timeline)
 	self.def = def
 	self.id = def.id
 	self.frames = expand_frames(def.frames, def.repetitions or 1)
@@ -37,26 +37,26 @@ function Timeline.new(def)
 		autotick = self.ticks_per_frame ~= 0
 	end
 	self.auto_tick = autotick
-	self.head = TIMELINE_START_INDEX
+	self.head = timeline_start_index
 	self.ticks = 0
 	self.direction = 1
 	return self
 end
 
-function Timeline:value()
+function timeline:value()
 	if self.head < 0 or self.head >= self.length then
 		return nil
 	end
 	return self.frames[self.head + 1]
 end
 
-function Timeline:rewind()
-	self.head = TIMELINE_START_INDEX
+function timeline:rewind()
+	self.head = timeline_start_index
 	self.ticks = 0
 	self.direction = 1
 end
 
-function Timeline:tick(dt)
+function timeline:tick(dt)
 	if not self.auto_tick or self.length == 0 then
 		return {}
 	end
@@ -67,26 +67,26 @@ function Timeline:tick(dt)
 	return {}
 end
 
-function Timeline:advance()
+function timeline:advance()
 	return self:advance_internal("advance")
 end
 
-function Timeline:seek(frame)
+function timeline:seek(frame)
 	return self:apply_frame(frame, "seek")
 end
 
-function Timeline:snap_to_start()
+function timeline:snap_to_start()
 	return self:apply_frame(0, "snap")
 end
 
-function Timeline:force_seek(frame)
+function timeline:force_seek(frame)
 	if self.length == 0 then
-		self.head = TIMELINE_START_INDEX
+		self.head = timeline_start_index
 		self.ticks = 0
 		self.direction = 1
 		return
 	end
-	local clamped = math.min(math.max(frame, TIMELINE_START_INDEX), self.length - 1)
+	local clamped = math.min(math.max(frame, timeline_start_index), self.length - 1)
 	self.head = clamped
 	self.ticks = 0
 	if self.playback_mode ~= "pingpong" then
@@ -96,16 +96,16 @@ function Timeline:force_seek(frame)
 	end
 end
 
-function Timeline:advance_internal(reason)
+function timeline:advance_internal(reason)
 	if self.length == 0 then
 		return {}
 	end
 	local delta = self.playback_mode == "pingpong" and self.direction or 1
-	local target = self.head + (self.head == TIMELINE_START_INDEX and 1 or delta)
+	local target = self.head + (self.head == timeline_start_index and 1 or delta)
 	return self:apply_frame(target, reason)
 end
 
-function Timeline:apply_frame(target, reason)
+function timeline:apply_frame(target, reason)
 	local events = {}
 	if self.length == 0 then
 		return events
@@ -184,6 +184,6 @@ function Timeline:apply_frame(target, reason)
 end
 
 return {
-	TIMELINE_START_INDEX = TIMELINE_START_INDEX,
-	Timeline = Timeline,
+	timeline_start_index = timeline_start_index,
+	timeline = timeline,
 }

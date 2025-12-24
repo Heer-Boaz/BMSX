@@ -1,19 +1,19 @@
 -- components.lua
--- Base component primitives for system ROM
+-- base component primitives for system rom
 
 local eventemitter = require("eventemitter")
 local timeline = require("timeline")
-local EventEmitter = eventemitter.EventEmitter
-local Timeline = timeline.Timeline
+local eventemitter = eventemitter.eventemitter
+local timeline = timeline.timeline
 
-local Component = {}
-Component.__index = Component
+local component = {}
+component.__index = component
 
-function Component.new(opts)
-	local self = setmetatable({}, Component)
+function component.new(opts)
+	local self = setmetatable({}, component)
 	opts = opts or {}
 	self.parent = opts.parent
-	self.type_name = opts.type_name or "Component"
+	self.type_name = opts.type_name or "component"
 	self.id_local = opts.id_local
 	self.id = opts.id or (self.parent.id .. "_" .. self.type_name .. (self.id_local and ("_" .. self.id_local) or ""))
 	self.enabled = opts.enabled ~= false
@@ -22,12 +22,12 @@ function Component.new(opts)
 	return self
 end
 
-function Component:attach(new_parent)
+function component:attach(new_parent)
 	if new_parent then
 		self.parent = new_parent
 	end
 	if self.unique and self.parent:has_component(self.type_name) then
-		error("Component '" .. self.type_name .. "' is unique and already attached to '" .. self.parent.id .. "'")
+		error("component '" .. self.type_name .. "' is unique and already attached to '" .. self.parent.id .. "'")
 	end
 	self.parent:add_component(self)
 	self:bind()
@@ -35,59 +35,59 @@ function Component:attach(new_parent)
 	return self
 end
 
-function Component:detach()
+function component:detach()
 	self.parent:remove_component_instance(self)
 end
 
-function Component:on_attach()
+function component:on_attach()
 end
 
-function Component:on_detach()
+function component:on_detach()
 end
 
-function Component:bind()
+function component:bind()
 end
 
-function Component:unbind()
-	EventEmitter.instance:remove_subscriber(self)
+function component:unbind()
+	eventemitter.instance:remove_subscriber(self)
 end
 
-function Component:dispose()
+function component:dispose()
 	self:detach()
 	self.enabled = false
 end
 
-function Component:has_tag(tag)
+function component:has_tag(tag)
 	return self.tags[tag] == true
 end
 
-function Component:add_tag(tag)
+function component:add_tag(tag)
 	self.tags[tag] = true
 end
 
-function Component:remove_tag(tag)
+function component:remove_tag(tag)
 	self.tags[tag] = nil
 end
 
-function Component:toggle_tag(tag)
+function component:toggle_tag(tag)
 	self.tags[tag] = not self.tags[tag]
 end
 
-function Component:tick(_dt)
+function component:tick(_dt)
 end
 
-function Component:draw()
+function component:draw()
 end
 
--- SpriteComponent: holds sprite metadata
-local SpriteComponent = {}
-SpriteComponent.__index = SpriteComponent
-setmetatable(SpriteComponent, { __index = Component })
+-- spritecomponent: holds sprite metadata
+local spritecomponent = {}
+spritecomponent.__index = spritecomponent
+setmetatable(spritecomponent, { __index = component })
 
-function SpriteComponent.new(opts)
+function spritecomponent.new(opts)
 	opts = opts or {}
-	opts.type_name = "SpriteComponent"
-	local self = setmetatable(Component.new(opts), SpriteComponent)
+	opts.type_name = "spritecomponent"
+	local self = setmetatable(component.new(opts), spritecomponent)
 	self.imgid = opts and opts.imgid or "none"
 	self.flip = { flip_h = false, flip_v = false }
 	self.colorize = opts and opts.colorize or { r = 1, g = 1, b = 1, a = 1 }
@@ -96,58 +96,58 @@ function SpriteComponent.new(opts)
 	return self
 end
 
--- Collider2DComponent: holds hit areas / polys
-local Collider2DComponent = {}
-Collider2DComponent.__index = Collider2DComponent
-setmetatable(Collider2DComponent, { __index = Component })
+-- collider2dcomponent: holds hit areas / polys
+local collider2dcomponent = {}
+collider2dcomponent.__index = collider2dcomponent
+setmetatable(collider2dcomponent, { __index = component })
 
-function Collider2DComponent.new(opts)
+function collider2dcomponent.new(opts)
 	opts = opts or {}
-	opts.type_name = "Collider2DComponent"
-	local self = setmetatable(Component.new(opts), Collider2DComponent)
+	opts.type_name = "collider2dcomponent"
+	local self = setmetatable(component.new(opts), collider2dcomponent)
 	self.local_area = nil
 	self.local_poly = nil
 	return self
 end
 
-function Collider2DComponent:set_local_area(area)
+function collider2dcomponent:set_local_area(area)
 	self.local_area = area
 end
 
-function Collider2DComponent:set_local_poly(poly)
+function collider2dcomponent:set_local_poly(poly)
 	self.local_poly = poly
 end
 
--- TimelineComponent: lightweight placeholder
-local TimelineComponent = {}
-TimelineComponent.__index = TimelineComponent
-setmetatable(TimelineComponent, { __index = Component })
+-- timelinecomponent: lightweight placeholder
+local timelinecomponent = {}
+timelinecomponent.__index = timelinecomponent
+setmetatable(timelinecomponent, { __index = component })
 
-function TimelineComponent.new(opts)
+function timelinecomponent.new(opts)
 	opts = opts or {}
-	opts.type_name = "TimelineComponent"
+	opts.type_name = "timelinecomponent"
 	opts.unique = true
-	local self = setmetatable(Component.new(opts), TimelineComponent)
+	local self = setmetatable(component.new(opts), timelinecomponent)
 	self.registry = {}
 	self.active = {}
 	self.listeners = {}
 	return self
 end
 
-function TimelineComponent:define(definition)
-	local instance = definition.__is_timeline and definition or Timeline.new(definition)
+function timelinecomponent:define(definition)
+	local instance = definition.__is_timeline and definition or timeline.new(definition)
 	self.registry[instance.id] = { instance = instance }
 end
 
-function TimelineComponent:get(id)
+function timelinecomponent:get(id)
 	local entry = self.registry[id]
 	return entry and entry.instance or nil
 end
 
-function TimelineComponent:play(id, opts)
+function timelinecomponent:play(id, opts)
 	local entry = self.registry[id]
 	if not entry then
-		error("[TimelineComponent] Unknown timeline '" .. id .. "' on '" .. self.parent.id .. "'")
+		error("[timelinecomponent] unknown timeline '" .. id .. "' on '" .. self.parent.id .. "'")
 	end
 	local instance = entry.instance
 	local rewind = true
@@ -170,11 +170,11 @@ function TimelineComponent:play(id, opts)
 	return instance
 end
 
-function TimelineComponent:stop(id)
+function timelinecomponent:stop(id)
 	self.active[id] = nil
 end
 
-function TimelineComponent:tick_active(dt)
+function timelinecomponent:tick_active(dt)
 	for id in pairs(self.active) do
 		local entry = self.registry[id]
 		local events = entry.instance:tick(dt)
@@ -184,7 +184,7 @@ function TimelineComponent:tick_active(dt)
 	end
 end
 
-function TimelineComponent:process_events(entry, events)
+function timelinecomponent:process_events(entry, events)
 	local owner = self.parent
 	for i = 1, #events do
 		local evt = events[i]
@@ -212,15 +212,15 @@ function TimelineComponent:process_events(entry, events)
 	end
 end
 
-function TimelineComponent:emit_frameevent(owner, payload)
+function timelinecomponent:emit_frameevent(owner, payload)
 	self:dispatch_timeline_events(owner, "timeline.frame", payload)
 end
 
-function TimelineComponent:emit_endevent(owner, payload)
+function timelinecomponent:emit_endevent(owner, payload)
 	self:dispatch_timeline_events(owner, "timeline.end", payload)
 end
 
-function TimelineComponent:dispatch_timeline_events(owner, base_type, payload)
+function timelinecomponent:dispatch_timeline_events(owner, base_type, payload)
 	local base_event = eventemitter.create_gameevent({ type = base_type, emitter = owner, timeline_id = payload.timeline_id, frame_index = payload.frame_index, frame_value = payload.frame_value, rewound = payload.rewound, reason = payload.reason, direction = payload.direction, mode = payload.mode, wrapped = payload.wrapped })
 	owner.events:emit_event(base_event)
 	owner.sc:dispatch_event(base_event)
@@ -230,16 +230,16 @@ function TimelineComponent:dispatch_timeline_events(owner, base_type, payload)
 	owner.sc:dispatch_event(scoped_event)
 end
 
--- TransformComponent: simple positional proxy
-local TransformComponent = {}
-TransformComponent.__index = TransformComponent
-setmetatable(TransformComponent, { __index = Component })
+-- transformcomponent: simple positional proxy
+local transformcomponent = {}
+transformcomponent.__index = transformcomponent
+setmetatable(transformcomponent, { __index = component })
 
-function TransformComponent.new(opts)
+function transformcomponent.new(opts)
 	opts = opts or {}
-	opts.type_name = "TransformComponent"
+	opts.type_name = "transformcomponent"
 	opts.unique = true
-	local self = setmetatable(Component.new(opts), TransformComponent)
+	local self = setmetatable(component.new(opts), transformcomponent)
 	local p = self.parent
 	self.position = opts.position or { x = p.x or 0, y = p.y or 0, z = p.z or 0 }
 	self.scale = opts.scale or { x = 1, y = 1, z = 1 }
@@ -247,22 +247,22 @@ function TransformComponent.new(opts)
 	return self
 end
 
-function TransformComponent:post_update()
+function transformcomponent:post_update()
 	local p = self.parent
 	self.position.x = p.x
 	self.position.y = p.y
 	self.position.z = p.z
 end
 
--- TextComponent: lightweight render descriptor
-local TextComponent = {}
-TextComponent.__index = TextComponent
-setmetatable(TextComponent, { __index = Component })
+-- textcomponent: lightweight render descriptor
+local textcomponent = {}
+textcomponent.__index = textcomponent
+setmetatable(textcomponent, { __index = component })
 
-function TextComponent.new(opts)
+function textcomponent.new(opts)
 	opts = opts or {}
-	opts.type_name = "TextComponent"
-	local self = setmetatable(Component.new(opts), TextComponent)
+	opts.type_name = "textcomponent"
+	local self = setmetatable(component.new(opts), textcomponent)
 	self.text = opts.text or ""
 	self.font = opts.font
 	self.color = opts.color or { r = 1, g = 1, b = 1, a = 1 }
@@ -272,15 +272,15 @@ function TextComponent.new(opts)
 	return self
 end
 
--- MeshComponent: minimal render descriptor
-local MeshComponent = {}
-MeshComponent.__index = MeshComponent
-setmetatable(MeshComponent, { __index = Component })
+-- meshcomponent: minimal render descriptor
+local meshcomponent = {}
+meshcomponent.__index = meshcomponent
+setmetatable(meshcomponent, { __index = component })
 
-function MeshComponent.new(opts)
+function meshcomponent.new(opts)
 	opts = opts or {}
-	opts.type_name = "MeshComponent"
-	local self = setmetatable(Component.new(opts), MeshComponent)
+	opts.type_name = "meshcomponent"
+	local self = setmetatable(component.new(opts), meshcomponent)
 	self.mesh = opts.mesh
 	self.matrix = opts.matrix
 	self.joint_matrices = opts.joint_matrices
@@ -290,23 +290,23 @@ function MeshComponent.new(opts)
 	return self
 end
 
-function MeshComponent:update_animation(_dt)
+function meshcomponent:update_animation(_dt)
 end
 
--- CustomVisualComponent: scripted render producer
-local CustomVisualComponent = {}
-CustomVisualComponent.__index = CustomVisualComponent
-setmetatable(CustomVisualComponent, { __index = Component })
+-- customvisualcomponent: scripted render producer
+local customvisualcomponent = {}
+customvisualcomponent.__index = customvisualcomponent
+setmetatable(customvisualcomponent, { __index = component })
 
-function CustomVisualComponent.new(opts)
+function customvisualcomponent.new(opts)
 	opts = opts or {}
-	opts.type_name = "CustomVisualComponent"
-	local self = setmetatable(Component.new(opts), CustomVisualComponent)
+	opts.type_name = "customvisualcomponent"
+	local self = setmetatable(component.new(opts), customvisualcomponent)
 	self.producer = opts.producer
 	return self
 end
 
-function CustomVisualComponent:add_producer(fn)
+function customvisualcomponent:add_producer(fn)
 	if not fn then
 		self.producer = nil
 		return
@@ -322,14 +322,14 @@ function CustomVisualComponent:add_producer(fn)
 	end
 end
 
-function CustomVisualComponent:flush()
+function customvisualcomponent:flush()
 	if not self.producer then
-		error("CustomVisualComponent: no producer for '" .. self.parent.id .. "'")
+		error("customvisualcomponent: no producer for '" .. self.parent.id .. "'")
 	end
 	self.producer({ parent = self.parent, rc = self })
 end
 
-function CustomVisualComponent:submit_sprite(desc)
+function customvisualcomponent:submit_sprite(desc)
 	local pos = desc.pos or desc.position
 	local flip = desc.flip or {}
 	put_sprite(desc.imgid, pos.x, pos.y, pos.z, {
@@ -340,12 +340,12 @@ function CustomVisualComponent:submit_sprite(desc)
 	})
 end
 
-function CustomVisualComponent:submit_rect(desc)
+function customvisualcomponent:submit_rect(desc)
 	local area = desc.area
 	local color = desc.color
 	if desc.kind == "stroke" then
 		if type(color) == "table" then
-			error("CustomVisualComponent: stroke rectangle requires palette color index")
+			error("customvisualcomponent: stroke rectangle requires palette color index")
 		end
 		put_rect(area.left, area.top, area.right, area.bottom, area.z, color)
 	else
@@ -357,12 +357,12 @@ function CustomVisualComponent:submit_rect(desc)
 	end
 end
 
-function CustomVisualComponent:submit_poly(desc)
+function customvisualcomponent:submit_poly(desc)
 	local thickness = desc.thickness
 	put_poly(desc.points, desc.z, desc.color, thickness)
 end
 
-function CustomVisualComponent:submit_mesh(desc)
+function customvisualcomponent:submit_mesh(desc)
 	put_mesh(desc.mesh, desc.matrix, {
 		joint_matrices = desc.joint_matrices,
 		morph_weights = desc.morph_weights,
@@ -370,7 +370,7 @@ function CustomVisualComponent:submit_mesh(desc)
 	})
 end
 
-function CustomVisualComponent:submit_particle(desc)
+function customvisualcomponent:submit_particle(desc)
 	put_particle(desc.position, desc.size, desc.color, {
 		texture = desc.texture,
 		ambient_mode = desc.ambient_mode,
@@ -378,7 +378,7 @@ function CustomVisualComponent:submit_particle(desc)
 	})
 end
 
-function CustomVisualComponent:submit_glyphs(desc)
+function customvisualcomponent:submit_glyphs(desc)
 	if desc.font and type(desc.color) == "number" then
 		write_with_font(desc.glyphs, desc.x, desc.y, desc.z, desc.color, desc.font)
 	elseif type(desc.color) == "table" then
@@ -388,93 +388,93 @@ function CustomVisualComponent:submit_glyphs(desc)
 	end
 end
 
--- InputIntentComponent: declarative input -> state bindings
-local InputIntentComponent = {}
-InputIntentComponent.__index = InputIntentComponent
-setmetatable(InputIntentComponent, { __index = Component })
+-- inputintentcomponent: declarative input -> state bindings
+local inputintentcomponent = {}
+inputintentcomponent.__index = inputintentcomponent
+setmetatable(inputintentcomponent, { __index = component })
 
-function InputIntentComponent.new(opts)
+function inputintentcomponent.new(opts)
 	opts = opts or {}
-	opts.type_name = "InputIntentComponent"
+	opts.type_name = "inputintentcomponent"
 	opts.unique = true
-	local self = setmetatable(Component.new(opts), InputIntentComponent)
+	local self = setmetatable(component.new(opts), inputintentcomponent)
 	self.player_index = opts.player_index or 1
 	self.bindings = opts.bindings or {}
 	return self
 end
 
--- InputActionEffectComponent: links an input-action program to an object
-local InputActionEffectComponent = {}
-InputActionEffectComponent.__index = InputActionEffectComponent
-setmetatable(InputActionEffectComponent, { __index = Component })
+-- inputactioneffectcomponent: links an input-action program to an object
+local inputactioneffectcomponent = {}
+inputactioneffectcomponent.__index = inputactioneffectcomponent
+setmetatable(inputactioneffectcomponent, { __index = component })
 
-function InputActionEffectComponent.new(opts)
+function inputactioneffectcomponent.new(opts)
 	opts = opts or {}
-	opts.type_name = "InputActionEffectComponent"
+	opts.type_name = "inputactioneffectcomponent"
 	opts.unique = true
-	local self = setmetatable(Component.new(opts), InputActionEffectComponent)
+	local self = setmetatable(component.new(opts), inputactioneffectcomponent)
 	self.program_id = opts.program_id
 	self.program = opts.program
 	return self
 end
 
--- PositionUpdateAxisComponent: tracks old position for physics/boundary systems
-local PositionUpdateAxisComponent = {}
-PositionUpdateAxisComponent.__index = PositionUpdateAxisComponent
-setmetatable(PositionUpdateAxisComponent, { __index = Component })
+-- positionupdateaxiscomponent: tracks old position for physics/boundary systems
+local positionupdateaxiscomponent = {}
+positionupdateaxiscomponent.__index = positionupdateaxiscomponent
+setmetatable(positionupdateaxiscomponent, { __index = component })
 
-function PositionUpdateAxisComponent.new(opts)
+function positionupdateaxiscomponent.new(opts)
 	opts = opts or {}
-	opts.type_name = "PositionUpdateAxisComponent"
-	local self = setmetatable(Component.new(opts), PositionUpdateAxisComponent)
+	opts.type_name = "positionupdateaxiscomponent"
+	local self = setmetatable(component.new(opts), positionupdateaxiscomponent)
 	self.old_pos = { x = 0, y = 0 }
 	return self
 end
 
-function PositionUpdateAxisComponent:preprocess_update()
+function positionupdateaxiscomponent:preprocess_update()
 	local p = self.parent
 	self.old_pos.x = p.x
 	self.old_pos.y = p.y
 end
 
-local ScreenBoundaryComponent = {}
-ScreenBoundaryComponent.__index = ScreenBoundaryComponent
-setmetatable(ScreenBoundaryComponent, { __index = PositionUpdateAxisComponent })
+local screenboundarycomponent = {}
+screenboundarycomponent.__index = screenboundarycomponent
+setmetatable(screenboundarycomponent, { __index = positionupdateaxiscomponent })
 
-function ScreenBoundaryComponent.new(opts)
+function screenboundarycomponent.new(opts)
 	opts = opts or {}
-	opts.type_name = "ScreenBoundaryComponent"
+	opts.type_name = "screenboundarycomponent"
 	opts.unique = true
-	local self = setmetatable(PositionUpdateAxisComponent.new(opts), ScreenBoundaryComponent)
+	local self = setmetatable(positionupdateaxiscomponent.new(opts), screenboundarycomponent)
 	self.stick_to_edge = opts.stick_to_edge ~= false
 	return self
 end
 
-local TileCollisionComponent = {}
-TileCollisionComponent.__index = TileCollisionComponent
-setmetatable(TileCollisionComponent, { __index = PositionUpdateAxisComponent })
+local tilecollisioncomponent = {}
+tilecollisioncomponent.__index = tilecollisioncomponent
+setmetatable(tilecollisioncomponent, { __index = positionupdateaxiscomponent })
 
-function TileCollisionComponent.new(opts)
+function tilecollisioncomponent.new(opts)
 	opts = opts or {}
-	opts.type_name = "TileCollisionComponent"
+	opts.type_name = "tilecollisioncomponent"
 	opts.unique = true
-	local self = setmetatable(PositionUpdateAxisComponent.new(opts), TileCollisionComponent)
+	local self = setmetatable(positionupdateaxiscomponent.new(opts), tilecollisioncomponent)
 	return self
 end
 
-local ProhibitLeavingScreenComponent = {}
-ProhibitLeavingScreenComponent.__index = ProhibitLeavingScreenComponent
-setmetatable(ProhibitLeavingScreenComponent, { __index = ScreenBoundaryComponent })
+local prohibitleavingscreencomponent = {}
+prohibitleavingscreencomponent.__index = prohibitleavingscreencomponent
+setmetatable(prohibitleavingscreencomponent, { __index = screenboundarycomponent })
 
-function ProhibitLeavingScreenComponent.new(opts)
+function prohibitleavingscreencomponent.new(opts)
 	opts = opts or {}
-	opts.type_name = "ProhibitLeavingScreenComponent"
+	opts.type_name = "prohibitleavingscreencomponent"
 	opts.unique = true
-	local self = setmetatable(ScreenBoundaryComponent.new(opts), ProhibitLeavingScreenComponent)
+	local self = setmetatable(screenboundarycomponent.new(opts), prohibitleavingscreencomponent)
 	return self
 end
 
-function ProhibitLeavingScreenComponent:bind()
+function prohibitleavingscreencomponent:bind()
 	self.parent.events:on({ event_name = "screen.leaving", handler = function(event)
 		local p = self.parent
 		local w = $.viewportsize.x
@@ -491,51 +491,51 @@ function ProhibitLeavingScreenComponent:bind()
 	end, subscriber = self })
 end
 
-local ComponentRegistry = {
-	Component = Component,
-	SpriteComponent = SpriteComponent,
-	Collider2DComponent = Collider2DComponent,
-	TimelineComponent = TimelineComponent,
-	TransformComponent = TransformComponent,
-	TextComponent = TextComponent,
-	MeshComponent = MeshComponent,
-	CustomVisualComponent = CustomVisualComponent,
-	InputIntentComponent = InputIntentComponent,
-	InputActionEffectComponent = InputActionEffectComponent,
-	PositionUpdateAxisComponent = PositionUpdateAxisComponent,
-	ScreenBoundaryComponent = ScreenBoundaryComponent,
-	TileCollisionComponent = TileCollisionComponent,
-	ProhibitLeavingScreenComponent = ProhibitLeavingScreenComponent,
+local componentregistry = {
+	component = component,
+	spritecomponent = spritecomponent,
+	collider2dcomponent = collider2dcomponent,
+	timelinecomponent = timelinecomponent,
+	transformcomponent = transformcomponent,
+	textcomponent = textcomponent,
+	meshcomponent = meshcomponent,
+	customvisualcomponent = customvisualcomponent,
+	inputintentcomponent = inputintentcomponent,
+	inputactioneffectcomponent = inputactioneffectcomponent,
+	positionupdateaxiscomponent = positionupdateaxiscomponent,
+	screenboundarycomponent = screenboundarycomponent,
+	tilecollisioncomponent = tilecollisioncomponent,
+	prohibitleavingscreencomponent = prohibitleavingscreencomponent,
 }
 
 local function register_component(type_name, ctor)
-	ComponentRegistry[type_name] = ctor
+	componentregistry[type_name] = ctor
 end
 
 local function new_component(type_name, opts)
-	local ctor = ComponentRegistry[type_name]
+	local ctor = componentregistry[type_name]
 	if not ctor then
-		error("Component '" .. type_name .. "' is not registered.")
+		error("component '" .. type_name .. "' is not registered.")
 	end
 	return ctor.new(opts)
 end
 
 return {
-	Component = Component,
-	SpriteComponent = SpriteComponent,
-	Collider2DComponent = Collider2DComponent,
-	TimelineComponent = TimelineComponent,
-	TransformComponent = TransformComponent,
-	TextComponent = TextComponent,
-	MeshComponent = MeshComponent,
-	CustomVisualComponent = CustomVisualComponent,
-	InputIntentComponent = InputIntentComponent,
-	InputActionEffectComponent = InputActionEffectComponent,
-	PositionUpdateAxisComponent = PositionUpdateAxisComponent,
-	ScreenBoundaryComponent = ScreenBoundaryComponent,
-	TileCollisionComponent = TileCollisionComponent,
-	ProhibitLeavingScreenComponent = ProhibitLeavingScreenComponent,
-	ComponentRegistry = ComponentRegistry,
+	component = component,
+	spritecomponent = spritecomponent,
+	collider2dcomponent = collider2dcomponent,
+	timelinecomponent = timelinecomponent,
+	transformcomponent = transformcomponent,
+	textcomponent = textcomponent,
+	meshcomponent = meshcomponent,
+	customvisualcomponent = customvisualcomponent,
+	inputintentcomponent = inputintentcomponent,
+	inputactioneffectcomponent = inputactioneffectcomponent,
+	positionupdateaxiscomponent = positionupdateaxiscomponent,
+	screenboundarycomponent = screenboundarycomponent,
+	tilecollisioncomponent = tilecollisioncomponent,
+	prohibitleavingscreencomponent = prohibitleavingscreencomponent,
+	componentregistry = componentregistry,
 	register_component = register_component,
 	new_component = new_component,
 }

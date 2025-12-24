@@ -1,15 +1,15 @@
 -- sprite.lua
--- SpriteObject built atop WorldObject
+-- spriteobject built atop worldobject
 
-local WorldObject = require("worldobject")
+local worldobject = require("worldobject")
 local components = require("components")
 
-local SpriteObject = {}
-SpriteObject.__index = SpriteObject
-setmetatable(SpriteObject, { __index = WorldObject })
+local spriteobject = {}
+spriteobject.__index = spriteobject
+setmetatable(spriteobject, { __index = worldobject })
 
-local BASE_SPRITE_ID = "base_sprite"
-local PRIMARY_COLLIDER_ID = "primary"
+local base_sprite_id = "base_sprite"
+local primary_collider_id = "primary"
 
 local function apply_image_metadata(self, id)
 	local meta = assets.img[id].imgmeta
@@ -17,17 +17,17 @@ local function apply_image_metadata(self, id)
 	self.sy = meta.height
 end
 
-function SpriteObject.new(opts)
-	local self = setmetatable(WorldObject.new(opts), SpriteObject)
-	self.type_name = "SpriteObject"
+function spriteobject.new(opts)
+	local self = setmetatable(worldobject.new(opts), spriteobject)
+	self.type_name = "spriteobject"
 	self.flip_h = false
 	self.flip_v = false
 	self.imgid = "none"
 	self.animations = {}
 	self.current_animation = nil
 
-	self.sprite_component = components.SpriteComponent.new({ parent = self, imgid = self.imgid, id_local = BASE_SPRITE_ID })
-	self.collider = components.Collider2DComponent.new({ parent = self, id_local = PRIMARY_COLLIDER_ID })
+	self.sprite_component = components.spritecomponent.new({ parent = self, imgid = self.imgid, id_local = base_sprite_id })
+	self.collider = components.collider2dcomponent.new({ parent = self, id_local = primary_collider_id })
 
 	self:add_component(self.sprite_component)
 	self:add_component(self.collider)
@@ -35,7 +35,7 @@ function SpriteObject.new(opts)
 	return self
 end
 
-function SpriteObject:set_image(id, meta)
+function spriteobject:set_image(id, meta)
 	self.imgid = id
 	self.sprite_component.imgid = id
 	if id == "none" then
@@ -49,23 +49,23 @@ function SpriteObject:set_image(id, meta)
 	end
 end
 
-function SpriteObject:play_ani(id, opts)
+function spriteobject:play_ani(id, opts)
 	self.current_animation = id
 	self.timelines:play(id, opts)
 end
 
-function SpriteObject:stop_ani(id)
+function spriteobject:stop_ani(id)
 	if self.current_animation == id then
 		self.current_animation = nil
 	end
 	self.timelines:stop(id)
 end
 
-function SpriteObject:resume_ani(id)
+function spriteobject:resume_ani(id)
 	self:play_ani(id)
 end
 
-function SpriteObject:draw()
+function spriteobject:draw()
 	if not self.visible then
 		return
 	end
@@ -82,4 +82,4 @@ function SpriteObject:draw()
 	})
 end
 
-return SpriteObject
+return spriteobject

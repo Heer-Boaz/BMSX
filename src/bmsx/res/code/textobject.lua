@@ -1,15 +1,15 @@
 -- textobject.lua
--- Text object with typewriter effect for system ROM
+-- text object with typewriter effect for system rom
 
-local WorldObject = require("worldobject")
+local worldobject = require("worldobject")
 local components = require("components")
 
-local TextObject = {}
-TextObject.__index = TextObject
-setmetatable(TextObject, { __index = WorldObject })
+local textobject = {}
+textobject.__index = textobject
+setmetatable(textobject, { __index = worldobject })
 
-local DEFAULT_CHAR_WIDTH = 6
-local DEFAULT_LINE_HEIGHT = 16
+local default_char_width = 6
+local default_line_height = 16
 
 local function split_lines(text)
 	local lines = {}
@@ -26,10 +26,10 @@ local function split_lines(text)
 	return lines
 end
 
-function TextObject.new(opts)
-	local self = setmetatable(WorldObject.new(opts), TextObject)
+function textobject.new(opts)
+	local self = setmetatable(worldobject.new(opts), textobject)
 	opts = opts or {}
-	self.type_name = "TextObject"
+	self.type_name = "textobject"
 	self.text = { "" }
 	self.full_text_lines = { "" }
 	self.displayed_lines = { "" }
@@ -42,10 +42,10 @@ function TextObject.new(opts)
 	self.highlight_color = { r = 0, g = 0, b = 0.5, a = 1 }
 	self.dimensions = opts.dimensions or opts.dims or { left = 0, top = 0, right = display_width(), bottom = display_height() }
 	self.centered_block_x = 0
-	self.char_width = opts.char_width or DEFAULT_CHAR_WIDTH
-	self.line_height = opts.line_height or DEFAULT_LINE_HEIGHT
+	self.char_width = opts.char_width or default_char_width
+	self.line_height = opts.line_height or default_line_height
 	self:set_dimensions(self.dimensions)
-	self.custom_visual = components.CustomVisualComponent.new({
+	self.custom_visual = components.customvisualcomponent.new({
 		parent = self,
 		producer = function()
 			self:draw()
@@ -55,13 +55,13 @@ function TextObject.new(opts)
 	return self
 end
 
-function TextObject:set_dimensions(rect)
+function textobject:set_dimensions(rect)
 	self.dimensions = rect
 	self.maximum_characters_per_line = math.floor((rect.right - rect.left) / self.char_width)
 	self:recenter_text_block()
 end
 
-function TextObject:recenter_text_block()
+function textobject:recenter_text_block()
 	local longest = 0
 	for i = 1, #self.full_text_lines do
 		local line = self.full_text_lines[i]
@@ -73,11 +73,11 @@ function TextObject:recenter_text_block()
 	self.centered_block_x = ((self.dimensions.right - self.dimensions.left) - longest) / 2 + self.dimensions.left
 end
 
-function TextObject:update_displayed_text()
+function textobject:update_displayed_text()
 	self.text = self.displayed_lines
 end
 
-function TextObject:set_text(text_or_lines)
+function textobject:set_text(text_or_lines)
 	local lines
 	if type(text_or_lines) == "string" then
 		lines = split_lines(text_or_lines)
@@ -96,13 +96,13 @@ function TextObject:set_text(text_or_lines)
 	self:update_displayed_text()
 end
 
-function TextObject:type_next()
+function textobject:type_next()
 	if not self.is_typing then
 		return
 	end
 	if self.current_line_index >= #self.full_text_lines then
 		self.is_typing = false
-		self.events:emit("text.typing.done", { totalLines = #self.full_text_lines })
+		self.events:emit("text.typing.done", { totallines = #self.full_text_lines })
 		return
 	end
 	local line_index = self.current_line_index + 1
@@ -113,19 +113,19 @@ function TextObject:type_next()
 		self.displayed_lines[line_index] = self.displayed_lines[line_index] .. char
 		self.current_char_index = self.current_char_index + 1
 		self:update_displayed_text()
-		self.events:emit("text.typing.char", { char = char, lineIndex = self.current_line_index, charIndex = self.current_char_index - 1 })
+		self.events:emit("text.typing.char", { char = char, lineindex = self.current_line_index, charindex = self.current_char_index - 1 })
 		return
 	end
 	self.current_line_index = self.current_line_index + 1
 	self.current_char_index = 0
 	if self.current_line_index >= #self.full_text_lines then
 		self.is_typing = false
-		self.events:emit("text.typing.done", { totalLines = #self.full_text_lines })
+		self.events:emit("text.typing.done", { totallines = #self.full_text_lines })
 	end
 	self:update_displayed_text()
 end
 
-function TextObject:draw()
+function textobject:draw()
 	if not self.visible then
 		return
 	end
@@ -149,4 +149,4 @@ function TextObject:draw()
 	end
 end
 
-return TextObject
+return textobject

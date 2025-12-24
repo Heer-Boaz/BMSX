@@ -1,21 +1,21 @@
 -- ecs.lua
--- ECS core types and system manager for Lua engine
+-- ecs core types and system manager for lua engine
 
-local TickGroup = {
-	Input = 10,
-	ActionEffect = 20,
-	ModeResolution = 30,
-	Physics = 40,
-	Animation = 50,
-	Presentation = 60,
-	EventFlush = 70,
+local tickgroup = {
+	input = 10,
+	actioneffect = 20,
+	moderesolution = 30,
+	physics = 40,
+	animation = 50,
+	presentation = 60,
+	eventflush = 70,
 }
 
-local ECSystem = {}
-ECSystem.__index = ECSystem
+local ecsystem = {}
+ecsystem.__index = ecsystem
 
-function ECSystem.new(group, priority)
-	local self = setmetatable({}, ECSystem)
+function ecsystem.new(group, priority)
+	local self = setmetatable({}, ecsystem)
 	self.group = group
 	self.priority = priority or 0
 	self.__ecs_id = nil
@@ -23,20 +23,20 @@ function ECSystem.new(group, priority)
 	return self
 end
 
-function ECSystem:update(_world)
+function ecsystem:update(_world)
 end
 
-local ECSystemManager = {}
-ECSystemManager.__index = ECSystemManager
+local ecsystemmanager = {}
+ecsystemmanager.__index = ecsystemmanager
 
-function ECSystemManager.new()
-	local self = setmetatable({}, ECSystemManager)
+function ecsystemmanager.new()
+	local self = setmetatable({}, ecsystemmanager)
 	self.systems = {}
 	self.stats = {}
 	return self
 end
 
-function ECSystemManager:register(sys)
+function ecsystemmanager:register(sys)
 	self.systems[#self.systems + 1] = sys
 	table.sort(self.systems, function(a, b)
 		if a.group ~= b.group then
@@ -49,7 +49,7 @@ function ECSystemManager:register(sys)
 	end)
 end
 
-function ECSystemManager:unregister(sys)
+function ecsystemmanager:unregister(sys)
 	for i = #self.systems, 1, -1 do
 		if self.systems[i] == sys then
 			table.remove(self.systems, i)
@@ -58,20 +58,20 @@ function ECSystemManager:unregister(sys)
 	end
 end
 
-function ECSystemManager:clear()
+function ecsystemmanager:clear()
 	self.systems = {}
 	self.stats = {}
 end
 
-function ECSystemManager:begin_frame()
+function ecsystemmanager:begin_frame()
 	self.stats = {}
 end
 
-function ECSystemManager:get_stats()
+function ecsystemmanager:get_stats()
 	return self.stats
 end
 
-function ECSystemManager:record_stat(sys, t0, t1)
+function ecsystemmanager:record_stat(sys, t0, t1)
 	local id = sys.__ecs_id or sys.id or "system"
 	self.stats[#self.stats + 1] = {
 		id = id,
@@ -82,7 +82,7 @@ function ECSystemManager:record_stat(sys, t0, t1)
 	}
 end
 
-function ECSystemManager:update_until(world, max_group)
+function ecsystemmanager:update_until(world, max_group)
 	for i = 1, #self.systems do
 		local s = self.systems[i]
 		if s.group <= max_group then
@@ -94,7 +94,7 @@ function ECSystemManager:update_until(world, max_group)
 	end
 end
 
-function ECSystemManager:update_from(world, min_group)
+function ecsystemmanager:update_from(world, min_group)
 	for i = 1, #self.systems do
 		local s = self.systems[i]
 		if s.group >= min_group then
@@ -106,7 +106,7 @@ function ECSystemManager:update_from(world, min_group)
 	end
 end
 
-function ECSystemManager:update_phase(world, group)
+function ecsystemmanager:update_phase(world, group)
 	for i = 1, #self.systems do
 		local s = self.systems[i]
 		if s.group == group then
@@ -118,7 +118,7 @@ function ECSystemManager:update_phase(world, group)
 	end
 end
 
-function ECSystemManager:run_paused(world)
+function ecsystemmanager:run_paused(world)
 	self:begin_frame()
 	for i = 1, #self.systems do
 		local s = self.systems[i]
@@ -132,7 +132,7 @@ function ECSystemManager:run_paused(world)
 end
 
 return {
-	TickGroup = TickGroup,
-	ECSystem = ECSystem,
-	ECSystemManager = ECSystemManager,
+	tickgroup = tickgroup,
+	ecsystem = ecsystem,
+	ecsystemmanager = ecsystemmanager,
 }

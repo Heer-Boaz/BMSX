@@ -1,50 +1,50 @@
 -- fsmlibrary.lua
--- Registry of FSM definitions for system ROM
+-- registry of fsm definitions for system rom
 
 local fsm = require("fsm")
 
-local StateDefinitions = {}
-local ActiveMachines = {}
+local statedefinitions = {}
+local activemachines = {}
 
-local FSMLibrary = {}
+local fsmlibrary = {}
 
-function FSMLibrary.register(machine_name, blueprint)
-	StateDefinitions[machine_name] = fsm.StateDefinition.new(machine_name, blueprint)
+function fsmlibrary.register(machine_name, blueprint)
+	statedefinitions[machine_name] = fsm.statedefinition.new(machine_name, blueprint)
 end
 
-function FSMLibrary.clear(machine_name)
-	StateDefinitions[machine_name] = nil
-	ActiveMachines[machine_name] = nil
+function fsmlibrary.clear(machine_name)
+	statedefinitions[machine_name] = nil
+	activemachines[machine_name] = nil
 end
 
-function FSMLibrary.build(machine_name, blueprint)
-	FSMLibrary.register(machine_name, blueprint)
-	return StateDefinitions[machine_name]
+function fsmlibrary.build(machine_name, blueprint)
+	fsmlibrary.register(machine_name, blueprint)
+	return statedefinitions[machine_name]
 end
 
-function FSMLibrary.get(machine_name)
-	return StateDefinitions[machine_name]
+function fsmlibrary.get(machine_name)
+	return statedefinitions[machine_name]
 end
 
-function FSMLibrary.instantiate(machine_name, target)
-	local definition = StateDefinitions[machine_name]
-	assert(definition, "FSM '" .. machine_name .. "' not registered")
-	local controller = fsm.StateMachineController.new({ target = target, definition = definition, fsm_id = machine_name })
-	local list = ActiveMachines[machine_name]
+function fsmlibrary.instantiate(machine_name, target)
+	local definition = statedefinitions[machine_name]
+	assert(definition, "fsm '" .. machine_name .. "' not registered")
+	local controller = fsm.statemachinecontroller.new({ target = target, definition = definition, fsm_id = machine_name })
+	local list = activemachines[machine_name]
 	if not list then
 		list = {}
-		ActiveMachines[machine_name] = list
+		activemachines[machine_name] = list
 	end
 	list[#list + 1] = controller.statemachines[machine_name]
 	return controller
 end
 
-function FSMLibrary.active(machine_name)
-	return ActiveMachines[machine_name] or {}
+function fsmlibrary.active(machine_name)
+	return activemachines[machine_name] or {}
 end
 
-function FSMLibrary.definitions()
-	return StateDefinitions
+function fsmlibrary.definitions()
+	return statedefinitions
 end
 
-return FSMLibrary
+return fsmlibrary

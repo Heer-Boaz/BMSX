@@ -1,5 +1,5 @@
 -- worldobject.lua
--- Minimal world object base for system ROM
+-- minimal world object base for system rom
 
 local eventemitter = require("eventemitter")
 local fsm = require("fsm")
@@ -7,8 +7,8 @@ local fsmlibrary = require("fsmlibrary")
 local components = require("components")
 local behaviourtree = require("behaviourtree")
 
-local WorldObject = {}
-WorldObject.__index = WorldObject
+local worldobject = {}
+worldobject.__index = worldobject
 
 local function component_key(type_or_name)
 	local t = type(type_or_name)
@@ -22,11 +22,11 @@ local function component_key(type_or_name)
 	return string.lower(tostring(type_or_name))
 end
 
-function WorldObject.new(opts)
-	local self = setmetatable({}, WorldObject)
+function worldobject.new(opts)
+	local self = setmetatable({}, worldobject)
 	opts = opts or {}
 	self.id = opts.id or "worldobject"
-	self.type_name = "WorldObject"
+	self.type_name = "worldobject"
 	self.x = opts.x or 0
 	self.y = opts.y or 0
 	self.z = opts.z or 0
@@ -46,27 +46,27 @@ function WorldObject.new(opts)
 	self._disposed = false
 	self.events = eventemitter.events_of(self)
 	local definition = opts.definition or (opts.fsm_id and fsmlibrary.get(opts.fsm_id))
-	self.sc = opts.sc or fsm.StateMachineController.new({ target = self, definition = definition, fsm_id = opts.fsm_id })
+	self.sc = opts.sc or fsm.statemachinecontroller.new({ target = self, definition = definition, fsm_id = opts.fsm_id })
 	self.btreecontexts = {}
 
-	self.timelines = components.TimelineComponent.new({ parent = self })
+	self.timelines = components.timelinecomponent.new({ parent = self })
 	self:add_component(self.timelines)
 	return self
 end
 
-function WorldObject:set_pos(x, y, z)
+function worldobject:set_pos(x, y, z)
 	self.x = x or self.x
 	self.y = y or self.y
 	self.z = z or self.z
 end
 
-function WorldObject:move_by(dx, dy, dz)
+function worldobject:move_by(dx, dy, dz)
 	self.x = self.x + (dx or 0)
 	self.y = self.y + (dy or 0)
 	self.z = self.z + (dz or 0)
 end
 
-function WorldObject:add_component(comp)
+function worldobject:add_component(comp)
 	comp.parent = self
 	local key = component_key(comp.type_name or comp)
 	local bucket = self.component_map[key]
@@ -75,28 +75,28 @@ function WorldObject:add_component(comp)
 		self.component_map[key] = bucket
 	end
 	if comp.unique and #bucket > 0 then
-		error("Component '" .. (comp.type_name or key) .. "' is unique and already attached to '" .. self.id .. "'")
+		error("component '" .. (comp.type_name or key) .. "' is unique and already attached to '" .. self.id .. "'")
 	end
 	table.insert(self.components, comp)
 	bucket[#bucket + 1] = comp
 	comp:bind()
 	comp:on_attach()
-	if comp.type_name == "TimelineComponent" then
+	if comp.type_name == "timelinecomponent" then
 		self.timelines = comp
 	end
-	if comp.type_name == "ActionEffectComponent" then
+	if comp.type_name == "actioneffectcomponent" then
 		self.actioneffects = comp
 	end
 	return comp
 end
 
-function WorldObject:get_component(type_name)
+function worldobject:get_component(type_name)
 	local key = component_key(type_name)
 	local list = self.component_map[key]
 	return list and list[1] or nil
 end
 
-function WorldObject:get_components(type_name)
+function worldobject:get_components(type_name)
 	local key = component_key(type_name)
 	local list = self.component_map[key]
 	local out = {}
@@ -108,24 +108,24 @@ function WorldObject:get_components(type_name)
 	return out
 end
 
-function WorldObject:get_unique_component(type_name)
+function worldobject:get_unique_component(type_name)
 	local list = self.component_map[component_key(type_name)]
 	if not list or #list == 0 then
 		return nil
 	end
 	if #list > 1 then
-		error("Multiple '" .. component_key(type_name) .. "' components attached to '" .. self.id .. "'")
+		error("multiple '" .. component_key(type_name) .. "' components attached to '" .. self.id .. "'")
 	end
 	return list[1]
 end
 
-function WorldObject:has_component(type_name)
+function worldobject:has_component(type_name)
 	local key = component_key(type_name)
 	local list = self.component_map[key]
 	return list and #list > 0
 end
 
-function WorldObject:get_component_by_id(id)
+function worldobject:get_component_by_id(id)
 	for _, c in ipairs(self.components) do
 		if c.id == id or c.id_local == id then
 			return c
@@ -134,7 +134,7 @@ function WorldObject:get_component_by_id(id)
 	return nil
 end
 
-function WorldObject:get_component_by_local_id(type_name, id_local)
+function worldobject:get_component_by_local_id(type_name, id_local)
 	for _, c in ipairs(self.components) do
 		if c.id_local == id_local and component_key(c.type_name) == component_key(type_name) then
 			return c
@@ -143,12 +143,12 @@ function WorldObject:get_component_by_local_id(type_name, id_local)
 	return nil
 end
 
-function WorldObject:get_component_at(type_name, index)
+function worldobject:get_component_at(type_name, index)
 	local list = self.component_map[component_key(type_name)]
 	return list and list[index + 1] or nil
 end
 
-function WorldObject:find_component(predicate, type_name)
+function worldobject:find_component(predicate, type_name)
 	local list = type_name and self:get_components(type_name) or self.components
 	for i = 1, #list do
 		local c = list[i]
@@ -159,7 +159,7 @@ function WorldObject:find_component(predicate, type_name)
 	return nil
 end
 
-function WorldObject:find_components(predicate, type_name)
+function worldobject:find_components(predicate, type_name)
 	local list = type_name and self:get_components(type_name) or self.components
 	local out = {}
 	for i = 1, #list do
@@ -171,7 +171,7 @@ function WorldObject:find_components(predicate, type_name)
 	return out
 end
 
-function WorldObject:remove_components(type_name)
+function worldobject:remove_components(type_name)
 	local key = component_key(type_name)
 	local list = self.component_map[key]
 	if not list then
@@ -182,7 +182,7 @@ function WorldObject:remove_components(type_name)
 	end
 end
 
-function WorldObject:remove_component_instance(comp)
+function worldobject:remove_component_instance(comp)
 	local key = component_key(comp.type_name or comp)
 	local list = self.component_map[key]
 	if list then
@@ -207,17 +207,17 @@ function WorldObject:remove_component_instance(comp)
 	comp.parent = nil
 end
 
-function WorldObject:remove_all_components()
+function worldobject:remove_all_components()
 	for i = #self.components, 1, -1 do
 		self:remove_component_instance(self.components[i])
 	end
 end
 
-function WorldObject:iterate_components()
+function worldobject:iterate_components()
 	return ipairs(self.components)
 end
 
-function WorldObject:activate()
+function worldobject:activate()
 	self.active = true
 	self.tick_enabled = true
 	self.eventhandling_enabled = true
@@ -225,14 +225,14 @@ function WorldObject:activate()
 	self.sc:start()
 end
 
-function WorldObject:deactivate()
+function worldobject:deactivate()
 	self.active = false
 	self.tick_enabled = false
 	self.eventhandling_enabled = false
 	self.sc:pause()
 end
 
-function WorldObject:onspawn(pos)
+function worldobject:onspawn(pos)
 	if pos then
 		self.x = pos.x or self.x
 		self.y = pos.y or self.y
@@ -242,53 +242,53 @@ function WorldObject:onspawn(pos)
 	self.events:emit("spawn", { pos = pos })
 end
 
-function WorldObject:ondespawn()
+function worldobject:ondespawn()
 	self.active = false
 	self.eventhandling_enabled = false
 	self.events:emit("despawn")
 end
 
-function WorldObject:mark_for_disposal()
+function worldobject:mark_for_disposal()
 	self._dispose_flag = true
 	self.dispose_flag = true
 	self:deactivate()
 end
 
-function WorldObject:dispose()
+function worldobject:dispose()
 	self._disposed = true
 	self:deactivate()
 	self:remove_all_components()
 	self.sc:dispose()
-	eventemitter.EventEmitter.instance:remove_subscriber(self)
+	eventemitter.eventemitter.instance:remove_subscriber(self)
 end
 
-function WorldObject:tick(_dt)
+function worldobject:tick(_dt)
 end
 
-function WorldObject:draw()
+function worldobject:draw()
 end
 
-function WorldObject:define_timeline(def)
+function worldobject:define_timeline(def)
 	self.timelines:define(def)
 end
 
-function WorldObject:play_timeline(id, opts)
+function worldobject:play_timeline(id, opts)
 	self.timelines:play(id, opts)
 end
 
-function WorldObject:stop_timeline(id)
+function worldobject:stop_timeline(id)
 	self.timelines:stop(id)
 end
 
-function WorldObject:get_timeline(id)
+function worldobject:get_timeline(id)
 	return self.timelines:get(id)
 end
 
-function WorldObject:add_btree(bt_id)
+function worldobject:add_btree(bt_id)
 	if self.btreecontexts[bt_id] then
 		return
 	end
-	local blackboard = behaviourtree.Blackboard.new({ id = bt_id })
+	local blackboard = behaviourtree.blackboard.new({ id = bt_id })
 	self.btreecontexts[bt_id] = {
 		tree_id = bt_id,
 		running = true,
@@ -297,10 +297,10 @@ function WorldObject:add_btree(bt_id)
 	}
 end
 
-function WorldObject:tick_tree(bt_id)
+function worldobject:tick_tree(bt_id)
 	local context = self.btreecontexts[bt_id]
 	if not context then
-		error("Behavior tree context '" .. bt_id .. "' does not exist.")
+		error("behavior tree context '" .. bt_id .. "' does not exist.")
 	end
 	if not context.running then
 		return
@@ -308,12 +308,12 @@ function WorldObject:tick_tree(bt_id)
 	context.root:tick(self, context.blackboard)
 end
 
-function WorldObject:reset_tree(bt_id)
+function worldobject:reset_tree(bt_id)
 	local context = self.btreecontexts[bt_id]
 	if not context then
-		error("Behavior tree context '" .. bt_id .. "' does not exist.")
+		error("behavior tree context '" .. bt_id .. "' does not exist.")
 	end
 	context.blackboard:clear_node_data()
 end
 
-return WorldObject
+return worldobject

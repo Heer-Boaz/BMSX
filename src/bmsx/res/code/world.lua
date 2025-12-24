@@ -1,19 +1,19 @@
 -- world.lua
--- Minimal Lua world manager for system ROM
+-- minimal lua world manager for system rom
 
 local ecs = require("ecs")
 local ecs_pipeline = require("ecs_pipeline")
 
-local TickGroup = ecs.TickGroup
+local tickgroup = ecs.tickgroup
 
-local World = {}
-World.__index = World
+local world = {}
+world.__index = world
 
-function World.new()
-	local self = setmetatable({}, World)
+function world.new()
+	local self = setmetatable({}, world)
 	self._objects = {}
 	self._by_id = {}
-	self.systems = ecs.ECSystemManager.new()
+	self.systems = ecs.ecsystemmanager.new()
 	self.current_phase = nil
 	self.paused = false
 	self.gamewidth = display_width()
@@ -21,24 +21,24 @@ function World.new()
 	return self
 end
 
-function World:configure_pipeline(nodes)
-	return ecs_pipeline.DefaultECSPipelineRegistry:build(self, nodes)
+function world:configure_pipeline(nodes)
+	return ecs_pipeline.defaultecspipelineregistry:build(self, nodes)
 end
 
-function World:apply_default_pipeline()
+function world:apply_default_pipeline()
 	local ecs_builtin = require("ecs_builtin")
 	ecs_builtin.register_builtin_ecs()
 	return self:configure_pipeline(ecs_builtin.default_pipeline_spec())
 end
 
-function World:spawn(obj, pos)
+function world:spawn(obj, pos)
 	self._by_id[obj.id] = obj
 	self._objects[#self._objects + 1] = obj
 	obj:onspawn(pos)
 	return obj
 end
 
-function World:despawn(id_or_obj)
+function world:despawn(id_or_obj)
 	local obj = id_or_obj
 	if type(id_or_obj) ~= "table" then
 		obj = self._by_id[id_or_obj]
@@ -54,11 +54,11 @@ function World:despawn(id_or_obj)
 	end
 end
 
-function World:get(id)
+function world:get(id)
 	return self._by_id[id]
 end
 
-function World:objects(opts)
+function world:objects(opts)
 	local scope = opts and opts.scope or "all"
 	local reverse = opts and opts.reverse or false
 	local index = reverse and (#self._objects + 1) or 0
@@ -80,7 +80,7 @@ function World:objects(opts)
 	end
 end
 
-function World:objects_with_components(type_name, opts)
+function world:objects_with_components(type_name, opts)
 	local scope = opts and opts.scope or "all"
 	local obj_index = 0
 	local comp_index = 0
@@ -119,19 +119,19 @@ function World:objects_with_components(type_name, opts)
 	end
 end
 
-function World:update(dt)
+function world:update(dt)
 	self.deltatime = dt
 	self.systems:begin_frame()
-	self.current_phase = TickGroup.Input
-	self.systems:update_phase(self, TickGroup.Input)
-	self.current_phase = TickGroup.ActionEffect
-	self.systems:update_phase(self, TickGroup.ActionEffect)
-	self.current_phase = TickGroup.ModeResolution
-	self.systems:update_phase(self, TickGroup.ModeResolution)
-	self.current_phase = TickGroup.Physics
-	self.systems:update_phase(self, TickGroup.Physics)
-	self.current_phase = TickGroup.Animation
-	self.systems:update_phase(self, TickGroup.Animation)
+	self.current_phase = tickgroup.input
+	self.systems:update_phase(self, tickgroup.input)
+	self.current_phase = tickgroup.actioneffect
+	self.systems:update_phase(self, tickgroup.actioneffect)
+	self.current_phase = tickgroup.moderesolution
+	self.systems:update_phase(self, tickgroup.moderesolution)
+	self.current_phase = tickgroup.physics
+	self.systems:update_phase(self, tickgroup.physics)
+	self.current_phase = tickgroup.animation
+	self.systems:update_phase(self, tickgroup.animation)
 	self.current_phase = nil
 
 	for i = #self._objects, 1, -1 do
@@ -145,15 +145,15 @@ function World:update(dt)
 	end
 end
 
-function World:draw()
-	self.current_phase = TickGroup.Presentation
-	self.systems:update_phase(self, TickGroup.Presentation)
-	self.current_phase = TickGroup.EventFlush
-	self.systems:update_phase(self, TickGroup.EventFlush)
+function world:draw()
+	self.current_phase = tickgroup.presentation
+	self.systems:update_phase(self, tickgroup.presentation)
+	self.current_phase = tickgroup.eventflush
+	self.systems:update_phase(self, tickgroup.eventflush)
 	self.current_phase = nil
 end
 
-function World:clear()
+function world:clear()
 	for i = #self._objects, 1, -1 do
 		self._objects[i]:dispose()
 	end
@@ -162,6 +162,6 @@ function World:clear()
 end
 
 return {
-	World = World,
-	instance = World.new(),
+	world = world,
+	instance = world.new(),
 }

@@ -1,33 +1,33 @@
 -- ecs_systems.lua
--- Built-in ECS systems for Lua engine
+-- built-in ecs systems for lua engine
 
 local ecs = require("ecs")
 local action_effects = require("action_effects")
 local registry = require("registry")
 
-local TickGroup = ecs.TickGroup
-local ECSystem = ecs.ECSystem
+local tickgroup = ecs.tickgroup
+local ecsystem = ecs.ecsystem
 
-local SpriteComponent = "SpriteComponent"
-local TimelineComponent = "TimelineComponent"
-local TransformComponent = "TransformComponent"
-local TextComponent = "TextComponent"
-local MeshComponent = "MeshComponent"
-local CustomVisualComponent = "CustomVisualComponent"
-local PositionUpdateAxisComponent = "PositionUpdateAxisComponent"
-local ScreenBoundaryComponent = "ScreenBoundaryComponent"
-local ActionEffectComponent = "ActionEffectComponent"
+local spritecomponent = "spritecomponent"
+local timelinecomponent = "timelinecomponent"
+local transformcomponent = "transformcomponent"
+local textcomponent = "textcomponent"
+local meshcomponent = "meshcomponent"
+local customvisualcomponent = "customvisualcomponent"
+local positionupdateaxiscomponent = "positionupdateaxiscomponent"
+local screenboundarycomponent = "screenboundarycomponent"
+local actioneffectcomponent = "actioneffectcomponent"
 
-local BehaviorTreeSystem = {}
-BehaviorTreeSystem.__index = BehaviorTreeSystem
-setmetatable(BehaviorTreeSystem, { __index = ECSystem })
+local behaviortreesystem = {}
+behaviortreesystem.__index = behaviortreesystem
+setmetatable(behaviortreesystem, { __index = ecsystem })
 
-function BehaviorTreeSystem.new(priority)
-	local self = setmetatable(ECSystem.new(TickGroup.Input, priority or 0), BehaviorTreeSystem)
+function behaviortreesystem.new(priority)
+	local self = setmetatable(ecsystem.new(tickgroup.input, priority or 0), behaviortreesystem)
 	return self
 end
 
-function BehaviorTreeSystem:update(world)
+function behaviortreesystem:update(world)
 	for obj in world:objects({ scope = "active" }) do
 		if obj.tick_enabled == false then
 			goto continue
@@ -40,32 +40,32 @@ function BehaviorTreeSystem:update(world)
 	end
 end
 
-local ActionEffectRuntimeSystem = {}
-ActionEffectRuntimeSystem.__index = ActionEffectRuntimeSystem
-setmetatable(ActionEffectRuntimeSystem, { __index = ECSystem })
+local actioneffectruntimesystem = {}
+actioneffectruntimesystem.__index = actioneffectruntimesystem
+setmetatable(actioneffectruntimesystem, { __index = ecsystem })
 
-function ActionEffectRuntimeSystem.new(priority)
-	local self = setmetatable(ECSystem.new(TickGroup.ActionEffect, priority or 32), ActionEffectRuntimeSystem)
+function actioneffectruntimesystem.new(priority)
+	local self = setmetatable(ecsystem.new(tickgroup.actioneffect, priority or 32), actioneffectruntimesystem)
 	return self
 end
 
-function ActionEffectRuntimeSystem:update(world)
+function actioneffectruntimesystem:update(world)
 	local dt = world.deltatime or 0
-	for _, component in world:objects_with_components(ActionEffectComponent, { scope = "active" }) do
+	for _, component in world:objects_with_components(actioneffectcomponent, { scope = "active" }) do
 		component:advance_time(dt)
 	end
 end
 
-local StateMachineSystem = {}
-StateMachineSystem.__index = StateMachineSystem
-setmetatable(StateMachineSystem, { __index = ECSystem })
+local statemachinesystem = {}
+statemachinesystem.__index = statemachinesystem
+setmetatable(statemachinesystem, { __index = ecsystem })
 
-function StateMachineSystem.new(priority)
-	local self = setmetatable(ECSystem.new(TickGroup.ModeResolution, priority or 0), StateMachineSystem)
+function statemachinesystem.new(priority)
+	local self = setmetatable(ecsystem.new(tickgroup.moderesolution, priority or 0), statemachinesystem)
 	return self
 end
 
-function StateMachineSystem:update(world)
+function statemachinesystem:update(world)
 	for obj in world:objects({ scope = "active" }) do
 		if obj.tick_enabled == false then
 			goto continue
@@ -74,22 +74,22 @@ function StateMachineSystem:update(world)
 		::continue::
 	end
 	for _, entity in pairs(registry.instance:get_registered_entities()) do
-		if entity.type_name == "Service" and entity.active and entity.tick_enabled then
+		if entity.type_name == "service" and entity.active and entity.tick_enabled then
 			entity.sc:tick(world.deltatime or 0)
 		end
 	end
 end
 
-local ObjectTickSystem = {}
-ObjectTickSystem.__index = ObjectTickSystem
-setmetatable(ObjectTickSystem, { __index = ECSystem })
+local objectticksystem = {}
+objectticksystem.__index = objectticksystem
+setmetatable(objectticksystem, { __index = ecsystem })
 
-function ObjectTickSystem.new(priority)
-	local self = setmetatable(ECSystem.new(TickGroup.ModeResolution, priority or 10), ObjectTickSystem)
+function objectticksystem.new(priority)
+	local self = setmetatable(ecsystem.new(tickgroup.moderesolution, priority or 10), objectticksystem)
 	return self
 end
 
-function ObjectTickSystem:update(world)
+function objectticksystem:update(world)
 	local dt = world.deltatime or 0
 	for obj in world:objects({ scope = "active" }) do
 		if obj.tick_enabled then
@@ -104,36 +104,36 @@ function ObjectTickSystem:update(world)
 	end
 end
 
-local PrePositionSystem = {}
-PrePositionSystem.__index = PrePositionSystem
-setmetatable(PrePositionSystem, { __index = ECSystem })
+local prepositionsystem = {}
+prepositionsystem.__index = prepositionsystem
+setmetatable(prepositionsystem, { __index = ecsystem })
 
-function PrePositionSystem.new(priority)
-	local self = setmetatable(ECSystem.new(TickGroup.Physics, priority or 0), PrePositionSystem)
+function prepositionsystem.new(priority)
+	local self = setmetatable(ecsystem.new(tickgroup.physics, priority or 0), prepositionsystem)
 	return self
 end
 
-function PrePositionSystem:update(world)
-	for _, component in world:objects_with_components(PositionUpdateAxisComponent, { scope = "active" }) do
+function prepositionsystem:update(world)
+	for _, component in world:objects_with_components(positionupdateaxiscomponent, { scope = "active" }) do
 		if component.enabled then
 			component:preprocess_update()
 		end
 	end
 end
 
-local BoundarySystem = {}
-BoundarySystem.__index = BoundarySystem
-setmetatable(BoundarySystem, { __index = ECSystem })
+local boundarysystem = {}
+boundarysystem.__index = boundarysystem
+setmetatable(boundarysystem, { __index = ecsystem })
 
-function BoundarySystem.new(priority)
-	local self = setmetatable(ECSystem.new(TickGroup.Physics, priority or 0), BoundarySystem)
+function boundarysystem.new(priority)
+	local self = setmetatable(ecsystem.new(tickgroup.physics, priority or 0), boundarysystem)
 	return self
 end
 
-function BoundarySystem:update(world)
+function boundarysystem:update(world)
 	local width = world.gamewidth
 	local height = world.gameheight
-	for obj, component in world:objects_with_components(ScreenBoundaryComponent, { scope = "active" }) do
+	for obj, component in world:objects_with_components(screenboundarycomponent, { scope = "active" }) do
 		if not component.enabled then
 			goto continue
 		end
@@ -173,154 +173,154 @@ function BoundarySystem:update(world)
 	end
 end
 
-local TileCollisionSystem = {}
-TileCollisionSystem.__index = TileCollisionSystem
-setmetatable(TileCollisionSystem, { __index = ECSystem })
+local tilecollisionsystem = {}
+tilecollisionsystem.__index = tilecollisionsystem
+setmetatable(tilecollisionsystem, { __index = ecsystem })
 
-function TileCollisionSystem.new(priority)
-	local self = setmetatable(ECSystem.new(TickGroup.Physics, priority or 0), TileCollisionSystem)
+function tilecollisionsystem.new(priority)
+	local self = setmetatable(ecsystem.new(tickgroup.physics, priority or 0), tilecollisionsystem)
 	return self
 end
 
-function TileCollisionSystem:update(_world)
+function tilecollisionsystem:update(_world)
 end
 
-local PhysicsSyncBeforeStepSystem = {}
-PhysicsSyncBeforeStepSystem.__index = PhysicsSyncBeforeStepSystem
-setmetatable(PhysicsSyncBeforeStepSystem, { __index = ECSystem })
+local physicssyncbeforestepsystem = {}
+physicssyncbeforestepsystem.__index = physicssyncbeforestepsystem
+setmetatable(physicssyncbeforestepsystem, { __index = ecsystem })
 
-function PhysicsSyncBeforeStepSystem.new(priority)
-	local self = setmetatable(ECSystem.new(TickGroup.Physics, priority or 0), PhysicsSyncBeforeStepSystem)
+function physicssyncbeforestepsystem.new(priority)
+	local self = setmetatable(ecsystem.new(tickgroup.physics, priority or 0), physicssyncbeforestepsystem)
 	return self
 end
 
-function PhysicsSyncBeforeStepSystem:update(_world)
+function physicssyncbeforestepsystem:update(_world)
 end
 
-local PhysicsWorldStepSystem = {}
-PhysicsWorldStepSystem.__index = PhysicsWorldStepSystem
-setmetatable(PhysicsWorldStepSystem, { __index = ECSystem })
+local physicsworldstepsystem = {}
+physicsworldstepsystem.__index = physicsworldstepsystem
+setmetatable(physicsworldstepsystem, { __index = ecsystem })
 
-function PhysicsWorldStepSystem.new(priority)
-	local self = setmetatable(ECSystem.new(TickGroup.Physics, priority or 0), PhysicsWorldStepSystem)
+function physicsworldstepsystem.new(priority)
+	local self = setmetatable(ecsystem.new(tickgroup.physics, priority or 0), physicsworldstepsystem)
 	return self
 end
 
-function PhysicsWorldStepSystem:update(_world)
+function physicsworldstepsystem:update(_world)
 end
 
-local PhysicsPostSystem = {}
-PhysicsPostSystem.__index = PhysicsPostSystem
-setmetatable(PhysicsPostSystem, { __index = ECSystem })
+local physicspostsystem = {}
+physicspostsystem.__index = physicspostsystem
+setmetatable(physicspostsystem, { __index = ecsystem })
 
-function PhysicsPostSystem.new(priority)
-	local self = setmetatable(ECSystem.new(TickGroup.Physics, priority or 0), PhysicsPostSystem)
+function physicspostsystem.new(priority)
+	local self = setmetatable(ecsystem.new(tickgroup.physics, priority or 0), physicspostsystem)
 	return self
 end
 
-function PhysicsPostSystem:update(_world)
+function physicspostsystem:update(_world)
 end
 
-local PhysicsCollisionEventSystem = {}
-PhysicsCollisionEventSystem.__index = PhysicsCollisionEventSystem
-setmetatable(PhysicsCollisionEventSystem, { __index = ECSystem })
+local physicscollisioneventsystem = {}
+physicscollisioneventsystem.__index = physicscollisioneventsystem
+setmetatable(physicscollisioneventsystem, { __index = ecsystem })
 
-function PhysicsCollisionEventSystem.new(priority)
-	local self = setmetatable(ECSystem.new(TickGroup.Physics, priority or 0), PhysicsCollisionEventSystem)
+function physicscollisioneventsystem.new(priority)
+	local self = setmetatable(ecsystem.new(tickgroup.physics, priority or 0), physicscollisioneventsystem)
 	return self
 end
 
-function PhysicsCollisionEventSystem:update(_world)
+function physicscollisioneventsystem:update(_world)
 end
 
-local PhysicsSyncAfterWorldCollisionSystem = {}
-PhysicsSyncAfterWorldCollisionSystem.__index = PhysicsSyncAfterWorldCollisionSystem
-setmetatable(PhysicsSyncAfterWorldCollisionSystem, { __index = ECSystem })
+local physicssyncafterworldcollisionsystem = {}
+physicssyncafterworldcollisionsystem.__index = physicssyncafterworldcollisionsystem
+setmetatable(physicssyncafterworldcollisionsystem, { __index = ecsystem })
 
-function PhysicsSyncAfterWorldCollisionSystem.new(priority)
-	local self = setmetatable(ECSystem.new(TickGroup.Physics, priority or 0), PhysicsSyncAfterWorldCollisionSystem)
+function physicssyncafterworldcollisionsystem.new(priority)
+	local self = setmetatable(ecsystem.new(tickgroup.physics, priority or 0), physicssyncafterworldcollisionsystem)
 	return self
 end
 
-function PhysicsSyncAfterWorldCollisionSystem:update(_world)
+function physicssyncafterworldcollisionsystem:update(_world)
 end
 
-local Overlap2DSystem = {}
-Overlap2DSystem.__index = Overlap2DSystem
-setmetatable(Overlap2DSystem, { __index = ECSystem })
+local overlap2dsystem = {}
+overlap2dsystem.__index = overlap2dsystem
+setmetatable(overlap2dsystem, { __index = ecsystem })
 
-function Overlap2DSystem.new(priority)
-	local self = setmetatable(ECSystem.new(TickGroup.Physics, priority or 0), Overlap2DSystem)
+function overlap2dsystem.new(priority)
+	local self = setmetatable(ecsystem.new(tickgroup.physics, priority or 0), overlap2dsystem)
 	return self
 end
 
-function Overlap2DSystem:update(_world)
+function overlap2dsystem:update(_world)
 end
 
-local TransformSystem = {}
-TransformSystem.__index = TransformSystem
-setmetatable(TransformSystem, { __index = ECSystem })
+local transformsystem = {}
+transformsystem.__index = transformsystem
+setmetatable(transformsystem, { __index = ecsystem })
 
-function TransformSystem.new(priority)
-	local self = setmetatable(ECSystem.new(TickGroup.Physics, priority or 0), TransformSystem)
+function transformsystem.new(priority)
+	local self = setmetatable(ecsystem.new(tickgroup.physics, priority or 0), transformsystem)
 	return self
 end
 
-function TransformSystem:update(world)
-	for _, component in world:objects_with_components(TransformComponent, { scope = "active" }) do
+function transformsystem:update(world)
+	for _, component in world:objects_with_components(transformcomponent, { scope = "active" }) do
 		if component.enabled then
 			component:post_update()
 		end
 	end
 end
 
-local TimelineSystem = {}
-TimelineSystem.__index = TimelineSystem
-setmetatable(TimelineSystem, { __index = ECSystem })
+local timelinesystem = {}
+timelinesystem.__index = timelinesystem
+setmetatable(timelinesystem, { __index = ecsystem })
 
-function TimelineSystem.new(priority)
-	local self = setmetatable(ECSystem.new(TickGroup.Animation, priority or 0), TimelineSystem)
+function timelinesystem.new(priority)
+	local self = setmetatable(ecsystem.new(tickgroup.animation, priority or 0), timelinesystem)
 	return self
 end
 
-function TimelineSystem:update(world)
+function timelinesystem:update(world)
 	local dt = world.deltatime or 0
-	for _, component in world:objects_with_components(TimelineComponent, { scope = "active" }) do
+	for _, component in world:objects_with_components(timelinecomponent, { scope = "active" }) do
 		if component.enabled then
 			component:tick_active(dt)
 		end
 	end
 end
 
-local MeshAnimationSystem = {}
-MeshAnimationSystem.__index = MeshAnimationSystem
-setmetatable(MeshAnimationSystem, { __index = ECSystem })
+local meshanimationsystem = {}
+meshanimationsystem.__index = meshanimationsystem
+setmetatable(meshanimationsystem, { __index = ecsystem })
 
-function MeshAnimationSystem.new(priority)
-	local self = setmetatable(ECSystem.new(TickGroup.Animation, priority or 0), MeshAnimationSystem)
+function meshanimationsystem.new(priority)
+	local self = setmetatable(ecsystem.new(tickgroup.animation, priority or 0), meshanimationsystem)
 	return self
 end
 
-function MeshAnimationSystem:update(world)
+function meshanimationsystem:update(world)
 	local dt = world.deltatime or 0
-	for _, component in world:objects_with_components(MeshComponent, { scope = "active" }) do
+	for _, component in world:objects_with_components(meshcomponent, { scope = "active" }) do
 		if component.enabled then
 			component:update_animation(dt)
 		end
 	end
 end
 
-local TextRenderSystem = {}
-TextRenderSystem.__index = TextRenderSystem
-setmetatable(TextRenderSystem, { __index = ECSystem })
+local textrendersystem = {}
+textrendersystem.__index = textrendersystem
+setmetatable(textrendersystem, { __index = ecsystem })
 
-function TextRenderSystem.new(priority)
-	local self = setmetatable(ECSystem.new(TickGroup.Presentation, priority or 7), TextRenderSystem)
+function textrendersystem.new(priority)
+	local self = setmetatable(ecsystem.new(tickgroup.presentation, priority or 7), textrendersystem)
 	return self
 end
 
-function TextRenderSystem:update(world)
-	for obj, tc in world:objects_with_components(TextComponent, { scope = "active" }) do
+function textrendersystem:update(world)
+	for obj, tc in world:objects_with_components(textcomponent, { scope = "active" }) do
 		if not tc.enabled then
 			goto continue
 		end
@@ -328,7 +328,7 @@ function TextRenderSystem:update(world)
 		local x = obj.x + offset.x
 		local y = obj.y + offset.y
 		local z = obj.z + offset.z
-		local t = obj:get_component(TransformComponent)
+		local t = obj:get_component(transformcomponent)
 		if t then
 			x = t.position.x + offset.x
 			y = t.position.y + offset.y
@@ -345,17 +345,17 @@ function TextRenderSystem:update(world)
 	end
 end
 
-local SpriteRenderSystem = {}
-SpriteRenderSystem.__index = SpriteRenderSystem
-setmetatable(SpriteRenderSystem, { __index = ECSystem })
+local spriterendersystem = {}
+spriterendersystem.__index = spriterendersystem
+setmetatable(spriterendersystem, { __index = ecsystem })
 
-function SpriteRenderSystem.new(priority)
-	local self = setmetatable(ECSystem.new(TickGroup.Presentation, priority or 8), SpriteRenderSystem)
+function spriterendersystem.new(priority)
+	local self = setmetatable(ecsystem.new(tickgroup.presentation, priority or 8), spriterendersystem)
 	return self
 end
 
-function SpriteRenderSystem:update(world)
-	for obj, sc in world:objects_with_components(SpriteComponent, { scope = "active" }) do
+function spriterendersystem:update(world)
+	for obj, sc in world:objects_with_components(spritecomponent, { scope = "active" }) do
 		if obj.visible == false or not sc.enabled then
 			goto continue
 		end
@@ -363,7 +363,7 @@ function SpriteRenderSystem:update(world)
 		local x = obj.x + offset.x
 		local y = obj.y + offset.y
 		local z = obj.z + offset.z
-		local t = obj:get_component("TransformComponent")
+		local t = obj:get_component("transformcomponent")
 		if t then
 			x = t.position.x + offset.x
 			y = t.position.y + offset.y
@@ -379,17 +379,17 @@ function SpriteRenderSystem:update(world)
 	end
 end
 
-local MeshRenderSystem = {}
-MeshRenderSystem.__index = MeshRenderSystem
-setmetatable(MeshRenderSystem, { __index = ECSystem })
+local meshrendersystem = {}
+meshrendersystem.__index = meshrendersystem
+setmetatable(meshrendersystem, { __index = ecsystem })
 
-function MeshRenderSystem.new(priority)
-	local self = setmetatable(ECSystem.new(TickGroup.Presentation, priority or 9), MeshRenderSystem)
+function meshrendersystem.new(priority)
+	local self = setmetatable(ecsystem.new(tickgroup.presentation, priority or 9), meshrendersystem)
 	return self
 end
 
-function MeshRenderSystem:update(world)
-	for obj, mc in world:objects_with_components(MeshComponent, { scope = "active" }) do
+function meshrendersystem:update(world)
+	for obj, mc in world:objects_with_components(meshcomponent, { scope = "active" }) do
 		if obj.visible == false or not mc.enabled then
 			goto continue
 		end
@@ -402,17 +402,17 @@ function MeshRenderSystem:update(world)
 	end
 end
 
-local RenderSubmitSystem = {}
-RenderSubmitSystem.__index = RenderSubmitSystem
-setmetatable(RenderSubmitSystem, { __index = ECSystem })
+local rendersubmitsystem = {}
+rendersubmitsystem.__index = rendersubmitsystem
+setmetatable(rendersubmitsystem, { __index = ecsystem })
 
-function RenderSubmitSystem.new(priority)
-	local self = setmetatable(ECSystem.new(TickGroup.Presentation, priority or 10), RenderSubmitSystem)
+function rendersubmitsystem.new(priority)
+	local self = setmetatable(ecsystem.new(tickgroup.presentation, priority or 10), rendersubmitsystem)
 	return self
 end
 
-function RenderSubmitSystem:update(world)
-	for obj, rc in world:objects_with_components(CustomVisualComponent, { scope = "active" }) do
+function rendersubmitsystem:update(world)
+	for obj, rc in world:objects_with_components(customvisualcomponent, { scope = "active" }) do
 		if obj.visible == false or not rc.enabled then
 			goto continue
 		end
@@ -421,38 +421,38 @@ function RenderSubmitSystem:update(world)
 	end
 end
 
-local EventFlushSystem = {}
-EventFlushSystem.__index = EventFlushSystem
-setmetatable(EventFlushSystem, { __index = ECSystem })
+local eventflushsystem = {}
+eventflushsystem.__index = eventflushsystem
+setmetatable(eventflushsystem, { __index = ecsystem })
 
-function EventFlushSystem.new(priority)
-	local self = setmetatable(ECSystem.new(TickGroup.EventFlush, priority or 0), EventFlushSystem)
+function eventflushsystem.new(priority)
+	local self = setmetatable(ecsystem.new(tickgroup.eventflush, priority or 0), eventflushsystem)
 	return self
 end
 
-function EventFlushSystem:update(_world)
+function eventflushsystem:update(_world)
 end
 
 return {
-	BehaviorTreeSystem = BehaviorTreeSystem,
-	ActionEffectRuntimeSystem = ActionEffectRuntimeSystem,
-	StateMachineSystem = StateMachineSystem,
-	ObjectTickSystem = ObjectTickSystem,
-	PrePositionSystem = PrePositionSystem,
-	BoundarySystem = BoundarySystem,
-	TileCollisionSystem = TileCollisionSystem,
-	PhysicsSyncBeforeStepSystem = PhysicsSyncBeforeStepSystem,
-	PhysicsWorldStepSystem = PhysicsWorldStepSystem,
-	PhysicsPostSystem = PhysicsPostSystem,
-	PhysicsCollisionEventSystem = PhysicsCollisionEventSystem,
-	PhysicsSyncAfterWorldCollisionSystem = PhysicsSyncAfterWorldCollisionSystem,
-	Overlap2DSystem = Overlap2DSystem,
-	TransformSystem = TransformSystem,
-	TimelineSystem = TimelineSystem,
-	MeshAnimationSystem = MeshAnimationSystem,
-	TextRenderSystem = TextRenderSystem,
-	SpriteRenderSystem = SpriteRenderSystem,
-	MeshRenderSystem = MeshRenderSystem,
-	RenderSubmitSystem = RenderSubmitSystem,
-	EventFlushSystem = EventFlushSystem,
+	behaviortreesystem = behaviortreesystem,
+	actioneffectruntimesystem = actioneffectruntimesystem,
+	statemachinesystem = statemachinesystem,
+	objectticksystem = objectticksystem,
+	prepositionsystem = prepositionsystem,
+	boundarysystem = boundarysystem,
+	tilecollisionsystem = tilecollisionsystem,
+	physicssyncbeforestepsystem = physicssyncbeforestepsystem,
+	physicsworldstepsystem = physicsworldstepsystem,
+	physicspostsystem = physicspostsystem,
+	physicscollisioneventsystem = physicscollisioneventsystem,
+	physicssyncafterworldcollisionsystem = physicssyncafterworldcollisionsystem,
+	overlap2dsystem = overlap2dsystem,
+	transformsystem = transformsystem,
+	timelinesystem = timelinesystem,
+	meshanimationsystem = meshanimationsystem,
+	textrendersystem = textrendersystem,
+	spriterendersystem = spriterendersystem,
+	meshrendersystem = meshrendersystem,
+	rendersubmitsystem = rendersubmitsystem,
+	eventflushsystem = eventflushsystem,
 }

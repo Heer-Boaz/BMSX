@@ -1,5 +1,5 @@
 -- ecs_builtin.lua
--- Built-in ECS pipeline registration for Lua engine
+-- built-in ecs pipeline registration for lua engine
 
 local ecs = require("ecs")
 local ecs_pipeline = require("ecs_pipeline")
@@ -12,58 +12,58 @@ local function register_builtin_ecs()
 	if registered then
 		return
 	end
-	local R = ecs_pipeline.DefaultECSPipelineRegistry
-	R:register_many({
-		{ id = "behaviorTrees", group = ecs.TickGroup.Input, create = function(p) return ecs_systems.BehaviorTreeSystem.new(p) end },
-		{ id = "inputActionEffects", group = ecs.TickGroup.Input, default_priority = 10, create = function(p) return input_action_effect_system.InputActionEffectSystem.new(p) end },
-		{ id = "actionEffectRuntime", group = ecs.TickGroup.ActionEffect, create = function(p) return ecs_systems.ActionEffectRuntimeSystem.new(p) end },
-		{ id = "objectFSM", group = ecs.TickGroup.ModeResolution, create = function(p) return ecs_systems.StateMachineSystem.new(p) end },
-		{ id = "objectTick", group = ecs.TickGroup.ModeResolution, default_priority = 10, create = function(p) return ecs_systems.ObjectTickSystem.new(p) end },
-		{ id = "prePosition", group = ecs.TickGroup.Physics, create = function(p) return ecs_systems.PrePositionSystem.new(p) end },
-		{ id = "physicsSyncBefore", group = ecs.TickGroup.Physics, create = function(p) return ecs_systems.PhysicsSyncBeforeStepSystem.new(p) end },
-		{ id = "physicsStep", group = ecs.TickGroup.Physics, create = function(p) return ecs_systems.PhysicsWorldStepSystem.new(p) end },
-		{ id = "physicsPost", group = ecs.TickGroup.Physics, create = function(p) return ecs_systems.PhysicsPostSystem.new(p) end },
-		{ id = "tileCollision", group = ecs.TickGroup.Physics, create = function(p) return ecs_systems.TileCollisionSystem.new(p) end },
-		{ id = "boundary", group = ecs.TickGroup.Physics, create = function(p) return ecs_systems.BoundarySystem.new(p) end },
-		{ id = "physicsCollisionEvents", group = ecs.TickGroup.Physics, create = function(p) return ecs_systems.PhysicsCollisionEventSystem.new(p) end },
-		{ id = "physicsSyncAfterWorld", group = ecs.TickGroup.Physics, create = function(p) return ecs_systems.PhysicsSyncAfterWorldCollisionSystem.new(p) end },
-		{ id = "overlapEvents", group = ecs.TickGroup.Physics, create = function(p) return ecs_systems.Overlap2DSystem.new(p) end },
-		{ id = "transform", group = ecs.TickGroup.Physics, create = function(p) return ecs_systems.TransformSystem.new(p) end },
-		{ id = "timeline", group = ecs.TickGroup.Animation, create = function(p) return ecs_systems.TimelineSystem.new(p) end },
-		{ id = "meshAnim", group = ecs.TickGroup.Animation, create = function(p) return ecs_systems.MeshAnimationSystem.new(p) end },
-		{ id = "textRender", group = ecs.TickGroup.Presentation, create = function(p) return ecs_systems.TextRenderSystem.new(p) end },
-		{ id = "spriteRender", group = ecs.TickGroup.Presentation, create = function(p) return ecs_systems.SpriteRenderSystem.new(p) end },
-		{ id = "meshRender", group = ecs.TickGroup.Presentation, create = function(p) return ecs_systems.MeshRenderSystem.new(p) end },
-		{ id = "renderSubmit", group = ecs.TickGroup.Presentation, create = function(p) return ecs_systems.RenderSubmitSystem.new(p) end },
-		{ id = "eventFlush", group = ecs.TickGroup.EventFlush, create = function(p) return ecs_systems.EventFlushSystem.new(p) end },
+	local r = ecs_pipeline.defaultecspipelineregistry
+	r:register_many({
+		{ id = "behaviortrees", group = ecs.tickgroup.input, create = function(p) return ecs_systems.behaviortreesystem.new(p) end },
+		{ id = "inputactioneffects", group = ecs.tickgroup.input, default_priority = 10, create = function(p) return input_action_effect_system.inputactioneffectsystem.new(p) end },
+		{ id = "actioneffectruntime", group = ecs.tickgroup.actioneffect, create = function(p) return ecs_systems.actioneffectruntimesystem.new(p) end },
+		{ id = "objectfsm", group = ecs.tickgroup.moderesolution, create = function(p) return ecs_systems.statemachinesystem.new(p) end },
+		{ id = "objecttick", group = ecs.tickgroup.moderesolution, default_priority = 10, create = function(p) return ecs_systems.objectticksystem.new(p) end },
+		{ id = "preposition", group = ecs.tickgroup.physics, create = function(p) return ecs_systems.prepositionsystem.new(p) end },
+		{ id = "physicssyncbefore", group = ecs.tickgroup.physics, create = function(p) return ecs_systems.physicssyncbeforestepsystem.new(p) end },
+		{ id = "physicsstep", group = ecs.tickgroup.physics, create = function(p) return ecs_systems.physicsworldstepsystem.new(p) end },
+		{ id = "physicspost", group = ecs.tickgroup.physics, create = function(p) return ecs_systems.physicspostsystem.new(p) end },
+		{ id = "tilecollision", group = ecs.tickgroup.physics, create = function(p) return ecs_systems.tilecollisionsystem.new(p) end },
+		{ id = "boundary", group = ecs.tickgroup.physics, create = function(p) return ecs_systems.boundarysystem.new(p) end },
+		{ id = "physicscollisionevents", group = ecs.tickgroup.physics, create = function(p) return ecs_systems.physicscollisioneventsystem.new(p) end },
+		{ id = "physicssyncafterworld", group = ecs.tickgroup.physics, create = function(p) return ecs_systems.physicssyncafterworldcollisionsystem.new(p) end },
+		{ id = "overlapevents", group = ecs.tickgroup.physics, create = function(p) return ecs_systems.overlap2dsystem.new(p) end },
+		{ id = "transform", group = ecs.tickgroup.physics, create = function(p) return ecs_systems.transformsystem.new(p) end },
+		{ id = "timeline", group = ecs.tickgroup.animation, create = function(p) return ecs_systems.timelinesystem.new(p) end },
+		{ id = "meshanim", group = ecs.tickgroup.animation, create = function(p) return ecs_systems.meshanimationsystem.new(p) end },
+		{ id = "textrender", group = ecs.tickgroup.presentation, create = function(p) return ecs_systems.textrendersystem.new(p) end },
+		{ id = "spriterender", group = ecs.tickgroup.presentation, create = function(p) return ecs_systems.spriterendersystem.new(p) end },
+		{ id = "meshrender", group = ecs.tickgroup.presentation, create = function(p) return ecs_systems.meshrendersystem.new(p) end },
+		{ id = "rendersubmit", group = ecs.tickgroup.presentation, create = function(p) return ecs_systems.rendersubmitsystem.new(p) end },
+		{ id = "eventflush", group = ecs.tickgroup.eventflush, create = function(p) return ecs_systems.eventflushsystem.new(p) end },
 	})
 	registered = true
 end
 
 local function default_pipeline_spec()
 	return {
-		{ ref = "behaviorTrees" },
-		{ ref = "inputActionEffects" },
-		{ ref = "actionEffectRuntime" },
-		{ ref = "objectFSM" },
-		{ ref = "objectTick" },
-		{ ref = "prePosition" },
-		{ ref = "physicsSyncBefore" },
-		{ ref = "physicsStep" },
-		{ ref = "physicsPost" },
-		{ ref = "tileCollision" },
+		{ ref = "behaviortrees" },
+		{ ref = "inputactioneffects" },
+		{ ref = "actioneffectruntime" },
+		{ ref = "objectfsm" },
+		{ ref = "objecttick" },
+		{ ref = "preposition" },
+		{ ref = "physicssyncbefore" },
+		{ ref = "physicsstep" },
+		{ ref = "physicspost" },
+		{ ref = "tilecollision" },
 		{ ref = "boundary" },
-		{ ref = "physicsCollisionEvents" },
-		{ ref = "physicsSyncAfterWorld" },
-		{ ref = "overlapEvents" },
+		{ ref = "physicscollisionevents" },
+		{ ref = "physicssyncafterworld" },
+		{ ref = "overlapevents" },
 		{ ref = "transform" },
 		{ ref = "timeline" },
-		{ ref = "meshAnim" },
-		{ ref = "textRender" },
-		{ ref = "spriteRender" },
-		{ ref = "meshRender" },
-		{ ref = "renderSubmit" },
-		{ ref = "eventFlush" },
+		{ ref = "meshanim" },
+		{ ref = "textrender" },
+		{ ref = "spriterender" },
+		{ ref = "meshrender" },
+		{ ref = "rendersubmit" },
+		{ ref = "eventflush" },
 	}
 end
 

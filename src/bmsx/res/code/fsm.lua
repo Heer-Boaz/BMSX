@@ -1,10 +1,10 @@
 -- fsm.lua
--- Finite state machine runtime for system ROM
+-- finite state machine runtime for system rom
 
-local StateDefinition = {}
-StateDefinition.__index = StateDefinition
+local statedefinition = {}
+statedefinition.__index = statedefinition
 
-local START_STATE_PREFIXES = { ["_"] = true, ["#"] = true }
+local start_state_prefixes = { ["_"] = true, ["#"] = true }
 
 local function make_def_id(id, parent)
 	if not parent then
@@ -14,8 +14,8 @@ local function make_def_id(id, parent)
 	return parent.def_id .. separator .. id
 end
 
-function StateDefinition.new(id, def, root, parent)
-	local self = setmetatable({}, StateDefinition)
+function statedefinition.new(id, def, root, parent)
+	local self = setmetatable({}, statedefinition)
 	self.__is_state_definition = true
 	self.id = id
 	self.parent = parent
@@ -39,9 +39,9 @@ function StateDefinition.new(id, def, root, parent)
 
 	if def and def.states then
 		for state_id, state_def in pairs(def.states) do
-			local child = StateDefinition.new(state_id, state_def, self.root, self)
+			local child = statedefinition.new(state_id, state_def, self.root, self)
 			self.states[state_id] = child
-			if not self.initial and START_STATE_PREFIXES[state_id:sub(1, 1)] then
+			if not self.initial and start_state_prefixes[state_id:sub(1, 1)] then
 				self.initial = state_id
 			end
 		end
@@ -56,8 +56,8 @@ function StateDefinition.new(id, def, root, parent)
 	return self
 end
 
-local State = {}
-State.__index = State
+local state = {}
+state.__index = state
 
 local function clone_defaults(source)
 	local out = {}
@@ -67,8 +67,8 @@ local function clone_defaults(source)
 	return out
 end
 
-function State.new(definition, target, parent)
-	local self = setmetatable({}, State)
+function state.new(definition, target, parent)
+	local self = setmetatable({}, state)
 	self.definition = definition
 	self.target = target
 	self.id = definition.id
@@ -83,11 +83,11 @@ function State.new(definition, target, parent)
 	return self
 end
 
-function State:timeline(id)
+function state:timeline(id)
 	return self.target:get_timeline(id)
 end
 
-function State:create_timeline_binding(key, config)
+function state:create_timeline_binding(key, config)
 	return {
 		id = config.id or key,
 		create = config.create,
@@ -98,7 +98,7 @@ function State:create_timeline_binding(key, config)
 	}
 end
 
-function State:ensure_timeline_definitions()
+function state:ensure_timeline_definitions()
 	if not self.timeline_bindings then
 		local defs = self.definition.timelines or {}
 		local bindings = {}
@@ -119,7 +119,7 @@ function State:ensure_timeline_definitions()
 	return bindings
 end
 
-function State:activate_timelines()
+function state:activate_timelines()
 	local bindings = self:ensure_timeline_definitions()
 	for i = 1, #bindings do
 		local binding = bindings[i]
@@ -129,7 +129,7 @@ function State:activate_timelines()
 	end
 end
 
-function State:deactivate_timelines()
+function state:deactivate_timelines()
 	local bindings = self.timeline_bindings
 	if not bindings then
 		return
@@ -142,7 +142,7 @@ function State:deactivate_timelines()
 	end
 end
 
-function State:start()
+function state:start()
 	self.started = true
 	self:activate_timelines()
 	if self.definition.entering_state then
@@ -154,9 +154,9 @@ function State:start()
 	end
 end
 
-function State:transition_to(state_id)
+function state:transition_to(state_id)
 	local next_def = self.definition.states[state_id]
-	assert(next_def, "State '" .. state_id .. "' not defined under '" .. self.id .. "'")
+	assert(next_def, "state '" .. state_id .. "' not defined under '" .. self.id .. "'")
 
 	if self.current_id then
 		local old_state = self.states[self.current_id]
@@ -169,13 +169,13 @@ function State:transition_to(state_id)
 	self.current_id = state_id
 	local child = self.states[state_id]
 	if not child then
-		child = State.new(next_def, self.target, self)
+		child = state.new(next_def, self.target, self)
 		self.states[state_id] = child
 	end
 	child:start()
 end
 
-function State:transition_to_path(path)
+function state:transition_to_path(path)
 	local current = self
 	for part in string.gmatch(path, "[^/]+") do
 		current:transition_to(part)
@@ -186,11 +186,11 @@ function State:transition_to_path(path)
 	end
 end
 
-State._path_cache = {}
-State._path_cache_max = 256
+state._path_cache = {}
+state._path_cache_max = 256
 
-function State.parse_fs_path(input)
-	local cached = State._path_cache[input]
+function state.parse_fs_path(input)
+	local cached = state._path_cache[input]
 	if cached then
 		return cached
 	end
@@ -261,14 +261,14 @@ function State.parse_fs_path(input)
 						closed = true
 						break
 					else
-						error("Unterminated quoted segment in path '" .. input .. "'.")
+						error("unterminated quoted segment in path '" .. input .. "'.")
 					end
 				else
 					seg = seg .. ch
 				end
 			end
 			if not closed then
-				error("Unterminated quoted segment in path '" .. input .. "'.")
+				error("unterminated quoted segment in path '" .. input .. "'.")
 			end
 			push_seg(seg)
 		else
@@ -281,21 +281,21 @@ function State.parse_fs_path(input)
 	end
 
 	local cache_count = 0
-	for _ in pairs(State._path_cache) do
+	for _ in pairs(state._path_cache) do
 		cache_count = cache_count + 1
 	end
-	if cache_count >= State._path_cache_max then
-		for key in pairs(State._path_cache) do
-			State._path_cache[key] = nil
+	if cache_count >= state._path_cache_max then
+		for key in pairs(state._path_cache) do
+			state._path_cache[key] = nil
 			break
 		end
 	end
 	local rec = { abs = abs, up = up, segs = segs }
-	State._path_cache[input] = rec
+	state._path_cache[input] = rec
 	return rec
 end
 
-function State:matches_state_path(path)
+function state:matches_state_path(path)
 	local function match_segments(start, segments)
 		if #segments == 0 then
 			return false
@@ -322,7 +322,7 @@ function State:matches_state_path(path)
 		return match_segments(self, path)
 	end
 
-	local spec = State.parse_fs_path(path)
+	local spec = state.parse_fs_path(path)
 	local ctx = spec.abs and self.root or self
 	for i = 1, spec.up do
 		if not ctx.parent then
@@ -357,7 +357,7 @@ local function resolve_handler_transition(handler, target, state, payload)
 	return false
 end
 
-function State:dispatch_event(event_or_name, payload)
+function state:dispatch_event(event_or_name, payload)
 	local event_name = event_or_name
 	local data = payload
 	if type(event_or_name) == "table" then
@@ -377,7 +377,7 @@ function State:dispatch_event(event_or_name, payload)
 	return false
 end
 
-function State:dispatch_input_event(event_or_name, payload)
+function state:dispatch_input_event(event_or_name, payload)
 	local event_name = event_or_name
 	local data = payload
 	if type(event_or_name) == "table" then
@@ -397,7 +397,7 @@ function State:dispatch_input_event(event_or_name, payload)
 	return false
 end
 
-function State:resolve_input_eval_mode()
+function state:resolve_input_eval_mode()
 	local node = self
 	while node do
 		local mode = node.definition.input_eval
@@ -409,7 +409,7 @@ function State:resolve_input_eval_mode()
 	return "all"
 end
 
-function State:process_input_events()
+function state:process_input_events()
 	local handlers = self.definition.input_event_handlers
 	if not handlers then
 		return
@@ -426,7 +426,7 @@ function State:process_input_events()
 	end
 end
 
-function State:process_input()
+function state:process_input()
 	self:process_input_events()
 	if self.definition.process_input then
 		local result = self.definition.process_input(self.target, self)
@@ -436,7 +436,7 @@ function State:process_input()
 	end
 end
 
-function State:tick(dt)
+function state:tick(dt)
 	if self.current_id then
 		local child = self.states[self.current_id]
 		if child then
@@ -469,7 +469,7 @@ function State:tick(dt)
 	end
 end
 
-function State:dispose()
+function state:dispose()
 	for _, child in pairs(self.states) do
 		child:dispose()
 	end
@@ -477,11 +477,11 @@ function State:dispose()
 	self.current_id = nil
 end
 
-local StateMachineController = {}
-StateMachineController.__index = StateMachineController
+local statemachinecontroller = {}
+statemachinecontroller.__index = statemachinecontroller
 
-function StateMachineController.new(opts)
-	local self = setmetatable({}, StateMachineController)
+function statemachinecontroller.new(opts)
+	local self = setmetatable({}, statemachinecontroller)
 	opts = opts or {}
 	self.target = opts.target
 	self.statemachines = {}
@@ -495,24 +495,24 @@ function StateMachineController.new(opts)
 	return self
 end
 
-function StateMachineController:add_statemachine(id, definition)
+function statemachinecontroller:add_statemachine(id, definition)
 	local def = definition
 	if not (definition and definition.__is_state_definition) then
-		def = StateDefinition.new(id, definition)
+		def = statedefinition.new(id, definition)
 	end
-	local machine = State.new(def, self.target)
+	local machine = state.new(def, self.target)
 	self.statemachines[id] = machine
 	return machine
 end
 
-function StateMachineController:start()
+function statemachinecontroller:start()
 	for _, machine in pairs(self.statemachines) do
 		machine:start()
 	end
 	self.paused = false
 end
 
-function StateMachineController:tick(dt)
+function statemachinecontroller:tick(dt)
 	if self.paused or not self.tick_enabled then
 		return
 	end
@@ -521,7 +521,7 @@ function StateMachineController:tick(dt)
 	end
 end
 
-function StateMachineController:dispatch(event_or_name, payload)
+function statemachinecontroller:dispatch(event_or_name, payload)
 	if self.paused then
 		return false
 	end
@@ -540,7 +540,7 @@ function StateMachineController:dispatch(event_or_name, payload)
 	return handled
 end
 
-function StateMachineController:dispatch_input(event_or_name, payload)
+function statemachinecontroller:dispatch_input(event_or_name, payload)
 	if self.paused then
 		return false
 	end
@@ -559,11 +559,11 @@ function StateMachineController:dispatch_input(event_or_name, payload)
 	return handled
 end
 
-function StateMachineController:dispatch_event(event)
+function statemachinecontroller:dispatch_event(event)
 	return self:dispatch(event)
 end
 
-function StateMachineController:transition_to(path)
+function statemachinecontroller:transition_to(path)
 	local machine_id, state_path = path:match("^(.-):/(.+)$")
 	if not machine_id then
 		machine_id = path
@@ -573,7 +573,7 @@ function StateMachineController:transition_to(path)
 	machine:transition_to_path(state_path)
 end
 
-function StateMachineController:matches_state_path(path)
+function statemachinecontroller:matches_state_path(path)
 	local machine_id, state_path = path:match("^(.-):/(.+)$")
 	if machine_id then
 		local machine = self.statemachines[machine_id]
@@ -590,15 +590,15 @@ function StateMachineController:matches_state_path(path)
 	return false
 end
 
-function StateMachineController:pause()
+function statemachinecontroller:pause()
 	self.paused = true
 end
 
-function StateMachineController:resume()
+function statemachinecontroller:resume()
 	self.paused = false
 end
 
-function StateMachineController:dispose()
+function statemachinecontroller:dispose()
 	self:pause()
 	for _, machine in pairs(self.statemachines) do
 		machine:dispose()
@@ -607,7 +607,7 @@ function StateMachineController:dispose()
 end
 
 return {
-	StateDefinition = StateDefinition,
-	State = State,
-	StateMachineController = StateMachineController,
+	statedefinition = statedefinition,
+	state = state,
+	statemachinecontroller = statemachinecontroller,
 }
