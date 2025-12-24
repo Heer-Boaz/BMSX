@@ -418,6 +418,9 @@ export class BmsxVMRuntime {
 		this.storage = new BmsxVMStorage(this.storageService, $.luaSources.namespace);
 		const resolvedCanonicalization = options.canonicalization ?? 'none';
 		this.applyCanonicalization(resolvedCanonicalization);
+		this.engineLuaSources = $.luaSources;
+		this.engineCanonicalization = resolvedCanonicalization;
+		this.cartCanonicalization = resolvedCanonicalization;
 		this.luaJsBridge = new LuaJsBridge(this, this.luaHandlerCache);
 		this.terminal = new TerminalMode(this);
 		this.cpuMemory = new Array<Value>(VM_IO_MEMORY_SIZE);
