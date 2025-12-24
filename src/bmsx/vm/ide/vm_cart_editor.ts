@@ -231,7 +231,7 @@ export function initializeVMCartEditor(viewport: Viewport): void {
 	ide_state.codeHorizontalScrollbarVisible = false;
 	ide_state.cachedVisibleRowCount = 1;
 	ide_state.cachedVisibleColumnCount = 1;
-	initializeTabs();
+	initializeTabs(createEntryTabContext());
 	resetResourcePanelState();
 	ide_state.desiredColumn = ide_state.cursorColumn;
 	assertMonospace();
@@ -3425,8 +3425,15 @@ export function notifyReadOnlyEdit(): void {
 
 export function updateViewport(viewport: Viewport): void {
 	applyViewportSize(viewport);
-	ide_state.resourcePanel.clampHScroll();
-	ide_state.resourcePanel.ensureSelectionVisible();
+	if (ide_state.resourcePanel.visible) {
+		const bounds = ide_state.resourcePanel.getBounds();
+		if (!bounds) {
+			hideResourcePanel();
+		} else {
+			ide_state.resourcePanel.clampHScroll();
+			ide_state.resourcePanel.ensureSelectionVisible();
+		}
+	}
 	ide_state.layout.markVisualLinesDirty();
 	ide_state.cursorRevealSuspended = false;
 	ensureCursorVisible();

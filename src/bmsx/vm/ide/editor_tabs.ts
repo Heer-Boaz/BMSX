@@ -18,7 +18,6 @@ import {
 	enterResourceViewer,
 	getTabBarTotalHeight,
 	resetPointerClickTracking,
-	resetEditorContent,
 } from './vm_cart_editor';
 import { markDiagnosticsDirty } from './diagnostics';
 import { measureText } from './text_utils';
@@ -152,21 +151,18 @@ export function initializeTabs(initialContext: CodeTabContext = null): void {
 	ide_state.tabDragState = null;
 	ide_state.tabButtonBounds.clear();
 	ide_state.tabCloseButtonBounds.clear();
-	if (initialContext) {
-		ide_state.tabs.push({
-			id: initialContext.id,
-			kind: 'lua_editor',
-			title: initialContext.title,
-			closable: true,
-			dirty: initialContext.dirty,
-		});
-		ide_state.activeTabId = initialContext.id;
-		ide_state.activeCodeTabContextId = initialContext.id;
-		return;
-	}
-	ide_state.activeTabId = null;
-	ide_state.activeCodeTabContextId = null;
-	ide_state.activeContextReadOnly = false;
+	const context = initialContext ?? createEntryTabContext();
+	ide_state.codeTabContexts.set(context.id, context);
+	ide_state.tabs.push({
+		id: context.id,
+		kind: 'lua_editor',
+		title: context.title,
+		closable: true,
+		dirty: context.dirty,
+	});
+	ide_state.activeTabId = context.id;
+	ide_state.activeCodeTabContextId = context.id;
+	activateCodeEditorTab(context.id);
 }
 
 export function setTabDirty(tabId: string, dirty: boolean): void {
@@ -242,34 +238,27 @@ export function activateCodeTab(): void {
 
 export function closeTab(tabId: string): void {
 	const index = ide_state.tabs.findIndex(tab => tab.id === tabId);
-	if (ide_state.tabDragState && ide_state.tabDragState.tabId === tabId) {
-		endTabDrag();
-	}
 	const tab = ide_state.tabs[index];
 	if (!tab.closable) {
 		return;
 	}
-	const wasActiveContext = tab.kind === 'lua_editor' && ide_state.activeCodeTabContextId === tab.id;
-	if (wasActiveContext) {
+	if (ide_state.tabDragState && ide_state.tabDragState.tabId === tabId) {
+		endTabDrag();
+	}
+	const isActive = ide_state.activeTabId === tabId;
+	if (isActive && ide_state.tabs.length > 1) {
+		const fallback = ide_state.tabs[index - 1] ?? ide_state.tabs[index + 1];
+		setActiveTab(fallback.id);
+	} else if (isActive && tab.kind === 'lua_editor') {
 		storeActiveCodeTabContext();
 	}
 	ide_state.tabs.splice(index, 1);
 	if (tab.kind === 'lua_editor') {
-		if (ide_state.activeCodeTabContextId === tab.id) {
-			ide_state.activeCodeTabContextId = null;
-		}
 		ide_state.dirtyDiagnosticContexts.delete(tab.id);
 		ide_state.diagnosticsCache.delete(tab.id);
 	}
-	if (ide_state.activeTabId === tabId) {
-		const fallback = ide_state.tabs[index - 1] ?? ide_state.tabs[0];
-		if (fallback) {
-			setActiveTab(fallback.id);
-		} else {
-			ide_state.activeTabId = null;
-			ide_state.activeCodeTabContextId = null;
-			resetEditorContent();
-		}
+	if (ide_state.tabs.length === 0) {
+		initializeTabs();
 	}
 }
 

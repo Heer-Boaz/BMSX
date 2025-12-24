@@ -67,7 +67,9 @@ export class ResourcePanelController {
 		const desiredRatio = this.widthRatio;
 		const clamped = this.clampRatio(desiredRatio);
 		const widthPx = this.computePixelWidth(clamped);
-		if (clamped <= 0 || widthPx <= 0) {
+		const top = codeViewportTop();
+		const bottom = ide_state.viewportHeight - bottomMargin();
+		if (clamped <= 0 || widthPx <= 0 || bottom <= top) {
 			ide_state.showMessage('Viewport too small for resource panel.', constants.COLOR_STATUS_WARNING, 3.0);
 			return;
 		}
@@ -121,7 +123,6 @@ export class ResourcePanelController {
 			focusEditorFromResourcePanel();
 			return;
 		}
-		if (this.items.length === 0) return;
 
 		// Horizontal scroll with ArrowLeft/Right
 		const horizontalStep = this.charAdvance * 4;
@@ -161,10 +162,8 @@ export class ResourcePanelController {
 	}
 
 	// === Public helpers used by editor pointer logic ===
-	indexAtPosition(x: number, y: number): number {
+	indexAtPosition(_x: number, y: number): number {
 		const bounds = this.getBounds();
-		if (!bounds) return -1;
-		if (x < bounds.left || x >= bounds.right) return -1;
 		const contentTop = bounds.top + 2;
 		const relativeY = y - contentTop;
 		if (relativeY < 0) return -1;
@@ -182,7 +181,6 @@ export class ResourcePanelController {
 	}
 
 	setHoverIndex(index: number): void {
-		if (index < 0 || index >= this.items.length) { this.hoverIndex = -1; return; }
 		this.hoverIndex = index;
 	}
 
@@ -200,7 +198,6 @@ export class ResourcePanelController {
 
 	scrollBy(amount: number): void {
 		const capacity = this.lineCapacity();
-		if (capacity <= 0) { this.scroll = 0; return; }
 		const maxScroll = Math.max(0, this.items.length - capacity);
 		this.scroll = clamp(this.scroll + Math.trunc(amount), 0, maxScroll);
 		this.ensureSelectionVisible();
@@ -215,7 +212,9 @@ export class ResourcePanelController {
 		const requestedRatio = viewportX / viewportWidth;
 		const clampedRatio = this.clampRatio(requestedRatio);
 		const pixelWidth = this.computePixelWidth(clampedRatio);
-		if (pixelWidth <= 0) {
+		const top = codeViewportTop();
+		const bottom = ide_state.viewportHeight - bottomMargin();
+		if (pixelWidth <= 0 || bottom <= top) {
 			this.hide();
 			return false;
 		}
@@ -276,11 +275,7 @@ export class ResourcePanelController {
 		if (selectionIndex === -1 && this.items.length > 0) selectionIndex = 0;
 		this.selectionIndex = selectionIndex;
 		this.updateMetrics();
-		if (selectionIndex < 0) {
-			this.scroll = 0; this.hscroll = 0; return;
-		}
 		const capacity = this.lineCapacity();
-		if (capacity <= 0) { this.scroll = 0; this.clampHScroll(); return; }
 		const maxScroll = Math.max(0, this.items.length - capacity);
 		this.scroll = clamp(previous.scroll, 0, maxScroll);
 		this.ensureSelectionVisible();
@@ -386,7 +381,6 @@ export class ResourcePanelController {
 	}
 
 	private openSelectedInternal(): void {
-		if (this.selectionIndex < 0 || this.selectionIndex >= this.items.length) return;
 		const item = this.items[this.selectionIndex];
 		if (!item.descriptor) return;
 		const d = item.descriptor;
@@ -401,7 +395,6 @@ export class ResourcePanelController {
 
 	private moveSelection(delta: number): void {
 		const count = this.items.length;
-		if (count === 0) { this.selectionIndex = -1; return; }
 		let next: number;
 		if (delta === Number.NEGATIVE_INFINITY) next = 0;
 		else if (delta === Number.POSITIVE_INFINITY) next = count - 1;
@@ -423,11 +416,8 @@ export class ResourcePanelController {
 	}
 
 	public ensureSelectionVisible(): void {
-		if (!this.visible) return;
 		const index = this.selectionIndex;
-		if (index < 0) return;
 		const capacity = this.lineCapacity();
-		if (capacity <= 0) { this.scroll = 0; this.clampHScroll(); return; }
 		const maxScroll = Math.max(0, this.items.length - capacity);
 		if (index < this.scroll) { this.scroll = index; this.clampHScroll(); return; }
 		const overflow = index - (this.scroll + capacity - 1);
@@ -439,21 +429,19 @@ export class ResourcePanelController {
 
 	public lineCapacity(): number {
 		const bounds = this.getBounds();
-		const overlayTop = bounds ? bounds.top : codeViewportTop();
-		const overlayBottom = bounds ? bounds.bottom : (ide_state.viewportHeight - bottomMargin());
+		const overlayTop = bounds.top;
+		const overlayBottom = bounds.bottom;
 		let contentHeight = Math.max(0, overlayBottom - overlayTop);
 		let initialCapacity = Math.max(1, Math.floor(contentHeight / this.lineHeight));
-		if (bounds) {
-			const needsVerticalScrollbar = this.items.length > initialCapacity;
-			const contentLeft = bounds.left + constants.RESOURCE_PANEL_PADDING_X;
-			const dividerLeft = bounds.right - 1;
-			const availableRight = needsVerticalScrollbar ? dividerLeft - constants.SCROLLBAR_WIDTH : dividerLeft;
-			const availableWidth = Math.max(0, availableRight - contentLeft);
-			const needsHorizontalScrollbar = this.maxLineWidth > availableWidth;
-			if (needsHorizontalScrollbar) {
-				contentHeight = Math.max(0, contentHeight - constants.SCROLLBAR_WIDTH);
-				initialCapacity = Math.max(1, Math.floor(contentHeight / this.lineHeight));
-			}
+		const needsVerticalScrollbar = this.items.length > initialCapacity;
+		const contentLeft = bounds.left + constants.RESOURCE_PANEL_PADDING_X;
+		const dividerLeft = bounds.right - 1;
+		const availableRight = needsVerticalScrollbar ? dividerLeft - constants.SCROLLBAR_WIDTH : dividerLeft;
+		const availableWidth = Math.max(0, availableRight - contentLeft);
+		const needsHorizontalScrollbar = this.maxLineWidth > availableWidth;
+		if (needsHorizontalScrollbar) {
+			contentHeight = Math.max(0, contentHeight - constants.SCROLLBAR_WIDTH);
+			initialCapacity = Math.max(1, Math.floor(contentHeight / this.lineHeight));
 		}
 		return initialCapacity;
 	}
@@ -478,13 +466,11 @@ export class ResourcePanelController {
 
 	public computeMaxHScroll(): number {
 		const bounds = this.getBounds();
-		if (!bounds) return 0;
 		const contentLeft = bounds.left + constants.RESOURCE_PANEL_PADDING_X;
 		const capacity = this.lineCapacity();
 		const needsScrollbar = this.items.length > capacity;
 		const availableRight = needsScrollbar ? bounds.right - 1 - constants.SCROLLBAR_WIDTH : bounds.right - 1;
 		const availableWidth = Math.max(0, availableRight - contentLeft);
-		if (availableWidth <= 0) return 0;
 		const maxScroll = this.maxLineWidth - availableWidth;
 		return maxScroll > 0 ? maxScroll : 0;
 	}
