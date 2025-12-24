@@ -72,6 +72,7 @@ const MAX_FRAME_DELTA = 250;  // ms
 const MAX_SUBSTEPS = 5;
 const REWIND_BUFFER_ACTIVATED = true;
 const REWIND_BUFFER_WRITE_FREQUENCY = 1; // Frames
+const PRESENTATION_TICK_GROUPS: ReadonlyArray<TickGroup> = [TickGroup.Presentation, TickGroup.EventFlush];
 
 // Gate to block the game update/run loop (used when loading/hydrating game state)
 export const runGate: GateGroup = taskGate.group('run:main');
@@ -608,7 +609,7 @@ export class EngineCore {
 		let failed = false;
 		// Step physics first so world object logic can react to post-collision resolved positions.
 		try {
-			$.world.run(deltaTime);
+			$.world.run(deltaTime, false);
 		} catch (error) {
 			failed = true;
 			// Surface engine/runtime errors to the in-game terminal when active
@@ -661,7 +662,7 @@ export class EngineCore {
 
 			if (this._paused) {
 				this.accumulated_time = 0;
-				this.world.runTickGroups([TickGroup.Presentation, TickGroup.EventFlush]);
+				this.world.runTickGroups(PRESENTATION_TICK_GROUPS);
 				this.view.drawgame();
 				return;
 			}
@@ -699,6 +700,7 @@ export class EngineCore {
 		}
 
 		if (this.wasupdated) {
+			this.world.runTickGroups(PRESENTATION_TICK_GROUPS, false);
 			this.view.drawgame();
 		}
 	}
