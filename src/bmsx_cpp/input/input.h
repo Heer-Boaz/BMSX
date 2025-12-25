@@ -79,7 +79,7 @@ public:
 	// Constants
 	// ─────────────────────────────────────────────────────────────────────────
 	
-	static constexpr i32 DEFAULT_KEYBOARD_PLAYER_INDEX = 0;
+	static constexpr i32 DEFAULT_KEYBOARD_PLAYER_INDEX = 1;
 	
 	// Standard gamepad button IDs
 	static const std::vector<std::string>& BUTTON_IDS();
@@ -205,6 +205,9 @@ private:
 	
 	// Current time (updated each poll)
 	f64 m_currentTimeMs = 0.0;
+
+	i32 m_nextPressId = 1;
+	std::unordered_map<std::string, i32> m_activePressIds;
 	
 	// ─────────────────────────────────────────────────────────────────────────
 	// Helpers
@@ -213,6 +216,8 @@ private:
 	void enqueueButtonEvent(i32 playerIndex, const std::string& code, 
 							InputEvent::Type type, f64 timestamp, 
 							std::optional<i32> pressId);
+	i32 assignPressId(const std::string& deviceId, const std::string& code, bool down);
+	i32 toInternalPlayerIndex(i32 playerIndex) const { return playerIndex - 1; }
 };
 
 /* ============================================================================

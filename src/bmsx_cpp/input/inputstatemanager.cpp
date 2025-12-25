@@ -49,7 +49,6 @@ void InputStateManager::update(f64 currentTimeMs) {
  * ============================================================================ */
 
 void InputStateManager::addInputEvent(InputEvent evt) {
-	evt.timestamp = m_currentTimeMs;
 	m_inputBuffer.push_back(std::move(evt));
 	
 	// Update corresponding button state

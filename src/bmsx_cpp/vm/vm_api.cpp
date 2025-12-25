@@ -532,25 +532,38 @@ double VMApi::dget(int index) const {
 	return m_persistentData.at(static_cast<size_t>(index));
 }
 
-void VMApi::sfx(const std::string& /*id*/) {
+void VMApi::sfx(const std::string& id) {
+	EngineCore::instance().audioEventManager()->playDirect(id);
 }
 
 void VMApi::stop_sfx() {
+	EngineCore::instance().soundMaster()->stopEffect();
 }
 
-void VMApi::music(const std::string& /*id*/) {
+void VMApi::music(const std::string& id) {
+	auto* soundMaster = EngineCore::instance().soundMaster();
+	if (id.empty()) {
+		soundMaster->stopMusic();
+		return;
+	}
+	soundMaster->stopMusic();
+	soundMaster->play(id);
 }
 
 void VMApi::stop_music() {
+	EngineCore::instance().soundMaster()->stopMusic();
 }
 
-void VMApi::set_master_volume(double /*volume*/) {
+void VMApi::set_master_volume(double volume) {
+	EngineCore::instance().soundMaster()->setMasterVolume(static_cast<f32>(volume));
 }
 
 void VMApi::pause_audio() {
+	EngineCore::instance().soundMaster()->pauseAll();
 }
 
 void VMApi::resume_audio() {
+	EngineCore::instance().soundMaster()->resume();
 }
 
 void VMApi::reboot() {

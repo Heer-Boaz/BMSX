@@ -59,6 +59,10 @@ add_library(bmsx_core STATIC
     core/rompack.cpp
     core/font.cpp
 
+    # Audio systems
+    audio/soundmaster.cpp
+    audio/audioeventmanager.cpp
+
     # Input systems
     input/inputstatemanager.cpp
     input/playerinput.cpp

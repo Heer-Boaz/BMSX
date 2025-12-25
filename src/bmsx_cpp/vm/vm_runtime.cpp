@@ -2061,6 +2061,29 @@ void VMRuntime::setupBuiltins() {
 		callArgs.push_back(instanceTable);
 		callArgs.insert(callArgs.end(), args.begin(), args.end());
 		callLuaFunction(emitClosure, callArgs);
+
+		if (!args.empty()) {
+			const std::string& eventName = std::get<std::string>(args.at(0));
+			Value emitter = args.size() > 1 ? args.at(1) : Value{};
+			Value payload = args.size() > 2 ? args.at(2) : Value{};
+			std::string emitterId;
+			bool emitterValid = false;
+			if (auto* s = std::get_if<std::string>(&emitter)) {
+				emitterId = *s;
+				emitterValid = true;
+			} else if (auto* tbl = std::get_if<std::shared_ptr<Table>>(&emitter)) {
+				Value idValue = (*tbl)->get(std::string("id"));
+				if (auto* idStr = std::get_if<std::string>(&idValue)) {
+					emitterId = *idStr;
+					emitterValid = true;
+				}
+			}
+			if (!emitterValid && args.size() == 2) {
+				payload = emitter;
+				emitter = Value{};
+			}
+			EngineCore::instance().audioEventManager()->onEvent(eventName, payload, emitterId);
+		}
 		return {};
 	});
 

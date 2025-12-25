@@ -6,6 +6,7 @@
 
 #include "gamepadinput.h"
 #include "input.h"
+#include "../core/engine.h"
 #include <cmath>
 
 namespace bmsx {
@@ -33,8 +34,9 @@ void GamepadInput::pollInput() {
 	// This is called each frame to update edge flags and press times
 	// The actual button state changes come from ingestButton/ingestAxis2
 	
-	f64 now = m_lastPollTimeMs;  // Would get from platform clock in real implementation
+	f64 now = EngineCore::instance().clock()->now();
 	f64 prevPollTime = m_lastPollTimeMs;
+	m_lastPollTimeMs = now;
 	
 	for (auto& [key, state] : m_buttonStates) {
 		if (state.pressed) {

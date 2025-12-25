@@ -126,6 +126,10 @@ void retro_init(void) {
     g_platform = new bmsx::LibretroPlatform();
     g_platform->setEnvironmentCallback(environ_cb);
     g_platform->setLogCallback(logging.log);
+    g_platform->setVideoCallback(video_cb);
+    g_platform->setAudioBatchCallback(audio_batch_cb);
+    g_platform->setInputPollCallback(input_poll_cb);
+    g_platform->setInputStateCallback(input_state_cb);
 }
 
 void retro_deinit(void) {
@@ -232,11 +236,6 @@ void retro_reset(void) {
 }
 
 void retro_run(void) {
-    // Poll input first
-    if (input_poll_cb) {
-        input_poll_cb();
-    }
-
     // Run one frame
     if (g_platform) {
         g_platform->runFrame();

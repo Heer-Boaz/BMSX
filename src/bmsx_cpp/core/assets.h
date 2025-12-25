@@ -101,13 +101,32 @@ struct ImgAsset {
  * Audio metadata
  * ============================================================================ */
 
+enum class AudioType {
+    Sfx,
+    Music,
+    Ui,
+};
+
+inline AudioType audioTypeFromString(const std::string& value) {
+    if (value == "music") return AudioType::Music;
+    if (value == "ui") return AudioType::Ui;
+    return AudioType::Sfx;
+}
+
+inline const char* audioTypeToString(AudioType type) {
+    switch (type) {
+        case AudioType::Music: return "music";
+        case AudioType::Ui: return "ui";
+        case AudioType::Sfx: return "sfx";
+    }
+    return "sfx";
+}
+
 struct AudioMeta {
-    f32 duration = 0.0f;      // Duration in seconds
-    i32 sampleRate = 44100;
-    i32 channels = 2;
-    bool isMusic = false;
-    f32 loopStart = 0.0f;     // Loop point start (seconds)
-    f32 loopEnd = 0.0f;       // Loop point end (0 = no loop)
+    AudioType type = AudioType::Sfx;
+    i32 priority = 0;
+    std::optional<f32> loopStart;
+    std::optional<f32> loopEnd;
 };
 
 /* ============================================================================
@@ -120,19 +139,8 @@ struct AudioAsset {
 
     // Decoded PCM data (16-bit signed, interleaved)
     std::vector<i16> samples;
-};
-
-/* ============================================================================
- * Audio event entry
- * ============================================================================ */
-
-struct AudioEventEntry {
-    AssetId id;
-    AudioId audioId;        // Reference to AudioAsset
-    f32 volume = 1.0f;
-    f32 pitch = 1.0f;
-    bool loop = false;
-    std::string category;   // "sfx", "music", "voice", etc.
+    i32 sampleRate = 44100;
+    i32 channels = 2;
 };
 
 /* ============================================================================
@@ -183,7 +191,7 @@ public:
     std::unordered_map<AssetId, AudioAsset> audio;
     std::unordered_map<AssetId, ModelAsset> model;
     std::unordered_map<AssetId, BinValue> data;  // Generic decoded data assets
-    std::unordered_map<AssetId, AudioEventEntry> audioevents;
+    std::unordered_map<AssetId, BinValue> audioevents;
 
     // Atlas textures (atlasid -> ImgAsset with full texture data)
     std::unordered_map<i32, ImgAsset> atlasTextures;
@@ -208,7 +216,7 @@ public:
 
     const BinValue* getData(const AssetId& id) const;
 
-    const AudioEventEntry* getAudioEvent(const AssetId& id) const;
+    const BinValue* getAudioEvent(const AssetId& id) const;
 
     // Clear all assets
     void clear();

@@ -652,6 +652,7 @@ export class AudioEventManager implements RegisterablePersistent {
 	}
 
 	private mergeEvents(map: id2audioevent): Map<string, CompiledAudioEventEntry> {
+		// Keep merge logic aligned with the libretro C++ parser in src/bmsx_cpp/audio/audioeventmanager.*.
 		const out = new Map<string, CompiledAudioEventEntry>();
 
 		// Helper to add or merge a single event entry by name

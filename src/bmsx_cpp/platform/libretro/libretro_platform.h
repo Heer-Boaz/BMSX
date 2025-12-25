@@ -19,6 +19,10 @@
 
 namespace bmsx {
 
+class GamepadInput;
+class KeyboardInput;
+class LibretroInputHub;
+
 /* ============================================================================
  * Framebuffer for video output
  * ============================================================================ */
@@ -142,8 +146,8 @@ public:
     void setEnvironmentCallback(retro_environment_t cb) { m_environ_cb = cb; }
     void setVideoCallback(retro_video_refresh_t cb) { m_video_cb = cb; }
     void setAudioBatchCallback(retro_audio_sample_batch_t cb) { m_audio_batch_cb = cb; }
-    void setInputPollCallback(retro_input_poll_t cb) { m_input_poll_cb = cb; }
-    void setInputStateCallback(retro_input_state_t cb) { m_input_state_cb = cb; }
+    void setInputPollCallback(retro_input_poll_t cb);
+    void setInputStateCallback(retro_input_state_t cb);
     void setLogCallback(void (*cb)(enum retro_log_level, const char*, ...)) { m_log_cb = cb; }
 
     // Configuration
@@ -229,6 +233,9 @@ private:
     std::unique_ptr<LibretroGameViewHost> m_gameview_host;
     std::unique_ptr<MicrotaskQueue> m_microtask_queue;
 
+    std::unique_ptr<KeyboardInput> m_keyboard_input;
+    std::array<std::unique_ptr<GamepadInput>, InputState::MAX_PLAYERS> m_gamepad_inputs;
+
     // ROM data (kept in memory)
     std::vector<uint8_t> m_rom_data;
 
@@ -250,6 +257,7 @@ public:
     explicit LibretroInputHub(LibretroPlatform* platform);
 
     void poll();
+    void setInputPollCallback(retro_input_poll_t cb) { m_input_poll_cb = cb; }
     void setInputStateCallback(retro_input_state_t cb) { m_input_state_cb = cb; }
 
     // InputHub interface
@@ -259,6 +267,7 @@ public:
 
 private:
     LibretroPlatform* m_platform;
+    retro_input_poll_t m_input_poll_cb = nullptr;
     retro_input_state_t m_input_state_cb = nullptr;
     std::vector<InputEvt> m_event_queue;
     std::vector<std::function<void(const InputEvt&)>> m_handlers;
@@ -277,6 +286,7 @@ public:
     explicit LibretroAudioService(LibretroPlatform* platform);
 
     void setAudioBatchCallback(retro_audio_sample_batch_t cb) { m_audio_batch_cb = cb; }
+    void setTiming(double sampleRate, double fps);
 
     // Collect audio samples from all voices
     void collectSamples(AudioBuffer& buffer);
@@ -292,7 +302,9 @@ public:
 private:
     LibretroPlatform* m_platform;
     retro_audio_sample_batch_t m_audio_batch_cb = nullptr;
-    float m_sample_rate = 44100.0f;
+    double m_sample_rate = 44100.0;
+    double m_frame_rate = 60.0;
+    double m_sample_accumulator = 0.0;
 
     class LibretroMasterVolume : public MasterVolume {
     public:
@@ -304,6 +316,7 @@ private:
 
     LibretroMasterVolume m_master_volume;
     std::vector<std::unique_ptr<Voice>> m_voices;
+    std::vector<int16_t> m_mix_buffer;
 };
 
 /* ============================================================================

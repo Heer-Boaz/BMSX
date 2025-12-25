@@ -6,6 +6,7 @@
 
 #include "keyboardinput.h"
 #include "input.h"
+#include "../core/engine.h"
 #include <algorithm>
 
 namespace bmsx {
@@ -29,8 +30,7 @@ KeyboardInput::~KeyboardInput() {
  * ============================================================================ */
 
 void KeyboardInput::pollInput() {
-	// Update current time (in real implementation, from platform clock)
-	// m_currentTimeMs = $.platform.clock.now();
+	m_currentTimeMs = EngineCore::instance().clock()->now();
 	
 	// Update gamepad button states from key states
 	for (auto& [keyCode, keyState] : m_keyStates) {
@@ -38,7 +38,7 @@ void KeyboardInput::pollInput() {
 		bool isDown = keyState.pressed;
 		bool wasDown = prev.pressed;
 		
-		i32 pressId = prev.pressId.value_or(0);
+		i32 pressId = keyState.pressId.value_or(prev.pressId.value_or(0));
 		if (isDown && !pressId) {
 			pressId = m_nextPressId++;
 		}
@@ -151,20 +151,18 @@ void KeyboardInput::dispose() {
  * Key events
  * ============================================================================ */
 
-void KeyboardInput::keydown(const std::string& keyCode) {
+void KeyboardInput::keydown(const std::string& keyCode, i32 pressId, f64 timestamp) {
 	auto& state = m_keyStates[keyCode];
-	if (!state.pressed) {
-		state.pressed = true;
-		state.justpressed = true;
-		state.presstime = 0.0;
-		state.timestamp = m_currentTimeMs;
-	}
+	state.pressed = true;
+	state.justpressed = true;
+	state.presstime = 0.0;
+	state.timestamp = timestamp;
+	state.pressedAtMs = timestamp;
+	state.pressId = pressId;
 }
 
-void KeyboardInput::keyup(const std::string& keyCode) {
-	auto it = m_keyStates.find(keyCode);
-	if (it == m_keyStates.end()) return;
-	it->second = ButtonState{};
+void KeyboardInput::keyup(const std::string& keyCode, i32 /*pressId*/, f64 /*timestamp*/) {
+	m_keyStates[keyCode] = ButtonState{};
 }
 
 void KeyboardInput::blur() {

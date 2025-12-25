@@ -5,6 +5,9 @@
  */
 
 #include "input.h"
+#include "gamepadinput.h"
+#include "keyboardinput.h"
+#include "../core/engine.h"
 
 namespace bmsx {
 
@@ -68,7 +71,7 @@ Input& Input::instance() {
 Input::Input() {
 	// Create player inputs
 	for (i32 i = 0; i < PLAYERS_MAX; i++) {
-		m_playerInputs[i] = std::make_unique<PlayerInput>(i);
+		m_playerInputs[i] = std::make_unique<PlayerInput>(i + 1);
 	}
 }
 
@@ -85,7 +88,7 @@ void Input::initialize() {
 	
 	// Set up default input mapping for keyboard player
 	auto defaultMapping = getDefaultInputMapping();
-	m_playerInputs[DEFAULT_KEYBOARD_PLAYER_INDEX]->setInputMap(defaultMapping);
+	m_playerInputs[toInternalPlayerIndex(DEFAULT_KEYBOARD_PLAYER_INDEX)]->setInputMap(defaultMapping);
 	
 	m_initialized = true;
 }
@@ -95,6 +98,8 @@ void Input::shutdown() {
 	
 	// Clear device bindings
 	m_deviceBindings.clear();
+	m_activePressIds.clear();
+	m_nextPressId = 1;
 	
 	// Reset player inputs
 	for (auto& player : m_playerInputs) {
@@ -111,10 +116,7 @@ void Input::shutdown() {
  * ============================================================================ */
 
 PlayerInput* Input::getPlayerInput(i32 playerIndex) {
-	if (playerIndex < 0 || playerIndex >= PLAYERS_MAX) {
-		return nullptr;
-	}
-	return m_playerInputs[playerIndex].get();
+	return m_playerInputs[toInternalPlayerIndex(playerIndex)].get();
 }
 
 /* ============================================================================
@@ -131,7 +133,7 @@ void Input::registerKeyboard(const std::string& deviceId, InputHandler* handler)
 	m_deviceBindings[deviceId] = binding;
 	
 	// Assign to keyboard player
-	m_playerInputs[DEFAULT_KEYBOARD_PLAYER_INDEX]->setHandler(InputSource::Keyboard, handler);
+	m_playerInputs[toInternalPlayerIndex(DEFAULT_KEYBOARD_PLAYER_INDEX)]->setHandler(InputSource::Keyboard, handler);
 }
 
 void Input::registerGamepad(const std::string& deviceId, InputHandler* handler) {
@@ -154,7 +156,7 @@ void Input::registerPointer(const std::string& deviceId, InputHandler* handler) 
 	m_deviceBindings[deviceId] = binding;
 	
 	// Assign to keyboard player
-	m_playerInputs[DEFAULT_KEYBOARD_PLAYER_INDEX]->setHandler(InputSource::Pointer, handler);
+	m_playerInputs[toInternalPlayerIndex(DEFAULT_KEYBOARD_PLAYER_INDEX)]->setHandler(InputSource::Pointer, handler);
 }
 
 void Input::unregisterDevice(const std::string& deviceId) {
@@ -165,7 +167,7 @@ void Input::unregisterDevice(const std::string& deviceId) {
 	
 	// Clear from assigned player
 	if (binding.assignedPlayer.has_value()) {
-		auto* player = m_playerInputs[binding.assignedPlayer.value()].get();
+		auto* player = m_playerInputs[toInternalPlayerIndex(binding.assignedPlayer.value())].get();
 		if (player) {
 			if (binding.source == InputSource::Gamepad) {
 				player->clearHandler(InputSource::Gamepad);
@@ -196,9 +198,7 @@ DeviceBinding* Input::getDeviceBinding(const std::string& deviceId) {
  * ============================================================================ */
 
 void Input::assignGamepadToPlayer(InputHandler* gamepad, i32 playerIndex) {
-	if (playerIndex < 0 || playerIndex >= PLAYERS_MAX) return;
-	
-	auto* player = m_playerInputs[playerIndex].get();
+	auto* player = m_playerInputs[toInternalPlayerIndex(playerIndex)].get();
 	player->assignGamepad(gamepad);
 	
 	// Update binding
@@ -222,7 +222,7 @@ std::optional<i32> Input::getFirstAvailablePlayerIndexForGamepad(i32 from, bool 
 			}
 		}
 	} else {
-		for (i32 i = from; i < PLAYERS_MAX; i++) {
+		for (i32 i = from; i <= PLAYERS_MAX; i++) {
 			if (isPlayerIndexAvailableForGamepad(i)) {
 				return i;
 			}
@@ -232,9 +232,7 @@ std::optional<i32> Input::getFirstAvailablePlayerIndexForGamepad(i32 from, bool 
 }
 
 bool Input::isPlayerIndexAvailableForGamepad(i32 playerIndex) {
-	if (playerIndex < 0 || playerIndex >= PLAYERS_MAX) return false;
-	
-	auto* player = m_playerInputs[playerIndex].get();
+	auto* player = m_playerInputs[toInternalPlayerIndex(playerIndex)].get();
 	return player->getHandler(InputSource::Gamepad) == nullptr;
 }
 
@@ -283,8 +281,40 @@ InputMap Input::getDefaultInputMapping() {
  * ============================================================================ */
 
 void Input::pollInput() {
-	// Get current time (in a real implementation, this would come from platform)
-	// For now, we assume caller provides time via platform integration
+	m_currentTimeMs = $().clock()->now();
+
+	auto* hub = $().platform()->inputHub();
+	std::optional<InputEvt> evt = hub->nextEvt();
+	while (evt.has_value()) {
+		const InputEvt& input = evt.value();
+		switch (input.type) {
+			case InputEvtType::ButtonDown:
+				handleGamepadButtonEvent(input.deviceId, input.code, true, input.value);
+				break;
+			case InputEvtType::ButtonUp:
+				handleGamepadButtonEvent(input.deviceId, input.code, false, input.value);
+				break;
+			case InputEvtType::AxisMove:
+				handleGamepadAxisEvent(input.deviceId, input.code, input.x, input.y);
+				break;
+			case InputEvtType::KeyDown:
+				handleKeyboardEvent(input.deviceId, input.code, true);
+				break;
+			case InputEvtType::KeyUp:
+				handleKeyboardEvent(input.deviceId, input.code, false);
+				break;
+			case InputEvtType::PointerDown:
+				handlePointerButtonEvent(input.deviceId, input.code, true);
+				break;
+			case InputEvtType::PointerUp:
+				handlePointerButtonEvent(input.deviceId, input.code, false);
+				break;
+			case InputEvtType::PointerMove:
+				handlePointerMoveEvent(input.deviceId, input.x, input.y);
+				break;
+		}
+		evt = hub->nextEvt();
+	}
 	
 	// Poll all player inputs
 	for (auto& player : m_playerInputs) {
@@ -301,46 +331,42 @@ void Input::pollInput() {
 
 void Input::handleKeyboardEvent(const std::string& deviceId, const std::string& keyCode, bool down) {
 	auto* binding = getDeviceBinding(deviceId);
-	if (!binding || binding->source != InputSource::Keyboard) return;
-	
-	// Route to handler
-	// In full implementation, this would call KeyboardInput::keydown/keyup
-	
-	// Enqueue to state manager
-	if (binding->assignedPlayer.has_value()) {
-		enqueueButtonEvent(binding->assignedPlayer.value(), keyCode,
-						   down ? InputEvent::Type::Press : InputEvent::Type::Release,
-						   m_currentTimeMs, std::nullopt);
+	auto* handler = static_cast<KeyboardInput*>(binding->handler);
+	i32 pressId = assignPressId(deviceId, keyCode, down);
+	if (down) {
+		handler->keydown(keyCode, pressId, m_currentTimeMs);
+	} else {
+		handler->keyup(keyCode, pressId, m_currentTimeMs);
 	}
+	enqueueButtonEvent(binding->assignedPlayer.value(), keyCode,
+					   down ? InputEvent::Type::Press : InputEvent::Type::Release,
+					   m_currentTimeMs, pressId);
 }
 
 void Input::handleGamepadButtonEvent(const std::string& deviceId, const std::string& button,
-									  bool down, f32 /*value*/) {
+									  bool down, f32 value) {
 	auto* binding = getDeviceBinding(deviceId);
-	if (!binding || binding->source != InputSource::Gamepad) return;
-	
-	if (binding->assignedPlayer.has_value()) {
-		enqueueButtonEvent(binding->assignedPlayer.value(), button,
-						   down ? InputEvent::Type::Press : InputEvent::Type::Release,
-						   m_currentTimeMs, std::nullopt);
-	}
+	auto* handler = static_cast<GamepadInput*>(binding->handler);
+	i32 pressId = assignPressId(deviceId, button, down);
+	handler->ingestButton(button, down, value, m_currentTimeMs, pressId);
+	enqueueButtonEvent(binding->assignedPlayer.value(), button,
+					   down ? InputEvent::Type::Press : InputEvent::Type::Release,
+					   m_currentTimeMs, pressId);
 }
 
-void Input::handleGamepadAxisEvent(const std::string& /*deviceId*/, const std::string& /*axis*/,
-									f32 /*x*/, f32 /*y*/) {
-	// Axis events don't generate press/release events directly
-	// They're handled by the gamepad handler internally
+void Input::handleGamepadAxisEvent(const std::string& deviceId, const std::string& axis,
+									f32 x, f32 y) {
+	auto* binding = getDeviceBinding(deviceId);
+	auto* handler = static_cast<GamepadInput*>(binding->handler);
+	handler->ingestAxis2(axis, x, y, m_currentTimeMs);
 }
 
 void Input::handlePointerButtonEvent(const std::string& deviceId, const std::string& button, bool down) {
 	auto* binding = getDeviceBinding(deviceId);
-	if (!binding || binding->source != InputSource::Pointer) return;
-	
-	if (binding->assignedPlayer.has_value()) {
-		enqueueButtonEvent(binding->assignedPlayer.value(), button,
-						   down ? InputEvent::Type::Press : InputEvent::Type::Release,
-						   m_currentTimeMs, std::nullopt);
-	}
+	i32 pressId = assignPressId(deviceId, button, down);
+	enqueueButtonEvent(binding->assignedPlayer.value(), button,
+					   down ? InputEvent::Type::Press : InputEvent::Type::Release,
+					   m_currentTimeMs, pressId);
 }
 
 void Input::handlePointerMoveEvent(const std::string& /*deviceId*/, f32 /*x*/, f32 /*y*/) {
@@ -355,7 +381,6 @@ void Input::enqueueButtonEvent(i32 playerIndex, const std::string& code,
 								InputEvent::Type type, f64 timestamp,
 								std::optional<i32> pressId) {
 	auto* player = getPlayerInput(playerIndex);
-	if (!player) return;
 	
 	InputEvent evt;
 	evt.eventType = type;
@@ -365,6 +390,18 @@ void Input::enqueueButtonEvent(i32 playerIndex, const std::string& code,
 	evt.pressId = pressId;
 	
 	player->stateManager().addInputEvent(evt);
+}
+
+i32 Input::assignPressId(const std::string& deviceId, const std::string& code, bool down) {
+	std::string key = deviceId + ":" + code;
+	if (down) {
+		i32 pressId = m_nextPressId++;
+		m_activePressIds[key] = pressId;
+		return pressId;
+	}
+	i32 pressId = m_activePressIds.at(key);
+	m_activePressIds.erase(key);
+	return pressId;
 }
 
 /* ============================================================================

@@ -45,10 +45,10 @@ public:
 	// ─────────────────────────────────────────────────────────────────────────
 	
 	// Called when a key is pressed
-	void keydown(const std::string& keyCode);
+	void keydown(const std::string& keyCode, i32 pressId, f64 timestamp);
 	
 	// Called when a key is released
-	void keyup(const std::string& keyCode);
+	void keyup(const std::string& keyCode, i32 pressId, f64 timestamp);
 	
 	// Called when window loses focus
 	void blur();

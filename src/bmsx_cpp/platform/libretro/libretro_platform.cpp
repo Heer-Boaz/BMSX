@@ -4,6 +4,9 @@
 
 #include "libretro_platform.h"
 #include "../../core/types.h"
+#include "../../input/input.h"
+#include "../../input/gamepadinput.h"
+#include "../../input/keyboardinput.h"
 #include <cstring>
 #include <cstdarg>
 #include <fstream>
@@ -38,6 +41,17 @@ LibretroPlatform::LibretroPlatform() {
     m_engine = std::make_unique<EngineCore>();
     m_engine->initialize(this);
 
+    m_keyboard_input = std::make_unique<KeyboardInput>("keyboard:0");
+    Input::instance().registerKeyboard("keyboard:0", m_keyboard_input.get());
+
+    for (size_t i = 0; i < InputState::MAX_PLAYERS; i++) {
+        std::string deviceId = "gamepad:" + std::to_string(i);
+        auto gamepad = std::make_unique<GamepadInput>(deviceId, "libretro");
+        Input::instance().registerGamepad(deviceId, gamepad.get());
+        Input::instance().assignGamepadToPlayer(gamepad.get(), static_cast<i32>(i + 1));
+        m_gamepad_inputs[i] = std::move(gamepad);
+    }
+
     log(RETRO_LOG_INFO, "[BMSX] Platform initialized\n");
 }
 
@@ -53,6 +67,16 @@ LibretroPlatform::~LibretroPlatform() {
     log(RETRO_LOG_INFO, "[BMSX] Platform destroyed\n");
 }
 
+void LibretroPlatform::setInputPollCallback(retro_input_poll_t cb) {
+    m_input_poll_cb = cb;
+    static_cast<LibretroInputHub*>(m_input_hub.get())->setInputPollCallback(cb);
+}
+
+void LibretroPlatform::setInputStateCallback(retro_input_state_t cb) {
+    m_input_state_cb = cb;
+    static_cast<LibretroInputHub*>(m_input_hub.get())->setInputStateCallback(cb);
+}
+
 void LibretroPlatform::setAVInfo(const retro_system_av_info& info) {
     m_av_info = info;
     m_framebuffer.resize(info.geometry.base_width, info.geometry.base_height);
@@ -61,6 +85,10 @@ void LibretroPlatform::setAVInfo(const retro_system_av_info& info) {
     view->setViewportSize(static_cast<i32>(info.geometry.base_width), static_cast<i32>(info.geometry.base_height));
     auto* backend = static_cast<SoftwareBackend*>(view->backend());
     static_cast<LibretroGameViewHost*>(m_gameview_host.get())->updateBackendFramebuffer(backend);
+
+    if (auto* audioService = dynamic_cast<LibretroAudioService*>(m_audio_service.get())) {
+        audioService->setTiming(info.timing.sample_rate, info.timing.fps);
+    }
 }
 
 void LibretroPlatform::setControllerDevice(unsigned port, unsigned device) {
@@ -235,9 +263,7 @@ void LibretroPlatform::runFrame() {
 }
 
 void LibretroPlatform::pollInput() {
-    if (auto* inputHub = dynamic_cast<LibretroInputHub*>(m_input_hub.get())) {
-        inputHub->poll();
-    }
+    static_cast<LibretroInputHub*>(m_input_hub.get())->poll();
 }
 
 void LibretroPlatform::processAudio() {
@@ -311,13 +337,41 @@ LibretroInputHub::LibretroInputHub(LibretroPlatform* platform)
     : m_platform(platform) {
 }
 
+namespace {
+
+constexpr std::array<const char*, InputState::BUTTONS_PER_PLAYER> kLibretroButtonIds = {
+    "a",      // RETRO_DEVICE_ID_JOYPAD_B
+    "x",      // RETRO_DEVICE_ID_JOYPAD_Y
+    "select", // RETRO_DEVICE_ID_JOYPAD_SELECT
+    "start",  // RETRO_DEVICE_ID_JOYPAD_START
+    "up",     // RETRO_DEVICE_ID_JOYPAD_UP
+    "down",   // RETRO_DEVICE_ID_JOYPAD_DOWN
+    "left",   // RETRO_DEVICE_ID_JOYPAD_LEFT
+    "right",  // RETRO_DEVICE_ID_JOYPAD_RIGHT
+    "b",      // RETRO_DEVICE_ID_JOYPAD_A
+    "y",      // RETRO_DEVICE_ID_JOYPAD_X
+    "l1",     // RETRO_DEVICE_ID_JOYPAD_L
+    "r1",     // RETRO_DEVICE_ID_JOYPAD_R
+    "l2",     // RETRO_DEVICE_ID_JOYPAD_L2
+    "r2",     // RETRO_DEVICE_ID_JOYPAD_R2
+    "l3",     // RETRO_DEVICE_ID_JOYPAD_L3
+    "r3"      // RETRO_DEVICE_ID_JOYPAD_R3
+};
+
+f32 normalizeAxis(i16 value) {
+    return static_cast<f32>(value) / 32767.0f;
+}
+
+} // namespace
+
 void LibretroInputHub::poll() {
-    if (!m_input_state_cb) return;
+    m_input_poll_cb();
 
     InputState new_state;
 
     // Poll all players
     for (unsigned player = 0; player < InputState::MAX_PLAYERS; player++) {
+        const std::string deviceId = "gamepad:" + std::to_string(player);
         uint16_t buttons = 0;
 
         // Poll digital buttons
@@ -337,10 +391,8 @@ void LibretroInputHub::poll() {
             RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_X);
         new_state.analog[player * 4 + 3] = m_input_state_cb(player, RETRO_DEVICE_ANALOG,
             RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_Y);
-    }
 
-    // Generate events for button changes
-    for (unsigned player = 0; player < InputState::MAX_PLAYERS; player++) {
+        // Generate events for button changes
         uint16_t changed = new_state.buttons[player] ^ m_prev_state.buttons[player];
 
         for (unsigned btn = 0; btn < InputState::BUTTONS_PER_PLAYER; btn++) {
@@ -349,8 +401,8 @@ void LibretroInputHub::poll() {
 
                 InputEvt evt;
                 evt.type = pressed ? InputEvtType::ButtonDown : InputEvtType::ButtonUp;
-                evt.player = player;
-                evt.button = btn;
+                evt.deviceId = deviceId;
+                evt.code = kLibretroButtonIds[btn];
                 evt.value = pressed ? 1.0f : 0.0f;
 
                 m_event_queue.push_back(evt);
@@ -359,6 +411,37 @@ void LibretroInputHub::poll() {
                 for (const auto& handler : m_handlers) {
                     handler(evt);
                 }
+            }
+        }
+
+        const size_t analogBase = player * 4;
+        bool leftChanged = new_state.analog[analogBase] != m_prev_state.analog[analogBase] ||
+            new_state.analog[analogBase + 1] != m_prev_state.analog[analogBase + 1];
+        if (leftChanged) {
+            InputEvt evt;
+            evt.type = InputEvtType::AxisMove;
+            evt.deviceId = deviceId;
+            evt.code = "leftstick";
+            evt.x = normalizeAxis(new_state.analog[analogBase]);
+            evt.y = normalizeAxis(new_state.analog[analogBase + 1]);
+            m_event_queue.push_back(evt);
+            for (const auto& handler : m_handlers) {
+                handler(evt);
+            }
+        }
+
+        bool rightChanged = new_state.analog[analogBase + 2] != m_prev_state.analog[analogBase + 2] ||
+            new_state.analog[analogBase + 3] != m_prev_state.analog[analogBase + 3];
+        if (rightChanged) {
+            InputEvt evt;
+            evt.type = InputEvtType::AxisMove;
+            evt.deviceId = deviceId;
+            evt.code = "rightstick";
+            evt.x = normalizeAxis(new_state.analog[analogBase + 2]);
+            evt.y = normalizeAxis(new_state.analog[analogBase + 3]);
+            m_event_queue.push_back(evt);
+            for (const auto& handler : m_handlers) {
+                handler(evt);
             }
         }
     }
@@ -398,14 +481,30 @@ LibretroAudioService::LibretroAudioService(LibretroPlatform* platform)
     : m_platform(platform) {
 }
 
+void LibretroAudioService::setTiming(double sampleRate, double fps) {
+    m_sample_rate = sampleRate;
+    m_frame_rate = fps;
+    m_sample_accumulator = 0.0;
+}
+
 void LibretroAudioService::collectSamples(AudioBuffer& buffer) {
-    // TODO: Mix audio from all voices
-    // For now, generate silence
+    const double samplesPerFrame = m_sample_rate / m_frame_rate;
+    m_sample_accumulator += samplesPerFrame;
+    const size_t frames = static_cast<size_t>(m_sample_accumulator);
+    if (frames == 0) {
+        buffer.clear();
+        return;
+    }
+    m_sample_accumulator -= frames;
 
-    constexpr size_t SAMPLES_PER_FRAME = 735; // ~44100 / 60
-    static std::vector<int16_t> silence(SAMPLES_PER_FRAME * 2, 0);
+    const size_t totalSamples = frames * 2;
+    if (m_mix_buffer.size() < totalSamples) {
+        m_mix_buffer.resize(totalSamples);
+    }
 
-    buffer.write(silence.data(), SAMPLES_PER_FRAME);
+    m_platform->engine()->soundMaster()->renderSamples(m_mix_buffer.data(), frames, static_cast<i32>(m_sample_rate));
+
+    buffer.write(m_mix_buffer.data(), frames);
 }
 
 Voice* LibretroAudioService::createVoice() {
@@ -425,7 +524,7 @@ void LibretroAudioService::destroyVoice(Voice* voice) {
 LibretroClock::LibretroClock() = default;
 
 void LibretroClock::advanceFrame(double fps) {
-    m_current_time += 1.0 / fps;
+    m_current_time += 1000.0 / fps;
 }
 
 /* ============================================================================

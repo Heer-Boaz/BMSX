@@ -23,7 +23,7 @@ namespace bmsx {
  * ============================================================================ */
 
 constexpr i32 PLAYERS_MAX = 4;
-constexpr i32 DEFAULT_KEYBOARD_PLAYER_INDEX = 0;
+constexpr i32 DEFAULT_KEYBOARD_PLAYER_INDEX = 1;
 constexpr f64 ACTION_GUARD_MIN_MS = 24.0;
 constexpr f64 ACTION_GUARD_MAX_MS = 120.0;
 constexpr i32 INITIAL_REPEAT_DELAY_FRAMES = 15;

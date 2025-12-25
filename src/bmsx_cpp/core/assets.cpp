@@ -72,7 +72,7 @@ const BinValue* RuntimeAssets::getData(const AssetId& id) const {
     return it != data.end() ? &it->second : nullptr;
 }
 
-const AudioEventEntry* RuntimeAssets::getAudioEvent(const AssetId& id) const {
+const BinValue* RuntimeAssets::getAudioEvent(const AssetId& id) const {
     auto it = audioevents.find(id);
     return it != audioevents.end() ? &it->second : nullptr;
 }
@@ -148,6 +148,85 @@ static size_t findPNGEnd(const u8* data, size_t size) {
         pos = chunkEnd;
     }
     return 0;
+}
+
+static u16 readLE16(const u8* data) {
+    return static_cast<u16>(data[0]) | (static_cast<u16>(data[1]) << 8);
+}
+
+static u32 readLE32(const u8* data) {
+    return static_cast<u32>(data[0])
+        | (static_cast<u32>(data[1]) << 8)
+        | (static_cast<u32>(data[2]) << 16)
+        | (static_cast<u32>(data[3]) << 24);
+}
+
+struct WavInfo {
+    i32 channels = 0;
+    i32 sampleRate = 0;
+    i32 bitsPerSample = 0;
+    const u8* data = nullptr;
+    size_t dataSize = 0;
+};
+
+static WavInfo parseWav(const u8* data, size_t size) {
+    if (size < 12) {
+        throw std::runtime_error("WAV data too small");
+    }
+    if (std::memcmp(data, "RIFF", 4) != 0 || std::memcmp(data + 8, "WAVE", 4) != 0) {
+        throw std::runtime_error("Invalid WAV header");
+    }
+
+    size_t pos = 12;
+    bool hasFmt = false;
+    bool hasData = false;
+    WavInfo info;
+    u16 audioFormat = 0;
+
+    while (pos + 8 <= size) {
+        const u8* chunkId = data + pos;
+        const u32 chunkSize = readLE32(data + pos + 4);
+        pos += 8;
+        size_t chunkEnd = pos + chunkSize;
+        if (chunkEnd > size) {
+            throw std::runtime_error("Invalid WAV chunk size");
+        }
+
+        if (std::memcmp(chunkId, "fmt ", 4) == 0) {
+            if (chunkSize < 16) {
+                throw std::runtime_error("Invalid WAV fmt chunk size");
+            }
+            audioFormat = readLE16(data + pos);
+            info.channels = static_cast<i32>(readLE16(data + pos + 2));
+            info.sampleRate = static_cast<i32>(readLE32(data + pos + 4));
+            info.bitsPerSample = static_cast<i32>(readLE16(data + pos + 14));
+            hasFmt = true;
+        } else if (std::memcmp(chunkId, "data", 4) == 0) {
+            info.data = data + pos;
+            info.dataSize = chunkSize;
+            hasData = true;
+        }
+
+        pos = chunkEnd;
+        if ((chunkSize & 1) != 0) {
+            pos += 1;
+        }
+    }
+
+    if (!hasFmt || !hasData) {
+        throw std::runtime_error("WAV file missing fmt or data chunk");
+    }
+    if (audioFormat != 1) {
+        throw std::runtime_error("Unsupported WAV encoding (expected PCM)");
+    }
+    if (info.bitsPerSample != 16 && info.bitsPerSample != 8) {
+        throw std::runtime_error("Unsupported WAV bit depth");
+    }
+    if (info.channels <= 0 || info.sampleRate <= 0) {
+        throw std::runtime_error("Invalid WAV channels or sample rate");
+    }
+
+    return info;
 }
 
 // Decompress zlib data
@@ -342,21 +421,49 @@ bool loadAssetsFromRom(const u8* buffer, size_t size, RuntimeAssets& assets) {
             audioAsset.id = assetId;
 
             // Load audio metadata
-            if (metaBufStart >= 0 && metaBufEnd > metaBufStart) {
-                BinValue metaVal = decodeBinary(romData + metaBufStart, metaBufEnd - metaBufStart);
-                if (metaVal.isObject()) {
-                    const auto& audioMeta = metaVal.asObject();
-                    audioAsset.meta.duration = audioMeta.count("duration") ? static_cast<f32>(audioMeta.at("duration").toNumber()) : 0.0f;
-                    audioAsset.meta.sampleRate = audioMeta.count("sampleRate") ? audioMeta.at("sampleRate").toI32() : 44100;
-                    audioAsset.meta.channels = audioMeta.count("channels") ? audioMeta.at("channels").toI32() : 2;
-                    audioAsset.meta.isMusic = audioMeta.count("isMusic") && audioMeta.at("isMusic").isBool() && audioMeta.at("isMusic").asBool();
+            if (metaBufStart < 0 || metaBufEnd <= metaBufStart) {
+                throw std::runtime_error("Audio asset missing metadata: " + assetId);
+            }
+            BinValue metaVal = decodeBinary(romData + metaBufStart, metaBufEnd - metaBufStart);
+            const auto& audioMeta = metaVal.asObject();
+            audioAsset.meta.type = audioTypeFromString(audioMeta.at("audiotype").asString());
+            audioAsset.meta.priority = audioMeta.at("priority").toI32();
+            if (audioMeta.count("loop") && !audioMeta.at("loop").isNull()) {
+                audioAsset.meta.loopStart = static_cast<f32>(audioMeta.at("loop").toNumber());
+            }
+            if (audioMeta.count("loopEnd") && !audioMeta.at("loopEnd").isNull()) {
+                audioAsset.meta.loopEnd = static_cast<f32>(audioMeta.at("loopEnd").toNumber());
+            }
+
+            if (bufStart < 0 || bufEnd <= bufStart) {
+                throw std::runtime_error("Audio asset missing payload: " + assetId);
+            }
+
+            const u8* audioData = romData + bufStart;
+            size_t audioSize = bufEnd - bufStart;
+            WavInfo wav = parseWav(audioData, audioSize);
+            audioAsset.sampleRate = wav.sampleRate;
+            audioAsset.channels = wav.channels;
+            size_t sampleCount = wav.dataSize / static_cast<size_t>(wav.bitsPerSample / 8);
+            audioAsset.samples.resize(sampleCount);
+            if (wav.bitsPerSample == 16) {
+                for (size_t i = 0; i < sampleCount; ++i) {
+                    audioAsset.samples[i] = static_cast<i16>(readLE16(wav.data + i * 2));
+                }
+            } else {
+                for (size_t i = 0; i < sampleCount; ++i) {
+                    audioAsset.samples[i] = static_cast<i16>(static_cast<int>(wav.data[i]) - 128) << 8;
                 }
             }
 
-            // TODO: Decode audio data (MP3, WAV, OGG)
-            // For now, skip actual audio loading
-
             assets.audio[assetId] = std::move(audioAsset);
+        }
+        else if (assetType == "aem") {
+            if (bufStart < 0 || bufEnd <= bufStart) {
+                throw std::runtime_error("Audio event asset missing payload: " + assetId);
+            }
+            BinValue audioEvents = decodeBinary(romData + bufStart, bufEnd - bufStart);
+            assets.audioevents[assetId] = std::move(audioEvents);
         }
         else if (assetType == "data") {
             std::cerr << "[BMSX] Data asset found: id='" << assetId << "' bufStart=" << bufStart << " bufEnd=" << bufEnd << std::endl;

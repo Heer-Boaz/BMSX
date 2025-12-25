@@ -60,6 +60,12 @@ bool EngineCore::initialize(Platform* platform) {
     m_view->bind();
 
     Input::instance().initialize();
+    m_sound_master = std::make_unique<SoundMaster>();
+    registry().registerObject(m_sound_master.get());
+    m_audio_event_manager = std::make_unique<AudioEventManager>();
+    m_audio_event_manager->setSoundMaster(m_sound_master.get());
+    m_audio_event_manager->setAssets(&m_assets);
+    registry().registerObject(m_audio_event_manager.get());
 
     m_state = EngineState::Initialized;
     return true;
@@ -80,6 +86,12 @@ void EngineCore::shutdown() {
     }
 
     // Clear registry (keeps persistent objects)
+    m_audio_event_manager->dispose();
+    registry().deregister(m_audio_event_manager.get(), true);
+    m_audio_event_manager.reset();
+    m_sound_master->dispose();
+    registry().deregister(m_sound_master.get(), true);
+    m_sound_master.reset();
     registry().clear();
 
     m_platform = nullptr;
@@ -240,6 +252,7 @@ bool EngineCore::bootWithoutCart() {
 
     // Upload textures to backend
     uploadTexturesToBackend();
+    refreshAudioAssets();
 
     // Boot the VM with the engine's system program
     if (m_engine_assets.vmProgram && m_engine_assets.vmProgram->program) {
@@ -316,6 +329,7 @@ bool EngineCore::loadRom(const u8* data, size_t size) {
 
     // Upload textures to backend
     uploadTexturesToBackend();
+    refreshAudioAssets();
 
     // Boot the VM if we have a pre-compiled program
     if (m_assets.hasVmProgram()) {
@@ -367,6 +381,8 @@ void EngineCore::unloadRom() {
     if (m_rom_loaded) {
         m_rom_data.clear();
         m_assets.clear();
+        m_audio_event_manager->dispose();
+        m_sound_master->resetPlaybackState();
         registry().clear();
         m_rom_loaded = false;
     }
@@ -471,6 +487,14 @@ void EngineCore::bootVMFromProgram() {
     VMRuntime& runtime = VMRuntime::instance();
     runtime.setCanonicalization(m_assets.manifest.canonicalization);
     runtime.boot(*m_assets.vmProgram);
+}
+
+void EngineCore::refreshAudioAssets() {
+    const f32 volume = m_sound_master->masterVolume();
+    m_sound_master->init(m_assets, volume);
+    m_audio_event_manager->setSoundMaster(m_sound_master.get());
+    m_audio_event_manager->setAssets(&m_assets);
+    m_audio_event_manager->init(m_assets.audioevents);
 }
 
 } // namespace bmsx

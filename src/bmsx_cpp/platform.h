@@ -36,12 +36,11 @@ enum class InputEvtType {
 
 struct InputEvt {
     InputEvtType type = InputEvtType::ButtonDown;
-    u32 player = 0;
-    u32 button = 0;
+    std::string deviceId;
+    std::string code;
     f32 value = 0.0f;
-    i32 keyCode = 0;
-    f32 pointerX = 0.0f;
-    f32 pointerY = 0.0f;
+    f32 x = 0.0f;
+    f32 y = 0.0f;
 };
 
 /* ============================================================================

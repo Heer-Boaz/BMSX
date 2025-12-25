@@ -1,0 +1,831 @@
+/*
+ * soundmaster.cpp - Audio playback and mixing
+ */
+
+#include "soundmaster.h"
+#include "../core/engine.h"
+#include "../vm/cpu.h"
+#include <algorithm>
+#include <cmath>
+#include <memory>
+#include <stdexcept>
+
+namespace bmsx {
+
+static constexpr f32 MIN_GAIN = 0.0001f;
+
+SoundMaster::SoundMaster()
+	: m_rng(std::random_device{}()),
+	  m_unitDist(0.0f, 1.0f) {
+	m_maxVoicesByType = {16, 1, 8};
+	resetPlaybackState();
+}
+
+SoundMaster::~SoundMaster() {
+	dispose();
+}
+
+const Identifier& SoundMaster::registryId() const {
+	static const Identifier id = "sm";
+	return id;
+}
+
+void SoundMaster::init(const RuntimeAssets& assets, f32 startingVolume) {
+	m_assets = &assets;
+	setMasterVolume(startingVolume);
+	resetPlaybackState();
+}
+
+void SoundMaster::resetPlaybackState() {
+	for (auto& pool : m_voicesByType) pool.clear();
+	for (auto& pool : m_pausedByType) pool.clear();
+	for (auto& list : m_endedListenersByType) list.clear();
+	m_currentVoiceIdByType = {0, 0, 0};
+	m_currentAudioIdByType = {"", "", ""};
+	m_currentParamsByType = {ModulationParams{}, ModulationParams{}, ModulationParams{}};
+	m_pendingTransition.reset();
+	m_pendingStingerReturnTo.reset();
+	m_pendingStingerReturnOffset.reset();
+	m_audioTimeSec = 0.0;
+	m_nextVoiceId = 1;
+}
+
+void SoundMaster::dispose() {
+	resetPlaybackState();
+	m_assets = nullptr;
+}
+
+VoiceId SoundMaster::play(const AssetId& id, const SoundMasterPlayRequest& request) {
+	const AudioAsset& asset = getAudioOrThrow(id);
+	ModulationInput input;
+	if (request.params.has_value()) {
+		input = request.params.value();
+	} else if (request.modulationPreset.has_value()) {
+		auto preset = resolveModulationPreset(request.modulationPreset.value());
+		if (preset.has_value()) {
+			input = preset.value();
+		}
+	}
+	const ModulationParams params = resolvePlayParams(input);
+	const i32 priority = request.priority.has_value() ? request.priority.value() : asset.meta.priority;
+	const f32 initialGain = clampVolume(std::pow(10.0f, params.volumeDelta / 20.0f));
+	return startVoice(asset.meta.type, id, asset, params, priority, initialGain);
+}
+
+void SoundMaster::stop(AudioType type, AudioStopSelector which, VoiceId voiceId, const AssetId& id) {
+	const size_t idx = typeIndex(type);
+	auto& pool = m_voicesByType[idx];
+	if (pool.empty()) return;
+
+	switch (which) {
+		case AudioStopSelector::All: {
+			while (!pool.empty()) {
+				removeVoice(type, pool.size() - 1);
+			}
+			break;
+		}
+		case AudioStopSelector::Oldest: {
+			removeVoice(type, 0);
+			break;
+		}
+		case AudioStopSelector::Newest: {
+			removeVoice(type, pool.size() - 1);
+			break;
+		}
+		case AudioStopSelector::ById: {
+			for (size_t i = pool.size(); i-- > 0;) {
+				if (pool[i].id == id) {
+					removeVoice(type, i);
+				}
+			}
+			break;
+		}
+		case AudioStopSelector::ByVoice: {
+			for (size_t i = 0; i < pool.size(); ++i) {
+				if (pool[i].voiceId == voiceId) {
+					removeVoice(type, i);
+					break;
+				}
+			}
+			break;
+		}
+	}
+}
+
+void SoundMaster::stopEffect() {
+	stop(AudioType::Sfx, AudioStopSelector::All);
+}
+
+void SoundMaster::stopMusic() {
+	stop(AudioType::Music, AudioStopSelector::All);
+}
+
+void SoundMaster::stopUI() {
+	stop(AudioType::Ui, AudioStopSelector::All);
+}
+
+void SoundMaster::pause(AudioType type) {
+	const size_t idx = typeIndex(type);
+	auto& pool = m_voicesByType[idx];
+	auto& paused = m_pausedByType[idx];
+	for (const auto& record : pool) {
+		const f64 offset = record.position / static_cast<f64>(record.asset->sampleRate);
+		paused.push_back(PausedSnapshot{record.id, offset, record.params, record.priority});
+	}
+	pool.clear();
+	m_currentVoiceIdByType[idx] = 0;
+	m_currentAudioIdByType[idx].clear();
+	m_currentParamsByType[idx] = ModulationParams{};
+}
+
+void SoundMaster::pauseAll() {
+	pause(AudioType::Sfx);
+	pause(AudioType::Music);
+	pause(AudioType::Ui);
+}
+
+void SoundMaster::resume() {
+	resumeType(AudioType::Sfx);
+	resumeType(AudioType::Music);
+	resumeType(AudioType::Ui);
+}
+
+void SoundMaster::resumeType(AudioType type) {
+	auto snapshots = drainPausedSnapshots(type);
+	for (const auto& snapshot : snapshots) {
+		ModulationParams params = snapshot.params;
+		params.offset = static_cast<f32>(snapshot.offset);
+		const AudioAsset& asset = getAudioOrThrow(snapshot.id);
+		const f32 initialGain = clampVolume(std::pow(10.0f, params.volumeDelta / 20.0f));
+		startVoice(asset.meta.type, snapshot.id, asset, params, snapshot.priority, initialGain);
+	}
+}
+
+void SoundMaster::setMasterVolume(f32 value) {
+	m_masterVolume = clampVolume(value);
+}
+
+size_t SoundMaster::activeCountByType(AudioType type) const {
+	return m_voicesByType[typeIndex(type)].size();
+}
+
+std::vector<ActiveVoiceInfo> SoundMaster::getActiveVoiceInfosByType(AudioType type) const {
+	const auto& pool = m_voicesByType[typeIndex(type)];
+	std::vector<ActiveVoiceInfo> result;
+	result.reserve(pool.size());
+	for (const auto& record : pool) {
+		result.push_back(ActiveVoiceInfo{
+			record.voiceId,
+			record.id,
+			record.priority,
+			record.params,
+			record.startedAt,
+			record.startOffset,
+			record.meta,
+		});
+	}
+	return result;
+}
+
+std::optional<ModulationParams> SoundMaster::currentModulationParamsByType(AudioType type) const {
+	const size_t idx = typeIndex(type);
+	if (m_currentVoiceIdByType[idx] == 0) return std::nullopt;
+	return m_currentParamsByType[idx];
+}
+
+std::optional<f64> SoundMaster::currentTimeByType(AudioType type) const {
+	const size_t idx = typeIndex(type);
+	const VoiceId currentId = m_currentVoiceIdByType[idx];
+	if (currentId == 0) return std::nullopt;
+	const auto& pool = m_voicesByType[idx];
+	for (const auto& record : pool) {
+		if (record.voiceId == currentId) {
+			return record.position / static_cast<f64>(record.asset->sampleRate);
+		}
+	}
+	return std::nullopt;
+}
+
+AssetId SoundMaster::currentTrackByType(AudioType type) const {
+	const size_t idx = typeIndex(type);
+	return m_currentVoiceIdByType[idx] == 0 ? AssetId{} : m_currentAudioIdByType[idx];
+}
+
+const AudioMeta* SoundMaster::currentTrackMetaByType(AudioType type) const {
+	const size_t idx = typeIndex(type);
+	if (m_currentVoiceIdByType[idx] == 0) return nullptr;
+	const auto& pool = m_voicesByType[idx];
+	for (const auto& record : pool) {
+		if (record.voiceId == m_currentVoiceIdByType[idx]) {
+			return &record.meta;
+		}
+	}
+	return nullptr;
+}
+
+std::vector<PausedSnapshot> SoundMaster::snapshotVoices(AudioType type) const {
+	const auto& pool = m_voicesByType[typeIndex(type)];
+	std::vector<PausedSnapshot> snapshots;
+	snapshots.reserve(pool.size());
+	for (const auto& record : pool) {
+		const f64 offset = record.position / static_cast<f64>(record.asset->sampleRate);
+		snapshots.push_back(PausedSnapshot{record.id, offset, record.params, record.priority});
+	}
+	return snapshots;
+}
+
+std::vector<PausedSnapshot> SoundMaster::drainPausedSnapshots(AudioType type) {
+	const size_t idx = typeIndex(type);
+	auto snapshots = m_pausedByType[idx];
+	m_pausedByType[idx].clear();
+	return snapshots;
+}
+
+SubscriptionHandle SoundMaster::addEndedListener(AudioType type, std::function<void(const ActiveVoiceInfo&)> listener) {
+	const size_t idx = typeIndex(type);
+	const u32 id = m_nextListenerId++;
+	m_endedListenersByType[idx].push_back({id, std::move(listener)});
+	return SubscriptionHandle::create([this, idx, id]() {
+		auto& listeners = m_endedListenersByType[idx];
+		for (size_t i = 0; i < listeners.size(); ++i) {
+			if (listeners[i].first == id) {
+				listeners.erase(listeners.begin() + static_cast<std::ptrdiff_t>(i));
+				break;
+			}
+		}
+	});
+}
+
+void SoundMaster::requestMusicTransition(const MusicTransitionRequest& request) {
+	MusicTransitionRequest resolved = request;
+	if (resolved.fadeMs < 0) resolved.fadeMs = 0;
+
+	if (resolved.sync.kind != MusicTransitionSync::Kind::Stinger && !resolved.startFresh) {
+		if (currentTrackByType(AudioType::Music) == resolved.to) {
+			return;
+		}
+	}
+
+	if (resolved.sync.kind == MusicTransitionSync::Kind::Stinger) {
+		const AudioAsset& stingerAsset = getAudioOrThrow(resolved.sync.stinger);
+		const AudioType stingerType = stingerAsset.meta.type;
+		const AssetId previousId = currentTrackByType(AudioType::Music);
+		const std::optional<f64> previousOffset = currentTimeByType(AudioType::Music);
+		const bool returnToPrevious = resolved.sync.returnToPrevious;
+		const AssetId returnTarget = resolved.sync.returnTo.has_value() ? resolved.sync.returnTo.value() : resolved.to;
+		const bool hasPrevious = !previousId.empty();
+		m_pendingStingerReturnTo = returnToPrevious ? (hasPrevious ? previousId : returnTarget) : returnTarget;
+		m_pendingStingerReturnOffset = returnToPrevious ? (previousOffset.has_value() ? previousOffset : std::optional<f64>{0.0}) : std::optional<f64>{};
+		stopMusic();
+
+		const VoiceId stingerVoice = play(resolved.sync.stinger);
+		if (stingerVoice == 0) return;
+		auto unsub = std::make_shared<SubscriptionHandle>();
+		*unsub = addEndedListener(stingerType, [this, stingerVoice, resolved, unsub](const ActiveVoiceInfo& info) {
+			if (info.voiceId != stingerVoice) return;
+			unsub->unsubscribe();
+			if (!m_pendingStingerReturnTo.has_value()) return;
+			const auto target = m_pendingStingerReturnTo;
+			const auto offset = m_pendingStingerReturnOffset;
+			m_pendingStingerReturnTo.reset();
+			m_pendingStingerReturnOffset.reset();
+			if (target.has_value()) {
+				startMusicWithFade(target.value(), resolved.fadeMs / 1000.0, resolved.startAtLoopStart, offset);
+			}
+		});
+		return;
+	}
+
+	if (resolved.sync.kind == MusicTransitionSync::Kind::Immediate) {
+		startMusicWithFade(resolved.to, resolved.fadeMs / 1000.0, resolved.startAtLoopStart, resolved.startFresh ? 0.0 : std::optional<f64>{});
+		return;
+	}
+
+	if (resolved.sync.kind == MusicTransitionSync::Kind::Delay) {
+		const f64 delaySec = std::max(0, resolved.sync.delayMs) / 1000.0;
+		enqueueTransition(resolved, delaySec, resolved.startFresh ? 0.0 : std::optional<f64>{});
+		return;
+	}
+
+	const auto currentRecord = currentTrackMetaByType(AudioType::Music);
+	const std::optional<f64> currentOffset = currentTimeByType(AudioType::Music);
+	if (!currentRecord || !currentOffset.has_value()) {
+		startMusicWithFade(resolved.to, resolved.fadeMs / 1000.0, resolved.startAtLoopStart, resolved.startFresh ? 0.0 : std::optional<f64>{});
+		return;
+	}
+
+	const AudioAsset& currentAsset = getAudioOrThrow(currentTrackByType(AudioType::Music));
+	const f64 duration = static_cast<f64>(currentAsset.samples.size() / currentAsset.channels) / currentAsset.sampleRate;
+	if (duration <= 0.0) {
+		startMusicWithFade(resolved.to, resolved.fadeMs / 1000.0, resolved.startAtLoopStart, resolved.startFresh ? 0.0 : std::optional<f64>{});
+		return;
+	}
+	f64 offsetMod = std::fmod(currentOffset.value(), duration);
+	if (offsetMod < 0.0) offsetMod += duration;
+	f64 boundary = duration;
+	if (currentRecord->loopStart.has_value()) {
+		const f64 loopStart = currentRecord->loopStart.value();
+		boundary = offsetMod < loopStart ? loopStart : duration;
+	}
+	const f64 delaySec = std::max(0.0, boundary - offsetMod);
+	enqueueTransition(resolved, delaySec, resolved.startFresh ? 0.0 : std::optional<f64>{});
+}
+
+void SoundMaster::renderSamples(i16* output, size_t frameCount, i32 outputSampleRate) {
+	const size_t totalSamples = frameCount * 2;
+	if (m_mixBuffer.size() < totalSamples) {
+		m_mixBuffer.resize(totalSamples);
+	}
+	std::fill(m_mixBuffer.begin(), m_mixBuffer.begin() + totalSamples, 0.0f);
+
+	const f64 dt = outputSampleRate > 0 ? static_cast<f64>(frameCount) / outputSampleRate : 0.0;
+	processPendingTransitions(dt);
+
+	for (size_t typeIdx = 0; typeIdx < m_voicesByType.size(); ++typeIdx) {
+		auto& pool = m_voicesByType[typeIdx];
+		for (size_t i = 0; i < pool.size();) {
+			VoiceRecord& record = pool[i];
+			const AudioAsset& asset = *record.asset;
+			const size_t framesInAsset = asset.samples.size() / asset.channels;
+			if (framesInAsset == 0) {
+				removeVoice(static_cast<AudioType>(typeIdx), i);
+				continue;
+			}
+
+			const f64 loopStart = record.meta.loopStart.has_value() ? record.meta.loopStart.value() * asset.sampleRate : 0.0;
+			const f64 loopEnd = record.meta.loopEnd.has_value() ? record.meta.loopEnd.value() * asset.sampleRate : static_cast<f64>(framesInAsset);
+			const bool hasLoop = record.meta.loopStart.has_value() && loopEnd > loopStart;
+
+			const f64 step = record.step * (static_cast<f64>(asset.sampleRate) / outputSampleRate);
+
+			f64 gain = record.gain;
+			f64 target = record.targetGain;
+			f64 rampRemaining = record.gainRampRemaining;
+			f64 gainStep = 0.0;
+			if (rampRemaining > 0.0) {
+				const f64 rampFrames = rampRemaining * outputSampleRate;
+				gainStep = rampFrames > 0 ? (target - gain) / rampFrames : 0.0;
+			}
+
+			bool ended = false;
+			for (size_t frame = 0; frame < frameCount; ++frame) {
+				if (record.stopAfter >= 0.0) {
+					record.stopAfter -= 1.0 / outputSampleRate;
+					if (record.stopAfter <= 0.0) {
+						ended = true;
+						break;
+					}
+				}
+
+				const i64 idx = static_cast<i64>(record.position);
+				const f64 frac = record.position - static_cast<f64>(idx);
+				if (!hasLoop && static_cast<size_t>(idx) >= framesInAsset) {
+					ended = true;
+					break;
+				}
+
+				auto sampleAt = [&](i64 frameIndex, int channel) -> f32 {
+					if (frameIndex < 0) return 0.0f;
+					if (static_cast<size_t>(frameIndex) >= framesInAsset) {
+						if (hasLoop) {
+							const f64 loopLen = loopEnd - loopStart;
+							if (loopLen <= 0.0) return 0.0f;
+							const f64 wrapped = loopStart + std::fmod(frameIndex - loopStart, loopLen);
+							frameIndex = static_cast<i64>(wrapped);
+						} else {
+							return 0.0f;
+						}
+					}
+					const size_t base = static_cast<size_t>(frameIndex) * asset.channels;
+					const size_t offset = channel < asset.channels ? static_cast<size_t>(channel) : 0;
+					return static_cast<f32>(asset.samples[base + offset]) / 32768.0f;
+				};
+
+				const f32 left0 = sampleAt(idx, 0);
+				const f32 right0 = asset.channels > 1 ? sampleAt(idx, 1) : left0;
+				const f32 left1 = sampleAt(idx + 1, 0);
+				const f32 right1 = asset.channels > 1 ? sampleAt(idx + 1, 1) : left1;
+
+				const f32 left = left0 + static_cast<f32>((left1 - left0) * frac);
+				const f32 right = right0 + static_cast<f32>((right1 - right0) * frac);
+
+				const size_t outIndex = frame * 2;
+				m_mixBuffer[outIndex] += left * static_cast<f32>(gain);
+				m_mixBuffer[outIndex + 1] += right * static_cast<f32>(gain);
+
+				record.position += step;
+				if (hasLoop && record.position >= loopEnd) {
+					const f64 loopLen = loopEnd - loopStart;
+					record.position = loopStart + std::fmod(record.position - loopStart, loopLen);
+				}
+
+				if (rampRemaining > 0.0) {
+					gain += gainStep;
+					rampRemaining -= 1.0 / outputSampleRate;
+				}
+			}
+
+			record.gain = static_cast<f32>(gain);
+			record.gainRampRemaining = rampRemaining > 0.0 ? rampRemaining : 0.0;
+			if (record.gainRampRemaining == 0.0f) {
+				record.gain = record.targetGain;
+			}
+
+			if (ended) {
+				removeVoice(static_cast<AudioType>(typeIdx), i);
+				continue;
+			}
+			++i;
+		}
+	}
+
+	const f32 master = m_masterVolume;
+	for (size_t i = 0; i < totalSamples; ++i) {
+		f32 v = m_mixBuffer[i] * master;
+		if (v > 1.0f) v = 1.0f;
+		if (v < -1.0f) v = -1.0f;
+		output[i] = static_cast<i16>(std::lrint(v * 32767.0f));
+	}
+
+	m_audioTimeSec += dt;
+}
+
+ModulationParams SoundMaster::resolvePlayParams(const ModulationInput& input) {
+	auto randomInRange = [this](const std::optional<ModulationRange>& range) -> f32 {
+		if (!range.has_value()) return 0.0f;
+		f32 min = range->min;
+		f32 max = range->max;
+		if (min > max) std::swap(min, max);
+		return min + (max - min) * m_unitDist(m_rng);
+	};
+
+	ModulationParams params;
+	params.offset = (input.offset.has_value() ? input.offset.value() : 0.0f) + randomInRange(input.offsetRange);
+	params.pitchDelta = (input.pitchDelta.has_value() ? input.pitchDelta.value() : 0.0f) + randomInRange(input.pitchRange);
+	params.volumeDelta = (input.volumeDelta.has_value() ? input.volumeDelta.value() : 0.0f) + randomInRange(input.volumeRange);
+	params.playbackRate = (input.playbackRate.has_value() ? input.playbackRate.value() : 1.0f) + randomInRange(input.playbackRateRange);
+	if (input.filter.has_value()) {
+		params.filter = input.filter;
+	}
+	return params;
+}
+
+std::optional<ModulationInput> SoundMaster::resolveModulationPreset(const AssetId& key) const {
+	const auto& dataAssets = m_assets->data;
+	if (key.empty()) return std::nullopt;
+	size_t pos = key.find('.');
+	const std::string root = pos == std::string::npos ? key : key.substr(0, pos);
+	auto it = dataAssets.find(root);
+	if (it == dataAssets.end()) return std::nullopt;
+
+	const BinValue* cursor = &it->second;
+	while (pos != std::string::npos) {
+		const size_t next = key.find('.', pos + 1);
+		const std::string segment = key.substr(pos + 1, next - (pos + 1));
+		const auto& obj = cursor->asObject();
+		auto segIt = obj.find(segment);
+		if (segIt == obj.end()) return std::nullopt;
+		cursor = &segIt->second;
+		pos = next;
+	}
+
+	return parseModulationInput(*cursor);
+}
+
+ModulationInput SoundMaster::parseModulationInput(const BinValue& value) const {
+	if (!value.isObject()) {
+		throw std::runtime_error("Modulation preset is not an object");
+	}
+	const auto& obj = value.asObject();
+	ModulationInput input;
+
+	auto readRange = [](const BinValue& v) -> ModulationRange {
+		if (!v.isArray()) {
+			throw std::runtime_error("Modulation range is not an array");
+		}
+		const auto& arr = v.asArray();
+		if (arr.size() < 2) {
+			throw std::runtime_error("Modulation range is missing bounds");
+		}
+		return ModulationRange{static_cast<f32>(arr[0].toNumber()), static_cast<f32>(arr[1].toNumber())};
+	};
+
+	auto setOptionalRange = [&](const char* key, std::optional<ModulationRange>& target) {
+		auto it = obj.find(key);
+		if (it == obj.end() || it->second.isNull()) return;
+		target = readRange(it->second);
+	};
+
+	auto setOptionalNumber = [&](const char* key, std::optional<f32>& target) {
+		auto it = obj.find(key);
+		if (it == obj.end() || it->second.isNull()) return;
+		target = static_cast<f32>(it->second.toNumber());
+	};
+
+	setOptionalRange("pitchRange", input.pitchRange);
+	setOptionalRange("volumeRange", input.volumeRange);
+	setOptionalRange("offsetRange", input.offsetRange);
+	setOptionalRange("playbackRateRange", input.playbackRateRange);
+
+	setOptionalNumber("pitchDelta", input.pitchDelta);
+	setOptionalNumber("volumeDelta", input.volumeDelta);
+	setOptionalNumber("offset", input.offset);
+	setOptionalNumber("playbackRate", input.playbackRate);
+
+	auto filterIt = obj.find("filter");
+	if (filterIt != obj.end() && filterIt->second.isObject()) {
+		const auto& fobj = filterIt->second.asObject();
+		FilterModulationParams filter;
+		auto typeIt = fobj.find("type");
+		if (typeIt != fobj.end() && typeIt->second.isString()) {
+			filter.type = typeIt->second.asString();
+		}
+		auto freqIt = fobj.find("frequency");
+		if (freqIt != fobj.end() && freqIt->second.isNumber()) {
+			filter.frequency = static_cast<f32>(freqIt->second.toNumber());
+		}
+		auto qIt = fobj.find("q");
+		if (qIt != fobj.end() && qIt->second.isNumber()) {
+			filter.q = static_cast<f32>(qIt->second.toNumber());
+		}
+		auto gainIt = fobj.find("gain");
+		if (gainIt != fobj.end() && gainIt->second.isNumber()) {
+			filter.gain = static_cast<f32>(gainIt->second.toNumber());
+		}
+		input.filter = filter;
+	}
+
+	return input;
+}
+
+ModulationInput SoundMaster::parseModulationInput(const Table& table) const {
+	auto getNumber = [&](const std::string& key, std::optional<f32>& out) {
+		Value v = table.get(key);
+		if (isNil(v)) return;
+		if (auto* n = std::get_if<double>(&v)) {
+			out = static_cast<f32>(*n);
+			return;
+		}
+		throw std::runtime_error("Modulation param '" + key + "' is not a number");
+	};
+
+	auto getRange = [&](const std::string& key, std::optional<ModulationRange>& out) {
+		Value v = table.get(key);
+		if (isNil(v)) return;
+		if (auto* t = std::get_if<std::shared_ptr<Table>>(&v)) {
+			const Table& arr = **t;
+			const int len = arr.length();
+			if (len < 2) {
+				throw std::runtime_error("Modulation range '" + key + "' is missing bounds");
+			}
+			const Value v0 = arr.get(1.0);
+			const Value v1 = arr.get(2.0);
+			if (!std::holds_alternative<double>(v0) || !std::holds_alternative<double>(v1)) {
+				throw std::runtime_error("Modulation range '" + key + "' bounds are not numbers");
+			}
+			out = ModulationRange{static_cast<f32>(std::get<double>(v0)), static_cast<f32>(std::get<double>(v1))};
+			return;
+		}
+		throw std::runtime_error("Modulation range '" + key + "' is not an array");
+	};
+
+	ModulationInput input;
+	getNumber("pitchDelta", input.pitchDelta);
+	getNumber("volumeDelta", input.volumeDelta);
+	getNumber("offset", input.offset);
+	getNumber("playbackRate", input.playbackRate);
+	getRange("pitchRange", input.pitchRange);
+	getRange("volumeRange", input.volumeRange);
+	getRange("offsetRange", input.offsetRange);
+	getRange("playbackRateRange", input.playbackRateRange);
+
+	Value filterVal = table.get("filter");
+	if (!isNil(filterVal)) {
+		if (auto* t = std::get_if<std::shared_ptr<Table>>(&filterVal)) {
+			const Table& ftable = **t;
+			FilterModulationParams filter;
+			Value typeVal = ftable.get("type");
+			if (auto* s = std::get_if<std::string>(&typeVal)) {
+				filter.type = *s;
+			}
+			Value freqVal = ftable.get("frequency");
+			if (auto* n = std::get_if<double>(&freqVal)) {
+				filter.frequency = static_cast<f32>(*n);
+			}
+			Value qVal = ftable.get("q");
+			if (auto* n = std::get_if<double>(&qVal)) {
+				filter.q = static_cast<f32>(*n);
+			}
+			Value gainVal = ftable.get("gain");
+			if (auto* n = std::get_if<double>(&gainVal)) {
+				filter.gain = static_cast<f32>(*n);
+			}
+			input.filter = filter;
+		} else {
+			throw std::runtime_error("Modulation filter must be a table");
+		}
+	}
+
+	return input;
+}
+
+const AudioAsset& SoundMaster::getAudioOrThrow(const AssetId& id) const {
+	auto it = m_assets->audio.find(id);
+	if (it == m_assets->audio.end()) {
+		throw std::runtime_error("Audio asset not found: " + id);
+	}
+	return it->second;
+}
+
+VoiceId SoundMaster::startVoice(AudioType type, const AssetId& id, const AudioAsset& asset, const ModulationParams& params, i32 priority, f32 initialGain) {
+	const size_t idx = typeIndex(type);
+	auto& pool = m_voicesByType[idx];
+	const size_t capacity = m_maxVoicesByType[idx];
+	if (capacity > 0 && pool.size() >= capacity) {
+		const int drop = selectVoiceDropIndex(pool);
+		if (drop >= 0) {
+			if (priority < pool[drop].priority) {
+				return 0;
+			}
+			removeVoice(type, static_cast<size_t>(drop));
+		}
+	}
+
+	VoiceRecord record;
+	record.voiceId = m_nextVoiceId++;
+	record.id = id;
+	record.asset = &asset;
+	record.meta = asset.meta;
+	record.type = type;
+	record.priority = priority;
+	record.params = params;
+	record.startedAt = m_audioTimeSec;
+	const size_t framesInAsset = asset.samples.size() / asset.channels;
+	const f64 durationSec = framesInAsset > 0 ? static_cast<f64>(framesInAsset) / asset.sampleRate : 0.0;
+	f64 offset = params.offset;
+	if (durationSec > 0.0) {
+		if (asset.meta.loopStart.has_value()) {
+			offset = std::fmod(offset, durationSec);
+			if (offset < 0.0) offset += durationSec;
+		} else {
+			if (offset < 0.0) offset = 0.0;
+			if (offset > durationSec) offset = durationSec;
+		}
+	}
+	const f64 rate = effectivePlaybackRate(params);
+	if (rate <= 0.0) {
+		throw std::runtime_error("Playback rate must be positive");
+	}
+	record.startOffset = offset;
+	record.position = offset * asset.sampleRate;
+	record.step = rate;
+	record.gain = initialGain;
+	record.targetGain = initialGain;
+	record.gainRampRemaining = 0.0;
+	record.stopAfter = -1.0;
+
+	pool.push_back(record);
+	m_currentVoiceIdByType[idx] = record.voiceId;
+	m_currentAudioIdByType[idx] = id;
+	m_currentParamsByType[idx] = params;
+
+	return record.voiceId;
+}
+
+void SoundMaster::removeVoice(AudioType type, size_t index) {
+	const size_t idx = typeIndex(type);
+	auto& pool = m_voicesByType[idx];
+	if (index >= pool.size()) return;
+	VoiceRecord record = pool[index];
+	pool.erase(pool.begin() + static_cast<std::ptrdiff_t>(index));
+	if (m_currentVoiceIdByType[idx] == record.voiceId) {
+		if (!pool.empty()) {
+			const auto& latest = pool.back();
+			m_currentVoiceIdByType[idx] = latest.voiceId;
+			m_currentAudioIdByType[idx] = latest.id;
+			m_currentParamsByType[idx] = latest.params;
+		} else {
+			m_currentVoiceIdByType[idx] = 0;
+			m_currentAudioIdByType[idx].clear();
+			m_currentParamsByType[idx] = ModulationParams{};
+		}
+	}
+	finalizeVoiceEnd(type, record);
+}
+
+void SoundMaster::finalizeVoiceEnd(AudioType type, const VoiceRecord& record) {
+	const size_t idx = typeIndex(type);
+	if (m_endedListenersByType[idx].empty()) return;
+	ActiveVoiceInfo info{
+		record.voiceId,
+		record.id,
+		record.priority,
+		record.params,
+		record.startedAt,
+		record.startOffset,
+		record.meta,
+	};
+	for (const auto& entry : m_endedListenersByType[idx]) {
+		entry.second(info);
+	}
+}
+
+void SoundMaster::stopVoice(AudioType type, size_t index) {
+	removeVoice(type, index);
+}
+
+int SoundMaster::selectVoiceDropIndex(const std::vector<VoiceRecord>& pool) const {
+	if (pool.empty()) return -1;
+	size_t index = 0;
+	const VoiceRecord* candidate = &pool[0];
+	for (size_t i = 1; i < pool.size(); ++i) {
+		const auto& record = pool[i];
+		if (record.priority < candidate->priority) {
+			candidate = &record;
+			index = i;
+			continue;
+		}
+		if (record.priority == candidate->priority && record.startedAt < candidate->startedAt) {
+			candidate = &record;
+			index = i;
+		}
+	}
+	return static_cast<int>(index);
+}
+
+void SoundMaster::startMusicWithFade(const AssetId& target, f64 fadeSec, bool startAtLoopStart, std::optional<f64> startAtSeconds) {
+	const AudioAsset& asset = getAudioOrThrow(target);
+	const f64 baseOffset = startAtSeconds.has_value()
+		? startAtSeconds.value()
+		: (startAtLoopStart && asset.meta.loopStart.has_value() ? asset.meta.loopStart.value() : 0.0);
+
+	ModulationParams params;
+	params.offset = static_cast<f32>(baseOffset);
+	const f32 initialGain = MIN_GAIN;
+	const VoiceId newVoiceId = startVoice(AudioType::Music, target, asset, params, asset.meta.priority, initialGain);
+	if (newVoiceId == 0) return;
+
+	const size_t musicIdx = typeIndex(AudioType::Music);
+	auto& pool = m_voicesByType[musicIdx];
+	for (auto& record : pool) {
+		if (record.voiceId == newVoiceId) {
+			rampVoiceGain(record, 1.0f, fadeSec);
+			break;
+		}
+	}
+
+	if (pool.size() > 1) {
+		for (auto& record : pool) {
+			if (record.voiceId != newVoiceId) {
+				rampVoiceGain(record, MIN_GAIN, fadeSec);
+				record.stopAfter = fadeSec;
+			}
+		}
+	}
+}
+
+void SoundMaster::enqueueTransition(const MusicTransitionRequest& request, f64 delaySec, std::optional<f64> startAtSeconds) {
+	PendingTransition pending;
+	pending.request = request;
+	pending.remainingSec = delaySec;
+	pending.startAtSeconds = startAtSeconds;
+	m_pendingTransition = pending;
+}
+
+void SoundMaster::processPendingTransitions(f64 dt) {
+	if (!m_pendingTransition.has_value()) return;
+	auto& pending = m_pendingTransition.value();
+	pending.remainingSec -= dt;
+	if (pending.remainingSec > 0.0) return;
+	const auto startAt = pending.startAtSeconds;
+	startMusicWithFade(pending.request.to, pending.request.fadeMs / 1000.0, pending.request.startAtLoopStart, startAt);
+	m_pendingTransition.reset();
+}
+
+void SoundMaster::rampVoiceGain(VoiceRecord& record, f32 target, f64 durationSec) {
+	record.targetGain = target;
+	record.gainRampRemaining = durationSec;
+}
+
+f32 SoundMaster::clampVolume(f32 value) const {
+	if (value < 0.0f) return 0.0f;
+	if (value > 1.0f) return 1.0f;
+	return std::isfinite(value) ? value : 0.0f;
+}
+
+f64 SoundMaster::effectivePlaybackRate(const ModulationParams& params) const {
+	const f64 base = params.playbackRate;
+	const f64 pitch = params.pitchDelta;
+	return base * std::pow(2.0, pitch / 12.0);
+}
+
+size_t SoundMaster::typeIndex(AudioType type) {
+	switch (type) {
+		case AudioType::Sfx: return 0;
+		case AudioType::Music: return 1;
+		case AudioType::Ui: return 2;
+	}
+	return 0;
+}
+
+} // namespace bmsx
