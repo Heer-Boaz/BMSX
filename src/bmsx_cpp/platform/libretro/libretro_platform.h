@@ -153,6 +153,7 @@ public:
     // Configuration
     void setAVInfo(const retro_system_av_info& info);
     void setControllerDevice(unsigned port, unsigned device);
+    void applyManifestViewport();
 
     // ROM management
     bool loadRom(const uint8_t* data, size_t size);
@@ -201,7 +202,6 @@ private:
     void pollInput();
     void processAudio();
     void log(retro_log_level level, const char* fmt, ...);
-    void applyManifestViewport();
 
     // Libretro callbacks
     retro_environment_t m_environ_cb = nullptr;
@@ -218,6 +218,9 @@ private:
 
     // AV info
     retro_system_av_info m_av_info{};
+    bool m_has_av_info = false;
+    bool m_has_pending_viewport = false;
+    Vec2 m_pending_viewport;
 
     // Controller configuration
     std::array<unsigned, 4> m_controller_devices{};

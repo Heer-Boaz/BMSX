@@ -80,32 +80,24 @@ void retro_set_environment(retro_environment_t cb) {
 
 void retro_set_video_refresh(retro_video_refresh_t cb) {
   video_cb = cb;
-  if (g_platform) {
-    g_platform->setVideoCallback(cb);
-  }
+  g_platform->setVideoCallback(cb);
 }
 
 void retro_set_audio_sample(retro_audio_sample_t cb) { audio_cb = cb; }
 
 void retro_set_audio_sample_batch(retro_audio_sample_batch_t cb) {
   audio_batch_cb = cb;
-  if (g_platform) {
-    g_platform->setAudioBatchCallback(cb);
-  }
+  g_platform->setAudioBatchCallback(cb);
 }
 
 void retro_set_input_poll(retro_input_poll_t cb) {
   input_poll_cb = cb;
-  if (g_platform) {
-    g_platform->setInputPollCallback(cb);
-  }
+  g_platform->setInputPollCallback(cb);
 }
 
 void retro_set_input_state(retro_input_state_t cb) {
   input_state_cb = cb;
-  if (g_platform) {
-    g_platform->setInputStateCallback(cb);
-  }
+  g_platform->setInputStateCallback(cb);
 }
 
 /* ============================================================================
@@ -160,12 +152,11 @@ void retro_get_system_av_info(struct retro_system_av_info* info) {
   // Default resolution - this should match your game's base resolution
   constexpr unsigned BASE_WIDTH = 100;
   constexpr unsigned BASE_HEIGHT = 100;
-  constexpr unsigned MAX_WIDTH = 1024;
-  constexpr unsigned MAX_HEIGHT = 768;
+  constexpr unsigned MAX_WIDTH = 512;
+  constexpr unsigned MAX_HEIGHT = 448;
   constexpr double FPS = 50.0;
-  constexpr double SAMPLE_RATE =
-      8000.0;  // Standard sample rate for audio = 48000, but we set it to 8000
-
+  constexpr double SAMPLE_RATE = 8000.0;
+    
   info->geometry.base_width = BASE_WIDTH;
   info->geometry.base_height = BASE_HEIGHT;
   info->geometry.max_width = MAX_WIDTH;
@@ -183,17 +174,14 @@ void retro_get_system_av_info(struct retro_system_av_info* info) {
       info->timing.sample_rate);
   g_cached_av_info = *info;
   g_cached_av_info_valid = true;
-  if (g_platform) {
-    g_platform->setAVInfo(*info);
-  }
+  g_platform->setAVInfo(*info);
+  g_platform->applyManifestViewport();
 }
 
 void retro_set_controller_port_device(unsigned port, unsigned device) {
   logging.log(RETRO_LOG_INFO, "[BMSX] Port %u set to device %u\n", port,
               device);
-  if (g_platform) {
-    g_platform->setControllerDevice(port, device);
-  }
+  g_platform->setControllerDevice(port, device);
 }
 
 /* ============================================================================

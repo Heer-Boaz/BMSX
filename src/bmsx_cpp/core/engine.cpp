@@ -43,8 +43,8 @@ bool EngineCore::initialize(Platform* platform) {
 
     // Get viewport size from platform
     auto* host = platform->gameviewHost();
-    i32 width = host ? host->width() : 256;
-    i32 height = host ? host->height() : 224;
+    i32 width = host->width();
+    i32 height = host->height();
 
     // Create GameView with viewport from platform
     m_view = std::make_unique<GameView>(width, height);
@@ -260,8 +260,8 @@ bool EngineCore::bootWithoutCart() {
         if (!VMRuntime::hasInstance()) {
             VMRuntimeOptions options;
             options.playerIndex = 1;
-            options.viewport.x = m_engine_assets.manifest.viewportWidth > 0 ? m_engine_assets.manifest.viewportWidth : 256;
-            options.viewport.y = m_engine_assets.manifest.viewportHeight > 0 ? m_engine_assets.manifest.viewportHeight : 224;
+            options.viewport.x = m_engine_assets.manifest.viewportWidth;
+            options.viewport.y = m_engine_assets.manifest.viewportHeight;
             options.canonicalization = m_engine_assets.manifest.canonicalization;
             VMRuntime::createInstance(options);
         }

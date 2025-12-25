@@ -80,6 +80,7 @@ void LibretroPlatform::setInputStateCallback(retro_input_state_t cb) {
 
 void LibretroPlatform::setAVInfo(const retro_system_av_info& info) {
     m_av_info = info;
+    m_has_av_info = true;
     m_framebuffer.resize(info.geometry.base_width, info.geometry.base_height);
     log(RETRO_LOG_INFO, "[BMSX] AV Info set: %ux%u @ %.2fHz, Sample Rate: %.2fHz\n",
         info.geometry.base_width,
@@ -110,14 +111,24 @@ void LibretroPlatform::setControllerDevice(unsigned port, unsigned device) {
 
 void LibretroPlatform::applyManifestViewport() {
     const auto& manifest = m_engine->assets().manifest;
+    m_pending_viewport = {
+        static_cast<f32>(manifest.viewportWidth),
+        static_cast<f32>(manifest.viewportHeight)
+    };
+    m_has_pending_viewport = true;
+    if (!m_has_av_info) {
+        return;
+    }
+
     retro_system_av_info nextInfo = m_av_info;
-    nextInfo.geometry.base_width = static_cast<unsigned>(manifest.viewportWidth);
-    nextInfo.geometry.base_height = static_cast<unsigned>(manifest.viewportHeight);
+    nextInfo.geometry.base_width = static_cast<unsigned>(m_pending_viewport.x);
+    nextInfo.geometry.base_height = static_cast<unsigned>(m_pending_viewport.y);
     nextInfo.geometry.max_width = nextInfo.geometry.base_width;
     nextInfo.geometry.max_height = nextInfo.geometry.base_height;
     nextInfo.geometry.aspect_ratio = static_cast<float>(nextInfo.geometry.base_width)
         / static_cast<float>(nextInfo.geometry.base_height);
 
+    m_has_pending_viewport = false;
     m_environ_cb(RETRO_ENVIRONMENT_SET_GEOMETRY, &nextInfo.geometry);
     setAVInfo(nextInfo);
 }
