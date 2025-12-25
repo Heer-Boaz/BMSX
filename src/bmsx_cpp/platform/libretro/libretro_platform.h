@@ -201,6 +201,7 @@ private:
     void pollInput();
     void processAudio();
     void log(retro_log_level level, const char* fmt, ...);
+    void applyManifestViewport();
 
     // Libretro callbacks
     retro_environment_t m_environ_cb = nullptr;
@@ -302,9 +303,13 @@ public:
 private:
     LibretroPlatform* m_platform;
     retro_audio_sample_batch_t m_audio_batch_cb = nullptr;
-    double m_sample_rate = 44100.0;
+    double m_sample_rate = 48000.0;
     double m_frame_rate = 60.0;
     double m_sample_accumulator = 0.0;
+    std::vector<int16_t> m_sample_queue;
+    size_t m_queue_start_samples = 0;
+    size_t m_queue_samples = 0;
+    size_t m_target_buffer_frames = 0;
 
     class LibretroMasterVolume : public MasterVolume {
     public:

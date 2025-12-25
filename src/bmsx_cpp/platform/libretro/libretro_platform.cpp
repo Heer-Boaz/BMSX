@@ -11,6 +11,7 @@
 #include <cstdarg>
 #include <fstream>
 #include <algorithm>
+#include <cmath>
 
 namespace bmsx {
 
@@ -22,7 +23,7 @@ LibretroPlatform::LibretroPlatform() {
     // Initialize framebuffer with default size
     m_framebuffer.resize(256, 224);
 
-    // Reserve audio buffer for one frame at 44100Hz / 60fps = ~735 samples
+    // Reserve audio buffer for one frame at 48000Hz / 60fps = ~800 samples
     m_audio_buffer.reserve(1024);
 
     // Create platform components
@@ -80,9 +81,19 @@ void LibretroPlatform::setInputStateCallback(retro_input_state_t cb) {
 void LibretroPlatform::setAVInfo(const retro_system_av_info& info) {
     m_av_info = info;
     m_framebuffer.resize(info.geometry.base_width, info.geometry.base_height);
+    log(RETRO_LOG_INFO, "[BMSX] AV Info set: %ux%u @ %.2fHz, Sample Rate: %.2fHz\n",
+        info.geometry.base_width,
+        info.geometry.base_height,
+        info.timing.fps,
+        info.timing.sample_rate
+    );
 
     auto* view = m_engine->view();
-    view->setViewportSize(static_cast<i32>(info.geometry.base_width), static_cast<i32>(info.geometry.base_height));
+    Vec2 renderTargetSize{
+        static_cast<f32>(info.geometry.base_width),
+        static_cast<f32>(info.geometry.base_height)
+    };
+    view->configureRenderTargets(&renderTargetSize, &renderTargetSize, &renderTargetSize);
     auto* backend = static_cast<SoftwareBackend*>(view->backend());
     static_cast<LibretroGameViewHost*>(m_gameview_host.get())->updateBackendFramebuffer(backend);
 
@@ -97,6 +108,20 @@ void LibretroPlatform::setControllerDevice(unsigned port, unsigned device) {
     }
 }
 
+void LibretroPlatform::applyManifestViewport() {
+    const auto& manifest = m_engine->assets().manifest;
+    retro_system_av_info nextInfo = m_av_info;
+    nextInfo.geometry.base_width = static_cast<unsigned>(manifest.viewportWidth);
+    nextInfo.geometry.base_height = static_cast<unsigned>(manifest.viewportHeight);
+    nextInfo.geometry.max_width = nextInfo.geometry.base_width;
+    nextInfo.geometry.max_height = nextInfo.geometry.base_height;
+    nextInfo.geometry.aspect_ratio = static_cast<float>(nextInfo.geometry.base_width)
+        / static_cast<float>(nextInfo.geometry.base_height);
+
+    m_environ_cb(RETRO_ENVIRONMENT_SET_GEOMETRY, &nextInfo.geometry);
+    setAVInfo(nextInfo);
+}
+
 bool LibretroPlatform::loadRom(const uint8_t* data, size_t size) {
     unloadRom();
 
@@ -109,6 +134,7 @@ bool LibretroPlatform::loadRom(const uint8_t* data, size_t size) {
         return false;
     }
 
+    applyManifestViewport();
     m_rom_loaded = true;
     log(RETRO_LOG_INFO, "[BMSX] ROM loaded (%zu bytes)\n", size);
     return true;
@@ -485,9 +511,15 @@ void LibretroAudioService::setTiming(double sampleRate, double fps) {
     m_sample_rate = sampleRate;
     m_frame_rate = fps;
     m_sample_accumulator = 0.0;
+    m_queue_start_samples = 0;
+    m_queue_samples = 0;
+    m_sample_queue.clear();
+    const double framesPerFrame = m_sample_rate / m_frame_rate;
+    m_target_buffer_frames = static_cast<size_t>(std::ceil(framesPerFrame * 4.0));
 }
 
 void LibretroAudioService::collectSamples(AudioBuffer& buffer) {
+    // Drive sample count from frame timing and buffer a small lead to smooth jitter.
     const double samplesPerFrame = m_sample_rate / m_frame_rate;
     m_sample_accumulator += samplesPerFrame;
     const size_t frames = static_cast<size_t>(m_sample_accumulator);
@@ -497,14 +529,35 @@ void LibretroAudioService::collectSamples(AudioBuffer& buffer) {
     }
     m_sample_accumulator -= frames;
 
-    const size_t totalSamples = frames * 2;
-    if (m_mix_buffer.size() < totalSamples) {
-        m_mix_buffer.resize(totalSamples);
+    const size_t queuedFrames = m_queue_samples / 2;
+    const size_t targetFrames = frames + m_target_buffer_frames;
+    if (queuedFrames < targetFrames) {
+        const size_t renderFrames = targetFrames - queuedFrames;
+        const size_t renderSamples = renderFrames * 2;
+        if (m_mix_buffer.size() < renderSamples) {
+            m_mix_buffer.resize(renderSamples);
+        }
+        m_platform->engine()->soundMaster()->renderSamples(m_mix_buffer.data(), renderFrames, static_cast<i32>(m_sample_rate));
+
+        size_t neededSamples = m_queue_start_samples + m_queue_samples + renderSamples;
+        if (m_queue_start_samples > 0 && neededSamples > m_sample_queue.size()) {
+            std::memmove(m_sample_queue.data(), m_sample_queue.data() + m_queue_start_samples, m_queue_samples * sizeof(int16_t));
+            m_queue_start_samples = 0;
+            neededSamples = m_queue_samples + renderSamples;
+        }
+        if (m_sample_queue.size() < neededSamples) {
+            m_sample_queue.resize(neededSamples);
+        }
+        std::memcpy(m_sample_queue.data() + m_queue_start_samples + m_queue_samples, m_mix_buffer.data(), renderSamples * sizeof(int16_t));
+        m_queue_samples += renderSamples;
     }
 
-    m_platform->engine()->soundMaster()->renderSamples(m_mix_buffer.data(), frames, static_cast<i32>(m_sample_rate));
-
-    buffer.write(m_mix_buffer.data(), frames);
+    buffer.write(m_sample_queue.data() + m_queue_start_samples, frames);
+    m_queue_start_samples += frames * 2;
+    m_queue_samples -= frames * 2;
+    if (m_queue_samples == 0) {
+        m_queue_start_samples = 0;
+    }
 }
 
 Voice* LibretroAudioService::createVoice() {
