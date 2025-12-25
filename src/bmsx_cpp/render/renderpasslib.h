@@ -234,6 +234,7 @@ private:
     };
 
     void registerBuiltinPassesSoftware();
+    void registerBuiltinPassesOpenGLES2();
 
     GPUBackend* m_backend;
     std::vector<RenderPassDef> m_passes;

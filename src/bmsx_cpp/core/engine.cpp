@@ -187,6 +187,10 @@ void EngineCore::render() {
     m_presentation_pending = false;
 }
 
+void EngineCore::refreshRenderAssets() {
+    uploadTexturesToBackend();
+}
+
 bool EngineCore::loadEngineAssets(const u8* data, size_t size) {
     m_engine_assets.clear();
     m_engine_assets_data.assign(data, data + size);

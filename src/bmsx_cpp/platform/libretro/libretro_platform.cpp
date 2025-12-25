@@ -7,6 +7,9 @@
 #include "../../input/input.h"
 #include "../../input/gamepadinput.h"
 #include "../../input/keyboardinput.h"
+#include "../../render/gles2_backend.h"
+#include "../../render/renderpasslib.h"
+#include "../../render/sprites_pipeline_gles2.h"
 #include <cstring>
 #include <cstdarg>
 #include <fstream>
@@ -22,7 +25,8 @@ constexpr double kAudioLeadFrames = 8.0;
  * LibretroPlatform implementation
  * ============================================================================ */
 
-LibretroPlatform::LibretroPlatform() {
+LibretroPlatform::LibretroPlatform(bool use_hw_render)
+    : m_use_hw_render(use_hw_render) {
     // Initialize framebuffer with default size
     m_framebuffer.resize(0, 0);
 
@@ -35,7 +39,7 @@ LibretroPlatform::LibretroPlatform() {
     m_lifecycle = std::make_unique<DefaultLifecycle>();
     m_input_hub = std::make_unique<LibretroInputHub>(this);
     m_audio_service = std::make_unique<LibretroAudioService>(this);
-    m_gameview_host = std::make_unique<LibretroGameViewHost>(m_framebuffer);
+    m_gameview_host = std::make_unique<LibretroGameViewHost>(m_framebuffer, m_use_hw_render);
     m_microtask_queue = std::make_unique<DefaultMicrotaskQueue>();
 
     // Initialize controller devices
@@ -44,6 +48,9 @@ LibretroPlatform::LibretroPlatform() {
     // Create and initialize the engine
     m_engine = std::make_unique<EngineCore>();
     m_engine->initialize(this);
+    if (m_use_hw_render) {
+        m_engine->view()->crt_postprocessing_enabled = false;
+    }
 
     m_keyboard_input = std::make_unique<KeyboardInput>("keyboard:0");
     Input::instance().registerKeyboard("keyboard:0", m_keyboard_input.get());
@@ -82,6 +89,34 @@ void LibretroPlatform::setInputStateCallback(retro_input_state_t cb) {
     static_cast<LibretroInputHub*>(m_input_hub.get())->setInputStateCallback(cb);
 }
 
+void LibretroPlatform::setHwRenderCallbacks(retro_hw_get_current_framebuffer_t get_current_framebuffer) {
+    m_hw_get_current_framebuffer = get_current_framebuffer;
+    auto* backend = static_cast<OpenGLES2Backend*>(m_engine->view()->backend());
+    backend->setFramebufferGetter(m_hw_get_current_framebuffer);
+}
+
+void LibretroPlatform::onContextReset() {
+    auto* view = m_engine->view();
+    auto* backend = static_cast<OpenGLES2Backend*>(view->backend());
+    backend->setFramebufferGetter(m_hw_get_current_framebuffer);
+    backend->onContextReset();
+    static_cast<LibretroGameViewHost*>(m_gameview_host.get())->updateBackend(backend);
+
+    auto registry = std::make_unique<RenderPassLibrary>(backend);
+    registry->registerBuiltin();
+    view->setPipelineRegistry(std::move(registry));
+    view->rebuildGraph();
+    m_engine->refreshRenderAssets();
+}
+
+void LibretroPlatform::onContextDestroy() {
+    auto* view = m_engine->view();
+    auto* backend = static_cast<OpenGLES2Backend*>(view->backend());
+    SpritesPipeline::shutdownGLES2(backend);
+    backend->onContextDestroy();
+    view->setPipelineRegistry(std::unique_ptr<RenderPassLibrary>());
+}
+
 void LibretroPlatform::setAVInfo(const retro_system_av_info& info) {
     m_av_info = info;
     m_has_av_info = true;
@@ -100,8 +135,8 @@ void LibretroPlatform::setAVInfo(const retro_system_av_info& info) {
         static_cast<f32>(info.geometry.base_height)
     };
     view->configureRenderTargets(&renderTargetSize, &renderTargetSize, &renderTargetSize);
-    auto* backend = static_cast<SoftwareBackend*>(view->backend());
-    static_cast<LibretroGameViewHost*>(m_gameview_host.get())->updateBackendFramebuffer(backend);
+    auto* backend = view->backend();
+    static_cast<LibretroGameViewHost*>(m_gameview_host.get())->updateBackend(backend);
 
     if (auto* audioService = dynamic_cast<LibretroAudioService*>(m_audio_service.get())) {
         audioService->setTiming(info.timing.sample_rate, info.timing.fps);
@@ -636,11 +671,18 @@ void LibretroFrameLoop::stop() {
  * LibretroGameViewHost implementation
  * ============================================================================ */
 
-LibretroGameViewHost::LibretroGameViewHost(Framebuffer& framebuffer)
-    : m_framebuffer(framebuffer) {
+LibretroGameViewHost::LibretroGameViewHost(Framebuffer& framebuffer, bool use_hw_render)
+    : m_framebuffer(framebuffer)
+    , m_use_hw_render(use_hw_render) {
 }
 
 std::unique_ptr<GPUBackend> LibretroGameViewHost::createBackend() {
+    if (m_use_hw_render) {
+        return std::make_unique<OpenGLES2Backend>(
+            static_cast<i32>(m_framebuffer.width),
+            static_cast<i32>(m_framebuffer.height)
+        );
+    }
     return std::make_unique<SoftwareBackend>(
         m_framebuffer.data,
         static_cast<i32>(m_framebuffer.width),
@@ -649,8 +691,15 @@ std::unique_ptr<GPUBackend> LibretroGameViewHost::createBackend() {
     );
 }
 
-void LibretroGameViewHost::updateBackendFramebuffer(SoftwareBackend* backend) {
-    backend->setFramebuffer(
+void LibretroGameViewHost::updateBackend(GPUBackend* backend) {
+    if (backend->type() == BackendType::OpenGLES2) {
+        auto* glBackend = static_cast<OpenGLES2Backend*>(backend);
+        glBackend->setViewportSize(static_cast<i32>(m_framebuffer.width),
+                                   static_cast<i32>(m_framebuffer.height));
+        return;
+    }
+    auto* softBackend = static_cast<SoftwareBackend*>(backend);
+    softBackend->setFramebuffer(
         m_framebuffer.data,
         static_cast<i32>(m_framebuffer.width),
         static_cast<i32>(m_framebuffer.height),

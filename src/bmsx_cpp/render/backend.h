@@ -21,6 +21,7 @@ namespace bmsx {
 
 enum class BackendType {
     Software,   // CPU software renderer (libretro)
+    OpenGLES2,  // OpenGL ES 2.0 (libretro HW)
     WebGL2,     // WebGL2 (browser)
     WebGPU,     // WebGPU (browser)
     Headless    // No rendering (testing)

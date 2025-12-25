@@ -51,7 +51,7 @@ private:
 
 class LibretroGameViewHost : public GameViewHost {
 public:
-    explicit LibretroGameViewHost(Framebuffer& framebuffer);
+    LibretroGameViewHost(Framebuffer& framebuffer, bool use_hw_render);
 
     // GameViewHost interface
     void* getCapability(std::string_view name) override;
@@ -60,14 +60,15 @@ public:
     int width() override { return m_framebuffer.width; }
     int height() override { return m_framebuffer.height; }
 
-    // Create a SoftwareBackend bound to the framebuffer
+    // Create a backend for this platform
     std::unique_ptr<GPUBackend> createBackend() override;
 
     // Update backend when framebuffer changes
-    void updateBackendFramebuffer(SoftwareBackend* backend);
+    void updateBackend(GPUBackend* backend);
 
 private:
     Framebuffer& m_framebuffer;
+    bool m_use_hw_render = false;
 };
 
 /* ============================================================================
@@ -139,7 +140,7 @@ struct InputState {
 
 class LibretroPlatform : public Platform {
 public:
-    LibretroPlatform();
+    explicit LibretroPlatform(bool use_hw_render);
     ~LibretroPlatform() override;
 
     // Libretro callback setters
@@ -149,6 +150,9 @@ public:
     void setInputPollCallback(retro_input_poll_t cb);
     void setInputStateCallback(retro_input_state_t cb);
     void setLogCallback(void (*cb)(enum retro_log_level, const char*, ...)) { m_log_cb = cb; }
+    void setHwRenderCallbacks(retro_hw_get_current_framebuffer_t get_current_framebuffer);
+    void onContextReset();
+    void onContextDestroy();
 
     // Configuration
     void setAVInfo(const retro_system_av_info& info);
@@ -223,6 +227,8 @@ private:
     bool m_has_pending_viewport = false;
     Vec2 m_pending_viewport;
     double m_frame_time_sec = 1.0 / 50.0;
+    bool m_use_hw_render = false;
+    retro_hw_get_current_framebuffer_t m_hw_get_current_framebuffer = nullptr;
 
     // Controller configuration
     std::array<unsigned, 4> m_controller_devices{};

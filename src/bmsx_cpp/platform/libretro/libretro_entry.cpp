@@ -8,6 +8,7 @@
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
+#include <cstdlib>
 
 #include "libretro.h"
 #include "libretro_platform.h"
@@ -27,6 +28,9 @@ static retro_input_state_t input_state_cb = nullptr;
 static retro_log_callback logging;
 static retro_usec_t g_pending_frame_time_usec = 0;
 static bool g_has_pending_frame_time = false;
+static retro_hw_render_callback g_hw_render;
+static bool g_hw_render_active = false;
+static bool g_hw_context_pending = false;
 
 // The platform instance
 static bmsx::LibretroPlatform* g_platform = nullptr;
@@ -36,6 +40,8 @@ static bool g_cached_av_info_valid = false;
 // Forward declarations
 static void fallback_log(enum retro_log_level level, const char* fmt, ...);
 static void frame_time_cb(retro_usec_t usec);
+static void hw_context_reset();
+static void hw_context_destroy();
 
 /* ============================================================================
  * Libretro callback setters
@@ -84,6 +90,24 @@ void retro_set_environment(retro_environment_t cb) {
   frame_time.callback = frame_time_cb;
   frame_time.reference = 0;
   cb(RETRO_ENVIRONMENT_SET_FRAME_TIME_CALLBACK, &frame_time);
+
+  std::memset(&g_hw_render, 0, sizeof(g_hw_render));
+  g_hw_render.context_type = RETRO_HW_CONTEXT_OPENGLES2;
+  g_hw_render.context_reset = hw_context_reset;
+  g_hw_render.context_destroy = hw_context_destroy;
+  g_hw_render.depth = false;
+  g_hw_render.stencil = false;
+  g_hw_render.bottom_left_origin = true;
+  g_hw_render.cache_context = false;
+  g_hw_render.version_major = 2;
+  g_hw_render.version_minor = 0;
+  g_hw_render.debug_context = false;
+
+  if (!cb(RETRO_ENVIRONMENT_SET_HW_RENDER, &g_hw_render)) {
+    g_hw_render_active = false;
+  } else {
+    g_hw_render_active = true;
+  }
 }
 
 void retro_set_video_refresh(retro_video_refresh_t cb) {
@@ -115,6 +139,11 @@ void retro_set_input_state(retro_input_state_t cb) {
 
 void retro_init(void) {
   logging.log(RETRO_LOG_INFO, "[BMSX] retro_init\n");
+  if (!g_hw_render_active) {
+    logging.log(RETRO_LOG_ERROR,
+                "[BMSX] GLES2 hw render context not initialized\n");
+    std::abort();
+  }
 
   // Set pixel format
   enum retro_pixel_format fmt = RETRO_PIXEL_FORMAT_XRGB8888;
@@ -126,19 +155,24 @@ void retro_init(void) {
   }
 
   // Create platform instance
-  g_platform = new bmsx::LibretroPlatform();
+  g_platform = new bmsx::LibretroPlatform(g_hw_render_active);
   g_platform->setEnvironmentCallback(environ_cb);
   g_platform->setLogCallback(logging.log);
   g_platform->setVideoCallback(video_cb);
   g_platform->setAudioBatchCallback(audio_batch_cb);
   g_platform->setInputPollCallback(input_poll_cb);
   g_platform->setInputStateCallback(input_state_cb);
+  g_platform->setHwRenderCallbacks(g_hw_render.get_current_framebuffer);
   if (g_cached_av_info_valid) {
     g_platform->setAVInfo(g_cached_av_info);
   }
   if (g_has_pending_frame_time) {
-    g_platform->setFrameTimeUsec(g_pending_frame_time_usec);
-    g_has_pending_frame_time = false;
+  g_platform->setFrameTimeUsec(g_pending_frame_time_usec);
+  g_has_pending_frame_time = false;
+  }
+  if (g_hw_context_pending) {
+    g_platform->onContextReset();
+    g_hw_context_pending = false;
   }
 }
 
@@ -259,7 +293,11 @@ void retro_run(void) {
   // Output video
   const auto& fb = g_platform->getFramebuffer();
   if (video_cb && fb.data) {
-    video_cb(fb.data, fb.width, fb.height, fb.pitch);
+    if (g_hw_render_active) {
+      video_cb(RETRO_HW_FRAME_BUFFER_VALID, fb.width, fb.height, 0);
+    } else {
+      video_cb(fb.data, fb.width, fb.height, fb.pitch);
+    }
   }
 
   // Output audio
@@ -346,4 +384,18 @@ static void frame_time_cb(retro_usec_t usec) {
   }
   g_pending_frame_time_usec = usec;
   g_has_pending_frame_time = true;
+}
+
+static void hw_context_reset() {
+  if (g_platform) {
+    g_platform->onContextReset();
+    return;
+  }
+  g_hw_context_pending = true;
+}
+
+static void hw_context_destroy() {
+  if (g_platform) {
+    g_platform->onContextDestroy();
+  }
 }

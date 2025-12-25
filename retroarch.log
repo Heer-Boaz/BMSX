@@ -1,0 +1,23 @@
+[INFO] [Config]: Looking for config in: "/home/boaz/.config/retroarch/retroarch.cfg".
+[INFO] RetroArch 1.18.0 (Git b2ceb50)
+[INFO] === Build =======================================
+[INFO] CPU Model Name: 12th Gen Intel(R) Core(TM) i7-12800H
+[INFO] Capabilities: MMX MMXEXT SSE SSE2 SSE3 SSSE3 SSE4 SSE42 AES AVX AVX2 
+[INFO] Version: 1.18.0
+[INFO] Git: b2ceb50
+[INFO] Built: Apr  2 2024
+[INFO] =================================================
+[INFO] [Input]: Found input driver: "x".
+[INFO] [Core]: Loading dynamic libretro core from: "/home/boaz/BMSX/build/bmsx_libretro.so"
+[INFO] [Config]: Loading config: "/home/boaz/.config/retroarch/retroarch.cfg".
+[INFO] [Config]: Appending config: "/home/boaz/BMSX/scripts/retroarch.local.cfg".
+[INFO] [Overrides]: Redirecting save file to "/home/boaz/.config/retroarch/saves/BMSX/2025.debug.srm".
+[INFO] [Overrides]: Redirecting save state to "/home/boaz/.config/retroarch/states/BMSX/2025.debug.state".
+[INFO] [Environ]: GET_LOG_INTERFACE.
+[INFO] [Environ]: SET_SUPPORT_NO_GAME: yes.
+[INFO] [Environ]: SET_INPUT_DESCRIPTORS:
+[INFO] [Environ]: SET_FRAME_TIME_CALLBACK.
+[INFO] [Environ]: SET_HW_RENDER, context type: gl.
+[ERROR] Requesting OpenGLES2 context, but RetroArch is compiled against OpenGL. Cannot use HW context.
+[ERROR] [Environ]: SET_HW_RENDER - Dynamic request HW context failed.
+[libretro ERROR] [BMSX] GLES2 hw render context not available

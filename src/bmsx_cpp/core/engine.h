@@ -78,6 +78,8 @@ public:
     u64 frameCount() const { return m_frame_count; }
     f64 fps() const { return m_fps; }
 
+    void refreshRenderAssets();
+
     // ROM loading
     bool loadEngineAssets(const u8* data, size_t size);  // Load engine.assets.rom first
     bool loadEngineAssetsFromPath(const char* path);     // Load engine assets from file

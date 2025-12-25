@@ -7,6 +7,7 @@
 
 #include "gameview.h"
 #include "sprites_pipeline.h"
+#include "gles2_backend.h"
 #include "renderpasslib.h"
 #include "rendergraph.h"
 #include "glyphs.h"
@@ -139,9 +140,6 @@ void GameView::drawGame() {
     // Increment frame timing
     m_renderFrameIndex++;
 
-    // For now, directly execute the software render path
-    // TODO: Implement full render graph with pipeline registry
-
     // Begin main render pass
     RenderPassDesc mainPass;
     mainPass.label = "main";
@@ -149,6 +147,16 @@ void GameView::drawGame() {
     mainPass.depth.clearDepth = 1.0f;
 
     PassEncoder pass = m_backend->beginRenderPass(mainPass);
+
+    if (m_backend->type() == BackendType::OpenGLES2) {
+        if (m_pipelineRegistry) {
+            m_pipelineRegistry->execute("sprites", pass.fbo);
+        } else {
+            SpritesPipeline::renderSpriteBatch(m_backend.get(), this);
+        }
+        m_backend->endRenderPass(pass);
+        return;
+    }
 
     // Execute sprite pipeline (includes rects, polys via whitepixel sprite)
     SpritesPipeline::renderSpriteBatch(m_backend.get(), this);
@@ -209,22 +217,21 @@ void GameView::setPipelineRegistry(std::unique_ptr<RenderPassLibrary> registry) 
 // ─────────────────────────────────────────────────────────────────────────────
 
 void GameView::setActiveTexUnit(i32 unit) {
-    if (backendType() != BackendType::WebGL2) return;
+    if (backendType() != BackendType::OpenGLES2) return;
     m_activeTexUnit = unit;
-    // TODO: Call backend setActiveTexture
+    static_cast<OpenGLES2Backend*>(m_backend.get())->setActiveTextureUnit(unit);
 }
 
 void GameView::bind2DTex(TextureHandle tex) {
-    if (backendType() != BackendType::WebGL2) return;
+    if (backendType() != BackendType::OpenGLES2) return;
     if (m_activeTexture2D == tex) return;
-    // TODO: Call backend bindTexture2D
+    static_cast<OpenGLES2Backend*>(m_backend.get())->bindTexture2D(tex);
     m_activeTexture2D = tex;
 }
 
 void GameView::bindCubemapTex(TextureHandle tex) {
-    if (backendType() != BackendType::WebGL2) return;
+    if (backendType() != BackendType::OpenGLES2) return;
     if (m_activeCubemap == tex) return;
-    // TODO: Call backend bindTextureCube
     m_activeCubemap = tex;
 }
 

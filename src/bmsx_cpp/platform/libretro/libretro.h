@@ -15,6 +15,40 @@
 #include <stddef.h>
 #include <limits.h>
 
+#ifndef RETRO_CALLCONV
+#  if defined(__GNUC__) && defined(__i386__) && !defined(__x86_64__)
+#    define RETRO_CALLCONV __attribute__((cdecl))
+#  elif defined(_MSC_VER) && defined(_M_X86) && !defined(_M_X64)
+#    define RETRO_CALLCONV __cdecl
+#  else
+#    define RETRO_CALLCONV
+#  endif
+#endif
+
+#ifndef RETRO_API
+#  if defined(_WIN32) || defined(__CYGWIN__) || defined(__MINGW32__)
+#    ifdef RETRO_IMPORT_SYMBOLS
+#      ifdef __GNUC__
+#        define RETRO_API RETRO_CALLCONV __attribute__((__dllimport__))
+#      else
+#        define RETRO_API RETRO_CALLCONV __declspec(dllimport)
+#      endif
+#    else
+#      ifdef __GNUC__
+#        define RETRO_API RETRO_CALLCONV __attribute__((__dllexport__))
+#      else
+#        define RETRO_API RETRO_CALLCONV __declspec(dllexport)
+#      endif
+#    endif
+#  else
+#    if defined(__GNUC__) && __GNUC__ >= 4
+#      define RETRO_API RETRO_CALLCONV __attribute__((__visibility__("default")))
+#    else
+#      define RETRO_API RETRO_CALLCONV
+#    endif
+#  endif
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -201,6 +235,44 @@ typedef void (*retro_frame_time_callback_t)(retro_usec_t usec);
 struct retro_frame_time_callback {
     retro_frame_time_callback_t callback;
     unsigned reference;
+};
+
+/* Pass this to retro_video_refresh_t if rendering to hardware. */
+#define RETRO_HW_FRAME_BUFFER_VALID ((void*)-1)
+
+typedef void (RETRO_CALLCONV *retro_proc_address_t)(void);
+typedef retro_proc_address_t (RETRO_CALLCONV *retro_hw_get_proc_address_t)(const char *sym);
+typedef uintptr_t (RETRO_CALLCONV *retro_hw_get_current_framebuffer_t)(void);
+typedef void (RETRO_CALLCONV *retro_hw_context_reset_t)(void);
+
+enum retro_hw_context_type {
+    RETRO_HW_CONTEXT_NONE             = 0,
+    RETRO_HW_CONTEXT_OPENGL           = 1,
+    RETRO_HW_CONTEXT_OPENGLES2        = 2,
+    RETRO_HW_CONTEXT_OPENGL_CORE      = 3,
+    RETRO_HW_CONTEXT_OPENGLES3        = 4,
+    RETRO_HW_CONTEXT_OPENGLES_VERSION = 5,
+    RETRO_HW_CONTEXT_VULKAN           = 6,
+    RETRO_HW_CONTEXT_D3D11            = 7,
+    RETRO_HW_CONTEXT_D3D10            = 8,
+    RETRO_HW_CONTEXT_D3D12            = 9,
+    RETRO_HW_CONTEXT_D3D9             = 10,
+    RETRO_HW_CONTEXT_DUMMY = INT_MAX
+};
+
+struct retro_hw_render_callback {
+    enum retro_hw_context_type context_type;
+    retro_hw_context_reset_t context_reset;
+    retro_hw_get_current_framebuffer_t get_current_framebuffer;
+    retro_hw_get_proc_address_t get_proc_address;
+    bool depth;
+    bool stencil;
+    bool bottom_left_origin;
+    unsigned version_major;
+    unsigned version_minor;
+    bool cache_context;
+    retro_hw_context_reset_t context_destroy;
+    bool debug_context;
 };
 
 /* Callbacks */

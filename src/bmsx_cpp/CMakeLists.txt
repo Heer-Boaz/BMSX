@@ -73,9 +73,11 @@ add_library(bmsx_core STATIC
 
     # Render systems
     render/backend.cpp
+    render/gles2_backend.cpp
     render/gameview.cpp
     render/render_queues.cpp
     render/sprites_pipeline.cpp
+    render/sprites_pipeline_gles2.cpp
     render/renderpasslib.cpp
     render/rendergraph.cpp
     render/glyphs.cpp
@@ -109,6 +111,8 @@ if(BMSX_BUILD_LIBRETRO)
     )
 
     target_link_libraries(bmsx_libretro PRIVATE bmsx_core)
+    find_library(GLESV2_LIBRARY GLESv2 REQUIRED)
+    target_link_libraries(bmsx_libretro PRIVATE ${GLESV2_LIBRARY})
 
     # Libretro naming convention
     set_target_properties(bmsx_libretro PROPERTIES

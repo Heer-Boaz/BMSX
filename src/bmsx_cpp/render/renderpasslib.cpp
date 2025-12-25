@@ -7,6 +7,7 @@
 #include "renderpasslib.h"
 #include "gameview.h"
 #include "sprites_pipeline.h"
+#include "sprites_pipeline_gles2.h"
 #include "rendergraph.h"
 #include "../core/engine.h"
 #include <stdexcept>
@@ -24,6 +25,9 @@ void RenderPassLibrary::registerBuiltin() {
     switch (m_backend->type()) {
         case BackendType::Software:
             registerBuiltinPassesSoftware();
+            break;
+        case BackendType::OpenGLES2:
+            registerBuiltinPassesOpenGLES2();
             break;
         case BackendType::WebGL2:
             // TODO: WebGL2 passes
@@ -138,6 +142,78 @@ void RenderPassLibrary::registerBuiltinPassesSoftware() {
             crtState.applyAperture = gv->applyAperture;
 
             state = crtState;
+        };
+        registerPass(desc);
+    }
+}
+
+void RenderPassLibrary::registerBuiltinPassesOpenGLES2() {
+    // FrameResolve: per-frame state setup
+    {
+        RenderPassDef desc;
+        desc.id = "frame_resolve";
+        desc.name = "FrameResolve";
+        desc.stateOnly = true;
+        desc.exec = [](GPUBackend*, void*, std::any&) { };
+        desc.prepare = [](GPUBackend*, std::any&) { };
+        registerPass(desc);
+    }
+
+    // FrameShared: aggregated frame state
+    {
+        RenderPassDef desc;
+        desc.id = "frame_shared";
+        desc.name = "FrameShared";
+        desc.stateOnly = true;
+        desc.exec = [](GPUBackend*, void*, std::any&) { };
+        registerPass(desc);
+    }
+
+    // Sprites pass (GLES2)
+    {
+        RenderPassDef desc;
+        desc.id = "sprites";
+        desc.name = "Sprites2D";
+        desc.writesDepth = true;
+        desc.bootstrap = [](GPUBackend* backend) {
+            auto& engine = EngineCore::instance();
+            SpritesPipeline::initGLES2(static_cast<OpenGLES2Backend*>(backend), engine.view());
+        };
+        desc.shouldExecute = []() { return true; };
+        desc.exec = [](GPUBackend* backend, void* fbo, std::any& state) {
+            (void)fbo;
+            auto& engine = EngineCore::instance();
+            auto& spriteState = std::any_cast<SpritesPipelineState&>(state);
+            SpritesPipeline::renderSpriteBatchGLES2(static_cast<OpenGLES2Backend*>(backend), engine.view(), spriteState);
+        };
+        desc.prepare = [](GPUBackend*, std::any& state) {
+            auto& engine = EngineCore::instance();
+            auto* gv = engine.view();
+            auto& assets = engine.assets();
+
+            SpritesPipelineState spriteState;
+            spriteState.width = static_cast<i32>(gv->offscreenCanvasSize.x);
+            spriteState.height = static_cast<i32>(gv->offscreenCanvasSize.y);
+            spriteState.baseWidth = static_cast<i32>(gv->viewportSize.x);
+            spriteState.baseHeight = static_cast<i32>(gv->viewportSize.y);
+
+            spriteState.atlasPrimaryTex = reinterpret_cast<TextureHandle>(assets.atlasTextures.at(0).textureHandle);
+            auto secondaryIt = assets.atlasTextures.find(1);
+            if (secondaryIt != assets.atlasTextures.end()) {
+                spriteState.atlasSecondaryTex = reinterpret_cast<TextureHandle>(secondaryIt->second.textureHandle);
+            }
+            auto engineIt = assets.atlasTextures.find(254);
+            if (engineIt != assets.atlasTextures.end()) {
+                spriteState.atlasEngineTex = reinterpret_cast<TextureHandle>(engineIt->second.textureHandle);
+            }
+
+            spriteState.ambientEnabledDefault = gv->spriteAmbientEnabledDefault;
+            spriteState.ambientFactorDefault = gv->spriteAmbientFactorDefault;
+            spriteState.psxDither2dEnabled = gv->psx_dither_2d_enabled;
+            spriteState.psxDither2dIntensity = gv->psx_dither2d_intensity;
+            spriteState.viewportTypeIde = (gv->viewportTypeIde == GameView::ViewportType::Viewport) ? "viewport" : "offscreen";
+
+            state = spriteState;
         };
         registerPass(desc);
     }
