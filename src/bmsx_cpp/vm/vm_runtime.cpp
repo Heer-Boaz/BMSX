@@ -3,6 +3,7 @@
 #include "vm_io.h"
 #include "program_loader.h"
 #include "../core/engine.h"
+#include "../input/input.h"
 #include <array>
 #include <algorithm>
 #include <cmath>
@@ -37,6 +38,128 @@ const std::vector<std::string> VM_BUTTON_ACTIONS = {
 
 // Static instance pointer
 VMRuntime* VMRuntime::s_instance = nullptr;
+
+namespace {
+
+constexpr int kBootLogFrames = 8;
+int s_updateLogRemaining = 0;
+int s_drawLogRemaining = 0;
+
+std::shared_ptr<Table> buildArrayTable(const std::array<f32, 12>& values) {
+	auto table = std::make_shared<Table>(static_cast<int>(values.size()), 0);
+	for (size_t index = 0; index < values.size(); ++index) {
+		table->set(static_cast<double>(index + 1), static_cast<double>(values[index]));
+	}
+	return table;
+}
+
+std::shared_ptr<Table> buildBoundingBoxTable(const ImgMeta& meta) {
+	auto table = std::make_shared<Table>(0, 4);
+	const double left = static_cast<double>(meta.boundingbox.x);
+	const double top = static_cast<double>(meta.boundingbox.y);
+	const double right = static_cast<double>(meta.boundingbox.x + meta.boundingbox.width);
+	const double bottom = static_cast<double>(meta.boundingbox.y + meta.boundingbox.height);
+	const double width = static_cast<double>(meta.width);
+	const double height = static_cast<double>(meta.height);
+
+	auto original = std::make_shared<Table>(0, 6);
+	original->set(std::string("left"), left);
+	original->set(std::string("right"), right);
+	original->set(std::string("top"), top);
+	original->set(std::string("bottom"), bottom);
+	original->set(std::string("width"), static_cast<double>(meta.boundingbox.width));
+	original->set(std::string("height"), static_cast<double>(meta.boundingbox.height));
+
+	auto fliph = std::make_shared<Table>(0, 6);
+	fliph->set(std::string("left"), width - right);
+	fliph->set(std::string("right"), width - left);
+	fliph->set(std::string("top"), top);
+	fliph->set(std::string("bottom"), bottom);
+	fliph->set(std::string("width"), static_cast<double>(meta.boundingbox.width));
+	fliph->set(std::string("height"), static_cast<double>(meta.boundingbox.height));
+
+	auto flipv = std::make_shared<Table>(0, 6);
+	flipv->set(std::string("left"), left);
+	flipv->set(std::string("right"), right);
+	flipv->set(std::string("top"), height - bottom);
+	flipv->set(std::string("bottom"), height - top);
+	flipv->set(std::string("width"), static_cast<double>(meta.boundingbox.width));
+	flipv->set(std::string("height"), static_cast<double>(meta.boundingbox.height));
+
+	auto fliphv = std::make_shared<Table>(0, 6);
+	fliphv->set(std::string("left"), width - right);
+	fliphv->set(std::string("right"), width - left);
+	fliphv->set(std::string("top"), height - bottom);
+	fliphv->set(std::string("bottom"), height - top);
+	fliphv->set(std::string("width"), static_cast<double>(meta.boundingbox.width));
+	fliphv->set(std::string("height"), static_cast<double>(meta.boundingbox.height));
+
+	table->set(std::string("original"), original);
+	table->set(std::string("fliph"), fliph);
+	table->set(std::string("flipv"), flipv);
+	table->set(std::string("fliphv"), fliphv);
+	return table;
+}
+
+std::shared_ptr<Table> buildImgMetaTable(const ImgMeta& meta) {
+	auto table = std::make_shared<Table>(0, 12);
+	table->set(std::string("atlassed"), meta.atlassed);
+	if (meta.atlassed) {
+		table->set(std::string("atlasid"), static_cast<double>(meta.atlasid));
+	}
+	table->set(std::string("width"), static_cast<double>(meta.width));
+	table->set(std::string("height"), static_cast<double>(meta.height));
+	table->set(std::string("texcoords"), buildArrayTable(meta.texcoords));
+	table->set(std::string("texcoords_fliph"), buildArrayTable(meta.texcoords_fliph));
+	table->set(std::string("texcoords_flipv"), buildArrayTable(meta.texcoords_flipv));
+	table->set(std::string("texcoords_fliphv"), buildArrayTable(meta.texcoords_fliphv));
+	table->set(std::string("boundingbox"), buildBoundingBoxTable(meta));
+
+	auto centerpoint = std::make_shared<Table>(2, 0);
+	centerpoint->set(1.0, static_cast<double>(meta.centerX));
+	centerpoint->set(2.0, static_cast<double>(meta.centerY));
+	table->set(std::string("centerpoint"), centerpoint);
+	return table;
+}
+
+Value binValueToVmValue(const BinValue& value) {
+	if (value.isNull()) {
+		return Value{std::monostate{}};
+	}
+	if (value.isBool()) {
+		return value.asBool();
+	}
+	if (value.isNumber()) {
+		return static_cast<double>(value.toNumber());
+	}
+	if (value.isString()) {
+		return value.asString();
+	}
+	if (value.isArray()) {
+		const auto& arr = value.asArray();
+		auto table = std::make_shared<Table>(static_cast<int>(arr.size()), 0);
+		for (size_t index = 0; index < arr.size(); ++index) {
+			table->set(static_cast<double>(index + 1), binValueToVmValue(arr[index]));
+		}
+		return table;
+	}
+	if (value.isObject()) {
+		const auto& obj = value.asObject();
+		auto table = std::make_shared<Table>(0, static_cast<int>(obj.size()));
+		for (const auto& [key, entry] : obj) {
+			table->set(key, binValueToVmValue(entry));
+		}
+		return table;
+	}
+	const auto& bin = value.asBinary();
+	auto table = std::make_shared<Table>(static_cast<int>(bin.size()), 0);
+	for (size_t index = 0; index < bin.size(); ++index) {
+		table->set(static_cast<double>(index + 1), static_cast<double>(bin[index]));
+	}
+	return table;
+}
+
+} // namespace
 
 VMRuntime& VMRuntime::createInstance(const VMRuntimeOptions& options) {
 	if (s_instance) {
@@ -106,6 +229,8 @@ void VMRuntime::boot(const VmProgramAsset& asset) {
 
 void VMRuntime::boot(Program* program, int entryProtoIndex) {
 	std::cerr << "[VMRuntime] boot: program=" << program << " entryProtoIndex=" << entryProtoIndex << std::endl;
+	std::cerr << "[VMRuntime] boot: module protos=" << m_vmModuleProtos.size()
+	          << " aliases=" << m_vmModuleAliases.size() << std::endl;
 	m_runtimeFailed = false;
 	m_vmInitialized = false;
 	m_pendingVmCall = PendingCall::None;
@@ -124,6 +249,9 @@ void VMRuntime::boot(Program* program, int entryProtoIndex) {
 	m_api->registerAllFunctions();
 	m_program = program;
 	m_cpu.setProgram(program);
+	runEngineBuiltinPrelude();
+	s_updateLogRemaining = kBootLogFrames;
+	s_drawLogRemaining = kBootLogFrames;
 
 	// Start execution at entry point
 	std::cerr << "[VMRuntime] boot: starting CPU at entry point..." << std::endl;
@@ -178,11 +306,24 @@ void VMRuntime::boot(Program* program, int entryProtoIndex) {
 
 void VMRuntime::tickUpdate() {
 	if (!m_vmInitialized || !m_tickEnabled || m_runtimeFailed) {
+		if (s_updateLogRemaining > 0) {
+			std::cerr << "[VMRuntime] update: skipped (initialized=" << (m_vmInitialized ? "true" : "false")
+			          << " tick=" << (m_tickEnabled ? "true" : "false")
+			          << " failed=" << (m_runtimeFailed ? "true" : "false") << ")" << std::endl;
+			--s_updateLogRemaining;
+		}
 		return;
 	}
 
 	m_frameState.updateExecuted = false;
 	m_frameState.deltaSeconds = static_cast<float>(EngineCore::instance().deltaTime());
+	auto gameTable = std::get<std::shared_ptr<Table>>(m_cpu.globals.get(canonicalizeIdentifier("game")));
+	gameTable->set(std::string("deltatime_seconds"), static_cast<double>(m_frameState.deltaSeconds));
+	gameTable->set(std::string("deltatime"), static_cast<double>(m_frameState.deltaSeconds) * 1000.0);
+	auto viewportTable = std::get<std::shared_ptr<Table>>(gameTable->get(std::string("viewportsize")));
+	auto viewSize = EngineCore::instance().view()->viewportSize;
+	viewportTable->set(std::string("x"), static_cast<double>(viewSize.x));
+	viewportTable->set(std::string("y"), static_cast<double>(viewSize.y));
 
 	// Call _update if present
 	executeUpdateCallback(m_frameState.deltaSeconds);
@@ -192,6 +333,12 @@ void VMRuntime::tickUpdate() {
 
 void VMRuntime::tickDraw() {
 	if (!m_vmInitialized || !m_tickEnabled || m_runtimeFailed) {
+		if (s_drawLogRemaining > 0) {
+			std::cerr << "[VMRuntime] draw: skipped (initialized=" << (m_vmInitialized ? "true" : "false")
+			          << " tick=" << (m_tickEnabled ? "true" : "false")
+			          << " failed=" << (m_runtimeFailed ? "true" : "false") << ")" << std::endl;
+			--s_drawLogRemaining;
+		}
 		return;
 	}
 
@@ -332,6 +479,38 @@ std::vector<Value> VMRuntime::callEngineModuleMember(const std::string& name, co
 	Value key = canonicalizeIdentifier(name);
 	auto member = std::get<std::shared_ptr<Closure>>(engineModule->get(key));
 	return callLuaFunction(member, args);
+}
+
+void VMRuntime::runEngineBuiltinPrelude() {
+	std::cerr << "[VMRuntime] prelude: binding engine builtins" << std::endl;
+	static const std::array<const char*, 19> engineBuiltins = {
+		"define_fsm",
+		"define_world_object",
+		"define_service",
+		"define_component",
+		"define_effect",
+		"new_timeline",
+		"spawn_object",
+		"spawn_sprite",
+		"spawn_textobject",
+		"create_service",
+		"service",
+		"object",
+		"attach_component",
+		"configure_ecs",
+		"apply_default_pipeline",
+		"register",
+		"deregister",
+		"grant_effect",
+		"trigger_effect",
+	};
+	auto engineModule = std::get<std::shared_ptr<Table>>(requireVmModule("engine"));
+	for (const char* name : engineBuiltins) {
+		Value key = canonicalizeIdentifier(name);
+		m_cpu.globals.set(key, engineModule->get(key));
+	}
+	processIOCommands();
+	std::cerr << "[VMRuntime] prelude: engine builtins bound" << std::endl;
 }
 
 std::string VMRuntime::formatVmString(const std::string& templateStr, const std::vector<Value>& args, size_t argStart) const {
@@ -1689,32 +1868,144 @@ void VMRuntime::setupBuiltins() {
 		return {ipairsIterator, target, 0.0};
 	});
 
-	static const std::array<const char*, 19> engineBuiltins = {
-		"define_fsm",
-		"define_world_object",
-		"define_service",
-		"define_component",
-		"define_effect",
-		"new_timeline",
-		"spawn_object",
-		"spawn_sprite",
-		"spawn_textobject",
-		"create_service",
-		"service",
-		"object",
-		"attach_component",
-		"configure_ecs",
-		"apply_default_pipeline",
-		"register",
-		"deregister",
-		"grant_effect",
-		"trigger_effect",
-	};
-	for (const char* name : engineBuiltins) {
-		registerNativeFunction(name, [this, name](const std::vector<Value>& args) -> std::vector<Value> {
-			return callEngineModuleMember(name, args);
-		});
+	const RuntimeAssets& assets = EngineCore::instance().assets();
+	auto assetsTable = std::make_shared<Table>();
+	auto imgTable = std::make_shared<Table>(0, static_cast<int>(assets.img.size()));
+	for (const auto& [id, imgAsset] : assets.img) {
+		auto imgEntry = std::make_shared<Table>(0, 2);
+		imgEntry->set(std::string("imgmeta"), buildImgMetaTable(imgAsset.meta));
+		imgTable->set(id, imgEntry);
 	}
+	assetsTable->set(std::string("img"), imgTable);
+
+	auto dataTable = std::make_shared<Table>(0, static_cast<int>(assets.data.size()));
+	for (const auto& [id, value] : assets.data) {
+		dataTable->set(id, binValueToVmValue(value));
+	}
+	assetsTable->set(std::string("data"), dataTable);
+	assetsTable->set(std::string("audio"), std::make_shared<Table>());
+	assetsTable->set(std::string("audioevents"), std::make_shared<Table>());
+	assetsTable->set(std::string("model"), std::make_shared<Table>());
+	assetsTable->set(std::string("project_root_path"), assets.projectRootPath);
+	setGlobal("assets", assetsTable);
+
+	auto viewSize = EngineCore::instance().view()->viewportSize;
+	auto viewportTable = std::make_shared<Table>(0, 2);
+	viewportTable->set(std::string("x"), static_cast<double>(viewSize.x));
+	viewportTable->set(std::string("y"), static_cast<double>(viewSize.y));
+
+	auto clockNowFn = createNativeFunction("platform.clock.now", [](const std::vector<Value>&) -> std::vector<Value> {
+		return {EngineCore::instance().clock()->now()};
+	});
+	auto clockTable = std::make_shared<Table>(0, 1);
+	clockTable->set(std::string("now"), clockNowFn);
+	auto platformTable = std::make_shared<Table>(0, 1);
+	platformTable->set(std::string("clock"), clockTable);
+
+	auto makeActionStateTable = [](const ActionState& state) -> std::shared_ptr<Table> {
+		auto table = std::make_shared<Table>(0, 18);
+		table->set(std::string("action"), state.action);
+		table->set(std::string("pressed"), state.pressed);
+		table->set(std::string("justpressed"), state.justpressed);
+		table->set(std::string("justreleased"), state.justreleased);
+		table->set(std::string("waspressed"), state.waspressed);
+		table->set(std::string("wasreleased"), state.wasreleased);
+		table->set(std::string("consumed"), state.consumed);
+		table->set(std::string("alljustpressed"), state.alljustpressed);
+		table->set(std::string("allwaspressed"), state.allwaspressed);
+		table->set(std::string("alljustreleased"), state.alljustreleased);
+		if (state.guardedjustpressed.has_value()) {
+			table->set(std::string("guardedjustpressed"), state.guardedjustpressed.value());
+		}
+		if (state.repeatpressed.has_value()) {
+			table->set(std::string("repeatpressed"), state.repeatpressed.value());
+		}
+		if (state.repeatcount.has_value()) {
+			table->set(std::string("repeatcount"), static_cast<double>(state.repeatcount.value()));
+		}
+		if (state.presstime.has_value()) {
+			table->set(std::string("presstime"), static_cast<double>(state.presstime.value()));
+		}
+		if (state.timestamp.has_value()) {
+			table->set(std::string("timestamp"), static_cast<double>(state.timestamp.value()));
+		}
+		if (state.pressedAtMs.has_value()) {
+			table->set(std::string("pressedAtMs"), static_cast<double>(state.pressedAtMs.value()));
+		}
+		if (state.releasedAtMs.has_value()) {
+			table->set(std::string("releasedAtMs"), static_cast<double>(state.releasedAtMs.value()));
+		}
+		if (state.pressId.has_value()) {
+			table->set(std::string("pressId"), static_cast<double>(state.pressId.value()));
+		}
+		table->set(std::string("value"), static_cast<double>(state.value));
+		if (state.value2d.has_value()) {
+			auto value2d = std::make_shared<Table>(0, 2);
+			value2d->set(std::string("x"), static_cast<double>(state.value2d->x));
+			value2d->set(std::string("y"), static_cast<double>(state.value2d->y));
+			table->set(std::string("value2d"), value2d);
+		}
+		return table;
+	};
+
+	auto getActionStateFn = createNativeFunction("game.get_action_state", [this, makeActionStateTable](const std::vector<Value>& args) -> std::vector<Value> {
+		int playerIndex = m_playerIndex;
+		std::string action;
+		std::optional<f64> windowMs;
+		if (args.size() == 1) {
+			action = std::get<std::string>(args.at(0));
+		} else {
+			playerIndex = static_cast<int>(std::floor(std::get<double>(args.at(0))));
+			action = std::get<std::string>(args.at(1));
+			if (args.size() > 2 && !isNil(args.at(2))) {
+				windowMs = std::get<double>(args.at(2));
+			}
+		}
+		PlayerInput* input = Input::instance().getPlayerInput(playerIndex);
+		ActionState state = input->getActionState(action, windowMs);
+		return {makeActionStateTable(state)};
+	});
+
+	auto consumeActionFn = createNativeFunction("game.consume_action", [this](const std::vector<Value>& args) -> std::vector<Value> {
+		int playerIndex = m_playerIndex;
+		std::string action;
+		if (args.size() == 1) {
+			action = std::get<std::string>(args.at(0));
+		} else {
+			playerIndex = static_cast<int>(std::floor(std::get<double>(args.at(0))));
+			action = std::get<std::string>(args.at(1));
+		}
+		Input::instance().getPlayerInput(playerIndex)->consumeAction(action);
+		return {};
+	});
+
+	auto emitFn = createNativeFunction("game.emit", [this](const std::vector<Value>& args) -> std::vector<Value> {
+		auto emitterModule = std::get<std::shared_ptr<Table>>(requireVmModule("eventemitter"));
+		Value emitterKey = canonicalizeIdentifier("EventEmitter");
+		auto emitterTable = std::get<std::shared_ptr<Table>>(emitterModule->get(emitterKey));
+		Value instanceKey = canonicalizeIdentifier("instance");
+		auto instanceTable = std::get<std::shared_ptr<Table>>(emitterTable->get(instanceKey));
+		Value emitKey = canonicalizeIdentifier("emit");
+		auto emitClosure = std::get<std::shared_ptr<Closure>>(instanceTable->get(emitKey));
+		std::vector<Value> callArgs;
+		callArgs.reserve(args.size() + 1);
+		callArgs.push_back(instanceTable);
+		callArgs.insert(callArgs.end(), args.begin(), args.end());
+		callLuaFunction(emitClosure, callArgs);
+		return {};
+	});
+
+	auto gameTable = std::make_shared<Table>(0, 8);
+	gameTable->set(std::string("platform"), platformTable);
+	gameTable->set(std::string("viewportsize"), viewportTable);
+	gameTable->set(std::string("deltatime"), 0.0);
+	gameTable->set(std::string("deltatime_seconds"), 0.0);
+	gameTable->set(std::string("get_action_state"), getActionStateFn);
+	gameTable->set(std::string("consume_action"), consumeActionFn);
+	gameTable->set(std::string("emit"), emitFn);
+	setGlobal("game", gameTable);
+	setGlobal("$", gameTable);
+
 }
 
 void VMRuntime::executeUpdateCallback(double deltaSeconds) {
@@ -1737,8 +2028,19 @@ void VMRuntime::executeUpdateCallback(double deltaSeconds) {
 			}
 		}
 		if (shouldRunEngineUpdate) {
-			callEngineModuleMember("update", {deltaSeconds});
+			const double deltaMs = deltaSeconds * 1000.0;
+			callEngineModuleMember("update", {deltaMs});
 			processIOCommands();
+		}
+		if (s_updateLogRemaining > 0) {
+			const char* pendingLabel = m_pendingVmCall == PendingCall::None
+				? "none"
+				: (m_pendingVmCall == PendingCall::Update ? "update" : "draw");
+			std::cerr << "[VMRuntime] update: vm=" << (m_updateFn.has_value() ? "yes" : "no")
+			          << " pending=" << pendingLabel
+			          << " engine=" << (shouldRunEngineUpdate ? "yes" : "no")
+			          << " dt=" << deltaSeconds << std::endl;
+			--s_updateLogRemaining;
 		}
 	} catch (const std::exception& e) {
 		std::cerr << "[VMRuntime] Error in update: " << e.what() << std::endl;
@@ -1768,6 +2070,15 @@ void VMRuntime::executeDrawCallback() {
 		if (shouldRunEngineDraw) {
 			callEngineModuleMember("draw", {});
 			processIOCommands();
+		}
+		if (s_drawLogRemaining > 0) {
+			const char* pendingLabel = m_pendingVmCall == PendingCall::None
+				? "none"
+				: (m_pendingVmCall == PendingCall::Update ? "update" : "draw");
+			std::cerr << "[VMRuntime] draw: vm=" << (m_drawFn.has_value() ? "yes" : "no")
+			          << " pending=" << pendingLabel
+			          << " engine=" << (shouldRunEngineDraw ? "yes" : "no") << std::endl;
+			--s_drawLogRemaining;
 		}
 	} catch (const std::exception& e) {
 		std::cerr << "[VMRuntime] Error in draw: " << e.what() << std::endl;

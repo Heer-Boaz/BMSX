@@ -138,6 +138,68 @@ void VMApi::registerAllFunctions() {
 		return {};
 	});
 
+	m_runtime.registerNativeFunction("put_glyphs", [this](const std::vector<Value>& args) -> std::vector<Value> {
+		const Value& glyphValue = args.at(0);
+		std::string text;
+		if (std::holds_alternative<std::string>(glyphValue)) {
+			text = std::get<std::string>(glyphValue);
+		} else {
+			auto tbl = std::get<std::shared_ptr<Table>>(glyphValue);
+			int length = tbl->length();
+			for (int i = 1; i <= length; ++i) {
+				if (i > 1) {
+					text.push_back('\n');
+				}
+				text += std::get<std::string>(tbl->get(static_cast<double>(i)));
+			}
+		}
+
+		float x = static_cast<float>(std::get<double>(args.at(1)));
+		float y = static_cast<float>(std::get<double>(args.at(2)));
+		float z = static_cast<float>(std::get<double>(args.at(3)));
+		GlyphRenderSubmission submission;
+		submission.text = text;
+		submission.x = x;
+		submission.y = y;
+		submission.z = z;
+		submission.font = m_font.get();
+
+		if (args.size() > 4 && std::holds_alternative<std::shared_ptr<Table>>(args[4])) {
+			auto options = std::get<std::shared_ptr<Table>>(args[4]);
+			Value colorValue = options->get(std::string("color"));
+			if (!isNil(colorValue)) {
+				submission.color = resolve_color(colorValue);
+			}
+			Value backgroundValue = options->get(std::string("background_color"));
+			if (!isNil(backgroundValue)) {
+				submission.background_color = resolve_color(backgroundValue);
+			}
+			Value wrapValue = options->get(std::string("wrap_chars"));
+			if (!isNil(wrapValue)) {
+				submission.wrap_chars = static_cast<int>(std::floor(std::get<double>(wrapValue)));
+			}
+			Value centerValue = options->get(std::string("center_block_width"));
+			if (!isNil(centerValue)) {
+				submission.center_block_width = static_cast<int>(std::floor(std::get<double>(centerValue)));
+			}
+			Value startValue = options->get(std::string("glyph_start"));
+			if (!isNil(startValue)) {
+				submission.glyph_start = static_cast<int>(std::floor(std::get<double>(startValue)));
+			}
+			Value endValue = options->get(std::string("glyph_end"));
+			if (!isNil(endValue)) {
+				submission.glyph_end = static_cast<int>(std::floor(std::get<double>(endValue)));
+			}
+			Value layerValue = options->get(std::string("layer"));
+			if (!isNil(layerValue)) {
+				submission.layer = resolve_layer(layerValue);
+			}
+		}
+
+		EngineCore::instance().view()->renderer.submit.glyphs(submission);
+		return {};
+	});
+
 	m_runtime.registerNativeFunction("put_poly", [this](const std::vector<Value>& args) -> std::vector<Value> {
 		std::vector<Vec2> points = read_polygon(args.at(0));
 		float z = static_cast<float>(std::get<double>(args.at(1)));

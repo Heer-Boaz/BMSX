@@ -230,6 +230,7 @@ private:
 	~VMRuntime();
 
 	void setupBuiltins();
+	void runEngineBuiltinPrelude();
 	void executeUpdateCallback(double deltaSeconds);
 	void executeDrawCallback();
 	Value requireVmModule(const std::string& moduleName);

@@ -67,7 +67,7 @@ const ModelAsset* RuntimeAssets::getModel(const AssetId& id) const {
     return it != model.end() ? &it->second : nullptr;
 }
 
-const std::vector<u8>* RuntimeAssets::getData(const AssetId& id) const {
+const BinValue* RuntimeAssets::getData(const AssetId& id) const {
     auto it = data.find(id);
     return it != data.end() ? &it->second : nullptr;
 }
@@ -376,8 +376,8 @@ bool loadAssetsFromRom(const u8* buffer, size_t size, RuntimeAssets& assets) {
                         std::cerr << "[BMSX] VM program load FAILED: " << e.what() << std::endl;
                     }
                 } else {
-                    std::vector<u8> dataBlob(romData + bufStart, romData + bufEnd);
-                    assets.data[assetId] = std::move(dataBlob);
+                    BinValue dataValue = decodeBinary(romData + bufStart, bufEnd - bufStart);
+                    assets.data[assetId] = std::move(dataValue);
                 }
             }
         }

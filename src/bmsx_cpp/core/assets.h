@@ -14,6 +14,7 @@
 #define BMSX_ASSETS_H
 
 #include "types.h"
+#include "binencoder.h"
 #include "../vm/program_loader.h"
 #include <string>
 #include <unordered_map>
@@ -181,7 +182,7 @@ public:
     std::unordered_map<AssetId, ImgAsset> img;
     std::unordered_map<AssetId, AudioAsset> audio;
     std::unordered_map<AssetId, ModelAsset> model;
-    std::unordered_map<AssetId, std::vector<u8>> data;  // Generic binary data
+    std::unordered_map<AssetId, BinValue> data;  // Generic decoded data assets
     std::unordered_map<AssetId, AudioEventEntry> audioevents;
 
     // Atlas textures (atlasid -> ImgAsset with full texture data)
@@ -205,7 +206,7 @@ public:
     ModelAsset* getModel(const AssetId& id);
     const ModelAsset* getModel(const AssetId& id) const;
 
-    const std::vector<u8>* getData(const AssetId& id) const;
+    const BinValue* getData(const AssetId& id) const;
 
     const AudioEventEntry* getAudioEvent(const AssetId& id) const;
 

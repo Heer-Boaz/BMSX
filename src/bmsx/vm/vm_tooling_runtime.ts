@@ -28,7 +28,7 @@ import { decodeuint8arr } from '../serializer/binencoder';
 import { createIdentifierCanonicalizer } from '../utils/identifier_canonicalizer';
 import { clamp_fallback } from '../utils/clamp';
 import { BmsxVMApi } from './vm_api';
-import { VMCPU, Table, type Closure, type Value, RunResult, createNativeFunction, createNativeObject, isNativeFunction, isNativeObject, type NativeFunction, type NativeObject } from './cpu';
+import { VMCPU, Table, type Closure, type Value, type Program, RunResult, createNativeFunction, createNativeObject, isNativeFunction, isNativeObject, type NativeFunction, type NativeObject } from './cpu';
 import { TerminalMode } from './terminal_mode';
 import { VMRenderFacade } from './vm_render_facade';
 import { VMFont, type VMFontVariant } from './font';
@@ -128,6 +128,7 @@ export var api: BmsxVMApi; // Initialized in BmsxVMRuntime constructor
 
 export class BmsxVMRuntime {
 	private static _instance: BmsxVMRuntime = null;
+	private static readonly ENGINE_BUILTIN_PRELUDE_PATH = '__engine_builtin_prelude__';
 	private static readonly LUA_SNAPSHOT_EXCLUDED_GLOBALS = new Set<string>(['print', 'type', 'tostring', 'tonumber', 'setmetatable', 'getmetatable', 'require', 'pairs', 'ipairs', 'serialize', 'deserialize', 'math', 'string', 'os', 'table', 'coroutine', 'debug', 'package', 'api', 'peek', 'poke', 'SYS_CART_PRESENT', 'SYS_BOOT_CART',
 	]);
 	/**
@@ -1366,7 +1367,6 @@ export class BmsxVMRuntime {
 		const chunk = interpreter.compileChunk(params.source, binding);
 		const { modules, modulePaths } = this.buildVmModuleChunks(binding);
 		const { program, entryProtoIndex, moduleProtoMap } = compileLuaChunkToProgram(chunk, modules, { baseProgram: this.cpu.getProgram() });
-		this.cpu.setProgram(program);
 		this.vmModuleProtos.clear();
 		for (const [modulePath, protoIndex] of moduleProtoMap.entries()) {
 			this.vmModuleProtos.set(modulePath, protoIndex);
@@ -1377,6 +1377,7 @@ export class BmsxVMRuntime {
 		}
 		this.vmModuleCache.clear();
 		this.cpuMemory[IO_WRITE_PTR_ADDR] = 0;
+		this.runEngineBuiltinPrelude(program);
 		this.cpu.start(entryProtoIndex);
 		this.pendingVmCall = null;
 		this.cpu.instructionBudgetRemaining = null;
@@ -1531,7 +1532,6 @@ export class BmsxVMRuntime {
 		const chunk = interpreter.compileChunk(params.source, binding.source_path);
 		const { modules, modulePaths } = this.buildVmModuleChunks(binding.source_path);
 		const { program, entryProtoIndex, moduleProtoMap } = compileLuaChunkToProgram(chunk, modules);
-		this.cpu.setProgram(program);
 		this.vmModuleProtos.clear();
 		for (const [modulePath, protoIndex] of moduleProtoMap.entries()) {
 			this.vmModuleProtos.set(modulePath, protoIndex);
@@ -1542,6 +1542,7 @@ export class BmsxVMRuntime {
 		}
 		this.vmModuleCache.clear();
 		this.cpuMemory[IO_WRITE_PTR_ADDR] = 0;
+		this.runEngineBuiltinPrelude(program);
 		this.cpu.start(entryProtoIndex);
 		this.pendingVmCall = null;
 		this.cpu.instructionBudgetRemaining = null;
@@ -1799,6 +1800,28 @@ export class BmsxVMRuntime {
 		const key = this.canonicalizeIdentifier(name);
 		const member = engine.get(key) as Closure;
 		return this.callVmFunction(member, args as Value[]);
+	}
+
+	private buildEngineBuiltinPreludeSource(): string {
+		const lines: string[] = ['local engine = require("engine")'];
+		for (let index = 0; index < ENGINE_LUA_BUILTIN_FUNCTIONS.length; index += 1) {
+			const name = ENGINE_LUA_BUILTIN_FUNCTIONS[index].name;
+			lines.push(`${name} = engine.${name}`);
+		}
+		return lines.join('\n');
+	}
+
+	private runEngineBuiltinPrelude(program: Program): Program {
+		const source = this.buildEngineBuiltinPreludeSource();
+		const interpreter = this.luaInterpreter;
+		interpreter.setReservedIdentifiers([]);
+		const chunk = interpreter.compileChunk(source, BmsxVMRuntime.ENGINE_BUILTIN_PRELUDE_PATH);
+		interpreter.setReservedIdentifiers(this.apiFunctionNames);
+		const compiled = appendLuaChunkToProgram(program, chunk);
+		this.cpu.setProgram(compiled.program);
+		this.callVmFunction({ protoIndex: compiled.entryProtoIndex, upvalues: [] }, []);
+		this.processVmIo();
+		return compiled.program;
 	}
 
 	private seedVmGlobals(): void {
@@ -2488,11 +2511,6 @@ export class BmsxVMRuntime {
 			}
 			return [ipairsIterator, target, 0];
 		}));
-
-		for (let index = 0; index < ENGINE_LUA_BUILTIN_FUNCTIONS.length; index += 1) {
-			const name = ENGINE_LUA_BUILTIN_FUNCTIONS[index].name;
-			this.registerVmGlobal(name, createNativeFunction(name, (args) => this.callEngineModuleMember(name, args)));
-		}
 
 		const members = this.collectApiMembers();
 		for (const { name, kind, descriptor } of members) {
@@ -3187,7 +3205,6 @@ export class BmsxVMRuntime {
 			const entryChunk = interpreter.compileChunk(entrySource, entryPath);
 			const { modules, modulePaths } = this.buildVmModuleChunks(entryPath);
 			const { program, entryProtoIndex, moduleProtoMap } = compileLuaChunkToProgram(entryChunk, modules);
-			this.cpu.setProgram(program);
 			this.vmModuleProtos.clear();
 			for (const [modulePath, protoIndex] of moduleProtoMap.entries()) {
 				this.vmModuleProtos.set(modulePath, protoIndex);
@@ -3198,6 +3215,7 @@ export class BmsxVMRuntime {
 			}
 			this.vmModuleCache.clear();
 			this.cpuMemory[IO_WRITE_PTR_ADDR] = 0;
+			this.runEngineBuiltinPrelude(program);
 			this.cpu.start(entryProtoIndex);
 			this.pendingVmCall = null;
 			this.cpu.instructionBudgetRemaining = null;
