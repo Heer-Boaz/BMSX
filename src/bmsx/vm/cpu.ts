@@ -28,8 +28,34 @@ export type NativeObject = {
 	len?: () => number;
 };
 
+function valueTypeName(value: Value): string {
+	if (value === null) return 'nil';
+	if (typeof value === 'boolean') return 'boolean';
+	if (typeof value === 'number') return 'number';
+	if (typeof value === 'string') return 'string';
+	if (value instanceof Table) return 'table';
+	if (isNativeFunction(value)) return 'native_function';
+	if (isNativeObject(value)) return 'native_object';
+	return 'closure';
+}
+
 export function createNativeFunction(name: string, invoke: (args: ReadonlyArray<Value>) => Value[]): NativeFunction {
-	return { kind: NATIVE_FUNCTION_KIND, name, invoke };
+	return {
+		kind: NATIVE_FUNCTION_KIND,
+		name,
+		// Keep diagnostics aligned with the C++ VM when native calls receive wrong arg types.
+		invoke: (args) => {
+			try {
+				return invoke(args);
+			} catch (err) {
+				if (err instanceof TypeError) {
+					const argTypes = args.map(valueTypeName).join(', ');
+					err.message = `Native function argument type mismatch. fn=${name} args=[${argTypes}] error=${err.message}`;
+				}
+				throw err;
+			}
+		},
+	};
 }
 
 export function createNativeObject(raw: object, handlers: { get: (key: Value) => Value; set: (key: Value, value: Value) => void; len?: () => number }): NativeObject {

@@ -5,6 +5,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <stdexcept>
 #include <unordered_map>
 #include <utility>
 #include <variant>
@@ -103,13 +104,44 @@ struct NativeFunction {
 };
 
 /**
+ * Value type name for diagnostics (mirrors cpu.cpp valueTypeName).
+ */
+inline const char* valueTypeNameInline(const Value& v) {
+	switch (v.index()) {
+		case VALUE_NIL: return "nil";
+		case VALUE_BOOL: return "boolean";
+		case VALUE_NUMBER: return "number";
+		case VALUE_STRING: return "string";
+		case VALUE_TABLE: return "table";
+		case VALUE_CLOSURE: return "closure";
+		case VALUE_NATIVE_FUNCTION: return "native_function";
+		case VALUE_NATIVE_OBJECT: return "native_object";
+		default: return "unknown";
+	}
+}
+
+/**
  * Create a native function.
  */
 inline std::shared_ptr<NativeFunction> createNativeFunction(
 	const std::string& name,
 	NativeFunctionInvoke invoke
 ) {
-	return std::make_shared<NativeFunction>(NativeFunction{name, std::move(invoke)});
+	auto wrapped = [name, invoke = std::move(invoke)](const std::vector<Value>& args) -> std::vector<Value> {
+		try {
+			return invoke(args);
+		} catch (const std::bad_variant_access& e) {
+			std::string message = "Native function argument type mismatch.";
+			message += " fn=" + name + " args=[";
+			for (size_t i = 0; i < args.size(); ++i) {
+				if (i > 0) message += ", ";
+				message += valueTypeNameInline(args[i]);
+			}
+			message += "] error=" + std::string(e.what());
+			throw std::runtime_error(message);
+		}
+	};
+	return std::make_shared<NativeFunction>(NativeFunction{name, std::move(wrapped)});
 }
 
 /**

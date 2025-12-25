@@ -2056,34 +2056,102 @@ void VMRuntime::setupBuiltins() {
 		Value emitKey = canonicalizeIdentifier("emit");
 		// Methods live on the EventEmitter table; call with instance as self.
 		auto emitClosure = std::get<std::shared_ptr<Closure>>(emitterTable->get(emitKey));
+		// Aligns with TS EngineCore.emit and vm_tooling_runtime native method dispatch.
+		const auto gameTable = std::get<std::shared_ptr<Table>>(m_cpu.globals.get(canonicalizeIdentifier("game")));
+		size_t argOffset = 0;
+		if (auto* selfTable = std::get_if<std::shared_ptr<Table>>(&args.at(0))) {
+			if (*selfTable == gameTable) {
+				argOffset = 1;
+			}
+		}
 		std::vector<Value> callArgs;
-		callArgs.reserve(args.size() + 1);
+		callArgs.reserve(args.size() - argOffset + 1);
 		callArgs.push_back(instanceTable);
-		callArgs.insert(callArgs.end(), args.begin(), args.end());
+		callArgs.insert(callArgs.end(), args.begin() + static_cast<std::ptrdiff_t>(argOffset), args.end());
 		callLuaFunction(emitClosure, callArgs);
 
-		if (!args.empty()) {
-			const std::string& eventName = std::get<std::string>(args.at(0));
-			Value emitter = args.size() > 1 ? args.at(1) : Value{};
-			Value payload = args.size() > 2 ? args.at(2) : Value{};
-			std::string emitterId;
+		const size_t argCount = args.size() - argOffset;
+		const Value& specValue = args.at(argOffset);
+		std::string eventName;
+		Value emitterValue{};
+		Value payloadValue{};
+		bool payloadIsEventTable = false;
+		if (auto* eventNameStr = std::get_if<std::string>(&specValue)) {
+			eventName = *eventNameStr;
+			emitterValue = argCount > 1 ? args.at(argOffset + 1) : Value{};
+			payloadValue = argCount > 2 ? args.at(argOffset + 2) : Value{};
 			bool emitterValid = false;
-			if (auto* s = std::get_if<std::string>(&emitter)) {
-				emitterId = *s;
+			if (auto* s = std::get_if<std::string>(&emitterValue)) {
+				(void)s;
 				emitterValid = true;
-			} else if (auto* tbl = std::get_if<std::shared_ptr<Table>>(&emitter)) {
+			} else if (auto* tbl = std::get_if<std::shared_ptr<Table>>(&emitterValue)) {
 				Value idValue = (*tbl)->get(std::string("id"));
-				if (auto* idStr = std::get_if<std::string>(&idValue)) {
-					emitterId = *idStr;
+				if (std::holds_alternative<std::string>(idValue)) {
 					emitterValid = true;
 				}
 			}
-			if (!emitterValid && args.size() == 2) {
-				payload = emitter;
-				emitter = Value{};
+			if (!emitterValid && argCount == 2) {
+				payloadValue = emitterValue;
+				emitterValue = Value{};
 			}
-			EngineCore::instance().audioEventManager()->onEvent(eventName, payload, emitterId);
+		} else if (auto* eventTable = std::get_if<std::shared_ptr<Table>>(&specValue)) {
+			Value typeValue = (*eventTable)->get(std::string("type"));
+			eventName = std::get<std::string>(typeValue);
+			emitterValue = (*eventTable)->get(std::string("emitter"));
+			payloadValue = specValue;
+			payloadIsEventTable = true;
+		} else {
+			eventName = std::get<std::string>(specValue);
 		}
+
+		std::string emitterId;
+		if (auto* s = std::get_if<std::string>(&emitterValue)) {
+			emitterId = *s;
+		} else if (auto* tbl = std::get_if<std::shared_ptr<Table>>(&emitterValue)) {
+			Value idValue = (*tbl)->get(std::string("id"));
+			if (auto* idStr = std::get_if<std::string>(&idValue)) {
+				emitterId = *idStr;
+			}
+		}
+
+		Value payload = payloadValue;
+		if (!payloadIsEventTable && !isNil(payloadValue)) {
+			if (auto* payloadTable = std::get_if<std::shared_ptr<Table>>(&payloadValue)) {
+				Value payloadType = (*payloadTable)->get(std::string("type"));
+				if (isNil(payloadType)) {
+					auto eventTable = std::make_shared<Table>(0, 8);
+					eventTable->set(std::string("type"), eventName);
+					eventTable->set(std::string("emitter"), emitterValue);
+					eventTable->set(std::string("timestamp"), EngineCore::instance().clock()->now());
+					for (const auto& [key, value] : (*payloadTable)->entries()) {
+						eventTable->set(key, value);
+					}
+					payload = eventTable;
+				} else {
+					auto eventTable = std::make_shared<Table>(0, 4);
+					eventTable->set(std::string("type"), eventName);
+					eventTable->set(std::string("emitter"), emitterValue);
+					eventTable->set(std::string("timestamp"), EngineCore::instance().clock()->now());
+					eventTable->set(std::string("payload"), payloadValue);
+					payload = eventTable;
+				}
+			} else {
+				auto eventTable = std::make_shared<Table>(0, 4);
+				eventTable->set(std::string("type"), eventName);
+				eventTable->set(std::string("emitter"), emitterValue);
+				eventTable->set(std::string("timestamp"), EngineCore::instance().clock()->now());
+				eventTable->set(std::string("payload"), payloadValue);
+				payload = eventTable;
+			}
+		} else if (!payloadIsEventTable) {
+			auto eventTable = std::make_shared<Table>(0, 3);
+			eventTable->set(std::string("type"), eventName);
+			eventTable->set(std::string("emitter"), emitterValue);
+			eventTable->set(std::string("timestamp"), EngineCore::instance().clock()->now());
+			payload = eventTable;
+		}
+
+		EngineCore::instance().audioEventManager()->onEvent(eventName, payload, emitterId);
 		return {};
 	});
 
