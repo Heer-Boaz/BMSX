@@ -37,16 +37,16 @@ struct VMFrameState {
  * Viewport size configuration.
  */
 struct Viewport {
-	int x = 256;
-	int y = 224;
+	int x = 0;
+	int y = 0;
 };
 
 /**
  * VM runtime options for initialization.
  */
 struct VMRuntimeOptions {
-	int playerIndex = 1;
-	Viewport viewport{256, 224};
+	int playerIndex = 0;
+	Viewport viewport{0, 0};
 	CanonicalizationType canonicalization = CanonicalizationType::None;
 };
 
@@ -254,8 +254,8 @@ private:
 	std::unique_ptr<VMApi> m_api;
 
 	// Configuration
-	int m_playerIndex = 1;
-	Viewport m_viewport{256, 224};
+	int m_playerIndex = 0;
+	Viewport m_viewport{0, 0};
 	CanonicalizationType m_canonicalization = CanonicalizationType::None;
 
 	// State flags

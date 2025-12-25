@@ -14,7 +14,7 @@
 
 // Core info
 static constexpr const char* CORE_NAME = "BMSX";
-static constexpr const char* CORE_VERSION = "0.1.0";
+static constexpr const char* CORE_VERSION = "1.0.0";
 static constexpr const char* VALID_EXTENSIONS = "rom|bmsx";
 
 // Libretro callbacks

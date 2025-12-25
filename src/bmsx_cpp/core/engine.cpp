@@ -477,8 +477,8 @@ void EngineCore::bootVMFromProgram() {
     if (!VMRuntime::hasInstance()) {
         VMRuntimeOptions options;
         options.playerIndex = 1;
-        options.viewport.x = m_assets.manifest.viewportWidth > 0 ? m_assets.manifest.viewportWidth : 256;
-        options.viewport.y = m_assets.manifest.viewportHeight > 0 ? m_assets.manifest.viewportHeight : 224;
+        options.viewport.x = m_assets.manifest.viewportWidth;
+        options.viewport.y = m_assets.manifest.viewportHeight;
         options.canonicalization = m_assets.manifest.canonicalization;
         VMRuntime::createInstance(options);
     }

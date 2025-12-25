@@ -21,10 +21,10 @@ namespace bmsx {
 
 LibretroPlatform::LibretroPlatform() {
     // Initialize framebuffer with default size
-    m_framebuffer.resize(256, 224);
+    m_framebuffer.resize(0, 0);
 
-    // Reserve audio buffer for one frame at 48000Hz / 60fps = ~800 samples
-    m_audio_buffer.reserve(1024);
+    // Reserve audio buffer for ten frames at 8000Hz / 50fps = 1600 samples
+    m_audio_buffer.reserve(1600);
 
     // Create platform components
     m_clock = std::make_unique<LibretroClock>();

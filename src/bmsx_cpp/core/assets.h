@@ -170,8 +170,8 @@ struct RomManifest {
     std::string author;
     std::string description;
 
-    i32 viewportWidth = 256;
-    i32 viewportHeight = 224;
+    i32 viewportWidth = 0;
+    i32 viewportHeight = 0;
 	CanonicalizationType canonicalization = CanonicalizationType::None;
 
     std::string entryPoint;  // Main Lua file
