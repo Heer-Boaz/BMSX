@@ -61,6 +61,7 @@ LibretroPlatform::LibretroPlatform() {
 
 LibretroPlatform::~LibretroPlatform() {
     unloadRom();
+    Input::instance().shutdown();
 
     // Shutdown engine before destroying platform components
     if (m_engine) {
