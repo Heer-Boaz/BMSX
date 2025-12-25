@@ -25,6 +25,8 @@ static retro_audio_sample_batch_t audio_batch_cb = nullptr;
 static retro_input_poll_t input_poll_cb = nullptr;
 static retro_input_state_t input_state_cb = nullptr;
 static retro_log_callback logging;
+static retro_usec_t g_pending_frame_time_usec = 0;
+static bool g_has_pending_frame_time = false;
 
 // The platform instance
 static bmsx::LibretroPlatform* g_platform = nullptr;
@@ -33,6 +35,7 @@ static bool g_cached_av_info_valid = false;
 
 // Forward declarations
 static void fallback_log(enum retro_log_level level, const char* fmt, ...);
+static void frame_time_cb(retro_usec_t usec);
 
 /* ============================================================================
  * Libretro callback setters
@@ -76,6 +79,11 @@ void retro_set_environment(retro_environment_t cb) {
       {1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B, "B (P2)"},
       {0, 0, 0, 0, nullptr}};
   cb(RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS, (void*)input_desc);
+
+  retro_frame_time_callback frame_time{};
+  frame_time.callback = frame_time_cb;
+  frame_time.reference = 0;
+  cb(RETRO_ENVIRONMENT_SET_FRAME_TIME_CALLBACK, &frame_time);
 }
 
 void retro_set_video_refresh(retro_video_refresh_t cb) {
@@ -127,6 +135,10 @@ void retro_init(void) {
   g_platform->setInputStateCallback(input_state_cb);
   if (g_cached_av_info_valid) {
     g_platform->setAVInfo(g_cached_av_info);
+  }
+  if (g_has_pending_frame_time) {
+    g_platform->setFrameTimeUsec(g_pending_frame_time_usec);
+    g_has_pending_frame_time = false;
   }
 }
 
@@ -325,4 +337,13 @@ static void fallback_log(enum retro_log_level level, const char* fmt, ...) {
   va_start(args, fmt);
   vfprintf(stderr, fmt, args);
   va_end(args);
+}
+
+static void frame_time_cb(retro_usec_t usec) {
+  if (g_platform) {
+    g_platform->setFrameTimeUsec(usec);
+    return;
+  }
+  g_pending_frame_time_usec = usec;
+  g_has_pending_frame_time = true;
 }

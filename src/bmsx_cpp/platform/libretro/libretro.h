@@ -195,6 +195,14 @@ struct retro_rumble_interface {
     bool (*set_rumble_state)(unsigned port, enum retro_rumble_effect effect, uint16_t strength);
 };
 
+typedef int64_t retro_usec_t;
+typedef void (*retro_frame_time_callback_t)(retro_usec_t usec);
+
+struct retro_frame_time_callback {
+    retro_frame_time_callback_t callback;
+    unsigned reference;
+};
+
 /* Callbacks */
 typedef bool (*retro_environment_t)(unsigned cmd, void *data);
 typedef void (*retro_video_refresh_t)(const void *data, unsigned width, unsigned height, size_t pitch);

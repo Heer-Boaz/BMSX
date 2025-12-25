@@ -15,7 +15,7 @@
 
 namespace bmsx {
 namespace {
-constexpr double kMaxSampleRate = 48000.0;
+constexpr double kAudioLeadFrames = 8.0;
 }
 
 /* ============================================================================
@@ -85,6 +85,7 @@ void LibretroPlatform::setInputStateCallback(retro_input_state_t cb) {
 void LibretroPlatform::setAVInfo(const retro_system_av_info& info) {
     m_av_info = info;
     m_has_av_info = true;
+    m_frame_time_sec = 1.0 / info.timing.fps;
     m_framebuffer.resize(info.geometry.base_width, info.geometry.base_height);
     log(RETRO_LOG_INFO, "[BMSX] AV Info set: %ux%u @ %.2fHz, Sample Rate: %.2fHz\n",
         info.geometry.base_width,
@@ -104,6 +105,13 @@ void LibretroPlatform::setAVInfo(const retro_system_av_info& info) {
 
     if (auto* audioService = dynamic_cast<LibretroAudioService*>(m_audio_service.get())) {
         audioService->setTiming(info.timing.sample_rate, info.timing.fps);
+    }
+}
+
+void LibretroPlatform::setFrameTimeUsec(retro_usec_t usec) {
+    m_frame_time_sec = static_cast<double>(usec) / 1000000.0;
+    if (auto* audioService = dynamic_cast<LibretroAudioService*>(m_audio_service.get())) {
+        audioService->setFrameTimeSec(m_frame_time_sec);
     }
 }
 
@@ -137,22 +145,6 @@ void LibretroPlatform::applyManifestViewport() {
     setAVInfo(nextInfo);
 }
 
-void LibretroPlatform::applyManifestAudioTiming() {
-    const auto& audioAssets = m_engine->assets().audio;
-    if (audioAssets.empty()) {
-        return;
-    }
-    auto it = audioAssets.begin();
-    double sampleRate = static_cast<double>(it->second.sampleRate);
-    for (++it; it != audioAssets.end(); ++it) {
-        sampleRate = std::max(sampleRate, static_cast<double>(it->second.sampleRate));
-    }
-    sampleRate = std::min(sampleRate, kMaxSampleRate);
-
-    m_pending_sample_rate = sampleRate;
-    m_has_pending_audio_timing = true;
-}
-
 bool LibretroPlatform::loadRom(const uint8_t* data, size_t size) {
     unloadRom();
 
@@ -166,7 +158,6 @@ bool LibretroPlatform::loadRom(const uint8_t* data, size_t size) {
     }
 
     applyManifestViewport();
-    applyManifestAudioTiming();
     m_rom_loaded = true;
     log(RETRO_LOG_INFO, "[BMSX] ROM loaded (%zu bytes)\n", size);
     return true;
@@ -291,14 +282,6 @@ void LibretroPlatform::reset() {
 void LibretroPlatform::runFrame() {
     if (!m_rom_loaded || !m_engine) return;
 
-    if (m_has_pending_audio_timing && m_has_av_info) {
-        m_has_pending_audio_timing = false;
-        retro_system_av_info nextInfo = m_av_info;
-        nextInfo.timing.sample_rate = m_pending_sample_rate;
-        m_environ_cb(RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO, &nextInfo);
-        setAVInfo(nextInfo);
-    }
-
     // Clear audio buffer
     m_audio_buffer.clear();
 
@@ -307,11 +290,11 @@ void LibretroPlatform::runFrame() {
 
     // Advance clock
     if (auto* clock = dynamic_cast<LibretroClock*>(m_clock.get())) {
-        clock->advanceFrame(m_av_info.timing.fps);
+        clock->advanceFrame(1.0 / m_frame_time_sec);
     }
 
-    // Calculate delta time (1/fps in seconds)
-    f64 dt = m_av_info.timing.fps > 0 ? 1.0 / m_av_info.timing.fps : 1.0 / 60.0;
+    // Calculate delta time in seconds
+    f64 dt = m_frame_time_sec;
 
     // Start engine if not running
     if (!m_engine->isRunning() && m_engine->state() == EngineState::Initialized) {
@@ -549,18 +532,24 @@ LibretroAudioService::LibretroAudioService(LibretroPlatform* platform)
 
 void LibretroAudioService::setTiming(double sampleRate, double fps) {
     m_sample_rate = sampleRate;
-    m_frame_rate = fps;
+    m_frame_time_sec = 1.0 / fps;
     m_sample_accumulator = 0.0;
     m_queue_start_samples = 0;
     m_queue_samples = 0;
     m_sample_queue.clear();
-    const double framesPerFrame = m_sample_rate / m_frame_rate;
-    m_target_buffer_frames = static_cast<size_t>(std::ceil(framesPerFrame * 4.0));
+    const double framesPerFrame = m_sample_rate * m_frame_time_sec;
+    m_target_buffer_frames = static_cast<size_t>(std::ceil(framesPerFrame * kAudioLeadFrames));
+}
+
+void LibretroAudioService::setFrameTimeSec(double seconds) {
+    m_frame_time_sec = seconds;
+    const double framesPerFrame = m_sample_rate * m_frame_time_sec;
+    m_target_buffer_frames = static_cast<size_t>(std::ceil(framesPerFrame * kAudioLeadFrames));
 }
 
 void LibretroAudioService::collectSamples(AudioBuffer& buffer) {
     // Drive sample count from frame timing and buffer a small lead to smooth jitter.
-    const double samplesPerFrame = m_sample_rate / m_frame_rate;
+    const double samplesPerFrame = m_sample_rate * m_frame_time_sec;
     m_sample_accumulator += samplesPerFrame;
     const size_t frames = static_cast<size_t>(m_sample_accumulator);
     if (frames == 0) {

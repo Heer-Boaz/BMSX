@@ -152,9 +152,9 @@ public:
 
     // Configuration
     void setAVInfo(const retro_system_av_info& info);
+    void setFrameTimeUsec(retro_usec_t usec);
     void setControllerDevice(unsigned port, unsigned device);
     void applyManifestViewport();
-    void applyManifestAudioTiming();
 
     // ROM management
     bool loadRom(const uint8_t* data, size_t size);
@@ -222,8 +222,7 @@ private:
     bool m_has_av_info = false;
     bool m_has_pending_viewport = false;
     Vec2 m_pending_viewport;
-    bool m_has_pending_audio_timing = false;
-    double m_pending_sample_rate = 0.0;
+    double m_frame_time_sec = 1.0 / 50.0;
 
     // Controller configuration
     std::array<unsigned, 4> m_controller_devices{};
@@ -294,6 +293,7 @@ public:
 
     void setAudioBatchCallback(retro_audio_sample_batch_t cb) { m_audio_batch_cb = cb; }
     void setTiming(double sampleRate, double fps);
+    void setFrameTimeSec(double seconds);
 
     // Collect audio samples from all voices
     void collectSamples(AudioBuffer& buffer);
@@ -310,7 +310,7 @@ private:
     LibretroPlatform* m_platform;
     retro_audio_sample_batch_t m_audio_batch_cb = nullptr;
     double m_sample_rate = 48000.0;
-    double m_frame_rate = 60.0;
+    double m_frame_time_sec = 1.0 / 50.0;
     double m_sample_accumulator = 0.0;
     std::vector<int16_t> m_sample_queue;
     size_t m_queue_start_samples = 0;
