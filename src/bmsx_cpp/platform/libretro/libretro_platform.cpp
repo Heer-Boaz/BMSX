@@ -14,6 +14,9 @@
 #include <cmath>
 
 namespace bmsx {
+namespace {
+constexpr double kMaxSampleRate = 48000.0;
+}
 
 /* ============================================================================
  * LibretroPlatform implementation
@@ -23,8 +26,8 @@ LibretroPlatform::LibretroPlatform() {
     // Initialize framebuffer with default size
     m_framebuffer.resize(0, 0);
 
-    // Reserve audio buffer for ten frames at 8000Hz / 50fps = 1600 samples
-    m_audio_buffer.reserve(1600);
+    // Reserve audio buffer for ten frames at 48000Hz / 50fps = 9600 samples
+    m_audio_buffer.reserve(9600);
 
     // Create platform components
     m_clock = std::make_unique<LibretroClock>();
@@ -133,6 +136,22 @@ void LibretroPlatform::applyManifestViewport() {
     setAVInfo(nextInfo);
 }
 
+void LibretroPlatform::applyManifestAudioTiming() {
+    const auto& audioAssets = m_engine->assets().audio;
+    if (audioAssets.empty()) {
+        return;
+    }
+    auto it = audioAssets.begin();
+    double sampleRate = static_cast<double>(it->second.sampleRate);
+    for (++it; it != audioAssets.end(); ++it) {
+        sampleRate = std::max(sampleRate, static_cast<double>(it->second.sampleRate));
+    }
+    sampleRate = std::min(sampleRate, kMaxSampleRate);
+
+    m_pending_sample_rate = sampleRate;
+    m_has_pending_audio_timing = true;
+}
+
 bool LibretroPlatform::loadRom(const uint8_t* data, size_t size) {
     unloadRom();
 
@@ -146,6 +165,7 @@ bool LibretroPlatform::loadRom(const uint8_t* data, size_t size) {
     }
 
     applyManifestViewport();
+    applyManifestAudioTiming();
     m_rom_loaded = true;
     log(RETRO_LOG_INFO, "[BMSX] ROM loaded (%zu bytes)\n", size);
     return true;
@@ -269,6 +289,14 @@ void LibretroPlatform::reset() {
 
 void LibretroPlatform::runFrame() {
     if (!m_rom_loaded || !m_engine) return;
+
+    if (m_has_pending_audio_timing && m_has_av_info) {
+        m_has_pending_audio_timing = false;
+        retro_system_av_info nextInfo = m_av_info;
+        nextInfo.timing.sample_rate = m_pending_sample_rate;
+        m_environ_cb(RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO, &nextInfo);
+        setAVInfo(nextInfo);
+    }
 
     // Clear audio buffer
     m_audio_buffer.clear();

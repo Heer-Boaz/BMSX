@@ -154,6 +154,7 @@ public:
     void setAVInfo(const retro_system_av_info& info);
     void setControllerDevice(unsigned port, unsigned device);
     void applyManifestViewport();
+    void applyManifestAudioTiming();
 
     // ROM management
     bool loadRom(const uint8_t* data, size_t size);
@@ -221,6 +222,8 @@ private:
     bool m_has_av_info = false;
     bool m_has_pending_viewport = false;
     Vec2 m_pending_viewport;
+    bool m_has_pending_audio_timing = false;
+    double m_pending_sample_rate = 0.0;
 
     // Controller configuration
     std::array<unsigned, 4> m_controller_devices{};

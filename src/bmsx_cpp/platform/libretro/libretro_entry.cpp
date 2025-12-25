@@ -155,7 +155,7 @@ void retro_get_system_av_info(struct retro_system_av_info* info) {
   constexpr unsigned MAX_WIDTH = 512;
   constexpr unsigned MAX_HEIGHT = 448;
   constexpr double FPS = 50.0;
-  constexpr double SAMPLE_RATE = 8000.0;
+  constexpr double SAMPLE_RATE = 48000.0;
     
   info->geometry.base_width = BASE_WIDTH;
   info->geometry.base_height = BASE_HEIGHT;
