@@ -1,11 +1,11 @@
 -- eventemitter.lua
--- Lightweight event emitter + per-emitter event port
+-- lightweight event emitter + per-emitter event port
 
-local EventEmitter = {}
-EventEmitter.__index = EventEmitter
+local eventemitter = {}
+eventemitter.__index = eventemitter
 
-local EventPort = {}
-EventPort.__index = EventPort
+local eventport = {}
+eventport.__index = eventport
 
 local port_cache = setmetatable({}, { __mode = "k" })
 
@@ -23,29 +23,29 @@ local function create_gameevent(spec)
 	return event
 end
 
-function EventEmitter.new()
+function eventemitter.new()
 	return setmetatable({
 		listeners = {},
 		any_listeners = {},
-	}, EventEmitter)
+	}, eventemitter)
 end
 
-EventEmitter.instance = EventEmitter.new()
+eventemitter.instance = eventemitter.new()
 
-function EventEmitter:create_gameevent(spec)
+function eventemitter:create_gameevent(spec)
 	return create_gameevent(spec)
 end
 
-function EventEmitter:events_of(emitter)
+function eventemitter:events_of(emitter)
 	local port = port_cache[emitter]
 	if not port then
-		port = setmetatable({ emitter = emitter }, EventPort)
+		port = setmetatable({ emitter = emitter }, eventport)
 		port_cache[emitter] = port
 	end
 	return port
 end
 
-function EventEmitter:on(spec)
+function eventemitter:on(spec)
 	local name = spec.event_name or spec.event
 	local list = self.listeners[name]
 	if not list then
@@ -60,7 +60,7 @@ function EventEmitter:on(spec)
 	}
 end
 
-function EventEmitter:off(event_name, handler, emitter)
+function eventemitter:off(event_name, handler, emitter)
 	local list = self.listeners[event_name]
 	if not list then
 		return
@@ -73,11 +73,11 @@ function EventEmitter:off(event_name, handler, emitter)
 	end
 end
 
-function EventEmitter:on_any(handler, persistent)
+function eventemitter:on_any(handler, persistent)
 	self.any_listeners[#self.any_listeners + 1] = { handler = handler, persistent = persistent }
 end
 
-function EventEmitter:off_any(handler, force_persistent)
+function eventemitter:off_any(handler, force_persistent)
 	for i = #self.any_listeners, 1, -1 do
 		local entry = self.any_listeners[i]
 		if entry.handler == handler and (force_persistent or not entry.persistent) then
@@ -86,7 +86,7 @@ function EventEmitter:off_any(handler, force_persistent)
 	end
 end
 
-function EventEmitter:emit(arg0, emitter, payload)
+function eventemitter:emit(arg0, emitter, payload)
 	local event
 	if type(arg0) == "table" then
 		event = arg0
@@ -120,7 +120,7 @@ function EventEmitter:emit(arg0, emitter, payload)
 	end
 end
 
-function EventEmitter:remove_subscriber(subscriber, force_persistent)
+function eventemitter:remove_subscriber(subscriber, force_persistent)
 	for _, list in pairs(self.listeners) do
 		for i = #list, 1, -1 do
 			local entry = list[i]
@@ -131,7 +131,7 @@ function EventEmitter:remove_subscriber(subscriber, force_persistent)
 	end
 end
 
-function EventEmitter:clear()
+function eventemitter:clear()
 	for _, list in pairs(self.listeners) do
 		for i = #list, 1, -1 do
 			if not list[i].persistent then
@@ -146,30 +146,30 @@ function EventEmitter:clear()
 	end
 end
 
-function EventPort:on(spec)
+function eventport:on(spec)
 	spec.emitter = spec.emitter or self.emitter.id or self.emitter
-	EventEmitter.instance:on(spec)
+	eventemitter.instance:on(spec)
 	local name = spec.event_name or spec.event
 	return function()
-		EventEmitter.instance:off(name, spec.handler, spec.emitter)
+		eventemitter.instance:off(name, spec.handler, spec.emitter)
 	end
 end
 
-function EventPort:emit(event_name, payload)
-	EventEmitter.instance:emit(event_name, self.emitter, payload)
+function eventport:emit(event_name, payload)
+	eventemitter.instance:emit(event_name, self.emitter, payload)
 end
 
-function EventPort:emit_event(event)
+function eventport:emit_event(event)
 	event.emitter = event.emitter or self.emitter
-	EventEmitter.instance:emit(event)
+	eventemitter.instance:emit(event)
 	return event
 end
 
 return {
-	EventEmitter = EventEmitter,
-	EventPort = EventPort,
+	eventemitter = eventemitter,
+	eventport = eventport,
 	events_of = function(emitter)
-		return EventEmitter.instance:events_of(emitter)
+		return eventemitter.instance:events_of(emitter)
 	end,
 	create_gameevent = create_gameevent,
 }

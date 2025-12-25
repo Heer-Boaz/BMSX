@@ -451,6 +451,7 @@ export class BmsxVMRuntime {
 	private applyCanonicalization(canonicalization: CanonicalizationType): void {
 		this._canonicalization = canonicalization;
 		this.canonicalizeIdentifierFn = createIdentifierCanonicalizer(this._canonicalization);
+		// Canonicalized identifiers require case-insensitive table keys to match runtime lookups across hosts.
 		setLuaTableCaseInsensitiveKeys(this._canonicalization !== 'none');
 		setEditorCaseInsensitivity(this._canonicalization !== 'none');
 	}
@@ -2441,8 +2442,163 @@ export class BmsxVMRuntime {
 		this.registerVmGlobal('table', tableLibrary);
 
 		const osTable = new Table(0, 0);
+		const formatOsDate = (format: string, date: Date): string => {
+			const pad = (value: number, size: number): string => {
+				let text = Math.floor(value).toString();
+				while (text.length < size) {
+					text = `0${text}`;
+				}
+				return text;
+			};
+			const weekdaysShort = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+			const weekdaysLong = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+			const monthsShort = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+			const monthsLong = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+			const year = date.getFullYear();
+			const month = date.getMonth() + 1;
+			const day = date.getDate();
+			const hour = date.getHours();
+			const min = date.getMinutes();
+			const sec = date.getSeconds();
+			const ydayStart = new Date(year, 0, 1);
+			const yday = Math.floor((date.getTime() - ydayStart.getTime()) / 86400000) + 1;
+			const wday = date.getDay();
+			const hour12 = hour % 12 === 0 ? 12 : hour % 12;
+			const ampm = hour < 12 ? 'AM' : 'PM';
+			let output = '';
+			for (let index = 0; index < format.length; index += 1) {
+				const ch = format.charAt(index);
+				if (ch !== '%') {
+					output += ch;
+					continue;
+				}
+				index += 1;
+				const code = format.charAt(index);
+				switch (code) {
+					case 'Y':
+						output += pad(year, 4);
+						break;
+					case 'y':
+						output += pad(year % 100, 2);
+						break;
+					case 'm':
+						output += pad(month, 2);
+						break;
+					case 'd':
+						output += pad(day, 2);
+						break;
+					case 'H':
+						output += pad(hour, 2);
+						break;
+					case 'M':
+						output += pad(min, 2);
+						break;
+					case 'S':
+						output += pad(sec, 2);
+						break;
+					case 'I':
+						output += pad(hour12, 2);
+						break;
+					case 'p':
+						output += ampm;
+						break;
+					case 'a':
+						output += weekdaysShort[wday];
+						break;
+					case 'A':
+						output += weekdaysLong[wday];
+						break;
+					case 'b':
+						output += monthsShort[month - 1];
+						break;
+					case 'B':
+						output += monthsLong[month - 1];
+						break;
+					case 'j':
+						output += pad(yday, 3);
+						break;
+					case 'w':
+						output += wday.toString();
+						break;
+					case 'c':
+						output += date.toLocaleString();
+						break;
+					case 'x':
+						output += date.toLocaleDateString();
+						break;
+					case 'X':
+						output += date.toLocaleTimeString();
+						break;
+					case 'Z': {
+						const tz = date.toTimeString();
+						const start = tz.indexOf('(');
+						const end = tz.lastIndexOf(')');
+						if (start !== -1 && end !== -1 && end > start) {
+							output += tz.slice(start + 1, end);
+						} else {
+							output += 'UTC';
+						}
+						break;
+					}
+					case '%':
+						output += '%';
+						break;
+					default:
+						output += `%${code}`;
+						break;
+				}
+			}
+			return output;
+		};
+		const buildOsDateTable = (date: Date): Table => {
+			const year = date.getFullYear();
+			const ydayStart = new Date(year, 0, 1);
+			const yday = Math.floor((date.getTime() - ydayStart.getTime()) / 86400000) + 1;
+			const jan = new Date(year, 0, 1);
+			const jul = new Date(year, 6, 1);
+			const isDst = date.getTimezoneOffset() < Math.max(jan.getTimezoneOffset(), jul.getTimezoneOffset());
+			const table = new Table(0, 9);
+			table.set('year', year);
+			table.set('month', date.getMonth() + 1);
+			table.set('day', date.getDate());
+			table.set('hour', date.getHours());
+			table.set('min', date.getMinutes());
+			table.set('sec', date.getSeconds());
+			table.set('wday', date.getDay() + 1);
+			table.set('yday', yday);
+			table.set('isdst', isDst);
+			return table;
+		};
 		osTable.set('clock', createNativeFunction('os.clock', () => {
 			return [$.platform.clock.now() / 1000];
+		}));
+		osTable.set('time', createNativeFunction('os.time', (args) => {
+			if (args.length > 0 && args[0] !== null) {
+				const table = args[0] as Table;
+				const year = table.get('year') as number;
+				const month = table.get('month') as number;
+				const day = table.get('day') as number;
+				const hour = table.get('hour') as number;
+				const min = table.get('min') as number;
+				const sec = table.get('sec') as number;
+				const date = new Date(year, month - 1, day, hour, min, sec);
+				return [Math.floor(date.getTime() / 1000)];
+			}
+			return [Math.floor(Date.now() / 1000)];
+		}));
+		osTable.set('difftime', createNativeFunction('os.difftime', (args) => {
+			const t2 = args[0] as number;
+			const t1 = args[1] as number;
+			return [t2 - t1];
+		}));
+		osTable.set('date', createNativeFunction('os.date', (args) => {
+			const format = args.length > 0 && args[0] !== null ? args[0] as string : '%c';
+			const timeValue = args.length > 1 && args[1] !== null ? (args[1] as number) * 1000 : Date.now();
+			const date = new Date(timeValue);
+			if (format === '*t') {
+				return [buildOsDateTable(date)];
+			}
+			return [formatOsDate(format, date)];
 		}));
 		this.registerVmGlobal('os', osTable);
 

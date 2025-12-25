@@ -281,6 +281,8 @@ struct CallFrame {
 class Table {
 public:
 	Table(int arraySize = 0, int hashSize = 0);
+	// Canonicalized identifiers rely on case-insensitive string keys to mirror TS VM semantics.
+	static void setCaseInsensitiveKeys(bool enabled);
 
 	Value get(const Value& key) const;
 	void set(const Value& key, const Value& value);
@@ -296,10 +298,16 @@ private:
 	bool isArrayIndex(const Value& key) const;
 	int toArrayIndex(const Value& key) const;
 	std::optional<size_t> findMapIndex(const Value& key) const;
+	void ensureUppercaseIndex() const;
+	static std::string toUpperAscii(const std::string& value);
+
+	static bool s_caseInsensitiveKeys;
 
 	std::vector<Value> m_array;
 	std::vector<std::pair<Value, Value>> m_map;
 	std::shared_ptr<Table> m_metatable;
+	mutable std::unordered_map<std::string, size_t> m_uppercaseIndex;
+	mutable bool m_uppercaseIndexValid = false;
 };
 
 /**

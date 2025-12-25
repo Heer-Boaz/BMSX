@@ -1,6 +1,8 @@
 #include "cpu.h"
+#include <cctype>
 #include <cmath>
 #include <cstdlib>
+#include <iostream>
 #include <limits>
 #include <sstream>
 #include <stdexcept>
@@ -44,14 +46,67 @@ std::string valueToString(const Value& v) {
 	}, v);
 }
 
+const char* valueTypeName(const Value& v) {
+	return std::visit([](auto&& arg) -> const char* {
+		using T = std::decay_t<decltype(arg)>;
+		if constexpr (std::is_same_v<T, std::monostate>) {
+			return "nil";
+		} else if constexpr (std::is_same_v<T, bool>) {
+			return "boolean";
+		} else if constexpr (std::is_same_v<T, double>) {
+			return "number";
+		} else if constexpr (std::is_same_v<T, std::string>) {
+			return "string";
+		} else if constexpr (std::is_same_v<T, std::shared_ptr<Table>>) {
+			return "table";
+		} else if constexpr (std::is_same_v<T, std::shared_ptr<Closure>>) {
+			return "closure";
+		} else if constexpr (std::is_same_v<T, std::shared_ptr<NativeFunction>>) {
+			return "native_function";
+		} else if constexpr (std::is_same_v<T, std::shared_ptr<NativeObject>>) {
+			return "native_object";
+		} else {
+			return "unknown";
+		}
+	}, v);
+}
+
 // =============================================================================
 // Table implementation
 // =============================================================================
+
+bool Table::s_caseInsensitiveKeys = false;
+
+void Table::setCaseInsensitiveKeys(bool enabled) {
+	s_caseInsensitiveKeys = enabled;
+}
 
 Table::Table(int arraySize, int /*hashSize*/) {
 	if (arraySize > 0) {
 		m_array.resize(arraySize);
 	}
+}
+
+std::string Table::toUpperAscii(const std::string& value) {
+	std::string result = value;
+	for (char& ch : result) {
+		ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+	}
+	return result;
+}
+
+void Table::ensureUppercaseIndex() const {
+	if (!s_caseInsensitiveKeys || m_uppercaseIndexValid) {
+		return;
+	}
+	m_uppercaseIndex.clear();
+	m_uppercaseIndex.reserve(m_map.size());
+	for (size_t i = 0; i < m_map.size(); ++i) {
+		if (auto* str = std::get_if<std::string>(&m_map[i].first)) {
+			m_uppercaseIndex[toUpperAscii(*str)] = i;
+		}
+	}
+	m_uppercaseIndexValid = true;
 }
 
 bool Table::isArrayIndex(const Value& key) const {
@@ -99,7 +154,11 @@ void Table::set(const Value& key, const Value& value) {
 	auto mapIndex = findMapIndex(key);
 	if (isNil(value)) {
 		if (mapIndex.has_value()) {
+			const bool wasStringKey = std::holds_alternative<std::string>(m_map[*mapIndex].first);
 			m_map.erase(m_map.begin() + static_cast<std::ptrdiff_t>(*mapIndex));
+			if (wasStringKey) {
+				m_uppercaseIndexValid = false;
+			}
 		}
 		return;
 	}
@@ -108,6 +167,9 @@ void Table::set(const Value& key, const Value& value) {
 		return;
 	}
 	m_map.emplace_back(key, value);
+	if (std::holds_alternative<std::string>(key)) {
+		m_uppercaseIndexValid = false;
+	}
 }
 
 int Table::length() const {
@@ -125,6 +187,8 @@ int Table::length() const {
 void Table::clear() {
 	m_array.clear();
 	m_map.clear();
+	m_uppercaseIndex.clear();
+	m_uppercaseIndexValid = false;
 }
 
 std::vector<std::pair<Value, Value>> Table::entries() const {
@@ -182,6 +246,16 @@ std::optional<std::pair<Value, Value>> Table::nextEntry(const Value& after) cons
 }
 
 std::optional<size_t> Table::findMapIndex(const Value& key) const {
+	if (s_caseInsensitiveKeys) {
+		if (auto* str = std::get_if<std::string>(&key)) {
+			ensureUppercaseIndex();
+			auto it = m_uppercaseIndex.find(toUpperAscii(*str));
+			if (it != m_uppercaseIndex.end()) {
+				return it->second;
+			}
+			return std::nullopt;
+		}
+	}
 	for (size_t i = 0; i < m_map.size(); ++i) {
 		if (m_map[i].first == key) {
 			return i;
@@ -347,7 +421,14 @@ void VMCPU::executeInstruction(CallFrame& frame, uint32_t instr) {
 				setRegister(frame, a, (*obj)->get(key));
 				return;
 			}
-			throw std::runtime_error("Attempted to index field on a non-table value.");
+			std::string message = "Attempted to index field on a non-table value.";
+			message += " base=" + std::string(valueTypeName(table)) + "(" + valueToString(table) + ")";
+			message += " key=" + std::string(valueTypeName(key)) + "(" + valueToString(key) + ")";
+			auto range = getDebugRange(frame.pc - 1);
+			if (range.has_value()) {
+				message += " at " + range->path + ":" + std::to_string(range->startLine);
+			}
+			throw std::runtime_error(message);
 		}
 
 		case OpCode::SETT: {
@@ -362,7 +443,15 @@ void VMCPU::executeInstruction(CallFrame& frame, uint32_t instr) {
 				(*obj)->set(key, value);
 				return;
 			}
-			throw std::runtime_error("Attempted to assign to a non-table value.");
+			std::string message = "Attempted to assign to a non-table value.";
+			message += " base=" + std::string(valueTypeName(table)) + "(" + valueToString(table) + ")";
+			message += " key=" + std::string(valueTypeName(key)) + "(" + valueToString(key) + ")";
+			message += " value=" + std::string(valueTypeName(value)) + "(" + valueToString(value) + ")";
+			auto range = getDebugRange(frame.pc - 1);
+			if (range.has_value()) {
+				message += " at " + range->path + ":" + std::to_string(range->startLine);
+			}
+			throw std::runtime_error(message);
 		}
 
 		case OpCode::NEWT:
@@ -854,6 +943,9 @@ void VMCPU::writeReturnValues(CallFrame& frame, int base, int count, const std::
 }
 
 void VMCPU::setRegister(CallFrame& frame, int index, const Value& value) {
+	if (index >= static_cast<int>(frame.registers.size())) {
+		frame.registers.resize(static_cast<size_t>(index) + 1);
+	}
 	frame.registers[index] = value;
 	int nextTop = index + 1;
 	if (nextTop > frame.top) {

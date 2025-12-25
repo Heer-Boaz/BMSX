@@ -32,6 +32,7 @@ export const ENGINE_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<VMLuaBuiltinDescriptor>
 	{ name: 'trigger_effect', params: ['object_id', 'effect_id', 'options?'], signature: 'trigger_effect(object_id, effect_id [, options])' },
 ];
 
+// Keep this list in sync with runtime builtins (TS/C++) so editor metadata matches actual VM behavior.
 export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<VMLuaBuiltinDescriptor> = [
 	{ name: 'assert', params: ['value', 'message?'], signature: 'assert(value [, message])' },
 	{ name: 'error', params: ['message', 'level?'], signature: 'error(message [, level])' },
@@ -70,11 +71,15 @@ export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<VMLuaBuiltinDescriptor
 	{ name: 'string.byte', params: ['s', 'i?'], signature: 'string.byte(s [, i])' },
 	{ name: 'string.char', params: ['...'], signature: 'string.char(...)' },
 	{ name: 'string.find', params: ['s', 'pattern', 'init?'], signature: 'string.find(s, pattern [, init])' },
+	{ name: 'string.match', params: ['s', 'pattern', 'init?'], signature: 'string.match(s, pattern [, init])' },
+	{ name: 'string.gsub', params: ['s', 'pattern', 'repl', 'n?'], signature: 'string.gsub(s, pattern, repl [, n])' },
+	{ name: 'string.gmatch', params: ['s', 'pattern'], signature: 'string.gmatch(s, pattern)' },
 	{ name: 'string.format', params: ['format', '...'], signature: 'string.format(format, ...)' },
 	{ name: 'string.len', params: ['s'], signature: 'string.len(s)' },
 	{ name: 'string.lower', params: ['s'], signature: 'string.lower(s)' },
 	{ name: 'string.sub', params: ['s', 'i', 'j?'], signature: 'string.sub(s, i [, j])' },
 	{ name: 'string.upper', params: ['s'], signature: 'string.upper(s)' },
+	{ name: 'os.clock', params: [], signature: 'os.clock()' },
 	{ name: 'os.date', params: ['format?', 'time?'], signature: 'os.date([format [, time]])' },
 	{ name: 'os.difftime', params: ['t2', 't1?'], signature: 'os.difftime(t2 [, t1])' },
 	{ name: 'os.time', params: ['table?'], signature: 'os.time([table])' },

@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cctype>
+#include <ctime>
 #include <cstdlib>
 #include <iomanip>
 #include <iostream>
@@ -189,6 +190,7 @@ VMRuntime::VMRuntime(const VMRuntimeOptions& options)
 	, m_viewport(options.viewport)
 	, m_canonicalization(options.canonicalization)
 {
+	Table::setCaseInsensitiveKeys(m_canonicalization != CanonicalizationType::None);
 	// Initialize I/O memory region
 	std::fill(m_memory.begin(), m_memory.end(), std::monostate{});
 	// Write pointer starts at 0
@@ -448,6 +450,7 @@ void VMRuntime::registerNativeFunction(const std::string& name, NativeFunctionIn
 
 void VMRuntime::setCanonicalization(CanonicalizationType canonicalization) {
 	m_canonicalization = canonicalization;
+	Table::setCaseInsensitiveKeys(m_canonicalization != CanonicalizationType::None);
 }
 
 Value VMRuntime::requireVmModule(const std::string& moduleName) {
@@ -1000,6 +1003,24 @@ double VMRuntime::nextVmRandom() {
 }
 
 void VMRuntime::setupBuiltins() {
+	auto logPcallError = [this](const std::string& message) {
+		std::cerr << "[VMRuntime] pcall error: " << message << std::endl;
+		const Program* program = m_cpu.getProgram();
+		if (!program) {
+			return;
+		}
+		auto stack = m_cpu.getCallStack();
+		for (const auto& [protoIndex, pc] : stack) {
+			const std::string& protoId = program->protoIds[protoIndex];
+			auto range = m_cpu.getDebugRange(pc);
+			if (range.has_value()) {
+				std::cerr << "  at " << protoId << " (" << range->path << ":" << range->startLine << ")"
+				          << std::endl;
+			} else {
+				std::cerr << "  at " << protoId << " (pc=" << pc << ")" << std::endl;
+			}
+		}
+	};
 	auto callVmValue = [this](const Value& callee, const std::vector<Value>& args) -> std::vector<Value> {
 		if (auto nfn = std::get_if<std::shared_ptr<NativeFunction>>(&callee)) {
 			return (*nfn)->invoke(args);
@@ -1209,7 +1230,7 @@ void VMRuntime::setupBuiltins() {
 		return output;
 	});
 
-	registerNativeFunction("pcall", [callVmValue](const std::vector<Value>& args) -> std::vector<Value> {
+	registerNativeFunction("pcall", [callVmValue, logPcallError](const std::vector<Value>& args) -> std::vector<Value> {
 		Value fn = args.at(0);
 		std::vector<Value> callArgs;
 		for (size_t i = 1; i < args.size(); ++i) {
@@ -1222,13 +1243,15 @@ void VMRuntime::setupBuiltins() {
 			output.insert(output.end(), results.begin(), results.end());
 			return output;
 		} catch (const std::exception& e) {
+			logPcallError(e.what());
 			return {false, std::string(e.what())};
 		} catch (...) {
+			logPcallError("error");
 			return {false, std::string("error")};
 		}
 	});
 
-	registerNativeFunction("xpcall", [callVmValue](const std::vector<Value>& args) -> std::vector<Value> {
+	registerNativeFunction("xpcall", [callVmValue, logPcallError](const std::vector<Value>& args) -> std::vector<Value> {
 		Value fn = args.at(0);
 		Value handler = args.at(1);
 		std::vector<Value> callArgs;
@@ -1242,12 +1265,14 @@ void VMRuntime::setupBuiltins() {
 			output.insert(output.end(), results.begin(), results.end());
 			return output;
 		} catch (const std::exception& e) {
+			logPcallError(e.what());
 			std::vector<Value> handlerResults = callVmValue(handler, {std::string(e.what())});
 			std::vector<Value> output;
 			output.push_back(false);
 			output.insert(output.end(), handlerResults.begin(), handlerResults.end());
 			return output;
 		} catch (...) {
+			logPcallError("error");
 			std::vector<Value> handlerResults = callVmValue(handler, {std::string("error")});
 			std::vector<Value> output;
 			output.push_back(false);
@@ -1806,6 +1831,49 @@ void VMRuntime::setupBuiltins() {
 	osTable->set(std::string("clock"), createNativeFunction("os.clock", [](const std::vector<Value>&) -> std::vector<Value> {
 		return {EngineCore::instance().clock()->now() / 1000.0};
 	}));
+	osTable->set(std::string("time"), createNativeFunction("os.time", [](const std::vector<Value>& args) -> std::vector<Value> {
+		if (!args.empty() && !isNil(args.at(0))) {
+			auto table = std::get<std::shared_ptr<Table>>(args.at(0));
+			std::tm timeInfo{};
+			timeInfo.tm_year = static_cast<int>(std::get<double>(table->get(std::string("year")))) - 1900;
+			timeInfo.tm_mon = static_cast<int>(std::get<double>(table->get(std::string("month")))) - 1;
+			timeInfo.tm_mday = static_cast<int>(std::get<double>(table->get(std::string("day"))));
+			timeInfo.tm_hour = static_cast<int>(std::get<double>(table->get(std::string("hour"))));
+			timeInfo.tm_min = static_cast<int>(std::get<double>(table->get(std::string("min"))));
+			timeInfo.tm_sec = static_cast<int>(std::get<double>(table->get(std::string("sec"))));
+			timeInfo.tm_isdst = -1;
+			return {static_cast<double>(std::mktime(&timeInfo))};
+		}
+		return {static_cast<double>(std::time(nullptr))};
+	}));
+	osTable->set(std::string("difftime"), createNativeFunction("os.difftime", [](const std::vector<Value>& args) -> std::vector<Value> {
+		double t2 = std::get<double>(args.at(0));
+		double t1 = std::get<double>(args.at(1));
+		return {t2 - t1};
+	}));
+	osTable->set(std::string("date"), createNativeFunction("os.date", [](const std::vector<Value>& args) -> std::vector<Value> {
+		std::string format = args.empty() || isNil(args.at(0)) ? std::string("%c") : std::get<std::string>(args.at(0));
+		std::time_t timeValue = args.size() > 1 && !isNil(args.at(1))
+			? static_cast<std::time_t>(std::get<double>(args.at(1)))
+			: std::time(nullptr);
+		std::tm timeInfo = *std::localtime(&timeValue);
+		if (format == "*t") {
+			auto table = std::make_shared<Table>(0, 9);
+			table->set(std::string("year"), static_cast<double>(timeInfo.tm_year + 1900));
+			table->set(std::string("month"), static_cast<double>(timeInfo.tm_mon + 1));
+			table->set(std::string("day"), static_cast<double>(timeInfo.tm_mday));
+			table->set(std::string("hour"), static_cast<double>(timeInfo.tm_hour));
+			table->set(std::string("min"), static_cast<double>(timeInfo.tm_min));
+			table->set(std::string("sec"), static_cast<double>(timeInfo.tm_sec));
+			table->set(std::string("wday"), static_cast<double>(timeInfo.tm_wday + 1));
+			table->set(std::string("yday"), static_cast<double>(timeInfo.tm_yday + 1));
+			table->set(std::string("isdst"), timeInfo.tm_isdst > 0);
+			return {table};
+		}
+		char buffer[256];
+		size_t size = std::strftime(buffer, sizeof(buffer), format.c_str(), &timeInfo);
+		return {std::string(buffer, size)};
+	}));
 	setGlobal("os", osTable);
 
 	auto nextFn = createNativeFunction("next", [this](const std::vector<Value>& args) -> std::vector<Value> {
@@ -1986,7 +2054,8 @@ void VMRuntime::setupBuiltins() {
 		Value instanceKey = canonicalizeIdentifier("instance");
 		auto instanceTable = std::get<std::shared_ptr<Table>>(emitterTable->get(instanceKey));
 		Value emitKey = canonicalizeIdentifier("emit");
-		auto emitClosure = std::get<std::shared_ptr<Closure>>(instanceTable->get(emitKey));
+		// Methods live on the EventEmitter table; call with instance as self.
+		auto emitClosure = std::get<std::shared_ptr<Closure>>(emitterTable->get(emitKey));
 		std::vector<Value> callArgs;
 		callArgs.reserve(args.size() + 1);
 		callArgs.push_back(instanceTable);
