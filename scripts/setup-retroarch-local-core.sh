@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CPP_DIR="$ROOT_DIR/src/bmsx_cpp"
-BUILD_DIR="$CPP_DIR/build"
+BUILD_DIR="$ROOT_DIR/build"
 LOCAL_CORES_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/retroarch/cores"
 CORE_NAME="bmsx_libretro.so"
 ROM_PATH="${1:-$ROOT_DIR/dist/2025.debug.rom}"

@@ -250,6 +250,12 @@ bool EngineCore::bootWithoutCart() {
     m_assets.projectRootPath = m_engine_assets.projectRootPath;
     // Don't copy vmProgram - use engine_assets.vmProgram directly below
 
+    Vec2 viewportSize{
+        static_cast<f32>(m_engine_assets.manifest.viewportWidth),
+        static_cast<f32>(m_engine_assets.manifest.viewportHeight)
+    };
+    m_view->configureRenderTargets(&viewportSize, &viewportSize, &viewportSize);
+
     // Upload textures to backend
     uploadTexturesToBackend();
     refreshAudioAssets();
@@ -326,6 +332,12 @@ bool EngineCore::loadRom(const u8* data, size_t size) {
     m_assets.vmProgram = std::move(cartAssets.vmProgram);
     m_assets.manifest = std::move(cartAssets.manifest);
     m_assets.projectRootPath = std::move(cartAssets.projectRootPath);
+
+    Vec2 viewportSize{
+        static_cast<f32>(m_assets.manifest.viewportWidth),
+        static_cast<f32>(m_assets.manifest.viewportHeight)
+    };
+    m_view->configureRenderTargets(&viewportSize, &viewportSize, &viewportSize);
 
     // Upload textures to backend
     uploadTexturesToBackend();

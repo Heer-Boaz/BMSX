@@ -2,7 +2,7 @@
 set -e
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CORE_SRC="$ROOT_DIR/src/bmsx_cpp/build/bmsx_libretro.so"
+CORE_SRC="$ROOT_DIR/build/bmsx_libretro.so"
 CORES_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/retroarch/cores"
 CORE_DST="$CORES_DIR/bmsx_libretro.so"
 ROM_PATH="$1"
