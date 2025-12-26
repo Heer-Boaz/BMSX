@@ -87,7 +87,7 @@ void main() {
     vec2 scaledPosition = a_position * u_scale;
     vec2 clipSpace = ((scaledPosition / u_resolution) * 2.0 - 1.0) * vec2(1.0, -1.0);
     gl_Position = vec4(clipSpace, a_pos_z, 1.0);
-    v_texcoord = vec2(a_texcoord.x, 1.0 - a_texcoord.y);
+    v_texcoord = a_texcoord;
     v_color_override = a_color_override;
     v_atlas_id = a_atlas_id;
 }
