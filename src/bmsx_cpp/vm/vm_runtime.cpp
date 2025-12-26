@@ -71,62 +71,62 @@ std::shared_ptr<Table> buildBoundingBoxTable(const ImgMeta& meta) {
 	const double height = static_cast<double>(meta.height);
 
 	auto original = std::make_shared<Table>(0, 6);
-	original->set(std::string("left"), left);
-	original->set(std::string("right"), right);
-	original->set(std::string("top"), top);
-	original->set(std::string("bottom"), bottom);
-	original->set(std::string("width"), static_cast<double>(meta.boundingbox.width));
-	original->set(std::string("height"), static_cast<double>(meta.boundingbox.height));
+	original->set("left", left);
+	original->set("right", right);
+	original->set("top", top);
+	original->set("bottom", bottom);
+	original->set("width", static_cast<double>(meta.boundingbox.width));
+	original->set("height", static_cast<double>(meta.boundingbox.height));
 
 	auto fliph = std::make_shared<Table>(0, 6);
-	fliph->set(std::string("left"), width - right);
-	fliph->set(std::string("right"), width - left);
-	fliph->set(std::string("top"), top);
-	fliph->set(std::string("bottom"), bottom);
-	fliph->set(std::string("width"), static_cast<double>(meta.boundingbox.width));
-	fliph->set(std::string("height"), static_cast<double>(meta.boundingbox.height));
+	fliph->set("left", width - right);
+	fliph->set("right", width - left);
+	fliph->set("top", top);
+	fliph->set("bottom", bottom);
+	fliph->set("width", static_cast<double>(meta.boundingbox.width));
+	fliph->set("height", static_cast<double>(meta.boundingbox.height));
 
 	auto flipv = std::make_shared<Table>(0, 6);
-	flipv->set(std::string("left"), left);
-	flipv->set(std::string("right"), right);
-	flipv->set(std::string("top"), height - bottom);
-	flipv->set(std::string("bottom"), height - top);
-	flipv->set(std::string("width"), static_cast<double>(meta.boundingbox.width));
-	flipv->set(std::string("height"), static_cast<double>(meta.boundingbox.height));
+	flipv->set("left", left);
+	flipv->set("right", right);
+	flipv->set("top", height - bottom);
+	flipv->set("bottom", height - top);
+	flipv->set("width", static_cast<double>(meta.boundingbox.width));
+	flipv->set("height", static_cast<double>(meta.boundingbox.height));
 
 	auto fliphv = std::make_shared<Table>(0, 6);
-	fliphv->set(std::string("left"), width - right);
-	fliphv->set(std::string("right"), width - left);
-	fliphv->set(std::string("top"), height - bottom);
-	fliphv->set(std::string("bottom"), height - top);
-	fliphv->set(std::string("width"), static_cast<double>(meta.boundingbox.width));
-	fliphv->set(std::string("height"), static_cast<double>(meta.boundingbox.height));
+	fliphv->set("left", width - right);
+	fliphv->set("right", width - left);
+	fliphv->set("top", height - bottom);
+	fliphv->set("bottom", height - top);
+	fliphv->set("width", static_cast<double>(meta.boundingbox.width));
+	fliphv->set("height", static_cast<double>(meta.boundingbox.height));
 
-	table->set(std::string("original"), original);
-	table->set(std::string("fliph"), fliph);
-	table->set(std::string("flipv"), flipv);
-	table->set(std::string("fliphv"), fliphv);
+	table->set("original", original);
+	table->set("fliph", fliph);
+	table->set("flipv", flipv);
+	table->set("fliphv", fliphv);
 	return table;
 }
 
 std::shared_ptr<Table> buildImgMetaTable(const ImgMeta& meta) {
 	auto table = std::make_shared<Table>(0, 12);
-	table->set(std::string("atlassed"), meta.atlassed);
+	table->set("atlassed", meta.atlassed);
 	if (meta.atlassed) {
-		table->set(std::string("atlasid"), static_cast<double>(meta.atlasid));
+		table->set("atlasid", static_cast<double>(meta.atlasid));
 	}
-	table->set(std::string("width"), static_cast<double>(meta.width));
-	table->set(std::string("height"), static_cast<double>(meta.height));
-	table->set(std::string("texcoords"), buildArrayTable(meta.texcoords));
-	table->set(std::string("texcoords_fliph"), buildArrayTable(meta.texcoords_fliph));
-	table->set(std::string("texcoords_flipv"), buildArrayTable(meta.texcoords_flipv));
-	table->set(std::string("texcoords_fliphv"), buildArrayTable(meta.texcoords_fliphv));
-	table->set(std::string("boundingbox"), buildBoundingBoxTable(meta));
+	table->set("width", static_cast<double>(meta.width));
+	table->set("height", static_cast<double>(meta.height));
+	table->set("texcoords", buildArrayTable(meta.texcoords));
+	table->set("texcoords_fliph", buildArrayTable(meta.texcoords_fliph));
+	table->set("texcoords_flipv", buildArrayTable(meta.texcoords_flipv));
+	table->set("texcoords_fliphv", buildArrayTable(meta.texcoords_fliphv));
+	table->set("boundingbox", buildBoundingBoxTable(meta));
 
 	auto centerpoint = std::make_shared<Table>(2, 0);
 	centerpoint->set(1.0, static_cast<double>(meta.centerX));
 	centerpoint->set(2.0, static_cast<double>(meta.centerY));
-	table->set(std::string("centerpoint"), centerpoint);
+	table->set("centerpoint", centerpoint);
 	return table;
 }
 
@@ -327,12 +327,12 @@ void VMRuntime::tickUpdate() {
 	m_frameState.updateExecuted = false;
 	m_frameState.deltaSeconds = static_cast<float>(EngineCore::instance().deltaTime());
 	auto gameTable = std::get<std::shared_ptr<Table>>(m_cpu.globals.get(canonicalizeIdentifier("game")));
-	gameTable->set(std::string("deltatime_seconds"), static_cast<double>(m_frameState.deltaSeconds));
-	gameTable->set(std::string("deltatime"), static_cast<double>(m_frameState.deltaSeconds) * 1000.0);
-	auto viewportTable = std::get<std::shared_ptr<Table>>(gameTable->get(std::string("viewportsize")));
+	gameTable->set("deltatime_seconds", static_cast<double>(m_frameState.deltaSeconds));
+	gameTable->set("deltatime", static_cast<double>(m_frameState.deltaSeconds) * 1000.0);
+	auto viewportTable = std::get<std::shared_ptr<Table>>(gameTable->get("viewportsize"));
 	auto viewSize = EngineCore::instance().view()->viewportSize;
-	viewportTable->set(std::string("x"), static_cast<double>(viewSize.x));
-	viewportTable->set(std::string("y"), static_cast<double>(viewSize.y));
+	viewportTable->set("x", static_cast<double>(viewSize.x));
+	viewportTable->set("y", static_cast<double>(viewSize.y));
 
 	// Call _update if present
 	executeUpdateCallback(m_frameState.deltaSeconds);
@@ -394,7 +394,7 @@ void VMRuntime::processIOCommands() {
 		switch (cmd) {
 			case IO_CMD_PRINT: {
 				Value arg = m_memory[cmdBase + IO_ARG0_OFFSET];
-				std::cout << vmToString(arg) << std::endl;
+				std::cout << vmToString(arg) << '\n';
 				break;
 			}
 			default:
@@ -1039,37 +1039,37 @@ void VMRuntime::setupBuiltins() {
 	};
 
 	auto mathTable = std::make_shared<Table>();
-	mathTable->set(std::string("abs"), createNativeFunction("math.abs", [](const std::vector<Value>& args) -> std::vector<Value> {
+	mathTable->set("abs", createNativeFunction("math.abs", [](const std::vector<Value>& args) -> std::vector<Value> {
 		double value = std::get<double>(args.at(0));
 		return {std::abs(value)};
 	}));
-	mathTable->set(std::string("ceil"), createNativeFunction("math.ceil", [](const std::vector<Value>& args) -> std::vector<Value> {
+	mathTable->set("ceil", createNativeFunction("math.ceil", [](const std::vector<Value>& args) -> std::vector<Value> {
 		double value = std::get<double>(args.at(0));
 		return {std::ceil(value)};
 	}));
-	mathTable->set(std::string("floor"), createNativeFunction("math.floor", [](const std::vector<Value>& args) -> std::vector<Value> {
+	mathTable->set("floor", createNativeFunction("math.floor", [](const std::vector<Value>& args) -> std::vector<Value> {
 		double value = std::get<double>(args.at(0));
 		return {std::floor(value)};
 	}));
-	mathTable->set(std::string("max"), createNativeFunction("math.max", [](const std::vector<Value>& args) -> std::vector<Value> {
+	mathTable->set("max", createNativeFunction("math.max", [](const std::vector<Value>& args) -> std::vector<Value> {
 		double result = std::get<double>(args.at(0));
 		for (size_t i = 1; i < args.size(); ++i) {
 			result = std::max(result, std::get<double>(args[i]));
 		}
 		return {result};
 	}));
-	mathTable->set(std::string("min"), createNativeFunction("math.min", [](const std::vector<Value>& args) -> std::vector<Value> {
+	mathTable->set("min", createNativeFunction("math.min", [](const std::vector<Value>& args) -> std::vector<Value> {
 		double result = std::get<double>(args.at(0));
 		for (size_t i = 1; i < args.size(); ++i) {
 			result = std::min(result, std::get<double>(args[i]));
 		}
 		return {result};
 	}));
-	mathTable->set(std::string("sqrt"), createNativeFunction("math.sqrt", [](const std::vector<Value>& args) -> std::vector<Value> {
+	mathTable->set("sqrt", createNativeFunction("math.sqrt", [](const std::vector<Value>& args) -> std::vector<Value> {
 		double value = std::get<double>(args.at(0));
 		return {std::sqrt(value)};
 	}));
-	mathTable->set(std::string("random"), createNativeFunction("math.random", [this](const std::vector<Value>& args) -> std::vector<Value> {
+	mathTable->set("random", createNativeFunction("math.random", [this](const std::vector<Value>& args) -> std::vector<Value> {
 		double randomValue = nextVmRandom();
 		if (args.empty()) {
 			return {randomValue};
@@ -1089,13 +1089,13 @@ void VMRuntime::setupBuiltins() {
 		int span = upper - lower + 1;
 		return {static_cast<double>(lower + static_cast<int>(randomValue * span))};
 	}));
-	mathTable->set(std::string("randomseed"), createNativeFunction("math.randomseed", [this](const std::vector<Value>& args) -> std::vector<Value> {
+	mathTable->set("randomseed", createNativeFunction("math.randomseed", [this](const std::vector<Value>& args) -> std::vector<Value> {
 		double seedValue = args.empty() ? EngineCore::instance().clock()->now() : std::get<double>(args.at(0));
 		uint64_t seed = static_cast<uint64_t>(std::floor(seedValue));
 		m_vmRandomSeedValue = static_cast<uint32_t>(seed & 0xffffffffu);
 		return {};
 	}));
-	mathTable->set(std::string("pi"), 3.14159265358979323846);
+	mathTable->set("pi", 3.14159265358979323846);
 
 	setGlobal("math", mathTable);
 	setGlobal("SYS_CART_PRESENT", static_cast<double>(IO_SYS_CART_PRESENT));
@@ -1430,26 +1430,26 @@ void VMRuntime::setupBuiltins() {
 			}
 			text += vmToString(args[i]);
 		}
-		std::cout << text << std::endl;
+		std::cout << text << '\n';
 		return {};
 	});
 
 	auto stringTable = std::make_shared<Table>();
-	stringTable->set(std::string("len"), createNativeFunction("string.len", [](const std::vector<Value>& args) -> std::vector<Value> {
+	stringTable->set("len", createNativeFunction("string.len", [](const std::vector<Value>& args) -> std::vector<Value> {
 		const std::string& text = std::get<std::string>(args.at(0));
 		return {static_cast<double>(text.size())};
 	}));
-	stringTable->set(std::string("upper"), createNativeFunction("string.upper", [](const std::vector<Value>& args) -> std::vector<Value> {
+	stringTable->set("upper", createNativeFunction("string.upper", [](const std::vector<Value>& args) -> std::vector<Value> {
 		std::string text = std::get<std::string>(args.at(0));
 		for (auto& c : text) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
 		return {text};
 	}));
-	stringTable->set(std::string("lower"), createNativeFunction("string.lower", [](const std::vector<Value>& args) -> std::vector<Value> {
+	stringTable->set("lower", createNativeFunction("string.lower", [](const std::vector<Value>& args) -> std::vector<Value> {
 		std::string text = std::get<std::string>(args.at(0));
 		for (auto& c : text) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
 		return {text};
 	}));
-	stringTable->set(std::string("sub"), createNativeFunction("string.sub", [](const std::vector<Value>& args) -> std::vector<Value> {
+	stringTable->set("sub", createNativeFunction("string.sub", [](const std::vector<Value>& args) -> std::vector<Value> {
 		const std::string& text = std::get<std::string>(args.at(0));
 		int length = static_cast<int>(text.length());
 		auto normalizeIndex = [length](double value) -> int {
@@ -1467,7 +1467,7 @@ void VMRuntime::setupBuiltins() {
 		}
 		return {text.substr(static_cast<size_t>(startIndex - 1), static_cast<size_t>(endIndex - startIndex + 1))};
 	}));
-	stringTable->set(std::string("find"), createNativeFunction("string.find", [this](const std::vector<Value>& args) -> std::vector<Value> {
+	stringTable->set("find", createNativeFunction("string.find", [this](const std::vector<Value>& args) -> std::vector<Value> {
 		const std::string& source = std::get<std::string>(args.at(0));
 		const std::string& pattern = args.size() > 1 ? std::get<std::string>(args.at(1)) : std::string("");
 		int length = static_cast<int>(source.length());
@@ -1514,7 +1514,7 @@ void VMRuntime::setupBuiltins() {
 		}
 		return {static_cast<double>(first), static_cast<double>(last)};
 	}));
-	stringTable->set(std::string("match"), createNativeFunction("string.match", [this](const std::vector<Value>& args) -> std::vector<Value> {
+	stringTable->set("match", createNativeFunction("string.match", [this](const std::vector<Value>& args) -> std::vector<Value> {
 		const std::string& source = std::get<std::string>(args.at(0));
 		const std::string& pattern = args.size() > 1 ? std::get<std::string>(args.at(1)) : std::string("");
 		int length = static_cast<int>(source.length());
@@ -1549,7 +1549,7 @@ void VMRuntime::setupBuiltins() {
 		}
 		return {match[0].str()};
 	}));
-	stringTable->set(std::string("gsub"), createNativeFunction("string.gsub", [this, callVmValue](const std::vector<Value>& args) -> std::vector<Value> {
+	stringTable->set("gsub", createNativeFunction("string.gsub", [this, callVmValue](const std::vector<Value>& args) -> std::vector<Value> {
 		const std::string& source = std::get<std::string>(args.at(0));
 		const std::string& pattern = args.size() > 1 ? std::get<std::string>(args.at(1)) : std::string("");
 		const Value replacement = args.size() > 2 ? args.at(2) : Value{std::string("")};
@@ -1644,7 +1644,7 @@ void VMRuntime::setupBuiltins() {
 		result += source.substr(lastIndex);
 		return {result, static_cast<double>(count)};
 	}));
-	stringTable->set(std::string("gmatch"), createNativeFunction("string.gmatch", [this](const std::vector<Value>& args) -> std::vector<Value> {
+	stringTable->set("gmatch", createNativeFunction("string.gmatch", [this](const std::vector<Value>& args) -> std::vector<Value> {
 		struct GMatchState {
 			std::regex regex;
 			std::string source;
@@ -1686,7 +1686,7 @@ void VMRuntime::setupBuiltins() {
 		});
 		return {iterator};
 	}));
-	stringTable->set(std::string("byte"), createNativeFunction("string.byte", [](const std::vector<Value>& args) -> std::vector<Value> {
+	stringTable->set("byte", createNativeFunction("string.byte", [](const std::vector<Value>& args) -> std::vector<Value> {
 		const std::string& source = std::get<std::string>(args.at(0));
 		int position = args.size() > 1 ? static_cast<int>(std::floor(std::get<double>(args.at(1)))) - 1 : 0;
 		if (position < 0 || position >= static_cast<int>(source.size())) {
@@ -1695,7 +1695,7 @@ void VMRuntime::setupBuiltins() {
 		unsigned char code = static_cast<unsigned char>(source[static_cast<size_t>(position)]);
 		return {static_cast<double>(code)};
 	}));
-	stringTable->set(std::string("char"), createNativeFunction("string.char", [](const std::vector<Value>& args) -> std::vector<Value> {
+	stringTable->set("char", createNativeFunction("string.char", [](const std::vector<Value>& args) -> std::vector<Value> {
 		if (args.empty()) {
 			return {std::string("")};
 		}
@@ -1707,7 +1707,7 @@ void VMRuntime::setupBuiltins() {
 		}
 		return {result};
 	}));
-	stringTable->set(std::string("format"), createNativeFunction("string.format", [this](const std::vector<Value>& args) -> std::vector<Value> {
+	stringTable->set("format", createNativeFunction("string.format", [this](const std::vector<Value>& args) -> std::vector<Value> {
 		const std::string& templateStr = std::get<std::string>(args.at(0));
 		return {formatVmString(templateStr, args, 1)};
 	}));
@@ -1715,7 +1715,7 @@ void VMRuntime::setupBuiltins() {
 	setGlobal("string", stringTable);
 
 	auto tableLib = std::make_shared<Table>();
-	tableLib->set(std::string("insert"), createNativeFunction("table.insert", [](const std::vector<Value>& args) -> std::vector<Value> {
+	tableLib->set("insert", createNativeFunction("table.insert", [](const std::vector<Value>& args) -> std::vector<Value> {
 		auto tbl = std::get<std::shared_ptr<Table>>(args.at(0));
 		int position = 0;
 		Value value;
@@ -1733,7 +1733,7 @@ void VMRuntime::setupBuiltins() {
 		tbl->set(static_cast<double>(position), value);
 		return {};
 	}));
-	tableLib->set(std::string("remove"), createNativeFunction("table.remove", [](const std::vector<Value>& args) -> std::vector<Value> {
+	tableLib->set("remove", createNativeFunction("table.remove", [](const std::vector<Value>& args) -> std::vector<Value> {
 		auto tbl = std::get<std::shared_ptr<Table>>(args.at(0));
 		int position = args.size() > 1 ? static_cast<int>(std::floor(std::get<double>(args.at(1)))) : tbl->length();
 		int length = tbl->length();
@@ -1747,7 +1747,7 @@ void VMRuntime::setupBuiltins() {
 		}
 		return {removed};
 	}));
-	tableLib->set(std::string("concat"), createNativeFunction("table.concat", [this](const std::vector<Value>& args) -> std::vector<Value> {
+	tableLib->set("concat", createNativeFunction("table.concat", [this](const std::vector<Value>& args) -> std::vector<Value> {
 		auto tbl = std::get<std::shared_ptr<Table>>(args.at(0));
 		const std::string separator = args.size() > 1 ? vmToString(args.at(1)) : std::string("");
 		int length = tbl->length();
@@ -1774,15 +1774,15 @@ void VMRuntime::setupBuiltins() {
 		}
 		return {output};
 	}));
-	tableLib->set(std::string("pack"), createNativeFunction("table.pack", [](const std::vector<Value>& args) -> std::vector<Value> {
+	tableLib->set("pack", createNativeFunction("table.pack", [](const std::vector<Value>& args) -> std::vector<Value> {
 		auto tbl = std::make_shared<Table>(static_cast<int>(args.size()), 1);
 		for (size_t i = 0; i < args.size(); ++i) {
 			tbl->set(static_cast<double>(i + 1), args[i]);
 		}
-		tbl->set(std::string("n"), static_cast<double>(args.size()));
+		tbl->set("n", static_cast<double>(args.size()));
 		return {tbl};
 	}));
-	tableLib->set(std::string("unpack"), createNativeFunction("table.unpack", [](const std::vector<Value>& args) -> std::vector<Value> {
+	tableLib->set("unpack", createNativeFunction("table.unpack", [](const std::vector<Value>& args) -> std::vector<Value> {
 		auto tbl = std::get<std::shared_ptr<Table>>(args.at(0));
 		int length = tbl->length();
 		auto normalizeIndex = [length](double value, int fallback) -> int {
@@ -1802,7 +1802,7 @@ void VMRuntime::setupBuiltins() {
 		}
 		return output;
 	}));
-	tableLib->set(std::string("sort"), createNativeFunction("table.sort", [callVmValue](const std::vector<Value>& args) -> std::vector<Value> {
+	tableLib->set("sort", createNativeFunction("table.sort", [callVmValue](const std::vector<Value>& args) -> std::vector<Value> {
 		auto tbl = std::get<std::shared_ptr<Table>>(args.at(0));
 		Value comparator = args.size() > 1 ? args.at(1) : Value{std::monostate{}};
 		int length = tbl->length();
@@ -1835,30 +1835,30 @@ void VMRuntime::setupBuiltins() {
 	setGlobal("table", tableLib);
 
 	auto osTable = std::make_shared<Table>();
-	osTable->set(std::string("clock"), createNativeFunction("os.clock", [](const std::vector<Value>&) -> std::vector<Value> {
+osTable->set("clock", createNativeFunction("os.clock", [](const std::vector<Value>&) -> std::vector<Value> {
 		return {EngineCore::instance().clock()->now() / 1000.0};
 	}));
-	osTable->set(std::string("time"), createNativeFunction("os.time", [](const std::vector<Value>& args) -> std::vector<Value> {
+osTable->set("time", createNativeFunction("os.time", [](const std::vector<Value>& args) -> std::vector<Value> {
 		if (!args.empty() && !isNil(args.at(0))) {
 			auto table = std::get<std::shared_ptr<Table>>(args.at(0));
 			std::tm timeInfo{};
-			timeInfo.tm_year = static_cast<int>(std::get<double>(table->get(std::string("year")))) - 1900;
-			timeInfo.tm_mon = static_cast<int>(std::get<double>(table->get(std::string("month")))) - 1;
-			timeInfo.tm_mday = static_cast<int>(std::get<double>(table->get(std::string("day"))));
-			timeInfo.tm_hour = static_cast<int>(std::get<double>(table->get(std::string("hour"))));
-			timeInfo.tm_min = static_cast<int>(std::get<double>(table->get(std::string("min"))));
-			timeInfo.tm_sec = static_cast<int>(std::get<double>(table->get(std::string("sec"))));
+			timeInfo.tm_year = static_cast<int>(std::get<double>(table->get("year"))) - 1900;
+			timeInfo.tm_mon = static_cast<int>(std::get<double>(table->get("month"))) - 1;
+			timeInfo.tm_mday = static_cast<int>(std::get<double>(table->get("day")));
+			timeInfo.tm_hour = static_cast<int>(std::get<double>(table->get("hour")));
+			timeInfo.tm_min = static_cast<int>(std::get<double>(table->get("min")));
+			timeInfo.tm_sec = static_cast<int>(std::get<double>(table->get("sec")));
 			timeInfo.tm_isdst = -1;
 			return {static_cast<double>(std::mktime(&timeInfo))};
 		}
 		return {static_cast<double>(std::time(nullptr))};
 	}));
-	osTable->set(std::string("difftime"), createNativeFunction("os.difftime", [](const std::vector<Value>& args) -> std::vector<Value> {
+osTable->set("difftime", createNativeFunction("os.difftime", [](const std::vector<Value>& args) -> std::vector<Value> {
 		double t2 = std::get<double>(args.at(0));
 		double t1 = std::get<double>(args.at(1));
 		return {t2 - t1};
 	}));
-	osTable->set(std::string("date"), createNativeFunction("os.date", [](const std::vector<Value>& args) -> std::vector<Value> {
+osTable->set("date", createNativeFunction("os.date", [](const std::vector<Value>& args) -> std::vector<Value> {
 		std::string format = args.empty() || isNil(args.at(0)) ? std::string("%c") : std::get<std::string>(args.at(0));
 		std::time_t timeValue = args.size() > 1 && !isNil(args.at(1))
 			? static_cast<std::time_t>(std::get<double>(args.at(1)))
@@ -1866,15 +1866,15 @@ void VMRuntime::setupBuiltins() {
 		std::tm timeInfo = *std::localtime(&timeValue);
 		if (format == "*t") {
 			auto table = std::make_shared<Table>(0, 9);
-			table->set(std::string("year"), static_cast<double>(timeInfo.tm_year + 1900));
-			table->set(std::string("month"), static_cast<double>(timeInfo.tm_mon + 1));
-			table->set(std::string("day"), static_cast<double>(timeInfo.tm_mday));
-			table->set(std::string("hour"), static_cast<double>(timeInfo.tm_hour));
-			table->set(std::string("min"), static_cast<double>(timeInfo.tm_min));
-			table->set(std::string("sec"), static_cast<double>(timeInfo.tm_sec));
-			table->set(std::string("wday"), static_cast<double>(timeInfo.tm_wday + 1));
-			table->set(std::string("yday"), static_cast<double>(timeInfo.tm_yday + 1));
-			table->set(std::string("isdst"), timeInfo.tm_isdst > 0);
+			table->set("year", static_cast<double>(timeInfo.tm_year + 1900));
+			table->set("month", static_cast<double>(timeInfo.tm_mon + 1));
+			table->set("day", static_cast<double>(timeInfo.tm_mday));
+			table->set("hour", static_cast<double>(timeInfo.tm_hour));
+			table->set("min", static_cast<double>(timeInfo.tm_min));
+			table->set("sec", static_cast<double>(timeInfo.tm_sec));
+			table->set("wday", static_cast<double>(timeInfo.tm_wday + 1));
+			table->set("yday", static_cast<double>(timeInfo.tm_yday + 1));
+			table->set("isdst", timeInfo.tm_isdst > 0);
 			return {table};
 		}
 		char buffer[256];
@@ -1948,26 +1948,26 @@ void VMRuntime::setupBuiltins() {
 	auto imgTable = std::make_shared<Table>(0, static_cast<int>(assets.img.size()));
 	for (const auto& [id, imgAsset] : assets.img) {
 		auto imgEntry = std::make_shared<Table>(0, 2);
-		imgEntry->set(std::string("imgmeta"), buildImgMetaTable(imgAsset.meta));
+		imgEntry->set("imgmeta", buildImgMetaTable(imgAsset.meta));
 		imgTable->set(id, imgEntry);
 	}
-	assetsTable->set(std::string("img"), imgTable);
+	assetsTable->set("img", imgTable);
 
 	auto dataTable = std::make_shared<Table>(0, static_cast<int>(assets.data.size()));
 	for (const auto& [id, value] : assets.data) {
 		dataTable->set(id, binValueToVmValue(value));
 	}
-	assetsTable->set(std::string("data"), dataTable);
-	assetsTable->set(std::string("audio"), std::make_shared<Table>());
-	assetsTable->set(std::string("audioevents"), std::make_shared<Table>());
-	assetsTable->set(std::string("model"), std::make_shared<Table>());
-	assetsTable->set(std::string("project_root_path"), assets.projectRootPath);
+	assetsTable->set("data", dataTable);
+	assetsTable->set("audio", std::make_shared<Table>());
+	assetsTable->set("audioevents", std::make_shared<Table>());
+	assetsTable->set("model", std::make_shared<Table>());
+	assetsTable->set("project_root_path", assets.projectRootPath);
 	setGlobal("assets", assetsTable);
 
 	auto viewSize = EngineCore::instance().view()->viewportSize;
 	auto viewportTable = std::make_shared<Table>(0, 2);
-	viewportTable->set(std::string("x"), static_cast<double>(viewSize.x));
-	viewportTable->set(std::string("y"), static_cast<double>(viewSize.y));
+	viewportTable->set("x", static_cast<double>(viewSize.x));
+	viewportTable->set("y", static_cast<double>(viewSize.y));
 
 	auto clockNowFn = createNativeFunction("platform.clock.now", [](const std::vector<Value>&) -> std::vector<Value> {
 		return {EngineCore::instance().clock()->now()};
@@ -1976,53 +1976,53 @@ void VMRuntime::setupBuiltins() {
 		return {to_ms(std::chrono::steady_clock::now().time_since_epoch())};
 	});
 	auto clockTable = std::make_shared<Table>(0, 2);
-	clockTable->set(std::string("now"), clockNowFn);
-	clockTable->set(std::string("perf_now"), clockPerfNowFn);
+	clockTable->set("now", clockNowFn);
+	clockTable->set("perf_now", clockPerfNowFn);
 	auto platformTable = std::make_shared<Table>(0, 1);
-	platformTable->set(std::string("clock"), clockTable);
+	platformTable->set("clock", clockTable);
 
 	auto makeActionStateTable = [](const ActionState& state) -> std::shared_ptr<Table> {
 		auto table = std::make_shared<Table>(0, 18);
-		table->set(std::string("action"), state.action);
-		table->set(std::string("pressed"), state.pressed);
-		table->set(std::string("justpressed"), state.justpressed);
-		table->set(std::string("justreleased"), state.justreleased);
-		table->set(std::string("waspressed"), state.waspressed);
-		table->set(std::string("wasreleased"), state.wasreleased);
-		table->set(std::string("consumed"), state.consumed);
-		table->set(std::string("alljustpressed"), state.alljustpressed);
-		table->set(std::string("allwaspressed"), state.allwaspressed);
-		table->set(std::string("alljustreleased"), state.alljustreleased);
+		table->set("action", state.action);
+		table->set("pressed", state.pressed);
+		table->set("justpressed", state.justpressed);
+		table->set("justreleased", state.justreleased);
+		table->set("waspressed", state.waspressed);
+		table->set("wasreleased", state.wasreleased);
+		table->set("consumed", state.consumed);
+		table->set("alljustpressed", state.alljustpressed);
+		table->set("allwaspressed", state.allwaspressed);
+		table->set("alljustreleased", state.alljustreleased);
 		if (state.guardedjustpressed.has_value()) {
-			table->set(std::string("guardedjustpressed"), state.guardedjustpressed.value());
+			table->set("guardedjustpressed", state.guardedjustpressed.value());
 		}
 		if (state.repeatpressed.has_value()) {
-			table->set(std::string("repeatpressed"), state.repeatpressed.value());
+			table->set("repeatpressed", state.repeatpressed.value());
 		}
 		if (state.repeatcount.has_value()) {
-			table->set(std::string("repeatcount"), static_cast<double>(state.repeatcount.value()));
+			table->set("repeatcount", static_cast<double>(state.repeatcount.value()));
 		}
 		if (state.presstime.has_value()) {
-			table->set(std::string("presstime"), static_cast<double>(state.presstime.value()));
+			table->set("presstime", static_cast<double>(state.presstime.value()));
 		}
 		if (state.timestamp.has_value()) {
-			table->set(std::string("timestamp"), static_cast<double>(state.timestamp.value()));
+			table->set("timestamp", static_cast<double>(state.timestamp.value()));
 		}
 		if (state.pressedAtMs.has_value()) {
-			table->set(std::string("pressedAtMs"), static_cast<double>(state.pressedAtMs.value()));
+			table->set("pressedAtMs", static_cast<double>(state.pressedAtMs.value()));
 		}
 		if (state.releasedAtMs.has_value()) {
-			table->set(std::string("releasedAtMs"), static_cast<double>(state.releasedAtMs.value()));
+			table->set("releasedAtMs", static_cast<double>(state.releasedAtMs.value()));
 		}
 		if (state.pressId.has_value()) {
-			table->set(std::string("pressId"), static_cast<double>(state.pressId.value()));
+			table->set("pressId", static_cast<double>(state.pressId.value()));
 		}
-		table->set(std::string("value"), static_cast<double>(state.value));
+		table->set("value", static_cast<double>(state.value));
 		if (state.value2d.has_value()) {
 			auto value2d = std::make_shared<Table>(0, 2);
-			value2d->set(std::string("x"), static_cast<double>(state.value2d->x));
-			value2d->set(std::string("y"), static_cast<double>(state.value2d->y));
-			table->set(std::string("value2d"), value2d);
+			value2d->set("x", static_cast<double>(state.value2d->x));
+			value2d->set("y", static_cast<double>(state.value2d->y));
+			table->set("value2d", value2d);
 		}
 		return table;
 	};
@@ -2096,7 +2096,7 @@ void VMRuntime::setupBuiltins() {
 				(void)s;
 				emitterValid = true;
 			} else if (auto* tbl = std::get_if<std::shared_ptr<Table>>(&emitterValue)) {
-				Value idValue = (*tbl)->get(std::string("id"));
+				Value idValue = (*tbl)->get("id");
 				if (std::holds_alternative<std::string>(idValue)) {
 					emitterValid = true;
 				}
@@ -2106,9 +2106,9 @@ void VMRuntime::setupBuiltins() {
 				emitterValue = Value{};
 			}
 		} else if (auto* eventTable = std::get_if<std::shared_ptr<Table>>(&specValue)) {
-			Value typeValue = (*eventTable)->get(std::string("type"));
+			Value typeValue = (*eventTable)->get("type");
 			eventName = std::get<std::string>(typeValue);
-			emitterValue = (*eventTable)->get(std::string("emitter"));
+			emitterValue = (*eventTable)->get("emitter");
 			payloadValue = specValue;
 			payloadIsEventTable = true;
 		} else {
@@ -2119,7 +2119,7 @@ void VMRuntime::setupBuiltins() {
 		if (auto* s = std::get_if<std::string>(&emitterValue)) {
 			emitterId = *s;
 		} else if (auto* tbl = std::get_if<std::shared_ptr<Table>>(&emitterValue)) {
-			Value idValue = (*tbl)->get(std::string("id"));
+			Value idValue = (*tbl)->get("id");
 			if (auto* idStr = std::get_if<std::string>(&idValue)) {
 				emitterId = *idStr;
 			}
@@ -2128,37 +2128,37 @@ void VMRuntime::setupBuiltins() {
 		Value payload = payloadValue;
 		if (!payloadIsEventTable && !isNil(payloadValue)) {
 			if (auto* payloadTable = std::get_if<std::shared_ptr<Table>>(&payloadValue)) {
-				Value payloadType = (*payloadTable)->get(std::string("type"));
+				Value payloadType = (*payloadTable)->get("type");
 				if (isNil(payloadType)) {
 					auto eventTable = std::make_shared<Table>(0, 8);
-					eventTable->set(std::string("type"), eventName);
-					eventTable->set(std::string("emitter"), emitterValue);
-					eventTable->set(std::string("timestamp"), EngineCore::instance().clock()->now());
+					eventTable->set("type", eventName);
+					eventTable->set("emitter", emitterValue);
+					eventTable->set("timestamp", EngineCore::instance().clock()->now());
 					for (const auto& [key, value] : (*payloadTable)->entries()) {
 						eventTable->set(key, value);
 					}
 					payload = eventTable;
 				} else {
 					auto eventTable = std::make_shared<Table>(0, 4);
-					eventTable->set(std::string("type"), eventName);
-					eventTable->set(std::string("emitter"), emitterValue);
-					eventTable->set(std::string("timestamp"), EngineCore::instance().clock()->now());
-					eventTable->set(std::string("payload"), payloadValue);
+					eventTable->set("type", eventName);
+					eventTable->set("emitter", emitterValue);
+					eventTable->set("timestamp", EngineCore::instance().clock()->now());
+					eventTable->set("payload", payloadValue);
 					payload = eventTable;
 				}
 			} else {
 				auto eventTable = std::make_shared<Table>(0, 4);
-				eventTable->set(std::string("type"), eventName);
-				eventTable->set(std::string("emitter"), emitterValue);
-				eventTable->set(std::string("timestamp"), EngineCore::instance().clock()->now());
-				eventTable->set(std::string("payload"), payloadValue);
+				eventTable->set("type", eventName);
+				eventTable->set("emitter", emitterValue);
+				eventTable->set("timestamp", EngineCore::instance().clock()->now());
+				eventTable->set("payload", payloadValue);
 				payload = eventTable;
 			}
 		} else if (!payloadIsEventTable) {
 			auto eventTable = std::make_shared<Table>(0, 3);
-			eventTable->set(std::string("type"), eventName);
-			eventTable->set(std::string("emitter"), emitterValue);
-			eventTable->set(std::string("timestamp"), EngineCore::instance().clock()->now());
+			eventTable->set("type", eventName);
+			eventTable->set("emitter", emitterValue);
+			eventTable->set("timestamp", EngineCore::instance().clock()->now());
 			payload = eventTable;
 		}
 
@@ -2167,13 +2167,13 @@ void VMRuntime::setupBuiltins() {
 	});
 
 	auto gameTable = std::make_shared<Table>(0, 8);
-	gameTable->set(std::string("platform"), platformTable);
-	gameTable->set(std::string("viewportsize"), viewportTable);
-	gameTable->set(std::string("deltatime"), 0.0);
-	gameTable->set(std::string("deltatime_seconds"), 0.0);
-	gameTable->set(std::string("get_action_state"), getActionStateFn);
-	gameTable->set(std::string("consume_action"), consumeActionFn);
-	gameTable->set(std::string("emit"), emitFn);
+	gameTable->set("platform", platformTable);
+	gameTable->set("viewportsize", viewportTable);
+	gameTable->set("deltatime", 0.0);
+	gameTable->set("deltatime_seconds", 0.0);
+	gameTable->set("get_action_state", getActionStateFn);
+	gameTable->set("consume_action", consumeActionFn);
+	gameTable->set("emit", emitFn);
 	setGlobal("game", gameTable);
 	setGlobal("$", gameTable);
 

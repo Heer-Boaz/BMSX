@@ -5,7 +5,7 @@ import { resetBlink } from './render/render_caret';
 import { activeSearchMatchCount, applySearchSelection, closeSearch, ensureSearchSelectionVisible, focusEditorFromSearch, jumpToNextMatch, jumpToPreviousMatch, onSearchQueryChanged, openSearch, searchPageSize, stepSearchSelection } from './editor_search';
 import { ide_state } from './ide_state';
 import { ESCAPE_KEY } from './constants';
-import type { MenuId, PointerSnapshot, ResourceViewerState, RuntimeErrorOverlay, TopBarButtonId } from './types';
+import type { IdeThemeVariant, MenuId, PointerSnapshot, ResourceViewerState, RuntimeErrorOverlay, TopBarButtonId } from './types';
 import { moveCursorDown, moveCursorEnd, moveCursorHome, moveCursorLeft, moveCursorRight, moveCursorUp, pageDown, pageUp, revealCursor, setCursorPosition } from './caret';
 import { isResourceViewActive, isCodeTabActive, isEditableCodeTab, isReadOnlyCodeTab, cycleTab, activateCodeTab, beginTabDrag, closeTab, endTabDrag, setActiveTab, getActiveCodeTabContext, updateTabDrag } from './editor_tabs';
 import { prepareDebuggerStepOverlay } from './ide_debugger';
@@ -23,6 +23,7 @@ import { focusRuntimeErrorOverlay } from './runtime_error_navigation';
 import { toggleProblemsPanel } from './problems_panel';
 import { point_in_rect } from '../../utils/rect_operations';
 import { applyInlineFieldEditing, getFieldText } from './inline_text_field';
+import { setEditorCaseInsensitivity } from './text_renderer';
 import { BmsxVMRuntime } from '../vm_tooling_runtime';
 import { computeRuntimeErrorOverlayGeometry, resolveRuntimeErrorOverlayAnchor, computeRuntimeErrorOverlayLayout, findRuntimeErrorOverlayLineAtPosition, RuntimeErrorOverlayClickResult } from './render/render_error_overlay';
 import { rebuildRuntimeErrorOverlayView, buildRuntimeErrorOverlayCopyText } from './runtime_error_overlay';
@@ -2102,9 +2103,23 @@ export function evaluateRuntimeErrorOverlayClick(
 
 export function toggleThemeMode() {
 	const currentVariant = constants.getActiveIdeThemeVariant();
-	const nextVariant = currentVariant === 'dark' ? 'light' : 'dark';
+	let nextVariant: IdeThemeVariant;
+	switch (currentVariant) {
+		case 'light':
+			nextVariant = 'dark';
+			break;
+		case 'dark':
+			nextVariant = 'gruvbox';
+			break;
+		case 'gruvbox':
+			nextVariant = 'light';
+			break;
+		default:
+			throw new Error(`[IDE] Unknown theme variant: ${currentVariant}`);
+	}
 	constants.setIdeThemeVariant(nextVariant);
 	ide_state.themeVariant = constants.getActiveIdeThemeVariant();
+	setEditorCaseInsensitivity(ide_state.caseInsensitive);
 	ide_state.layout.invalidateAllHighlights();
 }
 

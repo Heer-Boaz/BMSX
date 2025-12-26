@@ -110,27 +110,27 @@ void VMApi::registerAllFunctions() {
 
 		if (args.size() > 4 && std::holds_alternative<std::shared_ptr<Table>>(args[4])) {
 			auto options = std::get<std::shared_ptr<Table>>(args[4]);
-			Value scaleValue = options->get(std::string("scale"));
+			Value scaleValue = options->get("scale");
 			if (!isNil(scaleValue)) {
 				if (std::holds_alternative<double>(scaleValue)) {
 					float scale = static_cast<float>(std::get<double>(scaleValue));
 					submission.scale = {scale, scale};
 				} else if (std::holds_alternative<std::shared_ptr<Table>>(scaleValue)) {
 					auto scaleTable = std::get<std::shared_ptr<Table>>(scaleValue);
-					float scaleX = static_cast<float>(std::get<double>(scaleTable->get(std::string("x"))));
-					float scaleY = static_cast<float>(std::get<double>(scaleTable->get(std::string("y"))));
+					float scaleX = static_cast<float>(std::get<double>(scaleTable->get("x")));
+					float scaleY = static_cast<float>(std::get<double>(scaleTable->get("y")));
 					submission.scale = {scaleX, scaleY};
 				}
 			}
-			Value flipH = options->get(std::string("flip_h"));
-			Value flipV = options->get(std::string("flip_v"));
+			Value flipH = options->get("flip_h");
+			Value flipV = options->get("flip_v");
 			if (!isNil(flipH) || !isNil(flipV)) {
 				FlipOptions flip;
 				flip.flip_h = std::holds_alternative<bool>(flipH) && std::get<bool>(flipH);
 				flip.flip_v = std::holds_alternative<bool>(flipV) && std::get<bool>(flipV);
 				submission.flip = flip;
 			}
-			Value colorizeValue = options->get(std::string("colorize"));
+			Value colorizeValue = options->get("colorize");
 			if (!isNil(colorizeValue)) {
 				submission.colorize = resolve_color(colorizeValue);
 			}
@@ -165,31 +165,31 @@ void VMApi::registerAllFunctions() {
 
 		if (args.size() > 4 && std::holds_alternative<std::shared_ptr<Table>>(args[4])) {
 			auto options = std::get<std::shared_ptr<Table>>(args[4]);
-			Value colorValue = options->get(std::string("color"));
+			Value colorValue = options->get("color");
 			if (!isNil(colorValue)) {
 				submission.color = resolve_color(colorValue);
 			}
-			Value backgroundValue = options->get(std::string("background_color"));
+			Value backgroundValue = options->get("background_color");
 			if (!isNil(backgroundValue)) {
 				submission.background_color = resolve_color(backgroundValue);
 			}
-			Value wrapValue = options->get(std::string("wrap_chars"));
+			Value wrapValue = options->get("wrap_chars");
 			if (!isNil(wrapValue)) {
 				submission.wrap_chars = static_cast<int>(std::floor(std::get<double>(wrapValue)));
 			}
-			Value centerValue = options->get(std::string("center_block_width"));
+			Value centerValue = options->get("center_block_width");
 			if (!isNil(centerValue)) {
 				submission.center_block_width = static_cast<int>(std::floor(std::get<double>(centerValue)));
 			}
-			Value startValue = options->get(std::string("glyph_start"));
+			Value startValue = options->get("glyph_start");
 			if (!isNil(startValue)) {
 				submission.glyph_start = static_cast<int>(std::floor(std::get<double>(startValue)));
 			}
-			Value endValue = options->get(std::string("glyph_end"));
+			Value endValue = options->get("glyph_end");
 			if (!isNil(endValue)) {
 				submission.glyph_end = static_cast<int>(std::floor(std::get<double>(endValue)));
 			}
-			Value layerValue = options->get(std::string("layer"));
+			Value layerValue = options->get("layer");
 			if (!isNil(layerValue)) {
 				submission.layer = resolve_layer(layerValue);
 			}
@@ -230,7 +230,7 @@ void VMApi::registerAllFunctions() {
 		submission.matrix = read_matrix(args.at(1));
 		if (args.size() > 2 && std::holds_alternative<std::shared_ptr<Table>>(args[2])) {
 			auto options = std::get<std::shared_ptr<Table>>(args[2]);
-			Value receiveShadow = options->get(std::string("receive_shadow"));
+			Value receiveShadow = options->get("receive_shadow");
 			if (!isNil(receiveShadow)) {
 				submission.receive_shadow = std::holds_alternative<bool>(receiveShadow) && std::get<bool>(receiveShadow);
 			}
@@ -246,8 +246,8 @@ void VMApi::registerAllFunctions() {
 		submission.color = resolve_color(args.at(2));
 		if (args.size() > 3 && std::holds_alternative<std::shared_ptr<Table>>(args[3])) {
 			auto options = std::get<std::shared_ptr<Table>>(args[3]);
-			Value ambientMode = options->get(std::string("ambient_mode"));
-			Value ambientFactor = options->get(std::string("ambient_factor"));
+			Value ambientMode = options->get("ambient_mode");
+			Value ambientFactor = options->get("ambient_factor");
 			if (!isNil(ambientMode)) {
 				submission.ambient_mode = static_cast<int>(std::floor(std::get<double>(ambientMode)));
 			}
@@ -639,10 +639,10 @@ Color VMApi::resolve_color(const Value& value) const {
 	}
 	auto tbl = std::get<std::shared_ptr<Table>>(value);
 	Color color;
-	color.r = static_cast<f32>(std::get<double>(tbl->get(std::string("r"))));
-	color.g = static_cast<f32>(std::get<double>(tbl->get(std::string("g"))));
-	color.b = static_cast<f32>(std::get<double>(tbl->get(std::string("b"))));
-	color.a = static_cast<f32>(std::get<double>(tbl->get(std::string("a"))));
+	color.r = static_cast<f32>(std::get<double>(tbl->get("r")));
+	color.g = static_cast<f32>(std::get<double>(tbl->get("g")));
+	color.b = static_cast<f32>(std::get<double>(tbl->get("b")));
+	color.a = static_cast<f32>(std::get<double>(tbl->get("a")));
 	return color;
 }
 
@@ -690,9 +690,9 @@ Vec3 VMApi::read_vec3(const Value& value) const {
 	if (std::holds_alternative<std::shared_ptr<Table>>(value)) {
 		auto tbl = std::get<std::shared_ptr<Table>>(value);
 		Vec3 out;
-		out.x = static_cast<f32>(std::get<double>(tbl->get(std::string("x"))));
-		out.y = static_cast<f32>(std::get<double>(tbl->get(std::string("y"))));
-		out.z = static_cast<f32>(std::get<double>(tbl->get(std::string("z"))));
+		out.x = static_cast<f32>(std::get<double>(tbl->get("x")));
+		out.y = static_cast<f32>(std::get<double>(tbl->get("y")));
+		out.z = static_cast<f32>(std::get<double>(tbl->get("z")));
 		return out;
 	}
 	if (std::holds_alternative<std::shared_ptr<NativeObject>>(value)) {

@@ -172,7 +172,8 @@ export class Table {
 	private metatable: Table | null = null;
 
 	constructor(arraySize: number, _hashSize: number) {
-		this.array = new Array(arraySize);
+		this.array = new Array<Value>(arraySize);
+		this.array.fill(null);
 		this.map = new Map<Value, Value>();
 	}
 

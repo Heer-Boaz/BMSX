@@ -5,6 +5,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <stdexcept>
 #include <unordered_map>
 #include <utility>
@@ -89,6 +90,32 @@ struct ValueHash {
 
 struct ValueEq {
 	bool operator()(const Value& lhs, const Value& rhs) const {
+		return lhs == rhs;
+	}
+};
+
+struct StringKeyHash {
+	using is_transparent = void;
+	size_t operator()(std::string_view key) const noexcept {
+		return std::hash<std::string_view>{}(key);
+	}
+	size_t operator()(const std::string& key) const noexcept {
+		return std::hash<std::string_view>{}(key);
+	}
+};
+
+struct StringKeyEq {
+	using is_transparent = void;
+	bool operator()(std::string_view lhs, std::string_view rhs) const noexcept {
+		return lhs == rhs;
+	}
+	bool operator()(const std::string& lhs, const std::string& rhs) const noexcept {
+		return lhs == rhs;
+	}
+	bool operator()(const std::string& lhs, std::string_view rhs) const noexcept {
+		return lhs == rhs;
+	}
+	bool operator()(std::string_view lhs, const std::string& rhs) const noexcept {
 		return lhs == rhs;
 	}
 };
@@ -353,7 +380,9 @@ public:
 	static void setCaseInsensitiveKeys(bool enabled);
 
 	Value get(const Value& key) const;
+	Value get(std::string_view key) const;
 	void set(const Value& key, const Value& value);
+	void set(std::string_view key, const Value& value);
 	int length() const;
 	void clear();
 	std::vector<std::pair<Value, Value>> entries() const;
@@ -366,15 +395,15 @@ private:
 	bool isArrayIndex(const Value& key) const;
 	int toArrayIndex(const Value& key) const;
 	void ensureUppercaseIndex() const;
-	static std::string toUpperAscii(const std::string& value);
+	static std::string toUpperAscii(std::string_view value);
 
 	static bool s_caseInsensitiveKeys;
 
 	std::vector<Value> m_array;
-	std::unordered_map<std::string, Value> m_stringMap;
+	std::unordered_map<std::string, Value, StringKeyHash, StringKeyEq> m_stringMap;
 	std::unordered_map<Value, Value, ValueHash, ValueEq> m_otherMap;
 	std::shared_ptr<Table> m_metatable;
-	mutable std::unordered_map<std::string, std::string> m_uppercaseIndex;
+	mutable std::unordered_map<std::string, std::string, StringKeyHash, StringKeyEq> m_uppercaseIndex;
 	mutable bool m_uppercaseIndexValid = false;
 };
 

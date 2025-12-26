@@ -82,14 +82,17 @@ void Table::setCaseInsensitiveKeys(bool enabled) {
 	s_caseInsensitiveKeys = enabled;
 }
 
-Table::Table(int arraySize, int /*hashSize*/) {
+Table::Table(int arraySize, int hashSize) {
 	if (arraySize > 0) {
 		m_array.resize(arraySize);
 	}
+	m_stringMap.reserve(static_cast<size_t>(hashSize));
+	m_otherMap.reserve(static_cast<size_t>(hashSize));
+	m_uppercaseIndex.reserve(static_cast<size_t>(hashSize));
 }
 
-std::string Table::toUpperAscii(const std::string& value) {
-	std::string result = value;
+std::string Table::toUpperAscii(std::string_view value) {
+	std::string result(value);
 	for (char& ch : result) {
 		ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
 	}
@@ -132,26 +135,30 @@ Value Table::get(const Value& key) const {
 	}
 
 	if (auto* str = std::get_if<std::string>(&key)) {
-		if (s_caseInsensitiveKeys) {
-			ensureUppercaseIndex();
-			auto it = m_uppercaseIndex.find(toUpperAscii(*str));
-			if (it != m_uppercaseIndex.end()) {
-				auto mapIt = m_stringMap.find(it->second);
-				if (mapIt != m_stringMap.end()) {
-					return mapIt->second;
-				}
-			}
-			return std::monostate{};
-		}
-		auto mapIt = m_stringMap.find(*str);
-		if (mapIt != m_stringMap.end()) {
-			return mapIt->second;
-		}
-		return std::monostate{};
+		return get(std::string_view(*str));
 	}
 
 	auto mapIt = m_otherMap.find(key);
 	if (mapIt != m_otherMap.end()) {
+		return mapIt->second;
+	}
+	return std::monostate{};
+}
+
+Value Table::get(std::string_view key) const {
+	if (s_caseInsensitiveKeys) {
+		ensureUppercaseIndex();
+		auto it = m_uppercaseIndex.find(toUpperAscii(key));
+		if (it != m_uppercaseIndex.end()) {
+			auto mapIt = m_stringMap.find(it->second);
+			if (mapIt != m_stringMap.end()) {
+				return mapIt->second;
+			}
+		}
+		return std::monostate{};
+	}
+	auto mapIt = m_stringMap.find(key);
+	if (mapIt != m_stringMap.end()) {
 		return mapIt->second;
 	}
 	return std::monostate{};
@@ -170,32 +177,7 @@ void Table::set(const Value& key, const Value& value) {
 	}
 
 	if (auto* str = std::get_if<std::string>(&key)) {
-		if (s_caseInsensitiveKeys) {
-			ensureUppercaseIndex();
-			const std::string upper = toUpperAscii(*str);
-			auto it = m_uppercaseIndex.find(upper);
-			if (isNil(value)) {
-				if (it != m_uppercaseIndex.end()) {
-					m_stringMap.erase(it->second);
-					m_uppercaseIndex.erase(it);
-				}
-				return;
-			}
-			if (it != m_uppercaseIndex.end()) {
-				m_stringMap[it->second] = value;
-				return;
-			}
-			m_stringMap[*str] = value;
-			m_uppercaseIndex.emplace(upper, *str);
-			return;
-		}
-		if (isNil(value)) {
-			m_stringMap.erase(*str);
-			m_uppercaseIndexValid = false;
-			return;
-		}
-		m_stringMap[*str] = value;
-		m_uppercaseIndexValid = false;
+		set(std::string_view(*str), value);
 		return;
 	}
 	if (isNil(value)) {
@@ -203,6 +185,43 @@ void Table::set(const Value& key, const Value& value) {
 		return;
 	}
 	m_otherMap[key] = value;
+}
+
+void Table::set(std::string_view key, const Value& value) {
+	if (s_caseInsensitiveKeys) {
+		ensureUppercaseIndex();
+		const std::string upper = toUpperAscii(key);
+		auto it = m_uppercaseIndex.find(upper);
+		if (isNil(value)) {
+			if (it != m_uppercaseIndex.end()) {
+				m_stringMap.erase(it->second);
+				m_uppercaseIndex.erase(it);
+			}
+			return;
+		}
+		if (it != m_uppercaseIndex.end()) {
+			m_stringMap[it->second] = value;
+			return;
+		}
+		auto mapIt = m_stringMap.emplace(std::string(key), value).first;
+		m_uppercaseIndex.emplace(upper, mapIt->first);
+		return;
+	}
+	if (isNil(value)) {
+		auto mapIt = m_stringMap.find(key);
+		if (mapIt != m_stringMap.end()) {
+			m_stringMap.erase(mapIt);
+		}
+		m_uppercaseIndexValid = false;
+		return;
+	}
+	auto mapIt = m_stringMap.find(key);
+	if (mapIt != m_stringMap.end()) {
+		mapIt->second = value;
+	} else {
+		m_stringMap.emplace(std::string(key), value);
+	}
+	m_uppercaseIndexValid = false;
 }
 
 int Table::length() const {

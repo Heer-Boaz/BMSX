@@ -121,6 +121,34 @@ export const Msx1Colors: color[] = [
 	{ r: 0.95, g: 0.45, b: 0.1, a: 0.45 }, // 56 = Execution stop overlay
 	{ r: 0.1, g: 0.1, b: 0.1, a: 0.9 }, // 57 = Hover tooltip background
 	{ r: 0, g: 0, b: 0, a: 0.65 }, // 58 = Action overlay
+	// Gruvbox palette for IDE themes
+	{ r: 40 / 255, g: 40 / 255, b: 40 / 255, a: 1 }, // 59 = Gruvbox bg0 (#282828)
+	{ r: 60 / 255, g: 56 / 255, b: 54 / 255, a: 1 }, // 60 = Gruvbox bg1 (#3c3836)
+	{ r: 80 / 255, g: 73 / 255, b: 69 / 255, a: 1 }, // 61 = Gruvbox bg2 (#504945)
+	{ r: 102 / 255, g: 92 / 255, b: 84 / 255, a: 1 }, // 62 = Gruvbox bg3 (#665c54)
+	{ r: 124 / 255, g: 111 / 255, b: 100 / 255, a: 1 }, // 63 = Gruvbox bg4 (#7c6f64)
+	{ r: 235 / 255, g: 219 / 255, b: 178 / 255, a: 1 }, // 64 = Gruvbox fg1 (#ebdbb2)
+	{ r: 213 / 255, g: 196 / 255, b: 161 / 255, a: 1 }, // 65 = Gruvbox fg2 (#d5c4a1)
+	{ r: 189 / 255, g: 174 / 255, b: 147 / 255, a: 1 }, // 66 = Gruvbox fg3 (#bdae93)
+	{ r: 168 / 255, g: 153 / 255, b: 132 / 255, a: 1 }, // 67 = Gruvbox fg4 (#a89984)
+	{ r: 146 / 255, g: 131 / 255, b: 116 / 255, a: 1 }, // 68 = Gruvbox gray (#928374)
+	{ r: 251 / 255, g: 73 / 255, b: 52 / 255, a: 1 }, // 69 = Gruvbox red (#fb4934)
+	{ r: 204 / 255, g: 36 / 255, b: 29 / 255, a: 1 }, // 70 = Gruvbox red dark (#cc241d)
+	{ r: 184 / 255, g: 187 / 255, b: 38 / 255, a: 1 }, // 71 = Gruvbox green (#b8bb26)
+	{ r: 152 / 255, g: 151 / 255, b: 26 / 255, a: 1 }, // 72 = Gruvbox green dark (#98971a)
+	{ r: 250 / 255, g: 189 / 255, b: 47 / 255, a: 1 }, // 73 = Gruvbox yellow (#fabd2f)
+	{ r: 215 / 255, g: 153 / 255, b: 33 / 255, a: 1 }, // 74 = Gruvbox yellow dark (#d79921)
+	{ r: 131 / 255, g: 165 / 255, b: 152 / 255, a: 1 }, // 75 = Gruvbox blue (#83a598)
+	{ r: 69 / 255, g: 133 / 255, b: 136 / 255, a: 1 }, // 76 = Gruvbox blue dark (#458588)
+	{ r: 211 / 255, g: 134 / 255, b: 155 / 255, a: 1 }, // 77 = Gruvbox purple (#d3869b)
+	{ r: 177 / 255, g: 98 / 255, b: 134 / 255, a: 1 }, // 78 = Gruvbox purple dark (#b16286)
+	{ r: 142 / 255, g: 192 / 255, b: 124 / 255, a: 1 }, // 79 = Gruvbox aqua (#8ec07c)
+	{ r: 104 / 255, g: 157 / 255, b: 106 / 255, a: 1 }, // 80 = Gruvbox aqua dark (#689d6a)
+	{ r: 254 / 255, g: 128 / 255, b: 25 / 255, a: 1 }, // 81 = Gruvbox orange (#fe8019)
+	{ r: 214 / 255, g: 93 / 255, b: 14 / 255, a: 1 }, // 82 = Gruvbox orange dark (#d65d0e)
+	{ r: 60 / 255, g: 56 / 255, b: 54 / 255, a: 96 / 255 }, // 83 = Gruvbox line highlight (#3c383660)
+	{ r: 104 / 255, g: 157 / 255, b: 106 / 255, a: 64 / 255 }, // 84 = Gruvbox selection (#689d6a40)
+	{ r: 80 / 255, g: 73 / 255, b: 69 / 255, a: 153 / 255 }, // 85 = Gruvbox scrollbar thumb (#50494599)
 ];
 export function resolvePaletteIndex(color: { r: number; g: number; b: number; a: number; } | number): number {
 	if (typeof color === 'number') {
