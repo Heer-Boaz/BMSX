@@ -16,6 +16,8 @@ namespace bmsx {
 namespace SpritesPipeline {
 namespace {
 
+constexpr bool kSpritesVerboseLog = true;
+
 constexpr int kMaxSprites = 256;
 constexpr int kVerticesPerSprite = 6;
 constexpr int kPositionComponents = 2;
@@ -351,6 +353,16 @@ void initGLES2(OpenGLES2Backend* backend, GameView* context) {
   glUniform1i(g_sprite.uniform_tex0, kTexUnitAtlasPrimary);
   glUniform1i(g_sprite.uniform_tex1, kTexUnitAtlasSecondary);
   glUniform1i(g_sprite.uniform_tex2, kTexUnitAtlasEngine);
+  if (kSpritesVerboseLog) {
+    std::fprintf(stderr,
+                 "[BMSX][GLES2][Sprites] init program=%u attribs(pos=%d uv=%d z=%d color=%d atlas=%d) uniforms(res=%d scale=%d tex0=%d tex1=%d tex2=%d)\n",
+                 static_cast<unsigned>(g_sprite.program),
+                 g_sprite.attrib_pos, g_sprite.attrib_uv, g_sprite.attrib_z,
+                 g_sprite.attrib_color, g_sprite.attrib_atlas,
+                 g_sprite.uniform_resolution, g_sprite.uniform_scale,
+                 g_sprite.uniform_tex0, g_sprite.uniform_tex1,
+                 g_sprite.uniform_tex2);
+  }
 }
 
 void shutdownGLES2(OpenGLES2Backend* backend) {
@@ -369,12 +381,32 @@ void shutdownGLES2(OpenGLES2Backend* backend) {
 void renderSpriteBatchGLES2(OpenGLES2Backend* backend, GameView* context,
                             const SpritesPipelineState& state) {
   (void)context;
+  static u32 s_frameIndex = 0;
+  s_frameIndex++;
+  const bool logFrame = kSpritesVerboseLog && s_frameIndex <= 3;
   const i32 spriteCount = RenderQueues::beginSpriteQueue();
   if (spriteCount == 0) {
     return;
   }
+  if (kSpritesVerboseLog) {
+    auto* primary = OpenGLES2Backend::asTexture(state.atlasPrimaryTex);
+    auto* secondary = state.atlasSecondaryTex
+                          ? OpenGLES2Backend::asTexture(state.atlasSecondaryTex)
+                          : nullptr;
+    auto* engine =
+        state.atlasEngineTex ? OpenGLES2Backend::asTexture(state.atlasEngineTex)
+                             : nullptr;
+    std::fprintf(stderr,
+                 "[BMSX][GLES2][Sprites] spriteCount=%d atlasPrimary=%u atlasSecondary=%u atlasEngine=%u\n",
+                 spriteCount, static_cast<unsigned>(primary->id),
+                 static_cast<unsigned>(secondary ? secondary->id : 0),
+                 static_cast<unsigned>(engine ? engine->id : 0));
+  }
 
   glUseProgram(g_sprite.program);
+  glUniform1i(g_sprite.uniform_tex0, kTexUnitAtlasPrimary);
+  glUniform1i(g_sprite.uniform_tex1, kTexUnitAtlasSecondary);
+  glUniform1i(g_sprite.uniform_tex2, kTexUnitAtlasEngine);
   setupAttributes();
 
   glDisable(GL_CULL_FACE);
@@ -421,9 +453,19 @@ void renderSpriteBatchGLES2(OpenGLES2Backend* backend, GameView* context,
     batchCount = 0;
   };
 
-  RenderQueues::forEachSprite([&](const SpriteQueueItem& item, size_t) {
+  RenderQueues::forEachSprite([&](const SpriteQueueItem& item, size_t index) {
     const auto& options = item.options;
     const ImgMeta* imgmeta = item.imgmeta;
+    if (logFrame && index < 4) {
+      const auto& tc = imgmeta->texcoords;
+      std::fprintf(
+          stderr,
+          "[BMSX][GLES2][Sprites] item=%zu imgid=%s atlasid=%d size=%dx%d pos=%.1f,%.1f scale=%.1f,%.1f texcoords={%.3f,%.3f %.3f,%.3f %.3f,%.3f %.3f,%.3f %.3f,%.3f %.3f,%.3f}\n",
+          index, options.imgid.c_str(), imgmeta->atlasid, imgmeta->width,
+          imgmeta->height, options.pos.x, options.pos.y,
+          options.scale->x, options.scale->y, tc[0], tc[1], tc[2], tc[3],
+          tc[4], tc[5], tc[6], tc[7], tc[8], tc[9], tc[10], tc[11]);
+    }
 
     const RenderLayer layer = options.layer.value_or(RenderLayer::World);
     const float desiredScale = (layer == RenderLayer::IDE) ? ideScale : 1.0f;
