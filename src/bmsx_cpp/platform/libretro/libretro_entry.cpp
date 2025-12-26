@@ -295,12 +295,10 @@ void retro_run(void) {
 
   // Output video
   const auto& fb = g_platform->getFramebuffer();
-  if (video_cb && fb.data) {
-    if (g_hw_render_active) {
-      video_cb(RETRO_HW_FRAME_BUFFER_VALID, fb.width, fb.height, 0);
-    } else {
-      video_cb(fb.data, fb.width, fb.height, fb.pitch);
-    }
+  if (g_hw_render_active) {
+    video_cb(RETRO_HW_FRAME_BUFFER_VALID, fb.width, fb.height, 0);
+  } else {
+    video_cb(fb.data, fb.width, fb.height, fb.pitch);
   }
 
   // Output audio

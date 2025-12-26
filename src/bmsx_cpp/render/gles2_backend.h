@@ -7,6 +7,7 @@
 
 #include "backend.h"
 #include <cstdint>
+#include <array>
 
 #include <GLES2/gl2.h>
 
@@ -57,6 +58,7 @@ public:
     static GLES2Texture* asTexture(TextureHandle handle) { return static_cast<GLES2Texture*>(handle); }
 
 private:
+    static constexpr i32 kTrackedTextureUnits = 16;
     FramebufferGetter m_get_framebuffer = nullptr;
     GLuint m_current_fbo = 0;
     GLuint m_backbuffer_fbo = 0;
@@ -64,7 +66,7 @@ private:
     i32 m_height = 0;
     FrameStats m_stats{};
     i32 m_active_texture_unit = -1;
-    GLuint m_bound_texture_2d = 0;
+    std::array<GLuint, kTrackedTextureUnits> m_bound_texture_2d_by_unit{};
 };
 
 } // namespace bmsx

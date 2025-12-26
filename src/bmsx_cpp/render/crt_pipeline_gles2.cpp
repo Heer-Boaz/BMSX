@@ -12,6 +12,8 @@ namespace bmsx {
 namespace CRTPipeline {
 namespace {
 
+constexpr bool kCRTVerboseLog = true;
+
 constexpr int kTexUnitPostProcess = 3;
 
 struct CRTGLES2State {
@@ -341,6 +343,15 @@ void initGLES2(OpenGLES2Backend* backend) {
 
     glUseProgram(g_crt.program);
     glUniform1i(g_crt.uniform_texture, kTexUnitPostProcess);
+    if (kCRTVerboseLog) {
+        std::fprintf(stderr,
+                     "[BMSX][GLES2][CRT] init program=%u attribs(pos=%d uv=%d) uniforms(res=%d srcRes=%d scale=%d fragscale=%d time=%d random=%d tex=%d)\n",
+                     static_cast<unsigned>(g_crt.program), g_crt.attrib_pos,
+                     g_crt.attrib_uv, g_crt.uniform_resolution,
+                     g_crt.uniform_src_resolution, g_crt.uniform_scale,
+                     g_crt.uniform_fragscale, g_crt.uniform_time,
+                     g_crt.uniform_random, g_crt.uniform_texture);
+    }
 }
 
 void shutdownGLES2(OpenGLES2Backend* backend) {
@@ -355,6 +366,15 @@ void renderCRTGLES2(OpenGLES2Backend* backend, GameView* context, const CRTPipel
     (void)context;
 
     glUseProgram(g_crt.program);
+    glUniform1i(g_crt.uniform_texture, kTexUnitPostProcess);
+    if (kCRTVerboseLog) {
+        auto* srcTex = OpenGLES2Backend::asTexture(state.colorTex);
+        std::fprintf(stderr,
+                     "[BMSX][GLES2][CRT] render backbuffer_fbo=%u colorTex=%u size=%dx%d base=%dx%d\n",
+                     static_cast<unsigned>(backend->backbuffer()),
+                     static_cast<unsigned>(srcTex->id), state.width,
+                     state.height, state.baseWidth, state.baseHeight);
+    }
     updateFullscreenQuad(state.width, state.height);
 
     backend->setRenderTarget(backend->backbuffer(), state.width, state.height);
