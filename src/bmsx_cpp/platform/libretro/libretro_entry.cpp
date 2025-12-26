@@ -112,24 +112,20 @@ void retro_set_environment(retro_environment_t cb) {
 
 void retro_set_video_refresh(retro_video_refresh_t cb) {
   video_cb = cb;
-  g_platform->setVideoCallback(cb);
 }
 
 void retro_set_audio_sample(retro_audio_sample_t cb) { audio_cb = cb; }
 
 void retro_set_audio_sample_batch(retro_audio_sample_batch_t cb) {
   audio_batch_cb = cb;
-  g_platform->setAudioBatchCallback(cb);
 }
 
 void retro_set_input_poll(retro_input_poll_t cb) {
   input_poll_cb = cb;
-  g_platform->setInputPollCallback(cb);
 }
 
 void retro_set_input_state(retro_input_state_t cb) {
   input_state_cb = cb;
-  g_platform->setInputStateCallback(cb);
 }
 
 /* ============================================================================

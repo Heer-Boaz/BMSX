@@ -119,6 +119,9 @@ void OpenGLES2Backend::drawIndexed(PassEncoder& pass, i32 indexCount, i32 firstI
 
 void OpenGLES2Backend::beginFrame() {
     m_stats = FrameStats{};
+    // RetroArch can mutate GL state between frames; reset caches so bindings are refreshed.
+    m_active_texture_unit = -1;
+    m_bound_texture_2d = 0;
     m_backbuffer_fbo = static_cast<GLuint>(m_get_framebuffer());
     m_current_fbo = m_backbuffer_fbo;
     glBindFramebuffer(GL_FRAMEBUFFER, m_current_fbo);
@@ -126,6 +129,7 @@ void OpenGLES2Backend::beginFrame() {
 }
 
 void OpenGLES2Backend::endFrame() {
+    glFinish();
 }
 
 BackendCaps OpenGLES2Backend::getCaps() const {
