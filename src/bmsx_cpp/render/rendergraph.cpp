@@ -10,7 +10,7 @@
 #include <stdexcept>
 
 namespace {
-constexpr bool kRenderGraphVerboseLog = true;
+constexpr bool kRenderGraphVerboseLog = false;
 }
 
 namespace bmsx {

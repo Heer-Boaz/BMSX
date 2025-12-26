@@ -12,7 +12,7 @@ namespace bmsx {
 namespace CRTPipeline {
 namespace {
 
-constexpr bool kCRTVerboseLog = true;
+constexpr bool kCRTVerboseLog = false;
 
 constexpr int kTexUnitPostProcess = 3;
 
@@ -342,6 +342,8 @@ void initGLES2(OpenGLES2Backend* backend) {
     glGenBuffers(1, &g_crt.vbo_uv);
 
     glUseProgram(g_crt.program);
+    // Re-apply sampler binding every draw; shared contexts can clobber uniform state.
+    // This keeps the CRT pass sampling the offscreen color texture.
     glUniform1i(g_crt.uniform_texture, kTexUnitPostProcess);
     if (kCRTVerboseLog) {
         std::fprintf(stderr,

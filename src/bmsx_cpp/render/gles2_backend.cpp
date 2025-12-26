@@ -8,11 +8,24 @@
 #include <vector>
 
 namespace {
-constexpr bool kGLES2VerboseLog = true;
-}
+constexpr bool kGLES2VerboseLog = false;
+// Use glFinish only when debugging strict GPU completion; glFlush avoids a stall.
+constexpr bool kGLES2FinishFrame = false;
+}  // namespace
 
 namespace bmsx {
 
+/*
+  Libretro GLES2 state note:
+  - Symptom: live output shows the atlas while RetroArch pause shows the correct frame.
+  - Root cause: the core and frontend share the same GL context. If the core leaves
+    program/buffer/texture state bound, RetroArch's present blit can inherit that
+    state and sample the wrong texture.
+  - Fix: reset the bindings we touch at the end of the frame so the frontend starts
+    from a clean baseline. This is intentionally minimal to limit overhead.
+  - Performance: default to glFlush to avoid a full GPU stall; enable glFinish only
+    when debugging strict GPU completion.
+*/
 OpenGLES2Backend::OpenGLES2Backend(i32 width, i32 height)
     : m_width(width), m_height(height) {}
 
@@ -161,6 +174,7 @@ void OpenGLES2Backend::endFrame() {
   if (kGLES2VerboseLog) {
     std::fprintf(stderr, "[BMSX][GLES2] endFrame\n");
   }
+  // Reset the GL state we touched so the frontend's present path doesn't inherit it.
   glUseProgram(0);
   glBindBuffer(GL_ARRAY_BUFFER, 0);
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
@@ -171,7 +185,11 @@ void OpenGLES2Backend::endFrame() {
   glDisableVertexAttribArray(2);
   glDisableVertexAttribArray(3);
   glDisableVertexAttribArray(4);
-  glFinish();
+  if constexpr (kGLES2FinishFrame) {
+    glFinish();
+  } else {
+    glFlush();
+  }
 }
 
 BackendCaps OpenGLES2Backend::getCaps() const {

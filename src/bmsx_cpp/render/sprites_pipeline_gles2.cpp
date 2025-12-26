@@ -16,7 +16,7 @@ namespace bmsx {
 namespace SpritesPipeline {
 namespace {
 
-constexpr bool kSpritesVerboseLog = true;
+constexpr bool kSpritesVerboseLog = false;
 
 constexpr int kMaxSprites = 256;
 constexpr int kVerticesPerSprite = 6;
@@ -350,6 +350,8 @@ void initGLES2(OpenGLES2Backend* backend, GameView* context) {
   setupBuffers();
 
   glUseProgram(g_sprite.program);
+  // Re-apply sampler bindings every draw; shared contexts can clobber uniform state.
+  // This avoids stale sampler slots after the frontend renders.
   glUniform1i(g_sprite.uniform_tex0, kTexUnitAtlasPrimary);
   glUniform1i(g_sprite.uniform_tex1, kTexUnitAtlasSecondary);
   glUniform1i(g_sprite.uniform_tex2, kTexUnitAtlasEngine);
@@ -381,9 +383,14 @@ void shutdownGLES2(OpenGLES2Backend* backend) {
 void renderSpriteBatchGLES2(OpenGLES2Backend* backend, GameView* context,
                             const SpritesPipelineState& state) {
   (void)context;
-  static u32 s_frameIndex = 0;
-  s_frameIndex++;
-  const bool logFrame = kSpritesVerboseLog && s_frameIndex <= 3;
+  const bool logFrame = []() {
+    if constexpr (kSpritesVerboseLog) {
+      static u32 s_frameIndex = 0;
+      s_frameIndex++;
+      return s_frameIndex <= 3;
+    }
+    return false;
+  }();
   const i32 spriteCount = RenderQueues::beginSpriteQueue();
   if (spriteCount == 0) {
     return;
