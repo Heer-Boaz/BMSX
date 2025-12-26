@@ -94,11 +94,28 @@ void SoftwareBackend::clear(const Color* color, const f32* depth) {
 }
 
 PassEncoder SoftwareBackend::beginRenderPass(const RenderPassDesc& desc) {
-    // Clear if requested
-    if (desc.color.tex == nullptr) {
-        // Render to main framebuffer
-        clear(&desc.color.clear, &desc.depth.clearDepth);
+    const ColorAttachmentSpec* colorSpec = nullptr;
+    if (desc.color) {
+        colorSpec = &*desc.color;
+    } else if (!desc.colors.empty()) {
+        colorSpec = &desc.colors.front();
     }
+
+    const Color* clearColor = nullptr;
+    Color colorValue;
+    if (colorSpec && colorSpec->clear) {
+        colorValue = *colorSpec->clear;
+        clearColor = &colorValue;
+    }
+
+    const f32* clearDepth = nullptr;
+    f32 depthValue = 1.0f;
+    if (desc.depth && desc.depth->clearDepth) {
+        depthValue = *desc.depth->clearDepth;
+        clearDepth = &depthValue;
+    }
+
+    clear(clearColor, clearDepth);
 
     PassEncoder encoder;
     encoder.desc = desc;

@@ -18,8 +18,8 @@ static FeatureQueue<ParticleRenderSubmission> s_particleQueue(1024);
 static i32 s_spriteSubmissionCounter = 0;
 
 // Default Z coordinate (mirrors TypeScript DEFAULT_ZCOORD)
-static constexpr f32 DEFAULT_ZCOORD = 100.0f;
-static constexpr f32 ZCOORD_MAX = 1000.0f;
+static constexpr f32 DEFAULT_ZCOORD = 0.0f;
+static constexpr f32 ZCOORD_MAX = 10000.0f;
 
 // --- Object pools for sprite queue items ---
 
@@ -28,6 +28,7 @@ static std::vector<SpriteQueueItem> s_spriteItemPoolB;
 static std::vector<SpriteQueueItem>* s_spriteItemPool = &s_spriteItemPoolA;
 static std::vector<SpriteQueueItem>* s_spriteItemPoolAlt = &s_spriteItemPoolB;
 static size_t s_spriteItemPoolIndex = 0;
+static std::vector<RenderSubmission> s_spriteQueuePlaybackBuffer;
 
 static SpriteQueueItem& acquireSpriteQueueItem() {
     size_t index = s_spriteItemPoolIndex++;
@@ -39,13 +40,14 @@ static SpriteQueueItem& acquireSpriteQueueItem() {
 
 // --- Layer weight for sorting ---
 
-static i32 renderLayerWeight(RenderLayer layer) {
-    switch (layer) {
+static i32 renderLayerWeight(const std::optional<RenderLayer>& layer) {
+    if (!layer) return 0;
+    switch (*layer) {
         case RenderLayer::IDE:   return 2;
         case RenderLayer::UI:    return 1;
         case RenderLayer::World: return 0;
-        default:                 return 0;
     }
+    return 0;
 }
 
 // --- Sprite queue sorting ---
@@ -88,13 +90,16 @@ void submitSprite(const ImgRenderSubmission& options, const ImgMeta* imgmeta) {
     pooled.options.pos.z = static_cast<f32>(static_cast<i32>(options.pos.z));
 
     // Scale
-    pooled.options.scale = options.scale;
+    const Vec2 defaultScale{1.0f, 1.0f};
+    pooled.options.scale = options.scale ? *options.scale : defaultScale;
 
     // Flip
-    pooled.options.flip = options.flip;
+    const FlipOptions defaultFlip{};
+    pooled.options.flip = options.flip ? *options.flip : defaultFlip;
 
     // Colorize
-    pooled.options.colorize = options.colorize;
+    const Color defaultColor{1.0f, 1.0f, 1.0f, 1.0f};
+    pooled.options.colorize = options.colorize ? *options.colorize : defaultColor;
 
     s_spriteQueue.submit(pooled);
 }
@@ -111,14 +116,51 @@ i32 beginSpriteQueue() {
     return static_cast<i32>(s_spriteQueue.sizeFront());
 }
 
-void forEachSprite(const std::function<void(const SpriteQueueItem&)>& fn) {
-    s_spriteQueue.forEachFront([&fn](const SpriteQueueItem& item, size_t) {
-        fn(item);
+void forEachSprite(const std::function<void(const SpriteQueueItem&, size_t)>& fn) {
+    s_spriteQueue.forEachFront([&fn](const SpriteQueueItem& item, size_t index) {
+        fn(item, index);
     });
 }
 
 size_t spriteQueueBackSize() { return s_spriteQueue.sizeBack(); }
 size_t spriteQueueFrontSize() { return s_spriteQueue.sizeFront(); }
+
+void sortSpriteQueue(const std::function<bool(const SpriteQueueItem&, const SpriteQueueItem&)>& compare) {
+    s_spriteQueue.sortFront(compare);
+}
+
+const std::vector<RenderSubmission>& copySpriteQueueForPlayback() {
+    size_t count = 0;
+    s_spriteQueue.forEachBack([&](const SpriteQueueItem& item, size_t) {
+        if (count >= s_spriteQueuePlaybackBuffer.size()) {
+            RenderSubmission created;
+            created.type = RenderSubmissionType::Img;
+            created.img.imgid = "none";
+            created.img.pos = {0.0f, 0.0f, DEFAULT_ZCOORD};
+            created.img.scale = Vec2{1.0f, 1.0f};
+            created.img.flip = FlipOptions{};
+            created.img.colorize = Color{1.0f, 1.0f, 1.0f, 1.0f};
+            s_spriteQueuePlaybackBuffer.push_back(created);
+        }
+        RenderSubmission& op = s_spriteQueuePlaybackBuffer[count];
+        op.type = RenderSubmissionType::Img;
+        const ImgRenderSubmission& src = item.options;
+        ImgRenderSubmission& dst = op.img;
+        dst.imgid = src.imgid;
+        dst.layer = src.layer;
+        dst.ambient_affected = src.ambient_affected;
+        dst.ambient_factor = src.ambient_factor;
+        dst.pos.x = src.pos.x;
+        dst.pos.y = src.pos.y;
+        dst.pos.z = src.pos.z;
+        dst.scale = src.scale;
+        dst.flip = src.flip;
+        dst.colorize = src.colorize;
+        count += 1;
+    });
+    s_spriteQueuePlaybackBuffer.resize(count);
+    return s_spriteQueuePlaybackBuffer;
+}
 
 // --- Mesh queue API ---
 
@@ -131,9 +173,9 @@ i32 beginMeshQueue() {
     return static_cast<i32>(s_meshQueue.sizeFront());
 }
 
-void forEachMesh(const std::function<void(const MeshRenderSubmission&)>& fn) {
-    s_meshQueue.forEachFront([&fn](const MeshRenderSubmission& item, size_t) {
-        fn(item);
+void forEachMeshQueue(const std::function<void(const MeshRenderSubmission&, size_t)>& fn) {
+    s_meshQueue.forEachFront([&fn](const MeshRenderSubmission& item, size_t index) {
+        fn(item, index);
     });
 }
 
@@ -142,7 +184,7 @@ size_t meshQueueFrontSize() { return s_meshQueue.sizeFront(); }
 
 // --- Particle queue API ---
 
-void submitParticle(const ParticleRenderSubmission& item) {
+void submit_particle(const ParticleRenderSubmission& item) {
     s_particleQueue.submit(item);
 }
 
@@ -151,9 +193,9 @@ i32 beginParticleQueue() {
     return static_cast<i32>(s_particleQueue.sizeFront());
 }
 
-void forEachParticle(const std::function<void(const ParticleRenderSubmission&)>& fn) {
-    s_particleQueue.forEachFront([&fn](const ParticleRenderSubmission& item, size_t) {
-        fn(item);
+void forEachParticleQueue(const std::function<void(const ParticleRenderSubmission&, size_t)>& fn) {
+    s_particleQueue.forEachFront([&fn](const ParticleRenderSubmission& item, size_t index) {
+        fn(item, index);
     });
 }
 

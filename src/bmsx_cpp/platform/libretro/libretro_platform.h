@@ -68,7 +68,7 @@ public:
 
 private:
     Framebuffer& m_framebuffer;
-    bool m_use_hw_render = false;
+    bool m_use_hw_render;
 };
 
 /* ============================================================================

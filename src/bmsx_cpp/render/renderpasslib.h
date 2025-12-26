@@ -65,23 +65,27 @@ struct SpritesPipelineState {
     f32 psxDither2dIntensity = 1.0f;
 };
 
-struct CRTPipelineState {
-    i32 width = 0;
-    i32 height = 0;
-    i32 baseWidth = 0;
-    i32 baseHeight = 0;
-    TextureHandle colorTex = nullptr;
+struct CRTPipelineOptions {
     bool applyNoise = true;
     f32 noiseIntensity = 0.4f;
     bool applyColorBleed = true;
     std::array<f32, 3> colorBleed = {0.02f, 0.0f, 0.0f};
     bool applyScanlines = true;
     bool applyBlur = true;
-    f32 blurIntensity = 0.6f;
     bool applyGlow = true;
-    std::array<f32, 3> glowColor = {0.12f, 0.10f, 0.09f};
     bool applyFringing = true;
     bool applyAperture = true;
+    f32 blurIntensity = 0.6f;
+    std::array<f32, 3> glowColor = {0.12f, 0.10f, 0.09f};
+};
+
+struct CRTPipelineState {
+    i32 width = 0;
+    i32 height = 0;
+    i32 baseWidth = 0;
+    i32 baseHeight = 0;
+    TextureHandle colorTex = nullptr;
+    CRTPipelineOptions options;
 };
 
 struct FrameSharedState {

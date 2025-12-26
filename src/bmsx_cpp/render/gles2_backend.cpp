@@ -54,17 +54,46 @@ void OpenGLES2Backend::destroyTexture(TextureHandle handle) {
 }
 
 void OpenGLES2Backend::clear(const Color* color, const f32* depth) {
-    glClearColor(color->r, color->g, color->b, color->a);
-    glClearDepthf(*depth);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    GLbitfield mask = 0;
+    if (color) {
+        glClearColor(color->r, color->g, color->b, color->a);
+        mask |= GL_COLOR_BUFFER_BIT;
+    }
+    if (depth) {
+        glClearDepthf(*depth);
+        mask |= GL_DEPTH_BUFFER_BIT;
+    }
+    if (mask == 0) {
+        return;
+    }
+    glClear(mask);
 }
 
 PassEncoder OpenGLES2Backend::beginRenderPass(const RenderPassDesc& desc) {
     glBindFramebuffer(GL_FRAMEBUFFER, m_current_fbo);
     glViewport(0, 0, m_width, m_height);
-    glClearColor(desc.color.clear.r, desc.color.clear.g, desc.color.clear.b, desc.color.clear.a);
-    glClearDepthf(desc.depth.clearDepth);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    const ColorAttachmentSpec* colorSpec = nullptr;
+    if (desc.color) {
+        colorSpec = &*desc.color;
+    } else if (!desc.colors.empty()) {
+        colorSpec = &desc.colors.front();
+    }
+
+    const Color* clearColor = nullptr;
+    Color colorValue;
+    if (colorSpec && colorSpec->clear) {
+        colorValue = *colorSpec->clear;
+        clearColor = &colorValue;
+    }
+
+    const f32* clearDepth = nullptr;
+    f32 depthValue = 1.0f;
+    if (desc.depth && desc.depth->clearDepth) {
+        depthValue = *desc.depth->clearDepth;
+        clearDepth = &depthValue;
+    }
+
+    clear(clearColor, clearDepth);
     PassEncoder pass;
     pass.fbo = reinterpret_cast<void*>(static_cast<uintptr_t>(m_current_fbo));
     pass.desc = desc;

@@ -140,9 +140,8 @@ void retro_set_input_state(retro_input_state_t cb) {
 void retro_init(void) {
   logging.log(RETRO_LOG_INFO, "[BMSX] retro_init\n");
   if (!g_hw_render_active) {
-    logging.log(RETRO_LOG_ERROR,
-                "[BMSX] GLES2 hw render context not initialized\n");
-    std::abort();
+    logging.log(RETRO_LOG_WARN,
+                "[BMSX] GLES2 hw render context not initialized; using software backend\n");
   }
 
   // Set pixel format
@@ -162,7 +161,9 @@ void retro_init(void) {
   g_platform->setAudioBatchCallback(audio_batch_cb);
   g_platform->setInputPollCallback(input_poll_cb);
   g_platform->setInputStateCallback(input_state_cb);
-  g_platform->setHwRenderCallbacks(g_hw_render.get_current_framebuffer);
+  if (g_hw_render_active) {
+    g_platform->setHwRenderCallbacks(g_hw_render.get_current_framebuffer);
+  }
   if (g_cached_av_info_valid) {
     g_platform->setAVInfo(g_cached_av_info);
   }
@@ -170,7 +171,7 @@ void retro_init(void) {
   g_platform->setFrameTimeUsec(g_pending_frame_time_usec);
   g_has_pending_frame_time = false;
   }
-  if (g_hw_context_pending) {
+  if (g_hw_render_active && g_hw_context_pending) {
     g_platform->onContextReset();
     g_hw_context_pending = false;
   }

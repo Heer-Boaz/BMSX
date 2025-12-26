@@ -157,7 +157,7 @@ public:
 
     // Create a GPU backend for rendering (platform-specific implementation)
     // Returns nullptr if the platform doesn't provide its own backend
-    virtual std::unique_ptr<GPUBackend> createBackend() { return nullptr; }
+    virtual std::unique_ptr<GPUBackend> createBackend() { return nullptr; } // Dummy implementation
 };
 
 /* ============================================================================

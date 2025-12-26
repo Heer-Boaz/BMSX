@@ -12,9 +12,11 @@
 #include "rendergraph.h"
 #include "glyphs.h"
 #include "../core/engine.h"
+#include "../core/font.h"
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <stdexcept>
 
 namespace bmsx {
 
@@ -59,18 +61,31 @@ void GameView::initializeRenderer() {
 
     // poly -> SpritesPipeline.drawPolygon
     renderer.submit.poly = [](const PolyRenderSubmission& s) {
-        SpritesPipeline::drawPolygon(s.points, s.z, s.color, s.thickness, s.layer);
+        const f32 thickness = s.thickness.value_or(1.0f);
+        SpritesPipeline::drawPolygon(s.points, s.z, s.color, thickness, s.layer);
     };
 
     // glyphs -> renderGlyphs (uses font + sprite rendering)
     renderer.submit.glyphs = [this](const GlyphRenderSubmission& s) {
         BFont* font = s.font ? s.font : default_font;
-        renderGlyphs(this, s, font);
+        if (!font) {
+            throw std::runtime_error("[GameView] No font available for glyph rendering.");
+        }
+        std::vector<std::string> lines = s.glyphs;
+        if (s.wrap_chars && *s.wrap_chars > 0 && lines.size() == 1) {
+            lines = wrapGlyphs(lines[0], *s.wrap_chars);
+        }
+        f32 x = s.x;
+        if (s.center_block_width && *s.center_block_width > 0) {
+            x += calculateCenteredBlockX(lines, font->char_width('a'), *s.center_block_width);
+        }
+        const f32 z = s.z.value_or(950.0f);
+        renderGlyphs(this, x, s.y, lines, s.glyph_start, s.glyph_end, z, font, s.color, s.background_color, s.layer);
     };
 
     // particle -> ParticlesPipeline (TODO)
     renderer.submit.particle = [](const ParticleRenderSubmission& s) {
-        RenderQueues::submitParticle(s);
+        RenderQueues::submit_particle(s);
     };
 
     // mesh -> MeshPipeline (TODO)
@@ -152,8 +167,12 @@ void GameView::drawGame() {
     // Begin main render pass
     RenderPassDesc mainPass;
     mainPass.label = "main";
-    mainPass.color.clear = Color::black();
-    mainPass.depth.clearDepth = 1.0f;
+    ColorAttachmentSpec colorSpec;
+    colorSpec.clear = Color::black();
+    mainPass.color = colorSpec;
+    DepthAttachmentSpec depthSpec;
+    depthSpec.clearDepth = 1.0f;
+    mainPass.depth = depthSpec;
 
     PassEncoder pass = m_backend->beginRenderPass(mainPass);
 
@@ -279,8 +298,10 @@ void GameView::drawRectangle(const RectBounds& area, const Color& color, RenderL
 
 void GameView::drawLine(i32 x0, i32 y0, i32 x1, i32 y1, const Color& color, RenderLayer layer) {
     PolyRenderSubmission submission;
-    submission.points.push_back({static_cast<f32>(x0), static_cast<f32>(y0)});
-    submission.points.push_back({static_cast<f32>(x1), static_cast<f32>(y1)});
+    submission.points.push_back(static_cast<f32>(x0));
+    submission.points.push_back(static_cast<f32>(y0));
+    submission.points.push_back(static_cast<f32>(x1));
+    submission.points.push_back(static_cast<f32>(y1));
     submission.z = 0.0f;
     submission.color = color;
     submission.thickness = 1.0f;

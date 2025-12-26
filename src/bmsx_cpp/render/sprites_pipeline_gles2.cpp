@@ -36,7 +36,7 @@ constexpr float kEngineAtlasId = 254.0f;
 
 constexpr int kTexUnitAtlasPrimary = 0;
 constexpr int kTexUnitAtlasSecondary = 1;
-constexpr int kTexUnitAtlasEngine = 2;
+constexpr int kTexUnitAtlasEngine = 11;
 
 struct SpriteGLES2State {
   GLuint program = 0;
@@ -368,6 +368,7 @@ void shutdownGLES2(OpenGLES2Backend* backend) {
 
 void renderSpriteBatchGLES2(OpenGLES2Backend* backend, GameView* context,
                             const SpritesPipelineState& state) {
+  (void)context;
   const i32 spriteCount = RenderQueues::beginSpriteQueue();
   if (spriteCount == 0) {
     return;
@@ -420,12 +421,12 @@ void renderSpriteBatchGLES2(OpenGLES2Backend* backend, GameView* context,
     batchCount = 0;
   };
 
-  RenderQueues::forEachSprite([&](const SpriteQueueItem& item) {
+  RenderQueues::forEachSprite([&](const SpriteQueueItem& item, size_t) {
     const auto& options = item.options;
     const ImgMeta* imgmeta = item.imgmeta;
 
-    const float desiredScale =
-        (options.layer == RenderLayer::IDE) ? ideScale : 1.0f;
+    const RenderLayer layer = options.layer.value_or(RenderLayer::World);
+    const float desiredScale = (layer == RenderLayer::IDE) ? ideScale : 1.0f;
     if (desiredScale != currentScale) {
       flush();
       currentScale = desiredScale;
@@ -433,8 +434,9 @@ void renderSpriteBatchGLES2(OpenGLES2Backend* backend, GameView* context,
     }
 
     const Vec3& pos = options.pos;
-    const Vec2& scale = options.scale;
-    const Color& colorize = options.colorize;
+    const Vec2& scale = options.scale.value();
+    const Color& colorize = options.colorize.value();
+    const FlipOptions& flip = options.flip.value();
     const float zValue = (pos.z == 0.0f) ? kDefaultZ : pos.z;
     const float zNorm = 1.0f - (zValue / kZCoordMax);
 
@@ -447,10 +449,10 @@ void renderSpriteBatchGLES2(OpenGLES2Backend* backend, GameView* context,
     writePositions(posDst, pos.x, pos.y, static_cast<float>(imgmeta->width),
                    static_cast<float>(imgmeta->height), scale.x, scale.y);
     const auto& texcoords =
-        options.flip.flip_h ? (options.flip.flip_v ? imgmeta->texcoords_fliphv
-                                                   : imgmeta->texcoords_fliph)
-                            : (options.flip.flip_v ? imgmeta->texcoords_flipv
-                                                   : imgmeta->texcoords);
+        flip.flip_h
+            ? (flip.flip_v ? imgmeta->texcoords_fliphv
+                           : imgmeta->texcoords_fliph)
+            : (flip.flip_v ? imgmeta->texcoords_flipv : imgmeta->texcoords);
     std::memcpy(uvDst, texcoords.data(), kTexcoordSize * sizeof(float));
     writeZ(zDst, zNorm);
     writeColor(colorDst, colorize);

@@ -17,6 +17,9 @@ namespace bmsx {
 
 // Color is already defined in types.h
 class BFont;
+class Mesh;
+
+using TextureHandle = void*;  // Backend-specific texture pointer
 
 /* ============================================================================
  * Flip options for sprites
@@ -46,6 +49,7 @@ struct RectBounds {
     f32 top = 0.0f;
     f32 right = 0.0f;
     f32 bottom = 0.0f;
+    f32 z = 0.0f;
 
     f32 width() const { return right - left; }
     f32 height() const { return bottom - top; }
@@ -61,36 +65,38 @@ struct RectRenderSubmission {
     Kind kind = Kind::Rect;
     RectBounds area;
     Color color;
-    RenderLayer layer = RenderLayer::World;
+    std::optional<RenderLayer> layer;
 };
 
 // Image/sprite render
 struct ImgRenderSubmission {
     std::string imgid;
     Vec3 pos{0.0f, 0.0f, 0.0f};  // x, y, z (z for depth sorting)
-    Vec2 scale{1.0f, 1.0f};
-    FlipOptions flip;
-    Color colorize{1.0f, 1.0f, 1.0f, 1.0f};  // Tint color (white = no tint)
-    bool ambient_affected = false;
-    f32 ambient_factor = 1.0f;
-    RenderLayer layer = RenderLayer::World;
+    std::optional<Vec2> scale;
+    std::optional<FlipOptions> flip;
+    std::optional<Color> colorize;  // Tint color (white = no tint)
+    std::optional<bool> ambient_affected;
+    std::optional<f32> ambient_factor;
+    std::optional<RenderLayer> layer;
 };
 
 // Polygon render (outline)
 struct PolyRenderSubmission {
-    std::vector<Vec2> points;
+    std::vector<f32> points;
     f32 z = 0.0f;
     Color color;
-    f32 thickness = 1.0f;
-    RenderLayer layer = RenderLayer::World;
+    std::optional<f32> thickness;
+    std::optional<RenderLayer> layer;
 };
 
 // Mesh render (3D)
 struct MeshRenderSubmission {
-    // TODO: Mesh pointer, matrices, etc.
+    Mesh* mesh = nullptr;
     std::array<f32, 16> matrix;
-    bool receive_shadow = false;
-    RenderLayer layer = RenderLayer::World;
+    std::optional<std::vector<std::array<f32, 16>>> joint_matrices;
+    std::optional<std::vector<f32>> morph_weights;
+    std::optional<bool> receive_shadow;
+    std::optional<RenderLayer> layer;
 };
 
 // Particle render
@@ -98,33 +104,52 @@ struct ParticleRenderSubmission {
     Vec3 position{0.0f, 0.0f, 0.0f};
     f32 size = 1.0f;
     Color color;
-    // texture handle
-    i32 ambient_mode = 0;  // 0 or 1
-    f32 ambient_factor = 1.0f;
-    RenderLayer layer = RenderLayer::World;
+    TextureHandle texture = nullptr;
+    std::optional<i32> ambient_mode;  // 0 or 1
+    std::optional<f32> ambient_factor;
+    std::optional<RenderLayer> layer;
 };
+
+enum class TextAlign { Left, Right, Center, Start, End };
+enum class TextBaseline { Top, Hanging, Middle, Alphabetic, Ideographic, Bottom };
 
 // Glyph/text render
 struct GlyphRenderSubmission {
     f32 x = 0.0f;
     f32 y = 0.0f;
-    f32 z = 950.0f;  // Default Z for UI text
-    std::string text;
+    std::optional<f32> z;
+    std::vector<std::string> glyphs;
+    std::optional<i32> glyph_start;
+    std::optional<i32> glyph_end;
     BFont* font = nullptr;
-    i32 glyph_start = 0;
-    i32 glyph_end = -1;
-    Color color{1.0f, 1.0f, 1.0f, 1.0f};
-    Color background_color{0.0f, 0.0f, 0.0f, 0.0f};
-    i32 wrap_chars = 0;
-    i32 center_block_width = 0;
-    RenderLayer layer = RenderLayer::World;
+    std::optional<Color> color;
+    std::optional<Color> background_color;
+    std::optional<i32> wrap_chars;
+    std::optional<i32> center_block_width;
+    std::optional<TextAlign> align;
+    std::optional<TextBaseline> baseline;
+    std::optional<RenderLayer> layer;
 };
 
-/* ============================================================================
- * Texture handle (abstract, backend-specific)
- * ============================================================================ */
+enum class RenderSubmissionType {
+    Img,
+    Mesh,
+    Particle,
+    Poly,
+    Rect,
+    Glyphs,
+};
 
-using TextureHandle = void*;  // Backend-specific texture pointer
+struct RenderSubmission {
+    RenderSubmissionType type = RenderSubmissionType::Img;
+    ImgRenderSubmission img;
+    MeshRenderSubmission mesh;
+    ParticleRenderSubmission particle;
+    PolyRenderSubmission poly;
+    RectRenderSubmission rect;
+    GlyphRenderSubmission glyphs;
+};
+
 
 /* ============================================================================
  * Texture parameters
@@ -133,6 +158,15 @@ using TextureHandle = void*;  // Backend-specific texture pointer
 struct TextureParams {
     Vec2 size{0.0f, 0.0f};
     // Wrap modes, filters, etc.
+};
+
+struct SkyboxImageIds {
+    std::string posx;
+    std::string negx;
+    std::string posy;
+    std::string negy;
+    std::string posz;
+    std::string negz;
 };
 
 } // namespace bmsx

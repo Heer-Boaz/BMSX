@@ -125,8 +125,10 @@ void VMApi::registerAllFunctions() {
 			Value flipH = options->get(std::string("flip_h"));
 			Value flipV = options->get(std::string("flip_v"));
 			if (!isNil(flipH) || !isNil(flipV)) {
-				submission.flip.flip_h = std::holds_alternative<bool>(flipH) && std::get<bool>(flipH);
-				submission.flip.flip_v = std::holds_alternative<bool>(flipV) && std::get<bool>(flipV);
+				FlipOptions flip;
+				flip.flip_h = std::holds_alternative<bool>(flipH) && std::get<bool>(flipH);
+				flip.flip_v = std::holds_alternative<bool>(flipV) && std::get<bool>(flipV);
+				submission.flip = flip;
 			}
 			Value colorizeValue = options->get(std::string("colorize"));
 			if (!isNil(colorizeValue)) {
@@ -140,17 +142,14 @@ void VMApi::registerAllFunctions() {
 
 	m_runtime.registerNativeFunction("put_glyphs", [this](const std::vector<Value>& args) -> std::vector<Value> {
 		const Value& glyphValue = args.at(0);
-		std::string text;
+		std::vector<std::string> glyphs;
 		if (std::holds_alternative<std::string>(glyphValue)) {
-			text = std::get<std::string>(glyphValue);
+			glyphs.push_back(std::get<std::string>(glyphValue));
 		} else {
 			auto tbl = std::get<std::shared_ptr<Table>>(glyphValue);
 			int length = tbl->length();
 			for (int i = 1; i <= length; ++i) {
-				if (i > 1) {
-					text.push_back('\n');
-				}
-				text += std::get<std::string>(tbl->get(static_cast<double>(i)));
+				glyphs.push_back(std::get<std::string>(tbl->get(static_cast<double>(i))));
 			}
 		}
 
@@ -158,7 +157,7 @@ void VMApi::registerAllFunctions() {
 		float y = static_cast<float>(std::get<double>(args.at(2)));
 		float z = static_cast<float>(std::get<double>(args.at(3)));
 		GlyphRenderSubmission submission;
-		submission.text = text;
+		submission.glyphs = std::move(glyphs);
 		submission.x = x;
 		submission.y = y;
 		submission.z = z;
@@ -201,7 +200,7 @@ void VMApi::registerAllFunctions() {
 	});
 
 	m_runtime.registerNativeFunction("put_poly", [this](const std::vector<Value>& args) -> std::vector<Value> {
-		std::vector<Vec2> points = read_polygon(args.at(0));
+		std::vector<f32> points = read_polygon(args.at(0));
 		float z = static_cast<float>(std::get<double>(args.at(1)));
 		Color color = palette_color(static_cast<int>(std::floor(std::get<double>(args.at(2)))));
 		std::optional<float> thickness;
@@ -491,7 +490,7 @@ void VMApi::write_with_font(const std::string& text, std::optional<int> x, std::
 
 void VMApi::write_inline_with_font(const std::string& text, int x, int y, int z, int colorIndex, VMFont* font) {
 	GlyphRenderSubmission submission;
-	submission.text = text;
+	submission.glyphs = {text};
 	submission.x = static_cast<f32>(x);
 	submission.y = static_cast<f32>(y);
 	submission.z = static_cast<f32>(z);
@@ -503,7 +502,7 @@ void VMApi::write_inline_with_font(const std::string& text, int x, int y, int z,
 void VMApi::write_inline_span_with_font(const std::string& text, int start, int end,
                                         int x, int y, int z, int colorIndex, VMFont* font) {
 	GlyphRenderSubmission submission;
-	submission.text = text;
+	submission.glyphs = {text};
 	submission.glyph_start = start;
 	submission.glyph_end = end;
 	submission.x = static_cast<f32>(x);
@@ -597,7 +596,7 @@ void VMApi::draw_multiline_text(const std::string& text, int x, int y, int z, co
 		std::string line = expand_tabs(expanded.substr(start, end - start));
 		if (!line.empty()) {
 			GlyphRenderSubmission submission;
-			submission.text = line;
+			submission.glyphs = {line};
 			submission.x = static_cast<f32>(x);
 			submission.y = static_cast<f32>(cursorY);
 			submission.z = static_cast<f32>(z);
@@ -656,15 +655,16 @@ RenderLayer VMApi::resolve_layer(const Value& value) const {
 	return RenderLayer::World;
 }
 
-std::vector<Vec2> VMApi::read_polygon(const Value& value) const {
-	std::vector<Vec2> points;
+std::vector<f32> VMApi::read_polygon(const Value& value) const {
+	std::vector<f32> points;
 	if (std::holds_alternative<std::shared_ptr<Table>>(value)) {
 		auto tbl = std::get<std::shared_ptr<Table>>(value);
 		int length = tbl->length();
 		for (int i = 1; i + 1 <= length; i += 2) {
 			float x = static_cast<float>(std::get<double>(tbl->get(static_cast<double>(i))));
 			float y = static_cast<float>(std::get<double>(tbl->get(static_cast<double>(i + 1))));
-			points.push_back({x, y});
+			points.push_back(x);
+			points.push_back(y);
 		}
 		return points;
 	}
@@ -678,7 +678,8 @@ std::vector<Vec2> VMApi::read_polygon(const Value& value) const {
 			}
 			float x = static_cast<float>(std::get<double>(xValue));
 			float y = static_cast<float>(std::get<double>(yValue));
-			points.push_back({x, y});
+			points.push_back(x);
+			points.push_back(y);
 		}
 		return points;
 	}

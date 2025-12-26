@@ -378,18 +378,18 @@ void renderCRTGLES2(OpenGLES2Backend* backend, GameView* context, const CRTPipel
     glUniform1f(g_crt.uniform_time, static_cast<float>(EngineCore::instance().clock()->now() / 1000.0));
     glUniform1f(g_crt.uniform_random, static_cast<float>(std::rand()) / static_cast<float>(RAND_MAX));
 
-    glUniform1f(g_crt.uniform_apply_noise, state.applyNoise ? 1.0f : 0.0f);
-    glUniform1f(g_crt.uniform_apply_color_bleed, state.applyColorBleed ? 1.0f : 0.0f);
-    glUniform1f(g_crt.uniform_apply_scanlines, state.applyScanlines ? 1.0f : 0.0f);
-    glUniform1f(g_crt.uniform_apply_blur, state.applyBlur ? 1.0f : 0.0f);
-    glUniform1f(g_crt.uniform_apply_glow, state.applyGlow ? 1.0f : 0.0f);
-    glUniform1f(g_crt.uniform_apply_fringing, state.applyFringing ? 1.0f : 0.0f);
-    glUniform1f(g_crt.uniform_apply_aperture, state.applyAperture ? 1.0f : 0.0f);
+    glUniform1f(g_crt.uniform_apply_noise, state.options.applyNoise ? 1.0f : 0.0f);
+    glUniform1f(g_crt.uniform_apply_color_bleed, state.options.applyColorBleed ? 1.0f : 0.0f);
+    glUniform1f(g_crt.uniform_apply_scanlines, state.options.applyScanlines ? 1.0f : 0.0f);
+    glUniform1f(g_crt.uniform_apply_blur, state.options.applyBlur ? 1.0f : 0.0f);
+    glUniform1f(g_crt.uniform_apply_glow, state.options.applyGlow ? 1.0f : 0.0f);
+    glUniform1f(g_crt.uniform_apply_fringing, state.options.applyFringing ? 1.0f : 0.0f);
+    glUniform1f(g_crt.uniform_apply_aperture, state.options.applyAperture ? 1.0f : 0.0f);
 
-    glUniform1f(g_crt.uniform_noise_intensity, state.noiseIntensity);
-    glUniform3f(g_crt.uniform_color_bleed, state.colorBleed[0], state.colorBleed[1], state.colorBleed[2]);
-    glUniform1f(g_crt.uniform_blur_intensity, state.blurIntensity);
-    glUniform3f(g_crt.uniform_glow_color, state.glowColor[0], state.glowColor[1], state.glowColor[2]);
+    glUniform1f(g_crt.uniform_noise_intensity, state.options.noiseIntensity);
+    glUniform3f(g_crt.uniform_color_bleed, state.options.colorBleed[0], state.options.colorBleed[1], state.options.colorBleed[2]);
+    glUniform1f(g_crt.uniform_blur_intensity, state.options.blurIntensity);
+    glUniform3f(g_crt.uniform_glow_color, state.options.glowColor[0], state.options.glowColor[1], state.options.glowColor[2]);
 
     backend->setActiveTextureUnit(kTexUnitPostProcess);
     backend->bindTexture2D(state.colorTex);

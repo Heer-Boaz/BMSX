@@ -66,20 +66,21 @@ struct SoftwareTexture {
 
 struct ColorAttachmentSpec {
     TextureHandle tex = nullptr;
-    Color clear{0.0f, 0.0f, 0.0f, 1.0f};
+    std::optional<Color> clear;
     bool discardAfter = false;
 };
 
 struct DepthAttachmentSpec {
     TextureHandle tex = nullptr;
-    f32 clearDepth = 1.0f;
+    std::optional<f32> clearDepth;
     bool discardAfter = false;
 };
 
 struct RenderPassDesc {
-    std::string label;
-    ColorAttachmentSpec color;
-    DepthAttachmentSpec depth;
+    std::optional<std::string> label;
+    std::optional<ColorAttachmentSpec> color;
+    std::vector<ColorAttachmentSpec> colors;
+    std::optional<DepthAttachmentSpec> depth;
 };
 
 /* ============================================================================

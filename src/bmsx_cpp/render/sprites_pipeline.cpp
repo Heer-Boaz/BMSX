@@ -7,6 +7,7 @@
 #include "sprites_pipeline.h"
 
 #include <cmath>
+#include <stdexcept>
 
 #include "../core/assets.h"
 #include "../core/engine.h"
@@ -18,25 +19,26 @@ namespace bmsx {
 namespace SpritesPipeline {
 
 // Default Z coordinate (mirrors TypeScript DEFAULT_ZCOORD)
-static constexpr f32 DEFAULT_ZCOORD = 100.0f;
-static constexpr f32 ZCOORD_MAX = 1000.0f;
+static constexpr f32 DEFAULT_ZCOORD = 0.0f;
+static constexpr f32 ZCOORD_MAX = 10000.0f;
 
 /**
  * Submit an image/sprite for rendering.
  * Mirrors TypeScript SpritesPipeline.drawImg().
  */
 void drawImg(const ImgRenderSubmission& options) {
-  if (options.imgid == "none" || options.imgid.empty()) return;
+  if (options.imgid == "none") return;
 
   auto& engine = EngineCore::instance();
   const auto* imgAsset = engine.assets().getImg(options.imgid);
   if (!imgAsset) {
-    // Image not found - skip silently (matches TypeScript behavior with thrown
-    // error)
-    return;
+    throw std::runtime_error("[Sprite Pipeline] drawImg called with unknown image id '" + options.imgid + "'.");
   }
 
   const ImgMeta* imgmeta = &imgAsset->meta;
+  if (!imgmeta) {
+    throw std::runtime_error("[Sprite Pipeline] Image metadata missing for imgid '" + options.imgid + "'.");
+  }
   RenderQueues::submitSprite(options, imgmeta);
 }
 
@@ -58,7 +60,7 @@ void fillRectangle(const RectRenderSubmission& options) {
   f32 y = options.area.top;
   f32 ex = options.area.right;
   f32 ey = options.area.bottom;
-  f32 z = 0.0f;  // TODO: Get z from area if available
+  f32 z = options.area.z;
 
   correctAreaStartEnd(x, y, ex, ey);
 
@@ -82,13 +84,13 @@ void drawRectangle(const RectRenderSubmission& options) {
   f32 y = options.area.top;
   f32 ex = options.area.right;
   f32 ey = options.area.bottom;
-  f32 z = 0.0f;
+  f32 z = options.area.z;
 
   correctAreaStartEnd(x, y, ex, ey);
 
   const std::string imgid = "whitepixel";
   const Color& c = options.color;
-  RenderLayer layer = options.layer;
+  const auto layer = options.layer;
 
   // Top edge
   ImgRenderSubmission top;
@@ -131,19 +133,19 @@ void drawRectangle(const RectRenderSubmission& options) {
  * Draw a polygon outline using the whitepixel sprite (Bresenham line).
  * Mirrors TypeScript SpritesPipeline.drawPolygon().
  */
-void drawPolygon(const std::vector<Vec2>& coords, f32 z, const Color& color,
-                 f32 thickness, RenderLayer layer) {
-  if (coords.size() < 2) return;
+void drawPolygon(const std::vector<f32>& coords, f32 z, const Color& color,
+                 f32 thickness, std::optional<RenderLayer> layer) {
+  if (coords.size() < 4) return;
 
   const std::string imgid = "whitepixel";
 
   // Draw lines between consecutive points
-  for (size_t i = 0; i < coords.size(); ++i) {
-    size_t next = (i + 1) % coords.size();
-    f32 x0 = coords[i].x;
-    f32 y0 = coords[i].y;
-    f32 x1 = coords[next].x;
-    f32 y1 = coords[next].y;
+  for (size_t i = 0; i < coords.size(); i += 2) {
+    size_t next = (i + 2) % coords.size();
+    f32 x0 = coords[i];
+    f32 y0 = coords[i + 1];
+    f32 x1 = coords[next];
+    f32 y1 = coords[next + 1];
 
     // Bresenham line algorithm (mirrors TypeScript)
     f32 dx = std::abs(x1 - x0);
@@ -191,6 +193,7 @@ void drawPolygon(const std::vector<Vec2>& coords, f32 z, const Color& color,
 namespace {
 void renderSpriteBatchSoftware(SoftwareBackend* softBackend,
                                GameView* context) {
+  (void)context;
   // Swap and sort the sprite queue (returns count)
   i32 spriteCount = RenderQueues::beginSpriteQueue();
   if (spriteCount == 0) return;
@@ -199,14 +202,15 @@ void renderSpriteBatchSoftware(SoftwareBackend* softBackend,
   const auto& assets = engine.assets();
 
   // Iterate over all sprites in the sorted front queue
-  RenderQueues::forEachSprite([&](const SpriteQueueItem& item) {
+  RenderQueues::forEachSprite([&](const SpriteQueueItem& item, size_t) {
     const auto& options = item.options;
     const ImgMeta* imgmeta = item.imgmeta;
 
-    if (!imgmeta) return;
-
     const auto* imgAsset = assets.getImg(options.imgid);
-    const auto& meta = imgAsset->meta;
+    const auto& meta = *imgmeta;
+    const Vec2& scale = options.scale.value();
+    const FlipOptions& flip = options.flip.value();
+    const Color& colorize = options.colorize.value();
 
     TextureHandle tex = nullptr;
     if (meta.atlassed) {
@@ -219,17 +223,9 @@ void renderSpriteBatchSoftware(SoftwareBackend* softBackend,
 
     // Get UV coordinates based on flip options
     f32 u0, v0, u1, v1;
-    meta.getUVRect(u0, v0, u1, v1, options.flip.flip_h, options.flip.flip_v);
+    meta.getUVRect(u0, v0, u1, v1, flip.flip_h, flip.flip_v);
 
     auto* softTex = static_cast<SoftwareTexture*>(tex);
-    if (!softTex) {
-      i32 x = static_cast<i32>(options.pos.x);
-      i32 y = static_cast<i32>(options.pos.y);
-      i32 w = static_cast<i32>(16 * options.scale.x);
-      i32 h = static_cast<i32>(16 * options.scale.y);
-      softBackend->fillRect(x, y, w, h, options.colorize);
-      return;
-    }
 
     // Calculate source rectangle from UVs
     i32 srcX = static_cast<i32>(u0 * softTex->width);
@@ -240,12 +236,11 @@ void renderSpriteBatchSoftware(SoftwareBackend* softBackend,
     // Destination position and size
     i32 dstX = static_cast<i32>(options.pos.x);
     i32 dstY = static_cast<i32>(options.pos.y);
-    i32 dstW = static_cast<i32>(meta.width * options.scale.x);
-    i32 dstH = static_cast<i32>(meta.height * options.scale.y);
+    i32 dstW = static_cast<i32>(meta.width * scale.x);
+    i32 dstH = static_cast<i32>(meta.height * scale.y);
 
     softBackend->blitTexture(tex, srcX, srcY, srcW, srcH, dstX, dstY, dstW,
-                             dstH, options.colorize, options.flip.flip_h,
-                             options.flip.flip_v);
+                             dstH, colorize, flip.flip_h, flip.flip_v);
   });
 }
 }  // namespace

@@ -270,10 +270,14 @@ void RenderGraphRuntime::execute(FrameData* frame) {
                 desc.label = pass.name;
                 if (clearColor) {
                     const auto& clr = *colorRes.clearOnWrite.color;
-                    desc.color.clear = Color{clr[0], clr[1], clr[2], clr[3]};
+                    ColorAttachmentSpec colorSpec;
+                    colorSpec.clear = Color{clr[0], clr[1], clr[2], clr[3]};
+                    desc.color = colorSpec;
                 }
                 if (clearDepth) {
-                    desc.depth.clearDepth = *m_texResources[depthHandle].clearOnWrite.depth;
+                    DepthAttachmentSpec depthSpec;
+                    depthSpec.clearDepth = *m_texResources[depthHandle].clearOnWrite.depth;
+                    desc.depth = depthSpec;
                 }
                 passEnc = m_backend->beginRenderPass(desc);
                 didBegin = true;

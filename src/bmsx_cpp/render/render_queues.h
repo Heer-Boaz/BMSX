@@ -69,7 +69,12 @@ i32 beginSpriteQueue();
 /**
  * Iterate over all sprites in the front queue.
  */
-void forEachSprite(const std::function<void(const SpriteQueueItem&)>& fn);
+void forEachSprite(const std::function<void(const SpriteQueueItem&, size_t)>& fn);
+
+/**
+ * Custom sort for the sprite queue front buffer.
+ */
+void sortSpriteQueue(const std::function<bool(const SpriteQueueItem&, const SpriteQueueItem&)>& compare);
 
 /**
  * Get sprite queue sizes for debugging.
@@ -77,19 +82,24 @@ void forEachSprite(const std::function<void(const SpriteQueueItem&)>& fn);
 size_t spriteQueueBackSize();
 size_t spriteQueueFrontSize();
 
+/**
+ * Copy sprite queue into a reusable playback buffer.
+ */
+const std::vector<RenderSubmission>& copySpriteQueueForPlayback();
+
 // --- Mesh queue helpers ---
 
 void submitMesh(const MeshRenderSubmission& item);
 i32 beginMeshQueue();
-void forEachMesh(const std::function<void(const MeshRenderSubmission&)>& fn);
+void forEachMeshQueue(const std::function<void(const MeshRenderSubmission&, size_t)>& fn);
 size_t meshQueueBackSize();
 size_t meshQueueFrontSize();
 
 // --- Particle queue helpers ---
 
-void submitParticle(const ParticleRenderSubmission& item);
+void submit_particle(const ParticleRenderSubmission& item);
 i32 beginParticleQueue();
-void forEachParticle(const std::function<void(const ParticleRenderSubmission&)>& fn);
+void forEachParticleQueue(const std::function<void(const ParticleRenderSubmission&, size_t)>& fn);
 size_t particleQueueBackSize();
 size_t particleQueueFrontSize();
 

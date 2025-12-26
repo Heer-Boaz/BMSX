@@ -49,7 +49,7 @@ void drawRectangle(const RectRenderSubmission& options);
  * Draw a polygon outline using the whitepixel sprite (Bresenham line).
  * Mirrors TypeScript SpritesPipeline.drawPolygon().
  */
-void drawPolygon(const std::vector<Vec2>& coords, f32 z, const Color& color, f32 thickness, RenderLayer layer);
+void drawPolygon(const std::vector<f32>& coords, f32 z, const Color& color, f32 thickness = 1.0f, std::optional<RenderLayer> layer = std::nullopt);
 
 /**
  * Render the sprite batch.

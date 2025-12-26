@@ -19,7 +19,7 @@ namespace bmsx {
  * Color attachment specification
  * ============================================================================ */
 
-struct ColorAttachmentSpec {
+struct BuilderColorAttachmentSpec {
     TextureHandle tex = nullptr;
     std::optional<std::array<f32, 4>> clear;  // RGBA clear color
     bool discardAfter = false;
@@ -29,7 +29,7 @@ struct ColorAttachmentSpec {
  * Depth attachment specification
  * ============================================================================ */
 
-struct DepthAttachmentSpec {
+struct BuilderDepthAttachmentSpec {
     TextureHandle tex = nullptr;
     std::optional<f32> clearDepth;
     bool discardAfter = false;
@@ -54,7 +54,7 @@ public:
     RenderPassBuilder& color(TextureHandle tex,
                              const std::array<f32, 4>* clear = nullptr,
                              bool discardAfter = false) {
-        ColorAttachmentSpec spec;
+        BuilderColorAttachmentSpec spec;
         spec.tex = tex;
         if (clear) spec.clear = *clear;
         spec.discardAfter = discardAfter;
@@ -68,7 +68,7 @@ public:
         return color(tex, clear, discardAfter);
     }
 
-    RenderPassBuilder& colors(const std::vector<ColorAttachmentSpec>& specs) {
+    RenderPassBuilder& colors(const std::vector<BuilderColorAttachmentSpec>& specs) {
         for (const auto& s : specs) {
             m_colors.push_back(s);
         }
@@ -76,32 +76,49 @@ public:
     }
 
     RenderPassBuilder& depth(TextureHandle tex,
-                             f32 clearDepth = 1.0f,
+                             const f32* clearDepth = nullptr,
                              bool discardAfter = false) {
-        m_depth = DepthAttachmentSpec{tex, clearDepth, discardAfter};
+        BuilderDepthAttachmentSpec spec;
+        spec.tex = tex;
+        if (clearDepth) spec.clearDepth = *clearDepth;
+        spec.discardAfter = discardAfter;
+        m_depth = spec;
         return *this;
     }
 
     RenderPassDesc buildDesc() const {
         RenderPassDesc desc;
-        desc.label = m_label;
+        if (m_label) {
+            desc.label = *m_label;
+        }
 
         if (!m_colors.empty()) {
-            const auto& first = m_colors[0];
-            if (first.clear) {
-                desc.color.clear = Color{
-                    (*first.clear)[0],
-                    (*first.clear)[1],
-                    (*first.clear)[2],
-                    (*first.clear)[3]
-                };
+            desc.colors.reserve(m_colors.size());
+            for (const auto& colorSpec : m_colors) {
+                ColorAttachmentSpec out;
+                out.tex = colorSpec.tex;
+                out.discardAfter = colorSpec.discardAfter;
+                if (colorSpec.clear) {
+                    out.clear = Color{
+                        (*colorSpec.clear)[0],
+                        (*colorSpec.clear)[1],
+                        (*colorSpec.clear)[2],
+                        (*colorSpec.clear)[3]
+                    };
+                }
+                desc.colors.push_back(out);
             }
+            desc.color = desc.colors.front();
         }
 
         if (m_depth) {
+            DepthAttachmentSpec out;
+            out.tex = m_depth->tex;
+            out.discardAfter = m_depth->discardAfter;
             if (m_depth->clearDepth) {
-                desc.depth.clearDepth = *m_depth->clearDepth;
+                out.clearDepth = *m_depth->clearDepth;
             }
+            desc.depth = out;
         }
 
         return desc;
@@ -113,9 +130,9 @@ public:
 
 private:
     GPUBackend* m_backend;
-    std::string m_label;
-    std::vector<ColorAttachmentSpec> m_colors;
-    std::optional<DepthAttachmentSpec> m_depth;
+    std::optional<std::string> m_label;
+    std::vector<BuilderColorAttachmentSpec> m_colors;
+    std::optional<BuilderDepthAttachmentSpec> m_depth;
 };
 
 } // namespace bmsx

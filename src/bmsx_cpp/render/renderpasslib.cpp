@@ -93,18 +93,24 @@ void RenderPassLibrary::registerBuiltinPassesSoftware() {
 
             // Atlas textures
             auto atlasIt = gv->textures.find("_atlas_primary");
-            if (atlasIt != gv->textures.end()) {
-                spriteState.atlasPrimaryTex = atlasIt->second;
+            if (atlasIt == gv->textures.end()) {
+                throw std::runtime_error("[SpritesPipeline] Texture '_atlas_primary' missing from view textures.");
             }
+            spriteState.atlasPrimaryTex = atlasIt->second;
             auto secondaryIt = gv->textures.find("_atlas_secondary");
             if (secondaryIt != gv->textures.end()) {
                 spriteState.atlasSecondaryTex = secondaryIt->second;
+            }
+            auto engineIt = gv->textures.find("_atlas_engine");
+            if (engineIt != gv->textures.end()) {
+                spriteState.atlasEngineTex = engineIt->second;
             }
 
             spriteState.ambientEnabledDefault = gv->spriteAmbientEnabledDefault;
             spriteState.ambientFactorDefault = gv->spriteAmbientFactorDefault;
             spriteState.psxDither2dEnabled = gv->psx_dither_2d_enabled;
             spriteState.psxDither2dIntensity = gv->psx_dither2d_intensity;
+            spriteState.viewportTypeIde = (gv->viewportTypeIde == GameView::ViewportType::Viewport) ? "viewport" : "offscreen";
 
             state = spriteState;
         };
@@ -117,10 +123,6 @@ void RenderPassLibrary::registerBuiltinPassesSoftware() {
         desc.id = "crt";
         desc.name = "CRT";
         desc.present = true;
-        desc.shouldExecute = []() {
-            auto& engine = EngineCore::instance();
-            return engine.view()->crt_postprocessing_enabled;
-        };
         desc.exec = [](GPUBackend*, void*, std::any&) {
             // CRT is applied in GameView::applyCRTPostProcessing for software
         };
@@ -134,17 +136,31 @@ void RenderPassLibrary::registerBuiltinPassesSoftware() {
             crtState.baseWidth = static_cast<i32>(gv->viewportSize.x);
             crtState.baseHeight = static_cast<i32>(gv->viewportSize.y);
             crtState.colorTex = nullptr;
-            crtState.applyNoise = gv->applyNoise;
-            crtState.noiseIntensity = gv->noiseIntensity;
-            crtState.applyColorBleed = gv->applyColorBleed;
-            crtState.colorBleed = gv->colorBleed;
-            crtState.applyScanlines = gv->applyScanlines;
-            crtState.applyBlur = gv->applyBlur;
-            crtState.blurIntensity = gv->blurIntensity;
-            crtState.applyGlow = gv->applyGlow;
-            crtState.glowColor = gv->glowColor;
-            crtState.applyFringing = gv->applyFringing;
-            crtState.applyAperture = gv->applyAperture;
+            if (gv->crt_postprocessing_enabled) {
+                crtState.options.applyNoise = gv->applyNoise;
+                crtState.options.noiseIntensity = gv->noiseIntensity;
+                crtState.options.applyColorBleed = gv->applyColorBleed;
+                crtState.options.colorBleed = gv->colorBleed;
+                crtState.options.applyScanlines = gv->applyScanlines;
+                crtState.options.applyBlur = gv->applyBlur;
+                crtState.options.blurIntensity = gv->blurIntensity;
+                crtState.options.applyGlow = gv->applyGlow;
+                crtState.options.glowColor = gv->glowColor;
+                crtState.options.applyFringing = gv->applyFringing;
+                crtState.options.applyAperture = gv->applyAperture;
+            } else {
+                crtState.options.applyNoise = false;
+                crtState.options.applyColorBleed = false;
+                crtState.options.applyScanlines = false;
+                crtState.options.applyBlur = false;
+                crtState.options.applyGlow = false;
+                crtState.options.applyFringing = false;
+                crtState.options.applyAperture = false;
+                crtState.options.noiseIntensity = gv->noiseIntensity;
+                crtState.options.colorBleed = gv->colorBleed;
+                crtState.options.blurIntensity = gv->blurIntensity;
+                crtState.options.glowColor = gv->glowColor;
+            }
 
             state = crtState;
         };
@@ -427,29 +443,29 @@ std::unique_ptr<RenderGraphRuntime> RenderPassLibrary::buildRenderGraph(GameView
                 crtState.colorTex = ctx.getTexture(handles->color);
 
                 if (view->crt_postprocessing_enabled) {
-                    crtState.applyNoise = view->applyNoise;
-                    crtState.noiseIntensity = view->noiseIntensity;
-                    crtState.applyColorBleed = view->applyColorBleed;
-                    crtState.colorBleed = view->colorBleed;
-                    crtState.applyScanlines = view->applyScanlines;
-                    crtState.applyBlur = view->applyBlur;
-                    crtState.blurIntensity = view->blurIntensity;
-                    crtState.applyGlow = view->applyGlow;
-                    crtState.glowColor = view->glowColor;
-                    crtState.applyFringing = view->applyFringing;
-                    crtState.applyAperture = view->applyAperture;
+                    crtState.options.applyNoise = view->applyNoise;
+                    crtState.options.noiseIntensity = view->noiseIntensity;
+                    crtState.options.applyColorBleed = view->applyColorBleed;
+                    crtState.options.colorBleed = view->colorBleed;
+                    crtState.options.applyScanlines = view->applyScanlines;
+                    crtState.options.applyBlur = view->applyBlur;
+                    crtState.options.blurIntensity = view->blurIntensity;
+                    crtState.options.applyGlow = view->applyGlow;
+                    crtState.options.glowColor = view->glowColor;
+                    crtState.options.applyFringing = view->applyFringing;
+                    crtState.options.applyAperture = view->applyAperture;
                 } else {
-                    crtState.applyNoise = false;
-                    crtState.applyColorBleed = false;
-                    crtState.applyScanlines = false;
-                    crtState.applyBlur = false;
-                    crtState.applyGlow = false;
-                    crtState.applyFringing = false;
-                    crtState.applyAperture = false;
-                    crtState.noiseIntensity = view->noiseIntensity;
-                    crtState.colorBleed = view->colorBleed;
-                    crtState.blurIntensity = view->blurIntensity;
-                    crtState.glowColor = view->glowColor;
+                    crtState.options.applyNoise = false;
+                    crtState.options.applyColorBleed = false;
+                    crtState.options.applyScanlines = false;
+                    crtState.options.applyBlur = false;
+                    crtState.options.applyGlow = false;
+                    crtState.options.applyFringing = false;
+                    crtState.options.applyAperture = false;
+                    crtState.options.noiseIntensity = view->noiseIntensity;
+                    crtState.options.colorBleed = view->colorBleed;
+                    crtState.options.blurIntensity = view->blurIntensity;
+                    crtState.options.glowColor = view->glowColor;
                 }
 
                 setState("crt", crtState);
