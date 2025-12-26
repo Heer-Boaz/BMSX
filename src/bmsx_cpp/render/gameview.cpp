@@ -436,6 +436,8 @@ void GameView::unbind() {
 
 void GameView::dispose() {
     unbind();
+    m_renderGraph.reset();
+    m_pipelineRegistry.reset();
     m_backend.reset();
 }
 

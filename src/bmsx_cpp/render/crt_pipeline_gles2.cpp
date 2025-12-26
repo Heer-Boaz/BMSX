@@ -12,7 +12,7 @@ namespace bmsx {
 namespace CRTPipeline {
 namespace {
 
-constexpr int kTexUnitPostProcess = 8;
+constexpr int kTexUnitPostProcess = 3;
 
 struct CRTGLES2State {
     GLuint program = 0;

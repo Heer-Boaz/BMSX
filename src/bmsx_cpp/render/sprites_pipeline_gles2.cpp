@@ -36,7 +36,7 @@ constexpr float kEngineAtlasId = 254.0f;
 
 constexpr int kTexUnitAtlasPrimary = 0;
 constexpr int kTexUnitAtlasSecondary = 1;
-constexpr int kTexUnitAtlasEngine = 11;
+constexpr int kTexUnitAtlasEngine = 2;
 
 struct SpriteGLES2State {
   GLuint program = 0;
