@@ -11,4 +11,4 @@ LOCAL_CFG="$ROOT_DIR/scripts/retroarch.local.cfg"
 
 mkdir -p "$CORES_DIR"
 cp "$CORE_SRC" "$CORE_DST"
-"$RETROARCH_BIN" --appendconfig="$LOCAL_CFG" -L "$CORE_DST" "$ROM_PATH"
+gdb --batch -ex "set pagination off" -ex "run" -ex "bt" --args "$RETROARCH_BIN" --appendconfig="$LOCAL_CFG" -L "$CORE_DST" "$ROM_PATH"
