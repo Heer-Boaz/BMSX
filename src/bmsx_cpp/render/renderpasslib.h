@@ -68,6 +68,9 @@ struct SpritesPipelineState {
 struct CRTPipelineState {
     i32 width = 0;
     i32 height = 0;
+    i32 baseWidth = 0;
+    i32 baseHeight = 0;
+    TextureHandle colorTex = nullptr;
     bool applyNoise = true;
     f32 noiseIntensity = 0.4f;
     bool applyColorBleed = true;

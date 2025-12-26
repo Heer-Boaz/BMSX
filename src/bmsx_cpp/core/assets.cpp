@@ -371,15 +371,22 @@ bool loadAssetsFromRom(const u8* buffer, size_t size, RuntimeAssets& assets) {
                     imgAsset.meta.width = imgMeta.count("width") ? imgMeta.at("width").toI32() : 0;
                     imgAsset.meta.height = imgMeta.count("height") ? imgMeta.at("height").toI32() : 0;
                     imgAsset.meta.atlassed = imgMeta.count("atlassed") && imgMeta.at("atlassed").isBool() && imgMeta.at("atlassed").asBool();
-                    imgAsset.meta.atlasid = imgMeta.count("atlasid") ? imgMeta.at("atlasid").toI32() : -1;
+                    imgAsset.meta.atlasid = imgMeta.count("atlasid") ? imgMeta.at("atlasid").toI32() : 0;
 
                     // Load texcoords
-                    if (imgMeta.count("texcoords") && imgMeta.at("texcoords").isArray()) {
-                        const auto& tc = imgMeta.at("texcoords").asArray();
-                        for (size_t i = 0; i < 12; ++i) {
-                            imgAsset.meta.texcoords[i] = static_cast<f32>(tc.at(i).toNumber());
+                    if (imgMeta.count("texcoords")) {
+                        const auto& tcVal = imgMeta.at("texcoords");
+                        if (tcVal.isArray()) {
+                            const auto& tc = tcVal.asArray();
+                            for (size_t i = 0; i < 12; ++i) {
+                                imgAsset.meta.texcoords[i] = static_cast<f32>(tc.at(i).toNumber());
+                            }
+                            updateFlippedTexcoords(imgAsset.meta);
+                        } else if (tcVal.isBinary()) {
+                            const auto& tc = tcVal.asBinary();
+                            std::memcpy(imgAsset.meta.texcoords.data(), tc.data(), sizeof(imgAsset.meta.texcoords));
+                            updateFlippedTexcoords(imgAsset.meta);
                         }
-                        updateFlippedTexcoords(imgAsset.meta);
                     }
 
                     // Load bounding box

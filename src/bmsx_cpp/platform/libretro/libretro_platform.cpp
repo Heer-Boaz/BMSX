@@ -10,6 +10,7 @@
 #include "../../render/gles2_backend.h"
 #include "../../render/renderpasslib.h"
 #include "../../render/sprites_pipeline_gles2.h"
+#include "../../render/crt_pipeline_gles2.h"
 #include <cstring>
 #include <cstdarg>
 #include <fstream>
@@ -113,6 +114,7 @@ void LibretroPlatform::onContextDestroy() {
     auto* view = m_engine->view();
     auto* backend = static_cast<OpenGLES2Backend*>(view->backend());
     SpritesPipeline::shutdownGLES2(backend);
+    CRTPipeline::shutdownGLES2(backend);
     backend->onContextDestroy();
     view->setPipelineRegistry(std::unique_ptr<RenderPassLibrary>());
 }

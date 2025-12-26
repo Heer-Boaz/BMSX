@@ -271,17 +271,20 @@ void renderSpriteBatch(GPUBackend* backend, GameView* context) {
       spriteState.baseWidth = static_cast<i32>(view->viewportSize.x);
       spriteState.baseHeight = static_cast<i32>(view->viewportSize.y);
 
-      spriteState.atlasPrimaryTex = reinterpret_cast<TextureHandle>(
-          assets.atlasTextures.at(0).textureHandle);
-      auto atlasSecondary = assets.atlasTextures.find(1);
-      if (atlasSecondary != assets.atlasTextures.end()) {
+      const auto& primaryAtlas = assets.img.at(generateAtlasName(0));
+      spriteState.atlasPrimaryTex =
+          reinterpret_cast<TextureHandle>(primaryAtlas.textureHandle);
+      const auto secondaryName = generateAtlasName(1);
+      auto atlasSecondary = assets.img.find(secondaryName);
+      if (atlasSecondary != assets.img.end()) {
         spriteState.atlasSecondaryTex = reinterpret_cast<TextureHandle>(
             atlasSecondary->second.textureHandle);
       }
-      auto atlasEngine = assets.atlasTextures.find(254);
-      if (atlasEngine != assets.atlasTextures.end()) {
-        spriteState.atlasEngineTex =
-            reinterpret_cast<TextureHandle>(atlasEngine->second.textureHandle);
+      const auto engineName = generateAtlasName(254);
+      auto atlasEngine = assets.img.find(engineName);
+      if (atlasEngine != assets.img.end()) {
+        spriteState.atlasEngineTex = reinterpret_cast<TextureHandle>(
+            atlasEngine->second.textureHandle);
       }
 
       spriteState.ambientEnabledDefault = view->spriteAmbientEnabledDefault;

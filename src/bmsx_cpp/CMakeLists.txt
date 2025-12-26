@@ -78,6 +78,7 @@ add_library(bmsx_core STATIC
     render/render_queues.cpp
     render/sprites_pipeline.cpp
     render/sprites_pipeline_gles2.cpp
+    render/crt_pipeline_gles2.cpp
     render/renderpasslib.cpp
     render/rendergraph.cpp
     render/glyphs.cpp

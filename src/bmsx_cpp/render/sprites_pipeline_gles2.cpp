@@ -37,7 +37,6 @@ constexpr float kEngineAtlasId = 254.0f;
 constexpr int kTexUnitAtlasPrimary = 0;
 constexpr int kTexUnitAtlasSecondary = 1;
 constexpr int kTexUnitAtlasEngine = 2;
-constexpr int kTexUnitSingle = 3;
 
 struct SpriteGLES2State {
   GLuint program = 0;
@@ -51,10 +50,8 @@ struct SpriteGLES2State {
   GLint uniform_tex0 = -1;
   GLint uniform_tex1 = -1;
   GLint uniform_tex2 = -1;
-  GLint uniform_tex_single = -1;
   GLint uniform_dither_intensity = -1;
   GLint uniform_dither_enabled = -1;
-  GLint uniform_use_single = -1;
   GLint uniform_time = -1;
   GLuint vbo_pos = 0;
   GLuint vbo_uv = 0;
@@ -90,7 +87,7 @@ void main() {
     vec2 scaledPosition = a_position * u_scale;
     vec2 clipSpace = ((scaledPosition / u_resolution) * 2.0 - 1.0) * vec2(1.0, -1.0);
     gl_Position = vec4(clipSpace, a_pos_z, 1.0);
-    v_texcoord = a_texcoord;
+    v_texcoord = vec2(a_texcoord.x, 1.0 - a_texcoord.y);
     v_color_override = a_color_override;
     v_atlas_id = a_atlas_id;
 }
@@ -102,10 +99,8 @@ precision mediump float;
 uniform sampler2D u_texture0;
 uniform sampler2D u_texture1;
 uniform sampler2D u_texture2;
-uniform sampler2D u_texture_single;
 uniform float u_ditherIntensity;
 uniform float u_ditherEnabled;
-uniform float u_useSingleTexture;
 uniform float u_time;
 
 varying vec2 v_texcoord;
@@ -137,9 +132,7 @@ vec3 linear_to_srgb(vec3 c) { return pow(max(c, vec3(0.0)), vec3(1.0 / 2.2)); }
 
 void main() {
     vec4 texColor;
-    if (u_useSingleTexture > 0.5) {
-        texColor = texture2D(u_texture_single, v_texcoord);
-    } else if (v_atlas_id < 0.5) {
+    if (v_atlas_id < 0.5) {
         texColor = texture2D(u_texture0, v_texcoord);
     } else if (abs(v_atlas_id - ENGINE_ATLAS_ID) < 0.5) {
         texColor = texture2D(u_texture2, v_texcoord);
@@ -346,14 +339,10 @@ void initGLES2(OpenGLES2Backend* backend, GameView* context) {
   g_sprite.uniform_tex0 = glGetUniformLocation(g_sprite.program, "u_texture0");
   g_sprite.uniform_tex1 = glGetUniformLocation(g_sprite.program, "u_texture1");
   g_sprite.uniform_tex2 = glGetUniformLocation(g_sprite.program, "u_texture2");
-  g_sprite.uniform_tex_single =
-      glGetUniformLocation(g_sprite.program, "u_texture_single");
   g_sprite.uniform_dither_intensity =
       glGetUniformLocation(g_sprite.program, "u_ditherIntensity");
   g_sprite.uniform_dither_enabled =
       glGetUniformLocation(g_sprite.program, "u_ditherEnabled");
-  g_sprite.uniform_use_single =
-      glGetUniformLocation(g_sprite.program, "u_useSingleTexture");
   g_sprite.uniform_time = glGetUniformLocation(g_sprite.program, "u_time");
 
   setupBuffers();
@@ -362,7 +351,6 @@ void initGLES2(OpenGLES2Backend* backend, GameView* context) {
   glUniform1i(g_sprite.uniform_tex0, kTexUnitAtlasPrimary);
   glUniform1i(g_sprite.uniform_tex1, kTexUnitAtlasSecondary);
   glUniform1i(g_sprite.uniform_tex2, kTexUnitAtlasEngine);
-  glUniform1i(g_sprite.uniform_tex_single, kTexUnitSingle);
 }
 
 void shutdownGLES2(OpenGLES2Backend* backend) {
@@ -408,7 +396,6 @@ void renderSpriteBatchGLES2(OpenGLES2Backend* backend, GameView* context,
       ideIsViewport ? 1.0f : (baseWidth / static_cast<float>(state.width));
   float currentScale = 1.0f;
   glUniform1f(g_sprite.uniform_scale, currentScale);
-  glUniform1f(g_sprite.uniform_use_single, 0.0f);
 
   backend->setActiveTextureUnit(kTexUnitAtlasPrimary);
   backend->bindTexture2D(state.atlasPrimaryTex);
@@ -422,8 +409,6 @@ void renderSpriteBatchGLES2(OpenGLES2Backend* backend, GameView* context,
   }
 
   size_t batchCount = 0;
-  bool useSingleTexture = false;
-  TextureHandle currentSingle = nullptr;
 
   auto flush = [&]() {
     if (batchCount == 0) {
@@ -435,31 +420,9 @@ void renderSpriteBatchGLES2(OpenGLES2Backend* backend, GameView* context,
     batchCount = 0;
   };
 
-  auto& assets = EngineCore::instance().assets();
-
   RenderQueues::forEachSprite([&](const SpriteQueueItem& item) {
     const auto& options = item.options;
     const ImgMeta* imgmeta = item.imgmeta;
-    const auto* imgAsset = assets.getImg(options.imgid);
-
-    const bool isAtlassed = imgmeta->atlassed;
-    if (!isAtlassed) {
-      TextureHandle tex =
-          reinterpret_cast<TextureHandle>(imgAsset->textureHandle);
-      if (!useSingleTexture || currentSingle != tex) {
-        flush();
-        glUniform1f(g_sprite.uniform_use_single, 1.0f);
-        backend->setActiveTextureUnit(kTexUnitSingle);
-        backend->bindTexture2D(tex);
-        useSingleTexture = true;
-        currentSingle = tex;
-      }
-    } else if (useSingleTexture) {
-      flush();
-      glUniform1f(g_sprite.uniform_use_single, 0.0f);
-      useSingleTexture = false;
-      currentSingle = nullptr;
-    }
 
     const float desiredScale =
         (options.layer == RenderLayer::IDE) ? ideScale : 1.0f;

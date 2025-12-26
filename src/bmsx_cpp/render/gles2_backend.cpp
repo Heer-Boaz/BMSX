@@ -90,7 +90,8 @@ void OpenGLES2Backend::drawIndexed(PassEncoder& pass, i32 indexCount, i32 firstI
 
 void OpenGLES2Backend::beginFrame() {
     m_stats = FrameStats{};
-    m_current_fbo = static_cast<GLuint>(m_get_framebuffer());
+    m_backbuffer_fbo = static_cast<GLuint>(m_get_framebuffer());
+    m_current_fbo = m_backbuffer_fbo;
     glBindFramebuffer(GL_FRAMEBUFFER, m_current_fbo);
     glViewport(0, 0, m_width, m_height);
 }
@@ -138,6 +139,14 @@ void OpenGLES2Backend::bindTexture2D(TextureHandle tex) {
     }
     glBindTexture(GL_TEXTURE_2D, gltex->id);
     m_bound_texture_2d = gltex->id;
+}
+
+void OpenGLES2Backend::setRenderTarget(GLuint fbo, i32 width, i32 height) {
+    m_current_fbo = fbo;
+    m_width = width;
+    m_height = height;
+    glBindFramebuffer(GL_FRAMEBUFFER, m_current_fbo);
+    glViewport(0, 0, m_width, m_height);
 }
 
 } // namespace bmsx

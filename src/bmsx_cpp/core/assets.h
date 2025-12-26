@@ -47,7 +47,7 @@ struct ImgMeta {
     i32 width = 0;
     i32 height = 0;
     bool atlassed = false;           // Whether this image is part of an atlas
-    i32 atlasid = -1;                 // Which atlas this image belongs to (0=primary, 1=secondary, 254=engine)
+    i32 atlasid = 0;                  // Which atlas this image belongs to (0=primary, 1=secondary, 254=engine)
 
     // Texture coordinates for sprite rendering (matches TypeScript ImgMeta)
     // Each array is [u0, v0, u1, v1, u2, v2, u3, v3] for quad vertices

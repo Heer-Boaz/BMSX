@@ -140,6 +140,15 @@ void GameView::drawGame() {
     // Increment frame timing
     m_renderFrameIndex++;
 
+    if (m_backend->type() == BackendType::OpenGLES2) {
+        FrameData frame;
+        frame.frameIndex = static_cast<u32>(m_renderFrameIndex);
+        frame.time = EngineCore::instance().totalTime();
+        frame.delta = EngineCore::instance().deltaTime();
+        m_renderGraph->execute(&frame);
+        return;
+    }
+
     // Begin main render pass
     RenderPassDesc mainPass;
     mainPass.label = "main";
@@ -147,16 +156,6 @@ void GameView::drawGame() {
     mainPass.depth.clearDepth = 1.0f;
 
     PassEncoder pass = m_backend->beginRenderPass(mainPass);
-
-    if (m_backend->type() == BackendType::OpenGLES2) {
-        if (m_pipelineRegistry) {
-            m_pipelineRegistry->execute("sprites", pass.fbo);
-        } else {
-            SpritesPipeline::renderSpriteBatch(m_backend.get(), this);
-        }
-        m_backend->endRenderPass(pass);
-        return;
-    }
 
     // Execute sprite pipeline (includes rects, polys via whitepixel sprite)
     SpritesPipeline::renderSpriteBatch(m_backend.get(), this);
@@ -298,7 +297,7 @@ void GameView::rebuildGraph() {
         // No pipeline registry yet - this is OK during early init
         return;
     }
-    // TODO: m_renderGraph = m_pipelineRegistry->buildRenderGraph(this, lightingSystem);
+    m_renderGraph = m_pipelineRegistry->buildRenderGraph(this, nullptr);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

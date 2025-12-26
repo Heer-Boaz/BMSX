@@ -8,8 +8,10 @@
 #include "gameview.h"
 #include "sprites_pipeline.h"
 #include "sprites_pipeline_gles2.h"
+#include "crt_pipeline_gles2.h"
 #include "rendergraph.h"
 #include "../core/engine.h"
+#include "../core/rompack.h"
 #include <stdexcept>
 
 namespace bmsx {
@@ -129,6 +131,9 @@ void RenderPassLibrary::registerBuiltinPassesSoftware() {
             CRTPipelineState crtState;
             crtState.width = static_cast<i32>(gv->viewportSize.x);
             crtState.height = static_cast<i32>(gv->viewportSize.y);
+            crtState.baseWidth = static_cast<i32>(gv->viewportSize.x);
+            crtState.baseHeight = static_cast<i32>(gv->viewportSize.y);
+            crtState.colorTex = nullptr;
             crtState.applyNoise = gv->applyNoise;
             crtState.noiseIntensity = gv->noiseIntensity;
             crtState.applyColorBleed = gv->applyColorBleed;
@@ -197,13 +202,16 @@ void RenderPassLibrary::registerBuiltinPassesOpenGLES2() {
             spriteState.baseWidth = static_cast<i32>(gv->viewportSize.x);
             spriteState.baseHeight = static_cast<i32>(gv->viewportSize.y);
 
-            spriteState.atlasPrimaryTex = reinterpret_cast<TextureHandle>(assets.atlasTextures.at(0).textureHandle);
-            auto secondaryIt = assets.atlasTextures.find(1);
-            if (secondaryIt != assets.atlasTextures.end()) {
+            const auto& primaryAtlas = assets.img.at(generateAtlasName(0));
+            spriteState.atlasPrimaryTex = reinterpret_cast<TextureHandle>(primaryAtlas.textureHandle);
+            const auto secondaryName = generateAtlasName(1);
+            auto secondaryIt = assets.img.find(secondaryName);
+            if (secondaryIt != assets.img.end()) {
                 spriteState.atlasSecondaryTex = reinterpret_cast<TextureHandle>(secondaryIt->second.textureHandle);
             }
-            auto engineIt = assets.atlasTextures.find(254);
-            if (engineIt != assets.atlasTextures.end()) {
+            const auto engineName = generateAtlasName(254);
+            auto engineIt = assets.img.find(engineName);
+            if (engineIt != assets.img.end()) {
                 spriteState.atlasEngineTex = reinterpret_cast<TextureHandle>(engineIt->second.textureHandle);
             }
 
@@ -215,6 +223,24 @@ void RenderPassLibrary::registerBuiltinPassesOpenGLES2() {
 
             state = spriteState;
         };
+        registerPass(desc);
+    }
+
+    // CRT post-processing / present pass (GLES2)
+    {
+        RenderPassDef desc;
+        desc.id = "crt";
+        desc.name = "Present/CRT";
+        desc.present = true;
+        desc.bootstrap = [](GPUBackend* backend) {
+            CRTPipeline::initGLES2(static_cast<OpenGLES2Backend*>(backend));
+        };
+        desc.exec = [](GPUBackend* backend, void*, std::any& state) {
+            auto& engine = EngineCore::instance();
+            auto& crtState = std::any_cast<CRTPipelineState&>(state);
+            CRTPipeline::renderCRTGLES2(static_cast<OpenGLES2Backend*>(backend), engine.view(), crtState);
+        };
+        desc.prepare = [](GPUBackend*, std::any&) { };
         registerPass(desc);
     }
 }
@@ -309,24 +335,36 @@ std::unique_ptr<RenderGraphRuntime> RenderPassLibrary::buildRenderGraph(GameView
     (void)lightingSystem; // TODO: Use for lighting state
 
     auto rg = std::make_unique<RenderGraphRuntime>(m_backend);
+    struct GraphHandles {
+        RenderGraphTexHandle color = -1;
+        RenderGraphTexHandle depth = -1;
+    };
+    auto handles = std::make_shared<GraphHandles>();
 
     // Clear pass
     {
         RenderGraphPass pass;
         pass.name = "Clear";
-        pass.setup = [view](RenderGraphIO& io) -> void* {
-            auto color = io.createTex(static_cast<i32>(view->offscreenCanvasSize.x),
-                                      static_cast<i32>(view->offscreenCanvasSize.y),
-                                      "FrameColor");
-            auto depth = io.createTex(static_cast<i32>(view->offscreenCanvasSize.x),
-                                      static_cast<i32>(view->offscreenCanvasSize.y),
-                                      "FrameDepth", true);
-            io.writeTex(color, {0, 0, 0, 1});
-            io.writeTex(depth, 1.0f);
-            io.exportToBackbuffer(color);
-            return nullptr;
+        pass.setup = [view, handles](RenderGraphIO& io, FrameData*) -> std::any {
+            TexDesc colorDesc;
+            colorDesc.width = static_cast<i32>(view->offscreenCanvasSize.x);
+            colorDesc.height = static_cast<i32>(view->offscreenCanvasSize.y);
+            colorDesc.name = "FrameColor";
+
+            TexDesc depthDesc;
+            depthDesc.width = static_cast<i32>(view->offscreenCanvasSize.x);
+            depthDesc.height = static_cast<i32>(view->offscreenCanvasSize.y);
+            depthDesc.name = "FrameDepth";
+            depthDesc.depth = true;
+
+            handles->color = io.createTex(colorDesc);
+            handles->depth = io.createTex(depthDesc);
+            io.writeTex(handles->color, {0, 0, 0, 1});
+            io.writeTex(handles->depth, 1.0f);
+            io.exportToBackbuffer(handles->color);
+            return std::any{};
         };
-        pass.execute = [](RenderGraphContext&, FrameData*) {};
+        pass.execute = [](RenderGraphContext&, FrameData*, const std::any&) {};
         rg->addPass(pass);
     }
 
@@ -335,8 +373,8 @@ std::unique_ptr<RenderGraphRuntime> RenderPassLibrary::buildRenderGraph(GameView
         RenderGraphPass pass;
         pass.name = "FrameSharedState";
         pass.alwaysExecute = true;
-        pass.setup = [](RenderGraphIO&) -> void* { return nullptr; };
-        pass.execute = [this, view](RenderGraphContext&, FrameData* frame) {
+        pass.setup = [](RenderGraphIO&, FrameData*) -> std::any { return std::any{}; };
+        pass.execute = [this, view](RenderGraphContext&, FrameData* frame, const std::any&) {
             FrameSharedState frameShared;
             // TODO: Fill from camera and lighting
             frameShared.fog.fogD50 = view->atmosphere.fogD50;
@@ -354,18 +392,73 @@ std::unique_ptr<RenderGraphRuntime> RenderPassLibrary::buildRenderGraph(GameView
 
     // Add registered passes
     for (const auto& desc : m_passes) {
-        if (desc.stateOnly) continue;
-
         RenderGraphPass pass;
         pass.name = desc.name;
-        pass.alwaysExecute = false;
-        pass.setup = [](RenderGraphIO&) -> void* { return nullptr; };
+        pass.alwaysExecute = desc.stateOnly;
 
-        std::string passId = desc.id;
-        pass.execute = [this, passId](RenderGraphContext& ctx, FrameData*) {
+        const std::string passId = desc.id;
+        const bool isPresent = desc.present;
+        const bool isStateOnly = desc.stateOnly;
+        const bool writesDepth = desc.writesDepth;
+        const bool depthTest = desc.depthTest;
+        const auto shouldExecute = desc.shouldExecute;
+
+        pass.setup = [handles, isPresent, isStateOnly, writesDepth, depthTest](RenderGraphIO& io, FrameData*) -> std::any {
+            if (!isPresent && !isStateOnly) {
+                io.writeTex(handles->color);
+                if (writesDepth) io.writeTex(handles->depth);
+                else if (depthTest) io.readTex(handles->depth);
+            } else {
+                io.readTex(handles->color);
+            }
+            return std::any{};
+        };
+
+        pass.execute = [this, view, handles, passId, isPresent, isStateOnly, shouldExecute](RenderGraphContext& ctx, FrameData*, const std::any&) {
             if (!isPassEnabled(passId)) return;
-            execute(passId, nullptr);
-            (void)ctx;
+            if (shouldExecute && !shouldExecute()) return;
+
+            if (isPresent) {
+                CRTPipelineState crtState;
+                crtState.width = static_cast<i32>(view->offscreenCanvasSize.x);
+                crtState.height = static_cast<i32>(view->offscreenCanvasSize.y);
+                crtState.baseWidth = static_cast<i32>(view->viewportSize.x);
+                crtState.baseHeight = static_cast<i32>(view->viewportSize.y);
+                crtState.colorTex = ctx.getTexture(handles->color);
+
+                if (view->crt_postprocessing_enabled) {
+                    crtState.applyNoise = view->applyNoise;
+                    crtState.noiseIntensity = view->noiseIntensity;
+                    crtState.applyColorBleed = view->applyColorBleed;
+                    crtState.colorBleed = view->colorBleed;
+                    crtState.applyScanlines = view->applyScanlines;
+                    crtState.applyBlur = view->applyBlur;
+                    crtState.blurIntensity = view->blurIntensity;
+                    crtState.applyGlow = view->applyGlow;
+                    crtState.glowColor = view->glowColor;
+                    crtState.applyFringing = view->applyFringing;
+                    crtState.applyAperture = view->applyAperture;
+                } else {
+                    crtState.applyNoise = false;
+                    crtState.applyColorBleed = false;
+                    crtState.applyScanlines = false;
+                    crtState.applyBlur = false;
+                    crtState.applyGlow = false;
+                    crtState.applyFringing = false;
+                    crtState.applyAperture = false;
+                    crtState.noiseIntensity = view->noiseIntensity;
+                    crtState.colorBleed = view->colorBleed;
+                    crtState.blurIntensity = view->blurIntensity;
+                    crtState.glowColor = view->glowColor;
+                }
+
+                setState("crt", crtState);
+                execute(passId, nullptr);
+            } else if (isStateOnly) {
+                execute(passId, nullptr);
+            } else {
+                execute(passId, ctx.getFBO(handles->color, handles->depth));
+            }
         };
         rg->addPass(pass);
     }
