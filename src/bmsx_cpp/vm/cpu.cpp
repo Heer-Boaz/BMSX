@@ -1,4 +1,5 @@
 #include "cpu.h"
+#include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
@@ -100,11 +101,9 @@ void Table::ensureUppercaseIndex() const {
 		return;
 	}
 	m_uppercaseIndex.clear();
-	m_uppercaseIndex.reserve(m_map.size());
-	for (size_t i = 0; i < m_map.size(); ++i) {
-		if (auto* str = std::get_if<std::string>(&m_map[i].first)) {
-			m_uppercaseIndex[toUpperAscii(*str)] = i;
-		}
+	m_uppercaseIndex.reserve(m_stringMap.size());
+	for (const auto& entry : m_stringMap) {
+		m_uppercaseIndex[toUpperAscii(entry.first)] = entry.first;
 	}
 	m_uppercaseIndexValid = true;
 }
@@ -132,9 +131,28 @@ Value Table::get(const Value& key) const {
 		return std::monostate{};
 	}
 
-	auto mapIndex = findMapIndex(key);
-	if (mapIndex.has_value()) {
-		return m_map[*mapIndex].second;
+	if (auto* str = std::get_if<std::string>(&key)) {
+		if (s_caseInsensitiveKeys) {
+			ensureUppercaseIndex();
+			auto it = m_uppercaseIndex.find(toUpperAscii(*str));
+			if (it != m_uppercaseIndex.end()) {
+				auto mapIt = m_stringMap.find(it->second);
+				if (mapIt != m_stringMap.end()) {
+					return mapIt->second;
+				}
+			}
+			return std::monostate{};
+		}
+		auto mapIt = m_stringMap.find(*str);
+		if (mapIt != m_stringMap.end()) {
+			return mapIt->second;
+		}
+		return std::monostate{};
+	}
+
+	auto mapIt = m_otherMap.find(key);
+	if (mapIt != m_otherMap.end()) {
+		return mapIt->second;
 	}
 	return std::monostate{};
 }
@@ -151,25 +169,40 @@ void Table::set(const Value& key, const Value& value) {
 		}
 	}
 
-	auto mapIndex = findMapIndex(key);
-	if (isNil(value)) {
-		if (mapIndex.has_value()) {
-			const bool wasStringKey = std::holds_alternative<std::string>(m_map[*mapIndex].first);
-			m_map.erase(m_map.begin() + static_cast<std::ptrdiff_t>(*mapIndex));
-			if (wasStringKey) {
-				m_uppercaseIndexValid = false;
+	if (auto* str = std::get_if<std::string>(&key)) {
+		if (s_caseInsensitiveKeys) {
+			ensureUppercaseIndex();
+			const std::string upper = toUpperAscii(*str);
+			auto it = m_uppercaseIndex.find(upper);
+			if (isNil(value)) {
+				if (it != m_uppercaseIndex.end()) {
+					m_stringMap.erase(it->second);
+					m_uppercaseIndex.erase(it);
+				}
+				return;
 			}
+			if (it != m_uppercaseIndex.end()) {
+				m_stringMap[it->second] = value;
+				return;
+			}
+			m_stringMap[*str] = value;
+			m_uppercaseIndex.emplace(upper, *str);
+			return;
 		}
-		return;
-	}
-	if (mapIndex.has_value()) {
-		m_map[*mapIndex].second = value;
-		return;
-	}
-	m_map.emplace_back(key, value);
-	if (std::holds_alternative<std::string>(key)) {
+		if (isNil(value)) {
+			m_stringMap.erase(*str);
+			m_uppercaseIndexValid = false;
+			return;
+		}
+		m_stringMap[*str] = value;
 		m_uppercaseIndexValid = false;
+		return;
 	}
+	if (isNil(value)) {
+		m_otherMap.erase(key);
+		return;
+	}
+	m_otherMap[key] = value;
 }
 
 int Table::length() const {
@@ -186,7 +219,8 @@ int Table::length() const {
 
 void Table::clear() {
 	m_array.clear();
-	m_map.clear();
+	m_stringMap.clear();
+	m_otherMap.clear();
 	m_uppercaseIndex.clear();
 	m_uppercaseIndexValid = false;
 }
@@ -201,8 +235,11 @@ std::vector<std::pair<Value, Value>> Table::entries() const {
 		}
 	}
 
-	for (const auto& entry : m_map) {
-		result.push_back(entry);
+	for (const auto& entry : m_stringMap) {
+		result.emplace_back(entry.first, entry.second);
+	}
+	for (const auto& entry : m_otherMap) {
+		result.emplace_back(entry.first, entry.second);
 	}
 
 	return result;
@@ -215,8 +252,13 @@ std::optional<std::pair<Value, Value>> Table::nextEntry(const Value& after) cons
 				return std::make_pair(static_cast<double>(i + 1), m_array[i]);
 			}
 		}
-		if (!m_map.empty()) {
-			return m_map.front();
+		if (!m_stringMap.empty()) {
+			const auto& entry = *m_stringMap.begin();
+			return std::make_pair(Value{entry.first}, entry.second);
+		}
+		if (!m_otherMap.empty()) {
+			const auto& entry = *m_otherMap.begin();
+			return std::make_pair(entry.first, entry.second);
 		}
 		return std::nullopt;
 	}
@@ -227,39 +269,51 @@ std::optional<std::pair<Value, Value>> Table::nextEntry(const Value& after) cons
 				return std::make_pair(static_cast<double>(i + 1), m_array[static_cast<size_t>(i)]);
 			}
 		}
-		if (!m_map.empty()) {
-			return m_map.front();
+		if (!m_stringMap.empty()) {
+			const auto& entry = *m_stringMap.begin();
+			return std::make_pair(Value{entry.first}, entry.second);
+		}
+		if (!m_otherMap.empty()) {
+			const auto& entry = *m_otherMap.begin();
+			return std::make_pair(entry.first, entry.second);
+		}
+		return std::nullopt;
+	}
+	if (auto* str = std::get_if<std::string>(&after)) {
+		const std::string* match = str;
+		if (s_caseInsensitiveKeys) {
+			ensureUppercaseIndex();
+			auto it = m_uppercaseIndex.find(toUpperAscii(*str));
+			if (it == m_uppercaseIndex.end()) {
+				return std::nullopt;
+			}
+			match = &it->second;
+		}
+		bool seen = false;
+		for (const auto& entry : m_stringMap) {
+			if (!seen) {
+				if (entry.first == *match) {
+					seen = true;
+				}
+				continue;
+			}
+			return std::make_pair(Value{entry.first}, entry.second);
+		}
+		if (seen && !m_otherMap.empty()) {
+			const auto& entry = *m_otherMap.begin();
+			return std::make_pair(entry.first, entry.second);
 		}
 		return std::nullopt;
 	}
 	bool seen = false;
-	for (const auto& entry : m_map) {
+	for (const auto& entry : m_otherMap) {
 		if (!seen) {
 			if (entry.first == after) {
 				seen = true;
 			}
 			continue;
 		}
-		return entry;
-	}
-	return std::nullopt;
-}
-
-std::optional<size_t> Table::findMapIndex(const Value& key) const {
-	if (s_caseInsensitiveKeys) {
-		if (auto* str = std::get_if<std::string>(&key)) {
-			ensureUppercaseIndex();
-			auto it = m_uppercaseIndex.find(toUpperAscii(*str));
-			if (it != m_uppercaseIndex.end()) {
-				return it->second;
-			}
-			return std::nullopt;
-		}
-	}
-	for (size_t i = 0; i < m_map.size(); ++i) {
-		if (m_map[i].first == key) {
-			return i;
-		}
+		return std::make_pair(entry.first, entry.second);
 	}
 	return std::nullopt;
 }
@@ -267,6 +321,18 @@ std::optional<size_t> Table::findMapIndex(const Value& key) const {
 // =============================================================================
 // VMCPU implementation
 // =============================================================================
+
+namespace {
+const Value kNilValue{std::monostate{}};
+
+inline size_t registerBucket(size_t size) {
+	size_t bucket = 8;
+	while (bucket < size) {
+		bucket <<= 1;
+	}
+	return bucket;
+}
+}
 
 VMCPU::VMCPU(std::vector<Value>& memory)
 	: globals(0, 0)
@@ -387,7 +453,7 @@ void VMCPU::executeInstruction(CallFrame& frame, uint32_t instr) {
 
 		case OpCode::LOADNIL:
 			for (int i = 0; i < b; ++i) {
-				setRegister(frame, a + i, std::monostate{});
+				setRegister(frame, a + i, kNilValue);
 			}
 			return;
 
@@ -412,7 +478,7 @@ void VMCPU::executeInstruction(CallFrame& frame, uint32_t instr) {
 
 		case OpCode::GETT: {
 			const Value& table = frame.registers[b];
-			Value key = readRK(frame, c);
+			const Value& key = readRK(frame, c);
 			if (auto tbl = std::get_if<std::shared_ptr<Table>>(&table)) {
 				setRegister(frame, a, resolveTableIndex(*tbl, key));
 				return;
@@ -433,8 +499,8 @@ void VMCPU::executeInstruction(CallFrame& frame, uint32_t instr) {
 
 		case OpCode::SETT: {
 			const Value& table = frame.registers[a];
-			Value key = readRK(frame, b);
-			Value value = readRK(frame, c);
+			const Value& key = readRK(frame, b);
+			const Value& value = readRK(frame, c);
 			if (auto tbl = std::get_if<std::shared_ptr<Table>>(&table)) {
 				(*tbl)->set(key, value);
 				return;
@@ -614,8 +680,8 @@ void VMCPU::executeInstruction(CallFrame& frame, uint32_t instr) {
 		}
 
 		case OpCode::EQ: {
-			Value left = readRK(frame, b);
-			Value right = readRK(frame, c);
+			const Value& left = readRK(frame, b);
+			const Value& right = readRK(frame, c);
 			bool eq = (left == right);
 			if (eq != (a != 0)) {
 				frame.pc += 1;
@@ -624,8 +690,8 @@ void VMCPU::executeInstruction(CallFrame& frame, uint32_t instr) {
 		}
 
 		case OpCode::LT: {
-			Value leftValue = readRK(frame, b);
-			Value rightValue = readRK(frame, c);
+			const Value& leftValue = readRK(frame, b);
+			const Value& rightValue = readRK(frame, c);
 			bool ok = false;
 			if (std::holds_alternative<std::string>(leftValue) && std::holds_alternative<std::string>(rightValue)) {
 				ok = std::get<std::string>(leftValue) < std::get<std::string>(rightValue);
@@ -661,8 +727,8 @@ void VMCPU::executeInstruction(CallFrame& frame, uint32_t instr) {
 		}
 
 		case OpCode::LE: {
-			Value leftValue = readRK(frame, b);
-			Value rightValue = readRK(frame, c);
+			const Value& leftValue = readRK(frame, b);
+			const Value& rightValue = readRK(frame, c);
 			bool ok = false;
 			if (std::holds_alternative<std::string>(leftValue) && std::holds_alternative<std::string>(rightValue)) {
 				ok = std::get<std::string>(leftValue) <= std::get<std::string>(rightValue);
@@ -737,8 +803,9 @@ void VMCPU::executeInstruction(CallFrame& frame, uint32_t instr) {
 
 		case OpCode::VARARG: {
 			int count = (b == 0) ? static_cast<int>(frame.varargs.size()) : b;
+			const size_t varargCount = frame.varargs.size();
 			for (int i = 0; i < count; ++i) {
-				Value val = (i < static_cast<int>(frame.varargs.size())) ? frame.varargs[i] : Value{std::monostate{}};
+				const Value& val = (i < static_cast<int>(varargCount)) ? frame.varargs[static_cast<size_t>(i)] : kNilValue;
 				setRegister(frame, a + i, val);
 			}
 			return;
@@ -747,16 +814,16 @@ void VMCPU::executeInstruction(CallFrame& frame, uint32_t instr) {
 		case OpCode::CALL: {
 			const Value& callee = frame.registers[a];
 			int argCount = (b == 0) ? std::max(frame.top - a - 1, 0) : b;
-			m_valueScratch.clear();
-			for (int i = 0; i < argCount; ++i) {
-				m_valueScratch.push_back(frame.registers[a + 1 + i]);
-			}
 			if (isNil(callee)) {
 				throw std::runtime_error("Attempted to call a nil value.");
 			}
 			if (auto nfn = std::get_if<std::shared_ptr<NativeFunction>>(&callee)) {
 				if (!*nfn) {
 					throw std::runtime_error("Attempted to call a nil value.");
+				}
+				m_valueScratch.clear();
+				for (int i = 0; i < argCount; ++i) {
+					m_valueScratch.push_back(frame.registers[a + 1 + i]);
 				}
 				std::vector<Value> results = (*nfn)->invoke(m_valueScratch);
 				writeReturnValues(frame, a, c, results);
@@ -766,7 +833,8 @@ void VMCPU::executeInstruction(CallFrame& frame, uint32_t instr) {
 				if (!*cls) {
 					throw std::runtime_error("Attempted to call a nil value.");
 				}
-				pushFrame(*cls, m_valueScratch, a, c, false, frame.pc - 1);
+				const Value* argsBase = frame.registers.data() + a + 1;
+				pushFrame(*cls, argsBase, static_cast<size_t>(argCount), a, c, false, frame.pc - 1);
 				return;
 			}
 			std::string message = "Attempted to call a non-function value.";
@@ -822,14 +890,13 @@ void VMCPU::executeInstruction(CallFrame& frame, uint32_t instr) {
 	}
 }
 
-void VMCPU::pushFrame(std::shared_ptr<Closure> closure, const std::vector<Value>& args,
+void VMCPU::pushFrame(std::shared_ptr<Closure> closure, const Value* args, size_t argCount,
                       int returnBase, int returnCount, bool captureReturns, int callSitePc) {
 	const Proto& proto = m_program->protos[closure->protoIndex];
 	auto frame = acquireFrame();
 	frame->protoIndex = closure->protoIndex;
 	frame->pc = proto.entryPC;
-	frame->registers.resize(proto.maxStack);
-	std::fill(frame->registers.begin(), frame->registers.end(), std::monostate{});
+	frame->registers = acquireRegisters(static_cast<size_t>(proto.maxStack));
 	frame->closure = closure;
 	frame->returnBase = returnBase;
 	frame->returnCount = returnCount;
@@ -842,18 +909,24 @@ void VMCPU::pushFrame(std::shared_ptr<Closure> closure, const std::vector<Value>
 	// Copy args into registers
 	size_t argIndex = 0;
 	for (int i = 0; i < proto.numParams; ++i) {
-		frame->registers[i] = (argIndex < args.size()) ? args[argIndex] : Value{std::monostate{}};
+		frame->registers[i] = (argIndex < argCount) ? args[argIndex] : kNilValue;
 		++argIndex;
 	}
 
 	// Handle varargs
 	if (proto.isVararg) {
-		for (size_t i = argIndex; i < args.size(); ++i) {
+		for (size_t i = argIndex; i < argCount; ++i) {
 			frame->varargs.push_back(args[i]);
 		}
 	}
 
 	m_frames.push_back(std::move(frame));
+}
+
+void VMCPU::pushFrame(std::shared_ptr<Closure> closure, const std::vector<Value>& args,
+                      int returnBase, int returnCount, bool captureReturns, int callSitePc) {
+	const Value* data = args.empty() ? nullptr : args.data();
+	pushFrame(closure, data, args.size(), returnBase, returnCount, captureReturns, callSitePc);
 }
 
 std::shared_ptr<Closure> VMCPU::createClosure(CallFrame& frame, int protoIndex) {
@@ -893,7 +966,7 @@ void VMCPU::closeUpvalues(CallFrame& frame) {
 	frame.openUpvalues.clear();
 }
 
-Value VMCPU::readUpvalue(const std::shared_ptr<Upvalue>& upvalue) {
+const Value& VMCPU::readUpvalue(const std::shared_ptr<Upvalue>& upvalue) {
 	if (upvalue->open) {
 		return upvalue->frame->registers[upvalue->index];
 	}
@@ -937,15 +1010,12 @@ void VMCPU::writeReturnValues(CallFrame& frame, int base, int count, const std::
 		return;
 	}
 	for (int i = 0; i < count; ++i) {
-		Value val = (i < static_cast<int>(values.size())) ? values[i] : Value{std::monostate{}};
+		const Value& val = (i < static_cast<int>(values.size())) ? values[static_cast<size_t>(i)] : kNilValue;
 		setRegister(frame, base + i, val);
 	}
 }
 
 void VMCPU::setRegister(CallFrame& frame, int index, const Value& value) {
-	if (index >= static_cast<int>(frame.registers.size())) {
-		frame.registers.resize(static_cast<size_t>(index) + 1);
-	}
 	frame.registers[index] = value;
 	int nextTop = index + 1;
 	if (nextTop > frame.top) {
@@ -953,7 +1023,7 @@ void VMCPU::setRegister(CallFrame& frame, int index, const Value& value) {
 	}
 }
 
-Value VMCPU::readRK(CallFrame& frame, int operand) {
+const Value& VMCPU::readRK(CallFrame& frame, int operand) {
 	if ((operand & 0x80) != 0) {
 		int index = operand & 0x7F;
 		return m_program->constPool[index];
@@ -971,13 +1041,50 @@ std::unique_ptr<CallFrame> VMCPU::acquireFrame() {
 }
 
 void VMCPU::releaseFrame(std::unique_ptr<CallFrame> frame) {
-	frame->registers.clear();
+	releaseRegisters(std::move(frame->registers));
+	frame->registers = {};
 	frame->varargs.clear();
 	frame->openUpvalues.clear();
 	frame->closure.reset();
 
 	if (m_framePool.size() < MAX_POOLED_FRAMES) {
 		m_framePool.push_back(std::move(frame));
+	}
+}
+
+std::vector<Value> VMCPU::acquireRegisters(size_t size) {
+	size_t bucket = registerBucket(size);
+	if (bucket > MAX_REGISTER_ARRAY_SIZE) {
+		std::vector<Value> regs(size);
+		return regs;
+	}
+	auto& pool = m_registerPool[bucket];
+	if (!pool.empty()) {
+		std::vector<Value> regs = std::move(pool.back());
+		pool.pop_back();
+		std::fill_n(regs.begin(), size, std::monostate{});
+		return regs;
+	}
+	std::vector<Value> regs(bucket);
+	std::fill_n(regs.begin(), size, std::monostate{});
+	return regs;
+}
+
+void VMCPU::releaseRegisters(std::vector<Value>&& regs) {
+	const size_t size = regs.size();
+	if (size == 0) {
+		return;
+	}
+	const size_t bucket = registerBucket(size);
+	if (bucket == 0 || bucket > MAX_REGISTER_ARRAY_SIZE) {
+		return;
+	}
+	if (regs.size() != bucket) {
+		regs.resize(bucket);
+	}
+	auto& pool = m_registerPool[bucket];
+	if (pool.size() < MAX_POOLED_REGISTER_ARRAYS) {
+		pool.push_back(std::move(regs));
 	}
 }
 

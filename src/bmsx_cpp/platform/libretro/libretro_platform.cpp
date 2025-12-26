@@ -11,6 +11,7 @@
 #include "../../render/renderpasslib.h"
 #include "../../render/sprites_pipeline_gles2.h"
 #include "../../render/crt_pipeline_gles2.h"
+#include <chrono>
 #include <cstring>
 #include <cstdarg>
 #include <fstream>
@@ -20,6 +21,7 @@
 namespace bmsx {
 namespace {
 constexpr double kAudioLeadFrames = 8.0;
+constexpr double kFrameSpikeMultiplier = 1.2;
 }
 
 /* ============================================================================
@@ -130,6 +132,10 @@ void LibretroPlatform::setAVInfo(const retro_system_av_info& info) {
         info.timing.fps,
         info.timing.sample_rate
     );
+    log(RETRO_LOG_INFO, "[BMSX] Frame time set: %.3fms (fps %.2f)\n",
+        m_frame_time_sec * 1000.0,
+        info.timing.fps
+    );
 
     auto* view = m_engine->view();
     Vec2 renderTargetSize{
@@ -146,7 +152,17 @@ void LibretroPlatform::setAVInfo(const retro_system_av_info& info) {
 }
 
 void LibretroPlatform::setFrameTimeUsec(retro_usec_t usec) {
-    m_frame_time_sec = static_cast<double>(usec) / 1000000.0;
+    const double nextFrameTimeSec = static_cast<double>(usec) / 1000000.0;
+    static double lastLoggedFrameTimeSec = -1.0;
+    m_frame_time_sec = nextFrameTimeSec;
+    if (nextFrameTimeSec != lastLoggedFrameTimeSec) {
+        log(RETRO_LOG_INFO, "[BMSX] Frame time override: %llu usec -> %.3fms (fps %.2f)\n",
+            static_cast<unsigned long long>(usec),
+            nextFrameTimeSec * 1000.0,
+            1.0 / nextFrameTimeSec
+        );
+        lastLoggedFrameTimeSec = nextFrameTimeSec;
+    }
     if (auto* audioService = dynamic_cast<LibretroAudioService*>(m_audio_service.get())) {
         audioService->setFrameTimeSec(m_frame_time_sec);
     }
@@ -319,11 +335,15 @@ void LibretroPlatform::reset() {
 void LibretroPlatform::runFrame() {
     if (!m_rom_loaded || !m_engine) return;
 
+    const auto frameStart = std::chrono::steady_clock::now();
+
     // Clear audio buffer
     m_audio_buffer.clear();
 
     // Poll input
+    const auto pollStart = std::chrono::steady_clock::now();
     pollInput();
+    const auto pollEnd = std::chrono::steady_clock::now();
 
     // Advance clock
     if (auto* clock = dynamic_cast<LibretroClock*>(m_clock.get())) {
@@ -339,13 +359,68 @@ void LibretroPlatform::runFrame() {
     }
 
     // Update game logic
+    const auto tickStart = std::chrono::steady_clock::now();
     m_engine->tick(dt);
+    const auto tickEnd = std::chrono::steady_clock::now();
 
     // Render
+    const auto renderStart = std::chrono::steady_clock::now();
     m_engine->render();
+    const auto renderEnd = std::chrono::steady_clock::now();
 
     // Collect audio
+    const auto audioStart = std::chrono::steady_clock::now();
     processAudio();
+    const auto audioEnd = std::chrono::steady_clock::now();
+
+    const auto frameEnd = std::chrono::steady_clock::now();
+
+    const double budgetMs = m_frame_time_sec * 1000.0;
+    const double pollMs = std::chrono::duration<double, std::milli>(pollEnd - pollStart).count();
+    const double tickMs = std::chrono::duration<double, std::milli>(tickEnd - tickStart).count();
+    const double renderMs = std::chrono::duration<double, std::milli>(renderEnd - renderStart).count();
+    const double audioMs = std::chrono::duration<double, std::milli>(audioEnd - audioStart).count();
+    const double totalMs = std::chrono::duration<double, std::milli>(frameEnd - frameStart).count();
+    const auto& tickTiming = m_engine->lastTickTiming();
+    const auto& renderTiming = m_engine->lastRenderTiming();
+
+    if (totalMs > budgetMs * kFrameSpikeMultiplier) {
+        const char* slowest = "poll";
+        double slowestMs = pollMs;
+        if (tickMs > slowestMs) { slowest = "tick"; slowestMs = tickMs; }
+        if (renderMs > slowestMs) { slowest = "render"; slowestMs = renderMs; }
+        if (audioMs > slowestMs) { slowest = "audio"; slowestMs = audioMs; }
+        log(RETRO_LOG_WARN,
+            "[BMSX] frame spike %.2fms (budget %.2f) poll=%.2f tick=%.2f render=%.2f audio=%.2f slowest=%s %.2fms\n",
+            totalMs,
+            budgetMs,
+            pollMs,
+            tickMs,
+            renderMs,
+            audioMs,
+            slowest,
+            slowestMs);
+        log(RETRO_LOG_WARN,
+            "[BMSX] tick ms total=%.2f input=%.2f ide_in=%.2f term_in=%.2f update=%.2f ide=%.2f term=%.2f micro=%.2f\n",
+            tickTiming.totalMs,
+            tickTiming.inputMs,
+            tickTiming.vmIdeInputMs,
+            tickTiming.vmTerminalInputMs,
+            tickTiming.vmUpdateMs,
+            tickTiming.vmIdeMs,
+            tickTiming.vmTerminalMs,
+            tickTiming.microtaskMs);
+        log(RETRO_LOG_WARN,
+            "[BMSX] render ms total=%.2f begin=%.2f test=%.2f vm_draw=%.2f vm_ide=%.2f vm_term=%.2f draw=%.2f end=%.2f\n",
+            renderTiming.totalMs,
+            renderTiming.beginFrameMs,
+            renderTiming.testPatternMs,
+            renderTiming.vmDrawMs,
+            renderTiming.vmIdeDrawMs,
+            renderTiming.vmTerminalDrawMs,
+            renderTiming.drawGameMs,
+            renderTiming.endFrameMs);
+    }
 }
 
 void LibretroPlatform::pollInput() {

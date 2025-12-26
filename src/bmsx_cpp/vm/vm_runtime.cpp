@@ -6,10 +6,12 @@
 #include "../input/input.h"
 #include <array>
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cctype>
 #include <ctime>
 #include <cstdlib>
+#include <cstdio>
 #include <iomanip>
 #include <iostream>
 #include <limits>
@@ -18,6 +20,11 @@
 #include <stdexcept>
 
 namespace bmsx {
+namespace {
+inline double to_ms(std::chrono::steady_clock::duration duration) {
+	return std::chrono::duration<double, std::milli>(duration).count();
+}
+}
 
 // Button actions for standard gamepad/keyboard mapping
 const std::vector<std::string> VM_BUTTON_ACTIONS = {
@@ -1965,8 +1972,12 @@ void VMRuntime::setupBuiltins() {
 	auto clockNowFn = createNativeFunction("platform.clock.now", [](const std::vector<Value>&) -> std::vector<Value> {
 		return {EngineCore::instance().clock()->now()};
 	});
-	auto clockTable = std::make_shared<Table>(0, 1);
+	auto clockPerfNowFn = createNativeFunction("platform.clock.perf_now", [](const std::vector<Value>&) -> std::vector<Value> {
+		return {to_ms(std::chrono::steady_clock::now().time_since_epoch())};
+	});
+	auto clockTable = std::make_shared<Table>(0, 2);
 	clockTable->set(std::string("now"), clockNowFn);
+	clockTable->set(std::string("perf_now"), clockPerfNowFn);
 	auto platformTable = std::make_shared<Table>(0, 1);
 	platformTable->set(std::string("clock"), clockTable);
 
@@ -2174,14 +2185,25 @@ void VMRuntime::executeUpdateCallback(double deltaSeconds) {
 		return;
 	}
 
+	const auto updateStart = std::chrono::steady_clock::now();
+	double vmRunMs = 0.0;
+	double engineMs = 0.0;
+	double ioMs = 0.0;
+
 	try {
 		if (m_updateFn) {
 			if (m_pendingVmCall == PendingCall::None) {
 				m_cpu.call(*m_updateFn, {deltaSeconds}, 0);
 				m_pendingVmCall = PendingCall::Update;
 			}
+			const auto vmStart = std::chrono::steady_clock::now();
 			RunResult result = m_cpu.run(UPDATE_STATEMENT_BUDGET);
+			const auto vmEnd = std::chrono::steady_clock::now();
+			vmRunMs += to_ms(vmEnd - vmStart);
+			const auto ioStart = std::chrono::steady_clock::now();
 			processIOCommands();
+			const auto ioEnd = std::chrono::steady_clock::now();
+			ioMs += to_ms(ioEnd - ioStart);
 			if (result == RunResult::Halted) {
 				m_pendingVmCall = PendingCall::None;
 				shouldRunEngineUpdate = true;
@@ -2189,8 +2211,61 @@ void VMRuntime::executeUpdateCallback(double deltaSeconds) {
 		}
 		if (shouldRunEngineUpdate) {
 			const double deltaMs = deltaSeconds * 1000.0;
+			const auto engineStart = std::chrono::steady_clock::now();
 			callEngineModuleMember("update", {deltaMs});
+			const auto engineEnd = std::chrono::steady_clock::now();
+			engineMs += to_ms(engineEnd - engineStart);
+			const auto ioStart = std::chrono::steady_clock::now();
 			processIOCommands();
+			const auto ioEnd = std::chrono::steady_clock::now();
+			ioMs += to_ms(ioEnd - ioStart);
+		}
+		const double totalMs = to_ms(std::chrono::steady_clock::now() - updateStart);
+		static double accSimSec = 0.0;
+		static double accTotalMs = 0.0;
+		static double accVmMs = 0.0;
+		static double accEngineMs = 0.0;
+		static double accIoMs = 0.0;
+		static double maxTotalMs = 0.0;
+		static double maxVmMs = 0.0;
+		static double maxEngineMs = 0.0;
+		static double maxIoMs = 0.0;
+		static uint64_t accFrames = 0;
+
+		accSimSec += deltaSeconds;
+		accTotalMs += totalMs;
+		accVmMs += vmRunMs;
+		accEngineMs += engineMs;
+		accIoMs += ioMs;
+		if (totalMs > maxTotalMs) maxTotalMs = totalMs;
+		if (vmRunMs > maxVmMs) maxVmMs = vmRunMs;
+		if (engineMs > maxEngineMs) maxEngineMs = engineMs;
+		if (ioMs > maxIoMs) maxIoMs = ioMs;
+		accFrames += 1;
+
+		if (accSimSec >= 1.0) {
+			const double invFrames = 1.0 / static_cast<double>(accFrames);
+			std::fprintf(stderr,
+				"[VMRuntime] update perf avg total=%.2f vm=%.2f engine=%.2f io=%.2f max_total=%.2f max_vm=%.2f max_engine=%.2f max_io=%.2f frames=%llu\n",
+				accTotalMs * invFrames,
+				accVmMs * invFrames,
+				accEngineMs * invFrames,
+				accIoMs * invFrames,
+				maxTotalMs,
+				maxVmMs,
+				maxEngineMs,
+				maxIoMs,
+				static_cast<unsigned long long>(accFrames));
+			accSimSec = 0.0;
+			accTotalMs = 0.0;
+			accVmMs = 0.0;
+			accEngineMs = 0.0;
+			accIoMs = 0.0;
+			maxTotalMs = 0.0;
+			maxVmMs = 0.0;
+			maxEngineMs = 0.0;
+			maxIoMs = 0.0;
+			accFrames = 0;
 		}
 		if (s_updateLogRemaining > 0) {
 			const char* pendingLabel = m_pendingVmCall == PendingCall::None
@@ -2214,22 +2289,87 @@ void VMRuntime::executeDrawCallback() {
 		return;
 	}
 
+	const auto drawStart = std::chrono::steady_clock::now();
+	double vmRunMs = 0.0;
+	double engineMs = 0.0;
+	double ioMs = 0.0;
+
 	try {
 		if (m_drawFn) {
 			if (m_pendingVmCall == PendingCall::None) {
 				m_cpu.call(*m_drawFn, {}, 0);
 				m_pendingVmCall = PendingCall::Draw;
 			}
+			const auto vmStart = std::chrono::steady_clock::now();
 			RunResult result = m_cpu.run(UPDATE_STATEMENT_BUDGET);
+			const auto vmEnd = std::chrono::steady_clock::now();
+			vmRunMs += to_ms(vmEnd - vmStart);
+			const auto ioStart = std::chrono::steady_clock::now();
 			processIOCommands();
+			const auto ioEnd = std::chrono::steady_clock::now();
+			ioMs += to_ms(ioEnd - ioStart);
 			if (result == RunResult::Halted) {
 				m_pendingVmCall = PendingCall::None;
 				shouldRunEngineDraw = true;
 			}
 		}
 		if (shouldRunEngineDraw) {
+			const auto engineStart = std::chrono::steady_clock::now();
 			callEngineModuleMember("draw", {});
+			const auto engineEnd = std::chrono::steady_clock::now();
+			engineMs += to_ms(engineEnd - engineStart);
+			const auto ioStart = std::chrono::steady_clock::now();
 			processIOCommands();
+			const auto ioEnd = std::chrono::steady_clock::now();
+			ioMs += to_ms(ioEnd - ioStart);
+		}
+		const double totalMs = to_ms(std::chrono::steady_clock::now() - drawStart);
+		static double accSimSec = 0.0;
+		static double accTotalMs = 0.0;
+		static double accVmMs = 0.0;
+		static double accEngineMs = 0.0;
+		static double accIoMs = 0.0;
+		static double maxTotalMs = 0.0;
+		static double maxVmMs = 0.0;
+		static double maxEngineMs = 0.0;
+		static double maxIoMs = 0.0;
+		static uint64_t accFrames = 0;
+
+		const double deltaSeconds = static_cast<double>(m_frameState.deltaSeconds);
+		accSimSec += deltaSeconds;
+		accTotalMs += totalMs;
+		accVmMs += vmRunMs;
+		accEngineMs += engineMs;
+		accIoMs += ioMs;
+		if (totalMs > maxTotalMs) maxTotalMs = totalMs;
+		if (vmRunMs > maxVmMs) maxVmMs = vmRunMs;
+		if (engineMs > maxEngineMs) maxEngineMs = engineMs;
+		if (ioMs > maxIoMs) maxIoMs = ioMs;
+		accFrames += 1;
+
+		if (accSimSec >= 1.0) {
+			const double invFrames = 1.0 / static_cast<double>(accFrames);
+			std::fprintf(stderr,
+				"[VMRuntime] draw perf avg total=%.2f vm=%.2f engine=%.2f io=%.2f max_total=%.2f max_vm=%.2f max_engine=%.2f max_io=%.2f frames=%llu\n",
+				accTotalMs * invFrames,
+				accVmMs * invFrames,
+				accEngineMs * invFrames,
+				accIoMs * invFrames,
+				maxTotalMs,
+				maxVmMs,
+				maxEngineMs,
+				maxIoMs,
+				static_cast<unsigned long long>(accFrames));
+			accSimSec = 0.0;
+			accTotalMs = 0.0;
+			accVmMs = 0.0;
+			accEngineMs = 0.0;
+			accIoMs = 0.0;
+			maxTotalMs = 0.0;
+			maxVmMs = 0.0;
+			maxEngineMs = 0.0;
+			maxIoMs = 0.0;
+			accFrames = 0;
 		}
 		if (s_drawLogRemaining > 0) {
 			const char* pendingLabel = m_pendingVmCall == PendingCall::None

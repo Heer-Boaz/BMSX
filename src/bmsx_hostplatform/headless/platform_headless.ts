@@ -59,6 +59,11 @@ class HeadlessClock implements Clock {
 	now(): MonoTime {
 		return performance.now() - this.origin;
 	}
+
+	perf_now(): MonoTime {
+		return this.now();
+	}
+
 	dateNow(): number {
 		return Date.now();
 	}

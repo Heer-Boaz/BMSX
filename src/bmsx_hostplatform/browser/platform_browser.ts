@@ -104,6 +104,10 @@ class BrowserClock implements Clock {
 		return performance.now();
 	}
 
+	perf_now(): number {
+		return this.now();
+	}
+
 	dateNow(): number {
 		return Date.now();
 	}

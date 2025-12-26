@@ -70,6 +70,7 @@ struct TimerHandle {
 
 struct Clock {
 	virtual MonoTime now() = 0;
+	virtual MonoTime perf_now() = 0;
 	virtual double dateNow() = 0;
 	virtual std::unique_ptr<TimerHandle> scheduleOnce(double delayMs, std::function<void(MonoTime)> cb) = 0;
 	virtual ~Clock() = default;

@@ -86,9 +86,9 @@ function ecsystemmanager:update_until(world, max_group)
 	for i = 1, #self.systems do
 		local s = self.systems[i]
 		if s.group <= max_group then
-			local t0 = $.platform.clock.now()
+			local t0 = $.platform.clock.perf_now()
 			s:update(world)
-			local t1 = $.platform.clock.now()
+			local t1 = $.platform.clock.perf_now()
 			self:record_stat(s, t0, t1)
 		end
 	end
@@ -98,9 +98,9 @@ function ecsystemmanager:update_from(world, min_group)
 	for i = 1, #self.systems do
 		local s = self.systems[i]
 		if s.group >= min_group then
-			local t0 = $.platform.clock.now()
+			local t0 = $.platform.clock.perf_now()
 			s:update(world)
-			local t1 = $.platform.clock.now()
+			local t1 = $.platform.clock.perf_now()
 			self:record_stat(s, t0, t1)
 		end
 	end
@@ -110,9 +110,9 @@ function ecsystemmanager:update_phase(world, group)
 	for i = 1, #self.systems do
 		local s = self.systems[i]
 		if s.group == group then
-			local t0 = $.platform.clock.now()
+			local t0 = $.platform.clock.perf_now()
 			s:update(world)
-			local t1 = $.platform.clock.now()
+			local t1 = $.platform.clock.perf_now()
 			self:record_stat(s, t0, t1)
 		end
 	end
@@ -123,9 +123,9 @@ function ecsystemmanager:run_paused(world)
 	for i = 1, #self.systems do
 		local s = self.systems[i]
 		if s.runs_while_paused then
-			local t0 = $.platform.clock.now()
+			local t0 = $.platform.clock.perf_now()
 			s:update(world)
-			local t1 = $.platform.clock.now()
+			local t1 = $.platform.clock.perf_now()
 			self:record_stat(s, t0, t1)
 		end
 	end

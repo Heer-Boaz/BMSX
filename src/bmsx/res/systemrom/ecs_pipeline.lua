@@ -31,7 +31,7 @@ function ecspipelineregistry:get(id)
 end
 
 function ecspipelineregistry:build(world, nodes)
-	local t0 = $.platform.clock.now()
+local t0 = $.platform.clock.perf_now()
 	local filtered = {}
 	for i = 1, #nodes do
 		local n = nodes[i]
@@ -86,7 +86,7 @@ function ecspipelineregistry:build(world, nodes)
 		world.systems:register(systems[i])
 	end
 
-	local t1 = $.platform.clock.now()
+local t1 = $.platform.clock.perf_now()
 	local diag = {
 		final_order = (function()
 			local out = {}

@@ -343,6 +343,22 @@ class FunctionBuilder {
 		return reg;
 	}
 
+	private reserveTempRange(base: number, count: number): void {
+		const end = base + count;
+		if (end > this.tempTop) {
+			this.tempTop = end;
+		}
+		if (end > this.maxStack) {
+			this.maxStack = end;
+		}
+	}
+
+	private ensureMaxStack(end: number): void {
+		if (end > this.maxStack) {
+			this.maxStack = end;
+		}
+	}
+
 	private withRange(range: LuaSourceRange, fn: () => void): void {
 		const previous = this.currentRange;
 		this.currentRange = range;
@@ -473,12 +489,14 @@ class FunctionBuilder {
 			const lastExpr = values[lastIndex];
 			const lastReg = this.allocTemp();
 			const wantsMulti = remaining > 1 && this.isMultiReturnExpression(lastExpr);
+			const resultCount = wantsMulti ? remaining : 1;
 			const lastHint = lastExpr.kind === LuaSyntaxKind.FunctionExpression && lastIndex < names.length
 				? this.createLocalFunctionHint(names[lastIndex].name)
 				: null;
-			this.compileExpressionInto(lastExpr, lastReg, wantsMulti ? 0 : 1, lastHint);
+			this.compileExpressionInto(lastExpr, lastReg, resultCount, lastHint);
 			valueRegs.push(lastReg);
 			if (wantsMulti) {
+				this.reserveTempRange(lastReg, remaining);
 				for (let i = 1; i < remaining; i += 1) {
 					valueRegs.push(lastReg + i);
 				}
@@ -569,11 +587,13 @@ class FunctionBuilder {
 		const lastExpr = expressions[lastIndex];
 		const baseReg = this.allocTemp();
 		const wantsMulti = remaining > 1 && this.isMultiReturnExpression(lastExpr);
+		const resultCount = wantsMulti ? remaining : 1;
 		const lastPath = targetPaths[lastIndex];
 		const lastHint = lastExpr.kind === LuaSyntaxKind.FunctionExpression && lastPath ? buildAssignmentHint(lastPath) : null;
-		this.compileExpressionInto(lastExpr, baseReg, wantsMulti ? 0 : 1, lastHint);
+		this.compileExpressionInto(lastExpr, baseReg, resultCount, lastHint);
 		values.push(baseReg);
 		if (wantsMulti) {
+			this.reserveTempRange(baseReg, remaining);
 			for (let i = 1; i < remaining; i += 1) {
 				values.push(baseReg + i);
 			}
@@ -655,6 +675,7 @@ class FunctionBuilder {
 			this.emitABC(OpCode.RET, base, wantsMulti ? 0 : 1, 0);
 			return;
 		}
+		this.reserveTempRange(base, expressions.length);
 		for (let i = 0; i < expressions.length; i += 1) {
 			this.compileExpressionInto(expressions[i], base + i, 1);
 		}
@@ -1231,6 +1252,10 @@ class FunctionBuilder {
 			}
 		}
 		const argBase = callBase + (hasMethod ? 2 : 1);
+		const callSlotCount = fixedArgCount + (hasMethod ? 2 : 1) + (hasVarArg ? 1 : 0);
+		const resultSlots = resultCount > 0 ? resultCount : 0;
+		const requiredSlots = Math.max(callSlotCount, resultSlots);
+		this.ensureMaxStack(callBase + requiredSlots);
 		for (let i = 0; i < fixedArgCount; i += 1) {
 			const argReg = this.allocTemp();
 			this.compileExpressionInto(expression.arguments[i], argReg, 1);

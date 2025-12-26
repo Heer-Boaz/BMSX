@@ -6,7 +6,9 @@
 #include "../core/engine.h"
 #include "../vm/cpu.h"
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <memory>
 #include <stdexcept>
 
@@ -338,14 +340,20 @@ void SoundMaster::renderSamples(i16* output, size_t frameCount, i32 outputSample
 	}
 	std::fill(m_mixBuffer.begin(), m_mixBuffer.begin() + totalSamples, 0.0f);
 
-	const f64 dt = outputSampleRate > 0 ? static_cast<f64>(frameCount) / outputSampleRate : 0.0;
+	const auto mixStart = std::chrono::steady_clock::now();
+	const f64 invOutputRate = 1.0 / static_cast<f64>(outputSampleRate);
+	const f64 dt = static_cast<f64>(frameCount) * invOutputRate;
 	processPendingTransitions(dt);
+
+	const f32 sampleScale = 1.0f / 32768.0f;
+	f32* mix = m_mixBuffer.data();
 
 	for (size_t typeIdx = 0; typeIdx < m_voicesByType.size(); ++typeIdx) {
 		auto& pool = m_voicesByType[typeIdx];
 		for (size_t i = 0; i < pool.size();) {
 			VoiceRecord& record = pool[i];
 			const AudioAsset& asset = *record.asset;
+			const int channels = asset.channels;
 			const size_t framesInAsset = asset.samples.size() / asset.channels;
 			if (framesInAsset == 0) {
 				removeVoice(static_cast<AudioType>(typeIdx), i);
@@ -355,81 +363,270 @@ void SoundMaster::renderSamples(i16* output, size_t frameCount, i32 outputSample
 			const f64 loopStart = record.meta.loopStart.has_value() ? record.meta.loopStart.value() * asset.sampleRate : 0.0;
 			const f64 loopEnd = record.meta.loopEnd.has_value() ? record.meta.loopEnd.value() * asset.sampleRate : static_cast<f64>(framesInAsset);
 			const bool hasLoop = record.meta.loopStart.has_value() && loopEnd > loopStart;
+			const f64 loopLen = loopEnd - loopStart;
 
-			const f64 step = record.step * (static_cast<f64>(asset.sampleRate) / outputSampleRate);
+			const f64 step = record.step * (static_cast<f64>(asset.sampleRate) * invOutputRate);
 
-			f64 gain = record.gain;
-			f64 target = record.targetGain;
+			f64 position = record.position;
+			f32 gain = record.gain;
+			const f32 target = record.targetGain;
 			f64 rampRemaining = record.gainRampRemaining;
+			f64 stopAfter = record.stopAfter;
 			f64 gainStep = 0.0;
 			if (rampRemaining > 0.0) {
-				const f64 rampFrames = rampRemaining * outputSampleRate;
-				gainStep = rampFrames > 0 ? (target - gain) / rampFrames : 0.0;
+				const f64 rampFrames = rampRemaining * static_cast<f64>(outputSampleRate);
+				gainStep = (target - gain) / rampFrames;
 			}
 
 			bool ended = false;
-			for (size_t frame = 0; frame < frameCount; ++frame) {
-				if (record.stopAfter >= 0.0) {
-					record.stopAfter -= 1.0 / outputSampleRate;
-					if (record.stopAfter <= 0.0) {
-						ended = true;
-						break;
-					}
-				}
+			const bool integerPos = position == std::floor(position);
+			const bool loopAligned = !hasLoop || (loopStart == std::floor(loopStart) && loopEnd == std::floor(loopEnd));
+			const bool fastPath = step == 1.0 && integerPos && loopAligned;
 
-				const i64 idx = static_cast<i64>(record.position);
-				const f64 frac = record.position - static_cast<f64>(idx);
-				if (!hasLoop && static_cast<size_t>(idx) >= framesInAsset) {
-					ended = true;
-					break;
-				}
+			if (fastPath) {
+				size_t posIndex = static_cast<size_t>(position);
+				const size_t loopStartIndex = static_cast<size_t>(loopStart);
+				const size_t loopEndIndex = static_cast<size_t>(loopEnd);
+				const i16* samples = asset.samples.data();
+				size_t outIndex = 0;
 
-				auto sampleAt = [&](i64 frameIndex, int channel) -> f32 {
-					if (frameIndex < 0) return 0.0f;
-					if (static_cast<size_t>(frameIndex) >= framesInAsset) {
-						if (hasLoop) {
-							const f64 loopLen = loopEnd - loopStart;
-							if (loopLen <= 0.0) return 0.0f;
-							const f64 wrapped = loopStart + std::fmod(frameIndex - loopStart, loopLen);
-							frameIndex = static_cast<i64>(wrapped);
-						} else {
-							return 0.0f;
+				if (channels == 1) {
+					for (size_t frame = 0; frame < frameCount; ++frame) {
+						if (stopAfter >= 0.0) {
+							stopAfter -= invOutputRate;
+							if (stopAfter <= 0.0) {
+								ended = true;
+								break;
+							}
+						}
+						if (!hasLoop && posIndex >= framesInAsset) {
+							ended = true;
+							break;
+						}
+
+						const f32 sample = static_cast<f32>(samples[posIndex]) * sampleScale;
+						const f32 out = sample * gain;
+						mix[outIndex] += out;
+						mix[outIndex + 1] += out;
+						outIndex += 2;
+
+						++posIndex;
+						if (hasLoop && posIndex >= loopEndIndex) {
+							posIndex = loopStartIndex;
+						}
+
+						if (rampRemaining > 0.0) {
+							gain += static_cast<f32>(gainStep);
+							rampRemaining -= invOutputRate;
 						}
 					}
-					const size_t base = static_cast<size_t>(frameIndex) * asset.channels;
-					const size_t offset = channel < asset.channels ? static_cast<size_t>(channel) : 0;
-					return static_cast<f32>(asset.samples[base + offset]) / 32768.0f;
-				};
+				} else {
+					for (size_t frame = 0; frame < frameCount; ++frame) {
+						if (stopAfter >= 0.0) {
+							stopAfter -= invOutputRate;
+							if (stopAfter <= 0.0) {
+								ended = true;
+								break;
+							}
+						}
+						if (!hasLoop && posIndex >= framesInAsset) {
+							ended = true;
+							break;
+						}
 
-				const f32 left0 = sampleAt(idx, 0);
-				const f32 right0 = asset.channels > 1 ? sampleAt(idx, 1) : left0;
-				const f32 left1 = sampleAt(idx + 1, 0);
-				const f32 right1 = asset.channels > 1 ? sampleAt(idx + 1, 1) : left1;
+						const size_t base = posIndex * static_cast<size_t>(channels);
+						const f32 left = static_cast<f32>(samples[base]) * sampleScale;
+						const f32 right = static_cast<f32>(samples[base + 1]) * sampleScale;
+						mix[outIndex] += left * gain;
+						mix[outIndex + 1] += right * gain;
+						outIndex += 2;
 
-				const f32 left = left0 + static_cast<f32>((left1 - left0) * frac);
-				const f32 right = right0 + static_cast<f32>((right1 - right0) * frac);
+						++posIndex;
+						if (hasLoop && posIndex >= loopEndIndex) {
+							posIndex = loopStartIndex;
+						}
 
-				const size_t outIndex = frame * 2;
-				m_mixBuffer[outIndex] += left * static_cast<f32>(gain);
-				m_mixBuffer[outIndex + 1] += right * static_cast<f32>(gain);
-
-				record.position += step;
-				if (hasLoop && record.position >= loopEnd) {
-					const f64 loopLen = loopEnd - loopStart;
-					record.position = loopStart + std::fmod(record.position - loopStart, loopLen);
+						if (rampRemaining > 0.0) {
+							gain += static_cast<f32>(gainStep);
+							rampRemaining -= invOutputRate;
+						}
+					}
 				}
 
-				if (rampRemaining > 0.0) {
-					gain += gainStep;
-					rampRemaining -= 1.0 / outputSampleRate;
+				position = static_cast<f64>(posIndex);
+			} else {
+				const i16* samples = asset.samples.data();
+				size_t outIndex = 0;
+
+				if (channels == 1) {
+					if (hasLoop) {
+						for (size_t frame = 0; frame < frameCount; ++frame) {
+							if (stopAfter >= 0.0) {
+								stopAfter -= invOutputRate;
+								if (stopAfter <= 0.0) {
+									ended = true;
+									break;
+								}
+							}
+
+							const i64 idx = static_cast<i64>(position);
+							const f64 frac = position - static_cast<f64>(idx);
+							i64 idx1 = idx + 1;
+							if (static_cast<f64>(idx1) >= loopEnd) {
+								const f64 wrapped = loopStart + (static_cast<f64>(idx1) - loopEnd);
+								idx1 = static_cast<i64>(wrapped);
+							}
+
+							const f32 s0 = static_cast<f32>(samples[static_cast<size_t>(idx)]) * sampleScale;
+							const f32 s1 = static_cast<f32>(samples[static_cast<size_t>(idx1)]) * sampleScale;
+							const f32 sample = s0 + (s1 - s0) * static_cast<f32>(frac);
+							const f32 out = sample * gain;
+							mix[outIndex] += out;
+							mix[outIndex + 1] += out;
+							outIndex += 2;
+
+							position += step;
+							if (position >= loopEnd) {
+								position = loopStart + std::fmod(position - loopStart, loopLen);
+							}
+
+							if (rampRemaining > 0.0) {
+								gain += static_cast<f32>(gainStep);
+								rampRemaining -= invOutputRate;
+							}
+						}
+					} else {
+						const f64 framesInAssetF = static_cast<f64>(framesInAsset);
+						for (size_t frame = 0; frame < frameCount; ++frame) {
+							if (stopAfter >= 0.0) {
+								stopAfter -= invOutputRate;
+								if (stopAfter <= 0.0) {
+									ended = true;
+									break;
+								}
+							}
+							if (position >= framesInAssetF) {
+								ended = true;
+								break;
+							}
+
+							const i64 idx = static_cast<i64>(position);
+							const f64 frac = position - static_cast<f64>(idx);
+							const size_t idx0 = static_cast<size_t>(idx);
+							const f32 s0 = static_cast<f32>(samples[idx0]) * sampleScale;
+							f32 s1 = 0.0f;
+							const size_t idx1 = idx0 + 1;
+							if (idx1 < framesInAsset) {
+								s1 = static_cast<f32>(samples[idx1]) * sampleScale;
+							}
+							const f32 sample = s0 + (s1 - s0) * static_cast<f32>(frac);
+							const f32 out = sample * gain;
+							mix[outIndex] += out;
+							mix[outIndex + 1] += out;
+							outIndex += 2;
+
+							position += step;
+							if (rampRemaining > 0.0) {
+								gain += static_cast<f32>(gainStep);
+								rampRemaining -= invOutputRate;
+							}
+						}
+					}
+				} else {
+					if (hasLoop) {
+						for (size_t frame = 0; frame < frameCount; ++frame) {
+							if (stopAfter >= 0.0) {
+								stopAfter -= invOutputRate;
+								if (stopAfter <= 0.0) {
+									ended = true;
+									break;
+								}
+							}
+
+							const i64 idx = static_cast<i64>(position);
+							const f64 frac = position - static_cast<f64>(idx);
+							i64 idx1 = idx + 1;
+							if (static_cast<f64>(idx1) >= loopEnd) {
+								const f64 wrapped = loopStart + (static_cast<f64>(idx1) - loopEnd);
+								idx1 = static_cast<i64>(wrapped);
+							}
+
+							const size_t base0 = static_cast<size_t>(idx) * static_cast<size_t>(channels);
+							const size_t base1 = static_cast<size_t>(idx1) * static_cast<size_t>(channels);
+							const f32 left0 = static_cast<f32>(samples[base0]) * sampleScale;
+							const f32 right0 = static_cast<f32>(samples[base0 + 1]) * sampleScale;
+							const f32 left1 = static_cast<f32>(samples[base1]) * sampleScale;
+							const f32 right1 = static_cast<f32>(samples[base1 + 1]) * sampleScale;
+
+							const f32 left = left0 + (left1 - left0) * static_cast<f32>(frac);
+							const f32 right = right0 + (right1 - right0) * static_cast<f32>(frac);
+							mix[outIndex] += left * gain;
+							mix[outIndex + 1] += right * gain;
+							outIndex += 2;
+
+							position += step;
+							if (position >= loopEnd) {
+								position = loopStart + std::fmod(position - loopStart, loopLen);
+							}
+
+							if (rampRemaining > 0.0) {
+								gain += static_cast<f32>(gainStep);
+								rampRemaining -= invOutputRate;
+							}
+						}
+					} else {
+						const f64 framesInAssetF = static_cast<f64>(framesInAsset);
+						for (size_t frame = 0; frame < frameCount; ++frame) {
+							if (stopAfter >= 0.0) {
+								stopAfter -= invOutputRate;
+								if (stopAfter <= 0.0) {
+									ended = true;
+									break;
+								}
+							}
+							if (position >= framesInAssetF) {
+								ended = true;
+								break;
+							}
+
+							const i64 idx = static_cast<i64>(position);
+							const f64 frac = position - static_cast<f64>(idx);
+							const size_t idx0 = static_cast<size_t>(idx);
+							const size_t base0 = idx0 * static_cast<size_t>(channels);
+							const f32 left0 = static_cast<f32>(samples[base0]) * sampleScale;
+							const f32 right0 = static_cast<f32>(samples[base0 + 1]) * sampleScale;
+							f32 left1 = 0.0f;
+							f32 right1 = 0.0f;
+							const size_t idx1 = idx0 + 1;
+							if (idx1 < framesInAsset) {
+								const size_t base1 = idx1 * static_cast<size_t>(channels);
+								left1 = static_cast<f32>(samples[base1]) * sampleScale;
+								right1 = static_cast<f32>(samples[base1 + 1]) * sampleScale;
+							}
+
+							const f32 left = left0 + (left1 - left0) * static_cast<f32>(frac);
+							const f32 right = right0 + (right1 - right0) * static_cast<f32>(frac);
+							mix[outIndex] += left * gain;
+							mix[outIndex + 1] += right * gain;
+							outIndex += 2;
+
+							position += step;
+							if (rampRemaining > 0.0) {
+								gain += static_cast<f32>(gainStep);
+								rampRemaining -= invOutputRate;
+							}
+						}
+					}
 				}
 			}
 
-			record.gain = static_cast<f32>(gain);
+			record.position = position;
+			record.gain = gain;
 			record.gainRampRemaining = rampRemaining > 0.0 ? rampRemaining : 0.0;
 			if (record.gainRampRemaining == 0.0f) {
 				record.gain = record.targetGain;
 			}
+			record.stopAfter = stopAfter;
 
 			if (ended) {
 				removeVoice(static_cast<AudioType>(typeIdx), i);
@@ -441,10 +638,37 @@ void SoundMaster::renderSamples(i16* output, size_t frameCount, i32 outputSample
 
 	const f32 master = m_masterVolume;
 	for (size_t i = 0; i < totalSamples; ++i) {
-		f32 v = m_mixBuffer[i] * master;
+		f32 v = mix[i] * master;
 		if (v > 1.0f) v = 1.0f;
 		if (v < -1.0f) v = -1.0f;
 		output[i] = static_cast<i16>(std::lrint(v * 32767.0f));
+	}
+
+	const auto mixEnd = std::chrono::steady_clock::now();
+	static f64 accAudioSec = 0.0;
+	static f64 accMixMs = 0.0;
+	static u64 accCalls = 0;
+	accAudioSec += dt;
+	accMixMs += std::chrono::duration<double, std::milli>(mixEnd - mixStart).count();
+	accCalls += 1;
+	if (accAudioSec >= 1.0) {
+		const size_t sfxCount = m_voicesByType[0].size();
+		const size_t musicCount = m_voicesByType[1].size();
+		const size_t uiCount = m_voicesByType[2].size();
+		const f64 audioMs = accAudioSec * 1000.0;
+		const f64 loadPct = (accMixMs / audioMs) * 100.0;
+		std::fprintf(stderr,
+			"[BMSX] audio mix %.2fms / %.2fms (%.1f%%), calls=%llu, voices sfx=%zu music=%zu ui=%zu\n",
+			accMixMs,
+			audioMs,
+			loadPct,
+			static_cast<unsigned long long>(accCalls),
+			sfxCount,
+			musicCount,
+			uiCount);
+		accAudioSec = 0.0;
+		accMixMs = 0.0;
+		accCalls = 0;
 	}
 
 	m_audioTimeSec += dt;

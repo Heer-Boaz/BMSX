@@ -9,6 +9,9 @@
 #include <cstdio>
 #include <cstring>
 #include <cstdlib>
+#include <cstdint>
+#include <chrono>
+#include <limits>
 
 #include "libretro.h"
 #include "libretro_platform.h"
@@ -290,8 +293,121 @@ void retro_reset(void) {
 }
 
 void retro_run(void) {
+  static auto lastFrameTime = std::chrono::steady_clock::now();
+  static double accSec = 0.0;
+  static double accMs = 0.0;
+  static double minMs = std::numeric_limits<double>::infinity();
+  static double maxMs = 0.0;
+  static uint64_t accCalls = 0;
+  static auto perfStart = std::chrono::steady_clock::now();
+  static double accRunMs = 0.0;
+  static double accTickMs = 0.0;
+  static double accRenderMs = 0.0;
+  static double accOverheadMs = 0.0;
+  static double accVmUpdateMs = 0.0;
+  static double accVmDrawMs = 0.0;
+  static double accDrawGameMs = 0.0;
+  static double maxRunMs = 0.0;
+  static double maxTickMs = 0.0;
+  static double maxRenderMs = 0.0;
+  static double maxOverheadMs = 0.0;
+  static double maxVmUpdateMs = 0.0;
+  static double maxVmDrawMs = 0.0;
+  static double maxDrawGameMs = 0.0;
+  static uint64_t perfFrames = 0;
+
+  const auto now = std::chrono::steady_clock::now();
+  const double dtSec = std::chrono::duration<double>(now - lastFrameTime).count();
+  const double dtMs = dtSec * 1000.0;
+  lastFrameTime = now;
+
+  accSec += dtSec;
+  accMs += dtMs;
+  accCalls += 1;
+  if (dtMs < minMs) minMs = dtMs;
+  if (dtMs > maxMs) maxMs = dtMs;
+  if (accSec >= 1.0) {
+    const double avgMs = accMs / static_cast<double>(accCalls);
+    const double fps = static_cast<double>(accCalls) / accSec;
+    const double targetMs = g_platform->frameTimeSec() * 1000.0;
+    const double targetFps = 1.0 / g_platform->frameTimeSec();
+    logging.log(RETRO_LOG_WARN,
+                "[BMSX] host frame timing avg=%.2fms min=%.2f max=%.2f fps=%.1f target=%.2fms (%.1f fps) calls=%llu\n",
+                avgMs,
+                minMs,
+                maxMs,
+                fps,
+                targetMs,
+                targetFps,
+                static_cast<unsigned long long>(accCalls));
+    accSec = 0.0;
+    accMs = 0.0;
+    minMs = std::numeric_limits<double>::infinity();
+    maxMs = 0.0;
+    accCalls = 0;
+  }
+
   // Run one frame
+  const auto runStart = std::chrono::steady_clock::now();
   g_platform->runFrame();
+  const auto runEnd = std::chrono::steady_clock::now();
+  const double runMs = std::chrono::duration<double, std::milli>(runEnd - runStart).count();
+  const auto& tickTiming = g_platform->engine()->lastTickTiming();
+  const auto& renderTiming = g_platform->engine()->lastRenderTiming();
+  const double overheadMs = runMs - tickTiming.totalMs - renderTiming.totalMs;
+
+  accRunMs += runMs;
+  accTickMs += tickTiming.totalMs;
+  accRenderMs += renderTiming.totalMs;
+  accOverheadMs += overheadMs;
+  accVmUpdateMs += tickTiming.vmUpdateMs;
+  accVmDrawMs += renderTiming.vmDrawMs;
+  accDrawGameMs += renderTiming.drawGameMs;
+  if (runMs > maxRunMs) maxRunMs = runMs;
+  if (tickTiming.totalMs > maxTickMs) maxTickMs = tickTiming.totalMs;
+  if (renderTiming.totalMs > maxRenderMs) maxRenderMs = renderTiming.totalMs;
+  if (overheadMs > maxOverheadMs) maxOverheadMs = overheadMs;
+  if (tickTiming.vmUpdateMs > maxVmUpdateMs) maxVmUpdateMs = tickTiming.vmUpdateMs;
+  if (renderTiming.vmDrawMs > maxVmDrawMs) maxVmDrawMs = renderTiming.vmDrawMs;
+  if (renderTiming.drawGameMs > maxDrawGameMs) maxDrawGameMs = renderTiming.drawGameMs;
+  perfFrames += 1;
+
+  const double perfSec = std::chrono::duration<double>(runEnd - perfStart).count();
+  if (perfSec >= 1.0) {
+    const double invFrames = 1.0 / static_cast<double>(perfFrames);
+    logging.log(RETRO_LOG_WARN,
+                "[BMSX] run avg=%.2fms max=%.2f tick=%.2f render=%.2f overhead=%.2f frames=%llu\n",
+                accRunMs * invFrames,
+                maxRunMs,
+                accTickMs * invFrames,
+                accRenderMs * invFrames,
+                accOverheadMs * invFrames,
+                static_cast<unsigned long long>(perfFrames));
+    logging.log(RETRO_LOG_WARN,
+                "[BMSX] vm avg update=%.2f draw=%.2f draw_game=%.2f max_update=%.2f max_draw=%.2f max_draw_game=%.2f\n",
+                accVmUpdateMs * invFrames,
+                accVmDrawMs * invFrames,
+                accDrawGameMs * invFrames,
+                maxVmUpdateMs,
+                maxVmDrawMs,
+                maxDrawGameMs);
+    perfStart = runEnd;
+    accRunMs = 0.0;
+    accTickMs = 0.0;
+    accRenderMs = 0.0;
+    accOverheadMs = 0.0;
+    accVmUpdateMs = 0.0;
+    accVmDrawMs = 0.0;
+    accDrawGameMs = 0.0;
+    maxRunMs = 0.0;
+    maxTickMs = 0.0;
+    maxRenderMs = 0.0;
+    maxOverheadMs = 0.0;
+    maxVmUpdateMs = 0.0;
+    maxVmDrawMs = 0.0;
+    maxDrawGameMs = 0.0;
+    perfFrames = 0;
+  }
 
   // Output video
   const auto& fb = g_platform->getFramebuffer();
@@ -379,6 +495,10 @@ static void fallback_log(enum retro_log_level level, const char* fmt, ...) {
 }
 
 static void frame_time_cb(retro_usec_t usec) {
+  logging.log(RETRO_LOG_WARN, "[BMSX] frame_time_cb: %llu usec (%.3fms, %.2f fps)\n",
+              static_cast<unsigned long long>(usec),
+              static_cast<double>(usec) / 1000.0,
+              1000000.0 / static_cast<double>(usec));
   if (g_platform) {
     g_platform->setFrameTimeUsec(usec);
     return;

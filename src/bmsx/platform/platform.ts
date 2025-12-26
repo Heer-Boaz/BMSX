@@ -120,6 +120,7 @@ export interface TimerHandle {
  */
 export interface Clock {
 	now(): MonoTime;
+	perf_now(): MonoTime;
 	dateNow(): number;
 	scheduleOnce: (delay_ms: number, cb: (t: MonoTime) => void) => TimerHandle;
 }

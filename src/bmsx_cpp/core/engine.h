@@ -41,6 +41,28 @@ enum class EngineState {
 
 class EngineCore {
 public:
+    struct TickTiming {
+        f64 totalMs = 0.0;
+        f64 inputMs = 0.0;
+        f64 vmIdeInputMs = 0.0;
+        f64 vmTerminalInputMs = 0.0;
+        f64 vmUpdateMs = 0.0;
+        f64 vmIdeMs = 0.0;
+        f64 vmTerminalMs = 0.0;
+        f64 microtaskMs = 0.0;
+    };
+
+    struct RenderTiming {
+        f64 totalMs = 0.0;
+        f64 beginFrameMs = 0.0;
+        f64 testPatternMs = 0.0;
+        f64 vmDrawMs = 0.0;
+        f64 vmIdeDrawMs = 0.0;
+        f64 vmTerminalDrawMs = 0.0;
+        f64 drawGameMs = 0.0;
+        f64 endFrameMs = 0.0;
+    };
+
     EngineCore();
     ~EngineCore();
 
@@ -77,6 +99,8 @@ public:
     f64 deltaTime() const { return m_delta_time; }
     u64 frameCount() const { return m_frame_count; }
     f64 fps() const { return m_fps; }
+    const TickTiming& lastTickTiming() const { return m_last_tick_timing; }
+    const RenderTiming& lastRenderTiming() const { return m_last_render_timing; }
 
     void refreshRenderAssets();
 
@@ -135,6 +159,8 @@ private:
     std::vector<u8> m_rom_data;
     std::vector<u8> m_engine_assets_data;
     RuntimeAssets m_engine_assets;  // Base engine assets (fonts, UI sprites, etc.)
+    TickTiming m_last_tick_timing;
+    RenderTiming m_last_render_timing;
 
     static EngineCore* s_instance;
 };

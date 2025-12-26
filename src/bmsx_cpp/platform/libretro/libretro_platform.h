@@ -174,6 +174,7 @@ public:
     // State access
     const Framebuffer& getFramebuffer() const { return m_framebuffer; }
     const AudioBuffer& getAudioBuffer() const { return m_audio_buffer; }
+    double frameTimeSec() const { return m_frame_time_sec; }
 
     // Engine access
     EngineCore* engine() { return m_engine.get(); }

@@ -57,6 +57,42 @@ constexpr size_t VALUE_CLOSURE = 5;
 constexpr size_t VALUE_NATIVE_FUNCTION = 6;
 constexpr size_t VALUE_NATIVE_OBJECT = 7;
 
+inline size_t hashCombine(size_t seed, size_t value) {
+	return seed ^ (value + 0x9e3779b97f4a7c15ULL + (seed << 6) + (seed >> 2));
+}
+
+struct ValueHash {
+	size_t operator()(const Value& v) const {
+		size_t seed = std::hash<size_t>{}(v.index());
+		switch (v.index()) {
+			case VALUE_NIL:
+				return seed;
+			case VALUE_BOOL:
+				return hashCombine(seed, std::hash<bool>{}(std::get<bool>(v)));
+			case VALUE_NUMBER:
+				return hashCombine(seed, std::hash<double>{}(std::get<double>(v)));
+			case VALUE_STRING:
+				return hashCombine(seed, std::hash<std::string>{}(std::get<std::string>(v)));
+			case VALUE_TABLE:
+				return hashCombine(seed, std::hash<const void*>{}(std::get<std::shared_ptr<Table>>(v).get()));
+			case VALUE_CLOSURE:
+				return hashCombine(seed, std::hash<const void*>{}(std::get<std::shared_ptr<Closure>>(v).get()));
+			case VALUE_NATIVE_FUNCTION:
+				return hashCombine(seed, std::hash<const void*>{}(std::get<std::shared_ptr<NativeFunction>>(v).get()));
+			case VALUE_NATIVE_OBJECT:
+				return hashCombine(seed, std::hash<const void*>{}(std::get<std::shared_ptr<NativeObject>>(v).get()));
+			default:
+				return seed;
+		}
+	}
+};
+
+struct ValueEq {
+	bool operator()(const Value& lhs, const Value& rhs) const {
+		return lhs == rhs;
+	}
+};
+
 /**
  * Check if a Value is nil.
  */
@@ -329,16 +365,16 @@ public:
 private:
 	bool isArrayIndex(const Value& key) const;
 	int toArrayIndex(const Value& key) const;
-	std::optional<size_t> findMapIndex(const Value& key) const;
 	void ensureUppercaseIndex() const;
 	static std::string toUpperAscii(const std::string& value);
 
 	static bool s_caseInsensitiveKeys;
 
 	std::vector<Value> m_array;
-	std::vector<std::pair<Value, Value>> m_map;
+	std::unordered_map<std::string, Value> m_stringMap;
+	std::unordered_map<Value, Value, ValueHash, ValueEq> m_otherMap;
 	std::shared_ptr<Table> m_metatable;
-	mutable std::unordered_map<std::string, size_t> m_uppercaseIndex;
+	mutable std::unordered_map<std::string, std::string> m_uppercaseIndex;
 	mutable bool m_uppercaseIndexValid = false;
 };
 
@@ -382,20 +418,24 @@ public:
 
 private:
 	void executeInstruction(CallFrame& frame, uint32_t instr);
+	void pushFrame(std::shared_ptr<Closure> closure, const Value* args, size_t argCount,
+	               int returnBase, int returnCount, bool captureReturns, int callSitePc);
 	void pushFrame(std::shared_ptr<Closure> closure, const std::vector<Value>& args,
 	               int returnBase, int returnCount, bool captureReturns, int callSitePc);
 	std::shared_ptr<Closure> createClosure(CallFrame& frame, int protoIndex);
 	void closeUpvalues(CallFrame& frame);
-	Value readUpvalue(const std::shared_ptr<Upvalue>& upvalue);
+	const Value& readUpvalue(const std::shared_ptr<Upvalue>& upvalue);
 	void writeUpvalue(const std::shared_ptr<Upvalue>& upvalue, const Value& value);
 	void writeReturnValues(CallFrame& frame, int base, int count, const std::vector<Value>& values);
 	void setRegister(CallFrame& frame, int index, const Value& value);
-	Value readRK(CallFrame& frame, int operand);
+	const Value& readRK(CallFrame& frame, int operand);
 	Value resolveTableIndex(const std::shared_ptr<Table>& table, const Value& key);
 
 	// Frame pooling
 	std::unique_ptr<CallFrame> acquireFrame();
 	void releaseFrame(std::unique_ptr<CallFrame> frame);
+	std::vector<Value> acquireRegisters(size_t size);
+	void releaseRegisters(std::vector<Value>&& regs);
 
 	Program* m_program = nullptr;
 	std::vector<std::unique_ptr<CallFrame>> m_frames;
@@ -408,6 +448,11 @@ private:
 	// Frame pool
 	std::vector<std::unique_ptr<CallFrame>> m_framePool;
 	static constexpr int MAX_POOLED_FRAMES = 32;
+
+	// Register pool
+	std::unordered_map<size_t, std::vector<std::vector<Value>>> m_registerPool;
+	static constexpr size_t MAX_POOLED_REGISTER_ARRAYS = 64;
+	static constexpr size_t MAX_REGISTER_ARRAY_SIZE = 256;
 };
 
 /**

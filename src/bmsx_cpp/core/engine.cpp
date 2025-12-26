@@ -6,12 +6,18 @@
 #include "../input/input.h"
 #include "../vm/vm_runtime.h"
 #include "../vm/font.h"
+#include <chrono>
 #include <algorithm>
 #include <cmath>
 #include <fstream>
 #include <iostream>
 
 namespace bmsx {
+namespace {
+inline f64 to_ms(std::chrono::steady_clock::duration duration) {
+    return std::chrono::duration<f64, std::milli>(duration).count();
+}
+}
 
 EngineCore* EngineCore::s_instance = nullptr;
 
@@ -127,6 +133,8 @@ void EngineCore::tick(f64 deltaTime) {
         return;
     }
 
+    const auto tickStart = std::chrono::steady_clock::now();
+
     m_delta_time = deltaTime;
     m_total_time += deltaTime;
     m_frame_count++;
@@ -136,22 +144,55 @@ void EngineCore::tick(f64 deltaTime) {
         m_fps = 1.0 / deltaTime;
     }
 
+    const auto inputStart = std::chrono::steady_clock::now();
     Input::instance().pollInput();
+    const auto inputEnd = std::chrono::steady_clock::now();
+    m_last_tick_timing.inputMs = to_ms(inputEnd - inputStart);
+
+    m_last_tick_timing.vmIdeInputMs = 0.0;
+    m_last_tick_timing.vmTerminalInputMs = 0.0;
+    m_last_tick_timing.vmUpdateMs = 0.0;
+    m_last_tick_timing.vmIdeMs = 0.0;
+    m_last_tick_timing.vmTerminalMs = 0.0;
     if (VMRuntime::hasInstance()) {
         VMRuntime& runtime = VMRuntime::instance();
+        auto ideInputStart = std::chrono::steady_clock::now();
         runtime.tickIdeInput();
+        auto ideInputEnd = std::chrono::steady_clock::now();
+        m_last_tick_timing.vmIdeInputMs = to_ms(ideInputEnd - ideInputStart);
+
+        auto terminalInputStart = std::chrono::steady_clock::now();
         runtime.tickTerminalInput();
+        auto terminalInputEnd = std::chrono::steady_clock::now();
+        m_last_tick_timing.vmTerminalInputMs = to_ms(terminalInputEnd - terminalInputStart);
+
+        auto updateStart = std::chrono::steady_clock::now();
         runtime.tickUpdate();
+        auto updateEnd = std::chrono::steady_clock::now();
+        m_last_tick_timing.vmUpdateMs = to_ms(updateEnd - updateStart);
+
+        auto ideStart = std::chrono::steady_clock::now();
         runtime.tickIDE();
+        auto ideEnd = std::chrono::steady_clock::now();
+        m_last_tick_timing.vmIdeMs = to_ms(ideEnd - ideStart);
+
+        auto terminalStart = std::chrono::steady_clock::now();
         runtime.tickTerminalMode();
+        auto terminalEnd = std::chrono::steady_clock::now();
+        m_last_tick_timing.vmTerminalMs = to_ms(terminalEnd - terminalStart);
     }
 
     // Process microtasks
+    m_last_tick_timing.microtaskMs = 0.0;
     if (m_platform && m_platform->microtaskQueue()) {
+        const auto microtaskStart = std::chrono::steady_clock::now();
         m_platform->microtaskQueue()->flush();
+        const auto microtaskEnd = std::chrono::steady_clock::now();
+        m_last_tick_timing.microtaskMs = to_ms(microtaskEnd - microtaskStart);
     }
 
     m_presentation_pending = true;
+    m_last_tick_timing.totalMs = to_ms(std::chrono::steady_clock::now() - tickStart);
 }
 
 void EngineCore::render() {
@@ -164,27 +205,59 @@ void EngineCore::render() {
         return;
     }
 
+    const auto renderStart = std::chrono::steady_clock::now();
+
     // Render through GameView
     if (m_view) {
+        const auto beginStart = std::chrono::steady_clock::now();
         m_view->beginFrame();
+        const auto beginEnd = std::chrono::steady_clock::now();
+        m_last_render_timing.beginFrameMs = to_ms(beginEnd - beginStart);
 
         // If no ROM loaded, draw a test pattern
         if (!m_rom_loaded) {
+            const auto testStart = std::chrono::steady_clock::now();
             renderTestPattern();
+            const auto testEnd = std::chrono::steady_clock::now();
+            m_last_render_timing.testPatternMs = to_ms(testEnd - testStart);
+        } else {
+            m_last_render_timing.testPatternMs = 0.0;
         }
 
+        m_last_render_timing.vmDrawMs = 0.0;
+        m_last_render_timing.vmIdeDrawMs = 0.0;
+        m_last_render_timing.vmTerminalDrawMs = 0.0;
         if (VMRuntime::hasInstance()) {
             VMRuntime& runtime = VMRuntime::instance();
+            auto drawStart = std::chrono::steady_clock::now();
             runtime.tickDraw();
+            auto drawEnd = std::chrono::steady_clock::now();
+            m_last_render_timing.vmDrawMs = to_ms(drawEnd - drawStart);
+
+            auto ideDrawStart = std::chrono::steady_clock::now();
             runtime.tickIDEDraw();
+            auto ideDrawEnd = std::chrono::steady_clock::now();
+            m_last_render_timing.vmIdeDrawMs = to_ms(ideDrawEnd - ideDrawStart);
+
+            auto terminalDrawStart = std::chrono::steady_clock::now();
             runtime.tickTerminalModeDraw();
+            auto terminalDrawEnd = std::chrono::steady_clock::now();
+            m_last_render_timing.vmTerminalDrawMs = to_ms(terminalDrawEnd - terminalDrawStart);
         }
 
+        const auto drawGameStart = std::chrono::steady_clock::now();
         m_view->drawGame();
+        const auto drawGameEnd = std::chrono::steady_clock::now();
+        m_last_render_timing.drawGameMs = to_ms(drawGameEnd - drawGameStart);
+
+        const auto endStart = std::chrono::steady_clock::now();
         m_view->endFrame();
+        const auto endEnd = std::chrono::steady_clock::now();
+        m_last_render_timing.endFrameMs = to_ms(endEnd - endStart);
     }
 
     m_presentation_pending = false;
+    m_last_render_timing.totalMs = to_ms(std::chrono::steady_clock::now() - renderStart);
 }
 
 void EngineCore::refreshRenderAssets() {
