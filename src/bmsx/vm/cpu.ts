@@ -922,7 +922,9 @@ export class VMCPU {
 					args.push(frame.registers[a + 1 + index]);
 				}
 				if (callee === null) {
-					throw new Error('Attempted to call a nil value.');
+					const range = this.program.debugRanges[this.lastPc];
+					const location = range ? `${range.path}:${range.start.line}:${range.start.column}` : 'unknown';
+					throw new Error(`Attempted to call a nil value. at ${location}`);
 				}
 				if (isNativeFunction(callee)) {
 					const results = this.acquireNativeReturnScratch();
@@ -935,7 +937,13 @@ export class VMCPU {
 					return;
 				}
 				if (typeof (callee as Closure).protoIndex !== 'number') {
-					throw new Error('Attempted to call a non-function value.');
+					const range = this.program.debugRanges[this.lastPc];
+					const location = range ? `${range.path}:${range.start.line}:${range.start.column}` : 'unknown';
+					const calleeType = valueTypeName(callee as Value);
+					const calleeValue = (typeof callee === 'string' || typeof callee === 'number' || typeof callee === 'boolean')
+						? ` value=${String(callee)}`
+						: '';
+					throw new Error(`Attempted to call a non-function value (${calleeType}${calleeValue}). at ${location}`);
 				}
 				this.pushFrame(callee as Closure, args, a, c, false, frame.pc - 1);
 				return;
@@ -1055,13 +1063,14 @@ export class VMCPU {
 			for (let index = 0; index < values.length; index += 1) {
 				this.setRegister(frame, base + index, values[index]);
 			}
-			frame.top = Math.max(frame.top, base + values.length);
+			frame.top = base + values.length;
 			return;
 		}
 		for (let index = 0; index < count; index += 1) {
 			const value = index < values.length ? values[index] : null;
 			this.setRegister(frame, base + index, value);
 		}
+		frame.top = base + count;
 	}
 
 	private setRegister(frame: CallFrame, index: number, value: Value): void {

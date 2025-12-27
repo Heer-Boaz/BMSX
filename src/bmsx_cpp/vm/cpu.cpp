@@ -1048,13 +1048,14 @@ void VMCPU::writeReturnValues(CallFrame& frame, int base, int count, const std::
 		for (size_t i = 0; i < values.size(); ++i) {
 			setRegister(frame, base + static_cast<int>(i), values[i]);
 		}
-		frame.top = std::max(frame.top, base + static_cast<int>(values.size()));
+		frame.top = base + static_cast<int>(values.size());
 		return;
 	}
 	for (int i = 0; i < count; ++i) {
 		const Value& val = (i < static_cast<int>(values.size())) ? values[static_cast<size_t>(i)] : kNilValue;
 		setRegister(frame, base + i, val);
 	}
+	frame.top = base + count;
 }
 
 void VMCPU::setRegister(CallFrame& frame, int index, const Value& value) {

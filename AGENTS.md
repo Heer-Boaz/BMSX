@@ -1,21 +1,23 @@
-Coding policies: *no defensive checks, trust the types, trust proper initialization and configuration (thus: no `ensure`), let the code just fail (thus: trust the code and just let runtime errors pop-up)!, and no legacy fallbacks permitted!*
-
-*. Ensure that you have the latest version of Node.js installed (preferably v22 or later).
-*. Install the necessary dependencies by running:
+* Ensure that you have the latest version of Node.js installed (preferably v22 or later).
+* Install the necessary dependencies by running:
    ```bash
    npm install -D
    ```
-*. Ensure that you have `typescript` installed locally, as it is required for the build process.
-*. To validate the bmsx package (the game engine) and to verify the game roms running on the bmsx package, you can build the game engine, scripts, and game roms by running:
+* Ensure that you have `typescript` installed locally, as it is required for the build process.
+* To validate the bmsx package (the game engine) and to verify the game roms running on the bmsx package, you can build the game engine, scripts, and game roms by running:
    ```bash
-   npm run headless:game <gameromname> # WARNING: `<gameromname>` must be replaced with the folder name of the rompack (game) you want to test, e.g. `ella2023` or `testrom`! This is different from the rom name specified in the `rommanifest.json` file inside the `res` directory! The `rominspector` tool uses the rom name specified in the `rommanifest.json` file, so that is different from this!
+   npm run headless:game <gameromname> # WARNING: `<gameromname>` must be replaced with the folder name of the rompack (game) you want to test, e.g. `2025` (`2025` is a great test rom)! This is different from the rom name specified in the `rommanifest.json` file inside the `res` directory! The `rominspector` tool uses the rom name specified in the `rommanifest.json` file, so that is different from this!
    ```
    This command will pack the resources and build the specified rompack (game). The built rompack will be available in the `dist` directory. It will also run the rompack in a headless mode (without a graphical interface) to validate that it works correctly. If there are any errors during the build or runtime, they will be displayed in the console.
    > Important: The given <romname> must match the name of a directory under `./src/` that contains a `res` subdirectory with the resources for that rompack (game). For example, for the `testrom`, the resources should be located in `./src/testrom/res`. However, the result romfile will be named based on the rommanifest.json file inside the `res` directory!! For example, if the `rommanifest.json` file specifies the name as `yiear`, the resulting romfile will be named `yiear.rom` (or `yiear.debug.rom`) even if the directory is named `ella2023`!
-*. **Project Structure**: Understand the overall structure of the project, including key directories and files.
+   Also, you should build and test the libretro core by running:
+   ```bash
+   npm run build:libretro:debug <gameromname> # WARNING: `<gameromname>` must be replaced with the folder name of the rompack (game) you want to test, e.g. `2025` (`2025` is a great test rom)!
+   ```
+* **Project Structure**: Understand the overall structure of the project, including key directories and files.
 * **No legacy fallback**: Avoid adding legacy code or fallbacks.
 * **No defensive coding**: Prevent any bug-concealing techniques, silent failures and defensive coding. For example:
-	  ```typescript
+	```ts
 	private getViewportMetrics(): ViewportMetrics | null {
 		const platform = $.platform;
 		if (!platform) {
@@ -38,14 +40,14 @@ Coding policies: *no defensive checks, trust the types, trust proper initializat
 	```
 
 	Instead, do this:
-	```typescript
+	```ts
 	private getViewportMetrics(): ViewportMetrics {
 		return $.platform.gameviewHost.getCapability('viewport-metrics').getViewportMetrics(); // Assume all properties and functions exist and work correctly if the code is designed that way. Only use defensive checks if there is a valid reason to believe that the property/function may not exist or work correctly.
 	}
 	```
 
 	Also, instead of this:
-	```typescript
+	```ts
 	private initializeSomething(): void {
 		if (this.isSomethingInitialized) { // Defensive check
 			return;
@@ -55,19 +57,19 @@ Coding policies: *no defensive checks, trust the types, trust proper initializat
 	}
 	```
 	Do this:
-	```typescript
+	```ts
 	private initializeSomething(): void { // Assume this method is only called once
 		// ... initialization code ...
 	}
 	```
 	Also avoid code like this:
-	```typescript
+	```ts
 	private doSomething(): void {
 		this?.someProperty?.doAction(); // Avoid optional chaining for properties that should always be defined, otherwise it hides potential bugs
 	}
 	```
 	Instead, do this:
-	```typescript
+	```ts
 	interface SomeType {
 		doAction(): void;
 		doOptionalAction?(): void; // Optional method, so optional chaining is acceptable here! Don't think that optional chaining is always bad, it's only bad when used to hide potential bugs or simplify initialization logic!
@@ -80,7 +82,7 @@ Coding policies: *no defensive checks, trust the types, trust proper initializat
 	```
 
 	Also avoid code like this:
-	```typescript
+	```ts
 	private foo(): void {
 		if (typeof this.bar === 'function') {
 			this.bar(); // Defensive check for function existence
@@ -88,38 +90,38 @@ Coding policies: *no defensive checks, trust the types, trust proper initializat
 	}
 	```
 	Instead, do this:
-	```typescript
+	```ts
 	private foo(): void {
 		this.bar(); // Assume bar() always exists
 	}
 	```
 
 	Instead of this:
-	```typescript
+	```ts
 	if (typeof this.onSomething === 'function')
 	```
 
 	do this:
-	```typescript
+	```ts
 	this.onSomething();
 	```
 
 	Also avoid code like this:
-	```typescript
+	```ts
 	function dumbDefensiveFunction(value: string[]): string[] | null {
 		// (...)
 		return (value && value.length > 0) ? value : null; // Prevents allowing checks for undefined or empty arrays. Also, why even check for an empty array? Just return the empty array or never call this function with an empty array!
 	}
 	```
 	Instead, do this:
-	```typescript
+	```ts
 	function smartFunction(value: string[]): string[] {
 		// (...)
 		return value; // Assume value is always a valid, non-empty array, or handle empty arrays as needed without returning null
 	}
 	```
 	Another example for the same:
-	```typescript
+	```ts
 	function ensureActiveCodeTabMatchesLuaSources(): void {
 		const context = getActiveCodeTabContext();
 		const activePath = context && context.descriptor ? context.descriptor.path : null;
@@ -131,7 +133,7 @@ Coding policies: *no defensive checks, trust the types, trust proper initializat
 	}
 	```
 	Should be:
-	```typescript
+	```ts
 	function ensureActiveCodeTabMatchesLuaSources(): void {
 		const context = getActiveCodeTabContext();
 		const activePath = context?.descriptor?.path;
@@ -145,7 +147,7 @@ Coding policies: *no defensive checks, trust the types, trust proper initializat
 	```
 
 	Also avoid code like this:
-	```typescript
+	```ts
 	function anotherDumbDefensiveFunction(num: number): number {
 		// (...)
 		const defensiveBla = bla ?? null; // What is the point of this? Just use bla directly! If bla is undefined, let it be undefined! Don't be afraid of using truthy checks!
@@ -154,7 +156,7 @@ Coding policies: *no defensive checks, trust the types, trust proper initializat
 	```
 
 	Of course, there are valid cases for defensive coding:
-	```typescript
+	```ts
 	function parseJson(jsonString: string): any | null {
 		try {
 			return JSON.parse(jsonString);
@@ -165,7 +167,7 @@ Coding policies: *no defensive checks, trust the types, trust proper initializat
 	}
 	```
 	or this:
-	```typescript
+	```ts
 	function getConfigValue(key: string): string {
 		const value = this.config[key];
 		if (value === undefined) {
@@ -175,7 +177,7 @@ Coding policies: *no defensive checks, trust the types, trust proper initializat
 	}
 	```
 	or this:
-	```typescript
+	```ts
 	function fetchData(url: string): Promise<any> {
 		return fetch(url)
 			.then(response => {
@@ -187,7 +189,7 @@ Coding policies: *no defensive checks, trust the types, trust proper initializat
 	}
 	```
 	or this:
-	```typescript
+	```ts
 	function doSomethingComplexWithOptionalParam(param?: SomeType): void {
 		if (param) {
 			// Handle the case where param is provided

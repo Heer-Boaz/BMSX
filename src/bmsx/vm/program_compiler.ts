@@ -1301,6 +1301,9 @@ class FunctionBuilder {
 		const tempBase = this.tempTop;
 		const useTarget = resultCount === 0 || (target >= this.localCount && target === tempBase - 1);
 		const callBase = useTarget ? target : this.allocTempBlock(requiredSlots);
+		if (useTarget) {
+			this.reserveTempRange(callBase, requiredSlots);
+		}
 		if (hasMethod) {
 			this.reserveTempRange(callBase, 2);
 			this.compileExpressionInto(expression.callee, callBase + 1, 1);
