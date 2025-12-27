@@ -1537,7 +1537,7 @@ export function appendVmProgramAsset(assetList: RomAsset[], manifest: RomManifes
 		modules.push({ path, chunk });
 	}
 
-	const compiled = compileLuaChunkToProgram(entryChunk, modules);
+	const compiled = compileLuaChunkToProgram(entryChunk, modules, { canonicalization: LUA_CANONICALIZATION });
 	const program = compiled.program;
 	const programAsset = {
 		entryProtoIndex: compiled.entryProtoIndex,
