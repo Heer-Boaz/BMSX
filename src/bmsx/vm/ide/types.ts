@@ -10,8 +10,6 @@ import { RectBounds } from '../../rompack/rompack';
 import type { TextBuffer } from './text_buffer';
 import type { EditorUndoRecord } from './editor_undo';
 
-export type IdeThemeVariant = string;
-
 export type Position = { row: number; column: number };
 
 export type MessageState = {

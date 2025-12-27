@@ -2,7 +2,7 @@ import type {
 	VMLuaHoverResult,
 } from '../types';
 import type { VMFontVariant } from '../font';
-import type { TextField, ScrollbarKind, MessageState, IdeThemeVariant } from './types';
+import type { TextField, ScrollbarKind, MessageState } from './types';
 import type { InlineFieldMetrics } from './inline_text_field';
 import { VMScrollbar, ScrollbarController } from './scrollbar';
 import type { InputController } from './ide_input';
@@ -112,7 +112,7 @@ export type DebuggerControlsState = {
 export interface IdeState {
 	initialized: boolean;
 	playerIndex: number;
-	themeVariant: IdeThemeVariant;
+	themeVariant: string;
 	buffer: TextBuffer;
 	cursorRow: number;
 	cursorColumn: number;

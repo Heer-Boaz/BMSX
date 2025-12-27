@@ -5,7 +5,7 @@ import { resetBlink } from './render/render_caret';
 import { activeSearchMatchCount, applySearchSelection, closeSearch, ensureSearchSelectionVisible, focusEditorFromSearch, jumpToNextMatch, jumpToPreviousMatch, onSearchQueryChanged, openSearch, searchPageSize, stepSearchSelection } from './editor_search';
 import { ide_state } from './ide_state';
 import { ESCAPE_KEY } from './constants';
-import type { IdeThemeVariant, MenuId, PointerSnapshot, ResourceViewerState, RuntimeErrorOverlay, TopBarButtonId } from './types';
+import type { MenuId, PointerSnapshot, ResourceViewerState, RuntimeErrorOverlay, TopBarButtonId } from './types';
 import { moveCursorDown, moveCursorEnd, moveCursorHome, moveCursorLeft, moveCursorRight, moveCursorUp, pageDown, pageUp, revealCursor, setCursorPosition } from './caret';
 import { isResourceViewActive, isCodeTabActive, isEditableCodeTab, isReadOnlyCodeTab, cycleTab, activateCodeTab, beginTabDrag, closeTab, endTabDrag, setActiveTab, getActiveCodeTabContext, updateTabDrag } from './editor_tabs';
 import { prepareDebuggerStepOverlay } from './ide_debugger';
@@ -2103,15 +2103,12 @@ export function evaluateRuntimeErrorOverlayClick(
 
 export function toggleThemeMode() {
 	const currentVariant = constants.getActiveIdeThemeVariant();
-	let nextVariant: IdeThemeVariant;
+	let nextVariant: string;
 	switch (currentVariant) {
 		case 'light':
 			nextVariant = 'dark';
 			break;
 		case 'dark':
-			nextVariant = 'gruvbox';
-			break;
-		case 'gruvbox':
 			nextVariant = 'light';
 			break;
 		default:
