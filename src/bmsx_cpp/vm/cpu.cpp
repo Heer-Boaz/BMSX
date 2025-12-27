@@ -3,7 +3,6 @@
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
-#include <iostream>
 #include <limits>
 #include <sstream>
 #include <stdexcept>
@@ -366,50 +365,6 @@ inline size_t registerBucket(size_t size) {
 		bucket <<= 1;
 	}
 	return bucket;
-}
-
-void appendRange(std::ostream& out, const VMCPU& cpu, int pc) {
-	const auto range = cpu.getDebugRange(pc);
-	if (range.has_value()) {
-		out << " at " << range->path << ":" << range->startLine << ":" << range->startColumn;
-	}
-}
-
-void appendCallStack(std::ostream& out, const VMCPU& cpu) {
-	const auto stack = cpu.getCallStack();
-	if (stack.empty()) {
-		return;
-	}
-	const Program* program = cpu.getProgram();
-	out << " stack=";
-	bool first = true;
-	for (auto it = stack.rbegin(); it != stack.rend(); ++it) {
-		if (!first) {
-			out << " <- ";
-		}
-		first = false;
-		const std::string& protoId = program->protoIds[it->first];
-		out << protoId;
-		const auto range = cpu.getDebugRange(it->second);
-		if (range.has_value()) {
-			out << "(" << range->path << ":" << range->startLine << ":" << range->startColumn << ")";
-		} else {
-			out << "(pc=" << it->second << ")";
-		}
-	}
-}
-
-void logTableIndexMiss(const VMCPU& cpu, const Table* table, const Value& key, std::string_view reason) {
-	static int missCount = 0;
-	if (missCount >= 64) {
-		return;
-	}
-	missCount += 1;
-	std::cerr << "[VMCPU] resolveTableIndex miss (" << reason << ") key=" << valueToString(key)
-	          << " keyType=" << valueTypeName(key) << " table=" << table;
-	appendRange(std::cerr, cpu, cpu.lastPc);
-	appendCallStack(std::cerr, cpu);
-	std::cerr << std::endl;
 }
 }
 
@@ -895,18 +850,10 @@ void VMCPU::executeInstruction(CallFrame& frame, uint32_t instr) {
 			const Value& callee = frame.registers[a];
 			int argCount = (b == 0) ? std::max(frame.top - a - 1, 0) : b;
 			if (isNil(callee)) {
-				std::cerr << "[VMCPU] CALL nil callee pc=" << (frame.pc - 1) << " a=" << a << " args=" << argCount;
-				appendRange(std::cerr, *this, frame.pc - 1);
-				appendCallStack(std::cerr, *this);
-				std::cerr << std::endl;
 				throw std::runtime_error("Attempted to call a nil value.");
 			}
 			if (auto nfn = std::get_if<std::shared_ptr<NativeFunction>>(&callee)) {
 				if (!*nfn) {
-					std::cerr << "[VMCPU] CALL nil native_function pc=" << (frame.pc - 1) << " a=" << a << " args=" << argCount;
-					appendRange(std::cerr, *this, frame.pc - 1);
-					appendCallStack(std::cerr, *this);
-					std::cerr << std::endl;
 					throw std::runtime_error("Attempted to call a nil value.");
 				}
 				m_valueScratch.clear();
@@ -926,10 +873,6 @@ void VMCPU::executeInstruction(CallFrame& frame, uint32_t instr) {
 			}
 			if (auto cls = std::get_if<std::shared_ptr<Closure>>(&callee)) {
 				if (!*cls) {
-					std::cerr << "[VMCPU] CALL nil closure pc=" << (frame.pc - 1) << " a=" << a << " args=" << argCount;
-					appendRange(std::cerr, *this, frame.pc - 1);
-					appendCallStack(std::cerr, *this);
-					std::cerr << std::endl;
 					throw std::runtime_error("Attempted to call a nil value.");
 				}
 				const Value* argsBase = frame.registers.data() + a + 1;
@@ -1081,13 +1024,10 @@ Value VMCPU::resolveTableIndex(const std::shared_ptr<Table>& table, const Value&
 		}
 		auto mt = current->getMetatable();
 		if (!mt) {
-			logTableIndexMiss(*this, current.get(), key, "no metatable");
 			return std::monostate{};
 		}
 		Value indexer = mt->get(std::string_view("__index"));
 		if (!std::holds_alternative<std::shared_ptr<Table>>(indexer)) {
-			std::string reason = std::string("indexer=") + valueTypeName(indexer);
-			logTableIndexMiss(*this, current.get(), key, reason);
 			return std::monostate{};
 		}
 		current = std::get<std::shared_ptr<Table>>(indexer);
@@ -1118,6 +1058,12 @@ void VMCPU::writeReturnValues(CallFrame& frame, int base, int count, const std::
 }
 
 void VMCPU::setRegister(CallFrame& frame, int index, const Value& value) {
+	if (index >= static_cast<int>(frame.registers.size())) {
+		const size_t needed = static_cast<size_t>(index + 1);
+		const size_t bucket = registerBucket(needed);
+		const size_t target = (bucket > MAX_REGISTER_ARRAY_SIZE) ? needed : bucket;
+		frame.registers.resize(target, kNilValue);
+	}
 	frame.registers[index] = value;
 	int nextTop = index + 1;
 	if (nextTop > frame.top) {

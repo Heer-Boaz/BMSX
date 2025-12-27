@@ -418,7 +418,6 @@ const MAX_POOLED_FRAMES = 32;
 const MAX_POOLED_REGISTER_ARRAYS = 64;
 const MAX_REGISTER_ARRAY_SIZE = 256;
 const MAX_POOLED_NATIVE_RETURN_ARRAYS = 32;
-const MAX_TABLE_INDEX_MISS_LOGS = 64;
 
 export class VMCPU {
 	public instructionBudgetRemaining: number | null = null;
@@ -433,9 +432,6 @@ export class VMCPU {
 	private readonly valueScratch: Value[] = [];
 	private readonly returnScratch: Value[] = [];
 	private readonly nativeReturnPool: Value[][] = [];
-	private tableIndexMissCount = 0;
-	private nextTableId = 1;
-	private readonly tableIds = new WeakMap<Table, number>();
 
 	// Frame pooling: avoid allocating new CallFrame objects per call
 	private readonly framePool: CallFrame[] = [];
@@ -490,12 +486,10 @@ export class VMCPU {
 			}
 			const metatable = current.getMetatable();
 			if (metatable === null) {
-				this.logTableIndexMiss(current, key, 'no metatable');
 				return null;
 			}
 			const indexer = metatable.get('__index');
 			if (!(indexer instanceof Table)) {
-				this.logTableIndexMiss(current, key, `indexer=${valueTypeName(indexer)}`);
 				return null;
 			}
 			current = indexer;
@@ -928,7 +922,6 @@ export class VMCPU {
 					args.push(frame.registers[a + 1 + index]);
 				}
 				if (callee === null) {
-					this.logCallNil(frame.pc - 1, a, argCount);
 					throw new Error('Attempted to call a nil value.');
 				}
 				if (isNativeFunction(callee)) {
@@ -1072,7 +1065,14 @@ export class VMCPU {
 	}
 
 	private setRegister(frame: CallFrame, index: number, value: Value): void {
-		frame.registers[index] = value;
+		const registers = frame.registers;
+		if (index >= registers.length) {
+			const needed = index + 1;
+			const bucket = Math.max(8, 1 << (32 - Math.clz32(needed - 1)));
+			const target = bucket > MAX_REGISTER_ARRAY_SIZE ? needed : bucket;
+			for (let i = registers.length; i < target; i += 1) registers[i] = null;
+		}
+		registers[index] = value;
 		const nextTop = index + 1;
 		if (nextTop > frame.top) {
 			frame.top = nextTop;
@@ -1085,59 +1085,6 @@ export class VMCPU {
 			return this.program.constPool[index];
 		}
 		return frame.registers[operand];
-	}
-
-	private formatRange(pc: number): string {
-		const range = this.getDebugRange(pc);
-		if (!range) {
-			return '';
-		}
-		return ` at ${range.path}:${range.start.line}:${range.start.column}`;
-	}
-
-	private formatCallStack(): string {
-		const stack = this.getCallStack();
-		if (stack.length === 0) {
-			return '';
-		}
-		const parts: string[] = [];
-		for (let index = stack.length - 1; index >= 0; index -= 1) {
-			const entry = stack[index];
-			const protoId = this.program.protoIds[entry.protoIndex];
-			const range = this.getDebugRange(entry.pc);
-			if (range) {
-				parts.push(`${protoId}(${range.path}:${range.start.line}:${range.start.column})`);
-			} else {
-				parts.push(`${protoId}(pc=${entry.pc})`);
-			}
-		}
-		return ` stack=${parts.join(' <- ')}`;
-	}
-
-	private getTableId(table: Table): number {
-		const existing = this.tableIds.get(table);
-		if (existing !== undefined) {
-			return existing;
-		}
-		const id = this.nextTableId;
-		this.nextTableId += 1;
-		this.tableIds.set(table, id);
-		return id;
-	}
-
-	private logCallNil(pc: number, registerIndex: number, argCount: number): void {
-		const message = `[VMCPU] CALL nil callee pc=${pc} a=${registerIndex} args=${argCount}${this.formatRange(pc)}${this.formatCallStack()}`;
-		console.error(message);
-	}
-
-	private logTableIndexMiss(table: Table, key: Value, reason: string): void {
-		if (this.tableIndexMissCount >= MAX_TABLE_INDEX_MISS_LOGS) {
-			return;
-		}
-		this.tableIndexMissCount += 1;
-		const tableId = this.getTableId(table);
-		const message = `[VMCPU] resolveTableIndex miss (${reason}) key=${String(key)} keyType=${valueTypeName(key)} table=${tableId}${this.formatRange(this.lastPc)}${this.formatCallStack()}`;
-		console.warn(message);
 	}
 
 	private isTruthy(value: Value): boolean {
