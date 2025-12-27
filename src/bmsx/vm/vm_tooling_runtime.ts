@@ -1368,7 +1368,10 @@ export class BmsxVMRuntime {
 		interpreter.clearLastFaultEnvironment();
 		const chunk = interpreter.compileChunk(params.source, binding);
 		const { modules, modulePaths } = this.buildVmModuleChunks(binding);
-		const { program, entryProtoIndex, moduleProtoMap } = compileLuaChunkToProgram(chunk, modules, { baseProgram: this.cpu.getProgram() });
+		const { program, entryProtoIndex, moduleProtoMap } = compileLuaChunkToProgram(chunk, modules, {
+			baseProgram: this.cpu.getProgram(),
+			canonicalization: this._canonicalization,
+		});
 		this.vmModuleProtos.clear();
 		for (const [modulePath, protoIndex] of moduleProtoMap.entries()) {
 			this.vmModuleProtos.set(modulePath, protoIndex);
@@ -1533,7 +1536,7 @@ export class BmsxVMRuntime {
 		this.resetVmState();
 		const chunk = interpreter.compileChunk(params.source, binding.source_path);
 		const { modules, modulePaths } = this.buildVmModuleChunks(binding.source_path);
-		const { program, entryProtoIndex, moduleProtoMap } = compileLuaChunkToProgram(chunk, modules);
+		const { program, entryProtoIndex, moduleProtoMap } = compileLuaChunkToProgram(chunk, modules, { canonicalization: this._canonicalization });
 		this.vmModuleProtos.clear();
 		for (const [modulePath, protoIndex] of moduleProtoMap.entries()) {
 			this.vmModuleProtos.set(modulePath, protoIndex);
@@ -1819,7 +1822,7 @@ export class BmsxVMRuntime {
 		interpreter.setReservedIdentifiers([]);
 		const chunk = interpreter.compileChunk(source, BmsxVMRuntime.ENGINE_BUILTIN_PRELUDE_PATH);
 		interpreter.setReservedIdentifiers(this.apiFunctionNames);
-		const compiled = appendLuaChunkToProgram(program, chunk);
+		const compiled = appendLuaChunkToProgram(program, chunk, { canonicalization: this._canonicalization });
 		this.cpu.setProgram(compiled.program);
 		this.callVmFunction({ protoIndex: compiled.entryProtoIndex, upvalues: [] }, []);
 		this.processVmIo();
@@ -3388,7 +3391,7 @@ export class BmsxVMRuntime {
 			const entrySource = options?.sourceOverride?.source ?? this.resourceSourceForChunk(entryPath);
 			const entryChunk = interpreter.compileChunk(entrySource, entryPath);
 			const { modules, modulePaths } = this.buildVmModuleChunks(entryPath);
-			const { program, entryProtoIndex, moduleProtoMap } = compileLuaChunkToProgram(entryChunk, modules);
+			const { program, entryProtoIndex, moduleProtoMap } = compileLuaChunkToProgram(entryChunk, modules, { canonicalization: this._canonicalization });
 			this.vmModuleProtos.clear();
 			for (const [modulePath, protoIndex] of moduleProtoMap.entries()) {
 				this.vmModuleProtos.set(modulePath, protoIndex);
@@ -3625,7 +3628,7 @@ export class BmsxVMRuntime {
 	public runVmConsoleChunk(source: string): Value[] {
 		const chunk = this.luaInterpreter.compileChunk(source, 'console');
 		const currentProgram = this.cpu.getProgram();
-		const compiled = appendLuaChunkToProgram(currentProgram, chunk);
+		const compiled = appendLuaChunkToProgram(currentProgram, chunk, { canonicalization: this._canonicalization });
 		this.cpu.setProgram(compiled.program);
 		const results = this.callVmFunction({ protoIndex: compiled.entryProtoIndex, upvalues: [] }, []);
 		this.processVmIo();
