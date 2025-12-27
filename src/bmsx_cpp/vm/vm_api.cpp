@@ -46,62 +46,64 @@ void VMApi::registerAllFunctions() {
 		return static_cast<int>(std::floor(std::get<double>(args[index])));
 	};
 
-	m_runtime.registerNativeFunction("display_width", [this](const std::vector<Value>&) -> std::vector<Value> {
-		return {static_cast<double>(display_width())};
-	});
+m_runtime.registerNativeFunction("display_width", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+	(void)args;
+	out.push_back(static_cast<double>(display_width()));
+});
 
-	m_runtime.registerNativeFunction("display_height", [this](const std::vector<Value>&) -> std::vector<Value> {
-		return {static_cast<double>(display_height())};
-	});
+m_runtime.registerNativeFunction("display_height", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+	(void)args;
+	out.push_back(static_cast<double>(display_height()));
+});
 
-	m_runtime.registerNativeFunction("stat", [this](const std::vector<Value>& args) -> std::vector<Value> {
-		int index = static_cast<int>(std::floor(std::get<double>(args.at(0))));
-		return {stat(index)};
-	});
+m_runtime.registerNativeFunction("stat", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+	int index = static_cast<int>(std::floor(std::get<double>(args.at(0))));
+	out.push_back(stat(index));
+});
 
-	m_runtime.registerNativeFunction("cls", [this](const std::vector<Value>& args) -> std::vector<Value> {
-		int colorIndex = args.empty() ? 0 : static_cast<int>(std::floor(std::get<double>(args.at(0))));
-		cls(colorIndex);
-		return {};
-	});
+m_runtime.registerNativeFunction("cls", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+	int colorIndex = args.empty() ? 0 : static_cast<int>(std::floor(std::get<double>(args.at(0))));
+	cls(colorIndex);
+	(void)out;
+});
 
-	m_runtime.registerNativeFunction("put_rect", [this](const std::vector<Value>& args) -> std::vector<Value> {
-		int x0 = static_cast<int>(std::floor(std::get<double>(args.at(0))));
-		int y0 = static_cast<int>(std::floor(std::get<double>(args.at(1))));
-		int x1 = static_cast<int>(std::floor(std::get<double>(args.at(2))));
-		int y1 = static_cast<int>(std::floor(std::get<double>(args.at(3))));
-		int z = static_cast<int>(std::floor(std::get<double>(args.at(4))));
-		int colorIndex = static_cast<int>(std::floor(std::get<double>(args.at(5))));
-		put_rect(x0, y0, x1, y1, z, colorIndex);
-		return {};
-	});
+m_runtime.registerNativeFunction("put_rect", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+	int x0 = static_cast<int>(std::floor(std::get<double>(args.at(0))));
+	int y0 = static_cast<int>(std::floor(std::get<double>(args.at(1))));
+	int x1 = static_cast<int>(std::floor(std::get<double>(args.at(2))));
+	int y1 = static_cast<int>(std::floor(std::get<double>(args.at(3))));
+	int z = static_cast<int>(std::floor(std::get<double>(args.at(4))));
+	int colorIndex = static_cast<int>(std::floor(std::get<double>(args.at(5))));
+	put_rect(x0, y0, x1, y1, z, colorIndex);
+	(void)out;
+});
 
-	m_runtime.registerNativeFunction("put_rectfill", [this](const std::vector<Value>& args) -> std::vector<Value> {
-		int x0 = static_cast<int>(std::floor(std::get<double>(args.at(0))));
-		int y0 = static_cast<int>(std::floor(std::get<double>(args.at(1))));
-		int x1 = static_cast<int>(std::floor(std::get<double>(args.at(2))));
-		int y1 = static_cast<int>(std::floor(std::get<double>(args.at(3))));
-		int z = static_cast<int>(std::floor(std::get<double>(args.at(4))));
-		int colorIndex = static_cast<int>(std::floor(std::get<double>(args.at(5))));
-		put_rectfill(x0, y0, x1, y1, z, colorIndex);
-		return {};
-	});
+m_runtime.registerNativeFunction("put_rectfill", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+	int x0 = static_cast<int>(std::floor(std::get<double>(args.at(0))));
+	int y0 = static_cast<int>(std::floor(std::get<double>(args.at(1))));
+	int x1 = static_cast<int>(std::floor(std::get<double>(args.at(2))));
+	int y1 = static_cast<int>(std::floor(std::get<double>(args.at(3))));
+	int z = static_cast<int>(std::floor(std::get<double>(args.at(4))));
+	int colorIndex = static_cast<int>(std::floor(std::get<double>(args.at(5))));
+	put_rectfill(x0, y0, x1, y1, z, colorIndex);
+	(void)out;
+});
 
-	m_runtime.registerNativeFunction("put_rectfillcolor", [this](const std::vector<Value>& args) -> std::vector<Value> {
-		int x0 = static_cast<int>(std::floor(std::get<double>(args.at(0))));
-		int y0 = static_cast<int>(std::floor(std::get<double>(args.at(1))));
-		int x1 = static_cast<int>(std::floor(std::get<double>(args.at(2))));
-		int y1 = static_cast<int>(std::floor(std::get<double>(args.at(3))));
-		int z = static_cast<int>(std::floor(std::get<double>(args.at(4))));
-		Color color = resolve_color(args.at(5));
-		put_rectfillcolor(x0, y0, x1, y1, z, color);
-		return {};
-	});
+m_runtime.registerNativeFunction("put_rectfillcolor", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+	int x0 = static_cast<int>(std::floor(std::get<double>(args.at(0))));
+	int y0 = static_cast<int>(std::floor(std::get<double>(args.at(1))));
+	int x1 = static_cast<int>(std::floor(std::get<double>(args.at(2))));
+	int y1 = static_cast<int>(std::floor(std::get<double>(args.at(3))));
+	int z = static_cast<int>(std::floor(std::get<double>(args.at(4))));
+	Color color = resolve_color(args.at(5));
+	put_rectfillcolor(x0, y0, x1, y1, z, color);
+	(void)out;
+});
 
-	m_runtime.registerNativeFunction("put_sprite", [this](const std::vector<Value>& args) -> std::vector<Value> {
-		const std::string& imgId = std::get<std::string>(args.at(0));
-		float x = static_cast<float>(std::get<double>(args.at(1)));
-		float y = static_cast<float>(std::get<double>(args.at(2)));
+m_runtime.registerNativeFunction("put_sprite", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+	const std::string& imgId = std::get<std::string>(args.at(0));
+	float x = static_cast<float>(std::get<double>(args.at(1)));
+	float y = static_cast<float>(std::get<double>(args.at(2)));
 		float z = static_cast<float>(std::get<double>(args.at(3)));
 		ImgRenderSubmission submission;
 		submission.imgid = imgId;
@@ -134,17 +136,17 @@ void VMApi::registerAllFunctions() {
 			if (!isNil(colorizeValue)) {
 				submission.colorize = resolve_color(colorizeValue);
 			}
-		}
+	}
 
-		put_sprite(submission);
-		return {};
-	});
+	put_sprite(submission);
+	(void)out;
+});
 
-	m_runtime.registerNativeFunction("put_glyphs", [this](const std::vector<Value>& args) -> std::vector<Value> {
-		const Value& glyphValue = args.at(0);
-		std::vector<std::string> glyphs;
-		if (std::holds_alternative<std::string>(glyphValue)) {
-			glyphs.push_back(std::get<std::string>(glyphValue));
+m_runtime.registerNativeFunction("put_glyphs", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+	const Value& glyphValue = args.at(0);
+	std::vector<std::string> glyphs;
+	if (std::holds_alternative<std::string>(glyphValue)) {
+		glyphs.push_back(std::get<std::string>(glyphValue));
 		} else {
 			auto tbl = std::get<std::shared_ptr<Table>>(glyphValue);
 			int length = tbl->length();
@@ -193,17 +195,17 @@ void VMApi::registerAllFunctions() {
 			if (!isNil(layerValue)) {
 				submission.layer = resolve_layer(layerValue);
 			}
-		}
+	}
 
-		EngineCore::instance().view()->renderer.submit.glyphs(submission);
-		return {};
-	});
+	EngineCore::instance().view()->renderer.submit.glyphs(submission);
+	(void)out;
+});
 
-	m_runtime.registerNativeFunction("put_poly", [this](const std::vector<Value>& args) -> std::vector<Value> {
-		std::vector<f32> points = read_polygon(args.at(0));
-		float z = static_cast<float>(std::get<double>(args.at(1)));
-		Color color = palette_color(static_cast<int>(std::floor(std::get<double>(args.at(2)))));
-		std::optional<float> thickness;
+m_runtime.registerNativeFunction("put_poly", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+	std::vector<f32> points = read_polygon(args.at(0));
+	float z = static_cast<float>(std::get<double>(args.at(1)));
+	Color color = palette_color(static_cast<int>(std::floor(std::get<double>(args.at(2)))));
+	std::optional<float> thickness;
 		std::optional<RenderLayer> layer;
 		if (args.size() > 3 && !isNil(args[3])) {
 			thickness = static_cast<float>(std::get<double>(args.at(3)));
@@ -218,32 +220,32 @@ void VMApi::registerAllFunctions() {
 		if (thickness.has_value()) {
 			submission.thickness = thickness.value();
 		}
-		if (layer.has_value()) {
-			submission.layer = layer.value();
-		}
-		put_poly(submission);
-		return {};
-	});
+	if (layer.has_value()) {
+		submission.layer = layer.value();
+	}
+	put_poly(submission);
+	(void)out;
+});
 
-	m_runtime.registerNativeFunction("put_mesh", [this](const std::vector<Value>& args) -> std::vector<Value> {
-		MeshRenderSubmission submission;
-		submission.matrix = read_matrix(args.at(1));
-		if (args.size() > 2 && std::holds_alternative<std::shared_ptr<Table>>(args[2])) {
-			auto options = std::get<std::shared_ptr<Table>>(args[2]);
+m_runtime.registerNativeFunction("put_mesh", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+	MeshRenderSubmission submission;
+	submission.matrix = read_matrix(args.at(1));
+	if (args.size() > 2 && std::holds_alternative<std::shared_ptr<Table>>(args[2])) {
+		auto options = std::get<std::shared_ptr<Table>>(args[2]);
 			Value receiveShadow = options->get("receive_shadow");
 			if (!isNil(receiveShadow)) {
 				submission.receive_shadow = std::holds_alternative<bool>(receiveShadow) && std::get<bool>(receiveShadow);
 			}
-		}
-		put_mesh(submission);
-		return {};
-	});
+	}
+	put_mesh(submission);
+	(void)out;
+});
 
-	m_runtime.registerNativeFunction("put_particle", [this](const std::vector<Value>& args) -> std::vector<Value> {
-		ParticleRenderSubmission submission;
-		submission.position = read_vec3(args.at(0));
-		submission.size = static_cast<float>(std::get<double>(args.at(1)));
-		submission.color = resolve_color(args.at(2));
+m_runtime.registerNativeFunction("put_particle", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+	ParticleRenderSubmission submission;
+	submission.position = read_vec3(args.at(0));
+	submission.size = static_cast<float>(std::get<double>(args.at(1)));
+	submission.color = resolve_color(args.at(2));
 		if (args.size() > 3 && std::holds_alternative<std::shared_ptr<Table>>(args[3])) {
 			auto options = std::get<std::shared_ptr<Table>>(args[3]);
 			Value ambientMode = options->get("ambient_mode");
@@ -254,121 +256,126 @@ void VMApi::registerAllFunctions() {
 			if (!isNil(ambientFactor)) {
 				submission.ambient_factor = static_cast<float>(std::get<double>(ambientFactor));
 			}
-		}
-		put_particle(submission);
-		return {};
-	});
+	}
+	put_particle(submission);
+	(void)out;
+});
 
-	m_runtime.registerNativeFunction("write", [this, readOptionalInt](const std::vector<Value>& args) -> std::vector<Value> {
-		const std::string& text = std::get<std::string>(args.at(0));
-		write(text, readOptionalInt(args, 1), readOptionalInt(args, 2), readOptionalInt(args, 3), readOptionalInt(args, 4));
-		return {};
-	});
+m_runtime.registerNativeFunction("write", [this, readOptionalInt](const std::vector<Value>& args, std::vector<Value>& out) {
+	const std::string& text = std::get<std::string>(args.at(0));
+	write(text, readOptionalInt(args, 1), readOptionalInt(args, 2), readOptionalInt(args, 3), readOptionalInt(args, 4));
+	(void)out;
+});
 
-	m_runtime.registerNativeFunction("write_color", [this, readOptionalInt](const std::vector<Value>& args) -> std::vector<Value> {
-		const std::string& text = std::get<std::string>(args.at(0));
-		Value colorValue = args.size() > 4 ? args.at(4) : Value{std::monostate{}};
-		write_color(text, readOptionalInt(args, 1), readOptionalInt(args, 2), readOptionalInt(args, 3), colorValue);
-		return {};
-	});
+m_runtime.registerNativeFunction("write_color", [this, readOptionalInt](const std::vector<Value>& args, std::vector<Value>& out) {
+	const std::string& text = std::get<std::string>(args.at(0));
+	Value colorValue = args.size() > 4 ? args.at(4) : Value{std::monostate{}};
+	write_color(text, readOptionalInt(args, 1), readOptionalInt(args, 2), readOptionalInt(args, 3), colorValue);
+	(void)out;
+});
 
-	m_runtime.registerNativeFunction("write_with_font", [this, readOptionalInt](const std::vector<Value>& args) -> std::vector<Value> {
-		const std::string& text = std::get<std::string>(args.at(0));
-		write_with_font(text, readOptionalInt(args, 1), readOptionalInt(args, 2), readOptionalInt(args, 3), readOptionalInt(args, 4), m_font.get());
-		return {};
-	});
+m_runtime.registerNativeFunction("write_with_font", [this, readOptionalInt](const std::vector<Value>& args, std::vector<Value>& out) {
+	const std::string& text = std::get<std::string>(args.at(0));
+	write_with_font(text, readOptionalInt(args, 1), readOptionalInt(args, 2), readOptionalInt(args, 3), readOptionalInt(args, 4), m_font.get());
+	(void)out;
+});
 
-	m_runtime.registerNativeFunction("write_inline_with_font", [this](const std::vector<Value>& args) -> std::vector<Value> {
-		const std::string& text = std::get<std::string>(args.at(0));
-		int x = static_cast<int>(std::floor(std::get<double>(args.at(1))));
-		int y = static_cast<int>(std::floor(std::get<double>(args.at(2))));
-		int z = static_cast<int>(std::floor(std::get<double>(args.at(3))));
-		int colorIndex = static_cast<int>(std::floor(std::get<double>(args.at(4))));
-		write_inline_with_font(text, x, y, z, colorIndex, m_font.get());
-		return {};
-	});
+m_runtime.registerNativeFunction("write_inline_with_font", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+	const std::string& text = std::get<std::string>(args.at(0));
+	int x = static_cast<int>(std::floor(std::get<double>(args.at(1))));
+	int y = static_cast<int>(std::floor(std::get<double>(args.at(2))));
+	int z = static_cast<int>(std::floor(std::get<double>(args.at(3))));
+	int colorIndex = static_cast<int>(std::floor(std::get<double>(args.at(4))));
+	write_inline_with_font(text, x, y, z, colorIndex, m_font.get());
+	(void)out;
+});
 
-	m_runtime.registerNativeFunction("write_inline_span_with_font", [this](const std::vector<Value>& args) -> std::vector<Value> {
-		const std::string& text = std::get<std::string>(args.at(0));
-		int start = static_cast<int>(std::floor(std::get<double>(args.at(1))));
-		int end = static_cast<int>(std::floor(std::get<double>(args.at(2))));
+m_runtime.registerNativeFunction("write_inline_span_with_font", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+	const std::string& text = std::get<std::string>(args.at(0));
+	int start = static_cast<int>(std::floor(std::get<double>(args.at(1))));
+	int end = static_cast<int>(std::floor(std::get<double>(args.at(2))));
 		int x = static_cast<int>(std::floor(std::get<double>(args.at(3))));
-		int y = static_cast<int>(std::floor(std::get<double>(args.at(4))));
-		int z = static_cast<int>(std::floor(std::get<double>(args.at(5))));
-		int colorIndex = static_cast<int>(std::floor(std::get<double>(args.at(6))));
-		write_inline_span_with_font(text, start, end, x, y, z, colorIndex, m_font.get());
-		return {};
-	});
+	int y = static_cast<int>(std::floor(std::get<double>(args.at(4))));
+	int z = static_cast<int>(std::floor(std::get<double>(args.at(5))));
+	int colorIndex = static_cast<int>(std::floor(std::get<double>(args.at(6))));
+	write_inline_span_with_font(text, start, end, x, y, z, colorIndex, m_font.get());
+	(void)out;
+});
 
-	m_runtime.registerNativeFunction("action_triggered", [this](const std::vector<Value>& args) -> std::vector<Value> {
-		const std::string& action = std::get<std::string>(args.at(0));
-		std::optional<int> playerIndex;
-		if (args.size() > 1 && !isNil(args[1])) {
-			playerIndex = static_cast<int>(std::floor(std::get<double>(args.at(1))));
-		}
-		return {action_triggered(action, playerIndex)};
-	});
+m_runtime.registerNativeFunction("action_triggered", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+	const std::string& action = std::get<std::string>(args.at(0));
+	std::optional<int> playerIndex;
+	if (args.size() > 1 && !isNil(args[1])) {
+		playerIndex = static_cast<int>(std::floor(std::get<double>(args.at(1))));
+	}
+	out.push_back(action_triggered(action, playerIndex));
+});
 
-	m_runtime.registerNativeFunction("cartdata", [this](const std::vector<Value>& args) -> std::vector<Value> {
-		const std::string& ns = std::get<std::string>(args.at(0));
-		cartdata(ns);
-		return {};
-	});
+m_runtime.registerNativeFunction("cartdata", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+	const std::string& ns = std::get<std::string>(args.at(0));
+	cartdata(ns);
+	(void)out;
+});
 
-	m_runtime.registerNativeFunction("dset", [this](const std::vector<Value>& args) -> std::vector<Value> {
-		int index = static_cast<int>(std::floor(std::get<double>(args.at(0))));
-		double value = std::get<double>(args.at(1));
-		dset(index, value);
-		return {};
-	});
+m_runtime.registerNativeFunction("dset", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+	int index = static_cast<int>(std::floor(std::get<double>(args.at(0))));
+	double value = std::get<double>(args.at(1));
+	dset(index, value);
+	(void)out;
+});
 
-	m_runtime.registerNativeFunction("dget", [this](const std::vector<Value>& args) -> std::vector<Value> {
-		int index = static_cast<int>(std::floor(std::get<double>(args.at(0))));
-		return {dget(index)};
-	});
+m_runtime.registerNativeFunction("dget", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+	int index = static_cast<int>(std::floor(std::get<double>(args.at(0))));
+	out.push_back(dget(index));
+});
 
-	m_runtime.registerNativeFunction("sfx", [this](const std::vector<Value>& args) -> std::vector<Value> {
-		const std::string& id = std::get<std::string>(args.at(0));
-		sfx(id);
-		return {};
-	});
+m_runtime.registerNativeFunction("sfx", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+	const std::string& id = std::get<std::string>(args.at(0));
+	sfx(id);
+	(void)out;
+});
 
-	m_runtime.registerNativeFunction("stop_sfx", [this](const std::vector<Value>&) -> std::vector<Value> {
-		stop_sfx();
-		return {};
-	});
+m_runtime.registerNativeFunction("stop_sfx", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+	(void)args;
+	stop_sfx();
+	(void)out;
+});
 
-	m_runtime.registerNativeFunction("music", [this](const std::vector<Value>& args) -> std::vector<Value> {
-		const std::string& id = std::get<std::string>(args.at(0));
-		music(id);
-		return {};
-	});
+m_runtime.registerNativeFunction("music", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+	const std::string& id = std::get<std::string>(args.at(0));
+	music(id);
+	(void)out;
+});
 
-	m_runtime.registerNativeFunction("stop_music", [this](const std::vector<Value>&) -> std::vector<Value> {
-		stop_music();
-		return {};
-	});
+m_runtime.registerNativeFunction("stop_music", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+	(void)args;
+	stop_music();
+	(void)out;
+});
 
-	m_runtime.registerNativeFunction("set_master_volume", [this](const std::vector<Value>& args) -> std::vector<Value> {
-		double volume = std::get<double>(args.at(0));
-		set_master_volume(volume);
-		return {};
-	});
+m_runtime.registerNativeFunction("set_master_volume", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+	double volume = std::get<double>(args.at(0));
+	set_master_volume(volume);
+	(void)out;
+});
 
-	m_runtime.registerNativeFunction("pause_audio", [this](const std::vector<Value>&) -> std::vector<Value> {
-		pause_audio();
-		return {};
-	});
+m_runtime.registerNativeFunction("pause_audio", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+	(void)args;
+	pause_audio();
+	(void)out;
+});
 
-	m_runtime.registerNativeFunction("resume_audio", [this](const std::vector<Value>&) -> std::vector<Value> {
-		resume_audio();
-		return {};
-	});
+m_runtime.registerNativeFunction("resume_audio", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+	(void)args;
+	resume_audio();
+	(void)out;
+});
 
-	m_runtime.registerNativeFunction("reboot", [this](const std::vector<Value>&) -> std::vector<Value> {
-		reboot();
-		return {};
-	});
+m_runtime.registerNativeFunction("reboot", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+	(void)args;
+	reboot();
+	(void)out;
+});
 }
 
 int VMApi::display_width() const {

@@ -145,6 +145,14 @@ Value Table::get(const Value& key) const {
 	return std::monostate{};
 }
 
+Value Table::get(const std::string& key) const {
+	return get(std::string_view(key));
+}
+
+Value Table::get(const char* key) const {
+	return get(std::string_view(key));
+}
+
 Value Table::get(std::string_view key) const {
 	if (s_caseInsensitiveKeys) {
 		ensureUppercaseIndex();
@@ -185,6 +193,14 @@ void Table::set(const Value& key, const Value& value) {
 		return;
 	}
 	m_otherMap[key] = value;
+}
+
+void Table::set(const std::string& key, const Value& value) {
+	set(std::string_view(key), value);
+}
+
+void Table::set(const char* key, const Value& value) {
+	set(std::string_view(key), value);
 }
 
 void Table::set(std::string_view key, const Value& value) {
@@ -351,6 +367,50 @@ inline size_t registerBucket(size_t size) {
 	}
 	return bucket;
 }
+
+void appendRange(std::ostream& out, const VMCPU& cpu, int pc) {
+	const auto range = cpu.getDebugRange(pc);
+	if (range.has_value()) {
+		out << " at " << range->path << ":" << range->startLine << ":" << range->startColumn;
+	}
+}
+
+void appendCallStack(std::ostream& out, const VMCPU& cpu) {
+	const auto stack = cpu.getCallStack();
+	if (stack.empty()) {
+		return;
+	}
+	const Program* program = cpu.getProgram();
+	out << " stack=";
+	bool first = true;
+	for (auto it = stack.rbegin(); it != stack.rend(); ++it) {
+		if (!first) {
+			out << " <- ";
+		}
+		first = false;
+		const std::string& protoId = program->protoIds[it->first];
+		out << protoId;
+		const auto range = cpu.getDebugRange(it->second);
+		if (range.has_value()) {
+			out << "(" << range->path << ":" << range->startLine << ":" << range->startColumn << ")";
+		} else {
+			out << "(pc=" << it->second << ")";
+		}
+	}
+}
+
+void logTableIndexMiss(const VMCPU& cpu, const Table* table, const Value& key, std::string_view reason) {
+	static int missCount = 0;
+	if (missCount >= 64) {
+		return;
+	}
+	missCount += 1;
+	std::cerr << "[VMCPU] resolveTableIndex miss (" << reason << ") key=" << valueToString(key)
+	          << " keyType=" << valueTypeName(key) << " table=" << table;
+	appendRange(std::cerr, cpu, cpu.lastPc);
+	appendCallStack(std::cerr, cpu);
+	std::cerr << std::endl;
+}
 }
 
 VMCPU::VMCPU(std::vector<Value>& memory)
@@ -359,6 +419,7 @@ VMCPU::VMCPU(std::vector<Value>& memory)
 {
 	m_valueScratch.reserve(64);
 	m_returnScratch.reserve(64);
+	m_nativeReturnPool.reserve(8);
 }
 
 void VMCPU::setProgram(Program* program) {
@@ -834,22 +895,41 @@ void VMCPU::executeInstruction(CallFrame& frame, uint32_t instr) {
 			const Value& callee = frame.registers[a];
 			int argCount = (b == 0) ? std::max(frame.top - a - 1, 0) : b;
 			if (isNil(callee)) {
+				std::cerr << "[VMCPU] CALL nil callee pc=" << (frame.pc - 1) << " a=" << a << " args=" << argCount;
+				appendRange(std::cerr, *this, frame.pc - 1);
+				appendCallStack(std::cerr, *this);
+				std::cerr << std::endl;
 				throw std::runtime_error("Attempted to call a nil value.");
 			}
 			if (auto nfn = std::get_if<std::shared_ptr<NativeFunction>>(&callee)) {
 				if (!*nfn) {
+					std::cerr << "[VMCPU] CALL nil native_function pc=" << (frame.pc - 1) << " a=" << a << " args=" << argCount;
+					appendRange(std::cerr, *this, frame.pc - 1);
+					appendCallStack(std::cerr, *this);
+					std::cerr << std::endl;
 					throw std::runtime_error("Attempted to call a nil value.");
 				}
 				m_valueScratch.clear();
 				for (int i = 0; i < argCount; ++i) {
 					m_valueScratch.push_back(frame.registers[a + 1 + i]);
 				}
-				std::vector<Value> results = (*nfn)->invoke(m_valueScratch);
-				writeReturnValues(frame, a, c, results);
+				auto results = acquireNativeReturnScratch();
+				try {
+					(*nfn)->invoke(m_valueScratch, results);
+					writeReturnValues(frame, a, c, results);
+				} catch (...) {
+					releaseNativeReturnScratch(std::move(results));
+					throw;
+				}
+				releaseNativeReturnScratch(std::move(results));
 				return;
 			}
 			if (auto cls = std::get_if<std::shared_ptr<Closure>>(&callee)) {
 				if (!*cls) {
+					std::cerr << "[VMCPU] CALL nil closure pc=" << (frame.pc - 1) << " a=" << a << " args=" << argCount;
+					appendRange(std::cerr, *this, frame.pc - 1);
+					appendCallStack(std::cerr, *this);
+					std::cerr << std::endl;
 					throw std::runtime_error("Attempted to call a nil value.");
 				}
 				const Value* argsBase = frame.registers.data() + a + 1;
@@ -1001,10 +1081,13 @@ Value VMCPU::resolveTableIndex(const std::shared_ptr<Table>& table, const Value&
 		}
 		auto mt = current->getMetatable();
 		if (!mt) {
+			logTableIndexMiss(*this, current.get(), key, "no metatable");
 			return std::monostate{};
 		}
-		Value indexer = mt->get(std::string("__index"));
+		Value indexer = mt->get(std::string_view("__index"));
 		if (!std::holds_alternative<std::shared_ptr<Table>>(indexer)) {
+			std::string reason = std::string("indexer=") + valueTypeName(indexer);
+			logTableIndexMiss(*this, current.get(), key, reason);
 			return std::monostate{};
 		}
 		current = std::get<std::shared_ptr<Table>>(indexer);
@@ -1104,6 +1187,22 @@ void VMCPU::releaseRegisters(std::vector<Value>&& regs) {
 	auto& pool = m_registerPool[bucket];
 	if (pool.size() < MAX_POOLED_REGISTER_ARRAYS) {
 		pool.push_back(std::move(regs));
+	}
+}
+
+std::vector<Value> VMCPU::acquireNativeReturnScratch() {
+	if (!m_nativeReturnPool.empty()) {
+		auto out = std::move(m_nativeReturnPool.back());
+		m_nativeReturnPool.pop_back();
+		out.clear();
+		return out;
+	}
+	return {};
+}
+
+void VMCPU::releaseNativeReturnScratch(std::vector<Value>&& out) {
+	if (m_nativeReturnPool.size() < MAX_POOLED_NATIVE_RETURN_ARRAYS) {
+		m_nativeReturnPool.push_back(std::move(out));
 	}
 }
 

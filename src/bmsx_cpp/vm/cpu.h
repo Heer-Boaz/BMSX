@@ -154,9 +154,9 @@ inline const std::string& asString(const Value& v) {
 }
 
 /**
- * Native function signature - takes args, returns results.
+ * Native function signature - takes args, writes results into out buffer.
  */
-using NativeFunctionInvoke = std::function<std::vector<Value>(const std::vector<Value>&)>;
+using NativeFunctionInvoke = std::function<void(const std::vector<Value>&, std::vector<Value>&)>;
 
 /**
  * Native function wrapper for C++ functions callable from Lua.
@@ -190,9 +190,10 @@ inline std::shared_ptr<NativeFunction> createNativeFunction(
 	const std::string& name,
 	NativeFunctionInvoke invoke
 ) {
-	auto wrapped = [name, invoke = std::move(invoke)](const std::vector<Value>& args) -> std::vector<Value> {
+	auto wrapped = [name, invoke = std::move(invoke)](const std::vector<Value>& args, std::vector<Value>& out) {
+		out.clear();
 		try {
-			return invoke(args);
+			invoke(args, out);
 		} catch (const std::bad_variant_access& e) {
 			std::string message = "Native function argument type mismatch.";
 			message += " fn=" + name + " args=[";
@@ -380,8 +381,12 @@ public:
 	static void setCaseInsensitiveKeys(bool enabled);
 
 	Value get(const Value& key) const;
+	Value get(const std::string& key) const;
+	Value get(const char* key) const;
 	Value get(std::string_view key) const;
 	void set(const Value& key, const Value& value);
+	void set(const std::string& key, const Value& value);
+	void set(const char* key, const Value& value);
 	void set(std::string_view key, const Value& value);
 	int length() const;
 	void clear();
@@ -465,6 +470,8 @@ private:
 	void releaseFrame(std::unique_ptr<CallFrame> frame);
 	std::vector<Value> acquireRegisters(size_t size);
 	void releaseRegisters(std::vector<Value>&& regs);
+	std::vector<Value> acquireNativeReturnScratch();
+	void releaseNativeReturnScratch(std::vector<Value>&& out);
 
 	Program* m_program = nullptr;
 	std::vector<std::unique_ptr<CallFrame>> m_frames;
@@ -473,6 +480,8 @@ private:
 	// Scratch buffers for avoiding allocations
 	std::vector<Value> m_valueScratch;
 	std::vector<Value> m_returnScratch;
+	std::vector<std::vector<Value>> m_nativeReturnPool;
+	static constexpr size_t MAX_POOLED_NATIVE_RETURN_ARRAYS = 32;
 
 	// Frame pool
 	std::vector<std::unique_ptr<CallFrame>> m_framePool;

@@ -452,6 +452,7 @@ export class BmsxVMRuntime {
 		this._canonicalization = canonicalization;
 		this.canonicalizeIdentifierFn = createIdentifierCanonicalizer(this._canonicalization);
 		// Canonicalized identifiers require case-insensitive table keys to match runtime lookups across hosts.
+		Table.setCaseInsensitiveKeys(this._canonicalization !== 'none');
 		setLuaTableCaseInsensitiveKeys(this._canonicalization !== 'none');
 		setEditorCaseInsensitivity(this._canonicalization !== 'none');
 	}
@@ -1827,27 +1828,32 @@ export class BmsxVMRuntime {
 
 	private seedVmGlobals(): void {
 		const isTruthy = (value: Value): boolean => value !== null && value !== false;
-		const callVmValue = (callee: Value, args: Value[]): Value[] => {
+		const callVmValue = (callee: Value, args: Value[], out: Value[]): void => {
 			if (isNativeFunction(callee)) {
-				return callee.invoke(args);
+				callee.invoke(args, out);
+				return;
 			}
-			return this.callVmFunction(callee as Closure, args);
+			const results = this.callVmFunction(callee as Closure, args);
+			out.length = 0;
+			for (let index = 0; index < results.length; index += 1) {
+				out.push(results[index]);
+			}
 		};
 
 		const mathTable = new Table(0, 0);
-		mathTable.set('abs', createNativeFunction('math.abs', (args) => {
+		mathTable.set('abs', createNativeFunction('math.abs', (args, out) => {
 			const value = args[0] as number;
-			return [Math.abs(value)];
+			out.push(Math.abs(value));
 		}));
-		mathTable.set('ceil', createNativeFunction('math.ceil', (args) => {
+		mathTable.set('ceil', createNativeFunction('math.ceil', (args, out) => {
 			const value = args[0] as number;
-			return [Math.ceil(value)];
+			out.push(Math.ceil(value));
 		}));
-		mathTable.set('floor', createNativeFunction('math.floor', (args) => {
+		mathTable.set('floor', createNativeFunction('math.floor', (args, out) => {
 			const value = args[0] as number;
-			return [Math.floor(value)];
+			out.push(Math.floor(value));
 		}));
-		mathTable.set('max', createNativeFunction('math.max', (args) => {
+		mathTable.set('max', createNativeFunction('math.max', (args, out) => {
 			let result = args[0] as number;
 			for (let index = 1; index < args.length; index += 1) {
 				const value = args[index] as number;
@@ -1855,9 +1861,9 @@ export class BmsxVMRuntime {
 					result = value;
 				}
 			}
-			return [result];
+			out.push(result);
 		}));
-		mathTable.set('min', createNativeFunction('math.min', (args) => {
+		mathTable.set('min', createNativeFunction('math.min', (args, out) => {
 			let result = args[0] as number;
 			for (let index = 1; index < args.length; index += 1) {
 				const value = args[index] as number;
@@ -1865,23 +1871,25 @@ export class BmsxVMRuntime {
 					result = value;
 				}
 			}
-			return [result];
+			out.push(result);
 		}));
-		mathTable.set('sqrt', createNativeFunction('math.sqrt', (args) => {
+		mathTable.set('sqrt', createNativeFunction('math.sqrt', (args, out) => {
 			const value = args[0] as number;
-			return [Math.sqrt(value)];
+			out.push(Math.sqrt(value));
 		}));
-		mathTable.set('random', createNativeFunction('math.random', (args) => {
+		mathTable.set('random', createNativeFunction('math.random', (args, out) => {
 			const randomValue = this.nextVmRandom();
 			if (args.length === 0) {
-				return [randomValue];
+				out.push(randomValue);
+				return;
 			}
 			if (args.length === 1) {
 				const upper = Math.floor(args[0] as number);
 				if (upper < 1) {
 					throw this.createApiRuntimeError('math.random upper bound must be positive.');
 				}
-				return [Math.floor(randomValue * upper) + 1];
+				out.push(Math.floor(randomValue * upper) + 1);
+				return;
 			}
 			const lower = Math.floor(args[0] as number);
 			const upper = Math.floor(args[1] as number);
@@ -1889,126 +1897,129 @@ export class BmsxVMRuntime {
 				throw this.createApiRuntimeError('math.random upper bound must be greater than or equal to lower bound.');
 			}
 			const span = upper - lower + 1;
-			return [lower + Math.floor(randomValue * span)];
+			out.push(lower + Math.floor(randomValue * span));
 		}));
-		mathTable.set('randomseed', createNativeFunction('math.randomseed', (args) => {
+		mathTable.set('randomseed', createNativeFunction('math.randomseed', (args, out) => {
 			const seedValue = args.length > 0 ? (args[0] as number) : $.platform.clock.now();
 			this.vmRandomSeedValue = Math.floor(seedValue) >>> 0;
-			return [];
+			out.length = 0;
 		}));
 		mathTable.set('pi', Math.PI);
 
 		this.registerVmGlobal('math', mathTable);
 		this.registerVmGlobal('SYS_CART_PRESENT', IO_SYS_CART_PRESENT);
 		this.registerVmGlobal('SYS_BOOT_CART', IO_SYS_BOOT_CART);
-		this.registerVmGlobal('peek', createNativeFunction('peek', (args) => {
+		this.registerVmGlobal('peek', createNativeFunction('peek', (args, out) => {
 			const address = args[0] as number;
-			return [this.cpuMemory[address]];
+			out.push(this.cpuMemory[address]);
 		}));
-		this.registerVmGlobal('poke', createNativeFunction('poke', (args) => {
+		this.registerVmGlobal('poke', createNativeFunction('poke', (args, out) => {
 			const address = args[0] as number;
 			this.cpuMemory[address] = args[1];
-			return [];
+			out.length = 0;
 		}));
-		this.registerVmGlobal('type', createNativeFunction('type', (args) => {
+		this.registerVmGlobal('type', createNativeFunction('type', (args, out) => {
 			const value = args.length > 0 ? args[0] : null;
-			return [this.vmTypeOf(value)];
+			out.push(this.vmTypeOf(value));
 		}));
-		this.registerVmGlobal('tostring', createNativeFunction('tostring', (args) => {
+		this.registerVmGlobal('tostring', createNativeFunction('tostring', (args, out) => {
 			const value = args.length > 0 ? args[0] : null;
-			return [this.vmToString(value)];
+			out.push(this.vmToString(value));
 		}));
-		this.registerVmGlobal('tonumber', createNativeFunction('tonumber', (args) => {
+		this.registerVmGlobal('tonumber', createNativeFunction('tonumber', (args, out) => {
 			if (args.length === 0) {
-				return [null];
+				out.push(null);
+				return;
 			}
 			const value = args[0];
 			if (typeof value === 'number') {
-				return [value];
+				out.push(value);
+				return;
 			}
 			if (typeof value === 'string') {
 				if (args.length >= 2) {
 					const baseValue = Math.floor(args[1] as number);
 					if (baseValue >= 2 && baseValue <= 36) {
 						const parsed = parseInt(value.trim(), baseValue);
-						return Number.isFinite(parsed) ? [parsed] : [null];
+						out.push(Number.isFinite(parsed) ? parsed : null);
+						return;
 					}
 				}
 				const converted = Number(value);
-				return Number.isFinite(converted) ? [converted] : [null];
+				out.push(Number.isFinite(converted) ? converted : null);
+				return;
 			}
-			return [null];
+			out.push(null);
 		}));
-		this.registerVmGlobal('assert', createNativeFunction('assert', (args) => {
+		this.registerVmGlobal('assert', createNativeFunction('assert', (args, out) => {
 			const condition = args.length > 0 ? args[0] : null;
 			if (!isTruthy(condition)) {
 				const message = args.length > 1 ? this.vmToString(args[1]) : 'assertion failed!';
 				throw this.createApiRuntimeError(message);
 			}
-			return args as Value[];
+			for (let index = 0; index < args.length; index += 1) {
+				out.push(args[index]);
+			}
 		}));
-		this.registerVmGlobal('error', createNativeFunction('error', (args) => {
+		this.registerVmGlobal('error', createNativeFunction('error', (args, out) => {
+			void out;
 			const message = args.length > 0 ? this.vmToString(args[0]) : 'error';
 			throw this.createApiRuntimeError(message);
 		}));
-		this.registerVmGlobal('setmetatable', createNativeFunction('setmetatable', (args) => {
+		this.registerVmGlobal('setmetatable', createNativeFunction('setmetatable', (args, out) => {
 			const target = args[0] as Table;
 			const metatable = args.length > 1 ? (args[1] as Table) : null;
 			target.setMetatable(metatable);
-			return [target];
+			out.push(target);
 		}));
-		this.registerVmGlobal('getmetatable', createNativeFunction('getmetatable', (args) => {
+		this.registerVmGlobal('getmetatable', createNativeFunction('getmetatable', (args, out) => {
 			const target = args[0] as Table;
-			return [target.getMetatable()];
+			out.push(target.getMetatable());
 		}));
-		this.registerVmGlobal('rawequal', createNativeFunction('rawequal', (args) => {
-			return [args[0] === args[1]];
+		this.registerVmGlobal('rawequal', createNativeFunction('rawequal', (args, out) => {
+			out.push(args[0] === args[1]);
 		}));
-		this.registerVmGlobal('rawget', createNativeFunction('rawget', (args) => {
+		this.registerVmGlobal('rawget', createNativeFunction('rawget', (args, out) => {
 			const target = args[0] as Table;
 			const key = args.length > 1 ? args[1] : null;
-			return [target.get(key)];
+			out.push(target.get(key));
 		}));
-		this.registerVmGlobal('rawset', createNativeFunction('rawset', (args) => {
+		this.registerVmGlobal('rawset', createNativeFunction('rawset', (args, out) => {
 			const target = args[0] as Table;
 			const key = args[1];
 			const value = args.length > 2 ? args[2] : null;
 			target.set(key, value);
-			return [target];
+			out.push(target);
 		}));
-		this.registerVmGlobal('select', createNativeFunction('select', (args) => {
+		this.registerVmGlobal('select', createNativeFunction('select', (args, out) => {
 			const index = args[0];
 			const count = args.length - 1;
 			if (index === '#') {
-				return [count];
+				out.push(count);
+				return;
 			}
 			const start = (index as number) >= 0
 				? (index as number)
 				: count + (index as number) + 1;
-			const output: Value[] = [];
 			for (let i = start; i <= count; i += 1) {
-				output.push(args[i]);
+				out.push(args[i]);
 			}
-			return output;
 		}));
-		this.registerVmGlobal('pcall', createNativeFunction('pcall', (args) => {
+		this.registerVmGlobal('pcall', createNativeFunction('pcall', (args, out) => {
 			const fn = args[0];
 			const callArgs: Value[] = [];
 			for (let index = 1; index < args.length; index += 1) {
 				callArgs.push(args[index]);
 			}
 			try {
-				const results = callVmValue(fn, callArgs);
-				const output: Value[] = [true];
-				for (let index = 0; index < results.length; index += 1) {
-					output.push(results[index]);
-				}
-				return output;
+				callVmValue(fn, callArgs, out);
+				out.unshift(true);
 			} catch (error) {
-				return [false, extractErrorMessage(error)];
+				out.length = 0;
+				out.push(false, extractErrorMessage(error));
 			}
 		}));
-		this.registerVmGlobal('xpcall', createNativeFunction('xpcall', (args) => {
+		this.registerVmGlobal('xpcall', createNativeFunction('xpcall', (args, out) => {
 			const fn = args[0];
 			const handler = args[1];
 			const callArgs: Value[] = [];
@@ -2016,26 +2027,19 @@ export class BmsxVMRuntime {
 				callArgs.push(args[index]);
 			}
 			try {
-				const results = callVmValue(fn, callArgs);
-				const output: Value[] = [true];
-				for (let index = 0; index < results.length; index += 1) {
-					output.push(results[index]);
-				}
-				return output;
+				callVmValue(fn, callArgs, out);
+				out.unshift(true);
 			} catch (error) {
-				const handlerResults = callVmValue(handler, [extractErrorMessage(error)]);
-				const output: Value[] = [false];
-				for (let index = 0; index < handlerResults.length; index += 1) {
-					output.push(handlerResults[index]);
-				}
-				return output;
+				const handlerArgs: Value[] = [extractErrorMessage(error)];
+				callVmValue(handler, handlerArgs, out);
+				out.unshift(false);
 			}
 		}));
-		this.registerVmGlobal('require', createNativeFunction('require', (args) => {
+		this.registerVmGlobal('require', createNativeFunction('require', (args, out) => {
 			const moduleName = (args[0] as string).trim();
-			return [this.requireVmModule(moduleName)];
+			out.push(this.requireVmModule(moduleName));
 		}));
-		this.registerVmGlobal('array', createNativeFunction('array', (args) => {
+		this.registerVmGlobal('array', createNativeFunction('array', (args, out) => {
 			const ctx = this.buildVmContext();
 			let result: unknown[] = [];
 			if (args.length === 1 && args[0] instanceof Table) {
@@ -2046,9 +2050,9 @@ export class BmsxVMRuntime {
 					result[index] = this.toNativeValue(args[index], ctx, new WeakMap());
 				}
 			}
-			return [this.getOrCreateNativeObject(result)];
+			out.push(this.getOrCreateNativeObject(result));
 		}));
-			this.registerVmGlobal('print', createNativeFunction('print', (args) => {
+			this.registerVmGlobal('print', createNativeFunction('print', (args, out) => {
 				const parts: string[] = [];
 				for (let index = 0; index < args.length; index += 1) {
 					parts.push(this.formatVmValue(args[index]));
@@ -2059,23 +2063,23 @@ export class BmsxVMRuntime {
 					// eslint-disable-next-line no-console
 					console.log(text);
 				}
-				return [];
+				out.length = 0;
 			}));
 
 		const stringTable = new Table(0, 0);
-		stringTable.set('len', createNativeFunction('string.len', (args) => {
+		stringTable.set('len', createNativeFunction('string.len', (args, out) => {
 			const text = args[0] as string;
-			return [text.length];
+			out.push(text.length);
 		}));
-		stringTable.set('upper', createNativeFunction('string.upper', (args) => {
+		stringTable.set('upper', createNativeFunction('string.upper', (args, out) => {
 			const text = args[0] as string;
-			return [text.toUpperCase()];
+			out.push(text.toUpperCase());
 		}));
-		stringTable.set('lower', createNativeFunction('string.lower', (args) => {
+		stringTable.set('lower', createNativeFunction('string.lower', (args, out) => {
 			const text = args[0] as string;
-			return [text.toLowerCase()];
+			out.push(text.toLowerCase());
 		}));
-		stringTable.set('sub', createNativeFunction('string.sub', (args) => {
+		stringTable.set('sub', createNativeFunction('string.sub', (args, out) => {
 			const text = args[0] as string;
 			const length = text.length;
 			const normalizeIndex = (value: number): number => {
@@ -2099,11 +2103,12 @@ export class BmsxVMRuntime {
 				endIndex = length;
 			}
 			if (endIndex < startIndex) {
-				return [''];
+				out.push('');
+				return;
 			}
-			return [text.substring(startIndex - 1, endIndex)];
+			out.push(text.substring(startIndex - 1, endIndex));
 		}));
-		stringTable.set('find', createNativeFunction('string.find', (args) => {
+		stringTable.set('find', createNativeFunction('string.find', (args, out) => {
 			const source = args[0] as string;
 			const pattern = args.length > 1 ? (args[1] as string) : '';
 			const length = source.length;
@@ -2119,38 +2124,42 @@ export class BmsxVMRuntime {
 			};
 			const startIndex = args.length > 2 ? normalizeIndex(args[2] as number) : 1;
 			if (startIndex > length) {
-				return [null];
+				out.push(null);
+				return;
 			}
 			const plain = args.length > 3 && args[3] === true;
 			if (plain) {
 				const position = source.indexOf(pattern, Math.max(0, startIndex - 1));
 				if (position === -1) {
-					return [null];
+					out.push(null);
+					return;
 				}
 				const first = position + 1;
 				const last = first + pattern.length - 1;
-				return [first, last];
+				out.push(first, last);
+				return;
 			}
 			const regexBase = this.buildLuaPatternRegex(pattern);
 			const regex = new RegExp(regexBase.source);
 			const slice = source.slice(Math.max(0, startIndex - 1));
 			const match = regex.exec(slice);
 			if (!match) {
-				return [null];
+				out.push(null);
+				return;
 			}
 			const first = (startIndex - 1) + match.index + 1;
 			const last = first + match[0].length - 1;
 			if (match.length > 1) {
-				const output: Value[] = [first, last];
+				out.push(first, last);
 				for (let index = 1; index < match.length; index += 1) {
 					const value = match[index];
-					output.push(value === undefined ? null : value);
+					out.push(value === undefined ? null : value);
 				}
-				return output;
+				return;
 			}
-			return [first, last];
+			out.push(first, last);
 		}));
-		stringTable.set('match', createNativeFunction('string.match', (args) => {
+		stringTable.set('match', createNativeFunction('string.match', (args, out) => {
 			const source = args[0] as string;
 			const pattern = args.length > 1 ? (args[1] as string) : '';
 			const length = source.length;
@@ -2166,26 +2175,27 @@ export class BmsxVMRuntime {
 			};
 			const startIndex = args.length > 2 ? normalizeIndex(args[2] as number) : 1;
 			if (startIndex > length) {
-				return [null];
+				out.push(null);
+				return;
 			}
 			const regexBase = this.buildLuaPatternRegex(pattern);
 			const regex = new RegExp(regexBase.source);
 			const slice = source.slice(Math.max(0, startIndex - 1));
 			const match = regex.exec(slice);
 			if (!match) {
-				return [null];
+				out.push(null);
+				return;
 			}
 			if (match.length > 1) {
-				const output: Value[] = [];
 				for (let index = 1; index < match.length; index += 1) {
 					const value = match[index];
-					output.push(value === undefined ? null : value);
+					out.push(value === undefined ? null : value);
 				}
-				return output.length > 0 ? output : [match[0]];
+				return;
 			}
-			return [match[0]];
+			out.push(match[0]);
 		}));
-		stringTable.set('gsub', createNativeFunction('string.gsub', (args) => {
+		stringTable.set('gsub', createNativeFunction('string.gsub', (args, out) => {
 			const source = args[0] as string;
 			const pattern = args.length > 1 ? (args[1] as string) : '';
 			const replacement = args.length > 2 ? args[2] : '';
@@ -2199,6 +2209,8 @@ export class BmsxVMRuntime {
 			let count = 0;
 			let result = '';
 			let lastIndex = 0;
+			const fnArgs: Value[] = [];
+			const fnResults: Value[] = [];
 
 			const renderReplacement = (match: RegExpExecArray): string => {
 				if (typeof replacement === 'string' || typeof replacement === 'number') {
@@ -2224,7 +2236,7 @@ export class BmsxVMRuntime {
 					return mapped === null ? match[0] : this.vmToString(mapped);
 				}
 				if (isNativeFunction(replacement) || (replacement !== null && typeof replacement === 'object' && 'protoIndex' in replacement)) {
-					const fnArgs: Value[] = [];
+					fnArgs.length = 0;
 					if (match.length > 1) {
 						for (let index = 1; index < match.length; index += 1) {
 							const value = match[index];
@@ -2236,8 +2248,8 @@ export class BmsxVMRuntime {
 					} else {
 						fnArgs.push(match[0]);
 					}
-					const results = callVmValue(replacement, fnArgs);
-					const value = results.length > 0 ? results[0] : null;
+					callVmValue(replacement, fnArgs, fnResults);
+					const value = fnResults.length > 0 ? fnResults[0] : null;
 					if (value === null || value === false) {
 						return match[0];
 					}
@@ -2266,61 +2278,63 @@ export class BmsxVMRuntime {
 			}
 
 			result += source.slice(lastIndex);
-			return [result, count];
+			out.push(result, count);
 		}));
-		stringTable.set('gmatch', createNativeFunction('string.gmatch', (args) => {
+		stringTable.set('gmatch', createNativeFunction('string.gmatch', (args, out) => {
 			const source = args[0] as string;
 			const pattern = args.length > 1 ? (args[1] as string) : '';
 			const regex = this.buildLuaPatternRegex(pattern);
-			const iterator = createNativeFunction('string.gmatch.iterator', () => {
+			const iterator = createNativeFunction('string.gmatch.iterator', (_args, iterOut) => {
 				const match = regex.exec(source);
 				if (!match) {
-					return [null];
+					iterOut.push(null);
+					return;
 				}
 				if (match[0].length === 0) {
 					regex.lastIndex += 1;
 				}
 				if (match.length > 1) {
-					const output: Value[] = [];
 					for (let index = 1; index < match.length; index += 1) {
 						const value = match[index];
-						output.push(value === undefined ? null : value);
+						iterOut.push(value === undefined ? null : value);
 					}
-					return output.length > 0 ? output : [match[0]];
+					return;
 				}
-				return [match[0]];
+				iterOut.push(match[0]);
 			});
-			return [iterator];
+			out.push(iterator);
 		}));
-		stringTable.set('byte', createNativeFunction('string.byte', (args) => {
+		stringTable.set('byte', createNativeFunction('string.byte', (args, out) => {
 			const source = args[0] as string;
 			const positionArg = args.length > 1 ? (args[1] as number) : 1;
 			const position = Math.floor(positionArg) - 1;
 			if (position < 0 || position >= source.length) {
-				return [null];
+				out.push(null);
+				return;
 			}
-			return [source.charCodeAt(position)];
+			out.push(source.charCodeAt(position));
 		}));
-		stringTable.set('char', createNativeFunction('string.char', (args) => {
+		stringTable.set('char', createNativeFunction('string.char', (args, out) => {
 			if (args.length === 0) {
-				return [''];
+				out.push('');
+				return;
 			}
 			let result = '';
 			for (let index = 0; index < args.length; index += 1) {
 				const code = args[index] as number;
 				result += String.fromCharCode(Math.floor(code));
 			}
-			return [result];
+			out.push(result);
 		}));
-		stringTable.set('format', createNativeFunction('string.format', (args) => {
+		stringTable.set('format', createNativeFunction('string.format', (args, out) => {
 			const template = args[0] as string;
 			const formatted = this.formatVmString(template, args, 1);
-			return [formatted];
+			out.push(formatted);
 		}));
 		this.registerVmGlobal('string', stringTable);
 
 		const tableLibrary = new Table(0, 0);
-		tableLibrary.set('insert', createNativeFunction('table.insert', (args) => {
+		tableLibrary.set('insert', createNativeFunction('table.insert', (args, out) => {
 			const target = args[0] as Table;
 			let position: number;
 			let value: Value;
@@ -2336,9 +2350,9 @@ export class BmsxVMRuntime {
 				target.set(index + 1, target.get(index));
 			}
 			target.set(position, value);
-			return [];
+			out.length = 0;
 		}));
-		tableLibrary.set('remove', createNativeFunction('table.remove', (args) => {
+		tableLibrary.set('remove', createNativeFunction('table.remove', (args, out) => {
 			const target = args[0] as Table;
 			const position = args.length > 1 ? Math.floor(args[1] as number) : target.length();
 			const length = target.length();
@@ -2347,9 +2361,11 @@ export class BmsxVMRuntime {
 				target.set(index, target.get(index + 1));
 			}
 			target.set(length, null);
-			return removed === null ? [] : [removed];
+			if (removed !== null) {
+				out.push(removed);
+			}
 		}));
-		tableLibrary.set('concat', createNativeFunction('table.concat', (args) => {
+		tableLibrary.set('concat', createNativeFunction('table.concat', (args, out) => {
 			const target = args[0] as Table;
 			const separator = args.length > 1 ? (args[1] as string) : '';
 			const length = target.length();
@@ -2366,24 +2382,25 @@ export class BmsxVMRuntime {
 			const startIndex = args.length > 2 ? normalizeIndex(args[2] as number, 1) : 1;
 			const endIndex = args.length > 3 ? normalizeIndex(args[3] as number, length) : length;
 			if (endIndex < startIndex) {
-				return [''];
+				out.push('');
+				return;
 			}
 			const parts: string[] = [];
 			for (let index = startIndex; index <= endIndex; index += 1) {
 				const value = target.get(index);
 				parts.push(value === null ? '' : this.vmToString(value));
 			}
-			return [parts.join(separator)];
+			out.push(parts.join(separator));
 		}));
-		tableLibrary.set('pack', createNativeFunction('table.pack', (args) => {
+		tableLibrary.set('pack', createNativeFunction('table.pack', (args, out) => {
 			const target = new Table(args.length, 1);
 			for (let index = 0; index < args.length; index += 1) {
 				target.set(index + 1, args[index]);
 			}
 			target.set('n', args.length);
-			return [target];
+			out.push(target);
 		}));
-		tableLibrary.set('unpack', createNativeFunction('table.unpack', (args) => {
+		tableLibrary.set('unpack', createNativeFunction('table.unpack', (args, out) => {
 			const target = args[0] as Table;
 			const length = target.length();
 			const normalizeIndex = (value: number, fallback: number): number => {
@@ -2399,15 +2416,13 @@ export class BmsxVMRuntime {
 			const startIndex = args.length > 1 ? normalizeIndex(args[1] as number, 1) : 1;
 			const endIndex = args.length > 2 ? normalizeIndex(args[2] as number, length) : length;
 			if (endIndex < startIndex) {
-				return [];
+				return;
 			}
-			const output: Value[] = [];
 			for (let index = startIndex; index <= endIndex; index += 1) {
-				output.push(target.get(index));
+				out.push(target.get(index));
 			}
-			return output;
 		}));
-		tableLibrary.set('sort', createNativeFunction('table.sort', (args) => {
+		tableLibrary.set('sort', createNativeFunction('table.sort', (args, out) => {
 			const target = args[0] as Table;
 			const comparator = args.length > 1 ? args[1] : null;
 			const length = target.length();
@@ -2416,12 +2431,13 @@ export class BmsxVMRuntime {
 				values[index - 1] = target.get(index);
 			}
 			const comparatorArgs: Value[] = [null, null];
+			const comparatorResults: Value[] = [];
 			values.sort((left, right) => {
 				if (comparator !== null) {
 					comparatorArgs[0] = left;
 					comparatorArgs[1] = right;
-					const results = callVmValue(comparator, comparatorArgs);
-					return results[0] === true ? -1 : 1;
+					callVmValue(comparator, comparatorArgs, comparatorResults);
+					return comparatorResults[0] === true ? -1 : 1;
 				}
 				if (typeof left === 'number' && typeof right === 'number') {
 					return left - right;
@@ -2437,7 +2453,7 @@ export class BmsxVMRuntime {
 			for (let index = 1; index <= length; index += 1) {
 				target.set(index, values[index - 1]);
 			}
-			return [target];
+			out.push(target);
 		}));
 		this.registerVmGlobal('table', tableLibrary);
 
@@ -2569,10 +2585,10 @@ export class BmsxVMRuntime {
 			table.set('isdst', isDst);
 			return table;
 		};
-		osTable.set('clock', createNativeFunction('os.clock', () => {
-			return [$.platform.clock.now() / 1000];
+		osTable.set('clock', createNativeFunction('os.clock', (_args, out) => {
+			out.push($.platform.clock.now() / 1000);
 		}));
-		osTable.set('time', createNativeFunction('os.time', (args) => {
+		osTable.set('time', createNativeFunction('os.time', (args, out) => {
 			if (args.length > 0 && args[0] !== null) {
 				const table = args[0] as Table;
 				const year = table.get('year') as number;
@@ -2582,75 +2598,87 @@ export class BmsxVMRuntime {
 				const min = table.get('min') as number;
 				const sec = table.get('sec') as number;
 				const date = new Date(year, month - 1, day, hour, min, sec);
-				return [Math.floor(date.getTime() / 1000)];
+				out.push(Math.floor(date.getTime() / 1000));
+				return;
 			}
-			return [Math.floor(Date.now() / 1000)];
+			out.push(Math.floor(Date.now() / 1000));
 		}));
-		osTable.set('difftime', createNativeFunction('os.difftime', (args) => {
+		osTable.set('difftime', createNativeFunction('os.difftime', (args, out) => {
 			const t2 = args[0] as number;
 			const t1 = args[1] as number;
-			return [t2 - t1];
+			out.push(t2 - t1);
 		}));
-		osTable.set('date', createNativeFunction('os.date', (args) => {
+		osTable.set('date', createNativeFunction('os.date', (args, out) => {
 			const format = args.length > 0 && args[0] !== null ? args[0] as string : '%c';
 			const timeValue = args.length > 1 && args[1] !== null ? (args[1] as number) * 1000 : Date.now();
 			const date = new Date(timeValue);
 			if (format === '*t') {
-				return [buildOsDateTable(date)];
+				out.push(buildOsDateTable(date));
+				return;
 			}
-			return [formatOsDate(format, date)];
+			out.push(formatOsDate(format, date));
 		}));
 		this.registerVmGlobal('os', osTable);
 
-		const nextFn = createNativeFunction('next', (args) => {
+		const nextFn = createNativeFunction('next', (args, out) => {
 			const target = args[0];
 			const key = args.length > 1 ? args[1] : null;
 			if (target instanceof Table) {
 				const entry = target.nextEntry(key);
 				if (entry === null) {
-					return [null];
+					out.push(null);
+					return;
 				}
-				return [entry[0], entry[1]];
+				out.push(entry[0], entry[1]);
+				return;
 			}
 			if (isNativeObject(target)) {
 				const entry = this.nextNativeEntry(target, key);
 				if (entry === null) {
-					return [null];
+					out.push(null);
+					return;
 				}
-				return [entry[0], entry[1]];
+				out.push(entry[0], entry[1]);
+				return;
 			}
 			throw this.createApiRuntimeError('next expects a table or native object.');
 		});
-		const ipairsIterator = createNativeFunction('ipairs.iterator', (args) => {
+		const ipairsIterator = createNativeFunction('ipairs.iterator', (args, out) => {
 			const target = args[0];
 			const index = args[1] as number;
 			const nextIndex = Math.floor(index) + 1;
 			if (target instanceof Table) {
 				const value = target.get(nextIndex);
 				if (value === null) {
-					return [null];
+					out.push(null);
+					return;
 				}
-				return [nextIndex, value];
+				out.push(nextIndex, value);
+				return;
 			}
 			if (isNativeObject(target)) {
 				const raw = target.raw as object;
 				if (Array.isArray(raw)) {
 					const value = (raw as unknown[])[nextIndex - 1];
 					if (value === undefined || value === null) {
-						return [null];
+						out.push(null);
+						return;
 					}
-					return [nextIndex, this.toVmValue(value)];
+					out.push(nextIndex, this.toVmValue(value));
+					return;
 				}
 				const value = (raw as Record<string, unknown>)[String(nextIndex)];
 				if (value === undefined || value === null) {
-					return [null];
+					out.push(null);
+					return;
 				}
-				return [nextIndex, this.toVmValue(value)];
+				out.push(nextIndex, this.toVmValue(value));
+				return;
 			}
 			throw this.createApiRuntimeError('ipairs expects a table or native object.');
 		});
 		this.registerVmGlobal('next', nextFn);
-			this.registerVmGlobal('pairs', createNativeFunction('pairs', (args) => {
+			this.registerVmGlobal('pairs', createNativeFunction('pairs', (args, out) => {
 				const target = args[0];
 				if (!(target instanceof Table) && !isNativeObject(target)) {
 					const stack = this.buildVmStackFrames()
@@ -2658,21 +2686,21 @@ export class BmsxVMRuntime {
 						.join(' <- ');
 					throw this.createApiRuntimeError(`pairs expects a table or native object (got ${this.formatVmValue(target)}). stack=${stack}`);
 				}
-				return [nextFn, target, null];
+				out.push(nextFn, target, null);
 			}));
-		this.registerVmGlobal('ipairs', createNativeFunction('ipairs', (args) => {
+		this.registerVmGlobal('ipairs', createNativeFunction('ipairs', (args, out) => {
 			const target = args[0];
 			if (!(target instanceof Table) && !isNativeObject(target)) {
 				throw this.createApiRuntimeError('ipairs expects a table or native object.');
 			}
-			return [ipairsIterator, target, 0];
+			out.push(ipairsIterator, target, 0);
 		}));
 
 		const members = this.collectApiMembers();
 		for (const { name, kind, descriptor } of members) {
 			if (kind === 'method') {
 				const callable = descriptor.value as (...args: unknown[]) => unknown;
-				const native = createNativeFunction(`api.${name}`, (args) => {
+				const native = createNativeFunction(`api.${name}`, (args, out) => {
 					const ctx = this.buildVmContext();
 					const visited = new WeakMap<Table, unknown>();
 					const jsArgs: unknown[] = [];
@@ -2682,7 +2710,7 @@ export class BmsxVMRuntime {
 					}
 					try {
 						const result = callable.apply(api, jsArgs);
-						return this.wrapNativeResult(result);
+						this.wrapNativeResult(result, out);
 					} catch (error) {
 						const message = extractErrorMessage(error);
 						throw this.createApiRuntimeError(`[api.${name}] ${message}`);
@@ -2693,10 +2721,10 @@ export class BmsxVMRuntime {
 			}
 			if (descriptor.get) {
 				const getter = descriptor.get;
-				const native = createNativeFunction(`api.${name}`, () => {
+				const native = createNativeFunction(`api.${name}`, (_args, out) => {
 					try {
 						const result = getter.call(api);
-						return this.wrapNativeResult(result);
+						this.wrapNativeResult(result, out);
 					} catch (error) {
 						const message = extractErrorMessage(error);
 						throw this.createApiRuntimeError(`[api.${name}] ${message}`);
@@ -3950,7 +3978,8 @@ export class BmsxVMRuntime {
 				for (let index = 0; index < args.length; index += 1) {
 					vmArgs.push(this.toVmValue(args[index]));
 				}
-				const results = value.invoke(vmArgs);
+				const results: Value[] = [];
+				value.invoke(vmArgs, results);
 				if (results.length === 0) {
 					return undefined;
 				}
@@ -4018,18 +4047,17 @@ export class BmsxVMRuntime {
 		return objectResult;
 	}
 
-	private wrapNativeResult(result: unknown): Value[] {
+	private wrapNativeResult(result: unknown, out: Value[]): void {
 		if (Array.isArray(result)) {
-			const values: Value[] = [];
 			for (let index = 0; index < result.length; index += 1) {
-				values.push(this.toVmValue(result[index]));
+				out.push(this.toVmValue(result[index]));
 			}
-			return values;
+			return;
 		}
 		if (result === undefined) {
-			return [];
+			return;
 		}
-		return [this.toVmValue(result)];
+		out.push(this.toVmValue(result));
 	}
 
 	private getOrCreateNativeObject(value: object): NativeObject {
@@ -4092,7 +4120,7 @@ export class BmsxVMRuntime {
 			return cached;
 		}
 		const name = this.resolveNativeTypeName(fn);
-		const wrapper = createNativeFunction(name, (args) => {
+		const wrapper = createNativeFunction(name, (args, out) => {
 			const ctx = this.buildVmContext();
 			const visited = new WeakMap<Table, unknown>();
 			const jsArgs: unknown[] = [];
@@ -4100,7 +4128,7 @@ export class BmsxVMRuntime {
 				jsArgs.push(this.toNativeValue(args[index], ctx, visited));
 			}
 			const result = fn.apply(undefined, jsArgs);
-			return this.wrapNativeResult(result);
+			this.wrapNativeResult(result, out);
 		});
 		this.nativeFunctionCache.set(fn, wrapper);
 		return wrapper;
@@ -4117,7 +4145,7 @@ export class BmsxVMRuntime {
 			return cached;
 		}
 		const name = `${this.resolveNativeTypeName(target)}.${key}`;
-		const wrapper = createNativeFunction(name, (args) => {
+		const wrapper = createNativeFunction(name, (args, out) => {
 			const ctx = this.buildVmContext();
 			const visited = new WeakMap<Table, unknown>();
 			const jsArgs: unknown[] = [];
@@ -4137,7 +4165,7 @@ export class BmsxVMRuntime {
 				throw new Error(`Property '${key}' is not callable.`);
 			}
 			const result = (member as (...inner: unknown[]) => unknown).apply(target, jsArgs);
-			return this.wrapNativeResult(result);
+			this.wrapNativeResult(result, out);
 		});
 		bucket.set(key, wrapper);
 		return wrapper;

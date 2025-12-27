@@ -1028,58 +1028,70 @@ void VMRuntime::setupBuiltins() {
 			}
 		}
 	};
-	auto callVmValue = [this](const Value& callee, const std::vector<Value>& args) -> std::vector<Value> {
+	auto callVmValue = [this](const Value& callee, const std::vector<Value>& args, std::vector<Value>& out) {
 		if (auto nfn = std::get_if<std::shared_ptr<NativeFunction>>(&callee)) {
-			return (*nfn)->invoke(args);
+			(*nfn)->invoke(args, out);
+			return;
 		}
 		if (auto cls = std::get_if<std::shared_ptr<Closure>>(&callee)) {
-			return callLuaFunction(*cls, args);
+			int depthBefore = m_cpu.getFrameDepth();
+			m_cpu.callExternal(*cls, args);
+			std::optional<int> previousBudget = m_cpu.instructionBudgetRemaining;
+			m_cpu.instructionBudgetRemaining = std::nullopt;
+			m_cpu.runUntilDepth(depthBefore);
+			m_cpu.instructionBudgetRemaining = previousBudget;
+			out.clear();
+			const auto& results = m_cpu.lastReturnValues;
+			out.insert(out.end(), results.begin(), results.end());
+			return;
 		}
 		throw std::runtime_error("Attempted to call a non-function value.");
 	};
 
 	auto mathTable = std::make_shared<Table>();
-	mathTable->set("abs", createNativeFunction("math.abs", [](const std::vector<Value>& args) -> std::vector<Value> {
+	mathTable->set("abs", createNativeFunction("math.abs", [](const std::vector<Value>& args, std::vector<Value>& out) {
 		double value = std::get<double>(args.at(0));
-		return {std::abs(value)};
+		out.push_back(std::abs(value));
 	}));
-	mathTable->set("ceil", createNativeFunction("math.ceil", [](const std::vector<Value>& args) -> std::vector<Value> {
+	mathTable->set("ceil", createNativeFunction("math.ceil", [](const std::vector<Value>& args, std::vector<Value>& out) {
 		double value = std::get<double>(args.at(0));
-		return {std::ceil(value)};
+		out.push_back(std::ceil(value));
 	}));
-	mathTable->set("floor", createNativeFunction("math.floor", [](const std::vector<Value>& args) -> std::vector<Value> {
+	mathTable->set("floor", createNativeFunction("math.floor", [](const std::vector<Value>& args, std::vector<Value>& out) {
 		double value = std::get<double>(args.at(0));
-		return {std::floor(value)};
+		out.push_back(std::floor(value));
 	}));
-	mathTable->set("max", createNativeFunction("math.max", [](const std::vector<Value>& args) -> std::vector<Value> {
+	mathTable->set("max", createNativeFunction("math.max", [](const std::vector<Value>& args, std::vector<Value>& out) {
 		double result = std::get<double>(args.at(0));
 		for (size_t i = 1; i < args.size(); ++i) {
 			result = std::max(result, std::get<double>(args[i]));
 		}
-		return {result};
+		out.push_back(result);
 	}));
-	mathTable->set("min", createNativeFunction("math.min", [](const std::vector<Value>& args) -> std::vector<Value> {
+	mathTable->set("min", createNativeFunction("math.min", [](const std::vector<Value>& args, std::vector<Value>& out) {
 		double result = std::get<double>(args.at(0));
 		for (size_t i = 1; i < args.size(); ++i) {
 			result = std::min(result, std::get<double>(args[i]));
 		}
-		return {result};
+		out.push_back(result);
 	}));
-	mathTable->set("sqrt", createNativeFunction("math.sqrt", [](const std::vector<Value>& args) -> std::vector<Value> {
+	mathTable->set("sqrt", createNativeFunction("math.sqrt", [](const std::vector<Value>& args, std::vector<Value>& out) {
 		double value = std::get<double>(args.at(0));
-		return {std::sqrt(value)};
+		out.push_back(std::sqrt(value));
 	}));
-	mathTable->set("random", createNativeFunction("math.random", [this](const std::vector<Value>& args) -> std::vector<Value> {
+	mathTable->set("random", createNativeFunction("math.random", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 		double randomValue = nextVmRandom();
 		if (args.empty()) {
-			return {randomValue};
+			out.push_back(randomValue);
+			return;
 		}
 		if (args.size() == 1) {
 			int upper = static_cast<int>(std::floor(std::get<double>(args.at(0))));
 			if (upper < 1) {
 				throw std::runtime_error("math.random upper bound must be positive.");
 			}
-			return {static_cast<double>(static_cast<int>(randomValue * upper) + 1)};
+			out.push_back(static_cast<double>(static_cast<int>(randomValue * upper) + 1));
+			return;
 		}
 		int lower = static_cast<int>(std::floor(std::get<double>(args.at(0))));
 		int upper = static_cast<int>(std::floor(std::get<double>(args.at(1))));
@@ -1087,13 +1099,13 @@ void VMRuntime::setupBuiltins() {
 			throw std::runtime_error("math.random upper bound must be greater than or equal to lower bound.");
 		}
 		int span = upper - lower + 1;
-		return {static_cast<double>(lower + static_cast<int>(randomValue * span))};
+		out.push_back(static_cast<double>(lower + static_cast<int>(randomValue * span)));
 	}));
-	mathTable->set("randomseed", createNativeFunction("math.randomseed", [this](const std::vector<Value>& args) -> std::vector<Value> {
+	mathTable->set("randomseed", createNativeFunction("math.randomseed", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 		double seedValue = args.empty() ? EngineCore::instance().clock()->now() : std::get<double>(args.at(0));
 		uint64_t seed = static_cast<uint64_t>(std::floor(seedValue));
 		m_vmRandomSeedValue = static_cast<uint32_t>(seed & 0xffffffffu);
-		return {};
+		(void)out;
 	}));
 	mathTable->set("pi", 3.14159265358979323846);
 
@@ -1101,42 +1113,44 @@ void VMRuntime::setupBuiltins() {
 	setGlobal("SYS_CART_PRESENT", static_cast<double>(IO_SYS_CART_PRESENT));
 	setGlobal("SYS_BOOT_CART", static_cast<double>(IO_SYS_BOOT_CART));
 
-	registerNativeFunction("peek", [this](const std::vector<Value>& args) -> std::vector<Value> {
+	registerNativeFunction("peek", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 		int address = static_cast<int>(std::get<double>(args.at(0)));
-		return {m_memory[address]};
+		out.push_back(m_memory[address]);
 	});
 
-	registerNativeFunction("poke", [this](const std::vector<Value>& args) -> std::vector<Value> {
+	registerNativeFunction("poke", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 		int address = static_cast<int>(std::get<double>(args.at(0)));
 		m_memory[address] = args.at(1);
-		return {};
+		(void)out;
 	});
 
-	registerNativeFunction("type", [](const std::vector<Value>& args) -> std::vector<Value> {
+	registerNativeFunction("type", [](const std::vector<Value>& args, std::vector<Value>& out) {
 		const Value& v = args.empty() ? Value{std::monostate{}} : args.at(0);
-		if (isNil(v)) return {std::string("nil")};
-		if (std::holds_alternative<bool>(v)) return {std::string("boolean")};
-		if (std::holds_alternative<double>(v)) return {std::string("number")};
-		if (std::holds_alternative<std::string>(v)) return {std::string("string")};
-		if (std::holds_alternative<std::shared_ptr<Table>>(v)) return {std::string("table")};
-		if (std::holds_alternative<std::shared_ptr<Closure>>(v)) return {std::string("function")};
-		if (std::holds_alternative<std::shared_ptr<NativeFunction>>(v)) return {std::string("function")};
-		if (std::holds_alternative<std::shared_ptr<NativeObject>>(v)) return {std::string("native")};
-		return {std::string("function")};
+		if (isNil(v)) { out.push_back(std::string("nil")); return; }
+		if (std::holds_alternative<bool>(v)) { out.push_back(std::string("boolean")); return; }
+		if (std::holds_alternative<double>(v)) { out.push_back(std::string("number")); return; }
+		if (std::holds_alternative<std::string>(v)) { out.push_back(std::string("string")); return; }
+		if (std::holds_alternative<std::shared_ptr<Table>>(v)) { out.push_back(std::string("table")); return; }
+		if (std::holds_alternative<std::shared_ptr<Closure>>(v)) { out.push_back(std::string("function")); return; }
+		if (std::holds_alternative<std::shared_ptr<NativeFunction>>(v)) { out.push_back(std::string("function")); return; }
+		if (std::holds_alternative<std::shared_ptr<NativeObject>>(v)) { out.push_back(std::string("native")); return; }
+		out.push_back(std::string("function"));
 	});
 
-	registerNativeFunction("tostring", [this](const std::vector<Value>& args) -> std::vector<Value> {
+	registerNativeFunction("tostring", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 		const Value& v = args.empty() ? Value{std::monostate{}} : args.at(0);
-		return {vmToString(v)};
+		out.push_back(vmToString(v));
 	});
 
-	registerNativeFunction("tonumber", [](const std::vector<Value>& args) -> std::vector<Value> {
+	registerNativeFunction("tonumber", [](const std::vector<Value>& args, std::vector<Value>& out) {
 		if (args.empty()) {
-			return {std::monostate{}};
+			out.push_back(std::monostate{});
+			return;
 		}
 		const Value& v = args.at(0);
 		if (auto* n = std::get_if<double>(&v)) {
-			return {*n};
+			out.push_back(*n);
+			return;
 		}
 		if (auto* s = std::get_if<std::string>(&v)) {
 			if (args.size() >= 2) {
@@ -1146,119 +1160,127 @@ void VMRuntime::setupBuiltins() {
 					size_t start = trimmed.find_first_not_of(" \t\n\r");
 					size_t end = trimmed.find_last_not_of(" \t\n\r");
 					if (start == std::string::npos) {
-						return {std::monostate{}};
+						out.push_back(std::monostate{});
+						return;
 					}
 					trimmed = trimmed.substr(start, end - start + 1);
 					char* parseEnd = nullptr;
 					long parsed = std::strtol(trimmed.c_str(), &parseEnd, base);
 					if (parseEnd == trimmed.c_str()) {
-						return {std::monostate{}};
+						out.push_back(std::monostate{});
+						return;
 					}
-					return {static_cast<double>(parsed)};
+					out.push_back(static_cast<double>(parsed));
+					return;
 				}
-				return {std::monostate{}};
+				out.push_back(std::monostate{});
+				return;
 			}
 			char* end = nullptr;
 			double parsed = std::strtod(s->c_str(), &end);
 			if (end == s->c_str() || !std::isfinite(parsed)) {
-				return {std::monostate{}};
+				out.push_back(std::monostate{});
+				return;
 			}
-			return {parsed};
+			out.push_back(parsed);
+			return;
 		}
-		return {std::monostate{}};
+		out.push_back(std::monostate{});
 	});
 
-	registerNativeFunction("assert", [this](const std::vector<Value>& args) -> std::vector<Value> {
+	registerNativeFunction("assert", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 		const Value& condition = args.empty() ? Value{std::monostate{}} : args.at(0);
 		if (!isTruthy(condition)) {
 			const std::string message = args.size() > 1 ? vmToString(args.at(1)) : std::string("assertion failed!");
 			throw std::runtime_error(message);
 		}
-		return args;
+		out.insert(out.end(), args.begin(), args.end());
 	});
 
-	registerNativeFunction("error", [this](const std::vector<Value>& args) -> std::vector<Value> {
-		const std::string message = args.empty() ? std::string("error") : vmToString(args.at(0));
-		throw std::runtime_error(message);
-	});
+registerNativeFunction("error", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+	const std::string message = args.empty() ? std::string("error") : vmToString(args.at(0));
+	(void)out;
+	throw std::runtime_error(message);
+});
 
-	registerNativeFunction("setmetatable", [](const std::vector<Value>& args) -> std::vector<Value> {
+	registerNativeFunction("setmetatable", [](const std::vector<Value>& args, std::vector<Value>& out) {
 		auto tbl = std::get<std::shared_ptr<Table>>(args.at(0));
 		if (isNil(args.at(1))) {
 			tbl->setMetatable(nullptr);
 		} else {
 			tbl->setMetatable(std::get<std::shared_ptr<Table>>(args.at(1)));
 		}
-		return {tbl};
+		out.push_back(tbl);
 	});
 
-	registerNativeFunction("getmetatable", [](const std::vector<Value>& args) -> std::vector<Value> {
+	registerNativeFunction("getmetatable", [](const std::vector<Value>& args, std::vector<Value>& out) {
 		auto tbl = std::get<std::shared_ptr<Table>>(args.at(0));
 		auto mt = tbl->getMetatable();
 		if (mt) {
-			return {mt};
+			out.push_back(mt);
+			return;
 		}
-		return {std::monostate{}};
+		out.push_back(std::monostate{});
 	});
 
-	registerNativeFunction("rawequal", [](const std::vector<Value>& args) -> std::vector<Value> {
-		return {args.at(0) == args.at(1)};
+	registerNativeFunction("rawequal", [](const std::vector<Value>& args, std::vector<Value>& out) {
+		out.push_back(args.at(0) == args.at(1));
 	});
 
-	registerNativeFunction("rawget", [](const std::vector<Value>& args) -> std::vector<Value> {
+	registerNativeFunction("rawget", [](const std::vector<Value>& args, std::vector<Value>& out) {
 		auto tbl = std::get<std::shared_ptr<Table>>(args.at(0));
 		Value key = args.size() > 1 ? args.at(1) : Value{std::monostate{}};
-		return {tbl->get(key)};
+		out.push_back(tbl->get(key));
 	});
 
-	registerNativeFunction("rawset", [](const std::vector<Value>& args) -> std::vector<Value> {
+	registerNativeFunction("rawset", [](const std::vector<Value>& args, std::vector<Value>& out) {
 		auto tbl = std::get<std::shared_ptr<Table>>(args.at(0));
 		Value key = args.at(1);
 		Value value = args.size() > 2 ? args.at(2) : Value{std::monostate{}};
 		tbl->set(key, value);
-		return {tbl};
+		out.push_back(tbl);
 	});
 
-	registerNativeFunction("select", [](const std::vector<Value>& args) -> std::vector<Value> {
+	registerNativeFunction("select", [](const std::vector<Value>& args, std::vector<Value>& out) {
 		if (std::holds_alternative<std::string>(args.at(0)) && std::get<std::string>(args.at(0)) == "#") {
-			return {static_cast<double>(args.size() - 1)};
+			out.push_back(static_cast<double>(args.size() - 1));
+			return;
 		}
 		int count = static_cast<int>(args.size()) - 1;
 		int start = static_cast<int>(std::get<double>(args.at(0)));
 		if (start < 0) {
 			start = count + start + 1;
 		}
-		std::vector<Value> output;
 		for (int i = start; i <= count; ++i) {
 			if (i >= 1 && static_cast<size_t>(i) < args.size()) {
-				output.push_back(args[static_cast<size_t>(i)]);
+				out.push_back(args[static_cast<size_t>(i)]);
 			}
 		}
-		return output;
 	});
 
-	registerNativeFunction("pcall", [callVmValue, logPcallError](const std::vector<Value>& args) -> std::vector<Value> {
+	registerNativeFunction("pcall", [callVmValue, logPcallError](const std::vector<Value>& args, std::vector<Value>& out) {
 		Value fn = args.at(0);
 		std::vector<Value> callArgs;
 		for (size_t i = 1; i < args.size(); ++i) {
 			callArgs.push_back(args[i]);
 		}
 		try {
-			std::vector<Value> results = callVmValue(fn, callArgs);
-			std::vector<Value> output;
-			output.push_back(true);
-			output.insert(output.end(), results.begin(), results.end());
-			return output;
+			callVmValue(fn, callArgs, out);
+			out.insert(out.begin(), true);
 		} catch (const std::exception& e) {
 			logPcallError(e.what());
-			return {false, std::string(e.what())};
+			out.clear();
+			out.push_back(false);
+			out.push_back(std::string(e.what()));
 		} catch (...) {
 			logPcallError("error");
-			return {false, std::string("error")};
+			out.clear();
+			out.push_back(false);
+			out.push_back(std::string("error"));
 		}
 	});
 
-	registerNativeFunction("xpcall", [callVmValue, logPcallError](const std::vector<Value>& args) -> std::vector<Value> {
+	registerNativeFunction("xpcall", [callVmValue, logPcallError](const std::vector<Value>& args, std::vector<Value>& out) {
 		Value fn = args.at(0);
 		Value handler = args.at(1);
 		std::vector<Value> callArgs;
@@ -1266,39 +1288,35 @@ void VMRuntime::setupBuiltins() {
 			callArgs.push_back(args[i]);
 		}
 		try {
-			std::vector<Value> results = callVmValue(fn, callArgs);
-			std::vector<Value> output;
-			output.push_back(true);
-			output.insert(output.end(), results.begin(), results.end());
-			return output;
+			callVmValue(fn, callArgs, out);
+			out.insert(out.begin(), true);
 		} catch (const std::exception& e) {
 			logPcallError(e.what());
-			std::vector<Value> handlerResults = callVmValue(handler, {std::string(e.what())});
-			std::vector<Value> output;
-			output.push_back(false);
-			output.insert(output.end(), handlerResults.begin(), handlerResults.end());
-			return output;
+			std::vector<Value> handlerArgs;
+			handlerArgs.push_back(std::string(e.what()));
+			callVmValue(handler, handlerArgs, out);
+			out.insert(out.begin(), false);
 		} catch (...) {
 			logPcallError("error");
-			std::vector<Value> handlerResults = callVmValue(handler, {std::string("error")});
-			std::vector<Value> output;
-			output.push_back(false);
-			output.insert(output.end(), handlerResults.begin(), handlerResults.end());
-			return output;
+			std::vector<Value> handlerArgs;
+			handlerArgs.push_back(std::string("error"));
+			callVmValue(handler, handlerArgs, out);
+			out.insert(out.begin(), false);
 		}
 	});
 
-	registerNativeFunction("require", [this](const std::vector<Value>& args) -> std::vector<Value> {
+	registerNativeFunction("require", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 		const std::string& moduleName = std::get<std::string>(args.at(0));
 		size_t start = moduleName.find_first_not_of(" \t\n\r");
 		if (start == std::string::npos) {
-			return {requireVmModule("")};
+			out.push_back(requireVmModule(""));
+			return;
 		}
 		size_t end = moduleName.find_last_not_of(" \t\n\r");
-		return {requireVmModule(moduleName.substr(start, end - start + 1))};
+		out.push_back(requireVmModule(moduleName.substr(start, end - start + 1)));
 	});
 
-	registerNativeFunction("array", [](const std::vector<Value>& args) -> std::vector<Value> {
+	registerNativeFunction("array", [](const std::vector<Value>& args, std::vector<Value>& out) {
 		struct NativeArray {
 			std::vector<Value> values;
 			std::unordered_map<std::string, Value> props;
@@ -1419,10 +1437,10 @@ void VMRuntime::setupBuiltins() {
 			}
 		);
 
-		return {native};
+		out.push_back(native);
 	});
 
-	registerNativeFunction("print", [this](const std::vector<Value>& args) -> std::vector<Value> {
+	registerNativeFunction("print", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 		std::string text;
 		for (size_t i = 0; i < args.size(); ++i) {
 			if (i > 0) {
@@ -1431,25 +1449,25 @@ void VMRuntime::setupBuiltins() {
 			text += vmToString(args[i]);
 		}
 		std::cout << text << '\n';
-		return {};
+		(void)out;
 	});
 
 	auto stringTable = std::make_shared<Table>();
-	stringTable->set("len", createNativeFunction("string.len", [](const std::vector<Value>& args) -> std::vector<Value> {
+	stringTable->set("len", createNativeFunction("string.len", [](const std::vector<Value>& args, std::vector<Value>& out) {
 		const std::string& text = std::get<std::string>(args.at(0));
-		return {static_cast<double>(text.size())};
+		out.push_back(static_cast<double>(text.size()));
 	}));
-	stringTable->set("upper", createNativeFunction("string.upper", [](const std::vector<Value>& args) -> std::vector<Value> {
+	stringTable->set("upper", createNativeFunction("string.upper", [](const std::vector<Value>& args, std::vector<Value>& out) {
 		std::string text = std::get<std::string>(args.at(0));
 		for (auto& c : text) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-		return {text};
+		out.push_back(text);
 	}));
-	stringTable->set("lower", createNativeFunction("string.lower", [](const std::vector<Value>& args) -> std::vector<Value> {
+	stringTable->set("lower", createNativeFunction("string.lower", [](const std::vector<Value>& args, std::vector<Value>& out) {
 		std::string text = std::get<std::string>(args.at(0));
 		for (auto& c : text) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-		return {text};
+		out.push_back(text);
 	}));
-	stringTable->set("sub", createNativeFunction("string.sub", [](const std::vector<Value>& args) -> std::vector<Value> {
+	stringTable->set("sub", createNativeFunction("string.sub", [](const std::vector<Value>& args, std::vector<Value>& out) {
 		const std::string& text = std::get<std::string>(args.at(0));
 		int length = static_cast<int>(text.length());
 		auto normalizeIndex = [length](double value) -> int {
@@ -1463,11 +1481,12 @@ void VMRuntime::setupBuiltins() {
 		if (startIndex < 1) startIndex = 1;
 		if (endIndex > length) endIndex = length;
 		if (endIndex < startIndex) {
-			return {std::string("")};
+			out.push_back(std::string(""));
+			return;
 		}
-		return {text.substr(static_cast<size_t>(startIndex - 1), static_cast<size_t>(endIndex - startIndex + 1))};
+		out.push_back(text.substr(static_cast<size_t>(startIndex - 1), static_cast<size_t>(endIndex - startIndex + 1)));
 	}));
-	stringTable->set("find", createNativeFunction("string.find", [this](const std::vector<Value>& args) -> std::vector<Value> {
+	stringTable->set("find", createNativeFunction("string.find", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 		const std::string& source = std::get<std::string>(args.at(0));
 		const std::string& pattern = args.size() > 1 ? std::get<std::string>(args.at(1)) : std::string("");
 		int length = static_cast<int>(source.length());
@@ -1479,92 +1498,98 @@ void VMRuntime::setupBuiltins() {
 		};
 		int startIndex = args.size() > 2 ? normalizeIndex(std::get<double>(args.at(2))) : 1;
 		if (startIndex > length) {
-			return {std::monostate{}};
+			out.push_back(std::monostate{});
+			return;
 		}
 		bool plain = args.size() > 3 && std::holds_alternative<bool>(args.at(3)) && std::get<bool>(args.at(3)) == true;
 		if (plain) {
 			size_t position = source.find(pattern, static_cast<size_t>(std::max(0, startIndex - 1)));
 			if (position == std::string::npos) {
-				return {std::monostate{}};
+				out.push_back(std::monostate{});
+				return;
 			}
 			int first = static_cast<int>(position) + 1;
 			int last = first + static_cast<int>(pattern.length()) - 1;
-			return {static_cast<double>(first), static_cast<double>(last)};
+			out.push_back(static_cast<double>(first));
+			out.push_back(static_cast<double>(last));
+			return;
 		}
 		std::regex regex = buildLuaPatternRegex(pattern);
 		const std::string slice = source.substr(static_cast<size_t>(std::max(0, startIndex - 1)));
 		std::smatch match;
 		if (!std::regex_search(slice, match, regex)) {
-			return {std::monostate{}};
+			out.push_back(std::monostate{});
+			return;
 		}
 		int first = (startIndex - 1) + static_cast<int>(match.position()) + 1;
 		int last = first + static_cast<int>(match.length()) - 1;
 		if (match.size() > 1) {
-			std::vector<Value> output;
-			output.push_back(static_cast<double>(first));
-			output.push_back(static_cast<double>(last));
+			out.push_back(static_cast<double>(first));
+			out.push_back(static_cast<double>(last));
 			for (size_t i = 1; i < match.size(); ++i) {
 				if (!match[i].matched) {
-					output.push_back(std::monostate{});
+					out.push_back(std::monostate{});
 				} else {
-					output.push_back(match[i].str());
+					out.push_back(match[i].str());
 				}
 			}
-			return output;
+			return;
 		}
-		return {static_cast<double>(first), static_cast<double>(last)};
+		out.push_back(static_cast<double>(first));
+		out.push_back(static_cast<double>(last));
 	}));
-	stringTable->set("match", createNativeFunction("string.match", [this](const std::vector<Value>& args) -> std::vector<Value> {
-		const std::string& source = std::get<std::string>(args.at(0));
-		const std::string& pattern = args.size() > 1 ? std::get<std::string>(args.at(1)) : std::string("");
-		int length = static_cast<int>(source.length());
-		auto normalizeIndex = [length](double value) -> int {
+stringTable->set("match", createNativeFunction("string.match", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+	const std::string& source = std::get<std::string>(args.at(0));
+	const std::string& pattern = args.size() > 1 ? std::get<std::string>(args.at(1)) : std::string("");
+	int length = static_cast<int>(source.length());
+	auto normalizeIndex = [length](double value) -> int {
 			int integer = static_cast<int>(std::floor(value));
 			if (integer > 0) return integer;
 			if (integer < 0) return length + integer + 1;
 			return 1;
-		};
-		int startIndex = args.size() > 2 ? normalizeIndex(std::get<double>(args.at(2))) : 1;
-		if (startIndex > length) {
-			return {std::monostate{}};
-		}
-		std::regex regex = buildLuaPatternRegex(pattern);
-		const std::string slice = source.substr(static_cast<size_t>(std::max(0, startIndex - 1)));
-		std::smatch match;
-		if (!std::regex_search(slice, match, regex)) {
-			return {std::monostate{}};
-		}
-		if (match.size() > 1) {
-			std::vector<Value> output;
-			for (size_t i = 1; i < match.size(); ++i) {
-				if (!match[i].matched) {
-					output.push_back(std::monostate{});
-				} else {
-					output.push_back(match[i].str());
-				}
-			}
-			if (!output.empty()) {
-				return output;
+	};
+	int startIndex = args.size() > 2 ? normalizeIndex(std::get<double>(args.at(2))) : 1;
+	if (startIndex > length) {
+		out.push_back(std::monostate{});
+		return;
+	}
+	std::regex regex = buildLuaPatternRegex(pattern);
+	const std::string slice = source.substr(static_cast<size_t>(std::max(0, startIndex - 1)));
+	std::smatch match;
+	if (!std::regex_search(slice, match, regex)) {
+		out.push_back(std::monostate{});
+		return;
+	}
+	if (match.size() > 1) {
+		for (size_t i = 1; i < match.size(); ++i) {
+			if (!match[i].matched) {
+				out.push_back(std::monostate{});
+			} else {
+				out.push_back(match[i].str());
 			}
 		}
-		return {match[0].str()};
-	}));
-	stringTable->set("gsub", createNativeFunction("string.gsub", [this, callVmValue](const std::vector<Value>& args) -> std::vector<Value> {
-		const std::string& source = std::get<std::string>(args.at(0));
-		const std::string& pattern = args.size() > 1 ? std::get<std::string>(args.at(1)) : std::string("");
-		const Value replacement = args.size() > 2 ? args.at(2) : Value{std::string("")};
-		int maxReplacements = args.size() > 3 && !isNil(args.at(3)) ? std::max(0, static_cast<int>(std::floor(std::get<double>(args.at(3))))) : std::numeric_limits<int>::max();
+		return;
+	}
+	out.push_back(match[0].str());
+}));
+stringTable->set("gsub", createNativeFunction("string.gsub", [this, callVmValue](const std::vector<Value>& args, std::vector<Value>& out) {
+	const std::string& source = std::get<std::string>(args.at(0));
+	const std::string& pattern = args.size() > 1 ? std::get<std::string>(args.at(1)) : std::string("");
+	const Value replacement = args.size() > 2 ? args.at(2) : Value{std::string("")};
+	int maxReplacements = args.size() > 3 && !isNil(args.at(3)) ? std::max(0, static_cast<int>(std::floor(std::get<double>(args.at(3))))) : std::numeric_limits<int>::max();
 
-		std::regex regex = buildLuaPatternRegex(pattern);
-		size_t count = 0;
-		size_t searchIndex = 0;
-		size_t lastIndex = 0;
-		std::string result;
+	std::regex regex = buildLuaPatternRegex(pattern);
+	size_t count = 0;
+	size_t searchIndex = 0;
+	size_t lastIndex = 0;
+	std::string result;
+	std::vector<Value> fnArgs;
+	std::vector<Value> fnResults;
 
-		auto renderReplacement = [&](const std::smatch& match) -> std::string {
-			if (std::holds_alternative<std::string>(replacement) || std::holds_alternative<double>(replacement)) {
-				const std::string templateStr = vmToString(replacement);
-				std::string output;
+	auto renderReplacement = [&](const std::smatch& match) -> std::string {
+		if (std::holds_alternative<std::string>(replacement) || std::holds_alternative<double>(replacement)) {
+			const std::string templateStr = vmToString(replacement);
+			std::string output;
 				for (size_t i = 0; i < templateStr.size(); ++i) {
 					if (templateStr[i] == '%' && i + 1 < templateStr.size()) {
 						char token = templateStr[i + 1];
@@ -1597,7 +1622,7 @@ void VMRuntime::setupBuiltins() {
 				return vmToString(mapped);
 			}
 			if (std::holds_alternative<std::shared_ptr<NativeFunction>>(replacement) || std::holds_alternative<std::shared_ptr<Closure>>(replacement)) {
-				std::vector<Value> fnArgs;
+				fnArgs.clear();
 				if (match.size() > 1) {
 					for (size_t i = 1; i < match.size(); ++i) {
 						if (match[i].matched) {
@@ -1609,8 +1634,8 @@ void VMRuntime::setupBuiltins() {
 				} else {
 					fnArgs.emplace_back(match[0].str());
 				}
-				std::vector<Value> results = callVmValue(replacement, fnArgs);
-				Value value = results.empty() ? Value{std::monostate{}} : results[0];
+				callVmValue(replacement, fnArgs, fnResults);
+				Value value = fnResults.empty() ? Value{std::monostate{}} : fnResults[0];
 				if (isNil(value) || (std::holds_alternative<bool>(value) && !std::get<bool>(value))) {
 					return match[0].str();
 				}
@@ -1641,85 +1666,88 @@ void VMRuntime::setupBuiltins() {
 			}
 		}
 
-		result += source.substr(lastIndex);
-		return {result, static_cast<double>(count)};
-	}));
-	stringTable->set("gmatch", createNativeFunction("string.gmatch", [this](const std::vector<Value>& args) -> std::vector<Value> {
-		struct GMatchState {
-			std::regex regex;
-			std::string source;
-			size_t index = 0;
-		};
-		const std::string& source = std::get<std::string>(args.at(0));
-		const std::string& pattern = args.size() > 1 ? std::get<std::string>(args.at(1)) : std::string("");
-		auto state = std::make_shared<GMatchState>(GMatchState{buildLuaPatternRegex(pattern), source, 0});
-		auto iterator = createNativeFunction("string.gmatch.iterator", [state](const std::vector<Value>&) -> std::vector<Value> {
-			if (state->index > state->source.size()) {
-				return {std::monostate{}};
-			}
-			std::smatch match;
-			auto begin = state->source.cbegin() + static_cast<std::string::difference_type>(state->index);
-			if (!std::regex_search(begin, state->source.cend(), match, state->regex)) {
-				return {std::monostate{}};
-			}
-			size_t matchStart = state->index + static_cast<size_t>(match.position());
-			size_t matchEnd = matchStart + static_cast<size_t>(match.length());
+	result += source.substr(lastIndex);
+	out.push_back(result);
+	out.push_back(static_cast<double>(count));
+}));
+stringTable->set("gmatch", createNativeFunction("string.gmatch", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+	struct GMatchState {
+		std::regex regex;
+		std::string source;
+		size_t index = 0;
+	};
+	const std::string& source = std::get<std::string>(args.at(0));
+	const std::string& pattern = args.size() > 1 ? std::get<std::string>(args.at(1)) : std::string("");
+	auto state = std::make_shared<GMatchState>(GMatchState{buildLuaPatternRegex(pattern), source, 0});
+	auto iterator = createNativeFunction("string.gmatch.iterator", [state](const std::vector<Value>& args, std::vector<Value>& out) {
+		(void)args;
+		if (state->index > state->source.size()) {
+			out.push_back(std::monostate{});
+			return;
+		}
+		std::smatch match;
+		auto begin = state->source.cbegin() + static_cast<std::string::difference_type>(state->index);
+		if (!std::regex_search(begin, state->source.cend(), match, state->regex)) {
+			out.push_back(std::monostate{});
+			return;
+		}
+		size_t matchStart = state->index + static_cast<size_t>(match.position());
+		size_t matchEnd = matchStart + static_cast<size_t>(match.length());
 			if (match.length() == 0) {
 				state->index = matchEnd + 1;
 			} else {
 				state->index = matchEnd;
 			}
 			if (match.size() > 1) {
-				std::vector<Value> output;
 				for (size_t i = 1; i < match.size(); ++i) {
 					if (match[i].matched) {
-						output.emplace_back(match[i].str());
+						out.emplace_back(match[i].str());
 					} else {
-						output.emplace_back(std::monostate{});
+						out.emplace_back(std::monostate{});
 					}
 				}
-				if (!output.empty()) {
-					return output;
-				}
+				return;
 			}
-			return {match[0].str()};
+			out.push_back(match[0].str());
 		});
-		return {iterator};
+		out.push_back(iterator);
 	}));
-	stringTable->set("byte", createNativeFunction("string.byte", [](const std::vector<Value>& args) -> std::vector<Value> {
-		const std::string& source = std::get<std::string>(args.at(0));
-		int position = args.size() > 1 ? static_cast<int>(std::floor(std::get<double>(args.at(1)))) - 1 : 0;
-		if (position < 0 || position >= static_cast<int>(source.size())) {
-			return {std::monostate{}};
-		}
-		unsigned char code = static_cast<unsigned char>(source[static_cast<size_t>(position)]);
-		return {static_cast<double>(code)};
-	}));
-	stringTable->set("char", createNativeFunction("string.char", [](const std::vector<Value>& args) -> std::vector<Value> {
-		if (args.empty()) {
-			return {std::string("")};
-		}
-		std::string result;
-		result.reserve(args.size());
-		for (const auto& arg : args) {
-			int code = static_cast<int>(std::floor(std::get<double>(arg)));
-			result.push_back(static_cast<char>(code));
-		}
-		return {result};
-	}));
-	stringTable->set("format", createNativeFunction("string.format", [this](const std::vector<Value>& args) -> std::vector<Value> {
-		const std::string& templateStr = std::get<std::string>(args.at(0));
-		return {formatVmString(templateStr, args, 1)};
-	}));
+stringTable->set("byte", createNativeFunction("string.byte", [](const std::vector<Value>& args, std::vector<Value>& out) {
+	const std::string& source = std::get<std::string>(args.at(0));
+	int position = args.size() > 1 ? static_cast<int>(std::floor(std::get<double>(args.at(1)))) - 1 : 0;
+	if (position < 0 || position >= static_cast<int>(source.size())) {
+		out.push_back(std::monostate{});
+		return;
+	}
+	unsigned char code = static_cast<unsigned char>(source[static_cast<size_t>(position)]);
+	out.push_back(static_cast<double>(code));
+}));
+stringTable->set("char", createNativeFunction("string.char", [](const std::vector<Value>& args, std::vector<Value>& out) {
+	if (args.empty()) {
+		out.push_back(std::string(""));
+		return;
+	}
+	std::string result;
+	result.reserve(args.size());
+	for (const auto& arg : args) {
+		int code = static_cast<int>(std::floor(std::get<double>(arg)));
+		result.push_back(static_cast<char>(code));
+	}
+	out.push_back(result);
+}));
+stringTable->set("format", createNativeFunction("string.format", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+	const std::string& templateStr = std::get<std::string>(args.at(0));
+	out.push_back(formatVmString(templateStr, args, 1));
+}));
 
 	setGlobal("string", stringTable);
 
 	auto tableLib = std::make_shared<Table>();
-	tableLib->set("insert", createNativeFunction("table.insert", [](const std::vector<Value>& args) -> std::vector<Value> {
-		auto tbl = std::get<std::shared_ptr<Table>>(args.at(0));
-		int position = 0;
-		Value value;
-		if (args.size() == 2) {
+tableLib->set("insert", createNativeFunction("table.insert", [](const std::vector<Value>& args, std::vector<Value>& out) {
+	auto tbl = std::get<std::shared_ptr<Table>>(args.at(0));
+	int position = 0;
+	Value value;
+	if (args.size() == 2) {
 			value = args.at(1);
 			position = tbl->length() + 1;
 		} else {
@@ -1727,220 +1755,239 @@ void VMRuntime::setupBuiltins() {
 			value = args.at(2);
 		}
 		int length = tbl->length();
-		for (int i = length; i >= position; --i) {
-			tbl->set(static_cast<double>(i + 1), tbl->get(static_cast<double>(i)));
-		}
-		tbl->set(static_cast<double>(position), value);
-		return {};
-	}));
-	tableLib->set("remove", createNativeFunction("table.remove", [](const std::vector<Value>& args) -> std::vector<Value> {
-		auto tbl = std::get<std::shared_ptr<Table>>(args.at(0));
-		int position = args.size() > 1 ? static_cast<int>(std::floor(std::get<double>(args.at(1)))) : tbl->length();
-		int length = tbl->length();
-		Value removed = tbl->get(static_cast<double>(position));
+	for (int i = length; i >= position; --i) {
+		tbl->set(static_cast<double>(i + 1), tbl->get(static_cast<double>(i)));
+	}
+	tbl->set(static_cast<double>(position), value);
+	(void)out;
+}));
+tableLib->set("remove", createNativeFunction("table.remove", [](const std::vector<Value>& args, std::vector<Value>& out) {
+	auto tbl = std::get<std::shared_ptr<Table>>(args.at(0));
+	int position = args.size() > 1 ? static_cast<int>(std::floor(std::get<double>(args.at(1)))) : tbl->length();
+	int length = tbl->length();
+	Value removed = tbl->get(static_cast<double>(position));
 		for (int i = position; i < length; ++i) {
 			tbl->set(static_cast<double>(i), tbl->get(static_cast<double>(i + 1)));
-		}
-		tbl->set(static_cast<double>(length), std::monostate{});
-		if (isNil(removed)) {
-			return {};
-		}
-		return {removed};
-	}));
-	tableLib->set("concat", createNativeFunction("table.concat", [this](const std::vector<Value>& args) -> std::vector<Value> {
-		auto tbl = std::get<std::shared_ptr<Table>>(args.at(0));
-		const std::string separator = args.size() > 1 ? vmToString(args.at(1)) : std::string("");
-		int length = tbl->length();
-		auto normalizeIndex = [length](double value, int fallback) -> int {
+	}
+	tbl->set(static_cast<double>(length), std::monostate{});
+	if (isNil(removed)) {
+		return;
+	}
+	out.push_back(removed);
+}));
+tableLib->set("concat", createNativeFunction("table.concat", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+	auto tbl = std::get<std::shared_ptr<Table>>(args.at(0));
+	const std::string separator = args.size() > 1 ? vmToString(args.at(1)) : std::string("");
+	int length = tbl->length();
+	auto normalizeIndex = [length](double value, int fallback) -> int {
 			int integer = static_cast<int>(std::floor(value));
 			if (integer > 0) return integer;
 			if (integer < 0) return length + integer + 1;
 			return fallback;
 		};
-		int startIndex = args.size() > 2 ? normalizeIndex(std::get<double>(args.at(2)), 1) : 1;
-		int endIndex = args.size() > 3 ? normalizeIndex(std::get<double>(args.at(3)), length) : length;
-		if (endIndex < startIndex) {
-			return {std::string("")};
-		}
-		std::string output;
-		for (int i = startIndex; i <= endIndex; ++i) {
-			if (i > startIndex) {
+	int startIndex = args.size() > 2 ? normalizeIndex(std::get<double>(args.at(2)), 1) : 1;
+	int endIndex = args.size() > 3 ? normalizeIndex(std::get<double>(args.at(3)), length) : length;
+	if (endIndex < startIndex) {
+		out.push_back(std::string(""));
+		return;
+	}
+	std::string output;
+	for (int i = startIndex; i <= endIndex; ++i) {
+		if (i > startIndex) {
 				output += separator;
 			}
 			Value value = tbl->get(static_cast<double>(i));
-			if (!isNil(value)) {
-				output += vmToString(value);
-			}
+		if (!isNil(value)) {
+			output += vmToString(value);
 		}
-		return {output};
-	}));
-	tableLib->set("pack", createNativeFunction("table.pack", [](const std::vector<Value>& args) -> std::vector<Value> {
-		auto tbl = std::make_shared<Table>(static_cast<int>(args.size()), 1);
-		for (size_t i = 0; i < args.size(); ++i) {
-			tbl->set(static_cast<double>(i + 1), args[i]);
-		}
-		tbl->set("n", static_cast<double>(args.size()));
-		return {tbl};
-	}));
-	tableLib->set("unpack", createNativeFunction("table.unpack", [](const std::vector<Value>& args) -> std::vector<Value> {
-		auto tbl = std::get<std::shared_ptr<Table>>(args.at(0));
-		int length = tbl->length();
-		auto normalizeIndex = [length](double value, int fallback) -> int {
+	}
+	out.push_back(output);
+}));
+tableLib->set("pack", createNativeFunction("table.pack", [](const std::vector<Value>& args, std::vector<Value>& out) {
+	auto tbl = std::make_shared<Table>(static_cast<int>(args.size()), 1);
+	for (size_t i = 0; i < args.size(); ++i) {
+		tbl->set(static_cast<double>(i + 1), args[i]);
+	}
+	tbl->set("n", static_cast<double>(args.size()));
+	out.push_back(tbl);
+}));
+tableLib->set("unpack", createNativeFunction("table.unpack", [](const std::vector<Value>& args, std::vector<Value>& out) {
+	auto tbl = std::get<std::shared_ptr<Table>>(args.at(0));
+	int length = tbl->length();
+	auto normalizeIndex = [length](double value, int fallback) -> int {
 			int integer = static_cast<int>(std::floor(value));
 			if (integer > 0) return integer;
 			if (integer < 0) return length + integer + 1;
 			return fallback;
 		};
-		int startIndex = args.size() > 1 ? normalizeIndex(std::get<double>(args.at(1)), 1) : 1;
-		int endIndex = args.size() > 2 ? normalizeIndex(std::get<double>(args.at(2)), length) : length;
-		if (endIndex < startIndex) {
-			return {};
+	int startIndex = args.size() > 1 ? normalizeIndex(std::get<double>(args.at(1)), 1) : 1;
+	int endIndex = args.size() > 2 ? normalizeIndex(std::get<double>(args.at(2)), length) : length;
+	if (endIndex < startIndex) {
+		return;
+	}
+	for (int i = startIndex; i <= endIndex; ++i) {
+		out.push_back(tbl->get(static_cast<double>(i)));
+	}
+}));
+tableLib->set("sort", createNativeFunction("table.sort", [callVmValue](const std::vector<Value>& args, std::vector<Value>& out) {
+	auto tbl = std::get<std::shared_ptr<Table>>(args.at(0));
+	Value comparator = args.size() > 1 ? args.at(1) : Value{std::monostate{}};
+	int length = tbl->length();
+	std::vector<Value> values(static_cast<size_t>(length));
+	for (int i = 1; i <= length; ++i) {
+		values[static_cast<size_t>(i - 1)] = tbl->get(static_cast<double>(i));
+	}
+	std::vector<Value> comparatorArgs(2);
+	std::vector<Value> comparatorResults;
+	std::sort(values.begin(), values.end(), [&](const Value& left, const Value& right) -> bool {
+		if (!isNil(comparator)) {
+			comparatorArgs[0] = left;
+			comparatorArgs[1] = right;
+			callVmValue(comparator, comparatorArgs, comparatorResults);
+			return !comparatorResults.empty() && std::holds_alternative<bool>(comparatorResults[0]) && std::get<bool>(comparatorResults[0]) == true;
 		}
-		std::vector<Value> output;
-		for (int i = startIndex; i <= endIndex; ++i) {
-			output.push_back(tbl->get(static_cast<double>(i)));
+		if (std::holds_alternative<double>(left) && std::holds_alternative<double>(right)) {
+			return std::get<double>(left) < std::get<double>(right);
 		}
-		return output;
-	}));
-	tableLib->set("sort", createNativeFunction("table.sort", [callVmValue](const std::vector<Value>& args) -> std::vector<Value> {
-		auto tbl = std::get<std::shared_ptr<Table>>(args.at(0));
-		Value comparator = args.size() > 1 ? args.at(1) : Value{std::monostate{}};
-		int length = tbl->length();
-		std::vector<Value> values(static_cast<size_t>(length));
-		for (int i = 1; i <= length; ++i) {
-			values[static_cast<size_t>(i - 1)] = tbl->get(static_cast<double>(i));
-		}
-		std::vector<Value> comparatorArgs(2);
-		std::sort(values.begin(), values.end(), [&](const Value& left, const Value& right) -> bool {
-			if (!isNil(comparator)) {
-				comparatorArgs[0] = left;
-				comparatorArgs[1] = right;
-				std::vector<Value> results = callVmValue(comparator, comparatorArgs);
-				return !results.empty() && std::holds_alternative<bool>(results[0]) && std::get<bool>(results[0]) == true;
-			}
-			if (std::holds_alternative<double>(left) && std::holds_alternative<double>(right)) {
-				return std::get<double>(left) < std::get<double>(right);
-			}
 			if (std::holds_alternative<std::string>(left) && std::holds_alternative<std::string>(right)) {
 				return std::get<std::string>(left) < std::get<std::string>(right);
 			}
 			throw std::runtime_error("table.sort comparison expects numbers or strings.");
-		});
-		for (int i = 1; i <= length; ++i) {
-			tbl->set(static_cast<double>(i), values[static_cast<size_t>(i - 1)]);
-		}
-		return {tbl};
-	}));
+	});
+	for (int i = 1; i <= length; ++i) {
+		tbl->set(static_cast<double>(i), values[static_cast<size_t>(i - 1)]);
+	}
+	out.push_back(tbl);
+}));
 
 	setGlobal("table", tableLib);
 
-	auto osTable = std::make_shared<Table>();
-osTable->set("clock", createNativeFunction("os.clock", [](const std::vector<Value>&) -> std::vector<Value> {
-		return {EngineCore::instance().clock()->now() / 1000.0};
-	}));
-osTable->set("time", createNativeFunction("os.time", [](const std::vector<Value>& args) -> std::vector<Value> {
-		if (!args.empty() && !isNil(args.at(0))) {
-			auto table = std::get<std::shared_ptr<Table>>(args.at(0));
-			std::tm timeInfo{};
-			timeInfo.tm_year = static_cast<int>(std::get<double>(table->get("year"))) - 1900;
-			timeInfo.tm_mon = static_cast<int>(std::get<double>(table->get("month"))) - 1;
-			timeInfo.tm_mday = static_cast<int>(std::get<double>(table->get("day")));
-			timeInfo.tm_hour = static_cast<int>(std::get<double>(table->get("hour")));
-			timeInfo.tm_min = static_cast<int>(std::get<double>(table->get("min")));
-			timeInfo.tm_sec = static_cast<int>(std::get<double>(table->get("sec")));
-			timeInfo.tm_isdst = -1;
-			return {static_cast<double>(std::mktime(&timeInfo))};
-		}
-		return {static_cast<double>(std::time(nullptr))};
-	}));
-osTable->set("difftime", createNativeFunction("os.difftime", [](const std::vector<Value>& args) -> std::vector<Value> {
-		double t2 = std::get<double>(args.at(0));
-		double t1 = std::get<double>(args.at(1));
-		return {t2 - t1};
-	}));
-osTable->set("date", createNativeFunction("os.date", [](const std::vector<Value>& args) -> std::vector<Value> {
-		std::string format = args.empty() || isNil(args.at(0)) ? std::string("%c") : std::get<std::string>(args.at(0));
-		std::time_t timeValue = args.size() > 1 && !isNil(args.at(1))
-			? static_cast<std::time_t>(std::get<double>(args.at(1)))
-			: std::time(nullptr);
-		std::tm timeInfo = *std::localtime(&timeValue);
-		if (format == "*t") {
-			auto table = std::make_shared<Table>(0, 9);
-			table->set("year", static_cast<double>(timeInfo.tm_year + 1900));
-			table->set("month", static_cast<double>(timeInfo.tm_mon + 1));
-			table->set("day", static_cast<double>(timeInfo.tm_mday));
-			table->set("hour", static_cast<double>(timeInfo.tm_hour));
-			table->set("min", static_cast<double>(timeInfo.tm_min));
-			table->set("sec", static_cast<double>(timeInfo.tm_sec));
-			table->set("wday", static_cast<double>(timeInfo.tm_wday + 1));
-			table->set("yday", static_cast<double>(timeInfo.tm_yday + 1));
-			table->set("isdst", timeInfo.tm_isdst > 0);
-			return {table};
-		}
-		char buffer[256];
-		size_t size = std::strftime(buffer, sizeof(buffer), format.c_str(), &timeInfo);
-		return {std::string(buffer, size)};
-	}));
+auto osTable = std::make_shared<Table>();
+osTable->set("clock", createNativeFunction("os.clock", [](const std::vector<Value>& args, std::vector<Value>& out) {
+	(void)args;
+	out.push_back(EngineCore::instance().clock()->now() / 1000.0);
+}));
+osTable->set("time", createNativeFunction("os.time", [](const std::vector<Value>& args, std::vector<Value>& out) {
+	if (!args.empty() && !isNil(args.at(0))) {
+		auto table = std::get<std::shared_ptr<Table>>(args.at(0));
+		std::tm timeInfo{};
+		timeInfo.tm_year = static_cast<int>(std::get<double>(table->get("year"))) - 1900;
+		timeInfo.tm_mon = static_cast<int>(std::get<double>(table->get("month"))) - 1;
+		timeInfo.tm_mday = static_cast<int>(std::get<double>(table->get("day")));
+		timeInfo.tm_hour = static_cast<int>(std::get<double>(table->get("hour")));
+		timeInfo.tm_min = static_cast<int>(std::get<double>(table->get("min")));
+		timeInfo.tm_sec = static_cast<int>(std::get<double>(table->get("sec")));
+		timeInfo.tm_isdst = -1;
+		out.push_back(static_cast<double>(std::mktime(&timeInfo)));
+		return;
+	}
+	out.push_back(static_cast<double>(std::time(nullptr)));
+}));
+osTable->set("difftime", createNativeFunction("os.difftime", [](const std::vector<Value>& args, std::vector<Value>& out) {
+	double t2 = std::get<double>(args.at(0));
+	double t1 = std::get<double>(args.at(1));
+	out.push_back(t2 - t1);
+}));
+osTable->set("date", createNativeFunction("os.date", [](const std::vector<Value>& args, std::vector<Value>& out) {
+	std::string format = args.empty() || isNil(args.at(0)) ? std::string("%c") : std::get<std::string>(args.at(0));
+	std::time_t timeValue = args.size() > 1 && !isNil(args.at(1))
+		? static_cast<std::time_t>(std::get<double>(args.at(1)))
+		: std::time(nullptr);
+	std::tm timeInfo = *std::localtime(&timeValue);
+	if (format == "*t") {
+		auto table = std::make_shared<Table>(0, 9);
+		table->set("year", static_cast<double>(timeInfo.tm_year + 1900));
+		table->set("month", static_cast<double>(timeInfo.tm_mon + 1));
+		table->set("day", static_cast<double>(timeInfo.tm_mday));
+		table->set("hour", static_cast<double>(timeInfo.tm_hour));
+		table->set("min", static_cast<double>(timeInfo.tm_min));
+		table->set("sec", static_cast<double>(timeInfo.tm_sec));
+		table->set("wday", static_cast<double>(timeInfo.tm_wday + 1));
+		table->set("yday", static_cast<double>(timeInfo.tm_yday + 1));
+		table->set("isdst", timeInfo.tm_isdst > 0);
+		out.push_back(table);
+		return;
+	}
+	char buffer[256];
+	size_t size = std::strftime(buffer, sizeof(buffer), format.c_str(), &timeInfo);
+	out.push_back(std::string(buffer, size));
+}));
 	setGlobal("os", osTable);
 
-	auto nextFn = createNativeFunction("next", [this](const std::vector<Value>& args) -> std::vector<Value> {
-		const Value& target = args.at(0);
-		const Value key = args.size() > 1 ? args.at(1) : Value{std::monostate{}};
-		if (auto tbl = std::get_if<std::shared_ptr<Table>>(&target)) {
-			auto entry = (*tbl)->nextEntry(key);
-			if (!entry.has_value()) {
-				return {std::monostate{}};
-			}
-			return {entry->first, entry->second};
+auto nextFn = createNativeFunction("next", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+	const Value& target = args.at(0);
+	const Value key = args.size() > 1 ? args.at(1) : Value{std::monostate{}};
+	if (auto tbl = std::get_if<std::shared_ptr<Table>>(&target)) {
+		auto entry = (*tbl)->nextEntry(key);
+		if (!entry.has_value()) {
+			out.push_back(std::monostate{});
+			return;
 		}
-		if (auto obj = std::get_if<std::shared_ptr<NativeObject>>(&target)) {
-			if (!(*obj)->next) {
-				throw std::runtime_error("next expects a native object with iteration.");
-			}
-			auto entry = (*obj)->next(key);
-			if (!entry.has_value()) {
-				return {std::monostate{}};
-			}
-			return {entry->first, entry->second};
+		out.push_back(entry->first);
+		out.push_back(entry->second);
+		return;
+	}
+	if (auto obj = std::get_if<std::shared_ptr<NativeObject>>(&target)) {
+		if (!(*obj)->next) {
+			throw std::runtime_error("next expects a native object with iteration.");
 		}
-		throw std::runtime_error("next expects a table or native object.");
-	});
+		auto entry = (*obj)->next(key);
+		if (!entry.has_value()) {
+			out.push_back(std::monostate{});
+			return;
+		}
+		out.push_back(entry->first);
+		out.push_back(entry->second);
+		return;
+	}
+	throw std::runtime_error("next expects a table or native object.");
+});
 
-	auto ipairsIterator = createNativeFunction("ipairs.iterator", [](const std::vector<Value>& args) -> std::vector<Value> {
-		const Value& target = args.at(0);
-		int index = static_cast<int>(std::get<double>(args.at(1)));
-		int nextIndex = index + 1;
-		if (auto tbl = std::get_if<std::shared_ptr<Table>>(&target)) {
-			Value value = (*tbl)->get(static_cast<double>(nextIndex));
-			if (isNil(value)) {
-				return {std::monostate{}};
-			}
-			return {static_cast<double>(nextIndex), value};
+auto ipairsIterator = createNativeFunction("ipairs.iterator", [](const std::vector<Value>& args, std::vector<Value>& out) {
+	const Value& target = args.at(0);
+	int index = static_cast<int>(std::get<double>(args.at(1)));
+	int nextIndex = index + 1;
+	if (auto tbl = std::get_if<std::shared_ptr<Table>>(&target)) {
+		Value value = (*tbl)->get(static_cast<double>(nextIndex));
+		if (isNil(value)) {
+			out.push_back(std::monostate{});
+			return;
 		}
-		if (auto obj = std::get_if<std::shared_ptr<NativeObject>>(&target)) {
-			Value value = (*obj)->get(static_cast<double>(nextIndex));
-			if (isNil(value)) {
-				return {std::monostate{}};
-			}
-			return {static_cast<double>(nextIndex), value};
+		out.push_back(static_cast<double>(nextIndex));
+		out.push_back(value);
+		return;
+	}
+	if (auto obj = std::get_if<std::shared_ptr<NativeObject>>(&target)) {
+		Value value = (*obj)->get(static_cast<double>(nextIndex));
+		if (isNil(value)) {
+			out.push_back(std::monostate{});
+			return;
 		}
-		throw std::runtime_error("ipairs expects a table or native object.");
-	});
+		out.push_back(static_cast<double>(nextIndex));
+		out.push_back(value);
+		return;
+	}
+	throw std::runtime_error("ipairs expects a table or native object.");
+});
 
 	setGlobal("next", nextFn);
-	registerNativeFunction("pairs", [nextFn](const std::vector<Value>& args) -> std::vector<Value> {
+	registerNativeFunction("pairs", [nextFn](const std::vector<Value>& args, std::vector<Value>& out) {
 		const Value& target = args.at(0);
 		if (!std::holds_alternative<std::shared_ptr<Table>>(target) && !std::holds_alternative<std::shared_ptr<NativeObject>>(target)) {
 			throw std::runtime_error("pairs expects a table or native object.");
 		}
-		return {nextFn, target, std::monostate{}};
+		out.push_back(nextFn);
+		out.push_back(target);
+		out.push_back(std::monostate{});
 	});
-	registerNativeFunction("ipairs", [ipairsIterator](const std::vector<Value>& args) -> std::vector<Value> {
+	registerNativeFunction("ipairs", [ipairsIterator](const std::vector<Value>& args, std::vector<Value>& out) {
 		const Value& target = args.at(0);
 		if (!std::holds_alternative<std::shared_ptr<Table>>(target) && !std::holds_alternative<std::shared_ptr<NativeObject>>(target)) {
 			throw std::runtime_error("ipairs expects a table or native object.");
 		}
-		return {ipairsIterator, target, 0.0};
+		out.push_back(ipairsIterator);
+		out.push_back(target);
+		out.push_back(0.0);
 	});
 
 	const RuntimeAssets& assets = EngineCore::instance().assets();
@@ -1969,12 +2016,14 @@ osTable->set("date", createNativeFunction("os.date", [](const std::vector<Value>
 	viewportTable->set("x", static_cast<double>(viewSize.x));
 	viewportTable->set("y", static_cast<double>(viewSize.y));
 
-	auto clockNowFn = createNativeFunction("platform.clock.now", [](const std::vector<Value>&) -> std::vector<Value> {
-		return {EngineCore::instance().clock()->now()};
-	});
-	auto clockPerfNowFn = createNativeFunction("platform.clock.perf_now", [](const std::vector<Value>&) -> std::vector<Value> {
-		return {to_ms(std::chrono::steady_clock::now().time_since_epoch())};
-	});
+auto clockNowFn = createNativeFunction("platform.clock.now", [](const std::vector<Value>& args, std::vector<Value>& out) {
+	(void)args;
+	out.push_back(EngineCore::instance().clock()->now());
+});
+auto clockPerfNowFn = createNativeFunction("platform.clock.perf_now", [](const std::vector<Value>& args, std::vector<Value>& out) {
+	(void)args;
+	out.push_back(to_ms(std::chrono::steady_clock::now().time_since_epoch()));
+});
 	auto clockTable = std::make_shared<Table>(0, 2);
 	clockTable->set("now", clockNowFn);
 	clockTable->set("perf_now", clockPerfNowFn);
@@ -2027,11 +2076,11 @@ osTable->set("date", createNativeFunction("os.date", [](const std::vector<Value>
 		return table;
 	};
 
-	auto getActionStateFn = createNativeFunction("game.get_action_state", [this, makeActionStateTable](const std::vector<Value>& args) -> std::vector<Value> {
-		int playerIndex = m_playerIndex;
-		std::string action;
-		std::optional<f64> windowMs;
-		if (args.size() == 1) {
+auto getActionStateFn = createNativeFunction("game.get_action_state", [this, makeActionStateTable](const std::vector<Value>& args, std::vector<Value>& out) {
+	int playerIndex = m_playerIndex;
+	std::string action;
+	std::optional<f64> windowMs;
+	if (args.size() == 1) {
 			action = std::get<std::string>(args.at(0));
 		} else {
 			playerIndex = static_cast<int>(std::floor(std::get<double>(args.at(0))));
@@ -2039,29 +2088,29 @@ osTable->set("date", createNativeFunction("os.date", [](const std::vector<Value>
 			if (args.size() > 2 && !isNil(args.at(2))) {
 				windowMs = std::get<double>(args.at(2));
 			}
-		}
-		PlayerInput* input = Input::instance().getPlayerInput(playerIndex);
-		ActionState state = input->getActionState(action, windowMs);
-		return {makeActionStateTable(state)};
-	});
+	}
+	PlayerInput* input = Input::instance().getPlayerInput(playerIndex);
+	ActionState state = input->getActionState(action, windowMs);
+	out.push_back(makeActionStateTable(state));
+});
 
-	auto consumeActionFn = createNativeFunction("game.consume_action", [this](const std::vector<Value>& args) -> std::vector<Value> {
-		int playerIndex = m_playerIndex;
-		std::string action;
-		if (args.size() == 1) {
-			action = std::get<std::string>(args.at(0));
+auto consumeActionFn = createNativeFunction("game.consume_action", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+	int playerIndex = m_playerIndex;
+	std::string action;
+	if (args.size() == 1) {
+		action = std::get<std::string>(args.at(0));
 		} else {
 			playerIndex = static_cast<int>(std::floor(std::get<double>(args.at(0))));
-			action = std::get<std::string>(args.at(1));
-		}
-		Input::instance().getPlayerInput(playerIndex)->consumeAction(action);
-		return {};
-	});
+		action = std::get<std::string>(args.at(1));
+	}
+	Input::instance().getPlayerInput(playerIndex)->consumeAction(action);
+	(void)out;
+});
 
-	auto emitFn = createNativeFunction("game.emit", [this](const std::vector<Value>& args) -> std::vector<Value> {
-		auto emitterModule = std::get<std::shared_ptr<Table>>(requireVmModule("eventemitter"));
-		Value emitterKey = canonicalizeIdentifier("EventEmitter");
-		auto emitterTable = std::get<std::shared_ptr<Table>>(emitterModule->get(emitterKey));
+auto emitFn = createNativeFunction("game.emit", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+	auto emitterModule = std::get<std::shared_ptr<Table>>(requireVmModule("eventemitter"));
+	Value emitterKey = canonicalizeIdentifier("EventEmitter");
+	auto emitterTable = std::get<std::shared_ptr<Table>>(emitterModule->get(emitterKey));
 		Value instanceKey = canonicalizeIdentifier("instance");
 		auto instanceTable = std::get<std::shared_ptr<Table>>(emitterTable->get(instanceKey));
 		Value emitKey = canonicalizeIdentifier("emit");
@@ -2079,7 +2128,7 @@ osTable->set("date", createNativeFunction("os.date", [](const std::vector<Value>
 		callArgs.reserve(args.size() - argOffset + 1);
 		callArgs.push_back(instanceTable);
 		callArgs.insert(callArgs.end(), args.begin() + static_cast<std::ptrdiff_t>(argOffset), args.end());
-		callLuaFunction(emitClosure, callArgs);
+	callLuaFunction(emitClosure, callArgs);
 
 		const size_t argCount = args.size() - argOffset;
 		const Value& specValue = args.at(argOffset);
@@ -2162,9 +2211,9 @@ osTable->set("date", createNativeFunction("os.date", [](const std::vector<Value>
 			payload = eventTable;
 		}
 
-		EngineCore::instance().audioEventManager()->onEvent(eventName, payload, emitterId);
-		return {};
-	});
+	EngineCore::instance().audioEventManager()->onEvent(eventName, payload, emitterId);
+	(void)out;
+});
 
 	auto gameTable = std::make_shared<Table>(0, 8);
 	gameTable->set("platform", platformTable);

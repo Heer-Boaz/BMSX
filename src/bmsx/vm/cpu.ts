@@ -17,7 +17,7 @@ const NATIVE_OBJECT_KIND = 'native_object';
 export type NativeFunction = {
 	readonly kind: typeof NATIVE_FUNCTION_KIND;
 	readonly name: string;
-	invoke(args: ReadonlyArray<Value>): Value[];
+	invoke(args: ReadonlyArray<Value>, out: Value[]): void;
 };
 
 export type NativeObject = {
@@ -39,14 +39,15 @@ function valueTypeName(value: Value): string {
 	return 'closure';
 }
 
-export function createNativeFunction(name: string, invoke: (args: ReadonlyArray<Value>) => Value[]): NativeFunction {
+export function createNativeFunction(name: string, invoke: (args: ReadonlyArray<Value>, out: Value[]) => void): NativeFunction {
 	return {
 		kind: NATIVE_FUNCTION_KIND,
 		name,
 		// Keep diagnostics aligned with the C++ VM when native calls receive wrong arg types.
-		invoke: (args) => {
+		invoke: (args, out) => {
+			out.length = 0;
 			try {
-				return invoke(args);
+				invoke(args, out);
 			} catch (err) {
 				if (err instanceof TypeError) {
 					const argTypes = args.map(valueTypeName).join(', ');
@@ -167,14 +168,25 @@ type CallFrame = {
 };
 
 export class Table {
+	private static caseInsensitiveKeys = false;
+
 	private readonly array: Value[];
-	private readonly map: Map<Value, Value>;
+	private readonly stringMap: Map<string, Value>;
+	private readonly otherMap: Map<Value, Value>;
+	private readonly uppercaseIndex: Map<string, string>;
+	private uppercaseIndexValid = false;
 	private metatable: Table | null = null;
+
+	public static setCaseInsensitiveKeys(enabled: boolean): void {
+		Table.caseInsensitiveKeys = enabled;
+	}
 
 	constructor(arraySize: number, _hashSize: number) {
 		this.array = new Array<Value>(arraySize);
 		this.array.fill(null);
-		this.map = new Map<Value, Value>();
+		this.stringMap = new Map<string, Value>();
+		this.otherMap = new Map<Value, Value>();
+		this.uppercaseIndex = new Map<string, string>();
 	}
 
 	public get(key: Value): Value {
@@ -183,7 +195,10 @@ export class Table {
 			const value = this.array[index - 1];
 			return value === undefined ? null : value;
 		}
-		const value = this.map.get(key);
+		if (typeof key === 'string') {
+			return this.getStringKey(key);
+		}
+		const value = this.otherMap.get(key);
 		return value === undefined ? null : value;
 	}
 
@@ -193,11 +208,15 @@ export class Table {
 			this.array[index - 1] = value;
 			return;
 		}
-		if (value === null) {
-			this.map.delete(key);
+		if (typeof key === 'string') {
+			this.setStringKey(key, value);
 			return;
 		}
-		this.map.set(key, value);
+		if (value === null) {
+			this.otherMap.delete(key);
+			return;
+		}
+		this.otherMap.set(key, value);
 	}
 
 	public length(): number {
@@ -214,7 +233,10 @@ export class Table {
 
 	public clear(): void {
 		this.array.length = 0;
-		this.map.clear();
+		this.stringMap.clear();
+		this.otherMap.clear();
+		this.uppercaseIndex.clear();
+		this.uppercaseIndexValid = false;
 	}
 
 	public entriesArray(): ReadonlyArray<[Value, Value]> {
@@ -226,7 +248,10 @@ export class Table {
 			}
 			entries.push([index + 1, value]);
 		}
-		for (const entry of this.map.entries()) {
+		for (const entry of this.stringMap.entries()) {
+			entries.push(entry);
+		}
+		for (const entry of this.otherMap.entries()) {
 			entries.push(entry);
 		}
 		return entries;
@@ -248,7 +273,10 @@ export class Table {
 					return [index + 1, value];
 				}
 			}
-			for (const entry of this.map.entries()) {
+			for (const entry of this.stringMap.entries()) {
+				return entry;
+			}
+			for (const entry of this.otherMap.entries()) {
 				return entry;
 			}
 			return null;
@@ -261,13 +289,38 @@ export class Table {
 					return [index + 1, value];
 				}
 			}
-			for (const entry of this.map.entries()) {
+			for (const entry of this.stringMap.entries()) {
+				return entry;
+			}
+			for (const entry of this.otherMap.entries()) {
 				return entry;
 			}
 			return null;
 		}
+		if (typeof after === 'string') {
+			const match = this.resolveStringKey(after);
+			if (match === null) {
+				return null;
+			}
+			let seen = false;
+			for (const entry of this.stringMap.entries()) {
+				if (!seen) {
+					if (entry[0] === match) {
+						seen = true;
+					}
+					continue;
+				}
+				return entry;
+			}
+			if (seen) {
+				for (const entry of this.otherMap.entries()) {
+					return entry;
+				}
+			}
+			return null;
+		}
 		let seen = false;
-		for (const entry of this.map.entries()) {
+		for (const entry of this.otherMap.entries()) {
 			if (!seen) {
 				if (entry[0] === after) {
 					seen = true;
@@ -282,12 +335,90 @@ export class Table {
 	private isArrayIndex(key: Value): boolean {
 		return typeof key === 'number' && Number.isInteger(key) && key >= 1;
 	}
+
+	private getStringKey(key: string): Value {
+		if (Table.caseInsensitiveKeys) {
+			this.ensureUppercaseIndex();
+			const mapped = this.uppercaseIndex.get(Table.toUpperAscii(key));
+			if (mapped !== undefined) {
+				const value = this.stringMap.get(mapped);
+				return value === undefined ? null : value;
+			}
+			return null;
+		}
+		const value = this.stringMap.get(key);
+		return value === undefined ? null : value;
+	}
+
+	private setStringKey(key: string, value: Value): void {
+		if (Table.caseInsensitiveKeys) {
+			this.ensureUppercaseIndex();
+			const upper = Table.toUpperAscii(key);
+			const existing = this.uppercaseIndex.get(upper);
+			if (value === null) {
+				if (existing !== undefined) {
+					this.stringMap.delete(existing);
+					this.uppercaseIndex.delete(upper);
+				}
+				return;
+			}
+			if (existing !== undefined) {
+				this.stringMap.set(existing, value);
+				return;
+			}
+			this.stringMap.set(key, value);
+			this.uppercaseIndex.set(upper, key);
+			return;
+		}
+		if (value === null) {
+			this.stringMap.delete(key);
+			this.uppercaseIndexValid = false;
+			return;
+		}
+		this.stringMap.set(key, value);
+		this.uppercaseIndexValid = false;
+	}
+
+	private resolveStringKey(key: string): string | null {
+		if (!Table.caseInsensitiveKeys) {
+			return this.stringMap.has(key) ? key : null;
+		}
+		this.ensureUppercaseIndex();
+		const mapped = this.uppercaseIndex.get(Table.toUpperAscii(key));
+		return mapped === undefined ? null : mapped;
+	}
+
+	private ensureUppercaseIndex(): void {
+		if (!Table.caseInsensitiveKeys || this.uppercaseIndexValid) {
+			return;
+		}
+		this.uppercaseIndex.clear();
+		for (const entry of this.stringMap.keys()) {
+			this.uppercaseIndex.set(Table.toUpperAscii(entry), entry);
+		}
+		this.uppercaseIndexValid = true;
+	}
+
+	private static toUpperAscii(value: string): string {
+		let out = '';
+		for (let index = 0; index < value.length; index += 1) {
+			const code = value.charCodeAt(index);
+			if (code >= 97 && code <= 122) {
+				out += String.fromCharCode(code - 32);
+			} else {
+				out += value[index];
+			}
+		}
+		return out;
+	}
 }
 
 // Pool constants for frame/register reuse
 const MAX_POOLED_FRAMES = 32;
 const MAX_POOLED_REGISTER_ARRAYS = 64;
 const MAX_REGISTER_ARRAY_SIZE = 256;
+const MAX_POOLED_NATIVE_RETURN_ARRAYS = 32;
+const MAX_TABLE_INDEX_MISS_LOGS = 64;
 
 export class VMCPU {
 	public instructionBudgetRemaining: number | null = null;
@@ -301,6 +432,10 @@ export class VMCPU {
 	private readonly frames: CallFrame[] = [];
 	private readonly valueScratch: Value[] = [];
 	private readonly returnScratch: Value[] = [];
+	private readonly nativeReturnPool: Value[][] = [];
+	private tableIndexMissCount = 0;
+	private nextTableId = 1;
+	private readonly tableIds = new WeakMap<Table, number>();
 
 	// Frame pooling: avoid allocating new CallFrame objects per call
 	private readonly framePool: CallFrame[] = [];
@@ -330,6 +465,22 @@ export class VMCPU {
 		return regs;
 	}
 
+	private acquireNativeReturnScratch(): Value[] {
+		const pool = this.nativeReturnPool;
+		if (pool.length > 0) {
+			const out = pool.pop()!;
+			out.length = 0;
+			return out;
+		}
+		return [];
+	}
+
+	private releaseNativeReturnScratch(out: Value[]): void {
+		if (this.nativeReturnPool.length < MAX_POOLED_NATIVE_RETURN_ARRAYS) {
+			this.nativeReturnPool.push(out);
+		}
+	}
+
 	private resolveTableIndex(table: Table, key: Value): Value {
 		let current = table;
 		for (let depth = 0; depth < 32; depth += 1) {
@@ -339,10 +490,12 @@ export class VMCPU {
 			}
 			const metatable = current.getMetatable();
 			if (metatable === null) {
+				this.logTableIndexMiss(current, key, 'no metatable');
 				return null;
 			}
 			const indexer = metatable.get('__index');
 			if (!(indexer instanceof Table)) {
+				this.logTableIndexMiss(current, key, `indexer=${valueTypeName(indexer)}`);
 				return null;
 			}
 			current = indexer;
@@ -775,11 +928,17 @@ export class VMCPU {
 					args.push(frame.registers[a + 1 + index]);
 				}
 				if (callee === null) {
+					this.logCallNil(frame.pc - 1, a, argCount);
 					throw new Error('Attempted to call a nil value.');
 				}
 				if (isNativeFunction(callee)) {
-					const results = callee.invoke(args);
-					this.writeReturnValues(frame, a, c, results);
+					const results = this.acquireNativeReturnScratch();
+					try {
+						callee.invoke(args, results);
+						this.writeReturnValues(frame, a, c, results);
+					} finally {
+						this.releaseNativeReturnScratch(results);
+					}
 					return;
 				}
 				if (typeof (callee as Closure).protoIndex !== 'number') {
@@ -926,6 +1085,59 @@ export class VMCPU {
 			return this.program.constPool[index];
 		}
 		return frame.registers[operand];
+	}
+
+	private formatRange(pc: number): string {
+		const range = this.getDebugRange(pc);
+		if (!range) {
+			return '';
+		}
+		return ` at ${range.path}:${range.start.line}:${range.start.column}`;
+	}
+
+	private formatCallStack(): string {
+		const stack = this.getCallStack();
+		if (stack.length === 0) {
+			return '';
+		}
+		const parts: string[] = [];
+		for (let index = stack.length - 1; index >= 0; index -= 1) {
+			const entry = stack[index];
+			const protoId = this.program.protoIds[entry.protoIndex];
+			const range = this.getDebugRange(entry.pc);
+			if (range) {
+				parts.push(`${protoId}(${range.path}:${range.start.line}:${range.start.column})`);
+			} else {
+				parts.push(`${protoId}(pc=${entry.pc})`);
+			}
+		}
+		return ` stack=${parts.join(' <- ')}`;
+	}
+
+	private getTableId(table: Table): number {
+		const existing = this.tableIds.get(table);
+		if (existing !== undefined) {
+			return existing;
+		}
+		const id = this.nextTableId;
+		this.nextTableId += 1;
+		this.tableIds.set(table, id);
+		return id;
+	}
+
+	private logCallNil(pc: number, registerIndex: number, argCount: number): void {
+		const message = `[VMCPU] CALL nil callee pc=${pc} a=${registerIndex} args=${argCount}${this.formatRange(pc)}${this.formatCallStack()}`;
+		console.error(message);
+	}
+
+	private logTableIndexMiss(table: Table, key: Value, reason: string): void {
+		if (this.tableIndexMissCount >= MAX_TABLE_INDEX_MISS_LOGS) {
+			return;
+		}
+		this.tableIndexMissCount += 1;
+		const tableId = this.getTableId(table);
+		const message = `[VMCPU] resolveTableIndex miss (${reason}) key=${String(key)} keyType=${valueTypeName(key)} table=${tableId}${this.formatRange(this.lastPc)}${this.formatCallStack()}`;
+		console.warn(message);
 	}
 
 	private isTruthy(value: Value): boolean {
