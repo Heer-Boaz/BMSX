@@ -8,8 +8,7 @@ import { mod } from '../utils/mod';
 import { PhysicsComponent } from "../physics/physicscomponent";
 import { CollisionEvent, PhysicsWorld } from "../physics/physicsworld";
 import { excludeclassfromsavegame } from '../serializer/serializationhooks';
-import { TileSize } from "../systems/msx";
-import { Identifiable, type Oriented, type Scaled } from "../rompack/rompack";
+import type { Direction, Identifiable, Oriented, Scaled } from "../rompack/rompack";
 import { Service } from '../core/service';
 import { Registry } from '../core/registry';
 
@@ -232,6 +231,7 @@ export class BoundarySystem extends ECSystem {
  * TileCollisionSystem resolves tile collisions using the component logic.
  */
 export class TileCollisionSystem extends ECSystem {
+	public tileSize = 8; // Default tile size; can be overridden as needed
 	constructor(priority: number = 0) { super(TickGroup.Physics, priority); }
 	update(world: World): void {
 		for (let [o, c] of world.objects_with_components(TileCollisionComponent, { scope: 'active' })) {
@@ -244,13 +244,13 @@ export class TileCollisionSystem extends ECSystem {
 			if (newx < oldx) {
 				if ($.world.collidesWithTile(o, 'left')) {
 					o.events.emit('wallcollide', { d: 'left' as const });
-					newx += TileSize - mod(newx, TileSize);
+					newx += this.tileSize - mod(newx, this.tileSize);
 				}
 				o.x = ~~newx;
 			} else if (newx > oldx) {
 				if ($.world.collidesWithTile(o, 'right')) {
 					o.events.emit('wallcollide', { d: 'right' as const });
-					newx -= newx % TileSize;
+					newx -= newx % this.tileSize;
 				}
 				o.x = ~~newx;
 			}
@@ -258,13 +258,13 @@ export class TileCollisionSystem extends ECSystem {
 			if (newy < oldy) {
 				if ($.world.collidesWithTile(o, 'up')) {
 					o.events.emit('wallcollide', { d: 'up' as const });
-					newy += TileSize - mod(newy, TileSize);
+					newy += this.tileSize - mod(newy, this.tileSize);
 				}
 				o.y = ~~newy;
 			} else if (newy > oldy) {
 				if ($.world.collidesWithTile(o, 'down')) {
-					o.events.emit('wallcollide', { d: 'down' as const });
-					newy -= newy % TileSize;
+					o.events.emit('wallcollide', { d: 'down' satisfies Direction });
+					newy -= newy % this.tileSize;
 				}
 				o.y = ~~newy;
 			}
