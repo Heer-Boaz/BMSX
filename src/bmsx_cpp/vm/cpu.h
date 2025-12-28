@@ -1,26 +1,27 @@
 #pragma once
 
 #include <cstdint>
+#include <cstring>
 #include <functional>
-#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
-#include <stdexcept>
 #include <unordered_map>
 #include <utility>
-#include <variant>
 #include <vector>
 
 #include "../core/types.h"
 
 namespace bmsx {
 
-// Forward declarations
-class Table;
+class VMHeap;
+
+struct Table;
 struct Closure;
 struct NativeFunction;
 struct NativeObject;
+struct Upvalue;
+struct CallFrame;
 
 /**
  * Source range in Lua code for debugging/error reporting.
@@ -33,74 +34,11 @@ struct SourceRange {
 	int endColumn = 0;
 };
 
+using StringId = uint32_t;
+
 struct InternedString {
-	uint32_t id = 0;
+	StringId id = 0;
 	std::string value;
-};
-
-using StringValue = const InternedString*;
-
-/**
- * Value type - the core type for all VM values.
- * Uses std::variant to represent Lua's dynamic typing.
- *
- * Order matters for std::monostate (nil), bool, double, string, then pointer types.
- */
-using Value = std::variant<
-	std::monostate,              // nil
-	bool,                         // boolean
-	double,                       // number
-	StringValue,                  // string
-	std::shared_ptr<Table>,       // table
-	std::shared_ptr<Closure>,     // closure/function
-	std::shared_ptr<NativeFunction>, // native function
-	std::shared_ptr<NativeObject>    // native object wrapper
->;
-
-// Type indices for Value variant
-constexpr size_t VALUE_NIL = 0;
-constexpr size_t VALUE_BOOL = 1;
-constexpr size_t VALUE_NUMBER = 2;
-constexpr size_t VALUE_STRING = 3;
-constexpr size_t VALUE_TABLE = 4;
-constexpr size_t VALUE_CLOSURE = 5;
-constexpr size_t VALUE_NATIVE_FUNCTION = 6;
-constexpr size_t VALUE_NATIVE_OBJECT = 7;
-
-inline size_t hashCombine(size_t seed, size_t value) {
-	return seed ^ (value + 0x9e3779b97f4a7c15ULL + (seed << 6) + (seed >> 2));
-}
-
-struct ValueHash {
-	size_t operator()(const Value& v) const {
-		size_t seed = std::hash<size_t>{}(v.index());
-		switch (v.index()) {
-			case VALUE_NIL:
-				return seed;
-			case VALUE_BOOL:
-				return hashCombine(seed, std::hash<bool>{}(std::get<bool>(v)));
-			case VALUE_NUMBER:
-				return hashCombine(seed, std::hash<double>{}(std::get<double>(v)));
-			case VALUE_STRING:
-				return hashCombine(seed, std::hash<const void*>{}(std::get<StringValue>(v)));
-			case VALUE_TABLE:
-				return hashCombine(seed, std::hash<const void*>{}(std::get<std::shared_ptr<Table>>(v).get()));
-			case VALUE_CLOSURE:
-				return hashCombine(seed, std::hash<const void*>{}(std::get<std::shared_ptr<Closure>>(v).get()));
-			case VALUE_NATIVE_FUNCTION:
-				return hashCombine(seed, std::hash<const void*>{}(std::get<std::shared_ptr<NativeFunction>>(v).get()));
-			case VALUE_NATIVE_OBJECT:
-				return hashCombine(seed, std::hash<const void*>{}(std::get<std::shared_ptr<NativeObject>>(v).get()));
-			default:
-				return seed;
-		}
-	}
-};
-
-struct ValueEq {
-	bool operator()(const Value& lhs, const Value& rhs) const {
-		return lhs == rhs;
-	}
 };
 
 struct StringKeyHash {
@@ -115,287 +53,401 @@ struct StringKeyHash {
 
 struct StringKeyEq {
 	using is_transparent = void;
-	bool operator()(std::string_view lhs, std::string_view rhs) const noexcept {
-		return lhs == rhs;
-	}
-	bool operator()(const std::string& lhs, const std::string& rhs) const noexcept {
-		return lhs == rhs;
-	}
-	bool operator()(const std::string& lhs, std::string_view rhs) const noexcept {
-		return lhs == rhs;
-	}
-	bool operator()(std::string_view lhs, const std::string& rhs) const noexcept {
-		return lhs == rhs;
-	}
+	bool operator()(std::string_view lhs, std::string_view rhs) const noexcept { return lhs == rhs; }
+	bool operator()(const std::string& lhs, const std::string& rhs) const noexcept { return lhs == rhs; }
+	bool operator()(const std::string& lhs, std::string_view rhs) const noexcept { return lhs == rhs; }
+	bool operator()(std::string_view lhs, const std::string& rhs) const noexcept { return lhs == rhs; }
 };
 
 class StringPool {
 public:
-	StringValue intern(std::string_view value) {
+	StringId intern(std::string_view value) {
 		auto it = m_stringMap.find(value);
 		if (it != m_stringMap.end()) {
 			return it->second;
 		}
 		auto entry = std::make_unique<InternedString>();
-		entry->id = static_cast<uint32_t>(m_entries.size());
+		entry->id = static_cast<StringId>(m_entries.size());
 		entry->value.assign(value.data(), value.size());
-		StringValue ptr = entry.get();
+		StringId id = entry->id;
 		m_entries.push_back(std::move(entry));
-		m_stringMap.emplace(std::string_view(ptr->value), ptr);
-		return ptr;
+		m_stringMap.emplace(m_entries.back()->value, id);
+		return id;
 	}
 
-	const std::string& toString(StringValue value) const {
-		return value->value;
+	const std::string& toString(StringId id) const {
+		return m_entries.at(static_cast<size_t>(id))->value;
 	}
 
 private:
-	std::unordered_map<std::string_view, StringValue, StringKeyHash, StringKeyEq> m_stringMap;
+	std::unordered_map<std::string, StringId, StringKeyHash, StringKeyEq> m_stringMap;
 	std::vector<std::unique_ptr<InternedString>> m_entries;
 };
 
-/**
- * Check if a Value is nil.
- */
-inline bool isNil(const Value& v) {
-	return std::holds_alternative<std::monostate>(v);
+using Value = uint64_t;
+
+enum class ValueTag : uint8_t {
+	Nil = 0,
+	False = 1,
+	True = 2,
+	String = 3,
+	Table = 4,
+	Closure = 5,
+	NativeFunction = 6,
+	NativeObject = 7,
+	Upvalue = 8,
+};
+
+constexpr uint64_t VALUE_QNAN_MASK = 0x7ff8000000000000ULL;
+constexpr uint64_t VALUE_SIGN_BIT = 0x8000000000000000ULL;
+constexpr uint64_t VALUE_PAYLOAD_MASK = 0x0000ffffffffffffULL;
+
+inline bool valueIsNumber(Value v) {
+	if ((v & VALUE_QNAN_MASK) != VALUE_QNAN_MASK) {
+		return true;
+	}
+	uint64_t tag = ((v >> 48) & 0x7ULL) | ((v & VALUE_SIGN_BIT) ? 0x8ULL : 0ULL);
+	return tag == 0;
 }
 
-/**
- * Check if a Value is truthy (not nil and not false).
- */
-inline bool isTruthy(const Value& v) {
+inline bool valueIsTagged(Value v) {
+	if ((v & VALUE_QNAN_MASK) != VALUE_QNAN_MASK) {
+		return false;
+	}
+	uint64_t tag = ((v >> 48) & 0x7ULL) | ((v & VALUE_SIGN_BIT) ? 0x8ULL : 0ULL);
+	return tag != 0;
+}
+
+inline uint64_t valuePayload(Value v) {
+	return v & VALUE_PAYLOAD_MASK;
+}
+
+inline ValueTag valueTag(Value v) {
+	uint64_t tag = ((v >> 48) & 0x7ULL) | ((v & VALUE_SIGN_BIT) ? 0x8ULL : 0ULL);
+	return static_cast<ValueTag>(tag - 1);
+}
+
+inline Value valueFromTag(ValueTag tag, uint64_t payload = 0) {
+	uint64_t tagBits = static_cast<uint64_t>(tag) + 1;
+	uint64_t hi = (tagBits & 0x7ULL) << 48;
+	uint64_t sign = (tagBits & 0x8ULL) ? VALUE_SIGN_BIT : 0ULL;
+	return VALUE_QNAN_MASK | hi | sign | (payload & VALUE_PAYLOAD_MASK);
+}
+
+inline Value valueFromNumber(double value) {
+	if (value != value) {
+		return VALUE_QNAN_MASK;
+	}
+	Value out = 0;
+	std::memcpy(&out, &value, sizeof(double));
+	return out;
+}
+
+inline double valueToNumber(Value v) {
+	double out = 0.0;
+	std::memcpy(&out, &v, sizeof(double));
+	return out;
+}
+
+inline Value valueNil() {
+	return valueFromTag(ValueTag::Nil);
+}
+
+inline Value valueBool(bool value) {
+	return valueFromTag(value ? ValueTag::True : ValueTag::False);
+}
+
+inline Value valueNumber(double value) {
+	return valueFromNumber(value);
+}
+
+inline Value valueString(StringId id) {
+	return valueFromTag(ValueTag::String, id);
+}
+
+inline Value valueTable(Table* table) {
+	return valueFromTag(ValueTag::Table, reinterpret_cast<uint64_t>(table));
+}
+
+inline Value valueClosure(Closure* closure) {
+	return valueFromTag(ValueTag::Closure, reinterpret_cast<uint64_t>(closure));
+}
+
+inline Value valueNativeFunction(NativeFunction* fn) {
+	return valueFromTag(ValueTag::NativeFunction, reinterpret_cast<uint64_t>(fn));
+}
+
+inline Value valueNativeObject(NativeObject* obj) {
+	return valueFromTag(ValueTag::NativeObject, reinterpret_cast<uint64_t>(obj));
+}
+
+inline Value valueUpvalue(Upvalue* upvalue) {
+	return valueFromTag(ValueTag::Upvalue, reinterpret_cast<uint64_t>(upvalue));
+}
+
+inline bool isNil(Value v) {
+	return valueIsTagged(v) && valueTag(v) == ValueTag::Nil;
+}
+
+inline bool isTruthy(Value v) {
 	if (isNil(v)) return false;
-	if (auto* b = std::get_if<bool>(&v)) return *b;
+	if (valueIsTagged(v)) return valueTag(v) != ValueTag::False;
 	return true;
 }
 
-/**
- * Get a Value as a number, or 0 if not a number.
- */
-inline double asNumber(const Value& v) {
-	if (auto* n = std::get_if<double>(&v)) return *n;
-	return 0.0;
+inline double asNumber(Value v) {
+	return valueToNumber(v);
 }
 
-/**
- * Get a Value as a string.
- */
-inline const std::string& asString(const Value& v) {
-	static const std::string empty;
-	if (auto* s = std::get_if<StringValue>(&v)) return (*s)->value;
-	return empty;
+inline StringId asStringId(Value v) {
+	return static_cast<StringId>(valuePayload(v));
 }
+
+inline Table* asTable(Value v) {
+	return reinterpret_cast<Table*>(valuePayload(v));
+}
+
+inline Closure* asClosure(Value v) {
+	return reinterpret_cast<Closure*>(valuePayload(v));
+}
+
+inline NativeFunction* asNativeFunction(Value v) {
+	return reinterpret_cast<NativeFunction*>(valuePayload(v));
+}
+
+inline NativeObject* asNativeObject(Value v) {
+	return reinterpret_cast<NativeObject*>(valuePayload(v));
+}
+
+inline Upvalue* asUpvalue(Value v) {
+	return reinterpret_cast<Upvalue*>(valuePayload(v));
+}
+
+inline bool valueIsString(Value v) {
+	return valueIsTagged(v) && valueTag(v) == ValueTag::String;
+}
+
+inline bool valueIsBool(Value v) {
+	if (!valueIsTagged(v)) {
+		return false;
+	}
+	ValueTag tag = valueTag(v);
+	return tag == ValueTag::True || tag == ValueTag::False;
+}
+
+inline bool valueToBool(Value v) {
+	return valueTag(v) == ValueTag::True;
+}
+
+inline bool valueIsTable(Value v) {
+	return valueIsTagged(v) && valueTag(v) == ValueTag::Table;
+}
+
+inline bool valueIsClosure(Value v) {
+	return valueIsTagged(v) && valueTag(v) == ValueTag::Closure;
+}
+
+inline bool valueIsNativeFunction(Value v) {
+	return valueIsTagged(v) && valueTag(v) == ValueTag::NativeFunction;
+}
+
+inline bool valueIsNativeObject(Value v) {
+	return valueIsTagged(v) && valueTag(v) == ValueTag::NativeObject;
+}
+
+inline bool valueIsUpvalue(Value v) {
+	return valueIsTagged(v) && valueTag(v) == ValueTag::Upvalue;
+}
+
+inline const char* valueTypeNameInline(Value v) {
+	if (valueIsNumber(v)) return "number";
+	if (!valueIsTagged(v)) return "unknown";
+	switch (valueTag(v)) {
+		case ValueTag::Nil: return "nil";
+		case ValueTag::False: return "boolean";
+		case ValueTag::True: return "boolean";
+		case ValueTag::String: return "string";
+		case ValueTag::Table: return "table";
+		case ValueTag::Closure: return "closure";
+		case ValueTag::NativeFunction: return "native_function";
+		case ValueTag::NativeObject: return "native_object";
+		case ValueTag::Upvalue: return "upvalue";
+		default: return "unknown";
+	}
+}
+
+struct ValueHash {
+	size_t operator()(Value v) const noexcept {
+		if (valueIsNumber(v)) {
+			double num = valueToNumber(v);
+			if (num == 0.0) {
+				num = 0.0;
+			}
+			if (num != num) {
+				return static_cast<size_t>(VALUE_QNAN_MASK ^ (VALUE_QNAN_MASK >> 32));
+			}
+			uint64_t bits = 0;
+			std::memcpy(&bits, &num, sizeof(double));
+			return static_cast<size_t>(bits ^ (bits >> 32));
+		}
+		return static_cast<size_t>(v ^ (v >> 32));
+	}
+};
+
+struct ValueEq {
+	bool operator()(Value lhs, Value rhs) const noexcept {
+		if (valueIsNumber(lhs) && valueIsNumber(rhs)) {
+			double leftNum = valueToNumber(lhs);
+			double rightNum = valueToNumber(rhs);
+			if (leftNum != leftNum && rightNum != rightNum) {
+				return true;
+			}
+			return leftNum == rightNum;
+		}
+		return lhs == rhs;
+	}
+};
 
 /**
  * Native function signature - takes args, writes results into out buffer.
  */
 using NativeFunctionInvoke = std::function<void(const std::vector<Value>&, std::vector<Value>&)>;
 
+enum class ObjType : uint8_t {
+	Table,
+	Closure,
+	NativeFunction,
+	NativeObject,
+	Upvalue,
+};
+
+struct GCObject {
+	ObjType type;
+	bool marked = false;
+	GCObject* next = nullptr;
+};
+
 /**
  * Native function wrapper for C++ functions callable from Lua.
  */
-struct NativeFunction {
+struct NativeFunction : GCObject {
 	std::string name;
 	NativeFunctionInvoke invoke;
 };
 
 /**
- * Value type name for diagnostics (mirrors cpu.cpp valueTypeName).
- */
-inline const char* valueTypeNameInline(const Value& v) {
-	switch (v.index()) {
-		case VALUE_NIL: return "nil";
-		case VALUE_BOOL: return "boolean";
-		case VALUE_NUMBER: return "number";
-		case VALUE_STRING: return "string";
-		case VALUE_TABLE: return "table";
-		case VALUE_CLOSURE: return "closure";
-		case VALUE_NATIVE_FUNCTION: return "native_function";
-		case VALUE_NATIVE_OBJECT: return "native_object";
-		default: return "unknown";
-	}
-}
-
-/**
- * Create a native function.
- */
-inline std::shared_ptr<NativeFunction> createNativeFunction(
-	const std::string& name,
-	NativeFunctionInvoke invoke
-) {
-	auto wrapped = [name, invoke = std::move(invoke)](const std::vector<Value>& args, std::vector<Value>& out) {
-		out.clear();
-		try {
-			invoke(args, out);
-		} catch (const std::bad_variant_access& e) {
-			std::string message = "Native function argument type mismatch.";
-			message += " fn=" + name + " args=[";
-			for (size_t i = 0; i < args.size(); ++i) {
-				if (i > 0) message += ", ";
-				message += valueTypeNameInline(args[i]);
-			}
-			message += "] error=" + std::string(e.what());
-			throw std::runtime_error(message);
-		}
-	};
-	return std::make_shared<NativeFunction>(NativeFunction{name, std::move(wrapped)});
-}
-
-/**
- * Check if a Value is a native function.
- */
-inline bool isNativeFunction(const Value& v) {
-	return std::holds_alternative<std::shared_ptr<NativeFunction>>(v);
-}
-
-/**
  * Native object wrapper for exposing C++ objects to Lua.
  */
-struct NativeObject {
+struct NativeObject : GCObject {
 	void* raw = nullptr;
 	std::function<Value(const Value&)> get;
 	std::function<void(const Value&, const Value&)> set;
-	std::function<int()> len; // optional
-	std::function<std::optional<std::pair<Value, Value>>(const Value&)> next; // optional
+	std::function<int()> len;
+	std::function<std::optional<std::pair<Value, Value>>(const Value&)> next;
+	std::function<void(VMHeap&)> mark;
 };
-
-/**
- * Create a native object wrapper.
- */
-inline std::shared_ptr<NativeObject> createNativeObject(
-	void* raw,
-	std::function<Value(const Value&)> get,
-	std::function<void(const Value&, const Value&)> set,
-	std::function<int()> len = nullptr,
-	std::function<std::optional<std::pair<Value, Value>>(const Value&)> next = nullptr
-) {
-	return std::make_shared<NativeObject>(NativeObject{raw, std::move(get), std::move(set), std::move(len), std::move(next)});
-}
-
-/**
- * Check if a Value is a native object.
- */
-inline bool isNativeObject(const Value& v) {
-	return std::holds_alternative<std::shared_ptr<NativeObject>>(v);
-}
 
 /**
  * Upvalue descriptor - describes how to find an upvalue when creating a closure.
  */
 struct UpvalueDesc {
-	bool isLocal = false;  // true = local in enclosing function, false = upvalue of enclosing function
-	int index = 0;         // register index (if isLocal) or upvalue index (if !isLocal)
+	bool isLocal = false;
+	int index = 0;
 };
 
 /**
  * Function prototype - compiled function metadata.
  */
 struct Proto {
-	int entryPC = 0;         // entry point in global code array
-	int maxStack = 0;        // maximum stack size needed
-	int numParams = 0;       // number of fixed parameters
-	bool isVararg = false;   // accepts varargs
-	std::vector<UpvalueDesc> upvalues; // upvalue descriptors
+	int entryPC = 0;
+	int maxStack = 0;
+	int numParams = 0;
+	bool isVararg = false;
+	std::vector<UpvalueDesc> upvalues;
 };
 
 /**
  * Compiled program - bytecode, constants, and prototypes.
  */
 struct Program {
-	std::vector<uint32_t> code;            // bytecode instructions
-	std::vector<Value> constPool;          // constant pool
-	StringPool stringPool;                 // interned strings for this program
-	std::vector<Proto> protos;             // function prototypes
-	std::vector<std::optional<SourceRange>> debugRanges; // debug info per instruction
-	std::vector<std::string> protoIds;     // prototype identifiers for debugging
+	std::vector<uint32_t> code;
+	std::vector<Value> constPool;
+	StringPool stringPool;
+	std::vector<Proto> protos;
+	std::vector<std::optional<SourceRange>> debugRanges;
+	std::vector<std::string> protoIds;
 };
 
-/**
- * Upvalue - runtime representation of a captured variable.
- */
-struct Upvalue;
-struct CallFrame;
-
-struct Upvalue {
-	bool open = false;       // still on stack?
-	int index = 0;           // register index when open
-	CallFrame* frame = nullptr; // owning frame when open
-	Value value;             // closed value
+struct Upvalue : GCObject {
+	bool open = false;
+	int index = 0;
+	CallFrame* frame = nullptr;
+	Value value = valueNil();
 };
 
-/**
- * Closure - a function value with captured upvalues.
- */
-struct Closure {
+struct Closure : GCObject {
 	int protoIndex = 0;
-	std::vector<std::shared_ptr<Upvalue>> upvalues;
+	std::vector<Upvalue*> upvalues;
 };
 
 /**
  * VM opcodes - instruction set for the bytecode interpreter.
  */
 enum class OpCode : uint8_t {
-	MOV,        // A B     R[A] = R[B]
-	LOADK,      // A Bx    R[A] = K[Bx]
-	LOADNIL,    // A B     R[A..A+B-1] = nil
-	LOADBOOL,   // A B C   R[A] = (B != 0); if C skip next
-	GETG,       // A Bx    R[A] = globals[K[Bx]]
-	SETG,       // A Bx    globals[K[Bx]] = R[A]
-	GETT,       // A B C   R[A] = R[B][RK(C)]
-	SETT,       // A B C   R[A][RK(B)] = RK(C)
-	NEWT,       // A B C   R[A] = new Table(arraySize=B, hashSize=C)
-	ADD,        // A B C   R[A] = RK(B) + RK(C)
-	SUB,        // A B C   R[A] = RK(B) - RK(C)
-	MUL,        // A B C   R[A] = RK(B) * RK(C)
-	DIV,        // A B C   R[A] = RK(B) / RK(C)
-	MOD,        // A B C   R[A] = RK(B) % RK(C)
-	FLOORDIV,   // A B C   R[A] = floor(RK(B) / RK(C))
-	POW,        // A B C   R[A] = RK(B) ^ RK(C)
-	BAND,       // A B C   R[A] = RK(B) & RK(C)
-	BOR,        // A B C   R[A] = RK(B) | RK(C)
-	BXOR,       // A B C   R[A] = RK(B) ^ RK(C) (bitwise)
-	SHL,        // A B C   R[A] = RK(B) << RK(C)
-	SHR,        // A B C   R[A] = RK(B) >> RK(C)
-	CONCAT,     // A B C   R[A] = tostring(RK(B)) .. tostring(RK(C))
-	UNM,        // A B     R[A] = -R[B]
-	NOT,        // A B     R[A] = not R[B]
-	LEN,        // A B     R[A] = #R[B]
-	BNOT,       // A B     R[A] = ~R[B]
-	EQ,         // A B C   if (RK(B) == RK(C)) != A then skip next
-	LT,         // A B C   if (RK(B) < RK(C)) != A then skip next
-	LE,         // A B C   if (RK(B) <= RK(C)) != A then skip next
-	TEST,       // A B C   if (R[A] is truthy) != C then skip next
-	TESTSET,    // A B C   if R[B] is truthy == C then R[A] = R[B], else skip next
-	JMP,        // sBx     pc += sBx
-	CLOSURE,    // A Bx    R[A] = closure(protos[Bx])
-	GETUP,      // A B     R[A] = upvalues[B]
-	SETUP,      // A B     upvalues[B] = R[A]
-	VARARG,     // A B     R[A..A+B-1] = varargs (B=0 means all)
-	CALL,       // A B C   R[A..A+C-1] = R[A](R[A+1..A+B]) (B=0: varargs, C=0: multi-return)
-	RET,        // A B     return R[A..A+B-1] (B=0: return all from A to top)
-	LOAD_MEM,   // A B     R[A] = memory[R[B]]
-	STORE_MEM,  // A B     memory[R[B]] = R[A]
+	MOV,
+	LOADK,
+	LOADNIL,
+	LOADBOOL,
+	GETG,
+	SETG,
+	GETT,
+	SETT,
+	NEWT,
+	ADD,
+	SUB,
+	MUL,
+	DIV,
+	MOD,
+	FLOORDIV,
+	POW,
+	BAND,
+	BOR,
+	BXOR,
+	SHL,
+	SHR,
+	CONCAT,
+	UNM,
+	NOT,
+	LEN,
+	BNOT,
+	EQ,
+	LT,
+	LE,
+	TEST,
+	TESTSET,
+	JMP,
+	CLOSURE,
+	GETUP,
+	SETUP,
+	VARARG,
+	CALL,
+	RET,
+	LOAD_MEM,
+	STORE_MEM,
 };
 
-/**
- * Run result - whether execution halted or yielded.
- */
 enum class RunResult {
-	Halted,   // no more frames to execute
-	Yielded,  // yielded due to instruction budget
+	Halted,
+	Yielded,
 };
 
-/**
- * Call frame - represents a function activation on the call stack.
- */
 struct CallFrame {
 	int protoIndex = 0;
 	int pc = 0;
 	std::vector<Value> registers;
 	std::vector<Value> varargs;
-	std::shared_ptr<Closure> closure;
-	std::unordered_map<int, std::shared_ptr<Upvalue>> openUpvalues;
+	Closure* closure = nullptr;
+	std::unordered_map<int, Upvalue*> openUpvalues;
 	int returnBase = 0;
 	int returnCount = 0;
 	int top = 0;
@@ -403,137 +455,173 @@ struct CallFrame {
 	int callSitePc = 0;
 };
 
-/**
- * Lua table implementation.
- *
- * Supports both array-style (1-based integer keys) and hash-style access.
- * Metatables are supported for operator overloading.
- */
-struct StringValueHash {
-	size_t operator()(StringValue value) const noexcept {
-		return std::hash<const void*>{}(value);
-	}
-};
-
-struct StringValueEq {
-	bool operator()(StringValue lhs, StringValue rhs) const noexcept {
-		return lhs == rhs;
-	}
-};
-
-class Table {
+class Table : public GCObject {
 public:
 	Table(int arraySize = 0, int hashSize = 0);
 
 	Value get(const Value& key) const;
-	Value getString(std::string_view key) const;
 	void set(const Value& key, const Value& value);
 	int length() const;
 	void clear();
+	template <typename Fn>
+	void forEachEntry(Fn&& fn) const {
+		for (size_t i = 0; i < m_array.size(); ++i) {
+			if (!isNil(m_array[i])) {
+				fn(valueNumber(static_cast<double>(i + 1)), m_array[i]);
+			}
+		}
+		for (const auto& entry : m_stringMap) {
+			fn(valueString(entry.first), entry.second);
+		}
+		for (const auto& entry : m_otherMap) {
+			fn(entry.first, entry.second);
+		}
+	}
 	std::vector<std::pair<Value, Value>> entries() const;
 	std::optional<std::pair<Value, Value>> nextEntry(const Value& after) const;
 
-	std::shared_ptr<Table> getMetatable() const { return m_metatable; }
-	void setMetatable(std::shared_ptr<Table> mt) { m_metatable = std::move(mt); }
+	Table* getMetatable() const { return m_metatable; }
+	void setMetatable(Table* mt) { m_metatable = mt; }
 
 private:
 	bool isArrayIndex(const Value& key) const;
 	int toArrayIndex(const Value& key) const;
 
 	std::vector<Value> m_array;
-	std::unordered_map<StringValue, Value, StringValueHash, StringValueEq> m_stringMap;
+	std::unordered_map<StringId, Value> m_stringMap;
 	std::unordered_map<Value, Value, ValueHash, ValueEq> m_otherMap;
-	std::shared_ptr<Table> m_metatable;
+	Table* m_metatable = nullptr;
 };
 
-/**
- * VM CPU - the bytecode interpreter.
- *
- * Executes compiled Lua programs with:
- * - Register-based instruction set
- * - Upvalue support for closures
- * - Memory-mapped I/O region
- * - Frame and register pooling for performance
- */
+class VMHeap {
+public:
+	VMHeap() = default;
+
+	template <typename T, typename... Args>
+	T* allocate(ObjType type, Args&&... args) {
+		auto* obj = new T(std::forward<Args>(args)...);
+		obj->type = type;
+		obj->marked = false;
+		obj->next = m_objects;
+		m_objects = obj;
+		m_bytesAllocated += sizeof(T);
+		if (m_bytesAllocated > m_nextGC) {
+			m_collectRequested = true;
+		}
+		return obj;
+	}
+
+	void requestCollection() { m_collectRequested = true; }
+	bool needsCollection() const { return m_collectRequested; }
+	void collect();
+
+	void markValue(Value v);
+	void markObject(GCObject* obj);
+
+	void setRootMarker(std::function<void(VMHeap&)> marker) { m_rootMarker = std::move(marker); }
+
+private:
+	void trace();
+	void sweep();
+
+	GCObject* m_objects = nullptr;
+	std::vector<GCObject*> m_grayStack;
+	size_t m_bytesAllocated = 0;
+	size_t m_nextGC = 1024 * 1024;
+	bool m_collectRequested = false;
+	std::function<void(VMHeap&)> m_rootMarker;
+};
+
 class VMCPU {
 public:
 	explicit VMCPU(std::vector<Value>& memory);
 
-	// Program management
 	void setProgram(Program* program);
 	Program* getProgram() const { return m_program; }
-	StringValue internString(std::string_view value) { return m_stringPool.intern(value); }
+	StringId internString(std::string_view value) { return m_stringPool.intern(value); }
+	const StringPool& stringPool() const { return m_stringPool; }
+	void setExternalRootMarker(std::function<void(VMHeap&)> marker) { m_externalRootMarker = std::move(marker); }
 
-	// Execution control
+	Value createNativeFunction(std::string_view name, NativeFunctionInvoke fn);
+	Value createNativeObject(
+		void* raw,
+		std::function<Value(const Value&)> get,
+		std::function<void(const Value&, const Value&)> set,
+		std::function<int()> len = nullptr,
+		std::function<std::optional<std::pair<Value, Value>>(const Value&)> next = nullptr,
+		std::function<void(VMHeap&)> mark = nullptr
+	);
+	Table* createTable(int arraySize = 0, int hashSize = 0);
+	Closure* createRootClosure(int protoIndex);
+
 	void start(int entryProtoIndex, const std::vector<Value>& args = {});
-	void call(std::shared_ptr<Closure> closure, const std::vector<Value>& args = {}, int returnCount = 0);
-	void callExternal(std::shared_ptr<Closure> closure, const std::vector<Value>& args = {});
+	void call(Closure* closure, const std::vector<Value>& args = {}, int returnCount = 0);
+	void callExternal(Closure* closure, const std::vector<Value>& args = {});
 	RunResult run(std::optional<int> instructionBudget = std::nullopt);
 	RunResult runUntilDepth(int targetDepth, std::optional<int> instructionBudget = std::nullopt);
 	void step();
 
-	// State inspection
 	int getFrameDepth() const { return static_cast<int>(m_frames.size()); }
 	bool hasFrames() const { return !m_frames.empty(); }
 	std::optional<SourceRange> getDebugRange(int pc) const;
-	std::vector<std::pair<int, int>> getCallStack() const; // [(protoIndex, pc), ...]
+	std::vector<std::pair<int, int>> getCallStack() const;
 
-	// Public state
 	std::optional<int> instructionBudgetRemaining;
 	std::vector<Value> lastReturnValues;
 	int lastPc = 0;
 	uint32_t lastInstruction = 0;
-	Table globals;
+	Table* globals = nullptr;
 
 private:
 	void executeInstruction(CallFrame& frame, uint32_t instr);
-	void pushFrame(std::shared_ptr<Closure> closure, const Value* args, size_t argCount,
-	               int returnBase, int returnCount, bool captureReturns, int callSitePc);
-	void pushFrame(std::shared_ptr<Closure> closure, const std::vector<Value>& args,
-	               int returnBase, int returnCount, bool captureReturns, int callSitePc);
-	std::shared_ptr<Closure> createClosure(CallFrame& frame, int protoIndex);
+	void pushFrame(Closure* closure, const Value* args, size_t argCount,
+		int returnBase, int returnCount, bool captureReturns, int callSitePc);
+	void pushFrame(Closure* closure, const std::vector<Value>& args,
+		int returnBase, int returnCount, bool captureReturns, int callSitePc);
+	Closure* createClosure(CallFrame& frame, int protoIndex);
 	void closeUpvalues(CallFrame& frame);
-	const Value& readUpvalue(const std::shared_ptr<Upvalue>& upvalue);
-	void writeUpvalue(const std::shared_ptr<Upvalue>& upvalue, const Value& value);
+	const Value& readUpvalue(Upvalue* upvalue);
+	void writeUpvalue(Upvalue* upvalue, const Value& value);
 	void writeReturnValues(CallFrame& frame, int base, int count, const std::vector<Value>& values);
 	void setRegister(CallFrame& frame, int index, const Value& value);
 	const Value& readRK(CallFrame& frame, int operand);
-	Value resolveTableIndex(const std::shared_ptr<Table>& table, const Value& key);
+	Value resolveTableIndex(Table* table, const Value& key);
 
-	// Frame pooling
 	std::unique_ptr<CallFrame> acquireFrame();
 	void releaseFrame(std::unique_ptr<CallFrame> frame);
 	std::vector<Value> acquireRegisters(size_t size);
 	void releaseRegisters(std::vector<Value>&& regs);
 	std::vector<Value> acquireNativeReturnScratch();
 	void releaseNativeReturnScratch(std::vector<Value>&& out);
+	std::vector<Value> acquireArgScratch();
+	void releaseArgScratch(std::vector<Value>&& args);
+
+	void markRoots(VMHeap& heap);
 
 	Program* m_program = nullptr;
 	std::vector<std::unique_ptr<CallFrame>> m_frames;
 	std::vector<Value>& m_memory;
 	StringPool m_stringPool;
+	VMHeap m_heap;
+	std::function<void(VMHeap&)> m_externalRootMarker;
 
-	// Scratch buffers for avoiding allocations
-	std::vector<Value> m_valueScratch;
 	std::vector<Value> m_returnScratch;
 	std::vector<std::vector<Value>> m_nativeReturnPool;
 	static constexpr size_t MAX_POOLED_NATIVE_RETURN_ARRAYS = 32;
+	std::vector<std::vector<Value>> m_nativeArgPool;
+	static constexpr size_t MAX_POOLED_NATIVE_ARG_ARRAYS = 32;
 
-	// Frame pool
 	std::vector<std::unique_ptr<CallFrame>> m_framePool;
 	static constexpr int MAX_POOLED_FRAMES = 32;
 
-	// Register pool
 	std::unordered_map<size_t, std::vector<std::vector<Value>>> m_registerPool;
 	static constexpr size_t MAX_POOLED_REGISTER_ARRAYS = 64;
 	static constexpr size_t MAX_REGISTER_ARRAY_SIZE = 256;
 
-	StringValue m_indexKey = nullptr;
+	Value m_indexKey = valueNil();
 };
 
-/**
- * Convert a Value to its string representation.
- */
-std::string valueToString(const Value& v);
+std::string valueToString(const Value& v, const StringPool& stringPool);
+const char* valueTypeName(Value v);
 
 } // namespace bmsx

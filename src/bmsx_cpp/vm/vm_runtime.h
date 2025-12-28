@@ -201,7 +201,7 @@ public:
 	/**
 	 * Call a Lua function from native code.
 	 */
-	std::vector<Value> callLuaFunction(std::shared_ptr<Closure> fn, const std::vector<Value>& args);
+	std::vector<Value> callLuaFunction(Closure* fn, const std::vector<Value>& args);
 
 	/**
 	 * Get a global variable by name.
@@ -219,7 +219,7 @@ public:
 	void registerNativeFunction(std::string_view name, NativeFunctionInvoke fn);
 
 	void setCanonicalization(CanonicalizationType canonicalization);
-	StringValue canonicalizeIdentifier(std::string_view value);
+	Value canonicalizeIdentifier(std::string_view value);
 
 private:
 	enum class PendingCall {
@@ -270,10 +270,10 @@ private:
 	VMFrameState m_frameState;
 
 	// Cached function references
-	std::optional<std::shared_ptr<Closure>> m_updateFn;
-	std::optional<std::shared_ptr<Closure>> m_drawFn;
-	std::optional<std::shared_ptr<Closure>> m_initFn;
-	std::optional<std::shared_ptr<Closure>> m_newGameFn;
+	Closure* m_updateFn = nullptr;
+	Closure* m_drawFn = nullptr;
+	Closure* m_initFn = nullptr;
+	Closure* m_newGameFn = nullptr;
 	PendingCall m_pendingVmCall = PendingCall::None;
 	uint32_t m_vmRandomSeedValue = 0;
 
