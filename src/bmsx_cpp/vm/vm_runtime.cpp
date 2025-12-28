@@ -215,6 +215,7 @@ VMRuntime::VMRuntime(const VMRuntimeOptions& options)
 		heap.markObject(m_drawFn);
 		heap.markObject(m_initFn);
 		heap.markObject(m_newGameFn);
+		heap.markValue(m_ipairsIterator);
 	});
 
 	// Create API instance
@@ -1985,27 +1986,30 @@ auto nextFn = m_cpu.createNativeFunction("next", [this](const std::vector<Value>
 	throw std::runtime_error("next expects a table or native object.");
 });
 
-auto ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::vector<Value>& args, std::vector<Value>& out) {
+m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::vector<Value>& args, std::vector<Value>& out) {
 	const Value& target = args.at(0);
-	int index = static_cast<int>(asNumber(args.at(1)));
-	int nextIndex = index + 1;
+	double index = 0.0;
+	if (args.size() > 1 && valueIsNumber(args.at(1))) {
+		index = valueToNumber(args.at(1));
+	}
+	double nextIndex = index + 1.0;
 	if (valueIsTable(target)) {
-		Value value = asTable(target)->get(valueNumber(static_cast<double>(nextIndex)));
+		Value value = asTable(target)->get(valueNumber(nextIndex));
 		if (isNil(value)) {
 			out.push_back(valueNil());
 			return;
 		}
-		out.push_back(valueNumber(static_cast<double>(nextIndex)));
+		out.push_back(valueNumber(nextIndex));
 		out.push_back(value);
 		return;
 	}
 	if (valueIsNativeObject(target)) {
-		Value value = asNativeObject(target)->get(valueNumber(static_cast<double>(nextIndex)));
+		Value value = asNativeObject(target)->get(valueNumber(nextIndex));
 		if (isNil(value)) {
 			out.push_back(valueNil());
 			return;
 		}
-		out.push_back(valueNumber(static_cast<double>(nextIndex)));
+		out.push_back(valueNumber(nextIndex));
 		out.push_back(value);
 		return;
 	}
@@ -2022,12 +2026,12 @@ auto ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std
 		out.push_back(target);
 		out.push_back(valueNil());
 	});
-	registerNativeFunction("ipairs", [ipairsIterator](const std::vector<Value>& args, std::vector<Value>& out) {
+	registerNativeFunction("ipairs", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 		const Value& target = args.at(0);
 		if (!valueIsTable(target) && !valueIsNativeObject(target)) {
 			throw std::runtime_error("ipairs expects a table or native object.");
 		}
-		out.push_back(ipairsIterator);
+		out.push_back(m_ipairsIterator);
 		out.push_back(target);
 		out.push_back(valueNumber(0.0));
 	});

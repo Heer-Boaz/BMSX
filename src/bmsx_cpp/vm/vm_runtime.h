@@ -274,6 +274,7 @@ private:
 	Closure* m_drawFn = nullptr;
 	Closure* m_initFn = nullptr;
 	Closure* m_newGameFn = nullptr;
+	Value m_ipairsIterator = valueNil();
 	PendingCall m_pendingVmCall = PendingCall::None;
 	uint32_t m_vmRandomSeedValue = 0;
 
