@@ -103,10 +103,9 @@ std::unique_ptr<VmProgramAsset> ProgramLoader::load(const uint8_t* data, size_t 
 	// Extract program
 	asset->program = extractProgram(root["program"]);
 
-	if (!root.has("metadata")) {
-		throw std::runtime_error("ProgramLoader: missing metadata section");
+	if (root.has("metadata")) {
+		asset->metadata = extractProgramMetadata(root["metadata"]);
 	}
-	asset->metadata = extractProgramMetadata(root["metadata"]);
 
 	// Extract moduleProtos
 	const auto& moduleProtosArr = root["moduleProtos"].asArray();

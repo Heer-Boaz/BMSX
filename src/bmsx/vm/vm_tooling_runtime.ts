@@ -7,7 +7,7 @@ import type { LuaChunk, LuaDefinitionInfo } from '../lua/lua_ast';
 import { LuaEnvironment } from '../lua/luaenvironment';
 import { LuaError, LuaRuntimeError, LuaSyntaxError } from '../lua/luaerrors';
 import { LuaHandlerCache, } from '../lua/luahandler_cache';
-import { LuaInterpreter, type ExecutionSignal } from '../lua/luaruntime';
+import { LuaInterpreter, type ExecutionSignal, type LuaCallFrame } from '../lua/luaruntime';
 import type { LuaFunctionValue, LuaValue, StackTraceFrame } from '../lua/luavalue';
 import {
 	convertToError,
@@ -462,17 +462,11 @@ export class BmsxVMRuntime {
 		if (error instanceof LuaError) {
 			const rawChunk = typeof error.path === 'string' && error.path.length > 0 ? error.path : null;
 			const path = rawChunk && rawChunk.startsWith('@') ? rawChunk.slice(1) : rawChunk;
-			const line = Number.isFinite(error.line) && error.line > 0 ? Math.floor(error.line) : null;
-			const column = Number.isFinite(error.column) && error.column > 0 ? Math.floor(error.column) : null;
-			if (this.lastVmCallStack.length > 0 && (line === null || column === null || path === null)) {
-				const frame = this.lastVmCallStack[0];
-				return {
-					line: line ?? frame.line,
-					column: column ?? frame.column,
-					path: path ?? frame.source,
-				};
-			}
-			return { line, column, path };
+			return {
+				line: Number.isFinite(error.line) && error.line > 0 ? Math.floor(error.line) : null,
+				column: Number.isFinite(error.column) && error.column > 0 ? Math.floor(error.column) : null,
+				path: path,
+			};
 		}
 		if (this.lastVmCallStack.length > 0) {
 			const frame = this.lastVmCallStack[0];
@@ -1631,7 +1625,7 @@ export class BmsxVMRuntime {
 				path: signal.location.path,
 				line: signalLine,
 				column: signalColumn,
-				details: this.buildRuntimeErrorDetailsForEditor(null, 'Runtime error'),
+				details: this.buildRuntimeErrorDetailsForEditor(null, 'Runtime error', signal.callStack),
 				fromDebugger: true,
 			});
 			return;
@@ -1648,7 +1642,7 @@ export class BmsxVMRuntime {
 			path,
 			line: normalizedLine ?? signalLine,
 			column: normalizedColumn ?? signalColumn,
-			details: this.buildRuntimeErrorDetailsForEditor(exception, message),
+			details: this.buildRuntimeErrorDetailsForEditor(exception, message, signal.callStack),
 			fromDebugger: true,
 		});
 	}
@@ -3358,16 +3352,38 @@ export class BmsxVMRuntime {
 			const source = range ? range.path : this._luaPath;
 			const line = range ? range.start.line : null;
 			const column = range ? range.start.column : null;
+			const functionName = this.resolveVmFunctionName(entry.protoIndex);
 			frames.push({
 				origin: 'lua',
-				functionName: null,
+				functionName,
 				source,
 				line,
 				column,
-				raw: buildLuaFrameRawLabel(null, source),
+				raw: buildLuaFrameRawLabel(functionName, source),
 			});
 		}
 		return frames;
+	}
+
+	private resolveVmFunctionName(protoIndex: number): string {
+		const protoId = this.vmProgramMetadata.protoIds[protoIndex];
+		const slashIndex = protoId.lastIndexOf('/');
+		const hint = slashIndex >= 0 ? protoId.slice(slashIndex + 1) : protoId;
+		if (hint.startsWith('decl:')) {
+			return hint.slice(5);
+		}
+		if (hint.startsWith('assign:')) {
+			return hint.slice(7);
+		}
+		if (hint.startsWith('local:')) {
+			const rawName = hint.slice(6);
+			const hashIndex = rawName.indexOf('#');
+			return hashIndex >= 0 ? rawName.slice(0, hashIndex) : rawName;
+		}
+		if (hint.startsWith('anon:')) {
+			return 'anonymous';
+		}
+		return hint;
 	}
 
 	private buildVmModuleChunks(entryPath: string): { modules: Array<{ path: string; chunk: LuaChunk }>; modulePaths: string[] } {
@@ -3516,12 +3532,10 @@ export class BmsxVMRuntime {
 		const message = sanitizeLuaErrorMessage(extractErrorMessage(error));
 		const { line, column, path } = this.extractErrorLocation(error);
 
-		const interpreter = this.luaInterpreter;
-		const callStackSnapshot = interpreter ? Array.from(interpreter.lastFaultCallStack) : [];
-		const innermostFrame = callStackSnapshot.length > 0 ? callStackSnapshot[callStackSnapshot.length - 1] : null;
-		const resolvedPath = path ?? (innermostFrame ? innermostFrame.source : this._luaPath);
-		const resolvedLine = line ?? (innermostFrame ? innermostFrame.line : null);
-		const resolvedColumn = column ?? (innermostFrame ? innermostFrame.column : null);
+		const innermostVmFrame = this.lastVmCallStack.length > 0 ? this.lastVmCallStack[0] : null;
+		const resolvedPath = innermostVmFrame ? innermostVmFrame.source : (path ?? this._luaPath);
+		const resolvedLine = innermostVmFrame ? innermostVmFrame.line : line;
+		const resolvedColumn = innermostVmFrame ? innermostVmFrame.column : column;
 		const runtimeDetails = this.buildRuntimeErrorDetailsForEditor(error, message);
 
 		const stackText = buildErrorStackString(
@@ -3548,15 +3562,16 @@ export class BmsxVMRuntime {
 		this.handledLuaErrors.add(error);
 	}
 
-	private buildRuntimeErrorDetailsForEditor(error: unknown, message: string): RuntimeErrorDetails {
+	private buildRuntimeErrorDetailsForEditor(error: unknown, message: string, callStack?: ReadonlyArray<LuaCallFrame>): RuntimeErrorDetails {
 		if (error instanceof LuaSyntaxError) {
 			return null;
 		}
-		const interpreter = this.luaInterpreter;
-		const callFrames = interpreter ? interpreter.lastFaultCallStack : [];
-		const hasInterpreterFrames = callFrames.length > 0;
-		let luaFrames: StackTraceFrame[] = hasInterpreterFrames ? convertLuaCallFrames(callFrames) : [];
-		if (!hasInterpreterFrames && this.lastVmCallStack.length > 0) {
+		const useInterpreterStack = callStack !== undefined;
+		const callFrames = useInterpreterStack ? callStack : null;
+		let luaFrames: StackTraceFrame[] = [];
+		if (useInterpreterStack) {
+			luaFrames = callFrames.length > 0 ? convertLuaCallFrames(callFrames) : [];
+		} else if (this.lastVmCallStack.length > 0) {
 			luaFrames = this.lastVmCallStack.slice();
 		}
 		// If the thrown error includes precise location, prepend it as the current frame
@@ -3565,7 +3580,7 @@ export class BmsxVMRuntime {
 			const line = Number.isFinite(error.line) && error.line > 0 ? Math.floor(error.line) : null;
 			const col = Number.isFinite(error.column) && error.column > 0 ? Math.floor(error.column) : null;
 			// Only inject if not already represented as the innermost frame
-			const innermostCall = callFrames.length > 0 ? callFrames[callFrames.length - 1] : null;
+			const innermostCall = callFrames && callFrames.length > 0 ? callFrames[callFrames.length - 1] : null;
 			const innermostFrame = luaFrames.length > 0 ? luaFrames[0] : null;
 			const effectiveSource = src !== null ? src : innermostFrame ? innermostFrame.source : null;
 			const resolvedLine = line !== null ? line : (innermostFrame ? innermostFrame.line : null);
@@ -3651,7 +3666,8 @@ export class BmsxVMRuntime {
 
 	public createApiRuntimeError(message: string): LuaRuntimeError {
 		this.luaInterpreter.markFaultEnvironment();
-		const range = this.luaInterpreter.currentCallRange;
+		const debug = this.cpu.getDebugState();
+		const range = this.cpu.getDebugRange(debug.pc);
 		const path = range ? range.path : (this._luaPath ?? 'lua');
 		const line = range ? range.start.line : 0;
 		const column = range ? range.start.column : 0;
@@ -4272,7 +4288,7 @@ export class BmsxVMRuntime {
 		const canonicalName = this.canonicalizeIdentifierFn(moduleName);
 		const path = this.vmModuleAliases.get(moduleName) ?? this.vmModuleAliases.get(canonicalName);
 		if (!path) {
-			throw this.createApiRuntimeError(`require('${moduleName}') failed: module not found.`);
+			throw interpreter.runtimeError(`require('${moduleName}') failed: module not found.`);
 		}
 		const loaded = interpreter.packageLoadedTable.get(path);
 		if (loaded !== undefined && loaded !== null) {
@@ -4281,7 +4297,7 @@ export class BmsxVMRuntime {
 		interpreter.packageLoadedTable.set(path, true);
 		const source = this.resourceSourceForChunk(path);
 		if (!source) {
-			throw this.createApiRuntimeError(`require('${moduleName}') failed: module source unavailable.`);
+			throw interpreter.runtimeError(`require('${moduleName}') failed: module source unavailable.`);
 		}
 		const chunk = interpreter.compileChunk(source, path);
 		const results = interpreter.executeChunk(chunk);
