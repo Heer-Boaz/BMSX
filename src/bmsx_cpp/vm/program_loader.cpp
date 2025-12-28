@@ -8,11 +8,11 @@ namespace bmsx {
 /**
  * Convert BinValue to VM Value (for const pool).
  */
-Value binValueToVmValue(const BinValue& bv) {
+Value binValueToVmValue(const BinValue& bv, StringPool& stringPool) {
 	if (bv.isNull()) return std::monostate{};
 	if (bv.isBool()) return bv.asBool();
 	if (bv.isNumber()) return bv.toNumber();
-	if (bv.isString()) return bv.asString();
+	if (bv.isString()) return stringPool.intern(bv.asString());
 	// Tables/closures not in const pool
 	return std::monostate{};
 }
@@ -33,7 +33,7 @@ std::unique_ptr<Program> extractProgram(const BinValue& programObj) {
 	const auto& constPoolArr = programObj["constPool"].asArray();
 	program->constPool.reserve(constPoolArr.size());
 	for (const auto& cv : constPoolArr) {
-		program->constPool.push_back(binValueToVmValue(cv));
+		program->constPool.push_back(binValueToVmValue(cv, program->stringPool));
 	}
 
 	// Extract protos

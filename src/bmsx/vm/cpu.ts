@@ -1,4 +1,6 @@
-export type Value = null | boolean | number | string | Table | Closure | NativeFunction | NativeObject;
+import { StringPool, StringValue, isStringValue, stringValueToString } from './string_pool';
+
+export type Value = null | boolean | number | StringValue | Table | Closure | NativeFunction | NativeObject;
 
 export type SourcePosition = {
 	line: number;
@@ -32,7 +34,7 @@ function valueTypeName(value: Value): string {
 	if (value === null) return 'nil';
 	if (typeof value === 'boolean') return 'boolean';
 	if (typeof value === 'number') return 'number';
-	if (typeof value === 'string') return 'string';
+	if (isStringValue(value)) return 'string';
 	if (value instanceof Table) return 'table';
 	if (isNativeFunction(value)) return 'native_function';
 	if (isNativeObject(value)) return 'native_object';
@@ -77,6 +79,7 @@ export type Program = {
 	protos: Proto[];
 	debugRanges: ReadonlyArray<SourceRange | null>;
 	protoIds: string[];
+	stringPool: StringPool;
 };
 
 export type Proto = {
@@ -168,25 +171,16 @@ type CallFrame = {
 };
 
 export class Table {
-	private static caseInsensitiveKeys = false;
-
 	private readonly array: Value[];
-	private readonly stringMap: Map<string, Value>;
+	private readonly stringMap: Map<StringValue, Value>;
 	private readonly otherMap: Map<Value, Value>;
-	private readonly uppercaseIndex: Map<string, string>;
-	private uppercaseIndexValid = false;
 	private metatable: Table | null = null;
-
-	public static setCaseInsensitiveKeys(enabled: boolean): void {
-		Table.caseInsensitiveKeys = enabled;
-	}
 
 	constructor(arraySize: number, _hashSize: number) {
 		this.array = new Array<Value>(arraySize);
 		this.array.fill(null);
-		this.stringMap = new Map<string, Value>();
+		this.stringMap = new Map<StringValue, Value>();
 		this.otherMap = new Map<Value, Value>();
-		this.uppercaseIndex = new Map<string, string>();
 	}
 
 	public get(key: Value): Value {
@@ -195,7 +189,7 @@ export class Table {
 			const value = this.array[index - 1];
 			return value === undefined ? null : value;
 		}
-		if (typeof key === 'string') {
+		if (isStringValue(key)) {
 			return this.getStringKey(key);
 		}
 		const value = this.otherMap.get(key);
@@ -208,7 +202,7 @@ export class Table {
 			this.array[index - 1] = value;
 			return;
 		}
-		if (typeof key === 'string') {
+		if (isStringValue(key)) {
 			this.setStringKey(key, value);
 			return;
 		}
@@ -235,8 +229,6 @@ export class Table {
 		this.array.length = 0;
 		this.stringMap.clear();
 		this.otherMap.clear();
-		this.uppercaseIndex.clear();
-		this.uppercaseIndexValid = false;
 	}
 
 	public entriesArray(): ReadonlyArray<[Value, Value]> {
@@ -297,15 +289,14 @@ export class Table {
 			}
 			return null;
 		}
-		if (typeof after === 'string') {
-			const match = this.resolveStringKey(after);
-			if (match === null) {
+		if (isStringValue(after)) {
+			if (!this.stringMap.has(after)) {
 				return null;
 			}
 			let seen = false;
 			for (const entry of this.stringMap.entries()) {
 				if (!seen) {
-					if (entry[0] === match) {
+					if (entry[0] === after) {
 						seen = true;
 					}
 					continue;
@@ -336,80 +327,17 @@ export class Table {
 		return typeof key === 'number' && Number.isInteger(key) && key >= 1;
 	}
 
-	private getStringKey(key: string): Value {
-		if (Table.caseInsensitiveKeys) {
-			this.ensureUppercaseIndex();
-			const mapped = this.uppercaseIndex.get(Table.toUpperAscii(key));
-			if (mapped !== undefined) {
-				const value = this.stringMap.get(mapped);
-				return value === undefined ? null : value;
-			}
-			return null;
-		}
+	private getStringKey(key: StringValue): Value {
 		const value = this.stringMap.get(key);
 		return value === undefined ? null : value;
 	}
 
-	private setStringKey(key: string, value: Value): void {
-		if (Table.caseInsensitiveKeys) {
-			this.ensureUppercaseIndex();
-			const upper = Table.toUpperAscii(key);
-			const existing = this.uppercaseIndex.get(upper);
-			if (value === null) {
-				if (existing !== undefined) {
-					this.stringMap.delete(existing);
-					this.uppercaseIndex.delete(upper);
-				}
-				return;
-			}
-			if (existing !== undefined) {
-				this.stringMap.set(existing, value);
-				return;
-			}
-			this.stringMap.set(key, value);
-			this.uppercaseIndex.set(upper, key);
-			return;
-		}
+	private setStringKey(key: StringValue, value: Value): void {
 		if (value === null) {
 			this.stringMap.delete(key);
-			this.uppercaseIndexValid = false;
 			return;
 		}
 		this.stringMap.set(key, value);
-		this.uppercaseIndexValid = false;
-	}
-
-	private resolveStringKey(key: string): string | null {
-		if (!Table.caseInsensitiveKeys) {
-			return this.stringMap.has(key) ? key : null;
-		}
-		this.ensureUppercaseIndex();
-		const mapped = this.uppercaseIndex.get(Table.toUpperAscii(key));
-		return mapped === undefined ? null : mapped;
-	}
-
-	private ensureUppercaseIndex(): void {
-		if (!Table.caseInsensitiveKeys || this.uppercaseIndexValid) {
-			return;
-		}
-		this.uppercaseIndex.clear();
-		for (const entry of this.stringMap.keys()) {
-			this.uppercaseIndex.set(Table.toUpperAscii(entry), entry);
-		}
-		this.uppercaseIndexValid = true;
-	}
-
-	private static toUpperAscii(value: string): string {
-		let out = '';
-		for (let index = 0; index < value.length; index += 1) {
-			const code = value.charCodeAt(index);
-			if (code >= 97 && code <= 122) {
-				out += String.fromCharCode(code - 32);
-			} else {
-				out += value[index];
-			}
-		}
-		return out;
 	}
 }
 
@@ -428,6 +356,8 @@ export class VMCPU {
 	public readonly memory: Value[];
 
 	private program: Program = null;
+	private readonly stringPool: StringPool = new StringPool();
+	private indexKey: StringValue = null;
 	private readonly frames: CallFrame[] = [];
 	private readonly valueScratch: Value[] = [];
 	private readonly returnScratch: Value[] = [];
@@ -442,6 +372,7 @@ export class VMCPU {
 	constructor(memory: Value[]) {
 		this.memory = memory;
 		this.globals = new Table(0, 0);
+		this.indexKey = this.stringPool.intern('__index');
 	}
 
 	// Acquire a register array of at least `size` slots, reusing pooled arrays when possible
@@ -488,7 +419,7 @@ export class VMCPU {
 			if (metatable === null) {
 				return null;
 			}
-			const indexer = metatable.get('__index');
+			const indexer = metatable.get(this.indexKey);
 			if (!(indexer instanceof Table)) {
 				return null;
 			}
@@ -547,6 +478,19 @@ export class VMCPU {
 
 	public setProgram(program: Program): void {
 		this.program = program;
+		const constPool = program.constPool;
+		for (let index = 0; index < constPool.length; index += 1) {
+			const value = constPool[index];
+			if (isStringValue(value)) {
+				constPool[index] = this.stringPool.intern(stringValueToString(value));
+			}
+		}
+		program.stringPool = this.stringPool;
+		this.indexKey = this.stringPool.intern('__index');
+	}
+
+	public getStringPool(): StringPool {
+		return this.stringPool;
 	}
 
 	public getProgram(): Program {
@@ -795,7 +739,8 @@ export class VMCPU {
 			case OpCode.CONCAT: {
 				const left = this.readRK(frame, b);
 				const right = this.readRK(frame, c);
-				this.setRegister(frame, a, String(left) + String(right));
+				const text = this.valueToString(left) + this.valueToString(right);
+				this.setRegister(frame, a, this.stringPool.intern(text));
 				return;
 			}
 			case OpCode.UNM: {
@@ -808,8 +753,8 @@ export class VMCPU {
 				return;
 				case OpCode.LEN: {
 					const value = frame.registers[b];
-					if (typeof value === 'string') {
-						this.setRegister(frame, a, value.length);
+					if (isStringValue(value)) {
+						this.setRegister(frame, a, stringValueToString(value).length);
 						return;
 					}
 					if (value instanceof Table) {
@@ -856,18 +801,22 @@ export class VMCPU {
 				return;
 			}
 			case OpCode.LT: {
-				const left = this.readRK(frame, b) as number | string;
-				const right = this.readRK(frame, c) as number | string;
-				const ok = left < right;
+				const left = this.readRK(frame, b);
+				const right = this.readRK(frame, c);
+				const ok = (isStringValue(left) && isStringValue(right))
+					? stringValueToString(left) < stringValueToString(right)
+					: (left as number) < (right as number);
 				if (ok !== (a !== 0)) {
 					frame.pc += 1;
 				}
 				return;
 			}
 			case OpCode.LE: {
-				const left = this.readRK(frame, b) as number | string;
-				const right = this.readRK(frame, c) as number | string;
-				const ok = left <= right;
+				const left = this.readRK(frame, b);
+				const right = this.readRK(frame, c);
+				const ok = (isStringValue(left) && isStringValue(right))
+					? stringValueToString(left) <= stringValueToString(right)
+					: (left as number) <= (right as number);
 				if (ok !== (a !== 0)) {
 					frame.pc += 1;
 				}
@@ -940,7 +889,9 @@ export class VMCPU {
 					const range = this.program.debugRanges[this.lastPc];
 					const location = range ? `${range.path}:${range.start.line}:${range.start.column}` : 'unknown';
 					const calleeType = valueTypeName(callee as Value);
-					const calleeValue = (typeof callee === 'string' || typeof callee === 'number' || typeof callee === 'boolean')
+				const calleeValue = isStringValue(callee)
+					? ` value=${stringValueToString(callee)}`
+					: (typeof callee === 'number' || typeof callee === 'boolean')
 						? ` value=${String(callee)}`
 						: '';
 					throw new Error(`Attempted to call a non-function value (${calleeType}${calleeValue}). at ${location}`);
@@ -1094,6 +1045,13 @@ export class VMCPU {
 			return this.program.constPool[index];
 		}
 		return frame.registers[operand];
+	}
+
+	private valueToString(value: Value): string {
+		if (isStringValue(value)) {
+			return stringValueToString(value);
+		}
+		return String(value);
 	}
 
 	private isTruthy(value: Value): boolean {

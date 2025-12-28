@@ -1,11 +1,14 @@
 import { decodeBinary, encodeBinary, typedArrayFromBytes } from '../serializer/binencoder';
 import type { Program, Proto, SourceRange, Value } from './cpu';
+import { StringPool, isStringValue, stringValueToString } from './string_pool';
 
 export const VM_PROGRAM_ASSET_ID = '__vm_program__';
 
+export type EncodedValue = null | boolean | number | string;
+
 export type EncodedProgram = {
 	code: Uint8Array;
-	constPool: Value[];
+	constPool: EncodedValue[];
 	protos: Proto[];
 	debugRanges: ReadonlyArray<SourceRange | null>;
 	protoIds: string[];
@@ -18,6 +21,29 @@ export type VmProgramAsset = {
 	moduleAliases: Array<{ alias: string; path: string }>;
 };
 
+export function encodeProgram(program: Program): EncodedProgram {
+	const constPool: EncodedValue[] = new Array(program.constPool.length);
+	for (let index = 0; index < program.constPool.length; index += 1) {
+		const value = program.constPool[index];
+		if (value === null || typeof value === 'number' || typeof value === 'boolean') {
+			constPool[index] = value;
+			continue;
+		}
+		if (isStringValue(value)) {
+			constPool[index] = stringValueToString(value);
+			continue;
+		}
+		throw new Error(`encodeProgram: unsupported constPool value at index ${index}`);
+	}
+	return {
+		code: new Uint8Array(program.code.buffer, program.code.byteOffset, program.code.byteLength),
+		constPool,
+		protos: program.protos,
+		debugRanges: program.debugRanges,
+		protoIds: program.protoIds,
+	};
+}
+
 export function encodeProgramAsset(asset: VmProgramAsset): Uint8Array {
 	return encodeBinary(asset);
 }
@@ -27,12 +53,23 @@ export function decodeProgramAsset(bytes: Uint8Array): VmProgramAsset {
 }
 
 export function inflateProgram(encoded: EncodedProgram): Program {
+	const stringPool = new StringPool();
+	const constPool: Value[] = new Array(encoded.constPool.length);
+	for (let index = 0; index < encoded.constPool.length; index += 1) {
+		const value = encoded.constPool[index];
+		if (typeof value === 'string') {
+			constPool[index] = stringPool.intern(value);
+			continue;
+		}
+		constPool[index] = value;
+	}
 	return {
 		code: typedArrayFromBytes(encoded.code, Uint32Array),
-		constPool: encoded.constPool,
+		constPool,
 		protos: encoded.protos,
 		debugRanges: encoded.debugRanges,
 		protoIds: encoded.protoIds,
+		stringPool,
 	};
 }
 

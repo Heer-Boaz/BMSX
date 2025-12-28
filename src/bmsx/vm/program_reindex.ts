@@ -86,6 +86,7 @@ const rebuildProgram = (
 		protos,
 		debugRanges,
 		protoIds: Array.from(order),
+		stringPool: program.stringPool,
 	};
 };
 

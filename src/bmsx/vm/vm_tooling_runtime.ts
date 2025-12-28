@@ -29,6 +29,7 @@ import { createIdentifierCanonicalizer } from '../utils/identifier_canonicalizer
 import { clamp_fallback } from '../utils/clamp';
 import { BmsxVMApi } from './vm_api';
 import { VMCPU, Table, type Closure, type Value, type Program, RunResult, createNativeFunction, createNativeObject, isNativeFunction, isNativeObject, type NativeFunction, type NativeObject } from './cpu';
+import { StringValue, isStringValue, stringValueToString } from './string_pool';
 import { TerminalMode } from './terminal_mode';
 import { VMRenderFacade } from './vm_render_facade';
 import { VMFont, type VMFontVariant } from './font';
@@ -451,8 +452,8 @@ export class BmsxVMRuntime {
 	private applyCanonicalization(canonicalization: CanonicalizationType): void {
 		this._canonicalization = canonicalization;
 		this.canonicalizeIdentifierFn = createIdentifierCanonicalizer(this._canonicalization);
-		// Canonicalized identifiers require case-insensitive table keys to match runtime lookups across hosts.
-		Table.setCaseInsensitiveKeys(this._canonicalization !== 'none');
+		// Canonicalized identifiers require canonicalized table keys to match runtime lookups across hosts.
+		Table.setKeyCanonicalization(this._canonicalization);
 		setLuaTableCaseInsensitiveKeys(this._canonicalization !== 'none');
 		setEditorCaseInsensitivity(this._canonicalization !== 'none');
 	}
@@ -1398,10 +1399,10 @@ export class BmsxVMRuntime {
 
 	private bindLifecycleHandlers(): void {
 		const globals = this.cpu.globals;
-		this.vmNewGameClosure = globals.get(this.canonicalizeIdentifier('new_game')) as Closure;
-		this.vmInitClosure = globals.get(this.canonicalizeIdentifier('init')) as Closure;
-		this.vmUpdateClosure = globals.get(this.canonicalizeIdentifier('update')) as Closure;
-		this.vmDrawClosure = globals.get(this.canonicalizeIdentifier('draw')) as Closure;
+		this.vmNewGameClosure = globals.get(this.vmKey('new_game')) as Closure;
+		this.vmInitClosure = globals.get(this.vmKey('init')) as Closure;
+		this.vmUpdateClosure = globals.get(this.vmKey('update')) as Closure;
+		this.vmDrawClosure = globals.get(this.vmKey('draw')) as Closure;
 	}
 
 	private runLuaLifecycleHandler(kind: 'init' | 'new_game'): boolean {
@@ -1796,13 +1797,13 @@ export class BmsxVMRuntime {
 	}
 
 	private registerVmGlobal(name: string, value: Value): void {
-		const key = this.canonicalizeIdentifier(name);
+		const key = this.vmKey(name);
 		this.cpu.globals.set(key, value);
 	}
 
 	private callEngineModuleMember(name: string, args: ReadonlyArray<Value>): Value[] {
 		const engine = this.requireVmModule('engine') as Table;
-		const key = this.canonicalizeIdentifier(name);
+		const key = this.vmKey(name);
 		const member = engine.get(key) as Closure;
 		return this.callVmFunction(member, args as Value[]);
 	}
@@ -1842,21 +1843,25 @@ export class BmsxVMRuntime {
 				out.push(results[index]);
 			}
 		};
+		const key = (name: string): StringValue => this.internVmString(name);
+		const setKey = (table: Table, name: string, value: Value): void => {
+			table.set(key(name), value);
+		};
 
 		const mathTable = new Table(0, 0);
-		mathTable.set('abs', createNativeFunction('math.abs', (args, out) => {
+		setKey(mathTable, 'abs', createNativeFunction('math.abs', (args, out) => {
 			const value = args[0] as number;
 			out.push(Math.abs(value));
 		}));
-		mathTable.set('ceil', createNativeFunction('math.ceil', (args, out) => {
+		setKey(mathTable, 'ceil', createNativeFunction('math.ceil', (args, out) => {
 			const value = args[0] as number;
 			out.push(Math.ceil(value));
 		}));
-		mathTable.set('floor', createNativeFunction('math.floor', (args, out) => {
+		setKey(mathTable, 'floor', createNativeFunction('math.floor', (args, out) => {
 			const value = args[0] as number;
 			out.push(Math.floor(value));
 		}));
-		mathTable.set('max', createNativeFunction('math.max', (args, out) => {
+		setKey(mathTable, 'max', createNativeFunction('math.max', (args, out) => {
 			let result = args[0] as number;
 			for (let index = 1; index < args.length; index += 1) {
 				const value = args[index] as number;
@@ -1866,7 +1871,7 @@ export class BmsxVMRuntime {
 			}
 			out.push(result);
 		}));
-		mathTable.set('min', createNativeFunction('math.min', (args, out) => {
+		setKey(mathTable, 'min', createNativeFunction('math.min', (args, out) => {
 			let result = args[0] as number;
 			for (let index = 1; index < args.length; index += 1) {
 				const value = args[index] as number;
@@ -1876,11 +1881,11 @@ export class BmsxVMRuntime {
 			}
 			out.push(result);
 		}));
-		mathTable.set('sqrt', createNativeFunction('math.sqrt', (args, out) => {
+		setKey(mathTable, 'sqrt', createNativeFunction('math.sqrt', (args, out) => {
 			const value = args[0] as number;
 			out.push(Math.sqrt(value));
 		}));
-		mathTable.set('random', createNativeFunction('math.random', (args, out) => {
+		setKey(mathTable, 'random', createNativeFunction('math.random', (args, out) => {
 			const randomValue = this.nextVmRandom();
 			if (args.length === 0) {
 				out.push(randomValue);
@@ -1902,12 +1907,12 @@ export class BmsxVMRuntime {
 			const span = upper - lower + 1;
 			out.push(lower + Math.floor(randomValue * span));
 		}));
-		mathTable.set('randomseed', createNativeFunction('math.randomseed', (args, out) => {
+		setKey(mathTable, 'randomseed', createNativeFunction('math.randomseed', (args, out) => {
 			const seedValue = args.length > 0 ? (args[0] as number) : $.platform.clock.now();
 			this.vmRandomSeedValue = Math.floor(seedValue) >>> 0;
 			out.length = 0;
 		}));
-		mathTable.set('pi', Math.PI);
+		setKey(mathTable, 'pi', Math.PI);
 
 		this.registerVmGlobal('math', mathTable);
 		this.registerVmGlobal('SYS_CART_PRESENT', IO_SYS_CART_PRESENT);
@@ -1927,7 +1932,7 @@ export class BmsxVMRuntime {
 		}));
 		this.registerVmGlobal('tostring', createNativeFunction('tostring', (args, out) => {
 			const value = args.length > 0 ? args[0] : null;
-			out.push(this.vmToString(value));
+			out.push(this.vmToStringValue(value));
 		}));
 		this.registerVmGlobal('tonumber', createNativeFunction('tonumber', (args, out) => {
 			if (args.length === 0) {
@@ -1939,16 +1944,17 @@ export class BmsxVMRuntime {
 				out.push(value);
 				return;
 			}
-			if (typeof value === 'string') {
+			if (isStringValue(value)) {
+				const text = stringValueToString(value);
 				if (args.length >= 2) {
 					const baseValue = Math.floor(args[1] as number);
 					if (baseValue >= 2 && baseValue <= 36) {
-						const parsed = parseInt(value.trim(), baseValue);
+						const parsed = parseInt(text.trim(), baseValue);
 						out.push(Number.isFinite(parsed) ? parsed : null);
 						return;
 					}
 				}
-				const converted = Number(value);
+				const converted = Number(text);
 				out.push(Number.isFinite(converted) ? converted : null);
 				return;
 			}
@@ -1997,7 +2003,7 @@ export class BmsxVMRuntime {
 		this.registerVmGlobal('select', createNativeFunction('select', (args, out) => {
 			const index = args[0];
 			const count = args.length - 1;
-			if (index === '#') {
+			if (isStringValue(index) && stringValueToString(index) === '#') {
 				out.push(count);
 				return;
 			}
@@ -2039,7 +2045,7 @@ export class BmsxVMRuntime {
 			}
 		}));
 		this.registerVmGlobal('require', createNativeFunction('require', (args, out) => {
-			const moduleName = (args[0] as string).trim();
+			const moduleName = this.requireVmString(args[0]).trim();
 			out.push(this.requireVmModule(moduleName));
 		}));
 		this.registerVmGlobal('array', createNativeFunction('array', (args, out) => {
@@ -2070,20 +2076,20 @@ export class BmsxVMRuntime {
 			}));
 
 		const stringTable = new Table(0, 0);
-		stringTable.set('len', createNativeFunction('string.len', (args, out) => {
-			const text = args[0] as string;
+		setKey(stringTable, 'len', createNativeFunction('string.len', (args, out) => {
+			const text = this.requireVmString(args[0]);
 			out.push(text.length);
 		}));
-		stringTable.set('upper', createNativeFunction('string.upper', (args, out) => {
-			const text = args[0] as string;
-			out.push(text.toUpperCase());
+		setKey(stringTable, 'upper', createNativeFunction('string.upper', (args, out) => {
+			const text = this.requireVmString(args[0]);
+			out.push(this.internVmString(text.toUpperCase()));
 		}));
-		stringTable.set('lower', createNativeFunction('string.lower', (args, out) => {
-			const text = args[0] as string;
-			out.push(text.toLowerCase());
+		setKey(stringTable, 'lower', createNativeFunction('string.lower', (args, out) => {
+			const text = this.requireVmString(args[0]);
+			out.push(this.internVmString(text.toLowerCase()));
 		}));
-		stringTable.set('sub', createNativeFunction('string.sub', (args, out) => {
-			const text = args[0] as string;
+		setKey(stringTable, 'sub', createNativeFunction('string.sub', (args, out) => {
+			const text = this.requireVmString(args[0]);
 			const length = text.length;
 			const normalizeIndex = (value: number): number => {
 				const integer = Math.floor(value);
@@ -2106,14 +2112,14 @@ export class BmsxVMRuntime {
 				endIndex = length;
 			}
 			if (endIndex < startIndex) {
-				out.push('');
+				out.push(this.internVmString(''));
 				return;
 			}
-			out.push(text.substring(startIndex - 1, endIndex));
+			out.push(this.internVmString(text.substring(startIndex - 1, endIndex)));
 		}));
-		stringTable.set('find', createNativeFunction('string.find', (args, out) => {
-			const source = args[0] as string;
-			const pattern = args.length > 1 ? (args[1] as string) : '';
+		setKey(stringTable, 'find', createNativeFunction('string.find', (args, out) => {
+			const source = this.requireVmString(args[0]);
+			const pattern = args.length > 1 ? this.requireVmString(args[1]) : '';
 			const length = source.length;
 			const normalizeIndex = (value: number): number => {
 				const integer = Math.floor(value);
@@ -2156,15 +2162,15 @@ export class BmsxVMRuntime {
 				out.push(first, last);
 				for (let index = 1; index < match.length; index += 1) {
 					const value = match[index];
-					out.push(value === undefined ? null : value);
+					out.push(value === undefined ? null : this.internVmString(value));
 				}
 				return;
 			}
 			out.push(first, last);
 		}));
-		stringTable.set('match', createNativeFunction('string.match', (args, out) => {
-			const source = args[0] as string;
-			const pattern = args.length > 1 ? (args[1] as string) : '';
+		setKey(stringTable, 'match', createNativeFunction('string.match', (args, out) => {
+			const source = this.requireVmString(args[0]);
+			const pattern = args.length > 1 ? this.requireVmString(args[1]) : '';
 			const length = source.length;
 			const normalizeIndex = (value: number): number => {
 				const integer = Math.floor(value);
@@ -2192,16 +2198,16 @@ export class BmsxVMRuntime {
 			if (match.length > 1) {
 				for (let index = 1; index < match.length; index += 1) {
 					const value = match[index];
-					out.push(value === undefined ? null : value);
+					out.push(value === undefined ? null : this.internVmString(value));
 				}
 				return;
 			}
-			out.push(match[0]);
+			out.push(this.internVmString(match[0]));
 		}));
-		stringTable.set('gsub', createNativeFunction('string.gsub', (args, out) => {
-			const source = args[0] as string;
-			const pattern = args.length > 1 ? (args[1] as string) : '';
-			const replacement = args.length > 2 ? args[2] : '';
+		setKey(stringTable, 'gsub', createNativeFunction('string.gsub', (args, out) => {
+			const source = this.requireVmString(args[0]);
+			const pattern = args.length > 1 ? this.requireVmString(args[1]) : '';
+			const replacement = args.length > 2 ? args[2] : this.internVmString('');
 			const maxReplacements = args.length > 3 && args[3] !== null
 				? Math.max(0, Math.floor(args[3] as number))
 				: Number.POSITIVE_INFINITY;
@@ -2216,8 +2222,8 @@ export class BmsxVMRuntime {
 			const fnResults: Value[] = [];
 
 			const renderReplacement = (match: RegExpExecArray): string => {
-				if (typeof replacement === 'string' || typeof replacement === 'number') {
-					const template = String(replacement);
+				if (isStringValue(replacement) || typeof replacement === 'number') {
+					const template = isStringValue(replacement) ? stringValueToString(replacement) : String(replacement);
 					return template.replace(/%([0-9%])/g, (_full, token) => {
 						if (token === '%') {
 							return '%';
@@ -2234,8 +2240,10 @@ export class BmsxVMRuntime {
 					});
 				}
 				if (replacement instanceof Table) {
-					const key = match.length > 1 ? (match[1] === undefined ? null : match[1]) : match[0];
-					const mapped = replacement.get(key);
+					const keyValue = match.length > 1
+						? (match[1] === undefined ? null : this.internVmString(match[1]))
+						: this.internVmString(match[0]);
+					const mapped = replacement.get(keyValue);
 					return mapped === null ? match[0] : this.vmToString(mapped);
 				}
 				if (isNativeFunction(replacement) || (replacement !== null && typeof replacement === 'object' && 'protoIndex' in replacement)) {
@@ -2243,13 +2251,13 @@ export class BmsxVMRuntime {
 					if (match.length > 1) {
 						for (let index = 1; index < match.length; index += 1) {
 							const value = match[index];
-							fnArgs.push(value === undefined ? null : value);
+							fnArgs.push(value === undefined ? null : this.internVmString(value));
 						}
 						if (fnArgs.length === 0) {
-							fnArgs.push(match[0]);
+							fnArgs.push(this.internVmString(match[0]));
 						}
 					} else {
-						fnArgs.push(match[0]);
+						fnArgs.push(this.internVmString(match[0]));
 					}
 					callVmValue(replacement, fnArgs, fnResults);
 					const value = fnResults.length > 0 ? fnResults[0] : null;
@@ -2281,11 +2289,11 @@ export class BmsxVMRuntime {
 			}
 
 			result += source.slice(lastIndex);
-			out.push(result, count);
+			out.push(this.internVmString(result), count);
 		}));
-		stringTable.set('gmatch', createNativeFunction('string.gmatch', (args, out) => {
-			const source = args[0] as string;
-			const pattern = args.length > 1 ? (args[1] as string) : '';
+		setKey(stringTable, 'gmatch', createNativeFunction('string.gmatch', (args, out) => {
+			const source = this.requireVmString(args[0]);
+			const pattern = args.length > 1 ? this.requireVmString(args[1]) : '';
 			const regex = this.buildLuaPatternRegex(pattern);
 			const iterator = createNativeFunction('string.gmatch.iterator', (_args, iterOut) => {
 				const match = regex.exec(source);
@@ -2299,16 +2307,16 @@ export class BmsxVMRuntime {
 				if (match.length > 1) {
 					for (let index = 1; index < match.length; index += 1) {
 						const value = match[index];
-						iterOut.push(value === undefined ? null : value);
+						iterOut.push(value === undefined ? null : this.internVmString(value));
 					}
 					return;
 				}
-				iterOut.push(match[0]);
+				iterOut.push(this.internVmString(match[0]));
 			});
 			out.push(iterator);
 		}));
-		stringTable.set('byte', createNativeFunction('string.byte', (args, out) => {
-			const source = args[0] as string;
+		setKey(stringTable, 'byte', createNativeFunction('string.byte', (args, out) => {
+			const source = this.requireVmString(args[0]);
 			const positionArg = args.length > 1 ? (args[1] as number) : 1;
 			const position = Math.floor(positionArg) - 1;
 			if (position < 0 || position >= source.length) {
@@ -2317,9 +2325,9 @@ export class BmsxVMRuntime {
 			}
 			out.push(source.charCodeAt(position));
 		}));
-		stringTable.set('char', createNativeFunction('string.char', (args, out) => {
+		setKey(stringTable, 'char', createNativeFunction('string.char', (args, out) => {
 			if (args.length === 0) {
-				out.push('');
+				out.push(this.internVmString(''));
 				return;
 			}
 			let result = '';
@@ -2327,17 +2335,17 @@ export class BmsxVMRuntime {
 				const code = args[index] as number;
 				result += String.fromCharCode(Math.floor(code));
 			}
-			out.push(result);
+			out.push(this.internVmString(result));
 		}));
-		stringTable.set('format', createNativeFunction('string.format', (args, out) => {
-			const template = args[0] as string;
+		setKey(stringTable, 'format', createNativeFunction('string.format', (args, out) => {
+			const template = this.requireVmString(args[0]);
 			const formatted = this.formatVmString(template, args, 1);
-			out.push(formatted);
+			out.push(this.internVmString(formatted));
 		}));
 		this.registerVmGlobal('string', stringTable);
 
 		const tableLibrary = new Table(0, 0);
-		tableLibrary.set('insert', createNativeFunction('table.insert', (args, out) => {
+		setKey(tableLibrary, 'insert', createNativeFunction('table.insert', (args, out) => {
 			const target = args[0] as Table;
 			let position: number;
 			let value: Value;
@@ -2355,7 +2363,7 @@ export class BmsxVMRuntime {
 			target.set(position, value);
 			out.length = 0;
 		}));
-		tableLibrary.set('remove', createNativeFunction('table.remove', (args, out) => {
+		setKey(tableLibrary, 'remove', createNativeFunction('table.remove', (args, out) => {
 			const target = args[0] as Table;
 			const position = args.length > 1 ? Math.floor(args[1] as number) : target.length();
 			const length = target.length();
@@ -2368,9 +2376,9 @@ export class BmsxVMRuntime {
 				out.push(removed);
 			}
 		}));
-		tableLibrary.set('concat', createNativeFunction('table.concat', (args, out) => {
+		setKey(tableLibrary, 'concat', createNativeFunction('table.concat', (args, out) => {
 			const target = args[0] as Table;
-			const separator = args.length > 1 ? (args[1] as string) : '';
+			const separator = args.length > 1 ? this.requireVmString(args[1]) : '';
 			const length = target.length();
 			const normalizeIndex = (value: number, fallback: number): number => {
 				const integer = Math.floor(value);
@@ -2385,7 +2393,7 @@ export class BmsxVMRuntime {
 			const startIndex = args.length > 2 ? normalizeIndex(args[2] as number, 1) : 1;
 			const endIndex = args.length > 3 ? normalizeIndex(args[3] as number, length) : length;
 			if (endIndex < startIndex) {
-				out.push('');
+				out.push(this.internVmString(''));
 				return;
 			}
 			const parts: string[] = [];
@@ -2393,17 +2401,17 @@ export class BmsxVMRuntime {
 				const value = target.get(index);
 				parts.push(value === null ? '' : this.vmToString(value));
 			}
-			out.push(parts.join(separator));
+			out.push(this.internVmString(parts.join(separator)));
 		}));
-		tableLibrary.set('pack', createNativeFunction('table.pack', (args, out) => {
+		setKey(tableLibrary, 'pack', createNativeFunction('table.pack', (args, out) => {
 			const target = new Table(args.length, 1);
 			for (let index = 0; index < args.length; index += 1) {
 				target.set(index + 1, args[index]);
 			}
-			target.set('n', args.length);
+			target.set(key('n'), args.length);
 			out.push(target);
 		}));
-		tableLibrary.set('unpack', createNativeFunction('table.unpack', (args, out) => {
+		setKey(tableLibrary, 'unpack', createNativeFunction('table.unpack', (args, out) => {
 			const target = args[0] as Table;
 			const length = target.length();
 			const normalizeIndex = (value: number, fallback: number): number => {
@@ -2425,7 +2433,7 @@ export class BmsxVMRuntime {
 				out.push(target.get(index));
 			}
 		}));
-		tableLibrary.set('sort', createNativeFunction('table.sort', (args, out) => {
+		setKey(tableLibrary, 'sort', createNativeFunction('table.sort', (args, out) => {
 			const target = args[0] as Table;
 			const comparator = args.length > 1 ? args[1] : null;
 			const length = target.length();
@@ -2445,11 +2453,11 @@ export class BmsxVMRuntime {
 				if (typeof left === 'number' && typeof right === 'number') {
 					return left - right;
 				}
-				if (typeof left === 'string' && typeof right === 'string') {
+				if (isStringValue(left) && isStringValue(right)) {
 					if (left === right) {
 						return 0;
 					}
-					return left < right ? -1 : 1;
+					return stringValueToString(left) < stringValueToString(right) ? -1 : 1;
 				}
 				throw this.createApiRuntimeError('table.sort comparison expects numbers or strings.');
 			});
@@ -2577,49 +2585,49 @@ export class BmsxVMRuntime {
 			const jul = new Date(year, 6, 1);
 			const isDst = date.getTimezoneOffset() < Math.max(jan.getTimezoneOffset(), jul.getTimezoneOffset());
 			const table = new Table(0, 9);
-			table.set('year', year);
-			table.set('month', date.getMonth() + 1);
-			table.set('day', date.getDate());
-			table.set('hour', date.getHours());
-			table.set('min', date.getMinutes());
-			table.set('sec', date.getSeconds());
-			table.set('wday', date.getDay() + 1);
-			table.set('yday', yday);
-			table.set('isdst', isDst);
+			setKey(table, 'year', year);
+			setKey(table, 'month', date.getMonth() + 1);
+			setKey(table, 'day', date.getDate());
+			setKey(table, 'hour', date.getHours());
+			setKey(table, 'min', date.getMinutes());
+			setKey(table, 'sec', date.getSeconds());
+			setKey(table, 'wday', date.getDay() + 1);
+			setKey(table, 'yday', yday);
+			setKey(table, 'isdst', isDst);
 			return table;
 		};
-		osTable.set('clock', createNativeFunction('os.clock', (_args, out) => {
+		setKey(osTable, 'clock', createNativeFunction('os.clock', (_args, out) => {
 			out.push($.platform.clock.now() / 1000);
 		}));
-		osTable.set('time', createNativeFunction('os.time', (args, out) => {
+		setKey(osTable, 'time', createNativeFunction('os.time', (args, out) => {
 			if (args.length > 0 && args[0] !== null) {
 				const table = args[0] as Table;
-				const year = table.get('year') as number;
-				const month = table.get('month') as number;
-				const day = table.get('day') as number;
-				const hour = table.get('hour') as number;
-				const min = table.get('min') as number;
-				const sec = table.get('sec') as number;
+				const year = table.get(key('year')) as number;
+				const month = table.get(key('month')) as number;
+				const day = table.get(key('day')) as number;
+				const hour = table.get(key('hour')) as number;
+				const min = table.get(key('min')) as number;
+				const sec = table.get(key('sec')) as number;
 				const date = new Date(year, month - 1, day, hour, min, sec);
 				out.push(Math.floor(date.getTime() / 1000));
 				return;
 			}
 			out.push(Math.floor(Date.now() / 1000));
 		}));
-		osTable.set('difftime', createNativeFunction('os.difftime', (args, out) => {
+		setKey(osTable, 'difftime', createNativeFunction('os.difftime', (args, out) => {
 			const t2 = args[0] as number;
 			const t1 = args[1] as number;
 			out.push(t2 - t1);
 		}));
-		osTable.set('date', createNativeFunction('os.date', (args, out) => {
-			const format = args.length > 0 && args[0] !== null ? args[0] as string : '%c';
+		setKey(osTable, 'date', createNativeFunction('os.date', (args, out) => {
+			const format = args.length > 0 && args[0] !== null ? this.requireVmString(args[0]) : '%c';
 			const timeValue = args.length > 1 && args[1] !== null ? (args[1] as number) * 1000 : Date.now();
 			const date = new Date(timeValue);
 			if (format === '*t') {
 				out.push(buildOsDateTable(date));
 				return;
 			}
-			out.push(formatOsDate(format, date));
+			out.push(this.internVmString(formatOsDate(format, date)));
 		}));
 		this.registerVmGlobal('os', osTable);
 
@@ -2846,29 +2854,29 @@ export class BmsxVMRuntime {
 		}
 	}
 
-	private vmTypeOf(value: Value): string {
+	private vmTypeOf(value: Value): StringValue {
 		if (value === null) {
-			return 'nil';
+			return this.internVmString('nil');
 		}
 		if (typeof value === 'boolean') {
-			return 'boolean';
+			return this.internVmString('boolean');
 		}
 		if (typeof value === 'number') {
-			return 'number';
+			return this.internVmString('number');
 		}
-		if (typeof value === 'string') {
-			return 'string';
+		if (isStringValue(value)) {
+			return this.internVmString('string');
 		}
 		if (value instanceof Table) {
-			return 'table';
+			return this.internVmString('table');
 		}
 		if (isNativeFunction(value)) {
-			return 'function';
+			return this.internVmString('function');
 		}
 		if (isNativeObject(value)) {
-			return 'native';
+			return this.internVmString('native');
 		}
-		return 'function';
+		return this.internVmString('function');
 	}
 
 	private createNativeArrayFromTable(table: Table, context: LuaMarshalContext): unknown[] {
@@ -2931,8 +2939,8 @@ export class BmsxVMRuntime {
 		if (typeof value === 'number') {
 			return Number.isFinite(value) ? value.toString() : 'nan';
 		}
-		if (typeof value === 'string') {
-			return value;
+		if (isStringValue(value)) {
+			return stringValueToString(value);
 		}
 		if (value instanceof Table) {
 			return 'table';
@@ -2944,6 +2952,10 @@ export class BmsxVMRuntime {
 			return 'native';
 		}
 		return 'function';
+	}
+
+	private requireVmString(value: Value): string {
+		return stringValueToString(value as StringValue);
 	}
 
 	public formatVmValue(value: Value): string {
@@ -3625,6 +3637,18 @@ export class BmsxVMRuntime {
 		return this.canonicalizeIdentifierFn(name);
 	}
 
+	private internVmString(value: string): StringValue {
+		return this.cpu.getStringPool().intern(value);
+	}
+
+	private vmKey(name: string): StringValue {
+		return this.internVmString(this.canonicalizeIdentifier(name));
+	}
+
+	private vmToStringValue(value: Value): StringValue {
+		return this.internVmString(this.vmToString(value));
+	}
+
 	public runVmConsoleChunk(source: string): Value[] {
 		const chunk = this.luaInterpreter.compileChunk(source, 'console');
 		const currentProgram = this.cpu.getProgram();
@@ -3930,8 +3954,11 @@ export class BmsxVMRuntime {
 		if (value === undefined || value === null) {
 			return null;
 		}
-		if (typeof value === 'boolean' || typeof value === 'number' || typeof value === 'string') {
+		if (typeof value === 'boolean' || typeof value === 'number') {
 			return value;
+		}
+		if (typeof value === 'string') {
+			return this.internVmString(value);
 		}
 		if (isNativeObject(value as Value)) {
 			return value as Value;
@@ -3951,7 +3978,7 @@ export class BmsxVMRuntime {
 		if (this.isPlainObject(value)) {
 			const table = new Table(0, 0);
 			for (const [prop, entry] of Object.entries(value)) {
-				table.set(prop, this.toVmValue(entry));
+				table.set(this.internVmString(prop), this.toVmValue(entry));
 			}
 			return table;
 		}
@@ -3966,8 +3993,11 @@ export class BmsxVMRuntime {
 	}
 
 	private toNativeValue(value: Value, context: LuaMarshalContext, visited: WeakMap<Table, unknown>): unknown {
-		if (value === null || typeof value === 'boolean' || typeof value === 'number' || typeof value === 'string') {
+		if (value === null || typeof value === 'boolean' || typeof value === 'number') {
 			return value;
+		}
+		if (isStringValue(value)) {
+			return stringValueToString(value);
 		}
 		if (value instanceof Table) {
 			return this.vmTableToNative(value, context, visited);

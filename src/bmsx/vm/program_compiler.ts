@@ -28,6 +28,7 @@ import {
 } from '../lua/lua_ast';
 import { createIdentifierCanonicalizer } from '../utils/identifier_canonicalizer';
 import { OpCode, type Program, type Proto, type UpvalueDesc, type Value, type SourceRange } from './cpu';
+import { StringPool, StringValue, isStringValue } from './string_pool';
 import { IO_ARG0_OFFSET, IO_BUFFER_BASE, IO_COMMAND_STRIDE, IO_CMD_PRINT, IO_WRITE_PTR_ADDR } from './vm_io';
 import type { CanonicalizationType } from '../rompack/rompack';
 
@@ -45,6 +46,7 @@ export type ProgramModule = {
 type CompileOptions = {
 	baseProgram?: Program;
 	canonicalization?: CanonicalizationType;
+	stringPool?: StringPool;
 };
 
 type LoopContext = {
@@ -53,6 +55,7 @@ type LoopContext = {
 
 class ProgramBuilder {
 	public readonly constPool: Value[];
+	public readonly stringPool: StringPool;
 	public readonly canonicalizeIdentifier: (value: string) => string;
 	private readonly constMap: Map<string, number>;
 	public readonly protos: Proto[] = [];
@@ -62,14 +65,23 @@ class ProgramBuilder {
 	private readonly protoIdMap: Map<string, number> = new Map();
 	private readonly assignedProtoIds: Set<string> = new Set();
 
-	public constructor(baseConstPool: ReadonlyArray<Value> | null = null, canonicalization: CanonicalizationType = 'none') {
+	public constructor(baseConstPool: ReadonlyArray<Value> | null = null, canonicalization: CanonicalizationType = 'none', stringPool: StringPool | null = null) {
 		this.constPool = baseConstPool ? Array.from(baseConstPool) : [];
 		this.canonicalizeIdentifier = createIdentifierCanonicalizer(canonicalization);
+		this.stringPool = stringPool ?? new StringPool();
 		this.constMap = new Map<string, number>();
 		for (let index = 0; index < this.constPool.length; index += 1) {
 			const value = this.constPool[index];
 			this.constMap.set(this.makeConstKey(value), index);
 		}
+	}
+
+	public internString(value: string): StringValue {
+		return this.stringPool.intern(value);
+	}
+
+	public constIndexString(value: string): number {
+		return this.constIndex(this.internString(value));
 	}
 
 	public constIndex(value: Value): number {
@@ -142,13 +154,14 @@ class ProgramBuilder {
 			protos: this.protos,
 			debugRanges: fullRanges,
 			protoIds: this.protoIds,
+			stringPool: this.stringPool,
 		};
 	}
 
 	private makeConstKey(value: Value): string {
 		if (value === null) return 'nil';
 		if (typeof value === 'number') return `n:${value}`;
-		if (typeof value === 'string') return `s:${value}`;
+		if (isStringValue(value)) return `s:${value.id}`;
 		if (typeof value === 'boolean') return `b:${value ? 1 : 0}`;
 		return `o:${String(value)}`;
 	}
@@ -564,14 +577,14 @@ class FunctionBuilder {
 					targets.push({ kind: 'upvalue', upvalue });
 					continue;
 				}
-				const keyConst = this.program.constIndex(name);
+				const keyConst = this.program.constIndexString(name);
 				targets.push({ kind: 'global', keyConst });
 				continue;
 			}
 			if (expr.kind === LuaSyntaxKind.MemberExpression) {
 				const baseReg = this.allocTemp();
 				this.compileExpressionInto(expr.base, baseReg, 1);
-				const keyConst = this.program.constIndex(this.canonicalizeName(expr.identifier));
+				const keyConst = this.program.constIndexString(this.canonicalizeName(expr.identifier));
 				targets.push({ kind: 'table', tableReg: baseReg, keyConst });
 				continue;
 			}
@@ -953,7 +966,7 @@ class FunctionBuilder {
 				this.emitABC(OpCode.SETUP, closureReg, upvalue, 0);
 				return;
 			}
-			this.emitABx(OpCode.SETG, closureReg, this.program.constIndex(name));
+			this.emitABx(OpCode.SETG, closureReg, this.program.constIndexString(name));
 			return;
 		}
 
@@ -967,19 +980,19 @@ class FunctionBuilder {
 			if (baseUpvalue !== null) {
 				this.emitABC(OpCode.GETUP, baseReg, baseUpvalue, 0);
 			} else {
-				this.emitABx(OpCode.GETG, baseReg, this.program.constIndex(baseName));
+				this.emitABx(OpCode.GETG, baseReg, this.program.constIndexString(baseName));
 			}
 		}
 
 		const pathEnd = methodName ? identifiers.length : identifiers.length - 1;
 		for (let i = 1; i < pathEnd; i += 1) {
-			const key = this.program.constIndex(identifiers[i]);
+			const key = this.program.constIndexString(identifiers[i]);
 			const nextReg = this.allocTemp();
 			this.emitABC(OpCode.GETT, nextReg, baseReg, this.encodeConstOperand(key));
 			this.emitABC(OpCode.MOV, baseReg, nextReg, 0);
 		}
 		const keyName = methodName && methodName.length > 0 ? methodName : identifiers[identifiers.length - 1];
-		const keyConst = this.program.constIndex(keyName);
+		const keyConst = this.program.constIndexString(keyName);
 		this.emitABC(OpCode.SETT, baseReg, this.encodeConstOperand(keyConst), closureReg);
 	}
 
@@ -990,7 +1003,7 @@ class FunctionBuilder {
 					this.emitLoadConst(target, expression.value);
 					return;
 				case LuaSyntaxKind.StringLiteralExpression:
-					this.emitLoadConst(target, expression.value);
+					this.emitLoadConst(target, this.program.internString(expression.value));
 					return;
 				case LuaSyntaxKind.BooleanLiteralExpression:
 					this.emitLoadBool(target, expression.value);
@@ -1050,14 +1063,14 @@ class FunctionBuilder {
 			this.emitABC(OpCode.GETUP, target, upvalue, 0);
 			return;
 		}
-		const key = this.program.constIndex(name);
+		const key = this.program.constIndexString(name);
 		this.emitABx(OpCode.GETG, target, key);
 	}
 
 	private compileMemberExpression(expression: any, target: number): void {
 		const baseReg = this.allocTemp();
 		this.compileExpressionInto(expression.base, baseReg, 1);
-		const key = this.program.constIndex(this.canonicalizeName(expression.identifier));
+		const key = this.program.constIndexString(this.canonicalizeName(expression.identifier));
 		this.emitABC(OpCode.GETT, target, baseReg, this.encodeConstOperand(key));
 	}
 
@@ -1102,7 +1115,7 @@ class FunctionBuilder {
 			if (field.kind === LuaTableFieldKind.IdentifierKey) {
 				const valueReg = this.allocTemp();
 				this.compileExpressionInto(field.value, valueReg, 1);
-				const keyConst = this.program.constIndex(this.canonicalizeName(field.name));
+				const keyConst = this.program.constIndexString(this.canonicalizeName(field.name));
 				this.emitABC(OpCode.SETT, target, this.encodeConstOperand(keyConst), valueReg);
 				this.tempTop = tempBase;
 				continue;
@@ -1129,7 +1142,7 @@ class FunctionBuilder {
 			case LuaSyntaxKind.NumericLiteralExpression:
 				return this.program.constIndex((expression as LuaNumericLiteralExpression).value);
 			case LuaSyntaxKind.StringLiteralExpression:
-				return this.program.constIndex((expression as LuaStringLiteralExpression).value);
+				return this.program.constIndexString((expression as LuaStringLiteralExpression).value);
 			case LuaSyntaxKind.BooleanLiteralExpression:
 				return this.program.constIndex((expression as LuaBooleanLiteralExpression).value);
 			case LuaSyntaxKind.NilLiteralExpression:
@@ -1307,7 +1320,7 @@ class FunctionBuilder {
 		if (hasMethod) {
 			this.reserveTempRange(callBase, 2);
 			this.compileExpressionInto(expression.callee, callBase + 1, 1);
-			const methodKey = this.program.constIndex(methodName);
+			const methodKey = this.program.constIndexString(methodName);
 			this.emitABC(OpCode.GETT, callBase, callBase + 1, this.encodeConstOperand(methodKey));
 		} else {
 			this.compileExpressionInto(expression.callee, callBase, 1);
@@ -1569,7 +1582,7 @@ function cloneProto(proto: Proto): Proto {
 }
 
 function createProgramBuilderFromProgram(base: Program, canonicalization: CanonicalizationType): ProgramBuilder {
-	const builder = new ProgramBuilder(base.constPool, canonicalization);
+	const builder = new ProgramBuilder(base.constPool, canonicalization, base.stringPool);
 	const protoIds = base.protoIds;
 	if (!protoIds || protoIds.length !== base.protos.length) {
 		throw new Error('[ProgramBuilder] Base program proto ids missing or mismatched.');
@@ -1589,7 +1602,7 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 	const canonicalization = options.canonicalization ?? 'none';
 	const programBuilder = options.baseProgram
 		? createProgramBuilderFromProgram(options.baseProgram, canonicalization)
-		: new ProgramBuilder(null, canonicalization);
+		: new ProgramBuilder(null, canonicalization, options.stringPool ?? null);
 	const moduleId = chunk.range.path;
 	const entryProtoId = buildEntryProtoId(moduleId);
 	const entryBuilder = new FunctionBuilder(programBuilder, null, { moduleId, protoId: entryProtoId });

@@ -784,7 +784,7 @@ ModulationInput SoundMaster::parseModulationInput(const BinValue& value) const {
 
 ModulationInput SoundMaster::parseModulationInput(const Table& table) const {
 	auto getNumber = [&](const std::string& key, std::optional<f32>& out) {
-		Value v = table.get(std::string_view(key));
+		Value v = table.getString(key);
 		if (isNil(v)) return;
 		if (auto* n = std::get_if<double>(&v)) {
 			out = static_cast<f32>(*n);
@@ -794,7 +794,7 @@ ModulationInput SoundMaster::parseModulationInput(const Table& table) const {
 	};
 
 	auto getRange = [&](const std::string& key, std::optional<ModulationRange>& out) {
-		Value v = table.get(std::string_view(key));
+		Value v = table.getString(key);
 		if (isNil(v)) return;
 		if (auto* t = std::get_if<std::shared_ptr<Table>>(&v)) {
 			const Table& arr = **t;
@@ -823,24 +823,24 @@ ModulationInput SoundMaster::parseModulationInput(const Table& table) const {
 	getRange("offsetRange", input.offsetRange);
 	getRange("playbackRateRange", input.playbackRateRange);
 
-	Value filterVal = table.get(std::string_view("filter"));
+	Value filterVal = table.getString("filter");
 	if (!isNil(filterVal)) {
 		if (auto* t = std::get_if<std::shared_ptr<Table>>(&filterVal)) {
 			const Table& ftable = **t;
 			FilterModulationParams filter;
-			Value typeVal = ftable.get(std::string_view("type"));
-			if (auto* s = std::get_if<std::string>(&typeVal)) {
-				filter.type = *s;
+			Value typeVal = ftable.getString("type");
+			if (auto* s = std::get_if<StringValue>(&typeVal)) {
+				filter.type = (*s)->value;
 			}
-			Value freqVal = ftable.get(std::string_view("frequency"));
+			Value freqVal = ftable.getString("frequency");
 			if (auto* n = std::get_if<double>(&freqVal)) {
 				filter.frequency = static_cast<f32>(*n);
 			}
-			Value qVal = ftable.get(std::string_view("q"));
+			Value qVal = ftable.getString("q");
 			if (auto* n = std::get_if<double>(&qVal)) {
 				filter.q = static_cast<f32>(*n);
 			}
-			Value gainVal = ftable.get(std::string_view("gain"));
+			Value gainVal = ftable.getString("gain");
 			if (auto* n = std::get_if<double>(&gainVal)) {
 				filter.gain = static_cast<f32>(*n);
 			}

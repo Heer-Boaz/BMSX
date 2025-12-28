@@ -12,6 +12,8 @@
 #include <variant>
 #include <vector>
 
+#include "../core/types.h"
+
 namespace bmsx {
 
 // Forward declarations
@@ -31,6 +33,13 @@ struct SourceRange {
 	int endColumn = 0;
 };
 
+struct InternedString {
+	uint32_t id = 0;
+	std::string value;
+};
+
+using StringValue = const InternedString*;
+
 /**
  * Value type - the core type for all VM values.
  * Uses std::variant to represent Lua's dynamic typing.
@@ -41,7 +50,7 @@ using Value = std::variant<
 	std::monostate,              // nil
 	bool,                         // boolean
 	double,                       // number
-	std::string,                  // string
+	StringValue,                  // string
 	std::shared_ptr<Table>,       // table
 	std::shared_ptr<Closure>,     // closure/function
 	std::shared_ptr<NativeFunction>, // native function
@@ -73,7 +82,7 @@ struct ValueHash {
 			case VALUE_NUMBER:
 				return hashCombine(seed, std::hash<double>{}(std::get<double>(v)));
 			case VALUE_STRING:
-				return hashCombine(seed, std::hash<std::string>{}(std::get<std::string>(v)));
+				return hashCombine(seed, std::hash<const void*>{}(std::get<StringValue>(v)));
 			case VALUE_TABLE:
 				return hashCombine(seed, std::hash<const void*>{}(std::get<std::shared_ptr<Table>>(v).get()));
 			case VALUE_CLOSURE:
@@ -120,6 +129,31 @@ struct StringKeyEq {
 	}
 };
 
+class StringPool {
+public:
+	StringValue intern(std::string_view value) {
+		auto it = m_stringMap.find(value);
+		if (it != m_stringMap.end()) {
+			return it->second;
+		}
+		auto entry = std::make_unique<InternedString>();
+		entry->id = static_cast<uint32_t>(m_entries.size());
+		entry->value.assign(value.data(), value.size());
+		StringValue ptr = entry.get();
+		m_entries.push_back(std::move(entry));
+		m_stringMap.emplace(std::string_view(ptr->value), ptr);
+		return ptr;
+	}
+
+	const std::string& toString(StringValue value) const {
+		return value->value;
+	}
+
+private:
+	std::unordered_map<std::string_view, StringValue, StringKeyHash, StringKeyEq> m_stringMap;
+	std::vector<std::unique_ptr<InternedString>> m_entries;
+};
+
 /**
  * Check if a Value is nil.
  */
@@ -149,7 +183,7 @@ inline double asNumber(const Value& v) {
  */
 inline const std::string& asString(const Value& v) {
 	static const std::string empty;
-	if (auto* s = std::get_if<std::string>(&v)) return *s;
+	if (auto* s = std::get_if<StringValue>(&v)) return (*s)->value;
 	return empty;
 }
 
@@ -271,6 +305,7 @@ struct Proto {
 struct Program {
 	std::vector<uint32_t> code;            // bytecode instructions
 	std::vector<Value> constPool;          // constant pool
+	StringPool stringPool;                 // interned strings for this program
 	std::vector<Proto> protos;             // function prototypes
 	std::vector<std::optional<SourceRange>> debugRanges; // debug info per instruction
 	std::vector<std::string> protoIds;     // prototype identifiers for debugging
@@ -374,20 +409,25 @@ struct CallFrame {
  * Supports both array-style (1-based integer keys) and hash-style access.
  * Metatables are supported for operator overloading.
  */
+struct StringValueHash {
+	size_t operator()(StringValue value) const noexcept {
+		return std::hash<const void*>{}(value);
+	}
+};
+
+struct StringValueEq {
+	bool operator()(StringValue lhs, StringValue rhs) const noexcept {
+		return lhs == rhs;
+	}
+};
+
 class Table {
 public:
 	Table(int arraySize = 0, int hashSize = 0);
-	// Canonicalized identifiers rely on case-insensitive string keys to mirror TS VM semantics.
-	static void setCaseInsensitiveKeys(bool enabled);
 
 	Value get(const Value& key) const;
-	Value get(const std::string& key) const;
-	Value get(const char* key) const;
-	Value get(std::string_view key) const;
+	Value getString(std::string_view key) const;
 	void set(const Value& key, const Value& value);
-	void set(const std::string& key, const Value& value);
-	void set(const char* key, const Value& value);
-	void set(std::string_view key, const Value& value);
 	int length() const;
 	void clear();
 	std::vector<std::pair<Value, Value>> entries() const;
@@ -399,17 +439,11 @@ public:
 private:
 	bool isArrayIndex(const Value& key) const;
 	int toArrayIndex(const Value& key) const;
-	void ensureUppercaseIndex() const;
-	static std::string toUpperAscii(std::string_view value);
-
-	static bool s_caseInsensitiveKeys;
 
 	std::vector<Value> m_array;
-	std::unordered_map<std::string, Value, StringKeyHash, StringKeyEq> m_stringMap;
+	std::unordered_map<StringValue, Value, StringValueHash, StringValueEq> m_stringMap;
 	std::unordered_map<Value, Value, ValueHash, ValueEq> m_otherMap;
 	std::shared_ptr<Table> m_metatable;
-	mutable std::unordered_map<std::string, std::string, StringKeyHash, StringKeyEq> m_uppercaseIndex;
-	mutable bool m_uppercaseIndexValid = false;
 };
 
 /**
@@ -428,6 +462,7 @@ public:
 	// Program management
 	void setProgram(Program* program);
 	Program* getProgram() const { return m_program; }
+	StringValue internString(std::string_view value) { return m_stringPool.intern(value); }
 
 	// Execution control
 	void start(int entryProtoIndex, const std::vector<Value>& args = {});
@@ -476,6 +511,7 @@ private:
 	Program* m_program = nullptr;
 	std::vector<std::unique_ptr<CallFrame>> m_frames;
 	std::vector<Value>& m_memory;
+	StringPool m_stringPool;
 
 	// Scratch buffers for avoiding allocations
 	std::vector<Value> m_valueScratch;
@@ -491,6 +527,8 @@ private:
 	std::unordered_map<size_t, std::vector<std::vector<Value>>> m_registerPool;
 	static constexpr size_t MAX_POOLED_REGISTER_ARRAYS = 64;
 	static constexpr size_t MAX_REGISTER_ARRAY_SIZE = 256;
+
+	StringValue m_indexKey = nullptr;
 };
 
 /**

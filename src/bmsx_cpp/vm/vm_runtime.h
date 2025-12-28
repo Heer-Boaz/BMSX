@@ -8,6 +8,7 @@
 #include <optional>
 #include <regex>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -205,19 +206,20 @@ public:
 	/**
 	 * Get a global variable by name.
 	 */
-	Value getGlobal(const std::string& name) const;
+	Value getGlobal(std::string_view name);
 
 	/**
 	 * Set a global variable.
 	 */
-	void setGlobal(const std::string& name, const Value& value);
+	void setGlobal(std::string_view name, const Value& value);
 
 	/**
 	 * Register a native function as a global.
 	 */
-	void registerNativeFunction(const std::string& name, NativeFunctionInvoke fn);
+	void registerNativeFunction(std::string_view name, NativeFunctionInvoke fn);
 
 	void setCanonicalization(CanonicalizationType canonicalization);
+	StringValue canonicalizeIdentifier(std::string_view value);
 
 private:
 	enum class PendingCall {
@@ -240,7 +242,6 @@ private:
 	std::string vmToString(const Value& value) const;
 	double nextVmRandom();
 	std::string formatVmString(const std::string& templateStr, const std::vector<Value>& args, size_t argStart) const;
-	std::string canonicalizeIdentifier(const std::string& value) const;
 
 	static VMRuntime* s_instance;
 	static constexpr int UPDATE_STATEMENT_BUDGET = 1'000'000;

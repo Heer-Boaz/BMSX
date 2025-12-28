@@ -34,7 +34,7 @@ const { LuaParser } = require('../../src/bmsx/lua/luaparser');
 // @ts-ignore
 const { compileLuaChunkToProgram } = require('../../src/bmsx/vm/program_compiler');
 // @ts-ignore
-const { VM_PROGRAM_ASSET_ID, buildModuleAliasesFromPaths, encodeProgramAsset } = require('../../src/bmsx/vm/vm_program_asset');
+const { VM_PROGRAM_ASSET_ID, buildModuleAliasesFromPaths, encodeProgram, encodeProgramAsset } = require('../../src/bmsx/vm/vm_program_asset');
 // @ts-ignore
 // @ts-ignore
 const pako = require('pako');
@@ -1541,13 +1541,7 @@ export function appendVmProgramAsset(assetList: RomAsset[], manifest: RomManifes
 	const program = compiled.program;
 	const programAsset = {
 		entryProtoIndex: compiled.entryProtoIndex,
-		program: {
-			code: new Uint8Array(program.code.buffer, program.code.byteOffset, program.code.byteLength),
-			constPool: program.constPool,
-			protos: program.protos,
-			debugRanges: program.debugRanges,
-			protoIds: program.protoIds,
-		},
+		program: encodeProgram(program),
 		moduleProtos: Array.from(compiled.moduleProtoMap.entries(), ([path, protoIndex]) => ({ path, protoIndex })),
 		moduleAliases: buildModuleAliasesFromPaths(modulePaths),
 	};

@@ -30,8 +30,8 @@ std::string valueToString(const Value& v) {
 			std::ostringstream oss;
 			oss << arg;
 			return oss.str();
-		} else if constexpr (std::is_same_v<T, std::string>) {
-			return arg;
+		} else if constexpr (std::is_same_v<T, StringValue>) {
+			return arg->value;
 		} else if constexpr (std::is_same_v<T, std::shared_ptr<Table>>) {
 			return "[object Object]";
 		} else if constexpr (std::is_same_v<T, std::shared_ptr<Closure>>) {
@@ -55,7 +55,7 @@ const char* valueTypeName(const Value& v) {
 			return "boolean";
 		} else if constexpr (std::is_same_v<T, double>) {
 			return "number";
-		} else if constexpr (std::is_same_v<T, std::string>) {
+		} else if constexpr (std::is_same_v<T, StringValue>) {
 			return "string";
 		} else if constexpr (std::is_same_v<T, std::shared_ptr<Table>>) {
 			return "table";
@@ -75,39 +75,12 @@ const char* valueTypeName(const Value& v) {
 // Table implementation
 // =============================================================================
 
-bool Table::s_caseInsensitiveKeys = false;
-
-void Table::setCaseInsensitiveKeys(bool enabled) {
-	s_caseInsensitiveKeys = enabled;
-}
-
 Table::Table(int arraySize, int hashSize) {
 	if (arraySize > 0) {
 		m_array.resize(arraySize);
 	}
 	m_stringMap.reserve(static_cast<size_t>(hashSize));
 	m_otherMap.reserve(static_cast<size_t>(hashSize));
-	m_uppercaseIndex.reserve(static_cast<size_t>(hashSize));
-}
-
-std::string Table::toUpperAscii(std::string_view value) {
-	std::string result(value);
-	for (char& ch : result) {
-		ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
-	}
-	return result;
-}
-
-void Table::ensureUppercaseIndex() const {
-	if (!s_caseInsensitiveKeys || m_uppercaseIndexValid) {
-		return;
-	}
-	m_uppercaseIndex.clear();
-	m_uppercaseIndex.reserve(m_stringMap.size());
-	for (const auto& entry : m_stringMap) {
-		m_uppercaseIndex[toUpperAscii(entry.first)] = entry.first;
-	}
-	m_uppercaseIndexValid = true;
 }
 
 bool Table::isArrayIndex(const Value& key) const {
@@ -133,8 +106,12 @@ Value Table::get(const Value& key) const {
 		return std::monostate{};
 	}
 
-	if (auto* str = std::get_if<std::string>(&key)) {
-		return get(std::string_view(*str));
+	if (auto* str = std::get_if<StringValue>(&key)) {
+		auto mapIt = m_stringMap.find(*str);
+		if (mapIt != m_stringMap.end()) {
+			return mapIt->second;
+		}
+		return std::monostate{};
 	}
 
 	auto mapIt = m_otherMap.find(key);
@@ -144,29 +121,11 @@ Value Table::get(const Value& key) const {
 	return std::monostate{};
 }
 
-Value Table::get(const std::string& key) const {
-	return get(std::string_view(key));
-}
-
-Value Table::get(const char* key) const {
-	return get(std::string_view(key));
-}
-
-Value Table::get(std::string_view key) const {
-	if (s_caseInsensitiveKeys) {
-		ensureUppercaseIndex();
-		auto it = m_uppercaseIndex.find(toUpperAscii(key));
-		if (it != m_uppercaseIndex.end()) {
-			auto mapIt = m_stringMap.find(it->second);
-			if (mapIt != m_stringMap.end()) {
-				return mapIt->second;
-			}
+Value Table::getString(std::string_view key) const {
+	for (const auto& [stringKey, value] : m_stringMap) {
+		if (stringKey->value == key) {
+			return value;
 		}
-		return std::monostate{};
-	}
-	auto mapIt = m_stringMap.find(key);
-	if (mapIt != m_stringMap.end()) {
-		return mapIt->second;
 	}
 	return std::monostate{};
 }
@@ -183,8 +142,12 @@ void Table::set(const Value& key, const Value& value) {
 		}
 	}
 
-	if (auto* str = std::get_if<std::string>(&key)) {
-		set(std::string_view(*str), value);
+	if (auto* str = std::get_if<StringValue>(&key)) {
+		if (isNil(value)) {
+			m_stringMap.erase(*str);
+			return;
+		}
+		m_stringMap[*str] = value;
 		return;
 	}
 	if (isNil(value)) {
@@ -192,51 +155,6 @@ void Table::set(const Value& key, const Value& value) {
 		return;
 	}
 	m_otherMap[key] = value;
-}
-
-void Table::set(const std::string& key, const Value& value) {
-	set(std::string_view(key), value);
-}
-
-void Table::set(const char* key, const Value& value) {
-	set(std::string_view(key), value);
-}
-
-void Table::set(std::string_view key, const Value& value) {
-	if (s_caseInsensitiveKeys) {
-		ensureUppercaseIndex();
-		const std::string upper = toUpperAscii(key);
-		auto it = m_uppercaseIndex.find(upper);
-		if (isNil(value)) {
-			if (it != m_uppercaseIndex.end()) {
-				m_stringMap.erase(it->second);
-				m_uppercaseIndex.erase(it);
-			}
-			return;
-		}
-		if (it != m_uppercaseIndex.end()) {
-			m_stringMap[it->second] = value;
-			return;
-		}
-		auto mapIt = m_stringMap.emplace(std::string(key), value).first;
-		m_uppercaseIndex.emplace(upper, mapIt->first);
-		return;
-	}
-	if (isNil(value)) {
-		auto mapIt = m_stringMap.find(key);
-		if (mapIt != m_stringMap.end()) {
-			m_stringMap.erase(mapIt);
-		}
-		m_uppercaseIndexValid = false;
-		return;
-	}
-	auto mapIt = m_stringMap.find(key);
-	if (mapIt != m_stringMap.end()) {
-		mapIt->second = value;
-	} else {
-		m_stringMap.emplace(std::string(key), value);
-	}
-	m_uppercaseIndexValid = false;
 }
 
 int Table::length() const {
@@ -255,8 +173,6 @@ void Table::clear() {
 	m_array.clear();
 	m_stringMap.clear();
 	m_otherMap.clear();
-	m_uppercaseIndex.clear();
-	m_uppercaseIndexValid = false;
 }
 
 std::vector<std::pair<Value, Value>> Table::entries() const {
@@ -313,20 +229,15 @@ std::optional<std::pair<Value, Value>> Table::nextEntry(const Value& after) cons
 		}
 		return std::nullopt;
 	}
-	if (auto* str = std::get_if<std::string>(&after)) {
-		const std::string* match = str;
-		if (s_caseInsensitiveKeys) {
-			ensureUppercaseIndex();
-			auto it = m_uppercaseIndex.find(toUpperAscii(*str));
-			if (it == m_uppercaseIndex.end()) {
-				return std::nullopt;
-			}
-			match = &it->second;
+	if (auto* str = std::get_if<StringValue>(&after)) {
+		auto found = m_stringMap.find(*str);
+		if (found == m_stringMap.end()) {
+			return std::nullopt;
 		}
 		bool seen = false;
 		for (const auto& entry : m_stringMap) {
 			if (!seen) {
-				if (entry.first == *match) {
+				if (entry.first == *str) {
 					seen = true;
 				}
 				continue;
@@ -379,6 +290,12 @@ VMCPU::VMCPU(std::vector<Value>& memory)
 
 void VMCPU::setProgram(Program* program) {
 	m_program = program;
+	for (auto& entry : m_program->constPool) {
+		if (auto* str = std::get_if<StringValue>(&entry)) {
+			entry = m_stringPool.intern((*str)->value);
+		}
+	}
+	m_indexKey = m_stringPool.intern("__index");
 }
 
 void VMCPU::start(int entryProtoIndex, const std::vector<Value>& args) {
@@ -644,9 +561,9 @@ void VMCPU::executeInstruction(CallFrame& frame, uint32_t instr) {
 		}
 
 		case OpCode::CONCAT: {
-			std::string left = valueToString(readRK(frame, b));
-			std::string right = valueToString(readRK(frame, c));
-			setRegister(frame, a, left + right);
+			std::string text = valueToString(readRK(frame, b));
+			text += valueToString(readRK(frame, c));
+			setRegister(frame, a, m_program->stringPool.intern(text));
 			return;
 		}
 
@@ -662,8 +579,8 @@ void VMCPU::executeInstruction(CallFrame& frame, uint32_t instr) {
 
 		case OpCode::LEN: {
 			const Value& val = frame.registers[b];
-			if (auto* s = std::get_if<std::string>(&val)) {
-				setRegister(frame, a, static_cast<double>(s->length()));
+			if (auto* s = std::get_if<StringValue>(&val)) {
+				setRegister(frame, a, static_cast<double>((*s)->value.length()));
 				return;
 			}
 			if (auto tbl = std::get_if<std::shared_ptr<Table>>(&val)) {
@@ -728,8 +645,8 @@ void VMCPU::executeInstruction(CallFrame& frame, uint32_t instr) {
 			const Value& leftValue = readRK(frame, b);
 			const Value& rightValue = readRK(frame, c);
 			bool ok = false;
-			if (std::holds_alternative<std::string>(leftValue) && std::holds_alternative<std::string>(rightValue)) {
-				ok = std::get<std::string>(leftValue) < std::get<std::string>(rightValue);
+			if (std::holds_alternative<StringValue>(leftValue) && std::holds_alternative<StringValue>(rightValue)) {
+				ok = std::get<StringValue>(leftValue)->value < std::get<StringValue>(rightValue)->value;
 			} else {
 				auto toNumber = [](const Value& value) -> double {
 					if (auto* n = std::get_if<double>(&value)) {
@@ -741,10 +658,11 @@ void VMCPU::executeInstruction(CallFrame& frame, uint32_t instr) {
 					if (isNil(value)) {
 						return 0.0;
 					}
-					if (auto* s = std::get_if<std::string>(&value)) {
+					if (auto* s = std::get_if<StringValue>(&value)) {
+						const std::string& text = (*s)->value;
 						char* end = nullptr;
-						double parsed = std::strtod(s->c_str(), &end);
-						if (end == s->c_str()) {
+						double parsed = std::strtod(text.c_str(), &end);
+						if (end == text.c_str()) {
 							return std::numeric_limits<double>::quiet_NaN();
 						}
 						return parsed;
@@ -765,8 +683,8 @@ void VMCPU::executeInstruction(CallFrame& frame, uint32_t instr) {
 			const Value& leftValue = readRK(frame, b);
 			const Value& rightValue = readRK(frame, c);
 			bool ok = false;
-			if (std::holds_alternative<std::string>(leftValue) && std::holds_alternative<std::string>(rightValue)) {
-				ok = std::get<std::string>(leftValue) <= std::get<std::string>(rightValue);
+			if (std::holds_alternative<StringValue>(leftValue) && std::holds_alternative<StringValue>(rightValue)) {
+				ok = std::get<StringValue>(leftValue)->value <= std::get<StringValue>(rightValue)->value;
 			} else {
 				auto toNumber = [](const Value& value) -> double {
 					if (auto* n = std::get_if<double>(&value)) {
@@ -778,10 +696,11 @@ void VMCPU::executeInstruction(CallFrame& frame, uint32_t instr) {
 					if (isNil(value)) {
 						return 0.0;
 					}
-					if (auto* s = std::get_if<std::string>(&value)) {
+					if (auto* s = std::get_if<StringValue>(&value)) {
+						const std::string& text = (*s)->value;
 						char* end = nullptr;
-						double parsed = std::strtod(s->c_str(), &end);
-						if (end == s->c_str()) {
+						double parsed = std::strtod(text.c_str(), &end);
+						if (end == text.c_str()) {
 							return std::numeric_limits<double>::quiet_NaN();
 						}
 						return parsed;
@@ -1026,7 +945,7 @@ Value VMCPU::resolveTableIndex(const std::shared_ptr<Table>& table, const Value&
 		if (!mt) {
 			return std::monostate{};
 		}
-		Value indexer = mt->get(std::string_view("__index"));
+		Value indexer = mt->get(m_indexKey);
 		if (!std::holds_alternative<std::shared_ptr<Table>>(indexer)) {
 			return std::monostate{};
 		}

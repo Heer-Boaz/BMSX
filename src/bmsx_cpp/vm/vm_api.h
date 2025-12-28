@@ -80,11 +80,11 @@ private:
 	void reset_print_cursor();
 
 	Color palette_color(int index) const;
-	Color resolve_color(const Value& value) const;
-	RenderLayer resolve_layer(const Value& value) const;
-	std::vector<f32> read_polygon(const Value& value) const;
-	Vec3 read_vec3(const Value& value) const;
-	std::array<f32, 16> read_matrix(const Value& value) const;
+	Color resolve_color(const Value& value);
+	RenderLayer resolve_layer(const Value& value);
+	std::vector<f32> read_polygon(const Value& value);
+	Vec3 read_vec3(const Value& value);
+	std::array<f32, 16> read_matrix(const Value& value);
 };
 
 } // namespace bmsx

@@ -505,19 +505,19 @@ bool AudioEventManager::ruleMatches(const AudioCaseMatcher& matcher, const Value
 
 	for (const auto& [key, expected] : matcher.equals) {
 		if (!payloadTable) return false;
-		Value actual = payloadTable->get(std::string_view(key));
+		Value actual = payloadTable->getString(key);
 		if (!valueEquals(expected, actual)) return false;
 	}
 
 	for (const auto& entry : matcher.anyOf) {
 		if (!payloadTable) return false;
-		Value actual = payloadTable->get(std::string_view(entry.first));
+		Value actual = payloadTable->getString(entry.first);
 		if (!matchesAnyOf(entry.second, actual)) return false;
 	}
 
 	if (!matcher.requiredTags.empty()) {
 		if (!payloadTable) return false;
-		Value tagsVal = payloadTable->get(std::string_view("tags"));
+		Value tagsVal = payloadTable->getString("tags");
 		if (!std::holds_alternative<std::shared_ptr<Table>>(tagsVal)) return false;
 		auto tagsTable = std::get<std::shared_ptr<Table>>(tagsVal);
 		const int len = tagsTable->length();
@@ -525,8 +525,8 @@ bool AudioEventManager::ruleMatches(const AudioCaseMatcher& matcher, const Value
 			bool found = false;
 			for (int i = 1; i <= len; ++i) {
 				Value v = tagsTable->get(static_cast<double>(i));
-				if (auto* s = std::get_if<std::string>(&v)) {
-					if (*s == tag) { found = true; break; }
+				if (auto* s = std::get_if<StringValue>(&v)) {
+					if ((*s)->value == tag) { found = true; break; }
 				}
 			}
 			if (!found) return false;
@@ -561,7 +561,7 @@ bool AudioEventManager::valueEquals(const BinValue& expected, const Value& actua
 		return false;
 	}
 	if (expected.isString()) {
-		if (auto* s = std::get_if<std::string>(&actual)) return expected.asString() == *s;
+		if (auto* s = std::get_if<StringValue>(&actual)) return expected.asString() == (*s)->value;
 		return false;
 	}
 	return false;
@@ -587,19 +587,19 @@ bool AudioEventManager::matchesAnyOf(const std::vector<BinValue>& expected, cons
 
 std::optional<std::string> AudioEventManager::readPayloadString(const Value& payload, const std::string& key) const {
 	if (!std::holds_alternative<std::shared_ptr<Table>>(payload)) return std::nullopt;
-	Value v = std::get<std::shared_ptr<Table>>(payload)->get(std::string_view(key));
-	if (auto* s = std::get_if<std::string>(&v)) return *s;
+	Value v = std::get<std::shared_ptr<Table>>(payload)->getString(key);
+	if (auto* s = std::get_if<StringValue>(&v)) return (*s)->value;
 	return std::nullopt;
 }
 
 std::optional<ModulationInput> AudioEventManager::readPayloadModulation(const Value& payload, const std::string& key) const {
 	if (!std::holds_alternative<std::shared_ptr<Table>>(payload)) return std::nullopt;
-	Value v = std::get<std::shared_ptr<Table>>(payload)->get(std::string_view(key));
+	Value v = std::get<std::shared_ptr<Table>>(payload)->getString(key);
 	if (!std::holds_alternative<std::shared_ptr<Table>>(v)) return std::nullopt;
 	auto table = std::get<std::shared_ptr<Table>>(v);
 	ModulationInput input;
 	auto readNum = [&](const std::string& field, std::optional<f32>& out) {
-		Value val = table->get(std::string_view(field));
+		Value val = table->getString(field);
 		if (isNil(val)) return;
 		if (auto* n = std::get_if<double>(&val)) {
 			out = static_cast<f32>(*n);
@@ -608,7 +608,7 @@ std::optional<ModulationInput> AudioEventManager::readPayloadModulation(const Va
 		throw std::runtime_error("Modulation param '" + field + "' is not a number");
 	};
 	auto readRange = [&](const std::string& field, std::optional<ModulationRange>& out) {
-		Value val = table->get(std::string_view(field));
+		Value val = table->getString(field);
 		if (isNil(val)) return;
 		if (!std::holds_alternative<std::shared_ptr<Table>>(val)) {
 			throw std::runtime_error("Modulation range '" + field + "' is not an array");
