@@ -27,13 +27,15 @@ import {
 	type LuaGotoStatement,
 } from '../lua/lua_ast';
 import { createIdentifierCanonicalizer } from '../utils/identifier_canonicalizer';
-import { OpCode, type Program, type Proto, type UpvalueDesc, type Value, type SourceRange } from './cpu';
+import { OpCode, type Program, type ProgramMetadata, type Proto, type UpvalueDesc, type Value, type SourceRange } from './cpu';
 import { StringPool, StringValue, isStringValue } from './string_pool';
 import { IO_ARG0_OFFSET, IO_BUFFER_BASE, IO_COMMAND_STRIDE, IO_CMD_PRINT, IO_WRITE_PTR_ADDR } from './vm_io';
 import type { CanonicalizationType } from '../rompack/rompack';
+import { INSTRUCTION_BYTES, MAX_EXT_BX, MAX_EXT_CONST, MAX_EXT_REGISTER, MAX_LOW_BX, writeInstruction } from './instruction_format';
 
 export type CompiledProgram = {
 	program: Program;
+	metadata: ProgramMetadata;
 	entryProtoIndex: number;
 	moduleProtoMap: Map<string, number>;
 };
@@ -45,6 +47,7 @@ export type ProgramModule = {
 
 type CompileOptions = {
 	baseProgram?: Program;
+	baseMetadata?: ProgramMetadata;
 	canonicalization?: CanonicalizationType;
 	stringPool?: StringPool;
 };
@@ -53,13 +56,28 @@ type LoopContext = {
 	breakJumps: number[];
 };
 
+type InstructionFormat = 'ABC' | 'ABx' | 'AsBx';
+
+type Instruction = {
+	op: OpCode;
+	a: number;
+	b: number;
+	c: number;
+	format: InstructionFormat;
+	rkMask: number;
+	target: number | null;
+};
+
+const RK_B = 1;
+const RK_C = 2;
+
 class ProgramBuilder {
 	public readonly constPool: Value[];
 	public readonly stringPool: StringPool;
 	public readonly canonicalizeIdentifier: (value: string) => string;
 	private readonly constMap: Map<string, number>;
 	public readonly protos: Proto[] = [];
-	public readonly protoCode: Uint32Array[] = [];
+	public readonly protoCode: Uint8Array[] = [];
 	public readonly protoRanges: ReadonlyArray<SourceRange | null>[] = [];
 	public readonly protoIds: string[] = [];
 	private readonly protoIdMap: Map<string, number> = new Map();
@@ -96,7 +114,7 @@ class ProgramBuilder {
 		return index;
 	}
 
-	public addProto(proto: Proto, code: Uint32Array, ranges: ReadonlyArray<SourceRange | null>, protoId: string): number {
+	public addProto(proto: Proto, code: Uint8Array, ranges: ReadonlyArray<SourceRange | null>, protoId: string): number {
 		if (this.assignedProtoIds.has(protoId)) {
 			throw new Error(`[ProgramBuilder] Duplicate proto id '${protoId}'.`);
 		}
@@ -118,7 +136,7 @@ class ProgramBuilder {
 		return index;
 	}
 
-	public seedProto(proto: Proto, code: Uint32Array, ranges: ReadonlyArray<SourceRange | null>, protoId: string): void {
+	public seedProto(proto: Proto, code: Uint8Array, ranges: ReadonlyArray<SourceRange | null>, protoId: string): void {
 		const index = this.protos.length;
 		this.protos.push(proto);
 		this.protoCode.push(code);
@@ -127,12 +145,12 @@ class ProgramBuilder {
 		this.protoIdMap.set(protoId, index);
 	}
 
-	public buildProgram(): Program {
+	public buildProgram(): { program: Program; metadata: ProgramMetadata } {
 		let total = 0;
 		for (let i = 0; i < this.protoCode.length; i += 1) {
-			total += this.protoCode[i].length;
+			total += this.protos[i].codeLen;
 		}
-		const fullCode = new Uint32Array(total);
+		const fullCode = new Uint8Array(total * INSTRUCTION_BYTES);
 		const fullRanges: Array<SourceRange | null> = new Array(total);
 		let offset = 0;
 		for (let i = 0; i < this.protoCode.length; i += 1) {
@@ -142,19 +160,24 @@ class ProgramBuilder {
 			}
 			const ranges = this.protoRanges[i];
 			this.protos[i].entryPC = offset;
-			fullCode.set(chunk, offset);
+			fullCode.set(chunk, offset * INSTRUCTION_BYTES);
 			for (let j = 0; j < ranges.length; j += 1) {
 				fullRanges[offset + j] = ranges[j];
 			}
-			offset += chunk.length;
+			offset += ranges.length;
 		}
-		return {
-			code: fullCode,
-			constPool: this.constPool,
-			protos: this.protos,
+		const metadata: ProgramMetadata = {
 			debugRanges: fullRanges,
 			protoIds: this.protoIds,
-			stringPool: this.stringPool,
+		};
+		return {
+			program: {
+				code: fullCode,
+				constPool: this.constPool,
+				protos: this.protos,
+				stringPool: this.stringPool,
+			},
+			metadata,
 		};
 	}
 
@@ -166,6 +189,35 @@ class ProgramBuilder {
 		return `o:${String(value)}`;
 	}
 }
+
+const splitPlainOperand = (value: number, label: string): { low: number; high: number } => {
+	if (value < 0) {
+		throw new Error(`[FunctionBuilder] Negative ${label} operand: ${value}`);
+	}
+	if (value > MAX_EXT_REGISTER) {
+		throw new Error(`[FunctionBuilder] ${label} operand exceeds range: ${value}`);
+	}
+	return { low: value & 0x3f, high: value >> 6 };
+};
+
+const splitRKOperand = (value: number, label: string): { low: number; high: number } => {
+	const min = -(MAX_EXT_CONST + 1);
+	if (value < min || value > MAX_EXT_CONST) {
+		throw new Error(`[FunctionBuilder] ${label} RK operand exceeds range: ${value}`);
+	}
+	const raw = value & 0xfff;
+	return { low: raw & 0x3f, high: raw >> 6 };
+};
+
+const splitBxOperand = (value: number, label: string): { low: number; high: number } => {
+	if (value < 0) {
+		throw new Error(`[FunctionBuilder] Negative ${label} operand: ${value}`);
+	}
+	if (value > MAX_EXT_BX) {
+		throw new Error(`[FunctionBuilder] ${label} operand exceeds range: ${value}`);
+	}
+	return { low: value & MAX_LOW_BX, high: value >> 12 };
+};
 
 const buildModuleRootId = (moduleId: string): string => `module:${moduleId}`;
 
@@ -187,8 +239,10 @@ class FunctionBuilder {
 	private readonly moduleId: string;
 	private readonly protoId: string;
 	private readonly canonicalizeIdentifier: (value: string) => string;
-	private readonly code: number[] = [];
+	private readonly code: Instruction[] = [];
 	private readonly ranges: Array<SourceRange | null> = [];
+	private finalizedCode: Uint8Array | null = null;
+	private finalizedRanges: Array<SourceRange | null> | null = null;
 	private readonly localStacks = new Map<string, number[]>();
 	private readonly scopeStack: string[][] = [];
 	private readonly upvalueDescs: UpvalueDesc[] = [];
@@ -238,12 +292,134 @@ class FunctionBuilder {
 		this.finalizeLabels();
 	}
 
-	public getCode(): Uint32Array {
-		return new Uint32Array(this.code);
+	public getCode(): Uint8Array {
+		this.finalizeCode();
+		return this.finalizedCode!;
 	}
 
 	public getRanges(): ReadonlyArray<SourceRange | null> {
-		return this.ranges;
+		this.finalizeCode();
+		return this.finalizedRanges!;
+	}
+
+	private finalizeCode(): void {
+		if (this.finalizedCode) {
+			return;
+		}
+		const instructions = this.code;
+		const ranges = this.ranges;
+		const wideFlags: boolean[] = new Array(instructions.length);
+		const sbxValues: number[] = new Array(instructions.length).fill(0);
+
+		for (let index = 0; index < instructions.length; index += 1) {
+			const instr = instructions[index];
+			if (instr.format === 'ABC') {
+				const aSplit = splitPlainOperand(instr.a, 'A');
+				const bSplit = (instr.rkMask & RK_B) ? splitRKOperand(instr.b, 'B') : splitPlainOperand(instr.b, 'B');
+				const cSplit = (instr.rkMask & RK_C) ? splitRKOperand(instr.c, 'C') : splitPlainOperand(instr.c, 'C');
+				wideFlags[index] = aSplit.high !== 0 || bSplit.high !== 0 || cSplit.high !== 0;
+				continue;
+			}
+			if (instr.format === 'ABx') {
+				const aSplit = splitPlainOperand(instr.a, 'A');
+				const bxSplit = splitBxOperand(instr.b, 'Bx');
+				wideFlags[index] = aSplit.high !== 0 || bxSplit.high !== 0;
+				continue;
+			}
+			const aSplit = splitPlainOperand(instr.a, 'A');
+			wideFlags[index] = aSplit.high !== 0;
+		}
+
+		let changed = true;
+		const instrStartIndex: number[] = new Array(instructions.length);
+		const instrWordIndex: number[] = new Array(instructions.length);
+		while (changed) {
+			changed = false;
+			let cursor = 0;
+			for (let index = 0; index < instructions.length; index += 1) {
+				const hasWide = wideFlags[index];
+				instrStartIndex[index] = cursor;
+				instrWordIndex[index] = cursor + (hasWide ? 1 : 0);
+				cursor += hasWide ? 2 : 1;
+			}
+			const endIndex = cursor;
+			for (let index = 0; index < instructions.length; index += 1) {
+				const instr = instructions[index];
+				if (instr.format !== 'AsBx') {
+					continue;
+				}
+				if (instr.target === null) {
+					throw new Error('[FunctionBuilder] Unpatched jump instruction.');
+				}
+				const targetIndex = instr.target;
+				const encodedTarget = targetIndex === instructions.length ? endIndex : instrStartIndex[targetIndex];
+				const sbx = encodedTarget - (instrWordIndex[index] + 1);
+				if (sbx < -131072 || sbx > 131071) {
+					throw new Error(`[FunctionBuilder] Jump offset out of range: ${sbx}`);
+				}
+				sbxValues[index] = sbx;
+				if (!wideFlags[index] && (sbx < 0 || sbx > 2047)) {
+					wideFlags[index] = true;
+					changed = true;
+				}
+			}
+		}
+
+		let totalInstr = 0;
+		for (let index = 0; index < instructions.length; index += 1) {
+			totalInstr += wideFlags[index] ? 2 : 1;
+		}
+
+		const code = new Uint8Array(totalInstr * INSTRUCTION_BYTES);
+		const finalRanges: Array<SourceRange | null> = new Array(totalInstr);
+		let cursor = 0;
+		for (let index = 0; index < instructions.length; index += 1) {
+			const instr = instructions[index];
+			const hasWide = wideFlags[index];
+			const range = ranges[index];
+			if (instr.format === 'ABC') {
+				const aSplit = splitPlainOperand(instr.a, 'A');
+				const bSplit = (instr.rkMask & RK_B) ? splitRKOperand(instr.b, 'B') : splitPlainOperand(instr.b, 'B');
+				const cSplit = (instr.rkMask & RK_C) ? splitRKOperand(instr.c, 'C') : splitPlainOperand(instr.c, 'C');
+				if (hasWide) {
+					writeInstruction(code, cursor, OpCode.WIDE, aSplit.high, bSplit.high, cSplit.high);
+					finalRanges[cursor] = range;
+					cursor += 1;
+				}
+				writeInstruction(code, cursor, instr.op, aSplit.low, bSplit.low, cSplit.low);
+				finalRanges[cursor] = range;
+				cursor += 1;
+				continue;
+			}
+			if (instr.format === 'ABx') {
+				const aSplit = splitPlainOperand(instr.a, 'A');
+				const bxSplit = splitBxOperand(instr.b, 'Bx');
+				if (hasWide) {
+					writeInstruction(code, cursor, OpCode.WIDE, aSplit.high, bxSplit.high, 0);
+					finalRanges[cursor] = range;
+					cursor += 1;
+				}
+				writeInstruction(code, cursor, instr.op, aSplit.low, (bxSplit.low >>> 6) & 0x3f, bxSplit.low & 0x3f);
+				finalRanges[cursor] = range;
+				cursor += 1;
+				continue;
+			}
+
+			const aSplit = splitPlainOperand(instr.a, 'A');
+			const sbx = sbxValues[index];
+			const bxSplit = splitBxOperand(sbx & MAX_EXT_BX, 'sBx');
+			if (hasWide) {
+				writeInstruction(code, cursor, OpCode.WIDE, aSplit.high, bxSplit.high, 0);
+				finalRanges[cursor] = range;
+				cursor += 1;
+			}
+			writeInstruction(code, cursor, instr.op, aSplit.low, (bxSplit.low >>> 6) & 0x3f, bxSplit.low & 0x3f);
+			finalRanges[cursor] = range;
+			cursor += 1;
+		}
+
+		this.finalizedCode = code;
+		this.finalizedRanges = finalRanges;
 	}
 
 	public getUpvalueDescs(): UpvalueDesc[] {
@@ -395,35 +571,64 @@ class FunctionBuilder {
 		this.currentRange = previous;
 	}
 
-	private emitABC(op: OpCode, a: number, b: number, c: number): void {
-		const instr = ((op & 0xff) << 24) | ((a & 0xff) << 16) | ((b & 0xff) << 8) | (c & 0xff);
-		this.code.push(instr >>> 0);
+	private emitABC(op: OpCode, a: number, b: number, c: number, rkMask: number = 0): void {
+		this.code.push({
+			op,
+			a,
+			b,
+			c,
+			format: 'ABC',
+			rkMask,
+			target: null,
+		});
 		this.ranges.push(this.currentRange);
 	}
 
 	private emitABx(op: OpCode, a: number, bx: number): void {
-		const instr = ((op & 0xff) << 24) | ((a & 0xff) << 16) | (bx & 0xffff);
-		this.code.push(instr >>> 0);
+		this.code.push({
+			op,
+			a,
+			b: bx,
+			c: 0,
+			format: 'ABx',
+			rkMask: 0,
+			target: null,
+		});
 		this.ranges.push(this.currentRange);
 	}
 
 	private emitAsBx(op: OpCode, a: number, sbx: number): void {
-		const encoded = sbx & 0xffff;
-		const instr = ((op & 0xff) << 24) | ((a & 0xff) << 16) | encoded;
-		this.code.push(instr >>> 0);
+		const target = this.code.length + 1 + sbx;
+		this.code.push({
+			op,
+			a,
+			b: 0,
+			c: 0,
+			format: 'AsBx',
+			rkMask: 0,
+			target,
+		});
 		this.ranges.push(this.currentRange);
 	}
 
-	private emitJumpPlaceholder(): number {
+	private emitJumpPlaceholder(op: OpCode = OpCode.JMP, a: number = 0): number {
 		const index = this.code.length;
-		this.emitAsBx(OpCode.JMP, 0, 0);
+		this.code.push({
+			op,
+			a,
+			b: 0,
+			c: 0,
+			format: 'AsBx',
+			rkMask: 0,
+			target: null,
+		});
+		this.ranges.push(this.currentRange);
 		return index;
 	}
 
 	private patchJump(index: number, target: number): void {
-		const sbx = target - (index + 1);
-		const instr = ((OpCode.JMP & 0xff) << 24) | (sbx & 0xffff);
-		this.code[index] = instr >>> 0;
+		const instr = this.code[index];
+		instr.target = target;
 	}
 
 	private emitLoadNil(target: number, count = 1): void {
@@ -651,7 +856,7 @@ class FunctionBuilder {
 				return;
 			case 'table': {
 				const keyOperand = target.keyConst !== undefined ? this.encodeConstOperand(target.keyConst) : target.keyReg;
-				this.emitABC(OpCode.SETT, target.tableReg, keyOperand, valueReg);
+				this.emitABC(OpCode.SETT, target.tableReg, keyOperand, valueReg, RK_B | RK_C);
 				return;
 			}
 			default:
@@ -683,9 +888,9 @@ class FunctionBuilder {
 			}
 			case 'table': {
 				const keyOperand = target.keyConst !== undefined ? this.encodeConstOperand(target.keyConst) : target.keyReg;
-				this.emitABC(OpCode.GETT, temp, target.tableReg, keyOperand);
+				this.emitABC(OpCode.GETT, temp, target.tableReg, keyOperand, RK_C);
 				this.emitArithmetic(opForAssignment(operator), temp, temp, valueReg);
-				this.emitABC(OpCode.SETT, target.tableReg, keyOperand, temp);
+				this.emitABC(OpCode.SETT, target.tableReg, keyOperand, temp, RK_B | RK_C);
 				return;
 			}
 			default:
@@ -726,8 +931,7 @@ class FunctionBuilder {
 			if (clause.condition) {
 				const condReg = this.allocTemp();
 				this.compileExpressionInto(clause.condition, condReg, 1);
-				this.emitABC(OpCode.TEST, condReg, 0, 0);
-				const jumpToNext = this.emitJumpPlaceholder();
+				const jumpToNext = this.emitJumpPlaceholder(OpCode.JMPIFNOT, condReg);
 				this.pushScope();
 				for (let j = 0; j < clause.block.body.length; j += 1) {
 					this.compileStatement(clause.block.body[j]);
@@ -755,8 +959,7 @@ class FunctionBuilder {
 		const loopStart = this.code.length;
 		const condReg = this.allocTemp();
 		this.compileExpressionInto(statement.condition, condReg, 1);
-		this.emitABC(OpCode.TEST, condReg, 0, 0);
-		const jumpOut = this.emitJumpPlaceholder();
+		const jumpOut = this.emitJumpPlaceholder(OpCode.JMPIFNOT, condReg);
 		const ctx: LoopContext = { breakJumps: [] };
 		this.loopStack.push(ctx);
 		this.pushScope();
@@ -786,8 +989,7 @@ class FunctionBuilder {
 		this.loopStack.pop();
 		const condReg = this.allocTemp();
 		this.compileExpressionInto(statement.condition, condReg, 1);
-		this.emitABC(OpCode.TEST, condReg, 0, 0);
-		this.emitAsBx(OpCode.JMP, 0, loopStart - (this.code.length + 1));
+		this.emitAsBx(OpCode.JMPIFNOT, condReg, loopStart - (this.code.length + 1));
 		for (let i = 0; i < ctx.breakJumps.length; i += 1) {
 			this.patchJump(ctx.breakJumps[i], this.code.length);
 		}
@@ -808,13 +1010,13 @@ class FunctionBuilder {
 		const loopStart = this.code.length;
 		const zeroConst = this.program.constIndex(0);
 		const zeroOperand = this.encodeConstOperand(zeroConst);
-		this.emitABC(OpCode.LT, 0, zeroOperand, stepReg);
+		this.emitABC(OpCode.LT, 0, zeroOperand, stepReg, RK_B | RK_C);
 		const jumpToNegativeCheck = this.emitJumpPlaceholder();
-		this.emitABC(OpCode.LT, 1, limitReg, indexReg);
+		this.emitABC(OpCode.LT, 1, limitReg, indexReg, RK_B | RK_C);
 		const jumpOutPositive = this.emitJumpPlaceholder();
 		const jumpToBody = this.emitJumpPlaceholder();
 		this.patchJump(jumpToNegativeCheck, this.code.length);
-		this.emitABC(OpCode.LT, 1, indexReg, limitReg);
+		this.emitABC(OpCode.LT, 1, indexReg, limitReg, RK_B | RK_C);
 		const jumpOutNegative = this.emitJumpPlaceholder();
 		this.patchJump(jumpToBody, this.code.length);
 		const ctx: LoopContext = { breakJumps: [] };
@@ -824,7 +1026,7 @@ class FunctionBuilder {
 			this.resetTemps();
 		}
 		this.loopStack.pop();
-		this.emitABC(OpCode.ADD, indexReg, indexReg, stepReg);
+		this.emitABC(OpCode.ADD, indexReg, indexReg, stepReg, RK_B | RK_C);
 		this.emitAsBx(OpCode.JMP, 0, loopStart - (this.code.length + 1));
 		this.patchJump(jumpOutPositive, this.code.length);
 		this.patchJump(jumpOutNegative, this.code.length);
@@ -869,7 +1071,7 @@ class FunctionBuilder {
 
 		const nilConst = this.program.constIndex(null);
 		const nilOperand = this.encodeConstOperand(nilConst);
-		this.emitABC(OpCode.EQ, 1, callBase, nilOperand);
+		this.emitABC(OpCode.EQ, 1, callBase, nilOperand, RK_B | RK_C);
 		const jumpOut = this.emitJumpPlaceholder();
 
 		for (let i = 0; i < loopVars.length; i += 1) {
@@ -988,12 +1190,12 @@ class FunctionBuilder {
 		for (let i = 1; i < pathEnd; i += 1) {
 			const key = this.program.constIndexString(identifiers[i]);
 			const nextReg = this.allocTemp();
-			this.emitABC(OpCode.GETT, nextReg, baseReg, this.encodeConstOperand(key));
+			this.emitABC(OpCode.GETT, nextReg, baseReg, this.encodeConstOperand(key), RK_C);
 			this.emitABC(OpCode.MOV, baseReg, nextReg, 0);
 		}
 		const keyName = methodName && methodName.length > 0 ? methodName : identifiers[identifiers.length - 1];
 		const keyConst = this.program.constIndexString(keyName);
-		this.emitABC(OpCode.SETT, baseReg, this.encodeConstOperand(keyConst), closureReg);
+		this.emitABC(OpCode.SETT, baseReg, this.encodeConstOperand(keyConst), closureReg, RK_B | RK_C);
 	}
 
 	private compileExpressionInto(expression: LuaExpression, target: number, resultCount: number, protoIdHint: string | null = null): void {
@@ -1071,7 +1273,7 @@ class FunctionBuilder {
 		const baseReg = this.allocTemp();
 		this.compileExpressionInto(expression.base, baseReg, 1);
 		const key = this.program.constIndexString(this.canonicalizeName(expression.identifier));
-		this.emitABC(OpCode.GETT, target, baseReg, this.encodeConstOperand(key));
+		this.emitABC(OpCode.GETT, target, baseReg, this.encodeConstOperand(key), RK_C);
 	}
 
 	private compileIndexExpression(expression: any, target: number): void {
@@ -1079,12 +1281,12 @@ class FunctionBuilder {
 		this.compileExpressionInto(expression.base, baseReg, 1);
 		const keyConst = this.tryGetConstIndex(expression.index);
 		if (keyConst !== null) {
-			this.emitABC(OpCode.GETT, target, baseReg, this.encodeConstOperand(keyConst));
+			this.emitABC(OpCode.GETT, target, baseReg, this.encodeConstOperand(keyConst), RK_C);
 			return;
 		}
 		const keyReg = this.allocTemp();
 		this.compileExpressionInto(expression.index, keyReg, 1);
-		this.emitABC(OpCode.GETT, target, baseReg, keyReg);
+		this.emitABC(OpCode.GETT, target, baseReg, keyReg, RK_C);
 	}
 
 	private compileTableConstructor(expression: LuaTableConstructorExpression, target: number): void {
@@ -1107,7 +1309,7 @@ class FunctionBuilder {
 				const valueReg = this.allocTemp();
 				this.compileExpressionInto(field.value, valueReg, 1);
 				const keyConst = this.program.constIndex(arrayIndex);
-				this.emitABC(OpCode.SETT, target, this.encodeConstOperand(keyConst), valueReg);
+				this.emitABC(OpCode.SETT, target, this.encodeConstOperand(keyConst), valueReg, RK_B | RK_C);
 				arrayIndex += 1;
 				this.tempTop = tempBase;
 				continue;
@@ -1116,7 +1318,7 @@ class FunctionBuilder {
 				const valueReg = this.allocTemp();
 				this.compileExpressionInto(field.value, valueReg, 1);
 				const keyConst = this.program.constIndexString(this.canonicalizeName(field.name));
-				this.emitABC(OpCode.SETT, target, this.encodeConstOperand(keyConst), valueReg);
+				this.emitABC(OpCode.SETT, target, this.encodeConstOperand(keyConst), valueReg, RK_B | RK_C);
 				this.tempTop = tempBase;
 				continue;
 			}
@@ -1124,7 +1326,7 @@ class FunctionBuilder {
 			if (keyConst !== null) {
 				const valueReg = this.allocTemp();
 				this.compileExpressionInto(field.value, valueReg, 1);
-				this.emitABC(OpCode.SETT, target, this.encodeConstOperand(keyConst), valueReg);
+				this.emitABC(OpCode.SETT, target, this.encodeConstOperand(keyConst), valueReg, RK_B | RK_C);
 				this.tempTop = tempBase;
 				continue;
 			}
@@ -1132,7 +1334,7 @@ class FunctionBuilder {
 			this.compileExpressionInto(field.key, keyReg, 1);
 			const valueReg = this.allocTemp();
 			this.compileExpressionInto(field.value, valueReg, 1);
-			this.emitABC(OpCode.SETT, target, keyReg, valueReg);
+			this.emitABC(OpCode.SETT, target, keyReg, valueReg, RK_B | RK_C);
 			this.tempTop = tempBase;
 		}
 	}
@@ -1244,7 +1446,7 @@ class FunctionBuilder {
 				this.compileArithmetic(OpCode.MOD, expression.left, expression.right, target);
 				return;
 			case LuaBinaryOperator.Concat:
-				this.compileArithmetic(OpCode.CONCAT, expression.left, expression.right, target);
+				this.compileConcatExpression(expression, target);
 				return;
 			case LuaBinaryOperator.Exponent:
 				this.compileArithmetic(OpCode.POW, expression.left, expression.right, target);
@@ -1257,18 +1459,18 @@ class FunctionBuilder {
 	private compileArithmetic(op: OpCode, left: LuaExpression, right: LuaExpression, target: number): void {
 		const leftOperand = this.compileRKOperand(left);
 		const rightOperand = this.compileRKOperand(right);
-		this.emitABC(op, target, leftOperand, rightOperand);
+		this.emitABC(op, target, leftOperand, rightOperand, RK_B | RK_C);
 	}
 
 	private emitArithmetic(op: OpCode, target: number, leftReg: number, rightReg: number): void {
-		this.emitABC(op, target, leftReg, rightReg);
+		this.emitABC(op, target, leftReg, rightReg, RK_B | RK_C);
 	}
 
 	private compileComparison(op: OpCode, left: LuaExpression, right: LuaExpression, target: number): void {
 		const leftOperand = this.compileRKOperand(left);
 		const rightOperand = this.compileRKOperand(right);
 		this.emitLoadBool(target, true);
-		this.emitABC(op, 1, leftOperand, rightOperand);
+		this.emitABC(op, 1, leftOperand, rightOperand, RK_B | RK_C);
 		const jump = this.emitJumpPlaceholder();
 		this.emitLoadBool(target, false);
 		this.patchJump(jump, this.code.length);
@@ -1276,20 +1478,50 @@ class FunctionBuilder {
 
 	private compileAndExpression(expression: any, target: number): void {
 		this.compileExpressionInto(expression.left, target, 1);
-		this.emitABC(OpCode.TEST, target, 0, 0);
-		const jump = this.emitJumpPlaceholder();
+		const jump = this.emitJumpPlaceholder(OpCode.JMPIFNOT, target);
 		this.compileExpressionInto(expression.right, target, 1);
 		this.patchJump(jump, this.code.length);
 	}
 
 	private compileOrExpression(expression: any, target: number): void {
 		this.compileExpressionInto(expression.left, target, 1);
-		this.emitABC(OpCode.TEST, target, 0, 0);
-		const jumpToEval = this.emitJumpPlaceholder();
-		const jumpEnd = this.emitJumpPlaceholder();
-		this.patchJump(jumpToEval, this.code.length);
+		const jumpEnd = this.emitJumpPlaceholder(OpCode.JMPIF, target);
 		this.compileExpressionInto(expression.right, target, 1);
 		this.patchJump(jumpEnd, this.code.length);
+	}
+
+	private collectConcatOperands(expression: LuaExpression, out: LuaExpression[]): void {
+		if (expression.kind === LuaSyntaxKind.BinaryExpression) {
+			const binary = expression as any;
+			if (binary.operator === LuaBinaryOperator.Concat) {
+				this.collectConcatOperands(binary.left, out);
+				this.collectConcatOperands(binary.right, out);
+				return;
+			}
+		}
+		out.push(expression);
+	}
+
+	private compileConcatExpression(expression: any, target: number): void {
+		const operands: LuaExpression[] = [];
+		this.collectConcatOperands(expression, operands);
+		if (operands.length === 2) {
+			this.compileArithmetic(OpCode.CONCAT, operands[0], operands[1], target);
+			return;
+		}
+		const tempBase = this.tempTop;
+		const useTarget = target >= this.localCount && target === tempBase;
+		const base = useTarget ? target : this.allocTempBlock(operands.length);
+		if (useTarget) {
+			this.reserveTempRange(base, operands.length);
+		}
+		for (let index = 0; index < operands.length; index += 1) {
+			this.compileExpressionInto(operands[index], base + index, 1);
+		}
+		this.emitABC(OpCode.CONCATN, target, base, operands.length);
+		if (!useTarget) {
+			this.tempTop = tempBase;
+		}
 	}
 
 	private compileCallExpression(expression: LuaCallExpression, target: number, resultCount: number): void {
@@ -1321,7 +1553,7 @@ class FunctionBuilder {
 			this.reserveTempRange(callBase, 2);
 			this.compileExpressionInto(expression.callee, callBase + 1, 1);
 			const methodKey = this.program.constIndexString(methodName);
-			this.emitABC(OpCode.GETT, callBase, callBase + 1, this.encodeConstOperand(methodKey));
+			this.emitABC(OpCode.GETT, callBase, callBase + 1, this.encodeConstOperand(methodKey), RK_C);
 		} else {
 			this.compileExpressionInto(expression.callee, callBase, 1);
 		}
@@ -1422,25 +1654,25 @@ class FunctionBuilder {
 		this.emitABC(OpCode.LOAD_MEM, writePtrReg, writePtrAddrReg, 0);
 		this.emitLoadConst(bufferBaseReg, IO_BUFFER_BASE);
 		this.emitLoadConst(strideReg, IO_COMMAND_STRIDE);
-		this.emitABC(OpCode.MUL, commandBaseReg, writePtrReg, strideReg);
-		this.emitABC(OpCode.ADD, commandBaseReg, bufferBaseReg, commandBaseReg);
+		this.emitABC(OpCode.MUL, commandBaseReg, writePtrReg, strideReg, RK_B | RK_C);
+		this.emitABC(OpCode.ADD, commandBaseReg, bufferBaseReg, commandBaseReg, RK_B | RK_C);
 		this.emitLoadConst(tempReg, command);
 		this.emitABC(OpCode.STORE_MEM, tempReg, commandBaseReg, 0);
 
 		for (let i = 0; i < argRegs.length; i += 1) {
 			this.emitLoadConst(tempReg, IO_ARG0_OFFSET + i);
-			this.emitABC(OpCode.ADD, tempReg, commandBaseReg, tempReg);
+			this.emitABC(OpCode.ADD, tempReg, commandBaseReg, tempReg, RK_B | RK_C);
 			this.emitABC(OpCode.STORE_MEM, argRegs[i], tempReg, 0);
 		}
 
 		this.emitLoadConst(tempReg, 1);
-		this.emitABC(OpCode.ADD, writePtrReg, writePtrReg, tempReg);
+		this.emitABC(OpCode.ADD, writePtrReg, writePtrReg, tempReg, RK_B | RK_C);
 		this.emitABC(OpCode.STORE_MEM, writePtrReg, writePtrAddrReg, 0);
 	}
 
 	private encodeConstOperand(constIndex: number): number {
-		if (constIndex < 0x80) {
-			return constIndex | 0x80;
+		if (constIndex <= MAX_EXT_CONST) {
+			return -constIndex - 1;
 		}
 		const reg = this.allocTemp();
 		this.emitABx(OpCode.LOADK, reg, constIndex);
@@ -1556,7 +1788,7 @@ function compileFunctionExpression(program: ProgramBuilder, expression: LuaFunct
 	const ranges = builder.getRanges();
 	const protoIndex = program.addProto({
 		entryPC: 0,
-		codeLen: code.length,
+		codeLen: ranges.length,
 		numParams: expression.parameters.length + (implicitSelf ? 1 : 0),
 		isVararg: expression.hasVararg,
 		maxStack: builder.getMaxStack(),
@@ -1581,9 +1813,9 @@ function cloneProto(proto: Proto): Proto {
 	};
 }
 
-function createProgramBuilderFromProgram(base: Program, canonicalization: CanonicalizationType): ProgramBuilder {
+function createProgramBuilderFromProgram(base: Program, metadata: ProgramMetadata, canonicalization: CanonicalizationType): ProgramBuilder {
 	const builder = new ProgramBuilder(base.constPool, canonicalization, base.stringPool);
-	const protoIds = base.protoIds;
+	const protoIds = metadata.protoIds;
 	if (!protoIds || protoIds.length !== base.protos.length) {
 		throw new Error('[ProgramBuilder] Base program proto ids missing or mismatched.');
 	}
@@ -1591,8 +1823,8 @@ function createProgramBuilderFromProgram(base: Program, canonicalization: Canoni
 		const proto = base.protos[index];
 		const start = proto.entryPC;
 		const end = start + proto.codeLen;
-		const code = base.code.slice(start, end);
-		const ranges = base.debugRanges.slice(start, end);
+		const code = base.code.slice(start * INSTRUCTION_BYTES, end * INSTRUCTION_BYTES);
+		const ranges = metadata.debugRanges.slice(start, end);
 		builder.seedProto(cloneProto(proto), code, ranges, protoIds[index]);
 	}
 	return builder;
@@ -1600,9 +1832,15 @@ function createProgramBuilderFromProgram(base: Program, canonicalization: Canoni
 
 export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray<ProgramModule> = [], options: CompileOptions = {}): CompiledProgram {
 	const canonicalization = options.canonicalization ?? 'none';
-	const programBuilder = options.baseProgram
-		? createProgramBuilderFromProgram(options.baseProgram, canonicalization)
-		: new ProgramBuilder(null, canonicalization, options.stringPool ?? null);
+	let programBuilder: ProgramBuilder;
+	if (options.baseProgram) {
+		if (!options.baseMetadata) {
+			throw new Error('[ProgramBuilder] Base program metadata is required.');
+		}
+		programBuilder = createProgramBuilderFromProgram(options.baseProgram, options.baseMetadata, canonicalization);
+	} else {
+		programBuilder = new ProgramBuilder(null, canonicalization, options.stringPool ?? null);
+	}
 	const moduleId = chunk.range.path;
 	const entryProtoId = buildEntryProtoId(moduleId);
 	const entryBuilder = new FunctionBuilder(programBuilder, null, { moduleId, protoId: entryProtoId });
@@ -1611,7 +1849,7 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 	const entryRanges = entryBuilder.getRanges();
 	const entryProtoIndex = programBuilder.addProto({
 		entryPC: 0,
-		codeLen: entryCode.length,
+		codeLen: entryRanges.length,
 		numParams: 0,
 		isVararg: false,
 		maxStack: entryBuilder.getMaxStack(),
@@ -1626,7 +1864,7 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 		const ranges = builder.getRanges();
 		const protoIndex = programBuilder.addProto({
 			entryPC: 0,
-			codeLen: code.length,
+			codeLen: ranges.length,
 			numParams: 0,
 			isVararg: false,
 			maxStack: builder.getMaxStack(),
@@ -1634,13 +1872,13 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 		}, code, ranges, moduleProtoId);
 		moduleProtoMap.set(module.path, protoIndex);
 	}
-	const program = programBuilder.buildProgram();
-	return { program, entryProtoIndex, moduleProtoMap };
+	const { program, metadata } = programBuilder.buildProgram();
+	return { program, metadata, entryProtoIndex, moduleProtoMap };
 }
 
-export function appendLuaChunkToProgram(base: Program, chunk: LuaChunk, options: CompileOptions = {}): { program: Program; entryProtoIndex: number } {
+export function appendLuaChunkToProgram(base: Program, metadata: ProgramMetadata, chunk: LuaChunk, options: CompileOptions = {}): { program: Program; metadata: ProgramMetadata; entryProtoIndex: number } {
 	const canonicalization = options.canonicalization ?? 'none';
-	const programBuilder = createProgramBuilderFromProgram(base, canonicalization);
+	const programBuilder = createProgramBuilderFromProgram(base, metadata, canonicalization);
 	const moduleId = chunk.range.path;
 	const entryProtoId = buildEntryProtoId(moduleId);
 	const entryBuilder = new FunctionBuilder(programBuilder, null, { moduleId, protoId: entryProtoId });
@@ -1649,12 +1887,12 @@ export function appendLuaChunkToProgram(base: Program, chunk: LuaChunk, options:
 	const entryRanges = entryBuilder.getRanges();
 	const entryProtoIndex = programBuilder.addProto({
 		entryPC: 0,
-		codeLen: entryCode.length,
+		codeLen: entryRanges.length,
 		numParams: 0,
 		isVararg: false,
 		maxStack: entryBuilder.getMaxStack(),
 		upvalueDescs: entryBuilder.getUpvalueDescs(),
 	}, entryCode, entryRanges, entryProtoId);
-	const program = programBuilder.buildProgram();
-	return { program, entryProtoIndex };
+	const { program, metadata: nextMetadata } = programBuilder.buildProgram();
+	return { program, metadata: nextMetadata, entryProtoIndex };
 }

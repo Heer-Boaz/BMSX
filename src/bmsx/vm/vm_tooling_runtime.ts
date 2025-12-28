@@ -28,7 +28,7 @@ import { decodeuint8arr } from '../serializer/binencoder';
 import { createIdentifierCanonicalizer } from '../utils/identifier_canonicalizer';
 import { clamp_fallback } from '../utils/clamp';
 import { BmsxVMApi } from './vm_api';
-import { VMCPU, Table, type Closure, type Value, type Program, RunResult, createNativeFunction, createNativeObject, isNativeFunction, isNativeObject, type NativeFunction, type NativeObject } from './cpu';
+import { VMCPU, Table, OpCode, type Closure, type Value, type Program, type ProgramMetadata, RunResult, createNativeFunction, createNativeObject, isNativeFunction, isNativeObject, type NativeFunction, type NativeObject } from './cpu';
 import { StringValue, isStringValue, stringValueToString } from './string_pool';
 import { TerminalMode } from './terminal_mode';
 import { VMRenderFacade } from './vm_render_facade';
@@ -66,6 +66,7 @@ import { compileLuaChunkToProgram, appendLuaChunkToProgram } from './program_com
 import { IO_ARG0_OFFSET, IO_BUFFER_BASE, IO_COMMAND_STRIDE, IO_CMD_PRINT, IO_SYS_BOOT_CART, IO_SYS_CART_PRESENT, IO_WRITE_PTR_ADDR, VM_IO_MEMORY_SIZE } from './vm_io';
 import { VmHandlerCache } from './vm_handler_cache';
 import { buildModuleAliasesFromPaths } from './vm_program_asset';
+import { readInstructionWord } from './instruction_format';
 
 export const VM_BUTTON_ACTIONS: ReadonlyArray<string> = [
 	'left',
@@ -346,6 +347,7 @@ export class BmsxVMRuntime {
 	private pendingProgramReload: { runInit?: boolean } = null;
 	private readonly cpuMemory: Value[];
 	private readonly cpu: VMCPU;
+	private vmProgramMetadata: ProgramMetadata = null;
 	private _luaPath: string = null;
 	public get currentPath(): string {
 		return this._luaPath;
@@ -460,11 +462,17 @@ export class BmsxVMRuntime {
 		if (error instanceof LuaError) {
 			const rawChunk = typeof error.path === 'string' && error.path.length > 0 ? error.path : null;
 			const path = rawChunk && rawChunk.startsWith('@') ? rawChunk.slice(1) : rawChunk;
-			return {
-				line: Number.isFinite(error.line) && error.line > 0 ? Math.floor(error.line) : null,
-				column: Number.isFinite(error.column) && error.column > 0 ? Math.floor(error.column) : null,
-				path: path,
-			};
+			const line = Number.isFinite(error.line) && error.line > 0 ? Math.floor(error.line) : null;
+			const column = Number.isFinite(error.column) && error.column > 0 ? Math.floor(error.column) : null;
+			if (this.lastVmCallStack.length > 0 && (line === null || column === null || path === null)) {
+				const frame = this.lastVmCallStack[0];
+				return {
+					line: line ?? frame.line,
+					column: column ?? frame.column,
+					path: path ?? frame.source,
+				};
+			}
+			return { line, column, path };
 		}
 		if (this.lastVmCallStack.length > 0) {
 			const frame = this.lastVmCallStack[0];
@@ -1367,8 +1375,9 @@ export class BmsxVMRuntime {
 		interpreter.clearLastFaultEnvironment();
 		const chunk = interpreter.compileChunk(params.source, binding);
 		const { modules, modulePaths } = this.buildVmModuleChunks(binding);
-		const { program, entryProtoIndex, moduleProtoMap } = compileLuaChunkToProgram(chunk, modules, {
+		const { program, metadata, entryProtoIndex, moduleProtoMap } = compileLuaChunkToProgram(chunk, modules, {
 			baseProgram: this.cpu.getProgram(),
+			baseMetadata: this.vmProgramMetadata,
 			canonicalization: this._canonicalization,
 		});
 		this.vmModuleProtos.clear();
@@ -1381,7 +1390,8 @@ export class BmsxVMRuntime {
 		}
 		this.vmModuleCache.clear();
 		this.cpuMemory[IO_WRITE_PTR_ADDR] = 0;
-		this.runEngineBuiltinPrelude(program);
+		const prelude = this.runEngineBuiltinPrelude(program, metadata);
+		const finalizedMetadata = prelude.metadata;
 		this.cpu.start(entryProtoIndex);
 		this.pendingVmCall = null;
 		this.cpu.instructionBudgetRemaining = null;
@@ -1390,6 +1400,7 @@ export class BmsxVMRuntime {
 		this.bindLifecycleHandlers();
 		this.luaRuntimeFailed = preserveRuntimeFailure;
 		this._luaPath = binding;
+		this.vmProgramMetadata = finalizedMetadata;
 		this.luaVmInitialized = true;
 		clearNativeMemberCompletionCache();
 		this.clearEditorErrorOverlaysIfNoFault();
@@ -1535,7 +1546,7 @@ export class BmsxVMRuntime {
 		this.resetVmState();
 		const chunk = interpreter.compileChunk(params.source, binding.source_path);
 		const { modules, modulePaths } = this.buildVmModuleChunks(binding.source_path);
-		const { program, entryProtoIndex, moduleProtoMap } = compileLuaChunkToProgram(chunk, modules, { canonicalization: this._canonicalization });
+		const { program, metadata, entryProtoIndex, moduleProtoMap } = compileLuaChunkToProgram(chunk, modules, { canonicalization: this._canonicalization });
 		this.vmModuleProtos.clear();
 		for (const [modulePath, protoIndex] of moduleProtoMap.entries()) {
 			this.vmModuleProtos.set(modulePath, protoIndex);
@@ -1546,7 +1557,8 @@ export class BmsxVMRuntime {
 		}
 		this.vmModuleCache.clear();
 		this.cpuMemory[IO_WRITE_PTR_ADDR] = 0;
-		this.runEngineBuiltinPrelude(program);
+		const prelude = this.runEngineBuiltinPrelude(program, metadata);
+		this.vmProgramMetadata = prelude.metadata;
 		this.cpu.start(entryProtoIndex);
 		this.pendingVmCall = null;
 		this.cpu.instructionBudgetRemaining = null;
@@ -1815,17 +1827,18 @@ export class BmsxVMRuntime {
 		return lines.join('\n');
 	}
 
-	private runEngineBuiltinPrelude(program: Program): Program {
+	private runEngineBuiltinPrelude(program: Program, metadata: ProgramMetadata): { program: Program; metadata: ProgramMetadata } {
 		const source = this.buildEngineBuiltinPreludeSource();
 		const interpreter = this.luaInterpreter;
 		interpreter.setReservedIdentifiers([]);
 		const chunk = interpreter.compileChunk(source, BmsxVMRuntime.ENGINE_BUILTIN_PRELUDE_PATH);
 		interpreter.setReservedIdentifiers(this.apiFunctionNames);
-		const compiled = appendLuaChunkToProgram(program, chunk, { canonicalization: this._canonicalization });
-		this.cpu.setProgram(compiled.program);
+		const compiled = appendLuaChunkToProgram(program, metadata, chunk, { canonicalization: this._canonicalization });
+		this.cpu.setProgram(compiled.program, compiled.metadata);
+		this.vmProgramMetadata = compiled.metadata;
 		this.callVmFunction({ protoIndex: compiled.entryProtoIndex, upvalues: [] }, []);
 		this.processVmIo();
-		return compiled.program;
+		return { program: compiled.program, metadata: compiled.metadata };
 	}
 
 	private seedVmGlobals(): void {
@@ -3310,13 +3323,29 @@ export class BmsxVMRuntime {
 		}
 		const debug = this.cpu.getDebugState();
 		const instr = debug.instr;
-		const op = (instr >>> 24) & 0xff;
-		const a = (instr >>> 16) & 0xff;
-		const b = (instr >>> 8) & 0xff;
-		const c = instr & 0xff;
+		const program = this.cpu.getProgram();
+		let wideA = 0;
+		let wideB = 0;
+		let wideC = 0;
+		if (debug.pc > 0) {
+			const previous = readInstructionWord(program.code, debug.pc - 1);
+			const prevOp = (previous >>> 18) & 0x3f;
+			if (prevOp === OpCode.WIDE) {
+				wideA = (previous >>> 12) & 0x3f;
+				wideB = (previous >>> 6) & 0x3f;
+				wideC = previous & 0x3f;
+			}
+		}
+		const op = (instr >>> 18) & 0x3f;
+		const aLow = (instr >>> 12) & 0x3f;
+		const bLow = (instr >>> 6) & 0x3f;
+		const cLow = instr & 0x3f;
+		const a = (wideA << 6) | aLow;
+		const b = (wideB << 6) | bLow;
+		const c = (wideC << 6) | cLow;
 		const ra = debug.registers[a];
-		const rb = (b & 0x80) !== 0 ? this.cpu.getConst(b & 0x7f) : debug.registers[b];
-		const rc = (c & 0x80) !== 0 ? this.cpu.getConst(c & 0x7f) : debug.registers[c];
+		const rb = debug.registers[b];
+		const rc = debug.registers[c];
 		console.info(`[BmsxVMRuntime] VM debug: pc=${debug.pc} op=${op} a=${a} b=${b} c=${c} ra=${this.formatVmValue(ra)} rb=${this.formatVmValue(rb)} rc=${this.formatVmValue(rc)}`);
 	}
 
@@ -3401,7 +3430,7 @@ export class BmsxVMRuntime {
 			const entrySource = options?.sourceOverride?.source ?? this.resourceSourceForChunk(entryPath);
 			const entryChunk = interpreter.compileChunk(entrySource, entryPath);
 			const { modules, modulePaths } = this.buildVmModuleChunks(entryPath);
-			const { program, entryProtoIndex, moduleProtoMap } = compileLuaChunkToProgram(entryChunk, modules, { canonicalization: this._canonicalization });
+			const { program, metadata, entryProtoIndex, moduleProtoMap } = compileLuaChunkToProgram(entryChunk, modules, { canonicalization: this._canonicalization });
 			this.vmModuleProtos.clear();
 			for (const [modulePath, protoIndex] of moduleProtoMap.entries()) {
 				this.vmModuleProtos.set(modulePath, protoIndex);
@@ -3412,7 +3441,8 @@ export class BmsxVMRuntime {
 			}
 			this.vmModuleCache.clear();
 			this.cpuMemory[IO_WRITE_PTR_ADDR] = 0;
-			this.runEngineBuiltinPrelude(program);
+			const prelude = this.runEngineBuiltinPrelude(program, metadata);
+			this.vmProgramMetadata = prelude.metadata;
 			this.cpu.start(entryProtoIndex);
 			this.pendingVmCall = null;
 			this.cpu.instructionBudgetRemaining = null;
@@ -3523,70 +3553,67 @@ export class BmsxVMRuntime {
 			return null;
 		}
 		const interpreter = this.luaInterpreter;
-		let luaFrames: StackTraceFrame[] = [];
-		if (interpreter) {
-			const callFrames = interpreter.lastFaultCallStack;
-			// Convert recorded call sites
-			luaFrames = convertLuaCallFrames(callFrames);
-			// If the thrown error includes precise location, prepend it as the current frame
-			if (error instanceof LuaError) {
-				const src = typeof error.path === 'string' && error.path.length > 0 ? error.path : null;
-				const line = Number.isFinite(error.line) && error.line > 0 ? Math.floor(error.line) : null;
-				const col = Number.isFinite(error.column) && error.column > 0 ? Math.floor(error.column) : null;
-				// Only inject if not already represented as the innermost frame
-				const innermostCall = callFrames.length > 0 ? callFrames[callFrames.length - 1] : null;
-				const innermostFrame = luaFrames.length > 0 ? luaFrames[0] : null;
-				const effectiveSource = src !== null ? src : innermostFrame ? innermostFrame.source : null;
-				const resolvedLine = line !== null ? line : (innermostFrame ? innermostFrame.line : null);
-				const resolvedColumn = col !== null ? col : (innermostFrame ? innermostFrame.column : null);
-				const alreadyCaptured =
-					!!innermostFrame &&
-					innermostFrame.source === (effectiveSource ?? '') &&
-					innermostFrame.line === (resolvedLine ?? 0) &&
-					innermostFrame.column === (resolvedColumn ?? 0);
-				if (!alreadyCaptured) {
-					const fnName =
-						innermostCall && innermostCall.functionName && innermostCall.functionName.length > 0
-							? innermostCall.functionName
-							: innermostFrame && innermostFrame.functionName && innermostFrame.functionName.length > 0
-								? innermostFrame.functionName
-								: null;
-					if (innermostFrame && effectiveSource && innermostFrame.source === effectiveSource) {
-						const hint = effectiveSource;
-						const updated: StackTraceFrame = {
-							origin: innermostFrame.origin,
-							functionName: fnName,
-							source: effectiveSource,
-							line: resolvedLine,
-							column: resolvedColumn,
-							raw: buildLuaFrameRawLabel(fnName, effectiveSource),
-							pathPath: innermostFrame.pathPath,
-						};
-						updated.pathPath = hint;
-						luaFrames[0] = updated;
-					} else {
-						const frameSource = src !== null ? src : effectiveSource;
-						const top: StackTraceFrame = {
-							origin: 'lua',
-							functionName: fnName,
-							source: frameSource,
-							line: resolvedLine,
-							column: resolvedColumn,
-							raw: buildLuaFrameRawLabel(fnName, frameSource),
-						};
-						if (frameSource && frameSource.length > 0) {
-							const hint = frameSource;
-							if (hint) {
-								top.pathPath = hint;
-							}
+		const callFrames = interpreter ? interpreter.lastFaultCallStack : [];
+		const hasInterpreterFrames = callFrames.length > 0;
+		let luaFrames: StackTraceFrame[] = hasInterpreterFrames ? convertLuaCallFrames(callFrames) : [];
+		if (!hasInterpreterFrames && this.lastVmCallStack.length > 0) {
+			luaFrames = this.lastVmCallStack.slice();
+		}
+		// If the thrown error includes precise location, prepend it as the current frame
+		if (error instanceof LuaError) {
+			const src = typeof error.path === 'string' && error.path.length > 0 ? error.path : null;
+			const line = Number.isFinite(error.line) && error.line > 0 ? Math.floor(error.line) : null;
+			const col = Number.isFinite(error.column) && error.column > 0 ? Math.floor(error.column) : null;
+			// Only inject if not already represented as the innermost frame
+			const innermostCall = callFrames.length > 0 ? callFrames[callFrames.length - 1] : null;
+			const innermostFrame = luaFrames.length > 0 ? luaFrames[0] : null;
+			const effectiveSource = src !== null ? src : innermostFrame ? innermostFrame.source : null;
+			const resolvedLine = line !== null ? line : (innermostFrame ? innermostFrame.line : null);
+			const resolvedColumn = col !== null ? col : (innermostFrame ? innermostFrame.column : null);
+			const alreadyCaptured =
+				!!innermostFrame &&
+				innermostFrame.source === (effectiveSource ?? '') &&
+				innermostFrame.line === (resolvedLine ?? 0) &&
+				innermostFrame.column === (resolvedColumn ?? 0);
+			if (!alreadyCaptured) {
+				const fnName =
+					innermostCall && innermostCall.functionName && innermostCall.functionName.length > 0
+						? innermostCall.functionName
+						: innermostFrame && innermostFrame.functionName && innermostFrame.functionName.length > 0
+							? innermostFrame.functionName
+							: null;
+				if (innermostFrame && effectiveSource && innermostFrame.source === effectiveSource) {
+					const hint = effectiveSource;
+					const updated: StackTraceFrame = {
+						origin: innermostFrame.origin,
+						functionName: fnName,
+						source: effectiveSource,
+						line: resolvedLine,
+						column: resolvedColumn,
+						raw: buildLuaFrameRawLabel(fnName, effectiveSource),
+						pathPath: innermostFrame.pathPath,
+					};
+					updated.pathPath = hint;
+					luaFrames[0] = updated;
+				} else {
+					const frameSource = src !== null ? src : effectiveSource;
+					const top: StackTraceFrame = {
+						origin: 'lua',
+						functionName: fnName,
+						source: frameSource,
+						line: resolvedLine,
+						column: resolvedColumn,
+						raw: buildLuaFrameRawLabel(fnName, frameSource),
+					};
+					if (frameSource && frameSource.length > 0) {
+						const hint = frameSource;
+						if (hint) {
+							top.pathPath = hint;
 						}
-						luaFrames.unshift(top);
 					}
+					luaFrames.unshift(top);
 				}
 			}
-		}
-		if (luaFrames.length === 0 && this.lastVmCallStack.length > 0) {
-			luaFrames = this.lastVmCallStack.slice();
 		}
 		const projectRootPath = $.assets.project_root_path;
 		const normalizedRoot = projectRootPath && projectRootPath.length > 0
@@ -3650,8 +3677,9 @@ export class BmsxVMRuntime {
 	public runVmConsoleChunk(source: string): Value[] {
 		const chunk = this.luaInterpreter.compileChunk(source, 'console');
 		const currentProgram = this.cpu.getProgram();
-		const compiled = appendLuaChunkToProgram(currentProgram, chunk, { canonicalization: this._canonicalization });
-		this.cpu.setProgram(compiled.program);
+		const compiled = appendLuaChunkToProgram(currentProgram, this.vmProgramMetadata, chunk, { canonicalization: this._canonicalization });
+		this.cpu.setProgram(compiled.program, compiled.metadata);
+		this.vmProgramMetadata = compiled.metadata;
 		const results = this.callVmFunction({ protoIndex: compiled.entryProtoIndex, upvalues: [] }, []);
 		this.processVmIo();
 		return results;

@@ -1,9 +1,10 @@
-import { OpCode, type Program, type Proto, type SourceRange } from './cpu';
+import { OpCode, type Program, type ProgramMetadata, type Proto, type SourceRange } from './cpu';
+import { INSTRUCTION_BYTES, MAX_EXT_BX, MAX_LOW_BX, readInstructionWord, writeInstruction } from './instruction_format';
 
-const buildProtoIdIndex = (program: Program): Map<string, number> => {
+const buildProtoIdIndex = (metadata: ProgramMetadata): Map<string, number> => {
 	const map = new Map<string, number>();
-	for (let index = 0; index < program.protoIds.length; index += 1) {
-		map.set(program.protoIds[index], index);
+	for (let index = 0; index < metadata.protoIds.length; index += 1) {
+		map.set(metadata.protoIds[index], index);
 	}
 	return map;
 };
@@ -24,31 +25,61 @@ const cloneProto = (proto: Proto): Proto => {
 	};
 };
 
-const rewriteClosureIndices = (code: Uint32Array, indexMap: ReadonlyArray<number>): void => {
-	for (let index = 0; index < code.length; index += 1) {
-		const instr = code[index];
-		const op = instr >>> 24;
-		if (op !== OpCode.CLOSURE) {
+const rewriteClosureIndices = (code: Uint8Array, indexMap: ReadonlyArray<number>): void => {
+	const instructionCount = code.length / INSTRUCTION_BYTES;
+	let wideIndex = -1;
+	let wideA = 0;
+	let wideB = 0;
+	let wideC = 0;
+	for (let index = 0; index < instructionCount; index += 1) {
+		const word = readInstructionWord(code, index);
+		const op = (word >>> 18) & 0x3f;
+		if (op === OpCode.WIDE) {
+			wideIndex = index;
+			wideA = (word >>> 12) & 0x3f;
+			wideB = (word >>> 6) & 0x3f;
+			wideC = word & 0x3f;
 			continue;
 		}
-		const a = (instr >>> 16) & 0xff;
-		const bx = instr & 0xffff;
-		const mapped = indexMap[bx];
-		if (mapped === undefined) {
-			throw new Error(`[ProgramReindex] Missing proto index mapping for ${bx}.`);
+		if (op === OpCode.CLOSURE) {
+			const a = (word >>> 12) & 0x3f;
+			const bLow = (word >>> 6) & 0x3f;
+			const cLow = word & 0x3f;
+			const bxLow = (bLow << 6) | cLow;
+			const bx = (wideB << 12) | bxLow;
+			const mapped = indexMap[bx];
+			if (mapped === undefined) {
+				throw new Error(`[ProgramReindex] Missing proto index mapping for ${bx}.`);
+			}
+			if (mapped > MAX_EXT_BX) {
+				throw new Error(`[ProgramReindex] Closure proto index exceeds range: ${mapped}.`);
+			}
+			const high = mapped >> 12;
+			const low = mapped & MAX_LOW_BX;
+			if (high !== 0 && wideIndex < 0) {
+				throw new Error(`[ProgramReindex] Closure proto index ${mapped} requires WIDE prefix.`);
+			}
+			writeInstruction(code, index, op, a, (low >>> 6) & 0x3f, low & 0x3f);
+			if (wideIndex >= 0) {
+			writeInstruction(code, wideIndex, OpCode.WIDE, wideA, high & 0x3f, wideC);
 		}
-		code[index] = ((op & 0xff) << 24) | (a << 16) | (mapped & 0xffff);
+		}
+		wideIndex = -1;
+		wideA = 0;
+		wideB = 0;
+		wideC = 0;
 	}
 };
 
 const rebuildProgram = (
 	program: Program,
+	metadata: ProgramMetadata,
 	order: ReadonlyArray<string>,
 	indexMap: ReadonlyArray<number>,
-): Program => {
-	const idToIndex = buildProtoIdIndex(program);
+): { program: Program; metadata: ProgramMetadata } => {
+	const idToIndex = buildProtoIdIndex(metadata);
 	let total = 0;
-	const segments: Array<{ proto: Proto; code: Uint32Array; ranges: ReadonlyArray<SourceRange | null> }> = [];
+	const segments: Array<{ proto: Proto; code: Uint8Array; ranges: ReadonlyArray<SourceRange | null> }> = [];
 	for (let index = 0; index < order.length; index += 1) {
 		const id = order[index];
 		const protoIndex = idToIndex.get(id);
@@ -58,46 +89,51 @@ const rebuildProgram = (
 		const proto = program.protos[protoIndex];
 		const start = proto.entryPC;
 		const end = start + proto.codeLen;
-		const code = program.code.slice(start, end);
+		const code = program.code.slice(start * INSTRUCTION_BYTES, end * INSTRUCTION_BYTES);
 		rewriteClosureIndices(code, indexMap);
-		const ranges = program.debugRanges.slice(start, end);
+		const ranges = metadata.debugRanges.slice(start, end);
 		segments.push({ proto: cloneProto(proto), code, ranges });
-		total += code.length;
+		total += ranges.length;
 	}
 
-	const code = new Uint32Array(total);
+	const code = new Uint8Array(total * INSTRUCTION_BYTES);
 	const debugRanges: Array<SourceRange | null> = new Array(total);
 	let offset = 0;
 	const protos: Proto[] = [];
 	for (let index = 0; index < segments.length; index += 1) {
 		const segment = segments[index];
 		segment.proto.entryPC = offset;
-		code.set(segment.code, offset);
+		code.set(segment.code, offset * INSTRUCTION_BYTES);
 		for (let rangeIndex = 0; rangeIndex < segment.ranges.length; rangeIndex += 1) {
 			debugRanges[offset + rangeIndex] = segment.ranges[rangeIndex];
 		}
-		offset += segment.code.length;
+		offset += segment.ranges.length;
 		protos.push(segment.proto);
 	}
 
 	return {
-		code,
-		constPool: program.constPool,
-		protos,
-		debugRanges,
-		protoIds: Array.from(order),
-		stringPool: program.stringPool,
+		program: {
+			code,
+			constPool: program.constPool,
+			protos,
+			stringPool: program.stringPool,
+		},
+		metadata: {
+			debugRanges,
+			protoIds: Array.from(order),
+		},
 	};
 };
 
 export type ReindexedProgram = {
 	program: Program;
+	metadata: ProgramMetadata;
 	protoIdToIndex: Map<string, number>;
 };
 
-export const reindexProgram = (program: Program, desiredOrder: ReadonlyArray<string>): ReindexedProgram => {
-	const incomingIds = program.protoIds;
-	const incomingIdToIndex = buildProtoIdIndex(program);
+export const reindexProgram = (program: Program, metadata: ProgramMetadata, desiredOrder: ReadonlyArray<string>): ReindexedProgram => {
+	const incomingIds = metadata.protoIds;
+	const incomingIdToIndex = buildProtoIdIndex(metadata);
 	const desiredSet = new Set<string>();
 	const finalOrder: string[] = [];
 	for (let index = 0; index < desiredOrder.length; index += 1) {
@@ -122,7 +158,7 @@ export const reindexProgram = (program: Program, desiredOrder: ReadonlyArray<str
 		indexMap[oldIndex] = index;
 	}
 
-	const rebuilt = rebuildProgram(program, finalOrder, indexMap);
-	const protoIdToIndex = buildProtoIdIndex(rebuilt);
-	return { program: rebuilt, protoIdToIndex };
+	const rebuilt = rebuildProgram(program, metadata, finalOrder, indexMap);
+	const protoIdToIndex = buildProtoIdIndex(rebuilt.metadata);
+	return { program: rebuilt.program, metadata: rebuilt.metadata, protoIdToIndex };
 };

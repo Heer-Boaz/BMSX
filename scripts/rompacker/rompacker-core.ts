@@ -1542,6 +1542,7 @@ export function appendVmProgramAsset(assetList: RomAsset[], manifest: RomManifes
 	const programAsset = {
 		entryProtoIndex: compiled.entryProtoIndex,
 		program: encodeProgram(program),
+		metadata: compiled.metadata,
 		moduleProtos: Array.from(compiled.moduleProtoMap.entries(), ([path, protoIndex]) => ({ path, protoIndex })),
 		moduleAliases: buildModuleAliasesFromPaths(modulePaths),
 	};

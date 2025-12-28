@@ -244,10 +244,10 @@ void VMRuntime::boot(const VmProgramAsset& asset) {
 		m_vmModuleAliases[alias] = path;
 	}
 	m_vmModuleCache.clear();
-	boot(asset.program.get(), asset.entryProtoIndex);
+	boot(asset.program.get(), asset.metadata.get(), asset.entryProtoIndex);
 }
 
-void VMRuntime::boot(Program* program, int entryProtoIndex) {
+void VMRuntime::boot(Program* program, ProgramMetadata* metadata, int entryProtoIndex) {
 	std::cerr << "[VMRuntime] boot: program=" << program << " entryProtoIndex=" << entryProtoIndex << std::endl;
 	std::cerr << "[VMRuntime] boot: module protos=" << m_vmModuleProtos.size()
 	          << " aliases=" << m_vmModuleAliases.size() << std::endl;
@@ -268,7 +268,8 @@ void VMRuntime::boot(Program* program, int entryProtoIndex) {
 	setupBuiltins();
 	m_api->registerAllFunctions();
 	m_program = program;
-	m_cpu.setProgram(program);
+	m_programMetadata = metadata;
+	m_cpu.setProgram(program, metadata);
 	runEngineBuiltinPrelude();
 	s_updateLogRemaining = kBootLogFrames;
 	s_drawLogRemaining = kBootLogFrames;
@@ -1022,13 +1023,13 @@ double VMRuntime::nextVmRandom() {
 void VMRuntime::setupBuiltins() {
 	auto logPcallError = [this](const std::string& message) {
 		std::cerr << "[VMRuntime] pcall error: " << message << std::endl;
-		const Program* program = m_cpu.getProgram();
-		if (!program) {
+		const ProgramMetadata* metadata = m_programMetadata;
+		if (!metadata) {
 			return;
 		}
 		auto stack = m_cpu.getCallStack();
 		for (const auto& [protoIndex, pc] : stack) {
-			const std::string& protoId = program->protoIds[protoIndex];
+			const std::string& protoId = metadata->protoIds[protoIndex];
 			auto range = m_cpu.getDebugRange(pc);
 			if (range.has_value()) {
 				std::cerr << "  at " << protoId << " (" << range->path << ":" << range->startLine << ")"

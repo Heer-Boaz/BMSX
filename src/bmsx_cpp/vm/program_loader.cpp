@@ -23,10 +23,9 @@ Value binValueToVmValue(const BinValue& bv, StringPool& stringPool) {
 std::unique_ptr<Program> extractProgram(const BinValue& programObj) {
 	auto program = std::make_unique<Program>();
 
-	// Extract code (Uint32Array stored as binary)
+	// Extract code (Uint8Array stored as binary)
 	const auto& codeBytes = programObj["code"].asBinary();
-	size_t codeLen = codeBytes.size() / 4;
-	program->code.resize(codeLen);
+	program->code.resize(codeBytes.size());
 	std::memcpy(program->code.data(), codeBytes.data(), codeBytes.size());
 
 	// Extract constPool
@@ -58,35 +57,34 @@ std::unique_ptr<Program> extractProgram(const BinValue& programObj) {
 		program->protos.push_back(std::move(proto));
 	}
 
-	// Extract protoIds
-	const auto& protoIdsArr = programObj["protoIds"].asArray();
-	program->protoIds.reserve(protoIdsArr.size());
-	for (const auto& idVal : protoIdsArr) {
-		program->protoIds.push_back(idVal.asString());
-	}
-
-	// Extract debugRanges (optional)
-	if (programObj.has("debugRanges")) {
-		const auto& rangesArr = programObj["debugRanges"].asArray();
-		program->debugRanges.reserve(rangesArr.size());
-		for (const auto& rangeVal : rangesArr) {
-			if (rangeVal.isNull()) {
-				program->debugRanges.push_back(std::nullopt);
-			} else {
-				SourceRange range;
-				range.path = rangeVal["path"].asString();
-				const auto& startObj = rangeVal["start"];
-				const auto& endObj = rangeVal["end"];
-				range.startLine = startObj["line"].toI32();
-				range.startColumn = startObj["column"].toI32();
-				range.endLine = endObj["line"].toI32();
-				range.endColumn = endObj["column"].toI32();
-				program->debugRanges.push_back(range);
-			}
-		}
-	}
-
 	return program;
+}
+
+std::unique_ptr<ProgramMetadata> extractProgramMetadata(const BinValue& metadataObj) {
+	auto metadata = std::make_unique<ProgramMetadata>();
+	const auto& protoIdsArr = metadataObj["protoIds"].asArray();
+	metadata->protoIds.reserve(protoIdsArr.size());
+	for (const auto& idVal : protoIdsArr) {
+		metadata->protoIds.push_back(idVal.asString());
+	}
+	const auto& rangesArr = metadataObj["debugRanges"].asArray();
+	metadata->debugRanges.reserve(rangesArr.size());
+	for (const auto& rangeVal : rangesArr) {
+		if (rangeVal.isNull()) {
+			metadata->debugRanges.push_back(std::nullopt);
+			continue;
+		}
+		SourceRange range;
+		range.path = rangeVal["path"].asString();
+		const auto& startObj = rangeVal["start"];
+		const auto& endObj = rangeVal["end"];
+		range.startLine = startObj["line"].toI32();
+		range.startColumn = startObj["column"].toI32();
+		range.endLine = endObj["line"].toI32();
+		range.endColumn = endObj["column"].toI32();
+		metadata->debugRanges.push_back(range);
+	}
+	return metadata;
 }
 
 std::unique_ptr<VmProgramAsset> ProgramLoader::load(const uint8_t* data, size_t size) {
@@ -104,6 +102,11 @@ std::unique_ptr<VmProgramAsset> ProgramLoader::load(const uint8_t* data, size_t 
 
 	// Extract program
 	asset->program = extractProgram(root["program"]);
+
+	if (!root.has("metadata")) {
+		throw std::runtime_error("ProgramLoader: missing metadata section");
+	}
+	asset->metadata = extractProgramMetadata(root["metadata"]);
 
 	// Extract moduleProtos
 	const auto& moduleProtosArr = root["moduleProtos"].asArray();

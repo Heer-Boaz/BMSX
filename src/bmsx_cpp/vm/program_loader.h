@@ -16,6 +16,7 @@ namespace bmsx {
 struct VmProgramAsset {
 	int entryProtoIndex = 0;
 	std::unique_ptr<Program> program;
+	std::unique_ptr<ProgramMetadata> metadata;
 	std::vector<std::pair<std::string, int>> moduleProtos;  // path -> protoIndex
 	std::vector<std::pair<std::string, std::string>> moduleAliases;  // alias -> path
 };

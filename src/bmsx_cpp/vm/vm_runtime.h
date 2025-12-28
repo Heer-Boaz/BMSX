@@ -98,7 +98,7 @@ public:
 	/**
 	 * Boot the VM with a compiled program.
 	 */
-	void boot(Program* program, int entryProtoIndex);
+	void boot(Program* program, ProgramMetadata* metadata, int entryProtoIndex);
 	void boot(const VmProgramAsset& asset);
 
 	/**
@@ -250,6 +250,7 @@ private:
 	std::vector<Value> m_memory;
 	VMCPU m_cpu;
 	Program* m_program = nullptr;
+	ProgramMetadata* m_programMetadata = nullptr;
 
 	// API
 	std::unique_ptr<VMApi> m_api;

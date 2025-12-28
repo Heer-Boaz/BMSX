@@ -1,4 +1,5 @@
 import { StringPool, StringValue, isStringValue, stringValueToString } from './string_pool';
+import { readInstructionWord } from './instruction_format';
 
 export type Value = null | boolean | number | StringValue | Table | Closure | NativeFunction | NativeObject;
 
@@ -73,12 +74,15 @@ export function isNativeObject(value: Value): value is NativeObject {
 	return (value as NativeObject)?.kind === NATIVE_OBJECT_KIND;
 }
 
-export type Program = {
-	code: Uint32Array;
-	constPool: Value[];
-	protos: Proto[];
+export type ProgramMetadata = {
 	debugRanges: ReadonlyArray<SourceRange | null>;
 	protoIds: string[];
+};
+
+export type Program = {
+	code: Uint8Array;
+	constPool: Value[];
+	protos: Proto[];
 	stringPool: StringPool;
 };
 
@@ -102,6 +106,7 @@ export type Closure = {
 };
 
 export const enum OpCode {
+	WIDE,
 	MOV,
 	LOADK,
 	LOADNIL,
@@ -124,6 +129,7 @@ export const enum OpCode {
 	SHL,
 	SHR,
 	CONCAT,
+	CONCATN,
 	UNM,
 	NOT,
 	LEN,
@@ -134,6 +140,8 @@ export const enum OpCode {
 	TEST,
 	TESTSET,
 	JMP,
+	JMPIF,
+	JMPIFNOT,
 	CLOSURE,
 	GETUP,
 	SETUP,
@@ -356,6 +364,7 @@ export class VMCPU {
 	public readonly memory: Value[];
 
 	private program: Program = null;
+	private metadata: ProgramMetadata | null = null;
 	private readonly stringPool: StringPool = new StringPool();
 	private indexKey: StringValue = null;
 	private readonly frames: CallFrame[] = [];
@@ -476,8 +485,9 @@ export class VMCPU {
 		}
 	}
 
-	public setProgram(program: Program): void {
+	public setProgram(program: Program, metadata: ProgramMetadata | null = null): void {
 		this.program = program;
+		this.metadata = metadata;
 		const constPool = program.constPool;
 		for (let index = 0; index < constPool.length; index += 1) {
 			const value = constPool[index];
@@ -558,15 +568,28 @@ export class VMCPU {
 
 	public step(): void {
 		const frame = this.frames[this.frames.length - 1];
-		const pc = frame.pc;
-		const instr = this.program.code[pc];
+		let pc = frame.pc;
+		const code = this.program.code;
+		let instr = readInstructionWord(code, pc);
+		let op = (instr >>> 18) & 0x3f;
+		let wideA = 0;
+		let wideB = 0;
+		let wideC = 0;
+		if (op === OpCode.WIDE) {
+			wideA = (instr >>> 12) & 0x3f;
+			wideB = (instr >>> 6) & 0x3f;
+			wideC = instr & 0x3f;
+			pc += 1;
+			instr = readInstructionWord(code, pc);
+			op = (instr >>> 18) & 0x3f;
+		}
 		frame.pc = pc + 1;
 		this.lastPc = pc;
 		this.lastInstruction = instr;
 		if (this.instructionBudgetRemaining !== null) {
 			this.instructionBudgetRemaining -= 1;
 		}
-		this.executeInstruction(frame, instr);
+		this.executeInstruction(frame, op, instr, wideA, wideB, wideC);
 	}
 
 	public getDebugState(): { pc: number; instr: number; registers: Value[] } {
@@ -579,7 +602,10 @@ export class VMCPU {
 	}
 
 	public getDebugRange(pc: number): SourceRange | null {
-		return this.program.debugRanges[pc];
+		if (!this.metadata) {
+			return null;
+		}
+		return this.metadata.debugRanges[pc];
 	}
 
 	public getCallStack(): ReadonlyArray<{ protoIndex: number; pc: number }> {
@@ -598,13 +624,16 @@ export class VMCPU {
 		return this.program.constPool[index];
 	}
 
-	private executeInstruction(frame: CallFrame, instr: number): void {
-		const op = (instr >>> 24) & 0xff;
-		const a = (instr >>> 16) & 0xff;
-		const b = (instr >>> 8) & 0xff;
-		const c = instr & 0xff;
-		const bx = instr & 0xffff;
-		const sbx = (bx << 16) >> 16;
+	private executeInstruction(frame: CallFrame, op: number, instr: number, wideA: number, wideB: number, wideC: number): void {
+		const aLow = (instr >>> 12) & 0x3f;
+		const bLow = (instr >>> 6) & 0x3f;
+		const cLow = instr & 0x3f;
+		const a = (wideA << 6) | aLow;
+		const b = (wideB << 6) | bLow;
+		const c = (wideC << 6) | cLow;
+		const bxLow = (bLow << 6) | cLow;
+		const bx = (wideB << 12) | bxLow;
+		const sbx = (bx << 14) >> 14;
 
 		switch (op) {
 			case OpCode.MOV:
@@ -636,7 +665,7 @@ export class VMCPU {
 			}
 			case OpCode.GETT: {
 				const table = frame.registers[b];
-				const key = this.readRK(frame, c);
+				const key = this.readRK(frame, cLow, wideC);
 				if (table instanceof Table) {
 					this.setRegister(frame, a, this.resolveTableIndex(table, key));
 					return;
@@ -649,8 +678,8 @@ export class VMCPU {
 			}
 			case OpCode.SETT: {
 				const table = frame.registers[a];
-				const key = this.readRK(frame, b);
-				const value = this.readRK(frame, c);
+				const key = this.readRK(frame, bLow, wideB);
+				const value = this.readRK(frame, cLow, wideC);
 				if (table instanceof Table) {
 					table.set(key, value);
 					return;
@@ -665,81 +694,89 @@ export class VMCPU {
 				this.setRegister(frame, a, new Table(b, c));
 				return;
 			case OpCode.ADD: {
-				const left = this.readRK(frame, b) as number;
-				const right = this.readRK(frame, c) as number;
+				const left = this.readRK(frame, bLow, wideB) as number;
+				const right = this.readRK(frame, cLow, wideC) as number;
 				this.setRegister(frame, a, left + right);
 				return;
 			}
 			case OpCode.SUB: {
-				const left = this.readRK(frame, b) as number;
-				const right = this.readRK(frame, c) as number;
+				const left = this.readRK(frame, bLow, wideB) as number;
+				const right = this.readRK(frame, cLow, wideC) as number;
 				this.setRegister(frame, a, left - right);
 				return;
 			}
 			case OpCode.MUL: {
-				const left = this.readRK(frame, b) as number;
-				const right = this.readRK(frame, c) as number;
+				const left = this.readRK(frame, bLow, wideB) as number;
+				const right = this.readRK(frame, cLow, wideC) as number;
 				this.setRegister(frame, a, left * right);
 				return;
 			}
 			case OpCode.DIV: {
-				const left = this.readRK(frame, b) as number;
-				const right = this.readRK(frame, c) as number;
+				const left = this.readRK(frame, bLow, wideB) as number;
+				const right = this.readRK(frame, cLow, wideC) as number;
 				this.setRegister(frame, a, left / right);
 				return;
 			}
 			case OpCode.MOD: {
-				const left = this.readRK(frame, b) as number;
-				const right = this.readRK(frame, c) as number;
+				const left = this.readRK(frame, bLow, wideB) as number;
+				const right = this.readRK(frame, cLow, wideC) as number;
 				this.setRegister(frame, a, left % right);
 				return;
 			}
 			case OpCode.FLOORDIV: {
-				const left = this.readRK(frame, b) as number;
-				const right = this.readRK(frame, c) as number;
+				const left = this.readRK(frame, bLow, wideB) as number;
+				const right = this.readRK(frame, cLow, wideC) as number;
 				this.setRegister(frame, a, Math.floor(left / right));
 				return;
 			}
 			case OpCode.POW: {
-				const left = this.readRK(frame, b) as number;
-				const right = this.readRK(frame, c) as number;
+				const left = this.readRK(frame, bLow, wideB) as number;
+				const right = this.readRK(frame, cLow, wideC) as number;
 				this.setRegister(frame, a, Math.pow(left, right));
 				return;
 			}
 			case OpCode.BAND: {
-				const left = this.readRK(frame, b) as number;
-				const right = this.readRK(frame, c) as number;
+				const left = this.readRK(frame, bLow, wideB) as number;
+				const right = this.readRK(frame, cLow, wideC) as number;
 				this.setRegister(frame, a, left & right);
 				return;
 			}
 			case OpCode.BOR: {
-				const left = this.readRK(frame, b) as number;
-				const right = this.readRK(frame, c) as number;
+				const left = this.readRK(frame, bLow, wideB) as number;
+				const right = this.readRK(frame, cLow, wideC) as number;
 				this.setRegister(frame, a, left | right);
 				return;
 			}
 			case OpCode.BXOR: {
-				const left = this.readRK(frame, b) as number;
-				const right = this.readRK(frame, c) as number;
+				const left = this.readRK(frame, bLow, wideB) as number;
+				const right = this.readRK(frame, cLow, wideC) as number;
 				this.setRegister(frame, a, left ^ right);
 				return;
 			}
 			case OpCode.SHL: {
-				const left = this.readRK(frame, b) as number;
-				const right = this.readRK(frame, c) as number;
+				const left = this.readRK(frame, bLow, wideB) as number;
+				const right = this.readRK(frame, cLow, wideC) as number;
 				this.setRegister(frame, a, left << (right & 31));
 				return;
 			}
 			case OpCode.SHR: {
-				const left = this.readRK(frame, b) as number;
-				const right = this.readRK(frame, c) as number;
+				const left = this.readRK(frame, bLow, wideB) as number;
+				const right = this.readRK(frame, cLow, wideC) as number;
 				this.setRegister(frame, a, left >> (right & 31));
 				return;
 			}
 			case OpCode.CONCAT: {
-				const left = this.readRK(frame, b);
-				const right = this.readRK(frame, c);
+				const left = this.readRK(frame, bLow, wideB);
+				const right = this.readRK(frame, cLow, wideC);
 				const text = this.valueToString(left) + this.valueToString(right);
+				this.setRegister(frame, a, this.stringPool.intern(text));
+				return;
+			}
+			case OpCode.CONCATN: {
+				let text = '';
+				for (let index = 0; index < c; index += 1) {
+					text += this.valueToString(frame.registers[b + index]);
+				}
 				this.setRegister(frame, a, this.stringPool.intern(text));
 				return;
 			}
@@ -792,8 +829,8 @@ export class VMCPU {
 				return;
 			}
 			case OpCode.EQ: {
-				const left = this.readRK(frame, b);
-				const right = this.readRK(frame, c);
+				const left = this.readRK(frame, bLow, wideB);
+				const right = this.readRK(frame, cLow, wideC);
 				const eq = left === right;
 				if (eq !== (a !== 0)) {
 					frame.pc += 1;
@@ -801,8 +838,8 @@ export class VMCPU {
 				return;
 			}
 			case OpCode.LT: {
-				const left = this.readRK(frame, b);
-				const right = this.readRK(frame, c);
+				const left = this.readRK(frame, bLow, wideB);
+				const right = this.readRK(frame, cLow, wideC);
 				const ok = (isStringValue(left) && isStringValue(right))
 					? stringValueToString(left) < stringValueToString(right)
 					: (left as number) < (right as number);
@@ -812,8 +849,8 @@ export class VMCPU {
 				return;
 			}
 			case OpCode.LE: {
-				const left = this.readRK(frame, b);
-				const right = this.readRK(frame, c);
+				const left = this.readRK(frame, bLow, wideB);
+				const right = this.readRK(frame, cLow, wideC);
 				const ok = (isStringValue(left) && isStringValue(right))
 					? stringValueToString(left) <= stringValueToString(right)
 					: (left as number) <= (right as number);
@@ -840,6 +877,16 @@ export class VMCPU {
 			}
 			case OpCode.JMP:
 				frame.pc += sbx;
+				return;
+			case OpCode.JMPIF:
+				if (this.isTruthy(frame.registers[a])) {
+					frame.pc += sbx;
+				}
+				return;
+			case OpCode.JMPIFNOT:
+				if (!this.isTruthy(frame.registers[a])) {
+					frame.pc += sbx;
+				}
 				return;
 			case OpCode.CLOSURE:
 				this.setRegister(frame, a, this.createClosure(frame, bx));
@@ -871,7 +918,7 @@ export class VMCPU {
 					args.push(frame.registers[a + 1 + index]);
 				}
 				if (callee === null) {
-					const range = this.program.debugRanges[this.lastPc];
+					const range = this.metadata ? this.metadata.debugRanges[this.lastPc] : null;
 					const location = range ? `${range.path}:${range.start.line}:${range.start.column}` : 'unknown';
 					throw new Error(`Attempted to call a nil value. at ${location}`);
 				}
@@ -886,7 +933,7 @@ export class VMCPU {
 					return;
 				}
 				if (typeof (callee as Closure).protoIndex !== 'number') {
-					const range = this.program.debugRanges[this.lastPc];
+					const range = this.metadata ? this.metadata.debugRanges[this.lastPc] : null;
 					const location = range ? `${range.path}:${range.start.line}:${range.start.column}` : 'unknown';
 					const calleeType = valueTypeName(callee as Value);
 				const calleeValue = isStringValue(callee)
@@ -1039,12 +1086,14 @@ export class VMCPU {
 		}
 	}
 
-	private readRK(frame: CallFrame, operand: number): Value {
-		if ((operand & 0x80) !== 0) {
-			const index = operand & 0x7f;
+	private readRK(frame: CallFrame, low: number, wide: number): Value {
+		const raw = (wide << 6) | low;
+		const rk = (raw << 20) >> 20;
+		if (rk < 0) {
+			const index = -1 - rk;
 			return this.program.constPool[index];
 		}
-		return frame.registers[operand];
+		return frame.registers[rk];
 	}
 
 	private valueToString(value: Value): string {

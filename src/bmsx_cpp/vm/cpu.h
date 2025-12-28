@@ -370,13 +370,18 @@ struct Proto {
  * Compiled program - bytecode, constants, and prototypes.
  */
 struct Program {
-	std::vector<uint32_t> code;
+	std::vector<uint8_t> code;
 	std::vector<Value> constPool;
 	StringPool stringPool;
 	std::vector<Proto> protos;
+};
+
+struct ProgramMetadata {
 	std::vector<std::optional<SourceRange>> debugRanges;
 	std::vector<std::string> protoIds;
 };
+
+constexpr int INSTRUCTION_BYTES = 3;
 
 struct Upvalue : GCObject {
 	bool open = false;
@@ -394,6 +399,7 @@ struct Closure : GCObject {
  * VM opcodes - instruction set for the bytecode interpreter.
  */
 enum class OpCode : uint8_t {
+	WIDE,
 	MOV,
 	LOADK,
 	LOADNIL,
@@ -416,6 +422,7 @@ enum class OpCode : uint8_t {
 	SHL,
 	SHR,
 	CONCAT,
+	CONCATN,
 	UNM,
 	NOT,
 	LEN,
@@ -426,6 +433,8 @@ enum class OpCode : uint8_t {
 	TEST,
 	TESTSET,
 	JMP,
+	JMPIF,
+	JMPIFNOT,
 	CLOSURE,
 	GETUP,
 	SETUP,
@@ -536,7 +545,7 @@ class VMCPU {
 public:
 	explicit VMCPU(std::vector<Value>& memory);
 
-	void setProgram(Program* program);
+	void setProgram(Program* program, ProgramMetadata* metadata);
 	Program* getProgram() const { return m_program; }
 	StringId internString(std::string_view value) { return m_stringPool.intern(value); }
 	const StringPool& stringPool() const { return m_stringPool; }
@@ -573,7 +582,7 @@ public:
 	Table* globals = nullptr;
 
 private:
-	void executeInstruction(CallFrame& frame, uint32_t instr);
+	void executeInstruction(CallFrame& frame, OpCode op, uint32_t instr, uint8_t wideA, uint8_t wideB, uint8_t wideC);
 	void pushFrame(Closure* closure, const Value* args, size_t argCount,
 		int returnBase, int returnCount, bool captureReturns, int callSitePc);
 	void pushFrame(Closure* closure, const std::vector<Value>& args,
@@ -584,7 +593,7 @@ private:
 	void writeUpvalue(Upvalue* upvalue, const Value& value);
 	void writeReturnValues(CallFrame& frame, int base, int count, const std::vector<Value>& values);
 	void setRegister(CallFrame& frame, int index, const Value& value);
-	const Value& readRK(CallFrame& frame, int operand);
+	const Value& readRK(CallFrame& frame, int low, int wide);
 	Value resolveTableIndex(Table* table, const Value& key);
 
 	std::unique_ptr<CallFrame> acquireFrame();
@@ -599,6 +608,7 @@ private:
 	void markRoots(VMHeap& heap);
 
 	Program* m_program = nullptr;
+	ProgramMetadata* m_metadata = nullptr;
 	std::vector<std::unique_ptr<CallFrame>> m_frames;
 	std::vector<Value>& m_memory;
 	StringPool m_stringPool;

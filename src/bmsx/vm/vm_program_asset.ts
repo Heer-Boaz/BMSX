@@ -1,5 +1,5 @@
-import { decodeBinary, encodeBinary, typedArrayFromBytes } from '../serializer/binencoder';
-import type { Program, Proto, SourceRange, Value } from './cpu';
+import { decodeBinary, encodeBinary } from '../serializer/binencoder';
+import type { Program, ProgramMetadata, Proto, Value } from './cpu';
 import { StringPool, isStringValue, stringValueToString } from './string_pool';
 
 export const VM_PROGRAM_ASSET_ID = '__vm_program__';
@@ -10,13 +10,14 @@ export type EncodedProgram = {
 	code: Uint8Array;
 	constPool: EncodedValue[];
 	protos: Proto[];
-	debugRanges: ReadonlyArray<SourceRange | null>;
-	protoIds: string[];
 };
+
+export type EncodedProgramMetadata = ProgramMetadata;
 
 export type VmProgramAsset = {
 	entryProtoIndex: number;
 	program: EncodedProgram;
+	metadata: EncodedProgramMetadata;
 	moduleProtos: Array<{ path: string; protoIndex: number }>;
 	moduleAliases: Array<{ alias: string; path: string }>;
 };
@@ -36,11 +37,9 @@ export function encodeProgram(program: Program): EncodedProgram {
 		throw new Error(`encodeProgram: unsupported constPool value at index ${index}`);
 	}
 	return {
-		code: new Uint8Array(program.code.buffer, program.code.byteOffset, program.code.byteLength),
+		code: program.code,
 		constPool,
 		protos: program.protos,
-		debugRanges: program.debugRanges,
-		protoIds: program.protoIds,
 	};
 }
 
@@ -64,11 +63,9 @@ export function inflateProgram(encoded: EncodedProgram): Program {
 		constPool[index] = value;
 	}
 	return {
-		code: typedArrayFromBytes(encoded.code, Uint32Array),
+		code: encoded.code,
 		constPool,
 		protos: encoded.protos,
-		debugRanges: encoded.debugRanges,
-		protoIds: encoded.protoIds,
 		stringPool,
 	};
 }

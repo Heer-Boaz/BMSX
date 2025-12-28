@@ -9,6 +9,13 @@
 
 namespace bmsx {
 
+static inline uint32_t readInstructionWord(const std::vector<uint8_t>& code, int pc) {
+	size_t offset = static_cast<size_t>(pc) * INSTRUCTION_BYTES;
+	return (static_cast<uint32_t>(code[offset]) << 16)
+		| (static_cast<uint32_t>(code[offset + 1]) << 8)
+		| static_cast<uint32_t>(code[offset + 2]);
+}
+
 std::string valueToString(const Value& v, const StringPool& stringPool) {
 	if (isNil(v)) return "nil";
 	if (valueIsTagged(v)) {
@@ -382,8 +389,9 @@ Closure* VMCPU::createRootClosure(int protoIndex) {
 	return closure;
 }
 
-void VMCPU::setProgram(Program* program) {
+void VMCPU::setProgram(Program* program, ProgramMetadata* metadata) {
 	m_program = program;
+	m_metadata = metadata;
 	if (!m_program) {
 		return;
 	}
@@ -423,21 +431,10 @@ void VMCPU::callExternal(Closure* closure, const std::vector<Value>& args) {
 RunResult VMCPU::run(std::optional<int> instructionBudget) {
 	instructionBudgetRemaining = instructionBudget;
 	while (!m_frames.empty()) {
-		if (m_heap.needsCollection()) {
-			m_heap.collect();
-		}
-		CallFrame& frame = *m_frames.back();
 		if (instructionBudgetRemaining.has_value() && *instructionBudgetRemaining <= 0) {
 			return RunResult::Yielded;
 		}
-		uint32_t instr = m_program->code[frame.pc];
-		frame.pc += 1;
-		lastPc = frame.pc - 1;
-		lastInstruction = instr;
-		if (instructionBudgetRemaining.has_value()) {
-			--(*instructionBudgetRemaining);
-		}
-		executeInstruction(frame, instr);
+		step();
 	}
 	return RunResult::Halted;
 }
@@ -445,21 +442,10 @@ RunResult VMCPU::run(std::optional<int> instructionBudget) {
 RunResult VMCPU::runUntilDepth(int targetDepth, std::optional<int> instructionBudget) {
 	instructionBudgetRemaining = instructionBudget;
 	while (static_cast<int>(m_frames.size()) > targetDepth) {
-		if (m_heap.needsCollection()) {
-			m_heap.collect();
-		}
-		CallFrame& frame = *m_frames.back();
 		if (instructionBudgetRemaining.has_value() && *instructionBudgetRemaining <= 0) {
 			return RunResult::Yielded;
 		}
-		uint32_t instr = m_program->code[frame.pc];
-		frame.pc += 1;
-		lastPc = frame.pc - 1;
-		lastInstruction = instr;
-		if (instructionBudgetRemaining.has_value()) {
-			--(*instructionBudgetRemaining);
-		}
-		executeInstruction(frame, instr);
+		step();
 	}
 	return RunResult::Halted;
 }
@@ -470,21 +456,34 @@ void VMCPU::step() {
 		m_heap.collect();
 	}
 	CallFrame& frame = *m_frames.back();
-	uint32_t instr = m_program->code[frame.pc];
-	frame.pc += 1;
-	lastPc = frame.pc - 1;
+	int pc = frame.pc;
+	uint32_t instr = readInstructionWord(m_program->code, pc);
+	uint8_t op = static_cast<uint8_t>((instr >> 18) & 0x3f);
+	uint8_t wideA = 0;
+	uint8_t wideB = 0;
+	uint8_t wideC = 0;
+	if (static_cast<OpCode>(op) == OpCode::WIDE) {
+		wideA = static_cast<uint8_t>((instr >> 12) & 0x3f);
+		wideB = static_cast<uint8_t>((instr >> 6) & 0x3f);
+		wideC = static_cast<uint8_t>(instr & 0x3f);
+		pc += 1;
+		instr = readInstructionWord(m_program->code, pc);
+		op = static_cast<uint8_t>((instr >> 18) & 0x3f);
+	}
+	frame.pc = pc + 1;
+	lastPc = pc;
 	lastInstruction = instr;
 	if (instructionBudgetRemaining.has_value()) {
 		--(*instructionBudgetRemaining);
 	}
-	executeInstruction(frame, instr);
+	executeInstruction(frame, static_cast<OpCode>(op), instr, wideA, wideB, wideC);
 }
 
 std::optional<SourceRange> VMCPU::getDebugRange(int pc) const {
-	if (!m_program || pc < 0 || pc >= static_cast<int>(m_program->debugRanges.size())) {
+	if (!m_metadata || pc < 0 || pc >= static_cast<int>(m_metadata->debugRanges.size())) {
 		return std::nullopt;
 	}
-	return m_program->debugRanges[pc];
+	return m_metadata->debugRanges[pc];
 }
 
 std::vector<std::pair<int, int>> VMCPU::getCallStack() const {
@@ -498,15 +497,18 @@ std::vector<std::pair<int, int>> VMCPU::getCallStack() const {
 	return stack;
 }
 
-void VMCPU::executeInstruction(CallFrame& frame, uint32_t instr) {
-	uint8_t op = (instr >> 24) & 0xFF;
-	uint8_t a = (instr >> 16) & 0xFF;
-	uint8_t b = (instr >> 8) & 0xFF;
-	uint8_t c = instr & 0xFF;
-	uint16_t bx = instr & 0xFFFF;
-	int16_t sbx = static_cast<int16_t>(bx);
+void VMCPU::executeInstruction(CallFrame& frame, OpCode op, uint32_t instr, uint8_t wideA, uint8_t wideB, uint8_t wideC) {
+	uint8_t aLow = static_cast<uint8_t>((instr >> 12) & 0x3f);
+	uint8_t bLow = static_cast<uint8_t>((instr >> 6) & 0x3f);
+	uint8_t cLow = static_cast<uint8_t>(instr & 0x3f);
+	int a = (static_cast<int>(wideA) << 6) | aLow;
+	int b = (static_cast<int>(wideB) << 6) | bLow;
+	int c = (static_cast<int>(wideC) << 6) | cLow;
+	uint32_t bxLow = (static_cast<uint32_t>(bLow) << 6) | static_cast<uint32_t>(cLow);
+	uint32_t bx = (static_cast<uint32_t>(wideB) << 12) | bxLow;
+	int32_t sbx = (static_cast<int32_t>(bx) << 14) >> 14;
 
-	switch (static_cast<OpCode>(op)) {
+	switch (op) {
 		case OpCode::MOV:
 			setRegister(frame, a, frame.registers[b]);
 			return;
@@ -542,7 +544,7 @@ void VMCPU::executeInstruction(CallFrame& frame, uint32_t instr) {
 
 		case OpCode::GETT: {
 			const Value& tableValue = frame.registers[b];
-			const Value& key = readRK(frame, c);
+			const Value& key = readRK(frame, cLow, wideC);
 			if (valueIsTable(tableValue)) {
 				setRegister(frame, a, resolveTableIndex(asTable(tableValue), key));
 				return;
@@ -563,8 +565,8 @@ void VMCPU::executeInstruction(CallFrame& frame, uint32_t instr) {
 
 		case OpCode::SETT: {
 			const Value& tableValue = frame.registers[a];
-			const Value& key = readRK(frame, b);
-			const Value& value = readRK(frame, c);
+			const Value& key = readRK(frame, bLow, wideB);
+			const Value& value = readRK(frame, cLow, wideC);
 			if (valueIsTable(tableValue)) {
 				asTable(tableValue)->set(key, value);
 				return;
@@ -591,92 +593,101 @@ void VMCPU::executeInstruction(CallFrame& frame, uint32_t instr) {
 		}
 
 		case OpCode::ADD: {
-			double left = asNumber(readRK(frame, b));
-			double right = asNumber(readRK(frame, c));
+			double left = asNumber(readRK(frame, bLow, wideB));
+			double right = asNumber(readRK(frame, cLow, wideC));
 			setRegister(frame, a, valueNumber(left + right));
 			return;
 		}
 
 		case OpCode::SUB: {
-			double left = asNumber(readRK(frame, b));
-			double right = asNumber(readRK(frame, c));
+			double left = asNumber(readRK(frame, bLow, wideB));
+			double right = asNumber(readRK(frame, cLow, wideC));
 			setRegister(frame, a, valueNumber(left - right));
 			return;
 		}
 
 		case OpCode::MUL: {
-			double left = asNumber(readRK(frame, b));
-			double right = asNumber(readRK(frame, c));
+			double left = asNumber(readRK(frame, bLow, wideB));
+			double right = asNumber(readRK(frame, cLow, wideC));
 			setRegister(frame, a, valueNumber(left * right));
 			return;
 		}
 
 		case OpCode::DIV: {
-			double left = asNumber(readRK(frame, b));
-			double right = asNumber(readRK(frame, c));
+			double left = asNumber(readRK(frame, bLow, wideB));
+			double right = asNumber(readRK(frame, cLow, wideC));
 			setRegister(frame, a, valueNumber(left / right));
 			return;
 		}
 
 		case OpCode::MOD: {
-			double left = asNumber(readRK(frame, b));
-			double right = asNumber(readRK(frame, c));
+			double left = asNumber(readRK(frame, bLow, wideB));
+			double right = asNumber(readRK(frame, cLow, wideC));
 			setRegister(frame, a, valueNumber(std::fmod(left, right)));
 			return;
 		}
 
 		case OpCode::FLOORDIV: {
-			double left = asNumber(readRK(frame, b));
-			double right = asNumber(readRK(frame, c));
+			double left = asNumber(readRK(frame, bLow, wideB));
+			double right = asNumber(readRK(frame, cLow, wideC));
 			setRegister(frame, a, valueNumber(std::floor(left / right)));
 			return;
 		}
 
 		case OpCode::POW: {
-			double left = asNumber(readRK(frame, b));
-			double right = asNumber(readRK(frame, c));
+			double left = asNumber(readRK(frame, bLow, wideB));
+			double right = asNumber(readRK(frame, cLow, wideC));
 			setRegister(frame, a, valueNumber(std::pow(left, right)));
 			return;
 		}
 
 		case OpCode::BAND: {
-			int left = static_cast<int>(asNumber(readRK(frame, b)));
-			int right = static_cast<int>(asNumber(readRK(frame, c)));
+			int left = static_cast<int>(asNumber(readRK(frame, bLow, wideB)));
+			int right = static_cast<int>(asNumber(readRK(frame, cLow, wideC)));
 			setRegister(frame, a, valueNumber(static_cast<double>(left & right)));
 			return;
 		}
 
 		case OpCode::BOR: {
-			int left = static_cast<int>(asNumber(readRK(frame, b)));
-			int right = static_cast<int>(asNumber(readRK(frame, c)));
+			int left = static_cast<int>(asNumber(readRK(frame, bLow, wideB)));
+			int right = static_cast<int>(asNumber(readRK(frame, cLow, wideC)));
 			setRegister(frame, a, valueNumber(static_cast<double>(left | right)));
 			return;
 		}
 
 		case OpCode::BXOR: {
-			int left = static_cast<int>(asNumber(readRK(frame, b)));
-			int right = static_cast<int>(asNumber(readRK(frame, c)));
+			int left = static_cast<int>(asNumber(readRK(frame, bLow, wideB)));
+			int right = static_cast<int>(asNumber(readRK(frame, cLow, wideC)));
 			setRegister(frame, a, valueNumber(static_cast<double>(left ^ right)));
 			return;
 		}
 
 		case OpCode::SHL: {
-			int left = static_cast<int>(asNumber(readRK(frame, b)));
-			int right = static_cast<int>(asNumber(readRK(frame, c))) & 31;
+			int left = static_cast<int>(asNumber(readRK(frame, bLow, wideB)));
+			int right = static_cast<int>(asNumber(readRK(frame, cLow, wideC))) & 31;
 			setRegister(frame, a, valueNumber(static_cast<double>(left << right)));
 			return;
 		}
 
 		case OpCode::SHR: {
-			int left = static_cast<int>(asNumber(readRK(frame, b)));
-			int right = static_cast<int>(asNumber(readRK(frame, c))) & 31;
+			int left = static_cast<int>(asNumber(readRK(frame, bLow, wideB)));
+			int right = static_cast<int>(asNumber(readRK(frame, cLow, wideC))) & 31;
 			setRegister(frame, a, valueNumber(static_cast<double>(left >> right)));
 			return;
 		}
 
 		case OpCode::CONCAT: {
-			std::string text = valueToString(readRK(frame, b), m_stringPool);
-			text += valueToString(readRK(frame, c), m_stringPool);
+			std::string text = valueToString(readRK(frame, bLow, wideB), m_stringPool);
+			text += valueToString(readRK(frame, cLow, wideC), m_stringPool);
+			setRegister(frame, a, valueString(m_stringPool.intern(text)));
+			return;
+		}
+
+		case OpCode::CONCATN: {
+			std::string text;
+			for (int index = 0; index < c; ++index) {
+				text += valueToString(frame.registers[static_cast<size_t>(b + index)], m_stringPool);
+			}
 			setRegister(frame, a, valueString(m_stringPool.intern(text)));
 			return;
 		}
@@ -748,8 +759,8 @@ void VMCPU::executeInstruction(CallFrame& frame, uint32_t instr) {
 		}
 
 		case OpCode::EQ: {
-			const Value& left = readRK(frame, b);
-			const Value& right = readRK(frame, c);
+			const Value& left = readRK(frame, bLow, wideB);
+			const Value& right = readRK(frame, cLow, wideC);
 			bool eq = false;
 			if (valueIsNumber(left) && valueIsNumber(right)) {
 				eq = valueToNumber(left) == valueToNumber(right);
@@ -763,8 +774,8 @@ void VMCPU::executeInstruction(CallFrame& frame, uint32_t instr) {
 		}
 
 		case OpCode::LT: {
-			const Value& leftValue = readRK(frame, b);
-			const Value& rightValue = readRK(frame, c);
+			const Value& leftValue = readRK(frame, bLow, wideB);
+			const Value& rightValue = readRK(frame, cLow, wideC);
 			bool ok = false;
 			if (valueIsString(leftValue) && valueIsString(rightValue)) {
 				ok = m_stringPool.toString(asStringId(leftValue)) < m_stringPool.toString(asStringId(rightValue));
@@ -804,8 +815,8 @@ void VMCPU::executeInstruction(CallFrame& frame, uint32_t instr) {
 		}
 
 		case OpCode::LE: {
-			const Value& leftValue = readRK(frame, b);
-			const Value& rightValue = readRK(frame, c);
+			const Value& leftValue = readRK(frame, bLow, wideB);
+			const Value& rightValue = readRK(frame, cLow, wideC);
 			bool ok = false;
 			if (valueIsString(leftValue) && valueIsString(rightValue)) {
 				ok = m_stringPool.toString(asStringId(leftValue)) <= m_stringPool.toString(asStringId(rightValue));
@@ -864,6 +875,18 @@ void VMCPU::executeInstruction(CallFrame& frame, uint32_t instr) {
 
 		case OpCode::JMP:
 			frame.pc += sbx;
+			return;
+
+		case OpCode::JMPIF:
+			if (isTruthy(frame.registers[static_cast<size_t>(a)])) {
+				frame.pc += sbx;
+			}
+			return;
+
+		case OpCode::JMPIFNOT:
+			if (!isTruthy(frame.registers[static_cast<size_t>(a)])) {
+				frame.pc += sbx;
+			}
 			return;
 
 		case OpCode::CLOSURE:
@@ -1068,10 +1091,14 @@ void VMCPU::setRegister(CallFrame& frame, int index, const Value& value) {
 	}
 }
 
-const Value& VMCPU::readRK(CallFrame& frame, int operand) {
-	bool isConst = (operand & 0x80) != 0;
-	int index = operand & 0x7F;
-	return isConst ? m_program->constPool[static_cast<size_t>(index)] : frame.registers[static_cast<size_t>(index)];
+const Value& VMCPU::readRK(CallFrame& frame, int low, int wide) {
+	int raw = (wide << 6) | low;
+	int rk = (raw << 20) >> 20;
+	if (rk < 0) {
+		int index = -1 - rk;
+		return m_program->constPool[static_cast<size_t>(index)];
+	}
+	return frame.registers[static_cast<size_t>(rk)];
 }
 
 Value VMCPU::resolveTableIndex(Table* table, const Value& key) {
