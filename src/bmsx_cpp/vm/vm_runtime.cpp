@@ -1970,10 +1970,10 @@ auto nextFn = m_cpu.createNativeFunction("next", [this](const std::vector<Value>
 	}
 	if (valueIsNativeObject(target)) {
 		auto* obj = asNativeObject(target);
-		if (!obj->next) {
+		if (!obj->nextEntry) {
 			throw std::runtime_error("next expects a native object with iteration.");
 		}
-		auto entry = obj->next(key);
+		auto entry = obj->nextEntry(key);
 		if (!entry.has_value()) {
 			out.push_back(valueNil());
 			return;

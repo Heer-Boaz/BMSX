@@ -295,6 +295,7 @@ void VMHeap::sweep() {
 			current = &obj->next;
 			continue;
 		}
+		GCObject* next = obj->next;
 		switch (obj->type) {
 			case ObjType::Table:
 				m_bytesAllocated -= sizeof(Table);
@@ -317,7 +318,7 @@ void VMHeap::sweep() {
 				delete static_cast<Upvalue*>(obj);
 				break;
 		}
-		*current = obj->next;
+		*current = next;
 	}
 }
 
@@ -357,7 +358,7 @@ Value VMCPU::createNativeObject(
 	std::function<Value(const Value&)> get,
 	std::function<void(const Value&, const Value&)> set,
 	std::function<int()> len,
-	std::function<std::optional<std::pair<Value, Value>>(const Value&)> next,
+	std::function<std::optional<std::pair<Value, Value>>(const Value&)> nextEntry,
 	std::function<void(VMHeap&)> mark
 ) {
 	auto* native = m_heap.allocate<NativeObject>(ObjType::NativeObject);
@@ -365,7 +366,7 @@ Value VMCPU::createNativeObject(
 	native->get = std::move(get);
 	native->set = std::move(set);
 	native->len = std::move(len);
-	native->next = std::move(next);
+	native->nextEntry = std::move(nextEntry);
 	native->mark = std::move(mark);
 	return valueNativeObject(native);
 }
@@ -443,7 +444,7 @@ RunResult VMCPU::run(std::optional<int> instructionBudget) {
 
 RunResult VMCPU::runUntilDepth(int targetDepth, std::optional<int> instructionBudget) {
 	instructionBudgetRemaining = instructionBudget;
-	while (static_cast<int>(m_frames.size()) >= targetDepth && !m_frames.empty()) {
+	while (static_cast<int>(m_frames.size()) > targetDepth) {
 		if (m_heap.needsCollection()) {
 			m_heap.collect();
 		}

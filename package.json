@@ -70,7 +70,7 @@
     "build:game:production": "npx tsx scripts/rompacker/rompacker.ts --nodeploy --usepkgtsconfig -romname ",
     "build:game:production:force": "npx tsx scripts/rompacker/rompacker.ts --nodeploy --usepkgtsconfig --force -romname ",
     "pack:engine": "npm pack ./src/bmsx",
-    "build:libretro:debug": "cd build && make && bash run-retroarch.sh",
+    "build:libretro:debug": "cd build && make && bash ../run-retroarch.sh",
     "serve:dist": "node scripts/serve-dist.mjs --dir dist --host 0.0.0.0 --port 8080",
     "serve:dist:wsl": "bash scripts/serve-dist-wsl.sh --port 8080 --dir dist",
     "fix:indent": "node scripts/fix-ts-indentation-safe.js",

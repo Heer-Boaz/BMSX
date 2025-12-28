@@ -343,7 +343,7 @@ struct NativeObject : GCObject {
 	std::function<Value(const Value&)> get;
 	std::function<void(const Value&, const Value&)> set;
 	std::function<int()> len;
-	std::function<std::optional<std::pair<Value, Value>>(const Value&)> next;
+	std::function<std::optional<std::pair<Value, Value>>(const Value&)> nextEntry;
 	std::function<void(VMHeap&)> mark;
 };
 
@@ -548,7 +548,7 @@ public:
 		std::function<Value(const Value&)> get,
 		std::function<void(const Value&, const Value&)> set,
 		std::function<int()> len = nullptr,
-		std::function<std::optional<std::pair<Value, Value>>(const Value&)> next = nullptr,
+		std::function<std::optional<std::pair<Value, Value>>(const Value&)> nextEntry = nullptr,
 		std::function<void(VMHeap&)> mark = nullptr
 	);
 	Table* createTable(int arraySize = 0, int hashSize = 0);

@@ -452,8 +452,6 @@ export class BmsxVMRuntime {
 	private applyCanonicalization(canonicalization: CanonicalizationType): void {
 		this._canonicalization = canonicalization;
 		this.canonicalizeIdentifierFn = createIdentifierCanonicalizer(this._canonicalization);
-		// Canonicalized identifiers require canonicalized table keys to match runtime lookups across hosts.
-		Table.setKeyCanonicalization(this._canonicalization);
 		setLuaTableCaseInsensitiveKeys(this._canonicalization !== 'none');
 		setEditorCaseInsensitivity(this._canonicalization !== 'none');
 	}
@@ -2025,7 +2023,7 @@ export class BmsxVMRuntime {
 				out.unshift(true);
 			} catch (error) {
 				out.length = 0;
-				out.push(false, extractErrorMessage(error));
+				out.push(false, this.internVmString(extractErrorMessage(error)));
 			}
 		}));
 		this.registerVmGlobal('xpcall', createNativeFunction('xpcall', (args, out) => {
@@ -2039,7 +2037,7 @@ export class BmsxVMRuntime {
 				callVmValue(fn, callArgs, out);
 				out.unshift(true);
 			} catch (error) {
-				const handlerArgs: Value[] = [extractErrorMessage(error)];
+				const handlerArgs: Value[] = [this.internVmString(extractErrorMessage(error))];
 				callVmValue(handler, handlerArgs, out);
 				out.unshift(false);
 			}
@@ -3757,8 +3755,8 @@ export class BmsxVMRuntime {
 	}
 
 	private describeMarshalSegment(key: Value): string {
-		if (typeof key === 'string') {
-			return key;
+		if (isStringValue(key)) {
+			return stringValueToString(key);
 		}
 		if (typeof key === 'number') {
 			return String(key);
@@ -3771,18 +3769,21 @@ export class BmsxVMRuntime {
 		if (Number.isInteger(numeric) && String(numeric) === key) {
 			return numeric;
 		}
-		return key;
+		return this.internVmString(key);
 	}
 
 	private nativeKeysEqual(left: Value, right: Value): boolean {
 		if (left === right) {
 			return true;
 		}
-		if (typeof left === 'number' && typeof right === 'string') {
-			return right === String(left);
+		if (isStringValue(left) && isStringValue(right)) {
+			return stringValueToString(left) === stringValueToString(right);
 		}
-		if (typeof left === 'string' && typeof right === 'number') {
-			return left === String(right);
+		if (typeof left === 'number' && isStringValue(right)) {
+			return String(left) === stringValueToString(right);
+		}
+		if (isStringValue(left) && typeof right === 'number') {
+			return stringValueToString(left) === String(right);
 		}
 		return false;
 	}
@@ -3830,10 +3831,12 @@ export class BmsxVMRuntime {
 				return (raw as unknown[])[key - 1];
 			}
 			const rawRecord = raw as unknown as Record<string, unknown>;
-			return rawRecord[String(key)];
+			const prop = isStringValue(key) ? stringValueToString(key) : String(key);
+			return rawRecord[prop];
 		}
 		const rawRecord = raw as unknown as Record<string, unknown>;
-		return rawRecord[String(key)];
+		const prop = isStringValue(key) ? stringValueToString(key) : String(key);
+		return rawRecord[prop];
 	}
 
 	private nextNativeEntry(target: NativeObject, after: Value): [Value, Value] | null {
@@ -3898,8 +3901,8 @@ export class BmsxVMRuntime {
 	}
 
 	private resolveNativeKey(key: Value): string {
-		if (typeof key === 'string') {
-			return key;
+		if (isStringValue(key)) {
+			return stringValueToString(key);
 		}
 		if (typeof key === 'number' && Number.isInteger(key)) {
 			return String(key);
@@ -4069,15 +4072,22 @@ export class BmsxVMRuntime {
 			const entry = numericEntries[index];
 			const segment = this.describeMarshalSegment(entry.key);
 			const nextContext = segment ? this.extendMarshalContext(tableContext, segment) : tableContext;
-			objectResult[String(entry.key)] = this.toNativeValue(entry.value, nextContext, visited);
+			objectResult[this.stringifyVmKey(entry.key)] = this.toNativeValue(entry.value, nextContext, visited);
 		}
 		for (let index = 0; index < otherEntries.length; index += 1) {
 			const entry = otherEntries[index];
 			const segment = this.describeMarshalSegment(entry.key);
 			const nextContext = segment ? this.extendMarshalContext(tableContext, segment) : tableContext;
-			objectResult[String(entry.key)] = this.toNativeValue(entry.value, nextContext, visited);
+			objectResult[this.stringifyVmKey(entry.key)] = this.toNativeValue(entry.value, nextContext, visited);
 		}
 		return objectResult;
+	}
+
+	private stringifyVmKey(key: Value): string {
+		if (isStringValue(key)) {
+			return stringValueToString(key);
+		}
+		return String(key);
 	}
 
 	private wrapNativeResult(result: unknown, out: Value[]): void {

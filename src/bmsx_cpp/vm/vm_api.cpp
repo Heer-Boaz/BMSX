@@ -106,7 +106,7 @@ m_runtime.registerNativeFunction("put_rectfillcolor", [this](const std::vector<V
 	(void)out;
 });
 
-m_runtime.registerNativeFunction("put_sprite", [this, key](const std::vector<Value>& args, std::vector<Value>& out) {
+m_runtime.registerNativeFunction("put_sprite", [this, key, asText](const std::vector<Value>& args, std::vector<Value>& out) {
 	const std::string& imgId = asText(args.at(0));
 	float x = static_cast<float>(asNumber(args.at(1)));
 	float y = static_cast<float>(asNumber(args.at(2)));
@@ -148,7 +148,7 @@ m_runtime.registerNativeFunction("put_sprite", [this, key](const std::vector<Val
 	(void)out;
 });
 
-m_runtime.registerNativeFunction("put_glyphs", [this, key](const std::vector<Value>& args, std::vector<Value>& out) {
+m_runtime.registerNativeFunction("put_glyphs", [this, key, asText](const std::vector<Value>& args, std::vector<Value>& out) {
 	const Value& glyphValue = args.at(0);
 	std::vector<std::string> glyphs;
 	if (valueIsString(glyphValue)) {
@@ -267,26 +267,26 @@ m_runtime.registerNativeFunction("put_particle", [this, key](const std::vector<V
 	(void)out;
 });
 
-m_runtime.registerNativeFunction("write", [this, readOptionalInt](const std::vector<Value>& args, std::vector<Value>& out) {
+m_runtime.registerNativeFunction("write", [this, readOptionalInt, asText](const std::vector<Value>& args, std::vector<Value>& out) {
 	const std::string& text = asText(args.at(0));
 	write(text, readOptionalInt(args, 1), readOptionalInt(args, 2), readOptionalInt(args, 3), readOptionalInt(args, 4));
 	(void)out;
 });
 
-m_runtime.registerNativeFunction("write_color", [this, readOptionalInt](const std::vector<Value>& args, std::vector<Value>& out) {
+m_runtime.registerNativeFunction("write_color", [this, readOptionalInt, asText](const std::vector<Value>& args, std::vector<Value>& out) {
 	const std::string& text = asText(args.at(0));
 	Value colorValue = args.size() > 4 ? args.at(4) : valueNil();
 	write_color(text, readOptionalInt(args, 1), readOptionalInt(args, 2), readOptionalInt(args, 3), colorValue);
 	(void)out;
 });
 
-m_runtime.registerNativeFunction("write_with_font", [this, readOptionalInt](const std::vector<Value>& args, std::vector<Value>& out) {
+m_runtime.registerNativeFunction("write_with_font", [this, readOptionalInt, asText](const std::vector<Value>& args, std::vector<Value>& out) {
 	const std::string& text = asText(args.at(0));
 	write_with_font(text, readOptionalInt(args, 1), readOptionalInt(args, 2), readOptionalInt(args, 3), readOptionalInt(args, 4), m_font.get());
 	(void)out;
 });
 
-m_runtime.registerNativeFunction("write_inline_with_font", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+m_runtime.registerNativeFunction("write_inline_with_font", [this, asText](const std::vector<Value>& args, std::vector<Value>& out) {
 	const std::string& text = asText(args.at(0));
 	int x = static_cast<int>(std::floor(asNumber(args.at(1))));
 	int y = static_cast<int>(std::floor(asNumber(args.at(2))));
@@ -296,7 +296,7 @@ m_runtime.registerNativeFunction("write_inline_with_font", [this](const std::vec
 	(void)out;
 });
 
-m_runtime.registerNativeFunction("write_inline_span_with_font", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+m_runtime.registerNativeFunction("write_inline_span_with_font", [this, asText](const std::vector<Value>& args, std::vector<Value>& out) {
 	const std::string& text = asText(args.at(0));
 	int start = static_cast<int>(std::floor(asNumber(args.at(1))));
 	int end = static_cast<int>(std::floor(asNumber(args.at(2))));
@@ -308,7 +308,7 @@ m_runtime.registerNativeFunction("write_inline_span_with_font", [this](const std
 	(void)out;
 });
 
-m_runtime.registerNativeFunction("action_triggered", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+m_runtime.registerNativeFunction("action_triggered", [this, asText](const std::vector<Value>& args, std::vector<Value>& out) {
 	const std::string& action = asText(args.at(0));
 	std::optional<int> playerIndex;
 	if (args.size() > 1 && !isNil(args[1])) {
@@ -317,7 +317,7 @@ m_runtime.registerNativeFunction("action_triggered", [this](const std::vector<Va
 	out.push_back(valueBool(action_triggered(action, playerIndex)));
 });
 
-m_runtime.registerNativeFunction("cartdata", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+m_runtime.registerNativeFunction("cartdata", [this, asText](const std::vector<Value>& args, std::vector<Value>& out) {
 	const std::string& ns = asText(args.at(0));
 	cartdata(ns);
 	(void)out;
@@ -335,7 +335,7 @@ m_runtime.registerNativeFunction("dget", [this](const std::vector<Value>& args, 
 	out.push_back(valueNumber(dget(index)));
 });
 
-m_runtime.registerNativeFunction("sfx", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+m_runtime.registerNativeFunction("sfx", [this, asText](const std::vector<Value>& args, std::vector<Value>& out) {
 	const std::string& id = asText(args.at(0));
 	sfx(id);
 	(void)out;
@@ -347,7 +347,7 @@ m_runtime.registerNativeFunction("stop_sfx", [this](const std::vector<Value>& ar
 	(void)out;
 });
 
-m_runtime.registerNativeFunction("music", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+m_runtime.registerNativeFunction("music", [this, asText](const std::vector<Value>& args, std::vector<Value>& out) {
 	const std::string& id = asText(args.at(0));
 	music(id);
 	(void)out;

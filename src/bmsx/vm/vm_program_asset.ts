@@ -26,7 +26,7 @@ export function encodeProgram(program: Program): EncodedProgram {
 	for (let index = 0; index < program.constPool.length; index += 1) {
 		const value = program.constPool[index];
 		if (value === null || typeof value === 'number' || typeof value === 'boolean') {
-			constPool[index] = value;
+			constPool[index] = value as EncodedValue;
 			continue;
 		}
 		if (isStringValue(value)) {
