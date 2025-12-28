@@ -9,12 +9,12 @@ namespace bmsx {
  * Convert BinValue to VM Value (for const pool).
  */
 Value binValueToVmValue(const BinValue& bv, StringPool& stringPool) {
-	if (bv.isNull()) return std::monostate{};
-	if (bv.isBool()) return bv.asBool();
-	if (bv.isNumber()) return bv.toNumber();
-	if (bv.isString()) return stringPool.intern(bv.asString());
+	if (bv.isNull()) return valueNil();
+	if (bv.isBool()) return valueBool(bv.asBool());
+	if (bv.isNumber()) return valueNumber(bv.toNumber());
+	if (bv.isString()) return valueString(stringPool.intern(bv.asString()));
 	// Tables/closures not in const pool
-	return std::monostate{};
+	return valueNil();
 }
 
 /**
