@@ -43,87 +43,90 @@ void VMApi::registerAllFunctions() {
 		if (args.size() <= index || isNil(args[index])) {
 			return std::nullopt;
 		}
-		return static_cast<int>(std::floor(std::get<double>(args[index])));
+		return static_cast<int>(std::floor(asNumber(args[index])));
 	};
 	auto key = [this](std::string_view name) {
 		return m_runtime.canonicalizeIdentifier(name);
 	};
+	auto asText = [this](Value value) -> const std::string& {
+		return m_runtime.cpu().stringPool().toString(asStringId(value));
+	};
 
 m_runtime.registerNativeFunction("display_width", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 	(void)args;
-	out.push_back(static_cast<double>(display_width()));
+	out.push_back(valueNumber(static_cast<double>(display_width())));
 });
 
 m_runtime.registerNativeFunction("display_height", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 	(void)args;
-	out.push_back(static_cast<double>(display_height()));
+	out.push_back(valueNumber(static_cast<double>(display_height())));
 });
 
 m_runtime.registerNativeFunction("stat", [this](const std::vector<Value>& args, std::vector<Value>& out) {
-	int index = static_cast<int>(std::floor(std::get<double>(args.at(0))));
-	out.push_back(stat(index));
+	int index = static_cast<int>(std::floor(asNumber(args.at(0))));
+	out.push_back(valueNumber(stat(index)));
 });
 
 m_runtime.registerNativeFunction("cls", [this](const std::vector<Value>& args, std::vector<Value>& out) {
-	int colorIndex = args.empty() ? 0 : static_cast<int>(std::floor(std::get<double>(args.at(0))));
+	int colorIndex = args.empty() ? 0 : static_cast<int>(std::floor(asNumber(args.at(0))));
 	cls(colorIndex);
 	(void)out;
 });
 
 m_runtime.registerNativeFunction("put_rect", [this](const std::vector<Value>& args, std::vector<Value>& out) {
-	int x0 = static_cast<int>(std::floor(std::get<double>(args.at(0))));
-	int y0 = static_cast<int>(std::floor(std::get<double>(args.at(1))));
-	int x1 = static_cast<int>(std::floor(std::get<double>(args.at(2))));
-	int y1 = static_cast<int>(std::floor(std::get<double>(args.at(3))));
-	int z = static_cast<int>(std::floor(std::get<double>(args.at(4))));
-	int colorIndex = static_cast<int>(std::floor(std::get<double>(args.at(5))));
+	int x0 = static_cast<int>(std::floor(asNumber(args.at(0))));
+	int y0 = static_cast<int>(std::floor(asNumber(args.at(1))));
+	int x1 = static_cast<int>(std::floor(asNumber(args.at(2))));
+	int y1 = static_cast<int>(std::floor(asNumber(args.at(3))));
+	int z = static_cast<int>(std::floor(asNumber(args.at(4))));
+	int colorIndex = static_cast<int>(std::floor(asNumber(args.at(5))));
 	put_rect(x0, y0, x1, y1, z, colorIndex);
 	(void)out;
 });
 
 m_runtime.registerNativeFunction("put_rectfill", [this](const std::vector<Value>& args, std::vector<Value>& out) {
-	int x0 = static_cast<int>(std::floor(std::get<double>(args.at(0))));
-	int y0 = static_cast<int>(std::floor(std::get<double>(args.at(1))));
-	int x1 = static_cast<int>(std::floor(std::get<double>(args.at(2))));
-	int y1 = static_cast<int>(std::floor(std::get<double>(args.at(3))));
-	int z = static_cast<int>(std::floor(std::get<double>(args.at(4))));
-	int colorIndex = static_cast<int>(std::floor(std::get<double>(args.at(5))));
+	int x0 = static_cast<int>(std::floor(asNumber(args.at(0))));
+	int y0 = static_cast<int>(std::floor(asNumber(args.at(1))));
+	int x1 = static_cast<int>(std::floor(asNumber(args.at(2))));
+	int y1 = static_cast<int>(std::floor(asNumber(args.at(3))));
+	int z = static_cast<int>(std::floor(asNumber(args.at(4))));
+	int colorIndex = static_cast<int>(std::floor(asNumber(args.at(5))));
 	put_rectfill(x0, y0, x1, y1, z, colorIndex);
 	(void)out;
 });
 
 m_runtime.registerNativeFunction("put_rectfillcolor", [this](const std::vector<Value>& args, std::vector<Value>& out) {
-	int x0 = static_cast<int>(std::floor(std::get<double>(args.at(0))));
-	int y0 = static_cast<int>(std::floor(std::get<double>(args.at(1))));
-	int x1 = static_cast<int>(std::floor(std::get<double>(args.at(2))));
-	int y1 = static_cast<int>(std::floor(std::get<double>(args.at(3))));
-	int z = static_cast<int>(std::floor(std::get<double>(args.at(4))));
+	int x0 = static_cast<int>(std::floor(asNumber(args.at(0))));
+	int y0 = static_cast<int>(std::floor(asNumber(args.at(1))));
+	int x1 = static_cast<int>(std::floor(asNumber(args.at(2))));
+	int y1 = static_cast<int>(std::floor(asNumber(args.at(3))));
+	int z = static_cast<int>(std::floor(asNumber(args.at(4))));
 	Color color = resolve_color(args.at(5));
 	put_rectfillcolor(x0, y0, x1, y1, z, color);
 	(void)out;
 });
 
 m_runtime.registerNativeFunction("put_sprite", [this, key](const std::vector<Value>& args, std::vector<Value>& out) {
-	const std::string& imgId = std::get<StringValue>(args.at(0))->value;
-	float x = static_cast<float>(std::get<double>(args.at(1)));
-	float y = static_cast<float>(std::get<double>(args.at(2)));
-		float z = static_cast<float>(std::get<double>(args.at(3)));
+	const std::string& imgId = asText(args.at(0));
+	float x = static_cast<float>(asNumber(args.at(1)));
+	float y = static_cast<float>(asNumber(args.at(2)));
+		float z = static_cast<float>(asNumber(args.at(3)));
 		ImgRenderSubmission submission;
 		submission.imgid = imgId;
 		submission.pos = {x, y, z};
 		submission.scale = {1.0f, 1.0f};
 
-		if (args.size() > 4 && std::holds_alternative<std::shared_ptr<Table>>(args[4])) {
-			auto options = std::get<std::shared_ptr<Table>>(args[4]);
+		if (args.size() > 4 && valueIsTable(args[4])) {
+			auto* options = asTable(args[4]);
 			Value scaleValue = options->get(key("scale"));
 			if (!isNil(scaleValue)) {
-				if (std::holds_alternative<double>(scaleValue)) {
-					float scale = static_cast<float>(std::get<double>(scaleValue));
+				if (valueIsNumber(scaleValue)) {
+					float scale = static_cast<float>(asNumber(scaleValue));
 					submission.scale = {scale, scale};
-				} else if (std::holds_alternative<std::shared_ptr<Table>>(scaleValue)) {
-					auto scaleTable = std::get<std::shared_ptr<Table>>(scaleValue);
-					float scaleX = static_cast<float>(std::get<double>(scaleTable->get(key("x"))));
-					float scaleY = static_cast<float>(std::get<double>(scaleTable->get(key("y"))));
+				} else if (valueIsTable(scaleValue)) {
+					auto* scaleTable = asTable(scaleValue);
+					float scaleX = static_cast<float>(asNumber(scaleTable->get(key("x"))));
+					float scaleY = static_cast<float>(asNumber(scaleTable->get(key("y"))));
 					submission.scale = {scaleX, scaleY};
 				}
 			}
@@ -131,8 +134,8 @@ m_runtime.registerNativeFunction("put_sprite", [this, key](const std::vector<Val
 			Value flipV = options->get(key("flip_v"));
 			if (!isNil(flipH) || !isNil(flipV)) {
 				FlipOptions flip;
-				flip.flip_h = std::holds_alternative<bool>(flipH) && std::get<bool>(flipH);
-				flip.flip_v = std::holds_alternative<bool>(flipV) && std::get<bool>(flipV);
+				flip.flip_h = valueIsBool(flipH) && valueToBool(flipH);
+				flip.flip_v = valueIsBool(flipV) && valueToBool(flipV);
 				submission.flip = flip;
 			}
 			Value colorizeValue = options->get(key("colorize"));
@@ -148,19 +151,19 @@ m_runtime.registerNativeFunction("put_sprite", [this, key](const std::vector<Val
 m_runtime.registerNativeFunction("put_glyphs", [this, key](const std::vector<Value>& args, std::vector<Value>& out) {
 	const Value& glyphValue = args.at(0);
 	std::vector<std::string> glyphs;
-	if (std::holds_alternative<StringValue>(glyphValue)) {
-		glyphs.push_back(std::get<StringValue>(glyphValue)->value);
+	if (valueIsString(glyphValue)) {
+		glyphs.push_back(asText(glyphValue));
 		} else {
-			auto tbl = std::get<std::shared_ptr<Table>>(glyphValue);
+			auto* tbl = asTable(glyphValue);
 			int length = tbl->length();
 			for (int i = 1; i <= length; ++i) {
-				glyphs.push_back(std::get<StringValue>(tbl->get(static_cast<double>(i)))->value);
+				glyphs.push_back(asText(tbl->get(valueNumber(static_cast<double>(i)))));
 			}
 		}
 
-		float x = static_cast<float>(std::get<double>(args.at(1)));
-		float y = static_cast<float>(std::get<double>(args.at(2)));
-		float z = static_cast<float>(std::get<double>(args.at(3)));
+		float x = static_cast<float>(asNumber(args.at(1)));
+		float y = static_cast<float>(asNumber(args.at(2)));
+		float z = static_cast<float>(asNumber(args.at(3)));
 		GlyphRenderSubmission submission;
 		submission.glyphs = std::move(glyphs);
 		submission.x = x;
@@ -168,8 +171,8 @@ m_runtime.registerNativeFunction("put_glyphs", [this, key](const std::vector<Val
 		submission.z = z;
 		submission.font = m_font.get();
 
-		if (args.size() > 4 && std::holds_alternative<std::shared_ptr<Table>>(args[4])) {
-			auto options = std::get<std::shared_ptr<Table>>(args[4]);
+		if (args.size() > 4 && valueIsTable(args[4])) {
+			auto* options = asTable(args[4]);
 			Value colorValue = options->get(key("color"));
 			if (!isNil(colorValue)) {
 				submission.color = resolve_color(colorValue);
@@ -180,19 +183,19 @@ m_runtime.registerNativeFunction("put_glyphs", [this, key](const std::vector<Val
 			}
 			Value wrapValue = options->get(key("wrap_chars"));
 			if (!isNil(wrapValue)) {
-				submission.wrap_chars = static_cast<int>(std::floor(std::get<double>(wrapValue)));
+				submission.wrap_chars = static_cast<int>(std::floor(asNumber(wrapValue)));
 			}
 			Value centerValue = options->get(key("center_block_width"));
 			if (!isNil(centerValue)) {
-				submission.center_block_width = static_cast<int>(std::floor(std::get<double>(centerValue)));
+				submission.center_block_width = static_cast<int>(std::floor(asNumber(centerValue)));
 			}
 			Value startValue = options->get(key("glyph_start"));
 			if (!isNil(startValue)) {
-				submission.glyph_start = static_cast<int>(std::floor(std::get<double>(startValue)));
+				submission.glyph_start = static_cast<int>(std::floor(asNumber(startValue)));
 			}
 			Value endValue = options->get(key("glyph_end"));
 			if (!isNil(endValue)) {
-				submission.glyph_end = static_cast<int>(std::floor(std::get<double>(endValue)));
+				submission.glyph_end = static_cast<int>(std::floor(asNumber(endValue)));
 			}
 			Value layerValue = options->get(key("layer"));
 			if (!isNil(layerValue)) {
@@ -206,12 +209,12 @@ m_runtime.registerNativeFunction("put_glyphs", [this, key](const std::vector<Val
 
 m_runtime.registerNativeFunction("put_poly", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 	std::vector<f32> points = read_polygon(args.at(0));
-	float z = static_cast<float>(std::get<double>(args.at(1)));
-	Color color = palette_color(static_cast<int>(std::floor(std::get<double>(args.at(2)))));
+	float z = static_cast<float>(asNumber(args.at(1)));
+	Color color = palette_color(static_cast<int>(std::floor(asNumber(args.at(2)))));
 	std::optional<float> thickness;
 		std::optional<RenderLayer> layer;
 		if (args.size() > 3 && !isNil(args[3])) {
-			thickness = static_cast<float>(std::get<double>(args.at(3)));
+			thickness = static_cast<float>(asNumber(args.at(3)));
 		}
 		if (args.size() > 4 && !isNil(args[4])) {
 			layer = resolve_layer(args.at(4));
@@ -233,11 +236,11 @@ m_runtime.registerNativeFunction("put_poly", [this](const std::vector<Value>& ar
 m_runtime.registerNativeFunction("put_mesh", [this, key](const std::vector<Value>& args, std::vector<Value>& out) {
 	MeshRenderSubmission submission;
 	submission.matrix = read_matrix(args.at(1));
-	if (args.size() > 2 && std::holds_alternative<std::shared_ptr<Table>>(args[2])) {
-		auto options = std::get<std::shared_ptr<Table>>(args[2]);
+	if (args.size() > 2 && valueIsTable(args[2])) {
+		auto* options = asTable(args[2]);
 			Value receiveShadow = options->get(key("receive_shadow"));
 			if (!isNil(receiveShadow)) {
-				submission.receive_shadow = std::holds_alternative<bool>(receiveShadow) && std::get<bool>(receiveShadow);
+				submission.receive_shadow = valueIsBool(receiveShadow) && valueToBool(receiveShadow);
 			}
 	}
 	put_mesh(submission);
@@ -247,17 +250,17 @@ m_runtime.registerNativeFunction("put_mesh", [this, key](const std::vector<Value
 m_runtime.registerNativeFunction("put_particle", [this, key](const std::vector<Value>& args, std::vector<Value>& out) {
 	ParticleRenderSubmission submission;
 	submission.position = read_vec3(args.at(0));
-	submission.size = static_cast<float>(std::get<double>(args.at(1)));
+	submission.size = static_cast<float>(asNumber(args.at(1)));
 	submission.color = resolve_color(args.at(2));
-		if (args.size() > 3 && std::holds_alternative<std::shared_ptr<Table>>(args[3])) {
-			auto options = std::get<std::shared_ptr<Table>>(args[3]);
+		if (args.size() > 3 && valueIsTable(args[3])) {
+			auto* options = asTable(args[3]);
 			Value ambientMode = options->get(key("ambient_mode"));
 			Value ambientFactor = options->get(key("ambient_factor"));
 			if (!isNil(ambientMode)) {
-				submission.ambient_mode = static_cast<int>(std::floor(std::get<double>(ambientMode)));
+				submission.ambient_mode = static_cast<int>(std::floor(asNumber(ambientMode)));
 			}
 			if (!isNil(ambientFactor)) {
-				submission.ambient_factor = static_cast<float>(std::get<double>(ambientFactor));
+				submission.ambient_factor = static_cast<float>(asNumber(ambientFactor));
 			}
 	}
 	put_particle(submission);
@@ -265,75 +268,75 @@ m_runtime.registerNativeFunction("put_particle", [this, key](const std::vector<V
 });
 
 m_runtime.registerNativeFunction("write", [this, readOptionalInt](const std::vector<Value>& args, std::vector<Value>& out) {
-	const std::string& text = std::get<StringValue>(args.at(0))->value;
+	const std::string& text = asText(args.at(0));
 	write(text, readOptionalInt(args, 1), readOptionalInt(args, 2), readOptionalInt(args, 3), readOptionalInt(args, 4));
 	(void)out;
 });
 
 m_runtime.registerNativeFunction("write_color", [this, readOptionalInt](const std::vector<Value>& args, std::vector<Value>& out) {
-	const std::string& text = std::get<StringValue>(args.at(0))->value;
-	Value colorValue = args.size() > 4 ? args.at(4) : Value{std::monostate{}};
+	const std::string& text = asText(args.at(0));
+	Value colorValue = args.size() > 4 ? args.at(4) : valueNil();
 	write_color(text, readOptionalInt(args, 1), readOptionalInt(args, 2), readOptionalInt(args, 3), colorValue);
 	(void)out;
 });
 
 m_runtime.registerNativeFunction("write_with_font", [this, readOptionalInt](const std::vector<Value>& args, std::vector<Value>& out) {
-	const std::string& text = std::get<StringValue>(args.at(0))->value;
+	const std::string& text = asText(args.at(0));
 	write_with_font(text, readOptionalInt(args, 1), readOptionalInt(args, 2), readOptionalInt(args, 3), readOptionalInt(args, 4), m_font.get());
 	(void)out;
 });
 
 m_runtime.registerNativeFunction("write_inline_with_font", [this](const std::vector<Value>& args, std::vector<Value>& out) {
-	const std::string& text = std::get<StringValue>(args.at(0))->value;
-	int x = static_cast<int>(std::floor(std::get<double>(args.at(1))));
-	int y = static_cast<int>(std::floor(std::get<double>(args.at(2))));
-	int z = static_cast<int>(std::floor(std::get<double>(args.at(3))));
-	int colorIndex = static_cast<int>(std::floor(std::get<double>(args.at(4))));
+	const std::string& text = asText(args.at(0));
+	int x = static_cast<int>(std::floor(asNumber(args.at(1))));
+	int y = static_cast<int>(std::floor(asNumber(args.at(2))));
+	int z = static_cast<int>(std::floor(asNumber(args.at(3))));
+	int colorIndex = static_cast<int>(std::floor(asNumber(args.at(4))));
 	write_inline_with_font(text, x, y, z, colorIndex, m_font.get());
 	(void)out;
 });
 
 m_runtime.registerNativeFunction("write_inline_span_with_font", [this](const std::vector<Value>& args, std::vector<Value>& out) {
-	const std::string& text = std::get<StringValue>(args.at(0))->value;
-	int start = static_cast<int>(std::floor(std::get<double>(args.at(1))));
-	int end = static_cast<int>(std::floor(std::get<double>(args.at(2))));
-		int x = static_cast<int>(std::floor(std::get<double>(args.at(3))));
-	int y = static_cast<int>(std::floor(std::get<double>(args.at(4))));
-	int z = static_cast<int>(std::floor(std::get<double>(args.at(5))));
-	int colorIndex = static_cast<int>(std::floor(std::get<double>(args.at(6))));
+	const std::string& text = asText(args.at(0));
+	int start = static_cast<int>(std::floor(asNumber(args.at(1))));
+	int end = static_cast<int>(std::floor(asNumber(args.at(2))));
+		int x = static_cast<int>(std::floor(asNumber(args.at(3))));
+	int y = static_cast<int>(std::floor(asNumber(args.at(4))));
+	int z = static_cast<int>(std::floor(asNumber(args.at(5))));
+	int colorIndex = static_cast<int>(std::floor(asNumber(args.at(6))));
 	write_inline_span_with_font(text, start, end, x, y, z, colorIndex, m_font.get());
 	(void)out;
 });
 
 m_runtime.registerNativeFunction("action_triggered", [this](const std::vector<Value>& args, std::vector<Value>& out) {
-	const std::string& action = std::get<StringValue>(args.at(0))->value;
+	const std::string& action = asText(args.at(0));
 	std::optional<int> playerIndex;
 	if (args.size() > 1 && !isNil(args[1])) {
-		playerIndex = static_cast<int>(std::floor(std::get<double>(args.at(1))));
+		playerIndex = static_cast<int>(std::floor(asNumber(args.at(1))));
 	}
-	out.push_back(action_triggered(action, playerIndex));
+	out.push_back(valueBool(action_triggered(action, playerIndex)));
 });
 
 m_runtime.registerNativeFunction("cartdata", [this](const std::vector<Value>& args, std::vector<Value>& out) {
-	const std::string& ns = std::get<StringValue>(args.at(0))->value;
+	const std::string& ns = asText(args.at(0));
 	cartdata(ns);
 	(void)out;
 });
 
 m_runtime.registerNativeFunction("dset", [this](const std::vector<Value>& args, std::vector<Value>& out) {
-	int index = static_cast<int>(std::floor(std::get<double>(args.at(0))));
-	double value = std::get<double>(args.at(1));
+	int index = static_cast<int>(std::floor(asNumber(args.at(0))));
+	double value = asNumber(args.at(1));
 	dset(index, value);
 	(void)out;
 });
 
 m_runtime.registerNativeFunction("dget", [this](const std::vector<Value>& args, std::vector<Value>& out) {
-	int index = static_cast<int>(std::floor(std::get<double>(args.at(0))));
-	out.push_back(dget(index));
+	int index = static_cast<int>(std::floor(asNumber(args.at(0))));
+	out.push_back(valueNumber(dget(index)));
 });
 
 m_runtime.registerNativeFunction("sfx", [this](const std::vector<Value>& args, std::vector<Value>& out) {
-	const std::string& id = std::get<StringValue>(args.at(0))->value;
+	const std::string& id = asText(args.at(0));
 	sfx(id);
 	(void)out;
 });
@@ -345,7 +348,7 @@ m_runtime.registerNativeFunction("stop_sfx", [this](const std::vector<Value>& ar
 });
 
 m_runtime.registerNativeFunction("music", [this](const std::vector<Value>& args, std::vector<Value>& out) {
-	const std::string& id = std::get<StringValue>(args.at(0))->value;
+	const std::string& id = asText(args.at(0));
 	music(id);
 	(void)out;
 });
@@ -357,7 +360,7 @@ m_runtime.registerNativeFunction("stop_music", [this](const std::vector<Value>& 
 });
 
 m_runtime.registerNativeFunction("set_master_volume", [this](const std::vector<Value>& args, std::vector<Value>& out) {
-	double volume = std::get<double>(args.at(0));
+	double volume = asNumber(args.at(0));
 	set_master_volume(volume);
 	(void)out;
 });
@@ -468,10 +471,10 @@ void VMApi::write_color(const std::string& text, std::optional<int> x, std::opti
 		m_textCursorX = m_textCursorHomeX;
 		m_textCursorY = y.value();
 	}
-	if (std::holds_alternative<double>(colorValue)) {
-		m_textCursorColorIndex = static_cast<int>(std::floor(std::get<double>(colorValue)));
+	if (valueIsNumber(colorValue)) {
+		m_textCursorColorIndex = static_cast<int>(std::floor(asNumber(colorValue)));
 	}
-	Color color = !isNil(colorValue) && !std::holds_alternative<double>(colorValue)
+	Color color = !isNil(colorValue) && !valueIsNumber(colorValue)
 		? resolve_color(colorValue)
 		: palette_color(m_textCursorColorIndex);
 	draw_multiline_text(text, m_textCursorX, m_textCursorY, z.value_or(0), color, *m_font);
@@ -644,21 +647,24 @@ Color VMApi::palette_color(int index) const {
 }
 
 Color VMApi::resolve_color(const Value& value) {
-	if (std::holds_alternative<double>(value)) {
-		return palette_color(static_cast<int>(std::floor(std::get<double>(value))));
+	if (valueIsNumber(value)) {
+		return palette_color(static_cast<int>(std::floor(asNumber(value))));
 	}
-	auto tbl = std::get<std::shared_ptr<Table>>(value);
+	if (!valueIsTable(value)) {
+		throw std::runtime_error("Color expects a number or table.");
+	}
+	auto* tbl = asTable(value);
 	Color color;
-	color.r = static_cast<f32>(std::get<double>(tbl->get(m_runtime.canonicalizeIdentifier("r"))));
-	color.g = static_cast<f32>(std::get<double>(tbl->get(m_runtime.canonicalizeIdentifier("g"))));
-	color.b = static_cast<f32>(std::get<double>(tbl->get(m_runtime.canonicalizeIdentifier("b"))));
-	color.a = static_cast<f32>(std::get<double>(tbl->get(m_runtime.canonicalizeIdentifier("a"))));
+	color.r = static_cast<f32>(asNumber(tbl->get(m_runtime.canonicalizeIdentifier("r"))));
+	color.g = static_cast<f32>(asNumber(tbl->get(m_runtime.canonicalizeIdentifier("g"))));
+	color.b = static_cast<f32>(asNumber(tbl->get(m_runtime.canonicalizeIdentifier("b"))));
+	color.a = static_cast<f32>(asNumber(tbl->get(m_runtime.canonicalizeIdentifier("a"))));
 	return color;
 }
 
 RenderLayer VMApi::resolve_layer(const Value& value) {
-	if (std::holds_alternative<StringValue>(value)) {
-		const std::string& key = std::get<StringValue>(value)->value;
+	if (valueIsString(value)) {
+		const std::string& key = m_runtime.cpu().stringPool().toString(asStringId(value));
 		if (key == "ui") return RenderLayer::UI;
 		if (key == "ide") return RenderLayer::IDE;
 	}
@@ -667,27 +673,27 @@ RenderLayer VMApi::resolve_layer(const Value& value) {
 
 std::vector<f32> VMApi::read_polygon(const Value& value) {
 	std::vector<f32> points;
-	if (std::holds_alternative<std::shared_ptr<Table>>(value)) {
-		auto tbl = std::get<std::shared_ptr<Table>>(value);
-		int length = tbl->length();
+	if (valueIsTable(value)) {
+		auto* tbl = asTable(value);
+		const int length = tbl->length();
 		for (int i = 1; i + 1 <= length; i += 2) {
-			float x = static_cast<float>(std::get<double>(tbl->get(static_cast<double>(i))));
-			float y = static_cast<float>(std::get<double>(tbl->get(static_cast<double>(i + 1))));
+			float x = static_cast<float>(asNumber(tbl->get(valueNumber(static_cast<double>(i)))));
+			float y = static_cast<float>(asNumber(tbl->get(valueNumber(static_cast<double>(i + 1)))));
 			points.push_back(x);
 			points.push_back(y);
 		}
 		return points;
 	}
-	if (std::holds_alternative<std::shared_ptr<NativeObject>>(value)) {
-		auto obj = std::get<std::shared_ptr<NativeObject>>(value);
+	if (valueIsNativeObject(value)) {
+		auto* obj = asNativeObject(value);
 		for (int i = 1; ; i += 2) {
-			Value xValue = obj->get(static_cast<double>(i));
-			Value yValue = obj->get(static_cast<double>(i + 1));
+			Value xValue = obj->get(valueNumber(static_cast<double>(i)));
+			Value yValue = obj->get(valueNumber(static_cast<double>(i + 1)));
 			if (isNil(xValue) || isNil(yValue)) {
 				break;
 			}
-			float x = static_cast<float>(std::get<double>(xValue));
-			float y = static_cast<float>(std::get<double>(yValue));
+			float x = static_cast<float>(asNumber(xValue));
+			float y = static_cast<float>(asNumber(yValue));
 			points.push_back(x);
 			points.push_back(y);
 		}
@@ -697,20 +703,20 @@ std::vector<f32> VMApi::read_polygon(const Value& value) {
 }
 
 Vec3 VMApi::read_vec3(const Value& value) {
-	if (std::holds_alternative<std::shared_ptr<Table>>(value)) {
-		auto tbl = std::get<std::shared_ptr<Table>>(value);
+	if (valueIsTable(value)) {
+		auto* tbl = asTable(value);
 		Vec3 out;
-		out.x = static_cast<f32>(std::get<double>(tbl->get(m_runtime.canonicalizeIdentifier("x"))));
-		out.y = static_cast<f32>(std::get<double>(tbl->get(m_runtime.canonicalizeIdentifier("y"))));
-		out.z = static_cast<f32>(std::get<double>(tbl->get(m_runtime.canonicalizeIdentifier("z"))));
+		out.x = static_cast<f32>(asNumber(tbl->get(m_runtime.canonicalizeIdentifier("x"))));
+		out.y = static_cast<f32>(asNumber(tbl->get(m_runtime.canonicalizeIdentifier("y"))));
+		out.z = static_cast<f32>(asNumber(tbl->get(m_runtime.canonicalizeIdentifier("z"))));
 		return out;
 	}
-	if (std::holds_alternative<std::shared_ptr<NativeObject>>(value)) {
-		auto obj = std::get<std::shared_ptr<NativeObject>>(value);
+	if (valueIsNativeObject(value)) {
+		auto* obj = asNativeObject(value);
 		Vec3 out;
-		out.x = static_cast<f32>(std::get<double>(obj->get(1.0)));
-		out.y = static_cast<f32>(std::get<double>(obj->get(2.0)));
-		out.z = static_cast<f32>(std::get<double>(obj->get(3.0)));
+		out.x = static_cast<f32>(asNumber(obj->get(valueNumber(1.0))));
+		out.y = static_cast<f32>(asNumber(obj->get(valueNumber(2.0))));
+		out.z = static_cast<f32>(asNumber(obj->get(valueNumber(3.0))));
 		return out;
 	}
 	throw std::runtime_error("put_particle expects a table or native object.");
@@ -718,17 +724,17 @@ Vec3 VMApi::read_vec3(const Value& value) {
 
 std::array<f32, 16> VMApi::read_matrix(const Value& value) {
 	std::array<f32, 16> matrix{};
-	if (std::holds_alternative<std::shared_ptr<Table>>(value)) {
-		auto tbl = std::get<std::shared_ptr<Table>>(value);
+	if (valueIsTable(value)) {
+		auto* tbl = asTable(value);
 		for (int i = 0; i < 16; ++i) {
-			matrix[static_cast<size_t>(i)] = static_cast<f32>(std::get<double>(tbl->get(static_cast<double>(i + 1))));
+			matrix[static_cast<size_t>(i)] = static_cast<f32>(asNumber(tbl->get(valueNumber(static_cast<double>(i + 1)))));
 		}
 		return matrix;
 	}
-	if (std::holds_alternative<std::shared_ptr<NativeObject>>(value)) {
-		auto obj = std::get<std::shared_ptr<NativeObject>>(value);
+	if (valueIsNativeObject(value)) {
+		auto* obj = asNativeObject(value);
 		for (int i = 0; i < 16; ++i) {
-			matrix[static_cast<size_t>(i)] = static_cast<f32>(std::get<double>(obj->get(static_cast<double>(i + 1))));
+			matrix[static_cast<size_t>(i)] = static_cast<f32>(asNumber(obj->get(valueNumber(static_cast<double>(i + 1)))));
 		}
 		return matrix;
 	}
