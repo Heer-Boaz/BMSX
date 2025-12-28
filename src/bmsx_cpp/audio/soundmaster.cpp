@@ -5,6 +5,7 @@
 #include "soundmaster.h"
 #include "../core/engine.h"
 #include "../vm/cpu.h"
+#include "../vm/vm_runtime.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -783,34 +784,40 @@ ModulationInput SoundMaster::parseModulationInput(const BinValue& value) const {
 }
 
 ModulationInput SoundMaster::parseModulationInput(const Table& table) const {
-	auto getNumber = [&](const std::string& key, std::optional<f32>& out) {
-		Value v = table.getString(key);
-		if (isNil(v)) return;
-		if (auto* n = std::get_if<double>(&v)) {
-			out = static_cast<f32>(*n);
-			return;
-		}
-		throw std::runtime_error("Modulation param '" + key + "' is not a number");
+	auto key = [](const std::string& name) {
+		return VMRuntime::instance().canonicalizeIdentifier(name);
+	};
+	auto vmString = [](Value value) -> const std::string& {
+		return VMRuntime::instance().cpu().stringPool().toString(asStringId(value));
 	};
 
-	auto getRange = [&](const std::string& key, std::optional<ModulationRange>& out) {
-		Value v = table.getString(key);
+	auto getNumber = [&](const std::string& field, std::optional<f32>& out) {
+		Value v = table.get(key(field));
 		if (isNil(v)) return;
-		if (auto* t = std::get_if<std::shared_ptr<Table>>(&v)) {
-			const Table& arr = **t;
-			const int len = arr.length();
-			if (len < 2) {
-				throw std::runtime_error("Modulation range '" + key + "' is missing bounds");
-			}
-			const Value v0 = arr.get(1.0);
-			const Value v1 = arr.get(2.0);
-			if (!std::holds_alternative<double>(v0) || !std::holds_alternative<double>(v1)) {
-				throw std::runtime_error("Modulation range '" + key + "' bounds are not numbers");
-			}
-			out = ModulationRange{static_cast<f32>(std::get<double>(v0)), static_cast<f32>(std::get<double>(v1))};
+		if (valueIsNumber(v)) {
+			out = static_cast<f32>(valueToNumber(v));
 			return;
 		}
-		throw std::runtime_error("Modulation range '" + key + "' is not an array");
+		throw std::runtime_error("Modulation param '" + field + "' is not a number");
+	};
+
+	auto getRange = [&](const std::string& field, std::optional<ModulationRange>& out) {
+		Value v = table.get(key(field));
+		if (isNil(v)) return;
+		if (!valueIsTable(v)) {
+			throw std::runtime_error("Modulation range '" + field + "' is not an array");
+		}
+		const Table& arr = *asTable(v);
+		const int len = arr.length();
+		if (len < 2) {
+			throw std::runtime_error("Modulation range '" + field + "' is missing bounds");
+		}
+		const Value v0 = arr.get(valueNumber(1.0));
+		const Value v1 = arr.get(valueNumber(2.0));
+		if (!valueIsNumber(v0) || !valueIsNumber(v1)) {
+			throw std::runtime_error("Modulation range '" + field + "' bounds are not numbers");
+		}
+		out = ModulationRange{static_cast<f32>(valueToNumber(v0)), static_cast<f32>(valueToNumber(v1))};
 	};
 
 	ModulationInput input;
@@ -823,31 +830,30 @@ ModulationInput SoundMaster::parseModulationInput(const Table& table) const {
 	getRange("offsetRange", input.offsetRange);
 	getRange("playbackRateRange", input.playbackRateRange);
 
-	Value filterVal = table.getString("filter");
+	Value filterVal = table.get(key("filter"));
 	if (!isNil(filterVal)) {
-		if (auto* t = std::get_if<std::shared_ptr<Table>>(&filterVal)) {
-			const Table& ftable = **t;
-			FilterModulationParams filter;
-			Value typeVal = ftable.getString("type");
-			if (auto* s = std::get_if<StringValue>(&typeVal)) {
-				filter.type = (*s)->value;
-			}
-			Value freqVal = ftable.getString("frequency");
-			if (auto* n = std::get_if<double>(&freqVal)) {
-				filter.frequency = static_cast<f32>(*n);
-			}
-			Value qVal = ftable.getString("q");
-			if (auto* n = std::get_if<double>(&qVal)) {
-				filter.q = static_cast<f32>(*n);
-			}
-			Value gainVal = ftable.getString("gain");
-			if (auto* n = std::get_if<double>(&gainVal)) {
-				filter.gain = static_cast<f32>(*n);
-			}
-			input.filter = filter;
-		} else {
+		if (!valueIsTable(filterVal)) {
 			throw std::runtime_error("Modulation filter must be a table");
 		}
+		const Table& ftable = *asTable(filterVal);
+		FilterModulationParams filter;
+		Value typeVal = ftable.get(key("type"));
+		if (valueIsString(typeVal)) {
+			filter.type = vmString(typeVal);
+		}
+		Value freqVal = ftable.get(key("frequency"));
+		if (valueIsNumber(freqVal)) {
+			filter.frequency = static_cast<f32>(valueToNumber(freqVal));
+		}
+		Value qVal = ftable.get(key("q"));
+		if (valueIsNumber(qVal)) {
+			filter.q = static_cast<f32>(valueToNumber(qVal));
+		}
+		Value gainVal = ftable.get(key("gain"));
+		if (valueIsNumber(gainVal)) {
+			filter.gain = static_cast<f32>(valueToNumber(gainVal));
+		}
+		input.filter = filter;
 	}
 
 	return input;

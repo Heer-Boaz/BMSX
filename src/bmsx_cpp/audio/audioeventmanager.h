@@ -133,6 +133,7 @@ private:
 	std::optional<AudioAction> pickAction(const std::string& eventName, const AudioEventEntry& entry, const Value& payload);
 	size_t pickUniformIndex(size_t n, std::optional<size_t> avoid) const;
 	size_t pickWeightedIndex(const std::vector<f32>& weights, std::optional<size_t> avoid) const;
+	Value cachedKey(const std::string& key) const;
 
 	void enqueue(AudioType type, AudioEventQueueItem item);
 	void onChannelEnded(AudioType type);
@@ -146,6 +147,7 @@ private:
 	std::unordered_map<std::string, AudioEventEntry> m_events;
 	std::unordered_map<std::string, f64> m_lastPlayedAt;
 	std::unordered_map<std::string, size_t> m_lastRandomPickByRule;
+	mutable std::unordered_map<std::string, Value> m_keyCache;
 
 	std::array<std::vector<AudioEventQueueItem>, 3> m_queuesByType;
 	std::array<bool, 3> m_resumeOnNextEndByType{false, false, false};

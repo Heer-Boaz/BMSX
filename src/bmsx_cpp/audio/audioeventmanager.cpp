@@ -4,6 +4,7 @@
 
 #include "audioeventmanager.h"
 #include "../core/engine.h"
+#include "../vm/vm_runtime.h"
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
@@ -35,6 +36,7 @@ const Identifier& AudioEventManager::registryId() const {
 void AudioEventManager::init(const std::unordered_map<AssetId, BinValue>& map) {
 	dispose();
 	resetPlaybackState();
+	m_keyCache.clear();
 
 	// Keep event parsing aligned with src/bmsx/audio/audioeventmanager.ts to avoid runtime drift.
 	auto addOrMerge = [&](const std::string& name, const AudioEventEntry& entry) {
@@ -499,34 +501,35 @@ AudioCaseMatcher AudioEventManager::parseMatcher(const BinValue& value) const {
 
 bool AudioEventManager::ruleMatches(const AudioCaseMatcher& matcher, const Value& payload) const {
 	const Table* payloadTable = nullptr;
-	if (auto* t = std::get_if<std::shared_ptr<Table>>(&payload)) {
-		payloadTable = t->get();
+	if (valueIsTable(payload)) {
+		payloadTable = asTable(payload);
 	}
 
 	for (const auto& [key, expected] : matcher.equals) {
 		if (!payloadTable) return false;
-		Value actual = payloadTable->getString(key);
+		Value actual = payloadTable->get(cachedKey(key));
 		if (!valueEquals(expected, actual)) return false;
 	}
 
 	for (const auto& entry : matcher.anyOf) {
 		if (!payloadTable) return false;
-		Value actual = payloadTable->getString(entry.first);
+		Value actual = payloadTable->get(cachedKey(entry.first));
 		if (!matchesAnyOf(entry.second, actual)) return false;
 	}
 
 	if (!matcher.requiredTags.empty()) {
 		if (!payloadTable) return false;
-		Value tagsVal = payloadTable->getString("tags");
-		if (!std::holds_alternative<std::shared_ptr<Table>>(tagsVal)) return false;
-		auto tagsTable = std::get<std::shared_ptr<Table>>(tagsVal);
+		Value tagsVal = payloadTable->get(cachedKey("tags"));
+		if (!valueIsTable(tagsVal)) return false;
+		auto* tagsTable = asTable(tagsVal);
 		const int len = tagsTable->length();
 		for (const auto& tag : matcher.requiredTags) {
 			bool found = false;
 			for (int i = 1; i <= len; ++i) {
-				Value v = tagsTable->get(static_cast<double>(i));
-				if (auto* s = std::get_if<StringValue>(&v)) {
-					if ((*s)->value == tag) { found = true; break; }
+				Value v = tagsTable->get(valueNumber(static_cast<double>(i)));
+				if (valueIsString(v) && VMRuntime::instance().cpu().stringPool().toString(asStringId(v)) == tag) {
+					found = true;
+					break;
 				}
 			}
 			if (!found) return false;
@@ -553,26 +556,26 @@ bool AudioEventManager::ruleMatches(const AudioCaseMatcher& matcher, const Value
 bool AudioEventManager::valueEquals(const BinValue& expected, const Value& actual) const {
 	if (expected.isNull()) return isNil(actual);
 	if (expected.isBool()) {
-		if (auto* b = std::get_if<bool>(&actual)) return expected.asBool() == *b;
+		if (valueIsBool(actual)) return expected.asBool() == valueToBool(actual);
 		return false;
 	}
 	if (expected.isNumber()) {
-		if (auto* n = std::get_if<double>(&actual)) return expected.toNumber() == *n;
+		if (valueIsNumber(actual)) return expected.toNumber() == valueToNumber(actual);
 		return false;
 	}
 	if (expected.isString()) {
-		if (auto* s = std::get_if<StringValue>(&actual)) return expected.asString() == (*s)->value;
+		if (valueIsString(actual)) return expected.asString() == VMRuntime::instance().cpu().stringPool().toString(asStringId(actual));
 		return false;
 	}
 	return false;
 }
 
 bool AudioEventManager::matchesAnyOf(const std::vector<BinValue>& expected, const Value& actual) const {
-	if (std::holds_alternative<std::shared_ptr<Table>>(actual)) {
-		auto table = std::get<std::shared_ptr<Table>>(actual);
+	if (valueIsTable(actual)) {
+		auto* table = asTable(actual);
 		const int len = table->length();
 		for (int i = 1; i <= len; ++i) {
-			Value v = table->get(static_cast<double>(i));
+			Value v = table->get(valueNumber(static_cast<double>(i)));
 			for (const auto& exp : expected) {
 				if (valueEquals(exp, v)) return true;
 			}
@@ -586,43 +589,43 @@ bool AudioEventManager::matchesAnyOf(const std::vector<BinValue>& expected, cons
 }
 
 std::optional<std::string> AudioEventManager::readPayloadString(const Value& payload, const std::string& key) const {
-	if (!std::holds_alternative<std::shared_ptr<Table>>(payload)) return std::nullopt;
-	Value v = std::get<std::shared_ptr<Table>>(payload)->getString(key);
-	if (auto* s = std::get_if<StringValue>(&v)) return (*s)->value;
+	if (!valueIsTable(payload)) return std::nullopt;
+	Value v = asTable(payload)->get(cachedKey(key));
+	if (valueIsString(v)) return VMRuntime::instance().cpu().stringPool().toString(asStringId(v));
 	return std::nullopt;
 }
 
 std::optional<ModulationInput> AudioEventManager::readPayloadModulation(const Value& payload, const std::string& key) const {
-	if (!std::holds_alternative<std::shared_ptr<Table>>(payload)) return std::nullopt;
-	Value v = std::get<std::shared_ptr<Table>>(payload)->getString(key);
-	if (!std::holds_alternative<std::shared_ptr<Table>>(v)) return std::nullopt;
-	auto table = std::get<std::shared_ptr<Table>>(v);
+	if (!valueIsTable(payload)) return std::nullopt;
+	Value v = asTable(payload)->get(cachedKey(key));
+	if (!valueIsTable(v)) return std::nullopt;
+	auto* table = asTable(v);
 	ModulationInput input;
 	auto readNum = [&](const std::string& field, std::optional<f32>& out) {
-		Value val = table->getString(field);
+		Value val = table->get(cachedKey(field));
 		if (isNil(val)) return;
-		if (auto* n = std::get_if<double>(&val)) {
-			out = static_cast<f32>(*n);
+		if (valueIsNumber(val)) {
+			out = static_cast<f32>(valueToNumber(val));
 			return;
 		}
 		throw std::runtime_error("Modulation param '" + field + "' is not a number");
 	};
 	auto readRange = [&](const std::string& field, std::optional<ModulationRange>& out) {
-		Value val = table->getString(field);
+		Value val = table->get(cachedKey(field));
 		if (isNil(val)) return;
-		if (!std::holds_alternative<std::shared_ptr<Table>>(val)) {
+		if (!valueIsTable(val)) {
 			throw std::runtime_error("Modulation range '" + field + "' is not an array");
 		}
-		auto arr = std::get<std::shared_ptr<Table>>(val);
+		auto* arr = asTable(val);
 		if (arr->length() < 2) {
 			throw std::runtime_error("Modulation range '" + field + "' is missing bounds");
 		}
-		Value v0 = arr->get(1.0);
-		Value v1 = arr->get(2.0);
-		if (!std::holds_alternative<double>(v0) || !std::holds_alternative<double>(v1)) {
+		Value v0 = arr->get(valueNumber(1.0));
+		Value v1 = arr->get(valueNumber(2.0));
+		if (!valueIsNumber(v0) || !valueIsNumber(v1)) {
 			throw std::runtime_error("Modulation range '" + field + "' bounds are not numbers");
 		}
-		out = ModulationRange{static_cast<f32>(std::get<double>(v0)), static_cast<f32>(std::get<double>(v1))};
+		out = ModulationRange{static_cast<f32>(valueToNumber(v0)), static_cast<f32>(valueToNumber(v1))};
 	};
 
 	readNum("pitchDelta", input.pitchDelta);
@@ -634,6 +637,16 @@ std::optional<ModulationInput> AudioEventManager::readPayloadModulation(const Va
 	readRange("offsetRange", input.offsetRange);
 	readRange("playbackRateRange", input.playbackRateRange);
 	return input;
+}
+
+Value AudioEventManager::cachedKey(const std::string& key) const {
+	auto it = m_keyCache.find(key);
+	if (it != m_keyCache.end()) {
+		return it->second;
+	}
+	Value value = VMRuntime::instance().canonicalizeIdentifier(key);
+	m_keyCache.emplace(key, value);
+	return value;
 }
 
 std::optional<AudioAction> AudioEventManager::pickAction(const std::string& eventName, const AudioEventEntry& entry, const Value& payload) {
