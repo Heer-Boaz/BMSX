@@ -10,6 +10,8 @@ import type { CanonicalizationType, RomAsset, RomManifest } from '../../src/bmsx
 
 import { join, isAbsolute } from 'node:path';
 import { existsSync, statSync } from 'node:fs';
+import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
 
 // CASE_INSENSITIVE_LUA and its setter are declared earlier in the file to avoid
 // temporal-dead-zone issues when they are used during module initialization.
@@ -24,7 +26,11 @@ const glyph = {
 	title: pc.magenta('◆'),
 };
 const labelWidth = 14;
-type ParsedOptions = RomPackerOptions & { bootloaderFallbackPath?: string };
+type ParsedOptions = RomPackerOptions & { bootloaderFallbackPath?: string; engineOnly?: boolean };
+
+const LIBRETRO_CORE_BASENAME = 'bmsx_libretro';
+const LIBRETRO_ENTRY_PATH = join(process.cwd(), 'src', 'bmsx_cpp', 'platform', 'libretro', 'libretro_entry.cpp');
+const LIBRETRO_PLATFORM_DEFAULT = 'libretro';
 
 const KNOWN_FLAGS = new Set<string>([
 	'-romname',
@@ -44,6 +50,7 @@ const KNOWN_FLAGS = new Set<string>([
 	'--platform',
 	'--mode',
 	'--preserve-lua-case',
+	'--engine',
 	'-h',
 	'--help',
 ]);
@@ -260,8 +267,9 @@ function parseOptions(args: string[]): ParsedOptions {
 		writeOut(`  --preserve-lua-case      Disable Lua case folding (default: enabled)`, 'warning');
 		writeOut(`  --enginedts <dir>        Use engine declarations from <dir> to type-check the game`, 'warning');
 		writeOut(`  --usepkgtsconfig         Use per-game tsconfig.pkg.json for bundling/type-checking`, 'warning');
-		writeOut(`  --platform <target>      Target platform: browser (default), cli, or headless`, 'warning');
+		writeOut(`  --platform <target>      Target platform: browser (default), cli, headless, libretro, or libretro-win`, 'warning');
 		writeOut(`  --mode <bundle|engine>  Packaging mode (default: bundle)`, 'warning');
+		writeOut(`  --engine               Build engine artifacts only (libretro platform)`, 'warning');
 		process.exit(0);
 	}
 
@@ -278,6 +286,7 @@ function parseOptions(args: string[]): ParsedOptions {
 		}
 	}
 
+	const engineOnly = seenFlags.has('--engine');
 	const rom_name = getParamOrEnv(args, '-romname', 'ROM_NAME', '');
 	const title = getParamOrEnv(args, '-title', 'TITLE', rom_name);
 	const defaultBootloaderPath = rom_name ? `./src/${rom_name}` : '';
@@ -307,8 +316,14 @@ function parseOptions(args: string[]): ParsedOptions {
 		case 'headless':
 			platform = 'headless';
 			break;
+		case 'libretro':
+			platform = 'libretro';
+			break;
+		case 'libretro-win':
+			platform = 'libretro-win';
+			break;
 		default:
-			throw new Error(`Unsupported platform target "${platformRaw}". Expected one of: browser, cli, headless.`);
+			throw new Error(`Unsupported platform target "${platformRaw}". Expected one of: browser, cli, headless, libretro, libretro-win.`);
 	}
 
 	const modeRaw = getParamOrEnv(args, '--mode', 'ROM_MODE', 'bundle');
@@ -411,6 +426,7 @@ function parseOptions(args: string[]): ParsedOptions {
 		shouldBundleCartCode,
 		extraLuaRoots,
 		bootloaderFallbackPath,
+		engineOnly,
 	};
 }
 
@@ -477,6 +493,80 @@ function formatEsbuildErrors(err: any): string[] {
 		}
 	}
 	return result;
+}
+
+function runCommand(command: string, args: string[]): void {
+	const result = spawnSync(command, args, { stdio: 'inherit' });
+	if (result.status !== 0) {
+		throw new Error(`Command failed: ${command} ${args.join(' ')}`);
+	}
+}
+
+function getLibretroBuildDir(platform: RomPackerTarget): string {
+	return platform === 'libretro-win' ? 'build-win' : 'build';
+}
+
+function getLibretroBuildOutputPath(platform: RomPackerTarget, debug: boolean): string {
+	const buildDir = getLibretroBuildDir(platform);
+	const coreFilename = getLibretroCoreFilename(platform);
+	if (platform === 'libretro-win') {
+		const configDir = debug ? 'Debug' : 'Release';
+		return join(process.cwd(), buildDir, configDir, coreFilename);
+	}
+	return join(process.cwd(), buildDir, coreFilename);
+}
+
+function ensureLibretroCoreBuilt(debug: boolean, platform: RomPackerTarget): void {
+	const buildType = debug ? 'Debug' : 'Release';
+	const buildDir = getLibretroBuildDir(platform);
+	const cmakeArgs = ['-S', 'src/bmsx_cpp', '-B', buildDir, `-DCMAKE_BUILD_TYPE=${buildType}`, '-DBMSX_BUILD_LIBRETRO=ON'];
+	if (platform === 'libretro-win') {
+		if (process.platform !== 'win32') {
+			throw new Error('libretro-win requires running on Windows with MSVC build tools.');
+		}
+	}
+	runCommand('cmake', cmakeArgs);
+	const config = debug ? 'Debug' : 'Release';
+	runCommand('cmake', ['--build', buildDir, '--config', config]);
+}
+
+function getLibretroCoreFilename(platform: RomPackerTarget): string {
+	const suffix = platform === 'libretro-win' ? '.dll' : '.so';
+	return `${LIBRETRO_CORE_BASENAME}${suffix}`;
+}
+
+function extractLibretroConstant(source: string, constantName: string): string {
+	const matcher = new RegExp(`\\b${constantName}\\b\\s*=\\s*"([^"]+)"`);
+	const match = source.match(matcher);
+	if (!match) {
+		throw new Error(`Libretro constant "${constantName}" was not found in ${LIBRETRO_ENTRY_PATH}.`);
+	}
+	return match[1];
+}
+
+async function stageLibretroArtifacts(platform: RomPackerTarget, debug: boolean): Promise<void> {
+	const libretroEntrySource = await readFile(LIBRETRO_ENTRY_PATH, 'utf8');
+	const coreName = extractLibretroConstant(libretroEntrySource, 'CORE_NAME');
+	const coreVersion = extractLibretroConstant(libretroEntrySource, 'CORE_VERSION');
+	const supportedExtensions = extractLibretroConstant(libretroEntrySource, 'VALID_EXTENSIONS');
+
+	const distDir = join(process.cwd(), 'dist');
+	const coreFilename = getLibretroCoreFilename(platform);
+	const coreSrc = getLibretroBuildOutputPath(platform, debug);
+	const coreDst = join(distDir, coreFilename);
+	const infoDst = join(distDir, `${LIBRETRO_CORE_BASENAME}.info`);
+
+	await mkdir(distDir, { recursive: true });
+	await copyFile(coreSrc, coreDst);
+
+	const infoContents = [
+		`display_name = "${coreName}"`,
+		`display_version = "${coreVersion}"`,
+		`corename = "${coreName}"`,
+		`supported_extensions = "${supportedExtensions}"`,
+		`supports_no_game = "true"`,
+	].join('\n') + '\n';
+	await writeFile(infoDst, infoContents, 'utf8');
 }
 
 class ProgressReporter {
@@ -656,7 +746,24 @@ async function main() {
 		printBanner();
 
 		const args = process.argv.slice(2);
-		let { title, rom_name, bootloader_path, respath, force, debug, buildreslist, deploy, useTextureAtlas, enginedts, usePkgTsconfig, skipTypecheck, platform, canonicalization, mode, shouldBundleCartCode, extraLuaRoots, bootloaderFallbackPath } = parseOptions(args);
+		let { title, rom_name, bootloader_path, respath, force, debug, buildreslist, deploy, useTextureAtlas, enginedts, usePkgTsconfig, skipTypecheck, platform, canonicalization, mode, shouldBundleCartCode, extraLuaRoots, bootloaderFallbackPath, engineOnly } = parseOptions(args);
+		if (platform === 'libretro' || platform === 'libretro-win') {
+			if (!engineOnly) {
+				throw new Error('Libretro platform requires --engine (no rom name required).');
+			}
+			logDivider('Engine');
+			logInfo('Building libretro core');
+			ensureLibretroCoreBuilt(debug, platform);
+			logInfo('Staging libretro core');
+			await stageLibretroArtifacts(platform, debug);
+			const stagedName = getLibretroCoreFilename(platform);
+			logOk(`Libretro core staged → ${pc.white(`dist/${stagedName}`)}`);
+			writeOut(`\n`);
+			return;
+		}
+		if (engineOnly) {
+			throw new Error('--engine is only supported with --platform libretro.');
+		}
 		if (!shouldBundleCartCode && mode !== 'engine') {
 			progress.removeTasks(bundlerTasks);
 			removeTaskNamesFromList(romBuildTasks, bundlerTasks);
