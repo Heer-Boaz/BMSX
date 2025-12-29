@@ -32,7 +32,6 @@ local combat_fade_ticks_per_frame = 32
 local combat_intro_timeline_id = 'combat_intro'
 local combat_intro_maya_b_frames = 14
 local combat_intro_reveal_frames = 26
-local combat_intro_frame_count = combat_intro_maya_b_frames + combat_intro_reveal_frames
 local combat_intro_ticks_per_frame = 24
 local combat_intro_maya_b_start_scale = 1.08
 local combat_intro_maya_b_end_scale = 0.9
@@ -487,6 +486,91 @@ local function arc01(u)
 		return smoothstep(u * 2)
 	end
 	return smoothstep((1 - u) * 2)
+end
+
+local function build_combat_intro_frames(self, monster, maya_a, maya_b)
+	local frames = {}
+
+	local monster_start_scale = self.combat_monster_start_scale
+	local monster_start_x = self.combat_monster_start_x
+	local monster_start_y = self.combat_monster_start_y
+	local monster_base_x = self.combat_monster_base_x
+	local monster_base_y = self.combat_monster_base_y
+	local monster_start_ox = (monster.sx * (monster_start_scale - 1)) / 2
+	local monster_start_oy = (monster.sy * (monster_start_scale - 1)) / 2
+	local monster_hidden_x = monster_start_x - monster_start_ox
+	local monster_hidden_y = monster_start_y - monster_start_oy
+
+	local maya_a_start_scale = self.combat_maya_a_start_scale
+	local maya_a_start_x = self.combat_maya_a_start_x
+	local maya_a_base_x = self.combat_maya_a_base_x
+	local maya_a_base_y = self.combat_maya_a_base_y
+	local maya_a_hidden_y = maya_a_base_y - (maya_a.sy * (maya_a_start_scale - 1))
+
+	local maya_b_start_scale = self.combat_maya_b_start_scale
+	local maya_b_end_scale = self.combat_maya_b_end_scale
+	local maya_b_start_right_x = self.combat_maya_b_start_right_x
+	local maya_b_exit_right_x = self.combat_maya_b_exit_right_x
+	local maya_b_base_x = self.combat_maya_b_start_x
+	local maya_b_base_y = self.combat_maya_b_base_y
+
+	for i = 0, combat_intro_maya_b_frames - 1 do
+		local u = i / (combat_intro_maya_b_frames - 1)
+		local eased = smoothstep(u)
+		local turn = arc01(u)
+		local s = maya_b_start_scale + (maya_b_end_scale - maya_b_start_scale) * eased
+		local right_x = maya_b_start_right_x + (maya_b_exit_right_x - maya_b_start_right_x) * eased
+		local x = right_x - (maya_b.sx * s)
+		local y = maya_b_base_y - (maya_b.sy * (s - 1)) + (combat_intro_maya_b_arc_y * turn)
+
+		frames[#frames + 1] = {
+			monster_visible = false,
+			monster_x = monster_hidden_x,
+			monster_y = monster_hidden_y,
+			monster_scale = monster_start_scale,
+			maya_a_visible = false,
+			maya_a_x = maya_a_start_x,
+			maya_a_y = maya_a_hidden_y,
+			maya_a_scale = maya_a_start_scale,
+			maya_b_visible = true,
+			maya_b_x = x,
+			maya_b_y = y,
+			maya_b_scale = s,
+		}
+	end
+
+	for i = 0, combat_intro_reveal_frames - 1 do
+		local u = i / (combat_intro_reveal_frames - 1)
+		local eased = smoothstep(u)
+		local turn = arc01(u)
+
+		local monster_scale = monster_start_scale + (1 - monster_start_scale) * eased
+		local monster_ox = (monster.sx * (monster_scale - 1)) / 2
+		local monster_oy = (monster.sy * (monster_scale - 1)) / 2
+		local monster_x = monster_start_x + (monster_base_x - monster_start_x) * eased + (combat_intro_monster_arc_x * turn) - monster_ox
+		local monster_y = monster_start_y + (monster_base_y - monster_start_y) * eased + (combat_intro_monster_arc_y * turn) - monster_oy
+
+		local maya_a_scale = maya_a_start_scale + (1 - maya_a_start_scale) * eased
+		local maya_a_x = maya_a_start_x + (maya_a_base_x - maya_a_start_x) * eased + (combat_intro_maya_a_arc_x * turn)
+		local maya_a_y = maya_a_base_y - (maya_a.sy * (maya_a_scale - 1)) + (combat_intro_maya_a_arc_y * turn)
+
+		frames[#frames + 1] = {
+			monster_visible = true,
+			monster_x = monster_x,
+			monster_y = monster_y,
+			monster_scale = monster_scale,
+			maya_a_visible = true,
+			maya_a_x = maya_a_x,
+			maya_a_y = maya_a_y,
+			maya_a_scale = maya_a_scale,
+			maya_b_visible = false,
+			maya_b_x = maya_b_base_x,
+			maya_b_y = maya_b_base_y,
+			maya_b_scale = 1,
+		}
+	end
+
+	return frames
 end
 
 local function set_text_lines(text_object_id, lines, typed)
@@ -1106,94 +1190,41 @@ local function build_director_fsm()
 				end,
 			},
 			combat_intro = {
-				timelines = {
-					[combat_intro_timeline_id] = {
-						create = function()
-							local frames = {}
-							for i = 0, combat_intro_frame_count - 1 do
-								frames[#frames + 1] = i
-							end
-							return new_timeline({
-								id = combat_intro_timeline_id,
-								frames = frames,
-								ticks_per_frame = combat_intro_ticks_per_frame,
-								playback_mode = 'once',
-							})
-						end,
-						autoplay = true,
-						stop_on_exit = true,
-						play_options = { rewind = true, snap_to_start = true },
-					},
-				},
 				entering_state = function(self)
 					local monster = object(combat_monster_id)
-					local monster_sprite = monster:get_component_by_id('base_sprite')
 					local maya_a = object(combat_maya_a_id)
-					local maya_a_sprite = maya_a:get_component_by_id('base_sprite')
 					local maya_b = object(combat_maya_b_id)
-					local maya_b_sprite = maya_b:get_component_by_id('base_sprite')
-
-					monster_sprite.scale = { x = self.combat_monster_start_scale, y = self.combat_monster_start_scale }
-					local ox = (monster.sx * (self.combat_monster_start_scale - 1)) / 2
-					local oy = (monster.sy * (self.combat_monster_start_scale - 1)) / 2
-					monster.x = self.combat_monster_start_x - ox
-					monster.y = self.combat_monster_start_y - oy
-					monster.visible = false
-
-					maya_a_sprite.scale = { x = self.combat_maya_a_start_scale, y = self.combat_maya_a_start_scale }
-					maya_a.x = self.combat_maya_a_start_x
-					maya_a.y = self.combat_maya_a_base_y - (maya_a.sy * (self.combat_maya_a_start_scale - 1))
-					maya_a.visible = false
-
-					maya_b_sprite.scale = { x = self.combat_maya_b_start_scale, y = self.combat_maya_b_start_scale }
-					maya_b.x = self.combat_maya_b_start_right_x - (maya_b.sx * self.combat_maya_b_start_scale)
-					maya_b.y = self.combat_maya_b_base_y - (maya_b.sy * (self.combat_maya_b_start_scale - 1))
-					maya_b.visible = true
+					local frames = build_combat_intro_frames(self, monster, maya_a, maya_b)
+					self:define_timeline(new_timeline({
+						id = combat_intro_timeline_id,
+						frames = frames,
+						ticks_per_frame = combat_intro_ticks_per_frame,
+						playback_mode = 'once',
+					}))
+					self:play_timeline(combat_intro_timeline_id, { rewind = true, snap_to_start = true })
 				end,
 				on = {
 					['timeline.frame.' .. combat_intro_timeline_id] = {
-						go = function(self, _state, event)
-							local frame_index = event.frame_index
+						go = function(_self, _state, event)
+							local frame = event.frame_value
 							local monster = object(combat_monster_id)
 							local maya_a = object(combat_maya_a_id)
-							local maya_a_sprite = maya_a:get_component_by_id('base_sprite')
 							local maya_b = object(combat_maya_b_id)
-							local maya_b_sprite = maya_b:get_component_by_id('base_sprite')
 
-							if frame_index < combat_intro_maya_b_frames then
-								local u = frame_index / (combat_intro_maya_b_frames - 1)
-								local eased = smoothstep(u)
-								local turn = arc01(u)
-								local s = self.combat_maya_b_start_scale + (self.combat_maya_b_end_scale - self.combat_maya_b_start_scale) * eased
-								local right_x = self.combat_maya_b_start_right_x + (self.combat_maya_b_exit_right_x - self.combat_maya_b_start_right_x) * eased
-								maya_b_sprite.scale = { x = s, y = s }
-								maya_b.x = right_x - (maya_b.sx * s)
-								maya_b.y = self.combat_maya_b_base_y - (maya_b.sy * (s - 1)) + (combat_intro_maya_b_arc_y * turn)
-								maya_b.visible = true
-								monster.visible = false
-								maya_a.visible = false
-								return
-							end
+							monster.visible = frame.monster_visible
+							monster:get_component_by_id('base_sprite').scale = { x = frame.monster_scale, y = frame.monster_scale }
+							monster.x = frame.monster_x
+							monster.y = frame.monster_y
 
-							maya_b.visible = false
-							local reveal_index = frame_index - combat_intro_maya_b_frames
-							local u = reveal_index / (combat_intro_reveal_frames - 1)
-							local eased = smoothstep(u)
-							local turn = arc01(u)
+							maya_a.visible = frame.maya_a_visible
+							maya_a:get_component_by_id('base_sprite').scale = { x = frame.maya_a_scale, y = frame.maya_a_scale }
+							maya_a.x = frame.maya_a_x
+							maya_a.y = frame.maya_a_y
 
-							local s = self.combat_monster_start_scale + (1 - self.combat_monster_start_scale) * eased
-							monster.visible = true
-							monster:get_component_by_id('base_sprite').scale = { x = s, y = s }
-							local ox = (monster.sx * (s - 1)) / 2
-							local oy = (monster.sy * (s - 1)) / 2
-							monster.x = self.combat_monster_start_x + (self.combat_monster_base_x - self.combat_monster_start_x) * eased + (combat_intro_monster_arc_x * turn) - ox
-							monster.y = self.combat_monster_start_y + (self.combat_monster_base_y - self.combat_monster_start_y) * eased + (combat_intro_monster_arc_y * turn) - oy
-
-							maya_a.visible = true
-							local maya_scale = self.combat_maya_a_start_scale + (1 - self.combat_maya_a_start_scale) * eased
-							maya_a_sprite.scale = { x = maya_scale, y = maya_scale }
-							maya_a.x = self.combat_maya_a_start_x + (self.combat_maya_a_base_x - self.combat_maya_a_start_x) * eased + (combat_intro_maya_a_arc_x * turn)
-							maya_a.y = self.combat_maya_a_base_y - (maya_a.sy * (maya_scale - 1)) + (combat_intro_maya_a_arc_y * turn)
+							maya_b.visible = frame.maya_b_visible
+							maya_b:get_component_by_id('base_sprite').scale = { x = frame.maya_b_scale, y = frame.maya_b_scale }
+							maya_b.x = frame.maya_b_x
+							maya_b.y = frame.maya_b_y
 						end,
 					},
 					['timeline.end.' .. combat_intro_timeline_id] = {
