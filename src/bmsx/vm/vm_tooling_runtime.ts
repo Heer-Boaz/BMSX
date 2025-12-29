@@ -1362,7 +1362,7 @@ export class BmsxVMRuntime {
 		this.luaVmInitialized = true;
 	}
 
-	private hotReloadProgramEntry(params: { path: string; source: string; }): void {
+	private hotReloadProgramEntry(params: { path: string; source: string; preserveEngineModules?: boolean }): void {
 		const preserveRuntimeFailure = this.luaRuntimeFailed || (this.pauseCoordinator.hasSuspension() && this.pauseCoordinator.getPendingException() !== null);
 		const binding = params.path;
 		const interpreter = this.luaInterpreter;
@@ -1382,7 +1382,11 @@ export class BmsxVMRuntime {
 		for (const entry of buildModuleAliasesFromPaths(modulePaths)) {
 			this.vmModuleAliases.set(entry.alias, entry.path);
 		}
-		this.vmModuleCache.clear();
+		if (params.preserveEngineModules) {
+			this.clearCartModuleCacheForHotReload();
+		} else {
+			this.vmModuleCache.clear();
+		}
 		this.cpuMemory[IO_WRITE_PTR_ADDR] = 0;
 		const prelude = this.runEngineBuiltinPrelude(program, metadata);
 		const finalizedMetadata = prelude.metadata;
@@ -1398,6 +1402,14 @@ export class BmsxVMRuntime {
 		this.luaVmInitialized = true;
 		clearNativeMemberCompletionCache();
 		this.clearEditorErrorOverlaysIfNoFault();
+	}
+
+	private clearCartModuleCacheForHotReload(): void {
+		for (const path of Array.from(this.vmModuleCache.keys())) {
+			if (!this.engineLuaSources.path2lua[path]) {
+				this.vmModuleCache.delete(path);
+			}
+		}
 	}
 
 	private bindLifecycleHandlers(): void {
@@ -1474,7 +1486,7 @@ export class BmsxVMRuntime {
 		}
 		this._luaPath = binding;
 		try {
-			this.hotReloadProgramEntry({ source, path: binding });
+			this.hotReloadProgramEntry({ source, path: binding, preserveEngineModules: !this.isEngineProgramActive() });
 		}
 		catch (error) {
 			this.handleLuaError(error);
@@ -1520,7 +1532,7 @@ export class BmsxVMRuntime {
 		const savedRuntimeFailed = snapshot.luaRuntimeFailed === true;
 		const binding = $.luaSources.path2lua[params.path];
 		if (params.hotReload) {
-			this.hotReloadProgramEntry({ source: params.source, path: binding.source_path });
+			this.hotReloadProgramEntry({ source: params.source, path: binding.source_path, preserveEngineModules: !this.isEngineProgramActive() });
 			if (params.runInit && !savedRuntimeFailed) {
 				this.runLuaLifecycleHandler('init');
 				this.runLuaLifecycleHandler('new_game');
