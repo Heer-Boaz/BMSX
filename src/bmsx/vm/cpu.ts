@@ -167,7 +167,7 @@ type Upvalue = {
 type CallFrame = {
 	protoIndex: number;
 	pc: number;
-	registers: Value[];
+	registers: RegisterFile;
 	varargs: Value[];
 	closure: Closure;
 	openUpvalues: Map<number, Upvalue>;
@@ -349,6 +349,172 @@ export class Table {
 	}
 }
 
+const enum RegisterTag {
+	Nil,
+	False,
+	True,
+	Number,
+	String,
+	Table,
+	Closure,
+	NativeFunction,
+	NativeObject,
+}
+
+class RegisterFile {
+	private readonly tags: Uint8Array;
+	private readonly numbers: Float64Array;
+	private readonly refs: Value[];
+
+	constructor(size: number) {
+		this.tags = new Uint8Array(size);
+		this.numbers = new Float64Array(size);
+		this.refs = new Array<Value>(size);
+		for (let index = 0; index < size; index += 1) {
+			this.refs[index] = null;
+		}
+	}
+
+	public capacity(): number {
+		return this.tags.length;
+	}
+
+	public clear(count: number): void {
+		this.tags.fill(RegisterTag.Nil, 0, count);
+		for (let index = 0; index < count; index += 1) {
+			this.refs[index] = null;
+		}
+	}
+
+	public copyFrom(source: RegisterFile, count: number): void {
+		for (let index = 0; index < count; index += 1) {
+			this.tags[index] = source.tags[index];
+			this.numbers[index] = source.numbers[index];
+			this.refs[index] = source.refs[index];
+		}
+	}
+
+	public copyTo(target: Value[], count: number): void {
+		target.length = count;
+		for (let index = 0; index < count; index += 1) {
+			target[index] = this.get(index);
+		}
+	}
+
+	public copySlot(dst: number, src: number): void {
+		this.tags[dst] = this.tags[src];
+		this.numbers[dst] = this.numbers[src];
+		this.refs[dst] = this.refs[src];
+	}
+
+	public isNumber(index: number): boolean {
+		return this.tags[index] === RegisterTag.Number;
+	}
+
+	public getNumber(index: number): number {
+		return this.numbers[index];
+	}
+
+	public isTruthy(index: number): boolean {
+		const tag = this.tags[index];
+		return tag !== RegisterTag.Nil && tag !== RegisterTag.False;
+	}
+
+	public get(index: number): Value {
+		switch (this.tags[index]) {
+			case RegisterTag.Nil:
+				return null;
+			case RegisterTag.False:
+				return false;
+			case RegisterTag.True:
+				return true;
+			case RegisterTag.Number:
+				return this.numbers[index];
+			case RegisterTag.String:
+			case RegisterTag.Table:
+			case RegisterTag.Closure:
+			case RegisterTag.NativeFunction:
+			case RegisterTag.NativeObject:
+				return this.refs[index];
+			default:
+				throw new Error('Invalid register tag.');
+		}
+	}
+
+	public setNil(index: number): void {
+		this.tags[index] = RegisterTag.Nil;
+		this.refs[index] = null;
+	}
+
+	public setBool(index: number, value: boolean): void {
+		this.tags[index] = value ? RegisterTag.True : RegisterTag.False;
+		this.refs[index] = null;
+	}
+
+	public setNumber(index: number, value: number): void {
+		this.tags[index] = RegisterTag.Number;
+		this.numbers[index] = value;
+		this.refs[index] = null;
+	}
+
+	public setString(index: number, value: StringValue): void {
+		this.tags[index] = RegisterTag.String;
+		this.refs[index] = value;
+	}
+
+	public setTable(index: number, value: Table): void {
+		this.tags[index] = RegisterTag.Table;
+		this.refs[index] = value;
+	}
+
+	public setClosure(index: number, value: Closure): void {
+		this.tags[index] = RegisterTag.Closure;
+		this.refs[index] = value;
+	}
+
+	public setNativeFunction(index: number, value: NativeFunction): void {
+		this.tags[index] = RegisterTag.NativeFunction;
+		this.refs[index] = value;
+	}
+
+	public setNativeObject(index: number, value: NativeObject): void {
+		this.tags[index] = RegisterTag.NativeObject;
+		this.refs[index] = value;
+	}
+
+	public set(index: number, value: Value): void {
+		if (value === null) {
+			this.setNil(index);
+			return;
+		}
+		if (typeof value === 'number') {
+			this.setNumber(index, value);
+			return;
+		}
+		if (typeof value === 'boolean') {
+			this.setBool(index, value);
+			return;
+		}
+		if (isStringValue(value)) {
+			this.setString(index, value);
+			return;
+		}
+		if (value instanceof Table) {
+			this.setTable(index, value);
+			return;
+		}
+		if (isNativeFunction(value)) {
+			this.setNativeFunction(index, value);
+			return;
+		}
+		if (isNativeObject(value)) {
+			this.setNativeObject(index, value);
+			return;
+		}
+		this.setClosure(index, value);
+	}
+}
+
 // Pool constants for frame/register reuse
 const MAX_POOLED_FRAMES = 32;
 const MAX_POOLED_REGISTER_ARRAYS = 64;
@@ -370,13 +536,19 @@ export class VMCPU {
 	private readonly frames: CallFrame[] = [];
 	private readonly valueScratch: Value[] = [];
 	private readonly returnScratch: Value[] = [];
+	private readonly debugRegistersScratch: Value[] = [];
 	private readonly nativeReturnPool: Value[][] = [];
+	private decodedOps: Uint8Array | null = null;
+	private decodedA: Uint8Array | null = null;
+	private decodedB: Uint8Array | null = null;
+	private decodedC: Uint8Array | null = null;
+	private decodedWords: Uint32Array | null = null;
 
 	// Frame pooling: avoid allocating new CallFrame objects per call
 	private readonly framePool: CallFrame[] = [];
 
 	// Register array pooling: keyed by size bucket (power of 2)
-	private readonly registerPool: Map<number, Value[][]> = new Map();
+	private readonly registerPool: Map<number, RegisterFile[]> = new Map();
 
 	constructor(memory: Value[]) {
 		this.memory = memory;
@@ -385,19 +557,22 @@ export class VMCPU {
 	}
 
 	// Acquire a register array of at least `size` slots, reusing pooled arrays when possible
-	private acquireRegisters(size: number): Value[] {
+	private acquireRegisters(size: number): RegisterFile {
+		if (size > MAX_REGISTER_ARRAY_SIZE) {
+			const regs = new RegisterFile(size);
+			regs.clear(size);
+			return regs;
+		}
 		// Round up to next power of 2 for bucketing (min 8)
 		const bucket = Math.max(8, 1 << (32 - Math.clz32(size - 1)));
 		let pool = this.registerPool.get(bucket);
 		if (pool && pool.length > 0) {
 			const regs = pool.pop()!;
-			// Clear only the portion we need
-			for (let i = 0; i < size; i++) regs[i] = null;
+			regs.clear(size);
 			return regs;
 		}
-		// Allocate new array at bucket size
-		const regs = new Array<Value>(bucket);
-		for (let i = 0; i < bucket; i++) regs[i] = null;
+		const regs = new RegisterFile(bucket);
+		regs.clear(size);
 		return regs;
 	}
 
@@ -438,9 +613,10 @@ export class VMCPU {
 	}
 
 	// Release a register array back to the pool
-	private releaseRegisters(regs: Value[]): void {
-		const bucket = regs.length;
+	private releaseRegisters(regs: RegisterFile): void {
+		const bucket = regs.capacity();
 		if (bucket > MAX_REGISTER_ARRAY_SIZE) return; // Don't pool oversized arrays
+		regs.clear(bucket);
 		let pool = this.registerPool.get(bucket);
 		if (!pool) {
 			pool = [];
@@ -459,7 +635,7 @@ export class VMCPU {
 		return {
 			protoIndex: 0,
 			pc: 0,
-			registers: [],
+			registers: null!,
 			varargs: [],
 			closure: null!,
 			openUpvalues: new Map<number, Upvalue>(),
@@ -497,6 +673,30 @@ export class VMCPU {
 		}
 		program.stringPool = this.stringPool;
 		this.indexKey = this.stringPool.intern('__index');
+		this.decodeProgram(program);
+	}
+
+	private decodeProgram(program: Program): void {
+		const code = program.code;
+		const instructionCount = Math.floor(code.length / 3);
+		const decodedOps = new Uint8Array(instructionCount);
+		const decodedA = new Uint8Array(instructionCount);
+		const decodedB = new Uint8Array(instructionCount);
+		const decodedC = new Uint8Array(instructionCount);
+		const decodedWords = new Uint32Array(instructionCount);
+		for (let pc = 0; pc < instructionCount; pc += 1) {
+			const instr = readInstructionWord(code, pc);
+			decodedWords[pc] = instr;
+			decodedOps[pc] = (instr >>> 18) & 0x3f;
+			decodedA[pc] = (instr >>> 12) & 0x3f;
+			decodedB[pc] = (instr >>> 6) & 0x3f;
+			decodedC[pc] = instr & 0x3f;
+		}
+		this.decodedOps = decodedOps;
+		this.decodedA = decodedA;
+		this.decodedB = decodedB;
+		this.decodedC = decodedC;
+		this.decodedWords = decodedWords;
 	}
 
 	public getStringPool(): StringPool {
@@ -569,19 +769,23 @@ export class VMCPU {
 	public step(): void {
 		const frame = this.frames[this.frames.length - 1];
 		let pc = frame.pc;
-		const code = this.program.code;
-		let instr = readInstructionWord(code, pc);
-		let op = (instr >>> 18) & 0x3f;
+		const decodedOps = this.decodedOps!;
+		const decodedA = this.decodedA!;
+		const decodedB = this.decodedB!;
+		const decodedC = this.decodedC!;
+		const decodedWords = this.decodedWords!;
+		let instr = decodedWords[pc];
+		let op = decodedOps[pc];
 		let wideA = 0;
 		let wideB = 0;
 		let wideC = 0;
 		if (op === OpCode.WIDE) {
-			wideA = (instr >>> 12) & 0x3f;
-			wideB = (instr >>> 6) & 0x3f;
-			wideC = instr & 0x3f;
+			wideA = decodedA[pc];
+			wideB = decodedB[pc];
+			wideC = decodedC[pc];
 			pc += 1;
-			instr = readInstructionWord(code, pc);
-			op = (instr >>> 18) & 0x3f;
+			instr = decodedWords[pc];
+			op = decodedOps[pc];
 		}
 		frame.pc = pc + 1;
 		this.lastPc = pc;
@@ -589,15 +793,24 @@ export class VMCPU {
 		if (this.instructionBudgetRemaining !== null) {
 			this.instructionBudgetRemaining -= 1;
 		}
-		this.executeInstruction(frame, op, instr, wideA, wideB, wideC);
+		this.executeInstruction(frame, op, decodedA[pc], decodedB[pc], decodedC[pc], wideA, wideB, wideC);
 	}
 
 	public getDebugState(): { pc: number; instr: number; registers: Value[] } {
 		const frame = this.frames[this.frames.length - 1];
+		if (!frame) {
+			return {
+				pc: this.lastPc,
+				instr: this.lastInstruction,
+				registers: [],
+			};
+		}
+		const registers = this.debugRegistersScratch;
+		frame.registers.copyTo(registers, frame.top);
 		return {
 			pc: this.lastPc,
 			instr: this.lastInstruction,
-			registers: frame ? frame.registers : [],
+			registers,
 		};
 	}
 
@@ -624,47 +837,46 @@ export class VMCPU {
 		return this.program.constPool[index];
 	}
 
-	private executeInstruction(frame: CallFrame, op: number, instr: number, wideA: number, wideB: number, wideC: number): void {
-		const aLow = (instr >>> 12) & 0x3f;
-		const bLow = (instr >>> 6) & 0x3f;
-		const cLow = instr & 0x3f;
+	private executeInstruction(frame: CallFrame, op: number, aLow: number, bLow: number, cLow: number, wideA: number, wideB: number, wideC: number): void {
 		const a = (wideA << 6) | aLow;
 		const b = (wideB << 6) | bLow;
 		const c = (wideC << 6) | cLow;
-		const bxLow = (bLow << 6) | cLow;
-		const bx = (wideB << 12) | bxLow;
-		const sbx = (bx << 14) >> 14;
-
 		switch (op) {
+			case OpCode.WIDE:
+				throw new Error('Unknown opcode.');
 			case OpCode.MOV:
-				this.setRegister(frame, a, frame.registers[b]);
+				this.copyRegister(frame, a, b);
 				return;
-			case OpCode.LOADK:
+			case OpCode.LOADK: {
+				const bx = (wideB << 12) | (bLow << 6) | cLow;
 				this.setRegister(frame, a, this.program.constPool[bx]);
 				return;
+			}
 			case OpCode.LOADNIL:
 				for (let index = 0; index < b; index += 1) {
-					this.setRegister(frame, a + index, null);
+					this.setRegisterNil(frame, a + index);
 				}
 				return;
 			case OpCode.LOADBOOL:
-				this.setRegister(frame, a, b !== 0);
+				this.setRegisterBool(frame, a, b !== 0);
 				if (c !== 0) {
 					frame.pc += 1;
 				}
 				return;
 			case OpCode.GETG: {
+				const bx = (wideB << 12) | (bLow << 6) | cLow;
 				const key = this.program.constPool[bx];
 				this.setRegister(frame, a, this.globals.get(key));
 				return;
 			}
 			case OpCode.SETG: {
+				const bx = (wideB << 12) | (bLow << 6) | cLow;
 				const key = this.program.constPool[bx];
-				this.globals.set(key, frame.registers[a]);
+				this.globals.set(key, frame.registers.get(a));
 				return;
 			}
 			case OpCode.GETT: {
-				const table = frame.registers[b];
+				const table = frame.registers.get(b);
 				const key = this.readRK(frame, cLow, wideC);
 				if (table instanceof Table) {
 					this.setRegister(frame, a, this.resolveTableIndex(table, key));
@@ -677,7 +889,7 @@ export class VMCPU {
 				throw new Error('Attempted to index field on a non-table value.');
 			}
 			case OpCode.SETT: {
-				const table = frame.registers[a];
+				const table = frame.registers.get(a);
 				const key = this.readRK(frame, bLow, wideB);
 				const value = this.readRK(frame, cLow, wideC);
 				if (table instanceof Table) {
@@ -691,141 +903,141 @@ export class VMCPU {
 				throw new Error('Attempted to assign to a non-table value.');
 			}
 			case OpCode.NEWT:
-				this.setRegister(frame, a, new Table(b, c));
+				this.setRegisterTable(frame, a, new Table(b, c));
 				return;
 			case OpCode.ADD: {
-				const left = this.readRK(frame, bLow, wideB) as number;
-				const right = this.readRK(frame, cLow, wideC) as number;
-				this.setRegister(frame, a, left + right);
+				const left = this.readRKNumber(frame, bLow, wideB);
+				const right = this.readRKNumber(frame, cLow, wideC);
+				this.setRegisterNumber(frame, a, left + right);
 				return;
 			}
 			case OpCode.SUB: {
-				const left = this.readRK(frame, bLow, wideB) as number;
-				const right = this.readRK(frame, cLow, wideC) as number;
-				this.setRegister(frame, a, left - right);
+				const left = this.readRKNumber(frame, bLow, wideB);
+				const right = this.readRKNumber(frame, cLow, wideC);
+				this.setRegisterNumber(frame, a, left - right);
 				return;
 			}
 			case OpCode.MUL: {
-				const left = this.readRK(frame, bLow, wideB) as number;
-				const right = this.readRK(frame, cLow, wideC) as number;
-				this.setRegister(frame, a, left * right);
+				const left = this.readRKNumber(frame, bLow, wideB);
+				const right = this.readRKNumber(frame, cLow, wideC);
+				this.setRegisterNumber(frame, a, left * right);
 				return;
 			}
 			case OpCode.DIV: {
-				const left = this.readRK(frame, bLow, wideB) as number;
-				const right = this.readRK(frame, cLow, wideC) as number;
-				this.setRegister(frame, a, left / right);
+				const left = this.readRKNumber(frame, bLow, wideB);
+				const right = this.readRKNumber(frame, cLow, wideC);
+				this.setRegisterNumber(frame, a, left / right);
 				return;
 			}
 			case OpCode.MOD: {
-				const left = this.readRK(frame, bLow, wideB) as number;
-				const right = this.readRK(frame, cLow, wideC) as number;
-				this.setRegister(frame, a, left % right);
+				const left = this.readRKNumber(frame, bLow, wideB);
+				const right = this.readRKNumber(frame, cLow, wideC);
+				this.setRegisterNumber(frame, a, left % right);
 				return;
 			}
 			case OpCode.FLOORDIV: {
-				const left = this.readRK(frame, bLow, wideB) as number;
-				const right = this.readRK(frame, cLow, wideC) as number;
-				this.setRegister(frame, a, Math.floor(left / right));
+				const left = this.readRKNumber(frame, bLow, wideB);
+				const right = this.readRKNumber(frame, cLow, wideC);
+				this.setRegisterNumber(frame, a, Math.floor(left / right));
 				return;
 			}
 			case OpCode.POW: {
-				const left = this.readRK(frame, bLow, wideB) as number;
-				const right = this.readRK(frame, cLow, wideC) as number;
-				this.setRegister(frame, a, Math.pow(left, right));
+				const left = this.readRKNumber(frame, bLow, wideB);
+				const right = this.readRKNumber(frame, cLow, wideC);
+				this.setRegisterNumber(frame, a, Math.pow(left, right));
 				return;
 			}
 			case OpCode.BAND: {
-				const left = this.readRK(frame, bLow, wideB) as number;
-				const right = this.readRK(frame, cLow, wideC) as number;
-				this.setRegister(frame, a, left & right);
+				const left = this.readRKNumber(frame, bLow, wideB);
+				const right = this.readRKNumber(frame, cLow, wideC);
+				this.setRegisterNumber(frame, a, left & right);
 				return;
 			}
 			case OpCode.BOR: {
-				const left = this.readRK(frame, bLow, wideB) as number;
-				const right = this.readRK(frame, cLow, wideC) as number;
-				this.setRegister(frame, a, left | right);
+				const left = this.readRKNumber(frame, bLow, wideB);
+				const right = this.readRKNumber(frame, cLow, wideC);
+				this.setRegisterNumber(frame, a, left | right);
 				return;
 			}
 			case OpCode.BXOR: {
-				const left = this.readRK(frame, bLow, wideB) as number;
-				const right = this.readRK(frame, cLow, wideC) as number;
-				this.setRegister(frame, a, left ^ right);
+				const left = this.readRKNumber(frame, bLow, wideB);
+				const right = this.readRKNumber(frame, cLow, wideC);
+				this.setRegisterNumber(frame, a, left ^ right);
 				return;
 			}
 			case OpCode.SHL: {
-				const left = this.readRK(frame, bLow, wideB) as number;
-				const right = this.readRK(frame, cLow, wideC) as number;
-				this.setRegister(frame, a, left << (right & 31));
+				const left = this.readRKNumber(frame, bLow, wideB);
+				const right = this.readRKNumber(frame, cLow, wideC);
+				this.setRegisterNumber(frame, a, left << (right & 31));
 				return;
 			}
 			case OpCode.SHR: {
-				const left = this.readRK(frame, bLow, wideB) as number;
-				const right = this.readRK(frame, cLow, wideC) as number;
-				this.setRegister(frame, a, left >> (right & 31));
+				const left = this.readRKNumber(frame, bLow, wideB);
+				const right = this.readRKNumber(frame, cLow, wideC);
+				this.setRegisterNumber(frame, a, left >> (right & 31));
 				return;
 			}
 			case OpCode.CONCAT: {
 				const left = this.readRK(frame, bLow, wideB);
 				const right = this.readRK(frame, cLow, wideC);
 				const text = this.valueToString(left) + this.valueToString(right);
-				this.setRegister(frame, a, this.stringPool.intern(text));
+				this.setRegisterString(frame, a, this.stringPool.intern(text));
 				return;
 			}
 			case OpCode.CONCATN: {
 				let text = '';
 				for (let index = 0; index < c; index += 1) {
-					text += this.valueToString(frame.registers[b + index]);
+					text += this.valueToString(frame.registers.get(b + index));
 				}
-				this.setRegister(frame, a, this.stringPool.intern(text));
+				this.setRegisterString(frame, a, this.stringPool.intern(text));
 				return;
 			}
 			case OpCode.UNM: {
-				const value = frame.registers[b] as number;
-				this.setRegister(frame, a, -value);
+				const value = this.readRegisterNumber(frame, b);
+				this.setRegisterNumber(frame, a, -value);
 				return;
 			}
 			case OpCode.NOT:
-				this.setRegister(frame, a, !this.isTruthy(frame.registers[b]));
+				this.setRegisterBool(frame, a, !frame.registers.isTruthy(b));
 				return;
-				case OpCode.LEN: {
-					const value = frame.registers[b];
-					if (isStringValue(value)) {
-						this.setRegister(frame, a, stringValueToString(value).length);
-						return;
-					}
-					if (value instanceof Table) {
-						this.setRegister(frame, a, value.length());
-						return;
-					}
-					if (isNativeObject(value)) {
-						if (!value.len) {
-							const stack = this.getCallStack()
-								.map(entry => {
-									const range = this.getDebugRange(entry.pc);
-									if (!range) return '<unknown>';
-									return `${range.path}:${range.start.line}:${range.start.column}`;
-								})
-								.reverse()
-								.join(' <- ');
-							throw new Error(`Length operator expects a native object with a length. stack=${stack}`);
-						}
-						this.setRegister(frame, a, value.len());
-						return;
-					}
-					const stack = this.getCallStack()
-						.map(entry => {
-							const range = this.getDebugRange(entry.pc);
-							if (!range) return '<unknown>';
-							return `${range.path}:${range.start.line}:${range.start.column}`;
-						})
-						.reverse()
-						.join(' <- ');
-					throw new Error(`Length operator expects a string or table. stack=${stack}`);
+			case OpCode.LEN: {
+				const value = frame.registers.get(b);
+				if (isStringValue(value)) {
+					this.setRegisterNumber(frame, a, stringValueToString(value).length);
+					return;
 				}
+				if (value instanceof Table) {
+					this.setRegisterNumber(frame, a, value.length());
+					return;
+				}
+				if (isNativeObject(value)) {
+					if (!value.len) {
+						const stack = this.getCallStack()
+							.map(entry => {
+								const range = this.getDebugRange(entry.pc);
+								if (!range) return '<unknown>';
+								return `${range.path}:${range.start.line}:${range.start.column}`;
+							})
+							.reverse()
+							.join(' <- ');
+						throw new Error(`Length operator expects a native object with a length. stack=${stack}`);
+					}
+					this.setRegisterNumber(frame, a, value.len());
+					return;
+				}
+				const stack = this.getCallStack()
+					.map(entry => {
+						const range = this.getDebugRange(entry.pc);
+						if (!range) return '<unknown>';
+						return `${range.path}:${range.start.line}:${range.start.column}`;
+					})
+					.reverse()
+					.join(' <- ');
+				throw new Error(`Length operator expects a string or table. stack=${stack}`);
+			}
 			case OpCode.BNOT: {
-				const value = frame.registers[b] as number;
-				this.setRegister(frame, a, ~value);
+				const value = this.readRegisterNumber(frame, b);
+				this.setRegisterNumber(frame, a, ~value);
 				return;
 			}
 			case OpCode.EQ: {
@@ -860,37 +1072,45 @@ export class VMCPU {
 				return;
 			}
 			case OpCode.TEST: {
-				const ok = this.isTruthy(frame.registers[a]);
+				const ok = frame.registers.isTruthy(a);
 				if (ok !== (c !== 0)) {
 					frame.pc += 1;
 				}
 				return;
 			}
 			case OpCode.TESTSET: {
-				const ok = this.isTruthy(frame.registers[b]);
+				const ok = frame.registers.isTruthy(b);
 				if (ok === (c !== 0)) {
-					this.setRegister(frame, a, frame.registers[b]);
-				} else {
-					frame.pc += 1;
+					this.copyRegister(frame, a, b);
+					return;
+				}
+				frame.pc += 1;
+				return;
+			}
+			case OpCode.JMP: {
+				const sbx = (((wideB << 12) | (bLow << 6) | cLow) << 14) >> 14;
+				frame.pc += sbx;
+				return;
+			}
+			case OpCode.JMPIF: {
+				if (frame.registers.isTruthy(a)) {
+					const sbx = (((wideB << 12) | (bLow << 6) | cLow) << 14) >> 14;
+					frame.pc += sbx;
 				}
 				return;
 			}
-			case OpCode.JMP:
-				frame.pc += sbx;
-				return;
-			case OpCode.JMPIF:
-				if (this.isTruthy(frame.registers[a])) {
+			case OpCode.JMPIFNOT: {
+				if (!frame.registers.isTruthy(a)) {
+					const sbx = (((wideB << 12) | (bLow << 6) | cLow) << 14) >> 14;
 					frame.pc += sbx;
 				}
 				return;
-			case OpCode.JMPIFNOT:
-				if (!this.isTruthy(frame.registers[a])) {
-					frame.pc += sbx;
-				}
+			}
+			case OpCode.CLOSURE: {
+				const bx = (wideB << 12) | (bLow << 6) | cLow;
+				this.setRegisterClosure(frame, a, this.createClosure(frame, bx));
 				return;
-			case OpCode.CLOSURE:
-				this.setRegister(frame, a, this.createClosure(frame, bx));
-				return;
+			}
 			case OpCode.GETUP: {
 				const upvalue = frame.closure.upvalues[b];
 				this.setRegister(frame, a, this.readUpvalue(upvalue));
@@ -898,7 +1118,7 @@ export class VMCPU {
 			}
 			case OpCode.SETUP: {
 				const upvalue = frame.closure.upvalues[b];
-				this.writeUpvalue(upvalue, frame.registers[a]);
+				this.writeUpvalue(upvalue, frame.registers.get(a));
 				return;
 			}
 			case OpCode.VARARG: {
@@ -910,12 +1130,12 @@ export class VMCPU {
 				return;
 			}
 			case OpCode.CALL: {
-				const callee = frame.registers[a];
+				const callee = frame.registers.get(a);
 				const argCount = b === 0 ? Math.max(frame.top - a - 1, 0) : b;
 				const args = this.valueScratch;
 				args.length = 0;
 				for (let index = 0; index < argCount; index += 1) {
-					args.push(frame.registers[a + 1 + index]);
+					args.push(frame.registers.get(a + 1 + index));
 				}
 				if (callee === null) {
 					const range = this.metadata ? this.metadata.debugRanges[this.lastPc] : null;
@@ -936,25 +1156,23 @@ export class VMCPU {
 					const range = this.metadata ? this.metadata.debugRanges[this.lastPc] : null;
 					const location = range ? `${range.path}:${range.start.line}:${range.start.column}` : 'unknown';
 					const calleeType = valueTypeName(callee as Value);
-				const calleeValue = isStringValue(callee)
-					? ` value=${stringValueToString(callee)}`
-					: (typeof callee === 'number' || typeof callee === 'boolean')
-						? ` value=${String(callee)}`
-						: '';
+					const calleeValue = isStringValue(callee)
+						? ` value=${stringValueToString(callee)}`
+						: (typeof callee === 'number' || typeof callee === 'boolean')
+							? ` value=${String(callee)}`
+							: '';
 					throw new Error(`Attempted to call a non-function value (${calleeType}${calleeValue}). at ${location}`);
 				}
 				this.pushFrame(callee as Closure, args, a, c, false, frame.pc - 1);
 				return;
 			}
 			case OpCode.RET: {
-				// Collect return values into scratch buffer (avoids allocation)
 				const scratch = this.returnScratch;
 				scratch.length = 0;
 				const total = b === 0 ? Math.max(frame.top - a, 0) : b;
 				for (let index = 0; index < total; index += 1) {
-					scratch.push(frame.registers[a + index]);
+					scratch.push(frame.registers.get(a + index));
 				}
-				// Copy to lastReturnValues (public API expects persistent array)
 				this.lastReturnValues.length = scratch.length;
 				for (let i = 0; i < scratch.length; i++) {
 					this.lastReturnValues[i] = scratch[i];
@@ -972,12 +1190,16 @@ export class VMCPU {
 				this.writeReturnValues(caller, frame.returnBase, frame.returnCount, scratch);
 				return;
 			}
-			case OpCode.LOAD_MEM:
-				this.setRegister(frame, a, this.memory[frame.registers[b] as number]);
+			case OpCode.LOAD_MEM: {
+				const addr = this.readRegisterNumber(frame, b);
+				this.setRegister(frame, a, this.memory[addr]);
 				return;
-			case OpCode.STORE_MEM:
-				this.memory[frame.registers[b] as number] = frame.registers[a];
+			}
+			case OpCode.STORE_MEM: {
+				const addr = this.readRegisterNumber(frame, b);
+				this.memory[addr] = frame.registers.get(a);
 				return;
+			}
 			default:
 				throw new Error('Unknown opcode.');
 		}
@@ -1000,7 +1222,7 @@ export class VMCPU {
 		const registers = frame.registers;
 		let argIndex = 0;
 		for (let index = 0; index < proto.numParams; index += 1) {
-			registers[index] = argIndex < args.length ? args[argIndex] : null;
+			registers.set(index, argIndex < args.length ? args[argIndex] : null);
 			argIndex += 1;
 		}
 		// Handle varargs
@@ -1034,7 +1256,7 @@ export class VMCPU {
 
 	private closeUpvalues(frame: CallFrame): void {
 		for (const upvalue of frame.openUpvalues.values()) {
-			upvalue.value = frame.registers[upvalue.index];
+			upvalue.value = frame.registers.get(upvalue.index);
 			upvalue.open = false;
 			upvalue.frame = null;
 		}
@@ -1043,14 +1265,14 @@ export class VMCPU {
 
 	private readUpvalue(upvalue: Upvalue): Value {
 		if (upvalue.open) {
-			return upvalue.frame.registers[upvalue.index];
+			return upvalue.frame.registers.get(upvalue.index);
 		}
 		return upvalue.value;
 	}
 
 	private writeUpvalue(upvalue: Upvalue, value: Value): void {
 		if (upvalue.open) {
-			upvalue.frame.registers[upvalue.index] = value;
+			upvalue.frame.registers.set(upvalue.index, value);
 			return;
 		}
 		upvalue.value = value;
@@ -1071,19 +1293,92 @@ export class VMCPU {
 		frame.top = base + count;
 	}
 
-	private setRegister(frame: CallFrame, index: number, value: Value): void {
-		const registers = frame.registers;
-		if (index >= registers.length) {
+	private ensureRegisterCapacity(frame: CallFrame, index: number): RegisterFile {
+		let registers = frame.registers;
+		if (index >= registers.capacity()) {
 			const needed = index + 1;
 			const bucket = Math.max(8, 1 << (32 - Math.clz32(needed - 1)));
 			const target = bucket > MAX_REGISTER_ARRAY_SIZE ? needed : bucket;
-			for (let i = registers.length; i < target; i += 1) registers[i] = null;
+			const next = target > MAX_REGISTER_ARRAY_SIZE ? new RegisterFile(target) : this.acquireRegisters(target);
+			next.copyFrom(registers, frame.top);
+			this.releaseRegisters(registers);
+			registers = next;
+			frame.registers = next;
 		}
-		registers[index] = value;
+		return registers;
+	}
+
+	private bumpRegisterTop(frame: CallFrame, index: number): void {
 		const nextTop = index + 1;
 		if (nextTop > frame.top) {
 			frame.top = nextTop;
 		}
+	}
+
+	private copyRegister(frame: CallFrame, dst: number, src: number): void {
+		const registers = this.ensureRegisterCapacity(frame, dst);
+		registers.copySlot(dst, src);
+		this.bumpRegisterTop(frame, dst);
+	}
+
+	private setRegisterNil(frame: CallFrame, index: number): void {
+		const registers = this.ensureRegisterCapacity(frame, index);
+		registers.setNil(index);
+		this.bumpRegisterTop(frame, index);
+	}
+
+	private setRegisterBool(frame: CallFrame, index: number, value: boolean): void {
+		const registers = this.ensureRegisterCapacity(frame, index);
+		registers.setBool(index, value);
+		this.bumpRegisterTop(frame, index);
+	}
+
+	private setRegisterNumber(frame: CallFrame, index: number, value: number): void {
+		const registers = this.ensureRegisterCapacity(frame, index);
+		registers.setNumber(index, value);
+		this.bumpRegisterTop(frame, index);
+	}
+
+	private setRegisterString(frame: CallFrame, index: number, value: StringValue): void {
+		const registers = this.ensureRegisterCapacity(frame, index);
+		registers.setString(index, value);
+		this.bumpRegisterTop(frame, index);
+	}
+
+	private setRegisterTable(frame: CallFrame, index: number, value: Table): void {
+		const registers = this.ensureRegisterCapacity(frame, index);
+		registers.setTable(index, value);
+		this.bumpRegisterTop(frame, index);
+	}
+
+	private setRegisterClosure(frame: CallFrame, index: number, value: Closure): void {
+		const registers = this.ensureRegisterCapacity(frame, index);
+		registers.setClosure(index, value);
+		this.bumpRegisterTop(frame, index);
+	}
+
+	private setRegister(frame: CallFrame, index: number, value: Value): void {
+		const registers = this.ensureRegisterCapacity(frame, index);
+		registers.set(index, value);
+		this.bumpRegisterTop(frame, index);
+	}
+
+	private readRegisterNumber(frame: CallFrame, index: number): number {
+		const registers = frame.registers;
+		if (registers.isNumber(index)) {
+			return registers.getNumber(index);
+		}
+		return registers.get(index) as number;
+	}
+
+	private readRKNumber(frame: CallFrame, low: number, wide: number): number {
+		const raw = (wide << 6) | low;
+		const rk = (raw << 20) >> 20;
+		if (rk < 0) {
+			const index = -1 - rk;
+			return this.program.constPool[index] as number;
+		}
+		return this.readRegisterNumber(frame, rk);
 	}
 
 	private readRK(frame: CallFrame, low: number, wide: number): Value {
@@ -1093,7 +1388,7 @@ export class VMCPU {
 			const index = -1 - rk;
 			return this.program.constPool[index];
 		}
-		return frame.registers[rk];
+		return frame.registers.get(rk);
 	}
 
 	private valueToString(value: Value): string {
@@ -1103,7 +1398,4 @@ export class VMCPU {
 		return String(value);
 	}
 
-	private isTruthy(value: Value): boolean {
-		return value !== null && value !== false;
-	}
 }

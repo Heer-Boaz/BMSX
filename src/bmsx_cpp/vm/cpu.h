@@ -383,6 +383,14 @@ struct ProgramMetadata {
 
 constexpr int INSTRUCTION_BYTES = 3;
 
+struct DecodedInstruction {
+	uint32_t word = 0;
+	uint8_t op = 0;
+	uint8_t a = 0;
+	uint8_t b = 0;
+	uint8_t c = 0;
+};
+
 struct Upvalue : GCObject {
 	bool open = false;
 	int index = 0;
@@ -582,7 +590,7 @@ public:
 	Table* globals = nullptr;
 
 private:
-	void executeInstruction(CallFrame& frame, OpCode op, uint32_t instr, uint8_t wideA, uint8_t wideB, uint8_t wideC);
+	void executeInstruction(CallFrame& frame, OpCode op, uint8_t aLow, uint8_t bLow, uint8_t cLow, uint8_t wideA, uint8_t wideB, uint8_t wideC);
 	void pushFrame(Closure* closure, const Value* args, size_t argCount,
 		int returnBase, int returnCount, bool captureReturns, int callSitePc);
 	void pushFrame(Closure* closure, const std::vector<Value>& args,
@@ -605,6 +613,7 @@ private:
 	std::vector<Value> acquireArgScratch();
 	void releaseArgScratch(std::vector<Value>&& args);
 
+	void decodeProgram();
 	void markRoots(VMHeap& heap);
 
 	Program* m_program = nullptr;
@@ -628,6 +637,7 @@ private:
 	static constexpr size_t MAX_POOLED_REGISTER_ARRAYS = 64;
 	static constexpr size_t MAX_REGISTER_ARRAY_SIZE = 256;
 
+	std::vector<DecodedInstruction> m_decoded;
 	Value m_indexKey = valueNil();
 };
 

@@ -393,6 +393,7 @@ void VMCPU::setProgram(Program* program, ProgramMetadata* metadata) {
 	m_program = program;
 	m_metadata = metadata;
 	if (!m_program) {
+		m_decoded.clear();
 		return;
 	}
 	const StringPool& programPool = m_program->stringPool;
@@ -406,6 +407,26 @@ void VMCPU::setProgram(Program* program, ProgramMetadata* metadata) {
 		}
 	}
 	m_indexKey = valueString(m_stringPool.intern("__index"));
+	decodeProgram();
+}
+
+void VMCPU::decodeProgram() {
+	m_decoded.clear();
+	if (!m_program) {
+		return;
+	}
+	size_t instructionCount = m_program->code.size() / INSTRUCTION_BYTES;
+	m_decoded.resize(instructionCount);
+	for (size_t pc = 0; pc < instructionCount; ++pc) {
+		uint32_t instr = readInstructionWord(m_program->code, static_cast<int>(pc));
+		DecodedInstruction decoded;
+		decoded.word = instr;
+		decoded.op = static_cast<uint8_t>((instr >> 18) & 0x3f);
+		decoded.a = static_cast<uint8_t>((instr >> 12) & 0x3f);
+		decoded.b = static_cast<uint8_t>((instr >> 6) & 0x3f);
+		decoded.c = static_cast<uint8_t>(instr & 0x3f);
+		m_decoded[pc] = decoded;
+	}
 }
 
 void VMCPU::start(int entryProtoIndex, const std::vector<Value>& args) {
@@ -457,26 +478,26 @@ void VMCPU::step() {
 	}
 	CallFrame& frame = *m_frames.back();
 	int pc = frame.pc;
-	uint32_t instr = readInstructionWord(m_program->code, pc);
-	uint8_t op = static_cast<uint8_t>((instr >> 18) & 0x3f);
+	const DecodedInstruction* decoded = &m_decoded[static_cast<size_t>(pc)];
+	uint8_t op = decoded->op;
 	uint8_t wideA = 0;
 	uint8_t wideB = 0;
 	uint8_t wideC = 0;
 	if (static_cast<OpCode>(op) == OpCode::WIDE) {
-		wideA = static_cast<uint8_t>((instr >> 12) & 0x3f);
-		wideB = static_cast<uint8_t>((instr >> 6) & 0x3f);
-		wideC = static_cast<uint8_t>(instr & 0x3f);
+		wideA = decoded->a;
+		wideB = decoded->b;
+		wideC = decoded->c;
 		pc += 1;
-		instr = readInstructionWord(m_program->code, pc);
-		op = static_cast<uint8_t>((instr >> 18) & 0x3f);
+		decoded = &m_decoded[static_cast<size_t>(pc)];
+		op = decoded->op;
 	}
 	frame.pc = pc + 1;
 	lastPc = pc;
-	lastInstruction = instr;
+	lastInstruction = decoded->word;
 	if (instructionBudgetRemaining.has_value()) {
 		--(*instructionBudgetRemaining);
 	}
-	executeInstruction(frame, static_cast<OpCode>(op), instr, wideA, wideB, wideC);
+	executeInstruction(frame, static_cast<OpCode>(op), decoded->a, decoded->b, decoded->c, wideA, wideB, wideC);
 }
 
 std::optional<SourceRange> VMCPU::getDebugRange(int pc) const {
@@ -497,10 +518,7 @@ std::vector<std::pair<int, int>> VMCPU::getCallStack() const {
 	return stack;
 }
 
-void VMCPU::executeInstruction(CallFrame& frame, OpCode op, uint32_t instr, uint8_t wideA, uint8_t wideB, uint8_t wideC) {
-	uint8_t aLow = static_cast<uint8_t>((instr >> 12) & 0x3f);
-	uint8_t bLow = static_cast<uint8_t>((instr >> 6) & 0x3f);
-	uint8_t cLow = static_cast<uint8_t>(instr & 0x3f);
+void VMCPU::executeInstruction(CallFrame& frame, OpCode op, uint8_t aLow, uint8_t bLow, uint8_t cLow, uint8_t wideA, uint8_t wideB, uint8_t wideC) {
 	int a = (static_cast<int>(wideA) << 6) | aLow;
 	int b = (static_cast<int>(wideB) << 6) | bLow;
 	int c = (static_cast<int>(wideC) << 6) | cLow;
@@ -509,6 +527,9 @@ void VMCPU::executeInstruction(CallFrame& frame, OpCode op, uint32_t instr, uint
 	int32_t sbx = (static_cast<int32_t>(bx) << 14) >> 14;
 
 	switch (op) {
+		case OpCode::WIDE:
+			throw std::runtime_error("Unexpected WIDE opcode.");
+
 		case OpCode::MOV:
 			setRegister(frame, a, frame.registers[b]);
 			return;
