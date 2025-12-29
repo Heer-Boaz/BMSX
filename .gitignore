@@ -75,3 +75,5 @@ compile_commands.json
 # Build directories
 src/bmsx_cpp/build/
 **/build/
+/build-*/
+/build-win/
