@@ -34,6 +34,9 @@ local combat_intro_maya_b_frames = 14
 local combat_intro_reveal_frames = 26
 local combat_intro_frame_count = combat_intro_maya_b_frames + combat_intro_reveal_frames
 local combat_intro_ticks_per_frame = 24
+local combat_intro_maya_b_start_scale = 1.08
+local combat_intro_maya_b_end_scale = 0.9
+local combat_intro_maya_a_scale_ratio = 0.6
 
 local fade_timeline_id = 'fade'
 local fade_out_frames = 18
@@ -1072,6 +1075,7 @@ local function build_director_fsm()
 					self.combat_maya_a_base_x = maya_a.x
 					self.combat_maya_a_base_y = maya_a.y
 					self.combat_maya_a_start_x = display_width()
+					self.combat_maya_a_start_scale = 1 + ((self.combat_monster_start_scale - 1) * combat_intro_maya_a_scale_ratio)
 
 					local all_out = object(combat_all_out_id)
 					all_out:set_image('all_out')
@@ -1087,8 +1091,11 @@ local function build_director_fsm()
 					maya_b.y = display_height() - maya_b.sy
 					maya_b.z = 300
 					self.combat_maya_b_start_x = maya_b.x
-					self.combat_maya_b_exit_x = display_width()
 					self.combat_maya_b_base_y = maya_b.y
+					self.combat_maya_b_start_scale = combat_intro_maya_b_start_scale
+					self.combat_maya_b_end_scale = combat_intro_maya_b_end_scale
+					self.combat_maya_b_start_right_x = self.combat_maya_b_start_x + maya_b.sx
+					self.combat_maya_b_exit_right_x = self.combat_maya_b_start_right_x + maya_b.sx
 
 					return '/combat_intro'
 				end,
@@ -1117,7 +1124,9 @@ local function build_director_fsm()
 					local monster = object(combat_monster_id)
 					local monster_sprite = monster:get_component_by_id('base_sprite')
 					local maya_a = object(combat_maya_a_id)
+					local maya_a_sprite = maya_a:get_component_by_id('base_sprite')
 					local maya_b = object(combat_maya_b_id)
+					local maya_b_sprite = maya_b:get_component_by_id('base_sprite')
 
 					monster_sprite.scale = { x = self.combat_monster_start_scale, y = self.combat_monster_start_scale }
 					local ox = (monster.sx * (self.combat_monster_start_scale - 1)) / 2
@@ -1126,12 +1135,14 @@ local function build_director_fsm()
 					monster.y = self.combat_monster_start_y - oy
 					monster.visible = false
 
+					maya_a_sprite.scale = { x = self.combat_maya_a_start_scale, y = self.combat_maya_a_start_scale }
 					maya_a.x = self.combat_maya_a_start_x
-					maya_a.y = self.combat_maya_a_base_y
+					maya_a.y = self.combat_maya_a_base_y - (maya_a.sy * (self.combat_maya_a_start_scale - 1))
 					maya_a.visible = false
 
-					maya_b.x = self.combat_maya_b_start_x
-					maya_b.y = self.combat_maya_b_base_y
+					maya_b_sprite.scale = { x = self.combat_maya_b_start_scale, y = self.combat_maya_b_start_scale }
+					maya_b.x = self.combat_maya_b_start_right_x - (maya_b.sx * self.combat_maya_b_start_scale)
+					maya_b.y = self.combat_maya_b_base_y - (maya_b.sy * (self.combat_maya_b_start_scale - 1))
 					maya_b.visible = true
 				end,
 				on = {
@@ -1140,12 +1151,18 @@ local function build_director_fsm()
 							local frame_index = event.frame_index
 							local monster = object(combat_monster_id)
 							local maya_a = object(combat_maya_a_id)
+							local maya_a_sprite = maya_a:get_component_by_id('base_sprite')
 							local maya_b = object(combat_maya_b_id)
+							local maya_b_sprite = maya_b:get_component_by_id('base_sprite')
 
 							if frame_index < combat_intro_maya_b_frames then
 								local u = frame_index / (combat_intro_maya_b_frames - 1)
 								local eased = smoothstep(u)
-								maya_b.x = self.combat_maya_b_start_x + (self.combat_maya_b_exit_x - self.combat_maya_b_start_x) * eased
+								local s = self.combat_maya_b_start_scale + (self.combat_maya_b_end_scale - self.combat_maya_b_start_scale) * eased
+								local right_x = self.combat_maya_b_start_right_x + (self.combat_maya_b_exit_right_x - self.combat_maya_b_start_right_x) * eased
+								maya_b_sprite.scale = { x = s, y = s }
+								maya_b.x = right_x - (maya_b.sx * s)
+								maya_b.y = self.combat_maya_b_base_y - (maya_b.sy * (s - 1))
 								maya_b.visible = true
 								monster.visible = false
 								maya_a.visible = false
@@ -1166,8 +1183,10 @@ local function build_director_fsm()
 							monster.y = self.combat_monster_start_y + (self.combat_monster_base_y - self.combat_monster_start_y) * eased - oy
 
 							maya_a.visible = true
+							local maya_scale = self.combat_maya_a_start_scale + (1 - self.combat_maya_a_start_scale) * eased
+							maya_a_sprite.scale = { x = maya_scale, y = maya_scale }
 							maya_a.x = self.combat_maya_a_start_x + (self.combat_maya_a_base_x - self.combat_maya_a_start_x) * eased
-							maya_a.y = self.combat_maya_a_base_y
+							maya_a.y = self.combat_maya_a_base_y - (maya_a.sy * (maya_scale - 1))
 						end,
 					},
 					['timeline.end.' .. combat_intro_timeline_id] = {
@@ -1184,11 +1203,13 @@ local function build_director_fsm()
 					monster.visible = true
 
 					local maya_a = object(combat_maya_a_id)
+					maya_a:get_component_by_id('base_sprite').scale = { x = 1, y = 1 }
 					maya_a.x = self.combat_maya_a_base_x
 					maya_a.y = self.combat_maya_a_base_y
 					maya_a.visible = true
 
 					local maya_b = object(combat_maya_b_id)
+					maya_b:get_component_by_id('base_sprite').scale = { x = 1, y = 1 }
 					maya_b.visible = false
 					maya_b.x = self.combat_maya_b_start_x
 					maya_b.y = self.combat_maya_b_base_y
@@ -1906,9 +1927,13 @@ local function register_director()
 			combat_maya_a_base_x = 0,
 			combat_maya_a_base_y = 0,
 			combat_maya_a_start_x = 0,
+			combat_maya_a_start_scale = 1,
 			combat_maya_b_start_x = 0,
-			combat_maya_b_exit_x = 0,
 			combat_maya_b_base_y = 0,
+			combat_maya_b_start_scale = 1,
+			combat_maya_b_end_scale = 1,
+			combat_maya_b_start_right_x = 0,
+			combat_maya_b_exit_right_x = 0,
 			combat_dodge_dir = 1,
 			all_out_origin_x = 0,
 			all_out_origin_y = 0,
