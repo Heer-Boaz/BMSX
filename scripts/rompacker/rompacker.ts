@@ -30,7 +30,6 @@ type ParsedOptions = RomPackerOptions & { bootloaderFallbackPath?: string; engin
 
 const LIBRETRO_CORE_BASENAME = 'bmsx_libretro';
 const LIBRETRO_ENTRY_PATH = join(process.cwd(), 'src', 'bmsx_cpp', 'platform', 'libretro', 'libretro_entry.cpp');
-const LIBRETRO_PLATFORM_DEFAULT = 'libretro';
 
 const KNOWN_FLAGS = new Set<string>([
 	'-romname',
