@@ -16,6 +16,7 @@
 #include <functional>
 #include <memory>
 #include <any>
+#include <stdexcept>
 
 namespace bmsx {
 
