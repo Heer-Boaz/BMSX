@@ -41,6 +41,17 @@ local combat_intro_monster_arc_y = 8
 local combat_intro_maya_a_arc_x = -12
 local combat_intro_maya_a_arc_y = -4
 local combat_intro_maya_b_arc_y = -6
+local combat_focus_timeline_id = 'combat_focus'
+local combat_focus_zoom_frames = 8
+local combat_focus_vanish_frames = 12
+local combat_focus_ticks_per_frame = 24
+local combat_focus_zoom_scale = 1.22
+local combat_focus_vanish_scale = 1.55
+local combat_focus_zoom_arc_x = 10
+local combat_focus_zoom_arc_y = -6
+local combat_focus_vanish_arc_x = -6
+local combat_focus_vanish_arc_y = -8
+local combat_focus_vanish_lift = -18
 
 local fade_timeline_id = 'fade'
 local fade_out_frames = 18
@@ -567,6 +578,55 @@ local function build_combat_intro_frames(self, monster, maya_a, maya_b)
 			maya_b_x = maya_b_base_x,
 			maya_b_y = maya_b_base_y,
 			maya_b_scale = 1,
+		}
+	end
+
+	return frames
+end
+
+local function build_combat_focus_frames(self, monster)
+	local frames = {}
+
+	local base_x = self.combat_monster_base_x
+	local base_y = self.combat_monster_base_y
+
+	local zoom_scale = combat_focus_zoom_scale
+	local zoom_target_x = (display_width() - (monster.sx * zoom_scale)) / 2
+	local zoom_target_y = (display_height() - (monster.sy * zoom_scale)) / 2
+
+	local vanish_scale = combat_focus_vanish_scale
+	local vanish_target_x = (display_width() - (monster.sx * vanish_scale)) / 2
+	local vanish_target_y = ((display_height() - (monster.sy * vanish_scale)) / 2) + combat_focus_vanish_lift
+
+	for i = 0, combat_focus_zoom_frames - 1 do
+		local u = i / (combat_focus_zoom_frames - 1)
+		local eased = smoothstep(u)
+		local turn = arc01(u)
+		local s = 1 + ((zoom_scale - 1) * eased)
+		local x = base_x + (zoom_target_x - base_x) * eased + (combat_focus_zoom_arc_x * turn)
+		local y = base_y + (zoom_target_y - base_y) * eased + (combat_focus_zoom_arc_y * turn)
+
+		frames[#frames + 1] = {
+			x = x,
+			y = y,
+			scale = s,
+			alpha = 1,
+		}
+	end
+
+	for i = 0, combat_focus_vanish_frames - 1 do
+		local u = i / (combat_focus_vanish_frames - 1)
+		local eased = smoothstep(u)
+		local turn = arc01(u)
+		local s = zoom_scale + ((vanish_scale - zoom_scale) * eased)
+		local x = zoom_target_x + (vanish_target_x - zoom_target_x) * eased + (combat_focus_vanish_arc_x * turn)
+		local y = zoom_target_y + (vanish_target_y - zoom_target_y) * eased + (combat_focus_vanish_arc_y * turn)
+
+		frames[#frames + 1] = {
+			x = x,
+			y = y,
+			scale = s,
+			alpha = 1 - eased,
 		}
 	end
 
@@ -1518,7 +1578,7 @@ local function build_director_fsm()
 					},
 					['timeline.end.' .. combat_all_out_timeline_id] = {
 						go = function(self)
-							return '/combat_results_setup'
+							return '/combat_focus'
 						end,
 					},
 				},
@@ -1528,6 +1588,58 @@ local function build_director_fsm()
 					all_out.visible = false
 					all_out.x = self.all_out_origin_x
 					all_out.y = self.all_out_origin_y
+				end,
+			},
+			combat_focus = {
+				entering_state = function(self)
+					self:hide_combat_sprites()
+					clear_text(text_main_id)
+					clear_text(text_choice_id)
+					clear_text(text_prompt_id)
+					clear_text(text_transition_id)
+					clear_text(text_results_id)
+
+					local monster = object(combat_monster_id)
+					monster.visible = true
+					monster.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
+					monster:get_component_by_id('base_sprite').scale = { x = 1, y = 1 }
+					monster.x = self.combat_monster_base_x
+					monster.y = self.combat_monster_base_y
+
+					local frames = build_combat_focus_frames(self, monster)
+					self:define_timeline(new_timeline({
+						id = combat_focus_timeline_id,
+						frames = frames,
+						ticks_per_frame = combat_focus_ticks_per_frame,
+						playback_mode = 'once',
+					}))
+					self:play_timeline(combat_focus_timeline_id, { rewind = true, snap_to_start = true })
+				end,
+				on = {
+					['timeline.frame.' .. combat_focus_timeline_id] = {
+						go = function(_self, _state, event)
+							local frame = event.frame_value
+							local monster = object(combat_monster_id)
+							monster.visible = true
+							monster:get_component_by_id('base_sprite').scale = { x = frame.scale, y = frame.scale }
+							monster.x = frame.x
+							monster.y = frame.y
+							monster.sprite_component.colorize = { r = 1, g = 1, b = 1, a = frame.alpha }
+						end,
+					},
+					['timeline.end.' .. combat_focus_timeline_id] = {
+						go = function(self)
+							return '/combat_results_setup'
+						end,
+					},
+				},
+				leaving_state = function(self)
+					local monster = object(combat_monster_id)
+					monster.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
+					monster:get_component_by_id('base_sprite').scale = { x = 1, y = 1 }
+					monster.x = self.combat_monster_base_x
+					monster.y = self.combat_monster_base_y
+					monster.visible = false
 				end,
 			},
 			combat_results_setup = {
