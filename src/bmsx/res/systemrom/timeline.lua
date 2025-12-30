@@ -52,26 +52,41 @@ local function clamp_marker_frame(at, length)
 end
 
 local function compile_timeline_markers(def, length)
-	local cache = { by_frame = {} }
-	if length == 0 then
-		return cache
-	end
+	local cache = { by_frame = {}, controlled_tags = {} }
 	local markers = expand_timeline_windows(def.markers or {}, def.windows or {})
+	local controlled = {}
 	for i = 1, #markers do
 		local marker = markers[i]
-		local frame = clamp_marker_frame(marker, length)
-		local bucket = cache.by_frame[frame]
-		if not bucket then
-			bucket = {}
-			cache.by_frame[frame] = bucket
+		local adds = marker.add_tags
+		if adds then
+			for j = 1, #adds do
+				controlled[adds[j]] = true
+			end
 		end
-		bucket[#bucket + 1] = {
-			frame = frame,
-			event = marker.event,
-			payload = marker.payload,
-			add_tags = marker.add_tags,
-			remove_tags = marker.remove_tags,
-		}
+		local removes = marker.remove_tags
+		if removes then
+			for j = 1, #removes do
+				controlled[removes[j]] = true
+			end
+		end
+		if length > 0 then
+			local frame = clamp_marker_frame(marker, length)
+			local bucket = cache.by_frame[frame]
+			if not bucket then
+				bucket = {}
+				cache.by_frame[frame] = bucket
+			end
+			bucket[#bucket + 1] = {
+				frame = frame,
+				event = marker.event,
+				payload = marker.payload,
+				add_tags = marker.add_tags,
+				remove_tags = marker.remove_tags,
+			}
+		end
+	end
+	for tag in pairs(controlled) do
+		cache.controlled_tags[#cache.controlled_tags + 1] = tag
 	end
 	return cache
 end

@@ -38,6 +38,7 @@ function worldobject.new(opts)
 	self.tick_enabled = opts.tick_enabled or false
 	self.eventhandling_enabled = opts.eventhandling_enabled or false
 	self.player_index = opts.player_index or 1
+	self.tags = opts.tags or {}
 	self.components = {}
 	self.component_map = {}
 	self.space_id = opts.space_id
@@ -215,6 +216,22 @@ end
 
 function worldobject:iterate_components()
 	return ipairs(self.components)
+end
+
+function worldobject:has_tag(tag)
+	return self.tags[tag] == true
+end
+
+function worldobject:add_tag(tag)
+	self.tags[tag] = true
+end
+
+function worldobject:remove_tag(tag)
+	self.tags[tag] = nil
+end
+
+function worldobject:toggle_tag(tag)
+	self.tags[tag] = not self.tags[tag]
 end
 
 function worldobject:activate()

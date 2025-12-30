@@ -151,6 +151,7 @@ function timelinecomponent:play(id, opts)
 		error("[timelinecomponent] unknown timeline '" .. id .. "' on '" .. self.parent.id .. "'")
 	end
 	local instance = entry.instance
+	local owner = self.parent
 	local rewind = true
 	local snap = true
 	local params = nil
@@ -173,6 +174,10 @@ function timelinecomponent:play(id, opts)
 		entry.markers = timeline_module.compile_timeline_markers(instance.def, instance.length)
 	end
 	if rewind then
+		local controlled = entry.markers.controlled_tags
+		for i = 1, #controlled do
+			owner:remove_tag(controlled[i])
+		end
 		instance:rewind()
 	end
 	if snap and instance.length > 0 then
@@ -183,6 +188,14 @@ function timelinecomponent:play(id, opts)
 end
 
 function timelinecomponent:stop(id)
+	local entry = self.registry[id]
+	if entry then
+		local owner = self.parent
+		local controlled = entry.markers.controlled_tags
+		for i = 1, #controlled do
+			owner:remove_tag(controlled[i])
+		end
+	end
 	self.active[id] = nil
 end
 
@@ -234,6 +247,18 @@ function timelinecomponent:apply_markers(entry, event)
 	local owner = self.parent
 	for i = 1, #bucket do
 		local marker = bucket[i]
+		local add_tags = marker.add_tags
+		if add_tags then
+			for j = 1, #add_tags do
+				owner:add_tag(add_tags[j])
+			end
+		end
+		local remove_tags = marker.remove_tags
+		if remove_tags then
+			for j = 1, #remove_tags do
+				owner:remove_tag(remove_tags[j])
+			end
+		end
 		local payload = marker.payload
 		if type(payload) == "table" then
 			local copy = {}
