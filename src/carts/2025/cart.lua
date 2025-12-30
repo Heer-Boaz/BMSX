@@ -608,10 +608,11 @@ local function build_combat_focus_frames(params)
 		local y = base_y + (zoom_target_y - base_y) * eased + (combat_focus_zoom_arc_y * turn)
 
 		frames[#frames + 1] = {
+			visible = true,
 			x = x,
 			y = y,
-			scale = s,
-			alpha = 1,
+			scale = { x = s, y = s },
+			colorize = { r = 1, g = 1, b = 1, a = 1 },
 		}
 	end
 
@@ -622,12 +623,14 @@ local function build_combat_focus_frames(params)
 		local s = zoom_scale + ((vanish_scale - zoom_scale) * eased)
 		local x = zoom_target_x + (vanish_target_x - zoom_target_x) * eased + (combat_focus_vanish_arc_x * turn)
 		local y = zoom_target_y + (vanish_target_y - zoom_target_y) * eased + (combat_focus_vanish_arc_y * turn)
+		local alpha = 1 - eased
 
 		frames[#frames + 1] = {
+			visible = alpha > 0,
 			x = x,
 			y = y,
-			scale = s,
-			alpha = 1 - eased,
+			scale = { x = s, y = s },
+			colorize = { r = 1, g = 1, b = 1, a = alpha },
 		}
 	end
 
@@ -788,6 +791,10 @@ local function build_director_fsm()
 						frames = build_combat_focus_frames,
 						ticks_per_frame = combat_focus_ticks_per_frame,
 						playback_mode = 'once',
+						markers = {
+							{ frame = 0, event = 'combat_focus.snap' },
+							{ u = 1, event = 'combat_focus.done' },
+						},
 					}))
 					return '/run_node'
 				end,
@@ -1599,19 +1606,7 @@ local function build_director_fsm()
 			},
 			combat_focus = {
 				entering_state = function(self)
-					self:hide_combat_sprites()
-					clear_text(text_main_id)
-					clear_text(text_choice_id)
-					clear_text(text_prompt_id)
-					clear_text(text_transition_id)
-					clear_text(text_results_id)
-
 					local monster = object(combat_monster_id)
-					monster.visible = true
-					monster.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
-					monster:get_component_by_id('base_sprite').scale = { x = 1, y = 1 }
-					monster.x = self.combat_monster_base_x
-					monster.y = self.combat_monster_base_y
 
 					self:play_timeline(combat_focus_timeline_id, {
 						rewind = true,
@@ -1628,27 +1623,29 @@ local function build_director_fsm()
 						go = function(_self, _state, event)
 							local frame = event.frame_value
 							local monster = object(combat_monster_id)
-							monster.visible = true
-							monster:get_component_by_id('base_sprite').scale = { x = frame.scale, y = frame.scale }
+							monster.visible = frame.visible
+							monster:get_component_by_id('base_sprite').scale = frame.scale
 							monster.x = frame.x
 							monster.y = frame.y
-							monster.sprite_component.colorize = { r = 1, g = 1, b = 1, a = frame.alpha }
+							monster.sprite_component.colorize = frame.colorize
 						end,
 					},
-					['timeline.end.' .. combat_focus_timeline_id] = {
+					['combat_focus.snap'] = {
+						go = function(self)
+							self:hide_combat_sprites()
+							clear_text(text_main_id)
+							clear_text(text_choice_id)
+							clear_text(text_prompt_id)
+							clear_text(text_transition_id)
+							clear_text(text_results_id)
+						end,
+					},
+					['combat_focus.done'] = {
 						go = function(self)
 							return '/combat_results_setup'
 						end,
 					},
 				},
-				leaving_state = function(self)
-					local monster = object(combat_monster_id)
-					monster.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
-					monster:get_component_by_id('base_sprite').scale = { x = 1, y = 1 }
-					monster.x = self.combat_monster_base_x
-					monster.y = self.combat_monster_base_y
-					monster.visible = false
-				end,
 			},
 			combat_results_setup = {
 				entering_state = function(self)

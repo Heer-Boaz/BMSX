@@ -7,6 +7,75 @@ local timeline = {}
 timeline.__index = timeline
 timeline.__is_timeline = true
 
+local function copy_marker_at(at)
+	local out = {}
+	for k, v in pairs(at) do
+		out[k] = v
+	end
+	return out
+end
+
+local function expand_timeline_windows(markers, windows)
+	if not windows or #windows == 0 then
+		return markers or {}
+	end
+	local out = {}
+	if markers then
+		for i = 1, #markers do
+			out[#out + 1] = markers[i]
+		end
+	end
+	for i = 1, #windows do
+		local window_def = windows[i]
+		local name = window_def.name
+		local tag = window_def.tag or ("timeline.window." .. name)
+		local start = copy_marker_at(window_def.start)
+		start.event = "window." .. name .. ".start"
+		start.payload = window_def.payloadstart
+		start.add_tags = { tag }
+		local finish = copy_marker_at(window_def["end"])
+		finish.event = "window." .. name .. ".end"
+		finish.payload = window_def.payloadend
+		finish.remove_tags = { tag }
+		out[#out + 1] = start
+		out[#out + 1] = finish
+	end
+	return out
+end
+
+local function clamp_marker_frame(at, length)
+	if at.frame ~= nil then
+		return math.min(math.max(at.frame, 0), length - 1)
+	end
+	local normalized = math.min(math.max(at.u or 0, 0), 1)
+	return math.min(math.max(math.floor(normalized * (length - 1)), 0), length - 1)
+end
+
+local function compile_timeline_markers(def, length)
+	local cache = { by_frame = {} }
+	if length == 0 then
+		return cache
+	end
+	local markers = expand_timeline_windows(def.markers or {}, def.windows or {})
+	for i = 1, #markers do
+		local marker = markers[i]
+		local frame = clamp_marker_frame(marker, length)
+		local bucket = cache.by_frame[frame]
+		if not bucket then
+			bucket = {}
+			cache.by_frame[frame] = bucket
+		end
+		bucket[#bucket + 1] = {
+			frame = frame,
+			event = marker.event,
+			payload = marker.payload,
+			add_tags = marker.add_tags,
+			remove_tags = marker.remove_tags,
+		}
+	end
+	return cache
+end
+
 local function expand_frames(frames, repetitions)
 	if repetitions <= 1 then
 		local out = {}
@@ -213,4 +282,6 @@ end
 return {
 	timeline_start_index = timeline_start_index,
 	timeline = timeline,
+	expand_timeline_windows = expand_timeline_windows,
+	compile_timeline_markers = compile_timeline_markers,
 }

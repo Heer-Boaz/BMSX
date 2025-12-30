@@ -2,9 +2,9 @@
 -- base component primitives for system rom
 
 local eventemitter = require("eventemitter")
-local timeline = require("timeline")
+local timeline_module = require("timeline")
 local eventemitter = eventemitter.eventemitter
-local timeline = timeline.timeline
+local timeline = timeline_module.timeline
 
 local component = {}
 component.__index = component
@@ -136,7 +136,8 @@ end
 
 function timelinecomponent:define(definition)
 	local instance = definition.__is_timeline and definition or timeline.new(definition)
-	self.registry[instance.id] = { instance = instance }
+	local markers = timeline_module.compile_timeline_markers(instance.def, instance.length)
+	self.registry[instance.id] = { instance = instance, markers = markers }
 end
 
 function timelinecomponent:get(id)
@@ -169,6 +170,7 @@ function timelinecomponent:play(id, opts)
 			params = instance.def.params
 		end
 		instance:build(params)
+		entry.markers = timeline_module.compile_timeline_markers(instance.def, instance.length)
 	end
 	if rewind then
 		instance:rewind()
@@ -207,6 +209,7 @@ function timelinecomponent:process_events(entry, events)
 				reason = evt.reason,
 				direction = evt.direction,
 			}
+			self:apply_markers(entry, evt)
 			self:emit_frameevent(owner, payload)
 		else
 			local payload = {
@@ -219,6 +222,39 @@ function timelinecomponent:process_events(entry, events)
 				self.active[entry.instance.id] = nil
 			end
 		end
+	end
+end
+
+function timelinecomponent:apply_markers(entry, event)
+	local compiled = entry.markers
+	local bucket = compiled.by_frame[event.current]
+	if not bucket then
+		return
+	end
+	local owner = self.parent
+	for i = 1, #bucket do
+		local marker = bucket[i]
+		local payload = marker.payload
+		if type(payload) == "table" then
+			local copy = {}
+			for k, v in pairs(payload) do
+				copy[k] = v
+			end
+			payload = copy
+		end
+		local spec = { type = marker.event, emitter = owner }
+		if payload ~= nil then
+			if type(payload) == "table" and payload.type == nil then
+				for k, v in pairs(payload) do
+					spec[k] = v
+				end
+			else
+				spec.payload = payload
+			end
+		end
+		local event = eventemitter:create_gameevent(spec)
+		owner.events:emit_event(event)
+		owner.sc:dispatch_event(event)
 	end
 end
 
