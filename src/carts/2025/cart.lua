@@ -584,11 +584,12 @@ local function build_combat_intro_frames(self, monster, maya_a, maya_b)
 	return frames
 end
 
-local function build_combat_focus_frames(self, monster)
+local function build_combat_focus_frames(params)
 	local frames = {}
 
-	local base_x = self.combat_monster_base_x
-	local base_y = self.combat_monster_base_y
+	local monster = params.monster
+	local base_x = params.base_x
+	local base_y = params.base_y
 
 	local zoom_scale = combat_focus_zoom_scale
 	local zoom_target_x = (display_width() - (monster.sx * zoom_scale)) / 2
@@ -782,6 +783,12 @@ local function build_director_fsm()
 					clear_text(text_transition_id)
 					clear_text(text_results_id)
 					self:hide_combat_sprites()
+					self:define_timeline(new_timeline({
+						id = combat_focus_timeline_id,
+						frames = build_combat_focus_frames,
+						ticks_per_frame = combat_focus_ticks_per_frame,
+						playback_mode = 'once',
+					}))
 					return '/run_node'
 				end,
 			},
@@ -1606,14 +1613,15 @@ local function build_director_fsm()
 					monster.x = self.combat_monster_base_x
 					monster.y = self.combat_monster_base_y
 
-					local frames = build_combat_focus_frames(self, monster)
-					self:define_timeline(new_timeline({
-						id = combat_focus_timeline_id,
-						frames = frames,
-						ticks_per_frame = combat_focus_ticks_per_frame,
-						playback_mode = 'once',
-					}))
-					self:play_timeline(combat_focus_timeline_id, { rewind = true, snap_to_start = true })
+					self:play_timeline(combat_focus_timeline_id, {
+						rewind = true,
+						snap_to_start = true,
+						params = {
+							monster = monster,
+							base_x = self.combat_monster_base_x,
+							base_y = self.combat_monster_base_y,
+						},
+					})
 				end,
 				on = {
 					['timeline.frame.' .. combat_focus_timeline_id] = {

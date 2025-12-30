@@ -28,8 +28,21 @@ function timeline.new(def)
 	local self = setmetatable({}, timeline)
 	self.def = def
 	self.id = def.id
-	self.frames = expand_frames(def.frames, def.repetitions or 1)
-	self.length = #self.frames
+	self.repetitions = def.repetitions or 1
+	local frame_source = def.frames
+	local source_type = type(frame_source)
+	if source_type == "function" then
+		self.frame_builder = frame_source
+		self.frames = {}
+		self.length = 0
+		self.built = false
+	elseif source_type == "table" then
+		self.frames = expand_frames(frame_source, self.repetitions)
+		self.length = #self.frames
+		self.built = true
+	else
+		error("[timeline] timeline '" .. tostring(def.id) .. "' requires a frames table or builder function.")
+	end
 	self.ticks_per_frame = def.ticks_per_frame or 0
 	self.playback_mode = def.playback_mode or "once"
 	local autotick = def.autotick
@@ -41,6 +54,20 @@ function timeline.new(def)
 	self.ticks = 0
 	self.direction = 1
 	return self
+end
+
+function timeline:build(params)
+	if not self.frame_builder then
+		error("[timeline] timeline '" .. tostring(self.id) .. "' has no frame builder.")
+	end
+	local frames = self.frame_builder(params)
+	if type(frames) ~= "table" then
+		error("[timeline] timeline '" .. tostring(self.id) .. "' frame builder must return a table.")
+	end
+	self.frames = expand_frames(frames, self.repetitions)
+	self.length = #self.frames
+	self.built = true
+	self:rewind()
 end
 
 function timeline:value()

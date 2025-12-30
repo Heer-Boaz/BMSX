@@ -152,6 +152,7 @@ function timelinecomponent:play(id, opts)
 	local instance = entry.instance
 	local rewind = true
 	local snap = true
+	local params = nil
 	if opts ~= nil then
 		if opts.rewind ~= nil then
 			rewind = opts.rewind
@@ -159,6 +160,15 @@ function timelinecomponent:play(id, opts)
 		if opts.snap_to_start ~= nil then
 			snap = opts.snap_to_start
 		end
+		if opts.params ~= nil then
+			params = opts.params
+		end
+	end
+	if instance.frame_builder then
+		if params == nil then
+			params = instance.def.params
+		end
+		instance:build(params)
 	end
 	if rewind then
 		instance:rewind()
