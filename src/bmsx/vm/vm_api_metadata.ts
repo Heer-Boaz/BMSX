@@ -429,6 +429,22 @@ export const VM_API_METHOD_METADATA = {
 		returnType: 'Timeline',
 		returnDescription: 'New Timeline instance.',
 	},
+	timeline_range: {
+		description: 'Builds a frame index array from 0 to frame_count - 1.',
+		parameters: [
+			{ name: 'frame_count', description: 'Number of frames to include in the range.' },
+		],
+		returnType: 'number[]',
+		returnDescription: 'Array of frame indices.',
+	},
+	new_timeline_range: {
+		description: 'Creates a Timeline instance with a 0..frame_count-1 frame range.',
+		parameters: [
+			{ name: 'def', description: 'Timeline definition including frame_count.' },
+		],
+		returnType: 'Timeline',
+		returnDescription: 'New Timeline instance.',
+	},
 	rget: {
 		description: 'Looks up a registered object by id in the global registry.',
 		parameters: [

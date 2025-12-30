@@ -503,13 +503,15 @@ std::vector<Value> VMRuntime::callEngineModuleMember(const std::string& name, co
 
 void VMRuntime::runEngineBuiltinPrelude() {
 	std::cerr << "[VMRuntime] prelude: binding engine builtins" << std::endl;
-	static const std::array<const char*, 19> engineBuiltins = {
+	static const std::array<const char*, 21> engineBuiltins = {
 		"define_fsm",
 		"define_world_object",
 		"define_service",
 		"define_component",
 		"define_effect",
 		"new_timeline",
+		"timeline_range",
+		"new_timeline_range",
 		"spawn_object",
 		"spawn_sprite",
 		"spawn_textobject",

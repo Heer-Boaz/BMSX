@@ -170,6 +170,20 @@ function engine.new_timeline(def)
 	return timeline.timeline.new(def)
 end
 
+function engine.timeline_range(frame_count)
+	local frames = {}
+	for i = 0, frame_count - 1 do
+		frames[#frames + 1] = i
+	end
+	return frames
+end
+
+function engine.new_timeline_range(def)
+	local definition = def or {}
+	definition.frames = engine.timeline_range(definition.frame_count)
+	return engine.new_timeline(definition)
+end
+
 function engine.spawn_object(definition_id, addons)
 	local def = definitions[definition_id]
 	local class_table = def and def.class or nil

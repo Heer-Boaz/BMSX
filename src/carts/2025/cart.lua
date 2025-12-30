@@ -644,13 +644,8 @@ end
 local function set_text_lines(text_object_id, lines, typed)
 	local text_obj = object(text_object_id)
 	-- Convert table to newline-separated string (portable to C++)
-	text_obj:set_text(lines)
-	if typed then
-		return
-	end
-	text_obj.displayed_lines = text_obj.full_text_lines
-	text_obj.text = text_obj.full_text_lines
-	text_obj.is_typing = false
+	local should_type = typed == true
+	text_obj:set_text(lines, { typed = should_type, snap = not should_type })
 end
 
 local function clear_text(text_object_id)
@@ -667,9 +662,7 @@ end
 
 local function finish_text(text_object_id)
 	local text_obj = object(text_object_id)
-	text_obj.displayed_lines = text_obj.full_text_lines
-	text_obj.text = text_obj.full_text_lines
-	text_obj.is_typing = false
+	text_obj:reveal_text()
 end
 
 local director = {}
@@ -839,24 +832,20 @@ local function build_director_fsm()
 					end
 				end,
 			},
-			transition = {
-				timelines = {
-					[overgang_timeline_id] = {
-						create = function()
-							local frames = {}
-							for i = 0, overgang_frame_count - 1 do
-								frames[#frames + 1] = i
-							end
-							return new_timeline({
-								id = overgang_timeline_id,
-								frames = frames,
-								ticks_per_frame = overgang_ticks_per_frame,
-								playback_mode = 'once',
-							})
-						end,
-						autoplay = true,
-						stop_on_exit = true,
-						play_options = { rewind = true, snap_to_start = true },
+				transition = {
+					timelines = {
+						[overgang_timeline_id] = {
+							create = function()
+								return new_timeline_range({
+									id = overgang_timeline_id,
+									frame_count = overgang_frame_count,
+									ticks_per_frame = overgang_ticks_per_frame,
+									playback_mode = 'once',
+								})
+							end,
+							autoplay = true,
+							stop_on_exit = true,
+							play_options = { rewind = true, snap_to_start = true },
 					},
 				},
 				entering_state = function(self)
@@ -948,24 +937,20 @@ local function build_director_fsm()
 					clear_text(text_transition_id)
 				end,
 			},
-			transition_fade_in = {
-				timelines = {
-					[overgang_post_fade_in_timeline_id] = {
-						create = function()
-							local frames = {}
-							for i = 0, overgang_fade_in_frames - 1 do
-								frames[#frames + 1] = i
-							end
-							return new_timeline({
-								id = overgang_post_fade_in_timeline_id,
-								frames = frames,
-								ticks_per_frame = overgang_ticks_per_frame,
-								playback_mode = 'once',
-							})
-						end,
-						autoplay = true,
-						stop_on_exit = true,
-						play_options = { rewind = true, snap_to_start = true },
+				transition_fade_in = {
+					timelines = {
+						[overgang_post_fade_in_timeline_id] = {
+							create = function()
+								return new_timeline_range({
+									id = overgang_post_fade_in_timeline_id,
+									frame_count = overgang_fade_in_frames,
+									ticks_per_frame = overgang_ticks_per_frame,
+									playback_mode = 'once',
+								})
+							end,
+							autoplay = true,
+							stop_on_exit = true,
+							play_options = { rewind = true, snap_to_start = true },
 					},
 				},
 				entering_state = function(self)
@@ -1020,22 +1005,18 @@ local function build_director_fsm()
 			},
 				fade = {
 					timelines = {
-					[fade_timeline_id] = {
-						create = function()
-							local frames = {}
-							for i = 0, fade_frame_count - 1 do
-								frames[#frames + 1] = i
-							end
-							return new_timeline({
-								id = fade_timeline_id,
-								frames = frames,
-								ticks_per_frame = fade_ticks_per_frame,
-								playback_mode = 'once',
-							})
-						end,
-						autoplay = true,
-						stop_on_exit = true,
-						play_options = { rewind = true, snap_to_start = true },
+						[fade_timeline_id] = {
+							create = function()
+								return new_timeline_range({
+									id = fade_timeline_id,
+									frame_count = fade_frame_count,
+									ticks_per_frame = fade_ticks_per_frame,
+									playback_mode = 'once',
+								})
+							end,
+							autoplay = true,
+							stop_on_exit = true,
+							play_options = { rewind = true, snap_to_start = true },
 					},
 				},
 					entering_state = function(self)
@@ -1108,23 +1089,19 @@ local function build_director_fsm()
 				end,
 			},
 				combat_fade_in = {
-				timelines = {
-					[combat_fade_timeline_id] = {
-						create = function()
-							local frames = {}
-							for i = 0, combat_fade_frame_count - 1 do
-								frames[#frames + 1] = i
-							end
-							return new_timeline({
-								id = combat_fade_timeline_id,
-								frames = frames,
-								ticks_per_frame = combat_fade_ticks_per_frame,
-								playback_mode = 'once',
-							})
-						end,
-						autoplay = true,
-						stop_on_exit = true,
-						play_options = { rewind = true, snap_to_start = true },
+					timelines = {
+						[combat_fade_timeline_id] = {
+							create = function()
+								return new_timeline_range({
+									id = combat_fade_timeline_id,
+									frame_count = combat_fade_frame_count,
+									ticks_per_frame = combat_fade_ticks_per_frame,
+									playback_mode = 'once',
+								})
+							end,
+							autoplay = true,
+							stop_on_exit = true,
+							play_options = { rewind = true, snap_to_start = true },
 					},
 				},
 					entering_state = function(self)
@@ -1159,23 +1136,19 @@ local function build_director_fsm()
 				end,
 			},
 				combat_fade_out = {
-				timelines = {
-					[combat_fade_timeline_id] = {
-						create = function()
-							local frames = {}
-							for i = 0, combat_fade_frame_count - 1 do
-								frames[#frames + 1] = i
-							end
-							return new_timeline({
-								id = combat_fade_timeline_id,
-								frames = frames,
-								ticks_per_frame = combat_fade_ticks_per_frame,
-								playback_mode = 'once',
-							})
-						end,
-						autoplay = true,
-						stop_on_exit = true,
-						play_options = { rewind = true, snap_to_start = true },
+					timelines = {
+						[combat_fade_timeline_id] = {
+							create = function()
+								return new_timeline_range({
+									id = combat_fade_timeline_id,
+									frame_count = combat_fade_frame_count,
+									ticks_per_frame = combat_fade_ticks_per_frame,
+									playback_mode = 'once',
+								})
+							end,
+							autoplay = true,
+							stop_on_exit = true,
+							play_options = { rewind = true, snap_to_start = true },
 					},
 				},
 					entering_state = function(self)
@@ -1379,23 +1352,19 @@ local function build_director_fsm()
 				},
 			},
 				combat_hit = {
-				timelines = {
-					[combat_hit_timeline_id] = {
-						create = function()
-							local frames = {}
-							for i = 0, combat_hit_frame_count - 1 do
-								frames[#frames + 1] = i
-							end
-							return new_timeline({
-								id = combat_hit_timeline_id,
-								frames = frames,
-								ticks_per_frame = combat_hit_ticks_per_frame,
-								playback_mode = 'once',
-							})
-						end,
-						autoplay = true,
-						stop_on_exit = true,
-						play_options = { rewind = true, snap_to_start = true },
+					timelines = {
+						[combat_hit_timeline_id] = {
+							create = function()
+								return new_timeline_range({
+									id = combat_hit_timeline_id,
+									frame_count = combat_hit_frame_count,
+									ticks_per_frame = combat_hit_ticks_per_frame,
+									playback_mode = 'once',
+								})
+							end,
+							autoplay = true,
+							stop_on_exit = true,
+							play_options = { rewind = true, snap_to_start = true },
 					},
 				},
 					entering_state = function(self)
@@ -1439,23 +1408,19 @@ local function build_director_fsm()
 				},
 			},
 				combat_dodge = {
-				timelines = {
-					[combat_dodge_timeline_id] = {
-						create = function()
-							local frames = {}
-							for i = 0, combat_dodge_frame_count - 1 do
-								frames[#frames + 1] = i
-							end
-							return new_timeline({
-								id = combat_dodge_timeline_id,
-								frames = frames,
-								ticks_per_frame = combat_dodge_ticks_per_frame,
-								playback_mode = 'once',
-							})
-						end,
-						autoplay = true,
-						stop_on_exit = true,
-						play_options = { rewind = true, snap_to_start = true },
+					timelines = {
+						[combat_dodge_timeline_id] = {
+							create = function()
+								return new_timeline_range({
+									id = combat_dodge_timeline_id,
+									frame_count = combat_dodge_frame_count,
+									ticks_per_frame = combat_dodge_ticks_per_frame,
+									playback_mode = 'once',
+								})
+							end,
+							autoplay = true,
+							stop_on_exit = true,
+							play_options = { rewind = true, snap_to_start = true },
 					},
 				},
 					entering_state = function(self)
@@ -1526,23 +1491,19 @@ local function build_director_fsm()
 				},
 			},
 				combat_all_out = {
-				timelines = {
-					[combat_all_out_timeline_id] = {
-						create = function()
-							local frames = {}
-							for i = 0, combat_all_out_frame_count - 1 do
-								frames[#frames + 1] = i
-							end
-							return new_timeline({
-								id = combat_all_out_timeline_id,
-								frames = frames,
-								ticks_per_frame = combat_all_out_ticks_per_frame,
-								playback_mode = 'once',
-							})
-						end,
-						autoplay = true,
-						stop_on_exit = true,
-						play_options = { rewind = true, snap_to_start = true },
+					timelines = {
+						[combat_all_out_timeline_id] = {
+							create = function()
+								return new_timeline_range({
+									id = combat_all_out_timeline_id,
+									frame_count = combat_all_out_frame_count,
+									ticks_per_frame = combat_all_out_ticks_per_frame,
+									playback_mode = 'once',
+								})
+							end,
+							autoplay = true,
+							stop_on_exit = true,
+							play_options = { rewind = true, snap_to_start = true },
 					},
 				},
 					entering_state = function(self)
@@ -1679,24 +1640,20 @@ local function build_director_fsm()
 					return '/combat_results_fade_in'
 				end,
 			},
-			combat_results_fade_in = {
-				timelines = {
-					[combat_results_fade_in_timeline_id] = {
-						create = function()
-							local frames = {}
-							for i = 0, combat_results_fade_in_frames - 1 do
-								frames[#frames + 1] = i
-							end
-							return new_timeline({
-								id = combat_results_fade_in_timeline_id,
-								frames = frames,
-								ticks_per_frame = combat_results_fade_in_ticks_per_frame,
-								playback_mode = 'once',
-							})
-						end,
-						autoplay = true,
-						stop_on_exit = true,
-						play_options = { rewind = true, snap_to_start = true },
+				combat_results_fade_in = {
+					timelines = {
+						[combat_results_fade_in_timeline_id] = {
+							create = function()
+								return new_timeline_range({
+									id = combat_results_fade_in_timeline_id,
+									frame_count = combat_results_fade_in_frames,
+									ticks_per_frame = combat_results_fade_in_ticks_per_frame,
+									playback_mode = 'once',
+								})
+							end,
+							autoplay = true,
+							stop_on_exit = true,
+							play_options = { rewind = true, snap_to_start = true },
 					},
 				},
 				on = {
@@ -1734,23 +1691,19 @@ local function build_director_fsm()
 				},
 			},
 				combat_results_fade_out = {
-				timelines = {
-					[combat_results_fade_out_timeline_id] = {
-						create = function()
-							local frames = {}
-							for i = 0, combat_results_fade_out_frames - 1 do
-								frames[#frames + 1] = i
-							end
-							return new_timeline({
-								id = combat_results_fade_out_timeline_id,
-								frames = frames,
-								ticks_per_frame = combat_results_fade_out_ticks_per_frame,
-								playback_mode = 'once',
-							})
-						end,
-						autoplay = true,
-						stop_on_exit = true,
-						play_options = { rewind = true, snap_to_start = true },
+					timelines = {
+						[combat_results_fade_out_timeline_id] = {
+							create = function()
+								return new_timeline_range({
+									id = combat_results_fade_out_timeline_id,
+									frame_count = combat_results_fade_out_frames,
+									ticks_per_frame = combat_results_fade_out_ticks_per_frame,
+									playback_mode = 'once',
+								})
+							end,
+							autoplay = true,
+							stop_on_exit = true,
+							play_options = { rewind = true, snap_to_start = true },
 					},
 				},
 					entering_state = function(self)
@@ -1795,24 +1748,20 @@ local function build_director_fsm()
 					},
 				},
 			},
-			combat_exit_fade_in = {
-				timelines = {
-					[combat_exit_fade_in_timeline_id] = {
-						create = function()
-							local frames = {}
-							for i = 0, combat_exit_fade_in_frames - 1 do
-								frames[#frames + 1] = i
-							end
-							return new_timeline({
-								id = combat_exit_fade_in_timeline_id,
-								frames = frames,
-								ticks_per_frame = combat_exit_fade_in_ticks_per_frame,
-								playback_mode = 'once',
-							})
-						end,
-						autoplay = true,
-						stop_on_exit = true,
-						play_options = { rewind = true, snap_to_start = true },
+				combat_exit_fade_in = {
+					timelines = {
+						[combat_exit_fade_in_timeline_id] = {
+							create = function()
+								return new_timeline_range({
+									id = combat_exit_fade_in_timeline_id,
+									frame_count = combat_exit_fade_in_frames,
+									ticks_per_frame = combat_exit_fade_in_ticks_per_frame,
+									playback_mode = 'once',
+								})
+							end,
+							autoplay = true,
+							stop_on_exit = true,
+							play_options = { rewind = true, snap_to_start = true },
 					},
 				},
 				entering_state = function(self)

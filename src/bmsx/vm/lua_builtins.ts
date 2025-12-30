@@ -17,6 +17,8 @@ export const ENGINE_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<VMLuaBuiltinDescriptor>
 	{ name: 'define_component', params: ['definition'], signature: 'define_component(definition)' },
 	{ name: 'define_effect', params: ['definition', 'opts?'], signature: 'define_effect(definition [, opts])' },
 	{ name: 'new_timeline', params: ['def'], signature: 'new_timeline(def)' },
+	{ name: 'timeline_range', params: ['frame_count'], signature: 'timeline_range(frame_count)' },
+	{ name: 'new_timeline_range', params: ['def'], signature: 'new_timeline_range(def)' },
 	{ name: 'spawn_object', params: ['definition_id', 'addons?'], signature: 'spawn_object(definition_id [, addons])' },
 	{ name: 'spawn_sprite', params: ['definition_id', 'addons?'], signature: 'spawn_sprite(definition_id [, addons])' },
 	{ name: 'spawn_textobject', params: ['definition_id', 'addons?'], signature: 'spawn_textobject(definition_id [, addons])' },
