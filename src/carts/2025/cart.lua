@@ -1176,6 +1176,7 @@ local function build_director_fsm()
 					local maya_b = object(combat_maya_b_id)
 					maya_b:set_image('maya_b')
 					maya_b.visible = true
+					maya_b.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
 					maya_b.x = display_width() - maya_b.sx
 					maya_b.y = display_height() - maya_b.sy
 					maya_b.z = 300
