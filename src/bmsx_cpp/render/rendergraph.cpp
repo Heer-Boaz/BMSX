@@ -3,7 +3,9 @@
  */
 
 #include "rendergraph.h"
+#if BMSX_ENABLE_GLES2
 #include "gles2_backend.h"
+#endif
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
@@ -17,11 +19,13 @@ namespace bmsx {
 
 namespace {
 
+#if BMSX_ENABLE_GLES2
 struct GLES2DepthTarget {
     GLuint id = 0;
     i32 width = 0;
     i32 height = 0;
 };
+#endif
 
 } // namespace
 
@@ -233,6 +237,9 @@ void RenderGraphRuntime::compile(FrameData* frame) {
 }
 
 void RenderGraphRuntime::execute(FrameData* frame) {
+#if !BMSX_ENABLE_GLES2
+    throw std::runtime_error("[RenderGraph] OpenGLES2 backend disabled at compile time.");
+#else
     if (!m_compiled) compile(frame);
     if (!m_realized) realizeAll();
 
@@ -310,6 +317,7 @@ void RenderGraphRuntime::execute(FrameData* frame) {
             m_backend->endRenderPass(passEnc);
         }
     }
+#endif
 }
 
 void RenderGraphRuntime::invalidate() {
@@ -395,6 +403,9 @@ void* RenderGraphRuntime::getFBO(RenderGraphTexHandle color, RenderGraphTexHandl
 }
 
 void RenderGraphRuntime::realizeAll() {
+#if !BMSX_ENABLE_GLES2
+    throw std::runtime_error("[RenderGraph] OpenGLES2 backend disabled at compile time.");
+#else
     if (m_realized) return;
 
     auto* gles = static_cast<OpenGLES2Backend*>(m_backend);
@@ -434,9 +445,11 @@ void RenderGraphRuntime::realizeAll() {
     }
 
     m_realized = true;
+#endif
 }
 
 void RenderGraphRuntime::destroyResources() {
+#if BMSX_ENABLE_GLES2
     auto* gles = static_cast<OpenGLES2Backend*>(m_backend);
 
     for (i32 i = 1; i < static_cast<i32>(m_texResources.size()); ++i) {
@@ -458,9 +471,18 @@ void RenderGraphRuntime::destroyResources() {
     }
 
     m_realized = false;
+#else
+    for (i32 i = 1; i < static_cast<i32>(m_texResources.size()); ++i) {
+        m_texResources[i] = InternalTexResource{};
+    }
+    m_realized = false;
+#endif
 }
 
 void* RenderGraphRuntime::ensureFBO(RenderGraphTexHandle color, RenderGraphTexHandle depth) {
+#if !BMSX_ENABLE_GLES2
+    throw std::runtime_error("[RenderGraph] OpenGLES2 backend disabled at compile time.");
+#else
     auto& colorRes = m_texResources[color];
     auto it = colorRes.fboWithDepth.find(depth);
     if (it != colorRes.fboWithDepth.end()) return it->second;
@@ -485,6 +507,7 @@ void* RenderGraphRuntime::ensureFBO(RenderGraphTexHandle color, RenderGraphTexHa
                      static_cast<unsigned>(status));
     }
     return handle;
+#endif
 }
 
 } // namespace bmsx

@@ -7,16 +7,19 @@
 #include "../../input/input.h"
 #include "../../input/gamepadinput.h"
 #include "../../input/keyboardinput.h"
-#include "../../render/gles2_backend.h"
 #include "../../render/renderpasslib.h"
+#if BMSX_ENABLE_GLES2
+#include "../../render/gles2_backend.h"
 #include "../../render/sprites_pipeline_gles2.h"
 #include "../../render/crt_pipeline_gles2.h"
+#endif
 #include <chrono>
 #include <cstring>
 #include <cstdarg>
 #include <fstream>
 #include <algorithm>
 #include <cmath>
+#include <stdexcept>
 
 namespace bmsx {
 namespace {
@@ -30,6 +33,9 @@ constexpr double kFrameSpikeMultiplier = 1.2;
 
 LibretroPlatform::LibretroPlatform(bool use_hw_render)
     : m_use_hw_render(use_hw_render) {
+#if !BMSX_ENABLE_GLES2
+    m_use_hw_render = false;
+#endif
     // Initialize framebuffer with default size
     m_framebuffer.resize(0, 0);
 
@@ -93,12 +99,18 @@ void LibretroPlatform::setInputStateCallback(retro_input_state_t cb) {
 }
 
 void LibretroPlatform::setHwRenderCallbacks(retro_hw_get_current_framebuffer_t get_current_framebuffer) {
+#if BMSX_ENABLE_GLES2
     m_hw_get_current_framebuffer = get_current_framebuffer;
     auto* backend = static_cast<OpenGLES2Backend*>(m_engine->view()->backend());
     backend->setFramebufferGetter(m_hw_get_current_framebuffer);
+#else
+    (void)get_current_framebuffer;
+    throw std::runtime_error("[LibretroPlatform] OpenGLES2 backend disabled at compile time.");
+#endif
 }
 
 void LibretroPlatform::onContextReset() {
+#if BMSX_ENABLE_GLES2
     auto* view = m_engine->view();
     auto* backend = static_cast<OpenGLES2Backend*>(view->backend());
     backend->setFramebufferGetter(m_hw_get_current_framebuffer);
@@ -110,15 +122,22 @@ void LibretroPlatform::onContextReset() {
     view->setPipelineRegistry(std::move(registry));
     view->rebuildGraph();
     m_engine->refreshRenderAssets();
+#else
+    throw std::runtime_error("[LibretroPlatform] OpenGLES2 backend disabled at compile time.");
+#endif
 }
 
 void LibretroPlatform::onContextDestroy() {
+#if BMSX_ENABLE_GLES2
     auto* view = m_engine->view();
     auto* backend = static_cast<OpenGLES2Backend*>(view->backend());
     SpritesPipeline::shutdownGLES2(backend);
     CRTPipeline::shutdownGLES2(backend);
     backend->onContextDestroy();
     view->setPipelineRegistry(std::unique_ptr<RenderPassLibrary>());
+#else
+    throw std::runtime_error("[LibretroPlatform] OpenGLES2 backend disabled at compile time.");
+#endif
 }
 
 void LibretroPlatform::setAVInfo(const retro_system_av_info& info) {
@@ -755,10 +774,14 @@ LibretroGameViewHost::LibretroGameViewHost(Framebuffer& framebuffer, bool use_hw
 
 std::unique_ptr<GPUBackend> LibretroGameViewHost::createBackend() {
     if (m_use_hw_render) {
+#if BMSX_ENABLE_GLES2
         return std::make_unique<OpenGLES2Backend>(
             static_cast<i32>(m_framebuffer.width),
             static_cast<i32>(m_framebuffer.height)
         );
+#else
+        throw std::runtime_error("[LibretroGameViewHost] OpenGLES2 backend disabled at compile time.");
+#endif
     }
     return std::make_unique<SoftwareBackend>(
         m_framebuffer.data,
@@ -769,12 +792,18 @@ std::unique_ptr<GPUBackend> LibretroGameViewHost::createBackend() {
 }
 
 void LibretroGameViewHost::updateBackend(GPUBackend* backend) {
+#if BMSX_ENABLE_GLES2
     if (backend->type() == BackendType::OpenGLES2) {
         auto* glBackend = static_cast<OpenGLES2Backend*>(backend);
         glBackend->setViewportSize(static_cast<i32>(m_framebuffer.width),
                                    static_cast<i32>(m_framebuffer.height));
         return;
     }
+#else
+    if (backend->type() == BackendType::OpenGLES2) {
+        throw std::runtime_error("[LibretroGameViewHost] OpenGLES2 backend disabled at compile time.");
+    }
+#endif
     auto* softBackend = static_cast<SoftwareBackend*>(backend);
     softBackend->setFramebuffer(
         m_framebuffer.data,

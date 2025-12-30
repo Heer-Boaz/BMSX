@@ -7,8 +7,10 @@
 #include "renderpasslib.h"
 #include "gameview.h"
 #include "sprites_pipeline.h"
+#if BMSX_ENABLE_GLES2
 #include "sprites_pipeline_gles2.h"
 #include "crt_pipeline_gles2.h"
+#endif
 #include "rendergraph.h"
 #include "../core/engine.h"
 #include "../core/rompack.h"
@@ -29,7 +31,11 @@ void RenderPassLibrary::registerBuiltin() {
             registerBuiltinPassesSoftware();
             break;
         case BackendType::OpenGLES2:
+#if BMSX_ENABLE_GLES2
             registerBuiltinPassesOpenGLES2();
+#else
+            throw std::runtime_error("[RenderPassLibrary] OpenGLES2 backend disabled at compile time.");
+#endif
             break;
         case BackendType::WebGL2:
             // TODO: WebGL2 passes
@@ -169,6 +175,9 @@ void RenderPassLibrary::registerBuiltinPassesSoftware() {
 }
 
 void RenderPassLibrary::registerBuiltinPassesOpenGLES2() {
+#if !BMSX_ENABLE_GLES2
+    throw std::runtime_error("[RenderPassLibrary] OpenGLES2 backend disabled at compile time.");
+#else
     // FrameResolve: per-frame state setup
     {
         RenderPassDef desc;
@@ -259,6 +268,7 @@ void RenderPassLibrary::registerBuiltinPassesOpenGLES2() {
         desc.prepare = [](GPUBackend*, std::any&) { };
         registerPass(desc);
     }
+#endif
 }
 
 void RenderPassLibrary::registerPass(const RenderPassDef& desc) {

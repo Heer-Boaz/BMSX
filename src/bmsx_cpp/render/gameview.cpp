@@ -7,7 +7,9 @@
 
 #include "gameview.h"
 #include "sprites_pipeline.h"
+#if BMSX_ENABLE_GLES2
 #include "gles2_backend.h"
+#endif
 #include "renderpasslib.h"
 #include "rendergraph.h"
 #include "glyphs.h"
@@ -155,6 +157,11 @@ void GameView::drawGame() {
     // Increment frame timing
     m_renderFrameIndex++;
 
+#if !BMSX_ENABLE_GLES2
+    if (m_backend->type() == BackendType::OpenGLES2) {
+        throw std::runtime_error("[GameView] OpenGLES2 backend disabled at compile time.");
+    }
+#else
     if (m_backend->type() == BackendType::OpenGLES2) {
         FrameData frame;
         frame.frameIndex = static_cast<u32>(m_renderFrameIndex);
@@ -163,6 +170,7 @@ void GameView::drawGame() {
         m_renderGraph->execute(&frame);
         return;
     }
+#endif
 
     // Begin main render pass
     RenderPassDesc mainPass;
@@ -236,21 +244,33 @@ void GameView::setPipelineRegistry(std::unique_ptr<RenderPassLibrary> registry) 
 
 void GameView::setActiveTexUnit(i32 unit) {
     if (backendType() != BackendType::OpenGLES2) return;
+#if !BMSX_ENABLE_GLES2
+    throw std::runtime_error("[GameView] OpenGLES2 backend disabled at compile time.");
+#else
     m_activeTexUnit = unit;
     static_cast<OpenGLES2Backend*>(m_backend.get())->setActiveTextureUnit(unit);
+#endif
 }
 
 void GameView::bind2DTex(TextureHandle tex) {
     if (backendType() != BackendType::OpenGLES2) return;
     if (m_activeTexture2D == tex) return;
+#if !BMSX_ENABLE_GLES2
+    throw std::runtime_error("[GameView] OpenGLES2 backend disabled at compile time.");
+#else
     static_cast<OpenGLES2Backend*>(m_backend.get())->bindTexture2D(tex);
     m_activeTexture2D = tex;
+#endif
 }
 
 void GameView::bindCubemapTex(TextureHandle tex) {
     if (backendType() != BackendType::OpenGLES2) return;
+#if !BMSX_ENABLE_GLES2
+    throw std::runtime_error("[GameView] OpenGLES2 backend disabled at compile time.");
+#else
     if (m_activeCubemap == tex) return;
     m_activeCubemap = tex;
+#endif
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

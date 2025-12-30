@@ -94,6 +94,7 @@ void retro_set_environment(retro_environment_t cb) {
   frame_time.reference = 0;
   cb(RETRO_ENVIRONMENT_SET_FRAME_TIME_CALLBACK, &frame_time);
 
+#if BMSX_ENABLE_GLES2
   std::memset(&g_hw_render, 0, sizeof(g_hw_render));
   g_hw_render.context_type = RETRO_HW_CONTEXT_OPENGLES2;
   g_hw_render.context_reset = hw_context_reset;
@@ -111,6 +112,9 @@ void retro_set_environment(retro_environment_t cb) {
   } else {
     g_hw_render_active = true;
   }
+#else
+  g_hw_render_active = false;
+#endif
 }
 
 void retro_set_video_refresh(retro_video_refresh_t cb) {

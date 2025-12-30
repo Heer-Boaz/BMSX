@@ -13,6 +13,11 @@ option(BMSX_BUILD_LIBRETRO "Build libretro core" ON)
 option(BMSX_BUILD_SDL "Build SDL standalone executable" OFF)
 option(BMSX_BUILD_TESTS "Build unit tests" OFF)
 option(BMSX_ENABLE_LTO "Enable Link Time Optimization" OFF)
+set(BMSX_ENABLE_GLES2_DEFAULT ON)
+if(WIN32)
+    set(BMSX_ENABLE_GLES2_DEFAULT OFF)
+endif()
+option(BMSX_ENABLE_GLES2 "Enable OpenGLES2 backend" ${BMSX_ENABLE_GLES2_DEFAULT})
 
 # =============================================================================
 # Find zlib (for ROM decompression)
@@ -101,12 +106,9 @@ add_library(bmsx_core STATIC
 
     # Render systems
     render/backend.cpp
-    render/gles2_backend.cpp
     render/gameview.cpp
     render/render_queues.cpp
     render/sprites_pipeline.cpp
-    render/sprites_pipeline_gles2.cpp
-    render/crt_pipeline_gles2.cpp
     render/renderpasslib.cpp
     render/rendergraph.cpp
     render/glyphs.cpp
@@ -127,6 +129,18 @@ target_include_directories(bmsx_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/..
 )
 
+target_compile_definitions(bmsx_core PUBLIC
+    BMSX_ENABLE_GLES2=$<BOOL:${BMSX_ENABLE_GLES2}>
+)
+
+if(BMSX_ENABLE_GLES2)
+    target_sources(bmsx_core PRIVATE
+        render/gles2_backend.cpp
+        render/sprites_pipeline_gles2.cpp
+        render/crt_pipeline_gles2.cpp
+    )
+endif()
+
 target_link_libraries(bmsx_core PUBLIC ZLIB::ZLIB)
 
 # =============================================================================
@@ -140,8 +154,10 @@ if(BMSX_BUILD_LIBRETRO)
     )
 
     target_link_libraries(bmsx_libretro PRIVATE bmsx_core)
-    find_library(GLESV2_LIBRARY GLESv2 REQUIRED)
-    target_link_libraries(bmsx_libretro PRIVATE ${GLESV2_LIBRARY})
+    if(BMSX_ENABLE_GLES2)
+        find_library(GLESV2_LIBRARY GLESv2 REQUIRED)
+        target_link_libraries(bmsx_libretro PRIVATE ${GLESV2_LIBRARY})
+    endif()
 
     # Libretro naming convention
     set_target_properties(bmsx_libretro PROPERTIES

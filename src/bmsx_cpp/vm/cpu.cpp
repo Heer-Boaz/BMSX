@@ -999,6 +999,13 @@ void VMCPU::executeInstruction(CallFrame& frame, OpCode op, uint8_t aLow, uint8_
 			m_memory[static_cast<size_t>(addr)] = frame.registers[a];
 			return;
 		}
+		case OpCode::EMIT: {
+			if (!m_emitHandler) {
+				throw std::runtime_error("EMIT opcode requires an emit handler.");
+			}
+			m_emitHandler(frame.registers[a], frame.registers[b], frame.registers[c]);
+			return;
+		}
 	}
 }
 

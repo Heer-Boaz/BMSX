@@ -13,7 +13,9 @@
 #include "../core/engine.h"
 #include "../core/rompack.h"
 #include "gameview.h"
+#if BMSX_ENABLE_GLES2
 #include "sprites_pipeline_gles2.h"
+#endif
 
 namespace bmsx {
 namespace SpritesPipeline {
@@ -256,6 +258,9 @@ void renderSpriteBatch(GPUBackend* backend, GameView* context) {
                                 context);
       return;
     case BackendType::OpenGLES2: {
+#if !BMSX_ENABLE_GLES2
+      throw std::runtime_error("[SpritesPipeline] OpenGLES2 backend disabled at compile time.");
+#else
       auto& engine = EngineCore::instance();
       auto* view = engine.view();
       const auto& assets = engine.assets();
@@ -294,6 +299,7 @@ void renderSpriteBatch(GPUBackend* backend, GameView* context) {
       renderSpriteBatchGLES2(static_cast<OpenGLES2Backend*>(backend), view,
                              spriteState);
       return;
+#endif
     }
     default:
       return;
