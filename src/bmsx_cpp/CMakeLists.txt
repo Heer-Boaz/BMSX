@@ -18,7 +18,34 @@ option(BMSX_ENABLE_LTO "Enable Link Time Optimization" OFF)
 # Find zlib (for ROM decompression)
 # =============================================================================
 
-find_package(ZLIB REQUIRED)
+if(WIN32)
+    find_package(ZLIB)
+    if(NOT ZLIB_FOUND)
+        include(FetchContent)
+        set(FETCHCONTENT_BASE_DIR "${CMAKE_BINARY_DIR}/third_party")
+        set(ZLIB_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+        set(ZLIB_BUILD_STATIC ON CACHE BOOL "" FORCE)
+        FetchContent_Declare(
+            zlib
+            URL https://zlib.net/zlib-1.3.1.tar.gz
+            URL_HASH SHA256=38ef96b8dfe510d42707d9c781877914792541133e1870841463bfa73f883e32
+        )
+        FetchContent_MakeAvailable(zlib)
+        if(TARGET zlibstatic AND NOT TARGET ZLIB::ZLIB)
+            add_library(ZLIB::ZLIB ALIAS zlibstatic)
+        elseif(TARGET zlib AND NOT TARGET ZLIB::ZLIB)
+            add_library(ZLIB::ZLIB ALIAS zlib)
+        endif()
+        if(TARGET ZLIB::ZLIB)
+            set(ZLIB_FOUND TRUE)
+        endif()
+    endif()
+    if(NOT ZLIB_FOUND)
+        message(FATAL_ERROR "ZLIB not found. Install zlib or provide it in the build directory.")
+    endif()
+else()
+    find_package(ZLIB REQUIRED)
+endif()
 
 # =============================================================================
 # Compiler flags
