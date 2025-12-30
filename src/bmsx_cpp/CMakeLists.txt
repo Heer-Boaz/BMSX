@@ -28,7 +28,8 @@ if(WIN32)
         FetchContent_Declare(
             zlib
             URL https://zlib.net/zlib-1.3.1.tar.gz
-            URL_HASH SHA256=38ef96b8dfe510d42707d9c781877914792541133e1870841463bfa73f883e32
+            URL_HASH SHA256=9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23
+            DOWNLOAD_EXTRACT_TIMESTAMP TRUE
         )
         FetchContent_MakeAvailable(zlib)
         if(TARGET zlibstatic AND NOT TARGET ZLIB::ZLIB)
