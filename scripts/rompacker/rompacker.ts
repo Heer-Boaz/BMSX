@@ -501,6 +501,22 @@ function runCommand(command: string, args: string[]): void {
 	}
 }
 
+function getVcpkgToolchainPath(): string {
+	const vcpkgRoot = process.env.VCPKG_ROOT;
+	if (!vcpkgRoot) {
+		throw new Error('libretro-win requires VCPKG_ROOT to be set (vcpkg toolchain).');
+	}
+	const toolchainPath = join(vcpkgRoot, 'scripts', 'buildsystems', 'vcpkg.cmake');
+	if (!existsSync(toolchainPath)) {
+		throw new Error(`vcpkg toolchain not found at ${toolchainPath}.`);
+	}
+	return toolchainPath;
+}
+
+function resolveVcpkgTriplet(): string {
+	return process.env.VCPKG_TARGET_TRIPLET || process.env.VCPKG_DEFAULT_TRIPLET || 'x64-windows';
+}
+
 function getLibretroBuildDir(platform: RomPackerTarget): string {
 	return platform === 'libretro-win' ? 'build-win' : 'build';
 }
@@ -523,6 +539,11 @@ function ensureLibretroCoreBuilt(debug: boolean, platform: RomPackerTarget): voi
 		if (process.platform !== 'win32') {
 			throw new Error('libretro-win requires running on Windows with MSVC build tools.');
 		}
+		const toolchainPath = getVcpkgToolchainPath();
+		const triplet = resolveVcpkgTriplet();
+		cmakeArgs.push('-G', 'Visual Studio 17 2022', '-A', 'x64');
+		cmakeArgs.push(`-DCMAKE_TOOLCHAIN_FILE=${toolchainPath}`);
+		cmakeArgs.push(`-DVCPKG_TARGET_TRIPLET=${triplet}`);
 	}
 	runCommand('cmake', cmakeArgs);
 	const config = debug ? 'Debug' : 'Release';
