@@ -12,6 +12,10 @@ local text_choice_id = 'p3.text.choice'
 local text_prompt_id = 'p3.text.prompt'
 local text_transition_id = 'p3.text.transition'
 local text_results_id = 'p3.text.results'
+local text_ids_all = { text_main_id, text_choice_id, text_prompt_id, text_transition_id, text_results_id }
+local text_ids_core = { text_main_id, text_choice_id, text_prompt_id, text_transition_id }
+local text_ids_choice_prompt = { text_choice_id, text_prompt_id }
+local text_ids_transition_results = { text_transition_id, text_results_id }
 
 local overgang_timeline_id = 'overgang'
 local overgang_in_frames = 24
@@ -655,6 +659,12 @@ local function clear_text(text_object_id)
 	text_obj.highlighted_line_index = nil
 end
 
+local function clear_texts(text_ids)
+	for i = 1, #text_ids do
+		clear_text(text_ids[i])
+	end
+end
+
 local function finish_text(text_object_id)
 	local text_obj = object(text_object_id)
 	text_obj.displayed_lines = text_obj.full_text_lines
@@ -780,11 +790,7 @@ local function build_director_fsm()
 					self.skip_combat_fade_in = false
 					self.skip_transition_fade = false
 					self.fade_hold_black = false
-					clear_text(text_main_id)
-					clear_text(text_choice_id)
-					clear_text(text_prompt_id)
-					clear_text(text_transition_id)
-					clear_text(text_results_id)
+					clear_texts(text_ids_all)
 					self:hide_combat_sprites()
 					self:define_timeline(new_timeline({
 						id = combat_focus_timeline_id,
@@ -990,21 +996,17 @@ local function build_director_fsm()
 					bg.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
 				end,
 			},
-			bg_only = {
-				entering_state = function(self)
-					local node = story[self.node_id]
-					self:apply_background(node.bg)
-					local bg = object(bg_id)
-					bg.visible = true
-					bg.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
-					self:hide_combat_sprites()
-					clear_text(text_main_id)
-					clear_text(text_choice_id)
-					clear_text(text_prompt_id)
-					clear_text(text_transition_id)
-					clear_text(text_results_id)
-					self:reset_text_colors()
-				end,
+				bg_only = {
+					entering_state = function(self)
+						local node = story[self.node_id]
+						self:apply_background(node.bg)
+						local bg = object(bg_id)
+						bg.visible = true
+						bg.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
+						self:hide_combat_sprites()
+						clear_texts(text_ids_all)
+						self:reset_text_colors()
+					end,
 				input_eval = 'first',
 				input_event_handlers = {
 					['a[jp]'] = {
@@ -1016,8 +1018,8 @@ local function build_director_fsm()
 					},
 				},
 			},
-			fade = {
-				timelines = {
+				fade = {
+					timelines = {
 					[fade_timeline_id] = {
 						create = function()
 							local frames = {}
@@ -1036,15 +1038,11 @@ local function build_director_fsm()
 						play_options = { rewind = true, snap_to_start = true },
 					},
 				},
-				entering_state = function(self)
-					local node = story[self.node_id]
-					clear_text(text_main_id)
-					clear_text(text_choice_id)
-					clear_text(text_prompt_id)
-					clear_text(text_transition_id)
-					clear_text(text_results_id)
-					self:reset_text_colors()
-					local next_node = story[node.next]
+					entering_state = function(self)
+						local node = story[self.node_id]
+						clear_texts(text_ids_all)
+						self:reset_text_colors()
+						local next_node = story[node.next]
 					local next_kind = next_node.kind
 					self.fade_hold_black = next_kind == 'transition' or next_kind == 'combat'
 					if next_kind == 'transition' then
@@ -1109,7 +1107,7 @@ local function build_director_fsm()
 					self.fade_hold_black = false
 				end,
 			},
-			combat_fade_in = {
+				combat_fade_in = {
 				timelines = {
 					[combat_fade_timeline_id] = {
 						create = function()
@@ -1129,17 +1127,13 @@ local function build_director_fsm()
 						play_options = { rewind = true, snap_to_start = true },
 					},
 				},
-				entering_state = function(self)
-					clear_text(text_main_id)
-					clear_text(text_choice_id)
-					clear_text(text_prompt_id)
-					clear_text(text_transition_id)
-					clear_text(text_results_id)
-					self:hide_combat_sprites()
-					local bg = object(bg_id)
-					bg.visible = true
-					bg.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
-				end,
+					entering_state = function(self)
+						clear_texts(text_ids_all)
+						self:hide_combat_sprites()
+						local bg = object(bg_id)
+						bg.visible = true
+						bg.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
+					end,
 				on = {
 					['timeline.frame.' .. combat_fade_timeline_id] = {
 						go = function(self, _state, event)
@@ -1164,7 +1158,7 @@ local function build_director_fsm()
 					bg.sprite_component.colorize = { r = 0, g = 0, b = 0, a = 1 }
 				end,
 			},
-			combat_fade_out = {
+				combat_fade_out = {
 				timelines = {
 					[combat_fade_timeline_id] = {
 						create = function()
@@ -1184,12 +1178,9 @@ local function build_director_fsm()
 						play_options = { rewind = true, snap_to_start = true },
 					},
 				},
-				entering_state = function(self)
-					clear_text(text_main_id)
-					clear_text(text_choice_id)
-					clear_text(text_prompt_id)
-					clear_text(text_transition_id)
-				end,
+					entering_state = function(self)
+						clear_texts(text_ids_core)
+					end,
 				on = {
 					['timeline.end.' .. combat_fade_timeline_id] = {
 						go = function(self)
@@ -1198,12 +1189,11 @@ local function build_director_fsm()
 					},
 				},
 			},
-			combat_init = {
-				entering_state = function(self)
-					local node = story[self.node_id]
-					clear_text(text_transition_id)
-					clear_text(text_results_id)
-					self:reset_text_colors()
+				combat_init = {
+					entering_state = function(self)
+						local node = story[self.node_id]
+						clear_texts(text_ids_transition_results)
+						self:reset_text_colors()
 
 					local bg = object(bg_id)
 					bg.visible = false
@@ -1328,13 +1318,12 @@ local function build_director_fsm()
 					maya_b.y = self.combat_maya_b_base_y
 				end,
 			},
-			combat_round = {
-				entering_state = function(self)
-					local node = story[self.node_id]
-					clear_text(text_transition_id)
-					clear_text(text_results_id)
-					local bg = object(bg_id)
-					bg.visible = false
+				combat_round = {
+					entering_state = function(self)
+						local node = story[self.node_id]
+						clear_texts(text_ids_transition_results)
+						local bg = object(bg_id)
+						bg.visible = false
 					local monster = object(combat_monster_id)
 					monster:set_image(node.monster_imgid)
 					monster.visible = true
@@ -1389,7 +1378,7 @@ local function build_director_fsm()
 					},
 				},
 			},
-			combat_hit = {
+				combat_hit = {
 				timelines = {
 					[combat_hit_timeline_id] = {
 						create = function()
@@ -1409,11 +1398,10 @@ local function build_director_fsm()
 						play_options = { rewind = true, snap_to_start = true },
 					},
 				},
-				entering_state = function(self)
-					clear_text(text_choice_id)
-					clear_text(text_prompt_id)
-					set_text_lines(text_main_id, { 'RAAK!' }, false)
-				end,
+					entering_state = function(self)
+						clear_texts(text_ids_choice_prompt)
+						set_text_lines(text_main_id, { 'RAAK!' }, false)
+					end,
 				tick = function(self)
 					self:update_combat_hover()
 				end,
@@ -1450,7 +1438,7 @@ local function build_director_fsm()
 					},
 				},
 			},
-			combat_dodge = {
+				combat_dodge = {
 				timelines = {
 					[combat_dodge_timeline_id] = {
 						create = function()
@@ -1470,12 +1458,11 @@ local function build_director_fsm()
 						play_options = { rewind = true, snap_to_start = true },
 					},
 				},
-				entering_state = function(self)
-					clear_text(text_choice_id)
-					clear_text(text_prompt_id)
-					set_text_lines(text_main_id, { 'ONTWIJKT!' }, false)
-					self.combat_dodge_dir = -self.combat_dodge_dir
-				end,
+					entering_state = function(self)
+						clear_texts(text_ids_choice_prompt)
+						set_text_lines(text_main_id, { 'ONTWIJKT!' }, false)
+						self.combat_dodge_dir = -self.combat_dodge_dir
+					end,
 				tick = function(self)
 					self:update_combat_hover()
 				end,
@@ -1508,14 +1495,13 @@ local function build_director_fsm()
 					},
 				},
 			},
-			combat_all_out_prompt = {
-				entering_state = function(self)
-					clear_text(text_choice_id)
-					clear_text(text_prompt_id)
-					set_text_lines(text_main_id, { 'Het monster lijkt rijp voor de sloop!' }, true)
-					set_text_lines(text_choice_id, { 'ALL-OUT-ATTACK!!' }, false)
-					self.choice_index = 1
-				end,
+				combat_all_out_prompt = {
+					entering_state = function(self)
+						clear_texts(text_ids_choice_prompt)
+						set_text_lines(text_main_id, { 'Het monster lijkt rijp voor de sloop!' }, true)
+						set_text_lines(text_choice_id, { 'ALL-OUT-ATTACK!!' }, false)
+						self.choice_index = 1
+					end,
 				tick = function(self)
 					self:update_combat_hover()
 					local main = object(text_main_id)
@@ -1539,7 +1525,7 @@ local function build_director_fsm()
 					},
 				},
 			},
-			combat_all_out = {
+				combat_all_out = {
 				timelines = {
 					[combat_all_out_timeline_id] = {
 						create = function()
@@ -1559,14 +1545,10 @@ local function build_director_fsm()
 						play_options = { rewind = true, snap_to_start = true },
 					},
 				},
-				entering_state = function(self)
-					self:hide_combat_sprites()
-					clear_text(text_main_id)
-					clear_text(text_choice_id)
-					clear_text(text_prompt_id)
-					clear_text(text_transition_id)
-					clear_text(text_results_id)
-					local all_out = object(combat_all_out_id)
+					entering_state = function(self)
+						self:hide_combat_sprites()
+						clear_texts(text_ids_all)
+						local all_out = object(combat_all_out_id)
 					all_out:get_component_by_id('base_sprite').scale = { x = 1, y = 1 }
 					all_out.visible = true
 					all_out.x = 0
@@ -1633,11 +1615,7 @@ local function build_director_fsm()
 					['combat_focus.snap'] = {
 						go = function(self)
 							self:hide_combat_sprites()
-							clear_text(text_main_id)
-							clear_text(text_choice_id)
-							clear_text(text_prompt_id)
-							clear_text(text_transition_id)
-							clear_text(text_results_id)
+							clear_texts(text_ids_all)
 						end,
 					},
 					['combat_focus.done'] = {
@@ -1647,19 +1625,16 @@ local function build_director_fsm()
 					},
 				},
 			},
-			combat_results_setup = {
-				entering_state = function(self)
-					local node = story[self.node_id]
-					local rewards = self:resolve_combat_rewards(node)
+				combat_results_setup = {
+					entering_state = function(self)
+						local node = story[self.node_id]
+						local rewards = self:resolve_combat_rewards(node)
 					$.emit('combat.end', 'world', { node_id = self.node_id, monster_imgid = node.monster_imgid })
 					self.just_finished_combat = true
 					self.last_combat_monster_imgid = node.monster_imgid
 					self:apply_effects(rewards)
 
-					clear_text(text_main_id)
-					clear_text(text_choice_id)
-					clear_text(text_prompt_id)
-					clear_text(text_transition_id)
+						clear_texts(text_ids_core)
 
 					local monster = object(combat_monster_id)
 					monster.visible = false
@@ -1758,7 +1733,7 @@ local function build_director_fsm()
 					},
 				},
 			},
-			combat_results_fade_out = {
+				combat_results_fade_out = {
 				timelines = {
 					[combat_results_fade_out_timeline_id] = {
 						create = function()
@@ -1778,12 +1753,9 @@ local function build_director_fsm()
 						play_options = { rewind = true, snap_to_start = true },
 					},
 				},
-				entering_state = function(self)
-					clear_text(text_main_id)
-					clear_text(text_choice_id)
-					clear_text(text_prompt_id)
-					clear_text(text_transition_id)
-				end,
+					entering_state = function(self)
+						clear_texts(text_ids_core)
+					end,
 				on = {
 					['timeline.frame.' .. combat_results_fade_out_timeline_id] = {
 						go = function(self, _state, event)
@@ -2147,11 +2119,7 @@ function new_game()
 		pos = { z = 1003 },
 	})
 
-	clear_text(text_main_id)
-	clear_text(text_choice_id)
-	clear_text(text_prompt_id)
-	clear_text(text_transition_id)
-	clear_text(text_results_id)
+	clear_texts(text_ids_all)
 
 	spawn_sprite('p3.combat.monster.def', {
 		id = combat_monster_id,
