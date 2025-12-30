@@ -112,21 +112,42 @@ function textobject:update_displayed_text()
 	self.text = self.displayed_lines
 end
 
-function textobject:set_text(text_or_lines)
+function textobject:set_text(text_or_lines, opts)
+	opts = opts or {}
+	local typed = opts.typed
+	local snap = opts.snap == true
+	if typed == nil then
+		typed = true
+	end
 	if type(text_or_lines) == "string" then
 		self.full_text_lines = wrap_glyphs(text_or_lines, self.maximum_characters_per_line)
 	else
 		local joined = table.concat(text_or_lines, "\n")
 		self.full_text_lines = wrap_glyphs(joined, self.maximum_characters_per_line)
 	end
+	self:recenter_text_block()
+	if typed and not snap then
+		self.displayed_lines = {}
+		for i = 1, #self.full_text_lines do
+			self.displayed_lines[i] = ""
+		end
+		self.current_line_index = 0
+		self.current_char_index = 0
+		self.is_typing = true
+		self:update_displayed_text()
+		return
+	end
+	self:reveal_text()
+end
+
+function textobject:reveal_text()
 	self.displayed_lines = {}
 	for i = 1, #self.full_text_lines do
-		self.displayed_lines[i] = ""
+		self.displayed_lines[i] = self.full_text_lines[i]
 	end
-	self.current_line_index = 0
+	self.current_line_index = #self.full_text_lines
 	self.current_char_index = 0
-	self.is_typing = true
-	self:recenter_text_block()
+	self.is_typing = false
 	self:update_displayed_text()
 end
 

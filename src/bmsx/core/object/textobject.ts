@@ -63,17 +63,30 @@ export class TextObject extends WorldObject {
 	 * @param textOrLines - A string containing the text to display (use newlines to separate lines),
 	 *                      or an iterable of strings (e.g., Lua table) where each element is a line.
 	 */
-	public set_text(textOrLines: string | Iterable<string>): void {
+	public set_text(textOrLines: string | Iterable<string>, opts: { typed?: boolean; snap?: boolean } = {}): void {
 		const text = typeof textOrLines === 'string' ? textOrLines : Array.from(textOrLines).join('\n');
 		const wrappedLines = wrapGlyphs(text, this.maximum_characters_per_line);
+		const typed = opts.typed ?? true;
+		const snap = opts.snap === true;
 
 		this.full_text_lines = wrappedLines;
-		this.displayed_lines = this.full_text_lines.map(() => '');
-		this.current_line_index = 0;
-		this.current_char_index = 0;
-		this.is_typing = true;
-
 		this.recenter_text_block();
+		if (typed && !snap) {
+			this.displayed_lines = this.full_text_lines.map(() => '');
+			this.current_line_index = 0;
+			this.current_char_index = 0;
+			this.is_typing = true;
+			this.update_displayed_text();
+			return;
+		}
+		this.reveal_text();
+	}
+
+	public reveal_text(): void {
+		this.displayed_lines = [...this.full_text_lines];
+		this.current_line_index = this.full_text_lines.length;
+		this.current_char_index = 0;
+		this.is_typing = false;
 		this.update_displayed_text();
 	}
 
