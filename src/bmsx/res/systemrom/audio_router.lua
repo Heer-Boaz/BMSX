@@ -431,21 +431,33 @@ local function bind_events()
 	return true
 end
 
+function router.try_bind()
+	if router._bound then
+		return true
+	end
+	if not bind_events() then
+		return false
+	end
+	flush_pending()
+	return true
+end
+
+function router.tick()
+	router.try_bind()
+end
+
 function router.init()
 	if router._inited then
 		return
 	end
 	router._inited = true
-	if bind_events() then
+	if router.try_bind() then
 		return
 	end
 	router._any_handler = function(event)
 		if not router._bound then
 			stash_event(event)
-			if not bind_events() then
-				return
-			end
-			flush_pending()
+			router.try_bind()
 		end
 	end
 	eventemitter.instance:on_any(router._any_handler)

@@ -15,6 +15,7 @@ local function register_builtin_ecs()
 	local r = ecs_pipeline.defaultecspipelineregistry
 	r:register_many({
 		{ id = "behaviortrees", group = ecs.tickgroup.input, create = function(p) return ecs_systems.behaviortreesystem.new(p) end },
+		{ id = "audiorouter", group = ecs.tickgroup.input, default_priority = 5, create = function(p) return ecs_systems.audioroutersystem.new(p) end },
 		{ id = "inputactioneffects", group = ecs.tickgroup.input, default_priority = 10, create = function(p) return input_action_effect_system.inputactioneffectsystem.new(p) end },
 		{ id = "actioneffectruntime", group = ecs.tickgroup.actioneffect, create = function(p) return ecs_systems.actioneffectruntimesystem.new(p) end },
 		{ id = "objectfsm", group = ecs.tickgroup.moderesolution, create = function(p) return ecs_systems.statemachinesystem.new(p) end },
@@ -43,6 +44,7 @@ end
 local function default_pipeline_spec()
 	return {
 		{ ref = "behaviortrees" },
+		{ ref = "audiorouter" },
 		{ ref = "inputactioneffects" },
 		{ ref = "actioneffectruntime" },
 		{ ref = "objectfsm" },

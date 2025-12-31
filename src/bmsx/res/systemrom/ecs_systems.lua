@@ -3,6 +3,7 @@
 
 local ecs = require("ecs")
 local action_effects = require("action_effects")
+local audio_router = require("audio_router")
 local registry = require("registry")
 
 local tickgroup = ecs.tickgroup
@@ -25,6 +26,20 @@ setmetatable(behaviortreesystem, { __index = ecsystem })
 function behaviortreesystem.new(priority)
 	local self = setmetatable(ecsystem.new(tickgroup.input, priority or 0), behaviortreesystem)
 	return self
+end
+
+local audioroutersystem = {}
+audioroutersystem.__index = audioroutersystem
+setmetatable(audioroutersystem, { __index = ecsystem })
+
+function audioroutersystem.new(priority)
+	local self = setmetatable(ecsystem.new(tickgroup.input, priority or 5), audioroutersystem)
+	self.__ecs_id = "audioroutersystem"
+	return self
+end
+
+function audioroutersystem:update(_world)
+	audio_router.tick()
 end
 
 function behaviortreesystem:update(world)
@@ -438,6 +453,7 @@ end
 
 return {
 	behaviortreesystem = behaviortreesystem,
+	audioroutersystem = audioroutersystem,
 	actioneffectruntimesystem = actioneffectruntimesystem,
 	statemachinesystem = statemachinesystem,
 	objectticksystem = objectticksystem,

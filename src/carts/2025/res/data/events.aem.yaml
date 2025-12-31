@@ -119,7 +119,7 @@ events:
                       sync: immediate
                       fade_ms: 200
 
-    combat.end:
+    combat.results:
         channel: music
         max_voices: 1
         rules:

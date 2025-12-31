@@ -832,6 +832,10 @@ function combat.define_fsm()
 			local node = story[self.node_id]
 			local rewards = self:resolve_combat_rewards(node)
 			self.combat_rewards = rewards
+			object(director_instance_id).events:emit('combat.results', {
+				combat_node_id = self.combat_node_id,
+				monster_imgid = self.combat_monster_imgid,
+			})
 
 			clear_texts(text_ids_core)
 
