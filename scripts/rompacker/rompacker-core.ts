@@ -39,9 +39,9 @@ const { VM_PROGRAM_ASSET_ID, buildModuleAliasesFromPaths, encodeProgram, encodeP
 // @ts-ignore
 const pako = require('pako');
 // @ts-ignore
-const minify = require('@node-minify/core');
+const { minify } = require('@node-minify/core');
 // @ts-ignore
-const cleanCSS = require('@node-minify/clean-css');
+const { cleanCss: cleanCSS } = require('@node-minify/clean-css');
 // @ts-ignore
 const { loadImage } = require('canvas');
 // @ts-ignore
@@ -578,33 +578,20 @@ export async function buildGameHtmlAndManifest(rom_name: string, title: string, 
 
 	const images = await loadImages(IMAGE_PATHS);
 
-	return new Promise<any>((resolve, reject) => {
-		minify({
-			compressor: cleanCSS,
-			input: "./gamebase.css",
-			output: "./rom/gamebase.min.css",
-			callback: async (err: any, cssMinified: string) => {
-				if (!cssMinified) {
-					return reject(err);
-				}
-
-				try {
-					const transformedHtml = await transformHtml(html, cssMinified, debug);
-					await writeFile(`./dist/game${debug ? '_debug' : ''}.html`, transformedHtml);
-
-					// Update the manifest.json-file that is used for app-versions of the webpage
-					const manifest = (await readFile("./rom/manifest.json", 'utf8')).replace('#title', title).replace('#short_name', short_name);
-
-					// Write updated manifest to dist-folder
-					await writeFile("./dist/manifest.webmanifest", manifest);
-
-					resolve(null);
-				} catch (error) {
-					reject(error);
-				}
-			}
-		});
+	const cssMinified = await minify({
+		compressor: cleanCSS,
+		input: "./gamebase.css",
+		output: "./rom/gamebase.min.css",
 	});
+
+	const transformedHtml = await transformHtml(html, cssMinified, debug);
+	await writeFile(`./dist/game${debug ? '_debug' : ''}.html`, transformedHtml);
+
+	// Update the manifest.json-file that is used for app-versions of the webpage
+	const manifest = (await readFile("./rom/manifest.json", 'utf8')).replace('#title', title).replace('#short_name', short_name);
+
+	// Write updated manifest to dist-folder
+	await writeFile("./dist/manifest.webmanifest", manifest);
 }
 
 /**
