@@ -277,9 +277,9 @@ story = {
 			{ 'Nu tijd voor combat...' },
 			{ 'Maar de Sint faalt met goede voorbereiding en skipt dit gedeelte van het spel...' },
 		},
-		next = 'overgang_tuesday_afternoon',
+		next = 'overgang_ordeel_des_sints',
 	},
-	overgang_tuesday_afternoon = {
+	overgang_ordeel_des_sints = {
 		kind = 'transition',
 		label = 'ORDEEL DES SINTS',
 		next = 'ending',

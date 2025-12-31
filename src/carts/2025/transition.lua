@@ -2,6 +2,40 @@ local transition = {}
 
 function transition.register_states(states)
 
+	local function finish_transition(self)
+		local node = story[self.node_id]
+		local came_from_fade = self.skip_transition_fade
+		self.node_id = node.next
+		local next_kind = story[self.node_id].kind
+		self.skip_transition_fade = false
+		if next_kind == 'combat' then
+			self.skip_combat_fade_in = true
+		end
+		if came_from_fade and next_kind ~= 'combat' then
+			return '/transition_fade_in'
+		end
+		return '/run_node'
+	end
+
+	local function finish_transition_fade_in(self)
+		local bg = object(bg_id)
+		bg.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
+		return '/run_node'
+	end
+
+	local function finish_fade(self)
+		local node = story[self.node_id]
+		self.node_id = node.next
+		local next_kind = story[self.node_id].kind
+		if next_kind == 'combat' then
+			self.skip_combat_fade_in = true
+		end
+		if next_kind == 'transition' then
+			self.skip_transition_fade = true
+		end
+		return '/run_node'
+	end
+
 	states.transition = {
 		timelines = {
 			[overgang_timeline_id] = {
@@ -40,6 +74,14 @@ function transition.register_states(states)
 				apply_background(self.transition_target_bg)
 			end
 		end,
+		input_eval = 'first',
+		input_event_handlers = {
+			['b[jp]'] = {
+				go = function(self)
+					return finish_transition(self)
+				end,
+			},
+		},
 		on = {
 			['timeline.frame.' .. overgang_timeline_id] = {
 				go = function(self, _state, event)
@@ -88,18 +130,7 @@ function transition.register_states(states)
 			},
 			['timeline.end.' .. overgang_timeline_id] = {
 				go = function(self)
-					local node = story[self.node_id]
-					local came_from_fade = self.skip_transition_fade
-					self.node_id = node.next
-					local next_kind = story[self.node_id].kind
-					self.skip_transition_fade = false
-					if next_kind == 'combat' then
-						self.skip_combat_fade_in = true
-					end
-					if came_from_fade and next_kind ~= 'combat' then
-						return '/transition_fade_in'
-					end
-					return '/run_node'
+					return finish_transition(self)
 				end,
 			},
 		},
@@ -130,6 +161,14 @@ function transition.register_states(states)
 			bg.visible = true
 			bg.sprite_component.colorize = { r = 0, g = 0, b = 0, a = 1 }
 		end,
+		input_eval = 'first',
+		input_event_handlers = {
+			['b[jp]'] = {
+				go = function(self)
+					return finish_transition_fade_in(self)
+				end,
+			},
+		},
 		on = {
 			['timeline.frame.' .. overgang_post_fade_in_timeline_id] = {
 				go = function(self, _state, event)
@@ -141,9 +180,7 @@ function transition.register_states(states)
 			},
 			['timeline.end.' .. overgang_post_fade_in_timeline_id] = {
 				go = function(self)
-					local bg = object(bg_id)
-					bg.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
-					return '/run_node'
+					return finish_transition_fade_in(self)
 				end,
 			},
 		},
@@ -185,6 +222,14 @@ function transition.register_states(states)
 			bg.visible = true
 			bg.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
 		end,
+		input_eval = 'first',
+		input_event_handlers = {
+			['b[jp]'] = {
+				go = function(self)
+					return finish_fade(self)
+				end,
+			},
+		},
 		on = {
 			['timeline.frame.' .. fade_timeline_id] = {
 				go = function(self, _state, event)
@@ -215,16 +260,7 @@ function transition.register_states(states)
 			},
 			['timeline.end.' .. fade_timeline_id] = {
 				go = function(self)
-					local node = story[self.node_id]
-					self.node_id = node.next
-					local next_kind = story[self.node_id].kind
-					if next_kind == 'combat' then
-						self.skip_combat_fade_in = true
-					end
-					if next_kind == 'transition' then
-						self.skip_transition_fade = true
-					end
-					return '/run_node'
+					return finish_fade(self)
 				end,
 			},
 		},

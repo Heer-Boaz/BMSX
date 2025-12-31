@@ -319,6 +319,88 @@ function combat.define_fsm()
 	end
 
 	local all_out_shake = build_all_out_shake(combat_all_out_frame_count)
+	local function finish_combat_fade_in(self)
+		return '/combat_init'
+	end
+
+	local function finish_combat_fade_out(self)
+		return '/combat_done'
+	end
+
+	local function finish_combat_intro(self)
+		return '/combat_round'
+	end
+
+	local function finish_combat_hit(self)
+		local monster = object(combat_monster_id)
+		monster.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
+		local node = story[self.node_id]
+		if self.combat_round_index > #node.rounds then
+			return '/combat_all_out_prompt'
+		end
+		return '/combat_round'
+	end
+
+	local function finish_combat_dodge(self)
+		local monster = object(combat_monster_id)
+		monster.x = self.combat_monster_base_x
+		local node = story[self.node_id]
+		if self.combat_round_index > #node.rounds then
+			return '/combat_all_out_prompt'
+		end
+		return '/combat_round'
+	end
+
+	local function finish_combat_all_out(self)
+		return '/combat_focus'
+	end
+
+	local function finish_combat_focus(self)
+		hide_combat_sprites()
+		clear_texts(text_ids_all)
+		return '/combat_results_setup'
+	end
+
+	local function finish_combat_results_fade_in(self)
+		local bg = object(bg_id)
+		bg.sprite_component.colorize = { r = combat_results_bg_r, g = combat_results_bg_g, b = combat_results_bg_b, a = combat_results_bg_a }
+		local maya_b = object(combat_maya_b_id)
+		maya_b.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
+		maya_b.x = self.combat_results_maya_target_x
+		local results = object(text_results_id)
+		results.text_color = { r = 1, g = 1, b = 1, a = 1 }
+		results.centered_block_x = self.combat_results_text_target_x
+		return '/combat_results'
+	end
+
+	local function finish_combat_results_fade_out(self)
+		object(combat_maya_b_id).visible = false
+		clear_text(text_results_id)
+		local bg = object(bg_id)
+		local bg_sprite = bg:get_component_by_id('base_sprite')
+		bg.visible = false
+		bg:set_image(self.combat_results_prev_bg_imgid)
+		bg_sprite.scale = { x = self.combat_results_prev_bg_scale_x, y = self.combat_results_prev_bg_scale_y }
+		bg.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
+		hide_combat_sprites()
+		local next_kind = story[self.node_id].kind
+		if next_kind == 'transition' then
+			self.skip_transition_fade = true
+			return '/combat_done'
+		end
+		if next_kind == 'fade' then
+			self.combat_exit_target_bg = story[story[self.node_id].next].bg
+		else
+			self.combat_exit_target_bg = story[self.node_id].bg
+		end
+		return '/combat_exit_fade_in'
+	end
+
+	local function finish_combat_exit_fade_in(self)
+		local bg = object(bg_id)
+		bg.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
+		return '/combat_done'
+	end
 
 	states.combat_fade_in = {
 		timelines = {
@@ -343,6 +425,14 @@ function combat.define_fsm()
 			bg.visible = true
 			bg.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
 		end,
+		input_eval = 'first',
+		input_event_handlers = {
+			['b[jp]'] = {
+				go = function(self)
+					return finish_combat_fade_in(self)
+				end,
+			},
+		},
 		on = {
 			['timeline.frame.' .. combat_fade_timeline_id] = {
 				go = function(self, _state, event)
@@ -358,7 +448,7 @@ function combat.define_fsm()
 			},
 			['timeline.end.' .. combat_fade_timeline_id] = {
 				go = function(self)
-					return '/combat_init'
+					return finish_combat_fade_in(self)
 				end,
 			},
 		},
@@ -387,10 +477,18 @@ function combat.define_fsm()
 		entering_state = function(self)
 			clear_texts(text_ids_core)
 		end,
+		input_eval = 'first',
+		input_event_handlers = {
+			['b[jp]'] = {
+				go = function(self)
+					return finish_combat_fade_out(self)
+				end,
+			},
+		},
 		on = {
 			['timeline.end.' .. combat_fade_timeline_id] = {
 				go = function(self)
-					return '/combat_done'
+					return finish_combat_fade_out(self)
 				end,
 			},
 		},
@@ -475,6 +573,14 @@ function combat.define_fsm()
 			}))
 			self:play_timeline(combat_intro_timeline_id, { rewind = true, snap_to_start = true })
 		end,
+		input_eval = 'first',
+		input_event_handlers = {
+			['b[jp]'] = {
+				go = function(self)
+					return finish_combat_intro(self)
+				end,
+			},
+		},
 		on = {
 			['timeline.frame.' .. combat_intro_timeline_id] = {
 				go = function(_self, _state, event)
@@ -501,7 +607,7 @@ function combat.define_fsm()
 			},
 			['timeline.end.' .. combat_intro_timeline_id] = {
 				go = function(self)
-					return '/combat_round'
+					return finish_combat_intro(self)
 				end,
 			},
 		},
@@ -610,6 +716,14 @@ function combat.define_fsm()
 		tick = function(self)
 			self:update_combat_hover()
 		end,
+		input_eval = 'first',
+		input_event_handlers = {
+			['b[jp]'] = {
+				go = function(self)
+					return finish_combat_hit(self)
+				end,
+			},
+		},
 		on = {
 			['timeline.frame.' .. combat_hit_timeline_id] = {
 				go = function(self, _state, event)
@@ -632,13 +746,7 @@ function combat.define_fsm()
 			},
 			['timeline.end.' .. combat_hit_timeline_id] = {
 				go = function(self)
-					local monster = object(combat_monster_id)
-					monster.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
-					local node = story[self.node_id]
-					if self.combat_round_index > #node.rounds then
-						return '/combat_all_out_prompt'
-					end
-					return '/combat_round'
+					return finish_combat_hit(self)
 				end,
 			},
 		},
@@ -668,6 +776,14 @@ function combat.define_fsm()
 		tick = function(self)
 			self:update_combat_hover()
 		end,
+		input_eval = 'first',
+		input_event_handlers = {
+			['b[jp]'] = {
+				go = function(self)
+					return finish_combat_dodge(self)
+				end,
+			},
+		},
 		on = {
 			['timeline.frame.' .. combat_dodge_timeline_id] = {
 				go = function(self, _state, event)
@@ -686,13 +802,7 @@ function combat.define_fsm()
 			},
 			['timeline.end.' .. combat_dodge_timeline_id] = {
 				go = function(self)
-					local monster = object(combat_monster_id)
-					monster.x = self.combat_monster_base_x
-					local node = story[self.node_id]
-					if self.combat_round_index > #node.rounds then
-						return '/combat_all_out_prompt'
-					end
-					return '/combat_round'
+					return finish_combat_dodge(self)
 				end,
 			},
 		},
@@ -756,6 +866,14 @@ function combat.define_fsm()
 			self.all_out_origin_x = all_out.x
 			self.all_out_origin_y = all_out.y
 		end,
+		input_eval = 'first',
+		input_event_handlers = {
+			['b[jp]'] = {
+				go = function(self)
+					return finish_combat_all_out(self)
+				end,
+			},
+		},
 		on = {
 			['timeline.frame.' .. combat_all_out_timeline_id] = {
 				go = function(self, _state, event)
@@ -774,7 +892,7 @@ function combat.define_fsm()
 			},
 			['timeline.end.' .. combat_all_out_timeline_id] = {
 				go = function(self)
-					return '/combat_focus'
+					return finish_combat_all_out(self)
 				end,
 			},
 		},
@@ -801,6 +919,14 @@ function combat.define_fsm()
 				},
 			})
 		end,
+		input_eval = 'first',
+		input_event_handlers = {
+			['b[jp]'] = {
+				go = function(self)
+					return finish_combat_focus(self)
+				end,
+			},
+		},
 		on = {
 			['timeline.frame.' .. combat_focus_timeline_id] = {
 				go = function(_self, _state, event)
@@ -899,6 +1025,14 @@ function combat.define_fsm()
 				play_options = { rewind = true, snap_to_start = true },
 			},
 		},
+		input_eval = 'first',
+		input_event_handlers = {
+			['b[jp]'] = {
+				go = function(self)
+					return finish_combat_results_fade_in(self)
+				end,
+			},
+		},
 		on = {
 			['timeline.frame.' .. combat_results_fade_in_timeline_id] = {
 				go = function(self, _state, event)
@@ -916,7 +1050,7 @@ function combat.define_fsm()
 			},
 			['timeline.end.' .. combat_results_fade_in_timeline_id] = {
 				go = function(self)
-					return '/combat_results'
+					return finish_combat_results_fade_in(self)
 				end,
 			},
 		},
@@ -954,6 +1088,14 @@ function combat.define_fsm()
 		entering_state = function(self)
 			clear_texts(text_ids_core)
 		end,
+		input_eval = 'first',
+		input_event_handlers = {
+			['b[jp]'] = {
+				go = function(self)
+					return finish_combat_results_fade_out(self)
+				end,
+			},
+		},
 		on = {
 			['timeline.frame.' .. combat_results_fade_out_timeline_id] = {
 				go = function(self, _state, event)
@@ -969,26 +1111,7 @@ function combat.define_fsm()
 			},
 			['timeline.end.' .. combat_results_fade_out_timeline_id] = {
 				go = function(self)
-					object(combat_maya_b_id).visible = false
-					clear_text(text_results_id)
-					local bg = object(bg_id)
-					local bg_sprite = bg:get_component_by_id('base_sprite')
-					bg.visible = false
-					bg:set_image(self.combat_results_prev_bg_imgid)
-					bg_sprite.scale = { x = self.combat_results_prev_bg_scale_x, y = self.combat_results_prev_bg_scale_y }
-					bg.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
-					hide_combat_sprites()
-					local next_kind = story[self.node_id].kind
-					if next_kind == 'transition' then
-						self.skip_transition_fade = true
-						return '/combat_done'
-					end
-					if next_kind == 'fade' then
-						self.combat_exit_target_bg = story[story[self.node_id].next].bg
-					else
-						self.combat_exit_target_bg = story[self.node_id].bg
-					end
-					return '/combat_exit_fade_in'
+					return finish_combat_results_fade_out(self)
 				end,
 			},
 		},
@@ -1016,6 +1139,14 @@ function combat.define_fsm()
 			bg.visible = true
 			bg.sprite_component.colorize = { r = 0, g = 0, b = 0, a = 1 }
 		end,
+		input_eval = 'first',
+		input_event_handlers = {
+			['b[jp]'] = {
+				go = function(self)
+					return finish_combat_exit_fade_in(self)
+				end,
+			},
+		},
 		on = {
 			['timeline.frame.' .. combat_exit_fade_in_timeline_id] = {
 				go = function(self, _state, event)
@@ -1027,9 +1158,7 @@ function combat.define_fsm()
 			},
 			['timeline.end.' .. combat_exit_fade_in_timeline_id] = {
 				go = function(self)
-					local bg = object(bg_id)
-					bg.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
-					return '/combat_done'
+					return finish_combat_exit_fade_in(self)
 				end,
 			},
 		},
