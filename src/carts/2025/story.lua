@@ -104,9 +104,10 @@ story = {
 		bg = 'slaap_n',
 		typed = true,
 		pages = {
-			{ 'Maya ligt s\'avonds lekker te ronken.' },
+			{ 'Maya ligt s\'avonds lekker te ronken.', },
 			{ 'De problemen van morgen zijn', 'voor de Maya van morgen.' },
-			{ 'Maar...', 'dan wordt ze wakker in een droom...' },
+			{ 'Die laten we voor morgen.' },
+			{ 'Maar...', 'Dan wordt ze "wakker" in een droom...' },
 		},
 		next = 'igor',
 	},
@@ -117,8 +118,9 @@ story = {
 		typed = true,
 		pages = {
 			{ 'Een mysterieuze figuur verschijnt.', 'Hij noemt zichzelf Sintigor.' },
-			{ 'Sintigor:', '"Je keuzes hebben gevolgen, Maya."' },
-			{ 'Maya:', '"Dat klinkt verdacht logisch."' },
+			{ 'Sintigor: "Welkom Maya.', 'Ik zie dat je houdt van goede spellen."' },
+			{ 'Sintigor: "Maar je zal moeten beseffen dat"', 'je keuzes gevolgen hebben."' },
+			{ 'Maya: "Wat bedoel je?"' },
 		},
 		next = 'igor_choice',
 	},
@@ -126,21 +128,21 @@ story = {
 	igor_choice = {
 		kind = 'choice',
 		bg = 'igor',
-		prompt = { 'Sintigor kijkt je onderzoekend aan.' },
+		prompt = { 'Sintigor: "Je zult het snel genoeg ontdekken."',},
 		options = {
 			{
 				label = 'Uh ja, whatever.',
 				effects = { { stat = 'opdekin', add = 1 } },
 				result_pages = {
-					{ 'Sintigor glimlacht.', 'Opdekin +1' },
+					{ 'Sintigor lacht. Hij wat jou te wachten staat.', 'Opdekin +1' },
 				},
 				next = 'overgang_tuesday_morning',
 			},
 			{
-				label = 'Dit is toch best verontrustend.',
+				label = 'Nogal verontrustend dat Sinterklaas in de dromen van kinderen verschijnt.',
 				effects = { { stat = 'makeup', add = 1 } },
 				result_pages = {
-					{ 'Sintigor knikt.', '"Scherp."', 'Make-up +1' },
+					{ 'Sintigor: "Ik ben Sintigor, niet Sinterklaas. Jouw opmerking is wel scherp en laat je er beter uit zien."', 'Make-up +1' },
 				},
 				next = 'overgang_tuesday_morning',
 			},
@@ -161,8 +163,10 @@ story = {
 		bg = 'ochtendpijn',
 		typed = true,
 		pages = {
-			{ 'De wekker gaat af.', 'Maya wordt half wakker.' },
-			{ '"Snooze bestaat niet voor niets..."' },
+			{ 'De wekker gaat af.', 'Maya wordt semi-wakker.' },
+			{ '"Die rotwekker ook!" denkt ze bij zichzelf.' },
+			{ '"Gelukkig hebben ze daarom snooze uitgevonden."', 'Maar is dat wel verstandig met een toets deze week?' },
+			{ '"Kan Maya weerstand bieden aan de verleiding?"' },
 		},
 		next = 'combat_wekker',
 	},
@@ -172,24 +176,32 @@ story = {
 		monster_imgid = 'monster_snoozer',
 		rounds = {
 			{
-				prompt = { 'De wekker gaat af.', 'Snoozen?' },
+				prompt = { 'De wekker gaat af.', 'Tijd voor een snooze?' },
 				options = {
 					{ label = '\"Nog eventjes dan.\"', outcome = 'dodge', points = 0 },
-					{ label = '\"Nee. Opstaan.\"', outcome = 'hit', points = 1 },
+					{ label = '\"Neen! Ik ga opstaan!\"', outcome = 'hit', points = 1 },
 				},
 			},
 			{
-				prompt = { 'De oogjes worden zwaar.' },
+				prompt = { 'De oogjes worden zwaar.', 'Meer snoozen?' },
 				options = {
-					{ label = '\"Snoozen is huidverzorging.\"', outcome = 'dodge', points = 0 },
-					{ label = '\"NEIN.\"', outcome = 'hit', points = 1 },
+					{ label = '\"Snoozen is goed voor de huid!\"', outcome = 'dodge', points = 0 },
+					{ label = '\"NEIN!\"', outcome = 'hit', points = 1 },
+				},
+			},
+			{
+				prompt = { 'Het wordt lichter en de ogen frisser.', },
+				options = {
+					{ label = '\"Ik wordt wekker van de wakker!\"', outcome = 'hit', points = 1 },
+					{ label = '\"School is stom.\"', outcome = 'dodge', points = 0 },
 				},
 			},
 		},
 		rewards = {
-			{ { stat = 'rust', add = -1 } },
-			{ { stat = 'planning', add = 1 }, { stat = 'rust', add = 1 } },
-			{ { stat = 'planning', add = 2 }, { stat = 'opdekin', add = 1 } },
+			{ { stat = 'makeup', add = 2 } },
+			{ { stat = 'rust', add = 1 }, { stat = 'planning', add = 1 }, { stat = 'makeup', add = 1 } },
+			{ { stat = 'planning', add = 1 }, { stat = 'rust', add = 1 }, { stat = 'opdekin', add = 1 } },
+			{ { stat = 'planning', add = 2 }, { stat = 'rust', add = 2 }, { stat = 'opdekin', add = 2 } },
 		},
 		next = 'after_combat_wekker',
 	},
@@ -253,8 +265,9 @@ story = {
 		bg = 'ochtendpijn',
 		typed = true,
 		pages = {
-			{ 'Nieuwe dag.', 'Nieuwe strijd.' },
-			{ 'De Spiegel.' },
+			{ 'De dodelijkste strijd gaat beginnen!' },
+			{ 'Het allerbelangrijkste wat er moet gebeuren...' },
+			{ 'Het opmaken voor de schooldag!' },
 		},
 		next = 'combat_spiegel',
 	},
@@ -264,24 +277,31 @@ story = {
 		monster_imgid = 'monster_spiegel',
 		rounds = {
 			{
-				prompt = { 'Wat wordt het vandaag?' },
+				prompt = { 'Wat wordt het vandaag?', 'Extra eyeliner of lipstick?' },
 				options = {
 					{ label = '\"Extra eyeliner.\"', outcome = 'dodge', points = 0 },
-					{ label = '\"Goed is goed.\"', outcome = 'hit', points = 1 },
+					{ label = '\"Extra lipstick.\"', outcome = 'dodge', points = 0 },
 				},
 			},
 			{
-				prompt = { 'Twijfel loert.' },
+				prompt = { 'Oei, een puistje!', 'Meer make-up?' },
 				options = {
-					{ label = '\"Nog even.\"', outcome = 'dodge', points = 0 },
-					{ label = '\"Klaar.\"', outcome = 'hit', points = 1 },
+					{ label = '\"Boeuh!\"', outcome = 'hit', points = 1 },
+					{ label = '\"Ubermakeup!\"', outcome = 'dodge', points = 0 },
+				},
+			},
+			{
+				prompt = { 'Je mag jezelf nu wel vertonen op school.', 'Maar het is nog niet genoeg!' },
+				options = {
+					{ label = '\"MEER MAKEUP!\"', outcome = 'dodge', points = 0 },
+					{ label = '\"Ik luister naar mijn moeder.\"', outcome = 'hit', points = 1 },
 				},
 			},
 		},
 		rewards = {
-			{ { stat = 'makeup', add = 1 } },
-			{ { stat = 'makeup', add = 2 }, { stat = 'planning', add = 1 } },
-			{ { stat = 'makeup', add = 3 }, { stat = 'planning', add = 2 } },
+			{ { stat = 'makeup', add = 3 } },
+			{ { stat = 'makeup', add = 3 } },
+			{ { stat = 'makeup', add = 3 }, { stat = 'planning', add = 1 }, { stat = 'rust', add = 1 } },
 		},
 		next = 'after_combat_spiegel',
 	},
@@ -291,7 +311,8 @@ story = {
 		bg = 'maya_b',
 		typed = true,
 		pages = {
-			{ 'Je ziet er oké uit.', 'Dat is genoeg.' },
+			{ 'YES, JE ZIET ER WEER GOED UIT!', },
+			{ 'Nu voorbereiden op de toets!', },
 		},
 		next = 'overgang_wednesday_afternoon',
 	},
@@ -323,9 +344,9 @@ story = {
 		bg = 'huiswerk',
 		typed = true,
 		pages = {
-			{ 'Laatste voorbereiding.' },
-			{ 'Checklist. Ademhalen.' },
-			{ 'Dan: slapen.' },
+			{ 'Nadat Maya dapper heeft gestreden tegen haar wekker en spiegel...' },
+			{ 'Besluit Maya verstandig haar voorbereiding te doen voor de toets!' },
+			{ 'Nu tijd voor school.' },
 		},
 		next = 'overgang_thursday_morning',
 	},
@@ -341,10 +362,12 @@ story = {
 
 	schoolpoort = {
 		kind = 'dialogue',
-		bg = 'schoolpoort_mist',
+		bg = 'schoolpoort_klok',
 		typed = true,
 		pages = {
-			{ 'Voor de schoolpoort hangt mist.', 'Niet normale mist.' },
+			{ 'Voor de schoolpoort hangen er allemaal klokken.',},
+			{ 'En het zijn geen kerkklokken!' },
+			{ 'Het lijkt meer symbolisch,', 'alsof je wordt veroordeelt!' },
 			{ 'Papier ritselt in de lucht.', 'Alsof de toets al bestaat vóór je binnen bent.' },
 			{ 'Een stem:', '"Welkom, Maya."', '"Ik ben Heer Later."', '"En ik BEN de Eindtoets!"' },
 		},
@@ -418,10 +441,10 @@ story = {
 			{ 'Maya:', '"Awel."', '"Dan doen we dit dus."' },
 			{ 'De schooldeur klikt open.', 'Ubertoets: unlocked.' },
 		},
-		next = 'overgang_thursday_afternoon',
+		next = 'after_combat_heer_later',
 	},
 
-	after_combat_meester_later = {
+	after_combat_heer_later = {
 		kind = 'dialogue',
 		bg = 'klas1',
 		typed = true,
@@ -447,11 +470,12 @@ story = {
 		bg = 'sint_blij',
 		typed = true,
 		pages = {
-			{ 'Je vocht tegen de wekker.' },
-			{ 'Je vocht tegen de spiegel.' },
-			{ 'En tegen Meester Later.' },
-			{ 'Dat telt.' },
+			{ 'Maya, dat heb je toch weer redelijk gedaan!' },
+			{ 'Je hebt dapper gestreden tegen twee verschrikkelijke verleidingen:' },
+			{ 'De gruwelijke snooze', 'En de afgrijselijke make-up spiegel!' },
+			{ 'Ik ben trots op je!', 'Dit zal jouw toekomst zeker ten goede komen.' },
 		},
+		next = __inline_dialogue,
 	},
 
 	__inline_dialogue = {

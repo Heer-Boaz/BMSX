@@ -17,14 +17,22 @@ end
 
 local function wrap_glyphs(text, max_line_length)
 	local lines = {}
+	local line_map = {}
 	local current_line = ""
 	local i = 1
+	local logical_line_index = 1
+
+	local function push_line(line)
+		lines[#lines + 1] = line
+		line_map[#lines] = logical_line_index
+	end
 
 	while i <= #text do
 		local ch = string.sub(text, i, i)
 		if ch == "\n" then
-			lines[#lines + 1] = trim(current_line)
+			push_line(trim(current_line))
 			current_line = ""
+			logical_line_index = logical_line_index + 1
 			i = i + 1
 		elseif ch == " " or ch == "\t" or ch == "\r" or ch == "\f" or ch == "\v" then
 			i = i + 1
@@ -43,10 +51,10 @@ local function wrap_glyphs(text, max_line_length)
 				current_line = tentative
 			else
 				if current_line ~= "" then
-					lines[#lines + 1] = trim(current_line)
+					push_line(trim(current_line))
 					current_line = word
 				else
-					lines[#lines + 1] = word
+					push_line(word)
 					current_line = ""
 				end
 			end
@@ -55,10 +63,10 @@ local function wrap_glyphs(text, max_line_length)
 	end
 
 	if trim(current_line) ~= "" then
-		lines[#lines + 1] = trim(current_line)
+		push_line(trim(current_line))
 	end
 
-	return lines
+	return lines, line_map
 end
 
 function textobject.new(opts)
@@ -72,6 +80,7 @@ function textobject.new(opts)
 	self.current_char_index = 0
 	self.maximum_characters_per_line = 0
 	self.highlighted_line_index = nil
+	self.wrapped_line_to_logical_line = {}
 	self.is_typing = false
 	self.text_color = { r = 1, g = 1, b = 1, a = 1 }
 	self.highlight_color = { r = 0, g = 0, b = 0.5, a = 1 }
@@ -120,10 +129,10 @@ function textobject:set_text(text_or_lines, opts)
 		typed = true
 	end
 	if type(text_or_lines) == "string" then
-		self.full_text_lines = wrap_glyphs(text_or_lines, self.maximum_characters_per_line)
+		self.full_text_lines, self.wrapped_line_to_logical_line = wrap_glyphs(text_or_lines, self.maximum_characters_per_line)
 	else
 		local joined = table.concat(text_or_lines, "\n")
-		self.full_text_lines = wrap_glyphs(joined, self.maximum_characters_per_line)
+		self.full_text_lines, self.wrapped_line_to_logical_line = wrap_glyphs(joined, self.maximum_characters_per_line)
 	end
 	self:recenter_text_block()
 	if typed and not snap then
@@ -191,11 +200,12 @@ function textobject:draw()
 	local bg_alpha = text_color.a
 	local normal_bg_color = { r = 0, g = 0, b = 0, a = bg_alpha }
 	local highlight_bg_color = { r = highlight.r, g = highlight.g, b = highlight.b, a = highlight.a * bg_alpha }
+	local highlighted_logical_line = self.highlighted_line_index
 	for i = 1, #self.text do
 		local line = self.text[i]
 		local y = dims.top + line_height * (i - 1)
 		local bg = normal_bg_color
-		if self.highlighted_line_index ~= nil and self.highlighted_line_index == (i - 1) then
+		if highlighted_logical_line ~= nil and self.wrapped_line_to_logical_line[i] == (highlighted_logical_line + 1) then
 			local margin = self.char_width / 2
 			bg = highlight_bg_color
 			put_rectfillcolor(dims.left - margin, y - margin, dims.right + margin, y + line_height - margin, self.z, {
