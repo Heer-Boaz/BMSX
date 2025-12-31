@@ -20,11 +20,25 @@
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
+#include <string>
 
 namespace bmsx {
 namespace {
 constexpr double kAudioLeadFrames = 8.0;
 constexpr double kFrameSpikeMultiplier = 1.2;
+
+std::string buildEngineAssetsPath(const std::string& directory) {
+    if (directory.empty()) {
+        return {};
+    }
+    std::string path = directory;
+    const char last = path.back();
+    if (last != '/' && last != '\\') {
+        path.push_back('/');
+    }
+    path.append("engine.assets.rom");
+    return path;
+}
 }
 
 /* ============================================================================
@@ -240,23 +254,21 @@ void LibretroPlatform::tryLoadEngineAssets(const char* romPath) {
     std::string pathStr(romPath);
     size_t lastSlash = pathStr.find_last_of("/\\");
     std::string directory = (lastSlash != std::string::npos) ? pathStr.substr(0, lastSlash + 1) : "";
-    std::string engineAssetsPath = directory + "engine.assets.rom";
+    std::string engineAssetsPath = buildEngineAssetsPath(directory);
+    std::string systemAssetsPath = buildEngineAssetsPath(m_system_dir);
 
-    // Try to load engine assets (optional - not fatal if missing)
-    std::ifstream engineFile(engineAssetsPath, std::ios::binary | std::ios::ate);
-    if (engineFile) {
-        size_t engineSize = engineFile.tellg();
-        engineFile.seekg(0);
-        std::vector<uint8_t> engineData(engineSize);
-        if (engineFile.read(reinterpret_cast<char*>(engineData.data()), engineSize)) {
-            if (m_engine && m_engine->loadEngineAssets(engineData.data(), engineData.size())) {
-                log(RETRO_LOG_INFO, "[BMSX] Engine assets loaded (%zu bytes) from: %s\n", engineSize, engineAssetsPath.c_str());
-            } else {
-                log(RETRO_LOG_WARN, "[BMSX] Failed to parse engine assets: %s\n", engineAssetsPath.c_str());
-            }
-        }
-    } else {
+    if (!engineAssetsPath.empty() && loadEngineAssetsFromFile(engineAssetsPath)) {
+        return;
+    }
+    if (!systemAssetsPath.empty() && loadEngineAssetsFromFile(systemAssetsPath)) {
+        return;
+    }
+
+    if (!engineAssetsPath.empty()) {
         log(RETRO_LOG_INFO, "[BMSX] No engine assets found at: %s (continuing without)\n", engineAssetsPath.c_str());
+    }
+    if (!systemAssetsPath.empty()) {
+        log(RETRO_LOG_INFO, "[BMSX] No engine assets found in system dir: %s (continuing without)\n", systemAssetsPath.c_str());
     }
 }
 
@@ -288,31 +300,27 @@ bool LibretroPlatform::loadEmptyCart() {
 
     // Try to load engine assets from dist directory (default location)
     // TODO: Make this configurable via core options
-    const char* engineAssetsPaths[] = {
-        "dist/engine.assets.rom",
-        "./engine.assets.rom",
-        "../engine.assets.rom",
-        nullptr
-    };
+    std::vector<std::string> engineAssetsPaths;
+    std::string systemAssetsPath = buildEngineAssetsPath(m_system_dir);
+    if (!systemAssetsPath.empty()) {
+        engineAssetsPaths.push_back(systemAssetsPath);
+    }
+    engineAssetsPaths.emplace_back("dist/engine.assets.rom");
+    engineAssetsPaths.emplace_back("./engine.assets.rom");
+    engineAssetsPaths.emplace_back("../engine.assets.rom");
 
     bool assetsLoaded = false;
-    for (int i = 0; engineAssetsPaths[i] != nullptr; i++) {
-        std::ifstream file(engineAssetsPaths[i], std::ios::binary | std::ios::ate);
-        if (file) {
-            size_t size = file.tellg();
-            file.seekg(0);
-            std::vector<uint8_t> data(size);
-            if (file.read(reinterpret_cast<char*>(data.data()), size)) {
-                if (m_engine && m_engine->loadEngineAssets(data.data(), data.size())) {
-                    log(RETRO_LOG_INFO, "[BMSX] Engine assets loaded from: %s\n", engineAssetsPaths[i]);
-                    assetsLoaded = true;
-                    break;
-                }
-            }
+    for (const auto& path : engineAssetsPaths) {
+        if (loadEngineAssetsFromFile(path)) {
+            assetsLoaded = true;
+            break;
         }
     }
 
     if (!assetsLoaded) {
+        for (const auto& path : engineAssetsPaths) {
+            log(RETRO_LOG_INFO, "[BMSX] No engine assets found at: %s\n", path.c_str());
+        }
         log(RETRO_LOG_WARN, "[BMSX] No engine assets found, running without system program\n");
     }
 
@@ -326,6 +334,30 @@ bool LibretroPlatform::loadEmptyCart() {
     // Fallback: just mark as loaded to show test pattern
     m_rom_loaded = true;
     log(RETRO_LOG_INFO, "[BMSX] Empty cart loaded (test pattern mode)\n");
+    return true;
+}
+
+bool LibretroPlatform::loadEngineAssetsFromFile(const std::string& path) {
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
+    if (!file) {
+        return false;
+    }
+
+    size_t size = file.tellg();
+    file.seekg(0);
+
+    std::vector<uint8_t> data(size);
+    if (!file.read(reinterpret_cast<char*>(data.data()), size)) {
+        log(RETRO_LOG_WARN, "[BMSX] Failed to read engine assets: %s\n", path.c_str());
+        return false;
+    }
+
+    if (!m_engine->loadEngineAssets(data.data(), data.size())) {
+        log(RETRO_LOG_WARN, "[BMSX] Failed to parse engine assets: %s\n", path.c_str());
+        return false;
+    }
+
+    log(RETRO_LOG_INFO, "[BMSX] Engine assets loaded (%zu bytes) from: %s\n", size, path.c_str());
     return true;
 }
 

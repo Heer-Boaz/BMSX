@@ -150,6 +150,7 @@ public:
     void setInputPollCallback(retro_input_poll_t cb);
     void setInputStateCallback(retro_input_state_t cb);
     void setLogCallback(void (*cb)(enum retro_log_level, const char*, ...)) { m_log_cb = cb; }
+    void setSystemDirectory(std::string_view path) { m_system_dir = std::string(path); }
     void setHwRenderCallbacks(retro_hw_get_current_framebuffer_t get_current_framebuffer);
     void onContextReset();
     void onContextDestroy();
@@ -208,6 +209,7 @@ private:
     void pollInput();
     void processAudio();
     void log(retro_log_level level, const char* fmt, ...);
+    bool loadEngineAssetsFromFile(const std::string& path);
 
     // Libretro callbacks
     retro_environment_t m_environ_cb = nullptr;
@@ -216,6 +218,7 @@ private:
     retro_input_poll_t m_input_poll_cb = nullptr;
     retro_input_state_t m_input_state_cb = nullptr;
     void (*m_log_cb)(enum retro_log_level, const char*, ...) = nullptr;
+    std::string m_system_dir;
 
     // Output buffers
     Framebuffer m_framebuffer;

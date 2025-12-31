@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <chrono>
 #include <limits>
+#include <string>
 
 #include "libretro.h"
 #include "libretro_platform.h"
@@ -34,6 +35,7 @@ static bool g_has_pending_frame_time = false;
 static retro_hw_render_callback g_hw_render;
 static bool g_hw_render_active = false;
 static bool g_hw_context_pending = false;
+static std::string g_system_dir;
 
 // The platform instance
 static bmsx::LibretroPlatform* g_platform = nullptr;
@@ -115,6 +117,15 @@ void retro_set_environment(retro_environment_t cb) {
 #else
   g_hw_render_active = false;
 #endif
+
+  const char* system_dir = nullptr;
+  if (cb(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &system_dir) && system_dir && system_dir[0]) {
+    g_system_dir = system_dir;
+    logging.log(RETRO_LOG_INFO, "[BMSX] System directory: %s\n", g_system_dir.c_str());
+  } else {
+    g_system_dir.clear();
+    logging.log(RETRO_LOG_INFO, "[BMSX] System directory not provided\n");
+  }
 }
 
 void retro_set_video_refresh(retro_video_refresh_t cb) {
@@ -166,6 +177,7 @@ void retro_init(void) {
   g_platform = new bmsx::LibretroPlatform(g_hw_render_active);
   g_platform->setEnvironmentCallback(environ_cb);
   g_platform->setLogCallback(logging.log);
+  g_platform->setSystemDirectory(g_system_dir);
   g_platform->setVideoCallback(video_cb);
   g_platform->setAudioBatchCallback(audio_batch_cb);
   g_platform->setInputPollCallback(input_poll_cb);
