@@ -279,7 +279,7 @@ function timelinecomponent:apply_markers(entry, event)
 		end
 		local event = eventemitter:create_gameevent(spec)
 		owner.events:emit_event(event)
-		owner.sc:dispatch_event(event)
+		owner.sc:dispatch(event)
 	end
 end
 
@@ -294,11 +294,11 @@ end
 	function timelinecomponent:dispatch_timeline_events(owner, base_type, payload)
 		local base_event = eventemitter:create_gameevent({ type = base_type, emitter = owner, timeline_id = payload.timeline_id, frame_index = payload.frame_index, frame_value = payload.frame_value, rewound = payload.rewound, reason = payload.reason, direction = payload.direction, mode = payload.mode, wrapped = payload.wrapped })
 		owner.events:emit_event(base_event)
-		owner.sc:dispatch_event(base_event)
+		owner.sc:dispatch(base_event)
 		local scoped_type = base_type .. "." .. payload.timeline_id
 		local scoped_event = eventemitter:create_gameevent({ type = scoped_type, emitter = owner, timeline_id = payload.timeline_id, frame_index = payload.frame_index, frame_value = payload.frame_value, rewound = payload.rewound, reason = payload.reason, direction = payload.direction, mode = payload.mode, wrapped = payload.wrapped })
 		owner.events:emit_event(scoped_event)
-		owner.sc:dispatch_event(scoped_event)
+		owner.sc:dispatch(scoped_event)
 	end
 
 -- transformcomponent: simple positional proxy

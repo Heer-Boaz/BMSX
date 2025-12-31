@@ -14,6 +14,18 @@ local function make_def_id(id, parent)
 	return parent.def_id .. separator .. id
 end
 
+local function collect_event_list(def, list, seen)
+	for name in pairs(def.on) do
+		if not seen[name] then
+			list[#list + 1] = { name = name }
+			seen[name] = true
+		end
+	end
+	for _, child in pairs(def.states) do
+		collect_event_list(child, list, seen)
+	end
+end
+
 function statedefinition.new(id, def, root, parent)
 	local self = setmetatable({}, statedefinition)
 	self.__is_state_definition = true
@@ -52,6 +64,12 @@ function statedefinition.new(id, def, root, parent)
 			self.initial = key
 			break
 		end
+	end
+	if self.root == self then
+		local list = {}
+		local seen = {}
+		collect_event_list(self, list, seen)
+		self.event_list = list
 	end
 	return self
 end
@@ -1778,7 +1796,7 @@ function statemachinecontroller:auto_dispatch(event)
 	if not event.emitter then
 		event.emitter = self.target
 	end
-	self:dispatch_event(event)
+	self:dispatch(event)
 end
 
 function statemachinecontroller:start()
@@ -1834,10 +1852,6 @@ function statemachinecontroller:dispatch_input(event_or_name, payload)
 	return handled
 end
 
-function statemachinecontroller:dispatch_event(event)
-	return self:dispatch(event)
-end
-
 function statemachinecontroller:transition_to(path)
 	local machine_id, state_path = string.match(path, "^(.-):/(.+)$")
 	if not machine_id then
@@ -1866,18 +1880,6 @@ function statemachinecontroller:matches_state_path(path)
 		end
 	end
 	return false
-end
-
-function statemachinecontroller:switch_to(path)
-	local sep_index = string.find(path, ":/", 1, true)
-	local machine_id = sep_index and string.sub(path, 1, sep_index - 1) or path
-	local state_path = sep_index and string.sub(path, sep_index + 2) or nil
-	local machine = self.statemachines[machine_id]
-	if not machine then
-		error("no machine with id '" .. tostring(machine_id) .. "'")
-	end
-	local target_path = state_path or machine_id
-	machine:transition_to_path(target_path)
 end
 
 function statemachinecontroller:run_statemachine(id)

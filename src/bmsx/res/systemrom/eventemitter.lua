@@ -156,12 +156,12 @@ function eventport:on(spec)
 end
 
 function eventport:emit(event_name, payload)
-	eventemitter.instance:emit(event_name, self.emitter, payload)
+	$.emit(event_name, self.emitter, payload)
 end
 
 function eventport:emit_event(event)
 	event.emitter = event.emitter or self.emitter
-	eventemitter.instance:emit(event)
+	$.emit(event)
 	return event
 end
 

@@ -101,7 +101,7 @@ function inputactioneffectsystem:process_input_action_programs(world)
 			if not evt.emitter then
 				evt.emitter = obj
 			end
-			obj.sc:dispatch_event(evt)
+			obj.sc:dispatch(evt)
 		end
 		::continue::
 	end

@@ -175,7 +175,7 @@ function actioneffectcomponent:trigger(id, opts)
 	local event_payload = (outcome and outcome.payload ~= nil) and outcome.payload or payload
 	local event = create_owner_event(owner, event_type, event_payload)
 	owner.events:emit_event(event)
-	owner.sc:dispatch_event(event)
+	owner.sc:dispatch(event)
 
 	if definition.cooldown_ms and definition.cooldown_ms > 0 then
 		self.cooldown_until[id] = now + definition.cooldown_ms
