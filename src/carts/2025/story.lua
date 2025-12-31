@@ -368,7 +368,7 @@ story = {
 			{ 'Voor de schoolpoort hangen er allemaal klokken.',},
 			{ 'En het zijn geen kerkklokken!' },
 			{ 'Het lijkt meer symbolisch,', 'alsof je wordt veroordeelt!' },
-			{ 'Papier ritselt in de lucht.', 'Alsof de toets al bestaat vóór je binnen bent.' },
+			{ 'Papier ritselt in de lucht.', 'Alsof de toets al bestaat voor je binnen bent.' },
 			{ 'Een stem:', '"Welkom, Maya."', '"Ik ben Heer Later."', '"En ik BEN de Eindtoets!"' },
 		},
 		next = 'combat_heer_later',
@@ -381,8 +381,8 @@ story = {
 			{
 				prompt = { 'EINDTOETS MODE.', 'Je ziet ALLE vragen ineens.', 'Je brein wil alles tegelijk lezen.' },
 				options = {
-					{ label = '\"Vraag 1. Gewoon. Alsof ik normaal ben.\"', outcome = 'hit', points = 1 },
 					{ label = '\"Ik scan alles tegelijk. Maya speedrun!\"', outcome = 'dodge', points = 0 },
+					{ label = '\"Vraag 1. Gewoon. Alsof ik normaal ben.\"', outcome = 'hit', points = 1 },
 				},
 			},
 			{
@@ -395,22 +395,22 @@ story = {
 			{
 				prompt = { 'Oeps, deze huiswerkvragen sloeg ik over want stom!', 'Vertrouw op eigen genie', 'PANIEKAANVAL!' },
 				options = {
-					{ label = '\"NEIN! Ik vertrouw mijn huiswerk.\"', outcome = 'hit', points = 1 },
 					{ label = '\"Ik gum tot het papier boos is.\"', outcome = 'dodge', points = 0 },
+					{ label = '\"NEIN! Ik vertrouw mijn huiswerk.\"', outcome = 'hit', points = 1 },
 				},
 			},
 			{
 				prompt = { 'Spiegelstress cameo!', '"Zit mijn haar wel goed?!"', 'Iedereen ziet er ineens beter uit. (NEE.)' },
 				options = {
-					{ label = '\"Das weise ich innerlich komplett zurück.\"', outcome = 'hit', points = 1 },
+					{ label = '\"Das weise ich innerlich komplett zuruck.\"', outcome = 'hit', points = 1 },
 					{ label = '\"Even mijn haar checken in het raam.\"', outcome = 'dodge', points = 0 },
 				},
 			},
 			{
 				prompt = { 'TIK TOK.', 'Nog 5 minuten.', 'Heer Later fluistert: "Je hebt toch al een onvoldoende..."' },
 				options = {
-					{ label = '\"En dan gezijk van mijn moeder?! AFMAKEN.\"', outcome = 'hit', points = 1 },
 					{ label = '\"Ik accepteer dat het leven een hel is.\"', outcome = 'dodge', points = 0 },
+					{ label = '\"En dan gezeik van mijn moeder?! AFMAKEN.\"', outcome = 'hit', points = 1 },
 				},
 			},
 		},
@@ -436,7 +436,7 @@ story = {
 		bg = 'schoolgang_mist',
 		typed = true,
 		pages = {
-			{ 'Heer Later wankelt.', 'De mist laat los.' },
+			{ 'Heer Later wankelt.', 'De klokken vallen op de grond.' },
 			{ 'Het papier ritselt nog één keer.', 'Dan wordt het… gewoon papier.' },
 			{ 'Maya:', '"Awel."', '"Dan doen we dit dus."' },
 			{ 'De schooldeur klikt open.', 'Ubertoets: unlocked.' },
