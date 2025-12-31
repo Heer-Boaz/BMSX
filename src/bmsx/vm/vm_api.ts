@@ -15,12 +15,30 @@ import { Msx1Colors } from '../systems/msx';
 import { VMFont } from './font';
 import { BmsxVMStorage } from './storage';
 import type { RandomModulationParams, ModulationParams, SoundMasterPlayRequest } from '../audio/soundmaster';
-import type { Polygon, vec3arr } from '../rompack/rompack';
+import type { Polygon, vec3arr, asset_id, AudioType } from '../rompack/rompack';
 import { taskGate, GateGroup } from '../core/taskgate';
 import { VMRenderFacade } from './vm_render_facade';
 import { BmsxVMRuntime } from './vm_tooling_runtime';
 
-type AudioPlayOptions = RandomModulationParams | ModulationParams | SoundMasterPlayRequest;
+type AudioPlaybackMode = 'replace' | 'ignore' | 'queue' | 'stop' | 'pause';
+type MusicTransitionSync = 'immediate' | 'loop'
+	| { delay_ms: number }
+	| { stinger: asset_id; return_to?: asset_id; return_to_previous?: boolean };
+type AudioRouterOptions = {
+	modulation_params?: RandomModulationParams | ModulationParams;
+	params?: RandomModulationParams | ModulationParams;
+	modulation_preset?: asset_id;
+	priority?: number;
+	policy?: AudioPlaybackMode;
+	max_voices?: number;
+	channel?: AudioType;
+	audio_id?: asset_id;
+	sync?: MusicTransitionSync;
+	fade_ms?: number;
+	start_at_loop_start?: boolean;
+	start_fresh?: boolean;
+};
+type AudioPlayOptions = RandomModulationParams | ModulationParams | SoundMasterPlayRequest | AudioRouterOptions;
 
 export type BmsxVMApiOptions = {
 	storage: BmsxVMStorage;
@@ -28,6 +46,244 @@ export type BmsxVMApiOptions = {
 };
 
 const VM_TAB_SPACES = 2;
+
+type ParsedAudioOptions = {
+	request: SoundMasterPlayRequest;
+	policy?: AudioPlaybackMode;
+	maxVoices?: number;
+	channel?: AudioType;
+};
+
+type VmAudioQueueItem = {
+	id: asset_id;
+	request: SoundMasterPlayRequest;
+	maxVoices: number;
+};
+
+const vmAudioQueueByType: Record<AudioType, VmAudioQueueItem[]> = { sfx: [], music: [], ui: [] };
+const vmResumeOnNextEndByType: Record<AudioType, boolean> = { sfx: false, music: false, ui: false };
+let vmAudioPolicyListenersReady = false;
+
+const ensureVmAudioPolicyListeners = (): void => {
+	if (vmAudioPolicyListenersReady) {
+		return;
+	}
+	vmAudioPolicyListenersReady = true;
+	$.sndmaster.addEndedListener('sfx', () => onVmAudioChannelEnded('sfx'));
+	$.sndmaster.addEndedListener('music', () => onVmAudioChannelEnded('music'));
+	$.sndmaster.addEndedListener('ui', () => onVmAudioChannelEnded('ui'));
+};
+
+const onVmAudioChannelEnded = (channel: AudioType): void => {
+	if (vmResumeOnNextEndByType[channel]) {
+		vmResumeOnNextEndByType[channel] = false;
+		const paused = $.sndmaster.drainPausedSnapshots(channel);
+		for (let i = 0; i < paused.length; i += 1) {
+			const snapshot = paused[i];
+			const params: ModulationParams = { ...snapshot.params, offset: snapshot.offset };
+			void $.sndmaster.play(snapshot.id, { params, priority: snapshot.priority });
+		}
+		return;
+	}
+	const queue = vmAudioQueueByType[channel];
+	while (queue.length > 0) {
+		const item = queue[0];
+		if ($.sndmaster.activeCountByType(channel) >= item.maxVoices) {
+			return;
+		}
+		queue.shift();
+		void $.sndmaster.play(item.id, item.request);
+	}
+};
+
+const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
+
+const parseAudioChannel = (value: unknown): AudioType => {
+	if (value === 'sfx' || value === 'music' || value === 'ui') {
+		return value;
+	}
+	throw new Error(`Unknown audio channel "${String(value)}".`);
+};
+
+const parsePlaybackMode = (value: unknown): AudioPlaybackMode => {
+	if (value === 'replace' || value === 'ignore' || value === 'queue' || value === 'stop' || value === 'pause') {
+		return value;
+	}
+	throw new Error(`Unknown audio policy "${String(value)}".`);
+};
+
+const hasModulationFields = (value: Record<string, unknown>): boolean => (
+	value.pitchDelta !== undefined
+	|| value.volumeDelta !== undefined
+	|| value.offset !== undefined
+	|| value.playbackRate !== undefined
+	|| value.pitchRange !== undefined
+	|| value.volumeRange !== undefined
+	|| value.offsetRange !== undefined
+	|| value.playbackRateRange !== undefined
+	|| value.filter !== undefined
+);
+
+const parseAudioOptions = (options?: AudioPlayOptions): ParsedAudioOptions => {
+	const out: ParsedAudioOptions = { request: {} };
+	if (options === null || options === undefined) {
+		return out;
+	}
+	if (!isObject(options)) {
+		throw new Error('audio options must be a table.');
+	}
+
+	if (options.channel !== undefined) {
+		out.channel = parseAudioChannel(options.channel);
+	}
+	if (options.policy !== undefined) {
+		out.policy = parsePlaybackMode(options.policy);
+	}
+	if (options.max_voices !== undefined) {
+		if (typeof options.max_voices !== 'number') {
+			throw new Error('max_voices must be a number.');
+		}
+		out.maxVoices = Math.floor(options.max_voices);
+	}
+	if (options.priority !== undefined) {
+		if (typeof options.priority !== 'number') {
+			throw new Error('priority must be a number.');
+		}
+		out.request.priority = Math.floor(options.priority);
+	}
+
+	if (options.modulation_params !== undefined) {
+		if (!isObject(options.modulation_params)) {
+			throw new Error('modulation_params must be a table.');
+		}
+		out.request.params = options.modulation_params as RandomModulationParams | ModulationParams;
+	} else if (options.params !== undefined) {
+		if (!isObject(options.params)) {
+			throw new Error('params must be a table.');
+		}
+		out.request.params = options.params as RandomModulationParams | ModulationParams;
+	} else if (hasModulationFields(options)) {
+		out.request.params = options as RandomModulationParams | ModulationParams;
+	}
+
+	if (!out.request.params && options.modulation_preset !== undefined) {
+		if (typeof options.modulation_preset !== 'string') {
+			throw new Error('modulation_preset must be a string.');
+		}
+		out.request.modulation_preset = options.modulation_preset;
+	}
+
+	return out;
+};
+
+const resolveMusicTransition = (options: AudioPlayOptions | undefined, id?: asset_id): {
+	request?: {
+		to: asset_id;
+		sync?: MusicTransitionSync;
+		fade_ms?: number;
+		start_at_loop_start?: boolean;
+		start_fresh?: boolean;
+	};
+} => {
+	if (!options) {
+		return {};
+	}
+	if (!isObject(options)) {
+		throw new Error('music options must be a table.');
+	}
+	const hasTransition = options.sync !== undefined
+		|| options.fade_ms !== undefined
+		|| options.start_at_loop_start !== undefined
+		|| options.start_fresh !== undefined
+		|| options.audio_id !== undefined;
+	if (!hasTransition) {
+		return {};
+	}
+	const target = (id && id.length > 0) ? id : options.audio_id;
+	if (!target || typeof target !== 'string') {
+		throw new Error('music_transition.audio_id must be a string.');
+	}
+	if (options.fade_ms !== undefined && typeof options.fade_ms !== 'number') {
+		throw new Error('music_transition.fade_ms must be a number.');
+	}
+	if (options.start_at_loop_start !== undefined && typeof options.start_at_loop_start !== 'boolean') {
+		throw new Error('music_transition.start_at_loop_start must be a boolean.');
+	}
+	if (options.start_fresh !== undefined && typeof options.start_fresh !== 'boolean') {
+		throw new Error('music_transition.start_fresh must be a boolean.');
+	}
+	if (options.sync !== undefined && typeof options.sync !== 'string' && !isObject(options.sync)) {
+		throw new Error('music_transition.sync must be a string or table.');
+	}
+	const sync = options.sync as MusicTransitionSync | undefined;
+	return {
+		request: {
+			to: target,
+			sync: sync,
+			fade_ms: options.fade_ms,
+			start_at_loop_start: options.start_at_loop_start,
+			start_fresh: options.start_fresh,
+		},
+	};
+};
+
+const playWithPolicy = (channel: AudioType, id: asset_id, options: ParsedAudioOptions): void => {
+	const audioAsset = $.assets.audio[id];
+	if (!audioAsset) {
+		throw new Error(`Audio asset '${id}' not found.`);
+	}
+	const fallbackPriority = audioAsset.audiometa ? audioAsset.audiometa.priority : 0;
+	const priority = options.request.priority ?? fallbackPriority;
+	options.request.priority = priority;
+	const policy = options.policy ?? 'replace';
+	const maxVoices = options.maxVoices ?? 1;
+	if (maxVoices < 1) {
+		throw new Error('max_voices must be at least 1.');
+	}
+	if (policy === 'stop') {
+		$.sndmaster.stop(channel, 'all');
+		vmAudioQueueByType[channel] = [];
+		return;
+	}
+	const active = $.sndmaster.activeCountByType(channel);
+	if (active >= maxVoices) {
+		if (policy === 'ignore') {
+			return;
+		}
+		if (policy === 'replace') {
+			const infos = $.sndmaster.getActiveVoiceInfosByType(channel);
+			if (infos.length === 0) {
+				throw new Error('No active voices returned for audio channel.');
+			}
+			let minIdx = 0;
+			let minPr = infos[0].priority;
+			let oldest = infos[0].startedAt;
+			for (let i = 1; i < infos.length; i += 1) {
+				const info = infos[i];
+				if (info.priority < minPr || (info.priority === minPr && info.startedAt < oldest)) {
+					minIdx = i;
+					minPr = info.priority;
+					oldest = info.startedAt;
+				}
+			}
+			if (priority < minPr) {
+				return;
+			}
+			$.sndmaster.stop(channel, 'byvoice', infos[minIdx].voiceId);
+		}
+		if (policy === 'pause') {
+			ensureVmAudioPolicyListeners();
+			$.sndmaster.pause(channel);
+			vmResumeOnNextEndByType[channel] = true;
+		}
+		if (policy === 'queue') {
+			ensureVmAudioPolicyListeners();
+			vmAudioQueueByType[channel].push({ id, request: options.request, maxVoices });
+			return;
+		}
+	}
+	void $.sndmaster.play(id, options.request);
+};
 
 export class BmsxVMApi {
 	private readonly playerindex: number;
@@ -332,7 +588,12 @@ export class BmsxVMApi {
 	}
 
 	public sfx(id: string, options?: AudioPlayOptions): void {
-		$.playaudio(id, options);
+		const parsed = parseAudioOptions(options);
+		const channel = parsed.channel ?? 'sfx';
+		if (channel === 'music') {
+			throw new Error('sfx does not support music channel.');
+		}
+		playWithPolicy(channel, id, parsed);
 	}
 
 	public stop_sfx(): void {
@@ -340,12 +601,20 @@ export class BmsxVMApi {
 	}
 
 	public music(id: string, options?: AudioPlayOptions): void {
+		const transition = resolveMusicTransition(options, id);
+		if (transition.request) {
+			$.sndmaster.requestMusicTransition(transition.request);
+			return;
+		}
 		if (!id) {
 			$.sndmaster.stopMusic();
 			return;
 		}
-		$.sndmaster.stopMusic();
-		void $.sndmaster.play(id, options as SoundMasterPlayRequest | ModulationParams | RandomModulationParams);
+		const parsed = parseAudioOptions(options);
+		if (parsed.channel && parsed.channel !== 'music') {
+			throw new Error('music does not support non-music channel.');
+		}
+		playWithPolicy('music', id, parsed);
 	}
 
 	public stop_music(): void {

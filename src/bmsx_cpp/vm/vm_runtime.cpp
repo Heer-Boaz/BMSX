@@ -2055,7 +2055,11 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 	}
 	assetsTable->set(key("data"), valueTable(dataTable));
 	assetsTable->set(key("audio"), valueTable(m_cpu.createTable()));
-	assetsTable->set(key("audioevents"), valueTable(m_cpu.createTable()));
+	auto* audioEventsTable = m_cpu.createTable(0, static_cast<int>(assets.audioevents.size()));
+	for (const auto& [id, value] : assets.audioevents) {
+		audioEventsTable->set(str(id), binValueToVmValue(m_cpu, value));
+	}
+	assetsTable->set(key("audioevents"), valueTable(audioEventsTable));
 	assetsTable->set(key("model"), valueTable(m_cpu.createTable()));
 	assetsTable->set(key("project_root_path"), str(assets.projectRootPath));
 	setGlobal("assets", valueTable(assetsTable));
@@ -2156,123 +2160,6 @@ auto consumeActionFn = m_cpu.createNativeFunction("game.consume_action", [this](
 	(void)out;
 });
 
-const Value emitterClassKey = key("EventEmitter");
-const Value emitterInstanceKey = key("instance");
-const Value emitterEmitKey = key("emit");
-const Value eventIdKey = key("id");
-const Value eventTypeKey = key("type");
-const Value eventEmitterKey = key("emitter");
-const Value eventTimestampKey = key("timestamp");
-const Value eventPayloadKey = key("payload");
-const Value gameKey = key("game");
-auto emitFn = m_cpu.createNativeFunction("game.emit", [this, emitterClassKey, emitterInstanceKey, emitterEmitKey, eventIdKey, eventTypeKey, eventEmitterKey, eventTimestampKey, eventPayloadKey, gameKey](const std::vector<Value>& args, std::vector<Value>& out) {
-	auto* emitterModule = asTable(requireVmModule("eventemitter"));
-	auto* emitterTable = asTable(emitterModule->get(emitterClassKey));
-	auto* instanceTable = asTable(emitterTable->get(emitterInstanceKey));
-	// Methods live on the EventEmitter table; call with instance as self.
-	auto* emitClosure = asClosure(emitterTable->get(emitterEmitKey));
-	// Aligns with TS EngineCore.emit and vm_tooling_runtime native method dispatch.
-	const auto gameTable = asTable(m_cpu.globals->get(gameKey));
-	size_t argOffset = 0;
-	if (valueIsTable(args.at(0)) && asTable(args.at(0)) == gameTable) {
-		argOffset = 1;
-	}
-	std::vector<Value> callArgs;
-	callArgs.reserve(args.size() - argOffset + 1);
-	callArgs.push_back(valueTable(instanceTable));
-	callArgs.insert(callArgs.end(), args.begin() + static_cast<std::ptrdiff_t>(argOffset), args.end());
-	callLuaFunction(emitClosure, callArgs);
-
-	const size_t argCount = args.size() - argOffset;
-	const Value& specValue = args.at(argOffset);
-	Value eventNameValue = valueNil();
-	std::string eventName;
-	Value emitterValue = valueNil();
-	Value payloadValue = valueNil();
-	bool payloadIsEventTable = false;
-	if (valueIsString(specValue)) {
-		eventNameValue = specValue;
-		eventName = m_cpu.stringPool().toString(asStringId(specValue));
-		emitterValue = argCount > 1 ? args.at(argOffset + 1) : valueNil();
-		payloadValue = argCount > 2 ? args.at(argOffset + 2) : valueNil();
-		bool emitterValid = false;
-		if (valueIsString(emitterValue)) {
-			emitterValid = true;
-		} else if (valueIsTable(emitterValue)) {
-			Value idValue = asTable(emitterValue)->get(eventIdKey);
-			if (valueIsString(idValue)) {
-				emitterValid = true;
-			}
-		}
-		if (!emitterValid && argCount == 2) {
-			payloadValue = emitterValue;
-			emitterValue = valueNil();
-		}
-	} else if (valueIsTable(specValue)) {
-		auto* eventTable = asTable(specValue);
-		Value typeValue = eventTable->get(eventTypeKey);
-		eventNameValue = typeValue;
-		eventName = m_cpu.stringPool().toString(asStringId(typeValue));
-		emitterValue = eventTable->get(eventEmitterKey);
-		payloadValue = specValue;
-		payloadIsEventTable = true;
-	} else {
-		eventNameValue = specValue;
-		eventName = m_cpu.stringPool().toString(asStringId(specValue));
-	}
-
-	std::string emitterId;
-	if (valueIsString(emitterValue)) {
-		emitterId = m_cpu.stringPool().toString(asStringId(emitterValue));
-	} else if (valueIsTable(emitterValue)) {
-		Value idValue = asTable(emitterValue)->get(eventIdKey);
-		if (valueIsString(idValue)) {
-			emitterId = m_cpu.stringPool().toString(asStringId(idValue));
-		}
-	}
-
-	Value payload = payloadValue;
-	if (!payloadIsEventTable && !isNil(payloadValue)) {
-		if (valueIsTable(payloadValue)) {
-			auto* payloadTable = asTable(payloadValue);
-			Value payloadType = payloadTable->get(eventTypeKey);
-			if (isNil(payloadType)) {
-				auto* eventTable = m_cpu.createTable(0, 8);
-				eventTable->set(eventTypeKey, eventNameValue);
-				eventTable->set(eventEmitterKey, emitterValue);
-				eventTable->set(eventTimestampKey, valueNumber(EngineCore::instance().clock()->now()));
-				for (const auto& [key, value] : payloadTable->entries()) {
-					eventTable->set(key, value);
-				}
-				payload = valueTable(eventTable);
-			} else {
-				auto* eventTable = m_cpu.createTable(0, 4);
-				eventTable->set(eventTypeKey, eventNameValue);
-				eventTable->set(eventEmitterKey, emitterValue);
-				eventTable->set(eventTimestampKey, valueNumber(EngineCore::instance().clock()->now()));
-				eventTable->set(eventPayloadKey, payloadValue);
-				payload = valueTable(eventTable);
-			}
-		} else {
-			auto* eventTable = m_cpu.createTable(0, 4);
-			eventTable->set(eventTypeKey, eventNameValue);
-			eventTable->set(eventEmitterKey, emitterValue);
-			eventTable->set(eventTimestampKey, valueNumber(EngineCore::instance().clock()->now()));
-			eventTable->set(eventPayloadKey, payloadValue);
-			payload = valueTable(eventTable);
-		}
-	} else if (!payloadIsEventTable) {
-		auto* eventTable = m_cpu.createTable(0, 3);
-		eventTable->set(eventTypeKey, eventNameValue);
-		eventTable->set(eventEmitterKey, emitterValue);
-		eventTable->set(eventTimestampKey, valueNumber(EngineCore::instance().clock()->now()));
-		payload = valueTable(eventTable);
-	}
-
-	EngineCore::instance().audioEventManager()->onEvent(eventName, payload, emitterId);
-	(void)out;
-});
-
 	auto* gameTable = m_cpu.createTable(0, 8);
 	gameTable->set(key("platform"), valueTable(platformTable));
 	gameTable->set(key("viewportsize"), valueTable(viewportTable));
@@ -2280,7 +2167,6 @@ auto emitFn = m_cpu.createNativeFunction("game.emit", [this, emitterClassKey, em
 	gameTable->set(key("deltatime_seconds"), valueNumber(0.0));
 	gameTable->set(key("get_action_state"), getActionStateFn);
 	gameTable->set(key("consume_action"), consumeActionFn);
-	gameTable->set(key("emit"), emitFn);
 	setGlobal("game", valueTable(gameTable));
 	setGlobal("$", valueTable(gameTable));
 

@@ -304,6 +304,7 @@ public:
     void setAudioBatchCallback(retro_audio_sample_batch_t cb) { m_audio_batch_cb = cb; }
     void setTiming(double sampleRate, double fps);
     void setFrameTimeSec(double seconds);
+    void resetQueue();
 
     // Collect audio samples from all voices
     void collectSamples(AudioBuffer& buffer);

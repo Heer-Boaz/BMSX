@@ -26,6 +26,428 @@ static const Color& paletteColor(int index) {
 	return MSX1_PALETTE[static_cast<size_t>(index)];
 }
 
+struct ParsedAudioOptions {
+	SoundMasterPlayRequest request;
+	std::optional<AudioPlaybackMode> policy;
+	std::optional<int> maxVoices;
+	std::optional<AudioType> channel;
+};
+
+struct VmAudioQueueItem {
+	AssetId id;
+	SoundMasterPlayRequest request;
+	int maxVoices = 1;
+};
+
+static std::array<std::vector<VmAudioQueueItem>, 3> s_vmAudioQueueByType;
+static std::array<bool, 3> s_vmResumeOnNextEndByType{false, false, false};
+static std::array<SubscriptionHandle, 3> s_vmAudioPolicySubscriptions;
+static bool s_vmAudioPolicyListenersReady = false;
+
+static size_t audioTypeIndex(AudioType type) {
+	return static_cast<size_t>(type);
+}
+
+static void onVmAudioChannelEnded(AudioType type) {
+	SoundMaster* soundMaster = EngineCore::instance().soundMaster();
+	const size_t idx = audioTypeIndex(type);
+	if (s_vmResumeOnNextEndByType[idx]) {
+		s_vmResumeOnNextEndByType[idx] = false;
+		soundMaster->resumeType(type);
+		return;
+	}
+	auto& queue = s_vmAudioQueueByType[idx];
+	while (!queue.empty()) {
+		VmAudioQueueItem item = queue.front();
+		if (soundMaster->activeCountByType(type) >= static_cast<size_t>(item.maxVoices)) {
+			return;
+		}
+		queue.erase(queue.begin());
+		soundMaster->play(item.id, item.request);
+	}
+}
+
+static void ensureVmAudioPolicyListeners(SoundMaster* soundMaster) {
+	if (s_vmAudioPolicyListenersReady) {
+		return;
+	}
+	s_vmAudioPolicyListenersReady = true;
+	s_vmAudioPolicySubscriptions[static_cast<size_t>(AudioType::Sfx)] =
+		soundMaster->addEndedListener(AudioType::Sfx, [](const ActiveVoiceInfo&) { onVmAudioChannelEnded(AudioType::Sfx); });
+	s_vmAudioPolicySubscriptions[static_cast<size_t>(AudioType::Music)] =
+		soundMaster->addEndedListener(AudioType::Music, [](const ActiveVoiceInfo&) { onVmAudioChannelEnded(AudioType::Music); });
+	s_vmAudioPolicySubscriptions[static_cast<size_t>(AudioType::Ui)] =
+		soundMaster->addEndedListener(AudioType::Ui, [](const ActiveVoiceInfo&) { onVmAudioChannelEnded(AudioType::Ui); });
+}
+
+static AudioPlaybackMode parsePlaybackMode(const std::string& value) {
+	if (value == "replace") return AudioPlaybackMode::Replace;
+	if (value == "ignore") return AudioPlaybackMode::Ignore;
+	if (value == "queue") return AudioPlaybackMode::Queue;
+	if (value == "stop") return AudioPlaybackMode::Stop;
+	if (value == "pause") return AudioPlaybackMode::Pause;
+	throw std::runtime_error("Unknown audio policy '" + value + "'");
+}
+
+static AudioType parseAudioChannel(const std::string& value) {
+	if (value == "sfx") return AudioType::Sfx;
+	if (value == "music") return AudioType::Music;
+	if (value == "ui") return AudioType::Ui;
+	throw std::runtime_error("Unknown audio channel '" + value + "'");
+}
+
+static bool hasModulationFields(const Table& table) {
+	auto key = [](std::string_view name) {
+		return VMRuntime::instance().canonicalizeIdentifier(name);
+	};
+	if (!isNil(table.get(key("pitchDelta")))) return true;
+	if (!isNil(table.get(key("volumeDelta")))) return true;
+	if (!isNil(table.get(key("offset")))) return true;
+	if (!isNil(table.get(key("playbackRate")))) return true;
+	if (!isNil(table.get(key("pitchRange")))) return true;
+	if (!isNil(table.get(key("volumeRange")))) return true;
+	if (!isNil(table.get(key("offsetRange")))) return true;
+	if (!isNil(table.get(key("playbackRateRange")))) return true;
+	if (!isNil(table.get(key("filter")))) return true;
+	return false;
+}
+
+static ModulationInput parseModulationInputTable(const Table& table) {
+	auto key = [](std::string_view name) {
+		return VMRuntime::instance().canonicalizeIdentifier(name);
+	};
+	auto vmString = [](Value value) -> const std::string& {
+		return VMRuntime::instance().cpu().stringPool().toString(asStringId(value));
+	};
+
+	auto getNumber = [&](const std::string& field, std::optional<f32>& out) {
+		Value v = table.get(key(field));
+		if (isNil(v)) return;
+		if (valueIsNumber(v)) {
+			out = static_cast<f32>(valueToNumber(v));
+			return;
+		}
+		throw std::runtime_error("Modulation param '" + field + "' is not a number");
+	};
+
+	auto getRange = [&](const std::string& field, std::optional<ModulationRange>& out) {
+		Value v = table.get(key(field));
+		if (isNil(v)) return;
+		if (!valueIsTable(v)) {
+			throw std::runtime_error("Modulation range '" + field + "' is not an array");
+		}
+		const Table& arr = *asTable(v);
+		const int len = arr.length();
+		if (len < 2) {
+			throw std::runtime_error("Modulation range '" + field + "' is missing bounds");
+		}
+		const Value v0 = arr.get(valueNumber(1.0));
+		const Value v1 = arr.get(valueNumber(2.0));
+		if (!valueIsNumber(v0) || !valueIsNumber(v1)) {
+			throw std::runtime_error("Modulation range '" + field + "' bounds are not numbers");
+		}
+		out = ModulationRange{static_cast<f32>(valueToNumber(v0)), static_cast<f32>(valueToNumber(v1))};
+	};
+
+	ModulationInput input;
+	getNumber("pitchDelta", input.pitchDelta);
+	getNumber("volumeDelta", input.volumeDelta);
+	getNumber("offset", input.offset);
+	getNumber("playbackRate", input.playbackRate);
+	getRange("pitchRange", input.pitchRange);
+	getRange("volumeRange", input.volumeRange);
+	getRange("offsetRange", input.offsetRange);
+	getRange("playbackRateRange", input.playbackRateRange);
+
+	Value filterVal = table.get(key("filter"));
+	if (!isNil(filterVal)) {
+		if (!valueIsTable(filterVal)) {
+			throw std::runtime_error("Modulation filter must be a table");
+		}
+		const Table& ftable = *asTable(filterVal);
+		FilterModulationParams filter;
+		Value typeVal = ftable.get(key("type"));
+		if (valueIsString(typeVal)) {
+			filter.type = vmString(typeVal);
+		}
+		Value freqVal = ftable.get(key("frequency"));
+		if (valueIsNumber(freqVal)) {
+			filter.frequency = static_cast<f32>(valueToNumber(freqVal));
+		}
+		Value qVal = ftable.get(key("q"));
+		if (valueIsNumber(qVal)) {
+			filter.q = static_cast<f32>(valueToNumber(qVal));
+		}
+		Value gainVal = ftable.get(key("gain"));
+		if (valueIsNumber(gainVal)) {
+			filter.gain = static_cast<f32>(valueToNumber(gainVal));
+		}
+		input.filter = filter;
+	}
+
+	return input;
+}
+
+static ParsedAudioOptions parseAudioOptions(const Value& value) {
+	ParsedAudioOptions out;
+	if (isNil(value)) {
+		return out;
+	}
+	if (!valueIsTable(value)) {
+		throw std::runtime_error("audio options must be a table");
+	}
+	const Table& table = *asTable(value);
+	auto key = [](std::string_view name) {
+		return VMRuntime::instance().canonicalizeIdentifier(name);
+	};
+	auto vmString = [](Value v) -> const std::string& {
+		return VMRuntime::instance().cpu().stringPool().toString(asStringId(v));
+	};
+
+	Value channelVal = table.get(key("channel"));
+	if (!isNil(channelVal)) {
+		if (!valueIsString(channelVal)) {
+			throw std::runtime_error("audio channel must be a string");
+		}
+		out.channel = parseAudioChannel(vmString(channelVal));
+	}
+
+	Value policyVal = table.get(key("policy"));
+	if (!isNil(policyVal)) {
+		if (!valueIsString(policyVal)) {
+			throw std::runtime_error("audio policy must be a string");
+		}
+		out.policy = parsePlaybackMode(vmString(policyVal));
+	}
+
+	Value maxVal = table.get(key("max_voices"));
+	if (!isNil(maxVal)) {
+		if (!valueIsNumber(maxVal)) {
+			throw std::runtime_error("max_voices must be a number");
+		}
+		out.maxVoices = static_cast<int>(std::floor(valueToNumber(maxVal)));
+	}
+
+	Value priorityVal = table.get(key("priority"));
+	if (!isNil(priorityVal)) {
+		if (!valueIsNumber(priorityVal)) {
+			throw std::runtime_error("priority must be a number");
+		}
+		out.request.priority = static_cast<i32>(std::floor(valueToNumber(priorityVal)));
+	}
+
+	Value modulationParamsVal = table.get(key("modulation_params"));
+	Value paramsVal = table.get(key("params"));
+	Value modulationPresetVal = table.get(key("modulation_preset"));
+
+	if (!isNil(modulationParamsVal)) {
+		if (!valueIsTable(modulationParamsVal)) {
+			throw std::runtime_error("modulation_params must be a table");
+		}
+		out.request.params = parseModulationInputTable(*asTable(modulationParamsVal));
+	} else if (!isNil(paramsVal)) {
+		if (!valueIsTable(paramsVal)) {
+			throw std::runtime_error("params must be a table");
+		}
+		out.request.params = parseModulationInputTable(*asTable(paramsVal));
+	} else if (hasModulationFields(table)) {
+		out.request.params = parseModulationInputTable(table);
+	}
+
+	if (!out.request.params.has_value() && !isNil(modulationPresetVal)) {
+		if (!valueIsString(modulationPresetVal)) {
+			throw std::runtime_error("modulation_preset must be a string");
+		}
+		out.request.modulationPreset = vmString(modulationPresetVal);
+	}
+
+	return out;
+}
+
+static MusicTransitionSync parseMusicSyncValue(const Value& value) {
+	MusicTransitionSync sync;
+	if (isNil(value)) {
+		return sync;
+	}
+	auto key = [](std::string_view name) {
+		return VMRuntime::instance().canonicalizeIdentifier(name);
+	};
+	auto vmString = [](Value v) -> const std::string& {
+		return VMRuntime::instance().cpu().stringPool().toString(asStringId(v));
+	};
+	if (valueIsString(value)) {
+		const std::string& text = vmString(value);
+		if (text == "loop") {
+			sync.kind = MusicTransitionSync::Kind::Loop;
+		} else {
+			sync.kind = MusicTransitionSync::Kind::Immediate;
+		}
+		return sync;
+	}
+	if (!valueIsTable(value)) {
+		throw std::runtime_error("music sync must be a string or table");
+	}
+	const Table& table = *asTable(value);
+	Value delayVal = table.get(key("delay_ms"));
+	if (!isNil(delayVal)) {
+		if (!valueIsNumber(delayVal)) {
+			throw std::runtime_error("sync.delay_ms must be a number");
+		}
+		sync.kind = MusicTransitionSync::Kind::Delay;
+		sync.delayMs = static_cast<i32>(std::floor(valueToNumber(delayVal)));
+		return sync;
+	}
+	Value stingerVal = table.get(key("stinger"));
+	if (!isNil(stingerVal)) {
+		if (!valueIsString(stingerVal)) {
+			throw std::runtime_error("sync.stinger must be a string");
+		}
+		sync.kind = MusicTransitionSync::Kind::Stinger;
+		sync.stinger = vmString(stingerVal);
+		Value returnVal = table.get(key("return_to"));
+		if (!isNil(returnVal)) {
+			if (!valueIsString(returnVal)) {
+				throw std::runtime_error("sync.return_to must be a string");
+			}
+			sync.returnTo = vmString(returnVal);
+		}
+		Value prevVal = table.get(key("return_to_previous"));
+		if (!isNil(prevVal)) {
+			if (!valueIsBool(prevVal)) {
+				throw std::runtime_error("sync.return_to_previous must be a boolean");
+			}
+			sync.returnToPrevious = valueToBool(prevVal);
+		}
+	}
+	return sync;
+}
+
+static std::optional<MusicTransitionRequest> parseMusicTransition(const Value& value, const std::string& id) {
+	if (isNil(value)) {
+		return std::nullopt;
+	}
+	if (!valueIsTable(value)) {
+		throw std::runtime_error("music options must be a table");
+	}
+	const Table& table = *asTable(value);
+	auto key = [](std::string_view name) {
+		return VMRuntime::instance().canonicalizeIdentifier(name);
+	};
+	auto vmString = [](Value v) -> const std::string& {
+		return VMRuntime::instance().cpu().stringPool().toString(asStringId(v));
+	};
+
+	Value syncVal = table.get(key("sync"));
+	Value fadeVal = table.get(key("fade_ms"));
+	Value loopVal = table.get(key("start_at_loop_start"));
+	Value freshVal = table.get(key("start_fresh"));
+	Value audioIdVal = table.get(key("audio_id"));
+	const bool hasTransition = !isNil(syncVal) || !isNil(fadeVal) || !isNil(loopVal) || !isNil(freshVal) || !isNil(audioIdVal);
+	if (!hasTransition) {
+		return std::nullopt;
+	}
+
+	MusicTransitionRequest request;
+	if (!id.empty()) {
+		request.to = id;
+	} else if (!isNil(audioIdVal)) {
+		if (!valueIsString(audioIdVal)) {
+			throw std::runtime_error("music_transition.audio_id must be a string");
+		}
+		request.to = vmString(audioIdVal);
+	} else {
+		throw std::runtime_error("music_transition.audio_id is required");
+	}
+
+	if (!isNil(syncVal)) {
+		request.sync = parseMusicSyncValue(syncVal);
+	}
+	if (!isNil(fadeVal)) {
+		if (!valueIsNumber(fadeVal)) {
+			throw std::runtime_error("music_transition.fade_ms must be a number");
+		}
+		request.fadeMs = static_cast<i32>(std::floor(valueToNumber(fadeVal)));
+	}
+	if (!isNil(loopVal)) {
+		if (!valueIsBool(loopVal)) {
+			throw std::runtime_error("music_transition.start_at_loop_start must be a boolean");
+		}
+		request.startAtLoopStart = valueToBool(loopVal);
+	}
+	if (!isNil(freshVal)) {
+		if (!valueIsBool(freshVal)) {
+			throw std::runtime_error("music_transition.start_fresh must be a boolean");
+		}
+		request.startFresh = valueToBool(freshVal);
+	}
+	return request;
+}
+
+static void playWithPolicy(AudioType type, const AssetId& id, const ParsedAudioOptions& options) {
+	SoundMaster* soundMaster = EngineCore::instance().soundMaster();
+	const RuntimeAssets& assets = EngineCore::instance().assets();
+	const AudioAsset* asset = assets.getAudio(id);
+	if (!asset) {
+		throw std::runtime_error("Audio asset '" + id + "' not found.");
+	}
+	SoundMasterPlayRequest request = options.request;
+	const i32 priority = request.priority.has_value() ? request.priority.value() : asset->meta.priority;
+	request.priority = priority;
+
+	const AudioPlaybackMode policy = options.policy.value_or(AudioPlaybackMode::Replace);
+	const int maxVoices = options.maxVoices.value_or(1);
+	if (maxVoices < 1) {
+		throw std::runtime_error("max_voices must be at least 1");
+	}
+
+	if (policy == AudioPlaybackMode::Stop) {
+		soundMaster->stop(type, AudioStopSelector::All);
+		s_vmAudioQueueByType[audioTypeIndex(type)].clear();
+		return;
+	}
+
+	const size_t active = soundMaster->activeCountByType(type);
+	if (active >= static_cast<size_t>(maxVoices)) {
+		if (policy == AudioPlaybackMode::Ignore) {
+			return;
+		}
+		if (policy == AudioPlaybackMode::Replace) {
+			const std::vector<ActiveVoiceInfo> infos = soundMaster->getActiveVoiceInfosByType(type);
+			if (infos.empty()) {
+				throw std::runtime_error("No active voices returned for audio channel");
+			}
+			size_t minIdx = 0;
+			i32 minPr = infos[0].priority;
+			f64 oldestStart = infos[0].startedAt;
+			for (size_t i = 1; i < infos.size(); ++i) {
+				const auto& info = infos[i];
+				if (info.priority < minPr || (info.priority == minPr && info.startedAt < oldestStart)) {
+					minPr = info.priority;
+					minIdx = i;
+					oldestStart = info.startedAt;
+				}
+			}
+			if (priority < minPr) {
+				return;
+			}
+			const auto& victim = infos[minIdx];
+			soundMaster->stop(type, AudioStopSelector::ByVoice, victim.voiceId);
+		}
+		if (policy == AudioPlaybackMode::Pause) {
+			ensureVmAudioPolicyListeners(soundMaster);
+			soundMaster->pause(type);
+			s_vmResumeOnNextEndByType[audioTypeIndex(type)] = true;
+		}
+		if (policy == AudioPlaybackMode::Queue) {
+			ensureVmAudioPolicyListeners(soundMaster);
+			s_vmAudioQueueByType[audioTypeIndex(type)].push_back(VmAudioQueueItem{ id, request, maxVoices });
+			return;
+		}
+	}
+
+	soundMaster->play(id, request);
+}
+
 } // namespace
 
 VMApi::VMApi(VMRuntime& runtime)
@@ -337,7 +759,13 @@ m_runtime.registerNativeFunction("dget", [this](const std::vector<Value>& args, 
 
 m_runtime.registerNativeFunction("sfx", [this, asText](const std::vector<Value>& args, std::vector<Value>& out) {
 	const std::string& id = asText(args.at(0));
-	sfx(id);
+	Value optionsValue = args.size() > 1 ? args.at(1) : valueNil();
+	ParsedAudioOptions options = parseAudioOptions(optionsValue);
+	AudioType channel = options.channel.value_or(AudioType::Sfx);
+	if (channel == AudioType::Music) {
+		throw std::runtime_error("sfx does not support music channel");
+	}
+	playWithPolicy(channel, id, options);
 	(void)out;
 });
 
@@ -348,8 +776,27 @@ m_runtime.registerNativeFunction("stop_sfx", [this](const std::vector<Value>& ar
 });
 
 m_runtime.registerNativeFunction("music", [this, asText](const std::vector<Value>& args, std::vector<Value>& out) {
-	const std::string& id = asText(args.at(0));
-	music(id);
+	std::string id;
+	if (!args.empty() && !isNil(args.at(0))) {
+		id = asText(args.at(0));
+	}
+	Value optionsValue = args.size() > 1 ? args.at(1) : valueNil();
+	std::optional<MusicTransitionRequest> transition = parseMusicTransition(optionsValue, id);
+	if (transition.has_value()) {
+		EngineCore::instance().soundMaster()->requestMusicTransition(transition.value());
+		(void)out;
+		return;
+	}
+	if (id.empty()) {
+		EngineCore::instance().soundMaster()->stopMusic();
+		(void)out;
+		return;
+	}
+	ParsedAudioOptions options = parseAudioOptions(optionsValue);
+	if (options.channel.has_value() && options.channel.value() != AudioType::Music) {
+		throw std::runtime_error("music does not support non-music channel");
+	}
+	playWithPolicy(AudioType::Music, id, options);
 	(void)out;
 });
 
@@ -545,7 +992,7 @@ double VMApi::dget(int index) const {
 }
 
 void VMApi::sfx(const std::string& id) {
-	EngineCore::instance().audioEventManager()->playDirect(id);
+	EngineCore::instance().soundMaster()->play(id);
 }
 
 void VMApi::stop_sfx() {

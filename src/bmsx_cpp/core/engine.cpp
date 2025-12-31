@@ -68,10 +68,10 @@ bool EngineCore::initialize(Platform* platform) {
     Input::instance().initialize();
     m_sound_master = std::make_unique<SoundMaster>();
     registry().registerObject(m_sound_master.get());
-    m_audio_event_manager = std::make_unique<AudioEventManager>();
-    m_audio_event_manager->setSoundMaster(m_sound_master.get());
-    m_audio_event_manager->setAssets(&m_assets);
-    registry().registerObject(m_audio_event_manager.get());
+	m_audio_event_manager = std::make_unique<AudioEventManager>();
+	m_audio_event_manager->setSoundMaster(m_sound_master.get());
+	m_audio_event_manager->setAssets(&m_assets);
+	registry().registerObject(m_audio_event_manager.get());
 
     m_state = EngineState::Initialized;
     return true;

@@ -312,7 +312,6 @@ struct ValueEq {
  * Native function signature - takes args, writes results into out buffer.
  */
 using NativeFunctionInvoke = std::function<void(const std::vector<Value>&, std::vector<Value>&)>;
-using EmitHandler = std::function<void(const Value&, const Value&, const Value&)>;
 
 enum class ObjType : uint8_t {
 	Table,
@@ -452,7 +451,6 @@ enum class OpCode : uint8_t {
 	RET,
 	LOAD_MEM,
 	STORE_MEM,
-	EMIT,
 };
 
 enum class RunResult {
@@ -560,7 +558,6 @@ public:
 	StringId internString(std::string_view value) { return m_stringPool.intern(value); }
 	const StringPool& stringPool() const { return m_stringPool; }
 	void setExternalRootMarker(std::function<void(VMHeap&)> marker) { m_externalRootMarker = std::move(marker); }
-	void setEmitHandler(EmitHandler handler) { m_emitHandler = std::move(handler); }
 
 	Value createNativeFunction(std::string_view name, NativeFunctionInvoke fn);
 	Value createNativeObject(
@@ -642,7 +639,6 @@ private:
 
 	std::vector<DecodedInstruction> m_decoded;
 	Value m_indexKey = valueNil();
-	EmitHandler m_emitHandler;
 };
 
 std::string valueToString(const Value& v, const StringPool& stringPool);

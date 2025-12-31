@@ -360,7 +360,7 @@ export class BmsxVMRuntime {
 	public get hasRuntimeFailed(): boolean {
 		return this.luaRuntimeFailed;
 	}
-	private includeJsStackTraces = true;
+	private includeJsStackTraces = false;
 	private currentFrameState: VMFrameState = null;
 	private pendingLuaWarnings: string[] = [];
 	public readonly vmModuleAliases: Map<string, string> = new Map();

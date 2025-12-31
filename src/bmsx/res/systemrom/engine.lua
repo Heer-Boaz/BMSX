@@ -10,6 +10,7 @@ local action_effects = require("action_effects")
 local components = require("components")
 local service = require("service")
 local registry = require("registry")
+local eventemitter = require("eventemitter").eventemitter
 
 local world = world_module.instance
 
@@ -308,6 +309,14 @@ function engine.trigger_effect(object_id, effect_id, options)
 	end
 	return component:trigger(effect_id)
 end
+
+if $.emit == nil then
+	function $.emit(name_or_event, emitter, payload)
+		return eventemitter.instance:emit(name_or_event, emitter, payload)
+	end
+end
+
+require("audio_router").init()
 
 if not world._ecs_pipeline_built then
 	world._ecs_pipeline_built = true

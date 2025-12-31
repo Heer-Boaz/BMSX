@@ -733,7 +733,6 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 */
 	private transition_queue: TransitionQueueItem[];
 
-
 	private transitionContextStack?: TransitionDiagContext[];
 
 	private definitionOrThrow(): StateDefinition {

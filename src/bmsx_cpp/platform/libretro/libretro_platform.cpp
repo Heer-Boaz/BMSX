@@ -375,6 +375,8 @@ void LibretroPlatform::unloadRom() {
 
 void LibretroPlatform::reset() {
     m_engine->stop();
+    static_cast<LibretroAudioService*>(m_audio_service.get())->resetQueue();
+    m_audio_buffer.clear();
 
     if (!m_rom_data.empty()) {
         std::vector<uint8_t> romData = m_rom_data;
@@ -718,6 +720,13 @@ void LibretroAudioService::setFrameTimeSec(double seconds) {
     m_frame_time_sec = seconds;
     const double framesPerFrame = m_sample_rate * m_frame_time_sec;
     m_target_buffer_frames = static_cast<size_t>(std::ceil(framesPerFrame * kAudioLeadFrames));
+}
+
+void LibretroAudioService::resetQueue() {
+    m_sample_accumulator = 0.0;
+    m_queue_start_samples = 0;
+    m_queue_samples = 0;
+    m_sample_queue.clear();
 }
 
 void LibretroAudioService::collectSamples(AudioBuffer& buffer) {
