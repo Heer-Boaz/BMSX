@@ -374,13 +374,23 @@ void LibretroPlatform::unloadRom() {
 }
 
 void LibretroPlatform::reset() {
-    // Reset engine state
-    if (m_engine && m_rom_loaded) {
-        m_engine->stop();
-        // Re-initialize world, keep ROM loaded
-        m_engine->start();
+    m_engine->stop();
+
+    if (!m_rom_data.empty()) {
+        std::vector<uint8_t> romData = m_rom_data;
+        if (!loadRom(romData.data(), romData.size())) {
+            log(RETRO_LOG_ERROR, "[BMSX] Reset failed: ROM reload failed\n");
+            return;
+        }
+    } else {
+        if (!loadEmptyCart()) {
+            log(RETRO_LOG_ERROR, "[BMSX] Reset failed: empty cart boot failed\n");
+            return;
+        }
     }
-    log(RETRO_LOG_INFO, "[BMSX] Game reset\n");
+
+    m_engine->start();
+    log(RETRO_LOG_INFO, "[BMSX] Game reset (reloaded)\n");
 }
 
 void LibretroPlatform::runFrame() {
