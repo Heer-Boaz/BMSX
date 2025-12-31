@@ -369,7 +369,8 @@ story = {
 			{ 'En het zijn geen kerkklokken!' },
 			{ 'Het lijkt meer symbolisch,', 'alsof je wordt veroordeelt!' },
 			{ 'Papier ritselt in de lucht.', 'Alsof de toets al bestaat voor je binnen bent.' },
-			{ 'Een stem:', '"Welkom, Maya."', '"Ik ben Heer Later."', '"En ik BEN de Eindtoets!"' },
+			{ 'Een stem:', '"Welkom, Maya."', },
+			{ '"Ik ben Heer Later..."', '"En ik BEN de Eindtoets!!"' },
 		},
 		next = 'combat_heer_later',
 	},
@@ -433,7 +434,7 @@ story = {
 
 	after_combat_heer_later = {
 		kind = 'dialogue',
-		bg = 'schoolgang_mist',
+		bg = 'schoolpoort_klok',
 		typed = true,
 		pages = {
 			{ 'Heer Later wankelt.', 'De klokken vallen op de grond.' },
@@ -441,16 +442,17 @@ story = {
 			{ 'Maya:', '"Awel."', '"Dan doen we dit dus."' },
 			{ 'De schooldeur klikt open.', 'Ubertoets: unlocked.' },
 		},
-		next = 'after_combat_heer_later',
+		next = 'toets_is_af',
 	},
 
-	after_combat_heer_later = {
+	toets_is_af = {
 		kind = 'dialogue',
-		bg = 'klas1',
+		bg = 'schoolpoort_klok',
 		typed = true,
 		pages = {
 			{ 'Het papier is weer papier.' },
 			{ 'Je levert in.' },
+			{ 'Afwachtend op het...' },
 		},
 		next = 'overgang_ordeel_des_sints',
 	},
