@@ -669,8 +669,14 @@ export function zip(content: Buffer): Uint8Array {
 	return pako.deflate(toCompress, { level: 9 });
 }
 
+function normalizeLineEndings(input: string): string {
+	// Normalize line endings to LF (handles CRLF and lone CR)
+	return input.replace(/\r\n|\r/g, '\n');
+}
+
 function compileLuaChunkBuffer(source: string, path: string): Buffer {
 	const lexer = new LuaLexer(source, path, { canonicalizeIdentifiers: LUA_CANONICALIZATION });
+
 	const tokens = lexer.scanTokens();
 	const parser = new LuaParser(tokens, path, source);
 	const chunk = parser.parseChunk();
@@ -762,7 +768,6 @@ export type ResourceScanOptions = {
 	virtualRoot?: string;
 	resolveAtlasIndex?: boolean;
 };
-
 
 function isWorkspaceStateDirectory(name: string): boolean {
 	return name.toLowerCase() === WORKSPACE_STATE_DIR_NAME;
@@ -1194,7 +1199,8 @@ export async function getResourcesList(resMetaList: Resource[]): Promise<Resourc
 					};
 				}
 				const source = buffer.toString('utf8');
-				const uppercased = changeCasingLuaSourceExceptStrings(source);
+				const normalizedSource = normalizeLineEndings(source);
+				const uppercased = changeCasingLuaSourceExceptStrings(normalizedSource);
 				const upperBuffer = Buffer.from(uppercased, 'utf8');
 				return {
 					...meta,
@@ -1474,11 +1480,11 @@ export function appendVmProgramAsset(assetList: RomAsset[], manifest: RomManifes
 	if (extraLuaAssets.length > 0) {
 		const seenPaths = new Set<string>();
 		for (const asset of baseLuaAssets) {
-			const path = asset.normalized_source_path ?? asset.source_path;
+			const path = asset.normalized_source_path;
 			seenPaths.add(path);
 		}
 		for (const asset of extraLuaAssets) {
-			const path = asset.normalized_source_path ?? asset.source_path;
+			const path = asset.normalized_source_path;
 			if (seenPaths.has(path)) {
 				continue;
 			}
@@ -1506,7 +1512,7 @@ export function appendVmProgramAsset(assetList: RomAsset[], manifest: RomManifes
 			throw new Error(`[RomPacker] Lua asset '${asset.resid}' is missing its compiled buffer.`);
 		}
 		const decoded = decodeBinary(new Uint8Array(asset.compiled_buffer)) as LuaChunk;
-		const path = asset.normalized_source_path ?? asset.source_path;
+		const path = asset.normalized_source_path;
 		chunksByPath.set(path, decoded);
 		modulePaths.push(path);
 		if (asset === entryAsset) {
