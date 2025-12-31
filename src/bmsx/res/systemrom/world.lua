@@ -81,14 +81,14 @@ end
 local function emit_perf_log(p)
 	local inv_frames = 1 / p.acc_frames
 	local avg_dt = p.acc_sim_ms * inv_frames
-	print(string.format(
-		"[World] perf avg dt=%.2fms update=%.2f draw=%.2f cleanup=%.2f frames=%d",
-		avg_dt,
-		p.acc_update_ms * inv_frames,
-		p.acc_draw_ms * inv_frames,
-		p.acc_cleanup_ms * inv_frames,
-		p.acc_frames
-	))
+	-- print(string.format(
+	-- 	"[World] perf avg dt=%.2fms update=%.2f draw=%.2f cleanup=%.2f frames=%d",
+	-- 	avg_dt,
+	-- 	p.acc_update_ms * inv_frames,
+	-- 	p.acc_draw_ms * inv_frames,
+	-- 	p.acc_cleanup_ms * inv_frames,
+	-- 	p.acc_frames
+	-- ))
 
 	local phase_parts = {}
 	for i = 1, #phase_order do
@@ -96,7 +96,7 @@ local function emit_perf_log(p)
 		local name = tickgroup_names[group] or tostring(group)
 		phase_parts[#phase_parts + 1] = string.format("%s=%.2f", name, p.phase_ms[group] * inv_frames)
 	end
-	print("[World] phases avg " .. table.concat(phase_parts, " "))
+	-- print("[World] phases avg " .. table.concat(phase_parts, " "))
 
 	local top = {}
 	for id, ms in pairs(p.system_ms) do
@@ -125,7 +125,7 @@ local function emit_perf_log(p)
 			local group_name = tickgroup_names[group] or tostring(group)
 			out[#out + 1] = string.format("%s(%s)=%.2f", name, group_name, entry.ms * inv_frames)
 		end
-		print("[World] top systems avg " .. table.concat(out, " "))
+		-- print("[World] top systems avg " .. table.concat(out, " "))
 	end
 	reset_perf_accumulators(p)
 end

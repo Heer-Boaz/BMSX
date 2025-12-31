@@ -126,9 +126,9 @@ local function append_trace_entry(id, message)
 			table.remove(list, 1)
 		end
 	end
-	if diag.mirror_to_vm then
-		print("[FSM:" .. id .. "] " .. message)
-	end
+	-- if diag.mirror_to_vm then
+		-- print("[FSM:" .. id .. "] " .. message)
+	-- end
 end
 
 local function describe_payload(payload)

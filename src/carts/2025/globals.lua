@@ -38,7 +38,8 @@ transition_accent_in_frames = 4
 transition_accent_hold_frames = 8
 transition_accent_out_frames = 4
 transition_text_in_frames = 6
-transition_text_out_frames = 6
+transition_text_hold_frames = 32
+transition_text_out_frames = 5
 transition_flash_frames = 2
 transition_flash_mix = 0.35
 

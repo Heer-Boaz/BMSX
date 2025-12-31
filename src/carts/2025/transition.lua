@@ -52,42 +52,50 @@ function transition.register_states(states)
 		accent.sprite_component.colorize = { r = 0, g = 0, b = 0, a = 0 }
 	end
 
-	local function build_transition_layout(style, palette)
+	local function build_transition_layout(style, palette, layout)
 		local w = display_width()
 		local h = display_height()
 		local swap_frame = overgang_fade_out_frames - 1
+		local center_x = layout.center_x
+		local text_top = layout.text_top
+		local line_height = layout.line_height
+		local accent_height = line_height * 1.1
+		local accent_y = text_top + (line_height - accent_height) * 0.5
 
+		local panel1_width = w * 1.15
+		local panel2_width = w * 1.3
+		local panel3_width = w * 0.55
 		local panels = {
 			{
 				id = transition_panel_ids[1],
 				color = palette.panel_primary,
-				width = w * 1.15,
+				width = panel1_width,
 				height = h * 0.22,
 				y = h * 0.12,
 				x_in = -w * 1.2,
-				x_hold = -w * 0.05,
+				x_hold = center_x - (panel1_width / 2),
 				x_out = w,
 				offset = 0,
 			},
 			{
 				id = transition_panel_ids[2],
 				color = palette.panel_secondary,
-				width = w * 1.3,
+				width = panel2_width,
 				height = h * 0.2,
 				y = h * 0.42,
 				x_in = w,
-				x_hold = -w * 0.1,
+				x_hold = center_x - (panel2_width / 2),
 				x_out = -w * 1.3,
 				offset = transition_panel_gap_frames,
 			},
 			{
 				id = transition_panel_ids[3],
 				color = palette.panel_primary,
-				width = w * 0.55,
+				width = panel3_width,
 				height = h * 0.14,
 				y = h * 0.68,
 				x_in = -w * 0.55,
-				x_hold = w * 0.25,
+				x_hold = center_x - (panel3_width / 2),
 				x_out = w * 1.1,
 				offset = swap_frame - transition_panel_in_frames,
 			},
@@ -97,10 +105,10 @@ function transition.register_states(states)
 			id = transition_accent_id,
 			color = palette.accent,
 			width = w * 0.7,
-			height = 3,
-			y = h * 0.38,
+			height = accent_height,
+			y = accent_y,
 			x_in = w,
-			x_hold = w * 0.1,
+			x_hold = center_x - (w * 0.35),
 			x_out = -w * 0.3,
 			offset = swap_frame - transition_accent_in_frames,
 		}
@@ -213,7 +221,43 @@ function transition.register_states(states)
 			local style = resolve_transition_style(node, next_node.kind)
 			self.transition_style = style
 			self.transition_palette = build_transition_palette(style)
-			self.transition_panels, self.transition_accent = build_transition_layout(style, self.transition_palette)
+			local layout = {
+				center_x = display_width() / 2,
+				text_top = transition_text.dimensions.top,
+				line_height = transition_text.line_height,
+			}
+			self.transition_panels, self.transition_accent = build_transition_layout(style, self.transition_palette, layout)
+			local swap_frame = overgang_fade_out_frames - 1
+			local montage_end = transition_text_in_frames + transition_text_hold_frames + transition_text_out_frames - 1
+			for i = 1, #self.transition_panels do
+				local panel = self.transition_panels[i]
+				local panel_end = panel.offset + transition_panel_in_frames + transition_panel_hold_frames + transition_panel_out_frames - 1
+				if panel_end > montage_end then
+					montage_end = panel_end
+				end
+			end
+			local accent_end = self.transition_accent.offset + transition_accent_in_frames + transition_accent_hold_frames + transition_accent_out_frames - 1
+			if accent_end > montage_end then
+				montage_end = accent_end
+			end
+			self.transition_montage_end_frame = montage_end
+			local fade_in_start = math.max(swap_frame + 1, montage_end + 1)
+			local max_fade_start = overgang_frame_count - overgang_fade_in_frames
+			if fade_in_start > max_fade_start then
+				fade_in_start = max_fade_start
+			end
+			if next_node.kind == 'combat' then
+				fade_in_start = overgang_frame_count
+			end
+			self.transition_fade_in_start = fade_in_start
+			local finish_frame = montage_end
+			if not self.skip_transition_fade and fade_in_start < overgang_frame_count then
+				finish_frame = fade_in_start + overgang_fade_in_frames - 1
+			end
+			if finish_frame > (overgang_frame_count - 1) then
+				finish_frame = overgang_frame_count - 1
+			end
+			self.transition_finish_frame = finish_frame
 			local bg = object(bg_id)
 			bg.visible = true
 			bg.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
@@ -257,11 +301,7 @@ function transition.register_states(states)
 						if frame_index == swap_frame then
 							apply_background(self.transition_target_bg)
 						end
-						local fade_in_start = overgang_frame_count - overgang_fade_in_frames
-						local node = story[self.node_id]
-						if story[node.next].kind == 'combat' then
-							fade_in_start = overgang_frame_count
-						end
+						local fade_in_start = self.transition_fade_in_start
 						if frame_index < overgang_fade_out_frames then
 							local u = frame_index / (overgang_fade_out_frames - 1)
 							fade_alpha = smoothstep(u)
@@ -304,19 +344,25 @@ function transition.register_states(states)
 					local start_x = display_width()
 					local end_x = -display_width()
 					local x = start_x
-					local text_hold_frames = overgang_frame_count - transition_text_in_frames - transition_text_out_frames
+					local text_out_start = transition_text_in_frames + transition_text_hold_frames
+					local text_out_end = text_out_start + transition_text_out_frames
 					if frame_index < transition_text_in_frames then
 						local u = frame_index / (transition_text_in_frames - 1)
 						x = start_x + (center_x - start_x) * smoothstep(u)
-					elseif frame_index < (transition_text_in_frames + text_hold_frames) then
+					elseif frame_index < text_out_start then
 						x = center_x
-					else
-						local out_index = frame_index - (transition_text_in_frames + text_hold_frames)
+					elseif frame_index < text_out_end then
+						local out_index = frame_index - text_out_start
 						local u = out_index / (transition_text_out_frames - 1)
 						x = center_x + (end_x - center_x) * smoothstep(u)
+					else
+						x = end_x
 					end
 					local transition_text = object(text_transition_id)
 					transition_text.centered_block_x = x
+					if frame_index == self.transition_finish_frame then
+						return finish_transition(self)
+					end
 				end,
 			},
 			['timeline.end.' .. overgang_timeline_id] = {
