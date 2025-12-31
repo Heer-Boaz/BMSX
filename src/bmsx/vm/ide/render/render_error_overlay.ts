@@ -4,7 +4,7 @@ import { drawEditorText } from '../text_renderer';
 import { clamp } from '../../../utils/clamp';
 import { activate, bottomMargin, editorFacade, focusChunkSource, setActiveRuntimeErrorOverlay, setExecutionStopHighlight, updateDesiredColumn } from '../vm_cart_editor';
 import { ide_state } from '../ide_state';
-import { normalizeEndingsAndSplitLines, computeRuntimeErrorOverlayMaxWidth, ensureVisualLines, measureText, positionToVisualIndex, visualIndexToSegment, wrapOverlayLine } from '../text_utils';
+import { computeRuntimeErrorOverlayMaxWidth, ensureVisualLines, measureText, positionToVisualIndex, visualIndexToSegment, wrapOverlayLine } from '../text_utils';
 import type { RuntimeErrorDetails, RuntimeErrorOverlay } from '../types';
 import type { StackTraceFrame } from '../../../lua/luavalue';
 import type { RectBounds } from '../../../rompack/rompack';
@@ -16,6 +16,7 @@ import * as constants from '../constants';
 import { cloneRuntimeErrorDetails, rebuildRuntimeErrorOverlayView } from '../runtime_error_overlay';
 import { resetBlink } from './render_caret';
 import { formatRuntimeErrorLocation } from '../../runtime_error_util';
+import { splitText } from '../source_text';
 
 export interface ErrorOverlayBounds {
 	left: number;
@@ -567,7 +568,7 @@ export function showRuntimeError(
 	const overlayMessage = locationLabel
 		? `${locationLabel}: ${normalizedMessage}`
 		: (processedLine !== null ? `Line ${processedLine}:${normalizedMessage}` : normalizedMessage);
-	const messageLines = normalizeEndingsAndSplitLines(overlayMessage);
+	const messageLines = splitText(overlayMessage);
 	const overlayDetails = cloneRuntimeErrorDetails(details );
 	const overlay: RuntimeErrorOverlay = {
 		row: targetRow,

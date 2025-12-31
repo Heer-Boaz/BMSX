@@ -639,7 +639,7 @@ export function wrapOverlayLine(line: string, maxWidth: number): string[] {
 }
 
 function rewrapRuntimeErrorOverlay(overlay: RuntimeErrorOverlay): void {
-	overlay.messageLines = normalizeEndingsAndSplitLines(overlay.message);
+	overlay.messageLines = splitText(overlay.message);
 	rebuildRuntimeErrorOverlayView(overlay);
 }
 
@@ -707,8 +707,4 @@ export function markTextMutated(): void {
 }
 export function bumpTextVersion(): void {
 	ide_state.textVersion = ide_state.buffer.version;
-}
-
-export function normalizeEndingsAndSplitLines(message: string): string[] {
-	return splitText(message);
 }

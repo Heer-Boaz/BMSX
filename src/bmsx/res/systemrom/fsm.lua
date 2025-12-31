@@ -362,6 +362,9 @@ function state:ensure_child(ctx, seg)
 			children[#children + 1] = id
 		end
 		error("no state '" .. seg .. "' under '" .. tostring(ctx.id) .. "'. children: " .. table.concat(children, ", "))
+		if type(child) ~= "table" then
+			error("state '" .. tostring(ctx.id) .. "' has non-state child '" .. tostring(seg) .. "' (type " .. type(child) .. ").")
+		end
 	end
 	return child, key
 end

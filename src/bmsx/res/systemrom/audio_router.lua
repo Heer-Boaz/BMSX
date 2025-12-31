@@ -6,6 +6,8 @@ local eventemitter = require("eventemitter").eventemitter
 local router = { _inited = false, _bound = false, _events = nil, _any_handler = nil }
 local last_random_pick_by_rule = {}
 local last_played_at = {}
+local pending_events = {}
+local handle_event
 
 local function now_ms()
 	return os.clock() * 1000
@@ -30,6 +32,56 @@ local function any_matches(list, value)
 		return false
 	end
 	return list_contains(list, value)
+end
+
+local function should_buffer_event(event)
+	if not event then
+		return false
+	end
+	local name = event.type
+	if not name then
+		return false
+	end
+	if string.sub(name, 1, 9) == "timeline." then
+		return false
+	end
+	return true
+end
+
+local function stash_event(event)
+	if not should_buffer_event(event) then
+		return
+	end
+	pending_events[event.type] = event
+end
+
+local function flush_pending()
+	if not router._events then
+		return
+	end
+	local latest_event = nil
+	local latest_name = nil
+	local latest_ts = -1
+	for event_name, event in pairs(pending_events) do
+		local entry = router._events[event_name]
+		if entry then
+			local ts = event.timestamp or event.timeStamp or 0
+			if ts >= latest_ts then
+				latest_ts = ts
+				latest_event = event
+				latest_name = event_name
+			end
+		end
+	end
+	for k in pairs(pending_events) do
+		pending_events[k] = nil
+	end
+	if latest_event and latest_name then
+		local entry = router._events[latest_name]
+		if entry then
+			handle_event(latest_name, entry, latest_event)
+		end
+	end
 end
 
 local function compile_matcher(matcher)
@@ -335,7 +387,7 @@ local function dispatch_action(event_name, entry, action, payload)
 	end
 end
 
-local function handle_event(event_name, entry, payload)
+handle_event = function(event_name, entry, payload)
 	local rules = entry.rules
 	for i = 1, #rules do
 		local rule = rules[i]
@@ -389,14 +441,11 @@ function router.init()
 	end
 	router._any_handler = function(event)
 		if not router._bound then
+			stash_event(event)
 			if not bind_events() then
 				return
 			end
-			local entry = router._events[event.type]
-			if entry then
-				handle_event(event.type, entry, event)
-			end
-			return
+			flush_pending()
 		end
 	end
 	eventemitter.instance:on_any(router._any_handler)

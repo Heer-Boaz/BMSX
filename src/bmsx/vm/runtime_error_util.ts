@@ -1,6 +1,6 @@
 import { LuaCallFrame } from '../lua/luaruntime';
 import { StackTraceFrame } from '../lua/luavalue';
-import { normalizeEndingsAndSplitLines } from './ide/text_utils';
+import { splitText } from './ide/source_text';
 import { RuntimeErrorDetails } from './ide/types';
 import { createMinimalSourceMapConsumer, InlineSourceMap, MinimalSourceMapConsumer, originalPositionFor } from './sourcemap_minimal';
 
@@ -168,7 +168,7 @@ export function parseJsStackFrames(stack: string): StackTraceFrame[] {
 	if (!stack || stack.length === 0) {
 		return [];
 	}
-	const lines = normalizeEndingsAndSplitLines(stack);
+	const lines = splitText(stack);
 	const frames: StackTraceFrame[] = [];
 	for (let index = 1; index < lines.length; index += 1) {
 		const trimmed = lines[index].trim();

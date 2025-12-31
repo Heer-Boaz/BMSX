@@ -48,7 +48,7 @@ export interface RomAsset {
 	metabuffer_start?: number; // Optional start offset of binary-encoded per-asset metadata in the buffer
 	metabuffer_end?: number; // Optional end offset of binary-encoded per-asset metadata in the buffer
 	buffer?: Buffer; // The binary buffer of the asset, used for all assets, including images and audio.
-	compiled_buffer?: Buffer; // Pack-time only: compiled Lua chunk buffer (stripped during finalization)
+	compiled_buffer?: Buffer; // ???? The compiled Lua chunk buffer for Lua script assets.
 	texture_buffer?: Buffer; // Optional buffer holding packed textures for model assets
 	imgmeta?: ImgMeta; // The metadata of the asset, if it is an image.
 	audiometa?: AudioMeta; // The metadata of the asset, if it is an audio asset.

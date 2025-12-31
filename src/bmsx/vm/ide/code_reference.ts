@@ -2,13 +2,12 @@ import { clamp } from '../../utils/clamp';
 import type { VMLuaDefinitionLocation, VMLuaSymbolEntry, VMResourceDescriptor } from '../types';
 import type { CodeTabContext, SearchMatch, SymbolSearchResult } from './types';
 import type { LuaSourceRange } from '../../lua/lua_ast';
-import { normalizeEndingsAndSplitLines } from './text_utils';
 import { listResources } from '../workspace';
 import { BmsxVMRuntime } from '../vm_tooling_runtime';
 import { VMCodeLayout } from './code_layout';
 import { LuaSemanticWorkspace, Decl } from './semantic_model';
 import type { TextBuffer } from './text_buffer';
-import { getTextSnapshot } from './source_text';
+import { getTextSnapshot, splitText } from './source_text';
 
 export type ProjectReferenceEnvironment = {
 	activeContext: CodeTabContext;
@@ -282,7 +281,7 @@ function collectFileMetadata(options: CollectMetadataOptions): Map<string, FileM
 			lines = environment.activeLines;
 		} else {
 			const source = getTextSnapshot(context.buffer);
-			lines = normalizeEndingsAndSplitLines(source);
+			lines = splitText(source);
 		}
 		if (!lines || lines.length === 0) {
 			continue;
@@ -300,7 +299,7 @@ function collectFileMetadata(options: CollectMetadataOptions): Map<string, FileM
 			continue;
 		}
 		const source = BmsxVMRuntime.instance.resourceSourceForChunk(path);
-		const lines = normalizeEndingsAndSplitLines(source);
+		const lines = splitText(source);
 		if (!lines || lines.length === 0) {
 			continue;
 		}
