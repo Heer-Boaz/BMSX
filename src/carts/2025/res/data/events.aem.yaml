@@ -8,10 +8,10 @@ events:
                       - equals:
                             just_finished_combat: true
                       - equals:
-                            last_combat_monster_imgid: monster_snoozer
+                            last_combat_monster_imgid: monster_heer_later
               go:
                   music_transition:
-                      audio_id: m07
+                      audio_id: m11
                       sync: immediate
                       fade_ms: 250
             - when:
@@ -67,10 +67,18 @@ events:
                       fade_ms: 250
             - when:
                   in:
-                      label: ['MONDAY', 'MONDAY AFTERNOON']
+                      label: ['MONDAY']
               go:
                   music_transition:
                       audio_id: m05
+                      sync: immediate
+                      fade_ms: 250
+            - when:
+                  in:
+                      label: ['MONDAY AFTERNOON']
+              go:
+                  music_transition:
+                      audio_id: m28
                       sync: immediate
                       fade_ms: 250
             - when:
@@ -98,6 +106,15 @@ events:
                       sync: immediate
                       fade_ms: 250
 
+            - when:
+                  equals:
+                      label: 'TUESDAY AFTERNOON'
+              go:
+                  music_transition:
+                      audio_id: m02
+                      sync: immediate
+                      fade_ms: 250
+
     combat.start:
         channel: music
         max_voices: 1
@@ -116,6 +133,14 @@ events:
               go:
                   music_transition:
                       audio_id: m35
+                      sync: immediate
+                      fade_ms: 200
+            - when:
+                  equals:
+                      monster_imgid: monster_heer_later
+              go:
+                  music_transition:
+                      audio_id: m10
                       sync: immediate
                       fade_ms: 200
 
