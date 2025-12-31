@@ -421,6 +421,7 @@ function combat.define_fsm()
 		entering_state = function(self)
 			clear_texts(text_ids_all)
 			hide_combat_sprites()
+			hide_transition_layers()
 			local bg = object(bg_id)
 			bg.visible = true
 			bg.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
@@ -499,6 +500,7 @@ function combat.define_fsm()
 			local node = story[self.node_id]
 			clear_texts(text_ids_transition_results)
 			reset_text_colors()
+			hide_transition_layers()
 
 			local bg = object(bg_id)
 			bg.visible = false

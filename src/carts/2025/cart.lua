@@ -111,7 +111,24 @@ local function register_director()
 			pages = {},
 			transition_center_x = 0,
 			transition_target_bg = story.title.bg,
+			transition_style = 'dialogue',
+			transition_palette = p3_transition_palette_dialogue,
+			transition_panels = {},
+			transition_accent = {
+				id = transition_accent_id,
+				color = p3_transition_palette_dialogue.accent,
+				width = 0,
+				height = 0,
+				y = 0,
+				x_in = 0,
+				x_hold = 0,
+				x_out = 0,
+				offset = 999,
+			},
+			transition_needs_post_fade = false,
 			fade_target_bg = story.title.bg,
+			fade_style = 'dialogue',
+			fade_palette = p3_transition_palette_dialogue,
 			skip_combat_fade_in = false,
 			skip_transition_fade = false,
 			fade_hold_black = false,
@@ -142,6 +159,36 @@ function new_game()
 		id = bg_id,
 		pos = { x = 0, y = 0, z = 0 },
 		imgid = 'none',
+		visible = false,
+	})
+	spawn_sprite('p3.bg.def', {
+		id = transition_overlay_id,
+		pos = { x = 0, y = 0, z = 850 },
+		imgid = 'whitepixel',
+		visible = false,
+	})
+	spawn_sprite('p3.bg.def', {
+		id = transition_panel_ids[1],
+		pos = { x = 0, y = 0, z = 860 },
+		imgid = 'whitepixel',
+		visible = false,
+	})
+	spawn_sprite('p3.bg.def', {
+		id = transition_panel_ids[2],
+		pos = { x = 0, y = 0, z = 861 },
+		imgid = 'whitepixel',
+		visible = false,
+	})
+	spawn_sprite('p3.bg.def', {
+		id = transition_panel_ids[3],
+		pos = { x = 0, y = 0, z = 862 },
+		imgid = 'whitepixel',
+		visible = false,
+	})
+	spawn_sprite('p3.bg.def', {
+		id = transition_accent_id,
+		pos = { x = 0, y = 0, z = 870 },
+		imgid = 'whitepixel',
 		visible = false,
 	})
 

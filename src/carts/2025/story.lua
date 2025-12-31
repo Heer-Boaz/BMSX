@@ -282,6 +282,7 @@ story = {
 	overgang_ordeel_des_sints = {
 		kind = 'transition',
 		label = 'ORDEEL DES SINTS',
+		transition_style = 'ending',
 		next = 'ending',
 	},
 	ending = {
