@@ -57,7 +57,7 @@
   "scripts": {
     "headless:game": "node scripts/headless-run.js",
     "test:lua": "npx tsx --test tests/lua/*.ts",
-    "validate:engine": "npx tsc --build ./src/bmsx && (test -f tsconfig.scripts.json && npm run validate:scripts || true)",
+    "validate:engine": "npx tsc --build ./src/bmsx",
     "build:engine:debug": "npx tsx scripts/rompacker/rompacker.ts --mode engine --debug --force --nodeploy --skiptypecheck --platform browser -romname engine -title \"BMSX Engine\" -bootloaderpath ./src/bmsx/console/default_cart -respath ./src/bmsx/res && npx tsx scripts/rompacker/rompacker.ts --mode engine --debug --force --nodeploy --skiptypecheck --platform headless -romname engine -title \"BMSX Engine\" -bootloaderpath ./src/bmsx/console/default_cart -respath ./src/bmsx/res",
     "build:cart": "npx tsx scripts/rompacker/rompacker.ts",
     "build:game": "npx tsx scripts/rompacker/rompacker.ts --nodeploy --usepkgtsconfig --skiptypecheck --debug -romname ",
