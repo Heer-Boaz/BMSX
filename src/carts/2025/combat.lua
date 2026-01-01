@@ -332,8 +332,10 @@ function combat.define_fsm()
 		local maya_recover_frames = params.maya_recover_frames or 0
 		local maya_bob_amp = params.maya_bob_amp
 		local maya_bob_period_frames = params.maya_bob_period_frames
-		local maya_step_scale_x = params.maya_step_scale_x
-		local maya_step_scale_y = params.maya_step_scale_y
+		local maya_react_scale_x = params.maya_react_scale_x
+		local maya_react_scale_y = params.maya_react_scale_y
+		local maya_impact_scale_x = params.maya_impact_scale_x
+		local maya_impact_scale_y = params.maya_impact_scale_y
 		local maya_hold_end = impact_end + maya_hold_frames
 		local maya_recover_end = maya_hold_end + maya_recover_frames
 		local anticipate_frames = combat_exchange_anticipate_frames
@@ -405,8 +407,8 @@ function combat.define_fsm()
 				maya_x = maya_x + (params.maya_offset_x * maya_u)
 				maya_y = maya_y + (params.maya_offset_y * maya_u)
 				maya_scale = {
-					x = 1 + (maya_step_scale_x * maya_u),
-					y = 1 + (maya_step_scale_y * maya_u),
+					x = 1 + (maya_react_scale_x * maya_u),
+					y = 1 + (maya_react_scale_y * maya_u),
 				}
 				local bob_u = easing.pingpong01((i - impact_start) / maya_bob_period_frames)
 				bob = (bob_u - 0.5) * 2 * maya_bob_amp
@@ -415,8 +417,8 @@ function combat.define_fsm()
 			if impact_u > 0 then
 				if params.squash then
 					maya_scale = {
-						x = 1 + (0.10 * impact_u),
-						y = 1 - (0.08 * impact_u),
+						x = maya_scale.x + (maya_impact_scale_x * impact_u),
+						y = maya_scale.y + (maya_impact_scale_y * impact_u),
 					}
 				end
 				if params.flash then
@@ -1038,8 +1040,10 @@ function combat.define_fsm()
 				maya_recover_frames = combat_exchange_hit_recoil_recover_frames,
 				maya_bob_amp = 0,
 				maya_bob_period_frames = combat_exchange_miss_dodge_bob_period_frames,
-				maya_step_scale_x = 0,
-				maya_step_scale_y = 0,
+				maya_react_scale_x = combat_exchange_hit_scale_x,
+				maya_react_scale_y = combat_exchange_hit_scale_y,
+				maya_impact_scale_x = combat_exchange_hit_impact_scale_x,
+				maya_impact_scale_y = combat_exchange_hit_impact_scale_y,
 				flash = true,
 				flash_r = p3_cyan_r,
 				flash_g = p3_cyan_g,
@@ -1142,8 +1146,10 @@ function combat.define_fsm()
 				maya_recover_frames = combat_exchange_miss_dodge_recover_frames,
 				maya_bob_amp = combat_exchange_miss_dodge_bob_amp,
 				maya_bob_period_frames = combat_exchange_miss_dodge_bob_period_frames,
-				maya_step_scale_x = combat_exchange_miss_dodge_scale_x,
-				maya_step_scale_y = combat_exchange_miss_dodge_scale_y,
+				maya_react_scale_x = combat_exchange_miss_dodge_scale_x,
+				maya_react_scale_y = combat_exchange_miss_dodge_scale_y,
+				maya_impact_scale_x = 0,
+				maya_impact_scale_y = 0,
 				flash = false,
 				flash_r = 1,
 				flash_g = 1,
