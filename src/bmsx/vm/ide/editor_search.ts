@@ -4,7 +4,7 @@ import { clamp, clamp_wrap } from '../../utils/clamp';
 import { getSelectionRange, getSelectionText } from './text_editing_and_selection';
 import type { GlobalSearchJob, GlobalSearchMatch, SearchComputationJob, SearchMatch } from './types';
 import type { VMResourceDescriptor } from '../types';
-import { BmsxVMRuntime } from '../vm_tooling_runtime';
+import { BmsxVMRuntime } from '../vm_runtime';
 import { enqueueBackgroundTask } from './background_tasks';
 import {
 	applySearchFieldText,

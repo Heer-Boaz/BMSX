@@ -4,7 +4,7 @@ import { isResourceViewActive } from '../editor_tabs';
 import { ide_state } from '../ide_state';
 import { drawEditorText } from '../text_renderer';
 import { measureText, truncateTextToWidth } from '../text_utils';
-import { api, BmsxVMRuntime } from '../../vm_tooling_runtime';
+import { api, BmsxVMRuntime } from '../../vm_runtime';
 
 export function renderStatusBar(): void {
 	const runtime = BmsxVMRuntime.instance;

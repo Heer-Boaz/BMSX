@@ -1,5 +1,5 @@
 import type { RectBounds } from '../../../rompack/rompack';
-import { api } from '../../vm_tooling_runtime';
+import { api } from '../../vm_runtime';
 import * as constants from '../constants';
 import { ide_state } from '../ide_state';
 import { drawEditorText } from '../text_renderer';

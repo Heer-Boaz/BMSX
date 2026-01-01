@@ -1,6 +1,6 @@
 import { RegisterablePersistent } from '../../rompack/rompack';
 import { Registry } from '../../core/registry';
-import { BmsxVMRuntime } from '../vm_tooling_runtime';
+import { BmsxVMRuntime } from '../vm_runtime';
 import { type LuaDebuggerSessionMetrics } from '../../lua/luadebugger';
 import { ide_state } from './ide_state';
 import { getActiveCodeTabContext } from './editor_tabs';

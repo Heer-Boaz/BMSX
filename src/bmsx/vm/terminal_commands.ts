@@ -1,5 +1,5 @@
 import { $ } from '../core/engine_core';
-import { BmsxVMRuntime } from './vm_tooling_runtime';
+import { BmsxVMRuntime } from './vm_runtime';
 import { clearWorkspaceSessionState } from './ide/workspace_storage';
 import { ide_state } from './ide/ide_state';
 import { buildWorkspaceDirtyEntryPath, buildWorkspaceStorageKey, nukeWorkspaceState, resetWorkspaceDirtyBuffersAndStorage } from './workspace';

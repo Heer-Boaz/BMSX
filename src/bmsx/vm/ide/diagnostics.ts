@@ -1,6 +1,6 @@
 import type { VMLuaBuiltinDescriptor, VMLuaSymbolEntry, VMResourceDescriptor } from '../types';
 import type { EditorDiagnostic } from './types';
-import { BmsxVMRuntime } from '../vm_tooling_runtime';
+import { BmsxVMRuntime } from '../vm_runtime';
 import { computeLuaDiagnostics, getApiCompletionData } from './intellisense';
 import { getCachedLuaParse } from './lua_analysis_cache';
 import { ide_state, diagnosticsDebounceMs } from './ide_state';

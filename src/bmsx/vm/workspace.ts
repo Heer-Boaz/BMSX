@@ -1,7 +1,7 @@
 import { extractErrorMessage } from '../lua/luavalue';
 import type { HttpResponse, StorageService } from '../platform';
 import type { LuaSourceRecord, LuaSourceRegistry } from './lua_sources';
-import { BmsxVMRuntime } from './vm_tooling_runtime';
+import { BmsxVMRuntime } from './vm_runtime';
 import { $ } from '../core/engine_core';
 import { VMLuaResourceCreationRequest, VMResourceDescriptor } from './types';
 

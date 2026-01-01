@@ -9,7 +9,7 @@ import { ide_state } from '../ide_state';
 import { drawEditorColoredText } from '../text_renderer';
 import { getBreakpointsForChunk } from '../ide_debugger';
 import { getActiveCodeTabContext } from '../editor_tabs';
-import { api } from '../../vm_tooling_runtime';
+import { api } from '../../vm_runtime';
 import { computeSelectionSlice, ensureVisualLines, getVisualLineCount, visualIndexToSegment } from '../text_utils';
 import { drawCursor } from './render_caret';
 import type { VMFont } from '../../font';

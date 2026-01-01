@@ -18,7 +18,7 @@ import type { RandomModulationParams, ModulationParams, SoundMasterPlayRequest }
 import type { Polygon, vec3arr, asset_id, AudioType } from '../rompack/rompack';
 import { taskGate, GateGroup } from '../core/taskgate';
 import { VMRenderFacade } from './vm_render_facade';
-import { BmsxVMRuntime } from './vm_tooling_runtime';
+import { BmsxVMRuntime } from './vm_runtime';
 
 type AudioPlaybackMode = 'replace' | 'ignore' | 'queue' | 'stop' | 'pause';
 type MusicTransitionSync = 'immediate' | 'loop'

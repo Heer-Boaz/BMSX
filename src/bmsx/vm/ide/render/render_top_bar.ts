@@ -5,7 +5,7 @@ import { isDebugPanelActive } from '../vm_cart_editor';
 import { measureText } from '../text_utils';
 import { drawEditorText } from '../text_renderer';
 import { MenuId, TopBarButtonId } from '../types';
-import { api, BmsxVMRuntime } from '../../vm_tooling_runtime';
+import { api, BmsxVMRuntime } from '../../vm_runtime';
 import { MENU_COMMANDS, MENU_IDS } from '../ide_input';
 
 type MenuSeparator = { type: 'separator' };

@@ -107,7 +107,7 @@ import { applyWorkspaceOverridesToCart, createLuaResource, listResources, saveLu
 
 import * as TextEditing from './text_editing_and_selection';
 import { resetBlink } from './render/render_caret';
-import { api, BmsxVMRuntime } from '../vm_tooling_runtime';
+import { api, BmsxVMRuntime } from '../vm_runtime';
 import { drawResourcePanel, drawResourceViewer } from './render/render_resource_panel';
 import { drawCreateResourceBar } from './render/render_input_bars';
 import { drawActionPromptOverlay } from './render/render_prompt';

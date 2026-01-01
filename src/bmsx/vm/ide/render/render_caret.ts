@@ -6,7 +6,7 @@ import { ide_state } from '../ide_state';
 import { drawEditorText } from '../text_renderer';
 import type { CursorScreenInfo, TextField } from '../types';
 import { getCursorOffset, getFieldText } from '../inline_text_field';
-import { api } from '../../vm_tooling_runtime';
+import { api } from '../../vm_runtime';
 
 export interface CaretDrawOps {
 	fillRect(x0: number, y0: number, x1: number, y1: number, color: color): void;

@@ -1,7 +1,7 @@
 import { $ } from '../core/engine_core';
 import { ECSystem, TickGroup } from './ecsystem';
 import { ActionEffectComponent } from '../component/actioneffectcomponent';
-import { BmsxVMRuntime } from '../vm/vm_tooling_runtime';
+import { BmsxVMRuntime } from '../vm/vm_runtime';
 import { extractErrorMessage } from '../lua/luavalue';
 
 export class ActionEffectRuntimeSystem extends ECSystem {

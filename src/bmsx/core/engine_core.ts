@@ -35,7 +35,7 @@ import { registerBuiltinECS } from "../ecs/builtin_pipeline";
 import type { NodeSpec } from "../ecs/pipeline";
 import { collectEcsPipelineExtensionsFromWorldModules, } from "../ecs/extensions";
 import { gameplaySpec } from './pipelines/gameplay_pipeline';
-import { BmsxVMRuntime } from '../vm/vm_tooling_runtime';
+import { BmsxVMRuntime } from '../vm/vm_runtime';
 import { createBmsxVMModule } from '../vm/module';
 import type { GPUBackend } from '../render/backend/pipeline_interfaces';
 import { ActionEffectRegistry } from '../action_effects/effect_registry';

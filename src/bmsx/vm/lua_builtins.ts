@@ -7,7 +7,7 @@ import { extractErrorMessage, LuaFunctionValue, LuaNativeValue } from '../lua/lu
 import { isLuaTable, LuaTable, LuaValue } from '../lua/luavalue';
 import { arrayify } from '../utils/arrayify';
 import { VM_API_METHOD_METADATA } from './vm_api_metadata';
-import { api, BmsxVMRuntime } from './vm_tooling_runtime';
+import { api, BmsxVMRuntime } from './vm_runtime';
 import type { VMLuaBuiltinDescriptor } from './types';
 
 export const ENGINE_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<VMLuaBuiltinDescriptor> = [

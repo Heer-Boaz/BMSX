@@ -5,7 +5,7 @@ import type { RectBounds } from '../../rompack/rompack';
 import { computeMaximumScrollColumn, getActiveResourceViewer, resourceViewerTextCapacity } from './vm_cart_editor';
 import { ensureVisualLines, getVisualLineCount } from './text_utils';
 import { ide_state } from './ide_state';
-import { api } from '../vm_tooling_runtime';
+import { api } from '../vm_runtime';
 
 export class VMScrollbar {
 	public readonly orientation: 'vertical' | 'horizontal';

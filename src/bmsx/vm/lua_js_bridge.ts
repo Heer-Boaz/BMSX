@@ -3,7 +3,7 @@ import { LuaSourceRange } from '../lua/lua_ast';
 import { LuaEnvironment } from '../lua/luaenvironment';
 import { LuaHandlerCache, isLuaHandlerFunction } from '../lua/luahandler_cache';
 import { LuaValue, LuaTable, isLuaTable, createLuaTable, LuaNativeValue, isLuaFunctionValue, isPlainObject, resolveNativeTypeName, isLuaNativeMemberHandle, LuaFunctionValue } from '../lua/luavalue';
-import { BmsxVMRuntime } from './vm_tooling_runtime';
+import { BmsxVMRuntime } from './vm_runtime';
 import { LuaMarshalContext } from './types';
 
 export type LuaSnapshotObjects = Record<number, unknown>;

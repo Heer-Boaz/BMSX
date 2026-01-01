@@ -7,7 +7,7 @@ import type { StorageService, TimerHandle } from '../../platform/platform';
 import { restoreBreakpointsFromPayload, serializeBreakpoints, type SerializedBreakpointMap } from './ide_debugger';
 import { scheduleIdeOnce } from './background_tasks';
 import { taskGate } from '../../core/taskgate';
-import { BmsxVMRuntime } from '../vm_tooling_runtime';
+import { BmsxVMRuntime } from '../vm_runtime';
 import {
 	WORKSPACE_FILE_ENDPOINT,
 	WORKSPACE_MARKER_FILE,

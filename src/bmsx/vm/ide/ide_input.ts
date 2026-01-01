@@ -24,7 +24,7 @@ import { toggleProblemsPanel } from './problems_panel';
 import { point_in_rect } from '../../utils/rect_operations';
 import { applyInlineFieldEditing, getFieldText } from './inline_text_field';
 import { setEditorCaseInsensitivity } from './text_renderer';
-import { BmsxVMRuntime } from '../vm_tooling_runtime';
+import { BmsxVMRuntime } from '../vm_runtime';
 import { computeRuntimeErrorOverlayGeometry, resolveRuntimeErrorOverlayAnchor, computeRuntimeErrorOverlayLayout, findRuntimeErrorOverlayLineAtPosition, RuntimeErrorOverlayClickResult } from './render/render_error_overlay';
 import { rebuildRuntimeErrorOverlayView, buildRuntimeErrorOverlayCopyText } from './runtime_error_overlay';
 import * as constants from './constants';

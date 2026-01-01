@@ -1,7 +1,7 @@
 import type { VMEditorFont } from '../editor_font';
 import { applyCaseOutsideStrings, expandTabs as expandTabsExternal } from './text_utils';
 import * as constants from './constants';
-import { api } from '../vm_tooling_runtime';
+import { api } from '../vm_runtime';
 import { splitText } from './source_text';
 
 let CASE_INSENSITIVE_EDITOR = true;

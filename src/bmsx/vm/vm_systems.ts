@@ -2,7 +2,7 @@ import { $ } from '../core/engine_core';
 import type { World } from '../core/world';
 import { ECSystem, TickGroup } from '../ecs/ecsystem';
 import type { NodeSpec } from '../ecs/pipeline';
-import { BmsxVMRuntime } from './vm_tooling_runtime';
+import { BmsxVMRuntime } from './vm_runtime';
 
 export const BMSX_CART_UPDATE_SYSTEM_ID = 'bmsx:cart_update_system';
 export const BMSX_CART_DRAW_SYSTEM_ID = 'bmsx:cart_draw_system';
