@@ -325,31 +325,38 @@ function combat.define_fsm()
 		local monster_base_y = self.combat_monster_base_y
 		local maya_base_x = self.combat_maya_a_base_x
 		local maya_base_y = self.combat_maya_a_base_y
-		local impact_start = math.floor(frame_count * 0.4)
-		local impact_end = math.floor(frame_count * 0.7)
+		local impact_start = math.floor(frame_count * combat_exchange_impact_start_ratio)
+		local impact_end = math.floor(frame_count * combat_exchange_impact_end_ratio)
 		local impact_frames = impact_end - impact_start + 1
 
 		for i = 0, frame_count - 1 do
 			local u = i / (frame_count - 1)
-			local lunge = arc01(u)
+			local impact_u = 0
+			if i >= impact_start and i <= impact_end then
+				local ru = (i - impact_start) / (impact_frames - 1)
+				impact_u = arc01(ru)
+			end
+
+			local lunge = arc01(u) + (combat_exchange_lunge_punch * impact_u)
 			local monster_x = monster_base_x - (combat_exchange_lunge_distance * lunge)
 			local monster_y = monster_base_y + (combat_exchange_lunge_lift * lunge)
 			local s = 1 + ((combat_exchange_lunge_scale - 1) * lunge)
-			local maya_x = maya_base_x
-			local maya_y = maya_base_y
+			local maya_x = maya_base_x + (params.maya_offset_x * impact_u)
+			local maya_y = maya_base_y + (params.maya_offset_y * impact_u)
 			local maya_colorize = { r = 1, g = 1, b = 1, a = 1 }
 
-			if i >= impact_start and i <= impact_end then
-				local ru = (i - impact_start) / (impact_frames - 1)
-				local recoil = arc01(ru)
-				maya_x = maya_x + (params.maya_offset_x * recoil)
-				maya_y = maya_y + (params.maya_offset_y * recoil)
+			if impact_u > 0 then
 				if params.flash then
 					local flash_index = i - impact_start
 					if (flash_index % 2) == 1 then
-						maya_colorize = { r = 0.7, g = 0.7, b = 0.7, a = 1 }
+						local dim = params.flash_dim
+						maya_colorize = { r = dim, g = dim, b = dim, a = 1 }
 					end
 				end
+				monster_x = monster_x + round(shake_signed(i * 19 + 5) * params.monster_shake_x * impact_u)
+				monster_y = monster_y + round(shake_signed(i * 23 + 11) * params.monster_shake_y * impact_u)
+				maya_x = maya_x + round(shake_signed(i * 29 + 7) * params.maya_shake_x * impact_u)
+				maya_y = maya_y + round(shake_signed(i * 31 + 13) * params.maya_shake_y * impact_u)
 			end
 
 			frames[#frames + 1] = {
@@ -878,7 +885,12 @@ function combat.define_fsm()
 				frame_count = combat_exchange_hit_frame_count,
 				maya_offset_x = combat_exchange_hit_recoil_distance,
 				maya_offset_y = combat_exchange_hit_recoil_lift,
+				maya_shake_x = combat_exchange_hit_shake_x,
+				maya_shake_y = combat_exchange_hit_shake_y,
+				monster_shake_x = combat_exchange_hit_shake_x,
+				monster_shake_y = combat_exchange_hit_shake_y,
 				flash = true,
+				flash_dim = combat_exchange_hit_flash_dim,
 			})
 
 			self:define_timeline(new_timeline({
@@ -952,7 +964,12 @@ function combat.define_fsm()
 				frame_count = combat_exchange_miss_frame_count,
 				maya_offset_x = combat_exchange_miss_dodge_distance,
 				maya_offset_y = combat_exchange_miss_dodge_lift,
+				maya_shake_x = 0,
+				maya_shake_y = 0,
+				monster_shake_x = 0,
+				monster_shake_y = 0,
 				flash = false,
+				flash_dim = 1,
 			})
 
 			self:define_timeline(new_timeline({
