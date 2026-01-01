@@ -338,16 +338,16 @@ function combat.define_fsm()
 		for i = 0, frame_count - 1 do
 			local lunge = 0
 			if i < anticipate_frames then
-				local u = i / (anticipate_frames - 1)
-				lunge = -0.10 * easing.smoothstep(u)
-			elseif i < lunge_end then
-				local u = (i - anticipate_frames) / (lunge_frames - 1)
-				lunge = easing.ease_out_quad(u)
-			elseif i < hitstop_end then
-				lunge = 1.0
-			else
-				local u = (i - hitstop_end) / (recover_frames - 1)
-				lunge = 1.0 - easing.ease_in_quad(u)
+			local u = i / (anticipate_frames - 1)
+			lunge = -0.10 * easing.smoothstep(u)
+		elseif i < lunge_end then
+			local u = (i - anticipate_frames) / (lunge_frames - 1)
+			lunge = easing.ease_in_out_quad(u)
+		elseif i < hitstop_end then
+			lunge = 1.0
+		else
+			local u = (i - hitstop_end) / (recover_frames - 1)
+			lunge = 1.0 - easing.ease_in_quad(u)
 			end
 
 			local impact_u = 0
@@ -818,13 +818,15 @@ function combat.define_fsm()
 				play_options = { rewind = true, snap_to_start = true },
 			},
 		},
-		entering_state = function(self)
-			clear_texts(text_ids_choice_prompt)
-			set_text_lines(text_main_id, { 'RAAK!' }, false)
-			local monster = object(combat_monster_id)
-			self.combat_hit_origin_x = monster.x
-			self.combat_hit_origin_y = monster.y
-		end,
+	entering_state = function(self)
+		clear_texts(text_ids_choice_prompt)
+		set_text_lines(text_main_id, { 'RAAK!' }, false)
+		local monster = object(combat_monster_id)
+		monster.x = self.combat_monster_base_x
+		monster.y = self.combat_monster_base_y
+		self.combat_hit_origin_x = monster.x
+		self.combat_hit_origin_y = monster.y
+	end,
 		input_eval = 'first',
 		input_event_handlers = {
 			['b[jp]'] = {
