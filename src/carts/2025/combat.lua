@@ -114,7 +114,7 @@ function combat_director:update_combat_hover()
 	self.combat_hover_time = self.combat_hover_time + game.deltatime_seconds
 	local monster = object(combat_monster_id)
 	local u = (self.combat_hover_time / combat_monster_hover_period_seconds) + 0.25
-	local wave = smoothstep(pingpong01(u))
+	local wave = easing.smoothstep(easing.pingpong01(u))
 	local offset = (wave - 0.5) * 2 * combat_monster_hover_amp
 	monster.y = self.combat_monster_base_y + offset
 end
@@ -155,8 +155,8 @@ function combat.setup_timelines(self)
 
 		for i = 0, combat_focus_zoom_frames - 1 do
 			local u = i / (combat_focus_zoom_frames - 1)
-			local eased = smoothstep(u)
-			local turn = arc01(u)
+			local eased = easing.smoothstep(u)
+			local turn = easing.arc01(u)
 			local s = 1 + ((zoom_scale - 1) * eased)
 			local x = base_x + (zoom_target_x - base_x) * eased + (combat_focus_zoom_arc_x * turn)
 			local y = base_y + (zoom_target_y - base_y) * eased + (combat_focus_zoom_arc_y * turn)
@@ -172,8 +172,8 @@ function combat.setup_timelines(self)
 
 		for i = 0, combat_focus_vanish_frames - 1 do
 			local u = i / (combat_focus_vanish_frames - 1)
-			local eased = smoothstep(u)
-			local turn = arc01(u)
+			local eased = easing.smoothstep(u)
+			local turn = easing.arc01(u)
 			local s = zoom_scale + ((vanish_scale - zoom_scale) * eased)
 			local x = zoom_target_x + (vanish_target_x - zoom_target_x) * eased + (combat_focus_vanish_arc_x * turn)
 			local y = zoom_target_y + (vanish_target_y - zoom_target_y) * eased + (combat_focus_vanish_arc_y * turn)
@@ -261,8 +261,8 @@ function combat.define_fsm()
 
 		for i = 0, combat_intro_maya_b_frames - 1 do
 			local u = i / (combat_intro_maya_b_frames - 1)
-			local eased = smoothstep(u)
-			local turn = arc01(u)
+			local eased = easing.smoothstep(u)
+			local turn = easing.arc01(u)
 			local s = maya_b_start_scale + (maya_b_end_scale - maya_b_start_scale) * eased
 			local right_x = maya_b_start_right_x + (maya_b_exit_right_x - maya_b_start_right_x) * eased
 			local x = right_x - (maya_b.sx * s)
@@ -286,8 +286,8 @@ function combat.define_fsm()
 
 		for i = 0, combat_intro_reveal_frames - 1 do
 			local u = i / (combat_intro_reveal_frames - 1)
-			local eased = smoothstep(u)
-			local turn = arc01(u)
+			local eased = easing.smoothstep(u)
+			local turn = easing.arc01(u)
 
 			local monster_scale = monster_start_scale + (1 - monster_start_scale) * eased
 			local monster_ox = (monster.sx * (monster_scale - 1)) / 2
@@ -334,10 +334,10 @@ function combat.define_fsm()
 			local impact_u = 0
 			if i >= impact_start and i <= impact_end then
 				local ru = (i - impact_start) / (impact_frames - 1)
-				impact_u = arc01(ru)
+				impact_u = easing.arc01(ru)
 			end
 
-			local lunge = arc01(u) + (combat_exchange_lunge_punch * impact_u)
+			local lunge = easing.arc01(u) + (combat_exchange_lunge_punch * impact_u)
 			local monster_x = monster_base_x - (combat_exchange_lunge_distance * lunge)
 			local monster_y = monster_base_y + (combat_exchange_lunge_lift * lunge)
 			local s = 1 + ((combat_exchange_lunge_scale - 1) * lunge)
@@ -496,7 +496,7 @@ function combat.define_fsm()
 					local c = 0
 					if frame_index < combat_fade_out_frames then
 						local u = frame_index / (combat_fade_out_frames - 1)
-						c = 1 - smoothstep(u)
+						c = 1 - easing.smoothstep(u)
 					end
 					local bg = object(bg_id)
 					bg.sprite_component.colorize = { r = c, g = c, b = c, a = 1 }
@@ -852,7 +852,7 @@ function combat.define_fsm()
 					local offset = 0
 					if frame_index >= hold_in and frame_index < (hold_in + move_frames) then
 						local u = (frame_index - hold_in) / (move_frames - 1)
-						offset = arc01(u) * combat_monster_dodge_distance * self.combat_dodge_dir
+						offset = easing.arc01(u) * combat_monster_dodge_distance * self.combat_dodge_dir
 					end
 					monster.x = self.combat_monster_base_x + offset
 				end,
@@ -1096,7 +1096,7 @@ function combat.define_fsm()
 					local dx, dy = all_out_shake(frame_index)
 					local all_out = object(combat_all_out_id)
 					local u = (frame_index / combat_all_out_pulse_period_frames) + 0.25
-					local pulse = smoothstep(pingpong01(u))
+					local pulse = easing.smoothstep(easing.pingpong01(u))
 					local s = 1 + (((pulse * 2) - 1) * combat_all_out_pulse_amp)
 					all_out:get_component_by_id('base_sprite').scale = { x = s, y = s }
 					local ox = (all_out.sx * (s - 1)) / 2
@@ -1252,7 +1252,7 @@ function combat.define_fsm()
 			['timeline.frame.' .. combat_results_fade_in_timeline_id] = {
 				go = function(self, _state, event)
 					local u = event.frame_index / (combat_results_fade_in_frames - 1)
-					local a = smoothstep(u)
+					local a = easing.smoothstep(u)
 					local bg = object(bg_id)
 					bg.sprite_component.colorize = { r = combat_results_bg_r, g = combat_results_bg_g, b = combat_results_bg_b, a = combat_results_bg_a * a }
 					local maya_b = object(combat_maya_b_id)
@@ -1315,7 +1315,7 @@ function combat.define_fsm()
 			['timeline.frame.' .. combat_results_fade_out_timeline_id] = {
 				go = function(self, _state, event)
 					local u = event.frame_index / (combat_results_fade_out_frames - 1)
-					local a = 1 - smoothstep(u)
+					local a = 1 - easing.smoothstep(u)
 					local bg = object(bg_id)
 					bg.sprite_component.colorize = { r = combat_results_bg_r, g = combat_results_bg_g, b = combat_results_bg_b, a = combat_results_bg_a * a }
 					local maya_b = object(combat_maya_b_id)
@@ -1366,7 +1366,7 @@ function combat.define_fsm()
 			['timeline.frame.' .. combat_exit_fade_in_timeline_id] = {
 				go = function(self, _state, event)
 					local u = event.frame_index / (combat_exit_fade_in_frames - 1)
-					local c = smoothstep(u)
+					local c = easing.smoothstep(u)
 					local bg = object(bg_id)
 					bg.sprite_component.colorize = { r = c, g = c, b = c, a = 1 }
 				end,

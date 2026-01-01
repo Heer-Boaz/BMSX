@@ -168,25 +168,6 @@ combat_results_bg_g = p3_blue_g
 combat_results_bg_b = p3_blue_b
 combat_results_bg_a = 0.85
 
-function smoothstep(u)
-	return u * u * (3 - 2 * u)
-end
-
-function pingpong01(u)
-	local p = u % 2
-	if p < 1 then
-		return p
-	end
-	return 2 - p
-end
-
-function arc01(u)
-	if u <= 0.5 then
-		return smoothstep(u * 2)
-	end
-	return smoothstep((1 - u) * 2)
-end
-
 function set_text_lines(text_object_id, lines, typed)
 	local text_obj = object(text_object_id)
 	-- Convert table to newline-separated string (portable to C++)

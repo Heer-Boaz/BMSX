@@ -26,7 +26,7 @@ import { AssetSourceStack, type RawAssetSource } from '../rompack/asset_source';
 import { applyRuntimeAssetLayer, buildRuntimeAssetLayer } from '../rompack/romloader';
 import { decodeuint8arr } from '../serializer/binencoder';
 import { createIdentifierCanonicalizer } from '../utils/identifier_canonicalizer';
-import { clamp_fallback } from '../utils/clamp';
+import { clamp01, clamp_fallback } from '../utils/clamp';
 import { BmsxVMApi } from './vm_api';
 import { VMCPU, Table, OpCode, type Closure, type Value, type Program, type ProgramMetadata, RunResult, createNativeFunction, createNativeObject, isNativeFunction, isNativeObject, type NativeFunction, type NativeObject } from './cpu';
 import { StringValue, isStringValue, stringValueToString } from './string_pool';
@@ -131,7 +131,7 @@ export var api: BmsxVMApi; // Initialized in BmsxVMRuntime constructor
 export class BmsxVMRuntime {
 	private static _instance: BmsxVMRuntime = null;
 	private static readonly ENGINE_BUILTIN_PRELUDE_PATH = '__engine_builtin_prelude__';
-	private static readonly LUA_SNAPSHOT_EXCLUDED_GLOBALS = new Set<string>(['print', 'type', 'tostring', 'tonumber', 'setmetatable', 'getmetatable', 'require', 'pairs', 'ipairs', 'serialize', 'deserialize', 'math', 'string', 'os', 'table', 'coroutine', 'debug', 'package', 'api', 'peek', 'poke', 'SYS_CART_PRESENT', 'SYS_BOOT_CART',
+	private static readonly LUA_SNAPSHOT_EXCLUDED_GLOBALS = new Set<string>(['print', 'type', 'tostring', 'tonumber', 'setmetatable', 'getmetatable', 'require', 'pairs', 'ipairs', 'serialize', 'deserialize', 'math', 'easing', 'string', 'os', 'table', 'coroutine', 'debug', 'package', 'api', 'peek', 'poke', 'SYS_CART_PRESENT', 'SYS_BOOT_CART',
 	]);
 	/**
 	 * Preserved render queue when a fault occurs
@@ -1864,6 +1864,14 @@ export class BmsxVMRuntime {
 		const setKey = (table: Table, name: string, value: Value): void => {
 			table.set(key(name), value);
 		};
+		const smoothstep01 = (value: number): number => {
+			const x = clamp01(value);
+			return x * x * (3 - (2 * x));
+		};
+		const pingpong01 = (value: number): number => {
+			const p = ((value % 2) + 2) % 2;
+			return p < 1 ? p : (2 - p);
+		};
 
 		const mathTable = new Table(0, 0);
 		setKey(mathTable, 'abs', createNativeFunction('math.abs', (args, out) => {
@@ -1931,7 +1939,50 @@ export class BmsxVMRuntime {
 		}));
 		setKey(mathTable, 'pi', Math.PI);
 
+		const easingTable = new Table(0, 0);
+		setKey(easingTable, 'linear', createNativeFunction('easing.linear', (args, out) => {
+			out.push(clamp01(args[0] as number));
+		}));
+		setKey(easingTable, 'ease_in_quad', createNativeFunction('easing.ease_in_quad', (args, out) => {
+			const x = clamp01(args[0] as number);
+			out.push(x * x);
+		}));
+		setKey(easingTable, 'ease_out_quad', createNativeFunction('easing.ease_out_quad', (args, out) => {
+			const x = clamp01(1 - (args[0] as number));
+			out.push(1 - (x * x));
+		}));
+		setKey(easingTable, 'ease_in_out_quad', createNativeFunction('easing.ease_in_out_quad', (args, out) => {
+			const x = clamp01(args[0] as number);
+			if (x < 0.5) {
+				out.push(2 * x * x);
+				return;
+			}
+			const y = (-2 * x) + 2;
+			out.push(1 - ((y * y) / 2));
+		}));
+		setKey(easingTable, 'ease_out_back', createNativeFunction('easing.ease_out_back', (args, out) => {
+			const x = clamp01(args[0] as number);
+			const c1 = 1.70158;
+			const c3 = c1 + 1;
+			out.push(1 + (c3 * Math.pow(x - 1, 3)) + (c1 * Math.pow(x - 1, 2)));
+		}));
+		setKey(easingTable, 'smoothstep', createNativeFunction('easing.smoothstep', (args, out) => {
+			out.push(smoothstep01(args[0] as number));
+		}));
+		setKey(easingTable, 'pingpong01', createNativeFunction('easing.pingpong01', (args, out) => {
+			out.push(pingpong01(args[0] as number));
+		}));
+		setKey(easingTable, 'arc01', createNativeFunction('easing.arc01', (args, out) => {
+			const value = args[0] as number;
+			if (value <= 0.5) {
+				out.push(smoothstep01(value * 2));
+				return;
+			}
+			out.push(smoothstep01((1 - value) * 2));
+		}));
+
 		this.registerVmGlobal('math', mathTable);
+		this.registerVmGlobal('easing', easingTable);
 		this.registerVmGlobal('SYS_CART_PRESENT', IO_SYS_CART_PRESENT);
 		this.registerVmGlobal('SYS_BOOT_CART', IO_SYS_BOOT_CART);
 		this.registerVmGlobal('peek', createNativeFunction('peek', (args, out) => {

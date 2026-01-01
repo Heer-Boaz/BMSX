@@ -132,7 +132,7 @@ function transition.register_states(states)
 		end
 		if t < in_frames then
 			local u = t / (in_frames - 1)
-			local eased = smoothstep(u)
+			local eased = easing.smoothstep(u)
 			return panel.x_in + (panel.x_hold - panel.x_in) * eased, panel.y, eased
 		end
 		if t < (in_frames + hold_frames) then
@@ -141,7 +141,7 @@ function transition.register_states(states)
 		local out_index = t - in_frames - hold_frames
 		if out_index < out_frames then
 			local u = out_index / (out_frames - 1)
-			local eased = smoothstep(u)
+			local eased = easing.smoothstep(u)
 			return panel.x_hold + (panel.x_out - panel.x_hold) * eased, panel.y, 1 - eased
 		end
 		return panel.x_out, panel.y, 0
@@ -304,12 +304,12 @@ function transition.register_states(states)
 						local fade_in_start = self.transition_fade_in_start
 						if frame_index < overgang_fade_out_frames then
 							local u = frame_index / (overgang_fade_out_frames - 1)
-							fade_alpha = smoothstep(u)
+							fade_alpha = easing.smoothstep(u)
 						elseif frame_index < fade_in_start then
 							fade_alpha = 1
 						else
 							local u = (frame_index - fade_in_start) / (overgang_fade_in_frames - 1)
-							fade_alpha = 1 - smoothstep(u)
+							fade_alpha = 1 - easing.smoothstep(u)
 						end
 					end
 					local palette = self.transition_palette
@@ -348,13 +348,13 @@ function transition.register_states(states)
 					local text_out_end = text_out_start + transition_text_out_frames
 					if frame_index < transition_text_in_frames then
 						local u = frame_index / (transition_text_in_frames - 1)
-						x = start_x + (center_x - start_x) * smoothstep(u)
+						x = start_x + (center_x - start_x) * easing.smoothstep(u)
 					elseif frame_index < text_out_start then
 						x = center_x
 					elseif frame_index < text_out_end then
 						local out_index = frame_index - text_out_start
 						local u = out_index / (transition_text_out_frames - 1)
-						x = center_x + (end_x - center_x) * smoothstep(u)
+						x = center_x + (end_x - center_x) * easing.smoothstep(u)
 					else
 						x = end_x
 					end
@@ -419,7 +419,7 @@ function transition.register_states(states)
 			['timeline.frame.' .. overgang_post_fade_in_timeline_id] = {
 				go = function(self, _state, event)
 					local u = event.frame_index / (overgang_fade_in_frames - 1)
-					local a = 1 - smoothstep(u)
+					local a = 1 - easing.smoothstep(u)
 					local base = self.transition_palette.overlay
 					local overlay = object(transition_overlay_id)
 					overlay.sprite_component.colorize = { r = base.r, g = base.g, b = base.b, a = a }
@@ -496,7 +496,7 @@ function transition.register_states(states)
 					local a = 0
 					if frame_index < fade_out_frames then
 						local u = frame_index / (fade_out_frames - 1)
-						a = smoothstep(u)
+						a = easing.smoothstep(u)
 					else
 						if self.fade_hold_black then
 							a = 1
@@ -506,7 +506,7 @@ function transition.register_states(states)
 								a = 1
 							else
 								local u = (frame_index - fade_in_start) / (fade_in_frames - 1)
-								a = 1 - smoothstep(u)
+								a = 1 - easing.smoothstep(u)
 							end
 						end
 					end

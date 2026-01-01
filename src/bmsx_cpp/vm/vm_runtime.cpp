@@ -1069,6 +1069,26 @@ void VMRuntime::setupBuiltins() {
 	auto asText = [this](Value value) -> const std::string& {
 		return m_cpu.stringPool().toString(asStringId(value));
 	};
+	auto clamp01 = [](double value) {
+		if (value <= 0.0) {
+			return 0.0;
+		}
+		if (value >= 1.0) {
+			return 1.0;
+		}
+		return value;
+	};
+	auto smoothstep01 = [clamp01](double value) {
+		const double x = clamp01(value);
+		return x * x * (3.0 - (2.0 * x));
+	};
+	auto pingpong01 = [](double value) {
+		double p = std::fmod(value, 2.0);
+		if (p < 0.0) {
+			p += 2.0;
+		}
+		return (p < 1.0) ? p : (2.0 - p);
+	};
 
 	auto* mathTable = m_cpu.createTable();
 	mathTable->set(key("abs"), m_cpu.createNativeFunction("math.abs", [](const std::vector<Value>& args, std::vector<Value>& out) {
@@ -1131,7 +1151,51 @@ void VMRuntime::setupBuiltins() {
 	}));
 	mathTable->set(key("pi"), valueNumber(3.14159265358979323846));
 
+	auto* easingTable = m_cpu.createTable();
+	easingTable->set(key("linear"), m_cpu.createNativeFunction("easing.linear", [clamp01](const std::vector<Value>& args, std::vector<Value>& out) {
+		double value = asNumber(args.at(0));
+		out.push_back(valueNumber(clamp01(value)));
+	}));
+	easingTable->set(key("ease_in_quad"), m_cpu.createNativeFunction("easing.ease_in_quad", [clamp01](const std::vector<Value>& args, std::vector<Value>& out) {
+		double x = clamp01(asNumber(args.at(0)));
+		out.push_back(valueNumber(x * x));
+	}));
+	easingTable->set(key("ease_out_quad"), m_cpu.createNativeFunction("easing.ease_out_quad", [clamp01](const std::vector<Value>& args, std::vector<Value>& out) {
+		double x = clamp01(1.0 - asNumber(args.at(0)));
+		out.push_back(valueNumber(1.0 - (x * x)));
+	}));
+	easingTable->set(key("ease_in_out_quad"), m_cpu.createNativeFunction("easing.ease_in_out_quad", [clamp01](const std::vector<Value>& args, std::vector<Value>& out) {
+		double x = clamp01(asNumber(args.at(0)));
+		if (x < 0.5) {
+			out.push_back(valueNumber(2.0 * x * x));
+			return;
+		}
+		double y = (-2.0 * x) + 2.0;
+		out.push_back(valueNumber(1.0 - ((y * y) / 2.0)));
+	}));
+	easingTable->set(key("ease_out_back"), m_cpu.createNativeFunction("easing.ease_out_back", [clamp01](const std::vector<Value>& args, std::vector<Value>& out) {
+		double x = clamp01(asNumber(args.at(0)));
+		const double c1 = 1.70158;
+		const double c3 = c1 + 1.0;
+		out.push_back(valueNumber(1.0 + (c3 * std::pow(x - 1.0, 3.0)) + (c1 * std::pow(x - 1.0, 2.0))));
+	}));
+	easingTable->set(key("smoothstep"), m_cpu.createNativeFunction("easing.smoothstep", [smoothstep01](const std::vector<Value>& args, std::vector<Value>& out) {
+		out.push_back(valueNumber(smoothstep01(asNumber(args.at(0)))));
+	}));
+	easingTable->set(key("pingpong01"), m_cpu.createNativeFunction("easing.pingpong01", [pingpong01](const std::vector<Value>& args, std::vector<Value>& out) {
+		out.push_back(valueNumber(pingpong01(asNumber(args.at(0)))));
+	}));
+	easingTable->set(key("arc01"), m_cpu.createNativeFunction("easing.arc01", [smoothstep01](const std::vector<Value>& args, std::vector<Value>& out) {
+		double value = asNumber(args.at(0));
+		if (value <= 0.5) {
+			out.push_back(valueNumber(smoothstep01(value * 2.0)));
+			return;
+		}
+		out.push_back(valueNumber(smoothstep01((1.0 - value) * 2.0)));
+	}));
+
 	setGlobal("math", valueTable(mathTable));
+	setGlobal("easing", valueTable(easingTable));
 	setGlobal("SYS_CART_PRESENT", valueNumber(static_cast<double>(IO_SYS_CART_PRESENT)));
 	setGlobal("SYS_BOOT_CART", valueNumber(static_cast<double>(IO_SYS_BOOT_CART)));
 
