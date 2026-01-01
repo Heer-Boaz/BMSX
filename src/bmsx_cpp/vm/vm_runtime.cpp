@@ -4,6 +4,7 @@
 #include "program_loader.h"
 #include "../core/engine.h"
 #include "../input/input.h"
+#include "../utils/clamp.h"
 #include <array>
 #include <algorithm>
 #include <chrono>
@@ -1070,13 +1071,7 @@ void VMRuntime::setupBuiltins() {
 		return m_cpu.stringPool().toString(asStringId(value));
 	};
 	auto clamp01 = [](double value) {
-		if (value <= 0.0) {
-			return 0.0;
-		}
-		if (value >= 1.0) {
-			return 1.0;
-		}
-		return value;
+		return clamp(value, 0.0, 1.0);
 	};
 	auto smoothstep01 = [clamp01](double value) {
 		const double x = clamp01(value);

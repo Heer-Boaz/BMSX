@@ -328,35 +328,81 @@ function combat.define_fsm()
 		local impact_start = math.floor(frame_count * combat_exchange_impact_start_ratio)
 		local impact_end = math.floor(frame_count * combat_exchange_impact_end_ratio)
 		local impact_frames = impact_end - impact_start + 1
+		local anticipate_frames = combat_exchange_anticipate_frames
+		local lunge_frames = combat_exchange_lunge_frames
+		local hitstop_frames = combat_exchange_hitstop_frames
+		local recover_frames = frame_count - anticipate_frames - lunge_frames - hitstop_frames
+		local lunge_end = anticipate_frames + lunge_frames
+		local hitstop_end = lunge_end + hitstop_frames
 
 		for i = 0, frame_count - 1 do
-			local u = i / (frame_count - 1)
+			local lunge = 0
+			if i < anticipate_frames then
+				local u = i / (anticipate_frames - 1)
+				lunge = -0.10 * easing.smoothstep(u)
+			elseif i < lunge_end then
+				local u = (i - anticipate_frames) / (lunge_frames - 1)
+				lunge = easing.ease_out_quad(u)
+			elseif i < hitstop_end then
+				lunge = 1.0
+			else
+				local u = (i - hitstop_end) / (recover_frames - 1)
+				lunge = 1.0 - easing.ease_in_quad(u)
+			end
+
 			local impact_u = 0
 			if i >= impact_start and i <= impact_end then
 				local ru = (i - impact_start) / (impact_frames - 1)
 				impact_u = easing.arc01(ru)
 			end
 
-			local lunge = easing.arc01(u) + (combat_exchange_lunge_punch * impact_u)
-			local monster_x = monster_base_x - (combat_exchange_lunge_distance * lunge)
-			local monster_y = monster_base_y + (combat_exchange_lunge_lift * lunge)
-			local s = 1 + ((combat_exchange_lunge_scale - 1) * lunge)
-			local maya_x = maya_base_x + (params.maya_offset_x * impact_u)
-			local maya_y = maya_base_y + (params.maya_offset_y * impact_u)
+			local forward = lunge
+			if forward < 0 then
+				forward = 0
+			end
+
+			local monster_x = monster_base_x - (combat_exchange_lunge_distance * forward)
+			local monster_y = monster_base_y + (combat_exchange_lunge_lift * forward)
+			if impact_u > 0 then
+				monster_x = monster_x - (combat_exchange_lunge_distance * combat_exchange_lunge_punch * impact_u)
+				monster_y = monster_y + (combat_exchange_lunge_lift * combat_exchange_lunge_punch * impact_u)
+			end
+
+			local s = 1
+			if lunge < 0 then
+				s = 1 - (0.04 * (-lunge))
+			else
+				s = 1 + ((combat_exchange_lunge_scale - 1) * forward)
+			end
+
+			local maya_x = maya_base_x
+			local maya_y = maya_base_y
+			local maya_scale = { x = 1, y = 1 }
 			local maya_colorize = { r = 1, g = 1, b = 1, a = 1 }
+			local overlay_alpha = 0
 
 			if impact_u > 0 then
+				maya_x = maya_x + (params.maya_offset_x * impact_u)
+				maya_y = maya_y + (params.maya_offset_y * impact_u)
+				if params.squash then
+					maya_scale = {
+						x = 1 + (0.10 * impact_u),
+						y = 1 - (0.08 * impact_u),
+					}
+				end
 				if params.flash then
 					local flash_index = i - impact_start
 					if (flash_index % 2) == 1 then
-						local dim = params.flash_dim
-						maya_colorize = { r = dim, g = dim, b = dim, a = 1 }
+						maya_colorize = { r = params.flash_r, g = params.flash_g, b = params.flash_b, a = 1 }
 					end
 				end
-				monster_x = monster_x + round(shake_signed(i * 19 + 5) * params.monster_shake_x * impact_u)
-				monster_y = monster_y + round(shake_signed(i * 23 + 11) * params.monster_shake_y * impact_u)
-				maya_x = maya_x + round(shake_signed(i * 29 + 7) * params.maya_shake_x * impact_u)
-				maya_y = maya_y + round(shake_signed(i * 31 + 13) * params.maya_shake_y * impact_u)
+				local cam_dx = round(shake_signed(i * 19 + 5) * params.cam_shake_x * impact_u)
+				local cam_dy = round(shake_signed(i * 23 + 11) * params.cam_shake_y * impact_u)
+				monster_x = monster_x + cam_dx
+				monster_y = monster_y + cam_dy
+				maya_x = maya_x + cam_dx
+				maya_y = maya_y + cam_dy
+				overlay_alpha = params.overlay_alpha * impact_u
 			end
 
 			frames[#frames + 1] = {
@@ -366,7 +412,10 @@ function combat.define_fsm()
 				monster_colorize = { r = 1, g = 1, b = 1, a = 1 },
 				maya_x = maya_x,
 				maya_y = maya_y,
+				maya_scale = maya_scale,
 				maya_colorize = maya_colorize,
+				impact_u = impact_u,
+				overlay_alpha = overlay_alpha,
 			}
 		end
 
@@ -397,12 +446,15 @@ function combat.define_fsm()
 	local function finish_combat_hit(self)
 		local monster = object(combat_monster_id)
 		monster.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
+		monster.x = self.combat_monster_base_x
+		monster.y = self.combat_monster_base_y
 		return '/combat_exchange_miss'
 	end
 
 	local function finish_combat_dodge(self)
 		local monster = object(combat_monster_id)
 		monster.x = self.combat_monster_base_x
+		monster.y = self.combat_monster_base_y
 		return '/combat_exchange_hit'
 	end
 
@@ -769,9 +821,9 @@ function combat.define_fsm()
 		entering_state = function(self)
 			clear_texts(text_ids_choice_prompt)
 			set_text_lines(text_main_id, { 'RAAK!' }, false)
-		end,
-		tick = function(self)
-			self:update_combat_hover()
+			local monster = object(combat_monster_id)
+			self.combat_hit_origin_x = monster.x
+			self.combat_hit_origin_y = monster.y
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
@@ -786,8 +838,27 @@ function combat.define_fsm()
 				go = function(self, _state, event)
 					local frame_index = event.frame_index
 					local monster = object(combat_monster_id)
-					local hold_in = 3
-					local hold_out = 3
+					local base_x = self.combat_hit_origin_x
+					local base_y = self.combat_hit_origin_y
+					local hold_in = combat_hit_stop_frames
+					local hold_out = 2
+					local move_frames = combat_hit_frame_count - hold_in
+					local kick = 0
+					if frame_index >= hold_in then
+						local u = (frame_index - hold_in) / (move_frames - 1)
+						kick = easing.arc01(u)
+					end
+					local dx = combat_hit_knockback_x * kick
+					local dy = combat_hit_knockback_y * kick
+					if frame_index >= hold_in and frame_index < (hold_in + combat_hit_shake_frames) then
+						local k = frame_index - hold_in
+						local intensity = (combat_hit_shake_frames - k) / combat_hit_shake_frames
+						dx = dx + round(shake_signed(frame_index * 31 + 7) * combat_hit_shake_x * intensity)
+						dy = dy + round(shake_signed(frame_index * 37 + 11) * combat_hit_shake_y * intensity)
+					end
+					monster.x = base_x + dx
+					monster.y = base_y + dy
+
 					local flash_end = combat_hit_frame_count - hold_out
 					if frame_index < hold_in or frame_index >= flash_end then
 						monster.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
@@ -830,9 +901,6 @@ function combat.define_fsm()
 			set_text_lines(text_main_id, { 'ONTWIJKT!' }, false)
 			self.combat_dodge_dir = -self.combat_dodge_dir
 		end,
-		tick = function(self)
-			self:update_combat_hover()
-		end,
 		input_eval = 'first',
 		input_event_handlers = {
 			['b[jp]'] = {
@@ -850,9 +918,15 @@ function combat.define_fsm()
 					local hold_out = 4
 					local move_frames = combat_dodge_frame_count - hold_in - hold_out
 					local offset = 0
-					if frame_index >= hold_in and frame_index < (hold_in + move_frames) then
+					if frame_index < hold_in then
+						local u = frame_index / (hold_in - 1)
+						offset = -combat_monster_dodge_distance * 0.15 * easing.smoothstep(u) * self.combat_dodge_dir
+					elseif frame_index < (hold_in + move_frames) then
 						local u = (frame_index - hold_in) / (move_frames - 1)
-						offset = easing.arc01(u) * combat_monster_dodge_distance * self.combat_dodge_dir
+						offset = combat_monster_dodge_distance * easing.ease_out_quad(u) * self.combat_dodge_dir
+					else
+						local u = (frame_index - hold_in - move_frames) / (hold_out - 1)
+						offset = combat_monster_dodge_distance * (1 - easing.ease_in_quad(u)) * self.combat_dodge_dir
 					end
 					monster.x = self.combat_monster_base_x + offset
 				end,
@@ -869,6 +943,7 @@ function combat.define_fsm()
 		entering_state = function(self)
 			local monster = object(combat_monster_id)
 			local maya_a = object(combat_maya_a_id)
+			local overlay = object(transition_overlay_id)
 			clear_texts(text_ids_choice_prompt)
 			monster.visible = true
 			maya_a.visible = true
@@ -880,17 +955,25 @@ function combat.define_fsm()
 			maya_a:get_component_by_id('base_sprite').scale = { x = 1, y = 1 }
 			monster.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
 			maya_a.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
+			overlay.visible = true
+			overlay:set_image('whitepixel')
+			overlay.x = 0
+			overlay.y = 0
+			overlay:get_component_by_id('base_sprite').scale = { x = display_width(), y = display_height() }
+			overlay.sprite_component.colorize = { r = 0, g = 0, b = 0, a = 0 }
 
 			local frames = build_combat_exchange_frames(self, {
 				frame_count = combat_exchange_hit_frame_count,
 				maya_offset_x = combat_exchange_hit_recoil_distance,
 				maya_offset_y = combat_exchange_hit_recoil_lift,
-				maya_shake_x = combat_exchange_hit_shake_x,
-				maya_shake_y = combat_exchange_hit_shake_y,
-				monster_shake_x = combat_exchange_hit_shake_x,
-				monster_shake_y = combat_exchange_hit_shake_y,
 				flash = true,
-				flash_dim = combat_exchange_hit_flash_dim,
+				flash_r = p3_cyan_r,
+				flash_g = p3_cyan_g,
+				flash_b = p3_cyan_b,
+				squash = true,
+				cam_shake_x = combat_exchange_hit_shake_x,
+				cam_shake_y = combat_exchange_hit_shake_y,
+				overlay_alpha = combat_exchange_hit_overlay_alpha,
 			})
 
 			self:define_timeline(new_timeline({
@@ -915,13 +998,20 @@ function combat.define_fsm()
 					local frame = event.frame_value
 					local monster = object(combat_monster_id)
 					local maya_a = object(combat_maya_a_id)
+					local overlay = object(transition_overlay_id)
 					monster.x = frame.monster_x
 					monster.y = frame.monster_y
 					monster:get_component_by_id('base_sprite').scale = frame.monster_scale
 					monster.sprite_component.colorize = frame.monster_colorize
 					maya_a.x = frame.maya_x
 					maya_a.y = frame.maya_y
+					maya_a:get_component_by_id('base_sprite').scale = frame.maya_scale
 					maya_a.sprite_component.colorize = frame.maya_colorize
+					if frame.overlay_alpha > 0 then
+						overlay.sprite_component.colorize = { r = p3_cyan_r, g = p3_cyan_g, b = p3_cyan_b, a = frame.overlay_alpha }
+					else
+						overlay.sprite_component.colorize = { r = 0, g = 0, b = 0, a = 0 }
+					end
 				end,
 			},
 			['timeline.end.' .. combat_exchange_hit_timeline_id] = {
@@ -933,6 +1023,7 @@ function combat.define_fsm()
 		leaving_state = function(self)
 			local monster = object(combat_monster_id)
 			local maya_a = object(combat_maya_a_id)
+			local overlay = object(transition_overlay_id)
 			monster.x = self.combat_monster_base_x
 			monster.y = self.combat_monster_base_y
 			maya_a.x = self.combat_maya_a_base_x
@@ -941,6 +1032,8 @@ function combat.define_fsm()
 			maya_a:get_component_by_id('base_sprite').scale = { x = 1, y = 1 }
 			monster.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
 			maya_a.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
+			overlay.visible = false
+			overlay.sprite_component.colorize = { r = 0, g = 0, b = 0, a = 0 }
 		end,
 	}
 
@@ -948,6 +1041,7 @@ function combat.define_fsm()
 		entering_state = function(self)
 			local monster = object(combat_monster_id)
 			local maya_a = object(combat_maya_a_id)
+			local overlay = object(transition_overlay_id)
 			clear_texts(text_ids_choice_prompt)
 			monster.visible = true
 			maya_a.visible = true
@@ -959,17 +1053,25 @@ function combat.define_fsm()
 			maya_a:get_component_by_id('base_sprite').scale = { x = 1, y = 1 }
 			monster.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
 			maya_a.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
+			overlay.visible = true
+			overlay:set_image('whitepixel')
+			overlay.x = 0
+			overlay.y = 0
+			overlay:get_component_by_id('base_sprite').scale = { x = display_width(), y = display_height() }
+			overlay.sprite_component.colorize = { r = 0, g = 0, b = 0, a = 0 }
 
 			local frames = build_combat_exchange_frames(self, {
 				frame_count = combat_exchange_miss_frame_count,
 				maya_offset_x = combat_exchange_miss_dodge_distance,
 				maya_offset_y = combat_exchange_miss_dodge_lift,
-				maya_shake_x = 0,
-				maya_shake_y = 0,
-				monster_shake_x = 0,
-				monster_shake_y = 0,
 				flash = false,
-				flash_dim = 1,
+				flash_r = 1,
+				flash_g = 1,
+				flash_b = 1,
+				squash = false,
+				cam_shake_x = 0,
+				cam_shake_y = 0,
+				overlay_alpha = 0,
 			})
 
 			self:define_timeline(new_timeline({
@@ -994,13 +1096,20 @@ function combat.define_fsm()
 					local frame = event.frame_value
 					local monster = object(combat_monster_id)
 					local maya_a = object(combat_maya_a_id)
+					local overlay = object(transition_overlay_id)
 					monster.x = frame.monster_x
 					monster.y = frame.monster_y
 					monster:get_component_by_id('base_sprite').scale = frame.monster_scale
 					monster.sprite_component.colorize = frame.monster_colorize
 					maya_a.x = frame.maya_x
 					maya_a.y = frame.maya_y
+					maya_a:get_component_by_id('base_sprite').scale = frame.maya_scale
 					maya_a.sprite_component.colorize = frame.maya_colorize
+					if frame.overlay_alpha > 0 then
+						overlay.sprite_component.colorize = { r = p3_cyan_r, g = p3_cyan_g, b = p3_cyan_b, a = frame.overlay_alpha }
+					else
+						overlay.sprite_component.colorize = { r = 0, g = 0, b = 0, a = 0 }
+					end
 				end,
 			},
 			['timeline.end.' .. combat_exchange_miss_timeline_id] = {
@@ -1012,6 +1121,7 @@ function combat.define_fsm()
 		leaving_state = function(self)
 			local monster = object(combat_monster_id)
 			local maya_a = object(combat_maya_a_id)
+			local overlay = object(transition_overlay_id)
 			monster.x = self.combat_monster_base_x
 			monster.y = self.combat_monster_base_y
 			maya_a.x = self.combat_maya_a_base_x
@@ -1020,6 +1130,8 @@ function combat.define_fsm()
 			maya_a:get_component_by_id('base_sprite').scale = { x = 1, y = 1 }
 			monster.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
 			maya_a.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
+			overlay.visible = false
+			overlay.sprite_component.colorize = { r = 0, g = 0, b = 0, a = 0 }
 		end,
 	}
 
@@ -1403,6 +1515,8 @@ function combat.register_director()
 			combat_hover_time = 0,
 			combat_monster_base_x = 0,
 			combat_monster_base_y = 0,
+			combat_hit_origin_x = 0,
+			combat_hit_origin_y = 0,
 			combat_monster_start_x = 0,
 			combat_monster_start_y = 0,
 			combat_monster_start_scale = 1,
