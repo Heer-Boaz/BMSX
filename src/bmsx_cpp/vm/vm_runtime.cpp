@@ -502,6 +502,24 @@ std::vector<Value> VMRuntime::callEngineModuleMember(const std::string& name, co
 	return callLuaFunction(member, args);
 }
 
+void VMRuntime::logVmCallStack() const {
+	const ProgramMetadata* metadata = m_programMetadata;
+	if (!metadata) {
+		return;
+	}
+	auto stack = m_cpu.getCallStack();
+	for (const auto& [protoIndex, pc] : stack) {
+		const std::string& protoId = metadata->protoIds[protoIndex];
+		auto range = m_cpu.getDebugRange(pc);
+		if (range.has_value()) {
+			std::cerr << "  at " << protoId << " (" << range->path << ":" << range->startLine << ":" << range->startColumn << ")"
+			          << std::endl;
+		} else {
+			std::cerr << "  at " << protoId << " (pc=" << pc << ")" << std::endl;
+		}
+	}
+}
+
 void VMRuntime::runEngineBuiltinPrelude() {
 	std::cerr << "[VMRuntime] prelude: binding engine builtins" << std::endl;
 	static const std::array<const char*, 21> engineBuiltins = {
@@ -1026,21 +1044,7 @@ double VMRuntime::nextVmRandom() {
 void VMRuntime::setupBuiltins() {
 	auto logPcallError = [this](const std::string& message) {
 		std::cerr << "[VMRuntime] pcall error: " << message << std::endl;
-		const ProgramMetadata* metadata = m_programMetadata;
-		if (!metadata) {
-			return;
-		}
-		auto stack = m_cpu.getCallStack();
-		for (const auto& [protoIndex, pc] : stack) {
-			const std::string& protoId = metadata->protoIds[protoIndex];
-			auto range = m_cpu.getDebugRange(pc);
-			if (range.has_value()) {
-				std::cerr << "  at " << protoId << " (" << range->path << ":" << range->startLine << ")"
-				          << std::endl;
-			} else {
-				std::cerr << "  at " << protoId << " (pc=" << pc << ")" << std::endl;
-			}
-		}
+		logVmCallStack();
 	};
 	auto callVmValue = [this](const Value& callee, const std::vector<Value>& args, std::vector<Value>& out) {
 		if (valueIsNativeFunction(callee)) {
@@ -2331,6 +2335,7 @@ bool shouldRunEngineUpdate = (m_updateFn == nullptr);
 		}
 	} catch (const std::exception& e) {
 		std::cerr << "[VMRuntime] Error in update: " << e.what() << std::endl;
+		logVmCallStack();
 		m_runtimeFailed = true;
 	}
 }
@@ -2434,6 +2439,7 @@ bool shouldRunEngineDraw = (m_drawFn == nullptr);
 		}
 	} catch (const std::exception& e) {
 		std::cerr << "[VMRuntime] Error in draw: " << e.what() << std::endl;
+		logVmCallStack();
 		m_runtimeFailed = true;
 	}
 }

@@ -242,6 +242,7 @@ private:
 	std::string vmToString(const Value& value) const;
 	double nextVmRandom();
 	std::string formatVmString(const std::string& templateStr, const std::vector<Value>& args, size_t argStart) const;
+	void logVmCallStack() const;
 
 	static VMRuntime* s_instance;
 	static constexpr int UPDATE_STATEMENT_BUDGET = 1'000'000;
