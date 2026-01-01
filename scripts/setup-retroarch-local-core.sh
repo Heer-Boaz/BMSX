@@ -54,7 +54,15 @@ run_linux() {
 	cmake -S "$CPP_DIR" -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE="$BUILD_TYPE" -DBMSX_BUILD_LIBRETRO=ON
 	cmake --build "$BUILD_DIR" --config "$BUILD_TYPE"
 
-	git clone --depth 1 https://github.com/libretro/RetroArch.git "$retroarch_dir"
+	if [[ -d "$retroarch_dir" ]]; then
+		(
+			cd "$retroarch_dir"
+			git fetch --depth 1 origin master
+			git reset --hard FETCH_HEAD
+		)
+	else
+		git clone --depth 1 https://github.com/libretro/RetroArch.git "$retroarch_dir"
+	fi
 	(
 		cd "$retroarch_dir"
 		./configure --enable-opengles --enable-opengles3 --enable-egl --disable-opengl
