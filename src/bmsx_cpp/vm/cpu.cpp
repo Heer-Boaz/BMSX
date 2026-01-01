@@ -1242,14 +1242,15 @@ void VMCPU::markRoots(VMHeap& heap) {
 	for (const auto& framePtr : m_frames) {
 		CallFrame* frame = framePtr.get();
 		heap.markObject(frame->closure);
-		for (const auto& value : frame->registers) {
-			heap.markValue(value);
+		for (int i = 0; i < frame->top; ++i) {
+			heap.markValue(frame->registers[static_cast<size_t>(i)]);
 		}
 		for (const auto& value : frame->varargs) {
 			heap.markValue(value);
 		}
 		for (const auto& entry : frame->openUpvalues) {
 			heap.markObject(entry.second);
+			heap.markValue(frame->registers[static_cast<size_t>(entry.first)]);
 		}
 	}
 	m_externalRootMarker(heap);
