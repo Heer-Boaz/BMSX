@@ -78,7 +78,7 @@ events:
                       label: ['MONDAY AFTERNOON']
               go:
                   music_transition:
-                      audio_id: m28
+                      audio_id: m12
                       sync: immediate
                       fade_ms: 250
             - when:
@@ -111,9 +111,17 @@ events:
                       label: 'TUESDAY AFTERNOON'
               go:
                   music_transition:
-                      audio_id: m02
+                      audio_id: m12
                       sync: immediate
                       fade_ms: 250
+            - when:
+                  equals:
+                      label: 'THURSDAY MORNING'
+              go:
+                  music_transition:
+                      audio_id: m08
+                      sync: immediate
+                      fade_ms: 100
 
     combat.start:
         channel: music
@@ -126,7 +134,7 @@ events:
                   music_transition:
                       audio_id: m16
                       sync: immediate
-                      fade_ms: 200
+                      fade_ms: 50
             - when:
                   equals:
                       monster_imgid: monster_spiegel
@@ -134,7 +142,7 @@ events:
                   music_transition:
                       audio_id: m35
                       sync: immediate
-                      fade_ms: 200
+                      fade_ms: 50
             - when:
                   equals:
                       monster_imgid: monster_heer_later
@@ -142,7 +150,7 @@ events:
                   music_transition:
                       audio_id: m10
                       sync: immediate
-                      fade_ms: 200
+                      fade_ms: 50
 
     combat.results:
         channel: music
