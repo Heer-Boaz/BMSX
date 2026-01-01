@@ -481,7 +481,15 @@ story = {
 			{ 'De gruwelijke snooze', 'En de afgrijselijke make-up spiegel!' },
 			{ 'Ik ben trots op je!', 'Dit zal jouw toekomst zeker ten goede komen.' },
 		},
-		next = __inline_dialogue,
+		next = 'theend',
+	},
+
+	theend = {
+		kind = 'ending',
+		bg = 'sint_blij',
+		typed = false,
+		pages = nil,
+		next = nil,
 	},
 
 	__inline_dialogue = {
