@@ -109,6 +109,10 @@ story = {
 			{ 'Die laten we voor morgen.' },
 			{ 'Maar...', 'Dan wordt ze "wakker" in een droom...' },
 		},
+		next = 'to_igor',
+	},
+	to_igor = {
+		kind = 'fade',
 		next = 'igor',
 	},
 
