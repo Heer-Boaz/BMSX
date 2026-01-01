@@ -88,6 +88,20 @@ combat_dodge_timeline_id = 'combat_dodge'
 combat_dodge_frame_count = 20
 combat_dodge_ticks_per_frame = 24
 
+combat_exchange_hit_timeline_id = 'combat_exchange_hit'
+combat_exchange_hit_frame_count = 20
+combat_exchange_hit_ticks_per_frame = 24
+combat_exchange_miss_timeline_id = 'combat_exchange_miss'
+combat_exchange_miss_frame_count = 20
+combat_exchange_miss_ticks_per_frame = 24
+combat_exchange_lunge_distance = 48
+combat_exchange_lunge_lift = 8
+combat_exchange_lunge_scale = 1.08
+combat_exchange_hit_recoil_distance = 14
+combat_exchange_hit_recoil_lift = 6
+combat_exchange_miss_dodge_distance = 16
+combat_exchange_miss_dodge_lift = -8
+
 combat_all_out_timeline_id = 'combat_all_out'
 combat_all_out_frame_count = 150
 combat_all_out_ticks_per_frame = 1

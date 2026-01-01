@@ -318,6 +318,54 @@ function combat.define_fsm()
 		return frames
 	end
 
+	local function build_combat_exchange_frames(self, params)
+		local frames = {}
+		local frame_count = params.frame_count
+		local monster_base_x = self.combat_monster_base_x
+		local monster_base_y = self.combat_monster_base_y
+		local maya_base_x = self.combat_maya_a_base_x
+		local maya_base_y = self.combat_maya_a_base_y
+		local impact_start = math.floor(frame_count * 0.4)
+		local impact_end = math.floor(frame_count * 0.7)
+		local impact_frames = impact_end - impact_start + 1
+
+		for i = 0, frame_count - 1 do
+			local u = i / (frame_count - 1)
+			local lunge = arc01(u)
+			local monster_x = monster_base_x - (combat_exchange_lunge_distance * lunge)
+			local monster_y = monster_base_y + (combat_exchange_lunge_lift * lunge)
+			local s = 1 + ((combat_exchange_lunge_scale - 1) * lunge)
+			local maya_x = maya_base_x
+			local maya_y = maya_base_y
+			local maya_colorize = { r = 1, g = 1, b = 1, a = 1 }
+
+			if i >= impact_start and i <= impact_end then
+				local ru = (i - impact_start) / (impact_frames - 1)
+				local recoil = arc01(ru)
+				maya_x = maya_x + (params.maya_offset_x * recoil)
+				maya_y = maya_y + (params.maya_offset_y * recoil)
+				if params.flash then
+					local flash_index = i - impact_start
+					if (flash_index % 2) == 1 then
+						maya_colorize = { r = 0.7, g = 0.7, b = 0.7, a = 1 }
+					end
+				end
+			end
+
+			frames[#frames + 1] = {
+				monster_x = monster_x,
+				monster_y = monster_y,
+				monster_scale = { x = s, y = s },
+				monster_colorize = { r = 1, g = 1, b = 1, a = 1 },
+				maya_x = maya_x,
+				maya_y = maya_y,
+				maya_colorize = maya_colorize,
+			}
+		end
+
+		return frames
+	end
+
 	local all_out_shake = build_all_out_shake(combat_all_out_frame_count)
 	local function finish_combat_fade_in(self)
 		return '/combat_init'
@@ -331,9 +379,7 @@ function combat.define_fsm()
 		return '/combat_round'
 	end
 
-	local function finish_combat_hit(self)
-		local monster = object(combat_monster_id)
-		monster.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
+	local function finish_combat_exchange(self)
 		local node = story[self.node_id]
 		if self.combat_round_index > #node.rounds then
 			return '/combat_all_out_prompt'
@@ -341,14 +387,16 @@ function combat.define_fsm()
 		return '/combat_round'
 	end
 
+	local function finish_combat_hit(self)
+		local monster = object(combat_monster_id)
+		monster.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
+		return '/combat_exchange_miss'
+	end
+
 	local function finish_combat_dodge(self)
 		local monster = object(combat_monster_id)
 		monster.x = self.combat_monster_base_x
-		local node = story[self.node_id]
-		if self.combat_round_index > #node.rounds then
-			return '/combat_all_out_prompt'
-		end
-		return '/combat_round'
+		return '/combat_exchange_hit'
 	end
 
 	local function finish_combat_all_out(self)
@@ -808,6 +856,154 @@ function combat.define_fsm()
 				end,
 			},
 		},
+	}
+
+	states.combat_exchange_hit = {
+		entering_state = function(self)
+			local monster = object(combat_monster_id)
+			local maya_a = object(combat_maya_a_id)
+			clear_texts(text_ids_choice_prompt)
+			monster.visible = true
+			maya_a.visible = true
+			monster.x = self.combat_monster_base_x
+			monster.y = self.combat_monster_base_y
+			maya_a.x = self.combat_maya_a_base_x
+			maya_a.y = self.combat_maya_a_base_y
+			monster:get_component_by_id('base_sprite').scale = { x = 1, y = 1 }
+			maya_a:get_component_by_id('base_sprite').scale = { x = 1, y = 1 }
+			monster.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
+			maya_a.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
+
+			local frames = build_combat_exchange_frames(self, {
+				frame_count = combat_exchange_hit_frame_count,
+				maya_offset_x = combat_exchange_hit_recoil_distance,
+				maya_offset_y = combat_exchange_hit_recoil_lift,
+				flash = true,
+			})
+
+			self:define_timeline(new_timeline({
+				id = combat_exchange_hit_timeline_id,
+				frames = frames,
+				ticks_per_frame = combat_exchange_hit_ticks_per_frame,
+				playback_mode = 'once',
+			}))
+			self:play_timeline(combat_exchange_hit_timeline_id, { rewind = true, snap_to_start = true })
+		end,
+		input_eval = 'first',
+		input_event_handlers = {
+			['b[jp]'] = {
+				go = function(self)
+					return finish_combat_exchange(self)
+				end,
+			},
+		},
+		on = {
+			['timeline.frame.' .. combat_exchange_hit_timeline_id] = {
+				go = function(_self, _state, event)
+					local frame = event.frame_value
+					local monster = object(combat_monster_id)
+					local maya_a = object(combat_maya_a_id)
+					monster.x = frame.monster_x
+					monster.y = frame.monster_y
+					monster:get_component_by_id('base_sprite').scale = frame.monster_scale
+					monster.sprite_component.colorize = frame.monster_colorize
+					maya_a.x = frame.maya_x
+					maya_a.y = frame.maya_y
+					maya_a.sprite_component.colorize = frame.maya_colorize
+				end,
+			},
+			['timeline.end.' .. combat_exchange_hit_timeline_id] = {
+				go = function(self)
+					return finish_combat_exchange(self)
+				end,
+			},
+		},
+		leaving_state = function(self)
+			local monster = object(combat_monster_id)
+			local maya_a = object(combat_maya_a_id)
+			monster.x = self.combat_monster_base_x
+			monster.y = self.combat_monster_base_y
+			maya_a.x = self.combat_maya_a_base_x
+			maya_a.y = self.combat_maya_a_base_y
+			monster:get_component_by_id('base_sprite').scale = { x = 1, y = 1 }
+			maya_a:get_component_by_id('base_sprite').scale = { x = 1, y = 1 }
+			monster.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
+			maya_a.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
+		end,
+	}
+
+	states.combat_exchange_miss = {
+		entering_state = function(self)
+			local monster = object(combat_monster_id)
+			local maya_a = object(combat_maya_a_id)
+			clear_texts(text_ids_choice_prompt)
+			monster.visible = true
+			maya_a.visible = true
+			monster.x = self.combat_monster_base_x
+			monster.y = self.combat_monster_base_y
+			maya_a.x = self.combat_maya_a_base_x
+			maya_a.y = self.combat_maya_a_base_y
+			monster:get_component_by_id('base_sprite').scale = { x = 1, y = 1 }
+			maya_a:get_component_by_id('base_sprite').scale = { x = 1, y = 1 }
+			monster.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
+			maya_a.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
+
+			local frames = build_combat_exchange_frames(self, {
+				frame_count = combat_exchange_miss_frame_count,
+				maya_offset_x = combat_exchange_miss_dodge_distance,
+				maya_offset_y = combat_exchange_miss_dodge_lift,
+				flash = false,
+			})
+
+			self:define_timeline(new_timeline({
+				id = combat_exchange_miss_timeline_id,
+				frames = frames,
+				ticks_per_frame = combat_exchange_miss_ticks_per_frame,
+				playback_mode = 'once',
+			}))
+			self:play_timeline(combat_exchange_miss_timeline_id, { rewind = true, snap_to_start = true })
+		end,
+		input_eval = 'first',
+		input_event_handlers = {
+			['b[jp]'] = {
+				go = function(self)
+					return finish_combat_exchange(self)
+				end,
+			},
+		},
+		on = {
+			['timeline.frame.' .. combat_exchange_miss_timeline_id] = {
+				go = function(_self, _state, event)
+					local frame = event.frame_value
+					local monster = object(combat_monster_id)
+					local maya_a = object(combat_maya_a_id)
+					monster.x = frame.monster_x
+					monster.y = frame.monster_y
+					monster:get_component_by_id('base_sprite').scale = frame.monster_scale
+					monster.sprite_component.colorize = frame.monster_colorize
+					maya_a.x = frame.maya_x
+					maya_a.y = frame.maya_y
+					maya_a.sprite_component.colorize = frame.maya_colorize
+				end,
+			},
+			['timeline.end.' .. combat_exchange_miss_timeline_id] = {
+				go = function(self)
+					return finish_combat_exchange(self)
+				end,
+			},
+		},
+		leaving_state = function(self)
+			local monster = object(combat_monster_id)
+			local maya_a = object(combat_maya_a_id)
+			monster.x = self.combat_monster_base_x
+			monster.y = self.combat_monster_base_y
+			maya_a.x = self.combat_maya_a_base_x
+			maya_a.y = self.combat_maya_a_base_y
+			monster:get_component_by_id('base_sprite').scale = { x = 1, y = 1 }
+			maya_a:get_component_by_id('base_sprite').scale = { x = 1, y = 1 }
+			monster.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
+			maya_a.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
+		end,
 	}
 
 	states.combat_all_out_prompt = {
