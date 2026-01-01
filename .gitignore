@@ -28,6 +28,7 @@ rom/**/*.js
 !resourceids.d.ts
 !rompack.d.ts
 rom/ignore
+bmsx/**.js
 dist/game_debug.html
 dist/game.html
 dist/manifest.json

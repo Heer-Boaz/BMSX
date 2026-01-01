@@ -515,7 +515,39 @@ function getLibretroBuildOutputPath(platform: RomPackerTarget, debug: boolean): 
 	return join(process.cwd(), buildDir, coreFilename);
 }
 
+function findCMake(): string {
+	try {
+		const result = spawnSync('cmake', ['--version']);
+		if (result.status === 0) return 'cmake';
+	} catch { }
+
+	// Try to find via vswhere
+	try {
+		const vswhere = join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'Microsoft Visual Studio', 'Installer', 'vswhere.exe');
+		const args = ['-latest', '-products', '*', '-requires', 'Microsoft.VisualStudio.Component.VC.CMake.Project', '-property', 'installationPath'];
+		const result = spawnSync(vswhere, args, { encoding: 'utf8' });
+		if (result.status === 0 && result.stdout) {
+			const installPath = result.stdout.trim();
+			if (installPath) {
+				// Search for cmake.exe recursively in the installation path to avoid hardcoding internal paths
+				try {
+					const { execSync } = require('child_process');
+					// Use dir /S /B to find cmake.exe
+					const stdout = execSync(`dir /S /B cmake.exe`, { cwd: installPath, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+					const lines = stdout.split(/\r?\n/);
+					// Prefer the one in a 'bin' directory
+					const found = lines.find(line => line.trim().toLowerCase().endsWith('bin\\cmake.exe'));
+					if (found) return found.trim();
+				} catch { }
+			}
+		}
+	} catch { }
+
+	return 'cmake'; // Fallback
+}
+
 function ensureLibretroCoreBuilt(debug: boolean, platform: RomPackerTarget): void {
+	const cmakeBin = findCMake();
 	const buildType = debug ? 'Debug' : 'Release';
 	const buildDir = getLibretroBuildDir(platform);
 	const cmakeArgs = ['-S', 'src/bmsx_cpp', '-B', buildDir, `-DCMAKE_BUILD_TYPE=${buildType}`, '-DBMSX_BUILD_LIBRETRO=ON'];
@@ -523,11 +555,13 @@ function ensureLibretroCoreBuilt(debug: boolean, platform: RomPackerTarget): voi
 		if (process.platform !== 'win32') {
 			throw new Error('libretro-win requires running on Windows with MSVC build tools.');
 		}
-		cmakeArgs.push('-G', 'Visual Studio 17 2022', '-A', 'x64');
+		// Let CMake pick the latest Visual Studio version installed
+		// cmakeArgs.push('-G', 'Visual Studio 17 2022', '-A', 'x64');
+		cmakeArgs.push('-A', 'x64');
 	}
-	runCommand('cmake', cmakeArgs);
+	runCommand(cmakeBin, cmakeArgs);
 	const config = debug ? 'Debug' : 'Release';
-	runCommand('cmake', ['--build', buildDir, '--config', config]);
+	runCommand(cmakeBin, ['--build', buildDir, '--config', config]);
 }
 
 function getLibretroCoreFilename(platform: RomPackerTarget): string {
