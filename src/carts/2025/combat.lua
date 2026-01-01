@@ -518,7 +518,7 @@ function combat.define_fsm()
 			monster:get_component_by_id('base_sprite').scale = { x = 1, y = 1 }
 
 			monster.x = (display_width() * 0.65) - (monster.sx / 2)
-			monster.y = (display_height() * 0.25) - (monster.sy / 2)
+			monster.y = (display_height() * 0.25) - (monster.sy / 3)
 
 			self.combat_monster_base_x = monster.x
 			self.combat_monster_base_y = monster.y
