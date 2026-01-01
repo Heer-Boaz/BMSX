@@ -106,10 +106,10 @@ combat_dodge_move_scale_x = 0.07
 combat_dodge_move_scale_y = -0.05
 
 combat_exchange_hit_timeline_id = 'combat_exchange_hit'
-combat_exchange_hit_frame_count = combat_hit_frame_count
+combat_exchange_hit_frame_count = 22
 combat_exchange_hit_ticks_per_frame = 24
 combat_exchange_miss_timeline_id = 'combat_exchange_miss'
-combat_exchange_miss_frame_count = combat_dodge_frame_count
+combat_exchange_miss_frame_count = 28
 combat_exchange_miss_ticks_per_frame = 24
 combat_exchange_impact_start_ratio = 0.43
 combat_exchange_impact_end_ratio = 0.57
