@@ -242,8 +242,10 @@ void renderSpriteBatchSoftware(SoftwareBackend* softBackend,
     i32 dstW = static_cast<i32>(meta.width * scale.x);
     i32 dstH = static_cast<i32>(meta.height * scale.y);
 
+    const f32 zValue = (options.pos.z == 0.0f) ? DEFAULT_ZCOORD : options.pos.z;
+    const f32 zNorm = 1.0f - (zValue / ZCOORD_MAX);
     softBackend->blitTexture(tex, srcX, srcY, srcW, srcH, dstX, dstY, dstW,
-                             dstH, colorize, flip.flip_h, flip.flip_v);
+                             dstH, zNorm, colorize, flip.flip_h, flip.flip_v);
   });
 }
 }  // namespace

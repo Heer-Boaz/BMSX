@@ -184,8 +184,8 @@ public:
     void fillRect(i32 x, i32 y, i32 w, i32 h, const Color& color);
     void drawRect(i32 x, i32 y, i32 w, i32 h, const Color& color);
     void blitTexture(TextureHandle tex, i32 srcX, i32 srcY, i32 srcW, i32 srcH,
-                     i32 dstX, i32 dstY, i32 dstW, i32 dstH, const Color& tint,
-                     bool flipH, bool flipV);
+                     i32 dstX, i32 dstY, i32 dstW, i32 dstH, f32 depth,
+                     const Color& tint, bool flipH, bool flipV);
 
     // Framebuffer access
     u32* framebuffer() { return m_framebuffer; }

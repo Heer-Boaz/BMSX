@@ -268,8 +268,8 @@ void SoftwareBackend::drawRect(i32 x, i32 y, i32 w, i32 h, const Color& color) {
 }
 
 void SoftwareBackend::blitTexture(TextureHandle tex, i32 srcX, i32 srcY, i32 srcW, i32 srcH,
-                                   i32 dstX, i32 dstY, i32 dstW, i32 dstH, const Color& tint,
-                                   bool flipH, bool flipV) {
+                                   i32 dstX, i32 dstY, i32 dstW, i32 dstH, f32 depth,
+                                   const Color& tint, bool flipH, bool flipV) {
     auto* softTex = static_cast<SoftwareTexture*>(tex);
     if (!softTex || softTex->data.empty()) return;
 
@@ -292,12 +292,16 @@ void SoftwareBackend::blitTexture(TextureHandle tex, i32 srcX, i32 srcY, i32 src
         i32 sy = srcY + static_cast<i32>((flipV ? (dstH - 1 - relY) : relY) * scaleY);
         if (sy < 0 || sy >= softTex->height) continue;
 
+        const i32 depthRow = dy * m_width;
         u32* dstRow = m_framebuffer + dy * pixelsPerRow;
 
         for (i32 dx = clipX0; dx < clipX1; ++dx) {
             i32 relX = dx - dstX;
             i32 sx = srcX + static_cast<i32>((flipH ? (dstW - 1 - relX) : relX) * scaleX);
             if (sx < 0 || sx >= softTex->width) continue;
+
+            const i32 depthIndex = depthRow + dx;
+            if (depth > m_depthBuffer[depthIndex]) continue;
 
             u32 srcPixel = softTex->data[sy * softTex->width + sx];
             u8 srcA = (srcPixel >> 24) & 0xFF;
@@ -322,6 +326,7 @@ void SoftwareBackend::blitTexture(TextureHandle tex, i32 srcX, i32 srcY, i32 src
                 Color col{r, g, b, a};
                 blendPixel(dx, dy, col);
             }
+            m_depthBuffer[depthIndex] = depth;
         }
     }
 }
