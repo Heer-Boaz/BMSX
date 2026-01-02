@@ -165,27 +165,28 @@ function combat_director:resolve_combat_rewards(node)
 	return node.rewards[self.combat_points + 1]
 end
 
-function combat.setup_timelines(self)
+	function combat.setup_timelines(self)
 
-	local function build_combat_focus_frames(params)
-		local frames = {}
+		local function build_combat_focus_frames(params)
+			local frames = {}
 
-		local monster = params.monster
-		local base_x = params.base_x
-		local base_y = params.base_y
+			local monster = params.monster
+			local base_x = params.base_x
+			local base_y = params.base_y
 
-		local zoom_scale = combat_focus_zoom_scale
-		local zoom_target_x = (display_width() - (monster.sx * zoom_scale)) / 2
-		local zoom_target_y = (display_height() - (monster.sy * zoom_scale)) / 2
+			local zoom_scale = combat_focus_zoom_scale
+			local zoom_target_x = (display_width() - (monster.sx * zoom_scale)) / 2
+			local zoom_target_y = (display_height() - (monster.sy * zoom_scale)) / 2
 
-		local vanish_scale = combat_focus_vanish_scale
-		local vanish_target_x = (display_width() - (monster.sx * vanish_scale)) / 2
-		local vanish_target_y = ((display_height() - (monster.sy * vanish_scale)) / 2) + combat_focus_vanish_lift
+			local vanish_scale_x = combat_focus_vanish_scale_x
+			local vanish_scale_y = combat_focus_vanish_scale_y
+			local vanish_center_x = display_width() / 2
+			local vanish_bottom_y = zoom_target_y + (monster.sy * zoom_scale)
 
-		for i = 0, combat_focus_zoom_frames - 1 do
-			local u = i / (combat_focus_zoom_frames - 1)
-			local eased = easing.smoothstep(u)
-			local turn = easing.arc01(u)
+			for i = 0, combat_focus_zoom_frames - 1 do
+				local u = i / (combat_focus_zoom_frames - 1)
+				local eased = easing.smoothstep(u)
+				local turn = easing.arc01(u)
 			local s = 1 + ((zoom_scale - 1) * eased)
 			local x = base_x + (zoom_target_x - base_x) * eased + (combat_focus_zoom_arc_x * turn)
 			local y = base_y + (zoom_target_y - base_y) * eased + (combat_focus_zoom_arc_y * turn)
@@ -199,23 +200,27 @@ function combat.setup_timelines(self)
 			}
 		end
 
-		for i = 0, combat_focus_vanish_frames - 1 do
-			local u = i / (combat_focus_vanish_frames - 1)
-			local eased = easing.smoothstep(u)
-			local turn = easing.arc01(u)
-			local s = zoom_scale + ((vanish_scale - zoom_scale) * eased)
-			local x = zoom_target_x + (vanish_target_x - zoom_target_x) * eased + (combat_focus_vanish_arc_x * turn)
-			local y = zoom_target_y + (vanish_target_y - zoom_target_y) * eased + (combat_focus_vanish_arc_y * turn)
-			local alpha = 1 - eased
+			for i = 0, combat_focus_vanish_frames - 1 do
+				local u = i / (combat_focus_vanish_frames - 1)
+				local eased = easing.smoothstep(u)
+				local melt = easing.ease_out_quad(eased)
+				local turn = easing.arc01(u)
+				local sx = zoom_scale + ((vanish_scale_x - zoom_scale) * melt)
+				local sy = zoom_scale + ((vanish_scale_y - zoom_scale) * melt)
+				local center_x = vanish_center_x + (combat_focus_vanish_arc_x * turn)
+				local bottom_y = vanish_bottom_y + (combat_focus_vanish_lift * melt) + (combat_focus_vanish_arc_y * turn)
+				local x = center_x - (monster.sx * sx) / 2
+				local y = bottom_y - (monster.sy * sy)
+				local alpha = 1 - easing.ease_in_quad(u)
 
-			frames[#frames + 1] = {
-				visible = alpha > 0,
-				x = x,
-				y = y,
-				scale = { x = s, y = s },
-				colorize = { r = 1, g = 1, b = 1, a = alpha },
-			}
-		end
+				frames[#frames + 1] = {
+					visible = alpha > 0,
+					x = x,
+					y = y,
+					scale = { x = sx, y = sy },
+					colorize = { r = 1, g = 1, b = 1, a = alpha },
+				}
+			end
 
 		return frames
 	end
