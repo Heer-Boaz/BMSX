@@ -160,7 +160,7 @@ export const VM_API_METHOD_METADATA = {
 		parameters: [
 			{ name: 'points', description: 'Polygon points array.' },
 			{ name: 'z', description: 'Z coordinate for ordering.' },
-			{ name: 'colorindex', description: 'Palette index for the line color.' },
+			{ name: 'colorvalue', description: 'Palette index (number) or a color object.' },
 			{ name: 'thickness', optional: true, description: 'Optional line thickness.' },
 			{ name: 'layer', optional: true, description: 'Optional render layer.' },
 		],

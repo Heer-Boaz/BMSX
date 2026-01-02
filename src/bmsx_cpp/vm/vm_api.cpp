@@ -632,7 +632,7 @@ m_runtime.registerNativeFunction("put_glyphs", [this, key, asText](const std::ve
 m_runtime.registerNativeFunction("put_poly", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 	std::vector<f32> points = read_polygon(args.at(0));
 	float z = static_cast<float>(asNumber(args.at(1)));
-	Color color = palette_color(static_cast<int>(std::floor(asNumber(args.at(2)))));
+	Color color = resolve_color(args.at(2));
 	std::optional<float> thickness;
 		std::optional<RenderLayer> layer;
 		if (args.size() > 3 && !isNil(args[3])) {

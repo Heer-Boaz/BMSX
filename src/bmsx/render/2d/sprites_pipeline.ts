@@ -351,7 +351,8 @@ export function fillRectangle(options: RectRenderSubmission): void {
 export function drawPolygon(coords: Polygon, z: number, color: color, thickness: number = 1, layer?: RenderLayer): void {
 	if (!coords || coords.length < 4) return; const imgid = 'whitepixel';
 	for (let i = 0; i < coords.length; i += 2) {
-		let x0 = coords[i], y0 = coords[i + 1]; const next = (i + 2) % coords.length; let x1 = coords[next], y1 = coords[next + 1];
+		// Snap to integer grid so Bresenham-style stepping terminates with fractional inputs.
+		let x0 = Math.round(coords[i]), y0 = Math.round(coords[i + 1]); const next = (i + 2) % coords.length; let x1 = Math.round(coords[next]), y1 = Math.round(coords[next + 1]);
 		const dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0); const sx = x0 < x1 ? 1 : -1; const sy = y0 < y1 ? 1 : -1; let err = dx - dy;
 		if (dx > dy) {
 			while (true) {

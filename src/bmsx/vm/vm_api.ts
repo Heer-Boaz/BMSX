@@ -475,11 +475,11 @@ export class BmsxVMApi {
 		this.renderBackend.glyphs(submission);
 	}
 
-	public put_poly(points: Polygon, z: number, colorindex: number, thickness?: number, layer?: RenderLayer): void {
+	public put_poly(points: Polygon, z: number, colorvalue: number | color, thickness?: number, layer?: RenderLayer): void {
 		const submission: PolyRenderSubmission = {
 			points,
 			z,
-			color: this.palette_color(colorindex),
+			color: this.resolve_color(colorvalue),
 			thickness,
 			layer,
 		};

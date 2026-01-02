@@ -94,6 +94,16 @@ combat_hit_shake_x = 9
 combat_hit_shake_y = 7
 combat_hit_scale_x = 0.12
 combat_hit_scale_y = -0.08
+combat_hit_slash_path_start_x_ratio = 0.18
+combat_hit_slash_path_start_y_ratio = 0.28
+combat_hit_slash_path_end_x_ratio = 0.82
+combat_hit_slash_path_end_y_ratio = 0.7
+combat_hit_slash_length_ratio = 0.9
+combat_hit_slash_thickness_ratio = 0.06
+combat_hit_slash_peak_scale = 1.45
+combat_hit_slash_alpha = 0.9
+combat_hit_slash_taper_floor = 0.3
+combat_hit_slash_z = 650
 
 combat_dodge_timeline_id = 'combat_dodge'
 combat_dodge_frame_count = 22

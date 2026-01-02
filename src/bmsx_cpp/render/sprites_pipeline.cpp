@@ -144,10 +144,11 @@ void drawPolygon(const std::vector<f32>& coords, f32 z, const Color& color,
   // Draw lines between consecutive points
   for (size_t i = 0; i < coords.size(); i += 2) {
     size_t next = (i + 2) % coords.size();
-    f32 x0 = coords[i];
-    f32 y0 = coords[i + 1];
-    f32 x1 = coords[next];
-    f32 y1 = coords[next + 1];
+    // Snap to integer grid so Bresenham stepping terminates with fractional inputs.
+    f32 x0 = std::round(coords[i]);
+    f32 y0 = std::round(coords[i + 1]);
+    f32 x1 = std::round(coords[next]);
+    f32 y1 = std::round(coords[next + 1]);
 
     // Bresenham line algorithm (mirrors TypeScript)
     f32 dx = std::abs(x1 - x0);

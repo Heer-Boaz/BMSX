@@ -243,6 +243,26 @@ function combat.define_fsm()
 	states.boot = {
 		entering_state = function(self)
 			combat.setup_timelines(self)
+			self.combat_hit_slash_frame = {
+				slash_active = false,
+				slash_points = { 0, 0, 0, 0 },
+				slash_thickness = 0,
+				slash_color = { r = 1, g = 1, b = 1, a = 0 },
+				slash_z = combat_hit_slash_z,
+			}
+			self.combat_hit_slash_rc = attach_component(self, 'customvisualcomponent')
+			self.combat_hit_slash_rc:add_producer(function(ctx)
+				local frame = ctx.parent.combat_hit_slash_frame
+				if not frame.slash_active then
+					return
+				end
+				ctx.rc:submit_poly({
+					points = frame.slash_points,
+					z = frame.slash_z,
+					color = frame.slash_color,
+					thickness = frame.slash_thickness,
+				})
+			end)
 			hide_combat_sprites()
 			return '/idle'
 		end,
@@ -482,6 +502,98 @@ function combat.define_fsm()
 				maya_colorize = maya_colorize,
 				impact_u = impact_u,
 				overlay_alpha = overlay_alpha,
+			}
+		end
+
+		return frames
+	end
+
+	local function build_combat_hit_frames(self, monster)
+		local frames = {}
+		local base_x = self.combat_hit_origin_x
+		local base_y = self.combat_hit_origin_y
+		local hold_in = combat_hit_stop_frames
+		local peak_frames = combat_hit_peak_frames
+		local recover_frames = combat_hit_recover_frames
+		local move_frames = combat_hit_frame_count - hold_in - peak_frames - recover_frames
+		local peak_start = hold_in + move_frames
+		local recover_start = peak_start + peak_frames
+		local slash_start = hold_in
+		local slash_end = recover_start - 1
+		local path_dx = (combat_hit_slash_path_end_x_ratio - combat_hit_slash_path_start_x_ratio) * monster.sx
+		local path_dy = (combat_hit_slash_path_end_y_ratio - combat_hit_slash_path_start_y_ratio) * monster.sy
+		local path_len = math.sqrt((path_dx * path_dx) + (path_dy * path_dy))
+		local path_nx = path_dx / path_len
+		local path_ny = path_dy / path_len
+		local base_length = monster.sx * combat_hit_slash_length_ratio
+		local base_thickness = monster.sy * combat_hit_slash_thickness_ratio
+
+		for frame_index = 0, combat_hit_frame_count - 1 do
+			local kick = 0
+			if frame_index >= hold_in and frame_index < peak_start then
+				local u = (frame_index - hold_in) / (move_frames - 1)
+				kick = easing.ease_out_quad(u)
+			elseif frame_index >= peak_start and frame_index < recover_start then
+				kick = 1
+			elseif frame_index >= recover_start then
+				local u = (frame_index - recover_start) / (recover_frames - 1)
+				kick = 1 - easing.ease_in_quad(u)
+			end
+
+			local dx = combat_hit_knockback_x * kick
+			local dy = combat_hit_knockback_y * kick
+			if frame_index >= hold_in and frame_index < (hold_in + combat_hit_shake_frames) then
+				local k = frame_index - hold_in
+				local intensity = (combat_hit_shake_frames - k) / combat_hit_shake_frames
+				dx = dx + round(shake_signed(frame_index * 31 + 7) * combat_hit_shake_x * intensity)
+				dy = dy + round(shake_signed(frame_index * 37 + 11) * combat_hit_shake_y * intensity)
+			end
+
+			local monster_x = base_x + dx
+			local monster_y = base_y + dy
+			local monster_scale = {
+				x = 1 + (combat_hit_scale_x * kick),
+				y = 1 + (combat_hit_scale_y * kick),
+			}
+
+			local monster_colorize = { r = 1, g = 1, b = 1, a = 1 }
+			if frame_index >= hold_in and frame_index < recover_start then
+				local flash_index = frame_index - hold_in
+				if (flash_index % 2) == 1 then
+					monster_colorize = { r = 1, g = 0.2, b = 0.2, a = 1 }
+				end
+			end
+
+			local slash_active = frame_index >= slash_start and frame_index <= slash_end
+			local slash_points = nil
+			local slash_thickness = 0
+			local slash_color = nil
+			if slash_active then
+				local u = (frame_index - slash_start) / (slash_end - slash_start)
+				local arc = easing.arc01(u)
+				local center_x = monster_x + (monster.sx * (combat_hit_slash_path_start_x_ratio + ((combat_hit_slash_path_end_x_ratio - combat_hit_slash_path_start_x_ratio) * u)))
+				local center_y = monster_y + (monster.sy * (combat_hit_slash_path_start_y_ratio + ((combat_hit_slash_path_end_y_ratio - combat_hit_slash_path_start_y_ratio) * u)))
+				local scale = 1 + ((combat_hit_slash_peak_scale - 1) * arc)
+				local half = (base_length * scale) / 2
+				local x0 = center_x - (path_nx * half)
+				local y0 = center_y - (path_ny * half)
+				local x1 = center_x + (path_nx * half)
+				local y1 = center_y + (path_ny * half)
+				slash_points = { x0, y0, x1, y1 }
+				slash_thickness = base_thickness * (combat_hit_slash_taper_floor + ((1 - combat_hit_slash_taper_floor) * arc))
+				slash_color = { r = 1, g = 1, b = 1, a = combat_hit_slash_alpha * arc }
+			end
+
+			frames[#frames + 1] = {
+				monster_x = monster_x,
+				monster_y = monster_y,
+				monster_scale = monster_scale,
+				monster_colorize = monster_colorize,
+				slash_active = slash_active,
+				slash_points = slash_points,
+				slash_thickness = slash_thickness,
+				slash_color = slash_color,
+				slash_z = combat_hit_slash_z,
 			}
 		end
 
@@ -871,21 +983,6 @@ function combat.define_fsm()
 	}
 
 	states.combat_hit = {
-		timelines = {
-			[combat_hit_timeline_id] = {
-				create = function()
-					return new_timeline_range({
-						id = combat_hit_timeline_id,
-						frame_count = combat_hit_frame_count,
-						ticks_per_frame = combat_hit_ticks_per_frame,
-						playback_mode = 'once',
-					})
-				end,
-				autoplay = true,
-				stop_on_exit = true,
-				play_options = { rewind = true, snap_to_start = true },
-			},
-		},
 		entering_state = function(self)
 			clear_texts(text_ids_choice_prompt)
 			set_text_lines(text_main_id, { 'RAAK!' }, false)
@@ -895,6 +992,14 @@ function combat.define_fsm()
 			monster:get_component_by_id('base_sprite').scale = { x = 1, y = 1 }
 			self.combat_hit_origin_x = monster.x
 			self.combat_hit_origin_y = monster.y
+			local frames = build_combat_hit_frames(self, monster)
+			self:define_timeline(new_timeline({
+				id = combat_hit_timeline_id,
+				frames = frames,
+				ticks_per_frame = combat_hit_ticks_per_frame,
+				playback_mode = 'once',
+			}))
+			self:play_timeline(combat_hit_timeline_id, { rewind = true, snap_to_start = true })
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
@@ -907,52 +1012,17 @@ function combat.define_fsm()
 		on = {
 			['timeline.frame.' .. combat_hit_timeline_id] = {
 				go = function(self, _state, event)
-					local frame_index = event.frame_index
+					local frame = event.frame_value
 					local monster = object(combat_monster_id)
-					local base_x = self.combat_hit_origin_x
-					local base_y = self.combat_hit_origin_y
-					local hold_in = combat_hit_stop_frames
-					local peak_frames = combat_hit_peak_frames
-					local recover_frames = combat_hit_recover_frames
-					local move_frames = combat_hit_frame_count - hold_in - peak_frames - recover_frames
-					local peak_start = hold_in + move_frames
-					local recover_start = peak_start + peak_frames
-					local kick = 0
-					if frame_index >= hold_in and frame_index < peak_start then
-						local u = (frame_index - hold_in) / (move_frames - 1)
-						kick = easing.ease_out_quad(u)
-					elseif frame_index >= peak_start and frame_index < recover_start then
-						kick = 1
-					elseif frame_index >= recover_start then
-						local u = (frame_index - recover_start) / (recover_frames - 1)
-						kick = 1 - easing.ease_in_quad(u)
-					end
-					local dx = combat_hit_knockback_x * kick
-					local dy = combat_hit_knockback_y * kick
-					if frame_index >= hold_in and frame_index < (hold_in + combat_hit_shake_frames) then
-						local k = frame_index - hold_in
-						local intensity = (combat_hit_shake_frames - k) / combat_hit_shake_frames
-						dx = dx + round(shake_signed(frame_index * 31 + 7) * combat_hit_shake_x * intensity)
-						dy = dy + round(shake_signed(frame_index * 37 + 11) * combat_hit_shake_y * intensity)
-					end
-					monster.x = base_x + dx
-					monster.y = base_y + dy
-					monster:get_component_by_id('base_sprite').scale = {
-						x = 1 + (combat_hit_scale_x * kick),
-						y = 1 + (combat_hit_scale_y * kick),
-					}
-
-					local flash_end = recover_start
-					if frame_index < hold_in or frame_index >= flash_end then
-						monster.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
-						return
-					end
-					local flash_index = frame_index - hold_in
-					if (flash_index % 2) == 0 then
-						monster.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
-					else
-						monster.sprite_component.colorize = { r = 1, g = 0.2, b = 0.2, a = 1 }
-					end
+					monster.x = frame.monster_x
+					monster.y = frame.monster_y
+					monster:get_component_by_id('base_sprite').scale = frame.monster_scale
+					monster.sprite_component.colorize = frame.monster_colorize
+					self.combat_hit_slash_frame.slash_active = frame.slash_active
+					self.combat_hit_slash_frame.slash_points = frame.slash_points
+					self.combat_hit_slash_frame.slash_thickness = frame.slash_thickness
+					self.combat_hit_slash_frame.slash_color = frame.slash_color
+					self.combat_hit_slash_frame.slash_z = frame.slash_z
 				end,
 			},
 			['timeline.end.' .. combat_hit_timeline_id] = {
@@ -961,6 +1031,10 @@ function combat.define_fsm()
 				end,
 			},
 		},
+		leaving_state = function(self)
+			self:stop_timeline(combat_hit_timeline_id)
+			self.combat_hit_slash_frame.slash_active = false
+		end,
 	}
 
 	states.combat_dodge = {

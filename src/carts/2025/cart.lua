@@ -1,6 +1,9 @@
 require('globals.lua')
 require('story.lua')
 
+local start_node = 'combat_wekker'
+-- local start_node = 'title'
+
 local combat_module = require('combat.lua')
 local dialogue_module = require('dialogue.lua')
 local transition_module = require('transition.lua')
@@ -102,7 +105,7 @@ local function register_director()
 		class = director,
 		fsms = { director_fsm_id },
 		defaults = {
-			node_id = 'title',
+			node_id = start_node,
 			page_index = 1,
 			choice_index = 1,
 			stats = { planning = 0, opdekin = 0, rust = 0, makeup = 0 },
