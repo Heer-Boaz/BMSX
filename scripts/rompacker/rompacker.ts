@@ -7,9 +7,10 @@ import { validateAudioEventReferences } from './audioeventvalidator';
 import { appendVmProgramAsset, buildBootromScriptIfNewer, buildEngineRuntime, buildGameHtmlAndManifest, buildResourceList, commonResPath, createAtlasses, deployToServer, esbuild, finalizeRompack, GENERATE_AND_USE_TEXTURE_ATLAS, generateRomAssets, getNodeLauncherFilename, getResMetaList, getResourcesList, getRomManifest, isEngineRuntimeRebuildRequired, isRebuildRequired, LUA_CANONICALIZATION, setAtlasFlag, setLuaCanonicalization, typecheckBeforeBuild, typecheckGameWithDts } from './rompacker-core';
 import type { RomPackerMode, RomPackerOptions, RomPackerTarget } from './rompacker.rompack';
 import type { CanonicalizationType, RomAsset, RomManifest } from '../../src/bmsx/rompack/rompack';
+import { LuaError } from '../../src/bmsx/lua/luaerrors';
 
 import { join, isAbsolute } from 'node:path';
-import { existsSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 
@@ -494,6 +495,46 @@ function formatEsbuildErrors(err: any): string[] {
 	return result;
 }
 
+function resolveLuaSourcePath(candidate: string, virtualRoots: ReadonlyArray<string>): string {
+	const normalized = normalizePathKey(candidate);
+	if (existsSync(normalized)) {
+		return normalized;
+	}
+	for (const root of virtualRoots) {
+		const normalizedRoot = normalizePathKey(root);
+		const joined = normalizePathKey(join(normalizedRoot, normalized));
+		if (existsSync(joined)) {
+			return joined;
+		}
+	}
+	return normalized;
+}
+
+function formatLuaBuildError(err: LuaError, virtualRoots: ReadonlyArray<string>): string[] {
+	const lines: string[] = [];
+	const resolvedPath = resolveLuaSourcePath(err.path, virtualRoots);
+	const location = `${resolvedPath}:${err.line}:${err.column}`;
+	lines.push(`${location}: ${err.message}`);
+
+	try {
+		const source = readFileSync(resolvedPath, 'utf8');
+		const sourceLines = source.replace(/\r\n|\r/g, '\n').split('\n');
+		const sourceLine = sourceLines[err.line - 1];
+		if (sourceLine === undefined) {
+			return lines;
+		}
+		const gutter = `${err.line} | `;
+		lines.push(`${gutter}${sourceLine}`);
+		const caretOffset = Math.max(0, err.column - 1);
+		lines.push(`${' '.repeat(gutter.length + caretOffset)}^`);
+		return lines;
+	} catch (readError) {
+		const message = readError instanceof Error ? readError.message : String(readError);
+		lines.push(`(unable to read ${resolvedPath}: ${message})`);
+		return lines;
+	}
+}
+
 function runCommand(command: string, args: string[]): void {
 	const result = spawnSync(command, args, { stdio: 'inherit' });
 	if (result.status !== 0) {
@@ -769,6 +810,7 @@ class ProgressReporter {
 async function main() {
 	const progress = new ProgressReporter(taskList);
 	let romOutputPath = '';
+	let luaErrorVirtualRoots: string[] = [];
 	const bufferedLogs: string[] = [];
 	const captureLog = (text: string) => {
 		if (!text) return;
@@ -812,6 +854,7 @@ async function main() {
 			? projectRootFromRes
 			: (projectRootFromBoot.length > 0 ? projectRootFromBoot : null);
 		const virtualRoot = projectRootPath;
+		luaErrorVirtualRoots = [virtualRoot];
 
 		setAtlasFlag(useTextureAtlas);
 		setLuaCanonicalization(canonicalization);
@@ -919,6 +962,7 @@ async function main() {
 		const engineProjectRoot = normalizePathKey(join(engineResPath, '..'));
 		const engineProjectRootPath = engineProjectRoot.replace(/^\.\//, '');
 		const engineVirtualRoot = engineProjectRootPath;
+		luaErrorVirtualRoots.push(engineVirtualRoot);
 		const engineBootloaderPath = normalizePathKey('./src/bmsx/vm/default_cart');
 		const engineRuntimeNeedsRebuild = force || await isEngineRuntimeRebuildRequired();
 
@@ -1125,7 +1169,9 @@ async function main() {
 		progress.stop();
 		await progress.pulse();
 		const failedTask = progress.getCurrentTask();
-		const summary = (e as any)?.message?.split?.('\n')?.[0] ?? String(e);
+		const summary = e instanceof LuaError
+			? `${resolveLuaSourcePath(e.path, luaErrorVirtualRoots)}:${e.line}:${e.column}: ${e.message}`
+			: (e as any)?.message?.split?.('\n')?.[0] ?? String(e);
 		if (failedTask) {
 			progress.fail(failedTask, summary);
 			writeOut(`${pc.red(`✘ Failed during: ${failedTask}`)}`, 'error');
@@ -1140,6 +1186,8 @@ async function main() {
 		const esErrors = formatEsbuildErrors(e);
 		if (esErrors.length > 0) {
 			prettyErrors.push(...esErrors);
+		} else if (e instanceof LuaError) {
+			prettyErrors.push(...formatLuaBuildError(e, luaErrorVirtualRoots));
 		} else {
 			// Only add main error message if no esbuild errors were extracted
 			const mainMessage = (e as any)?.message as string;
