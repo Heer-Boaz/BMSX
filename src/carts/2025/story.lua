@@ -357,7 +357,7 @@ story = {
 
 	spiegel = {
 		kind = 'dialogue',
-		bg = 'badkamer_spiegel',
+		bg = 'badkamer_makeup',
 		typed = true,
 		pages = {
 			{ 'Nieuwe dag. Nieuwe vijand.' },
