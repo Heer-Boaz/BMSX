@@ -2104,28 +2104,142 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 
 	const RuntimeAssets& assets = EngineCore::instance().assets();
 	auto* assetsTable = m_cpu.createTable();
+	auto formatAssetKeyNumber = [](double value) -> std::string {
+		if (value == 0.0) {
+			return "0";
+		}
+		std::ostringstream oss;
+		oss << std::fixed << std::setprecision(0) << value;
+		return oss.str();
+	};
+	auto makeAssetMapNativeObject = [this, formatAssetKeyNumber](Table* mapTable) -> Value {
+		return m_cpu.createNativeObject(
+			mapTable,
+			[this, mapTable, formatAssetKeyNumber](const Value& keyValue) -> Value {
+				if (valueIsString(keyValue)) {
+					Value value = mapTable->get(keyValue);
+					if (isNil(value)) {
+						const std::string& keyName = m_cpu.stringPool().toString(asStringId(keyValue));
+						throw std::runtime_error("Asset '" + keyName + "' does not exist.");
+					}
+					return value;
+				}
+				if (valueIsNumber(keyValue)) {
+					double n = valueToNumber(keyValue);
+					double intpart = 0.0;
+					if (std::isfinite(n) && std::modf(n, &intpart) == 0.0) {
+						std::string keyName = formatAssetKeyNumber(n);
+						Value resolvedKey = valueString(m_cpu.internString(keyName));
+						Value value = mapTable->get(resolvedKey);
+						if (isNil(value)) {
+							throw std::runtime_error("Asset '" + keyName + "' does not exist.");
+						}
+						return value;
+					}
+				}
+				throw std::runtime_error("Attempted to retrieve an asset that did not use a string or integer key.");
+			},
+			[this, mapTable, formatAssetKeyNumber](const Value& keyValue, const Value& value) {
+				if (valueIsString(keyValue)) {
+					mapTable->set(keyValue, value);
+					return;
+				}
+				if (valueIsNumber(keyValue)) {
+					double n = valueToNumber(keyValue);
+					double intpart = 0.0;
+					if (std::isfinite(n) && std::modf(n, &intpart) == 0.0) {
+						std::string keyName = formatAssetKeyNumber(n);
+						Value resolvedKey = valueString(m_cpu.internString(keyName));
+						mapTable->set(resolvedKey, value);
+						return;
+					}
+				}
+				throw std::runtime_error("Attempted to index native object with unsupported key. Asset maps and methods require string or integer keys.");
+			},
+			nullptr,
+			[mapTable](const Value& after) -> std::optional<std::pair<Value, Value>> {
+				return mapTable->nextEntry(after);
+			},
+			[mapTable](VMHeap& heap) {
+				heap.markValue(valueTable(mapTable));
+			}
+		);
+	};
 	auto* imgTable = m_cpu.createTable(0, static_cast<int>(assets.img.size()));
 	for (const auto& [id, imgAsset] : assets.img) {
 		auto* imgEntry = m_cpu.createTable(0, 2);
 		imgEntry->set(key("imgmeta"), valueTable(buildImgMetaTable(m_cpu, imgAsset.meta, key)));
 		imgTable->set(str(id), valueTable(imgEntry));
 	}
-	assetsTable->set(key("img"), valueTable(imgTable));
+	assetsTable->set(key("img"), makeAssetMapNativeObject(imgTable));
 
 	auto* dataTable = m_cpu.createTable(0, static_cast<int>(assets.data.size()));
 	for (const auto& [id, value] : assets.data) {
 		dataTable->set(str(id), binValueToVmValue(m_cpu, value));
 	}
-	assetsTable->set(key("data"), valueTable(dataTable));
-	assetsTable->set(key("audio"), valueTable(m_cpu.createTable()));
+	assetsTable->set(key("data"), makeAssetMapNativeObject(dataTable));
+	auto* audioTable = m_cpu.createTable();
+	assetsTable->set(key("audio"), makeAssetMapNativeObject(audioTable));
 	auto* audioEventsTable = m_cpu.createTable(0, static_cast<int>(assets.audioevents.size()));
 	for (const auto& [id, value] : assets.audioevents) {
 		audioEventsTable->set(str(id), binValueToVmValue(m_cpu, value));
 	}
-	assetsTable->set(key("audioevents"), valueTable(audioEventsTable));
-	assetsTable->set(key("model"), valueTable(m_cpu.createTable()));
+	assetsTable->set(key("audioevents"), makeAssetMapNativeObject(audioEventsTable));
+	auto* modelTable = m_cpu.createTable();
+	assetsTable->set(key("model"), makeAssetMapNativeObject(modelTable));
 	assetsTable->set(key("project_root_path"), str(assets.projectRootPath));
-	setGlobal("assets", valueTable(assetsTable));
+	auto assetsNative = m_cpu.createNativeObject(
+		assetsTable,
+		[this, assetsTable, formatAssetKeyNumber](const Value& keyValue) -> Value {
+			if (valueIsString(keyValue)) {
+				Value value = assetsTable->get(keyValue);
+				if (isNil(value)) {
+					const std::string& keyName = m_cpu.stringPool().toString(asStringId(keyValue));
+					throw std::runtime_error("Asset '" + keyName + "' does not exist.");
+				}
+				return value;
+			}
+			if (valueIsNumber(keyValue)) {
+				double n = valueToNumber(keyValue);
+				double intpart = 0.0;
+				if (std::isfinite(n) && std::modf(n, &intpart) == 0.0) {
+					std::string keyName = formatAssetKeyNumber(n);
+					Value resolvedKey = valueString(m_cpu.internString(keyName));
+					Value value = assetsTable->get(resolvedKey);
+					if (isNil(value)) {
+						throw std::runtime_error("Asset '" + keyName + "' does not exist.");
+					}
+					return value;
+				}
+			}
+			throw std::runtime_error("Attempted to retrieve an asset that did not use a string or integer key.");
+		},
+		[this, assetsTable, formatAssetKeyNumber](const Value& keyValue, const Value& value) {
+			if (valueIsString(keyValue)) {
+				assetsTable->set(keyValue, value);
+				return;
+			}
+			if (valueIsNumber(keyValue)) {
+				double n = valueToNumber(keyValue);
+				double intpart = 0.0;
+				if (std::isfinite(n) && std::modf(n, &intpart) == 0.0) {
+					std::string keyName = formatAssetKeyNumber(n);
+					Value resolvedKey = valueString(m_cpu.internString(keyName));
+					assetsTable->set(resolvedKey, value);
+					return;
+				}
+			}
+			throw std::runtime_error("Attempted to index native object with unsupported key. Asset maps and methods require string or integer keys.");
+		},
+		nullptr,
+		[assetsTable](const Value& after) -> std::optional<std::pair<Value, Value>> {
+			return assetsTable->nextEntry(after);
+		},
+		[assetsTable](VMHeap& heap) {
+			heap.markValue(valueTable(assetsTable));
+		}
+	);
+	setGlobal("assets", assetsNative);
 
 	auto viewSize = EngineCore::instance().view()->viewportSize;
 	auto* viewportTable = m_cpu.createTable(0, 2);

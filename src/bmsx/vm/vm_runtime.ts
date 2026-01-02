@@ -4023,20 +4023,19 @@ export class BmsxVMRuntime {
 		if (cached) {
 			return cached;
 		}
-		const assetsRecord = assets as unknown as Record<string, unknown>;
 		const assetMapKeys = new Set<string>(['img', 'audio', 'model', 'data', 'audioevents']);
 		const wrapper = createNativeObject(assets, {
 			get: (key) => {
 				const prop = this.resolveNativeKey(key);
 				if (!prop) {
-					throw new Error('Attempted to index native object with unsupported key.');
+					throw new Error('Attempted to retrieve an asset that did not use a string or integer key.');
 				}
-				const rawValue = assetsRecord[prop];
+				const rawValue = assets[prop];
 				if (rawValue === undefined) {
-					return null;
+					throw new Error(`Asset '${prop}' does not exist.`);
 				}
 				if (assetMapKeys.has(prop)) {
-					return this.getOrCreateNativeObject(rawValue as object);
+					return this.getOrCreateAssetMapNativeObject(rawValue as Record<string, unknown>);
 				}
 				if (typeof rawValue === 'function') {
 					return this.getOrCreateNativeMethod(assets, prop);
@@ -4046,17 +4045,54 @@ export class BmsxVMRuntime {
 			set: (key, entryValue) => {
 				const prop = this.resolveNativeKey(key);
 				if (!prop) {
-					throw new Error('Attempted to assign native object with unsupported key.');
+					throw new Error('Attempted to index native object with unsupported key. Asset maps and methods require string or integer keys.');
 				}
 				if (entryValue === null) {
-					delete assetsRecord[prop];
+					delete assets[prop];
 					return;
 				}
 				const ctx = this.buildVmContext();
-				assetsRecord[prop] = this.toNativeValue(entryValue, ctx, new WeakMap());
+				assets[prop] = this.toNativeValue(entryValue, ctx, new WeakMap());
 			},
 		});
 		this.nativeObjectCache.set(assets, wrapper);
+		return wrapper;
+	}
+
+	private getOrCreateAssetMapNativeObject(map: Record<string, unknown>): NativeObject {
+		const cached = this.nativeObjectCache.get(map);
+		if (cached) {
+			return cached;
+		}
+		const wrapper = createNativeObject(map, {
+			get: (key) => {
+				const prop = this.resolveNativeKey(key);
+				if (!prop) {
+					throw new Error('Attempted to retrieve an asset that did not use a string or integer key.');
+				}
+				const rawValue = map[prop];
+				if (rawValue === undefined) {
+					throw new Error(`Asset '${prop}' does not exist.`);
+				}
+				if (typeof rawValue === 'function') {
+					return this.getOrCreateNativeMethod(map, prop);
+				}
+				return this.toVmValue(rawValue);
+			},
+			set: (key, entryValue) => {
+				const prop = this.resolveNativeKey(key);
+				if (!prop) {
+					throw new Error('Attempted to index native object with unsupported key. Asset maps and methods require string or integer keys.');
+				}
+				if (entryValue === null) {
+					delete map[prop];
+					return;
+				}
+				const ctx = this.buildVmContext();
+				map[prop] = this.toNativeValue(entryValue, ctx, new WeakMap());
+			},
+		});
+		this.nativeObjectCache.set(map, wrapper);
 		return wrapper;
 	}
 
