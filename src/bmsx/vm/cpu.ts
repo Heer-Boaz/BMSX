@@ -17,6 +17,14 @@ export type SourceRange = {
 const NATIVE_FUNCTION_KIND = 'native_function';
 const NATIVE_OBJECT_KIND = 'native_object';
 
+function utf8CodepointCount(text: string): number {
+	let count = 0;
+	for (const _char of text) {
+		count += 1;
+	}
+	return count;
+}
+
 export type NativeFunction = {
 	readonly kind: typeof NATIVE_FUNCTION_KIND;
 	readonly name: string;
@@ -1003,7 +1011,7 @@ export class VMCPU {
 			case OpCode.LEN: {
 				const value = frame.registers.get(b);
 				if (isStringValue(value)) {
-					this.setRegisterNumber(frame, a, stringValueToString(value).length);
+					this.setRegisterNumber(frame, a, utf8CodepointCount(stringValueToString(value)));
 					return;
 				}
 				if (value instanceof Table) {

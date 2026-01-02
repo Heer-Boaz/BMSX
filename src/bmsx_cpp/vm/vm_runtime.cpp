@@ -10,6 +10,7 @@
 #include <chrono>
 #include <cmath>
 #include <cctype>
+#include <cstdint>
 #include <ctime>
 #include <cstdlib>
 #include <cstdio>
@@ -53,6 +54,101 @@ namespace {
 constexpr int kBootLogFrames = 8;
 int s_updateLogRemaining = 0;
 int s_drawLogRemaining = 0;
+
+size_t utf8_next_index(const std::string& text, size_t index) {
+	unsigned char c0 = static_cast<unsigned char>(text[index]);
+	if (c0 < 0x80) {
+		return index + 1;
+	}
+	if ((c0 & 0xE0) == 0xC0) {
+		return index + 2;
+	}
+	if ((c0 & 0xF0) == 0xE0) {
+		return index + 3;
+	}
+	return index + 4;
+}
+
+int utf8_codepoint_count(const std::string& text) {
+	int count = 0;
+	size_t index = 0;
+	while (index < text.size()) {
+		index = utf8_next_index(text, index);
+		count += 1;
+	}
+	return count;
+}
+
+size_t utf8_byte_index_from_codepoint(const std::string& text, int codepointIndex) {
+	if (codepointIndex <= 1) {
+		return 0;
+	}
+	size_t index = 0;
+	int current = 1;
+	while (index < text.size()) {
+		if (current == codepointIndex) {
+			return index;
+		}
+		index = utf8_next_index(text, index);
+		current += 1;
+	}
+	return index;
+}
+
+int utf8_codepoint_index_from_byte(const std::string& text, size_t byteIndex) {
+	size_t index = 0;
+	int current = 1;
+	while (index < text.size()) {
+		if (index >= byteIndex) {
+			return current;
+		}
+		index = utf8_next_index(text, index);
+		current += 1;
+	}
+	return current;
+}
+
+uint32_t utf8_codepoint_at(const std::string& text, size_t index) {
+	unsigned char c0 = static_cast<unsigned char>(text[index]);
+	if (c0 < 0x80) {
+		return c0;
+	}
+	if ((c0 & 0xE0) == 0xC0) {
+		unsigned char c1 = static_cast<unsigned char>(text[index + 1]);
+		return ((c0 & 0x1F) << 6) | (c1 & 0x3F);
+	}
+	if ((c0 & 0xF0) == 0xE0) {
+		unsigned char c1 = static_cast<unsigned char>(text[index + 1]);
+		unsigned char c2 = static_cast<unsigned char>(text[index + 2]);
+		return ((c0 & 0x0F) << 12) | ((c1 & 0x3F) << 6) | (c2 & 0x3F);
+	}
+	unsigned char c1 = static_cast<unsigned char>(text[index + 1]);
+	unsigned char c2 = static_cast<unsigned char>(text[index + 2]);
+	unsigned char c3 = static_cast<unsigned char>(text[index + 3]);
+	return ((c0 & 0x07) << 18) | ((c1 & 0x3F) << 12) | ((c2 & 0x3F) << 6) | (c3 & 0x3F);
+}
+
+void utf8_append_codepoint(std::string& out, uint32_t codepoint) {
+	if (codepoint <= 0x7F) {
+		out.push_back(static_cast<char>(codepoint));
+		return;
+	}
+	if (codepoint <= 0x7FF) {
+		out.push_back(static_cast<char>(0xC0 | ((codepoint >> 6) & 0x1F)));
+		out.push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
+		return;
+	}
+	if (codepoint <= 0xFFFF) {
+		out.push_back(static_cast<char>(0xE0 | ((codepoint >> 12) & 0x0F)));
+		out.push_back(static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F)));
+		out.push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
+		return;
+	}
+	out.push_back(static_cast<char>(0xF0 | ((codepoint >> 18) & 0x07)));
+	out.push_back(static_cast<char>(0x80 | ((codepoint >> 12) & 0x3F)));
+	out.push_back(static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F)));
+	out.push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
+}
 
 Table* buildArrayTable(VMCPU& cpu, const std::array<f32, 12>& values) {
 	auto* table = cpu.createTable(static_cast<int>(values.size()), 0);
@@ -1552,7 +1648,7 @@ registerNativeFunction("error", [this](const std::vector<Value>& args, std::vect
 auto* stringTable = m_cpu.createTable();
 stringTable->set(key("len"), m_cpu.createNativeFunction("string.len", [asText](const std::vector<Value>& args, std::vector<Value>& out) {
 	const std::string& text = asText(args.at(0));
-	out.push_back(valueNumber(static_cast<double>(text.size())));
+	out.push_back(valueNumber(static_cast<double>(utf8_codepoint_count(text))));
 }));
 stringTable->set(key("upper"), m_cpu.createNativeFunction("string.upper", [str, asText](const std::vector<Value>& args, std::vector<Value>& out) {
 	std::string text = asText(args.at(0));
@@ -1566,7 +1662,7 @@ stringTable->set(key("lower"), m_cpu.createNativeFunction("string.lower", [str, 
 }));
 stringTable->set(key("sub"), m_cpu.createNativeFunction("string.sub", [str, asText](const std::vector<Value>& args, std::vector<Value>& out) {
 	const std::string& text = asText(args.at(0));
-	int length = static_cast<int>(text.length());
+	int length = utf8_codepoint_count(text);
 		auto normalizeIndex = [length](double value) -> int {
 			int integer = static_cast<int>(std::floor(value));
 			if (integer > 0) return integer;
@@ -1581,12 +1677,14 @@ stringTable->set(key("sub"), m_cpu.createNativeFunction("string.sub", [str, asTe
 		out.push_back(str(""));
 		return;
 	}
-	out.push_back(str(text.substr(static_cast<size_t>(startIndex - 1), static_cast<size_t>(endIndex - startIndex + 1))));
+	size_t startByte = utf8_byte_index_from_codepoint(text, startIndex);
+	size_t endByte = utf8_byte_index_from_codepoint(text, endIndex + 1);
+	out.push_back(str(text.substr(startByte, endByte - startByte)));
 }));
 stringTable->set(key("find"), m_cpu.createNativeFunction("string.find", [this, str, asText](const std::vector<Value>& args, std::vector<Value>& out) {
 	const std::string& source = asText(args.at(0));
 	const std::string& pattern = args.size() > 1 ? asText(args.at(1)) : std::string("");
-	int length = static_cast<int>(source.length());
+	int length = utf8_codepoint_count(source);
 		auto normalizeIndex = [length](double value) -> int {
 			int integer = static_cast<int>(std::floor(value));
 			if (integer > 0) return integer;
@@ -1598,28 +1696,31 @@ stringTable->set(key("find"), m_cpu.createNativeFunction("string.find", [this, s
 		out.push_back(valueNil());
 		return;
 	}
+	size_t startByte = utf8_byte_index_from_codepoint(source, startIndex);
 	bool plain = args.size() > 3 && valueIsBool(args.at(3)) && valueToBool(args.at(3)) == true;
 	if (plain) {
-		size_t position = source.find(pattern, static_cast<size_t>(std::max(0, startIndex - 1)));
+		size_t position = source.find(pattern, startByte);
 		if (position == std::string::npos) {
 			out.push_back(valueNil());
 			return;
 		}
-		int first = static_cast<int>(position) + 1;
-		int last = first + static_cast<int>(pattern.length()) - 1;
+		int first = utf8_codepoint_index_from_byte(source, position);
+		int last = utf8_codepoint_index_from_byte(source, position + pattern.length()) - 1;
 		out.push_back(valueNumber(static_cast<double>(first)));
 		out.push_back(valueNumber(static_cast<double>(last)));
 		return;
 	}
 		std::regex regex = buildLuaPatternRegex(pattern);
-		const std::string slice = source.substr(static_cast<size_t>(std::max(0, startIndex - 1)));
+		const std::string slice = source.substr(startByte);
 		std::smatch match;
 		if (!std::regex_search(slice, match, regex)) {
 			out.push_back(valueNil());
 			return;
 		}
-	int first = (startIndex - 1) + static_cast<int>(match.position()) + 1;
-	int last = first + static_cast<int>(match.length()) - 1;
+	size_t matchStartByte = startByte + static_cast<size_t>(match.position());
+	size_t matchEndByte = matchStartByte + static_cast<size_t>(match.length());
+	int first = utf8_codepoint_index_from_byte(source, matchStartByte);
+	int last = utf8_codepoint_index_from_byte(source, matchEndByte) - 1;
 	if (match.size() > 1) {
 		out.push_back(valueNumber(static_cast<double>(first)));
 		out.push_back(valueNumber(static_cast<double>(last)));
@@ -1638,7 +1739,7 @@ stringTable->set(key("find"), m_cpu.createNativeFunction("string.find", [this, s
 stringTable->set(key("match"), m_cpu.createNativeFunction("string.match", [this, str, asText](const std::vector<Value>& args, std::vector<Value>& out) {
 	const std::string& source = asText(args.at(0));
 	const std::string& pattern = args.size() > 1 ? asText(args.at(1)) : std::string("");
-	int length = static_cast<int>(source.length());
+	int length = utf8_codepoint_count(source);
 	auto normalizeIndex = [length](double value) -> int {
 			int integer = static_cast<int>(std::floor(value));
 			if (integer > 0) return integer;
@@ -1651,7 +1752,8 @@ stringTable->set(key("match"), m_cpu.createNativeFunction("string.match", [this,
 		return;
 	}
 	std::regex regex = buildLuaPatternRegex(pattern);
-	const std::string slice = source.substr(static_cast<size_t>(std::max(0, startIndex - 1)));
+	size_t startByte = utf8_byte_index_from_codepoint(source, startIndex);
+	const std::string slice = source.substr(startByte);
 	std::smatch match;
 	if (!std::regex_search(slice, match, regex)) {
 		out.push_back(valueNil());
@@ -1811,13 +1913,18 @@ stringTable->set(key("gmatch"), m_cpu.createNativeFunction("string.gmatch", [thi
 	}));
 stringTable->set(key("byte"), m_cpu.createNativeFunction("string.byte", [asText](const std::vector<Value>& args, std::vector<Value>& out) {
 	const std::string& source = asText(args.at(0));
-	int position = args.size() > 1 ? static_cast<int>(std::floor(asNumber(args.at(1)))) - 1 : 0;
-	if (position < 0 || position >= static_cast<int>(source.size())) {
+	int position = args.size() > 1 ? static_cast<int>(std::floor(asNumber(args.at(1)))) : 1;
+	if (position < 1) {
 		out.push_back(valueNil());
 		return;
 	}
-	unsigned char code = static_cast<unsigned char>(source[static_cast<size_t>(position)]);
-	out.push_back(valueNumber(static_cast<double>(code)));
+	size_t byteIndex = utf8_byte_index_from_codepoint(source, position);
+	if (byteIndex >= source.size()) {
+		out.push_back(valueNil());
+		return;
+	}
+	uint32_t codepoint = utf8_codepoint_at(source, byteIndex);
+	out.push_back(valueNumber(static_cast<double>(codepoint)));
 }));
 stringTable->set(key("char"), m_cpu.createNativeFunction("string.char", [str](const std::vector<Value>& args, std::vector<Value>& out) {
 	if (args.empty()) {
@@ -1827,8 +1934,8 @@ stringTable->set(key("char"), m_cpu.createNativeFunction("string.char", [str](co
 	std::string result;
 	result.reserve(args.size());
 	for (const auto& arg : args) {
-		int code = static_cast<int>(std::floor(asNumber(arg)));
-		result.push_back(static_cast<char>(code));
+		uint32_t codepoint = static_cast<uint32_t>(std::floor(asNumber(arg)));
+		utf8_append_codepoint(result, codepoint);
 	}
 	out.push_back(str(result));
 }));

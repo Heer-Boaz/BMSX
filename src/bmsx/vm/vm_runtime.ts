@@ -2129,24 +2129,48 @@ export class BmsxVMRuntime {
 			}
 			out.push(this.getOrCreateNativeObject(result));
 		}));
-			this.registerVmGlobal('print', createNativeFunction('print', (args, out) => {
-				const parts: string[] = [];
-				for (let index = 0; index < args.length; index += 1) {
-					parts.push(this.formatVmValue(args[index]));
+		this.registerVmGlobal('print', createNativeFunction('print', (args, out) => {
+			const parts: string[] = [];
+			for (let index = 0; index < args.length; index += 1) {
+				parts.push(this.formatVmValue(args[index]));
+			}
+			const text = parts.length === 0 ? '' : parts.join('\t');
+			this.terminal.appendStdout(text);
+			if ($.view.backendType === 'headless') {
+				// eslint-disable-next-line no-console
+				console.log(text);
+			}
+			out.length = 0;
+		}));
+
+		const utf8CodepointCount = (text: string): number => {
+			let count = 0;
+			for (const _char of text) {
+				count += 1;
+			}
+			return count;
+		};
+
+		const utf8CodepointIndexToUnitIndex = (text: string, codepointIndex: number): number => {
+			if (codepointIndex <= 1) {
+				return 0;
+			}
+			let unitIndex = 0;
+			let current = 1;
+			for (const char of text) {
+				if (current === codepointIndex) {
+					return unitIndex;
 				}
-				const text = parts.length === 0 ? '' : parts.join('\t');
-				this.terminal.appendStdout(text);
-				if ($.view.backendType === 'headless') {
-					// eslint-disable-next-line no-console
-					console.log(text);
-				}
-				out.length = 0;
-			}));
+				unitIndex += char.length;
+				current += 1;
+			}
+			return unitIndex;
+		};
 
 		const stringTable = new Table(0, 0);
 		setKey(stringTable, 'len', createNativeFunction('string.len', (args, out) => {
 			const text = this.requireVmString(args[0]);
-			out.push(text.length);
+			out.push(utf8CodepointCount(text));
 		}));
 		setKey(stringTable, 'upper', createNativeFunction('string.upper', (args, out) => {
 			const text = this.requireVmString(args[0]);
@@ -2158,7 +2182,7 @@ export class BmsxVMRuntime {
 		}));
 		setKey(stringTable, 'sub', createNativeFunction('string.sub', (args, out) => {
 			const text = this.requireVmString(args[0]);
-			const length = text.length;
+			const length = utf8CodepointCount(text);
 			const normalizeIndex = (value: number): number => {
 				const integer = Math.floor(value);
 				if (integer > 0) {
@@ -2183,12 +2207,14 @@ export class BmsxVMRuntime {
 				out.push(this.internVmString(''));
 				return;
 			}
-			out.push(this.internVmString(text.substring(startIndex - 1, endIndex)));
+			const startUnit = utf8CodepointIndexToUnitIndex(text, startIndex);
+			const endUnit = utf8CodepointIndexToUnitIndex(text, endIndex + 1);
+			out.push(this.internVmString(text.slice(startUnit, endUnit)));
 		}));
 		setKey(stringTable, 'find', createNativeFunction('string.find', (args, out) => {
 			const source = this.requireVmString(args[0]);
 			const pattern = args.length > 1 ? this.requireVmString(args[1]) : '';
-			const length = source.length;
+			const length = utf8CodepointCount(source);
 			const normalizeIndex = (value: number): number => {
 				const integer = Math.floor(value);
 				if (integer > 0) {
@@ -2204,28 +2230,31 @@ export class BmsxVMRuntime {
 				out.push(null);
 				return;
 			}
+			const startUnit = utf8CodepointIndexToUnitIndex(source, startIndex);
 			const plain = args.length > 3 && args[3] === true;
 			if (plain) {
-				const position = source.indexOf(pattern, Math.max(0, startIndex - 1));
+				const position = source.indexOf(pattern, Math.max(0, startUnit));
 				if (position === -1) {
 					out.push(null);
 					return;
 				}
-				const first = position + 1;
-				const last = first + pattern.length - 1;
+				const first = utf8CodepointCount(source.slice(0, position)) + 1;
+				const last = utf8CodepointCount(source.slice(0, position + pattern.length));
 				out.push(first, last);
 				return;
 			}
 			const regexBase = this.buildLuaPatternRegex(pattern);
 			const regex = new RegExp(regexBase.source);
-			const slice = source.slice(Math.max(0, startIndex - 1));
+			const slice = source.slice(Math.max(0, startUnit));
 			const match = regex.exec(slice);
 			if (!match) {
 				out.push(null);
 				return;
 			}
-			const first = (startIndex - 1) + match.index + 1;
-			const last = first + match[0].length - 1;
+			const matchStartUnit = startUnit + match.index;
+			const matchEndUnit = matchStartUnit + match[0].length;
+			const first = utf8CodepointCount(source.slice(0, matchStartUnit)) + 1;
+			const last = utf8CodepointCount(source.slice(0, matchEndUnit));
 			if (match.length > 1) {
 				out.push(first, last);
 				for (let index = 1; index < match.length; index += 1) {
@@ -2239,7 +2268,7 @@ export class BmsxVMRuntime {
 		setKey(stringTable, 'match', createNativeFunction('string.match', (args, out) => {
 			const source = this.requireVmString(args[0]);
 			const pattern = args.length > 1 ? this.requireVmString(args[1]) : '';
-			const length = source.length;
+			const length = utf8CodepointCount(source);
 			const normalizeIndex = (value: number): number => {
 				const integer = Math.floor(value);
 				if (integer > 0) {
@@ -2257,7 +2286,8 @@ export class BmsxVMRuntime {
 			}
 			const regexBase = this.buildLuaPatternRegex(pattern);
 			const regex = new RegExp(regexBase.source);
-			const slice = source.slice(Math.max(0, startIndex - 1));
+			const startUnit = utf8CodepointIndexToUnitIndex(source, startIndex);
+			const slice = source.slice(Math.max(0, startUnit));
 			const match = regex.exec(slice);
 			if (!match) {
 				out.push(null);
@@ -2386,12 +2416,20 @@ export class BmsxVMRuntime {
 		setKey(stringTable, 'byte', createNativeFunction('string.byte', (args, out) => {
 			const source = this.requireVmString(args[0]);
 			const positionArg = args.length > 1 ? (args[1] as number) : 1;
-			const position = Math.floor(positionArg) - 1;
-			if (position < 0 || position >= source.length) {
+			const position = Math.floor(positionArg);
+			if (position < 1) {
 				out.push(null);
 				return;
 			}
-			out.push(source.charCodeAt(position));
+			let current = 1;
+			for (const char of source) {
+				if (current === position) {
+					out.push(char.codePointAt(0) as number);
+					return;
+				}
+				current += 1;
+			}
+			out.push(null);
 		}));
 		setKey(stringTable, 'char', createNativeFunction('string.char', (args, out) => {
 			if (args.length === 0) {
@@ -2401,7 +2439,7 @@ export class BmsxVMRuntime {
 			let result = '';
 			for (let index = 0; index < args.length; index += 1) {
 				const code = args[index] as number;
-				result += String.fromCharCode(Math.floor(code));
+				result += String.fromCodePoint(Math.floor(code));
 			}
 			out.push(this.internVmString(result));
 		}));
