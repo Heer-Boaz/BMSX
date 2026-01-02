@@ -143,8 +143,8 @@ combat_exchange_miss_dodge_scale_y = 0.08
 combat_all_out_timeline_id = 'combat_all_out'
 combat_all_out_frame_count = 150
 combat_all_out_ticks_per_frame = 1
-combat_all_out_pulse_period_frames = 32
-combat_all_out_pulse_amp = 0.05
+combat_all_out_pulse_period_frames = 16
+combat_all_out_pulse_amp = 0.14
 
 combat_results_fade_out_timeline_id = 'combat_results_fade_out'
 combat_results_fade_out_frames = 18

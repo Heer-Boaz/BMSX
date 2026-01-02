@@ -36,48 +36,77 @@ local function shake_signed(seed)
 end
 
 local function build_all_out_shake(total_frames)
-	local impact_frames = 8
-	local finisher_frames = 10
-	local finisher_start = total_frames - finisher_frames
+	local ramp_in_frames = 10
+	local ramp_out_frames = 18
+	local ramp_out_start = total_frames - ramp_out_frames
+
+	local swing_period_frames = 10
+	local swing_amp_x = 28
+	local swing_amp_y = 10
+
+	local jitter_amp_x = 10
+	local jitter_amp_y = 7
+	local micro_jitter_amp_x = 4
+	local micro_jitter_amp_y = 3
+
+	local hit_segment_len = 7
+	local hit_len = 3
+	local hit_amp_x = 36
+	local hit_amp_y = 20
+	local hit_window = hit_segment_len - hit_len + 1
+
+	local boom_frames = 10
+	local boom_amp_x = 44
+	local boom_amp_y = 28
 
 	return function(frame_index)
-		if frame_index < impact_frames then
-			local amp_x = 12 - (frame_index * 2)
-			local amp_y = 5 - frame_index
-			return round(shake_signed(frame_index * 31 + 7) * amp_x), round(shake_signed(frame_index * 47 + 13) * amp_y)
-		end
-
-		if frame_index < finisher_start then
-			local step = math.floor(frame_index / 2)
-			local loop = step % 16
-			local base_x = 3
-			local base_y = 1
-			local dx = round(shake_signed(loop * 29 + 3) * base_x)
-			local dy = round(shake_signed(loop * 31 + 9) * base_y)
-
-			local segment_len = 20
-			local segment_index = math.floor((frame_index - impact_frames) / segment_len)
-			local segment_start = impact_frames + (segment_index * segment_len)
-			local accent_at = segment_start + 5 + (shake_hash(segment_index * 73 + 11) & 7)
-			local accent_len = 3
-			if frame_index >= accent_at and frame_index < (accent_at + accent_len) then
-				local k = frame_index - accent_at
-				local intensity = (accent_len - k) / accent_len
-				dx = dx + round(shake_signed(segment_index * 199 + k * 17 + 5) * 8 * intensity)
-				dy = dy + round(shake_signed(segment_index * 211 + k * 19 + 9) * 3 * intensity)
-			end
-
-			return dx, dy
-		end
-
 		if frame_index >= (total_frames - 1) then
 			return 0, 0
 		end
 
-		local k = frame_index - finisher_start
-		local fin_len = total_frames - finisher_start
-		local intensity = (fin_len - k) / fin_len
-		return round(shake_signed(5000 + k * 37 + 1) * 14 * intensity), round(shake_signed(6000 + k * 41 + 3) * 5 * intensity)
+		local intensity = 1
+		if frame_index < ramp_in_frames then
+			local u = frame_index / (ramp_in_frames - 1)
+			intensity = easing.smoothstep(u)
+		elseif frame_index >= ramp_out_start then
+			local u = (total_frames - 1 - frame_index) / (ramp_out_frames - 1)
+			intensity = easing.smoothstep(u)
+		end
+
+		local swing_u = (frame_index / swing_period_frames) + 0.15
+		local swing = easing.pingpong01(swing_u)
+		swing = (easing.ease_in_out_quad(swing) - 0.5) * 2
+
+		local bob_u = (frame_index / (swing_period_frames * 0.75)) + 0.37
+		local bob = (easing.smoothstep(easing.pingpong01(bob_u)) - 0.5) * 2
+
+		local dx = (swing * swing_amp_x)
+		local dy = (bob * swing_amp_y)
+
+		dx = dx + (shake_signed(1000 + frame_index * 31 + 7) * jitter_amp_x)
+		dy = dy + (shake_signed(2000 + frame_index * 47 + 13) * jitter_amp_y)
+		dx = dx + (shake_signed(3000 + frame_index * 97 + 3) * micro_jitter_amp_x)
+		dy = dy + (shake_signed(4000 + frame_index * 89 + 9) * micro_jitter_amp_y)
+
+		local segment_index = math.floor(frame_index / hit_segment_len)
+		local segment_start = segment_index * hit_segment_len
+		local accent_at = segment_start + (shake_hash(segment_index * 73 + 11) % hit_window)
+		if frame_index >= accent_at and frame_index < (accent_at + hit_len) then
+			local u = (frame_index - accent_at) / (hit_len - 1)
+			local hit_u = easing.arc01(u)
+			local strength = 0.7 + (((shake_hash(segment_index * 53 + 7) & 0xff) / 0xff) * 0.7)
+			dx = dx + (shake_signed(segment_index * 199 + frame_index * 17 + 5) * hit_amp_x * hit_u * strength)
+			dy = dy + (shake_signed(segment_index * 211 + frame_index * 19 + 9) * hit_amp_y * hit_u * strength)
+		end
+
+		if frame_index < boom_frames then
+			local u = frame_index / (boom_frames - 1)
+			local boom = 1 - easing.smoothstep(u)
+			dx = dx + (shake_signed(5000 + frame_index * 19 + 1) * boom_amp_x * boom)
+			dy = dy + (shake_signed(6000 + frame_index * 23 + 5) * boom_amp_y * boom)
+		end
+
+		return round(dx * intensity), round(dy * intensity)
 	end
 end
 
@@ -1295,10 +1324,16 @@ function combat.define_fsm()
 					local all_out = object(combat_all_out_id)
 					local u = (frame_index / combat_all_out_pulse_period_frames) + 0.25
 					local pulse = easing.smoothstep(easing.pingpong01(u))
-					local s = 1 + (((pulse * 2) - 1) * combat_all_out_pulse_amp)
-					all_out:get_component_by_id('base_sprite').scale = { x = s, y = s }
-					local ox = (all_out.sx * (s - 1)) / 2
-					local oy = (all_out.sy * (s - 1)) / 2
+					local s_base = 1 + (pulse * combat_all_out_pulse_amp)
+					local squash_u = (frame_index / (combat_all_out_pulse_period_frames * 0.5)) + 0.15
+					local squash = easing.pingpong01(squash_u)
+					squash = (easing.ease_in_out_quad(squash) - 0.5) * 2
+					local jitter = shake_signed(7000 + frame_index * 29 + 9) * 0.04
+					local sx = s_base + (squash * combat_all_out_pulse_amp * 0.6) + jitter
+					local sy = s_base - (squash * combat_all_out_pulse_amp * 0.4) - (jitter * 0.6)
+					all_out:get_component_by_id('base_sprite').scale = { x = sx, y = sy }
+					local ox = (all_out.sx * (sx - 1)) / 2
+					local oy = (all_out.sy * (sy - 1)) / 2
 					all_out.x = self.all_out_origin_x + dx - ox
 					all_out.y = self.all_out_origin_y + dy - oy
 				end,
