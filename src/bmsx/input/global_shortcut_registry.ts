@@ -1,28 +1,38 @@
 import { Input } from './input';
-import type { PlayerInput } from './playerinput';
+import { KeyModifier, type PlayerInput } from './playerinput';
 import type { ButtonState } from './inputtypes';
 
 export type ShortcutDisposer = () => void;
 
+type KeyboardShortcutEntry = {
+	key: string;
+	modifiers: KeyModifier;
+	handler: () => void;
+	latchKey: string;
+};
+
 export class GlobalShortcutRegistry {
-	private readonly keyboardShortcuts = new Map<number, Map<string, { handler: () => void; latchKey: string }>>();
+	private readonly keyboardShortcuts = new Map<number, KeyboardShortcutEntry[]>();
 	private readonly gamepadChords = new Map<number, Array<{ buttons: string[]; handler: () => void; latchKeys: string[] }>>();
 	private readonly latch = new Map<string, number>();
 
-	public registerKeyboardShortcut(playerIndex: number, key: string, handler: () => void): ShortcutDisposer {
+	public registerKeyboardShortcut(playerIndex: number, key: string, handler: () => void, modifiers: KeyModifier = KeyModifier.none): ShortcutDisposer {
 		Input.instance.setKeyboardCapture(key, true);
-		let shortcuts = this.keyboardShortcuts.get(playerIndex);
-		if (!shortcuts) {
-			shortcuts = new Map();
+		const shortcuts = this.keyboardShortcuts.get(playerIndex) ?? [];
+		if (!this.keyboardShortcuts.has(playerIndex)) {
 			this.keyboardShortcuts.set(playerIndex, shortcuts);
 		}
-		const latchKey = `keyboard:${playerIndex}:${key}`;
-		shortcuts.set(key, { handler, latchKey });
+		const latchKey = `keyboard:${playerIndex}:${key}:${modifiers}`;
+		const entry = { key, modifiers, handler, latchKey };
+		shortcuts.push(entry);
 		return () => {
 			const target = this.keyboardShortcuts.get(playerIndex);
 			if (!target) return;
-			target.delete(key);
-			if (target.size === 0) {
+			const idx = target.indexOf(entry);
+			if (idx >= 0) {
+				target.splice(idx, 1);
+			}
+			if (target.length === 0) {
 				this.keyboardShortcuts.delete(playerIndex);
 			}
 			this.latch.delete(latchKey);
@@ -64,14 +74,15 @@ export class GlobalShortcutRegistry {
 	}
 
 	public pollPlayer(player: PlayerInput): void {
-		const keyboardMap = this.keyboardShortcuts.get(player.playerIndex);
-		if (keyboardMap) {
-			keyboardMap.forEach((entry, key) => {
-				const state = player.getButtonState(key, 'keyboard');
+		const keyboardEntries = this.keyboardShortcuts.get(player.playerIndex);
+		if (keyboardEntries) {
+			for (let i = 0; i < keyboardEntries.length; i++) {
+				const entry = keyboardEntries[i];
+				const state = player.getKeyState(entry.key, entry.modifiers);
 				if (this.shouldAccept(entry.latchKey, state)) {
 					entry.handler();
 				}
-			});
+			}
 		}
 		const chords = this.gamepadChords.get(player.playerIndex);
 		if (chords) {

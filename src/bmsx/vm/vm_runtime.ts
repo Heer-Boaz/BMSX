@@ -18,7 +18,7 @@ import {
 	setLuaTableCaseInsensitiveKeys,
 	type LuaDebuggerPauseSignal
 } from '../lua/luavalue';
-import type { InputEvt, StorageService, SubscriptionHandle } from '../platform/platform';
+import type { StorageService } from '../platform/platform';
 import { publishOverlayFrame } from '../render/editor/editor_overlay_queue';
 import type { Viewport, BmsxCartridgeBlob, CartridgeIndex } from '../rompack/rompack';
 import { CanonicalizationType } from '../rompack/rompack';
@@ -334,9 +334,7 @@ export class BmsxVMRuntime {
 		return this.overlayRenderBackend.viewportSize;
 	}
 
-	private readonly consoleHotkeyLatch = new Map<string, number>();
 	private shortcutDisposers: Array<() => void> = [];
-	private globalInputUnsubscribe: SubscriptionHandle = null;
 	private luaInterpreter!: LuaInterpreter;
 	private static readonly UPDATE_STATEMENT_BUDGET = 1_000_000;
 	private vmInitClosure: Closure = null;
@@ -446,7 +444,6 @@ export class BmsxVMRuntime {
 		this.flushLuaWarnings();
 		this.registerVMShortcuts();
 
-		this.subscribeGlobalDebuggerHotkeys();
 		this.setDebuggerBreakpoints(ide_state.breakpoints);
 		$.pipeline_ext = vmExtSpec; // Activate base VM pipeline extensions by default (for ticking the VM and drawing the VM)
 	}
@@ -504,22 +501,6 @@ export class BmsxVMRuntime {
 		this.luaVmInitialized = false;
 	}
 
-	private pollVMHotkeys(): void {
-		if (this.shouldAcceptVMHotkey('console-font-variant', 'KeyT', KeyModifier.ctrl | KeyModifier.shift)) {
-			$.consume_button(this.playerIndex, 'KeyT', 'keyboard');
-			const next = this._activeIdeFontVariant === 'tiny' ? 'msx' : 'tiny';
-			this.activeIdeFontVariant = next; // Toggle font variant and apply to both console and editor
-			return;
-		}
-		if (this.terminal.isActive) {
-			if (this.shouldAcceptVMHotkey('console-resolution', 'KeyM', KeyModifier.ctrl | KeyModifier.alt)) {
-				$.consume_button(this.playerIndex, 'KeyModifier', 'keyboard');
-				this.toggleOverlayResolutionMode();
-			}
-		}
-		this.handleGlobalDebuggerHotkeys();
-	}
-
 	public get activeIdeFontVariant(): VMFontVariant {
 		return this._activeIdeFontVariant;
 	}
@@ -528,77 +509,6 @@ export class BmsxVMRuntime {
 		this._activeIdeFontVariant = variant;
 		this.terminal.setFontVariant(variant);
 		this.editor.setFontVariant(variant);
-	}
-
-	private subscribeGlobalDebuggerHotkeys(): void {
-		this.unsubscribeGlobalDebuggerHotkeys();
-		const hub = $.platform.input;
-		this.globalInputUnsubscribe = hub.subscribe((event) => this.onGlobalInputEvent(event));
-	}
-
-	private unsubscribeGlobalDebuggerHotkeys(): void {
-		if (!this.globalInputUnsubscribe) {
-			return;
-		}
-		const handle = this.globalInputUnsubscribe;
-		this.globalInputUnsubscribe = null;
-		handle.unsubscribe();
-	}
-
-	private onGlobalInputEvent(event: InputEvt): void {
-		if (event.type !== 'button' || event.code !== 'F8' || event.down !== true) {
-			return;
-		}
-		const playerInput = $.input.getPlayerInput(this.playerIndex);
-
-		const modifiers = playerInput.getModifiersState();
-		if (modifiers.ctrl) {
-			return;
-		}
-		const pressId = typeof event.pressId === 'number' ? event.pressId : null;
-		const existing = this.consoleHotkeyLatch.get('debugger-f8-step');
-		if (pressId !== null) {
-			if (existing === pressId) {
-				return;
-			}
-			this.consoleHotkeyLatch.set('debugger-f8-step', pressId);
-		} else if (existing === null) {
-			return;
-		} else {
-			this.consoleHotkeyLatch.set('debugger-f8-step', null);
-		}
-	}
-
-	private shouldAcceptVMHotkey(code: string, key: string, modifiers: KeyModifier): boolean {
-		const state = $.get_key_state(this.playerIndex, key, modifiers);
-		if (state.pressed !== true) {
-			this.consoleHotkeyLatch.delete(code);
-			return false;
-		}
-		if (typeof state.pressId === 'number') {
-			const existing = this.consoleHotkeyLatch.get(code);
-			if (existing === state.pressId) {
-				return false;
-			}
-			this.consoleHotkeyLatch.set(code, state.pressId);
-			return true;
-		}
-		if (state.justpressed !== true) {
-			return false;
-		}
-		this.consoleHotkeyLatch.set(code, null);
-		return true;
-	}
-
-	private handleGlobalDebuggerHotkeys(): void {
-		if (this.consoleHotkeyLatch.has('debugger-f8-step')) {
-			this.consoleHotkeyLatch.delete('debugger-f8-step');
-			if (this.debuggerSuspendSignal) {
-				this.stepOverLuaDebugger();
-			} else {
-				this.debuggerController.requestStepInto();
-			}
-		}
 	}
 
 	private updateGamePipelineExts(): void {
@@ -692,6 +602,29 @@ export class BmsxVMRuntime {
 		disposers.push(registry.registerKeyboardShortcut(this.playerIndex, VM_TOGGLE_KEY, () => this.toggleTerminalMode()));
 		disposers.push(registry.registerGamepadChord(this.playerIndex, EDITOR_TOGGLE_GAMEPAD_BUTTONS, () => this.toggleEditor()));
 		disposers.push(registry.registerKeyboardShortcut(this.playerIndex, GAME_PAUSE_KEY, () => $.toggleDebuggerControls()));
+		disposers.push(registry.registerKeyboardShortcut(this.playerIndex, 'KeyT', () => {
+			$.consume_button(this.playerIndex, 'KeyT', 'keyboard');
+			const next = this._activeIdeFontVariant === 'tiny' ? 'msx' : 'tiny';
+			this.activeIdeFontVariant = next;
+		}, KeyModifier.ctrl | KeyModifier.shift));
+		disposers.push(registry.registerKeyboardShortcut(this.playerIndex, 'KeyM', () => {
+			if (!this.isOverlayActive()) {
+				return;
+			}
+			$.consume_button(this.playerIndex, 'KeyM', 'keyboard');
+			this.toggleOverlayResolutionMode();
+		}, KeyModifier.ctrl | KeyModifier.alt));
+		disposers.push(registry.registerKeyboardShortcut(this.playerIndex, 'F8', () => {
+			const modifiers = $.input.getPlayerInput(this.playerIndex).getModifiersState();
+			if (modifiers.ctrl) {
+				return;
+			}
+			if (this.debuggerSuspendSignal) {
+				this.stepOverLuaDebugger();
+			} else {
+				this.debuggerController.requestStepInto();
+			}
+		}));
 		this.shortcutDisposers = disposers;
 	}
 
@@ -717,7 +650,6 @@ export class BmsxVMRuntime {
 			return;
 		}
 		this.lastIdeInputFrame = pollFrame;
-		this.pollVMHotkeys();
 		this.editor.tickInput();
 	}
 
@@ -727,7 +659,6 @@ export class BmsxVMRuntime {
 			return;
 		}
 		this.lastTerminalInputFrame = pollFrame;
-		this.pollVMHotkeys();
 		void this.terminal.handleInput();
 	}
 
@@ -969,7 +900,6 @@ export class BmsxVMRuntime {
 			return;
 		}
 		const state = this.beginFrameState();
-		this.pollVMHotkeys();
 		this.terminal.update(state.deltaSeconds);
 	}
 
@@ -998,7 +928,6 @@ export class BmsxVMRuntime {
 			return;
 		}
 		const state = this.beginFrameState();
-		this.pollVMHotkeys();
 		this.editor.update(state.deltaSeconds);
 	}
 
@@ -1021,7 +950,6 @@ export class BmsxVMRuntime {
 		let fault: unknown = null;
 		try {
 			const state = this.beginFrameState();
-			this.pollVMHotkeys();
 			this.runUpdatePhase(state);
 		} catch (error) {
 			fault = error;
@@ -1034,7 +962,6 @@ export class BmsxVMRuntime {
 	}
 
 	private runUpdatePhase(state: VMFrameState): void {
-		this.handleGlobalDebuggerHotkeys();
 		if (state.updateExecuted) {
 			return;
 		}
@@ -1257,7 +1184,6 @@ export class BmsxVMRuntime {
 	public dispose(): void {
 		this.disposeShortcutHandlers();
 		this.terminal.deactivate();
-		this.unsubscribeGlobalDebuggerHotkeys();
 		this.luaVmInitialized = false;
 		if (this.editor) {
 			this.editor.shutdown();
