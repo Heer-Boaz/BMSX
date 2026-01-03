@@ -74,6 +74,7 @@
     "build:libretro-win:debug": "npx tsx scripts/rompacker/rompacker.ts --engine --platform libretro-win --debug -romname engine -respath ./src/bmsx/res",
     "serve:dist": "node scripts/serve-dist.mjs --dir dist --host 0.0.0.0 --port 8080",
     "serve:dist:wsl": "bash scripts/serve-dist-wsl.sh --port 8080 --dir dist",
+	"run:retroarch": "bash run-retroarch.sh",
     "fix:indent": "node scripts/fix-ts-indentation-safe.js",
     "check:indent": "node scripts/fix-ts-indentation-safe.js --check"
   },
