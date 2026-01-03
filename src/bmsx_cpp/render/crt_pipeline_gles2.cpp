@@ -105,8 +105,6 @@ const float BLUR_FOOTPRINT_PX = 0.5;
 const float BLACK_CUTOFF = 0.015;
 const float BLACK_SOFT   = 0.060;
 
-const float K_NORM = 1.0 / 16.0;
-
 varying vec2 v_texcoord;
 
 vec3 toLinear(vec3 c){ return c; }
@@ -121,29 +119,47 @@ float hashNoise(vec2 uv, float t){
 
 struct BlurContrast { vec3 blurred; float contrast; };
 
+float kernelWeight(int offset){
+    int a = offset;
+    if (a < 0) a = -a;
+    if (a == 0) return 6.0;
+    if (a == 1) return 4.0;
+    return 1.0;
+}
+
 BlurContrast applyBlurAndContrast(vec2 uv, vec2 texel, float footprintPx){
     vec2 stepUV = texel * footprintPx;
-    vec3 c00 = texture2D(u_texture, uv + vec2(-stepUV.x, -stepUV.y)).rgb;
-    vec3 c10 = texture2D(u_texture, uv + vec2(0.0, -stepUV.y)).rgb;
-    vec3 c20 = texture2D(u_texture, uv + vec2(stepUV.x, -stepUV.y)).rgb;
-    vec3 c01 = texture2D(u_texture, uv + vec2(-stepUV.x, 0.0)).rgb;
-    vec3 c11 = texture2D(u_texture, uv).rgb;
-    vec3 c21 = texture2D(u_texture, uv + vec2(stepUV.x, 0.0)).rgb;
-    vec3 c02 = texture2D(u_texture, uv + vec2(-stepUV.x, stepUV.y)).rgb;
-    vec3 c12 = texture2D(u_texture, uv + vec2(0.0, stepUV.y)).rgb;
-    vec3 c22 = texture2D(u_texture, uv + vec2(stepUV.x, stepUV.y)).rgb;
+    vec3 accum = vec3(0.0);
+    float centerLum = 0.0;
+    float neighLum = 0.0;
+    float neighCount = 0.0;
 
-    vec3 accum = c11 * 4.0;
-    accum += (c10 + c01 + c21 + c12) * 2.0;
-    accum += c00 + c20 + c02 + c22;
-    vec3 blurred = accum * K_NORM;
+    for (int yi = 0; yi < 5; ++yi) {
+        int oy = yi - 2;
+        float wy = kernelWeight(oy);
+        for (int xi = 0; xi < 5; ++xi) {
+            int ox = xi - 2;
+            float wx = kernelWeight(ox);
+            vec2 ofs = vec2(float(ox), float(oy)) * stepUV;
+            vec3 s = texture2D(u_texture, uv + ofs).rgb;
+            float w = (wx * wy) * (1.0 / 256.0);
+            accum += s * w;
 
-    float centerLum = dot(c11, LUMA);
-    vec3 neighSum = c00 + c10 + c20 + c01 + c21 + c02 + c12 + c22;
-    float neighAvg = dot(neighSum * (1.0 / 8.0), LUMA);
+            if (xi >= 1 && xi <= 3 && yi >= 1 && yi <= 3) {
+                float lum = dot(s, LUMA);
+                if (xi == 2 && yi == 2) {
+                    centerLum = lum;
+                } else {
+                    neighLum += lum;
+                    neighCount += 1.0;
+                }
+            }
+        }
+    }
+    float neighAvg = (neighCount > 0.0) ? (neighLum / neighCount) : centerLum;
 
     BlurContrast bc;
-    bc.blurred = blurred;
+    bc.blurred = accum;
     bc.contrast = abs(centerLum - neighAvg);
     return bc;
 }
