@@ -70,7 +70,7 @@ struct SpriteGLES2State {
 SpriteGLES2State g_sprite;
 
 const char* kSpriteVertexShader = R"(
-precision mediump float;
+precision highp float;
 
 attribute vec2 a_position;
 attribute vec2 a_texcoord;
@@ -96,7 +96,7 @@ void main() {
 )";
 
 const char* kSpriteFragmentShader = R"(
-precision mediump float;
+precision highp float;
 
 uniform sampler2D u_texture0;
 uniform sampler2D u_texture1;
@@ -141,6 +141,7 @@ void main() {
     } else {
         texColor = texture2D(u_texture1, v_texcoord);
     }
+    texColor.rgb = srgb_to_linear(texColor.rgb);
     texColor *= v_color_override;
 
     if (u_ditherEnabled > 0.5) {
@@ -417,9 +418,8 @@ void renderSpriteBatchGLES2(OpenGLES2Backend* backend, GameView* context,
   setupAttributes();
 
   glDisable(GL_CULL_FACE);
-  glEnable(GL_DEPTH_TEST);
-  glDepthFunc(GL_LEQUAL);
-  glDepthMask(GL_TRUE);
+  glDisable(GL_DEPTH_TEST);
+  glDepthMask(GL_FALSE);
   glEnable(GL_BLEND);
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
