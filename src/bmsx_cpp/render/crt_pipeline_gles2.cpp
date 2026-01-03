@@ -47,7 +47,7 @@ struct CRTGLES2State {
 CRTGLES2State g_crt;
 
 const char* kCRTVertexShader = R"(
-precision mediump float;
+precision highp float;
 
 attribute vec2 a_position;
 attribute vec2 a_texcoord;
@@ -66,7 +66,7 @@ void main() {
 )";
 
 const char* kCRTFragmentShader = R"(
-precision mediump float;
+precision highp float;
 
 uniform sampler2D u_texture;
 uniform vec2 u_srcResolution;
@@ -412,7 +412,7 @@ void renderCRTGLES2(OpenGLES2Backend* backend, GameView* context, const CRTPipel
     glUniform2f(g_crt.uniform_resolution, static_cast<float>(state.width), static_cast<float>(state.height));
     glUniform2f(g_crt.uniform_src_resolution, static_cast<float>(state.baseWidth), static_cast<float>(state.baseHeight));
     glUniform1f(g_crt.uniform_scale, 1.0f);
-    glUniform1f(g_crt.uniform_fragscale, static_cast<float>(state.width) / static_cast<float>(state.baseWidth));
+    glUniform1f(g_crt.uniform_fragscale, static_cast<float>(state.srcWidth) / static_cast<float>(state.baseWidth));
     glUniform1f(g_crt.uniform_time, static_cast<float>(EngineCore::instance().clock()->now() / 1000.0));
     glUniform1f(g_crt.uniform_random, static_cast<float>(std::rand()) / static_cast<float>(RAND_MAX));
 

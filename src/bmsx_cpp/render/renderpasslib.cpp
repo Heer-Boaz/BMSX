@@ -137,10 +137,12 @@ void RenderPassLibrary::registerBuiltinPassesSoftware() {
             auto* gv = engine.view();
 
             CRTPipelineState crtState;
-            crtState.width = static_cast<i32>(gv->viewportSize.x);
-            crtState.height = static_cast<i32>(gv->viewportSize.y);
+            crtState.width = static_cast<i32>(gv->canvasSize.x);
+            crtState.height = static_cast<i32>(gv->canvasSize.y);
             crtState.baseWidth = static_cast<i32>(gv->viewportSize.x);
             crtState.baseHeight = static_cast<i32>(gv->viewportSize.y);
+            crtState.srcWidth = static_cast<i32>(gv->offscreenCanvasSize.x);
+            crtState.srcHeight = static_cast<i32>(gv->offscreenCanvasSize.y);
             crtState.colorTex = nullptr;
             if (gv->crt_postprocessing_enabled) {
                 crtState.options.applyNoise = gv->applyNoise;
@@ -446,10 +448,12 @@ std::unique_ptr<RenderGraphRuntime> RenderPassLibrary::buildRenderGraph(GameView
 
             if (isPresent) {
                 CRTPipelineState crtState;
-                crtState.width = static_cast<i32>(view->offscreenCanvasSize.x);
-                crtState.height = static_cast<i32>(view->offscreenCanvasSize.y);
+                crtState.width = static_cast<i32>(view->canvasSize.x);
+                crtState.height = static_cast<i32>(view->canvasSize.y);
                 crtState.baseWidth = static_cast<i32>(view->viewportSize.x);
                 crtState.baseHeight = static_cast<i32>(view->viewportSize.y);
+                crtState.srcWidth = static_cast<i32>(view->offscreenCanvasSize.x);
+                crtState.srcHeight = static_cast<i32>(view->offscreenCanvasSize.y);
                 crtState.colorTex = ctx.getTexture(handles->color);
 
                 if (view->crt_postprocessing_enabled) {

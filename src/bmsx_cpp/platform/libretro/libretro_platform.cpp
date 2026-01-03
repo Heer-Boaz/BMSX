@@ -175,7 +175,11 @@ void LibretroPlatform::setAVInfo(const retro_system_av_info& info) {
         static_cast<f32>(info.geometry.base_width),
         static_cast<f32>(info.geometry.base_height)
     };
-    view->configureRenderTargets(&renderTargetSize, &renderTargetSize, &renderTargetSize);
+    Vec2 offscreenSize{
+        renderTargetSize.x * 2.0f,
+        renderTargetSize.y * 2.0f
+    };
+    view->configureRenderTargets(&renderTargetSize, &renderTargetSize, &offscreenSize);
     auto* backend = view->backend();
     static_cast<LibretroGameViewHost*>(m_gameview_host.get())->updateBackend(backend);
 

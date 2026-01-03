@@ -351,20 +351,21 @@ void initGLES2(OpenGLES2Backend* backend, GameView* context) {
   setupBuffers();
 
   glUseProgram(g_sprite.program);
-  // Re-apply sampler bindings every draw; shared contexts can clobber uniform state.
-  // This avoids stale sampler slots after the frontend renders.
+  // Re-apply sampler bindings every draw; shared contexts can clobber uniform
+  // state. This avoids stale sampler slots after the frontend renders.
   glUniform1i(g_sprite.uniform_tex0, kTexUnitAtlasPrimary);
   glUniform1i(g_sprite.uniform_tex1, kTexUnitAtlasSecondary);
   glUniform1i(g_sprite.uniform_tex2, kTexUnitAtlasEngine);
   if (kSpritesVerboseLog) {
     std::fprintf(stderr,
-                 "[BMSX][GLES2][Sprites] init program=%u attribs(pos=%d uv=%d z=%d color=%d atlas=%d) uniforms(res=%d scale=%d tex0=%d tex1=%d tex2=%d)\n",
-                 static_cast<unsigned>(g_sprite.program),
-                 g_sprite.attrib_pos, g_sprite.attrib_uv, g_sprite.attrib_z,
-                 g_sprite.attrib_color, g_sprite.attrib_atlas,
-                 g_sprite.uniform_resolution, g_sprite.uniform_scale,
-                 g_sprite.uniform_tex0, g_sprite.uniform_tex1,
-                 g_sprite.uniform_tex2);
+                 "[BMSX][GLES2][Sprites] init program=%u attribs(pos=%d uv=%d "
+                 "z=%d color=%d atlas=%d) uniforms(res=%d scale=%d tex0=%d "
+                 "tex1=%d tex2=%d)\n",
+                 static_cast<unsigned>(g_sprite.program), g_sprite.attrib_pos,
+                 g_sprite.attrib_uv, g_sprite.attrib_z, g_sprite.attrib_color,
+                 g_sprite.attrib_atlas, g_sprite.uniform_resolution,
+                 g_sprite.uniform_scale, g_sprite.uniform_tex0,
+                 g_sprite.uniform_tex1, g_sprite.uniform_tex2);
   }
 }
 
@@ -401,11 +402,12 @@ void renderSpriteBatchGLES2(OpenGLES2Backend* backend, GameView* context,
     auto* secondary = state.atlasSecondaryTex
                           ? OpenGLES2Backend::asTexture(state.atlasSecondaryTex)
                           : nullptr;
-    auto* engine =
-        state.atlasEngineTex ? OpenGLES2Backend::asTexture(state.atlasEngineTex)
-                             : nullptr;
+    auto* engine = state.atlasEngineTex
+                       ? OpenGLES2Backend::asTexture(state.atlasEngineTex)
+                       : nullptr;
     std::fprintf(stderr,
-                 "[BMSX][GLES2][Sprites] spriteCount=%d atlasPrimary=%u atlasSecondary=%u atlasEngine=%u\n",
+                 "[BMSX][GLES2][Sprites] spriteCount=%d atlasPrimary=%u "
+                 "atlasSecondary=%u atlasEngine=%u\n",
                  spriteCount, static_cast<unsigned>(primary->id),
                  static_cast<unsigned>(secondary ? secondary->id : 0),
                  static_cast<unsigned>(engine ? engine->id : 0));
@@ -468,11 +470,13 @@ void renderSpriteBatchGLES2(OpenGLES2Backend* backend, GameView* context,
       const auto& tc = imgmeta->texcoords;
       std::fprintf(
           stderr,
-          "[BMSX][GLES2][Sprites] item=%zu imgid=%s atlasid=%d size=%dx%d pos=%.1f,%.1f scale=%.1f,%.1f texcoords={%.3f,%.3f %.3f,%.3f %.3f,%.3f %.3f,%.3f %.3f,%.3f %.3f,%.3f}\n",
+          "[BMSX][GLES2][Sprites] item=%zu imgid=%s atlasid=%d size=%dx%d "
+          "pos=%.1f,%.1f scale=%.1f,%.1f texcoords={%.3f,%.3f %.3f,%.3f "
+          "%.3f,%.3f %.3f,%.3f %.3f,%.3f %.3f,%.3f}\n",
           index, options.imgid.c_str(), imgmeta->atlasid, imgmeta->width,
-          imgmeta->height, options.pos.x, options.pos.y,
-          options.scale->x, options.scale->y, tc[0], tc[1], tc[2], tc[3],
-          tc[4], tc[5], tc[6], tc[7], tc[8], tc[9], tc[10], tc[11]);
+          imgmeta->height, options.pos.x, options.pos.y, options.scale->x,
+          options.scale->y, tc[0], tc[1], tc[2], tc[3], tc[4], tc[5], tc[6],
+          tc[7], tc[8], tc[9], tc[10], tc[11]);
     }
 
     const RenderLayer layer = options.layer.value_or(RenderLayer::World);
@@ -496,8 +500,21 @@ void renderSpriteBatchGLES2(OpenGLES2Backend* backend, GameView* context,
     float* colorDst = g_sprite.colors.data() + (batchCount * kColorSize);
     float* atlasDst = g_sprite.atlas.data() + (batchCount * kAtlasSize);
 
-    writePositions(posDst, pos.x, pos.y, static_cast<float>(imgmeta->width),
-                   static_cast<float>(imgmeta->height), scale.x, scale.y);
+    const float baseW = static_cast<float>(imgmeta->width);
+    const float baseH = static_cast<float>(imgmeta->height);
+    const float scaledX0 = pos.x * desiredScale;
+    const float scaledY0 = pos.y * desiredScale;
+    const float scaledX1 = scaledX0 + baseW * scale.x * desiredScale;
+    const float scaledY1 = scaledY0 + baseH * scale.y * desiredScale;
+    const float snapX0 = static_cast<float>(static_cast<i32>(scaledX0));
+    const float snapY0 = static_cast<float>(static_cast<i32>(scaledY0));
+    const float snapX1 = static_cast<float>(static_cast<i32>(scaledX1));
+    const float snapY1 = static_cast<float>(static_cast<i32>(scaledY1));
+    const float snappedX = snapX0 / desiredScale;
+    const float snappedY = snapY0 / desiredScale;
+    const float snappedW = (snapX1 - snapX0) / desiredScale;
+    const float snappedH = (snapY1 - snapY0) / desiredScale;
+    writePositions(posDst, snappedX, snappedY, snappedW, snappedH, 1.0f, 1.0f);
     const auto& texcoords =
         flip.flip_h
             ? (flip.flip_v ? imgmeta->texcoords_fliphv

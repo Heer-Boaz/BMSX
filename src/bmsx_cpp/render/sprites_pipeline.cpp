@@ -248,20 +248,26 @@ void renderSpriteBatchSoftware(SoftwareBackend* softBackend,
     auto* softTex = static_cast<SoftwareTexture*>(tex);
 
     // Calculate source rectangle from UVs
-    i32 srcX = static_cast<i32>(u0 * softTex->width);
-    i32 srcY = static_cast<i32>(v0 * softTex->height);
-    i32 srcW = static_cast<i32>((u1 - u0) * softTex->width);
-    i32 srcH = static_cast<i32>((v1 - v0) * softTex->height);
+    const f32 srcXf = u0 * static_cast<f32>(softTex->width);
+    const f32 srcYf = v0 * static_cast<f32>(softTex->height);
+    const f32 srcXf1 = u1 * static_cast<f32>(softTex->width);
+    const f32 srcYf1 = v1 * static_cast<f32>(softTex->height);
+    i32 srcX = static_cast<i32>(srcXf);
+    i32 srcY = static_cast<i32>(srcYf);
+    i32 srcW = static_cast<i32>(srcXf1) - srcX;
+    i32 srcH = static_cast<i32>(srcYf1) - srcY;
 
     // Destination position and size
-    const f32 scaledX = options.pos.x * desiredScale;
-    const f32 scaledY = options.pos.y * desiredScale;
-    const f32 scaledW = static_cast<f32>(meta.width) * scale.x * desiredScale;
-    const f32 scaledH = static_cast<f32>(meta.height) * scale.y * desiredScale;
-    i32 dstX = static_cast<i32>(scaledX);
-    i32 dstY = static_cast<i32>(scaledY);
-    i32 dstW = static_cast<i32>(scaledW);
-    i32 dstH = static_cast<i32>(scaledH);
+    const f32 scaledX0 = options.pos.x * desiredScale;
+    const f32 scaledY0 = options.pos.y * desiredScale;
+    const f32 scaledX1 =
+        scaledX0 + static_cast<f32>(meta.width) * scale.x * desiredScale;
+    const f32 scaledY1 =
+        scaledY0 + static_cast<f32>(meta.height) * scale.y * desiredScale;
+    i32 dstX = static_cast<i32>(scaledX0);
+    i32 dstY = static_cast<i32>(scaledY0);
+    i32 dstW = static_cast<i32>(scaledX1) - dstX;
+    i32 dstH = static_cast<i32>(scaledY1) - dstY;
 
     const f32 zValue = (options.pos.z == 0.0f) ? DEFAULT_ZCOORD : options.pos.z;
     const f32 zNorm = 1.0f - (zValue / ZCOORD_MAX);

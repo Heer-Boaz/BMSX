@@ -85,6 +85,8 @@ struct CRTPipelineState {
     i32 height = 0;
     i32 baseWidth = 0;
     i32 baseHeight = 0;
+    i32 srcWidth = 0;
+    i32 srcHeight = 0;
     TextureHandle colorTex = nullptr;
     CRTPipelineOptions options;
 };

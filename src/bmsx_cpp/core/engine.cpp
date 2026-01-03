@@ -331,7 +331,11 @@ bool EngineCore::bootWithoutCart() {
         static_cast<f32>(m_engine_assets.manifest.viewportWidth),
         static_cast<f32>(m_engine_assets.manifest.viewportHeight)
     };
-    m_view->configureRenderTargets(&viewportSize, &viewportSize, &viewportSize);
+    Vec2 offscreenSize{
+        viewportSize.x * 2.0f,
+        viewportSize.y * 2.0f
+    };
+    m_view->configureRenderTargets(&viewportSize, &viewportSize, &offscreenSize);
 
     // Upload textures to backend
     uploadTexturesToBackend();
@@ -414,7 +418,11 @@ bool EngineCore::loadRom(const u8* data, size_t size) {
         static_cast<f32>(m_assets.manifest.viewportWidth),
         static_cast<f32>(m_assets.manifest.viewportHeight)
     };
-    m_view->configureRenderTargets(&viewportSize, &viewportSize, &viewportSize);
+    Vec2 offscreenSize{
+        viewportSize.x * 2.0f,
+        viewportSize.y * 2.0f
+    };
+    m_view->configureRenderTargets(&viewportSize, &viewportSize, &offscreenSize);
 
     // Upload textures to backend
     uploadTexturesToBackend();

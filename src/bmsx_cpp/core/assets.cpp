@@ -413,8 +413,12 @@ bool loadAssetsFromRom(const u8* buffer, size_t size, RuntimeAssets& assets) {
                                                    &width, &height, &channels, 4);  // Force RGBA
 
                 if (pixels) {
-                    imgAsset.meta.width = width;
-                    imgAsset.meta.height = height;
+                    if (imgAsset.meta.width <= 0) {
+                        imgAsset.meta.width = width;
+                    }
+                    if (imgAsset.meta.height <= 0) {
+                        imgAsset.meta.height = height;
+                    }
                     imgAsset.pixels.assign(pixels, pixels + width * height * 4);
                     stbi_image_free(pixels);
                 }

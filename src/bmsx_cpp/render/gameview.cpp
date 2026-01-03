@@ -29,7 +29,7 @@ namespace bmsx {
 GameView::GameView(i32 viewportWidth, i32 viewportHeight)
     : viewportSize{static_cast<f32>(viewportWidth), static_cast<f32>(viewportHeight)}
     , canvasSize{static_cast<f32>(viewportWidth), static_cast<f32>(viewportHeight)}
-    , offscreenCanvasSize{static_cast<f32>(viewportWidth), static_cast<f32>(viewportHeight)}
+    , offscreenCanvasSize{static_cast<f32>(viewportWidth) * 2.0f, static_cast<f32>(viewportHeight) * 2.0f}
     , windowSize{static_cast<f32>(viewportWidth), static_cast<f32>(viewportHeight)}
     , availableWindowSize{static_cast<f32>(viewportWidth), static_cast<f32>(viewportHeight)}
 {

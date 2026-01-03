@@ -852,26 +852,26 @@ void VMApi::cls(int colorIndex) {
 	reset_print_cursor();
 }
 
-void VMApi::put_rect(int x0, int y0, int x1, int y1, int /*z*/, int colorIndex) {
+void VMApi::put_rect(int x0, int y0, int x1, int y1, int z, int colorIndex) {
 	RectRenderSubmission submission;
 	submission.kind = RectRenderSubmission::Kind::Rect;
-	submission.area = {static_cast<f32>(x0), static_cast<f32>(y0), static_cast<f32>(x1), static_cast<f32>(y1)};
+	submission.area = {static_cast<f32>(x0), static_cast<f32>(y0), static_cast<f32>(x1), static_cast<f32>(y1), static_cast<f32>(z)};
 	submission.color = palette_color(colorIndex);
 	EngineCore::instance().view()->renderer.submit.rect(submission);
 }
 
-void VMApi::put_rectfill(int x0, int y0, int x1, int y1, int /*z*/, int colorIndex) {
+void VMApi::put_rectfill(int x0, int y0, int x1, int y1, int z, int colorIndex) {
 	RectRenderSubmission submission;
 	submission.kind = RectRenderSubmission::Kind::Fill;
-	submission.area = {static_cast<f32>(x0), static_cast<f32>(y0), static_cast<f32>(x1), static_cast<f32>(y1)};
+	submission.area = {static_cast<f32>(x0), static_cast<f32>(y0), static_cast<f32>(x1), static_cast<f32>(y1), static_cast<f32>(z)};
 	submission.color = palette_color(colorIndex);
 	EngineCore::instance().view()->renderer.submit.rect(submission);
 }
 
-void VMApi::put_rectfillcolor(int x0, int y0, int x1, int y1, int /*z*/, const Color& color) {
+void VMApi::put_rectfillcolor(int x0, int y0, int x1, int y1, int z, const Color& color) {
 	RectRenderSubmission submission;
 	submission.kind = RectRenderSubmission::Kind::Fill;
-	submission.area = {static_cast<f32>(x0), static_cast<f32>(y0), static_cast<f32>(x1), static_cast<f32>(y1)};
+	submission.area = {static_cast<f32>(x0), static_cast<f32>(y0), static_cast<f32>(x1), static_cast<f32>(y1), static_cast<f32>(z)};
 	submission.color = color;
 	EngineCore::instance().view()->renderer.submit.rect(submission);
 }
