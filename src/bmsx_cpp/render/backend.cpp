@@ -8,6 +8,43 @@
 #include <cmath>
 
 namespace bmsx {
+namespace {
+
+constexpr f32 kDitherLevels = 31.0f;
+constexpr f32 kDitherStep = 1.0f / kDitherLevels;
+constexpr f32 kDitherGamma = 2.2f;
+constexpr f32 kDitherInvGamma = 1.0f / kDitherGamma;
+constexpr f32 kBayerPattern[16] = {
+    0.0f, 8.0f, 2.0f, 10.0f,
+    12.0f, 4.0f, 14.0f, 6.0f,
+    3.0f, 11.0f, 1.0f, 9.0f,
+    15.0f, 7.0f, 13.0f, 5.0f,
+};
+
+inline f32 clamp01(f32 v) {
+    return std::min(1.0f, std::max(0.0f, v));
+}
+
+inline f32 smoothstep(f32 edge0, f32 edge1, f32 x) {
+    const f32 t = clamp01((x - edge0) / (edge1 - edge0));
+    return t * t * (3.0f - 2.0f * t);
+}
+
+inline f32 linearToSrgb(f32 c) {
+    return std::pow(std::max(0.0f, c), kDitherInvGamma);
+}
+
+inline f32 srgbToLinear(f32 c) {
+    return std::pow(std::max(0.0f, c), kDitherGamma);
+}
+
+inline f32 bayer4x4(i32 x, i32 y) {
+    const i32 xi = x & 3;
+    const i32 yi = y & 3;
+    return (kBayerPattern[(yi << 2) + xi] + 0.5f) / 16.0f;
+}
+
+} // namespace
 
 /* ============================================================================
  * SoftwareBackend implementation
@@ -269,11 +306,15 @@ void SoftwareBackend::drawRect(i32 x, i32 y, i32 w, i32 h, const Color& color) {
 
 void SoftwareBackend::blitTexture(TextureHandle tex, i32 srcX, i32 srcY, i32 srcW, i32 srcH,
                                    i32 dstX, i32 dstY, i32 dstW, i32 dstH, f32 depth,
-                                   const Color& tint, bool flipH, bool flipV) {
+                                   const Color& tint, bool flipH, bool flipV,
+                                   const DitherParams& dither, bool useDepth) {
     auto* softTex = static_cast<SoftwareTexture*>(tex);
     if (!softTex || softTex->data.empty()) return;
 
     i32 pixelsPerRow = m_pitch / sizeof(u32);
+    const bool applyDither = dither.enabled;
+    const f32 ditherIntensity = dither.intensity;
+    const i32 ditherJitter = dither.jitter;
 
     // Clipping
     i32 clipX0 = std::max(0, dstX);
@@ -301,7 +342,7 @@ void SoftwareBackend::blitTexture(TextureHandle tex, i32 srcX, i32 srcY, i32 src
             if (sx < 0 || sx >= softTex->width) continue;
 
             const i32 depthIndex = depthRow + dx;
-            if (depth > m_depthBuffer[depthIndex]) continue;
+            if (useDepth && depth > m_depthBuffer[depthIndex]) continue;
 
             u32 srcPixel = softTex->data[sy * softTex->width + sx];
             u8 srcA = (srcPixel >> 24) & 0xFF;
@@ -317,6 +358,21 @@ void SoftwareBackend::blitTexture(TextureHandle tex, i32 srcX, i32 srcY, i32 src
             f32 b = (srcB / 255.0f) * tint.b;
             f32 a = (srcA / 255.0f) * tint.a;
 
+            if (applyDither) {
+                f32 colR = linearToSrgb(r);
+                f32 colG = linearToSrgb(g);
+                f32 colB = linearToSrgb(b);
+                const f32 lumS = colR * 0.299f + colG * 0.587f + colB * 0.114f;
+                const f32 guard = smoothstep(kDitherStep, 3.0f * kDitherStep, lumS) * ditherIntensity;
+                const f32 threshold = bayer4x4(dx + ditherJitter, dy + ditherJitter) * clamp01(guard);
+                const f32 qR = std::floor(colR * kDitherLevels + threshold) / kDitherLevels;
+                const f32 qG = std::floor(colG * kDitherLevels + threshold) / kDitherLevels;
+                const f32 qB = std::floor(colB * kDitherLevels + threshold) / kDitherLevels;
+                r = srgbToLinear(clamp01(qR));
+                g = srgbToLinear(clamp01(qG));
+                b = srgbToLinear(clamp01(qB));
+            }
+
             if (a >= 1.0f) {
                 dstRow[dx] = (0xFF << 24) |
                              (static_cast<u8>(std::min(1.0f, r) * 255) << 16) |
@@ -326,7 +382,7 @@ void SoftwareBackend::blitTexture(TextureHandle tex, i32 srcX, i32 srcY, i32 src
                 Color col{r, g, b, a};
                 blendPixel(dx, dy, col);
             }
-            m_depthBuffer[depthIndex] = depth;
+            if (useDepth) m_depthBuffer[depthIndex] = depth;
         }
     }
 }

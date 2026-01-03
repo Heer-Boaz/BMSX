@@ -196,10 +196,25 @@ void drawPolygon(const std::vector<f32>& coords, f32 z, const Color& color,
 namespace {
 void renderSpriteBatchSoftware(SoftwareBackend* softBackend,
                                GameView* context) {
-  (void)context;
   // Swap and sort the sprite queue (returns count)
   i32 spriteCount = RenderQueues::beginSpriteQueue();
   if (spriteCount == 0) return;
+
+  const f32 baseWidth = context->viewportSize.x;
+  const f32 offscreenWidth = context->offscreenCanvasSize.x;
+  const bool ideIsViewport =
+      (context->viewportTypeIde == GameView::ViewportType::Viewport);
+  const f32 ideScale = ideIsViewport ? 1.0f : (baseWidth / offscreenWidth);
+
+  const f32 time = static_cast<f32>(EngineCore::instance().totalTime());
+  const f32 phase = time * 60.0f;
+  const f32 frac = phase - std::floor(phase);
+  DitherParams dither;
+  dither.enabled = context->psx_dither_2d_enabled;
+  dither.intensity = context->psx_dither2d_intensity;
+  dither.jitter = static_cast<i32>(frac * 4.0f);
+
+  const bool useDepth = false;
 
   auto& engine = EngineCore::instance();
   const auto& assets = engine.assets();
@@ -214,6 +229,8 @@ void renderSpriteBatchSoftware(SoftwareBackend* softBackend,
     const Vec2& scale = options.scale.value();
     const FlipOptions& flip = options.flip.value();
     const Color& colorize = options.colorize.value();
+    const RenderLayer layer = options.layer.value_or(RenderLayer::World);
+    const f32 desiredScale = (layer == RenderLayer::IDE) ? ideScale : 1.0f;
 
     TextureHandle tex = nullptr;
     if (meta.atlassed) {
@@ -237,15 +254,20 @@ void renderSpriteBatchSoftware(SoftwareBackend* softBackend,
     i32 srcH = static_cast<i32>((v1 - v0) * softTex->height);
 
     // Destination position and size
-    i32 dstX = static_cast<i32>(options.pos.x);
-    i32 dstY = static_cast<i32>(options.pos.y);
-    i32 dstW = static_cast<i32>(meta.width * scale.x);
-    i32 dstH = static_cast<i32>(meta.height * scale.y);
+    const f32 scaledX = options.pos.x * desiredScale;
+    const f32 scaledY = options.pos.y * desiredScale;
+    const f32 scaledW = static_cast<f32>(meta.width) * scale.x * desiredScale;
+    const f32 scaledH = static_cast<f32>(meta.height) * scale.y * desiredScale;
+    i32 dstX = static_cast<i32>(scaledX);
+    i32 dstY = static_cast<i32>(scaledY);
+    i32 dstW = static_cast<i32>(scaledW);
+    i32 dstH = static_cast<i32>(scaledH);
 
     const f32 zValue = (options.pos.z == 0.0f) ? DEFAULT_ZCOORD : options.pos.z;
     const f32 zNorm = 1.0f - (zValue / ZCOORD_MAX);
     softBackend->blitTexture(tex, srcX, srcY, srcW, srcH, dstX, dstY, dstW,
-                             dstH, zNorm, colorize, flip.flip_h, flip.flip_v);
+                             dstH, zNorm, colorize, flip.flip_h, flip.flip_v,
+                             dither, useDepth);
   });
 }
 }  // namespace

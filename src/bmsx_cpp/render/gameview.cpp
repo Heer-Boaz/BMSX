@@ -341,11 +341,175 @@ void GameView::rebuildGraph() {
     m_renderGraph = m_pipelineRegistry->buildRenderGraph(this, nullptr);
 }
 
+namespace {
+
+constexpr f32 kPi = 3.14159265359f;
+constexpr f32 kGamma = 2.2f;
+constexpr f32 kInvGamma = 1.0f / kGamma;
+
+constexpr f32 kLumaR = 0.299f;
+constexpr f32 kLumaG = 0.587f;
+constexpr f32 kLumaB = 0.114f;
+
+constexpr f32 kScanlineDepth = 0.07f;
+constexpr f32 kApertureStrength = 0.08f;
+constexpr f32 kGlowBrightnessClamp = 0.6f;
+constexpr f32 kFringingBasePx = 0.8f;
+constexpr f32 kFringingQuadCoef = 2.5f;
+constexpr f32 kFringingContrastCoef = 0.4f;
+constexpr f32 kFringingMix = 0.11f;
+constexpr f32 kFringingOffset = 0.5f;
+constexpr f32 kBlurFootprintPx = 0.5f;
+
+constexpr f32 kBlackCutoff = 0.015f;
+constexpr f32 kBlackSoft = 0.060f;
+
+constexpr f32 kKernelNorm = 1.0f / 256.0f;
+constexpr f32 kKernel5x5[25] = {
+    1.0f,  4.0f,  6.0f,  4.0f, 1.0f,
+    4.0f, 16.0f, 24.0f, 16.0f, 4.0f,
+    6.0f, 24.0f, 36.0f, 24.0f, 6.0f,
+    4.0f, 16.0f, 24.0f, 16.0f, 4.0f,
+    1.0f,  4.0f,  6.0f,  4.0f, 1.0f,
+};
+
+inline f32 clamp01(f32 v) {
+    return std::min(1.0f, std::max(0.0f, v));
+}
+
+inline f32 smoothstep(f32 edge0, f32 edge1, f32 x) {
+    const f32 t = clamp01((x - edge0) / (edge1 - edge0));
+    return t * t * (3.0f - 2.0f * t);
+}
+
+inline f32 linearToSrgb(f32 c) {
+    return std::pow(std::max(0.0f, c), kInvGamma);
+}
+
+inline f32 fract(f32 v) {
+    return v - std::floor(v);
+}
+
+const std::array<f32, 256>& srgbToLinearTable() {
+    static std::array<f32, 256> table = []() {
+        std::array<f32, 256> t{};
+        for (i32 i = 0; i < 256; ++i) {
+            f32 c = static_cast<f32>(i) / 255.0f;
+            t[static_cast<size_t>(i)] = std::pow(c, kGamma);
+        }
+        return t;
+    }();
+    return table;
+}
+
+inline Color unpackLinear(u32 pixel, const std::array<f32, 256>& table) {
+    const u8 r = (pixel >> 16) & 0xFF;
+    const u8 g = (pixel >> 8) & 0xFF;
+    const u8 b = pixel & 0xFF;
+    return {table[r], table[g], table[b], 1.0f};
+}
+
+inline Color sampleLinear(const u32* src, i32 width, i32 height, f32 x, f32 y,
+                          const std::array<f32, 256>& table) {
+    const f32 maxX = static_cast<f32>(width - 1);
+    const f32 maxY = static_cast<f32>(height - 1);
+    x = std::min(maxX, std::max(0.0f, x));
+    y = std::min(maxY, std::max(0.0f, y));
+
+    const i32 x0 = static_cast<i32>(std::floor(x));
+    const i32 y0 = static_cast<i32>(std::floor(y));
+    const i32 x1 = std::min(x0 + 1, width - 1);
+    const i32 y1 = std::min(y0 + 1, height - 1);
+    const f32 tx = x - static_cast<f32>(x0);
+    const f32 ty = y - static_cast<f32>(y0);
+
+    const Color c00 = unpackLinear(src[y0 * width + x0], table);
+    const Color c10 = unpackLinear(src[y0 * width + x1], table);
+    const Color c01 = unpackLinear(src[y1 * width + x0], table);
+    const Color c11 = unpackLinear(src[y1 * width + x1], table);
+
+    const f32 r0 = c00.r + (c10.r - c00.r) * tx;
+    const f32 g0 = c00.g + (c10.g - c00.g) * tx;
+    const f32 b0 = c00.b + (c10.b - c00.b) * tx;
+
+    const f32 r1 = c01.r + (c11.r - c01.r) * tx;
+    const f32 g1 = c01.g + (c11.g - c01.g) * tx;
+    const f32 b1 = c01.b + (c11.b - c01.b) * tx;
+
+    return {
+        r0 + (r1 - r0) * ty,
+        g0 + (g1 - g0) * ty,
+        b0 + (b1 - b0) * ty,
+        1.0f
+    };
+}
+
+inline f32 luminance(const Color& c) {
+    return c.r * kLumaR + c.g * kLumaG + c.b * kLumaB;
+}
+
+struct BlurContrast {
+    Color blurred;
+    f32 contrast = 0.0f;
+};
+
+inline BlurContrast applyBlurAndContrast(const u32* src, i32 width, i32 height,
+                                         f32 x, f32 y,
+                                         const std::array<f32, 256>& table) {
+    f32 accumR = 0.0f;
+    f32 accumG = 0.0f;
+    f32 accumB = 0.0f;
+    f32 centerLum = 0.0f;
+    f32 neighLum = 0.0f;
+    f32 neighCount = 0.0f;
+    i32 idx = 0;
+
+    for (i32 oy = -2; oy <= 2; ++oy) {
+        for (i32 ox = -2; ox <= 2; ++ox, ++idx) {
+            const f32 sampleX = x + static_cast<f32>(ox) * kBlurFootprintPx;
+            const f32 sampleY = y + static_cast<f32>(oy) * kBlurFootprintPx;
+            const Color s = sampleLinear(src, width, height, sampleX, sampleY, table);
+            const f32 w = kKernel5x5[idx] * kKernelNorm;
+            accumR += s.r * w;
+            accumG += s.g * w;
+            accumB += s.b * w;
+
+            if (std::abs(ox) <= 1 && std::abs(oy) <= 1) {
+                const f32 lum = luminance(s);
+                if (ox == 0 && oy == 0) {
+                    centerLum = lum;
+                } else {
+                    neighLum += lum;
+                    neighCount += 1.0f;
+                }
+            }
+        }
+    }
+
+    const f32 neighAvg = (neighCount > 0.0f) ? (neighLum / neighCount) : centerLum;
+    BlurContrast out;
+    out.blurred = {accumR, accumG, accumB, 1.0f};
+    out.contrast = std::abs(centerLum - neighAvg);
+    return out;
+}
+
+inline f32 hashNoise(f32 u, f32 v, f32 t) {
+    f32 px = fract(u * 0.1f * 12.9898f);
+    f32 py = fract(v * 0.1f * 78.233f);
+    f32 pz = fract(t * 0.1f * 43758.5453f);
+    const f32 dotp = px * (py + 19.19f) + py * (pz + 19.19f) + pz * (px + 19.19f);
+    px += dotp;
+    py += dotp;
+    pz += dotp;
+    return fract((px + py) * pz);
+}
+
+} // namespace
+
 // ─────────────────────────────────────────────────────────────────────────────
 // CRT Post-processing (software implementation)
 //
-// This is a simplified software CRT effect for the libretro backend.
-// The TypeScript version uses GPU shaders via crt_pipeline.ts.
+// This mirrors the WebGL CRT shader for feature parity.
 // ─────────────────────────────────────────────────────────────────────────────
 
 void GameView::applyCRTPostProcessing() {
@@ -356,7 +520,7 @@ void GameView::applyCRTPostProcessing() {
     i32 width = softBackend->width();
     i32 height = softBackend->height();
     i32 pitch = softBackend->pitch();
-    i32 pixelsPerRow = pitch / sizeof(u32);
+    const i32 pixelsPerRow = pitch / sizeof(u32);
 
     // Ensure scratch buffer is large enough
     if (m_crtScratchBuffer.size() < static_cast<size_t>(width * height)) {
@@ -366,77 +530,140 @@ void GameView::applyCRTPostProcessing() {
     // Copy framebuffer to scratch for effects that need source pixels
     std::memcpy(m_crtScratchBuffer.data(), fb, width * height * sizeof(u32));
 
-    // Time-based noise seed
-    static u32 noiseState = 12345;
+    const auto& table = srgbToLinearTable();
+    const f32 invW = 1.0f / static_cast<f32>(width);
+    const f32 invH = 1.0f / static_cast<f32>(height);
+    const f32 time = static_cast<f32>(EngineCore::instance().totalTime());
+    static u32 noiseState = 0x12345678u;
+    noiseState = noiseState * 1664525u + 1013904223u;
+    const f32 random = static_cast<f32>((noiseState >> 8) & 0xFFFFFF) / 16777215.0f;
+
+    const bool useNoise = applyNoise;
+    const bool useColorBleed = applyColorBleed;
+    const bool useScanlines = applyScanlines;
+    const bool useBlur = applyBlur;
+    const bool useGlow = applyGlow;
+    const bool useFringing = applyFringing;
+    const bool useAperture = applyAperture;
+    const f32 blurMix = clamp01(blurIntensity);
 
     for (i32 y = 0; y < height; ++y) {
+        const f32 uvY = (static_cast<f32>(y) + 0.5f) * invH;
         for (i32 x = 0; x < width; ++x) {
-            i32 idx = y * pixelsPerRow + x;
-            i32 scratchIdx = y * width + x;
-            u32 pixel = m_crtScratchBuffer[scratchIdx];
+            const f32 uvX = (static_cast<f32>(x) + 0.5f) * invW;
+            const i32 idx = y * pixelsPerRow + x;
+            const i32 scratchIdx = y * width + x;
 
-            u8 r = (pixel >> 16) & 0xFF;
-            u8 g = (pixel >> 8) & 0xFF;
-            u8 b = pixel & 0xFF;
+            Color color = unpackLinear(m_crtScratchBuffer[scratchIdx], table);
 
-            f32 rf = r / 255.0f;
-            f32 gf = g / 255.0f;
-            f32 bf = b / 255.0f;
-
-            // 1. Scanlines: darken every other row
-            if (applyScanlines) {
-                if (y % 2 == 1) {
-                    rf *= 0.85f;
-                    gf *= 0.85f;
-                    bf *= 0.85f;
-                }
+            if (useColorBleed) {
+                color.r += colorBleed[0];
+                color.g += colorBleed[1];
+                color.b += colorBleed[2];
             }
 
-            // 2. Color bleed: shift red channel slightly
-            if (applyColorBleed) {
-                if (x > 0) {
-                    u32 leftPixel = m_crtScratchBuffer[scratchIdx - 1];
-                    f32 leftR = ((leftPixel >> 16) & 0xFF) / 255.0f;
-                    rf = rf * (1.0f - colorBleed[0]) + leftR * colorBleed[0];
-                }
+            BlurContrast bc;
+            if (useBlur || useFringing) {
+                bc = applyBlurAndContrast(m_crtScratchBuffer.data(), width, height,
+                                          static_cast<f32>(x), static_cast<f32>(y), table);
+            } else {
+                bc.blurred = color;
+                bc.contrast = 0.0f;
             }
 
-            // 3. Noise
-            if (applyNoise) {
-                noiseState ^= noiseState << 13;
-                noiseState ^= noiseState >> 17;
-                noiseState ^= noiseState << 5;
-
-                f32 noise = (static_cast<f32>(noiseState & 0xFF) / 255.0f - 0.5f) * noiseIntensity * 0.1f;
-                rf += noise;
-                gf += noise;
-                bf += noise;
+            if (useBlur) {
+                color.r += (bc.blurred.r - color.r) * blurMix;
+                color.g += (bc.blurred.g - color.g) * blurMix;
+                color.b += (bc.blurred.b - color.b) * blurMix;
             }
 
-            // 4. Subtle glow/brightness boost based on luminance
-            if (applyGlow) {
-                f32 lum = 0.299f * rf + 0.587f * gf + 0.114f * bf;
-                if (lum > 0.5f) {
-                    f32 glowFactor = (lum - 0.5f) * 0.2f;
-                    rf += glowColor[0] * glowFactor;
-                    gf += glowColor[1] * glowFactor;
-                    bf += glowColor[2] * glowFactor;
-                }
+            if (useFringing) {
+                const f32 dUVx = uvX - kFringingOffset;
+                const f32 dUVy = uvY - kFringingOffset;
+                const f32 d = std::sqrt(dUVx * dUVx + dUVy * dUVy) * 1.41421356f;
+                const f32 invD = (d > 0.0f) ? (1.0f / std::max(d, 1e-6f)) : 0.0f;
+                const f32 dirX = (d > 0.0f) ? (dUVx * invD) : 1.0f;
+                const f32 dirY = (d > 0.0f) ? (dUVy * invD) : 0.0f;
+                const f32 shiftPx = kFringingBasePx +
+                                    kFringingQuadCoef * (d * d) +
+                                    kFringingContrastCoef * bc.contrast;
+                const f32 shiftX = dirX * shiftPx;
+                const f32 shiftY = dirY * shiftPx;
+
+                const Color rSample = sampleLinear(m_crtScratchBuffer.data(), width, height,
+                                                   static_cast<f32>(x) + shiftX,
+                                                   static_cast<f32>(y) + shiftY, table);
+                const Color gSample = unpackLinear(m_crtScratchBuffer[scratchIdx], table);
+                const Color bSample = sampleLinear(m_crtScratchBuffer.data(), width, height,
+                                                   static_cast<f32>(x) - shiftX,
+                                                   static_cast<f32>(y) - shiftY, table);
+                const Color fringed{rSample.r, gSample.g, bSample.b, 1.0f};
+                color.r += (fringed.r - color.r) * kFringingMix;
+                color.g += (fringed.g - color.g) * kFringingMix;
+                color.b += (fringed.b - color.b) * kFringingMix;
             }
 
-            // 5. Aperture grille simulation (subtle RGB subpixel pattern)
-            if (applyAperture) {
-                i32 subpixel = x % 3;
-                if (subpixel == 0) { rf *= 1.05f; gf *= 0.98f; bf *= 0.98f; }
-                else if (subpixel == 1) { rf *= 0.98f; gf *= 1.05f; bf *= 0.98f; }
-                else { rf *= 0.98f; gf *= 0.98f; bf *= 1.05f; }
+            if (useScanlines) {
+                const f32 lum = luminance(color);
+                const f32 A = kScanlineDepth + (0.12f - kScanlineDepth) * clamp01(lum);
+                const f32 phase = (y & 1) ? -1.0f : 1.0f;
+                f32 mask = 1.0f - A * (0.5f - 0.5f * phase);
+                mask /= (1.0f - 0.5f * A);
+                const f32 k = smoothstep(kBlackCutoff, kBlackSoft, lum);
+                const f32 scale = 1.0f + k * (mask - 1.0f);
+                color.r *= scale;
+                color.g *= scale;
+                color.b *= scale;
             }
 
-            // Clamp and convert back to u8
-            r = static_cast<u8>(std::max(0.0f, std::min(1.0f, rf)) * 255.0f);
-            g = static_cast<u8>(std::max(0.0f, std::min(1.0f, gf)) * 255.0f);
-            b = static_cast<u8>(std::max(0.0f, std::min(1.0f, bf)) * 255.0f);
+            if (useAperture) {
+                const f32 xSrc = uvX * static_cast<f32>(width);
+                const f32 triad = 0.5f + 0.5f * std::cos(6.2831853f * xSrc);
+                const f32 lum = luminance(color);
+                const f32 k = smoothstep(kBlackCutoff, kBlackSoft, lum);
+                const f32 maskR = 1.0f + kApertureStrength * triad;
+                const f32 maskG = 1.0f;
+                const f32 maskB = 1.0f - kApertureStrength * triad;
+                color.r *= 1.0f + k * (maskR - 1.0f);
+                color.g *= 1.0f + k * (maskG - 1.0f);
+                color.b *= 1.0f + k * (maskB - 1.0f);
+            }
 
+            if (useGlow) {
+                const f32 lum = luminance(color);
+                const f32 k = smoothstep(kBlackCutoff, kBlackSoft, lum);
+                const f32 glow = std::min(kGlowBrightnessClamp, std::max(0.0f, lum)) * k;
+                color.r += glowColor[0] * glow;
+                color.g += glowColor[1] * glow;
+                color.b += glowColor[2] * glow;
+            }
+
+            if (useNoise) {
+                const f32 ySrc = uvY * static_cast<f32>(height);
+                const f32 lineNoise =
+                    hashNoise(0.0f, std::floor(ySrc) + time * 30.0f, 0.0f) - 0.5f;
+                const f32 pixNoise =
+                    hashNoise(uvX * static_cast<f32>(width) + random,
+                              uvY * static_cast<f32>(height) + random,
+                              time) - 0.5f;
+                const f32 lum = luminance(color);
+                const f32 n = pixNoise * 0.65f + lineNoise * 0.35f;
+                const f32 k = smoothstep(kBlackCutoff, kBlackSoft, lum);
+                const f32 amp = noiseIntensity * (1.0f - 0.8f * lum);
+                color.r += color.r * (n * amp * k);
+                color.g += color.g * (n * amp * k);
+                color.b += color.b * (n * amp * k);
+            }
+
+            const f32 lumFinal = luminance(color);
+            const f32 keep = smoothstep(kBlackCutoff, kBlackSoft, lumFinal);
+            color.r *= keep;
+            color.g *= keep;
+            color.b *= keep;
+
+            const u8 r = static_cast<u8>(clamp01(linearToSrgb(color.r)) * 255.0f);
+            const u8 g = static_cast<u8>(clamp01(linearToSrgb(color.g)) * 255.0f);
+            const u8 b = static_cast<u8>(clamp01(linearToSrgb(color.b)) * 255.0f);
             fb[idx] = (0xFF << 24) | (r << 16) | (g << 8) | b;
         }
     }

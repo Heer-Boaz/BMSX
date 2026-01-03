@@ -119,7 +119,6 @@ const KonamiGlyphMap: GlyphMap = {
 	'+': 'letter_question',
 };
 
-
 /**
  * Represents a bitmap font used for rendering text.
  */
