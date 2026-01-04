@@ -3,6 +3,7 @@
  */
 
 #include "backend.h"
+#include <array>
 #include <algorithm>
 #include <cstring>
 #include <cmath>
@@ -10,39 +11,40 @@
 namespace bmsx {
 namespace {
 
-constexpr f32 kDitherLevels = 31.0f;
-constexpr f32 kDitherStep = 1.0f / kDitherLevels;
-constexpr f32 kDitherGamma = 2.2f;
-constexpr f32 kDitherInvGamma = 1.0f / kDitherGamma;
-constexpr f32 kBayerPattern[16] = {
-	0.0f, 8.0f, 2.0f, 10.0f,
-	12.0f, 4.0f, 14.0f, 6.0f,
-	3.0f, 11.0f, 1.0f, 9.0f,
-	15.0f, 7.0f, 13.0f, 5.0f,
+constexpr i32 kDitherLevels = 31;
+constexpr f32 kDitherGuardEdge0 = 1.0f / static_cast<f32>(kDitherLevels);
+constexpr f32 kDitherGuardEdge1 = 3.0f / static_cast<f32>(kDitherLevels);
+constexpr u8 kBayerThreshold[16] = {
+	8, 135, 39, 167,
+	199, 71, 231, 103,
+	55, 183, 23, 151,
+	247, 119, 215, 87,
 };
 
-inline f32 clamp01(f32 v) {
-	return std::min(1.0f, std::max(0.0f, v));
+inline u8 expand5to8(i32 v5) {
+	return static_cast<u8>((v5 << 3) | (v5 >> 2));
 }
 
-inline f32 smoothstep(f32 edge0, f32 edge1, f32 x) {
-	const f32 t = clamp01((x - edge0) / (edge1 - edge0));
-	return t * t * (3.0f - 2.0f * t);
+inline u8 quantize5Bit(i32 c8, i32 threshold) {
+	i32 q5 = (c8 * kDitherLevels + threshold) / 255;
+	if (q5 < 0) q5 = 0;
+	if (q5 > kDitherLevels) q5 = kDitherLevels;
+	return expand5to8(q5);
 }
 
-inline f32 linearToSrgb(f32 c) {
-	return std::pow(std::max(0.0f, c), kDitherInvGamma);
+static std::array<u8, 256> buildDitherGuardLut() {
+	std::array<u8, 256> lut{};
+	for (i32 i = 0; i < 256; ++i) {
+		const f32 lum = static_cast<f32>(i) / 255.0f;
+		f32 t = (lum - kDitherGuardEdge0) / (kDitherGuardEdge1 - kDitherGuardEdge0);
+		t = std::min(1.0f, std::max(0.0f, t));
+		const f32 smooth = t * t * (3.0f - 2.0f * t);
+		lut[i] = static_cast<u8>(smooth * 255.0f + 0.5f);
+	}
+	return lut;
 }
 
-inline f32 srgbToLinear(f32 c) {
-	return std::pow(std::max(0.0f, c), kDitherGamma);
-}
-
-inline f32 bayer4x4(i32 x, i32 y) {
-	const i32 xi = x & 3;
-	const i32 yi = y & 3;
-	return (kBayerPattern[(yi << 2) + xi] + 0.5f) / 16.0f;
-}
+static const std::array<u8, 256> kDitherGuardLut = buildDitherGuardLut();
 
 } // namespace
 
@@ -311,9 +313,9 @@ void SoftwareBackend::blitTexture(TextureHandle tex, i32 srcX, i32 srcY, i32 src
 	auto* softTex = static_cast<SoftwareTexture*>(tex);
 	if (!softTex || softTex->data.empty()) return;
 
-	i32 pixelsPerRow = m_pitch / sizeof(u32);
-	const bool applyDither = dither.enabled;
-	const f32 ditherIntensity = dither.intensity;
+	const i32 pixelsPerRow = m_pitch / sizeof(u32);
+	const bool applyDither = dither.enabled && dither.intensity != 0.0f;
+	const i32 ditherIntensity = static_cast<i32>(dither.intensity * 255.0f + 0.5f);
 	const i32 ditherJitter = dither.jitter;
 
 	// Clipping
@@ -324,66 +326,168 @@ void SoftwareBackend::blitTexture(TextureHandle tex, i32 srcX, i32 srcY, i32 src
 
 	if (clipX0 >= clipX1 || clipY0 >= clipY1) return;
 
-	// Scale factors
-	f32 scaleX = static_cast<f32>(srcW) / static_cast<f32>(dstW);
-	f32 scaleY = static_cast<f32>(srcH) / static_cast<f32>(dstH);
+	const i32 stepX = (srcW << 16) / dstW;
+	const i32 stepY = (srcH << 16) / dstH;
+
+	const i32 startRelX = clipX0 - dstX;
+	const i32 startRelY = clipY0 - dstY;
+	const i32 baseX = flipH ? (dstW - 1 - startRelX) : startRelX;
+	const i32 baseY = flipV ? (dstH - 1 - startRelY) : startRelY;
+	const i32 xStep = flipH ? -stepX : stepX;
+	const i32 yStep = flipV ? -stepY : stepY;
+
+	const i32 sx_fp_start = (srcX << 16) + baseX * stepX;
+
+	const i32 tintR = static_cast<i32>(tint.r * 255.0f + 0.5f);
+	const i32 tintG = static_cast<i32>(tint.g * 255.0f + 0.5f);
+	const i32 tintB = static_cast<i32>(tint.b * 255.0f + 0.5f);
+	const i32 tintA = static_cast<i32>(tint.a * 255.0f + 0.5f);
+
+	const u32* srcData = softTex->data.data();
+	const i32 texWidth = softTex->width;
+
+	i32 sy_fp = (srcY << 16) + baseY * stepY;
+
+	if (useDepth) {
+		for (i32 dy = clipY0; dy < clipY1; ++dy) {
+			const i32 sy = sy_fp >> 16;
+			const u32* srcRow = srcData + sy * texWidth;
+			u32* dstRow = m_framebuffer + dy * pixelsPerRow;
+			const i32 depthRow = dy * m_width;
+			const i32 ditherRow = ((dy + ditherJitter) & 3) << 2;
+
+			i32 sx_fp = sx_fp_start;
+			for (i32 dx = clipX0; dx < clipX1; ++dx) {
+				const i32 depthIndex = depthRow + dx;
+				if (depth > m_depthBuffer[depthIndex]) {
+					sx_fp += xStep;
+					continue;
+				}
+
+				const i32 sx = sx_fp >> 16;
+				sx_fp += xStep;
+
+				const u32 srcPixel = srcRow[sx];
+				const i32 srcA = (srcPixel >> 24) & 0xFF;
+				if (srcA == 0) continue;
+
+				const i32 srcR = (srcPixel >> 16) & 0xFF;
+				const i32 srcG = (srcPixel >> 8) & 0xFF;
+				const i32 srcB = srcPixel & 0xFF;
+
+				i32 r = (srcR * tintR + 127) / 255;
+				i32 g = (srcG * tintG + 127) / 255;
+				i32 b = (srcB * tintB + 127) / 255;
+				i32 a = (srcA * tintA + 127) / 255;
+
+				if (r < 0) r = 0;
+				if (r > 255) r = 255;
+				if (g < 0) g = 0;
+				if (g > 255) g = 255;
+				if (b < 0) b = 0;
+				if (b > 255) b = 255;
+				if (a <= 0) continue;
+				if (a > 255) a = 255;
+
+				if (applyDither) {
+					const i32 lum = (r * 77 + g * 150 + b * 29) >> 8;
+					const i32 guard = (static_cast<i32>(kDitherGuardLut[lum]) * ditherIntensity + 127) / 255;
+					const i32 threshold = (static_cast<i32>(kBayerThreshold[ditherRow | ((dx + ditherJitter) & 3)]) * guard + 127) / 255;
+					r = quantize5Bit(r, threshold);
+					g = quantize5Bit(g, threshold);
+					b = quantize5Bit(b, threshold);
+				}
+
+				if (a >= 255) {
+					dstRow[dx] = (0xFF << 24) |
+								 (static_cast<u32>(r) << 16) |
+								 (static_cast<u32>(g) << 8) |
+								 static_cast<u32>(b);
+				} else {
+					const u32 dst = dstRow[dx];
+					const u32 invA = 255 - static_cast<u32>(a);
+
+					const u32 dr = (dst >> 16) & 0xFF;
+					const u32 dg = (dst >> 8) & 0xFF;
+					const u32 db = dst & 0xFF;
+
+					const u32 or_ = (static_cast<u32>(r) * a + dr * invA + 127) / 255;
+					const u32 og = (static_cast<u32>(g) * a + dg * invA + 127) / 255;
+					const u32 ob = (static_cast<u32>(b) * a + db * invA + 127) / 255;
+
+					dstRow[dx] = 0xFF000000 | (or_ << 16) | (og << 8) | ob;
+				}
+
+				m_depthBuffer[depthIndex] = depth;
+			}
+			sy_fp += yStep;
+		}
+		return;
+	}
 
 	for (i32 dy = clipY0; dy < clipY1; ++dy) {
-		i32 relY = dy - dstY;
-		i32 sy = srcY + static_cast<i32>((flipV ? (dstH - 1 - relY) : relY) * scaleY);
-		if (sy < 0 || sy >= softTex->height) continue;
-
-		const i32 depthRow = dy * m_width;
+		const i32 sy = sy_fp >> 16;
+		const u32* srcRow = srcData + sy * texWidth;
 		u32* dstRow = m_framebuffer + dy * pixelsPerRow;
+		const i32 ditherRow = ((dy + ditherJitter) & 3) << 2;
 
+		i32 sx_fp = sx_fp_start;
 		for (i32 dx = clipX0; dx < clipX1; ++dx) {
-			i32 relX = dx - dstX;
-			i32 sx = srcX + static_cast<i32>((flipH ? (dstW - 1 - relX) : relX) * scaleX);
-			if (sx < 0 || sx >= softTex->width) continue;
+			const i32 sx = sx_fp >> 16;
+			sx_fp += xStep;
 
-			const i32 depthIndex = depthRow + dx;
-			if (useDepth && depth > m_depthBuffer[depthIndex]) continue;
-
-			u32 srcPixel = softTex->data[sy * softTex->width + sx];
-			u8 srcA = (srcPixel >> 24) & 0xFF;
+			const u32 srcPixel = srcRow[sx];
+			const i32 srcA = (srcPixel >> 24) & 0xFF;
 			if (srcA == 0) continue;
 
-			u8 srcR = (srcPixel >> 16) & 0xFF;
-			u8 srcG = (srcPixel >> 8) & 0xFF;
-			u8 srcB = srcPixel & 0xFF;
+			const i32 srcR = (srcPixel >> 16) & 0xFF;
+			const i32 srcG = (srcPixel >> 8) & 0xFF;
+			const i32 srcB = srcPixel & 0xFF;
 
-			// Apply tint
-			f32 r = (srcR / 255.0f) * tint.r;
-			f32 g = (srcG / 255.0f) * tint.g;
-			f32 b = (srcB / 255.0f) * tint.b;
-			f32 a = (srcA / 255.0f) * tint.a;
+			i32 r = (srcR * tintR + 127) / 255;
+			i32 g = (srcG * tintG + 127) / 255;
+			i32 b = (srcB * tintB + 127) / 255;
+			i32 a = (srcA * tintA + 127) / 255;
+
+			if (r < 0) r = 0;
+			if (r > 255) r = 255;
+			if (g < 0) g = 0;
+			if (g > 255) g = 255;
+			if (b < 0) b = 0;
+			if (b > 255) b = 255;
+			if (a <= 0) continue;
+			if (a > 255) a = 255;
 
 			if (applyDither) {
-				f32 colR = linearToSrgb(r);
-				f32 colG = linearToSrgb(g);
-				f32 colB = linearToSrgb(b);
-				const f32 lumS = colR * 0.299f + colG * 0.587f + colB * 0.114f;
-				const f32 guard = smoothstep(kDitherStep, 3.0f * kDitherStep, lumS) * ditherIntensity;
-				const f32 threshold = bayer4x4(dx + ditherJitter, dy + ditherJitter) * clamp01(guard);
-				const f32 qR = std::floor(colR * kDitherLevels + threshold) / kDitherLevels;
-				const f32 qG = std::floor(colG * kDitherLevels + threshold) / kDitherLevels;
-				const f32 qB = std::floor(colB * kDitherLevels + threshold) / kDitherLevels;
-				r = srgbToLinear(clamp01(qR));
-				g = srgbToLinear(clamp01(qG));
-				b = srgbToLinear(clamp01(qB));
+				const i32 lum = (r * 77 + g * 150 + b * 29) >> 8;
+				const i32 guard = (static_cast<i32>(kDitherGuardLut[lum]) * ditherIntensity + 127) / 255;
+				const i32 threshold = (static_cast<i32>(kBayerThreshold[ditherRow | ((dx + ditherJitter) & 3)]) * guard + 127) / 255;
+				r = quantize5Bit(r, threshold);
+				g = quantize5Bit(g, threshold);
+				b = quantize5Bit(b, threshold);
 			}
 
-			if (a >= 1.0f) {
+			if (a >= 255) {
 				dstRow[dx] = (0xFF << 24) |
-							 (static_cast<u8>(std::min(1.0f, r) * 255) << 16) |
-							 (static_cast<u8>(std::min(1.0f, g) * 255) << 8) |
-							 static_cast<u8>(std::min(1.0f, b) * 255);
+							 (static_cast<u32>(r) << 16) |
+							 (static_cast<u32>(g) << 8) |
+							 static_cast<u32>(b);
 			} else {
-				Color col{r, g, b, a};
-				blendPixel(dx, dy, col);
+				const u32 dst = dstRow[dx];
+				const u32 invA = 255 - static_cast<u32>(a);
+
+				const u32 dr = (dst >> 16) & 0xFF;
+				const u32 dg = (dst >> 8) & 0xFF;
+				const u32 db = dst & 0xFF;
+
+				const u32 or_ = (static_cast<u32>(r) * a + dr * invA + 127) / 255;
+				const u32 og = (static_cast<u32>(g) * a + dg * invA + 127) / 255;
+				const u32 ob = (static_cast<u32>(b) * a + db * invA + 127) / 255;
+
+				dstRow[dx] = 0xFF000000 | (or_ << 16) | (og << 8) | ob;
 			}
-			if (useDepth) m_depthBuffer[depthIndex] = depth;
 		}
+		sy_fp += yStep;
 	}
 }
 

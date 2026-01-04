@@ -134,10 +134,20 @@ void RenderPassLibrary::registerBuiltinPassesSoftware() {
 			auto& crtState = std::any_cast<CRTPipelineState&>(state);
 			auto* colorTex = static_cast<SoftwareTexture*>(crtState.colorTex);
 			auto* softBackend = static_cast<SoftwareBackend*>(backend);
-			view->applyCRTPostProcessing(colorTex->data.data(), colorTex->width,
-										 colorTex->height, softBackend->framebuffer(),
-										 softBackend->width(), softBackend->height(),
-										 softBackend->pitch());
+			if (view->crt_postprocessing_enabled) {
+				view->applyCRTPostProcessing(colorTex->data.data(), colorTex->width,
+											 colorTex->height, softBackend->framebuffer(),
+											 softBackend->width(), softBackend->height(),
+											 softBackend->pitch());
+				return;
+			}
+
+			DitherParams dither;
+			dither.enabled = false;
+			const Color tint{1.0f, 1.0f, 1.0f, 1.0f};
+			softBackend->blitTexture(colorTex, 0, 0, colorTex->width, colorTex->height,
+									 0, 0, softBackend->width(), softBackend->height(),
+									 0.0f, tint, false, false, dither, false);
 		};
 		desc.prepare = [](GPUBackend*, std::any&) {};
 		registerPass(desc);

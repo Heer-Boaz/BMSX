@@ -58,6 +58,12 @@ static bool g_cached_av_info_valid = false;
 static constexpr const char* kOptionRenderBackend = "bmsx_render_backend";
 static constexpr const char* kRenderBackendSoftware = "software";
 static constexpr const char* kRenderBackendGLES2 = "gles2";
+static constexpr const char* kOptionSoftwareCrt = "bmsx_sw_crt";
+static constexpr const char* kSoftwareCrtOff = "off";
+static constexpr const char* kSoftwareCrtOn = "on";
+static constexpr const char* kOptionSoftwareScale = "bmsx_sw_offscreen_scale";
+static constexpr const char* kSoftwareScale1x = "1x";
+static constexpr const char* kSoftwareScale2x = "2x";
 
 enum class RenderBackendPreference {
 	Auto,
@@ -66,6 +72,8 @@ enum class RenderBackendPreference {
 };
 
 static RenderBackendPreference g_backend_preference = RenderBackendPreference::Auto;
+static bool g_software_crt_enabled = false;
+static int g_software_offscreen_scale = 1;
 
 static retro_core_option_v2_category g_option_categories_us[] = {
 	{"video", "Video", "Video settings."},
@@ -87,6 +95,34 @@ static retro_core_option_v2_definition g_option_defs_us[] = {
 		},
 		kRenderBackendSoftware
 	},
+	{
+		kOptionSoftwareCrt,
+		"Software CRT",
+		"Software CRT",
+		"Enable CRT post-processing when using software rendering.",
+		"Enable CRT post-processing when using software rendering.",
+		"video",
+		{
+			{kSoftwareCrtOff, "Off"},
+			{kSoftwareCrtOn, "On"},
+			{nullptr, nullptr},
+		},
+		kSoftwareCrtOff
+	},
+	{
+		kOptionSoftwareScale,
+		"Software Offscreen Scale",
+		"Software Offscreen Scale",
+		"Offscreen render scale for software rendering.",
+		"Offscreen render scale for software rendering.",
+		"video",
+		{
+			{kSoftwareScale1x, "1x"},
+			{kSoftwareScale2x, "2x"},
+			{nullptr, nullptr},
+		},
+		kSoftwareScale1x
+	},
 	{nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, {{nullptr, nullptr}}, nullptr}
 };
 
@@ -107,12 +143,38 @@ static retro_core_option_definition g_option_defs_v1_us[] = {
 		},
 		kRenderBackendSoftware
 	},
+	{
+		kOptionSoftwareCrt,
+		"Software CRT",
+		"Enable CRT post-processing when using software rendering.",
+		{
+			{kSoftwareCrtOff, "Off"},
+			{kSoftwareCrtOn, "On"},
+			{nullptr, nullptr},
+		},
+		kSoftwareCrtOff
+	},
+	{
+		kOptionSoftwareScale,
+		"Software Offscreen Scale",
+		"Offscreen render scale for software rendering.",
+		{
+			{kSoftwareScale1x, "1x"},
+			{kSoftwareScale2x, "2x"},
+			{nullptr, nullptr},
+		},
+		kSoftwareScale1x
+	},
 	{nullptr, nullptr, nullptr, {{nullptr, nullptr}}, nullptr}
 };
 
 static char g_option_render_backend_var[128] = {};
+static char g_option_sw_crt_var[128] = {};
+static char g_option_sw_scale_var[128] = {};
 static retro_variable g_option_vars[] = {
 	{kOptionRenderBackend, nullptr},
+	{kOptionSoftwareCrt, nullptr},
+	{kOptionSoftwareScale, nullptr},
 	{nullptr, nullptr}
 };
 
@@ -130,6 +192,8 @@ static const char* backend_label(bmsx::BackendType type);
 static void apply_backend_preference(RenderBackendPreference preference);
 static void handle_backend_fallback(bmsx::BackendType backend, const char* reason);
 static void try_update_backend_option();
+static bool read_software_crt_enabled();
+static int read_software_offscreen_scale();
 
 /* ============================================================================
  * Libretro callback setters
@@ -208,6 +272,18 @@ static void set_core_options(bool default_gles2) {
 	g_option_defs_v1_us[0].values[0] = {kRenderBackendGLES2, "GLES2"};
 	g_option_defs_v1_us[0].values[1] = {kRenderBackendSoftware, "Software"};
 	g_option_defs_v1_us[0].values[2] = {nullptr, nullptr};
+	g_option_defs_us[1].values[0] = {kSoftwareCrtOff, "Off"};
+	g_option_defs_us[1].values[1] = {kSoftwareCrtOn, "On"};
+	g_option_defs_us[1].values[2] = {nullptr, nullptr};
+	g_option_defs_v1_us[1].values[0] = {kSoftwareCrtOff, "Off"};
+	g_option_defs_v1_us[1].values[1] = {kSoftwareCrtOn, "On"};
+	g_option_defs_v1_us[1].values[2] = {nullptr, nullptr};
+	g_option_defs_us[2].values[0] = {kSoftwareScale1x, "1x"};
+	g_option_defs_us[2].values[1] = {kSoftwareScale2x, "2x"};
+	g_option_defs_us[2].values[2] = {nullptr, nullptr};
+	g_option_defs_v1_us[2].values[0] = {kSoftwareScale1x, "1x"};
+	g_option_defs_v1_us[2].values[1] = {kSoftwareScale2x, "2x"};
+	g_option_defs_v1_us[2].values[2] = {nullptr, nullptr};
 
 	if (default_gles2) {
 		std::snprintf(g_option_render_backend_var, sizeof(g_option_render_backend_var),
@@ -217,6 +293,12 @@ static void set_core_options(bool default_gles2) {
 					  "Render Backend; %s|%s", kRenderBackendSoftware, kRenderBackendGLES2);
 	}
 	g_option_vars[0].value = g_option_render_backend_var;
+	std::snprintf(g_option_sw_crt_var, sizeof(g_option_sw_crt_var),
+				  "Software CRT; %s|%s", kSoftwareCrtOff, kSoftwareCrtOn);
+	g_option_vars[1].value = g_option_sw_crt_var;
+	std::snprintf(g_option_sw_scale_var, sizeof(g_option_sw_scale_var),
+				  "Software Offscreen Scale; %s|%s", kSoftwareScale1x, kSoftwareScale2x);
+	g_option_vars[2].value = g_option_sw_scale_var;
 
 	unsigned version = 0;
 	if (environ_cb(RETRO_ENVIRONMENT_GET_CORE_OPTIONS_VERSION, &version) && version >= 2) {
@@ -247,6 +329,34 @@ static RenderBackendPreference parse_backend_preference(const char* value) {
 	return RenderBackendPreference::Software;
 }
 
+static bool parse_software_crt_enabled(const char* value) {
+	if (!value || !value[0]) return false;
+	if (std::strcmp(value, kSoftwareCrtOn) == 0 || std::strcmp(value, "On") == 0) {
+		return true;
+	}
+	if (std::strcmp(value, kSoftwareCrtOff) == 0 || std::strcmp(value, "Off") == 0) {
+		return false;
+	}
+	logging.log(RETRO_LOG_WARN,
+				"[BMSX] Unknown software CRT option '%s', using off\n",
+				value);
+	return false;
+}
+
+static int parse_software_offscreen_scale(const char* value) {
+	if (!value || !value[0]) return 1;
+	if (std::strcmp(value, kSoftwareScale2x) == 0 || std::strcmp(value, "2x") == 0) {
+		return 2;
+	}
+	if (std::strcmp(value, kSoftwareScale1x) == 0 || std::strcmp(value, "1x") == 0) {
+		return 1;
+	}
+	logging.log(RETRO_LOG_WARN,
+				"[BMSX] Unknown software offscreen scale option '%s', using 1x\n",
+				value);
+	return 1;
+}
+
 static RenderBackendPreference read_backend_preference() {
 	retro_variable var;
 	var.key = kOptionRenderBackend;
@@ -255,6 +365,26 @@ static RenderBackendPreference read_backend_preference() {
 		return parse_backend_preference(var.value);
 	}
 	return RenderBackendPreference::Auto;
+}
+
+static bool read_software_crt_enabled() {
+	retro_variable var;
+	var.key = kOptionSoftwareCrt;
+	var.value = nullptr;
+	if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
+		return parse_software_crt_enabled(var.value);
+	}
+	return false;
+}
+
+static int read_software_offscreen_scale() {
+	retro_variable var;
+	var.key = kOptionSoftwareScale;
+	var.value = nullptr;
+	if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
+		return parse_software_offscreen_scale(var.value);
+	}
+	return 1;
 }
 
 static void apply_backend_preference(RenderBackendPreference preference) {
@@ -458,6 +588,8 @@ void retro_init(void) {
   logging.log(RETRO_LOG_INFO, "[BMSX] retro_init\n");
   const RenderBackendPreference preference = read_backend_preference();
   const bmsx::BackendType desired_backend = resolve_backend_preference(preference);
+  g_software_crt_enabled = read_software_crt_enabled();
+  g_software_offscreen_scale = read_software_offscreen_scale();
   request_hw_context_for_backend(desired_backend);
   apply_backend_preference(preference);
 
@@ -501,6 +633,7 @@ void retro_init(void) {
   g_platform->setAudioBatchCallback(audio_batch_cb);
   g_platform->setInputPollCallback(input_poll_cb);
   g_platform->setInputStateCallback(input_state_cb);
+  g_platform->setSoftwareRenderOptions(g_software_crt_enabled, g_software_offscreen_scale);
   if (isHardwareBackendActive()) {
 	try {
 	  g_platform->setHwRenderCallbacks(g_hw_render.get_current_framebuffer);
@@ -672,6 +805,13 @@ void retro_run(void) {
 	  environ_cb(RETRO_ENVIRONMENT_SET_MESSAGE, &msg);
 	  logging.log(RETRO_LOG_WARN,
 				  "[BMSX] Render backend change detected; restart required\n");
+	}
+	const bool new_sw_crt = read_software_crt_enabled();
+	const int new_sw_scale = read_software_offscreen_scale();
+	if (new_sw_crt != g_software_crt_enabled || new_sw_scale != g_software_offscreen_scale) {
+	  g_software_crt_enabled = new_sw_crt;
+	  g_software_offscreen_scale = new_sw_scale;
+	  g_platform->setSoftwareRenderOptions(g_software_crt_enabled, g_software_offscreen_scale);
 	}
   }
   static auto lastFrameTime = std::chrono::steady_clock::now();

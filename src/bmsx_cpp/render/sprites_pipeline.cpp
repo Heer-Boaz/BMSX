@@ -53,13 +53,13 @@ void renderSpriteBatchSoftware(SoftwareBackend* softBackend,
 
   auto& engine = EngineCore::instance();
   const auto& assets = engine.assets();
+  const TextureHandle atlasPrimary = context->textures.at("_atlas_primary");
+  const TextureHandle atlasSecondary = context->textures.at("_atlas_secondary");
 
   // Iterate over all sprites in the sorted front queue
   RenderQueues::forEachSprite([&](const SpriteQueueItem& item, size_t) {
 	const auto& options = item.options;
 	const ImgMeta* imgmeta = item.imgmeta;
-
-	const auto* imgAsset = assets.getImg(options.imgid);
 	const auto& meta = *imgmeta;
 	const Vec2& scale = options.scale.value();
 	const FlipOptions& flip = options.flip.value();
@@ -71,10 +71,19 @@ void renderSpriteBatchSoftware(SoftwareBackend* softBackend,
 
 	TextureHandle tex = nullptr;
 	if (meta.atlassed) {
-	  const std::string atlasName = generateAtlasName(meta.atlasid);
-	  const auto* atlasAsset = assets.getImg(atlasName);
-	  tex = reinterpret_cast<TextureHandle>(atlasAsset->textureHandle);
+	  if (meta.atlasid == 0) {
+		tex = atlasPrimary;
+	  } else if (meta.atlasid == 1) {
+		tex = atlasSecondary;
+	  } else if (meta.atlasid == ENGINE_ATLAS_INDEX) {
+		tex = context->textures.at(ENGINE_ATLAS_TEXTURE_KEY);
+	  } else {
+		const std::string atlasName = generateAtlasName(meta.atlasid);
+		const auto* atlasAsset = assets.getImg(atlasName);
+		tex = reinterpret_cast<TextureHandle>(atlasAsset->textureHandle);
+	  }
 	} else {
+	  const auto* imgAsset = assets.getImg(options.imgid);
 	  tex = reinterpret_cast<TextureHandle>(imgAsset->textureHandle);
 	}
 
