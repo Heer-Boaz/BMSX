@@ -14,9 +14,6 @@
 #include "../core/rompack.h"
 #include "render_queues.h"
 
-#define BMSX_STRINGIFY_INNER(x) #x
-#define BMSX_STRINGIFY(x) BMSX_STRINGIFY_INNER(x)
-
 namespace bmsx {
 namespace SpritesPipeline {
 namespace {
@@ -56,6 +53,7 @@ struct SpriteGLES2State {
   GLint uniform_tex0 = -1;
   GLint uniform_tex1 = -1;
   GLint uniform_tex2 = -1;
+  GLint uniform_engine_atlas_id = -1;
   GLint uniform_dither_intensity = -1;
   GLint uniform_dither_enabled = -1;
   GLint uniform_time = -1;
@@ -105,6 +103,7 @@ precision highp float;
 uniform sampler2D u_texture0;
 uniform sampler2D u_texture1;
 uniform sampler2D u_texture2;
+uniform float u_engineAtlasId;
 uniform float u_ditherIntensity;
 uniform float u_ditherEnabled;
 uniform float u_time;
@@ -112,8 +111,6 @@ uniform float u_time;
 varying vec2 v_texcoord;
 varying vec4 v_color_override;
 varying float v_atlas_id;
-
-const float ENGINE_ATLAS_ID = )" BMSX_STRINGIFY(ENGINE_ATLAS_INDEX) R"(.0;
 
 float bayer4x4(vec2 p) {
 	vec2 wrapped = mod(p, 4.0);
@@ -140,7 +137,7 @@ void main() {
 	vec4 texColor;
 	if (v_atlas_id < 0.5) {
 		texColor = texture2D(u_texture0, v_texcoord);
-	} else if (abs(v_atlas_id - ENGINE_ATLAS_ID) < 0.5) {
+	} else if (abs(v_atlas_id - u_engineAtlasId) < 0.5) {
 		texColor = texture2D(u_texture2, v_texcoord);
 	} else {
 		texColor = texture2D(u_texture1, v_texcoord);
@@ -161,9 +158,6 @@ void main() {
 	gl_FragColor = texColor;
 }
 )";
-
-#undef BMSX_STRINGIFY
-#undef BMSX_STRINGIFY_INNER
 
 GLuint compileShader(GLenum type, const char* src) {
   GLuint shader = glCreateShader(type);
@@ -373,6 +367,8 @@ void initGLES2(OpenGLES2Backend* backend, GameView* context) {
   g_sprite.uniform_tex0 = glGetUniformLocation(g_sprite.program, "u_texture0");
   g_sprite.uniform_tex1 = glGetUniformLocation(g_sprite.program, "u_texture1");
   g_sprite.uniform_tex2 = glGetUniformLocation(g_sprite.program, "u_texture2");
+  g_sprite.uniform_engine_atlas_id =
+	  glGetUniformLocation(g_sprite.program, "u_engineAtlasId");
   g_sprite.uniform_dither_intensity =
 	  glGetUniformLocation(g_sprite.program, "u_ditherIntensity");
   g_sprite.uniform_dither_enabled =
@@ -387,6 +383,8 @@ void initGLES2(OpenGLES2Backend* backend, GameView* context) {
   glUniform1i(g_sprite.uniform_tex0, kTexUnitAtlasPrimary);
   glUniform1i(g_sprite.uniform_tex1, kTexUnitAtlasSecondary);
   glUniform1i(g_sprite.uniform_tex2, kTexUnitAtlasEngine);
+  glUniform1f(g_sprite.uniform_engine_atlas_id,
+			  static_cast<float>(ENGINE_ATLAS_INDEX));
   if (kSpritesVerboseLog) {
 	std::fprintf(stderr,
 				 "[BMSX][GLES2][Sprites] init program=%u attribs(pos=%d uv=%d "
@@ -448,6 +446,8 @@ void renderSpriteBatchGLES2(OpenGLES2Backend* backend, GameView* context,
   glUniform1i(g_sprite.uniform_tex0, kTexUnitAtlasPrimary);
   glUniform1i(g_sprite.uniform_tex1, kTexUnitAtlasSecondary);
   glUniform1i(g_sprite.uniform_tex2, kTexUnitAtlasEngine);
+  glUniform1f(g_sprite.uniform_engine_atlas_id,
+			  static_cast<float>(ENGINE_ATLAS_INDEX));
   setupAttributes();
 
   glDisable(GL_CULL_FACE);

@@ -428,6 +428,7 @@ static void apply_backend_preference(RenderBackendPreference preference) {
 }
 
 static void handle_backend_fallback(bmsx::BackendType backend, const char* reason) {
+	logging.log(RETRO_LOG_INFO, "[BMSX] handle_backend_fallback called. Reason: %s\n", reason);
 	const bool was_active = g_backend_fallback_token.active;
 	GateScope scope;
 	scope.blocking = true;
@@ -480,6 +481,8 @@ static void request_hw_context_for_backend(bmsx::BackendType backend) {
 		return;
 	}
 
+	g_hw_render_backend = backend;
+	g_hw_render_requested = true;
 	std::memset(&g_hw_render, 0, sizeof(g_hw_render));
 	g_hw_render.context_type = RETRO_HW_CONTEXT_OPENGLES2;
 	g_hw_render.context_reset = hw_context_reset;
@@ -492,6 +495,8 @@ static void request_hw_context_for_backend(bmsx::BackendType backend) {
 	g_hw_render.version_minor = 0;
 	g_hw_render.debug_context = false;
 
+	logging.log(RETRO_LOG_INFO, "[BMSX] Requesting HW context for backend %s\n", backend_label(backend));
+
 	if (!environ_cb(RETRO_ENVIRONMENT_SET_HW_RENDER, &g_hw_render)) {
 		g_hw_render_failure_reason = "RETRO_ENVIRONMENT_SET_HW_RENDER rejected by frontend";
 		logging.log(RETRO_LOG_WARN,
@@ -499,18 +504,17 @@ static void request_hw_context_for_backend(bmsx::BackendType backend) {
 					backend_label(backend));
 		g_hw_render_supported = false;
 		g_hw_render_requested = false;
+		g_hw_render_backend = bmsx::BackendType::Software;
+		g_hw_context_pending = false;
+		g_hw_context_ready = false;
 		return;
 	}
 	g_hw_render_supported = true;
-	g_hw_render_requested = true;
-	g_hw_render_backend = backend;
 	g_hw_render_failure_reason.clear();
 }
 
 void retro_set_environment(retro_environment_t cb) {
   environ_cb = cb;
-  g_hw_context_pending = false;
-  g_hw_context_ready = false;
 
   // Try to get logging interface
   if (cb(RETRO_ENVIRONMENT_GET_LOG_INTERFACE, &logging)) {
@@ -601,7 +605,6 @@ void retro_init(void) {
 	g_system_dir.clear();
 	logging.log(RETRO_LOG_INFO, "[BMSX] System directory not provided\n");
   }
-  g_hw_context_ready = false;
   if (!isHardwareBackendActive()) {
 	const bmsx::BackendType desired_backend = resolve_backend_preference(g_backend_preference);
 	if (is_hardware_backend(desired_backend)) {
@@ -613,6 +616,7 @@ void retro_init(void) {
 				  "[BMSX] Software backend selected via core option\n");
 	}
 	g_hw_context_pending = false;
+	g_hw_context_ready = false;
   }
 
   // Set pixel format
@@ -656,6 +660,7 @@ void retro_init(void) {
   g_platform->setFrameTimeUsec(g_pending_frame_time_usec);
   g_has_pending_frame_time = false;
   }
+  
   if (isHardwareBackendActive() && g_hw_context_pending) {
 	try {
 	  g_platform->onContextReset();
@@ -789,6 +794,7 @@ void retro_reset(void) {
 void retro_run(void) {
   try_update_backend_option();
   if (isHardwareBackendActive() && !g_hw_context_ready) {
+	logging.log(RETRO_LOG_WARN, "[BMSX] retro_run: HW backend active but context not ready. g_hw_context_pending=%d\n", g_hw_context_pending);
 	const std::string reason =
 		std::string("[BMSX] ") + backend_label(g_active_backend) +
 		" hw render context not initialized; falling back to software";
@@ -1029,14 +1035,18 @@ static void fallback_log(enum retro_log_level level, const char* fmt, ...) {
 // }
 
 static void hw_context_reset() {
-  if (!isHardwareBackendActive()) {
+  logging.log(RETRO_LOG_INFO, "[BMSX] hw_context_reset called. g_platform=%p\n", g_platform);
+  if (!g_hw_render_requested) {
+	logging.log(RETRO_LOG_INFO, "[BMSX] hw_context_reset ignored (not requested)\n");
 	return;
   }
   if (g_platform) {
 	try {
 	  g_platform->onContextReset();
 	  g_hw_context_ready = true;
+	  g_hw_context_pending = false;
 	  g_hw_render_failure_reason.clear();
+	  logging.log(RETRO_LOG_INFO, "[BMSX] hw_context_reset success. g_hw_context_ready=true\n");
 	  return;
 	} catch (const std::exception& err) {
 	  logging.log(RETRO_LOG_ERROR,
@@ -1052,14 +1062,17 @@ static void hw_context_reset() {
 	}
   }
   g_hw_context_pending = true;
+  g_hw_context_ready = false;
 }
 
 static void hw_context_destroy() {
-  if (!isHardwareBackendActive()) {
+  logging.log(RETRO_LOG_INFO, "[BMSX] hw_context_destroy called\n");
+  if (!g_hw_render_requested) {
 	return;
   }
   if (g_platform) {
 	g_platform->onContextDestroy();
   }
   g_hw_context_ready = false;
+  g_hw_context_pending = false;
 }
