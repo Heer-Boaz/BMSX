@@ -58,9 +58,9 @@ void retro_set_environment(retro_environment_t cb) {
 
   // Try to get logging interface
   if (cb(RETRO_ENVIRONMENT_GET_LOG_INTERFACE, &logging)) {
-    // Got log callback
+	// Got log callback
   } else {
-    logging.log = fallback_log;
+	logging.log = fallback_log;
   }
 
   // We don't need a game to run (for testing empty cart)
@@ -69,26 +69,26 @@ void retro_set_environment(retro_environment_t cb) {
 
   // Set input descriptors
   static const struct retro_input_descriptor input_desc[] = {
-      {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP, "Up"},
-      {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN, "Down"},
-      {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT, "Left"},
-      {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT, "Right"},
-      {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A, "A"},
-      {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B, "B"},
-      {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X, "X"},
-      {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y, "Y"},
-      {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L, "L"},
-      {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R, "R"},
-      {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_START, "Start"},
-      {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT, "Select"},
-      // Player 2
-      {1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP, "Up (P2)"},
-      {1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN, "Down (P2)"},
-      {1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT, "Left (P2)"},
-      {1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT, "Right (P2)"},
-      {1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A, "A (P2)"},
-      {1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B, "B (P2)"},
-      {0, 0, 0, 0, nullptr}};
+	  {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP, "Up"},
+	  {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN, "Down"},
+	  {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT, "Left"},
+	  {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT, "Right"},
+	  {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A, "A"},
+	  {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B, "B"},
+	  {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X, "X"},
+	  {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y, "Y"},
+	  {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L, "L"},
+	  {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R, "R"},
+	  {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_START, "Start"},
+	  {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT, "Select"},
+	  // Player 2
+	  {1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP, "Up (P2)"},
+	  {1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN, "Down (P2)"},
+	  {1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT, "Left (P2)"},
+	  {1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT, "Right (P2)"},
+	  {1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A, "A (P2)"},
+	  {1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B, "B (P2)"},
+	  {0, 0, 0, 0, nullptr}};
   cb(RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS, (void*)input_desc);
 
   retro_frame_time_callback frame_time{};
@@ -110,9 +110,9 @@ void retro_set_environment(retro_environment_t cb) {
   g_hw_render.debug_context = false;
 
   if (!cb(RETRO_ENVIRONMENT_SET_HW_RENDER, &g_hw_render)) {
-    g_hw_render_active = false;
+	g_hw_render_active = false;
   } else {
-    g_hw_render_active = true;
+	g_hw_render_active = true;
   }
 #else
   g_hw_render_active = false;
@@ -120,11 +120,11 @@ void retro_set_environment(retro_environment_t cb) {
 
   const char* system_dir = nullptr;
   if (cb(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &system_dir) && system_dir && system_dir[0]) {
-    g_system_dir = system_dir;
-    logging.log(RETRO_LOG_INFO, "[BMSX] System directory: %s\n", g_system_dir.c_str());
+	g_system_dir = system_dir;
+	logging.log(RETRO_LOG_INFO, "[BMSX] System directory: %s\n", g_system_dir.c_str());
   } else {
-    g_system_dir.clear();
-    logging.log(RETRO_LOG_INFO, "[BMSX] System directory not provided\n");
+	g_system_dir.clear();
+	logging.log(RETRO_LOG_INFO, "[BMSX] System directory not provided\n");
   }
 }
 
@@ -141,14 +141,14 @@ void retro_set_audio_sample_batch(retro_audio_sample_batch_t cb) {
 void retro_set_input_poll(retro_input_poll_t cb) {
   input_poll_cb = cb;
   if (g_platform) {
-    g_platform->setInputPollCallback(cb);
+	g_platform->setInputPollCallback(cb);
   }
 }
 
 void retro_set_input_state(retro_input_state_t cb) {
   input_state_cb = cb;
   if (g_platform) {
-    g_platform->setInputStateCallback(cb);
+	g_platform->setInputStateCallback(cb);
   }
 }
 
@@ -160,17 +160,17 @@ void retro_set_input_state(retro_input_state_t cb) {
 void retro_init(void) {
   logging.log(RETRO_LOG_INFO, "[BMSX] retro_init\n");
   if (!g_hw_render_active) {
-    logging.log(RETRO_LOG_WARN,
-                "[BMSX] GLES2 hw render context not initialized; using software backend\n");
+	logging.log(RETRO_LOG_WARN,
+				"[BMSX] GLES2 hw render context not initialized; using software backend\n");
   }
 
   // Set pixel format
   enum retro_pixel_format fmt = RETRO_PIXEL_FORMAT_XRGB8888;
   if (!environ_cb(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &fmt)) {
-    logging.log(RETRO_LOG_WARN,
-                "[BMSX] XRGB8888 not supported, trying RGB565\n");
-    fmt = RETRO_PIXEL_FORMAT_RGB565;
-    environ_cb(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &fmt);
+	logging.log(RETRO_LOG_WARN,
+				"[BMSX] XRGB8888 not supported, trying RGB565\n");
+	fmt = RETRO_PIXEL_FORMAT_RGB565;
+	environ_cb(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &fmt);
   }
 
   // Create platform instance
@@ -183,18 +183,18 @@ void retro_init(void) {
   g_platform->setInputPollCallback(input_poll_cb);
   g_platform->setInputStateCallback(input_state_cb);
   if (g_hw_render_active) {
-    g_platform->setHwRenderCallbacks(g_hw_render.get_current_framebuffer);
+	g_platform->setHwRenderCallbacks(g_hw_render.get_current_framebuffer);
   }
   if (g_cached_av_info_valid) {
-    g_platform->setAVInfo(g_cached_av_info);
+	g_platform->setAVInfo(g_cached_av_info);
   }
   if (g_has_pending_frame_time) {
   g_platform->setFrameTimeUsec(g_pending_frame_time_usec);
   g_has_pending_frame_time = false;
   }
   if (g_hw_render_active && g_hw_context_pending) {
-    g_platform->onContextReset();
-    g_hw_context_pending = false;
+	g_platform->onContextReset();
+	g_hw_context_pending = false;
   }
 }
 
@@ -224,22 +224,22 @@ void retro_get_system_av_info(struct retro_system_av_info* info) {
   constexpr unsigned MAX_HEIGHT = 448;
   constexpr double FPS = 50.0;
   constexpr double SAMPLE_RATE = 48000.0;
-    
+	
   info->geometry.base_width = BASE_WIDTH;
   info->geometry.base_height = BASE_HEIGHT;
   info->geometry.max_width = MAX_WIDTH;
   info->geometry.max_height = MAX_HEIGHT;
   info->geometry.aspect_ratio =
-      static_cast<float>(BASE_WIDTH) / static_cast<float>(BASE_HEIGHT);
+	  static_cast<float>(BASE_WIDTH) / static_cast<float>(BASE_HEIGHT);
 
   info->timing.fps = FPS;
   info->timing.sample_rate = SAMPLE_RATE;
 
   logging.log(
-      RETRO_LOG_INFO,
-      "[BMSX] System AV Info requested: %ux%u @ %.2fHz, Sample Rate: %.2fHz\n",
-      info->geometry.base_width, info->geometry.base_height, info->timing.fps,
-      info->timing.sample_rate);
+	  RETRO_LOG_INFO,
+	  "[BMSX] System AV Info requested: %ux%u @ %.2fHz, Sample Rate: %.2fHz\n",
+	  info->geometry.base_width, info->geometry.base_height, info->timing.fps,
+	  info->timing.sample_rate);
   g_cached_av_info = *info;
   g_cached_av_info_valid = true;
   g_platform->setAVInfo(*info);
@@ -248,7 +248,7 @@ void retro_get_system_av_info(struct retro_system_av_info* info) {
 
 void retro_set_controller_port_device(unsigned port, unsigned device) {
   logging.log(RETRO_LOG_INFO, "[BMSX] Port %u set to device %u\n", port,
-              device);
+			  device);
   g_platform->setControllerDevice(port, device);
 }
 
@@ -259,24 +259,24 @@ void retro_set_controller_port_device(unsigned port, unsigned device) {
 
 bool retro_load_game(const struct retro_game_info* game) {
   if (!game) {
-    logging.log(RETRO_LOG_INFO,
-                "[BMSX] No game provided, loading empty cart\n");
-    return g_platform->loadEmptyCart();
+	logging.log(RETRO_LOG_INFO,
+				"[BMSX] No game provided, loading empty cart\n");
+	return g_platform->loadEmptyCart();
   }
 
   logging.log(RETRO_LOG_INFO, "[BMSX] Loading game: %s\n",
-              game->path ? game->path : "(memory)");
+			  game->path ? game->path : "(memory)");
 
   // Try to load engine assets from the same directory as the ROM
   if (game->path) {
-    g_platform->tryLoadEngineAssets(game->path);
+	g_platform->tryLoadEngineAssets(game->path);
   }
 
   if (game->data && game->size > 0) {
-    return g_platform->loadRom(static_cast<const uint8_t*>(game->data),
-                               game->size);
+	return g_platform->loadRom(static_cast<const uint8_t*>(game->data),
+							   game->size);
   } else if (game->path) {
-    return g_platform->loadRomFromPath(game->path);
+	return g_platform->loadRomFromPath(game->path);
   }
 
   logging.log(RETRO_LOG_ERROR, "[BMSX] No game data or path provided\n");
@@ -284,8 +284,8 @@ bool retro_load_game(const struct retro_game_info* game) {
 }
 
 bool retro_load_game_special(unsigned game_type,
-                             const struct retro_game_info* info,
-                             size_t num_info) {
+							 const struct retro_game_info* info,
+							 size_t num_info) {
   // We don't support special game loading
   (void)game_type;
   (void)info;
@@ -343,24 +343,24 @@ void retro_run(void) {
   if (dtMs < minMs) minMs = dtMs;
   if (dtMs > maxMs) maxMs = dtMs;
   if (accSec >= 1.0) {
-    const double avgMs = accMs / static_cast<double>(accCalls);
-    const double fps = static_cast<double>(accCalls) / accSec;
-    const double targetMs = g_platform->frameTimeSec() * 1000.0;
-    const double targetFps = 1.0 / g_platform->frameTimeSec();
-    logging.log(RETRO_LOG_WARN,
-                "[BMSX] host frame timing avg=%.2fms min=%.2f max=%.2f fps=%.1f target=%.2fms (%.1f fps) calls=%llu\n",
-                avgMs,
-                minMs,
-                maxMs,
-                fps,
-                targetMs,
-                targetFps,
-                static_cast<unsigned long long>(accCalls));
-    accSec = 0.0;
-    accMs = 0.0;
-    minMs = std::numeric_limits<double>::infinity();
-    maxMs = 0.0;
-    accCalls = 0;
+	const double avgMs = accMs / static_cast<double>(accCalls);
+	const double fps = static_cast<double>(accCalls) / accSec;
+	const double targetMs = g_platform->frameTimeSec() * 1000.0;
+	const double targetFps = 1.0 / g_platform->frameTimeSec();
+	logging.log(RETRO_LOG_WARN,
+				"[BMSX] host frame timing avg=%.2fms min=%.2f max=%.2f fps=%.1f target=%.2fms (%.1f fps) calls=%llu\n",
+				avgMs,
+				minMs,
+				maxMs,
+				fps,
+				targetMs,
+				targetFps,
+				static_cast<unsigned long long>(accCalls));
+	accSec = 0.0;
+	accMs = 0.0;
+	minMs = std::numeric_limits<double>::infinity();
+	maxMs = 0.0;
+	accCalls = 0;
   }
 
   // Run one frame
@@ -390,53 +390,53 @@ void retro_run(void) {
 
   const double perfSec = std::chrono::duration<double>(runEnd - perfStart).count();
   if (perfSec >= 1.0) {
-    const double invFrames = 1.0 / static_cast<double>(perfFrames);
-    logging.log(RETRO_LOG_WARN,
-                "[BMSX] run avg=%.2fms max=%.2f tick=%.2f render=%.2f overhead=%.2f frames=%llu\n",
-                accRunMs * invFrames,
-                maxRunMs,
-                accTickMs * invFrames,
-                accRenderMs * invFrames,
-                accOverheadMs * invFrames,
-                static_cast<unsigned long long>(perfFrames));
-    logging.log(RETRO_LOG_WARN,
-                "[BMSX] vm avg update=%.2f draw=%.2f draw_game=%.2f max_update=%.2f max_draw=%.2f max_draw_game=%.2f\n",
-                accVmUpdateMs * invFrames,
-                accVmDrawMs * invFrames,
-                accDrawGameMs * invFrames,
-                maxVmUpdateMs,
-                maxVmDrawMs,
-                maxDrawGameMs);
-    perfStart = runEnd;
-    accRunMs = 0.0;
-    accTickMs = 0.0;
-    accRenderMs = 0.0;
-    accOverheadMs = 0.0;
-    accVmUpdateMs = 0.0;
-    accVmDrawMs = 0.0;
-    accDrawGameMs = 0.0;
-    maxRunMs = 0.0;
-    maxTickMs = 0.0;
-    maxRenderMs = 0.0;
-    maxOverheadMs = 0.0;
-    maxVmUpdateMs = 0.0;
-    maxVmDrawMs = 0.0;
-    maxDrawGameMs = 0.0;
-    perfFrames = 0;
+	const double invFrames = 1.0 / static_cast<double>(perfFrames);
+	logging.log(RETRO_LOG_WARN,
+				"[BMSX] run avg=%.2fms max=%.2f tick=%.2f render=%.2f overhead=%.2f frames=%llu\n",
+				accRunMs * invFrames,
+				maxRunMs,
+				accTickMs * invFrames,
+				accRenderMs * invFrames,
+				accOverheadMs * invFrames,
+				static_cast<unsigned long long>(perfFrames));
+	logging.log(RETRO_LOG_WARN,
+				"[BMSX] vm avg update=%.2f draw=%.2f draw_game=%.2f max_update=%.2f max_draw=%.2f max_draw_game=%.2f\n",
+				accVmUpdateMs * invFrames,
+				accVmDrawMs * invFrames,
+				accDrawGameMs * invFrames,
+				maxVmUpdateMs,
+				maxVmDrawMs,
+				maxDrawGameMs);
+	perfStart = runEnd;
+	accRunMs = 0.0;
+	accTickMs = 0.0;
+	accRenderMs = 0.0;
+	accOverheadMs = 0.0;
+	accVmUpdateMs = 0.0;
+	accVmDrawMs = 0.0;
+	accDrawGameMs = 0.0;
+	maxRunMs = 0.0;
+	maxTickMs = 0.0;
+	maxRenderMs = 0.0;
+	maxOverheadMs = 0.0;
+	maxVmUpdateMs = 0.0;
+	maxVmDrawMs = 0.0;
+	maxDrawGameMs = 0.0;
+	perfFrames = 0;
   }
 
   // Output video
   const auto& fb = g_platform->getFramebuffer();
   if (g_hw_render_active) {
-    video_cb(RETRO_HW_FRAME_BUFFER_VALID, fb.width, fb.height, 0);
+	video_cb(RETRO_HW_FRAME_BUFFER_VALID, fb.width, fb.height, 0);
   } else {
-    video_cb(fb.data, fb.width, fb.height, fb.pitch);
+	video_cb(fb.data, fb.width, fb.height, fb.pitch);
   }
 
   // Output audio
   const auto& audio = g_platform->getAudioBuffer();
   if (audio_batch_cb && audio.samples > 0) {
-    audio_batch_cb(audio.data, audio.samples);
+	audio_batch_cb(audio.data, audio.samples);
   }
 }
 
@@ -477,23 +477,23 @@ unsigned retro_get_region(void) {
 
 void* retro_get_memory_data(unsigned id) {
   switch (id) {
-    case RETRO_MEMORY_SAVE_RAM:
-      return g_platform->getSaveRAM();
-    case RETRO_MEMORY_SYSTEM_RAM:
-      return g_platform->getSystemRAM();
-    default:
-      return nullptr;
+	case RETRO_MEMORY_SAVE_RAM:
+	  return g_platform->getSaveRAM();
+	case RETRO_MEMORY_SYSTEM_RAM:
+	  return g_platform->getSystemRAM();
+	default:
+	  return nullptr;
   }
 }
 
 size_t retro_get_memory_size(unsigned id) {
   switch (id) {
-    case RETRO_MEMORY_SAVE_RAM:
-      return g_platform->getSaveRAMSize();
-    case RETRO_MEMORY_SYSTEM_RAM:
-      return g_platform->getSystemRAMSize();
-    default:
-      return 0;
+	case RETRO_MEMORY_SAVE_RAM:
+	  return g_platform->getSaveRAMSize();
+	case RETRO_MEMORY_SYSTEM_RAM:
+	  return g_platform->getSystemRAMSize();
+	default:
+	  return 0;
   }
 }
 
@@ -512,12 +512,12 @@ static void fallback_log(enum retro_log_level level, const char* fmt, ...) {
 
 static void frame_time_cb(retro_usec_t usec) {
   logging.log(RETRO_LOG_WARN, "[BMSX] frame_time_cb: %llu usec (%.3fms, %.2f fps)\n",
-              static_cast<unsigned long long>(usec),
-              static_cast<double>(usec) / 1000.0,
-              1000000.0 / static_cast<double>(usec));
+			  static_cast<unsigned long long>(usec),
+			  static_cast<double>(usec) / 1000.0,
+			  1000000.0 / static_cast<double>(usec));
   if (g_platform) {
-    g_platform->setFrameTimeUsec(usec);
-    return;
+	g_platform->setFrameTimeUsec(usec);
+	return;
   }
   g_pending_frame_time_usec = usec;
   g_has_pending_frame_time = true;
@@ -525,14 +525,14 @@ static void frame_time_cb(retro_usec_t usec) {
 
 static void hw_context_reset() {
   if (g_platform) {
-    g_platform->onContextReset();
-    return;
+	g_platform->onContextReset();
+	return;
   }
   g_hw_context_pending = true;
 }
 
 static void hw_context_destroy() {
   if (g_platform) {
-    g_platform->onContextDestroy();
+	g_platform->onContextDestroy();
   }
 }

@@ -27,17 +27,17 @@ namespace bmsx {
  * ============================================================================ */
 
 GameView::GameView(i32 viewportWidth, i32 viewportHeight)
-    : viewportSize{static_cast<f32>(viewportWidth), static_cast<f32>(viewportHeight)}
-    , canvasSize{static_cast<f32>(viewportWidth), static_cast<f32>(viewportHeight)}
-    , offscreenCanvasSize{static_cast<f32>(viewportWidth) * 2.0f, static_cast<f32>(viewportHeight) * 2.0f}
-    , windowSize{static_cast<f32>(viewportWidth), static_cast<f32>(viewportHeight)}
-    , availableWindowSize{static_cast<f32>(viewportWidth), static_cast<f32>(viewportHeight)}
+	: viewportSize{static_cast<f32>(viewportWidth), static_cast<f32>(viewportHeight)}
+	, canvasSize{static_cast<f32>(viewportWidth), static_cast<f32>(viewportHeight)}
+	, offscreenCanvasSize{static_cast<f32>(viewportWidth) * 2.0f, static_cast<f32>(viewportHeight) * 2.0f}
+	, windowSize{static_cast<f32>(viewportWidth), static_cast<f32>(viewportHeight)}
+	, availableWindowSize{static_cast<f32>(viewportWidth), static_cast<f32>(viewportHeight)}
 {
-    initializeRenderer();
+	initializeRenderer();
 }
 
 GameView::~GameView() {
-    dispose();
+	dispose();
 }
 
 /**
@@ -47,101 +47,101 @@ GameView::~GameView() {
  * Each submit function routes to the appropriate pipeline.
  */
 void GameView::initializeRenderer() {
-    // sprite -> SpritesPipeline.drawImg
-    renderer.submit.sprite = [](const ImgRenderSubmission& s) {
-        SpritesPipeline::drawImg(s);
-    };
+	// sprite -> SpritesPipeline.drawImg
+	renderer.submit.sprite = [](const ImgRenderSubmission& s) {
+		SpritesPipeline::drawImg(s);
+	};
 
-    // rect -> SpritesPipeline.fillRectangle / drawRectangle
-    renderer.submit.rect = [](const RectRenderSubmission& s) {
-        if (s.kind == RectRenderSubmission::Kind::Fill) {
-            SpritesPipeline::fillRectangle(s);
-        } else {
-            SpritesPipeline::drawRectangle(s);
-        }
-    };
+	// rect -> SpritesPipeline.fillRectangle / drawRectangle
+	renderer.submit.rect = [](const RectRenderSubmission& s) {
+		if (s.kind == RectRenderSubmission::Kind::Fill) {
+			SpritesPipeline::fillRectangle(s);
+		} else {
+			SpritesPipeline::drawRectangle(s);
+		}
+	};
 
-    // poly -> SpritesPipeline.drawPolygon
-    renderer.submit.poly = [](const PolyRenderSubmission& s) {
-        const f32 thickness = s.thickness.value_or(1.0f);
-        SpritesPipeline::drawPolygon(s.points, s.z, s.color, thickness, s.layer);
-    };
+	// poly -> SpritesPipeline.drawPolygon
+	renderer.submit.poly = [](const PolyRenderSubmission& s) {
+		const f32 thickness = s.thickness.value_or(1.0f);
+		SpritesPipeline::drawPolygon(s.points, s.z, s.color, thickness, s.layer);
+	};
 
-    // glyphs -> renderGlyphs (uses font + sprite rendering)
-    renderer.submit.glyphs = [this](const GlyphRenderSubmission& s) {
-        BFont* font = s.font ? s.font : default_font;
-        if (!font) {
-            throw std::runtime_error("[GameView] No font available for glyph rendering.");
-        }
-        std::vector<std::string> lines = s.glyphs;
-        if (s.wrap_chars && *s.wrap_chars > 0 && lines.size() == 1) {
-            lines = wrapGlyphs(lines[0], *s.wrap_chars);
-        }
-        f32 x = s.x;
-        if (s.center_block_width && *s.center_block_width > 0) {
-            x += calculateCenteredBlockX(lines, font->char_width('a'), *s.center_block_width);
-        }
-        const f32 z = s.z.value_or(950.0f);
-        renderGlyphs(this, x, s.y, lines, s.glyph_start, s.glyph_end, z, font, s.color, s.background_color, s.layer);
-    };
+	// glyphs -> renderGlyphs (uses font + sprite rendering)
+	renderer.submit.glyphs = [this](const GlyphRenderSubmission& s) {
+		BFont* font = s.font ? s.font : default_font;
+		if (!font) {
+			throw std::runtime_error("[GameView] No font available for glyph rendering.");
+		}
+		std::vector<std::string> lines = s.glyphs;
+		if (s.wrap_chars && *s.wrap_chars > 0 && lines.size() == 1) {
+			lines = wrapGlyphs(lines[0], *s.wrap_chars);
+		}
+		f32 x = s.x;
+		if (s.center_block_width && *s.center_block_width > 0) {
+			x += calculateCenteredBlockX(lines, font->char_width('a'), *s.center_block_width);
+		}
+		const f32 z = s.z.value_or(950.0f);
+		renderGlyphs(this, x, s.y, lines, s.glyph_start, s.glyph_end, z, font, s.color, s.background_color, s.layer);
+	};
 
-    // particle -> ParticlesPipeline (TODO)
-    renderer.submit.particle = [](const ParticleRenderSubmission& s) {
-        RenderQueues::submit_particle(s);
-    };
+	// particle -> ParticlesPipeline (TODO)
+	renderer.submit.particle = [](const ParticleRenderSubmission& s) {
+		RenderQueues::submit_particle(s);
+	};
 
-    // mesh -> MeshPipeline (TODO)
-    renderer.submit.mesh = [](const MeshRenderSubmission& s) {
-        RenderQueues::submitMesh(s);
-    };
+	// mesh -> MeshPipeline (TODO)
+	renderer.submit.mesh = [](const MeshRenderSubmission& s) {
+		RenderQueues::submitMesh(s);
+	};
 }
 
 void GameView::setBackend(std::unique_ptr<GPUBackend> backend) {
-    m_backend = std::move(backend);
+	m_backend = std::move(backend);
 }
 
 BackendType GameView::backendType() const {
-    return m_backend ? m_backend->type() : BackendType::Headless;
+	return m_backend ? m_backend->type() : BackendType::Headless;
 }
 
 void GameView::setViewportSize(i32 width, i32 height) {
-    viewportSize.x = static_cast<f32>(width);
-    viewportSize.y = static_cast<f32>(height);
+	viewportSize.x = static_cast<f32>(width);
+	viewportSize.y = static_cast<f32>(height);
 }
 
 void GameView::configureRenderTargets(const Vec2* viewport, const Vec2* canvas, const Vec2* offscreen) {
-    bool viewportChanged = false;
-    bool canvasChanged = false;
-    bool offscreenChanged = false;
+	bool viewportChanged = false;
+	bool canvasChanged = false;
+	bool offscreenChanged = false;
 
-    if (viewport) {
-        viewportChanged = (viewportSize.x != viewport->x || viewportSize.y != viewport->y);
-        viewportSize = *viewport;
-    }
-    if (canvas) {
-        canvasChanged = (canvasSize.x != canvas->x || canvasSize.y != canvas->y);
-        canvasSize = *canvas;
-    }
-    if (offscreen) {
-        offscreenChanged = (offscreenCanvasSize.x != offscreen->x || offscreenCanvasSize.y != offscreen->y);
-        offscreenCanvasSize = *offscreen;
-    }
+	if (viewport) {
+		viewportChanged = (viewportSize.x != viewport->x || viewportSize.y != viewport->y);
+		viewportSize = *viewport;
+	}
+	if (canvas) {
+		canvasChanged = (canvasSize.x != canvas->x || canvasSize.y != canvas->y);
+		canvasSize = *canvas;
+	}
+	if (offscreen) {
+		offscreenChanged = (offscreenCanvasSize.x != offscreen->x || offscreenCanvasSize.y != offscreen->y);
+		offscreenCanvasSize = *offscreen;
+	}
 
-    if (!(viewportChanged || canvasChanged || offscreenChanged)) {
-        return;
-    }
+	if (!(viewportChanged || canvasChanged || offscreenChanged)) {
+		return;
+	}
 
-    rebuildGraph();
+	rebuildGraph();
 }
 
 void GameView::init() {
-    // Backend resources are configured externally via setBackend()
-    rebuildGraph();
+	// Backend resources are configured externally via setBackend()
+	rebuildGraph();
 }
 
 void GameView::beginFrame() {
-    if (!m_backend) return;
-    m_backend->beginFrame();
+	if (!m_backend) return;
+	m_backend->beginFrame();
 }
 
 /**
@@ -152,52 +152,52 @@ void GameView::beginFrame() {
  * in the correct order.
  */
 void GameView::drawGame() {
-    if (!m_backend) return;
+	if (!m_backend) return;
 
-    // Increment frame timing
-    m_renderFrameIndex++;
+	// Increment frame timing
+	m_renderFrameIndex++;
 
 #if !BMSX_ENABLE_GLES2
-    if (m_backend->type() == BackendType::OpenGLES2) {
-        throw std::runtime_error("[GameView] OpenGLES2 backend disabled at compile time.");
-    }
+	if (m_backend->type() == BackendType::OpenGLES2) {
+		throw std::runtime_error("[GameView] OpenGLES2 backend disabled at compile time.");
+	}
 #else
-    if (m_backend->type() == BackendType::OpenGLES2) {
-        FrameData frame;
-        frame.frameIndex = static_cast<u32>(m_renderFrameIndex);
-        frame.time = EngineCore::instance().totalTime();
-        frame.delta = EngineCore::instance().deltaTime();
-        m_renderGraph->execute(&frame);
-        return;
-    }
+	if (m_backend->type() == BackendType::OpenGLES2) {
+		FrameData frame;
+		frame.frameIndex = static_cast<u32>(m_renderFrameIndex);
+		frame.time = EngineCore::instance().totalTime();
+		frame.delta = EngineCore::instance().deltaTime();
+		m_renderGraph->execute(&frame);
+		return;
+	}
 #endif
 
-    // Begin main render pass
-    RenderPassDesc mainPass;
-    mainPass.label = "main";
-    ColorAttachmentSpec colorSpec;
-    colorSpec.clear = Color::black();
-    mainPass.color = colorSpec;
-    DepthAttachmentSpec depthSpec;
-    depthSpec.clearDepth = 1.0f;
-    mainPass.depth = depthSpec;
+	// Begin main render pass
+	RenderPassDesc mainPass;
+	mainPass.label = "main";
+	ColorAttachmentSpec colorSpec;
+	colorSpec.clear = Color::black();
+	mainPass.color = colorSpec;
+	DepthAttachmentSpec depthSpec;
+	depthSpec.clearDepth = 1.0f;
+	mainPass.depth = depthSpec;
 
-    PassEncoder pass = m_backend->beginRenderPass(mainPass);
+	PassEncoder pass = m_backend->beginRenderPass(mainPass);
 
-    // Execute sprite pipeline (includes rects, polys via whitepixel sprite)
-    SpritesPipeline::renderSpriteBatch(m_backend.get(), this);
+	// Execute sprite pipeline (includes rects, polys via whitepixel sprite)
+	SpritesPipeline::renderSpriteBatch(m_backend.get(), this);
 
-    m_backend->endRenderPass(pass);
+	m_backend->endRenderPass(pass);
 
-    // Apply CRT post-processing effects (software implementation)
-    if (crt_postprocessing_enabled) {
-        applyCRTPostProcessing();
-    }
+	// Apply CRT post-processing effects (software implementation)
+	if (crt_postprocessing_enabled) {
+		applyCRTPostProcessing();
+	}
 }
 
 void GameView::endFrame() {
-    if (!m_backend) return;
-    m_backend->endFrame();
+	if (!m_backend) return;
+	m_backend->endFrame();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -205,37 +205,37 @@ void GameView::endFrame() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 void GameView::setAtlasIndex(bool isPrimary, i32 index) {
-    i32& currentIndex = isPrimary ? m_primaryAtlasIndex : m_secondaryAtlasIndex;
-    if (currentIndex == index) return;
+	i32& currentIndex = isPrimary ? m_primaryAtlasIndex : m_secondaryAtlasIndex;
+	if (currentIndex == index) return;
 
-    const char* atlasId = isPrimary ? "_atlas_primary" : "_atlas_secondary";
+	const char* atlasId = isPrimary ? "_atlas_primary" : "_atlas_secondary";
 
-    if (index < 0) {
-        currentIndex = -1;
-        auto fallbackIt = textures.find("_atlas_fallback");
-        if (fallbackIt != textures.end()) {
-            textures[atlasId] = fallbackIt->second;
-        }
-        return;
-    }
+	if (index < 0) {
+		currentIndex = -1;
+		auto fallbackIt = textures.find("_atlas_fallback");
+		if (fallbackIt != textures.end()) {
+			textures[atlasId] = fallbackIt->second;
+		}
+		return;
+	}
 
-    // TODO: Generate atlas name and load from assets
-    // const std::string atlasName = generateAtlasName(index);
-    // const auto* atlas = EngineCore::instance().assets().getImg(atlasName);
-    // textures[atlasId] = m_backend->createTexture(...);
-    currentIndex = index;
+	// TODO: Generate atlas name and load from assets
+	// const std::string atlasName = generateAtlasName(index);
+	// const auto* atlas = EngineCore::instance().assets().getImg(atlasName);
+	// textures[atlasId] = m_backend->createTexture(...);
+	currentIndex = index;
 }
 
 void GameView::setPrimaryAtlas(i32 index) {
-    setAtlasIndex(true, index);
+	setAtlasIndex(true, index);
 }
 
 void GameView::setSecondaryAtlas(i32 index) {
-    setAtlasIndex(false, index);
+	setAtlasIndex(false, index);
 }
 
 void GameView::setPipelineRegistry(std::unique_ptr<RenderPassLibrary> registry) {
-    m_pipelineRegistry = std::move(registry);
+	m_pipelineRegistry = std::move(registry);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -243,33 +243,33 @@ void GameView::setPipelineRegistry(std::unique_ptr<RenderPassLibrary> registry) 
 // ─────────────────────────────────────────────────────────────────────────────
 
 void GameView::setActiveTexUnit(i32 unit) {
-    if (backendType() != BackendType::OpenGLES2) return;
+	if (backendType() != BackendType::OpenGLES2) return;
 #if !BMSX_ENABLE_GLES2
-    throw std::runtime_error("[GameView] OpenGLES2 backend disabled at compile time.");
+	throw std::runtime_error("[GameView] OpenGLES2 backend disabled at compile time.");
 #else
-    m_activeTexUnit = unit;
-    static_cast<OpenGLES2Backend*>(m_backend.get())->setActiveTextureUnit(unit);
+	m_activeTexUnit = unit;
+	static_cast<OpenGLES2Backend*>(m_backend.get())->setActiveTextureUnit(unit);
 #endif
 }
 
 void GameView::bind2DTex(TextureHandle tex) {
-    if (backendType() != BackendType::OpenGLES2) return;
-    if (m_activeTexture2D == tex) return;
+	if (backendType() != BackendType::OpenGLES2) return;
+	if (m_activeTexture2D == tex) return;
 #if !BMSX_ENABLE_GLES2
-    throw std::runtime_error("[GameView] OpenGLES2 backend disabled at compile time.");
+	throw std::runtime_error("[GameView] OpenGLES2 backend disabled at compile time.");
 #else
-    static_cast<OpenGLES2Backend*>(m_backend.get())->bindTexture2D(tex);
-    m_activeTexture2D = tex;
+	static_cast<OpenGLES2Backend*>(m_backend.get())->bindTexture2D(tex);
+	m_activeTexture2D = tex;
 #endif
 }
 
 void GameView::bindCubemapTex(TextureHandle tex) {
-    if (backendType() != BackendType::OpenGLES2) return;
+	if (backendType() != BackendType::OpenGLES2) return;
 #if !BMSX_ENABLE_GLES2
-    throw std::runtime_error("[GameView] OpenGLES2 backend disabled at compile time.");
+	throw std::runtime_error("[GameView] OpenGLES2 backend disabled at compile time.");
 #else
-    if (m_activeCubemap == tex) return;
-    m_activeCubemap = tex;
+	if (m_activeCubemap == tex) return;
+	m_activeCubemap = tex;
 #endif
 }
 
@@ -278,18 +278,18 @@ void GameView::bindCubemapTex(TextureHandle tex) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 void GameView::setSkyboxTintExposure(const std::array<f32, 3>& tint, f32 exposure) {
-    // TODO: SkyboxPipeline::setSkyboxTintExposure(tint, exposure);
-    (void)tint; (void)exposure;
+	// TODO: SkyboxPipeline::setSkyboxTintExposure(tint, exposure);
+	(void)tint; (void)exposure;
 }
 
 void GameView::setParticlesAmbient(i32 mode, f32 factor) {
-    // TODO: ParticlesPipeline::setAmbientDefaults(mode, factor);
-    (void)mode; (void)factor;
+	// TODO: ParticlesPipeline::setAmbientDefaults(mode, factor);
+	(void)mode; (void)factor;
 }
 
 void GameView::setSpritesAmbient(bool enabled, f32 factor) {
-    spriteAmbientEnabledDefault = enabled;
-    spriteAmbientFactorDefault = factor;
+	spriteAmbientEnabledDefault = enabled;
+	spriteAmbientFactorDefault = factor;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -299,34 +299,34 @@ void GameView::setSpritesAmbient(bool enabled, f32 factor) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 void GameView::fillRectangle(const RectBounds& area, const Color& color, RenderLayer layer) {
-    RectRenderSubmission submission;
-    submission.kind = RectRenderSubmission::Kind::Fill;
-    submission.area = area;
-    submission.color = color;
-    submission.layer = layer;
-    renderer.submit.rect(submission);
+	RectRenderSubmission submission;
+	submission.kind = RectRenderSubmission::Kind::Fill;
+	submission.area = area;
+	submission.color = color;
+	submission.layer = layer;
+	renderer.submit.rect(submission);
 }
 
 void GameView::drawRectangle(const RectBounds& area, const Color& color, RenderLayer layer) {
-    RectRenderSubmission submission;
-    submission.kind = RectRenderSubmission::Kind::Rect;
-    submission.area = area;
-    submission.color = color;
-    submission.layer = layer;
-    renderer.submit.rect(submission);
+	RectRenderSubmission submission;
+	submission.kind = RectRenderSubmission::Kind::Rect;
+	submission.area = area;
+	submission.color = color;
+	submission.layer = layer;
+	renderer.submit.rect(submission);
 }
 
 void GameView::drawLine(i32 x0, i32 y0, i32 x1, i32 y1, const Color& color, RenderLayer layer) {
-    PolyRenderSubmission submission;
-    submission.points.push_back(static_cast<f32>(x0));
-    submission.points.push_back(static_cast<f32>(y0));
-    submission.points.push_back(static_cast<f32>(x1));
-    submission.points.push_back(static_cast<f32>(y1));
-    submission.z = 0.0f;
-    submission.color = color;
-    submission.thickness = 1.0f;
-    submission.layer = layer;
-    renderer.submit.poly(submission);
+	PolyRenderSubmission submission;
+	submission.points.push_back(static_cast<f32>(x0));
+	submission.points.push_back(static_cast<f32>(y0));
+	submission.points.push_back(static_cast<f32>(x1));
+	submission.points.push_back(static_cast<f32>(y1));
+	submission.z = 0.0f;
+	submission.color = color;
+	submission.thickness = 1.0f;
+	submission.layer = layer;
+	renderer.submit.poly(submission);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -334,11 +334,11 @@ void GameView::drawLine(i32 x0, i32 y0, i32 x1, i32 y1, const Color& color, Rend
 // ─────────────────────────────────────────────────────────────────────────────
 
 void GameView::rebuildGraph() {
-    if (!m_pipelineRegistry) {
-        // No pipeline registry yet - this is OK during early init
-        return;
-    }
-    m_renderGraph = m_pipelineRegistry->buildRenderGraph(this, nullptr);
+	if (!m_pipelineRegistry) {
+		// No pipeline registry yet - this is OK during early init
+		return;
+	}
+	m_renderGraph = m_pipelineRegistry->buildRenderGraph(this, nullptr);
 }
 
 namespace {
@@ -366,142 +366,142 @@ constexpr f32 kBlackSoft = 0.060f;
 
 constexpr f32 kKernelNorm = 1.0f / 256.0f;
 constexpr f32 kKernel5x5[25] = {
-    1.0f,  4.0f,  6.0f,  4.0f, 1.0f,
-    4.0f, 16.0f, 24.0f, 16.0f, 4.0f,
-    6.0f, 24.0f, 36.0f, 24.0f, 6.0f,
-    4.0f, 16.0f, 24.0f, 16.0f, 4.0f,
-    1.0f,  4.0f,  6.0f,  4.0f, 1.0f,
+	1.0f,  4.0f,  6.0f,  4.0f, 1.0f,
+	4.0f, 16.0f, 24.0f, 16.0f, 4.0f,
+	6.0f, 24.0f, 36.0f, 24.0f, 6.0f,
+	4.0f, 16.0f, 24.0f, 16.0f, 4.0f,
+	1.0f,  4.0f,  6.0f,  4.0f, 1.0f,
 };
 
 inline f32 clamp01(f32 v) {
-    return std::min(1.0f, std::max(0.0f, v));
+	return std::min(1.0f, std::max(0.0f, v));
 }
 
 inline f32 smoothstep(f32 edge0, f32 edge1, f32 x) {
-    const f32 t = clamp01((x - edge0) / (edge1 - edge0));
-    return t * t * (3.0f - 2.0f * t);
+	const f32 t = clamp01((x - edge0) / (edge1 - edge0));
+	return t * t * (3.0f - 2.0f * t);
 }
 
 inline f32 linearToSrgb(f32 c) {
-    return std::pow(std::max(0.0f, c), kInvGamma);
+	return std::pow(std::max(0.0f, c), kInvGamma);
 }
 
 inline f32 fract(f32 v) {
-    return v - std::floor(v);
+	return v - std::floor(v);
 }
 
 const std::array<f32, 256>& srgbToLinearTable() {
-    static std::array<f32, 256> table = []() {
-        std::array<f32, 256> t{};
-        for (i32 i = 0; i < 256; ++i) {
-            f32 c = static_cast<f32>(i) / 255.0f;
-            t[static_cast<size_t>(i)] = std::pow(c, kGamma);
-        }
-        return t;
-    }();
-    return table;
+	static std::array<f32, 256> table = []() {
+		std::array<f32, 256> t{};
+		for (i32 i = 0; i < 256; ++i) {
+			f32 c = static_cast<f32>(i) / 255.0f;
+			t[static_cast<size_t>(i)] = std::pow(c, kGamma);
+		}
+		return t;
+	}();
+	return table;
 }
 
 inline Color unpackLinear(u32 pixel, const std::array<f32, 256>& table) {
-    const u8 r = (pixel >> 16) & 0xFF;
-    const u8 g = (pixel >> 8) & 0xFF;
-    const u8 b = pixel & 0xFF;
-    return {table[r], table[g], table[b], 1.0f};
+	const u8 r = (pixel >> 16) & 0xFF;
+	const u8 g = (pixel >> 8) & 0xFF;
+	const u8 b = pixel & 0xFF;
+	return {table[r], table[g], table[b], 1.0f};
 }
 
 inline Color sampleLinear(const u32* src, i32 width, i32 height, f32 x, f32 y,
-                          const std::array<f32, 256>& table) {
-    const f32 maxX = static_cast<f32>(width - 1);
-    const f32 maxY = static_cast<f32>(height - 1);
-    x = std::min(maxX, std::max(0.0f, x));
-    y = std::min(maxY, std::max(0.0f, y));
+						  const std::array<f32, 256>& table) {
+	const f32 maxX = static_cast<f32>(width - 1);
+	const f32 maxY = static_cast<f32>(height - 1);
+	x = std::min(maxX, std::max(0.0f, x));
+	y = std::min(maxY, std::max(0.0f, y));
 
-    const i32 x0 = static_cast<i32>(std::floor(x));
-    const i32 y0 = static_cast<i32>(std::floor(y));
-    const i32 x1 = std::min(x0 + 1, width - 1);
-    const i32 y1 = std::min(y0 + 1, height - 1);
-    const f32 tx = x - static_cast<f32>(x0);
-    const f32 ty = y - static_cast<f32>(y0);
+	const i32 x0 = static_cast<i32>(std::floor(x));
+	const i32 y0 = static_cast<i32>(std::floor(y));
+	const i32 x1 = std::min(x0 + 1, width - 1);
+	const i32 y1 = std::min(y0 + 1, height - 1);
+	const f32 tx = x - static_cast<f32>(x0);
+	const f32 ty = y - static_cast<f32>(y0);
 
-    const Color c00 = unpackLinear(src[y0 * width + x0], table);
-    const Color c10 = unpackLinear(src[y0 * width + x1], table);
-    const Color c01 = unpackLinear(src[y1 * width + x0], table);
-    const Color c11 = unpackLinear(src[y1 * width + x1], table);
+	const Color c00 = unpackLinear(src[y0 * width + x0], table);
+	const Color c10 = unpackLinear(src[y0 * width + x1], table);
+	const Color c01 = unpackLinear(src[y1 * width + x0], table);
+	const Color c11 = unpackLinear(src[y1 * width + x1], table);
 
-    const f32 r0 = c00.r + (c10.r - c00.r) * tx;
-    const f32 g0 = c00.g + (c10.g - c00.g) * tx;
-    const f32 b0 = c00.b + (c10.b - c00.b) * tx;
+	const f32 r0 = c00.r + (c10.r - c00.r) * tx;
+	const f32 g0 = c00.g + (c10.g - c00.g) * tx;
+	const f32 b0 = c00.b + (c10.b - c00.b) * tx;
 
-    const f32 r1 = c01.r + (c11.r - c01.r) * tx;
-    const f32 g1 = c01.g + (c11.g - c01.g) * tx;
-    const f32 b1 = c01.b + (c11.b - c01.b) * tx;
+	const f32 r1 = c01.r + (c11.r - c01.r) * tx;
+	const f32 g1 = c01.g + (c11.g - c01.g) * tx;
+	const f32 b1 = c01.b + (c11.b - c01.b) * tx;
 
-    return {
-        r0 + (r1 - r0) * ty,
-        g0 + (g1 - g0) * ty,
-        b0 + (b1 - b0) * ty,
-        1.0f
-    };
+	return {
+		r0 + (r1 - r0) * ty,
+		g0 + (g1 - g0) * ty,
+		b0 + (b1 - b0) * ty,
+		1.0f
+	};
 }
 
 inline f32 luminance(const Color& c) {
-    return c.r * kLumaR + c.g * kLumaG + c.b * kLumaB;
+	return c.r * kLumaR + c.g * kLumaG + c.b * kLumaB;
 }
 
 struct BlurContrast {
-    Color blurred;
-    f32 contrast = 0.0f;
+	Color blurred;
+	f32 contrast = 0.0f;
 };
 
 inline BlurContrast applyBlurAndContrast(const u32* src, i32 width, i32 height,
-                                         f32 x, f32 y,
-                                         const std::array<f32, 256>& table) {
-    f32 accumR = 0.0f;
-    f32 accumG = 0.0f;
-    f32 accumB = 0.0f;
-    f32 centerLum = 0.0f;
-    f32 neighLum = 0.0f;
-    f32 neighCount = 0.0f;
-    i32 idx = 0;
+										 f32 x, f32 y,
+										 const std::array<f32, 256>& table) {
+	f32 accumR = 0.0f;
+	f32 accumG = 0.0f;
+	f32 accumB = 0.0f;
+	f32 centerLum = 0.0f;
+	f32 neighLum = 0.0f;
+	f32 neighCount = 0.0f;
+	i32 idx = 0;
 
-    for (i32 oy = -2; oy <= 2; ++oy) {
-        for (i32 ox = -2; ox <= 2; ++ox, ++idx) {
-            const f32 sampleX = x + static_cast<f32>(ox) * kBlurFootprintPx;
-            const f32 sampleY = y + static_cast<f32>(oy) * kBlurFootprintPx;
-            const Color s = sampleLinear(src, width, height, sampleX, sampleY, table);
-            const f32 w = kKernel5x5[idx] * kKernelNorm;
-            accumR += s.r * w;
-            accumG += s.g * w;
-            accumB += s.b * w;
+	for (i32 oy = -2; oy <= 2; ++oy) {
+		for (i32 ox = -2; ox <= 2; ++ox, ++idx) {
+			const f32 sampleX = x + static_cast<f32>(ox) * kBlurFootprintPx;
+			const f32 sampleY = y + static_cast<f32>(oy) * kBlurFootprintPx;
+			const Color s = sampleLinear(src, width, height, sampleX, sampleY, table);
+			const f32 w = kKernel5x5[idx] * kKernelNorm;
+			accumR += s.r * w;
+			accumG += s.g * w;
+			accumB += s.b * w;
 
-            if (std::abs(ox) <= 1 && std::abs(oy) <= 1) {
-                const f32 lum = luminance(s);
-                if (ox == 0 && oy == 0) {
-                    centerLum = lum;
-                } else {
-                    neighLum += lum;
-                    neighCount += 1.0f;
-                }
-            }
-        }
-    }
+			if (std::abs(ox) <= 1 && std::abs(oy) <= 1) {
+				const f32 lum = luminance(s);
+				if (ox == 0 && oy == 0) {
+					centerLum = lum;
+				} else {
+					neighLum += lum;
+					neighCount += 1.0f;
+				}
+			}
+		}
+	}
 
-    const f32 neighAvg = (neighCount > 0.0f) ? (neighLum / neighCount) : centerLum;
-    BlurContrast out;
-    out.blurred = {accumR, accumG, accumB, 1.0f};
-    out.contrast = std::abs(centerLum - neighAvg);
-    return out;
+	const f32 neighAvg = (neighCount > 0.0f) ? (neighLum / neighCount) : centerLum;
+	BlurContrast out;
+	out.blurred = {accumR, accumG, accumB, 1.0f};
+	out.contrast = std::abs(centerLum - neighAvg);
+	return out;
 }
 
 inline f32 hashNoise(f32 u, f32 v, f32 t) {
-    f32 px = fract(u * 0.1f * 12.9898f);
-    f32 py = fract(v * 0.1f * 78.233f);
-    f32 pz = fract(t * 0.1f * 43758.5453f);
-    const f32 dotp = px * (py + 19.19f) + py * (pz + 19.19f) + pz * (px + 19.19f);
-    px += dotp;
-    py += dotp;
-    pz += dotp;
-    return fract((px + py) * pz);
+	f32 px = fract(u * 0.1f * 12.9898f);
+	f32 py = fract(v * 0.1f * 78.233f);
+	f32 pz = fract(t * 0.1f * 43758.5453f);
+	const f32 dotp = px * (py + 19.19f) + py * (pz + 19.19f) + pz * (px + 19.19f);
+	px += dotp;
+	py += dotp;
+	pz += dotp;
+	return fract((px + py) * pz);
 }
 
 } // namespace
@@ -513,160 +513,160 @@ inline f32 hashNoise(f32 u, f32 v, f32 t) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 void GameView::applyCRTPostProcessing() {
-    auto* softBackend = dynamic_cast<SoftwareBackend*>(m_backend.get());
-    if (!softBackend) return;
+	auto* softBackend = dynamic_cast<SoftwareBackend*>(m_backend.get());
+	if (!softBackend) return;
 
-    u32* fb = softBackend->framebuffer();
-    i32 width = softBackend->width();
-    i32 height = softBackend->height();
-    i32 pitch = softBackend->pitch();
-    const i32 pixelsPerRow = pitch / sizeof(u32);
+	u32* fb = softBackend->framebuffer();
+	i32 width = softBackend->width();
+	i32 height = softBackend->height();
+	i32 pitch = softBackend->pitch();
+	const i32 pixelsPerRow = pitch / sizeof(u32);
 
-    // Ensure scratch buffer is large enough
-    if (m_crtScratchBuffer.size() < static_cast<size_t>(width * height)) {
-        m_crtScratchBuffer.resize(width * height);
-    }
+	// Ensure scratch buffer is large enough
+	if (m_crtScratchBuffer.size() < static_cast<size_t>(width * height)) {
+		m_crtScratchBuffer.resize(width * height);
+	}
 
-    // Copy framebuffer to scratch for effects that need source pixels
-    std::memcpy(m_crtScratchBuffer.data(), fb, width * height * sizeof(u32));
+	// Copy framebuffer to scratch for effects that need source pixels
+	std::memcpy(m_crtScratchBuffer.data(), fb, width * height * sizeof(u32));
 
-    const auto& table = srgbToLinearTable();
-    const f32 invW = 1.0f / static_cast<f32>(width);
-    const f32 invH = 1.0f / static_cast<f32>(height);
-    const f32 time = static_cast<f32>(EngineCore::instance().totalTime());
-    static u32 noiseState = 0x12345678u;
-    noiseState = noiseState * 1664525u + 1013904223u;
-    const f32 random = static_cast<f32>((noiseState >> 8) & 0xFFFFFF) / 16777215.0f;
+	const auto& table = srgbToLinearTable();
+	const f32 invW = 1.0f / static_cast<f32>(width);
+	const f32 invH = 1.0f / static_cast<f32>(height);
+	const f32 time = static_cast<f32>(EngineCore::instance().totalTime());
+	static u32 noiseState = 0x12345678u;
+	noiseState = noiseState * 1664525u + 1013904223u;
+	const f32 random = static_cast<f32>((noiseState >> 8) & 0xFFFFFF) / 16777215.0f;
 
-    const bool useNoise = applyNoise;
-    const bool useColorBleed = applyColorBleed;
-    const bool useScanlines = applyScanlines;
-    const bool useBlur = applyBlur;
-    const bool useGlow = applyGlow;
-    const bool useFringing = applyFringing;
-    const bool useAperture = applyAperture;
-    const f32 blurMix = clamp01(blurIntensity);
+	const bool useNoise = applyNoise;
+	const bool useColorBleed = applyColorBleed;
+	const bool useScanlines = applyScanlines;
+	const bool useBlur = applyBlur;
+	const bool useGlow = applyGlow;
+	const bool useFringing = applyFringing;
+	const bool useAperture = applyAperture;
+	const f32 blurMix = clamp01(blurIntensity);
 
-    for (i32 y = 0; y < height; ++y) {
-        const f32 uvY = (static_cast<f32>(y) + 0.5f) * invH;
-        for (i32 x = 0; x < width; ++x) {
-            const f32 uvX = (static_cast<f32>(x) + 0.5f) * invW;
-            const i32 idx = y * pixelsPerRow + x;
-            const i32 scratchIdx = y * width + x;
+	for (i32 y = 0; y < height; ++y) {
+		const f32 uvY = (static_cast<f32>(y) + 0.5f) * invH;
+		for (i32 x = 0; x < width; ++x) {
+			const f32 uvX = (static_cast<f32>(x) + 0.5f) * invW;
+			const i32 idx = y * pixelsPerRow + x;
+			const i32 scratchIdx = y * width + x;
 
-            Color color = unpackLinear(m_crtScratchBuffer[scratchIdx], table);
+			Color color = unpackLinear(m_crtScratchBuffer[scratchIdx], table);
 
-            if (useColorBleed) {
-                color.r += colorBleed[0];
-                color.g += colorBleed[1];
-                color.b += colorBleed[2];
-            }
+			if (useColorBleed) {
+				color.r += colorBleed[0];
+				color.g += colorBleed[1];
+				color.b += colorBleed[2];
+			}
 
-            BlurContrast bc;
-            if (useBlur || useFringing) {
-                bc = applyBlurAndContrast(m_crtScratchBuffer.data(), width, height,
-                                          static_cast<f32>(x), static_cast<f32>(y), table);
-            } else {
-                bc.blurred = color;
-                bc.contrast = 0.0f;
-            }
+			BlurContrast bc;
+			if (useBlur || useFringing) {
+				bc = applyBlurAndContrast(m_crtScratchBuffer.data(), width, height,
+										  static_cast<f32>(x), static_cast<f32>(y), table);
+			} else {
+				bc.blurred = color;
+				bc.contrast = 0.0f;
+			}
 
-            if (useBlur) {
-                color.r += (bc.blurred.r - color.r) * blurMix;
-                color.g += (bc.blurred.g - color.g) * blurMix;
-                color.b += (bc.blurred.b - color.b) * blurMix;
-            }
+			if (useBlur) {
+				color.r += (bc.blurred.r - color.r) * blurMix;
+				color.g += (bc.blurred.g - color.g) * blurMix;
+				color.b += (bc.blurred.b - color.b) * blurMix;
+			}
 
-            if (useFringing) {
-                const f32 dUVx = uvX - kFringingOffset;
-                const f32 dUVy = uvY - kFringingOffset;
-                const f32 d = std::sqrt(dUVx * dUVx + dUVy * dUVy) * 1.41421356f;
-                const f32 invD = (d > 0.0f) ? (1.0f / std::max(d, 1e-6f)) : 0.0f;
-                const f32 dirX = (d > 0.0f) ? (dUVx * invD) : 1.0f;
-                const f32 dirY = (d > 0.0f) ? (dUVy * invD) : 0.0f;
-                const f32 shiftPx = kFringingBasePx +
-                                    kFringingQuadCoef * (d * d) +
-                                    kFringingContrastCoef * bc.contrast;
-                const f32 shiftX = dirX * shiftPx;
-                const f32 shiftY = dirY * shiftPx;
+			if (useFringing) {
+				const f32 dUVx = uvX - kFringingOffset;
+				const f32 dUVy = uvY - kFringingOffset;
+				const f32 d = std::sqrt(dUVx * dUVx + dUVy * dUVy) * 1.41421356f;
+				const f32 invD = (d > 0.0f) ? (1.0f / std::max(d, 1e-6f)) : 0.0f;
+				const f32 dirX = (d > 0.0f) ? (dUVx * invD) : 1.0f;
+				const f32 dirY = (d > 0.0f) ? (dUVy * invD) : 0.0f;
+				const f32 shiftPx = kFringingBasePx +
+									kFringingQuadCoef * (d * d) +
+									kFringingContrastCoef * bc.contrast;
+				const f32 shiftX = dirX * shiftPx;
+				const f32 shiftY = dirY * shiftPx;
 
-                const Color rSample = sampleLinear(m_crtScratchBuffer.data(), width, height,
-                                                   static_cast<f32>(x) + shiftX,
-                                                   static_cast<f32>(y) + shiftY, table);
-                const Color gSample = unpackLinear(m_crtScratchBuffer[scratchIdx], table);
-                const Color bSample = sampleLinear(m_crtScratchBuffer.data(), width, height,
-                                                   static_cast<f32>(x) - shiftX,
-                                                   static_cast<f32>(y) - shiftY, table);
-                const Color fringed{rSample.r, gSample.g, bSample.b, 1.0f};
-                color.r += (fringed.r - color.r) * kFringingMix;
-                color.g += (fringed.g - color.g) * kFringingMix;
-                color.b += (fringed.b - color.b) * kFringingMix;
-            }
+				const Color rSample = sampleLinear(m_crtScratchBuffer.data(), width, height,
+												   static_cast<f32>(x) + shiftX,
+												   static_cast<f32>(y) + shiftY, table);
+				const Color gSample = unpackLinear(m_crtScratchBuffer[scratchIdx], table);
+				const Color bSample = sampleLinear(m_crtScratchBuffer.data(), width, height,
+												   static_cast<f32>(x) - shiftX,
+												   static_cast<f32>(y) - shiftY, table);
+				const Color fringed{rSample.r, gSample.g, bSample.b, 1.0f};
+				color.r += (fringed.r - color.r) * kFringingMix;
+				color.g += (fringed.g - color.g) * kFringingMix;
+				color.b += (fringed.b - color.b) * kFringingMix;
+			}
 
-            if (useScanlines) {
-                const f32 lum = luminance(color);
-                const f32 A = kScanlineDepth + (0.12f - kScanlineDepth) * clamp01(lum);
-                const f32 phase = (y & 1) ? -1.0f : 1.0f;
-                f32 mask = 1.0f - A * (0.5f - 0.5f * phase);
-                mask /= (1.0f - 0.5f * A);
-                const f32 k = smoothstep(kBlackCutoff, kBlackSoft, lum);
-                const f32 scale = 1.0f + k * (mask - 1.0f);
-                color.r *= scale;
-                color.g *= scale;
-                color.b *= scale;
-            }
+			if (useScanlines) {
+				const f32 lum = luminance(color);
+				const f32 A = kScanlineDepth + (0.12f - kScanlineDepth) * clamp01(lum);
+				const f32 phase = (y & 1) ? -1.0f : 1.0f;
+				f32 mask = 1.0f - A * (0.5f - 0.5f * phase);
+				mask /= (1.0f - 0.5f * A);
+				const f32 k = smoothstep(kBlackCutoff, kBlackSoft, lum);
+				const f32 scale = 1.0f + k * (mask - 1.0f);
+				color.r *= scale;
+				color.g *= scale;
+				color.b *= scale;
+			}
 
-            if (useAperture) {
-                const f32 xSrc = uvX * static_cast<f32>(width);
-                const f32 triad = 0.5f + 0.5f * std::cos(6.2831853f * xSrc);
-                const f32 lum = luminance(color);
-                const f32 k = smoothstep(kBlackCutoff, kBlackSoft, lum);
-                const f32 maskR = 1.0f + kApertureStrength * triad;
-                const f32 maskG = 1.0f;
-                const f32 maskB = 1.0f - kApertureStrength * triad;
-                color.r *= 1.0f + k * (maskR - 1.0f);
-                color.g *= 1.0f + k * (maskG - 1.0f);
-                color.b *= 1.0f + k * (maskB - 1.0f);
-            }
+			if (useAperture) {
+				const f32 xSrc = uvX * static_cast<f32>(width);
+				const f32 triad = 0.5f + 0.5f * std::cos(6.2831853f * xSrc);
+				const f32 lum = luminance(color);
+				const f32 k = smoothstep(kBlackCutoff, kBlackSoft, lum);
+				const f32 maskR = 1.0f + kApertureStrength * triad;
+				const f32 maskG = 1.0f;
+				const f32 maskB = 1.0f - kApertureStrength * triad;
+				color.r *= 1.0f + k * (maskR - 1.0f);
+				color.g *= 1.0f + k * (maskG - 1.0f);
+				color.b *= 1.0f + k * (maskB - 1.0f);
+			}
 
-            if (useGlow) {
-                const f32 lum = luminance(color);
-                const f32 k = smoothstep(kBlackCutoff, kBlackSoft, lum);
-                const f32 glow = std::min(kGlowBrightnessClamp, std::max(0.0f, lum)) * k;
-                color.r += glowColor[0] * glow;
-                color.g += glowColor[1] * glow;
-                color.b += glowColor[2] * glow;
-            }
+			if (useGlow) {
+				const f32 lum = luminance(color);
+				const f32 k = smoothstep(kBlackCutoff, kBlackSoft, lum);
+				const f32 glow = std::min(kGlowBrightnessClamp, std::max(0.0f, lum)) * k;
+				color.r += glowColor[0] * glow;
+				color.g += glowColor[1] * glow;
+				color.b += glowColor[2] * glow;
+			}
 
-            if (useNoise) {
-                const f32 ySrc = uvY * static_cast<f32>(height);
-                const f32 lineNoise =
-                    hashNoise(0.0f, std::floor(ySrc) + time * 30.0f, 0.0f) - 0.5f;
-                const f32 pixNoise =
-                    hashNoise(uvX * static_cast<f32>(width) + random,
-                              uvY * static_cast<f32>(height) + random,
-                              time) - 0.5f;
-                const f32 lum = luminance(color);
-                const f32 n = pixNoise * 0.65f + lineNoise * 0.35f;
-                const f32 k = smoothstep(kBlackCutoff, kBlackSoft, lum);
-                const f32 amp = noiseIntensity * (1.0f - 0.8f * lum);
-                color.r += color.r * (n * amp * k);
-                color.g += color.g * (n * amp * k);
-                color.b += color.b * (n * amp * k);
-            }
+			if (useNoise) {
+				const f32 ySrc = uvY * static_cast<f32>(height);
+				const f32 lineNoise =
+					hashNoise(0.0f, std::floor(ySrc) + time * 30.0f, 0.0f) - 0.5f;
+				const f32 pixNoise =
+					hashNoise(uvX * static_cast<f32>(width) + random,
+							  uvY * static_cast<f32>(height) + random,
+							  time) - 0.5f;
+				const f32 lum = luminance(color);
+				const f32 n = pixNoise * 0.65f + lineNoise * 0.35f;
+				const f32 k = smoothstep(kBlackCutoff, kBlackSoft, lum);
+				const f32 amp = noiseIntensity * (1.0f - 0.8f * lum);
+				color.r += color.r * (n * amp * k);
+				color.g += color.g * (n * amp * k);
+				color.b += color.b * (n * amp * k);
+			}
 
-            const f32 lumFinal = luminance(color);
-            const f32 keep = smoothstep(kBlackCutoff, kBlackSoft, lumFinal);
-            color.r *= keep;
-            color.g *= keep;
-            color.b *= keep;
+			const f32 lumFinal = luminance(color);
+			const f32 keep = smoothstep(kBlackCutoff, kBlackSoft, lumFinal);
+			color.r *= keep;
+			color.g *= keep;
+			color.b *= keep;
 
-            const u8 r = static_cast<u8>(clamp01(linearToSrgb(color.r)) * 255.0f);
-            const u8 g = static_cast<u8>(clamp01(linearToSrgb(color.g)) * 255.0f);
-            const u8 b = static_cast<u8>(clamp01(linearToSrgb(color.b)) * 255.0f);
-            fb[idx] = (0xFF << 24) | (r << 16) | (g << 8) | b;
-        }
-    }
+			const u8 r = static_cast<u8>(clamp01(linearToSrgb(color.r)) * 255.0f);
+			const u8 g = static_cast<u8>(clamp01(linearToSrgb(color.g)) * 255.0f);
+			const u8 b = static_cast<u8>(clamp01(linearToSrgb(color.b)) * 255.0f);
+			fb[idx] = (0xFF << 24) | (r << 16) | (g << 8) | b;
+		}
+	}
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -674,22 +674,22 @@ void GameView::applyCRTPostProcessing() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 void GameView::bind() {
-    Registry::instance().registerObject(this);
+	Registry::instance().registerObject(this);
 }
 
 void GameView::unbind() {
-    Registry::instance().deregister(this);
+	Registry::instance().deregister(this);
 }
 
 void GameView::dispose() {
-    unbind();
-    m_renderGraph.reset();
-    m_pipelineRegistry.reset();
-    m_backend.reset();
+	unbind();
+	m_renderGraph.reset();
+	m_pipelineRegistry.reset();
+	m_backend.reset();
 }
 
 void GameView::reset() {
-    // Nothing to reset - queues are managed by RenderQueues module
+	// Nothing to reset - queues are managed by RenderQueues module
 }
 
 } // namespace bmsx

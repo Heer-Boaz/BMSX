@@ -35,14 +35,14 @@ public:
 	void put_particle(const ParticleRenderSubmission& submission);
 
 	void write(const std::string& text, std::optional<int> x, std::optional<int> y,
-	           std::optional<int> z, std::optional<int> colorIndex);
+			   std::optional<int> z, std::optional<int> colorIndex);
 	void write_color(const std::string& text, std::optional<int> x, std::optional<int> y,
-	                 std::optional<int> z, const Value& colorValue);
+					 std::optional<int> z, const Value& colorValue);
 	void write_with_font(const std::string& text, std::optional<int> x, std::optional<int> y,
-	                     std::optional<int> z, std::optional<int> colorIndex, VMFont* font);
+						 std::optional<int> z, std::optional<int> colorIndex, VMFont* font);
 	void write_inline_with_font(const std::string& text, int x, int y, int z, int colorIndex, VMFont* font);
 	void write_inline_span_with_font(const std::string& text, int start, int end,
-	                                 int x, int y, int z, int colorIndex, VMFont* font);
+									 int x, int y, int z, int colorIndex, VMFont* font);
 
 	bool action_triggered(const std::string& actionDefinition, std::optional<int> playerIndex) const;
 

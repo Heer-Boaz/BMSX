@@ -12,15 +12,15 @@
 namespace bmsx {
 
 enum class VMFontVariant {
-    Msx,
-    Tiny
+	Msx,
+	Tiny
 };
 
 constexpr VMFontVariant DEFAULT_VM_FONT_VARIANT = VMFontVariant::Msx;
 
 class VMFont : public BFont {
 public:
-    explicit VMFont(RuntimeAssets& assets, VMFontVariant variant = DEFAULT_VM_FONT_VARIANT);
+	explicit VMFont(RuntimeAssets& assets, VMFontVariant variant = DEFAULT_VM_FONT_VARIANT);
 };
 
 } // namespace bmsx

@@ -101,10 +101,10 @@ extern "C" {
 
 /* Pixel formats */
 enum retro_pixel_format {
-    RETRO_PIXEL_FORMAT_0RGB1555 = 0,
-    RETRO_PIXEL_FORMAT_XRGB8888 = 1,
-    RETRO_PIXEL_FORMAT_RGB565   = 2,
-    RETRO_PIXEL_FORMAT_UNKNOWN  = INT_MAX
+	RETRO_PIXEL_FORMAT_0RGB1555 = 0,
+	RETRO_PIXEL_FORMAT_XRGB8888 = 1,
+	RETRO_PIXEL_FORMAT_RGB565   = 2,
+	RETRO_PIXEL_FORMAT_UNKNOWN  = INT_MAX
 };
 
 /* Input device IDs */
@@ -157,84 +157,84 @@ enum retro_pixel_format {
 #define RETRO_REGION_PAL   1
 
 struct retro_message {
-    const char *msg;
-    unsigned frames;
+	const char *msg;
+	unsigned frames;
 };
 
 struct retro_system_info {
-    const char *library_name;
-    const char *library_version;
-    const char *valid_extensions;
-    bool need_fullpath;
-    bool block_extract;
+	const char *library_name;
+	const char *library_version;
+	const char *valid_extensions;
+	bool need_fullpath;
+	bool block_extract;
 };
 
 struct retro_game_geometry {
-    unsigned base_width;
-    unsigned base_height;
-    unsigned max_width;
-    unsigned max_height;
-    float aspect_ratio;
+	unsigned base_width;
+	unsigned base_height;
+	unsigned max_width;
+	unsigned max_height;
+	float aspect_ratio;
 };
 
 struct retro_system_timing {
-    double fps;
-    double sample_rate;
+	double fps;
+	double sample_rate;
 };
 
 struct retro_system_av_info {
-    struct retro_game_geometry geometry;
-    struct retro_system_timing timing;
+	struct retro_game_geometry geometry;
+	struct retro_system_timing timing;
 };
 
 struct retro_variable {
-    const char *key;
-    const char *value;
+	const char *key;
+	const char *value;
 };
 
 struct retro_game_info {
-    const char *path;
-    const void *data;
-    size_t size;
-    const char *meta;
+	const char *path;
+	const void *data;
+	size_t size;
+	const char *meta;
 };
 
 struct retro_input_descriptor {
-    unsigned port;
-    unsigned device;
-    unsigned index;
-    unsigned id;
-    const char *description;
+	unsigned port;
+	unsigned device;
+	unsigned index;
+	unsigned id;
+	const char *description;
 };
 
 enum retro_log_level {
-    RETRO_LOG_DEBUG = 0,
-    RETRO_LOG_INFO,
-    RETRO_LOG_WARN,
-    RETRO_LOG_ERROR,
-    RETRO_LOG_DUMMY = INT_MAX
+	RETRO_LOG_DEBUG = 0,
+	RETRO_LOG_INFO,
+	RETRO_LOG_WARN,
+	RETRO_LOG_ERROR,
+	RETRO_LOG_DUMMY = INT_MAX
 };
 
 struct retro_log_callback {
-    void (*log)(enum retro_log_level level, const char *fmt, ...);
+	void (*log)(enum retro_log_level level, const char *fmt, ...);
 };
 
 enum retro_rumble_effect {
-    RETRO_RUMBLE_STRONG = 0,
-    RETRO_RUMBLE_WEAK = 1,
-    RETRO_RUMBLE_DUMMY = INT_MAX
+	RETRO_RUMBLE_STRONG = 0,
+	RETRO_RUMBLE_WEAK = 1,
+	RETRO_RUMBLE_DUMMY = INT_MAX
 };
 
 struct retro_rumble_interface {
-    bool (*set_rumble_state)(unsigned port, enum retro_rumble_effect effect, uint16_t strength);
+	bool (*set_rumble_state)(unsigned port, enum retro_rumble_effect effect, uint16_t strength);
 };
 
 typedef int64_t retro_usec_t;
 typedef void (*retro_frame_time_callback_t)(retro_usec_t usec);
 
 struct retro_frame_time_callback {
-    retro_frame_time_callback_t callback;
-    unsigned reference;
+	retro_frame_time_callback_t callback;
+	unsigned reference;
 };
 
 /* Pass this to retro_video_refresh_t if rendering to hardware. */
@@ -246,33 +246,33 @@ typedef uintptr_t (RETRO_CALLCONV *retro_hw_get_current_framebuffer_t)(void);
 typedef void (RETRO_CALLCONV *retro_hw_context_reset_t)(void);
 
 enum retro_hw_context_type {
-    RETRO_HW_CONTEXT_NONE             = 0,
-    RETRO_HW_CONTEXT_OPENGL           = 1,
-    RETRO_HW_CONTEXT_OPENGLES2        = 2,
-    RETRO_HW_CONTEXT_OPENGL_CORE      = 3,
-    RETRO_HW_CONTEXT_OPENGLES3        = 4,
-    RETRO_HW_CONTEXT_OPENGLES_VERSION = 5,
-    RETRO_HW_CONTEXT_VULKAN           = 6,
-    RETRO_HW_CONTEXT_D3D11            = 7,
-    RETRO_HW_CONTEXT_D3D10            = 8,
-    RETRO_HW_CONTEXT_D3D12            = 9,
-    RETRO_HW_CONTEXT_D3D9             = 10,
-    RETRO_HW_CONTEXT_DUMMY = INT_MAX
+	RETRO_HW_CONTEXT_NONE             = 0,
+	RETRO_HW_CONTEXT_OPENGL           = 1,
+	RETRO_HW_CONTEXT_OPENGLES2        = 2,
+	RETRO_HW_CONTEXT_OPENGL_CORE      = 3,
+	RETRO_HW_CONTEXT_OPENGLES3        = 4,
+	RETRO_HW_CONTEXT_OPENGLES_VERSION = 5,
+	RETRO_HW_CONTEXT_VULKAN           = 6,
+	RETRO_HW_CONTEXT_D3D11            = 7,
+	RETRO_HW_CONTEXT_D3D10            = 8,
+	RETRO_HW_CONTEXT_D3D12            = 9,
+	RETRO_HW_CONTEXT_D3D9             = 10,
+	RETRO_HW_CONTEXT_DUMMY = INT_MAX
 };
 
 struct retro_hw_render_callback {
-    enum retro_hw_context_type context_type;
-    retro_hw_context_reset_t context_reset;
-    retro_hw_get_current_framebuffer_t get_current_framebuffer;
-    retro_hw_get_proc_address_t get_proc_address;
-    bool depth;
-    bool stencil;
-    bool bottom_left_origin;
-    unsigned version_major;
-    unsigned version_minor;
-    bool cache_context;
-    retro_hw_context_reset_t context_destroy;
-    bool debug_context;
+	enum retro_hw_context_type context_type;
+	retro_hw_context_reset_t context_reset;
+	retro_hw_get_current_framebuffer_t get_current_framebuffer;
+	retro_hw_get_proc_address_t get_proc_address;
+	bool depth;
+	bool stencil;
+	bool bottom_left_origin;
+	unsigned version_major;
+	unsigned version_minor;
+	bool cache_context;
+	retro_hw_context_reset_t context_destroy;
+	bool debug_context;
 };
 
 /* Callbacks */

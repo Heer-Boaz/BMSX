@@ -27,16 +27,16 @@ using Identifier = std::string;
 
 class Registerable {
 public:
-    virtual ~Registerable() = default;
+	virtual ~Registerable() = default;
 
-    // Unique identifier (required) - matches TypeScript registryId
-    virtual const Identifier& registryId() const = 0;
+	// Unique identifier (required) - matches TypeScript registryId
+	virtual const Identifier& registryId() const = 0;
 
-    // Helper that returns registryId (for compatibility)
-    const std::string& getId() const { return registryId(); }
+	// Helper that returns registryId (for compatibility)
+	const std::string& getId() const { return registryId(); }
 
-    // Whether this object persists across clear() calls
-    virtual bool isRegistryPersistent() const { return false; }
+	// Whether this object persists across clear() calls
+	virtual bool isRegistryPersistent() const { return false; }
 };
 
 /* ============================================================================
@@ -45,75 +45,75 @@ public:
 
 class Registry {
 public:
-    // Singleton access
-    static Registry& instance();
+	// Singleton access
+	static Registry& instance();
 
-    // Registration
-    void registerObject(Registerable* entity);
-    bool deregister(const std::string& id, bool removePersistent = false);
-    bool deregister(Registerable* entity, bool removePersistent = false);
+	// Registration
+	void registerObject(Registerable* entity);
+	bool deregister(const std::string& id, bool removePersistent = false);
+	bool deregister(Registerable* entity, bool removePersistent = false);
 
-    // Lookup
-    template<typename T = Registerable>
-    T* get(const std::string& id) {
-        auto it = m_registry.find(id);
-        if (it != m_registry.end()) {
-            return dynamic_cast<T*>(it->second);
-        }
-        return nullptr;
-    }
+	// Lookup
+	template<typename T = Registerable>
+	T* get(const std::string& id) {
+		auto it = m_registry.find(id);
+		if (it != m_registry.end()) {
+			return dynamic_cast<T*>(it->second);
+		}
+		return nullptr;
+	}
 
-    bool has(const std::string& id) const;
+	bool has(const std::string& id) const;
 
-    // Clear non-persistent entries
-    void clear();
+	// Clear non-persistent entries
+	void clear();
 
-    // Iteration
-    std::vector<Registerable*> getAll() const;
-    std::vector<std::string> getAllIds() const;
+	// Iteration
+	std::vector<Registerable*> getAll() const;
+	std::vector<std::string> getAllIds() const;
 
-    std::vector<Registerable*> getPersistentEntities() const;
+	std::vector<Registerable*> getPersistentEntities() const;
 
-    template<typename T>
-    std::vector<T*> getAllOfType() const {
-        std::vector<T*> result;
-        for (const auto& [id, entity] : m_registry) {
-            if (auto* typed = dynamic_cast<T*>(entity)) {
-                result.push_back(typed);
-            }
-        }
-        return result;
-    }
+	template<typename T>
+	std::vector<T*> getAllOfType() const {
+		std::vector<T*> result;
+		for (const auto& [id, entity] : m_registry) {
+			if (auto* typed = dynamic_cast<T*>(entity)) {
+				result.push_back(typed);
+			}
+		}
+		return result;
+	}
 
-    template<typename T>
-    std::vector<std::string> getAllIdsOfType() const {
-        std::vector<std::string> result;
-        for (const auto& [id, entity] : m_registry) {
-            if (dynamic_cast<T*>(entity)) {
-                result.push_back(id);
-            }
-        }
-        return result;
-    }
+	template<typename T>
+	std::vector<std::string> getAllIdsOfType() const {
+		std::vector<std::string> result;
+		for (const auto& [id, entity] : m_registry) {
+			if (dynamic_cast<T*>(entity)) {
+				result.push_back(id);
+			}
+		}
+		return result;
+	}
 
-    template<typename T, typename Func>
-    void forEach(Func&& fn) {
-        for (auto& [id, entity] : m_registry) {
-            if (auto* typed = dynamic_cast<T*>(entity)) {
-                fn(typed);
-            }
-        }
-    }
+	template<typename T, typename Func>
+	void forEach(Func&& fn) {
+		for (auto& [id, entity] : m_registry) {
+			if (auto* typed = dynamic_cast<T*>(entity)) {
+				fn(typed);
+			}
+		}
+	}
 
 private:
-    Registry() = default;
-    ~Registry() = default;
+	Registry() = default;
+	~Registry() = default;
 
-    // Non-copyable
-    Registry(const Registry&) = delete;
-    Registry& operator=(const Registry&) = delete;
+	// Non-copyable
+	Registry(const Registry&) = delete;
+	Registry& operator=(const Registry&) = delete;
 
-    std::unordered_map<std::string, Registerable*> m_registry;
+	std::unordered_map<std::string, Registerable*> m_registry;
 };
 
 } // namespace bmsx

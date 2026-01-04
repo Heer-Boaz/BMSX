@@ -893,7 +893,7 @@ void VMApi::put_particle(const ParticleRenderSubmission& submission) {
 }
 
 void VMApi::write(const std::string& text, std::optional<int> x, std::optional<int> y,
-                  std::optional<int> z, std::optional<int> colorIndex) {
+				  std::optional<int> z, std::optional<int> colorIndex) {
 	int baseX = m_textCursorX;
 	int baseY = m_textCursorY;
 	if (x.has_value() && y.has_value()) {
@@ -912,7 +912,7 @@ void VMApi::write(const std::string& text, std::optional<int> x, std::optional<i
 }
 
 void VMApi::write_color(const std::string& text, std::optional<int> x, std::optional<int> y,
-                        std::optional<int> z, const Value& colorValue) {
+						std::optional<int> z, const Value& colorValue) {
 	if (x.has_value() && y.has_value()) {
 		m_textCursorHomeX = x.value();
 		m_textCursorX = m_textCursorHomeX;
@@ -929,7 +929,7 @@ void VMApi::write_color(const std::string& text, std::optional<int> x, std::opti
 }
 
 void VMApi::write_with_font(const std::string& text, std::optional<int> x, std::optional<int> y,
-                            std::optional<int> z, std::optional<int> colorIndex, VMFont* font) {
+							std::optional<int> z, std::optional<int> colorIndex, VMFont* font) {
 	VMFont* renderFont = font ? font : m_font.get();
 	int baseX = m_textCursorX;
 	int baseY = m_textCursorY;
@@ -960,7 +960,7 @@ void VMApi::write_inline_with_font(const std::string& text, int x, int y, int z,
 }
 
 void VMApi::write_inline_span_with_font(const std::string& text, int start, int end,
-                                        int x, int y, int z, int colorIndex, VMFont* font) {
+										int x, int y, int z, int colorIndex, VMFont* font) {
 	GlyphRenderSubmission submission;
 	submission.glyphs = {text};
 	submission.glyph_start = start;

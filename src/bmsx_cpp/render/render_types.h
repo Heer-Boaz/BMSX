@@ -26,8 +26,8 @@ using TextureHandle = void*;  // Backend-specific texture pointer
  * ============================================================================ */
 
 struct FlipOptions {
-    bool flip_h = false;
-    bool flip_v = false;
+	bool flip_h = false;
+	bool flip_v = false;
 };
 
 /* ============================================================================
@@ -35,9 +35,9 @@ struct FlipOptions {
  * ============================================================================ */
 
 enum class RenderLayer {
-    World,  // Main game world
-    UI,     // User interface overlay
-    IDE     // Editor/debug overlay
+	World,  // Main game world
+	UI,     // User interface overlay
+	IDE     // Editor/debug overlay
 };
 
 /* ============================================================================
@@ -45,14 +45,14 @@ enum class RenderLayer {
  * ============================================================================ */
 
 struct RectBounds {
-    f32 left = 0.0f;
-    f32 top = 0.0f;
-    f32 right = 0.0f;
-    f32 bottom = 0.0f;
-    f32 z = 0.0f;
+	f32 left = 0.0f;
+	f32 top = 0.0f;
+	f32 right = 0.0f;
+	f32 bottom = 0.0f;
+	f32 z = 0.0f;
 
-    f32 width() const { return right - left; }
-    f32 height() const { return bottom - top; }
+	f32 width() const { return right - left; }
+	f32 height() const { return bottom - top; }
 };
 
 /* ============================================================================
@@ -61,53 +61,53 @@ struct RectBounds {
 
 // Rectangle render (outline or filled)
 struct RectRenderSubmission {
-    enum class Kind { Rect, Fill };
-    Kind kind = Kind::Rect;
-    RectBounds area;
-    Color color;
-    std::optional<RenderLayer> layer;
+	enum class Kind { Rect, Fill };
+	Kind kind = Kind::Rect;
+	RectBounds area;
+	Color color;
+	std::optional<RenderLayer> layer;
 };
 
 // Image/sprite render
 struct ImgRenderSubmission {
-    std::string imgid;
-    Vec3 pos{0.0f, 0.0f, 0.0f};  // x, y, z (z for depth sorting)
-    std::optional<Vec2> scale;
-    std::optional<FlipOptions> flip;
-    std::optional<Color> colorize;  // Tint color (white = no tint)
-    std::optional<bool> ambient_affected;
-    std::optional<f32> ambient_factor;
-    std::optional<RenderLayer> layer;
+	std::string imgid;
+	Vec3 pos{0.0f, 0.0f, 0.0f};  // x, y, z (z for depth sorting)
+	std::optional<Vec2> scale;
+	std::optional<FlipOptions> flip;
+	std::optional<Color> colorize;  // Tint color (white = no tint)
+	std::optional<bool> ambient_affected;
+	std::optional<f32> ambient_factor;
+	std::optional<RenderLayer> layer;
 };
 
 // Polygon render (outline)
 struct PolyRenderSubmission {
-    std::vector<f32> points;
-    f32 z = 0.0f;
-    Color color;
-    std::optional<f32> thickness;
-    std::optional<RenderLayer> layer;
+	std::vector<f32> points;
+	f32 z = 0.0f;
+	Color color;
+	std::optional<f32> thickness;
+	std::optional<RenderLayer> layer;
 };
 
 // Mesh render (3D)
 struct MeshRenderSubmission {
-    Mesh* mesh = nullptr;
-    std::array<f32, 16> matrix;
-    std::optional<std::vector<std::array<f32, 16>>> joint_matrices;
-    std::optional<std::vector<f32>> morph_weights;
-    std::optional<bool> receive_shadow;
-    std::optional<RenderLayer> layer;
+	Mesh* mesh = nullptr;
+	std::array<f32, 16> matrix;
+	std::optional<std::vector<std::array<f32, 16>>> joint_matrices;
+	std::optional<std::vector<f32>> morph_weights;
+	std::optional<bool> receive_shadow;
+	std::optional<RenderLayer> layer;
 };
 
 // Particle render
 struct ParticleRenderSubmission {
-    Vec3 position{0.0f, 0.0f, 0.0f};
-    f32 size = 1.0f;
-    Color color;
-    TextureHandle texture = nullptr;
-    std::optional<i32> ambient_mode;  // 0 or 1
-    std::optional<f32> ambient_factor;
-    std::optional<RenderLayer> layer;
+	Vec3 position{0.0f, 0.0f, 0.0f};
+	f32 size = 1.0f;
+	Color color;
+	TextureHandle texture = nullptr;
+	std::optional<i32> ambient_mode;  // 0 or 1
+	std::optional<f32> ambient_factor;
+	std::optional<RenderLayer> layer;
 };
 
 enum class TextAlign { Left, Right, Center, Start, End };
@@ -115,39 +115,39 @@ enum class TextBaseline { Top, Hanging, Middle, Alphabetic, Ideographic, Bottom 
 
 // Glyph/text render
 struct GlyphRenderSubmission {
-    f32 x = 0.0f;
-    f32 y = 0.0f;
-    std::optional<f32> z;
-    std::vector<std::string> glyphs;
-    std::optional<i32> glyph_start;
-    std::optional<i32> glyph_end;
-    BFont* font = nullptr;
-    std::optional<Color> color;
-    std::optional<Color> background_color;
-    std::optional<i32> wrap_chars;
-    std::optional<i32> center_block_width;
-    std::optional<TextAlign> align;
-    std::optional<TextBaseline> baseline;
-    std::optional<RenderLayer> layer;
+	f32 x = 0.0f;
+	f32 y = 0.0f;
+	std::optional<f32> z;
+	std::vector<std::string> glyphs;
+	std::optional<i32> glyph_start;
+	std::optional<i32> glyph_end;
+	BFont* font = nullptr;
+	std::optional<Color> color;
+	std::optional<Color> background_color;
+	std::optional<i32> wrap_chars;
+	std::optional<i32> center_block_width;
+	std::optional<TextAlign> align;
+	std::optional<TextBaseline> baseline;
+	std::optional<RenderLayer> layer;
 };
 
 enum class RenderSubmissionType {
-    Img,
-    Mesh,
-    Particle,
-    Poly,
-    Rect,
-    Glyphs,
+	Img,
+	Mesh,
+	Particle,
+	Poly,
+	Rect,
+	Glyphs,
 };
 
 struct RenderSubmission {
-    RenderSubmissionType type = RenderSubmissionType::Img;
-    ImgRenderSubmission img;
-    MeshRenderSubmission mesh;
-    ParticleRenderSubmission particle;
-    PolyRenderSubmission poly;
-    RectRenderSubmission rect;
-    GlyphRenderSubmission glyphs;
+	RenderSubmissionType type = RenderSubmissionType::Img;
+	ImgRenderSubmission img;
+	MeshRenderSubmission mesh;
+	ParticleRenderSubmission particle;
+	PolyRenderSubmission poly;
+	RectRenderSubmission rect;
+	GlyphRenderSubmission glyphs;
 };
 
 
@@ -156,17 +156,17 @@ struct RenderSubmission {
  * ============================================================================ */
 
 struct TextureParams {
-    Vec2 size{0.0f, 0.0f};
-    // Wrap modes, filters, etc.
+	Vec2 size{0.0f, 0.0f};
+	// Wrap modes, filters, etc.
 };
 
 struct SkyboxImageIds {
-    std::string posx;
-    std::string negx;
-    std::string posy;
-    std::string negy;
-    std::string posz;
-    std::string negz;
+	std::string posx;
+	std::string negx;
+	std::string posy;
+	std::string negy;
+	std::string posz;
+	std::string negz;
 };
 
 } // namespace bmsx

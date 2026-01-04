@@ -24,9 +24,9 @@ struct ImgMeta;
  * ============================================================================ */
 
 struct SpriteQueueItem {
-    ImgRenderSubmission options;
-    const ImgMeta* imgmeta = nullptr;
-    i32 submissionIndex = 0;
+	ImgRenderSubmission options;
+	const ImgMeta* imgmeta = nullptr;
+	i32 submissionIndex = 0;
 };
 
 /* ============================================================================

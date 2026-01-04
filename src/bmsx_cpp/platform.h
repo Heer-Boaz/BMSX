@@ -24,23 +24,23 @@ namespace bmsx {
  * ============================================================================ */
 
 enum class InputEvtType {
-    ButtonDown,
-    ButtonUp,
-    AxisMove,
-    KeyDown,
-    KeyUp,
-    PointerDown,
-    PointerUp,
-    PointerMove
+	ButtonDown,
+	ButtonUp,
+	AxisMove,
+	KeyDown,
+	KeyUp,
+	PointerDown,
+	PointerUp,
+	PointerMove
 };
 
 struct InputEvt {
-    InputEvtType type = InputEvtType::ButtonDown;
-    std::string deviceId;
-    std::string code;
-    f32 value = 0.0f;
-    f32 x = 0.0f;
-    f32 y = 0.0f;
+	InputEvtType type = InputEvtType::ButtonDown;
+	std::string deviceId;
+	std::string code;
+	f32 value = 0.0f;
+	f32 x = 0.0f;
+	f32 y = 0.0f;
 };
 
 /* ============================================================================
@@ -48,8 +48,8 @@ struct InputEvt {
  * ============================================================================ */
 
 struct ResizeEvt {
-    i32 width = 0;
-    i32 height = 0;
+	i32 width = 0;
+	i32 height = 0;
 };
 
 /* ============================================================================
@@ -58,10 +58,10 @@ struct ResizeEvt {
 
 class Clock {
 public:
-    virtual ~Clock() = default;
-    virtual f64 now() = 0;       // Current time in milliseconds
-    virtual f64 origin() = 0;    // Start time
-    virtual f64 elapsed() = 0;   // Time since origin
+	virtual ~Clock() = default;
+	virtual f64 now() = 0;       // Current time in milliseconds
+	virtual f64 origin() = 0;    // Start time
+	virtual f64 elapsed() = 0;   // Time since origin
 };
 
 /* ============================================================================
@@ -70,10 +70,10 @@ public:
 
 class FrameLoop {
 public:
-    virtual ~FrameLoop() = default;
-    virtual void start(std::function<void(f64 now, f64 dt)> callback) = 0;
-    virtual void stop() = 0;
-    virtual bool isRunning() = 0;
+	virtual ~FrameLoop() = default;
+	virtual void start(std::function<void(f64 now, f64 dt)> callback) = 0;
+	virtual void stop() = 0;
+	virtual bool isRunning() = 0;
 };
 
 /* ============================================================================
@@ -82,8 +82,8 @@ public:
 
 class Lifecycle {
 public:
-    virtual ~Lifecycle() = default;
-    virtual SubscriptionHandle onWillExit(std::function<void()> handler) = 0;
+	virtual ~Lifecycle() = default;
+	virtual SubscriptionHandle onWillExit(std::function<void()> handler) = 0;
 };
 
 /* ============================================================================
@@ -92,10 +92,10 @@ public:
 
 class InputHub {
 public:
-    virtual ~InputHub() = default;
-    virtual SubscriptionHandle subscribe(std::function<void(const InputEvt&)> handler) = 0;
-    virtual std::optional<InputEvt> nextEvt() = 0;
-    virtual void clearEvtQ() = 0;
+	virtual ~InputHub() = default;
+	virtual SubscriptionHandle subscribe(std::function<void(const InputEvt&)> handler) = 0;
+	virtual std::optional<InputEvt> nextEvt() = 0;
+	virtual void clearEvtQ() = 0;
 };
 
 /* ============================================================================
@@ -104,16 +104,16 @@ public:
 
 class Voice {
 public:
-    virtual ~Voice() = default;
-    virtual void play() = 0;
-    virtual void stop() = 0;
-    virtual void pause() = 0;
-    virtual void resume() = 0;
-    virtual bool isPlaying() = 0;
-    virtual void setVolume(f32 vol) = 0;
-    virtual void setPitch(f32 pitch) = 0;
-    virtual void setLoop(bool loop) = 0;
-    virtual SubscriptionHandle onEnded(std::function<void()> handler) = 0;
+	virtual ~Voice() = default;
+	virtual void play() = 0;
+	virtual void stop() = 0;
+	virtual void pause() = 0;
+	virtual void resume() = 0;
+	virtual bool isPlaying() = 0;
+	virtual void setVolume(f32 vol) = 0;
+	virtual void setPitch(f32 pitch) = 0;
+	virtual void setLoop(bool loop) = 0;
+	virtual SubscriptionHandle onEnded(std::function<void()> handler) = 0;
 };
 
 /* ============================================================================
@@ -122,9 +122,9 @@ public:
 
 class MasterVolume {
 public:
-    virtual ~MasterVolume() = default;
-    virtual f32 get() = 0;
-    virtual void set(f32 vol) = 0;
+	virtual ~MasterVolume() = default;
+	virtual f32 get() = 0;
+	virtual void set(f32 vol) = 0;
 };
 
 /* ============================================================================
@@ -133,13 +133,13 @@ public:
 
 class AudioService {
 public:
-    virtual ~AudioService() = default;
-    virtual Voice* createVoice() = 0;
-    virtual void destroyVoice(Voice* voice) = 0;
-    virtual MasterVolume* masterVolume() = 0;
-    virtual std::string name() = 0;
-    virtual bool ready() = 0;
-    virtual f32 sampleRate() = 0;
+	virtual ~AudioService() = default;
+	virtual Voice* createVoice() = 0;
+	virtual void destroyVoice(Voice* voice) = 0;
+	virtual MasterVolume* masterVolume() = 0;
+	virtual std::string name() = 0;
+	virtual bool ready() = 0;
+	virtual f32 sampleRate() = 0;
 };
 
 /* ============================================================================
@@ -148,16 +148,16 @@ public:
 
 class GameViewHost {
 public:
-    virtual ~GameViewHost() = default;
-    virtual void* getCapability(std::string_view name) = 0;
-    virtual SubscriptionHandle onResize(std::function<void(const ResizeEvt&)> handler) = 0;
-    virtual SubscriptionHandle onFocusChange(std::function<void(bool)> handler) = 0;
-    virtual i32 width() = 0;
-    virtual i32 height() = 0;
+	virtual ~GameViewHost() = default;
+	virtual void* getCapability(std::string_view name) = 0;
+	virtual SubscriptionHandle onResize(std::function<void(const ResizeEvt&)> handler) = 0;
+	virtual SubscriptionHandle onFocusChange(std::function<void(bool)> handler) = 0;
+	virtual i32 width() = 0;
+	virtual i32 height() = 0;
 
-    // Create a GPU backend for rendering (platform-specific implementation)
-    // Returns nullptr if the platform doesn't provide its own backend
-    virtual std::unique_ptr<GPUBackend> createBackend() { return nullptr; } // Dummy implementation
+	// Create a GPU backend for rendering (platform-specific implementation)
+	// Returns nullptr if the platform doesn't provide its own backend
+	virtual std::unique_ptr<GPUBackend> createBackend() { return nullptr; } // Dummy implementation
 };
 
 /* ============================================================================
@@ -166,9 +166,9 @@ public:
 
 class MicrotaskQueue {
 public:
-    virtual ~MicrotaskQueue() = default;
-    virtual void queueMicrotask(std::function<void()> task) = 0;
-    virtual void flush() = 0;
+	virtual ~MicrotaskQueue() = default;
+	virtual void queueMicrotask(std::function<void()> task) = 0;
+	virtual void flush() = 0;
 };
 
 /* ============================================================================
@@ -177,16 +177,16 @@ public:
 
 class Platform {
 public:
-    virtual ~Platform() = default;
+	virtual ~Platform() = default;
 
-    virtual Clock* clock() = 0;
-    virtual FrameLoop* frameLoop() = 0;
-    virtual Lifecycle* lifecycle() = 0;
-    virtual InputHub* inputHub() = 0;
-    virtual AudioService* audioService() = 0;
-    virtual GameViewHost* gameviewHost() = 0;
-    virtual MicrotaskQueue* microtaskQueue() = 0;
-    virtual std::string_view type() = 0;
+	virtual Clock* clock() = 0;
+	virtual FrameLoop* frameLoop() = 0;
+	virtual Lifecycle* lifecycle() = 0;
+	virtual InputHub* inputHub() = 0;
+	virtual AudioService* audioService() = 0;
+	virtual GameViewHost* gameviewHost() = 0;
+	virtual MicrotaskQueue* microtaskQueue() = 0;
+	virtual std::string_view type() = 0;
 };
 
 /* ============================================================================
@@ -195,24 +195,24 @@ public:
 
 class DefaultMicrotaskQueue : public MicrotaskQueue {
 public:
-    void queueMicrotask(std::function<void()> task) override;
-    void flush() override;
+	void queueMicrotask(std::function<void()> task) override;
+	void flush() override;
 
 private:
-    std::vector<std::function<void()>> m_queue;
+	std::vector<std::function<void()>> m_queue;
 };
 
 class DefaultLifecycle : public Lifecycle {
 public:
-    DefaultLifecycle();
-    ~DefaultLifecycle() override;
+	DefaultLifecycle();
+	~DefaultLifecycle() override;
 
-    SubscriptionHandle onWillExit(std::function<void()> handler) override;
-    void triggerExit();
+	SubscriptionHandle onWillExit(std::function<void()> handler) override;
+	void triggerExit();
 
 private:
-    std::vector<std::function<void()>> m_handlers;
-    int m_next_handle_id = 1;
+	std::vector<std::function<void()>> m_handlers;
+	int m_next_handle_id = 1;
 };
 
 } // namespace bmsx

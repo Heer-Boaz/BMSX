@@ -19,21 +19,21 @@ namespace bmsx {
   Libretro GLES2 state note:
   - Symptom: live output shows the atlas while RetroArch pause shows the correct frame.
   - Root cause: the core and frontend share the same GL context. If the core leaves
-    program/buffer/texture state bound, RetroArch's present blit can inherit that
-    state and sample the wrong texture.
+	program/buffer/texture state bound, RetroArch's present blit can inherit that
+	state and sample the wrong texture.
   - Fix: reset the bindings we touch at the end of the frame so the frontend starts
-    from a clean baseline. This is intentionally minimal to limit overhead.
+	from a clean baseline. This is intentionally minimal to limit overhead.
   - Performance: default to glFlush to avoid a full GPU stall; enable glFinish only
-    when debugging strict GPU completion.
+	when debugging strict GPU completion.
 */
 OpenGLES2Backend::OpenGLES2Backend(i32 width, i32 height)
-    : m_width(width), m_height(height) {}
+	: m_width(width), m_height(height) {}
 
 OpenGLES2Backend::~OpenGLES2Backend() = default;
 
 TextureHandle OpenGLES2Backend::createTexture(const u8* data, i32 width,
-                                              i32 height,
-                                              const TextureParams& params) {
+											  i32 height,
+											  const TextureParams& params) {
   (void)params;
   auto* tex = new GLES2Texture{};
   tex->width = width;
@@ -47,29 +47,29 @@ TextureHandle OpenGLES2Backend::createTexture(const u8* data, i32 width,
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
   glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA,
-               GL_UNSIGNED_BYTE, data);
+			   GL_UNSIGNED_BYTE, data);
   if (kGLES2VerboseLog) {
-    std::fprintf(stderr,
-                 "[BMSX][GLES2] createTexture id=%u size=%dx%d data=%p\n",
-                 static_cast<unsigned>(tex->id), width, height,
-                 static_cast<const void*>(data));
+	std::fprintf(stderr,
+				 "[BMSX][GLES2] createTexture id=%u size=%dx%d data=%p\n",
+				 static_cast<unsigned>(tex->id), width, height,
+				 static_cast<const void*>(data));
   }
 
   return static_cast<TextureHandle>(tex);
 }
 
 TextureHandle OpenGLES2Backend::createSolidTexture2D(i32 width, i32 height,
-                                                     const Color& color) {
+													 const Color& color) {
   std::vector<u8> pixels(static_cast<size_t>(width * height * 4));
   const u8 r = static_cast<u8>(color.r * 255.0f);
   const u8 g = static_cast<u8>(color.g * 255.0f);
   const u8 b = static_cast<u8>(color.b * 255.0f);
   const u8 a = static_cast<u8>(color.a * 255.0f);
   for (size_t i = 0; i < pixels.size(); i += 4) {
-    pixels[i + 0] = r;
-    pixels[i + 1] = g;
-    pixels[i + 2] = b;
-    pixels[i + 3] = a;
+	pixels[i + 0] = r;
+	pixels[i + 1] = g;
+	pixels[i + 2] = b;
+	pixels[i + 3] = a;
   }
   return createTexture(pixels.data(), width, height, TextureParams{});
 }
@@ -77,8 +77,8 @@ TextureHandle OpenGLES2Backend::createSolidTexture2D(i32 width, i32 height,
 void OpenGLES2Backend::destroyTexture(TextureHandle handle) {
   auto* tex = static_cast<GLES2Texture*>(handle);
   if (kGLES2VerboseLog) {
-    std::fprintf(stderr, "[BMSX][GLES2] destroyTexture id=%u\n",
-                 static_cast<unsigned>(tex->id));
+	std::fprintf(stderr, "[BMSX][GLES2] destroyTexture id=%u\n",
+				 static_cast<unsigned>(tex->id));
   }
   glDeleteTextures(1, &tex->id);
   delete tex;
@@ -87,15 +87,15 @@ void OpenGLES2Backend::destroyTexture(TextureHandle handle) {
 void OpenGLES2Backend::clear(const Color* color, const f32* depth) {
   GLbitfield mask = 0;
   if (color) {
-    glClearColor(color->r, color->g, color->b, color->a);
-    mask |= GL_COLOR_BUFFER_BIT;
+	glClearColor(color->r, color->g, color->b, color->a);
+	mask |= GL_COLOR_BUFFER_BIT;
   }
   if (depth) {
-    glClearDepthf(*depth);
-    mask |= GL_DEPTH_BUFFER_BIT;
+	glClearDepthf(*depth);
+	mask |= GL_DEPTH_BUFFER_BIT;
   }
   if (mask == 0) {
-    return;
+	return;
   }
   glClear(mask);
 }
@@ -105,23 +105,23 @@ PassEncoder OpenGLES2Backend::beginRenderPass(const RenderPassDesc& desc) {
   glViewport(0, 0, m_width, m_height);
   const ColorAttachmentSpec* colorSpec = nullptr;
   if (desc.color) {
-    colorSpec = &*desc.color;
+	colorSpec = &*desc.color;
   } else if (!desc.colors.empty()) {
-    colorSpec = &desc.colors.front();
+	colorSpec = &desc.colors.front();
   }
 
   const Color* clearColor = nullptr;
   Color colorValue;
   if (colorSpec && colorSpec->clear) {
-    colorValue = *colorSpec->clear;
-    clearColor = &colorValue;
+	colorValue = *colorSpec->clear;
+	clearColor = &colorValue;
   }
 
   const f32* clearDepth = nullptr;
   f32 depthValue = 1.0f;
   if (desc.depth && desc.depth->clearDepth) {
-    depthValue = *desc.depth->clearDepth;
-    clearDepth = &depthValue;
+	depthValue = *desc.depth->clearDepth;
+	clearDepth = &depthValue;
   }
 
   clear(clearColor, clearDepth);
@@ -140,10 +140,10 @@ void OpenGLES2Backend::draw(PassEncoder& pass, i32 first, i32 count) {
 }
 
 void OpenGLES2Backend::drawIndexed(PassEncoder& pass, i32 indexCount,
-                                   i32 firstIndex) {
+								   i32 firstIndex) {
   (void)pass;
   const auto* offset = reinterpret_cast<const void*>(
-      static_cast<uintptr_t>(firstIndex * sizeof(u16)));
+	  static_cast<uintptr_t>(firstIndex * sizeof(u16)));
   glDrawElements(GL_TRIANGLES, indexCount, GL_UNSIGNED_SHORT, offset);
   m_stats.drawIndexed++;
 }
@@ -156,11 +156,11 @@ void OpenGLES2Backend::beginFrame() {
   m_bound_texture_2d_by_unit.fill(0);
   m_backbuffer_fbo = static_cast<GLuint>(m_get_framebuffer());
   if (kGLES2VerboseLog) {
-    static u32 frameIndex = 0;
-    frameIndex++;
-    std::fprintf(
-        stderr, "[BMSX][GLES2] beginFrame #%u backbuffer_fbo=%u size=%dx%d\n",
-        frameIndex, static_cast<unsigned>(m_backbuffer_fbo), m_width, m_height);
+	static u32 frameIndex = 0;
+	frameIndex++;
+	std::fprintf(
+		stderr, "[BMSX][GLES2] beginFrame #%u backbuffer_fbo=%u size=%dx%d\n",
+		frameIndex, static_cast<unsigned>(m_backbuffer_fbo), m_width, m_height);
   }
   m_current_fbo = m_backbuffer_fbo;
   glBindFramebuffer(GL_FRAMEBUFFER, m_current_fbo);
@@ -172,7 +172,7 @@ void OpenGLES2Backend::beginFrame() {
 
 void OpenGLES2Backend::endFrame() {
   if (kGLES2VerboseLog) {
-    std::fprintf(stderr, "[BMSX][GLES2] endFrame\n");
+	std::fprintf(stderr, "[BMSX][GLES2] endFrame\n");
   }
   // Reset the GL state we touched so the frontend's present path doesn't inherit it.
   glUseProgram(0);
@@ -186,9 +186,9 @@ void OpenGLES2Backend::endFrame() {
   glDisableVertexAttribArray(3);
   glDisableVertexAttribArray(4);
   if constexpr (kGLES2FinishFrame) {
-    glFinish();
+	glFinish();
   } else {
-    glFlush();
+	glFlush();
   }
 }
 
@@ -219,12 +219,12 @@ void OpenGLES2Backend::onContextDestroy() {
 
 void OpenGLES2Backend::setActiveTextureUnit(i32 unit) {
   if (unit == m_active_texture_unit) {
-    return;
+	return;
   }
   glActiveTexture(GL_TEXTURE0 + unit);
   m_active_texture_unit = unit;
   if (kGLES2VerboseLog) {
-    std::fprintf(stderr, "[BMSX][GLES2] activeTexture unit=%d\n", unit);
+	std::fprintf(stderr, "[BMSX][GLES2] activeTexture unit=%d\n", unit);
   }
 }
 
@@ -235,8 +235,8 @@ void OpenGLES2Backend::bindTexture2D(TextureHandle tex) {
   glBindTexture(GL_TEXTURE_2D, gltex->id);
   m_bound_texture_2d_by_unit[unit] = gltex->id;
   if (kGLES2VerboseLog) {
-    std::fprintf(stderr, "[BMSX][GLES2] bindTexture2D unit=%d id=%u\n", unit,
-                 static_cast<unsigned>(gltex->id));
+	std::fprintf(stderr, "[BMSX][GLES2] bindTexture2D unit=%d id=%u\n", unit,
+				 static_cast<unsigned>(gltex->id));
   }
 }
 
@@ -247,8 +247,8 @@ void OpenGLES2Backend::setRenderTarget(GLuint fbo, i32 width, i32 height) {
   glBindFramebuffer(GL_FRAMEBUFFER, m_current_fbo);
   glViewport(0, 0, m_width, m_height);
   if (kGLES2VerboseLog) {
-    std::fprintf(stderr, "[BMSX][GLES2] setRenderTarget fbo=%u size=%dx%d\n",
-                 static_cast<unsigned>(fbo), width, height);
+	std::fprintf(stderr, "[BMSX][GLES2] setRenderTarget fbo=%u size=%dx%d\n",
+				 static_cast<unsigned>(fbo), width, height);
   }
 }
 

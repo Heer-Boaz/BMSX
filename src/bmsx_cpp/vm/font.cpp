@@ -8,41 +8,41 @@ namespace bmsx {
 namespace {
 
 GlyphMap buildMsxCharMap() {
-    const std::string prefix = "msx_6b_font";
-    auto withPrefix = [&](const std::string& suffix) {
-        return prefix + "_" + suffix;
-    };
+	const std::string prefix = "msx_6b_font";
+	auto withPrefix = [&](const std::string& suffix) {
+		return prefix + "_" + suffix;
+	};
 
-    GlyphMap map;
-    map[static_cast<u32>(' ')] = withPrefix("space");
-    map[static_cast<u32>('!')] = withPrefix("exclamation");
-    map[static_cast<u32>('\"')] = withPrefix("code_0x22");
-    map[static_cast<u32>('#')] = withPrefix("code_0x23");
-    map[static_cast<u32>('$')] = withPrefix("code_0x24");
-    map[static_cast<u32>('%')] = withPrefix("percent");
-    map[static_cast<u32>('&')] = withPrefix("code_0x26");
-    map[static_cast<u32>('\'')] = withPrefix("apostroph");
-    map[static_cast<u32>('(')] = withPrefix("code_0x28");
-    map[static_cast<u32>(')')] = withPrefix("code_0x29");
-    map[static_cast<u32>('*')] = withPrefix("code_0x2a");
-    map[static_cast<u32>('+')] = withPrefix("code_0x2b");
-    map[static_cast<u32>(',')] = withPrefix("comma");
-    map[static_cast<u32>('-')] = withPrefix("streep");
-    map[static_cast<u32>('.')] = withPrefix("dot");
-    map[static_cast<u32>('/')] = withPrefix("slash");
-    map[static_cast<u32>(':')] = withPrefix("colon");
-    map[static_cast<u32>(';')] = withPrefix("code_0x3b");
-    map[static_cast<u32>('<')] = withPrefix("code_0x3c");
-    map[static_cast<u32>('=')] = withPrefix("code_0x3d");
-    map[static_cast<u32>('>')] = withPrefix("code_0x3e");
-    map[static_cast<u32>('?')] = withPrefix("question");
-    map[static_cast<u32>('@')] = withPrefix("at_sign");
-    map[static_cast<u32>('[')] = withPrefix("code_0x5b");
-    map[static_cast<u32>('\\')] = withPrefix("code_0x5c");
-    map[static_cast<u32>(']')] = withPrefix("code_0x5d");
-    map[static_cast<u32>('^')] = withPrefix("code_0x5e");
-    map[static_cast<u32>('_')] = withPrefix("line");
-    map[static_cast<u32>('`')] = withPrefix("code_0x60");
+	GlyphMap map;
+	map[static_cast<u32>(' ')] = withPrefix("space");
+	map[static_cast<u32>('!')] = withPrefix("exclamation");
+	map[static_cast<u32>('\"')] = withPrefix("code_0x22");
+	map[static_cast<u32>('#')] = withPrefix("code_0x23");
+	map[static_cast<u32>('$')] = withPrefix("code_0x24");
+	map[static_cast<u32>('%')] = withPrefix("percent");
+	map[static_cast<u32>('&')] = withPrefix("code_0x26");
+	map[static_cast<u32>('\'')] = withPrefix("apostroph");
+	map[static_cast<u32>('(')] = withPrefix("code_0x28");
+	map[static_cast<u32>(')')] = withPrefix("code_0x29");
+	map[static_cast<u32>('*')] = withPrefix("code_0x2a");
+	map[static_cast<u32>('+')] = withPrefix("code_0x2b");
+	map[static_cast<u32>(',')] = withPrefix("comma");
+	map[static_cast<u32>('-')] = withPrefix("streep");
+	map[static_cast<u32>('.')] = withPrefix("dot");
+	map[static_cast<u32>('/')] = withPrefix("slash");
+	map[static_cast<u32>(':')] = withPrefix("colon");
+	map[static_cast<u32>(';')] = withPrefix("code_0x3b");
+	map[static_cast<u32>('<')] = withPrefix("code_0x3c");
+	map[static_cast<u32>('=')] = withPrefix("code_0x3d");
+	map[static_cast<u32>('>')] = withPrefix("code_0x3e");
+	map[static_cast<u32>('?')] = withPrefix("question");
+	map[static_cast<u32>('@')] = withPrefix("at_sign");
+	map[static_cast<u32>('[')] = withPrefix("code_0x5b");
+	map[static_cast<u32>('\\')] = withPrefix("code_0x5c");
+	map[static_cast<u32>(']')] = withPrefix("code_0x5d");
+	map[static_cast<u32>('^')] = withPrefix("code_0x5e");
+	map[static_cast<u32>('_')] = withPrefix("line");
+	map[static_cast<u32>('`')] = withPrefix("code_0x60");
     map[static_cast<u32>('{')] = withPrefix("code_0x7b");
     map[static_cast<u32>('|')] = withPrefix("code_0x7c");
     map[static_cast<u32>('}')] = withPrefix("code_0x7d");
@@ -103,41 +103,41 @@ GlyphMap buildTinyCharMap() {
     map[static_cast<u32>('^')] = withPrefix("caret");
     map[static_cast<u32>('_')] = withPrefix("line");
     map[static_cast<u32>('`')] = withPrefix("backtick");
-    map[static_cast<u32>('{')] = withPrefix("braceopen");
-    map[static_cast<u32>('|')] = withPrefix("pipe");
-    map[static_cast<u32>('}')] = withPrefix("braceclose");
-    map[0x2022] = withPrefix("bullet");
-    map[0x00A1] = withPrefix("inverted_exclamation");
-    map[0x00A4] = withPrefix("flower");
-    map[0x00A6] = withPrefix("brokenbar");
-    map[0x00A7] = withPrefix("section");
-    map[0x00A3] = withPrefix("pound");
-    map[0x00A5] = withPrefix("yen");
-    map[0x20AC] = withPrefix("euro");
-    map[0x00B5] = withPrefix("euler");
-    map[0x0133] = withPrefix("low_ij");
-    map[0x0132] = withPrefix("ij");
+	map[static_cast<u32>('{')] = withPrefix("braceopen");
+	map[static_cast<u32>('|')] = withPrefix("pipe");
+	map[static_cast<u32>('}')] = withPrefix("braceclose");
+	map[0x2022] = withPrefix("bullet");
+	map[0x00A1] = withPrefix("inverted_exclamation");
+	map[0x00A4] = withPrefix("flower");
+	map[0x00A6] = withPrefix("brokenbar");
+	map[0x00A7] = withPrefix("section");
+	map[0x00A3] = withPrefix("pound");
+	map[0x00A5] = withPrefix("yen");
+	map[0x20AC] = withPrefix("euro");
+	map[0x00B5] = withPrefix("euler");
+	map[0x0133] = withPrefix("low_ij");
+	map[0x0132] = withPrefix("ij");
 
-    for (int i = 0; i < 10; ++i) {
-        char digit = static_cast<char>('0' + i);
-        map[static_cast<u32>(digit)] = withPrefix(std::string(1, digit));
-    }
+	for (int i = 0; i < 10; ++i) {
+		char digit = static_cast<char>('0' + i);
+		map[static_cast<u32>(digit)] = withPrefix(std::string(1, digit));
+	}
 
-    for (char c = 'a'; c <= 'z'; ++c) {
-        map[static_cast<u32>(c)] = withPrefix(std::string("low_") + c);
-    }
-    for (char c = 'A'; c <= 'Z'; ++c) {
-        char lower = static_cast<char>(c - 'A' + 'a');
-        map[static_cast<u32>(c)] = withPrefix(std::string(1, lower));
-    }
+	for (char c = 'a'; c <= 'z'; ++c) {
+		map[static_cast<u32>(c)] = withPrefix(std::string("low_") + c);
+	}
+	for (char c = 'A'; c <= 'Z'; ++c) {
+		char lower = static_cast<char>(c - 'A' + 'a');
+		map[static_cast<u32>(c)] = withPrefix(std::string(1, lower));
+	}
 
-    return map;
+	return map;
 }
 
 } // namespace
 
 VMFont::VMFont(RuntimeAssets& assets, VMFontVariant variant)
-    : BFont(assets, variant == VMFontVariant::Tiny ? buildTinyCharMap() : buildMsxCharMap()) {
+	: BFont(assets, variant == VMFontVariant::Tiny ? buildTinyCharMap() : buildMsxCharMap()) {
 }
 
 } // namespace bmsx
