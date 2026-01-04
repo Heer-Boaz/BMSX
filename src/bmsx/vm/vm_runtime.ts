@@ -6,7 +6,7 @@ import type { InputMap } from '../input/inputtypes';
 import type { LuaChunk, LuaDefinitionInfo } from '../lua/lua_ast';
 import { LuaEnvironment } from '../lua/luaenvironment';
 import { LuaError, LuaRuntimeError, LuaSyntaxError } from '../lua/luaerrors';
-import { LuaHandlerCache, } from '../lua/luahandler_cache';
+import { LuaHandlerCache, isLuaHandlerFunction } from '../lua/luahandler_cache';
 import { LuaInterpreter, type ExecutionSignal, type LuaCallFrame } from '../lua/luaruntime';
 import type { LuaFunctionValue, LuaValue, StackTraceFrame } from '../lua/luavalue';
 import {
@@ -4298,23 +4298,35 @@ export class BmsxVMRuntime {
 		const wrapper = createNativeFunction(name, (args, out) => {
 			const ctx = this.buildVmContext();
 			const visited = new WeakMap<Table, unknown>();
-			const jsArgs: unknown[] = [];
-			let startIndex = 0;
-			if (args.length > 0) {
-				const first = this.toNativeValue(args[0], ctx, visited);
-				if (first !== target) {
-					jsArgs.push(first);
+			const member = (target as Record<string, unknown>)[key];
+			if (!isLuaHandlerFunction(member)) {
+				const jsArgs: unknown[] = [];
+				let startIndex = 0;
+				if (args.length > 0) {
+					const first = this.toNativeValue(args[0], ctx, visited);
+					if (first !== target) {
+						jsArgs.push(first);
+					}
+					startIndex = 1;
 				}
-				startIndex = 1;
+				for (let index = startIndex; index < args.length; index += 1) {
+					jsArgs.push(this.toNativeValue(args[index], ctx, visited));
+				}
+				if (typeof member !== 'function') {
+					throw new Error(`Property '${key}' is not callable.`);
+				}
+				const result = (member as (...inner: unknown[]) => unknown).apply(target, jsArgs);
+				this.wrapNativeResult(result, out);
+				return;
 			}
-			for (let index = startIndex; index < args.length; index += 1) {
+			const jsArgs: unknown[] = [];
+			for (let index = 0; index < args.length; index += 1) {
 				jsArgs.push(this.toNativeValue(args[index], ctx, visited));
 			}
-			const member = (target as Record<string, unknown>)[key];
 			if (typeof member !== 'function') {
 				throw new Error(`Property '${key}' is not callable.`);
 			}
-			const result = (member as (...inner: unknown[]) => unknown).apply(target, jsArgs);
+			const result = (member as (...inner: unknown[]) => unknown).apply(undefined, jsArgs);
 			this.wrapNativeResult(result, out);
 		});
 		bucket.set(key, wrapper);
