@@ -91,6 +91,7 @@ add_library(bmsx_core STATIC
     core/binencoder.cpp
     core/rompack.cpp
     core/font.cpp
+    core/taskgate.cpp
 
     # Audio systems
     audio/soundmaster.cpp
