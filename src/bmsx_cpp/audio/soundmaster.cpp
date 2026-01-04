@@ -645,32 +645,32 @@ void SoundMaster::renderSamples(i16* output, size_t frameCount, i32 outputSample
 		output[i] = static_cast<i16>(std::lrint(v * 32767.0f));
 	}
 
-	const auto mixEnd = std::chrono::steady_clock::now();
-	static f64 accAudioSec = 0.0;
-	static f64 accMixMs = 0.0;
-	static u64 accCalls = 0;
-	accAudioSec += dt;
-	accMixMs += std::chrono::duration<double, std::milli>(mixEnd - mixStart).count();
-	accCalls += 1;
-	if (accAudioSec >= 1.0) {
-		const size_t sfxCount = m_voicesByType[0].size();
-		const size_t musicCount = m_voicesByType[1].size();
-		const size_t uiCount = m_voicesByType[2].size();
-		const f64 audioMs = accAudioSec * 1000.0;
-		const f64 loadPct = (accMixMs / audioMs) * 100.0;
-		std::fprintf(stderr,
-			"[BMSX] audio mix %.2fms / %.2fms (%.1f%%), calls=%llu, voices sfx=%zu music=%zu ui=%zu\n",
-			accMixMs,
-			audioMs,
-			loadPct,
-			static_cast<unsigned long long>(accCalls),
-			sfxCount,
-			musicCount,
-			uiCount);
-		accAudioSec = 0.0;
-		accMixMs = 0.0;
-		accCalls = 0;
-	}
+	// const auto mixEnd = std::chrono::steady_clock::now();
+	// static f64 accAudioSec = 0.0;
+	// static f64 accMixMs = 0.0;
+	// static u64 accCalls = 0;
+	// accAudioSec += dt;
+	// accMixMs += std::chrono::duration<double, std::milli>(mixEnd - mixStart).count();
+	// accCalls += 1;
+	// if (accAudioSec >= 1.0) {
+	// 	const size_t sfxCount = m_voicesByType[0].size();
+	// 	const size_t musicCount = m_voicesByType[1].size();
+	// 	const size_t uiCount = m_voicesByType[2].size();
+	// 	const f64 audioMs = accAudioSec * 1000.0;
+	// 	const f64 loadPct = (accMixMs / audioMs) * 100.0;
+	// 	std::fprintf(stderr,
+	// 		"[BMSX] audio mix %.2fms / %.2fms (%.1f%%), calls=%llu, voices sfx=%zu music=%zu ui=%zu\n",
+	// 		accMixMs,
+	// 		audioMs,
+	// 		loadPct,
+	// 		static_cast<unsigned long long>(accCalls),
+	// 		sfxCount,
+	// 		musicCount,
+	// 		uiCount);
+	// 	accAudioSec = 0.0;
+	// 	accMixMs = 0.0;
+	// 	accCalls = 0;
+	// }
 
 	m_audioTimeSec += dt;
 }

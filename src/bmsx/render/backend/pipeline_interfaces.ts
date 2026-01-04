@@ -248,7 +248,13 @@ export interface MeshBatchPipelineState {
 	lighting?: LightingFrameState;
 }
 
-export interface ParticlePipelineState { width: number; height: number; viewProj: Float32Array; camRight: Float32Array; camUp: Float32Array; }
+export interface ParticlePipelineState {
+	width: number;
+	height: number;
+	viewProj: Float32Array;
+	camRight: Float32Array;
+	camUp: Float32Array;
+}
 
 export type RenderingViewportType = 'viewport' | 'offscreen';
 

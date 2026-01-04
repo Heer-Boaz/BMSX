@@ -5,7 +5,14 @@
  */
 
 #include "render_queues.h"
+#include "glyphs.h"
 #include "../core/assets.h"
+#include "../core/engine.h"
+#include "../core/font.h"
+#include "../utils/clamp.h"
+#include <algorithm>
+#include <cmath>
+#include <stdexcept>
 
 namespace bmsx {
 namespace RenderQueues {
@@ -16,6 +23,11 @@ static FeatureQueue<SpriteQueueItem> s_spriteQueue(256);
 static FeatureQueue<MeshRenderSubmission> s_meshQueue(256);
 static FeatureQueue<ParticleRenderSubmission> s_particleQueue(1024);
 static i32 s_spriteSubmissionCounter = 0;
+
+i32 particleAmbientModeDefault = 0;
+f32 particleAmbientFactorDefault = 1.0f;
+std::array<f32, 3> _skyTint = {1.0f, 1.0f, 1.0f};
+f32 _skyExposure = 1.0f;
 
 // Default Z coordinate (mirrors TypeScript DEFAULT_ZCOORD)
 static constexpr f32 DEFAULT_ZCOORD = 0.0f;
@@ -71,7 +83,20 @@ static void sortSpriteQueueForRendering() {
 
 // --- Sprite queue API ---
 
-void submitSprite(const ImgRenderSubmission& options, const ImgMeta* imgmeta) {
+void submitSprite(const ImgRenderSubmission& options) {
+	if (options.imgid == "none") return;
+
+	auto& engine = EngineCore::instance();
+	const auto* imgAsset = engine.assets().getImg(options.imgid);
+	if (!imgAsset) {
+		throw std::runtime_error("[Sprite Queue] submitSprite called with unknown image id '" + options.imgid + "'.");
+	}
+
+	const ImgMeta* imgmeta = &imgAsset->meta;
+	if (!imgmeta) {
+		throw std::runtime_error("[Sprite Queue] Image metadata missing for imgid '" + options.imgid + "'.");
+	}
+
 	i32 submissionIndex = s_spriteSubmissionCounter++;
 	SpriteQueueItem& pooled = acquireSpriteQueueItem();
 
@@ -162,6 +187,156 @@ const std::vector<RenderSubmission>& copySpriteQueueForPlayback() {
 	return s_spriteQueuePlaybackBuffer;
 }
 
+void correctAreaStartEnd(f32& x, f32& y, f32& ex, f32& ey) {
+	if (ex < x) std::swap(x, ex);
+	if (ey < y) std::swap(y, ey);
+}
+
+void submitRectangle(const RectRenderSubmission& options) {
+	f32 x = options.area.left;
+	f32 y = options.area.top;
+	f32 ex = options.area.right;
+	f32 ey = options.area.bottom;
+	f32 z = options.area.z;
+	const Color& c = options.color;
+
+	correctAreaStartEnd(x, y, ex, ey);
+
+	ImgRenderSubmission sprite;
+	sprite.imgid = "whitepixel";
+	sprite.pos = {x, y, z};
+	sprite.colorize = c;
+	sprite.layer = options.layer;
+
+	if (options.kind == RectRenderSubmission::Kind::Fill) {
+		sprite.scale = Vec2{static_cast<f32>(static_cast<i32>(ex - x)),
+							static_cast<f32>(static_cast<i32>(ey - y))};
+		submitSprite(sprite);
+		return;
+	}
+
+	const f32 width = static_cast<f32>(static_cast<i32>(ex - x));
+	const f32 height = static_cast<f32>(static_cast<i32>(ey - y));
+
+	sprite.scale = Vec2{width, 1.0f};
+	submitSprite(sprite);
+
+	sprite.pos = {x, ey, z};
+	submitSprite(sprite);
+
+	sprite.pos = {x, y, z};
+	sprite.scale = Vec2{1.0f, height};
+	submitSprite(sprite);
+
+	sprite.pos = {ex, y, z};
+	submitSprite(sprite);
+}
+
+void submitDrawPolygon(const PolyRenderSubmission& options) {
+	const std::vector<f32>& coords = options.points;
+	if (coords.size() < 4) return;
+
+	const f32 z = options.z;
+	const Color& color = options.color;
+	const f32 thickness = options.thickness.value_or(1.0f);
+	const std::optional<RenderLayer>& layer = options.layer;
+	const std::string imgid = "whitepixel";
+
+	for (size_t i = 0; i < coords.size(); i += 2) {
+		size_t next = (i + 2) % coords.size();
+		f32 x0 = std::round(coords[i]);
+		f32 y0 = std::round(coords[i + 1]);
+		f32 x1 = std::round(coords[next]);
+		f32 y1 = std::round(coords[next + 1]);
+
+		f32 dx = std::abs(x1 - x0);
+		f32 dy = std::abs(y1 - y0);
+		f32 sx = x0 < x1 ? 1.0f : -1.0f;
+		f32 sy = y0 < y1 ? 1.0f : -1.0f;
+		f32 err = dx - dy;
+
+		while (true) {
+			ImgRenderSubmission pixel;
+			pixel.imgid = imgid;
+			pixel.pos = {x0, y0, z};
+			pixel.scale = {thickness, thickness};
+			pixel.colorize = color;
+			pixel.layer = layer;
+			submitSprite(pixel);
+
+			if (x0 == x1 && y0 == y1) break;
+
+			f32 e2 = 2.0f * err;
+			if (e2 > -dy) {
+				err -= dy;
+				x0 += sx;
+			}
+			if (x0 == x1 && y0 == y1) {
+				ImgRenderSubmission finalPixel;
+				finalPixel.imgid = imgid;
+				finalPixel.pos = {x0, y0, z};
+				finalPixel.scale = {thickness, thickness};
+				finalPixel.colorize = color;
+				finalPixel.layer = layer;
+				submitSprite(finalPixel);
+				break;
+			}
+			if (e2 < dx) {
+				err += dx;
+				y0 += sy;
+			}
+		}
+	}
+}
+
+void submitGlyphs(const GlyphRenderSubmission& options) {
+	GameView* view = EngineCore::instance().view();
+	BFont* font = options.font ? options.font : view->default_font;
+	if (!font) {
+		throw std::runtime_error("No font available for glyph rendering.");
+	}
+
+	const std::vector<std::string>* lines = &options.glyphs;
+	std::vector<std::string> wrapped;
+	if (options.wrap_chars && *options.wrap_chars > 0 && options.glyphs.size() == 1) {
+		wrapped = wrapGlyphs(options.glyphs[0], *options.wrap_chars);
+		lines = &wrapped;
+	}
+
+	f32 x = options.x;
+	if (options.center_block_width && *options.center_block_width > 0) {
+		x += calculateCenteredBlockX(*lines, font->char_width('a'),
+									 *options.center_block_width);
+	}
+
+	const f32 z = options.z.value_or(950.0f);
+	renderGlyphs(x, options.y, *lines, options.glyph_start, options.glyph_end,
+				 z, font, options.color, options.background_color, options.layer);
+}
+
+void renderGlyphs(f32 x,
+				  f32 y,
+				  const std::vector<std::string>& lines,
+				  std::optional<i32> start,
+				  std::optional<i32> end,
+				  f32 z,
+				  BFont* font,
+				  const std::optional<Color>& color,
+				  const std::optional<Color>& backgroundColor,
+				  const std::optional<RenderLayer>& layer) {
+	GameView* view = EngineCore::instance().view();
+	::bmsx::renderGlyphs(view, x, y, lines, start, end, z, font, color,
+						 backgroundColor, layer);
+}
+
+f32 calculateCenteredBlockX(const std::vector<std::string>& lines, i32 charWidth, i32 blockWidth) {
+	return ::bmsx::calculateCenteredBlockX(lines, charWidth, blockWidth);
+}
+
+std::vector<std::string> wrapGlyphs(const std::string& text, i32 maxLineLength) {
+	return ::bmsx::wrapGlyphs(text, maxLineLength);
+}
+
 // --- Mesh queue API ---
 
 void submitMesh(const MeshRenderSubmission& item) {
@@ -201,6 +376,16 @@ void forEachParticleQueue(const std::function<void(const ParticleRenderSubmissio
 
 size_t particleQueueBackSize() { return s_particleQueue.sizeBack(); }
 size_t particleQueueFrontSize() { return s_particleQueue.sizeFront(); }
+
+void setAmbientDefaults(i32 mode, f32 factor) {
+	particleAmbientModeDefault = mode;
+	particleAmbientFactorDefault = clamp(factor, 0.0f, 1.0f);
+}
+
+void setSkyboxTintExposure(const std::array<f32, 3>& tint, f32 exposure) {
+	_skyTint = {std::max(0.0f, tint[0]), std::max(0.0f, tint[1]), std::max(0.0f, tint[2])};
+	_skyExposure = std::max(0.0f, exposure);
+}
 
 } // namespace RenderQueues
 } // namespace bmsx

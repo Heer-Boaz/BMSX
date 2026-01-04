@@ -12,6 +12,7 @@ import { WebGLBackend } from '../backend/webgl/webgl_backend';
 import { TextureKey } from '../texturemanager';
 import type { TextureSource } from '../../rompack/rompack';
 import { SkyboxImageIds } from '../shared/render_types';
+import { _skyTint, _skyExposure } from '../shared/render_queues';
 
 function resolveSkyboxImage(assetId: string): Promise<TextureSource> {
 	const asset = $.assets.img[assetId];
@@ -164,14 +165,6 @@ export function drawSkybox(runtime: SkyboxRuntime, framebuffer: WebGLFramebuffer
 	const passStub = { fbo: framebuffer, desc: { label: 'skybox' } };
 	backend.draw(passStub, 0, 36);
 	backend.bindVertexArray(null);
-}
-
-// --- Public API: tint/exposure controls ------------------------------------
-let _skyTint: [number, number, number] = [1, 1, 1];
-let _skyExposure = 1.0;
-export function setSkyboxTintExposure(tint: [number, number, number], exposure = 1.0): void {
-	_skyTint = [Math.max(0, tint[0]), Math.max(0, tint[1]), Math.max(0, tint[2])];
-	_skyExposure = Math.max(0, exposure);
 }
 
 export function registerSkyboxPass_WebGL(registry: RenderPassLibrary) {

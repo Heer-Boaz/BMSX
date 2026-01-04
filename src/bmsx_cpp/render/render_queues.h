@@ -53,9 +53,29 @@ namespace RenderQueues {
 // --- Sprite queue helpers ---
 
 /**
- * Submit a sprite to the queue with its image metadata.
+ * Submit a sprite to the queue (resolves image metadata).
  */
-void submitSprite(const ImgRenderSubmission& options, const ImgMeta* imgmeta);
+void submitSprite(const ImgRenderSubmission& options);
+
+/**
+ * Submit a rectangle (filled or outline) using the whitepixel sprite.
+ */
+void submitRectangle(const RectRenderSubmission& options);
+
+/**
+ * Submit a polygon outline using the whitepixel sprite.
+ */
+void submitDrawPolygon(const PolyRenderSubmission& options);
+
+/**
+ * Submit glyphs for rendering (uses sprite + rect submissions).
+ */
+void submitGlyphs(const GlyphRenderSubmission& options);
+
+/**
+ * Correct area start/end to ensure positive dimensions.
+ */
+void correctAreaStartEnd(f32& x, f32& y, f32& ex, f32& ey);
 
 /**
  * Begin sprite queue processing:
@@ -87,6 +107,14 @@ size_t spriteQueueFrontSize();
  */
 const std::vector<RenderSubmission>& copySpriteQueueForPlayback();
 
+/**
+ * Sprite queue debug counts.
+ */
+struct QueueDebug { size_t front; size_t back; };
+QueueDebug getSpriteQueueDebug();
+QueueDebug getMeshQueueDebug();
+size_t getQueuedParticleCount();
+
 // --- Mesh queue helpers ---
 
 void submitMesh(const MeshRenderSubmission& item);
@@ -102,6 +130,33 @@ i32 beginParticleQueue();
 void forEachParticleQueue(const std::function<void(const ParticleRenderSubmission&, size_t)>& fn);
 size_t particleQueueBackSize();
 size_t particleQueueFrontSize();
+
+// --- Ambient defaults (particles) ---
+
+extern i32 particleAmbientModeDefault;
+extern f32 particleAmbientFactorDefault;
+void setAmbientDefaults(i32 mode, f32 factor = 1.0f);
+
+// --- Skybox exposure defaults ---
+
+extern std::array<f32, 3> _skyTint;
+extern f32 _skyExposure;
+void setSkyboxTintExposure(const std::array<f32, 3>& tint, f32 exposure = 1.0f);
+
+// --- Glyph helpers ---
+
+void renderGlyphs(f32 x,
+				  f32 y,
+				  const std::vector<std::string>& lines,
+				  std::optional<i32> start,
+				  std::optional<i32> end,
+				  f32 z,
+				  BFont* font,
+				  const std::optional<Color>& color,
+				  const std::optional<Color>& backgroundColor,
+				  const std::optional<RenderLayer>& layer);
+f32 calculateCenteredBlockX(const std::vector<std::string>& lines, i32 charWidth, i32 blockWidth);
+std::vector<std::string> wrapGlyphs(const std::string& text, i32 maxLineLength);
 
 } // namespace RenderQueues
 

@@ -23,8 +23,6 @@ import {
 	beginMeshQueue,
 	forEachMeshQueue,
 	meshQueueBackSize,
-	meshQueueFrontSize,
-	submitMesh as enqueueMesh,
 } from '../shared/render_queues';
 import { clamp } from '../../utils/clamp';
 
@@ -940,10 +938,6 @@ export function renderMeshBatch(backend: WebGLBackend, context: RenderContext, f
 		gl.depthMask(true);
 	}
 }
-
-export function submitMesh(o: MeshRenderSubmission): void { enqueueMesh({ ...o }); }
-export function reset(_gl: WebGL2RenderingContext): void { normal9Pool.reset(); clearLights(); }
-export function getMeshQueueDebug(): { front: number; back: number } { return { front: meshQueueFrontSize(), back: meshQueueBackSize() }; }
 
 export function registerMeshBatchPass_WebGL(registry: RenderPassLibrary) {
 	registry.register({

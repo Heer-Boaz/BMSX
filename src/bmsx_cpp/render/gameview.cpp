@@ -12,9 +12,8 @@
 #endif
 #include "renderpasslib.h"
 #include "rendergraph.h"
-#include "glyphs.h"
 #include "../core/engine.h"
-#include "../core/font.h"
+#include "../utils/clamp.h"
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -44,45 +43,27 @@ GameView::~GameView() {
  * Initialize the renderer submit functions.
  *
  * Mirrors TypeScript GameView.renderer.submit structure.
- * Each submit function routes to the appropriate pipeline.
+ * Each submit function routes to render_queues helpers.
  */
 void GameView::initializeRenderer() {
-	// sprite -> SpritesPipeline.drawImg
+	// sprite -> RenderQueues::submitSprite
 	renderer.submit.sprite = [](const ImgRenderSubmission& s) {
-		SpritesPipeline::drawImg(s);
+		RenderQueues::submitSprite(s);
 	};
 
-	// rect -> SpritesPipeline.fillRectangle / drawRectangle
+	// rect -> RenderQueues::submitRectangle
 	renderer.submit.rect = [](const RectRenderSubmission& s) {
-		if (s.kind == RectRenderSubmission::Kind::Fill) {
-			SpritesPipeline::fillRectangle(s);
-		} else {
-			SpritesPipeline::drawRectangle(s);
-		}
+		RenderQueues::submitRectangle(s);
 	};
 
-	// poly -> SpritesPipeline.drawPolygon
+	// poly -> RenderQueues::submitDrawPolygon
 	renderer.submit.poly = [](const PolyRenderSubmission& s) {
-		const f32 thickness = s.thickness.value_or(1.0f);
-		SpritesPipeline::drawPolygon(s.points, s.z, s.color, thickness, s.layer);
+		RenderQueues::submitDrawPolygon(s);
 	};
 
-	// glyphs -> renderGlyphs (uses font + sprite rendering)
-	renderer.submit.glyphs = [this](const GlyphRenderSubmission& s) {
-		BFont* font = s.font ? s.font : default_font;
-		if (!font) {
-			throw std::runtime_error("[GameView] No font available for glyph rendering.");
-		}
-		std::vector<std::string> lines = s.glyphs;
-		if (s.wrap_chars && *s.wrap_chars > 0 && lines.size() == 1) {
-			lines = wrapGlyphs(lines[0], *s.wrap_chars);
-		}
-		f32 x = s.x;
-		if (s.center_block_width && *s.center_block_width > 0) {
-			x += calculateCenteredBlockX(lines, font->char_width('a'), *s.center_block_width);
-		}
-		const f32 z = s.z.value_or(950.0f);
-		renderGlyphs(this, x, s.y, lines, s.glyph_start, s.glyph_end, z, font, s.color, s.background_color, s.layer);
+	// glyphs -> RenderQueues::submitGlyphs
+	renderer.submit.glyphs = [](const GlyphRenderSubmission& s) {
+		RenderQueues::submitGlyphs(s);
 	};
 
 	// particle -> ParticlesPipeline (TODO)
@@ -278,18 +259,16 @@ void GameView::bindCubemapTex(TextureHandle tex) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 void GameView::setSkyboxTintExposure(const std::array<f32, 3>& tint, f32 exposure) {
-	// TODO: SkyboxPipeline::setSkyboxTintExposure(tint, exposure);
-	(void)tint; (void)exposure;
+	RenderQueues::setSkyboxTintExposure(tint, exposure);
 }
 
 void GameView::setParticlesAmbient(i32 mode, f32 factor) {
-	// TODO: ParticlesPipeline::setAmbientDefaults(mode, factor);
-	(void)mode; (void)factor;
+	RenderQueues::setAmbientDefaults(mode, factor);
 }
 
 void GameView::setSpritesAmbient(bool enabled, f32 factor) {
 	spriteAmbientEnabledDefault = enabled;
-	spriteAmbientFactorDefault = factor;
+	spriteAmbientFactorDefault = clamp(factor, 0.0f, 1.0f);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

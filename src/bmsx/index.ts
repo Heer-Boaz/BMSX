@@ -99,7 +99,6 @@ export * from './render/texturemanager';
 export * from './timeline/timeline';
 // Text utility (immediate-mode). Preferred usage: TextComponent + TextRenderSystem
 export * from './render/gameview';
-export * from './render/glyphs';
 // Typed rendering components
 export * from './component/mesh_component';
 export * from './component/sprite_component';
@@ -114,7 +113,6 @@ export * from './render/backend/pipeline_interfaces';
 export * from './render/backend/renderpasslib';
 export * from './render/backend/shader_module';
 export * from './render/backend/webgl/webgl_backend';
-export * from './render/glyphs';
 export * from './rompack/rompack';
 export * from './rompack/romloader';
 export * from './serializer/bincompressor';

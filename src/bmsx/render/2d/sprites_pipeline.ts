@@ -1,6 +1,5 @@
 // Provides batched 2D sprite + primitive rendering using shared buffers.
-import { new_vec2, new_vec3 } from '../../utils/vector_operations';
-import type { ImgMeta, Polygon, vec2arr } from '../../rompack/rompack';
+import type { ImgMeta, vec2arr } from '../../rompack/rompack';
 import spriteFS from '../2d/shaders/2d.frag.glsl';
 import spriteVS from '../2d/shaders/2d.vert.glsl';
 import * as GLR from '../backend/webgl/gl_resources';
@@ -38,12 +37,7 @@ import type { LightingFrameState } from '../lighting/lightingsystem';
 import {
 	beginSpriteQueue,
 	forEachSprite,
-	spriteQueueBackSize,
-	spriteQueueFrontSize,
-	submitSprite as enqueueSprite,
 } from '../shared/render_queues';
-import { ImgRenderSubmission, RectRenderSubmission, RenderLayer } from '../shared/render_types';
-import { color } from '../shared/render_types';
 
 export let spriteShaderProgram: WebGLProgram;
 let vertexLocation: number;
@@ -263,22 +257,6 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 	gl.depthMask(true);
 }
 
-export function drawImg(options: ImgRenderSubmission): void {
-	const { imgid } = options;
-	if (imgid === 'none') return;
-	const asset = $.assets.img[imgid];
-	if (!asset) {
-		throw new Error(`[Sprite Pipeline] drawImg called with unknown image id '${imgid}'.`);
-	}
-	const imgmeta = asset.imgmeta;
-	if (!imgmeta) {
-		throw new Error(`[Sprite Pipeline] Image metadata missing for imgid '${imgid}'.`);
-	}
-	enqueueSprite(options, imgmeta);
-}
-
-export function getSpriteQueueDebug(): { front: number; back: number } { return { front: spriteQueueFrontSize(), back: spriteQueueBackSize() }; }
-
 export function getTexCoords(flip_h: boolean, flip_v: boolean, imgmeta: ImgMeta): number[] {
 	if (flip_h && flip_v) return imgmeta['texcoords_fliphv'];
 	if (flip_h) return imgmeta['texcoords_fliph'];
@@ -323,49 +301,6 @@ export function updateBuffers(
 	backend.accountUpload('vertex', usedAtlas.byteLength);
 }
 
-export function correctAreaStartEnd(x: number, y: number, ex: number, ey: number): [number, number, number, number] {
-	if (ex < x) { [x, ex] = [ex, x]; }
-	if (ey < y) { [y, ey] = [ey, y]; }
-	return [x, y, ex, ey];
-}
-
-export function drawRectangle(options: RectRenderSubmission): void {
-	let { left: x, top: y, z, right: ex, bottom: ey } = options.area;
-	const c = options.color;
-	const imgid = 'whitepixel';
-	[x, y, ex, ey] = correctAreaStartEnd(x, y, ex, ey);
-	drawImg({ pos: new_vec3(x, y, z), imgid, scale: new_vec2(~~(ex - x), 1), colorize: c, layer: options.layer });
-	drawImg({ pos: new_vec3(x, ey, z), imgid, scale: new_vec2(~~(ex - x), 1), colorize: c, layer: options.layer });
-	drawImg({ pos: new_vec3(x, y, z), imgid, scale: new_vec2(1, ~~(ey - y)), colorize: c, layer: options.layer });
-	drawImg({ pos: new_vec3(ex, y, z), imgid, scale: new_vec2(1, ~~(ey - y)), colorize: c, layer: options.layer });
-}
-
-export function fillRectangle(options: RectRenderSubmission): void {
-	let { left: x, top: y, z, right: ex, bottom: ey } = options.area;
-	const c = options.color;
-	const imgid = 'whitepixel';
-	[x, y, ex, ey] = correctAreaStartEnd(x, y, ex, ey);
-	drawImg({ pos: new_vec3(x, y, z), imgid, scale: new_vec2(~~(ex - x), ~~(ey - y)), colorize: c, layer: options.layer });
-}
-
-export function drawPolygon(coords: Polygon, z: number, color: color, thickness: number = 1, layer?: RenderLayer): void {
-	if (!coords || coords.length < 4) return; const imgid = 'whitepixel';
-	for (let i = 0; i < coords.length; i += 2) {
-		// Snap to integer grid so Bresenham-style stepping terminates with fractional inputs.
-		let x0 = Math.round(coords[i]), y0 = Math.round(coords[i + 1]); const next = (i + 2) % coords.length; let x1 = Math.round(coords[next]), y1 = Math.round(coords[next + 1]);
-		const dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0); const sx = x0 < x1 ? 1 : -1; const sy = y0 < y1 ? 1 : -1; let err = dx - dy;
-		if (dx > dy) {
-			while (true) {
-				drawImg({ pos: new_vec3(x0, y0, z), imgid, scale: new_vec2(thickness, thickness), colorize: color, layer }); if (x0 === x1 && y0 === y1) break; const e2 = 2 * err; if (e2 > -dy) { err -= dy; x0 += sx; } if (x0 === x1 && y0 === y1) { drawImg({ pos: new_vec3(x0, y0, z), imgid, scale: new_vec2(thickness, thickness), colorize: color, layer }); break; } if (e2 < dx) { err += dx; y0 += sy; }
-			}
-		} else {
-			while (true) {
-				drawImg({ pos: new_vec3(x0, y0, z), imgid, scale: new_vec2(thickness, thickness), colorize: color, layer }); if (x0 === x1 && y0 === y1) break; const e2 = 2 * err; if (e2 > -dy) { err -= dy; x0 += sx; } if (x0 === x1 && y0 === y1) { drawImg({ pos: new_vec3(x0, y0, z), imgid, scale: new_vec2(thickness, thickness), colorize: color, layer }); break; } if (e2 < dx) { err += dx; y0 += sy; }
-			}
-		}
-	}
-}
-
 export function registerSpritesPass_WebGL(registry: RenderPassLibrary): void {
 	registry.register({
 		id: 'sprites',
@@ -384,13 +319,13 @@ export function registerSpritesPass_WebGL(registry: RenderPassLibrary): void {
 			const build = makePipelineBuildDesc('Sprites2D', vs, fs);
 			return { vsCode: build.vsCode, fsCode: build.fsCode, bindingLayout: build.bindingLayout };
 		})(),
-			bootstrap: (backend: WebGLBackend) => {
-				const webglBackend = backend;
-				setupSpriteShaderLocations(webglBackend);
-				setupBuffers(webglBackend);
-				setupSpriteLocations(webglBackend);
-				setupDefaultUniformValues(backend, [$.view.viewportSize.x, $.view.viewportSize.y]);
-			},
+		bootstrap: (backend: WebGLBackend) => {
+			const webglBackend = backend;
+			setupSpriteShaderLocations(webglBackend);
+			setupBuffers(webglBackend);
+			setupSpriteLocations(webglBackend);
+			setupDefaultUniformValues(backend, [$.view.viewportSize.x, $.view.viewportSize.y]);
+		},
 		writesDepth: true,
 		shouldExecute: () => true,
 		exec: (backend: WebGLBackend, fbo, state: SpritesPipelineState) => {

@@ -202,13 +202,13 @@ export class RenderHUDOverlay implements RegisterablePersistent {
 		// Compute averages depending on mode (EMA or fixed sliding window)
 		const modeStr = this.useEMA ? 'EMA' : 'Window';
 		// Feature queue sizes (front/back)
-		const sq = render_queues.getSpriteQueueDebug();
-		const mq = render_queues.getMeshQueueDebug();
-		const pq = render_queues.getQueuedParticleCount();
+		const sq = { front: render_queues.spriteQueueFrontSize(), back: render_queues.spriteQueueBackSize() };
+		const mq = { front: render_queues.meshQueueFrontSize(), back: render_queues.meshQueueBackSize() };
+		const pq = { front: render_queues.particleQueueFrontSize(), back: render_queues.particleQueueBackSize() };
 		if (sq || mq || pq) {
 			const s = sq ? `S f:${sq.front} b:${sq.back}` : 'S n/a';
 			const m = mq ? `M f:${mq.front} b:${mq.back}` : 'M n/a';
-			const p = pq ? `P f:${pq} b:n/a` : 'P n/a';
+			const p = pq ? `P f:${pq.front} b:${pq.back}` : 'P n/a';
 			lines.push(`queues ${s} | ${m} | ${p}`);
 		}
 		if (this.useEMA) {

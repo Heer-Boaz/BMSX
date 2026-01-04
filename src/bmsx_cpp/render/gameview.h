@@ -102,11 +102,11 @@ public:
 	// ─────────────────────────────────────────────────────────────────────────
 	// Render submission (mirrors TypeScript renderer.submit)
 	//
-	// These functions route to the appropriate pipeline:
-	// - sprite -> SpritesPipeline.drawImg
-	// - rect   -> SpritesPipeline.fillRectangle / drawRectangle
-	// - poly   -> SpritesPipeline.drawPolygon
-	// - glyphs -> renderGlyphs (uses sprite rendering internally)
+	// These functions route to render_queues helpers:
+	// - sprite -> RenderQueues::submitSprite
+	// - rect   -> RenderQueues::submitRectangle
+	// - poly   -> RenderQueues::submitDrawPolygon
+	// - glyphs -> RenderQueues::submitGlyphs
 	// - particle -> ParticlesPipeline.submit_particle
 	// - mesh   -> MeshPipeline.submitMesh
 	// ─────────────────────────────────────────────────────────────────────────

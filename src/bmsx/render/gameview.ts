@@ -6,17 +6,15 @@ import { shallowcopy } from '../utils/shallowcopy';
 import { Input } from '../input/input';
 import type { vec2 } from '../rompack/rompack';
 import { type RegisterablePersistent } from '../rompack/rompack';
-import * as SpritesPipeline from './2d/sprites_pipeline';
-import * as MeshPipeline from './3d/mesh_pipeline';
-import * as ParticlesPipeline from './3d/particles_pipeline';
 import * as SkyboxPipeline from './3d/skybox_pipeline';
+import * as render_queues from './shared/render_queues';
 import type { AtmosphereParams, BackendContext, GPUBackend, RenderContext, RenderSubmission, RenderSubmitQueue, TextureHandle } from './backend/pipeline_interfaces';
 import { RenderPassLibrary } from './backend/renderpasslib';
 import { type RenderPassToken } from './backend/pipeline_interfaces';
 import { RenderGraphRuntime, buildFrameData, updateExternalFrameTiming } from './graph/rendergraph';
 import { LightingSystem } from './lighting/lightingsystem';
 import { GameOptions } from '../core/gameoptions';
-import { calculateCenteredBlockX, renderGlyphs, wrapGlyphs } from './glyphs';
+import * as renderQueues from './shared/render_queues';
 import type {
 	GameViewHost,
 	GameViewCanvas,
@@ -235,49 +233,32 @@ export class GameView implements RegisterablePersistent, RenderContext {
 				}
 			},
 			particle: (o: ParticleRenderSubmission) => {
-				ParticlesPipeline.submit_particle({ ...o });
+				renderQueues.submit_particle(o);
 			},
 			sprite: (o: ImgRenderSubmission) => {
-				SpritesPipeline.drawImg(o);
+				renderQueues.submitSprite(o);
 			},
 			mesh: (o: MeshRenderSubmission) => {
-				MeshPipeline.submitMesh({ ...o });
+				renderQueues.submitMesh(o);
 			},
 			rect: (o: RectRenderSubmission) => {
-				o.kind === 'fill' ? SpritesPipeline.fillRectangle(o) : SpritesPipeline.drawRectangle(o);
+				render_queues.submitRectangle(o);
 			},
 			poly: (o: PolyRenderSubmission) => {
-				SpritesPipeline.drawPolygon(o.points, o.z, o.color, o.thickness ?? 1, o.layer);
+				render_queues.submitDrawPolygon(o);
 			},
 			glyphs: (o: GlyphRenderSubmission) => {
-				let lines: string | string[] = o.glyphs;
-				const resolvedFont = o.font ?? this.default_font;
-				if (!resolvedFont) {
-					throw new Error('[GameView] No font available for glyph rendering.');
-				}
-				o.font = resolvedFont;
-
-				// Optional char-based wrapping
-				if (typeof lines === 'string' && o.wrap_chars !== undefined && o.wrap_chars > 0) {
-					lines = wrapGlyphs(lines, o.wrap_chars);
-				}
-				let xx = o.x;
-				// Optional simple centering within a block of width (pixels)
-				if (o.center_block_width && o.center_block_width > 0) {
-					const arr = Array.isArray(lines) ? lines : [lines];
-					xx += calculateCenteredBlockX(arr, o.font.char_width('a'), o.center_block_width);
-				}
-				renderGlyphs(xx, o.y, lines, o.glyph_start, o.glyph_end, o.z ?? 950, o.font, o.color, o.background_color, o.layer);
+				render_queues.submitGlyphs(o)
 			},
 		},
 	} as RenderSubmitQueue;
 
 	// --- Ambient controls API (best-practice toggles) -------------------------
 	public setSkyboxTintExposure(tint: [number, number, number], exposure = 1.0): void {
-		SkyboxPipeline.setSkyboxTintExposure(tint, exposure);
+		render_queues.setSkyboxTintExposure(tint, exposure);
 	}
 	public setParticlesAmbient(mode: 0 | 1, factor = 1.0): void {
-		ParticlesPipeline.setAmbientDefaults(mode, factor);
+		render_queues.setAmbientDefaults(mode, factor);
 	}
 	public setSpritesAmbient(enabled: boolean, factor = 1.0): void {
 		this.spriteAmbientEnabledDefault = !!enabled;

@@ -2,7 +2,7 @@ import { $ } from '../../core/engine_core';
 
 import particleFS from '../3d/shaders/particle.frag.glsl';
 import particleVS from '../3d/shaders/particle.vert.glsl';
-import type { PassEncoder, RenderContext, TextureHandle } from '../backend/pipeline_interfaces';
+import type { PassEncoder, RenderContext, RenderPassStateRegistry, TextureHandle } from '../backend/pipeline_interfaces';
 import { RenderPassLibrary } from '../backend/renderpasslib';
 import { ParticlePipelineState } from '../backend/pipeline_interfaces';
 import { TEXTURE_UNIT_PARTICLE } from '../backend/webgl/webgl.constants';
@@ -12,23 +12,15 @@ import { M4 } from './math3d';
 import {
 	beginParticleQueue,
 	forEachParticleQueue,
-	particleQueueBackSize,
-	particleQueueFrontSize,
-	submit_particle as enqueueParticle,
+	particleAmbientFactorDefault,
+	particleAmbientModeDefault,
+	particleQueueBackSize
 } from '../shared/render_queues';
 import type { ParticleRenderSubmission } from '../shared/render_types';
 import { updateFallbackCamera, FALLBACK_CAMERA } from '../shared/fallback_camera';
 
 const camRight = new Float32Array(3);
 const camUp = new Float32Array(3);
-let particleAmbientModeDefault: 0 | 1 = 0;
-let particleAmbientFactorDefault = 1.0;
-
-export function setAmbientDefaults(mode: 0 | 1, factor = 1.0): void {
-	particleAmbientModeDefault = mode;
-	particleAmbientFactorDefault = Math.max(0, Math.min(1, factor));
-}
-
 const MAX_PARTICLES = 1000;
 const INSTANCE_FLOATS = 8; // vec4(position+size) + vec4(color)
 const BYTES_PER_FLOAT = 4;
@@ -202,13 +194,6 @@ export function renderParticleBatch(runtime: ParticleRuntime, framebuffer: WebGL
 	backend.bindVertexArray(null);
 	gl.depthMask(true);
 }
-export function setDefaultParticleTexture(tex: TextureHandle): void { defaultTexture = tex; }
-// New submission helper (prefer over touching particlesToDraw)
-export function submit_particle(p: ParticleRenderSubmission): void {
-	enqueueParticle({ ...p });
-}
-export function getQueuedParticleCount(): number { return particleQueueBackSize(); }
-export function getParticleQueueDebug(): { front: number; back: number } { return { front: particleQueueFrontSize(), back: particleQueueBackSize() }; }
 
 export function registerParticlesPass_WebGL(registry: RenderPassLibrary): void {
 	registry.register({
@@ -224,8 +209,8 @@ export function registerParticlesPass_WebGL(registry: RenderPassLibrary): void {
 			setupParticleUniforms(webglBackend);
 		},
 		writesDepth: true,
-		shouldExecute: () => !!getQueuedParticleCount(),
-		exec: (backend, fbo, s) => {
+		shouldExecute: () => !!particleQueueBackSize(),
+		exec: (backend, fbo, s: RenderPassStateRegistry['particles']) => {
 			const webglBackend = backend as WebGLBackend;
 			const runtime: ParticleRuntime = { backend: webglBackend, gl: webglBackend.gl as WebGL2RenderingContext, context: $.view };
 			renderParticleBatch(runtime, fbo as WebGLFramebuffer, s as ParticlePipelineState);
@@ -236,9 +221,9 @@ export function registerParticlesPass_WebGL(registry: RenderPassLibrary): void {
 			const cam = $.world.activeCamera3D;
 			if (!cam) {
 				registry.setState('particles', updateOrthographicParticleState(width, height));
-				return;
+			} else {
+				registry.setState('particles', updateCameraParticleState(width, height, cam));
 			}
-			registry.setState('particles', updateCameraParticleState(width, height, cam));
 		},
 	});
 }

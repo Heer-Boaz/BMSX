@@ -345,8 +345,8 @@ void VMRuntime::boot(const VmProgramAsset& asset) {
 }
 
 void VMRuntime::boot(Program* program, ProgramMetadata* metadata, int entryProtoIndex) {
-	std::cerr << "[VMRuntime] boot: program=" << program << " entryProtoIndex=" << entryProtoIndex << std::endl;
-	std::cerr << "[VMRuntime] boot: module protos=" << m_vmModuleProtos.size()
+	std::cout << "[VMRuntime] boot: program=" << program << " entryProtoIndex=" << entryProtoIndex << std::endl;
+	std::cout << "[VMRuntime] boot: module protos=" << m_vmModuleProtos.size()
 			  << " aliases=" << m_vmModuleAliases.size() << std::endl;
 	m_runtimeFailed = false;
 	m_vmInitialized = false;
@@ -372,38 +372,38 @@ void VMRuntime::boot(Program* program, ProgramMetadata* metadata, int entryProto
 	s_drawLogRemaining = kBootLogFrames;
 
 	// Start execution at entry point
-	std::cerr << "[VMRuntime] boot: starting CPU at entry point..." << std::endl;
+	std::cout << "[VMRuntime] boot: starting CPU at entry point..." << std::endl;
 	m_cpu.start(entryProtoIndex);
 
 	// Run until halted to execute top-level code
-	std::cerr << "[VMRuntime] boot: running top-level code..." << std::endl;
+	std::cout << "[VMRuntime] boot: running top-level code..." << std::endl;
 	m_cpu.run();
 	processIOCommands();
-	std::cerr << "[VMRuntime] boot: top-level code executed" << std::endl;
+	std::cout << "[VMRuntime] boot: top-level code executed" << std::endl;
 
 	// Cache callback functions (use Lua-style names: update, draw, init, new_game)
 	Value updateVal = m_cpu.globals->get(canonicalizeIdentifier("update"));
 	if (valueIsClosure(updateVal)) {
 		m_updateFn = asClosure(updateVal);
-		std::cerr << "[VMRuntime] boot: found update" << std::endl;
+		std::cout << "[VMRuntime] boot: found update" << std::endl;
 	}
 
 	Value drawVal = m_cpu.globals->get(canonicalizeIdentifier("draw"));
 	if (valueIsClosure(drawVal)) {
 		m_drawFn = asClosure(drawVal);
-		std::cerr << "[VMRuntime] boot: found draw" << std::endl;
+		std::cout << "[VMRuntime] boot: found draw" << std::endl;
 	}
 
 	Value initVal = m_cpu.globals->get(canonicalizeIdentifier("init"));
 	if (valueIsClosure(initVal)) {
 		m_initFn = asClosure(initVal);
-		std::cerr << "[VMRuntime] boot: found init" << std::endl;
+		std::cout << "[VMRuntime] boot: found init" << std::endl;
 	}
 
 	Value newGameVal = m_cpu.globals->get(canonicalizeIdentifier("new_game"));
 	if (valueIsClosure(newGameVal)) {
 		m_newGameFn = asClosure(newGameVal);
-		std::cerr << "[VMRuntime] boot: found new_game" << std::endl;
+		std::cout << "[VMRuntime] boot: found new_game" << std::endl;
 	}
 
 	if (!m_initFn) {
@@ -412,24 +412,24 @@ void VMRuntime::boot(Program* program, ProgramMetadata* metadata, int entryProto
 	if (!m_newGameFn) {
 		throw std::runtime_error("[VMRuntime] VM lifecycle handler 'new_game' is not defined.");
 	}
-	std::cerr << "[VMRuntime] boot: calling init..." << std::endl;
+	std::cout << "[VMRuntime] boot: calling init..." << std::endl;
 	callLuaFunction(m_initFn, {});
-	std::cerr << "[VMRuntime] boot: calling new_game..." << std::endl;
+	std::cout << "[VMRuntime] boot: calling new_game..." << std::endl;
 	callEngineModuleMember("reset", {});
 	callLuaFunction(m_newGameFn, {});
 
 	m_vmInitialized = true;
-	std::cerr << "[VMRuntime] boot: VM initialized!" << std::endl;
+	std::cout << "[VMRuntime] boot: VM initialized!" << std::endl;
 }
 
 void VMRuntime::tickUpdate() {
 	if (!m_vmInitialized || !m_tickEnabled || m_runtimeFailed) {
-		if (s_updateLogRemaining > 0) {
-			std::cerr << "[VMRuntime] update: skipped (initialized=" << (m_vmInitialized ? "true" : "false")
-					  << " tick=" << (m_tickEnabled ? "true" : "false")
-					  << " failed=" << (m_runtimeFailed ? "true" : "false") << ")" << std::endl;
-			--s_updateLogRemaining;
-		}
+		// if (s_updateLogRemaining > 0) {
+		// 	std::cerr << "[VMRuntime] update: skipped (initialized=" << (m_vmInitialized ? "true" : "false")
+		// 			  << " tick=" << (m_tickEnabled ? "true" : "false")
+		// 			  << " failed=" << (m_runtimeFailed ? "true" : "false") << ")" << std::endl;
+		// 	--s_updateLogRemaining;
+		// }
 		return;
 	}
 
@@ -451,12 +451,12 @@ void VMRuntime::tickUpdate() {
 
 void VMRuntime::tickDraw() {
 	if (!m_vmInitialized || !m_tickEnabled || m_runtimeFailed) {
-		if (s_drawLogRemaining > 0) {
-			std::cerr << "[VMRuntime] draw: skipped (initialized=" << (m_vmInitialized ? "true" : "false")
-					  << " tick=" << (m_tickEnabled ? "true" : "false")
-					  << " failed=" << (m_runtimeFailed ? "true" : "false") << ")" << std::endl;
-			--s_drawLogRemaining;
-		}
+		// if (s_drawLogRemaining > 0) {
+		// 	std::cerr << "[VMRuntime] draw: skipped (initialized=" << (m_vmInitialized ? "true" : "false")
+		// 			  << " tick=" << (m_tickEnabled ? "true" : "false")
+		// 			  << " failed=" << (m_runtimeFailed ? "true" : "false") << ")" << std::endl;
+		// 	--s_drawLogRemaining;
+		// }
 		return;
 	}
 
@@ -2462,7 +2462,7 @@ bool shouldRunEngineUpdate = (m_updateFn == nullptr);
 		return;
 	}
 
-	const auto updateStart = std::chrono::steady_clock::now();
+	// const auto updateStart = std::chrono::steady_clock::now();
 	double vmRunMs = 0.0;
 	double engineMs = 0.0;
 	double ioMs = 0.0;
@@ -2497,63 +2497,63 @@ bool shouldRunEngineUpdate = (m_updateFn == nullptr);
 			const auto ioEnd = std::chrono::steady_clock::now();
 			ioMs += to_ms(ioEnd - ioStart);
 		}
-		const double totalMs = to_ms(std::chrono::steady_clock::now() - updateStart);
-		static double accSimSec = 0.0;
-		static double accTotalMs = 0.0;
-		static double accVmMs = 0.0;
-		static double accEngineMs = 0.0;
-		static double accIoMs = 0.0;
-		static double maxTotalMs = 0.0;
-		static double maxVmMs = 0.0;
-		static double maxEngineMs = 0.0;
-		static double maxIoMs = 0.0;
-		static uint64_t accFrames = 0;
+		// const double totalMs = to_ms(std::chrono::steady_clock::now() - updateStart);
+		// static double accSimSec = 0.0;
+		// static double accTotalMs = 0.0;
+		// static double accVmMs = 0.0;
+		// static double accEngineMs = 0.0;
+		// static double accIoMs = 0.0;
+		// static double maxTotalMs = 0.0;
+		// static double maxVmMs = 0.0;
+		// static double maxEngineMs = 0.0;
+		// static double maxIoMs = 0.0;
+		// static uint64_t accFrames = 0;
 
-		accSimSec += deltaSeconds;
-		accTotalMs += totalMs;
-		accVmMs += vmRunMs;
-		accEngineMs += engineMs;
-		accIoMs += ioMs;
-		if (totalMs > maxTotalMs) maxTotalMs = totalMs;
-		if (vmRunMs > maxVmMs) maxVmMs = vmRunMs;
-		if (engineMs > maxEngineMs) maxEngineMs = engineMs;
-		if (ioMs > maxIoMs) maxIoMs = ioMs;
-		accFrames += 1;
+		// accSimSec += deltaSeconds;
+		// accTotalMs += totalMs;
+		// accVmMs += vmRunMs;
+		// accEngineMs += engineMs;
+		// accIoMs += ioMs;
+		// if (totalMs > maxTotalMs) maxTotalMs = totalMs;
+		// if (vmRunMs > maxVmMs) maxVmMs = vmRunMs;
+		// if (engineMs > maxEngineMs) maxEngineMs = engineMs;
+		// if (ioMs > maxIoMs) maxIoMs = ioMs;
+		// accFrames += 1;
 
-		if (accSimSec >= 1.0) {
-			const double invFrames = 1.0 / static_cast<double>(accFrames);
-			std::fprintf(stderr,
-				"[VMRuntime] update perf avg total=%.2f vm=%.2f engine=%.2f io=%.2f max_total=%.2f max_vm=%.2f max_engine=%.2f max_io=%.2f frames=%llu\n",
-				accTotalMs * invFrames,
-				accVmMs * invFrames,
-				accEngineMs * invFrames,
-				accIoMs * invFrames,
-				maxTotalMs,
-				maxVmMs,
-				maxEngineMs,
-				maxIoMs,
-				static_cast<unsigned long long>(accFrames));
-			accSimSec = 0.0;
-			accTotalMs = 0.0;
-			accVmMs = 0.0;
-			accEngineMs = 0.0;
-			accIoMs = 0.0;
-			maxTotalMs = 0.0;
-			maxVmMs = 0.0;
-			maxEngineMs = 0.0;
-			maxIoMs = 0.0;
-			accFrames = 0;
-		}
-		if (s_updateLogRemaining > 0) {
-			const char* pendingLabel = m_pendingVmCall == PendingCall::None
-				? "none"
-				: (m_pendingVmCall == PendingCall::Update ? "update" : "draw");
-		std::cerr << "[VMRuntime] update: vm=" << (m_updateFn ? "yes" : "no")
-			          << " pending=" << pendingLabel
-			          << " engine=" << (shouldRunEngineUpdate ? "yes" : "no")
-			          << " dt=" << deltaSeconds << std::endl;
-			--s_updateLogRemaining;
-		}
+		// if (accSimSec >= 1.0) {
+		// 	const double invFrames = 1.0 / static_cast<double>(accFrames);
+		// 	std::fprintf(stderr,
+		// 		"[VMRuntime] update perf avg total=%.2f vm=%.2f engine=%.2f io=%.2f max_total=%.2f max_vm=%.2f max_engine=%.2f max_io=%.2f frames=%llu\n",
+		// 		accTotalMs * invFrames,
+		// 		accVmMs * invFrames,
+		// 		accEngineMs * invFrames,
+		// 		accIoMs * invFrames,
+		// 		maxTotalMs,
+		// 		maxVmMs,
+		// 		maxEngineMs,
+		// 		maxIoMs,
+		// 		static_cast<unsigned long long>(accFrames));
+		// 	accSimSec = 0.0;
+		// 	accTotalMs = 0.0;
+		// 	accVmMs = 0.0;
+		// 	accEngineMs = 0.0;
+		// 	accIoMs = 0.0;
+		// 	maxTotalMs = 0.0;
+		// 	maxVmMs = 0.0;
+		// 	maxEngineMs = 0.0;
+		// 	maxIoMs = 0.0;
+		// 	accFrames = 0;
+		// }
+		// if (s_updateLogRemaining > 0) {
+		// 	const char* pendingLabel = m_pendingVmCall == PendingCall::None
+		// 		? "none"
+		// 		: (m_pendingVmCall == PendingCall::Update ? "update" : "draw");
+		// std::cerr << "[VMRuntime] update: vm=" << (m_updateFn ? "yes" : "no")
+		// 	          << " pending=" << pendingLabel
+		// 	          << " engine=" << (shouldRunEngineUpdate ? "yes" : "no")
+		// 	          << " dt=" << deltaSeconds << std::endl;
+		// 	--s_updateLogRemaining;
+		// }
 	} catch (const std::exception& e) {
 		std::cerr << "[VMRuntime] Error in update: " << e.what() << std::endl;
 		logVmCallStack();
@@ -2567,7 +2567,7 @@ bool shouldRunEngineDraw = (m_drawFn == nullptr);
 		return;
 	}
 
-	const auto drawStart = std::chrono::steady_clock::now();
+	// const auto drawStart = std::chrono::steady_clock::now();
 	double vmRunMs = 0.0;
 	double engineMs = 0.0;
 	double ioMs = 0.0;
@@ -2601,63 +2601,63 @@ bool shouldRunEngineDraw = (m_drawFn == nullptr);
 			const auto ioEnd = std::chrono::steady_clock::now();
 			ioMs += to_ms(ioEnd - ioStart);
 		}
-		const double totalMs = to_ms(std::chrono::steady_clock::now() - drawStart);
-		static double accSimSec = 0.0;
-		static double accTotalMs = 0.0;
-		static double accVmMs = 0.0;
-		static double accEngineMs = 0.0;
-		static double accIoMs = 0.0;
-		static double maxTotalMs = 0.0;
-		static double maxVmMs = 0.0;
-		static double maxEngineMs = 0.0;
-		static double maxIoMs = 0.0;
-		static uint64_t accFrames = 0;
+		// const double totalMs = to_ms(std::chrono::steady_clock::now() - drawStart);
+		// static double accSimSec = 0.0;
+		// static double accTotalMs = 0.0;
+		// static double accVmMs = 0.0;
+		// static double accEngineMs = 0.0;
+		// static double accIoMs = 0.0;
+		// static double maxTotalMs = 0.0;
+		// static double maxVmMs = 0.0;
+		// static double maxEngineMs = 0.0;
+		// static double maxIoMs = 0.0;
+		// static uint64_t accFrames = 0;
 
-		const double deltaSeconds = static_cast<double>(m_frameState.deltaSeconds);
-		accSimSec += deltaSeconds;
-		accTotalMs += totalMs;
-		accVmMs += vmRunMs;
-		accEngineMs += engineMs;
-		accIoMs += ioMs;
-		if (totalMs > maxTotalMs) maxTotalMs = totalMs;
-		if (vmRunMs > maxVmMs) maxVmMs = vmRunMs;
-		if (engineMs > maxEngineMs) maxEngineMs = engineMs;
-		if (ioMs > maxIoMs) maxIoMs = ioMs;
-		accFrames += 1;
+		// const double deltaSeconds = static_cast<double>(m_frameState.deltaSeconds);
+		// accSimSec += deltaSeconds;
+		// accTotalMs += totalMs;
+		// accVmMs += vmRunMs;
+		// accEngineMs += engineMs;
+		// accIoMs += ioMs;
+		// if (totalMs > maxTotalMs) maxTotalMs = totalMs;
+		// if (vmRunMs > maxVmMs) maxVmMs = vmRunMs;
+		// if (engineMs > maxEngineMs) maxEngineMs = engineMs;
+		// if (ioMs > maxIoMs) maxIoMs = ioMs;
+		// accFrames += 1;
 
-		if (accSimSec >= 1.0) {
-			const double invFrames = 1.0 / static_cast<double>(accFrames);
-			std::fprintf(stderr,
-				"[VMRuntime] draw perf avg total=%.2f vm=%.2f engine=%.2f io=%.2f max_total=%.2f max_vm=%.2f max_engine=%.2f max_io=%.2f frames=%llu\n",
-				accTotalMs * invFrames,
-				accVmMs * invFrames,
-				accEngineMs * invFrames,
-				accIoMs * invFrames,
-				maxTotalMs,
-				maxVmMs,
-				maxEngineMs,
-				maxIoMs,
-				static_cast<unsigned long long>(accFrames));
-			accSimSec = 0.0;
-			accTotalMs = 0.0;
-			accVmMs = 0.0;
-			accEngineMs = 0.0;
-			accIoMs = 0.0;
-			maxTotalMs = 0.0;
-			maxVmMs = 0.0;
-			maxEngineMs = 0.0;
-			maxIoMs = 0.0;
-			accFrames = 0;
-		}
-		if (s_drawLogRemaining > 0) {
-			const char* pendingLabel = m_pendingVmCall == PendingCall::None
-				? "none"
-				: (m_pendingVmCall == PendingCall::Update ? "update" : "draw");
-		std::cerr << "[VMRuntime] draw: vm=" << (m_drawFn ? "yes" : "no")
-			          << " pending=" << pendingLabel
-			          << " engine=" << (shouldRunEngineDraw ? "yes" : "no") << std::endl;
-			--s_drawLogRemaining;
-		}
+		// if (accSimSec >= 1.0) {
+		// 	const double invFrames = 1.0 / static_cast<double>(accFrames);
+		// 	std::fprintf(stderr,
+		// 		"[VMRuntime] draw perf avg total=%.2f vm=%.2f engine=%.2f io=%.2f max_total=%.2f max_vm=%.2f max_engine=%.2f max_io=%.2f frames=%llu\n",
+		// 		accTotalMs * invFrames,
+		// 		accVmMs * invFrames,
+		// 		accEngineMs * invFrames,
+		// 		accIoMs * invFrames,
+		// 		maxTotalMs,
+		// 		maxVmMs,
+		// 		maxEngineMs,
+		// 		maxIoMs,
+		// 		static_cast<unsigned long long>(accFrames));
+		// 	accSimSec = 0.0;
+		// 	accTotalMs = 0.0;
+		// 	accVmMs = 0.0;
+		// 	accEngineMs = 0.0;
+		// 	accIoMs = 0.0;
+		// 	maxTotalMs = 0.0;
+		// 	maxVmMs = 0.0;
+		// 	maxEngineMs = 0.0;
+		// 	maxIoMs = 0.0;
+		// 	accFrames = 0;
+		// }
+		// if (s_drawLogRemaining > 0) {
+		// 	const char* pendingLabel = m_pendingVmCall == PendingCall::None
+		// 		? "none"
+		// 		: (m_pendingVmCall == PendingCall::Update ? "update" : "draw");
+		// std::cerr << "[VMRuntime] draw: vm=" << (m_drawFn ? "yes" : "no")
+		// 	          << " pending=" << pendingLabel
+		// 	          << " engine=" << (shouldRunEngineDraw ? "yes" : "no") << std::endl;
+		// 	--s_drawLogRemaining;
+		// }
 	} catch (const std::exception& e) {
 		std::cerr << "[VMRuntime] Error in draw: " << e.what() << std::endl;
 		logVmCallStack();

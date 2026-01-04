@@ -44,7 +44,7 @@ static bool g_cached_av_info_valid = false;
 
 // Forward declarations
 static void fallback_log(enum retro_log_level level, const char* fmt, ...);
-static void frame_time_cb(retro_usec_t usec);
+// static void frame_time_cb(retro_usec_t usec);
 static void hw_context_reset();
 static void hw_context_destroy();
 
@@ -91,10 +91,10 @@ void retro_set_environment(retro_environment_t cb) {
 	  {0, 0, 0, 0, nullptr}};
   cb(RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS, (void*)input_desc);
 
-  retro_frame_time_callback frame_time{};
-  frame_time.callback = frame_time_cb;
-  frame_time.reference = 0;
-  cb(RETRO_ENVIRONMENT_SET_FRAME_TIME_CALLBACK, &frame_time);
+  // retro_frame_time_callback frame_time{};
+  // frame_time.callback = frame_time_cb;
+  // frame_time.reference = 0;
+  // cb(RETRO_ENVIRONMENT_SET_FRAME_TIME_CALLBACK, &frame_time);
 
 #if BMSX_ENABLE_GLES2
   std::memset(&g_hw_render, 0, sizeof(g_hw_render));
@@ -332,36 +332,36 @@ void retro_run(void) {
   static double maxDrawGameMs = 0.0;
   static uint64_t perfFrames = 0;
 
-  const auto now = std::chrono::steady_clock::now();
-  const double dtSec = std::chrono::duration<double>(now - lastFrameTime).count();
-  const double dtMs = dtSec * 1000.0;
-  lastFrameTime = now;
+  // const auto now = std::chrono::steady_clock::now();
+  // const double dtSec = std::chrono::duration<double>(now - lastFrameTime).count();
+  // const double dtMs = dtSec * 1000.0;
+  // lastFrameTime = now;
 
-  accSec += dtSec;
-  accMs += dtMs;
-  accCalls += 1;
-  if (dtMs < minMs) minMs = dtMs;
-  if (dtMs > maxMs) maxMs = dtMs;
-  if (accSec >= 1.0) {
-	const double avgMs = accMs / static_cast<double>(accCalls);
-	const double fps = static_cast<double>(accCalls) / accSec;
-	const double targetMs = g_platform->frameTimeSec() * 1000.0;
-	const double targetFps = 1.0 / g_platform->frameTimeSec();
-	logging.log(RETRO_LOG_WARN,
-				"[BMSX] host frame timing avg=%.2fms min=%.2f max=%.2f fps=%.1f target=%.2fms (%.1f fps) calls=%llu\n",
-				avgMs,
-				minMs,
-				maxMs,
-				fps,
-				targetMs,
-				targetFps,
-				static_cast<unsigned long long>(accCalls));
-	accSec = 0.0;
-	accMs = 0.0;
-	minMs = std::numeric_limits<double>::infinity();
-	maxMs = 0.0;
-	accCalls = 0;
-  }
+  // accSec += dtSec;
+  // accMs += dtMs;
+  // accCalls += 1;
+  // if (dtMs < minMs) minMs = dtMs;
+  // if (dtMs > maxMs) maxMs = dtMs;
+  // if (accSec >= 1.0) {
+	// const double avgMs = accMs / static_cast<double>(accCalls);
+	// const double fps = static_cast<double>(accCalls) / accSec;
+	// const double targetMs = g_platform->frameTimeSec() * 1000.0;
+	// const double targetFps = 1.0 / g_platform->frameTimeSec();
+	// logging.log(RETRO_LOG_WARN,
+	// 			"[BMSX] host frame timing avg=%.2fms min=%.2f max=%.2f fps=%.1f target=%.2fms (%.1f fps) calls=%llu\n",
+	// 			avgMs,
+	// 			minMs,
+	// 			maxMs,
+	// 			fps,
+	// 			targetMs,
+	// 			targetFps,
+	// 			static_cast<unsigned long long>(accCalls));
+	// accSec = 0.0;
+	// accMs = 0.0;
+	// minMs = std::numeric_limits<double>::infinity();
+	// maxMs = 0.0;
+	// accCalls = 0;
+  // }
 
   // Run one frame
   const auto runStart = std::chrono::steady_clock::now();
@@ -510,18 +510,18 @@ static void fallback_log(enum retro_log_level level, const char* fmt, ...) {
   va_end(args);
 }
 
-static void frame_time_cb(retro_usec_t usec) {
-  logging.log(RETRO_LOG_WARN, "[BMSX] frame_time_cb: %llu usec (%.3fms, %.2f fps)\n",
-			  static_cast<unsigned long long>(usec),
-			  static_cast<double>(usec) / 1000.0,
-			  1000000.0 / static_cast<double>(usec));
-  if (g_platform) {
-	g_platform->setFrameTimeUsec(usec);
-	return;
-  }
-  g_pending_frame_time_usec = usec;
-  g_has_pending_frame_time = true;
-}
+// static void frame_time_cb(retro_usec_t usec) {
+//   logging.log(RETRO_LOG_WARN, "[BMSX] frame_time_cb: %llu usec (%.3fms, %.2f fps)\n",
+// 			  static_cast<unsigned long long>(usec),
+// 			  static_cast<double>(usec) / 1000.0,
+// 			  1000000.0 / static_cast<double>(usec));
+//   if (g_platform) {
+// 	g_platform->setFrameTimeUsec(usec);
+// 	return;
+//   }
+//   g_pending_frame_time_usec = usec;
+//   g_has_pending_frame_time = true;
+// }
 
 static void hw_context_reset() {
   if (g_platform) {
