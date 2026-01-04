@@ -341,7 +341,7 @@ void SoundMaster::renderSamples(i16* output, size_t frameCount, i32 outputSample
 	}
 	std::fill(m_mixBuffer.begin(), m_mixBuffer.begin() + totalSamples, 0.0f);
 
-	const auto mixStart = std::chrono::steady_clock::now();
+	// const auto mixStart = std::chrono::steady_clock::now();
 	const f64 invOutputRate = 1.0 / static_cast<f64>(outputSampleRate);
 	const f64 dt = static_cast<f64>(frameCount) * invOutputRate;
 	processPendingTransitions(dt);

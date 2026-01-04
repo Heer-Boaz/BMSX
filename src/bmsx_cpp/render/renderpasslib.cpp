@@ -129,49 +129,18 @@ void RenderPassLibrary::registerBuiltinPassesSoftware() {
 		desc.id = "crt";
 		desc.name = "CRT";
 		desc.present = true;
-		desc.exec = [](GPUBackend*, void*, std::any&) {
-			// CRT is applied in GameView::applyCRTPostProcessing for software
-		};
-		desc.prepare = [](GPUBackend*, std::any& state) {
+		desc.exec = [](GPUBackend* backend, void*, std::any& state) {
 			auto& engine = EngineCore::instance();
-			auto* gv = engine.view();
-
-			CRTPipelineState crtState;
-			crtState.width = static_cast<i32>(gv->canvasSize.x);
-			crtState.height = static_cast<i32>(gv->canvasSize.y);
-			crtState.baseWidth = static_cast<i32>(gv->viewportSize.x);
-			crtState.baseHeight = static_cast<i32>(gv->viewportSize.y);
-			crtState.srcWidth = static_cast<i32>(gv->offscreenCanvasSize.x);
-			crtState.srcHeight = static_cast<i32>(gv->offscreenCanvasSize.y);
-			crtState.colorTex = nullptr;
-			if (gv->crt_postprocessing_enabled) {
-				crtState.options.applyNoise = gv->applyNoise;
-				crtState.options.noiseIntensity = gv->noiseIntensity;
-				crtState.options.applyColorBleed = gv->applyColorBleed;
-				crtState.options.colorBleed = gv->colorBleed;
-				crtState.options.applyScanlines = gv->applyScanlines;
-				crtState.options.applyBlur = gv->applyBlur;
-				crtState.options.blurIntensity = gv->blurIntensity;
-				crtState.options.applyGlow = gv->applyGlow;
-				crtState.options.glowColor = gv->glowColor;
-				crtState.options.applyFringing = gv->applyFringing;
-				crtState.options.applyAperture = gv->applyAperture;
-			} else {
-				crtState.options.applyNoise = false;
-				crtState.options.applyColorBleed = false;
-				crtState.options.applyScanlines = false;
-				crtState.options.applyBlur = false;
-				crtState.options.applyGlow = false;
-				crtState.options.applyFringing = false;
-				crtState.options.applyAperture = false;
-				crtState.options.noiseIntensity = gv->noiseIntensity;
-				crtState.options.colorBleed = gv->colorBleed;
-				crtState.options.blurIntensity = gv->blurIntensity;
-				crtState.options.glowColor = gv->glowColor;
-			}
-
-			state = crtState;
+			auto* view = engine.view();
+			auto& crtState = std::any_cast<CRTPipelineState&>(state);
+			auto* colorTex = static_cast<SoftwareTexture*>(crtState.colorTex);
+			auto* softBackend = static_cast<SoftwareBackend*>(backend);
+			view->applyCRTPostProcessing(colorTex->data.data(), colorTex->width,
+										 colorTex->height, softBackend->framebuffer(),
+										 softBackend->width(), softBackend->height(),
+										 softBackend->pitch());
 		};
+		desc.prepare = [](GPUBackend*, std::any&) {};
 		registerPass(desc);
 	}
 }

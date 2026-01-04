@@ -6,7 +6,6 @@
  */
 
 #include "gameview.h"
-#include "sprites_pipeline.h"
 #if BMSX_ENABLE_GLES2
 #include "gles2_backend.h"
 #endif
@@ -138,42 +137,11 @@ void GameView::drawGame() {
 	// Increment frame timing
 	m_renderFrameIndex++;
 
-#if !BMSX_ENABLE_GLES2
-	if (m_backend->type() == BackendType::OpenGLES2) {
-		throw std::runtime_error("[GameView] OpenGLES2 backend disabled at compile time.");
-	}
-#else
-	if (m_backend->type() == BackendType::OpenGLES2) {
-		FrameData frame;
-		frame.frameIndex = static_cast<u32>(m_renderFrameIndex);
-		frame.time = EngineCore::instance().totalTime();
-		frame.delta = EngineCore::instance().deltaTime();
-		m_renderGraph->execute(&frame);
-		return;
-	}
-#endif
-
-	// Begin main render pass
-	RenderPassDesc mainPass;
-	mainPass.label = "main";
-	ColorAttachmentSpec colorSpec;
-	colorSpec.clear = Color::black();
-	mainPass.color = colorSpec;
-	DepthAttachmentSpec depthSpec;
-	depthSpec.clearDepth = 1.0f;
-	mainPass.depth = depthSpec;
-
-	PassEncoder pass = m_backend->beginRenderPass(mainPass);
-
-	// Execute sprite pipeline (includes rects, polys via whitepixel sprite)
-	SpritesPipeline::renderSpriteBatch(m_backend.get(), this);
-
-	m_backend->endRenderPass(pass);
-
-	// Apply CRT post-processing effects (software implementation)
-	if (crt_postprocessing_enabled) {
-		applyCRTPostProcessing();
-	}
+	FrameData frame;
+	frame.frameIndex = static_cast<u32>(m_renderFrameIndex);
+	frame.time = EngineCore::instance().totalTime();
+	frame.delta = EngineCore::instance().deltaTime();
+	m_renderGraph->execute(&frame);
 }
 
 void GameView::endFrame() {
@@ -491,49 +459,55 @@ inline f32 hashNoise(f32 u, f32 v, f32 t) {
 // This mirrors the WebGL CRT shader for feature parity.
 // ─────────────────────────────────────────────────────────────────────────────
 
-void GameView::applyCRTPostProcessing() {
-	auto* softBackend = dynamic_cast<SoftwareBackend*>(m_backend.get());
-	if (!softBackend) return;
+void GameView::applyCRTPostProcessing(const u32* src,
+									  i32 srcWidth,
+									  i32 srcHeight,
+									  u32* dst,
+									  i32 dstWidth,
+									  i32 dstHeight,
+									  i32 dstPitch) {
+	const i32 dstPixelsPerRow = dstPitch / sizeof(u32);
+	const size_t srcSize = static_cast<size_t>(srcWidth) * static_cast<size_t>(srcHeight);
 
-	u32* fb = softBackend->framebuffer();
-	i32 width = softBackend->width();
-	i32 height = softBackend->height();
-	i32 pitch = softBackend->pitch();
-	const i32 pixelsPerRow = pitch / sizeof(u32);
-
-	// Ensure scratch buffer is large enough
-	if (m_crtScratchBuffer.size() < static_cast<size_t>(width * height)) {
-		m_crtScratchBuffer.resize(width * height);
+	if (m_crtScratchBuffer.size() < srcSize) {
+		m_crtScratchBuffer.resize(srcSize);
 	}
-
-	// Copy framebuffer to scratch for effects that need source pixels
-	std::memcpy(m_crtScratchBuffer.data(), fb, width * height * sizeof(u32));
+	std::memcpy(m_crtScratchBuffer.data(), src, srcSize * sizeof(u32));
 
 	const auto& table = srgbToLinearTable();
-	const f32 invW = 1.0f / static_cast<f32>(width);
-	const f32 invH = 1.0f / static_cast<f32>(height);
+	const f32 invOutW = 1.0f / static_cast<f32>(dstWidth);
+	const f32 invOutH = 1.0f / static_cast<f32>(dstHeight);
+	const f32 srcWf = static_cast<f32>(srcWidth);
+	const f32 srcHf = static_cast<f32>(srcHeight);
+	const f32 srcMaxX = srcWf - 1.0f;
+	const f32 srcMaxY = srcHf - 1.0f;
 	const f32 time = static_cast<f32>(EngineCore::instance().totalTime());
 	static u32 noiseState = 0x12345678u;
 	noiseState = noiseState * 1664525u + 1013904223u;
 	const f32 random = static_cast<f32>((noiseState >> 8) & 0xFFFFFF) / 16777215.0f;
 
-	const bool useNoise = applyNoise;
-	const bool useColorBleed = applyColorBleed;
-	const bool useScanlines = applyScanlines;
-	const bool useBlur = applyBlur;
-	const bool useGlow = applyGlow;
-	const bool useFringing = applyFringing;
-	const bool useAperture = applyAperture;
+	const bool enableCrt = crt_postprocessing_enabled;
+	const bool useNoise = enableCrt && applyNoise;
+	const bool useColorBleed = enableCrt && applyColorBleed;
+	const bool useScanlines = enableCrt && applyScanlines;
+	const bool useBlur = enableCrt && applyBlur;
+	const bool useGlow = enableCrt && applyGlow;
+	const bool useFringing = enableCrt && applyFringing;
+	const bool useAperture = enableCrt && applyAperture;
 	const f32 blurMix = clamp01(blurIntensity);
 
-	for (i32 y = 0; y < height; ++y) {
-		const f32 uvY = (static_cast<f32>(y) + 0.5f) * invH;
-		for (i32 x = 0; x < width; ++x) {
-			const f32 uvX = (static_cast<f32>(x) + 0.5f) * invW;
-			const i32 idx = y * pixelsPerRow + x;
-			const i32 scratchIdx = y * width + x;
+	const u32* scratch = m_crtScratchBuffer.data();
 
-			Color color = unpackLinear(m_crtScratchBuffer[scratchIdx], table);
+	for (i32 y = 0; y < dstHeight; ++y) {
+		const f32 uvY = (static_cast<f32>(y) + 0.5f) * invOutH;
+		const f32 srcY = uvY * srcMaxY;
+		for (i32 x = 0; x < dstWidth; ++x) {
+			const f32 uvX = (static_cast<f32>(x) + 0.5f) * invOutW;
+			const f32 srcX = uvX * srcMaxX;
+			const i32 dstIdx = y * dstPixelsPerRow + x;
+
+			const Color baseTex = sampleLinear(scratch, srcWidth, srcHeight, srcX, srcY, table);
+			Color color = baseTex;
 
 			if (useColorBleed) {
 				color.r += colorBleed[0];
@@ -543,8 +517,7 @@ void GameView::applyCRTPostProcessing() {
 
 			BlurContrast bc;
 			if (useBlur || useFringing) {
-				bc = applyBlurAndContrast(m_crtScratchBuffer.data(), width, height,
-										  static_cast<f32>(x), static_cast<f32>(y), table);
+				bc = applyBlurAndContrast(scratch, srcWidth, srcHeight, srcX, srcY, table);
 			} else {
 				bc.blurred = color;
 				bc.contrast = 0.0f;
@@ -569,14 +542,11 @@ void GameView::applyCRTPostProcessing() {
 				const f32 shiftX = dirX * shiftPx;
 				const f32 shiftY = dirY * shiftPx;
 
-				const Color rSample = sampleLinear(m_crtScratchBuffer.data(), width, height,
-												   static_cast<f32>(x) + shiftX,
-												   static_cast<f32>(y) + shiftY, table);
-				const Color gSample = unpackLinear(m_crtScratchBuffer[scratchIdx], table);
-				const Color bSample = sampleLinear(m_crtScratchBuffer.data(), width, height,
-												   static_cast<f32>(x) - shiftX,
-												   static_cast<f32>(y) - shiftY, table);
-				const Color fringed{rSample.r, gSample.g, bSample.b, 1.0f};
+				const Color rSample = sampleLinear(scratch, srcWidth, srcHeight,
+												   srcX + shiftX, srcY + shiftY, table);
+				const Color bSample = sampleLinear(scratch, srcWidth, srcHeight,
+												   srcX - shiftX, srcY - shiftY, table);
+				const Color fringed{rSample.r, baseTex.g, bSample.b, 1.0f};
 				color.r += (fringed.r - color.r) * kFringingMix;
 				color.g += (fringed.g - color.g) * kFringingMix;
 				color.b += (fringed.b - color.b) * kFringingMix;
@@ -585,7 +555,8 @@ void GameView::applyCRTPostProcessing() {
 			if (useScanlines) {
 				const f32 lum = luminance(color);
 				const f32 A = kScanlineDepth + (0.12f - kScanlineDepth) * clamp01(lum);
-				const f32 phase = (y & 1) ? -1.0f : 1.0f;
+				const f32 row = std::floor(uvY * srcHf);
+				const f32 phase = std::cos(kPi * row);
 				f32 mask = 1.0f - A * (0.5f - 0.5f * phase);
 				mask /= (1.0f - 0.5f * A);
 				const f32 k = smoothstep(kBlackCutoff, kBlackSoft, lum);
@@ -596,7 +567,7 @@ void GameView::applyCRTPostProcessing() {
 			}
 
 			if (useAperture) {
-				const f32 xSrc = uvX * static_cast<f32>(width);
+				const f32 xSrc = uvX * srcWf;
 				const f32 triad = 0.5f + 0.5f * std::cos(6.2831853f * xSrc);
 				const f32 lum = luminance(color);
 				const f32 k = smoothstep(kBlackCutoff, kBlackSoft, lum);
@@ -618,12 +589,12 @@ void GameView::applyCRTPostProcessing() {
 			}
 
 			if (useNoise) {
-				const f32 ySrc = uvY * static_cast<f32>(height);
+				const f32 ySrc = uvY * srcHf;
 				const f32 lineNoise =
 					hashNoise(0.0f, std::floor(ySrc) + time * 30.0f, 0.0f) - 0.5f;
 				const f32 pixNoise =
-					hashNoise(uvX * static_cast<f32>(width) + random,
-							  uvY * static_cast<f32>(height) + random,
+					hashNoise(uvX * srcWf + random,
+							  uvY * srcHf + random,
 							  time) - 0.5f;
 				const f32 lum = luminance(color);
 				const f32 n = pixNoise * 0.65f + lineNoise * 0.35f;
@@ -643,7 +614,7 @@ void GameView::applyCRTPostProcessing() {
 			const u8 r = static_cast<u8>(clamp01(linearToSrgb(color.r)) * 255.0f);
 			const u8 g = static_cast<u8>(clamp01(linearToSrgb(color.g)) * 255.0f);
 			const u8 b = static_cast<u8>(clamp01(linearToSrgb(color.b)) * 255.0f);
-			fb[idx] = (0xFF << 24) | (r << 16) | (g << 8) | b;
+			dst[dstIdx] = (0xFF << 24) | (r << 16) | (g << 8) | b;
 		}
 	}
 }

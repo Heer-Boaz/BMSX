@@ -27,6 +27,11 @@ struct GLES2DepthTarget {
 };
 #endif
 
+struct SoftwareDepthTarget {
+	i32 width = 0;
+	i32 height = 0;
+};
+
 } // namespace
 
 /* ============================================================================
@@ -237,9 +242,6 @@ void RenderGraphRuntime::compile(FrameData* frame) {
 }
 
 void RenderGraphRuntime::execute(FrameData* frame) {
-#if !BMSX_ENABLE_GLES2
-	throw std::runtime_error("[RenderGraph] OpenGLES2 backend disabled at compile time.");
-#else
 	if (!m_compiled) compile(frame);
 	if (!m_realized) realizeAll();
 
@@ -248,76 +250,167 @@ void RenderGraphRuntime::execute(FrameData* frame) {
 	const i32 passCount = static_cast<i32>(m_passes.size());
 	const i32 total = hasOrder ? static_cast<i32>(m_passOrder.size()) : passCount;
 
-	for (i32 oi = 0; oi < total; ++oi) {
-		const i32 passIndex = hasOrder ? m_passOrder[oi] : oi;
-		if (!m_reachable.empty() && !m_reachable[passIndex]) continue;
+	const BackendType backendType = m_backend->type();
 
-		auto& pass = m_passes[passIndex];
-		const std::any& data = m_setupData[passIndex];
-		if (kRenderGraphVerboseLog) {
-			std::fprintf(stderr, "[BMSX][RG] execute pass index=%d name=%s\n",
-						 passIndex, pass.name.c_str());
-		}
+	if (backendType == BackendType::OpenGLES2) {
+#if !BMSX_ENABLE_GLES2
+		throw std::runtime_error("[RenderGraph] OpenGLES2 backend disabled at compile time.");
+#else
+		for (i32 oi = 0; oi < total; ++oi) {
+			const i32 passIndex = hasOrder ? m_passOrder[oi] : oi;
+			if (!m_reachable.empty() && !m_reachable[passIndex]) continue;
 
-		const auto& writes = m_passWrites[passIndex];
-		RenderGraphTexHandle colorHandle = -1;
-		RenderGraphTexHandle depthHandle = -1;
-		for (RenderGraphTexHandle h : writes) {
-			const auto& res = m_texResources[h];
-			if (res.desc.depth) depthHandle = h; else colorHandle = h;
-		}
-
-		bool didBegin = false;
-		PassEncoder passEnc{};
-		if (colorHandle >= 0) {
-			auto& colorRes = m_texResources[colorHandle];
-			const i32 width = colorRes.desc.width;
-			const i32 height = colorRes.desc.height;
-			const void* fboHandle = getFBO(colorHandle, depthHandle);
+			auto& pass = m_passes[passIndex];
+			const std::any& data = m_setupData[passIndex];
 			if (kRenderGraphVerboseLog) {
-				std::fprintf(stderr,
-							 "[BMSX][RG] pass=%s colorHandle=%d depthHandle=%d fbo=%u size=%dx%d\n",
-							 pass.name.c_str(), colorHandle, depthHandle,
-							 static_cast<unsigned>(reinterpret_cast<uintptr_t>(fboHandle)),
-							 width, height);
+				std::fprintf(stderr, "[BMSX][RG] execute pass index=%d name=%s\n",
+							 passIndex, pass.name.c_str());
 			}
 
-			auto* gles = static_cast<OpenGLES2Backend*>(m_backend);
-			gles->setRenderTarget(static_cast<GLuint>(reinterpret_cast<uintptr_t>(fboHandle)), width, height);
-
-			bool clearColor = !colorRes.clearOnWrite.color.has_value() ? false : (colorRes.writerPasses[0] == passIndex);
-			bool clearDepth = false;
-			if (depthHandle >= 0) {
-				const auto& depthRes = m_texResources[depthHandle];
-				clearDepth = depthRes.clearOnWrite.depth.has_value() && (depthRes.writerPasses[0] == passIndex);
+			const auto& writes = m_passWrites[passIndex];
+			RenderGraphTexHandle colorHandle = -1;
+			RenderGraphTexHandle depthHandle = -1;
+			for (RenderGraphTexHandle h : writes) {
+				const auto& res = m_texResources[h];
+				if (res.desc.depth) depthHandle = h; else colorHandle = h;
 			}
 
-			if (clearColor || clearDepth) {
-				RenderPassDesc desc;
-				desc.label = pass.name;
-				if (clearColor) {
-					const auto& clr = *colorRes.clearOnWrite.color;
-					ColorAttachmentSpec colorSpec;
-					colorSpec.clear = Color{clr[0], clr[1], clr[2], clr[3]};
-					desc.color = colorSpec;
+			bool didBegin = false;
+			PassEncoder passEnc{};
+			if (colorHandle >= 0) {
+				auto& colorRes = m_texResources[colorHandle];
+				const i32 width = colorRes.desc.width;
+				const i32 height = colorRes.desc.height;
+				const void* fboHandle = getFBO(colorHandle, depthHandle);
+				if (kRenderGraphVerboseLog) {
+					std::fprintf(stderr,
+								 "[BMSX][RG] pass=%s colorHandle=%d depthHandle=%d fbo=%u size=%dx%d\n",
+								 pass.name.c_str(), colorHandle, depthHandle,
+								 static_cast<unsigned>(reinterpret_cast<uintptr_t>(fboHandle)),
+								 width, height);
 				}
-				if (clearDepth) {
-					DepthAttachmentSpec depthSpec;
-					depthSpec.clearDepth = *m_texResources[depthHandle].clearOnWrite.depth;
-					desc.depth = depthSpec;
+
+				auto* gles = static_cast<OpenGLES2Backend*>(m_backend);
+				gles->setRenderTarget(static_cast<GLuint>(reinterpret_cast<uintptr_t>(fboHandle)), width, height);
+
+				const bool clearColor = colorRes.clearOnWrite.color.has_value() && (colorRes.writerPasses[0] == passIndex);
+				bool clearDepth = false;
+				if (depthHandle >= 0) {
+					const auto& depthRes = m_texResources[depthHandle];
+					clearDepth = depthRes.clearOnWrite.depth.has_value() && (depthRes.writerPasses[0] == passIndex);
 				}
-				passEnc = m_backend->beginRenderPass(desc);
-				didBegin = true;
+
+				if (clearColor || clearDepth) {
+					RenderPassDesc desc;
+					desc.label = pass.name;
+					if (clearColor) {
+						const auto& clr = *colorRes.clearOnWrite.color;
+						ColorAttachmentSpec colorSpec;
+						colorSpec.clear = Color{clr[0], clr[1], clr[2], clr[3]};
+						desc.color = colorSpec;
+					}
+					if (clearDepth) {
+						DepthAttachmentSpec depthSpec;
+						depthSpec.clearDepth = *m_texResources[depthHandle].clearOnWrite.depth;
+						desc.depth = depthSpec;
+					}
+					passEnc = m_backend->beginRenderPass(desc);
+					didBegin = true;
+				}
+			}
+
+			pass.execute(ctx, frame, data);
+
+			if (didBegin) {
+				m_backend->endRenderPass(passEnc);
 			}
 		}
-
-		pass.execute(ctx, frame, data);
-
-		if (didBegin) {
-			m_backend->endRenderPass(passEnc);
-		}
-	}
 #endif
+		return;
+	}
+
+	if (backendType == BackendType::Software) {
+		auto* softBackend = static_cast<SoftwareBackend*>(m_backend);
+		u32* outputFb = softBackend->framebuffer();
+		i32 outputWidth = softBackend->width();
+		i32 outputHeight = softBackend->height();
+		i32 outputPitch = softBackend->pitch();
+
+		for (i32 oi = 0; oi < total; ++oi) {
+			const i32 passIndex = hasOrder ? m_passOrder[oi] : oi;
+			if (!m_reachable.empty() && !m_reachable[passIndex]) continue;
+
+			auto& pass = m_passes[passIndex];
+			const std::any& data = m_setupData[passIndex];
+			if (kRenderGraphVerboseLog) {
+				std::fprintf(stderr, "[BMSX][RG] execute pass index=%d name=%s\n",
+							 passIndex, pass.name.c_str());
+			}
+
+			const auto& writes = m_passWrites[passIndex];
+			RenderGraphTexHandle colorHandle = -1;
+			RenderGraphTexHandle depthHandle = -1;
+			for (RenderGraphTexHandle h : writes) {
+				const auto& res = m_texResources[h];
+				if (res.desc.depth) depthHandle = h; else colorHandle = h;
+			}
+
+			if (colorHandle >= 0) {
+				auto* colorTex = static_cast<SoftwareTexture*>(m_texResources[colorHandle].tex);
+				const i32 width = colorTex->width;
+				const i32 height = colorTex->height;
+				softBackend->setFramebuffer(colorTex->data.data(), width, height,
+											width * static_cast<i32>(sizeof(u32)));
+			} else if (m_presentHandle >= 0) {
+				const auto& reads = m_passReads[passIndex];
+				const bool readsPresent = std::find(reads.begin(), reads.end(), m_presentHandle) != reads.end();
+				if (readsPresent) {
+					softBackend->setFramebuffer(outputFb, outputWidth, outputHeight, outputPitch);
+				}
+			}
+
+			bool didBegin = false;
+			PassEncoder passEnc{};
+			if (colorHandle >= 0) {
+				auto& colorRes = m_texResources[colorHandle];
+				const bool clearColor = colorRes.clearOnWrite.color.has_value() && (colorRes.writerPasses[0] == passIndex);
+				bool clearDepth = false;
+				if (depthHandle >= 0) {
+					const auto& depthRes = m_texResources[depthHandle];
+					clearDepth = depthRes.clearOnWrite.depth.has_value() && (depthRes.writerPasses[0] == passIndex);
+				}
+
+				if (clearColor || clearDepth) {
+					RenderPassDesc desc;
+					desc.label = pass.name;
+					if (clearColor) {
+						const auto& clr = *colorRes.clearOnWrite.color;
+						ColorAttachmentSpec colorSpec;
+						colorSpec.clear = Color{clr[0], clr[1], clr[2], clr[3]};
+						desc.color = colorSpec;
+					}
+					if (clearDepth) {
+						DepthAttachmentSpec depthSpec;
+						depthSpec.clearDepth = *m_texResources[depthHandle].clearOnWrite.depth;
+						desc.depth = depthSpec;
+					}
+					passEnc = m_backend->beginRenderPass(desc);
+					didBegin = true;
+				}
+			}
+
+			pass.execute(ctx, frame, data);
+
+			if (didBegin) {
+				m_backend->endRenderPass(passEnc);
+			}
+		}
+
+		softBackend->setFramebuffer(outputFb, outputWidth, outputHeight, outputPitch);
+		return;
+	}
+
+	throw std::runtime_error("[RenderGraph] Backend type not supported.");
 }
 
 void RenderGraphRuntime::invalidate() {
@@ -403,111 +496,171 @@ void* RenderGraphRuntime::getFBO(RenderGraphTexHandle color, RenderGraphTexHandl
 }
 
 void RenderGraphRuntime::realizeAll() {
-#if !BMSX_ENABLE_GLES2
-	throw std::runtime_error("[RenderGraph] OpenGLES2 backend disabled at compile time.");
-#else
 	if (m_realized) return;
 
-	auto* gles = static_cast<OpenGLES2Backend*>(m_backend);
+	const BackendType backendType = m_backend->type();
 
-	for (i32 i = 1; i < static_cast<i32>(m_texResources.size()); ++i) {
-		auto& res = m_texResources[i];
+	if (backendType == BackendType::OpenGLES2) {
+#if !BMSX_ENABLE_GLES2
+		throw std::runtime_error("[RenderGraph] OpenGLES2 backend disabled at compile time.");
+#else
+		auto* gles = static_cast<OpenGLES2Backend*>(m_backend);
 
-		if (res.desc.depth) {
-			auto* depth = new GLES2DepthTarget{};
-			depth->width = res.desc.width;
-			depth->height = res.desc.height;
-			glGenRenderbuffers(1, &depth->id);
-			glBindRenderbuffer(GL_RENDERBUFFER, depth->id);
-			glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT16, depth->width, depth->height);
-			res.tex = reinterpret_cast<TextureHandle>(depth);
-			if (kRenderGraphVerboseLog) {
-				std::fprintf(stderr,
-							 "[BMSX][RG] create depth handle=%d rb=%u size=%dx%d\n",
-							 i, static_cast<unsigned>(depth->id), depth->width, depth->height);
-			}
-		} else {
-			res.tex = gles->createTexture(nullptr, res.desc.width, res.desc.height, TextureParams{});
-			auto* glTex = OpenGLES2Backend::asTexture(res.tex);
-			GLuint fbo = 0;
-			glGenFramebuffers(1, &fbo);
-			glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-			glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, glTex->id, 0);
-			res.fboColorOnly = reinterpret_cast<void*>(static_cast<uintptr_t>(fbo));
-			if (kRenderGraphVerboseLog) {
-				const GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
-				std::fprintf(stderr,
-							 "[BMSX][RG] create color handle=%d tex=%u size=%dx%d fbo=%u status=0x%x\n",
-							 i, static_cast<unsigned>(glTex->id), res.desc.width, res.desc.height,
-							 static_cast<unsigned>(fbo), static_cast<unsigned>(status));
+		for (i32 i = 1; i < static_cast<i32>(m_texResources.size()); ++i) {
+			auto& res = m_texResources[i];
+
+			if (res.desc.depth) {
+				auto* depth = new GLES2DepthTarget{};
+				depth->width = res.desc.width;
+				depth->height = res.desc.height;
+				glGenRenderbuffers(1, &depth->id);
+				glBindRenderbuffer(GL_RENDERBUFFER, depth->id);
+				glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT16, depth->width, depth->height);
+				res.tex = reinterpret_cast<TextureHandle>(depth);
+				if (kRenderGraphVerboseLog) {
+					std::fprintf(stderr,
+								 "[BMSX][RG] create depth handle=%d rb=%u size=%dx%d\n",
+								 i, static_cast<unsigned>(depth->id), depth->width, depth->height);
+				}
+			} else {
+				res.tex = gles->createTexture(nullptr, res.desc.width, res.desc.height, TextureParams{});
+				auto* glTex = OpenGLES2Backend::asTexture(res.tex);
+				GLuint fbo = 0;
+				glGenFramebuffers(1, &fbo);
+				glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+				glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, glTex->id, 0);
+				res.fboColorOnly = reinterpret_cast<void*>(static_cast<uintptr_t>(fbo));
+				if (kRenderGraphVerboseLog) {
+					const GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+					std::fprintf(stderr,
+								 "[BMSX][RG] create color handle=%d tex=%u size=%dx%d fbo=%u status=0x%x\n",
+								 i, static_cast<unsigned>(glTex->id), res.desc.width, res.desc.height,
+								 static_cast<unsigned>(fbo), static_cast<unsigned>(status));
+				}
 			}
 		}
+#endif
+		m_realized = true;
+		return;
 	}
 
-	m_realized = true;
-#endif
+	if (backendType == BackendType::Software) {
+		for (i32 i = 1; i < static_cast<i32>(m_texResources.size()); ++i) {
+			auto& res = m_texResources[i];
+
+			if (res.desc.depth) {
+				auto* depth = new SoftwareDepthTarget{};
+				depth->width = res.desc.width;
+				depth->height = res.desc.height;
+				res.tex = reinterpret_cast<TextureHandle>(depth);
+				continue;
+			}
+
+			auto* tex = new SoftwareTexture{};
+			tex->width = res.desc.width;
+			tex->height = res.desc.height;
+			tex->data.resize(static_cast<size_t>(tex->width) * static_cast<size_t>(tex->height));
+			res.tex = reinterpret_cast<TextureHandle>(tex);
+			res.fboColorOnly = reinterpret_cast<void*>(tex);
+		}
+
+		m_realized = true;
+		return;
+	}
+
+	throw std::runtime_error("[RenderGraph] Backend type not supported.");
 }
 
 void RenderGraphRuntime::destroyResources() {
-#if BMSX_ENABLE_GLES2
-	auto* gles = static_cast<OpenGLES2Backend*>(m_backend);
+	const BackendType backendType = m_backend->type();
 
-	for (i32 i = 1; i < static_cast<i32>(m_texResources.size()); ++i) {
-		auto& res = m_texResources[i];
-		if (res.desc.depth) {
-			auto* depth = static_cast<GLES2DepthTarget*>(res.tex);
-			glDeleteRenderbuffers(1, &depth->id);
-			delete depth;
-		} else {
-			GLuint fbo = static_cast<GLuint>(reinterpret_cast<uintptr_t>(res.fboColorOnly));
-			glDeleteFramebuffers(1, &fbo);
-			for (const auto& kv : res.fboWithDepth) {
-				GLuint fbo = static_cast<GLuint>(reinterpret_cast<uintptr_t>(kv.second));
+	if (backendType == BackendType::OpenGLES2) {
+#if BMSX_ENABLE_GLES2
+		auto* gles = static_cast<OpenGLES2Backend*>(m_backend);
+
+		for (i32 i = 1; i < static_cast<i32>(m_texResources.size()); ++i) {
+			auto& res = m_texResources[i];
+			if (res.desc.depth) {
+				auto* depth = static_cast<GLES2DepthTarget*>(res.tex);
+				glDeleteRenderbuffers(1, &depth->id);
+				delete depth;
+			} else {
+				GLuint fbo = static_cast<GLuint>(reinterpret_cast<uintptr_t>(res.fboColorOnly));
 				glDeleteFramebuffers(1, &fbo);
+				for (const auto& kv : res.fboWithDepth) {
+					GLuint fbo = static_cast<GLuint>(reinterpret_cast<uintptr_t>(kv.second));
+					glDeleteFramebuffers(1, &fbo);
+				}
+				gles->destroyTexture(res.tex);
 			}
-			gles->destroyTexture(res.tex);
+			res = InternalTexResource{};
 		}
-		res = InternalTexResource{};
+
+		m_realized = false;
+		return;
+#else
+		throw std::runtime_error("[RenderGraph] OpenGLES2 backend disabled at compile time.");
+#endif
 	}
 
-	m_realized = false;
-#else
+	if (backendType == BackendType::Software) {
+		for (i32 i = 1; i < static_cast<i32>(m_texResources.size()); ++i) {
+			auto& res = m_texResources[i];
+			if (res.desc.depth) {
+				delete static_cast<SoftwareDepthTarget*>(res.tex);
+			} else {
+				delete static_cast<SoftwareTexture*>(res.tex);
+			}
+			res = InternalTexResource{};
+		}
+		m_realized = false;
+		return;
+	}
+
 	for (i32 i = 1; i < static_cast<i32>(m_texResources.size()); ++i) {
 		m_texResources[i] = InternalTexResource{};
 	}
 	m_realized = false;
-#endif
 }
 
 void* RenderGraphRuntime::ensureFBO(RenderGraphTexHandle color, RenderGraphTexHandle depth) {
+	const BackendType backendType = m_backend->type();
+	if (backendType == BackendType::OpenGLES2) {
 #if !BMSX_ENABLE_GLES2
-	throw std::runtime_error("[RenderGraph] OpenGLES2 backend disabled at compile time.");
+		throw std::runtime_error("[RenderGraph] OpenGLES2 backend disabled at compile time.");
 #else
-	auto& colorRes = m_texResources[color];
-	auto it = colorRes.fboWithDepth.find(depth);
-	if (it != colorRes.fboWithDepth.end()) return it->second;
+		auto& colorRes = m_texResources[color];
+		auto it = colorRes.fboWithDepth.find(depth);
+		if (it != colorRes.fboWithDepth.end()) return it->second;
 
-	auto* glTex = OpenGLES2Backend::asTexture(colorRes.tex);
-	auto& depthRes = m_texResources[depth];
-	auto* depthTarget = static_cast<GLES2DepthTarget*>(depthRes.tex);
+		auto* glTex = OpenGLES2Backend::asTexture(colorRes.tex);
+		auto& depthRes = m_texResources[depth];
+		auto* depthTarget = static_cast<GLES2DepthTarget*>(depthRes.tex);
 
-	GLuint fbo = 0;
-	glGenFramebuffers(1, &fbo);
-	glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, glTex->id, 0);
-	glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depthTarget->id);
+		GLuint fbo = 0;
+		glGenFramebuffers(1, &fbo);
+		glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, glTex->id, 0);
+		glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depthTarget->id);
 
-	void* handle = reinterpret_cast<void*>(static_cast<uintptr_t>(fbo));
-	colorRes.fboWithDepth[depth] = handle;
-	if (kRenderGraphVerboseLog) {
-		const GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
-		std::fprintf(stderr,
-					 "[BMSX][RG] create color+depth fbo=%u colorHandle=%d depthHandle=%d status=0x%x\n",
-					 static_cast<unsigned>(fbo), color, depth,
-					 static_cast<unsigned>(status));
-	}
-	return handle;
+		void* handle = reinterpret_cast<void*>(static_cast<uintptr_t>(fbo));
+		colorRes.fboWithDepth[depth] = handle;
+		if (kRenderGraphVerboseLog) {
+			const GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+			std::fprintf(stderr,
+						 "[BMSX][RG] create color+depth fbo=%u colorHandle=%d depthHandle=%d status=0x%x\n",
+						 static_cast<unsigned>(fbo), color, depth,
+						 static_cast<unsigned>(status));
+		}
+		return handle;
 #endif
+	}
+
+	if (backendType == BackendType::Software) {
+		return m_texResources[color].fboColorOnly;
+	}
+
+	throw std::runtime_error("[RenderGraph] Backend type not supported.");
 }
 
 } // namespace bmsx

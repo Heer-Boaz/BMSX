@@ -205,6 +205,13 @@ public:
 	// ─────────────────────────────────────────────────────────────────────────
 	void rebuildGraph();
 	RenderGraphRuntime* renderGraph() { return m_renderGraph.get(); }
+	void applyCRTPostProcessing(const u32* src,
+								i32 srcWidth,
+								i32 srcHeight,
+								u32* dst,
+								i32 dstWidth,
+								i32 dstHeight,
+								i32 dstPitch);
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// Ambient control API (mirrors TypeScript best-practice toggles)
@@ -224,7 +231,6 @@ public:
 private:
 	void initializeRenderer();
 	void setAtlasIndex(bool isPrimary, i32 index);
-	void applyCRTPostProcessing();
 
 	std::unique_ptr<GPUBackend> m_backend;
 	std::unique_ptr<RenderPassLibrary> m_pipelineRegistry;
