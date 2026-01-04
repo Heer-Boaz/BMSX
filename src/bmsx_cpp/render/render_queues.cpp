@@ -192,6 +192,14 @@ void correctAreaStartEnd(f32& x, f32& y, f32& ex, f32& ey) {
 	if (ey < y) std::swap(y, ey);
 }
 
+static i32 snapSpanToInt(f32 span) {
+	const f32 snapped = std::round(span);
+	if (std::abs(span - snapped) < 0.001f) {
+		return static_cast<i32>(snapped);
+	}
+	return static_cast<i32>(span);
+}
+
 void submitRectangle(const RectRenderSubmission& options) {
 	f32 x = options.area.left;
 	f32 y = options.area.top;
@@ -208,24 +216,27 @@ void submitRectangle(const RectRenderSubmission& options) {
 	sprite.colorize = c;
 	sprite.layer = options.layer;
 
+	const i32 width = snapSpanToInt(ex - x);
+	const i32 height = snapSpanToInt(ey - y);
+
 	if (options.kind == RectRenderSubmission::Kind::Fill) {
-		sprite.scale = Vec2{static_cast<f32>(static_cast<i32>(ex - x)),
-							static_cast<f32>(static_cast<i32>(ey - y))};
+		sprite.scale = Vec2{static_cast<f32>(width),
+							static_cast<f32>(height)};
 		submitSprite(sprite);
 		return;
 	}
 
-	const f32 width = static_cast<f32>(static_cast<i32>(ex - x));
-	const f32 height = static_cast<f32>(static_cast<i32>(ey - y));
+	const f32 widthF = static_cast<f32>(width);
+	const f32 heightF = static_cast<f32>(height);
 
-	sprite.scale = Vec2{width, 1.0f};
+	sprite.scale = Vec2{widthF, 1.0f};
 	submitSprite(sprite);
 
 	sprite.pos = {x, ey, z};
 	submitSprite(sprite);
 
 	sprite.pos = {x, y, z};
-	sprite.scale = Vec2{1.0f, height};
+	sprite.scale = Vec2{1.0f, heightF};
 	submitSprite(sprite);
 
 	sprite.pos = {ex, y, z};
