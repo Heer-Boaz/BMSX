@@ -4,13 +4,30 @@ const path = require('path');
 
 const root = path.resolve(__dirname, '..');
 
-function walk(dir, list=[]) {
+function parseGitignore() {
+  const gitignorePath = path.join(root, '.gitignore');
+  if (!fs.existsSync(gitignorePath)) return [];
+  const content = fs.readFileSync(gitignorePath, 'utf8');
+  return content.split('\n').filter(line => line.trim() && !line.startsWith('#'));
+}
+
+function isIgnored(file, ignorePatterns) {
+  const rel = path.relative(root, file);
+  for (const pattern of ignorePatterns) {
+	const p = pattern.replace(/\/$/, '');
+	if (rel === p || rel.startsWith(p + '/') || rel.startsWith(p)) return true;
+  }
+  return false;
+}
+
+function walk(dir, list=[], ignorePatterns=[]) {
   const entries = fs.readdirSync(dir, { withFileTypes: true });
   for (const e of entries) {
 	if (e.name === 'node_modules' || e.name === '.git') continue;
 	const full = path.join(dir, e.name);
-	if (e.isDirectory()) walk(full, list);
-	else if (e.isFile() && full.endsWith('.ts')) list.push(full);
+	if (isIgnored(full, ignorePatterns)) continue;
+	if (e.isDirectory()) walk(full, list, ignorePatterns);
+	else if (e.isFile() && (full.endsWith('.ts') || full.endsWith('.js') || full.endsWith('.cpp') || full.endsWith('.h') )) list.push(full);
   }
   return list;
 }
@@ -43,7 +60,8 @@ function fixFile(file) {
 }
 
 function main() {
-  const files = walk(root);
+  const ignorePatterns = parseGitignore();
+  const files = walk(root, [], ignorePatterns);
   let changed = [];
   for (const f of files) {
 	try {

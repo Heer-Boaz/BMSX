@@ -10,15 +10,32 @@ const TAB_WIDTH = 4;
 // sets: INCLUDED_EXTS (what file extensions we process) and
 // SPACE_ONLY_EXTS (those extensions where tabs should be replaced with
 // spaces, not converted to tabs).
-const INCLUDED_EXTS = new Set(['ts', 'tsx', 'js', 'jsx', 'jsm', 'json', 'md', 'css', 'html', 'ps1', 'sh', 'glsl', 'yaml', 'yml']);
+const INCLUDED_EXTS = new Set(['ts', 'tsx', 'js', 'jsx', 'jsm', 'json', 'md', 'css', 'html', 'ps1', 'sh', 'glsl', 'yaml', 'yml', 'cpp', 'h']);
 const SPACE_ONLY_EXTS = new Set(['yaml', 'yml']);
 
-function walk(dir, list = []) {
+function parseGitignore() {
+	const gitignorePath = path.join(ROOT, '.gitignore');
+	if (!fs.existsSync(gitignorePath)) return [];
+	const content = fs.readFileSync(gitignorePath, 'utf8');
+	return content.split('\n').filter(line => line.trim() && !line.startsWith('#'));
+}
+
+function isIgnored(file, ignorePatterns) {
+	const rel = path.relative(ROOT, file);
+	for (const pattern of ignorePatterns) {
+		const p = pattern.replace(/\/$/, '');
+		if (rel === p || rel.startsWith(p + '/') || rel.startsWith(p)) return true;
+	}
+	return false;
+}
+
+function walk(dir, list = [], ignorePatterns = []) {
 	const entries = fs.readdirSync(dir, { withFileTypes: true });
 	for (const e of entries) {
 		if (e.name === 'node_modules' || e.name === '.git') continue;
 		const full = path.join(dir, e.name);
-		if (e.isDirectory()) walk(full, list);
+		if (isIgnored(full, ignorePatterns)) continue;
+		if (e.isDirectory()) walk(full, list, ignorePatterns);
 		else if (e.isFile()) {
 			const ext = path.extname(full).toLowerCase().replace(/^\./, '');
 			if (INCLUDED_EXTS.has(ext)) list.push(full);
@@ -140,27 +157,28 @@ function convertFile(src, tabWidth = TAB_WIDTH) {
 
 function main() {
 	const checkOnly = process.argv.indexOf('--check') !== -1 || process.argv.indexOf('-c') !== -1;
-	const files = walk(ROOT);
+	const ignorePatterns = parseGitignore();
+	const files = walk(ROOT, [], ignorePatterns);
 	const changed = [];
-		for (const f of files) {
-			try {
-				const src = fs.readFileSync(f, 'utf8');
-				const ext = path.extname(f).toLowerCase().replace(/^\./, '');
-				let out;
-						if (SPACE_ONLY_EXTS.has(ext)) {
-							// Replace all tab characters with TAB_WIDTH spaces for space-only files.
-							out = src.replace(/\t/g, ' '.repeat(TAB_WIDTH));
-						} else {
-					out = convertFile(src, TAB_WIDTH);
-				}
-				if (out !== src) {
-					changed.push(path.relative(ROOT, f));
-					if (!checkOnly) fs.writeFileSync(f, out, 'utf8');
-				}
-			} catch (err) {
-				console.error('Error processing', f, err && err.message);
+	for (const f of files) {
+		try {
+			const src = fs.readFileSync(f, 'utf8');
+			const ext = path.extname(f).toLowerCase().replace(/^\./, '');
+			let out;
+			if (SPACE_ONLY_EXTS.has(ext)) {
+				// Replace all tab characters with TAB_WIDTH spaces for space-only files.
+				out = src.replace(/\t/g, ' '.repeat(TAB_WIDTH));
+			} else {
+				out = convertFile(src, TAB_WIDTH);
 			}
+			if (out !== src) {
+				changed.push(path.relative(ROOT, f));
+				if (!checkOnly) fs.writeFileSync(f, out, 'utf8');
+			}
+		} catch (err) {
+			console.error('Error processing', f, err && err.message);
 		}
+	}
 
 	if (changed.length) {
 		if (checkOnly) {

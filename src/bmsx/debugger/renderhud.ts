@@ -1,8 +1,7 @@
 import { Registry } from '../core/registry';
 import { EventEmitter } from '../core/eventemitter';
-import * as SpritesPipeline from '../render/2d/sprites_pipeline';
 import * as MeshPipeline from '../render/3d/mesh_pipeline';
-import * as ParticlesPipeline from '../render/3d/particles_pipeline';
+import * as render_queues from 'bmsx/render/shared/render_queues';
 import { RegisterablePersistent } from '../rompack/rompack';
 import { excludeclassfromsavegame } from '../serializer/serializationhooks';
 import { $ } from '../core/engine_core';
@@ -203,9 +202,9 @@ export class RenderHUDOverlay implements RegisterablePersistent {
 		// Compute averages depending on mode (EMA or fixed sliding window)
 		const modeStr = this.useEMA ? 'EMA' : 'Window';
 		// Feature queue sizes (front/back)
-		const sq = (SpritesPipeline).getSpriteQueueDebug();
-		const mq = (MeshPipeline).getMeshQueueDebug();
-		const pq = (ParticlesPipeline).getQueuedParticleCount();
+		const sq = render_queues.getSpriteQueueDebug();
+		const mq = render_queues.getMeshQueueDebug();
+		const pq = render_queues.getQueuedParticleCount();
 		if (sq || mq || pq) {
 			const s = sq ? `S f:${sq.front} b:${sq.back}` : 'S n/a';
 			const m = mq ? `M f:${mq.front} b:${mq.back}` : 'M n/a';

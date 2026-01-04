@@ -1,4 +1,4 @@
-import { wrapGlyphs } from '../../render/glyphs';
+import { wrapGlyphs } from 'bmsx/render/shared/render_queues';
 import { BFont } from '../font';
 import { $ } from '../engine_core';
 import { insavegame, type RevivableObjectArgs } from '../../serializer/serializationhooks';

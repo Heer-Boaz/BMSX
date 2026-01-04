@@ -23,16 +23,16 @@ $CoreName = 'bmsx_libretro.dll'
 $VcpkgExe = $null
 $CMakeExe = "cmake"
 if (-not (Get-Command cmake -ErrorAction SilentlyContinue)) {
-    $VsWhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-    if (Test-Path $VsWhere) {
-        $InstallPath = & $VsWhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.CMake.Project -property installationPath
-        if ($InstallPath) {
-            $FoundCMake = Get-ChildItem -Path $InstallPath -Filter "cmake.exe" -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.FullName -like "*\bin\cmake.exe" } | Select-Object -First 1 -ExpandProperty FullName
-            if ($FoundCMake) {
-                $CMakeExe = $FoundCMake
-            }
-        }
-    }
+	$VsWhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+	if (Test-Path $VsWhere) {
+		$InstallPath = & $VsWhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.CMake.Project -property installationPath
+		if ($InstallPath) {
+			$FoundCMake = Get-ChildItem -Path $InstallPath -Filter "cmake.exe" -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.FullName -like "*\bin\cmake.exe" } | Select-Object -First 1 -ExpandProperty FullName
+			if ($FoundCMake) {
+				$CMakeExe = $FoundCMake
+			}
+		}
+	}
 }
 
 & $CMakeExe -S $CppDir -B $BuildDir -A x64 -DBMSX_BUILD_LIBRETRO=ON -DCMAKE_BUILD_TYPE=$BuildType
