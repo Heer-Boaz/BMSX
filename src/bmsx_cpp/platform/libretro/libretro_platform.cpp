@@ -73,10 +73,8 @@ LibretroPlatform::LibretroPlatform(BackendType backend_type)
 	// Create and initialize the engine
 	m_engine = std::make_unique<EngineCore>();
 	m_engine->initialize(this);
-	if (m_backend_type != BackendType::Software) {
-		m_engine->view()->crt_postprocessing_enabled = false;
-	} else {
-		m_engine->view()->crt_postprocessing_enabled = m_sw_crt_enabled;
+	m_engine->view()->crt_postprocessing_enabled = m_crt_postprocessing_enabled;
+	if (m_backend_type == BackendType::Software) {
 		auto* view = m_engine->view();
 		auto* backend = view->backend();
 		auto registry = std::make_unique<RenderPassLibrary>(backend);
@@ -167,7 +165,7 @@ void LibretroPlatform::onContextDestroy() {
 void LibretroPlatform::switchToSoftwareBackend() {
 	m_backend_type = BackendType::Software;
 	auto* view = m_engine->view();
-	view->crt_postprocessing_enabled = m_sw_crt_enabled;
+	view->crt_postprocessing_enabled = m_crt_postprocessing_enabled;
 	auto backend = std::make_unique<SoftwareBackend>(
 		m_framebuffer.data,
 		static_cast<i32>(m_framebuffer.width),
@@ -179,7 +177,7 @@ void LibretroPlatform::switchToSoftwareBackend() {
 	registry->registerBuiltin();
 	view->setPipelineRegistry(std::move(registry));
 	view->rebuildGraph();
-	setSoftwareRenderOptions(m_sw_crt_enabled, m_sw_offscreen_scale);
+	setPostProcessOptions(m_crt_postprocessing_enabled, m_postprocess_scale > 1);
 	m_engine->refreshRenderAssets();
 }
 
@@ -204,9 +202,7 @@ void LibretroPlatform::setAVInfo(const retro_system_av_info& info) {
 		static_cast<f32>(info.geometry.base_width),
 		static_cast<f32>(info.geometry.base_height)
 	};
-	const f32 offscreenScale = (m_backend_type == BackendType::Software)
-		? static_cast<f32>(m_sw_offscreen_scale)
-		: 2.0f;
+	const f32 offscreenScale = static_cast<f32>(m_postprocess_scale);
 	Vec2 offscreenSize{
 		renderTargetSize.x * offscreenScale,
 		renderTargetSize.y * offscreenScale
@@ -220,19 +216,15 @@ void LibretroPlatform::setAVInfo(const retro_system_av_info& info) {
 	}
 }
 
-void LibretroPlatform::setSoftwareRenderOptions(bool enableCrt, i32 offscreenScale) {
-	m_sw_crt_enabled = enableCrt;
-	m_sw_offscreen_scale = offscreenScale;
-
-	if (m_backend_type != BackendType::Software) {
-		return;
-	}
+void LibretroPlatform::setPostProcessOptions(bool enableCrt, bool highDetail) {
+	m_crt_postprocessing_enabled = enableCrt;
+	m_postprocess_scale = highDetail ? 2 : 1;
 
 	auto* view = m_engine->view();
 	view->crt_postprocessing_enabled = enableCrt;
 	const Vec2 offscreenSize{
-		view->viewportSize.x * static_cast<f32>(m_sw_offscreen_scale),
-		view->viewportSize.y * static_cast<f32>(m_sw_offscreen_scale)
+		view->viewportSize.x * static_cast<f32>(m_postprocess_scale),
+		view->viewportSize.y * static_cast<f32>(m_postprocess_scale)
 	};
 	view->configureRenderTargets(nullptr, nullptr, &offscreenSize);
 }

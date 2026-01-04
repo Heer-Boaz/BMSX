@@ -155,7 +155,7 @@ public:
 	void onContextReset();
 	void onContextDestroy();
 	void switchToSoftwareBackend();
-	void setSoftwareRenderOptions(bool enableCrt, i32 offscreenScale);
+	void setPostProcessOptions(bool enableCrt, bool highDetail);
 
 	// Configuration
 	void setAVInfo(const retro_system_av_info& info);
@@ -236,8 +236,8 @@ private:
 	double m_frame_time_sec = 1.0 / 50.0;
 	BackendType m_backend_type = BackendType::Software;
 	retro_hw_get_current_framebuffer_t m_hw_get_current_framebuffer = nullptr;
-	bool m_sw_crt_enabled = false;
-	i32 m_sw_offscreen_scale = 1;
+	bool m_crt_postprocessing_enabled = false;
+	i32 m_postprocess_scale = 1;
 
 	// Controller configuration
 	std::array<unsigned, 4> m_controller_devices{};

@@ -58,12 +58,12 @@ static bool g_cached_av_info_valid = false;
 static constexpr const char* kOptionRenderBackend = "bmsx_render_backend";
 static constexpr const char* kRenderBackendSoftware = "software";
 static constexpr const char* kRenderBackendGLES2 = "gles2";
-static constexpr const char* kOptionSoftwareCrt = "bmsx_sw_crt";
-static constexpr const char* kSoftwareCrtOff = "off";
-static constexpr const char* kSoftwareCrtOn = "on";
-static constexpr const char* kOptionSoftwareScale = "bmsx_sw_offscreen_scale";
-static constexpr const char* kSoftwareScale1x = "1x";
-static constexpr const char* kSoftwareScale2x = "2x";
+static constexpr const char* kOptionCrtPostprocessing = "bmsx_crt_postprocessing";
+static constexpr const char* kCrtPostprocessingOff = "off";
+static constexpr const char* kCrtPostprocessingOn = "on";
+static constexpr const char* kOptionPostprocessDetail = "bmsx_postprocess_detail";
+static constexpr const char* kPostprocessDetailOff = "off";
+static constexpr const char* kPostprocessDetailOn = "on";
 
 enum class RenderBackendPreference {
 	Auto,
@@ -72,8 +72,8 @@ enum class RenderBackendPreference {
 };
 
 static RenderBackendPreference g_backend_preference = RenderBackendPreference::Auto;
-static bool g_software_crt_enabled = false;
-static int g_software_offscreen_scale = 1;
+static bool g_crt_postprocessing_enabled = false;
+static bool g_postprocess_detail_enabled = false;
 
 static retro_core_option_v2_category g_option_categories_us[] = {
 	{"video", "Video", "Video settings."},
@@ -96,32 +96,32 @@ static retro_core_option_v2_definition g_option_defs_us[] = {
 		kRenderBackendSoftware
 	},
 	{
-		kOptionSoftwareCrt,
-		"Software CRT",
-		"Software CRT",
-		"Enable CRT post-processing when using software rendering.",
-		"Enable CRT post-processing when using software rendering.",
+		kOptionCrtPostprocessing,
+		"CRT Post-processing",
+		"CRT Post-processing",
+		"Enable CRT post-processing.",
+		"Enable CRT post-processing.",
 		"video",
 		{
-			{kSoftwareCrtOff, "Off"},
-			{kSoftwareCrtOn, "On"},
+			{kCrtPostprocessingOff, "Off"},
+			{kCrtPostprocessingOn, "On"},
 			{nullptr, nullptr},
 		},
-		kSoftwareCrtOff
+		kCrtPostprocessingOff
 	},
 	{
-		kOptionSoftwareScale,
-		"Software Offscreen Scale",
-		"Software Offscreen Scale",
-		"Offscreen render scale for software rendering.",
-		"Offscreen render scale for software rendering.",
+		kOptionPostprocessDetail,
+		"Post-processing Detail",
+		"Post-processing Detail",
+		"Increase post-processing detail (higher offscreen scale).",
+		"Increase post-processing detail (higher offscreen scale).",
 		"video",
 		{
-			{kSoftwareScale1x, "1x"},
-			{kSoftwareScale2x, "2x"},
+			{kPostprocessDetailOff, "Off"},
+			{kPostprocessDetailOn, "On"},
 			{nullptr, nullptr},
 		},
-		kSoftwareScale1x
+		kPostprocessDetailOff
 	},
 	{nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, {{nullptr, nullptr}}, nullptr}
 };
@@ -144,37 +144,37 @@ static retro_core_option_definition g_option_defs_v1_us[] = {
 		kRenderBackendSoftware
 	},
 	{
-		kOptionSoftwareCrt,
-		"Software CRT",
-		"Enable CRT post-processing when using software rendering.",
+		kOptionCrtPostprocessing,
+		"CRT Post-processing",
+		"Enable CRT post-processing.",
 		{
-			{kSoftwareCrtOff, "Off"},
-			{kSoftwareCrtOn, "On"},
+			{kCrtPostprocessingOff, "Off"},
+			{kCrtPostprocessingOn, "On"},
 			{nullptr, nullptr},
 		},
-		kSoftwareCrtOff
+		kCrtPostprocessingOff
 	},
 	{
-		kOptionSoftwareScale,
-		"Software Offscreen Scale",
-		"Offscreen render scale for software rendering.",
+		kOptionPostprocessDetail,
+		"Post-processing Detail",
+		"Increase post-processing detail (higher offscreen scale).",
 		{
-			{kSoftwareScale1x, "1x"},
-			{kSoftwareScale2x, "2x"},
+			{kPostprocessDetailOff, "Off"},
+			{kPostprocessDetailOn, "On"},
 			{nullptr, nullptr},
 		},
-		kSoftwareScale1x
+		kPostprocessDetailOff
 	},
 	{nullptr, nullptr, nullptr, {{nullptr, nullptr}}, nullptr}
 };
 
 static char g_option_render_backend_var[128] = {};
-static char g_option_sw_crt_var[128] = {};
-static char g_option_sw_scale_var[128] = {};
+static char g_option_crt_postprocessing_var[128] = {};
+static char g_option_postprocess_detail_var[128] = {};
 static retro_variable g_option_vars[] = {
 	{kOptionRenderBackend, nullptr},
-	{kOptionSoftwareCrt, nullptr},
-	{kOptionSoftwareScale, nullptr},
+	{kOptionCrtPostprocessing, nullptr},
+	{kOptionPostprocessDetail, nullptr},
 	{nullptr, nullptr}
 };
 
@@ -192,8 +192,8 @@ static const char* backend_label(bmsx::BackendType type);
 static void apply_backend_preference(RenderBackendPreference preference);
 static void handle_backend_fallback(bmsx::BackendType backend, const char* reason);
 static void try_update_backend_option();
-static bool read_software_crt_enabled();
-static int read_software_offscreen_scale();
+static bool read_crt_postprocessing_enabled();
+static bool read_postprocess_detail_enabled();
 
 /* ============================================================================
  * Libretro callback setters
@@ -272,17 +272,17 @@ static void set_core_options(bool default_gles2) {
 	g_option_defs_v1_us[0].values[0] = {kRenderBackendGLES2, "GLES2"};
 	g_option_defs_v1_us[0].values[1] = {kRenderBackendSoftware, "Software"};
 	g_option_defs_v1_us[0].values[2] = {nullptr, nullptr};
-	g_option_defs_us[1].values[0] = {kSoftwareCrtOff, "Off"};
-	g_option_defs_us[1].values[1] = {kSoftwareCrtOn, "On"};
+	g_option_defs_us[1].values[0] = {kCrtPostprocessingOff, "Off"};
+	g_option_defs_us[1].values[1] = {kCrtPostprocessingOn, "On"};
 	g_option_defs_us[1].values[2] = {nullptr, nullptr};
-	g_option_defs_v1_us[1].values[0] = {kSoftwareCrtOff, "Off"};
-	g_option_defs_v1_us[1].values[1] = {kSoftwareCrtOn, "On"};
+	g_option_defs_v1_us[1].values[0] = {kCrtPostprocessingOff, "Off"};
+	g_option_defs_v1_us[1].values[1] = {kCrtPostprocessingOn, "On"};
 	g_option_defs_v1_us[1].values[2] = {nullptr, nullptr};
-	g_option_defs_us[2].values[0] = {kSoftwareScale1x, "1x"};
-	g_option_defs_us[2].values[1] = {kSoftwareScale2x, "2x"};
+	g_option_defs_us[2].values[0] = {kPostprocessDetailOff, "Off"};
+	g_option_defs_us[2].values[1] = {kPostprocessDetailOn, "On"};
 	g_option_defs_us[2].values[2] = {nullptr, nullptr};
-	g_option_defs_v1_us[2].values[0] = {kSoftwareScale1x, "1x"};
-	g_option_defs_v1_us[2].values[1] = {kSoftwareScale2x, "2x"};
+	g_option_defs_v1_us[2].values[0] = {kPostprocessDetailOff, "Off"};
+	g_option_defs_v1_us[2].values[1] = {kPostprocessDetailOn, "On"};
 	g_option_defs_v1_us[2].values[2] = {nullptr, nullptr};
 
 	if (default_gles2) {
@@ -293,12 +293,12 @@ static void set_core_options(bool default_gles2) {
 					  "Render Backend; %s|%s", kRenderBackendSoftware, kRenderBackendGLES2);
 	}
 	g_option_vars[0].value = g_option_render_backend_var;
-	std::snprintf(g_option_sw_crt_var, sizeof(g_option_sw_crt_var),
-				  "Software CRT; %s|%s", kSoftwareCrtOff, kSoftwareCrtOn);
-	g_option_vars[1].value = g_option_sw_crt_var;
-	std::snprintf(g_option_sw_scale_var, sizeof(g_option_sw_scale_var),
-				  "Software Offscreen Scale; %s|%s", kSoftwareScale1x, kSoftwareScale2x);
-	g_option_vars[2].value = g_option_sw_scale_var;
+	std::snprintf(g_option_crt_postprocessing_var, sizeof(g_option_crt_postprocessing_var),
+				  "CRT Post-processing; %s|%s", kCrtPostprocessingOff, kCrtPostprocessingOn);
+	g_option_vars[1].value = g_option_crt_postprocessing_var;
+	std::snprintf(g_option_postprocess_detail_var, sizeof(g_option_postprocess_detail_var),
+				  "Post-processing Detail; %s|%s", kPostprocessDetailOff, kPostprocessDetailOn);
+	g_option_vars[2].value = g_option_postprocess_detail_var;
 
 	unsigned version = 0;
 	if (environ_cb(RETRO_ENVIRONMENT_GET_CORE_OPTIONS_VERSION, &version) && version >= 2) {
@@ -329,32 +329,32 @@ static RenderBackendPreference parse_backend_preference(const char* value) {
 	return RenderBackendPreference::Software;
 }
 
-static bool parse_software_crt_enabled(const char* value) {
+static bool parse_crt_postprocessing_enabled(const char* value) {
 	if (!value || !value[0]) return false;
-	if (std::strcmp(value, kSoftwareCrtOn) == 0 || std::strcmp(value, "On") == 0) {
+	if (std::strcmp(value, kCrtPostprocessingOn) == 0 || std::strcmp(value, "On") == 0) {
 		return true;
 	}
-	if (std::strcmp(value, kSoftwareCrtOff) == 0 || std::strcmp(value, "Off") == 0) {
+	if (std::strcmp(value, kCrtPostprocessingOff) == 0 || std::strcmp(value, "Off") == 0) {
 		return false;
 	}
 	logging.log(RETRO_LOG_WARN,
-				"[BMSX] Unknown software CRT option '%s', using off\n",
+				"[BMSX] Unknown CRT post-processing option '%s', using off\n",
 				value);
 	return false;
 }
 
-static int parse_software_offscreen_scale(const char* value) {
-	if (!value || !value[0]) return 1;
-	if (std::strcmp(value, kSoftwareScale2x) == 0 || std::strcmp(value, "2x") == 0) {
-		return 2;
+static bool parse_postprocess_detail_enabled(const char* value) {
+	if (!value || !value[0]) return false;
+	if (std::strcmp(value, kPostprocessDetailOn) == 0 || std::strcmp(value, "On") == 0) {
+		return true;
 	}
-	if (std::strcmp(value, kSoftwareScale1x) == 0 || std::strcmp(value, "1x") == 0) {
-		return 1;
+	if (std::strcmp(value, kPostprocessDetailOff) == 0 || std::strcmp(value, "Off") == 0) {
+		return false;
 	}
 	logging.log(RETRO_LOG_WARN,
-				"[BMSX] Unknown software offscreen scale option '%s', using 1x\n",
+				"[BMSX] Unknown post-processing detail option '%s', using off\n",
 				value);
-	return 1;
+	return false;
 }
 
 static RenderBackendPreference read_backend_preference() {
@@ -367,24 +367,24 @@ static RenderBackendPreference read_backend_preference() {
 	return RenderBackendPreference::Auto;
 }
 
-static bool read_software_crt_enabled() {
+static bool read_crt_postprocessing_enabled() {
 	retro_variable var;
-	var.key = kOptionSoftwareCrt;
+	var.key = kOptionCrtPostprocessing;
 	var.value = nullptr;
 	if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
-		return parse_software_crt_enabled(var.value);
+		return parse_crt_postprocessing_enabled(var.value);
 	}
 	return false;
 }
 
-static int read_software_offscreen_scale() {
+static bool read_postprocess_detail_enabled() {
 	retro_variable var;
-	var.key = kOptionSoftwareScale;
+	var.key = kOptionPostprocessDetail;
 	var.value = nullptr;
 	if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
-		return parse_software_offscreen_scale(var.value);
+		return parse_postprocess_detail_enabled(var.value);
 	}
-	return 1;
+	return false;
 }
 
 static void apply_backend_preference(RenderBackendPreference preference) {
@@ -588,8 +588,8 @@ void retro_init(void) {
   logging.log(RETRO_LOG_INFO, "[BMSX] retro_init\n");
   const RenderBackendPreference preference = read_backend_preference();
   const bmsx::BackendType desired_backend = resolve_backend_preference(preference);
-  g_software_crt_enabled = read_software_crt_enabled();
-  g_software_offscreen_scale = read_software_offscreen_scale();
+  g_crt_postprocessing_enabled = read_crt_postprocessing_enabled();
+  g_postprocess_detail_enabled = read_postprocess_detail_enabled();
   request_hw_context_for_backend(desired_backend);
   apply_backend_preference(preference);
 
@@ -633,7 +633,7 @@ void retro_init(void) {
   g_platform->setAudioBatchCallback(audio_batch_cb);
   g_platform->setInputPollCallback(input_poll_cb);
   g_platform->setInputStateCallback(input_state_cb);
-  g_platform->setSoftwareRenderOptions(g_software_crt_enabled, g_software_offscreen_scale);
+  g_platform->setPostProcessOptions(g_crt_postprocessing_enabled, g_postprocess_detail_enabled);
   if (isHardwareBackendActive()) {
 	try {
 	  g_platform->setHwRenderCallbacks(g_hw_render.get_current_framebuffer);
@@ -806,12 +806,12 @@ void retro_run(void) {
 	  logging.log(RETRO_LOG_WARN,
 				  "[BMSX] Render backend change detected; restart required\n");
 	}
-	const bool new_sw_crt = read_software_crt_enabled();
-	const int new_sw_scale = read_software_offscreen_scale();
-	if (new_sw_crt != g_software_crt_enabled || new_sw_scale != g_software_offscreen_scale) {
-	  g_software_crt_enabled = new_sw_crt;
-	  g_software_offscreen_scale = new_sw_scale;
-	  g_platform->setSoftwareRenderOptions(g_software_crt_enabled, g_software_offscreen_scale);
+	const bool new_crt = read_crt_postprocessing_enabled();
+	const bool new_detail = read_postprocess_detail_enabled();
+	if (new_crt != g_crt_postprocessing_enabled || new_detail != g_postprocess_detail_enabled) {
+	  g_crt_postprocessing_enabled = new_crt;
+	  g_postprocess_detail_enabled = new_detail;
+	  g_platform->setPostProcessOptions(g_crt_postprocessing_enabled, g_postprocess_detail_enabled);
 	}
   }
   static auto lastFrameTime = std::chrono::steady_clock::now();
