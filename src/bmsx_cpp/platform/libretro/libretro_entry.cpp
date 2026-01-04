@@ -11,7 +11,9 @@
 #include <cstdlib>
 #include <cstdint>
 #include <chrono>
+#include <exception>
 #include <limits>
+#include <stdexcept>
 #include <string>
 
 #include "libretro.h"
@@ -33,8 +35,12 @@ static retro_log_callback logging;
 static retro_usec_t g_pending_frame_time_usec = 0;
 static bool g_has_pending_frame_time = false;
 static retro_hw_render_callback g_hw_render;
-static bool g_hw_render_active = false;
+static bool g_hw_render_supported = false;
+static bool g_hw_render_requested = false;
 static bool g_hw_context_pending = false;
+static bool g_hw_context_ready = false;
+static bmsx::BackendType g_active_backend = bmsx::BackendType::Software;
+static bmsx::BackendType g_hw_render_backend = bmsx::BackendType::Software;
 static std::string g_system_dir;
 
 // The platform instance
@@ -42,19 +48,278 @@ static bmsx::LibretroPlatform* g_platform = nullptr;
 static retro_system_av_info g_cached_av_info{};
 static bool g_cached_av_info_valid = false;
 
+static constexpr const char* kOptionRenderBackend = "bmsx_render_backend";
+static constexpr const char* kRenderBackendSoftware = "software";
+static constexpr const char* kRenderBackendGLES2 = "gles2";
+
+enum class RenderBackendPreference {
+	Auto,
+	Software,
+	GLES2
+};
+
+static RenderBackendPreference g_backend_preference = RenderBackendPreference::Auto;
+static bool g_backend_fallback_notified = false;
+
+static retro_core_option_v2_category g_option_categories_us[] = {
+	{"video", "Video", "Video settings."},
+	{nullptr, nullptr, nullptr},
+};
+
+static retro_core_option_v2_definition g_option_defs_us[] = {
+	{
+		kOptionRenderBackend,
+		"Render Backend",
+		"Render Backend",
+		"Select the renderer backend. Requires restart.",
+		"Select the renderer backend. Requires restart.",
+		"video",
+		{
+			{kRenderBackendSoftware, "Software"},
+			{kRenderBackendGLES2, "GLES2"},
+			{nullptr, nullptr},
+		},
+		kRenderBackendSoftware
+	},
+	{nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, {{nullptr, nullptr}}, nullptr}
+};
+
+static retro_core_options_v2 g_options_us = {
+	g_option_categories_us,
+	g_option_defs_us
+};
+
+static retro_core_option_definition g_option_defs_v1_us[] = {
+	{
+		kOptionRenderBackend,
+		"Render Backend",
+		"Select the renderer backend. Requires restart.",
+		{
+			{kRenderBackendSoftware, "Software"},
+			{kRenderBackendGLES2, "GLES2"},
+			{nullptr, nullptr},
+		},
+		kRenderBackendSoftware
+	},
+	{nullptr, nullptr, nullptr, {{nullptr, nullptr}}, nullptr}
+};
+
+static char g_option_render_backend_var[128] = {};
+static retro_variable g_option_vars[] = {
+	{kOptionRenderBackend, nullptr},
+	{nullptr, nullptr}
+};
+
 // Forward declarations
 static void fallback_log(enum retro_log_level level, const char* fmt, ...);
 // static void frame_time_cb(retro_usec_t usec);
 static void hw_context_reset();
 static void hw_context_destroy();
+static void set_core_options(bool default_gles2);
+static RenderBackendPreference read_backend_preference();
+static RenderBackendPreference parse_backend_preference(const char* value);
+static bmsx::BackendType resolve_backend_preference(RenderBackendPreference preference);
+static bool is_hardware_backend(bmsx::BackendType type);
+static const char* backend_label(bmsx::BackendType type);
+static void apply_backend_preference(RenderBackendPreference preference);
+static void handle_backend_fallback(bmsx::BackendType backend, const char* reason);
 
 /* ============================================================================
  * Libretro callback setters
  * ============================================================================
  */
 
+static bmsx::BackendType resolve_backend_preference(RenderBackendPreference preference) {
+	if (preference == RenderBackendPreference::Software) {
+		return bmsx::BackendType::Software;
+	}
+	if (preference == RenderBackendPreference::GLES2) {
+		return bmsx::BackendType::OpenGLES2;
+	}
+	return bmsx::BackendType::OpenGLES2;
+}
+
+static bool is_hardware_backend(bmsx::BackendType type) {
+	switch (type) {
+		case bmsx::BackendType::Software:
+			return false;
+		case bmsx::BackendType::OpenGLES2:
+			return true;
+		default:
+			throw std::runtime_error("[BMSX] Unsupported libretro backend.");
+	}
+}
+
+static const char* backend_label(bmsx::BackendType type) {
+	switch (type) {
+		case bmsx::BackendType::Software:
+			return "Software";
+		case bmsx::BackendType::OpenGLES2:
+			return "GLES2";
+		default:
+			throw std::runtime_error("[BMSX] Unsupported libretro backend.");
+	}
+}
+
+static bool isHardwareBackendActive() {
+	return is_hardware_backend(g_active_backend);
+}
+
+static void set_core_options(bool default_gles2) {
+	const char* default_backend = default_gles2 ? kRenderBackendGLES2 : kRenderBackendSoftware;
+	g_option_defs_us[0].default_value = default_backend;
+	g_option_defs_v1_us[0].default_value = default_backend;
+
+	g_option_defs_us[0].values[0] = {kRenderBackendGLES2, "GLES2"};
+	g_option_defs_us[0].values[1] = {kRenderBackendSoftware, "Software"};
+	g_option_defs_us[0].values[2] = {nullptr, nullptr};
+	g_option_defs_v1_us[0].values[0] = {kRenderBackendGLES2, "GLES2"};
+	g_option_defs_v1_us[0].values[1] = {kRenderBackendSoftware, "Software"};
+	g_option_defs_v1_us[0].values[2] = {nullptr, nullptr};
+
+	if (default_gles2) {
+		std::snprintf(g_option_render_backend_var, sizeof(g_option_render_backend_var),
+					  "Render Backend; %s|%s", kRenderBackendGLES2, kRenderBackendSoftware);
+	} else {
+		std::snprintf(g_option_render_backend_var, sizeof(g_option_render_backend_var),
+					  "Render Backend; %s|%s", kRenderBackendSoftware, kRenderBackendGLES2);
+	}
+	g_option_vars[0].value = g_option_render_backend_var;
+
+	unsigned version = 0;
+	if (environ_cb(RETRO_ENVIRONMENT_GET_CORE_OPTIONS_VERSION, &version) && version >= 2) {
+		environ_cb(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2, &g_options_us);
+	} else {
+		retro_core_options_intl options_intl;
+		options_intl.us = g_option_defs_v1_us;
+		options_intl.local = nullptr;
+		if (!environ_cb(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_INTL, &options_intl)) {
+			environ_cb(RETRO_ENVIRONMENT_SET_CORE_OPTIONS, g_option_defs_v1_us);
+		}
+	}
+
+	environ_cb(RETRO_ENVIRONMENT_SET_VARIABLES, g_option_vars);
+}
+
+static RenderBackendPreference parse_backend_preference(const char* value) {
+	if (!value || !value[0]) return RenderBackendPreference::Auto;
+	if (std::strcmp(value, kRenderBackendSoftware) == 0 || std::strcmp(value, "Software") == 0) {
+		return RenderBackendPreference::Software;
+	}
+	if (std::strcmp(value, kRenderBackendGLES2) == 0 || std::strcmp(value, "GLES2") == 0) {
+		return RenderBackendPreference::GLES2;
+	}
+	logging.log(RETRO_LOG_WARN,
+				"[BMSX] Unknown render backend option '%s', using software\n",
+				value);
+	return RenderBackendPreference::Software;
+}
+
+static RenderBackendPreference read_backend_preference() {
+	retro_variable var;
+	var.key = kOptionRenderBackend;
+	var.value = nullptr;
+	if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
+		return parse_backend_preference(var.value);
+	}
+	return RenderBackendPreference::Auto;
+}
+
+static void apply_backend_preference(RenderBackendPreference preference) {
+	g_backend_preference = preference;
+	const bmsx::BackendType desired_backend = resolve_backend_preference(preference);
+	if (g_hw_render_requested) {
+		if (preference == RenderBackendPreference::Software) {
+			logging.log(RETRO_LOG_INFO,
+						"[BMSX] Software backend requested, but a hardware backend is already active; restart required\n");
+		}
+		g_active_backend = g_hw_render_backend;
+		return;
+	}
+
+	if (is_hardware_backend(desired_backend)) {
+		if (!g_hw_render_supported) {
+			const std::string reason =
+				std::string("[BMSX] ") + backend_label(desired_backend) +
+				" backend requested but not supported; using software backend";
+			handle_backend_fallback(desired_backend, reason.c_str());
+			return;
+		}
+		g_active_backend = desired_backend;
+		return;
+	}
+
+	g_active_backend = desired_backend;
+}
+
+static void handle_backend_fallback(bmsx::BackendType backend, const char* reason) {
+	logging.log(RETRO_LOG_WARN, "%s\n", reason);
+	if (!g_backend_fallback_notified) {
+		static char fallback_message[128];
+		std::snprintf(fallback_message, sizeof(fallback_message),
+					  "BMSX: %s failed, reverted to Software rendering.",
+					  backend_label(backend));
+		retro_message msg;
+		msg.msg = fallback_message;
+		msg.frames = 240;
+		environ_cb(RETRO_ENVIRONMENT_SET_MESSAGE, &msg);
+		g_backend_fallback_notified = true;
+	}
+	retro_variable var;
+	var.key = kOptionRenderBackend;
+	var.value = kRenderBackendSoftware;
+	if (!environ_cb(RETRO_ENVIRONMENT_SET_VARIABLE, &var)) {
+		logging.log(RETRO_LOG_WARN,
+					"[BMSX] Failed to update core option '%s' to software\n",
+					kOptionRenderBackend);
+	}
+	g_backend_preference = RenderBackendPreference::Software;
+	g_active_backend = bmsx::BackendType::Software;
+	g_hw_render_supported = false;
+	g_hw_render_requested = false;
+	g_hw_render_backend = bmsx::BackendType::Software;
+	g_hw_context_pending = false;
+	g_hw_context_ready = false;
+	if (g_platform) {
+		g_platform->switchToSoftwareBackend();
+	}
+}
+
+static void request_hw_context_for_backend(bmsx::BackendType backend) {
+	g_hw_render_supported = false;
+	g_hw_render_requested = false;
+	g_hw_render_backend = bmsx::BackendType::Software;
+	if (!is_hardware_backend(backend)) {
+		return;
+	}
+
+	std::memset(&g_hw_render, 0, sizeof(g_hw_render));
+	g_hw_render.context_type = RETRO_HW_CONTEXT_OPENGLES2;
+	g_hw_render.context_reset = hw_context_reset;
+	g_hw_render.context_destroy = hw_context_destroy;
+	g_hw_render.depth = false;
+	g_hw_render.stencil = false;
+	g_hw_render.bottom_left_origin = true;
+	g_hw_render.cache_context = false;
+	g_hw_render.version_major = 2;
+	g_hw_render.version_minor = 0;
+	g_hw_render.debug_context = false;
+
+	if (!environ_cb(RETRO_ENVIRONMENT_SET_HW_RENDER, &g_hw_render)) {
+		g_hw_render_supported = false;
+		g_hw_render_requested = false;
+		return;
+	}
+	g_hw_render_supported = true;
+	g_hw_render_requested = true;
+	g_hw_render_backend = backend;
+}
+
 void retro_set_environment(retro_environment_t cb) {
   environ_cb = cb;
+  g_backend_fallback_notified = false;
+  g_hw_context_pending = false;
+  g_hw_context_ready = false;
 
   // Try to get logging interface
   if (cb(RETRO_ENVIRONMENT_GET_LOG_INTERFACE, &logging)) {
@@ -96,27 +361,14 @@ void retro_set_environment(retro_environment_t cb) {
   // frame_time.reference = 0;
   // cb(RETRO_ENVIRONMENT_SET_FRAME_TIME_CALLBACK, &frame_time);
 
-#if BMSX_ENABLE_GLES2
-  std::memset(&g_hw_render, 0, sizeof(g_hw_render));
-  g_hw_render.context_type = RETRO_HW_CONTEXT_OPENGLES2;
-  g_hw_render.context_reset = hw_context_reset;
-  g_hw_render.context_destroy = hw_context_destroy;
-  g_hw_render.depth = false;
-  g_hw_render.stencil = false;
-  g_hw_render.bottom_left_origin = true;
-  g_hw_render.cache_context = false;
-  g_hw_render.version_major = 2;
-  g_hw_render.version_minor = 0;
-  g_hw_render.debug_context = false;
+  set_core_options(true);
 
-  if (!cb(RETRO_ENVIRONMENT_SET_HW_RENDER, &g_hw_render)) {
-	g_hw_render_active = false;
-  } else {
-	g_hw_render_active = true;
-  }
-#else
-  g_hw_render_active = false;
-#endif
+  const RenderBackendPreference preference = read_backend_preference();
+  const bmsx::BackendType desired_backend = resolve_backend_preference(preference);
+
+  request_hw_context_for_backend(desired_backend);
+
+  apply_backend_preference(preference);
 
   const char* system_dir = nullptr;
   if (cb(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &system_dir) && system_dir && system_dir[0]) {
@@ -159,9 +411,19 @@ void retro_set_input_state(retro_input_state_t cb) {
 
 void retro_init(void) {
   logging.log(RETRO_LOG_INFO, "[BMSX] retro_init\n");
-  if (!g_hw_render_active) {
-	logging.log(RETRO_LOG_WARN,
-				"[BMSX] GLES2 hw render context not initialized; using software backend\n");
+  apply_backend_preference(read_backend_preference());
+  g_hw_context_ready = false;
+  if (!isHardwareBackendActive()) {
+	const bmsx::BackendType desired_backend = resolve_backend_preference(g_backend_preference);
+	if (is_hardware_backend(desired_backend)) {
+	  logging.log(RETRO_LOG_WARN,
+				  "[BMSX] %s hardware backend not initialized; using software backend\n",
+				  backend_label(desired_backend));
+	} else {
+	  logging.log(RETRO_LOG_INFO,
+				  "[BMSX] Software backend selected via core option\n");
+	}
+	g_hw_context_pending = false;
   }
 
   // Set pixel format
@@ -174,7 +436,7 @@ void retro_init(void) {
   }
 
   // Create platform instance
-  g_platform = new bmsx::LibretroPlatform(g_hw_render_active);
+  g_platform = new bmsx::LibretroPlatform(g_active_backend);
   g_platform->setEnvironmentCallback(environ_cb);
   g_platform->setLogCallback(logging.log);
   g_platform->setSystemDirectory(g_system_dir);
@@ -182,8 +444,15 @@ void retro_init(void) {
   g_platform->setAudioBatchCallback(audio_batch_cb);
   g_platform->setInputPollCallback(input_poll_cb);
   g_platform->setInputStateCallback(input_state_cb);
-  if (g_hw_render_active) {
-	g_platform->setHwRenderCallbacks(g_hw_render.get_current_framebuffer);
+  if (isHardwareBackendActive()) {
+	try {
+	  g_platform->setHwRenderCallbacks(g_hw_render.get_current_framebuffer);
+	} catch (const std::exception& err) {
+	  const std::string reason =
+		  std::string("[BMSX] ") + backend_label(g_active_backend) +
+		  " setup failed: " + err.what();
+	  handle_backend_fallback(g_active_backend, reason.c_str());
+	}
   }
   if (g_cached_av_info_valid) {
 	g_platform->setAVInfo(g_cached_av_info);
@@ -192,8 +461,16 @@ void retro_init(void) {
   g_platform->setFrameTimeUsec(g_pending_frame_time_usec);
   g_has_pending_frame_time = false;
   }
-  if (g_hw_render_active && g_hw_context_pending) {
-	g_platform->onContextReset();
+  if (isHardwareBackendActive() && g_hw_context_pending) {
+	try {
+	  g_platform->onContextReset();
+	  g_hw_context_ready = true;
+	} catch (const std::exception& err) {
+	  const std::string reason =
+		  std::string("[BMSX] ") + backend_label(g_active_backend) +
+		  " context reset failed: " + err.what();
+	  handle_backend_fallback(g_active_backend, reason.c_str());
+	}
 	g_hw_context_pending = false;
   }
 }
@@ -309,6 +586,25 @@ void retro_reset(void) {
 }
 
 void retro_run(void) {
+  if (isHardwareBackendActive() && !g_hw_context_ready) {
+	const std::string reason =
+		std::string("[BMSX] ") + backend_label(g_active_backend) +
+		" hw render context not initialized; falling back to software";
+	handle_backend_fallback(g_active_backend, reason.c_str());
+  }
+  bool vars_updated = false;
+  if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &vars_updated) && vars_updated) {
+	const RenderBackendPreference new_preference = read_backend_preference();
+	if (new_preference != g_backend_preference) {
+	  g_backend_preference = new_preference;
+	  retro_message msg;
+	  msg.msg = "BMSX: Render backend change requires core restart.";
+	  msg.frames = 180;
+	  environ_cb(RETRO_ENVIRONMENT_SET_MESSAGE, &msg);
+	  logging.log(RETRO_LOG_WARN,
+				  "[BMSX] Render backend change detected; restart required\n");
+	}
+  }
   static auto lastFrameTime = std::chrono::steady_clock::now();
   static double accSec = 0.0;
   static double accMs = 0.0;
@@ -427,7 +723,7 @@ void retro_run(void) {
 
   // Output video
   const auto& fb = g_platform->getFramebuffer();
-  if (g_hw_render_active) {
+  if (isHardwareBackendActive()) {
 	video_cb(RETRO_HW_FRAME_BUFFER_VALID, fb.width, fb.height, 0);
   } else {
 	video_cb(fb.data, fb.width, fb.height, fb.pitch);
@@ -524,15 +820,31 @@ static void fallback_log(enum retro_log_level level, const char* fmt, ...) {
 // }
 
 static void hw_context_reset() {
-  if (g_platform) {
-	g_platform->onContextReset();
+  if (!isHardwareBackendActive()) {
 	return;
+  }
+  if (g_platform) {
+	try {
+	  g_platform->onContextReset();
+	  g_hw_context_ready = true;
+	  return;
+	} catch (const std::exception& err) {
+	  const std::string reason =
+		  std::string("[BMSX] ") + backend_label(g_active_backend) +
+		  " context reset failed: " + err.what();
+	  handle_backend_fallback(g_active_backend, reason.c_str());
+	  return;
+	}
   }
   g_hw_context_pending = true;
 }
 
 static void hw_context_destroy() {
+  if (!isHardwareBackendActive()) {
+	return;
+  }
   if (g_platform) {
 	g_platform->onContextDestroy();
   }
+  g_hw_context_ready = false;
 }

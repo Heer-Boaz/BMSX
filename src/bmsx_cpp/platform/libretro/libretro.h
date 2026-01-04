@@ -98,6 +98,11 @@ extern "C" {
 #define RETRO_ENVIRONMENT_SET_CORE_OPTIONS 53
 #define RETRO_ENVIRONMENT_SET_CORE_OPTIONS_INTL 54
 #define RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY 55
+#define RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2 67
+#define RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2_INTL 68
+#define RETRO_ENVIRONMENT_SET_VARIABLE 70
+
+#define RETRO_NUM_CORE_OPTION_VALUES_MAX 128
 
 /* Pixel formats */
 enum retro_pixel_format {
@@ -190,6 +195,51 @@ struct retro_system_av_info {
 struct retro_variable {
 	const char *key;
 	const char *value;
+};
+
+struct retro_core_option_value {
+	const char *value;
+	const char *label;
+};
+
+struct retro_core_option_definition {
+	const char *key;
+	const char *desc;
+	const char *info;
+	struct retro_core_option_value values[RETRO_NUM_CORE_OPTION_VALUES_MAX];
+	const char *default_value;
+};
+
+struct retro_core_options_intl {
+	struct retro_core_option_definition *us;
+	struct retro_core_option_definition *local;
+};
+
+struct retro_core_option_v2_category {
+	const char *key;
+	const char *desc;
+	const char *info;
+};
+
+struct retro_core_option_v2_definition {
+	const char *key;
+	const char *desc;
+	const char *desc_categorized;
+	const char *info;
+	const char *info_categorized;
+	const char *category_key;
+	struct retro_core_option_value values[RETRO_NUM_CORE_OPTION_VALUES_MAX];
+	const char *default_value;
+};
+
+struct retro_core_options_v2 {
+	struct retro_core_option_v2_category *categories;
+	struct retro_core_option_v2_definition *definitions;
+};
+
+struct retro_core_options_v2_intl {
+	struct retro_core_options_v2 *us;
+	struct retro_core_options_v2 *local;
 };
 
 struct retro_game_info {

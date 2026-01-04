@@ -12,6 +12,7 @@
 #include "renderpasslib.h"
 #include "rendergraph.h"
 #include "../core/engine.h"
+#include "../core/rompack.h"
 #include "../utils/clamp.h"
 #include <algorithm>
 #include <cmath>
@@ -77,6 +78,9 @@ void GameView::initializeRenderer() {
 }
 
 void GameView::setBackend(std::unique_ptr<GPUBackend> backend) {
+	if (m_renderGraph) { // There is a possibility that there is no render graph yet, e.g. during early init when setBackend is called and we immediately have to fallback to software rendering backend!
+		m_renderGraph.reset();
+	}
 	m_backend = std::move(backend);
 }
 
@@ -117,6 +121,39 @@ void GameView::configureRenderTargets(const Vec2* viewport, const Vec2* canvas, 
 void GameView::init() {
 	// Backend resources are configured externally via setBackend()
 	rebuildGraph();
+}
+
+void GameView::initializeDefaultTextures() {
+	if (!m_backend) {
+		throw std::runtime_error("[GameView] initializeDefaultTextures called before backend was configured.");
+	}
+
+	const Color fallbackColor{1.0f, 1.0f, 1.0f, 1.0f};
+	TextureHandle fallback = m_backend->createSolidTexture2D(1, 1, fallbackColor);
+	textures["_atlas_primary"] = fallback;
+	textures["_atlas_secondary"] = fallback;
+	textures["_atlas_fallback"] = fallback;
+	m_primaryAtlasIndex = -1;
+	m_secondaryAtlasIndex = -1;
+
+	const std::string engineAtlasName = generateAtlasName(ENGINE_ATLAS_INDEX);
+	auto& assets = EngineCore::instance().assets();
+	const auto* engineAtlas = assets.getImg(engineAtlasName);
+	if (!engineAtlas) {
+		if (!assets.img.empty()) {
+			throw std::runtime_error("[GameView] Engine atlas '" + engineAtlasName + "' missing.");
+		}
+	} else {
+		if (!engineAtlas->textureHandle) {
+			throw std::runtime_error("[GameView] Engine atlas '" + engineAtlasName + "' not uploaded.");
+		}
+		textures[ENGINE_ATLAS_TEXTURE_KEY] =
+			reinterpret_cast<TextureHandle>(engineAtlas->textureHandle);
+	}
+
+	textures["_default_albedo"] = m_backend->createSolidTexture2D(1, 1, {1.0f, 1.0f, 1.0f, 1.0f});
+	textures["_default_normal"] = m_backend->createSolidTexture2D(1, 1, {0.5f, 0.5f, 1.0f, 1.0f});
+	textures["_default_mr"] = m_backend->createSolidTexture2D(1, 1, {1.0f, 1.0f, 1.0f, 1.0f});
 }
 
 void GameView::beginFrame() {
@@ -161,17 +198,20 @@ void GameView::setAtlasIndex(bool isPrimary, i32 index) {
 
 	if (index < 0) {
 		currentIndex = -1;
-		auto fallbackIt = textures.find("_atlas_fallback");
-		if (fallbackIt != textures.end()) {
-			textures[atlasId] = fallbackIt->second;
-		}
+		textures[atlasId] = textures.at("_atlas_fallback");
 		return;
 	}
 
-	// TODO: Generate atlas name and load from assets
-	// const std::string atlasName = generateAtlasName(index);
-	// const auto* atlas = EngineCore::instance().assets().getImg(atlasName);
-	// textures[atlasId] = m_backend->createTexture(...);
+	const std::string atlasName = generateAtlasName(index);
+	auto& assets = EngineCore::instance().assets();
+	const auto* atlas = assets.getImg(atlasName);
+	if (!atlas) {
+		throw std::runtime_error("[GameView] atlas '" + atlasName + "' not found.");
+	}
+	if (!atlas->textureHandle) {
+		throw std::runtime_error("[GameView] atlas '" + atlasName + "' not uploaded.");
+	}
+	textures[atlasId] = reinterpret_cast<TextureHandle>(atlas->textureHandle);
 	currentIndex = index;
 }
 

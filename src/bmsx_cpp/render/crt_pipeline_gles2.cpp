@@ -5,8 +5,9 @@
 #include "crt_pipeline_gles2.h"
 
 #include "../core/engine.h"
-#include <cstdlib>
 #include <cstdio>
+#include <stdexcept>
+#include <string>
 
 namespace bmsx {
 namespace CRTPipeline {
@@ -268,7 +269,8 @@ GLuint compileShader(GLenum type, const char* src) {
 		char log[1024];
 		glGetShaderInfoLog(shader, sizeof(log), nullptr, log);
 		std::fprintf(stderr, "[BMSX] GLES2 CRT shader compile failed: %s\n", log);
-		std::abort();
+		glDeleteShader(shader);
+		throw std::runtime_error(std::string("[BMSX] GLES2 CRT shader compile failed: ") + log);
 	}
 	return shader;
 }
@@ -284,7 +286,10 @@ GLuint linkProgram(GLuint vs, GLuint fs) {
 		char log[1024];
 		glGetProgramInfoLog(program, sizeof(log), nullptr, log);
 		std::fprintf(stderr, "[BMSX] GLES2 CRT program link failed: %s\n", log);
-		std::abort();
+		glDeleteProgram(program);
+		glDeleteShader(vs);
+		glDeleteShader(fs);
+		throw std::runtime_error(std::string("[BMSX] GLES2 CRT program link failed: ") + log);
 	}
 	glDeleteShader(vs);
 	glDeleteShader(fs);

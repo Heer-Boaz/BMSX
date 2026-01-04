@@ -32,10 +32,14 @@ void renderSpriteBatchSoftware(SoftwareBackend* softBackend,
   if (spriteCount == 0) return;
 
   const f32 baseWidth = context->viewportSize.x;
+  const f32 baseHeight = context->viewportSize.y;
   const f32 offscreenWidth = context->offscreenCanvasSize.x;
+  const f32 offscreenHeight = context->offscreenCanvasSize.y;
   const bool ideIsViewport =
 	  (context->viewportTypeIde == GameView::ViewportType::Viewport);
   const f32 ideScale = ideIsViewport ? 1.0f : (baseWidth / offscreenWidth);
+  const f32 renderScaleX = offscreenWidth / baseWidth;
+  const f32 renderScaleY = offscreenHeight / baseHeight;
 
   const f32 time = static_cast<f32>(EngineCore::instance().totalTime());
   const f32 phase = time * 60.0f;
@@ -62,6 +66,8 @@ void renderSpriteBatchSoftware(SoftwareBackend* softBackend,
 	const Color& colorize = options.colorize.value();
 	const RenderLayer layer = options.layer.value_or(RenderLayer::World);
 	const f32 desiredScale = (layer == RenderLayer::IDE) ? ideScale : 1.0f;
+	const f32 totalScaleX = renderScaleX * desiredScale;
+	const f32 totalScaleY = renderScaleY * desiredScale;
 
 	TextureHandle tex = nullptr;
 	if (meta.atlassed) {
@@ -89,12 +95,12 @@ void renderSpriteBatchSoftware(SoftwareBackend* softBackend,
 	i32 srcH = static_cast<i32>(srcYf1) - srcY;
 
 	// Destination position and size
-	const f32 scaledX0 = options.pos.x * desiredScale;
-	const f32 scaledY0 = options.pos.y * desiredScale;
+	const f32 scaledX0 = options.pos.x * totalScaleX;
+	const f32 scaledY0 = options.pos.y * totalScaleY;
 	const f32 scaledX1 =
-		scaledX0 + static_cast<f32>(meta.width) * scale.x * desiredScale;
+		scaledX0 + static_cast<f32>(meta.width) * scale.x * totalScaleX;
 	const f32 scaledY1 =
-		scaledY0 + static_cast<f32>(meta.height) * scale.y * desiredScale;
+		scaledY0 + static_cast<f32>(meta.height) * scale.y * totalScaleY;
 	i32 dstX = static_cast<i32>(scaledX0);
 	i32 dstY = static_cast<i32>(scaledY0);
 	i32 dstW = static_cast<i32>(scaledX1) - dstX;
@@ -125,7 +131,6 @@ void renderSpriteBatch(GPUBackend* backend, GameView* context) {
 #else
 	  auto& engine = EngineCore::instance();
 	  auto* view = engine.view();
-	  const auto& assets = engine.assets();
 
 	  SpritesPipelineState spriteState;
 	  spriteState.width = static_cast<i32>(view->offscreenCanvasSize.x);
@@ -133,20 +138,18 @@ void renderSpriteBatch(GPUBackend* backend, GameView* context) {
 	  spriteState.baseWidth = static_cast<i32>(view->viewportSize.x);
 	  spriteState.baseHeight = static_cast<i32>(view->viewportSize.y);
 
-	  const auto& primaryAtlas = assets.img.at(generateAtlasName(0));
-	  spriteState.atlasPrimaryTex =
-		  reinterpret_cast<TextureHandle>(primaryAtlas.textureHandle);
-	  const auto secondaryName = generateAtlasName(1);
-	  auto atlasSecondary = assets.img.find(secondaryName);
-	  if (atlasSecondary != assets.img.end()) {
-		spriteState.atlasSecondaryTex = reinterpret_cast<TextureHandle>(
-			atlasSecondary->second.textureHandle);
+	  auto primaryIt = view->textures.find("_atlas_primary");
+	  if (primaryIt == view->textures.end() || !primaryIt->second) {
+		throw std::runtime_error("[SpritesPipeline] Texture '_atlas_primary' missing from view textures.");
 	  }
-	  const auto engineName = generateAtlasName(254);
-	  auto atlasEngine = assets.img.find(engineName);
-	  if (atlasEngine != assets.img.end()) {
-		spriteState.atlasEngineTex = reinterpret_cast<TextureHandle>(
-			atlasEngine->second.textureHandle);
+	  spriteState.atlasPrimaryTex = primaryIt->second;
+	  auto secondaryIt = view->textures.find("_atlas_secondary");
+	  if (secondaryIt != view->textures.end()) {
+		spriteState.atlasSecondaryTex = secondaryIt->second;
+	  }
+	  auto engineIt = view->textures.find(ENGINE_ATLAS_TEXTURE_KEY);
+	  if (engineIt != view->textures.end()) {
+		spriteState.atlasEngineTex = engineIt->second;
 	  }
 
 	  spriteState.ambientEnabledDefault = view->spriteAmbientEnabledDefault;

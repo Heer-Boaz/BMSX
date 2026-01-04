@@ -95,6 +95,7 @@ public:
 	// Frame rendering
 	// ─────────────────────────────────────────────────────────────────────────
 	void init();
+	void initializeDefaultTextures();
 	void beginFrame();
 	void drawGame();
 	void endFrame();

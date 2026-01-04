@@ -45,10 +45,12 @@ std::string buildEngineAssetsPath(const std::string& directory) {
  * LibretroPlatform implementation
  * ============================================================================ */
 
-LibretroPlatform::LibretroPlatform(bool use_hw_render)
-	: m_use_hw_render(use_hw_render) {
+LibretroPlatform::LibretroPlatform(BackendType backend_type)
+	: m_backend_type(backend_type) {
 #if !BMSX_ENABLE_GLES2
-	m_use_hw_render = false;
+	if (m_backend_type == BackendType::OpenGLES2) {
+		m_backend_type = BackendType::Software;
+	}
 #endif
 	// Initialize framebuffer with default size
 	m_framebuffer.resize(0, 0);
@@ -62,7 +64,7 @@ LibretroPlatform::LibretroPlatform(bool use_hw_render)
 	m_lifecycle = std::make_unique<DefaultLifecycle>();
 	m_input_hub = std::make_unique<LibretroInputHub>(this);
 	m_audio_service = std::make_unique<LibretroAudioService>(this);
-	m_gameview_host = std::make_unique<LibretroGameViewHost>(m_framebuffer, m_use_hw_render);
+	m_gameview_host = std::make_unique<LibretroGameViewHost>(m_framebuffer, m_backend_type);
 	m_microtask_queue = std::make_unique<DefaultMicrotaskQueue>();
 
 	// Initialize controller devices
@@ -71,8 +73,15 @@ LibretroPlatform::LibretroPlatform(bool use_hw_render)
 	// Create and initialize the engine
 	m_engine = std::make_unique<EngineCore>();
 	m_engine->initialize(this);
-	if (m_use_hw_render) {
+	if (m_backend_type != BackendType::Software) {
 		m_engine->view()->crt_postprocessing_enabled = false;
+	} else {
+		auto* view = m_engine->view();
+		auto* backend = view->backend();
+		auto registry = std::make_unique<RenderPassLibrary>(backend);
+		registry->registerBuiltin();
+		view->setPipelineRegistry(std::move(registry));
+		view->rebuildGraph();
 	}
 
 	m_keyboard_input = std::make_unique<KeyboardInput>("keyboard:0");
@@ -152,6 +161,24 @@ void LibretroPlatform::onContextDestroy() {
 #else
 	throw std::runtime_error("[LibretroPlatform] OpenGLES2 backend disabled at compile time.");
 #endif
+}
+
+void LibretroPlatform::switchToSoftwareBackend() {
+	m_backend_type = BackendType::Software;
+	auto* view = m_engine->view();
+	view->crt_postprocessing_enabled = true;
+	auto backend = std::make_unique<SoftwareBackend>(
+		m_framebuffer.data,
+		static_cast<i32>(m_framebuffer.width),
+		static_cast<i32>(m_framebuffer.height),
+		static_cast<i32>(m_framebuffer.pitch)
+	);
+	view->setBackend(std::move(backend));
+	auto registry = std::make_unique<RenderPassLibrary>(view->backend());
+	registry->registerBuiltin();
+	view->setPipelineRegistry(std::move(registry));
+	view->rebuildGraph();
+	m_engine->refreshRenderAssets();
 }
 
 void LibretroPlatform::setAVInfo(const retro_system_av_info& info) {
@@ -822,28 +849,32 @@ void LibretroFrameLoop::stop() {
  * LibretroGameViewHost implementation
  * ============================================================================ */
 
-LibretroGameViewHost::LibretroGameViewHost(Framebuffer& framebuffer, bool use_hw_render)
+LibretroGameViewHost::LibretroGameViewHost(Framebuffer& framebuffer, BackendType backend_type)
 	: m_framebuffer(framebuffer)
-	, m_use_hw_render(use_hw_render) {
+	, m_backend_type(backend_type) {
 }
 
 std::unique_ptr<GPUBackend> LibretroGameViewHost::createBackend() {
-	if (m_use_hw_render) {
+	switch (m_backend_type) {
+		case BackendType::OpenGLES2:
 #if BMSX_ENABLE_GLES2
-		return std::make_unique<OpenGLES2Backend>(
-			static_cast<i32>(m_framebuffer.width),
-			static_cast<i32>(m_framebuffer.height)
-		);
+			return std::make_unique<OpenGLES2Backend>(
+				static_cast<i32>(m_framebuffer.width),
+				static_cast<i32>(m_framebuffer.height)
+			);
 #else
-		throw std::runtime_error("[LibretroGameViewHost] OpenGLES2 backend disabled at compile time.");
+			throw std::runtime_error("[LibretroGameViewHost] OpenGLES2 backend disabled at compile time.");
 #endif
+		case BackendType::Software:
+			return std::make_unique<SoftwareBackend>(
+				m_framebuffer.data,
+				static_cast<i32>(m_framebuffer.width),
+				static_cast<i32>(m_framebuffer.height),
+				static_cast<i32>(m_framebuffer.pitch)
+			);
+		default:
+			throw std::runtime_error("[LibretroGameViewHost] Unsupported backend type.");
 	}
-	return std::make_unique<SoftwareBackend>(
-		m_framebuffer.data,
-		static_cast<i32>(m_framebuffer.width),
-		static_cast<i32>(m_framebuffer.height),
-		static_cast<i32>(m_framebuffer.pitch)
-	);
 }
 
 void LibretroGameViewHost::updateBackend(GPUBackend* backend) {

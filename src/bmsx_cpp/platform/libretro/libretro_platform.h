@@ -51,7 +51,7 @@ private:
 
 class LibretroGameViewHost : public GameViewHost {
 public:
-	LibretroGameViewHost(Framebuffer& framebuffer, bool use_hw_render);
+	LibretroGameViewHost(Framebuffer& framebuffer, BackendType backend_type);
 
 	// GameViewHost interface
 	void* getCapability(std::string_view name) override;
@@ -68,7 +68,7 @@ public:
 
 private:
 	Framebuffer& m_framebuffer;
-	bool m_use_hw_render;
+	BackendType m_backend_type;
 };
 
 /* ============================================================================
@@ -140,7 +140,7 @@ struct InputState {
 
 class LibretroPlatform : public Platform {
 public:
-	explicit LibretroPlatform(bool use_hw_render);
+	explicit LibretroPlatform(BackendType backend_type);
 	~LibretroPlatform() override;
 
 	// Libretro callback setters
@@ -154,6 +154,7 @@ public:
 	void setHwRenderCallbacks(retro_hw_get_current_framebuffer_t get_current_framebuffer);
 	void onContextReset();
 	void onContextDestroy();
+	void switchToSoftwareBackend();
 
 	// Configuration
 	void setAVInfo(const retro_system_av_info& info);
@@ -231,7 +232,7 @@ private:
 	bool m_has_pending_viewport = false;
 	Vec2 m_pending_viewport;
 	double m_frame_time_sec = 1.0 / 50.0;
-	bool m_use_hw_render = false;
+	BackendType m_backend_type = BackendType::Software;
 	retro_hw_get_current_framebuffer_t m_hw_get_current_framebuffer = nullptr;
 
 	// Controller configuration

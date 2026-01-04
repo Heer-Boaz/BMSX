@@ -5,12 +5,17 @@
 #include "sprites_pipeline_gles2.h"
 
 #include <cstdio>
-#include <cstdlib>
 #include <cstring>
+#include <stdexcept>
+#include <string>
 
 #include "../core/assets.h"
 #include "../core/engine.h"
+#include "../core/rompack.h"
 #include "render_queues.h"
+
+#define BMSX_STRINGIFY_INNER(x) #x
+#define BMSX_STRINGIFY(x) BMSX_STRINGIFY_INNER(x)
 
 namespace bmsx {
 namespace SpritesPipeline {
@@ -34,7 +39,6 @@ constexpr int kAtlasSize = kVerticesPerSprite * kAtlasComponents;
 
 constexpr float kZCoordMax = 10000.0f;
 constexpr float kDefaultZ = 0.0f;
-constexpr float kEngineAtlasId = 254.0f;
 
 constexpr int kTexUnitAtlasPrimary = 0;
 constexpr int kTexUnitAtlasSecondary = 1;
@@ -109,7 +113,7 @@ varying vec2 v_texcoord;
 varying vec4 v_color_override;
 varying float v_atlas_id;
 
-const float ENGINE_ATLAS_ID = 254.0;
+const float ENGINE_ATLAS_ID = )" BMSX_STRINGIFY(ENGINE_ATLAS_INDEX) R"(.0;
 
 float bayer4x4(vec2 p) {
 	vec2 wrapped = mod(p, 4.0);
@@ -158,6 +162,9 @@ void main() {
 }
 )";
 
+#undef BMSX_STRINGIFY
+#undef BMSX_STRINGIFY_INNER
+
 GLuint compileShader(GLenum type, const char* src) {
   GLuint shader = glCreateShader(type);
   glShaderSource(shader, 1, &src, nullptr);
@@ -168,7 +175,8 @@ GLuint compileShader(GLenum type, const char* src) {
 	char log[1024];
 	glGetShaderInfoLog(shader, sizeof(log), nullptr, log);
 	std::fprintf(stderr, "[BMSX] GLES2 shader compile failed: %s\n", log);
-	std::abort();
+	glDeleteShader(shader);
+	throw std::runtime_error(std::string("[BMSX] GLES2 shader compile failed: ") + log);
   }
   return shader;
 }
@@ -184,7 +192,10 @@ GLuint linkProgram(GLuint vs, GLuint fs) {
 	char log[1024];
 	glGetProgramInfoLog(program, sizeof(log), nullptr, log);
 	std::fprintf(stderr, "[BMSX] GLES2 program link failed: %s\n", log);
-	std::abort();
+	glDeleteProgram(program);
+	glDeleteShader(vs);
+	glDeleteShader(fs);
+	throw std::runtime_error(std::string("[BMSX] GLES2 program link failed: ") + log);
   }
   glDeleteShader(vs);
   glDeleteShader(fs);

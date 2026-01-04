@@ -13,6 +13,7 @@
 namespace bmsx {
 
 constexpr i32 ENGINE_ATLAS_INDEX = 254;
+constexpr const char* ENGINE_ATLAS_TEXTURE_KEY = "_atlas_engine";
 
 std::string generateAtlasName(i32 atlasIndex);
 

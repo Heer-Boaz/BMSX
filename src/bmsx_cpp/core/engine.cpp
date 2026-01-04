@@ -6,11 +6,13 @@
 #include "../input/input.h"
 #include "../vm/vm_runtime.h"
 #include "../vm/font.h"
+#include "rompack.h"
 #include <chrono>
 #include <algorithm>
 #include <cmath>
 #include <fstream>
 #include <iostream>
+#include <stdexcept>
 
 namespace bmsx {
 namespace {
@@ -62,6 +64,7 @@ bool EngineCore::initialize(Platform* platform) {
 			m_view->setBackend(std::move(backend));
 		}
 	}
+	m_view->initializeDefaultTextures();
 
 	m_view->bind();
 
@@ -471,6 +474,14 @@ void EngineCore::uploadTexturesToBackend() {
 			imgAsset.textureHandle = reinterpret_cast<uintptr_t>(handle);
 			imgAsset.uploaded = true;
 		}
+	}
+
+	m_view->initializeDefaultTextures();
+	const std::string primaryAtlasName = generateAtlasName(0);
+	if (m_assets.hasImg(primaryAtlasName)) {
+		m_view->setPrimaryAtlas(0);
+	} else if (!m_assets.img.empty()) {
+		throw std::runtime_error("[EngineCore] Primary atlas '" + primaryAtlasName + "' missing.");
 	}
 }
 

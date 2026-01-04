@@ -198,6 +198,7 @@
 		}
 	}
 	```
+* No `descriptor`-patterns. They suck.
 * Don't worry about indentation styles. I will take care of formatting the code using Prettier before committing.
 * `clamp` is a utility function available that you can find in the folder `/src/bmsx/util/`; use it instead of writing your own!
 * Scratch buffers are available in `/src/bmsx/util/scratchbuffer.ts`; use them for temporary data storage instead of allocating new arrays or buffers.

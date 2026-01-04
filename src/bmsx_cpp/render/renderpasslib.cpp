@@ -97,17 +97,16 @@ void RenderPassLibrary::registerBuiltinPassesSoftware() {
 			spriteState.baseWidth = static_cast<i32>(gv->viewportSize.x);
 			spriteState.baseHeight = static_cast<i32>(gv->viewportSize.y);
 
-			// Atlas textures
-			auto atlasIt = gv->textures.find("_atlas_primary");
-			if (atlasIt == gv->textures.end()) {
+			auto primaryIt = gv->textures.find("_atlas_primary");
+			if (primaryIt == gv->textures.end() || !primaryIt->second) {
 				throw std::runtime_error("[SpritesPipeline] Texture '_atlas_primary' missing from view textures.");
 			}
-			spriteState.atlasPrimaryTex = atlasIt->second;
+			spriteState.atlasPrimaryTex = primaryIt->second;
 			auto secondaryIt = gv->textures.find("_atlas_secondary");
 			if (secondaryIt != gv->textures.end()) {
 				spriteState.atlasSecondaryTex = secondaryIt->second;
 			}
-			auto engineIt = gv->textures.find("_atlas_engine");
+			auto engineIt = gv->textures.find(ENGINE_ATLAS_TEXTURE_KEY);
 			if (engineIt != gv->textures.end()) {
 				spriteState.atlasEngineTex = engineIt->second;
 			}
@@ -190,7 +189,6 @@ void RenderPassLibrary::registerBuiltinPassesOpenGLES2() {
 		desc.prepare = [](GPUBackend*, std::any& state) {
 			auto& engine = EngineCore::instance();
 			auto* gv = engine.view();
-			auto& assets = engine.assets();
 
 			SpritesPipelineState spriteState;
 			spriteState.width = static_cast<i32>(gv->offscreenCanvasSize.x);
@@ -198,17 +196,18 @@ void RenderPassLibrary::registerBuiltinPassesOpenGLES2() {
 			spriteState.baseWidth = static_cast<i32>(gv->viewportSize.x);
 			spriteState.baseHeight = static_cast<i32>(gv->viewportSize.y);
 
-			const auto& primaryAtlas = assets.img.at(generateAtlasName(0));
-			spriteState.atlasPrimaryTex = reinterpret_cast<TextureHandle>(primaryAtlas.textureHandle);
-			const auto secondaryName = generateAtlasName(1);
-			auto secondaryIt = assets.img.find(secondaryName);
-			if (secondaryIt != assets.img.end()) {
-				spriteState.atlasSecondaryTex = reinterpret_cast<TextureHandle>(secondaryIt->second.textureHandle);
+			auto primaryIt = gv->textures.find("_atlas_primary");
+			if (primaryIt == gv->textures.end() || !primaryIt->second) {
+				throw std::runtime_error("[SpritesPipeline] Texture '_atlas_primary' missing from view textures.");
 			}
-			const auto engineName = generateAtlasName(254);
-			auto engineIt = assets.img.find(engineName);
-			if (engineIt != assets.img.end()) {
-				spriteState.atlasEngineTex = reinterpret_cast<TextureHandle>(engineIt->second.textureHandle);
+			spriteState.atlasPrimaryTex = primaryIt->second;
+			auto secondaryIt = gv->textures.find("_atlas_secondary");
+			if (secondaryIt != gv->textures.end()) {
+				spriteState.atlasSecondaryTex = secondaryIt->second;
+			}
+			auto engineIt = gv->textures.find(ENGINE_ATLAS_TEXTURE_KEY);
+			if (engineIt != gv->textures.end()) {
+				spriteState.atlasEngineTex = engineIt->second;
 			}
 
 			spriteState.ambientEnabledDefault = gv->spriteAmbientEnabledDefault;
