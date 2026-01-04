@@ -2444,11 +2444,17 @@ auto consumeActionFn = m_cpu.createNativeFunction("game.consume_action", [this](
 	(void)out;
 });
 
-	auto* gameTable = m_cpu.createTable(0, 8);
+auto emitFn = m_cpu.createNativeFunction("game.emit", [](const std::vector<Value>& args, std::vector<Value>& out) {
+	(void)args;
+	(void)out;
+});
+
+	auto* gameTable = m_cpu.createTable(0, 9);
 	gameTable->set(key("platform"), valueTable(platformTable));
 	gameTable->set(key("viewportsize"), valueTable(viewportTable));
 	gameTable->set(key("deltatime"), valueNumber(0.0));
 	gameTable->set(key("deltatime_seconds"), valueNumber(0.0));
+	gameTable->set(key("emit"), emitFn);
 	gameTable->set(key("get_action_state"), getActionStateFn);
 	gameTable->set(key("consume_action"), consumeActionFn);
 	setGlobal("game", valueTable(gameTable));

@@ -310,10 +310,25 @@ function engine.trigger_effect(object_id, effect_id, options)
 	return component:trigger(effect_id)
 end
 
-if $.emit == nil then
-	function $.emit(name_or_event, emitter, payload)
-		return eventemitter.instance:emit(name_or_event, emitter, payload)
+function $.emit(name_or_event, emitter, payload)
+	local kind = type(name_or_event)
+	if kind == "table" then
+		if name_or_event.type == nil then
+			error("engine.emit: event is missing type")
+		end
+		return eventemitter.instance:emit(name_or_event)
 	end
+	if kind == "native_object" then
+		local event = {}
+		for k, v in pairs(name_or_event) do
+			event[k] = v
+		end
+		if event.type == nil then
+			error("engine.emit: event is missing type")
+		end
+		return eventemitter.instance:emit(event)
+	end
+	return eventemitter.instance:emit(name_or_event, emitter, payload)
 end
 
 require("audio_router").init()

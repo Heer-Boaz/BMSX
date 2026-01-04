@@ -95,7 +95,6 @@ add_library(bmsx_core STATIC
 
     # Audio systems
     audio/soundmaster.cpp
-    audio/audioeventmanager.cpp
 
     # Input systems
     input/inputstatemanager.cpp

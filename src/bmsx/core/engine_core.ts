@@ -1,5 +1,4 @@
-﻿import { AudioEventManager } from '../audio/audioeventmanager';
-import { PSG } from "../audio/psg";
+﻿import { PSG } from "../audio/psg";
 import { ModulationParams, ModulationPresetResolver, RandomModulationParams, SoundMaster, SoundMasterPlayRequest } from "../audio/soundmaster";
 import { showRewindDialog } from "../debugger/rewindui";
 import { Input } from "../input/input";
@@ -213,8 +212,6 @@ export class EngineCore {
 
 	public get view(): GameView { return this._view; }
 
-	public get aem(): AudioEventManager { return AudioEventManager.instance!; }
-
 	public get event_emitter(): EventEmitter { return EventEmitter.instance!; }
 	public get events(): EventEmitter { return EventEmitter.instance!; }
 
@@ -268,8 +265,11 @@ export class EngineCore {
 	public exile(o: WorldObject): void { this.world.despawnFromAllSpaces(o); }
 
 	public playaudio(id: asset_id, options?: RandomModulationParams | ModulationParams | string | SoundMasterPlayRequest): void {
-		// Route through AudioEventManager so policies and per-channel handling stay consistent
-		this.aem.playDirect(id, options);
+		if (typeof options === 'string') {
+			void this.sndmaster.play(id, { modulation_preset: options });
+			return;
+		}
+		void this.sndmaster.play(id, options);
 	}
 
 	public stopmusic(): void {
@@ -365,7 +365,6 @@ export class EngineCore {
 	public async refreshAudioAssets(): Promise<void> {
 		const resolver = this.buildModulationResolver(this._assets);
 		await SoundMaster.instance.init(this._assets.audio, GameOptions.volumePercentage, resolver);
-		AudioEventManager.instance.init(this._assets.audioevents, null);
 	}
 
 	/**
@@ -535,7 +534,6 @@ export class EngineCore {
 		const gateToken = renderGate.begin({ blocking: true, tag: 'world-reset' });
 		const runToken = runGate.begin({ blocking: true, tag: 'world-reset' });
 		try {
-			this.aem.resetPlaybackState();
 			this.sndmaster.resetPlaybackState();
 			// if (this.psgEnabled) {
 			// 	PSG.stopAll();

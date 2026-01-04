@@ -276,6 +276,7 @@ function combat.define_fsm()
 
 	states.combat_done = {
 		entering_state = function(self)
+			print("[Combat] emit combat.end monster_imgid=" .. tostring(self.combat_monster_imgid) .. " combat_node_id=" .. tostring(self.combat_node_id) .. " next_node_id=" .. tostring(self.node_id))
 			object(director_instance_id).events:emit('combat.end', {
 				combat_node_id = self.combat_node_id,
 				next_node_id = self.node_id,
@@ -1485,6 +1486,7 @@ function combat.define_fsm()
 			local node = story[self.node_id]
 			local rewards = self:resolve_combat_rewards(node)
 			self.combat_rewards = rewards
+			print("[Combat] emit combat.results monster_imgid=" .. tostring(self.combat_monster_imgid) .. " combat_node_id=" .. tostring(self.combat_node_id) .. " node_id=" .. tostring(self.node_id))
 			object(director_instance_id).events:emit('combat.results', {
 				combat_node_id = self.combat_node_id,
 				monster_imgid = self.combat_monster_imgid,

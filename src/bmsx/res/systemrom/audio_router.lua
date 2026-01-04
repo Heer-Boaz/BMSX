@@ -3,7 +3,7 @@
 
 local eventemitter = require("eventemitter").eventemitter
 
-local router = { _inited = false, _bound = false, _events = nil, _any_handler = nil }
+local router = { _inited = false, _bound = false, _events = nil, _any_handler = nil, _last_bind_status = nil }
 local last_random_pick_by_rule = {}
 local last_played_at = {}
 local pending_events = {}
@@ -11,6 +11,71 @@ local handle_event
 
 local function now_ms()
 	return os.clock() * 1000
+end
+
+local function log_router(message)
+	print("[AudioRouter] " .. message)
+end
+
+local function count_entries(map)
+	local count = 0
+	for _ in pairs(map) do
+		count = count + 1
+	end
+	return count
+end
+
+local function format_entity(value)
+	if value == nil then
+		return "nil"
+	end
+	local value_type = type(value)
+	if value_type == "table" or value_type == "native_object" then
+		if value.id ~= nil then
+			return tostring(value.id)
+		end
+		if value.name ~= nil then
+			return tostring(value.name)
+		end
+	end
+	return tostring(value)
+end
+
+local function format_tags(tags)
+	if tags == nil then
+		return "nil"
+	end
+	local tags_type = type(tags)
+	if tags_type == "table" or tags_type == "native_object" then
+		local out = {}
+		for i = 1, #tags do
+			out[#out + 1] = tostring(tags[i])
+		end
+		return table.concat(out, ",")
+	end
+	return tostring(tags)
+end
+
+local function format_event_details(event_name, payload)
+	if event_name == "combat.start" then
+		return " monster_imgid=" .. tostring(payload.monster_imgid) .. " node_id=" .. tostring(payload.node_id)
+	end
+	if event_name == "combat.results" then
+		return " monster_imgid=" .. tostring(payload.monster_imgid) .. " combat_node_id=" .. tostring(payload.combat_node_id)
+	end
+	if event_name == "story.node.enter" then
+		return " node_id=" .. tostring(payload.node_id) .. " bg=" .. tostring(payload.bg) .. " label=" .. tostring(payload.label)
+			.. " just_finished_combat=" .. tostring(payload.just_finished_combat)
+			.. " last_combat_monster_imgid=" .. tostring(payload.last_combat_monster_imgid)
+	end
+	return ""
+end
+
+local function log_bind_status(status)
+	if router._last_bind_status ~= status then
+		log_router(status)
+		router._last_bind_status = status
+	end
 end
 
 local function list_contains(list, value)
@@ -325,10 +390,41 @@ local function merge_events(map)
 		merged[event_name] = out
 	end
 
-	for _asset_id, value in pairs(map) do
+	for asset_id, value in pairs(map) do
+		local value_type = type(value)
+		if value_type ~= "table" and value_type ~= "native_object" then
+			error("audio_router asset '" .. tostring(asset_id) .. "' must be a table")
+		end
+
 		local events = value.events
-		for event_name, entry in pairs(events) do
-			add_or_merge(event_name, entry)
+		if events ~= nil then
+			local events_type = type(events)
+			if events_type ~= "table" and events_type ~= "native_object" then
+				error("audio_router asset '" .. tostring(asset_id) .. "' has invalid events")
+			end
+			for event_name, entry in pairs(events) do
+				add_or_merge(event_name, entry)
+			end
+		else
+			local found_direct = false
+			for key, entry in pairs(value) do
+				if key ~= "$type" and key ~= "events" and key ~= "name" and key ~= "channel" and key ~= "max_voices" and key ~= "policy" and key ~= "rules" then
+					local entry_type = type(entry)
+					if entry_type == "table" or entry_type == "native_object" then
+						if entry.rules ~= nil then
+							found_direct = true
+							add_or_merge(key, entry)
+						end
+					end
+				end
+			end
+			if not found_direct and value.rules ~= nil then
+				local event_name = value.name
+				if type(event_name) ~= "string" or event_name == "" then
+					error("audio_router event entry is missing name")
+				end
+				add_or_merge(event_name, value)
+			end
 		end
 	end
 
@@ -359,6 +455,7 @@ local action_opts = {}
 
 local function dispatch_action(event_name, entry, action, payload)
 	if action.music_transition then
+		log_router("action music_transition event=" .. tostring(event_name) .. " audio=" .. tostring(action.music_transition.audio_id))
 		music(action.music_transition.audio_id, action.music_transition)
 		return
 	end
@@ -366,6 +463,7 @@ local function dispatch_action(event_name, entry, action, payload)
 		error("audio_router action missing audio_id")
 	end
 	if not apply_cooldown(event_name, action, payload) then
+		log_router("action skipped cooldown event=" .. tostring(event_name) .. " audio=" .. tostring(action.audio_id))
 		return
 	end
 	action_opts.modulation_preset = nil
@@ -380,7 +478,9 @@ local function dispatch_action(event_name, entry, action, payload)
 	action_opts.policy = entry.policy
 	action_opts.max_voices = entry.max_voices
 	action_opts.channel = entry.channel
-	if resolve_channel(entry) == "music" then
+	local channel = resolve_channel(entry)
+	log_router("action event=" .. tostring(event_name) .. " channel=" .. channel .. " audio=" .. tostring(action.audio_id))
+	if channel == "music" then
 		music(action.audio_id, action_opts)
 	else
 		sfx(action.audio_id, action_opts)
@@ -388,10 +488,15 @@ local function dispatch_action(event_name, entry, action, payload)
 end
 
 handle_event = function(event_name, entry, payload)
+	log_router(
+		"event " .. tostring(event_name) .. " emitter=" .. format_entity(payload.emitter) .. " actor=" .. format_entity(payload.actorId or payload.actor)
+			.. " tags=" .. format_tags(payload.tags) .. format_event_details(event_name, payload)
+	)
 	local rules = entry.rules
 	for i = 1, #rules do
 		local rule = rules[i]
 		if rule.__predicate(payload) then
+			log_router("rule " .. tostring(i) .. " matched for event " .. tostring(event_name))
 			local action = resolve_action_spec(event_name, i, rule, payload)
 			if action then
 				dispatch_action(event_name, entry, action, payload)
@@ -399,26 +504,39 @@ handle_event = function(event_name, entry, payload)
 			end
 		end
 	end
+	log_router("no rule matched for event " .. tostring(event_name))
 end
 
 local function bind_events()
 	local audioevents = assets.audioevents
 	if audioevents == nil then
+		log_bind_status("assets.audioevents is nil")
 		return false
 	end
 	if next(audioevents) == nil then
+		log_bind_status("assets.audioevents is empty")
 		return false
 	end
 	local merged = merge_events(audioevents)
 	if next(merged) == nil then
+		log_bind_status("merged audioevents is empty")
 		return false
 	end
 	router._events = merged
+	log_bind_status(
+		"bound " .. tostring(count_entries(merged)) .. " events from " .. tostring(count_entries(audioevents)) .. " assets"
+			.. " instance=" .. tostring(eventemitter.instance._debug_id)
+	)
 	for event_name, entry in pairs(merged) do
+		local bound_name = event_name
+		log_router("bind event " .. tostring(bound_name))
 		eventemitter.instance:on({
-			event_name = event_name,
+			event_name = bound_name,
 			handler = function(payload)
-				handle_event(event_name, entry, payload)
+				local actual_name = payload.type
+				local current_entry = router._events[actual_name]
+				log_router("dispatch event=" .. tostring(actual_name) .. " entry=" .. tostring(current_entry))
+				handle_event(actual_name, current_entry, payload)
 			end,
 			subscriber = router,
 		})
@@ -451,11 +569,13 @@ function router.init()
 		return
 	end
 	router._inited = true
+	log_router("init")
 	if router.try_bind() then
 		return
 	end
 	router._any_handler = function(event)
 		if not router._bound then
+			log_router("queued event before bind: " .. tostring(event.type))
 			stash_event(event)
 			router.try_bind()
 		end

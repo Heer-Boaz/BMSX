@@ -11,6 +11,14 @@
 namespace bmsx {
 namespace {
 
+enum class AudioPlaybackMode {
+	Replace,
+	Ignore,
+	Queue,
+	Stop,
+	Pause,
+};
+
 static const std::array<Color, 16> MSX1_PALETTE = {
 	Color::fromRGBA8(0, 0, 0, 0),         Color::fromRGBA8(0, 0, 0, 255),
 	Color::fromRGBA8(0, 241, 20, 255),    Color::fromRGBA8(68, 249, 86, 255),

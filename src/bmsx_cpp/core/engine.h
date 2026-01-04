@@ -16,7 +16,6 @@
 #include "../platform.h"
 #include "../render/gameview.h"
 #include "../audio/soundmaster.h"
-#include "../audio/audioeventmanager.h"
 #include <memory>
 
 namespace bmsx {
@@ -92,7 +91,6 @@ public:
 	RuntimeAssets& assets() { return m_assets; }
 	Clock* clock() { return m_platform ? m_platform->clock() : nullptr; }
 	SoundMaster* soundMaster() { return m_sound_master.get(); }
-	AudioEventManager* audioEventManager() { return m_audio_event_manager.get(); }
 
 	// Time
 	f64 totalTime() const { return m_total_time; }
@@ -144,7 +142,6 @@ private:
 	std::unique_ptr<GameView> m_view;
 	std::unique_ptr<BFont> m_default_font;
 	std::unique_ptr<SoundMaster> m_sound_master;
-	std::unique_ptr<AudioEventManager> m_audio_event_manager;
 	RuntimeAssets m_assets;
 
 	EngineState m_state = EngineState::Uninitialized;

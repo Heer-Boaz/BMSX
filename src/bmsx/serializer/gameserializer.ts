@@ -18,7 +18,7 @@ import type { BmsxVMState } from '../vm/types';
 import { Registry } from "../core/registry";
 import { GameView } from '../render/gameview';
 import { decodeBinary, encodeBinary } from "./binencoder";
-import { Bindable, Identifier } from "../rompack/rompack";
+import { Bindable } from "../rompack/rompack";
 import { insavegame, type RevivableObjectArgs, onsave, onload } from './serializationhooks';
 import { typedarray_to_numberarray } from '../utils/typedarray_to_numberarray';
 import { SkyboxImageIds } from '../render/shared/render_types';
@@ -504,13 +504,10 @@ export class Reviver {
 }
 
 type VoiceState = { id: string; offset: number; params: ModulationParams; priority: number };
-type VoiceQueueItem = { id: string; params: ModulationParams; priority: number; cooldown_ms?: number; actorId?: Identifier };
 type SoundMasterState = {
 	sfxVoices: VoiceState[];
 	uiVoices: VoiceState[];
 	musicVoices: VoiceState[];
-	sfxQueue?: VoiceQueueItem[];
-	uiQueue?: VoiceQueueItem[];
 };
 
 type ViewState = {
@@ -577,23 +574,6 @@ export class Savegame {
 			musicVoices: $.sndmaster.snapshotVoices('music'),
 		};
 
-		// Capture queues via AudioEventManager and convert to VoiceQueueItem shape
-		const qs = $.aem.getQueues();
-		SMState.sfxQueue = qs.sfx.map(q => ({
-			id: q.audio_id,
-			params: (q.modulation_params ?? (q.modulation_preset !== undefined ? ($.assets.data[q.modulation_preset] as ModulationParams) : {} as ModulationParams)),
-			priority: q.priority ?? 0,
-			cooldown_ms: q.cooldown_ms,
-			actorId: q.payload_actor_id,
-		}));
-		SMState.uiQueue = qs.ui.map(q => ({
-			id: q.audio_id,
-			params: (q.modulation_params ?? (q.modulation_preset !== undefined ? ($.assets.data[q.modulation_preset] as ModulationParams) : {} as ModulationParams)),
-			priority: q.priority ?? 0,
-			cooldown_ms: q.cooldown_ms,
-			actorId: q.payload_actor_id,
-		}));
-
 		return { SMState };
 	}
 
@@ -617,10 +597,6 @@ export class Savegame {
 			const params: ModulationParams = { ...v.params, offset: v.offset };
 			void $.sndmaster.play(v.id, { params, priority: v.priority });
 		}
-		const aem = $.aem;
-		const sfx = (SMState.sfxQueue || []).map(q => ({ audio_id: q.id, modulation_params: q.params, priority: q.priority, cooldown_ms: q.cooldown_ms, payload_actor_id: q.actorId }));
-		const ui = (SMState.uiQueue || []).map(q => ({ audio_id: q.id, modulation_params: q.params, priority: q.priority, cooldown_ms: q.cooldown_ms, payload_actor_id: q.actorId }));
-		aem.restoreQueues({ sfx, ui });
 	}
 }
 

@@ -9,6 +9,23 @@ eventport.__index = eventport
 
 local port_cache = setmetatable({}, { __mode = "k" })
 
+local function format_emitter(value)
+	if value == nil then
+		return "nil"
+	end
+	local value_type = type(value)
+	if value_type == "table" or value_type == "native_object" then
+		if value.id ~= nil then
+			return tostring(value.id)
+		end
+	end
+	return tostring(value)
+end
+
+local function should_log_event(event_type)
+	return event_type == "combat.start" or event_type == "combat.results" or event_type == "story.node.enter"
+end
+
 local function create_gameevent(spec)
 	local event = {
 		type = spec.type,
@@ -31,6 +48,7 @@ function eventemitter.new()
 end
 
 eventemitter.instance = eventemitter.new()
+eventemitter.instance._debug_id = eventemitter.instance._debug_id or tostring(os.clock())
 
 function eventemitter:create_gameevent(spec)
 	return create_gameevent(spec)
@@ -105,6 +123,11 @@ function eventemitter:emit(arg0, emitter, payload)
 	end
 
 	local list = self.listeners[event.type]
+	if should_log_event(event.type) then
+		print("[EventEmitter] emit " .. tostring(event.type) .. " emitter=" .. format_emitter(event.emitter) .. " instance=" .. tostring(self._debug_id))
+		print("[EventEmitter] listeners " .. tostring(event.type) .. " count=" .. tostring(list and #list or 0))
+	end
+
 	if list then
 		for i = 1, #list do
 			local entry = list[i]

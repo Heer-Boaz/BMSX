@@ -820,12 +820,12 @@ void retro_run(void) {
 	  g_platform->setPostProcessOptions(g_crt_postprocessing_enabled, g_postprocess_detail_enabled);
 	}
   }
-  static auto lastFrameTime = std::chrono::steady_clock::now();
-  static double accSec = 0.0;
-  static double accMs = 0.0;
-  static double minMs = std::numeric_limits<double>::infinity();
-  static double maxMs = 0.0;
-  static uint64_t accCalls = 0;
+//   static auto lastFrameTime = std::chrono::steady_clock::now();
+//   static double accSec = 0.0;
+//   static double accMs = 0.0;
+//   static double minMs = std::numeric_limits<double>::infinity();
+//   static double maxMs = 0.0;
+//   static uint64_t accCalls = 0;
   static auto perfStart = std::chrono::steady_clock::now();
   static double accRunMs = 0.0;
   static double accTickMs = 0.0;
