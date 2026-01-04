@@ -205,6 +205,7 @@ public:
 	GameViewHost* gameviewHost() override { return m_gameview_host.get(); }
 	MicrotaskQueue* microtaskQueue() override { return m_microtask_queue.get(); }
 	std::string_view type() override { return "libretro"; }
+	void log(LogLevel level, std::string_view message) override;
 
 private:
 	void pollInput();

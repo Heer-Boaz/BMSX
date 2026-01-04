@@ -66,7 +66,6 @@ enum class RenderBackendPreference {
 };
 
 static RenderBackendPreference g_backend_preference = RenderBackendPreference::Auto;
-static bool g_backend_fallback_notified = false;
 
 static retro_core_option_v2_category g_option_categories_us[] = {
 	{"video", "Video", "Video settings."},
@@ -286,7 +285,7 @@ static void apply_backend_preference(RenderBackendPreference preference) {
 			} else {
 				reason =
 					std::string("[BMSX] ") + backend_label(desired_backend) +
-					" backend requested but not supported; using software backend";
+					" backend failed to start; using software backend";
 			}
 			handle_backend_fallback(desired_backend, reason.c_str());
 			return;
@@ -309,17 +308,20 @@ static void handle_backend_fallback(bmsx::BackendType backend, const char* reaso
 		return;
 	}
 	logging.log(RETRO_LOG_WARN, "%s\n", reason);
-	if (!g_backend_fallback_notified) {
-		static char fallback_message[128];
-		std::snprintf(fallback_message, sizeof(fallback_message),
-					  "BMSX: %s failed, reverted to Software rendering.",
-					  backend_label(backend));
-		retro_message msg;
-		msg.msg = fallback_message;
-		msg.frames = 240;
-		environ_cb(RETRO_ENVIRONMENT_SET_MESSAGE, &msg);
-		g_backend_fallback_notified = true;
+	if (!g_hw_render_failure_reason.empty()) {
+		logging.log(RETRO_LOG_ERROR,
+					"[BMSX] %s backend error: %s\n",
+					backend_label(backend),
+					g_hw_render_failure_reason.c_str());
 	}
+	static char fallback_message[128];
+	std::snprintf(fallback_message, sizeof(fallback_message),
+				  "BMSX: %s failed, reverted to Software rendering.",
+				  backend_label(backend));
+	retro_message msg;
+	msg.msg = fallback_message;
+	msg.frames = 240;
+	environ_cb(RETRO_ENVIRONMENT_SET_MESSAGE, &msg);
 	GateScope option_scope;
 	option_scope.category = "option-update";
 	option_scope.tag = "render-backend";
@@ -341,7 +343,6 @@ static void request_hw_context_for_backend(bmsx::BackendType backend) {
 	g_hw_render_supported = false;
 	g_hw_render_requested = false;
 	g_hw_render_backend = bmsx::BackendType::Software;
-	g_hw_render_failure_reason.clear();
 	if (g_backend_fallback_token.active) {
 		return;
 	}
@@ -362,19 +363,22 @@ static void request_hw_context_for_backend(bmsx::BackendType backend) {
 	g_hw_render.debug_context = false;
 
 	if (!environ_cb(RETRO_ENVIRONMENT_SET_HW_RENDER, &g_hw_render)) {
+		g_hw_render_failure_reason = "RETRO_ENVIRONMENT_SET_HW_RENDER rejected by frontend";
+		logging.log(RETRO_LOG_WARN,
+					"[BMSX] Failed to request %s hw render context\n",
+					backend_label(backend));
 		g_hw_render_supported = false;
 		g_hw_render_requested = false;
-		g_hw_render_failure_reason = "RETRO_ENVIRONMENT_SET_HW_RENDER returned false";
 		return;
 	}
 	g_hw_render_supported = true;
 	g_hw_render_requested = true;
 	g_hw_render_backend = backend;
+	g_hw_render_failure_reason.clear();
 }
 
 void retro_set_environment(retro_environment_t cb) {
   environ_cb = cb;
-  g_backend_fallback_notified = false;
   g_hw_context_pending = false;
   g_hw_context_ready = false;
 
@@ -419,22 +423,6 @@ void retro_set_environment(retro_environment_t cb) {
   // cb(RETRO_ENVIRONMENT_SET_FRAME_TIME_CALLBACK, &frame_time);
 
   set_core_options(true);
-
-  const RenderBackendPreference preference = read_backend_preference();
-  const bmsx::BackendType desired_backend = resolve_backend_preference(preference);
-
-  request_hw_context_for_backend(desired_backend);
-
-  apply_backend_preference(preference);
-
-  const char* system_dir = nullptr;
-  if (cb(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &system_dir) && system_dir && system_dir[0]) {
-	g_system_dir = system_dir;
-	logging.log(RETRO_LOG_INFO, "[BMSX] System directory: %s\n", g_system_dir.c_str());
-  } else {
-	g_system_dir.clear();
-	logging.log(RETRO_LOG_INFO, "[BMSX] System directory not provided\n");
-  }
 }
 
 void retro_set_video_refresh(retro_video_refresh_t cb) {
@@ -468,7 +456,19 @@ void retro_set_input_state(retro_input_state_t cb) {
 
 void retro_init(void) {
   logging.log(RETRO_LOG_INFO, "[BMSX] retro_init\n");
-  apply_backend_preference(read_backend_preference());
+  const RenderBackendPreference preference = read_backend_preference();
+  const bmsx::BackendType desired_backend = resolve_backend_preference(preference);
+  request_hw_context_for_backend(desired_backend);
+  apply_backend_preference(preference);
+
+  const char* system_dir = nullptr;
+  if (environ_cb(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &system_dir) && system_dir && system_dir[0]) {
+	g_system_dir = system_dir;
+	logging.log(RETRO_LOG_INFO, "[BMSX] System directory: %s\n", g_system_dir.c_str());
+  } else {
+	g_system_dir.clear();
+	logging.log(RETRO_LOG_INFO, "[BMSX] System directory not provided\n");
+  }
   g_hw_context_ready = false;
   if (!isHardwareBackendActive()) {
 	const bmsx::BackendType desired_backend = resolve_backend_preference(g_backend_preference);
@@ -505,6 +505,11 @@ void retro_init(void) {
 	try {
 	  g_platform->setHwRenderCallbacks(g_hw_render.get_current_framebuffer);
 	} catch (const std::exception& err) {
+	  logging.log(RETRO_LOG_ERROR,
+				  "[BMSX] %s setup exception: %s\n",
+				  backend_label(g_active_backend),
+				  err.what());
+	  g_hw_render_failure_reason = err.what();
 	  const std::string reason =
 		  std::string("[BMSX] ") + backend_label(g_active_backend) +
 		  " setup failed: " + err.what();
@@ -522,7 +527,13 @@ void retro_init(void) {
 	try {
 	  g_platform->onContextReset();
 	  g_hw_context_ready = true;
+	  g_hw_render_failure_reason.clear();
 	} catch (const std::exception& err) {
+	  logging.log(RETRO_LOG_ERROR,
+				  "[BMSX] %s context reset exception: %s\n",
+				  backend_label(g_active_backend),
+				  err.what());
+	  g_hw_render_failure_reason = err.what();
 	  const std::string reason =
 		  std::string("[BMSX] ") + backend_label(g_active_backend) +
 		  " context reset failed: " + err.what();
@@ -885,8 +896,14 @@ static void hw_context_reset() {
 	try {
 	  g_platform->onContextReset();
 	  g_hw_context_ready = true;
+	  g_hw_render_failure_reason.clear();
 	  return;
 	} catch (const std::exception& err) {
+	  logging.log(RETRO_LOG_ERROR,
+				  "[BMSX] %s context reset exception: %s\n",
+				  backend_label(g_active_backend),
+				  err.what());
+	  g_hw_render_failure_reason = err.what();
 	  const std::string reason =
 		  std::string("[BMSX] ") + backend_label(g_active_backend) +
 		  " context reset failed: " + err.what();

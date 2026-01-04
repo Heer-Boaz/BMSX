@@ -527,6 +527,25 @@ void LibretroPlatform::processAudio() {
 	}
 }
 
+void LibretroPlatform::log(LogLevel level, std::string_view message) {
+	retro_log_level retroLevel = RETRO_LOG_INFO;
+	switch (level) {
+		case LogLevel::Debug:
+			retroLevel = RETRO_LOG_DEBUG;
+			break;
+		case LogLevel::Info:
+			retroLevel = RETRO_LOG_INFO;
+			break;
+		case LogLevel::Warn:
+			retroLevel = RETRO_LOG_WARN;
+			break;
+		case LogLevel::Error:
+			retroLevel = RETRO_LOG_ERROR;
+			break;
+	}
+	m_log_cb(retroLevel, "%.*s", static_cast<int>(message.size()), message.data());
+}
+
 void LibretroPlatform::log(retro_log_level level, const char* fmt, ...) {
 	if (m_log_cb) {
 		va_list args;

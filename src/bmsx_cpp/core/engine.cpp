@@ -7,9 +7,11 @@
 #include "../vm/vm_runtime.h"
 #include "../vm/font.h"
 #include "rompack.h"
+#include <cstdio>
 #include <chrono>
 #include <algorithm>
 #include <cmath>
+#include <cstdarg>
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
@@ -266,6 +268,34 @@ void EngineCore::render() {
 void EngineCore::refreshRenderAssets() {
 	uploadTexturesToBackend();
 }
+
+	void EngineCore::log(LogLevel level, const char* fmt, ...) {
+		va_list args;
+		va_start(args, fmt);
+		va_list args_copy;
+		va_copy(args_copy, args);
+
+		char stack_buffer[2048];
+		const int written = vsnprintf(stack_buffer, sizeof(stack_buffer), fmt, args);
+		va_end(args);
+
+		if (written >= 0 && static_cast<size_t>(written) < sizeof(stack_buffer)) {
+			va_end(args_copy);
+			m_platform->log(level, std::string_view(stack_buffer, static_cast<size_t>(written)));
+			return;
+		}
+
+		std::string message;
+		if (written < 0) {
+			message = "EngineCore::log: formatting error";
+		} else {
+			message.resize(static_cast<size_t>(written) + 1);
+			vsnprintf(message.data(), message.size(), fmt, args_copy);
+			message.resize(static_cast<size_t>(written));
+		}
+		va_end(args_copy);
+		m_platform->log(level, message);
+	}
 
 bool EngineCore::loadEngineAssets(const u8* data, size_t size) {
 	m_engine_assets.clear();

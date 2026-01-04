@@ -172,9 +172,19 @@ GLuint compileShader(GLenum type, const char* src) {
   GLint status = 0;
   glGetShaderiv(shader, GL_COMPILE_STATUS, &status);
   if (status == GL_FALSE) {
-	char log[1024];
-	glGetShaderInfoLog(shader, sizeof(log), nullptr, log);
-	std::fprintf(stderr, "[BMSX] GLES2 shader compile failed: %s\n", log);
+	GLint log_length = 0;
+	glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &log_length);
+	std::string log;
+	if (log_length > 1) {
+		std::string log_buffer;
+		log_buffer.resize(static_cast<size_t>(log_length));
+		GLsizei written = 0;
+		glGetShaderInfoLog(shader, log_length, &written, log_buffer.data());
+		log.assign(log_buffer.data(), static_cast<size_t>(written));
+	}
+	EngineCore::instance().log(LogLevel::Error,
+							   "[BMSX] GLES2 shader compile failed: %s\n",
+							   log.c_str());
 	glDeleteShader(shader);
 	throw std::runtime_error(std::string("[BMSX] GLES2 shader compile failed: ") + log);
   }
@@ -189,9 +199,19 @@ GLuint linkProgram(GLuint vs, GLuint fs) {
   GLint status = 0;
   glGetProgramiv(program, GL_LINK_STATUS, &status);
   if (status == GL_FALSE) {
-	char log[1024];
-	glGetProgramInfoLog(program, sizeof(log), nullptr, log);
-	std::fprintf(stderr, "[BMSX] GLES2 program link failed: %s\n", log);
+	GLint log_length = 0;
+	glGetProgramiv(program, GL_INFO_LOG_LENGTH, &log_length);
+	std::string log;
+	if (log_length > 1) {
+		std::string log_buffer;
+		log_buffer.resize(static_cast<size_t>(log_length));
+		GLsizei written = 0;
+		glGetProgramInfoLog(program, log_length, &written, log_buffer.data());
+		log.assign(log_buffer.data(), static_cast<size_t>(written));
+	}
+	EngineCore::instance().log(LogLevel::Error,
+							   "[BMSX] GLES2 program link failed: %s\n",
+							   log.c_str());
 	glDeleteProgram(program);
 	glDeleteShader(vs);
 	glDeleteShader(fs);

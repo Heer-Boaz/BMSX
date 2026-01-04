@@ -53,6 +53,17 @@ struct ResizeEvt {
 };
 
 /* ============================================================================
+ * Logging
+ * ============================================================================ */
+
+enum class LogLevel {
+	Debug,
+	Info,
+	Warn,
+	Error
+};
+
+/* ============================================================================
  * Clock - Time management
  * ============================================================================ */
 
@@ -187,6 +198,7 @@ public:
 	virtual GameViewHost* gameviewHost() = 0;
 	virtual MicrotaskQueue* microtaskQueue() = 0;
 	virtual std::string_view type() = 0;
+	virtual void log(LogLevel level, std::string_view message) = 0;
 };
 
 /* ============================================================================

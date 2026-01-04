@@ -103,6 +103,7 @@ public:
 	const RenderTiming& lastRenderTiming() const { return m_last_render_timing; }
 
 	void refreshRenderAssets();
+	void log(LogLevel level, const char* fmt, ...);
 
 	// ROM loading
 	bool loadEngineAssets(const u8* data, size_t size);  // Load engine.assets.rom first
