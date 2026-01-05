@@ -280,7 +280,7 @@ void main(){
 									   "[BMSX] GLES2 CRT shader compile failed: %s\n",
 									   log.c_str());
 			glDeleteShader(shader);
-			throw std::runtime_error(std::string("[BMSX] GLES2 CRT shader compile failed: ") + log);
+			throw BMSX_RUNTIME_ERROR(std::string("[BMSX] GLES2 CRT shader compile failed: ") + log);
 		}
 		return shader;
 	}
@@ -309,7 +309,7 @@ void main(){
 			glDeleteProgram(program);
 			glDeleteShader(vs);
 			glDeleteShader(fs);
-			throw std::runtime_error(std::string("[BMSX] GLES2 CRT program link failed: ") + log);
+			throw BMSX_RUNTIME_ERROR(std::string("[BMSX] GLES2 CRT program link failed: ") + log);
 		}
 		glDeleteShader(vs);
 		glDeleteShader(fs);

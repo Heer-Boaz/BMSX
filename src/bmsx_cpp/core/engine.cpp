@@ -504,7 +504,7 @@ void EngineCore::uploadTexturesToBackend() {
 	if (m_assets.hasImg(primaryAtlasName)) {
 		m_view->setPrimaryAtlas(0);
 	} else if (!m_assets.img.empty()) {
-		throw std::runtime_error("[EngineCore] Primary atlas '" + primaryAtlasName + "' missing.");
+		throw BMSX_RUNTIME_ERROR("[EngineCore] Primary atlas '" + primaryAtlasName + "' missing.");
 	}
 }
 

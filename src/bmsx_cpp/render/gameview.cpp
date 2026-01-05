@@ -125,7 +125,7 @@ void GameView::init() {
 
 void GameView::initializeDefaultTextures() {
 	if (!m_backend) {
-		throw std::runtime_error("[GameView] initializeDefaultTextures called before backend was configured.");
+		throw BMSX_RUNTIME_ERROR("[GameView] initializeDefaultTextures called before backend was configured.");
 	}
 
 	const Color fallbackColor{1.0f, 1.0f, 1.0f, 1.0f};
@@ -141,11 +141,11 @@ void GameView::initializeDefaultTextures() {
 	const auto* engineAtlas = assets.getImg(engineAtlasName);
 	if (!engineAtlas) {
 		if (!assets.img.empty()) {
-			throw std::runtime_error("[GameView] Engine atlas '" + engineAtlasName + "' missing.");
+			throw BMSX_RUNTIME_ERROR("[GameView] Engine atlas '" + engineAtlasName + "' missing.");
 		}
 	} else {
 		if (!engineAtlas->textureHandle) {
-			throw std::runtime_error("[GameView] Engine atlas '" + engineAtlasName + "' not uploaded.");
+			throw BMSX_RUNTIME_ERROR("[GameView] Engine atlas '" + engineAtlasName + "' not uploaded.");
 		}
 		textures[ENGINE_ATLAS_TEXTURE_KEY] =
 			reinterpret_cast<TextureHandle>(engineAtlas->textureHandle);
@@ -206,10 +206,10 @@ void GameView::setAtlasIndex(bool isPrimary, i32 index) {
 	auto& assets = EngineCore::instance().assets();
 	const auto* atlas = assets.getImg(atlasName);
 	if (!atlas) {
-		throw std::runtime_error("[GameView] atlas '" + atlasName + "' not found.");
+		throw BMSX_RUNTIME_ERROR("[GameView] atlas '" + atlasName + "' not found.");
 	}
 	if (!atlas->textureHandle) {
-		throw std::runtime_error("[GameView] atlas '" + atlasName + "' not uploaded.");
+		throw BMSX_RUNTIME_ERROR("[GameView] atlas '" + atlasName + "' not uploaded.");
 	}
 	textures[atlasId] = reinterpret_cast<TextureHandle>(atlas->textureHandle);
 	currentIndex = index;
@@ -234,7 +234,7 @@ void GameView::setPipelineRegistry(std::unique_ptr<RenderPassLibrary> registry) 
 void GameView::setActiveTexUnit(i32 unit) {
 	if (backendType() != BackendType::OpenGLES2) return;
 #if !BMSX_ENABLE_GLES2
-	throw std::runtime_error("[GameView] OpenGLES2 backend disabled at compile time.");
+	throw BMSX_RUNTIME_ERROR("[GameView] OpenGLES2 backend disabled at compile time.");
 #else
 	m_activeTexUnit = unit;
 	static_cast<OpenGLES2Backend*>(m_backend.get())->setActiveTextureUnit(unit);
@@ -245,7 +245,7 @@ void GameView::bind2DTex(TextureHandle tex) {
 	if (backendType() != BackendType::OpenGLES2) return;
 	if (m_activeTexture2D == tex) return;
 #if !BMSX_ENABLE_GLES2
-	throw std::runtime_error("[GameView] OpenGLES2 backend disabled at compile time.");
+	throw BMSX_RUNTIME_ERROR("[GameView] OpenGLES2 backend disabled at compile time.");
 #else
 	static_cast<OpenGLES2Backend*>(m_backend.get())->bindTexture2D(tex);
 	m_activeTexture2D = tex;
@@ -255,7 +255,7 @@ void GameView::bind2DTex(TextureHandle tex) {
 void GameView::bindCubemapTex(TextureHandle tex) {
 	if (backendType() != BackendType::OpenGLES2) return;
 #if !BMSX_ENABLE_GLES2
-	throw std::runtime_error("[GameView] OpenGLES2 backend disabled at compile time.");
+	throw BMSX_RUNTIME_ERROR("[GameView] OpenGLES2 backend disabled at compile time.");
 #else
 	if (m_activeCubemap == tex) return;
 	m_activeCubemap = tex;

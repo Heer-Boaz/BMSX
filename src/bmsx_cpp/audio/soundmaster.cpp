@@ -719,18 +719,18 @@ std::optional<ModulationInput> SoundMaster::resolveModulationPreset(const AssetI
 
 ModulationInput SoundMaster::parseModulationInput(const BinValue& value) const {
 	if (!value.isObject()) {
-		throw std::runtime_error("Modulation preset is not an object");
+		throw BMSX_RUNTIME_ERROR("Modulation preset is not an object");
 	}
 	const auto& obj = value.asObject();
 	ModulationInput input;
 
 	auto readRange = [](const BinValue& v) -> ModulationRange {
 		if (!v.isArray()) {
-			throw std::runtime_error("Modulation range is not an array");
+			throw BMSX_RUNTIME_ERROR("Modulation range is not an array");
 		}
 		const auto& arr = v.asArray();
 		if (arr.size() < 2) {
-			throw std::runtime_error("Modulation range is missing bounds");
+			throw BMSX_RUNTIME_ERROR("Modulation range is missing bounds");
 		}
 		return ModulationRange{static_cast<f32>(arr[0].toNumber()), static_cast<f32>(arr[1].toNumber())};
 	};
@@ -798,24 +798,24 @@ ModulationInput SoundMaster::parseModulationInput(const Table& table) const {
 			out = static_cast<f32>(valueToNumber(v));
 			return;
 		}
-		throw std::runtime_error("Modulation param '" + field + "' is not a number");
+		throw BMSX_RUNTIME_ERROR("Modulation param '" + field + "' is not a number");
 	};
 
 	auto getRange = [&](const std::string& field, std::optional<ModulationRange>& out) {
 		Value v = table.get(key(field));
 		if (isNil(v)) return;
 		if (!valueIsTable(v)) {
-			throw std::runtime_error("Modulation range '" + field + "' is not an array");
+			throw BMSX_RUNTIME_ERROR("Modulation range '" + field + "' is not an array");
 		}
 		const Table& arr = *asTable(v);
 		const int len = arr.length();
 		if (len < 2) {
-			throw std::runtime_error("Modulation range '" + field + "' is missing bounds");
+			throw BMSX_RUNTIME_ERROR("Modulation range '" + field + "' is missing bounds");
 		}
 		const Value v0 = arr.get(valueNumber(1.0));
 		const Value v1 = arr.get(valueNumber(2.0));
 		if (!valueIsNumber(v0) || !valueIsNumber(v1)) {
-			throw std::runtime_error("Modulation range '" + field + "' bounds are not numbers");
+			throw BMSX_RUNTIME_ERROR("Modulation range '" + field + "' bounds are not numbers");
 		}
 		out = ModulationRange{static_cast<f32>(valueToNumber(v0)), static_cast<f32>(valueToNumber(v1))};
 	};
@@ -833,7 +833,7 @@ ModulationInput SoundMaster::parseModulationInput(const Table& table) const {
 	Value filterVal = table.get(key("filter"));
 	if (!isNil(filterVal)) {
 		if (!valueIsTable(filterVal)) {
-			throw std::runtime_error("Modulation filter must be a table");
+			throw BMSX_RUNTIME_ERROR("Modulation filter must be a table");
 		}
 		const Table& ftable = *asTable(filterVal);
 		FilterModulationParams filter;
@@ -862,7 +862,7 @@ ModulationInput SoundMaster::parseModulationInput(const Table& table) const {
 const AudioAsset& SoundMaster::getAudioOrThrow(const AssetId& id) const {
 	auto it = m_assets->audio.find(id);
 	if (it == m_assets->audio.end()) {
-		throw std::runtime_error("Audio asset not found: " + id);
+		throw BMSX_RUNTIME_ERROR("Audio asset not found: " + id);
 	}
 	return it->second;
 }
@@ -904,7 +904,7 @@ VoiceId SoundMaster::startVoice(AudioType type, const AssetId& id, const AudioAs
 	}
 	const f64 rate = effectivePlaybackRate(params);
 	if (rate <= 0.0) {
-		throw std::runtime_error("Playback rate must be positive");
+		throw BMSX_RUNTIME_ERROR("Playback rate must be positive");
 	}
 	record.startOffset = offset;
 	record.position = offset * asset.sampleRate;

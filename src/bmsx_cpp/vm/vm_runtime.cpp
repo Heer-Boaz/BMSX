@@ -270,7 +270,7 @@ Value binValueToVmValue(VMCPU& cpu, const BinValue& value) {
 
 VMRuntime& VMRuntime::createInstance(const VMRuntimeOptions& options) {
 	if (s_instance) {
-		throw std::runtime_error("[VMRuntime] Instance already exists.");
+		throw BMSX_RUNTIME_ERROR("[VMRuntime] Instance already exists.");
 	}
 	s_instance = new VMRuntime(options);
 	return *s_instance;
@@ -407,10 +407,10 @@ void VMRuntime::boot(Program* program, ProgramMetadata* metadata, int entryProto
 	}
 
 	if (!m_initFn) {
-		throw std::runtime_error("[VMRuntime] VM lifecycle handler 'init' is not defined.");
+		throw BMSX_RUNTIME_ERROR("[VMRuntime] VM lifecycle handler 'init' is not defined.");
 	}
 	if (!m_newGameFn) {
-		throw std::runtime_error("[VMRuntime] VM lifecycle handler 'new_game' is not defined.");
+		throw BMSX_RUNTIME_ERROR("[VMRuntime] VM lifecycle handler 'new_game' is not defined.");
 	}
 	std::cout << "[VMRuntime] boot: calling init..." << std::endl;
 	callLuaFunction(m_initFn, {});
@@ -507,7 +507,7 @@ void VMRuntime::processIOCommands() {
 				break;
 			}
 			default:
-				throw std::runtime_error("Unknown VM IO command: " + std::to_string(cmd) + ".");
+				throw BMSX_RUNTIME_ERROR("Unknown VM IO command: " + std::to_string(cmd) + ".");
 		}
 	}
 
@@ -571,7 +571,7 @@ void VMRuntime::setCanonicalization(CanonicalizationType canonicalization) {
 Value VMRuntime::requireVmModule(const std::string& moduleName) {
 	const auto aliasIt = m_vmModuleAliases.find(moduleName);
 	if (aliasIt == m_vmModuleAliases.end()) {
-		throw std::runtime_error("require('" + moduleName + "') failed: module not found.");
+		throw BMSX_RUNTIME_ERROR("require('" + moduleName + "') failed: module not found.");
 	}
 	const std::string& path = aliasIt->second;
 	const auto cachedIt = m_vmModuleCache.find(path);
@@ -580,7 +580,7 @@ Value VMRuntime::requireVmModule(const std::string& moduleName) {
 	}
 	const auto protoIt = m_vmModuleProtos.find(path);
 	if (protoIt == m_vmModuleProtos.end()) {
-		throw std::runtime_error("require('" + moduleName + "') failed: module not compiled.");
+		throw BMSX_RUNTIME_ERROR("require('" + moduleName + "') failed: module not compiled.");
 	}
 	m_vmModuleCache[path] = valueBool(true);
 	auto* closure = m_cpu.createRootClosure(protoIt->second);
@@ -688,7 +688,7 @@ std::string VMRuntime::formatVmString(const std::string& templateStr, const std:
 			continue;
 		}
 		if (index == templateStr.size() - 1) {
-			throw std::runtime_error("string.format incomplete format specifier.");
+			throw BMSX_RUNTIME_ERROR("string.format incomplete format specifier.");
 		}
 		if (templateStr[index + 1] == '%') {
 			output.push_back('%');
@@ -757,7 +757,7 @@ std::string VMRuntime::formatVmString(const std::string& templateStr, const std:
 
 		const char specifier = cursor < templateStr.size() ? templateStr[cursor] : '\0';
 		if (specifier == '\0') {
-			throw std::runtime_error("string.format incomplete format specifier.");
+			throw BMSX_RUNTIME_ERROR("string.format incomplete format specifier.");
 		}
 
 		auto signPrefix = [&](double value) -> std::string {
@@ -965,7 +965,7 @@ std::string VMRuntime::formatVmString(const std::string& templateStr, const std:
 				break;
 			}
 			default:
-				throw std::runtime_error(std::string("string.format unsupported format specifier '%") + specifier + "'.");
+				throw BMSX_RUNTIME_ERROR(std::string("string.format unsupported format specifier '%") + specifier + "'.");
 		}
 
 		index = cursor;
@@ -1005,7 +1005,7 @@ std::regex VMRuntime::buildLuaPatternRegex(const std::string& pattern) const {
 			if (ch == '%') {
 				++index;
 				if (index >= pattern.size()) {
-					throw std::runtime_error("string.gmatch invalid pattern.");
+					throw BMSX_RUNTIME_ERROR("string.gmatch invalid pattern.");
 				}
 				output += translateLuaPatternEscape(pattern[index], true);
 				continue;
@@ -1026,7 +1026,7 @@ std::regex VMRuntime::buildLuaPatternRegex(const std::string& pattern) const {
 		if (ch == '%') {
 			++index;
 			if (index >= pattern.size()) {
-				throw std::runtime_error("string.gmatch invalid pattern.");
+				throw BMSX_RUNTIME_ERROR("string.gmatch invalid pattern.");
 			}
 			output += translateLuaPatternEscape(pattern[index], false);
 			continue;
@@ -1055,7 +1055,7 @@ std::regex VMRuntime::buildLuaPatternRegex(const std::string& pattern) const {
 		output.push_back(ch);
 	}
 	if (inClass) {
-		throw std::runtime_error("string.gmatch invalid pattern.");
+		throw BMSX_RUNTIME_ERROR("string.gmatch invalid pattern.");
 	}
 	return std::regex(output);
 }
@@ -1159,7 +1159,7 @@ void VMRuntime::setupBuiltins() {
 			out.insert(out.end(), results.begin(), results.end());
 			return;
 		}
-		throw std::runtime_error("Attempted to call a non-function value.");
+		throw BMSX_RUNTIME_ERROR("Attempted to call a non-function value.");
 	};
 	auto key = [this](std::string_view name) {
 		return canonicalizeIdentifier(name);
@@ -1225,7 +1225,7 @@ void VMRuntime::setupBuiltins() {
 		if (args.size() == 1) {
 			int upper = static_cast<int>(std::floor(asNumber(args.at(0))));
 			if (upper < 1) {
-				throw std::runtime_error("math.random upper bound must be positive.");
+				throw BMSX_RUNTIME_ERROR("math.random upper bound must be positive.");
 			}
 			out.push_back(valueNumber(static_cast<double>(static_cast<int>(randomValue * upper) + 1)));
 			return;
@@ -1233,7 +1233,7 @@ void VMRuntime::setupBuiltins() {
 		int lower = static_cast<int>(std::floor(asNumber(args.at(0))));
 		int upper = static_cast<int>(std::floor(asNumber(args.at(1))));
 		if (upper < lower) {
-			throw std::runtime_error("math.random upper bound must be greater than or equal to lower bound.");
+			throw BMSX_RUNTIME_ERROR("math.random upper bound must be greater than or equal to lower bound.");
 		}
 		int span = upper - lower + 1;
 		out.push_back(valueNumber(static_cast<double>(lower + static_cast<int>(randomValue * span))));
@@ -1374,7 +1374,7 @@ registerNativeFunction("peek", [this](const std::vector<Value>& args, std::vecto
 		const Value& condition = args.empty() ? valueNil() : args.at(0);
 		if (!isTruthy(condition)) {
 			const std::string message = args.size() > 1 ? vmToString(args.at(1)) : std::string("assertion failed!");
-			throw std::runtime_error(message);
+			throw BMSX_RUNTIME_ERROR(message);
 		}
 		out.insert(out.end(), args.begin(), args.end());
 	});
@@ -1382,7 +1382,7 @@ registerNativeFunction("peek", [this](const std::vector<Value>& args, std::vecto
 registerNativeFunction("error", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 	const std::string message = args.empty() ? std::string("error") : vmToString(args.at(0));
 	(void)out;
-	throw std::runtime_error(message);
+	throw BMSX_RUNTIME_ERROR(message);
 });
 
 	registerNativeFunction("setmetatable", [](const std::vector<Value>& args, std::vector<Value>& out) {
@@ -1551,7 +1551,7 @@ registerNativeFunction("error", [this](const std::vector<Value>& args, std::vect
 					}
 					return valueNil();
 				}
-				throw std::runtime_error("Attempted to index native array with unsupported key.");
+				throw BMSX_RUNTIME_ERROR("Attempted to index native array with unsupported key.");
 			},
 			[data](const Value& key, const Value& value) {
 				if (valueIsNumber(key)) {
@@ -1574,7 +1574,7 @@ registerNativeFunction("error", [this](const std::vector<Value>& args, std::vect
 					data->props[id] = value;
 					return;
 				}
-				throw std::runtime_error("Attempted to index native array with unsupported key.");
+				throw BMSX_RUNTIME_ERROR("Attempted to index native array with unsupported key.");
 			},
 			[data]() -> int {
 				return static_cast<int>(data->values.size());
@@ -1840,7 +1840,7 @@ stringTable->set(key("gsub"), m_cpu.createNativeFunction("string.gsub", [this, c
 				}
 				return vmToString(value);
 			}
-			throw std::runtime_error("string.gsub replacement must be a string, number, function, or table.");
+			throw BMSX_RUNTIME_ERROR("string.gsub replacement must be a string, number, function, or table.");
 		};
 
 		while (count < static_cast<size_t>(maxReplacements)) {
@@ -2058,7 +2058,7 @@ tableLib->set(key("sort"), m_cpu.createNativeFunction("table.sort", [callVmValue
 			return VMRuntime::instance().cpu().stringPool().toString(asStringId(left))
 				< VMRuntime::instance().cpu().stringPool().toString(asStringId(right));
 		}
-		throw std::runtime_error("table.sort comparison expects numbers or strings.");
+		throw BMSX_RUNTIME_ERROR("table.sort comparison expects numbers or strings.");
 	});
 	for (int i = 1; i <= length; ++i) {
 		tbl->set(valueNumber(static_cast<double>(i)), values[static_cast<size_t>(i - 1)]);
@@ -2145,7 +2145,7 @@ auto nextFn = m_cpu.createNativeFunction("next", [this](const std::vector<Value>
 	if (valueIsNativeObject(target)) {
 		auto* obj = asNativeObject(target);
 		if (!obj->nextEntry) {
-			throw std::runtime_error("next expects a native object with iteration.");
+			throw BMSX_RUNTIME_ERROR("next expects a native object with iteration.");
 		}
 		auto entry = obj->nextEntry(key);
 		if (!entry.has_value()) {
@@ -2156,7 +2156,7 @@ auto nextFn = m_cpu.createNativeFunction("next", [this](const std::vector<Value>
 		out.push_back(entry->second);
 		return;
 	}
-	throw std::runtime_error("next expects a table or native object.");
+	throw BMSX_RUNTIME_ERROR("next expects a table or native object.");
 });
 
 m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::vector<Value>& args, std::vector<Value>& out) {
@@ -2186,14 +2186,14 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 		out.push_back(value);
 		return;
 	}
-	throw std::runtime_error("ipairs expects a table or native object.");
+	throw BMSX_RUNTIME_ERROR("ipairs expects a table or native object.");
 });
 
 	setGlobal("next", nextFn);
 	registerNativeFunction("pairs", [nextFn](const std::vector<Value>& args, std::vector<Value>& out) {
 		const Value& target = args.at(0);
 		if (!valueIsTable(target) && !valueIsNativeObject(target)) {
-			throw std::runtime_error("pairs expects a table or native object.");
+			throw BMSX_RUNTIME_ERROR("pairs expects a table or native object.");
 		}
 		out.push_back(nextFn);
 		out.push_back(target);
@@ -2202,7 +2202,7 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 	registerNativeFunction("ipairs", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 		const Value& target = args.at(0);
 		if (!valueIsTable(target) && !valueIsNativeObject(target)) {
-			throw std::runtime_error("ipairs expects a table or native object.");
+			throw BMSX_RUNTIME_ERROR("ipairs expects a table or native object.");
 		}
 		out.push_back(m_ipairsIterator);
 		out.push_back(target);
@@ -2227,7 +2227,7 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 					Value value = mapTable->get(keyValue);
 					if (isNil(value)) {
 						const std::string& keyName = m_cpu.stringPool().toString(asStringId(keyValue));
-						throw std::runtime_error("Asset '" + keyName + "' does not exist.");
+						throw BMSX_RUNTIME_ERROR("Asset '" + keyName + "' does not exist.");
 					}
 					return value;
 				}
@@ -2239,12 +2239,12 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 						Value resolvedKey = valueString(m_cpu.internString(keyName));
 						Value value = mapTable->get(resolvedKey);
 						if (isNil(value)) {
-							throw std::runtime_error("Asset '" + keyName + "' does not exist.");
+							throw BMSX_RUNTIME_ERROR("Asset '" + keyName + "' does not exist.");
 						}
 						return value;
 					}
 				}
-				throw std::runtime_error("Attempted to retrieve an asset that did not use a string or integer key.");
+				throw BMSX_RUNTIME_ERROR("Attempted to retrieve an asset that did not use a string or integer key.");
 			},
 			[this, mapTable, formatAssetKeyNumber](const Value& keyValue, const Value& value) {
 				if (valueIsString(keyValue)) {
@@ -2261,7 +2261,7 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 						return;
 					}
 				}
-				throw std::runtime_error("Attempted to index native object with unsupported key. Asset maps and methods require string or integer keys.");
+				throw BMSX_RUNTIME_ERROR("Attempted to index native object with unsupported key. Asset maps and methods require string or integer keys.");
 			},
 			nullptr,
 			[mapTable](const Value& after) -> std::optional<std::pair<Value, Value>> {
@@ -2302,7 +2302,7 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 				Value value = assetsTable->get(keyValue);
 				if (isNil(value)) {
 					const std::string& keyName = m_cpu.stringPool().toString(asStringId(keyValue));
-					throw std::runtime_error("Asset '" + keyName + "' does not exist.");
+					throw BMSX_RUNTIME_ERROR("Asset '" + keyName + "' does not exist.");
 				}
 				return value;
 			}
@@ -2314,12 +2314,12 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 					Value resolvedKey = valueString(m_cpu.internString(keyName));
 					Value value = assetsTable->get(resolvedKey);
 					if (isNil(value)) {
-						throw std::runtime_error("Asset '" + keyName + "' does not exist.");
+						throw BMSX_RUNTIME_ERROR("Asset '" + keyName + "' does not exist.");
 					}
 					return value;
 				}
 			}
-			throw std::runtime_error("Attempted to retrieve an asset that did not use a string or integer key.");
+			throw BMSX_RUNTIME_ERROR("Attempted to retrieve an asset that did not use a string or integer key.");
 		},
 		[this, assetsTable, formatAssetKeyNumber](const Value& keyValue, const Value& value) {
 			if (valueIsString(keyValue)) {
@@ -2336,7 +2336,7 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 					return;
 				}
 			}
-			throw std::runtime_error("Attempted to index native object with unsupported key. Asset maps and methods require string or integer keys.");
+			throw BMSX_RUNTIME_ERROR("Attempted to index native object with unsupported key. Asset maps and methods require string or integer keys.");
 		},
 		nullptr,
 		[assetsTable](const Value& after) -> std::optional<std::pair<Value, Value>> {

@@ -9,6 +9,9 @@
 #define BMSX_BINENCODER_H
 
 #include "types.h"
+#if defined(BMSX_SNESMINI_LEGACY)
+#include <memory>
+#endif
 #include <string>
 #include <vector>
 #include <variant>
@@ -51,6 +54,11 @@ struct BinValue;
 using BinArray = std::vector<BinValue>;
 using BinObject = std::unordered_map<std::string, BinValue>;
 using BinBinary = std::vector<u8>;
+#if defined(BMSX_SNESMINI_LEGACY)
+using BinObjectStorage = std::shared_ptr<BinObject>;
+#else
+using BinObjectStorage = BinObject;
+#endif
 
 // Variant holding all possible decoded types
 struct BinValue {
@@ -62,7 +70,7 @@ struct BinValue {
 		f64,                // F64
 		std::string,        // Str
 		BinArray,           // Arr
-		BinObject,          // Obj
+		BinObjectStorage,   // Obj
 		BinBinary           // Bin
 	> data;
 
@@ -77,7 +85,11 @@ struct BinValue {
 	BinValue(std::string&& v) : data(std::move(v)) {}
 	BinValue(const char* v) : data(std::string(v)) {}
 	BinValue(BinArray&& v) : data(std::move(v)) {}
+#if defined(BMSX_SNESMINI_LEGACY)
+	BinValue(BinObject&& v) : data(std::make_shared<BinObject>(std::move(v))) {}
+#else
 	BinValue(BinObject&& v) : data(std::move(v)) {}
+#endif
 	BinValue(BinBinary&& v) : data(std::move(v)) {}
 
 	// Type checks
@@ -89,7 +101,7 @@ struct BinValue {
 	bool isNumber() const { return isInt() || isF32() || isF64(); }
 	bool isString() const { return std::holds_alternative<std::string>(data); }
 	bool isArray() const { return std::holds_alternative<BinArray>(data); }
-	bool isObject() const { return std::holds_alternative<BinObject>(data); }
+	bool isObject() const { return std::holds_alternative<BinObjectStorage>(data); }
 	bool isBinary() const { return std::holds_alternative<BinBinary>(data); }
 
 	// Value accessors (throw if wrong type)
@@ -99,7 +111,11 @@ struct BinValue {
 	f64 asF64() const { return std::get<f64>(data); }
 	const std::string& asString() const { return std::get<std::string>(data); }
 	const BinArray& asArray() const { return std::get<BinArray>(data); }
-	const BinObject& asObject() const { return std::get<BinObject>(data); }
+#if defined(BMSX_SNESMINI_LEGACY)
+	const BinObject& asObject() const { return *std::get<BinObjectStorage>(data); }
+#else
+	const BinObject& asObject() const { return std::get<BinObjectStorage>(data); }
+#endif
 	const BinBinary& asBinary() const { return std::get<BinBinary>(data); }
 
 	// Number conversion (works for int, f32, f64)

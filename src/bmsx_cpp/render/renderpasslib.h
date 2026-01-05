@@ -197,7 +197,7 @@ public:
 	void setState(const std::string& id, const T& state) {
 		auto it = m_registered.find(id);
 		if (it == m_registered.end()) {
-			throw std::runtime_error("Pipeline '" + id + "' not found");
+			throw BMSX_RUNTIME_ERROR("Pipeline '" + id + "' not found");
 		}
 		it->second.state = state;
 	}
@@ -206,7 +206,7 @@ public:
 	T getState(const std::string& id) const {
 		auto it = m_registered.find(id);
 		if (it == m_registered.end()) {
-			throw std::runtime_error("Pipeline '" + id + "' not found");
+			throw BMSX_RUNTIME_ERROR("Pipeline '" + id + "' not found");
 		}
 		return std::any_cast<T>(it->second.state);
 	}

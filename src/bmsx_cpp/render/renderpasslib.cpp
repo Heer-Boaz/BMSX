@@ -34,7 +34,7 @@ void RenderPassLibrary::registerBuiltin() {
 #if BMSX_ENABLE_GLES2
 			registerBuiltinPassesOpenGLES2();
 #else
-			throw std::runtime_error("[RenderPassLibrary] OpenGLES2 backend disabled at compile time.");
+			throw BMSX_RUNTIME_ERROR("[RenderPassLibrary] OpenGLES2 backend disabled at compile time.");
 #endif
 			break;
 		case BackendType::WebGL2:
@@ -99,7 +99,7 @@ void RenderPassLibrary::registerBuiltinPassesSoftware() {
 
 			auto primaryIt = gv->textures.find("_atlas_primary");
 			if (primaryIt == gv->textures.end() || !primaryIt->second) {
-				throw std::runtime_error("[SpritesPipeline] Texture '_atlas_primary' missing from view textures.");
+				throw BMSX_RUNTIME_ERROR("[SpritesPipeline] Texture '_atlas_primary' missing from view textures.");
 			}
 			spriteState.atlasPrimaryTex = primaryIt->second;
 			auto secondaryIt = gv->textures.find("_atlas_secondary");
@@ -156,7 +156,7 @@ void RenderPassLibrary::registerBuiltinPassesSoftware() {
 
 void RenderPassLibrary::registerBuiltinPassesOpenGLES2() {
 #if !BMSX_ENABLE_GLES2
-	throw std::runtime_error("[RenderPassLibrary] OpenGLES2 backend disabled at compile time.");
+	throw BMSX_RUNTIME_ERROR("[RenderPassLibrary] OpenGLES2 backend disabled at compile time.");
 #else
 	// FrameResolve: per-frame state setup
 	{
@@ -208,7 +208,7 @@ void RenderPassLibrary::registerBuiltinPassesOpenGLES2() {
 
 			auto primaryIt = gv->textures.find("_atlas_primary");
 			if (primaryIt == gv->textures.end() || !primaryIt->second) {
-				throw std::runtime_error("[SpritesPipeline] Texture '_atlas_primary' missing from view textures.");
+				throw BMSX_RUNTIME_ERROR("[SpritesPipeline] Texture '_atlas_primary' missing from view textures.");
 			}
 			spriteState.atlasPrimaryTex = primaryIt->second;
 			auto secondaryIt = gv->textures.find("_atlas_secondary");
@@ -254,7 +254,7 @@ void RenderPassLibrary::registerBuiltinPassesOpenGLES2() {
 void RenderPassLibrary::registerPass(const RenderPassDef& desc) {
 	const std::string& idStr = desc.id;
 	if (m_registered.find(idStr) != m_registered.end()) {
-		throw std::runtime_error("Pipeline '" + idStr + "' already registered");
+		throw BMSX_RUNTIME_ERROR("Pipeline '" + idStr + "' already registered");
 	}
 
 	RegisteredPassRec rec;
@@ -280,7 +280,7 @@ bool RenderPassLibrary::has(const std::string& id) const {
 void RenderPassLibrary::execute(const std::string& id, void* fbo) {
 	auto it = m_registered.find(id);
 	if (it == m_registered.end()) {
-		throw std::runtime_error("Pipeline '" + id + "' not found");
+		throw BMSX_RUNTIME_ERROR("Pipeline '" + id + "' not found");
 	}
 
 	auto& rec = it->second;

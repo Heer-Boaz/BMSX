@@ -465,14 +465,14 @@ void VMCPU::start(int entryProtoIndex, const std::vector<Value>& args) {
 
 void VMCPU::call(Closure* closure, const std::vector<Value>& args, int returnCount) {
 	if (!closure) {
-		throw std::runtime_error("Attempted to call a nil value.");
+		throw BMSX_RUNTIME_ERROR("Attempted to call a nil value.");
 	}
 	pushFrame(closure, args, 0, returnCount, false, m_program->protos[closure->protoIndex].entryPC);
 }
 
 void VMCPU::callExternal(Closure* closure, const std::vector<Value>& args) {
 	if (!closure) {
-		throw std::runtime_error("Attempted to call a nil value.");
+		throw BMSX_RUNTIME_ERROR("Attempted to call a nil value.");
 	}
 	pushFrame(closure, args, 0, 0, true, m_program->protos[closure->protoIndex].entryPC);
 }
@@ -556,7 +556,7 @@ void VMCPU::executeInstruction(CallFrame& frame, OpCode op, uint8_t aLow, uint8_
 
 	switch (op) {
 		case OpCode::WIDE:
-			throw std::runtime_error("Unexpected WIDE opcode.");
+			throw BMSX_RUNTIME_ERROR("Unexpected WIDE opcode.");
 
 		case OpCode::MOV:
 			setRegister(frame, a, frame.registers[b]);
@@ -609,7 +609,7 @@ void VMCPU::executeInstruction(CallFrame& frame, OpCode op, uint8_t aLow, uint8_
 			if (range.has_value()) {
 				message += " at " + range->path + ":" + std::to_string(range->startLine);
 			}
-			throw std::runtime_error(message);
+			throw BMSX_RUNTIME_ERROR(message);
 		}
 
 		case OpCode::SETT: {
@@ -632,7 +632,7 @@ void VMCPU::executeInstruction(CallFrame& frame, OpCode op, uint8_t aLow, uint8_
 			if (range.has_value()) {
 				message += " at " + range->path + ":" + std::to_string(range->startLine);
 			}
-			throw std::runtime_error(message);
+			throw BMSX_RUNTIME_ERROR(message);
 		}
 
 		case OpCode::NEWT: {
@@ -779,7 +779,7 @@ void VMCPU::executeInstruction(CallFrame& frame, OpCode op, uint8_t aLow, uint8_
 							stack += "<unknown>";
 						}
 					}
-					throw std::runtime_error("Length operator expects a native object with a length. stack=" + stack);
+					throw BMSX_RUNTIME_ERROR("Length operator expects a native object with a length. stack=" + stack);
 				}
 				setRegister(frame, a, valueNumber(static_cast<double>(obj->len())));
 				return;
@@ -798,7 +798,7 @@ void VMCPU::executeInstruction(CallFrame& frame, OpCode op, uint8_t aLow, uint8_
 					stack += "<unknown>";
 				}
 			}
-			throw std::runtime_error("Length operator expects a string or table. stack=" + stack);
+			throw BMSX_RUNTIME_ERROR("Length operator expects a string or table. stack=" + stack);
 		}
 
 		case OpCode::BNOT: {
@@ -987,7 +987,7 @@ void VMCPU::executeInstruction(CallFrame& frame, OpCode op, uint8_t aLow, uint8_
 				releaseArgScratch(std::move(args));
 				return;
 			}
-			throw std::runtime_error("Attempted to call a non-function value.");
+			throw BMSX_RUNTIME_ERROR("Attempted to call a non-function value.");
 		}
 
 		case OpCode::RET: {
@@ -1167,7 +1167,7 @@ Value VMCPU::resolveTableIndex(Table* table, const Value& key) {
 		}
 		current = asTable(indexerValue);
 	}
-	throw std::runtime_error("Metatable __index loop detected.");
+	throw BMSX_RUNTIME_ERROR("Metatable __index loop detected.");
 }
 
 std::unique_ptr<CallFrame> VMCPU::acquireFrame() {

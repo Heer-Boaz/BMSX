@@ -145,7 +145,7 @@ void LibretroPlatform::setHwRenderCallbacks(retro_hw_get_current_framebuffer_t g
 	backend->setFramebufferGetter(m_hw_get_current_framebuffer);
 #else
 	(void)get_current_framebuffer;
-	throw std::runtime_error("[LibretroPlatform] OpenGLES2 backend disabled at compile time.");
+	throw BMSX_RUNTIME_ERROR("[LibretroPlatform] OpenGLES2 backend disabled at compile time.");
 #endif
 }
 
@@ -163,7 +163,7 @@ void LibretroPlatform::onContextReset() {
 	view->rebuildGraph();
 	m_engine->refreshRenderAssets();
 #else
-	throw std::runtime_error("[LibretroPlatform] OpenGLES2 backend disabled at compile time.");
+	throw BMSX_RUNTIME_ERROR("[LibretroPlatform] OpenGLES2 backend disabled at compile time.");
 #endif
 }
 
@@ -176,7 +176,7 @@ void LibretroPlatform::onContextDestroy() {
 	backend->onContextDestroy();
 	view->setPipelineRegistry(std::unique_ptr<RenderPassLibrary>());
 #else
-	throw std::runtime_error("[LibretroPlatform] OpenGLES2 backend disabled at compile time.");
+	throw BMSX_RUNTIME_ERROR("[LibretroPlatform] OpenGLES2 backend disabled at compile time.");
 #endif
 }
 
@@ -924,7 +924,7 @@ std::unique_ptr<GPUBackend> LibretroGameViewHost::createBackend() {
 				static_cast<i32>(m_framebuffer.height)
 			);
 #else
-			throw std::runtime_error("[LibretroGameViewHost] OpenGLES2 backend disabled at compile time.");
+			throw BMSX_RUNTIME_ERROR("[LibretroGameViewHost] OpenGLES2 backend disabled at compile time.");
 #endif
 		case BackendType::Software:
 			return std::make_unique<SoftwareBackend>(
@@ -934,7 +934,7 @@ std::unique_ptr<GPUBackend> LibretroGameViewHost::createBackend() {
 				static_cast<i32>(m_framebuffer.pitch)
 			);
 		default:
-			throw std::runtime_error("[LibretroGameViewHost] Unsupported backend type.");
+			throw BMSX_RUNTIME_ERROR("[LibretroGameViewHost] Unsupported backend type.");
 	}
 }
 
@@ -948,7 +948,7 @@ void LibretroGameViewHost::updateBackend(GPUBackend* backend) {
 	}
 #else
 	if (backend->type() == BackendType::OpenGLES2) {
-		throw std::runtime_error("[LibretroGameViewHost] OpenGLES2 backend disabled at compile time.");
+		throw BMSX_RUNTIME_ERROR("[LibretroGameViewHost] OpenGLES2 backend disabled at compile time.");
 	}
 #endif
 	auto* softBackend = static_cast<SoftwareBackend*>(backend);

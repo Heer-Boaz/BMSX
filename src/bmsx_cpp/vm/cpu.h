@@ -62,7 +62,11 @@ struct StringKeyEq {
 class StringPool {
 public:
 	StringId intern(std::string_view value) {
+#if defined(BMSX_SNESMINI_LEGACY)
+		auto it = m_stringMap.find(std::string(value));
+#else
 		auto it = m_stringMap.find(value);
+#endif
 		if (it != m_stringMap.end()) {
 			return it->second;
 		}

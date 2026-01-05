@@ -217,7 +217,7 @@ static bool is_hardware_backend(bmsx::BackendType type) {
 		case bmsx::BackendType::OpenGLES2:
 			return true;
 		default:
-			throw std::runtime_error("[BMSX] Unsupported libretro backend.");
+			throw BMSX_RUNTIME_ERROR("[BMSX] Unsupported libretro backend.");
 	}
 }
 
@@ -228,7 +228,7 @@ static const char* backend_label(bmsx::BackendType type) {
 		case bmsx::BackendType::OpenGLES2:
 			return "GLES2";
 		default:
-			throw std::runtime_error("[BMSX] Unsupported libretro backend.");
+			throw BMSX_RUNTIME_ERROR("[BMSX] Unsupported libretro backend.");
 	}
 }
 
@@ -517,9 +517,7 @@ void retro_set_environment(retro_environment_t cb) {
   environ_cb = cb;
 
   // Try to get logging interface
-  if (cb(RETRO_ENVIRONMENT_GET_LOG_INTERFACE, &logging)) {
-	// Got log callback
-  } else {
+  if (!cb(RETRO_ENVIRONMENT_GET_LOG_INTERFACE, &logging)) {
 	logging.log = fallback_log;
   }
 
@@ -749,7 +747,6 @@ bool retro_load_game(const struct retro_game_info* game) {
 
   logging.log(RETRO_LOG_INFO, "[BMSX] Loading game: %s\n",
 			  game->path ? game->path : "(memory)");
-
   // Try to load engine assets from the same directory as the ROM
   if (game->path) {
 	g_platform->tryLoadEngineAssets(game->path);

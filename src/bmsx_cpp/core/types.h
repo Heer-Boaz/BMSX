@@ -18,6 +18,13 @@
 #include <vector>
 #include <unordered_map>
 #include <array>
+#include <stdexcept>
+
+#if defined(BMSX_SNESMINI_LEGACY)
+#define BMSX_RUNTIME_ERROR(message) std::runtime_error(std::string(message))
+#else
+#define BMSX_RUNTIME_ERROR(message) std::runtime_error(message)
+#endif
 
 namespace bmsx {
 

@@ -92,7 +92,7 @@ std::unique_ptr<VmProgramAsset> ProgramLoader::load(const uint8_t* data, size_t 
 	BinValue root = decodeBinary(data, size);
 
 	if (!root.isObject()) {
-		throw std::runtime_error("ProgramLoader: expected object at root");
+		throw BMSX_RUNTIME_ERROR("ProgramLoader: expected object at root");
 	}
 
 	auto asset = std::make_unique<VmProgramAsset>();

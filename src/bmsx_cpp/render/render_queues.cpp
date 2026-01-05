@@ -89,12 +89,12 @@ void submitSprite(const ImgRenderSubmission& options) {
 	auto& engine = EngineCore::instance();
 	const auto* imgAsset = engine.assets().getImg(options.imgid);
 	if (!imgAsset) {
-		throw std::runtime_error("[Sprite Queue] submitSprite called with unknown image id '" + options.imgid + "'.");
+		throw BMSX_RUNTIME_ERROR("[Sprite Queue] submitSprite called with unknown image id '" + options.imgid + "'.");
 	}
 
 	const ImgMeta* imgmeta = &imgAsset->meta;
 	if (!imgmeta) {
-		throw std::runtime_error("[Sprite Queue] Image metadata missing for imgid '" + options.imgid + "'.");
+		throw BMSX_RUNTIME_ERROR("[Sprite Queue] Image metadata missing for imgid '" + options.imgid + "'.");
 	}
 
 	i32 submissionIndex = s_spriteSubmissionCounter++;
@@ -304,7 +304,7 @@ void submitGlyphs(const GlyphRenderSubmission& options) {
 	GameView* view = EngineCore::instance().view();
 	BFont* font = options.font ? options.font : view->default_font;
 	if (!font) {
-		throw std::runtime_error("No font available for glyph rendering.");
+		throw BMSX_RUNTIME_ERROR("No font available for glyph rendering.");
 	}
 
 	const std::vector<std::string>* lines = &options.glyphs;

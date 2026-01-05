@@ -108,7 +108,7 @@ RenderGraphRuntime::~RenderGraphRuntime() {
 
 void RenderGraphRuntime::addPass(const RenderGraphPass& pass) {
 	if (m_compiled) {
-		throw std::runtime_error("Cannot add passes after compilation");
+		throw BMSX_RUNTIME_ERROR("Cannot add passes after compilation");
 	}
 	m_passes.push_back(pass);
 }
@@ -143,7 +143,7 @@ void RenderGraphRuntime::compile(FrameData* frame) {
 		}
 	}
 	if (presentCount != 1) {
-		throw std::runtime_error("RenderGraph validation failed: expected exactly 1 present/exported texture");
+		throw BMSX_RUNTIME_ERROR("RenderGraph validation failed: expected exactly 1 present/exported texture");
 	}
 	if (kRenderGraphVerboseLog) {
 		std::fprintf(stderr, "[BMSX][RG] compile passes=%zu presentHandle=%d\n",
@@ -235,7 +235,7 @@ void RenderGraphRuntime::compile(FrameData* frame) {
 	i32 reachableCount = 0;
 	for (bool r : m_reachable) if (r) reachableCount++;
 	if (static_cast<i32>(m_passOrder.size()) != reachableCount) {
-		throw std::runtime_error("RenderGraph cycle detected");
+		throw BMSX_RUNTIME_ERROR("RenderGraph cycle detected");
 	}
 
 	m_compiled = true;
@@ -254,7 +254,7 @@ void RenderGraphRuntime::execute(FrameData* frame) {
 
 	if (backendType == BackendType::OpenGLES2) {
 #if !BMSX_ENABLE_GLES2
-		throw std::runtime_error("[RenderGraph] OpenGLES2 backend disabled at compile time.");
+		throw BMSX_RUNTIME_ERROR("[RenderGraph] OpenGLES2 backend disabled at compile time.");
 #else
 		for (i32 oi = 0; oi < total; ++oi) {
 			const i32 passIndex = hasOrder ? m_passOrder[oi] : oi;
@@ -410,7 +410,7 @@ void RenderGraphRuntime::execute(FrameData* frame) {
 		return;
 	}
 
-	throw std::runtime_error("[RenderGraph] Backend type not supported.");
+	throw BMSX_RUNTIME_ERROR("[RenderGraph] Backend type not supported.");
 }
 
 void RenderGraphRuntime::invalidate() {
@@ -502,7 +502,7 @@ void RenderGraphRuntime::realizeAll() {
 
 	if (backendType == BackendType::OpenGLES2) {
 #if !BMSX_ENABLE_GLES2
-		throw std::runtime_error("[RenderGraph] OpenGLES2 backend disabled at compile time.");
+		throw BMSX_RUNTIME_ERROR("[RenderGraph] OpenGLES2 backend disabled at compile time.");
 #else
 		auto* gles = static_cast<OpenGLES2Backend*>(m_backend);
 
@@ -568,7 +568,7 @@ void RenderGraphRuntime::realizeAll() {
 		return;
 	}
 
-	throw std::runtime_error("[RenderGraph] Backend type not supported.");
+	throw BMSX_RUNTIME_ERROR("[RenderGraph] Backend type not supported.");
 }
 
 void RenderGraphRuntime::destroyResources() {
@@ -599,7 +599,7 @@ void RenderGraphRuntime::destroyResources() {
 		m_realized = false;
 		return;
 #else
-		throw std::runtime_error("[RenderGraph] OpenGLES2 backend disabled at compile time.");
+		throw BMSX_RUNTIME_ERROR("[RenderGraph] OpenGLES2 backend disabled at compile time.");
 #endif
 	}
 
@@ -627,7 +627,7 @@ void* RenderGraphRuntime::ensureFBO(RenderGraphTexHandle color, RenderGraphTexHa
 	const BackendType backendType = m_backend->type();
 	if (backendType == BackendType::OpenGLES2) {
 #if !BMSX_ENABLE_GLES2
-		throw std::runtime_error("[RenderGraph] OpenGLES2 backend disabled at compile time.");
+		throw BMSX_RUNTIME_ERROR("[RenderGraph] OpenGLES2 backend disabled at compile time.");
 #else
 		auto& colorRes = m_texResources[color];
 		auto it = colorRes.fboWithDepth.find(depth);
@@ -660,7 +660,7 @@ void* RenderGraphRuntime::ensureFBO(RenderGraphTexHandle color, RenderGraphTexHa
 		return m_texResources[color].fboColorOnly;
 	}
 
-	throw std::runtime_error("[RenderGraph] Backend type not supported.");
+	throw BMSX_RUNTIME_ERROR("[RenderGraph] Backend type not supported.");
 }
 
 } // namespace bmsx

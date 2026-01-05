@@ -104,7 +104,7 @@ void renderGlyphs(GameView* view,
 				  const std::optional<Color>& backgroundColor,
 				  const std::optional<RenderLayer>& layer) {
 	if (!font) {
-		throw std::runtime_error("No font or default font available for renderGlyphs");
+		throw BMSX_RUNTIME_ERROR("No font or default font available for renderGlyphs");
 	}
 	const f32 startX = x;
 	f32 stepY = 0.0f;

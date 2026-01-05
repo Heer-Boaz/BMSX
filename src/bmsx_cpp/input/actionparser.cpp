@@ -152,7 +152,7 @@ Token Tokenizer::scanToken() {
 		return {TokenType::Ident, std::string(m_input.substr(start, m_pos - start))};
 	}
 	
-	throw std::runtime_error("[Action Parser] Unexpected character: " + std::string(1, c));
+	throw BMSX_RUNTIME_ERROR("[Action Parser] Unexpected character: " + std::string(1, c));
 }
 
 Token Tokenizer::next() {
@@ -188,7 +188,7 @@ std::unique_ptr<AstNode> InputActionParser::parse(const std::string& def) {
 	// Verify end of input
 	Token end = parser.current();
 	if (end.kind != TokenType::End) {
-		throw std::runtime_error("[Action Parser] Unexpected token at end: " + end.value);
+		throw BMSX_RUNTIME_ERROR("[Action Parser] Unexpected token at end: " + end.value);
 	}
 	
 	return ast;
@@ -205,12 +205,12 @@ Token InputActionParser::eat() {
 Token InputActionParser::take(TokenType expected, const std::string& expectedValue) {
 	Token t = eat();
 	if (t.kind != expected) {
-		throw std::runtime_error("[Action Parser] Expected token type " + 
+		throw BMSX_RUNTIME_ERROR("[Action Parser] Expected token type " + 
 								 std::to_string(static_cast<int>(expected)) +
 								 " but got " + std::to_string(static_cast<int>(t.kind)));
 	}
 	if (!expectedValue.empty() && t.value != expectedValue) {
-		throw std::runtime_error("[Action Parser] Expected '" + expectedValue + 
+		throw BMSX_RUNTIME_ERROR("[Action Parser] Expected '" + expectedValue + 
 								 "' but got '" + t.value + "'");
 	}
 	return t;
@@ -307,7 +307,7 @@ std::unique_ptr<AstNode> InputActionParser::factor() {
 		return action();
 	}
 	
-	throw std::runtime_error("[Action Parser] Unexpected token: " + t.value);
+	throw BMSX_RUNTIME_ERROR("[Action Parser] Unexpected token: " + t.value);
 }
 
 // func -> FUNC '(' args ')'
@@ -580,7 +580,7 @@ ModFn makeModPred(const std::string& tok) {
 				return false;
 			};
 		} else {
-			throw std::runtime_error("[Action Parser] Unknown modifier '" + raw + "'");
+			throw BMSX_RUNTIME_ERROR("[Action Parser] Unknown modifier '" + raw + "'");
 		}
 	}
 	
@@ -853,7 +853,7 @@ EvalFn compileFunction(const std::string& fname,
 		};
 	}
 	
-	throw std::runtime_error("[Action Parser] Unknown function helper '" + fname + "'");
+	throw BMSX_RUNTIME_ERROR("[Action Parser] Unknown function helper '" + fname + "'");
 }
 
 /* ============================================================================

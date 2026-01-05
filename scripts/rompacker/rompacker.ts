@@ -29,7 +29,7 @@ const glyph = {
 const labelWidth = 14;
 type ParsedOptions = RomPackerOptions & { bootloaderFallbackPath?: string; engineOnly?: boolean };
 
-const LIBRETRO_CORE_BASENAME = 'bmsx_libretro';
+const LIBRETRO_CORE_BASENAME = 'km_bmsx_libretro';
 const LIBRETRO_ENTRY_PATH = join(process.cwd(), 'src', 'bmsx_cpp', 'platform', 'libretro', 'libretro_entry.cpp');
 
 const KNOWN_FLAGS = new Set<string>([
@@ -305,26 +305,7 @@ function parseOptions(args: string[]): ParsedOptions {
 	const usePkgTsconfig = seenFlags.has('--usepkgtsconfig');
 	const platformRaw = getParamOrEnv(args, '--platform', 'ROM_PLATFORM', 'browser');
 	const platformKey = platformRaw.toLowerCase();
-	let platform: RomPackerTarget;
-	switch (platformKey) {
-		case 'browser':
-			platform = 'browser';
-			break;
-		case 'cli':
-			platform = 'cli';
-			break;
-		case 'headless':
-			platform = 'headless';
-			break;
-		case 'libretro':
-			platform = 'libretro';
-			break;
-		case 'libretro-win':
-			platform = 'libretro-win';
-			break;
-		default:
-			throw new Error(`Unsupported platform target "${platformRaw}". Expected one of: browser, cli, headless, libretro, libretro-win.`);
-	}
+	let platform: RomPackerTarget = platformKey as RomPackerTarget;
 
 	const modeRaw = getParamOrEnv(args, '--mode', 'ROM_MODE', 'bundle');
 	const modeStr = modeRaw.toLowerCase();
@@ -823,7 +804,7 @@ async function main() {
 
 		const args = process.argv.slice(2);
 		let { title, rom_name, bootloader_path, respath, force, debug, buildreslist, deploy, useTextureAtlas, enginedts, usePkgTsconfig, skipTypecheck, platform, canonicalization, mode, shouldBundleCartCode, extraLuaRoots, bootloaderFallbackPath, engineOnly } = parseOptions(args);
-		if (platform === 'libretro' || platform === 'libretro-win') {
+		if (platform.startsWith('libretro')) {
 			if (!engineOnly) {
 				throw new Error('Libretro platform requires --engine (no rom name required).');
 			}

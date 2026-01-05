@@ -30,7 +30,7 @@ static CanonicalizationType parseCanonicalization(const std::string& value) {
 	if (value == "none") return CanonicalizationType::None;
 	if (value == "upper") return CanonicalizationType::Upper;
 	if (value == "lower") return CanonicalizationType::Lower;
-	throw std::runtime_error("Unknown canonicalization value: " + value);
+	throw BMSX_RUNTIME_ERROR("Unknown canonicalization value: " + value);
 }
 
 /* ============================================================================
@@ -96,7 +96,7 @@ void RuntimeAssets::clear() {
 
 RomMeta parseRomMeta(const u8* buffer, size_t size) {
 	if (size < 16) {
-		throw std::runtime_error("ROM file too small for footer");
+		throw BMSX_RUNTIME_ERROR("ROM file too small for footer");
 	}
 
 	// Footer is last 16 bytes: 8 bytes offset + 8 bytes length (little endian)
@@ -114,7 +114,7 @@ RomMeta parseRomMeta(const u8* buffer, size_t size) {
 	}
 
 	if (metaOffset + metaLength > size) {
-		throw std::runtime_error("Invalid ROM metadata footer");
+		throw BMSX_RUNTIME_ERROR("Invalid ROM metadata footer");
 	}
 
 	return RomMeta{
@@ -171,10 +171,10 @@ struct WavInfo {
 
 static WavInfo parseWav(const u8* data, size_t size) {
 	if (size < 12) {
-		throw std::runtime_error("WAV data too small");
+		throw BMSX_RUNTIME_ERROR("WAV data too small");
 	}
 	if (std::memcmp(data, "RIFF", 4) != 0 || std::memcmp(data + 8, "WAVE", 4) != 0) {
-		throw std::runtime_error("Invalid WAV header");
+		throw BMSX_RUNTIME_ERROR("Invalid WAV header");
 	}
 
 	size_t pos = 12;
@@ -189,12 +189,12 @@ static WavInfo parseWav(const u8* data, size_t size) {
 		pos += 8;
 		size_t chunkEnd = pos + chunkSize;
 		if (chunkEnd > size) {
-			throw std::runtime_error("Invalid WAV chunk size");
+			throw BMSX_RUNTIME_ERROR("Invalid WAV chunk size");
 		}
 
 		if (std::memcmp(chunkId, "fmt ", 4) == 0) {
 			if (chunkSize < 16) {
-				throw std::runtime_error("Invalid WAV fmt chunk size");
+				throw BMSX_RUNTIME_ERROR("Invalid WAV fmt chunk size");
 			}
 			audioFormat = readLE16(data + pos);
 			info.channels = static_cast<i32>(readLE16(data + pos + 2));
@@ -214,16 +214,16 @@ static WavInfo parseWav(const u8* data, size_t size) {
 	}
 
 	if (!hasFmt || !hasData) {
-		throw std::runtime_error("WAV file missing fmt or data chunk");
+		throw BMSX_RUNTIME_ERROR("WAV file missing fmt or data chunk");
 	}
 	if (audioFormat != 1) {
-		throw std::runtime_error("Unsupported WAV encoding (expected PCM)");
+		throw BMSX_RUNTIME_ERROR("Unsupported WAV encoding (expected PCM)");
 	}
 	if (info.bitsPerSample != 16 && info.bitsPerSample != 8) {
-		throw std::runtime_error("Unsupported WAV bit depth");
+		throw BMSX_RUNTIME_ERROR("Unsupported WAV bit depth");
 	}
 	if (info.channels <= 0 || info.sampleRate <= 0) {
-		throw std::runtime_error("Invalid WAV channels or sample rate");
+		throw BMSX_RUNTIME_ERROR("Invalid WAV channels or sample rate");
 	}
 
 	return info;
@@ -246,7 +246,7 @@ static std::vector<u8> zlibDecompress(const u8* data, size_t size) {
 			output.resize(output.size() * 2);
 			outputLen = output.size();
 		} else {
-			throw std::runtime_error("zlib decompression failed");
+			throw BMSX_RUNTIME_ERROR("zlib decompression failed");
 		}
 	}
 }
@@ -290,7 +290,7 @@ bool loadAssetsFromRom(const u8* buffer, size_t size, RuntimeAssets& assets) {
 		romSize = decompressed.size();
 
 		if (!hasRomMetaFooter(romData, romSize)) {
-			throw std::runtime_error("Invalid ROM payload after decompression");
+			throw BMSX_RUNTIME_ERROR("Invalid ROM payload after decompression");
 		}
 	}
 
@@ -301,7 +301,7 @@ bool loadAssetsFromRom(const u8* buffer, size_t size, RuntimeAssets& assets) {
 
 	BinValue assetListPayload = decodeBinary(metaData, metaSize);
 	if (!assetListPayload.isObject()) {
-		throw std::runtime_error("ROM asset list is not an object");
+		throw BMSX_RUNTIME_ERROR("ROM asset list is not an object");
 	}
 
 	const auto& payload = assetListPayload.asObject();
@@ -433,7 +433,7 @@ bool loadAssetsFromRom(const u8* buffer, size_t size, RuntimeAssets& assets) {
 
 			// Load audio metadata
 			if (metaBufStart < 0 || metaBufEnd <= metaBufStart) {
-				throw std::runtime_error("Audio asset missing metadata: " + assetId);
+				throw BMSX_RUNTIME_ERROR("Audio asset missing metadata: " + assetId);
 			}
 			BinValue metaVal = decodeBinary(romData + metaBufStart, metaBufEnd - metaBufStart);
 			const auto& audioMeta = metaVal.asObject();
@@ -447,7 +447,7 @@ bool loadAssetsFromRom(const u8* buffer, size_t size, RuntimeAssets& assets) {
 			}
 
 			if (bufStart < 0 || bufEnd <= bufStart) {
-				throw std::runtime_error("Audio asset missing payload: " + assetId);
+				throw BMSX_RUNTIME_ERROR("Audio asset missing payload: " + assetId);
 			}
 
 			const u8* audioData = romData + bufStart;
@@ -471,7 +471,7 @@ bool loadAssetsFromRom(const u8* buffer, size_t size, RuntimeAssets& assets) {
 		}
 		else if (assetType == "aem") {
 			if (bufStart < 0 || bufEnd <= bufStart) {
-				throw std::runtime_error("Audio event asset missing payload: " + assetId);
+				throw BMSX_RUNTIME_ERROR("Audio event asset missing payload: " + assetId);
 			}
 			BinValue audioEvents = decodeBinary(romData + bufStart, bufEnd - bufStart);
 			assets.audioevents[assetId] = std::move(audioEvents);

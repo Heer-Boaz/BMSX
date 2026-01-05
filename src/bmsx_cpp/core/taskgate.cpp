@@ -1,4 +1,5 @@
 #include "taskgate.h"
+#include "types.h"
 
 #include <stdexcept>
 
@@ -46,7 +47,7 @@ std::unordered_map<std::string, GateSnapshot> TaskGate::snapshotAll() const {
 
 uint64_t GateGroup::bump() {
   if (!gate_) {
-    throw std::runtime_error("GateGroup.bump() called on null gate");
+    throw BMSX_RUNTIME_ERROR("GateGroup.bump() called on null gate");
   }
   auto& bucket = gate_->bucket(name_);
   std::lock_guard<std::mutex> lock(bucket.mutex);
@@ -59,7 +60,7 @@ uint64_t GateGroup::bump() {
 
 GateToken GateGroup::begin(const GateScope& scope) {
   if (!gate_) {
-    throw std::runtime_error("GateGroup.begin() called on null gate");
+    throw BMSX_RUNTIME_ERROR("GateGroup.begin() called on null gate");
   }
   auto& bucket = gate_->bucket(name_);
   std::lock_guard<std::mutex> lock(bucket.mutex);
@@ -81,13 +82,13 @@ GateToken GateGroup::begin(const GateScope& scope) {
 
 void GateGroup::end(GateToken& token) {
   if (!gate_) {
-    throw std::runtime_error("GateGroup.end() called on null gate");
+    throw BMSX_RUNTIME_ERROR("GateGroup.end() called on null gate");
   }
   if (!token.active) {
     return;
   }
   if (token.group != name_) {
-    throw std::runtime_error("GateGroup.end() called with foreign token");
+    throw BMSX_RUNTIME_ERROR("GateGroup.end() called with foreign token");
   }
   auto& bucket = gate_->bucket(name_);
   std::lock_guard<std::mutex> lock(bucket.mutex);
@@ -97,7 +98,7 @@ void GateGroup::end(GateToken& token) {
   }
   auto it = bucket.live.find(token.id);
   if (it == bucket.live.end()) {
-    throw std::runtime_error("GateGroup.end() called on unknown token");
+    throw BMSX_RUNTIME_ERROR("GateGroup.end() called on unknown token");
   }
   const GateToken& live = it->second;
   auto catIt = bucket.countsByCat.find(live.category);
@@ -110,7 +111,7 @@ void GateGroup::end(GateToken& token) {
   }
   if (live.blocking) {
     if (bucket.blockingPending == 0) {
-      throw std::runtime_error("GateGroup.end() blockingPending underflow");
+      throw BMSX_RUNTIME_ERROR("GateGroup.end() blockingPending underflow");
     }
     bucket.blockingPending--;
   }
@@ -132,7 +133,7 @@ GateToken GateGroup::ensure(GateToken& token, bool active,
 
 void GateGroup::endCategory(const std::string& category) {
   if (!gate_) {
-    throw std::runtime_error("GateGroup.endCategory() called on null gate");
+    throw BMSX_RUNTIME_ERROR("GateGroup.endCategory() called on null gate");
   }
   auto& bucket = gate_->bucket(name_);
   std::lock_guard<std::mutex> lock(bucket.mutex);
@@ -149,7 +150,7 @@ void GateGroup::endCategory(const std::string& category) {
       }
       if (live.blocking) {
         if (bucket.blockingPending == 0) {
-          throw std::runtime_error(
+          throw BMSX_RUNTIME_ERROR(
               "GateGroup.endCategory() blockingPending underflow");
         }
         bucket.blockingPending--;
@@ -163,7 +164,7 @@ void GateGroup::endCategory(const std::string& category) {
 
 void GateGroup::endAll() {
   if (!gate_) {
-    throw std::runtime_error("GateGroup.endAll() called on null gate");
+    throw BMSX_RUNTIME_ERROR("GateGroup.endAll() called on null gate");
   }
   auto& bucket = gate_->bucket(name_);
   std::lock_guard<std::mutex> lock(bucket.mutex);

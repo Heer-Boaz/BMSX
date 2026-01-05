@@ -94,14 +94,14 @@ static AudioPlaybackMode parsePlaybackMode(const std::string& value) {
 	if (value == "queue") return AudioPlaybackMode::Queue;
 	if (value == "stop") return AudioPlaybackMode::Stop;
 	if (value == "pause") return AudioPlaybackMode::Pause;
-	throw std::runtime_error("Unknown audio policy '" + value + "'");
+	throw BMSX_RUNTIME_ERROR("Unknown audio policy '" + value + "'");
 }
 
 static AudioType parseAudioChannel(const std::string& value) {
 	if (value == "sfx") return AudioType::Sfx;
 	if (value == "music") return AudioType::Music;
 	if (value == "ui") return AudioType::Ui;
-	throw std::runtime_error("Unknown audio channel '" + value + "'");
+	throw BMSX_RUNTIME_ERROR("Unknown audio channel '" + value + "'");
 }
 
 static bool hasModulationFields(const Table& table) {
@@ -135,24 +135,24 @@ static ModulationInput parseModulationInputTable(const Table& table) {
 			out = static_cast<f32>(valueToNumber(v));
 			return;
 		}
-		throw std::runtime_error("Modulation param '" + field + "' is not a number");
+		throw BMSX_RUNTIME_ERROR("Modulation param '" + field + "' is not a number");
 	};
 
 	auto getRange = [&](const std::string& field, std::optional<ModulationRange>& out) {
 		Value v = table.get(key(field));
 		if (isNil(v)) return;
 		if (!valueIsTable(v)) {
-			throw std::runtime_error("Modulation range '" + field + "' is not an array");
+			throw BMSX_RUNTIME_ERROR("Modulation range '" + field + "' is not an array");
 		}
 		const Table& arr = *asTable(v);
 		const int len = arr.length();
 		if (len < 2) {
-			throw std::runtime_error("Modulation range '" + field + "' is missing bounds");
+			throw BMSX_RUNTIME_ERROR("Modulation range '" + field + "' is missing bounds");
 		}
 		const Value v0 = arr.get(valueNumber(1.0));
 		const Value v1 = arr.get(valueNumber(2.0));
 		if (!valueIsNumber(v0) || !valueIsNumber(v1)) {
-			throw std::runtime_error("Modulation range '" + field + "' bounds are not numbers");
+			throw BMSX_RUNTIME_ERROR("Modulation range '" + field + "' bounds are not numbers");
 		}
 		out = ModulationRange{static_cast<f32>(valueToNumber(v0)), static_cast<f32>(valueToNumber(v1))};
 	};
@@ -170,7 +170,7 @@ static ModulationInput parseModulationInputTable(const Table& table) {
 	Value filterVal = table.get(key("filter"));
 	if (!isNil(filterVal)) {
 		if (!valueIsTable(filterVal)) {
-			throw std::runtime_error("Modulation filter must be a table");
+			throw BMSX_RUNTIME_ERROR("Modulation filter must be a table");
 		}
 		const Table& ftable = *asTable(filterVal);
 		FilterModulationParams filter;
@@ -202,7 +202,7 @@ static ParsedAudioOptions parseAudioOptions(const Value& value) {
 		return out;
 	}
 	if (!valueIsTable(value)) {
-		throw std::runtime_error("audio options must be a table");
+		throw BMSX_RUNTIME_ERROR("audio options must be a table");
 	}
 	const Table& table = *asTable(value);
 	auto key = [](std::string_view name) {
@@ -215,7 +215,7 @@ static ParsedAudioOptions parseAudioOptions(const Value& value) {
 	Value channelVal = table.get(key("channel"));
 	if (!isNil(channelVal)) {
 		if (!valueIsString(channelVal)) {
-			throw std::runtime_error("audio channel must be a string");
+			throw BMSX_RUNTIME_ERROR("audio channel must be a string");
 		}
 		out.channel = parseAudioChannel(vmString(channelVal));
 	}
@@ -223,7 +223,7 @@ static ParsedAudioOptions parseAudioOptions(const Value& value) {
 	Value policyVal = table.get(key("policy"));
 	if (!isNil(policyVal)) {
 		if (!valueIsString(policyVal)) {
-			throw std::runtime_error("audio policy must be a string");
+			throw BMSX_RUNTIME_ERROR("audio policy must be a string");
 		}
 		out.policy = parsePlaybackMode(vmString(policyVal));
 	}
@@ -231,7 +231,7 @@ static ParsedAudioOptions parseAudioOptions(const Value& value) {
 	Value maxVal = table.get(key("max_voices"));
 	if (!isNil(maxVal)) {
 		if (!valueIsNumber(maxVal)) {
-			throw std::runtime_error("max_voices must be a number");
+			throw BMSX_RUNTIME_ERROR("max_voices must be a number");
 		}
 		out.maxVoices = static_cast<int>(std::floor(valueToNumber(maxVal)));
 	}
@@ -239,7 +239,7 @@ static ParsedAudioOptions parseAudioOptions(const Value& value) {
 	Value priorityVal = table.get(key("priority"));
 	if (!isNil(priorityVal)) {
 		if (!valueIsNumber(priorityVal)) {
-			throw std::runtime_error("priority must be a number");
+			throw BMSX_RUNTIME_ERROR("priority must be a number");
 		}
 		out.request.priority = static_cast<i32>(std::floor(valueToNumber(priorityVal)));
 	}
@@ -250,12 +250,12 @@ static ParsedAudioOptions parseAudioOptions(const Value& value) {
 
 	if (!isNil(modulationParamsVal)) {
 		if (!valueIsTable(modulationParamsVal)) {
-			throw std::runtime_error("modulation_params must be a table");
+			throw BMSX_RUNTIME_ERROR("modulation_params must be a table");
 		}
 		out.request.params = parseModulationInputTable(*asTable(modulationParamsVal));
 	} else if (!isNil(paramsVal)) {
 		if (!valueIsTable(paramsVal)) {
-			throw std::runtime_error("params must be a table");
+			throw BMSX_RUNTIME_ERROR("params must be a table");
 		}
 		out.request.params = parseModulationInputTable(*asTable(paramsVal));
 	} else if (hasModulationFields(table)) {
@@ -264,7 +264,7 @@ static ParsedAudioOptions parseAudioOptions(const Value& value) {
 
 	if (!out.request.params.has_value() && !isNil(modulationPresetVal)) {
 		if (!valueIsString(modulationPresetVal)) {
-			throw std::runtime_error("modulation_preset must be a string");
+			throw BMSX_RUNTIME_ERROR("modulation_preset must be a string");
 		}
 		out.request.modulationPreset = vmString(modulationPresetVal);
 	}
@@ -293,13 +293,13 @@ static MusicTransitionSync parseMusicSyncValue(const Value& value) {
 		return sync;
 	}
 	if (!valueIsTable(value)) {
-		throw std::runtime_error("music sync must be a string or table");
+		throw BMSX_RUNTIME_ERROR("music sync must be a string or table");
 	}
 	const Table& table = *asTable(value);
 	Value delayVal = table.get(key("delay_ms"));
 	if (!isNil(delayVal)) {
 		if (!valueIsNumber(delayVal)) {
-			throw std::runtime_error("sync.delay_ms must be a number");
+			throw BMSX_RUNTIME_ERROR("sync.delay_ms must be a number");
 		}
 		sync.kind = MusicTransitionSync::Kind::Delay;
 		sync.delayMs = static_cast<i32>(std::floor(valueToNumber(delayVal)));
@@ -308,21 +308,21 @@ static MusicTransitionSync parseMusicSyncValue(const Value& value) {
 	Value stingerVal = table.get(key("stinger"));
 	if (!isNil(stingerVal)) {
 		if (!valueIsString(stingerVal)) {
-			throw std::runtime_error("sync.stinger must be a string");
+			throw BMSX_RUNTIME_ERROR("sync.stinger must be a string");
 		}
 		sync.kind = MusicTransitionSync::Kind::Stinger;
 		sync.stinger = vmString(stingerVal);
 		Value returnVal = table.get(key("return_to"));
 		if (!isNil(returnVal)) {
 			if (!valueIsString(returnVal)) {
-				throw std::runtime_error("sync.return_to must be a string");
+				throw BMSX_RUNTIME_ERROR("sync.return_to must be a string");
 			}
 			sync.returnTo = vmString(returnVal);
 		}
 		Value prevVal = table.get(key("return_to_previous"));
 		if (!isNil(prevVal)) {
 			if (!valueIsBool(prevVal)) {
-				throw std::runtime_error("sync.return_to_previous must be a boolean");
+				throw BMSX_RUNTIME_ERROR("sync.return_to_previous must be a boolean");
 			}
 			sync.returnToPrevious = valueToBool(prevVal);
 		}
@@ -335,7 +335,7 @@ static std::optional<MusicTransitionRequest> parseMusicTransition(const Value& v
 		return std::nullopt;
 	}
 	if (!valueIsTable(value)) {
-		throw std::runtime_error("music options must be a table");
+		throw BMSX_RUNTIME_ERROR("music options must be a table");
 	}
 	const Table& table = *asTable(value);
 	auto key = [](std::string_view name) {
@@ -360,11 +360,11 @@ static std::optional<MusicTransitionRequest> parseMusicTransition(const Value& v
 		request.to = id;
 	} else if (!isNil(audioIdVal)) {
 		if (!valueIsString(audioIdVal)) {
-			throw std::runtime_error("music_transition.audio_id must be a string");
+			throw BMSX_RUNTIME_ERROR("music_transition.audio_id must be a string");
 		}
 		request.to = vmString(audioIdVal);
 	} else {
-		throw std::runtime_error("music_transition.audio_id is required");
+		throw BMSX_RUNTIME_ERROR("music_transition.audio_id is required");
 	}
 
 	if (!isNil(syncVal)) {
@@ -372,19 +372,19 @@ static std::optional<MusicTransitionRequest> parseMusicTransition(const Value& v
 	}
 	if (!isNil(fadeVal)) {
 		if (!valueIsNumber(fadeVal)) {
-			throw std::runtime_error("music_transition.fade_ms must be a number");
+			throw BMSX_RUNTIME_ERROR("music_transition.fade_ms must be a number");
 		}
 		request.fadeMs = static_cast<i32>(std::floor(valueToNumber(fadeVal)));
 	}
 	if (!isNil(loopVal)) {
 		if (!valueIsBool(loopVal)) {
-			throw std::runtime_error("music_transition.start_at_loop_start must be a boolean");
+			throw BMSX_RUNTIME_ERROR("music_transition.start_at_loop_start must be a boolean");
 		}
 		request.startAtLoopStart = valueToBool(loopVal);
 	}
 	if (!isNil(freshVal)) {
 		if (!valueIsBool(freshVal)) {
-			throw std::runtime_error("music_transition.start_fresh must be a boolean");
+			throw BMSX_RUNTIME_ERROR("music_transition.start_fresh must be a boolean");
 		}
 		request.startFresh = valueToBool(freshVal);
 	}
@@ -396,7 +396,7 @@ static void playWithPolicy(AudioType type, const AssetId& id, const ParsedAudioO
 	const RuntimeAssets& assets = EngineCore::instance().assets();
 	const AudioAsset* asset = assets.getAudio(id);
 	if (!asset) {
-		throw std::runtime_error("Audio asset '" + id + "' not found.");
+		throw BMSX_RUNTIME_ERROR("Audio asset '" + id + "' not found.");
 	}
 	SoundMasterPlayRequest request = options.request;
 	const i32 priority = request.priority.has_value() ? request.priority.value() : asset->meta.priority;
@@ -405,7 +405,7 @@ static void playWithPolicy(AudioType type, const AssetId& id, const ParsedAudioO
 	const AudioPlaybackMode policy = options.policy.value_or(AudioPlaybackMode::Replace);
 	const int maxVoices = options.maxVoices.value_or(1);
 	if (maxVoices < 1) {
-		throw std::runtime_error("max_voices must be at least 1");
+		throw BMSX_RUNTIME_ERROR("max_voices must be at least 1");
 	}
 
 	if (policy == AudioPlaybackMode::Stop) {
@@ -422,7 +422,7 @@ static void playWithPolicy(AudioType type, const AssetId& id, const ParsedAudioO
 		if (policy == AudioPlaybackMode::Replace) {
 			const std::vector<ActiveVoiceInfo> infos = soundMaster->getActiveVoiceInfosByType(type);
 			if (infos.empty()) {
-				throw std::runtime_error("No active voices returned for audio channel");
+				throw BMSX_RUNTIME_ERROR("No active voices returned for audio channel");
 			}
 			size_t minIdx = 0;
 			i32 minPr = infos[0].priority;
@@ -771,7 +771,7 @@ m_runtime.registerNativeFunction("sfx", [this, asText](const std::vector<Value>&
 	ParsedAudioOptions options = parseAudioOptions(optionsValue);
 	AudioType channel = options.channel.value_or(AudioType::Sfx);
 	if (channel == AudioType::Music) {
-		throw std::runtime_error("sfx does not support music channel");
+		throw BMSX_RUNTIME_ERROR("sfx does not support music channel");
 	}
 	playWithPolicy(channel, id, options);
 	(void)out;
@@ -802,7 +802,7 @@ m_runtime.registerNativeFunction("music", [this, asText](const std::vector<Value
 	}
 	ParsedAudioOptions options = parseAudioOptions(optionsValue);
 	if (options.channel.has_value() && options.channel.value() != AudioType::Music) {
-		throw std::runtime_error("music does not support non-music channel");
+		throw BMSX_RUNTIME_ERROR("music does not support non-music channel");
 	}
 	playWithPolicy(AudioType::Music, id, options);
 	(void)out;
@@ -848,7 +848,7 @@ int VMApi::display_height() const {
 }
 
 double VMApi::stat(int /*index*/) const {
-	throw std::runtime_error("stat is not implemented.");
+	throw BMSX_RUNTIME_ERROR("stat is not implemented.");
 }
 
 void VMApi::cls(int colorIndex) {
@@ -1106,7 +1106,7 @@ Color VMApi::resolve_color(const Value& value) {
 		return palette_color(static_cast<int>(std::floor(asNumber(value))));
 	}
 	if (!valueIsTable(value)) {
-		throw std::runtime_error("Color expects a number or table.");
+		throw BMSX_RUNTIME_ERROR("Color expects a number or table.");
 	}
 	auto* tbl = asTable(value);
 	Color color;
@@ -1154,7 +1154,7 @@ std::vector<f32> VMApi::read_polygon(const Value& value) {
 		}
 		return points;
 	}
-	throw std::runtime_error("put_poly expects a table or native object.");
+	throw BMSX_RUNTIME_ERROR("put_poly expects a table or native object.");
 }
 
 Vec3 VMApi::read_vec3(const Value& value) {
@@ -1174,7 +1174,7 @@ Vec3 VMApi::read_vec3(const Value& value) {
 		out.z = static_cast<f32>(asNumber(obj->get(valueNumber(3.0))));
 		return out;
 	}
-	throw std::runtime_error("put_particle expects a table or native object.");
+	throw BMSX_RUNTIME_ERROR("put_particle expects a table or native object.");
 }
 
 std::array<f32, 16> VMApi::read_matrix(const Value& value) {
@@ -1193,7 +1193,7 @@ std::array<f32, 16> VMApi::read_matrix(const Value& value) {
 		}
 		return matrix;
 	}
-	throw std::runtime_error("put_mesh expects a matrix table.");
+	throw BMSX_RUNTIME_ERROR("put_mesh expects a matrix table.");
 }
 
 } // namespace bmsx

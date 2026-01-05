@@ -56,7 +56,7 @@ BinDecoder::BinDecoder(const u8* data, size_t size)
 }
 
 u8 BinDecoder::readU8() {
-	if (m_pos >= m_size) throw std::runtime_error("BinDecoder: unexpected end of data");
+	if (m_pos >= m_size) throw BMSX_RUNTIME_ERROR("BinDecoder: unexpected end of data");
 	return m_data[m_pos++];
 }
 
@@ -68,7 +68,7 @@ u32 BinDecoder::readVarUint() {
 		result |= (b & 0x7F) << shift;
 		if ((b & 0x80) == 0) break;
 		shift += 7;
-		if (shift > 28) throw std::runtime_error("BinDecoder: varuint too large");
+		if (shift > 28) throw BMSX_RUNTIME_ERROR("BinDecoder: varuint too large");
 	}
 	return result;
 }
@@ -81,14 +81,14 @@ i64 BinDecoder::readVarInt() {
 		raw |= static_cast<u64>(b & 0x7F) << shift;
 		if ((b & 0x80) == 0) break;
 		shift += 7;
-		if (shift > 63) throw std::runtime_error("BinDecoder: varint too large");
+		if (shift > 63) throw BMSX_RUNTIME_ERROR("BinDecoder: varint too large");
 	}
 	// ZigZag decode: (raw >> 1) ^ -(raw & 1)
 	return static_cast<i64>((raw >> 1) ^ (~(raw & 1) + 1));
 }
 
 f32 BinDecoder::readF32() {
-	if (m_pos + 4 > m_size) throw std::runtime_error("BinDecoder: not enough data for f32");
+	if (m_pos + 4 > m_size) throw BMSX_RUNTIME_ERROR("BinDecoder: not enough data for f32");
 	f32 result;
 	std::memcpy(&result, m_data + m_pos, sizeof(f32));
 	m_pos += sizeof(f32);
@@ -96,7 +96,7 @@ f32 BinDecoder::readF32() {
 }
 
 f64 BinDecoder::readF64() {
-	if (m_pos + 8 > m_size) throw std::runtime_error("BinDecoder: not enough data for f64");
+	if (m_pos + 8 > m_size) throw BMSX_RUNTIME_ERROR("BinDecoder: not enough data for f64");
 	f64 result;
 	std::memcpy(&result, m_data + m_pos, sizeof(f64));
 	m_pos += sizeof(f64);
@@ -105,7 +105,7 @@ f64 BinDecoder::readF64() {
 
 std::string BinDecoder::readString() {
 	u32 len = readVarUint();
-	if (m_pos + len > m_size) throw std::runtime_error("BinDecoder: not enough data for string");
+	if (m_pos + len > m_size) throw BMSX_RUNTIME_ERROR("BinDecoder: not enough data for string");
 	std::string result(reinterpret_cast<const char*>(m_data + m_pos), len);
 	m_pos += len;
 	return result;
@@ -163,7 +163,7 @@ BinValue BinDecoder::readValue() {
 			for (u32 i = 0; i < propCount; ++i) {
 				u32 propId = readVarUint();
 				if (propId >= m_propNames.size()) {
-					throw std::runtime_error("BinDecoder: invalid property ID");
+					throw BMSX_RUNTIME_ERROR("BinDecoder: invalid property ID");
 				}
 				const std::string& key = m_propNames[propId];
 				obj[key] = readValue();
@@ -181,14 +181,14 @@ BinValue BinDecoder::readValue() {
 
 		case BinTag::Bin: {
 			u32 len = readVarUint();
-			if (m_pos + len > m_size) throw std::runtime_error("BinDecoder: not enough data for binary");
+			if (m_pos + len > m_size) throw BMSX_RUNTIME_ERROR("BinDecoder: not enough data for binary");
 			BinBinary bin(m_data + m_pos, m_data + m_pos + len);
 			m_pos += len;
 			return BinValue(std::move(bin));
 		}
 
 		default:
-			throw std::runtime_error("BinDecoder: unknown tag");
+			throw BMSX_RUNTIME_ERROR("BinDecoder: unknown tag");
 	}
 }
 
@@ -196,7 +196,7 @@ BinValue BinDecoder::decode() {
 	// Read version
 	u8 version = readU8();
 	if (version != BINENC_VERSION) {
-		throw std::runtime_error("BinDecoder: unsupported version");
+		throw BMSX_RUNTIME_ERROR("BinDecoder: unsupported version");
 	}
 
 	// Read property name table

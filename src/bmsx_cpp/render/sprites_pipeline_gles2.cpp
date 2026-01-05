@@ -180,7 +180,7 @@ GLuint compileShader(GLenum type, const char* src) {
 							   "[BMSX] GLES2 shader compile failed: %s\n",
 							   log.c_str());
 	glDeleteShader(shader);
-	throw std::runtime_error(std::string("[BMSX] GLES2 shader compile failed: ") + log);
+	throw BMSX_RUNTIME_ERROR(std::string("[BMSX] GLES2 shader compile failed: ") + log);
   }
   return shader;
 }
@@ -209,7 +209,7 @@ GLuint linkProgram(GLuint vs, GLuint fs) {
 	glDeleteProgram(program);
 	glDeleteShader(vs);
 	glDeleteShader(fs);
-	throw std::runtime_error(std::string("[BMSX] GLES2 program link failed: ") + log);
+	throw BMSX_RUNTIME_ERROR(std::string("[BMSX] GLES2 program link failed: ") + log);
   }
   glDeleteShader(vs);
   glDeleteShader(fs);

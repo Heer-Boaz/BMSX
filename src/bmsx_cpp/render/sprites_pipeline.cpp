@@ -136,7 +136,7 @@ void renderSpriteBatch(GPUBackend* backend, GameView* context) {
 	  return;
 	case BackendType::OpenGLES2: {
 #if !BMSX_ENABLE_GLES2
-	  throw std::runtime_error("[SpritesPipeline] OpenGLES2 backend disabled at compile time.");
+	  throw BMSX_RUNTIME_ERROR("[SpritesPipeline] OpenGLES2 backend disabled at compile time.");
 #else
 	  auto& engine = EngineCore::instance();
 	  auto* view = engine.view();
@@ -149,7 +149,7 @@ void renderSpriteBatch(GPUBackend* backend, GameView* context) {
 
 	  auto primaryIt = view->textures.find("_atlas_primary");
 	  if (primaryIt == view->textures.end() || !primaryIt->second) {
-		throw std::runtime_error("[SpritesPipeline] Texture '_atlas_primary' missing from view textures.");
+		throw BMSX_RUNTIME_ERROR("[SpritesPipeline] Texture '_atlas_primary' missing from view textures.");
 	  }
 	  spriteState.atlasPrimaryTex = primaryIt->second;
 	  auto secondaryIt = view->textures.find("_atlas_secondary");
