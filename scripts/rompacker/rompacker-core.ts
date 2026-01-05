@@ -4,7 +4,7 @@ import type { Stats } from 'fs';
 import type { asset_type, AudioMeta, CanonicalizationType, GLTFMesh, ImgMeta, Polygon, RomAsset, RomAssetListPayload, RomManifest } from '../../src/bmsx/rompack/rompack';
 import type { LuaChunk } from '../../src/bmsx/lua/lua_ast';
 import { atlasIndexResolver, createOptimizedAtlas, generateAtlasName } from './atlasbuilder';
-import { encodeWavToAacLc } from './audioencoder';
+// import { encodeWavToAacLc } from './audioencoder'; --- IGNORE ---
 import { BoundingBoxExtractor } from './boundingbox_extractor';
 import { loadGLTFModel } from './gltfloader';
 import type { AtlasResource, ImageResource, Resource, resourcetype, RomPackerTarget } from './rompacker.rompack';
@@ -1339,8 +1339,9 @@ export async function generateRomAssets(resources: Resource[], reportProgress?: 
 			case 'audio': {
 				// Note that the name has already been sanitized in the `getResMetaList` function
 				const { audiometa } = parseAudioMeta(res.filepath);
-				const aacBuffer = await encodeWavToAacLc(buffer, sourcePath);
-				romAssets.push({ resid, type, audiometa, buffer: aacBuffer, source_path: sourcePath });
+				// const aacBuffer = await encodeWavToAacLc(buffer, sourcePath);
+				// romAssets.push({ resid, type, audiometa, buffer: aacBuffer, source_path: sourcePath });
+				romAssets.push({ resid, type, audiometa, buffer, source_path: sourcePath });
 				break;
 			}
 			case 'code':
