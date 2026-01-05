@@ -1335,11 +1335,12 @@ export async function generateRomAssets(resources: Resource[], reportProgress?: 
 				romAssets.push({ ...baseAsset, });
 			}
 				break;
-			case 'audio':
+			case 'audio': {
 				// Note that the name has already been sanitized in the `getResMetaList` function
 				const { audiometa } = parseAudioMeta(res.filepath);
 				romAssets.push({ resid, type, audiometa, buffer, source_path: sourcePath });
 				break;
+			}
 			case 'code':
 				resid = resid.replace('.min', '');
 				romAssets.push({ resid, type, buffer, source_path: sourcePath });
@@ -1675,10 +1676,9 @@ export async function createAtlasses(resources: Resource[], reportProgress?: Pro
 export async function finalizeRompack(
 	assetList: RomAsset[],
 	rom_name: string,
-	debug: boolean,
-	options: { projectRootPath?: string, status?: ProgressNote, manifest?: RomManifest } = {}
+	options: { projectRootPath?: string, status?: ProgressNote, manifest?: RomManifest, zipRom: boolean, debug: boolean }
 ) {
-	const outfileBasename = `${rom_name}${debug ? '.debug' : ''}.rom`;
+	const outfileBasename = `${rom_name}${options.debug ? '.debug' : ''}.rom`;
 	const distPath = `./dist/${outfileBasename}`;
 	const ignoreDir = './rom/_ignore';
 	const status = options.status;
@@ -1766,8 +1766,7 @@ export async function finalizeRompack(
 
 	await finished(writer);
 	const romBinary = await readFile(tempFile);
-	// const payload = debug ? romBinary : Buffer.from(zip(romBinary));
-	const payload = Buffer.from(zip(romBinary));
+	const payload = options.zipRom ? romBinary : Buffer.from(zip(romBinary));
 	const finalPayload = romlabelBuffer ? Buffer.concat([romlabelBuffer, payload]) : payload;
 
 	await writeFile(distPath, finalPayload);

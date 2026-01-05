@@ -983,7 +983,7 @@ async function main() {
 						const engineRomAssets = await generateRomAssets(engineResources);
 						// Compile system_program.lua into VM bytecode for C++ engine
 						appendVmProgramAsset(engineRomAssets, engineManifest);
-						await finalizeRompack(engineRomAssets, engineRomName, false, { projectRootPath: engineProjectRootPath, manifest: engineManifest });
+						await finalizeRompack(engineRomAssets, engineRomName, { projectRootPath: engineProjectRootPath, manifest: engineManifest, zipRom: false, debug: debug });
 						logOk(`Engine assets ready → ${pc.white(`dist/${engineRomName}.rom`)}`);
 					} finally {
 						setLuaCanonicalization(previousCanonicalization);
@@ -1119,7 +1119,7 @@ async function main() {
 			appendVmProgramAsset(romAssets, romManifest, { extraLuaAssets });
 			await progress.taskCompleted();
 
-			await progress.runWithDetail('Finalize ROM pack', () => finalizeRompack(romAssets, rom_name, romPackDebug, { projectRootPath, manifest: romManifest, status: message => progress.setDetail(message) }));
+			await progress.runWithDetail('Finalize ROM pack', () => finalizeRompack(romAssets, rom_name, { projectRootPath, manifest: romManifest, status: message => progress.setDetail(message), debug: romPackDebug, zipRom: false }));
 			await progress.taskCompleted();
 		}
 

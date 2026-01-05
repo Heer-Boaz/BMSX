@@ -118,8 +118,10 @@ export function normalizeCartridgeBlob(blob: BmsxCartridgeBlob): { payload: Arra
 	const input = toArrayBuffer(blob);
 	const { zipped_rom, romlabel } = getZippedRomAndRomLabelFromBlob(input);
 	if (hasRomMetaFooter(zipped_rom)) {
+		// Already non-zipped ROM as we have the footer
 		return { payload: zipped_rom, romlabel };
 	}
+	// Assume zipped ROM as we don't have the footer
 	const inflated = inflate(new Uint8Array(zipped_rom));
 	const payload = new ArrayBuffer(inflated.byteLength);
 	new Uint8Array(payload).set(inflated);
