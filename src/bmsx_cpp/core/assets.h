@@ -23,6 +23,7 @@
 #include <optional>
 #include <array>
 #include <algorithm>
+#include <functional>
 
 namespace bmsx {
 
@@ -234,6 +235,15 @@ public:
 	void setFallback(const RuntimeAssets* assets) { fallback = assets; }
 };
 
+struct AssetLoadCallbacks {
+	// Return true to keep a copy of pixel data in ImgAsset, false to skip.
+	std::function<bool(const std::string& assetId,
+				   ImgAsset& asset,
+				   const u8* rgba,
+				   i32 width,
+				   i32 height)> onImageDecoded;
+};
+
 /* ============================================================================
  * ROM loader functions
  * ============================================================================ */
@@ -247,7 +257,10 @@ struct RomMeta {
 RomMeta parseRomMeta(const u8* buffer, size_t size);
 
 // Load assets from ROM buffer into RuntimeAssets
-bool loadAssetsFromRom(const u8* buffer, size_t size, RuntimeAssets& assets);
+bool loadAssetsFromRom(const u8* buffer,
+			   size_t size,
+			   RuntimeAssets& assets,
+			   const AssetLoadCallbacks* callbacks = nullptr);
 
 } // namespace bmsx
 

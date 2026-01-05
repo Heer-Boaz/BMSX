@@ -304,9 +304,33 @@ void EngineCore::refreshRenderAssets() {
 
 bool EngineCore::loadEngineAssets(const u8* data, size_t size) {
 	m_engine_assets.clear();
+	if (m_texture_manager) {
+		m_texture_manager->setBackend(m_view ? m_view->backend() : nullptr);
+	}
 
 	// Load engine assets from ROM
-	if (!loadAssetsFromRom(data, size, m_engine_assets)) {
+	AssetLoadCallbacks callbacks;
+	callbacks.onImageDecoded = [this](const std::string& assetId,
+									  ImgAsset& asset,
+									  const u8* rgba,
+									  i32 width,
+									  i32 height) -> bool {
+		if (!m_texture_manager || !m_view || !m_view->backend()) {
+			return true;
+		}
+		if (m_view->backend()->type() != BackendType::Software) {
+			return true;
+		}
+		TextureParams params;
+		const std::string keyId = asset.id.empty() ? assetId : asset.id;
+		const TextureKey key = m_texture_manager->makeKey(keyId, params);
+		TextureHandle handle = m_texture_manager->getOrCreateTexture(key, rgba, width, height, params);
+		asset.textureHandle = reinterpret_cast<uintptr_t>(handle);
+		asset.uploaded = true;
+		return false;
+	};
+
+	if (!loadAssetsFromRom(data, size, m_engine_assets, &callbacks)) {
 		return false;
 	}
 
@@ -396,6 +420,9 @@ bool EngineCore::bootWithoutCart() {
 
 bool EngineCore::loadRom(const u8* data, size_t size) {
 	unloadRom();
+	if (m_texture_manager) {
+		m_texture_manager->setBackend(m_view ? m_view->backend() : nullptr);
+	}
 
 	m_assets.clear();
 	if (m_engine_assets_loaded) {
@@ -404,7 +431,29 @@ bool EngineCore::loadRom(const u8* data, size_t size) {
 
 	// Load cartridge assets from ROM (overwrites engine assets with same ID)
 	RuntimeAssets cartAssets;
-	if (!loadAssetsFromRom(data, size, cartAssets)) {
+	AssetLoadCallbacks callbacks;
+	callbacks.onImageDecoded = [this](const std::string& assetId,
+									  ImgAsset& asset,
+									  const u8* rgba,
+									  i32 width,
+									  i32 height) -> bool {
+		if (!m_texture_manager || !m_view || !m_view->backend()) {
+			return true;
+		}
+		if (m_view->backend()->type() != BackendType::Software) {
+			return true;
+		}
+		TextureParams params;
+		const std::string keyId = asset.id.empty() ? assetId : asset.id;
+		const TextureKey key = m_texture_manager->makeKey(keyId, params);
+		// Use replaceTexture to override engine assets with same key
+		TextureHandle handle = m_texture_manager->replaceTexture(key, rgba, width, height, params);
+		asset.textureHandle = reinterpret_cast<uintptr_t>(handle);
+		asset.uploaded = true;
+		return false;
+	};
+
+	if (!loadAssetsFromRom(data, size, cartAssets, &callbacks)) {
 		m_assets.clear();
 		return false;
 	}
@@ -490,7 +539,9 @@ bool EngineCore::resetLoadedRom() {
 }
 
 void EngineCore::uploadTexturesToBackend() {
-	if (!m_view || !m_view->backend() || !m_texture_manager) return;
+	if (!m_view || !m_view->backend() || !m_texture_manager) {
+		return;
+	}
 
 	auto* backend = m_view->backend();
 	m_texture_manager->setBackend(backend);
@@ -519,11 +570,28 @@ void EngineCore::uploadTexturesToBackend() {
 	std::unordered_set<i32> uploadedAtlasIds;
 	std::unordered_set<AssetId> uploadedImgIds;
 
-	auto uploadAtlasTexture = [&](i32 atlasId, const std::string& atlasName, ImgAsset& imgAsset) {
+	auto uploadAtlasTexture = [&](i32 atlasId,
+								  const std::string& atlasName,
+								  ImgAsset& imgAsset) {
+		if (imgAsset.textureHandle) {
+			uploadedAtlasIds.insert(atlasId);
+			uploadedImgIds.insert(atlasName);
+			imgAsset.uploaded = true;
+			return;
+		}
+		// Check if texture was already loaded by callback (pixels freed but texture exists)
+		TextureParams params;
+		const TextureKey key = m_texture_manager->makeKey(atlasName, params);
+		TextureHandle existingHandle = m_texture_manager->getTexture(key);
+		if (existingHandle) {
+			imgAsset.textureHandle = reinterpret_cast<uintptr_t>(existingHandle);
+			imgAsset.uploaded = true;
+			uploadedAtlasIds.insert(atlasId);
+			uploadedImgIds.insert(atlasName);
+			return;
+		}
 		if (!uploadedAtlasIds.insert(atlasId).second) {
-			TextureParams params;
-			TextureHandle handle = m_texture_manager->getTexture(
-				m_texture_manager->makeKey(atlasName, params));
+			TextureHandle handle = m_texture_manager->getTexture(key);
 			if (handle) {
 				imgAsset.textureHandle = reinterpret_cast<uintptr_t>(handle);
 				imgAsset.uploaded = true;
@@ -562,11 +630,24 @@ void EngineCore::uploadTexturesToBackend() {
 
 	auto uploadImages = [&](RuntimeAssets& assets) {
 		for (auto& [id, imgAsset] : assets.img) {
+			if (imgAsset.textureHandle) {
+				uploadedImgIds.insert(id);
+				imgAsset.uploaded = true;
+				continue;
+			}
+			// Check if texture was already loaded by callback (pixels freed but texture exists)
+			TextureParams params;
+			const std::string keyId = imgAsset.id.empty() ? id : imgAsset.id;
+			const TextureKey key = m_texture_manager->makeKey(keyId, params);
+			TextureHandle existingHandle = m_texture_manager->getTexture(key);
+			if (existingHandle) {
+				imgAsset.textureHandle = reinterpret_cast<uintptr_t>(existingHandle);
+				imgAsset.uploaded = true;
+				uploadedImgIds.insert(id);
+				continue;
+			}
 			if (uploadedImgIds.count(id)) {
-				TextureParams params;
-				const std::string keyId = imgAsset.id.empty() ? id : imgAsset.id;
-				TextureHandle handle = m_texture_manager->getTexture(
-					m_texture_manager->makeKey(keyId, params));
+				TextureHandle handle = m_texture_manager->getTexture(key);
 				if (handle) {
 					imgAsset.textureHandle = reinterpret_cast<uintptr_t>(handle);
 					imgAsset.uploaded = true;
@@ -575,9 +656,6 @@ void EngineCore::uploadTexturesToBackend() {
 			}
 			if (!imgAsset.meta.atlassed && !imgAsset.pixels.empty() &&
 				imgAsset.meta.width > 0 && imgAsset.meta.height > 0) {
-				TextureParams params;
-				const std::string keyId = imgAsset.id.empty() ? id : imgAsset.id;
-				const TextureKey key = m_texture_manager->makeKey(keyId, params);
 				TextureHandle handle = m_texture_manager->getOrCreateTexture(
 					key, imgAsset.pixels.data(),
 					imgAsset.meta.width, imgAsset.meta.height, params);
@@ -609,6 +687,7 @@ void EngineCore::uploadTexturesToBackend() {
 	} else if (m_assets.hasAnyImg()) {
 		throw BMSX_RUNTIME_ERROR("[EngineCore] Primary atlas '" + primaryAtlasName + "' missing.");
 	}
+
 }
 
 void EngineCore::unloadRom() {

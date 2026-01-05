@@ -311,7 +311,10 @@ static bool hasRomMetaFooter(const u8* buffer, size_t size) {
 	return metaOffset + metaLength <= size && metaLength > 0;
 }
 
-bool loadAssetsFromRom(const u8* buffer, size_t size, RuntimeAssets& assets) {
+bool loadAssetsFromRom(const u8* buffer,
+					   size_t size,
+					   RuntimeAssets& assets,
+					   const AssetLoadCallbacks* callbacks) {
 	assets.clear();
 
 	// Step 1: Check for optional PNG label at start, skip it if present
@@ -463,7 +466,13 @@ bool loadAssetsFromRom(const u8* buffer, size_t size, RuntimeAssets& assets) {
 					if (imgAsset.meta.height <= 0) {
 						imgAsset.meta.height = height;
 					}
-					imgAsset.pixels.assign(pixels, pixels + width * height * 4);
+					bool keepPixels = true;
+					if (callbacks && callbacks->onImageDecoded) {
+						keepPixels = callbacks->onImageDecoded(assetId, imgAsset, pixels, width, height);
+					}
+					if (keepPixels) {
+						imgAsset.pixels.assign(pixels, pixels + width * height * 4);
+					}
 					stbi_image_free(pixels);
 				}
 			}

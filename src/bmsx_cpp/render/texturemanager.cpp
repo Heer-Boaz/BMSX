@@ -173,6 +173,27 @@ TextureHandle TextureManager::getOrCreateTexture(const TextureKey& key,
 	return getTexture(key);
 }
 
+TextureHandle TextureManager::replaceTexture(const TextureKey& key,
+											 const u8* pixels,
+											 i32 width,
+											 i32 height,
+											 const TextureParams& desc) {
+	// Force remove existing texture regardless of refcount
+	auto it = m_gpuCache.find(key);
+	if (it != m_gpuCache.end()) {
+		GPUCacheEntry& entry = it->second;
+		m_textureBarrier.release(key, [this](const TextureHandle& h) {
+			if (m_backend) m_backend->destroyTexture(h);
+		});
+		if (entry.ownedFallback && entry.handle && m_backend) {
+			m_backend->destroyTexture(entry.handle);
+		}
+		m_gpuCache.erase(it);
+	}
+	// Create new texture with the new pixel data
+	return getOrCreateTexture(key, pixels, width, height, desc);
+}
+
 TextureHandle TextureManager::getOrCreateTexture(const ImgAsset& asset,
 												 const TextureParams& desc) {
 	if (asset.id.empty()) {

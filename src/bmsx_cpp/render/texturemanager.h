@@ -84,6 +84,14 @@ public:
 	TextureHandle getOrCreateTexture(const ImgAsset& asset,
 									 const TextureParams& desc = {});
 
+	/// Replace an existing texture with new pixel data, or create if not exists.
+	/// This is used when cart assets override engine assets with the same key.
+	TextureHandle replaceTexture(const TextureKey& key,
+								 const u8* pixels,
+								 i32 width,
+								 i32 height,
+								 const TextureParams& desc = {});
+
 	TextureSource fromBuffer(const ImageKey& key,
 							 const u8* buffer,
 							 size_t size,

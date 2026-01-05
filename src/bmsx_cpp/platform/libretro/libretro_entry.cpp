@@ -872,66 +872,66 @@ void retro_run(void) {
   // }
 
   // Run one frame
-  const auto runStart = std::chrono::steady_clock::now();
+//   const auto runStart = std::chrono::steady_clock::now();
   g_platform->runFrame();
-  const auto runEnd = std::chrono::steady_clock::now();
-  const double runMs = std::chrono::duration<double, std::milli>(runEnd - runStart).count();
-  const auto& tickTiming = g_platform->engine()->lastTickTiming();
-  const auto& renderTiming = g_platform->engine()->lastRenderTiming();
-  const double overheadMs = runMs - tickTiming.totalMs - renderTiming.totalMs;
+//   const auto runEnd = std::chrono::steady_clock::now();
+//   const double runMs = std::chrono::duration<double, std::milli>(runEnd - runStart).count();
+//   const auto& tickTiming = g_platform->engine()->lastTickTiming();
+//   const auto& renderTiming = g_platform->engine()->lastRenderTiming();
+//   const double overheadMs = runMs - tickTiming.totalMs - renderTiming.totalMs;
 
-  accRunMs += runMs;
-  accTickMs += tickTiming.totalMs;
-  accRenderMs += renderTiming.totalMs;
-  accOverheadMs += overheadMs;
-  accVmUpdateMs += tickTiming.vmUpdateMs;
-  accVmDrawMs += renderTiming.vmDrawMs;
-  accDrawGameMs += renderTiming.drawGameMs;
-  if (runMs > maxRunMs) maxRunMs = runMs;
-  if (tickTiming.totalMs > maxTickMs) maxTickMs = tickTiming.totalMs;
-  if (renderTiming.totalMs > maxRenderMs) maxRenderMs = renderTiming.totalMs;
-  if (overheadMs > maxOverheadMs) maxOverheadMs = overheadMs;
-  if (tickTiming.vmUpdateMs > maxVmUpdateMs) maxVmUpdateMs = tickTiming.vmUpdateMs;
-  if (renderTiming.vmDrawMs > maxVmDrawMs) maxVmDrawMs = renderTiming.vmDrawMs;
-  if (renderTiming.drawGameMs > maxDrawGameMs) maxDrawGameMs = renderTiming.drawGameMs;
-  perfFrames += 1;
+//   accRunMs += runMs;
+//   accTickMs += tickTiming.totalMs;
+//   accRenderMs += renderTiming.totalMs;
+//   accOverheadMs += overheadMs;
+//   accVmUpdateMs += tickTiming.vmUpdateMs;
+//   accVmDrawMs += renderTiming.vmDrawMs;
+//   accDrawGameMs += renderTiming.drawGameMs;
+//   if (runMs > maxRunMs) maxRunMs = runMs;
+//   if (tickTiming.totalMs > maxTickMs) maxTickMs = tickTiming.totalMs;
+//   if (renderTiming.totalMs > maxRenderMs) maxRenderMs = renderTiming.totalMs;
+//   if (overheadMs > maxOverheadMs) maxOverheadMs = overheadMs;
+//   if (tickTiming.vmUpdateMs > maxVmUpdateMs) maxVmUpdateMs = tickTiming.vmUpdateMs;
+//   if (renderTiming.vmDrawMs > maxVmDrawMs) maxVmDrawMs = renderTiming.vmDrawMs;
+//   if (renderTiming.drawGameMs > maxDrawGameMs) maxDrawGameMs = renderTiming.drawGameMs;
+//   perfFrames += 1;
 
-  const double perfSec = std::chrono::duration<double>(runEnd - perfStart).count();
-  if (perfSec >= 1.0) {
-	const double invFrames = 1.0 / static_cast<double>(perfFrames);
-	logging.log(RETRO_LOG_WARN,
-				"[BMSX] run avg=%.2fms max=%.2f tick=%.2f render=%.2f overhead=%.2f frames=%llu\n",
-				accRunMs * invFrames,
-				maxRunMs,
-				accTickMs * invFrames,
-				accRenderMs * invFrames,
-				accOverheadMs * invFrames,
-				static_cast<unsigned long long>(perfFrames));
-	logging.log(RETRO_LOG_WARN,
-				"[BMSX] vm avg update=%.2f draw=%.2f draw_game=%.2f max_update=%.2f max_draw=%.2f max_draw_game=%.2f\n",
-				accVmUpdateMs * invFrames,
-				accVmDrawMs * invFrames,
-				accDrawGameMs * invFrames,
-				maxVmUpdateMs,
-				maxVmDrawMs,
-				maxDrawGameMs);
-	perfStart = runEnd;
-	accRunMs = 0.0;
-	accTickMs = 0.0;
-	accRenderMs = 0.0;
-	accOverheadMs = 0.0;
-	accVmUpdateMs = 0.0;
-	accVmDrawMs = 0.0;
-	accDrawGameMs = 0.0;
-	maxRunMs = 0.0;
-	maxTickMs = 0.0;
-	maxRenderMs = 0.0;
-	maxOverheadMs = 0.0;
-	maxVmUpdateMs = 0.0;
-	maxVmDrawMs = 0.0;
-	maxDrawGameMs = 0.0;
-	perfFrames = 0;
-  }
+//   const double perfSec = std::chrono::duration<double>(runEnd - perfStart).count();
+//   if (perfSec >= 1.0) {
+// 	const double invFrames = 1.0 / static_cast<double>(perfFrames);
+// 	logging.log(RETRO_LOG_WARN,
+// 				"[BMSX] run avg=%.2fms max=%.2f tick=%.2f render=%.2f overhead=%.2f frames=%llu\n",
+// 				accRunMs * invFrames,
+// 				maxRunMs,
+// 				accTickMs * invFrames,
+// 				accRenderMs * invFrames,
+// 				accOverheadMs * invFrames,
+// 				static_cast<unsigned long long>(perfFrames));
+// 	logging.log(RETRO_LOG_WARN,
+// 				"[BMSX] vm avg update=%.2f draw=%.2f draw_game=%.2f max_update=%.2f max_draw=%.2f max_draw_game=%.2f\n",
+// 				accVmUpdateMs * invFrames,
+// 				accVmDrawMs * invFrames,
+// 				accDrawGameMs * invFrames,
+// 				maxVmUpdateMs,
+// 				maxVmDrawMs,
+// 				maxDrawGameMs);
+// 	perfStart = runEnd;
+// 	accRunMs = 0.0;
+// 	accTickMs = 0.0;
+// 	accRenderMs = 0.0;
+// 	accOverheadMs = 0.0;
+// 	accVmUpdateMs = 0.0;
+// 	accVmDrawMs = 0.0;
+// 	accDrawGameMs = 0.0;
+// 	maxRunMs = 0.0;
+// 	maxTickMs = 0.0;
+// 	maxRenderMs = 0.0;
+// 	maxOverheadMs = 0.0;
+// 	maxVmUpdateMs = 0.0;
+// 	maxVmDrawMs = 0.0;
+// 	maxDrawGameMs = 0.0;
+// 	perfFrames = 0;
+//   }
 
   // Output video
   const auto& fb = g_platform->getFramebuffer();
