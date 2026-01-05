@@ -39,6 +39,24 @@ std::string buildEngineAssetsPath(const std::string& directory) {
 	path.append("engine.assets.rom");
 	return path;
 }
+
+std::string buildEngineAssetsPathInSubdir(const std::string& directory, const char* subdir) {
+	if (directory.empty()) {
+		return {};
+	}
+	std::string path = directory;
+	const char last = path.back();
+	if (last != '/' && last != '\\') {
+		path.push_back('/');
+	}
+	path.append(subdir);
+	const char subdirLast = path.back();
+	if (subdirLast != '/' && subdirLast != '\\') {
+		path.push_back('/');
+	}
+	path.append("engine.assets.rom");
+	return path;
+}
 }
 
 /* ============================================================================
@@ -300,20 +318,29 @@ void LibretroPlatform::tryLoadEngineAssets(const char* romPath) {
 	size_t lastSlash = pathStr.find_last_of("/\\");
 	std::string directory = (lastSlash != std::string::npos) ? pathStr.substr(0, lastSlash + 1) : "";
 	std::string engineAssetsPath = buildEngineAssetsPath(directory);
-	std::string systemAssetsPath = buildEngineAssetsPath(m_system_dir);
+	std::vector<std::string> systemAssetsPaths;
+	if (!m_system_dir.empty()) {
+		systemAssetsPaths.push_back(buildEngineAssetsPath(m_system_dir));
+		systemAssetsPaths.push_back(buildEngineAssetsPathInSubdir(m_system_dir, "BMSX"));
+		systemAssetsPaths.push_back(buildEngineAssetsPathInSubdir(m_system_dir, "bmsx"));
+	}
 
 	if (!engineAssetsPath.empty() && loadEngineAssetsFromFile(engineAssetsPath)) {
 		return;
 	}
-	if (!systemAssetsPath.empty() && loadEngineAssetsFromFile(systemAssetsPath)) {
-		return;
+	for (const auto& path : systemAssetsPaths) {
+		if (!path.empty() && loadEngineAssetsFromFile(path)) {
+			return;
+		}
 	}
 
 	if (!engineAssetsPath.empty()) {
 		log(RETRO_LOG_INFO, "[BMSX] No engine assets found at: %s (continuing without)\n", engineAssetsPath.c_str());
 	}
-	if (!systemAssetsPath.empty()) {
-		log(RETRO_LOG_INFO, "[BMSX] No engine assets found in system dir: %s (continuing without)\n", systemAssetsPath.c_str());
+	for (const auto& path : systemAssetsPaths) {
+		if (!path.empty()) {
+			log(RETRO_LOG_INFO, "[BMSX] No engine assets found in system dir: %s (continuing without)\n", path.c_str());
+		}
 	}
 }
 
@@ -346,9 +373,10 @@ bool LibretroPlatform::loadEmptyCart() {
 	// Try to load engine assets from dist directory (default location)
 	// TODO: Make this configurable via core options
 	std::vector<std::string> engineAssetsPaths;
-	std::string systemAssetsPath = buildEngineAssetsPath(m_system_dir);
-	if (!systemAssetsPath.empty()) {
-		engineAssetsPaths.push_back(systemAssetsPath);
+	if (!m_system_dir.empty()) {
+		engineAssetsPaths.push_back(buildEngineAssetsPath(m_system_dir));
+		engineAssetsPaths.push_back(buildEngineAssetsPathInSubdir(m_system_dir, "BMSX"));
+		engineAssetsPaths.push_back(buildEngineAssetsPathInSubdir(m_system_dir, "bmsx"));
 	}
 	engineAssetsPaths.emplace_back("dist/engine.assets.rom");
 	engineAssetsPaths.emplace_back("./engine.assets.rom");

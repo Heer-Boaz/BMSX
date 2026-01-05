@@ -78,3 +78,7 @@ src/bmsx_cpp/build/
 **/build/
 /build-*/
 /build-win/
+/build-snesmini/
+
+# System roots for cross-compilation
+.snesmini
