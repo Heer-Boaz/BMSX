@@ -203,6 +203,7 @@ public:
 	std::string projectRootPath;
 	RomManifest manifest;
 	CanonicalizationType canonicalization = CanonicalizationType::None;
+	const RuntimeAssets* fallback = nullptr;
 
 	// Asset access
 	ImgAsset* getImg(const AssetId& id);
@@ -222,11 +223,15 @@ public:
 	void clear();
 
 	// Check if asset exists
-	bool hasImg(const AssetId& id) const { return img.find(id) != img.end(); }
-	bool hasAudio(const AssetId& id) const { return audio.find(id) != audio.end(); }
-	bool hasModel(const AssetId& id) const { return model.find(id) != model.end(); }
-	bool hasData(const AssetId& id) const { return data.find(id) != data.end(); }
-	bool hasVmProgram() const { return vmProgram != nullptr; }
+	bool hasImg(const AssetId& id) const { return img.find(id) != img.end() || (fallback && fallback->hasImg(id)); }
+	bool hasAudio(const AssetId& id) const { return audio.find(id) != audio.end() || (fallback && fallback->hasAudio(id)); }
+	bool hasModel(const AssetId& id) const { return model.find(id) != model.end() || (fallback && fallback->hasModel(id)); }
+	bool hasData(const AssetId& id) const { return data.find(id) != data.end() || (fallback && fallback->hasData(id)); }
+	bool hasAudioEvent(const AssetId& id) const { return audioevents.find(id) != audioevents.end() || (fallback && fallback->hasAudioEvent(id)); }
+	bool hasVmProgram() const { return vmProgram != nullptr || (fallback && fallback->hasVmProgram()); }
+	bool hasAnyImg() const { return !img.empty() || (fallback && fallback->hasAnyImg()); }
+
+	void setFallback(const RuntimeAssets* assets) { fallback = assets; }
 };
 
 /* ============================================================================

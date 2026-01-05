@@ -257,9 +257,6 @@ private:
 	std::unique_ptr<KeyboardInput> m_keyboard_input;
 	std::array<std::unique_ptr<GamepadInput>, InputState::MAX_PLAYERS> m_gamepad_inputs;
 
-	// ROM data (kept in memory)
-	std::vector<uint8_t> m_rom_data;
-
 	// Save RAM
 	std::vector<uint8_t> m_save_ram;
 

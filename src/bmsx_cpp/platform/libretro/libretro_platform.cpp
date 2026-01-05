@@ -8,6 +8,7 @@
 #include "../../input/gamepadinput.h"
 #include "../../input/keyboardinput.h"
 #include "../../render/renderpasslib.h"
+#include "../../utils/mem_snapshot.h"
 #if BMSX_ENABLE_GLES2
 #include "../../render/gles2_backend.h"
 #include "../../render/sprites_pipeline_gles2.h"
@@ -296,14 +297,23 @@ void LibretroPlatform::applyManifestViewport() {
 
 bool LibretroPlatform::loadRom(const uint8_t* data, size_t size) {
 	unloadRom();
-
-	m_rom_data.assign(data, data + size);
+	{
+		const std::string line = memSnapshotLine("libretro:before_loadRom");
+		if (!line.empty()) {
+			log(RETRO_LOG_INFO, "%s\n", line.c_str());
+		}
+	}
 
 	// Load ROM into engine
 	if (m_engine && !m_engine->loadRom(data, size)) {
 		log(RETRO_LOG_ERROR, "[BMSX] Failed to load ROM into engine\n");
-		m_rom_data.clear();
 		return false;
+	}
+	{
+		const std::string line = memSnapshotLine("libretro:after_loadRom");
+		if (!line.empty()) {
+			log(RETRO_LOG_INFO, "%s\n", line.c_str());
+		}
 	}
 
 	applyManifestViewport();
@@ -440,7 +450,6 @@ void LibretroPlatform::unloadRom() {
 		if (m_engine) {
 			m_engine->unloadRom();
 		}
-		m_rom_data.clear();
 		m_rom_loaded = false;
 		log(RETRO_LOG_INFO, "[BMSX] ROM unloaded\n");
 	}
@@ -451,21 +460,18 @@ void LibretroPlatform::reset() {
 	static_cast<LibretroAudioService*>(m_audio_service.get())->resetQueue();
 	m_audio_buffer.clear();
 
-	if (!m_rom_data.empty()) {
-		std::vector<uint8_t> romData = m_rom_data;
-		if (!loadRom(romData.data(), romData.size())) {
-			log(RETRO_LOG_ERROR, "[BMSX] Reset failed: ROM reload failed\n");
+	if (m_engine && m_engine->romLoaded()) {
+		if (!m_engine->resetLoadedRom()) {
+			log(RETRO_LOG_ERROR, "[BMSX] Reset failed: VM reset failed\n");
 			return;
 		}
-	} else {
-		if (!loadEmptyCart()) {
-			log(RETRO_LOG_ERROR, "[BMSX] Reset failed: empty cart boot failed\n");
-			return;
-		}
+	} else if (!loadEmptyCart()) {
+		log(RETRO_LOG_ERROR, "[BMSX] Reset failed: empty cart boot failed\n");
+		return;
 	}
 
 	m_engine->start();
-	log(RETRO_LOG_INFO, "[BMSX] Game reset (reloaded)\n");
+	log(RETRO_LOG_INFO, "[BMSX] Game reset (VM rebooted)\n");
 }
 
 void LibretroPlatform::runFrame() {

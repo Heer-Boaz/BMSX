@@ -140,7 +140,7 @@ void GameView::initializeDefaultTextures() {
 	auto& assets = EngineCore::instance().assets();
 	const auto* engineAtlas = assets.getImg(engineAtlasName);
 	if (!engineAtlas) {
-		if (!assets.img.empty()) {
+		if (assets.hasAnyImg()) {
 			throw BMSX_RUNTIME_ERROR("[GameView] Engine atlas '" + engineAtlasName + "' missing.");
 		}
 	} else {

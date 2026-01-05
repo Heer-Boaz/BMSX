@@ -21,6 +21,7 @@
 namespace bmsx {
 
 class BFont;
+class TextureManager;
 
 /* ============================================================================
  * Engine state
@@ -91,6 +92,7 @@ public:
 	RuntimeAssets& assets() { return m_assets; }
 	Clock* clock() { return m_platform ? m_platform->clock() : nullptr; }
 	SoundMaster* soundMaster() { return m_sound_master.get(); }
+	TextureManager* texmanager() { return m_texture_manager.get(); }
 
 	// Time
 	f64 totalTime() const { return m_total_time; }
@@ -108,6 +110,7 @@ public:
 	bool loadEngineAssetsFromPath(const char* path);     // Load engine assets from file
 	bool loadRom(const u8* data, size_t size);            // Load game cartridge ROM
 	void unloadRom();
+	bool resetLoadedRom();
 	bool romLoaded() const { return m_rom_loaded; }
 	bool engineAssetsLoaded() const { return m_engine_assets_loaded; }
 
@@ -142,6 +145,7 @@ private:
 	std::unique_ptr<GameView> m_view;
 	std::unique_ptr<BFont> m_default_font;
 	std::unique_ptr<SoundMaster> m_sound_master;
+	std::unique_ptr<TextureManager> m_texture_manager;
 	RuntimeAssets m_assets;
 
 	EngineState m_state = EngineState::Uninitialized;
@@ -154,8 +158,6 @@ private:
 
 	bool m_rom_loaded = false;
 	bool m_engine_assets_loaded = false;
-	std::vector<u8> m_rom_data;
-	std::vector<u8> m_engine_assets_data;
 	RuntimeAssets m_engine_assets;  // Base engine assets (fonts, UI sprites, etc.)
 	TickTiming m_last_tick_timing;
 	RenderTiming m_last_render_timing;

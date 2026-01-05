@@ -20,6 +20,7 @@
 #include <regex>
 #include <sstream>
 #include <stdexcept>
+#include <unordered_set>
 
 namespace bmsx {
 namespace {
@@ -2272,24 +2273,57 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 			}
 		);
 	};
-	auto* imgTable = m_cpu.createTable(0, static_cast<int>(assets.img.size()));
-	for (const auto& [id, imgAsset] : assets.img) {
+	std::unordered_set<AssetId> imgIds;
+	if (assets.fallback) {
+		for (const auto& [id, _] : assets.fallback->img) {
+			imgIds.insert(id);
+		}
+	}
+	for (const auto& [id, _] : assets.img) {
+		imgIds.insert(id);
+	}
+	auto* imgTable = m_cpu.createTable(0, static_cast<int>(imgIds.size()));
+	for (const auto& id : imgIds) {
+		const ImgAsset* imgAsset = assets.getImg(id);
+		if (!imgAsset) continue;
 		auto* imgEntry = m_cpu.createTable(0, 2);
-		imgEntry->set(key("imgmeta"), valueTable(buildImgMetaTable(m_cpu, imgAsset.meta, key)));
+		imgEntry->set(key("imgmeta"), valueTable(buildImgMetaTable(m_cpu, imgAsset->meta, key)));
 		imgTable->set(str(id), valueTable(imgEntry));
 	}
 	assetsTable->set(key("img"), makeAssetMapNativeObject(imgTable));
 
-	auto* dataTable = m_cpu.createTable(0, static_cast<int>(assets.data.size()));
-	for (const auto& [id, value] : assets.data) {
-		dataTable->set(str(id), binValueToVmValue(m_cpu, value));
+	std::unordered_set<AssetId> dataIds;
+	if (assets.fallback) {
+		for (const auto& [id, _] : assets.fallback->data) {
+			dataIds.insert(id);
+		}
+	}
+	for (const auto& [id, _] : assets.data) {
+		dataIds.insert(id);
+	}
+	auto* dataTable = m_cpu.createTable(0, static_cast<int>(dataIds.size()));
+	for (const auto& id : dataIds) {
+		const BinValue* value = assets.getData(id);
+		if (!value) continue;
+		dataTable->set(str(id), binValueToVmValue(m_cpu, *value));
 	}
 	assetsTable->set(key("data"), makeAssetMapNativeObject(dataTable));
 	auto* audioTable = m_cpu.createTable();
 	assetsTable->set(key("audio"), makeAssetMapNativeObject(audioTable));
-	auto* audioEventsTable = m_cpu.createTable(0, static_cast<int>(assets.audioevents.size()));
-	for (const auto& [id, value] : assets.audioevents) {
-		audioEventsTable->set(str(id), binValueToVmValue(m_cpu, value));
+	std::unordered_set<AssetId> audioEventIds;
+	if (assets.fallback) {
+		for (const auto& [id, _] : assets.fallback->audioevents) {
+			audioEventIds.insert(id);
+		}
+	}
+	for (const auto& [id, _] : assets.audioevents) {
+		audioEventIds.insert(id);
+	}
+	auto* audioEventsTable = m_cpu.createTable(0, static_cast<int>(audioEventIds.size()));
+	for (const auto& id : audioEventIds) {
+		const BinValue* value = assets.getAudioEvent(id);
+		if (!value) continue;
+		audioEventsTable->set(str(id), binValueToVmValue(m_cpu, *value));
 	}
 	assetsTable->set(key("audioevents"), makeAssetMapNativeObject(audioEventsTable));
 	auto* modelTable = m_cpu.createTable();

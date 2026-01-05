@@ -29,7 +29,7 @@ const glyph = {
 const labelWidth = 14;
 type ParsedOptions = RomPackerOptions & { bootloaderFallbackPath?: string; engineOnly?: boolean };
 
-const LIBRETRO_CORE_BASENAME = 'km_bmsx_libretro';
+const LIBRETRO_CORE_BASENAME = 'bmsx_libretro';
 const LIBRETRO_ENTRY_PATH = join(process.cwd(), 'src', 'bmsx_cpp', 'platform', 'libretro', 'libretro_entry.cpp');
 
 const KNOWN_FLAGS = new Set<string>([

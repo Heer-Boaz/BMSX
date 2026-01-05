@@ -92,6 +92,7 @@ add_library(bmsx_core STATIC
     core/rompack.cpp
     core/font.cpp
     core/taskgate.cpp
+    utils/mem_snapshot.cpp
 
     # Audio systems
     audio/soundmaster.cpp
@@ -109,6 +110,7 @@ add_library(bmsx_core STATIC
     render/gameview.cpp
     render/render_queues.cpp
     render/sprites_pipeline.cpp
+    render/texturemanager.cpp
     render/renderpasslib.cpp
     render/rendergraph.cpp
     render/glyphs.cpp

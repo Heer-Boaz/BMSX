@@ -1,0 +1,126 @@
+#pragma once
+
+#include "../core/assetbarrier.h"
+#include "../core/assets.h"
+#include "../core/registry.h"
+#include "../core/taskgate.h"
+#include "backend.h"
+#include <functional>
+#include <memory>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
+namespace bmsx {
+
+struct ModelTextureIdentifier {
+	std::string modelName;
+	i32 modelImageIndex = 0;
+};
+
+using TextureKey = std::string;
+using ImageKey = std::string;
+
+struct TextureSource {
+	const u8* pixels = nullptr;
+	i32 width = 0;
+	i32 height = 0;
+	std::shared_ptr<std::vector<u8>> ownedPixels;
+
+	bool valid() const { return pixels && width > 0 && height > 0; }
+
+	static TextureSource fromView(const u8* data, i32 w, i32 h) {
+		TextureSource src;
+		src.pixels = data;
+		src.width = w;
+		src.height = h;
+		return src;
+	}
+
+	static TextureSource fromOwned(std::vector<u8> data, i32 w, i32 h) {
+		TextureSource src;
+		src.ownedPixels = std::make_shared<std::vector<u8>>(std::move(data));
+		src.pixels = src.ownedPixels->data();
+		src.width = w;
+		src.height = h;
+		return src;
+	}
+};
+
+class TextureManager : public Registerable {
+public:
+	explicit TextureManager(GPUBackend* backend);
+	~TextureManager() override;
+
+	static TextureManager* instancePtr();
+	static TextureManager& instance();
+
+	const Identifier& registryId() const override;
+	bool isRegistryPersistent() const override { return true; }
+
+	void bind();
+	void unbind();
+
+	void setBackend(GPUBackend* backend);
+	GPUBackend* backend() const { return m_backend; }
+
+	TextureKey makeKey(const std::string& uri, const TextureParams& desc) const;
+	TextureKey makeModelBufferKey(const ModelTextureIdentifier& identifier) const;
+
+	TextureKey acquireTexture(const TextureKey& key,
+							  const std::function<TextureSource()>& loadBitmapFn,
+							  const TextureParams& desc = {},
+							  TextureHandle fallbackHandle = nullptr);
+	TextureSource getImage(const ImageKey& key) const;
+	TextureHandle getTexture(const TextureKey& key) const;
+	TextureHandle getTextureByUri(const std::string& uri, const TextureParams& desc = {}) const;
+	void releaseByUri(const std::string& uri, const TextureParams& desc = {});
+
+	TextureHandle getOrCreateTexture(const TextureKey& key,
+									 const u8* pixels,
+									 i32 width,
+									 i32 height,
+									 const TextureParams& desc = {});
+	TextureHandle getOrCreateTexture(const ImgAsset& asset,
+									 const TextureParams& desc = {});
+
+	TextureSource fromBuffer(const ImageKey& key,
+							 const u8* buffer,
+							 size_t size,
+							 bool flipY = false);
+	TextureSource fromAsset(const ImgAsset& asset, bool flipY = false);
+	TextureSource createSolid(i32 size, const Color& color);
+
+	void releaseByKey(const TextureKey& key);
+	void clear();
+	void dispose();
+
+private:
+	struct ImageCacheEntry {
+		TextureSource source;
+		int refCount = 0;
+	};
+
+	struct GPUCacheEntry {
+		TextureHandle handle = nullptr;
+		int refCount = 0;
+		bool ownedFallback = false;
+	};
+
+	TextureKey ensureTextureReady(const TextureKey& key,
+								  const std::function<TextureSource()>& loadBitmapFn,
+								  const TextureParams& desc);
+
+	TextureHandle createTextureFromSource(const TextureSource& source,
+										  const TextureParams& desc);
+
+	GPUBackend* m_backend = nullptr;
+	GateGroup m_group;
+	AssetBarrier<TextureHandle> m_textureBarrier;
+	std::unordered_map<ImageKey, ImageCacheEntry> m_imageCache;
+	std::unordered_map<TextureKey, GPUCacheEntry> m_gpuCache;
+
+	static TextureManager* s_instance;
+};
+
+} // namespace bmsx

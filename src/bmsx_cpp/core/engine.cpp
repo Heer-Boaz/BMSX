@@ -4,6 +4,7 @@
 
 #include "engine.h"
 #include "../input/input.h"
+#include "../render/texturemanager.h"
 #include "../vm/vm_runtime.h"
 #include "../vm/font.h"
 #include "rompack.h"
@@ -14,6 +15,7 @@
 #include <cstdarg>
 #include <fstream>
 #include <iostream>
+#include <unordered_set>
 #include <stdexcept>
 
 namespace bmsx {
@@ -69,6 +71,8 @@ bool EngineCore::initialize(Platform* platform) {
 	m_view->initializeDefaultTextures();
 
 	m_view->bind();
+	m_texture_manager = std::make_unique<TextureManager>(m_view->backend());
+	m_texture_manager->bind();
 
 	Input::instance().initialize();
 	m_sound_master = std::make_unique<SoundMaster>();
@@ -85,6 +89,11 @@ void EngineCore::shutdown() {
 
 	stop();
 	unloadRom();
+
+	if (m_texture_manager) {
+		m_texture_manager->dispose();
+		m_texture_manager.reset();
+	}
 
 	// Dispose view
 	if (m_view) {
@@ -259,6 +268,9 @@ void EngineCore::render() {
 }
 
 void EngineCore::refreshRenderAssets() {
+	if (m_texture_manager) {
+		m_texture_manager->setBackend(m_view ? m_view->backend() : nullptr);
+	}
 	uploadTexturesToBackend();
 }
 
@@ -292,11 +304,9 @@ void EngineCore::refreshRenderAssets() {
 
 bool EngineCore::loadEngineAssets(const u8* data, size_t size) {
 	m_engine_assets.clear();
-	m_engine_assets_data.assign(data, data + size);
 
 	// Load engine assets from ROM
 	if (!loadAssetsFromRom(data, size, m_engine_assets)) {
-		m_engine_assets_data.clear();
 		return false;
 	}
 
@@ -340,15 +350,9 @@ bool EngineCore::bootWithoutCart() {
 
 	std::cerr << "[BMSX] bootWithoutCart: VM program found, booting..." << std::endl;
 
-	// Copy engine assets as the active assets
-	// Note: We can't move vmProgram since engine_assets must stay valid
-	// Instead, we reference the engine assets directly when booting VM
-	m_assets.img = m_engine_assets.img;
-	m_assets.audio = m_engine_assets.audio;
-	m_assets.model = m_engine_assets.model;
-	m_assets.data = m_engine_assets.data;
-	m_assets.audioevents = m_engine_assets.audioevents;
-	m_assets.atlasTextures = m_engine_assets.atlasTextures;
+	// Reference engine assets as fallback to avoid duplicating memory.
+	m_assets.clear();
+	m_assets.setFallback(&m_engine_assets);
 	m_assets.manifest = m_engine_assets.manifest;
 	m_assets.projectRootPath = m_engine_assets.projectRootPath;
 	// Don't copy vmProgram - use engine_assets.vmProgram directly below
@@ -393,24 +397,14 @@ bool EngineCore::bootWithoutCart() {
 bool EngineCore::loadRom(const u8* data, size_t size) {
 	unloadRom();
 
-	m_rom_data.assign(data, data + size);
-
-	// Start with engine assets as base (if loaded)
+	m_assets.clear();
 	if (m_engine_assets_loaded) {
-		// Copy engine assets as base layer
-		m_assets.img = m_engine_assets.img;
-		m_assets.audio = m_engine_assets.audio;
-		m_assets.model = m_engine_assets.model;
-		m_assets.data = m_engine_assets.data;
-		m_assets.audioevents = m_engine_assets.audioevents;
-		m_assets.atlasTextures = m_engine_assets.atlasTextures;
-		// VM program and manifest come from cartridge, not engine
+		m_assets.setFallback(&m_engine_assets);
 	}
 
 	// Load cartridge assets from ROM (overwrites engine assets with same ID)
 	RuntimeAssets cartAssets;
 	if (!loadAssetsFromRom(data, size, cartAssets)) {
-		m_rom_data.clear();
 		m_assets.clear();
 		return false;
 	}
@@ -463,55 +457,166 @@ bool EngineCore::loadRom(const u8* data, size_t size) {
 	return true;
 }
 
+bool EngineCore::resetLoadedRom() {
+	if (!m_rom_loaded) {
+		return false;
+	}
+
+	if (m_sound_master) {
+		m_sound_master->resetPlaybackState();
+	}
+
+	if (m_assets.vmProgram && m_assets.vmProgram->program) {
+		bootVMFromProgram();
+		return true;
+	}
+
+	if (m_engine_assets.vmProgram && m_engine_assets.vmProgram->program) {
+		if (!VMRuntime::hasInstance()) {
+			VMRuntimeOptions options;
+			options.playerIndex = 1;
+			options.viewport.x = m_engine_assets.manifest.viewportWidth;
+			options.viewport.y = m_engine_assets.manifest.viewportHeight;
+			options.canonicalization = m_engine_assets.manifest.canonicalization;
+			VMRuntime::createInstance(options);
+		}
+		VMRuntime& runtime = VMRuntime::instance();
+		runtime.setCanonicalization(m_engine_assets.manifest.canonicalization);
+		runtime.boot(*m_engine_assets.vmProgram);
+		return true;
+	}
+
+	return false;
+}
+
 void EngineCore::uploadTexturesToBackend() {
-	if (!m_view || !m_view->backend()) return;
+	if (!m_view || !m_view->backend() || !m_texture_manager) return;
 
 	auto* backend = m_view->backend();
+	m_texture_manager->setBackend(backend);
+	auto releasePixels = [](ImgAsset& asset) {
+		if (!asset.pixels.empty()) {
+			std::vector<u8>().swap(asset.pixels);
+		}
+	};
+	auto parseAtlasIdFromName = [](const std::string& name, i32& out) -> bool {
+		static constexpr const char* kPrefix = "_atlas_";
+		static constexpr size_t kPrefixLen = 7;
+		if (name.size() <= kPrefixLen || name.compare(0, kPrefixLen, kPrefix) != 0) {
+			return false;
+		}
+		i32 value = 0;
+		for (size_t i = kPrefixLen; i < name.size(); ++i) {
+			const char c = name[i];
+			if (c < '0' || c > '9') {
+				return false;
+			}
+			value = value * 10 + (c - '0');
+		}
+		out = value;
+		return true;
+	};
+	std::unordered_set<i32> uploadedAtlasIds;
+	std::unordered_set<AssetId> uploadedImgIds;
 
-	// Upload atlas textures
-	for (auto& [atlasId, imgAsset] : m_assets.atlasTextures) {
+	auto uploadAtlasTexture = [&](i32 atlasId, const std::string& atlasName, ImgAsset& imgAsset) {
+		if (!uploadedAtlasIds.insert(atlasId).second) {
+			TextureParams params;
+			TextureHandle handle = m_texture_manager->getTexture(
+				m_texture_manager->makeKey(atlasName, params));
+			if (handle) {
+				imgAsset.textureHandle = reinterpret_cast<uintptr_t>(handle);
+				imgAsset.uploaded = true;
+				uploadedImgIds.insert(atlasName);
+			}
+			return;
+		}
 		if (!imgAsset.pixels.empty() && imgAsset.meta.width > 0 && imgAsset.meta.height > 0) {
 			TextureParams params;
-			TextureHandle handle = backend->createTexture(
-				imgAsset.pixels.data(),
-				imgAsset.meta.width,
-				imgAsset.meta.height,
-				params
-			);
+			const TextureKey key = m_texture_manager->makeKey(atlasName, params);
+			TextureHandle handle = m_texture_manager->getOrCreateTexture(
+				key, imgAsset.pixels.data(),
+				imgAsset.meta.width, imgAsset.meta.height, params);
 			imgAsset.textureHandle = reinterpret_cast<uintptr_t>(handle);
 			imgAsset.uploaded = true;
+			uploadedImgIds.insert(atlasName);
+			releasePixels(imgAsset);
 		}
+	};
+
+	auto uploadAtlasTextures = [&](RuntimeAssets& assets) {
+		for (auto& [atlasId, imgAsset] : assets.atlasTextures) {
+			uploadAtlasTexture(atlasId, generateAtlasName(atlasId), imgAsset);
+		}
+	};
+
+	auto uploadAtlasTexturesFromImages = [&](RuntimeAssets& assets) {
+		for (auto& [id, imgAsset] : assets.img) {
+			i32 atlasId = 0;
+			if (!parseAtlasIdFromName(id, atlasId)) {
+				continue;
+			}
+			uploadAtlasTexture(atlasId, id, imgAsset);
+		}
+	};
+
+	auto uploadImages = [&](RuntimeAssets& assets) {
+		for (auto& [id, imgAsset] : assets.img) {
+			if (uploadedImgIds.count(id)) {
+				TextureParams params;
+				const std::string keyId = imgAsset.id.empty() ? id : imgAsset.id;
+				TextureHandle handle = m_texture_manager->getTexture(
+					m_texture_manager->makeKey(keyId, params));
+				if (handle) {
+					imgAsset.textureHandle = reinterpret_cast<uintptr_t>(handle);
+					imgAsset.uploaded = true;
+				}
+				continue;
+			}
+			if (!imgAsset.meta.atlassed && !imgAsset.pixels.empty() &&
+				imgAsset.meta.width > 0 && imgAsset.meta.height > 0) {
+				TextureParams params;
+				const std::string keyId = imgAsset.id.empty() ? id : imgAsset.id;
+				const TextureKey key = m_texture_manager->makeKey(keyId, params);
+				TextureHandle handle = m_texture_manager->getOrCreateTexture(
+					key, imgAsset.pixels.data(),
+					imgAsset.meta.width, imgAsset.meta.height, params);
+				imgAsset.textureHandle = reinterpret_cast<uintptr_t>(handle);
+				imgAsset.uploaded = true;
+				uploadedImgIds.insert(id);
+				releasePixels(imgAsset);
+			}
+		}
+	};
+
+	uploadAtlasTextures(m_assets);
+	uploadAtlasTexturesFromImages(m_assets);
+	if (m_engine_assets_loaded) {
+		uploadAtlasTextures(m_engine_assets);
+		uploadAtlasTexturesFromImages(m_engine_assets);
 	}
 
 	// Upload individual image textures (for non-atlassed images)
-	for (auto& [id, imgAsset] : m_assets.img) {
-		if (!imgAsset.meta.atlassed && !imgAsset.pixels.empty() &&
-			imgAsset.meta.width > 0 && imgAsset.meta.height > 0) {
-			TextureParams params;
-			TextureHandle handle = backend->createTexture(
-				imgAsset.pixels.data(),
-				imgAsset.meta.width,
-				imgAsset.meta.height,
-				params
-			);
-			imgAsset.textureHandle = reinterpret_cast<uintptr_t>(handle);
-			imgAsset.uploaded = true;
-		}
+	uploadImages(m_assets);
+	if (m_engine_assets_loaded) {
+		uploadImages(m_engine_assets);
 	}
 
 	m_view->initializeDefaultTextures();
 	const std::string primaryAtlasName = generateAtlasName(0);
 	if (m_assets.hasImg(primaryAtlasName)) {
 		m_view->setPrimaryAtlas(0);
-	} else if (!m_assets.img.empty()) {
+	} else if (m_assets.hasAnyImg()) {
 		throw BMSX_RUNTIME_ERROR("[EngineCore] Primary atlas '" + primaryAtlasName + "' missing.");
 	}
 }
 
 void EngineCore::unloadRom() {
 	if (m_rom_loaded) {
-		m_rom_data.clear();
 		m_assets.clear();
+		if (m_texture_manager) {
+			m_texture_manager->clear();
+		}
 		m_sound_master->resetPlaybackState();
 		registry().clear();
 		m_rom_loaded = false;

@@ -5,6 +5,7 @@
 #include "assets.h"
 #include "binencoder.h"
 #include "../vm/program_loader.h"
+#include "../utils/mem_snapshot.h"
 #include <cstring>
 #include <stdexcept>
 #include <zlib.h>
@@ -33,48 +34,88 @@ static CanonicalizationType parseCanonicalization(const std::string& value) {
 	throw BMSX_RUNTIME_ERROR("Unknown canonicalization value: " + value);
 }
 
+static void logMemSnapshot(const char* label) {
+	const std::string line = memSnapshotLine(label);
+	if (!line.empty()) {
+		std::cerr << line << std::endl;
+	}
+}
+
 /* ============================================================================
  * RuntimeAssets implementation
  * ============================================================================ */
 
 ImgAsset* RuntimeAssets::getImg(const AssetId& id) {
 	auto it = img.find(id);
-	return it != img.end() ? &it->second : nullptr;
+	if (it != img.end()) {
+		return &it->second;
+	}
+	if (fallback) {
+		return const_cast<ImgAsset*>(fallback->getImg(id));
+	}
+	return nullptr;
 }
 
 const ImgAsset* RuntimeAssets::getImg(const AssetId& id) const {
 	auto it = img.find(id);
-	return it != img.end() ? &it->second : nullptr;
+	if (it != img.end()) {
+		return &it->second;
+	}
+	return fallback ? fallback->getImg(id) : nullptr;
 }
 
 AudioAsset* RuntimeAssets::getAudio(const AssetId& id) {
 	auto it = audio.find(id);
-	return it != audio.end() ? &it->second : nullptr;
+	if (it != audio.end()) {
+		return &it->second;
+	}
+	if (fallback) {
+		return const_cast<AudioAsset*>(fallback->getAudio(id));
+	}
+	return nullptr;
 }
 
 const AudioAsset* RuntimeAssets::getAudio(const AssetId& id) const {
 	auto it = audio.find(id);
-	return it != audio.end() ? &it->second : nullptr;
+	if (it != audio.end()) {
+		return &it->second;
+	}
+	return fallback ? fallback->getAudio(id) : nullptr;
 }
 
 ModelAsset* RuntimeAssets::getModel(const AssetId& id) {
 	auto it = model.find(id);
-	return it != model.end() ? &it->second : nullptr;
+	if (it != model.end()) {
+		return &it->second;
+	}
+	if (fallback) {
+		return const_cast<ModelAsset*>(fallback->getModel(id));
+	}
+	return nullptr;
 }
 
 const ModelAsset* RuntimeAssets::getModel(const AssetId& id) const {
 	auto it = model.find(id);
-	return it != model.end() ? &it->second : nullptr;
+	if (it != model.end()) {
+		return &it->second;
+	}
+	return fallback ? fallback->getModel(id) : nullptr;
 }
 
 const BinValue* RuntimeAssets::getData(const AssetId& id) const {
 	auto it = data.find(id);
-	return it != data.end() ? &it->second : nullptr;
+	if (it != data.end()) {
+		return &it->second;
+	}
+	return fallback ? fallback->getData(id) : nullptr;
 }
 
 const BinValue* RuntimeAssets::getAudioEvent(const AssetId& id) const {
 	auto it = audioevents.find(id);
-	return it != audioevents.end() ? &it->second : nullptr;
+	if (it != audioevents.end()) {
+		return &it->second;
+	}
+	return fallback ? fallback->getAudioEvent(id) : nullptr;
 }
 
 void RuntimeAssets::clear() {
@@ -88,6 +129,7 @@ void RuntimeAssets::clear() {
 	projectRootPath.clear();
 	manifest = RomManifest{};
 	canonicalization = CanonicalizationType::None;
+	fallback = nullptr;
 }
 
 /* ============================================================================
@@ -342,6 +384,7 @@ bool loadAssetsFromRom(const u8* buffer, size_t size, RuntimeAssets& assets) {
 	}
 
 	const auto& assetArray = payload.at("assets").asArray();
+	logMemSnapshot("assets:begin");
 	std::cerr << "[BMSX] Loading " << assetArray.size() << " assets from ROM" << std::endl;
 
 	for (const auto& assetValue : assetArray) {
@@ -404,7 +447,8 @@ bool loadAssetsFromRom(const u8* buffer, size_t size, RuntimeAssets& assets) {
 			}
 
 			// Load image pixel data
-			if (bufStart >= 0 && bufEnd > bufStart) {
+			if (bufStart >= 0 && bufEnd > bufStart &&
+				(assetType == "atlas" || !imgAsset.meta.atlassed)) {
 				const u8* imgData = romData + bufStart;
 				size_t imgSize = bufEnd - bufStart;
 
@@ -501,6 +545,7 @@ bool loadAssetsFromRom(const u8* buffer, size_t size, RuntimeAssets& assets) {
 		}
 	}
 
+	logMemSnapshot("assets:end");
 	return true;
 }
 

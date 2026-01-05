@@ -860,11 +860,11 @@ ModulationInput SoundMaster::parseModulationInput(const Table& table) const {
 }
 
 const AudioAsset& SoundMaster::getAudioOrThrow(const AssetId& id) const {
-	auto it = m_assets->audio.find(id);
-	if (it == m_assets->audio.end()) {
+	const AudioAsset* asset = m_assets ? m_assets->getAudio(id) : nullptr;
+	if (!asset) {
 		throw BMSX_RUNTIME_ERROR("Audio asset not found: " + id);
 	}
-	return it->second;
+	return *asset;
 }
 
 VoiceId SoundMaster::startVoice(AudioType type, const AssetId& id, const AudioAsset& asset, const ModulationParams& params, i32 priority, f32 initialGain) {
