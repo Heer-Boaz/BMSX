@@ -774,6 +774,67 @@ function chooseGlobalGainForTargetBits(
   return best;
 }
 
+function estimateTotalBitsLongForGlobalGain(
+  spec: Float64Array,
+  swbOffsets: Uint16Array,
+  maxSfb: number,
+  globalGain: number,
+  includeIcsInfo: boolean,
+  tmpSfbCb: Uint8Array
+): number {
+  const icsInfoBits = includeIcsInfo ? (1 + 2 + 1 + 6 + 1) : 0; // long ics_info bits
+  const fixedBits = 8 + icsInfoBits + 3; // global_gain + (maybe) ics_info + (pulse/tns/gain_control)
+
+  const gain = sfGain(globalGain);
+  const { spectralBits, codedBands } = estimateSpectralBitsLong(spec, swbOffsets, maxSfb, gain, tmpSfbCb);
+  const sectionBits = estimateSectionDataBitsLong(tmpSfbCb);
+  const scalefacBits = codedBands * HCB_SF_LENS[60]; // diff=0, idx=60 => 1 bit
+  return fixedBits + sectionBits + scalefacBits + spectralBits;
+}
+
+function chooseGlobalGainForTargetBitsHistory(
+  spec: Float64Array,
+  swbOffsets: Uint16Array,
+  maxSfb: number,
+  targetBits: number,
+  includeIcsInfo: boolean,
+  prevGlobalGain: number | null,
+  maxDownStep: number
+): number {
+  if (prevGlobalGain == null || !Number.isFinite(prevGlobalGain)) {
+    return chooseGlobalGainForTargetBits(spec, swbOffsets, maxSfb, targetBits, includeIcsInfo);
+  }
+  if (!Number.isFinite(targetBits) || targetBits <= 0) {
+    return clampInt(prevGlobalGain | 0, 0, 255);
+  }
+
+  const tmpSfbCb = new Uint8Array(maxSfb);
+  let gg = clampInt(prevGlobalGain | 0, 0, 255);
+
+  // Step up until we fit the budget (always allowed).
+  let bits = estimateTotalBitsLongForGlobalGain(spec, swbOffsets, maxSfb, gg, includeIcsInfo, tmpSfbCb);
+  while (bits > targetBits && gg < 255) {
+    gg++;
+    bits = estimateTotalBitsLongForGlobalGain(spec, swbOffsets, maxSfb, gg, includeIcsInfo, tmpSfbCb);
+  }
+
+  // Step down to improve quality, but limit how fast we "improve" to keep the noise floor stable.
+  const downLimit = Math.max(0, maxDownStep | 0);
+  let down = 0;
+  while (down < downLimit && gg > 0) {
+    const bits2 = estimateTotalBitsLongForGlobalGain(spec, swbOffsets, maxSfb, gg - 1, includeIcsInfo, tmpSfbCb);
+    if (bits2 <= targetBits) {
+      gg--;
+      bits = bits2;
+      down++;
+    } else {
+      break;
+    }
+  }
+
+  return gg;
+}
+
 // ============================================================================
 // Encode one Individual Channel Stream (long blocks only)
 // ============================================================================
@@ -784,8 +845,10 @@ function encodeIcsLong(
   fsIndex: number,
   targetBits: number,
   commonWindow: boolean,
-  gainBias: number
-): void {
+  gainBias: number,
+  prevGlobalGain: number | null,
+  globalGainMaxDownStep: number
+): number {
   const swbOffsets = SWB_OFFSET_1024_WINDOW[fsIndex];
   const maxSfb = swbOffsets.length - 1;
   const maxLines = swbOffsets[maxSfb];
@@ -793,8 +856,8 @@ function encodeIcsLong(
   const includeIcsInfo = !commonWindow;
 
   // Choose global_gain (base scalefactor) per frame / channel for crude bitrate control
-  let globalGain = chooseGlobalGainForTargetBits(spec, swbOffsets, maxSfb, targetBits, includeIcsInfo);
-  globalGain = clampInt(globalGain + (gainBias | 0), 0, 255);
+  const baseGlobalGain = chooseGlobalGainForTargetBitsHistory(spec, swbOffsets, maxSfb, targetBits, includeIcsInfo, prevGlobalGain, globalGainMaxDownStep);
+  const globalGain = clampInt(baseGlobalGain + (gainBias | 0), 0, 255);
 
   // Quantize using constant gain for all coded bands (sf == global_gain)
   const gain = sfGain(globalGain);
@@ -821,6 +884,8 @@ function encodeIcsLong(
   writer.writeBits(0, 1); // gain_control_data_present
 
   writeSpectralDataLong(writer, quant, swbOffsets, sfbCb);
+
+  return baseGlobalGain;
 }
 
 // ============================================================================
@@ -911,6 +976,17 @@ resampleTaps?: number;
    */
   gainBiasSteps?: number;
 
+
+  /**
+   * Limits how quickly the encoder is allowed to *improve* quality from one frame to the next
+   * by decreasing global_gain. This stabilizes quantization noise at very low bitrates and can
+   * reduce metallic "warble/siren" artifacts.
+   *
+   * Larger = faster adaptation (potentially more warble), smaller = more stability.
+   *
+   * If omitted, a bitrate-based heuristic is used.
+   */
+  globalGainMaxDownStep?: number;
   /**
    * Extra zero frames appended to let the overlap-add tail decay cleanly.
    * For file encoding, 1 can help if you hear a tail artifact. For live streaming, set 0.
@@ -958,6 +1034,15 @@ function globalGainBiasSteps(bitrateKbps: number, numChannels: number): number {
   if (perCh <= 24) return 1;  // ~1.5 dB
   return 0;
 }
+
+function defaultGlobalGainMaxDownStep(bitrateKbps: number, numChannels: number): number {
+  const perCh = bitrateKbps / Math.max(1, numChannels);
+  if (perCh <= 16) return 1;
+  if (perCh <= 24) return 2;
+  if (perCh <= 32) return 3;
+  return 4;
+}
+
 function autoTargetChannels(inputChannels: number, bitrateKbps: number): 1 | 2 {
   // Pragmatic default: at low bitrates, mono usually beats "bad stereo".
   // You can override via options.targetChannels.
@@ -1160,6 +1245,11 @@ const bwMaxLine = mdctMaxLineForBandwidth(sampleRate, bwHz);
 // If gainBiasSteps isn't explicitly set, enable a small auto-bias at very low bitrates.
 const ggBias = options.gainBiasSteps ?? globalGainBiasSteps(bitrateKbps, numChannels);
 
+  const ggMaxDownStep = options.globalGainMaxDownStep ?? defaultGlobalGainMaxDownStep(bitrateKbps, numChannels);
+
+    // Per-channel global_gain history for stability (reduces frame-to-frame "warble").
+    const prevGlobalGain: Array<number | null> = new Array(numChannels).fill(null);
+
 const flushFrames = options.flushFrames ?? 0;
 const gateDb = options.silenceGateDb;
   const gateRms = (gateDb === undefined || gateDb === null) ? null : Math.pow(10, gateDb / 20);
@@ -1213,7 +1303,7 @@ const gateDb = options.silenceGateDb;
       if (silent0) {
         encodeIcsLongSilence(payloadWriter, fsIndex, /*commonWindow*/ false);
       } else {
-        encodeIcsLong(payloadWriter, specBuf[0], fsIndex, targetBitsPerChannel, /*commonWindow*/ false, ggBias);
+        prevGlobalGain[0] = encodeIcsLong(payloadWriter, specBuf[0], fsIndex, targetBitsPerChannel, /*commonWindow*/ false, ggBias, prevGlobalGain[0], ggMaxDownStep);
       }
     } else {
       payloadWriter.writeBits(1, 3); // ID_CPE
@@ -1224,14 +1314,14 @@ const gateDb = options.silenceGateDb;
       if (silent0) {
         encodeIcsLongSilence(payloadWriter, fsIndex, /*commonWindow*/ false);
       } else {
-        encodeIcsLong(payloadWriter, specBuf[0], fsIndex, targetBitsPerChannel, /*commonWindow*/ false, ggBias);
+        prevGlobalGain[0] = encodeIcsLong(payloadWriter, specBuf[0], fsIndex, targetBitsPerChannel, /*commonWindow*/ false, ggBias, prevGlobalGain[0], ggMaxDownStep);
       }
       // channel 1
       const silentR = (gateRms !== null) && (frameRms[1] < gateRms);
       if (silentR) {
         encodeIcsLongSilence(payloadWriter, fsIndex, /*commonWindow*/ false);
       } else {
-        encodeIcsLong(payloadWriter, specBuf[1], fsIndex, targetBitsPerChannel, /*commonWindow*/ false, ggBias);
+        prevGlobalGain[1] = encodeIcsLong(payloadWriter, specBuf[1], fsIndex, targetBitsPerChannel, /*commonWindow*/ false, ggBias, prevGlobalGain[1], ggMaxDownStep);
       }
     }
 
