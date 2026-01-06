@@ -168,7 +168,7 @@ function getMetadataBuffer(rombin: Buffer | ArrayBuffer, rommeta: RomMeta) {
 	return { metaBuf, metadataOffset, metadataLength };
 }
 
-async function loadRompackFromFile(romfile: string): Promise<Buffer> {
+async function loadRompackFromFile(romfile: string): Promise<Buffer | ArrayBuffer> {
 	let raw: Buffer
 	let error: any;
 	let rawSize = 0;
@@ -214,7 +214,7 @@ async function loadRompackFromFile(romfile: string): Promise<Buffer> {
 
 	const zippedView = new Uint8Array(zipped_rom) as Uint8Array<ArrayBufferLike>;
 	const isCompressed = isPakoCompressed(zippedView);
-	let rombin = null;
+	let rombin: Buffer | ArrayBuffer | null = null;
 	if (isCompressed) {
 		console.log('ROM is compressed, decompressing...');
 		let zipped = zippedView;
@@ -238,7 +238,7 @@ async function loadRompackFromFile(romfile: string): Promise<Buffer> {
 	if (!rombin) {
 		throw new Error('ROM pack is empty or invalid after decompression.');
 	}
-	return rombin as Buffer;
+	return rombin;
 }
 
 /**
@@ -290,16 +290,18 @@ async function main() {
 	}
 
 	// Load the ROM pack from the specified file
-	let rombin: Buffer | ArrayBuffer;
+	let rombin: ArrayBuffer;
 	try {
-		rombin = await loadRompackFromFile(romfile);
+		const loaded = await loadRompackFromFile(romfile);
+		rombin = loaded instanceof ArrayBuffer
+			? loaded
+			: loaded.buffer.slice(loaded.byteOffset, loaded.byteOffset + loaded.byteLength);
 	} catch (e: any) {
 		console.error(`Failed to load ROM file "${romfile}": ${e.message}`);
 		console.error(e?.stack ?? 'No stack trace available');
 		process.exit(1);
 	}
 
-	// @ts-ignore
 	const rommeta = parseMetaFromBuffer(rombin);
 	if (!rommeta || !rommeta.start || !rommeta.end) {
 		console.error('Invalid ROM metadata, unable to parse ROM file.');
