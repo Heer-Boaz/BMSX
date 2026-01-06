@@ -35,7 +35,7 @@ const { LuaParser } = require('../../src/bmsx/lua/luaparser');
 // @ts-ignore
 const { compileLuaChunkToProgram } = require('../../src/bmsx/vm/program_compiler');
 // @ts-ignore
-const { VM_PROGRAM_ASSET_ID, buildModuleAliasesFromPaths, encodeProgram, encodeProgramAsset } = require('../../src/bmsx/vm/vm_program_asset');
+const { VM_PROGRAM_ASSET_ID, VM_PROGRAM_SYMBOLS_ASSET_ID, buildModuleAliasesFromPaths, encodeProgram, encodeProgramAsset, encodeProgramSymbolsAsset } = require('../../src/bmsx/vm/vm_program_asset');
 // @ts-ignore
 // @ts-ignore
 const pako = require('pako');
@@ -1339,8 +1339,9 @@ export async function generateRomAssets(resources: Resource[], reportProgress?: 
 			case 'audio': {
 				// Note that the name has already been sanitized in the `getResMetaList` function
 				const { audiometa } = parseAudioMeta(res.filepath);
-				const encodedBuffer = await encodeWavToAacLc(buffer, res.filepath, { bitrate: undefined });
-				romAssets.push({ resid, type, audiometa, buffer: encodedBuffer, source_path: sourcePath });
+				// const encodedBuffer = await encodeWavToAacLc(buffer, res.filepath, { bitrate: undefined });
+				// romAssets.push({ resid, type, audiometa, buffer: encodedBuffer, source_path: sourcePath });
+				romAssets.push({ resid, type, audiometa, buffer, source_path: sourcePath });
 				break;
 			}
 			case 'code':
@@ -1474,7 +1475,12 @@ export async function generateRomAssets(resources: Resource[], reportProgress?: 
 }
 
 export function appendVmProgramAsset(assetList: RomAsset[], manifest: RomManifest, options: { extraLuaAssets?: RomAsset[] } = {}): void {
-	if (assetList.some(asset => asset.resid === VM_PROGRAM_ASSET_ID)) {
+	const hasProgramAsset = assetList.some(asset => asset.resid === VM_PROGRAM_ASSET_ID);
+	const hasSymbolsAsset = assetList.some(asset => asset.resid === VM_PROGRAM_SYMBOLS_ASSET_ID);
+	if (hasProgramAsset || hasSymbolsAsset) {
+		if (hasProgramAsset !== hasSymbolsAsset) {
+			throw new Error('[RomPacker] VM program asset and symbols asset must be added together.');
+		}
 		return;
 	}
 	const baseLuaAssets = assetList.filter(asset => asset.type === 'lua');
@@ -1538,9 +1544,12 @@ export function appendVmProgramAsset(assetList: RomAsset[], manifest: RomManifes
 	const programAsset = {
 		entryProtoIndex: compiled.entryProtoIndex,
 		program: encodeProgram(program),
-		metadata: compiled.metadata,
 		moduleProtos: Array.from(compiled.moduleProtoMap.entries(), ([path, protoIndex]) => ({ path, protoIndex })),
 		moduleAliases: buildModuleAliasesFromPaths(modulePaths),
+	};
+
+	const symbolsAsset = {
+		metadata: compiled.metadata,
 	};
 
 	const buffer = Buffer.from(encodeProgramAsset(programAsset));
@@ -1549,6 +1558,14 @@ export function appendVmProgramAsset(assetList: RomAsset[], manifest: RomManifes
 		type: 'data',
 		buffer,
 		source_path: VM_PROGRAM_ASSET_ID,
+	});
+
+	const symbolsBuffer = Buffer.from(encodeProgramSymbolsAsset(symbolsAsset));
+	assetList.push({
+		resid: VM_PROGRAM_SYMBOLS_ASSET_ID,
+		type: 'data',
+		buffer: symbolsBuffer,
+		source_path: VM_PROGRAM_SYMBOLS_ASSET_ID,
 	});
 }
 
