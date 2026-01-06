@@ -332,7 +332,7 @@ VMApi& VMRuntime::api() {
 	return *m_api;
 }
 
-void VMRuntime::boot(const VmProgramAsset& asset, ProgramMetadata& metadata) {
+void VMRuntime::boot(const VmProgramAsset& asset, ProgramMetadata* metadata) {
 	m_vmModuleProtos.clear();
 	for (const auto& [path, protoIndex] : asset.moduleProtos) {
 		m_vmModuleProtos[path] = protoIndex;
@@ -342,7 +342,7 @@ void VMRuntime::boot(const VmProgramAsset& asset, ProgramMetadata& metadata) {
 		m_vmModuleAliases[alias] = path;
 	}
 	m_vmModuleCache.clear();
-	boot(asset.program.get(), &metadata, asset.entryProtoIndex);
+	boot(asset.program.get(), metadata, asset.entryProtoIndex);
 }
 
 void VMRuntime::boot(Program* program, ProgramMetadata* metadata, int entryProtoIndex) {

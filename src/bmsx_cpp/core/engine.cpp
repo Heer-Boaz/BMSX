@@ -410,7 +410,7 @@ bool EngineCore::bootWithoutCart() {
 		// Boot the VM with the pre-compiled program from engine assets
 		VMRuntime& runtime = VMRuntime::instance();
 		runtime.setCanonicalization(m_engine_assets.manifest.canonicalization);
-		runtime.boot(*m_engine_assets.vmProgram, *m_engine_assets.vmProgramSymbols);
+		runtime.boot(*m_engine_assets.vmProgram, m_engine_assets.vmProgramSymbols.get());
 	}
 
 	m_rom_loaded = true;  // Engine is running (with system program)
@@ -532,7 +532,7 @@ bool EngineCore::resetLoadedRom() {
 		}
 		VMRuntime& runtime = VMRuntime::instance();
 		runtime.setCanonicalization(m_engine_assets.manifest.canonicalization);
-		runtime.boot(*m_engine_assets.vmProgram, *m_engine_assets.vmProgramSymbols);
+		runtime.boot(*m_engine_assets.vmProgram, m_engine_assets.vmProgramSymbols.get());
 		return true;
 	}
 
@@ -801,7 +801,7 @@ void EngineCore::bootVMFromProgram() {
 	// Boot the VM with the pre-compiled program
 	VMRuntime& runtime = VMRuntime::instance();
 	runtime.setCanonicalization(m_assets.manifest.canonicalization);
-	runtime.boot(*m_assets.vmProgram, *m_assets.vmProgramSymbols);
+	runtime.boot(*m_assets.vmProgram, m_assets.vmProgramSymbols.get());
 }
 
 void EngineCore::refreshAudioAssets() {

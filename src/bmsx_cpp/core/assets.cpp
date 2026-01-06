@@ -591,8 +591,8 @@ bool loadAssetsFromRom(const u8* buffer,
 		}
 	}
 
-	if ((assets.vmProgram != nullptr) != (assets.vmProgramSymbols != nullptr)) {
-		throw BMSX_RUNTIME_ERROR("VM program asset and symbols asset must both be present.");
+	if (!assets.vmProgram && assets.vmProgramSymbols) {
+		throw BMSX_RUNTIME_ERROR("VM program symbols asset requires the program asset.");
 	}
 
 	logMemSnapshot("assets:end");
