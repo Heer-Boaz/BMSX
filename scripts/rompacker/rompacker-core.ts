@@ -1474,12 +1474,16 @@ export async function generateRomAssets(resources: Resource[], reportProgress?: 
 	return romAssets;
 }
 
-export function appendVmProgramAsset(assetList: RomAsset[], manifest: RomManifest, options: { extraLuaAssets?: RomAsset[] } = {}): void {
+export function appendVmProgramAsset(assetList: RomAsset[], manifest: RomManifest, options: { extraLuaAssets?: RomAsset[]; includeSymbols?: boolean } = {}): void {
 	const hasProgramAsset = assetList.some(asset => asset.resid === VM_PROGRAM_ASSET_ID);
 	const hasSymbolsAsset = assetList.some(asset => asset.resid === VM_PROGRAM_SYMBOLS_ASSET_ID);
+	const includeSymbols = options.includeSymbols !== false;
 	if (hasProgramAsset || hasSymbolsAsset) {
-		if (hasProgramAsset !== hasSymbolsAsset) {
-			throw new Error('[RomPacker] VM program asset and symbols asset must be added together.');
+		if (hasSymbolsAsset && !hasProgramAsset) {
+			throw new Error('[RomPacker] VM program symbols asset requires the program asset.');
+		}
+		if (includeSymbols && !hasSymbolsAsset) {
+			throw new Error('[RomPacker] VM program asset and symbols asset must be added together in debug builds.');
 		}
 		return;
 	}
@@ -1548,10 +1552,6 @@ export function appendVmProgramAsset(assetList: RomAsset[], manifest: RomManifes
 		moduleAliases: buildModuleAliasesFromPaths(modulePaths),
 	};
 
-	const symbolsAsset = {
-		metadata: compiled.metadata,
-	};
-
 	const buffer = Buffer.from(encodeProgramAsset(programAsset));
 	assetList.push({
 		resid: VM_PROGRAM_ASSET_ID,
@@ -1559,14 +1559,18 @@ export function appendVmProgramAsset(assetList: RomAsset[], manifest: RomManifes
 		buffer,
 		source_path: VM_PROGRAM_ASSET_ID,
 	});
-
-	const symbolsBuffer = Buffer.from(encodeProgramSymbolsAsset(symbolsAsset));
-	assetList.push({
-		resid: VM_PROGRAM_SYMBOLS_ASSET_ID,
-		type: 'data',
-		buffer: symbolsBuffer,
-		source_path: VM_PROGRAM_SYMBOLS_ASSET_ID,
-	});
+	if (includeSymbols) {
+		const symbolsAsset = {
+			metadata: compiled.metadata,
+		};
+		const symbolsBuffer = Buffer.from(encodeProgramSymbolsAsset(symbolsAsset));
+		assetList.push({
+			resid: VM_PROGRAM_SYMBOLS_ASSET_ID,
+			type: 'data',
+			buffer: symbolsBuffer,
+			source_path: VM_PROGRAM_SYMBOLS_ASSET_ID,
+		});
+	}
 }
 
 /**

@@ -982,7 +982,7 @@ async function main() {
 						validateAudioEventReferences(engineResources);
 						const engineRomAssets = await generateRomAssets(engineResources);
 						// Compile system_program.lua into VM bytecode for C++ engine
-						appendVmProgramAsset(engineRomAssets, engineManifest);
+						appendVmProgramAsset(engineRomAssets, engineManifest, { includeSymbols: debug });
 						await finalizeRompack(engineRomAssets, engineRomName, { projectRootPath: engineProjectRootPath, manifest: engineManifest, zipRom: false, debug: debug });
 						logOk(`Engine assets ready → ${pc.white(`dist/${engineRomName}.rom`)}`);
 					} finally {
@@ -1116,7 +1116,7 @@ async function main() {
 					extraLuaAssets = engineLuaAssets.filter(asset => asset.type === 'lua');
 				}
 			}
-			appendVmProgramAsset(romAssets, romManifest, { extraLuaAssets });
+			appendVmProgramAsset(romAssets, romManifest, { extraLuaAssets, includeSymbols: romPackDebug });
 			await progress.taskCompleted();
 
 			await progress.runWithDetail('Finalize ROM pack', () => finalizeRompack(romAssets, rom_name, { projectRootPath, manifest: romManifest, status: message => progress.setDetail(message), debug: romPackDebug, zipRom: false }));
