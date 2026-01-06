@@ -77,7 +77,7 @@ import {
 	type VmProgramAsset,
 	type VmProgramSymbolsAsset,
 } from './vm_program_asset';
-import { readInstructionWord } from './instruction_format';
+import { INSTRUCTION_BYTES, readInstructionWord } from './instruction_format';
 
 export const VM_BUTTON_ACTIONS: ReadonlyArray<string> = [
 	'left',
@@ -382,6 +382,7 @@ export class BmsxVMRuntime {
 	private readonly cpuMemory: Value[];
 	private readonly cpu: VMCPU;
 	private vmProgramMetadata: ProgramMetadata | null = null;
+	private vmConsoleMetadata: ProgramMetadata | null = null;
 	private _luaPath: string = null;
 	public get currentPath(): string {
 		return this._luaPath;
@@ -537,6 +538,7 @@ export class BmsxVMRuntime {
 		this.vmNewGameClosure = null;
 		this.vmUpdateClosure = null;
 		this.vmDrawClosure = null;
+		this.vmConsoleMetadata = null;
 		this.pendingVmCall = null;
 		this.luaRuntimeFailed = false;
 		this.luaVmInitialized = false;
@@ -3872,16 +3874,30 @@ export class BmsxVMRuntime {
 		return this.internVmString(this.vmToString(value));
 	}
 
-	public runVmConsoleChunk(source: string): Value[] {
-		const baseMetadata = this.vmProgramMetadata;
-		if (!baseMetadata) {
-			throw new Error('[BmsxVMRuntime] VM console requires program symbols.');
+	private buildConsoleMetadata(baseProgram: Program): ProgramMetadata {
+		const instructionCount = Math.floor(baseProgram.code.length / INSTRUCTION_BYTES);
+		const debugRanges: Array<ProgramMetadata['debugRanges'][number]> = new Array(instructionCount);
+		for (let index = 0; index < debugRanges.length; index += 1) {
+			debugRanges[index] = null;
 		}
+		const protoIds = new Array<string>(baseProgram.protos.length);
+		for (let index = 0; index < protoIds.length; index += 1) {
+			protoIds[index] = `proto:${index}`;
+		}
+		return { debugRanges, protoIds };
+	}
+
+	public runVmConsoleChunk(source: string): Value[] {
 		const chunk = this.luaInterpreter.compileChunk(source, 'console');
 		const currentProgram = this.cpu.getProgram();
+		const baseMetadata = this.vmProgramMetadata ?? this.vmConsoleMetadata ?? this.buildConsoleMetadata(currentProgram);
 		const compiled = appendLuaChunkToProgram(currentProgram, baseMetadata, chunk, { canonicalization: this._canonicalization });
 		this.cpu.setProgram(compiled.program, compiled.metadata);
-		this.vmProgramMetadata = compiled.metadata;
+		if (this.vmProgramMetadata) {
+			this.vmProgramMetadata = compiled.metadata;
+		} else {
+			this.vmConsoleMetadata = compiled.metadata;
+		}
 		const results = this.callVmFunction({ protoIndex: compiled.entryProtoIndex, upvalues: [] }, []);
 		this.processVmIo();
 		return results;
