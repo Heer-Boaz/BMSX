@@ -783,7 +783,8 @@ function encodeIcsLong(
   spec: Float64Array,
   fsIndex: number,
   targetBits: number,
-  commonWindow: boolean
+  commonWindow: boolean,
+  gainBias: number
 ): void {
   const swbOffsets = SWB_OFFSET_1024_WINDOW[fsIndex];
   const maxSfb = swbOffsets.length - 1;
@@ -792,7 +793,8 @@ function encodeIcsLong(
   const includeIcsInfo = !commonWindow;
 
   // Choose global_gain (base scalefactor) per frame / channel for crude bitrate control
-  const globalGain = chooseGlobalGainForTargetBits(spec, swbOffsets, maxSfb, targetBits, includeIcsInfo);
+  let globalGain = chooseGlobalGainForTargetBits(spec, swbOffsets, maxSfb, targetBits, includeIcsInfo);
+  globalGain = clampInt(globalGain + (gainBias | 0), 0, 255);
 
   // Quantize using constant gain for all coded bands (sf == global_gain)
   const gain = sfGain(globalGain);
@@ -847,6 +849,265 @@ function writeADTS(writer: BitWriter, frameLenBytes: number, sampleRate: number,
   writer.writeBits(0, 2);       // number_of_raw_data_blocks_in_frame (0 => 1 raw block)
 }
 
+
+export interface AudioEncoderOptions {
+  /** Target bitrate in kbps (default: 128). */
+  bitrate?: number;
+
+/**
+ * Auto-tune for low bitrates: may downmix stereo->mono and resample to a lower AAC-supported
+ * sampling rate to improve quality and speed.
+ *
+ * Default: true
+ */
+autoTune?: boolean;
+
+/**
+ * Force encoder sample rate (Hz). Must be one of the AAC ADTS supported rates:
+ * 96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000.
+ *
+ * If set, overrides autoTune sample-rate selection.
+ */
+targetSampleRate?: number;
+
+/**
+ * Force output channel count (1 or 2).
+ * If set to 1 and input is stereo, encoder will downmix.
+ * (Upmix is not supported.)
+ *
+ * If set, overrides autoTune channel selection.
+ */
+targetChannels?: 1 | 2;
+
+/**
+ * Resampler quality (number of FIR taps). Higher = better, slower.
+ *
+ * Default: 32
+ */
+resampleTaps?: number;
+
+  /**
+   * Optional bandwidth limit (Hz). Frequencies above this are zeroed in the MDCT domain
+   * (a pragmatic low-bitrate quality improvement).
+   *
+   * If omitted, a heuristic based on bitrate/sample-rate is used.
+   */
+  bandwidthHz?: number;
+
+  /**
+   * Optional silence gate (dBFS, negative). If provided, frames whose RMS falls below this
+   * threshold are encoded as true "all-zero" spectra (no warble in silence).
+   *
+   * Example: -55 or -60.
+   */
+  silenceGateDb?: number;
+
+  /**
+   * Optional extra bias added to the chosen global_gain (in AAC scalefactor steps).
+   * Each step is ~1.5 dB. Increasing this can reduce low-level warble at very low bitrates,
+   * at the cost of more quantization (lower quality).
+   *
+   * Typical values: 0..2.
+   */
+  gainBiasSteps?: number;
+
+  /**
+   * Extra zero frames appended to let the overlap-add tail decay cleanly.
+   * For file encoding, 1 can help if you hear a tail artifact. For live streaming, set 0.
+   *
+   * Default: 0
+   */
+  flushFrames?: number;
+}
+
+function clampInt(v: number, lo: number, hi: number): number {
+  return v < lo ? lo : (v > hi ? hi : v);
+}
+
+function defaultBandwidthHz(sampleRate: number, bitrateKbps: number, numChannels: number): number {
+  // Heuristic tuned for AAC-LC without SBR (no HE-AAC tools):
+  // very low bitrates need aggressive bandwidth limiting to avoid "swirl/warble".
+  const perCh = bitrateKbps / Math.max(1, numChannels);
+  let bw: number;
+
+  if (perCh <= 16) bw = 3400;
+  else if (perCh <= 24) bw = 5000;
+  else if (perCh <= 32) bw = 7000;
+  else if (perCh <= 48) bw = 10000;
+  else if (perCh <= 64) bw = 14000;
+  else if (perCh <= 96) bw = 18000;
+  else bw = sampleRate / 2;
+
+  // Never exceed Nyquist.
+  const nyq = sampleRate / 2;
+  return Math.max(0, Math.min(bw, nyq));
+}
+
+function mdctMaxLineForBandwidth(sampleRate: number, bandwidthHz: number): number {
+  // MDCT has AAC_FRAME coefficients spanning ~0..Nyquist (fs/2).
+  // Approx mapping: f ~= (k + 0.5) * fs / (2*N) => k ~= 2*N*f/fs - 0.5.
+  const k = Math.floor((2 * AAC_FRAME * bandwidthHz) / sampleRate - 0.5);
+  return clampInt(k + 1, 0, AAC_FRAME); // +1 because k is zero-based index; line count is k+1
+}
+
+function globalGainBiasSteps(bitrateKbps: number, numChannels: number): number {
+  // Each step is ~1.5 dB (20*log10(2^(0.25))).
+  // A small positive bias can reduce low-level warble at very low bitrates.
+  const perCh = bitrateKbps / Math.max(1, numChannels);
+  if (perCh <= 16) return 2;  // ~3 dB
+  if (perCh <= 24) return 1;  // ~1.5 dB
+  return 0;
+}
+function autoTargetChannels(inputChannels: number, bitrateKbps: number): 1 | 2 {
+  // Pragmatic default: at low bitrates, mono usually beats "bad stereo".
+  // You can override via options.targetChannels.
+  if (inputChannels <= 1) return 1;
+  if (!Number.isFinite(bitrateKbps) || bitrateKbps <= 0) return 2;
+  if (bitrateKbps <= 48) return 1; // <=48 kb/s total: downmix
+  return 2;
+}
+
+function autoTargetSampleRate(inputSampleRate: number, bitrateKbps: number, numChannels: number): number {
+  // Heuristic for AAC-LC without SBR:
+  // Keep the time resolution reasonable (bits per 1024-sample frame) at very low bitrates.
+  // Note: this picks a "desired" rate; we later snap to a supported AAC ADTS rate and avoid upsampling.
+  const perCh = bitrateKbps / Math.max(1, numChannels);
+
+  if (perCh <= 16) return 8000;
+  if (perCh <= 24) return 16000;
+  if (perCh <= 32) return 22050;
+  if (perCh <= 48) return 32000;
+
+  // Higher bitrates: keep input rate (but will be snapped to nearest supported).
+  return inputSampleRate;
+}
+
+function pickAacSampleRate(desired: number, inputSampleRate: number): number {
+  // Choose the closest ADTS-supported rate to `desired`, preferring not to upsample above inputSampleRate.
+  const want = (Number.isFinite(desired) && desired > 0) ? desired : inputSampleRate;
+
+  const rates = AAC_SAMPLE_RATES as unknown as number[]; // descending order in this file
+  const candidates = rates.filter(r => r <= inputSampleRate);
+  const pool = candidates.length > 0 ? candidates : rates;
+
+  let best = pool[pool.length - 1];
+  let bestDist = Number.POSITIVE_INFINITY;
+
+  for (const r of pool) {
+    const d = Math.abs(r - want);
+    if (d < bestDist) {
+      bestDist = d;
+      best = r;
+    }
+  }
+  return best;
+}
+
+function downmixStereoToMono(left: Float32Array, right: Float32Array): Float32Array {
+  const n = Math.min(left.length, right.length);
+  const out = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    // -6 dB sum to reduce clipping risk
+    out[i] = 0.5 * (left[i] + right[i]);
+  }
+  return out;
+}
+
+function sinc(x: number): number {
+  if (x === 0) return 1;
+  const pix = Math.PI * x;
+  return Math.sin(pix) / pix;
+}
+
+function blackmanWindow(k: number, m: number): number {
+  // Blackman window (a0=0.42, a1=0.5, a2=0.08)
+  if (m <= 1) return 1;
+  const a0 = 0.42;
+  const a1 = 0.5;
+  const a2 = 0.08;
+  const w = (2 * Math.PI * k) / (m - 1);
+  return a0 - a1 * Math.cos(w) + a2 * Math.cos(2 * w);
+}
+
+/**
+ * Band-limited (windowed-sinc) resampler.
+ * Designed for downsampling (e.g. 44.1k -> 16k / 8k). Works for upsampling too, but is slower than linear.
+ */
+function resampleSincF32(input: Float32Array, inRate: number, outRate: number, taps: number): Float32Array {
+  if (inRate === outRate) return input;
+  if (!Number.isFinite(inRate) || !Number.isFinite(outRate) || inRate <= 0 || outRate <= 0) {
+    throw new Error(`Invalid resample rates: inRate=${inRate}, outRate=${outRate}`);
+  }
+
+  // Keep taps even and within a sane range.
+  const TAPS = clampInt((taps | 0) || 32, 16, 128);
+  const tapsEven = (TAPS & 1) === 0 ? TAPS : (TAPS + 1);
+  const half = tapsEven / 2;
+
+  const ratio = outRate / inRate;
+  const outLen = Math.max(1, Math.floor(input.length * ratio + 0.5));
+  const out = new Float32Array(outLen);
+
+  // Cutoff in cycles/sample (relative to input rate), with small rolloff to reduce aliasing at the edge.
+  const fc = 0.5 * Math.min(1, ratio) * 0.98;
+  const twoFc = 2 * fc;
+
+  // Precompute window
+  const win = new Float64Array(tapsEven);
+  for (let k = 0; k < tapsEven; k++) win[k] = blackmanWindow(k, tapsEven);
+
+  for (let m = 0; m < outLen; m++) {
+    const t = m / ratio;              // position in input sample units
+    const center = Math.floor(t);
+    const frac = t - center;
+
+    let sum = 0;
+    let sumW = 0;
+
+    // i range produces tapsEven coefficients
+    for (let i = -half + 1; i <= half; i++) {
+      const n = center + i;
+      const x = i - frac; // distance from the fractional position
+
+      // window index in [0, tapsEven-1]
+      const k = i + half - 1;
+      const w = win[k] * twoFc * sinc(twoFc * x);
+
+      if (n >= 0 && n < input.length) sum += input[n] * w;
+      sumW += w;
+    }
+
+    out[m] = sumW !== 0 ? (sum / sumW) : 0;
+  }
+
+  return out;
+}
+
+function encodeIcsLongSilence(writer: BitWriter, fsIndex: number, commonWindow: boolean): void {
+  const swbOffsets = SWB_OFFSET_1024_WINDOW[fsIndex];
+  const maxSfb = swbOffsets.length - 1;
+
+  // Any reasonable value. With ZERO_HCB everywhere, it won't matter much.
+  const globalGain = 180;
+
+  writer.writeBits(globalGain, 8);
+
+  if (!commonWindow) {
+    writeIcsInfoLong(writer, maxSfb);
+  }
+
+  // All sfb are ZERO_HCB => one long "all zero" section.
+  const sfbCb = new Uint8Array(maxSfb);
+  writeSectionDataLong(writer, sfbCb);
+
+  // No scalefactors (because no non-zero bands)
+  // Presence bits:
+  writer.writeBits(0, 1); // pulse_data_present
+  writer.writeBits(0, 1); // tns_data_present
+  writer.writeBits(0, 1); // gain_control_data_present
+
+  // No spectral data.
+}
 // ============================================================================
 // Public API
 // ============================================================================
@@ -854,25 +1115,59 @@ function writeADTS(writer: BitWriter, frameLenBytes: number, sampleRate: number,
 export async function encodeWavToAacLc(
   wavBuffer: Buffer,
   sourcePath: string,
-  options: { bitrate?: number } = {}
+  options: AudioEncoderOptions = {}
 ): Promise<Buffer> {
   const wav = parseWav(wavBuffer);
-  const { sampleRate, numChannels, samples } = wav;
+  let { sampleRate, numChannels, samples } = wav;
 
-  const fsIndex = getSampleRateIndex(sampleRate);
-  if (fsIndex < 0) {
-    throw new Error(`Unsupported AAC sample rate ${sampleRate} Hz in ${sourcePath}`);
-  }
-  if (numChannels !== 1 && numChannels !== 2) {
-    throw new Error(`Only mono/stereo supported. Got ${numChannels} channels in ${sourcePath}`);
-  }
+const bitrateKbps = options.bitrate ?? 128;
 
-  const bitrateKbps = options.bitrate ?? 128;
+// --------------------------------------------------------------------------
+// Auto-tune (optional): downmix + resample for low-bitrate speech-friendly output
+// --------------------------------------------------------------------------
+const autoTune = options.autoTune ?? true;
+
+// Channel selection
+const desiredCh = options.targetChannels ?? (autoTune ? autoTargetChannels(numChannels, bitrateKbps) : numChannels);
+if (desiredCh === 1 && numChannels === 2) {
+  samples = [downmixStereoToMono(samples[0], samples[1])];
+  numChannels = 1;
+}
+// We do not support upmixing; if desiredCh is 2 but input is mono, keep mono.
+if (numChannels !== 1 && numChannels !== 2) {
+  throw new Error(`Only mono/stereo supported. Got ${numChannels} channels in ${sourcePath}`);
+}
+
+// Sample-rate selection
+const desiredRate = options.targetSampleRate ?? (autoTune ? autoTargetSampleRate(sampleRate, bitrateKbps, numChannels) : sampleRate);
+const outRate = pickAacSampleRate(desiredRate, sampleRate);
+
+if (outRate !== sampleRate) {
+  const taps = options.resampleTaps ?? 32;
+  samples = samples.map(ch => resampleSincF32(ch, sampleRate, outRate, taps));
+  sampleRate = outRate;
+}
+
+const fsIndex = getSampleRateIndex(sampleRate);
+if (fsIndex < 0) {
+  throw new Error(`Unsupported AAC sample rate ${sampleRate} Hz in ${sourcePath}`);
+}
+
+// Bandwidth / rate-control knobs
+const bwHz = options.bandwidthHz ?? defaultBandwidthHz(sampleRate, bitrateKbps, numChannels);
+const bwMaxLine = mdctMaxLineForBandwidth(sampleRate, bwHz);
+
+// If gainBiasSteps isn't explicitly set, enable a small auto-bias at very low bitrates.
+const ggBias = options.gainBiasSteps ?? globalGainBiasSteps(bitrateKbps, numChannels);
+
+const flushFrames = options.flushFrames ?? 0;
+const gateDb = options.silenceGateDb;
+  const gateRms = (gateDb === undefined || gateDb === null) ? null : Math.pow(10, gateDb / 20);
   const targetBitsPerFrame = Math.max(200, Math.floor((bitrateKbps * 1000 * AAC_FRAME) / sampleRate));
   const targetBitsPerChannel = Math.floor(targetBitsPerFrame / numChannels);
 
   const totalSamples = samples[0].length;
-  const numFrames = Math.ceil(totalSamples / AAC_FRAME);
+  const numFrames = Math.ceil(totalSamples / AAC_FRAME) + Math.max(0, flushFrames | 0);
 
   const mdct = new Mdct1024();
 
@@ -884,15 +1179,28 @@ export async function encodeWavToAacLc(
 
   for (let f = 0; f < numFrames; f++) {
     // Build 2048-sample analysis buffer per channel (overlap)
+    const frameRms: number[] = new Array(numChannels).fill(0);
+
     for (let ch = 0; ch < numChannels; ch++) {
       inBuf[ch].set(prev[ch], 0);
       const base = f * AAC_FRAME;
+
+      let sumSq = 0;
       for (let i = 0; i < AAC_FRAME; i++) {
         const idx = base + i;
-        inBuf[ch][AAC_FRAME + i] = idx < totalSamples ? samples[ch][idx] * PCM_SCALE : 0;
+        const s = idx < totalSamples ? samples[ch][idx] : 0;
+        sumSq += s * s;
+        inBuf[ch][AAC_FRAME + i] = s * PCM_SCALE;
       }
+      frameRms[ch] = Math.sqrt(sumSq / AAC_FRAME);
+
       prev[ch].set(inBuf[ch].subarray(AAC_FRAME));
       mdct.forward(inBuf[ch], specBuf[ch]);
+
+      // Pragmatic bandwidth limiting at low bitrate: zero out lines above bwMaxLine
+      if (bwMaxLine < AAC_FRAME) {
+        specBuf[ch].fill(0, bwMaxLine);
+      }
     }
 
     // Raw data block payload
@@ -901,15 +1209,30 @@ export async function encodeWavToAacLc(
     if (numChannels === 1) {
       payloadWriter.writeBits(0, 3); // ID_SCE
       payloadWriter.writeBits(0, 4); // element_instance_tag
-      encodeIcsLong(payloadWriter, specBuf[0], fsIndex, targetBitsPerChannel, /*commonWindow*/ false);
+      const silent0 = (gateRms !== null) && (frameRms[0] < gateRms);
+      if (silent0) {
+        encodeIcsLongSilence(payloadWriter, fsIndex, /*commonWindow*/ false);
+      } else {
+        encodeIcsLong(payloadWriter, specBuf[0], fsIndex, targetBitsPerChannel, /*commonWindow*/ false, ggBias);
+      }
     } else {
       payloadWriter.writeBits(1, 3); // ID_CPE
       payloadWriter.writeBits(0, 4); // element_instance_tag
       payloadWriter.writeBits(0, 1); // common_window = 0
       // channel 0
-      encodeIcsLong(payloadWriter, specBuf[0], fsIndex, targetBitsPerChannel, /*commonWindow*/ false);
+      const silent0 = (gateRms !== null) && (frameRms[0] < gateRms);
+      if (silent0) {
+        encodeIcsLongSilence(payloadWriter, fsIndex, /*commonWindow*/ false);
+      } else {
+        encodeIcsLong(payloadWriter, specBuf[0], fsIndex, targetBitsPerChannel, /*commonWindow*/ false, ggBias);
+      }
       // channel 1
-      encodeIcsLong(payloadWriter, specBuf[1], fsIndex, targetBitsPerChannel, /*commonWindow*/ false);
+      const silentR = (gateRms !== null) && (frameRms[1] < gateRms);
+      if (silentR) {
+        encodeIcsLongSilence(payloadWriter, fsIndex, /*commonWindow*/ false);
+      } else {
+        encodeIcsLong(payloadWriter, specBuf[1], fsIndex, targetBitsPerChannel, /*commonWindow*/ false, ggBias);
+      }
     }
 
     payloadWriter.writeBits(7, 3); // ID_END

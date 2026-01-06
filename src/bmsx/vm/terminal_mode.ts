@@ -17,7 +17,7 @@ import {
 	setSelectionAnchorFromOffset,
 } from './ide/inline_text_field';
 import type { InlineInputOptions, TextField, CursorScreenInfo, EditContext, LuaCompletionItem } from './ide/types';
-import { COLOR_COMPLETION_PREVIEW_TEXT, TAB_SPACES } from './ide/constants';
+import { COLOR_COMPLETION_BACKGROUND, COLOR_COMPLETION_BORDER, COLOR_COMPLETION_HIGHLIGHT, COLOR_COMPLETION_HIGHLIGHT_TEXT, COLOR_COMPLETION_PREVIEW_TEXT, COLOR_COMPLETION_TEXT, TAB_SPACES } from './ide/constants';
 import { VMRenderFacade } from './vm_render_facade';
 import { renderInlineCaret, type CaretDrawOps } from './ide/render/render_caret';
 import {
@@ -34,8 +34,9 @@ import { BmsxVMRuntime } from './vm_runtime';
 import { TerminalCommandDispatcher as TerminalCommandDispatcher } from './terminal_commands';
 import { extractErrorMessage } from '../lua/luavalue';
 import type { Value } from './cpu';
-import { LuaMemberCompletionRequest } from './types';
+import { LuaMemberCompletionRequest, VmSymbolEntry } from './types';
 import type { MutableTextPosition, TextBuffer } from './ide/text_buffer';
+import { clamp } from '../utils/clamp';
 
 type TerminalOutputKind =
 	| 'prompt'
@@ -49,6 +50,37 @@ type TerminalOutputKind =
 type TerminalOutputEntry = {
 	text: string;
 	color: number;
+};
+
+type TerminalSymbolPanelMode = 'browse' | 'complete';
+
+type TerminalSymbolQueryContext = {
+	prefix: string;
+	replaceStart: number;
+	replaceEnd: number;
+};
+
+type TerminalSymbolPanelState = {
+	mode: TerminalSymbolPanelMode;
+	entries: VmSymbolEntry[];
+	filtered: VmSymbolEntry[];
+	filter: string;
+	selectionIndex: number;
+	displayRowOffset: number;
+	queryStart: number;
+	queryEnd: number;
+	originalText: string;
+	originalCursor: number;
+};
+
+type TerminalSymbolGridLayout = {
+	columns: number;
+	rows: number;
+	cellWidth: number;
+	gap: number;
+	visibleRows: number;
+	paddingX: number;
+	paddingY: number;
 };
 
 class InlineFieldTextBuffer implements TextBuffer {
@@ -170,6 +202,10 @@ const PADDING_X = 0;
 const PADDING_Y = 0;
 const CHARACTER_TILE_ALPHA = 1.0;
 const CURSOR_BLINK_PERIOD = 0.5;
+const SYMBOL_PANEL_MIN_CELL_WIDTH = 12;
+const SYMBOL_PANEL_COLUMN_GAP = 2;
+const SYMBOL_PANEL_PADDING_X = 1;
+const SYMBOL_PANEL_PADDING_Y = 1;
 
 const OUTPUT_COLORS: Record<TerminalOutputKind, number> = {
 	prompt: 15,
@@ -201,6 +237,8 @@ export class TerminalMode {
 	private active = false;
 	private textVersion = 0;
 	private readonly terminalCommands: TerminalCommandDispatcher;
+	private symbolPanel: TerminalSymbolPanelState = null;
+	private symbolPanelLayout: TerminalSymbolGridLayout = null;
 
 	private fieldText(): string {
 		return getFieldText(this.field);
@@ -288,12 +326,16 @@ export class TerminalMode {
 		this.resetInputField('');
 		this.historyIndex = null;
 		this.completion.closeSession();
+		this.symbolPanel = null;
+		this.symbolPanelLayout = null;
 		this.blinkTimer = 0;
 		this.caretVisible = true;
 	}
 
 	public deactivate(): void {
 		this.active = false;
+		this.symbolPanel = null;
+		this.symbolPanelLayout = null;
 	}
 
 	public setFontVariant(variant: VMFontVariant): void {
@@ -356,7 +398,16 @@ export class TerminalMode {
 		if (!this.active) {
 			return null;
 		}
-		if (this.completion.handleKeybindings()) {
+		if (this.symbolPanel) {
+			if (this.handleSymbolPanelKeybindings()) {
+				this.resetBlink();
+				return null;
+			}
+		} else if (this.handleSymbolTabCompletion()) {
+			this.resetBlink();
+			return null;
+		}
+		if (!this.symbolPanel && this.completion.handleKeybindings()) {
 			this.resetBlink();
 			return null;
 		}
@@ -373,11 +424,18 @@ export class TerminalMode {
 			const editContext = this.buildEditContext(previousText, this.fieldText());
 			this.handleTextMutation(previousText, editContext);
 		} else if (previousCursor !== this.cursorOffset() || previousAnchor !== this.anchorOffset()) {
-			this.completion.onCursorMoved();
+			if (this.symbolPanel) {
+				this.refreshSymbolPanelFilter();
+			} else {
+				this.completion.onCursorMoved();
+			}
 		}
 		const submit = this.trySubmitCommand();
 		if (submit !== null) {
 			this.completion.closeSession();
+			if (this.symbolPanel) {
+				this.closeSymbolPanel(false);
+			}
 			await this.handleTerminalCommand(submit);
 		}
 	}
@@ -438,6 +496,561 @@ export class TerminalMode {
 		return trimmed;
 	}
 
+	public openSymbolBrowser(): void {
+		const entries = this.buildSymbolCatalog();
+		const filtered = entries.slice();
+		this.openSymbolPanel('browse', entries, filtered, null);
+	}
+
+	private handleSymbolTabCompletion(): boolean {
+		if (!isKeyJustPressed('Tab')) {
+			return false;
+		}
+		const { ctrlDown, altDown, metaDown } = { ctrlDown: isCtrlDown(), altDown: isAltDown(), metaDown: isMetaDown() };
+		if (!ctrlDown || altDown || metaDown) {
+			return false;
+		}
+		const context = this.resolveSymbolCompletionContext();
+		if (!context) {
+			return false;
+		}
+		consumeIdeKey('Tab');
+		const entries = this.buildSymbolCatalog();
+		const filtered = this.filterSymbolEntries(entries, context.prefix);
+		if (filtered.length === 0) {
+			return true;
+		}
+		if (filtered.length === 1) {
+			this.applySymbolCompletion(context, filtered[0].name);
+			return true;
+		}
+		this.openSymbolPanel('complete', entries, filtered, context);
+		return true;
+	}
+
+	private handleSymbolPanelKeybindings(): boolean {
+		const panel = this.symbolPanel;
+		if (!panel) {
+			return false;
+		}
+		if (isKeyJustPressed('Escape')) {
+			consumeIdeKey('Escape');
+			this.closeSymbolPanel(true);
+			return true;
+		}
+		if (isKeyJustPressed('Tab')) {
+			consumeIdeKey('Tab');
+			if (panel.mode === 'complete') {
+				this.acceptSymbolPanelSelection();
+			}
+			return true;
+		}
+		const enterPressed = isKeyJustPressed('Enter') || isKeyJustPressed('NumpadEnter');
+		if (enterPressed) {
+			consumeIdeKey('Enter');
+			consumeIdeKey('NumpadEnter');
+			if (panel.mode === 'complete') {
+				this.acceptSymbolPanelSelection();
+			} else {
+				this.closeSymbolPanel(false);
+			}
+			return true;
+		}
+		const { ctrlDown, altDown, metaDown } = { ctrlDown: isCtrlDown(), altDown: isAltDown(), metaDown: isMetaDown() };
+		if (ctrlDown || altDown || metaDown) {
+			return false;
+		}
+		if (this.shouldRepeatKey('ArrowDown')) {
+			consumeIdeKey('ArrowDown');
+			this.moveSymbolSelectionRow(1);
+			return true;
+		}
+		if (this.shouldRepeatKey('ArrowUp')) {
+			consumeIdeKey('ArrowUp');
+			this.moveSymbolSelectionRow(-1);
+			return true;
+		}
+		if (this.shouldRepeatKey('ArrowRight')) {
+			consumeIdeKey('ArrowRight');
+			this.moveSymbolSelectionColumn(1);
+			return true;
+		}
+		if (this.shouldRepeatKey('ArrowLeft')) {
+			consumeIdeKey('ArrowLeft');
+			this.moveSymbolSelectionColumn(-1);
+			return true;
+		}
+		if (this.shouldRepeatKey('PageDown')) {
+			consumeIdeKey('PageDown');
+			this.moveSymbolSelectionPage(1);
+			return true;
+		}
+		if (this.shouldRepeatKey('PageUp')) {
+			consumeIdeKey('PageUp');
+			this.moveSymbolSelectionPage(-1);
+			return true;
+		}
+		return false;
+	}
+
+	private resolveSymbolQueryContext(): TerminalSymbolQueryContext | null {
+		const text = this.fieldText();
+		const cursor = this.cursorOffset();
+		let index = 0;
+		while (index < text.length && text.charAt(index) === ' ') {
+			index += 1;
+		}
+		if (index >= text.length) {
+			return null;
+		}
+		const marker = text.charAt(index);
+		if (marker !== '?' && marker !== '=') {
+			return null;
+		}
+		index += 1;
+		while (index < cursor && text.charAt(index) === ' ') {
+			index += 1;
+		}
+		if (cursor < index) {
+			return null;
+		}
+		for (let i = index; i < cursor; i += 1) {
+			if (!this.isSymbolQueryChar(text.charAt(i))) {
+				return null;
+			}
+		}
+		return {
+			prefix: text.slice(index, cursor),
+			replaceStart: index,
+			replaceEnd: cursor,
+		};
+	}
+
+	private resolveSymbolCompletionContext(): TerminalSymbolQueryContext | null {
+		const queryContext = this.resolveSymbolQueryContext();
+		if (queryContext) {
+			return queryContext;
+		}
+		const text = this.fieldText();
+		const cursor = this.cursorOffset();
+		let start = cursor;
+		while (start > 0 && this.isSymbolQueryChar(text.charAt(start - 1))) {
+			start -= 1;
+		}
+		return {
+			prefix: text.slice(start, cursor),
+			replaceStart: start,
+			replaceEnd: cursor,
+		};
+	}
+
+	private isSymbolQueryChar(ch: string): boolean {
+		const code = ch.charCodeAt(0);
+		if (code >= 48 && code <= 57) {
+			return true;
+		}
+		if (code >= 65 && code <= 90) {
+			return true;
+		}
+		if (code >= 97 && code <= 122) {
+			return true;
+		}
+		return ch === '_';
+	}
+
+	private openSymbolPanel(
+		mode: TerminalSymbolPanelMode,
+		entries: VmSymbolEntry[],
+		filtered: VmSymbolEntry[],
+		query: TerminalSymbolQueryContext | null,
+	): void {
+		const selectionIndex = filtered.length > 0 ? 0 : -1;
+		this.symbolPanel = {
+			mode,
+			entries,
+			filtered,
+			filter: query ? query.prefix : '',
+			selectionIndex,
+			displayRowOffset: 0,
+			queryStart: query ? query.replaceStart : 0,
+			queryEnd: query ? query.replaceEnd : 0,
+			originalText: this.fieldText(),
+			originalCursor: this.cursorOffset(),
+		};
+		this.symbolPanelLayout = null;
+		this.completion.closeSession();
+	}
+
+	private closeSymbolPanel(restoreInput: boolean): void {
+		const panel = this.symbolPanel;
+		if (!panel) {
+			return;
+		}
+		this.symbolPanel = null;
+		this.symbolPanelLayout = null;
+		if (restoreInput) {
+			const previous = this.fieldText();
+			setFieldText(this.field, panel.originalText, false);
+			this.setCursorOffset(panel.originalCursor);
+			this.onExternalFieldMutation(previous, panel.originalText);
+		}
+	}
+
+	private acceptSymbolPanelSelection(): void {
+		const panel = this.symbolPanel;
+		if (!panel) {
+			return;
+		}
+		if (panel.selectionIndex < 0 || panel.selectionIndex >= panel.filtered.length) {
+			this.closeSymbolPanel(false);
+			return;
+		}
+		const entry = panel.filtered[panel.selectionIndex];
+		if (panel.mode === 'complete') {
+			const context: TerminalSymbolQueryContext = {
+				prefix: panel.filter,
+				replaceStart: panel.queryStart,
+				replaceEnd: panel.queryEnd,
+			};
+			this.closeSymbolPanel(false);
+			this.applySymbolCompletion(context, entry.name);
+			return;
+		}
+		this.closeSymbolPanel(false);
+	}
+
+	private refreshSymbolPanelFilter(): void {
+		const panel = this.symbolPanel;
+		if (!panel) {
+			return;
+		}
+		const previousName = panel.selectionIndex >= 0 && panel.selectionIndex < panel.filtered.length
+			? panel.filtered[panel.selectionIndex].name
+			: null;
+		let filter = panel.filter;
+		if (panel.mode === 'complete') {
+			const context = this.resolveSymbolCompletionContext();
+			if (!context) {
+				this.closeSymbolPanel(false);
+				return;
+			}
+			panel.queryStart = context.replaceStart;
+			panel.queryEnd = context.replaceEnd;
+			filter = context.prefix;
+		} else {
+			filter = this.fieldText().trim();
+		}
+		panel.filter = filter;
+		panel.filtered = this.filterSymbolEntries(panel.entries, filter);
+		panel.selectionIndex = this.resolveSymbolSelectionIndex(panel.filtered, previousName);
+		panel.displayRowOffset = 0;
+	}
+
+	private buildSymbolCatalog(): VmSymbolEntry[] {
+		const entries = this.runtime.listVmSymbols();
+		return this.sortSymbolEntries(entries);
+	}
+
+	private sortSymbolEntries(entries: VmSymbolEntry[]): VmSymbolEntry[] {
+		const kindOrder: Record<VmSymbolEntry['kind'], number> = {
+			function: 0,
+			table: 1,
+			constant: 2,
+		};
+		const indexed = entries.map((entry, index) => ({
+			entry,
+			index,
+			normalized: entry.name.toLowerCase(),
+		}));
+		indexed.sort((a, b) => {
+			const kindDelta = kindOrder[a.entry.kind] - kindOrder[b.entry.kind];
+			if (kindDelta !== 0) {
+				return kindDelta;
+			}
+			if (a.normalized < b.normalized) {
+				return -1;
+			}
+			if (a.normalized > b.normalized) {
+				return 1;
+			}
+			if (a.entry.name < b.entry.name) {
+				return -1;
+			}
+			if (a.entry.name > b.entry.name) {
+				return 1;
+			}
+			return a.index - b.index;
+		});
+		return indexed.map(item => item.entry);
+	}
+
+	private filterSymbolEntries(entries: VmSymbolEntry[], prefix: string): VmSymbolEntry[] {
+		if (prefix.length === 0) {
+			return entries.slice();
+		}
+		const needle = prefix.toLowerCase();
+		const filtered: VmSymbolEntry[] = [];
+		for (let index = 0; index < entries.length; index += 1) {
+			const entry = entries[index];
+			if (entry.name.toLowerCase().startsWith(needle)) {
+				filtered.push(entry);
+			}
+		}
+		return filtered;
+	}
+
+	private resolveSymbolSelectionIndex(entries: VmSymbolEntry[], preferredName: string): number {
+		if (entries.length === 0) {
+			return -1;
+		}
+		if (preferredName) {
+			for (let index = 0; index < entries.length; index += 1) {
+				if (entries[index].name === preferredName) {
+					return index;
+				}
+			}
+		}
+		return 0;
+	}
+
+	private replaceInputRange(start: number, end: number, value: string): void {
+		const previous = this.fieldText();
+		const next = previous.slice(0, start) + value + previous.slice(end);
+		setFieldText(this.field, next, false);
+		this.setCursorOffset(start + value.length);
+		this.onExternalFieldMutation(previous, next);
+	}
+
+	private applySymbolCompletion(context: TerminalSymbolQueryContext, name: string): void {
+		this.replaceInputRange(context.replaceStart, context.replaceEnd, name);
+		this.resetBlink();
+	}
+
+	private drawSymbolPanel(params: { contentWidth: number; lineHeight: number; panelLayout: TerminalSymbolGridLayout; panelTop: number; uppercaseDisplay: boolean; }): void {
+		const panel = this.symbolPanel;
+		if (!panel) {
+			this.symbolPanelLayout = null;
+			return;
+		}
+		const { contentWidth, lineHeight, panelLayout, panelTop, uppercaseDisplay } = params;
+		const layout = panelLayout ?? this.symbolPanelLayout;
+		if (!layout) {
+			return;
+		}
+		this.ensureSymbolPanelSelectionVisible(layout);
+
+		const panelRows = layout.visibleRows + layout.paddingY * 2;
+		const panelLeft = PADDING_X;
+		const panelRight = panelLeft + contentWidth;
+		const panelBottom = panelTop + panelRows * lineHeight;
+		this.currentRenderer.rect({
+			kind: 'fill',
+			area: { left: panelLeft, top: panelTop, right: panelRight, bottom: panelBottom },
+			color: Msx1Colors[COLOR_COMPLETION_BACKGROUND],
+		});
+		this.currentRenderer.rect({
+			kind: 'rect',
+			area: { left: panelLeft, top: panelTop, right: panelRight, bottom: panelBottom },
+			color: Msx1Colors[COLOR_COMPLETION_BORDER],
+		});
+
+		const charWidth = this.font.advance(' ');
+		const gridStartX = panelLeft + layout.paddingX * charWidth;
+		const gridStartY = panelTop + layout.paddingY * lineHeight;
+		const cellWidthPx = layout.cellWidth * charWidth;
+		const gapWidthPx = layout.gap * charWidth;
+		const strideX = cellWidthPx + gapWidthPx;
+		const textColor = Msx1Colors[COLOR_COMPLETION_TEXT];
+
+		if (panel.filtered.length === 0) {
+			const message = panel.filter.length > 0 ? 'No matches' : 'No symbols';
+			this.drawGlyphRun(this.currentRenderer, message, gridStartX, gridStartY, textColor, uppercaseDisplay);
+			return;
+		}
+
+		const startRow = panel.displayRowOffset;
+		const endRow = Math.min(layout.rows, startRow + layout.visibleRows);
+		for (let row = startRow; row < endRow; row += 1) {
+			const drawRow = row - startRow;
+			const cellY = gridStartY + drawRow * lineHeight;
+			for (let col = 0; col < layout.columns; col += 1) {
+				const index = row + col * layout.rows;
+				if (index >= panel.filtered.length) {
+					continue;
+				}
+				const entry = panel.filtered[index];
+				const label = this.truncateSymbolName(entry.name, layout.cellWidth);
+				const cellX = gridStartX + col * strideX;
+				const isSelected = index === panel.selectionIndex;
+				if (isSelected) {
+					this.currentRenderer.rect({
+						kind: 'fill',
+						area: {
+							left: cellX - 1,
+							top: cellY - 1,
+							right: cellX + cellWidthPx + 1,
+							bottom: cellY + lineHeight + 1,
+						},
+						color: Msx1Colors[COLOR_COMPLETION_HIGHLIGHT],
+					});
+				}
+				const color = isSelected ? Msx1Colors[COLOR_COMPLETION_HIGHLIGHT_TEXT] : textColor;
+				this.drawGlyphRun(this.currentRenderer, label, cellX, cellY, color, uppercaseDisplay);
+			}
+		}
+	}
+
+	private computeSymbolGridLayout(total: number, maxColumns: number, maxRows: number, maxLabelLength: number): TerminalSymbolGridLayout {
+		const paddingX = clamp(SYMBOL_PANEL_PADDING_X, 0, Math.max(0, Math.floor((maxColumns - 1) / 2)));
+		const paddingY = clamp(SYMBOL_PANEL_PADDING_Y, 0, Math.max(0, Math.floor((maxRows - 1) / 2)));
+		const gap = SYMBOL_PANEL_COLUMN_GAP;
+		const availableColumns = Math.max(1, maxColumns - paddingX * 2);
+		const availableRows = Math.max(1, maxRows - paddingY * 2);
+		const fullCell = clamp(Math.max(1, maxLabelLength), 1, availableColumns);
+		const maxByFull = Math.max(1, Math.floor((availableColumns + gap) / (fullCell + gap)));
+		let columns = Math.max(1, total > 0 ? Math.min(total, maxByFull) : 1);
+		let cellWidth = Math.max(1, Math.floor((availableColumns - gap * (columns - 1)) / columns));
+		if (columns < 2 && total > 1) {
+			const compactCell = clamp(SYMBOL_PANEL_MIN_CELL_WIDTH, 1, availableColumns);
+			const maxByCompact = Math.max(1, Math.floor((availableColumns + gap) / (compactCell + gap)));
+			if (maxByCompact > columns) {
+				columns = Math.min(total, maxByCompact);
+				cellWidth = Math.max(1, Math.floor((availableColumns - gap * (columns - 1)) / columns));
+			}
+		}
+		const rows = Math.max(1, Math.ceil(total / columns));
+		const visibleRows = Math.max(1, Math.min(rows, availableRows));
+		return {
+			columns,
+			rows,
+			cellWidth,
+			gap,
+			visibleRows,
+			paddingX,
+			paddingY,
+		};
+	}
+
+	private measureSymbolMaxLabelLength(entries: VmSymbolEntry[]): number {
+		let maxLength = 0;
+		for (let index = 0; index < entries.length; index += 1) {
+			const length = entries[index].name.length;
+			if (length > maxLength) {
+				maxLength = length;
+			}
+		}
+		return maxLength;
+	}
+
+	private resolveSymbolLayoutForNavigation(): TerminalSymbolGridLayout {
+		if (this.symbolPanelLayout) {
+			return this.symbolPanelLayout;
+		}
+		const panel = this.symbolPanel;
+		if (!panel) {
+			return null;
+		}
+		const rows = Math.max(1, panel.filtered.length);
+		return {
+			columns: 1,
+			rows,
+			cellWidth: SYMBOL_PANEL_MIN_CELL_WIDTH,
+			gap: SYMBOL_PANEL_COLUMN_GAP,
+			visibleRows: rows,
+			paddingX: 0,
+			paddingY: 0,
+		};
+	}
+
+	private ensureSymbolPanelSelectionVisible(layout: TerminalSymbolGridLayout): void {
+		const panel = this.symbolPanel;
+		if (!panel || panel.filtered.length === 0 || panel.selectionIndex < 0) {
+			if (panel) {
+				panel.displayRowOffset = 0;
+			}
+			return;
+		}
+		const row = panel.selectionIndex % layout.rows;
+		const maxOffset = Math.max(0, layout.rows - layout.visibleRows);
+		let offset = clamp(panel.displayRowOffset, 0, maxOffset);
+		if (row < offset) {
+			offset = row;
+		}
+		if (row >= offset + layout.visibleRows) {
+			offset = row - layout.visibleRows + 1;
+		}
+		panel.displayRowOffset = clamp(offset, 0, maxOffset);
+	}
+
+	private moveSymbolSelectionRow(delta: number): void {
+		const panel = this.symbolPanel;
+		const layout = this.resolveSymbolLayoutForNavigation();
+		if (!layout) {
+			return;
+		}
+		const total = panel.filtered.length;
+		if (total === 0) {
+			panel.selectionIndex = -1;
+			return;
+		}
+		const current = panel.selectionIndex < 0 ? 0 : panel.selectionIndex;
+		const next = clamp(current + delta, 0, total - 1);
+		panel.selectionIndex = next;
+		this.ensureSymbolPanelSelectionVisible(layout);
+	}
+
+	private moveSymbolSelectionColumn(delta: number): void {
+		const panel = this.symbolPanel;
+		const layout = this.resolveSymbolLayoutForNavigation();
+		if (!layout) {
+			return;
+		}
+		const total = panel.filtered.length;
+		if (total === 0) {
+			panel.selectionIndex = -1;
+			return;
+		}
+		const current = panel.selectionIndex < 0 ? 0 : panel.selectionIndex;
+		const rows = layout.rows;
+		const columns = layout.columns;
+		const row = current % rows;
+		const col = Math.floor(current / rows);
+		const nextCol = clamp(col + delta, 0, Math.max(0, columns - 1));
+		const columnStart = nextCol * rows;
+		const columnEnd = Math.min(total - 1, columnStart + rows - 1);
+		const next = clamp(columnStart + row, columnStart, columnEnd);
+		panel.selectionIndex = next;
+		this.ensureSymbolPanelSelectionVisible(layout);
+	}
+
+	private moveSymbolSelectionPage(delta: number): void {
+		const panel = this.symbolPanel;
+		const layout = this.resolveSymbolLayoutForNavigation();
+		if (!layout) {
+			return;
+		}
+		const total = panel.filtered.length;
+		if (total === 0) {
+			panel.selectionIndex = -1;
+			return;
+		}
+		const current = panel.selectionIndex < 0 ? 0 : panel.selectionIndex;
+		const step = Math.max(1, layout.visibleRows);
+		const next = clamp(current + step * delta, 0, total - 1);
+		panel.selectionIndex = next;
+		this.ensureSymbolPanelSelectionVisible(layout);
+	}
+
+	private truncateSymbolName(name: string, cellWidth: number): string {
+		if (name.length <= cellWidth) {
+			return name;
+		}
+		if (cellWidth <= 3) {
+			return name.slice(0, cellWidth);
+		}
+		return `${name.slice(0, cellWidth - 3)}...`;
+	}
+
 	public draw(renderer: VMRenderFacade, surface: Viewport): void {
 		this.currentRenderer = renderer;
 		try {
@@ -454,7 +1067,18 @@ export class TerminalMode {
 
 			// space available for output lines above the input area
 			const availableHeight = surface.height - PADDING_Y * 2 - (inputWrap.segments.length * lineHeight);
-			const maxContentLines = Math.max(1, Math.floor(availableHeight / lineHeight));
+			const baseMaxLines = Math.max(1, Math.floor(availableHeight / lineHeight));
+			let panelLayout: TerminalSymbolGridLayout = null;
+			let panelRows = 0;
+			if (this.symbolPanel) {
+				const charWidth = this.font.advance(' ');
+				const maxColumns = Math.max(1, Math.floor(contentWidth / charWidth));
+				const maxLabelLength = this.measureSymbolMaxLabelLength(this.symbolPanel.filtered);
+				panelLayout = this.computeSymbolGridLayout(this.symbolPanel.filtered.length, maxColumns, baseMaxLines, maxLabelLength);
+				panelRows = panelLayout.visibleRows + panelLayout.paddingY * 2;
+				this.symbolPanelLayout = panelLayout;
+			}
+			const maxContentLines = Math.max(0, baseMaxLines - panelRows);
 
 			// build and clamp output lines
 			const wrappedLines = this.buildWrappedLines(contentWidth, maxContentLines);
@@ -472,7 +1096,15 @@ export class TerminalMode {
 
 			// compute where input block starts (positioned right after visible output lines,
 			// so the input moves upward as output fills the viewport — terminal-like behavior)
-			const inputStartY = PADDING_Y + visibleLines.length * lineHeight;
+			const panelTop = PADDING_Y + visibleLines.length * lineHeight;
+			const inputStartY = panelTop + panelRows * lineHeight;
+			this.drawSymbolPanel({
+				contentWidth,
+				lineHeight,
+				panelLayout,
+				panelTop,
+				uppercaseDisplay,
+			});
 
 			// draw prompt at the first input line then draw wrapped input lines (first segment after prompt)
 			const promptColor = Msx1Colors[OUTPUT_COLORS.prompt];
@@ -507,6 +1139,9 @@ export class TerminalMode {
 	}
 
 	private handleHistoryNavigation(): boolean {
+		if (this.symbolPanel) {
+			return false;
+		}
 		const { ctrlDown, altDown, metaDown } = { ctrlDown: isCtrlDown(), altDown: isAltDown(), metaDown: isMetaDown() };
 		if (ctrlDown || altDown || metaDown) {
 			return false;
@@ -572,6 +1207,9 @@ export class TerminalMode {
 	}
 
 	private buildWrappedLines(maxWidth: number, maxLines: number): Array<{ text: string; color: number }> {
+		if (maxLines <= 0) {
+			return [];
+		}
 		const lines: Array<{ text: string; color: number }> = [];
 		for (let i = 0; i < this.output.length; i += 1) {
 			const entry = this.output[i];
@@ -685,7 +1323,11 @@ export class TerminalMode {
 		this.textVersion += 1;
 		this.cachedLinesVersion = -1;
 		invalidateLuaCommentContextFromRow(this.buffer, 0);
-		this.completion.updateAfterEdit(context);
+		if (this.symbolPanel) {
+			this.refreshSymbolPanelFilter();
+		} else {
+			this.completion.updateAfterEdit(context);
+		}
 	}
 
 	private onExternalFieldMutation(previous: string, next: string): void {
@@ -719,6 +1361,9 @@ export class TerminalMode {
 	}
 
 	private drawCompletionOverlays(surface: Viewport, promptWidth: number): void {
+		if (this.symbolPanel) {
+			return;
+		}
 		const bounds = {
 			codeTop: PADDING_Y,
 			codeBottom: surface.height - PADDING_Y,

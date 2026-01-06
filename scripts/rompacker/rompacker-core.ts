@@ -1339,7 +1339,12 @@ export async function generateRomAssets(resources: Resource[], reportProgress?: 
 			case 'audio': {
 				// Note that the name has already been sanitized in the `getResMetaList` function
 				const { audiometa } = parseAudioMeta(res.filepath);
-				const encodedBuffer = await encodeWavToAacLc(buffer, res.filepath, { bitrate: 16 });
+				const encodedBuffer = await encodeWavToAacLc(buffer, res.filepath, {
+					bitrate: 16,
+					autoTune: true,          // default true
+					silenceGateDb: -55,      // sterk aanbevolen bij lage bitrates
+					gainBiasSteps: 2,      // optioneel: override
+				});
 				romAssets.push({ resid, type, audiometa, buffer: encodedBuffer, source_path: sourcePath });
 				// romAssets.push({ resid, type, audiometa, buffer, source_path: sourcePath });
 				break;

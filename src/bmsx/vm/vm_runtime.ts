@@ -51,7 +51,7 @@ import {
 	sanitizeLuaErrorMessage
 } from './runtime_error_util';
 import { BmsxVMStorage } from './storage';
-import type { BmsxVMRuntimeOptions, BmsxVMState, VMLuaBuiltinDescriptor, VMLuaMemberCompletion, LuaMarshalContext } from './types';
+import type { BmsxVMRuntimeOptions, BmsxVMState, VMLuaBuiltinDescriptor, VMLuaMemberCompletion, LuaMarshalContext, VmSymbolEntry, VmSymbolKind } from './types';
 import { getWorkspaceCachedSource } from './workspace_cache';
 import { applyWorkspaceOverridesToCart } from './workspace';
 import type { LuaSourceRecord, LuaSourceRegistry } from './lua_sources';
@@ -3046,6 +3046,52 @@ export class BmsxVMRuntime {
 			return 'native';
 		}
 		return 'function';
+	}
+
+	private describeVmSymbolValue(value: Value): { kind: VmSymbolKind; valueType: string } {
+		if (value === null) {
+			return { kind: 'constant', valueType: 'nil' };
+		}
+		if (typeof value === 'boolean') {
+			return { kind: 'constant', valueType: 'boolean' };
+		}
+		if (typeof value === 'number') {
+			return { kind: 'constant', valueType: 'number' };
+		}
+		if (isStringValue(value)) {
+			return { kind: 'constant', valueType: 'string' };
+		}
+		if (value instanceof Table) {
+			return { kind: 'table', valueType: 'table' };
+		}
+		if (isNativeFunction(value)) {
+			return { kind: 'function', valueType: 'native_function' };
+		}
+		if (isNativeObject(value)) {
+			return { kind: 'table', valueType: 'native_object' };
+		}
+		return { kind: 'function', valueType: 'function' };
+	}
+
+	public listVmSymbols(): VmSymbolEntry[] {
+		const entries = this.cpu.globals.entriesArray();
+		const symbols: VmSymbolEntry[] = [];
+		for (let index = 0; index < entries.length; index += 1) {
+			const entry = entries[index];
+			const key = entry[0];
+			if (!isStringValue(key)) {
+				continue;
+			}
+			const name = stringValueToString(key);
+			const classification = this.describeVmSymbolValue(entry[1]);
+			symbols.push({
+				name,
+				kind: classification.kind,
+				valueType: classification.valueType,
+				origin: 'global',
+			});
+		}
+		return symbols;
 	}
 
 	private requireVmString(value: Value): string {

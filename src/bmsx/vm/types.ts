@@ -75,6 +75,19 @@ export type VMLuaMemberCompletion = {
 	parameters: string[];
 };
 
+export type VmSymbolKind =
+	| 'function'
+	| 'table'
+	| 'constant';
+
+export type VmSymbolEntry = {
+	name: string;
+	kind: VmSymbolKind;
+	valueType: string;
+	origin: string;
+	module?: string;
+};
+
 export type VMLuaHoverResult = {
 	expression: string;
 	lines: string[];

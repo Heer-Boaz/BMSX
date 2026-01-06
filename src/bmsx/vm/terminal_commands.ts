@@ -45,6 +45,7 @@ const HELP_TEXT = [
 	' WS NUKE          Erase workspace and return to ROM-only',
 	'',
 	' MISC:',
+	' SYMBOLS          List Lua symbols',
 	' HELP             Show this help',
 	'----------------------------------------',
 ];
@@ -94,8 +95,24 @@ export class TerminalCommandDispatcher {
 			this.runtime.activateEditor();
 			return true;
 		}
+		if (upper === 'SYMBOLS') {
+			this.runtime.terminal.openSymbolBrowser();
+			return true;
+		}
 		// Support flexible spacing for WS subcommands, e.g. "WS   RESET", "WS\tEDIT", etc.
 		const tokens = this.tokenize(trimmed);
+		if (tokens.length >= 1 && tokens[0].toUpperCase() === 'HELP') {
+			if (tokens.length === 1) {
+				this.printHelp();
+				return true;
+			}
+			if (tokens.length === 2 && tokens[1].toUpperCase() === 'SYMBOLS') {
+				this.runtime.terminal.openSymbolBrowser();
+				return true;
+			}
+			this.runtime.terminal.appendStderr(ERROR_SYNTAX_ERROR);
+			return true;
+		}
 		if (tokens.length >= 1 && tokens[0].toUpperCase() === 'JSSTACK') {
 			this.handleJsStack(tokens);
 			return true;
