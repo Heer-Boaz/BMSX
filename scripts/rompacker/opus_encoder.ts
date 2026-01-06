@@ -1,3 +1,5 @@
+import { Buffer } from "buffer";
+
 export type opus_int32 = number;
 export type opus_uint32 = number;
 export type opus_int16 = number;
@@ -6,6 +8,7 @@ export type opus_val32 = number;
 
 export const MAX_ENCODER_BUFFER = 480;
 export const PSEUDO_SNR_THRESHOLD = 316.23;
+export const OPUS_MAX_PACKET_BYTES = 1276;
 
 export const OPUS_OK = 0;
 export const OPUS_BAD_ARG = -1;
@@ -124,6 +127,8 @@ export class OpusEncoder {
 	energy_masking: Float32Array | null = null;
 	width_mem: StereoWidthState;
 	delay_buffer: Float32Array;
+	pcm_scratch: Float32Array;
+	tmp_prefill: Float32Array;
 	detected_bandwidth = 0;
 	nb_no_activity_frames = 0;
 	peak_signal_energy = 0;
@@ -136,6 +141,8 @@ export class OpusEncoder {
 		this.width_mem = createStereoWidthState();
 		this.hp_mem = new Float32Array(4);
 		this.delay_buffer = new Float32Array(MAX_ENCODER_BUFFER * 2);
+		this.pcm_scratch = new Float32Array(0);
+		this.tmp_prefill = new Float32Array(0);
 	}
 }
 
@@ -254,6 +261,68 @@ export function opus_encoder_init(st: OpusEncoder, Fs: opus_int32, channels: num
 	st.rangeFinal = 0;
 }
 
+export function frame_size_select(frame_size: opus_int32, variable_duration: number, Fs: opus_int32): opus_int32 {
+	const fs400 = Math.trunc(Fs / 400);
+	let new_size = 0;
+	if (frame_size < fs400) return -1;
+	if (variable_duration === OPUS_FRAMESIZE_ARG) {
+		new_size = frame_size;
+	} else if (variable_duration >= OPUS_FRAMESIZE_2_5_MS && variable_duration <= OPUS_FRAMESIZE_120_MS) {
+		if (variable_duration <= OPUS_FRAMESIZE_40_MS) {
+			new_size = fs400 << (variable_duration - OPUS_FRAMESIZE_2_5_MS);
+		} else {
+			new_size = Math.trunc((variable_duration - OPUS_FRAMESIZE_2_5_MS - 2) * Fs / 50);
+		}
+	} else {
+		return -1;
+	}
+	if (new_size > frame_size) return -1;
+	if (
+		400 * new_size !== Fs &&
+		200 * new_size !== Fs &&
+		100 * new_size !== Fs &&
+		50 * new_size !== Fs &&
+		25 * new_size !== Fs &&
+		50 * new_size !== 3 * Fs &&
+		50 * new_size !== 4 * Fs &&
+		50 * new_size !== 5 * Fs &&
+		50 * new_size !== 6 * Fs
+	) {
+		return -1;
+	}
+	return new_size;
+}
+
+export function opus_encode_float(st: OpusEncoder, pcm: Float32Array, analysis_frame_size: number, max_data_bytes: number): Buffer {
+	const frame_size = frame_size_select(analysis_frame_size, st.variable_duration, st.Fs);
+	if (frame_size <= 0) {
+		throw new Error(`Invalid frame size ${analysis_frame_size}`);
+	}
+	if (max_data_bytes <= 0) {
+		throw new Error("max_data_bytes must be > 0");
+	}
+	const frame_samples = frame_size * st.channels;
+	st.pcm_scratch = ensureFloat32Capacity(st.pcm_scratch, frame_samples);
+	st.pcm_scratch.set(pcm.subarray(0, frame_samples));
+	return encode_placeholder_packet(st, frame_size, max_data_bytes);
+}
+
+export function opus_encode(st: OpusEncoder, pcm: Int16Array, analysis_frame_size: number, max_data_bytes: number): Buffer {
+	const frame_size = frame_size_select(analysis_frame_size, st.variable_duration, st.Fs);
+	if (frame_size <= 0) {
+		throw new Error(`Invalid frame size ${analysis_frame_size}`);
+	}
+	if (max_data_bytes <= 0) {
+		throw new Error("max_data_bytes must be > 0");
+	}
+	const frame_samples = frame_size * st.channels;
+	st.pcm_scratch = ensureFloat32Capacity(st.pcm_scratch, frame_samples);
+	for (let i = 0; i < frame_samples; i++) {
+		st.pcm_scratch[i] = pcm[i] / 32768;
+	}
+	return encode_placeholder_packet(st, frame_size, max_data_bytes);
+}
+
 function createStereoWidthState(): StereoWidthState {
 	return {
 		XX: 0,
@@ -296,4 +365,50 @@ function createSilkEncControlStruct(): SilkEncControlStruct {
 
 function createTonalityAnalysisState(): TonalityAnalysisState {
 	return {};
+}
+
+function gen_toc(mode: number, framerate: number, bandwidth: number, channels: number): number {
+	let period = 0;
+	let rate = framerate;
+	while (rate < 400) {
+		rate <<= 1;
+		period++;
+	}
+	let toc = 0;
+	if (mode === MODE_SILK_ONLY) {
+		toc = (bandwidth - OPUS_BANDWIDTH_NARROWBAND) << 5;
+		toc |= (period - 2) << 3;
+	} else if (mode === MODE_CELT_ONLY) {
+		let tmp = bandwidth - OPUS_BANDWIDTH_MEDIUMBAND;
+		if (tmp < 0) tmp = 0;
+		toc = 0x80;
+		toc |= tmp << 5;
+		toc |= period << 3;
+	} else {
+		toc = 0x60;
+		toc |= (bandwidth - OPUS_BANDWIDTH_SUPERWIDEBAND) << 4;
+		toc |= (period - 2) << 3;
+	}
+	toc |= (channels === 2 ? 1 : 0) << 2;
+	return toc & 0xff;
+}
+
+function ensureFloat32Capacity(buf: Float32Array, size: number): Float32Array {
+	if (buf.length < size) {
+		return new Float32Array(size);
+	}
+	return buf;
+}
+
+function encode_placeholder_packet(st: OpusEncoder, frame_size: number, max_data_bytes: number): Buffer {
+	const prefill_samples = Math.trunc((st.Fs / 400) * st.channels);
+	st.tmp_prefill = ensureFloat32Capacity(st.tmp_prefill, prefill_samples);
+	const frame_rate = Math.trunc(st.Fs / frame_size);
+	const toc = gen_toc(st.mode, frame_rate, st.bandwidth, st.channels);
+	const out_len = Math.min(OPUS_MAX_PACKET_BYTES, max_data_bytes, 2);
+	const out = Buffer.alloc(out_len);
+	out[0] = toc;
+	if (out_len > 1) out[1] = 0;
+	st.rangeFinal = 0;
+	return out;
 }
