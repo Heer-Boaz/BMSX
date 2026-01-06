@@ -593,55 +593,34 @@ export class TerminalMode {
 		return false;
 	}
 
-	private resolveSymbolQueryContext(): TerminalSymbolQueryContext | null {
+	private resolveSymbolCompletionContext(): TerminalSymbolQueryContext | null {
 		const text = this.fieldText();
 		const cursor = this.cursorOffset();
-		let index = 0;
-		while (index < text.length && text.charAt(index) === ' ') {
-			index += 1;
-		}
-		if (index >= text.length) {
-			return null;
-		}
-		const marker = text.charAt(index);
-		if (marker !== '?' && marker !== '=') {
-			return null;
-		}
-		index += 1;
-		while (index < cursor && text.charAt(index) === ' ') {
-			index += 1;
-		}
-		if (cursor < index) {
-			return null;
-		}
-		for (let i = index; i < cursor; i += 1) {
-			if (!this.isSymbolQueryChar(text.charAt(i))) {
-				return null;
-			}
-		}
+		const bounds = this.findSymbolCompletionBounds(text, cursor);
 		return {
-			prefix: text.slice(index, cursor),
-			replaceStart: index,
-			replaceEnd: cursor,
+			prefix: text.slice(bounds.start, cursor),
+			replaceStart: bounds.start,
+			replaceEnd: bounds.end,
 		};
 	}
 
-	private resolveSymbolCompletionContext(): TerminalSymbolQueryContext | null {
-		const queryContext = this.resolveSymbolQueryContext();
-		if (queryContext) {
-			return queryContext;
-		}
-		const text = this.fieldText();
-		const cursor = this.cursorOffset();
+	private findSymbolCompletionBounds(text: string, cursor: number): { start: number; end: number } {
 		let start = cursor;
-		while (start > 0 && this.isSymbolQueryChar(text.charAt(start - 1))) {
+		while (start > 0 && !this.isSymbolCompletionBoundary(text.charAt(start - 1))) {
 			start -= 1;
 		}
-		return {
-			prefix: text.slice(start, cursor),
-			replaceStart: start,
-			replaceEnd: cursor,
-		};
+		let end = cursor;
+		while (end < text.length && !this.isSymbolCompletionBoundary(text.charAt(end))) {
+			end += 1;
+		}
+		return { start, end };
+	}
+
+	private isSymbolCompletionBoundary(ch: string): boolean {
+		if (ch === '.' || ch === ':') {
+			return true;
+		}
+		return !this.isSymbolQueryChar(ch);
 	}
 
 	private isSymbolQueryChar(ch: string): boolean {
