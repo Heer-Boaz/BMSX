@@ -7,6 +7,7 @@ import { atlasIndexResolver, createOptimizedAtlas, generateAtlasName } from './a
 import { BoundingBoxExtractor } from './boundingbox_extractor';
 import { loadGLTFModel } from './gltfloader';
 import type { AtlasResource, ImageResource, Resource, resourcetype, RomPackerTarget } from './rompacker.rompack';
+import { encodeWavToAacLc } from './audioencoder';
 // @ts-ignore
 const { build } = require('esbuild');
 // @ts-ignore
@@ -1338,7 +1339,8 @@ export async function generateRomAssets(resources: Resource[], reportProgress?: 
 			case 'audio': {
 				// Note that the name has already been sanitized in the `getResMetaList` function
 				const { audiometa } = parseAudioMeta(res.filepath);
-				romAssets.push({ resid, type, audiometa, buffer, source_path: sourcePath });
+				const encodedBuffer = await encodeWavToAacLc(buffer, res.filepath, { bitrate: undefined });
+				romAssets.push({ resid, type, audiometa, buffer: encodedBuffer, source_path: sourcePath });
 				break;
 			}
 			case 'code':
