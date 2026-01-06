@@ -1435,6 +1435,9 @@ export function shutdown(): void {
 }
 
 export function activate(): void {
+	if (!BmsxVMRuntime.instance.hasProgramSymbols) {
+		return;
+	}
 	ide_state.input.applyOverrides(true, captureKeys);
 	if (ide_state.activeCodeTabContextId) {
 		const existingTab = ide_state.tabs.find(candidate => candidate.id === ide_state.activeCodeTabContextId);

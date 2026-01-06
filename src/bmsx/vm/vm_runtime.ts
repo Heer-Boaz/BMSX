@@ -65,7 +65,18 @@ import type { RectRenderSubmission } from '../render/shared/render_types';
 import { compileLuaChunkToProgram, appendLuaChunkToProgram } from './program_compiler';
 import { IO_ARG0_OFFSET, IO_BUFFER_BASE, IO_COMMAND_STRIDE, IO_CMD_PRINT, IO_SYS_BOOT_CART, IO_SYS_CART_PRESENT, IO_WRITE_PTR_ADDR, VM_IO_MEMORY_SIZE } from './vm_io';
 import { VmHandlerCache } from './vm_handler_cache';
-import { buildModuleAliasesFromPaths } from './vm_program_asset';
+import {
+	buildModuleAliasMap,
+	buildModuleAliasesFromPaths,
+	buildModuleProtoMap,
+	decodeProgramAsset,
+	decodeProgramSymbolsAsset,
+	inflateProgram,
+	VM_PROGRAM_ASSET_ID,
+	VM_PROGRAM_SYMBOLS_ASSET_ID,
+	type VmProgramAsset,
+	type VmProgramSymbolsAsset,
+} from './vm_program_asset';
 import { readInstructionWord } from './instruction_format';
 
 export const VM_BUTTON_ACTIONS: ReadonlyArray<string> = [
@@ -169,6 +180,7 @@ export class BmsxVMRuntime {
 			});
 			runtime.configureProgramSources({
 				engineSources: engineLuaSources,
+				engineAssetSource: engineSource,
 				engineCanonicalization: engineLayer.index.manifest.vm.canonicalization,
 			});
 			await runtime.boot();
@@ -220,6 +232,8 @@ export class BmsxVMRuntime {
 		runtime.configureProgramSources({
 			engineSources: engineLuaSources,
 			cartSources: cartLuaSources,
+			engineAssetSource: engineSource,
+			cartAssetSource: cartSource,
 			engineCanonicalization: engineLayer.index.manifest.vm.canonicalization,
 			cartCanonicalization: cartLayer.index.manifest.vm.canonicalization,
 		});
@@ -259,6 +273,24 @@ export class BmsxVMRuntime {
 			registry.path2lua[luaAsset.normalized_source_path] = luaAsset;
 		}
 
+		if (Object.keys(registry.path2lua).length === 0) {
+			const entryPath = index.manifest.lua.entry_path;
+			const hasProgramAsset = index.assets.some(asset => asset.resid === VM_PROGRAM_ASSET_ID);
+			if (hasProgramAsset) {
+				const stub: LuaSourceRecord = {
+					resid: entryPath,
+					type: 'lua',
+					src: '',
+					base_src: '',
+					source_path: entryPath,
+					normalized_source_path: entryPath,
+					update_timestamp: 0,
+				};
+				registry.path2lua[stub.source_path] = stub;
+				registry.path2lua[stub.normalized_source_path] = stub;
+			}
+		}
+
 		return registry;
 	}
 
@@ -279,11 +311,15 @@ export class BmsxVMRuntime {
 	private configureProgramSources(params: {
 		engineSources: LuaSourceRegistry;
 		cartSources?: LuaSourceRegistry;
+		engineAssetSource: RawAssetSource;
+		cartAssetSource?: RawAssetSource;
 		engineCanonicalization: CanonicalizationType;
 		cartCanonicalization?: CanonicalizationType;
 	}): void {
 		this.engineLuaSources = params.engineSources;
 		this.cartLuaSources = params.cartSources ?? null;
+		this.engineAssetSource = params.engineAssetSource;
+		this.cartAssetSource = params.cartAssetSource ?? null;
 		this.engineCanonicalization = params.engineCanonicalization;
 		this.cartCanonicalization = params.cartCanonicalization ?? params.engineCanonicalization;
 		this.pendingCartBoot = false;
@@ -345,7 +381,7 @@ export class BmsxVMRuntime {
 	private pendingProgramReload: { runInit?: boolean } = null;
 	private readonly cpuMemory: Value[];
 	private readonly cpu: VMCPU;
-	private vmProgramMetadata: ProgramMetadata = null;
+	private vmProgramMetadata: ProgramMetadata | null = null;
 	private _luaPath: string = null;
 	public get currentPath(): string {
 		return this._luaPath;
@@ -402,6 +438,8 @@ export class BmsxVMRuntime {
 	private pendingCartBoot = false;
 	private engineLuaSources: LuaSourceRegistry = null;
 	private cartLuaSources: LuaSourceRegistry = null;
+	private engineAssetSource: RawAssetSource = null;
+	private cartAssetSource: RawAssetSource = null;
 	private engineCanonicalization: CanonicalizationType = null;
 	private cartCanonicalization: CanonicalizationType = null;
 	private _canonicalization: CanonicalizationType;
@@ -411,6 +449,9 @@ export class BmsxVMRuntime {
 	}
 	public get interpreter(): LuaInterpreter {
 		return this.luaInterpreter;
+	}
+	public get hasProgramSymbols(): boolean {
+		return this.vmProgramMetadata !== null;
 	}
 
 	private constructor(options: BmsxVMRuntimeOptions) {
@@ -720,8 +761,10 @@ export class BmsxVMRuntime {
 		this.applyDebuggerStopLocation(signal);
 		if (signal.reason === 'exception') {
 			this.recordDebuggerExceptionFault(signal);
-			const message = this.faultSnapshot.message;
-			this.editor.showRuntimeErrorInChunk(this.faultSnapshot.path, this.faultSnapshot.line, this.faultSnapshot.column, message);
+			if (this.vmProgramMetadata && this.editor.isActive) {
+				const message = this.faultSnapshot.message;
+				this.editor.showRuntimeErrorInChunk(this.faultSnapshot.path, this.faultSnapshot.line, this.faultSnapshot.column, message);
+			}
 		}
 	}
 
@@ -827,7 +870,7 @@ export class BmsxVMRuntime {
 				$.view.primaryAtlas = 0;
 			}
 			api.cartdata($.luaSources.namespace);
-			this.bootLuaProgram();
+			this.bootActiveProgram();
 			this.hasCompletedInitialBoot = true;
 		}
 		catch (error) {
@@ -1173,6 +1216,10 @@ export class BmsxVMRuntime {
 		if (!this.pendingProgramReload) {
 			return;
 		}
+		if (!this.hasLuaAssets()) {
+			this.pendingProgramReload = null;
+			return;
+		}
 		if (this.currentFrameState || this.pendingVmCall) {
 			return;
 		}
@@ -1291,13 +1338,17 @@ export class BmsxVMRuntime {
 	private hotReloadProgramEntry(params: { path: string; source: string; preserveEngineModules?: boolean }): void {
 		const preserveRuntimeFailure = this.luaRuntimeFailed || (this.pauseCoordinator.hasSuspension() && this.pauseCoordinator.getPendingException() !== null);
 		const binding = params.path;
+		const baseMetadata = this.vmProgramMetadata;
+		if (!baseMetadata) {
+			throw new Error('[BmsxVMRuntime] Hot reload requires program symbols.');
+		}
 		const interpreter = this.luaInterpreter;
 		interpreter.clearLastFaultEnvironment();
 		const chunk = interpreter.compileChunk(params.source, binding);
 		const { modules, modulePaths } = this.buildVmModuleChunks(binding);
 		const { program, metadata, entryProtoIndex, moduleProtoMap } = compileLuaChunkToProgram(chunk, modules, {
 			baseProgram: this.cpu.getProgram(),
-			baseMetadata: this.vmProgramMetadata,
+			baseMetadata,
 			canonicalization: this._canonicalization,
 		});
 		this.vmModuleProtos.clear();
@@ -1771,6 +1822,15 @@ export class BmsxVMRuntime {
 		this.callVmFunction({ protoIndex: compiled.entryProtoIndex, upvalues: [] }, []);
 		this.processVmIo();
 		return { program: compiled.program, metadata: compiled.metadata };
+	}
+
+	private applyEngineBuiltinGlobals(): void {
+		const engine = this.requireVmModule('engine') as Table;
+		for (let index = 0; index < ENGINE_LUA_BUILTIN_FUNCTIONS.length; index += 1) {
+			const name = ENGINE_LUA_BUILTIN_FUNCTIONS[index].name;
+			const member = engine.get(this.vmKey(name)) as Closure;
+			this.registerVmGlobal(name, member);
+		}
 	}
 
 	private seedVmGlobals(): void {
@@ -3393,6 +3453,9 @@ export class BmsxVMRuntime {
 	}
 
 	private resolveVmFunctionName(protoIndex: number): string {
+		if (!this.vmProgramMetadata) {
+			return `proto:${protoIndex}`;
+		}
 		const protoId = this.vmProgramMetadata.protoIds[protoIndex];
 		const slashIndex = protoId.lastIndexOf('/');
 		const hint = slashIndex >= 0 ? protoId.slice(slashIndex + 1) : protoId;
@@ -3411,6 +3474,31 @@ export class BmsxVMRuntime {
 			return 'anonymous';
 		}
 		return hint;
+	}
+
+	private resolveProgramAssetSource(): RawAssetSource {
+		const source = this.isEngineProgramActive() ? this.engineAssetSource : this.cartAssetSource;
+		if (!source) {
+			throw new Error('[BmsxVMRuntime] Program asset source not configured.');
+		}
+		return source;
+	}
+
+	private hasLuaAssets(): boolean {
+		const source = this.resolveProgramAssetSource();
+		return source.list('lua').length > 0;
+	}
+
+	private loadVmProgramAssets(): { program: VmProgramAsset; symbols: VmProgramSymbolsAsset | null } {
+		const source = this.resolveProgramAssetSource();
+		const programEntry = source.getEntry(VM_PROGRAM_ASSET_ID);
+		if (!programEntry) {
+			throw new Error('[BmsxVMRuntime] VM program asset not found.');
+		}
+		const program = decodeProgramAsset(source.getBytes(programEntry));
+		const symbolsEntry = source.getEntry(VM_PROGRAM_SYMBOLS_ASSET_ID);
+		const symbols = symbolsEntry ? decodeProgramSymbolsAsset(source.getBytes(symbolsEntry)) : null;
+		return { program, symbols };
 	}
 
 	private buildVmModuleChunks(entryPath: string): { modules: Array<{ path: string; chunk: LuaChunk }>; modulePaths: string[] } {
@@ -3444,6 +3532,66 @@ export class BmsxVMRuntime {
 			}
 		}
 		return { modules, modulePaths };
+	}
+
+	private bootVmProgramAsset(options?: { preserveState?: boolean; runInit?: boolean }): boolean {
+		const { program, symbols } = this.loadVmProgramAssets();
+		this.cartEntryAvailable = true;
+		this.resetLuaInteroperabilityState();
+		const interpreter = this.createLuaInterpreter();
+		this.assignInterpreter(interpreter);
+
+		this._luaPath = $.luaSources.entry_path;
+		if (!options?.preserveState) {
+			this.resetVmState();
+		}
+
+		const protoMap = buildModuleProtoMap(program.moduleProtos);
+		this.vmModuleProtos.clear();
+		for (const [path, protoIndex] of protoMap.entries()) {
+			this.vmModuleProtos.set(path, protoIndex);
+		}
+		const aliasMap = buildModuleAliasMap(program.moduleAliases);
+		this.vmModuleAliases.clear();
+		for (const [alias, path] of aliasMap.entries()) {
+			this.vmModuleAliases.set(alias, path);
+		}
+		this.vmModuleCache.clear();
+		this.cpuMemory[IO_WRITE_PTR_ADDR] = 0;
+
+		const inflated = inflateProgram(program.program);
+		const metadata = symbols ? symbols.metadata : null;
+		this.cpu.setProgram(inflated, metadata);
+		this.vmProgramMetadata = metadata;
+		this.applyEngineBuiltinGlobals();
+		this.processVmIo();
+
+		this.cpu.start(program.entryProtoIndex);
+		this.pendingVmCall = null;
+		this.cpu.instructionBudgetRemaining = null;
+		this.cpu.run(null);
+		this.processVmIo();
+		this.luaVmInitialized = true;
+
+		this.bindLifecycleHandlers();
+		if (options?.runInit === false) {
+			return true;
+		}
+		const ok = this.runLuaLifecycleHandler('init');
+		if (!ok) {
+			return false;
+		}
+		return this.runLuaLifecycleHandler('new_game');
+	}
+
+	private bootActiveProgram(options?: { preserveState?: boolean; runInit?: boolean }): boolean {
+		const ok = this.hasLuaAssets()
+			? this.bootLuaProgram({ preserveState: options?.preserveState })
+			: this.bootVmProgramAsset(options);
+		if (!this.vmProgramMetadata && this.editor.isActive) {
+			this.deactivateEditor();
+		}
+		return ok;
 	}
 
 	private bootLuaProgram(options?: { preserveState?: boolean; sourceOverride?: { path: string; source: string } }): boolean {
@@ -3529,7 +3677,14 @@ export class BmsxVMRuntime {
 			$.view.primaryAtlas = 0;
 			try {
 				this.resetVmState();
-				this.reloadLuaProgramState({ runInit: options?.runInit !== false });
+				if (this.hasLuaAssets()) {
+					this.reloadLuaProgramState({ runInit: options?.runInit !== false });
+				} else {
+					this.bootVmProgramAsset({ preserveState: true, runInit: options?.runInit });
+					if (!this.vmProgramMetadata && this.editor.isActive) {
+						this.deactivateEditor();
+					}
+				}
 			} catch (error) {
 				this.handleLuaError(error);
 			}
@@ -3718,9 +3873,13 @@ export class BmsxVMRuntime {
 	}
 
 	public runVmConsoleChunk(source: string): Value[] {
+		const baseMetadata = this.vmProgramMetadata;
+		if (!baseMetadata) {
+			throw new Error('[BmsxVMRuntime] VM console requires program symbols.');
+		}
 		const chunk = this.luaInterpreter.compileChunk(source, 'console');
 		const currentProgram = this.cpu.getProgram();
-		const compiled = appendLuaChunkToProgram(currentProgram, this.vmProgramMetadata, chunk, { canonicalization: this._canonicalization });
+		const compiled = appendLuaChunkToProgram(currentProgram, baseMetadata, chunk, { canonicalization: this._canonicalization });
 		this.cpu.setProgram(compiled.program, compiled.metadata);
 		this.vmProgramMetadata = compiled.metadata;
 		const results = this.callVmFunction({ protoIndex: compiled.entryProtoIndex, upvalues: [] }, []);

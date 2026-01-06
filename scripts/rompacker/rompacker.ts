@@ -97,6 +97,17 @@ const taskList: TaskName[] = [
 	'ROM PACKING GE-DONUT!! :-)',
 ];
 
+function stripLuaAssets(assets: RomAsset[], debug: boolean): void {
+	if (debug) {
+		return;
+	}
+	for (let index = assets.length - 1; index >= 0; index -= 1) {
+		if (assets[index].type === 'lua') {
+			assets.splice(index, 1);
+		}
+	}
+}
+
 // --- Individual lists that allow us to easily remove tasks from the main task list (visualisation only!) ---
 const romBuildTasks: TaskName[] = [
 	'Rom manifest zoekeren en parseren',
@@ -983,6 +994,7 @@ async function main() {
 						const engineRomAssets = await generateRomAssets(engineResources);
 						// Compile system_program.lua into VM bytecode for C++ engine
 						appendVmProgramAsset(engineRomAssets, engineManifest, { includeSymbols: debug });
+						stripLuaAssets(engineRomAssets, debug);
 						await finalizeRompack(engineRomAssets, engineRomName, { projectRootPath: engineProjectRootPath, manifest: engineManifest, zipRom: false, debug: debug });
 						logOk(`Engine assets ready → ${pc.white(`dist/${engineRomName}.rom`)}`);
 					} finally {
@@ -1117,6 +1129,7 @@ async function main() {
 				}
 			}
 			appendVmProgramAsset(romAssets, romManifest, { extraLuaAssets, includeSymbols: romPackDebug });
+			stripLuaAssets(romAssets, romPackDebug);
 			await progress.taskCompleted();
 
 			await progress.runWithDetail('Finalize ROM pack', () => finalizeRompack(romAssets, rom_name, { projectRootPath, manifest: romManifest, status: message => progress.setDetail(message), debug: romPackDebug, zipRom: false }));
