@@ -30,6 +30,10 @@ let assetList: RomAsset[] = [];
 // 	return i === 0 ? `${n}` : `${num.toFixed(2)}${units[i]}`;
 // }
 
+function formatNumberAsHex(n: number): string {
+	return `#${n.toString(16).toUpperCase()}`;
+}
+
 function formatByteSize(size: number): string {
 	const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
 	let i = 0;
@@ -245,17 +249,25 @@ async function loadRompackFromFile(romfile: string): Promise<Buffer | ArrayBuffe
  * Print asset list to stdout in a tabular format (CLI mode).
  */
 function printAssetList(assets: RomAsset[]): void {
-	const headers = ['id', 'type', 'path', 'buffer-start', 'buffer-end', 'metabuffer-start', 'metabuffer-end'];
+	const headers = ['id', 'type', 'path', 'size', 'buffer-start', 'buffer-end', 'metabuffer-start', 'metabuffer-end'];
 	const rows = assets.map(asset => {
 		const path = asset.source_path ?? asset.normalized_source_path ?? '';
+		const hasBufferRange = typeof asset.start === 'number' && typeof asset.end === 'number';
+		const hasMetaRange = typeof asset.metabuffer_start === 'number' && typeof asset.metabuffer_end === 'number';
+		const size = (hasBufferRange ? asset.end - asset.start : 0) + (hasMetaRange ? asset.metabuffer_end - asset.metabuffer_start : 0);
+		const bufferStart = typeof asset.start === 'number' ? formatNumberAsHex(asset.start) : '';
+		const bufferEnd = typeof asset.end === 'number' ? formatNumberAsHex(asset.end) : '';
+		const metaStart = typeof asset.metabuffer_start === 'number' ? formatNumberAsHex(asset.metabuffer_start) : '';
+		const metaEnd = typeof asset.metabuffer_end === 'number' ? formatNumberAsHex(asset.metabuffer_end) : '';
 		return [
 			String(asset.resid),
 			String(asset.type),
 			path,
-			String(asset.start ?? ''),
-			String(asset.end ?? ''),
-			String(asset.metabuffer_start ?? ''),
-			String(asset.metabuffer_end ?? ''),
+			(hasBufferRange || hasMetaRange) ? formatByteSize(size) : '',
+			bufferStart,
+			bufferEnd,
+			metaStart,
+			metaEnd,
 		];
 	});
 	const colWidths = headers.map((header, idx) => {
