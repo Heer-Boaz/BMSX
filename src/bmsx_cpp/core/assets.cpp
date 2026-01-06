@@ -126,6 +126,7 @@ void RuntimeAssets::clear() {
 	audioevents.clear();
 	atlasTextures.clear();
 	vmProgram.reset();
+	vmProgramSymbols.reset();
 	projectRootPath.clear();
 	manifest = RomManifest{};
 	canonicalization = CanonicalizationType::None;
@@ -190,6 +191,19 @@ static size_t findPNGEnd(const u8* data, size_t size) {
 		pos = chunkEnd;
 	}
 	return 0;
+}
+
+static bool looksZlibCompressed(const u8* data, size_t size) {
+	if (size < 2) return false;
+	if (data[0] == 0x1F && data[1] == 0x8B) {
+		return true;
+	}
+	if (data[0] == 0x78) {
+		const u32 cmf = data[0];
+		const u32 flg = data[1];
+		return ((cmf << 8) + flg) % 31 == 0;
+	}
+	return false;
 }
 
 static u16 readLE16(const u8* data) {
@@ -323,8 +337,12 @@ bool loadAssetsFromRom(const u8* buffer,
 
 	size_t pngEnd = findPNGEnd(buffer, size);
 	if (pngEnd > 0) {
-		romData = buffer + pngEnd;
-		romSize = size - pngEnd;
+		const u8* candidate = buffer + pngEnd;
+		const size_t candidateSize = size - pngEnd;
+		if (hasRomMetaFooter(candidate, candidateSize) || looksZlibCompressed(candidate, candidateSize)) {
+			romData = candidate;
+			romSize = candidateSize;
+		}
 	}
 
 	// Step 2: Check if data is compressed (no valid footer = compressed)
@@ -553,12 +571,28 @@ bool loadAssetsFromRom(const u8* buffer,
 					} catch (const std::exception& e) {
 						std::cerr << "[BMSX] VM program load FAILED: " << e.what() << std::endl;
 					}
+				} else if (assetId == VM_PROGRAM_SYMBOLS_ASSET_ID) {
+					std::cerr << "[BMSX] Loading VM program symbols asset (" << (bufEnd - bufStart) << " bytes)" << std::endl;
+					try {
+						assets.vmProgramSymbols = ProgramLoader::loadSymbols(romData + bufStart, bufEnd - bufStart);
+						if (assets.vmProgramSymbols) {
+							std::cerr << "[BMSX] VM program symbols loaded successfully!" << std::endl;
+						} else {
+							std::cerr << "[BMSX] VM program symbols load returned nullptr!" << std::endl;
+						}
+					} catch (const std::exception& e) {
+						std::cerr << "[BMSX] VM program symbols load FAILED: " << e.what() << std::endl;
+					}
 				} else {
 					BinValue dataValue = decodeBinary(romData + bufStart, bufEnd - bufStart);
 					assets.data[assetId] = std::move(dataValue);
 				}
 			}
 		}
+	}
+
+	if ((assets.vmProgram != nullptr) != (assets.vmProgramSymbols != nullptr)) {
+		throw BMSX_RUNTIME_ERROR("VM program asset and symbols asset must both be present.");
 	}
 
 	logMemSnapshot("assets:end");

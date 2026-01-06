@@ -99,7 +99,7 @@ public:
 	 * Boot the VM with a compiled program.
 	 */
 	void boot(Program* program, ProgramMetadata* metadata, int entryProtoIndex);
-	void boot(const VmProgramAsset& asset);
+	void boot(const VmProgramAsset& asset, ProgramMetadata& metadata);
 
 	/**
 	 * Tick the VM update phase (called by BmsxCartUpdateSystem).

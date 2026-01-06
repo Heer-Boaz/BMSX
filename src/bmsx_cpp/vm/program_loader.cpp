@@ -103,10 +103,6 @@ std::unique_ptr<VmProgramAsset> ProgramLoader::load(const uint8_t* data, size_t 
 	// Extract program
 	asset->program = extractProgram(root["program"]);
 
-	if (root.has("metadata")) {
-		asset->metadata = extractProgramMetadata(root["metadata"]);
-	}
-
 	// Extract moduleProtos
 	const auto& moduleProtosArr = root["moduleProtos"].asArray();
 	asset->moduleProtos.reserve(moduleProtosArr.size());
@@ -126,6 +122,16 @@ std::unique_ptr<VmProgramAsset> ProgramLoader::load(const uint8_t* data, size_t 
 	}
 
 	return asset;
+}
+
+std::unique_ptr<ProgramMetadata> ProgramLoader::loadSymbols(const uint8_t* data, size_t size) {
+	BinValue root = decodeBinary(data, size);
+
+	if (!root.isObject()) {
+		throw BMSX_RUNTIME_ERROR("ProgramLoader: expected object at root");
+	}
+
+	return extractProgramMetadata(root["metadata"]);
 }
 
 } // namespace bmsx

@@ -8,6 +8,7 @@
  * - data: Generic data assets (JSON, etc.)
  * - audioevents: Audio event definitions
  * - vmProgram: Pre-compiled Lua bytecode program
+ * - vmProgramSymbols: VM program metadata (symbols/debug info)
  */
 
 #ifndef BMSX_ASSETS_H
@@ -29,6 +30,7 @@ namespace bmsx {
 
 // VM program asset ID (matches TypeScript VM_PROGRAM_ASSET_ID)
 constexpr const char* VM_PROGRAM_ASSET_ID = "__vm_program__";
+constexpr const char* VM_PROGRAM_SYMBOLS_ASSET_ID = "__vm_program_symbols__";
 
 /* ============================================================================
  * Asset identifiers (string-based, like TypeScript)
@@ -220,6 +222,8 @@ public:
 
 	// Pre-compiled VM program (loaded from __vm_program__ asset)
 	std::unique_ptr<VmProgramAsset> vmProgram;
+	// VM program symbols (loaded from __vm_program_symbols__ asset)
+	std::unique_ptr<ProgramMetadata> vmProgramSymbols;
 
 	// Project metadata
 	std::string projectRootPath;

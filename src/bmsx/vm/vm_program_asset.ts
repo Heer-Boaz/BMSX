@@ -3,6 +3,7 @@ import type { Program, ProgramMetadata, Proto, Value } from './cpu';
 import { StringPool, isStringValue, stringValueToString } from './string_pool';
 
 export const VM_PROGRAM_ASSET_ID = '__vm_program__';
+export const VM_PROGRAM_SYMBOLS_ASSET_ID = '__vm_program_symbols__';
 
 export type EncodedValue = null | boolean | number | string;
 
@@ -17,9 +18,12 @@ export type EncodedProgramMetadata = ProgramMetadata;
 export type VmProgramAsset = {
 	entryProtoIndex: number;
 	program: EncodedProgram;
-	metadata: EncodedProgramMetadata;
 	moduleProtos: Array<{ path: string; protoIndex: number }>;
 	moduleAliases: Array<{ alias: string; path: string }>;
+};
+
+export type VmProgramSymbolsAsset = {
+	metadata: EncodedProgramMetadata;
 };
 
 export function encodeProgram(program: Program): EncodedProgram {
@@ -49,6 +53,14 @@ export function encodeProgramAsset(asset: VmProgramAsset): Uint8Array {
 
 export function decodeProgramAsset(bytes: Uint8Array): VmProgramAsset {
 	return decodeBinary(bytes) as VmProgramAsset;
+}
+
+export function encodeProgramSymbolsAsset(asset: VmProgramSymbolsAsset): Uint8Array {
+	return encodeBinary(asset);
+}
+
+export function decodeProgramSymbolsAsset(bytes: Uint8Array): VmProgramSymbolsAsset {
+	return decodeBinary(bytes) as VmProgramSymbolsAsset;
 }
 
 export function inflateProgram(encoded: EncodedProgram): Program {

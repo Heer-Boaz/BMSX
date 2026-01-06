@@ -396,11 +396,11 @@ bool EngineCore::bootWithoutCart() {
 	refreshAudioAssets();
 
 	// Boot the VM with the engine's system program
-	if (m_engine_assets.vmProgram && m_engine_assets.vmProgram->program) {
-		// Create VMRuntime instance if it doesn't exist
-		if (!VMRuntime::hasInstance()) {
-			VMRuntimeOptions options;
-			options.playerIndex = 1;
+		if (m_engine_assets.vmProgram && m_engine_assets.vmProgram->program) {
+			// Create VMRuntime instance if it doesn't exist
+			if (!VMRuntime::hasInstance()) {
+				VMRuntimeOptions options;
+				options.playerIndex = 1;
 			options.viewport.x = m_engine_assets.manifest.viewportWidth;
 			options.viewport.y = m_engine_assets.manifest.viewportHeight;
 			options.canonicalization = m_engine_assets.manifest.canonicalization;
@@ -410,7 +410,7 @@ bool EngineCore::bootWithoutCart() {
 		// Boot the VM with the pre-compiled program from engine assets
 		VMRuntime& runtime = VMRuntime::instance();
 		runtime.setCanonicalization(m_engine_assets.manifest.canonicalization);
-		runtime.boot(*m_engine_assets.vmProgram);
+		runtime.boot(*m_engine_assets.vmProgram, *m_engine_assets.vmProgramSymbols);
 	}
 
 	m_rom_loaded = true;  // Engine is running (with system program)
@@ -480,6 +480,7 @@ bool EngineCore::loadRom(const u8* data, size_t size) {
 
 	// VM program and manifest always come from cartridge
 	m_assets.vmProgram = std::move(cartAssets.vmProgram);
+	m_assets.vmProgramSymbols = std::move(cartAssets.vmProgramSymbols);
 	m_assets.manifest = std::move(cartAssets.manifest);
 	m_assets.projectRootPath = std::move(cartAssets.projectRootPath);
 
@@ -531,7 +532,7 @@ bool EngineCore::resetLoadedRom() {
 		}
 		VMRuntime& runtime = VMRuntime::instance();
 		runtime.setCanonicalization(m_engine_assets.manifest.canonicalization);
-		runtime.boot(*m_engine_assets.vmProgram);
+		runtime.boot(*m_engine_assets.vmProgram, *m_engine_assets.vmProgramSymbols);
 		return true;
 	}
 
@@ -800,7 +801,7 @@ void EngineCore::bootVMFromProgram() {
 	// Boot the VM with the pre-compiled program
 	VMRuntime& runtime = VMRuntime::instance();
 	runtime.setCanonicalization(m_assets.manifest.canonicalization);
-	runtime.boot(*m_assets.vmProgram);
+	runtime.boot(*m_assets.vmProgram, *m_assets.vmProgramSymbols);
 }
 
 void EngineCore::refreshAudioAssets() {

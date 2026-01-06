@@ -16,7 +16,6 @@ namespace bmsx {
 struct VmProgramAsset {
 	int entryProtoIndex = 0;
 	std::unique_ptr<Program> program;
-	std::unique_ptr<ProgramMetadata> metadata;
 	std::vector<std::pair<std::string, int>> moduleProtos;  // path -> protoIndex
 	std::vector<std::pair<std::string, std::string>> moduleAliases;  // alias -> path
 };
@@ -35,6 +34,12 @@ public:
 	 * The binary format is produced by vm_program_asset.ts::encodeProgramAsset.
 	 */
 	static std::unique_ptr<VmProgramAsset> load(const uint8_t* data, size_t size);
+
+	/**
+	 * Load VM program symbols (ProgramMetadata) from binary data.
+	 * The binary format is produced by vm_program_asset.ts::encodeProgramSymbolsAsset.
+	 */
+	static std::unique_ptr<ProgramMetadata> loadSymbols(const uint8_t* data, size_t size);
 
 	/**
 	 * Load a VmProgramAsset from a vector.

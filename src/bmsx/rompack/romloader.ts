@@ -106,10 +106,31 @@ function splitPng(blob: ArrayBuffer): { png?: ArrayBuffer; rest: ArrayBuffer } {
 	throw new Error('PNG IEND chunk not found');
 }
 
+function looksPakoCompressed(buffer: ArrayBuffer): boolean {
+	const u8 = new Uint8Array(buffer);
+	if (u8.length < 2) {
+		return false;
+	}
+	// Gzip header: 1F 8B
+	if (u8[0] === 0x1F && u8[1] === 0x8B) {
+		return true;
+	}
+	// Zlib header starts with 0x78 and must have a valid CMF/FLG checksum.
+	if (u8[0] === 0x78) {
+		const cmf = u8[0];
+		const flg = u8[1];
+		return ((cmf << 8) + flg) % 31 === 0;
+	}
+	return false;
+}
+
 export function getZippedRomAndRomLabelFromBlob(blob_buffer: ArrayBuffer): { zipped_rom: ArrayBuffer, romlabel?: ArrayBuffer } {
 	const { png, rest } = splitPng(blob_buffer);
 	if (png) {
-		return { zipped_rom: rest, romlabel: png };
+		// Only treat the leading PNG as a romlabel if the remaining payload looks like a ROM.
+		if (hasRomMetaFooter(rest) || looksPakoCompressed(rest)) {
+			return { zipped_rom: rest, romlabel: png };
+		}
 	}
 	return { zipped_rom: blob_buffer, romlabel: undefined };
 }
