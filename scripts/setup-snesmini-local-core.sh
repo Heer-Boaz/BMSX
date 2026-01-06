@@ -53,13 +53,9 @@ else
 	SYSROOT_DIR="${ROOT_DIR}/${SYSROOT_REL}"
 fi
 
-if [ "$(id -u)" -ne 0 ]; then
-	if command -v sudo >/dev/null 2>&1; then
-		exec sudo "$0" "$@"
-	fi
-	echo "This script requires root (sudo not found)." >&2
-	exit 1
-fi
+is_root() {
+	[ "$(id -u)" -eq 0 ]
+}
 
 ensure_command() {
 	local command="$1"
@@ -84,7 +80,7 @@ ensure_sysroot() {
 
 	local distro="jessie"
 	local mirror="http://archive.debian.org/debian/"
-	local include_pkgs="libc6-dev,libstdc++6,libstdc++-4.9-dev,zlib1g-dev"
+	local include_pkgs="libc6-dev,libstdc++6,libstdc++-4.9-dev,zlib1g-dev,libegl1-mesa-dev,libgles2-mesa-dev"
 
 	mkdir -p "$sysroot"
 
@@ -138,6 +134,11 @@ EOF
 		fi
 	fi
 
+	if [ -f "$sysroot/usr/lib/arm-linux-gnueabihf/libGLESv2.so.2" ] && \
+		[ ! -e "$sysroot/usr/lib/arm-linux-gnueabihf/libGLESv2.so" ]; then
+		ln -s libGLESv2.so.2 "$sysroot/usr/lib/arm-linux-gnueabihf/libGLESv2.so"
+	fi
+
 	if [ -f "$sysroot/lib/arm-linux-gnueabihf/libm.so.6" ]; then
 		mkdir -p "$sysroot/usr/lib/arm-linux-gnueabihf"
 		if [ -L "$sysroot/usr/lib/arm-linux-gnueabihf/libm.so" ] || \
@@ -166,13 +167,68 @@ EOF
 	echo "SNES Mini sysroot created at: $sysroot"
 }
 
+require_ready_sysroot() {
+	local sysroot="$1"
+	local missing=()
+
+	if [ ! -f "$sysroot/usr/include/zlib.h" ]; then
+		missing+=("zlib headers")
+	fi
+	if [ ! -f "$sysroot/usr/lib/arm-linux-gnueabihf/libstdc++.so.6" ] && \
+		[ ! -f "$sysroot/lib/arm-linux-gnueabihf/libstdc++.so.6" ]; then
+		missing+=("libstdc++")
+	fi
+	if [ ! -f "$sysroot/usr/lib/arm-linux-gnueabihf/libGLESv2.so" ] && \
+		[ ! -f "$sysroot/usr/lib/arm-linux-gnueabihf/libGLESv2.so.2" ] && \
+		[ ! -f "$sysroot/lib/arm-linux-gnueabihf/libGLESv2.so.2" ]; then
+		missing+=("libGLESv2")
+	fi
+	if [ ! -f "$sysroot/usr/lib/arm-linux-gnueabihf/libEGL.so" ] && \
+		[ ! -f "$sysroot/usr/lib/arm-linux-gnueabihf/libEGL.so.1" ] && \
+		[ ! -f "$sysroot/lib/arm-linux-gnueabihf/libEGL.so.1" ]; then
+		missing+=("libEGL")
+	fi
+
+	if [ "${#missing[@]}" -gt 0 ]; then
+		echo "Sysroot not ready at: $sysroot" >&2
+		echo "Missing: ${missing[*]}" >&2
+		echo "Run this script as root to (re)build the sysroot, or point to a prebuilt sysroot." >&2
+		exit 1
+	fi
+}
+
 if [ "${BMSX_SNESMINI_IN_ROOTFS:-}" = "1" ]; then
-	ensure_sysroot "$SYSROOT_DIR"
+	if is_root; then
+		ensure_sysroot "$SYSROOT_DIR"
+	else
+		require_ready_sysroot "$SYSROOT_DIR"
+	fi
 	if [ "$MODE" = "build" ]; then
 		rm -rf "$ROOT_DIR/build-snesmini"
 		make -C "$ROOT_DIR" \
 			SNESMINI_SYSROOT="$SYSROOT_DIR" \
 			SNESMINI_BUILD_TYPE="$BUILD_TYPE" \
+			libretro-snesmini-debug-inner
+	fi
+	exit 0
+fi
+
+if ! is_root; then
+	require_ready_sysroot "$SYSROOT_DIR"
+	if [ "$MODE" = "build" ]; then
+		DEFAULT_BUILD_DIR="$ROOT_DIR/build-snesmini"
+		FALLBACK_BUILD_DIR="$ROOT_DIR/build-snesmini-user"
+		BUILD_DIR="$DEFAULT_BUILD_DIR"
+		if [ -e "$BUILD_DIR" ] && [ ! -w "$BUILD_DIR" ]; then
+			BUILD_DIR="$FALLBACK_BUILD_DIR"
+		fi
+		if [ -e "$BUILD_DIR" ] && [ -w "$BUILD_DIR" ]; then
+			rm -rf "$BUILD_DIR"
+		fi
+		make -C "$ROOT_DIR" \
+			SNESMINI_SYSROOT="$SYSROOT_DIR" \
+			SNESMINI_BUILD_TYPE="$BUILD_TYPE" \
+			SNESMINI_BUILD_DIR="$BUILD_DIR" \
 			libretro-snesmini-debug-inner
 	fi
 	exit 0

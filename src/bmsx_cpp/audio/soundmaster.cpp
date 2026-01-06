@@ -318,7 +318,7 @@ void SoundMaster::requestMusicTransition(const MusicTransitionRequest& request) 
 	}
 
 	const AudioAsset& currentAsset = getAudioOrThrow(currentTrackByType(AudioType::Music));
-	const f64 duration = static_cast<f64>(currentAsset.samples.size() / currentAsset.channels) / currentAsset.sampleRate;
+	const f64 duration = static_cast<f64>(currentAsset.frameCount()) / currentAsset.sampleRate;
 	if (duration <= 0.0) {
 		startMusicWithFade(resolved.to, resolved.fadeMs / 1000.0, resolved.startAtLoopStart, resolved.startFresh ? 0.0 : std::optional<f64>{});
 		return;
@@ -355,7 +355,7 @@ void SoundMaster::renderSamples(i16* output, size_t frameCount, i32 outputSample
 			VoiceRecord& record = pool[i];
 			const AudioAsset& asset = *record.asset;
 			const int channels = asset.channels;
-			const size_t framesInAsset = asset.samples.size() / asset.channels;
+			const size_t framesInAsset = asset.frameCount();
 			if (framesInAsset == 0) {
 				removeVoice(static_cast<AudioType>(typeIdx), i);
 				continue;
@@ -388,7 +388,6 @@ void SoundMaster::renderSamples(i16* output, size_t frameCount, i32 outputSample
 				size_t posIndex = static_cast<size_t>(position);
 				const size_t loopStartIndex = static_cast<size_t>(loopStart);
 				const size_t loopEndIndex = static_cast<size_t>(loopEnd);
-				const i16* samples = asset.samples.data();
 				size_t outIndex = 0;
 
 				if (channels == 1) {
@@ -405,7 +404,7 @@ void SoundMaster::renderSamples(i16* output, size_t frameCount, i32 outputSample
 							break;
 						}
 
-						const f32 sample = static_cast<f32>(samples[posIndex]) * sampleScale;
+						const f32 sample = static_cast<f32>(asset.getSample(posIndex)) * sampleScale;
 						const f32 out = sample * gain;
 						mix[outIndex] += out;
 						mix[outIndex + 1] += out;
@@ -436,8 +435,8 @@ void SoundMaster::renderSamples(i16* output, size_t frameCount, i32 outputSample
 						}
 
 						const size_t base = posIndex * static_cast<size_t>(channels);
-						const f32 left = static_cast<f32>(samples[base]) * sampleScale;
-						const f32 right = static_cast<f32>(samples[base + 1]) * sampleScale;
+						const f32 left = static_cast<f32>(asset.getSample(base)) * sampleScale;
+						const f32 right = static_cast<f32>(asset.getSample(base + 1)) * sampleScale;
 						mix[outIndex] += left * gain;
 						mix[outIndex + 1] += right * gain;
 						outIndex += 2;
@@ -456,7 +455,6 @@ void SoundMaster::renderSamples(i16* output, size_t frameCount, i32 outputSample
 
 				position = static_cast<f64>(posIndex);
 			} else {
-				const i16* samples = asset.samples.data();
 				size_t outIndex = 0;
 
 				if (channels == 1) {
@@ -478,8 +476,8 @@ void SoundMaster::renderSamples(i16* output, size_t frameCount, i32 outputSample
 								idx1 = static_cast<i64>(wrapped);
 							}
 
-							const f32 s0 = static_cast<f32>(samples[static_cast<size_t>(idx)]) * sampleScale;
-							const f32 s1 = static_cast<f32>(samples[static_cast<size_t>(idx1)]) * sampleScale;
+							const f32 s0 = static_cast<f32>(asset.getSample(static_cast<size_t>(idx))) * sampleScale;
+							const f32 s1 = static_cast<f32>(asset.getSample(static_cast<size_t>(idx1))) * sampleScale;
 							const f32 sample = s0 + (s1 - s0) * static_cast<f32>(frac);
 							const f32 out = sample * gain;
 							mix[outIndex] += out;
@@ -514,11 +512,11 @@ void SoundMaster::renderSamples(i16* output, size_t frameCount, i32 outputSample
 							const i64 idx = static_cast<i64>(position);
 							const f64 frac = position - static_cast<f64>(idx);
 							const size_t idx0 = static_cast<size_t>(idx);
-							const f32 s0 = static_cast<f32>(samples[idx0]) * sampleScale;
+							const f32 s0 = static_cast<f32>(asset.getSample(idx0)) * sampleScale;
 							f32 s1 = 0.0f;
 							const size_t idx1 = idx0 + 1;
 							if (idx1 < framesInAsset) {
-								s1 = static_cast<f32>(samples[idx1]) * sampleScale;
+								s1 = static_cast<f32>(asset.getSample(idx1)) * sampleScale;
 							}
 							const f32 sample = s0 + (s1 - s0) * static_cast<f32>(frac);
 							const f32 out = sample * gain;
@@ -554,10 +552,10 @@ void SoundMaster::renderSamples(i16* output, size_t frameCount, i32 outputSample
 
 							const size_t base0 = static_cast<size_t>(idx) * static_cast<size_t>(channels);
 							const size_t base1 = static_cast<size_t>(idx1) * static_cast<size_t>(channels);
-							const f32 left0 = static_cast<f32>(samples[base0]) * sampleScale;
-							const f32 right0 = static_cast<f32>(samples[base0 + 1]) * sampleScale;
-							const f32 left1 = static_cast<f32>(samples[base1]) * sampleScale;
-							const f32 right1 = static_cast<f32>(samples[base1 + 1]) * sampleScale;
+							const f32 left0 = static_cast<f32>(asset.getSample(base0)) * sampleScale;
+							const f32 right0 = static_cast<f32>(asset.getSample(base0 + 1)) * sampleScale;
+							const f32 left1 = static_cast<f32>(asset.getSample(base1)) * sampleScale;
+							const f32 right1 = static_cast<f32>(asset.getSample(base1 + 1)) * sampleScale;
 
 							const f32 left = left0 + (left1 - left0) * static_cast<f32>(frac);
 							const f32 right = right0 + (right1 - right0) * static_cast<f32>(frac);
@@ -594,15 +592,15 @@ void SoundMaster::renderSamples(i16* output, size_t frameCount, i32 outputSample
 							const f64 frac = position - static_cast<f64>(idx);
 							const size_t idx0 = static_cast<size_t>(idx);
 							const size_t base0 = idx0 * static_cast<size_t>(channels);
-							const f32 left0 = static_cast<f32>(samples[base0]) * sampleScale;
-							const f32 right0 = static_cast<f32>(samples[base0 + 1]) * sampleScale;
+							const f32 left0 = static_cast<f32>(asset.getSample(base0)) * sampleScale;
+							const f32 right0 = static_cast<f32>(asset.getSample(base0 + 1)) * sampleScale;
 							f32 left1 = 0.0f;
 							f32 right1 = 0.0f;
 							const size_t idx1 = idx0 + 1;
 							if (idx1 < framesInAsset) {
 								const size_t base1 = idx1 * static_cast<size_t>(channels);
-								left1 = static_cast<f32>(samples[base1]) * sampleScale;
-								right1 = static_cast<f32>(samples[base1 + 1]) * sampleScale;
+								left1 = static_cast<f32>(asset.getSample(base1)) * sampleScale;
+								right1 = static_cast<f32>(asset.getSample(base1 + 1)) * sampleScale;
 							}
 
 							const f32 left = left0 + (left1 - left0) * static_cast<f32>(frac);
@@ -890,7 +888,7 @@ VoiceId SoundMaster::startVoice(AudioType type, const AssetId& id, const AudioAs
 	record.priority = priority;
 	record.params = params;
 	record.startedAt = m_audioTimeSec;
-	const size_t framesInAsset = asset.samples.size() / asset.channels;
+	const size_t framesInAsset = asset.frameCount();
 	const f64 durationSec = framesInAsset > 0 ? static_cast<f64>(framesInAsset) / asset.sampleRate : 0.0;
 	f64 offset = params.offset;
 	if (durationSec > 0.0) {

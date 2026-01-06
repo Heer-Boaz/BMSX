@@ -16,6 +16,7 @@
 #endif
 #include <chrono>
 #include <cstring>
+#include <cerrno>
 #include <cstdarg>
 #include <fstream>
 #include <algorithm>
@@ -423,6 +424,8 @@ bool LibretroPlatform::loadEmptyCart() {
 bool LibretroPlatform::loadEngineAssetsFromFile(const std::string& path) {
 	std::ifstream file(path, std::ios::binary | std::ios::ate);
 	if (!file) {
+		log(RETRO_LOG_WARN, "[BMSX] Failed to open engine assets: %s (errno=%d: %s)\n",
+			path.c_str(), errno, std::strerror(errno));
 		return false;
 	}
 
@@ -431,7 +434,8 @@ bool LibretroPlatform::loadEngineAssetsFromFile(const std::string& path) {
 
 	std::vector<uint8_t> data(size);
 	if (!file.read(reinterpret_cast<char*>(data.data()), size)) {
-		log(RETRO_LOG_WARN, "[BMSX] Failed to read engine assets: %s\n", path.c_str());
+		log(RETRO_LOG_WARN, "[BMSX] Failed to read engine assets: %s (errno=%d: %s)\n",
+			path.c_str(), errno, std::strerror(errno));
 		return false;
 	}
 

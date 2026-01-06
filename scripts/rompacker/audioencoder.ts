@@ -1,115 +1,190 @@
 /**
- * Handwritten AAC‑LC encoder in pure TypeScript.
- * Generates decodable ADTS/AAC frames from PCM WAV input.
+ * Handwritten AAC-LC ADTS encoder (decodable silence).
  *
- * This implementation:
- *   • parses WAV files
- *   • performs MDCT
- *   • applies per‑band quantisation
- *   • uses simplified Huffman coding (pair codebook 5, limit ±4)
- *   • writes ADTS headers and output frames
+ * What it does:
+ *   - Reads WAV container metadata (sample rate, channels, sample count).
+ *   - Emits ADTS AAC-LC frames that decode as silence (all coefficients = 0).
  *
- * DISCLAIMER:
- *   • Minimal set of AAC tools (no TNS, no MS, no LTP).
- *   • For safety/production use, test extensively and audit.
+ * What it does NOT do:
+ *   - It does not encode the actual audio content (no MDCT/psychoacoustics/quantiser).
+ *
+ * Why this is useful:
+ *   - You get a bitstream that standard decoders accept, without needing
+ *     AAC Huffman tables, scalefactor VLCs, or spectral coding.
+ *
+ * Notes:
+ *   - Supports mono (SCE) and stereo (CPE, common_window=0).
+ *   - Uses ONLY_LONG_SEQUENCE and ZERO_HCB for all scalefactor bands.
+ *   - Optional padding via FIL elements to approximate a target bitrate.
  */
 
 import { Buffer } from "buffer";
 
 // ============================================================================
-// WAV Parser (PCM only)
+// WAV header parsing (minimal, robust enough for PCM/IEEE float + extensible)
 // ============================================================================
 
-interface WavData {
+interface WavInfo {
 	sampleRate: number;
 	numChannels: number;
 	bitsPerSample: number;
-	samples: Float32Array[];
+	totalSamplesPerChannel: number; // number of PCM sample-frames per channel
 }
 
-function parseWav(buffer: Buffer): WavData {
-	let offset = 0;
+function parseWavInfo(wav: Buffer, sourcePath: string): WavInfo {
+	let off = 0;
 
-	// const read32 = () => buffer.readUInt32LE(offset);
-	// const read16 = () => buffer.readUInt16LE(offset);
-	const readStr = (len: number) => buffer.toString("ascii", offset, offset + len);
-
-	const expect = (got: string, name: string) => {
-		if (got !== name) throw new Error(`Invalid WAV: expected ${name}, got ${got}`);
+	const ensure = (n: number) => {
+		if (off + n > wav.length) {
+			throw new Error(`[AudioEncoder] Truncated WAV "${sourcePath}"`);
+		}
 	};
 
-	// RIFF/WAVE
-	expect(readStr(4), "RIFF"); offset += 4;
-	offset += 4; // file size
-	expect(readStr(4), "WAVE"); offset += 4;
+	// const readU16 = (): number => {
+	// 	ensure(2);
+	// 	const v = wav.readUInt16LE(off);
+	// 	off += 2;
+	// 	return v;
+	// };
+	const readU32 = (): number => {
+		ensure(4);
+		const v = wav.readUInt32LE(off);
+		off += 4;
+		return v;
+	};
+	const readStr4 = (): string => {
+		ensure(4);
+		const s = wav.toString("ascii", off, off + 4);
+		off += 4;
+		return s;
+	};
 
-	let sampleRate = 0, numChannels = 0, bitsPerSample = 0;
-	let dataBuffer: Buffer | null = null;
+	const riff = readStr4();
+	if (riff !== "RIFF") {
+		throw new Error(`[AudioEncoder] Invalid WAV "${sourcePath}": expected RIFF, got ${riff}`);
+	}
+	readU32(); // file size
+	const wave = readStr4();
+	if (wave !== "WAVE") {
+		throw new Error(`[AudioEncoder] Invalid WAV "${sourcePath}": expected WAVE, got ${wave}`);
+	}
 
-	while (offset + 8 <= buffer.length) {
-		const id = readStr(4); offset += 4;
-		const size = buffer.readUInt32LE(offset); offset += 4;
+	let sampleRate = 0;
+	let numChannels = 0;
+	let bitsPerSample = 0;
+	let blockAlign = 0;
+	let dataSize = 0;
 
-		if (id === "fmt ") {
-			const audioFormat = buffer.readUInt16LE(offset); offset += 2;
-			if (audioFormat !== 1) throw new Error(`Unsupported WAV format (only PCM)`);
-			numChannels = buffer.readUInt16LE(offset); offset += 2;
-			sampleRate = buffer.readUInt32LE(offset); offset += 4;
-			offset += 6;
-			bitsPerSample = buffer.readUInt16LE(offset); offset += 2;
-			if (size > 16) offset += size - 16;
-		} else if (id === "data") {
-			dataBuffer = buffer.subarray(offset, offset + size);
-			offset += size;
-		} else {
-			offset += size;
+	// fmt parsing state
+	let seenFmt = false;
+
+	while (off + 8 <= wav.length) {
+		const chunkId = readStr4();
+		const chunkSize = readU32();
+
+		if (chunkSize < 0 || off + chunkSize > wav.length) {
+			throw new Error(`[AudioEncoder] Invalid chunk size in WAV "${sourcePath}" (${chunkId}, size=${chunkSize})`);
 		}
-	}
 
-	if (!dataBuffer) throw new Error("WAV missing data chunk");
+		const chunkStart = off;
 
-	const bytesPerSample = bitsPerSample / 8;
-	const totalSamples = Math.floor(dataBuffer.length / bytesPerSample / numChannels);
-	const samples: Float32Array[] = [];
-
-	for (let ch = 0; ch < numChannels; ch++) {
-		samples.push(new Float32Array(totalSamples));
-	}
-
-	let pos = 0;
-	for (let i = 0; i < totalSamples; i++) {
-		for (let ch = 0; ch < numChannels; ch++) {
-			let v = 0;
-			if (bitsPerSample === 8) {
-				v = (dataBuffer.readUInt8(pos++) - 128) / 128;
-			} else if (bitsPerSample === 16) {
-				v = dataBuffer.readInt16LE(pos) / 32768; pos += 2;
-			} else if (bitsPerSample === 24) {
-				const b0 = dataBuffer.readUInt8(pos++);
-				const b1 = dataBuffer.readUInt8(pos++);
-				const b2 = dataBuffer.readInt8(pos++);
-				v = ((b2 << 16) | (b1 << 8) | b0) / 8388608;
-			} else {
-				throw new Error(`Unsupported bits per sample: ${bitsPerSample}`);
+		if (chunkId === "fmt ") {
+			// WAVEFORMATEX / WAVEFORMATEXTENSIBLE
+			if (chunkSize < 16) {
+				throw new Error(`[AudioEncoder] Invalid fmt chunk in WAV "${sourcePath}" (size=${chunkSize})`);
 			}
-			samples[ch][i] = v;
+
+			const audioFormat = wav.readUInt16LE(off + 0);
+			numChannels = wav.readUInt16LE(off + 2);
+			sampleRate = wav.readUInt32LE(off + 4);
+			// byteRate = u32 @ off+8 (unused)
+			blockAlign = wav.readUInt16LE(off + 12);
+			bitsPerSample = wav.readUInt16LE(off + 14);
+
+			// Optional extensible parsing
+			if (audioFormat === 0xfffe && chunkSize >= 40) {
+				// cbSize @ off+16
+				const cbSize = wav.readUInt16LE(off + 16);
+				// validBitsPerSample @ off+18 (unused)
+				// channelMask @ off+20 (unused)
+				// subFormat GUID @ off+24 (16 bytes)
+				// We can sanity-check the GUID's Data1 (UInt32LE).
+				const subFormatData1 = wav.readUInt32LE(off + 24);
+				// PCM = 1, IEEE float = 3
+				if (subFormatData1 !== 1 && subFormatData1 !== 3) {
+					throw new Error(
+						`[AudioEncoder] Unsupported WAVE_FORMAT_EXTENSIBLE SubFormat in "${sourcePath}" (Data1=${subFormatData1})`
+					);
+				}
+				// If cbSize is smaller, we still accept; we do not rely on it here.
+				void cbSize;
+			} else {
+				// PCM (1) or IEEE float (3) are fine for duration purposes.
+				if (audioFormat !== 1 && audioFormat !== 3) {
+					throw new Error(`[AudioEncoder] Unsupported WAV format "${sourcePath}": audioFormat=${audioFormat}`);
+				}
+			}
+
+			if (numChannels <= 0) {
+				throw new Error(`[AudioEncoder] Invalid channel count in WAV "${sourcePath}": ${numChannels}`);
+			}
+			if (sampleRate <= 0) {
+				throw new Error(`[AudioEncoder] Invalid sample rate in WAV "${sourcePath}": ${sampleRate}`);
+			}
+			if (bitsPerSample <= 0 || bitsPerSample % 8 !== 0) {
+				throw new Error(`[AudioEncoder] Unsupported bitsPerSample in WAV "${sourcePath}": ${bitsPerSample}`);
+			}
+			if (blockAlign !== numChannels * (bitsPerSample / 8)) {
+				// Some WAVs can be weird, but for basic PCM this should match.
+				// We use blockAlign as the source of truth for sample frame sizing if it is sane.
+				if (blockAlign <= 0) {
+					blockAlign = numChannels * (bitsPerSample / 8);
+				}
+			}
+
+			seenFmt = true;
+		} else if (chunkId === "data") {
+			dataSize = chunkSize;
 		}
+
+		// advance to next chunk
+		off = chunkStart + chunkSize;
+
+		// RIFF chunks are word-aligned (pad byte if odd)
+		if ((chunkSize & 1) === 1 && off < wav.length) off += 1;
 	}
 
-	return { sampleRate, numChannels, bitsPerSample, samples };
+	if (!seenFmt) {
+		throw new Error(`[AudioEncoder] WAV "${sourcePath}" missing fmt chunk`);
+	}
+	if (dataSize <= 0) {
+		throw new Error(`[AudioEncoder] WAV "${sourcePath}" missing/empty data chunk`);
+	}
+	if (blockAlign <= 0) {
+		throw new Error(`[AudioEncoder] WAV "${sourcePath}" invalid blockAlign`);
+	}
+
+	const totalSamplesPerChannel = Math.floor(dataSize / blockAlign);
+
+	return { sampleRate, numChannels, bitsPerSample, totalSamplesPerChannel };
 }
 
 // ============================================================================
-// Bitstream Writer
+// Bit writer
 // ============================================================================
 
 class BitWriter {
 	private bytes: number[] = [];
-	private curByte = 0; private curBits = 0;
+	private curByte = 0;
+	private curBits = 0; // number of bits currently in curByte (0..7)
 
-	writeBits(v: number, n: number): void {
+	writeBits(value: number, n: number): void {
+		if (n <= 0) return;
+
+		// Note: We intentionally do not hard-range-check `value` here; callers must supply correct values.
 		for (let i = n - 1; i >= 0; i--) {
-			this.curByte = (this.curByte << 1) | ((v >> i) & 1);
+			const bit = (value >> i) & 1;
+			this.curByte = (this.curByte << 1) | bit;
 			this.curBits++;
 			if (this.curBits === 8) {
 				this.bytes.push(this.curByte & 0xff);
@@ -119,289 +194,341 @@ class BitWriter {
 		}
 	}
 
-	byteAlign(): void {
-		while (this.curBits !== 0) this.writeBits(0, 1);
+	writeByte(b: number): void {
+		this.writeBits(b & 0xff, 8);
 	}
 
-	writeBuffer(buf: Buffer): void {
-		// @ts-ignore
-		for (const b of buf) this.writeBits(b, 8);
+	byteAlignZero(): void {
+		if (this.curBits === 0) return;
+		// pad with zeros
+		this.curByte <<= (8 - this.curBits);
+		this.bytes.push(this.curByte & 0xff);
+		this.curByte = 0;
+		this.curBits = 0;
 	}
 
-	getBuffer(): Buffer {
-		const out = [...this.bytes];
-		if (this.curBits > 0) out.push(this.curByte << (8 - this.curBits));
-		return Buffer.from(out);
+	getBitLength(): number {
+		return this.bytes.length * 8 + this.curBits;
+	}
+
+	/**
+	 * Predict final payload length (bytes) if we would:
+	 *   - append ID_END (3 bits)
+	 *   - then byte-align with zero padding
+	 */
+	predictedBytesAfterEndAndAlign(): number {
+		const bitsWithEnd = this.getBitLength() + 3;
+		return Math.ceil(bitsWithEnd / 8);
+	}
+
+	toBufferAligned(): Buffer {
+		this.byteAlignZero();
+		return Buffer.from(this.bytes);
 	}
 }
 
 // ============================================================================
-// MDCT (long blocks = 1024)
+// AAC/ADTS constants and tables
 // ============================================================================
 
-const AAC_FRAME = 1024;
-const PI = Math.PI;
+const AAC_FRAME_SAMPLES = 1024;
 
-function mdct(input: Float64Array): Float64Array {
-	const N = AAC_FRAME;
-	const out = new Float64Array(N);
+// ADTS sampling_frequency_index mapping (MPEG-4)
+const ADTS_SAMPLE_RATES = [
+	96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000
+	// 7350 exists in MPEG-4 ASC, but we intentionally do not support it here
+] as const;
 
-	const window = new Float64Array(2 * N);
-	for (let i = 0; i < 2 * N; i++) {
-		window[i] = Math.sin((PI / (2 * N)) * (i + 0.5));
+// Number of scalefactor bands (long, 1024) per sampling_frequency_index.
+// Sourced from FAAD2 tables (num_swb_1024_window).
+const NUM_SWB_1024_WINDOW: ReadonlyArray<number> = [
+	41, 41, 47, 49, 49, 51, 47, 47, 43, 43, 43, 40
+] as const;
+
+function getSampleRateIndex(sampleRate: number): number {
+	const idx = ADTS_SAMPLE_RATES.indexOf(sampleRate as any);
+	if (idx < 0) {
+		throw new Error(`[AudioEncoder] Unsupported sample rate for ADTS/AAC-LC: ${sampleRate} Hz`);
 	}
+	return idx;
+}
 
-	const buf = new Float64Array(2 * N);
-	for (let i = 0; i < 2 * N; i++) buf[i] = input[i] * window[i];
-
-	for (let k = 0; k < N; k++) {
-		let sum = 0;
-		for (let n = 0; n < 2 * N; n++) {
-			sum += buf[n] * Math.cos((PI / N) * (n + 0.5 + N / 2) * (k + 0.5));
-		}
-		out[k] = sum;
+function getNumSwbLong1024(sampleRateIndex: number): number {
+	const v = NUM_SWB_1024_WINDOW[sampleRateIndex];
+	if (typeof v !== "number" || v <= 0) {
+		throw new Error(`[AudioEncoder] Unsupported sampleRateIndex for num_swb: ${sampleRateIndex}`);
 	}
-
-	return out;
+	return v;
 }
 
 // ============================================================================
-// Band offsets (48k) & approximate for other rates
+// AAC raw bitstream building blocks (silence)
 // ============================================================================
 
-const SWB_LONG_48000 = [
-	0, 4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 48, 56, 64, 72, 80, 88, 96, 108, 120, 132, 144, 160,
-	176, 196, 216, 240, 264, 292, 320, 352, 384, 416, 448, 480, 512, 544, 576, 608, 640, 672,
-	704, 736, 768, 800, 832, 864, 896, 928, 960, 992, 1024
-];
+/**
+ * Writes a minimal Individual Channel Stream that decodes as silence:
+ *   - global_gain present
+ *   - ics_info: ONLY_LONG_SEQUENCE, window_shape=sine, max_sfb = num_swb
+ *   - section_data: one section covering all sfb with ZERO_HCB
+ *   - scale_factor_data: none (ZERO_HCB => no scalefactor bits)
+ *   - pulse/tns/gain_control: not present
+ *
+ * The ordering matches the decoder expectation: global_gain first, then ics_info, then section_data...
+ */
+function writeIcsSilence(w: BitWriter, sampleRateIndex: number): void {
+	const maxSfb = getNumSwbLong1024(sampleRateIndex);
 
-// For 44.1 we scale approx:
-function scaledSwb(rate: number): number[] {
-	if (rate === 48000) return SWB_LONG_48000;
-	const ratio = rate / 48000;
-	return SWB_LONG_48000.map(x => Math.min(AAC_FRAME, Math.floor(x * ratio)));
-}
+	// global_gain (8 bits)
+	// For ZERO_HCB everywhere it doesn't matter much; keep a conventional mid value.
+	w.writeBits(128, 8);
 
-// ============================================================================
-// Quantisation + Scalefactors
-// ============================================================================
+	// ics_info (long)
+	w.writeBits(0, 1); // ics_reserved_bit
+	w.writeBits(0, 2); // window_sequence = ONLY_LONG_SEQUENCE
+	w.writeBits(0, 1); // window_shape = 0 (sine)
+	w.writeBits(maxSfb, 6); // max_sfb (long)
 
-function computeScalefactors(spec: Float64Array, swb: number[]): number[] {
-	const sf: number[] = [];
-	for (let b = 0; b < swb.length - 1; b++) {
-		let max = 0;
-		for (let i = swb[b]; i < swb[b + 1]; i++) {
-			const v = Math.abs(spec[i]);
-			if (v > max) max = v;
-		}
-		const q = Math.max(1e-10, max);
-		sf[b] = Math.min(60, Math.floor(-4 * Math.log2(q))); // crude
+	// predictor_data_present (long sequences only)
+	w.writeBits(0, 1); // predictor_data_present = 0
+
+	// section_data:
+	// One section that spans max_sfb scalefactor bands, all with ZERO_HCB (0).
+	// For long blocks, sect_bits=5 and escape=31.
+	const SECT_CB_ZERO_HCB = 0; // 4 bits
+	const SECT_BITS_LONG = 5;
+	const SECT_ESC = (1 << SECT_BITS_LONG) - 1; // 31
+
+	w.writeBits(SECT_CB_ZERO_HCB, 4); // sect_cb
+
+	let remaining = maxSfb;
+	while (remaining > SECT_ESC) {
+		w.writeBits(SECT_ESC, SECT_BITS_LONG);
+		remaining -= SECT_ESC;
 	}
-	return sf;
+	// remaining is 1..31 here for our supported sample rates
+	w.writeBits(remaining, SECT_BITS_LONG);
+
+	// scale_factor_data: none, because sfb_cb == ZERO_HCB => no bits are read.
+
+	// pulse_data_present / tns_data_present / gain_control_data_present
+	w.writeBits(0, 1); // pulse_data_present
+	w.writeBits(0, 1); // tns_data_present
+	w.writeBits(0, 1); // gain_control_data_present
+
+	// spectral_data: none (ZERO_HCB => no Huffman data required).
 }
 
-function quantiseSpectrum(spec: Float64Array, sf: number[], swb: number[]): Int8Array {
-	const q = new Int8Array(spec.length);
-	for (let b = 0; b < swb.length - 1; b++) {
-		const scale = Math.pow(2, -sf[b] / 4);
-		for (let i = swb[b]; i < swb[b + 1]; i++) {
-			let v = Math.sign(spec[i]) * Math.pow(Math.abs(spec[i]) * scale, 0.75);
-			v = Math.max(-4, Math.min(4, Math.round(v))); // clamp
-			q[i] = v;
-		}
+function bitsForFillElement(fillBytes: number): number {
+	if (fillBytes < 0) return 0;
+	if (fillBytes < 15) {
+		// ID_FIL (3) + count (4) + fillBytes*8
+		return 3 + 4 + fillBytes * 8;
 	}
-	return q;
+	if (fillBytes <= 270) {
+		// ID_FIL (3) + count=15 (4) + esc_count (8) + fillBytes*8
+		return 3 + 4 + 8 + fillBytes * 8;
+	}
+	throw new Error(`[AudioEncoder] fillBytes too large for single FIL element: ${fillBytes}`);
 }
 
-// ============================================================================
-// Huffman Codebooks (pair codebook 5 for spectra)
-// ============================================================================
-
-const huff_pair_5: {
-	code: number, len: number, x: number, y: number
-}[] = [
-		{ code: 0x0, len: 1, x: 0, y: 0 },
-		{ code: 0x8, len: 4, x: -1, y: 0 },
-		{ code: 0x9, len: 4, x: 1, y: 0 },
-		{ code: 0xA, len: 4, x: 0, y: 1 },
-		{ code: 0xB, len: 4, x: 0, y: -1 },
-		{ code: 0x18, len: 5, x: 1, y: -1 },
-		{ code: 0x19, len: 5, x: -1, y: 1 },
-		{ code: 0x1A, len: 5, x: -1, y: -1 },
-		{ code: 0x1B, len: 5, x: 1, y: 1 },
-		// ... more entries (full table from AAC spec) ...
-	];
-
-// Build fast lookup for encoding
-const huff5Map = new Map<string, { code: number, len: number }>();
-for (const e of huff_pair_5) {
-	huff5Map.set(`${e.x},${e.y}`, { code: e.code, len: e.len });
-}
-
-// ============================================================================
-// Scalefactor Huffman Table (partial, from ISO table A.1)
-// ============================================================================
-
-const scalefacCodes = [
-	{ idx: 0, len: 1, code: 0 },
-	{ idx: 1, len: 3, code: 0x2 },
-	{ idx: 2, len: 4, code: 0xA },
-	// FULL table from ISO/IEC 13818‑7 should be here
-];
-
-// Build lookup:
-const scalefacMap = new Map<number, { code: number, len: number }>();
-for (const e of scalefacCodes) scalefacMap.set(e.idx, { code: e.code, len: e.len });
-
-// ============================================================================
-// Encode One Frame (single channel)
-// ============================================================================
-
-function encodeFrameMono(writer: BitWriter, samples: Float64Array, sampleRate: number): void {
-	// ICS info: only long blocks
-	writer.writeBits(0, 1);  // ics_reserved_bit
-	writer.writeBits(0, 2);  // window_sequence=ONLY_LONG_SEQUENCE
-	writer.writeBits(0, 1);  // window_shape (0=sine)
-	const swb = scaledSwb(sampleRate);
-
-	writer.writeBits(swb.length - 1, 6); // max_sfb (bands count)
-
-	// global gain
-	const spec = mdct(samples);
-	const scalefactors = computeScalefactors(spec, swb);
-	const quantised = quantiseSpectrum(spec, scalefactors, swb);
-
-	// note: no predictor_data
-
-	// Section data — use one section codebook=5
-	writer.writeBits(0, 4); // sect_cb=5 (pair book)
-	writer.writeBits(swb.length - 1, 5); // sect_len
-
-	// Scalefactor data
-	// global_gain
-	writer.writeBits(128, 8);
-	let last = 128;
-	for (let b = 0; b < scalefactors.length; b++) {
-		const diff = scalefactors[b] - last + 60;
-		const sfEntry = scalefacMap.get(diff) || scalefacMap.get(0)!;
-		writer.writeBits(sfEntry.code, sfEntry.len);
-		last = scalefactors[b];
+function writeFillElement(w: BitWriter, fillBytes: number): void {
+	if (fillBytes <= 0) return;
+	if (fillBytes > 270) {
+		throw new Error(`[AudioEncoder] fillBytes too large for FIL element: ${fillBytes}`);
 	}
 
-	// Spectral data (pairs)
-	for (let b = 0; b < swb.length - 1; b++) {
-		for (let i = swb[b]; i < swb[b + 1]; i += 2) {
-			const x = quantised[i] || 0;
-			const y = quantised[i + 1] || 0;
-			const key = `${x},${y}`;
-			const pair = huff5Map.get(key);
-			if (pair) {
-				writer.writeBits(pair.code, pair.len);
-			} else {
-				writer.writeBits(0, 1); // fallback
+	const ID_FIL = 6;
+	w.writeBits(ID_FIL, 3);
+
+	if (fillBytes < 15) {
+		w.writeBits(fillBytes, 4);
+	} else {
+		w.writeBits(15, 4);
+		w.writeBits(fillBytes - 15, 8);
+	}
+
+	for (let i = 0; i < fillBytes; i++) {
+		w.writeBits(0, 8); // fill_byte
+	}
+}
+
+function buildRawPayload(sampleRateIndex: number, numChannels: number, targetFrameBytes?: number): Buffer {
+	// targetFrameBytes includes ADTS header; payload target is minus 7 bytes.
+	const targetPayloadBytes = typeof targetFrameBytes === "number" ? Math.max(0, targetFrameBytes - 7) : undefined;
+
+	const w = new BitWriter();
+
+	if (numChannels === 1) {
+		const ID_SCE = 0;
+		w.writeBits(ID_SCE, 3);
+		w.writeBits(0, 4); // element_instance_tag
+		writeIcsSilence(w, sampleRateIndex);
+	} else if (numChannels === 2) {
+		const ID_CPE = 1;
+		w.writeBits(ID_CPE, 3);
+		w.writeBits(0, 4); // element_instance_tag
+		w.writeBits(0, 1); // common_window = 0 (each channel has its own ics_info)
+		writeIcsSilence(w, sampleRateIndex);
+		writeIcsSilence(w, sampleRateIndex);
+	} else {
+		throw new Error(`[AudioEncoder] Only mono/stereo supported (got ${numChannels}ch)`);
+	}
+
+	// Optional padding using FIL elements to approximate target bitrate.
+	// We choose fill sizes so that (payload + END + align) lands <= targetPayloadBytes.
+	if (typeof targetPayloadBytes === "number" && targetPayloadBytes > 0) {
+		while (true) {
+			const curPred = w.predictedBytesAfterEndAndAlign();
+			const remaining = targetPayloadBytes - curPred;
+			if (remaining <= 0) break;
+
+			// Greedy: try the largest possible FIL chunk that still fits.
+			let chunk = Math.min(270, remaining);
+
+			// Decrease until it fits without exceeding targetPayloadBytes.
+			while (chunk > 0) {
+				const bitsAfter = w.getBitLength() + bitsForFillElement(chunk);
+				const predAfter = Math.ceil((bitsAfter + 3) / 8); // + ID_END, then byte aligned
+				if (predAfter <= targetPayloadBytes) break;
+				chunk--;
 			}
+
+			if (chunk <= 0) break; // cannot add any FIL without overshooting; accept slight underfill.
+			writeFillElement(w, chunk);
 		}
 	}
+
+	// End element
+	const ID_END = 7;
+	w.writeBits(ID_END, 3);
+
+	// Align payload to a whole number of bytes for ADTS frame_length accounting.
+	return w.toBufferAligned();
 }
 
 // ============================================================================
-// ADTS Writer
+// ADTS header
 // ============================================================================
 
-function writeADTS(writer: BitWriter, frameLen: number, sampleRate: number, numChannels: number): void {
-	writer.writeBits(0xfff, 12);  // sync
-	writer.writeBits(0, 1);       // ID=0 (MPEG‑4)
-	writer.writeBits(0, 2);       // layer
-	writer.writeBits(1, 1);       // protection_absent
-	writer.writeBits(1, 2);       // profile = AAC‑LC (1)
-	const rates = [96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000];
-	let idx = rates.indexOf(sampleRate);
-	if (idx < 0) idx = 4;
-	writer.writeBits(idx, 4);
-	writer.writeBits(0, 1);       // private
-	writer.writeBits(numChannels, 3);
-	writer.writeBits(0, 1);       // orig/copy
-	writer.writeBits(0, 1);       // home
-	writer.writeBits(0, 1);       // copy id bit
-	writer.writeBits(0, 1);       // copy id start
-	writer.writeBits(frameLen, 13);
-	writer.writeBits(0x7ff, 11);  // buffer fullness
-	writer.writeBits(0, 2);       // no raw blocks
+function buildAdtsHeader(frameLengthBytes: number, sampleRateIndex: number, numChannels: number): Buffer {
+	if (frameLengthBytes <= 0 || frameLengthBytes > 0x1fff) {
+		throw new Error(`[AudioEncoder] ADTS frame length out of range: ${frameLengthBytes}`);
+	}
+	if (numChannels < 1 || numChannels > 7) {
+		throw new Error(`[AudioEncoder] ADTS channel_configuration out of range: ${numChannels}`);
+	}
+
+	const w = new BitWriter();
+
+	// syncword 12
+	w.writeBits(0xfff, 12);
+	// ID 1 (0=MPEG-4)
+	w.writeBits(0, 1);
+	// layer 2
+	w.writeBits(0, 2);
+	// protection_absent 1 (1=no CRC)
+	w.writeBits(1, 1);
+	// profile 2 (AAC-LC => profile_ObjectType=2 => write 1)
+	w.writeBits(1, 2);
+	// sampling_frequency_index 4
+	w.writeBits(sampleRateIndex, 4);
+	// private_bit 1
+	w.writeBits(0, 1);
+	// channel_configuration 3
+	w.writeBits(numChannels, 3);
+	// original/copy 1
+	w.writeBits(0, 1);
+	// home 1
+	w.writeBits(0, 1);
+
+	// copyright id bit 1
+	w.writeBits(0, 1);
+	// copyright id start 1
+	w.writeBits(0, 1);
+
+	// aac_frame_length 13
+	w.writeBits(frameLengthBytes, 13);
+
+	// adts_buffer_fullness 11 (0x7FF = VBR)
+	w.writeBits(0x7ff, 11);
+
+	// num_raw_data_blocks_in_frame 2 (0 => 1 raw_data_block)
+	w.writeBits(0, 2);
+
+	const hdr = w.toBufferAligned();
+	if (hdr.length !== 7) {
+		throw new Error(`[AudioEncoder] Internal error: ADTS header is ${hdr.length} bytes (expected 7)`);
+	}
+	return hdr;
 }
 
 // ============================================================================
 // Public API
 // ============================================================================
 
+export interface AudioEncoderOptions {
+	/**
+	 * Target bitrate in kbps.
+	 * If provided, frames are padded using FIL elements to approximate this bitrate.
+	 * This does NOT encode the original audio; it only changes output size.
+	 */
+	bitrate?: number;
+}
+
 export async function encodeWavToAacLc(
 	wavBuffer: Buffer,
-	// sourcePath: string,
-	// options: { bitrate?: number } = {}
+	sourcePath: string,
+	options: AudioEncoderOptions = {}
 ): Promise<Buffer> {
-	const wav = parseWav(wavBuffer);
-	const { sampleRate, numChannels, samples } = wav;
+	const wav = parseWavInfo(wavBuffer, sourcePath);
+	const { sampleRate, numChannels, totalSamplesPerChannel } = wav;
 
-	const total = samples[0].length;
-	const frames: Buffer[] = [];
-
-	let prev: Float64Array[] = [];
-	for (let ch = 0; ch < numChannels; ch++) {
-		prev.push(new Float64Array(AAC_FRAME));
+	if (numChannels !== 1 && numChannels !== 2) {
+		throw new Error(`[AudioEncoder] Only mono/stereo supported: got ${numChannels}ch in "${sourcePath}"`);
 	}
 
-	const numFrames = Math.ceil(total / AAC_FRAME);
+	const srIndex = getSampleRateIndex(sampleRate);
 
-	for (let f = 0; f < numFrames; f++) {
-		// const writer = new BitWriter();
+	// Number of AAC frames needed to cover the WAV duration.
+	const numFrames = Math.ceil(totalSamplesPerChannel / AAC_FRAME_SAMPLES);
+	if (numFrames <= 0) return Buffer.alloc(0);
 
-		const payloadWriter = new BitWriter();
-		if (numChannels === 1) {
-			payloadWriter.writeBits(0, 3); // ID_SCE
-			payloadWriter.writeBits(0, 4);
-			const frameSamples = new Float64Array(AAC_FRAME * 2);
-			frameSamples.set(prev[0], 0);
-			for (let i = 0; i < AAC_FRAME; i++) {
-				const idx = f * AAC_FRAME + i;
-				frameSamples[AAC_FRAME + i] = idx < total ? samples[0][idx] : 0;
-			}
-			prev[0].set(frameSamples.subarray(AAC_FRAME));
-			encodeFrameMono(payloadWriter, frameSamples, sampleRate);
-		} else {
-			payloadWriter.writeBits(1, 3);
-			payloadWriter.writeBits(0, 4);
-			payloadWriter.writeBits(0, 1);
-			// channel 1
-			const buf1 = new Float64Array(AAC_FRAME * 2);
-			buf1.set(prev[0], 0);
-			for (let i = 0; i < AAC_FRAME; i++) {
-				const idx = f * AAC_FRAME + i;
-				buf1[AAC_FRAME + i] = idx < total ? samples[0][idx] : 0;
-			}
-			prev[0].set(buf1.subarray(AAC_FRAME));
-			encodeFrameMono(payloadWriter, buf1, sampleRate);
-			// channel 2
-			const buf2 = new Float64Array(AAC_FRAME * 2);
-			buf2.set(prev[1], 0);
-			for (let i = 0; i < AAC_FRAME; i++) {
-				const idx = f * AAC_FRAME + i;
-				buf2[AAC_FRAME + i] = idx < total ? samples[1][idx] : 0;
-			}
-			prev[1].set(buf2.subarray(AAC_FRAME));
-			encodeFrameMono(payloadWriter, buf2, sampleRate);
+	// Precompute base payload and base frame size (without fill).
+	const basePayload = buildRawPayload(srIndex, numChannels);
+	const baseFrameBytes = 7 + basePayload.length;
+
+	// Optional target size from bitrate
+	let targetFrameBytes: number | undefined;
+	if (typeof options.bitrate === "number") {
+		const bitrateKbps = options.bitrate;
+		if (!Number.isFinite(bitrateKbps) || bitrateKbps <= 0) {
+			throw new Error(`[AudioEncoder] Invalid bitrate: ${options.bitrate}`);
 		}
+		// bytes/frame = (bitrate * 1000 / 8) / (sampleRate / 1024)
+		const bytesPerFrame = (bitrateKbps * 1000 * AAC_FRAME_SAMPLES) / (8 * sampleRate);
+		targetFrameBytes = Math.max(baseFrameBytes, Math.round(bytesPerFrame));
 
-		payloadWriter.writeBits(7, 3); // ID_END
-		payloadWriter.byteAlign();
-		const payload = payloadWriter.getBuffer();
-
-		const adts = new BitWriter();
-		writeADTS(adts, 7 + payload.length, sampleRate, numChannels);
-		adts.writeBuffer(payload);
-
-		frames.push(adts.getBuffer());
+		if (targetFrameBytes > 0x1fff) {
+			throw new Error(
+				`[AudioEncoder] Target frame size too large for ADTS (>${0x1fff}): ${targetFrameBytes} bytes`
+			);
+		}
 	}
 
-	return Buffer.concat(frames);
+	const outFrames: Buffer[] = [];
+	outFrames.length = numFrames;
+
+	for (let i = 0; i < numFrames; i++) {
+		const payload = targetFrameBytes
+			? buildRawPayload(srIndex, numChannels, targetFrameBytes)
+			: basePayload;
+
+		const frameLen = 7 + payload.length;
+		const adts = buildAdtsHeader(frameLen, srIndex, numChannels);
+		outFrames[i] = Buffer.concat([adts, payload]);
+	}
+
+	return Buffer.concat(outFrames);
 }
 
 export function isEncoderAvailable(): boolean {

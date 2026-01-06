@@ -15,6 +15,7 @@
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <cctype>
 
 #include "libretro.h"
 #include "libretro_platform.h"
@@ -49,6 +50,26 @@ static GateToken g_backend_option_pending_token;
 static GateToken g_backend_option_failed_token;
 static std::string g_hw_render_failure_reason;
 static std::string g_system_dir;
+
+static std::string sanitizeSystemDir(std::string_view path) {
+	size_t start = 0;
+	size_t end = path.size();
+	while (start < end && std::isspace(static_cast<unsigned char>(path[start]))) {
+		++start;
+	}
+	while (end > start && std::isspace(static_cast<unsigned char>(path[end - 1]))) {
+		--end;
+	}
+	if (end - start >= 2) {
+		const char first = path[start];
+		const char last = path[end - 1];
+		if ((first == '"' && last == '"') || (first == '\'' && last == '\'')) {
+			++start;
+			--end;
+		}
+	}
+	return std::string(path.substr(start, end - start));
+}
 
 // The platform instance
 static bmsx::LibretroPlatform* g_platform = nullptr;
@@ -201,6 +222,10 @@ static bool read_postprocess_detail_enabled();
  */
 
 static bmsx::BackendType resolve_backend_preference(RenderBackendPreference preference) {
+#if !BMSX_ENABLE_GLES2
+	(void)preference;
+	return bmsx::BackendType::Software;
+#else
 	if (preference == RenderBackendPreference::Software) {
 		return bmsx::BackendType::Software;
 	}
@@ -208,6 +233,7 @@ static bmsx::BackendType resolve_backend_preference(RenderBackendPreference pref
 		return bmsx::BackendType::OpenGLES2;
 	}
 	return bmsx::BackendType::OpenGLES2;
+#endif
 }
 
 static bool is_hardware_backend(bmsx::BackendType type) {
@@ -262,16 +288,30 @@ static void try_update_backend_option() {
 }
 
 static void set_core_options(bool default_gles2) {
+#if BMSX_ENABLE_GLES2
 	const char* default_backend = default_gles2 ? kRenderBackendGLES2 : kRenderBackendSoftware;
+#else
+	(void)default_gles2;
+	const char* default_backend = kRenderBackendSoftware;
+#endif
 	g_option_defs_us[0].default_value = default_backend;
 	g_option_defs_v1_us[0].default_value = default_backend;
 
+#if BMSX_ENABLE_GLES2
 	g_option_defs_us[0].values[0] = {kRenderBackendGLES2, "GLES2"};
 	g_option_defs_us[0].values[1] = {kRenderBackendSoftware, "Software"};
 	g_option_defs_us[0].values[2] = {nullptr, nullptr};
 	g_option_defs_v1_us[0].values[0] = {kRenderBackendGLES2, "GLES2"};
 	g_option_defs_v1_us[0].values[1] = {kRenderBackendSoftware, "Software"};
 	g_option_defs_v1_us[0].values[2] = {nullptr, nullptr};
+#else
+	g_option_defs_us[0].values[0] = {kRenderBackendSoftware, "Software"};
+	g_option_defs_us[0].values[1] = {nullptr, nullptr};
+	g_option_defs_us[0].values[2] = {nullptr, nullptr};
+	g_option_defs_v1_us[0].values[0] = {kRenderBackendSoftware, "Software"};
+	g_option_defs_v1_us[0].values[1] = {nullptr, nullptr};
+	g_option_defs_v1_us[0].values[2] = {nullptr, nullptr};
+#endif
 	g_option_defs_us[1].values[0] = {kCrtPostprocessingOff, "Off"};
 	g_option_defs_us[1].values[1] = {kCrtPostprocessingOn, "On"};
 	g_option_defs_us[1].values[2] = {nullptr, nullptr};
@@ -285,6 +325,7 @@ static void set_core_options(bool default_gles2) {
 	g_option_defs_v1_us[2].values[1] = {kPostprocessDetailOn, "On"};
 	g_option_defs_v1_us[2].values[2] = {nullptr, nullptr};
 
+#if BMSX_ENABLE_GLES2
 	if (default_gles2) {
 		std::snprintf(g_option_render_backend_var, sizeof(g_option_render_backend_var),
 					  "Render Backend; %s|%s", kRenderBackendGLES2, kRenderBackendSoftware);
@@ -292,6 +333,10 @@ static void set_core_options(bool default_gles2) {
 		std::snprintf(g_option_render_backend_var, sizeof(g_option_render_backend_var),
 					  "Render Backend; %s|%s", kRenderBackendSoftware, kRenderBackendGLES2);
 	}
+#else
+	std::snprintf(g_option_render_backend_var, sizeof(g_option_render_backend_var),
+				  "Render Backend; %s", kRenderBackendSoftware);
+#endif
 	g_option_vars[0].value = g_option_render_backend_var;
 	std::snprintf(g_option_crt_postprocessing_var, sizeof(g_option_crt_postprocessing_var),
 				  "CRT Post-processing; %s|%s", kCrtPostprocessingOff, kCrtPostprocessingOn);
@@ -358,6 +403,9 @@ static bool parse_postprocess_detail_enabled(const char* value) {
 }
 
 static RenderBackendPreference read_backend_preference() {
+#if !BMSX_ENABLE_GLES2
+	return RenderBackendPreference::Software;
+#else
 	retro_variable var;
 	var.key = kOptionRenderBackend;
 	var.value = nullptr;
@@ -365,6 +413,7 @@ static RenderBackendPreference read_backend_preference() {
 		return parse_backend_preference(var.value);
 	}
 	return RenderBackendPreference::Auto;
+#endif
 }
 
 static bool read_crt_postprocessing_enabled() {
@@ -554,7 +603,7 @@ void retro_set_environment(retro_environment_t cb) {
   // frame_time.reference = 0;
   // cb(RETRO_ENVIRONMENT_SET_FRAME_TIME_CALLBACK, &frame_time);
 
-  set_core_options(true);
+  set_core_options(BMSX_ENABLE_GLES2);
 }
 
 void retro_set_video_refresh(retro_video_refresh_t cb) {
@@ -597,8 +646,12 @@ void retro_init(void) {
 
   const char* system_dir = nullptr;
   if (environ_cb(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &system_dir) && system_dir && system_dir[0]) {
-	g_system_dir = system_dir;
-	logging.log(RETRO_LOG_INFO, "[BMSX] System directory: %s\n", g_system_dir.c_str());
+	g_system_dir = sanitizeSystemDir(system_dir);
+	if (!g_system_dir.empty()) {
+		logging.log(RETRO_LOG_INFO, "[BMSX] System directory: %s\n", g_system_dir.c_str());
+	} else {
+		logging.log(RETRO_LOG_INFO, "[BMSX] System directory not provided\n");
+	}
   } else {
 	g_system_dir.clear();
 	logging.log(RETRO_LOG_INFO, "[BMSX] System directory not provided\n");

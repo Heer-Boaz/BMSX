@@ -338,6 +338,7 @@ bool loadAssetsFromRom(const u8* buffer,
 			throw BMSX_RUNTIME_ERROR("Invalid ROM payload after decompression");
 		}
 	}
+	const bool romDataPersistent = decompressed.empty();
 
 	// Step 3: Parse metadata to get asset list
 	RomMeta meta = parseRomMeta(romData, romSize);
@@ -508,15 +509,21 @@ bool loadAssetsFromRom(const u8* buffer,
 			WavInfo wav = parseWav(audioData, audioSize);
 			audioAsset.sampleRate = wav.sampleRate;
 			audioAsset.channels = wav.channels;
-			size_t sampleCount = wav.dataSize / static_cast<size_t>(wav.bitsPerSample / 8);
-			audioAsset.samples.resize(sampleCount);
-			if (wav.bitsPerSample == 16) {
-				for (size_t i = 0; i < sampleCount; ++i) {
-					audioAsset.samples[i] = static_cast<i16>(readLE16(wav.data + i * 2));
-				}
+			audioAsset.bitsPerSample = wav.bitsPerSample;
+			audioAsset.totalSamples = wav.dataSize / static_cast<size_t>(wav.bitsPerSample / 8);
+			if (romDataPersistent) {
+				audioAsset.romDataPtr = audioData;
+				audioAsset.romDataOffset = static_cast<size_t>(wav.data - audioData);
 			} else {
-				for (size_t i = 0; i < sampleCount; ++i) {
-					audioAsset.samples[i] = static_cast<i16>(static_cast<int>(wav.data[i]) - 128) << 8;
+				audioAsset.samples.resize(audioAsset.totalSamples);
+				if (wav.bitsPerSample == 16) {
+					for (size_t i = 0; i < audioAsset.totalSamples; ++i) {
+						audioAsset.samples[i] = static_cast<i16>(readLE16(wav.data + i * 2));
+					}
+				} else {
+					for (size_t i = 0; i < audioAsset.totalSamples; ++i) {
+						audioAsset.samples[i] = static_cast<i16>(static_cast<int>(wav.data[i]) - 128) << 8;
+					}
 				}
 			}
 
