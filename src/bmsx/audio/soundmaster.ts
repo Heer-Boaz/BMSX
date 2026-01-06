@@ -2,6 +2,7 @@ import { $ } from '../core/engine_core';
 import { AudioPlaybackParams, AudioService, AudioClipHandle, VoiceHandle, RngService, SubscriptionHandle } from '../platform';
 import { Registry } from '../core/registry';
 import { asset_id, AudioMeta, AudioType, AudioTypes, CartridgeLayerId, id2res, RegisterablePersistent, RomAsset } from '../rompack/rompack';
+import { clamp01 } from '../utils/clamp';
 
 export type VoiceId = number;
 type ModulationInput = RandomModulationParams | ModulationParams;
@@ -166,7 +167,7 @@ export class SoundMaster implements RegisterablePersistent {
 		this.resetVoiceState();
 
 		this.predecodeTracks();
-		this.volume = this.clampVolume(startingVolume);
+		this.volume = clamp01(startingVolume);
 	}
 
 	public bind(): void {
@@ -710,18 +711,12 @@ export class SoundMaster implements RegisterablePersistent {
 	}
 
 	public get volume(): number {
-		return this.clampVolume(this.A.getMasterGain());
+		return clamp01(this.A.getMasterGain());
 	}
 
 	public set volume(value: number) {
-		const clamped = this.clampVolume(value);
+		const clamped = clamp01(value);
 		this.A.setMasterGain(clamped);
-	}
-
-	private clampVolume(value: number): number {
-		if (value < 0) return 0;
-		if (value > 1) return 1;
-		return Number.isFinite(value) ? value : 0;
 	}
 
 	public currentTimeByType(type: AudioType): number {
