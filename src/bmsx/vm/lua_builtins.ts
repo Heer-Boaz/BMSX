@@ -87,6 +87,7 @@ export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<VMLuaBuiltinDescriptor
 	{ name: 'string.format', params: ['format', '...'], signature: 'string.format(format, ...)' },
 	{ name: 'string.len', params: ['s'], signature: 'string.len(s)' },
 	{ name: 'string.lower', params: ['s'], signature: 'string.lower(s)' },
+	{ name: 'string.rep', params: ['s', 'n', 'sep?'], signature: 'string.rep(s, n [, sep])' },
 	{ name: 'string.sub', params: ['s', 'i', 'j?'], signature: 'string.sub(s, i [, j])' },
 	{ name: 'string.upper', params: ['s'], signature: 'string.upper(s)' },
 	{ name: 'os.clock', params: [], signature: 'os.clock()' },

@@ -14,7 +14,7 @@ local function format_emitter(value)
 		return "nil"
 	end
 	local value_type = type(value)
-	if value_type == "table" or value_type == "native_object" then
+	if value_type == "table" or value_type == "native" then
 		if value.id ~= nil then
 			return tostring(value.id)
 		end

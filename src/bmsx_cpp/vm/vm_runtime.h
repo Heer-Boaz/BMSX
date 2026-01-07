@@ -71,6 +71,11 @@ struct VMState {
  */
 class VMRuntime {
 public:
+	enum class VmProgramSource {
+		Engine,
+		Cart,
+	};
+
 	/**
 	 * Create the singleton instance. Throws if already created.
 	 */
@@ -177,6 +182,9 @@ public:
 	void setTickEnabled(bool enabled) { m_tickEnabled = enabled; }
 	bool isTickEnabled() const { return m_tickEnabled; }
 
+	void setProgramSource(VmProgramSource source) { m_programSource = source; }
+	bool isEngineProgramActive() const { return m_programSource == VmProgramSource::Engine; }
+
 	/**
 	 * Get the player index for this runtime.
 	 */
@@ -243,6 +251,8 @@ private:
 	double nextVmRandom();
 	std::string formatVmString(const std::string& templateStr, const std::vector<Value>& args, size_t argStart) const;
 	void logVmCallStack() const;
+	void syncSystemRegisters();
+	bool pollSystemBootRequest();
 
 	static VMRuntime* s_instance;
 	static constexpr int UPDATE_STATEMENT_BUDGET = 1'000'000;
@@ -260,6 +270,7 @@ private:
 	int m_playerIndex = 0;
 	Viewport m_viewport{0, 0};
 	CanonicalizationType m_canonicalization = CanonicalizationType::None;
+	VmProgramSource m_programSource = VmProgramSource::Cart;
 
 	// State flags
 	bool m_vmInitialized = false;

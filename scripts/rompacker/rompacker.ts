@@ -992,7 +992,7 @@ async function main() {
 						}
 						validateAudioEventReferences(engineResources);
 						const engineRomAssets = await generateRomAssets(engineResources);
-						// Compile system_program.lua into VM bytecode for C++ engine
+						// Compile bootrom.lua into VM bytecode for C++ engine
 						appendVmProgramAsset(engineRomAssets, engineManifest, { includeSymbols: debug });
 						stripLuaAssets(engineRomAssets, debug);
 						await finalizeRompack(engineRomAssets, engineRomName, { projectRootPath: engineProjectRootPath, manifest: engineManifest, zipRom: false, debug: debug });
@@ -1128,7 +1128,7 @@ async function main() {
 					extraLuaAssets = engineLuaAssets.filter(asset => asset.type === 'lua');
 				}
 			}
-			appendVmProgramAsset(romAssets, romManifest, { extraLuaAssets, includeSymbols: romPackDebug });
+			appendVmProgramAsset(romAssets, romManifest, { extraLuaAssets, includeSymbols: debug });
 			stripLuaAssets(romAssets, romPackDebug);
 			await progress.taskCompleted();
 

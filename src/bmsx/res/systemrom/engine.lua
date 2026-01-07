@@ -310,7 +310,10 @@ function engine.trigger_effect(object_id, effect_id, options)
 	return component:trigger(effect_id)
 end
 
-function $.emit(name_or_event, emitter, payload)
+function $.emit(name_or_event, emitter, payload, ...)
+	if type(name_or_event) == "native" and name_or_event.type == nil then
+		name_or_event, emitter, payload = emitter, payload, select(1, ...)
+	end
 	local kind = type(name_or_event)
 	if kind == "table" then
 		if name_or_event.type == nil then
@@ -318,8 +321,9 @@ function $.emit(name_or_event, emitter, payload)
 		end
 		return eventemitter.instance:emit(name_or_event)
 	end
-	if kind == "native_object" then
+	if kind == "native" then
 		local event = {}
+		event.type = name_or_event.type
 		for k, v in pairs(name_or_event) do
 			event[k] = v
 		end

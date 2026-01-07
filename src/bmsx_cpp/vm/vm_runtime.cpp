@@ -423,6 +423,23 @@ void VMRuntime::boot(Program* program, ProgramMetadata* metadata, int entryProto
 	std::cout << "[VMRuntime] boot: VM initialized!" << std::endl;
 }
 
+void VMRuntime::syncSystemRegisters() {
+	const bool cartPresent = EngineCore::instance().assets().vmProgram != nullptr;
+	m_memory[IO_SYS_CART_PRESENT] = valueNumber(cartPresent ? 1.0 : 0.0);
+}
+
+bool VMRuntime::pollSystemBootRequest() {
+	if (!isEngineProgramActive()) {
+		return false;
+	}
+	if (asNumber(m_memory[IO_SYS_BOOT_CART]) == 0.0) {
+		return false;
+	}
+	m_memory[IO_SYS_BOOT_CART] = valueNumber(0.0);
+	EngineCore::instance().resetLoadedRom();
+	return true;
+}
+
 void VMRuntime::tickUpdate() {
 	if (!m_vmInitialized || !m_tickEnabled || m_runtimeFailed) {
 		// if (s_updateLogRemaining > 0) {
@@ -431,6 +448,11 @@ void VMRuntime::tickUpdate() {
 		// 			  << " failed=" << (m_runtimeFailed ? "true" : "false") << ")" << std::endl;
 		// 	--s_updateLogRemaining;
 		// }
+		return;
+	}
+
+	syncSystemRegisters();
+	if (pollSystemBootRequest()) {
 		return;
 	}
 
@@ -1661,6 +1683,31 @@ stringTable->set(key("lower"), m_cpu.createNativeFunction("string.lower", [str, 
 	for (auto& c : text) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
 	out.push_back(str(text));
 }));
+stringTable->set(key("rep"), m_cpu.createNativeFunction("string.rep", [str, asText](const std::vector<Value>& args, std::vector<Value>& out) {
+	const std::string& text = asText(args.at(0));
+	int count = args.size() > 1 ? static_cast<int>(std::floor(asNumber(args.at(1)))) : 1;
+	if (count <= 0) {
+		out.push_back(str(""));
+		return;
+	}
+	bool hasSeparator = args.size() > 2 && !isNil(args.at(2));
+	std::string separator = hasSeparator ? std::string(asText(args.at(2))) : std::string();
+	std::string result;
+	if (hasSeparator) {
+		for (int i = 0; i < count; ++i) {
+			if (i > 0) {
+				result += separator;
+			}
+			result += text;
+		}
+	} else {
+		result.reserve(text.size() * static_cast<size_t>(count));
+		for (int i = 0; i < count; ++i) {
+			result += text;
+		}
+	}
+	out.push_back(str(result));
+}));
 stringTable->set(key("sub"), m_cpu.createNativeFunction("string.sub", [str, asText](const std::vector<Value>& args, std::vector<Value>& out) {
 	const std::string& text = asText(args.at(0));
 	int length = utf8_codepoint_count(text);
@@ -2211,6 +2258,10 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 	});
 
 	const RuntimeAssets& assets = EngineCore::instance().assets();
+	const RuntimeAssets* assetView = &assets;
+	if (isEngineProgramActive() && assets.fallback) {
+		assetView = assets.fallback;
+	}
 	auto* assetsTable = m_cpu.createTable();
 	auto formatAssetKeyNumber = [](double value) -> std::string {
 		if (value == 0.0) {
@@ -2274,17 +2325,17 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 		);
 	};
 	std::unordered_set<AssetId> imgIds;
-	if (assets.fallback) {
-		for (const auto& [id, _] : assets.fallback->img) {
+	if (assetView->fallback) {
+		for (const auto& [id, _] : assetView->fallback->img) {
 			imgIds.insert(id);
 		}
 	}
-	for (const auto& [id, _] : assets.img) {
+	for (const auto& [id, _] : assetView->img) {
 		imgIds.insert(id);
 	}
 	auto* imgTable = m_cpu.createTable(0, static_cast<int>(imgIds.size()));
 	for (const auto& id : imgIds) {
-		const ImgAsset* imgAsset = assets.getImg(id);
+		const ImgAsset* imgAsset = assetView->getImg(id);
 		if (!imgAsset) continue;
 		auto* imgEntry = m_cpu.createTable(0, 2);
 		imgEntry->set(key("imgmeta"), valueTable(buildImgMetaTable(m_cpu, imgAsset->meta, key)));
@@ -2293,17 +2344,17 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 	assetsTable->set(key("img"), makeAssetMapNativeObject(imgTable));
 
 	std::unordered_set<AssetId> dataIds;
-	if (assets.fallback) {
-		for (const auto& [id, _] : assets.fallback->data) {
+	if (assetView->fallback) {
+		for (const auto& [id, _] : assetView->fallback->data) {
 			dataIds.insert(id);
 		}
 	}
-	for (const auto& [id, _] : assets.data) {
+	for (const auto& [id, _] : assetView->data) {
 		dataIds.insert(id);
 	}
 	auto* dataTable = m_cpu.createTable(0, static_cast<int>(dataIds.size()));
 	for (const auto& id : dataIds) {
-		const BinValue* value = assets.getData(id);
+		const BinValue* value = assetView->getData(id);
 		if (!value) continue;
 		dataTable->set(str(id), binValueToVmValue(m_cpu, *value));
 	}
@@ -2311,24 +2362,24 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 	auto* audioTable = m_cpu.createTable();
 	assetsTable->set(key("audio"), makeAssetMapNativeObject(audioTable));
 	std::unordered_set<AssetId> audioEventIds;
-	if (assets.fallback) {
-		for (const auto& [id, _] : assets.fallback->audioevents) {
+	if (assetView->fallback) {
+		for (const auto& [id, _] : assetView->fallback->audioevents) {
 			audioEventIds.insert(id);
 		}
 	}
-	for (const auto& [id, _] : assets.audioevents) {
+	for (const auto& [id, _] : assetView->audioevents) {
 		audioEventIds.insert(id);
 	}
 	auto* audioEventsTable = m_cpu.createTable(0, static_cast<int>(audioEventIds.size()));
 	for (const auto& id : audioEventIds) {
-		const BinValue* value = assets.getAudioEvent(id);
+		const BinValue* value = assetView->getAudioEvent(id);
 		if (!value) continue;
 		audioEventsTable->set(str(id), binValueToVmValue(m_cpu, *value));
 	}
 	assetsTable->set(key("audioevents"), makeAssetMapNativeObject(audioEventsTable));
 	auto* modelTable = m_cpu.createTable();
 	assetsTable->set(key("model"), makeAssetMapNativeObject(modelTable));
-	assetsTable->set(key("project_root_path"), str(assets.projectRootPath));
+	assetsTable->set(key("project_root_path"), str(assetView->projectRootPath));
 	auto assetsNative = m_cpu.createNativeObject(
 		assetsTable,
 		[this, assetsTable, formatAssetKeyNumber](const Value& keyValue) -> Value {

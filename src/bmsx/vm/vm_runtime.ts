@@ -23,7 +23,7 @@ import { publishOverlayFrame } from '../render/editor/editor_overlay_queue';
 import type { Viewport, BmsxCartridgeBlob, CartridgeIndex } from '../rompack/rompack';
 import { CanonicalizationType } from '../rompack/rompack';
 import { AssetSourceStack, type RawAssetSource } from '../rompack/asset_source';
-import { applyRuntimeAssetLayer, buildRuntimeAssetLayer } from '../rompack/romloader';
+import { applyRuntimeAssetLayer, buildRuntimeAssetLayer, type RuntimeAssetLayer } from '../rompack/romloader';
 import { decodeuint8arr } from '../serializer/binencoder';
 import { createIdentifierCanonicalizer } from '../utils/identifier_canonicalizer';
 import { clamp01, clamp_fallback } from '../utils/clamp';
@@ -189,11 +189,11 @@ export class BmsxVMRuntime {
 		}
 
 		const cartLayer = await buildRuntimeAssetLayer({ blob: cartridge, id: 'cart' });
-		applyRuntimeAssetLayer($.assets, cartLayer);
 		const overlayBlob = $.workspaceOverlay;
 		const overlayLayer = overlayBlob ? await buildRuntimeAssetLayer({ blob: overlayBlob, id: 'overlay' }) : null;
+		BmsxVMRuntime.applyLayerMetadata(cartLayer);
 		if (overlayLayer) {
-			applyRuntimeAssetLayer($.assets, overlayLayer);
+			BmsxVMRuntime.applyLayerMetadata(overlayLayer);
 		}
 		const layers = [];
 		if (overlayLayer) {
@@ -203,9 +203,7 @@ export class BmsxVMRuntime {
 		layers.push({ id: engineLayer.id, index: engineLayer.index, payload: engineLayer.payload });
 		const assetSource = new AssetSourceStack(layers);
 		$.setAssetSource(assetSource);
-		await $.refreshAudioAssets();
 		$.view.primaryAtlas = 0;
-		$.assets.project_root_path = cartLayer.index.projectRootPath;
 
 		const cartSource = new AssetSourceStack([{ id: cartLayer.id, index: cartLayer.index, payload: cartLayer.payload }]);
 		const cartLuaSources = BmsxVMRuntime.buildLuaSources({
@@ -229,6 +227,8 @@ export class BmsxVMRuntime {
 			canonicalization: engineLayer.index.manifest.vm.canonicalization,
 			viewport: cartLayer.index.manifest.vm.viewport,
 		});
+		runtime.cartAssetLayer = cartLayer;
+		runtime.overlayAssetLayer = overlayLayer;
 		runtime.configureProgramSources({
 			engineSources: engineLuaSources,
 			cartSources: cartLuaSources,
@@ -302,6 +302,12 @@ export class BmsxVMRuntime {
 		// No defense against multiple calls; let it throw if misused.
 		BmsxVMRuntime._instance.dispose();
 		BmsxVMRuntime._instance = null;
+	}
+
+	private static applyLayerMetadata(layer: RuntimeAssetLayer): void {
+		$.assets.project_root_path = layer.assets.project_root_path;
+		$.assets.manifest = layer.assets.manifest;
+		$.assets.canonicalization = layer.assets.canonicalization;
 	}
 
 	public setCartEntryAvailable(value: boolean): void {
@@ -441,6 +447,8 @@ export class BmsxVMRuntime {
 	private cartLuaSources: LuaSourceRegistry = null;
 	private engineAssetSource: RawAssetSource = null;
 	private cartAssetSource: RawAssetSource = null;
+	private cartAssetLayer: RuntimeAssetLayer = null;
+	private overlayAssetLayer: RuntimeAssetLayer = null;
 	private engineCanonicalization: CanonicalizationType = null;
 	private cartCanonicalization: CanonicalizationType = null;
 	private _canonicalization: CanonicalizationType;
@@ -1182,6 +1190,13 @@ export class BmsxVMRuntime {
 		return $.luaSources === this.engineLuaSources;
 	}
 
+	private applyCartAssetLayers(): void {
+		applyRuntimeAssetLayer($.assets, this.cartAssetLayer);
+		if (this.overlayAssetLayer) {
+			applyRuntimeAssetLayer($.assets, this.overlayAssetLayer);
+		}
+	}
+
 	private syncSystemRegisters(): void {
 		this.cpuMemory[IO_SYS_CART_PRESENT] = $.assets.project_root_path !== $.engineLayer.index.projectRootPath ? 1 : 0;
 	}
@@ -1211,7 +1226,7 @@ export class BmsxVMRuntime {
 		}
 		this.pendingCartBoot = false;
 		this.activateProgramSource('cart');
-		void this.reloadProgramAndResetWorld();
+		void this.reloadProgramAndResetWorld({ applyCartAssets: true });
 	}
 
 	private processPendingProgramReload(): void {
@@ -1427,7 +1442,7 @@ export class BmsxVMRuntime {
 		let binding = $.luaSources.path2lua[$.luaSources.entry_path] as LuaSourceRecord;
 		if (!binding) {
 			// This can happen if there is no Lua entry point defined in the cart. For example, when there is no cart loaded and the player still tried to write code and run it.
-			// Luckily, this is not a fatal error as the description will point towards `res/code/system_program.lua`
+			// Luckily, this is not a fatal error as the description will point towards `res/systemrom/bootrom.lua`
 			// binding =  { source_path: $.luaSources.entry_path, resid: $.luaSources.entry_path, type: 'lua', src: '', normalized_source_path: $.luaSources.entry_path, update_timestamp: $.platform.clock.dateNow(), base_src: '' };
 			console.info(`[BmsxVMRuntime] No Lua entry point defined; cannot reload program. Please save the entry point and try again.`);
 			return;
@@ -2167,6 +2182,30 @@ export class BmsxVMRuntime {
 		setKey(stringTable, 'lower', createNativeFunction('string.lower', (args, out) => {
 			const text = this.requireVmString(args[0]);
 			out.push(this.internVmString(text.toLowerCase()));
+		}));
+		setKey(stringTable, 'rep', createNativeFunction('string.rep', (args, out) => {
+			const text = this.requireVmString(args[0]);
+			const count = Math.floor(args.length > 1 ? (args[1] as number) : 1);
+			if (count <= 0) {
+				out.push(this.internVmString(''));
+				return;
+			}
+			const hasSeparator = args.length > 2 && args[2] !== null;
+			const separator = hasSeparator ? this.requireVmString(args[2]) : '';
+			let output = '';
+			if (hasSeparator) {
+				for (let index = 0; index < count; index += 1) {
+					if (index > 0) {
+						output += separator;
+					}
+					output += text;
+				}
+			} else {
+				for (let index = 0; index < count; index += 1) {
+					output += text;
+				}
+			}
+			out.push(this.internVmString(output));
 		}));
 		setKey(stringTable, 'sub', createNativeFunction('string.sub', (args, out) => {
 			const text = this.requireVmString(args[0]);
@@ -3705,7 +3744,7 @@ export class BmsxVMRuntime {
 		return this.runLuaLifecycleHandler('new_game');
 	}
 
-	public async reloadProgramAndResetWorld(options?: { runInit?: boolean }): Promise<void> {
+	public async reloadProgramAndResetWorld(options?: { runInit?: boolean; applyCartAssets?: boolean }): Promise<void> {
 		const vmToken = this.luaVmGate.begin({ blocking: true, tag: 'reload_and_reset' });
 		try {
 			const preservingSuspension = this.pauseCoordinator.hasSuspension();
@@ -3721,6 +3760,10 @@ export class BmsxVMRuntime {
 			this.luaGenericChunksExecuted.clear();
 
 			// Reload the active program source and reset the world
+			if (options?.applyCartAssets) {
+				this.applyCartAssetLayers();
+				await $.refreshAudioAssets();
+			}
 			await $.reset_to_fresh_world();
 			$.view.primaryAtlas = 0;
 			try {
@@ -3860,7 +3903,9 @@ export class BmsxVMRuntime {
 				}
 			}
 		}
-		const projectRootPath = $.assets.project_root_path;
+		const projectRootPath = this.isEngineProgramActive()
+			? $.engineLayer.index.projectRootPath
+			: $.assets.project_root_path;
 		const normalizedRoot = projectRootPath && projectRootPath.length > 0
 			? projectRootPath.replace(/^\.?\//, '')
 			: '';

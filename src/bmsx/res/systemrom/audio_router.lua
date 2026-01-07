@@ -30,7 +30,7 @@ local function format_entity(value)
 		return "nil"
 	end
 	local value_type = type(value)
-	if value_type == "table" or value_type == "native_object" then
+	if value_type == "table" or value_type == "native" then
 		if value.id ~= nil then
 			return tostring(value.id)
 		end
@@ -46,7 +46,7 @@ local function format_tags(tags)
 		return "nil"
 	end
 	local tags_type = type(tags)
-	if tags_type == "table" or tags_type == "native_object" then
+	if tags_type == "table" or tags_type == "native" then
 		local out = {}
 		for i = 1, #tags do
 			out[#out + 1] = tostring(tags[i])
@@ -392,14 +392,14 @@ local function merge_events(map)
 
 	for asset_id, value in pairs(map) do
 		local value_type = type(value)
-		if value_type ~= "table" and value_type ~= "native_object" then
+		if value_type ~= "table" and value_type ~= "native" then
 			error("audio_router asset '" .. tostring(asset_id) .. "' must be a table")
 		end
 
 		local events = value.events
 		if events ~= nil then
 			local events_type = type(events)
-			if events_type ~= "table" and events_type ~= "native_object" then
+			if events_type ~= "table" and events_type ~= "native" then
 				error("audio_router asset '" .. tostring(asset_id) .. "' has invalid events")
 			end
 			for event_name, entry in pairs(events) do
@@ -410,7 +410,7 @@ local function merge_events(map)
 			for key, entry in pairs(value) do
 				if key ~= "$type" and key ~= "events" and key ~= "name" and key ~= "channel" and key ~= "max_voices" and key ~= "policy" and key ~= "rules" then
 					local entry_type = type(entry)
-					if entry_type == "table" or entry_type == "native_object" then
+					if entry_type == "table" or entry_type == "native" then
 						if entry.rules ~= nil then
 							found_direct = true
 							add_or_merge(key, entry)
