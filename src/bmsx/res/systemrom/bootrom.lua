@@ -1,7 +1,7 @@
 -- bootrom.lua
 -- BMSX system boot screen
 
-local BOOT_DELAY = 2.0
+local BOOT_DELAY = 0.5
 local FONT_WIDTH = 6
 local LINE_HEIGHT = 8
 

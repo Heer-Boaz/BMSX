@@ -68,11 +68,10 @@ bool EngineCore::initialize(Platform* platform) {
 			m_view->setBackend(std::move(backend));
 		}
 	}
-	m_view->initializeDefaultTextures();
-
 	m_view->bind();
 	m_texture_manager = std::make_unique<TextureManager>(m_view->backend());
 	m_texture_manager->bind();
+	m_view->initializeDefaultTextures();
 
 	Input::instance().initialize();
 	m_sound_master = std::make_unique<SoundMaster>();

@@ -238,7 +238,7 @@ export class BmsxVMRuntime {
 			cartCanonicalization: cartLayer.index.manifest.vm.canonicalization,
 		});
 		await runtime.boot();
-		await runtime.prepareCartBoot();
+		void runtime.prepareCartBoot();
 		$.start();
 	}
 
