@@ -274,6 +274,25 @@ if [ "${BMSX_SNESMINI_IN_ROOTFS:-}" = "1" ]; then
 	exit 0
 fi
 
+if command -v docker >/dev/null 2>&1 && [ "${BMSX_SNESMINI_USE_DOCKER:-1}" = "1" ]; then
+	DOCKER_IMAGE="${BMSX_SNESMINI_DOCKER_IMAGE:-debian:bullseye}"
+	MODE_FLAG=""
+	if [ "$MODE" = "sysroot" ]; then
+		MODE_FLAG="--sysroot-only"
+	fi
+	docker run --rm -t \
+		-v "$ROOT_DIR":/src \
+		-w /src \
+		"$DOCKER_IMAGE" \
+		/bin/bash -lc "apt-get update && apt-get install -y \
+			ca-certificates debootstrap cmake make pkg-config git \
+			gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf binutils-arm-linux-gnueabihf \
+			qemu-user-static binfmt-support && \
+			BMSX_SNESMINI_IN_ROOTFS=1 BMSX_SNESMINI_MAKE_TARGET=\"$MAKE_TARGET\" \
+			SNESMINI_BUILD_TYPE=\"$BUILD_TYPE\" ./scripts/setup-snesmini-local-core.sh $MODE_FLAG \"$SYSROOT_DIR\""
+	exit 0
+fi
+
 require_ready_sysroot "$SYSROOT_DIR"
 if [ "$MODE" = "build" ]; then
 	TOOLCHAIN_PREFIX="${SNESMINI_TOOLCHAIN_PREFIX:-arm-linux-gnueabihf}"
