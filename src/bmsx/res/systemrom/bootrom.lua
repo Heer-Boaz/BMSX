@@ -37,9 +37,9 @@ local function center_x(text, width)
 end
 
 local function build_info()
-	local cart_manifest = $.assets.manifest
+	local cart_manifest = cart_manifest
 	local cart_vm = cart_manifest.vm
-	local engine_manifest = $.engine_layer.index.manifest
+	local engine_manifest = engine_manifest
 	local engine_vm = engine_manifest.vm
 
 	local cart_title = cart_manifest.title or "<untitled>"
@@ -49,22 +49,45 @@ local function build_info()
 	local cart_view = cart_vm.viewport or { width = display_width(), height = display_height() }
 	local cart_view_label = tostring(cart_view.width) .. "x" .. tostring(cart_view.height)
 	local cart_canon = cart_vm.canonicalization or "<default>"
+	local cart_entry = cart_manifest.lua.entry_path
+	local cart_input_label = "DEFAULT"
+	local cart_input_count = 1
+	if cart_manifest.input then
+		cart_input_label = "CUSTOM"
+		cart_input_count = 0
+		for _ in pairs(cart_manifest.input) do
+			cart_input_count = cart_input_count + 1
+		end
+		if cart_input_count == 0 then
+			cart_input_count = 1
+		end
+	end
+	local cart_input = cart_input_label .. " (" .. tostring(cart_input_count) .. "P)"
 
 	local engine_title = engine_manifest.title or "<engine>"
 	local engine_rom = engine_manifest.rom_name or "<unknown>"
 	local engine_ns = engine_vm.namespace or "<default>"
+	local engine_view = engine_vm.viewport or { width = display_width(), height = display_height() }
+	local engine_view_label = tostring(engine_view.width) .. "x" .. tostring(engine_view.height)
+	local engine_canon = engine_vm.canonicalization or "<default>"
+	local engine_entry = engine_manifest.lua.entry_path
 
 	return {
 		engine_title = engine_title,
 		engine_rom = engine_rom,
 		engine_ns = engine_ns,
+		engine_view = engine_view_label,
+		engine_canon = engine_canon,
+		engine_entry = engine_entry,
 		cart_title = cart_title,
 		cart_short = cart_short,
 		cart_rom = cart_rom,
 		cart_ns = cart_ns,
 		cart_view = cart_view_label,
 		cart_canon = cart_canon,
-		root = $.assets.project_root_path or "<unknown>",
+		cart_entry = cart_entry,
+		cart_input = cart_input,
+		root = assets.project_root_path or "<unknown>",
 	}
 end
 
@@ -105,13 +128,12 @@ end
 
 function draw()
 	local width = display_width()
-	local height = display_height()
 	local left = 10
 	local top = 24
 
 	cls(COLOR_BG)
 	put_rectfill(0, 0, width - 1, 15, 0, COLOR_HEADER_BG)
-	write_line("BMSX SYSTEM ROM", 8, 4, COLOR_HEADER_TEXT)
+	write_line("BMSX SYSTEM ROM", center_x("BMSX SYSTEM ROM", width), 4, COLOR_HEADER_TEXT)
 
 	local info = build_info()
 	local y = top
@@ -122,6 +144,12 @@ function draw()
 	write_line("ENGINE ROM : " .. info.engine_rom, left, y, COLOR_TEXT)
 	y = y + LINE_HEIGHT
 	write_line("ENGINE NS  : " .. info.engine_ns, left, y, COLOR_TEXT)
+	y = y + LINE_HEIGHT
+	write_line("ENGINE VIEW: " .. info.engine_view, left, y, COLOR_TEXT)
+	y = y + LINE_HEIGHT
+	write_line("ENGINE LUA : " .. info.engine_entry, left, y, COLOR_TEXT)
+	y = y + LINE_HEIGHT
+	write_line("ENGINE CAN : " .. info.engine_canon, left, y, COLOR_TEXT)
 	y = y + LINE_HEIGHT
 	write_line(divider(width, left), left, y, COLOR_ACCENT)
 	y = y + LINE_HEIGHT
@@ -136,6 +164,10 @@ function draw()
 	write_line("VIEWPORT   : " .. info.cart_view, left, y, COLOR_TEXT)
 	y = y + LINE_HEIGHT
 	write_line("CANON      : " .. info.cart_canon, left, y, COLOR_TEXT)
+	y = y + LINE_HEIGHT
+	write_line("CART LUA   : " .. info.cart_entry, left, y, COLOR_TEXT)
+	y = y + LINE_HEIGHT
+	write_line("INPUT MAP  : " .. info.cart_input, left, y, COLOR_TEXT)
 	y = y + LINE_HEIGHT
 	write_line("ROOT       : " .. info.root, left, y, COLOR_MUTED)
 	y = y + LINE_HEIGHT
@@ -152,7 +184,7 @@ function draw()
 		write_line("STATUS     : " .. status, left, y, COLOR_TEXT)
 		y = y + LINE_HEIGHT
 		local bar = build_progress_bar(elapsed / BOOT_DELAY, 20)
-		-- write_line("PROGRESS   : " .. bar .. " " .. cursor, left, y, COLOR_TEXT)
+		write_line("PROGRESS   : " .. bar .. " " .. cursor, left, y, COLOR_TEXT)
 	else
 		write_line("STATUS     : INSERT CARTRIDGE" .. " " .. cursor, left, y, COLOR_WARN)
 	end

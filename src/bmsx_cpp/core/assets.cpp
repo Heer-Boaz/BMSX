@@ -379,12 +379,16 @@ bool loadAssetsFromRom(const u8* buffer,
 	if (payload.count("manifest") && payload.at("manifest").isObject()) {
 		const auto& manifestObj = payload.at("manifest").asObject();
 		if (manifestObj.count("name")) assets.manifest.name = manifestObj.at("name").asString();
+		if (manifestObj.count("title")) assets.manifest.title = manifestObj.at("title").asString();
+		if (manifestObj.count("short_name")) assets.manifest.shortName = manifestObj.at("short_name").asString();
+		if (manifestObj.count("rom_name")) assets.manifest.romName = manifestObj.at("rom_name").asString();
 		if (manifestObj.count("version")) assets.manifest.version = manifestObj.at("version").asString();
 		if (manifestObj.count("author")) assets.manifest.author = manifestObj.at("author").asString();
 		if (manifestObj.count("description")) assets.manifest.description = manifestObj.at("description").asString();
 
 		if (manifestObj.count("vm") && manifestObj.at("vm").isObject()) {
 			const auto& vmObj = manifestObj.at("vm").asObject();
+			if (vmObj.count("namespace")) assets.manifest.namespaceName = vmObj.at("namespace").asString();
 			assets.manifest.canonicalization = parseCanonicalization(vmObj.at("canonicalization").asString());
 			assets.canonicalization = assets.manifest.canonicalization;
 			if (vmObj.count("viewport") && vmObj.at("viewport").isObject()) {

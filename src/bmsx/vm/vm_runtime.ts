@@ -3058,6 +3058,8 @@ export class BmsxVMRuntime {
 			this.registerVmGlobal(name, this.getOrCreateNativeObject(object));
 		}
 		this.registerVmGlobal('assets', this.getOrCreateAssetsNativeObject());
+		this.registerVmGlobal('cart_manifest', this.toVmValue($.assets.manifest));
+		this.registerVmGlobal('engine_manifest', this.toVmValue($.engine_layer.index.manifest));
 	}
 
 	private vmToString(value: Value): string {
@@ -3574,6 +3576,40 @@ export class BmsxVMRuntime {
 		return source.list('lua').length > 0;
 	}
 
+	private collectVmModulePathsFromSourceRegistries(): string[] {
+		const modulePaths: string[] = [];
+		const seen = new Set<string>();
+		const registries = this.resolveModuleRegistries();
+		for (const registry of registries) {
+			if (!registry) {
+				continue;
+			}
+			for (const asset of Object.values(registry.path2lua)) {
+				const key = asset.normalized_source_path ?? asset.source_path; // Why this defensive coding?
+				if (!key || seen.has(key)) {
+					continue;
+				}
+				seen.add(key);
+				modulePaths.push(key);
+			}
+		}
+		return modulePaths;
+	}
+
+	private shouldBootLuaProgramFromSources(): boolean {
+		if (!this.hasLuaAssets()) {
+			return false;
+		}
+		const modulePaths = this.collectVmModulePathsFromSourceRegistries();
+		for (const entry of buildModuleAliasesFromPaths(modulePaths)) {
+			if (entry.alias === 'engine') {
+				return true;
+			}
+		}
+		console.warn(`[BmsxVMRuntime] Lua sources are present, but require('engine') cannot be resolved; booting from VM program asset instead.`);
+		return false;
+	}
+
 	private loadVmProgramAssets(): { program: VmProgramAsset; symbols: VmProgramSymbolsAsset | null } {
 		const source = this.resolveProgramAssetSource();
 		const programEntry = source.getEntry(VM_PROGRAM_ASSET_ID);
@@ -3670,7 +3706,7 @@ export class BmsxVMRuntime {
 	}
 
 	private bootActiveProgram(options?: { preserveState?: boolean; runInit?: boolean }): boolean {
-		const ok = this.hasLuaAssets()
+		const ok = this.shouldBootLuaProgramFromSources()
 			? this.bootLuaProgram({ preserveState: options?.preserveState })
 			: this.bootVmProgramAsset(options);
 		if (!this.vmProgramMetadata && this.editor.isActive) {
@@ -3766,7 +3802,7 @@ export class BmsxVMRuntime {
 			$.view.primaryAtlas = 0;
 			try {
 				this.resetVmState();
-				if (this.hasLuaAssets()) {
+				if (this.shouldBootLuaProgramFromSources()) {
 					this.reloadLuaProgramState({ runInit: options?.runInit !== false });
 				} else {
 					this.bootVmProgramAsset({ preserveState: true, runInit: options?.runInit });

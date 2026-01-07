@@ -322,13 +322,16 @@ function $.emit(name_or_event, emitter, payload, ...)
 		return eventemitter.instance:emit(name_or_event)
 	end
 	if kind == "native" then
-		local event = {}
-		event.type = name_or_event.type
-		for k, v in pairs(name_or_event) do
-			event[k] = v
-		end
-		if event.type == nil then
+		local event_type = name_or_event.type
+		if event_type == nil then
 			error("engine.emit: event is missing type")
+		end
+		local event = {}
+		event.type = tostring(event_type)
+		for k, v in pairs(name_or_event) do
+			if k ~= "type" then
+				event[k] = v
+			end
 		end
 		return eventemitter.instance:emit(event)
 	end

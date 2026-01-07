@@ -2433,6 +2433,53 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 	);
 	setGlobal("assets", assetsNative);
 
+	auto canonicalizationLabel = [](CanonicalizationType value) -> const char* {
+		switch (value) {
+			case CanonicalizationType::Upper:
+				return "upper";
+			case CanonicalizationType::Lower:
+				return "lower";
+			case CanonicalizationType::None:
+			default:
+				return "none";
+		}
+	};
+	auto buildManifestTable = [this, key, str, canonicalizationLabel](const RuntimeAssets& source) -> Table* {
+		const RomManifest& manifest = source.manifest;
+		auto* manifestTable = m_cpu.createTable();
+		const std::string_view title = manifest.title.empty() ? manifest.name : manifest.title;
+		if (!title.empty()) {
+			manifestTable->set(key("title"), str(title));
+		}
+		const std::string_view romName = manifest.romName.empty() ? manifest.name : manifest.romName;
+		if (!romName.empty()) {
+			manifestTable->set(key("rom_name"), str(romName));
+		}
+		const std::string_view shortName = manifest.shortName.empty() ? romName : manifest.shortName;
+		if (!shortName.empty()) {
+			manifestTable->set(key("short_name"), str(shortName));
+		}
+		auto* vmTable = m_cpu.createTable(0, 2);
+		if (!manifest.namespaceName.empty()) {
+			vmTable->set(key("namespace"), str(manifest.namespaceName));
+		}
+		vmTable->set(key("canonicalization"), str(canonicalizationLabel(manifest.canonicalization)));
+		if (manifest.viewportWidth > 0 && manifest.viewportHeight > 0) {
+			auto* viewportTable = m_cpu.createTable(0, 2);
+			viewportTable->set(key("width"), valueNumber(static_cast<double>(manifest.viewportWidth)));
+			viewportTable->set(key("height"), valueNumber(static_cast<double>(manifest.viewportHeight)));
+			vmTable->set(key("viewport"), valueTable(viewportTable));
+		}
+		manifestTable->set(key("vm"), valueTable(vmTable));
+		auto* luaTable = m_cpu.createTable(0, 1);
+		luaTable->set(key("entry_path"), str(manifest.entryPoint));
+		manifestTable->set(key("lua"), valueTable(luaTable));
+		return manifestTable;
+	};
+	const RuntimeAssets* engineAssets = assets.fallback ? assets.fallback : &assets;
+	setGlobal("cart_manifest", valueTable(buildManifestTable(assets)));
+	setGlobal("engine_manifest", valueTable(buildManifestTable(*engineAssets)));
+
 	auto viewSize = EngineCore::instance().view()->viewportSize;
 	auto* viewportTable = m_cpu.createTable(0, 2);
 	viewportTable->set(key("x"), valueNumber(static_cast<double>(viewSize.x)));

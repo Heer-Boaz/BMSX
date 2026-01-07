@@ -190,9 +190,13 @@ struct ModelAsset {
 
 struct RomManifest {
 	std::string name;
+	std::string title;
+	std::string shortName;
+	std::string romName;
 	std::string version;
 	std::string author;
 	std::string description;
+	std::string namespaceName;
 
 	i32 viewportWidth = 0;
 	i32 viewportHeight = 0;

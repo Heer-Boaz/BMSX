@@ -26,7 +26,7 @@ const cartResPath = `${cartRoot}/res`;
 const romBase = romFilenameMap[romFolder] || romFolder;
 const romPath = `dist/${romBase}.debug.rom`;
 const engineRuntimePath = 'dist/engine.js';
-const engineAssetsPath = 'dist/engine.assets.rom';
+const engineAssetsPath = 'dist/engine.assets.debug.rom';
 const timelinePath = `${cartRoot}/test/${romFolder}_demo.json`;
 const inputModulePath = `${cartRoot}/test/${romFolder}_assert_results.mjs`;
 
