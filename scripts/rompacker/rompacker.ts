@@ -584,6 +584,9 @@ function ensureLibretroCoreBuilt(debug: boolean, platform: RomPackerTarget): voi
 	const buildType = debug ? 'Debug' : 'Release';
 	const buildDir = getLibretroBuildDir(platform);
 	const cmakeArgs = ['-S', 'src/bmsx_cpp', '-B', buildDir, `-DCMAKE_BUILD_TYPE=${buildType}`, '-DBMSX_BUILD_LIBRETRO=ON'];
+	if (platform === 'libretro-wsl') {
+		cmakeArgs.push('-DCMAKE_CXX_STANDARD=20');
+	}
 	if (platform === 'libretro-win') {
 		if (process.platform !== 'win32') {
 			throw new Error('libretro-win requires running on Windows with MSVC build tools.');

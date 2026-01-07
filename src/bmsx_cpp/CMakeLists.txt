@@ -3,8 +3,6 @@ project(bmsx VERSION 1.0.0 LANGUAGES C CXX)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # =============================================================================
@@ -16,6 +14,7 @@ option(BMSX_BUILD_LIBRETRO_HOST "Build libretro host executable" OFF)
 option(BMSX_BUILD_SDL "Build SDL standalone executable" OFF)
 option(BMSX_BUILD_TESTS "Build unit tests" OFF)
 option(BMSX_ENABLE_LTO "Enable Link Time Optimization" OFF)
+option(BMSX_ENABLE_ZLIB "Enable zlib-based ROM decompression" ON)
 set(BMSX_ENABLE_GLES2_DEFAULT ON)
 if(WIN32)
     set(BMSX_ENABLE_GLES2_DEFAULT OFF)
@@ -26,34 +25,36 @@ option(BMSX_ENABLE_GLES2 "Enable OpenGLES2 backend" ${BMSX_ENABLE_GLES2_DEFAULT}
 # Find zlib (for ROM decompression)
 # =============================================================================
 
-if(WIN32)
-    find_package(ZLIB)
-    if(NOT ZLIB_FOUND)
-        include(FetchContent)
-        set(FETCHCONTENT_BASE_DIR "${CMAKE_BINARY_DIR}/third_party")
-        set(ZLIB_BUILD_SHARED OFF CACHE BOOL "" FORCE)
-        set(ZLIB_BUILD_STATIC ON CACHE BOOL "" FORCE)
-        FetchContent_Declare(
-            zlib
-            URL https://zlib.net/zlib-1.3.1.tar.gz
-            URL_HASH SHA256=9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23
-            DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-        )
-        FetchContent_MakeAvailable(zlib)
-        if(TARGET zlibstatic AND NOT TARGET ZLIB::ZLIB)
-            add_library(ZLIB::ZLIB ALIAS zlibstatic)
-        elseif(TARGET zlib AND NOT TARGET ZLIB::ZLIB)
-            add_library(ZLIB::ZLIB ALIAS zlib)
+if(BMSX_ENABLE_ZLIB)
+    if(WIN32)
+        find_package(ZLIB)
+        if(NOT ZLIB_FOUND)
+            include(FetchContent)
+            set(FETCHCONTENT_BASE_DIR "${CMAKE_BINARY_DIR}/third_party")
+            set(ZLIB_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+            set(ZLIB_BUILD_STATIC ON CACHE BOOL "" FORCE)
+            FetchContent_Declare(
+                zlib
+                URL https://zlib.net/zlib-1.3.1.tar.gz
+                URL_HASH SHA256=9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23
+                DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+            )
+            FetchContent_MakeAvailable(zlib)
+            if(TARGET zlibstatic AND NOT TARGET ZLIB::ZLIB)
+                add_library(ZLIB::ZLIB ALIAS zlibstatic)
+            elseif(TARGET zlib AND NOT TARGET ZLIB::ZLIB)
+                add_library(ZLIB::ZLIB ALIAS zlib)
+            endif()
+            if(TARGET ZLIB::ZLIB)
+                set(ZLIB_FOUND TRUE)
+            endif()
         endif()
-        if(TARGET ZLIB::ZLIB)
-            set(ZLIB_FOUND TRUE)
+        if(NOT ZLIB_FOUND)
+            message(FATAL_ERROR "ZLIB not found. Install zlib or provide it in the build directory.")
         endif()
+    else()
+        find_package(ZLIB REQUIRED)
     endif()
-    if(NOT ZLIB_FOUND)
-        message(FATAL_ERROR "ZLIB not found. Install zlib or provide it in the build directory.")
-    endif()
-else()
-    find_package(ZLIB REQUIRED)
 endif()
 
 # =============================================================================
@@ -139,6 +140,7 @@ target_include_directories(bmsx_core PUBLIC
 
 target_compile_definitions(bmsx_core PUBLIC
     BMSX_ENABLE_GLES2=$<BOOL:${BMSX_ENABLE_GLES2}>
+    BMSX_ENABLE_ZLIB=$<BOOL:${BMSX_ENABLE_ZLIB}>
 )
 
 if(BMSX_ENABLE_GLES2)
@@ -149,17 +151,19 @@ if(BMSX_ENABLE_GLES2)
     )
 endif()
 
-target_link_libraries(bmsx_core PUBLIC ZLIB::ZLIB)
+if(BMSX_ENABLE_ZLIB)
+    target_link_libraries(bmsx_core PUBLIC ZLIB::ZLIB)
+endif()
 
 # =============================================================================
 # Libretro core (shared library)
 # =============================================================================
 
-if(BMSX_BUILD_LIBRETRO)
-    add_library(bmsx_libretro SHARED
-        platform/libretro/libretro_platform.cpp
-        platform/libretro/libretro_entry.cpp
-    )
+	if(BMSX_BUILD_LIBRETRO)
+	    add_library(bmsx_libretro SHARED
+	        platform/libretro/libretro_platform.cpp
+	        platform/libretro/libretro_entry.cpp
+	    )
 
     target_link_libraries(bmsx_libretro PRIVATE bmsx_core)
     if(BMSX_ENABLE_GLES2)
