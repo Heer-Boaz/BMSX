@@ -8,7 +8,9 @@
 #include "../utils/mem_snapshot.h"
 #include <cstring>
 #include <stdexcept>
+#if BMSX_ENABLE_ZLIB
 #include <zlib.h>
+#endif
 #include <iostream>
 
 // stb_image for PNG decoding
@@ -286,6 +288,7 @@ static WavInfo parseWav(const u8* data, size_t size) {
 }
 
 // Decompress zlib data
+#if BMSX_ENABLE_ZLIB
 static std::vector<u8> zlibDecompress(const u8* data, size_t size) {
 	// Start with estimate of 4x compression ratio
 	std::vector<u8> output(size * 4);
@@ -306,6 +309,7 @@ static std::vector<u8> zlibDecompress(const u8* data, size_t size) {
 		}
 	}
 }
+#endif
 
 // Check if ROM has valid metadata footer
 static bool hasRomMetaFooter(const u8* buffer, size_t size) {
@@ -348,7 +352,11 @@ bool loadAssetsFromRom(const u8* buffer,
 	// Step 2: Check if data is compressed (no valid footer = compressed)
 	std::vector<u8> decompressed;
 	if (!hasRomMetaFooter(romData, romSize)) {
+		#if BMSX_ENABLE_ZLIB
 		decompressed = zlibDecompress(romData, romSize);
+		#else
+		throw BMSX_RUNTIME_ERROR("ROM payload is compressed but zlib support is disabled.");
+		#endif
 		romData = decompressed.data();
 		romSize = decompressed.size();
 

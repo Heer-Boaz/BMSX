@@ -4,6 +4,7 @@
 #include "program_loader.h"
 #include "../core/engine.h"
 #include "../input/input.h"
+#include "../render/texturemanager.h"
 #include "../utils/clamp.h"
 #include <array>
 #include <algorithm>
@@ -26,6 +27,36 @@ namespace bmsx {
 namespace {
 inline double to_ms(std::chrono::steady_clock::duration duration) {
 	return std::chrono::duration<double, std::milli>(duration).count();
+}
+
+bool isAtlasName(const std::string& name) {
+	static constexpr const char* kPrefix = "_atlas_";
+	return name.rfind(kPrefix, 0) == 0;
+}
+
+void preloadAtlasTextures() {
+	auto* texmanager = EngineCore::instance().texmanager();
+	if (!texmanager) {
+		throw BMSX_RUNTIME_ERROR("[VMRuntime] TextureManager not configured.");
+	}
+	auto loadAtlas = [texmanager](const RuntimeAssets& assets, const std::string& atlasName) {
+		const ImgAsset* atlas = assets.getImg(atlasName);
+		if (!atlas) {
+			throw BMSX_RUNTIME_ERROR("[VMRuntime] atlas '" + atlasName + "' not found.");
+		}
+		TextureHandle handle = texmanager->getTextureByUri(atlasName);
+		if (!handle) {
+			if (atlas->pixels.empty()) {
+				throw BMSX_RUNTIME_ERROR("[VMRuntime] atlas '" + atlasName + "' not uploaded.");
+			}
+			handle = texmanager->getOrCreateTexture(*atlas);
+		}
+	};
+	const RuntimeAssets& assets = EngineCore::instance().assets();
+	for (const auto& [id, _] : assets.img) {
+		if (!isAtlasName(id)) continue;
+		loadAtlas(assets, id);
+	}
 }
 }
 
@@ -371,6 +402,7 @@ void VMRuntime::boot(Program* program, ProgramMetadata* metadata, int entryProto
 	m_programMetadata = metadata;
 	m_cpu.setProgram(program, metadata);
 	runEngineBuiltinPrelude();
+	preloadAtlasTextures();
 	s_updateLogRemaining = kBootLogFrames;
 	s_drawLogRemaining = kBootLogFrames;
 

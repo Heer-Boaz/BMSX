@@ -862,8 +862,8 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		if (!engineAtlas) {
 			throw new Error(`[GameView] Engine atlas '${engineAtlasName}' missing.`);
 		}
-		const engineAtlasImage = await engineAtlas._imgbin;
-		this.textures[ENGINE_ATLAS_TEXTURE_KEY] = this.backend.createTexture(engineAtlasImage, {});
+		const engineAtlasTexture = await $.texmanager.loadTextureFromAsset(engineAtlas, {}, engineAtlasName);
+		this.textures[ENGINE_ATLAS_TEXTURE_KEY] = engineAtlasTexture;
 		// Default material textures for meshes
 		this.textures['_default_albedo'] = this.backend.createSolidTexture2D(1, 1, [1, 1, 1, 1]);
 		// Normal map default (0.5,0.5,1.0)
@@ -887,6 +887,13 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	}
 	public setSkybox(images: SkyboxImageIds): void { SkyboxPipeline.setSkyboxImages(images); }
 	public get skyboxFaceIds(): SkyboxImageIds { return SkyboxPipeline.skyboxFaceIds; }
+	private async resolveAtlasTexture(atlasName: string): Promise<TextureHandle> {
+		const atlas = $.assets.img[atlasName];
+		if (!atlas) {
+			throw new Error(`[GameView] atlas '${atlasName}' not found.`);
+		}
+		return $.texmanager.loadTextureFromAsset(atlas, {}, atlasName);
+	}
 	private setAtlasIndex(indexKey: '_primaryAtlasIndex' | '_secondaryAtlasIndex', index: number | null): void {
 		if (this[indexKey] === index) return;
 		const atlas_id = indexKey === '_primaryAtlasIndex' ? '_atlas_primary' : '_atlas_secondary';
@@ -897,12 +904,13 @@ export class GameView implements RegisterablePersistent, RenderContext {
 			return;
 		}
 		const atlasName = generateAtlasName(index);
-		const atlas = $.assets.img[atlasName];
-		if (!atlas) {
-			throw new Error(`[GameView] atlas '${atlasName}' not found.`);
-		}
-		this.textures[atlas_id] = this.backend.createTexture(atlas._imgbin, {});
 		this[indexKey] = index;
+		const fallback = this.textures['_atlas_fallback'] as TextureHandle;
+		this.textures[atlas_id] = fallback;
+		void this.resolveAtlasTexture(atlasName).then((handle) => {
+			if (this[indexKey] !== index) return;
+			this.textures[atlas_id] = handle;
+		});
 	}
 
 	public get primaryAtlas(): number { return this._primaryAtlasIndex; }

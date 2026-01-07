@@ -466,7 +466,6 @@ export class BmsxVMRuntime {
 		entryPath: string;
 		canonicalization: CanonicalizationType;
 	} = null;
-	private cartBootReady = false;
 	private _canonicalization: CanonicalizationType;
 	private canonicalizeIdentifierFn: (value: string) => string;
 	public get canonicalization(): CanonicalizationType {
@@ -1217,7 +1216,6 @@ export class BmsxVMRuntime {
 	}
 
 	private setCartBootReadyFlag(value: boolean): void {
-		this.cartBootReady = value;
 		this.cpuMemory[IO_SYS_CART_BOOTREADY] = value ? 1 : 0;
 	}
 
@@ -1230,6 +1228,7 @@ export class BmsxVMRuntime {
 		}
 		this.applyCartAssetLayers();
 		await $.refreshAudioAssets();
+		await this.preloadAtlasTextures();
 		this.cartAssetsApplied = true;
 		if (this.shouldBootLuaProgramFromSources()) {
 			this.preparedCartProgram = this.compileCartLuaProgramForBoot();
@@ -1244,6 +1243,33 @@ export class BmsxVMRuntime {
 		if (this.overlayAssetLayer) {
 			applyRuntimeAssetLayer($.assets, this.overlayAssetLayer);
 		}
+	}
+
+	private async preloadAtlasTextures(): Promise<void> {
+		const atlasKeys = new Set<string>();
+		for (const asset of this.cartAssetLayer.index.assets) {
+			if (asset.type !== 'atlas') {
+				continue;
+			}
+			atlasKeys.add(asset.resid);
+		}
+		if (this.overlayAssetLayer) {
+			for (const asset of this.overlayAssetLayer.index.assets) {
+				if (asset.type !== 'atlas') {
+					continue;
+				}
+				atlasKeys.add(asset.resid);
+			}
+		}
+		const loads: Promise<unknown>[] = [];
+		for (const atlasKey of atlasKeys) {
+			const atlas = $.assets.img[atlasKey];
+			if (!atlas) {
+				throw new Error(`[BmsxVMRuntime] atlas '${atlasKey}' not found.`);
+			}
+			loads.push($.texmanager.loadTextureFromAsset(atlas, {}, atlasKey));
+		}
+		await Promise.all(loads);
 	}
 
 	private syncSystemRegisters(): void {
@@ -1852,7 +1878,6 @@ export class BmsxVMRuntime {
 		this.cpuMemory[IO_SYS_CART_PRESENT] = 0;
 		this.cpuMemory[IO_SYS_BOOT_CART] = 0;
 		this.cpuMemory[IO_SYS_CART_BOOTREADY] = 0;
-		this.cartBootReady = false;
 		this.cartAssetsApplied = false;
 		this.vmRandomSeedValue = $.platform.clock.now();
 		this.seedVmGlobals();
@@ -3675,14 +3700,14 @@ export class BmsxVMRuntime {
 		return { program, symbols };
 	}
 
-	private buildVmModuleChunks(entryPath: string): { modules: Array<{ path: string; chunk: LuaChunk }>; modulePaths: string[] } {
+	private buildVmModuleChunks(entryPath: string, registries?: LuaSourceRegistry[]): { modules: Array<{ path: string; chunk: LuaChunk }>; modulePaths: string[] } {
 		const entryAsset = this.resolveLuaSourceRecord(entryPath);
 		const entryKey = entryAsset ? (entryAsset.normalized_source_path ?? entryAsset.source_path ?? entryPath) : entryPath;
 		const modules: Array<{ path: string; chunk: LuaChunk }> = [];
 		const modulePaths: string[] = [];
 		const seen = new Set<string>();
-		const registries = this.resolveModuleRegistries();
-		for (const registry of registries) {
+		const resolvedRegistries = registries ?? this.resolveModuleRegistries();
+		for (const registry of resolvedRegistries) {
 			if (!registry) {
 				continue;
 			}
@@ -3708,14 +3733,18 @@ export class BmsxVMRuntime {
 		return { modules, modulePaths };
 	}
 
-	private buildVmModuleChunksForInterpreter(entryPath: string, interpreter: LuaInterpreter): { modules: Array<{ path: string; chunk: LuaChunk }>; modulePaths: string[] } {
+	private buildVmModuleChunksForInterpreter(
+		entryPath: string,
+		interpreter: LuaInterpreter,
+		registries?: LuaSourceRegistry[],
+	): { modules: Array<{ path: string; chunk: LuaChunk }>; modulePaths: string[] } {
 		const entryAsset = this.resolveLuaSourceRecord(entryPath);
 		const entryKey = entryAsset ? (entryAsset.normalized_source_path ?? entryAsset.source_path ?? entryPath) : entryPath;
 		const modules: Array<{ path: string; chunk: LuaChunk }> = [];
 		const modulePaths: string[] = [];
 		const seen = new Set<string>();
-		const registries = this.resolveModuleRegistries();
-		for (const registry of registries) {
+		const resolvedRegistries = registries ?? this.resolveModuleRegistries();
+		for (const registry of resolvedRegistries) {
 			if (!registry) {
 				continue;
 			}
@@ -3758,7 +3787,7 @@ export class BmsxVMRuntime {
 		const entrySource = this.resourceSourceForChunk(entryPath);
 		const interpreter = this.createLuaInterpreterForCanonicalization(this.cartCanonicalization);
 		const entryChunk = interpreter.compileChunk(entrySource, entryPath);
-		const { modules, modulePaths } = this.buildVmModuleChunksForInterpreter(entryPath, interpreter);
+		const { modules, modulePaths } = this.buildVmModuleChunksForInterpreter(entryPath, interpreter, [this.cartLuaSources, this.engineLuaSources]);
 		const { program, metadata, entryProtoIndex, moduleProtoMap } = compileLuaChunkToProgram(entryChunk, modules, { canonicalization: this.cartCanonicalization });
 		return {
 			program,

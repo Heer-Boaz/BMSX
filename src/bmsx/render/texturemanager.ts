@@ -66,7 +66,8 @@ export class TextureManager implements RegisterablePersistent {
 	private async ensureTextureReady(
 		key: string,
 		loadBitmapFn: () => Promise<TextureSource>,
-		desc: TextureParams
+		desc: TextureParams,
+		options?: { closeSource?: boolean }
 	): Promise<TextureKey> {
 		if (!this.backend) throw new Error('TextureManager backend not set');
 
@@ -80,7 +81,7 @@ export class TextureManager implements RegisterablePersistent {
 			async () => {
 				const bmp = await loadBitmapFn() as TextureSource;
 				const h = this.backend.createTexture(bmp, desc);
-				if ('close' in bmp) (bmp as { close: () => void }).close();
+				if (options?.closeSource !== false && 'close' in bmp) (bmp as { close: () => void }).close();
 				return h;
 			},
 			{
@@ -331,6 +332,12 @@ export class TextureManager implements RegisterablePersistent {
 	public async fetchModelTextureFromUri(uri: string, _identifier: ModelTextureIdentifier, desc: TextureParams = {}, buffer?: ArrayBuffer): Promise<TextureKey> {
 		const key = this.makeKey(uri, desc);
 		return this.loadAndCacheTexture(key, () => this.fromBuffer(uri, buffer), desc);
+	}
+
+	public async loadTextureFromAsset(asset: RomImgAsset, desc: TextureParams = {}, keyOverride?: string): Promise<TextureHandle> {
+		const key = this.makeKey(keyOverride ?? asset.resid, desc);
+		await this.ensureTextureReady(key, () => this.fromAsset(asset), desc, { closeSource: false });
+		return this.getTexture(key);
 	}
 
 	public getImage(key: ImageKey): TextureSource {

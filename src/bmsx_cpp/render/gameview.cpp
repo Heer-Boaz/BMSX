@@ -13,6 +13,7 @@
 #include "rendergraph.h"
 #include "../core/engine.h"
 #include "../core/rompack.h"
+#include "texturemanager.h"
 #include "../utils/clamp.h"
 #include <algorithm>
 #include <cmath>
@@ -138,17 +139,24 @@ void GameView::initializeDefaultTextures() {
 
 	const std::string engineAtlasName = generateAtlasName(ENGINE_ATLAS_INDEX);
 	auto& assets = EngineCore::instance().assets();
+	auto* texmanager = EngineCore::instance().texmanager();
+	if (!texmanager) {
+		throw BMSX_RUNTIME_ERROR("[GameView] TextureManager not configured.");
+	}
 	const auto* engineAtlas = assets.getImg(engineAtlasName);
 	if (!engineAtlas) {
 		if (assets.hasAnyImg()) {
 			throw BMSX_RUNTIME_ERROR("[GameView] Engine atlas '" + engineAtlasName + "' missing.");
 		}
 	} else {
-		if (!engineAtlas->textureHandle) {
-			throw BMSX_RUNTIME_ERROR("[GameView] Engine atlas '" + engineAtlasName + "' not uploaded.");
+		TextureHandle handle = texmanager->getTextureByUri(engineAtlasName);
+		if (!handle) {
+			if (engineAtlas->pixels.empty()) {
+				throw BMSX_RUNTIME_ERROR("[GameView] Engine atlas '" + engineAtlasName + "' not uploaded.");
+			}
+			handle = texmanager->getOrCreateTexture(*engineAtlas);
 		}
-		textures[ENGINE_ATLAS_TEXTURE_KEY] =
-			reinterpret_cast<TextureHandle>(engineAtlas->textureHandle);
+		textures[ENGINE_ATLAS_TEXTURE_KEY] = handle;
 	}
 
 	textures["_default_albedo"] = m_backend->createSolidTexture2D(1, 1, {1.0f, 1.0f, 1.0f, 1.0f});
@@ -204,14 +212,22 @@ void GameView::setAtlasIndex(bool isPrimary, i32 index) {
 
 	const std::string atlasName = generateAtlasName(index);
 	auto& assets = EngineCore::instance().assets();
+	auto* texmanager = EngineCore::instance().texmanager();
+	if (!texmanager) {
+		throw BMSX_RUNTIME_ERROR("[GameView] TextureManager not configured.");
+	}
 	const auto* atlas = assets.getImg(atlasName);
 	if (!atlas) {
 		throw BMSX_RUNTIME_ERROR("[GameView] atlas '" + atlasName + "' not found.");
 	}
-	if (!atlas->textureHandle) {
-		throw BMSX_RUNTIME_ERROR("[GameView] atlas '" + atlasName + "' not uploaded.");
+	TextureHandle handle = texmanager->getTextureByUri(atlasName);
+	if (!handle) {
+		if (atlas->pixels.empty()) {
+			throw BMSX_RUNTIME_ERROR("[GameView] atlas '" + atlasName + "' not uploaded.");
+		}
+		handle = texmanager->getOrCreateTexture(*atlas);
 	}
-	textures[atlasId] = reinterpret_cast<TextureHandle>(atlas->textureHandle);
+	textures[atlasId] = handle;
 	currentIndex = index;
 }
 
