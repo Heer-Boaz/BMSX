@@ -238,6 +238,7 @@ export class BmsxVMRuntime {
 			cartCanonicalization: cartLayer.index.manifest.vm.canonicalization,
 		});
 		await runtime.boot();
+		await runtime.prepareCartBoot();
 		$.start();
 	}
 
@@ -323,13 +324,15 @@ export class BmsxVMRuntime {
 		cartCanonicalization?: CanonicalizationType;
 	}): void {
 		this.engineLuaSources = params.engineSources;
-		this.cartLuaSources = params.cartSources ?? null;
+		this.cartLuaSources = params.cartSources;
 		this.engineAssetSource = params.engineAssetSource;
-		this.cartAssetSource = params.cartAssetSource ?? null;
+		this.cartAssetSource = params.cartAssetSource;
 		this.engineCanonicalization = params.engineCanonicalization;
 		this.cartCanonicalization = params.cartCanonicalization ?? params.engineCanonicalization;
 		this.pendingCartBoot = false;
-		this.updateCartBootReadyFlag();
+		this.cartAssetsApplied = false;
+		this.preparedCartProgram = null;
+		this.setCartBootReadyFlag(false);
 	}
 
 	private activateProgramSource(source: VmProgramSource): void {
@@ -453,6 +456,17 @@ export class BmsxVMRuntime {
 	private overlayAssetLayer: RuntimeAssetLayer = null;
 	private engineCanonicalization: CanonicalizationType = null;
 	private cartCanonicalization: CanonicalizationType = null;
+	private cartAssetsApplied = false;
+	private preparedCartProgram: {
+		program: Program;
+		metadata: ProgramMetadata;
+		entryProtoIndex: number;
+		moduleProtoMap: Map<string, number>;
+		moduleAliases: Array<{ alias: string; path: string }>;
+		entryPath: string;
+		canonicalization: CanonicalizationType;
+	} = null;
+	private cartBootReady = false;
 	private _canonicalization: CanonicalizationType;
 	private canonicalizeIdentifierFn: (value: string) => string;
 	public get canonicalization(): CanonicalizationType {
@@ -534,6 +548,16 @@ export class BmsxVMRuntime {
 
 	private createLuaInterpreter(): LuaInterpreter {
 		const interpreter = new LuaInterpreter(this.luaJsBridge, this._canonicalization);
+		this.configureInterpreter(interpreter);
+		interpreter.attachDebugger(this.debuggerController);
+		interpreter.clearLastFaultEnvironment();
+		registerApiBuiltins(interpreter);
+		interpreter.setReservedIdentifiers(this.apiFunctionNames);
+		return interpreter;
+	}
+
+	private createLuaInterpreterForCanonicalization(canonicalization: CanonicalizationType): LuaInterpreter {
+		const interpreter = new LuaInterpreter(this.luaJsBridge, canonicalization);
 		this.configureInterpreter(interpreter);
 		interpreter.attachDebugger(this.debuggerController);
 		interpreter.clearLastFaultEnvironment();
@@ -1192,18 +1216,27 @@ export class BmsxVMRuntime {
 		return $.lua_sources === this.engineLuaSources;
 	}
 
-	private isCartReadyForBoot(): boolean {
-		return this.cartAssetLayer !== null
-			&& this.cartAssetSource !== null
-			&& this.cartLuaSources !== null;
-	}
-
 	private setCartBootReadyFlag(value: boolean): void {
+		this.cartBootReady = value;
 		this.cpuMemory[IO_SYS_CART_BOOTREADY] = value ? 1 : 0;
 	}
 
-	private updateCartBootReadyFlag(): void {
-		this.setCartBootReadyFlag(this.isCartReadyForBoot());
+	private async prepareCartBoot(): Promise<void> {
+		this.setCartBootReadyFlag(false);
+		this.preparedCartProgram = null;
+		this.cartAssetsApplied = false;
+		if (!this.cartAssetLayer || !this.cartAssetSource || !this.cartLuaSources) {
+			return;
+		}
+		this.applyCartAssetLayers();
+		await $.refreshAudioAssets();
+		this.cartAssetsApplied = true;
+		if (this.shouldBootLuaProgramFromSources()) {
+			this.preparedCartProgram = this.compileCartLuaProgramForBoot();
+			this.setCartBootReadyFlag(this.editor.exists);
+			return;
+		}
+		this.setCartBootReadyFlag(this.editor.exists);
 	}
 
 	private applyCartAssetLayers(): void {
@@ -1242,7 +1275,7 @@ export class BmsxVMRuntime {
 		}
 		this.pendingCartBoot = false;
 		this.activateProgramSource('cart');
-		void this.reloadProgramAndResetWorld({ applyCartAssets: true });
+		void this.reloadProgramAndResetWorld({ applyCartAssets: !this.cartAssetsApplied });
 	}
 
 	private processPendingProgramReload(): void {
@@ -1819,6 +1852,8 @@ export class BmsxVMRuntime {
 		this.cpuMemory[IO_SYS_CART_PRESENT] = 0;
 		this.cpuMemory[IO_SYS_BOOT_CART] = 0;
 		this.cpuMemory[IO_SYS_CART_BOOTREADY] = 0;
+		this.cartBootReady = false;
+		this.cartAssetsApplied = false;
 		this.vmRandomSeedValue = $.platform.clock.now();
 		this.seedVmGlobals();
 	}
@@ -2005,6 +2040,7 @@ export class BmsxVMRuntime {
 		this.registerVmGlobal('easing', easingTable);
 		this.registerVmGlobal('SYS_CART_PRESENT', IO_SYS_CART_PRESENT);
 		this.registerVmGlobal('SYS_BOOT_CART', IO_SYS_BOOT_CART);
+		this.registerVmGlobal('SYS_CART_BOOTREADY', IO_SYS_CART_BOOTREADY);
 		this.registerVmGlobal('peek', createNativeFunction('peek', (args, out) => {
 			const address = args[0] as number;
 			out.push(this.cpuMemory[address]);
@@ -3672,6 +3708,69 @@ export class BmsxVMRuntime {
 		return { modules, modulePaths };
 	}
 
+	private buildVmModuleChunksForInterpreter(entryPath: string, interpreter: LuaInterpreter): { modules: Array<{ path: string; chunk: LuaChunk }>; modulePaths: string[] } {
+		const entryAsset = this.resolveLuaSourceRecord(entryPath);
+		const entryKey = entryAsset ? (entryAsset.normalized_source_path ?? entryAsset.source_path ?? entryPath) : entryPath;
+		const modules: Array<{ path: string; chunk: LuaChunk }> = [];
+		const modulePaths: string[] = [];
+		const seen = new Set<string>();
+		const registries = this.resolveModuleRegistries();
+		for (const registry of registries) {
+			if (!registry) {
+				continue;
+			}
+			const luaAssets = Object.values(registry.path2lua);
+			for (const asset of luaAssets) {
+				if (!asset || asset.type !== 'lua') {
+					continue;
+				}
+				const key = asset.normalized_source_path ?? asset.source_path;
+				if (!key || seen.has(key)) {
+					continue;
+				}
+				seen.add(key);
+				modulePaths.push(key);
+				if (key === entryKey) {
+					continue;
+				}
+				const source = this.resourceSourceForChunk(asset.source_path);
+				const chunk = interpreter.compileChunk(source, asset.source_path);
+				modules.push({ path: key, chunk });
+			}
+		}
+		return { modules, modulePaths };
+	}
+
+	private compileCartLuaProgramForBoot(): {
+		program: Program;
+		metadata: ProgramMetadata;
+		entryProtoIndex: number;
+		moduleProtoMap: Map<string, number>;
+		moduleAliases: Array<{ alias: string; path: string }>;
+		entryPath: string;
+		canonicalization: CanonicalizationType;
+	} {
+		const entryAsset = this.cartLuaSources.path2lua[this.cartLuaSources.entry_path];
+		if (!entryAsset) {
+			throw new Error('[BmsxVMRuntime] Cannot prepare cart boot: entry Lua source is missing.');
+		}
+		const entryPath = entryAsset.source_path;
+		const entrySource = this.resourceSourceForChunk(entryPath);
+		const interpreter = this.createLuaInterpreterForCanonicalization(this.cartCanonicalization);
+		const entryChunk = interpreter.compileChunk(entrySource, entryPath);
+		const { modules, modulePaths } = this.buildVmModuleChunksForInterpreter(entryPath, interpreter);
+		const { program, metadata, entryProtoIndex, moduleProtoMap } = compileLuaChunkToProgram(entryChunk, modules, { canonicalization: this.cartCanonicalization });
+		return {
+			program,
+			metadata,
+			entryProtoIndex,
+			moduleProtoMap,
+			moduleAliases: buildModuleAliasesFromPaths(modulePaths),
+			entryPath,
+			canonicalization: this.cartCanonicalization,
+		};
+	}
+
 	private bootVmProgramAsset(options?: { preserveState?: boolean; runInit?: boolean }): boolean {
 		const { program, symbols } = this.loadVmProgramAssets();
 		this.cartEntryAvailable = true;
@@ -3705,6 +3804,48 @@ export class BmsxVMRuntime {
 		this.processVmIo();
 
 		this.cpu.start(program.entryProtoIndex);
+		this.pendingVmCall = null;
+		this.cpu.instructionBudgetRemaining = null;
+		this.cpu.run(null);
+		this.processVmIo();
+		this.luaVmInitialized = true;
+
+		this.bindLifecycleHandlers();
+		if (options?.runInit === false) {
+			return true;
+		}
+		const ok = this.runLuaLifecycleHandler('init');
+		if (!ok) {
+			return false;
+		}
+		return this.runLuaLifecycleHandler('new_game');
+	}
+
+	private bootPreparedCartProgram(options?: { preserveState?: boolean; runInit?: boolean }): boolean {
+		const prepared = this.preparedCartProgram;
+		this.cartEntryAvailable = true;
+		this.resetLuaInteroperabilityState();
+		const interpreter = this.createLuaInterpreterForCanonicalization(prepared.canonicalization);
+		this.assignInterpreter(interpreter);
+
+		this._luaPath = prepared.entryPath;
+		if (!options?.preserveState) {
+			this.resetVmState();
+		}
+
+		this.vmModuleProtos.clear();
+		for (const [modulePath, protoIndex] of prepared.moduleProtoMap.entries()) {
+			this.vmModuleProtos.set(modulePath, protoIndex);
+		}
+		this.vmModuleAliases.clear();
+		for (const entry of prepared.moduleAliases) {
+			this.vmModuleAliases.set(entry.alias, entry.path);
+		}
+		this.vmModuleCache.clear();
+		this.cpuMemory[IO_WRITE_PTR_ADDR] = 0;
+		const prelude = this.runEngineBuiltinPrelude(prepared.program, prepared.metadata);
+		this.vmProgramMetadata = prelude.metadata;
+		this.cpu.start(prepared.entryProtoIndex);
 		this.pendingVmCall = null;
 		this.cpu.instructionBudgetRemaining = null;
 		this.cpu.run(null);
@@ -3814,13 +3955,19 @@ export class BmsxVMRuntime {
 			if (options?.applyCartAssets) {
 				this.applyCartAssetLayers();
 				await $.refreshAudioAssets();
+				this.cartAssetsApplied = true;
 			}
 			await $.reset_to_fresh_world();
 			$.view.primaryAtlas = 0;
 			try {
 				this.resetVmState();
 				if (this.shouldBootLuaProgramFromSources()) {
-					this.reloadLuaProgramState({ runInit: options?.runInit !== false });
+					if (this.preparedCartProgram) {
+						this.bootPreparedCartProgram({ runInit: options?.runInit !== false });
+						this.preparedCartProgram = null;
+					} else {
+						this.reloadLuaProgramState({ runInit: options?.runInit !== false });
+					}
 				} else {
 					this.bootVmProgramAsset({ preserveState: true, runInit: options?.runInit });
 					if (!this.vmProgramMetadata && this.editor.isActive) {
