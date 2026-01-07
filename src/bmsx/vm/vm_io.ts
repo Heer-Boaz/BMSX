@@ -9,5 +9,6 @@ export const VM_IO_COMMAND_CAPACITY = 256;
 export const IO_SYS_BASE = IO_BUFFER_BASE + IO_COMMAND_STRIDE * VM_IO_COMMAND_CAPACITY;
 export const IO_SYS_CART_PRESENT = IO_SYS_BASE;
 export const IO_SYS_BOOT_CART = IO_SYS_BASE + 1;
-export const IO_SYS_SIZE = 2;
+export const IO_SYS_CART_BOOTREADY = IO_SYS_BASE + 2;
+export const IO_SYS_SIZE = 3;
 export const VM_IO_MEMORY_SIZE = IO_SYS_BASE + IO_SYS_SIZE;

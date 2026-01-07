@@ -63,7 +63,7 @@ import { RenderSubmission } from '../render/backend/pipeline_interfaces';
 import { Msx1Colors } from '../systems/msx';
 import type { RectRenderSubmission } from '../render/shared/render_types';
 import { compileLuaChunkToProgram, appendLuaChunkToProgram } from './program_compiler';
-import { IO_ARG0_OFFSET, IO_BUFFER_BASE, IO_COMMAND_STRIDE, IO_CMD_PRINT, IO_SYS_BOOT_CART, IO_SYS_CART_PRESENT, IO_WRITE_PTR_ADDR, VM_IO_MEMORY_SIZE } from './vm_io';
+import { IO_ARG0_OFFSET, IO_BUFFER_BASE, IO_COMMAND_STRIDE, IO_CMD_PRINT, IO_SYS_BOOT_CART, IO_SYS_CART_PRESENT, IO_WRITE_PTR_ADDR, VM_IO_MEMORY_SIZE, IO_SYS_CART_BOOTREADY } from './vm_io';
 import { VmHandlerCache } from './vm_handler_cache';
 import {
 	buildModuleAliasMap,
@@ -329,6 +329,7 @@ export class BmsxVMRuntime {
 		this.engineCanonicalization = params.engineCanonicalization;
 		this.cartCanonicalization = params.cartCanonicalization ?? params.engineCanonicalization;
 		this.pendingCartBoot = false;
+		this.updateCartBootReadyFlag();
 	}
 
 	private activateProgramSource(source: VmProgramSource): void {
@@ -341,6 +342,7 @@ export class BmsxVMRuntime {
 
 	private requestCartBoot(): void {
 		this.pendingCartBoot = true;
+		this.setCartBootReadyFlag(false);
 	}
 
 	public readonly storage: BmsxVMStorage;
@@ -1190,6 +1192,20 @@ export class BmsxVMRuntime {
 		return $.lua_sources === this.engineLuaSources;
 	}
 
+	private isCartReadyForBoot(): boolean {
+		return this.cartAssetLayer !== null
+			&& this.cartAssetSource !== null
+			&& this.cartLuaSources !== null;
+	}
+
+	private setCartBootReadyFlag(value: boolean): void {
+		this.cpuMemory[IO_SYS_CART_BOOTREADY] = value ? 1 : 0;
+	}
+
+	private updateCartBootReadyFlag(): void {
+		this.setCartBootReadyFlag(this.isCartReadyForBoot());
+	}
+
 	private applyCartAssetLayers(): void {
 		applyRuntimeAssetLayer($.assets, this.cartAssetLayer);
 		if (this.overlayAssetLayer) {
@@ -1802,6 +1818,7 @@ export class BmsxVMRuntime {
 		this.cpuMemory[IO_WRITE_PTR_ADDR] = 0;
 		this.cpuMemory[IO_SYS_CART_PRESENT] = 0;
 		this.cpuMemory[IO_SYS_BOOT_CART] = 0;
+		this.cpuMemory[IO_SYS_CART_BOOTREADY] = 0;
 		this.vmRandomSeedValue = $.platform.clock.now();
 		this.seedVmGlobals();
 	}

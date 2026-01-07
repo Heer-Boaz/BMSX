@@ -119,8 +119,9 @@ function new_game()
 end
 
 function update(_dt)
-	local cart_present = peek(SYS_CART_PRESENT) == 1
-	if cart_present and not boot_requested and elapsed_seconds() >= BOOT_DELAY then
+	local cart_present_and_ready = peek(SYS_CART_PRESENT) == 1 and peek(SYS_CART_BOOTREADY) == 1
+
+	if cart_present_and_ready and not boot_requested and elapsed_seconds() >= BOOT_DELAY then
 		boot_requested = true
 		poke(SYS_BOOT_CART, 1)
 	end

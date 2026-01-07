@@ -96,6 +96,7 @@ export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<VMLuaBuiltinDescriptor
 	{ name: 'os.time', params: ['table?'], signature: 'os.time([table])' },
 	...ENGINE_LUA_BUILTIN_FUNCTIONS,
 	{ name: 'SYS_CART_PRESENT', params: [], signature: 'SYS_CART_PRESENT', description: 'System register address; reads as 1 when a cart is available.' },
+	{ name: 'SYS_CART_BOOTREADY', params: [], signature: 'SYS_CART_BOOTREADY', description: 'System register address; reads as 1 when the cart is ready to boot.' },
 	{ name: 'SYS_BOOT_CART', params: [], signature: 'SYS_BOOT_CART', description: 'System register address; write 1 to boot the cart.' },
 ];
 

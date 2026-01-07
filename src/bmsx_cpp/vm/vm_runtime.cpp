@@ -304,6 +304,7 @@ VMRuntime::VMRuntime(const VMRuntimeOptions& options)
 	// System flags
 	m_memory[IO_SYS_CART_PRESENT] = valueNumber(0.0);
 	m_memory[IO_SYS_BOOT_CART] = valueNumber(0.0);
+	m_memory[IO_SYS_CART_BOOTREADY] = valueNumber(0.0);
 	m_vmRandomSeedValue = static_cast<uint32_t>(EngineCore::instance().clock()->now());
 	m_cpu.setExternalRootMarker([this](VMHeap& heap) {
 		for (const auto& entry : m_vmModuleCache) {
@@ -362,6 +363,7 @@ void VMRuntime::boot(Program* program, ProgramMetadata* metadata, int entryProto
 	m_memory[IO_WRITE_PTR_ADDR] = valueNumber(0.0);
 	m_memory[IO_SYS_CART_PRESENT] = valueNumber(0.0);
 	m_memory[IO_SYS_BOOT_CART] = valueNumber(0.0);
+	m_memory[IO_SYS_CART_BOOTREADY] = valueNumber(0.0);
 	m_vmRandomSeedValue = static_cast<uint32_t>(EngineCore::instance().clock()->now());
 	setupBuiltins();
 	m_api->registerAllFunctions();
@@ -1316,6 +1318,7 @@ void VMRuntime::setupBuiltins() {
 	setGlobal("easing", valueTable(easingTable));
 	setGlobal("SYS_CART_PRESENT", valueNumber(static_cast<double>(IO_SYS_CART_PRESENT)));
 	setGlobal("SYS_BOOT_CART", valueNumber(static_cast<double>(IO_SYS_BOOT_CART)));
+	setGlobal("SYS_CART_BOOTREADY", valueNumber(static_cast<double>(IO_SYS_CART_BOOTREADY)));
 
 registerNativeFunction("peek", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 		int address = static_cast<int>(asNumber(args.at(0)));

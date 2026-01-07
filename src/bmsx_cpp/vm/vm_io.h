@@ -36,9 +36,10 @@ constexpr int IO_SYS_CART_PRESENT = IO_SYS_BASE;
 
 // System flag: should boot cartridge?
 constexpr int IO_SYS_BOOT_CART = IO_SYS_BASE + 1;
+constexpr int IO_SYS_CART_BOOTREADY = IO_SYS_BASE + 2;
 
 // Number of system flag slots
-constexpr int IO_SYS_SIZE = 2;
+constexpr int IO_SYS_SIZE = 3;
 
 // Total size of VM I/O memory region
 constexpr int VM_IO_MEMORY_SIZE = IO_SYS_BASE + IO_SYS_SIZE;
