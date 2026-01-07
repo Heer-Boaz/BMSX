@@ -98,6 +98,33 @@ export class CompletionController {
 		this.cancelPendingCompletion();
 	}
 
+	public listCompletionCandidates(): { context: CompletionContext; items: LuaCompletionItem[]; filteredItems: LuaCompletionItem[] } | null {
+		const context = this.analyzeCompletionContext();
+		if (!context) {
+			return null;
+		}
+		const items = this.collectCompletionItems(context);
+		if (items.length === 0) {
+			return null;
+		}
+		const filteredItems = this.filterCompletionItems(items, context.prefix);
+		return { context, items, filteredItems };
+	}
+
+	public applyCompletionItem(context: CompletionContext, item: LuaCompletionItem): void {
+		const addParentheses = item.kind === 'api_method' || item.kind === 'native_method';
+		this.applyCompletionItemForContext(context, item, addParentheses);
+		this.closeSession();
+	}
+
+	public tryAcceptSelectedCompletion(): boolean {
+		if (!this.completionSession) {
+			return false;
+		}
+		this.acceptSelectedCompletion();
+		return true;
+	}
+
 	public getInlineCompletionPreview(): { row: number; column: number; suffix: string } {
 		const session = this.completionSession;
 		if (!session || session.trigger === 'manual') {

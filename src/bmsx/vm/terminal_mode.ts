@@ -16,13 +16,14 @@ import {
 	selectionAnchorOffset,
 	setSelectionAnchorFromOffset,
 } from './ide/inline_text_field';
-import type { InlineInputOptions, TextField, CursorScreenInfo, EditContext, LuaCompletionItem } from './ide/types';
+import type { InlineInputOptions, TextField, CursorScreenInfo, CompletionContext, EditContext, LuaCompletionItem } from './ide/types';
 import { COLOR_COMPLETION_BACKGROUND, COLOR_COMPLETION_BORDER, COLOR_COMPLETION_HIGHLIGHT, COLOR_COMPLETION_HIGHLIGHT_TEXT, COLOR_COMPLETION_PREVIEW_TEXT, COLOR_COMPLETION_TEXT, TAB_SPACES } from './ide/constants';
 import { VMRenderFacade } from './vm_render_facade';
 import { renderInlineCaret, type CaretDrawOps } from './ide/render/render_caret';
 import {
 	isKeyJustPressed as isKeyJustPressed,
 	isCtrlDown,
+	isShiftDown,
 	isMetaDown,
 	isAltDown
 } from './ide/ide_input';
@@ -81,6 +82,17 @@ type TerminalSymbolGridLayout = {
 	visibleRows: number;
 	paddingX: number;
 	paddingY: number;
+};
+
+type TerminalCompletionPanelState = {
+	entries: LuaCompletionItem[];
+	filtered: LuaCompletionItem[];
+	filter: string;
+	selectionIndex: number;
+	displayRowOffset: number;
+	context: CompletionContext;
+	originalText: string;
+	originalCursor: number;
 };
 
 class InlineFieldTextBuffer implements TextBuffer {
@@ -239,6 +251,8 @@ export class TerminalMode {
 	private readonly terminalCommands: TerminalCommandDispatcher;
 	private symbolPanel: TerminalSymbolPanelState = null;
 	private symbolPanelLayout: TerminalSymbolGridLayout = null;
+	private completionPanel: TerminalCompletionPanelState = null;
+	private completionPanelLayout: TerminalSymbolGridLayout = null;
 
 	private fieldText(): string {
 		return getFieldText(this.field);
@@ -328,6 +342,8 @@ export class TerminalMode {
 		this.completion.closeSession();
 		this.symbolPanel = null;
 		this.symbolPanelLayout = null;
+		this.completionPanel = null;
+		this.completionPanelLayout = null;
 		this.blinkTimer = 0;
 		this.caretVisible = true;
 	}
@@ -336,6 +352,8 @@ export class TerminalMode {
 		this.active = false;
 		this.symbolPanel = null;
 		this.symbolPanelLayout = null;
+		this.completionPanel = null;
+		this.completionPanelLayout = null;
 	}
 
 	public setFontVariant(variant: VMFontVariant): void {
@@ -403,13 +421,24 @@ export class TerminalMode {
 				this.resetBlink();
 				return null;
 			}
-		} else if (this.handleSymbolTabCompletion()) {
-			this.resetBlink();
-			return null;
-		}
-		if (!this.symbolPanel && this.completion.handleKeybindings()) {
-			this.resetBlink();
-			return null;
+		} else if (this.completionPanel) {
+			if (this.handleCompletionPanelKeybindings()) {
+				this.resetBlink();
+				return null;
+			}
+		} else {
+			if (this.handleInlineCompletionAccept()) {
+				this.resetBlink();
+				return null;
+			}
+			if (this.handleCompletionPanelTrigger()) {
+				this.resetBlink();
+				return null;
+			}
+			if (this.handleCtrlTabTrigger()) {
+				this.resetBlink();
+				return null;
+			}
 		}
 		const options: InlineInputOptions = { allowSpace: true };
 		const historyHandled = this.handleHistoryNavigation();
@@ -424,7 +453,9 @@ export class TerminalMode {
 			const editContext = this.buildEditContext(previousText, this.fieldText());
 			this.handleTextMutation(previousText, editContext);
 		} else if (previousCursor !== this.cursorOffset() || previousAnchor !== this.anchorOffset()) {
-			if (this.symbolPanel) {
+			if (this.completionPanel) {
+				this.refreshCompletionPanelFilter();
+			} else if (this.symbolPanel) {
 				this.refreshSymbolPanelFilter();
 			} else {
 				this.completion.onCursorMoved();
@@ -435,6 +466,9 @@ export class TerminalMode {
 			this.completion.closeSession();
 			if (this.symbolPanel) {
 				this.closeSymbolPanel(false);
+			}
+			if (this.completionPanel) {
+				this.closeCompletionPanel(false);
 			}
 			await this.handleTerminalCommand(submit);
 		}
@@ -502,7 +536,43 @@ export class TerminalMode {
 		this.openSymbolPanel('browse', entries, filtered, null);
 	}
 
-	private handleSymbolTabCompletion(): boolean {
+	private handleInlineCompletionAccept(): boolean {
+		if (!isKeyJustPressed('ArrowRight')) {
+			return false;
+		}
+		const { ctrlDown, altDown, metaDown } = { ctrlDown: isCtrlDown(), altDown: isAltDown(), metaDown: isMetaDown() };
+		if (ctrlDown || altDown || metaDown) {
+			return false;
+		}
+		const accepted = this.completion.tryAcceptSelectedCompletion();
+		if (!accepted) {
+			return false;
+		}
+		consumeIdeKey('ArrowRight');
+		return true;
+	}
+
+	private handleCompletionPanelTrigger(): boolean {
+		if (!isKeyJustPressed('Tab')) {
+			return false;
+		}
+		const { ctrlDown, altDown, metaDown } = { ctrlDown: isCtrlDown(), altDown: isAltDown(), metaDown: isMetaDown() };
+		if (ctrlDown || altDown || metaDown) {
+			return false;
+		}
+		consumeIdeKey('Tab');
+		const snapshot = this.completion.listCompletionCandidates();
+		if (!snapshot) {
+			return true;
+		}
+		if (snapshot.filteredItems.length === 0) {
+			return true;
+		}
+		this.openCompletionPanel(snapshot.context, snapshot.items, snapshot.filteredItems);
+		return true;
+	}
+
+	private handleCtrlTabTrigger(): boolean {
 		if (!isKeyJustPressed('Tab')) {
 			return false;
 		}
@@ -510,21 +580,23 @@ export class TerminalMode {
 		if (!ctrlDown || altDown || metaDown) {
 			return false;
 		}
-		const context = this.resolveSymbolCompletionContext();
-		if (!context) {
-			return false;
-		}
 		consumeIdeKey('Tab');
+		const completionSnapshot = this.completion.listCompletionCandidates();
+		if (completionSnapshot && completionSnapshot.context.kind === 'member' && completionSnapshot.filteredItems.length > 0) {
+			this.openCompletionPanel(completionSnapshot.context, completionSnapshot.items, completionSnapshot.filteredItems);
+			return true;
+		}
+		const symbolContext = this.resolveSymbolCompletionContext();
 		const entries = this.buildSymbolCatalog();
-		const filtered = this.filterSymbolEntries(entries, context.prefix);
+		const filtered = this.filterSymbolEntries(entries, symbolContext.prefix);
 		if (filtered.length === 0) {
 			return true;
 		}
 		if (filtered.length === 1) {
-			this.applySymbolCompletion(context, filtered[0].name);
+			this.applySymbolCompletion(symbolContext, filtered[0].name);
 			return true;
 		}
-		this.openSymbolPanel('complete', entries, filtered, context);
+		this.openSymbolPanel('complete', entries, filtered, symbolContext);
 		return true;
 	}
 
@@ -540,9 +612,8 @@ export class TerminalMode {
 		}
 		if (isKeyJustPressed('Tab')) {
 			consumeIdeKey('Tab');
-			if (panel.mode === 'complete') {
-				this.acceptSymbolPanelSelection();
-			}
+			const shiftDown = isShiftDown();
+			this.moveSymbolSelectionRow(shiftDown ? -1 : 1);
 			return true;
 		}
 		const enterPressed = isKeyJustPressed('Enter') || isKeyJustPressed('NumpadEnter');
@@ -593,7 +664,7 @@ export class TerminalMode {
 		return false;
 	}
 
-	private resolveSymbolCompletionContext(): TerminalSymbolQueryContext | null {
+	private resolveSymbolCompletionContext(): TerminalSymbolQueryContext {
 		const text = this.fieldText();
 		const cursor = this.cursorOffset();
 		const bounds = this.findSymbolCompletionBounds(text, cursor);
@@ -644,6 +715,8 @@ export class TerminalMode {
 		query: TerminalSymbolQueryContext | null,
 	): void {
 		const selectionIndex = filtered.length > 0 ? 0 : -1;
+		this.completionPanel = null;
+		this.completionPanelLayout = null;
 		this.symbolPanel = {
 			mode,
 			entries,
@@ -673,6 +746,151 @@ export class TerminalMode {
 			this.setCursorOffset(panel.originalCursor);
 			this.onExternalFieldMutation(previous, panel.originalText);
 		}
+	}
+
+	private openCompletionPanel(context: CompletionContext, entries: LuaCompletionItem[], filtered: LuaCompletionItem[]): void {
+		const selectionIndex = filtered.length > 0 ? 0 : -1;
+		this.symbolPanel = null;
+		this.symbolPanelLayout = null;
+		this.completionPanel = {
+			entries,
+			filtered,
+			filter: context.prefix,
+			selectionIndex,
+			displayRowOffset: 0,
+			context,
+			originalText: this.fieldText(),
+			originalCursor: this.cursorOffset(),
+		};
+		this.completionPanelLayout = null;
+		this.completion.closeSession();
+	}
+
+	private closeCompletionPanel(restoreInput: boolean): void {
+		const panel = this.completionPanel;
+		if (!panel) {
+			return;
+		}
+		this.completionPanel = null;
+		this.completionPanelLayout = null;
+		if (restoreInput) {
+			const previous = this.fieldText();
+			setFieldText(this.field, panel.originalText, false);
+			this.setCursorOffset(panel.originalCursor);
+			this.onExternalFieldMutation(previous, panel.originalText);
+		}
+	}
+
+	private acceptCompletionPanelSelection(): void {
+		const panel = this.completionPanel;
+		if (!panel) {
+			return;
+		}
+		if (panel.selectionIndex < 0 || panel.selectionIndex >= panel.filtered.length) {
+			this.closeCompletionPanel(false);
+			return;
+		}
+		const item = panel.filtered[panel.selectionIndex];
+		const context = panel.context;
+		this.closeCompletionPanel(false);
+		this.completion.applyCompletionItem(context, item);
+	}
+
+	private resolveCompletionSelectionIndex(items: LuaCompletionItem[], preferredLabel: string): number {
+		if (items.length === 0) {
+			return -1;
+		}
+		if (preferredLabel) {
+			for (let index = 0; index < items.length; index += 1) {
+				if (items[index].label === preferredLabel) {
+					return index;
+				}
+			}
+		}
+		return 0;
+	}
+
+	private refreshCompletionPanelFilter(): void {
+		const panel = this.completionPanel;
+		if (!panel) {
+			return;
+		}
+		const previousLabel = panel.selectionIndex >= 0 && panel.selectionIndex < panel.filtered.length
+			? panel.filtered[panel.selectionIndex].label
+			: null;
+		const snapshot = this.completion.listCompletionCandidates();
+		if (!snapshot) {
+			this.closeCompletionPanel(false);
+			return;
+		}
+		panel.entries = snapshot.items;
+		panel.filtered = snapshot.filteredItems;
+		panel.filter = snapshot.context.prefix;
+		panel.context = snapshot.context;
+		panel.selectionIndex = panel.filtered.length > 0
+			? this.resolveCompletionSelectionIndex(panel.filtered, previousLabel)
+			: -1;
+		panel.displayRowOffset = 0;
+	}
+
+	private handleCompletionPanelKeybindings(): boolean {
+		const panel = this.completionPanel;
+		if (!panel) {
+			return false;
+		}
+		if (isKeyJustPressed('Escape')) {
+			consumeIdeKey('Escape');
+			this.closeCompletionPanel(false);
+			return true;
+		}
+		if (isKeyJustPressed('Tab')) {
+			consumeIdeKey('Tab');
+			const shiftDown = isShiftDown();
+			this.moveCompletionSelectionRow(shiftDown ? -1 : 1);
+			return true;
+		}
+		const enterPressed = isKeyJustPressed('Enter') || isKeyJustPressed('NumpadEnter');
+		if (enterPressed) {
+			consumeIdeKey('Enter');
+			consumeIdeKey('NumpadEnter');
+			this.acceptCompletionPanelSelection();
+			return true;
+		}
+		const { ctrlDown, altDown, metaDown } = { ctrlDown: isCtrlDown(), altDown: isAltDown(), metaDown: isMetaDown() };
+		if (ctrlDown || altDown || metaDown) {
+			return false;
+		}
+		if (this.shouldRepeatKey('ArrowDown')) {
+			consumeIdeKey('ArrowDown');
+			this.moveCompletionSelectionRow(1);
+			return true;
+		}
+		if (this.shouldRepeatKey('ArrowUp')) {
+			consumeIdeKey('ArrowUp');
+			this.moveCompletionSelectionRow(-1);
+			return true;
+		}
+		if (this.shouldRepeatKey('ArrowRight')) {
+			consumeIdeKey('ArrowRight');
+			this.moveCompletionSelectionColumn(1);
+			return true;
+		}
+		if (this.shouldRepeatKey('ArrowLeft')) {
+			consumeIdeKey('ArrowLeft');
+			this.moveCompletionSelectionColumn(-1);
+			return true;
+		}
+		if (this.shouldRepeatKey('PageDown')) {
+			consumeIdeKey('PageDown');
+			this.moveCompletionSelectionPage(1);
+			return true;
+		}
+		if (this.shouldRepeatKey('PageUp')) {
+			consumeIdeKey('PageUp');
+			this.moveCompletionSelectionPage(-1);
+			return true;
+		}
+		return false;
 	}
 
 	private acceptSymbolPanelSelection(): void {
@@ -709,10 +927,6 @@ export class TerminalMode {
 		let filter = panel.filter;
 		if (panel.mode === 'complete') {
 			const context = this.resolveSymbolCompletionContext();
-			if (!context) {
-				this.closeSymbolPanel(false);
-				return;
-			}
 			panel.queryStart = context.replaceStart;
 			panel.queryEnd = context.replaceEnd;
 			filter = context.prefix;
@@ -879,6 +1093,80 @@ export class TerminalMode {
 		}
 	}
 
+	private drawCompletionPanel(params: { contentWidth: number; lineHeight: number; panelLayout: TerminalSymbolGridLayout; panelTop: number; uppercaseDisplay: boolean; }): void {
+		const panel = this.completionPanel;
+		if (!panel) {
+			this.completionPanelLayout = null;
+			return;
+		}
+		const { contentWidth, lineHeight, panelLayout, panelTop, uppercaseDisplay } = params;
+		const layout = panelLayout ?? this.completionPanelLayout;
+		if (!layout) {
+			return;
+		}
+		this.ensureCompletionPanelSelectionVisible(layout);
+
+		const panelRows = layout.visibleRows + layout.paddingY * 2;
+		const panelLeft = PADDING_X;
+		const panelRight = panelLeft + contentWidth;
+		const panelBottom = panelTop + panelRows * lineHeight;
+		this.currentRenderer.rect({
+			kind: 'fill',
+			area: { left: panelLeft, top: panelTop, right: panelRight, bottom: panelBottom },
+			color: Msx1Colors[COLOR_COMPLETION_BACKGROUND],
+		});
+		this.currentRenderer.rect({
+			kind: 'rect',
+			area: { left: panelLeft, top: panelTop, right: panelRight, bottom: panelBottom },
+			color: Msx1Colors[COLOR_COMPLETION_BORDER],
+		});
+
+		const charWidth = this.font.advance(' ');
+		const gridStartX = panelLeft + layout.paddingX * charWidth;
+		const gridStartY = panelTop + layout.paddingY * lineHeight;
+		const cellWidthPx = layout.cellWidth * charWidth;
+		const gapWidthPx = layout.gap * charWidth;
+		const strideX = cellWidthPx + gapWidthPx;
+		const textColor = Msx1Colors[COLOR_COMPLETION_TEXT];
+
+		if (panel.filtered.length === 0) {
+			const message = panel.filter.length > 0 ? 'No matches' : 'No completions';
+			this.drawGlyphRun(this.currentRenderer, message, gridStartX, gridStartY, textColor, uppercaseDisplay);
+			return;
+		}
+
+		const startRow = panel.displayRowOffset;
+		const endRow = Math.min(layout.rows, startRow + layout.visibleRows);
+		for (let row = startRow; row < endRow; row += 1) {
+			const drawRow = row - startRow;
+			const cellY = gridStartY + drawRow * lineHeight;
+			for (let col = 0; col < layout.columns; col += 1) {
+				const index = row + col * layout.rows;
+				if (index >= panel.filtered.length) {
+					continue;
+				}
+				const entry = panel.filtered[index];
+				const label = this.truncateSymbolName(entry.label, layout.cellWidth);
+				const cellX = gridStartX + col * strideX;
+				const isSelected = index === panel.selectionIndex;
+				if (isSelected) {
+					this.currentRenderer.rect({
+						kind: 'fill',
+						area: {
+							left: cellX - 1,
+							top: cellY - 1,
+							right: cellX + cellWidthPx + 1,
+							bottom: cellY + lineHeight + 1,
+						},
+						color: Msx1Colors[COLOR_COMPLETION_HIGHLIGHT],
+					});
+				}
+				const color = isSelected ? Msx1Colors[COLOR_COMPLETION_HIGHLIGHT_TEXT] : textColor;
+				this.drawGlyphRun(this.currentRenderer, label, cellX, cellY, color, uppercaseDisplay);
+			}
+		}
+	}
+
 	private computeSymbolGridLayout(total: number, maxColumns: number, maxRows: number, maxLabelLength: number): TerminalSymbolGridLayout {
 		const paddingX = clamp(SYMBOL_PANEL_PADDING_X, 0, Math.max(0, Math.floor((maxColumns - 1) / 2)));
 		const paddingY = clamp(SYMBOL_PANEL_PADDING_Y, 0, Math.max(0, Math.floor((maxRows - 1) / 2)));
@@ -1020,6 +1308,116 @@ export class TerminalMode {
 		this.ensureSymbolPanelSelectionVisible(layout);
 	}
 
+	private measureCompletionMaxLabelLength(items: LuaCompletionItem[]): number {
+		let maxLength = 0;
+		for (let index = 0; index < items.length; index += 1) {
+			const length = items[index].label.length;
+			if (length > maxLength) {
+				maxLength = length;
+			}
+		}
+		return maxLength;
+	}
+
+	private resolveCompletionLayoutForNavigation(): TerminalSymbolGridLayout {
+		if (this.completionPanelLayout) {
+			return this.completionPanelLayout;
+		}
+		const panel = this.completionPanel;
+		if (!panel) {
+			return null;
+		}
+		const rows = Math.max(1, panel.filtered.length);
+		return {
+			columns: 1,
+			rows,
+			cellWidth: SYMBOL_PANEL_MIN_CELL_WIDTH,
+			gap: SYMBOL_PANEL_COLUMN_GAP,
+			visibleRows: rows,
+			paddingX: 0,
+			paddingY: 0,
+		};
+	}
+
+	private ensureCompletionPanelSelectionVisible(layout: TerminalSymbolGridLayout): void {
+		const panel = this.completionPanel;
+		if (!panel || panel.filtered.length === 0 || panel.selectionIndex < 0) {
+			if (panel) {
+				panel.displayRowOffset = 0;
+			}
+			return;
+		}
+		const row = panel.selectionIndex % layout.rows;
+		const maxOffset = Math.max(0, layout.rows - layout.visibleRows);
+		let offset = clamp(panel.displayRowOffset, 0, maxOffset);
+		if (row < offset) {
+			offset = row;
+		}
+		if (row >= offset + layout.visibleRows) {
+			offset = row - layout.visibleRows + 1;
+		}
+		panel.displayRowOffset = clamp(offset, 0, maxOffset);
+	}
+
+	private moveCompletionSelectionRow(delta: number): void {
+		const panel = this.completionPanel;
+		const layout = this.resolveCompletionLayoutForNavigation();
+		if (!layout) {
+			return;
+		}
+		const total = panel.filtered.length;
+		if (total === 0) {
+			panel.selectionIndex = -1;
+			return;
+		}
+		const current = panel.selectionIndex < 0 ? 0 : panel.selectionIndex;
+		const next = clamp(current + delta, 0, total - 1);
+		panel.selectionIndex = next;
+		this.ensureCompletionPanelSelectionVisible(layout);
+	}
+
+	private moveCompletionSelectionColumn(delta: number): void {
+		const panel = this.completionPanel;
+		const layout = this.resolveCompletionLayoutForNavigation();
+		if (!layout) {
+			return;
+		}
+		const total = panel.filtered.length;
+		if (total === 0) {
+			panel.selectionIndex = -1;
+			return;
+		}
+		const current = panel.selectionIndex < 0 ? 0 : panel.selectionIndex;
+		const rows = layout.rows;
+		const columns = layout.columns;
+		const row = current % rows;
+		const col = Math.floor(current / rows);
+		const nextCol = clamp(col + delta, 0, Math.max(0, columns - 1));
+		const columnStart = nextCol * rows;
+		const columnEnd = Math.min(total - 1, columnStart + rows - 1);
+		const next = clamp(columnStart + row, columnStart, columnEnd);
+		panel.selectionIndex = next;
+		this.ensureCompletionPanelSelectionVisible(layout);
+	}
+
+	private moveCompletionSelectionPage(delta: number): void {
+		const panel = this.completionPanel;
+		const layout = this.resolveCompletionLayoutForNavigation();
+		if (!layout) {
+			return;
+		}
+		const total = panel.filtered.length;
+		if (total === 0) {
+			panel.selectionIndex = -1;
+			return;
+		}
+		const current = panel.selectionIndex < 0 ? 0 : panel.selectionIndex;
+		const step = Math.max(1, layout.visibleRows);
+		const next = clamp(current + step * delta, 0, total - 1);
+		panel.selectionIndex = next;
+		this.ensureCompletionPanelSelectionVisible(layout);
+	}
+
 	private truncateSymbolName(name: string, cellWidth: number): string {
 		if (name.length <= cellWidth) {
 			return name;
@@ -1049,7 +1447,14 @@ export class TerminalMode {
 			const baseMaxLines = Math.max(1, Math.floor(availableHeight / lineHeight));
 			let panelLayout: TerminalSymbolGridLayout = null;
 			let panelRows = 0;
-			if (this.symbolPanel) {
+			if (this.completionPanel) {
+				const charWidth = this.font.advance(' ');
+				const maxColumns = Math.max(1, Math.floor(contentWidth / charWidth));
+				const maxLabelLength = this.measureCompletionMaxLabelLength(this.completionPanel.filtered);
+				panelLayout = this.computeSymbolGridLayout(this.completionPanel.filtered.length, maxColumns, baseMaxLines, maxLabelLength);
+				panelRows = panelLayout.visibleRows + panelLayout.paddingY * 2;
+				this.completionPanelLayout = panelLayout;
+			} else if (this.symbolPanel) {
 				const charWidth = this.font.advance(' ');
 				const maxColumns = Math.max(1, Math.floor(contentWidth / charWidth));
 				const maxLabelLength = this.measureSymbolMaxLabelLength(this.symbolPanel.filtered);
@@ -1077,13 +1482,23 @@ export class TerminalMode {
 			// so the input moves upward as output fills the viewport — terminal-like behavior)
 			const panelTop = PADDING_Y + visibleLines.length * lineHeight;
 			const inputStartY = panelTop + panelRows * lineHeight;
-			this.drawSymbolPanel({
-				contentWidth,
-				lineHeight,
-				panelLayout,
-				panelTop,
-				uppercaseDisplay,
-			});
+			if (this.completionPanel) {
+				this.drawCompletionPanel({
+					contentWidth,
+					lineHeight,
+					panelLayout,
+					panelTop,
+					uppercaseDisplay,
+				});
+			} else {
+				this.drawSymbolPanel({
+					contentWidth,
+					lineHeight,
+					panelLayout,
+					panelTop,
+					uppercaseDisplay,
+				});
+			}
 
 			// draw prompt at the first input line then draw wrapped input lines (first segment after prompt)
 			const promptColor = Msx1Colors[OUTPUT_COLORS.prompt];
@@ -1118,7 +1533,7 @@ export class TerminalMode {
 	}
 
 	private handleHistoryNavigation(): boolean {
-		if (this.symbolPanel) {
+		if (this.symbolPanel || this.completionPanel) {
 			return false;
 		}
 		const { ctrlDown, altDown, metaDown } = { ctrlDown: isCtrlDown(), altDown: isAltDown(), metaDown: isMetaDown() };
@@ -1302,7 +1717,9 @@ export class TerminalMode {
 		this.textVersion += 1;
 		this.cachedLinesVersion = -1;
 		invalidateLuaCommentContextFromRow(this.buffer, 0);
-		if (this.symbolPanel) {
+		if (this.completionPanel) {
+			this.refreshCompletionPanelFilter();
+		} else if (this.symbolPanel) {
 			this.refreshSymbolPanelFilter();
 		} else {
 			this.completion.updateAfterEdit(context);
@@ -1340,7 +1757,7 @@ export class TerminalMode {
 	}
 
 	private drawCompletionOverlays(surface: Viewport, promptWidth: number): void {
-		if (this.symbolPanel) {
+		if (this.symbolPanel || this.completionPanel) {
 			return;
 		}
 		const bounds = {

@@ -714,6 +714,8 @@ export function getResMetaByFilename(filepath: string): { name: string, ext: str
 
 	switch (ext) {
 		case '.wav':
+		case '.aac':
+		case '.m4u':
 			type = 'audio';
 			break;
 		case '.js':
