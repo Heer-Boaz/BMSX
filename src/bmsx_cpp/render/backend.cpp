@@ -191,12 +191,12 @@ void SoftwareBackend::endFrame() {
 }
 
 BackendCaps SoftwareBackend::getCaps() const {
-	return {
-		.maxColorAttachments = 1,
-		.maxTextureSize = 4096,
-		.supportsInstancing = false,
-		.supportsDepthTexture = true
-	};
+	BackendCaps caps;
+	caps.maxColorAttachments = 1;
+	caps.maxTextureSize = 4096;
+	caps.supportsInstancing = false;
+	caps.supportsDepthTexture = true;
+	return caps;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

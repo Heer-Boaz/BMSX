@@ -3,7 +3,7 @@ project(bmsx VERSION 1.0.0 LANGUAGES C CXX)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -125,6 +125,9 @@ add_library(bmsx_core STATIC
     vm/vm_runtime.cpp
     vm/program_loader.cpp
 )
+
+# stb is plain C; compile it as C to avoid libstdc++'s legacy C wrappers (e.g. <math.h>)
+set_source_files_properties(vendor/stb_impl.cpp PROPERTIES LANGUAGE C)
 
 # Required for linking static library into shared library
 set_target_properties(bmsx_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
