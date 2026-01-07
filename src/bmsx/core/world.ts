@@ -453,7 +453,7 @@ export class World implements Stateful, RegisterablePersistent {
 	public startWorldStateMachine(): this {
 		// Check if the FSM ID refers to a valid state machine in the library, but only if it was explicitly passed as an argument
 		if (this._fsmId && !StateDefinitions[this._fsmId]) {
-			console.info(`FSM ID '${this._fsmId}' not found in StateDefinitions; defaulting to 'default_world'.`);
+			// console.info(`FSM ID '${this._fsmId}' not found in StateDefinitions; defaulting to 'default_world'.`);
 			this._fsmId = WORLD_DEFAULT_FSM_ID;
 			if (!StateDefinitions[this._fsmId]) {
 				throw new Error(`Default FSM ID 'default_world' not found in StateDefinitions.`);

@@ -2139,10 +2139,8 @@ export class BmsxVMRuntime {
 			}
 			const text = parts.length === 0 ? '' : parts.join('\t');
 			this.terminal.appendStdout(text);
-			if ($.view.backendType === 'headless') {
-				// eslint-disable-next-line no-console
-				console.log(text);
-			}
+			// eslint-disable-next-line no-console
+			console.log(text);
 			out.length = 0;
 		}));
 
@@ -2822,16 +2820,16 @@ export class BmsxVMRuntime {
 			throw this.createApiRuntimeError('ipairs expects a table or native object.');
 		});
 		this.registerVmGlobal('next', nextFn);
-			this.registerVmGlobal('pairs', createNativeFunction('pairs', (args, out) => {
-				const target = args[0];
-				if (!(target instanceof Table) && !isNativeObject(target)) {
-					const stack = this.buildVmStackFrames()
-						.map(frame => `${frame.source ?? '<unknown>'}:${frame.line ?? '?'}:${frame.column ?? '?'}`)
-						.join(' <- ');
-					throw this.createApiRuntimeError(`pairs expects a table or native object (got ${this.formatVmValue(target)}). stack=${stack}`);
-				}
-				out.push(nextFn, target, null);
-			}));
+		this.registerVmGlobal('pairs', createNativeFunction('pairs', (args, out) => {
+			const target = args[0];
+			if (!(target instanceof Table) && !isNativeObject(target)) {
+				const stack = this.buildVmStackFrames()
+					.map(frame => `${frame.source ?? '<unknown>'}:${frame.line ?? '?'}:${frame.column ?? '?'}`)
+					.join(' <- ');
+				throw this.createApiRuntimeError(`pairs expects a table or native object (got ${this.formatVmValue(target)}). stack=${stack}`);
+			}
+			out.push(nextFn, target, null);
+		}));
 		this.registerVmGlobal('ipairs', createNativeFunction('ipairs', (args, out) => {
 			const target = args[0];
 			if (!(target instanceof Table) && !isNativeObject(target)) {
@@ -3468,16 +3466,16 @@ export class BmsxVMRuntime {
 			const cmdBase = base + index * IO_COMMAND_STRIDE;
 			const cmd = memory[cmdBase] as number;
 			switch (cmd) {
-					case IO_CMD_PRINT: {
-						const arg = memory[cmdBase + IO_ARG0_OFFSET];
-						const text = this.formatVmValue(arg);
-						this.terminal.appendStdout(text);
-						if ($.view.backendType === 'headless') {
-							// eslint-disable-next-line no-console
-							console.log(text);
-						}
-						break;
+				case IO_CMD_PRINT: {
+					const arg = memory[cmdBase + IO_ARG0_OFFSET];
+					const text = this.formatVmValue(arg);
+					this.terminal.appendStdout(text);
+					if ($.view.backendType === 'headless') {
+						// eslint-disable-next-line no-console
+						console.log(text);
 					}
+					break;
+				}
 				default:
 					throw new Error(`Unknown VM IO command: ${cmd}.`);
 			}

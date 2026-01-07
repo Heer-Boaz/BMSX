@@ -285,17 +285,17 @@ export function initializeWorkspaceStorage(projectRootPath: string): void {
 		}
 		if (ide_state.workspaceAutosaveEnabled) {
 			scheduleWorkspaceAutosaveLoop();
-			console.info('Workspace autosave loop started.')
+			// console.info('Workspace autosave loop started.')
 		}
 		if (ide_state.workspaceAutosaveQueued) {
 			ide_state.workspaceAutosaveQueued = false;
 			void runWorkspaceAutosaveTick();
-			console.info('Workspace autosave triggered.')
+			// console.info('Workspace autosave triggered.')
 		}
 	})().catch((error) => {
 		console.warn('[VMCartEditor] Workspace restore failed:', error);
 	});
-	console.info('Workspace initialized.')
+	// console.info('Workspace initialized.')
 }
 
 export function scheduleWorkspaceAutosaveLoop(): void {
