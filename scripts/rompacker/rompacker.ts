@@ -1143,8 +1143,9 @@ async function main() {
 				await progress.runWithDetail('Build game HTML/manifest', () => buildGameHtmlAndManifest(rom_name, title, short_name, debug));
 			}
 		} else {
+			// @ts-ignore
 			const launcherName = getNodeLauncherFilename(platform, debug);
-			logOk(`Generated Node launcher ${pc.white(`dist/${launcherName}`)} for platform ${pc.bold(platform)}`);
+			// logOk(`Generated Node launcher ${pc.white(`dist/${launcherName}`)} for platform ${pc.bold(platform)}`);
 		}
 		await progress.taskCompleted();
 		if (deploy) {

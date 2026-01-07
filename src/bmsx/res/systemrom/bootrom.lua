@@ -39,7 +39,7 @@ end
 local function build_info()
 	local cart_manifest = $.assets.manifest
 	local cart_vm = cart_manifest.vm
-	local engine_manifest = $.engineLayer.index.manifest
+	local engine_manifest = $.engine_layer.index.manifest
 	local engine_vm = engine_manifest.vm
 
 	local cart_title = cart_manifest.title or "<untitled>"
@@ -117,9 +117,9 @@ function draw()
 	local y = top
 	write_line(divider(width, left), left, y, COLOR_ACCENT)
 	y = y + LINE_HEIGHT
-	write_line("ENGINE ROM : " .. info.engine_rom, left, y, COLOR_TEXT)
-	y = y + LINE_HEIGHT
 	write_line("ENGINE NAME: " .. info.engine_title, left, y, COLOR_TEXT)
+	y = y + LINE_HEIGHT
+	write_line("ENGINE ROM : " .. info.engine_rom, left, y, COLOR_TEXT)
 	y = y + LINE_HEIGHT
 	write_line("ENGINE NS  : " .. info.engine_ns, left, y, COLOR_TEXT)
 	y = y + LINE_HEIGHT
@@ -152,7 +152,7 @@ function draw()
 		write_line("STATUS     : " .. status, left, y, COLOR_TEXT)
 		y = y + LINE_HEIGHT
 		local bar = build_progress_bar(elapsed / BOOT_DELAY, 20)
-		write_line("PROGRESS   : " .. bar .. " " .. cursor, left, y, COLOR_TEXT)
+		-- write_line("PROGRESS   : " .. bar .. " " .. cursor, left, y, COLOR_TEXT)
 	else
 		write_line("STATUS     : INSERT CARTRIDGE" .. " " .. cursor, left, y, COLOR_WARN)
 	end

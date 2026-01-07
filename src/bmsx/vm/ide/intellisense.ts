@@ -1712,7 +1712,7 @@ export function listLuaBuiltinFunctions(): VMLuaBuiltinDescriptor[] {
 
 function primeWorkspaceGlobalIndex(workspace: LuaSemanticWorkspace): void {
 	const runtime = BmsxVMRuntime.instance;
-	for (const [path] of Object.entries($.luaSources.path2lua) as Array<[string, LuaSourceRecord]>) {
+	for (const [path] of Object.entries($.lua_sources.path2lua) as Array<[string, LuaSourceRecord]>) {
 		if (workspace.getFileData(path)) {
 			continue;
 		}
@@ -1884,7 +1884,7 @@ export function findStaticDefinitionLocation(chain: ReadonlyArray<string>, usage
 export function getStaticDefinitions(preferredChunk: string): { definitions: ReadonlyArray<LuaDefinitionInfo>; paths: Array<{ path: string; info: { asset_id: string; path?: string } }>; models: Map<string, LuaSemanticModel> } {
 	const interpreter = BmsxVMRuntime.instance.interpreter;
 	const matchingChunks: Array<{ path: string; info: { asset_id: string; path?: string } }> = [];
-	for (const asset of Object.values($.luaSources.path2lua) as LuaSourceRecord[]) {
+	for (const asset of Object.values($.lua_sources.path2lua) as LuaSourceRecord[]) {
 		const path = asset.source_path;
 		const info: { asset_id: string; path?: string } = { asset_id: asset.resid, path: asset.normalized_source_path };
 		const matchesPath = preferredChunk !== null && info.path === preferredChunk;

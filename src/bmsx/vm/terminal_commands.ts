@@ -229,7 +229,7 @@ export class TerminalCommandDispatcher {
 		const faultLabel = this.runtime.hasRuntimeFailed ? 'FAULTED' : 'OK';
 		const root = $.assets.project_root_path;
 		const lines: string[] = [];
-		lines.push(`Cart: ${$.assets.project_root_path} (${$.luaSources.namespace})`);
+		lines.push(`Cart: ${$.assets.project_root_path} (${$.lua_sources.namespace})`);
 		lines.push(`Lua VM: ${vmState} | Entry: ${pathLabel}`);
 		lines.push(`Status: ${faultLabel} | Debugger: ${debuggerLabel}`);
 		lines.push(`Canonicalization: ${this.runtime.canonicalization}`);
@@ -462,7 +462,7 @@ export class TerminalCommandDispatcher {
 		const includeRom = mode === '-ROM' || mode === '-ALL' || !mode;
 		const includeSaved = mode === '-SAVED' || mode === '-ALL' || !mode;
 		const includeDirty = mode === '-DIRTY' || mode === '-ALL' || !mode;
-		const luaAssets = Object.values($.luaSources.path2lua);
+		const luaAssets = Object.values($.lua_sources.path2lua);
 		if (includeRom) {
 			for (const asset of luaAssets) {
 				const path = asset.source_path ?? 'help!!';

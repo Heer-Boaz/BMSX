@@ -17,7 +17,7 @@ type WorkspaceStoragePayload = { contents: string; updatedAt: number };
 type WorkspaceWinnerKind = 'override' | 'canonical' | 'rom';
 
 export async function saveLuaResourceSource(path: string, source: string): Promise<void> {
-	const cart = $.luaSources;
+	const cart = $.lua_sources;
 	const asset = cart.path2lua[path];
 	const absPath = asset.source_path;
 	await persistLuaSourceToFilesystem(absPath, source);
@@ -48,7 +48,7 @@ export async function createLuaResource(request: VMLuaResourceCreationRequest): 
 		cart.path2lua![asset.source_path] = asset;
 		cart.path2lua![asset.normalized_source_path] = asset;
 	};
-	registerAsset($.luaSources);
+	registerAsset($.lua_sources);
 	BmsxVMRuntime.instance.invalidateVmModuleAliases();
 	const filesystemPath = asset.source_path;
 	await persistLuaSourceToFilesystem(filesystemPath, contents);
@@ -744,13 +744,13 @@ async function clearWorkspaceDirtyFiles(cart: LuaSourceRegistry, storage: Storag
 
 export async function resetWorkspaceDirtyBuffersAndStorage(): Promise<void> {
 	const runtime = BmsxVMRuntime.instance;
-	await clearWorkspaceDirtyFiles($.luaSources, runtime.storageService);
+	await clearWorkspaceDirtyFiles($.lua_sources, runtime.storageService);
 	runtime.editor.clearWorkspaceDirtyBuffers();
 }
 
 export async function nukeWorkspaceState(): Promise<void> {
 	const runtime = BmsxVMRuntime.instance;
-	await clearWorkspaceArtifacts($.luaSources, runtime.storageService);
+	await clearWorkspaceArtifacts($.lua_sources, runtime.storageService);
 	runtime.editor.clearWorkspaceDirtyBuffers();
 }
 

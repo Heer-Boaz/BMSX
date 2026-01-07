@@ -131,7 +131,7 @@ export function registerApiBuiltins(interpreter: LuaInterpreter): void {
 		const targetPlayer = args.length >= 2
 			? Number(args[1])
 			: runtime.playerIndex;
-		const moduleId = $.luaSources.path2lua[runtime.currentPath].source_path;
+		const moduleId = $.lua_sources.path2lua[runtime.currentPath].source_path;
 		const marshalCtx = { moduleId, path: [] };
 		const mappingValue = runtime.luaJsBridge.convertFromLua(mappingTable, marshalCtx) as InputMap;
 		if (!mappingValue || typeof mappingValue !== 'object') {
@@ -200,7 +200,7 @@ export function registerApiBuiltins(interpreter: LuaInterpreter): void {
 				? `${name}(${displayParams.join(', ')})${returnTypeSuffix}`
 				: `${name}()${returnTypeSuffix}`;
 			const native = new LuaNativeFunction(`api.${name}`, (args) => {
-				const moduleId = $.luaSources.path2lua[runtime.currentPath].source_path;
+				const moduleId = $.lua_sources.path2lua[runtime.currentPath].source_path;
 				const baseCtx = { moduleId, path: [] };
 				const jsArgs = Array.from(args, (arg, index) => runtime.luaJsBridge.convertFromLua(arg, runtime.extendMarshalContext(baseCtx, `arg${index}`)));
 				try {

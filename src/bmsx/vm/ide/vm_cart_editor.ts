@@ -2700,7 +2700,7 @@ export function performHotReloadAndResume(): boolean {
 	console.log('[IDE] Performing hot-reload and resume');
 	scheduleRuntimeTask(async () => {
 		console.log('[IDE] Applying workspace overrides to cart before resume');
-		await applyWorkspaceOverridesToCart({ cart: $.luaSources, storage: $.platform.storage, includeServer: true });
+		await applyWorkspaceOverridesToCart({ cart: $.lua_sources, storage: $.platform.storage, includeServer: true });
 		console.log('[IDE] Capturing runtime snapshot for resume');
 		const snapshot = runtime.captureCurrentState();
 		console.log('[IDE] Clear execution stop highlights before resume');

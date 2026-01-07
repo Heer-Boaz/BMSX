@@ -40,7 +40,7 @@ function resolveSource(descriptor: VMResourceDescriptor): string {
 
 export function createEntryTabContext(): CodeTabContext {
 	const luaDescriptors = listResources().filter(r => r.type === 'lua');
-	const descriptor = luaDescriptors.find(r => r.path === $.luaSources.entry_path)!;
+	const descriptor = luaDescriptors.find(r => r.path === $.lua_sources.entry_path)!;
 	return createLuaCodeTabContext(descriptor);
 }
 

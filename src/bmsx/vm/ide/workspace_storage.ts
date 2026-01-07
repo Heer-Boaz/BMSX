@@ -370,7 +370,7 @@ export function resolveSerializedDescriptor(serialized: SerializedDescriptor): V
 	if (!serialized) {
 		return null;
 	}
-	const asset = $.luaSources.path2lua[serialized.path];
+	const asset = $.lua_sources.path2lua[serialized.path];
 	return asset ? { path: serialized.path, type: serialized.type } : null;
 }
 

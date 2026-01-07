@@ -41,7 +41,7 @@ export class LuaJsBridge implements LuaInteropAdapter {
 
 	public convertFromLua(value: LuaValue, context?: LuaMarshalContext): unknown {
 		if (!context) {
-			context = { moduleId: $.luaSources.path2lua[BmsxVMRuntime.instance.currentPath].source_path, path: [] };
+			context = { moduleId: $.lua_sources.path2lua[BmsxVMRuntime.instance.currentPath].source_path, path: [] };
 		}
 		return this.luaValueToJsWithVisited(value, context, new WeakMap<LuaTable, unknown>());
 	}

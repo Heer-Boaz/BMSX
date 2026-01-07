@@ -106,10 +106,10 @@ export class EngineCore {
 	public get deltatime_seconds(): number { return this.deltatime / 1000; }
 
 	private _assets: RuntimeAssets = null;
-	private _assetSource: RawAssetSource = null;
-	private _luaSources: LuaSourceRegistry = null;
-	private _engineLayer: RuntimeAssetLayer = null;
-	private _workspaceOverlay: BmsxCartridgeBlob = null;
+	private _asset_source: RawAssetSource = null;
+	private _lua_sources: LuaSourceRegistry = null;
+	private _engine_layer: RuntimeAssetLayer = null;
+	private _workspace_overlay: BmsxCartridgeBlob = null;
 	private _sndcontext: AudioContext = null;
 	private _gainnode: GainNode = null;
 
@@ -197,15 +197,15 @@ export class EngineCore {
 	private initialWorldConfigSnapshot: WorldConfiguration = null;
 
 	public get assets(): RuntimeAssets { return this._assets; }
-	public get assetSource(): RawAssetSource { return this._assetSource; }
-	public get luaSources(): LuaSourceRegistry { return this._luaSources; }
-	public get engineLayer(): RuntimeAssetLayer { return this._engineLayer; }
-	public get workspaceOverlay(): BmsxCartridgeBlob { return this._workspaceOverlay; }
-	public setLuaSources(sources: LuaSourceRegistry): void {
-		this._luaSources = sources;
+	public get asset_source(): RawAssetSource { return this._asset_source; }
+	public get lua_sources(): LuaSourceRegistry { return this._lua_sources; }
+	public get engine_layer(): RuntimeAssetLayer { return this._engine_layer; }
+	public get workspace_overlay(): BmsxCartridgeBlob { return this._workspace_overlay; }
+	public set_lua_sources(sources: LuaSourceRegistry): void {
+		this._lua_sources = sources;
 	}
-	public setAssetSource(source: RawAssetSource): void {
-		this._assetSource = source;
+	public set_asset_source(source: RawAssetSource): void {
+		this._asset_source = source;
 	}
 
 	public get world(): World { return this.registry.get<World>('world')!; }
@@ -388,10 +388,10 @@ export class EngineCore {
 		this._sndcontext = sndcontext ?? null;
 		this._gainnode = gainnode ?? null;
 		const engineLayer = await buildRuntimeAssetLayer({ blob: engineRom, id: 'system' });
-		this._engineLayer = engineLayer;
-		this._workspaceOverlay = workspaceOverlay ?? null;
+		this._engine_layer = engineLayer;
+		this._workspace_overlay = workspaceOverlay ?? null;
 		this._assets = engineLayer.assets;
-		this._assetSource = new AssetSourceStack([{ id: engineLayer.id, index: engineLayer.index, payload: engineLayer.payload }]);
+		this._asset_source = new AssetSourceStack([{ id: engineLayer.id, index: engineLayer.index, payload: engineLayer.payload }]);
 		platform.gameviewHost = resolvedViewHost;
 		this._platform = platform;
 		setMicrotaskQueue(platform.microtasks);
