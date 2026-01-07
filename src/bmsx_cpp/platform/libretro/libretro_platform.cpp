@@ -408,7 +408,7 @@ bool LibretroPlatform::loadEmptyCart() {
 		log(RETRO_LOG_WARN, "[BMSX] No engine assets found, running without system program\n");
 	}
 
-	// Boot engine with engine assets (runs system_program.lua)
+	// Boot engine with engine assets (runs bootrom.lua)
 	if (assetsLoaded && m_engine && m_engine->bootWithoutCart()) {
 		log(RETRO_LOG_INFO, "[BMSX] Booted with engine system program\n");
 		m_rom_loaded = true;

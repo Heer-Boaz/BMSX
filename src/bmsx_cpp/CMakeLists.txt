@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.16)
-project(bmsx VERSION 1.0.0 LANGUAGES CXX)
+project(bmsx VERSION 1.0.0 LANGUAGES C CXX)
 
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -10,6 +12,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # =============================================================================
 
 option(BMSX_BUILD_LIBRETRO "Build libretro core" ON)
+option(BMSX_BUILD_LIBRETRO_HOST "Build libretro host executable" OFF)
 option(BMSX_BUILD_SDL "Build SDL standalone executable" OFF)
 option(BMSX_BUILD_TESTS "Build unit tests" OFF)
 option(BMSX_ENABLE_LTO "Enable Link Time Optimization" OFF)
@@ -178,6 +181,27 @@ if(BMSX_BUILD_LIBRETRO)
 
     # Libretro header
     target_include_directories(bmsx_libretro PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/platform/libretro
+    )
+endif()
+
+# =============================================================================
+# Libretro host executable (Linux)
+# =============================================================================
+
+if(BMSX_BUILD_LIBRETRO_HOST)
+    if(NOT UNIX OR APPLE)
+        message(FATAL_ERROR "BMSX_BUILD_LIBRETRO_HOST is supported only on Linux-like UNIX platforms.")
+    endif()
+
+    add_executable(bmsx_libretro_host
+        platform/libretro_host/main.c
+    )
+
+    # SNES Mini sysroot uses glibc 2.19; the cross toolchain defaults to time64.
+    target_compile_definitions(bmsx_libretro_host PRIVATE _TIME_BITS=32)
+    target_link_libraries(bmsx_libretro_host PRIVATE dl rt)
+    target_include_directories(bmsx_libretro_host PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/platform/libretro
     )
 endif()

@@ -359,7 +359,7 @@ bool EngineCore::loadEngineAssetsFromPath(const char* path) {
 
 bool EngineCore::bootWithoutCart() {
 	// Boot engine with only engine assets (no cartridge)
-	// This runs the system_program.lua which displays "insert cart"
+	// This runs bootrom.lua which displays the boot screen
 
 	if (!m_engine_assets_loaded) {
 		std::cerr << "[BMSX] bootWithoutCart: engine assets not loaded" << std::endl;
@@ -409,6 +409,7 @@ bool EngineCore::bootWithoutCart() {
 
 		// Boot the VM with the pre-compiled program from engine assets
 		VMRuntime& runtime = VMRuntime::instance();
+		runtime.setProgramSource(VMRuntime::VmProgramSource::Engine);
 		runtime.setCanonicalization(m_engine_assets.manifest.canonicalization);
 		runtime.boot(*m_engine_assets.vmProgram, m_engine_assets.vmProgramSymbols.get());
 	}
@@ -531,6 +532,7 @@ bool EngineCore::resetLoadedRom() {
 			VMRuntime::createInstance(options);
 		}
 		VMRuntime& runtime = VMRuntime::instance();
+		runtime.setProgramSource(VMRuntime::VmProgramSource::Engine);
 		runtime.setCanonicalization(m_engine_assets.manifest.canonicalization);
 		runtime.boot(*m_engine_assets.vmProgram, m_engine_assets.vmProgramSymbols.get());
 		return true;
@@ -800,6 +802,7 @@ void EngineCore::bootVMFromProgram() {
 
 	// Boot the VM with the pre-compiled program
 	VMRuntime& runtime = VMRuntime::instance();
+	runtime.setProgramSource(VMRuntime::VmProgramSource::Cart);
 	runtime.setCanonicalization(m_assets.manifest.canonicalization);
 	runtime.boot(*m_assets.vmProgram, m_assets.vmProgramSymbols.get());
 }

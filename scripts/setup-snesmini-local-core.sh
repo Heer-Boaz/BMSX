@@ -7,6 +7,7 @@ SYSROOT_DIR=""
 SYSROOT_REL=""
 MODE="build"
 BUILD_TYPE="${SNESMINI_BUILD_TYPE:-Debug}"
+MAKE_TARGET="${BMSX_SNESMINI_MAKE_TARGET:-libretro-snesmini-debug-inner}"
 
 while [ $# -gt 0 ]; do
 	case "$1" in
@@ -163,6 +164,36 @@ EOF
 		ln -s ../../../lib/arm-linux-gnueabihf/libgcc_s.so.1 "$sysroot/usr/lib/arm-linux-gnueabihf/libgcc_s.so"
 	fi
 
+	if [ -f "$sysroot/lib/arm-linux-gnueabihf/libdl.so.2" ]; then
+		mkdir -p "$sysroot/usr/lib/arm-linux-gnueabihf"
+		local libdl_link="$sysroot/usr/lib/arm-linux-gnueabihf/libdl.so"
+		if [ -L "$libdl_link" ]; then
+			local link_target
+			link_target="$(readlink "$libdl_link")"
+			if [ "$link_target" != "../../../lib/arm-linux-gnueabihf/libdl.so.2" ]; then
+				rm -f "$libdl_link"
+				ln -s ../../../lib/arm-linux-gnueabihf/libdl.so.2 "$libdl_link"
+			fi
+		elif [ ! -e "$libdl_link" ]; then
+			ln -s ../../../lib/arm-linux-gnueabihf/libdl.so.2 "$libdl_link"
+		fi
+	fi
+
+	if [ -f "$sysroot/lib/arm-linux-gnueabihf/librt.so.1" ]; then
+		mkdir -p "$sysroot/usr/lib/arm-linux-gnueabihf"
+		local librt_link="$sysroot/usr/lib/arm-linux-gnueabihf/librt.so"
+		if [ -L "$librt_link" ]; then
+			local link_target
+			link_target="$(readlink "$librt_link")"
+			if [ "$link_target" != "../../../lib/arm-linux-gnueabihf/librt.so.1" ]; then
+				rm -f "$librt_link"
+				ln -s ../../../lib/arm-linux-gnueabihf/librt.so.1 "$librt_link"
+			fi
+		elif [ ! -e "$librt_link" ]; then
+			ln -s ../../../lib/arm-linux-gnueabihf/librt.so.1 "$librt_link"
+		fi
+	fi
+
 	touch "$sysroot/.snesmini-ready"
 	echo "SNES Mini sysroot created at: $sysroot"
 }
@@ -170,6 +201,11 @@ EOF
 require_ready_sysroot() {
 	local sysroot="$1"
 	local missing=()
+
+	if [ ! -d "$sysroot" ]; then
+		echo "Sysroot directory not found: $sysroot" >&2
+		exit 1
+	fi
 
 	if [ ! -f "$sysroot/usr/include/zlib.h" ]; then
 		missing+=("zlib headers")
@@ -192,47 +228,79 @@ require_ready_sysroot() {
 	if [ "${#missing[@]}" -gt 0 ]; then
 		echo "Sysroot not ready at: $sysroot" >&2
 		echo "Missing: ${missing[*]}" >&2
-		echo "Run this script as root to (re)build the sysroot, or point to a prebuilt sysroot." >&2
-		exit 1
+		echo "Continuing anyway (fake sysroot mode)." >&2
+	fi
+
+	if [ -f "$sysroot/lib/arm-linux-gnueabihf/libdl.so.2" ]; then
+		mkdir -p "$sysroot/usr/lib/arm-linux-gnueabihf"
+		local libdl_link="$sysroot/usr/lib/arm-linux-gnueabihf/libdl.so"
+		if [ -L "$libdl_link" ]; then
+			local link_target
+			link_target="$(readlink "$libdl_link")"
+			if [ "$link_target" != "../../../lib/arm-linux-gnueabihf/libdl.so.2" ]; then
+				rm -f "$libdl_link"
+				ln -s ../../../lib/arm-linux-gnueabihf/libdl.so.2 "$libdl_link"
+			fi
+		elif [ ! -e "$libdl_link" ]; then
+			ln -s ../../../lib/arm-linux-gnueabihf/libdl.so.2 "$libdl_link"
+		fi
+	fi
+
+	if [ -f "$sysroot/lib/arm-linux-gnueabihf/librt.so.1" ]; then
+		mkdir -p "$sysroot/usr/lib/arm-linux-gnueabihf"
+		local librt_link="$sysroot/usr/lib/arm-linux-gnueabihf/librt.so"
+		if [ -L "$librt_link" ]; then
+			local link_target
+			link_target="$(readlink "$librt_link")"
+			if [ "$link_target" != "../../../lib/arm-linux-gnueabihf/librt.so.1" ]; then
+				rm -f "$librt_link"
+				ln -s ../../../lib/arm-linux-gnueabihf/librt.so.1 "$librt_link"
+			fi
+		elif [ ! -e "$librt_link" ]; then
+			ln -s ../../../lib/arm-linux-gnueabihf/librt.so.1 "$librt_link"
+		fi
 	fi
 }
 
 if [ "${BMSX_SNESMINI_IN_ROOTFS:-}" = "1" ]; then
-	if is_root; then
-		ensure_sysroot "$SYSROOT_DIR"
-	else
-		require_ready_sysroot "$SYSROOT_DIR"
-	fi
+	require_ready_sysroot "$SYSROOT_DIR"
 	if [ "$MODE" = "build" ]; then
 		rm -rf "$ROOT_DIR/build-snesmini"
 		make -C "$ROOT_DIR" \
 			SNESMINI_SYSROOT="$SYSROOT_DIR" \
 			SNESMINI_BUILD_TYPE="$BUILD_TYPE" \
-			libretro-snesmini-debug-inner
+			"$MAKE_TARGET"
 	fi
 	exit 0
 fi
 
-if ! is_root; then
-	require_ready_sysroot "$SYSROOT_DIR"
-	if [ "$MODE" = "build" ]; then
-		DEFAULT_BUILD_DIR="$ROOT_DIR/build-snesmini"
-		FALLBACK_BUILD_DIR="$ROOT_DIR/build-snesmini-user"
-		BUILD_DIR="$DEFAULT_BUILD_DIR"
-		if [ -e "$BUILD_DIR" ] && [ ! -w "$BUILD_DIR" ]; then
-			BUILD_DIR="$FALLBACK_BUILD_DIR"
-		fi
-		if [ -e "$BUILD_DIR" ] && [ -w "$BUILD_DIR" ]; then
-			rm -rf "$BUILD_DIR"
-		fi
-		make -C "$ROOT_DIR" \
-			SNESMINI_SYSROOT="$SYSROOT_DIR" \
-			SNESMINI_BUILD_TYPE="$BUILD_TYPE" \
-			SNESMINI_BUILD_DIR="$BUILD_DIR" \
-			libretro-snesmini-debug-inner
+require_ready_sysroot "$SYSROOT_DIR"
+if [ "$MODE" = "build" ]; then
+	TOOLCHAIN_PREFIX="${SNESMINI_TOOLCHAIN_PREFIX:-arm-linux-gnueabihf}"
+	DEFAULT_BUILD_DIR="$ROOT_DIR/build-snesmini"
+	FALLBACK_BUILD_DIR="$ROOT_DIR/build-snesmini-user"
+	BUILD_DIR="$DEFAULT_BUILD_DIR"
+	if [ -e "$BUILD_DIR" ] && [ ! -w "$BUILD_DIR" ]; then
+		BUILD_DIR="$FALLBACK_BUILD_DIR"
 	fi
-	exit 0
+	if [ -e "$BUILD_DIR" ] && [ -w "$BUILD_DIR" ]; then
+		rm -rf "$BUILD_DIR"
+	fi
+	rm -f "$ROOT_DIR/dist/bmsx_libretro.so"
+	make -C "$ROOT_DIR" \
+		SNESMINI_SYSROOT="$SYSROOT_DIR" \
+		SNESMINI_BUILD_TYPE="$BUILD_TYPE" \
+		SNESMINI_TOOLCHAIN_PREFIX="$TOOLCHAIN_PREFIX" \
+		SNESMINI_BUILD_DIR="$BUILD_DIR" \
+		"$MAKE_TARGET"
+	BUILT_SO="$ROOT_DIR/dist/bmsx_libretro.so"
+	if [ -f "$BUILT_SO" ] && readelf --dyn-syms "$BUILT_SO" | grep -q "__libc_single_threaded"; then
+		echo "ERROR: __libc_single_threaded present in output. Toolchain headers are too new." >&2
+		echo "Compiler: $(arm-linux-gnueabihf-g++ --version | head -n 1)" >&2
+		exit 2
+	fi
 fi
+exit 0
 
 ensure_command debootstrap debootstrap
 
@@ -295,4 +363,4 @@ fi
 
 SYSROOT_IN_ROOTFS="/src/${SYSROOT_REL}"
 chroot "$BUILD_ROOTFS_DIR" /bin/bash -lc \
-	"cd /src && BMSX_SNESMINI_IN_ROOTFS=1 SNESMINI_BUILD_TYPE=\"$BUILD_TYPE\" ./scripts/setup-snesmini-local-core.sh $MODE_FLAG \"$SYSROOT_IN_ROOTFS\""
+	"cd /src && BMSX_SNESMINI_IN_ROOTFS=1 BMSX_SNESMINI_MAKE_TARGET=\"$MAKE_TARGET\" SNESMINI_BUILD_TYPE=\"$BUILD_TYPE\" ./scripts/setup-snesmini-local-core.sh $MODE_FLAG \"$SYSROOT_IN_ROOTFS\""

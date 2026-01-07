@@ -70,14 +70,18 @@ cmake --build . --config Release
 ### Build Options
 
 - `BMSX_BUILD_SDL`: Build SDL2 test application (default: OFF)
-- `BMSX_LIBRETRO`: Build libretro core (default: ON)
+- `BMSX_BUILD_LIBRETRO`: Build libretro core (default: ON)
+- `BMSX_BUILD_LIBRETRO_HOST`: Build `bmsx_libretro_host` (default: OFF)
 
 ```bash
 # Build with SDL2 test app
 cmake .. -DBMSX_BUILD_SDL=ON
 
 # Build only static library (no libretro)
-cmake .. -DBMSX_LIBRETRO=OFF
+cmake .. -DBMSX_BUILD_LIBRETRO=OFF
+
+# Build the standalone libretro host (Linux)
+cmake .. -DBMSX_BUILD_LIBRETRO_HOST=ON
 ```
 
 ## Architecture

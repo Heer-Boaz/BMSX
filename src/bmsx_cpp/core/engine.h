@@ -114,7 +114,7 @@ public:
 	bool romLoaded() const { return m_rom_loaded; }
 	bool engineAssetsLoaded() const { return m_engine_assets_loaded; }
 
-	// Boot engine without cart - uses VM program from engine assets (system_program.lua)
+	// Boot engine without cart - uses VM program from engine assets (bootrom.lua)
 	bool bootWithoutCart();
 
 	// Registry shortcuts (like TypeScript $)
