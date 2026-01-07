@@ -1737,7 +1737,7 @@ export function decide_fec(
 	}
 	let bw = bandwidth;
 	const orig_bandwidth = bw;
-	for (;;) {
+	for (; ;) {
 		const idx = 2 * (bw - OPUS_BANDWIDTH_NARROWBAND);
 		let LBRR_rate_thres_bps = fec_thresholds[idx];
 		const hysteresis = fec_thresholds[idx + 1];
@@ -2242,7 +2242,7 @@ function parse_code3_cbr_payload(out: Buffer): { payload_offset: number; payload
 	let offset = 2;
 	let padding_length = 0;
 	if (out[1] & 0x40) {
-		for (;;) {
+		for (; ;) {
 			const v = out[offset];
 			padding_length += v;
 			offset++;
