@@ -819,6 +819,44 @@ static bool menu_option_is_action(const MenuOption* opt) {
 	return opt && strncmp(opt->key, "__action_", 9) == 0;
 }
 
+static bool menu_option_is_disabled(const MenuOption* opt) {
+	if (!opt || menu_option_is_action(opt)) {
+		return false;
+	}
+	if (strcmp(g_opt_crt_postprocessing, "on") == 0) {
+		return false;
+	}
+	const char* key = opt->key;
+	return strcmp(key, "bmsx_postprocess_detail") == 0 ||
+		   strcmp(key, "bmsx_crt_noise") == 0 ||
+		   strcmp(key, "bmsx_crt_color_bleed") == 0 ||
+		   strcmp(key, "bmsx_crt_scanlines") == 0 ||
+		   strcmp(key, "bmsx_crt_blur") == 0 ||
+		   strcmp(key, "bmsx_crt_glow") == 0 ||
+		   strcmp(key, "bmsx_crt_fringing") == 0 ||
+		   strcmp(key, "bmsx_crt_aperture") == 0;
+}
+
+static size_t menu_next_selectable(size_t index, int dir) {
+	if (g_menu_option_count == 0) {
+		return 0;
+	}
+	size_t cur = index;
+	for (;;) {
+		if (!menu_option_is_disabled(&g_menu_options[cur])) {
+			return cur;
+		}
+		if (dir > 0) {
+			cur = (cur + 1) % g_menu_option_count;
+		} else {
+			cur = (cur == 0) ? (g_menu_option_count - 1) : (cur - 1);
+		}
+		if (cur == index) {
+			return index;
+		}
+	}
+}
+
 static void menu_execute_action(const char* key) {
 	if (!key) return;
 	if (strcmp(key, "__action_reboot") == 0) {
@@ -1031,6 +1069,7 @@ static void menu_toggle(void) {
 	}
 	if (g_menu_active) {
 		menu_append_actions();
+		g_menu_selected = menu_next_selectable(g_menu_selected, 1);
 	}
 	menu_mark_dirty();
 }
@@ -1176,6 +1215,7 @@ static void menu_rebuild_surface(void) {
 				menu_draw_rect(0, cursor_y - 2, g_menu_surface_w, line_h, hl_r, hl_g, hl_b, hl_a);
 			}
 			const MenuOption* opt = &g_menu_options[i];
+			const bool disabled = menu_option_is_disabled(opt);
 			const char* label = opt->label[0] ? opt->label : opt->key;
 			char line[256];
 			if (menu_option_is_action(opt)) {
@@ -1188,7 +1228,10 @@ static void menu_rebuild_surface(void) {
 					snprintf(line, sizeof(line), "%s", label);
 				}
 			}
-			menu_draw_text(padding, cursor_y, line, text_r, text_g, text_b, text_a, scale);
+			const uint8_t line_r = disabled ? dim_r : text_r;
+			const uint8_t line_g = disabled ? dim_g : text_g;
+			const uint8_t line_b = disabled ? dim_b : text_b;
+			menu_draw_text(padding, cursor_y, line, line_r, line_g, line_b, text_a, scale);
 			cursor_y += line_h;
 		}
 	}
@@ -2413,14 +2456,22 @@ static void menu_handle_input(uint16_t state, uint16_t prev, bool skip_nav) {
 
 	if (menu_pad_pressed(state, prev, RETRO_DEVICE_ID_JOYPAD_UP)) {
 		if (g_menu_option_count > 0) {
-			g_menu_selected = (g_menu_selected == 0) ? (g_menu_option_count - 1) : (g_menu_selected - 1);
-			menu_mark_dirty();
+			size_t next = (g_menu_selected == 0) ? (g_menu_option_count - 1) : (g_menu_selected - 1);
+			next = menu_next_selectable(next, -1);
+			if (next != g_menu_selected) {
+				g_menu_selected = next;
+				menu_mark_dirty();
+			}
 		}
 	}
 	if (menu_pad_pressed(state, prev, RETRO_DEVICE_ID_JOYPAD_DOWN)) {
 		if (g_menu_option_count > 0) {
-			g_menu_selected = (g_menu_selected + 1) % g_menu_option_count;
-			menu_mark_dirty();
+			size_t next = (g_menu_selected + 1) % g_menu_option_count;
+			next = menu_next_selectable(next, 1);
+			if (next != g_menu_selected) {
+				g_menu_selected = next;
+				menu_mark_dirty();
+			}
 		}
 	}
 	if (menu_pad_pressed(state, prev, RETRO_DEVICE_ID_JOYPAD_LEFT)) {
@@ -2428,6 +2479,9 @@ static void menu_handle_input(uint16_t state, uint16_t prev, bool skip_nav) {
 			MenuOption* opt = &g_menu_options[g_menu_selected];
 			if (menu_option_is_action(opt)) {
 				menu_execute_action(opt->key);
+				return;
+			}
+			if (menu_option_is_disabled(opt)) {
 				return;
 			}
 			if (opt->value_count > 0) {
@@ -2441,6 +2495,9 @@ static void menu_handle_input(uint16_t state, uint16_t prev, bool skip_nav) {
 			MenuOption* opt = &g_menu_options[g_menu_selected];
 			if (menu_option_is_action(opt)) {
 				menu_execute_action(opt->key);
+				return;
+			}
+			if (menu_option_is_disabled(opt)) {
 				return;
 			}
 			if (opt->value_count > 0) {
