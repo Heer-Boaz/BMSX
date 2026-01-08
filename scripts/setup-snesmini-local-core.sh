@@ -274,12 +274,24 @@ if [ "${BMSX_SNESMINI_IN_ROOTFS:-}" = "1" ]; then
 	exit 0
 fi
 
-if command -v docker >/dev/null 2>&1 && [ "${BMSX_SNESMINI_USE_DOCKER:-1}" = "1" ]; then
+if ! is_root; then
+	if command -v sudo >/dev/null 2>&1; then
+		exec sudo "$0" "$SYSROOT_DIR"
+	fi
+	echo "This command requires sudo to build via the SNES Mini docker toolchain." >&2
+	echo "Run: sudo $0 $SYSROOT_DIR" >&2
+	exit 1
+fi
+
+ensure_command docker docker.io
+
+if [ "${BMSX_SNESMINI_USE_DOCKER:-1}" = "1" ]; then
 	DOCKER_IMAGE="${BMSX_SNESMINI_DOCKER_IMAGE:-debian:bullseye}"
 	MODE_FLAG=""
 	if [ "$MODE" = "sysroot" ]; then
 		MODE_FLAG="--sysroot-only"
 	fi
+	SYSROOT_IN_CONTAINER="/src/${SYSROOT_REL}"
 	docker run --rm -t \
 		-v "$ROOT_DIR":/src \
 		-w /src \
@@ -289,97 +301,9 @@ if command -v docker >/dev/null 2>&1 && [ "${BMSX_SNESMINI_USE_DOCKER:-1}" = "1"
 			gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf binutils-arm-linux-gnueabihf \
 			qemu-user-static binfmt-support && \
 			BMSX_SNESMINI_IN_ROOTFS=1 BMSX_SNESMINI_MAKE_TARGET=\"$MAKE_TARGET\" \
-			SNESMINI_BUILD_TYPE=\"$BUILD_TYPE\" ./scripts/setup-snesmini-local-core.sh $MODE_FLAG \"$SYSROOT_DIR\""
+			SNESMINI_BUILD_TYPE=\"$BUILD_TYPE\" ./scripts/setup-snesmini-local-core.sh $MODE_FLAG \"$SYSROOT_IN_CONTAINER\""
 	exit 0
 fi
 
-require_ready_sysroot "$SYSROOT_DIR"
-if [ "$MODE" = "build" ]; then
-	TOOLCHAIN_PREFIX="${SNESMINI_TOOLCHAIN_PREFIX:-arm-linux-gnueabihf}"
-	DEFAULT_BUILD_DIR="$ROOT_DIR/build-snesmini"
-	FALLBACK_BUILD_DIR="$ROOT_DIR/build-snesmini-user"
-	BUILD_DIR="$DEFAULT_BUILD_DIR"
-	if [ -e "$BUILD_DIR" ] && [ ! -w "$BUILD_DIR" ]; then
-		BUILD_DIR="$FALLBACK_BUILD_DIR"
-	fi
-	if [ -e "$BUILD_DIR" ] && [ -w "$BUILD_DIR" ]; then
-		rm -rf "$BUILD_DIR"
-	fi
-	rm -f "$ROOT_DIR/dist/bmsx_libretro.so"
-	make -C "$ROOT_DIR" \
-		SNESMINI_SYSROOT="$SYSROOT_DIR" \
-		SNESMINI_BUILD_TYPE="$BUILD_TYPE" \
-		SNESMINI_TOOLCHAIN_PREFIX="$TOOLCHAIN_PREFIX" \
-		SNESMINI_BUILD_DIR="$BUILD_DIR" \
-		"$MAKE_TARGET"
-	BUILT_SO="$ROOT_DIR/dist/bmsx_libretro.so"
-	if [ -f "$BUILT_SO" ] && readelf --dyn-syms "$BUILT_SO" | grep -q "__libc_single_threaded"; then
-		echo "ERROR: __libc_single_threaded present in output. Toolchain headers are too new." >&2
-		echo "Compiler: $(arm-linux-gnueabihf-g++ --version | head -n 1)" >&2
-		exit 2
-	fi
-fi
-exit 0
-
-ensure_command debootstrap debootstrap
-
-BUILD_ROOTFS_DIR="${ROOT_DIR}/.snesmini/build-rootfs-bullseye"
-DISTRO="bullseye"
-MIRROR="http://deb.debian.org/debian"
-APT_MIRROR="http://archive.debian.org/debian"
-BUILD_PACKAGES=(
-	ca-certificates
-	debootstrap
-	cmake
-	make
-	pkg-config
-	git
-	gcc-arm-linux-gnueabihf
-	g++-arm-linux-gnueabihf
-	binutils-arm-linux-gnueabihf
-	qemu-user-static
-	binfmt-support
-)
-
-mkdir -p "$BUILD_ROOTFS_DIR"
-if [ ! -f "$BUILD_ROOTFS_DIR/.build-rootfs-ready" ]; then
-	debootstrap --variant=minbase --arch=amd64 --no-check-gpg \
-		"$DISTRO" "$BUILD_ROOTFS_DIR" "$MIRROR"
-	touch "$BUILD_ROOTFS_DIR/.build-rootfs-ready"
-fi
-
-cat > "$BUILD_ROOTFS_DIR/etc/apt/sources.list" <<EOF
-deb $MIRROR $DISTRO main
-EOF
-cat > "$BUILD_ROOTFS_DIR/etc/apt/apt.conf.d/99no-check-valid-until" <<EOF
-Acquire::Check-Valid-Until "false";
-EOF
-cp -L /etc/resolv.conf "$BUILD_ROOTFS_DIR/etc/resolv.conf"
-
-mkdir -p "$BUILD_ROOTFS_DIR/dev/pts" "$BUILD_ROOTFS_DIR/proc" "$BUILD_ROOTFS_DIR/sys" "$BUILD_ROOTFS_DIR/src"
-
-cleanup_mounts() {
-	if mountpoint -q "$BUILD_ROOTFS_DIR/src"; then umount "$BUILD_ROOTFS_DIR/src"; fi
-	if mountpoint -q "$BUILD_ROOTFS_DIR/dev/pts"; then umount "$BUILD_ROOTFS_DIR/dev/pts"; fi
-	if mountpoint -q "$BUILD_ROOTFS_DIR/dev"; then umount "$BUILD_ROOTFS_DIR/dev"; fi
-	if mountpoint -q "$BUILD_ROOTFS_DIR/proc"; then umount "$BUILD_ROOTFS_DIR/proc"; fi
-	if mountpoint -q "$BUILD_ROOTFS_DIR/sys"; then umount "$BUILD_ROOTFS_DIR/sys"; fi
-}
-trap cleanup_mounts EXIT
-
-mount --bind /dev "$BUILD_ROOTFS_DIR/dev"
-mount --bind /dev/pts "$BUILD_ROOTFS_DIR/dev/pts"
-mount -t proc proc "$BUILD_ROOTFS_DIR/proc"
-mount -t sysfs sys "$BUILD_ROOTFS_DIR/sys"
-mount --bind "$ROOT_DIR" "$BUILD_ROOTFS_DIR/src"
-
-chroot "$BUILD_ROOTFS_DIR" /bin/bash -lc "apt-get update && apt-get install -y ${BUILD_PACKAGES[*]}"
-
-MODE_FLAG=""
-if [ "$MODE" = "sysroot" ]; then
-	MODE_FLAG="--sysroot-only"
-fi
-
-SYSROOT_IN_ROOTFS="/src/${SYSROOT_REL}"
-chroot "$BUILD_ROOTFS_DIR" /bin/bash -lc \
-	"cd /src && BMSX_SNESMINI_IN_ROOTFS=1 BMSX_SNESMINI_MAKE_TARGET=\"$MAKE_TARGET\" SNESMINI_BUILD_TYPE=\"$BUILD_TYPE\" ./scripts/setup-snesmini-local-core.sh $MODE_FLAG \"$SYSROOT_IN_ROOTFS\""
+echo "Docker build is required. Set BMSX_SNESMINI_USE_DOCKER=1." >&2
+exit 1

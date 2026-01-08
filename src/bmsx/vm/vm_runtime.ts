@@ -495,6 +495,10 @@ export class BmsxVMRuntime {
 			this.cpuMemory[index] = null;
 		}
 		this.cpuMemory[IO_WRITE_PTR_ADDR] = 0;
+		this.cpuMemory[IO_SYS_CART_PRESENT] = 0;
+		this.cpuMemory[IO_SYS_BOOT_CART] = 0;
+		this.cpuMemory[IO_SYS_CART_BOOTREADY] = 0;
+		this.cartAssetsApplied = false;
 		this.cpu = new VMCPU(this.cpuMemory);
 		this.vmRandomSeedValue = $.platform.clock.now();
 
@@ -1871,15 +1875,9 @@ export class BmsxVMRuntime {
 		this.cpu.globals.clear();
 		this.vmModuleCache.clear();
 		this.vmModuleProtos.clear();
-		for (let index = 0; index < this.cpuMemory.length; index += 1) {
-			this.cpuMemory[index] = null;
-		}
-		this.cpuMemory[IO_WRITE_PTR_ADDR] = 0;
-		this.cpuMemory[IO_SYS_CART_PRESENT] = 0;
-		this.cpuMemory[IO_SYS_BOOT_CART] = 0;
-		this.cpuMemory[IO_SYS_CART_BOOTREADY] = 0;
-		this.cartAssetsApplied = false;
-		this.vmRandomSeedValue = $.platform.clock.now();
+		// for (let index = 0; index < this.cpuMemory.length; index += 1) {
+		// 	this.cpuMemory[index] = null;
+		// }
 		this.seedVmGlobals();
 	}
 

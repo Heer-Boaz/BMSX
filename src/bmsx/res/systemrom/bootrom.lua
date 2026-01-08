@@ -1,7 +1,7 @@
 -- bootrom.lua
 -- BMSX system boot screen
 
-local BOOT_DELAY = 0.5
+local BOOT_DELAY = 1.0
 local FONT_WIDTH = 6
 local LINE_HEIGHT = 8
 
@@ -181,11 +181,12 @@ function draw()
 	if cart_present then
 		local remaining = BOOT_DELAY - elapsed
 		if remaining < 0 then remaining = 0 end
-		local status = "AUTOBOOT IN " .. string.format("%.1f", remaining) .. "S"
+		-- local status = "AUTOBOOT IN " .. string.format("%.1f", remaining) .. "S"
+		local status = peek(SYS_CART_BOOTREADY) == 0 and "LOADING CART" or "CART LOADED"
 		write_line("STATUS     : " .. status, left, y, COLOR_TEXT)
 		y = y + LINE_HEIGHT
 		local bar = build_progress_bar(elapsed / BOOT_DELAY, 20)
-		write_line("PROGRESS   : " .. bar .. " " .. cursor, left, y, COLOR_TEXT)
+		write_line("BOOTING IN : " .. bar .. " " .. cursor, left, y, COLOR_TEXT)
 	else
 		write_line("STATUS     : INSERT CARTRIDGE" .. " " .. cursor, left, y, COLOR_WARN)
 	end
