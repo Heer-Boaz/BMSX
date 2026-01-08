@@ -461,6 +461,31 @@ void VMRuntime::boot(Program* program, ProgramMetadata* metadata, int entryProto
 void VMRuntime::syncSystemRegisters() {
 	const bool cartPresent = EngineCore::instance().assets().vmProgram != nullptr;
 	m_memory[IO_SYS_CART_PRESENT] = valueNumber(cartPresent ? 1.0 : 0.0);
+	if (!cartPresent) {
+		m_cartBootPrepared = false;
+		setCartBootReadyFlag(false);
+	}
+}
+
+void VMRuntime::setCartBootReadyFlag(bool value) {
+	m_memory[IO_SYS_CART_BOOTREADY] = valueNumber(value ? 1.0 : 0.0);
+}
+
+void VMRuntime::prepareCartBootIfNeeded() {
+	if (!isEngineProgramActive()) {
+		return;
+	}
+	const RuntimeAssets& assets = EngineCore::instance().assets();
+	if (!assets.vmProgram) {
+		return;
+	}
+	if (m_cartBootPrepared) {
+		return;
+	}
+	setCartBootReadyFlag(false);
+	EngineCore::instance().prepareLoadedRomAssets();
+	m_cartBootPrepared = true;
+	setCartBootReadyFlag(true);
 }
 
 bool VMRuntime::pollSystemBootRequest() {
@@ -487,6 +512,7 @@ void VMRuntime::tickUpdate() {
 	}
 
 	syncSystemRegisters();
+	prepareCartBootIfNeeded();
 	if (pollSystemBootRequest()) {
 		return;
 	}
@@ -576,6 +602,11 @@ void VMRuntime::processIOCommands() {
 void VMRuntime::requestProgramReload() {
 	// Mark for reload - actual reload happens in the appropriate phase
 	m_vmInitialized = false;
+}
+
+void VMRuntime::resetCartBootState() {
+	m_cartBootPrepared = false;
+	setCartBootReadyFlag(false);
 }
 
 VMState VMRuntime::captureCurrentState() const {
@@ -2292,10 +2323,6 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 	});
 
 	const RuntimeAssets& assets = EngineCore::instance().assets();
-	const RuntimeAssets* assetView = &assets;
-	if (isEngineProgramActive() && assets.fallback) {
-		assetView = assets.fallback;
-	}
 	auto* assetsTable = m_cpu.createTable();
 	auto formatAssetKeyNumber = [](double value) -> std::string {
 		if (value == 0.0) {
@@ -2359,17 +2386,17 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 		);
 	};
 	std::unordered_set<AssetId> imgIds;
-	if (assetView->fallback) {
-		for (const auto& [id, _] : assetView->fallback->img) {
+	if (assets.fallback) {
+		for (const auto& [id, _] : assets.fallback->img) {
 			imgIds.insert(id);
 		}
 	}
-	for (const auto& [id, _] : assetView->img) {
+	for (const auto& [id, _] : assets.img) {
 		imgIds.insert(id);
 	}
 	auto* imgTable = m_cpu.createTable(0, static_cast<int>(imgIds.size()));
 	for (const auto& id : imgIds) {
-		const ImgAsset* imgAsset = assetView->getImg(id);
+		const ImgAsset* imgAsset = assets.getImg(id);
 		if (!imgAsset) continue;
 		auto* imgEntry = m_cpu.createTable(0, 2);
 		imgEntry->set(key("imgmeta"), valueTable(buildImgMetaTable(m_cpu, imgAsset->meta, key)));
@@ -2378,17 +2405,17 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 	assetsTable->set(key("img"), makeAssetMapNativeObject(imgTable));
 
 	std::unordered_set<AssetId> dataIds;
-	if (assetView->fallback) {
-		for (const auto& [id, _] : assetView->fallback->data) {
+	if (assets.fallback) {
+		for (const auto& [id, _] : assets.fallback->data) {
 			dataIds.insert(id);
 		}
 	}
-	for (const auto& [id, _] : assetView->data) {
+	for (const auto& [id, _] : assets.data) {
 		dataIds.insert(id);
 	}
 	auto* dataTable = m_cpu.createTable(0, static_cast<int>(dataIds.size()));
 	for (const auto& id : dataIds) {
-		const BinValue* value = assetView->getData(id);
+		const BinValue* value = assets.getData(id);
 		if (!value) continue;
 		dataTable->set(str(id), binValueToVmValue(m_cpu, *value));
 	}
@@ -2396,24 +2423,24 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 	auto* audioTable = m_cpu.createTable();
 	assetsTable->set(key("audio"), makeAssetMapNativeObject(audioTable));
 	std::unordered_set<AssetId> audioEventIds;
-	if (assetView->fallback) {
-		for (const auto& [id, _] : assetView->fallback->audioevents) {
+	if (assets.fallback) {
+		for (const auto& [id, _] : assets.fallback->audioevents) {
 			audioEventIds.insert(id);
 		}
 	}
-	for (const auto& [id, _] : assetView->audioevents) {
+	for (const auto& [id, _] : assets.audioevents) {
 		audioEventIds.insert(id);
 	}
 	auto* audioEventsTable = m_cpu.createTable(0, static_cast<int>(audioEventIds.size()));
 	for (const auto& id : audioEventIds) {
-		const BinValue* value = assetView->getAudioEvent(id);
+		const BinValue* value = assets.getAudioEvent(id);
 		if (!value) continue;
 		audioEventsTable->set(str(id), binValueToVmValue(m_cpu, *value));
 	}
 	assetsTable->set(key("audioevents"), makeAssetMapNativeObject(audioEventsTable));
 	auto* modelTable = m_cpu.createTable();
 	assetsTable->set(key("model"), makeAssetMapNativeObject(modelTable));
-	assetsTable->set(key("project_root_path"), str(assetView->projectRootPath));
+	assetsTable->set(key("project_root_path"), str(assets.projectRootPath));
 	auto assetsNative = m_cpu.createNativeObject(
 		assetsTable,
 		[this, assetsTable, formatAssetKeyNumber](const Value& keyValue) -> Value {

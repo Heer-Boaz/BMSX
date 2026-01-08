@@ -113,6 +113,7 @@ public:
 	bool resetLoadedRom();
 	bool romLoaded() const { return m_rom_loaded; }
 	bool engineAssetsLoaded() const { return m_engine_assets_loaded; }
+	void prepareLoadedRomAssets();
 
 	// Boot engine without cart - uses VM program from engine assets (bootrom.lua)
 	bool bootWithoutCart();
@@ -137,9 +138,10 @@ public:
 
 private:
 	void renderTestPattern();  // Visual test when no ROM loaded
-	void uploadTexturesToBackend();  // Upload asset textures to GPU backend
+	void uploadTexturesToBackend(bool includeCartAssets);  // Upload asset textures to GPU backend
 	void bootVMFromProgram();  // Boot VM with pre-compiled program from ROM
 	void refreshAudioAssets();
+	void refreshAudioAssets(const RuntimeAssets& assets);
 
 	Platform* m_platform = nullptr;
 	std::unique_ptr<GameView> m_view;

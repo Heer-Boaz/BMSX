@@ -270,7 +270,7 @@ void EngineCore::refreshRenderAssets() {
 	if (m_texture_manager) {
 		m_texture_manager->setBackend(m_view ? m_view->backend() : nullptr);
 	}
-	uploadTexturesToBackend();
+	uploadTexturesToBackend(true);
 }
 
 	void EngineCore::log(LogLevel level, const char* fmt, ...) {
@@ -391,8 +391,8 @@ bool EngineCore::bootWithoutCart() {
 	m_view->configureRenderTargets(&viewportSize, &viewportSize, &offscreenSize);
 
 	// Upload textures to backend
-	uploadTexturesToBackend();
-	refreshAudioAssets();
+	uploadTexturesToBackend(false);
+	refreshAudioAssets(m_engine_assets);
 
 	// Boot the VM with the engine's system program
 		if (m_engine_assets.vmProgram && m_engine_assets.vmProgram->program) {
@@ -494,17 +494,43 @@ bool EngineCore::loadRom(const u8* data, size_t size) {
 	};
 	m_view->configureRenderTargets(&viewportSize, &viewportSize, &offscreenSize);
 
-	// Upload textures to backend
-	uploadTexturesToBackend();
-	refreshAudioAssets();
+	const bool hasEngineProgram = m_engine_assets_loaded
+		&& m_engine_assets.vmProgram
+		&& m_engine_assets.vmProgram->program;
+	if (hasEngineProgram) {
+		uploadTexturesToBackend(false);
+		refreshAudioAssets(m_engine_assets);
+		if (!VMRuntime::hasInstance()) {
+			VMRuntimeOptions options;
+			options.playerIndex = 1;
+			options.viewport.x = m_assets.manifest.viewportWidth;
+			options.viewport.y = m_assets.manifest.viewportHeight;
+			options.canonicalization = m_engine_assets.manifest.canonicalization;
+			VMRuntime::createInstance(options);
+		}
+		VMRuntime& runtime = VMRuntime::instance();
+		runtime.setProgramSource(VMRuntime::VmProgramSource::Engine);
+		runtime.setCanonicalization(m_engine_assets.manifest.canonicalization);
+		runtime.boot(*m_engine_assets.vmProgram, m_engine_assets.vmProgramSymbols.get());
+		runtime.resetCartBootState();
+	} else {
+		// Upload textures to backend
+		uploadTexturesToBackend(true);
+		refreshAudioAssets();
 
-	// Boot the VM if we have a pre-compiled program
-	if (m_assets.hasVmProgram()) {
-		bootVMFromProgram();
+		// Boot the VM if we have a pre-compiled program
+		if (m_assets.hasVmProgram()) {
+			bootVMFromProgram();
+		}
 	}
 
 	m_rom_loaded = true;
 	return true;
+}
+
+void EngineCore::prepareLoadedRomAssets() {
+	uploadTexturesToBackend(true);
+	refreshAudioAssets();
 }
 
 bool EngineCore::resetLoadedRom() {
@@ -540,8 +566,12 @@ bool EngineCore::resetLoadedRom() {
 	return false;
 }
 
-void EngineCore::uploadTexturesToBackend() {
+void EngineCore::uploadTexturesToBackend(bool includeCartAssets) {
 	if (!m_view || !m_view->backend() || !m_texture_manager) {
+		return;
+	}
+
+	if (!includeCartAssets && !m_engine_assets_loaded) {
 		return;
 	}
 
@@ -574,7 +604,8 @@ void EngineCore::uploadTexturesToBackend() {
 
 	auto uploadAtlasTexture = [&](i32 atlasId,
 								  const std::string& atlasName,
-								  ImgAsset& imgAsset) {
+								  ImgAsset& imgAsset,
+								  bool replaceExisting) {
 		if (imgAsset.textureHandle) {
 			uploadedAtlasIds.insert(atlasId);
 			uploadedImgIds.insert(atlasName);
@@ -586,6 +617,18 @@ void EngineCore::uploadTexturesToBackend() {
 		const TextureKey key = m_texture_manager->makeKey(atlasName, params);
 		TextureHandle existingHandle = m_texture_manager->getTexture(key);
 		if (existingHandle) {
+			if (replaceExisting && !imgAsset.pixels.empty()
+				&& imgAsset.meta.width > 0 && imgAsset.meta.height > 0) {
+				TextureHandle handle = m_texture_manager->replaceTexture(
+					key, imgAsset.pixels.data(),
+					imgAsset.meta.width, imgAsset.meta.height, params);
+				imgAsset.textureHandle = reinterpret_cast<uintptr_t>(handle);
+				imgAsset.uploaded = true;
+				uploadedAtlasIds.insert(atlasId);
+				uploadedImgIds.insert(atlasName);
+				releasePixels(imgAsset);
+				return;
+			}
 			imgAsset.textureHandle = reinterpret_cast<uintptr_t>(existingHandle);
 			imgAsset.uploaded = true;
 			uploadedAtlasIds.insert(atlasId);
@@ -614,23 +657,23 @@ void EngineCore::uploadTexturesToBackend() {
 		}
 	};
 
-	auto uploadAtlasTextures = [&](RuntimeAssets& assets) {
+	auto uploadAtlasTextures = [&](RuntimeAssets& assets, bool replaceExisting) {
 		for (auto& [atlasId, imgAsset] : assets.atlasTextures) {
-			uploadAtlasTexture(atlasId, generateAtlasName(atlasId), imgAsset);
+			uploadAtlasTexture(atlasId, generateAtlasName(atlasId), imgAsset, replaceExisting);
 		}
 	};
 
-	auto uploadAtlasTexturesFromImages = [&](RuntimeAssets& assets) {
+	auto uploadAtlasTexturesFromImages = [&](RuntimeAssets& assets, bool replaceExisting) {
 		for (auto& [id, imgAsset] : assets.img) {
 			i32 atlasId = 0;
 			if (!parseAtlasIdFromName(id, atlasId)) {
 				continue;
 			}
-			uploadAtlasTexture(atlasId, id, imgAsset);
+			uploadAtlasTexture(atlasId, id, imgAsset, replaceExisting);
 		}
 	};
 
-	auto uploadImages = [&](RuntimeAssets& assets) {
+	auto uploadImages = [&](RuntimeAssets& assets, bool replaceExisting) {
 		for (auto& [id, imgAsset] : assets.img) {
 			if (imgAsset.textureHandle) {
 				uploadedImgIds.insert(id);
@@ -643,6 +686,17 @@ void EngineCore::uploadTexturesToBackend() {
 			const TextureKey key = m_texture_manager->makeKey(keyId, params);
 			TextureHandle existingHandle = m_texture_manager->getTexture(key);
 			if (existingHandle) {
+				if (replaceExisting && !imgAsset.meta.atlassed && !imgAsset.pixels.empty() &&
+					imgAsset.meta.width > 0 && imgAsset.meta.height > 0) {
+					TextureHandle handle = m_texture_manager->replaceTexture(
+						key, imgAsset.pixels.data(),
+						imgAsset.meta.width, imgAsset.meta.height, params);
+					imgAsset.textureHandle = reinterpret_cast<uintptr_t>(handle);
+					imgAsset.uploaded = true;
+					uploadedImgIds.insert(id);
+					releasePixels(imgAsset);
+					continue;
+				}
 				imgAsset.textureHandle = reinterpret_cast<uintptr_t>(existingHandle);
 				imgAsset.uploaded = true;
 				uploadedImgIds.insert(id);
@@ -669,24 +723,29 @@ void EngineCore::uploadTexturesToBackend() {
 		}
 	};
 
-	uploadAtlasTextures(m_assets);
-	uploadAtlasTexturesFromImages(m_assets);
+	if (includeCartAssets) {
+		uploadAtlasTextures(m_assets, true);
+		uploadAtlasTexturesFromImages(m_assets, true);
+	}
 	if (m_engine_assets_loaded) {
-		uploadAtlasTextures(m_engine_assets);
-		uploadAtlasTexturesFromImages(m_engine_assets);
+		uploadAtlasTextures(m_engine_assets, false);
+		uploadAtlasTexturesFromImages(m_engine_assets, false);
 	}
 
 	// Upload individual image textures (for non-atlassed images)
-	uploadImages(m_assets);
+	if (includeCartAssets) {
+		uploadImages(m_assets, true);
+	}
 	if (m_engine_assets_loaded) {
-		uploadImages(m_engine_assets);
+		uploadImages(m_engine_assets, false);
 	}
 
 	m_view->initializeDefaultTextures();
 	const std::string primaryAtlasName = generateAtlasName(0);
-	if (m_assets.hasImg(primaryAtlasName)) {
+	const RuntimeAssets& primaryAssets = includeCartAssets ? m_assets : m_engine_assets;
+	if (primaryAssets.hasImg(primaryAtlasName)) {
 		m_view->setPrimaryAtlas(0);
-	} else if (m_assets.hasAnyImg()) {
+	} else if (primaryAssets.hasAnyImg()) {
 		throw BMSX_RUNTIME_ERROR("[EngineCore] Primary atlas '" + primaryAtlasName + "' missing.");
 	}
 
@@ -807,8 +866,12 @@ void EngineCore::bootVMFromProgram() {
 }
 
 void EngineCore::refreshAudioAssets() {
+	refreshAudioAssets(m_assets);
+}
+
+void EngineCore::refreshAudioAssets(const RuntimeAssets& assets) {
 	const f32 volume = m_sound_master->masterVolume();
-	m_sound_master->init(m_assets, volume);
+	m_sound_master->init(assets, volume);
 }
 
 } // namespace bmsx

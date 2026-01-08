@@ -155,6 +155,7 @@ public:
 	 * Request a program reload.
 	 */
 	void requestProgramReload();
+	void resetCartBootState();
 
 	/**
 	 * Capture current VM state for save.
@@ -252,6 +253,8 @@ private:
 	std::string formatVmString(const std::string& templateStr, const std::vector<Value>& args, size_t argStart) const;
 	void logVmCallStack() const;
 	void syncSystemRegisters();
+	void setCartBootReadyFlag(bool value);
+	void prepareCartBootIfNeeded();
 	bool pollSystemBootRequest();
 
 	static VMRuntime* s_instance;
@@ -278,6 +281,7 @@ private:
 	bool m_tickEnabled = true;
 	bool m_editorActive = false;
 	bool m_terminalActive = false;
+	bool m_cartBootPrepared = false;
 
 	// Frame state
 	VMFrameState m_frameState;
