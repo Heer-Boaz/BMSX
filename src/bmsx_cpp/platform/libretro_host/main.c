@@ -1760,7 +1760,9 @@ static void poll_input_devices(void) {
 	static uint64_t combo_start_ms = 0;
 	const bool combo_down =
 		(g_pad_state_port0 & (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_START)) &&
-		(g_pad_state_port0 & (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_SELECT));
+		(g_pad_state_port0 & (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_SELECT)) &&
+		(g_pad_state_port0 & (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_L)) &&
+		(g_pad_state_port0 & (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_R));
 	if (combo_down) {
 		uint64_t now = monotonic_ms();
 		if (combo_start_ms == 0) {
