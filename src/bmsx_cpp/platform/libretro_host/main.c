@@ -91,11 +91,6 @@ static FbDev g_fb;
 static InputDev g_input_devs[4];
 static size_t g_input_dev_count = 0;
 static uint16_t g_pad_state_port0 = 0;
-static uint8_t* g_last_frame = NULL;
-static size_t g_last_frame_size = 0;
-static unsigned g_last_frame_w = 0;
-static unsigned g_last_frame_h = 0;
-static size_t g_last_frame_pitch = 0;
 
 static void on_signal(int signum) {
 	(void)signum;
@@ -103,25 +98,15 @@ static void on_signal(int signum) {
 }
 
 static void die(const char* fmt, ...) {
-	FILE* f = fopen("/var/log/bmsx_host.log", "a");
 	va_list ap;
-	va_list ap_copy;
 	va_start(ap, fmt);
-	va_copy(ap_copy, ap);
 	vfprintf(stderr, fmt, ap);
-	if (f) {
-		vfprintf(f, fmt, ap_copy);
-		fputc('\n', f);
-		fclose(f);
-	}
-	va_end(ap_copy);
 	va_end(ap);
 	fputc('\n', stderr);
 	exit(1);
 }
 
 static void host_log(enum retro_log_level level, const char* fmt, ...) {
-	FILE* f = fopen("/var/log/bmsx_host.log", "a");
 	const char* prefix = "INFO";
 	switch (level) {
 		case RETRO_LOG_DEBUG: prefix = "DEBUG"; break;
@@ -131,20 +116,9 @@ static void host_log(enum retro_log_level level, const char* fmt, ...) {
 		default: break;
 	}
 	fprintf(stderr, "[libretro-host][%s] ", prefix);
-	if (f) {
-		fprintf(f, "[libretro-host][%s] ", prefix);
-	}
 	va_list ap;
-	va_list ap_copy;
 	va_start(ap, fmt);
-	va_copy(ap_copy, ap);
 	vfprintf(stderr, fmt, ap);
-	if (f) {
-		vfprintf(f, fmt, ap_copy);
-		fputc('\n', f);
-		fclose(f);
-	}
-	va_end(ap_copy);
 	va_end(ap);
 }
 
@@ -247,23 +221,17 @@ static bool environ_cb(unsigned cmd, void* data) {
 	}
 }
 
-static void fb_draw_test_pattern(FbDev* fb);
-
-static bool fb_init_try(FbDev* fb, const char* path) {
+static void fb_init(FbDev* fb, const char* path) {
 	memset(fb, 0, sizeof(*fb));
 	fb->fd = open(path, O_RDWR);
 	if (fb->fd < 0) {
-		return false;
+		die("Failed to open %s: %s", path, strerror(errno));
 	}
 	if (ioctl(fb->fd, FBIOGET_FSCREENINFO, &fb->fix) != 0) {
-		close(fb->fd);
-		fb->fd = -1;
-		return false;
+		die("FBIOGET_FSCREENINFO failed: %s", strerror(errno));
 	}
 	if (ioctl(fb->fd, FBIOGET_VSCREENINFO, &fb->var) != 0) {
-		close(fb->fd);
-		fb->fd = -1;
-		return false;
+		die("FBIOGET_VSCREENINFO failed: %s", strerror(errno));
 	}
 	fb->width = (int)fb->var.xres;
 	fb->height = (int)fb->var.yres;
@@ -272,34 +240,9 @@ static bool fb_init_try(FbDev* fb, const char* path) {
 	fb->map_size = (size_t)fb->fix.smem_len;
 	fb->map = (uint8_t*)mmap(NULL, fb->map_size, PROT_READ | PROT_WRITE, MAP_SHARED, fb->fd, 0);
 	if (fb->map == MAP_FAILED) {
-		close(fb->fd);
-		fb->fd = -1;
-		return false;
+		die("mmap framebuffer failed: %s", strerror(errno));
 	}
 	fprintf(stderr, "[libretro-host] fbdev %dx%d bpp=%d stride=%d\n", fb->width, fb->height, fb->bpp, fb->stride);
-	{
-		FILE* f = fopen("/var/log/bmsx_host.log", "a");
-		if (f) {
-			fprintf(f, "[libretro-host] fbdev %dx%d bpp=%d stride=%d\n", fb->width, fb->height, fb->bpp, fb->stride);
-			fclose(f);
-		}
-	}
-
-	fb_draw_test_pattern(fb);
-	{
-		FILE* f = fopen("/var/log/bmsx_host.log", "a");
-		if (f) {
-			fprintf(f, "[libretro-host] fbdev test pattern drawn\n");
-			fclose(f);
-		}
-	}
-	return true;
-}
-
-static void fb_init(FbDev* fb, const char* path) {
-	if (!fb_init_try(fb, path)) {
-		die("Failed to open %s: %s", path, strerror(errno));
-	}
 }
 
 static void fb_shutdown(FbDev* fb) {
@@ -310,40 +253,6 @@ static void fb_shutdown(FbDev* fb) {
 		close(fb->fd);
 	}
 	memset(fb, 0, sizeof(*fb));
-}
-
-static void fb_init_auto(FbDev* fb) {
-	const char* env_fb = getenv("BMSX_FBDEV");
-	if (env_fb && env_fb[0] != '\0') {
-		if (fb_init_try(fb, env_fb)) {
-			FILE* f = fopen("/var/log/bmsx_host.log", "a");
-			if (f) {
-				fprintf(f, "[libretro-host] fbdev selected via BMSX_FBDEV=%s\n", env_fb);
-				fclose(f);
-			}
-			return;
-		}
-	}
-
-	const char* candidates[] = {
-		"/dev/fb0",
-		"/dev/fb1",
-		"/dev/graphics/fb0",
-		"/dev/graphics/fb1",
-	};
-
-	for (size_t i = 0; i < sizeof(candidates) / sizeof(candidates[0]); ++i) {
-		if (fb_init_try(fb, candidates[i])) {
-			FILE* f = fopen("/var/log/bmsx_host.log", "a");
-			if (f) {
-				fprintf(f, "[libretro-host] fbdev selected %s\n", candidates[i]);
-				fclose(f);
-			}
-			return;
-		}
-	}
-
-	die("Failed to open any framebuffer device");
 }
 
 static inline uint16_t rgb888_to_rgb565(uint8_t r, uint8_t g, uint8_t b) {
@@ -360,148 +269,35 @@ static inline uint32_t rgb565_to_xrgb8888(uint16_t p) {
 	return (uint32_t)((r << 16) | (g << 8) | b);
 }
 
-static void fb_draw_test_pattern(FbDev* fb) {
-	if (!fb || !fb->map || fb->map == MAP_FAILED || fb->width <= 0 || fb->height <= 0) {
-		return;
-	}
-
-	const uint32_t colors[] = {
-		0x00ff0000, 0x0000ff00, 0x000000ff, 0x00ffff00,
-		0x00ff00ff, 0x0000ffff, 0x00ffffff, 0x00000000,
-	};
-	const int bars = (int)(sizeof(colors) / sizeof(colors[0]));
-	int bar_w = fb->width / bars;
-	if (bar_w < 1) bar_w = 1;
-
-	for (int y = 0; y < fb->height; ++y) {
-		uint8_t* row = fb->map + (size_t)y * (size_t)fb->stride;
-		for (int x = 0; x < fb->width; ++x) {
-			int idx = x / bar_w;
-			if (idx >= bars) idx = bars - 1;
-			uint32_t c = colors[idx];
-			if (fb->bpp == 32) {
-				((uint32_t*)row)[x] = c;
-			} else if (fb->bpp == 16) {
-				uint8_t r = (uint8_t)((c >> 16) & 0xFF);
-				uint8_t g = (uint8_t)((c >> 8) & 0xFF);
-				uint8_t b = (uint8_t)(c & 0xFF);
-				((uint16_t*)row)[x] = rgb888_to_rgb565(r, g, b);
-			} else {
-				return;
-			}
-		}
-	}
-}
-
 static void video_cb(const void* data, unsigned width, unsigned height, size_t pitch) {
-	static bool logged_first = false;
-	static bool logged_null = false;
-	static bool logged_zero = false;
-
-	if (width == 0 || height == 0) {
-		if (!logged_zero) {
-			FILE* f = fopen("/var/log/bmsx_host.log", "a");
-			if (f) {
-				fprintf(f, "[libretro-host] video_cb: zero frame (w=%u h=%u pitch=%zu data=%p)\n",
-					width, height, pitch, data);
-				fclose(f);
-			}
-			logged_zero = true;
-		}
+	if (!data) {
 		return;
-	}
-
-	const uint8_t* frame_data = (const uint8_t*)data;
-	unsigned frame_w = width;
-	unsigned frame_h = height;
-	size_t frame_pitch = pitch;
-	if (!frame_data) {
-		if (!g_last_frame || g_last_frame_w == 0 || g_last_frame_h == 0) {
-			if (!logged_null) {
-				FILE* f = fopen("/var/log/bmsx_host.log", "a");
-				if (f) {
-					fprintf(f, "[libretro-host] video_cb: null frame with no cache (w=%u h=%u pitch=%zu)\n", width, height, pitch);
-					fclose(f);
-				}
-				logged_null = true;
-			}
-			return;
-		}
-		frame_data = g_last_frame;
-		frame_w = g_last_frame_w;
-		frame_h = g_last_frame_h;
-		frame_pitch = g_last_frame_pitch;
-	} else {
-		size_t needed = pitch * height;
-		if (needed > g_last_frame_size) {
-			uint8_t* next = (uint8_t*)realloc(g_last_frame, needed);
-			if (!next) {
-				return;
-			}
-			g_last_frame = next;
-			g_last_frame_size = needed;
-		}
-		for (unsigned y = 0; y < height; ++y) {
-			memcpy(g_last_frame + y * pitch, frame_data + y * pitch, pitch);
-		}
-		g_last_frame_w = width;
-		g_last_frame_h = height;
-		g_last_frame_pitch = pitch;
-	}
-
-	if (!logged_first) {
-		FILE* f = fopen("/var/log/bmsx_host.log", "a");
-		if (f) {
-			fprintf(f, "[libretro-host] video_cb: frame=%ux%u pitch=%zu fmt=%d fb=%dx%d bpp=%d\n",
-				frame_w, frame_h, frame_pitch, (int)g_core_pixel_format, g_fb.width, g_fb.height, g_fb.bpp);
-			fclose(f);
-		}
-		logged_first = true;
 	}
 
 	const int fb_w = g_fb.width;
 	const int fb_h = g_fb.height;
 
-	int scale = 1;
-	if (frame_w > 0 && frame_h > 0) {
-		int scale_x = fb_w / (int)frame_w;
-		int scale_y = fb_h / (int)frame_h;
-		scale = scale_x < scale_y ? scale_x : scale_y;
-		if (scale < 1) scale = 1;
-	}
-
-	const unsigned dst_w = frame_w * (unsigned)scale;
-	const unsigned dst_h = frame_h * (unsigned)scale;
-
-	int dst_x = (fb_w - (int)dst_w) / 2;
-	int dst_y = (fb_h - (int)dst_h) / 2;
+	int dst_x = (fb_w - (int)width) / 2;
+	int dst_y = (fb_h - (int)height) / 2;
 	if (dst_x < 0) dst_x = 0;
 	if (dst_y < 0) dst_y = 0;
 
-	unsigned copy_w = dst_w;
-	unsigned copy_h = dst_h;
+	unsigned copy_w = width;
+	unsigned copy_h = height;
 	if ((int)copy_w > fb_w - dst_x) copy_w = (unsigned)(fb_w - dst_x);
 	if ((int)copy_h > fb_h - dst_y) copy_h = (unsigned)(fb_h - dst_y);
 
 	if (g_fb.bpp == 16) {
-		const bool src565 = (g_core_pixel_format == RETRO_PIXEL_FORMAT_RGB565);
 		for (unsigned y = 0; y < copy_h; ++y) {
-			const unsigned src_y = y / (unsigned)scale;
 			uint8_t* dst_line = g_fb.map + (size_t)(dst_y + (int)y) * (size_t)g_fb.stride + (size_t)dst_x * 2u;
 			uint16_t* dst = (uint16_t*)dst_line;
-			const uint8_t* src_line = frame_data + src_y * frame_pitch;
-			if (scale == 1 && src565) {
+			const uint8_t* src_line = (const uint8_t*)data + y * pitch;
+			if (g_core_pixel_format == RETRO_PIXEL_FORMAT_RGB565) {
 				memcpy(dst, src_line, copy_w * 2u);
-				continue;
-			}
-			for (unsigned x = 0; x < copy_w; ++x) {
-				const unsigned src_x = x / (unsigned)scale;
-				if (src565) {
-					const uint16_t* src = (const uint16_t*)src_line;
-					dst[x] = src[src_x];
-				} else {
-					const uint32_t* src = (const uint32_t*)src_line;
-					uint32_t p = src[src_x];
+			} else {
+				const uint32_t* src = (const uint32_t*)src_line;
+				for (unsigned x = 0; x < copy_w; ++x) {
+					uint32_t p = src[x];
 					uint8_t r = (uint8_t)((p >> 16) & 0xFF);
 					uint8_t g = (uint8_t)((p >> 8) & 0xFF);
 					uint8_t b = (uint8_t)(p & 0xFF);
@@ -513,24 +309,16 @@ static void video_cb(const void* data, unsigned width, unsigned height, size_t p
 	}
 
 	if (g_fb.bpp == 32) {
-		const bool src8888 = (g_core_pixel_format == RETRO_PIXEL_FORMAT_XRGB8888);
 		for (unsigned y = 0; y < copy_h; ++y) {
-			const unsigned src_y = y / (unsigned)scale;
 			uint8_t* dst_line = g_fb.map + (size_t)(dst_y + (int)y) * (size_t)g_fb.stride + (size_t)dst_x * 4u;
 			uint32_t* dst = (uint32_t*)dst_line;
-			const uint8_t* src_line = frame_data + src_y * frame_pitch;
-			if (scale == 1 && src8888) {
+			const uint8_t* src_line = (const uint8_t*)data + y * pitch;
+			if (g_core_pixel_format == RETRO_PIXEL_FORMAT_XRGB8888) {
 				memcpy(dst, src_line, copy_w * 4u);
-				continue;
-			}
-			for (unsigned x = 0; x < copy_w; ++x) {
-				const unsigned src_x = x / (unsigned)scale;
-				if (src8888) {
-					const uint32_t* src = (const uint32_t*)src_line;
-					dst[x] = src[src_x];
-				} else {
-					const uint16_t* src = (const uint16_t*)src_line;
-					dst[x] = rgb565_to_xrgb8888(src[src_x]);
+			} else {
+				const uint16_t* src = (const uint16_t*)src_line;
+				for (unsigned x = 0; x < copy_w; ++x) {
+					dst[x] = rgb565_to_xrgb8888(src[x]);
 				}
 			}
 		}
