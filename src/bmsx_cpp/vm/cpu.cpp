@@ -1,41 +1,15 @@
 #include "cpu.h"
+#include "number_format.h"
 #include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
 #include <limits>
-#include <sstream>
 #include <stdexcept>
 
 namespace bmsx {
 
 namespace {
-
-size_t utf8_next_index(const std::string& text, size_t index) {
-	unsigned char c0 = static_cast<unsigned char>(text[index]);
-	if (c0 < 0x80) {
-		return index + 1;
-	}
-	if ((c0 & 0xE0) == 0xC0) {
-		return index + 2;
-	}
-	if ((c0 & 0xF0) == 0xE0) {
-		return index + 3;
-	}
-	return index + 4;
-}
-
-int utf8_codepoint_count(const std::string& text) {
-	int count = 0;
-	size_t index = 0;
-	while (index < text.size()) {
-		index = utf8_next_index(text, index);
-		count += 1;
-	}
-	return count;
-}
-
-} // namespace
 
 static inline uint32_t readInstructionWord(const std::vector<uint8_t>& code, int pc) {
 	size_t offset = static_cast<size_t>(pc) * INSTRUCTION_BYTES;
@@ -43,6 +17,8 @@ static inline uint32_t readInstructionWord(const std::vector<uint8_t>& code, int
 		| (static_cast<uint32_t>(code[offset + 1]) << 8)
 		| static_cast<uint32_t>(code[offset + 2]);
 }
+
+} // namespace
 
 std::string valueToString(const Value& v, const StringPool& stringPool) {
 	if (isNil(v)) return "nil";
@@ -64,9 +40,7 @@ std::string valueToString(const Value& v, const StringPool& stringPool) {
 	if (!std::isfinite(num)) {
 		return std::isnan(num) ? "nan" : (num < 0 ? "-inf" : "inf");
 	}
-	std::ostringstream oss;
-	oss << num;
-	return oss.str();
+	return formatNumber(num);
 }
 
 const char* valueTypeName(Value v) {
@@ -754,8 +728,7 @@ void VMCPU::executeInstruction(CallFrame& frame, OpCode op, uint8_t aLow, uint8_
 		case OpCode::LEN: {
 			const Value& val = frame.registers[b];
 			if (valueIsString(val)) {
-				const std::string& text = m_stringPool.toString(asStringId(val));
-				setRegister(frame, a, valueNumber(static_cast<double>(utf8_codepoint_count(text))));
+				setRegister(frame, a, valueNumber(static_cast<double>(m_stringPool.codepointCount(asStringId(val)))));
 				return;
 			}
 			if (valueIsTable(val)) {

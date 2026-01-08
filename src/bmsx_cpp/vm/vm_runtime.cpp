@@ -2,6 +2,7 @@
 #include "vm_api.h"
 #include "vm_io.h"
 #include "program_loader.h"
+#include "number_format.h"
 #include "../core/engine.h"
 #include "../input/input.h"
 #include "../render/texturemanager.h"
@@ -1170,9 +1171,7 @@ std::string VMRuntime::vmToString(const Value& value) const {
 		if (!std::isfinite(n)) {
 			return "nan";
 		}
-		std::ostringstream oss;
-		oss << n;
-		return oss.str();
+		return formatNumber(n);
 	}
 	if (valueIsString(value)) {
 		return m_cpu.stringPool().toString(asStringId(value));

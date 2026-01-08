@@ -39,6 +39,7 @@ using StringId = uint32_t;
 struct InternedString {
 	StringId id = 0;
 	std::string value;
+	int codepointCount = 0;
 };
 
 struct StringKeyHash {
@@ -62,20 +63,17 @@ struct StringKeyEq {
 class StringPool {
 public:
 	StringId intern(std::string_view value) {
-#if defined(BMSX_SNESMINI_LEGACY)
-		auto it = m_stringMap.find(std::string(value));
-#else
 		auto it = m_stringMap.find(value);
-#endif
 		if (it != m_stringMap.end()) {
 			return it->second;
 		}
 		auto entry = std::make_unique<InternedString>();
 		entry->id = static_cast<StringId>(m_entries.size());
 		entry->value.assign(value.data(), value.size());
+		entry->codepointCount = countCodepoints(entry->value);
 		StringId id = entry->id;
 		m_entries.push_back(std::move(entry));
-		m_stringMap.emplace(m_entries.back()->value, id);
+		m_stringMap.emplace(std::string_view(m_entries.back()->value), id);
 		return id;
 	}
 
@@ -83,8 +81,36 @@ public:
 		return m_entries.at(static_cast<size_t>(id))->value;
 	}
 
+	int codepointCount(StringId id) const {
+		return m_entries.at(static_cast<size_t>(id))->codepointCount;
+	}
+
 private:
-	std::unordered_map<std::string, StringId, StringKeyHash, StringKeyEq> m_stringMap;
+	static size_t utf8NextIndex(std::string_view text, size_t index) {
+		unsigned char c0 = static_cast<unsigned char>(text[index]);
+		if (c0 < 0x80) {
+			return index + 1;
+		}
+		if ((c0 & 0xE0) == 0xC0) {
+			return index + 2;
+		}
+		if ((c0 & 0xF0) == 0xE0) {
+			return index + 3;
+		}
+		return index + 4;
+	}
+
+	static int countCodepoints(std::string_view text) {
+		int count = 0;
+		size_t index = 0;
+		while (index < text.size()) {
+			index = utf8NextIndex(text, index);
+			count += 1;
+		}
+		return count;
+	}
+
+	std::unordered_map<std::string_view, StringId, StringKeyHash, StringKeyEq> m_stringMap;
 	std::vector<std::unique_ptr<InternedString>> m_entries;
 };
 
