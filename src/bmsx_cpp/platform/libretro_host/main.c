@@ -77,12 +77,18 @@ typedef struct InputDev {
 	int fd;
 	int32_t hat_x;
 	int32_t hat_y;
+	int32_t hat_x_min;
+	int32_t hat_x_max;
+	int32_t hat_y_min;
+	int32_t hat_y_max;
 	int32_t abs_x;
 	int32_t abs_y;
 	int32_t abs_x_min;
 	int32_t abs_x_max;
 	int32_t abs_y_min;
 	int32_t abs_y_max;
+	bool hat_x_valid;
+	bool hat_y_valid;
 	bool has_hat;
 	bool has_abs_xy;
 	uint16_t pad_state;
@@ -1088,15 +1094,31 @@ static size_t audio_batch_cb(const int16_t* data, size_t frames) {
 static uint16_t map_ev_key_to_pad(uint16_t code) {
 	switch (code) {
 		case KEY_UP:
+		case KEY_KP8:
+#ifdef BTN_TRIGGER_HAPPY3
+		case BTN_TRIGGER_HAPPY3:
+#endif
 		case BTN_DPAD_UP:
 			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_UP);
 		case KEY_DOWN:
+		case KEY_KP2:
+#ifdef BTN_TRIGGER_HAPPY4
+		case BTN_TRIGGER_HAPPY4:
+#endif
 		case BTN_DPAD_DOWN:
 			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_DOWN);
 		case KEY_LEFT:
+		case KEY_KP4:
+#ifdef BTN_TRIGGER_HAPPY1
+		case BTN_TRIGGER_HAPPY1:
+#endif
 		case BTN_DPAD_LEFT:
 			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_LEFT);
 		case KEY_RIGHT:
+		case KEY_KP6:
+#ifdef BTN_TRIGGER_HAPPY2
+		case BTN_TRIGGER_HAPPY2:
+#endif
 		case BTN_DPAD_RIGHT:
 			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_RIGHT);
 
@@ -1126,13 +1148,15 @@ static uint16_t map_ev_key_to_pad(uint16_t code) {
 	}
 }
 
-static void input_init_abs_axis(InputDev* dev, unsigned code, int32_t* min_out, int32_t* max_out, bool* has_axis) {
+static bool input_init_abs_axis(InputDev* dev, unsigned code, int32_t* min_out, int32_t* max_out, bool* has_axis) {
 	struct input_absinfo absinfo;
 	if (ioctl(dev->fd, EVIOCGABS(code), &absinfo) == 0) {
 		if (min_out) *min_out = absinfo.minimum;
 		if (max_out) *max_out = absinfo.maximum;
 		if (has_axis) *has_axis = true;
+		return true;
 	}
+	return false;
 }
 
 static void input_register_device(const char* path) {
@@ -1151,18 +1175,24 @@ static void input_register_device(const char* path) {
 	dev.fd = fd;
 	dev.hat_x = 0;
 	dev.hat_y = 0;
+	dev.hat_x_min = INT32_MAX;
+	dev.hat_x_max = INT32_MIN;
+	dev.hat_y_min = INT32_MAX;
+	dev.hat_y_max = INT32_MIN;
 	dev.abs_x = 0;
 	dev.abs_y = 0;
 	dev.abs_x_min = INT32_MIN;
 	dev.abs_x_max = INT32_MAX;
 	dev.abs_y_min = INT32_MIN;
 	dev.abs_y_max = INT32_MAX;
+	dev.hat_x_valid = false;
+	dev.hat_y_valid = false;
 	dev.has_hat = false;
 	dev.has_abs_xy = false;
 	dev.pad_state = 0;
 
-	input_init_abs_axis(&dev, ABS_HAT0X, NULL, NULL, &dev.has_hat);
-	input_init_abs_axis(&dev, ABS_HAT0Y, NULL, NULL, &dev.has_hat);
+	dev.hat_x_valid = input_init_abs_axis(&dev, ABS_HAT0X, &dev.hat_x_min, &dev.hat_x_max, &dev.has_hat);
+	dev.hat_y_valid = input_init_abs_axis(&dev, ABS_HAT0Y, &dev.hat_y_min, &dev.hat_y_max, &dev.has_hat);
 	input_init_abs_axis(&dev, ABS_X, &dev.abs_x_min, &dev.abs_x_max, &dev.has_abs_xy);
 	input_init_abs_axis(&dev, ABS_Y, &dev.abs_y_min, &dev.abs_y_max, &dev.has_abs_xy);
 
@@ -1261,10 +1291,24 @@ static void poll_input_devices(void) {
 
 		merged |= dev->pad_state;
 		if (dev->has_hat) {
-			if (dev->hat_x < 0) merged |= (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_LEFT);
-			if (dev->hat_x > 0) merged |= (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_RIGHT);
-			if (dev->hat_y < 0) merged |= (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_UP);
-			if (dev->hat_y > 0) merged |= (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_DOWN);
+			if (dev->hat_x_valid && dev->hat_x_min <= dev->hat_x_max && dev->hat_x_min != dev->hat_x_max) {
+				const int64_t mid2 = (int64_t)dev->hat_x_min + (int64_t)dev->hat_x_max;
+				const int64_t val2 = (int64_t)dev->hat_x * 2;
+				if (val2 < mid2) merged |= (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_LEFT);
+				if (val2 > mid2) merged |= (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_RIGHT);
+			} else {
+				if (dev->hat_x < 0) merged |= (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_LEFT);
+				if (dev->hat_x > 0) merged |= (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_RIGHT);
+			}
+			if (dev->hat_y_valid && dev->hat_y_min <= dev->hat_y_max && dev->hat_y_min != dev->hat_y_max) {
+				const int64_t mid2 = (int64_t)dev->hat_y_min + (int64_t)dev->hat_y_max;
+				const int64_t val2 = (int64_t)dev->hat_y * 2;
+				if (val2 < mid2) merged |= (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_UP);
+				if (val2 > mid2) merged |= (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_DOWN);
+			} else {
+				if (dev->hat_y < 0) merged |= (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_UP);
+				if (dev->hat_y > 0) merged |= (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_DOWN);
+			}
 		} else if (dev->has_abs_xy) {
 			int32_t x_min = dev->abs_x_min;
 			int32_t x_max = dev->abs_x_max;
