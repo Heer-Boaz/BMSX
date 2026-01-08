@@ -1096,12 +1096,18 @@ static void audio_write_frames(const int16_t* data, size_t frames) {
 	if (frames == 0) {
 		return;
 	}
-	size_t bytes = frames * 2u * sizeof(int16_t);
+	size_t bytes = frames * g_audio_channels * sizeof(int16_t);
 	const uint8_t* src = (const uint8_t*)data;
 	while (bytes > 0) {
 		ssize_t n = write(g_audio_fd, src, bytes);
 		if (n < 0) {
 			if (errno == EINTR) {
+				continue;
+			}
+			if (errno == EPIPE) {
+				if (ioctl(g_audio_fd, SNDRV_PCM_IOCTL_PREPARE) != 0) {
+					die("SNDRV_PCM_IOCTL_PREPARE failed: %s", strerror(errno));
+				}
 				continue;
 			}
 			die("audio write failed: %s", strerror(errno));
@@ -1122,46 +1128,103 @@ static void audio_flush_sample_buffer(void) {
 	g_audio_sample_buf_frames = 0;
 }
 
+static void hw_params_any(struct snd_pcm_hw_params* params) {
+	memset(params, 0, sizeof(*params));
+	for (size_t i = 0; i < sizeof(params->masks) / sizeof(params->masks[0]); ++i) {
+		for (size_t j = 0; j < sizeof(params->masks[i].bits) / sizeof(params->masks[i].bits[0]); ++j) {
+			params->masks[i].bits[j] = 0xFFFFFFFFu;
+		}
+	}
+	for (size_t i = 0; i < sizeof(params->intervals) / sizeof(params->intervals[0]); ++i) {
+		params->intervals[i].min = 0;
+		params->intervals[i].max = UINT_MAX;
+		params->intervals[i].openmin = 0;
+		params->intervals[i].openmax = 0;
+		params->intervals[i].integer = 0;
+		params->intervals[i].empty = 0;
+	}
+	params->rmask = 0;
+	params->cmask = 0;
+}
+
+static void hw_param_mask_set(struct snd_pcm_hw_params* params, snd_pcm_hw_param_t param, unsigned value) {
+	struct snd_mask* mask = &params->masks[param - SNDRV_PCM_HW_PARAM_FIRST_MASK];
+	for (size_t i = 0; i < sizeof(mask->bits) / sizeof(mask->bits[0]); ++i) {
+		mask->bits[i] = 0;
+	}
+	mask->bits[value / 32] |= 1u << (value % 32);
+	params->rmask |= 1u << param;
+}
+
+static void hw_param_interval_set(struct snd_pcm_hw_params* params, snd_pcm_hw_param_t param, unsigned min, unsigned max) {
+	struct snd_interval* interval = &params->intervals[param - SNDRV_PCM_HW_PARAM_FIRST_INTERVAL];
+	interval->min = min;
+	interval->max = max;
+	interval->openmin = 0;
+	interval->openmax = 0;
+	interval->integer = 1;
+	interval->empty = 0;
+	params->rmask |= 1u << param;
+}
+
+static unsigned hw_param_interval_get_min(const struct snd_pcm_hw_params* params, snd_pcm_hw_param_t param) {
+	return params->intervals[param - SNDRV_PCM_HW_PARAM_FIRST_INTERVAL].min;
+}
+
+static unsigned hw_param_interval_get_max(const struct snd_pcm_hw_params* params, snd_pcm_hw_param_t param) {
+	return params->intervals[param - SNDRV_PCM_HW_PARAM_FIRST_INTERVAL].max;
+}
+
 static void audio_init(int sample_rate) {
-	g_audio_fd = open("/dev/dsp", O_WRONLY);
+	g_audio_fd = open(g_audio_device, O_WRONLY);
 	if (g_audio_fd < 0) {
-		die("Failed to open /dev/dsp: %s", strerror(errno));
+		die("Failed to open %s: %s", g_audio_device, strerror(errno));
 	}
-	int fmt = AFMT_S16_NE;
-	if (ioctl(g_audio_fd, SNDCTL_DSP_SETFMT, &fmt) != 0) {
-		die("SNDCTL_DSP_SETFMT failed: %s", strerror(errno));
+	struct snd_pcm_hw_params hw;
+	hw_params_any(&hw);
+	hw_param_mask_set(&hw, SNDRV_PCM_HW_PARAM_ACCESS, SNDRV_PCM_ACCESS_RW_INTERLEAVED);
+	hw_param_mask_set(&hw, SNDRV_PCM_HW_PARAM_FORMAT, SNDRV_PCM_FORMAT_S16_LE);
+	hw_param_mask_set(&hw, SNDRV_PCM_HW_PARAM_SUBFORMAT, SNDRV_PCM_SUBFORMAT_STD);
+	hw_param_interval_set(&hw, SNDRV_PCM_HW_PARAM_CHANNELS, g_audio_channels, g_audio_channels);
+	hw_param_interval_set(&hw, SNDRV_PCM_HW_PARAM_RATE, (unsigned)sample_rate, (unsigned)sample_rate);
+	if (ioctl(g_audio_fd, SNDRV_PCM_IOCTL_HW_REFINE, &hw) != 0) {
+		die("SNDRV_PCM_IOCTL_HW_REFINE failed: %s", strerror(errno));
 	}
-	if (fmt != AFMT_S16_NE) {
-		die("Audio device does not support 16-bit samples");
+	if (ioctl(g_audio_fd, SNDRV_PCM_IOCTL_HW_PARAMS, &hw) != 0) {
+		die("SNDRV_PCM_IOCTL_HW_PARAMS failed: %s", strerror(errno));
 	}
-	int channels = 2;
-	if (ioctl(g_audio_fd, SNDCTL_DSP_CHANNELS, &channels) != 0) {
-		die("SNDCTL_DSP_CHANNELS failed: %s", strerror(errno));
+	unsigned rate_min = hw_param_interval_get_min(&hw, SNDRV_PCM_HW_PARAM_RATE);
+	unsigned rate_max = hw_param_interval_get_max(&hw, SNDRV_PCM_HW_PARAM_RATE);
+	if (rate_min != (unsigned)sample_rate || rate_max != (unsigned)sample_rate) {
+		die("Audio rate mismatch: requested %d got %u-%u", sample_rate, rate_min, rate_max);
 	}
-	if (channels != 2) {
-		die("Audio device does not support stereo");
+	unsigned ch_min = hw_param_interval_get_min(&hw, SNDRV_PCM_HW_PARAM_CHANNELS);
+	unsigned ch_max = hw_param_interval_get_max(&hw, SNDRV_PCM_HW_PARAM_CHANNELS);
+	if (ch_min != g_audio_channels || ch_max != g_audio_channels) {
+		die("Audio channel mismatch: requested %u got %u-%u", g_audio_channels, ch_min, ch_max);
 	}
-	int rate = sample_rate;
-	if (ioctl(g_audio_fd, SNDCTL_DSP_SPEED, &rate) != 0) {
-		die("SNDCTL_DSP_SPEED failed: %s", strerror(errno));
+	g_audio_sample_rate = (int)rate_min;
+	g_audio_period_frames = hw_param_interval_get_min(&hw, SNDRV_PCM_HW_PARAM_PERIOD_SIZE);
+	g_audio_buffer_frames = hw_param_interval_get_min(&hw, SNDRV_PCM_HW_PARAM_BUFFER_SIZE);
+	if (ioctl(g_audio_fd, SNDRV_PCM_IOCTL_PREPARE) != 0) {
+		die("SNDRV_PCM_IOCTL_PREPARE failed: %s", strerror(errno));
 	}
-	g_audio_sample_rate = rate;
 	g_audio_sample_buf_frames = 0;
-	fprintf(stderr, "[libretro-host] audio: rate=%d ch=%d\n", g_audio_sample_rate, channels);
+	fprintf(stderr, "[libretro-host] audio: dev=%s rate=%d ch=%u period=%u buffer=%u\n",
+			g_audio_device, g_audio_sample_rate, g_audio_channels,
+			g_audio_period_frames, g_audio_buffer_frames);
 }
 
 static void audio_shutdown(void) {
 	audio_flush_sample_buffer();
-	if (g_audio_fd >= 0) {
-		close(g_audio_fd);
-	}
+	close(g_audio_fd);
 	g_audio_fd = -1;
 	g_audio_sample_rate = 0;
 	g_audio_sample_buf_frames = 0;
 }
 
 static void audio_sample_cb(int16_t left, int16_t right) {
-	const size_t idx = g_audio_sample_buf_frames * 2;
+	const size_t idx = g_audio_sample_buf_frames * g_audio_channels;
 	g_audio_sample_buf[idx] = left;
 	g_audio_sample_buf[idx + 1] = right;
 	++g_audio_sample_buf_frames;
