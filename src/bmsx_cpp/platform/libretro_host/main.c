@@ -19,6 +19,7 @@
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <sound/asound.h>
 #include <time.h>
 #include <unistd.h>
 #include <ucontext.h>
@@ -96,6 +97,7 @@ typedef struct InputDev {
 
 static volatile sig_atomic_t g_should_quit = 0;
 static bool g_input_debug = false;
+static const uint64_t kExitComboHoldMs = 2000;
 
 static char g_system_dir[1024] = "";
 static char g_save_dir[1024] = "";
@@ -255,6 +257,15 @@ static InputDev g_input_devs[kMaxInputDevs];
 static char g_input_paths[kMaxInputDevs][64];
 static size_t g_input_dev_count = 0;
 static uint16_t g_pad_state_port0 = 0;
+static char g_audio_device[64] = "/dev/snd/pcmC0D0p";
+enum { kAudioSampleBufferFrames = 512 };
+static int g_audio_fd = -1;
+static int g_audio_sample_rate = 0;
+static unsigned g_audio_channels = 2;
+static unsigned g_audio_period_frames = 0;
+static unsigned g_audio_buffer_frames = 0;
+static int16_t g_audio_sample_buf[kAudioSampleBufferFrames * 2];
+static size_t g_audio_sample_buf_frames = 0;
 
 static void crash_handler(int sig, siginfo_t* si, void* ctx_) {
   ucontext_t* uc = (ucontext_t*)ctx_;
@@ -1081,13 +1092,88 @@ static void video_cb(const void* data, unsigned width, unsigned height, size_t p
 	die("Unsupported fbdev bpp: %d", g_fb.bpp);
 }
 
+static void audio_write_frames(const int16_t* data, size_t frames) {
+	if (frames == 0) {
+		return;
+	}
+	size_t bytes = frames * 2u * sizeof(int16_t);
+	const uint8_t* src = (const uint8_t*)data;
+	while (bytes > 0) {
+		ssize_t n = write(g_audio_fd, src, bytes);
+		if (n < 0) {
+			if (errno == EINTR) {
+				continue;
+			}
+			die("audio write failed: %s", strerror(errno));
+		}
+		if (n == 0) {
+			die("audio write returned 0");
+		}
+		bytes -= (size_t)n;
+		src += (size_t)n;
+	}
+}
+
+static void audio_flush_sample_buffer(void) {
+	if (g_audio_sample_buf_frames == 0) {
+		return;
+	}
+	audio_write_frames(g_audio_sample_buf, g_audio_sample_buf_frames);
+	g_audio_sample_buf_frames = 0;
+}
+
+static void audio_init(int sample_rate) {
+	g_audio_fd = open("/dev/dsp", O_WRONLY);
+	if (g_audio_fd < 0) {
+		die("Failed to open /dev/dsp: %s", strerror(errno));
+	}
+	int fmt = AFMT_S16_NE;
+	if (ioctl(g_audio_fd, SNDCTL_DSP_SETFMT, &fmt) != 0) {
+		die("SNDCTL_DSP_SETFMT failed: %s", strerror(errno));
+	}
+	if (fmt != AFMT_S16_NE) {
+		die("Audio device does not support 16-bit samples");
+	}
+	int channels = 2;
+	if (ioctl(g_audio_fd, SNDCTL_DSP_CHANNELS, &channels) != 0) {
+		die("SNDCTL_DSP_CHANNELS failed: %s", strerror(errno));
+	}
+	if (channels != 2) {
+		die("Audio device does not support stereo");
+	}
+	int rate = sample_rate;
+	if (ioctl(g_audio_fd, SNDCTL_DSP_SPEED, &rate) != 0) {
+		die("SNDCTL_DSP_SPEED failed: %s", strerror(errno));
+	}
+	g_audio_sample_rate = rate;
+	g_audio_sample_buf_frames = 0;
+	fprintf(stderr, "[libretro-host] audio: rate=%d ch=%d\n", g_audio_sample_rate, channels);
+}
+
+static void audio_shutdown(void) {
+	audio_flush_sample_buffer();
+	if (g_audio_fd >= 0) {
+		close(g_audio_fd);
+	}
+	g_audio_fd = -1;
+	g_audio_sample_rate = 0;
+	g_audio_sample_buf_frames = 0;
+}
+
 static void audio_sample_cb(int16_t left, int16_t right) {
-	(void)left;
-	(void)right;
+	const size_t idx = g_audio_sample_buf_frames * 2;
+	g_audio_sample_buf[idx] = left;
+	g_audio_sample_buf[idx + 1] = right;
+	++g_audio_sample_buf_frames;
+	if (g_audio_sample_buf_frames >= kAudioSampleBufferFrames) {
+		audio_write_frames(g_audio_sample_buf, g_audio_sample_buf_frames);
+		g_audio_sample_buf_frames = 0;
+	}
 }
 
 static size_t audio_batch_cb(const int16_t* data, size_t frames) {
-	(void)data;
+	audio_flush_sample_buffer();
+	audio_write_frames(data, frames);
 	return frames;
 }
 
@@ -1238,6 +1324,8 @@ static void input_open_default_devices(void) {
 	}
 }
 
+static uint64_t monotonic_ms(void);
+
 static void poll_input_devices(void) {
 	uint16_t merged = 0;
 	for (size_t i = 0; i < g_input_dev_count; ++i) {
@@ -1330,6 +1418,23 @@ static void poll_input_devices(void) {
 		}
 	}
 	g_pad_state_port0 = merged;
+	static uint64_t combo_start_ms = 0;
+	const bool combo_down =
+		(g_pad_state_port0 & (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_START)) &&
+		(g_pad_state_port0 & (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_SELECT));
+	if (combo_down) {
+		uint64_t now = monotonic_ms();
+		if (combo_start_ms == 0) {
+			combo_start_ms = now;
+		} else if (now - combo_start_ms >= kExitComboHoldMs) {
+			fprintf(stderr, "[libretro-host] exit combo held %llums, exiting\n",
+				(unsigned long long)(now - combo_start_ms));
+			g_should_quit = 1;
+			combo_start_ms = 0;
+		}
+	} else {
+		combo_start_ms = 0;
+	}
 	if (g_input_debug) {
 		fprintf(stderr, "[libretro-host][input] port0=0x%04x\n", g_pad_state_port0);
 	}
@@ -1337,6 +1442,12 @@ static void poll_input_devices(void) {
 
 static void input_poll_cb(void) {
 	poll_input_devices();
+}
+
+static uint64_t monotonic_ms(void) {
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return (uint64_t)ts.tv_sec * 1000ull + (uint64_t)ts.tv_nsec / 1000000ull;
 }
 
 static int16_t input_state_cb(unsigned port, unsigned device, unsigned index, unsigned id) {
@@ -1548,6 +1659,12 @@ int main(int argc, char** argv) {
 		die("retro_load_game failed");
 	}
 
+	int audio_rate = (int)(av.timing.sample_rate + 0.5);
+	if (audio_rate <= 0) {
+		die("Invalid audio sample rate: %.2f", av.timing.sample_rate);
+	}
+	audio_init(audio_rate);
+
 	double fps = av.timing.fps;
 	if (fps <= 0.0) {
 		fps = 50.0;
@@ -1573,6 +1690,7 @@ int main(int argc, char** argv) {
 
 	core.retro_unload_game();
 	core.retro_deinit();
+	audio_shutdown();
 
 	for (size_t i = 0; i < g_input_dev_count; ++i) {
 		if (g_input_devs[i].fd >= 0) {
