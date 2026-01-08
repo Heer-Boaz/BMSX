@@ -121,6 +121,7 @@ static char g_opt_render_backend[16] = "software";
 static char g_opt_crt_postprocessing[8] = "off";
 static char g_opt_postprocess_detail[8] = "off";
 static bool g_vars_updated = false;
+static LibretroCore* g_core = NULL;
 
 static enum retro_pixel_format g_core_pixel_format = RETRO_PIXEL_FORMAT_XRGB8888;
 static struct retro_hw_render_callback g_hw_render;
@@ -814,6 +815,45 @@ static MenuOption* menu_get_option(const char* key) {
 	return opt;
 }
 
+static bool menu_option_is_action(const MenuOption* opt) {
+	return opt && strncmp(opt->key, "__action_", 9) == 0;
+}
+
+static void menu_execute_action(const char* key) {
+	if (!key) return;
+	if (strcmp(key, "__action_reboot") == 0) {
+		if (g_core && g_core->retro_reset) {
+			fprintf(stderr, "[libretro-host] menu: reboot cart\n");
+			g_core->retro_reset();
+		}
+		g_menu_active = false;
+		menu_mark_dirty();
+		return;
+	}
+	if (strcmp(key, "__action_exit") == 0) {
+		fprintf(stderr, "[libretro-host] menu: exit game\n");
+		g_should_quit = 1;
+		g_menu_active = false;
+		menu_mark_dirty();
+		return;
+	}
+}
+
+static void menu_append_action(const char* key, const char* label) {
+	if (!key || menu_find_option(key) || g_menu_option_count >= MENU_MAX_OPTIONS) return;
+	MenuOption* opt = &g_menu_options[g_menu_option_count++];
+	memset(opt, 0, sizeof(*opt));
+	menu_copy_str(opt->key, sizeof(opt->key), key);
+	menu_copy_str(opt->label, sizeof(opt->label), label);
+	opt->value_count = 0;
+	opt->current_index = 0;
+}
+
+static void menu_append_actions(void) {
+	menu_append_action("__action_reboot", "REBOOT CART");
+	menu_append_action("__action_exit", "EXIT GAME");
+}
+
 static bool menu_set_current_value(MenuOption* opt, const char* value) {
 	if (!opt || !value || !value[0]) return false;
 	for (size_t i = 0; i < opt->value_count; ++i) {
@@ -903,6 +943,7 @@ static void menu_ingest_options_v2(const struct retro_core_options_v2* opts) {
 		}
 		menu_set_option_values(opt, def->desc, def->info, values, count, def->default_value);
 	}
+	menu_append_actions();
 }
 
 static void menu_ingest_options_v1(const struct retro_core_option_definition* defs) {
@@ -920,6 +961,7 @@ static void menu_ingest_options_v1(const struct retro_core_option_definition* de
 		}
 		menu_set_option_values(opt, def->desc, def->info, values, count, def->default_value);
 	}
+	menu_append_actions();
 }
 
 static void menu_ingest_variables(const struct retro_variable* vars) {
@@ -957,6 +999,7 @@ static void menu_ingest_variables(const struct retro_variable* vars) {
 		const char* default_value = count > 0 ? values[0].value : NULL;
 		menu_set_option_values(opt, label_buf, opt->info, values, count, default_value);
 	}
+	menu_append_actions();
 }
 
 static const char* menu_get_variable_value(const char* key) {
@@ -985,6 +1028,9 @@ static void menu_toggle(void) {
 	g_menu_active = !g_menu_active;
 	if (g_menu_active && g_menu_selected >= g_menu_option_count) {
 		g_menu_selected = 0;
+	}
+	if (g_menu_active) {
+		menu_append_actions();
 	}
 	menu_mark_dirty();
 }
@@ -1036,6 +1082,11 @@ static void menu_draw_text(int x, int y, const char* text, uint8_t r, uint8_t g,
 	}
 }
 
+static int menu_text_width(const char* text, int scale) {
+	if (!text) return 0;
+	return (int)strlen(text) * (5 + 1) * scale;
+}
+
 static void menu_rebuild_surface(void) {
 	if (!g_menu_active || g_fb.width <= 0 || g_fb.height <= 0) {
 		return;
@@ -1049,8 +1100,13 @@ static void menu_rebuild_surface(void) {
 	for (size_t i = 0; i < g_menu_option_count; ++i) {
 		const MenuOption* opt = &g_menu_options[i];
 		const char* label = opt->label[0] ? opt->label : opt->key;
-		const char* value = menu_option_value_label(opt);
-		size_t len = strlen(label) + 2 + strlen(value);
+		size_t len = strlen(label);
+		if (!menu_option_is_action(opt)) {
+			const char* value = menu_option_value_label(opt);
+			if (value && value[0] && strcmp(value, "-") != 0) {
+				len = strlen(label) + 2 + strlen(value);
+			}
+		}
 		if (len > max_chars) {
 			max_chars = len;
 		}
@@ -1058,19 +1114,26 @@ static void menu_rebuild_surface(void) {
 	int scale = 2;
 	int padding = 8;
 	int line_h = (7 * scale) + 4;
+	int title_h = line_h;
+	int title_gap = 6;
 	int lines = (int)(g_menu_option_count ? g_menu_option_count : 1);
-	int total_lines = lines + 2;
+	int box_lines = lines + 1;
 	int menu_w = (int)(max_chars * (5 + 1) * scale) + padding * 2;
-	int menu_h = total_lines * line_h + padding * 2;
+	int box_h = box_lines * line_h + padding * 2;
+	int menu_h = title_h + title_gap + box_h;
 	if (menu_w > g_fb.width - 20 || menu_h > g_fb.height - 20) {
 		scale = 1;
 		line_h = (7 * scale) + 3;
+		title_h = line_h;
+		title_gap = 4;
 		menu_w = (int)(max_chars * (5 + 1) * scale) + padding * 2;
-		menu_h = total_lines * line_h + padding * 2;
+		box_h = box_lines * line_h + padding * 2;
+		menu_h = title_h + title_gap + box_h;
 	}
 	if (menu_w > g_fb.width - 10) menu_w = g_fb.width - 10;
 	if (menu_h > g_fb.height - 10) menu_h = g_fb.height - 10;
 	if (menu_w < 1 || menu_h < 1) return;
+	const int box_y = title_h + title_gap;
 
 	if (menu_w != g_menu_surface_w || menu_h != g_menu_surface_h) {
 		free(g_menu_surface);
@@ -1086,8 +1149,10 @@ static void menu_rebuild_surface(void) {
 		g_menu_surface_stride = menu_w * 4;
 	}
 
+	memset(g_menu_surface, 0, (size_t)g_menu_surface_stride * (size_t)g_menu_surface_h);
+
 	g_menu_x = (g_fb.width - g_menu_surface_w) / 2;
-	g_menu_y = (g_fb.height - g_menu_surface_h) / 2;
+	g_menu_y = (g_fb.height - box_h) / 2 - box_y;
 	if (g_menu_x < 0) g_menu_x = 0;
 	if (g_menu_y < 0) g_menu_y = 0;
 
@@ -1095,12 +1160,12 @@ static void menu_rebuild_surface(void) {
 	const uint8_t hl_r = 32, hl_g = 64, hl_b = 96, hl_a = 220;
 	const uint8_t text_r = 240, text_g = 240, text_b = 240, text_a = 255;
 	const uint8_t dim_r = 180, dim_g = 180, dim_b = 180, dim_a = 255;
+	const uint8_t title_r = 96, title_g = 200, title_b = 255, title_a = 255;
 
-	menu_draw_rect(0, 0, g_menu_surface_w, g_menu_surface_h, bg_r, bg_g, bg_b, bg_a);
+	menu_draw_rect(0, box_y, g_menu_surface_w, box_h, bg_r, bg_g, bg_b, bg_a);
+	menu_draw_text(padding, 0, title, title_r, title_g, title_b, title_a, scale);
 
-	int cursor_y = padding;
-	menu_draw_text(padding, cursor_y, title, text_r, text_g, text_b, text_a, scale);
-	cursor_y += line_h;
+	int cursor_y = box_y + padding;
 
 	if (g_menu_option_count == 0) {
 		menu_draw_text(padding, cursor_y, "NO OPTIONS", dim_r, dim_g, dim_b, dim_a, scale);
@@ -1112,14 +1177,28 @@ static void menu_rebuild_surface(void) {
 			}
 			const MenuOption* opt = &g_menu_options[i];
 			const char* label = opt->label[0] ? opt->label : opt->key;
-			const char* value = menu_option_value_label(opt);
 			char line[256];
-			snprintf(line, sizeof(line), "%s: %s", label, value);
+			if (menu_option_is_action(opt)) {
+				snprintf(line, sizeof(line), "%s", label);
+			} else {
+				const char* value = menu_option_value_label(opt);
+				if (value && value[0] && strcmp(value, "-") != 0) {
+					snprintf(line, sizeof(line), "%s: %s", label, value);
+				} else {
+					snprintf(line, sizeof(line), "%s", label);
+				}
+			}
 			menu_draw_text(padding, cursor_y, line, text_r, text_g, text_b, text_a, scale);
 			cursor_y += line_h;
 		}
 	}
-	menu_draw_text(padding, cursor_y, footer, dim_r, dim_g, dim_b, dim_a, scale);
+	{
+		int footer_w = menu_text_width(footer, scale);
+		int footer_x = g_menu_surface_w - padding - footer_w;
+		if (footer_x < padding) footer_x = padding;
+		int footer_y = box_y + box_h - padding - line_h;
+		menu_draw_text(footer_x, footer_y, footer, dim_r, dim_g, dim_b, dim_a, scale);
+	}
 
 	g_menu_dirty = false;
 	g_menu_gl_dirty = true;
@@ -2191,9 +2270,11 @@ static uint16_t map_ev_key_to_pad(uint16_t code) {
 			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_SELECT);
 
 		case BTN_SOUTH:
-			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_B);
-		case BTN_EAST:
+			// SNES mini button wiring reports A/B swapped; map to physical layout.
 			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_A);
+		case BTN_EAST:
+			// SNES mini button wiring reports A/B swapped; map to physical layout.
+			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_B);
 		case BTN_NORTH:
 			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_X);
 		case BTN_WEST:
@@ -2317,6 +2398,19 @@ static void menu_handle_input(uint16_t state, uint16_t prev, bool skip_nav) {
 		return;
 	}
 
+	MenuOption* selected = g_menu_option_count ? &g_menu_options[g_menu_selected] : NULL;
+	const bool is_action = menu_option_is_action(selected);
+	if (menu_pad_pressed(state, prev, RETRO_DEVICE_ID_JOYPAD_B)) {
+		menu_toggle();
+		return;
+	}
+
+	if (is_action && (menu_pad_pressed(state, prev, RETRO_DEVICE_ID_JOYPAD_A) ||
+					  menu_pad_pressed(state, prev, RETRO_DEVICE_ID_JOYPAD_START))) {
+		menu_execute_action(selected->key);
+		return;
+	}
+
 	if (menu_pad_pressed(state, prev, RETRO_DEVICE_ID_JOYPAD_UP)) {
 		if (g_menu_option_count > 0) {
 			g_menu_selected = (g_menu_selected == 0) ? (g_menu_option_count - 1) : (g_menu_selected - 1);
@@ -2332,6 +2426,10 @@ static void menu_handle_input(uint16_t state, uint16_t prev, bool skip_nav) {
 	if (menu_pad_pressed(state, prev, RETRO_DEVICE_ID_JOYPAD_LEFT)) {
 		if (g_menu_option_count > 0) {
 			MenuOption* opt = &g_menu_options[g_menu_selected];
+			if (menu_option_is_action(opt)) {
+				menu_execute_action(opt->key);
+				return;
+			}
 			if (opt->value_count > 0) {
 				size_t next = (opt->current_index == 0) ? (opt->value_count - 1) : (opt->current_index - 1);
 				menu_apply_option(opt, next, true);
@@ -2341,6 +2439,10 @@ static void menu_handle_input(uint16_t state, uint16_t prev, bool skip_nav) {
 	if (menu_pad_pressed(state, prev, RETRO_DEVICE_ID_JOYPAD_RIGHT)) {
 		if (g_menu_option_count > 0) {
 			MenuOption* opt = &g_menu_options[g_menu_selected];
+			if (menu_option_is_action(opt)) {
+				menu_execute_action(opt->key);
+				return;
+			}
 			if (opt->value_count > 0) {
 				size_t next = (opt->current_index + 1) % opt->value_count;
 				menu_apply_option(opt, next, true);
@@ -2636,6 +2738,7 @@ int main(int argc, char** argv) {
 
 	LibretroCore core;
 	load_core(&core, core_path);
+	g_core = &core;
 
 	core.retro_set_environment(environ_cb);
 	core.retro_set_video_refresh(video_cb);

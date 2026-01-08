@@ -72,7 +72,7 @@ struct SpriteGLES2State {
 SpriteGLES2State g_sprite;
 
 const char* kSpriteVertexShader = R"(
-precision highp float;
+precision mediump float;
 
 attribute vec2 a_position;
 attribute vec2 a_texcoord;
@@ -98,14 +98,14 @@ void main() {
 )";
 
 const char* kSpriteFragmentShader = R"(
-precision highp float;
+precision mediump float;
 
 uniform sampler2D u_texture0;
 uniform sampler2D u_texture1;
 uniform sampler2D u_texture2;
 uniform float u_engineAtlasId;
 uniform float u_ditherIntensity;
-uniform float u_ditherEnabled;
+uniform bool u_ditherEnabled;
 uniform float u_time;
 
 varying vec2 v_texcoord;
@@ -142,10 +142,9 @@ void main() {
 	} else {
 		texColor = texture2D(u_texture1, v_texcoord);
 	}
-	texColor.rgb = srgb_to_linear(texColor.rgb);
 	texColor *= v_color_override;
 
-	if (u_ditherEnabled > 0.5) {
+	if (u_ditherEnabled) {
 		vec3 colS = linear_to_srgb(texColor.rgb);
 		float stepSz = 1.0 / 31.0;
 		float lumS = dot(colS, vec3(0.299, 0.587, 0.114));
@@ -459,8 +458,8 @@ void renderSpriteBatchGLES2(OpenGLES2Backend* backend, GameView* context,
   const float baseWidth = static_cast<float>(state.baseWidth);
   const float baseHeight = static_cast<float>(state.baseHeight);
   glUniform2f(g_sprite.uniform_resolution, baseWidth, baseHeight);
-  glUniform1f(g_sprite.uniform_dither_enabled,
-			  state.psxDither2dEnabled ? 1.0f : 0.0f);
+  glUniform1i(g_sprite.uniform_dither_enabled,
+			  state.psxDither2dEnabled ? 1 : 0);
   glUniform1f(g_sprite.uniform_dither_intensity, state.psxDither2dIntensity);
   glUniform1f(g_sprite.uniform_time,
 			  static_cast<float>(EngineCore::instance().totalTime()));

@@ -157,6 +157,7 @@ struct RenderSubmission {
 
 struct TextureParams {
 	Vec2 size{0.0f, 0.0f};
+	bool srgb = true;
 	// Wrap modes, filters, etc.
 };
 

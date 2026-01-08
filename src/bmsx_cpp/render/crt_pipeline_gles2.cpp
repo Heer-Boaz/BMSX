@@ -48,7 +48,7 @@ struct CRTGLES2State {
 CRTGLES2State g_crt;
 
 const char* kCRTVertexShader = R"(
-precision highp float;
+precision mediump float;
 
 attribute vec2 a_position;
 attribute vec2 a_texcoord;
@@ -67,7 +67,7 @@ void main() {
 )";
 
 const char* kCRTFragmentShader = R"(
-precision highp float;
+precision mediump float;
 
 uniform sampler2D u_texture;
 uniform vec2 u_srcResolution;
@@ -76,13 +76,13 @@ uniform float u_fragscale;
 uniform float u_time;
 uniform float u_random;
 
-uniform float u_applyNoise;
-uniform float u_applyColorBleed;
-uniform float u_applyScanlines;
-uniform float u_applyBlur;
-uniform float u_applyGlow;
-uniform float u_applyFringing;
-uniform float u_applyAperture;
+uniform bool u_applyNoise;
+uniform bool u_applyColorBleed;
+uniform bool u_applyScanlines;
+uniform bool u_applyBlur;
+uniform bool u_applyGlow;
+uniform bool u_applyFringing;
+uniform bool u_applyAperture;
 
 uniform float u_noiseIntensity;
 uniform vec3 u_colorBleed;
@@ -91,7 +91,6 @@ uniform vec3 u_glowColor;
 
 const vec3 LUMA = vec3(0.299, 0.587, 0.114);
 
-const float SCANLINE_INTERVAL = 1.0;
 const float APERTURE_STRENGTH = 0.08;
 const float GLOW_BRIGHTNESS_CLAMP = 0.6;
 
@@ -102,6 +101,7 @@ const float FRINGING_MIX           = 0.11;
 
 const float FRINGING_OFFSET = 0.5;
 const float BLUR_FOOTPRINT_PX = 0.5;
+const float K_NORM = 1.0 / 256.0;
 
 const float BLACK_CUTOFF = 0.015;
 const float BLACK_SOFT   = 0.060;
@@ -120,48 +120,80 @@ float hashNoise(vec2 uv, float t){
 
 struct BlurContrast { vec3 blurred; float contrast; };
 
-float kernelWeight(int offset){
-	int a = offset;
-	if (a < 0) a = -a;
-	if (a == 0) return 6.0;
-	if (a == 1) return 4.0;
-	return 1.0;
-}
-
-BlurContrast applyBlurAndContrast(vec2 uv, vec2 texel, float footprintPx){
+BlurContrast applyBlurAndContrast(vec2 uv, vec2 texel, float footprintPx, vec3 centerColor){
 	vec2 stepUV = texel * footprintPx;
 	vec3 accum = vec3(0.0);
-	float centerLum = 0.0;
 	float neighLum = 0.0;
-	float neighCount = 0.0;
+	vec3 s;
 
-	for (int yi = 0; yi < 5; ++yi) {
-		int oy = yi - 2;
-		float wy = kernelWeight(oy);
-		for (int xi = 0; xi < 5; ++xi) {
-			int ox = xi - 2;
-			float wx = kernelWeight(ox);
-			vec2 ofs = vec2(float(ox), float(oy)) * stepUV;
-			vec3 s = texture2D(u_texture, uv + ofs).rgb;
-			float w = (wx * wy) * (1.0 / 256.0);
-			accum += s * w;
+	// Unrolled 5x5 kernel to keep GLES2 fast without array indexing.
+	s = texture2D(u_texture, uv + vec2(-2.0, -2.0) * stepUV).rgb;
+	accum += s * 1.0;
+	s = texture2D(u_texture, uv + vec2(-1.0, -2.0) * stepUV).rgb;
+	accum += s * 4.0;
+	s = texture2D(u_texture, uv + vec2(0.0, -2.0) * stepUV).rgb;
+	accum += s * 6.0;
+	s = texture2D(u_texture, uv + vec2(1.0, -2.0) * stepUV).rgb;
+	accum += s * 4.0;
+	s = texture2D(u_texture, uv + vec2(2.0, -2.0) * stepUV).rgb;
+	accum += s * 1.0;
 
-			if (xi >= 1 && xi <= 3 && yi >= 1 && yi <= 3) {
-				float lum = dot(s, LUMA);
-				if (xi == 2 && yi == 2) {
-					centerLum = lum;
-				} else {
-					neighLum += lum;
-					neighCount += 1.0;
-				}
-			}
-		}
-	}
-	float neighAvg = (neighCount > 0.0) ? (neighLum / neighCount) : centerLum;
+	s = texture2D(u_texture, uv + vec2(-2.0, -1.0) * stepUV).rgb;
+	accum += s * 4.0;
+	s = texture2D(u_texture, uv + vec2(-1.0, -1.0) * stepUV).rgb;
+	accum += s * 16.0;
+	neighLum += dot(s, LUMA);
+	s = texture2D(u_texture, uv + vec2(0.0, -1.0) * stepUV).rgb;
+	accum += s * 24.0;
+	neighLum += dot(s, LUMA);
+	s = texture2D(u_texture, uv + vec2(1.0, -1.0) * stepUV).rgb;
+	accum += s * 16.0;
+	neighLum += dot(s, LUMA);
+	s = texture2D(u_texture, uv + vec2(2.0, -1.0) * stepUV).rgb;
+	accum += s * 4.0;
+
+	s = texture2D(u_texture, uv + vec2(-2.0, 0.0) * stepUV).rgb;
+	accum += s * 6.0;
+	s = texture2D(u_texture, uv + vec2(-1.0, 0.0) * stepUV).rgb;
+	accum += s * 24.0;
+	neighLum += dot(s, LUMA);
+	accum += centerColor * 36.0;
+	s = texture2D(u_texture, uv + vec2(1.0, 0.0) * stepUV).rgb;
+	accum += s * 24.0;
+	neighLum += dot(s, LUMA);
+	s = texture2D(u_texture, uv + vec2(2.0, 0.0) * stepUV).rgb;
+	accum += s * 6.0;
+
+	s = texture2D(u_texture, uv + vec2(-2.0, 1.0) * stepUV).rgb;
+	accum += s * 4.0;
+	s = texture2D(u_texture, uv + vec2(-1.0, 1.0) * stepUV).rgb;
+	accum += s * 16.0;
+	neighLum += dot(s, LUMA);
+	s = texture2D(u_texture, uv + vec2(0.0, 1.0) * stepUV).rgb;
+	accum += s * 24.0;
+	neighLum += dot(s, LUMA);
+	s = texture2D(u_texture, uv + vec2(1.0, 1.0) * stepUV).rgb;
+	accum += s * 16.0;
+	neighLum += dot(s, LUMA);
+	s = texture2D(u_texture, uv + vec2(2.0, 1.0) * stepUV).rgb;
+	accum += s * 4.0;
+
+	s = texture2D(u_texture, uv + vec2(-2.0, 2.0) * stepUV).rgb;
+	accum += s * 1.0;
+	s = texture2D(u_texture, uv + vec2(-1.0, 2.0) * stepUV).rgb;
+	accum += s * 4.0;
+	s = texture2D(u_texture, uv + vec2(0.0, 2.0) * stepUV).rgb;
+	accum += s * 6.0;
+	s = texture2D(u_texture, uv + vec2(1.0, 2.0) * stepUV).rgb;
+	accum += s * 4.0;
+	s = texture2D(u_texture, uv + vec2(2.0, 2.0) * stepUV).rgb;
+	accum += s * 1.0;
+
+	accum *= K_NORM;
 
 	BlurContrast bc;
 	bc.blurred = accum;
-	bc.contrast = abs(centerLum - neighAvg);
+	bc.contrast = abs(dot(centerColor, LUMA) - (neighLum * 0.125));
 	return bc;
 }
 
@@ -229,27 +261,27 @@ void main(){
 
 	vec3 color = texture2D(u_texture, v_texcoord).rgb;
 
-	if (u_applyColorBleed > 0.5) color += u_colorBleed;
+	if (u_applyColorBleed) color += u_colorBleed;
 
 	BlurContrast bc;
-	if (u_applyBlur > 0.5 || u_applyFringing > 0.5) {
-		bc = applyBlurAndContrast(v_texcoord, texel, BLUR_FOOTPRINT_PX);
+	if (u_applyBlur || u_applyFringing) {
+		bc = applyBlurAndContrast(v_texcoord, texel, BLUR_FOOTPRINT_PX, color);
 	} else {
 		bc.blurred = color; bc.contrast = 0.0;
 	}
-	if (u_applyBlur > 0.5) color = mix(color, bc.blurred, clamp(u_blurIntensity, 0.0, 1.0));
+	if (u_applyBlur) color = mix(color, bc.blurred, clamp(u_blurIntensity, 0.0, 1.0));
 
-	if (u_applyFringing > 0.5) color = applyFringing(color, v_texcoord, texel, bc.contrast, FRINGING_MIX);
-	if (u_applyScanlines > 0.5) color = applyScanlines(color, v_texcoord, srcPxRes);
-	if (u_applyAperture > 0.5) color = applyApertureMask(color, v_texcoord, srcPxRes);
+	if (u_applyFringing) color = applyFringing(color, v_texcoord, texel, bc.contrast, FRINGING_MIX);
+	if (u_applyScanlines) color = applyScanlines(color, v_texcoord, srcPxRes);
+	if (u_applyAperture) color = applyApertureMask(color, v_texcoord, srcPxRes);
 
-	if (u_applyGlow > 0.5) {
+	if (u_applyGlow) {
 		float b = dot(color, LUMA);
 		float k = smoothstep(BLACK_CUTOFF, BLACK_SOFT, b);
 		color += u_glowColor * clamp(b, 0.0, GLOW_BRIGHTNESS_CLAMP) * k;
 	}
 
-	if (u_applyNoise > 0.5) color += applyNoise(color, v_texcoord, srcPxRes);
+	if (u_applyNoise) color += applyNoise(color, v_texcoord, srcPxRes);
 
 	float lumFinal = dot(color, LUMA);
 	float keep     = smoothstep(BLACK_CUTOFF, BLACK_SOFT, lumFinal);
@@ -441,13 +473,13 @@ void renderCRTGLES2(OpenGLES2Backend* backend, GameView* context, const CRTPipel
 	glUniform1f(g_crt.uniform_time, static_cast<float>(EngineCore::instance().clock()->now() / 1000.0));
 	glUniform1f(g_crt.uniform_random, static_cast<float>(std::rand()) / static_cast<float>(RAND_MAX));
 
-	glUniform1f(g_crt.uniform_apply_noise, state.options.applyNoise ? 1.0f : 0.0f);
-	glUniform1f(g_crt.uniform_apply_color_bleed, state.options.applyColorBleed ? 1.0f : 0.0f);
-	glUniform1f(g_crt.uniform_apply_scanlines, state.options.applyScanlines ? 1.0f : 0.0f);
-	glUniform1f(g_crt.uniform_apply_blur, state.options.applyBlur ? 1.0f : 0.0f);
-	glUniform1f(g_crt.uniform_apply_glow, state.options.applyGlow ? 1.0f : 0.0f);
-	glUniform1f(g_crt.uniform_apply_fringing, state.options.applyFringing ? 1.0f : 0.0f);
-	glUniform1f(g_crt.uniform_apply_aperture, state.options.applyAperture ? 1.0f : 0.0f);
+	glUniform1i(g_crt.uniform_apply_noise, state.options.applyNoise ? 1 : 0);
+	glUniform1i(g_crt.uniform_apply_color_bleed, state.options.applyColorBleed ? 1 : 0);
+	glUniform1i(g_crt.uniform_apply_scanlines, state.options.applyScanlines ? 1 : 0);
+	glUniform1i(g_crt.uniform_apply_blur, state.options.applyBlur ? 1 : 0);
+	glUniform1i(g_crt.uniform_apply_glow, state.options.applyGlow ? 1 : 0);
+	glUniform1i(g_crt.uniform_apply_fringing, state.options.applyFringing ? 1 : 0);
+	glUniform1i(g_crt.uniform_apply_aperture, state.options.applyAperture ? 1 : 0);
 
 	glUniform1f(g_crt.uniform_noise_intensity, state.options.noiseIntensity);
 	glUniform3f(g_crt.uniform_color_bleed, state.options.colorBleed[0], state.options.colorBleed[1], state.options.colorBleed[2]);

@@ -19,7 +19,8 @@ TaskGate& textureGate() {
 std::string textureParamsKey(const TextureParams& desc) {
 	std::ostringstream oss;
 	oss << "size=" << std::fixed << std::setprecision(3)
-		<< desc.size.x << "x" << desc.size.y;
+		<< desc.size.x << "x" << desc.size.y
+		<< "|srgb=" << (desc.srgb ? "1" : "0");
 	return oss.str();
 }
 

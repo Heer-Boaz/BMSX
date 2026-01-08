@@ -4,6 +4,8 @@
 
 #include "gles2_backend.h"
 
+#include <array>
+#include <cmath>
 #include <cstdio>
 #include <vector>
 
@@ -11,6 +13,33 @@ namespace {
 constexpr bool kGLES2VerboseLog = false;
 // Use glFinish only when debugging strict GPU completion; glFlush avoids a stall.
 constexpr bool kGLES2FinishFrame = false;
+
+std::array<uint8_t, 256> buildSrgbToLinearLut() {
+	std::array<uint8_t, 256> lut{};
+	for (size_t i = 0; i < lut.size(); ++i) {
+		const double c = static_cast<double>(i) / 255.0;
+		const double linear = std::pow(c, 2.2);
+		lut[i] = static_cast<uint8_t>(std::round(linear * 255.0));
+	}
+	return lut;
+}
+
+const std::array<uint8_t, 256>& srgbToLinearLut() {
+	static const std::array<uint8_t, 256> lut = buildSrgbToLinearLut();
+	return lut;
+}
+
+void convertSrgbToLinear(const bmsx::u8* src, size_t pixels, std::vector<bmsx::u8>& out) {
+	out.resize(pixels * 4);
+	const auto& lut = srgbToLinearLut();
+	for (size_t i = 0; i < pixels; ++i) {
+		const size_t idx = i * 4;
+		out[idx + 0] = lut[src[idx + 0]];
+		out[idx + 1] = lut[src[idx + 1]];
+		out[idx + 2] = lut[src[idx + 2]];
+		out[idx + 3] = src[idx + 3];
+	}
+}
 }  // namespace
 
 namespace bmsx {
@@ -34,10 +63,18 @@ OpenGLES2Backend::~OpenGLES2Backend() = default;
 TextureHandle OpenGLES2Backend::createTexture(const u8* data, i32 width,
 											  i32 height,
 											  const TextureParams& params) {
-  (void)params;
   auto* tex = new GLES2Texture{};
   tex->width = width;
   tex->height = height;
+
+  const u8* uploadData = data;
+  std::vector<u8> linearized;
+  // GLES2 lacks sRGB texture decode; pre-linearize to match WebGL sampling.
+  if (data && params.srgb) {
+	const size_t pixels = static_cast<size_t>(width) * static_cast<size_t>(height);
+	convertSrgbToLinear(data, pixels, linearized);
+	uploadData = linearized.data();
+  }
 
   glGenTextures(1, &tex->id);
   glBindTexture(GL_TEXTURE_2D, tex->id);
@@ -47,7 +84,7 @@ TextureHandle OpenGLES2Backend::createTexture(const u8* data, i32 width,
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
   glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA,
-			   GL_UNSIGNED_BYTE, data);
+			   GL_UNSIGNED_BYTE, uploadData);
   if (kGLES2VerboseLog) {
 	std::fprintf(stderr,
 				 "[BMSX][GLES2] createTexture id=%u size=%dx%d data=%p\n",
@@ -71,7 +108,9 @@ TextureHandle OpenGLES2Backend::createSolidTexture2D(i32 width, i32 height,
 	pixels[i + 2] = b;
 	pixels[i + 3] = a;
   }
-  return createTexture(pixels.data(), width, height, TextureParams{});
+  TextureParams params;
+  params.srgb = false;
+  return createTexture(pixels.data(), width, height, params);
 }
 
 void OpenGLES2Backend::destroyTexture(TextureHandle handle) {
