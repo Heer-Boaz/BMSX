@@ -97,6 +97,24 @@ static EGLContext g_egl_context = EGL_NO_CONTEXT;
 static EGLSurface g_egl_surface = EGL_NO_SURFACE;
 static void* g_egl_lib = NULL;
 static void* g_gles_lib = NULL;
+static unsigned g_geom_base_w = 0;
+static unsigned g_geom_base_h = 0;
+static float g_geom_aspect = 0.0f;
+static bool g_geom_dirty = false;
+static unsigned g_last_video_w = 0;
+static unsigned g_last_video_h = 0;
+
+static GLuint g_hw_fbo = 0;
+static GLuint g_hw_tex = 0;
+static unsigned g_hw_tex_w = 0;
+static unsigned g_hw_tex_h = 0;
+static GLuint g_blit_program = 0;
+static GLuint g_blit_vbo = 0;
+static GLint g_blit_attr_pos = -1;
+static GLint g_blit_attr_uv = -1;
+static GLint g_blit_uniform_tex = -1;
+static GLint g_blit_uniform_flip = -1;
+static bool g_gl_loaded = false;
 
 struct fbdev_window {
 	uint16_t width;
@@ -134,6 +152,86 @@ static PFNEGLDESTROYSURFACE eglDestroySurface_ptr = NULL;
 static PFNEGLTERMINATE eglTerminate_ptr = NULL;
 static PFNEGLGETERROR eglGetError_ptr = NULL;
 static PFNEGLGETPROCADDRESS eglGetProcAddress_ptr = NULL;
+
+typedef void (GL_APIENTRYP PFNGLACTIVETEXTUREPROC)(GLenum texture);
+typedef void (GL_APIENTRYP PFNGLATTACHSHADERPROC)(GLuint program, GLuint shader);
+typedef void (GL_APIENTRYP PFNGLBINDBUFFERPROC)(GLenum target, GLuint buffer);
+typedef void (GL_APIENTRYP PFNGLBINDFRAMEBUFFERPROC)(GLenum target, GLuint framebuffer);
+typedef void (GL_APIENTRYP PFNGLBINDTEXTUREPROC)(GLenum target, GLuint texture);
+typedef void (GL_APIENTRYP PFNGLBUFFERDATAPROC)(GLenum target, GLsizeiptr size, const void* data, GLenum usage);
+typedef void (GL_APIENTRYP PFNGLCLEARPROC)(GLbitfield mask);
+typedef void (GL_APIENTRYP PFNGLCLEARCOLORPROC)(GLfloat red, GLfloat green, GLfloat blue, GLfloat alpha);
+typedef void (GL_APIENTRYP PFNGLCOMPILESHADERPROC)(GLuint shader);
+typedef GLuint (GL_APIENTRYP PFNGLCREATEPROGRAMPROC)(void);
+typedef GLuint (GL_APIENTRYP PFNGLCREATESHADERPROC)(GLenum type);
+typedef void (GL_APIENTRYP PFNGLDELETEBUFFERSPROC)(GLsizei n, const GLuint* buffers);
+typedef void (GL_APIENTRYP PFNGLDELETEFRAMEBUFFERSPROC)(GLsizei n, const GLuint* framebuffers);
+typedef void (GL_APIENTRYP PFNGLDELETEPROGRAMPROC)(GLuint program);
+typedef void (GL_APIENTRYP PFNGLDELETESHADERPROC)(GLuint shader);
+typedef void (GL_APIENTRYP PFNGLDELETETEXTURESPROC)(GLsizei n, const GLuint* textures);
+typedef void (GL_APIENTRYP PFNGLDISABLEPROC)(GLenum cap);
+typedef void (GL_APIENTRYP PFNGLDRAWARRAYSPROC)(GLenum mode, GLint first, GLsizei count);
+typedef void (GL_APIENTRYP PFNGLENABLEVERTEXATTRIBARRAYPROC)(GLuint index);
+typedef void (GL_APIENTRYP PFNGLFRAMEBUFFERTEXTURE2DPROC)(GLenum target, GLenum attachment, GLenum textarget, GLuint texture, GLint level);
+typedef void (GL_APIENTRYP PFNGLGENBUFFERSPROC)(GLsizei n, GLuint* buffers);
+typedef void (GL_APIENTRYP PFNGLGENFRAMEBUFFERSPROC)(GLsizei n, GLuint* framebuffers);
+typedef void (GL_APIENTRYP PFNGLGENTEXTURESPROC)(GLsizei n, GLuint* textures);
+typedef GLint (GL_APIENTRYP PFNGLGETATTRIBLOCATIONPROC)(GLuint program, const GLchar* name);
+typedef void (GL_APIENTRYP PFNGLGETPROGRAMINFOLOGPROC)(GLuint program, GLsizei bufSize, GLsizei* length, GLchar* infoLog);
+typedef void (GL_APIENTRYP PFNGLGETPROGRAMIVPROC)(GLuint program, GLenum pname, GLint* params);
+typedef void (GL_APIENTRYP PFNGLGETSHADERINFOLOGPROC)(GLuint shader, GLsizei bufSize, GLsizei* length, GLchar* infoLog);
+typedef void (GL_APIENTRYP PFNGLGETSHADERIVPROC)(GLuint shader, GLenum pname, GLint* params);
+typedef GLint (GL_APIENTRYP PFNGLGETUNIFORMLOCATIONPROC)(GLuint program, const GLchar* name);
+typedef void (GL_APIENTRYP PFNGLLINKPROGRAMPROC)(GLuint program);
+typedef void (GL_APIENTRYP PFNGLSHADERSOURCEPROC)(GLuint shader, GLsizei count, const GLchar* const* string, const GLint* length);
+typedef void (GL_APIENTRYP PFNGLTEXIMAGE2DPROC)(GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height, GLint border, GLenum format, GLenum type, const void* pixels);
+typedef void (GL_APIENTRYP PFNGLTEXPARAMETERIPROC)(GLenum target, GLenum pname, GLint param);
+typedef void (GL_APIENTRYP PFNGLUNIFORM1FPROC)(GLint location, GLfloat v0);
+typedef void (GL_APIENTRYP PFNGLUNIFORM1IPROC)(GLint location, GLint v0);
+typedef void (GL_APIENTRYP PFNGLUSEPROGRAMPROC)(GLuint program);
+typedef void (GL_APIENTRYP PFNGLVERTEXATTRIBPOINTERPROC)(GLuint index, GLint size, GLenum type, GLboolean normalized, GLsizei stride, const void* pointer);
+typedef void (GL_APIENTRYP PFNGLVIEWPORTPROC)(GLint x, GLint y, GLsizei width, GLsizei height);
+typedef GLenum (GL_APIENTRYP PFNGLCHECKFRAMEBUFFERSTATUSPROC)(GLenum target);
+
+static PFNGLACTIVETEXTUREPROC glActiveTexture_ptr = NULL;
+static PFNGLATTACHSHADERPROC glAttachShader_ptr = NULL;
+static PFNGLBINDBUFFERPROC glBindBuffer_ptr = NULL;
+static PFNGLBINDFRAMEBUFFERPROC glBindFramebuffer_ptr = NULL;
+static PFNGLBINDTEXTUREPROC glBindTexture_ptr = NULL;
+static PFNGLBUFFERDATAPROC glBufferData_ptr = NULL;
+static PFNGLCLEARPROC glClear_ptr = NULL;
+static PFNGLCLEARCOLORPROC glClearColor_ptr = NULL;
+static PFNGLCOMPILESHADERPROC glCompileShader_ptr = NULL;
+static PFNGLCREATEPROGRAMPROC glCreateProgram_ptr = NULL;
+static PFNGLCREATESHADERPROC glCreateShader_ptr = NULL;
+static PFNGLDELETEBUFFERSPROC glDeleteBuffers_ptr = NULL;
+static PFNGLDELETEFRAMEBUFFERSPROC glDeleteFramebuffers_ptr = NULL;
+static PFNGLDELETEPROGRAMPROC glDeleteProgram_ptr = NULL;
+static PFNGLDELETESHADERPROC glDeleteShader_ptr = NULL;
+static PFNGLDELETETEXTURESPROC glDeleteTextures_ptr = NULL;
+static PFNGLDISABLEPROC glDisable_ptr = NULL;
+static PFNGLDRAWARRAYSPROC glDrawArrays_ptr = NULL;
+static PFNGLENABLEVERTEXATTRIBARRAYPROC glEnableVertexAttribArray_ptr = NULL;
+static PFNGLFRAMEBUFFERTEXTURE2DPROC glFramebufferTexture2D_ptr = NULL;
+static PFNGLGENBUFFERSPROC glGenBuffers_ptr = NULL;
+static PFNGLGENFRAMEBUFFERSPROC glGenFramebuffers_ptr = NULL;
+static PFNGLGENTEXTURESPROC glGenTextures_ptr = NULL;
+static PFNGLGETATTRIBLOCATIONPROC glGetAttribLocation_ptr = NULL;
+static PFNGLGETPROGRAMINFOLOGPROC glGetProgramInfoLog_ptr = NULL;
+static PFNGLGETPROGRAMIVPROC glGetProgramiv_ptr = NULL;
+static PFNGLGETSHADERINFOLOGPROC glGetShaderInfoLog_ptr = NULL;
+static PFNGLGETSHADERIVPROC glGetShaderiv_ptr = NULL;
+static PFNGLGETUNIFORMLOCATIONPROC glGetUniformLocation_ptr = NULL;
+static PFNGLLINKPROGRAMPROC glLinkProgram_ptr = NULL;
+static PFNGLSHADERSOURCEPROC glShaderSource_ptr = NULL;
+static PFNGLTEXIMAGE2DPROC glTexImage2D_ptr = NULL;
+static PFNGLTEXPARAMETERIPROC glTexParameteri_ptr = NULL;
+static PFNGLUNIFORM1FPROC glUniform1f_ptr = NULL;
+static PFNGLUNIFORM1IPROC glUniform1i_ptr = NULL;
+static PFNGLUSEPROGRAMPROC glUseProgram_ptr = NULL;
+static PFNGLVERTEXATTRIBPOINTERPROC glVertexAttribPointer_ptr = NULL;
+static PFNGLVIEWPORTPROC glViewport_ptr = NULL;
+static PFNGLCHECKFRAMEBUFFERSTATUSPROC glCheckFramebufferStatus_ptr = NULL;
 
 static FbDev g_fb;
 static InputDev g_input_devs[4];
@@ -205,7 +303,18 @@ static void host_log(enum retro_log_level level, const char* fmt, ...) {
 }
 
 static uintptr_t RETRO_CALLCONV hw_get_current_framebuffer(void) {
-	return 0;
+	unsigned target_w = g_geom_base_w ? g_geom_base_w : g_last_video_w;
+	unsigned target_h = g_geom_base_h ? g_geom_base_h : g_last_video_h;
+	if (target_w == 0) target_w = 256;
+	if (target_h == 0) target_h = 240;
+	if (g_geom_dirty || g_hw_tex == 0 || g_hw_tex_w != target_w || g_hw_tex_h != target_h) {
+		if (!hw_ensure_fbo(target_w, target_h)) {
+			return 0;
+		}
+		g_geom_dirty = false;
+	}
+	glBindFramebuffer_ptr(GL_FRAMEBUFFER, g_hw_fbo);
+	return (uintptr_t)g_hw_fbo;
 }
 
 static retro_proc_address_t RETRO_CALLCONV hw_get_proc_address(const char* sym) {
@@ -219,6 +328,289 @@ static retro_proc_address_t RETRO_CALLCONV hw_get_proc_address(const char* sym) 
 		return NULL;
 	}
 	return (retro_proc_address_t)eglGetProcAddress_ptr(sym);
+}
+
+static void update_geometry(const struct retro_game_geometry* geom) {
+	if (!geom) {
+		return;
+	}
+	if (geom->base_width > 0 && geom->base_height > 0) {
+		g_geom_base_w = geom->base_width;
+		g_geom_base_h = geom->base_height;
+	}
+	if (geom->aspect_ratio > 0.0f) {
+		g_geom_aspect = geom->aspect_ratio;
+	} else if (g_geom_base_w > 0 && g_geom_base_h > 0) {
+		g_geom_aspect = (float)g_geom_base_w / (float)g_geom_base_h;
+	}
+	g_geom_dirty = true;
+}
+
+static void* get_gl_proc(const char* name) {
+	void* proc = NULL;
+	if (g_gles_lib) {
+		proc = dlsym(g_gles_lib, name);
+	}
+	if (!proc && eglGetProcAddress_ptr) {
+		proc = (void*)eglGetProcAddress_ptr(name);
+	}
+	return proc;
+}
+
+static bool gl_load(void) {
+	if (g_gl_loaded) {
+		return true;
+	}
+#define GL_LOAD(name, type) do { \
+	name##_ptr = (type)get_gl_proc(#name); \
+	if (!name##_ptr) { \
+		fprintf(stderr, "[libretro-host] missing GL proc %s\n", #name); \
+		return false; \
+	} \
+} while (0)
+	GL_LOAD(glActiveTexture, PFNGLACTIVETEXTUREPROC);
+	GL_LOAD(glAttachShader, PFNGLATTACHSHADERPROC);
+	GL_LOAD(glBindBuffer, PFNGLBINDBUFFERPROC);
+	GL_LOAD(glBindFramebuffer, PFNGLBINDFRAMEBUFFERPROC);
+	GL_LOAD(glBindTexture, PFNGLBINDTEXTUREPROC);
+	GL_LOAD(glBufferData, PFNGLBUFFERDATAPROC);
+	GL_LOAD(glClear, PFNGLCLEARPROC);
+	GL_LOAD(glClearColor, PFNGLCLEARCOLORPROC);
+	GL_LOAD(glCompileShader, PFNGLCOMPILESHADERPROC);
+	GL_LOAD(glCreateProgram, PFNGLCREATEPROGRAMPROC);
+	GL_LOAD(glCreateShader, PFNGLCREATESHADERPROC);
+	GL_LOAD(glDeleteBuffers, PFNGLDELETEBUFFERSPROC);
+	GL_LOAD(glDeleteFramebuffers, PFNGLDELETEFRAMEBUFFERSPROC);
+	GL_LOAD(glDeleteProgram, PFNGLDELETEPROGRAMPROC);
+	GL_LOAD(glDeleteShader, PFNGLDELETESHADERPROC);
+	GL_LOAD(glDeleteTextures, PFNGLDELETETEXTURESPROC);
+	GL_LOAD(glDisable, PFNGLDISABLEPROC);
+	GL_LOAD(glDrawArrays, PFNGLDRAWARRAYSPROC);
+	GL_LOAD(glEnableVertexAttribArray, PFNGLENABLEVERTEXATTRIBARRAYPROC);
+	GL_LOAD(glFramebufferTexture2D, PFNGLFRAMEBUFFERTEXTURE2DPROC);
+	GL_LOAD(glGenBuffers, PFNGLGENBUFFERSPROC);
+	GL_LOAD(glGenFramebuffers, PFNGLGENFRAMEBUFFERSPROC);
+	GL_LOAD(glGenTextures, PFNGLGENTEXTURESPROC);
+	GL_LOAD(glGetAttribLocation, PFNGLGETATTRIBLOCATIONPROC);
+	GL_LOAD(glGetProgramInfoLog, PFNGLGETPROGRAMINFOLOGPROC);
+	GL_LOAD(glGetProgramiv, PFNGLGETPROGRAMIVPROC);
+	GL_LOAD(glGetShaderInfoLog, PFNGLGETSHADERINFOLOGPROC);
+	GL_LOAD(glGetShaderiv, PFNGLGETSHADERIVPROC);
+	GL_LOAD(glGetUniformLocation, PFNGLGETUNIFORMLOCATIONPROC);
+	GL_LOAD(glLinkProgram, PFNGLLINKPROGRAMPROC);
+	GL_LOAD(glShaderSource, PFNGLSHADERSOURCEPROC);
+	GL_LOAD(glTexImage2D, PFNGLTEXIMAGE2DPROC);
+	GL_LOAD(glTexParameteri, PFNGLTEXPARAMETERIPROC);
+	GL_LOAD(glUniform1f, PFNGLUNIFORM1FPROC);
+	GL_LOAD(glUniform1i, PFNGLUNIFORM1IPROC);
+	GL_LOAD(glUseProgram, PFNGLUSEPROGRAMPROC);
+	GL_LOAD(glVertexAttribPointer, PFNGLVERTEXATTRIBPOINTERPROC);
+	GL_LOAD(glViewport, PFNGLVIEWPORTPROC);
+	GL_LOAD(glCheckFramebufferStatus, PFNGLCHECKFRAMEBUFFERSTATUSPROC);
+#undef GL_LOAD
+	g_gl_loaded = true;
+	return true;
+}
+
+static GLuint compile_shader(GLenum type, const char* src) {
+	GLuint shader = glCreateShader_ptr(type);
+	if (!shader) {
+		return 0;
+	}
+	glShaderSource_ptr(shader, 1, &src, NULL);
+	glCompileShader_ptr(shader);
+	GLint status = 0;
+	glGetShaderiv_ptr(shader, GL_COMPILE_STATUS, &status);
+	if (!status) {
+		char log[512];
+		GLsizei log_len = 0;
+		glGetShaderInfoLog_ptr(shader, sizeof(log), &log_len, log);
+		fprintf(stderr, "[libretro-host] shader compile failed: %s\n", log_len ? log : "(no log)");
+		glDeleteShader_ptr(shader);
+		return 0;
+	}
+	return shader;
+}
+
+static bool hw_init_blitter(void) {
+	if (g_blit_program) {
+		return true;
+	}
+	if (!gl_load()) {
+		return false;
+	}
+	static const char* k_vs =
+		"attribute vec2 a_pos;\n"
+		"attribute vec2 a_uv;\n"
+		"varying vec2 v_uv;\n"
+		"void main() {\n"
+		"  gl_Position = vec4(a_pos, 0.0, 1.0);\n"
+		"  v_uv = a_uv;\n"
+		"}\n";
+	static const char* k_fs =
+		"precision mediump float;\n"
+		"varying vec2 v_uv;\n"
+		"uniform sampler2D u_tex;\n"
+		"uniform float u_flip_y;\n"
+		"void main() {\n"
+		"  vec2 uv = v_uv;\n"
+		"  if (u_flip_y > 0.5) uv.y = 1.0 - uv.y;\n"
+		"  gl_FragColor = texture2D(u_tex, uv);\n"
+		"}\n";
+	GLuint vs = compile_shader(GL_VERTEX_SHADER, k_vs);
+	if (!vs) {
+		return false;
+	}
+	GLuint fs = compile_shader(GL_FRAGMENT_SHADER, k_fs);
+	if (!fs) {
+		glDeleteShader_ptr(vs);
+		return false;
+	}
+	GLuint program = glCreateProgram_ptr();
+	glAttachShader_ptr(program, vs);
+	glAttachShader_ptr(program, fs);
+	glLinkProgram_ptr(program);
+	glDeleteShader_ptr(vs);
+	glDeleteShader_ptr(fs);
+	GLint linked = 0;
+	glGetProgramiv_ptr(program, GL_LINK_STATUS, &linked);
+	if (!linked) {
+		char log[512];
+		GLsizei log_len = 0;
+		glGetProgramInfoLog_ptr(program, sizeof(log), &log_len, log);
+		fprintf(stderr, "[libretro-host] program link failed: %s\n", log_len ? log : "(no log)");
+		glDeleteProgram_ptr(program);
+		return false;
+	}
+	g_blit_program = program;
+	g_blit_attr_pos = glGetAttribLocation_ptr(program, "a_pos");
+	g_blit_attr_uv = glGetAttribLocation_ptr(program, "a_uv");
+	g_blit_uniform_tex = glGetUniformLocation_ptr(program, "u_tex");
+	g_blit_uniform_flip = glGetUniformLocation_ptr(program, "u_flip_y");
+
+	const float quad[] = {
+		-1.0f, -1.0f, 0.0f, 0.0f,
+		 1.0f, -1.0f, 1.0f, 0.0f,
+		-1.0f,  1.0f, 0.0f, 1.0f,
+		 1.0f,  1.0f, 1.0f, 1.0f,
+	};
+	glGenBuffers_ptr(1, &g_blit_vbo);
+	glBindBuffer_ptr(GL_ARRAY_BUFFER, g_blit_vbo);
+	glBufferData_ptr(GL_ARRAY_BUFFER, (GLsizeiptr)sizeof(quad), quad, GL_STATIC_DRAW);
+	return true;
+}
+
+static bool hw_ensure_fbo(unsigned width, unsigned height) {
+	if (!gl_load()) {
+		return false;
+	}
+	if (width == 0 || height == 0) {
+		return false;
+	}
+	if (g_hw_tex && g_hw_tex_w == width && g_hw_tex_h == height) {
+		return true;
+	}
+	if (g_hw_tex) {
+		glDeleteTextures_ptr(1, &g_hw_tex);
+		g_hw_tex = 0;
+	}
+	if (g_hw_fbo) {
+		glDeleteFramebuffers_ptr(1, &g_hw_fbo);
+		g_hw_fbo = 0;
+	}
+	glGenTextures_ptr(1, &g_hw_tex);
+	glBindTexture_ptr(GL_TEXTURE_2D, g_hw_tex);
+	glTexParameteri_ptr(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri_ptr(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri_ptr(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri_ptr(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glTexImage2D_ptr(GL_TEXTURE_2D, 0, GL_RGBA, (GLsizei)width, (GLsizei)height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+
+	glGenFramebuffers_ptr(1, &g_hw_fbo);
+	glBindFramebuffer_ptr(GL_FRAMEBUFFER, g_hw_fbo);
+	glFramebufferTexture2D_ptr(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, g_hw_tex, 0);
+	if (glCheckFramebufferStatus_ptr(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+		fprintf(stderr, "[libretro-host] FBO incomplete\n");
+		glBindFramebuffer_ptr(GL_FRAMEBUFFER, 0);
+		return false;
+	}
+	glBindFramebuffer_ptr(GL_FRAMEBUFFER, 0);
+	g_hw_tex_w = width;
+	g_hw_tex_h = height;
+	return true;
+}
+
+static void compute_dst_rect(int fb_w, int fb_h, unsigned src_w, unsigned src_h,
+		int* out_x, int* out_y, int* out_w, int* out_h) {
+	if (fb_w <= 0 || fb_h <= 0 || src_w == 0 || src_h == 0) {
+		*out_x = 0;
+		*out_y = 0;
+		*out_w = 0;
+		*out_h = 0;
+		return;
+	}
+	double aspect = (g_geom_aspect > 0.0f) ? g_geom_aspect : ((double)src_w / (double)src_h);
+	if (aspect <= 0.0) {
+		aspect = (double)src_w / (double)src_h;
+	}
+	int dst_w = fb_w;
+	int dst_h = (int)(fb_w / aspect + 0.5);
+	if (dst_h > fb_h) {
+		dst_h = fb_h;
+		dst_w = (int)(fb_h * aspect + 0.5);
+	}
+	if (dst_w < 1) dst_w = 1;
+	if (dst_h < 1) dst_h = 1;
+	int dst_x = (fb_w - dst_w) / 2;
+	int dst_y = (fb_h - dst_h) / 2;
+	*out_x = dst_x;
+	*out_y = dst_y;
+	*out_w = dst_w;
+	*out_h = dst_h;
+}
+
+static bool hw_present_frame(unsigned src_w, unsigned src_h) {
+	if (!hw_init_blitter()) {
+		return false;
+	}
+	if (!g_hw_tex) {
+		return false;
+	}
+	if (src_w == 0) src_w = g_hw_tex_w;
+	if (src_h == 0) src_h = g_hw_tex_h;
+	int dst_x = 0, dst_y = 0, dst_w = 0, dst_h = 0;
+	compute_dst_rect(g_fb.width, g_fb.height, src_w, src_h, &dst_x, &dst_y, &dst_w, &dst_h);
+	if (dst_w <= 0 || dst_h <= 0) {
+		return false;
+	}
+	glBindFramebuffer_ptr(GL_FRAMEBUFFER, 0);
+	glViewport_ptr(0, 0, g_fb.width, g_fb.height);
+	glClearColor_ptr(0.0f, 0.0f, 0.0f, 1.0f);
+	glClear_ptr(GL_COLOR_BUFFER_BIT);
+	glViewport_ptr(dst_x, dst_y, dst_w, dst_h);
+	glDisable_ptr(GL_BLEND);
+	glDisable_ptr(GL_DEPTH_TEST);
+	glDisable_ptr(GL_CULL_FACE);
+	glUseProgram_ptr(g_blit_program);
+	glActiveTexture_ptr(GL_TEXTURE0);
+	glBindTexture_ptr(GL_TEXTURE_2D, g_hw_tex);
+	if (g_blit_uniform_tex >= 0) {
+		glUniform1i_ptr(g_blit_uniform_tex, 0);
+	}
+	if (g_blit_uniform_flip >= 0) {
+		glUniform1f_ptr(g_blit_uniform_flip, g_hw_render.bottom_left_origin ? 0.0f : 1.0f);
+	}
+	glBindBuffer_ptr(GL_ARRAY_BUFFER, g_blit_vbo);
+	if (g_blit_attr_pos >= 0) {
+		glEnableVertexAttribArray_ptr((GLuint)g_blit_attr_pos);
+		glVertexAttribPointer_ptr((GLuint)g_blit_attr_pos, 2, GL_FLOAT, GL_FALSE, 4 * (GLsizei)sizeof(float), (void*)0);
+	}
+	if (g_blit_attr_uv >= 0) {
+		glEnableVertexAttribArray_ptr((GLuint)g_blit_attr_uv);
+		glVertexAttribPointer_ptr((GLuint)g_blit_attr_uv, 2, GL_FLOAT, GL_FALSE, 4 * (GLsizei)sizeof(float), (void*)(2 * sizeof(float)));
+	}
+	glDrawArrays_ptr(GL_TRIANGLE_STRIP, 0, 4);
+	return true;
 }
 
 static void egl_unload(void) {
@@ -462,6 +854,7 @@ static bool environ_cb(unsigned cmd, void* data) {
 		case RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS:
 			return true;
 		case RETRO_ENVIRONMENT_SET_GEOMETRY:
+			update_geometry((const struct retro_game_geometry*)data);
 			return true;
 		case RETRO_ENVIRONMENT_SET_PIXEL_FORMAT: {
 			const enum retro_pixel_format* fmt = (const enum retro_pixel_format*)data;
@@ -541,20 +934,31 @@ static inline uint32_t rgb565_to_xrgb8888(uint16_t p) {
 
 static void video_cb(const void* data, unsigned width, unsigned height, size_t pitch) {
 	if (g_use_hw_render && data == RETRO_HW_FRAME_BUFFER_VALID) {
+		if (width > 0 && height > 0) {
+			g_last_video_w = width;
+			g_last_video_h = height;
+		}
+		hw_present_frame(width, height);
 		eglSwapBuffers_ptr(g_egl_display, g_egl_surface);
 		return;
 	}
-	if (!data) {
+	if (!data || width == 0 || height == 0) {
 		return;
 	}
+	g_last_video_w = width;
+	g_last_video_h = height;
 
 	const int fb_w = g_fb.width;
 	const int fb_h = g_fb.height;
 
-	int dst_x = (fb_w - (int)width) / 2;
-	int dst_y = (fb_h - (int)height) / 2;
-	if (dst_x < 0) dst_x = 0;
-	if (dst_y < 0) dst_y = 0;
+	int dst_x = 0;
+	int dst_y = 0;
+	int dst_w = 0;
+	int dst_h = 0;
+	compute_dst_rect(fb_w, fb_h, width, height, &dst_x, &dst_y, &dst_w, &dst_h);
+	if (dst_w <= 0 || dst_h <= 0) {
+		return;
+	}
 
 	unsigned copy_w = width;
 	unsigned copy_h = height;
@@ -562,20 +966,49 @@ static void video_cb(const void* data, unsigned width, unsigned height, size_t p
 	if ((int)copy_h > fb_h - dst_y) copy_h = (unsigned)(fb_h - dst_y);
 
 	if (g_fb.bpp == 16) {
-		for (unsigned y = 0; y < copy_h; ++y) {
-			uint8_t* dst_line = g_fb.map + (size_t)(dst_y + (int)y) * (size_t)g_fb.stride + (size_t)dst_x * 2u;
-			uint16_t* dst = (uint16_t*)dst_line;
-			const uint8_t* src_line = (const uint8_t*)data + y * pitch;
-			if (g_core_pixel_format == RETRO_PIXEL_FORMAT_RGB565) {
-				memcpy(dst, src_line, copy_w * 2u);
-			} else {
-				const uint32_t* src = (const uint32_t*)src_line;
-				for (unsigned x = 0; x < copy_w; ++x) {
-					uint32_t p = src[x];
-					uint8_t r = (uint8_t)((p >> 16) & 0xFF);
-					uint8_t g = (uint8_t)((p >> 8) & 0xFF);
-					uint8_t b = (uint8_t)(p & 0xFF);
-					dst[x] = rgb888_to_rgb565(r, g, b);
+		if (dst_w == (int)width && dst_h == (int)height) {
+			for (unsigned y = 0; y < copy_h; ++y) {
+				uint8_t* dst_line = g_fb.map + (size_t)(dst_y + (int)y) * (size_t)g_fb.stride + (size_t)dst_x * 2u;
+				uint16_t* dst = (uint16_t*)dst_line;
+				const uint8_t* src_line = (const uint8_t*)data + y * pitch;
+				if (g_core_pixel_format == RETRO_PIXEL_FORMAT_RGB565) {
+					memcpy(dst, src_line, copy_w * 2u);
+				} else {
+					const uint32_t* src = (const uint32_t*)src_line;
+					for (unsigned x = 0; x < copy_w; ++x) {
+						uint32_t p = src[x];
+						uint8_t r = (uint8_t)((p >> 16) & 0xFF);
+						uint8_t g = (uint8_t)((p >> 8) & 0xFF);
+						uint8_t b = (uint8_t)(p & 0xFF);
+						dst[x] = rgb888_to_rgb565(r, g, b);
+					}
+				}
+			}
+		} else {
+			const uint32_t step_x = (uint32_t)(((uint64_t)width << 16) / (uint32_t)dst_w);
+			const uint32_t step_y = (uint32_t)(((uint64_t)height << 16) / (uint32_t)dst_h);
+			for (int y = 0; y < dst_h; ++y) {
+				const uint32_t src_y = (uint32_t)(((uint64_t)y * step_y) >> 16);
+				uint8_t* dst_line = g_fb.map + (size_t)(dst_y + y) * (size_t)g_fb.stride + (size_t)dst_x * 2u;
+				uint16_t* dst = (uint16_t*)dst_line;
+				const uint8_t* src_line = (const uint8_t*)data + (size_t)src_y * pitch;
+				uint32_t src_x = 0;
+				if (g_core_pixel_format == RETRO_PIXEL_FORMAT_RGB565) {
+					const uint16_t* src = (const uint16_t*)src_line;
+					for (int x = 0; x < dst_w; ++x) {
+						dst[x] = src[src_x >> 16];
+						src_x += step_x;
+					}
+				} else {
+					const uint32_t* src = (const uint32_t*)src_line;
+					for (int x = 0; x < dst_w; ++x) {
+						uint32_t p = src[src_x >> 16];
+						uint8_t r = (uint8_t)((p >> 16) & 0xFF);
+						uint8_t g = (uint8_t)((p >> 8) & 0xFF);
+						uint8_t b = (uint8_t)(p & 0xFF);
+						dst[x] = rgb888_to_rgb565(r, g, b);
+						src_x += step_x;
+					}
 				}
 			}
 		}
@@ -583,16 +1016,41 @@ static void video_cb(const void* data, unsigned width, unsigned height, size_t p
 	}
 
 	if (g_fb.bpp == 32) {
-		for (unsigned y = 0; y < copy_h; ++y) {
-			uint8_t* dst_line = g_fb.map + (size_t)(dst_y + (int)y) * (size_t)g_fb.stride + (size_t)dst_x * 4u;
-			uint32_t* dst = (uint32_t*)dst_line;
-			const uint8_t* src_line = (const uint8_t*)data + y * pitch;
-			if (g_core_pixel_format == RETRO_PIXEL_FORMAT_XRGB8888) {
-				memcpy(dst, src_line, copy_w * 4u);
-			} else {
-				const uint16_t* src = (const uint16_t*)src_line;
-				for (unsigned x = 0; x < copy_w; ++x) {
-					dst[x] = rgb565_to_xrgb8888(src[x]);
+		if (dst_w == (int)width && dst_h == (int)height) {
+			for (unsigned y = 0; y < copy_h; ++y) {
+				uint8_t* dst_line = g_fb.map + (size_t)(dst_y + (int)y) * (size_t)g_fb.stride + (size_t)dst_x * 4u;
+				uint32_t* dst = (uint32_t*)dst_line;
+				const uint8_t* src_line = (const uint8_t*)data + y * pitch;
+				if (g_core_pixel_format == RETRO_PIXEL_FORMAT_XRGB8888) {
+					memcpy(dst, src_line, copy_w * 4u);
+				} else {
+					const uint16_t* src = (const uint16_t*)src_line;
+					for (unsigned x = 0; x < copy_w; ++x) {
+						dst[x] = rgb565_to_xrgb8888(src[x]);
+					}
+				}
+			}
+		} else {
+			const uint32_t step_x = (uint32_t)(((uint64_t)width << 16) / (uint32_t)dst_w);
+			const uint32_t step_y = (uint32_t)(((uint64_t)height << 16) / (uint32_t)dst_h);
+			for (int y = 0; y < dst_h; ++y) {
+				const uint32_t src_y = (uint32_t)(((uint64_t)y * step_y) >> 16);
+				uint8_t* dst_line = g_fb.map + (size_t)(dst_y + y) * (size_t)g_fb.stride + (size_t)dst_x * 4u;
+				uint32_t* dst = (uint32_t*)dst_line;
+				const uint8_t* src_line = (const uint8_t*)data + (size_t)src_y * pitch;
+				uint32_t src_x = 0;
+				if (g_core_pixel_format == RETRO_PIXEL_FORMAT_XRGB8888) {
+					const uint32_t* src = (const uint32_t*)src_line;
+					for (int x = 0; x < dst_w; ++x) {
+						dst[x] = src[src_x >> 16];
+						src_x += step_x;
+					}
+				} else {
+					const uint16_t* src = (const uint16_t*)src_line;
+					for (int x = 0; x < dst_w; ++x) {
+						dst[x] = rgb565_to_xrgb8888(src[src_x >> 16]);
+						src_x += step_x;
+					}
 				}
 			}
 		}
@@ -925,6 +1383,7 @@ int main(int argc, char** argv) {
 	struct retro_system_av_info av;
 	memset(&av, 0, sizeof(av));
 	core.retro_get_system_av_info(&av);
+	update_geometry(&av.geometry);
 	fprintf(stderr, "[libretro-host] av: base=%ux%u max=%ux%u fps=%.2f sr=%.2f\n",
 			av.geometry.base_width, av.geometry.base_height,
 			av.geometry.max_width, av.geometry.max_height,

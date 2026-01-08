@@ -36,7 +36,7 @@ libretro-snesmini-debug-inner: snesmini-sysroot
 		cmake -S src/bmsx_cpp -B "$(SNESMINI_BUILD_DIR)" \
 			-DCMAKE_BUILD_TYPE="$(SNESMINI_BUILD_TYPE)" \
 			$(SNESMINI_CMAKE_ARGS)
-	cmake --build "$(SNESMINI_BUILD_DIR)" --config "$(SNESMINI_BUILD_TYPE)"
+	cmake --build "$(SNESMINI_BUILD_DIR)" --config "$(SNESMINI_BUILD_TYPE)" --target bmsx_libretro_host
 	@mkdir -p "$(SNESMINI_DIST_DIR)"
 	cp "$(SNESMINI_BUILD_DIR)/bmsx_libretro.so" "$(SNESMINI_DIST_DIR)/bmsx_libretro.so"
 	@core_name=$$(sed -nE 's/.*CORE_NAME = "([^"]*)".*/\1/p' "$(SNESMINI_LIBRETRO_ENTRY)"); \

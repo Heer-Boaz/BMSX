@@ -525,6 +525,7 @@ void LibretroPlatform::runFrame() {
 	processAudio();
 	const auto audioEnd = std::chrono::steady_clock::now();
 
+#ifdef ENABLE_PERFORMANCE_LOGS
 	const auto frameEnd = std::chrono::steady_clock::now();
 
 	const double budgetMs = m_frame_time_sec * 1000.0;
@@ -573,6 +574,7 @@ void LibretroPlatform::runFrame() {
 			renderTiming.drawGameMs,
 			renderTiming.endFrameMs);
 	}
+#endif
 }
 
 void LibretroPlatform::pollInput() {
