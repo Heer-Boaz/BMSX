@@ -9,6 +9,7 @@
 #include <GLES2/gl2.h>
 #include <linux/fb.h>
 #include <linux/input.h>
+#include <pthread.h>
 #include <signal.h>
 #include <stdarg.h>
 #include <stdbool.h>
@@ -95,9 +96,24 @@ typedef struct InputDev {
 	uint16_t pad_state;
 } InputDev;
 
+typedef struct AudioQueue {
+	int16_t* data;
+	size_t capacity_frames;
+	size_t read_frame;
+	size_t write_frame;
+	size_t used_frames;
+	pthread_mutex_t mutex;
+	pthread_cond_t can_read;
+	pthread_cond_t can_write;
+	bool running;
+} AudioQueue;
+
 static volatile sig_atomic_t g_should_quit = 0;
 static bool g_input_debug = false;
 static const uint64_t kExitComboHoldMs = 2000;
+static const unsigned kAudioPeriodFrames = 1024;
+static const unsigned kAudioPeriodCount = 4;
+static const unsigned kAudioPrimePeriods = 4;
 
 static char g_system_dir[1024] = "";
 static char g_save_dir[1024] = "";
@@ -263,7 +279,16 @@ static int g_audio_fd = -1;
 static int g_audio_sample_rate = 0;
 static unsigned g_audio_channels = 2;
 static unsigned g_audio_period_frames = 0;
+static unsigned g_audio_period_count = 0;
 static unsigned g_audio_buffer_frames = 0;
+static bool g_audio_prepared = false;
+static bool g_audio_running = false;
+static unsigned g_audio_underruns = 0;
+static AudioQueue g_audio_queue;
+static pthread_t g_audio_thread;
+static bool g_audio_thread_started = false;
+static int16_t* g_audio_thread_buf = NULL;
+static size_t g_audio_thread_buf_frames = 0;
 static int16_t g_audio_sample_buf[kAudioSampleBufferFrames * 2];
 static size_t g_audio_sample_buf_frames = 0;
 
@@ -1096,35 +1121,218 @@ static void audio_write_frames(const int16_t* data, size_t frames) {
 	if (frames == 0) {
 		return;
 	}
-	size_t bytes = frames * g_audio_channels * sizeof(int16_t);
-	const uint8_t* src = (const uint8_t*)data;
-	while (bytes > 0) {
-		ssize_t n = write(g_audio_fd, src, bytes);
-		if (n < 0) {
+	size_t remaining = frames;
+	const int16_t* src = data;
+	while (remaining > 0) {
+		struct snd_xferi xfer;
+		xfer.buf = (void*)src;
+		xfer.frames = remaining;
+		xfer.result = 0;
+		if (!g_audio_prepared) {
+			if (ioctl(g_audio_fd, SNDRV_PCM_IOCTL_PREPARE) != 0) {
+				die("SNDRV_PCM_IOCTL_PREPARE failed: %s", strerror(errno));
+			}
+			g_audio_prepared = true;
+		}
+		if (ioctl(g_audio_fd, SNDRV_PCM_IOCTL_WRITEI_FRAMES, &xfer) != 0) {
 			if (errno == EINTR) {
 				continue;
 			}
 			if (errno == EPIPE) {
-				if (ioctl(g_audio_fd, SNDRV_PCM_IOCTL_PREPARE) != 0) {
-					die("SNDRV_PCM_IOCTL_PREPARE failed: %s", strerror(errno));
-				}
+				g_audio_prepared = false;
+				g_audio_running = false;
+				++g_audio_underruns;
 				continue;
 			}
-			die("audio write failed: %s", strerror(errno));
+			die("SNDRV_PCM_IOCTL_WRITEI_FRAMES failed: %s", strerror(errno));
 		}
-		if (n == 0) {
-			die("audio write returned 0");
+		if (xfer.result <= 0) {
+			die("Audio write returned %ld frames", (long)xfer.result);
 		}
-		bytes -= (size_t)n;
-		src += (size_t)n;
+		g_audio_running = true;
+		remaining -= (size_t)xfer.result;
+		src += (size_t)xfer.result * g_audio_channels;
 	}
+}
+
+static void audio_queue_init(size_t capacity_frames) {
+	if (capacity_frames == 0) {
+		die("Audio queue capacity must be > 0");
+	}
+	g_audio_queue.data = (int16_t*)malloc(capacity_frames * g_audio_channels * sizeof(int16_t));
+	if (!g_audio_queue.data) {
+		die("malloc(%zu) failed for audio queue", capacity_frames * g_audio_channels * sizeof(int16_t));
+	}
+	g_audio_queue.capacity_frames = capacity_frames;
+	g_audio_queue.read_frame = 0;
+	g_audio_queue.write_frame = 0;
+	g_audio_queue.used_frames = 0;
+	int err = pthread_mutex_init(&g_audio_queue.mutex, NULL);
+	if (err != 0) {
+		die("pthread_mutex_init failed: %s", strerror(err));
+	}
+	err = pthread_cond_init(&g_audio_queue.can_read, NULL);
+	if (err != 0) {
+		die("pthread_cond_init(can_read) failed: %s", strerror(err));
+	}
+	err = pthread_cond_init(&g_audio_queue.can_write, NULL);
+	if (err != 0) {
+		die("pthread_cond_init(can_write) failed: %s", strerror(err));
+	}
+	g_audio_queue.running = true;
+}
+
+static void audio_queue_destroy(void) {
+	if (g_audio_queue.data) {
+		free(g_audio_queue.data);
+		g_audio_queue.data = NULL;
+	}
+	int err = pthread_cond_destroy(&g_audio_queue.can_read);
+	if (err != 0) {
+		die("pthread_cond_destroy(can_read) failed: %s", strerror(err));
+	}
+	err = pthread_cond_destroy(&g_audio_queue.can_write);
+	if (err != 0) {
+		die("pthread_cond_destroy(can_write) failed: %s", strerror(err));
+	}
+	err = pthread_mutex_destroy(&g_audio_queue.mutex);
+	if (err != 0) {
+		die("pthread_mutex_destroy failed: %s", strerror(err));
+	}
+	memset(&g_audio_queue, 0, sizeof(g_audio_queue));
+}
+
+static void audio_queue_stop(void) {
+	int err = pthread_mutex_lock(&g_audio_queue.mutex);
+	if (err != 0) {
+		die("pthread_mutex_lock failed: %s", strerror(err));
+	}
+	g_audio_queue.running = false;
+	err = pthread_cond_broadcast(&g_audio_queue.can_read);
+	if (err != 0) {
+		die("pthread_cond_broadcast(can_read) failed: %s", strerror(err));
+	}
+	err = pthread_cond_broadcast(&g_audio_queue.can_write);
+	if (err != 0) {
+		die("pthread_cond_broadcast(can_write) failed: %s", strerror(err));
+	}
+	err = pthread_mutex_unlock(&g_audio_queue.mutex);
+	if (err != 0) {
+		die("pthread_mutex_unlock failed: %s", strerror(err));
+	}
+}
+
+static void audio_queue_push_frames(const int16_t* data, size_t frames) {
+	if (frames == 0) {
+		return;
+	}
+	if (frames > g_audio_queue.capacity_frames) {
+		die("Audio queue overflow: frames=%zu capacity=%zu", frames, g_audio_queue.capacity_frames);
+	}
+	size_t remaining = frames;
+	while (remaining > 0) {
+		int err = pthread_mutex_lock(&g_audio_queue.mutex);
+		if (err != 0) {
+			die("pthread_mutex_lock failed: %s", strerror(err));
+		}
+		while (g_audio_queue.used_frames == g_audio_queue.capacity_frames) {
+			err = pthread_cond_wait(&g_audio_queue.can_write, &g_audio_queue.mutex);
+			if (err != 0) {
+				die("pthread_cond_wait(can_write) failed: %s", strerror(err));
+			}
+		}
+		size_t space = g_audio_queue.capacity_frames - g_audio_queue.used_frames;
+		size_t to_write = remaining < space ? remaining : space;
+		size_t tail = g_audio_queue.capacity_frames - g_audio_queue.write_frame;
+		size_t first = to_write < tail ? to_write : tail;
+		memcpy(g_audio_queue.data + g_audio_queue.write_frame * g_audio_channels,
+				data, first * g_audio_channels * sizeof(int16_t));
+		if (to_write > first) {
+			memcpy(g_audio_queue.data, data + first * g_audio_channels,
+					(to_write - first) * g_audio_channels * sizeof(int16_t));
+		}
+		g_audio_queue.write_frame = (g_audio_queue.write_frame + to_write) % g_audio_queue.capacity_frames;
+		g_audio_queue.used_frames += to_write;
+		err = pthread_cond_signal(&g_audio_queue.can_read);
+		if (err != 0) {
+			die("pthread_cond_signal(can_read) failed: %s", strerror(err));
+		}
+		err = pthread_mutex_unlock(&g_audio_queue.mutex);
+		if (err != 0) {
+			die("pthread_mutex_unlock failed: %s", strerror(err));
+		}
+		data += to_write * g_audio_channels;
+		remaining -= to_write;
+	}
+}
+
+static size_t audio_queue_pop_frames(int16_t* out, size_t max_frames, size_t min_frames) {
+	if (min_frames > g_audio_queue.capacity_frames) {
+		die("Audio queue min_frames=%zu exceeds capacity=%zu", min_frames, g_audio_queue.capacity_frames);
+	}
+	int err = pthread_mutex_lock(&g_audio_queue.mutex);
+	if (err != 0) {
+		die("pthread_mutex_lock failed: %s", strerror(err));
+	}
+	while (g_audio_queue.used_frames < min_frames && g_audio_queue.running) {
+		err = pthread_cond_wait(&g_audio_queue.can_read, &g_audio_queue.mutex);
+		if (err != 0) {
+			die("pthread_cond_wait(can_read) failed: %s", strerror(err));
+		}
+	}
+	if (g_audio_queue.used_frames == 0 && !g_audio_queue.running) {
+		err = pthread_mutex_unlock(&g_audio_queue.mutex);
+		if (err != 0) {
+			die("pthread_mutex_unlock failed: %s", strerror(err));
+		}
+		return 0;
+	}
+	size_t frames = g_audio_queue.used_frames < max_frames ? g_audio_queue.used_frames : max_frames;
+	size_t tail = g_audio_queue.capacity_frames - g_audio_queue.read_frame;
+	size_t first = frames < tail ? frames : tail;
+	memcpy(out, g_audio_queue.data + g_audio_queue.read_frame * g_audio_channels,
+			first * g_audio_channels * sizeof(int16_t));
+	if (frames > first) {
+		memcpy(out + first * g_audio_channels, g_audio_queue.data,
+				(frames - first) * g_audio_channels * sizeof(int16_t));
+	}
+	g_audio_queue.read_frame = (g_audio_queue.read_frame + frames) % g_audio_queue.capacity_frames;
+	g_audio_queue.used_frames -= frames;
+	err = pthread_cond_signal(&g_audio_queue.can_write);
+	if (err != 0) {
+		die("pthread_cond_signal(can_write) failed: %s", strerror(err));
+	}
+	err = pthread_mutex_unlock(&g_audio_queue.mutex);
+	if (err != 0) {
+		die("pthread_mutex_unlock failed: %s", strerror(err));
+	}
+	return frames;
+}
+
+static void* audio_thread_main(void* arg) {
+	(void)arg;
+	const size_t prime_frames = g_audio_period_frames * kAudioPrimePeriods;
+	bool primed = false;
+	for (;;) {
+		size_t min_frames = primed ? g_audio_period_frames : prime_frames;
+		size_t frames = audio_queue_pop_frames(g_audio_thread_buf, g_audio_thread_buf_frames, min_frames);
+		if (frames == 0) {
+			break;
+		}
+		primed = true;
+		audio_write_frames(g_audio_thread_buf, frames);
+	}
+	if (ioctl(g_audio_fd, SNDRV_PCM_IOCTL_DRAIN) != 0) {
+		die("SNDRV_PCM_IOCTL_DRAIN failed: %s", strerror(errno));
+	}
+	return NULL;
 }
 
 static void audio_flush_sample_buffer(void) {
 	if (g_audio_sample_buf_frames == 0) {
 		return;
 	}
-	audio_write_frames(g_audio_sample_buf, g_audio_sample_buf_frames);
+	audio_queue_push_frames(g_audio_sample_buf, g_audio_sample_buf_frames);
 	g_audio_sample_buf_frames = 0;
 }
 
@@ -1175,6 +1383,27 @@ static unsigned hw_param_interval_get_max(const struct snd_pcm_hw_params* params
 	return params->intervals[param - SNDRV_PCM_HW_PARAM_FIRST_INTERVAL].max;
 }
 
+static void audio_set_sw_params(void) {
+	struct snd_pcm_sw_params sw;
+	memset(&sw, 0, sizeof(sw));
+	sw.tstamp_mode = SNDRV_PCM_TSTAMP_ENABLE;
+	sw.period_step = 1;
+	sw.sleep_min = 0;
+	sw.avail_min = 1;
+	sw.xfer_align = g_audio_period_frames / 2;
+	sw.start_threshold = g_audio_period_frames;
+	sw.stop_threshold = g_audio_buffer_frames;
+	sw.silence_threshold = 0;
+	sw.silence_size = 0;
+	sw.boundary = g_audio_buffer_frames;
+	while (sw.boundary * 2u <= (unsigned)(INT_MAX - (int)g_audio_buffer_frames)) {
+		sw.boundary *= 2u;
+	}
+	if (ioctl(g_audio_fd, SNDRV_PCM_IOCTL_SW_PARAMS, &sw) != 0) {
+		die("SNDRV_PCM_IOCTL_SW_PARAMS failed: %s", strerror(errno));
+	}
+}
+
 static void audio_init(int sample_rate) {
 	g_audio_fd = open(g_audio_device, O_WRONLY);
 	if (g_audio_fd < 0) {
@@ -1187,6 +1416,8 @@ static void audio_init(int sample_rate) {
 	hw_param_mask_set(&hw, SNDRV_PCM_HW_PARAM_SUBFORMAT, SNDRV_PCM_SUBFORMAT_STD);
 	hw_param_interval_set(&hw, SNDRV_PCM_HW_PARAM_CHANNELS, g_audio_channels, g_audio_channels);
 	hw_param_interval_set(&hw, SNDRV_PCM_HW_PARAM_RATE, (unsigned)sample_rate, (unsigned)sample_rate);
+	hw_param_interval_set(&hw, SNDRV_PCM_HW_PARAM_PERIOD_SIZE, kAudioPeriodFrames, kAudioPeriodFrames);
+	hw_param_interval_set(&hw, SNDRV_PCM_HW_PARAM_PERIODS, kAudioPeriodCount, kAudioPeriodCount);
 	if (ioctl(g_audio_fd, SNDRV_PCM_IOCTL_HW_REFINE, &hw) != 0) {
 		die("SNDRV_PCM_IOCTL_HW_REFINE failed: %s", strerror(errno));
 	}
@@ -1205,22 +1436,67 @@ static void audio_init(int sample_rate) {
 	}
 	g_audio_sample_rate = (int)rate_min;
 	g_audio_period_frames = hw_param_interval_get_min(&hw, SNDRV_PCM_HW_PARAM_PERIOD_SIZE);
-	g_audio_buffer_frames = hw_param_interval_get_min(&hw, SNDRV_PCM_HW_PARAM_BUFFER_SIZE);
+	g_audio_period_count = hw_param_interval_get_min(&hw, SNDRV_PCM_HW_PARAM_PERIODS);
+	if (g_audio_period_frames == 0) {
+		die("Invalid ALSA period size");
+	}
+	if (g_audio_period_count == 0) {
+		die("Invalid ALSA period count");
+	}
+	g_audio_buffer_frames = g_audio_period_frames * g_audio_period_count;
+	audio_set_sw_params();
 	if (ioctl(g_audio_fd, SNDRV_PCM_IOCTL_PREPARE) != 0) {
 		die("SNDRV_PCM_IOCTL_PREPARE failed: %s", strerror(errno));
 	}
+	g_audio_prepared = true;
+	g_audio_running = false;
+	g_audio_underruns = 0;
+	g_audio_thread_buf_frames = g_audio_period_frames;
+	g_audio_thread_buf = (int16_t*)malloc(g_audio_thread_buf_frames * g_audio_channels * sizeof(int16_t));
+	if (!g_audio_thread_buf) {
+		die("malloc(%zu) failed for audio thread buffer",
+				g_audio_thread_buf_frames * g_audio_channels * sizeof(int16_t));
+	}
+	audio_queue_init((size_t)g_audio_sample_rate);
+	int err = pthread_create(&g_audio_thread, NULL, audio_thread_main, NULL);
+	if (err != 0) {
+		die("pthread_create failed: %s", strerror(err));
+	}
+	g_audio_thread_started = true;
 	g_audio_sample_buf_frames = 0;
-	fprintf(stderr, "[libretro-host] audio: dev=%s rate=%d ch=%u period=%u buffer=%u\n",
+	fprintf(stderr, "[libretro-host] audio: dev=%s rate=%d ch=%u period=%u periods=%u buffer=%u\n",
 			g_audio_device, g_audio_sample_rate, g_audio_channels,
-			g_audio_period_frames, g_audio_buffer_frames);
+			g_audio_period_frames, g_audio_period_count, g_audio_buffer_frames);
 }
 
 static void audio_shutdown(void) {
 	audio_flush_sample_buffer();
-	close(g_audio_fd);
+	if (g_audio_thread_started) {
+		audio_queue_stop();
+		int err = pthread_join(g_audio_thread, NULL);
+		if (err != 0) {
+			die("pthread_join failed: %s", strerror(err));
+		}
+		g_audio_thread_started = false;
+		audio_queue_destroy();
+	}
+	if (g_audio_thread_buf) {
+		free(g_audio_thread_buf);
+		g_audio_thread_buf = NULL;
+	}
+	g_audio_thread_buf_frames = 0;
+	if (g_audio_fd >= 0) {
+		close(g_audio_fd);
+	}
 	g_audio_fd = -1;
 	g_audio_sample_rate = 0;
+	g_audio_period_frames = 0;
+	g_audio_period_count = 0;
+	g_audio_buffer_frames = 0;
 	g_audio_sample_buf_frames = 0;
+	g_audio_prepared = false;
+	g_audio_running = false;
+	g_audio_underruns = 0;
 }
 
 static void audio_sample_cb(int16_t left, int16_t right) {
@@ -1229,14 +1505,14 @@ static void audio_sample_cb(int16_t left, int16_t right) {
 	g_audio_sample_buf[idx + 1] = right;
 	++g_audio_sample_buf_frames;
 	if (g_audio_sample_buf_frames >= kAudioSampleBufferFrames) {
-		audio_write_frames(g_audio_sample_buf, g_audio_sample_buf_frames);
+		audio_queue_push_frames(g_audio_sample_buf, g_audio_sample_buf_frames);
 		g_audio_sample_buf_frames = 0;
 	}
 }
 
 static size_t audio_batch_cb(const int16_t* data, size_t frames) {
 	audio_flush_sample_buffer();
-	audio_write_frames(data, frames);
+	audio_queue_push_frames(data, frames);
 	return frames;
 }
 
@@ -1722,16 +1998,15 @@ int main(int argc, char** argv) {
 		die("retro_load_game failed");
 	}
 
+	double fps = av.timing.fps;
+	if (fps <= 0.0) {
+		fps = 50.0;
+	}
 	int audio_rate = (int)(av.timing.sample_rate + 0.5);
 	if (audio_rate <= 0) {
 		die("Invalid audio sample rate: %.2f", av.timing.sample_rate);
 	}
 	audio_init(audio_rate);
-
-	double fps = av.timing.fps;
-	if (fps <= 0.0) {
-		fps = 50.0;
-	}
 	const long frame_ns = (long)(1000000000.0 / fps);
 
 	while (!g_should_quit) {
