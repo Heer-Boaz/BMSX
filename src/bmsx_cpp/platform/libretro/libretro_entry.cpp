@@ -85,6 +85,16 @@ static constexpr const char* kCrtPostprocessingOn = "on";
 static constexpr const char* kOptionPostprocessDetail = "bmsx_postprocess_detail";
 static constexpr const char* kPostprocessDetailOff = "off";
 static constexpr const char* kPostprocessDetailOn = "on";
+static constexpr const char* kOptionCrtNoise = "bmsx_crt_noise";
+static constexpr const char* kOptionCrtColorBleed = "bmsx_crt_color_bleed";
+static constexpr const char* kOptionCrtScanlines = "bmsx_crt_scanlines";
+static constexpr const char* kOptionCrtBlur = "bmsx_crt_blur";
+static constexpr const char* kOptionCrtGlow = "bmsx_crt_glow";
+static constexpr const char* kOptionCrtFringing = "bmsx_crt_fringing";
+static constexpr const char* kOptionCrtAperture = "bmsx_crt_aperture";
+static constexpr const char* kOptionPsxDither2d = "bmsx_psx_dither_2d";
+static constexpr const char* kToggleOff = "off";
+static constexpr const char* kToggleOn = "on";
 
 enum class RenderBackendPreference {
 	Auto,
@@ -95,6 +105,14 @@ enum class RenderBackendPreference {
 static RenderBackendPreference g_backend_preference = RenderBackendPreference::Auto;
 static bool g_crt_postprocessing_enabled = false;
 static bool g_postprocess_detail_enabled = false;
+static bool g_crt_noise_enabled = true;
+static bool g_crt_color_bleed_enabled = true;
+static bool g_crt_scanlines_enabled = true;
+static bool g_crt_blur_enabled = true;
+static bool g_crt_glow_enabled = true;
+static bool g_crt_fringing_enabled = true;
+static bool g_crt_aperture_enabled = true;
+static bool g_psx_dither_2d_enabled = true;
 
 static retro_core_option_v2_category g_option_categories_us[] = {
 	{"video", "Video", "Video settings."},
@@ -144,6 +162,118 @@ static retro_core_option_v2_definition g_option_defs_us[] = {
 		},
 		kPostprocessDetailOff
 	},
+	{
+		kOptionCrtNoise,
+		"CRT Noise",
+		"CRT Noise",
+		"Toggle CRT noise/grain.",
+		"Toggle CRT noise/grain.",
+		"video",
+		{
+			{kToggleOff, "Off"},
+			{kToggleOn, "On"},
+			{nullptr, nullptr},
+		},
+		kToggleOn
+	},
+	{
+		kOptionCrtColorBleed,
+		"CRT Color Bleed",
+		"CRT Color Bleed",
+		"Toggle CRT color bleed.",
+		"Toggle CRT color bleed.",
+		"video",
+		{
+			{kToggleOff, "Off"},
+			{kToggleOn, "On"},
+			{nullptr, nullptr},
+		},
+		kToggleOn
+	},
+	{
+		kOptionCrtScanlines,
+		"CRT Scanlines",
+		"CRT Scanlines",
+		"Toggle CRT scanlines.",
+		"Toggle CRT scanlines.",
+		"video",
+		{
+			{kToggleOff, "Off"},
+			{kToggleOn, "On"},
+			{nullptr, nullptr},
+		},
+		kToggleOn
+	},
+	{
+		kOptionCrtBlur,
+		"CRT Blur",
+		"CRT Blur",
+		"Toggle CRT blur.",
+		"Toggle CRT blur.",
+		"video",
+		{
+			{kToggleOff, "Off"},
+			{kToggleOn, "On"},
+			{nullptr, nullptr},
+		},
+		kToggleOn
+	},
+	{
+		kOptionCrtGlow,
+		"CRT Glow",
+		"CRT Glow",
+		"Toggle CRT glow.",
+		"Toggle CRT glow.",
+		"video",
+		{
+			{kToggleOff, "Off"},
+			{kToggleOn, "On"},
+			{nullptr, nullptr},
+		},
+		kToggleOn
+	},
+	{
+		kOptionCrtFringing,
+		"CRT Fringing",
+		"CRT Fringing",
+		"Toggle CRT fringing.",
+		"Toggle CRT fringing.",
+		"video",
+		{
+			{kToggleOff, "Off"},
+			{kToggleOn, "On"},
+			{nullptr, nullptr},
+		},
+		kToggleOn
+	},
+	{
+		kOptionCrtAperture,
+		"CRT Aperture",
+		"CRT Aperture",
+		"Toggle CRT aperture grille.",
+		"Toggle CRT aperture grille.",
+		"video",
+		{
+			{kToggleOff, "Off"},
+			{kToggleOn, "On"},
+			{nullptr, nullptr},
+		},
+		kToggleOn
+	},
+	{
+		kOptionPsxDither2d,
+		"PSX Dither 2D",
+		"PSX Dither 2D",
+		"Toggle PSX-style dither for 2D sprites.",
+		"Toggle PSX-style dither for 2D sprites.",
+		"video",
+		{
+			{kToggleOff, "Off"},
+			{kToggleOn, "On"},
+			{nullptr, nullptr},
+		},
+		kToggleOn
+	},
 	{nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, {{nullptr, nullptr}}, nullptr}
 };
 
@@ -186,16 +316,120 @@ static retro_core_option_definition g_option_defs_v1_us[] = {
 		},
 		kPostprocessDetailOff
 	},
+	{
+		kOptionCrtNoise,
+		"CRT Noise",
+		"Toggle CRT noise/grain.",
+		{
+			{kToggleOff, "Off"},
+			{kToggleOn, "On"},
+			{nullptr, nullptr},
+		},
+		kToggleOn
+	},
+	{
+		kOptionCrtColorBleed,
+		"CRT Color Bleed",
+		"Toggle CRT color bleed.",
+		{
+			{kToggleOff, "Off"},
+			{kToggleOn, "On"},
+			{nullptr, nullptr},
+		},
+		kToggleOn
+	},
+	{
+		kOptionCrtScanlines,
+		"CRT Scanlines",
+		"Toggle CRT scanlines.",
+		{
+			{kToggleOff, "Off"},
+			{kToggleOn, "On"},
+			{nullptr, nullptr},
+		},
+		kToggleOn
+	},
+	{
+		kOptionCrtBlur,
+		"CRT Blur",
+		"Toggle CRT blur.",
+		{
+			{kToggleOff, "Off"},
+			{kToggleOn, "On"},
+			{nullptr, nullptr},
+		},
+		kToggleOn
+	},
+	{
+		kOptionCrtGlow,
+		"CRT Glow",
+		"Toggle CRT glow.",
+		{
+			{kToggleOff, "Off"},
+			{kToggleOn, "On"},
+			{nullptr, nullptr},
+		},
+		kToggleOn
+	},
+	{
+		kOptionCrtFringing,
+		"CRT Fringing",
+		"Toggle CRT fringing.",
+		{
+			{kToggleOff, "Off"},
+			{kToggleOn, "On"},
+			{nullptr, nullptr},
+		},
+		kToggleOn
+	},
+	{
+		kOptionCrtAperture,
+		"CRT Aperture",
+		"Toggle CRT aperture grille.",
+		{
+			{kToggleOff, "Off"},
+			{kToggleOn, "On"},
+			{nullptr, nullptr},
+		},
+		kToggleOn
+	},
+	{
+		kOptionPsxDither2d,
+		"PSX Dither 2D",
+		"Toggle PSX-style dither for 2D sprites.",
+		{
+			{kToggleOff, "Off"},
+			{kToggleOn, "On"},
+			{nullptr, nullptr},
+		},
+		kToggleOn
+	},
 	{nullptr, nullptr, nullptr, {{nullptr, nullptr}}, nullptr}
 };
 
 static char g_option_render_backend_var[128] = {};
 static char g_option_crt_postprocessing_var[128] = {};
 static char g_option_postprocess_detail_var[128] = {};
+static char g_option_crt_noise_var[128] = {};
+static char g_option_crt_color_bleed_var[128] = {};
+static char g_option_crt_scanlines_var[128] = {};
+static char g_option_crt_blur_var[128] = {};
+static char g_option_crt_glow_var[128] = {};
+static char g_option_crt_fringing_var[128] = {};
+static char g_option_crt_aperture_var[128] = {};
+static char g_option_psx_dither_2d_var[128] = {};
 static retro_variable g_option_vars[] = {
 	{kOptionRenderBackend, nullptr},
 	{kOptionCrtPostprocessing, nullptr},
 	{kOptionPostprocessDetail, nullptr},
+	{kOptionCrtNoise, nullptr},
+	{kOptionCrtColorBleed, nullptr},
+	{kOptionCrtScanlines, nullptr},
+	{kOptionCrtBlur, nullptr},
+	{kOptionCrtGlow, nullptr},
+	{kOptionCrtFringing, nullptr},
+	{kOptionCrtAperture, nullptr},
+	{kOptionPsxDither2d, nullptr},
 	{nullptr, nullptr}
 };
 
@@ -215,6 +449,14 @@ static void handle_backend_fallback(bmsx::BackendType backend, const char* reaso
 static void try_update_backend_option();
 static bool read_crt_postprocessing_enabled();
 static bool read_postprocess_detail_enabled();
+static bool read_crt_noise_enabled();
+static bool read_crt_color_bleed_enabled();
+static bool read_crt_scanlines_enabled();
+static bool read_crt_blur_enabled();
+static bool read_crt_glow_enabled();
+static bool read_crt_fringing_enabled();
+static bool read_crt_aperture_enabled();
+static bool read_psx_dither_2d_enabled();
 
 /* ============================================================================
  * Libretro callback setters
@@ -344,6 +586,30 @@ static void set_core_options(bool default_gles2) {
 	std::snprintf(g_option_postprocess_detail_var, sizeof(g_option_postprocess_detail_var),
 				  "Post-processing Detail; %s|%s", kPostprocessDetailOff, kPostprocessDetailOn);
 	g_option_vars[2].value = g_option_postprocess_detail_var;
+	std::snprintf(g_option_crt_noise_var, sizeof(g_option_crt_noise_var),
+				  "CRT Noise; %s|%s", kToggleOn, kToggleOff);
+	g_option_vars[3].value = g_option_crt_noise_var;
+	std::snprintf(g_option_crt_color_bleed_var, sizeof(g_option_crt_color_bleed_var),
+				  "CRT Color Bleed; %s|%s", kToggleOn, kToggleOff);
+	g_option_vars[4].value = g_option_crt_color_bleed_var;
+	std::snprintf(g_option_crt_scanlines_var, sizeof(g_option_crt_scanlines_var),
+				  "CRT Scanlines; %s|%s", kToggleOn, kToggleOff);
+	g_option_vars[5].value = g_option_crt_scanlines_var;
+	std::snprintf(g_option_crt_blur_var, sizeof(g_option_crt_blur_var),
+				  "CRT Blur; %s|%s", kToggleOn, kToggleOff);
+	g_option_vars[6].value = g_option_crt_blur_var;
+	std::snprintf(g_option_crt_glow_var, sizeof(g_option_crt_glow_var),
+				  "CRT Glow; %s|%s", kToggleOn, kToggleOff);
+	g_option_vars[7].value = g_option_crt_glow_var;
+	std::snprintf(g_option_crt_fringing_var, sizeof(g_option_crt_fringing_var),
+				  "CRT Fringing; %s|%s", kToggleOn, kToggleOff);
+	g_option_vars[8].value = g_option_crt_fringing_var;
+	std::snprintf(g_option_crt_aperture_var, sizeof(g_option_crt_aperture_var),
+				  "CRT Aperture; %s|%s", kToggleOn, kToggleOff);
+	g_option_vars[9].value = g_option_crt_aperture_var;
+	std::snprintf(g_option_psx_dither_2d_var, sizeof(g_option_psx_dither_2d_var),
+				  "PSX Dither 2D; %s|%s", kToggleOn, kToggleOff);
+	g_option_vars[10].value = g_option_psx_dither_2d_var;
 
 	unsigned version = 0;
 	if (environ_cb(RETRO_ENVIRONMENT_GET_CORE_OPTIONS_VERSION, &version) && version >= 2) {
@@ -402,6 +668,20 @@ static bool parse_postprocess_detail_enabled(const char* value) {
 	return false;
 }
 
+static bool parse_toggle_option(const char* value, const char* label, bool default_value) {
+	if (!value || !value[0]) return default_value;
+	if (std::strcmp(value, kToggleOn) == 0 || std::strcmp(value, "On") == 0) {
+		return true;
+	}
+	if (std::strcmp(value, kToggleOff) == 0 || std::strcmp(value, "Off") == 0) {
+		return false;
+	}
+	logging.log(RETRO_LOG_WARN,
+				"[BMSX] Unknown %s option '%s', using %s\n",
+				label, value, default_value ? "on" : "off");
+	return default_value;
+}
+
 static RenderBackendPreference read_backend_preference() {
 #if !BMSX_ENABLE_GLES2
 	return RenderBackendPreference::Software;
@@ -434,6 +714,48 @@ static bool read_postprocess_detail_enabled() {
 		return parse_postprocess_detail_enabled(var.value);
 	}
 	return false;
+}
+
+static bool read_toggle_option(const char* key, const char* label, bool default_value) {
+	retro_variable var;
+	var.key = key;
+	var.value = nullptr;
+	if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
+		return parse_toggle_option(var.value, label, default_value);
+	}
+	return default_value;
+}
+
+static bool read_crt_noise_enabled() {
+	return read_toggle_option(kOptionCrtNoise, "CRT Noise", true);
+}
+
+static bool read_crt_color_bleed_enabled() {
+	return read_toggle_option(kOptionCrtColorBleed, "CRT Color Bleed", true);
+}
+
+static bool read_crt_scanlines_enabled() {
+	return read_toggle_option(kOptionCrtScanlines, "CRT Scanlines", true);
+}
+
+static bool read_crt_blur_enabled() {
+	return read_toggle_option(kOptionCrtBlur, "CRT Blur", true);
+}
+
+static bool read_crt_glow_enabled() {
+	return read_toggle_option(kOptionCrtGlow, "CRT Glow", true);
+}
+
+static bool read_crt_fringing_enabled() {
+	return read_toggle_option(kOptionCrtFringing, "CRT Fringing", true);
+}
+
+static bool read_crt_aperture_enabled() {
+	return read_toggle_option(kOptionCrtAperture, "CRT Aperture", true);
+}
+
+static bool read_psx_dither_2d_enabled() {
+	return read_toggle_option(kOptionPsxDither2d, "PSX Dither 2D", true);
 }
 
 static void apply_backend_preference(RenderBackendPreference preference) {
@@ -641,6 +963,14 @@ void retro_init(void) {
   const bmsx::BackendType desired_backend = resolve_backend_preference(preference);
   g_crt_postprocessing_enabled = read_crt_postprocessing_enabled();
   g_postprocess_detail_enabled = read_postprocess_detail_enabled();
+  g_crt_noise_enabled = read_crt_noise_enabled();
+  g_crt_color_bleed_enabled = read_crt_color_bleed_enabled();
+  g_crt_scanlines_enabled = read_crt_scanlines_enabled();
+  g_crt_blur_enabled = read_crt_blur_enabled();
+  g_crt_glow_enabled = read_crt_glow_enabled();
+  g_crt_fringing_enabled = read_crt_fringing_enabled();
+  g_crt_aperture_enabled = read_crt_aperture_enabled();
+  g_psx_dither_2d_enabled = read_psx_dither_2d_enabled();
   request_hw_context_for_backend(desired_backend);
   apply_backend_preference(preference);
 
@@ -689,6 +1019,14 @@ void retro_init(void) {
   g_platform->setInputPollCallback(input_poll_cb);
   g_platform->setInputStateCallback(input_state_cb);
   g_platform->setPostProcessOptions(g_crt_postprocessing_enabled, g_postprocess_detail_enabled);
+  g_platform->setCrtEffectOptions(g_crt_noise_enabled,
+								  g_crt_color_bleed_enabled,
+								  g_crt_scanlines_enabled,
+								  g_crt_blur_enabled,
+								  g_crt_glow_enabled,
+								  g_crt_fringing_enabled,
+								  g_crt_aperture_enabled);
+  g_platform->setPsxDither2dOptions(g_psx_dither_2d_enabled);
   if (isHardwareBackendActive()) {
 	try {
 	  g_platform->setHwRenderCallbacks(g_hw_render.get_current_framebuffer);
@@ -868,6 +1206,56 @@ void retro_run(void) {
 	  g_crt_postprocessing_enabled = new_crt;
 	  g_postprocess_detail_enabled = new_detail;
 	  g_platform->setPostProcessOptions(g_crt_postprocessing_enabled, g_postprocess_detail_enabled);
+	}
+	const bool new_crt_noise = read_crt_noise_enabled();
+	const bool new_crt_color_bleed = read_crt_color_bleed_enabled();
+	const bool new_crt_scanlines = read_crt_scanlines_enabled();
+	const bool new_crt_blur = read_crt_blur_enabled();
+	const bool new_crt_glow = read_crt_glow_enabled();
+	const bool new_crt_fringing = read_crt_fringing_enabled();
+	const bool new_crt_aperture = read_crt_aperture_enabled();
+	bool crt_effects_changed = false;
+	if (new_crt_noise != g_crt_noise_enabled) {
+	  g_crt_noise_enabled = new_crt_noise;
+	  crt_effects_changed = true;
+	}
+	if (new_crt_color_bleed != g_crt_color_bleed_enabled) {
+	  g_crt_color_bleed_enabled = new_crt_color_bleed;
+	  crt_effects_changed = true;
+	}
+	if (new_crt_scanlines != g_crt_scanlines_enabled) {
+	  g_crt_scanlines_enabled = new_crt_scanlines;
+	  crt_effects_changed = true;
+	}
+	if (new_crt_blur != g_crt_blur_enabled) {
+	  g_crt_blur_enabled = new_crt_blur;
+	  crt_effects_changed = true;
+	}
+	if (new_crt_glow != g_crt_glow_enabled) {
+	  g_crt_glow_enabled = new_crt_glow;
+	  crt_effects_changed = true;
+	}
+	if (new_crt_fringing != g_crt_fringing_enabled) {
+	  g_crt_fringing_enabled = new_crt_fringing;
+	  crt_effects_changed = true;
+	}
+	if (new_crt_aperture != g_crt_aperture_enabled) {
+	  g_crt_aperture_enabled = new_crt_aperture;
+	  crt_effects_changed = true;
+	}
+	if (crt_effects_changed) {
+	  g_platform->setCrtEffectOptions(g_crt_noise_enabled,
+									  g_crt_color_bleed_enabled,
+									  g_crt_scanlines_enabled,
+									  g_crt_blur_enabled,
+									  g_crt_glow_enabled,
+									  g_crt_fringing_enabled,
+									  g_crt_aperture_enabled);
+	}
+	const bool new_psx_dither_2d = read_psx_dither_2d_enabled();
+	if (new_psx_dither_2d != g_psx_dither_2d_enabled) {
+	  g_psx_dither_2d_enabled = new_psx_dither_2d;
+	  g_platform->setPsxDither2dOptions(g_psx_dither_2d_enabled);
 	}
   }
 //   static auto lastFrameTime = std::chrono::steady_clock::now();

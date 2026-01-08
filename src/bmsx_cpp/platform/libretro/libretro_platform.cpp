@@ -255,6 +255,27 @@ void LibretroPlatform::setPostProcessOptions(bool enableCrt, bool highDetail) {
 	view->configureRenderTargets(nullptr, nullptr, &offscreenSize);
 }
 
+void LibretroPlatform::setCrtEffectOptions(bool applyNoise,
+										   bool applyColorBleed,
+										   bool applyScanlines,
+										   bool applyBlur,
+										   bool applyGlow,
+										   bool applyFringing,
+										   bool applyAperture) {
+	auto* view = m_engine->view();
+	view->applyNoise = applyNoise;
+	view->applyColorBleed = applyColorBleed;
+	view->applyScanlines = applyScanlines;
+	view->applyBlur = applyBlur;
+	view->applyGlow = applyGlow;
+	view->applyFringing = applyFringing;
+	view->applyAperture = applyAperture;
+}
+
+void LibretroPlatform::setPsxDither2dOptions(bool enabled) {
+	m_engine->view()->psx_dither_2d_enabled = enabled;
+}
+
 void LibretroPlatform::setFrameTimeUsec(retro_usec_t usec) {
 	const double nextFrameTimeSec = static_cast<double>(usec) / 1000000.0;
 	static double lastLoggedFrameTimeSec = -1.0;
@@ -673,8 +694,16 @@ LibretroInputHub::LibretroInputHub(LibretroPlatform* platform)
 
 namespace {
 
+#if defined(BMSX_SNESMINI_LEGACY)
+constexpr const char* kLibretroBtnA = "a";
+constexpr const char* kLibretroBtnB = "b";
+#else
+constexpr const char* kLibretroBtnA = "b";
+constexpr const char* kLibretroBtnB = "a";
+#endif
+
 constexpr std::array<const char*, InputState::BUTTONS_PER_PLAYER> kLibretroButtonIds = {
-	"a",      // RETRO_DEVICE_ID_JOYPAD_B
+	kLibretroBtnB,      // RETRO_DEVICE_ID_JOYPAD_B
 	"x",      // RETRO_DEVICE_ID_JOYPAD_Y
 	"select", // RETRO_DEVICE_ID_JOYPAD_SELECT
 	"start",  // RETRO_DEVICE_ID_JOYPAD_START
@@ -682,7 +711,7 @@ constexpr std::array<const char*, InputState::BUTTONS_PER_PLAYER> kLibretroButto
 	"down",   // RETRO_DEVICE_ID_JOYPAD_DOWN
 	"left",   // RETRO_DEVICE_ID_JOYPAD_LEFT
 	"right",  // RETRO_DEVICE_ID_JOYPAD_RIGHT
-	"b",      // RETRO_DEVICE_ID_JOYPAD_A
+	kLibretroBtnA,      // RETRO_DEVICE_ID_JOYPAD_A
 	"y",      // RETRO_DEVICE_ID_JOYPAD_X
 	"l1",     // RETRO_DEVICE_ID_JOYPAD_L
 	"r1",     // RETRO_DEVICE_ID_JOYPAD_R

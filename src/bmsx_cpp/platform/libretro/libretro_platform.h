@@ -156,6 +156,14 @@ public:
 	void onContextDestroy();
 	void switchToSoftwareBackend();
 	void setPostProcessOptions(bool enableCrt, bool highDetail);
+	void setCrtEffectOptions(bool applyNoise,
+							 bool applyColorBleed,
+							 bool applyScanlines,
+							 bool applyBlur,
+							 bool applyGlow,
+							 bool applyFringing,
+							 bool applyAperture);
+	void setPsxDither2dOptions(bool enabled);
 
 	// Configuration
 	void setAVInfo(const retro_system_av_info& info);
