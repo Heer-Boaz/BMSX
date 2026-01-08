@@ -55,6 +55,8 @@ libretro-host-snesmini-debug-host: snesmini-sysroot
 		cmake -S src/bmsx_cpp -B "$(SNESMINI_BUILD_DIR)" \
 			-DCMAKE_BUILD_TYPE="$(SNESMINI_BUILD_TYPE)" \
 			$(SNESMINI_CMAKE_ARGS) \
+			-DCMAKE_C_FLAGS="$(SNESMINI_C_FLAGS) -isystem /usr/include" \
+			-DCMAKE_CXX_FLAGS="$(SNESMINI_CXX_FLAGS) -isystem /usr/include" \
 			-DBMSX_BUILD_LIBRETRO=OFF \
 			-DBMSX_BUILD_LIBRETRO_HOST=ON
 	cmake --build "$(SNESMINI_BUILD_DIR)" --config "$(SNESMINI_BUILD_TYPE)"

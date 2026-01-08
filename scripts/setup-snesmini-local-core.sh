@@ -304,7 +304,8 @@ if [ "${BMSX_SNESMINI_USE_DOCKER:-1}" = "1" ]; then
 		/bin/bash -lc "apt-get update && apt-get install -y \
 			ca-certificates debootstrap cmake make pkg-config git \
 			gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf binutils-arm-linux-gnueabihf \
-			qemu-user-static binfmt-support && \
+			qemu-user-static binfmt-support \
+			libegl1-mesa-dev libgles2-mesa-dev && \
 			BMSX_SNESMINI_IN_ROOTFS=1 BMSX_SNESMINI_MAKE_TARGET=\"$MAKE_TARGET\" \
 			SNESMINI_BUILD_TYPE=\"$BUILD_TYPE\" ./scripts/setup-snesmini-local-core.sh $MODE_FLAG \"$SYSROOT_IN_CONTAINER\""
 	exit 0

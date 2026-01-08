@@ -1,8 +1,10 @@
 #define _GNU_SOURCE
 
 #include <dlfcn.h>
+#include <EGL/egl.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <GLES2/gl2.h>
 #include <linux/fb.h>
 #include <linux/input.h>
 #include <signal.h>
@@ -17,6 +19,7 @@
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
+#include <ucontext.h>
 
 #include "libretro.h"
 
@@ -86,11 +89,90 @@ static char g_opt_postprocess_detail[8] = "off";
 static bool g_vars_updated = false;
 
 static enum retro_pixel_format g_core_pixel_format = RETRO_PIXEL_FORMAT_XRGB8888;
+static struct retro_hw_render_callback g_hw_render;
+static bool g_use_hw_render = false;
+static bool g_hw_context_pending_reset = false;
+static EGLDisplay g_egl_display = EGL_NO_DISPLAY;
+static EGLContext g_egl_context = EGL_NO_CONTEXT;
+static EGLSurface g_egl_surface = EGL_NO_SURFACE;
+static void* g_egl_lib = NULL;
+static void* g_gles_lib = NULL;
+
+struct fbdev_window {
+	uint16_t width;
+	uint16_t height;
+};
+
+static struct fbdev_window g_fbwin;
+
+typedef EGLDisplay (EGLAPIENTRYP PFNEGLGETDISPLAY)(EGLNativeDisplayType display_id);
+typedef EGLBoolean (EGLAPIENTRYP PFNEGLBINDAPI)(EGLenum api);
+typedef EGLBoolean (EGLAPIENTRYP PFNEGLINITIALIZE)(EGLDisplay dpy, EGLint* major, EGLint* minor);
+typedef EGLBoolean (EGLAPIENTRYP PFNEGLCHOOSECONFIG)(EGLDisplay dpy, const EGLint* attrib_list, EGLConfig* configs, EGLint config_size, EGLint* num_config);
+typedef EGLSurface (EGLAPIENTRYP PFNEGLCREATEWINDOWSURFACE)(EGLDisplay dpy, EGLConfig config, EGLNativeWindowType win, const EGLint* attrib_list);
+typedef EGLContext (EGLAPIENTRYP PFNEGLCREATECONTEXT)(EGLDisplay dpy, EGLConfig config, EGLContext share_context, const EGLint* attrib_list);
+typedef EGLBoolean (EGLAPIENTRYP PFNEGLMAKECURRENT)(EGLDisplay dpy, EGLSurface draw, EGLSurface read, EGLContext ctx);
+typedef EGLBoolean (EGLAPIENTRYP PFNEGLSWAPINTERVAL)(EGLDisplay dpy, EGLint interval);
+typedef EGLBoolean (EGLAPIENTRYP PFNEGLSWAPBUFFERS)(EGLDisplay dpy, EGLSurface surface);
+typedef EGLBoolean (EGLAPIENTRYP PFNEGLDESTROYCONTEXT)(EGLDisplay dpy, EGLContext ctx);
+typedef EGLBoolean (EGLAPIENTRYP PFNEGLDESTROYSURFACE)(EGLDisplay dpy, EGLSurface surface);
+typedef EGLBoolean (EGLAPIENTRYP PFNEGLTERMINATE)(EGLDisplay dpy);
+typedef EGLint (EGLAPIENTRYP PFNEGLGETERROR)(void);
+typedef __eglMustCastToProperFunctionPointerType (EGLAPIENTRYP PFNEGLGETPROCADDRESS)(const char* procname);
+
+static PFNEGLGETDISPLAY eglGetDisplay_ptr = NULL;
+static PFNEGLBINDAPI eglBindAPI_ptr = NULL;
+static PFNEGLINITIALIZE eglInitialize_ptr = NULL;
+static PFNEGLCHOOSECONFIG eglChooseConfig_ptr = NULL;
+static PFNEGLCREATEWINDOWSURFACE eglCreateWindowSurface_ptr = NULL;
+static PFNEGLCREATECONTEXT eglCreateContext_ptr = NULL;
+static PFNEGLMAKECURRENT eglMakeCurrent_ptr = NULL;
+static PFNEGLSWAPINTERVAL eglSwapInterval_ptr = NULL;
+static PFNEGLSWAPBUFFERS eglSwapBuffers_ptr = NULL;
+static PFNEGLDESTROYCONTEXT eglDestroyContext_ptr = NULL;
+static PFNEGLDESTROYSURFACE eglDestroySurface_ptr = NULL;
+static PFNEGLTERMINATE eglTerminate_ptr = NULL;
+static PFNEGLGETERROR eglGetError_ptr = NULL;
+static PFNEGLGETPROCADDRESS eglGetProcAddress_ptr = NULL;
 
 static FbDev g_fb;
 static InputDev g_input_devs[4];
 static size_t g_input_dev_count = 0;
 static uint16_t g_pad_state_port0 = 0;
+
+static void crash_handler(int sig, siginfo_t* si, void* ctx_) {
+  ucontext_t* uc = (ucontext_t*)ctx_;
+
+#if defined(__arm__)
+  unsigned long pc = uc->uc_mcontext.arm_pc;
+  unsigned long lr = uc->uc_mcontext.arm_lr;
+  unsigned long sp = uc->uc_mcontext.arm_sp;
+  fprintf(stderr, "\nCRASH sig=%d addr=%p pc=%08lx lr=%08lx sp=%08lx\n",
+          sig, si->si_addr, pc, lr, sp);
+#elif defined(__aarch64__)
+  unsigned long pc = uc->uc_mcontext.pc;
+  unsigned long sp = uc->uc_mcontext.sp;
+  fprintf(stderr, "\nCRASH sig=%d addr=%p pc=%016lx sp=%016lx\n",
+          sig, si->si_addr, pc, sp);
+#else
+  fprintf(stderr, "\nCRASH sig=%d addr=%p\n", sig, si->si_addr);
+#endif
+
+  fflush(stderr);
+  _Exit(128 + sig);
+}
+
+static void install_crash_handlers(void) {
+  struct sigaction sa;
+  sa.sa_sigaction = crash_handler;
+  sigemptyset(&sa.sa_mask);
+  sa.sa_flags = SA_SIGINFO | SA_RESETHAND;
+
+  sigaction(SIGSEGV, &sa, NULL);
+  sigaction(SIGBUS,  &sa, NULL);
+  sigaction(SIGILL,  &sa, NULL);
+  sigaction(SIGABRT, &sa, NULL);
+}
 
 static void on_signal(int signum) {
 	(void)signum;
@@ -120,6 +202,181 @@ static void host_log(enum retro_log_level level, const char* fmt, ...) {
 	va_start(ap, fmt);
 	vfprintf(stderr, fmt, ap);
 	va_end(ap);
+}
+
+static uintptr_t RETRO_CALLCONV hw_get_current_framebuffer(void) {
+	return 0;
+}
+
+static retro_proc_address_t RETRO_CALLCONV hw_get_proc_address(const char* sym) {
+	if (sym && g_gles_lib) {
+		void* proc = dlsym(g_gles_lib, sym);
+		if (proc) {
+			return (retro_proc_address_t)proc;
+		}
+	}
+	if (!eglGetProcAddress_ptr) {
+		return NULL;
+	}
+	return (retro_proc_address_t)eglGetProcAddress_ptr(sym);
+}
+
+static void egl_unload(void) {
+	if (g_egl_lib) {
+		dlclose(g_egl_lib);
+		g_egl_lib = NULL;
+	}
+	if (g_gles_lib) {
+		dlclose(g_gles_lib);
+		g_gles_lib = NULL;
+	}
+	eglGetDisplay_ptr = NULL;
+	eglBindAPI_ptr = NULL;
+	eglInitialize_ptr = NULL;
+	eglChooseConfig_ptr = NULL;
+	eglCreateWindowSurface_ptr = NULL;
+	eglCreateContext_ptr = NULL;
+	eglMakeCurrent_ptr = NULL;
+	eglSwapInterval_ptr = NULL;
+	eglSwapBuffers_ptr = NULL;
+	eglDestroyContext_ptr = NULL;
+	eglDestroySurface_ptr = NULL;
+	eglTerminate_ptr = NULL;
+	eglGetError_ptr = NULL;
+	eglGetProcAddress_ptr = NULL;
+}
+
+static bool egl_load(void) {
+	if (g_egl_lib) {
+		return true;
+	}
+	g_gles_lib = dlopen("libGLESv2.so.2", RTLD_LAZY | RTLD_GLOBAL);
+	if (!g_gles_lib) {
+		g_gles_lib = dlopen("libGLESv2.so", RTLD_LAZY | RTLD_GLOBAL);
+	}
+	g_egl_lib = dlopen("libEGL.so.1", RTLD_LAZY | RTLD_LOCAL);
+	if (!g_egl_lib) {
+		g_egl_lib = dlopen("libEGL.so", RTLD_LAZY | RTLD_LOCAL);
+	}
+	if (!g_egl_lib) {
+		fprintf(stderr, "[libretro-host] dlopen(libEGL) failed: %s\n", dlerror());
+		return false;
+	}
+
+	eglGetDisplay_ptr = (PFNEGLGETDISPLAY)dlsym(g_egl_lib, "eglGetDisplay");
+	eglBindAPI_ptr = (PFNEGLBINDAPI)dlsym(g_egl_lib, "eglBindAPI");
+	eglInitialize_ptr = (PFNEGLINITIALIZE)dlsym(g_egl_lib, "eglInitialize");
+	eglChooseConfig_ptr = (PFNEGLCHOOSECONFIG)dlsym(g_egl_lib, "eglChooseConfig");
+	eglCreateWindowSurface_ptr = (PFNEGLCREATEWINDOWSURFACE)dlsym(g_egl_lib, "eglCreateWindowSurface");
+	eglCreateContext_ptr = (PFNEGLCREATECONTEXT)dlsym(g_egl_lib, "eglCreateContext");
+	eglMakeCurrent_ptr = (PFNEGLMAKECURRENT)dlsym(g_egl_lib, "eglMakeCurrent");
+	eglSwapInterval_ptr = (PFNEGLSWAPINTERVAL)dlsym(g_egl_lib, "eglSwapInterval");
+	eglSwapBuffers_ptr = (PFNEGLSWAPBUFFERS)dlsym(g_egl_lib, "eglSwapBuffers");
+	eglDestroyContext_ptr = (PFNEGLDESTROYCONTEXT)dlsym(g_egl_lib, "eglDestroyContext");
+	eglDestroySurface_ptr = (PFNEGLDESTROYSURFACE)dlsym(g_egl_lib, "eglDestroySurface");
+	eglTerminate_ptr = (PFNEGLTERMINATE)dlsym(g_egl_lib, "eglTerminate");
+	eglGetError_ptr = (PFNEGLGETERROR)dlsym(g_egl_lib, "eglGetError");
+	eglGetProcAddress_ptr = (PFNEGLGETPROCADDRESS)dlsym(g_egl_lib, "eglGetProcAddress");
+
+	if (!eglGetDisplay_ptr || !eglBindAPI_ptr || !eglInitialize_ptr || !eglChooseConfig_ptr ||
+		!eglCreateWindowSurface_ptr || !eglCreateContext_ptr ||
+		!eglMakeCurrent_ptr || !eglSwapInterval_ptr || !eglSwapBuffers_ptr ||
+		!eglDestroyContext_ptr || !eglDestroySurface_ptr || !eglTerminate_ptr || !eglGetError_ptr ||
+		!eglGetProcAddress_ptr) {
+		fprintf(stderr, "[libretro-host] egl symbols missing\n");
+		egl_unload();
+		return false;
+	}
+	return true;
+}
+
+static bool egl_init(void) {
+	EGLint err = EGL_SUCCESS;
+	if (!egl_load()) {
+		return false;
+	}
+	if (!eglBindAPI_ptr(EGL_OPENGL_ES_API)) {
+		fprintf(stderr, "[libretro-host] eglBindAPI failed\n");
+		return false;
+	}
+	g_egl_display = eglGetDisplay_ptr(EGL_DEFAULT_DISPLAY);
+	if (g_egl_display == EGL_NO_DISPLAY) {
+		fprintf(stderr, "[libretro-host] eglGetDisplay failed\n");
+		return false;
+	}
+	if (!eglInitialize_ptr(g_egl_display, NULL, NULL)) {
+		err = eglGetError_ptr();
+		fprintf(stderr, "[libretro-host] eglInitialize failed\n");
+		return false;
+	}
+
+	const EGLint config_attrs[] = {
+		EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
+		EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT,
+		EGL_RED_SIZE, 8,
+		EGL_GREEN_SIZE, 8,
+		EGL_BLUE_SIZE, 8,
+		EGL_ALPHA_SIZE, 0,
+		EGL_NONE
+	};
+	EGLConfig config;
+	EGLint num_configs = 0;
+	if (!eglChooseConfig_ptr(g_egl_display, config_attrs, &config, 1, &num_configs) || num_configs == 0) {
+		err = eglGetError_ptr();
+		fprintf(stderr, "[libretro-host] eglChooseConfig failed\n");
+		return false;
+	}
+
+	g_fbwin.width = (uint16_t)(g_fb.width > 0 ? g_fb.width : 1280);
+	g_fbwin.height = (uint16_t)(g_fb.height > 0 ? g_fb.height : 720);
+	g_egl_surface = eglCreateWindowSurface_ptr(
+		g_egl_display,
+		config,
+		(EGLNativeWindowType)&g_fbwin,
+		NULL
+	);
+	if (g_egl_surface == EGL_NO_SURFACE) {
+		err = eglGetError_ptr();
+		fprintf(stderr, "[libretro-host] eglCreateWindowSurface failed (0x%04x)\n", err);
+		return false;
+	}
+
+	const EGLint ctx_attrs[] = {
+		EGL_CONTEXT_CLIENT_VERSION, 2,
+		EGL_NONE
+	};
+	g_egl_context = eglCreateContext_ptr(g_egl_display, config, EGL_NO_CONTEXT, ctx_attrs);
+	if (g_egl_context == EGL_NO_CONTEXT) {
+		err = eglGetError_ptr();
+		fprintf(stderr, "[libretro-host] eglCreateContext failed\n");
+		return false;
+	}
+
+	if (!eglMakeCurrent_ptr(g_egl_display, g_egl_surface, g_egl_surface, g_egl_context)) {
+		err = eglGetError_ptr();
+		fprintf(stderr, "[libretro-host] eglMakeCurrent failed\n");
+		return false;
+	}
+	eglSwapInterval_ptr(g_egl_display, 1);
+	return true;
+}
+
+static void egl_shutdown(void) {
+	if (g_egl_display == EGL_NO_DISPLAY) {
+		return;
+	}
+	eglMakeCurrent_ptr(g_egl_display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+	if (g_egl_context != EGL_NO_CONTEXT) {
+		eglDestroyContext_ptr(g_egl_display, g_egl_context);
+		g_egl_context = EGL_NO_CONTEXT;
+	}
+	if (g_egl_surface != EGL_NO_SURFACE) {
+		eglDestroySurface_ptr(g_egl_display, g_egl_surface);
+		g_egl_surface = EGL_NO_SURFACE;
+	}
+	eglTerminate_ptr(g_egl_display);
+	g_egl_display = EGL_NO_DISPLAY;
+	egl_unload();
 }
 
 static bool environ_cb(unsigned cmd, void* data) {
@@ -211,8 +468,21 @@ static bool environ_cb(unsigned cmd, void* data) {
 			g_core_pixel_format = *fmt;
 			return true;
 		}
-		case RETRO_ENVIRONMENT_SET_HW_RENDER:
-			return false;
+		case RETRO_ENVIRONMENT_SET_HW_RENDER: {
+			struct retro_hw_render_callback* cb = (struct retro_hw_render_callback*)data;
+			if (cb->context_type != RETRO_HW_CONTEXT_OPENGLES2) {
+				return false;
+			}
+			g_hw_render = *cb;
+			g_hw_render.get_current_framebuffer = hw_get_current_framebuffer;
+			g_hw_render.get_proc_address = hw_get_proc_address;
+			if (!egl_init()) {
+				return false;
+			}
+			g_use_hw_render = true;
+			g_hw_context_pending_reset = (g_hw_render.context_reset != NULL);
+			return true;
+		}
 		case RETRO_ENVIRONMENT_SHUTDOWN:
 			g_should_quit = 1;
 			return true;
@@ -270,6 +540,10 @@ static inline uint32_t rgb565_to_xrgb8888(uint16_t p) {
 }
 
 static void video_cb(const void* data, unsigned width, unsigned height, size_t pitch) {
+	if (g_use_hw_render && data == RETRO_HW_FRAME_BUFFER_VALID) {
+		eglSwapBuffers_ptr(g_egl_display, g_egl_surface);
+		return;
+	}
 	if (!data) {
 		return;
 	}
@@ -564,6 +838,7 @@ static void usage(const char* argv0) {
 }
 
 int main(int argc, char** argv) {
+	install_crash_handlers();
 	const char* core_path = "./bmsx_libretro.so";
 	const char* game_path = NULL;
 	bool no_game = false;
@@ -630,7 +905,14 @@ int main(int argc, char** argv) {
 	core.retro_set_input_poll(input_poll_cb);
 	core.retro_set_input_state(input_state_cb);
 
+	fb_init(&g_fb, "/dev/fb0");
+	input_open_default_devices();
+
 	core.retro_init();
+	if (g_use_hw_render && g_hw_context_pending_reset && g_hw_render.context_reset) {
+		g_hw_render.context_reset();
+		g_hw_context_pending_reset = false;
+	}
 
 	struct retro_system_info sysinfo;
 	memset(&sysinfo, 0, sizeof(sysinfo));
@@ -648,8 +930,6 @@ int main(int argc, char** argv) {
 			av.geometry.max_width, av.geometry.max_height,
 			av.timing.fps, av.timing.sample_rate);
 
-	fb_init(&g_fb, "/dev/fb0");
-	input_open_default_devices();
 	core.retro_set_controller_port_device(0, RETRO_DEVICE_JOYPAD);
 
 	void* game_buf = NULL;
@@ -673,7 +953,7 @@ int main(int argc, char** argv) {
 
 	double fps = av.timing.fps;
 	if (fps <= 0.0) {
-		fps = 60.0;
+		fps = 50.0;
 	}
 	const long frame_ns = (long)(1000000000.0 / fps);
 
@@ -709,5 +989,9 @@ int main(int argc, char** argv) {
 	if (core.handle) {
 		dlclose(core.handle);
 	}
+	if (g_use_hw_render && g_hw_render.context_destroy) {
+		g_hw_render.context_destroy();
+	}
+	egl_shutdown();
 	return 0;
 }

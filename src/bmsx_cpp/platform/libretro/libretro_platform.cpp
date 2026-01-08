@@ -204,6 +204,12 @@ void LibretroPlatform::switchToSoftwareBackend() {
 void LibretroPlatform::setAVInfo(const retro_system_av_info& info) {
 	m_av_info = info;
 	m_has_av_info = true;
+
+	if (info.geometry.base_width == 0 || info.geometry.base_height == 0) {
+		log(RETRO_LOG_WARN, "[BMSX] Ignoring invalid geometry %ux%u\n", info.geometry.base_width, info.geometry.base_height);
+		return;
+	}
+
 	m_frame_time_sec = 1.0 / info.timing.fps;
 	m_framebuffer.resize(info.geometry.base_width, info.geometry.base_height);
 	log(RETRO_LOG_INFO, "[BMSX] AV Info set: %ux%u @ %.2fHz, Sample Rate: %.2fHz\n",
