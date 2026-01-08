@@ -157,6 +157,46 @@ struct fbdev_window {
 
 static struct fbdev_window g_fbwin;
 
+#define MENU_MAX_OPTIONS 32
+#define MENU_MAX_VALUES 16
+#define MENU_MAX_KEY 64
+#define MENU_MAX_LABEL 96
+#define MENU_MAX_INFO 192
+
+typedef struct MenuOptionValue {
+	char value[MENU_MAX_KEY];
+	char label[MENU_MAX_LABEL];
+} MenuOptionValue;
+
+typedef struct MenuOption {
+	char key[MENU_MAX_KEY];
+	char label[MENU_MAX_LABEL];
+	char info[MENU_MAX_INFO];
+	size_t value_count;
+	size_t current_index;
+	MenuOptionValue values[MENU_MAX_VALUES];
+} MenuOption;
+
+static MenuOption g_menu_options[MENU_MAX_OPTIONS];
+static size_t g_menu_option_count = 0;
+static bool g_menu_active = false;
+static bool g_menu_dirty = false;
+static bool g_menu_gl_dirty = false;
+static size_t g_menu_selected = 0;
+static uint16_t g_menu_prev_pad = 0;
+
+static uint8_t* g_menu_surface = NULL;
+static int g_menu_surface_w = 0;
+static int g_menu_surface_h = 0;
+static int g_menu_surface_stride = 0;
+static int g_menu_x = 0;
+static int g_menu_y = 0;
+
+static GLuint g_menu_tex = 0;
+static GLuint g_menu_vbo = 0;
+static int g_menu_tex_w = 0;
+static int g_menu_tex_h = 0;
+
 typedef EGLDisplay (EGLAPIENTRYP PFNEGLGETDISPLAY)(EGLNativeDisplayType display_id);
 typedef EGLBoolean (EGLAPIENTRYP PFNEGLBINDAPI)(EGLenum api);
 typedef EGLBoolean (EGLAPIENTRYP PFNEGLINITIALIZE)(EGLDisplay dpy, EGLint* major, EGLint* minor);
@@ -204,6 +244,8 @@ typedef void (GL_APIENTRYP PFNGLDELETEPROGRAMPROC)(GLuint program);
 typedef void (GL_APIENTRYP PFNGLDELETESHADERPROC)(GLuint shader);
 typedef void (GL_APIENTRYP PFNGLDELETETEXTURESPROC)(GLsizei n, const GLuint* textures);
 typedef void (GL_APIENTRYP PFNGLDISABLEPROC)(GLenum cap);
+typedef void (GL_APIENTRYP PFNGLENABLEPROC)(GLenum cap);
+typedef void (GL_APIENTRYP PFNGLBLENDFUNCPROC)(GLenum sfactor, GLenum dfactor);
 typedef void (GL_APIENTRYP PFNGLDRAWARRAYSPROC)(GLenum mode, GLint first, GLsizei count);
 typedef void (GL_APIENTRYP PFNGLENABLEVERTEXATTRIBARRAYPROC)(GLuint index);
 typedef void (GL_APIENTRYP PFNGLFRAMEBUFFERTEXTURE2DPROC)(GLenum target, GLenum attachment, GLenum textarget, GLuint texture, GLint level);
@@ -244,6 +286,8 @@ static PFNGLDELETEPROGRAMPROC glDeleteProgram_ptr = NULL;
 static PFNGLDELETESHADERPROC glDeleteShader_ptr = NULL;
 static PFNGLDELETETEXTURESPROC glDeleteTextures_ptr = NULL;
 static PFNGLDISABLEPROC glDisable_ptr = NULL;
+static PFNGLENABLEPROC glEnable_ptr = NULL;
+static PFNGLBLENDFUNCPROC glBlendFunc_ptr = NULL;
 static PFNGLDRAWARRAYSPROC glDrawArrays_ptr = NULL;
 static PFNGLENABLEVERTEXATTRIBARRAYPROC glEnableVertexAttribArray_ptr = NULL;
 static PFNGLFRAMEBUFFERTEXTURE2DPROC glFramebufferTexture2D_ptr = NULL;
@@ -272,6 +316,7 @@ enum { kMaxInputDevs = 16 };
 static InputDev g_input_devs[kMaxInputDevs];
 static char g_input_paths[kMaxInputDevs][64];
 static size_t g_input_dev_count = 0;
+static uint16_t g_pad_state_raw = 0;
 static uint16_t g_pad_state_port0 = 0;
 static char g_audio_device[64] = "/dev/snd/pcmC0D0p";
 enum { kAudioSampleBufferFrames = 512 };
@@ -358,6 +403,10 @@ static void host_log(enum retro_log_level level, const char* fmt, ...) {
 
 static bool hw_ensure_fbo(unsigned width, unsigned height);
 static bool hw_present_frame(unsigned src_w, unsigned src_h);
+static void menu_render_software(void);
+static void menu_render_hw(void);
+static inline uint16_t rgb888_to_rgb565(uint8_t r, uint8_t g, uint8_t b);
+static inline uint32_t rgb565_to_xrgb8888(uint16_t p);
 
 static uintptr_t RETRO_CALLCONV hw_get_current_framebuffer(void) {
 	unsigned target_w = g_geom_base_w ? g_geom_base_w : g_last_video_w;
@@ -442,6 +491,8 @@ static bool gl_load(void) {
 	GL_LOAD(glDeleteShader, PFNGLDELETESHADERPROC);
 	GL_LOAD(glDeleteTextures, PFNGLDELETETEXTURESPROC);
 	GL_LOAD(glDisable, PFNGLDISABLEPROC);
+	GL_LOAD(glEnable, PFNGLENABLEPROC);
+	GL_LOAD(glBlendFunc, PFNGLBLENDFUNCPROC);
 	GL_LOAD(glDrawArrays, PFNGLDRAWARRAYSPROC);
 	GL_LOAD(glEnableVertexAttribArray, PFNGLENABLEVERTEXATTRIBARRAYPROC);
 	GL_LOAD(glFramebufferTexture2D, PFNGLFRAMEBUFFERTEXTURE2DPROC);
@@ -626,6 +677,582 @@ static void compute_dst_rect(int fb_w, int fb_h, unsigned src_w, unsigned src_h,
 	*out_h = dst_h;
 }
 
+typedef struct MenuGlyph {
+	char c;
+	uint8_t rows[7];
+} MenuGlyph;
+
+static const MenuGlyph kMenuGlyphs[] = {
+	{' ', {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}},
+	{'+', {0x00, 0x04, 0x04, 0x1F, 0x04, 0x04, 0x00}},
+	{'-', {0x00, 0x00, 0x00, 0x1F, 0x00, 0x00, 0x00}},
+	{'.', {0x00, 0x00, 0x00, 0x00, 0x00, 0x06, 0x06}},
+	{'/', {0x01, 0x02, 0x04, 0x08, 0x10, 0x00, 0x00}},
+	{':', {0x00, 0x04, 0x04, 0x00, 0x04, 0x04, 0x00}},
+	{'?', {0x0E, 0x11, 0x01, 0x02, 0x04, 0x00, 0x04}},
+	{'0', {0x0E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E}},
+	{'1', {0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E}},
+	{'2', {0x0E, 0x11, 0x01, 0x02, 0x04, 0x08, 0x1F}},
+	{'3', {0x1E, 0x01, 0x01, 0x0E, 0x01, 0x01, 0x1E}},
+	{'4', {0x02, 0x06, 0x0A, 0x12, 0x1F, 0x02, 0x02}},
+	{'5', {0x1F, 0x10, 0x10, 0x1E, 0x01, 0x01, 0x1E}},
+	{'6', {0x0E, 0x10, 0x10, 0x1E, 0x11, 0x11, 0x0E}},
+	{'7', {0x1F, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08}},
+	{'8', {0x0E, 0x11, 0x11, 0x0E, 0x11, 0x11, 0x0E}},
+	{'9', {0x0E, 0x11, 0x11, 0x0F, 0x01, 0x01, 0x0E}},
+	{'A', {0x0E, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11}},
+	{'B', {0x1E, 0x11, 0x11, 0x1E, 0x11, 0x11, 0x1E}},
+	{'C', {0x0E, 0x11, 0x10, 0x10, 0x10, 0x11, 0x0E}},
+	{'D', {0x1E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x1E}},
+	{'E', {0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x1F}},
+	{'F', {0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x10}},
+	{'G', {0x0E, 0x11, 0x10, 0x17, 0x11, 0x11, 0x0F}},
+	{'H', {0x11, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11}},
+	{'I', {0x0E, 0x04, 0x04, 0x04, 0x04, 0x04, 0x0E}},
+	{'J', {0x07, 0x02, 0x02, 0x02, 0x12, 0x12, 0x0C}},
+	{'K', {0x11, 0x12, 0x14, 0x18, 0x14, 0x12, 0x11}},
+	{'L', {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x1F}},
+	{'M', {0x11, 0x1B, 0x15, 0x11, 0x11, 0x11, 0x11}},
+	{'N', {0x11, 0x19, 0x15, 0x13, 0x11, 0x11, 0x11}},
+	{'O', {0x0E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E}},
+	{'P', {0x1E, 0x11, 0x11, 0x1E, 0x10, 0x10, 0x10}},
+	{'Q', {0x0E, 0x11, 0x11, 0x11, 0x15, 0x12, 0x0D}},
+	{'R', {0x1E, 0x11, 0x11, 0x1E, 0x14, 0x12, 0x11}},
+	{'S', {0x0F, 0x10, 0x10, 0x0E, 0x01, 0x01, 0x1E}},
+	{'T', {0x1F, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04}},
+	{'U', {0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E}},
+	{'V', {0x11, 0x11, 0x11, 0x11, 0x0A, 0x0A, 0x04}},
+	{'W', {0x11, 0x11, 0x11, 0x15, 0x15, 0x1B, 0x11}},
+	{'X', {0x11, 0x0A, 0x04, 0x04, 0x04, 0x0A, 0x11}},
+	{'Y', {0x11, 0x0A, 0x04, 0x04, 0x04, 0x04, 0x04}},
+	{'Z', {0x1F, 0x01, 0x02, 0x04, 0x08, 0x10, 0x1F}},
+	{'(', {0x02, 0x04, 0x08, 0x08, 0x08, 0x04, 0x02}},
+	{')', {0x08, 0x04, 0x02, 0x02, 0x02, 0x04, 0x08}},
+	{'_', {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1F}},
+};
+
+static const uint8_t* menu_glyph_rows(char c) {
+	static const uint8_t k_unknown[7] = {0x0E, 0x11, 0x01, 0x02, 0x04, 0x00, 0x04};
+	for (size_t i = 0; i < sizeof(kMenuGlyphs) / sizeof(kMenuGlyphs[0]); ++i) {
+		if (kMenuGlyphs[i].c == c) {
+			return kMenuGlyphs[i].rows;
+		}
+	}
+	return k_unknown;
+}
+
+static void menu_mark_dirty(void) {
+	g_menu_dirty = true;
+	g_menu_gl_dirty = true;
+}
+
+static void menu_copy_str(char* dst, size_t dst_size, const char* src) {
+	if (!dst || dst_size == 0) {
+		return;
+	}
+	if (!src) {
+		dst[0] = '\0';
+		return;
+	}
+	snprintf(dst, dst_size, "%s", src);
+}
+
+static void menu_trim(char* s) {
+	if (!s) return;
+	char* start = s;
+	while (*start == ' ' || *start == '\t') {
+		++start;
+	}
+	char* end = start + strlen(start);
+	while (end > start && (end[-1] == ' ' || end[-1] == '\t')) {
+		--end;
+	}
+	size_t len = (size_t)(end - start);
+	if (start != s) {
+		memmove(s, start, len);
+	}
+	s[len] = '\0';
+}
+
+static const char* menu_builtin_value(const char* key) {
+	if (!key) return NULL;
+	if (strcmp(key, "bmsx_render_backend") == 0) return g_opt_render_backend;
+	if (strcmp(key, "bmsx_crt_postprocessing") == 0) return g_opt_crt_postprocessing;
+	if (strcmp(key, "bmsx_postprocess_detail") == 0) return g_opt_postprocess_detail;
+	return NULL;
+}
+
+static void menu_sync_builtin(const char* key, const char* value) {
+	if (!key || !value) return;
+	if (strcmp(key, "bmsx_render_backend") == 0) {
+		snprintf(g_opt_render_backend, sizeof(g_opt_render_backend), "%s", value);
+	} else if (strcmp(key, "bmsx_crt_postprocessing") == 0) {
+		snprintf(g_opt_crt_postprocessing, sizeof(g_opt_crt_postprocessing), "%s", value);
+	} else if (strcmp(key, "bmsx_postprocess_detail") == 0) {
+		snprintf(g_opt_postprocess_detail, sizeof(g_opt_postprocess_detail), "%s", value);
+	}
+}
+
+static MenuOption* menu_find_option(const char* key) {
+	if (!key) return NULL;
+	for (size_t i = 0; i < g_menu_option_count; ++i) {
+		if (strcmp(g_menu_options[i].key, key) == 0) {
+			return &g_menu_options[i];
+		}
+	}
+	return NULL;
+}
+
+static MenuOption* menu_get_option(const char* key) {
+	MenuOption* opt = menu_find_option(key);
+	if (opt) return opt;
+	if (!key || g_menu_option_count >= MENU_MAX_OPTIONS) return NULL;
+	opt = &g_menu_options[g_menu_option_count++];
+	memset(opt, 0, sizeof(*opt));
+	menu_copy_str(opt->key, sizeof(opt->key), key);
+	menu_copy_str(opt->label, sizeof(opt->label), key);
+	return opt;
+}
+
+static bool menu_set_current_value(MenuOption* opt, const char* value) {
+	if (!opt || !value || !value[0]) return false;
+	for (size_t i = 0; i < opt->value_count; ++i) {
+		if (strcmp(opt->values[i].value, value) == 0) {
+			opt->current_index = i;
+			return true;
+		}
+	}
+	return false;
+}
+
+static void menu_set_option_values(MenuOption* opt, const char* label, const char* info,
+		const MenuOptionValue* values, size_t count, const char* default_value) {
+	if (!opt) return;
+	char prev_value[MENU_MAX_KEY] = "";
+	if (opt->value_count > 0 && opt->current_index < opt->value_count) {
+		menu_copy_str(prev_value, sizeof(prev_value), opt->values[opt->current_index].value);
+	}
+	if (label && label[0]) menu_copy_str(opt->label, sizeof(opt->label), label);
+	if (info && info[0]) menu_copy_str(opt->info, sizeof(opt->info), info);
+	opt->value_count = 0;
+	for (size_t i = 0; i < count && i < MENU_MAX_VALUES; ++i) {
+		menu_copy_str(opt->values[i].value, sizeof(opt->values[i].value), values[i].value);
+		if (values[i].label[0]) {
+			menu_copy_str(opt->values[i].label, sizeof(opt->values[i].label), values[i].label);
+		} else {
+			menu_copy_str(opt->values[i].label, sizeof(opt->values[i].label), values[i].value);
+		}
+		++opt->value_count;
+	}
+	const char* initial = menu_builtin_value(opt->key);
+	if (!menu_set_current_value(opt, initial) &&
+		!menu_set_current_value(opt, prev_value) &&
+		!menu_set_current_value(opt, default_value)) {
+		opt->current_index = 0;
+	}
+	if (opt->value_count > 0) {
+		menu_sync_builtin(opt->key, opt->values[opt->current_index].value);
+	}
+	menu_mark_dirty();
+}
+
+static const char* menu_option_value_label(const MenuOption* opt) {
+	if (!opt || opt->value_count == 0) return "-";
+	const MenuOptionValue* val = &opt->values[opt->current_index];
+	return val->label[0] ? val->label : val->value;
+}
+
+static void menu_apply_option(MenuOption* opt, size_t index, bool mark_update) {
+	if (!opt || opt->value_count == 0 || index >= opt->value_count) return;
+	opt->current_index = index;
+	menu_sync_builtin(opt->key, opt->values[index].value);
+	if (mark_update) {
+		g_vars_updated = true;
+	}
+	menu_mark_dirty();
+}
+
+static void menu_set_option_value(MenuOption* opt, const char* value, bool mark_update) {
+	if (!opt || !value) return;
+	for (size_t i = 0; i < opt->value_count; ++i) {
+		if (strcmp(opt->values[i].value, value) == 0) {
+			menu_apply_option(opt, i, mark_update);
+			return;
+		}
+	}
+}
+
+static void menu_clear_options(void) {
+	g_menu_option_count = 0;
+	g_menu_selected = 0;
+	menu_mark_dirty();
+}
+
+static void menu_ingest_options_v2(const struct retro_core_options_v2* opts) {
+	if (!opts || !opts->definitions) return;
+	for (const struct retro_core_option_v2_definition* def = opts->definitions; def->key; ++def) {
+		MenuOption* opt = menu_get_option(def->key);
+		if (!opt) continue;
+		MenuOptionValue values[MENU_MAX_VALUES];
+		size_t count = 0;
+		for (size_t i = 0; def->values[i].value && count < MENU_MAX_VALUES; ++i) {
+			menu_copy_str(values[count].value, sizeof(values[count].value), def->values[i].value);
+			menu_copy_str(values[count].label, sizeof(values[count].label),
+				def->values[i].label ? def->values[i].label : def->values[i].value);
+			++count;
+		}
+		menu_set_option_values(opt, def->desc, def->info, values, count, def->default_value);
+	}
+}
+
+static void menu_ingest_options_v1(const struct retro_core_option_definition* defs) {
+	if (!defs) return;
+	for (const struct retro_core_option_definition* def = defs; def->key; ++def) {
+		MenuOption* opt = menu_get_option(def->key);
+		if (!opt) continue;
+		MenuOptionValue values[MENU_MAX_VALUES];
+		size_t count = 0;
+		for (size_t i = 0; def->values[i].value && count < MENU_MAX_VALUES; ++i) {
+			menu_copy_str(values[count].value, sizeof(values[count].value), def->values[i].value);
+			menu_copy_str(values[count].label, sizeof(values[count].label),
+				def->values[i].label ? def->values[i].label : def->values[i].value);
+			++count;
+		}
+		menu_set_option_values(opt, def->desc, def->info, values, count, def->default_value);
+	}
+}
+
+static void menu_ingest_variables(const struct retro_variable* vars) {
+	if (!vars) return;
+	for (const struct retro_variable* var = vars; var->key; ++var) {
+		if (!var->value) continue;
+		MenuOption* opt = menu_get_option(var->key);
+		if (!opt) continue;
+		char buf[256];
+		char label_buf[MENU_MAX_LABEL];
+		menu_copy_str(buf, sizeof(buf), var->value);
+		char* semicolon = strchr(buf, ';');
+		char* values_str = NULL;
+		if (semicolon) {
+			*semicolon = '\0';
+			menu_copy_str(label_buf, sizeof(label_buf), buf);
+			values_str = semicolon + 1;
+		} else {
+			menu_copy_str(label_buf, sizeof(label_buf), opt->label[0] ? opt->label : var->key);
+			values_str = buf;
+		}
+		menu_trim(label_buf);
+		menu_trim(values_str);
+		MenuOptionValue values[MENU_MAX_VALUES];
+		size_t count = 0;
+		char* saveptr = NULL;
+		for (char* tok = strtok_r(values_str, "|", &saveptr);
+			 tok && count < MENU_MAX_VALUES;
+			 tok = strtok_r(NULL, "|", &saveptr)) {
+			menu_trim(tok);
+			menu_copy_str(values[count].value, sizeof(values[count].value), tok);
+			menu_copy_str(values[count].label, sizeof(values[count].label), tok);
+			++count;
+		}
+		const char* default_value = count > 0 ? values[0].value : NULL;
+		menu_set_option_values(opt, label_buf, opt->info, values, count, default_value);
+	}
+}
+
+static const char* menu_get_variable_value(const char* key) {
+	MenuOption* opt = menu_find_option(key);
+	if (opt && opt->value_count > 0) {
+		return opt->values[opt->current_index].value;
+	}
+	return menu_builtin_value(key);
+}
+
+static bool menu_set_variable_value(const char* key, const char* value, bool mark_update) {
+	MenuOption* opt = menu_find_option(key);
+	if (opt) {
+		menu_set_option_value(opt, value, mark_update);
+		return true;
+	}
+	if (menu_builtin_value(key)) {
+		menu_sync_builtin(key, value);
+		if (mark_update) g_vars_updated = true;
+		return true;
+	}
+	return false;
+}
+
+static void menu_toggle(void) {
+	g_menu_active = !g_menu_active;
+	if (g_menu_active && g_menu_selected >= g_menu_option_count) {
+		g_menu_selected = 0;
+	}
+	menu_mark_dirty();
+}
+
+static void menu_draw_pixel(int x, int y, uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+	if (!g_menu_surface || x < 0 || y < 0 || x >= g_menu_surface_w || y >= g_menu_surface_h) {
+		return;
+	}
+	uint8_t* p = g_menu_surface + (size_t)y * (size_t)g_menu_surface_stride + (size_t)x * 4u;
+	p[0] = r;
+	p[1] = g;
+	p[2] = b;
+	p[3] = a;
+}
+
+static void menu_draw_rect(int x, int y, int w, int h, uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+	for (int yy = 0; yy < h; ++yy) {
+		for (int xx = 0; xx < w; ++xx) {
+			menu_draw_pixel(x + xx, y + yy, r, g, b, a);
+		}
+	}
+}
+
+static void menu_draw_char(int x, int y, char c, uint8_t r, uint8_t g, uint8_t b, uint8_t a, int scale) {
+	if (c >= 'a' && c <= 'z') {
+		c = (char)(c - ('a' - 'A'));
+	}
+	const uint8_t* rows = menu_glyph_rows(c);
+	for (int row = 0; row < 7; ++row) {
+		uint8_t bits = rows[row];
+		for (int col = 0; col < 5; ++col) {
+			if (bits & (1u << (4 - col))) {
+				for (int sy = 0; sy < scale; ++sy) {
+					for (int sx = 0; sx < scale; ++sx) {
+						menu_draw_pixel(x + col * scale + sx, y + row * scale + sy, r, g, b, a);
+					}
+				}
+			}
+		}
+	}
+}
+
+static void menu_draw_text(int x, int y, const char* text, uint8_t r, uint8_t g, uint8_t b, uint8_t a, int scale) {
+	if (!text) return;
+	const int advance = (5 + 1) * scale;
+	for (const char* p = text; *p; ++p) {
+		menu_draw_char(x, y, *p, r, g, b, a, scale);
+		x += advance;
+	}
+}
+
+static void menu_rebuild_surface(void) {
+	if (!g_menu_active || g_fb.width <= 0 || g_fb.height <= 0) {
+		return;
+	}
+	const char* title = "CORE OPTIONS";
+	const char* footer = "START+SELECT: CLOSE";
+	size_t max_chars = strlen(title);
+	if (strlen(footer) > max_chars) {
+		max_chars = strlen(footer);
+	}
+	for (size_t i = 0; i < g_menu_option_count; ++i) {
+		const MenuOption* opt = &g_menu_options[i];
+		const char* label = opt->label[0] ? opt->label : opt->key;
+		const char* value = menu_option_value_label(opt);
+		size_t len = strlen(label) + 2 + strlen(value);
+		if (len > max_chars) {
+			max_chars = len;
+		}
+	}
+	int scale = 2;
+	int padding = 8;
+	int line_h = (7 * scale) + 4;
+	int lines = (int)(g_menu_option_count ? g_menu_option_count : 1);
+	int total_lines = lines + 2;
+	int menu_w = (int)(max_chars * (5 + 1) * scale) + padding * 2;
+	int menu_h = total_lines * line_h + padding * 2;
+	if (menu_w > g_fb.width - 20 || menu_h > g_fb.height - 20) {
+		scale = 1;
+		line_h = (7 * scale) + 3;
+		menu_w = (int)(max_chars * (5 + 1) * scale) + padding * 2;
+		menu_h = total_lines * line_h + padding * 2;
+	}
+	if (menu_w > g_fb.width - 10) menu_w = g_fb.width - 10;
+	if (menu_h > g_fb.height - 10) menu_h = g_fb.height - 10;
+	if (menu_w < 1 || menu_h < 1) return;
+
+	if (menu_w != g_menu_surface_w || menu_h != g_menu_surface_h) {
+		free(g_menu_surface);
+		g_menu_surface = (uint8_t*)malloc((size_t)menu_w * (size_t)menu_h * 4u);
+		if (!g_menu_surface) {
+			g_menu_surface_w = 0;
+			g_menu_surface_h = 0;
+			g_menu_surface_stride = 0;
+			return;
+		}
+		g_menu_surface_w = menu_w;
+		g_menu_surface_h = menu_h;
+		g_menu_surface_stride = menu_w * 4;
+	}
+
+	g_menu_x = (g_fb.width - g_menu_surface_w) / 2;
+	g_menu_y = (g_fb.height - g_menu_surface_h) / 2;
+	if (g_menu_x < 0) g_menu_x = 0;
+	if (g_menu_y < 0) g_menu_y = 0;
+
+	const uint8_t bg_r = 8, bg_g = 8, bg_b = 8, bg_a = 200;
+	const uint8_t hl_r = 32, hl_g = 64, hl_b = 96, hl_a = 220;
+	const uint8_t text_r = 240, text_g = 240, text_b = 240, text_a = 255;
+	const uint8_t dim_r = 180, dim_g = 180, dim_b = 180, dim_a = 255;
+
+	menu_draw_rect(0, 0, g_menu_surface_w, g_menu_surface_h, bg_r, bg_g, bg_b, bg_a);
+
+	int cursor_y = padding;
+	menu_draw_text(padding, cursor_y, title, text_r, text_g, text_b, text_a, scale);
+	cursor_y += line_h;
+
+	if (g_menu_option_count == 0) {
+		menu_draw_text(padding, cursor_y, "NO OPTIONS", dim_r, dim_g, dim_b, dim_a, scale);
+		cursor_y += line_h;
+	} else {
+		for (size_t i = 0; i < g_menu_option_count; ++i) {
+			if (i == g_menu_selected) {
+				menu_draw_rect(0, cursor_y - 2, g_menu_surface_w, line_h, hl_r, hl_g, hl_b, hl_a);
+			}
+			const MenuOption* opt = &g_menu_options[i];
+			const char* label = opt->label[0] ? opt->label : opt->key;
+			const char* value = menu_option_value_label(opt);
+			char line[256];
+			snprintf(line, sizeof(line), "%s: %s", label, value);
+			menu_draw_text(padding, cursor_y, line, text_r, text_g, text_b, text_a, scale);
+			cursor_y += line_h;
+		}
+	}
+	menu_draw_text(padding, cursor_y, footer, dim_r, dim_g, dim_b, dim_a, scale);
+
+	g_menu_dirty = false;
+	g_menu_gl_dirty = true;
+}
+
+static void menu_render_software(void) {
+	if (!g_menu_active) return;
+	if (g_menu_dirty) menu_rebuild_surface();
+	if (!g_menu_surface) return;
+
+	for (int y = 0; y < g_menu_surface_h; ++y) {
+		int fb_y = g_menu_y + y;
+		if (fb_y < 0 || fb_y >= g_fb.height) continue;
+		uint8_t* dst_line = g_fb.map + (size_t)fb_y * (size_t)g_fb.stride + (size_t)g_menu_x * (size_t)(g_fb.bpp / 8);
+		const uint8_t* src_line = g_menu_surface + (size_t)y * (size_t)g_menu_surface_stride;
+		for (int x = 0; x < g_menu_surface_w; ++x) {
+			int fb_x = g_menu_x + x;
+			if (fb_x < 0 || fb_x >= g_fb.width) continue;
+			const uint8_t* src = src_line + (size_t)x * 4u;
+			uint8_t a = src[3];
+			if (a == 0) continue;
+			uint8_t r = src[0];
+			uint8_t g = src[1];
+			uint8_t b = src[2];
+			if (g_fb.bpp == 32) {
+				uint32_t* dst = (uint32_t*)dst_line;
+				uint32_t d = dst[x];
+				uint8_t dr = (uint8_t)((d >> 16) & 0xFF);
+				uint8_t dg = (uint8_t)((d >> 8) & 0xFF);
+				uint8_t db = (uint8_t)(d & 0xFF);
+				if (a != 255) {
+					dr = (uint8_t)((r * a + dr * (255 - a) + 127) / 255);
+					dg = (uint8_t)((g * a + dg * (255 - a) + 127) / 255);
+					db = (uint8_t)((b * a + db * (255 - a) + 127) / 255);
+				} else {
+					dr = r;
+					dg = g;
+					db = b;
+				}
+				dst[x] = (uint32_t)((dr << 16) | (dg << 8) | db);
+			} else if (g_fb.bpp == 16) {
+				uint16_t* dst = (uint16_t*)dst_line;
+				uint32_t d = rgb565_to_xrgb8888(dst[x]);
+				uint8_t dr = (uint8_t)((d >> 16) & 0xFF);
+				uint8_t dg = (uint8_t)((d >> 8) & 0xFF);
+				uint8_t db = (uint8_t)(d & 0xFF);
+				if (a != 255) {
+					dr = (uint8_t)((r * a + dr * (255 - a) + 127) / 255);
+					dg = (uint8_t)((g * a + dg * (255 - a) + 127) / 255);
+					db = (uint8_t)((b * a + db * (255 - a) + 127) / 255);
+				} else {
+					dr = r;
+					dg = g;
+					db = b;
+				}
+				dst[x] = rgb888_to_rgb565(dr, dg, db);
+			}
+		}
+	}
+}
+
+static void menu_render_hw(void) {
+	if (!g_menu_active) return;
+	if (g_menu_dirty) menu_rebuild_surface();
+	if (!g_menu_surface) return;
+	if (!hw_init_blitter()) return;
+
+	if (!g_menu_tex || g_menu_tex_w != g_menu_surface_w || g_menu_tex_h != g_menu_surface_h) {
+		if (g_menu_tex) {
+			glDeleteTextures_ptr(1, &g_menu_tex);
+			g_menu_tex = 0;
+		}
+		glGenTextures_ptr(1, &g_menu_tex);
+		glBindTexture_ptr(GL_TEXTURE_2D, g_menu_tex);
+		glTexParameteri_ptr(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexParameteri_ptr(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		glTexParameteri_ptr(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri_ptr(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		glTexImage2D_ptr(GL_TEXTURE_2D, 0, GL_RGBA, (GLsizei)g_menu_surface_w, (GLsizei)g_menu_surface_h,
+			0, GL_RGBA, GL_UNSIGNED_BYTE, g_menu_surface);
+		g_menu_tex_w = g_menu_surface_w;
+		g_menu_tex_h = g_menu_surface_h;
+		g_menu_gl_dirty = false;
+	} else if (g_menu_gl_dirty) {
+		glBindTexture_ptr(GL_TEXTURE_2D, g_menu_tex);
+		glTexImage2D_ptr(GL_TEXTURE_2D, 0, GL_RGBA, (GLsizei)g_menu_surface_w, (GLsizei)g_menu_surface_h,
+			0, GL_RGBA, GL_UNSIGNED_BYTE, g_menu_surface);
+		g_menu_gl_dirty = false;
+	}
+
+	if (!g_menu_vbo) {
+		glGenBuffers_ptr(1, &g_menu_vbo);
+	}
+
+	const float left = ((float)g_menu_x / (float)g_fb.width) * 2.0f - 1.0f;
+	const float right = ((float)(g_menu_x + g_menu_surface_w) / (float)g_fb.width) * 2.0f - 1.0f;
+	const float top = 1.0f - ((float)g_menu_y / (float)g_fb.height) * 2.0f;
+	const float bottom = 1.0f - ((float)(g_menu_y + g_menu_surface_h) / (float)g_fb.height) * 2.0f;
+	const float quad[] = {
+		left,  bottom, 0.0f, 0.0f,
+		right, bottom, 1.0f, 0.0f,
+		left,  top,    0.0f, 1.0f,
+		right, top,    1.0f, 1.0f,
+	};
+
+	glViewport_ptr(0, 0, g_fb.width, g_fb.height);
+	glDisable_ptr(GL_DEPTH_TEST);
+	glDisable_ptr(GL_CULL_FACE);
+	glEnable_ptr(GL_BLEND);
+	glBlendFunc_ptr(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glUseProgram_ptr(g_blit_program);
+	glActiveTexture_ptr(GL_TEXTURE0);
+	glBindTexture_ptr(GL_TEXTURE_2D, g_menu_tex);
+	if (g_blit_uniform_tex >= 0) {
+		glUniform1i_ptr(g_blit_uniform_tex, 0);
+	}
+	if (g_blit_uniform_flip >= 0) {
+		glUniform1f_ptr(g_blit_uniform_flip, 1.0f);
+	}
+	glBindBuffer_ptr(GL_ARRAY_BUFFER, g_menu_vbo);
+	glBufferData_ptr(GL_ARRAY_BUFFER, (GLsizeiptr)sizeof(quad), quad, GL_DYNAMIC_DRAW);
+	if (g_blit_attr_pos >= 0) {
+		glEnableVertexAttribArray_ptr((GLuint)g_blit_attr_pos);
+		glVertexAttribPointer_ptr((GLuint)g_blit_attr_pos, 2, GL_FLOAT, GL_FALSE, 4 * (GLsizei)sizeof(float), (void*)0);
+	}
+	if (g_blit_attr_uv >= 0) {
+		glEnableVertexAttribArray_ptr((GLuint)g_blit_attr_uv);
+		glVertexAttribPointer_ptr((GLuint)g_blit_attr_uv, 2, GL_FLOAT, GL_FALSE, 4 * (GLsizei)sizeof(float), (void*)(2 * sizeof(float)));
+	}
+	glDrawArrays_ptr(GL_TRIANGLE_STRIP, 0, 4);
+	glDisable_ptr(GL_BLEND);
+}
+
 static bool hw_present_frame(unsigned src_w, unsigned src_h) {
 	if (!hw_init_blitter()) {
 		return false;
@@ -667,6 +1294,7 @@ static bool hw_present_frame(unsigned src_w, unsigned src_h) {
 		glVertexAttribPointer_ptr((GLuint)g_blit_attr_uv, 2, GL_FLOAT, GL_FALSE, 4 * (GLsizei)sizeof(float), (void*)(2 * sizeof(float)));
 	}
 	glDrawArrays_ptr(GL_TRIANGLE_STRIP, 0, 4);
+	menu_render_hw();
 	return true;
 }
 
@@ -852,45 +1480,45 @@ static bool environ_cb(unsigned cmd, void* data) {
 			*version = 2;
 			return true;
 		}
-		case RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2:
-		case RETRO_ENVIRONMENT_SET_CORE_OPTIONS_INTL:
-		case RETRO_ENVIRONMENT_SET_CORE_OPTIONS:
+		case RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2: {
+			menu_clear_options();
+			menu_ingest_options_v2((const struct retro_core_options_v2*)data);
+			return true;
+		}
+		case RETRO_ENVIRONMENT_SET_CORE_OPTIONS_INTL: {
+			const struct retro_core_options_intl* intl = (const struct retro_core_options_intl*)data;
+			menu_clear_options();
+			if (intl && intl->us) {
+				menu_ingest_options_v1(intl->us);
+			}
+			return true;
+		}
+		case RETRO_ENVIRONMENT_SET_CORE_OPTIONS: {
+			menu_clear_options();
+			menu_ingest_options_v1((const struct retro_core_option_definition*)data);
+			return true;
+		}
 		case RETRO_ENVIRONMENT_SET_VARIABLES:
+			menu_ingest_variables((const struct retro_variable*)data);
 			return true;
 		case RETRO_ENVIRONMENT_SET_VARIABLE: {
 			const struct retro_variable* var = (const struct retro_variable*)data;
-			if (strcmp(var->key, "bmsx_render_backend") == 0) {
-				snprintf(g_opt_render_backend, sizeof(g_opt_render_backend), "%s", var->value);
-				g_vars_updated = true;
-				return true;
+			if (!var || !var->key || !var->value) {
+				return false;
 			}
-			if (strcmp(var->key, "bmsx_crt_postprocessing") == 0) {
-				snprintf(g_opt_crt_postprocessing, sizeof(g_opt_crt_postprocessing), "%s", var->value);
-				g_vars_updated = true;
-				return true;
-			}
-			if (strcmp(var->key, "bmsx_postprocess_detail") == 0) {
-				snprintf(g_opt_postprocess_detail, sizeof(g_opt_postprocess_detail), "%s", var->value);
-				g_vars_updated = true;
-				return true;
-			}
-			return false;
+			return menu_set_variable_value(var->key, var->value, true);
 		}
 		case RETRO_ENVIRONMENT_GET_VARIABLE: {
 			struct retro_variable* var = (struct retro_variable*)data;
-			if (strcmp(var->key, "bmsx_render_backend") == 0) {
-				var->value = g_opt_render_backend;
-				return true;
+			if (!var || !var->key) {
+				return false;
 			}
-			if (strcmp(var->key, "bmsx_crt_postprocessing") == 0) {
-				var->value = g_opt_crt_postprocessing;
-				return true;
+			const char* value = menu_get_variable_value(var->key);
+			if (!value) {
+				return false;
 			}
-			if (strcmp(var->key, "bmsx_postprocess_detail") == 0) {
-				var->value = g_opt_postprocess_detail;
-				return true;
-			}
-			return false;
+			var->value = value;
+			return true;
 		}
 		case RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE: {
 			bool* updated = (bool*)data;
@@ -1069,6 +1697,7 @@ static void video_cb(const void* data, unsigned width, unsigned height, size_t p
 				}
 			}
 		}
+		menu_render_software();
 		return;
 	}
 
@@ -1111,6 +1740,7 @@ static void video_cb(const void* data, unsigned width, unsigned height, size_t p
 				}
 			}
 		}
+		menu_render_software();
 		return;
 	}
 
@@ -1665,6 +2295,60 @@ static void input_open_default_devices(void) {
 
 static uint64_t monotonic_ms(void);
 
+static bool menu_pad_pressed(uint16_t state, uint16_t prev, unsigned id) {
+	const uint16_t bit = (uint16_t)(1u << id);
+	return (state & bit) && !(prev & bit);
+}
+
+static void menu_handle_input(uint16_t state, uint16_t prev, bool skip_nav) {
+	const uint16_t start_bit = (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_START);
+	const uint16_t select_bit = (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_SELECT);
+	const uint16_t l_bit = (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_L);
+	const uint16_t r_bit = (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_R);
+
+	const bool combo_now = (state & start_bit) && (state & select_bit) && !(state & l_bit) && !(state & r_bit);
+	const bool combo_prev = (prev & start_bit) && (prev & select_bit) && !(prev & l_bit) && !(prev & r_bit);
+	if (combo_now && !combo_prev) {
+		menu_toggle();
+		skip_nav = true;
+	}
+
+	if (!g_menu_active || skip_nav) {
+		return;
+	}
+
+	if (menu_pad_pressed(state, prev, RETRO_DEVICE_ID_JOYPAD_UP)) {
+		if (g_menu_option_count > 0) {
+			g_menu_selected = (g_menu_selected == 0) ? (g_menu_option_count - 1) : (g_menu_selected - 1);
+			menu_mark_dirty();
+		}
+	}
+	if (menu_pad_pressed(state, prev, RETRO_DEVICE_ID_JOYPAD_DOWN)) {
+		if (g_menu_option_count > 0) {
+			g_menu_selected = (g_menu_selected + 1) % g_menu_option_count;
+			menu_mark_dirty();
+		}
+	}
+	if (menu_pad_pressed(state, prev, RETRO_DEVICE_ID_JOYPAD_LEFT)) {
+		if (g_menu_option_count > 0) {
+			MenuOption* opt = &g_menu_options[g_menu_selected];
+			if (opt->value_count > 0) {
+				size_t next = (opt->current_index == 0) ? (opt->value_count - 1) : (opt->current_index - 1);
+				menu_apply_option(opt, next, true);
+			}
+		}
+	}
+	if (menu_pad_pressed(state, prev, RETRO_DEVICE_ID_JOYPAD_RIGHT)) {
+		if (g_menu_option_count > 0) {
+			MenuOption* opt = &g_menu_options[g_menu_selected];
+			if (opt->value_count > 0) {
+				size_t next = (opt->current_index + 1) % opt->value_count;
+				menu_apply_option(opt, next, true);
+			}
+		}
+	}
+}
+
 static void poll_input_devices(void) {
 	uint16_t merged = 0;
 	for (size_t i = 0; i < g_input_dev_count; ++i) {
@@ -1756,13 +2440,13 @@ static void poll_input_devices(void) {
 			if (dev->abs_y > y_mid + y_dead) merged |= (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_DOWN);
 		}
 	}
-	g_pad_state_port0 = merged;
+	g_pad_state_raw = merged;
 	static uint64_t combo_start_ms = 0;
 	const bool combo_down =
-		(g_pad_state_port0 & (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_START)) &&
-		(g_pad_state_port0 & (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_SELECT)) &&
-		(g_pad_state_port0 & (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_L)) &&
-		(g_pad_state_port0 & (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_R));
+		(g_pad_state_raw & (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_START)) &&
+		(g_pad_state_raw & (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_SELECT)) &&
+		(g_pad_state_raw & (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_L)) &&
+		(g_pad_state_raw & (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_R));
 	if (combo_down) {
 		uint64_t now = monotonic_ms();
 		if (combo_start_ms == 0) {
@@ -1776,6 +2460,13 @@ static void poll_input_devices(void) {
 	} else {
 		combo_start_ms = 0;
 	}
+	menu_handle_input(g_pad_state_raw, g_menu_prev_pad, combo_down);
+	if (g_menu_active) {
+		g_pad_state_port0 = 0;
+	} else {
+		g_pad_state_port0 = g_pad_state_raw;
+	}
+	g_menu_prev_pad = g_pad_state_raw;
 	if (g_input_debug) {
 		fprintf(stderr, "[libretro-host][input] port0=0x%04x\n", g_pad_state_port0);
 	}
@@ -2014,7 +2705,19 @@ int main(int argc, char** argv) {
 	while (!g_should_quit) {
 		struct timespec start;
 		clock_gettime(CLOCK_MONOTONIC, &start);
-		core.retro_run();
+
+		if (g_menu_active) {
+			poll_input_devices();
+			if (g_use_hw_render) {
+				menu_render_hw();
+				eglSwapBuffers_ptr(g_egl_display, g_egl_surface);
+			} else {
+				menu_render_software();
+			}
+		} else {
+			core.retro_run();
+		}
+
 		struct timespec end;
 		clock_gettime(CLOCK_MONOTONIC, &end);
 
@@ -2038,6 +2741,8 @@ int main(int argc, char** argv) {
 		}
 	}
 	fb_shutdown(&g_fb);
+	free(g_menu_surface);
+	g_menu_surface = NULL;
 	if (game_buf) {
 		free(game_buf);
 	}
