@@ -1,10 +1,14 @@
 SNESMINI_ROOT ?= $(CURDIR)/.snesmini
 SNESMINI_SYSROOT ?= $(SNESMINI_ROOT)/sysroot
 SNESMINI_BUILD_DIR ?= $(CURDIR)/build-snesmini
+SNESMINI_BUILD_DIR_HOST ?= $(CURDIR)/build-snesmini-host
 SNESMINI_BUILD_TYPE ?= Debug
 SNESMINI_TOOLCHAIN_PREFIX ?= arm-linux-gnueabihf
-SNESMINI_C_FLAGS ?= -U_TIME_BITS -D_TIME_BITS=32
-SNESMINI_CXX_FLAGS ?= -U_TIME_BITS -D_TIME_BITS=32 -D_GLIBCXX_USE_CXX11_ABI=0 -DBMSX_SNESMINI_LEGACY=1 -fno-sized-deallocation
+SNESMINI_USE_DOCKER ?= 1
+SNESMINI_USE_BUILDER_IMAGE ?= 1
+SNESMINI_BUILDER_IMAGE ?= bmsx-snesmini-builder:bullseye
+SNESMINI_C_FLAGS ?= -O3 -U_TIME_BITS -D_TIME_BITS=32
+SNESMINI_CXX_FLAGS ?= -O3 -U_TIME_BITS -D_TIME_BITS=32 -D_GLIBCXX_USE_CXX11_ABI=0 -DBMSX_SNESMINI_LEGACY=1 -fno-sized-deallocation
 SNESMINI_SYSROOT_LIB_DIR ?= $(SNESMINI_SYSROOT)/lib/arm-linux-gnueabihf
 SNESMINI_SYSROOT_USR_LIB_DIR ?= $(SNESMINI_SYSROOT)/usr/lib/arm-linux-gnueabihf
 SNESMINI_LINK_FLAGS ?= -L$(SNESMINI_SYSROOT_USR_LIB_DIR) -L$(SNESMINI_SYSROOT_LIB_DIR) -Wl,-rpath-link,$(SNESMINI_SYSROOT_USR_LIB_DIR):$(SNESMINI_SYSROOT_LIB_DIR) -static-libstdc++ -static-libgcc
@@ -15,12 +19,18 @@ SNESMINI_DIST_DIR ?= $(CURDIR)/dist
 .PHONY: libretro-snesmini-debug libretro-snesmini-debug-inner snesmini-sysroot
 libretro-snesmini-debug:
 	SNESMINI_BUILD_TYPE="$(SNESMINI_BUILD_TYPE)" \
+	BMSX_SNESMINI_USE_DOCKER="$(SNESMINI_USE_DOCKER)" \
+	BMSX_SNESMINI_USE_BUILDER_IMAGE="$(SNESMINI_USE_BUILDER_IMAGE)" \
+	BMSX_SNESMINI_BUILDER_IMAGE="$(SNESMINI_BUILDER_IMAGE)" \
 		"$(CURDIR)/scripts/setup-snesmini-local-core.sh" "$(SNESMINI_SYSROOT)"
 
 .PHONY: libretro-host-snesmini-debug libretro-host-snesmini-debug-inner
 libretro-host-snesmini-debug:
 	SNESMINI_BUILD_TYPE="$(SNESMINI_BUILD_TYPE)" \
-		BMSX_SNESMINI_MAKE_TARGET="libretro-host-snesmini-debug-host" \
+	BMSX_SNESMINI_MAKE_TARGET="libretro-host-snesmini-debug-host" \
+	BMSX_SNESMINI_USE_DOCKER="$(SNESMINI_USE_DOCKER)" \
+	BMSX_SNESMINI_USE_BUILDER_IMAGE="$(SNESMINI_USE_BUILDER_IMAGE)" \
+	BMSX_SNESMINI_BUILDER_IMAGE="$(SNESMINI_BUILDER_IMAGE)" \
 		"$(CURDIR)/scripts/setup-snesmini-local-core.sh" "$(SNESMINI_SYSROOT)"
 
 snesmini-sysroot:
@@ -36,7 +46,7 @@ libretro-snesmini-debug-inner: snesmini-sysroot
 		cmake -S src/bmsx_cpp -B "$(SNESMINI_BUILD_DIR)" \
 			-DCMAKE_BUILD_TYPE="$(SNESMINI_BUILD_TYPE)" \
 			$(SNESMINI_CMAKE_ARGS)
-	cmake --build "$(SNESMINI_BUILD_DIR)" --config "$(SNESMINI_BUILD_TYPE)" --target bmsx_libretro_host
+	cmake --build "$(SNESMINI_BUILD_DIR)" --config "$(SNESMINI_BUILD_TYPE)" --target bmsx_libretro
 	@mkdir -p "$(SNESMINI_DIST_DIR)"
 	cp "$(SNESMINI_BUILD_DIR)/bmsx_libretro.so" "$(SNESMINI_DIST_DIR)/bmsx_libretro.so"
 	@core_name=$$(sed -nE 's/.*CORE_NAME = "([^"]*)".*/\1/p' "$(SNESMINI_LIBRETRO_ENTRY)"); \
@@ -50,15 +60,14 @@ libretro-snesmini-debug-inner: snesmini-sysroot
 
 libretro-host-snesmini-debug-host: snesmini-sysroot
 	BMSX_SYSROOT="$(SNESMINI_SYSROOT)" BMSX_TOOLCHAIN_PREFIX="$(SNESMINI_TOOLCHAIN_PREFIX)" \
-		SNESMINI_BUILD_DIR="$(CURDIR)/build-snesmini-host" \
 		CC="$(SNESMINI_TOOLCHAIN_PREFIX)-gcc" CXX="$(SNESMINI_TOOLCHAIN_PREFIX)-g++" \
-		cmake -S src/bmsx_cpp -B "$(SNESMINI_BUILD_DIR)" \
+		cmake -S src/bmsx_cpp -B "$(SNESMINI_BUILD_DIR_HOST)" \
 			-DCMAKE_BUILD_TYPE="$(SNESMINI_BUILD_TYPE)" \
 			$(SNESMINI_CMAKE_ARGS) \
 			-DCMAKE_C_FLAGS="$(SNESMINI_C_FLAGS) -isystem /usr/include" \
 			-DCMAKE_CXX_FLAGS="$(SNESMINI_CXX_FLAGS) -isystem /usr/include" \
 			-DBMSX_BUILD_LIBRETRO=OFF \
 			-DBMSX_BUILD_LIBRETRO_HOST=ON
-	cmake --build "$(SNESMINI_BUILD_DIR)" --config "$(SNESMINI_BUILD_TYPE)"
+	cmake --build "$(SNESMINI_BUILD_DIR_HOST)" --config "$(SNESMINI_BUILD_TYPE)" --target bmsx_libretro_host
 	@mkdir -p "$(SNESMINI_DIST_DIR)"
-	cp "$(SNESMINI_BUILD_DIR)/bmsx_libretro_host" "$(SNESMINI_DIST_DIR)/bmsx_libretro_host"
+	cp "$(SNESMINI_BUILD_DIR_HOST)/bmsx_libretro_host" "$(SNESMINI_DIST_DIR)/bmsx_libretro_host"

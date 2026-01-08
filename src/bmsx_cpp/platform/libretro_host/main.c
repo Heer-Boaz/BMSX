@@ -1,5 +1,7 @@
 #define _GNU_SOURCE
 
+#include <dirent.h>
+#include <limits.h>
 #include <dlfcn.h>
 #include <EGL/egl.h>
 #include <errno.h>
@@ -75,6 +77,14 @@ typedef struct InputDev {
 	int fd;
 	int32_t hat_x;
 	int32_t hat_y;
+	int32_t abs_x;
+	int32_t abs_y;
+	int32_t abs_x_min;
+	int32_t abs_x_max;
+	int32_t abs_y_min;
+	int32_t abs_y_max;
+	bool has_hat;
+	bool has_abs_xy;
 	uint16_t pad_state;
 } InputDev;
 
@@ -234,7 +244,9 @@ static PFNGLVIEWPORTPROC glViewport_ptr = NULL;
 static PFNGLCHECKFRAMEBUFFERSTATUSPROC glCheckFramebufferStatus_ptr = NULL;
 
 static FbDev g_fb;
-static InputDev g_input_devs[4];
+enum { kMaxInputDevs = 16 };
+static InputDev g_input_devs[kMaxInputDevs];
+static char g_input_paths[kMaxInputDevs][64];
 static size_t g_input_dev_count = 0;
 static uint16_t g_pad_state_port0 = 0;
 
@@ -1114,30 +1126,81 @@ static uint16_t map_ev_key_to_pad(uint16_t code) {
 	}
 }
 
+static void input_init_abs_axis(InputDev* dev, unsigned code, int32_t* min_out, int32_t* max_out, bool* has_axis) {
+	struct input_absinfo absinfo;
+	if (ioctl(dev->fd, EVIOCGABS(code), &absinfo) == 0) {
+		if (min_out) *min_out = absinfo.minimum;
+		if (max_out) *max_out = absinfo.maximum;
+		if (has_axis) *has_axis = true;
+	}
+}
+
+static void input_register_device(const char* path) {
+	if (g_input_dev_count >= kMaxInputDevs) {
+		return;
+	}
+	int fd = open(path, O_RDONLY | O_NONBLOCK);
+	if (fd < 0) {
+		fprintf(stderr, "[libretro-host] Failed to open %s: %s\n", path, strerror(errno));
+		return;
+	}
+	InputDev dev;
+	memset(&dev, 0, sizeof(dev));
+	snprintf(g_input_paths[g_input_dev_count], sizeof(g_input_paths[g_input_dev_count]), "%s", path);
+	dev.path = g_input_paths[g_input_dev_count];
+	dev.fd = fd;
+	dev.hat_x = 0;
+	dev.hat_y = 0;
+	dev.abs_x = 0;
+	dev.abs_y = 0;
+	dev.abs_x_min = INT32_MIN;
+	dev.abs_x_max = INT32_MAX;
+	dev.abs_y_min = INT32_MIN;
+	dev.abs_y_max = INT32_MAX;
+	dev.has_hat = false;
+	dev.has_abs_xy = false;
+	dev.pad_state = 0;
+
+	input_init_abs_axis(&dev, ABS_HAT0X, NULL, NULL, &dev.has_hat);
+	input_init_abs_axis(&dev, ABS_HAT0Y, NULL, NULL, &dev.has_hat);
+	input_init_abs_axis(&dev, ABS_X, &dev.abs_x_min, &dev.abs_x_max, &dev.has_abs_xy);
+	input_init_abs_axis(&dev, ABS_Y, &dev.abs_y_min, &dev.abs_y_max, &dev.has_abs_xy);
+
+	g_input_devs[g_input_dev_count++] = dev;
+	fprintf(stderr, "[libretro-host] input %s opened\n", path);
+}
+
 static void input_open_default_devices(void) {
-	static const char* paths[] = {
-		"/dev/input/event0",
-		"/dev/input/event1",
-		"/dev/input/event2",
-		"/dev/input/event3",
-	};
-	for (size_t i = 0; i < sizeof(paths) / sizeof(paths[0]); ++i) {
-		int fd = open(paths[i], O_RDONLY | O_NONBLOCK);
-		if (fd < 0) {
-			fprintf(stderr, "[libretro-host] Failed to open %s: %s\n", paths[i], strerror(errno));
-			continue;
+	g_input_dev_count = 0;
+	DIR* dir = opendir("/dev/input");
+	if (dir) {
+		struct dirent* ent = NULL;
+		while ((ent = readdir(dir)) != NULL) {
+			if (strncmp(ent->d_name, "event", 5) != 0) {
+				continue;
+			}
+			char path[64];
+			snprintf(path, sizeof(path), "/dev/input/%s", ent->d_name);
+			input_register_device(path);
+			if (g_input_dev_count >= kMaxInputDevs) {
+				break;
+			}
 		}
-		InputDev dev = {
-			.path = paths[i],
-			.fd = fd,
-			.hat_x = 0,
-			.hat_y = 0,
-			.pad_state = 0,
+		closedir(dir);
+	}
+
+	if (g_input_dev_count == 0) {
+		static const char* paths[] = {
+			"/dev/input/event0",
+			"/dev/input/event1",
+			"/dev/input/event2",
+			"/dev/input/event3",
 		};
-		g_input_devs[g_input_dev_count++] = dev;
-		fprintf(stderr, "[libretro-host] input %s opened\n", paths[i]);
-		if (g_input_dev_count == sizeof(g_input_devs) / sizeof(g_input_devs[0])) {
-			break;
+		for (size_t i = 0; i < sizeof(paths) / sizeof(paths[0]); ++i) {
+			input_register_device(paths[i]);
+			if (g_input_dev_count >= kMaxInputDevs) {
+				break;
+			}
 		}
 	}
 	if (g_input_dev_count == 0) {
@@ -1182,17 +1245,45 @@ static void poll_input_devices(void) {
 			} else if (ev.type == EV_ABS) {
 				if (ev.code == ABS_HAT0X) {
 					dev->hat_x = ev.value;
+					dev->has_hat = true;
 				} else if (ev.code == ABS_HAT0Y) {
 					dev->hat_y = ev.value;
+					dev->has_hat = true;
+				} else if (ev.code == ABS_X) {
+					dev->abs_x = ev.value;
+					dev->has_abs_xy = true;
+				} else if (ev.code == ABS_Y) {
+					dev->abs_y = ev.value;
+					dev->has_abs_xy = true;
 				}
 			}
 		}
 
 		merged |= dev->pad_state;
-		if (dev->hat_x < 0) merged |= (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_LEFT);
-		if (dev->hat_x > 0) merged |= (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_RIGHT);
-		if (dev->hat_y < 0) merged |= (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_UP);
-		if (dev->hat_y > 0) merged |= (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_DOWN);
+		if (dev->has_hat) {
+			if (dev->hat_x < 0) merged |= (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_LEFT);
+			if (dev->hat_x > 0) merged |= (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_RIGHT);
+			if (dev->hat_y < 0) merged |= (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_UP);
+			if (dev->hat_y > 0) merged |= (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_DOWN);
+		} else if (dev->has_abs_xy) {
+			int32_t x_min = dev->abs_x_min;
+			int32_t x_max = dev->abs_x_max;
+			int32_t y_min = dev->abs_y_min;
+			int32_t y_max = dev->abs_y_max;
+			int32_t x_range = x_max - x_min;
+			int32_t y_range = y_max - y_min;
+			if (x_range <= 0 || y_range <= 0) {
+				continue;
+			}
+			int32_t x_mid = x_min + (x_range / 2);
+			int32_t y_mid = y_min + (y_range / 2);
+			int32_t x_dead = x_range > 0 ? x_range / 8 : 0;
+			int32_t y_dead = y_range > 0 ? y_range / 8 : 0;
+			if (dev->abs_x < x_mid - x_dead) merged |= (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_LEFT);
+			if (dev->abs_x > x_mid + x_dead) merged |= (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_RIGHT);
+			if (dev->abs_y < y_mid - y_dead) merged |= (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_UP);
+			if (dev->abs_y > y_mid + y_dead) merged |= (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_DOWN);
+		}
 	}
 	g_pad_state_port0 = merged;
 	if (g_input_debug) {

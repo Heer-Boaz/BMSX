@@ -1,0 +1,8 @@
+/src/CMakeFiles/install/local.dir
+/src/CMakeFiles/install.dir
+/src/CMakeFiles/list_install_components.dir
+/src/CMakeFiles/rebuild_cache.dir
+/src/CMakeFiles/edit_cache.dir
+/src/CMakeFiles/bmsx_libretro_host.dir
+/src/CMakeFiles/install/strip.dir
+/src/CMakeFiles/bmsx_core.dir

@@ -288,7 +288,17 @@ if ! is_root; then
 	if [ "$USE_DOCKER" = "1" ] && can_use_docker_as_user; then
 		:
 	elif command -v sudo >/dev/null 2>&1; then
-		exec sudo \
+		sudo_env=()
+		if [ -n "${DOCKER_HOST:-}" ]; then
+			sudo_env+=("DOCKER_HOST=$DOCKER_HOST")
+		fi
+		if [ -n "${DOCKER_CONTEXT:-}" ]; then
+			sudo_env+=("DOCKER_CONTEXT=$DOCKER_CONTEXT")
+		fi
+		if [ -n "${XDG_RUNTIME_DIR:-}" ]; then
+			sudo_env+=("XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR")
+		fi
+		exec sudo "${sudo_env[@]}" \
 			BMSX_SNESMINI_MAKE_TARGET="$MAKE_TARGET" \
 			SNESMINI_BUILD_TYPE="$BUILD_TYPE" \
 			BMSX_SNESMINI_USE_DOCKER="$USE_DOCKER" \
