@@ -840,7 +840,7 @@ async function main() {
 			removeTaskNamesFromList(romBuildTasks, bundlerTasks);
 		}
 		const isEngineMode = mode === 'engine';
-		const romPackDebug = isEngineMode ? false : debug;
+		const romPackDebug = debug;
 		const normalizedBootloader = normalizePathKey(bootloader_path);
 		const cartRootFromRes = respath ? normalizePathKey(join(respath, '..')) : null;
 		const projectRootFromRes = cartRootFromRes ? cartRootFromRes.replace(/^\.\//, '') : '';
@@ -998,8 +998,8 @@ async function main() {
 						// Compile bootrom.lua into VM bytecode for C++ engine
 						appendVmProgramAsset(engineRomAssets, engineManifest, { includeSymbols: debug });
 						stripLuaAssets(engineRomAssets, debug);
-						await finalizeRompack(engineRomAssets, engineRomName, { projectRootPath: engineProjectRootPath, manifest: engineManifest, zipRom: false, debug: debug });
-						logOk(`Engine assets ready → ${pc.white(`dist/${engineRomName}.rom`)}`);
+						await finalizeRompack(engineRomAssets, engineRomName, { projectRootPath: engineProjectRootPath, manifest: engineManifest, zipRom: false, debug });
+						logOk(`Engine assets ready → ${pc.white(`dist/${engineRomName}${debug ? '.debug' : ''}.rom`)}`);
 					} finally {
 						setLuaCanonicalization(previousCanonicalization);
 					}
@@ -1131,7 +1131,7 @@ async function main() {
 					extraLuaAssets = engineLuaAssets.filter(asset => asset.type === 'lua');
 				}
 			}
-			appendVmProgramAsset(romAssets, romManifest, { extraLuaAssets, includeSymbols: debug });
+			appendVmProgramAsset(romAssets, romManifest, { extraLuaAssets, includeSymbols: romPackDebug });
 			stripLuaAssets(romAssets, romPackDebug);
 			await progress.taskCompleted();
 

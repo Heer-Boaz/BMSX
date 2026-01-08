@@ -1484,7 +1484,7 @@ export async function generateRomAssets(resources: Resource[], reportProgress?: 
 export function appendVmProgramAsset(assetList: RomAsset[], manifest: RomManifest, options: { extraLuaAssets?: RomAsset[]; includeSymbols?: boolean } = {}): void {
 	const hasProgramAsset = assetList.some(asset => asset.resid === VM_PROGRAM_ASSET_ID);
 	const hasSymbolsAsset = assetList.some(asset => asset.resid === VM_PROGRAM_SYMBOLS_ASSET_ID);
-	const includeSymbols = options.includeSymbols !== false;
+	const includeSymbols = options.includeSymbols === true;
 	if (hasProgramAsset || hasSymbolsAsset) {
 		if (hasSymbolsAsset && !hasProgramAsset) {
 			throw new Error('[RomPacker] VM program symbols asset requires the program asset.');
