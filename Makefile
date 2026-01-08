@@ -20,7 +20,7 @@ libretro-snesmini-debug:
 .PHONY: libretro-host-snesmini-debug libretro-host-snesmini-debug-inner
 libretro-host-snesmini-debug:
 	SNESMINI_BUILD_TYPE="$(SNESMINI_BUILD_TYPE)" \
-		BMSX_SNESMINI_MAKE_TARGET="libretro-host-snesmini-debug-inner" \
+		BMSX_SNESMINI_MAKE_TARGET="libretro-host-snesmini-debug-host" \
 		"$(CURDIR)/scripts/setup-snesmini-local-core.sh" "$(SNESMINI_SYSROOT)"
 
 snesmini-sysroot:
@@ -48,22 +48,15 @@ libretro-snesmini-debug-inner: snesmini-sysroot
 	printf 'supported_extensions = "%s"\n' "$$extensions" >> "$(SNESMINI_DIST_DIR)/bmsx_libretro.info"; \
 	printf 'supports_no_game = "true"\n' >> "$(SNESMINI_DIST_DIR)/bmsx_libretro.info"
 
-libretro-host-snesmini-debug-inner: snesmini-sysroot
+libretro-host-snesmini-debug-host: snesmini-sysroot
 	BMSX_SYSROOT="$(SNESMINI_SYSROOT)" BMSX_TOOLCHAIN_PREFIX="$(SNESMINI_TOOLCHAIN_PREFIX)" \
+		SNESMINI_BUILD_DIR="$(CURDIR)/build-snesmini-host" \
 		CC="$(SNESMINI_TOOLCHAIN_PREFIX)-gcc" CXX="$(SNESMINI_TOOLCHAIN_PREFIX)-g++" \
 		cmake -S src/bmsx_cpp -B "$(SNESMINI_BUILD_DIR)" \
 			-DCMAKE_BUILD_TYPE="$(SNESMINI_BUILD_TYPE)" \
 			$(SNESMINI_CMAKE_ARGS) \
+			-DBMSX_BUILD_LIBRETRO=OFF \
 			-DBMSX_BUILD_LIBRETRO_HOST=ON
 	cmake --build "$(SNESMINI_BUILD_DIR)" --config "$(SNESMINI_BUILD_TYPE)"
 	@mkdir -p "$(SNESMINI_DIST_DIR)"
-	cp "$(SNESMINI_BUILD_DIR)/bmsx_libretro.so" "$(SNESMINI_DIST_DIR)/bmsx_libretro.so"
-	@core_name=$$(sed -nE 's/.*CORE_NAME = "([^"]*)".*/\1/p' "$(SNESMINI_LIBRETRO_ENTRY)"); \
-	core_version=$$(sed -nE 's/.*CORE_VERSION = "([^"]*)".*/\1/p' "$(SNESMINI_LIBRETRO_ENTRY)"); \
-	extensions=$$(sed -nE 's/.*VALID_EXTENSIONS = "([^"]*)".*/\1/p' "$(SNESMINI_LIBRETRO_ENTRY)"); \
-	printf 'display_name = "%s"\n' "$$core_name" > "$(SNESMINI_DIST_DIR)/bmsx_libretro.info"; \
-	printf 'display_version = "%s"\n' "$$core_version" >> "$(SNESMINI_DIST_DIR)/bmsx_libretro.info"; \
-	printf 'corename = "%s"\n' "$$core_name" >> "$(SNESMINI_DIST_DIR)/bmsx_libretro.info"; \
-	printf 'supported_extensions = "%s"\n' "$$extensions" >> "$(SNESMINI_DIST_DIR)/bmsx_libretro.info"; \
-	printf 'supports_no_game = "true"\n' >> "$(SNESMINI_DIST_DIR)/bmsx_libretro.info"
 	cp "$(SNESMINI_BUILD_DIR)/bmsx_libretro_host" "$(SNESMINI_DIST_DIR)/bmsx_libretro_host"

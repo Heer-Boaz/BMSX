@@ -202,6 +202,11 @@ void LibretroPlatform::switchToSoftwareBackend() {
 }
 
 void LibretroPlatform::setAVInfo(const retro_system_av_info& info) {
+	if (info.geometry.base_width == 0 || info.geometry.base_height == 0) {
+		log(RETRO_LOG_WARN, "[BMSX] Ignoring AV Info with zero geometry (%ux%u)\n",
+			info.geometry.base_width, info.geometry.base_height);
+		return;
+	}
 	m_av_info = info;
 	m_has_av_info = true;
 	m_frame_time_sec = 1.0 / info.timing.fps;
@@ -274,6 +279,11 @@ void LibretroPlatform::setControllerDevice(unsigned port, unsigned device) {
 
 void LibretroPlatform::applyManifestViewport() {
 	const auto& manifest = m_engine->assets().manifest;
+	if (manifest.viewportWidth <= 0 || manifest.viewportHeight <= 0) {
+		log(RETRO_LOG_WARN, "[BMSX] Manifest viewport invalid (%d x %d); keeping current geometry\n",
+			manifest.viewportWidth, manifest.viewportHeight);
+		return;
+	}
 	m_pending_viewport = {
 		static_cast<f32>(manifest.viewportWidth),
 		static_cast<f32>(manifest.viewportHeight)

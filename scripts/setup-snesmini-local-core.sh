@@ -276,7 +276,12 @@ fi
 
 if ! is_root; then
 	if command -v sudo >/dev/null 2>&1; then
-		exec sudo "$0" "$SYSROOT_DIR"
+		exec sudo \
+			BMSX_SNESMINI_MAKE_TARGET="$MAKE_TARGET" \
+			SNESMINI_BUILD_TYPE="$BUILD_TYPE" \
+			BMSX_SNESMINI_USE_DOCKER="${BMSX_SNESMINI_USE_DOCKER:-1}" \
+			BMSX_SNESMINI_DOCKER_IMAGE="${BMSX_SNESMINI_DOCKER_IMAGE:-debian:bullseye}" \
+			"$0" "$SYSROOT_DIR"
 	fi
 	echo "This command requires sudo to build via the SNES Mini docker toolchain." >&2
 	echo "Run: sudo $0 $SYSROOT_DIR" >&2
