@@ -302,6 +302,9 @@ static void host_log(enum retro_log_level level, const char* fmt, ...) {
 	va_end(ap);
 }
 
+static bool hw_ensure_fbo(unsigned width, unsigned height);
+static bool hw_present_frame(unsigned src_w, unsigned src_h);
+
 static uintptr_t RETRO_CALLCONV hw_get_current_framebuffer(void) {
 	unsigned target_w = g_geom_base_w ? g_geom_base_w : g_last_video_w;
 	unsigned target_h = g_geom_base_h ? g_geom_base_h : g_last_video_h;
