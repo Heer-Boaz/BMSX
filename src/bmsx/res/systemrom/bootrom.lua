@@ -1,7 +1,7 @@
 -- bootrom.lua
 -- BMSX system boot screen
 
-local BOOT_DELAY = 1.0
+local BOOT_DELAY = 2.0
 local FONT_WIDTH = 6
 local LINE_HEIGHT = 8
 
@@ -16,24 +16,12 @@ local COLOR_WARN = 8
 local boot_start = os.clock()
 local boot_requested = false
 
-local function now_seconds()
-	return os.clock()
-end
-
 local function elapsed_seconds()
-	return now_seconds() - boot_start
-end
-
-local function text_width(text)
-	return #text * FONT_WIDTH
-end
-
-local function write_line(text, x, y, color)
-	write(text, x, y, 0, color)
+	return os.clock() - boot_start
 end
 
 local function center_x(text, width)
-	return math.floor((width - text_width(text)) / 2)
+	return math.floor((width - (#text * FONT_WIDTH)) / 2)
 end
 
 local function build_info()
@@ -111,7 +99,7 @@ local function build_progress_bar(progress, width)
 end
 
 function init()
-	boot_start = now_seconds()
+	boot_start = os.clock()
 	boot_requested = false
 end
 
@@ -134,45 +122,45 @@ function draw()
 
 	cls(COLOR_BG)
 	put_rectfill(0, 0, width - 1, 15, 0, COLOR_HEADER_BG)
-	write_line("BMSX SYSTEM ROM", center_x("BMSX SYSTEM ROM", width), 4, COLOR_HEADER_TEXT)
+	write("BMSX SYSTEM ROM", center_x("BMSX SYSTEM ROM", width), 4, 0, COLOR_HEADER_TEXT)
 
 	local info = build_info()
 	local y = top
-	write_line(divider(width, left), left, y, COLOR_ACCENT)
+	write(divider(width, left), left, y, COLOR_ACCENT)
 	y = y + LINE_HEIGHT
-	write_line("ENGINE NAME: " .. info.engine_title, left, y, COLOR_TEXT)
+	write("ENGINE NAME: " .. info.engine_title, left, y, 0, COLOR_TEXT)
 	y = y + LINE_HEIGHT
-	write_line("ENGINE ROM : " .. info.engine_rom, left, y, COLOR_TEXT)
+	write("ENGINE ROM : " .. info.engine_rom, left, y, 0, COLOR_TEXT)
 	y = y + LINE_HEIGHT
-	write_line("ENGINE NS  : " .. info.engine_ns, left, y, COLOR_TEXT)
+	write("ENGINE NS  : " .. info.engine_ns, left, y, 0, COLOR_TEXT)
 	y = y + LINE_HEIGHT
-	write_line("ENGINE VIEW: " .. info.engine_view, left, y, COLOR_TEXT)
+	write("ENGINE VIEW: " .. info.engine_view, left, y, 0, COLOR_TEXT)
 	y = y + LINE_HEIGHT
-	write_line("ENGINE LUA : " .. info.engine_entry, left, y, COLOR_TEXT)
+	write("ENGINE LUA : " .. info.engine_entry, left, y, 0, COLOR_TEXT)
 	y = y + LINE_HEIGHT
-	write_line("ENGINE CAN : " .. info.engine_canon, left, y, COLOR_TEXT)
+	write("ENGINE CAN : " .. info.engine_canon, left, y, 0, COLOR_TEXT)
 	y = y + LINE_HEIGHT
-	write_line(divider(width, left), left, y, COLOR_ACCENT)
+	write(divider(width, left), left, y, 0, COLOR_ACCENT)
 	y = y + LINE_HEIGHT
-	write_line("CART ROM   : " .. info.cart_rom, left, y, COLOR_TEXT)
+	write("CART ROM   : " .. info.cart_rom, left, y, 0, COLOR_TEXT)
 	y = y + LINE_HEIGHT
-	write_line("CART NAME  : " .. info.cart_title, left, y, COLOR_TEXT)
+	write("CART NAME  : " .. info.cart_title, left, y, 0, COLOR_TEXT)
 	y = y + LINE_HEIGHT
-	write_line("SHORT NAME : " .. info.cart_short, left, y, COLOR_TEXT)
+	write("SHORT NAME : " .. info.cart_short, left, y, 0, COLOR_TEXT)
 	y = y + LINE_HEIGHT
-	write_line("NAMESPACE  : " .. info.cart_ns, left, y, COLOR_TEXT)
+	write("NAMESPACE  : " .. info.cart_ns, left, y, 0, COLOR_TEXT)
 	y = y + LINE_HEIGHT
-	write_line("VIEWPORT   : " .. info.cart_view, left, y, COLOR_TEXT)
+	write("VIEWPORT   : " .. info.cart_view, left, y, 0, COLOR_TEXT)
 	y = y + LINE_HEIGHT
-	write_line("CANON      : " .. info.cart_canon, left, y, COLOR_TEXT)
+	write("CANON      : " .. info.cart_canon, left, y, 0, COLOR_TEXT)
 	y = y + LINE_HEIGHT
-	write_line("CART LUA   : " .. info.cart_entry, left, y, COLOR_TEXT)
+	write("CART LUA   : " .. info.cart_entry, left, y, 0, COLOR_TEXT)
 	y = y + LINE_HEIGHT
-	write_line("INPUT MAP  : " .. info.cart_input, left, y, COLOR_TEXT)
+	write("INPUT MAP  : " .. info.cart_input, left, y, 0, COLOR_TEXT)
 	y = y + LINE_HEIGHT
-	write_line("ROOT       : " .. info.root, left, y, COLOR_MUTED)
+	write("ROOT       : " .. info.root, left, y, 0, COLOR_MUTED)
 	y = y + LINE_HEIGHT
-	write_line(divider(width, left), left, y, COLOR_ACCENT)
+	write(divider(width, left), left, y, 0, COLOR_ACCENT)
 	y = y + LINE_HEIGHT
 
 	local cart_present = peek(SYS_CART_PRESENT) == 1
@@ -183,11 +171,11 @@ function draw()
 		if remaining < 0 then remaining = 0 end
 		-- local status = "AUTOBOOT IN " .. string.format("%.1f", remaining) .. "S"
 		local status = peek(SYS_CART_BOOTREADY) == 0 and "LOADING CART" or "CART LOADED"
-		write_line("STATUS     : " .. status, left, y, COLOR_TEXT)
+		write("STATUS     : " .. status, left, y, 0, COLOR_TEXT)
 		y = y + LINE_HEIGHT
 		local bar = build_progress_bar(elapsed / BOOT_DELAY, 20)
-		write_line("BOOTING IN : " .. bar .. " " .. cursor, left, y, COLOR_TEXT)
+		write("BOOTING IN : " .. bar .. " " .. cursor, left, y, 0, COLOR_TEXT)
 	else
-		write_line("STATUS     : INSERT CARTRIDGE" .. " " .. cursor, left, y, COLOR_WARN)
+		write("STATUS     : NO CART DETECTED" .. " " .. cursor, left, y, 0, COLOR_WARN)
 	end
 end
