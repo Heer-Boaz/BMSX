@@ -10,6 +10,7 @@
 #include <linux/fb.h>
 #include <linux/input.h>
 #include <pthread.h>
+#include <sched.h>
 #include <signal.h>
 #include <stdarg.h>
 #include <stdbool.h>
@@ -114,6 +115,7 @@ static const uint64_t kExitComboHoldMs = 2000;
 static const unsigned kAudioPeriodFrames = 1024;
 static const unsigned kAudioPeriodCount = 4;
 static const unsigned kAudioPrimePeriods = 4;
+static const int kAudioThreadPriority = 20;
 
 static char g_system_dir[1024] = "";
 static char g_save_dir[1024] = "";
@@ -197,6 +199,24 @@ static GLuint g_menu_tex = 0;
 static GLuint g_menu_vbo = 0;
 static int g_menu_tex_w = 0;
 static int g_menu_tex_h = 0;
+
+static bool g_show_fps = false;
+static uint64_t g_fps_last_ms = 0;
+static uint32_t g_fps_frames = 0;
+static float g_fps_value = 0.0f;
+static char g_fps_text[32] = "FPS: --";
+static bool g_fps_dirty = true;
+static bool g_fps_gl_dirty = true;
+static uint8_t* g_fps_surface = NULL;
+static int g_fps_surface_w = 0;
+static int g_fps_surface_h = 0;
+static int g_fps_surface_stride = 0;
+static int g_fps_x = 8;
+static int g_fps_y = 8;
+static GLuint g_fps_tex = 0;
+static GLuint g_fps_vbo = 0;
+static int g_fps_tex_w = 0;
+static int g_fps_tex_h = 0;
 
 typedef EGLDisplay (EGLAPIENTRYP PFNEGLGETDISPLAY)(EGLNativeDisplayType display_id);
 typedef EGLBoolean (EGLAPIENTRYP PFNEGLBINDAPI)(EGLenum api);
@@ -406,6 +426,10 @@ static bool hw_ensure_fbo(unsigned width, unsigned height);
 static bool hw_present_frame(unsigned src_w, unsigned src_h);
 static void menu_render_software(void);
 static void menu_render_hw(void);
+static void fps_render_software(void);
+static void fps_render_hw(void);
+static void fps_update(void);
+static uint64_t monotonic_ms(void);
 static inline uint16_t rgb888_to_rgb565(uint8_t r, uint8_t g, uint8_t b);
 static inline uint32_t rgb565_to_xrgb8888(uint16_t p);
 
@@ -780,6 +804,7 @@ static const char* menu_builtin_value(const char* key) {
 	if (strcmp(key, "bmsx_render_backend") == 0) return g_opt_render_backend;
 	if (strcmp(key, "bmsx_crt_postprocessing") == 0) return g_opt_crt_postprocessing;
 	if (strcmp(key, "bmsx_postprocess_detail") == 0) return g_opt_postprocess_detail;
+	if (strcmp(key, "bmsx_host_show_fps") == 0) return g_show_fps ? "on" : "off";
 	return NULL;
 }
 
@@ -791,6 +816,16 @@ static void menu_sync_builtin(const char* key, const char* value) {
 		snprintf(g_opt_crt_postprocessing, sizeof(g_opt_crt_postprocessing), "%s", value);
 	} else if (strcmp(key, "bmsx_postprocess_detail") == 0) {
 		snprintf(g_opt_postprocess_detail, sizeof(g_opt_postprocess_detail), "%s", value);
+	} else if (strcmp(key, "bmsx_host_show_fps") == 0) {
+		bool enable = strcmp(value, "on") == 0;
+		if (g_show_fps != enable) {
+			g_show_fps = enable;
+			g_fps_last_ms = 0;
+			g_fps_frames = 0;
+			snprintf(g_fps_text, sizeof(g_fps_text), "FPS: --");
+			g_fps_dirty = true;
+			g_fps_gl_dirty = true;
+		}
 	}
 }
 
@@ -887,6 +922,21 @@ static void menu_append_action(const char* key, const char* label) {
 	opt->current_index = 0;
 }
 
+static void menu_set_option_values(MenuOption* opt, const char* label, const char* info,
+		const MenuOptionValue* values, size_t count, const char* default_value);
+
+static void menu_append_host_options(void) {
+	MenuOption* opt = menu_get_option("bmsx_host_show_fps");
+	if (!opt) return;
+	MenuOptionValue values[2];
+	menu_copy_str(values[0].value, sizeof(values[0].value), "off");
+	menu_copy_str(values[0].label, sizeof(values[0].label), "OFF");
+	menu_copy_str(values[1].value, sizeof(values[1].value), "on");
+	menu_copy_str(values[1].label, sizeof(values[1].label), "ON");
+	menu_set_option_values(opt, "SHOW FPS", "Toggle FPS overlay", values, 2,
+		g_show_fps ? "on" : "off");
+}
+
 static void menu_append_actions(void) {
 	menu_append_action("__action_reboot", "REBOOT CART");
 	menu_append_action("__action_exit", "EXIT GAME");
@@ -981,6 +1031,7 @@ static void menu_ingest_options_v2(const struct retro_core_options_v2* opts) {
 		}
 		menu_set_option_values(opt, def->desc, def->info, values, count, def->default_value);
 	}
+	menu_append_host_options();
 	menu_append_actions();
 }
 
@@ -999,6 +1050,7 @@ static void menu_ingest_options_v1(const struct retro_core_option_definition* de
 		}
 		menu_set_option_values(opt, def->desc, def->info, values, count, def->default_value);
 	}
+	menu_append_host_options();
 	menu_append_actions();
 }
 
@@ -1037,6 +1089,7 @@ static void menu_ingest_variables(const struct retro_variable* vars) {
 		const char* default_value = count > 0 ? values[0].value : NULL;
 		menu_set_option_values(opt, label_buf, opt->info, values, count, default_value);
 	}
+	menu_append_host_options();
 	menu_append_actions();
 }
 
@@ -1068,6 +1121,7 @@ static void menu_toggle(void) {
 		g_menu_selected = 0;
 	}
 	if (g_menu_active) {
+		menu_append_host_options();
 		menu_append_actions();
 		g_menu_selected = menu_next_selectable(g_menu_selected, 1);
 	}
@@ -1124,6 +1178,247 @@ static void menu_draw_text(int x, int y, const char* text, uint8_t r, uint8_t g,
 static int menu_text_width(const char* text, int scale) {
 	if (!text) return 0;
 	return (int)strlen(text) * (5 + 1) * scale;
+}
+
+static void fps_mark_dirty(void) {
+	g_fps_dirty = true;
+	g_fps_gl_dirty = true;
+}
+
+static void fps_draw_pixel(int x, int y, uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+	if (!g_fps_surface || x < 0 || y < 0 || x >= g_fps_surface_w || y >= g_fps_surface_h) {
+		return;
+	}
+	uint8_t* p = g_fps_surface + (size_t)y * (size_t)g_fps_surface_stride + (size_t)x * 4u;
+	p[0] = r;
+	p[1] = g;
+	p[2] = b;
+	p[3] = a;
+}
+
+static void fps_draw_rect(int x, int y, int w, int h, uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+	for (int yy = 0; yy < h; ++yy) {
+		for (int xx = 0; xx < w; ++xx) {
+			fps_draw_pixel(x + xx, y + yy, r, g, b, a);
+		}
+	}
+}
+
+static void fps_draw_char(int x, int y, char c, uint8_t r, uint8_t g, uint8_t b, uint8_t a, int scale) {
+	if (c >= 'a' && c <= 'z') {
+		c = (char)(c - ('a' - 'A'));
+	}
+	const uint8_t* rows = menu_glyph_rows(c);
+	for (int row = 0; row < 7; ++row) {
+		uint8_t bits = rows[row];
+		for (int col = 0; col < 5; ++col) {
+			if (bits & (1u << (4 - col))) {
+				for (int sy = 0; sy < scale; ++sy) {
+					for (int sx = 0; sx < scale; ++sx) {
+						fps_draw_pixel(x + col * scale + sx, y + row * scale + sy, r, g, b, a);
+					}
+				}
+			}
+		}
+	}
+}
+
+static void fps_draw_text(int x, int y, const char* text, uint8_t r, uint8_t g, uint8_t b, uint8_t a, int scale) {
+	if (!text) return;
+	const int advance = (5 + 1) * scale;
+	for (const char* p = text; *p; ++p) {
+		fps_draw_char(x, y, *p, r, g, b, a, scale);
+		x += advance;
+	}
+}
+
+static void fps_rebuild_surface(void) {
+	if (!g_show_fps || g_fb.width <= 0 || g_fb.height <= 0) {
+		return;
+	}
+	int scale = 1;
+	int padding = 4;
+	int line_h = (7 * scale) + 2;
+	int text_w = menu_text_width(g_fps_text, scale);
+	int surf_w = text_w + padding * 2;
+	int surf_h = line_h + padding * 2;
+	if (surf_w > g_fb.width - 4) surf_w = g_fb.width - 4;
+	if (surf_h > g_fb.height - 4) surf_h = g_fb.height - 4;
+	if (surf_w < 1 || surf_h < 1) return;
+
+	if (surf_w != g_fps_surface_w || surf_h != g_fps_surface_h) {
+		free(g_fps_surface);
+		g_fps_surface = (uint8_t*)malloc((size_t)surf_w * (size_t)surf_h * 4u);
+		if (!g_fps_surface) {
+			g_fps_surface_w = 0;
+			g_fps_surface_h = 0;
+			g_fps_surface_stride = 0;
+			return;
+		}
+		g_fps_surface_w = surf_w;
+		g_fps_surface_h = surf_h;
+		g_fps_surface_stride = surf_w * 4;
+	}
+
+	memset(g_fps_surface, 0, (size_t)g_fps_surface_stride * (size_t)g_fps_surface_h);
+
+	g_fps_x = g_fb.width - g_fps_surface_w - 8;
+	g_fps_y = 8;
+	if (g_fps_x < 0) g_fps_x = 0;
+	if (g_fps_y < 0) g_fps_y = 0;
+
+	const uint8_t text_r = 80, text_g = 220, text_b = 80, text_a = 255;
+	fps_draw_text(padding, padding, g_fps_text, text_r, text_g, text_b, text_a, scale);
+
+	g_fps_dirty = false;
+	g_fps_gl_dirty = true;
+}
+
+static void fps_render_software(void) {
+	if (!g_show_fps || g_menu_active) return;
+	if (g_fps_dirty) fps_rebuild_surface();
+	if (!g_fps_surface) return;
+
+	for (int y = 0; y < g_fps_surface_h; ++y) {
+		int fb_y = g_fps_y + y;
+		if (fb_y < 0 || fb_y >= g_fb.height) continue;
+		uint8_t* dst_line = g_fb.map + (size_t)fb_y * (size_t)g_fb.stride + (size_t)g_fps_x * (size_t)(g_fb.bpp / 8);
+		const uint8_t* src_line = g_fps_surface + (size_t)y * (size_t)g_fps_surface_stride;
+		for (int x = 0; x < g_fps_surface_w; ++x) {
+			int fb_x = g_fps_x + x;
+			if (fb_x < 0 || fb_x >= g_fb.width) continue;
+			const uint8_t* src = src_line + (size_t)x * 4u;
+			uint8_t a = src[3];
+			if (a == 0) continue;
+			uint8_t r = src[0];
+			uint8_t g = src[1];
+			uint8_t b = src[2];
+			if (g_fb.bpp == 32) {
+				uint32_t* dst = (uint32_t*)dst_line;
+				uint32_t d = dst[x];
+				uint8_t dr = (uint8_t)((d >> 16) & 0xFF);
+				uint8_t dg = (uint8_t)((d >> 8) & 0xFF);
+				uint8_t db = (uint8_t)(d & 0xFF);
+				if (a != 255) {
+					dr = (uint8_t)((r * a + dr * (255 - a) + 127) / 255);
+					dg = (uint8_t)((g * a + dg * (255 - a) + 127) / 255);
+					db = (uint8_t)((b * a + db * (255 - a) + 127) / 255);
+				} else {
+					dr = r;
+					dg = g;
+					db = b;
+				}
+				dst[x] = (uint32_t)((dr << 16) | (dg << 8) | db);
+			} else if (g_fb.bpp == 16) {
+				uint16_t* dst = (uint16_t*)dst_line;
+				uint32_t d = rgb565_to_xrgb8888(dst[x]);
+				uint8_t dr = (uint8_t)((d >> 16) & 0xFF);
+				uint8_t dg = (uint8_t)((d >> 8) & 0xFF);
+				uint8_t db = (uint8_t)(d & 0xFF);
+				if (a != 255) {
+					dr = (uint8_t)((r * a + dr * (255 - a) + 127) / 255);
+					dg = (uint8_t)((g * a + dg * (255 - a) + 127) / 255);
+					db = (uint8_t)((b * a + db * (255 - a) + 127) / 255);
+				} else {
+					dr = r;
+					dg = g;
+					db = b;
+				}
+				dst[x] = rgb888_to_rgb565(dr, dg, db);
+			}
+		}
+	}
+}
+
+static void fps_render_hw(void) {
+	if (!g_show_fps || g_menu_active) return;
+	if (g_fps_dirty) fps_rebuild_surface();
+	if (!g_fps_surface) return;
+	if (!hw_init_blitter()) return;
+
+	if (!g_fps_tex || g_fps_tex_w != g_fps_surface_w || g_fps_tex_h != g_fps_surface_h) {
+		if (g_fps_tex) {
+			glDeleteTextures_ptr(1, &g_fps_tex);
+			g_fps_tex = 0;
+		}
+		glGenTextures_ptr(1, &g_fps_tex);
+		glBindTexture_ptr(GL_TEXTURE_2D, g_fps_tex);
+		glTexParameteri_ptr(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexParameteri_ptr(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		glTexParameteri_ptr(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri_ptr(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		glTexImage2D_ptr(GL_TEXTURE_2D, 0, GL_RGBA, (GLsizei)g_fps_surface_w, (GLsizei)g_fps_surface_h,
+			0, GL_RGBA, GL_UNSIGNED_BYTE, g_fps_surface);
+		g_fps_tex_w = g_fps_surface_w;
+		g_fps_tex_h = g_fps_surface_h;
+		g_fps_gl_dirty = false;
+	} else if (g_fps_gl_dirty) {
+		glBindTexture_ptr(GL_TEXTURE_2D, g_fps_tex);
+		glTexImage2D_ptr(GL_TEXTURE_2D, 0, GL_RGBA, (GLsizei)g_fps_surface_w, (GLsizei)g_fps_surface_h,
+			0, GL_RGBA, GL_UNSIGNED_BYTE, g_fps_surface);
+		g_fps_gl_dirty = false;
+	}
+
+	if (!g_fps_vbo) {
+		glGenBuffers_ptr(1, &g_fps_vbo);
+	}
+
+	const float left = ((float)g_fps_x / (float)g_fb.width) * 2.0f - 1.0f;
+	const float right = ((float)(g_fps_x + g_fps_surface_w) / (float)g_fb.width) * 2.0f - 1.0f;
+	const float top = 1.0f - ((float)g_fps_y / (float)g_fb.height) * 2.0f;
+	const float bottom = 1.0f - ((float)(g_fps_y + g_fps_surface_h) / (float)g_fb.height) * 2.0f;
+	const float quad[] = {
+		left,  bottom, 0.0f, 0.0f,
+		right, bottom, 1.0f, 0.0f,
+		left,  top,    0.0f, 1.0f,
+		right, top,    1.0f, 1.0f,
+	};
+
+	glViewport_ptr(0, 0, g_fb.width, g_fb.height);
+	glDisable_ptr(GL_DEPTH_TEST);
+	glDisable_ptr(GL_CULL_FACE);
+	glEnable_ptr(GL_BLEND);
+	glBlendFunc_ptr(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glUseProgram_ptr(g_blit_program);
+	glActiveTexture_ptr(GL_TEXTURE0);
+	glBindTexture_ptr(GL_TEXTURE_2D, g_fps_tex);
+	if (g_blit_uniform_tex >= 0) {
+		glUniform1i_ptr(g_blit_uniform_tex, 0);
+	}
+	if (g_blit_uniform_flip >= 0) {
+		glUniform1f_ptr(g_blit_uniform_flip, 1.0f);
+	}
+	glBindBuffer_ptr(GL_ARRAY_BUFFER, g_fps_vbo);
+	glBufferData_ptr(GL_ARRAY_BUFFER, (GLsizeiptr)sizeof(quad), quad, GL_DYNAMIC_DRAW);
+	if (g_blit_attr_pos >= 0) {
+		glEnableVertexAttribArray_ptr((GLuint)g_blit_attr_pos);
+		glVertexAttribPointer_ptr((GLuint)g_blit_attr_pos, 2, GL_FLOAT, GL_FALSE, 4 * (GLsizei)sizeof(float), (void*)0);
+	}
+	if (g_blit_attr_uv >= 0) {
+		glEnableVertexAttribArray_ptr((GLuint)g_blit_attr_uv);
+		glVertexAttribPointer_ptr((GLuint)g_blit_attr_uv, 2, GL_FLOAT, GL_FALSE, 4 * (GLsizei)sizeof(float), (void*)(2 * sizeof(float)));
+	}
+	glDrawArrays_ptr(GL_TRIANGLE_STRIP, 0, 4);
+	glDisable_ptr(GL_BLEND);
+}
+
+static void fps_update(void) {
+	if (!g_show_fps) return;
+	uint64_t now = monotonic_ms();
+	if (g_fps_last_ms == 0) {
+		g_fps_last_ms = now;
+		g_fps_frames = 0;
+	}
+	++g_fps_frames;
+	const uint64_t elapsed = now - g_fps_last_ms;
+	// Host-side FPS estimate; uses monotonic clock (no vsync or GPU timing).
+	if (elapsed >= 500) {
+		g_fps_value = (float)g_fps_frames * 1000.0f / (float)elapsed;
+		snprintf(g_fps_text, sizeof(g_fps_text), "FPS: %.1f", g_fps_value);
+		g_fps_frames = 0;
+		g_fps_last_ms = now;
+		fps_mark_dirty();
+	}
 }
 
 static void menu_rebuild_surface(void) {
@@ -1416,6 +1711,7 @@ static bool hw_present_frame(unsigned src_w, unsigned src_h) {
 		glVertexAttribPointer_ptr((GLuint)g_blit_attr_uv, 2, GL_FLOAT, GL_FALSE, 4 * (GLsizei)sizeof(float), (void*)(2 * sizeof(float)));
 	}
 	glDrawArrays_ptr(GL_TRIANGLE_STRIP, 0, 4);
+	fps_render_hw();
 	menu_render_hw();
 	return true;
 }
@@ -1745,6 +2041,9 @@ static void video_cb(const void* data, unsigned width, unsigned height, size_t p
 			g_last_video_w = width;
 			g_last_video_h = height;
 		}
+		if (!g_menu_active) {
+			fps_update();
+		}
 		hw_present_frame(width, height);
 		eglSwapBuffers_ptr(g_egl_display, g_egl_surface);
 		return;
@@ -1754,6 +2053,9 @@ static void video_cb(const void* data, unsigned width, unsigned height, size_t p
 	}
 	g_last_video_w = width;
 	g_last_video_h = height;
+	if (!g_menu_active) {
+		fps_update();
+	}
 
 	const int fb_w = g_fb.width;
 	const int fb_h = g_fb.height;
@@ -1819,6 +2121,7 @@ static void video_cb(const void* data, unsigned width, unsigned height, size_t p
 				}
 			}
 		}
+		fps_render_software();
 		menu_render_software();
 		return;
 	}
@@ -1862,6 +2165,7 @@ static void video_cb(const void* data, unsigned width, unsigned height, size_t p
 				}
 			}
 		}
+		fps_render_software();
 		menu_render_software();
 		return;
 	}
@@ -1919,9 +2223,22 @@ static void audio_queue_init(size_t capacity_frames) {
 	g_audio_queue.read_frame = 0;
 	g_audio_queue.write_frame = 0;
 	g_audio_queue.used_frames = 0;
-	int err = pthread_mutex_init(&g_audio_queue.mutex, NULL);
+	pthread_mutexattr_t mattr;
+	int err = pthread_mutexattr_init(&mattr);
+	if (err != 0) {
+		die("pthread_mutexattr_init failed: %s", strerror(err));
+	}
+	err = pthread_mutexattr_setprotocol(&mattr, PTHREAD_PRIO_INHERIT);
+	if (err != 0) {
+		die("pthread_mutexattr_setprotocol failed: %s", strerror(err));
+	}
+	err = pthread_mutex_init(&g_audio_queue.mutex, &mattr);
 	if (err != 0) {
 		die("pthread_mutex_init failed: %s", strerror(err));
+	}
+	err = pthread_mutexattr_destroy(&mattr);
+	if (err != 0) {
+		die("pthread_mutexattr_destroy failed: %s", strerror(err));
 	}
 	err = pthread_cond_init(&g_audio_queue.can_read, NULL);
 	if (err != 0) {
@@ -2061,8 +2378,19 @@ static size_t audio_queue_pop_frames(int16_t* out, size_t max_frames, size_t min
 	return frames;
 }
 
+static void audio_thread_set_realtime(void) {
+	struct sched_param param;
+	memset(&param, 0, sizeof(param));
+	param.sched_priority = kAudioThreadPriority;
+	int err = pthread_setschedparam(pthread_self(), SCHED_FIFO, &param);
+	if (err != 0) {
+		die("pthread_setschedparam(SCHED_FIFO, %d) failed: %s", kAudioThreadPriority, strerror(err));
+	}
+}
+
 static void* audio_thread_main(void* arg) {
 	(void)arg;
+	audio_thread_set_realtime();
 	const size_t prime_frames = g_audio_period_frames * kAudioPrimePeriods;
 	bool primed = false;
 	for (;;) {
@@ -2416,8 +2744,6 @@ static void input_open_default_devices(void) {
 		die("No input devices opened. Are you running as root / do you have permissions for /dev/input/event*?");
 	}
 }
-
-static uint64_t monotonic_ms(void);
 
 static bool menu_pad_pressed(uint16_t state, uint16_t prev, unsigned id) {
 	const uint16_t bit = (uint16_t)(1u << id);
@@ -2903,6 +3229,8 @@ int main(int argc, char** argv) {
 	fb_shutdown(&g_fb);
 	free(g_menu_surface);
 	g_menu_surface = NULL;
+	free(g_fps_surface);
+	g_fps_surface = NULL;
 	if (game_buf) {
 		free(game_buf);
 	}
