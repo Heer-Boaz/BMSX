@@ -8,6 +8,7 @@ SYSROOT_REL=""
 MODE="build"
 BUILD_TYPE="${SNESMINI_BUILD_TYPE:-Debug}"
 MAKE_TARGET="${BMSX_SNESMINI_MAKE_TARGET:-libretro-snesmini-debug-inner}"
+USE_DOCKER="${BMSX_SNESMINI_USE_DOCKER:-1}"
 
 while [ $# -gt 0 ]; do
 	case "$1" in
@@ -265,7 +266,9 @@ require_ready_sysroot() {
 if [ "${BMSX_SNESMINI_IN_ROOTFS:-}" = "1" ]; then
 	require_ready_sysroot "$SYSROOT_DIR"
 	if [ "$MODE" = "build" ]; then
-		rm -rf "$ROOT_DIR/build-snesmini"
+		if [ "${BMSX_SNESMINI_CLEAN:-0}" = "1" ]; then
+			rm -rf "$ROOT_DIR/build-snesmini" "$ROOT_DIR/build-snesmini-host"
+		fi
 		make -C "$ROOT_DIR" \
 			SNESMINI_SYSROOT="$SYSROOT_DIR" \
 			SNESMINI_BUILD_TYPE="$BUILD_TYPE" \
@@ -274,38 +277,83 @@ if [ "${BMSX_SNESMINI_IN_ROOTFS:-}" = "1" ]; then
 	exit 0
 fi
 
+can_use_docker_as_user() {
+	if ! command -v docker >/dev/null 2>&1; then
+		return 1
+	fi
+	docker info >/dev/null 2>&1
+}
+
 if ! is_root; then
-	if command -v sudo >/dev/null 2>&1; then
+	if [ "$USE_DOCKER" = "1" ] && can_use_docker_as_user; then
+		:
+	elif command -v sudo >/dev/null 2>&1; then
 		exec sudo \
 			BMSX_SNESMINI_MAKE_TARGET="$MAKE_TARGET" \
 			SNESMINI_BUILD_TYPE="$BUILD_TYPE" \
-			BMSX_SNESMINI_USE_DOCKER="${BMSX_SNESMINI_USE_DOCKER:-1}" \
+			BMSX_SNESMINI_USE_DOCKER="$USE_DOCKER" \
 			BMSX_SNESMINI_DOCKER_IMAGE="${BMSX_SNESMINI_DOCKER_IMAGE:-debian:bullseye}" \
+			BMSX_SNESMINI_USE_BUILDER_IMAGE="${BMSX_SNESMINI_USE_BUILDER_IMAGE:-1}" \
+			BMSX_SNESMINI_BUILDER_IMAGE="${BMSX_SNESMINI_BUILDER_IMAGE:-bmsx-snesmini-builder:bullseye}" \
+			BMSX_SNESMINI_BUILDER_MARKER="${BMSX_SNESMINI_BUILDER_MARKER:-bmsx-snesmini-builder}" \
 			"$0" "$SYSROOT_DIR"
+	else
+		echo "This command requires sudo to build via the SNES Mini docker toolchain." >&2
+		echo "Run: sudo $0 $SYSROOT_DIR" >&2
+		exit 1
 	fi
-	echo "This command requires sudo to build via the SNES Mini docker toolchain." >&2
-	echo "Run: sudo $0 $SYSROOT_DIR" >&2
-	exit 1
 fi
 
 ensure_command docker docker.io
 
-if [ "${BMSX_SNESMINI_USE_DOCKER:-1}" = "1" ]; then
-	DOCKER_IMAGE="${BMSX_SNESMINI_DOCKER_IMAGE:-debian:bullseye}"
+USE_BUILDER_IMAGE="${BMSX_SNESMINI_USE_BUILDER_IMAGE:-1}"
+BUILDER_IMAGE="${BMSX_SNESMINI_BUILDER_IMAGE:-bmsx-snesmini-builder:bullseye}"
+BUILDER_MARKER="${BMSX_SNESMINI_BUILDER_MARKER:-bmsx-snesmini-builder}"
+if [ "$USE_BUILDER_IMAGE" = "1" ]; then
+	if ! docker image inspect "$BUILDER_IMAGE" >/dev/null 2>&1; then
+		echo "SNES Mini builder image missing; building $BUILDER_IMAGE..." >&2
+		docker build -t "$BUILDER_IMAGE" - <<EOF
+FROM debian:bullseye
+LABEL $BUILDER_MARKER=1
+RUN apt-get update && apt-get install -y \\
+  ca-certificates debootstrap cmake make pkg-config git \\
+  gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf binutils-arm-linux-gnueabihf \\
+  qemu-user-static binfmt-support \\
+  libegl1-mesa-dev libgles2-mesa-dev
+EOF
+	fi
+fi
+
+if [ "$USE_DOCKER" = "1" ]; then
+	if [ "$USE_BUILDER_IMAGE" = "1" ]; then
+		DOCKER_IMAGE="$BUILDER_IMAGE"
+	else
+		DOCKER_IMAGE="${BMSX_SNESMINI_DOCKER_IMAGE:-debian:bullseye}"
+	fi
 	MODE_FLAG=""
 	if [ "$MODE" = "sysroot" ]; then
 		MODE_FLAG="--sysroot-only"
 	fi
 	SYSROOT_IN_CONTAINER="/src/${SYSROOT_REL}"
+	DOCKER_BOOTSTRAP="apt-get update && apt-get install -y \
+			ca-certificates debootstrap cmake make pkg-config git \
+			gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf binutils-arm-linux-gnueabihf \
+			qemu-user-static binfmt-support \
+			libegl1-mesa-dev libgles2-mesa-dev &&"
+	if [ "$USE_BUILDER_IMAGE" = "1" ]; then
+		DOCKER_BOOTSTRAP=""
+	fi
+	echo "SNES Mini docker image: $DOCKER_IMAGE" >&2
+	if [ -n "$DOCKER_BOOTSTRAP" ]; then
+		echo "SNES Mini docker bootstrap: enabled" >&2
+	else
+		echo "SNES Mini docker bootstrap: skipped" >&2
+	fi
 	docker run --rm -t \
 		-v "$ROOT_DIR":/src \
 		-w /src \
 		"$DOCKER_IMAGE" \
-		/bin/bash -lc "apt-get update && apt-get install -y \
-			ca-certificates debootstrap cmake make pkg-config git \
-			gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf binutils-arm-linux-gnueabihf \
-			qemu-user-static binfmt-support \
-			libegl1-mesa-dev libgles2-mesa-dev && \
+		/bin/bash -lc "$DOCKER_BOOTSTRAP \
 			BMSX_SNESMINI_IN_ROOTFS=1 BMSX_SNESMINI_MAKE_TARGET=\"$MAKE_TARGET\" \
 			SNESMINI_BUILD_TYPE=\"$BUILD_TYPE\" ./scripts/setup-snesmini-local-core.sh $MODE_FLAG \"$SYSROOT_IN_CONTAINER\""
 	exit 0

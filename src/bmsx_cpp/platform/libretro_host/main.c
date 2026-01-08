@@ -473,9 +473,9 @@ static bool environ_cb(unsigned cmd, void* data) {
 			if (cb->context_type != RETRO_HW_CONTEXT_OPENGLES2) {
 				return false;
 			}
+			cb->get_current_framebuffer = hw_get_current_framebuffer;
+			cb->get_proc_address = hw_get_proc_address;
 			g_hw_render = *cb;
-			g_hw_render.get_current_framebuffer = hw_get_current_framebuffer;
-			g_hw_render.get_proc_address = hw_get_proc_address;
 			if (!egl_init()) {
 				return false;
 			}
