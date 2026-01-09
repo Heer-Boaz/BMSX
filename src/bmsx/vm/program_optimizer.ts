@@ -1,4 +1,5 @@
 import { OpCode, type SourceRange, type Value } from './cpu';
+import { MAX_EXT_CONST } from './instruction_format';
 import { isStringValue, stringValueToString } from './string_pool';
 
 export type InstructionFormat = 'ABC' | 'ABx' | 'AsBx';
@@ -25,6 +26,11 @@ type InstructionSet = {
 	ranges: Array<SourceRange | null>;
 };
 
+type Block = {
+	start: number;
+	end: number;
+};
+
 type ConstValue = {
 	value: Value;
 	constIndex: number | null;
@@ -35,6 +41,17 @@ const RK_C = 2;
 
 const isJump = (instruction: Instruction): boolean =>
 	instruction.op === OpCode.JMP || instruction.op === OpCode.JMPIF || instruction.op === OpCode.JMPIFNOT;
+
+const isSkipInstruction = (instruction: Instruction): boolean => {
+	if (instruction.op === OpCode.LOADBOOL) {
+		return instruction.c !== 0;
+	}
+	return instruction.op === OpCode.TEST
+		|| instruction.op === OpCode.TESTSET
+		|| instruction.op === OpCode.EQ
+		|| instruction.op === OpCode.LT
+		|| instruction.op === OpCode.LE;
+};
 
 const getJumpTarget = (instruction: Instruction): number => {
 	if (instruction.target === null) {
@@ -106,7 +123,7 @@ const getConstForOperand = (
 	return constants.get(operand) ?? null;
 };
 
-const buildBasicBlocks = (instructions: Instruction[]): Array<{ start: number; end: number }> => {
+const buildBasicBlocks = (instructions: Instruction[]): Block[] => {
 	const count = instructions.length;
 	if (count === 0) {
 		return [];
@@ -165,7 +182,7 @@ const buildBasicBlocks = (instructions: Instruction[]): Array<{ start: number; e
 		}
 	}
 	const sorted = Array.from(leaders).sort((a, b) => a - b);
-	const blocks: Array<{ start: number; end: number }> = [];
+	const blocks: Block[] = [];
 	for (let i = 0; i < sorted.length; i += 1) {
 		const start = sorted[i];
 		const end = i + 1 < sorted.length ? sorted[i + 1] : count;
@@ -174,6 +191,105 @@ const buildBasicBlocks = (instructions: Instruction[]): Array<{ start: number; e
 		}
 	}
 	return blocks;
+};
+
+const buildBlockGraph = (instructions: Instruction[], blocks: Block[]): {
+	blockForIndex: number[];
+	predecessors: number[][];
+	successors: number[][];
+} => {
+	const count = instructions.length;
+	const blockForIndex = new Array<number>(count);
+	for (let i = 0; i < blocks.length; i += 1) {
+		const block = blocks[i];
+		for (let index = block.start; index < block.end; index += 1) {
+			blockForIndex[index] = i;
+		}
+	}
+	const successors: number[][] = new Array(blocks.length);
+	const predecessors: number[][] = new Array(blocks.length);
+	for (let i = 0; i < blocks.length; i += 1) {
+		successors[i] = [];
+		predecessors[i] = [];
+	}
+
+	const addSuccessor = (blockIndex: number, targetIndex: number | null): void => {
+		if (targetIndex === null) {
+			return;
+		}
+		const list = successors[blockIndex];
+		for (let i = 0; i < list.length; i += 1) {
+			if (list[i] === targetIndex) {
+				return;
+			}
+		}
+		list.push(targetIndex);
+	};
+
+	for (let blockIndex = 0; blockIndex < blocks.length; blockIndex += 1) {
+		const block = blocks[blockIndex];
+		const lastIndex = block.end - 1;
+		if (lastIndex < 0 || lastIndex >= count) {
+			continue;
+		}
+		const instruction = instructions[lastIndex];
+		const nextIndex = lastIndex + 1;
+		const nextNextIndex = lastIndex + 2;
+		switch (instruction.op) {
+			case OpCode.RET:
+				break;
+			case OpCode.JMP: {
+				const target = getJumpTarget(instruction);
+				addSuccessor(blockIndex, target < count ? blockForIndex[target] : null);
+				break;
+			}
+			case OpCode.JMPIF:
+			case OpCode.JMPIFNOT: {
+				const target = getJumpTarget(instruction);
+				addSuccessor(blockIndex, target < count ? blockForIndex[target] : null);
+				if (nextIndex < count) {
+					addSuccessor(blockIndex, blockForIndex[nextIndex]);
+				}
+				break;
+			}
+			case OpCode.LOADBOOL: {
+				if (nextIndex < count) {
+					addSuccessor(blockIndex, blockForIndex[nextIndex]);
+				}
+				if (instruction.c !== 0 && nextNextIndex < count) {
+					addSuccessor(blockIndex, blockForIndex[nextNextIndex]);
+				}
+				break;
+			}
+			case OpCode.TEST:
+			case OpCode.TESTSET:
+			case OpCode.EQ:
+			case OpCode.LT:
+			case OpCode.LE: {
+				if (nextIndex < count) {
+					addSuccessor(blockIndex, blockForIndex[nextIndex]);
+				}
+				if (nextNextIndex < count) {
+					addSuccessor(blockIndex, blockForIndex[nextNextIndex]);
+				}
+				break;
+			}
+			default:
+				if (nextIndex < count) {
+					addSuccessor(blockIndex, blockForIndex[nextIndex]);
+				}
+				break;
+		}
+	}
+
+	for (let blockIndex = 0; blockIndex < blocks.length; blockIndex += 1) {
+		const nextBlocks = successors[blockIndex];
+		for (let i = 0; i < nextBlocks.length; i += 1) {
+			predecessors[nextBlocks[i]].push(blockIndex);
+		}
+	}
+
+	return { blockForIndex, predecessors, successors };
 };
 
 const remapInstructions = (
@@ -496,6 +612,187 @@ const evaluateComparison = (op: OpCode, left: Value, right: Value): boolean | nu
 	}
 };
 
+const clearConstRange = (constants: Map<number, ConstValue>, start: number, countValue: number | null): void => {
+	if (countValue === null) {
+		for (const reg of Array.from(constants.keys())) {
+			if (reg >= start) {
+				constants.delete(reg);
+			}
+		}
+		return;
+	}
+	for (let offset = 0; offset < countValue; offset += 1) {
+		constants.delete(start + offset);
+	}
+};
+
+const equalConstMaps = (left: Map<number, ConstValue>, right: Map<number, ConstValue>): boolean => {
+	if (left.size !== right.size) {
+		return false;
+	}
+	for (const [reg, value] of left) {
+		const other = right.get(reg);
+		if (!other || other.constIndex !== value.constIndex) {
+			return false;
+		}
+	}
+	return true;
+};
+
+const intersectConstMaps = (maps: Map<number, ConstValue>[]): Map<number, ConstValue> => {
+	if (maps.length === 0) {
+		return new Map<number, ConstValue>();
+	}
+	const [first, ...rest] = maps;
+	const result = new Map<number, ConstValue>();
+	for (const [reg, value] of first) {
+		let same = true;
+		for (let i = 0; i < rest.length; i += 1) {
+			const other = rest[i].get(reg);
+			if (!other || other.constIndex !== value.constIndex) {
+				same = false;
+				break;
+			}
+		}
+		if (same) {
+			result.set(reg, value);
+		}
+	}
+	return result;
+};
+
+const computeBlockConstantIn = (
+	instructions: Instruction[],
+	context: OptimizationContext,
+): Array<Map<number, ConstValue>> => {
+	const blocks = buildBasicBlocks(instructions);
+	const { predecessors } = buildBlockGraph(instructions, blocks);
+	const blockCount = blocks.length;
+	const inMaps: Array<Map<number, ConstValue>> = new Array(blockCount);
+	const outMaps: Array<Map<number, ConstValue>> = new Array(blockCount);
+	for (let i = 0; i < blockCount; i += 1) {
+		inMaps[i] = new Map();
+		outMaps[i] = new Map();
+	}
+	const nilConst: ConstValue = { value: null, constIndex: context.constIndex(null) };
+	const trueConst: ConstValue = { value: true, constIndex: context.constIndex(true) };
+	const falseConst: ConstValue = { value: false, constIndex: context.constIndex(false) };
+
+	let changed = true;
+	while (changed) {
+		changed = false;
+		for (let blockIndex = 0; blockIndex < blockCount; blockIndex += 1) {
+			const preds = predecessors[blockIndex];
+			const nextIn = preds.length === 0
+				? new Map<number, ConstValue>()
+				: intersectConstMaps(preds.map(pred => outMaps[pred]));
+			if (!equalConstMaps(nextIn, inMaps[blockIndex])) {
+				inMaps[blockIndex] = nextIn;
+				changed = true;
+			}
+			const constants = new Map(inMaps[blockIndex]);
+			const block = blocks[blockIndex];
+			for (let i = block.start; i < block.end; i += 1) {
+				const instruction = instructions[i];
+				switch (instruction.op) {
+					case OpCode.MOV: {
+						const source = constants.get(instruction.b);
+						if (source) {
+							constants.set(instruction.a, source);
+						} else {
+							constants.delete(instruction.a);
+						}
+						break;
+					}
+					case OpCode.LOADK: {
+						const index = instruction.b;
+						constants.set(instruction.a, { value: context.constPool[index], constIndex: index });
+						break;
+					}
+					case OpCode.LOADBOOL: {
+						constants.set(instruction.a, instruction.b !== 0 ? trueConst : falseConst);
+						break;
+					}
+					case OpCode.LOADNIL: {
+						for (let offset = 0; offset < instruction.b; offset += 1) {
+							constants.set(instruction.a + offset, nilConst);
+						}
+						break;
+					}
+					case OpCode.UNM:
+					case OpCode.BNOT:
+					case OpCode.NOT:
+					case OpCode.LEN: {
+						const operand = constants.get(instruction.b);
+						if (operand) {
+							const result = evaluateUnary(instruction.op, operand.value);
+							if (result !== null) {
+								constants.set(instruction.a, { value: result, constIndex: context.constIndex(result) });
+								break;
+							}
+						}
+						constants.delete(instruction.a);
+						break;
+					}
+					case OpCode.ADD:
+					case OpCode.SUB:
+					case OpCode.MUL:
+					case OpCode.DIV:
+					case OpCode.MOD:
+					case OpCode.FLOORDIV:
+					case OpCode.POW:
+					case OpCode.BAND:
+					case OpCode.BOR:
+					case OpCode.BXOR:
+					case OpCode.SHL:
+					case OpCode.SHR: {
+						const left = getConstForOperand(instruction.b, (instruction.rkMask & RK_B) !== 0, constants, context);
+						const right = getConstForOperand(instruction.c, (instruction.rkMask & RK_C) !== 0, constants, context);
+						if (left && right) {
+							const result = evaluateBinary(instruction.op, left.value, right.value);
+							if (result !== null) {
+								constants.set(instruction.a, { value: result, constIndex: context.constIndex(result) });
+								break;
+							}
+						}
+						constants.delete(instruction.a);
+						break;
+					}
+					case OpCode.GETG:
+					case OpCode.GETT:
+					case OpCode.NEWT:
+					case OpCode.CONCATN:
+					case OpCode.CLOSURE:
+					case OpCode.GETUP:
+					case OpCode.LOAD_MEM:
+						constants.delete(instruction.a);
+						break;
+					case OpCode.VARARG: {
+						const countValue = instruction.b === 0 ? null : instruction.b;
+						clearConstRange(constants, instruction.a, countValue);
+						break;
+					}
+					case OpCode.CALL: {
+						const countValue = instruction.c === 0 ? null : instruction.c;
+						clearConstRange(constants, instruction.a, countValue);
+						break;
+					}
+					case OpCode.TESTSET:
+						constants.delete(instruction.a);
+						break;
+					default:
+						break;
+				}
+			}
+			if (!equalConstMaps(constants, outMaps[blockIndex])) {
+				outMaps[blockIndex] = constants;
+				changed = true;
+			}
+		}
+	}
+	return inMaps;
+};
+
 const foldConstants = (set: InstructionSet, context: OptimizationContext): InstructionSet => {
 	const { instructions, ranges } = set;
 	const count = instructions.length;
@@ -508,23 +805,11 @@ const foldConstants = (set: InstructionSet, context: OptimizationContext): Instr
 	const nilConst: ConstValue = { value: null, constIndex: context.constIndex(null) };
 	const trueConst: ConstValue = { value: true, constIndex: context.constIndex(true) };
 	const falseConst: ConstValue = { value: false, constIndex: context.constIndex(false) };
+	const blockConstIn = computeBlockConstantIn(instructions, context);
 
-	const clearConstRange = (constants: Map<number, ConstValue>, start: number, countValue: number | null): void => {
-		if (countValue === null) {
-			for (const reg of Array.from(constants.keys())) {
-				if (reg >= start) {
-					constants.delete(reg);
-				}
-			}
-			return;
-		}
-		for (let offset = 0; offset < countValue; offset += 1) {
-			constants.delete(start + offset);
-		}
-	};
-
-	for (const block of blocks) {
-		const constants = new Map<number, ConstValue>();
+	for (let blockIndex = 0; blockIndex < blocks.length; blockIndex += 1) {
+		const block = blocks[blockIndex];
+		const constants = new Map(blockConstIn[blockIndex]);
 		for (let i = block.start; i < block.end; i += 1) {
 			const instruction = instructions[i];
 
@@ -701,6 +986,885 @@ const foldConstants = (set: InstructionSet, context: OptimizationContext): Instr
 	return remapInstructions(instructions, ranges, keep, true);
 };
 
+const resolveCopy = (register: number, copies: Map<number, number>): number => {
+	let current = register;
+	const visited = new Set<number>();
+	while (true) {
+		const next = copies.get(current);
+		if (next === undefined) {
+			return current;
+		}
+		if (visited.has(next)) {
+			return current;
+		}
+		visited.add(next);
+		current = next;
+	}
+};
+
+const propagateValues = (set: InstructionSet, context: OptimizationContext): InstructionSet => {
+	const { instructions } = set;
+	const count = instructions.length;
+	if (count === 0) {
+		return set;
+	}
+	const blocks = buildBasicBlocks(instructions);
+	const blockConstIn = computeBlockConstantIn(instructions, context);
+	const nilConst: ConstValue = { value: null, constIndex: context.constIndex(null) };
+	const trueConst: ConstValue = { value: true, constIndex: context.constIndex(true) };
+	const falseConst: ConstValue = { value: false, constIndex: context.constIndex(false) };
+	let changed = false;
+
+	const invalidateCopiesUsing = (copies: Map<number, number>, register: number): void => {
+		let updated = true;
+		while (updated) {
+			updated = false;
+			for (const [dst, src] of copies) {
+				if (src === register) {
+					copies.delete(dst);
+					updated = true;
+					continue;
+				}
+				if (resolveCopy(src, copies) === register) {
+					copies.delete(dst);
+					updated = true;
+				}
+			}
+		}
+	};
+
+	const killRegister = (constants: Map<number, ConstValue>, copies: Map<number, number>, register: number): void => {
+		constants.delete(register);
+		copies.delete(register);
+		invalidateCopiesUsing(copies, register);
+	};
+
+	const setConst = (constants: Map<number, ConstValue>, copies: Map<number, number>, register: number, value: ConstValue): void => {
+		killRegister(constants, copies, register);
+		constants.set(register, value);
+	};
+
+	const setCopy = (constants: Map<number, ConstValue>, copies: Map<number, number>, register: number, source: number): void => {
+		killRegister(constants, copies, register);
+		copies.set(register, source);
+	};
+
+	const rewriteRegisterOperand = (operand: number, copies: Map<number, number>): number => resolveCopy(operand, copies);
+
+	const rewriteRkOperand = (
+		instruction: Instruction,
+		operand: number,
+		maskBit: number,
+		constants: Map<number, ConstValue>,
+		copies: Map<number, number>,
+	): number => {
+		if ((instruction.rkMask & maskBit) === 0) {
+			return rewriteRegisterOperand(operand, copies);
+		}
+		if (operand < 0) {
+			return operand;
+		}
+		const constant = constants.get(operand);
+		if (constant && constant.constIndex !== null && constant.constIndex <= MAX_EXT_CONST) {
+			return -1 - constant.constIndex;
+		}
+		return rewriteRegisterOperand(operand, copies);
+	};
+
+	for (let blockIndex = 0; blockIndex < blocks.length; blockIndex += 1) {
+		const block = blocks[blockIndex];
+		const constants = new Map(blockConstIn[blockIndex]);
+		const copies = new Map<number, number>();
+
+		for (let i = block.start; i < block.end; i += 1) {
+			const instruction = instructions[i];
+
+			switch (instruction.op) {
+				case OpCode.MOV: {
+					const resolved = rewriteRegisterOperand(instruction.b, copies);
+					if (resolved !== instruction.b) {
+						instruction.b = resolved;
+						changed = true;
+					}
+					const constant = constants.get(instruction.b);
+					if (constant) {
+						replaceWithConst(instruction, instruction.a, constant.value, context);
+						changed = true;
+					}
+					break;
+				}
+				case OpCode.GETT: {
+					const nextB = rewriteRegisterOperand(instruction.b, copies);
+					if (nextB !== instruction.b) {
+						instruction.b = nextB;
+						changed = true;
+					}
+					const nextC = rewriteRkOperand(instruction, instruction.c, RK_C, constants, copies);
+					if (nextC !== instruction.c) {
+						instruction.c = nextC;
+						changed = true;
+					}
+					break;
+				}
+				case OpCode.SETT: {
+					const nextA = rewriteRegisterOperand(instruction.a, copies);
+					if (nextA !== instruction.a) {
+						instruction.a = nextA;
+						changed = true;
+					}
+					const nextB = rewriteRkOperand(instruction, instruction.b, RK_B, constants, copies);
+					if (nextB !== instruction.b) {
+						instruction.b = nextB;
+						changed = true;
+					}
+					const nextC = rewriteRkOperand(instruction, instruction.c, RK_C, constants, copies);
+					if (nextC !== instruction.c) {
+						instruction.c = nextC;
+						changed = true;
+					}
+					break;
+				}
+				case OpCode.ADD:
+				case OpCode.SUB:
+				case OpCode.MUL:
+				case OpCode.DIV:
+				case OpCode.MOD:
+				case OpCode.FLOORDIV:
+				case OpCode.POW:
+				case OpCode.BAND:
+				case OpCode.BOR:
+				case OpCode.BXOR:
+				case OpCode.SHL:
+				case OpCode.SHR:
+				case OpCode.CONCAT:
+				case OpCode.EQ:
+				case OpCode.LT:
+				case OpCode.LE: {
+					const nextB = rewriteRkOperand(instruction, instruction.b, RK_B, constants, copies);
+					if (nextB !== instruction.b) {
+						instruction.b = nextB;
+						changed = true;
+					}
+					const nextC = rewriteRkOperand(instruction, instruction.c, RK_C, constants, copies);
+					if (nextC !== instruction.c) {
+						instruction.c = nextC;
+						changed = true;
+					}
+					break;
+				}
+				case OpCode.UNM:
+				case OpCode.NOT:
+				case OpCode.LEN:
+				case OpCode.BNOT: {
+					const nextB = rewriteRegisterOperand(instruction.b, copies);
+					if (nextB !== instruction.b) {
+						instruction.b = nextB;
+						changed = true;
+					}
+					break;
+				}
+				case OpCode.TEST:
+				case OpCode.JMPIF:
+				case OpCode.JMPIFNOT: {
+					const nextA = rewriteRegisterOperand(instruction.a, copies);
+					if (nextA !== instruction.a) {
+						instruction.a = nextA;
+						changed = true;
+					}
+					break;
+				}
+				case OpCode.TESTSET: {
+					const nextB = rewriteRegisterOperand(instruction.b, copies);
+					if (nextB !== instruction.b) {
+						instruction.b = nextB;
+						changed = true;
+					}
+					break;
+				}
+				case OpCode.SETG:
+				case OpCode.SETUP:
+				case OpCode.STORE_MEM: {
+					const nextA = rewriteRegisterOperand(instruction.a, copies);
+					if (nextA !== instruction.a) {
+						instruction.a = nextA;
+						changed = true;
+					}
+					if (instruction.op === OpCode.STORE_MEM) {
+						const nextB = rewriteRegisterOperand(instruction.b, copies);
+						if (nextB !== instruction.b) {
+							instruction.b = nextB;
+							changed = true;
+						}
+					}
+					break;
+				}
+				case OpCode.LOAD_MEM: {
+					const nextB = rewriteRegisterOperand(instruction.b, copies);
+					if (nextB !== instruction.b) {
+						instruction.b = nextB;
+						changed = true;
+					}
+					break;
+				}
+				default:
+					break;
+			}
+
+			switch (instruction.op) {
+				case OpCode.MOV: {
+					const constant = constants.get(instruction.b);
+					if (constant) {
+						setConst(constants, copies, instruction.a, constant);
+					} else {
+						const resolved = resolveCopy(instruction.b, copies);
+						setCopy(constants, copies, instruction.a, resolved);
+					}
+					break;
+				}
+				case OpCode.LOADK: {
+					const index = instruction.b;
+					setConst(constants, copies, instruction.a, { value: context.constPool[index], constIndex: index });
+					break;
+				}
+				case OpCode.LOADBOOL: {
+					setConst(constants, copies, instruction.a, instruction.b !== 0 ? trueConst : falseConst);
+					break;
+				}
+				case OpCode.LOADNIL: {
+					for (let offset = 0; offset < instruction.b; offset += 1) {
+						setConst(constants, copies, instruction.a + offset, nilConst);
+					}
+					break;
+				}
+				case OpCode.UNM:
+				case OpCode.BNOT:
+				case OpCode.NOT:
+				case OpCode.LEN: {
+					const operand = constants.get(instruction.b);
+					if (operand) {
+						const result = evaluateUnary(instruction.op, operand.value);
+						if (result !== null) {
+							setConst(constants, copies, instruction.a, { value: result, constIndex: context.constIndex(result) });
+							break;
+						}
+					}
+					killRegister(constants, copies, instruction.a);
+					break;
+				}
+				case OpCode.ADD:
+				case OpCode.SUB:
+				case OpCode.MUL:
+				case OpCode.DIV:
+				case OpCode.MOD:
+				case OpCode.FLOORDIV:
+				case OpCode.POW:
+				case OpCode.BAND:
+				case OpCode.BOR:
+				case OpCode.BXOR:
+				case OpCode.SHL:
+				case OpCode.SHR: {
+					const left = getConstForOperand(instruction.b, (instruction.rkMask & RK_B) !== 0, constants, context);
+					const right = getConstForOperand(instruction.c, (instruction.rkMask & RK_C) !== 0, constants, context);
+					if (left && right) {
+						const result = evaluateBinary(instruction.op, left.value, right.value);
+						if (result !== null) {
+							setConst(constants, copies, instruction.a, { value: result, constIndex: context.constIndex(result) });
+							break;
+						}
+					}
+					killRegister(constants, copies, instruction.a);
+					break;
+				}
+				case OpCode.GETG:
+				case OpCode.GETT:
+				case OpCode.NEWT:
+				case OpCode.CONCAT:
+				case OpCode.CONCATN:
+				case OpCode.CLOSURE:
+				case OpCode.GETUP:
+				case OpCode.LOAD_MEM:
+					killRegister(constants, copies, instruction.a);
+					break;
+				case OpCode.VARARG: {
+					const countValue = instruction.b === 0 ? null : instruction.b;
+					if (countValue === null) {
+						clearConstRange(constants, instruction.a, null);
+						const toDelete: number[] = [];
+						for (const [dst, src] of copies) {
+							const resolved = resolveCopy(src, copies);
+							if (dst >= instruction.a || resolved >= instruction.a) {
+								toDelete.push(dst);
+							}
+						}
+						for (let i = 0; i < toDelete.length; i += 1) {
+							copies.delete(toDelete[i]);
+						}
+						break;
+					}
+					for (let offset = 0; offset < countValue; offset += 1) {
+						killRegister(constants, copies, instruction.a + offset);
+					}
+					break;
+				}
+				case OpCode.CALL: {
+					const countValue = instruction.c === 0 ? null : instruction.c;
+					if (countValue === null) {
+						clearConstRange(constants, instruction.a, null);
+						const toDelete: number[] = [];
+						for (const [dst, src] of copies) {
+							const resolved = resolveCopy(src, copies);
+							if (dst >= instruction.a || resolved >= instruction.a) {
+								toDelete.push(dst);
+							}
+						}
+						for (let i = 0; i < toDelete.length; i += 1) {
+							copies.delete(toDelete[i]);
+						}
+						break;
+					}
+					for (let offset = 0; offset < countValue; offset += 1) {
+						killRegister(constants, copies, instruction.a + offset);
+					}
+					break;
+				}
+				case OpCode.TESTSET:
+					killRegister(constants, copies, instruction.a);
+					break;
+				default:
+					break;
+			}
+		}
+	}
+
+	return changed ? set : set;
+};
+
+const computeMaxRegister = (instructions: Instruction[]): number => {
+	let maxRegister = 0;
+	const updateMax = (register: number): void => {
+		if (register > maxRegister) {
+			maxRegister = register;
+		}
+	};
+	for (const instruction of instructions) {
+		switch (instruction.op) {
+			case OpCode.LOADK:
+			case OpCode.LOADNIL:
+			case OpCode.LOADBOOL:
+			case OpCode.GETG:
+			case OpCode.NEWT:
+			case OpCode.CLOSURE:
+			case OpCode.GETUP:
+				updateMax(instruction.a);
+				break;
+			case OpCode.SETG:
+			case OpCode.SETUP:
+			case OpCode.TEST:
+			case OpCode.JMPIF:
+			case OpCode.JMPIFNOT:
+			case OpCode.LOAD_MEM:
+				updateMax(instruction.a);
+				if (instruction.op === OpCode.LOAD_MEM) {
+					updateMax(instruction.b);
+				}
+				break;
+			case OpCode.MOV:
+			case OpCode.UNM:
+			case OpCode.NOT:
+			case OpCode.LEN:
+			case OpCode.BNOT:
+				updateMax(instruction.a);
+				updateMax(instruction.b);
+				break;
+			case OpCode.ADD:
+			case OpCode.SUB:
+			case OpCode.MUL:
+			case OpCode.DIV:
+			case OpCode.MOD:
+			case OpCode.FLOORDIV:
+			case OpCode.POW:
+			case OpCode.BAND:
+			case OpCode.BOR:
+			case OpCode.BXOR:
+			case OpCode.SHL:
+			case OpCode.SHR:
+			case OpCode.CONCAT:
+			case OpCode.EQ:
+			case OpCode.LT:
+			case OpCode.LE:
+			case OpCode.GETT:
+			case OpCode.SETT: {
+				updateMax(instruction.a);
+				if (instruction.b >= 0) {
+					updateMax(instruction.b);
+				}
+				if (instruction.c >= 0) {
+					updateMax(instruction.c);
+				}
+				break;
+			}
+			case OpCode.CONCATN: {
+				updateMax(instruction.a);
+				updateMax(instruction.b);
+				updateMax(instruction.b + Math.max(instruction.c - 1, 0));
+				break;
+			}
+			case OpCode.TESTSET:
+				updateMax(instruction.a);
+				updateMax(instruction.b);
+				break;
+			case OpCode.VARARG:
+				updateMax(instruction.a);
+				updateMax(instruction.a + Math.max(instruction.b - 1, 0));
+				break;
+			case OpCode.CALL:
+			case OpCode.RET: {
+				updateMax(instruction.a);
+				if (instruction.b > 0) {
+					updateMax(instruction.a + instruction.b - 1);
+				}
+				if (instruction.op === OpCode.CALL && instruction.c > 0) {
+					updateMax(instruction.a + instruction.c - 1);
+				}
+				break;
+			}
+			case OpCode.STORE_MEM:
+				updateMax(instruction.a);
+				updateMax(instruction.b);
+				break;
+			default:
+				break;
+		}
+	}
+	return maxRegister;
+};
+
+const isPureInstruction = (instruction: Instruction): boolean => {
+	switch (instruction.op) {
+		case OpCode.MOV:
+		case OpCode.LOADK:
+		case OpCode.LOADNIL:
+		case OpCode.GETG:
+		case OpCode.GETT:
+		case OpCode.NEWT:
+		case OpCode.ADD:
+		case OpCode.SUB:
+		case OpCode.MUL:
+		case OpCode.DIV:
+		case OpCode.MOD:
+		case OpCode.FLOORDIV:
+		case OpCode.POW:
+		case OpCode.BAND:
+		case OpCode.BOR:
+		case OpCode.BXOR:
+		case OpCode.SHL:
+		case OpCode.SHR:
+		case OpCode.CONCAT:
+		case OpCode.CONCATN:
+		case OpCode.UNM:
+		case OpCode.NOT:
+		case OpCode.LEN:
+		case OpCode.BNOT:
+		case OpCode.CLOSURE:
+		case OpCode.GETUP:
+		case OpCode.VARARG:
+		case OpCode.LOAD_MEM:
+			return true;
+		case OpCode.LOADBOOL:
+			return instruction.c === 0;
+		default:
+			return false;
+	}
+};
+
+const eliminateDeadStores = (set: InstructionSet): InstructionSet => {
+	const { instructions, ranges } = set;
+	const count = instructions.length;
+	if (count === 0) {
+		return set;
+	}
+	const blocks = buildBasicBlocks(instructions);
+	const maxRegister = computeMaxRegister(instructions);
+	const keep = new Array<boolean>(count).fill(true);
+	let removed = 0;
+
+	const markReadRegisters = (instruction: Instruction, live: boolean[]): void => {
+		const mark = (register: number): void => {
+			if (register >= 0 && register < live.length) {
+				live[register] = true;
+			}
+		};
+		switch (instruction.op) {
+			case OpCode.MOV:
+			case OpCode.UNM:
+			case OpCode.NOT:
+			case OpCode.LEN:
+			case OpCode.BNOT:
+				mark(instruction.b);
+				break;
+			case OpCode.SETG:
+			case OpCode.SETUP:
+			case OpCode.TEST:
+			case OpCode.JMPIF:
+			case OpCode.JMPIFNOT:
+				mark(instruction.a);
+				break;
+			case OpCode.TESTSET:
+				mark(instruction.b);
+				break;
+			case OpCode.GETT:
+				mark(instruction.b);
+				if ((instruction.rkMask & RK_C) === 0 || instruction.c >= 0) {
+					mark(instruction.c);
+				}
+				break;
+			case OpCode.SETT:
+				mark(instruction.a);
+				if ((instruction.rkMask & RK_B) === 0 || instruction.b >= 0) {
+					mark(instruction.b);
+				}
+				if ((instruction.rkMask & RK_C) === 0 || instruction.c >= 0) {
+					mark(instruction.c);
+				}
+				break;
+			case OpCode.ADD:
+			case OpCode.SUB:
+			case OpCode.MUL:
+			case OpCode.DIV:
+			case OpCode.MOD:
+			case OpCode.FLOORDIV:
+			case OpCode.POW:
+			case OpCode.BAND:
+			case OpCode.BOR:
+			case OpCode.BXOR:
+			case OpCode.SHL:
+			case OpCode.SHR:
+			case OpCode.CONCAT:
+			case OpCode.EQ:
+			case OpCode.LT:
+			case OpCode.LE:
+				if ((instruction.rkMask & RK_B) === 0 || instruction.b >= 0) {
+					mark(instruction.b);
+				}
+				if ((instruction.rkMask & RK_C) === 0 || instruction.c >= 0) {
+					mark(instruction.c);
+				}
+				break;
+			case OpCode.CONCATN:
+				for (let offset = 0; offset < instruction.c; offset += 1) {
+					mark(instruction.b + offset);
+				}
+				break;
+			case OpCode.LOAD_MEM:
+				mark(instruction.b);
+				break;
+			case OpCode.STORE_MEM:
+				mark(instruction.a);
+				mark(instruction.b);
+				break;
+			case OpCode.CALL: {
+				const argCount = instruction.b === 0 ? maxRegister - instruction.a : instruction.b;
+				for (let offset = 0; offset <= argCount; offset += 1) {
+					mark(instruction.a + offset);
+				}
+				break;
+			}
+			case OpCode.RET: {
+				const countValue = instruction.b === 0 ? maxRegister - instruction.a + 1 : instruction.b;
+				for (let offset = 0; offset < countValue; offset += 1) {
+					mark(instruction.a + offset);
+				}
+				break;
+			}
+			default:
+				break;
+		}
+	};
+
+	const writeHasLive = (instruction: Instruction, live: boolean[]): boolean => {
+		const hasLive = (register: number): boolean =>
+			register >= 0 && register < live.length && live[register];
+		switch (instruction.op) {
+			case OpCode.MOV:
+			case OpCode.LOADK:
+			case OpCode.LOADBOOL:
+			case OpCode.GETG:
+			case OpCode.GETT:
+			case OpCode.NEWT:
+			case OpCode.ADD:
+			case OpCode.SUB:
+			case OpCode.MUL:
+			case OpCode.DIV:
+			case OpCode.MOD:
+			case OpCode.FLOORDIV:
+			case OpCode.POW:
+			case OpCode.BAND:
+			case OpCode.BOR:
+			case OpCode.BXOR:
+			case OpCode.SHL:
+			case OpCode.SHR:
+			case OpCode.CONCAT:
+			case OpCode.CONCATN:
+			case OpCode.UNM:
+			case OpCode.NOT:
+			case OpCode.LEN:
+			case OpCode.BNOT:
+			case OpCode.CLOSURE:
+			case OpCode.GETUP:
+			case OpCode.LOAD_MEM:
+				return hasLive(instruction.a);
+			case OpCode.LOADNIL: {
+				for (let offset = 0; offset < instruction.b; offset += 1) {
+					if (hasLive(instruction.a + offset)) {
+						return true;
+					}
+				}
+				return false;
+			}
+			case OpCode.VARARG: {
+				const countValue = instruction.b === 0 ? maxRegister - instruction.a + 1 : instruction.b;
+				for (let offset = 0; offset < countValue; offset += 1) {
+					if (hasLive(instruction.a + offset)) {
+						return true;
+					}
+				}
+				return false;
+			}
+			case OpCode.CALL: {
+				const countValue = instruction.c === 0 ? maxRegister - instruction.a + 1 : instruction.c;
+				for (let offset = 0; offset < countValue; offset += 1) {
+					if (hasLive(instruction.a + offset)) {
+						return true;
+					}
+				}
+				return false;
+			}
+			case OpCode.TESTSET:
+				return hasLive(instruction.a);
+			default:
+				return true;
+		}
+	};
+
+	const killWrittenRegisters = (instruction: Instruction, live: boolean[]): void => {
+		const kill = (register: number): void => {
+			if (register >= 0 && register < live.length) {
+				live[register] = false;
+			}
+		};
+		switch (instruction.op) {
+			case OpCode.MOV:
+			case OpCode.LOADK:
+			case OpCode.LOADBOOL:
+			case OpCode.GETG:
+			case OpCode.GETT:
+			case OpCode.NEWT:
+			case OpCode.ADD:
+			case OpCode.SUB:
+			case OpCode.MUL:
+			case OpCode.DIV:
+			case OpCode.MOD:
+			case OpCode.FLOORDIV:
+			case OpCode.POW:
+			case OpCode.BAND:
+			case OpCode.BOR:
+			case OpCode.BXOR:
+			case OpCode.SHL:
+			case OpCode.SHR:
+			case OpCode.CONCAT:
+			case OpCode.CONCATN:
+			case OpCode.UNM:
+			case OpCode.NOT:
+			case OpCode.LEN:
+			case OpCode.BNOT:
+			case OpCode.CLOSURE:
+			case OpCode.GETUP:
+			case OpCode.LOAD_MEM:
+			case OpCode.TESTSET:
+				kill(instruction.a);
+				break;
+			case OpCode.LOADNIL:
+				for (let offset = 0; offset < instruction.b; offset += 1) {
+					kill(instruction.a + offset);
+				}
+				break;
+			case OpCode.VARARG: {
+				const countValue = instruction.b === 0 ? maxRegister - instruction.a + 1 : instruction.b;
+				for (let offset = 0; offset < countValue; offset += 1) {
+					kill(instruction.a + offset);
+				}
+				break;
+			}
+			case OpCode.CALL: {
+				const countValue = instruction.c === 0 ? maxRegister - instruction.a + 1 : instruction.c;
+				for (let offset = 0; offset < countValue; offset += 1) {
+					kill(instruction.a + offset);
+				}
+				break;
+			}
+			default:
+				break;
+		}
+	};
+
+	for (const block of blocks) {
+		const live = new Array<boolean>(maxRegister + 1).fill(false);
+		for (let i = block.end - 1; i >= block.start; i -= 1) {
+			const instruction = instructions[i];
+			const pure = isPureInstruction(instruction);
+			const hasLiveWrite = writeHasLive(instruction, live);
+			if (pure && !hasLiveWrite) {
+				keep[i] = false;
+				removed += 1;
+				continue;
+			}
+			killWrittenRegisters(instruction, live);
+			markReadRegisters(instruction, live);
+		}
+	}
+
+	if (removed === 0) {
+		return set;
+	}
+	return remapInstructions(instructions, ranges, keep, true);
+};
+
+const reorderSegments = (set: InstructionSet): InstructionSet => {
+	const { instructions, ranges } = set;
+	const count = instructions.length;
+	if (count === 0) {
+		return set;
+	}
+	const blocks = buildBasicBlocks(instructions);
+	if (blocks.length === 0) {
+		return set;
+	}
+	const { blockForIndex } = buildBlockGraph(instructions, blocks);
+	const skipped = new Array<boolean>(count).fill(false);
+	for (let i = 0; i < count; i += 1) {
+		if (isSkipInstruction(instructions[i]) && i + 1 < count) {
+			skipped[i + 1] = true;
+		}
+	}
+
+	type Segment = {
+		blocks: number[];
+		jumpTarget: number | null;
+	};
+
+	const segments: Segment[] = [];
+	let current: Segment | null = null;
+	for (let i = 0; i < blocks.length; i += 1) {
+		if (!current) {
+			current = { blocks: [], jumpTarget: null };
+		}
+		current.blocks.push(i);
+		const block = blocks[i];
+		const lastIndex = block.end - 1;
+		const last = instructions[lastIndex];
+		const terminates = last.op === OpCode.JMP || last.op === OpCode.RET;
+		if (terminates) {
+			segments.push(current);
+			current = null;
+		}
+	}
+	if (current) {
+		segments.push(current);
+	}
+
+	const segmentOfBlock = new Array<number>(blocks.length);
+	for (let segIndex = 0; segIndex < segments.length; segIndex += 1) {
+		const segment = segments[segIndex];
+		for (let i = 0; i < segment.blocks.length; i += 1) {
+			segmentOfBlock[segment.blocks[i]] = segIndex;
+		}
+	}
+
+	for (let segIndex = 0; segIndex < segments.length; segIndex += 1) {
+		const segment = segments[segIndex];
+		const lastBlockIndex = segment.blocks[segment.blocks.length - 1];
+		const lastBlock = blocks[lastBlockIndex];
+		const lastIndex = lastBlock.end - 1;
+		const last = instructions[lastIndex];
+		if (last.op !== OpCode.JMP || skipped[lastIndex]) {
+			continue;
+		}
+		const target = getJumpTarget(last);
+		if (target < 0 || target >= count) {
+			continue;
+		}
+		const targetBlock = blockForIndex[target];
+		segment.jumpTarget = segmentOfBlock[targetBlock];
+	}
+
+	const visited = new Array<boolean>(segments.length).fill(false);
+	const order: number[] = [];
+	const appendTrace = (start: number): void => {
+		let currentIndex = start;
+		while (!visited[currentIndex]) {
+			visited[currentIndex] = true;
+			order.push(currentIndex);
+			const next = segments[currentIndex].jumpTarget;
+			if (next === null || visited[next]) {
+				break;
+			}
+			currentIndex = next;
+		}
+	};
+
+	if (segments.length > 0) {
+		appendTrace(segmentOfBlock[0]);
+		for (let i = 0; i < segments.length; i += 1) {
+			if (!visited[i]) {
+				appendTrace(i);
+			}
+		}
+	}
+
+	let unchanged = true;
+	for (let i = 0; i < order.length; i += 1) {
+		if (order[i] !== i) {
+			unchanged = false;
+			break;
+		}
+	}
+	if (unchanged) {
+		return set;
+	}
+
+	const indexMap = new Array<number>(count);
+	let newIndex = 0;
+	const nextInstructions: Instruction[] = new Array(count);
+	const nextRanges: Array<SourceRange | null> = new Array(count);
+	for (let orderIndex = 0; orderIndex < order.length; orderIndex += 1) {
+		const segment = segments[order[orderIndex]];
+		for (let i = 0; i < segment.blocks.length; i += 1) {
+			const block = blocks[segment.blocks[i]];
+			for (let index = block.start; index < block.end; index += 1) {
+				indexMap[index] = newIndex;
+				nextInstructions[newIndex] = instructions[index];
+				nextRanges[newIndex] = ranges[index];
+				newIndex += 1;
+			}
+		}
+	}
+
+	for (let i = 0; i < nextInstructions.length; i += 1) {
+		const instruction = nextInstructions[i];
+		if (!isJump(instruction)) {
+			continue;
+		}
+		const target = getJumpTarget(instruction);
+		if (target === count) {
+			instruction.target = newIndex;
+			continue;
+		}
+		instruction.target = indexMap[target];
+	}
+
+	return { instructions: nextInstructions, ranges: nextRanges };
+};
+
 export const optimizeInstructions = (
 	instructions: Instruction[],
 	ranges: Array<SourceRange | null>,
@@ -720,11 +1884,19 @@ export const optimizeInstructions = (
 			throw new Error('[ProgramOptimizer] Optimization context is required for level 2+.');
 		}
 		current = simplifyCompareBool(current);
+		current = propagateValues(current, context);
+		current = eliminateDeadStores(current);
+		current = removeNoOps(current);
+		current = threadJumps(current);
+		current = removeUnreachable(current);
+		current = foldConstants(current, context);
+		current = propagateValues(current, context);
+		current = eliminateDeadStores(current);
 		current = removeNoOps(current);
 		current = threadJumps(current);
 		current = removeUnreachable(current);
 		current = removeNoOps(current);
-		current = foldConstants(current, context);
+		current = reorderSegments(current);
 		current = removeNoOps(current);
 		current = threadJumps(current);
 		current = removeUnreachable(current);
