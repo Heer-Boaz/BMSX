@@ -304,7 +304,10 @@ class FunctionBuilder {
 			return;
 		}
 		if (this.program.optLevel > 0) {
-			const optimized = optimizeInstructions(this.code, this.ranges, this.program.optLevel);
+			const optimized = optimizeInstructions(this.code, this.ranges, this.program.optLevel, {
+				constPool: this.program.constPool,
+				constIndex: (value: Value) => this.program.constIndex(value),
+			});
 			if (optimized.instructions !== this.code) {
 				this.code.length = 0;
 				this.code.push(...optimized.instructions);
