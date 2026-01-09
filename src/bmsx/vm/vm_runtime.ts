@@ -100,6 +100,8 @@ export const VM_BUTTON_ACTIONS: ReadonlyArray<string> = [
 // Flip back to 'msx' to restore default font in vm/editor
 export const EDITOR_FONT_VARIANT: VMFontVariant = 'tiny';
 
+const MAX_POOLED_VM_RUNTIME_SCRATCH_ARRAYS = 32;
+
 type VMFrameState = {
 	haltGame: boolean;
 	updateExecuted: boolean;
@@ -415,6 +417,8 @@ export class BmsxVMRuntime {
 	public readonly pathFunctionDefinitionKeys: Map<string, Set<string>> = new Map();
 	private readonly luaGenericChunksExecuted: Set<string> = new Set();
 	private readonly luaPatternRegexCache: Map<string, RegExp> = new Map();
+	private readonly valueScratchPool: Value[][] = [];
+	private readonly stringScratchPool: string[][] = [];
 	public readonly luaFunctionRedirectCache = new LuaFunctionRedirectCache();
 	// Wrap Lua closures with stable JS stubs so FSM/input/events can hold onto durable references even across hot-reload.
 	private readonly luaHandlerCache = new LuaHandlerCache(
@@ -2420,83 +2424,88 @@ export class BmsxVMRuntime {
 			let result = '';
 			let searchIndex = 0;
 			let lastIndex = 0;
-			const fnArgs: Value[] = [];
-			const fnResults: Value[] = [];
-
-			const renderReplacement = (match: RegExpExecArray): string => {
-				if (isStringValue(replacement) || typeof replacement === 'number') {
-					const template = isStringValue(replacement) ? stringValueToString(replacement) : String(replacement);
-					return template.replace(/%([0-9%])/g, (_full, token) => {
-						if (token === '%') {
-							return '%';
-						}
-						const index = parseInt(token, 10);
-						if (!Number.isFinite(index)) {
-							return token;
-						}
-						if (index === 0) {
-							return match[0] ?? '';
-						}
-						const value = match[index];
-						return value === undefined ? '' : value;
-					});
-				}
-				if (replacement instanceof Table) {
-					if (match.length > 1 && match[1] === undefined) {
-						return match[0];
-					}
-					const keyValue = match.length > 1
-						? this.internVmString(match[1])
-						: this.internVmString(match[0]);
-					const mapped = replacement.get(keyValue);
-					return mapped === null ? match[0] : this.vmToString(mapped);
-				}
-				if (isNativeFunction(replacement) || (replacement !== null && typeof replacement === 'object' && 'protoIndex' in replacement)) {
-					fnArgs.length = 0;
-					if (match.length > 1) {
-						for (let index = 1; index < match.length; index += 1) {
+			const fnArgs = this.acquireValueScratch();
+			const fnResults = this.acquireValueScratch();
+			try {
+				const renderReplacement = (match: RegExpExecArray): string => {
+					if (isStringValue(replacement) || typeof replacement === 'number') {
+						const template = isStringValue(replacement) ? stringValueToString(replacement) : String(replacement);
+						return template.replace(/%([0-9%])/g, (_full, token) => {
+							if (token === '%') {
+								return '%';
+							}
+							const index = parseInt(token, 10);
+							if (!Number.isFinite(index)) {
+								return token;
+							}
+							if (index === 0) {
+								return match[0] ?? '';
+							}
 							const value = match[index];
-							fnArgs.push(value === undefined ? null : this.internVmString(value));
+							return value === undefined ? '' : value;
+						});
+					}
+					if (replacement instanceof Table) {
+						if (match.length > 1 && match[1] === undefined) {
+							return match[0];
 						}
-						if (fnArgs.length === 0) {
+						const keyValue = match.length > 1
+							? this.internVmString(match[1])
+							: this.internVmString(match[0]);
+						const mapped = replacement.get(keyValue);
+						return mapped === null ? match[0] : this.vmToString(mapped);
+					}
+					if (isNativeFunction(replacement) || (replacement !== null && typeof replacement === 'object' && 'protoIndex' in replacement)) {
+						fnArgs.length = 0;
+						fnResults.length = 0;
+						if (match.length > 1) {
+							for (let index = 1; index < match.length; index += 1) {
+								const value = match[index];
+								fnArgs.push(value === undefined ? null : this.internVmString(value));
+							}
+							if (fnArgs.length === 0) {
+								fnArgs.push(this.internVmString(match[0]));
+							}
+						} else {
 							fnArgs.push(this.internVmString(match[0]));
 						}
+						callVmValue(replacement, fnArgs, fnResults);
+						const value = fnResults.length > 0 ? fnResults[0] : null;
+						if (value === null || value === false) {
+							return match[0];
+						}
+						return this.vmToString(value);
+					}
+					throw this.createApiRuntimeError('string.gsub replacement must be a string, number, function, or table.');
+				};
+
+				while (count < maxReplacements) {
+					if (searchIndex > source.length) {
+						break;
+					}
+					const match = regex.exec(source.slice(searchIndex));
+					if (!match) {
+						break;
+					}
+					const start = searchIndex + match.index;
+					const end = start + match[0].length;
+					result += source.slice(lastIndex, start);
+					result += renderReplacement(match);
+					lastIndex = end;
+					count += 1;
+					if (match[0].length === 0) {
+						searchIndex = end + 1;
 					} else {
-						fnArgs.push(this.internVmString(match[0]));
+						searchIndex = end;
 					}
-					callVmValue(replacement, fnArgs, fnResults);
-					const value = fnResults.length > 0 ? fnResults[0] : null;
-					if (value === null || value === false) {
-						return match[0];
-					}
-					return this.vmToString(value);
 				}
-				throw this.createApiRuntimeError('string.gsub replacement must be a string, number, function, or table.');
-			};
 
-			while (count < maxReplacements) {
-				if (searchIndex > source.length) {
-					break;
-				}
-				const match = regex.exec(source.slice(searchIndex));
-				if (!match) {
-					break;
-				}
-				const start = searchIndex + match.index;
-				const end = start + match[0].length;
-				result += source.slice(lastIndex, start);
-				result += renderReplacement(match);
-				lastIndex = end;
-				count += 1;
-				if (match[0].length === 0) {
-					searchIndex = end + 1;
-				} else {
-					searchIndex = end;
-				}
+				result += source.slice(lastIndex);
+				out.push(this.internVmString(result), count);
+			} finally {
+				this.releaseValueScratch(fnResults);
+				this.releaseValueScratch(fnArgs);
 			}
-
-			result += source.slice(lastIndex);
-			out.push(this.internVmString(result), count);
 		}));
 		setKey(stringTable, 'gmatch', createNativeFunction('string.gmatch', (args, out) => {
 			const source = this.requireVmString(args[0]);
@@ -2620,12 +2629,16 @@ export class BmsxVMRuntime {
 				out.push(this.internVmString(''));
 				return;
 			}
-			const parts: string[] = [];
-			for (let index = startIndex; index <= endIndex; index += 1) {
-				const value = target.get(index);
-				parts.push(value === null ? '' : this.vmToString(value));
+			const parts = this.acquireStringScratch();
+			try {
+				for (let index = startIndex; index <= endIndex; index += 1) {
+					const value = target.get(index);
+					parts.push(value === null ? '' : this.vmToString(value));
+				}
+				out.push(this.internVmString(parts.join(separator)));
+			} finally {
+				this.releaseStringScratch(parts);
 			}
-			out.push(this.internVmString(parts.join(separator)));
 		}));
 		setKey(tableLibrary, 'pack', createNativeFunction('table.pack', (args, out) => {
 			const target = new Table(args.length, 1);
@@ -2661,34 +2674,45 @@ export class BmsxVMRuntime {
 			const target = args[0] as Table;
 			const comparator = args.length > 1 ? args[1] : null;
 			const length = target.length();
-			const values: Value[] = new Array(length);
-			for (let index = 1; index <= length; index += 1) {
-				values[index - 1] = target.get(index);
-			}
-			const comparatorArgs: Value[] = [null, null];
-			const comparatorResults: Value[] = [];
-			values.sort((left, right) => {
-				if (comparator !== null) {
-					comparatorArgs[0] = left;
-					comparatorArgs[1] = right;
-					callVmValue(comparator, comparatorArgs, comparatorResults);
-					return comparatorResults[0] === true ? -1 : 1;
+			const values = this.acquireValueScratch();
+			const comparatorArgs = this.acquireValueScratch();
+			const comparatorResults = this.acquireValueScratch();
+			try {
+				values.length = length;
+				for (let index = 1; index <= length; index += 1) {
+					values[index - 1] = target.get(index);
 				}
-				if (typeof left === 'number' && typeof right === 'number') {
-					return left - right;
-				}
-				if (isStringValue(left) && isStringValue(right)) {
-					if (left === right) {
-						return 0;
+				comparatorArgs.length = 2;
+				comparatorArgs[0] = null;
+				comparatorArgs[1] = null;
+				values.sort((left, right) => {
+					if (comparator !== null) {
+						comparatorArgs[0] = left;
+						comparatorArgs[1] = right;
+						comparatorResults.length = 0;
+						callVmValue(comparator, comparatorArgs, comparatorResults);
+						return comparatorResults[0] === true ? -1 : 1;
 					}
-					return stringValueToString(left) < stringValueToString(right) ? -1 : 1;
+					if (typeof left === 'number' && typeof right === 'number') {
+						return left - right;
+					}
+					if (isStringValue(left) && isStringValue(right)) {
+						if (left === right) {
+							return 0;
+						}
+						return stringValueToString(left) < stringValueToString(right) ? -1 : 1;
+					}
+					throw this.createApiRuntimeError('table.sort comparison expects numbers or strings.');
+				});
+				for (let index = 1; index <= length; index += 1) {
+					target.set(index, values[index - 1]);
 				}
-				throw this.createApiRuntimeError('table.sort comparison expects numbers or strings.');
-			});
-			for (let index = 1; index <= length; index += 1) {
-				target.set(index, values[index - 1]);
+				out.push(target);
+			} finally {
+				this.releaseValueScratch(comparatorResults);
+				this.releaseValueScratch(comparatorArgs);
+				this.releaseValueScratch(values);
 			}
-			out.push(target);
 		}));
 		this.registerVmGlobal('table', tableLibrary);
 
@@ -4221,6 +4245,40 @@ export class BmsxVMRuntime {
 
 	private vmToStringValue(value: Value): StringValue {
 		return this.internVmString(this.vmToString(value));
+	}
+
+	private acquireValueScratch(): Value[] {
+		const pool = this.valueScratchPool;
+		if (pool.length > 0) {
+			const scratch = pool.pop()!;
+			scratch.length = 0;
+			return scratch;
+		}
+		return [];
+	}
+
+	private releaseValueScratch(values: Value[]): void {
+		values.length = 0;
+		if (this.valueScratchPool.length < MAX_POOLED_VM_RUNTIME_SCRATCH_ARRAYS) {
+			this.valueScratchPool.push(values);
+		}
+	}
+
+	private acquireStringScratch(): string[] {
+		const pool = this.stringScratchPool;
+		if (pool.length > 0) {
+			const scratch = pool.pop()!;
+			scratch.length = 0;
+			return scratch;
+		}
+		return [];
+	}
+
+	private releaseStringScratch(values: string[]): void {
+		values.length = 0;
+		if (this.stringScratchPool.length < MAX_POOLED_VM_RUNTIME_SCRATCH_ARRAYS) {
+			this.stringScratchPool.push(values);
+		}
 	}
 
 	private buildConsoleMetadata(baseProgram: Program): ProgramMetadata {

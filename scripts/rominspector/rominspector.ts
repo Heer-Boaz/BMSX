@@ -10,6 +10,8 @@ import { PNG } from 'pngjs';
 import type { asset_type, AudioMeta, GLTFModel, ImgMeta, RomAsset, RomMeta } from '../../src/bmsx/rompack/rompack';
 import { decodeBinary } from '../../src/bmsx/serializer/binencoder';
 import { getZippedRomAndRomLabelFromBlob, loadAssetList, loadModelFromBuffer as loadGLTFModelFromBuffer, parseMetaFromBuffer, loadRuntimeAssetsFromBuffer } from '../../src/bmsx/rompack/romloader';
+import { disassembleProgram } from '../../src/bmsx/vm/disassembler';
+import { decodeProgramAsset, decodeProgramSymbolsAsset, inflateProgram, VM_PROGRAM_ASSET_ID, VM_PROGRAM_SYMBOLS_ASSET_ID } from '../../src/bmsx/vm/vm_program_asset';
 import { generateAtlasName } from '../rompacker/atlasbuilder';
 import { asciiWaveBraille, generateBrailleAsciiArt, generatePixelPerfectAsciiArt, parseWav, renderBufferBar, renderSummaryBar } from './asciiart';
 
@@ -30,8 +32,10 @@ let assetList: RomAsset[] = [];
 // 	return i === 0 ? `${n}` : `${num.toFixed(2)}${units[i]}`;
 // }
 
-function formatNumberAsHex(n: number): string {
-	return `#${n.toString(16).toUpperCase()}`;
+function formatNumberAsHex(n: number, width?: number): string {
+	const hex = n.toString(16).toUpperCase();
+	const padded = width === undefined ? hex : hex.padStart(width, '0');
+	return `#${padded}`;
 }
 
 function formatByteSize(size: number): string {
@@ -541,6 +545,7 @@ async function main() {
 		const audiometa = selected.audiometa || {} as AudioMeta;
 		let bufferSize = selected.end - selected.start;
 		let asciiArt = '';
+		let disassembly = '';
 		const metadataLines: string[] = [];
 
 		if (modal) {
@@ -696,12 +701,56 @@ async function main() {
 				}
 				break;
 			case 'data':
-				if (!selected.buffer || typeof selected.buffer !== 'object') {
-					// @ts-ignore
-					selected.buffer = await loadDataFromBuffer(rombin.slice(selected.start, selected.end));
+				if (selected.resid === VM_PROGRAM_ASSET_ID) {
+					const programStart = selected.start;
+					const programEnd = selected.end;
+					if (programStart === undefined || programEnd === undefined) {
+						throw new Error(`[RomInspector] VM program asset '${selected.resid}' is missing buffer range.`);
+					}
+					const programBytes = new Uint8Array(rombin.slice(programStart, programEnd));
+					const programAsset = decodeProgramAsset(programBytes);
+					const program = inflateProgram(programAsset.program);
+					const symbolsAsset = assetList.find(asset => asset.resid === VM_PROGRAM_SYMBOLS_ASSET_ID);
+					const hasSymbols = symbolsAsset !== undefined;
+					const metadata = hasSymbols
+						? (() => {
+							const symbolsStart = symbolsAsset.start;
+							const symbolsEnd = symbolsAsset.end;
+							if (symbolsStart === undefined || symbolsEnd === undefined) {
+								throw new Error(`[RomInspector] VM program symbols asset '${symbolsAsset.resid}' is missing buffer range.`);
+							}
+							const symbolsBytes = new Uint8Array(rombin.slice(symbolsStart, symbolsEnd));
+							const symbols = decodeProgramSymbolsAsset(symbolsBytes);
+							return symbols.metadata;
+						})()
+						: null;
+					disassembly = disassembleProgram(program, metadata, {
+						pcRadix: 16,
+						pcFormatter: (pc, width) => formatNumberAsHex(pc, width),
+					});
+					metadataLines.push(`VM program entry proto: ${programAsset.entryProtoIndex}`);
+					metadataLines.push(`VM program protos: ${program.protos.length}`);
+					metadataLines.push(`VM program consts: ${program.constPool.length}`);
+					metadataLines.push(`VM program code bytes: ${program.code.length}`);
+					asciiArt = '[VM program asset: open Details tab for disassembly]';
+				} else if (selected.resid === VM_PROGRAM_SYMBOLS_ASSET_ID) {
+					const symbolsStart = selected.start;
+					const symbolsEnd = selected.end;
+					if (symbolsStart === undefined || symbolsEnd === undefined) {
+						throw new Error(`[RomInspector] VM program symbols asset '${selected.resid}' is missing buffer range.`);
+					}
+					const symbolsBytes = new Uint8Array(rombin.slice(symbolsStart, symbolsEnd));
+					const symbols = decodeProgramSymbolsAsset(symbolsBytes);
+					metadataLines.push(`VM program symbols protos: ${symbols.metadata.protoIds.length}`);
+					asciiArt = JSON.stringify(symbols.metadata, null, 2);
+				} else {
+					if (!selected.buffer || typeof selected.buffer !== 'object') {
+						// @ts-ignore
+						selected.buffer = await loadDataFromBuffer(rombin.slice(selected.start, selected.end));
+					}
+					metadataLines.push(`Data size: ${formatByteSize(selected.end - selected.start)}`);
+					asciiArt = JSON.stringify(selected.buffer, null, 2);
 				}
-				metadataLines.push(`Data size: ${formatByteSize(selected.end - selected.start)}`);
-				asciiArt = JSON.stringify(selected.buffer, null, 2);
 				break;
 			case 'model':
 				if (!selected.buffer || typeof (selected.buffer as any).meshes === 'undefined') {
@@ -927,6 +976,9 @@ async function main() {
 				content += `${asciiArt} \n`;
 			} else if (currentTab === 1) {
 				content += `${metadataLines.join('\n')}`;
+				if (disassembly) {
+					content += `\n\nDisassembly:\n${disassembly}`;
+				}
 			} else if (currentTab === 2) {
 				// Asset buffer dump
 				const assetBuf = asset.start || asset.end
