@@ -254,13 +254,11 @@ function new_game()
 end
 
 local function test()
-	-- print "bla"
 	-- assert(false)
 end
 
 function update(_dt)
 	-- assert(false)
-	-- print(a.b + 3)
 	test()
 end
 
