@@ -64,8 +64,6 @@ const spriteShaderData = {
 	atlas_id: new Uint8Array(ATLAS_ID_SIZE * MAX_SPRITES),
 };
 let spriteShaderScaleLocation: WebGLUniformLocation;
-let spriteShaderDitherIntensityLocation: WebGLUniformLocation;
-let spriteShaderDitherEnabledLocation: WebGLUniformLocation;
 
 interface SpriteRuntime {
 	backend: WebGLBackend;
@@ -98,16 +96,12 @@ export function setupSpriteShaderLocations(backend: GPUBackend): void {
 	texture1Location = gl.getUniformLocation(spriteShaderProgram, 'u_texture1')!;
 	texture2Location = gl.getUniformLocation(spriteShaderProgram, 'u_texture2')!;
 	spriteShaderScaleLocation = gl.getUniformLocation(spriteShaderProgram, 'u_scale');
-	spriteShaderDitherIntensityLocation = gl.getUniformLocation(spriteShaderProgram, 'u_ditherIntensity')!;
-	spriteShaderDitherEnabledLocation = gl.getUniformLocation(spriteShaderProgram, 'u_ditherEnabled')!;
 }
 
 export function setupDefaultUniformValues(backend: WebGLBackend, canvasSize: vec2arr): void {
 	const gl = backend.gl;
 	gl.useProgram(spriteShaderProgram);
 	gl.uniform1f(spriteShaderScaleLocation, 1);
-	gl.uniform1f(spriteShaderDitherIntensityLocation, 1);
-	gl.uniform1f(spriteShaderDitherEnabledLocation, 1);
 	spriteShaderData.resolutionVector[0] = canvasSize[0];
 	spriteShaderData.resolutionVector[1] = canvasSize[1];
 	gl.uniform2fv(resolutionLocation, spriteShaderData.resolutionVector);
@@ -170,7 +164,6 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 	const program = gl.getParameter(gl.CURRENT_PROGRAM);
 
 	const u = (n: string) => gl.getUniformLocation(program, n);
-	const set1i = (n: string, v: number) => { const loc = u(n); gl.uniform1i(loc, v); };
 	const set1f = (n: string, v: number) => { const loc = u(n); gl.uniform1f(loc, v); };
 
 	// Legacy fallback uniform for shader paths where FrameUniforms.u_logicalSize is not available.
@@ -190,10 +183,6 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 	// const booleans: Array<[string, boolean]> = [
 	// ];
 	// for (const [name, val] of booleans) gl.uniform1i(u(name), val ? 1 : 0);
-
-	set1i('u_ditherEnabled', state.psxDither2dEnabled ? 1 : 0);
-	set1f('u_ditherIntensity', state.psxDither2dIntensity);
-
 
 	if (state.atlasPrimaryTex) {
 		context.activeTexUnit = TEXTURE_UNIT_ATLAS_PRIMARY;
@@ -364,8 +353,6 @@ export function registerSpritesPass_WebGL(registry: RenderPassLibrary): void {
 				ambientColor,
 				ambientIntensity,
 				viewportTypeIde: gv.viewportTypeIde,
-				psxDither2dEnabled: gv.psx_dither_2d_enabled,
-				psxDither2dIntensity: gv.psx_dither2d_intensity,
 			};
 			registry.setState('sprites', spriteState);
 			// Validate binding layout vs resources

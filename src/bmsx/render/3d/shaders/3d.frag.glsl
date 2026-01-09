@@ -11,14 +11,13 @@ uniform sampler2D u_normalTexture;
 uniform sampler2D u_metallicRoughnessTexture;
 uniform float u_metallicFactor;
 uniform float u_roughnessFactor;
-uniform float u_ditherIntensity;
 uniform vec4 u_materialColor;
 uniform sampler2D u_shadowMap;
 uniform bool u_useShadowMap;
 uniform mat4 u_lightMatrix;
 uniform float u_shadowStrength;
 // Frame-shared uniform block: required by this shader for camera, view/proj,
-// ambient lighting, and per-frame timing (used for dither jitter).
+// ambient lighting, and per-frame timing.
 layout(std140) uniform FrameUniforms {
 	vec2 u_offscreenSize;
 	vec2 u_logicalSize;
@@ -61,24 +60,8 @@ out vec4 outputColor;
 
 const float[16] pattern = float[16](0.0f, 8.0f, 2.0f, 10.0f, 12.0f, 4.0f, 14.0f, 6.0f, 3.0f, 11.0f, 1.0f, 9.0f, 15.0f, 7.0f, 13.0f, 5.0f);
 
-int bayerIndex(ivec2 p){
-	ivec2 wrapped = p & ivec2(3);
-	return wrapped.x + (wrapped.y << 2);
-}
-
-float bayer4x4(ivec2 p){
-	return (pattern[bayerIndex(p)] + 0.5f) / 16.0f;
-}
-
-vec3 quantize_psx_ordered(vec3 sRGB, ivec2 pix, float guard0_1){
-	vec3 levels = vec3(31.0f);
-	float threshold = bayer4x4(pix) * clamp(guard0_1, 0.0f, 1.0f);
-	return floor(sRGB * levels + threshold) / levels;
-}
-
 // Convert between sRGB and linear (approximate, gamma 2.2)
 vec3 srgb_to_linear(vec3 c) { return pow(c, vec3(2.2)); }
-vec3 linear_to_srgb(vec3 c) { return pow(max(c, vec3(0.0)), vec3(1.0 / 2.2)); }
 
 void main() {
 	vec4 texColor = texture(u_albedoTexture, v_texcoord);
@@ -147,14 +130,5 @@ void main() {
 
 	vec3 colLinear = max(lighting * shadow, vec3(0.0f));
 
-	// Ordered PSX-style quantization with black guard
-	vec3 colS = linear_to_srgb(colLinear);
-	float stepSz = 1.0f / 31.0f;
-	float lumS = dot(colS, vec3(0.299f, 0.587f, 0.114f));
-	float guard = smoothstep(stepSz, 3.0f * stepSz, lumS) * clamp(u_ditherIntensity, 0.0f, 1.0f);
-	int jitter = int(fract(u_timeDelta.x * 60.0f) * 4.0f);
-	ivec2 pix = ivec2(gl_FragCoord.xy) + ivec2(jitter);
-	vec3 qS = quantize_psx_ordered(colS, pix, guard);
-	vec3 qL = srgb_to_linear(clamp(qS, 0.0f, 1.0f));
-	outputColor = vec4(qL, alpha);
+	outputColor = vec4(colLinear, alpha);
 }

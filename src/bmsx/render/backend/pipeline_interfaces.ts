@@ -271,8 +271,6 @@ export interface SpritesPipelineState {
 	ambientColor: [number, number, number];
 	ambientIntensity: number;
 	viewportTypeIde: RenderingViewportType;
-	psxDither2dEnabled: boolean;
-	psxDither2dIntensity: number;
 }
 
 export interface CRTPipelineState {
@@ -291,6 +289,7 @@ export interface CRTPipelineState {
 		applyGlow: boolean;
 		applyFringing: boolean;
 		applyAperture: boolean;
+		applyRgb565Dither: boolean;
 		blurIntensity: number;
 		glowColor: [number, number, number];
 	};
@@ -314,4 +313,3 @@ export interface FrameSharedState {
 	progressFactor: number;
 	enableAutoAnimation: boolean;
 }
-

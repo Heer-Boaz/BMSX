@@ -352,13 +352,14 @@ export class RenderPassLibrary {
 							baseHeight: gv.viewportSize.y,
 							colorTex,
 							options: !!gv.crt_postprocessing_enabled ? {
-								applyNoise: !!gv.applyNoise,
-								applyColorBleed: !!gv.applyColorBleed,
-								applyScanlines: !!gv.applyScanlines,
-								applyBlur: !!gv.applyBlur,
-								applyGlow: !!gv.applyGlow,
-								applyFringing: !!gv.applyFringing,
-								applyAperture: !!gv.applyAperture,
+								applyNoise: !!gv.enable_noise,
+								applyColorBleed: !!gv.enable_colorbleed,
+								applyScanlines: !!gv.enable_scanlines,
+								applyBlur: !!gv.enable_blur,
+								applyGlow: !!gv.enable_glow,
+								applyFringing: !!gv.enable_fringing,
+								applyAperture: !!gv.enable_aperture,
+								applyRgb565Dither: !!gv.enable_rgb565dither,
 								noiseIntensity: gv.noiseIntensity,
 								colorBleed: gv.colorBleed,
 								blurIntensity: gv.blurIntensity,
@@ -371,6 +372,7 @@ export class RenderPassLibrary {
 								applyGlow: false,
 								applyFringing: false,
 								applyAperture: false,
+								applyRgb565Dither: false,
 								noiseIntensity: gv.noiseIntensity, // Will be unused
 								colorBleed: gv.colorBleed, // Will be unused
 								blurIntensity: gv.blurIntensity, // Will be unused
@@ -445,4 +447,3 @@ export class RenderPassLibrary {
 		return token;
 	}
 }
-

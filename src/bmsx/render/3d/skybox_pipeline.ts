@@ -32,7 +32,6 @@ let skyboxPositionLocation: number;
 let skyboxViewLocation: WebGLUniformLocation;
 let skyboxProjectionLocation: WebGLUniformLocation;
 let skyboxTextureLocation: WebGLUniformLocation;
-let skyboxDitherIntensityLocation: WebGLUniformLocation;
 let skyboxTintLocation: WebGLUniformLocation;
 let skyboxExposureLocation: WebGLUniformLocation;
 
@@ -69,11 +68,9 @@ export function setupSkyboxLocations(gl: WebGL2RenderingContext): void {
 	skyboxViewLocation = gl.getUniformLocation(skyboxProgram, 'u_view')!;
 	skyboxProjectionLocation = gl.getUniformLocation(skyboxProgram, 'u_projection')!;
 	skyboxTextureLocation = gl.getUniformLocation(skyboxProgram, 'u_skybox')!;
-	skyboxDitherIntensityLocation = gl.getUniformLocation(skyboxProgram, 'u_ditherIntensity')!;
 	skyboxTintLocation = gl.getUniformLocation(skyboxProgram, 'u_skyTint')!;
 	skyboxExposureLocation = gl.getUniformLocation(skyboxProgram, 'u_skyExposure')!;
 	gl.uniform1i(skyboxTextureLocation, TEXTURE_UNIT_SKYBOX);
-	gl.uniform1f(skyboxDitherIntensityLocation, 0.3);
 	gl.uniform3f(skyboxTintLocation, 1.0, 1.0, 1.0);
 	gl.uniform1f(skyboxExposureLocation, 1.0);
 

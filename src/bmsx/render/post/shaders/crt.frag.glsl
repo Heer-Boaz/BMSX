@@ -18,6 +18,7 @@ uniform bool u_applyBlur;
 uniform bool u_applyGlow;
 uniform bool u_applyFringing;
 uniform bool u_applyAperture;
+uniform bool u_applyRgb565Dither;
 
 // --- Parameters ---
 uniform float u_noiseIntensity;       // 0..~0.5
@@ -63,6 +64,37 @@ out vec4 outputColor;
 #define MANUAL_GAMMA 0
 vec3 toLinear(vec3 c){ return c; }
 vec3 toSRGB(vec3 c){ return pow(max(c, 0.0), vec3(1.0/2.2)); }
+
+// --- SNES-mini / GL_DITHER-like RGB565 ordered dither (4x4), fixed amplitude ---
+
+const float D4[16] = float[16](
+  0.0,  8.0,  2.0, 10.0,
+  12.0, 4.0, 14.0, 6.0,
+  3.0, 11.0, 1.0, 9.0,
+  15.0, 7.0, 13.0, 5.0
+);
+
+float dither4x4_centered(ivec2 p){
+  ivec2 w = p & ivec2(3);
+  int idx = w.x + (w.y << 2);
+  return (D4[idx] + 0.5) / 16.0 - 0.5; // ~[-0.5..+0.5]
+}
+
+// Match your existing gamma model
+vec3 srgb_to_linear(vec3 c) { return pow(max(c, vec3(0.0)), vec3(2.2)); }
+vec3 linear_to_srgb(vec3 c) { return pow(max(c, vec3(0.0)), vec3(1.0 / 2.2)); }
+
+// Quantize to RGB565 with fixed 1-LSB ordered dither (GL_DITHER-like)
+vec3 quantize_rgb565_glDither(vec3 sRGB, ivec2 pix){
+  vec3 levels = vec3(31.0, 63.0, 31.0); // R,G,B bits = 5,6,5
+  float t = dither4x4_centered(pix);
+
+  // Add exactly ~1 LSB worth of offset before quantization
+  vec3 x = sRGB + (t / levels);
+
+  // Softer look (rounded)
+  return floor(clamp(x, 0.0, 1.0) * levels + .5) / levels;
+}
 
 // --- Noise ---
 float hashNoise(vec2 uv, float t){
@@ -171,6 +203,21 @@ void main(){
 
 	// 1) signal tweak
 	if (u_applyColorBleed) color += u_colorBleed;
+
+	// --- RGB565 GL_DITHER-like quantization (do in sRGB/display space) ---
+	if (u_applyRgb565Dither) {
+		ivec2 dPix = ivec2(gl_FragCoord.xy / u_fragscale); // game-anchored pixels
+
+		vec3 s = linear_to_srgb(color);
+
+		// Near-black guard (prevents shimmer/crawl in almost-black)
+		float lumS  = dot(s, LUMA);
+		float stepG = 1.0 / 63.0;                // smallest step in RGB565 is green
+		float guard = smoothstep(stepG, 3.0 * stepG, lumS);
+
+		vec3 qS = mix(s, quantize_rgb565_glDither(s, dPix), guard);
+		color = srgb_to_linear(qS);
+	}
 
 	// 2) blur (pre-scanline/fringing)
 	BlurContrast bc;

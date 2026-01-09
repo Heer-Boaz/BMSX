@@ -163,21 +163,19 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	private _activeTexture2D: TextureHandle = null;
 	private _activeCubemap: TextureHandle = null;
 	// CRT/post flags (used by passes)
-	public applyNoise = true;
-	public applyColorBleed = true;
-	public applyScanlines = true;
-	public applyBlur = true;
-	public applyGlow = true;
-	public applyFringing = true;
-	public applyAperture = true;
+	public enable_noise = false;
+	public enable_colorbleed = false;
+	public enable_scanlines = false;
+	public enable_blur = false;
+	public enable_glow = false;
+	public enable_fringing = false;
+	public enable_aperture = false;
+	public enable_rgb565dither = true;
 	public noiseIntensity = 0.4;
 	public colorBleed: [number, number, number] = [0.02, 0.0, 0.0];
 	public blurIntensity = 0.6;
 	public glowColor: [number, number, number] = [0.12, 0.10, 0.09];
 	public crt_postprocessing_enabled = true; // Whether to apply postprocessing in the CRT-shader, such as scanlines, noise, glow, etc.
-	public psx_dither_2d_enabled = true;
-	public psx_dither2d_intensity = 1.0;
-	// public psx_dither_3d_enabled = false; TODO: JUST ADDED AND WE'LL USE IT LATER!
 
 	// Sprite ambient defaults (used when per-sprite override not provided)
 	public spriteAmbientEnabledDefault = false;

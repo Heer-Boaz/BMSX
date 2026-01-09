@@ -137,7 +137,6 @@ let normalLocation3D: number;
 let tangentLocation3D: number;
 let modelLocation3D: WebGLUniformLocation;
 let normalMatrixLocation3D: WebGLUniformLocation;
-let ditherLocation3D: WebGLUniformLocation;
 let materialColorLocation3D: WebGLUniformLocation;
 let shadowMapLocation3D: WebGLUniformLocation;
 let useShadowMapLocation3D: WebGLUniformLocation;
@@ -441,7 +440,6 @@ export function peekLightsDirty(): boolean { return lightsDirty; }
 export const DIR_LIGHT_UNIFORM_BINDING = DIR_LIGHT_BINDING; export const POINT_LIGHT_UNIFORM_BINDING = POINT_LIGHT_BINDING;
 export function setDefaultUniformValues(gl: WebGL2RenderingContext, defaultScale: number): void {
 	gl.useProgram(gameShaderProgram3D);
-	gl.uniform1f(ditherLocation3D, 0.3);
 	gl.uniform1f(vertShaderScaleLocation3D, defaultScale);
 	// PBR defaults: non-metal (0), rough (1)
 	gl.uniform1f(metallicFactorLocation3D, 0.0);
@@ -538,7 +536,6 @@ export function setupVertexShaderLocations3D(gl: WebGL2RenderingContext): void {
 	weightLocation3D = gl.getAttribLocation(gameShaderProgram3D, 'a_weights');
 	modelLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_model')!;
 	normalMatrixLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_normalMatrix')!;
-	ditherLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_ditherIntensity')!;
 	const dirBlock = gl.getUniformBlockIndex(gameShaderProgram3D, 'DirLightBlock');
 	const pointBlock = gl.getUniformBlockIndex(gameShaderProgram3D, 'PointLightBlock');
 	gl.uniformBlockBinding(gameShaderProgram3D, dirBlock, DIR_LIGHT_BINDING);
