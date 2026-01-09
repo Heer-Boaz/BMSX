@@ -538,6 +538,8 @@ private:
 	};
 
 	bool tryGetArrayIndex(const Value& key, int& outIndex) const;
+	bool hasArrayIndex(size_t index) const;
+	void updateArrayLengthFrom(size_t startIndex);
 	size_t hashValue(const Value& key) const;
 	bool keyEquals(const Value& a, const Value& b) const;
 	int findNodeIndex(const Value& key) const;

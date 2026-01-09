@@ -1,4 +1,5 @@
 import { StringPool, StringValue, isStringValue, stringValueToString } from './string_pool';
+import { formatNumber } from './number_format';
 import { readInstructionWord } from './instruction_format';
 
 export type Value = null | boolean | number | StringValue | Table | Closure | NativeFunction | NativeObject;
@@ -16,14 +17,6 @@ export type SourceRange = {
 
 const NATIVE_FUNCTION_KIND = 'native_function';
 const NATIVE_OBJECT_KIND = 'native_object';
-
-function utf8CodepointCount(text: string): number {
-	let count = 0;
-	for (const _char of text) {
-		count += 1;
-	}
-	return count;
-}
 
 export type NativeFunction = {
 	readonly kind: typeof NATIVE_FUNCTION_KIND;
@@ -186,65 +179,114 @@ type CallFrame = {
 	callSitePc: number;
 };
 
+type HashNode = {
+	key: Value;
+	value: Value;
+	next: number;
+};
+
 export class Table {
-	private readonly array: Value[];
-	private readonly stringMap: Map<StringValue, Value>;
-	private readonly otherMap: Map<Value, Value>;
+	private array: Value[];
+	private arrayLength = 0;
+	private hash: HashNode[];
+	private hashFree = -1;
 	private metatable: Table | null = null;
 
-	constructor(arraySize: number, _hashSize: number) {
+	private static readonly numberBuffer = new ArrayBuffer(8);
+	private static readonly float64View = new Float64Array(Table.numberBuffer);
+	private static readonly uint32View = new Uint32Array(Table.numberBuffer);
+	private static readonly objectIds = new WeakMap<object, number>();
+	private static nextObjectId = 1;
+
+	constructor(arraySize: number, hashSize: number) {
 		this.array = new Array<Value>(arraySize);
 		this.array.fill(null);
-		this.stringMap = new Map<StringValue, Value>();
-		this.otherMap = new Map<Value, Value>();
+		const size = hashSize > 0 ? Table.nextPowerOfTwo(hashSize) : 0;
+		this.hash = new Array<HashNode>(size);
+		for (let i = 0; i < size; i += 1) {
+			this.hash[i] = { key: null, value: null, next: -1 };
+		}
+		this.hashFree = size > 0 ? size - 1 : -1;
 	}
 
 	public get(key: Value): Value {
-		if (this.isArrayIndex(key)) {
-			const index = key as number;
-			const value = this.array[index - 1];
+		if (key === null) {
+			throw new Error('Table index is nil.');
+		}
+		const index = this.tryGetArrayIndex(key);
+		if (index !== null && index < this.array.length) {
+			const value = this.array[index];
 			return value === undefined ? null : value;
 		}
-		if (isStringValue(key)) {
-			return this.getStringKey(key);
+		const nodeIndex = this.findNodeIndex(key);
+		if (nodeIndex >= 0) {
+			return this.hash[nodeIndex].value;
 		}
-		const value = this.otherMap.get(key);
-		return value === undefined ? null : value;
+		return null;
 	}
 
 	public set(key: Value, value: Value): void {
-		if (this.isArrayIndex(key)) {
-			const index = key as number;
-			this.array[index - 1] = value;
-			return;
+		if (key === null) {
+			throw new Error('Table index is nil.');
 		}
-		if (isStringValue(key)) {
-			this.setStringKey(key, value);
+		const index = this.tryGetArrayIndex(key);
+		if (index !== null) {
+			if (index < this.array.length) {
+				if (value === null) {
+					this.array[index] = value;
+					if (index < this.arrayLength) {
+						this.arrayLength = index;
+					}
+					return;
+				}
+				this.array[index] = value;
+				if (index === this.arrayLength) {
+					this.updateArrayLengthFrom(this.arrayLength);
+				}
+				return;
+			}
+			if (value === null) {
+				this.removeFromHash(key);
+				if (index < this.arrayLength) {
+					this.arrayLength = index;
+				}
+				return;
+			}
+			const nodeIndex = this.findNodeIndex(key);
+			if (nodeIndex >= 0) {
+				this.hash[nodeIndex].value = value;
+				return;
+			}
+			if (this.hash.length === 0 || this.hashFree < 0) {
+				this.rehash(key);
+			}
+			this.rawSet(key, value);
 			return;
 		}
 		if (value === null) {
-			this.otherMap.delete(key);
+			this.removeFromHash(key);
 			return;
 		}
-		this.otherMap.set(key, value);
+		const nodeIndex = this.findNodeIndex(key);
+		if (nodeIndex >= 0) {
+			this.hash[nodeIndex].value = value;
+			return;
+		}
+		if (this.hash.length === 0 || this.hashFree < 0) {
+			this.rehash(key);
+		}
+		this.rawSet(key, value);
 	}
 
 	public length(): number {
-		let count = 0;
-		for (let index = 0; index < this.array.length; index += 1) {
-			const value = this.array[index];
-			if (value === null || value === undefined) {
-				break;
-			}
-			count = index + 1;
-		}
-		return count;
+		return this.arrayLength;
 	}
 
 	public clear(): void {
 		this.array.length = 0;
-		this.stringMap.clear();
-		this.otherMap.clear();
+		this.arrayLength = 0;
+		this.hash.length = 0;
+		this.hashFree = -1;
 	}
 
 	public entriesArray(): ReadonlyArray<[Value, Value]> {
@@ -256,11 +298,11 @@ export class Table {
 			}
 			entries.push([index + 1, value]);
 		}
-		for (const entry of this.stringMap.entries()) {
-			entries.push(entry);
-		}
-		for (const entry of this.otherMap.entries()) {
-			entries.push(entry);
+		for (let index = 0; index < this.hash.length; index += 1) {
+			const node = this.hash[index];
+			if (node.key !== null) {
+				entries.push([node.key, node.value]);
+			}
 		}
 		return entries;
 	}
@@ -281,79 +323,358 @@ export class Table {
 					return [index + 1, value];
 				}
 			}
-			for (const entry of this.stringMap.entries()) {
-				return entry;
-			}
-			for (const entry of this.otherMap.entries()) {
-				return entry;
-			}
-			return null;
-		}
-		if (this.isArrayIndex(after)) {
-			const startIndex = (after as number);
-			for (let index = startIndex; index < this.array.length; index += 1) {
-				const value = this.array[index];
-				if (value !== null && value !== undefined) {
-					return [index + 1, value];
+			for (let index = 0; index < this.hash.length; index += 1) {
+				const node = this.hash[index];
+				if (node.key !== null) {
+					return [node.key, node.value];
 				}
 			}
-			for (const entry of this.stringMap.entries()) {
-				return entry;
-			}
-			for (const entry of this.otherMap.entries()) {
-				return entry;
-			}
 			return null;
 		}
-		if (isStringValue(after)) {
-			if (!this.stringMap.has(after)) {
+		const index = this.tryGetArrayIndex(after);
+		if (index !== null && index < this.array.length) {
+			if (this.array[index] === null) {
 				return null;
 			}
-			let seen = false;
-			for (const entry of this.stringMap.entries()) {
-				if (!seen) {
-					if (entry[0] === after) {
-						seen = true;
-					}
-					continue;
+			for (let cursor = index + 1; cursor < this.array.length; cursor += 1) {
+				const value = this.array[cursor];
+				if (value !== null && value !== undefined) {
+					return [cursor + 1, value];
 				}
-				return entry;
 			}
-			if (seen) {
-				for (const entry of this.otherMap.entries()) {
-					return entry;
+			for (let i = 0; i < this.hash.length; i += 1) {
+				const node = this.hash[i];
+				if (node.key !== null) {
+					return [node.key, node.value];
 				}
 			}
 			return null;
 		}
-		let seen = false;
-		for (const entry of this.otherMap.entries()) {
-			if (!seen) {
-				if (entry[0] === after) {
-					seen = true;
-				}
-				continue;
+		const nodeIndex = this.findNodeIndex(after);
+		if (nodeIndex < 0) {
+			return null;
+		}
+		for (let i = nodeIndex + 1; i < this.hash.length; i += 1) {
+			const node = this.hash[i];
+			if (node.key !== null) {
+				return [node.key, node.value];
 			}
-			return entry;
 		}
 		return null;
 	}
 
-	private isArrayIndex(key: Value): boolean {
-		return typeof key === 'number' && Number.isInteger(key) && key >= 1;
+	private static nextPowerOfTwo(value: number): number {
+		if (value <= 0) {
+			return 0;
+		}
+		let power = 1;
+		while (power < value) {
+			power <<= 1;
+		}
+		return power;
 	}
 
-	private getStringKey(key: StringValue): Value {
-		const value = this.stringMap.get(key);
-		return value === undefined ? null : value;
+	private static ceilLog2(value: number): number {
+		let log = 0;
+		let power = 1;
+		while (power < value) {
+			power <<= 1;
+			log += 1;
+		}
+		return log;
 	}
 
-	private setStringKey(key: StringValue, value: Value): void {
-		if (value === null) {
-			this.stringMap.delete(key);
+	private static getObjectId(value: object): number {
+		const existing = Table.objectIds.get(value);
+		if (existing !== undefined) {
+			return existing;
+		}
+		const id = Table.nextObjectId;
+		Table.nextObjectId += 1;
+		Table.objectIds.set(value, id);
+		return id;
+	}
+
+	private hashValue(key: Value): number {
+		if (typeof key === 'number') {
+			if (Number.isNaN(key)) {
+				return 0x7ff80000;
+			}
+			const normalized = key === 0 ? 0 : key;
+			Table.float64View[0] = normalized;
+			return (Table.uint32View[0] ^ Table.uint32View[1]) >>> 0;
+		}
+		if (typeof key === 'boolean') {
+			return key ? 0x9e3779b9 : 0x85ebca6b;
+		}
+		if (isStringValue(key)) {
+			return (key.id * 2654435761) >>> 0;
+		}
+		return (Table.getObjectId(key as object) * 2654435761) >>> 0;
+	}
+
+	private keyEquals(a: Value, b: Value): boolean {
+		if (typeof a === 'number' && typeof b === 'number') {
+			if (Number.isNaN(a) && Number.isNaN(b)) {
+				return true;
+			}
+			return a === b;
+		}
+		if (isStringValue(a) && isStringValue(b)) {
+			return a.id === b.id;
+		}
+		return a === b;
+	}
+
+	private findNodeIndex(key: Value): number {
+		if (this.hash.length === 0) {
+			return -1;
+		}
+		const mask = this.hash.length - 1;
+		let index = (this.hashValue(key) & mask) >>> 0;
+		while (index >= 0) {
+			const node = this.hash[index];
+			if (node.key !== null && this.keyEquals(node.key, key)) {
+				return index;
+			}
+			index = node.next;
+		}
+		return -1;
+	}
+
+	private getFreeIndex(): number {
+		const start = this.hashFree >= 0 ? this.hashFree : this.hash.length - 1;
+		for (let i = start; i >= 0; i -= 1) {
+			if (this.hash[i].key === null) {
+				this.hashFree = i - 1;
+				return i;
+			}
+		}
+		this.hashFree = -1;
+		return -1;
+	}
+
+	private rehash(key: Value): void {
+		let totalKeys = 0;
+		const counts: number[] = [];
+
+		const countIntegerKey = (index: number): void => {
+			const log = Table.ceilLog2(index);
+			while (counts.length <= log) {
+				counts.push(0);
+			}
+			counts[log] += 1;
+		};
+
+		for (let i = 0; i < this.array.length; i += 1) {
+			if (this.array[i] !== null) {
+				totalKeys += 1;
+				countIntegerKey(i + 1);
+			}
+		}
+		for (let i = 0; i < this.hash.length; i += 1) {
+			const node = this.hash[i];
+			if (node.key !== null) {
+				totalKeys += 1;
+				const index = this.tryGetArrayIndex(node.key);
+				if (index !== null) {
+					countIntegerKey(index + 1);
+				}
+			}
+		}
+		if (key !== null) {
+			totalKeys += 1;
+			const index = this.tryGetArrayIndex(key);
+			if (index !== null) {
+				countIntegerKey(index + 1);
+			}
+		}
+
+		let arraySize = 0;
+		let arrayKeys = 0;
+		let total = 0;
+		let power = 1;
+		for (let i = 0; i < counts.length; i += 1) {
+			total += counts[i];
+			if (total > power / 2) {
+				arraySize = power;
+				arrayKeys = total;
+			}
+			power <<= 1;
+		}
+
+		const hashKeys = totalKeys - arrayKeys;
+		const hashSize = hashKeys > 0 ? Table.nextPowerOfTwo(hashKeys) : 0;
+		this.resize(arraySize, hashSize);
+	}
+
+	private resize(newArraySize: number, newHashSize: number): void {
+		const oldArray = this.array;
+		const oldHash = this.hash;
+
+		this.array = new Array<Value>(newArraySize);
+		this.array.fill(null);
+		this.arrayLength = 0;
+		this.hash = new Array<HashNode>(newHashSize);
+		for (let i = 0; i < newHashSize; i += 1) {
+			this.hash[i] = { key: null, value: null, next: -1 };
+		}
+		this.hashFree = newHashSize > 0 ? newHashSize - 1 : -1;
+
+		for (let i = 0; i < oldArray.length; i += 1) {
+			if (oldArray[i] !== null) {
+				this.rawSet(i + 1, oldArray[i]);
+			}
+		}
+		for (let i = 0; i < oldHash.length; i += 1) {
+			const node = oldHash[i];
+			if (node.key !== null) {
+				this.rawSet(node.key, node.value);
+			}
+		}
+	}
+
+	private rawSet(key: Value, value: Value): void {
+		const index = this.tryGetArrayIndex(key);
+		if (index !== null && index < this.array.length) {
+			this.array[index] = value;
+			if (value === null) {
+				if (index < this.arrayLength) {
+					this.arrayLength = index;
+				}
+			} else if (index === this.arrayLength) {
+				this.updateArrayLengthFrom(this.arrayLength);
+			}
 			return;
 		}
-		this.stringMap.set(key, value);
+		this.insertHash(key, value);
+		if (index !== null && index === this.arrayLength) {
+			this.updateArrayLengthFrom(this.arrayLength);
+		}
+	}
+
+	private insertHash(key: Value, value: Value): void {
+		if (this.hash.length === 0) {
+			this.rehash(key);
+			this.rawSet(key, value);
+			return;
+		}
+		const mask = this.hash.length - 1;
+		const mainIndex = (this.hashValue(key) & mask) >>> 0;
+		const mainNode = this.hash[mainIndex];
+		if (mainNode.key === null) {
+			mainNode.key = key;
+			mainNode.value = value;
+			mainNode.next = -1;
+			return;
+		}
+		const freeIndex = this.getFreeIndex();
+		if (freeIndex < 0) {
+			this.rehash(key);
+			this.rawSet(key, value);
+			return;
+		}
+		const freeNode = this.hash[freeIndex];
+		const mainIndexOfOccupied = (this.hashValue(mainNode.key) & mask) >>> 0;
+		if (mainIndexOfOccupied !== mainIndex) {
+			freeNode.key = mainNode.key;
+			freeNode.value = mainNode.value;
+			freeNode.next = mainNode.next;
+			let prev = mainIndexOfOccupied;
+			while (this.hash[prev].next !== mainIndex) {
+				prev = this.hash[prev].next;
+			}
+			this.hash[prev].next = freeIndex;
+			mainNode.key = key;
+			mainNode.value = value;
+			mainNode.next = -1;
+			return;
+		}
+		freeNode.key = key;
+		freeNode.value = value;
+		freeNode.next = mainNode.next;
+		mainNode.next = freeIndex;
+	}
+
+	private removeFromHash(key: Value): void {
+		if (this.hash.length === 0) {
+			return;
+		}
+		const mask = this.hash.length - 1;
+		const mainIndex = (this.hashValue(key) & mask) >>> 0;
+		let prev = -1;
+		let index = mainIndex;
+		while (index >= 0) {
+			const node = this.hash[index];
+			if (node.key !== null && this.keyEquals(node.key, key)) {
+				const next = node.next;
+				if (prev >= 0) {
+					this.hash[prev].next = next;
+					node.key = null;
+					node.value = null;
+					node.next = -1;
+					if (index > this.hashFree) {
+						this.hashFree = index;
+					}
+					return;
+				}
+				if (next >= 0) {
+					const nextNode = this.hash[next];
+					node.key = nextNode.key;
+					node.value = nextNode.value;
+					node.next = nextNode.next;
+					nextNode.key = null;
+					nextNode.value = null;
+					nextNode.next = -1;
+					if (next > this.hashFree) {
+						this.hashFree = next;
+					}
+					return;
+				}
+				node.key = null;
+				node.value = null;
+				node.next = -1;
+				if (index > this.hashFree) {
+					this.hashFree = index;
+				}
+				return;
+			}
+			prev = index;
+			index = node.next;
+		}
+	}
+
+	private tryGetArrayIndex(key: Value): number | null {
+		if (typeof key !== 'number') {
+			return null;
+		}
+		if (!Number.isFinite(key)) {
+			return null;
+		}
+		if (key < 1) {
+			return null;
+		}
+		if (!Number.isInteger(key)) {
+			return null;
+		}
+		return key - 1;
+	}
+
+	private hasArrayIndex(index: number): boolean {
+		if (index < this.array.length) {
+			const value = this.array[index];
+			return value !== null && value !== undefined;
+		}
+		const key = index + 1;
+		return this.findNodeIndex(key) >= 0;
+	}
+
+	private updateArrayLengthFrom(startIndex: number): void {
+		let newLength = startIndex;
+		while (this.hasArrayIndex(newLength)) {
+			newLength += 1;
+		}
+		this.arrayLength = newLength;
 	}
 }
 
@@ -1010,10 +1331,10 @@ export class VMCPU {
 				return;
 			case OpCode.LEN: {
 				const value = frame.registers.get(b);
-				if (isStringValue(value)) {
-					this.setRegisterNumber(frame, a, utf8CodepointCount(stringValueToString(value)));
-					return;
-				}
+			if (isStringValue(value)) {
+				this.setRegisterNumber(frame, a, this.stringPool.codepointCount(value));
+				return;
+			}
 				if (value instanceof Table) {
 					this.setRegisterNumber(frame, a, value.length());
 					return;
@@ -1400,10 +1721,33 @@ export class VMCPU {
 	}
 
 	private valueToString(value: Value): string {
+		if (value === null) {
+			return 'nil';
+		}
+		if (typeof value === 'boolean') {
+			return value ? 'true' : 'false';
+		}
+		if (typeof value === 'number') {
+			if (!Number.isFinite(value)) {
+				return Number.isNaN(value) ? 'nan' : (value < 0 ? '-inf' : 'inf');
+			}
+			// Parity with C++ VM string output (Lua tostring semantics).
+			// Slower than V8's native formatting; avoid tight-loop conversions.
+			return formatNumber(value);
+		}
 		if (isStringValue(value)) {
 			return stringValueToString(value);
 		}
-		return String(value);
+		if (value instanceof Table) {
+			return 'table';
+		}
+		if (isNativeFunction(value)) {
+			return 'function';
+		}
+		if (isNativeObject(value)) {
+			return 'native';
+		}
+		return 'function';
 	}
 
 }

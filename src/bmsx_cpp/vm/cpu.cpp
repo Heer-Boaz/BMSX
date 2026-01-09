@@ -101,6 +101,25 @@ bool Table::tryGetArrayIndex(const Value& key, int& outIndex) const {
 	return true;
 }
 
+bool Table::hasArrayIndex(size_t index) const {
+	if (index < m_array.size()) {
+		return !isNil(m_array[index]);
+	}
+	if (m_hash.empty()) {
+		return false;
+	}
+	Value key = valueNumber(static_cast<double>(index + 1));
+	return findNodeIndex(key) >= 0;
+}
+
+void Table::updateArrayLengthFrom(size_t startIndex) {
+	size_t newLength = startIndex;
+	while (hasArrayIndex(newLength)) {
+		++newLength;
+	}
+	m_arrayLength = newLength;
+}
+
 size_t Table::hashValue(const Value& key) const {
 	return ValueHash{}(key);
 }
@@ -230,7 +249,8 @@ void Table::resize(size_t newArraySize, size_t newHashSize) {
 
 void Table::rawSet(const Value& key, const Value& value) {
 	int index = 0;
-	if (tryGetArrayIndex(key, index)) {
+	bool isArrayKey = tryGetArrayIndex(key, index);
+	if (isArrayKey) {
 		size_t idx = static_cast<size_t>(index);
 		if (idx < m_array.size()) {
 			m_array[idx] = value;
@@ -249,6 +269,9 @@ void Table::rawSet(const Value& key, const Value& value) {
 		}
 	}
 	insertHash(key, value);
+	if (isArrayKey && static_cast<size_t>(index) == m_arrayLength) {
+		updateArrayLengthFrom(m_arrayLength);
+	}
 }
 
 void Table::insertHash(const Value& key, const Value& value) {
@@ -361,7 +384,8 @@ void Table::set(const Value& key, const Value& value) {
 		throw BMSX_RUNTIME_ERROR("Table index is nil.");
 	}
 	int index = 0;
-	if (tryGetArrayIndex(key, index)) {
+	bool isArrayKey = tryGetArrayIndex(key, index);
+	if (isArrayKey) {
 		const size_t idx = static_cast<size_t>(index);
 		if (isNil(value)) {
 			if (idx < m_array.size()) {
@@ -386,6 +410,9 @@ void Table::set(const Value& key, const Value& value) {
 
 	if (isNil(value)) {
 		removeFromHash(key);
+		if (isArrayKey && static_cast<size_t>(index) < m_arrayLength) {
+			m_arrayLength = static_cast<size_t>(index);
+		}
 		return;
 	}
 	int nodeIndex = findNodeIndex(key);
