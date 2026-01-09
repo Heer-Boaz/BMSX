@@ -174,7 +174,8 @@ function draw()
 		write('STATUS     : ' .. status, left, y, 0, color_text)
 		y = y + line_height
 		local bar = build_progress_bar(elapsed / boot_delay, 20)
-		write('BOOTING IN : ' .. bar .. ' ' .. cursor, left, y, 0, color_text)
+		write('BOAZ IS STOER : ' .. bar .. ' ' .. cursor, left, y, 0, color_text)
+		-- write('BOOTING IN : ' .. bar .. ' ' .. cursor, left, y, 0, color_text)
 	else
 		write('STATUS     : NO CART DETECTED' .. ' ' .. cursor, left, y, 0, color_warn)
 	end
