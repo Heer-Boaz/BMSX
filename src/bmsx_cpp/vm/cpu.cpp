@@ -398,15 +398,18 @@ void VMCPU::setProgram(Program* program, ProgramMetadata* metadata) {
 		m_decoded.clear();
 		return;
 	}
-	const StringPool& programPool = m_program->stringPool;
-	auto& constPool = m_program->constPool;
-	for (size_t index = 0; index < constPool.size(); ++index) {
-		Value value = constPool[index];
-		if (valueIsString(value)) {
-			StringId oldId = asStringId(value);
-			StringId newId = m_stringPool.intern(programPool.toString(oldId));
-			constPool[index] = valueString(newId);
+	if (!m_program->constPoolCanonicalized) {
+		const StringPool& programPool = m_program->stringPool;
+		auto& constPool = m_program->constPool;
+		for (size_t index = 0; index < constPool.size(); ++index) {
+			Value value = constPool[index];
+			if (valueIsString(value)) {
+				StringId oldId = asStringId(value);
+				StringId newId = m_stringPool.intern(programPool.toString(oldId));
+				constPool[index] = valueString(newId);
+			}
 		}
+		m_program->constPoolCanonicalized = true;
 	}
 	m_indexKey = valueString(m_stringPool.intern("__index"));
 	decodeProgram();

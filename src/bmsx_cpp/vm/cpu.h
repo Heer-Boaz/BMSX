@@ -404,6 +404,7 @@ struct Program {
 	std::vector<Value> constPool;
 	StringPool stringPool;
 	std::vector<Proto> protos;
+	bool constPoolCanonicalized = false;
 };
 
 struct ProgramMetadata {
