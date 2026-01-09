@@ -762,6 +762,32 @@ void LibretroInputHub::poll() {
 		}
 		new_state.buttons[player] = buttons;
 
+		if (player == 0 && m_platform && m_platform->engine()) {
+			const bool start_pressed = (new_state.buttons[player] & (1 << RETRO_DEVICE_ID_JOYPAD_START)) != 0;
+			if (start_pressed && !m_pause_hotkey_down) {
+				auto* engine = m_platform->engine();
+				if (engine->isPaused()) {
+					engine->resume();
+					if (auto* sound = engine->soundMaster()) {
+						sound->resume();
+					}
+				} else if (engine->isRunning()) {
+					engine->pause();
+					if (auto* sound = engine->soundMaster()) {
+						sound->pauseAll();
+					}
+				}
+				m_event_queue.clear();
+				m_pause_hotkey_down = true;
+			} else if (!start_pressed && m_pause_hotkey_down) {
+				m_pause_hotkey_down = false;
+			}
+
+			if (m_pause_hotkey_down) {
+				new_state.buttons[player] &= ~(1 << RETRO_DEVICE_ID_JOYPAD_START);
+			}
+		}
+
 		// Poll analog sticks
 		new_state.analog[player * 4 + 0] = m_input_state_cb(player, RETRO_DEVICE_ANALOG,
 			RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X);
