@@ -80,8 +80,8 @@ state.__index = state
 state.trace_map = {}
 state.path_config = { cache_size = 256 }
 state.diagnostics = {
-	trace_transitions = true,
-	trace_dispatch = true,
+	trace_transitions = false,
+	trace_dispatch = false,
 	mirror_to_vm = false,
 	max_entries_per_machine = 512,
 }
@@ -488,12 +488,12 @@ end
 
 function state:with_critical_section(fn)
 	self:enter_critical_section()
-	local results = table.pack(pcall(fn))
+	local ok, r1, r2, r3, r4, r5, r6, r7, r8 = pcall(fn)
 	self:leave_critical_section()
-	if not results[1] then
-		error(results[2])
+	if not ok then
+		error(r1)
 	end
-	return table.unpack(results, 2, results.n)
+	return r1, r2, r3, r4, r5, r6, r7, r8
 end
 
 	function state:process_transition_queue()
@@ -501,7 +501,7 @@ end
 			return
 		end
 		self.is_processing_queue = true
-		local results = table.pack(pcall(function()
+		local ok, err = pcall(function()
 			local i = 1
 			while i <= #self.transition_queue do
 				local t = self.transition_queue[i]
@@ -520,10 +520,10 @@ end
 				i = i + 1
 			end
 			self.transition_queue = {}
-		end))
+		end)
 		self.is_processing_queue = false
-		if not results[1] then
-			error(results[2])
+		if not ok then
+			error(err)
 		end
 	end
 
@@ -538,15 +538,15 @@ function state:run_with_transition_context(factory, fn)
 		self._transition_context_stack = stack
 	end
 	stack[#stack + 1] = ctx
-	local results = table.pack(pcall(fn, ctx))
+	local ok, r1, r2, r3, r4, r5, r6, r7, r8 = pcall(fn, ctx)
 	stack[#stack] = nil
 	if #stack == 0 then
 		self._transition_context_stack = nil
 	end
-	if not results[1] then
-		error(results[2])
+	if not ok then
+		error(r1)
 	end
-	return table.unpack(results, 2, results.n)
+	return r1, r2, r3, r4, r5, r6, r7, r8
 end
 
 function state:peek_transition_context()
@@ -1410,10 +1410,12 @@ function state:handle_event(event_name, emitter_id, detail, event)
 				if not spec then
 					return false
 				end
-				if type(spec) == "string" then
-					ctx.handler_name = self:describe_string_handler(spec)
-				else
-					ctx.handler_name = self:describe_action_handler(spec)
+				if ctx then
+					if type(spec) == "string" then
+						ctx.handler_name = self:describe_string_handler(spec)
+					else
+						ctx.handler_name = self:describe_action_handler(spec)
+					end
 				end
 				return self:handle_state_transition(spec, event)
 			end
@@ -1435,8 +1437,14 @@ function state:dispatch_event(event_or_name, payload)
 		event_name = event_or_name.type
 		data = event_or_name
 	end
-	local emitter_id = resolve_emitter_id(data, self.target_id)
-	local detail = resolve_event_payload(data)
+	local trace_dispatch = should_trace_dispatch()
+	local trace_transitions = should_trace_transitions()
+	local emitter_id = nil
+	local detail = nil
+	if trace_dispatch or trace_transitions then
+		emitter_id = resolve_emitter_id(data, self.target_id)
+		detail = resolve_event_payload(data)
+	end
 
 	if self.states and next(self.states) ~= nil and self.current_id then
 		local child = self.states[self.current_id]
