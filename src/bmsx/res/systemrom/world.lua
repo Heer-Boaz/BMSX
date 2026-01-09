@@ -130,6 +130,61 @@ local function emit_perf_log(p)
 	reset_perf_accumulators(p)
 end
 
+local function iter_objects(state, _)
+	local list = state.list
+	local scope = state.scope
+	local index = state.index + state.step
+	while true do
+		local obj = list[index]
+		if not obj then
+			return nil
+		end
+		if scope == "active" then
+			if obj.active then
+				state.index = index
+				return obj
+			end
+		else
+			state.index = index
+			return obj
+		end
+		index = index + state.step
+	end
+end
+
+local function iter_objects_with_components(state, _)
+	local objects = state.list
+	while true do
+		local comp_list = state.comp_list
+		if comp_list then
+			local comp_index = state.comp_index + 1
+			local comp = comp_list[comp_index]
+			if comp then
+				state.comp_index = comp_index
+				return state.current_obj, comp
+			end
+			state.comp_list = nil
+			state.current_obj = nil
+			state.comp_index = 0
+		end
+
+		local obj_index = state.obj_index + 1
+		local obj = objects[obj_index]
+		if not obj then
+			return nil
+		end
+		state.obj_index = obj_index
+		if state.scope ~= "active" or obj.active then
+			local list = obj:get_components(state.type_name)
+			if #list > 0 then
+				state.current_obj = obj
+				state.comp_list = list
+				state.comp_index = 0
+			end
+		end
+	end
+end
+
 function world.new()
 	local self = setmetatable({}, world)
 	self._objects = {}
@@ -182,62 +237,16 @@ end
 function world:objects(opts)
 	local scope = opts and opts.scope or "all"
 	local reverse = opts and opts.reverse or false
-	local index = reverse and (#self._objects + 1) or 0
-	return function()
-		while true do
-			index = index + (reverse and -1 or 1)
-			local obj = self._objects[index]
-			if not obj then
-				return nil
-			end
-			if scope == "active" then
-				if obj.active then
-					return obj
-				end
-			else
-				return obj
-			end
-		end
-	end
+	local step = reverse and -1 or 1
+	local start = reverse and (#self._objects + 1) or 0
+	return iter_objects, { list = self._objects, scope = scope, step = step, index = start }, nil
 end
 
 function world:objects_with_components(type_name, opts)
 	local scope = opts and opts.scope or "all"
-	local obj_index = 0
-	local comp_index = 0
-	local comp_list = nil
-	local current_obj = nil
-
-	return function()
-		while true do
-			if not comp_list or comp_index >= #comp_list then
-				comp_list = nil
-				comp_index = 0
-				obj_index = obj_index + 1
-				current_obj = self._objects[obj_index]
-				if not current_obj then
-					return nil
-				end
-				if scope == "active" and not current_obj.active then
-					current_obj = nil
-				else
-					comp_list = current_obj:get_components(type_name)
-					if #comp_list == 0 then
-						comp_list = nil
-						current_obj = nil
-					end
-				end
-			else
-				comp_index = comp_index + 1
-				local comp = comp_list[comp_index]
-				if comp then
-					return current_obj, comp
-				end
-				comp_list = nil
-				current_obj = nil
-			end
-		end
-	end
+	return iter_objects_with_components,
+		{ list = self._objects, type_name = type_name, scope = scope, obj_index = 0, comp_index = 0, comp_list = nil, current_obj = nil },
+		nil
 end
 
 function world:update(dt)
