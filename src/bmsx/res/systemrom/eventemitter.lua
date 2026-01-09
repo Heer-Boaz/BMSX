@@ -8,6 +8,9 @@ local eventport = {}
 eventport.__index = eventport
 
 local port_cache = setmetatable({}, { __mode = "k" })
+local payload_event_marker = setmetatable({}, { __mode = "k" })
+local payload_emitter_owned = setmetatable({}, { __mode = "k" })
+local payload_timestamp_owned = setmetatable({}, { __mode = "k" })
 
 local function create_gameevent(spec)
 	local event = {
@@ -91,17 +94,26 @@ function eventemitter:emit(arg0, emitter, payload)
 	if type(arg0) == "table" then
 		event = arg0
 	else
-		local spec = { type = arg0, emitter = emitter }
-		if payload ~= nil then
-			if type(payload) == "table" and payload.type == nil then
-				for k, v in pairs(payload) do
-					spec[k] = v
-				end
-			else
-				spec.payload = payload
+		if payload ~= nil and type(payload) == "table" and (payload.type == nil or payload_event_marker[payload]) then
+			event = payload
+			payload_event_marker[payload] = true
+			event.type = arg0
+			if payload_emitter_owned[payload] or event.emitter == nil then
+				event.emitter = emitter
+				payload_emitter_owned[payload] = true
 			end
+			if payload_timestamp_owned[payload] or event.timestamp == nil then
+				event.timestamp = event.timestamp or (os.clock() * 1000)
+				payload_timestamp_owned[payload] = true
+			end
+		else
+			event = {
+				type = arg0,
+				emitter = emitter,
+				timestamp = os.clock() * 1000,
+				payload = payload,
+			}
 		end
-		event = create_gameevent(spec)
 	end
 
 	local list = self.listeners[event.type]
