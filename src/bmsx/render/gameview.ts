@@ -163,13 +163,13 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	private _activeTexture2D: TextureHandle = null;
 	private _activeCubemap: TextureHandle = null;
 	// CRT/post flags (used by passes)
-	public enable_noise = false;
-	public enable_colorbleed = false;
-	public enable_scanlines = false;
-	public enable_blur = false;
-	public enable_glow = false;
-	public enable_fringing = false;
-	public enable_aperture = false;
+	public enable_noise = true;
+	public enable_colorbleed = true;
+	public enable_scanlines = true;
+	public enable_blur = true;
+	public enable_glow = true;
+	public enable_fringing = true;
+	public enable_aperture = true;
 	public enable_rgb565dither = true;
 	public noiseIntensity = 0.4;
 	public colorBleed: [number, number, number] = [0.02, 0.0, 0.0];
