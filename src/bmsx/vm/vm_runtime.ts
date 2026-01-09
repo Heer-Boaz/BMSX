@@ -30,6 +30,7 @@ import { clamp01, clamp_fallback } from '../utils/clamp';
 import { BmsxVMApi } from './vm_api';
 import { VMCPU, Table, OpCode, type Closure, type Value, type Program, type ProgramMetadata, RunResult, createNativeFunction, createNativeObject, isNativeFunction, isNativeObject, type NativeFunction, type NativeObject } from './cpu';
 import { StringValue, isStringValue, stringValueToString } from './string_pool';
+import { formatNumber } from './number_format';
 import { TerminalMode } from './terminal_mode';
 import { VMRenderFacade } from './vm_render_facade';
 import { VMFont, type VMFontVariant } from './font';
@@ -413,6 +414,7 @@ export class BmsxVMRuntime {
 	public readonly luaChunkEnvironmentsByPath: Map<string, LuaEnvironment> = new Map();
 	public readonly pathFunctionDefinitionKeys: Map<string, Set<string>> = new Map();
 	private readonly luaGenericChunksExecuted: Set<string> = new Set();
+	private readonly luaPatternRegexCache: Map<string, RegExp> = new Map();
 	public readonly luaFunctionRedirectCache = new LuaFunctionRedirectCache();
 	// Wrap Lua closures with stable JS stubs so FSM/input/events can hold onto durable references even across hot-reload.
 	private readonly luaHandlerCache = new LuaHandlerCache(
@@ -2246,8 +2248,8 @@ export class BmsxVMRuntime {
 
 		const stringTable = new Table(0, 0);
 		setKey(stringTable, 'len', createNativeFunction('string.len', (args, out) => {
-			const text = this.requireVmString(args[0]);
-			out.push(utf8CodepointCount(text));
+			const value = args[0] as StringValue;
+			out.push(this.cpu.getStringPool().codepointCount(value));
 		}));
 		setKey(stringTable, 'upper', createNativeFunction('string.upper', (args, out) => {
 			const text = this.requireVmString(args[0]);
@@ -2282,8 +2284,9 @@ export class BmsxVMRuntime {
 			out.push(this.internVmString(output));
 		}));
 		setKey(stringTable, 'sub', createNativeFunction('string.sub', (args, out) => {
-			const text = this.requireVmString(args[0]);
-			const length = utf8CodepointCount(text);
+			const value = args[0] as StringValue;
+			const text = stringValueToString(value);
+			const length = this.cpu.getStringPool().codepointCount(value);
 			const normalizeIndex = (value: number): number => {
 				const integer = Math.floor(value);
 				if (integer > 0) {
@@ -2313,9 +2316,10 @@ export class BmsxVMRuntime {
 			out.push(this.internVmString(text.slice(startUnit, endUnit)));
 		}));
 		setKey(stringTable, 'find', createNativeFunction('string.find', (args, out) => {
-			const source = this.requireVmString(args[0]);
-			const pattern = args.length > 1 ? this.requireVmString(args[1]) : '';
-			const length = utf8CodepointCount(source);
+			const sourceValue = args[0] as StringValue;
+			const source = stringValueToString(sourceValue);
+			const pattern = args.length > 1 ? stringValueToString(args[1] as StringValue) : '';
+			const length = this.cpu.getStringPool().codepointCount(sourceValue);
 			const normalizeIndex = (value: number): number => {
 				const integer = Math.floor(value);
 				if (integer > 0) {
@@ -2344,8 +2348,7 @@ export class BmsxVMRuntime {
 				out.push(first, last);
 				return;
 			}
-			const regexBase = this.buildLuaPatternRegex(pattern);
-			const regex = new RegExp(regexBase.source);
+			const regex = this.getLuaPatternRegex(pattern);
 			const slice = source.slice(Math.max(0, startUnit));
 			const match = regex.exec(slice);
 			if (!match) {
@@ -2367,9 +2370,10 @@ export class BmsxVMRuntime {
 			out.push(first, last);
 		}));
 		setKey(stringTable, 'match', createNativeFunction('string.match', (args, out) => {
-			const source = this.requireVmString(args[0]);
-			const pattern = args.length > 1 ? this.requireVmString(args[1]) : '';
-			const length = utf8CodepointCount(source);
+			const sourceValue = args[0] as StringValue;
+			const source = stringValueToString(sourceValue);
+			const pattern = args.length > 1 ? stringValueToString(args[1] as StringValue) : '';
+			const length = this.cpu.getStringPool().codepointCount(sourceValue);
 			const normalizeIndex = (value: number): number => {
 				const integer = Math.floor(value);
 				if (integer > 0) {
@@ -2385,8 +2389,7 @@ export class BmsxVMRuntime {
 				out.push(null);
 				return;
 			}
-			const regexBase = this.buildLuaPatternRegex(pattern);
-			const regex = new RegExp(regexBase.source);
+			const regex = this.getLuaPatternRegex(pattern);
 			const startUnit = utf8CodepointIndexToUnitIndex(source, startIndex);
 			const slice = source.slice(Math.max(0, startUnit));
 			const match = regex.exec(slice);
@@ -2411,11 +2414,11 @@ export class BmsxVMRuntime {
 				? Math.max(0, Math.floor(args[3] as number))
 				: Number.POSITIVE_INFINITY;
 
-			const regex = this.buildLuaPatternRegex(pattern);
-			regex.lastIndex = 0;
+			const regex = this.getLuaPatternRegex(pattern);
 
 			let count = 0;
 			let result = '';
+			let searchIndex = 0;
 			let lastIndex = 0;
 			const fnArgs: Value[] = [];
 			const fnResults: Value[] = [];
@@ -2439,8 +2442,11 @@ export class BmsxVMRuntime {
 					});
 				}
 				if (replacement instanceof Table) {
+					if (match.length > 1 && match[1] === undefined) {
+						return match[0];
+					}
 					const keyValue = match.length > 1
-						? (match[1] === undefined ? null : this.internVmString(match[1]))
+						? this.internVmString(match[1])
 						: this.internVmString(match[0]);
 					const mapped = replacement.get(keyValue);
 					return mapped === null ? match[0] : this.vmToString(mapped);
@@ -2469,21 +2475,23 @@ export class BmsxVMRuntime {
 			};
 
 			while (count < maxReplacements) {
-				const match = regex.exec(source);
+				if (searchIndex > source.length) {
+					break;
+				}
+				const match = regex.exec(source.slice(searchIndex));
 				if (!match) {
 					break;
 				}
-				const start = match.index;
+				const start = searchIndex + match.index;
 				const end = start + match[0].length;
 				result += source.slice(lastIndex, start);
 				result += renderReplacement(match);
 				lastIndex = end;
 				count += 1;
 				if (match[0].length === 0) {
-					regex.lastIndex += 1;
-					if (regex.lastIndex > source.length) {
-						break;
-					}
+					searchIndex = end + 1;
+				} else {
+					searchIndex = end;
 				}
 			}
 
@@ -2493,15 +2501,24 @@ export class BmsxVMRuntime {
 		setKey(stringTable, 'gmatch', createNativeFunction('string.gmatch', (args, out) => {
 			const source = this.requireVmString(args[0]);
 			const pattern = args.length > 1 ? this.requireVmString(args[1]) : '';
-			const regex = this.buildLuaPatternRegex(pattern);
+			const regex = this.getLuaPatternRegex(pattern);
+			const state = { index: 0 };
 			const iterator = createNativeFunction('string.gmatch.iterator', (_args, iterOut) => {
-				const match = regex.exec(source);
+				if (state.index > source.length) {
+					iterOut.push(null);
+					return;
+				}
+				const match = regex.exec(source.slice(state.index));
 				if (!match) {
 					iterOut.push(null);
 					return;
 				}
+				const matchStart = state.index + match.index;
+				const matchEnd = matchStart + match[0].length;
 				if (match[0].length === 0) {
-					regex.lastIndex += 1;
+					state.index = matchEnd + 1;
+				} else {
+					state.index = matchEnd;
 				}
 				if (match.length > 1) {
 					for (let index = 1; index < match.length; index += 1) {
@@ -2960,7 +2977,18 @@ export class BmsxVMRuntime {
 		return this.vmRandomSeedValue / 4294967296;
 	}
 
-	private buildLuaPatternRegex(pattern: string): RegExp {
+	private getLuaPatternRegex(pattern: string): RegExp {
+		const cached = this.luaPatternRegexCache.get(pattern);
+		if (cached) {
+			return cached;
+		}
+		const source = this.buildLuaPatternRegexSource(pattern);
+		const regex = new RegExp(source);
+		this.luaPatternRegexCache.set(pattern, regex);
+		return regex;
+	}
+
+	private buildLuaPatternRegexSource(pattern: string): string {
 		let output = '';
 		let inClass = false;
 		for (let index = 0; index < pattern.length; index += 1) {
@@ -3024,7 +3052,7 @@ export class BmsxVMRuntime {
 		if (inClass) {
 			throw this.createApiRuntimeError('string.gmatch invalid pattern.');
 		}
-		return new RegExp(output, 'g');
+		return output;
 	}
 
 	private translateLuaPatternEscape(token: string, inClass: boolean): string {
@@ -3146,7 +3174,12 @@ export class BmsxVMRuntime {
 			return value ? 'true' : 'false';
 		}
 		if (typeof value === 'number') {
-			return Number.isFinite(value) ? value.toString() : 'nan';
+			if (!Number.isFinite(value)) {
+				return Number.isNaN(value) ? 'nan' : (value < 0 ? '-inf' : 'inf');
+			}
+			// Parity with C++ VM string output (Lua tostring semantics).
+			// Slower than V8's native formatting; avoid tight-loop conversions.
+			return formatNumber(value);
 		}
 		if (isStringValue(value)) {
 			return stringValueToString(value);

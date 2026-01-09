@@ -173,6 +173,42 @@ void utf8_append_codepoint(std::string& out, uint32_t codepoint) {
 	out.push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
 }
 
+std::string utf8_to_upper(const std::string& text) {
+	std::string out;
+	out.reserve(text.size());
+	size_t index = 0;
+	while (index < text.size()) {
+		uint32_t codepoint = utf8_codepoint_at(text, index);
+		if (codepoint < 0x80) {
+			char c = static_cast<char>(codepoint);
+			char mapped = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+			out.push_back(mapped);
+		} else {
+			utf8_append_codepoint(out, codepoint);
+		}
+		index = utf8_next_index(text, index);
+	}
+	return out;
+}
+
+std::string utf8_to_lower(const std::string& text) {
+	std::string out;
+	out.reserve(text.size());
+	size_t index = 0;
+	while (index < text.size()) {
+		uint32_t codepoint = utf8_codepoint_at(text, index);
+		if (codepoint < 0x80) {
+			char c = static_cast<char>(codepoint);
+			char mapped = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+			out.push_back(mapped);
+		} else {
+			utf8_append_codepoint(out, codepoint);
+		}
+		index = utf8_next_index(text, index);
+	}
+	return out;
+}
+
 Table* buildArrayTable(VMCPU& cpu, const std::array<f32, 12>& values) {
 	auto* table = cpu.createTable(static_cast<int>(values.size()), 0);
 	for (size_t index = 0; index < values.size(); ++index) {
@@ -1740,14 +1776,10 @@ stringTable->set(key("len"), m_cpu.createNativeFunction("string.len", [this](con
 	out.push_back(valueNumber(static_cast<double>(m_cpu.stringPool().codepointCount(textId))));
 }));
 stringTable->set(key("upper"), m_cpu.createNativeFunction("string.upper", [str, asText](const std::vector<Value>& args, std::vector<Value>& out) {
-	std::string text = asText(args.at(0));
-	for (auto& c : text) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-	out.push_back(str(text));
+	out.push_back(str(utf8_to_upper(asText(args.at(0)))));
 }));
 stringTable->set(key("lower"), m_cpu.createNativeFunction("string.lower", [str, asText](const std::vector<Value>& args, std::vector<Value>& out) {
-	std::string text = asText(args.at(0));
-	for (auto& c : text) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-	out.push_back(str(text));
+	out.push_back(str(utf8_to_lower(asText(args.at(0)))));
 }));
 stringTable->set(key("rep"), m_cpu.createNativeFunction("string.rep", [str, asText](const std::vector<Value>& args, std::vector<Value>& out) {
 	const std::string& text = asText(args.at(0));
@@ -1930,13 +1962,16 @@ stringTable->set(key("gsub"), m_cpu.createNativeFunction("string.gsub", [this, c
 				return output;
 		}
 		if (valueIsTable(replacement)) {
-				Value key = match.size() > 1 ? (match[1].matched ? str(match[1].str()) : valueNil()) : str(match[0].str());
-				Value mapped = asTable(replacement)->get(key);
-				if (isNil(mapped)) {
-					return match[0].str();
-				}
-				return vmToString(mapped);
+			if (match.size() > 1 && !match[1].matched) {
+				return match[0].str();
 			}
+			Value key = match.size() > 1 ? str(match[1].str()) : str(match[0].str());
+			Value mapped = asTable(replacement)->get(key);
+			if (isNil(mapped)) {
+				return match[0].str();
+			}
+			return vmToString(mapped);
+		}
 			if (valueIsNativeFunction(replacement) || valueIsClosure(replacement)) {
 				fnArgs.clear();
 				if (match.size() > 1) {
