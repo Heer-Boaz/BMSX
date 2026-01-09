@@ -246,7 +246,7 @@ private:
 	void executeDrawCallback();
 	Value requireVmModule(const std::string& moduleName);
 	std::vector<Value> callEngineModuleMember(const std::string& name, const std::vector<Value>& args);
-	std::regex buildLuaPatternRegex(const std::string& pattern) const;
+	const std::regex& buildLuaPatternRegex(const std::string& pattern);
 	std::string translateLuaPatternEscape(char token, bool inClass) const;
 	std::string vmToString(const Value& value) const;
 	double nextVmRandom();
@@ -298,6 +298,7 @@ private:
 	std::unordered_map<std::string, int> m_vmModuleProtos;
 	std::unordered_map<std::string, std::string> m_vmModuleAliases;
 	std::unordered_map<std::string, Value> m_vmModuleCache;
+	std::unordered_map<std::string, std::unique_ptr<std::regex>> m_luaPatternRegexCache;
 };
 
 } // namespace bmsx

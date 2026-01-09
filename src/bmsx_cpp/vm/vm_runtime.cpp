@@ -102,16 +102,6 @@ size_t utf8_next_index(const std::string& text, size_t index) {
 	return index + 4;
 }
 
-int utf8_codepoint_count(const std::string& text) {
-	int count = 0;
-	size_t index = 0;
-	while (index < text.size()) {
-		index = utf8_next_index(text, index);
-		count += 1;
-	}
-	return count;
-}
-
 size_t utf8_byte_index_from_codepoint(const std::string& text, int codepointIndex) {
 	if (codepointIndex <= 1) {
 		return 0;
@@ -1080,8 +1070,14 @@ Value VMRuntime::canonicalizeIdentifier(std::string_view value) {
 	return valueString(m_cpu.internString(result));
 }
 
-std::regex VMRuntime::buildLuaPatternRegex(const std::string& pattern) const {
+const std::regex& VMRuntime::buildLuaPatternRegex(const std::string& pattern) {
+	auto it = m_luaPatternRegexCache.find(pattern);
+	if (it != m_luaPatternRegexCache.end()) {
+		return *it->second;
+	}
+
 	std::string output;
+	output.reserve(pattern.size() * 2);
 	bool inClass = false;
 	for (size_t index = 0; index < pattern.size(); ++index) {
 		char ch = pattern[index];
@@ -1146,7 +1142,12 @@ std::regex VMRuntime::buildLuaPatternRegex(const std::string& pattern) const {
 	if (inClass) {
 		throw BMSX_RUNTIME_ERROR("string.gmatch invalid pattern.");
 	}
-	return std::regex(output);
+	auto compiled = std::make_unique<std::regex>(
+		output,
+		std::regex_constants::ECMAScript | std::regex_constants::optimize
+	);
+	auto insertIt = m_luaPatternRegexCache.emplace(pattern, std::move(compiled)).first;
+	return *insertIt->second;
 }
 
 std::string VMRuntime::translateLuaPatternEscape(char token, bool inClass) const {
@@ -1734,9 +1735,9 @@ registerNativeFunction("error", [this](const std::vector<Value>& args, std::vect
 	});
 
 auto* stringTable = m_cpu.createTable();
-stringTable->set(key("len"), m_cpu.createNativeFunction("string.len", [asText](const std::vector<Value>& args, std::vector<Value>& out) {
-	const std::string& text = asText(args.at(0));
-	out.push_back(valueNumber(static_cast<double>(utf8_codepoint_count(text))));
+stringTable->set(key("len"), m_cpu.createNativeFunction("string.len", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+	StringId textId = asStringId(args.at(0));
+	out.push_back(valueNumber(static_cast<double>(m_cpu.stringPool().codepointCount(textId))));
 }));
 stringTable->set(key("upper"), m_cpu.createNativeFunction("string.upper", [str, asText](const std::vector<Value>& args, std::vector<Value>& out) {
 	std::string text = asText(args.at(0));
@@ -1773,9 +1774,10 @@ stringTable->set(key("rep"), m_cpu.createNativeFunction("string.rep", [str, asTe
 	}
 	out.push_back(str(result));
 }));
-stringTable->set(key("sub"), m_cpu.createNativeFunction("string.sub", [str, asText](const std::vector<Value>& args, std::vector<Value>& out) {
-	const std::string& text = asText(args.at(0));
-	int length = utf8_codepoint_count(text);
+stringTable->set(key("sub"), m_cpu.createNativeFunction("string.sub", [this, str](const std::vector<Value>& args, std::vector<Value>& out) {
+	StringId textId = asStringId(args.at(0));
+	const std::string& text = m_cpu.stringPool().toString(textId);
+	int length = m_cpu.stringPool().codepointCount(textId);
 		auto normalizeIndex = [length](double value) -> int {
 			int integer = static_cast<int>(std::floor(value));
 			if (integer > 0) return integer;
@@ -1795,9 +1797,10 @@ stringTable->set(key("sub"), m_cpu.createNativeFunction("string.sub", [str, asTe
 	out.push_back(str(text.substr(startByte, endByte - startByte)));
 }));
 stringTable->set(key("find"), m_cpu.createNativeFunction("string.find", [this, str, asText](const std::vector<Value>& args, std::vector<Value>& out) {
-	const std::string& source = asText(args.at(0));
+	StringId sourceId = asStringId(args.at(0));
+	const std::string& source = m_cpu.stringPool().toString(sourceId);
 	const std::string& pattern = args.size() > 1 ? asText(args.at(1)) : std::string("");
-	int length = utf8_codepoint_count(source);
+	int length = m_cpu.stringPool().codepointCount(sourceId);
 		auto normalizeIndex = [length](double value) -> int {
 			int integer = static_cast<int>(std::floor(value));
 			if (integer > 0) return integer;
@@ -1823,10 +1826,10 @@ stringTable->set(key("find"), m_cpu.createNativeFunction("string.find", [this, s
 		out.push_back(valueNumber(static_cast<double>(last)));
 		return;
 	}
-		std::regex regex = buildLuaPatternRegex(pattern);
-		const std::string slice = source.substr(startByte);
+		const std::regex& regex = buildLuaPatternRegex(pattern);
 		std::smatch match;
-		if (!std::regex_search(slice, match, regex)) {
+		auto begin = source.cbegin() + static_cast<std::string::difference_type>(startByte);
+		if (!std::regex_search(begin, source.cend(), match, regex)) {
 			out.push_back(valueNil());
 			return;
 		}
@@ -1850,9 +1853,10 @@ stringTable->set(key("find"), m_cpu.createNativeFunction("string.find", [this, s
 	out.push_back(valueNumber(static_cast<double>(last)));
 }));
 stringTable->set(key("match"), m_cpu.createNativeFunction("string.match", [this, str, asText](const std::vector<Value>& args, std::vector<Value>& out) {
-	const std::string& source = asText(args.at(0));
+	StringId sourceId = asStringId(args.at(0));
+	const std::string& source = m_cpu.stringPool().toString(sourceId);
 	const std::string& pattern = args.size() > 1 ? asText(args.at(1)) : std::string("");
-	int length = utf8_codepoint_count(source);
+	int length = m_cpu.stringPool().codepointCount(sourceId);
 	auto normalizeIndex = [length](double value) -> int {
 			int integer = static_cast<int>(std::floor(value));
 			if (integer > 0) return integer;
@@ -1864,11 +1868,11 @@ stringTable->set(key("match"), m_cpu.createNativeFunction("string.match", [this,
 		out.push_back(valueNil());
 		return;
 	}
-	std::regex regex = buildLuaPatternRegex(pattern);
+	const std::regex& regex = buildLuaPatternRegex(pattern);
 	size_t startByte = utf8_byte_index_from_codepoint(source, startIndex);
-	const std::string slice = source.substr(startByte);
 	std::smatch match;
-	if (!std::regex_search(slice, match, regex)) {
+	auto begin = source.cbegin() + static_cast<std::string::difference_type>(startByte);
+	if (!std::regex_search(begin, source.cend(), match, regex)) {
 		out.push_back(valueNil());
 		return;
 	}
@@ -1890,7 +1894,7 @@ stringTable->set(key("gsub"), m_cpu.createNativeFunction("string.gsub", [this, c
 	const Value replacement = args.size() > 2 ? args.at(2) : str("");
 	int maxReplacements = args.size() > 3 && !isNil(args.at(3)) ? std::max(0, static_cast<int>(std::floor(asNumber(args.at(3))))) : std::numeric_limits<int>::max();
 
-	std::regex regex = buildLuaPatternRegex(pattern);
+	const std::regex& regex = buildLuaPatternRegex(pattern);
 	size_t count = 0;
 	size_t searchIndex = 0;
 	size_t lastIndex = 0;
@@ -1984,13 +1988,17 @@ stringTable->set(key("gsub"), m_cpu.createNativeFunction("string.gsub", [this, c
 }));
 stringTable->set(key("gmatch"), m_cpu.createNativeFunction("string.gmatch", [this, str, asText](const std::vector<Value>& args, std::vector<Value>& out) {
 	struct GMatchState {
-		std::regex regex;
+		const std::regex* regex = nullptr;
 		std::string source;
 		size_t index = 0;
 	};
 	const std::string& source = asText(args.at(0));
 	const std::string& pattern = args.size() > 1 ? asText(args.at(1)) : std::string("");
-	auto state = std::make_shared<GMatchState>(GMatchState{buildLuaPatternRegex(pattern), source, 0});
+	const std::regex& regex = buildLuaPatternRegex(pattern);
+	auto state = std::make_shared<GMatchState>();
+	state->regex = &regex;
+	state->source = source;
+	state->index = 0;
 	auto iterator = m_cpu.createNativeFunction("string.gmatch.iterator", [state, str](const std::vector<Value>& args, std::vector<Value>& out) {
 		(void)args;
 		if (state->index > state->source.size()) {
@@ -1999,7 +2007,7 @@ stringTable->set(key("gmatch"), m_cpu.createNativeFunction("string.gmatch", [thi
 		}
 		std::smatch match;
 		auto begin = state->source.cbegin() + static_cast<std::string::difference_type>(state->index);
-		if (!std::regex_search(begin, state->source.cend(), match, state->regex)) {
+		if (!std::regex_search(begin, state->source.cend(), match, *state->regex)) {
 			out.push_back(valueNil());
 			return;
 		}

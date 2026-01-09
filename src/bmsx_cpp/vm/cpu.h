@@ -518,11 +518,10 @@ public:
 				fn(valueNumber(static_cast<double>(i + 1)), m_array[i]);
 			}
 		}
-		for (const auto& entry : m_stringMap) {
-			fn(valueString(entry.first), entry.second);
-		}
-		for (const auto& entry : m_otherMap) {
-			fn(entry.first, entry.second);
+		for (const auto& node : m_hash) {
+			if (!isNil(node.key)) {
+				fn(node.key, node.value);
+			}
 		}
 	}
 	std::vector<std::pair<Value, Value>> entries() const;
@@ -532,12 +531,29 @@ public:
 	void setMetatable(Table* mt) { m_metatable = mt; }
 
 private:
-	bool isArrayIndex(const Value& key) const;
-	int toArrayIndex(const Value& key) const;
+	struct HashNode {
+		Value key = valueNil();
+		Value value = valueNil();
+		int next = -1;
+	};
+
+	bool tryGetArrayIndex(const Value& key, int& outIndex) const;
+	size_t hashValue(const Value& key) const;
+	bool keyEquals(const Value& a, const Value& b) const;
+	int findNodeIndex(const Value& key) const;
+	HashNode* getNode(const Value& key);
+	HashNode* getMainNode(const Value& key);
+	int getFreeIndex();
+	void rehash(const Value& key);
+	void resize(size_t newArraySize, size_t newHashSize);
+	void rawSet(const Value& key, const Value& value);
+	void insertHash(const Value& key, const Value& value);
+	void removeFromHash(const Value& key);
 
 	std::vector<Value> m_array;
-	std::unordered_map<StringId, Value> m_stringMap;
-	std::unordered_map<Value, Value, ValueHash, ValueEq> m_otherMap;
+	size_t m_arrayLength = 0;
+	std::vector<HashNode> m_hash;
+	int m_hashFree = -1;
 	Table* m_metatable = nullptr;
 };
 

@@ -18,6 +18,27 @@ static inline uint32_t readInstructionWord(const std::vector<uint8_t>& code, int
 		| static_cast<uint32_t>(code[offset + 2]);
 }
 
+static inline size_t nextPowerOfTwo(size_t value) {
+	if (value == 0) {
+		return 0;
+	}
+	size_t power = 1;
+	while (power < value) {
+		power <<= 1;
+	}
+	return power;
+}
+
+static inline size_t ceilLog2(size_t value) {
+	size_t log = 0;
+	size_t power = 1;
+	while (power < value) {
+		power <<= 1;
+		++log;
+	}
+	return log;
+}
+
 } // namespace
 
 std::string valueToString(const Value& v, const StringPool& stringPool) {
@@ -49,97 +70,334 @@ const char* valueTypeName(Value v) {
 
 Table::Table(int arraySize, int hashSize) {
 	if (arraySize > 0) {
-		m_array.resize(arraySize, valueNil());
+		m_array.resize(static_cast<size_t>(arraySize), valueNil());
 	}
-	m_stringMap.reserve(static_cast<size_t>(hashSize));
-	m_otherMap.reserve(static_cast<size_t>(hashSize));
+	if (hashSize > 0) {
+		size_t size = nextPowerOfTwo(static_cast<size_t>(hashSize));
+		m_hash.assign(size, HashNode{});
+		m_hashFree = static_cast<int>(size) - 1;
+	}
 }
 
-bool Table::isArrayIndex(const Value& key) const {
+bool Table::tryGetArrayIndex(const Value& key, int& outIndex) const {
 	if (!valueIsNumber(key)) {
 		return false;
 	}
 	double n = valueToNumber(key);
-	double intpart;
-	if (std::modf(n, &intpart) == 0.0 && n >= 1.0) {
-		return true;
+	if (!std::isfinite(n)) {
+		return false;
 	}
-	return false;
+	if (n < 1.0) {
+		return false;
+	}
+	if (n > static_cast<double>(std::numeric_limits<int>::max())) {
+		return false;
+	}
+	int index = static_cast<int>(n);
+	if (static_cast<double>(index) != n) {
+		return false;
+	}
+	outIndex = index - 1;
+	return true;
 }
 
-int Table::toArrayIndex(const Value& key) const {
-	return static_cast<int>(valueToNumber(key)) - 1;
+size_t Table::hashValue(const Value& key) const {
+	return ValueHash{}(key);
+}
+
+bool Table::keyEquals(const Value& a, const Value& b) const {
+	return ValueEq{}(a, b);
+}
+
+int Table::findNodeIndex(const Value& key) const {
+	if (m_hash.empty()) {
+		return -1;
+	}
+	size_t mask = m_hash.size() - 1;
+	int index = static_cast<int>(hashValue(key) & mask);
+	while (index >= 0) {
+		const HashNode& node = m_hash[static_cast<size_t>(index)];
+		if (!isNil(node.key) && keyEquals(node.key, key)) {
+			return index;
+		}
+		index = node.next;
+	}
+	return -1;
+}
+
+Table::HashNode* Table::getNode(const Value& key) {
+	int index = findNodeIndex(key);
+	if (index < 0) {
+		return nullptr;
+	}
+	return &m_hash[static_cast<size_t>(index)];
+}
+
+Table::HashNode* Table::getMainNode(const Value& key) {
+	if (m_hash.empty()) {
+		return nullptr;
+	}
+	size_t mask = m_hash.size() - 1;
+	size_t index = hashValue(key) & mask;
+	return &m_hash[index];
+}
+
+int Table::getFreeIndex() {
+	for (int i = m_hashFree; i >= 0; --i) {
+		if (isNil(m_hash[static_cast<size_t>(i)].key)) {
+			m_hashFree = i - 1;
+			return i;
+		}
+	}
+	m_hashFree = -1;
+	return -1;
+}
+
+void Table::rehash(const Value& key) {
+	size_t totalKeys = 0;
+	std::vector<size_t> counts;
+
+	auto countIntegerKey = [&counts](size_t index) {
+		size_t log = ceilLog2(index);
+		if (log >= counts.size()) {
+			counts.resize(log + 1, 0);
+		}
+		counts[log] += 1;
+	};
+
+	for (size_t i = 0; i < m_array.size(); ++i) {
+		if (!isNil(m_array[i])) {
+			totalKeys += 1;
+			countIntegerKey(i + 1);
+		}
+	}
+	for (const auto& node : m_hash) {
+		if (!isNil(node.key)) {
+			totalKeys += 1;
+			int index = 0;
+			if (tryGetArrayIndex(node.key, index)) {
+				countIntegerKey(static_cast<size_t>(index) + 1);
+			}
+		}
+	}
+	if (!isNil(key)) {
+		totalKeys += 1;
+		int index = 0;
+		if (tryGetArrayIndex(key, index)) {
+			countIntegerKey(static_cast<size_t>(index) + 1);
+		}
+	}
+
+	size_t arraySize = 0;
+	size_t arrayKeys = 0;
+	size_t total = 0;
+	size_t power = 1;
+	for (size_t i = 0; i < counts.size(); ++i) {
+		total += counts[i];
+		if (total > power / 2) {
+			arraySize = power;
+			arrayKeys = total;
+		}
+		power <<= 1;
+	}
+
+	size_t hashKeys = totalKeys - arrayKeys;
+	size_t hashSize = hashKeys > 0 ? nextPowerOfTwo(hashKeys) : 0;
+	resize(arraySize, hashSize);
+}
+
+void Table::resize(size_t newArraySize, size_t newHashSize) {
+	std::vector<Value> oldArray = std::move(m_array);
+	std::vector<HashNode> oldHash = std::move(m_hash);
+
+	m_array.assign(newArraySize, valueNil());
+	m_arrayLength = 0;
+	m_hash.assign(newHashSize, HashNode{});
+	m_hashFree = newHashSize > 0 ? static_cast<int>(newHashSize) - 1 : -1;
+
+	for (size_t i = 0; i < oldArray.size(); ++i) {
+		if (!isNil(oldArray[i])) {
+			rawSet(valueNumber(static_cast<double>(i + 1)), oldArray[i]);
+		}
+	}
+	for (const auto& node : oldHash) {
+		if (!isNil(node.key)) {
+			rawSet(node.key, node.value);
+		}
+	}
+}
+
+void Table::rawSet(const Value& key, const Value& value) {
+	int index = 0;
+	if (tryGetArrayIndex(key, index)) {
+		size_t idx = static_cast<size_t>(index);
+		if (idx < m_array.size()) {
+			m_array[idx] = value;
+			if (isNil(value)) {
+				if (idx < m_arrayLength) {
+					m_arrayLength = idx;
+				}
+			} else if (idx == m_arrayLength) {
+				size_t newLength = m_arrayLength;
+				while (newLength < m_array.size() && !isNil(m_array[newLength])) {
+					++newLength;
+				}
+				m_arrayLength = newLength;
+			}
+			return;
+		}
+	}
+	insertHash(key, value);
+}
+
+void Table::insertHash(const Value& key, const Value& value) {
+	size_t mask = m_hash.size() - 1;
+	int mainIndex = static_cast<int>(hashValue(key) & mask);
+	HashNode& mainNode = m_hash[static_cast<size_t>(mainIndex)];
+	if (isNil(mainNode.key)) {
+		mainNode.key = key;
+		mainNode.value = value;
+		mainNode.next = -1;
+		return;
+	}
+	int freeIndex = getFreeIndex();
+	HashNode& freeNode = m_hash[static_cast<size_t>(freeIndex)];
+	int mainIndexOfOccupied = static_cast<int>(hashValue(mainNode.key) & mask);
+	if (mainIndexOfOccupied != mainIndex) {
+		freeNode = mainNode;
+		int prev = mainIndexOfOccupied;
+		while (m_hash[static_cast<size_t>(prev)].next != mainIndex) {
+			prev = m_hash[static_cast<size_t>(prev)].next;
+		}
+		m_hash[static_cast<size_t>(prev)].next = freeIndex;
+		mainNode.key = key;
+		mainNode.value = value;
+		mainNode.next = -1;
+		return;
+	}
+	freeNode.key = key;
+	freeNode.value = value;
+	freeNode.next = mainNode.next;
+	mainNode.next = freeIndex;
+}
+
+void Table::removeFromHash(const Value& key) {
+	if (m_hash.empty()) {
+		return;
+	}
+	size_t mask = m_hash.size() - 1;
+	int mainIndex = static_cast<int>(hashValue(key) & mask);
+	int prev = -1;
+	int index = mainIndex;
+	while (index >= 0) {
+		HashNode& node = m_hash[static_cast<size_t>(index)];
+		if (!isNil(node.key) && keyEquals(node.key, key)) {
+			int next = node.next;
+			if (prev >= 0) {
+				m_hash[static_cast<size_t>(prev)].next = next;
+				node.key = valueNil();
+				node.value = valueNil();
+				node.next = -1;
+				if (index > m_hashFree) {
+					m_hashFree = index;
+				}
+				return;
+			}
+			if (next >= 0) {
+				HashNode& nextNode = m_hash[static_cast<size_t>(next)];
+				node = nextNode;
+				nextNode.key = valueNil();
+				nextNode.value = valueNil();
+				nextNode.next = -1;
+				if (next > m_hashFree) {
+					m_hashFree = next;
+				}
+				return;
+			}
+			node.key = valueNil();
+			node.value = valueNil();
+			node.next = -1;
+			if (index > m_hashFree) {
+				m_hashFree = index;
+			}
+			return;
+		}
+		prev = index;
+		index = node.next;
+	}
 }
 
 Value Table::get(const Value& key) const {
-	if (isArrayIndex(key)) {
-		int index = toArrayIndex(key);
-		if (index >= 0 && index < static_cast<int>(m_array.size())) {
+	if (isNil(key)) {
+		throw BMSX_RUNTIME_ERROR("Table index is nil.");
+	}
+	int index = 0;
+	if (tryGetArrayIndex(key, index)) {
+		if (index < static_cast<int>(m_array.size())) {
 			return m_array[static_cast<size_t>(index)];
 		}
 		return valueNil();
 	}
 
-	if (valueIsString(key)) {
-		StringId id = asStringId(key);
-		auto mapIt = m_stringMap.find(id);
-		if (mapIt != m_stringMap.end()) {
-			return mapIt->second;
-		}
-		return valueNil();
-	}
-
-	auto mapIt = m_otherMap.find(key);
-	if (mapIt != m_otherMap.end()) {
-		return mapIt->second;
+	int nodeIndex = findNodeIndex(key);
+	if (nodeIndex >= 0) {
+		return m_hash[static_cast<size_t>(nodeIndex)].value;
 	}
 	return valueNil();
 }
 
 void Table::set(const Value& key, const Value& value) {
-	if (isArrayIndex(key)) {
-		int index = toArrayIndex(key);
-		if (index >= 0) {
-			if (index >= static_cast<int>(m_array.size())) {
-				m_array.resize(static_cast<size_t>(index) + 1, valueNil());
-			}
-			m_array[static_cast<size_t>(index)] = value;
-			return;
-		}
+	if (isNil(key)) {
+		throw BMSX_RUNTIME_ERROR("Table index is nil.");
 	}
-
-	if (valueIsString(key)) {
-		StringId id = asStringId(key);
+	int index = 0;
+	if (tryGetArrayIndex(key, index)) {
+		const size_t idx = static_cast<size_t>(index);
 		if (isNil(value)) {
-			m_stringMap.erase(id);
+			if (idx < m_array.size()) {
+				m_array[idx] = value;
+				if (idx < m_arrayLength) {
+					m_arrayLength = idx;
+				}
+				return;
+			}
+		} else if (idx < m_array.size()) {
+			m_array[idx] = value;
+			if (idx == m_arrayLength) {
+				size_t newLength = m_arrayLength;
+				while (newLength < m_array.size() && !isNil(m_array[newLength])) {
+					++newLength;
+				}
+				m_arrayLength = newLength;
+			}
 			return;
 		}
-		m_stringMap[id] = value;
-		return;
 	}
 
 	if (isNil(value)) {
-		m_otherMap.erase(key);
+		removeFromHash(key);
 		return;
 	}
-	m_otherMap[key] = value;
+	int nodeIndex = findNodeIndex(key);
+	if (nodeIndex >= 0) {
+		m_hash[static_cast<size_t>(nodeIndex)].value = value;
+		return;
+	}
+	if (m_hash.empty() || m_hashFree < 0) {
+		rehash(key);
+	}
+	rawSet(key, value);
 }
 
 int Table::length() const {
-	int count = 0;
-	for (size_t i = 0; i < m_array.size(); ++i) {
-		if (isNil(m_array[i])) {
-			break;
-		}
-		count = static_cast<int>(i) + 1;
-	}
-	return count;
+	return static_cast<int>(m_arrayLength);
 }
 
 void Table::clear() {
 	m_array.clear();
-	m_stringMap.clear();
-	m_otherMap.clear();
+	m_arrayLength = 0;
+	m_hash.clear();
+	m_hashFree = -1;
 }
 
 std::vector<std::pair<Value, Value>> Table::entries() const {
@@ -157,64 +415,42 @@ std::optional<std::pair<Value, Value>> Table::nextEntry(const Value& after) cons
 				return std::make_pair(valueNumber(static_cast<double>(i + 1)), m_array[i]);
 			}
 		}
-		if (!m_stringMap.empty()) {
-			const auto& entry = *m_stringMap.begin();
-			return std::make_pair(valueString(entry.first), entry.second);
-		}
-		if (!m_otherMap.empty()) {
-			const auto& entry = *m_otherMap.begin();
-			return std::make_pair(entry.first, entry.second);
-		}
-		return std::nullopt;
-	}
-	if (isArrayIndex(after)) {
-		int startIndex = static_cast<int>(valueToNumber(after));
-		for (int i = startIndex; i < static_cast<int>(m_array.size()); ++i) {
-			if (!isNil(m_array[static_cast<size_t>(i)])) {
-				return std::make_pair(valueNumber(static_cast<double>(i + 1)), m_array[static_cast<size_t>(i)]);
+		for (const auto& node : m_hash) {
+			if (!isNil(node.key)) {
+				return std::make_pair(node.key, node.value);
 			}
 		}
-		if (!m_stringMap.empty()) {
-			const auto& entry = *m_stringMap.begin();
-			return std::make_pair(valueString(entry.first), entry.second);
-		}
-		if (!m_otherMap.empty()) {
-			const auto& entry = *m_otherMap.begin();
-			return std::make_pair(entry.first, entry.second);
-		}
 		return std::nullopt;
 	}
-	if (valueIsString(after)) {
-		StringId id = asStringId(after);
-		auto found = m_stringMap.find(id);
-		if (found == m_stringMap.end()) {
+	int index = 0;
+	if (tryGetArrayIndex(after, index)) {
+		if (index < static_cast<int>(m_array.size())) {
+			if (isNil(m_array[static_cast<size_t>(index)])) {
+				return std::nullopt;
+			}
+			int startIndex = index + 1;
+			for (int i = startIndex; i < static_cast<int>(m_array.size()); ++i) {
+				if (!isNil(m_array[static_cast<size_t>(i)])) {
+					return std::make_pair(valueNumber(static_cast<double>(i + 1)), m_array[static_cast<size_t>(i)]);
+				}
+			}
+			for (const auto& node : m_hash) {
+				if (!isNil(node.key)) {
+					return std::make_pair(node.key, node.value);
+				}
+			}
 			return std::nullopt;
 		}
-		bool seen = false;
-		for (const auto& entry : m_stringMap) {
-			if (!seen) {
-				if (entry.first == id) {
-					seen = true;
-				}
-				continue;
-			}
-			return std::make_pair(valueString(entry.first), entry.second);
-		}
-		if (seen && !m_otherMap.empty()) {
-			const auto& entry = *m_otherMap.begin();
-			return std::make_pair(entry.first, entry.second);
-		}
+	}
+	int nodeIndex = findNodeIndex(after);
+	if (nodeIndex < 0) {
 		return std::nullopt;
 	}
-	bool seen = false;
-	for (const auto& entry : m_otherMap) {
-		if (!seen) {
-			if (entry.first == after) {
-				seen = true;
-			}
-			continue;
+	for (size_t i = static_cast<size_t>(nodeIndex + 1); i < m_hash.size(); ++i) {
+		const auto& node = m_hash[i];
+		if (!isNil(node.key)) {
+			return std::make_pair(node.key, node.value);
 		}
-		return std::make_pair(entry.first, entry.second);
 	}
 	return std::nullopt;
 }
@@ -951,10 +1187,9 @@ void VMCPU::executeInstruction(CallFrame& frame, OpCode op, uint8_t aLow, uint8_
 			if (valueIsNativeFunction(callee)) {
 				NativeFunction* fn = asNativeFunction(callee);
 				std::vector<Value> args = acquireArgScratch();
-				args.clear();
-				args.reserve(static_cast<size_t>(argCount));
+				args.resize(static_cast<size_t>(argCount));
 				for (int i = 0; i < argCount; ++i) {
-					args.push_back(frame.registers[a + 1 + i]);
+					args[static_cast<size_t>(i)] = frame.registers[a + 1 + i];
 				}
 				std::vector<Value> out = acquireNativeReturnScratch();
 				fn->invoke(args, out);
