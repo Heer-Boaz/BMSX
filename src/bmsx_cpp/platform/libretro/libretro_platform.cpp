@@ -539,14 +539,17 @@ void LibretroPlatform::runFrame() {
 	// Calculate delta time in seconds
 	f64 dt = m_frame_time_sec;
 
-	// Start engine if not running
-	if (!m_engine->isRunning() && m_engine->state() == EngineState::Initialized) {
+	// Start engine if not running and not paused
+	if (!m_platform_paused && !m_engine->isRunning() &&
+		m_engine->state() == EngineState::Initialized) {
 		m_engine->start();
 	}
 
 	// Update game logic
 	const auto tickStart = std::chrono::steady_clock::now();
-	m_engine->tick(dt);
+	if (!m_platform_paused) {
+		m_engine->tick(dt);
+	}
 	const auto tickEnd = std::chrono::steady_clock::now();
 
 	// Render
@@ -613,6 +616,33 @@ void LibretroPlatform::runFrame() {
 			renderTiming.endFrameMs);
 	}
 #endif
+}
+
+void LibretroPlatform::setPlatformPaused(bool paused) {
+	if (paused == m_platform_paused) {
+		return;
+	}
+	m_platform_paused = paused;
+	if (!m_engine) {
+		return;
+	}
+	if (paused) {
+		if (m_engine->isRunning()) {
+			m_engine->pause();
+		}
+		if (auto* sound = m_engine->soundMaster()) {
+			sound->pauseAll();
+		}
+	} else {
+		if (m_engine->state() == EngineState::Paused) {
+			m_engine->resume();
+		} else if (m_engine->state() == EngineState::Initialized && m_rom_loaded) {
+			m_engine->start();
+		}
+		if (auto* sound = m_engine->soundMaster()) {
+			sound->resume();
+		}
+	}
 }
 
 void LibretroPlatform::pollInput() {
@@ -762,21 +792,10 @@ void LibretroInputHub::poll() {
 		}
 		new_state.buttons[player] = buttons;
 
-		if (player == 0 && m_platform && m_platform->engine()) {
+		if (player == 0 && m_platform) {
 			const bool start_pressed = (new_state.buttons[player] & (1 << RETRO_DEVICE_ID_JOYPAD_START)) != 0;
 			if (start_pressed && !m_pause_hotkey_down) {
-				auto* engine = m_platform->engine();
-				if (engine->isPaused()) {
-					engine->resume();
-					if (auto* sound = engine->soundMaster()) {
-						sound->resume();
-					}
-				} else if (engine->isRunning()) {
-					engine->pause();
-					if (auto* sound = engine->soundMaster()) {
-						sound->pauseAll();
-					}
-				}
+				m_platform->setPlatformPaused(!m_platform->platformPaused());
 				m_event_queue.clear();
 				m_pause_hotkey_down = true;
 			} else if (!start_pressed && m_pause_hotkey_down) {

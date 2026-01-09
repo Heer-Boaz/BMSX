@@ -166,6 +166,8 @@ public:
 	void setPsxDither2dOptions(bool enabled);
 	void setFrameSkipOptions(bool enabled);
 	void setFrameSkipNext(bool skip);
+	void setPlatformPaused(bool paused);
+	bool platformPaused() const { return m_platform_paused; }
 
 	// Configuration
 	void setAVInfo(const retro_system_av_info& info);
@@ -276,6 +278,7 @@ private:
 	std::vector<uint8_t> m_system_ram;
 
 	bool m_rom_loaded = false;
+	bool m_platform_paused = false;
 };
 
 /* ============================================================================
