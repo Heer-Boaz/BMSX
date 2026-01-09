@@ -256,9 +256,12 @@ private:
 	void setCartBootReadyFlag(bool value);
 	void prepareCartBootIfNeeded();
 	bool pollSystemBootRequest();
+	std::vector<Value> acquireValueScratch();
+	void releaseValueScratch(std::vector<Value>&& values);
 
 	static VMRuntime* s_instance;
 	static constexpr int UPDATE_STATEMENT_BUDGET = 1'000'000;
+	static constexpr size_t MAX_POOLED_VM_RUNTIME_SCRATCH = 32;
 
 	// VM core
 	std::vector<Value> m_memory;
@@ -299,6 +302,7 @@ private:
 	std::unordered_map<std::string, std::string> m_vmModuleAliases;
 	std::unordered_map<std::string, Value> m_vmModuleCache;
 	std::unordered_map<std::string, std::unique_ptr<std::regex>> m_luaPatternRegexCache;
+	std::vector<std::vector<Value>> m_valueScratchPool;
 };
 
 } // namespace bmsx

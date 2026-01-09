@@ -1256,6 +1256,23 @@ std::string VMRuntime::vmToString(const Value& value) const {
 	return "function";
 }
 
+std::vector<Value> VMRuntime::acquireValueScratch() {
+	if (!m_valueScratchPool.empty()) {
+		auto scratch = std::move(m_valueScratchPool.back());
+		m_valueScratchPool.pop_back();
+		scratch.clear();
+		return scratch;
+	}
+	return {};
+}
+
+void VMRuntime::releaseValueScratch(std::vector<Value>&& values) {
+	values.clear();
+	if (m_valueScratchPool.size() < MAX_POOLED_VM_RUNTIME_SCRATCH) {
+		m_valueScratchPool.push_back(std::move(values));
+	}
+}
+
 double VMRuntime::nextVmRandom() {
 	m_vmRandomSeedValue = static_cast<uint32_t>((static_cast<uint64_t>(m_vmRandomSeedValue) * 1664525u + 1013904223u) & 0xffffffffu);
 	return static_cast<double>(m_vmRandomSeedValue) / 4294967296.0;
@@ -1931,8 +1948,8 @@ stringTable->set(key("gsub"), m_cpu.createNativeFunction("string.gsub", [this, c
 	size_t searchIndex = 0;
 	size_t lastIndex = 0;
 	std::string result;
-	std::vector<Value> fnArgs;
-	std::vector<Value> fnResults;
+	std::vector<Value> fnArgs = acquireValueScratch();
+	std::vector<Value> fnResults = acquireValueScratch();
 
 	auto renderReplacement = [&](const std::smatch& match) -> std::string {
 		if (valueIsString(replacement) || valueIsNumber(replacement)) {
@@ -1974,6 +1991,7 @@ stringTable->set(key("gsub"), m_cpu.createNativeFunction("string.gsub", [this, c
 		}
 			if (valueIsNativeFunction(replacement) || valueIsClosure(replacement)) {
 				fnArgs.clear();
+				fnResults.clear();
 				if (match.size() > 1) {
 					for (size_t i = 1; i < match.size(); ++i) {
 						if (match[i].matched) {
@@ -2020,6 +2038,8 @@ stringTable->set(key("gsub"), m_cpu.createNativeFunction("string.gsub", [this, c
 	result += source.substr(lastIndex);
 	out.push_back(str(result));
 	out.push_back(valueNumber(static_cast<double>(count)));
+	releaseValueScratch(std::move(fnResults));
+	releaseValueScratch(std::move(fnArgs));
 }));
 stringTable->set(key("gmatch"), m_cpu.createNativeFunction("string.gmatch", [this, str, asText](const std::vector<Value>& args, std::vector<Value>& out) {
 	struct GMatchState {
@@ -2194,16 +2214,19 @@ tableLib->set(key("sort"), m_cpu.createNativeFunction("table.sort", [callVmValue
 	auto* tbl = asTable(args.at(0));
 	Value comparator = args.size() > 1 ? args.at(1) : valueNil();
 	int length = tbl->length();
-	std::vector<Value> values(static_cast<size_t>(length));
+	std::vector<Value> values = acquireValueScratch();
+	values.resize(static_cast<size_t>(length));
 	for (int i = 1; i <= length; ++i) {
 		values[static_cast<size_t>(i - 1)] = tbl->get(valueNumber(static_cast<double>(i)));
 	}
-	std::vector<Value> comparatorArgs(2);
-	std::vector<Value> comparatorResults;
+	std::vector<Value> comparatorArgs = acquireValueScratch();
+	comparatorArgs.resize(2);
+	std::vector<Value> comparatorResults = acquireValueScratch();
 	std::sort(values.begin(), values.end(), [&](const Value& left, const Value& right) -> bool {
 		if (!isNil(comparator)) {
 			comparatorArgs[0] = left;
 			comparatorArgs[1] = right;
+			comparatorResults.clear();
 			callVmValue(comparator, comparatorArgs, comparatorResults);
 			return !comparatorResults.empty() && valueIsBool(comparatorResults[0]) && valueToBool(comparatorResults[0]) == true;
 		}
@@ -2220,6 +2243,9 @@ tableLib->set(key("sort"), m_cpu.createNativeFunction("table.sort", [callVmValue
 		tbl->set(valueNumber(static_cast<double>(i)), values[static_cast<size_t>(i - 1)]);
 	}
 	out.push_back(valueTable(tbl));
+	releaseValueScratch(std::move(comparatorResults));
+	releaseValueScratch(std::move(comparatorArgs));
+	releaseValueScratch(std::move(values));
 }));
 
 	setGlobal("table", valueTable(tableLib));
