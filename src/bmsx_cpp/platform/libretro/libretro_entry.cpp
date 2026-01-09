@@ -430,7 +430,7 @@ static retro_core_option_definition g_option_defs_v1_us[] = {
 			{kToggleOn, "On"},
 			{nullptr, nullptr},
 		},
-		kToggleOff
+		kToggleOn
 	},
 	{nullptr, nullptr, nullptr, {{nullptr, nullptr}}, nullptr}
 };
@@ -643,7 +643,7 @@ static void set_core_options(bool default_gles2) {
 				  "PSX Dither 2D; %s|%s", kToggleOn, kToggleOff);
 	g_option_vars[10].value = g_option_psx_dither_2d_var;
 	std::snprintf(g_option_frameskip_var, sizeof(g_option_frameskip_var),
-				  "Frame Skip; %s|%s", kToggleOff, kToggleOn);
+				  "Frame Skip; %s|%s", kToggleOn, kToggleOff);
 	g_option_vars[11].value = g_option_frameskip_var;
 
 	unsigned version = 0;
@@ -752,7 +752,7 @@ static bool read_postprocess_detail_enabled() {
 }
 
 static bool read_frameskip_enabled() {
-	return read_toggle_option(kOptionFrameSkip, "Frame Skip", false);
+	return read_toggle_option(kOptionFrameSkip, "Frame Skip", true);
 }
 
 static bool read_toggle_option(const char* key, const char* label, bool default_value) {
