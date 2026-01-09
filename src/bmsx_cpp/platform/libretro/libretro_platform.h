@@ -164,6 +164,8 @@ public:
 							 bool applyFringing,
 							 bool applyAperture);
 	void setPsxDither2dOptions(bool enabled);
+	void setFrameSkipOptions(bool enabled);
+	void setFrameSkipNext(bool skip);
 
 	// Configuration
 	void setAVInfo(const retro_system_av_info& info);
@@ -246,6 +248,8 @@ private:
 	retro_hw_get_current_framebuffer_t m_hw_get_current_framebuffer = nullptr;
 	bool m_crt_postprocessing_enabled = false;
 	i32 m_postprocess_scale = 1;
+	bool m_frameskip_enabled = false;
+	bool m_frameskip_next = false;
 
 	// Controller configuration
 	std::array<unsigned, 4> m_controller_devices{};

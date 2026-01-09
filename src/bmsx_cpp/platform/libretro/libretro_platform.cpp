@@ -24,6 +24,10 @@
 #include <stdexcept>
 #include <string>
 
+#ifndef ENABLE_PERFORMANCE_LOGS
+#define ENABLE_PERFORMANCE_LOGS 0
+#endif
+
 namespace bmsx {
 namespace {
 constexpr double kAudioLeadFrames = 8.0;
@@ -274,6 +278,15 @@ void LibretroPlatform::setCrtEffectOptions(bool applyNoise,
 
 void LibretroPlatform::setPsxDither2dOptions(bool enabled) {
 	m_engine->view()->psx_dither_2d_enabled = enabled;
+}
+
+void LibretroPlatform::setFrameSkipOptions(bool enabled) {
+	m_frameskip_enabled = enabled;
+	m_frameskip_next = false;
+}
+
+void LibretroPlatform::setFrameSkipNext(bool skip) {
+	m_frameskip_next = skip;
 }
 
 void LibretroPlatform::setFrameTimeUsec(retro_usec_t usec) {
@@ -537,8 +550,12 @@ void LibretroPlatform::runFrame() {
 	const auto tickEnd = std::chrono::steady_clock::now();
 
 	// Render
+	bool skipRender = m_frameskip_enabled && m_frameskip_next;
+	m_frameskip_next = false;
 	const auto renderStart = std::chrono::steady_clock::now();
-	m_engine->render();
+	if (!skipRender) {
+		m_engine->render();
+	}
 	const auto renderEnd = std::chrono::steady_clock::now();
 
 	// Collect audio
@@ -546,7 +563,7 @@ void LibretroPlatform::runFrame() {
 	processAudio();
 	const auto audioEnd = std::chrono::steady_clock::now();
 
-#ifdef ENABLE_PERFORMANCE_LOGS
+#if ENABLE_PERFORMANCE_LOGS
 	const auto frameEnd = std::chrono::steady_clock::now();
 
 	const double budgetMs = m_frame_time_sec * 1000.0;

@@ -15,6 +15,7 @@ option(BMSX_BUILD_SDL "Build SDL standalone executable" OFF)
 option(BMSX_BUILD_TESTS "Build unit tests" OFF)
 option(BMSX_ENABLE_LTO "Enable Link Time Optimization" OFF)
 option(BMSX_ENABLE_ZLIB "Enable zlib-based ROM decompression" ON)
+option(BMSX_ENABLE_PERFORMANCE_LOGS "Enable per-frame performance logging" OFF)
 set(BMSX_ENABLE_GLES2_DEFAULT ON)
 if(WIN32)
     set(BMSX_ENABLE_GLES2_DEFAULT OFF)
@@ -190,6 +191,10 @@ endif()
     target_include_directories(bmsx_libretro PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/platform/libretro
     )
+
+    if(BMSX_ENABLE_PERFORMANCE_LOGS)
+        target_compile_definitions(bmsx_libretro PRIVATE ENABLE_PERFORMANCE_LOGS=1)
+    endif()
 endif()
 
 # =============================================================================

@@ -116,6 +116,7 @@ static const unsigned kAudioPeriodFrames = 1024;
 static const unsigned kAudioPeriodCount = 4;
 static const unsigned kAudioPrimePeriods = 4;
 static const int kAudioThreadPriority = 20;
+static const unsigned kMaxCatchUpFrames = 4;
 
 static char g_system_dir[1024] = "";
 static char g_save_dir[1024] = "";
@@ -140,6 +141,7 @@ static float g_geom_aspect = 0.0f;
 static bool g_geom_dirty = false;
 static unsigned g_last_video_w = 0;
 static unsigned g_last_video_h = 0;
+static bool g_drop_video = false;
 
 static GLuint g_hw_fbo = 0;
 static GLuint g_hw_tex = 0;
@@ -217,6 +219,29 @@ static GLuint g_fps_tex = 0;
 static GLuint g_fps_vbo = 0;
 static int g_fps_tex_w = 0;
 static int g_fps_tex_h = 0;
+
+static double g_target_fps = 50.0;
+
+#define MSG_MAX_TEXT 256
+#define MSG_MAX_LINES 4
+#define MSG_MAX_LINE 96
+
+static char g_msg_text[MSG_MAX_TEXT] = "";
+static char g_msg_lines[MSG_MAX_LINES][MSG_MAX_LINE];
+static int g_msg_line_count = 0;
+static unsigned g_msg_frames_left = 0;
+static bool g_msg_dirty = false;
+static bool g_msg_gl_dirty = false;
+static uint8_t* g_msg_surface = NULL;
+static int g_msg_surface_w = 0;
+static int g_msg_surface_h = 0;
+static int g_msg_surface_stride = 0;
+static int g_msg_x = 8;
+static int g_msg_y = 8;
+static GLuint g_msg_tex = 0;
+static GLuint g_msg_vbo = 0;
+static int g_msg_tex_w = 0;
+static int g_msg_tex_h = 0;
 
 typedef EGLDisplay (EGLAPIENTRYP PFNEGLGETDISPLAY)(EGLNativeDisplayType display_id);
 typedef EGLBoolean (EGLAPIENTRYP PFNEGLBINDAPI)(EGLenum api);
@@ -429,6 +454,10 @@ static void menu_render_hw(void);
 static void fps_render_software(void);
 static void fps_render_hw(void);
 static void fps_update(void);
+static void msg_render_software(void);
+static void msg_render_hw(void);
+static void msg_tick(void);
+static uint64_t monotonic_ns(void);
 static uint64_t monotonic_ms(void);
 static inline uint16_t rgb888_to_rgb565(uint8_t r, uint8_t g, uint8_t b);
 static inline uint32_t rgb565_to_xrgb8888(uint16_t p);
@@ -1421,6 +1450,360 @@ static void fps_update(void) {
 	}
 }
 
+static void msg_mark_dirty(void) {
+	g_msg_dirty = true;
+	g_msg_gl_dirty = true;
+}
+
+static unsigned msg_default_frames(void) {
+	double fps = g_target_fps;
+	if (fps <= 1.0) {
+		fps = 50.0;
+	}
+	unsigned frames = (unsigned)(fps * 2.0 + 0.5);
+	if (frames < 60) {
+		frames = 60;
+	}
+	return frames;
+}
+
+static void msg_clear(void) {
+	g_msg_text[0] = '\0';
+	g_msg_line_count = 0;
+	g_msg_frames_left = 0;
+	msg_mark_dirty();
+}
+
+static void msg_set(const char* text, unsigned frames) {
+	if (!text || !text[0]) {
+		return;
+	}
+	snprintf(g_msg_text, sizeof(g_msg_text), "%s", text);
+	g_msg_frames_left = frames ? frames : msg_default_frames();
+	msg_mark_dirty();
+}
+
+static void msg_tick(void) {
+	if (g_msg_frames_left == 0) {
+		return;
+	}
+	if (g_msg_frames_left > 0) {
+		--g_msg_frames_left;
+		if (g_msg_frames_left == 0) {
+			msg_clear();
+		}
+	}
+}
+
+static void msg_build_lines(int max_chars) {
+	g_msg_line_count = 0;
+	if (!g_msg_text[0] || max_chars <= 0) {
+		return;
+	}
+	const char* p = g_msg_text;
+	while (*p && g_msg_line_count < MSG_MAX_LINES) {
+		while (*p == ' ' || *p == '\t' || *p == '\r') {
+			++p;
+		}
+		if (*p == '\n') {
+			++p;
+			continue;
+		}
+		int len = 0;
+		int last_space = -1;
+		while (p[len] && p[len] != '\n' && len < max_chars) {
+			if (p[len] == ' ' || p[len] == '\t') {
+				last_space = len;
+			}
+			++len;
+		}
+		int take = len;
+		if (p[len] == '\n') {
+			take = len;
+		} else if (len >= max_chars && last_space > 0) {
+			take = last_space;
+		}
+		if (take <= 0) {
+			break;
+		}
+		if (take >= MSG_MAX_LINE) {
+			take = MSG_MAX_LINE - 1;
+		}
+		memcpy(g_msg_lines[g_msg_line_count], p, (size_t)take);
+		g_msg_lines[g_msg_line_count][take] = '\0';
+		size_t line_len = strlen(g_msg_lines[g_msg_line_count]);
+		while (line_len > 0) {
+			char c = g_msg_lines[g_msg_line_count][line_len - 1];
+			if (c != ' ' && c != '\t') {
+				break;
+			}
+			g_msg_lines[g_msg_line_count][line_len - 1] = '\0';
+			--line_len;
+		}
+		++g_msg_line_count;
+		p += take;
+		while (*p == ' ' || *p == '\t') {
+			++p;
+		}
+		if (*p == '\n') {
+			++p;
+		}
+	}
+	if (*p && g_msg_line_count > 0) {
+		char* line = g_msg_lines[g_msg_line_count - 1];
+		size_t line_len = strlen(line);
+		if (line_len + 3 < MSG_MAX_LINE) {
+			strcat(line, "...");
+		} else if (line_len >= 3) {
+			line[line_len - 3] = '.';
+			line[line_len - 2] = '.';
+			line[line_len - 1] = '.';
+		}
+	}
+}
+
+static void msg_draw_pixel(int x, int y, uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+	if (!g_msg_surface || x < 0 || y < 0 || x >= g_msg_surface_w || y >= g_msg_surface_h) {
+		return;
+	}
+	uint8_t* p = g_msg_surface + (size_t)y * (size_t)g_msg_surface_stride + (size_t)x * 4u;
+	p[0] = r;
+	p[1] = g;
+	p[2] = b;
+	p[3] = a;
+}
+
+static void msg_draw_rect(int x, int y, int w, int h, uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+	for (int yy = 0; yy < h; ++yy) {
+		for (int xx = 0; xx < w; ++xx) {
+			msg_draw_pixel(x + xx, y + yy, r, g, b, a);
+		}
+	}
+}
+
+static void msg_draw_char(int x, int y, char c, uint8_t r, uint8_t g, uint8_t b, uint8_t a, int scale) {
+	if (c >= 'a' && c <= 'z') {
+		c = (char)(c - ('a' - 'A'));
+	}
+	const uint8_t* rows = menu_glyph_rows(c);
+	for (int row = 0; row < 7; ++row) {
+		uint8_t bits = rows[row];
+		for (int col = 0; col < 5; ++col) {
+			if (bits & (1u << (4 - col))) {
+				for (int sy = 0; sy < scale; ++sy) {
+					for (int sx = 0; sx < scale; ++sx) {
+						msg_draw_pixel(x + col * scale + sx, y + row * scale + sy, r, g, b, a);
+					}
+				}
+			}
+		}
+	}
+}
+
+static void msg_draw_text(int x, int y, const char* text, uint8_t r, uint8_t g, uint8_t b, uint8_t a, int scale) {
+	if (!text) return;
+	const int advance = (5 + 1) * scale;
+	for (const char* p = text; *p; ++p) {
+		msg_draw_char(x, y, *p, r, g, b, a, scale);
+		x += advance;
+	}
+}
+
+static void msg_rebuild_surface(void) {
+	if (g_msg_frames_left == 0 || !g_msg_text[0] || g_fb.width <= 0 || g_fb.height <= 0) {
+		return;
+	}
+	int scale = 2;
+	int padding = 6;
+	int max_w = g_fb.width - 24;
+	if (max_w < 40) {
+		return;
+	}
+	int max_chars = max_w / ((5 + 1) * scale);
+	if (max_chars < 12) {
+		scale = 1;
+		max_chars = max_w / ((5 + 1) * scale);
+	}
+	if (max_chars < 8) {
+		max_chars = 8;
+	}
+	msg_build_lines(max_chars);
+	if (g_msg_line_count == 0) {
+		return;
+	}
+	int max_len = 0;
+	for (int i = 0; i < g_msg_line_count; ++i) {
+		int len = (int)strlen(g_msg_lines[i]);
+		if (len > max_len) {
+			max_len = len;
+		}
+	}
+	int line_h = (7 * scale) + 2;
+	int surf_w = max_len * (5 + 1) * scale + padding * 2;
+	int surf_h = g_msg_line_count * line_h + padding * 2;
+	if (surf_w > g_fb.width - 8) surf_w = g_fb.width - 8;
+	if (surf_h > g_fb.height - 8) surf_h = g_fb.height - 8;
+	if (surf_w < 1 || surf_h < 1) return;
+
+	if (surf_w != g_msg_surface_w || surf_h != g_msg_surface_h) {
+		free(g_msg_surface);
+		g_msg_surface = (uint8_t*)malloc((size_t)surf_w * (size_t)surf_h * 4u);
+		if (!g_msg_surface) {
+			g_msg_surface_w = 0;
+			g_msg_surface_h = 0;
+			g_msg_surface_stride = 0;
+			return;
+		}
+		g_msg_surface_w = surf_w;
+		g_msg_surface_h = surf_h;
+		g_msg_surface_stride = surf_w * 4;
+	}
+
+	memset(g_msg_surface, 0, (size_t)g_msg_surface_stride * (size_t)g_msg_surface_h);
+	g_msg_x = 8;
+	g_msg_y = g_fb.height - g_msg_surface_h - 12;
+	if (g_msg_x < 0) g_msg_x = 0;
+	if (g_msg_y < 0) g_msg_y = 0;
+
+	const uint8_t bg_r = 8, bg_g = 8, bg_b = 8, bg_a = 180;
+	const uint8_t text_r = 240, text_g = 240, text_b = 240, text_a = 255;
+	msg_draw_rect(0, 0, g_msg_surface_w, g_msg_surface_h, bg_r, bg_g, bg_b, bg_a);
+	for (int i = 0; i < g_msg_line_count; ++i) {
+		int y = padding + i * line_h;
+		msg_draw_text(padding, y, g_msg_lines[i], text_r, text_g, text_b, text_a, scale);
+	}
+	g_msg_dirty = false;
+	g_msg_gl_dirty = true;
+}
+
+static void msg_render_software(void) {
+	if (g_msg_frames_left == 0 || g_menu_active) return;
+	if (g_msg_dirty) msg_rebuild_surface();
+	if (!g_msg_surface) return;
+
+	for (int y = 0; y < g_msg_surface_h; ++y) {
+		int fb_y = g_msg_y + y;
+		if (fb_y < 0 || fb_y >= g_fb.height) continue;
+		uint8_t* dst_line = g_fb.map + (size_t)fb_y * (size_t)g_fb.stride + (size_t)g_msg_x * (size_t)(g_fb.bpp / 8);
+		const uint8_t* src_line = g_msg_surface + (size_t)y * (size_t)g_msg_surface_stride;
+		for (int x = 0; x < g_msg_surface_w; ++x) {
+			int fb_x = g_msg_x + x;
+			if (fb_x < 0 || fb_x >= g_fb.width) continue;
+			const uint8_t* src = src_line + (size_t)x * 4u;
+			uint8_t a = src[3];
+			if (a == 0) continue;
+			uint8_t r = src[0];
+			uint8_t g = src[1];
+			uint8_t b = src[2];
+			if (g_fb.bpp == 32) {
+				uint32_t* dst = (uint32_t*)dst_line;
+				uint32_t d = dst[x];
+				uint8_t dr = (uint8_t)((d >> 16) & 0xFF);
+				uint8_t dg = (uint8_t)((d >> 8) & 0xFF);
+				uint8_t db = (uint8_t)(d & 0xFF);
+				if (a != 255) {
+					dr = (uint8_t)((r * a + dr * (255 - a) + 127) / 255);
+					dg = (uint8_t)((g * a + dg * (255 - a) + 127) / 255);
+					db = (uint8_t)((b * a + db * (255 - a) + 127) / 255);
+				} else {
+					dr = r;
+					dg = g;
+					db = b;
+				}
+				dst[x] = (uint32_t)((dr << 16) | (dg << 8) | db);
+			} else if (g_fb.bpp == 16) {
+				uint16_t* dst = (uint16_t*)dst_line;
+				uint32_t d = rgb565_to_xrgb8888(dst[x]);
+				uint8_t dr = (uint8_t)((d >> 16) & 0xFF);
+				uint8_t dg = (uint8_t)((d >> 8) & 0xFF);
+				uint8_t db = (uint8_t)(d & 0xFF);
+				if (a != 255) {
+					dr = (uint8_t)((r * a + dr * (255 - a) + 127) / 255);
+					dg = (uint8_t)((g * a + dg * (255 - a) + 127) / 255);
+					db = (uint8_t)((b * a + db * (255 - a) + 127) / 255);
+				} else {
+					dr = r;
+					dg = g;
+					db = b;
+				}
+				dst[x] = rgb888_to_rgb565(dr, dg, db);
+			}
+		}
+	}
+}
+
+static void msg_render_hw(void) {
+	if (g_msg_frames_left == 0 || g_menu_active) return;
+	if (g_msg_dirty) msg_rebuild_surface();
+	if (!g_msg_surface) return;
+	if (!hw_init_blitter()) return;
+
+	if (!g_msg_tex || g_msg_tex_w != g_msg_surface_w || g_msg_tex_h != g_msg_surface_h) {
+		if (g_msg_tex) {
+			glDeleteTextures_ptr(1, &g_msg_tex);
+			g_msg_tex = 0;
+		}
+		glGenTextures_ptr(1, &g_msg_tex);
+		glBindTexture_ptr(GL_TEXTURE_2D, g_msg_tex);
+		glTexParameteri_ptr(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexParameteri_ptr(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		glTexParameteri_ptr(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri_ptr(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		glTexImage2D_ptr(GL_TEXTURE_2D, 0, GL_RGBA, (GLsizei)g_msg_surface_w, (GLsizei)g_msg_surface_h,
+			0, GL_RGBA, GL_UNSIGNED_BYTE, g_msg_surface);
+		g_msg_tex_w = g_msg_surface_w;
+		g_msg_tex_h = g_msg_surface_h;
+		g_msg_gl_dirty = false;
+	} else if (g_msg_gl_dirty) {
+		glBindTexture_ptr(GL_TEXTURE_2D, g_msg_tex);
+		glTexImage2D_ptr(GL_TEXTURE_2D, 0, GL_RGBA, (GLsizei)g_msg_surface_w, (GLsizei)g_msg_surface_h,
+			0, GL_RGBA, GL_UNSIGNED_BYTE, g_msg_surface);
+		g_msg_gl_dirty = false;
+	}
+
+	if (!g_msg_vbo) {
+		glGenBuffers_ptr(1, &g_msg_vbo);
+	}
+
+	const float left = ((float)g_msg_x / (float)g_fb.width) * 2.0f - 1.0f;
+	const float right = ((float)(g_msg_x + g_msg_surface_w) / (float)g_fb.width) * 2.0f - 1.0f;
+	const float top = 1.0f - ((float)g_msg_y / (float)g_fb.height) * 2.0f;
+	const float bottom = 1.0f - ((float)(g_msg_y + g_msg_surface_h) / (float)g_fb.height) * 2.0f;
+	const float quad[] = {
+		left,  bottom, 0.0f, 0.0f,
+		right, bottom, 1.0f, 0.0f,
+		left,  top,    0.0f, 1.0f,
+		right, top,    1.0f, 1.0f,
+	};
+
+	glViewport_ptr(0, 0, g_fb.width, g_fb.height);
+	glDisable_ptr(GL_DEPTH_TEST);
+	glDisable_ptr(GL_CULL_FACE);
+	glEnable_ptr(GL_BLEND);
+	glBlendFunc_ptr(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glUseProgram_ptr(g_blit_program);
+	glActiveTexture_ptr(GL_TEXTURE0);
+	glBindTexture_ptr(GL_TEXTURE_2D, g_msg_tex);
+	if (g_blit_uniform_tex >= 0) {
+		glUniform1i_ptr(g_blit_uniform_tex, 0);
+	}
+	if (g_blit_uniform_flip >= 0) {
+		glUniform1f_ptr(g_blit_uniform_flip, 1.0f);
+	}
+	glBindBuffer_ptr(GL_ARRAY_BUFFER, g_msg_vbo);
+	glBufferData_ptr(GL_ARRAY_BUFFER, (GLsizeiptr)sizeof(quad), quad, GL_DYNAMIC_DRAW);
+	if (g_blit_attr_pos >= 0) {
+		glEnableVertexAttribArray_ptr((GLuint)g_blit_attr_pos);
+		glVertexAttribPointer_ptr((GLuint)g_blit_attr_pos, 2, GL_FLOAT, GL_FALSE, 4 * (GLsizei)sizeof(float), (void*)0);
+	}
+	if (g_blit_attr_uv >= 0) {
+		glEnableVertexAttribArray_ptr((GLuint)g_blit_attr_uv);
+		glVertexAttribPointer_ptr((GLuint)g_blit_attr_uv, 2, GL_FLOAT, GL_FALSE, 4 * (GLsizei)sizeof(float), (void*)(2 * sizeof(float)));
+	}
+	glDrawArrays_ptr(GL_TRIANGLE_STRIP, 0, 4);
+	glDisable_ptr(GL_BLEND);
+}
+
 static void menu_rebuild_surface(void) {
 	if (!g_menu_active || g_fb.width <= 0 || g_fb.height <= 0) {
 		return;
@@ -1711,6 +2094,7 @@ static bool hw_present_frame(unsigned src_w, unsigned src_h) {
 		glVertexAttribPointer_ptr((GLuint)g_blit_attr_uv, 2, GL_FLOAT, GL_FALSE, 4 * (GLsizei)sizeof(float), (void*)(2 * sizeof(float)));
 	}
 	glDrawArrays_ptr(GL_TRIANGLE_STRIP, 0, 4);
+	msg_render_hw();
 	fps_render_hw();
 	menu_render_hw();
 	return true;
@@ -1946,7 +2330,10 @@ static bool environ_cb(unsigned cmd, void* data) {
 		}
 		case RETRO_ENVIRONMENT_SET_MESSAGE: {
 			const struct retro_message* msg = (const struct retro_message*)data;
-			fprintf(stderr, "[libretro-host][MSG] (%u) %s\n", msg->frames, msg->msg);
+			if (msg && msg->msg) {
+				fprintf(stderr, "[libretro-host][MSG] (%u) %s\n", msg->frames, msg->msg);
+				msg_set(msg->msg, msg->frames);
+			}
 			return true;
 		}
 		case RETRO_ENVIRONMENT_GET_CAN_DUPE: {
@@ -2036,6 +2423,16 @@ static inline uint32_t rgb565_to_xrgb8888(uint16_t p) {
 }
 
 static void video_cb(const void* data, unsigned width, unsigned height, size_t pitch) {
+	if (g_msg_frames_left > 0) {
+		msg_tick();
+	}
+	if (g_drop_video) {
+		if (width > 0 && height > 0) {
+			g_last_video_w = width;
+			g_last_video_h = height;
+		}
+		return;
+	}
 	if (g_use_hw_render && data == RETRO_HW_FRAME_BUFFER_VALID) {
 		if (width > 0 && height > 0) {
 			g_last_video_w = width;
@@ -2121,6 +2518,7 @@ static void video_cb(const void* data, unsigned width, unsigned height, size_t p
 				}
 			}
 		}
+		msg_render_software();
 		fps_render_software();
 		menu_render_software();
 		return;
@@ -2165,6 +2563,7 @@ static void video_cb(const void* data, unsigned width, unsigned height, size_t p
 				}
 			}
 		}
+		msg_render_software();
 		fps_render_software();
 		menu_render_software();
 		return;
@@ -2961,6 +3360,12 @@ static void input_poll_cb(void) {
 	poll_input_devices();
 }
 
+static uint64_t monotonic_ns(void) {
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
+}
+
 static uint64_t monotonic_ms(void) {
 	struct timespec ts;
 	clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -3181,38 +3586,48 @@ int main(int argc, char** argv) {
 	if (fps <= 0.0) {
 		fps = 50.0;
 	}
+	g_target_fps = fps;
 	int audio_rate = (int)(av.timing.sample_rate + 0.5);
 	if (audio_rate <= 0) {
 		die("Invalid audio sample rate: %.2f", av.timing.sample_rate);
 	}
 	audio_init(audio_rate);
-	const long frame_ns = (long)(1000000000.0 / fps);
+	const uint64_t frame_ns = (uint64_t)(1000000000.0 / fps);
+	uint64_t next_frame_ns = monotonic_ns() + frame_ns;
 
 	while (!g_should_quit) {
-		struct timespec start;
-		clock_gettime(CLOCK_MONOTONIC, &start);
-
-		if (g_menu_active) {
-			poll_input_devices();
-			if (g_use_hw_render) {
-				menu_render_hw();
-				eglSwapBuffers_ptr(g_egl_display, g_egl_surface);
-			} else {
-				menu_render_software();
+		uint64_t now_ns = monotonic_ns();
+		unsigned frames_to_run = 1;
+		if (!g_menu_active && now_ns > next_frame_ns) {
+			uint64_t lag_ns = now_ns - next_frame_ns;
+			unsigned catch_up = (unsigned)(lag_ns / frame_ns) + 1;
+			if (catch_up > kMaxCatchUpFrames) {
+				catch_up = kMaxCatchUpFrames;
 			}
-		} else {
-			core.retro_run();
+			frames_to_run = catch_up;
 		}
-
-		struct timespec end;
-		clock_gettime(CLOCK_MONOTONIC, &end);
-
-		long elapsed_ns = (end.tv_sec - start.tv_sec) * 1000000000L + (end.tv_nsec - start.tv_nsec);
-		long sleep_ns = frame_ns - elapsed_ns;
-		if (sleep_ns > 0) {
+		for (unsigned i = 0; i < frames_to_run && !g_should_quit; ++i) {
+			g_drop_video = (frames_to_run > 1) && (i + 1 < frames_to_run);
+			if (g_menu_active) {
+				poll_input_devices();
+				if (g_use_hw_render) {
+					menu_render_hw();
+					eglSwapBuffers_ptr(g_egl_display, g_egl_surface);
+				} else {
+					menu_render_software();
+				}
+			} else {
+				core.retro_run();
+			}
+		}
+		g_drop_video = false;
+		next_frame_ns += frame_ns * (uint64_t)frames_to_run;
+		now_ns = monotonic_ns();
+		if (now_ns < next_frame_ns) {
+			uint64_t sleep_ns = next_frame_ns - now_ns;
 			struct timespec ts;
-			ts.tv_sec = sleep_ns / 1000000000L;
-			ts.tv_nsec = sleep_ns % 1000000000L;
+			ts.tv_sec = (time_t)(sleep_ns / 1000000000ull);
+			ts.tv_nsec = (long)(sleep_ns % 1000000000ull);
 			nanosleep(&ts, NULL);
 		}
 	}
@@ -3231,6 +3646,8 @@ int main(int argc, char** argv) {
 	g_menu_surface = NULL;
 	free(g_fps_surface);
 	g_fps_surface = NULL;
+	free(g_msg_surface);
+	g_msg_surface = NULL;
 	if (game_buf) {
 		free(game_buf);
 	}

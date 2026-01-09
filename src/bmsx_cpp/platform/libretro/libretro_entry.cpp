@@ -93,6 +93,7 @@ static constexpr const char* kOptionCrtGlow = "bmsx_crt_glow";
 static constexpr const char* kOptionCrtFringing = "bmsx_crt_fringing";
 static constexpr const char* kOptionCrtAperture = "bmsx_crt_aperture";
 static constexpr const char* kOptionPsxDither2d = "bmsx_psx_dither_2d";
+static constexpr const char* kOptionFrameSkip = "bmsx_frameskip";
 static constexpr const char* kToggleOff = "off";
 static constexpr const char* kToggleOn = "on";
 
@@ -113,6 +114,8 @@ static bool g_crt_glow_enabled = true;
 static bool g_crt_fringing_enabled = true;
 static bool g_crt_aperture_enabled = true;
 static bool g_psx_dither_2d_enabled = true;
+static bool g_frameskip_enabled = false;
+static bool g_frameskip_next = false;
 
 static retro_core_option_v2_category g_option_categories_us[] = {
 	{"video", "Video", "Video settings."},
@@ -274,6 +277,20 @@ static retro_core_option_v2_definition g_option_defs_us[] = {
 		},
 		kToggleOn
 	},
+	{
+		kOptionFrameSkip,
+		"Frame Skip",
+		"Frame Skip",
+		"Automatically skip video frames when rendering exceeds the frame budget.",
+		"Automatically skip video frames when rendering exceeds the frame budget.",
+		"video",
+		{
+			{kToggleOff, "Off"},
+			{kToggleOn, "On"},
+			{nullptr, nullptr},
+		},
+		kToggleOff
+	},
 	{nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, {{nullptr, nullptr}}, nullptr}
 };
 
@@ -404,6 +421,17 @@ static retro_core_option_definition g_option_defs_v1_us[] = {
 		},
 		kToggleOn
 	},
+	{
+		kOptionFrameSkip,
+		"Frame Skip",
+		"Automatically skip video frames when rendering exceeds the frame budget.",
+		{
+			{kToggleOff, "Off"},
+			{kToggleOn, "On"},
+			{nullptr, nullptr},
+		},
+		kToggleOff
+	},
 	{nullptr, nullptr, nullptr, {{nullptr, nullptr}}, nullptr}
 };
 
@@ -418,6 +446,7 @@ static char g_option_crt_glow_var[128] = {};
 static char g_option_crt_fringing_var[128] = {};
 static char g_option_crt_aperture_var[128] = {};
 static char g_option_psx_dither_2d_var[128] = {};
+static char g_option_frameskip_var[128] = {};
 static retro_variable g_option_vars[] = {
 	{kOptionRenderBackend, nullptr},
 	{kOptionCrtPostprocessing, nullptr},
@@ -430,6 +459,7 @@ static retro_variable g_option_vars[] = {
 	{kOptionCrtFringing, nullptr},
 	{kOptionCrtAperture, nullptr},
 	{kOptionPsxDither2d, nullptr},
+	{kOptionFrameSkip, nullptr},
 	{nullptr, nullptr}
 };
 
@@ -457,6 +487,8 @@ static bool read_crt_glow_enabled();
 static bool read_crt_fringing_enabled();
 static bool read_crt_aperture_enabled();
 static bool read_psx_dither_2d_enabled();
+static bool read_toggle_option(const char* key, const char* label, bool default_value);
+static bool read_frameskip_enabled();
 
 /* ============================================================================
  * Libretro callback setters
@@ -610,6 +642,9 @@ static void set_core_options(bool default_gles2) {
 	std::snprintf(g_option_psx_dither_2d_var, sizeof(g_option_psx_dither_2d_var),
 				  "PSX Dither 2D; %s|%s", kToggleOn, kToggleOff);
 	g_option_vars[10].value = g_option_psx_dither_2d_var;
+	std::snprintf(g_option_frameskip_var, sizeof(g_option_frameskip_var),
+				  "Frame Skip; %s|%s", kToggleOff, kToggleOn);
+	g_option_vars[11].value = g_option_frameskip_var;
 
 	unsigned version = 0;
 	if (environ_cb(RETRO_ENVIRONMENT_GET_CORE_OPTIONS_VERSION, &version) && version >= 2) {
@@ -714,6 +749,10 @@ static bool read_postprocess_detail_enabled() {
 		return parse_postprocess_detail_enabled(var.value);
 	}
 	return false;
+}
+
+static bool read_frameskip_enabled() {
+	return read_toggle_option(kOptionFrameSkip, "Frame Skip", false);
 }
 
 static bool read_toggle_option(const char* key, const char* label, bool default_value) {
@@ -971,6 +1010,8 @@ void retro_init(void) {
   g_crt_fringing_enabled = read_crt_fringing_enabled();
   g_crt_aperture_enabled = read_crt_aperture_enabled();
   g_psx_dither_2d_enabled = read_psx_dither_2d_enabled();
+  g_frameskip_enabled = read_frameskip_enabled();
+  g_frameskip_next = false;
   request_hw_context_for_backend(desired_backend);
   apply_backend_preference(preference);
 
@@ -1027,6 +1068,7 @@ void retro_init(void) {
 								  g_crt_fringing_enabled,
 								  g_crt_aperture_enabled);
   g_platform->setPsxDither2dOptions(g_psx_dither_2d_enabled);
+  g_platform->setFrameSkipOptions(g_frameskip_enabled);
   if (isHardwareBackendActive()) {
 	try {
 	  g_platform->setHwRenderCallbacks(g_hw_render.get_current_framebuffer);
@@ -1257,6 +1299,12 @@ void retro_run(void) {
 	  g_psx_dither_2d_enabled = new_psx_dither_2d;
 	  g_platform->setPsxDither2dOptions(g_psx_dither_2d_enabled);
 	}
+	const bool new_frameskip = read_frameskip_enabled();
+	if (new_frameskip != g_frameskip_enabled) {
+	  g_frameskip_enabled = new_frameskip;
+	  g_frameskip_next = false;
+	  g_platform->setFrameSkipOptions(g_frameskip_enabled);
+	}
   }
 //   static auto lastFrameTime = std::chrono::steady_clock::now();
 //   static double accSec = 0.0;
@@ -1313,6 +1361,9 @@ void retro_run(void) {
   // }
 
   // Run one frame
+  const auto frameStart = std::chrono::steady_clock::now();
+  g_platform->setFrameSkipNext(g_frameskip_enabled && g_frameskip_next);
+  g_frameskip_next = false;
 //   const auto runStart = std::chrono::steady_clock::now();
   g_platform->runFrame();
 //   const auto runEnd = std::chrono::steady_clock::now();
@@ -1386,6 +1437,16 @@ void retro_run(void) {
   const auto& audio = g_platform->getAudioBuffer();
   if (audio_batch_cb && audio.samples > 0) {
 	audio_batch_cb(audio.data, audio.samples);
+  }
+
+  const auto frameEnd = std::chrono::steady_clock::now();
+  if (g_frameskip_enabled) {
+	const double budgetMs = g_platform->frameTimeSec() * 1000.0;
+	const double frameMs =
+		std::chrono::duration<double, std::milli>(frameEnd - frameStart).count();
+	if (frameMs > budgetMs) {
+	  g_frameskip_next = true;
+	}
   }
 }
 
