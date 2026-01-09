@@ -1,0 +1,126 @@
+{
+	"name": "BMSX ASM",
+	"scopeName": "source.bmsx-asm",
+	"fileTypes": [
+		"asm"
+	],
+	"patterns": [
+		{
+			"include": "#comments"
+		},
+		{
+			"include": "#directives"
+		},
+		{
+			"include": "#opcodes"
+		},
+		{
+			"include": "#registers"
+		},
+		{
+			"include": "#constants"
+		},
+		{
+			"include": "#numbers"
+		},
+		{
+			"include": "#labels"
+		},
+		{
+			"include": "#strings"
+		}
+	],
+	"repository": {
+		"comments": {
+			"patterns": [
+				{
+					"name": "comment.line.semicolon.bmsx-asm",
+					"match": ";.*$"
+				}
+			]
+		},
+		"directives": {
+			"patterns": [
+				{
+					"name": "keyword.directive.bmsx-asm",
+					"match": "\\.[A-Za-z_][A-Za-z0-9_]*\\b"
+				}
+			]
+		},
+		"opcodes": {
+			"patterns": [
+				{
+					"name": "keyword.instruction.bmsx-asm",
+					"match": "(?i)\\b(MOV|LOADK|LOADNIL|LOADBOOL|GETG|SETG|GETT|SETT|NEWT|ADD|SUB|MUL|DIV|MOD|FLOORDIV|POW|BAND|BOR|BXOR|SHL|SHR|CONCAT|CONCATN|UNM|NOT|LEN|BNOT|EQ|LT|LE|TEST|TESTSET|JMP|JMPIF|JMPIFNOT|CLOSURE|GETUP|SETUP|VARARG|CALL|RET|LOAD_MEM|STORE_MEM|WIDE)\\b"
+				}
+			]
+		},
+		"registers": {
+			"patterns": [
+				{
+					"name": "variable.register.bmsx-asm",
+					"match": "\\br\\d+\\b"
+				},
+				{
+					"name": "variable.register.bmsx-asm",
+					"match": "\\bk\\d+\\b"
+				},
+				{
+					"name": "variable.register.bmsx-asm",
+					"match": "\\bu\\d+\\b"
+				},
+				{
+					"name": "variable.register.bmsx-asm",
+					"match": "\\bp\\d+\\b"
+				}
+			]
+		},
+		"constants": {
+			"patterns": [
+				{
+					"name": "constant.language.bmsx-asm",
+					"match": "\\b(true|false|nil)\\b"
+				}
+			]
+		},
+		"numbers": {
+			"patterns": [
+				{
+					"name": "constant.numeric.hex.bmsx-asm",
+					"match": "\\$[0-9A-Fa-f]+\\b"
+				},
+				{
+					"name": "constant.numeric.hex.bmsx-asm",
+					"match": "0x[0-9A-Fa-f]+\\b"
+				},
+				{
+					"name": "constant.numeric.decimal.bmsx-asm",
+					"match": "\\b\\d+\\b"
+				}
+			]
+		},
+		"labels": {
+			"patterns": [
+				{
+					"name": "entity.name.label.bmsx-asm",
+					"match": "\\b[A-Za-z_][A-Za-z0-9_]*:"
+				}
+			]
+		},
+		"strings": {
+			"patterns": [
+				{
+					"name": "string.quoted.double.bmsx-asm",
+					"begin": "\"",
+					"end": "\"",
+					"patterns": [
+						{
+							"name": "constant.character.escape.bmsx-asm",
+							"match": "\\\\."
+						}
+					]
+				}
+			]
+		}
+	}
+}

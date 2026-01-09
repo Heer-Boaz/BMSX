@@ -1,0 +1,35 @@
+{
+	"name": "bmsx-asm",
+	"displayName": "BMSX ASM",
+	"description": "Syntax highlighting for BMSX VM assembly.",
+	"version": "0.0.1",
+	"publisher": "bmsx-local",
+	"engines": {
+		"vscode": "^1.70.0"
+	},
+	"categories": [
+		"Programming Languages"
+	],
+	"contributes": {
+		"languages": [
+			{
+				"id": "bmsx-asm",
+				"aliases": [
+					"BMSX ASM",
+					"bmsx-asm"
+				],
+				"extensions": [
+					".asm"
+				],
+				"configuration": "./language-configuration.json"
+			}
+		],
+		"grammars": [
+			{
+				"language": "bmsx-asm",
+				"scopeName": "source.bmsx-asm",
+				"path": "./bmsx-asm.tmLanguage.json"
+			}
+		]
+	}
+}

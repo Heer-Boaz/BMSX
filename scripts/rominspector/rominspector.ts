@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // ROM Pack Inspector CLI
-// Usage: npx tsx scripts/rominspector.ts <romfile> [--ui] [--list-assets]
+// Usage: npx tsx scripts/rominspector.ts <romfile> [--ui] [--list-assets] [--program-asm]
 
 import * as blessed from 'blessed';
 import * as contrib from 'blessed-contrib';
@@ -11,6 +11,7 @@ import type { asset_type, AudioMeta, GLTFModel, ImgMeta, RomAsset, RomMeta } fro
 import { decodeBinary } from '../../src/bmsx/serializer/binencoder';
 import { getZippedRomAndRomLabelFromBlob, loadAssetList, loadModelFromBuffer as loadGLTFModelFromBuffer, parseMetaFromBuffer, loadRuntimeAssetsFromBuffer } from '../../src/bmsx/rompack/romloader';
 import { disassembleProgram } from '../../src/bmsx/vm/disassembler';
+import type { Program, ProgramMetadata } from '../../src/bmsx/vm/cpu';
 import { decodeProgramAsset, decodeProgramSymbolsAsset, inflateProgram, VM_PROGRAM_ASSET_ID, VM_PROGRAM_SYMBOLS_ASSET_ID } from '../../src/bmsx/vm/vm_program_asset';
 import { generateAtlasName } from '../rompacker/atlasbuilder';
 import { asciiWaveBraille, generateBrailleAsciiArt, generatePixelPerfectAsciiArt, parseWav, renderBufferBar, renderSummaryBar } from './asciiart';
@@ -36,6 +37,85 @@ function formatNumberAsHex(n: number, width?: number): string {
 	const hex = n.toString(16).toUpperCase();
 	const padded = width === undefined ? hex : hex.padStart(width, '0');
 	return `#${padded}`;
+}
+
+function buildLuaSourceLookup(rombin: ArrayBuffer, assets: RomAsset[]): (path: string) => string {
+	const sources = new Map<string, string>();
+	for (const asset of assets) {
+		if (asset.type !== 'lua') {
+			continue;
+		}
+		const path = asset.normalized_source_path ?? asset.source_path;
+		if (!path) {
+			throw new Error(`[RomInspector] Lua asset '${asset.resid}' is missing its source path.`);
+		}
+		const start = asset.start;
+		const end = asset.end;
+		if (start === undefined || end === undefined) {
+			throw new Error(`[RomInspector] Lua asset '${asset.resid}' is missing buffer range.`);
+		}
+		if (sources.has(path)) {
+			throw new Error(`[RomInspector] Duplicate lua source path '${path}'.`);
+		}
+		const text = Buffer.from(rombin.slice(start, end)).toString('utf8');
+		sources.set(path, text);
+	}
+	return (path: string) => {
+		const text = sources.get(path);
+		if (text === undefined) {
+			throw new Error(`[RomInspector] Lua source '${path}' not found in ROM pack.`);
+		}
+		return text;
+	};
+}
+
+function loadVmProgramFromAssets(rombin: ArrayBuffer, assets: RomAsset[]) {
+	const programAssetEntry = assets.find(asset => asset.resid === VM_PROGRAM_ASSET_ID);
+	if (!programAssetEntry) {
+		throw new Error('[RomInspector] VM program asset not found.');
+	}
+	const programStart = programAssetEntry.start;
+	const programEnd = programAssetEntry.end;
+	if (programStart === undefined || programEnd === undefined) {
+		throw new Error(`[RomInspector] VM program asset '${programAssetEntry.resid}' is missing buffer range.`);
+	}
+	const programBytes = new Uint8Array(rombin.slice(programStart, programEnd));
+	const programAsset = decodeProgramAsset(programBytes);
+	const program = inflateProgram(programAsset.program);
+	const symbolsAsset = assets.find(asset => asset.resid === VM_PROGRAM_SYMBOLS_ASSET_ID);
+	const metadata = symbolsAsset
+		? (() => {
+			const symbolsStart = symbolsAsset.start;
+			const symbolsEnd = symbolsAsset.end;
+			if (symbolsStart === undefined || symbolsEnd === undefined) {
+				throw new Error(`[RomInspector] VM program symbols asset '${symbolsAsset.resid}' is missing buffer range.`);
+			}
+			const symbolsBytes = new Uint8Array(rombin.slice(symbolsStart, symbolsEnd));
+			const symbols = decodeProgramSymbolsAsset(symbolsBytes);
+			return symbols.metadata;
+		})()
+		: null;
+	const sourceTextForPath = metadata ? buildLuaSourceLookup(rombin, assets) : null;
+	return { programAsset, program, metadata, sourceTextForPath };
+}
+
+function disassembleVmProgram(
+	program: Program,
+	metadata: ProgramMetadata | null,
+	sourceTextForPath: ((path: string) => string) | null,
+	options: { assembly?: boolean } = {},
+): string {
+	if (metadata && !sourceTextForPath) {
+		throw new Error('[RomInspector] VM program symbols found but Lua sources were not resolved.');
+	}
+	const assembly = options.assembly === true;
+	return disassembleProgram(program, metadata, {
+		formatStyle: assembly ? 'assembly' : 'default',
+		pcRadix: 16,
+		pcFormatter: assembly ? undefined : (pc, width) => formatNumberAsHex(pc, width),
+		showSourceComments: metadata !== null,
+		sourceTextForPath: sourceTextForPath ?? undefined,
+	});
 }
 
 function formatByteSize(size: number): string {
@@ -295,13 +375,15 @@ async function main() {
 	const args = process.argv.slice(2);
 	const uiFlag = args.includes('--ui');
 	const listAssetsFlag = args.includes('--list-assets');
+	const programAsmFlag = args.includes('--program-asm');
 	const romfile = args.find(arg => !arg.startsWith('--'));
 
 	if (!romfile) {
-		console.error('Usage: npx tsx scripts/rominspector.ts <romfile> [--ui] [--list-assets]');
+		console.error('Usage: npx tsx scripts/rominspector.ts <romfile> [--ui] [--list-assets] [--program-asm]');
 		console.error('Options:');
 		console.error('  --ui            Open the interactive UI');
 		console.error('  --list-assets   Print asset list to stdout (default)');
+		console.error('  --program-asm   Print VM program disassembly and exit');
 		process.exit(1);
 	}
 
@@ -327,6 +409,12 @@ async function main() {
 
 	const { metaBuf, metadataOffset, metadataLength } = getMetadataBuffer(rombin, rommeta);
 	assetList = await loadAssets(rombin);
+
+	if (programAsmFlag) {
+		const { program, metadata, sourceTextForPath } = loadVmProgramFromAssets(rombin, assetList);
+		console.log(disassembleVmProgram(program, metadata, sourceTextForPath, { assembly: true }));
+		process.exit(0);
+	}
 
 	// Print assets by default; UI is only enabled with --ui
 	if (!uiFlag || listAssetsFlag) {
@@ -702,32 +790,8 @@ async function main() {
 				break;
 			case 'data':
 				if (selected.resid === VM_PROGRAM_ASSET_ID) {
-					const programStart = selected.start;
-					const programEnd = selected.end;
-					if (programStart === undefined || programEnd === undefined) {
-						throw new Error(`[RomInspector] VM program asset '${selected.resid}' is missing buffer range.`);
-					}
-					const programBytes = new Uint8Array(rombin.slice(programStart, programEnd));
-					const programAsset = decodeProgramAsset(programBytes);
-					const program = inflateProgram(programAsset.program);
-					const symbolsAsset = assetList.find(asset => asset.resid === VM_PROGRAM_SYMBOLS_ASSET_ID);
-					const hasSymbols = symbolsAsset !== undefined;
-					const metadata = hasSymbols
-						? (() => {
-							const symbolsStart = symbolsAsset.start;
-							const symbolsEnd = symbolsAsset.end;
-							if (symbolsStart === undefined || symbolsEnd === undefined) {
-								throw new Error(`[RomInspector] VM program symbols asset '${symbolsAsset.resid}' is missing buffer range.`);
-							}
-							const symbolsBytes = new Uint8Array(rombin.slice(symbolsStart, symbolsEnd));
-							const symbols = decodeProgramSymbolsAsset(symbolsBytes);
-							return symbols.metadata;
-						})()
-						: null;
-					disassembly = disassembleProgram(program, metadata, {
-						pcRadix: 16,
-						pcFormatter: (pc, width) => formatNumberAsHex(pc, width),
-					});
+					const { programAsset, program, metadata, sourceTextForPath } = loadVmProgramFromAssets(rombin, assetList);
+					disassembly = disassembleVmProgram(program, metadata, sourceTextForPath);
 					metadataLines.push(`VM program entry proto: ${programAsset.entryProtoIndex}`);
 					metadataLines.push(`VM program protos: ${program.protos.length}`);
 					metadataLines.push(`VM program consts: ${program.constPool.length}`);

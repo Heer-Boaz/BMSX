@@ -28,6 +28,7 @@ import {
 } from '../lua/lua_ast';
 import { createIdentifierCanonicalizer } from '../utils/identifier_canonicalizer';
 import { OpCode, type Program, type ProgramMetadata, type Proto, type UpvalueDesc, type Value, type SourceRange } from './cpu';
+import { optimizeInstructions, type Instruction, type OptimizationLevel } from './program_optimizer';
 import { StringPool, StringValue, isStringValue } from './string_pool';
 import { IO_ARG0_OFFSET, IO_BUFFER_BASE, IO_COMMAND_STRIDE, IO_CMD_PRINT, IO_WRITE_PTR_ADDR } from './vm_io';
 import type { CanonicalizationType } from '../rompack/rompack';
@@ -50,22 +51,11 @@ type CompileOptions = {
 	baseMetadata?: ProgramMetadata;
 	canonicalization?: CanonicalizationType;
 	stringPool?: StringPool;
+	optLevel?: OptimizationLevel;
 };
 
 type LoopContext = {
 	breakJumps: number[];
-};
-
-type InstructionFormat = 'ABC' | 'ABx' | 'AsBx';
-
-type Instruction = {
-	op: OpCode;
-	a: number;
-	b: number;
-	c: number;
-	format: InstructionFormat;
-	rkMask: number;
-	target: number | null;
 };
 
 const RK_B = 1;
@@ -75,6 +65,7 @@ class ProgramBuilder {
 	public readonly constPool: Value[];
 	public readonly stringPool: StringPool;
 	public readonly canonicalizeIdentifier: (value: string) => string;
+	public readonly optLevel: OptimizationLevel;
 	private readonly constMap: Map<string, number>;
 	public readonly protos: Proto[] = [];
 	public readonly protoCode: Uint8Array[] = [];
@@ -83,10 +74,16 @@ class ProgramBuilder {
 	private readonly protoIdMap: Map<string, number> = new Map();
 	private readonly assignedProtoIds: Set<string> = new Set();
 
-	public constructor(baseConstPool: ReadonlyArray<Value> | null = null, canonicalization: CanonicalizationType = 'none', stringPool: StringPool | null = null) {
+	public constructor(
+		baseConstPool: ReadonlyArray<Value> | null = null,
+		canonicalization: CanonicalizationType = 'none',
+		stringPool: StringPool | null = null,
+		optLevel: OptimizationLevel = 0,
+	) {
 		this.constPool = baseConstPool ? Array.from(baseConstPool) : [];
 		this.canonicalizeIdentifier = createIdentifierCanonicalizer(canonicalization);
 		this.stringPool = stringPool ?? new StringPool();
+		this.optLevel = optLevel;
 		this.constMap = new Map<string, number>();
 		for (let index = 0; index < this.constPool.length; index += 1) {
 			const value = this.constPool[index];
@@ -305,6 +302,17 @@ class FunctionBuilder {
 	private finalizeCode(): void {
 		if (this.finalizedCode) {
 			return;
+		}
+		if (this.program.optLevel > 0) {
+			const optimized = optimizeInstructions(this.code, this.ranges, this.program.optLevel);
+			if (optimized.instructions !== this.code) {
+				this.code.length = 0;
+				this.code.push(...optimized.instructions);
+			}
+			if (optimized.ranges !== this.ranges) {
+				this.ranges.length = 0;
+				this.ranges.push(...optimized.ranges);
+			}
 		}
 		const instructions = this.code;
 		const ranges = this.ranges;
@@ -1813,8 +1821,13 @@ function cloneProto(proto: Proto): Proto {
 	};
 }
 
-function createProgramBuilderFromProgram(base: Program, metadata: ProgramMetadata, canonicalization: CanonicalizationType): ProgramBuilder {
-	const builder = new ProgramBuilder(base.constPool, canonicalization, base.stringPool);
+function createProgramBuilderFromProgram(
+	base: Program,
+	metadata: ProgramMetadata,
+	canonicalization: CanonicalizationType,
+	optLevel: OptimizationLevel,
+): ProgramBuilder {
+	const builder = new ProgramBuilder(base.constPool, canonicalization, base.stringPool, optLevel);
 	const protoIds = metadata.protoIds;
 	if (!protoIds || protoIds.length !== base.protos.length) {
 		throw new Error('[ProgramBuilder] Base program proto ids missing or mismatched.');
@@ -1832,14 +1845,15 @@ function createProgramBuilderFromProgram(base: Program, metadata: ProgramMetadat
 
 export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray<ProgramModule> = [], options: CompileOptions = {}): CompiledProgram {
 	const canonicalization = options.canonicalization ?? 'none';
+	const optLevel = options.optLevel ?? 0;
 	let programBuilder: ProgramBuilder;
 	if (options.baseProgram) {
 		if (!options.baseMetadata) {
 			throw new Error('[ProgramBuilder] Base program metadata is required.');
 		}
-		programBuilder = createProgramBuilderFromProgram(options.baseProgram, options.baseMetadata, canonicalization);
+		programBuilder = createProgramBuilderFromProgram(options.baseProgram, options.baseMetadata, canonicalization, optLevel);
 	} else {
-		programBuilder = new ProgramBuilder(null, canonicalization, options.stringPool ?? null);
+		programBuilder = new ProgramBuilder(null, canonicalization, options.stringPool ?? null, optLevel);
 	}
 	const moduleId = chunk.range.path;
 	const entryProtoId = buildEntryProtoId(moduleId);
@@ -1878,7 +1892,8 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 
 export function appendLuaChunkToProgram(base: Program, metadata: ProgramMetadata, chunk: LuaChunk, options: CompileOptions = {}): { program: Program; metadata: ProgramMetadata; entryProtoIndex: number } {
 	const canonicalization = options.canonicalization ?? 'none';
-	const programBuilder = createProgramBuilderFromProgram(base, metadata, canonicalization);
+	const optLevel = options.optLevel ?? 0;
+	const programBuilder = createProgramBuilderFromProgram(base, metadata, canonicalization, optLevel);
 	const moduleId = chunk.range.path;
 	const entryProtoId = buildEntryProtoId(moduleId);
 	const entryBuilder = new FunctionBuilder(programBuilder, null, { moduleId, protoId: entryProtoId });
