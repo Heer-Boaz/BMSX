@@ -106,14 +106,14 @@ enum class RenderBackendPreference {
 static RenderBackendPreference g_backend_preference = RenderBackendPreference::Auto;
 static bool g_crt_postprocessing_enabled = false;
 static bool g_postprocess_detail_enabled = false;
-static bool g_crt_noise_enabled = true;
-static bool g_crt_color_bleed_enabled = true;
-static bool g_crt_scanlines_enabled = true;
-static bool g_crt_blur_enabled = true;
-static bool g_crt_glow_enabled = true;
-static bool g_crt_fringing_enabled = true;
-static bool g_crt_aperture_enabled = true;
-static bool g_psx_dither_2d_enabled = true;
+static bool g_crt_noise_enabled = false;
+static bool g_crt_color_bleed_enabled = false;
+static bool g_crt_scanlines_enabled = false;
+static bool g_crt_blur_enabled = false;
+static bool g_crt_glow_enabled = false;
+static bool g_crt_fringing_enabled = false;
+static bool g_crt_aperture_enabled = false;
+static bool g_psx_dither_2d_enabled = false;
 static bool g_frameskip_enabled = false;
 static bool g_frameskip_next = false;
 
@@ -177,7 +177,7 @@ static retro_core_option_v2_definition g_option_defs_us[] = {
 			{kToggleOn, "On"},
 			{nullptr, nullptr},
 		},
-		kToggleOn
+		kToggleOff
 	},
 	{
 		kOptionCrtColorBleed,
@@ -191,7 +191,7 @@ static retro_core_option_v2_definition g_option_defs_us[] = {
 			{kToggleOn, "On"},
 			{nullptr, nullptr},
 		},
-		kToggleOn
+		kToggleOff
 	},
 	{
 		kOptionCrtScanlines,
@@ -205,7 +205,7 @@ static retro_core_option_v2_definition g_option_defs_us[] = {
 			{kToggleOn, "On"},
 			{nullptr, nullptr},
 		},
-		kToggleOn
+		kToggleOff
 	},
 	{
 		kOptionCrtBlur,
@@ -219,7 +219,7 @@ static retro_core_option_v2_definition g_option_defs_us[] = {
 			{kToggleOn, "On"},
 			{nullptr, nullptr},
 		},
-		kToggleOn
+		kToggleOff
 	},
 	{
 		kOptionCrtGlow,
@@ -233,7 +233,7 @@ static retro_core_option_v2_definition g_option_defs_us[] = {
 			{kToggleOn, "On"},
 			{nullptr, nullptr},
 		},
-		kToggleOn
+		kToggleOff
 	},
 	{
 		kOptionCrtFringing,
@@ -247,7 +247,7 @@ static retro_core_option_v2_definition g_option_defs_us[] = {
 			{kToggleOn, "On"},
 			{nullptr, nullptr},
 		},
-		kToggleOn
+		kToggleOff
 	},
 	{
 		kOptionCrtAperture,
@@ -261,7 +261,7 @@ static retro_core_option_v2_definition g_option_defs_us[] = {
 			{kToggleOn, "On"},
 			{nullptr, nullptr},
 		},
-		kToggleOn
+		kToggleOff
 	},
 	{
 		kOptionPsxDither2d,
@@ -275,7 +275,7 @@ static retro_core_option_v2_definition g_option_defs_us[] = {
 			{kToggleOn, "On"},
 			{nullptr, nullptr},
 		},
-		kToggleOn
+		kToggleOff
 	},
 	{
 		kOptionFrameSkip,
@@ -289,7 +289,7 @@ static retro_core_option_v2_definition g_option_defs_us[] = {
 			{kToggleOn, "On"},
 			{nullptr, nullptr},
 		},
-		kToggleOff
+		kToggleOn
 	},
 	{nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, {{nullptr, nullptr}}, nullptr}
 };
@@ -342,7 +342,7 @@ static retro_core_option_definition g_option_defs_v1_us[] = {
 			{kToggleOn, "On"},
 			{nullptr, nullptr},
 		},
-		kToggleOn
+		kToggleOff
 	},
 	{
 		kOptionCrtColorBleed,
@@ -353,7 +353,7 @@ static retro_core_option_definition g_option_defs_v1_us[] = {
 			{kToggleOn, "On"},
 			{nullptr, nullptr},
 		},
-		kToggleOn
+		kToggleOff
 	},
 	{
 		kOptionCrtScanlines,
@@ -364,7 +364,7 @@ static retro_core_option_definition g_option_defs_v1_us[] = {
 			{kToggleOn, "On"},
 			{nullptr, nullptr},
 		},
-		kToggleOn
+		kToggleOff
 	},
 	{
 		kOptionCrtBlur,
@@ -375,7 +375,7 @@ static retro_core_option_definition g_option_defs_v1_us[] = {
 			{kToggleOn, "On"},
 			{nullptr, nullptr},
 		},
-		kToggleOn
+		kToggleOff
 	},
 	{
 		kOptionCrtGlow,
@@ -386,7 +386,7 @@ static retro_core_option_definition g_option_defs_v1_us[] = {
 			{kToggleOn, "On"},
 			{nullptr, nullptr},
 		},
-		kToggleOn
+		kToggleOff
 	},
 	{
 		kOptionCrtFringing,
@@ -397,7 +397,7 @@ static retro_core_option_definition g_option_defs_v1_us[] = {
 			{kToggleOn, "On"},
 			{nullptr, nullptr},
 		},
-		kToggleOn
+		kToggleOff
 	},
 	{
 		kOptionCrtAperture,
@@ -408,7 +408,7 @@ static retro_core_option_definition g_option_defs_v1_us[] = {
 			{kToggleOn, "On"},
 			{nullptr, nullptr},
 		},
-		kToggleOn
+		kToggleOff
 	},
 	{
 		kOptionPsxDither2d,
@@ -419,7 +419,7 @@ static retro_core_option_definition g_option_defs_v1_us[] = {
 			{kToggleOn, "On"},
 			{nullptr, nullptr},
 		},
-		kToggleOn
+		kToggleOff
 	},
 	{
 		kOptionFrameSkip,
@@ -619,28 +619,28 @@ static void set_core_options(bool default_gles2) {
 				  "Post-processing Detail; %s|%s", kPostprocessDetailOff, kPostprocessDetailOn);
 	g_option_vars[2].value = g_option_postprocess_detail_var;
 	std::snprintf(g_option_crt_noise_var, sizeof(g_option_crt_noise_var),
-				  "CRT Noise; %s|%s", kToggleOn, kToggleOff);
+				  "CRT Noise; %s|%s", kToggleOff, kToggleOn);
 	g_option_vars[3].value = g_option_crt_noise_var;
 	std::snprintf(g_option_crt_color_bleed_var, sizeof(g_option_crt_color_bleed_var),
-				  "CRT Color Bleed; %s|%s", kToggleOn, kToggleOff);
+				  "CRT Color Bleed; %s|%s", kToggleOff, kToggleOn);
 	g_option_vars[4].value = g_option_crt_color_bleed_var;
 	std::snprintf(g_option_crt_scanlines_var, sizeof(g_option_crt_scanlines_var),
-				  "CRT Scanlines; %s|%s", kToggleOn, kToggleOff);
+				  "CRT Scanlines; %s|%s", kToggleOff, kToggleOn);
 	g_option_vars[5].value = g_option_crt_scanlines_var;
 	std::snprintf(g_option_crt_blur_var, sizeof(g_option_crt_blur_var),
-				  "CRT Blur; %s|%s", kToggleOn, kToggleOff);
+				  "CRT Blur; %s|%s", kToggleOff, kToggleOn);
 	g_option_vars[6].value = g_option_crt_blur_var;
 	std::snprintf(g_option_crt_glow_var, sizeof(g_option_crt_glow_var),
-				  "CRT Glow; %s|%s", kToggleOn, kToggleOff);
+				  "CRT Glow; %s|%s", kToggleOff, kToggleOn);
 	g_option_vars[7].value = g_option_crt_glow_var;
 	std::snprintf(g_option_crt_fringing_var, sizeof(g_option_crt_fringing_var),
-				  "CRT Fringing; %s|%s", kToggleOn, kToggleOff);
+				  "CRT Fringing; %s|%s", kToggleOff, kToggleOn);
 	g_option_vars[8].value = g_option_crt_fringing_var;
 	std::snprintf(g_option_crt_aperture_var, sizeof(g_option_crt_aperture_var),
-				  "CRT Aperture; %s|%s", kToggleOn, kToggleOff);
+				  "CRT Aperture; %s|%s", kToggleOff, kToggleOn);
 	g_option_vars[9].value = g_option_crt_aperture_var;
 	std::snprintf(g_option_psx_dither_2d_var, sizeof(g_option_psx_dither_2d_var),
-				  "PSX Dither 2D; %s|%s", kToggleOn, kToggleOff);
+				  "PSX Dither 2D; %s|%s", kToggleOff, kToggleOn);
 	g_option_vars[10].value = g_option_psx_dither_2d_var;
 	std::snprintf(g_option_frameskip_var, sizeof(g_option_frameskip_var),
 				  "Frame Skip; %s|%s", kToggleOn, kToggleOff);
@@ -766,35 +766,35 @@ static bool read_toggle_option(const char* key, const char* label, bool default_
 }
 
 static bool read_crt_noise_enabled() {
-	return read_toggle_option(kOptionCrtNoise, "CRT Noise", true);
+	return read_toggle_option(kOptionCrtNoise, "CRT Noise", false);
 }
 
 static bool read_crt_color_bleed_enabled() {
-	return read_toggle_option(kOptionCrtColorBleed, "CRT Color Bleed", true);
+	return read_toggle_option(kOptionCrtColorBleed, "CRT Color Bleed", false);
 }
 
 static bool read_crt_scanlines_enabled() {
-	return read_toggle_option(kOptionCrtScanlines, "CRT Scanlines", true);
+	return read_toggle_option(kOptionCrtScanlines, "CRT Scanlines", false);
 }
 
 static bool read_crt_blur_enabled() {
-	return read_toggle_option(kOptionCrtBlur, "CRT Blur", true);
+	return read_toggle_option(kOptionCrtBlur, "CRT Blur", false);
 }
 
 static bool read_crt_glow_enabled() {
-	return read_toggle_option(kOptionCrtGlow, "CRT Glow", true);
+	return read_toggle_option(kOptionCrtGlow, "CRT Glow", false);
 }
 
 static bool read_crt_fringing_enabled() {
-	return read_toggle_option(kOptionCrtFringing, "CRT Fringing", true);
+	return read_toggle_option(kOptionCrtFringing, "CRT Fringing", false);
 }
 
 static bool read_crt_aperture_enabled() {
-	return read_toggle_option(kOptionCrtAperture, "CRT Aperture", true);
+	return read_toggle_option(kOptionCrtAperture, "CRT Aperture", false);
 }
 
 static bool read_psx_dither_2d_enabled() {
-	return read_toggle_option(kOptionPsxDither2d, "PSX Dither 2D", true);
+	return read_toggle_option(kOptionPsxDither2d, "PSX Dither 2D", false);
 }
 
 static void apply_backend_preference(RenderBackendPreference preference) {
