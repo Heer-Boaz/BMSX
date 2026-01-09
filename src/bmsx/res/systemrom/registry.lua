@@ -51,23 +51,25 @@ function registry:clear()
 end
 
 function registry:get_registered_entities()
-	local out = {}
-	for _, entity in pairs(self._registry) do
-		out[#out + 1] = entity
+	return self._registry
+end
+
+local function iter_registry(state, key)
+	local reg = state.registry
+	local type_name = state.type_name
+	local persistent_only = state.persistent_only
+	local next_key, entity = next(reg._registry, key)
+	while next_key do
+		if (not persistent_only or entity.registrypersistent) and (not type_name or entity.type_name == type_name) then
+			return next_key, entity
+		end
+		next_key, entity = next(reg._registry, next_key)
 	end
-	return out
+	return nil
 end
 
 function registry:iterate(type_name, persistent_only)
-	return coroutine.wrap(function()
-		for _, entity in pairs(self._registry) do
-			if not persistent_only or entity.registrypersistent then
-				if not type_name or entity.type_name == type_name then
-					coroutine.yield(entity)
-				end
-			end
-		end
-	end)
+	return iter_registry, { registry = self, type_name = type_name, persistent_only = persistent_only }, nil
 end
 
 return {
