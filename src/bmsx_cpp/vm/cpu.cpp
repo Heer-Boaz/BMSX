@@ -143,7 +143,8 @@ Table::HashNode* Table::getMainNode(const Value& key) {
 }
 
 int Table::getFreeIndex() {
-	for (int i = m_hashFree; i >= 0; --i) {
+	int start = m_hashFree >= 0 ? m_hashFree : static_cast<int>(m_hash.size()) - 1;
+	for (int i = start; i >= 0; --i) {
 		if (isNil(m_hash[static_cast<size_t>(i)].key)) {
 			m_hashFree = i - 1;
 			return i;
@@ -251,6 +252,11 @@ void Table::rawSet(const Value& key, const Value& value) {
 }
 
 void Table::insertHash(const Value& key, const Value& value) {
+	if (m_hash.empty()) {
+		rehash(key);
+		rawSet(key, value);
+		return;
+	}
 	size_t mask = m_hash.size() - 1;
 	int mainIndex = static_cast<int>(hashValue(key) & mask);
 	HashNode& mainNode = m_hash[static_cast<size_t>(mainIndex)];
@@ -261,6 +267,11 @@ void Table::insertHash(const Value& key, const Value& value) {
 		return;
 	}
 	int freeIndex = getFreeIndex();
+	if (freeIndex < 0) {
+		rehash(key);
+		rawSet(key, value);
+		return;
+	}
 	HashNode& freeNode = m_hash[static_cast<size_t>(freeIndex)];
 	int mainIndexOfOccupied = static_cast<int>(hashValue(mainNode.key) & mask);
 	if (mainIndexOfOccupied != mainIndex) {
@@ -336,7 +347,6 @@ Value Table::get(const Value& key) const {
 		if (index < static_cast<int>(m_array.size())) {
 			return m_array[static_cast<size_t>(index)];
 		}
-		return valueNil();
 	}
 
 	int nodeIndex = findNodeIndex(key);
