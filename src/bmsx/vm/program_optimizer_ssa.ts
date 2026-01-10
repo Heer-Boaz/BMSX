@@ -2955,7 +2955,7 @@ export const applyGlobalOptimizations = (
 
 	renameBlock(0);
 
-	const enableSccp = false;
+	const enableSccp = true;
 	const sccp = enableSccp
 		? runSccp(
 			instructions,
@@ -3118,7 +3118,7 @@ export const applyGlobalOptimizations = (
 	};
 
 	gvnVisit(0);
-	const enableAvailableValueNumbering = false;
+	const enableAvailableValueNumbering = true;
 	if (enableAvailableValueNumbering) {
 		const valueNumbers = computeValueNumbers(
 			instructions,
@@ -3173,7 +3173,7 @@ export const applyGlobalOptimizations = (
 
 	simplifyAlgebraic(instructions, context);
 	let current: InstructionSet = { instructions, ranges };
-	const enableLoopOptimizations = false;
+	const enableLoopOptimizations = true;
 	if (enableLoopOptimizations) {
 		current = applyLoopOptimizations(current, context);
 	}

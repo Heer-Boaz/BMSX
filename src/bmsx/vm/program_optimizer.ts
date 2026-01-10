@@ -1936,6 +1936,32 @@ const reorderSegments = (set: InstructionSet): InstructionSet => {
 	return { instructions: nextInstructions, ranges: nextRanges };
 };
 
+const runMidLevelOptimizations = (
+	set: InstructionSet,
+	context: OptimizationContext,
+): InstructionSet => {
+	let current = simplifyCompareBool(set);
+	current = propagateValues(current, context);
+	current = eliminateDeadStores(current, context);
+	current = removeNoOps(current);
+	current = threadJumps(current);
+	current = removeUnreachable(current);
+	current = removeNoOps(current);
+	current = foldConstants(current, context);
+	current = propagateValues(current, context);
+	current = eliminateDeadStores(current, context);
+	current = removeNoOps(current);
+	current = threadJumps(current);
+	current = removeUnreachable(current);
+	current = removeNoOps(current);
+	current = reorderSegments(current);
+	current = removeNoOps(current);
+	current = threadJumps(current);
+	current = removeUnreachable(current);
+	current = removeNoOps(current);
+	return current;
+};
+
 export const optimizeInstructions = (
 	instructions: Instruction[],
 	ranges: Array<SourceRange | null>,
@@ -1954,24 +1980,7 @@ export const optimizeInstructions = (
 		if (!context) {
 			throw new Error('[ProgramOptimizer] Optimization context is required for level 2+.');
 		}
-		current = simplifyCompareBool(current);
-		current = propagateValues(current, context);
-		current = eliminateDeadStores(current, context);
-		current = removeNoOps(current);
-		current = threadJumps(current);
-		current = removeUnreachable(current);
-		current = foldConstants(current, context);
-		current = propagateValues(current, context);
-		current = eliminateDeadStores(current, context);
-		current = removeNoOps(current);
-		current = threadJumps(current);
-		current = removeUnreachable(current);
-		current = removeNoOps(current);
-		current = reorderSegments(current);
-		current = removeNoOps(current);
-		current = threadJumps(current);
-		current = removeUnreachable(current);
-		current = removeNoOps(current);
+		current = runMidLevelOptimizations(current, context);
 	}
 	if (level >= 3) {
 		if (!context) {
@@ -1982,6 +1991,7 @@ export const optimizeInstructions = (
 		current = threadJumps(current);
 		current = removeUnreachable(current);
 		current = removeNoOps(current);
+		current = runMidLevelOptimizations(current, context);
 	}
 	return current;
 };
