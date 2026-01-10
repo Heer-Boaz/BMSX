@@ -1,5 +1,5 @@
 import { OpCode, type ProgramMetadata, type Proto, type SourceRange } from './cpu';
-import { INSTRUCTION_BYTES, MAX_EXT_BX, MAX_LOW_BX, readInstructionWord, writeInstruction } from './instruction_format';
+import { EXT_BX_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_EXT_BX, MAX_LOW_BX, readInstructionWord, writeInstruction } from './instruction_format';
 import { resolveProgramLayout, type ProgramLayout } from './program_layout';
 import type { EncodedProgram, VmProgramAsset, VmProgramSymbolsAsset } from './vm_program_asset';
 
@@ -34,6 +34,7 @@ const rewriteClosureIndices = (code: Uint8Array, protoOffset: number): void => {
 	let wideC = 0;
 	for (let index = 0; index < instructionCount; index += 1) {
 		const word = readInstructionWord(code, index);
+		const ext = word >>> 24;
 		const op = (word >>> 18) & 0x3f;
 		if (op === OpCode.WIDE) {
 			wideIndex = index;
@@ -52,19 +53,21 @@ const rewriteClosureIndices = (code: Uint8Array, protoOffset: number): void => {
 		const aLow = (word >>> 12) & 0x3f;
 		const bLow = (word >>> 6) & 0x3f;
 		const cLow = word & 0x3f;
-		const bx = (wideB << 12) | (bLow << 6) | cLow;
+		const bxLow = (bLow << 6) | cLow;
+		const bx = (wideB << (MAX_BX_BITS + EXT_BX_BITS)) | (ext << MAX_BX_BITS) | bxLow;
 		const nextBx = bx + protoOffset;
 		if (nextBx > MAX_EXT_BX) {
 			throw new Error(`[ProgramLinker] Proto index exceeds range: ${nextBx}.`);
 		}
-		const high = nextBx >> 12;
-		if (high !== 0 && wideIndex < 0) {
+		const nextWide = nextBx >> (MAX_BX_BITS + EXT_BX_BITS);
+		if (nextWide !== 0 && wideIndex < 0) {
 			throw new Error(`[ProgramLinker] Proto index ${nextBx} requires WIDE prefix.`);
 		}
-		const low = nextBx & MAX_LOW_BX;
-		writeInstruction(code, index, op, aLow, (low >>> 6) & 0x3f, low & 0x3f);
+		const nextExt = (nextBx >> MAX_BX_BITS) & 0xff;
+		const nextLow = nextBx & MAX_LOW_BX;
+		writeInstruction(code, index, op, aLow, (nextLow >>> 6) & 0x3f, nextLow & 0x3f, nextExt);
 		if (wideIndex >= 0) {
-			writeInstruction(code, wideIndex, OpCode.WIDE, wideA, high, wideC);
+			writeInstruction(code, wideIndex, OpCode.WIDE, wideA, nextWide & 0x3f, wideC);
 		}
 		wideIndex = -1;
 		wideA = 0;

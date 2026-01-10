@@ -55,6 +55,7 @@ temp/**
 # Static libraries
 *.a
 *.lib
+*.asm
 
 # Shared libraries
 *.so

@@ -30,9 +30,9 @@ import { createIdentifierCanonicalizer } from '../utils/identifier_canonicalizer
 import { OpCode, type Program, type ProgramMetadata, type Proto, type UpvalueDesc, type Value, type SourceRange } from './cpu';
 import { optimizeInstructions, type Instruction, type OptimizationLevel } from './program_optimizer';
 import { StringPool, StringValue, isStringValue } from './string_pool';
-import { IO_ARG0_OFFSET, IO_BUFFER_BASE, IO_COMMAND_STRIDE, IO_CMD_PRINT, IO_WRITE_PTR_ADDR } from './vm_io';
+import { IO_ARG0_OFFSET, IO_ARG_STRIDE, IO_BUFFER_BASE, IO_COMMAND_STRIDE, IO_CMD_PRINT, IO_WRITE_PTR_ADDR } from './vm_io';
 import type { CanonicalizationType } from '../rompack/rompack';
-import { INSTRUCTION_BYTES, MAX_EXT_BX, MAX_EXT_CONST, MAX_EXT_REGISTER, MAX_LOW_BX, writeInstruction } from './instruction_format';
+import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_EXT_CONST, MAX_OPERAND_BITS, writeInstruction } from './instruction_format';
 
 export type CompiledProgram = {
 	program: Program;
@@ -178,6 +178,7 @@ class ProgramBuilder {
 				constPool: this.constPool,
 				protos: this.protos,
 				stringPool: this.stringPool,
+				constPoolStringPool: this.stringPool,
 			},
 			metadata,
 		};
@@ -192,33 +193,61 @@ class ProgramBuilder {
 	}
 }
 
-const splitPlainOperand = (value: number, label: string): { low: number; high: number } => {
+type SplitOperand = {
+	low: number;
+	ext: number;
+	wide: number;
+};
+
+const needsWideUnsigned = (value: number, baseBits: number, extBits: number): boolean => {
+	const baseTotal = baseBits + extBits;
+	const max = (1 << baseTotal) - 1;
+	return value > max;
+};
+
+const needsWideSigned = (value: number, baseBits: number, extBits: number): boolean => {
+	const baseTotal = baseBits + extBits;
+	const min = -(1 << (baseTotal - 1));
+	const max = (1 << (baseTotal - 1)) - 1;
+	return value < min || value > max;
+};
+
+const splitUnsignedOperand = (value: number, label: string, baseBits: number, extBits: number, forceWide: boolean): SplitOperand => {
 	if (value < 0) {
 		throw new Error(`[FunctionBuilder] Negative ${label} operand: ${value}`);
 	}
-	if (value > MAX_EXT_REGISTER) {
+	const baseTotal = baseBits + extBits;
+	const totalBits = baseTotal + (forceWide ? MAX_OPERAND_BITS : 0);
+	const max = (1 << totalBits) - 1;
+	if (value > max) {
 		throw new Error(`[FunctionBuilder] ${label} operand exceeds range: ${value}`);
 	}
-	return { low: value & 0x3f, high: value >> 6 };
+	const baseMask = (1 << baseBits) - 1;
+	const extMask = (1 << extBits) - 1;
+	return {
+		low: value & baseMask,
+		ext: (value >> baseBits) & extMask,
+		wide: value >> baseTotal,
+	};
 };
 
-const splitRKOperand = (value: number, label: string): { low: number; high: number } => {
-	const min = -(MAX_EXT_CONST + 1);
-	if (value < min || value > MAX_EXT_CONST) {
-		throw new Error(`[FunctionBuilder] ${label} RK operand exceeds range: ${value}`);
-	}
-	const raw = value & 0xfff;
-	return { low: raw & 0x3f, high: raw >> 6 };
-};
-
-const splitBxOperand = (value: number, label: string): { low: number; high: number } => {
-	if (value < 0) {
-		throw new Error(`[FunctionBuilder] Negative ${label} operand: ${value}`);
-	}
-	if (value > MAX_EXT_BX) {
+const splitSignedOperand = (value: number, label: string, baseBits: number, extBits: number, forceWide: boolean): SplitOperand => {
+	const baseTotal = baseBits + extBits;
+	const totalBits = baseTotal + (forceWide ? MAX_OPERAND_BITS : 0);
+	const min = -(1 << (totalBits - 1));
+	const max = (1 << (totalBits - 1)) - 1;
+	if (value < min || value > max) {
 		throw new Error(`[FunctionBuilder] ${label} operand exceeds range: ${value}`);
 	}
-	return { low: value & MAX_LOW_BX, high: value >> 12 };
+	const mask = (1 << totalBits) - 1;
+	const raw = value & mask;
+	const baseMask = (1 << baseBits) - 1;
+	const extMask = (1 << extBits) - 1;
+	return {
+		low: raw & baseMask,
+		ext: (raw >> baseBits) & extMask,
+		wide: raw >> baseTotal,
+	};
 };
 
 const buildModuleRootId = (moduleId: string): string => `module:${moduleId}`;
@@ -333,24 +362,33 @@ class FunctionBuilder {
 		const ranges = this.ranges;
 		const wideFlags: boolean[] = new Array(instructions.length);
 		const sbxValues: number[] = new Array(instructions.length).fill(0);
+		const sbxBaseBits = MAX_BX_BITS + EXT_BX_BITS;
+		const sbxWideBits = sbxBaseBits + MAX_OPERAND_BITS;
+		const sbxBaseMin = -(1 << (sbxBaseBits - 1));
+		const sbxBaseMax = (1 << (sbxBaseBits - 1)) - 1;
+		const sbxWideMin = -(1 << (sbxWideBits - 1));
+		const sbxWideMax = (1 << (sbxWideBits - 1)) - 1;
 
 		for (let index = 0; index < instructions.length; index += 1) {
 			const instr = instructions[index];
 			if (instr.format === 'ABC') {
-				const aSplit = splitPlainOperand(instr.a, 'A');
-				const bSplit = (instr.rkMask & RK_B) ? splitRKOperand(instr.b, 'B') : splitPlainOperand(instr.b, 'B');
-				const cSplit = (instr.rkMask & RK_C) ? splitRKOperand(instr.c, 'C') : splitPlainOperand(instr.c, 'C');
-				wideFlags[index] = aSplit.high !== 0 || bSplit.high !== 0 || cSplit.high !== 0;
+				const aWide = needsWideUnsigned(instr.a, MAX_OPERAND_BITS, EXT_A_BITS);
+				const bWide = (instr.rkMask & RK_B) !== 0
+					? needsWideSigned(instr.b, MAX_OPERAND_BITS, EXT_B_BITS)
+					: needsWideUnsigned(instr.b, MAX_OPERAND_BITS, EXT_B_BITS);
+				const cWide = (instr.rkMask & RK_C) !== 0
+					? needsWideSigned(instr.c, MAX_OPERAND_BITS, EXT_C_BITS)
+					: needsWideUnsigned(instr.c, MAX_OPERAND_BITS, EXT_C_BITS);
+				wideFlags[index] = aWide || bWide || cWide;
 				continue;
 			}
 			if (instr.format === 'ABx') {
-				const aSplit = splitPlainOperand(instr.a, 'A');
-				const bxSplit = splitBxOperand(instr.b, 'Bx');
-				wideFlags[index] = aSplit.high !== 0 || bxSplit.high !== 0;
+				const aWide = needsWideUnsigned(instr.a, MAX_OPERAND_BITS, 0);
+				const bxWide = needsWideUnsigned(instr.b, MAX_BX_BITS, EXT_BX_BITS);
+				wideFlags[index] = aWide || bxWide;
 				continue;
 			}
-			const aSplit = splitPlainOperand(instr.a, 'A');
-			wideFlags[index] = aSplit.high !== 0;
+			wideFlags[index] = needsWideUnsigned(instr.a, MAX_OPERAND_BITS, 0);
 		}
 
 		let changed = true;
@@ -377,11 +415,11 @@ class FunctionBuilder {
 				const targetIndex = instr.target;
 				const encodedTarget = targetIndex === instructions.length ? endIndex : instrStartIndex[targetIndex];
 				const sbx = encodedTarget - (instrWordIndex[index] + 1);
-				if (sbx < -131072 || sbx > 131071) {
+				if (sbx < sbxWideMin || sbx > sbxWideMax) {
 					throw new Error(`[FunctionBuilder] Jump offset out of range: ${sbx}`);
 				}
 				sbxValues[index] = sbx;
-				if (!wideFlags[index] && (sbx < 0 || sbx > 2047)) {
+				if (!wideFlags[index] && (sbx < sbxBaseMin || sbx > sbxBaseMax)) {
 					wideFlags[index] = true;
 					changed = true;
 				}
@@ -401,42 +439,47 @@ class FunctionBuilder {
 			const hasWide = wideFlags[index];
 			const range = ranges[index];
 			if (instr.format === 'ABC') {
-				const aSplit = splitPlainOperand(instr.a, 'A');
-				const bSplit = (instr.rkMask & RK_B) ? splitRKOperand(instr.b, 'B') : splitPlainOperand(instr.b, 'B');
-				const cSplit = (instr.rkMask & RK_C) ? splitRKOperand(instr.c, 'C') : splitPlainOperand(instr.c, 'C');
+				const aSplit = splitUnsignedOperand(instr.a, 'A', MAX_OPERAND_BITS, EXT_A_BITS, hasWide);
+				const bSplit = (instr.rkMask & RK_B)
+					? splitSignedOperand(instr.b, 'B', MAX_OPERAND_BITS, EXT_B_BITS, hasWide)
+					: splitUnsignedOperand(instr.b, 'B', MAX_OPERAND_BITS, EXT_B_BITS, hasWide);
+				const cSplit = (instr.rkMask & RK_C)
+					? splitSignedOperand(instr.c, 'C', MAX_OPERAND_BITS, EXT_C_BITS, hasWide)
+					: splitUnsignedOperand(instr.c, 'C', MAX_OPERAND_BITS, EXT_C_BITS, hasWide);
+				const ext = (aSplit.ext << 6) | (bSplit.ext << 3) | cSplit.ext;
 				if (hasWide) {
-					writeInstruction(code, cursor, OpCode.WIDE, aSplit.high, bSplit.high, cSplit.high);
+					writeInstruction(code, cursor, OpCode.WIDE, aSplit.wide, bSplit.wide, cSplit.wide);
 					finalRanges[cursor] = range;
 					cursor += 1;
 				}
-				writeInstruction(code, cursor, instr.op, aSplit.low, bSplit.low, cSplit.low);
+				writeInstruction(code, cursor, instr.op, aSplit.low, bSplit.low, cSplit.low, ext);
 				finalRanges[cursor] = range;
 				cursor += 1;
 				continue;
 			}
 			if (instr.format === 'ABx') {
-				const aSplit = splitPlainOperand(instr.a, 'A');
-				const bxSplit = splitBxOperand(instr.b, 'Bx');
+				const aSplit = splitUnsignedOperand(instr.a, 'A', MAX_OPERAND_BITS, 0, hasWide);
+				const bxSplit = splitUnsignedOperand(instr.b, 'Bx', MAX_BX_BITS, EXT_BX_BITS, hasWide);
 				if (hasWide) {
-					writeInstruction(code, cursor, OpCode.WIDE, aSplit.high, bxSplit.high, 0);
+					writeInstruction(code, cursor, OpCode.WIDE, aSplit.wide, bxSplit.wide, 0);
 					finalRanges[cursor] = range;
 					cursor += 1;
 				}
-				writeInstruction(code, cursor, instr.op, aSplit.low, (bxSplit.low >>> 6) & 0x3f, bxSplit.low & 0x3f);
+				writeInstruction(code, cursor, instr.op, aSplit.low, (bxSplit.low >>> 6) & 0x3f, bxSplit.low & 0x3f, bxSplit.ext);
 				finalRanges[cursor] = range;
 				cursor += 1;
 				continue;
 			}
 
-			const aSplit = splitPlainOperand(instr.a, 'A');
+			const aSplit = splitUnsignedOperand(instr.a, 'A', MAX_OPERAND_BITS, 0, hasWide);
 			const sbx = sbxValues[index];
-			const bxSplit = splitBxOperand(sbx & MAX_EXT_BX, 'sBx');
+			const bxSplit = splitSignedOperand(sbx, 'sBx', MAX_BX_BITS, EXT_BX_BITS, hasWide);
 			if (hasWide) {
-				writeInstruction(code, cursor, OpCode.WIDE, aSplit.high, bxSplit.high, 0);
+				writeInstruction(code, cursor, OpCode.WIDE, aSplit.wide, bxSplit.wide, 0);
 				finalRanges[cursor] = range;
 				cursor += 1;
 			}
-			writeInstruction(code, cursor, instr.op, aSplit.low, (bxSplit.low >>> 6) & 0x3f, bxSplit.low & 0x3f);
+			writeInstruction(code, cursor, instr.op, aSplit.low, (bxSplit.low >>> 6) & 0x3f, bxSplit.low & 0x3f, bxSplit.ext);
 			finalRanges[cursor] = range;
 			cursor += 1;
 		}
@@ -1683,7 +1726,7 @@ class FunctionBuilder {
 		this.emitABC(OpCode.STORE_MEM, tempReg, commandBaseReg, 0);
 
 		for (let i = 0; i < argRegs.length; i += 1) {
-			this.emitLoadConst(tempReg, IO_ARG0_OFFSET + i);
+			this.emitLoadConst(tempReg, IO_ARG0_OFFSET + (i * IO_ARG_STRIDE));
 			this.emitABC(OpCode.ADD, tempReg, commandBaseReg, tempReg, RK_B | RK_C);
 			this.emitABC(OpCode.STORE_MEM, argRegs[i], tempReg, 0);
 		}
@@ -1842,7 +1885,7 @@ function createProgramBuilderFromProgram(
 	canonicalization: CanonicalizationType,
 	optLevel: OptimizationLevel,
 ): ProgramBuilder {
-	const builder = new ProgramBuilder(base.constPool, canonicalization, base.stringPool, optLevel);
+	const builder = new ProgramBuilder(base.constPool, canonicalization, base.constPoolStringPool, optLevel);
 	const protoIds = metadata.protoIds;
 	if (!protoIds || protoIds.length !== base.protos.length) {
 		throw new Error('[ProgramBuilder] Base program proto ids missing or mismatched.');

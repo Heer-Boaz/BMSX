@@ -349,21 +349,23 @@ void VMRuntime::destroy() {
 }
 
 VMRuntime::VMRuntime(const VMRuntimeOptions& options)
-	: m_memory(VM_IO_MEMORY_SIZE)
-	, m_cpu(m_memory)
+	: m_memory()
+	, m_stringHandles(m_memory)
+	, m_cpu(m_memory, &m_stringHandles)
 	, m_playerIndex(options.playerIndex)
 	, m_viewport(options.viewport)
 	, m_canonicalization(options.canonicalization)
 {
 	// Initialize I/O memory region
-	std::fill(m_memory.begin(), m_memory.end(), valueNil());
+	m_memory.clearIoSlots();
 	// Write pointer starts at 0
-	m_memory[IO_WRITE_PTR_ADDR] = valueNumber(0.0);
+	m_memory.writeValue(IO_WRITE_PTR_ADDR, valueNumber(0.0));
 	// System flags
-	m_memory[IO_SYS_CART_PRESENT] = valueNumber(0.0);
-	m_memory[IO_SYS_BOOT_CART] = valueNumber(0.0);
-	m_memory[IO_SYS_CART_BOOTREADY] = valueNumber(0.0);
+	m_memory.writeValue(IO_SYS_CART_PRESENT, valueNumber(0.0));
+	m_memory.writeValue(IO_SYS_BOOT_CART, valueNumber(0.0));
+	m_memory.writeValue(IO_SYS_CART_BOOTREADY, valueNumber(0.0));
 	m_vmRandomSeedValue = static_cast<uint32_t>(EngineCore::instance().clock()->now());
+	refreshMemoryMap();
 	m_cpu.setExternalRootMarker([this](VMHeap& heap) {
 		for (const auto& entry : m_vmModuleCache) {
 			heap.markValue(entry.second);
@@ -417,11 +419,11 @@ void VMRuntime::boot(Program* program, ProgramMetadata* metadata, int entryProto
 	m_newGameFn = nullptr;
 	m_cpu.instructionBudgetRemaining = std::nullopt;
 	m_cpu.globals->clear();
-	std::fill(m_memory.begin(), m_memory.end(), valueNil());
-	m_memory[IO_WRITE_PTR_ADDR] = valueNumber(0.0);
-	m_memory[IO_SYS_CART_PRESENT] = valueNumber(0.0);
-	m_memory[IO_SYS_BOOT_CART] = valueNumber(0.0);
-	m_memory[IO_SYS_CART_BOOTREADY] = valueNumber(0.0);
+	m_memory.clearIoSlots();
+	m_memory.writeValue(IO_WRITE_PTR_ADDR, valueNumber(0.0));
+	m_memory.writeValue(IO_SYS_CART_PRESENT, valueNumber(0.0));
+	m_memory.writeValue(IO_SYS_BOOT_CART, valueNumber(0.0));
+	m_memory.writeValue(IO_SYS_CART_BOOTREADY, valueNumber(0.0));
 	m_vmRandomSeedValue = static_cast<uint32_t>(EngineCore::instance().clock()->now());
 	setupBuiltins();
 	m_api->registerAllFunctions();
@@ -486,7 +488,7 @@ void VMRuntime::boot(Program* program, ProgramMetadata* metadata, int entryProto
 
 void VMRuntime::syncSystemRegisters() {
 	const bool cartPresent = EngineCore::instance().assets().vmProgram != nullptr;
-	m_memory[IO_SYS_CART_PRESENT] = valueNumber(cartPresent ? 1.0 : 0.0);
+	m_memory.writeValue(IO_SYS_CART_PRESENT, valueNumber(cartPresent ? 1.0 : 0.0));
 	if (!cartPresent) {
 		m_cartBootPrepared = false;
 		setCartBootReadyFlag(false);
@@ -494,7 +496,7 @@ void VMRuntime::syncSystemRegisters() {
 }
 
 void VMRuntime::setCartBootReadyFlag(bool value) {
-	m_memory[IO_SYS_CART_BOOTREADY] = valueNumber(value ? 1.0 : 0.0);
+	m_memory.writeValue(IO_SYS_CART_BOOTREADY, valueNumber(value ? 1.0 : 0.0));
 }
 
 void VMRuntime::prepareCartBootIfNeeded() {
@@ -518,10 +520,10 @@ bool VMRuntime::pollSystemBootRequest() {
 	if (!isEngineProgramActive()) {
 		return false;
 	}
-	if (asNumber(m_memory[IO_SYS_BOOT_CART]) == 0.0) {
+	if (asNumber(m_memory.readValue(IO_SYS_BOOT_CART)) == 0.0) {
 		return false;
 	}
-	m_memory[IO_SYS_BOOT_CART] = valueNumber(0.0);
+	m_memory.writeValue(IO_SYS_BOOT_CART, valueNumber(0.0));
 	EngineCore::instance().resetLoadedRom();
 	return true;
 }
@@ -600,7 +602,7 @@ void VMRuntime::tickTerminalModeDraw() {
 
 void VMRuntime::processIOCommands() {
 	// Get write pointer
-	int writePtr = static_cast<int>(asNumber(m_memory[IO_WRITE_PTR_ADDR]));
+	int writePtr = static_cast<int>(asNumber(m_memory.readValue(IO_WRITE_PTR_ADDR)));
 	if (writePtr <= 0) {
 		return;
 	}
@@ -608,11 +610,11 @@ void VMRuntime::processIOCommands() {
 	// Process each command
 	for (int i = 0; i < writePtr && i < VM_IO_COMMAND_CAPACITY; ++i) {
 		int cmdBase = IO_BUFFER_BASE + i * IO_COMMAND_STRIDE;
-		int cmd = static_cast<int>(asNumber(m_memory[cmdBase]));
+		int cmd = static_cast<int>(asNumber(m_memory.readValue(cmdBase)));
 
 		switch (cmd) {
 			case IO_CMD_PRINT: {
-				Value arg = m_memory[cmdBase + IO_ARG0_OFFSET];
+				Value arg = m_memory.readValue(cmdBase + IO_ARG0_OFFSET);
 				std::cout << vmToString(arg) << '\n';
 				break;
 			}
@@ -622,7 +624,7 @@ void VMRuntime::processIOCommands() {
 	}
 
 	// Reset write pointer
-	m_memory[IO_WRITE_PTR_ADDR] = valueNumber(0.0);
+	m_memory.writeValue(IO_WRITE_PTR_ADDR, valueNumber(0.0));
 }
 
 void VMRuntime::requestProgramReload() {
@@ -637,17 +639,14 @@ void VMRuntime::resetCartBootState() {
 
 VMState VMRuntime::captureCurrentState() const {
 	VMState state;
-	state.memory = m_memory;
+	state.ioMemory = m_memory.ioSlots();
 	state.globals = m_cpu.globals->entries();
 	return state;
 }
 
 void VMRuntime::applyState(const VMState& state) {
 	// Restore memory
-	m_memory = state.memory;
-	if (m_memory.size() < VM_IO_MEMORY_SIZE) {
-		m_memory.resize(VM_IO_MEMORY_SIZE);
-	}
+	m_memory.loadIoSlots(state.ioMemory);
 
 	// Restore globals
 	m_cpu.globals->clear();
@@ -681,6 +680,19 @@ void VMRuntime::registerNativeFunction(std::string_view name, NativeFunctionInvo
 
 void VMRuntime::setCanonicalization(CanonicalizationType canonicalization) {
 	m_canonicalization = canonicalization;
+}
+
+void VMRuntime::refreshMemoryMap() {
+	const auto& engineRom = EngineCore::instance().engineRomBytes();
+	if (!engineRom.empty()) {
+		m_memory.setEngineRom(engineRom.data(), engineRom.size());
+	}
+	const auto& cartRom = EngineCore::instance().cartRomBytes();
+	if (!cartRom.empty()) {
+		m_memory.setCartRom(cartRom.data(), cartRom.size());
+	} else {
+		m_memory.setCartRom(nullptr, 0);
+	}
 }
 
 Value VMRuntime::requireVmModule(const std::string& moduleName) {
@@ -1436,14 +1448,14 @@ void VMRuntime::setupBuiltins() {
 	setGlobal("SYS_BOOT_CART", valueNumber(static_cast<double>(IO_SYS_BOOT_CART)));
 	setGlobal("SYS_CART_BOOTREADY", valueNumber(static_cast<double>(IO_SYS_CART_BOOTREADY)));
 
-registerNativeFunction("peek", [this](const std::vector<Value>& args, std::vector<Value>& out) {
-		int address = static_cast<int>(asNumber(args.at(0)));
-		out.push_back(m_memory[address]);
+	registerNativeFunction("peek", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+		uint32_t address = static_cast<uint32_t>(asNumber(args.at(0)));
+		out.push_back(m_memory.readValue(address));
 	});
 
 	registerNativeFunction("poke", [this](const std::vector<Value>& args, std::vector<Value>& out) {
-		int address = static_cast<int>(asNumber(args.at(0)));
-		m_memory[address] = args.at(1);
+		uint32_t address = static_cast<uint32_t>(asNumber(args.at(0)));
+		m_memory.writeValue(address, args.at(1));
 		(void)out;
 	});
 
@@ -2210,7 +2222,7 @@ tableLib->set(key("unpack"), m_cpu.createNativeFunction("table.unpack", [](const
 		out.push_back(tbl->get(valueNumber(static_cast<double>(i))));
 	}
 }));
-tableLib->set(key("sort"), m_cpu.createNativeFunction("table.sort", [callVmValue](const std::vector<Value>& args, std::vector<Value>& out) {
+tableLib->set(key("sort"), m_cpu.createNativeFunction("table.sort", [this, callVmValue](const std::vector<Value>& args, std::vector<Value>& out) {
 	auto* tbl = asTable(args.at(0));
 	Value comparator = args.size() > 1 ? args.at(1) : valueNil();
 	int length = tbl->length();

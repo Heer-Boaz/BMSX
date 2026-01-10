@@ -1,3 +1,5 @@
+import type { StringHandleTable } from './string_memory';
+
 export type StringId = number;
 
 export class StringValue {
@@ -18,25 +20,54 @@ export class StringValue {
 
 export class StringPool {
 	private readonly byText = new Map<string, StringValue>();
-	private readonly byId: StringValue[] = [];
+	private readonly byId: Array<StringValue | null> = [];
+	private nextId = 0;
+	private readonly handleTable: StringHandleTable | null;
+
+	constructor(handleTable: StringHandleTable | null = null) {
+		this.handleTable = handleTable;
+	}
 
 	public intern(text: string): StringValue {
 		const existing = this.byText.get(text);
 		if (existing !== undefined) {
 			return existing;
 		}
-		const entry = StringValue.create(this.byId.length, text);
-		this.byId.push(entry);
+		let id = this.nextId;
+		if (this.handleTable) {
+			id = this.handleTable.allocateHandle(text).id;
+		}
+		const entry = StringValue.create(id, text);
+		this.byId[id] = entry;
 		this.byText.set(text, entry);
+		if (id >= this.nextId) {
+			this.nextId = id + 1;
+		}
 		return entry;
 	}
 
 	public getById(id: StringId): StringValue {
-		return this.byId[id];
+		const entry = this.byId[id];
+		if (!entry) {
+			throw new Error(`[StringPool] Unknown string id ${id}.`);
+		}
+		return entry;
 	}
 
 	public codepointCount(value: StringValue): number {
 		return value.codepointCount;
+	}
+
+	public reserveHandles(minHandle: number): void {
+		if (this.handleTable) {
+			this.handleTable.reserveHandles(minHandle);
+		}
+		if (minHandle > this.nextId) {
+			for (let index = this.byId.length; index < minHandle; index += 1) {
+				this.byId[index] = null;
+			}
+			this.nextId = minHandle;
+		}
 	}
 }
 

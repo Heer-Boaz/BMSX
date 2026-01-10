@@ -1,0 +1,28 @@
+export const ADDRESS_BITS = 32;
+
+export const ENGINE_ROM_BASE = 0x00000000;
+export const ENGINE_ROM_SIZE = 0x01000000; // 16 MB
+
+export const CART_ROM_BASE = 0x01000000;
+export const CART_ROM_SIZE = 0x05000000; // 80 MB
+
+export const OVERLAY_ROM_BASE = 0x06000000;
+export const OVERLAY_ROM_SIZE = 0x02000000; // 32 MB
+
+export const RAM_BASE = 0x08000000;
+export const RAM_SIZE = 0x08000000; // 128 MB
+
+export const IO_WORD_SIZE = 8;
+export const IO_REGION_SIZE = 0x00004000; // 16 KB
+
+export const STRING_HANDLE_COUNT = 0x40000; // 256k handles
+export const STRING_HANDLE_ENTRY_SIZE = 16;
+export const STRING_HANDLE_TABLE_SIZE = STRING_HANDLE_COUNT * STRING_HANDLE_ENTRY_SIZE;
+export const ENGINE_STRING_HANDLE_LIMIT = 0x8000; // 32k reserved for engine/system
+
+export const STRING_HEAP_SIZE = 0x02000000; // 32 MB
+
+export const IO_BASE = RAM_BASE;
+export const STRING_HANDLE_TABLE_BASE = IO_BASE + IO_REGION_SIZE;
+export const STRING_HEAP_BASE = STRING_HANDLE_TABLE_BASE + STRING_HANDLE_TABLE_SIZE;
+export const RAM_USED_END = STRING_HEAP_BASE + STRING_HEAP_SIZE;

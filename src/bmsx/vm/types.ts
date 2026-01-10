@@ -1,5 +1,6 @@
 import type { LuaFunctionValue } from '../lua/luavalue';
 import type { asset_id, CanonicalizationType, Viewport } from '../rompack/rompack';
+import type { VmMemory } from './vm_memory';
 import { LuaEntrySnapshot } from './lua_js_bridge';
 
 export type VMResourceDescriptor = {
@@ -104,6 +105,7 @@ export type BmsxVMRuntimeOptions = {
 	playerIndex: number;
 	canonicalization?: CanonicalizationType;
 	viewport: Viewport;
+	memory: VmMemory;
 };
 
 export type BmsxVMState = {

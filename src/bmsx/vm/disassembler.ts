@@ -1,5 +1,5 @@
 import { OpCode, Table, isNativeFunction, isNativeObject, type Program, type ProgramMetadata, type SourceRange, type Value } from './cpu';
-import { INSTRUCTION_BYTES, readInstructionWord } from './instruction_format';
+import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, readInstructionWord } from './instruction_format';
 import { formatNumber } from './number_format';
 import { isStringValue, stringValueToString } from './string_pool';
 
@@ -27,6 +27,8 @@ type DecodedInstruction = {
 	c: number;
 	bx: number;
 	sbx: number;
+	rkBitsB: number;
+	rkBitsC: number;
 	rawWords: number[];
 };
 
@@ -70,9 +72,10 @@ const normalizeOptions = (options: DisassemblyOptions): ResolvedOptions => {
 	};
 };
 
-const signExtend12 = (value: number): number => (value << 20) >> 20;
-
-const signExtend18 = (value: number): number => (value << 14) >> 14;
+const signExtend = (value: number, bits: number): number => {
+	const shift = 32 - bits;
+	return (value << shift) >> shift;
+};
 
 const formatHexWord = (word: number, options: ResolvedOptions): string => {
 	const hex = word.toString(16);
@@ -127,8 +130,8 @@ const formatConst = (program: Program, index: number, options: ResolvedOptions):
 	return `${base}(${formatValue(program.constPool[index])})`;
 };
 
-const formatRK = (program: Program, raw: number, options: ResolvedOptions): string => {
-	const rk = signExtend12(raw);
+const formatRK = (program: Program, raw: number, bits: number, options: ResolvedOptions): string => {
+	const rk = signExtend(raw, bits);
 	if (rk < 0) {
 		return formatConst(program, -1 - rk, options);
 	}
@@ -217,6 +220,7 @@ const formatSourceComment = (range: SourceRange, options: ResolvedOptions, cache
 const decodeInstruction = (code: Uint8Array, pc: number): DecodedInstruction => {
 	const wordIndex = pc / INSTRUCTION_BYTES;
 	const word = readInstructionWord(code, wordIndex);
+	const ext = word >>> 24;
 	const op = (word >>> 18) & 0x3f;
 	const aLow = (word >>> 12) & 0x3f;
 	const bLow = (word >>> 6) & 0x3f;
@@ -225,16 +229,34 @@ const decodeInstruction = (code: Uint8Array, pc: number): DecodedInstruction => 
 		const wideA = aLow;
 		const wideB = bLow;
 		const wideC = cLow;
+		const hasWide = true;
 		const nextWord = readInstructionWord(code, wordIndex + 1);
+		const nextExt = nextWord >>> 24;
 		const nextOp = (nextWord >>> 18) & 0x3f;
 		const nextA = (nextWord >>> 12) & 0x3f;
 		const nextB = (nextWord >>> 6) & 0x3f;
 		const nextC = nextWord & 0x3f;
-		const a = (wideA << 6) | nextA;
-		const b = (wideB << 6) | nextB;
-		const c = (wideC << 6) | nextC;
-		const bx = (wideB << 12) | (nextB << 6) | nextC;
-		const sbx = signExtend18(bx);
+		const usesBx = nextOp === OpCode.LOADK
+			|| nextOp === OpCode.GETG
+			|| nextOp === OpCode.SETG
+			|| nextOp === OpCode.CLOSURE
+			|| nextOp === OpCode.JMP
+			|| nextOp === OpCode.JMPIF
+			|| nextOp === OpCode.JMPIFNOT;
+		const extA = usesBx ? 0 : (nextExt >>> 6) & 0x3;
+		const extB = usesBx ? 0 : (nextExt >>> 3) & 0x7;
+		const extC = usesBx ? 0 : (nextExt & 0x7);
+		const aShift = MAX_OPERAND_BITS + (usesBx ? 0 : EXT_A_BITS);
+		const a = (wideA << aShift) | (extA << MAX_OPERAND_BITS) | nextA;
+		const b = (wideB << (MAX_OPERAND_BITS + EXT_B_BITS)) | (extB << MAX_OPERAND_BITS) | nextB;
+		const c = (wideC << (MAX_OPERAND_BITS + EXT_C_BITS)) | (extC << MAX_OPERAND_BITS) | nextC;
+		const bxLow = (nextB << 6) | nextC;
+		const bxExt = usesBx ? nextExt : 0;
+		const bx = (wideB << (MAX_BX_BITS + EXT_BX_BITS)) | (bxExt << MAX_BX_BITS) | bxLow;
+		const sbxBits = MAX_BX_BITS + EXT_BX_BITS + (hasWide ? MAX_OPERAND_BITS : 0);
+		const sbx = signExtend(bx, sbxBits);
+		const rkBitsB = MAX_OPERAND_BITS + EXT_B_BITS + (hasWide ? MAX_OPERAND_BITS : 0);
+		const rkBitsC = MAX_OPERAND_BITS + EXT_C_BITS + (hasWide ? MAX_OPERAND_BITS : 0);
 		return {
 			pc: pc + INSTRUCTION_BYTES,
 			op: nextOp as OpCode,
@@ -243,14 +265,30 @@ const decodeInstruction = (code: Uint8Array, pc: number): DecodedInstruction => 
 			c,
 			bx,
 			sbx,
+			rkBitsB,
+			rkBitsC,
 			rawWords: [word, nextWord],
 		};
 	}
-	const a = aLow;
-	const b = bLow;
-	const c = cLow;
-	const bx = (bLow << 6) | cLow;
-	const sbx = signExtend18(bx);
+	const usesBx = op === OpCode.LOADK
+		|| op === OpCode.GETG
+		|| op === OpCode.SETG
+		|| op === OpCode.CLOSURE
+		|| op === OpCode.JMP
+		|| op === OpCode.JMPIF
+		|| op === OpCode.JMPIFNOT;
+	const extA = usesBx ? 0 : (ext >>> 6) & 0x3;
+	const extB = usesBx ? 0 : (ext >>> 3) & 0x7;
+	const extC = usesBx ? 0 : (ext & 0x7);
+	const a = (extA << MAX_OPERAND_BITS) | aLow;
+	const b = (extB << MAX_OPERAND_BITS) | bLow;
+	const c = (extC << MAX_OPERAND_BITS) | cLow;
+	const bxLow = (bLow << 6) | cLow;
+	const bxExt = usesBx ? ext : 0;
+	const bx = (bxExt << MAX_BX_BITS) | bxLow;
+	const sbx = signExtend(bx, MAX_BX_BITS + EXT_BX_BITS);
+	const rkBitsB = MAX_OPERAND_BITS + EXT_B_BITS;
+	const rkBitsC = MAX_OPERAND_BITS + EXT_C_BITS;
 	return {
 		pc,
 		op: op as OpCode,
@@ -259,6 +297,8 @@ const decodeInstruction = (code: Uint8Array, pc: number): DecodedInstruction => 
 		c,
 		bx,
 		sbx,
+		rkBitsB,
+		rkBitsC,
 		rawWords: [word],
 	};
 };
@@ -285,37 +325,37 @@ const formatInstruction = (
 		case OpCode.SETG:
 			return `SETG r${a}, ${formatConst(program, bx, options)}`;
 		case OpCode.GETT:
-			return `GETT r${a}, r${b}, ${formatRK(program, c, options)}`;
+			return `GETT r${a}, r${b}, ${formatRK(program, c, decoded.rkBitsC, options)}`;
 		case OpCode.SETT:
-			return `SETT r${a}, ${formatRK(program, b, options)}, ${formatRK(program, c, options)}`;
+			return `SETT r${a}, ${formatRK(program, b, decoded.rkBitsB, options)}, ${formatRK(program, c, decoded.rkBitsC, options)}`;
 		case OpCode.NEWT:
 			return `NEWT r${a}, ${b}, ${c}`;
 		case OpCode.ADD:
-			return `ADD r${a}, ${formatRK(program, b, options)}, ${formatRK(program, c, options)}`;
+			return `ADD r${a}, ${formatRK(program, b, decoded.rkBitsB, options)}, ${formatRK(program, c, decoded.rkBitsC, options)}`;
 		case OpCode.SUB:
-			return `SUB r${a}, ${formatRK(program, b, options)}, ${formatRK(program, c, options)}`;
+			return `SUB r${a}, ${formatRK(program, b, decoded.rkBitsB, options)}, ${formatRK(program, c, decoded.rkBitsC, options)}`;
 		case OpCode.MUL:
-			return `MUL r${a}, ${formatRK(program, b, options)}, ${formatRK(program, c, options)}`;
+			return `MUL r${a}, ${formatRK(program, b, decoded.rkBitsB, options)}, ${formatRK(program, c, decoded.rkBitsC, options)}`;
 		case OpCode.DIV:
-			return `DIV r${a}, ${formatRK(program, b, options)}, ${formatRK(program, c, options)}`;
+			return `DIV r${a}, ${formatRK(program, b, decoded.rkBitsB, options)}, ${formatRK(program, c, decoded.rkBitsC, options)}`;
 		case OpCode.MOD:
-			return `MOD r${a}, ${formatRK(program, b, options)}, ${formatRK(program, c, options)}`;
+			return `MOD r${a}, ${formatRK(program, b, decoded.rkBitsB, options)}, ${formatRK(program, c, decoded.rkBitsC, options)}`;
 		case OpCode.FLOORDIV:
-			return `FLOORDIV r${a}, ${formatRK(program, b, options)}, ${formatRK(program, c, options)}`;
+			return `FLOORDIV r${a}, ${formatRK(program, b, decoded.rkBitsB, options)}, ${formatRK(program, c, decoded.rkBitsC, options)}`;
 		case OpCode.POW:
-			return `POW r${a}, ${formatRK(program, b, options)}, ${formatRK(program, c, options)}`;
+			return `POW r${a}, ${formatRK(program, b, decoded.rkBitsB, options)}, ${formatRK(program, c, decoded.rkBitsC, options)}`;
 		case OpCode.BAND:
-			return `BAND r${a}, ${formatRK(program, b, options)}, ${formatRK(program, c, options)}`;
+			return `BAND r${a}, ${formatRK(program, b, decoded.rkBitsB, options)}, ${formatRK(program, c, decoded.rkBitsC, options)}`;
 		case OpCode.BOR:
-			return `BOR r${a}, ${formatRK(program, b, options)}, ${formatRK(program, c, options)}`;
+			return `BOR r${a}, ${formatRK(program, b, decoded.rkBitsB, options)}, ${formatRK(program, c, decoded.rkBitsC, options)}`;
 		case OpCode.BXOR:
-			return `BXOR r${a}, ${formatRK(program, b, options)}, ${formatRK(program, c, options)}`;
+			return `BXOR r${a}, ${formatRK(program, b, decoded.rkBitsB, options)}, ${formatRK(program, c, decoded.rkBitsC, options)}`;
 		case OpCode.SHL:
-			return `SHL r${a}, ${formatRK(program, b, options)}, ${formatRK(program, c, options)}`;
+			return `SHL r${a}, ${formatRK(program, b, decoded.rkBitsB, options)}, ${formatRK(program, c, decoded.rkBitsC, options)}`;
 		case OpCode.SHR:
-			return `SHR r${a}, ${formatRK(program, b, options)}, ${formatRK(program, c, options)}`;
+			return `SHR r${a}, ${formatRK(program, b, decoded.rkBitsB, options)}, ${formatRK(program, c, decoded.rkBitsC, options)}`;
 		case OpCode.CONCAT:
-			return `CONCAT r${a}, ${formatRK(program, b, options)}, ${formatRK(program, c, options)}`;
+			return `CONCAT r${a}, ${formatRK(program, b, decoded.rkBitsB, options)}, ${formatRK(program, c, decoded.rkBitsC, options)}`;
 		case OpCode.CONCATN:
 			return `CONCATN r${a}, r${b}, ${c}`;
 		case OpCode.UNM:
@@ -327,11 +367,11 @@ const formatInstruction = (
 		case OpCode.BNOT:
 			return `BNOT r${a}, r${b}`;
 		case OpCode.EQ:
-			return `EQ ${formatBool(a)}, ${formatRK(program, b, options)}, ${formatRK(program, c, options)}`;
+			return `EQ ${formatBool(a)}, ${formatRK(program, b, decoded.rkBitsB, options)}, ${formatRK(program, c, decoded.rkBitsC, options)}`;
 		case OpCode.LT:
-			return `LT ${formatBool(a)}, ${formatRK(program, b, options)}, ${formatRK(program, c, options)}`;
+			return `LT ${formatBool(a)}, ${formatRK(program, b, decoded.rkBitsB, options)}, ${formatRK(program, c, decoded.rkBitsC, options)}`;
 		case OpCode.LE:
-			return `LE ${formatBool(a)}, ${formatRK(program, b, options)}, ${formatRK(program, c, options)}`;
+			return `LE ${formatBool(a)}, ${formatRK(program, b, decoded.rkBitsB, options)}, ${formatRK(program, c, decoded.rkBitsC, options)}`;
 		case OpCode.TEST:
 			return `TEST r${a}, ${formatBool(c)}`;
 		case OpCode.TESTSET:

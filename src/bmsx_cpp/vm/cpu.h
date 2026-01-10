@@ -4,6 +4,7 @@
 #include <cstring>
 #include <functional>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -11,10 +12,12 @@
 #include <vector>
 
 #include "../core/types.h"
+#include "string_memory.h"
 
 namespace bmsx {
 
 class VMHeap;
+class VmMemory;
 
 struct Table;
 struct Closure;
@@ -62,27 +65,60 @@ struct StringKeyEq {
 
 class StringPool {
 public:
+	explicit StringPool(StringHandleTable* handleTable = nullptr)
+		: m_handleTable(handleTable) {
+	}
+
 	StringId intern(std::string_view value) {
 		auto it = m_stringMap.find(value);
 		if (it != m_stringMap.end()) {
 			return it->second;
 		}
 		auto entry = std::make_unique<InternedString>();
-		entry->id = static_cast<StringId>(m_entries.size());
+		StringId id = m_nextId;
+		if (m_handleTable) {
+			id = static_cast<StringId>(m_handleTable->allocateHandle(value));
+		}
+		entry->id = id;
 		entry->value.assign(value.data(), value.size());
 		entry->codepointCount = countCodepoints(entry->value);
-		StringId id = entry->id;
-		m_entries.push_back(std::move(entry));
-		m_stringMap.emplace(std::string_view(m_entries.back()->value), id);
+		if (id >= m_entries.size()) {
+			m_entries.resize(static_cast<size_t>(id) + 1);
+		}
+		m_entries[id] = std::move(entry);
+		m_stringMap.emplace(std::string_view(m_entries[id]->value), id);
+		if (id >= m_nextId) {
+			m_nextId = id + 1;
+		}
 		return id;
 	}
 
 	const std::string& toString(StringId id) const {
-		return m_entries.at(static_cast<size_t>(id))->value;
+		const auto* entry = m_entries.at(static_cast<size_t>(id)).get();
+		if (!entry) {
+			throw std::runtime_error("StringPool: missing string entry.");
+		}
+		return entry->value;
 	}
 
 	int codepointCount(StringId id) const {
-		return m_entries.at(static_cast<size_t>(id))->codepointCount;
+		const auto* entry = m_entries.at(static_cast<size_t>(id)).get();
+		if (!entry) {
+			throw std::runtime_error("StringPool: missing string entry.");
+		}
+		return entry->codepointCount;
+	}
+
+	void reserveHandles(StringId minHandle) {
+		if (m_handleTable) {
+			m_handleTable->reserveHandles(minHandle);
+		}
+		if (minHandle > m_nextId) {
+			if (m_entries.size() < static_cast<size_t>(minHandle)) {
+				m_entries.resize(static_cast<size_t>(minHandle));
+			}
+			m_nextId = minHandle;
+		}
 	}
 
 private:
@@ -110,6 +146,8 @@ private:
 		return count;
 	}
 
+	StringHandleTable* m_handleTable = nullptr;
+	StringId m_nextId = 0;
 	std::unordered_map<std::string_view, StringId, StringKeyHash, StringKeyEq> m_stringMap;
 	std::vector<std::unique_ptr<InternedString>> m_entries;
 };
@@ -403,6 +441,7 @@ struct Program {
 	std::vector<uint8_t> code;
 	std::vector<Value> constPool;
 	StringPool stringPool;
+	StringPool* constPoolStringPool = nullptr;
 	std::vector<Proto> protos;
 	bool constPoolCanonicalized = false;
 };
@@ -413,6 +452,12 @@ struct ProgramMetadata {
 };
 
 constexpr int INSTRUCTION_BYTES = 4;
+constexpr int MAX_OPERAND_BITS = 6;
+constexpr int MAX_BX_BITS = 12;
+constexpr int EXT_A_BITS = 2;
+constexpr int EXT_B_BITS = 3;
+constexpr int EXT_C_BITS = 3;
+constexpr int EXT_BX_BITS = 8;
 
 struct DecodedInstruction {
 	uint32_t word = 0;
@@ -420,6 +465,7 @@ struct DecodedInstruction {
 	uint8_t a = 0;
 	uint8_t b = 0;
 	uint8_t c = 0;
+	uint8_t ext = 0;
 };
 
 struct Upvalue : GCObject {
@@ -600,12 +646,13 @@ private:
 
 class VMCPU {
 public:
-	explicit VMCPU(std::vector<Value>& memory);
+	explicit VMCPU(VmMemory& memory, StringHandleTable* handleTable = nullptr);
 
 	void setProgram(Program* program, ProgramMetadata* metadata);
 	Program* getProgram() const { return m_program; }
 	StringId internString(std::string_view value) { return m_stringPool.intern(value); }
 	const StringPool& stringPool() const { return m_stringPool; }
+	void reserveStringHandles(StringId minHandle);
 	void setExternalRootMarker(std::function<void(VMHeap&)> marker) { m_externalRootMarker = std::move(marker); }
 
 	Value createNativeFunction(std::string_view name, NativeFunctionInvoke fn);
@@ -639,7 +686,18 @@ public:
 	Table* globals = nullptr;
 
 private:
-	void executeInstruction(CallFrame& frame, OpCode op, uint8_t aLow, uint8_t bLow, uint8_t cLow, uint8_t wideA, uint8_t wideB, uint8_t wideC);
+	void executeInstruction(
+		CallFrame& frame,
+		OpCode op,
+		uint8_t aLow,
+		uint8_t bLow,
+		uint8_t cLow,
+		uint8_t ext,
+		uint8_t wideA,
+		uint8_t wideB,
+		uint8_t wideC,
+		bool hasWide
+	);
 	void skipNextInstruction(CallFrame& frame);
 	void pushFrame(Closure* closure, const Value* args, size_t argCount,
 		int returnBase, int returnCount, bool captureReturns, int callSitePc);
@@ -651,7 +709,7 @@ private:
 	void writeUpvalue(Upvalue* upvalue, const Value& value);
 	void writeReturnValues(CallFrame& frame, int base, int count, const std::vector<Value>& values);
 	void setRegister(CallFrame& frame, int index, const Value& value);
-	const Value& readRK(CallFrame& frame, int low, int wide);
+	const Value& readRK(CallFrame& frame, uint32_t raw, int bits);
 	Value resolveTableIndex(Table* table, const Value& key);
 
 	std::unique_ptr<CallFrame> acquireFrame();
@@ -669,7 +727,7 @@ private:
 	Program* m_program = nullptr;
 	ProgramMetadata* m_metadata = nullptr;
 	std::vector<std::unique_ptr<CallFrame>> m_frames;
-	std::vector<Value>& m_memory;
+	VmMemory& m_memory;
 	StringPool m_stringPool;
 	VMHeap m_heap;
 	std::function<void(VMHeap&)> m_externalRootMarker;

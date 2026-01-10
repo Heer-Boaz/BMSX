@@ -2,6 +2,7 @@
 
 #include "cpu.h"
 #include "vm_io.h"
+#include "vm_memory.h"
 #include "../core/types.h"
 #include <functional>
 #include <memory>
@@ -55,7 +56,7 @@ struct VMRuntimeOptions {
  * VM runtime state snapshot for save/load.
  */
 struct VMState {
-	std::vector<Value> memory;
+	std::vector<Value> ioMemory;
 	std::vector<std::pair<Value, Value>> globals; // key-value pairs
 };
 
@@ -229,6 +230,7 @@ public:
 
 	void setCanonicalization(CanonicalizationType canonicalization);
 	Value canonicalizeIdentifier(std::string_view value);
+	void refreshMemoryMap();
 
 private:
 	enum class PendingCall {
@@ -264,7 +266,8 @@ private:
 	static constexpr size_t MAX_POOLED_VM_RUNTIME_SCRATCH = 32;
 
 	// VM core
-	std::vector<Value> m_memory;
+	VmMemory m_memory;
+	StringHandleTable m_stringHandles;
 	VMCPU m_cpu;
 	Program* m_program = nullptr;
 	ProgramMetadata* m_programMetadata = nullptr;

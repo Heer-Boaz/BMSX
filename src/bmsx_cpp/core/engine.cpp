@@ -6,8 +6,10 @@
 #include "../input/input.h"
 #include "../render/texturemanager.h"
 #include "../vm/vm_runtime.h"
+#include "../vm/program_linker.h"
 #include "../vm/font.h"
 #include "rompack.h"
+#include "../vm/memory_map.h"
 #include <cstdio>
 #include <chrono>
 #include <algorithm>
@@ -303,6 +305,7 @@ void EngineCore::refreshRenderAssets() {
 
 bool EngineCore::loadEngineAssets(const u8* data, size_t size) {
 	m_engine_assets.clear();
+	m_engine_rom_bytes.assign(data, data + size);
 	if (m_texture_manager) {
 		m_texture_manager->setBackend(m_view ? m_view->backend() : nullptr);
 	}
@@ -408,6 +411,7 @@ bool EngineCore::bootWithoutCart() {
 
 		// Boot the VM with the pre-compiled program from engine assets
 		VMRuntime& runtime = VMRuntime::instance();
+		runtime.refreshMemoryMap();
 		runtime.setProgramSource(VMRuntime::VmProgramSource::Engine);
 		runtime.setCanonicalization(m_engine_assets.manifest.canonicalization);
 		runtime.boot(*m_engine_assets.vmProgram, m_engine_assets.vmProgramSymbols.get());
@@ -420,6 +424,7 @@ bool EngineCore::bootWithoutCart() {
 
 bool EngineCore::loadRom(const u8* data, size_t size) {
 	unloadRom();
+	m_cart_rom_bytes.assign(data, data + size);
 	if (m_texture_manager) {
 		m_texture_manager->setBackend(m_view ? m_view->backend() : nullptr);
 	}
@@ -509,6 +514,7 @@ bool EngineCore::loadRom(const u8* data, size_t size) {
 			VMRuntime::createInstance(options);
 		}
 		VMRuntime& runtime = VMRuntime::instance();
+		runtime.refreshMemoryMap();
 		runtime.setProgramSource(VMRuntime::VmProgramSource::Engine);
 		runtime.setCanonicalization(m_engine_assets.manifest.canonicalization);
 		runtime.boot(*m_engine_assets.vmProgram, m_engine_assets.vmProgramSymbols.get());
@@ -557,6 +563,7 @@ bool EngineCore::resetLoadedRom() {
 			VMRuntime::createInstance(options);
 		}
 		VMRuntime& runtime = VMRuntime::instance();
+		runtime.refreshMemoryMap();
 		runtime.setProgramSource(VMRuntime::VmProgramSource::Engine);
 		runtime.setCanonicalization(m_engine_assets.manifest.canonicalization);
 		runtime.boot(*m_engine_assets.vmProgram, m_engine_assets.vmProgramSymbols.get());
@@ -754,6 +761,9 @@ void EngineCore::uploadTexturesToBackend(bool includeCartAssets) {
 void EngineCore::unloadRom() {
 	if (m_rom_loaded) {
 		m_assets.clear();
+		m_linked_vm_program.reset();
+		m_linked_vm_program_symbols.reset();
+		m_cart_rom_bytes.clear();
 		if (m_texture_manager) {
 			m_texture_manager->clear();
 		}
@@ -847,6 +857,8 @@ void EngineCore::bootVMFromProgram() {
 	if (!m_assets.vmProgram || !m_assets.vmProgram->program) {
 		return;
 	}
+	m_linked_vm_program.reset();
+	m_linked_vm_program_symbols.reset();
 
 	// Create VMRuntime instance if it doesn't exist
 	if (!VMRuntime::hasInstance()) {
@@ -860,8 +872,22 @@ void EngineCore::bootVMFromProgram() {
 
 	// Boot the VM with the pre-compiled program
 	VMRuntime& runtime = VMRuntime::instance();
+	runtime.refreshMemoryMap();
 	runtime.setProgramSource(VMRuntime::VmProgramSource::Cart);
 	runtime.setCanonicalization(m_assets.manifest.canonicalization);
+	if (m_engine_assets_loaded && m_engine_assets.vmProgram && m_engine_assets.vmProgram->program) {
+		runtime.cpu().reserveStringHandles(ENGINE_STRING_HANDLE_LIMIT);
+		auto linked = linkProgramAssets(
+			*m_engine_assets.vmProgram,
+			m_engine_assets.vmProgramSymbols.get(),
+			*m_assets.vmProgram,
+			m_assets.vmProgramSymbols.get()
+		);
+		m_linked_vm_program = std::move(linked.program);
+		m_linked_vm_program_symbols = std::move(linked.metadata);
+		runtime.boot(*m_linked_vm_program, m_linked_vm_program_symbols.get());
+		return;
+	}
 	runtime.boot(*m_assets.vmProgram, m_assets.vmProgramSymbols.get());
 }
 

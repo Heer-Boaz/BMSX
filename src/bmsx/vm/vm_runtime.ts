@@ -29,7 +29,8 @@ import { createIdentifierCanonicalizer } from '../utils/identifier_canonicalizer
 import { clamp01, clamp_fallback } from '../utils/clamp';
 import { BmsxVMApi } from './vm_api';
 import { VMCPU, Table, OpCode, type Closure, type Value, type Program, type ProgramMetadata, RunResult, createNativeFunction, createNativeObject, isNativeFunction, isNativeObject, type NativeFunction, type NativeObject } from './cpu';
-import { StringValue, isStringValue, stringValueToString } from './string_pool';
+import { StringPool, StringValue, isStringValue, stringValueToString } from './string_pool';
+import { StringHandleTable } from './string_memory';
 import { formatNumber } from './number_format';
 import { TerminalMode } from './terminal_mode';
 import { VMRenderFacade } from './vm_render_facade';
@@ -65,8 +66,10 @@ import { Msx1Colors } from '../systems/msx';
 import type { RectRenderSubmission } from '../render/shared/render_types';
 import { compileLuaChunkToProgram, appendLuaChunkToProgram } from './program_compiler';
 import { linkProgramAssets } from './program_linker';
-import { IO_ARG0_OFFSET, IO_BUFFER_BASE, IO_COMMAND_STRIDE, IO_CMD_PRINT, IO_SYS_BOOT_CART, IO_SYS_CART_PRESENT, IO_WRITE_PTR_ADDR, VM_IO_MEMORY_SIZE, IO_SYS_CART_BOOTREADY } from './vm_io';
+import { IO_ARG0_OFFSET, IO_BUFFER_BASE, IO_COMMAND_STRIDE, IO_CMD_PRINT, IO_SYS_BOOT_CART, IO_SYS_CART_PRESENT, IO_WRITE_PTR_ADDR, IO_SYS_CART_BOOTREADY } from './vm_io';
 import { VmHandlerCache } from './vm_handler_cache';
+import { VmMemory } from './vm_memory';
+import { ENGINE_STRING_HANDLE_LIMIT } from './memory_map';
 import {
 	buildModuleAliasMap,
 	buildModuleAliasesFromPaths,
@@ -177,10 +180,14 @@ export class BmsxVMRuntime {
 
 		if (!cartridge) {
 			$.set_lua_sources(engineLuaSources);
+			const memory = new VmMemory({
+				engineRom: new Uint8Array(engineLayer.payload),
+			});
 			const runtime = BmsxVMRuntime.createInstance({
 				playerIndex,
 				canonicalization: engineLayer.index.manifest.vm.canonicalization,
 				viewport: engineLayer.index.manifest.vm.viewport,
+				memory,
 			});
 			runtime.configureProgramSources({
 				engineSources: engineLuaSources,
@@ -226,10 +233,16 @@ export class BmsxVMRuntime {
 		await applyWorkspaceOverridesToCart({ cart: cartLuaSources, storage: $.platform.storage, includeServer: true });
 		$.set_lua_sources(engineLuaSources);
 
+		const memory = new VmMemory({
+			engineRom: new Uint8Array(engineLayer.payload),
+			cartRom: new Uint8Array(cartLayer.payload),
+			overlayRom: overlayLayer ? new Uint8Array(overlayLayer.payload) : null,
+		});
 		const runtime = BmsxVMRuntime.createInstance({
 			playerIndex,
 			canonicalization: engineLayer.index.manifest.vm.canonicalization,
 			viewport: cartLayer.index.manifest.vm.viewport,
+			memory,
 		});
 		runtime.cartAssetLayer = cartLayer;
 		runtime.overlayAssetLayer = overlayLayer;
@@ -394,8 +407,10 @@ export class BmsxVMRuntime {
 	private vmDrawClosure: Closure = null;
 	private pendingVmCall: 'update' | 'draw' = null;
 	private pendingProgramReload: { runInit?: boolean } = null;
-	private readonly cpuMemory: Value[];
+	private readonly memory: VmMemory;
 	private readonly cpu: VMCPU;
+	private readonly stringHandles: StringHandleTable;
+	private readonly runtimeStringPool: StringPool;
 	private vmProgramMetadata: ProgramMetadata | null = null;
 	private vmConsoleMetadata: ProgramMetadata | null = null;
 	private _luaPath: string = null;
@@ -497,16 +512,15 @@ export class BmsxVMRuntime {
 		this.cartCanonicalization = resolvedCanonicalization;
 		this.luaJsBridge = new LuaJsBridge(this, this.luaHandlerCache);
 		this.terminal = new TerminalMode(this);
-		this.cpuMemory = new Array<Value>(VM_IO_MEMORY_SIZE);
-		for (let index = 0; index < this.cpuMemory.length; index += 1) {
-			this.cpuMemory[index] = null;
-		}
-		this.cpuMemory[IO_WRITE_PTR_ADDR] = 0;
-		this.cpuMemory[IO_SYS_CART_PRESENT] = 0;
-		this.cpuMemory[IO_SYS_BOOT_CART] = 0;
-		this.cpuMemory[IO_SYS_CART_BOOTREADY] = 0;
+		this.memory = options.memory;
+		this.stringHandles = new StringHandleTable(this.memory);
+		this.runtimeStringPool = new StringPool(this.stringHandles);
+		this.memory.writeValue(IO_WRITE_PTR_ADDR, 0);
+		this.memory.writeValue(IO_SYS_CART_PRESENT, 0);
+		this.memory.writeValue(IO_SYS_BOOT_CART, 0);
+		this.memory.writeValue(IO_SYS_CART_BOOTREADY, 0);
 		this.cartAssetsApplied = false;
-		this.cpu = new VMCPU(this.cpuMemory);
+		this.cpu = new VMCPU(this.memory, this.runtimeStringPool);
 		this.vmRandomSeedValue = $.platform.clock.now();
 
 		api = new BmsxVMApi({
@@ -1227,7 +1241,7 @@ export class BmsxVMRuntime {
 	}
 
 	private setCartBootReadyFlag(value: boolean): void {
-		this.cpuMemory[IO_SYS_CART_BOOTREADY] = value ? 1 : 0;
+		this.memory.writeValue(IO_SYS_CART_BOOTREADY, value ? 1 : 0);
 	}
 
 	private async prepareCartBoot(): Promise<void> {
@@ -1284,17 +1298,17 @@ export class BmsxVMRuntime {
 	}
 
 	private syncSystemRegisters(): void {
-		this.cpuMemory[IO_SYS_CART_PRESENT] = $.assets.project_root_path !== $.engine_layer.index.projectRootPath ? 1 : 0;
+		this.memory.writeValue(IO_SYS_CART_PRESENT, $.assets.project_root_path !== $.engine_layer.index.projectRootPath ? 1 : 0);
 	}
 
 	private pollSystemBootRequest(): void {
 		if (!this.isEngineProgramActive()) {
 			return;
 		}
-		if (!this.cpuMemory[IO_SYS_BOOT_CART]) {
+		if (!this.memory.readValue(IO_SYS_BOOT_CART)) {
 			return;
 		}
-		this.cpuMemory[IO_SYS_BOOT_CART] = 0;
+		this.memory.writeValue(IO_SYS_BOOT_CART, 0);
 		this.requestCartBoot();
 	}
 
@@ -1467,7 +1481,7 @@ export class BmsxVMRuntime {
 		} else {
 			this.vmModuleCache.clear();
 		}
-		this.cpuMemory[IO_WRITE_PTR_ADDR] = 0;
+		this.memory.writeValue(IO_WRITE_PTR_ADDR, 0);
 		const prelude = this.runEngineBuiltinPrelude(program, metadata);
 		const finalizedMetadata = prelude.metadata;
 		this.cpu.start(entryProtoIndex);
@@ -1642,7 +1656,7 @@ export class BmsxVMRuntime {
 			this.vmModuleAliases.set(entry.alias, entry.path);
 		}
 		this.vmModuleCache.clear();
-		this.cpuMemory[IO_WRITE_PTR_ADDR] = 0;
+		this.memory.writeValue(IO_WRITE_PTR_ADDR, 0);
 		const prelude = this.runEngineBuiltinPrelude(program, metadata);
 		this.vmProgramMetadata = prelude.metadata;
 		this.cpu.start(entryProtoIndex);
@@ -2073,11 +2087,11 @@ export class BmsxVMRuntime {
 		this.registerVmGlobal('SYS_CART_BOOTREADY', IO_SYS_CART_BOOTREADY);
 		this.registerVmGlobal('peek', createNativeFunction('peek', (args, out) => {
 			const address = args[0] as number;
-			out.push(this.cpuMemory[address]);
+			out.push(this.memory.readValue(address));
 		}));
 		this.registerVmGlobal('poke', createNativeFunction('poke', (args, out) => {
 			const address = args[0] as number;
-			this.cpuMemory[address] = args[1];
+			this.memory.writeValue(address, args[1]);
 			out.length = 0;
 		}));
 		this.registerVmGlobal('type', createNativeFunction('type', (args, out) => {
@@ -3592,18 +3606,18 @@ export class BmsxVMRuntime {
 	}
 
 	private processVmIo(): void {
-		const memory = this.cpuMemory;
-		const count = memory[IO_WRITE_PTR_ADDR] as number;
+		const memory = this.memory;
+		const count = memory.readValue(IO_WRITE_PTR_ADDR) as number;
 		if (!count) {
 			return;
 		}
 		const base = IO_BUFFER_BASE;
 		for (let index = 0; index < count; index += 1) {
 			const cmdBase = base + index * IO_COMMAND_STRIDE;
-			const cmd = memory[cmdBase] as number;
+			const cmd = memory.readValue(cmdBase) as number;
 			switch (cmd) {
 				case IO_CMD_PRINT: {
-					const arg = memory[cmdBase + IO_ARG0_OFFSET];
+					const arg = memory.readValue(cmdBase + IO_ARG0_OFFSET);
 					const text = this.formatVmValue(arg);
 					this.terminal.appendStdout(text);
 					if ($.view.backendType === 'headless') {
@@ -3616,7 +3630,7 @@ export class BmsxVMRuntime {
 					throw new Error(`Unknown VM IO command: ${cmd}.`);
 			}
 		}
-		memory[IO_WRITE_PTR_ADDR] = 0;
+		memory.writeValue(IO_WRITE_PTR_ADDR, 0);
 	}
 
 	private logVmDebugState(): void {
@@ -3902,7 +3916,11 @@ export class BmsxVMRuntime {
 			this.vmModuleAliases.set(alias, path);
 		}
 		this.vmModuleCache.clear();
-		this.cpuMemory[IO_WRITE_PTR_ADDR] = 0;
+		this.memory.writeValue(IO_WRITE_PTR_ADDR, 0);
+
+		if (engineAssets) {
+			this.runtimeStringPool.reserveHandles(ENGINE_STRING_HANDLE_LIMIT);
+		}
 
 		const inflated = inflateProgram(programAsset.program);
 		try {
@@ -3955,7 +3973,7 @@ export class BmsxVMRuntime {
 			this.vmModuleAliases.set(entry.alias, entry.path);
 		}
 		this.vmModuleCache.clear();
-		this.cpuMemory[IO_WRITE_PTR_ADDR] = 0;
+		this.memory.writeValue(IO_WRITE_PTR_ADDR, 0);
 		const prelude = this.runEngineBuiltinPrelude(prepared.program, prepared.metadata);
 		this.vmProgramMetadata = prelude.metadata;
 		this.cpu.start(prepared.entryProtoIndex);
@@ -4023,7 +4041,7 @@ export class BmsxVMRuntime {
 				this.vmModuleAliases.set(entry.alias, entry.path);
 			}
 			this.vmModuleCache.clear();
-			this.cpuMemory[IO_WRITE_PTR_ADDR] = 0;
+			this.memory.writeValue(IO_WRITE_PTR_ADDR, 0);
 			const prelude = this.runEngineBuiltinPrelude(program, metadata);
 			this.vmProgramMetadata = prelude.metadata;
 			this.cpu.start(entryProtoIndex);

@@ -1,5 +1,5 @@
 import { OpCode, type Program, type ProgramMetadata, type Proto, type SourceRange } from './cpu';
-import { INSTRUCTION_BYTES, MAX_EXT_BX, MAX_LOW_BX, readInstructionWord, writeInstruction } from './instruction_format';
+import { EXT_BX_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_EXT_BX, MAX_LOW_BX, readInstructionWord, writeInstruction } from './instruction_format';
 
 const buildProtoIdIndex = (metadata: ProgramMetadata): Map<string, number> => {
 	const map = new Map<string, number>();
@@ -33,6 +33,7 @@ const rewriteClosureIndices = (code: Uint8Array, indexMap: ReadonlyArray<number>
 	let wideC = 0;
 	for (let index = 0; index < instructionCount; index += 1) {
 		const word = readInstructionWord(code, index);
+		const ext = word >>> 24;
 		const op = (word >>> 18) & 0x3f;
 		if (op === OpCode.WIDE) {
 			wideIndex = index;
@@ -46,7 +47,7 @@ const rewriteClosureIndices = (code: Uint8Array, indexMap: ReadonlyArray<number>
 			const bLow = (word >>> 6) & 0x3f;
 			const cLow = word & 0x3f;
 			const bxLow = (bLow << 6) | cLow;
-			const bx = (wideB << 12) | bxLow;
+			const bx = (wideB << (MAX_BX_BITS + EXT_BX_BITS)) | (ext << MAX_BX_BITS) | bxLow;
 			const mapped = indexMap[bx];
 			if (mapped === undefined) {
 				throw new Error(`[ProgramReindex] Missing proto index mapping for ${bx}.`);
@@ -54,15 +55,16 @@ const rewriteClosureIndices = (code: Uint8Array, indexMap: ReadonlyArray<number>
 			if (mapped > MAX_EXT_BX) {
 				throw new Error(`[ProgramReindex] Closure proto index exceeds range: ${mapped}.`);
 			}
-			const high = mapped >> 12;
+			const nextWide = mapped >> (MAX_BX_BITS + EXT_BX_BITS);
+			const nextExt = (mapped >> MAX_BX_BITS) & 0xff;
 			const low = mapped & MAX_LOW_BX;
-			if (high !== 0 && wideIndex < 0) {
+			if (nextWide !== 0 && wideIndex < 0) {
 				throw new Error(`[ProgramReindex] Closure proto index ${mapped} requires WIDE prefix.`);
 			}
-			writeInstruction(code, index, op, a, (low >>> 6) & 0x3f, low & 0x3f);
+			writeInstruction(code, index, op, a, (low >>> 6) & 0x3f, low & 0x3f, nextExt);
 			if (wideIndex >= 0) {
-			writeInstruction(code, wideIndex, OpCode.WIDE, wideA, high & 0x3f, wideC);
-		}
+				writeInstruction(code, wideIndex, OpCode.WIDE, wideA, nextWide & 0x3f, wideC);
+			}
 		}
 		wideIndex = -1;
 		wideA = 0;
@@ -123,6 +125,7 @@ const rebuildProgram = (
 			constPool: program.constPool,
 			protos,
 			stringPool: program.stringPool,
+			constPoolStringPool: program.constPoolStringPool,
 		},
 		metadata: {
 			debugRanges,

@@ -79,6 +79,7 @@ export function inflateProgram(encoded: EncodedProgram): Program {
 		constPool,
 		protos: encoded.protos,
 		stringPool,
+		constPoolStringPool: stringPool,
 	};
 }
 

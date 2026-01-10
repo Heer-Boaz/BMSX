@@ -22,6 +22,8 @@ namespace bmsx {
 
 class BFont;
 class TextureManager;
+struct VmProgramAsset;
+struct ProgramMetadata;
 
 /* ============================================================================
  * Engine state
@@ -93,6 +95,8 @@ public:
 	Clock* clock() { return m_platform ? m_platform->clock() : nullptr; }
 	SoundMaster* soundMaster() { return m_sound_master.get(); }
 	TextureManager* texmanager() { return m_texture_manager.get(); }
+	const std::vector<u8>& engineRomBytes() const { return m_engine_rom_bytes; }
+	const std::vector<u8>& cartRomBytes() const { return m_cart_rom_bytes; }
 
 	// Time
 	f64 totalTime() const { return m_total_time; }
@@ -161,6 +165,10 @@ private:
 	bool m_rom_loaded = false;
 	bool m_engine_assets_loaded = false;
 	RuntimeAssets m_engine_assets;  // Base engine assets (fonts, UI sprites, etc.)
+	std::vector<u8> m_engine_rom_bytes;
+	std::vector<u8> m_cart_rom_bytes;
+	std::unique_ptr<VmProgramAsset> m_linked_vm_program;
+	std::unique_ptr<ProgramMetadata> m_linked_vm_program_symbols;
 	TickTiming m_last_tick_timing;
 	RenderTiming m_last_render_timing;
 
