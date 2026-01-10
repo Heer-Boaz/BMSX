@@ -13,9 +13,10 @@ namespace {
 
 static inline uint32_t readInstructionWord(const std::vector<uint8_t>& code, int pc) {
 	size_t offset = static_cast<size_t>(pc) * INSTRUCTION_BYTES;
-	return (static_cast<uint32_t>(code[offset]) << 16)
-		| (static_cast<uint32_t>(code[offset + 1]) << 8)
-		| static_cast<uint32_t>(code[offset + 2]);
+	return (static_cast<uint32_t>(code[offset]) << 24)
+		| (static_cast<uint32_t>(code[offset + 1]) << 16)
+		| (static_cast<uint32_t>(code[offset + 2]) << 8)
+		| static_cast<uint32_t>(code[offset + 3]);
 }
 
 static inline size_t nextPowerOfTwo(size_t value) {
@@ -756,7 +757,8 @@ void VMCPU::step() {
 	}
 	CallFrame& frame = *m_frames.back();
 	int pc = frame.pc;
-	const DecodedInstruction* decoded = &m_decoded[static_cast<size_t>(pc)];
+	int wordIndex = pc / INSTRUCTION_BYTES;
+	const DecodedInstruction* decoded = &m_decoded[static_cast<size_t>(wordIndex)];
 	uint8_t op = decoded->op;
 	uint8_t wideA = 0;
 	uint8_t wideB = 0;
@@ -765,11 +767,12 @@ void VMCPU::step() {
 		wideA = decoded->a;
 		wideB = decoded->b;
 		wideC = decoded->c;
-		pc += 1;
-		decoded = &m_decoded[static_cast<size_t>(pc)];
+		pc += INSTRUCTION_BYTES;
+		wordIndex += 1;
+		decoded = &m_decoded[static_cast<size_t>(wordIndex)];
 		op = decoded->op;
 	}
-	frame.pc = pc + 1;
+	frame.pc = pc + INSTRUCTION_BYTES;
 	lastPc = pc;
 	lastInstruction = decoded->word;
 	if (instructionBudgetRemaining.has_value()) {
@@ -779,10 +782,11 @@ void VMCPU::step() {
 }
 
 std::optional<SourceRange> VMCPU::getDebugRange(int pc) const {
-	if (!m_metadata || pc < 0 || pc >= static_cast<int>(m_metadata->debugRanges.size())) {
+	int wordIndex = pc / INSTRUCTION_BYTES;
+	if (!m_metadata || wordIndex < 0 || wordIndex >= static_cast<int>(m_metadata->debugRanges.size())) {
 		return std::nullopt;
 	}
-	return m_metadata->debugRanges[pc];
+	return m_metadata->debugRanges[static_cast<size_t>(wordIndex)];
 }
 
 std::vector<std::pair<int, int>> VMCPU::getCallStack() const {
@@ -798,17 +802,18 @@ std::vector<std::pair<int, int>> VMCPU::getCallStack() const {
 
 void VMCPU::skipNextInstruction(CallFrame& frame) {
 	int pc = frame.pc;
-	if (pc < 0 || pc >= static_cast<int>(m_decoded.size())) {
+	int wordIndex = pc / INSTRUCTION_BYTES;
+	if (wordIndex < 0 || wordIndex >= static_cast<int>(m_decoded.size())) {
 		throw BMSX_RUNTIME_ERROR("Attempted to skip beyond end of program.");
 	}
-	if (static_cast<OpCode>(m_decoded[static_cast<size_t>(pc)].op) == OpCode::WIDE) {
-		if (pc + 1 >= static_cast<int>(m_decoded.size())) {
+	if (static_cast<OpCode>(m_decoded[static_cast<size_t>(wordIndex)].op) == OpCode::WIDE) {
+		if (wordIndex + 1 >= static_cast<int>(m_decoded.size())) {
 			throw BMSX_RUNTIME_ERROR("Malformed program: WIDE instruction at end of program.");
 		}
-		frame.pc += 2;
+		frame.pc += INSTRUCTION_BYTES * 2;
 		return;
 	}
-	frame.pc += 1;
+	frame.pc += INSTRUCTION_BYTES;
 }
 
 void VMCPU::executeInstruction(CallFrame& frame, OpCode op, uint8_t aLow, uint8_t bLow, uint8_t cLow, uint8_t wideA, uint8_t wideB, uint8_t wideC) {
@@ -870,7 +875,7 @@ void VMCPU::executeInstruction(CallFrame& frame, OpCode op, uint8_t aLow, uint8_
 			std::string message = "Attempted to index field on a non-table value.";
 			message += " base=" + std::string(valueTypeName(tableValue)) + "(" + valueToString(tableValue, m_stringPool) + ")";
 			message += " key=" + std::string(valueTypeName(key)) + "(" + valueToString(key, m_stringPool) + ")";
-			auto range = getDebugRange(frame.pc - 1);
+			auto range = getDebugRange(frame.pc - INSTRUCTION_BYTES);
 			if (range.has_value()) {
 				message += " at " + range->path + ":" + std::to_string(range->startLine);
 			}
@@ -893,7 +898,7 @@ void VMCPU::executeInstruction(CallFrame& frame, OpCode op, uint8_t aLow, uint8_
 			message += " base=" + std::string(valueTypeName(tableValue)) + "(" + valueToString(tableValue, m_stringPool) + ")";
 			message += " key=" + std::string(valueTypeName(key)) + "(" + valueToString(key, m_stringPool) + ")";
 			message += " value=" + std::string(valueTypeName(value)) + "(" + valueToString(value, m_stringPool) + ")";
-			auto range = getDebugRange(frame.pc - 1);
+			auto range = getDebugRange(frame.pc - INSTRUCTION_BYTES);
 			if (range.has_value()) {
 				message += " at " + range->path + ":" + std::to_string(range->startLine);
 			}
@@ -1187,18 +1192,18 @@ void VMCPU::executeInstruction(CallFrame& frame, OpCode op, uint8_t aLow, uint8_
 		}
 
 		case OpCode::JMP:
-			frame.pc += sbx;
+			frame.pc += sbx * INSTRUCTION_BYTES;
 			return;
 
 		case OpCode::JMPIF:
 			if (isTruthy(frame.registers[static_cast<size_t>(a)])) {
-				frame.pc += sbx;
+				frame.pc += sbx * INSTRUCTION_BYTES;
 			}
 			return;
 
 		case OpCode::JMPIFNOT:
 			if (!isTruthy(frame.registers[static_cast<size_t>(a)])) {
-				frame.pc += sbx;
+				frame.pc += sbx * INSTRUCTION_BYTES;
 			}
 			return;
 
@@ -1233,7 +1238,7 @@ void VMCPU::executeInstruction(CallFrame& frame, OpCode op, uint8_t aLow, uint8_
 			const Value& callee = frame.registers[a];
 			if (valueIsClosure(callee)) {
 				Closure* closure = asClosure(callee);
-				pushFrame(closure, &frame.registers[a + 1], static_cast<size_t>(argCount), a, retCount, false, frame.pc - 1);
+				pushFrame(closure, &frame.registers[a + 1], static_cast<size_t>(argCount), a, retCount, false, frame.pc - INSTRUCTION_BYTES);
 				return;
 			}
 			if (valueIsNativeFunction(callee)) {

@@ -3629,8 +3629,9 @@ export class BmsxVMRuntime {
 		let wideA = 0;
 		let wideB = 0;
 		let wideC = 0;
-		if (debug.pc > 0) {
-			const previous = readInstructionWord(program.code, debug.pc - 1);
+		const wordIndex = debug.pc / INSTRUCTION_BYTES;
+		if (wordIndex > 0) {
+			const previous = readInstructionWord(program.code, wordIndex - 1);
 			const prevOp = (previous >>> 18) & 0x3f;
 			if (prevOp === OpCode.WIDE) {
 				wideA = (previous >>> 12) & 0x3f;

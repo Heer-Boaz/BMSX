@@ -108,17 +108,19 @@ const mergeMetadata = (
 	if (cart.debugRanges.length !== cartInstructionCount) {
 		throw new Error('[ProgramLinker] Cart debug range length mismatch.');
 	}
+	const engineBaseWord = layout.engineBasePc / INSTRUCTION_BYTES;
+	const cartBaseWord = layout.cartBasePc / INSTRUCTION_BYTES;
 	const totalInstructionCount = Math.max(
-		layout.engineBasePc + engineInstructionCount,
-		layout.cartBasePc + cartInstructionCount,
+		engineBaseWord + engineInstructionCount,
+		cartBaseWord + cartInstructionCount,
 	);
 	const debugRanges: Array<SourceRange | null> = new Array(totalInstructionCount);
 	debugRanges.fill(null);
 	for (let index = 0; index < engineInstructionCount; index += 1) {
-		debugRanges[layout.engineBasePc + index] = engine.debugRanges[index];
+		debugRanges[engineBaseWord + index] = engine.debugRanges[index];
 	}
 	for (let index = 0; index < cartInstructionCount; index += 1) {
-		debugRanges[layout.cartBasePc + index] = cart.debugRanges[index];
+		debugRanges[cartBaseWord + index] = cart.debugRanges[index];
 	}
 	return {
 		debugRanges,
@@ -135,9 +137,11 @@ export const linkProgramAssets = (
 ): LinkedProgramAsset => {
 	const baseConstCount = assertConstPoolPrefix(engineAsset.program, cartAsset.program);
 	const baseProtoCount = engineAsset.program.protos.length;
-	const engineInstructionCount = engineAsset.program.code.length / INSTRUCTION_BYTES;
-	const cartInstructionCount = cartAsset.program.code.length / INSTRUCTION_BYTES;
-	const resolvedLayout = resolveProgramLayout(engineInstructionCount, layout);
+	const engineCodeBytes = engineAsset.program.code.length;
+	const cartCodeBytes = cartAsset.program.code.length;
+	const engineInstructionCount = engineCodeBytes / INSTRUCTION_BYTES;
+	const cartInstructionCount = cartCodeBytes / INSTRUCTION_BYTES;
+	const resolvedLayout = resolveProgramLayout(engineCodeBytes, layout);
 	const cartCode = cartAsset.program.code.slice();
 	rewriteClosureIndices(cartCode, baseProtoCount);
 
@@ -145,13 +149,13 @@ export const linkProgramAssets = (
 	const protos = engineAsset.program.protos.map(proto => cloneProto(proto, resolvedLayout.engineBasePc))
 		.concat(cartAsset.program.protos.map(proto => cloneProto(proto, resolvedLayout.cartBasePc)));
 
-	const totalInstructionCount = Math.max(
-		resolvedLayout.engineBasePc + engineInstructionCount,
-		resolvedLayout.cartBasePc + cartInstructionCount,
+	const totalBytes = Math.max(
+		resolvedLayout.engineBasePc + engineCodeBytes,
+		resolvedLayout.cartBasePc + cartCodeBytes,
 	);
-	const code = new Uint8Array(totalInstructionCount * INSTRUCTION_BYTES);
-	code.set(engineAsset.program.code, resolvedLayout.engineBasePc * INSTRUCTION_BYTES);
-	code.set(cartCode, resolvedLayout.cartBasePc * INSTRUCTION_BYTES);
+	const code = new Uint8Array(totalBytes);
+	code.set(engineAsset.program.code, resolvedLayout.engineBasePc);
+	code.set(cartCode, resolvedLayout.cartBasePc);
 
 	const program: EncodedProgram = {
 		code,

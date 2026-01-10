@@ -79,7 +79,7 @@ const formatHexWord = (word: number, options: ResolvedOptions): string => {
 	const upper = options.formatStyle === 'assembly' ? hex.toUpperCase() : hex;
 	const prefix = options.formatStyle === 'assembly' ? options.pcPrefix : '0x';
 	const suffix = options.formatStyle === 'assembly' ? options.pcSuffix : '';
-	return `${prefix}${upper.padStart(6, '0')}${suffix}`;
+	return `${prefix}${upper.padStart(INSTRUCTION_BYTES * 2, '0')}${suffix}`;
 };
 
 const SOURCE_COMMENT_MAX_CHARS = 120;
@@ -142,10 +142,11 @@ const formatSignedOffset = (value: number, width: number, options: ResolvedOptio
 };
 
 const formatJump = (pc: number, sbx: number, pcWidth: number, options: ResolvedOptions): string => {
-	const target = pc + 1 + sbx;
-	const offset = formatSignedOffset(sbx, pcWidth, options);
+	const offset = sbx * INSTRUCTION_BYTES;
+	const target = pc + INSTRUCTION_BYTES + offset;
+	const offsetText = formatSignedOffset(offset, pcWidth, options);
 	const targetText = formatPc(target, pcWidth, options);
-	return `${offset} -> ${targetText}`;
+	return `${offsetText} -> ${targetText}`;
 };
 
 const formatPc = (pc: number, width: number, options: ResolvedOptions, applyBias = true): string => {
@@ -214,7 +215,8 @@ const formatSourceComment = (range: SourceRange, options: ResolvedOptions, cache
 };
 
 const decodeInstruction = (code: Uint8Array, pc: number): DecodedInstruction => {
-	const word = readInstructionWord(code, pc);
+	const wordIndex = pc / INSTRUCTION_BYTES;
+	const word = readInstructionWord(code, wordIndex);
 	const op = (word >>> 18) & 0x3f;
 	const aLow = (word >>> 12) & 0x3f;
 	const bLow = (word >>> 6) & 0x3f;
@@ -223,7 +225,7 @@ const decodeInstruction = (code: Uint8Array, pc: number): DecodedInstruction => 
 		const wideA = aLow;
 		const wideB = bLow;
 		const wideC = cLow;
-		const nextWord = readInstructionWord(code, pc + 1);
+		const nextWord = readInstructionWord(code, wordIndex + 1);
 		const nextOp = (nextWord >>> 18) & 0x3f;
 		const nextA = (nextWord >>> 12) & 0x3f;
 		const nextB = (nextWord >>> 6) & 0x3f;
@@ -234,7 +236,7 @@ const decodeInstruction = (code: Uint8Array, pc: number): DecodedInstruction => 
 		const bx = (wideB << 12) | (nextB << 6) | nextC;
 		const sbx = signExtend18(bx);
 		return {
-			pc: pc + 1,
+			pc: pc + INSTRUCTION_BYTES,
 			op: nextOp as OpCode,
 			a,
 			b,
@@ -398,7 +400,8 @@ const disassembleRange = (
 			if (!metadata) {
 				throw new Error('[Disassembler] Source comments require program metadata.');
 			}
-			const range = metadata.debugRanges[decoded.pc];
+			const wordIndex = decoded.pc / INSTRUCTION_BYTES;
+			const range = metadata.debugRanges[wordIndex];
 			const rangeKey = range ? `${range.path}:${range.start.line}` : '<no source>';
 			let comment: string | null = null;
 			if (rangeKey !== lastRangeKey) {
@@ -409,7 +412,7 @@ const disassembleRange = (
 		} else {
 			lines.push(`${prefix}${text}`);
 		}
-		pc += decoded.rawWords.length;
+		pc += decoded.rawWords.length * INSTRUCTION_BYTES;
 	}
 };
 
@@ -431,7 +434,8 @@ export const disassembleProto = (
 	const proto = program.protos[protoIndex];
 	const start = proto.entryPC;
 	const end = start + proto.codeLen;
-	const pcWidth = Math.max(1, (end - 1).toString(opts.pcRadix).length);
+	const lastPc = Math.max(start, end - INSTRUCTION_BYTES);
+	const pcWidth = Math.max(1, lastPc.toString(opts.pcRadix).length);
 	const lines: string[] = [];
 	const sourceCache = new Map<string, string[]>();
 	if (opts.showProtoHeaders) {
@@ -470,8 +474,8 @@ export const disassembleProgram = (program: Program, metadata: ProgramMetadata |
 			throw new Error('[Disassembler] sourceTextForPath is required when showSourceComments is enabled.');
 		}
 	}
-	const instructionCount = program.code.length / INSTRUCTION_BYTES;
-	const maxPc = instructionCount - 1 + opts.pcBias;
+	const lastPc = Math.max(0, program.code.length - INSTRUCTION_BYTES);
+	const maxPc = lastPc + opts.pcBias;
 	const pcWidth = Math.max(1, maxPc.toString(opts.pcRadix).length);
 	const lines: string[] = [];
 	const sourceCache = new Map<string, string[]>();

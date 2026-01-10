@@ -78,7 +78,8 @@ const rebuildProgram = (
 	indexMap: ReadonlyArray<number>,
 ): { program: Program; metadata: ProgramMetadata } => {
 	const idToIndex = buildProtoIdIndex(metadata);
-	let total = 0;
+	let totalBytes = 0;
+	let totalWords = 0;
 	const segments: Array<{ proto: Proto; code: Uint8Array; ranges: ReadonlyArray<SourceRange | null> }> = [];
 	for (let index = 0; index < order.length; index += 1) {
 		const id = order[index];
@@ -89,25 +90,30 @@ const rebuildProgram = (
 		const proto = program.protos[protoIndex];
 		const start = proto.entryPC;
 		const end = start + proto.codeLen;
-		const code = program.code.slice(start * INSTRUCTION_BYTES, end * INSTRUCTION_BYTES);
+		const code = program.code.slice(start, end);
 		rewriteClosureIndices(code, indexMap);
-		const ranges = metadata.debugRanges.slice(start, end);
+		const startWord = Math.floor(start / INSTRUCTION_BYTES);
+		const endWord = Math.floor(end / INSTRUCTION_BYTES);
+		const ranges = metadata.debugRanges.slice(startWord, endWord);
 		segments.push({ proto: cloneProto(proto), code, ranges });
-		total += ranges.length;
+		totalBytes += code.length;
+		totalWords += ranges.length;
 	}
 
-	const code = new Uint8Array(total * INSTRUCTION_BYTES);
-	const debugRanges: Array<SourceRange | null> = new Array(total);
-	let offset = 0;
+	const code = new Uint8Array(totalBytes);
+	const debugRanges: Array<SourceRange | null> = new Array(totalWords);
+	let offsetBytes = 0;
+	let offsetWords = 0;
 	const protos: Proto[] = [];
 	for (let index = 0; index < segments.length; index += 1) {
 		const segment = segments[index];
-		segment.proto.entryPC = offset;
-		code.set(segment.code, offset * INSTRUCTION_BYTES);
+		segment.proto.entryPC = offsetBytes;
+		code.set(segment.code, offsetBytes);
 		for (let rangeIndex = 0; rangeIndex < segment.ranges.length; rangeIndex += 1) {
-			debugRanges[offset + rangeIndex] = segment.ranges[rangeIndex];
+			debugRanges[offsetWords + rangeIndex] = segment.ranges[rangeIndex];
 		}
-		offset += segment.ranges.length;
+		offsetBytes += segment.code.length;
+		offsetWords += segment.ranges.length;
 		protos.push(segment.proto);
 	}
 

@@ -1,6 +1,6 @@
 import { StringPool, StringValue, isStringValue, stringValueToString } from './string_pool';
 import { formatNumber } from './number_format';
-import { readInstructionWord } from './instruction_format';
+import { INSTRUCTION_BYTES, readInstructionWord } from './instruction_format';
 
 export type Value = null | boolean | number | StringValue | Table | Closure | NativeFunction | NativeObject;
 
@@ -1007,7 +1007,7 @@ export class VMCPU {
 
 	private decodeProgram(program: Program): void {
 		const code = program.code;
-		const instructionCount = Math.floor(code.length / 3);
+		const instructionCount = Math.floor(code.length / INSTRUCTION_BYTES);
 		const decodedOps = new Uint8Array(instructionCount);
 		const decodedA = new Uint8Array(instructionCount);
 		const decodedB = new Uint8Array(instructionCount);
@@ -1098,31 +1098,33 @@ export class VMCPU {
 	public step(): void {
 		const frame = this.frames[this.frames.length - 1];
 		let pc = frame.pc;
+		let wordIndex = pc / INSTRUCTION_BYTES;
 		const decodedOps = this.decodedOps!;
 		const decodedA = this.decodedA!;
 		const decodedB = this.decodedB!;
 		const decodedC = this.decodedC!;
 		const decodedWords = this.decodedWords!;
-		let instr = decodedWords[pc];
-		let op = decodedOps[pc];
+		let instr = decodedWords[wordIndex];
+		let op = decodedOps[wordIndex];
 		let wideA = 0;
 		let wideB = 0;
 		let wideC = 0;
 		if (op === OpCode.WIDE) {
-			wideA = decodedA[pc];
-			wideB = decodedB[pc];
-			wideC = decodedC[pc];
-			pc += 1;
-			instr = decodedWords[pc];
-			op = decodedOps[pc];
+			wideA = decodedA[wordIndex];
+			wideB = decodedB[wordIndex];
+			wideC = decodedC[wordIndex];
+			pc += INSTRUCTION_BYTES;
+			wordIndex += 1;
+			instr = decodedWords[wordIndex];
+			op = decodedOps[wordIndex];
 		}
-		frame.pc = pc + 1;
+		frame.pc = pc + INSTRUCTION_BYTES;
 		this.lastPc = pc;
 		this.lastInstruction = instr;
 		if (this.instructionBudgetRemaining !== null) {
 			this.instructionBudgetRemaining -= 1;
 		}
-		this.executeInstruction(frame, op, decodedA[pc], decodedB[pc], decodedC[pc], wideA, wideB, wideC);
+		this.executeInstruction(frame, op, decodedA[wordIndex], decodedB[wordIndex], decodedC[wordIndex], wideA, wideB, wideC);
 	}
 
 	public getDebugState(): { pc: number; instr: number; registers: Value[] } {
@@ -1147,7 +1149,8 @@ export class VMCPU {
 		if (!this.metadata) {
 			return null;
 		}
-		return this.metadata.debugRanges[pc];
+		const wordIndex = pc / INSTRUCTION_BYTES;
+		return this.metadata.debugRanges[wordIndex];
 	}
 
 	public getCallStack(): ReadonlyArray<{ protoIndex: number; pc: number }> {
@@ -1168,18 +1171,19 @@ export class VMCPU {
 
 	private skipNextInstruction(frame: CallFrame): void {
 		const pc = frame.pc;
+		const wordIndex = pc / INSTRUCTION_BYTES;
 		const decodedOps = this.decodedOps!;
-		if (pc >= decodedOps.length) {
+		if (wordIndex >= decodedOps.length) {
 			throw new Error('Attempted to skip beyond end of program.');
 		}
-		if (decodedOps[pc] === OpCode.WIDE) {
-			if (pc + 1 >= decodedOps.length) {
+		if (decodedOps[wordIndex] === OpCode.WIDE) {
+			if (wordIndex + 1 >= decodedOps.length) {
 				throw new Error('Malformed program: WIDE instruction at end of program.');
 			}
-			frame.pc += 2;
+			frame.pc += INSTRUCTION_BYTES * 2;
 			return;
 		}
-		frame.pc += 1;
+		frame.pc += INSTRUCTION_BYTES;
 	}
 
 	private executeInstruction(frame: CallFrame, op: number, aLow: number, bLow: number, cLow: number, wideA: number, wideB: number, wideC: number): void {
@@ -1434,20 +1438,20 @@ export class VMCPU {
 			}
 			case OpCode.JMP: {
 				const sbx = (((wideB << 12) | (bLow << 6) | cLow) << 14) >> 14;
-				frame.pc += sbx;
+				frame.pc += sbx * INSTRUCTION_BYTES;
 				return;
 			}
 			case OpCode.JMPIF: {
 				if (frame.registers.isTruthy(a)) {
 					const sbx = (((wideB << 12) | (bLow << 6) | cLow) << 14) >> 14;
-					frame.pc += sbx;
+					frame.pc += sbx * INSTRUCTION_BYTES;
 				}
 				return;
 			}
 			case OpCode.JMPIFNOT: {
 				if (!frame.registers.isTruthy(a)) {
 					const sbx = (((wideB << 12) | (bLow << 6) | cLow) << 14) >> 14;
-					frame.pc += sbx;
+					frame.pc += sbx * INSTRUCTION_BYTES;
 				}
 				return;
 			}
@@ -1483,7 +1487,7 @@ export class VMCPU {
 					args.push(frame.registers.get(a + 1 + index));
 				}
 				if (callee === null) {
-					const range = this.metadata ? this.metadata.debugRanges[this.lastPc] : null;
+					const range = this.metadata ? this.getDebugRange(this.lastPc) : null;
 					const location = range ? `${range.path}:${range.start.line}:${range.start.column}` : 'unknown';
 					throw new Error(`Attempted to call a nil value. at ${location}`);
 				}
@@ -1498,7 +1502,7 @@ export class VMCPU {
 					return;
 				}
 				if (typeof (callee as Closure).protoIndex !== 'number') {
-					const range = this.metadata ? this.metadata.debugRanges[this.lastPc] : null;
+					const range = this.metadata ? this.getDebugRange(this.lastPc) : null;
 					const location = range ? `${range.path}:${range.start.line}:${range.start.column}` : 'unknown';
 					const calleeType = valueTypeName(callee as Value);
 					const calleeValue = isStringValue(callee)
@@ -1508,7 +1512,7 @@ export class VMCPU {
 							: '';
 					throw new Error(`Attempted to call a non-function value (${calleeType}${calleeValue}). at ${location}`);
 				}
-				this.pushFrame(callee as Closure, args, a, c, false, frame.pc - 1);
+				this.pushFrame(callee as Closure, args, a, c, false, frame.pc - INSTRUCTION_BYTES);
 				return;
 			}
 			case OpCode.RET: {

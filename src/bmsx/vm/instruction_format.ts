@@ -1,4 +1,4 @@
-export const INSTRUCTION_BYTES = 3;
+export const INSTRUCTION_BYTES = 4;
 
 export const MAX_OP_BITS = 6;
 export const MAX_OPERAND_BITS = 6;
@@ -20,12 +20,16 @@ export function packInstructionWord(op: number, a: number, b: number, c: number)
 export function writeInstruction(code: Uint8Array, index: number, op: number, a: number, b: number, c: number): void {
 	const word = packInstructionWord(op, a, b, c);
 	const offset = index * INSTRUCTION_BYTES;
-	code[offset] = (word >>> 16) & 0xff;
-	code[offset + 1] = (word >>> 8) & 0xff;
-	code[offset + 2] = word & 0xff;
+	code[offset] = (word >>> 24) & 0xff;
+	code[offset + 1] = (word >>> 16) & 0xff;
+	code[offset + 2] = (word >>> 8) & 0xff;
+	code[offset + 3] = word & 0xff;
 }
 
 export function readInstructionWord(code: Uint8Array, index: number): number {
 	const offset = index * INSTRUCTION_BYTES;
-	return (code[offset] << 16) | (code[offset + 1] << 8) | code[offset + 2];
+	return (code[offset] << 24)
+		| (code[offset + 1] << 16)
+		| (code[offset + 2] << 8)
+		| code[offset + 3];
 }

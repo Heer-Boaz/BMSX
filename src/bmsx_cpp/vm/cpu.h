@@ -412,7 +412,7 @@ struct ProgramMetadata {
 	std::vector<std::string> protoIds;
 };
 
-constexpr int INSTRUCTION_BYTES = 3;
+constexpr int INSTRUCTION_BYTES = 4;
 
 struct DecodedInstruction {
 	uint32_t word = 0;

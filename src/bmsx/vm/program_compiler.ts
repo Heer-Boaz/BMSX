@@ -144,25 +144,29 @@ class ProgramBuilder {
 	}
 
 	public buildProgram(): { program: Program; metadata: ProgramMetadata } {
-		let total = 0;
+		let totalBytes = 0;
+		let totalWords = 0;
 		for (let i = 0; i < this.protoCode.length; i += 1) {
-			total += this.protos[i].codeLen;
+			totalBytes += this.protos[i].codeLen;
+			totalWords += this.protoRanges[i].length;
 		}
-		const fullCode = new Uint8Array(total * INSTRUCTION_BYTES);
-		const fullRanges: Array<SourceRange | null> = new Array(total);
-		let offset = 0;
+		const fullCode = new Uint8Array(totalBytes);
+		const fullRanges: Array<SourceRange | null> = new Array(totalWords);
+		let offsetBytes = 0;
+		let offsetWords = 0;
 		for (let i = 0; i < this.protoCode.length; i += 1) {
 			const chunk = this.protoCode[i];
 			if (!chunk) {
 				throw new Error(`[ProgramBuilder] Missing code for proto index ${i}.`);
 			}
 			const ranges = this.protoRanges[i];
-			this.protos[i].entryPC = offset;
-			fullCode.set(chunk, offset * INSTRUCTION_BYTES);
+			this.protos[i].entryPC = offsetBytes;
+			fullCode.set(chunk, offsetBytes);
 			for (let j = 0; j < ranges.length; j += 1) {
-				fullRanges[offset + j] = ranges[j];
+				fullRanges[offsetWords + j] = ranges[j];
 			}
-			offset += ranges.length;
+			offsetBytes += chunk.length;
+			offsetWords += ranges.length;
 		}
 		const metadata: ProgramMetadata = {
 			debugRanges: fullRanges,
@@ -1807,7 +1811,7 @@ function compileFunctionExpression(program: ProgramBuilder, expression: LuaFunct
 	const ranges = builder.getRanges();
 	const protoIndex = program.addProto({
 		entryPC: 0,
-		codeLen: ranges.length,
+		codeLen: ranges.length * INSTRUCTION_BYTES,
 		numParams: expression.parameters.length + (implicitSelf ? 1 : 0),
 		isVararg: expression.hasVararg,
 		maxStack: builder.getMaxStack(),
@@ -1847,8 +1851,10 @@ function createProgramBuilderFromProgram(
 		const proto = base.protos[index];
 		const start = proto.entryPC;
 		const end = start + proto.codeLen;
-		const code = base.code.slice(start * INSTRUCTION_BYTES, end * INSTRUCTION_BYTES);
-		const ranges = metadata.debugRanges.slice(start, end);
+		const code = base.code.slice(start, end);
+		const startWord = Math.floor(start / INSTRUCTION_BYTES);
+		const endWord = Math.floor(end / INSTRUCTION_BYTES);
+		const ranges = metadata.debugRanges.slice(startWord, endWord);
 		builder.seedProto(cloneProto(proto), code, ranges, protoIds[index]);
 	}
 	return builder;
@@ -1876,7 +1882,7 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 	const entryRanges = entryBuilder.getRanges();
 	const entryProtoIndex = programBuilder.addProto({
 		entryPC: 0,
-		codeLen: entryRanges.length,
+		codeLen: entryRanges.length * INSTRUCTION_BYTES,
 		numParams: 0,
 		isVararg: false,
 		maxStack: entryBuilder.getMaxStack(),
@@ -1891,7 +1897,7 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 		const ranges = builder.getRanges();
 		const protoIndex = programBuilder.addProto({
 			entryPC: 0,
-			codeLen: ranges.length,
+			codeLen: ranges.length * INSTRUCTION_BYTES,
 			numParams: 0,
 			isVararg: false,
 			maxStack: builder.getMaxStack(),
@@ -1915,7 +1921,7 @@ export function appendLuaChunkToProgram(base: Program, metadata: ProgramMetadata
 	const entryRanges = entryBuilder.getRanges();
 	const entryProtoIndex = programBuilder.addProto({
 		entryPC: 0,
-		codeLen: entryRanges.length,
+		codeLen: entryRanges.length * INSTRUCTION_BYTES,
 		numParams: 0,
 		isVararg: false,
 		maxStack: entryBuilder.getMaxStack(),
