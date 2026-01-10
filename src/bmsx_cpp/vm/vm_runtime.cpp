@@ -30,6 +30,9 @@ inline double to_ms(std::chrono::steady_clock::duration duration) {
 	return std::chrono::duration<double, std::milli>(duration).count();
 }
 
+constexpr uint32_t CART_ROM_MAGIC = 0x58534D42u;
+constexpr std::array<u8, 4> CART_ROM_EMPTY_HEADER = { 0u, 0u, 0u, 0u };
+
 bool isAtlasName(const std::string& name) {
 	static constexpr const char* kPrefix = "_atlas_";
 	return name.rfind(kPrefix, 0) == 0;
@@ -361,7 +364,6 @@ VMRuntime::VMRuntime(const VMRuntimeOptions& options)
 	// Write pointer starts at 0
 	m_memory.writeValue(IO_WRITE_PTR_ADDR, valueNumber(0.0));
 	// System flags
-	m_memory.writeValue(IO_SYS_CART_PRESENT, valueNumber(0.0));
 	m_memory.writeValue(IO_SYS_BOOT_CART, valueNumber(0.0));
 	m_memory.writeValue(IO_SYS_CART_BOOTREADY, valueNumber(0.0));
 	m_vmRandomSeedValue = static_cast<uint32_t>(EngineCore::instance().clock()->now());
@@ -421,7 +423,6 @@ void VMRuntime::boot(Program* program, ProgramMetadata* metadata, int entryProto
 	m_cpu.globals->clear();
 	m_memory.clearIoSlots();
 	m_memory.writeValue(IO_WRITE_PTR_ADDR, valueNumber(0.0));
-	m_memory.writeValue(IO_SYS_CART_PRESENT, valueNumber(0.0));
 	m_memory.writeValue(IO_SYS_BOOT_CART, valueNumber(0.0));
 	m_memory.writeValue(IO_SYS_CART_BOOTREADY, valueNumber(0.0));
 	m_vmRandomSeedValue = static_cast<uint32_t>(EngineCore::instance().clock()->now());
@@ -486,15 +487,6 @@ void VMRuntime::boot(Program* program, ProgramMetadata* metadata, int entryProto
 	std::cout << "[VMRuntime] boot: VM initialized!" << std::endl;
 }
 
-void VMRuntime::syncSystemRegisters() {
-	const bool cartPresent = EngineCore::instance().assets().vmProgram != nullptr;
-	m_memory.writeValue(IO_SYS_CART_PRESENT, valueNumber(cartPresent ? 1.0 : 0.0));
-	if (!cartPresent) {
-		m_cartBootPrepared = false;
-		setCartBootReadyFlag(false);
-	}
-}
-
 void VMRuntime::setCartBootReadyFlag(bool value) {
 	m_memory.writeValue(IO_SYS_CART_BOOTREADY, valueNumber(value ? 1.0 : 0.0));
 }
@@ -539,7 +531,6 @@ void VMRuntime::tickUpdate() {
 		return;
 	}
 
-	syncSystemRegisters();
 	prepareCartBootIfNeeded();
 	if (pollSystemBootRequest()) {
 		return;
@@ -691,7 +682,7 @@ void VMRuntime::refreshMemoryMap() {
 	if (!cartRom.empty()) {
 		m_memory.setCartRom(cartRom.data(), cartRom.size());
 	} else {
-		m_memory.setCartRom(nullptr, 0);
+		m_memory.setCartRom(CART_ROM_EMPTY_HEADER.data(), CART_ROM_EMPTY_HEADER.size());
 	}
 }
 
@@ -1444,9 +1435,10 @@ void VMRuntime::setupBuiltins() {
 
 	setGlobal("math", valueTable(mathTable));
 	setGlobal("easing", valueTable(easingTable));
-	setGlobal("SYS_CART_PRESENT", valueNumber(static_cast<double>(IO_SYS_CART_PRESENT)));
 	setGlobal("SYS_BOOT_CART", valueNumber(static_cast<double>(IO_SYS_BOOT_CART)));
 	setGlobal("SYS_CART_BOOTREADY", valueNumber(static_cast<double>(IO_SYS_CART_BOOTREADY)));
+	setGlobal("SYS_CART_MAGIC_ADDR", valueNumber(static_cast<double>(CART_ROM_MAGIC_ADDR)));
+	setGlobal("SYS_CART_MAGIC", valueNumber(static_cast<double>(CART_ROM_MAGIC)));
 
 	registerNativeFunction("peek", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 		uint32_t address = static_cast<uint32_t>(asNumber(args.at(0)));

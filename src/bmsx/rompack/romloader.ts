@@ -18,7 +18,7 @@ import type {
 	color_arr,
 } from './rompack';
 import { decodeBinary, toF32, typedArrayFromBytes } from '../serializer/binencoder';
-import { generateAtlasName } from './rompack';
+import { CART_ROM_MAGIC_BYTES, generateAtlasName } from './rompack';
 import { inflate } from 'pako';
 import { AssetSourceStack, type RawAssetSource } from './asset_source';
 
@@ -138,16 +138,26 @@ export function getZippedRomAndRomLabelFromBlob(blob_buffer: ArrayBuffer): { zip
 export function normalizeCartridgeBlob(blob: BmsxCartridgeBlob): { payload: ArrayBuffer; romlabel?: ArrayBuffer } {
 	const input = toArrayBuffer(blob);
 	const { zipped_rom, romlabel } = getZippedRomAndRomLabelFromBlob(input);
+	let payload: ArrayBuffer;
 	if (hasRomMetaFooter(zipped_rom)) {
-		// Already non-zipped ROM as we have the footer
-		return { payload: zipped_rom, romlabel };
+		payload = zipped_rom;
+	} else {
+		// Assume zipped ROM as we don't have the footer
+		const inflated = inflate(new Uint8Array(zipped_rom));
+		payload = new ArrayBuffer(inflated.byteLength);
+		new Uint8Array(payload).set(inflated);
+		if (!hasRomMetaFooter(payload)) {
+			throw new Error('Invalid ROM payload after decompression.');
+		}
 	}
-	// Assume zipped ROM as we don't have the footer
-	const inflated = inflate(new Uint8Array(zipped_rom));
-	const payload = new ArrayBuffer(inflated.byteLength);
-	new Uint8Array(payload).set(inflated);
-	if (!hasRomMetaFooter(payload)) {
-		throw new Error('Invalid ROM payload after decompression.');
+	if (payload.byteLength < CART_ROM_MAGIC_BYTES.length) {
+		throw new Error('ROM payload is too small for cart header.');
+	}
+	const headerView = new Uint8Array(payload, 0, CART_ROM_MAGIC_BYTES.length);
+	for (let index = 0; index < CART_ROM_MAGIC_BYTES.length; index += 1) {
+		if (headerView[index] !== CART_ROM_MAGIC_BYTES[index]) {
+			throw new Error('Invalid ROM cart header.');
+		}
 	}
 	return { payload, romlabel };
 }

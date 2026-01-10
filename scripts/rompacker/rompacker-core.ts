@@ -1,6 +1,7 @@
 import { glsl } from "esbuild-plugin-glsl";
 // @ts-ignore
 import type { Stats } from 'fs';
+import { CART_ROM_MAGIC_BYTES } from '../../src/bmsx/rompack/rompack';
 import type { asset_type, AudioMeta, CanonicalizationType, GLTFMesh, ImgMeta, Polygon, RomAsset, RomAssetListPayload, RomManifest } from '../../src/bmsx/rompack/rompack';
 import type { LuaChunk } from '../../src/bmsx/lua/lua_ast';
 import type { Value } from '../../src/bmsx/vm/cpu';
@@ -1758,6 +1759,7 @@ export async function finalizeRompack(
 	};
 
 	try {
+		await writeBuffer(Buffer.from(CART_ROM_MAGIC_BYTES));
 		for (const asset of assetList) {
 			status?.(`pack ${asset.type}:${asset.resid}`);
 			if (asset.buffer && asset.buffer.length > 0) {

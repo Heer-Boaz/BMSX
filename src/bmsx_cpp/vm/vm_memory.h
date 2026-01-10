@@ -45,6 +45,7 @@ private:
 	bool isIoAddress(uint32_t addr) const;
 	size_t ioIndex(uint32_t addr) const;
 	size_t ramOffset(uint32_t addr, size_t length) const;
+	uint32_t readU32FromRegion(uint32_t addr) const;
 	const std::vector<u8>& readRegion(uint32_t addr, size_t length, size_t& outOffset) const;
 	std::vector<u8>& writeRegion(uint32_t addr, size_t length, size_t& outOffset);
 };

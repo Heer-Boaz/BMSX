@@ -254,7 +254,6 @@ private:
 	double nextVmRandom();
 	std::string formatVmString(const std::string& templateStr, const std::vector<Value>& args, size_t argStart) const;
 	void logVmCallStack() const;
-	void syncSystemRegisters();
 	void setCartBootReadyFlag(bool value);
 	void prepareCartBootIfNeeded();
 	bool pollSystemBootRequest();

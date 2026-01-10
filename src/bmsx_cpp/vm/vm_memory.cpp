@@ -38,6 +38,9 @@ Value VmMemory::readValue(uint32_t addr) const {
 	if (isIoAddress(addr)) {
 		return m_ioSlots[ioIndex(addr)];
 	}
+	if (addr < RAM_BASE) {
+		return valueFromNumber(static_cast<double>(readU32FromRegion(addr)));
+	}
 	return valueFromNumber(static_cast<double>(readU32(addr)));
 }
 
@@ -69,6 +72,15 @@ uint32_t VmMemory::readU32(uint32_t addr) const {
 	uint32_t value = 0;
 	std::memcpy(&value, m_ram.data() + offset, sizeof(uint32_t));
 	return value;
+}
+
+uint32_t VmMemory::readU32FromRegion(uint32_t addr) const {
+	size_t offset = 0;
+	const auto& region = readRegion(addr, 4, offset);
+	return static_cast<uint32_t>(region[offset])
+		| (static_cast<uint32_t>(region[offset + 1]) << 8)
+		| (static_cast<uint32_t>(region[offset + 2]) << 16)
+		| (static_cast<uint32_t>(region[offset + 3]) << 24);
 }
 
 void VmMemory::writeU32(uint32_t addr, uint32_t value) {

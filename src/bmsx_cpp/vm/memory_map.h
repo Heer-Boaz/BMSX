@@ -11,6 +11,8 @@ constexpr uint32_t ENGINE_ROM_SIZE = 0x01000000u; // 16 MB
 
 constexpr uint32_t CART_ROM_BASE = 0x01000000u;
 constexpr uint32_t CART_ROM_SIZE = 0x05000000u; // 80 MB
+constexpr uint32_t CART_ROM_MAGIC_OFFSET = 0x00000000u;
+constexpr uint32_t CART_ROM_MAGIC_ADDR = CART_ROM_BASE + CART_ROM_MAGIC_OFFSET;
 
 constexpr uint32_t OVERLAY_ROM_BASE = 0x06000000u;
 constexpr uint32_t OVERLAY_ROM_SIZE = 0x02000000u; // 32 MB

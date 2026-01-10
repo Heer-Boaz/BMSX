@@ -5,6 +5,9 @@ import type { GameViewHost, Platform } from '../platform';
 import { InputMap } from '../input/inputtypes';
 
 export const GAME_FPS = 50;
+export const CART_ROM_MAGIC = 0x58534D42;
+export const CART_ROM_MAGIC_BYTES = new Uint8Array([0x42, 0x4d, 0x53, 0x58]);
+export const CART_ROM_HEADER_SIZE = CART_ROM_MAGIC_BYTES.length;
 
 export type CartridgeLayerId = 'system' | 'cart' | 'overlay';
 export type CartridgePayloads = Partial<Record<CartridgeLayerId, ArrayBuffer>>;

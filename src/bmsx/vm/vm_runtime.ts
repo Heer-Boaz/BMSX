@@ -21,7 +21,7 @@ import {
 import type { StorageService } from '../platform/platform';
 import { publishOverlayFrame } from '../render/editor/editor_overlay_queue';
 import type { Viewport, BmsxCartridgeBlob, CartridgeIndex } from '../rompack/rompack';
-import { CanonicalizationType } from '../rompack/rompack';
+import { CanonicalizationType, CART_ROM_HEADER_SIZE, CART_ROM_MAGIC } from '../rompack/rompack';
 import { AssetSourceStack, type RawAssetSource } from '../rompack/asset_source';
 import { applyRuntimeAssetLayer, buildRuntimeAssetLayer, type RuntimeAssetLayer } from '../rompack/romloader';
 import { decodeuint8arr } from '../serializer/binencoder';
@@ -66,10 +66,10 @@ import { Msx1Colors } from '../systems/msx';
 import type { RectRenderSubmission } from '../render/shared/render_types';
 import { compileLuaChunkToProgram, appendLuaChunkToProgram } from './program_compiler';
 import { linkProgramAssets } from './program_linker';
-import { IO_ARG0_OFFSET, IO_BUFFER_BASE, IO_COMMAND_STRIDE, IO_CMD_PRINT, IO_SYS_BOOT_CART, IO_SYS_CART_PRESENT, IO_WRITE_PTR_ADDR, IO_SYS_CART_BOOTREADY } from './vm_io';
+import { IO_ARG0_OFFSET, IO_BUFFER_BASE, IO_COMMAND_STRIDE, IO_CMD_PRINT, IO_SYS_BOOT_CART, IO_WRITE_PTR_ADDR, IO_SYS_CART_BOOTREADY } from './vm_io';
 import { VmHandlerCache } from './vm_handler_cache';
 import { VmMemory } from './vm_memory';
-import { ENGINE_STRING_HANDLE_LIMIT } from './memory_map';
+import { CART_ROM_MAGIC_ADDR, ENGINE_STRING_HANDLE_LIMIT } from './memory_map';
 import {
 	buildModuleAliasMap,
 	buildModuleAliasesFromPaths,
@@ -149,7 +149,7 @@ export var api: BmsxVMApi; // Initialized in BmsxVMRuntime constructor
 export class BmsxVMRuntime {
 	private static _instance: BmsxVMRuntime = null;
 	private static readonly ENGINE_BUILTIN_PRELUDE_PATH = '__engine_builtin_prelude__';
-	private static readonly LUA_SNAPSHOT_EXCLUDED_GLOBALS = new Set<string>(['print', 'type', 'tostring', 'tonumber', 'setmetatable', 'getmetatable', 'require', 'pairs', 'ipairs', 'serialize', 'deserialize', 'math', 'easing', 'string', 'os', 'table', 'coroutine', 'debug', 'package', 'api', 'peek', 'poke', 'SYS_CART_PRESENT', 'SYS_BOOT_CART',
+	private static readonly LUA_SNAPSHOT_EXCLUDED_GLOBALS = new Set<string>(['print', 'type', 'tostring', 'tonumber', 'setmetatable', 'getmetatable', 'require', 'pairs', 'ipairs', 'serialize', 'deserialize', 'math', 'easing', 'string', 'os', 'table', 'coroutine', 'debug', 'package', 'api', 'peek', 'poke', 'SYS_BOOT_CART', 'SYS_CART_MAGIC_ADDR', 'SYS_CART_MAGIC',
 	]);
 	/**
 	 * Preserved render queue when a fault occurs
@@ -182,6 +182,7 @@ export class BmsxVMRuntime {
 			$.set_lua_sources(engineLuaSources);
 			const memory = new VmMemory({
 				engineRom: new Uint8Array(engineLayer.payload),
+				cartRom: new Uint8Array(CART_ROM_HEADER_SIZE),
 			});
 			const runtime = BmsxVMRuntime.createInstance({
 				playerIndex,
@@ -516,7 +517,6 @@ export class BmsxVMRuntime {
 		this.stringHandles = new StringHandleTable(this.memory);
 		this.runtimeStringPool = new StringPool(this.stringHandles);
 		this.memory.writeValue(IO_WRITE_PTR_ADDR, 0);
-		this.memory.writeValue(IO_SYS_CART_PRESENT, 0);
 		this.memory.writeValue(IO_SYS_BOOT_CART, 0);
 		this.memory.writeValue(IO_SYS_CART_BOOTREADY, 0);
 		this.cartAssetsApplied = false;
@@ -1297,10 +1297,6 @@ export class BmsxVMRuntime {
 		await Promise.all(loads);
 	}
 
-	private syncSystemRegisters(): void {
-		this.memory.writeValue(IO_SYS_CART_PRESENT, $.assets.project_root_path !== $.engine_layer.index.projectRootPath ? 1 : 0);
-	}
-
 	private pollSystemBootRequest(): void {
 		if (!this.isEngineProgramActive()) {
 			return;
@@ -1313,7 +1309,6 @@ export class BmsxVMRuntime {
 	}
 
 	private processPendingCartBoot(): void {
-		this.syncSystemRegisters();
 		this.pollSystemBootRequest();
 		if (!this.pendingCartBoot) {
 			return;
@@ -2082,9 +2077,10 @@ export class BmsxVMRuntime {
 
 		this.registerVmGlobal('math', mathTable);
 		this.registerVmGlobal('easing', easingTable);
-		this.registerVmGlobal('SYS_CART_PRESENT', IO_SYS_CART_PRESENT);
 		this.registerVmGlobal('SYS_BOOT_CART', IO_SYS_BOOT_CART);
 		this.registerVmGlobal('SYS_CART_BOOTREADY', IO_SYS_CART_BOOTREADY);
+		this.registerVmGlobal('SYS_CART_MAGIC_ADDR', CART_ROM_MAGIC_ADDR);
+		this.registerVmGlobal('SYS_CART_MAGIC', CART_ROM_MAGIC);
 		this.registerVmGlobal('peek', createNativeFunction('peek', (args, out) => {
 			const address = args[0] as number;
 			out.push(this.memory.readValue(address));

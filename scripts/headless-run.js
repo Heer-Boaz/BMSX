@@ -30,7 +30,7 @@ const engineAssetsPath = 'dist/engine.assets.debug.rom';
 const timelinePath = `${cartRoot}/test/${romFolder}_demo.json`;
 const inputModulePath = `${cartRoot}/test/${romFolder}_assert_results.mjs`;
 
-let result = child.spawnSync('npm', ['run', 'build:engine'], { stdio: 'inherit' });
+let result = child.spawnSync('npm', ['run', 'build:engine', '--', '--platform', 'headless'], { stdio: 'inherit' });
 if (result.status !== 0) {
 	console.error('Error: build:engine failed.');
 	process.exit(result.status || 1);

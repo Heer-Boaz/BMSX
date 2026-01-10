@@ -329,6 +329,8 @@ static bool hasRomMetaFooter(const u8* buffer, size_t size) {
 	return metaOffset + metaLength <= size && metaLength > 0;
 }
 
+static constexpr u8 CART_ROM_MAGIC[4] = { 0x42, 0x4d, 0x53, 0x58 };
+
 bool loadAssetsFromRom(const u8* buffer,
 					   size_t size,
 					   RuntimeAssets& assets,
@@ -365,6 +367,12 @@ bool loadAssetsFromRom(const u8* buffer,
 		}
 	}
 	const bool romDataPersistent = decompressed.empty();
+	if (romSize < sizeof(CART_ROM_MAGIC)) {
+		throw BMSX_RUNTIME_ERROR("ROM payload is too small for cart header");
+	}
+	if (std::memcmp(romData, CART_ROM_MAGIC, sizeof(CART_ROM_MAGIC)) != 0) {
+		throw BMSX_RUNTIME_ERROR("Invalid ROM cart header");
+	}
 
 	// Step 3: Parse metadata to get asset list
 	RomMeta meta = parseRomMeta(romData, romSize);

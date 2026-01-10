@@ -95,12 +95,13 @@ export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<VMLuaBuiltinDescriptor
 	{ name: 'os.difftime', params: ['t2', 't1?'], signature: 'os.difftime(t2 [, t1])' },
 	{ name: 'os.time', params: ['table?'], signature: 'os.time([table])' },
 	...ENGINE_LUA_BUILTIN_FUNCTIONS,
-	{ name: 'SYS_CART_PRESENT', params: [], signature: 'SYS_CART_PRESENT', description: 'System register address; reads as 1 when a cart is available.' },
 	{ name: 'SYS_CART_BOOTREADY', params: [], signature: 'SYS_CART_BOOTREADY', description: 'System register address; reads as 1 when the cart is ready to boot.' },
 	{ name: 'SYS_BOOT_CART', params: [], signature: 'SYS_BOOT_CART', description: 'System register address; write 1 to boot the cart.' },
+	{ name: 'SYS_CART_MAGIC_ADDR', params: [], signature: 'SYS_CART_MAGIC_ADDR', description: 'Cart ROM magic header address.' },
+	{ name: 'SYS_CART_MAGIC', params: [], signature: 'SYS_CART_MAGIC', description: 'Cart ROM magic header value.' },
 ];
 
-const DEFAULT_LUA_BUILTIN_IDENTIFIER_EXTRAS = ['package', 'math.pi', 'SYS_CART_PRESENT', 'SYS_BOOT_CART'];
+const DEFAULT_LUA_BUILTIN_IDENTIFIER_EXTRAS = ['package', 'math.pi', 'SYS_BOOT_CART', 'SYS_CART_MAGIC_ADDR', 'SYS_CART_MAGIC'];
 
 export const DEFAULT_LUA_BUILTIN_NAMES: ReadonlyArray<string> = (() => {
 	const names = new Set<string>();

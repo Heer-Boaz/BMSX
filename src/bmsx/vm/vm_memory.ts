@@ -44,6 +44,9 @@ export class VmMemory {
 		if (this.isIoAddress(addr)) {
 			return this.ioSlots[this.ioIndex(addr)];
 		}
+		if (addr < RAM_BASE) {
+			return this.readU32FromRegion(addr);
+		}
 		return this.readU32(addr);
 	}
 
@@ -71,6 +74,16 @@ export class VmMemory {
 	public readU32(addr: number): number {
 		const offset = this.resolveRamOffset(addr, 4);
 		return this.ramView.getUint32(offset, true);
+	}
+
+	private readU32FromRegion(addr: number): number {
+		const { data, offset } = this.resolveReadRegion(addr, 4);
+		return (
+			data[offset]
+			| (data[offset + 1] << 8)
+			| (data[offset + 2] << 16)
+			| (data[offset + 3] << 24)
+		) >>> 0;
 	}
 
 	public writeU32(addr: number, value: number): void {

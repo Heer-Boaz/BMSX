@@ -107,7 +107,7 @@ function new_game()
 end
 
 function update(_dt)
-	local cart_present_and_ready = peek(sys_cart_present) == 1 and peek(sys_cart_bootready) == 1
+	local cart_present_and_ready = peek(sys_cart_magic_addr) == sys_cart_magic and peek(sys_cart_bootready) == 1
 
 	if cart_present_and_ready and not boot_requested and elapsed_seconds() >= boot_delay then
 		boot_requested = true
@@ -163,7 +163,7 @@ function draw()
 	write(divider(width, left), left, y, 0, color_accent)
 	y = y + line_height
 
-	local cart_present = peek(sys_cart_present) == 1
+	local cart_present = peek(sys_cart_magic_addr) == sys_cart_magic
 	local elapsed = elapsed_seconds()
 	local cursor = (math.floor(elapsed * 2) % 2 == 0) and '_' or ' '
 	if cart_present then
