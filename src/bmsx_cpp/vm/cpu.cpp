@@ -796,6 +796,21 @@ std::vector<std::pair<int, int>> VMCPU::getCallStack() const {
 	return stack;
 }
 
+void VMCPU::skipNextInstruction(CallFrame& frame) {
+	int pc = frame.pc;
+	if (pc < 0 || pc >= static_cast<int>(m_decoded.size())) {
+		throw BMSX_RUNTIME_ERROR("Attempted to skip beyond end of program.");
+	}
+	if (static_cast<OpCode>(m_decoded[static_cast<size_t>(pc)].op) == OpCode::WIDE) {
+		if (pc + 1 >= static_cast<int>(m_decoded.size())) {
+			throw BMSX_RUNTIME_ERROR("Malformed program: WIDE instruction at end of program.");
+		}
+		frame.pc += 2;
+		return;
+	}
+	frame.pc += 1;
+}
+
 void VMCPU::executeInstruction(CallFrame& frame, OpCode op, uint8_t aLow, uint8_t bLow, uint8_t cLow, uint8_t wideA, uint8_t wideB, uint8_t wideC) {
 	int a = (static_cast<int>(wideA) << 6) | aLow;
 	int b = (static_cast<int>(wideB) << 6) | bLow;
@@ -825,7 +840,7 @@ void VMCPU::executeInstruction(CallFrame& frame, OpCode op, uint8_t aLow, uint8_
 		case OpCode::LOADBOOL:
 			setRegister(frame, a, valueBool(b != 0));
 			if (c != 0) {
-				frame.pc += 1;
+				skipNextInstruction(frame);
 			}
 			return;
 
@@ -1066,7 +1081,7 @@ void VMCPU::executeInstruction(CallFrame& frame, OpCode op, uint8_t aLow, uint8_
 				eq = left == right;
 			}
 			if (eq != (a != 0)) {
-				frame.pc += 1;
+				skipNextInstruction(frame);
 			}
 			return;
 		}
@@ -1107,7 +1122,7 @@ void VMCPU::executeInstruction(CallFrame& frame, OpCode op, uint8_t aLow, uint8_
 				ok = left < right;
 			}
 			if (ok != (a != 0)) {
-				frame.pc += 1;
+				skipNextInstruction(frame);
 			}
 			return;
 		}
@@ -1148,7 +1163,7 @@ void VMCPU::executeInstruction(CallFrame& frame, OpCode op, uint8_t aLow, uint8_
 				ok = left <= right;
 			}
 			if (ok != (a != 0)) {
-				frame.pc += 1;
+				skipNextInstruction(frame);
 			}
 			return;
 		}
@@ -1156,7 +1171,7 @@ void VMCPU::executeInstruction(CallFrame& frame, OpCode op, uint8_t aLow, uint8_
 		case OpCode::TEST: {
 			const Value& val = frame.registers[a];
 			if (isTruthy(val) != (c != 0)) {
-				frame.pc += 1;
+				skipNextInstruction(frame);
 			}
 			return;
 		}
@@ -1166,7 +1181,7 @@ void VMCPU::executeInstruction(CallFrame& frame, OpCode op, uint8_t aLow, uint8_
 			if (isTruthy(val) == (c != 0)) {
 				setRegister(frame, a, val);
 			} else {
-				frame.pc += 1;
+				skipNextInstruction(frame);
 			}
 			return;
 		}

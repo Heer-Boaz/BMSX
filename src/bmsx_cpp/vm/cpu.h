@@ -640,6 +640,7 @@ public:
 
 private:
 	void executeInstruction(CallFrame& frame, OpCode op, uint8_t aLow, uint8_t bLow, uint8_t cLow, uint8_t wideA, uint8_t wideB, uint8_t wideC);
+	void skipNextInstruction(CallFrame& frame);
 	void pushFrame(Closure* closure, const Value* args, size_t argCount,
 		int returnBase, int returnCount, bool captureReturns, int callSitePc);
 	void pushFrame(Closure* closure, const std::vector<Value>& args,

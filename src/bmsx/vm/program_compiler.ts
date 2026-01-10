@@ -307,6 +307,13 @@ class FunctionBuilder {
 			const optimized = optimizeInstructions(this.code, this.ranges, this.program.optLevel, {
 				constPool: this.program.constPool,
 				constIndex: (value: Value) => this.program.constIndex(value),
+				getClosureUpvalues: (protoIndex: number) => {
+					const proto = this.program.protos[protoIndex];
+					if (!proto) {
+						throw new Error(`[ProgramCompiler] Missing proto for index ${protoIndex}.`);
+					}
+					return proto.upvalueDescs;
+				},
 			});
 			if (optimized.instructions !== this.code) {
 				this.code.length = 0;

@@ -30,9 +30,9 @@ const engineAssetsPath = 'dist/engine.assets.debug.rom';
 const timelinePath = `${cartRoot}/test/${romFolder}_demo.json`;
 const inputModulePath = `${cartRoot}/test/${romFolder}_assert_results.mjs`;
 
-let result = child.spawnSync('npm', ['run', 'build:engine:debug'], { stdio: 'inherit' });
+let result = child.spawnSync('npm', ['run', 'build:engine:headless'], { stdio: 'inherit' });
 if (result.status !== 0) {
-	console.error('Error: build:engine:debug failed.');
+	console.error('Error: build:engine:headless failed.');
 	process.exit(result.status || 1);
 }
 

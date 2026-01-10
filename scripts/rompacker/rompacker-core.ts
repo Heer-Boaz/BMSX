@@ -1550,7 +1550,17 @@ export function appendVmProgramAsset(assetList: RomAsset[], manifest: RomManifes
 		modules.push({ path, chunk });
 	}
 
-	const compiled = compileLuaChunkToProgram(entryChunk, modules, { canonicalization: LUA_CANONICALIZATION, optLevel: 2 });
+	const optLevelRaw = process.env.ROM_VM_OPTLEVEL ?? process.env.BMSX_VM_OPTLEVEL;
+	let optLevel: 0 | 1 | 2 | 3 = 3;
+	if (optLevelRaw !== undefined && optLevelRaw.length > 0) {
+		const parsed = Number.parseInt(optLevelRaw, 10);
+		if (parsed !== 0 && parsed !== 1 && parsed !== 2 && parsed !== 3) {
+			throw new Error(`[RomPacker] Unsupported ROM_VM_OPTLEVEL="${optLevelRaw}". Expected one of: 0, 1, 2, 3.`);
+		}
+		optLevel = parsed;
+	}
+
+	const compiled = compileLuaChunkToProgram(entryChunk, modules, { canonicalization: LUA_CANONICALIZATION, optLevel });
 	const program = compiled.program;
 	const programAsset = {
 		entryProtoIndex: compiled.entryProtoIndex,

@@ -3736,10 +3736,9 @@ export class BmsxVMRuntime {
 		const modulePaths = this.collectVmModulePathsFromSourceRegistries();
 		for (const entry of buildModuleAliasesFromPaths(modulePaths)) {
 			if (entry.alias === 'engine') {
-				return true;
+				return false;
 			}
 		}
-		console.warn(`[BmsxVMRuntime] Lua sources are present, but require('engine') cannot be resolved; booting from VM program asset instead.`);
 		return false;
 	}
 
@@ -3882,27 +3881,33 @@ export class BmsxVMRuntime {
 
 		const inflated = inflateProgram(program.program);
 		const metadata = symbols ? symbols.metadata : null;
-		this.cpu.setProgram(inflated, metadata);
-		this.vmProgramMetadata = metadata;
-		this.applyEngineBuiltinGlobals();
-		this.processVmIo();
+		try {
+			this.cpu.setProgram(inflated, metadata);
+			this.vmProgramMetadata = metadata;
+			this.applyEngineBuiltinGlobals();
+			this.processVmIo();
 
-		this.cpu.start(program.entryProtoIndex);
-		this.pendingVmCall = null;
-		this.cpu.instructionBudgetRemaining = null;
-		this.cpu.run(null);
-		this.processVmIo();
-		this.luaVmInitialized = true;
+			this.cpu.start(program.entryProtoIndex);
+			this.pendingVmCall = null;
+			this.cpu.instructionBudgetRemaining = null;
+			this.cpu.run(null);
+			this.processVmIo();
+			this.luaVmInitialized = true;
 
-		this.bindLifecycleHandlers();
-		if (options?.runInit === false) {
-			return true;
+			this.bindLifecycleHandlers();
+			if (options?.runInit === false) {
+				return true;
+			}
+			const ok = this.runLuaLifecycleHandler('init');
+			if (!ok) {
+				return false;
+			}
+			return this.runLuaLifecycleHandler('new_game');
+		} catch (error) {
+			console.info(`[BmsxVMRuntime] VM program-asset boot failed.`);
+			this.logVmDebugState();
+			throw error;
 		}
-		const ok = this.runLuaLifecycleHandler('init');
-		if (!ok) {
-			return false;
-		}
-		return this.runLuaLifecycleHandler('new_game');
 	}
 
 	private bootPreparedCartProgram(options?: { preserveState?: boolean; runInit?: boolean }): boolean {

@@ -1,6 +1,7 @@
-import { OpCode, type SourceRange, type Value } from './cpu';
+import { OpCode, type SourceRange, type UpvalueDesc, type Value } from './cpu';
 import { MAX_EXT_CONST } from './instruction_format';
 import { isStringValue, stringValueToString } from './string_pool';
+import { applyGlobalOptimizations } from './program_optimizer_ssa';
 
 export type InstructionFormat = 'ABC' | 'ABx' | 'AsBx';
 
@@ -19,9 +20,10 @@ export type OptimizationLevel = 0 | 1 | 2 | 3;
 export type OptimizationContext = {
 	constPool: ReadonlyArray<Value>;
 	constIndex: (value: Value) => number;
+	getClosureUpvalues: (protoIndex: number) => ReadonlyArray<UpvalueDesc>;
 };
 
-type InstructionSet = {
+export type InstructionSet = {
 	instructions: Instruction[];
 	ranges: Array<SourceRange | null>;
 };
@@ -347,8 +349,17 @@ const removeNoOps = (set: InstructionSet): InstructionSet => {
 	const { instructions, ranges } = set;
 	const count = instructions.length;
 	let removed = 0;
+	const pinned = new Array<boolean>(count).fill(false);
+	for (let i = 0; i + 1 < count; i += 1) {
+		if (isSkipInstruction(instructions[i])) {
+			pinned[i + 1] = true;
+		}
+	}
 	const keep = new Array<boolean>(count).fill(true);
 	for (let i = 0; i < count; i += 1) {
+		if (pinned[i]) {
+			continue;
+		}
 		const instruction = instructions[i];
 		if (instruction.op === OpCode.MOV && instruction.a === instruction.b) {
 			keep[i] = false;
@@ -1444,8 +1455,6 @@ const isPureInstruction = (instruction: Instruction): boolean => {
 		case OpCode.MOV:
 		case OpCode.LOADK:
 		case OpCode.LOADNIL:
-		case OpCode.GETG:
-		case OpCode.GETT:
 		case OpCode.NEWT:
 		case OpCode.ADD:
 		case OpCode.SUB:
@@ -1463,12 +1472,10 @@ const isPureInstruction = (instruction: Instruction): boolean => {
 		case OpCode.CONCATN:
 		case OpCode.UNM:
 		case OpCode.NOT:
-		case OpCode.LEN:
 		case OpCode.BNOT:
 		case OpCode.CLOSURE:
 		case OpCode.GETUP:
 		case OpCode.VARARG:
-		case OpCode.LOAD_MEM:
 			return true;
 		case OpCode.LOADBOOL:
 			return instruction.c === 0;
@@ -1477,21 +1484,55 @@ const isPureInstruction = (instruction: Instruction): boolean => {
 	}
 };
 
-const eliminateDeadStores = (set: InstructionSet): InstructionSet => {
+const eliminateDeadStores = (set: InstructionSet, context: OptimizationContext): InstructionSet => {
 	const { instructions, ranges } = set;
 	const count = instructions.length;
 	if (count === 0) {
 		return set;
 	}
-	const blocks = buildBasicBlocks(instructions);
 	const maxRegister = computeMaxRegister(instructions);
-	const keep = new Array<boolean>(count).fill(true);
-	let removed = 0;
+	const blocks = buildBasicBlocks(instructions);
+	const registerCount = maxRegister + 1;
+	const { successors } = buildBlockGraph(instructions, blocks);
+	const pinned = new Array<boolean>(count).fill(false);
+	for (let i = 0; i + 1 < count; i += 1) {
+		if (isSkipInstruction(instructions[i])) {
+			pinned[i + 1] = true;
+		}
+	}
+	const captured = new Uint8Array(registerCount);
+	for (let i = 0; i < count; i += 1) {
+		const instruction = instructions[i];
+		if (instruction.op !== OpCode.CLOSURE) {
+			continue;
+		}
+		const upvalues = context.getClosureUpvalues(instruction.b);
+		for (let u = 0; u < upvalues.length; u += 1) {
+			const desc = upvalues[u];
+			if (!desc.inStack) {
+				continue;
+			}
+			if (desc.index >= registerCount) {
+				throw new Error(`[ProgramOptimizer] Closure upvalue register out of range: r${desc.index}.`);
+			}
+			captured[desc.index] = 1;
+		}
+	}
+	const blockUse: Uint8Array[] = new Array(blocks.length);
+	const blockDef: Uint8Array[] = new Array(blocks.length);
+	const liveIn: Uint8Array[] = new Array(blocks.length);
+	const liveOut: Uint8Array[] = new Array(blocks.length);
 
-	const markReadRegisters = (instruction: Instruction, live: boolean[]): void => {
-		const mark = (register: number): void => {
-			if (register >= 0 && register < live.length) {
-				live[register] = true;
+	const collectUsesForLiveness = (instruction: Instruction): number[] => {
+		const uses: number[] = [];
+		const add = (reg: number): void => {
+			if (reg >= 0) {
+				uses.push(reg);
+			}
+		};
+		const addRange = (base: number, countValue: number): void => {
+			for (let offset = 0; offset < countValue; offset += 1) {
+				add(base + offset);
 			}
 		};
 		switch (instruction.op) {
@@ -1500,31 +1541,31 @@ const eliminateDeadStores = (set: InstructionSet): InstructionSet => {
 			case OpCode.NOT:
 			case OpCode.LEN:
 			case OpCode.BNOT:
-				mark(instruction.b);
+				add(instruction.b);
 				break;
 			case OpCode.SETG:
 			case OpCode.SETUP:
 			case OpCode.TEST:
 			case OpCode.JMPIF:
 			case OpCode.JMPIFNOT:
-				mark(instruction.a);
+				add(instruction.a);
 				break;
 			case OpCode.TESTSET:
-				mark(instruction.b);
+				add(instruction.b);
 				break;
 			case OpCode.GETT:
-				mark(instruction.b);
+				add(instruction.b);
 				if ((instruction.rkMask & RK_C) === 0 || instruction.c >= 0) {
-					mark(instruction.c);
+					add(instruction.c);
 				}
 				break;
 			case OpCode.SETT:
-				mark(instruction.a);
+				add(instruction.a);
 				if ((instruction.rkMask & RK_B) === 0 || instruction.b >= 0) {
-					mark(instruction.b);
+					add(instruction.b);
 				}
 				if ((instruction.rkMask & RK_C) === 0 || instruction.c >= 0) {
-					mark(instruction.c);
+					add(instruction.c);
 				}
 				break;
 			case OpCode.ADD:
@@ -1544,112 +1585,48 @@ const eliminateDeadStores = (set: InstructionSet): InstructionSet => {
 			case OpCode.LT:
 			case OpCode.LE:
 				if ((instruction.rkMask & RK_B) === 0 || instruction.b >= 0) {
-					mark(instruction.b);
+					add(instruction.b);
 				}
 				if ((instruction.rkMask & RK_C) === 0 || instruction.c >= 0) {
-					mark(instruction.c);
+					add(instruction.c);
 				}
 				break;
 			case OpCode.CONCATN:
-				for (let offset = 0; offset < instruction.c; offset += 1) {
-					mark(instruction.b + offset);
-				}
+				addRange(instruction.b, instruction.c);
 				break;
 			case OpCode.LOAD_MEM:
-				mark(instruction.b);
+				add(instruction.b);
 				break;
 			case OpCode.STORE_MEM:
-				mark(instruction.a);
-				mark(instruction.b);
+				add(instruction.a);
+				add(instruction.b);
 				break;
 			case OpCode.CALL: {
-				const argCount = instruction.b === 0 ? maxRegister - instruction.a : instruction.b;
-				for (let offset = 0; offset <= argCount; offset += 1) {
-					mark(instruction.a + offset);
-				}
+				const countValue = instruction.b === 0 ? maxRegister - instruction.a : instruction.b;
+				addRange(instruction.a, countValue + 1);
 				break;
 			}
 			case OpCode.RET: {
 				const countValue = instruction.b === 0 ? maxRegister - instruction.a + 1 : instruction.b;
-				for (let offset = 0; offset < countValue; offset += 1) {
-					mark(instruction.a + offset);
-				}
+				addRange(instruction.a, countValue);
 				break;
 			}
 			default:
 				break;
 		}
+		return uses;
 	};
 
-	const writeHasLive = (instruction: Instruction, live: boolean[]): boolean => {
-		const hasLive = (register: number): boolean =>
-			register >= 0 && register < live.length && live[register];
-		switch (instruction.op) {
-			case OpCode.MOV:
-			case OpCode.LOADK:
-			case OpCode.LOADBOOL:
-			case OpCode.GETG:
-			case OpCode.GETT:
-			case OpCode.NEWT:
-			case OpCode.ADD:
-			case OpCode.SUB:
-			case OpCode.MUL:
-			case OpCode.DIV:
-			case OpCode.MOD:
-			case OpCode.FLOORDIV:
-			case OpCode.POW:
-			case OpCode.BAND:
-			case OpCode.BOR:
-			case OpCode.BXOR:
-			case OpCode.SHL:
-			case OpCode.SHR:
-			case OpCode.CONCAT:
-			case OpCode.CONCATN:
-			case OpCode.UNM:
-			case OpCode.NOT:
-			case OpCode.LEN:
-			case OpCode.BNOT:
-			case OpCode.CLOSURE:
-			case OpCode.GETUP:
-			case OpCode.LOAD_MEM:
-				return hasLive(instruction.a);
-			case OpCode.LOADNIL: {
-				for (let offset = 0; offset < instruction.b; offset += 1) {
-					if (hasLive(instruction.a + offset)) {
-						return true;
-					}
-				}
-				return false;
+	const collectDefs = (instruction: Instruction): number[] => {
+		const defs: number[] = [];
+		const add = (reg: number): void => {
+			if (reg >= 0) {
+				defs.push(reg);
 			}
-			case OpCode.VARARG: {
-				const countValue = instruction.b === 0 ? maxRegister - instruction.a + 1 : instruction.b;
-				for (let offset = 0; offset < countValue; offset += 1) {
-					if (hasLive(instruction.a + offset)) {
-						return true;
-					}
-				}
-				return false;
-			}
-			case OpCode.CALL: {
-				const countValue = instruction.c === 0 ? maxRegister - instruction.a + 1 : instruction.c;
-				for (let offset = 0; offset < countValue; offset += 1) {
-					if (hasLive(instruction.a + offset)) {
-						return true;
-					}
-				}
-				return false;
-			}
-			case OpCode.TESTSET:
-				return hasLive(instruction.a);
-			default:
-				return true;
-		}
-	};
-
-	const killWrittenRegisters = (instruction: Instruction, live: boolean[]): void => {
-		const kill = (register: number): void => {
-			if (register >= 0 && register < live.length) {
-				live[register] = false;
+		};
+		const addRange = (base: number, countValue: number): void => {
+			for (let offset = 0; offset < countValue; offset += 1) {
+				add(base + offset);
 			}
 		};
 		switch (instruction.op) {
@@ -1680,46 +1657,134 @@ const eliminateDeadStores = (set: InstructionSet): InstructionSet => {
 			case OpCode.CLOSURE:
 			case OpCode.GETUP:
 			case OpCode.LOAD_MEM:
+				add(instruction.a);
+				break;
 			case OpCode.TESTSET:
-				kill(instruction.a);
+				add(instruction.a);
 				break;
 			case OpCode.LOADNIL:
-				for (let offset = 0; offset < instruction.b; offset += 1) {
-					kill(instruction.a + offset);
-				}
+				addRange(instruction.a, instruction.b);
 				break;
 			case OpCode.VARARG: {
 				const countValue = instruction.b === 0 ? maxRegister - instruction.a + 1 : instruction.b;
-				for (let offset = 0; offset < countValue; offset += 1) {
-					kill(instruction.a + offset);
-				}
+				addRange(instruction.a, countValue);
 				break;
 			}
 			case OpCode.CALL: {
 				const countValue = instruction.c === 0 ? maxRegister - instruction.a + 1 : instruction.c;
-				for (let offset = 0; offset < countValue; offset += 1) {
-					kill(instruction.a + offset);
-				}
+				addRange(instruction.a, countValue);
 				break;
 			}
 			default:
 				break;
 		}
+		return defs;
 	};
 
-	for (const block of blocks) {
-		const live = new Array<boolean>(maxRegister + 1).fill(false);
+	for (let blockIndex = 0; blockIndex < blocks.length; blockIndex += 1) {
+		blockUse[blockIndex] = new Uint8Array(registerCount);
+		blockDef[blockIndex] = new Uint8Array(registerCount);
+		liveIn[blockIndex] = new Uint8Array(registerCount);
+		liveOut[blockIndex] = new Uint8Array(registerCount);
+
+		const block = blocks[blockIndex];
+		const use = blockUse[blockIndex];
+		const def = blockDef[blockIndex];
+		for (let i = block.start; i < block.end; i += 1) {
+			const instruction = instructions[i];
+			const uses = collectUsesForLiveness(instruction);
+			for (let u = 0; u < uses.length; u += 1) {
+				const reg = uses[u];
+				if (reg < registerCount && def[reg] === 0) {
+					use[reg] = 1;
+				}
+			}
+			const defs = collectDefs(instruction);
+			for (let d = 0; d < defs.length; d += 1) {
+				const reg = defs[d];
+				if (reg < registerCount) {
+					def[reg] = 1;
+				}
+			}
+		}
+	}
+
+	let changed = true;
+	while (changed) {
+		changed = false;
+		for (let blockIndex = blocks.length - 1; blockIndex >= 0; blockIndex -= 1) {
+			const out = liveOut[blockIndex];
+			const nextOut = new Uint8Array(registerCount);
+			const succs = successors[blockIndex];
+			for (let s = 0; s < succs.length; s += 1) {
+				const succIn = liveIn[succs[s]];
+				for (let r = 0; r < registerCount; r += 1) {
+					if (succIn[r] !== 0) {
+						nextOut[r] = 1;
+					}
+				}
+			}
+			for (let r = 0; r < registerCount; r += 1) {
+				if (out[r] !== nextOut[r]) {
+					out[r] = nextOut[r];
+					changed = true;
+				}
+			}
+			const use = blockUse[blockIndex];
+			const def = blockDef[blockIndex];
+			const inSet = liveIn[blockIndex];
+			for (let r = 0; r < registerCount; r += 1) {
+				const nextIn = use[r] !== 0 || (out[r] !== 0 && def[r] === 0) ? 1 : 0;
+				if (inSet[r] !== nextIn) {
+					inSet[r] = nextIn;
+					changed = true;
+				}
+			}
+		}
+	}
+
+	const keep = new Array<boolean>(count).fill(true);
+	let removed = 0;
+	for (let blockIndex = 0; blockIndex < blocks.length; blockIndex += 1) {
+		const block = blocks[blockIndex];
+		const live = liveOut[blockIndex].slice();
 		for (let i = block.end - 1; i >= block.start; i -= 1) {
 			const instruction = instructions[i];
-			const pure = isPureInstruction(instruction);
-			const hasLiveWrite = writeHasLive(instruction, live);
-			if (pure && !hasLiveWrite) {
+			const defs = collectDefs(instruction);
+			let hasLive = false;
+			for (let d = 0; d < defs.length; d += 1) {
+				const reg = defs[d];
+				if (reg < registerCount && live[reg] !== 0) {
+					hasLive = true;
+					break;
+				}
+			}
+			let hasCaptured = false;
+			for (let d = 0; d < defs.length; d += 1) {
+				const reg = defs[d];
+				if (reg < registerCount && captured[reg] !== 0) {
+					hasCaptured = true;
+					break;
+				}
+			}
+			if (!pinned[i] && defs.length > 0 && isPureInstruction(instruction) && !hasLive && !hasCaptured) {
 				keep[i] = false;
 				removed += 1;
 				continue;
 			}
-			killWrittenRegisters(instruction, live);
-			markReadRegisters(instruction, live);
+			for (let d = 0; d < defs.length; d += 1) {
+				const reg = defs[d];
+				if (reg < registerCount) {
+					live[reg] = 0;
+				}
+			}
+			const uses = collectUsesForLiveness(instruction);
+			for (let u = 0; u < uses.length; u += 1) {
+				const reg = uses[u];
+				if (reg < registerCount) {
+					live[reg] = 1;
+				}
+			}
 		}
 	}
 
@@ -1885,18 +1950,28 @@ export const optimizeInstructions = (
 		}
 		current = simplifyCompareBool(current);
 		current = propagateValues(current, context);
-		current = eliminateDeadStores(current);
+		current = eliminateDeadStores(current, context);
 		current = removeNoOps(current);
 		current = threadJumps(current);
 		current = removeUnreachable(current);
 		current = foldConstants(current, context);
 		current = propagateValues(current, context);
-		current = eliminateDeadStores(current);
+		current = eliminateDeadStores(current, context);
 		current = removeNoOps(current);
 		current = threadJumps(current);
 		current = removeUnreachable(current);
 		current = removeNoOps(current);
 		current = reorderSegments(current);
+		current = removeNoOps(current);
+		current = threadJumps(current);
+		current = removeUnreachable(current);
+		current = removeNoOps(current);
+	}
+	if (level >= 3) {
+		if (!context) {
+			throw new Error('[ProgramOptimizer] Optimization context is required for level 3.');
+		}
+		current = applyGlobalOptimizations(current, context);
 		current = removeNoOps(current);
 		current = threadJumps(current);
 		current = removeUnreachable(current);

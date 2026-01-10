@@ -1166,6 +1166,22 @@ export class VMCPU {
 		return this.program.constPool[index];
 	}
 
+	private skipNextInstruction(frame: CallFrame): void {
+		const pc = frame.pc;
+		const decodedOps = this.decodedOps!;
+		if (pc >= decodedOps.length) {
+			throw new Error('Attempted to skip beyond end of program.');
+		}
+		if (decodedOps[pc] === OpCode.WIDE) {
+			if (pc + 1 >= decodedOps.length) {
+				throw new Error('Malformed program: WIDE instruction at end of program.');
+			}
+			frame.pc += 2;
+			return;
+		}
+		frame.pc += 1;
+	}
+
 	private executeInstruction(frame: CallFrame, op: number, aLow: number, bLow: number, cLow: number, wideA: number, wideB: number, wideC: number): void {
 		const a = (wideA << 6) | aLow;
 		const b = (wideB << 6) | bLow;
@@ -1189,7 +1205,7 @@ export class VMCPU {
 			case OpCode.LOADBOOL:
 				this.setRegisterBool(frame, a, b !== 0);
 				if (c !== 0) {
-					frame.pc += 1;
+					this.skipNextInstruction(frame);
 				}
 				return;
 			case OpCode.GETG: {
@@ -1374,7 +1390,7 @@ export class VMCPU {
 				const right = this.readRK(frame, cLow, wideC);
 				const eq = left === right;
 				if (eq !== (a !== 0)) {
-					frame.pc += 1;
+					this.skipNextInstruction(frame);
 				}
 				return;
 			}
@@ -1385,7 +1401,7 @@ export class VMCPU {
 					? stringValueToString(left) < stringValueToString(right)
 					: (left as number) < (right as number);
 				if (ok !== (a !== 0)) {
-					frame.pc += 1;
+					this.skipNextInstruction(frame);
 				}
 				return;
 			}
@@ -1396,14 +1412,14 @@ export class VMCPU {
 					? stringValueToString(left) <= stringValueToString(right)
 					: (left as number) <= (right as number);
 				if (ok !== (a !== 0)) {
-					frame.pc += 1;
+					this.skipNextInstruction(frame);
 				}
 				return;
 			}
 			case OpCode.TEST: {
 				const ok = frame.registers.isTruthy(a);
 				if (ok !== (c !== 0)) {
-					frame.pc += 1;
+					this.skipNextInstruction(frame);
 				}
 				return;
 			}
@@ -1413,7 +1429,7 @@ export class VMCPU {
 					this.copyRegister(frame, a, b);
 					return;
 				}
-				frame.pc += 1;
+				this.skipNextInstruction(frame);
 				return;
 			}
 			case OpCode.JMP: {
