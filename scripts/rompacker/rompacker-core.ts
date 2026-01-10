@@ -3,6 +3,8 @@ import { glsl } from "esbuild-plugin-glsl";
 import type { Stats } from 'fs';
 import type { asset_type, AudioMeta, CanonicalizationType, GLTFMesh, ImgMeta, Polygon, RomAsset, RomAssetListPayload, RomManifest } from '../../src/bmsx/rompack/rompack';
 import type { LuaChunk } from '../../src/bmsx/lua/lua_ast';
+import type { Value } from '../../src/bmsx/vm/cpu';
+import type { StringPool } from '../../src/bmsx/vm/string_pool';
 import { atlasIndexResolver, createOptimizedAtlas, generateAtlasName } from './atlasbuilder';
 import { BoundingBoxExtractor } from './boundingbox_extractor';
 import { loadGLTFModel } from './gltfloader';
@@ -553,6 +555,7 @@ export async function buildGameHtmlAndManifest(rom_name: string, title: string, 
 			'#title': title,
 			'//#debug': `bootrom.debug = ${debug};\n\t\tbootrom.romname = getRomNameFromUrlParameter() ?? '${rom_name}';\n`,
 			'#outfile': `${rom_name}.${debug ? 'debug.' : ''}rom`,
+			'#biospath': `./engine.assets.${debug ? 'debug.' : ''}rom`,
 			'@@BMSX_LOGO@@': `${imgPrefix}${images['./rom/bmsx.png']}`,
 			'@@DPAD_D@@': `${imgPrefix}${images['./rom/d-pad-d.png']}`,
 			'@@DPAD_L@@': `${imgPrefix}${images['./rom/d-pad-l.png']}`,
@@ -1481,7 +1484,16 @@ export async function generateRomAssets(resources: Resource[], reportProgress?: 
 	return romAssets;
 }
 
-export function appendVmProgramAsset(assetList: RomAsset[], manifest: RomManifest, options: { extraLuaAssets?: RomAsset[]; includeSymbols?: boolean } = {}): void {
+export function appendVmProgramAsset(
+	assetList: RomAsset[],
+	manifest: RomManifest,
+	options: {
+		extraLuaAssets?: RomAsset[];
+		includeSymbols?: boolean;
+		constPoolSeed?: { constPool: ReadonlyArray<Value>; stringPool: StringPool };
+		optLevel?: 0 | 1 | 2 | 3;
+	} = {},
+): void {
 	const hasProgramAsset = assetList.some(asset => asset.resid === VM_PROGRAM_ASSET_ID);
 	const hasSymbolsAsset = assetList.some(asset => asset.resid === VM_PROGRAM_SYMBOLS_ASSET_ID);
 	const includeSymbols = options.includeSymbols === true;
@@ -1550,17 +1562,14 @@ export function appendVmProgramAsset(assetList: RomAsset[], manifest: RomManifes
 		modules.push({ path, chunk });
 	}
 
-	const optLevelRaw = process.env.ROM_VM_OPTLEVEL ?? process.env.BMSX_VM_OPTLEVEL;
-	let optLevel: 0 | 1 | 2 | 3 = 3;
-	if (optLevelRaw !== undefined && optLevelRaw.length > 0) {
-		const parsed = Number.parseInt(optLevelRaw, 10);
-		if (parsed !== 0 && parsed !== 1 && parsed !== 2 && parsed !== 3) {
-			throw new Error(`[RomPacker] Unsupported ROM_VM_OPTLEVEL="${optLevelRaw}". Expected one of: 0, 1, 2, 3.`);
-		}
-		optLevel = parsed;
-	}
+	const optLevel = options.optLevel ?? 3;
 
-	const compiled = compileLuaChunkToProgram(entryChunk, modules, { canonicalization: LUA_CANONICALIZATION, optLevel });
+	const compiled = compileLuaChunkToProgram(entryChunk, modules, {
+		canonicalization: LUA_CANONICALIZATION,
+		optLevel,
+		baseConstPool: options.constPoolSeed ? options.constPoolSeed.constPool : undefined,
+		stringPool: options.constPoolSeed ? options.constPoolSeed.stringPool : undefined,
+	});
 	const program = compiled.program;
 	const programAsset = {
 		entryProtoIndex: compiled.entryProtoIndex,

@@ -1800,6 +1800,12 @@ const reorderSegments = (set: InstructionSet): InstructionSet => {
 	if (count === 0) {
 		return set;
 	}
+	for (let i = 0; i < count; i += 1) {
+		if (isSkipInstruction(instructions[i])) {
+			// Skip-next semantics depend on adjacency; reordering blocks would break them.
+			return set;
+		}
+	}
 	const blocks = buildBasicBlocks(instructions);
 	if (blocks.length === 0) {
 		return set;

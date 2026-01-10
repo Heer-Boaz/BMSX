@@ -49,6 +49,7 @@ export type ProgramModule = {
 type CompileOptions = {
 	baseProgram?: Program;
 	baseMetadata?: ProgramMetadata;
+	baseConstPool?: ReadonlyArray<Value>;
 	canonicalization?: CanonicalizationType;
 	stringPool?: StringPool;
 	optLevel?: OptimizationLevel;
@@ -1862,6 +1863,8 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 			throw new Error('[ProgramBuilder] Base program metadata is required.');
 		}
 		programBuilder = createProgramBuilderFromProgram(options.baseProgram, options.baseMetadata, canonicalization, optLevel);
+	} else if (options.baseConstPool) {
+		programBuilder = new ProgramBuilder(options.baseConstPool, canonicalization, options.stringPool ?? null, optLevel);
 	} else {
 		programBuilder = new ProgramBuilder(null, canonicalization, options.stringPool ?? null, optLevel);
 	}

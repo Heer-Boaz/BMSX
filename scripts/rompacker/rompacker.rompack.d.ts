@@ -28,6 +28,8 @@ export interface RomPackerOptions {
 	skipTypecheck?: boolean;
 	/** When true (default), rompacker folds Lua identifiers to lowercase for case-insensitive mode. */
 	canonicalization: CanonicalizationType;
+	/** VM optimizer level. */
+	optLevel: 0 | 1 | 2 | 3;
 	mode: RomPackerMode;
 	shouldBundleCartCode: boolean;
 	extraLuaRoots: string[];

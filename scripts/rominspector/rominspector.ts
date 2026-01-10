@@ -39,6 +39,42 @@ function formatNumberAsHex(n: number, width?: number): string {
 	return `#${padded}`;
 }
 
+const PROGRAM_ASM_BIAS_FLAG = '--program-asm-bias';
+
+function parseProgramAsmBias(args: string[]): number | null {
+	for (const arg of args) {
+		if (arg.startsWith(`${PROGRAM_ASM_BIAS_FLAG}=`)) {
+			return parseBiasValue(arg.slice(PROGRAM_ASM_BIAS_FLAG.length + 1));
+		}
+	}
+	const index = args.indexOf(PROGRAM_ASM_BIAS_FLAG);
+	if (index < 0) {
+		return null;
+	}
+	const raw = args[index + 1];
+	if (!raw) {
+		throw new Error(`[RomInspector] ${PROGRAM_ASM_BIAS_FLAG} requires a value.`);
+	}
+	return parseBiasValue(raw);
+}
+
+function parseBiasValue(raw: string): number {
+	let valueText = raw.trim();
+	let radix = 10;
+	if (valueText.startsWith('0x') || valueText.startsWith('0X')) {
+		radix = 16;
+		valueText = valueText.slice(2);
+	}
+	if (valueText.endsWith('h') || valueText.endsWith('H')) {
+		radix = 16;
+		valueText = valueText.slice(0, -1);
+	}
+	const parsed = Number.parseInt(valueText, radix);
+	if (Number.isNaN(parsed)) {
+		throw new Error(`[RomInspector] Invalid ${PROGRAM_ASM_BIAS_FLAG} value: "${raw}".`);
+	}
+	return parsed;
+}
 function buildLuaSourceLookup(rombin: ArrayBuffer, assets: RomAsset[]): (path: string) => string {
 	const sources = new Map<string, string>();
 	for (const asset of assets) {
@@ -103,7 +139,7 @@ function disassembleVmProgram(
 	program: Program,
 	metadata: ProgramMetadata | null,
 	sourceTextForPath: ((path: string) => string) | null,
-	options: { assembly?: boolean } = {},
+	options: { assembly?: boolean; pcBias?: number } = {},
 ): string {
 	if (metadata && !sourceTextForPath) {
 		throw new Error('[RomInspector] VM program symbols found but Lua sources were not resolved.');
@@ -113,6 +149,7 @@ function disassembleVmProgram(
 		formatStyle: assembly ? 'assembly' : 'default',
 		pcRadix: 16,
 		pcFormatter: assembly ? undefined : (pc, width) => formatNumberAsHex(pc, width),
+		pcBias: options.pcBias,
 		showSourceComments: metadata !== null,
 		sourceTextForPath: sourceTextForPath ?? undefined,
 	});
@@ -376,14 +413,16 @@ async function main() {
 	const uiFlag = args.includes('--ui');
 	const listAssetsFlag = args.includes('--list-assets');
 	const programAsmFlag = args.includes('--program-asm');
+	const programAsmBias = parseProgramAsmBias(args);
 	const romfile = args.find(arg => !arg.startsWith('--'));
 
 	if (!romfile) {
-		console.error('Usage: npx tsx scripts/rominspector.ts <romfile> [--ui] [--list-assets] [--program-asm]');
+		console.error('Usage: npx tsx scripts/rominspector.ts <romfile> [--ui] [--list-assets] [--program-asm] [--program-asm-bias <value>]');
 		console.error('Options:');
 		console.error('  --ui            Open the interactive UI');
 		console.error('  --list-assets   Print asset list to stdout (default)');
 		console.error('  --program-asm   Print VM program disassembly and exit');
+		console.error('  --program-asm-bias  Base PC to add (e.g. 0x80000 or 80000h)');
 		process.exit(1);
 	}
 
@@ -412,7 +451,8 @@ async function main() {
 
 	if (programAsmFlag) {
 		const { program, metadata, sourceTextForPath } = loadVmProgramFromAssets(rombin, assetList);
-		console.log(disassembleVmProgram(program, metadata, sourceTextForPath, { assembly: true }));
+		const pcBias = programAsmBias === null ? undefined : programAsmBias;
+		console.log(disassembleVmProgram(program, metadata, sourceTextForPath, { assembly: true, pcBias }));
 		process.exit(0);
 	}
 

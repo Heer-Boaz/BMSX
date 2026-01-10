@@ -12,9 +12,11 @@ export type DisassemblyOptions = {
 	sourceTextForPath?: (path: string) => string;
 	formatStyle?: 'default' | 'assembly';
 	pcPrefix?: string;
+	pcSuffix?: string;
 	pcRadix?: 10 | 16;
 	pcFormatter?: (pc: number, width: number) => string;
 	protoAddressOp?: string;
+	pcBias?: number;
 };
 
 type DecodedInstruction = {
@@ -37,16 +39,19 @@ type ResolvedOptions = {
 	sourceTextForPath: ((path: string) => string) | null;
 	formatStyle: 'default' | 'assembly';
 	pcPrefix: string;
+	pcSuffix: string;
 	pcRadix: 10 | 16;
 	pcFormatter: ((pc: number, width: number) => string) | null;
 	protoAddressOp: string | null;
+	pcBias: number;
 };
 
 const normalizeOptions = (options: DisassemblyOptions): ResolvedOptions => {
 	const formatStyle = options.formatStyle ?? 'default';
 	const showPc = options.showPc ?? (formatStyle !== 'assembly');
 	const pcRadix = options.pcRadix ?? (formatStyle === 'assembly' ? 16 : 10);
-	const pcPrefix = options.pcPrefix ?? (formatStyle === 'assembly' ? '$' : '');
+	const pcPrefix = options.pcPrefix ?? (formatStyle === 'assembly' ? '' : '');
+	const pcSuffix = options.pcSuffix ?? (formatStyle === 'assembly' ? 'h' : '');
 	const protoAddressOp = options.protoAddressOp ?? (formatStyle === 'assembly' ? '.ORG' : null);
 	return {
 		showPc,
@@ -57,9 +62,11 @@ const normalizeOptions = (options: DisassemblyOptions): ResolvedOptions => {
 		sourceTextForPath: options.sourceTextForPath ?? null,
 		formatStyle,
 		pcPrefix,
+		pcSuffix,
 		pcRadix,
 		pcFormatter: options.pcFormatter ?? null,
 		protoAddressOp,
+		pcBias: options.pcBias ?? 0,
 	};
 };
 
@@ -71,7 +78,8 @@ const formatHexWord = (word: number, options: ResolvedOptions): string => {
 	const hex = word.toString(16);
 	const upper = options.formatStyle === 'assembly' ? hex.toUpperCase() : hex;
 	const prefix = options.formatStyle === 'assembly' ? options.pcPrefix : '0x';
-	return `${prefix}${upper.padStart(6, '0')}`;
+	const suffix = options.formatStyle === 'assembly' ? options.pcSuffix : '';
+	return `${prefix}${upper.padStart(6, '0')}${suffix}`;
 };
 
 const SOURCE_COMMENT_MAX_CHARS = 120;
@@ -130,7 +138,7 @@ const formatRK = (program: Program, raw: number, options: ResolvedOptions): stri
 const formatSignedOffset = (value: number, width: number, options: ResolvedOptions): string => {
 	const sign = value < 0 ? '-' : '+';
 	const absValue = Math.abs(value);
-	return `${sign}${formatPc(absValue, width, options)}`;
+	return `${sign}${formatPc(absValue, width, options, false)}`;
 };
 
 const formatJump = (pc: number, sbx: number, pcWidth: number, options: ResolvedOptions): string => {
@@ -140,16 +148,18 @@ const formatJump = (pc: number, sbx: number, pcWidth: number, options: ResolvedO
 	return `${offset} -> ${targetText}`;
 };
 
-const formatPc = (pc: number, width: number, options: ResolvedOptions): string => {
+const formatPc = (pc: number, width: number, options: ResolvedOptions, applyBias = true): string => {
 	const formatter = options.pcFormatter;
 	if (formatter) {
-		return formatter(pc, width);
+		const value = applyBias ? pc + options.pcBias : pc;
+		return formatter(value, width);
 	}
-	let text = pc.toString(options.pcRadix);
+	const value = applyBias ? pc + options.pcBias : pc;
+	let text = value.toString(options.pcRadix);
 	if (options.pcRadix === 16) {
 		text = text.toUpperCase();
 	}
-	return `${options.pcPrefix}${text.padStart(width, '0')}`;
+	return `${options.pcPrefix}${text.padStart(width, '0')}${options.pcSuffix}`;
 };
 
 const getSourceLines = (path: string, options: ResolvedOptions, cache: Map<string, string[]>): string[] => {
@@ -461,7 +471,8 @@ export const disassembleProgram = (program: Program, metadata: ProgramMetadata |
 		}
 	}
 	const instructionCount = program.code.length / INSTRUCTION_BYTES;
-	const pcWidth = Math.max(1, (instructionCount - 1).toString(opts.pcRadix).length);
+	const maxPc = instructionCount - 1 + opts.pcBias;
+	const pcWidth = Math.max(1, maxPc.toString(opts.pcRadix).length);
 	const lines: string[] = [];
 	const sourceCache = new Map<string, string[]>();
 	for (let index = 0; index < program.protos.length; index += 1) {

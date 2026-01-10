@@ -64,6 +64,7 @@ import { RenderSubmission } from '../render/backend/pipeline_interfaces';
 import { Msx1Colors } from '../systems/msx';
 import type { RectRenderSubmission } from '../render/shared/render_types';
 import { compileLuaChunkToProgram, appendLuaChunkToProgram } from './program_compiler';
+import { linkProgramAssets } from './program_linker';
 import { IO_ARG0_OFFSET, IO_BUFFER_BASE, IO_COMMAND_STRIDE, IO_CMD_PRINT, IO_SYS_BOOT_CART, IO_SYS_CART_PRESENT, IO_WRITE_PTR_ADDR, VM_IO_MEMORY_SIZE, IO_SYS_CART_BOOTREADY } from './vm_io';
 import { VmHandlerCache } from './vm_handler_cache';
 import {
@@ -3742,16 +3743,34 @@ export class BmsxVMRuntime {
 		return false;
 	}
 
-	private loadVmProgramAssets(): { program: VmProgramAsset; symbols: VmProgramSymbolsAsset | null } {
-		const source = this.resolveProgramAssetSource();
-		const programEntry = source.getEntry(VM_PROGRAM_ASSET_ID);
+	private resolveProgramAssetSourceFor(source: VmProgramSource): RawAssetSource {
+		if (source === 'engine') {
+			if (!this.engineAssetSource) {
+				throw new Error('[BmsxVMRuntime] Engine asset source is not configured.');
+			}
+			return this.engineAssetSource;
+		}
+		if (!this.cartAssetSource) {
+			throw new Error('[BmsxVMRuntime] Cart asset source is not configured.');
+		}
+		return this.cartAssetSource;
+	}
+
+	private loadVmProgramAssetsForSource(source: VmProgramSource): { program: VmProgramAsset; symbols: VmProgramSymbolsAsset | null } {
+		const assetSource = this.resolveProgramAssetSourceFor(source);
+		const programEntry = assetSource.getEntry(VM_PROGRAM_ASSET_ID);
 		if (!programEntry) {
 			throw new Error('[BmsxVMRuntime] VM program asset not found.');
 		}
-		const program = decodeProgramAsset(source.getBytes(programEntry));
-		const symbolsEntry = source.getEntry(VM_PROGRAM_SYMBOLS_ASSET_ID);
-		const symbols = symbolsEntry ? decodeProgramSymbolsAsset(source.getBytes(symbolsEntry)) : null;
+		const program = decodeProgramAsset(assetSource.getBytes(programEntry));
+		const symbolsEntry = assetSource.getEntry(VM_PROGRAM_SYMBOLS_ASSET_ID);
+		const symbols = symbolsEntry ? decodeProgramSymbolsAsset(assetSource.getBytes(symbolsEntry)) : null;
 		return { program, symbols };
+	}
+
+	private loadVmProgramAssets(): { program: VmProgramAsset; symbols: VmProgramSymbolsAsset | null } {
+		const source = this.isEngineProgramActive() ? 'engine' : 'cart';
+		return this.loadVmProgramAssetsForSource(source);
 	}
 
 	private buildVmModuleChunks(entryPath: string, registries?: LuaSourceRegistry[]): { modules: Array<{ path: string; chunk: LuaChunk }>; modulePaths: string[] } {
@@ -3856,6 +3875,11 @@ export class BmsxVMRuntime {
 
 	private bootVmProgramAsset(options?: { preserveState?: boolean; runInit?: boolean }): boolean {
 		const { program, symbols } = this.loadVmProgramAssets();
+		const engineActive = this.isEngineProgramActive();
+		const engineAssets = engineActive ? null : this.loadVmProgramAssetsForSource('engine');
+		const linked = engineAssets ? linkProgramAssets(engineAssets.program, engineAssets.symbols, program, symbols) : null;
+		const programAsset = linked ? linked.programAsset : program;
+		const metadata = linked ? linked.metadata : (symbols ? symbols.metadata : null);
 		this.cartEntryAvailable = true;
 		this.resetLuaInteroperabilityState();
 		const interpreter = this.createLuaInterpreter();
@@ -3866,12 +3890,12 @@ export class BmsxVMRuntime {
 			this.resetVmState();
 		}
 
-		const protoMap = buildModuleProtoMap(program.moduleProtos);
+		const protoMap = buildModuleProtoMap(programAsset.moduleProtos);
 		this.vmModuleProtos.clear();
 		for (const [path, protoIndex] of protoMap.entries()) {
 			this.vmModuleProtos.set(path, protoIndex);
 		}
-		const aliasMap = buildModuleAliasMap(program.moduleAliases);
+		const aliasMap = buildModuleAliasMap(programAsset.moduleAliases);
 		this.vmModuleAliases.clear();
 		for (const [alias, path] of aliasMap.entries()) {
 			this.vmModuleAliases.set(alias, path);
@@ -3879,15 +3903,14 @@ export class BmsxVMRuntime {
 		this.vmModuleCache.clear();
 		this.cpuMemory[IO_WRITE_PTR_ADDR] = 0;
 
-		const inflated = inflateProgram(program.program);
-		const metadata = symbols ? symbols.metadata : null;
+		const inflated = inflateProgram(programAsset.program);
 		try {
 			this.cpu.setProgram(inflated, metadata);
 			this.vmProgramMetadata = metadata;
 			this.applyEngineBuiltinGlobals();
 			this.processVmIo();
 
-			this.cpu.start(program.entryProtoIndex);
+			this.cpu.start(programAsset.entryProtoIndex);
 			this.pendingVmCall = null;
 			this.cpu.instructionBudgetRemaining = null;
 			this.cpu.run(null);
