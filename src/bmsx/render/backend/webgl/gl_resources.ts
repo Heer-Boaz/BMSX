@@ -2,31 +2,15 @@
 // Moved out of webgl_backend.ts to keep backend focused on orchestration.
 import { $ } from '../../../core/engine_core';
 import { TextureParams } from '../pipeline_interfaces';
-import { MAX_SPRITES, TEXTURE_UNIT_SHADOW_MAP, TEXTURE_UNIT_UPLOAD, VERTEXCOORDS_SIZE } from './webgl.constants';
+import { TEXTURE_UNIT_SHADOW_MAP, TEXTURE_UNIT_UPLOAD } from './webgl.constants';
 
 function getRenderContext() {
 	return $.view;
 }
 
-export function buildQuadTexCoords(): Float32Array {
-	const textureCoordinates = new Float32Array(VERTEXCOORDS_SIZE * MAX_SPRITES);
-	for (let i = 0; i < VERTEXCOORDS_SIZE * MAX_SPRITES - VERTEXCOORDS_SIZE; i += VERTEXCOORDS_SIZE) {
-		textureCoordinates.set([
-			0.0, 1.0,
-			0.0, 0.0,
-			1.0, 1.0,
-			1.0, 1.0,
-			0.0, 0.0,
-			1.0, 0.0,
-		], i);
-	}
-
-	return textureCoordinates;
-}
-
 export function glCreateBuffer(
 	gl: WebGL2RenderingContext,
-	data?: Float32Array | Uint8Array,
+	data?: ArrayBufferView,
 ): WebGLBuffer {
 	const buffer = gl.createBuffer()!;
 	if (!data) return buffer;

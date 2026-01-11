@@ -1,17 +1,19 @@
 #version 300 es
 precision mediump float;
 
-// Input attributes from the vertex buffer
-in vec2 a_position;         // Vertex position
-in vec2 a_texcoord;         // Texture coordinates
-in vec4 a_color_override;   // Color override
-in float a_pos_z;           // Z position for depth sorting
-in uint a_atlas_id;         // Atlas ID for texture mapping
+in vec2 a_corner;
 
-// Uniforms for resolution and scaling factor
-// Legacy uniform (kept for compatibility during migration)
-uniform vec2 u_resolution;  // Logical resolution fallback
-uniform float u_scale;      // Scaling factor for the position
+in vec2 i_pos;
+in vec2 i_size;
+in vec2 i_uv0;
+in vec2 i_uv1;
+in float i_z;
+in uint i_atlas_id;
+in float i_fx;
+in vec4 i_color;
+
+uniform float u_scale;
+uniform vec4 u_parallax_rig; // (vy, scale, impact, impact_t)
 
 // Frame-shared UBO (std140). Only first fields are used in this shader.
 layout(std140) uniform FrameUniforms {
@@ -24,29 +26,32 @@ layout(std140) uniform FrameUniforms {
 	vec4 u_ambient_frame; // rgb,intensity (kept for block parity with FS)
 };
 
-// Output variables to pass to the fragment shader
-out vec2 v_texcoord;        // Texture coordinates to pass to the fragment shader
-out vec4 v_color_override;  // Color override to pass to the fragment shader
-flat out uint v_atlas_id;   // Atlas ID to pass to the fragment shader
+out vec2 v_texcoord;
+out vec4 v_color_override;
+flat out uint v_atlas_id;
+
+float wobble(float t) {
+	return sin(t * 2.2) * 0.5 + sin(t * 1.1 + 1.7) * 0.5;
+}
 
 void main() {
-	// Scale the position by the scaling factor
-	vec2 scaledPosition = a_position * u_scale;
+	float depth = smoothstep(0.0, 1.0, i_z);
+	float weight = (i_fx * 2.0 - 1.0) * depth;
+	float dy_px = wobble(u_timeDelta.x) * u_parallax_rig.x * weight;
+	float baseScale = 1.0 + (u_parallax_rig.y - 1.0) * weight;
+	float impactSign = sign(u_parallax_rig.z);
+	float impactWeight = max(0.0, weight * impactSign);
+	float pulse = exp(-8.0 * u_parallax_rig.w) * abs(u_parallax_rig.z) * impactWeight;
+	float parallaxScale = baseScale + pulse;
 
-	// Prefer frame UBO logical size; fallback to legacy uniform if zero.
-	vec2 logicalRes = u_logicalSize;
-	if (logicalRes.x <= 0.0 || logicalRes.y <= 0.0) {
-		logicalRes = u_resolution;
-	}
-	// Convert the rectangle from pixels to clipspace coordinates and invert Y-axis
-	vec2 clipSpace = ((scaledPosition / logicalRes) * 2.0 - 1.0) * vec2(1.0, -1.0);
-	// Flip Y-axis to match WebGL coordinates (0,0 is bottom-left) and convert to clipspace coordinates (-1 to 1)
+	vec2 center = i_pos + i_size * 0.5;
+	vec2 pos = i_pos + a_corner * i_size;
+	vec2 parallaxPos = (pos - center) * parallaxScale + center + vec2(0.0, dy_px);
+	vec2 scaledPosition = parallaxPos * u_scale;
+	vec2 clipSpace = ((scaledPosition / u_logicalSize) * 2.0 - 1.0) * vec2(1.0, -1.0);
 
-	// Set the vertex position (z is used for depth sorting) and w to 1.0 (required for clipping)
-	gl_Position = vec4(clipSpace, a_pos_z, 1);
-
-	// Pass the texture coordinates and color override to the fragment shader
-	v_texcoord = a_texcoord; // Texture coordinates for the fragment shader
-	v_color_override = a_color_override; // Color override for the fragment shader
-	v_atlas_id = a_atlas_id; // Atlas ID for texture mapping
+	gl_Position = vec4(clipSpace, i_z, 1.0);
+	v_texcoord = mix(i_uv0, i_uv1, a_corner);
+	v_color_override = i_color;
+	v_atlas_id = i_atlas_id;
 }

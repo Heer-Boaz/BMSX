@@ -15,6 +15,13 @@ export type FlipOptions = {
 	flip_v: boolean;
 };
 
+export type SpriteParallaxRig = {
+	vy: number;
+	scale: number;
+	impact: number;
+	impact_t: number;
+};
+
 export type RenderLayer = 'world' | 'ui' | 'ide';
 
 export type RectRenderSubmission = {
@@ -33,6 +40,7 @@ export type ImgRenderSubmission = {
 	ambient_affected?: boolean;
 	ambient_factor?: number;
 	layer?: RenderLayer;
+	parallax_weight?: number;
 };
 
 export type PolyRenderSubmission = {

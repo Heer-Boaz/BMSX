@@ -4,14 +4,17 @@
 
 #include "sprites_pipeline_gles2.h"
 
+#include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <cstdint>
 #include <stdexcept>
 #include <string>
 
 #include "../core/assets.h"
 #include "../core/engine.h"
 #include "../core/rompack.h"
+#include "../utils/clamp.h"
 #include "render_queues.h"
 
 namespace bmsx {
@@ -27,12 +30,18 @@ constexpr int kTexcoordComponents = 2;
 constexpr int kZComponents = 1;
 constexpr int kColorComponents = 4;
 constexpr int kAtlasComponents = 1;
-
-constexpr int kVertexCoordSize = kVerticesPerSprite * kPositionComponents;
-constexpr int kTexcoordSize = kVerticesPerSprite * kTexcoordComponents;
-constexpr int kZCoordSize = kVerticesPerSprite * kZComponents;
-constexpr int kColorSize = kVerticesPerSprite * kColorComponents;
-constexpr int kAtlasSize = kVerticesPerSprite * kAtlasComponents;
+constexpr int kCenterComponents = 2;
+constexpr int kParallaxWeightComponents = 1;
+constexpr int kVertexStride = 24;
+constexpr int kPositionOffset = 0;
+constexpr int kTexcoordOffset = 8;
+constexpr int kZOffset = 12;
+constexpr int kAtlasOffset = 14;
+constexpr int kParallaxWeightOffset = 15;
+constexpr int kColorOffset = 16;
+constexpr int kCenterOffset = 20;
+constexpr float kCornerX[6] = {0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 1.0f};
+constexpr float kCornerY[6] = {0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f};
 
 constexpr float kZCoordMax = 10000.0f;
 constexpr float kDefaultZ = 0.0f;
@@ -46,10 +55,13 @@ struct SpriteGLES2State {
   GLint attrib_pos = -1;
   GLint attrib_uv = -1;
   GLint attrib_z = -1;
+  GLint attrib_center = -1;
+  GLint attrib_parallax_weight = -1;
   GLint attrib_color = -1;
   GLint attrib_atlas = -1;
   GLint uniform_resolution = -1;
   GLint uniform_scale = -1;
+  GLint uniform_parallax_rig = -1;
   GLint uniform_tex0 = -1;
   GLint uniform_tex1 = -1;
   GLint uniform_tex2 = -1;
@@ -57,16 +69,8 @@ struct SpriteGLES2State {
   GLint uniform_dither_intensity = -1;
   GLint uniform_dither_enabled = -1;
   GLint uniform_time = -1;
-  GLuint vbo_pos = 0;
-  GLuint vbo_uv = 0;
-  GLuint vbo_z = 0;
-  GLuint vbo_color = 0;
-  GLuint vbo_atlas = 0;
-  std::vector<float> positions;
-  std::vector<float> texcoords;
-  std::vector<float> zcoords;
-  std::vector<float> colors;
-  std::vector<float> atlas;
+  GLuint vbo = 0;
+  std::vector<uint8_t> vertex_data;
 };
 
 SpriteGLES2State g_sprite;
@@ -77,18 +81,35 @@ precision mediump float;
 attribute vec2 a_position;
 attribute vec2 a_texcoord;
 attribute float a_pos_z;
+attribute vec2 a_center;
+attribute float a_parallax_weight;
 attribute vec4 a_color_override;
 attribute float a_atlas_id;
 
 uniform vec2 u_resolution;
 uniform float u_scale;
+uniform float u_time;
+uniform vec4 u_parallax_rig;
 
 varying vec2 v_texcoord;
 varying vec4 v_color_override;
 varying float v_atlas_id;
 
+float wobble(float t) {
+	return sin(t * 2.2) * 0.5 + sin(t * 1.1 + 1.7) * 0.5;
+}
+
 void main() {
-	vec2 scaledPosition = a_position * u_scale;
+	float depth = smoothstep(0.0, 1.0, a_pos_z);
+	float weight = (a_parallax_weight * 2.0 - 1.0) * depth;
+	float dy_px = wobble(u_time) * u_parallax_rig.x * weight;
+	float baseScale = 1.0 + (u_parallax_rig.y - 1.0) * weight;
+	float impactSign = sign(u_parallax_rig.z);
+	float impactWeight = max(0.0, weight * impactSign);
+	float pulse = exp(-8.0 * u_parallax_rig.w) * abs(u_parallax_rig.z) * impactWeight;
+	float parallaxScale = baseScale + pulse;
+	vec2 parallaxPos = (a_position - a_center) * parallaxScale + a_center + vec2(0.0, dy_px);
+	vec2 scaledPosition = parallaxPos * u_scale;
 	vec2 clipSpace = ((scaledPosition / u_resolution) * 2.0 - 1.0) * vec2(1.0, -1.0);
 	gl_Position = vec4(clipSpace, a_pos_z, 1.0);
 	v_texcoord = a_texcoord;
@@ -216,131 +237,99 @@ GLuint linkProgram(GLuint vs, GLuint fs) {
 }
 
 void setupBuffers() {
-  g_sprite.positions.resize(
-	  static_cast<size_t>(kMaxSprites * kVertexCoordSize));
-  g_sprite.texcoords.resize(static_cast<size_t>(kMaxSprites * kTexcoordSize));
-  g_sprite.zcoords.resize(static_cast<size_t>(kMaxSprites * kZCoordSize));
-  g_sprite.colors.resize(static_cast<size_t>(kMaxSprites * kColorSize));
-  g_sprite.atlas.resize(static_cast<size_t>(kMaxSprites * kAtlasSize));
+  g_sprite.vertex_data.resize(
+	  static_cast<size_t>(kMaxSprites * kVerticesPerSprite * kVertexStride));
 
-  glGenBuffers(1, &g_sprite.vbo_pos);
-  glBindBuffer(GL_ARRAY_BUFFER, g_sprite.vbo_pos);
-  glBufferData(GL_ARRAY_BUFFER, g_sprite.positions.size() * sizeof(float),
+  glGenBuffers(1, &g_sprite.vbo);
+  glBindBuffer(GL_ARRAY_BUFFER, g_sprite.vbo);
+  glBufferData(GL_ARRAY_BUFFER,
+			   static_cast<GLsizeiptr>(g_sprite.vertex_data.size()),
 			   nullptr, GL_DYNAMIC_DRAW);
-
-  glGenBuffers(1, &g_sprite.vbo_uv);
-  glBindBuffer(GL_ARRAY_BUFFER, g_sprite.vbo_uv);
-  glBufferData(GL_ARRAY_BUFFER, g_sprite.texcoords.size() * sizeof(float),
-			   nullptr, GL_DYNAMIC_DRAW);
-
-  glGenBuffers(1, &g_sprite.vbo_z);
-  glBindBuffer(GL_ARRAY_BUFFER, g_sprite.vbo_z);
-  glBufferData(GL_ARRAY_BUFFER, g_sprite.zcoords.size() * sizeof(float),
-			   nullptr, GL_DYNAMIC_DRAW);
-
-  glGenBuffers(1, &g_sprite.vbo_color);
-  glBindBuffer(GL_ARRAY_BUFFER, g_sprite.vbo_color);
-  glBufferData(GL_ARRAY_BUFFER, g_sprite.colors.size() * sizeof(float), nullptr,
-			   GL_DYNAMIC_DRAW);
-
-  glGenBuffers(1, &g_sprite.vbo_atlas);
-  glBindBuffer(GL_ARRAY_BUFFER, g_sprite.vbo_atlas);
-  glBufferData(GL_ARRAY_BUFFER, g_sprite.atlas.size() * sizeof(float), nullptr,
-			   GL_DYNAMIC_DRAW);
 }
 
 void setupAttributes() {
-  glBindBuffer(GL_ARRAY_BUFFER, g_sprite.vbo_pos);
+  glBindBuffer(GL_ARRAY_BUFFER, g_sprite.vbo);
+
   glEnableVertexAttribArray(static_cast<GLuint>(g_sprite.attrib_pos));
   glVertexAttribPointer(static_cast<GLuint>(g_sprite.attrib_pos),
-						kPositionComponents, GL_FLOAT, GL_FALSE, 0, nullptr);
+						kPositionComponents, GL_FLOAT, GL_FALSE, kVertexStride,
+						reinterpret_cast<void*>(static_cast<intptr_t>(kPositionOffset)));
 
-  glBindBuffer(GL_ARRAY_BUFFER, g_sprite.vbo_uv);
   glEnableVertexAttribArray(static_cast<GLuint>(g_sprite.attrib_uv));
   glVertexAttribPointer(static_cast<GLuint>(g_sprite.attrib_uv),
-						kTexcoordComponents, GL_FLOAT, GL_FALSE, 0, nullptr);
+						kTexcoordComponents, GL_UNSIGNED_SHORT, GL_TRUE,
+						kVertexStride,
+						reinterpret_cast<void*>(static_cast<intptr_t>(kTexcoordOffset)));
 
-  glBindBuffer(GL_ARRAY_BUFFER, g_sprite.vbo_z);
   glEnableVertexAttribArray(static_cast<GLuint>(g_sprite.attrib_z));
   glVertexAttribPointer(static_cast<GLuint>(g_sprite.attrib_z), kZComponents,
-						GL_FLOAT, GL_FALSE, 0, nullptr);
+						GL_UNSIGNED_SHORT, GL_TRUE, kVertexStride,
+						reinterpret_cast<void*>(static_cast<intptr_t>(kZOffset)));
 
-  glBindBuffer(GL_ARRAY_BUFFER, g_sprite.vbo_color);
-  glEnableVertexAttribArray(static_cast<GLuint>(g_sprite.attrib_color));
-  glVertexAttribPointer(static_cast<GLuint>(g_sprite.attrib_color),
-						kColorComponents, GL_FLOAT, GL_FALSE, 0, nullptr);
-
-  glBindBuffer(GL_ARRAY_BUFFER, g_sprite.vbo_atlas);
   glEnableVertexAttribArray(static_cast<GLuint>(g_sprite.attrib_atlas));
   glVertexAttribPointer(static_cast<GLuint>(g_sprite.attrib_atlas),
-						kAtlasComponents, GL_FLOAT, GL_FALSE, 0, nullptr);
+						kAtlasComponents, GL_UNSIGNED_BYTE, GL_FALSE, kVertexStride,
+						reinterpret_cast<void*>(static_cast<intptr_t>(kAtlasOffset)));
+
+  glEnableVertexAttribArray(
+	  static_cast<GLuint>(g_sprite.attrib_parallax_weight));
+  glVertexAttribPointer(
+	  static_cast<GLuint>(g_sprite.attrib_parallax_weight),
+	  kParallaxWeightComponents, GL_UNSIGNED_BYTE, GL_TRUE, kVertexStride,
+	  reinterpret_cast<void*>(static_cast<intptr_t>(kParallaxWeightOffset)));
+
+  glEnableVertexAttribArray(static_cast<GLuint>(g_sprite.attrib_color));
+  glVertexAttribPointer(static_cast<GLuint>(g_sprite.attrib_color),
+						kColorComponents, GL_UNSIGNED_BYTE, GL_TRUE, kVertexStride,
+						reinterpret_cast<void*>(static_cast<intptr_t>(kColorOffset)));
+
+  glEnableVertexAttribArray(static_cast<GLuint>(g_sprite.attrib_center));
+  glVertexAttribPointer(static_cast<GLuint>(g_sprite.attrib_center),
+						kCenterComponents, GL_SHORT, GL_FALSE, kVertexStride,
+						reinterpret_cast<void*>(static_cast<intptr_t>(kCenterOffset)));
 }
 
-void writePositions(float* dst, float x, float y, float w, float h, float sx,
-					float sy) {
-  const float x2 = x + w * sx;
-  const float y2 = y + h * sy;
-  dst[0] = x;
-  dst[1] = y;
-  dst[2] = x;
-  dst[3] = y2;
-  dst[4] = x2;
-  dst[5] = y;
-  dst[6] = x2;
-  dst[7] = y;
-  dst[8] = x;
-  dst[9] = y2;
-  dst[10] = x2;
-  dst[11] = y2;
+uint16_t packUnorm16(float value) {
+  const float clamped = clamp(value, 0.0f, 1.0f);
+  return static_cast<uint16_t>(std::lround(clamped * 65535.0f));
 }
 
-void writeZ(float* dst, float z) {
-  for (int i = 0; i < kZCoordSize; i++) {
-	dst[i] = z;
-  }
+uint8_t packUnorm8(float value) {
+  const float clamped = clamp(value, 0.0f, 1.0f);
+  return static_cast<uint8_t>(std::lround(clamped * 255.0f));
 }
 
-void writeColor(float* dst, const Color& color) {
-  for (int i = 0; i < kColorSize; i += kColorComponents) {
-	dst[i + 0] = color.r;
-	dst[i + 1] = color.g;
-	dst[i + 2] = color.b;
-	dst[i + 3] = color.a;
-  }
+uint8_t packSignedWeight(float value) {
+  const float clamped = clamp(value, -1.0f, 1.0f);
+  return static_cast<uint8_t>(std::lround((clamped * 0.5f + 0.5f) * 255.0f));
 }
 
-void writeAtlas(float* dst, float atlas_id) {
-  for (int i = 0; i < kAtlasSize; i++) {
-	dst[i] = atlas_id;
-  }
+void writeVertex(uint8_t* dst, float x, float y, uint16_t u, uint16_t v,
+				 uint16_t z, uint8_t atlas, uint8_t weight, uint8_t r,
+				 uint8_t g, uint8_t b, uint8_t a, int16_t cx,
+				 int16_t cy) {
+  std::memcpy(dst + kPositionOffset, &x, sizeof(float));
+  std::memcpy(dst + kPositionOffset + sizeof(float), &y, sizeof(float));
+  std::memcpy(dst + kTexcoordOffset, &u, sizeof(uint16_t));
+  std::memcpy(dst + kTexcoordOffset + sizeof(uint16_t), &v,
+			  sizeof(uint16_t));
+  std::memcpy(dst + kZOffset, &z, sizeof(uint16_t));
+  dst[kAtlasOffset] = atlas;
+  dst[kParallaxWeightOffset] = weight;
+  dst[kColorOffset + 0] = r;
+  dst[kColorOffset + 1] = g;
+  dst[kColorOffset + 2] = b;
+  dst[kColorOffset + 3] = a;
+  std::memcpy(dst + kCenterOffset, &cx, sizeof(int16_t));
+  std::memcpy(dst + kCenterOffset + sizeof(int16_t), &cy, sizeof(int16_t));
 }
 
 void updateBuffers(size_t spriteCount) {
-  const size_t posCount = spriteCount * kVertexCoordSize;
-  const size_t texCount = spriteCount * kTexcoordSize;
-  const size_t zCount = spriteCount * kZCoordSize;
-  const size_t colorCount = spriteCount * kColorSize;
-  const size_t atlasCount = spriteCount * kAtlasSize;
-
-  glBindBuffer(GL_ARRAY_BUFFER, g_sprite.vbo_pos);
-  glBufferData(GL_ARRAY_BUFFER, posCount * sizeof(float),
-			   g_sprite.positions.data(), GL_DYNAMIC_DRAW);
-
-  glBindBuffer(GL_ARRAY_BUFFER, g_sprite.vbo_uv);
-  glBufferData(GL_ARRAY_BUFFER, texCount * sizeof(float),
-			   g_sprite.texcoords.data(), GL_DYNAMIC_DRAW);
-
-  glBindBuffer(GL_ARRAY_BUFFER, g_sprite.vbo_z);
-  glBufferData(GL_ARRAY_BUFFER, zCount * sizeof(float), g_sprite.zcoords.data(),
-			   GL_DYNAMIC_DRAW);
-
-  glBindBuffer(GL_ARRAY_BUFFER, g_sprite.vbo_color);
-  glBufferData(GL_ARRAY_BUFFER, colorCount * sizeof(float),
-			   g_sprite.colors.data(), GL_DYNAMIC_DRAW);
-
-  glBindBuffer(GL_ARRAY_BUFFER, g_sprite.vbo_atlas);
-  glBufferData(GL_ARRAY_BUFFER, atlasCount * sizeof(float),
-			   g_sprite.atlas.data(), GL_DYNAMIC_DRAW);
+  const size_t vertexCount = spriteCount * kVerticesPerSprite;
+  const size_t byteCount = vertexCount * kVertexStride;
+  glBindBuffer(GL_ARRAY_BUFFER, g_sprite.vbo);
+  glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(byteCount),
+			   g_sprite.vertex_data.data(), GL_DYNAMIC_DRAW);
 }
 
 }  // namespace
@@ -356,6 +345,9 @@ void initGLES2(OpenGLES2Backend* backend, GameView* context) {
   g_sprite.attrib_pos = glGetAttribLocation(g_sprite.program, "a_position");
   g_sprite.attrib_uv = glGetAttribLocation(g_sprite.program, "a_texcoord");
   g_sprite.attrib_z = glGetAttribLocation(g_sprite.program, "a_pos_z");
+  g_sprite.attrib_center = glGetAttribLocation(g_sprite.program, "a_center");
+  g_sprite.attrib_parallax_weight =
+	  glGetAttribLocation(g_sprite.program, "a_parallax_weight");
   g_sprite.attrib_color =
 	  glGetAttribLocation(g_sprite.program, "a_color_override");
   g_sprite.attrib_atlas = glGetAttribLocation(g_sprite.program, "a_atlas_id");
@@ -363,6 +355,8 @@ void initGLES2(OpenGLES2Backend* backend, GameView* context) {
   g_sprite.uniform_resolution =
 	  glGetUniformLocation(g_sprite.program, "u_resolution");
   g_sprite.uniform_scale = glGetUniformLocation(g_sprite.program, "u_scale");
+  g_sprite.uniform_parallax_rig =
+	  glGetUniformLocation(g_sprite.program, "u_parallax_rig");
   g_sprite.uniform_tex0 = glGetUniformLocation(g_sprite.program, "u_texture0");
   g_sprite.uniform_tex1 = glGetUniformLocation(g_sprite.program, "u_texture1");
   g_sprite.uniform_tex2 = glGetUniformLocation(g_sprite.program, "u_texture2");
@@ -402,11 +396,7 @@ void shutdownGLES2(OpenGLES2Backend* backend) {
   if (g_sprite.program != 0) {
 	glDeleteProgram(g_sprite.program);
   }
-  if (g_sprite.vbo_pos != 0) glDeleteBuffers(1, &g_sprite.vbo_pos);
-  if (g_sprite.vbo_uv != 0) glDeleteBuffers(1, &g_sprite.vbo_uv);
-  if (g_sprite.vbo_z != 0) glDeleteBuffers(1, &g_sprite.vbo_z);
-  if (g_sprite.vbo_color != 0) glDeleteBuffers(1, &g_sprite.vbo_color);
-  if (g_sprite.vbo_atlas != 0) glDeleteBuffers(1, &g_sprite.vbo_atlas);
+  if (g_sprite.vbo != 0) glDeleteBuffers(1, &g_sprite.vbo);
   g_sprite = SpriteGLES2State{};
 }
 
@@ -463,6 +453,9 @@ void renderSpriteBatchGLES2(OpenGLES2Backend* backend, GameView* context,
   glUniform1f(g_sprite.uniform_dither_intensity, state.psxDither2dIntensity);
   glUniform1f(g_sprite.uniform_time,
 			  static_cast<float>(EngineCore::instance().totalTime()));
+  const SpriteParallaxRig& parallaxRig = RenderQueues::spriteParallaxRig;
+  glUniform4f(g_sprite.uniform_parallax_rig, parallaxRig.vy, parallaxRig.scale,
+			  parallaxRig.impact, parallaxRig.impact_t);
 
   const bool ideIsViewport = (state.viewportTypeIde == "viewport");
   const float ideScale =
@@ -482,7 +475,6 @@ void renderSpriteBatchGLES2(OpenGLES2Backend* backend, GameView* context,
   }
 
   size_t batchCount = 0;
-
   auto flush = [&]() {
 	if (batchCount == 0) {
 	  return;
@@ -523,12 +515,10 @@ void renderSpriteBatchGLES2(OpenGLES2Backend* backend, GameView* context,
 	const FlipOptions& flip = options.flip.value();
 	const float zValue = (pos.z == 0.0f) ? kDefaultZ : pos.z;
 	const float zNorm = 1.0f - (zValue / kZCoordMax);
-
-	float* posDst = g_sprite.positions.data() + (batchCount * kVertexCoordSize);
-	float* uvDst = g_sprite.texcoords.data() + (batchCount * kTexcoordSize);
-	float* zDst = g_sprite.zcoords.data() + (batchCount * kZCoordSize);
-	float* colorDst = g_sprite.colors.data() + (batchCount * kColorSize);
-	float* atlasDst = g_sprite.atlas.data() + (batchCount * kAtlasSize);
+	float parallaxWeight = options.parallax_weight.value_or(0.0f);
+	if (layer != RenderLayer::World) {
+	  parallaxWeight = 0.0f;
+	}
 
 	const float baseW = static_cast<float>(imgmeta->width);
 	const float baseH = static_cast<float>(imgmeta->height);
@@ -544,16 +534,35 @@ void renderSpriteBatchGLES2(OpenGLES2Backend* backend, GameView* context,
 	const float snappedY = snapY0 / desiredScale;
 	const float snappedW = (snapX1 - snapX0) / desiredScale;
 	const float snappedH = (snapY1 - snapY0) / desiredScale;
-	writePositions(posDst, snappedX, snappedY, snappedW, snappedH, 1.0f, 1.0f);
+	const float centerX = snappedX + (snappedW * 0.5f);
+	const float centerY = snappedY + (snappedH * 0.5f);
 	const auto& texcoords =
 		flip.flip_h
 			? (flip.flip_v ? imgmeta->texcoords_fliphv
 						   : imgmeta->texcoords_fliph)
 			: (flip.flip_v ? imgmeta->texcoords_flipv : imgmeta->texcoords);
-	std::memcpy(uvDst, texcoords.data(), kTexcoordSize * sizeof(float));
-	writeZ(zDst, zNorm);
-	writeColor(colorDst, colorize);
-	writeAtlas(atlasDst, static_cast<float>(imgmeta->atlasid));
+	const uint16_t zPacked = packUnorm16(zNorm);
+	const uint8_t atlasPacked = static_cast<uint8_t>(imgmeta->atlasid);
+	const uint8_t weightPacked = packSignedWeight(parallaxWeight);
+	const uint8_t colorR = packUnorm8(colorize.r);
+	const uint8_t colorG = packUnorm8(colorize.g);
+	const uint8_t colorB = packUnorm8(colorize.b);
+	const uint8_t colorA = packUnorm8(colorize.a);
+	const int16_t centerXi = static_cast<int16_t>(std::lround(centerX));
+	const int16_t centerYi = static_cast<int16_t>(std::lround(centerY));
+
+	const size_t baseVertex = batchCount * kVerticesPerSprite;
+	for (int v = 0; v < kVerticesPerSprite; ++v) {
+	  const float x = snappedX + kCornerX[v] * snappedW;
+	  const float y = snappedY + kCornerY[v] * snappedH;
+	  const float u = texcoords[static_cast<size_t>(v) * 2];
+	  const float vcoord = texcoords[static_cast<size_t>(v) * 2 + 1];
+	  uint8_t* dst =
+		  g_sprite.vertex_data.data() + (baseVertex + static_cast<size_t>(v)) * kVertexStride;
+	  writeVertex(dst, x, y, packUnorm16(u), packUnorm16(vcoord), zPacked,
+				  atlasPacked, weightPacked, colorR, colorG, colorB,
+				  colorA, centerXi, centerYi);
+	}
 
 	batchCount++;
 	if (batchCount >= static_cast<size_t>(kMaxSprites)) {

@@ -172,6 +172,12 @@ combat_results_fade_in_ticks_per_frame = 32
 combat_monster_hover_period_seconds = 1.8
 combat_monster_hover_amp = 6
 combat_monster_dodge_distance = 64
+combat_parallax_vy_base = 3
+combat_parallax_vy_momentum = 2
+combat_parallax_scale_base = 1
+combat_parallax_scale_momentum = 0.02
+combat_parallax_impact_amp = 0.02
+combat_parallax_momentum_step = 0.35
 
 p3_blue_r = 0.07
 p3_blue_g = 0.28

@@ -30,6 +30,13 @@ struct FlipOptions {
 	bool flip_v = false;
 };
 
+struct SpriteParallaxRig {
+	f32 vy = 0.0f;
+	f32 scale = 1.0f;
+	f32 impact = 0.0f;
+	f32 impact_t = 0.0f;
+};
+
 /* ============================================================================
  * Render layer (determines draw order/pass)
  * ============================================================================ */
@@ -78,6 +85,7 @@ struct ImgRenderSubmission {
 	std::optional<bool> ambient_affected;
 	std::optional<f32> ambient_factor;
 	std::optional<RenderLayer> layer;
+	std::optional<f32> parallax_weight;
 };
 
 // Polygon render (outline)

@@ -155,6 +155,129 @@ function transition.register_states(states)
 		return (1 - u) * transition_flash_mix
 	end
 
+	local function build_transition_frames(params)
+		local frames = {}
+		local frame_count = params.frame_count
+		local fade_out_frames = params.fade_out_frames
+		local fade_in_frames = params.fade_in_frames
+		local fade_in_start = params.fade_in_start
+		local finish_frame = params.finish_frame
+		local skip_fade = params.skip_fade
+		local palette = params.palette
+		local panels = params.panels
+		local accent_panel = params.accent
+		local center_x = params.center_x
+		local start_x = params.start_x
+		local end_x = params.end_x
+		local swap_frame = fade_out_frames - 1
+		local text_out_start = transition_text_in_frames + transition_text_hold_frames
+		local text_out_end = text_out_start + transition_text_out_frames
+		local base = palette.overlay
+		local accent = palette.accent
+
+		for frame_index = 0, frame_count - 1 do
+			local fade_alpha = 1
+			if not skip_fade then
+				if frame_index < fade_out_frames then
+					local u = frame_index / (fade_out_frames - 1)
+					fade_alpha = easing.smoothstep(u)
+				elseif frame_index < fade_in_start then
+					fade_alpha = 1
+				else
+					local u = (frame_index - fade_in_start) / (fade_in_frames - 1)
+					fade_alpha = 1 - easing.smoothstep(u)
+				end
+			end
+
+			local mix = skip_fade and 0 or flash_mix(frame_index, swap_frame)
+			local overlay_r = base.r + (accent.r - base.r) * mix
+			local overlay_g = base.g + (accent.g - base.g) * mix
+			local overlay_b = base.b + (accent.b - base.b) * mix
+
+			local panel_states = {}
+			for i = 1, #panels do
+				local panel = panels[i]
+				local x, y, a = panel_motion(frame_index, panel, transition_panel_in_frames, transition_panel_hold_frames, transition_panel_out_frames)
+				panel_states[i] = { x = x, y = y, a = a }
+			end
+
+			local ax, ay, aa = panel_motion(frame_index, accent_panel, transition_accent_in_frames, transition_accent_hold_frames, transition_accent_out_frames)
+
+			local text_x = end_x
+			if frame_index < transition_text_in_frames then
+				local u = frame_index / (transition_text_in_frames - 1)
+				text_x = start_x + (center_x - start_x) * easing.smoothstep(u)
+			elseif frame_index < text_out_start then
+				text_x = center_x
+			elseif frame_index < text_out_end then
+				local out_index = frame_index - text_out_start
+				local u = out_index / (transition_text_out_frames - 1)
+				text_x = center_x + (end_x - center_x) * easing.smoothstep(u)
+			end
+
+			frames[#frames + 1] = {
+				overlay = { r = overlay_r, g = overlay_g, b = overlay_b, a = fade_alpha },
+				panels = panel_states,
+				accent = { x = ax, y = ay, a = aa },
+				text_x = text_x,
+				swap = (not skip_fade) and (frame_index == swap_frame),
+				finish = frame_index == finish_frame,
+			}
+		end
+
+		return frames
+	end
+
+	local function build_transition_fade_in_frames(palette)
+		local frames = {}
+		local base = palette.overlay
+		for frame_index = 0, overgang_fade_in_frames - 1 do
+			local u = frame_index / (overgang_fade_in_frames - 1)
+			local a = 1 - easing.smoothstep(u)
+			frames[#frames + 1] = {
+				overlay = { r = base.r, g = base.g, b = base.b, a = a },
+			}
+		end
+		return frames
+	end
+
+	local function build_fade_frames(params)
+		local frames = {}
+		local palette = params.palette
+		local hold_black = params.hold_black
+		local base = palette.overlay
+		local accent = palette.accent
+		local swap_frame = fade_out_frames - 1
+		local fade_in_start = fade_out_frames + fade_hold_frames
+
+		for frame_index = 0, fade_frame_count - 1 do
+			local a = 0
+			if frame_index < fade_out_frames then
+				local u = frame_index / (fade_out_frames - 1)
+				a = easing.smoothstep(u)
+			else
+				if hold_black then
+					a = 1
+				elseif frame_index < fade_in_start then
+					a = 1
+				else
+					local u = (frame_index - fade_in_start) / (fade_in_frames - 1)
+					a = 1 - easing.smoothstep(u)
+				end
+			end
+			local mix = flash_mix(frame_index, swap_frame)
+			local overlay_r = base.r + (accent.r - base.r) * mix
+			local overlay_g = base.g + (accent.g - base.g) * mix
+			local overlay_b = base.b + (accent.b - base.b) * mix
+			frames[#frames + 1] = {
+				overlay = { r = overlay_r, g = overlay_g, b = overlay_b, a = a },
+				swap = frame_index == swap_frame,
+			}
+		end
+
+		return frames
+	end
+
 	local function finish_transition(self)
 		local node = story[self.node_id]
 		local came_from_fade = self.skip_transition_fade
@@ -190,21 +313,6 @@ function transition.register_states(states)
 	end
 
 	states.transition = {
-		timelines = {
-			[overgang_timeline_id] = {
-				create = function()
-					return new_timeline_range({
-						id = overgang_timeline_id,
-						frame_count = overgang_frame_count,
-						ticks_per_frame = overgang_ticks_per_frame,
-						playback_mode = 'once',
-					})
-				end,
-				autoplay = true,
-				stop_on_exit = true,
-				play_options = { rewind = true, snap_to_start = true },
-			},
-		},
 		entering_state = function(self)
 			local node = story[self.node_id]
 			clear_text(text_main_id)
@@ -280,6 +388,28 @@ function transition.register_states(states)
 			if self.skip_transition_fade then
 				apply_background(self.transition_target_bg)
 			end
+			local w = display_width()
+			local frames = build_transition_frames({
+				frame_count = overgang_frame_count,
+				fade_out_frames = overgang_fade_out_frames,
+				fade_in_frames = overgang_fade_in_frames,
+				fade_in_start = self.transition_fade_in_start,
+				finish_frame = self.transition_finish_frame,
+				skip_fade = self.skip_transition_fade,
+				palette = self.transition_palette,
+				panels = self.transition_panels,
+				accent = self.transition_accent,
+				center_x = self.transition_center_x,
+				start_x = w,
+				end_x = -w,
+			})
+			self:define_timeline(new_timeline({
+				id = overgang_timeline_id,
+				frames = frames,
+				ticks_per_frame = overgang_ticks_per_frame,
+				playback_mode = 'once',
+			}))
+			self:play_timeline(overgang_timeline_id, { rewind = true, snap_to_start = true })
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
@@ -292,75 +422,30 @@ function transition.register_states(states)
 		on = {
 			['timeline.frame.' .. overgang_timeline_id] = {
 				go = function(self, _state, event)
-					local frame_index = event.frame_index
-					local fade_alpha = 1
-					local swap_frame = overgang_fade_out_frames - 1
-					if self.skip_transition_fade then
-						fade_alpha = 1
-					else
-						if frame_index == swap_frame then
-							apply_background(self.transition_target_bg)
-						end
-						local fade_in_start = self.transition_fade_in_start
-						if frame_index < overgang_fade_out_frames then
-							local u = frame_index / (overgang_fade_out_frames - 1)
-							fade_alpha = easing.smoothstep(u)
-						elseif frame_index < fade_in_start then
-							fade_alpha = 1
-						else
-							local u = (frame_index - fade_in_start) / (overgang_fade_in_frames - 1)
-							fade_alpha = 1 - easing.smoothstep(u)
-						end
+					local frame = event.frame_value
+					if frame.swap then
+						apply_background(self.transition_target_bg)
 					end
-					local palette = self.transition_palette
-					local mix = 0
-					if not self.skip_transition_fade then
-						mix = flash_mix(frame_index, swap_frame)
-					end
-					local base = palette.overlay
-					local accent = palette.accent
-					local overlay_r = base.r + (accent.r - base.r) * mix
-					local overlay_g = base.g + (accent.g - base.g) * mix
-					local overlay_b = base.b + (accent.b - base.b) * mix
 					local overlay = object(transition_overlay_id)
-					overlay.sprite_component.colorize = { r = overlay_r, g = overlay_g, b = overlay_b, a = fade_alpha }
-					for i = 1, #self.transition_panels do
+					overlay.sprite_component.colorize = frame.overlay
+					for i = 1, #frame.panels do
 						local panel = self.transition_panels[i]
-						local x, y, a = panel_motion(frame_index, panel, transition_panel_in_frames, transition_panel_hold_frames, transition_panel_out_frames)
+						local state = frame.panels[i]
 						local sprite = object(panel.id)
-						sprite.visible = a > 0
-						sprite.x = x
-						sprite.y = y
-						sprite.sprite_component.colorize = { r = panel.color.r, g = panel.color.g, b = panel.color.b, a = a }
+						sprite.visible = state.a > 0
+						sprite.x = state.x
+						sprite.y = state.y
+						sprite.sprite_component.colorize = { r = panel.color.r, g = panel.color.g, b = panel.color.b, a = state.a }
 					end
 					local accent_panel = self.transition_accent
-					local ax, ay, aa = panel_motion(frame_index, accent_panel, transition_accent_in_frames, transition_accent_hold_frames, transition_accent_out_frames)
+					local accent_state = frame.accent
 					local accent_sprite = object(accent_panel.id)
-					accent_sprite.visible = aa > 0
-					accent_sprite.x = ax
-					accent_sprite.y = ay
-					accent_sprite.sprite_component.colorize = { r = accent_panel.color.r, g = accent_panel.color.g, b = accent_panel.color.b, a = aa }
-					local center_x = self.transition_center_x
-					local start_x = display_width()
-					local end_x = -display_width()
-					local x = start_x
-					local text_out_start = transition_text_in_frames + transition_text_hold_frames
-					local text_out_end = text_out_start + transition_text_out_frames
-					if frame_index < transition_text_in_frames then
-						local u = frame_index / (transition_text_in_frames - 1)
-						x = start_x + (center_x - start_x) * easing.smoothstep(u)
-					elseif frame_index < text_out_start then
-						x = center_x
-					elseif frame_index < text_out_end then
-						local out_index = frame_index - text_out_start
-						local u = out_index / (transition_text_out_frames - 1)
-						x = center_x + (end_x - center_x) * easing.smoothstep(u)
-					else
-						x = end_x
-					end
-					local transition_text = object(text_transition_id)
-					transition_text.centered_block_x = x
-					if frame_index == self.transition_finish_frame then
+					accent_sprite.visible = accent_state.a > 0
+					accent_sprite.x = accent_state.x
+					accent_sprite.y = accent_state.y
+					accent_sprite.sprite_component.colorize = { r = accent_panel.color.r, g = accent_panel.color.g, b = accent_panel.color.b, a = accent_state.a }
+					object(text_transition_id).centered_block_x = frame.text_x
+					if frame.finish then
 						return finish_transition(self)
 					end
 				end,
@@ -372,6 +457,7 @@ function transition.register_states(states)
 			},
 		},
 		leaving_state = function(self)
+			self:stop_timeline(overgang_timeline_id)
 			clear_text(text_transition_id)
 			if self.transition_needs_post_fade or story[self.node_id].kind == 'combat' then
 				hide_transition_panels()
@@ -382,21 +468,6 @@ function transition.register_states(states)
 	}
 
 	states.transition_fade_in = {
-		timelines = {
-			[overgang_post_fade_in_timeline_id] = {
-				create = function()
-					return new_timeline_range({
-						id = overgang_post_fade_in_timeline_id,
-						frame_count = overgang_fade_in_frames,
-						ticks_per_frame = overgang_ticks_per_frame,
-						playback_mode = 'once',
-					})
-				end,
-				autoplay = true,
-				stop_on_exit = true,
-				play_options = { rewind = true, snap_to_start = true },
-			},
-		},
 		entering_state = function(self)
 			clear_text(text_transition_id)
 			local bg = object(bg_id)
@@ -406,6 +477,14 @@ function transition.register_states(states)
 			local overlay = setup_overlay()
 			local base = self.transition_palette.overlay
 			overlay.sprite_component.colorize = { r = base.r, g = base.g, b = base.b, a = 1 }
+			local frames = build_transition_fade_in_frames(self.transition_palette)
+			self:define_timeline(new_timeline({
+				id = overgang_post_fade_in_timeline_id,
+				frames = frames,
+				ticks_per_frame = overgang_ticks_per_frame,
+				playback_mode = 'once',
+			}))
+			self:play_timeline(overgang_post_fade_in_timeline_id, { rewind = true, snap_to_start = true })
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
@@ -418,11 +497,8 @@ function transition.register_states(states)
 		on = {
 			['timeline.frame.' .. overgang_post_fade_in_timeline_id] = {
 				go = function(self, _state, event)
-					local u = event.frame_index / (overgang_fade_in_frames - 1)
-					local a = 1 - easing.smoothstep(u)
-					local base = self.transition_palette.overlay
 					local overlay = object(transition_overlay_id)
-					overlay.sprite_component.colorize = { r = base.r, g = base.g, b = base.b, a = a }
+					overlay.sprite_component.colorize = event.frame_value.overlay
 				end,
 			},
 			['timeline.end.' .. overgang_post_fade_in_timeline_id] = {
@@ -432,26 +508,12 @@ function transition.register_states(states)
 			},
 		},
 		leaving_state = function(self)
+			self:stop_timeline(overgang_post_fade_in_timeline_id)
 			hide_transition_layers()
 		end,
 	}
 
 	states.fade = {
-		timelines = {
-			[fade_timeline_id] = {
-				create = function()
-					return new_timeline_range({
-						id = fade_timeline_id,
-						frame_count = fade_frame_count,
-						ticks_per_frame = fade_ticks_per_frame,
-						playback_mode = 'once',
-					})
-				end,
-				autoplay = true,
-				stop_on_exit = true,
-				play_options = { rewind = true, snap_to_start = true },
-			},
-		},
 		entering_state = function(self)
 			local node = story[self.node_id]
 			clear_texts(text_ids_all)
@@ -477,6 +539,17 @@ function transition.register_states(states)
 			local overlay = setup_overlay()
 			local base = self.fade_palette.overlay
 			overlay.sprite_component.colorize = { r = base.r, g = base.g, b = base.b, a = 0 }
+			local frames = build_fade_frames({
+				palette = self.fade_palette,
+				hold_black = self.fade_hold_black,
+			})
+			self:define_timeline(new_timeline({
+				id = fade_timeline_id,
+				frames = frames,
+				ticks_per_frame = fade_ticks_per_frame,
+				playback_mode = 'once',
+			}))
+			self:play_timeline(fade_timeline_id, { rewind = true, snap_to_start = true })
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
@@ -489,35 +562,12 @@ function transition.register_states(states)
 		on = {
 			['timeline.frame.' .. fade_timeline_id] = {
 				go = function(self, _state, event)
-					local frame_index = event.frame_index
-					if frame_index == (fade_out_frames - 1) then
+					local frame = event.frame_value
+					if frame.swap then
 						apply_background(self.fade_target_bg)
 					end
-					local a = 0
-					if frame_index < fade_out_frames then
-						local u = frame_index / (fade_out_frames - 1)
-						a = easing.smoothstep(u)
-					else
-						if self.fade_hold_black then
-							a = 1
-						else
-							local fade_in_start = fade_out_frames + fade_hold_frames
-							if frame_index < fade_in_start then
-								a = 1
-							else
-								local u = (frame_index - fade_in_start) / (fade_in_frames - 1)
-								a = 1 - easing.smoothstep(u)
-							end
-						end
-					end
-					local base = self.fade_palette.overlay
-					local accent = self.fade_palette.accent
-					local mix = flash_mix(frame_index, fade_out_frames - 1)
-					local overlay_r = base.r + (accent.r - base.r) * mix
-					local overlay_g = base.g + (accent.g - base.g) * mix
-					local overlay_b = base.b + (accent.b - base.b) * mix
 					local overlay = object(transition_overlay_id)
-					overlay.sprite_component.colorize = { r = overlay_r, g = overlay_g, b = overlay_b, a = a }
+					overlay.sprite_component.colorize = frame.overlay
 				end,
 			},
 			['timeline.end.' .. fade_timeline_id] = {
@@ -527,6 +577,7 @@ function transition.register_states(states)
 			},
 		},
 		leaving_state = function(self)
+			self:stop_timeline(fade_timeline_id)
 			if self.fade_hold_black then
 				local base = self.fade_palette.overlay
 				local overlay = object(transition_overlay_id)

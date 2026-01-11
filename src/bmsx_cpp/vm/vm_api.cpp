@@ -572,6 +572,10 @@ m_runtime.registerNativeFunction("put_sprite", [this, key, asText](const std::ve
 			if (!isNil(colorizeValue)) {
 				submission.colorize = resolve_color(colorizeValue);
 			}
+			Value parallaxWeightValue = options->get(key("parallax_weight"));
+			if (!isNil(parallaxWeightValue)) {
+				submission.parallax_weight = static_cast<float>(asNumber(parallaxWeightValue));
+			}
 	}
 
 	put_sprite(submission);
@@ -820,6 +824,15 @@ m_runtime.registerNativeFunction("set_master_volume", [this](const std::vector<V
 	(void)out;
 });
 
+m_runtime.registerNativeFunction("set_sprite_parallax_rig", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+	float vy = static_cast<float>(asNumber(args.at(0)));
+	float scale = static_cast<float>(asNumber(args.at(1)));
+	float impact = static_cast<float>(asNumber(args.at(2)));
+	float impact_t = static_cast<float>(asNumber(args.at(3)));
+	set_sprite_parallax_rig(vy, scale, impact, impact_t);
+	(void)out;
+});
+
 m_runtime.registerNativeFunction("pause_audio", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 	(void)args;
 	pause_audio();
@@ -1023,6 +1036,10 @@ void VMApi::stop_music() {
 
 void VMApi::set_master_volume(double volume) {
 	EngineCore::instance().soundMaster()->setMasterVolume(static_cast<f32>(volume));
+}
+
+void VMApi::set_sprite_parallax_rig(f32 vy, f32 scale, f32 impact, f32 impact_t) {
+	EngineCore::instance().view()->setSpriteParallaxRig(vy, scale, impact, impact_t);
 }
 
 void VMApi::pause_audio() {

@@ -295,6 +295,10 @@ void GameView::setSpritesAmbient(bool enabled, f32 factor) {
 	spriteAmbientFactorDefault = clamp(factor, 0.0f, 1.0f);
 }
 
+void GameView::setSpriteParallaxRig(f32 vy, f32 scale, f32 impact, f32 impact_t) {
+	RenderQueues::setSpriteParallaxRig(vy, scale, impact, impact_t);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Convenience methods for drawing primitives
 //

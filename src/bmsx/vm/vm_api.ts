@@ -431,7 +431,7 @@ export class BmsxVMApi {
 		this.renderBackend.rect(rect);
 	}
 
-	public put_sprite(img_id: string, x: number, y: number, z: number, options?: { scale?: number | { x: number; y: number }; flip_h?: boolean; flip_v?: boolean; colorize?: color, }): void {
+	public put_sprite(img_id: string, x: number, y: number, z: number, options?: { scale?: number | { x: number; y: number }; flip_h?: boolean; flip_v?: boolean; colorize?: color; parallax_weight?: number }): void {
 		const scaleValue = options?.scale ?? 1;
 		const scale = typeof scaleValue === 'number' ? { x: scaleValue, y: scaleValue } : scaleValue;
 		const submission: ImgRenderSubmission = {
@@ -440,6 +440,7 @@ export class BmsxVMApi {
 			scale,
 			flip: options?.flip_h || options?.flip_v ? { flip_h: options?.flip_h === true, flip_v: options?.flip_v === true } : undefined,
 			colorize: options?.colorize,
+			parallax_weight: options?.parallax_weight,
 		};
 		this.renderBackend.sprite(submission);
 	}
@@ -623,6 +624,10 @@ export class BmsxVMApi {
 
 	public set_master_volume(volume: number): void {
 		$.sndmaster.volume = volume;
+	}
+
+	public set_sprite_parallax_rig(vy: number, scale: number, impact: number, impact_t: number): void {
+		$.view.setSpriteParallaxRig(vy, scale, impact, impact_t);
 	}
 
 	public pause_audio(): void {

@@ -93,6 +93,7 @@ function spritecomponent.new(opts)
 	self.colorize = opts and opts.colorize or { r = 1, g = 1, b = 1, a = 1 }
 	self.scale = opts and opts.scale or { x = 1, y = 1 }
 	self.offset = opts and opts.offset or { x = 0, y = 0, z = 0 }
+	self.parallax_weight = opts and opts.parallax_weight or 0
 	return self
 end
 
@@ -412,6 +413,7 @@ function customvisualcomponent:submit_sprite(desc)
 		flip_h = flip.flip_h,
 		flip_v = flip.flip_v,
 		colorize = desc.colorize,
+		parallax_weight = desc.parallax_weight,
 	})
 end
 

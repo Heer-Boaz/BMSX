@@ -22,6 +22,7 @@ export class SpriteComponent extends Component<WorldObject> {
 	public layer: RenderLayer = 'world';
 	public ambient_affected?: boolean;
 	public ambient_factor?: number; // 0..1
+	public parallax_weight?: number;
 	// Local offset relative to parent
 	public offset: vec3 = { x: 0, y: 0, z: 0 };
 	public autoplay_timeline_id?: string;

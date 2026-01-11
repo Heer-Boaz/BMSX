@@ -1,6 +1,6 @@
 import { FeatureQueue } from '../../utils/feature_queue';
 import type { ImgMeta } from '../../rompack/rompack';
-import type { color, GlyphRenderSubmission, ImgRenderSubmission, MeshRenderSubmission, ParticleRenderSubmission, PolyRenderSubmission, RectRenderSubmission } from './render_types';
+import type { color, GlyphRenderSubmission, ImgRenderSubmission, MeshRenderSubmission, ParticleRenderSubmission, PolyRenderSubmission, RectRenderSubmission, SpriteParallaxRig } from './render_types';
 import type { RenderLayer } from './render_types';
 import { DEFAULT_ZCOORD } from '../backend/webgl/webgl.constants';
 import { RenderSubmission } from '../backend/pipeline_interfaces';
@@ -41,6 +41,7 @@ function createPlaybackImgSubmission(): PlaybackImgSubmission {
 		layer: undefined,
 		ambient_affected: undefined,
 		ambient_factor: undefined,
+		parallax_weight: 0,
 	};
 }
 
@@ -61,6 +62,7 @@ function createSpriteQueueItem(): SpriteQueueItem {
 			layer: undefined,
 			ambient_affected: undefined,
 			ambient_factor: undefined,
+			parallax_weight: 0,
 		},
 		imgmeta: DEFAULT_IMG_META,
 		submissionIndex: 0,
@@ -134,6 +136,7 @@ export function submitSprite(options: ImgRenderSubmission): void {
 		dst.colorize.b = 1;
 		dst.colorize.a = 1;
 	}
+	dst.parallax_weight = src.parallax_weight ?? 0;
 	spriteQueue.submit(pooled);
 }
 
@@ -208,6 +211,7 @@ export function copySpriteQueueForPlayback(): RenderSubmission[] {
 		dst.colorize.g = src.colorize.g;
 		dst.colorize.b = src.colorize.b;
 		dst.colorize.a = src.colorize.a;
+		dst.parallax_weight = src.parallax_weight ?? 0;
 		count += 1;
 	});
 	items.length = count;
@@ -329,6 +333,14 @@ export let particleAmbientFactorDefault = 1.0;
 export function setAmbientDefaults(mode: 0 | 1, factor = 1.0): void {
 	particleAmbientModeDefault = mode;
 	particleAmbientFactorDefault = clamp(factor, 0, 1);
+}
+
+export const spriteParallaxRig: SpriteParallaxRig = { vy: 0, scale: 1, impact: 0, impact_t: 0 };
+export function setSpriteParallaxRig(vy: number, scale: number, impact: number, impact_t: number): void {
+	spriteParallaxRig.vy = vy;
+	spriteParallaxRig.scale = scale;
+	spriteParallaxRig.impact = impact;
+	spriteParallaxRig.impact_t = impact_t;
 }
 
 export let _skyTint: [number, number, number] = [1, 1, 1];
@@ -460,4 +472,3 @@ export function wrapGlyphs(text: string, maxLineLength: number): string[] {
 
 	return lines;
 }
-

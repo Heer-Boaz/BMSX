@@ -151,7 +151,7 @@ export const VM_API_METHOD_METADATA = {
 			{ name: 'x', description: 'X coordinate in pixels.' },
 			{ name: 'y', description: 'Y coordinate in pixels.' },
 			{ name: 'z', description: 'Z coordinate for ordering.' },
-			{ name: 'options', optional: true, description: 'Optional sprite options (scale: number or {x,y}, flip_h, flip_v, colorize).' },
+			{ name: 'options', optional: true, description: 'Optional sprite options (scale: number or {x,y}, flip_h, flip_v, colorize, parallax_weight).' },
 		],
 		returnType: 'void',
 	},
@@ -281,6 +281,16 @@ export const VM_API_METHOD_METADATA = {
 		description: 'Sets master audio volume.',
 		parameters: [
 			{ name: 'volume', description: 'Volume scalar between 0 and 1.' },
+		],
+		returnType: 'void',
+	},
+	set_sprite_parallax_rig: {
+		description: 'Sets global sprite parallax rig values for the current frame.',
+		parameters: [
+			{ name: 'vy', description: 'Vertical wobble amplitude in pixels.' },
+			{ name: 'scale', description: 'Base scale factor for parallax.' },
+			{ name: 'impact', description: 'Impact scale amplitude (sign selects side).' },
+			{ name: 'impact_t', description: 'Seconds since last impact.' },
 		],
 		returnType: 'void',
 	},

@@ -1,69 +1,85 @@
 // Provides batched 2D sprite + primitive rendering using shared buffers.
-import type { ImgMeta, vec2arr } from '../../rompack/rompack';
+import type { ImgMeta } from '../../rompack/rompack';
 import spriteFS from '../2d/shaders/2d.frag.glsl';
 import spriteVS from '../2d/shaders/2d.vert.glsl';
-import * as GLR from '../backend/webgl/gl_resources';
 import type { GPUBackend, RenderContext, RenderPassStateRegistry } from '../backend/pipeline_interfaces';
 import { RenderPassLibrary } from '../backend/renderpasslib';
 import { SpritesPipelineState } from '../backend/pipeline_interfaces';
 import type { FrameSharedState } from '../backend/pipeline_interfaces';
 import {
-	ATLAS_ID_COMPONENTS,
-	ATLAS_ID_SIZE,
-	COLOR_OVERRIDE_COMPONENTS,
-	COLOR_OVERRIDE_SIZE,
 	DEFAULT_ZCOORD,
 	MAX_SPRITES,
-	POSITION_COMPONENTS,
-	RESOLUTION_VECTOR_SIZE,
 	SPRITE_DRAW_OFFSET,
-	TEXCOORD_COMPONENTS,
 	TEXTURE_UNIT_ATLAS_PRIMARY,
 	TEXTURE_UNIT_ATLAS_SECONDARY,
 	TEXTURE_UNIT_ATLAS_ENGINE,
-	TEXTURECOORDS_SIZE,
 	VERTICES_PER_SPRITE,
-	ZCOORD_COMPONENTS,
 	ZCOORD_MAX,
-	ZCOORDS_SIZE
 } from '../backend/webgl/webgl.constants';
 import { ENGINE_ATLAS_TEXTURE_KEY } from 'bmsx/rompack/rompack';
 import { $ } from '../../core/engine_core';
-import { bvec } from './vertexutils2d';
 import type { WebGLBackend } from '../backend/webgl/webgl_backend';
 import { makePipelineBuildDesc, shaderModule } from '../backend/shader_module';
 import { drainOverlayFrameIntoSpriteQueue } from '../../vm/vm_render_facade';
 import type { LightingFrameState } from '../lighting/lightingsystem';
+import { clamp } from '../../utils/clamp';
 import {
 	beginSpriteQueue,
 	forEachSprite,
+	spriteParallaxRig,
 } from '../shared/render_queues';
 
+const SPRITE_INSTANCE_STRIDE = 40;
+const SPRITE_INSTANCE_FLOAT_STRIDE = SPRITE_INSTANCE_STRIDE / 4;
+const SPRITE_INSTANCE_POS_OFFSET = 0;
+const SPRITE_INSTANCE_SIZE_OFFSET = 8;
+const SPRITE_INSTANCE_UV0_OFFSET = 16;
+const SPRITE_INSTANCE_UV1_OFFSET = 24;
+const SPRITE_INSTANCE_Z_OFFSET = 32;
+const SPRITE_INSTANCE_ATLAS_OFFSET = 34;
+const SPRITE_INSTANCE_FX_OFFSET = 35;
+const SPRITE_INSTANCE_COLOR_OFFSET = 36;
+
+const SPRITE_CORNER_DATA = new Float32Array([
+	0, 0,
+	0, 1,
+	1, 0,
+	1, 0,
+	0, 1,
+	1, 1,
+]);
+
+const MAX_U16 = 0xffff;
+const MAX_U8 = 0xff;
+
+const packUnorm8 = (value: number) => Math.round(clamp(value, 0, 1) * MAX_U8);
+const packUnorm16 = (value: number) => Math.round(clamp(value, 0, 1) * MAX_U16);
+const packSignedWeight = (value: number) => Math.round((clamp(value, -1, 1) * 0.5 + 0.5) * MAX_U8);
+
 export let spriteShaderProgram: WebGLProgram;
-let vertexLocation: number;
-let texcoordLocation: number;
-let zcoordLocation: number;
-let color_overrideLocation: number;
-let atlas_idLocation: number;
-let resolutionLocation: WebGLUniformLocation;
+let cornerLocation: number;
+let instPosLocation: number;
+let instSizeLocation: number;
+let instUv0Location: number;
+let instUv1Location: number;
+let instZLocation: number;
+let instAtlasLocation: number;
+let instFxLocation: number;
+let instColorLocation: number;
 let texture0Location: WebGLUniformLocation;
 let texture1Location: WebGLUniformLocation;
 let texture2Location: WebGLUniformLocation;
-let vertexBuffer: WebGLBuffer;
-let texcoordBuffer: WebGLBuffer;
-let zBuffer: WebGLBuffer;
-let color_overrideBuffer: WebGLBuffer;
-let atlas_idBuffer: WebGLBuffer;
+let cornerBuffer: WebGLBuffer;
+let instanceBuffer: WebGLBuffer;
 let spriteVAO: WebGLVertexArrayObject = null;
+const spriteInstanceData = new ArrayBuffer(SPRITE_INSTANCE_STRIDE * MAX_SPRITES);
 const spriteShaderData = {
-	resolutionVector: new Float32Array(RESOLUTION_VECTOR_SIZE),
-	vertexcoords: null as Float32Array, // Lazy init to avoid circular dependency timing with backend
-	texcoords: new Float32Array(TEXTURECOORDS_SIZE * MAX_SPRITES),
-	zcoords: new Float32Array(ZCOORDS_SIZE * MAX_SPRITES),
-	color_override: new Float32Array(COLOR_OVERRIDE_SIZE * MAX_SPRITES),
-	atlas_id: new Uint8Array(ATLAS_ID_SIZE * MAX_SPRITES),
+	instanceF32: new Float32Array(spriteInstanceData),
+	instanceU16: new Uint16Array(spriteInstanceData),
+	instanceU8: new Uint8Array(spriteInstanceData),
 };
 let spriteShaderScaleLocation: WebGLUniformLocation;
+let spriteShaderParallaxRigLocation: WebGLUniformLocation;
 
 interface SpriteRuntime {
 	backend: WebGLBackend;
@@ -80,31 +96,36 @@ export function setupSpriteShaderLocations(backend: GPUBackend): void {
 		spriteShaderProgram = current;
 	}
 	const locations = {
-		vertex: gl.getAttribLocation(spriteShaderProgram, 'a_position'),
-		texcoord: gl.getAttribLocation(spriteShaderProgram, 'a_texcoord'),
-		zcoord: gl.getAttribLocation(spriteShaderProgram, 'a_pos_z'),
-		color_override: gl.getAttribLocation(spriteShaderProgram, 'a_color_override'),
-		atlas_id: gl.getAttribLocation(spriteShaderProgram, 'a_atlas_id'),
+		corner: gl.getAttribLocation(spriteShaderProgram, 'a_corner'),
+		inst_pos: gl.getAttribLocation(spriteShaderProgram, 'i_pos'),
+		inst_size: gl.getAttribLocation(spriteShaderProgram, 'i_size'),
+		inst_uv0: gl.getAttribLocation(spriteShaderProgram, 'i_uv0'),
+		inst_uv1: gl.getAttribLocation(spriteShaderProgram, 'i_uv1'),
+		inst_z: gl.getAttribLocation(spriteShaderProgram, 'i_z'),
+		inst_atlas: gl.getAttribLocation(spriteShaderProgram, 'i_atlas_id'),
+		inst_fx: gl.getAttribLocation(spriteShaderProgram, 'i_fx'),
+		inst_color: gl.getAttribLocation(spriteShaderProgram, 'i_color'),
 	};
-	vertexLocation = locations.vertex;
-	texcoordLocation = locations.texcoord;
-	zcoordLocation = locations.zcoord;
-	color_overrideLocation = locations.color_override;
-	atlas_idLocation = locations.atlas_id;
-	resolutionLocation = gl.getUniformLocation(spriteShaderProgram, 'u_resolution')!;
+	cornerLocation = locations.corner;
+	instPosLocation = locations.inst_pos;
+	instSizeLocation = locations.inst_size;
+	instUv0Location = locations.inst_uv0;
+	instUv1Location = locations.inst_uv1;
+	instZLocation = locations.inst_z;
+	instAtlasLocation = locations.inst_atlas;
+	instFxLocation = locations.inst_fx;
+	instColorLocation = locations.inst_color;
 	texture0Location = gl.getUniformLocation(spriteShaderProgram, 'u_texture0')!;
 	texture1Location = gl.getUniformLocation(spriteShaderProgram, 'u_texture1')!;
 	texture2Location = gl.getUniformLocation(spriteShaderProgram, 'u_texture2')!;
 	spriteShaderScaleLocation = gl.getUniformLocation(spriteShaderProgram, 'u_scale');
+	spriteShaderParallaxRigLocation = gl.getUniformLocation(spriteShaderProgram, 'u_parallax_rig')!;
 }
 
-export function setupDefaultUniformValues(backend: WebGLBackend, canvasSize: vec2arr): void {
+export function setupDefaultUniformValues(backend: WebGLBackend): void {
 	const gl = backend.gl;
 	gl.useProgram(spriteShaderProgram);
 	gl.uniform1f(spriteShaderScaleLocation, 1);
-	spriteShaderData.resolutionVector[0] = canvasSize[0];
-	spriteShaderData.resolutionVector[1] = canvasSize[1];
-	gl.uniform2fv(resolutionLocation, spriteShaderData.resolutionVector);
 	gl.uniform1i(texture0Location, TEXTURE_UNIT_ATLAS_PRIMARY);
 	gl.uniform1i(texture1Location, TEXTURE_UNIT_ATLAS_SECONDARY);
 	gl.uniform1i(texture2Location, TEXTURE_UNIT_ATLAS_ENGINE);
@@ -112,17 +133,14 @@ export function setupDefaultUniformValues(backend: WebGLBackend, canvasSize: vec
 
 export function setupBuffers(backend: WebGLBackend): void {
 	const gl = backend.gl;
-	if (!spriteShaderData.vertexcoords) spriteShaderData.vertexcoords = GLR.buildQuadTexCoords();
-	const cvertexBuffer = GLR.glCreateBuffer(gl, spriteShaderData.vertexcoords);
-	const ctexcoordBuffer = GLR.glCreateBuffer(gl, spriteShaderData.texcoords);
-	const czBuffer = GLR.glCreateBuffer(gl, spriteShaderData.zcoords);
-	const ccolor_overrideBuffer = GLR.glCreateBuffer(gl, spriteShaderData.color_override);
-	const catlas_idBuffer = GLR.glCreateBuffer(gl, spriteShaderData.atlas_id);
-	vertexBuffer = cvertexBuffer;
-	texcoordBuffer = ctexcoordBuffer;
-	zBuffer = czBuffer;
-	color_overrideBuffer = ccolor_overrideBuffer;
-	atlas_idBuffer = catlas_idBuffer;
+	cornerBuffer = gl.createBuffer()!;
+	gl.bindBuffer(gl.ARRAY_BUFFER, cornerBuffer);
+	gl.bufferData(gl.ARRAY_BUFFER, SPRITE_CORNER_DATA, gl.STATIC_DRAW);
+	backend.accountUpload('vertex', SPRITE_CORNER_DATA.byteLength);
+
+	instanceBuffer = gl.createBuffer()!;
+	gl.bindBuffer(gl.ARRAY_BUFFER, instanceBuffer);
+	gl.bufferData(gl.ARRAY_BUFFER, SPRITE_INSTANCE_STRIDE * MAX_SPRITES, gl.DYNAMIC_DRAW);
 }
 
 export function setupSpriteLocations(backend: WebGLBackend): void {
@@ -130,21 +148,42 @@ export function setupSpriteLocations(backend: WebGLBackend): void {
 	const gl = backend.gl;
 	const vao = backend.createVertexArray() as WebGLVertexArrayObject;
 	backend.bindVertexArray(vao);
-	backend.bindArrayBuffer(vertexBuffer);
-	backend.enableVertexAttrib(vertexLocation);
-	backend.vertexAttribPointer(vertexLocation, POSITION_COMPONENTS, gl.FLOAT, false, 0, 0);
-	backend.bindArrayBuffer(texcoordBuffer);
-	backend.enableVertexAttrib(texcoordLocation);
-	backend.vertexAttribPointer(texcoordLocation, TEXCOORD_COMPONENTS, gl.FLOAT, false, 0, 0);
-	backend.bindArrayBuffer(zBuffer);
-	backend.enableVertexAttrib(zcoordLocation);
-	backend.vertexAttribPointer(zcoordLocation, ZCOORD_COMPONENTS, gl.FLOAT, false, 0, 0);
-	backend.bindArrayBuffer(color_overrideBuffer);
-	backend.enableVertexAttrib(color_overrideLocation);
-	backend.vertexAttribPointer(color_overrideLocation, COLOR_OVERRIDE_COMPONENTS, gl.FLOAT, false, 0, 0);
-	backend.bindArrayBuffer(atlas_idBuffer);
-	backend.enableVertexAttrib(atlas_idLocation);
-	backend.vertexAttribIPointer(atlas_idLocation, ATLAS_ID_COMPONENTS, gl.UNSIGNED_BYTE, 0, 0);
+	backend.bindArrayBuffer(cornerBuffer);
+	backend.enableVertexAttrib(cornerLocation);
+	backend.vertexAttribPointer(cornerLocation, 2, gl.FLOAT, false, 0, 0);
+
+	backend.bindArrayBuffer(instanceBuffer);
+	backend.enableVertexAttrib(instPosLocation);
+	backend.vertexAttribPointer(instPosLocation, 2, gl.FLOAT, false, SPRITE_INSTANCE_STRIDE, SPRITE_INSTANCE_POS_OFFSET);
+	backend.vertexAttribDivisor(instPosLocation, 1);
+
+	backend.enableVertexAttrib(instSizeLocation);
+	backend.vertexAttribPointer(instSizeLocation, 2, gl.FLOAT, false, SPRITE_INSTANCE_STRIDE, SPRITE_INSTANCE_SIZE_OFFSET);
+	backend.vertexAttribDivisor(instSizeLocation, 1);
+
+	backend.enableVertexAttrib(instUv0Location);
+	backend.vertexAttribPointer(instUv0Location, 2, gl.FLOAT, false, SPRITE_INSTANCE_STRIDE, SPRITE_INSTANCE_UV0_OFFSET);
+	backend.vertexAttribDivisor(instUv0Location, 1);
+
+	backend.enableVertexAttrib(instUv1Location);
+	backend.vertexAttribPointer(instUv1Location, 2, gl.FLOAT, false, SPRITE_INSTANCE_STRIDE, SPRITE_INSTANCE_UV1_OFFSET);
+	backend.vertexAttribDivisor(instUv1Location, 1);
+
+	backend.enableVertexAttrib(instZLocation);
+	backend.vertexAttribPointer(instZLocation, 1, gl.UNSIGNED_SHORT, true, SPRITE_INSTANCE_STRIDE, SPRITE_INSTANCE_Z_OFFSET);
+	backend.vertexAttribDivisor(instZLocation, 1);
+
+	backend.enableVertexAttrib(instAtlasLocation);
+	backend.vertexAttribIPointer(instAtlasLocation, 1, gl.UNSIGNED_BYTE, SPRITE_INSTANCE_STRIDE, SPRITE_INSTANCE_ATLAS_OFFSET);
+	backend.vertexAttribDivisor(instAtlasLocation, 1);
+
+	backend.enableVertexAttrib(instFxLocation);
+	backend.vertexAttribPointer(instFxLocation, 1, gl.UNSIGNED_BYTE, true, SPRITE_INSTANCE_STRIDE, SPRITE_INSTANCE_FX_OFFSET);
+	backend.vertexAttribDivisor(instFxLocation, 1);
+
+	backend.enableVertexAttrib(instColorLocation);
+	backend.vertexAttribPointer(instColorLocation, 4, gl.UNSIGNED_BYTE, true, SPRITE_INSTANCE_STRIDE, SPRITE_INSTANCE_COLOR_OFFSET);
+	backend.vertexAttribDivisor(instColorLocation, 1);
 	backend.bindVertexArray(null);
 	spriteVAO = vao;
 }
@@ -160,22 +199,19 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 	gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 	gl.depthMask(false);
 	backend.bindVertexArray(spriteVAO as WebGLVertexArrayObject);
-
-	const program = gl.getParameter(gl.CURRENT_PROGRAM);
-
-	const u = (n: string) => gl.getUniformLocation(program, n);
-	const set1f = (n: string, v: number) => { const loc = u(n); gl.uniform1f(loc, v); };
-
-	// Legacy fallback uniform for shader paths where FrameUniforms.u_logicalSize is not available.
-	spriteShaderData.resolutionVector[0] = state.baseWidth;
-	spriteShaderData.resolutionVector[1] = state.baseHeight;
-	gl.uniform2fv(resolutionLocation, spriteShaderData.resolutionVector);
+	gl.uniform4f(
+		spriteShaderParallaxRigLocation,
+		spriteParallaxRig.vy,
+		spriteParallaxRig.scale,
+		spriteParallaxRig.impact,
+		spriteParallaxRig.impact_t,
+	);
 
 	const ideScale = state.viewportTypeIde === 'viewport' ? 1 : (state.baseWidth / state.width);
 	let currentScale = 1;
 	const setScale = (scale: number) => {
 		if (scale === currentScale) return;
-		set1f('u_scale', scale);
+		gl.uniform1f(spriteShaderScaleLocation, scale);
 		currentScale = scale;
 	};
 
@@ -196,9 +232,7 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 		context.activeTexUnit = TEXTURE_UNIT_ATLAS_ENGINE;
 		context.bind2DTex(state.atlasEngineTex);
 	}
-	const vertexcoords = spriteShaderData.vertexcoords;
-	if (!vertexcoords) return;
-	const { texcoords, zcoords, color_override, atlas_id } = spriteShaderData;
+	const { instanceF32, instanceU16, instanceU8 } = spriteShaderData;
 	// Ambient sprites are disabled for now; when we have a more efficient path, reuse the block below.
 	// const ambientFrameIntensity = state.ambientIntensity;
 	// const ambientFrameColor = state.ambientColor;
@@ -208,13 +242,18 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 	let i = 0;
 	const flush = () => {
 		if (i <= 0) return;
-		updateBuffers(runtime, vertexcoords, texcoords, zcoords, color_override, atlas_id, i);
+		const usedBytes = i * SPRITE_INSTANCE_STRIDE;
+		const used = instanceU8.subarray(0, usedBytes);
+		gl.bindBuffer(gl.ARRAY_BUFFER, instanceBuffer);
+		gl.bufferSubData(gl.ARRAY_BUFFER, 0, used);
+		backend.accountUpload('vertex', used.byteLength);
 		const passStub = { fbo, desc: { label: 'sprites' } } as Parameters<GPUBackend['draw']>[0];
-		backend.draw(passStub, SPRITE_DRAW_OFFSET, VERTICES_PER_SPRITE * i);
+		backend.drawInstanced!(passStub, VERTICES_PER_SPRITE, i, SPRITE_DRAW_OFFSET);
 		i = 0;
 	};
 	forEachSprite(({ options, imgmeta }) => {
-		const desiredScale = options.layer === 'ide' ? ideScale : 1;
+		const layer = options.layer;
+		const desiredScale = layer === 'ide' ? ideScale : 1;
 		if (desiredScale !== currentScale) {
 			flush();
 			setScale(desiredScale);
@@ -223,6 +262,8 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 		const flip = options.flip!;
 		const scale = options.scale!;
 		const colorize = options.colorize!;
+		const parallaxEnabled = layer !== 'ui' && layer !== 'ide';
+		const parallaxWeightValue = parallaxEnabled ? (options.parallax_weight ?? 0) : 0;
 		// Ambient sprites disabled for now; re-enable by using the mixing block below.
 		// const layerIsOverlay = options.layer === 'ui' || options.layer === 'ide';
 		// const ambientEnabled = !layerIsOverlay && (options.ambient_affected != null ? options.ambient_affected : state.ambientEnabledDefault);
@@ -231,13 +272,28 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 		// const mixR = (1 - ambientFactor) + ambientFactor * ambientMixR;
 		// const mixG = (1 - ambientFactor) + ambientFactor * ambientMixG;
 		// const mixB = (1 - ambientFactor) + ambientFactor * ambientMixB;
-		const { width, height } = imgmeta;
-		bvec.set(vertexcoords, i, pos.x, pos.y, width, height, scale.x, scale.y);
-		bvec.set_texturecoords(texcoords, i, getTexCoords(flip.flip_h, flip.flip_v, imgmeta));
+		const sizeX = imgmeta.width * scale.x;
+		const sizeY = imgmeta.height * scale.y;
+		const texcoords = getTexCoords(flip.flip_h, flip.flip_v, imgmeta);
+		const floatOffset = i * SPRITE_INSTANCE_FLOAT_STRIDE;
+		instanceF32[floatOffset + 0] = pos.x;
+		instanceF32[floatOffset + 1] = pos.y;
+		instanceF32[floatOffset + 2] = sizeX;
+		instanceF32[floatOffset + 3] = sizeY;
+		instanceF32[floatOffset + 4] = texcoords[0];
+		instanceF32[floatOffset + 5] = texcoords[1];
+		instanceF32[floatOffset + 6] = texcoords[10];
+		instanceF32[floatOffset + 7] = texcoords[11];
+
+		const byteOffset = i * SPRITE_INSTANCE_STRIDE;
 		const zNorm = 1 - (pos.z ?? DEFAULT_ZCOORD) / ZCOORD_MAX;
-		bvec.set_zcoord(zcoords, i, zNorm);
-		bvec.set_color(color_override, i, colorize /* For ambient, use: { r: colorize.r * mixR, g: colorize.g * mixG, b: colorize.b * mixB, a: colorize.a } */);
-		bvec.set_atlas_id(atlas_id, i, imgmeta.atlasid);
+		instanceU16[(byteOffset + SPRITE_INSTANCE_Z_OFFSET) >> 1] = packUnorm16(zNorm);
+		instanceU8[byteOffset + SPRITE_INSTANCE_ATLAS_OFFSET] = imgmeta.atlasid;
+		instanceU8[byteOffset + SPRITE_INSTANCE_FX_OFFSET] = packSignedWeight(parallaxWeightValue);
+		instanceU8[byteOffset + SPRITE_INSTANCE_COLOR_OFFSET + 0] = packUnorm8(colorize.r);
+		instanceU8[byteOffset + SPRITE_INSTANCE_COLOR_OFFSET + 1] = packUnorm8(colorize.g);
+		instanceU8[byteOffset + SPRITE_INSTANCE_COLOR_OFFSET + 2] = packUnorm8(colorize.b);
+		instanceU8[byteOffset + SPRITE_INSTANCE_COLOR_OFFSET + 3] = packUnorm8(colorize.a);
 		++i;
 		if (i >= MAX_SPRITES) { flush(); }
 	});
@@ -251,43 +307,6 @@ export function getTexCoords(flip_h: boolean, flip_v: boolean, imgmeta: ImgMeta)
 	if (flip_h) return imgmeta['texcoords_fliph'];
 	if (flip_v) return imgmeta['texcoords_flipv'];
 	return imgmeta['texcoords'];
-}
-
-export function updateBuffers(
-	runtime: SpriteRuntime,
-	vertexcoords: Float32Array,
-	texcoords: Float32Array,
-	zcoords: Float32Array,
-	color_override: Float32Array,
-	atlasid: Uint8Array,
-	spriteCount: number,
-): void {
-	const { backend, gl } = runtime;
-	const usedVertexFloats = spriteCount * VERTICES_PER_SPRITE * POSITION_COMPONENTS;
-	const usedVertex = vertexcoords.subarray(0, usedVertexFloats);
-	gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
-	gl.bufferData(gl.ARRAY_BUFFER, usedVertex, gl.DYNAMIC_DRAW);
-	backend.accountUpload('vertex', usedVertex.byteLength);
-
-	const usedTex = texcoords.subarray(0, spriteCount * TEXTURECOORDS_SIZE);
-	gl.bindBuffer(gl.ARRAY_BUFFER, texcoordBuffer);
-	gl.bufferData(gl.ARRAY_BUFFER, usedTex, gl.DYNAMIC_DRAW);
-	backend.accountUpload('vertex', usedTex.byteLength);
-
-	const usedZ = zcoords.subarray(0, spriteCount * ZCOORDS_SIZE);
-	gl.bindBuffer(gl.ARRAY_BUFFER, zBuffer);
-	gl.bufferData(gl.ARRAY_BUFFER, usedZ, gl.DYNAMIC_DRAW);
-	backend.accountUpload('vertex', usedZ.byteLength);
-
-	const usedColor = color_override.subarray(0, spriteCount * COLOR_OVERRIDE_SIZE);
-	gl.bindBuffer(gl.ARRAY_BUFFER, color_overrideBuffer);
-	gl.bufferData(gl.ARRAY_BUFFER, usedColor, gl.DYNAMIC_DRAW);
-	backend.accountUpload('vertex', usedColor.byteLength);
-
-	const usedAtlas = atlasid.subarray(0, spriteCount * ATLAS_ID_SIZE);
-	gl.bindBuffer(gl.ARRAY_BUFFER, atlas_idBuffer);
-	gl.bufferData(gl.ARRAY_BUFFER, usedAtlas, gl.DYNAMIC_DRAW);
-	backend.accountUpload('vertex', usedAtlas.byteLength);
 }
 
 export function registerSpritesPass_WebGL(registry: RenderPassLibrary): void {
@@ -313,7 +332,7 @@ export function registerSpritesPass_WebGL(registry: RenderPassLibrary): void {
 			setupSpriteShaderLocations(webglBackend);
 			setupBuffers(webglBackend);
 			setupSpriteLocations(webglBackend);
-			setupDefaultUniformValues(backend, [$.view.viewportSize.x, $.view.viewportSize.y]);
+			setupDefaultUniformValues(backend);
 		},
 		writesDepth: true,
 		shouldExecute: () => true,

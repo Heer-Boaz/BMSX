@@ -110,6 +110,135 @@ local function build_all_out_shake(total_frames)
 	end
 end
 
+local all_out_shake = build_all_out_shake(combat_all_out_frame_count)
+
+local function build_combat_fade_frames()
+	local frames = {}
+	for frame_index = 0, combat_fade_frame_count - 1 do
+		local c = 0
+		if frame_index < combat_fade_out_frames then
+			local u = frame_index / (combat_fade_out_frames - 1)
+			c = 1 - easing.smoothstep(u)
+		end
+		frames[#frames + 1] = { c = c }
+	end
+	return frames
+end
+
+local function build_combat_dodge_frames(params)
+	local frames = {}
+	local dir = params.dir
+	local anticipate_frames = combat_dodge_anticipation_frames
+	local peak_frames = combat_dodge_peak_frames
+	local recover_frames = combat_dodge_recover_frames
+	local move_frames = combat_dodge_frame_count - anticipate_frames - peak_frames - recover_frames
+	local move_end = anticipate_frames + move_frames
+	local peak_end = move_end + peak_frames
+
+	for frame_index = 0, combat_dodge_frame_count - 1 do
+		local offset = 0
+		local scale_x = 1
+		local scale_y = 1
+		if frame_index < anticipate_frames then
+			local u = frame_index / (anticipate_frames - 1)
+			offset = -combat_monster_dodge_distance * 0.2 * easing.smoothstep(u) * dir
+			local t = easing.smoothstep(u)
+			scale_x = 1 + (combat_dodge_anticipation_scale_x * t)
+			scale_y = 1 + (combat_dodge_anticipation_scale_y * t)
+		elseif frame_index < move_end then
+			local u = (frame_index - anticipate_frames) / (move_frames - 1)
+			offset = combat_monster_dodge_distance * easing.ease_out_quad(u) * dir
+			local t = easing.ease_out_quad(u)
+			scale_x = 1 + (combat_dodge_move_scale_x * t)
+			scale_y = 1 + (combat_dodge_move_scale_y * t)
+		elseif frame_index < peak_end then
+			offset = combat_monster_dodge_distance * dir
+			scale_x = 1 + combat_dodge_move_scale_x
+			scale_y = 1 + combat_dodge_move_scale_y
+		else
+			local u = (frame_index - peak_end) / (recover_frames - 1)
+			local t = 1 - easing.ease_in_quad(u)
+			offset = combat_monster_dodge_distance * t * dir
+			scale_x = 1 + (combat_dodge_move_scale_x * t)
+			scale_y = 1 + (combat_dodge_move_scale_y * t)
+		end
+		frames[#frames + 1] = { offset = offset, scale_x = scale_x, scale_y = scale_y }
+	end
+
+	return frames
+end
+
+local function build_combat_all_out_frames(params)
+	local frames = {}
+	local origin_x = params.origin_x
+	local origin_y = params.origin_y
+	local sprite_w = params.sprite_w
+	local sprite_h = params.sprite_h
+
+	for frame_index = 0, combat_all_out_frame_count - 1 do
+		local dx, dy = all_out_shake(frame_index)
+		local u = (frame_index / combat_all_out_pulse_period_frames) + 0.25
+		local pulse = easing.smoothstep(easing.pingpong01(u))
+		local s_base = 1 + (pulse * combat_all_out_pulse_amp)
+		local squash_u = (frame_index / (combat_all_out_pulse_period_frames * 0.5)) + 0.15
+		local squash = easing.pingpong01(squash_u)
+		squash = (easing.ease_in_out_quad(squash) - 0.5) * 2
+		local jitter = shake_signed(7000 + frame_index * 29 + 9) * 0.04
+		local sx = s_base + (squash * combat_all_out_pulse_amp * 0.6) + jitter
+		local sy = s_base - (squash * combat_all_out_pulse_amp * 0.4) - (jitter * 0.6)
+		local ox = (sprite_w * (sx - 1)) / 2
+		local oy = (sprite_h * (sy - 1)) / 2
+		frames[#frames + 1] = { x = origin_x + dx - ox, y = origin_y + dy - oy, sx = sx, sy = sy }
+	end
+
+	return frames
+end
+
+local function build_combat_results_fade_in_frames(params)
+	local frames = {}
+	local maya_start_x = params.maya_start_x
+	local maya_target_x = params.maya_target_x
+	local text_start_x = params.text_start_x
+	local text_target_x = params.text_target_x
+
+	for frame_index = 0, combat_results_fade_in_frames - 1 do
+		local u = frame_index / (combat_results_fade_in_frames - 1)
+		local a = easing.smoothstep(u)
+		frames[#frames + 1] = {
+			a = a,
+			bg_a = combat_results_bg_a * a,
+			maya_x = maya_start_x + (maya_target_x - maya_start_x) * a,
+			text_x = text_start_x + (text_target_x - text_start_x) * a,
+		}
+	end
+
+	return frames
+end
+
+local function build_combat_results_fade_out_frames()
+	local frames = {}
+	for frame_index = 0, combat_results_fade_out_frames - 1 do
+		local u = frame_index / (combat_results_fade_out_frames - 1)
+		local a = 1 - easing.smoothstep(u)
+		frames[#frames + 1] = { a = a, bg_a = combat_results_bg_a * a }
+	end
+	return frames
+end
+
+local function build_combat_exit_fade_in_frames()
+	local frames = {}
+	for frame_index = 0, combat_exit_fade_in_frames - 1 do
+		local u = frame_index / (combat_exit_fade_in_frames - 1)
+		local c = easing.smoothstep(u)
+		frames[#frames + 1] = { c = c }
+	end
+	return frames
+end
+
+local combat_fade_frames = build_combat_fade_frames()
+local combat_results_fade_out_frames_table = build_combat_results_fade_out_frames()
+local combat_exit_fade_in_frames_table = build_combat_exit_fade_in_frames()
+
 local combat_director = {}
 combat_director.__index = combat_director
 
@@ -146,6 +275,69 @@ function combat_director:update_combat_hover()
 	local wave = easing.smoothstep(easing.pingpong01(u))
 	local offset = (wave - 0.5) * 2 * combat_monster_hover_amp
 	monster.y = self.combat_monster_base_y + offset
+end
+
+function combat_director:apply_combat_parallax(dt)
+	if not self.combat_parallax_enabled then
+		return
+	end
+	self.combat_parallax_impact_t = self.combat_parallax_impact_t + dt
+	local momentum = self.combat_parallax_momentum
+	local impact_side = self.combat_parallax_impact_side
+	local rig_vy = combat_parallax_vy_base + combat_parallax_vy_momentum
+	local rig_scale = combat_parallax_scale_base + combat_parallax_scale_momentum
+	local rig_impact = 0
+	if impact_side == 'hero' then
+		rig_impact = combat_parallax_impact_amp
+	elseif impact_side == 'monster' then
+		rig_impact = -combat_parallax_impact_amp
+	end
+	set_sprite_parallax_rig(rig_vy, rig_scale, rig_impact, self.combat_parallax_impact_t)
+	local hero_weight = (combat_parallax_vy_base - (combat_parallax_vy_momentum * momentum)) / rig_vy
+	local monster_weight = -(combat_parallax_vy_base + (combat_parallax_vy_momentum * momentum)) / rig_vy
+	local hero = object(combat_maya_a_id)
+	local monster = object(combat_monster_id)
+	hero.sprite_component.parallax_weight = hero_weight
+	monster.sprite_component.parallax_weight = monster_weight
+	print("Applied combat parallax: " .. momentum)
+end
+
+function combat_director:reset_combat_parallax()
+	self.combat_parallax_enabled = true
+	self.combat_parallax_momentum = 0
+	self.combat_parallax_impact_t = 0
+	self.combat_parallax_impact_side = ''
+	self:apply_combat_parallax(0)
+end
+
+function combat_director:disable_combat_parallax()
+	self.combat_parallax_enabled = false
+	set_sprite_parallax_rig(0, 1, 0, 0)
+	local hero = object(combat_maya_a_id)
+	local monster = object(combat_monster_id)
+	hero.sprite_component.parallax_weight = 0
+	monster.sprite_component.parallax_weight = 0
+end
+
+function combat_director:push_combat_momentum(side, power)
+	local delta = side == 'hero' and power or -power
+	local next = self.combat_parallax_momentum + delta
+	if next < -1 then
+		next = -1
+	end
+	if next > 1 then
+		next = 1
+	end
+	self.combat_parallax_momentum = next
+	self.combat_parallax_impact_t = 0
+	self.combat_parallax_impact_side = side
+end
+
+function combat_director:tick(_dt)
+	if not self.combat_parallax_enabled then
+		return
+	end
+	self:apply_combat_parallax(game.deltatime_seconds)
 end
 
 function combat_director:is_typing()
@@ -276,6 +468,7 @@ function combat.define_fsm()
 
 	states.combat_done = {
 		entering_state = function(self)
+			self:disable_combat_parallax()
 			object(director_instance_id).events:emit('combat.end', {
 				combat_node_id = self.combat_node_id,
 				next_node_id = self.node_id,
@@ -600,7 +793,6 @@ function combat.define_fsm()
 		return frames
 	end
 
-	local all_out_shake = build_all_out_shake(combat_all_out_frame_count)
 	local function finish_combat_fade_in(self)
 		return '/combat_init'
 	end
@@ -693,9 +885,9 @@ function combat.define_fsm()
 		timelines = {
 			[combat_fade_timeline_id] = {
 				create = function()
-					return new_timeline_range({
+					return new_timeline({
 						id = combat_fade_timeline_id,
-						frame_count = combat_fade_frame_count,
+						frames = combat_fade_frames,
 						ticks_per_frame = combat_fade_ticks_per_frame,
 						playback_mode = 'once',
 					})
@@ -724,12 +916,7 @@ function combat.define_fsm()
 		on = {
 			['timeline.frame.' .. combat_fade_timeline_id] = {
 				go = function(self, _state, event)
-					local frame_index = event.frame_index
-					local c = 0
-					if frame_index < combat_fade_out_frames then
-						local u = frame_index / (combat_fade_out_frames - 1)
-						c = 1 - easing.smoothstep(u)
-					end
+					local c = event.frame_value.c
 					local bg = object(bg_id)
 					bg.sprite_component.colorize = { r = c, g = c, b = c, a = 1 }
 				end,
@@ -750,9 +937,9 @@ function combat.define_fsm()
 		timelines = {
 			[combat_fade_timeline_id] = {
 				create = function()
-					return new_timeline_range({
+					return new_timeline({
 						id = combat_fade_timeline_id,
-						frame_count = combat_fade_frame_count,
+						frames = combat_fade_frames,
 						ticks_per_frame = combat_fade_ticks_per_frame,
 						playback_mode = 'once',
 					})
@@ -844,6 +1031,7 @@ function combat.define_fsm()
 			self.combat_maya_b_start_right_x = self.combat_maya_b_start_x + maya_b.sx
 			self.combat_maya_b_exit_right_x = self.combat_maya_b_start_right_x + maya_b.sx
 
+			self:reset_combat_parallax()
 			return '/combat_intro'
 		end,
 	}
@@ -986,6 +1174,7 @@ function combat.define_fsm()
 		entering_state = function(self)
 			clear_texts(text_ids_choice_prompt)
 			set_text_lines(text_main_id, { 'RAAK!' }, false)
+			self:push_combat_momentum('hero', combat_parallax_momentum_step)
 			local monster = object(combat_monster_id)
 			monster.x = self.combat_monster_base_x
 			monster.y = self.combat_monster_base_y
@@ -1041,16 +1230,15 @@ function combat.define_fsm()
 		timelines = {
 			[combat_dodge_timeline_id] = {
 				create = function()
-					return new_timeline_range({
+					return new_timeline({
 						id = combat_dodge_timeline_id,
-						frame_count = combat_dodge_frame_count,
+						frames = build_combat_dodge_frames,
 						ticks_per_frame = combat_dodge_ticks_per_frame,
 						playback_mode = 'once',
 					})
 				end,
-				autoplay = true,
+				autoplay = false,
 				stop_on_exit = true,
-				play_options = { rewind = true, snap_to_start = true },
 			},
 		},
 		entering_state = function(self)
@@ -1059,6 +1247,11 @@ function combat.define_fsm()
 			local monster = object(combat_monster_id)
 			monster:get_component_by_id('base_sprite').scale = { x = 1, y = 1 }
 			self.combat_dodge_dir = -self.combat_dodge_dir
+			self:play_timeline(combat_dodge_timeline_id, {
+				rewind = true,
+				snap_to_start = true,
+				params = { dir = self.combat_dodge_dir },
+			})
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
@@ -1072,41 +1265,9 @@ function combat.define_fsm()
 			['timeline.frame.' .. combat_dodge_timeline_id] = {
 				go = function(self, _state, event)
 					local monster = object(combat_monster_id)
-					local frame_index = event.frame_index
-					local anticipate_frames = combat_dodge_anticipation_frames
-					local peak_frames = combat_dodge_peak_frames
-					local recover_frames = combat_dodge_recover_frames
-					local move_frames = combat_dodge_frame_count - anticipate_frames - peak_frames - recover_frames
-					local move_end = anticipate_frames + move_frames
-					local peak_end = move_end + peak_frames
-					local offset = 0
-					local scale_x = 1
-					local scale_y = 1
-					if frame_index < anticipate_frames then
-						local u = frame_index / (anticipate_frames - 1)
-						offset = -combat_monster_dodge_distance * 0.2 * easing.smoothstep(u) * self.combat_dodge_dir
-						local t = easing.smoothstep(u)
-						scale_x = 1 + (combat_dodge_anticipation_scale_x * t)
-						scale_y = 1 + (combat_dodge_anticipation_scale_y * t)
-					elseif frame_index < move_end then
-						local u = (frame_index - anticipate_frames) / (move_frames - 1)
-						offset = combat_monster_dodge_distance * easing.ease_out_quad(u) * self.combat_dodge_dir
-						local t = easing.ease_out_quad(u)
-						scale_x = 1 + (combat_dodge_move_scale_x * t)
-						scale_y = 1 + (combat_dodge_move_scale_y * t)
-					elseif frame_index < peak_end then
-						offset = combat_monster_dodge_distance * self.combat_dodge_dir
-						scale_x = 1 + combat_dodge_move_scale_x
-						scale_y = 1 + combat_dodge_move_scale_y
-					else
-						local u = (frame_index - peak_end) / (recover_frames - 1)
-						local t = 1 - easing.ease_in_quad(u)
-						offset = combat_monster_dodge_distance * t * self.combat_dodge_dir
-						scale_x = 1 + (combat_dodge_move_scale_x * t)
-						scale_y = 1 + (combat_dodge_move_scale_y * t)
-					end
-					monster.x = self.combat_monster_base_x + offset
-					monster:get_component_by_id('base_sprite').scale = { x = scale_x, y = scale_y }
+					local frame = event.frame_value
+					monster.x = self.combat_monster_base_x + frame.offset
+					monster:get_component_by_id('base_sprite').scale = { x = frame.scale_x, y = frame.scale_y }
 				end,
 			},
 			['timeline.end.' .. combat_dodge_timeline_id] = {
@@ -1123,6 +1284,7 @@ function combat.define_fsm()
 			local maya_a = object(combat_maya_a_id)
 			local overlay = object(transition_overlay_id)
 			clear_texts(text_ids_choice_prompt)
+			self:push_combat_momentum('monster', combat_parallax_momentum_step)
 			monster.visible = true
 			maya_a.visible = true
 			monster.x = self.combat_monster_base_x
@@ -1364,16 +1526,15 @@ function combat.define_fsm()
 		timelines = {
 			[combat_all_out_timeline_id] = {
 				create = function()
-					return new_timeline_range({
+					return new_timeline({
 						id = combat_all_out_timeline_id,
-						frame_count = combat_all_out_frame_count,
+						frames = build_combat_all_out_frames,
 						ticks_per_frame = combat_all_out_ticks_per_frame,
 						playback_mode = 'once',
 					})
 				end,
-				autoplay = true,
+				autoplay = false,
 				stop_on_exit = true,
-				play_options = { rewind = true, snap_to_start = true },
 			},
 		},
 		entering_state = function(self)
@@ -1386,6 +1547,16 @@ function combat.define_fsm()
 			all_out.y = 0
 			self.all_out_origin_x = all_out.x
 			self.all_out_origin_y = all_out.y
+			self:play_timeline(combat_all_out_timeline_id, {
+				rewind = true,
+				snap_to_start = true,
+				params = {
+					origin_x = self.all_out_origin_x,
+					origin_y = self.all_out_origin_y,
+					sprite_w = all_out.sx,
+					sprite_h = all_out.sy,
+				},
+			})
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
@@ -1398,23 +1569,11 @@ function combat.define_fsm()
 		on = {
 			['timeline.frame.' .. combat_all_out_timeline_id] = {
 				go = function(self, _state, event)
-					local frame_index = event.frame_index
-					local dx, dy = all_out_shake(frame_index)
+					local frame = event.frame_value
 					local all_out = object(combat_all_out_id)
-					local u = (frame_index / combat_all_out_pulse_period_frames) + 0.25
-					local pulse = easing.smoothstep(easing.pingpong01(u))
-					local s_base = 1 + (pulse * combat_all_out_pulse_amp)
-					local squash_u = (frame_index / (combat_all_out_pulse_period_frames * 0.5)) + 0.15
-					local squash = easing.pingpong01(squash_u)
-					squash = (easing.ease_in_out_quad(squash) - 0.5) * 2
-					local jitter = shake_signed(7000 + frame_index * 29 + 9) * 0.04
-					local sx = s_base + (squash * combat_all_out_pulse_amp * 0.6) + jitter
-					local sy = s_base - (squash * combat_all_out_pulse_amp * 0.4) - (jitter * 0.6)
-					all_out:get_component_by_id('base_sprite').scale = { x = sx, y = sy }
-					local ox = (all_out.sx * (sx - 1)) / 2
-					local oy = (all_out.sy * (sy - 1)) / 2
-					all_out.x = self.all_out_origin_x + dx - ox
-					all_out.y = self.all_out_origin_y + dy - oy
+					all_out:get_component_by_id('base_sprite').scale = { x = frame.sx, y = frame.sy }
+					all_out.x = frame.x
+					all_out.y = frame.y
 				end,
 			},
 			['timeline.end.' .. combat_all_out_timeline_id] = {
@@ -1540,18 +1699,29 @@ function combat.define_fsm()
 		timelines = {
 			[combat_results_fade_in_timeline_id] = {
 				create = function()
-					return new_timeline_range({
+					return new_timeline({
 						id = combat_results_fade_in_timeline_id,
-						frame_count = combat_results_fade_in_frames,
+						frames = build_combat_results_fade_in_frames,
 						ticks_per_frame = combat_results_fade_in_ticks_per_frame,
 						playback_mode = 'once',
 					})
 				end,
-				autoplay = true,
+				autoplay = false,
 				stop_on_exit = true,
-				play_options = { rewind = true, snap_to_start = true },
 			},
 		},
+		entering_state = function(self)
+			self:play_timeline(combat_results_fade_in_timeline_id, {
+				rewind = true,
+				snap_to_start = true,
+				params = {
+					maya_start_x = self.combat_results_maya_start_x,
+					maya_target_x = self.combat_results_maya_target_x,
+					text_start_x = self.combat_results_text_start_x,
+					text_target_x = self.combat_results_text_target_x,
+				},
+			})
+		end,
 		input_eval = 'first',
 		input_event_handlers = {
 			['b[jp]'] = {
@@ -1563,16 +1733,15 @@ function combat.define_fsm()
 		on = {
 			['timeline.frame.' .. combat_results_fade_in_timeline_id] = {
 				go = function(self, _state, event)
-					local u = event.frame_index / (combat_results_fade_in_frames - 1)
-					local a = easing.smoothstep(u)
+					local frame = event.frame_value
 					local bg = object(bg_id)
-					bg.sprite_component.colorize = { r = combat_results_bg_r, g = combat_results_bg_g, b = combat_results_bg_b, a = combat_results_bg_a * a }
+					bg.sprite_component.colorize = { r = combat_results_bg_r, g = combat_results_bg_g, b = combat_results_bg_b, a = frame.bg_a }
 					local maya_b = object(combat_maya_b_id)
-					maya_b.sprite_component.colorize = { r = 1, g = 1, b = 1, a = a }
-					maya_b.x = self.combat_results_maya_start_x + (self.combat_results_maya_target_x - self.combat_results_maya_start_x) * a
+					maya_b.sprite_component.colorize = { r = 1, g = 1, b = 1, a = frame.a }
+					maya_b.x = frame.maya_x
 					local results = object(text_results_id)
-					results.text_color = { r = 1, g = 1, b = 1, a = a }
-					results.centered_block_x = self.combat_results_text_start_x + (self.combat_results_text_target_x - self.combat_results_text_start_x) * a
+					results.text_color = { r = 1, g = 1, b = 1, a = frame.a }
+					results.centered_block_x = frame.text_x
 				end,
 			},
 			['timeline.end.' .. combat_results_fade_in_timeline_id] = {
@@ -1600,9 +1769,9 @@ function combat.define_fsm()
 		timelines = {
 			[combat_results_fade_out_timeline_id] = {
 				create = function()
-					return new_timeline_range({
+					return new_timeline({
 						id = combat_results_fade_out_timeline_id,
-						frame_count = combat_results_fade_out_frames,
+						frames = combat_results_fade_out_frames_table,
 						ticks_per_frame = combat_results_fade_out_ticks_per_frame,
 						playback_mode = 'once',
 					})
@@ -1626,14 +1795,13 @@ function combat.define_fsm()
 		on = {
 			['timeline.frame.' .. combat_results_fade_out_timeline_id] = {
 				go = function(self, _state, event)
-					local u = event.frame_index / (combat_results_fade_out_frames - 1)
-					local a = 1 - easing.smoothstep(u)
+					local frame = event.frame_value
 					local bg = object(bg_id)
-					bg.sprite_component.colorize = { r = combat_results_bg_r, g = combat_results_bg_g, b = combat_results_bg_b, a = combat_results_bg_a * a }
+					bg.sprite_component.colorize = { r = combat_results_bg_r, g = combat_results_bg_g, b = combat_results_bg_b, a = frame.bg_a }
 					local maya_b = object(combat_maya_b_id)
-					maya_b.sprite_component.colorize = { r = 1, g = 1, b = 1, a = a }
+					maya_b.sprite_component.colorize = { r = 1, g = 1, b = 1, a = frame.a }
 					local results = object(text_results_id)
-					results.text_color = { r = 1, g = 1, b = 1, a = a }
+					results.text_color = { r = 1, g = 1, b = 1, a = frame.a }
 				end,
 			},
 			['timeline.end.' .. combat_results_fade_out_timeline_id] = {
@@ -1648,9 +1816,9 @@ function combat.define_fsm()
 		timelines = {
 			[combat_exit_fade_in_timeline_id] = {
 				create = function()
-					return new_timeline_range({
+					return new_timeline({
 						id = combat_exit_fade_in_timeline_id,
-						frame_count = combat_exit_fade_in_frames,
+						frames = combat_exit_fade_in_frames_table,
 						ticks_per_frame = combat_exit_fade_in_ticks_per_frame,
 						playback_mode = 'once',
 					})
@@ -1677,8 +1845,7 @@ function combat.define_fsm()
 		on = {
 			['timeline.frame.' .. combat_exit_fade_in_timeline_id] = {
 				go = function(self, _state, event)
-					local u = event.frame_index / (combat_exit_fade_in_frames - 1)
-					local c = easing.smoothstep(u)
+					local c = event.frame_value.c
 					local bg = object(bg_id)
 					bg.sprite_component.colorize = { r = c, g = c, b = c, a = 1 }
 				end,
@@ -1741,6 +1908,10 @@ function combat.register_director()
 			combat_results_maya_start_x = 0,
 			combat_results_text_target_x = 0,
 			combat_results_text_start_x = 0,
+			combat_parallax_enabled = false,
+			combat_parallax_momentum = 0,
+			combat_parallax_impact_t = 0,
+			combat_parallax_impact_side = '',
 			skip_combat_fade_in = false,
 			skip_transition_fade = false,
 			combat_node_id = '',

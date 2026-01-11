@@ -55,6 +55,7 @@ public:
 	void music(const std::string& id);
 	void stop_music();
 	void set_master_volume(double volume);
+	void set_sprite_parallax_rig(f32 vy, f32 scale, f32 impact, f32 impact_t);
 	void pause_audio();
 	void resume_audio();
 	void reboot();

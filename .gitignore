@@ -65,6 +65,10 @@ temp/**
 *.exe
 *.out
 
+# Temporary files
+**.log
+**.tmp
+
 # CMake generated files
 # CMakeCache.txt
 # CMakeFiles/

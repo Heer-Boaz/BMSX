@@ -27,6 +27,7 @@ export class SpriteRenderSystem extends ECSystem {
 				layer: sc.layer,
 				ambient_affected: sc.ambient_affected,
 				ambient_factor: sc.ambient_factor,
+				parallax_weight: sc.parallax_weight,
 			});
 	}
 }

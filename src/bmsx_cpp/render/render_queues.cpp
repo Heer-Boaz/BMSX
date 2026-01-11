@@ -26,6 +26,7 @@ static i32 s_spriteSubmissionCounter = 0;
 
 i32 particleAmbientModeDefault = 0;
 f32 particleAmbientFactorDefault = 1.0f;
+SpriteParallaxRig spriteParallaxRig{};
 std::array<f32, 3> _skyTint = {1.0f, 1.0f, 1.0f};
 f32 _skyExposure = 1.0f;
 
@@ -125,6 +126,7 @@ void submitSprite(const ImgRenderSubmission& options) {
 	// Colorize
 	const Color defaultColor{1.0f, 1.0f, 1.0f, 1.0f};
 	pooled.options.colorize = options.colorize ? *options.colorize : defaultColor;
+	pooled.options.parallax_weight = options.parallax_weight;
 
 	s_spriteQueue.submit(pooled);
 }
@@ -181,6 +183,7 @@ const std::vector<RenderSubmission>& copySpriteQueueForPlayback() {
 		dst.scale = src.scale;
 		dst.flip = src.flip;
 		dst.colorize = src.colorize;
+		dst.parallax_weight = src.parallax_weight;
 		count += 1;
 	});
 	s_spriteQueuePlaybackBuffer.resize(count);
@@ -391,6 +394,13 @@ size_t particleQueueFrontSize() { return s_particleQueue.sizeFront(); }
 void setAmbientDefaults(i32 mode, f32 factor) {
 	particleAmbientModeDefault = mode;
 	particleAmbientFactorDefault = clamp(factor, 0.0f, 1.0f);
+}
+
+void setSpriteParallaxRig(f32 vy, f32 scale, f32 impact, f32 impact_t) {
+	spriteParallaxRig.vy = vy;
+	spriteParallaxRig.scale = scale;
+	spriteParallaxRig.impact = impact;
+	spriteParallaxRig.impact_t = impact_t;
 }
 
 void setSkyboxTintExposure(const std::array<f32, 3>& tint, f32 exposure) {

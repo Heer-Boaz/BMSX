@@ -392,6 +392,7 @@ function spriterendersystem:update(world)
 			flip_h = sc.flip.flip_h,
 			flip_v = sc.flip.flip_v,
 			colorize = sc.colorize,
+			parallax_weight = sc.parallax_weight,
 		})
 		::continue::
 	end

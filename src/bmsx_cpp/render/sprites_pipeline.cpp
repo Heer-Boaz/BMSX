@@ -13,6 +13,7 @@
 #include "../core/engine.h"
 #include "../core/rompack.h"
 #include "gameview.h"
+#include "../utils/clamp.h"
 #if BMSX_ENABLE_GLES2
 #include "sprites_pipeline_gles2.h"
 #endif
@@ -44,6 +45,8 @@ void renderSpriteBatchSoftware(SoftwareBackend* softBackend,
   const f32 time = static_cast<f32>(EngineCore::instance().totalTime());
   const f32 phase = time * 60.0f;
   const f32 frac = phase - std::floor(phase);
+  const f32 wobble = (std::sin(time * 2.2f) * 0.5f)
+					 + (std::sin(time * 1.1f + 1.7f) * 0.5f);
   DitherParams dither;
   dither.enabled = context->psx_dither_2d_enabled;
   dither.intensity = context->psx_dither2d_intensity;
@@ -56,6 +59,10 @@ void renderSpriteBatchSoftware(SoftwareBackend* softBackend,
   const TextureHandle atlasPrimary = context->textures.at("_atlas_primary");
   const TextureHandle atlasSecondary = context->textures.at("_atlas_secondary");
 
+  auto smoothstep01 = [](f32 t) {
+	t = clamp(t, 0.0f, 1.0f);
+	return t * t * (3.0f - 2.0f * t);
+  };
   // Iterate over all sprites in the sorted front queue
   RenderQueues::forEachSprite([&](const SpriteQueueItem& item, size_t) {
 	const auto& options = item.options;
@@ -68,6 +75,11 @@ void renderSpriteBatchSoftware(SoftwareBackend* softBackend,
 	const f32 desiredScale = (layer == RenderLayer::IDE) ? ideScale : 1.0f;
 	const f32 totalScaleX = renderScaleX * desiredScale;
 	const f32 totalScaleY = renderScaleY * desiredScale;
+	const SpriteParallaxRig& parallaxRig = RenderQueues::spriteParallaxRig;
+	f32 parallaxWeight = options.parallax_weight.value_or(0.0f);
+	if (layer != RenderLayer::World) {
+	  parallaxWeight = 0.0f;
+	}
 
 	TextureHandle tex = nullptr;
 	if (meta.atlassed) {
@@ -103,20 +115,39 @@ void renderSpriteBatchSoftware(SoftwareBackend* softBackend,
 	i32 srcW = static_cast<i32>(srcXf1) - srcX;
 	i32 srcH = static_cast<i32>(srcYf1) - srcY;
 
+	const f32 zValue = (options.pos.z == 0.0f) ? DEFAULT_ZCOORD : options.pos.z;
+	const f32 zNorm = 1.0f - (zValue / ZCOORD_MAX);
+	const f32 depth = smoothstep01(zNorm);
+	const f32 weight = parallaxWeight * depth;
+	const f32 dy = wobble * parallaxRig.vy * weight;
+	const f32 baseScale = 1.0f + ((parallaxRig.scale - 1.0f) * weight);
+	const f32 impactSign = (parallaxRig.impact > 0.0f)
+							   ? 1.0f
+							   : ((parallaxRig.impact < 0.0f) ? -1.0f : 0.0f);
+	const f32 impactWeight =
+		(weight * impactSign > 0.0f) ? (weight * impactSign) : 0.0f;
+	const f32 pulse = std::exp(-8.0f * parallaxRig.impact_t)
+					  * std::abs(parallaxRig.impact) * impactWeight;
+	const f32 parallaxScaleMul = baseScale + pulse;
+
 	// Destination position and size
-	const f32 scaledX0 = options.pos.x * totalScaleX;
-	const f32 scaledY0 = options.pos.y * totalScaleY;
-	const f32 scaledX1 =
-		scaledX0 + static_cast<f32>(meta.width) * scale.x * totalScaleX;
-	const f32 scaledY1 =
-		scaledY0 + static_cast<f32>(meta.height) * scale.y * totalScaleY;
+	const f32 baseW = static_cast<f32>(meta.width) * scale.x;
+	const f32 baseH = static_cast<f32>(meta.height) * scale.y;
+	const f32 centerX = options.pos.x + (baseW * 0.5f);
+	const f32 centerY = options.pos.y + (baseH * 0.5f);
+	const f32 finalW = baseW * parallaxScaleMul;
+	const f32 finalH = baseH * parallaxScaleMul;
+	const f32 finalX = centerX - (finalW * 0.5f);
+	const f32 finalY = centerY - (finalH * 0.5f) + dy;
+	const f32 scaledX0 = finalX * totalScaleX;
+	const f32 scaledY0 = finalY * totalScaleY;
+	const f32 scaledX1 = scaledX0 + finalW * totalScaleX;
+	const f32 scaledY1 = scaledY0 + finalH * totalScaleY;
 	i32 dstX = static_cast<i32>(scaledX0);
 	i32 dstY = static_cast<i32>(scaledY0);
 	i32 dstW = static_cast<i32>(scaledX1) - dstX;
 	i32 dstH = static_cast<i32>(scaledY1) - dstY;
 
-	const f32 zValue = (options.pos.z == 0.0f) ? DEFAULT_ZCOORD : options.pos.z;
-	const f32 zNorm = 1.0f - (zValue / ZCOORD_MAX);
 	softBackend->blitTexture(tex, srcX, srcY, srcW, srcH, dstX, dstY, dstW,
 							 dstH, zNorm, colorize, flip.flip_h, flip.flip_v,
 							 dither, useDepth);
