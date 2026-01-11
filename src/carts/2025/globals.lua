@@ -56,6 +56,7 @@ combat_intro_ticks_per_frame = 24
 combat_intro_maya_b_start_scale = 1.08
 combat_intro_maya_b_end_scale = 0.9
 combat_intro_maya_a_scale_ratio = 0.6
+combat_intro_monster_start_y_offset = 24
 combat_intro_monster_arc_x = 24
 combat_intro_monster_arc_y = 8
 combat_intro_maya_a_arc_x = -12

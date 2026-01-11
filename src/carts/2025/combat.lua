@@ -69,8 +69,10 @@ local function refresh_combat_parallax(self)
 		flip_strength = combat_parallax_flip_strength
 	end
 	local hero = object(combat_maya_a_id)
+	local hero_b = object(combat_maya_b_id)
 	local monster = object(combat_monster_id)
 	hero.sprite_component.parallax_weight = hero_weight
+	hero_b.sprite_component.parallax_weight = hero_weight
 	monster.sprite_component.parallax_weight = monster_weight
 	self:play_timeline(combat_parallax_timeline_id, {
 		rewind = true,
@@ -100,8 +102,10 @@ function combat_director:disable_combat_parallax()
 	self:stop_timeline(combat_parallax_timeline_id)
 	set_sprite_parallax_rig(0, 1, 0, 0, 0, 1, 1, 0, combat_parallax_flip_window_seconds)
 	local hero = object(combat_maya_a_id)
+	local hero_b = object(combat_maya_b_id)
 	local monster = object(combat_monster_id)
 	hero.sprite_component.parallax_weight = 0
+	hero_b.sprite_component.parallax_weight = 0
 	monster.sprite_component.parallax_weight = 0
 end
 
@@ -454,11 +458,11 @@ function combat.define_fsm()
 			monster.x = (display_width() * 0.65) - (monster.sx / 2)
 			monster.y = (display_height() * 0.25) - (monster.sy / 3)
 
-			self.combat_monster_base_x = monster.x
-			self.combat_monster_base_y = monster.y
-			self.combat_monster_start_x = (display_width() * 0.2) - (monster.sx / 2)
-			self.combat_monster_start_y = self.combat_monster_base_y
-			self.combat_monster_start_scale = math.max(1, display_width() / monster.sx, display_height() / monster.sy)
+				self.combat_monster_base_x = monster.x
+				self.combat_monster_base_y = monster.y
+				self.combat_monster_start_x = (display_width() * 0.2) - (monster.sx / 2)
+				self.combat_monster_start_y = self.combat_monster_base_y + combat_intro_monster_start_y_offset
+				self.combat_monster_start_scale = math.max(1, display_width() / monster.sx, display_height() / monster.sy)
 
 			local maya_a = object(combat_maya_a_id)
 			maya_a:set_image('maya_a')
