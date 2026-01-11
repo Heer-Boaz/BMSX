@@ -83,3 +83,4 @@ src/bmsx_cpp/build/
 
 # System roots for cross-compilation
 .snesmini
+tools/retroarch-gles2
