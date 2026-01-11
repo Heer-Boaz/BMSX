@@ -208,8 +208,8 @@ function builders.build_combat_focus_frames(params)
 	return frames
 end
 
-function builders.build_combat_intro_frames(params)
-	local frames = {}
+	function builders.build_combat_intro_frames(params)
+		local frames = {}
 
 	local monster_sx = params.monster_sx
 	local monster_sy = params.monster_sy
@@ -237,18 +237,25 @@ function builders.build_combat_intro_frames(params)
 	local monster_hidden_x = monster_start_x - monster_start_ox
 	local monster_hidden_y = monster_start_y - monster_start_oy
 
-	local maya_a_hidden_y = maya_a_base_y - (maya_a_sy * (maya_a_start_scale - 1))
+		local maya_a_hidden_y = maya_a_base_y - (maya_a_sy * (maya_a_start_scale - 1))
+			local hold_frames = combat_intro_hold_frames
+			local maya_b_motion_frames = combat_intro_maya_b_frames - hold_frames
 
-	for i = 0, combat_intro_maya_b_frames - 1 do
-		local u = i / (combat_intro_maya_b_frames - 1)
-		local eased = easing.smoothstep(u)
-		local turn = easing.arc01(u)
-		local s = maya_b_start_scale + (maya_b_end_scale - maya_b_start_scale) * eased
-		local right_x = maya_b_start_right_x + (maya_b_exit_right_x - maya_b_start_right_x) * eased
-		local x = right_x - (maya_b_sx * s)
-		local y = maya_b_base_y - (maya_b_sy * (s - 1)) + (combat_intro_maya_b_arc_y * turn)
+			for i = 0, combat_intro_maya_b_frames - 1 do
+				local u = 0
+				if i >= hold_frames then
+					u = (i - hold_frames) / (maya_b_motion_frames - 1)
+				end
+				local eased = easing.smoothstep(u)
+				local whoosh = easing.ease_out_back(eased)
+				local move = eased + ((whoosh - eased) * combat_intro_whoosh_strength)
+				local turn = easing.arc01(u)
+				local s = maya_b_start_scale + (maya_b_end_scale - maya_b_start_scale) * eased
+				local right_x = maya_b_start_right_x + (maya_b_exit_right_x - maya_b_start_right_x) * move
+				local x = right_x - (maya_b_sx * s)
+				local y = maya_b_base_y - (maya_b_sy * (s - 1)) + (combat_intro_maya_b_arc_y * turn)
 
-		frames[#frames + 1] = {
+				frames[#frames + 1] = {
 			monster = {
 				visible = false,
 				x = monster_hidden_x,
@@ -268,24 +275,26 @@ function builders.build_combat_intro_frames(params)
 				sprite_component = { scale = { x = s, y = s } },
 			},
 		}
-	end
+		end
 
-	for i = 0, combat_intro_reveal_frames - 1 do
-		local u = i / (combat_intro_reveal_frames - 1)
-		local eased = easing.smoothstep(u)
-		local turn = easing.arc01(u)
+			for i = 0, combat_intro_reveal_frames - 1 do
+				local u = i / (combat_intro_reveal_frames - 1)
+				local eased = easing.smoothstep(u)
+				local whoosh = easing.ease_out_back(eased)
+				local move = eased + ((whoosh - eased) * combat_intro_whoosh_strength)
+				local turn = easing.arc01(u)
 
-		local monster_scale = monster_start_scale + (1 - monster_start_scale) * eased
-		local monster_ox = (monster_sx * (monster_scale - 1)) / 2
-		local monster_oy = (monster_sy * (monster_scale - 1)) / 2
-		local monster_x = monster_start_x + (monster_base_x - monster_start_x) * eased + (combat_intro_monster_arc_x * turn) - monster_ox
-		local monster_y = monster_start_y + (monster_base_y - monster_start_y) * eased + (combat_intro_monster_arc_y * turn) - monster_oy
+				local monster_scale = monster_start_scale + (1 - monster_start_scale) * eased
+				local monster_ox = (monster_sx * (monster_scale - 1)) / 2
+				local monster_oy = (monster_sy * (monster_scale - 1)) / 2
+				local monster_x = monster_start_x + (monster_base_x - monster_start_x) * move + (combat_intro_monster_arc_x * turn) - monster_ox
+				local monster_y = monster_start_y + (monster_base_y - monster_start_y) * eased + (combat_intro_monster_arc_y * turn) - monster_oy
 
-		local maya_a_scale = maya_a_start_scale + (1 - maya_a_start_scale) * eased
-		local maya_a_x = maya_a_start_x + (maya_a_base_x - maya_a_start_x) * eased + (combat_intro_maya_a_arc_x * turn)
-		local maya_a_y = maya_a_base_y - (maya_a_sy * (maya_a_scale - 1)) + (combat_intro_maya_a_arc_y * turn)
+				local maya_a_scale = maya_a_start_scale + (1 - maya_a_start_scale) * eased
+				local maya_a_x = maya_a_start_x + (maya_a_base_x - maya_a_start_x) * move + (combat_intro_maya_a_arc_x * turn)
+				local maya_a_y = maya_a_base_y - (maya_a_sy * (maya_a_scale - 1)) + (combat_intro_maya_a_arc_y * turn)
 
-		frames[#frames + 1] = {
+				frames[#frames + 1] = {
 			monster = {
 				visible = true,
 				x = monster_x,
@@ -364,9 +373,6 @@ function builders.build_combat_exchange_frames(params)
 	local monster_base_y = params.monster_base_y
 	local maya_base_x = params.maya_base_x
 	local maya_base_y = params.maya_base_y
-	local impact_start = math.floor(frame_count * combat_exchange_impact_start_ratio)
-	local impact_end = math.floor(frame_count * combat_exchange_impact_end_ratio)
-	local impact_frames = impact_end - impact_start + 1
 	local maya_hold_frames = params.maya_hold_frames or 0
 	local maya_recover_frames = params.maya_recover_frames or 0
 	local maya_bob_amp = params.maya_bob_amp
@@ -375,14 +381,31 @@ function builders.build_combat_exchange_frames(params)
 	local maya_react_scale_y = params.maya_react_scale_y
 	local maya_impact_scale_x = params.maya_impact_scale_x
 	local maya_impact_scale_y = params.maya_impact_scale_y
-	local maya_hold_end = impact_end + maya_hold_frames
-	local maya_recover_end = maya_hold_end + maya_recover_frames
 	local anticipate_frames = combat_exchange_anticipate_frames
 	local lunge_frames = combat_exchange_lunge_frames
 	local hitstop_frames = combat_exchange_hitstop_frames
 	local recover_frames = frame_count - anticipate_frames - lunge_frames - hitstop_frames
 	local lunge_end = anticipate_frames + lunge_frames
 	local hitstop_end = lunge_end + hitstop_frames
+	local impact_start = lunge_end
+	local impact_end = (frame_count - 1) - (maya_hold_frames + maya_recover_frames)
+	if impact_end < impact_start then
+		error("[combat_exchange] impact window does not fit: impact_end=" .. impact_end .. ", impact_start=" .. impact_start .. ", frame_count=" .. frame_count)
+	end
+	local impact_frames = impact_end - impact_start + 1
+	if impact_frames <= 1 then
+		error("[combat_exchange] impact window too short: impact_frames=" .. impact_frames .. ", frame_count=" .. frame_count)
+	end
+	local maya_hold_end = impact_end + maya_hold_frames
+	local maya_recover_end = maya_hold_end + maya_recover_frames
+
+	local function ease_u(u, frames)
+		local e = easing.smoothstep(u)
+		if frames <= 6 then
+			e = easing.smoothstep(e)
+		end
+		return e
+	end
 
 	for i = 0, frame_count - 1 do
 		local lunge = 0
@@ -402,18 +425,18 @@ function builders.build_combat_exchange_frames(params)
 		local impact_u = 0
 		if i >= impact_start and i <= impact_end then
 			local ru = (i - impact_start) / (impact_frames - 1)
-			impact_u = easing.arc01(ru)
+			impact_u = easing.arc01(ease_u(ru, impact_frames))
 		end
 
 		local maya_u = 0
 		if i >= impact_start and i <= impact_end then
 			local ru = (i - impact_start) / (impact_frames - 1)
-			maya_u = easing.ease_out_quad(ru)
+			maya_u = ease_u(ru, impact_frames)
 		elseif i > impact_end and i <= maya_hold_end then
 			maya_u = 1
 		elseif i > maya_hold_end and i <= maya_recover_end and maya_recover_frames > 0 then
 			local ru = (i - maya_hold_end) / (maya_recover_frames - 1)
-			maya_u = 1 - easing.ease_in_quad(ru)
+			maya_u = 1 - ease_u(ru, maya_recover_frames)
 		end
 
 		local forward = lunge
@@ -442,16 +465,16 @@ function builders.build_combat_exchange_frames(params)
 		local overlay_alpha = 0
 		local bob = 0
 
-		if maya_u > 0 then
-			maya_x = maya_x + (params.maya_offset_x * maya_u)
-			maya_y = maya_y + (params.maya_offset_y * maya_u)
-			maya_scale = {
-				x = 1 + (maya_react_scale_x * maya_u),
-				y = 1 + (maya_react_scale_y * maya_u),
-			}
-			local bob_u = easing.pingpong01((i - impact_start) / maya_bob_period_frames)
-			bob = (bob_u - 0.5) * 2 * maya_bob_amp
-		end
+			if maya_u > 0 then
+				maya_x = maya_x + (params.maya_offset_x * maya_u)
+				maya_y = maya_y + (params.maya_offset_y * maya_u)
+				maya_scale = {
+					x = 1 + (maya_react_scale_x * maya_u),
+					y = 1 + (maya_react_scale_y * maya_u),
+				}
+				local bob_u = easing.smoothstep(easing.pingpong01((i - impact_start) / maya_bob_period_frames))
+				bob = (bob_u - 0.5) * 2 * maya_bob_amp
+			end
 
 		if impact_u > 0 then
 			if params.squash then
