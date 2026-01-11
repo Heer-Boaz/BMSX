@@ -25,7 +25,6 @@ import { requestSemanticRefresh } from './intellisense';
 import { resetBlink } from './render/render_caret';
 import { listResources } from '../workspace';
 import { BmsxVMRuntime } from '../vm_runtime';
-import { $ } from '../../core/engine_core';
 import { PieceTreeBuffer } from './piece_tree_buffer';
 
 function resolvePath(descriptor: VMResourceDescriptor): string {
@@ -39,8 +38,10 @@ function resolveSource(descriptor: VMResourceDescriptor): string {
 }
 
 export function createEntryTabContext(): CodeTabContext {
+	const runtime = BmsxVMRuntime.instance;
 	const luaDescriptors = listResources().filter(r => r.type === 'lua');
-	const descriptor = luaDescriptors.find(r => r.path === $.lua_sources.entry_path)!;
+	const preferredRegistry = runtime.listLuaSourceRegistries()[0].registry;
+	const descriptor = luaDescriptors.find(r => r.path === preferredRegistry.entry_path)!;
 	return createLuaCodeTabContext(descriptor);
 }
 
