@@ -6,6 +6,78 @@ local timeline_module = require("timeline")
 local eventemitter = eventemitter.eventemitter
 local timeline = timeline_module.timeline
 
+local function apply_frame(target, frame)
+	for k, v in pairs(frame) do
+		if type(v) == "table" then
+			apply_frame(target[k], v)
+		else
+			target[k] = v
+		end
+	end
+end
+
+local function set_path(target, path, value)
+	local node = target
+	for i = 1, #path - 1 do
+		node = node[path[i]]
+	end
+	node[path[#path]] = value
+end
+
+local function eval_wave(track, time_seconds)
+	local u = (time_seconds / track.period) + (track.phase or 0)
+	local w = nil
+	if track.wave == "pingpong" then
+		w = easing.pingpong01(u)
+	elseif track.wave == "sin" then
+		w = (math.sin(u * (math.pi * 2)) + 1) * 0.5
+	else
+		error("[timelinecomponent] unknown wave '" .. tostring(track.wave) .. "'.")
+	end
+	local ease = track.ease
+	if ease ~= nil then
+		w = ease(w)
+	end
+	return w
+end
+
+local function apply_track(target, track, params, event)
+	if type(track) == "function" then
+		track(target, params, event)
+		return
+	end
+	local kind = track.kind
+	if kind == "wave" then
+		local base = track.base
+		local base_value = type(base) == "string" and params[base] or base
+		local w = eval_wave(track, event.time_seconds)
+		local value = base_value + ((w - 0.5) * 2 * track.amp)
+		set_path(target, track.path, value)
+		return
+	end
+	if kind == "sprite_parallax_rig" then
+		set_sprite_parallax_rig(
+			params.vy,
+			params.scale,
+			params.impact,
+			event.time_seconds,
+			params.bias_px,
+			params.parallax_strength,
+			params.scale_strength,
+			params.flip_strength,
+			params.flip_window
+		)
+		return
+	end
+	error("[timelinecomponent] unknown track kind '" .. tostring(kind) .. "'.")
+end
+
+local function apply_tracks(target, tracks, params, event)
+	for i = 1, #tracks do
+		apply_track(target, tracks[i], params, event)
+	end
+end
+
 local component = {}
 component.__index = component
 
@@ -138,7 +210,14 @@ end
 function timelinecomponent:define(definition)
 	local instance = definition.__is_timeline and definition or timeline.new(definition)
 	local markers = timeline_module.compile_timeline_markers(instance.def, instance.length)
-	self.registry[instance.id] = { instance = instance, markers = markers }
+	self.registry[instance.id] = {
+		instance = instance,
+		markers = markers,
+		apply = instance.def.apply,
+		target = instance.def.target,
+		params = instance.def.params,
+		tracks = instance.def.tracks,
+	}
 end
 
 function timelinecomponent:get(id)
@@ -156,6 +235,7 @@ function timelinecomponent:play(id, opts)
 	local rewind = true
 	local snap = true
 	local params = nil
+	local target = entry.target
 	if opts ~= nil then
 		if opts.rewind ~= nil then
 			rewind = opts.rewind
@@ -166,11 +246,19 @@ function timelinecomponent:play(id, opts)
 		if opts.params ~= nil then
 			params = opts.params
 		end
-	end
-	if instance.frame_builder then
-		if params == nil then
-			params = instance.def.params
+		if opts.target ~= nil then
+			target = opts.target
 		end
+	end
+	if params == nil then
+		params = instance.def.params
+	end
+	if target == nil then
+		target = owner
+	end
+	entry.params = params
+	entry.target = target
+	if instance.frame_builder then
 		instance:build(params)
 		entry.markers = timeline_module.compile_timeline_markers(instance.def, instance.length)
 	end
@@ -182,7 +270,7 @@ function timelinecomponent:play(id, opts)
 		instance:rewind()
 	end
 	if snap and instance.length > 0 then
-		self:process_events(entry, instance:snap_to_start())
+		self:process_events(entry, instance:snap_to_start(), 0)
 	end
 	self.active[id] = true
 	return instance
@@ -205,13 +293,18 @@ function timelinecomponent:tick_active(dt)
 		local entry = self.registry[id]
 		local events = entry.instance:tick(dt)
 		if #events > 0 then
-			self:process_events(entry, events)
+			self:process_events(entry, events, dt)
 		end
 	end
 end
 
-function timelinecomponent:process_events(entry, events)
+function timelinecomponent:process_events(entry, events, dt)
 	local owner = self.parent
+	local target = entry.target or owner
+	local dt_ms = dt
+	local dt_seconds = dt_ms / 1000
+	local time_ms = entry.instance.time_ms
+	local time_seconds = time_ms / 1000
 	for i = 1, #events do
 		local evt = events[i]
 		if evt.kind == "frame" then
@@ -222,8 +315,23 @@ function timelinecomponent:process_events(entry, events)
 				rewound = evt.rewound,
 				reason = evt.reason,
 				direction = evt.direction,
+				dt = dt_ms,
+				dt_seconds = dt_seconds,
+				time_ms = time_ms,
+				time_seconds = time_seconds,
 			}
 			self:apply_markers(entry, evt)
+			local tracks = entry.tracks
+			if tracks ~= nil then
+				apply_tracks(target, tracks, entry.params, payload)
+			end
+			if entry.apply then
+				if entry.apply == true then
+					apply_frame(target, payload.frame_value)
+				else
+					entry.apply(target, payload.frame_value, entry.params, payload)
+				end
+			end
 			self:emit_frameevent(owner, payload)
 		else
 			local payload = {

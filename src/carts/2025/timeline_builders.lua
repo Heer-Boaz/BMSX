@@ -136,7 +136,11 @@ function builders.build_combat_fade_frames()
 			local u = frame_index / (combat_fade_out_frames - 1)
 			c = 1 - easing.smoothstep(u)
 		end
-		frames[#frames + 1] = { c = c }
+		frames[#frames + 1] = {
+			sprite_component = {
+				colorize = { r = c, g = c, b = c, a = 1 },
+			},
+		}
 	end
 	return frames
 end
@@ -144,18 +148,19 @@ end
 function builders.build_combat_focus_frames(params)
 	local frames = {}
 
-	local monster = params.monster
 	local base_x = params.base_x
 	local base_y = params.base_y
+	local monster_sx = params.monster_sx
+	local monster_sy = params.monster_sy
 
 	local zoom_scale = combat_focus_zoom_scale
-	local zoom_target_x = (display_width() - (monster.sx * zoom_scale)) / 2
-	local zoom_target_y = (display_height() - (monster.sy * zoom_scale)) / 2
+	local zoom_target_x = (display_width() - (monster_sx * zoom_scale)) / 2
+	local zoom_target_y = (display_height() - (monster_sy * zoom_scale)) / 2
 
 	local vanish_scale_x = combat_focus_vanish_scale_x
 	local vanish_scale_y = combat_focus_vanish_scale_y
 	local vanish_center_x = display_width() / 2
-	local vanish_bottom_y = zoom_target_y + (monster.sy * zoom_scale)
+	local vanish_bottom_y = zoom_target_y + (monster_sy * zoom_scale)
 
 	for i = 0, combat_focus_zoom_frames - 1 do
 		local u = i / (combat_focus_zoom_frames - 1)
@@ -169,8 +174,10 @@ function builders.build_combat_focus_frames(params)
 			visible = true,
 			x = x,
 			y = y,
-			scale = { x = s, y = s },
-			colorize = { r = 1, g = 1, b = 1, a = 1 },
+			sprite_component = {
+				colorize = { r = 1, g = 1, b = 1, a = 1 },
+				scale = { x = s, y = s },
+			},
 		}
 	end
 
@@ -183,16 +190,18 @@ function builders.build_combat_focus_frames(params)
 		local sy = zoom_scale + ((vanish_scale_y - zoom_scale) * melt)
 		local center_x = vanish_center_x + (combat_focus_vanish_arc_x * turn)
 		local bottom_y = vanish_bottom_y + (combat_focus_vanish_lift * melt) + (combat_focus_vanish_arc_y * turn)
-		local x = center_x - (monster.sx * sx) / 2
-		local y = bottom_y - (monster.sy * sy)
+		local x = center_x - (monster_sx * sx) / 2
+		local y = bottom_y - (monster_sy * sy)
 		local alpha = 1 - easing.ease_in_quad(u)
 
 		frames[#frames + 1] = {
 			visible = alpha > 0,
 			x = x,
 			y = y,
-			scale = { x = sx, y = sy },
-			colorize = { r = 1, g = 1, b = 1, a = alpha },
+			sprite_component = {
+				colorize = { r = 1, g = 1, b = 1, a = alpha },
+				scale = { x = sx, y = sy },
+			},
 		}
 	end
 
@@ -202,9 +211,11 @@ end
 function builders.build_combat_intro_frames(params)
 	local frames = {}
 
-	local monster = params.monster
-	local maya_a = params.maya_a
-	local maya_b = params.maya_b
+	local monster_sx = params.monster_sx
+	local monster_sy = params.monster_sy
+	local maya_a_sy = params.maya_a_sy
+	local maya_b_sx = params.maya_b_sx
+	local maya_b_sy = params.maya_b_sy
 	local monster_start_scale = params.monster_start_scale
 	local monster_start_x = params.monster_start_x
 	local monster_start_y = params.monster_start_y
@@ -221,12 +232,12 @@ function builders.build_combat_intro_frames(params)
 	local maya_b_base_x = params.maya_b_base_x
 	local maya_b_base_y = params.maya_b_base_y
 
-	local monster_start_ox = (monster.sx * (monster_start_scale - 1)) / 2
-	local monster_start_oy = (monster.sy * (monster_start_scale - 1)) / 2
+	local monster_start_ox = (monster_sx * (monster_start_scale - 1)) / 2
+	local monster_start_oy = (monster_sy * (monster_start_scale - 1)) / 2
 	local monster_hidden_x = monster_start_x - monster_start_ox
 	local monster_hidden_y = monster_start_y - monster_start_oy
 
-	local maya_a_hidden_y = maya_a_base_y - (maya_a.sy * (maya_a_start_scale - 1))
+	local maya_a_hidden_y = maya_a_base_y - (maya_a_sy * (maya_a_start_scale - 1))
 
 	for i = 0, combat_intro_maya_b_frames - 1 do
 		local u = i / (combat_intro_maya_b_frames - 1)
@@ -234,22 +245,28 @@ function builders.build_combat_intro_frames(params)
 		local turn = easing.arc01(u)
 		local s = maya_b_start_scale + (maya_b_end_scale - maya_b_start_scale) * eased
 		local right_x = maya_b_start_right_x + (maya_b_exit_right_x - maya_b_start_right_x) * eased
-		local x = right_x - (maya_b.sx * s)
-		local y = maya_b_base_y - (maya_b.sy * (s - 1)) + (combat_intro_maya_b_arc_y * turn)
+		local x = right_x - (maya_b_sx * s)
+		local y = maya_b_base_y - (maya_b_sy * (s - 1)) + (combat_intro_maya_b_arc_y * turn)
 
 		frames[#frames + 1] = {
-			monster_visible = false,
-			monster_x = monster_hidden_x,
-			monster_y = monster_hidden_y,
-			monster_scale = monster_start_scale,
-			maya_a_visible = false,
-			maya_a_x = maya_a_start_x,
-			maya_a_y = maya_a_hidden_y,
-			maya_a_scale = maya_a_start_scale,
-			maya_b_visible = true,
-			maya_b_x = x,
-			maya_b_y = y,
-			maya_b_scale = s,
+			monster = {
+				visible = false,
+				x = monster_hidden_x,
+				y = monster_hidden_y,
+				sprite_component = { scale = { x = monster_start_scale, y = monster_start_scale } },
+			},
+			maya_a = {
+				visible = false,
+				x = maya_a_start_x,
+				y = maya_a_hidden_y,
+				sprite_component = { scale = { x = maya_a_start_scale, y = maya_a_start_scale } },
+			},
+			maya_b = {
+				visible = true,
+				x = x,
+				y = y,
+				sprite_component = { scale = { x = s, y = s } },
+			},
 		}
 	end
 
@@ -259,28 +276,34 @@ function builders.build_combat_intro_frames(params)
 		local turn = easing.arc01(u)
 
 		local monster_scale = monster_start_scale + (1 - monster_start_scale) * eased
-		local monster_ox = (monster.sx * (monster_scale - 1)) / 2
-		local monster_oy = (monster.sy * (monster_scale - 1)) / 2
+		local monster_ox = (monster_sx * (monster_scale - 1)) / 2
+		local monster_oy = (monster_sy * (monster_scale - 1)) / 2
 		local monster_x = monster_start_x + (monster_base_x - monster_start_x) * eased + (combat_intro_monster_arc_x * turn) - monster_ox
 		local monster_y = monster_start_y + (monster_base_y - monster_start_y) * eased + (combat_intro_monster_arc_y * turn) - monster_oy
 
 		local maya_a_scale = maya_a_start_scale + (1 - maya_a_start_scale) * eased
 		local maya_a_x = maya_a_start_x + (maya_a_base_x - maya_a_start_x) * eased + (combat_intro_maya_a_arc_x * turn)
-		local maya_a_y = maya_a_base_y - (maya_a.sy * (maya_a_scale - 1)) + (combat_intro_maya_a_arc_y * turn)
+		local maya_a_y = maya_a_base_y - (maya_a_sy * (maya_a_scale - 1)) + (combat_intro_maya_a_arc_y * turn)
 
 		frames[#frames + 1] = {
-			monster_visible = true,
-			monster_x = monster_x,
-			monster_y = monster_y,
-			monster_scale = monster_scale,
-			maya_a_visible = true,
-			maya_a_x = maya_a_x,
-			maya_a_y = maya_a_y,
-			maya_a_scale = maya_a_scale,
-			maya_b_visible = false,
-			maya_b_x = maya_b_base_x,
-			maya_b_y = maya_b_base_y,
-			maya_b_scale = 1,
+			monster = {
+				visible = true,
+				x = monster_x,
+				y = monster_y,
+				sprite_component = { scale = { x = monster_scale, y = monster_scale } },
+			},
+			maya_a = {
+				visible = true,
+				x = maya_a_x,
+				y = maya_a_y,
+				sprite_component = { scale = { x = maya_a_scale, y = maya_a_scale } },
+			},
+			maya_b = {
+				visible = false,
+				x = maya_b_base_x,
+				y = maya_b_base_y,
+				sprite_component = { scale = { x = 1, y = 1 } },
+			},
 		}
 	end
 
@@ -290,6 +313,7 @@ end
 function builders.build_combat_dodge_frames(params)
 	local frames = {}
 	local dir = params.dir
+	local base_x = params.base_x
 	local anticipate_frames = combat_dodge_anticipation_frames
 	local peak_frames = combat_dodge_peak_frames
 	local recover_frames = combat_dodge_recover_frames
@@ -324,7 +348,10 @@ function builders.build_combat_dodge_frames(params)
 			scale_x = 1 + (combat_dodge_move_scale_x * t)
 			scale_y = 1 + (combat_dodge_move_scale_y * t)
 		end
-		frames[#frames + 1] = { offset = offset, scale_x = scale_x, scale_y = scale_y }
+		frames[#frames + 1] = {
+			x = base_x + offset,
+			sprite_component = { scale = { x = scale_x, y = scale_y } },
+		}
 	end
 
 	return frames
@@ -449,17 +476,29 @@ function builders.build_combat_exchange_frames(params)
 		end
 		maya_y = maya_y + bob
 
+		local overlay_colorize = { r = 0, g = 0, b = 0, a = 0 }
+		if overlay_alpha > 0 then
+			overlay_colorize = { r = params.flash_r, g = params.flash_g, b = params.flash_b, a = overlay_alpha }
+		end
+
 		frames[#frames + 1] = {
-			monster_x = monster_x,
-			monster_y = monster_y,
-			monster_scale = { x = s, y = s },
-			monster_colorize = { r = 1, g = 1, b = 1, a = 1 },
-			maya_x = maya_x,
-			maya_y = maya_y,
-			maya_scale = maya_scale,
-			maya_colorize = maya_colorize,
-			impact_u = impact_u,
-			overlay_alpha = overlay_alpha,
+			monster = {
+				x = monster_x,
+				y = monster_y,
+				sprite_component = {
+					colorize = { r = 1, g = 1, b = 1, a = 1 },
+					scale = { x = s, y = s },
+				},
+			},
+			maya_a = {
+				x = maya_x,
+				y = maya_y,
+				sprite_component = {
+					colorize = maya_colorize,
+					scale = maya_scale,
+				},
+			},
+			overlay = { sprite_component = { colorize = overlay_colorize } },
 		}
 	end
 
@@ -487,7 +526,11 @@ function builders.build_combat_all_out_frames(params)
 		local sy = s_base - (squash * combat_all_out_pulse_amp * 0.4) - (jitter * 0.6)
 		local ox = (sprite_w * (sx - 1)) / 2
 		local oy = (sprite_h * (sy - 1)) / 2
-		frames[#frames + 1] = { x = origin_x + dx - ox, y = origin_y + dy - oy, sx = sx, sy = sy }
+		frames[#frames + 1] = {
+			x = origin_x + dx - ox,
+			y = origin_y + dy - oy,
+			sprite_component = { scale = { x = sx, y = sy } },
+		}
 	end
 
 	return frames
@@ -552,9 +595,9 @@ function builders.build_combat_hit_frames(params)
 		end
 
 		local slash_active = frame_index >= slash_start and frame_index <= slash_end
-		local slash_points = nil
+		local slash_points = { 0, 0, 0, 0 }
 		local slash_thickness = 0
-		local slash_color = nil
+		local slash_color = { r = 1, g = 1, b = 1, a = 0 }
 		if slash_active then
 			local u = (frame_index - slash_start) / (slash_end - slash_start)
 			local arc = easing.arc01(u)
@@ -572,15 +615,21 @@ function builders.build_combat_hit_frames(params)
 		end
 
 		frames[#frames + 1] = {
-			monster_x = monster_x,
-			monster_y = monster_y,
-			monster_scale = monster_scale,
-			monster_colorize = monster_colorize,
-			slash_active = slash_active,
-			slash_points = slash_points,
-			slash_thickness = slash_thickness,
-			slash_color = slash_color,
-			slash_z = combat_hit_slash_z,
+			monster = {
+				x = monster_x,
+				y = monster_y,
+				sprite_component = {
+					colorize = monster_colorize,
+					scale = monster_scale,
+				},
+			},
+			slash_frame = {
+				slash_active = slash_active,
+				slash_points = slash_points,
+				slash_thickness = slash_thickness,
+				slash_color = slash_color,
+				slash_z = combat_hit_slash_z,
+			},
 		}
 	end
 
@@ -598,10 +647,17 @@ function builders.build_combat_results_fade_in_frames(params)
 		local u = frame_index / (combat_results_fade_in_frames - 1)
 		local a = easing.smoothstep(u)
 		frames[#frames + 1] = {
-			a = a,
-			bg_a = combat_results_bg_a * a,
-			maya_x = maya_start_x + (maya_target_x - maya_start_x) * a,
-			text_x = text_start_x + (text_target_x - text_start_x) * a,
+			bg = {
+				sprite_component = { colorize = { r = combat_results_bg_r, g = combat_results_bg_g, b = combat_results_bg_b, a = combat_results_bg_a * a } },
+			},
+			maya_b = {
+				sprite_component = { colorize = { r = 1, g = 1, b = 1, a = a } },
+				x = maya_start_x + (maya_target_x - maya_start_x) * a,
+			},
+			results = {
+				text_color = { r = 1, g = 1, b = 1, a = a },
+				centered_block_x = text_start_x + (text_target_x - text_start_x) * a,
+			},
 		}
 	end
 
@@ -613,7 +669,17 @@ function builders.build_combat_results_fade_out_frames()
 	for frame_index = 0, combat_results_fade_out_frames - 1 do
 		local u = frame_index / (combat_results_fade_out_frames - 1)
 		local a = 1 - easing.smoothstep(u)
-		frames[#frames + 1] = { a = a, bg_a = combat_results_bg_a * a }
+		frames[#frames + 1] = {
+			bg = {
+				sprite_component = { colorize = { r = combat_results_bg_r, g = combat_results_bg_g, b = combat_results_bg_b, a = combat_results_bg_a * a } },
+			},
+			maya_b = {
+				sprite_component = { colorize = { r = 1, g = 1, b = 1, a = a } },
+			},
+			results = {
+				text_color = { r = 1, g = 1, b = 1, a = a },
+			},
+		}
 	end
 	return frames
 end
@@ -623,14 +689,17 @@ function builders.build_combat_exit_fade_in_frames()
 	for frame_index = 0, combat_exit_fade_in_frames - 1 do
 		local u = frame_index / (combat_exit_fade_in_frames - 1)
 		local c = easing.smoothstep(u)
-		frames[#frames + 1] = { c = c }
+		frames[#frames + 1] = {
+			sprite_component = {
+				colorize = { r = c, g = c, b = c, a = 1 },
+			},
+		}
 	end
 	return frames
 end
 
 function builders.build_transition_frames(params)
 	local frames = {}
-	local frame_count = params.frame_count
 	local fade_out_frames = params.fade_out_frames
 	local fade_in_frames = params.fade_in_frames
 	local fade_in_start = params.fade_in_start
@@ -648,7 +717,7 @@ function builders.build_transition_frames(params)
 	local base = palette.overlay
 	local accent = palette.accent
 
-	for frame_index = 0, frame_count - 1 do
+	for frame_index = 0, finish_frame do
 		local fade_alpha = 1
 		if not skip_fade then
 			if frame_index < fade_out_frames then
@@ -671,7 +740,12 @@ function builders.build_transition_frames(params)
 		for i = 1, #panels do
 			local panel = panels[i]
 			local x, y, a = panel_motion(frame_index, panel, transition_panel_in_frames, transition_panel_hold_frames, transition_panel_out_frames)
-			panel_states[i] = { x = x, y = y, a = a }
+			panel_states[i] = {
+				visible = a > 0,
+				x = x,
+				y = y,
+				sprite_component = { colorize = { r = panel.color.r, g = panel.color.g, b = panel.color.b, a = a } },
+			}
 		end
 
 		local ax, ay, aa = panel_motion(frame_index, accent_panel, transition_accent_in_frames, transition_accent_hold_frames, transition_accent_out_frames)
@@ -689,12 +763,15 @@ function builders.build_transition_frames(params)
 		end
 
 		frames[#frames + 1] = {
-			overlay = { r = overlay_r, g = overlay_g, b = overlay_b, a = fade_alpha },
+			overlay = { sprite_component = { colorize = { r = overlay_r, g = overlay_g, b = overlay_b, a = fade_alpha } } },
 			panels = panel_states,
-			accent = { x = ax, y = ay, a = aa },
-			text_x = text_x,
-			swap = (not skip_fade) and (frame_index == swap_frame),
-			finish = frame_index == finish_frame,
+			accent = {
+				visible = aa > 0,
+				x = ax,
+				y = ay,
+				sprite_component = { colorize = { r = accent_panel.color.r, g = accent_panel.color.g, b = accent_panel.color.b, a = aa } },
+			},
+			text = { centered_block_x = text_x },
 		}
 	end
 
@@ -708,7 +785,7 @@ function builders.build_transition_fade_in_frames(palette)
 		local u = frame_index / (overgang_fade_in_frames - 1)
 		local a = 1 - easing.smoothstep(u)
 		frames[#frames + 1] = {
-			overlay = { r = base.r, g = base.g, b = base.b, a = a },
+			overlay = { sprite_component = { colorize = { r = base.r, g = base.g, b = base.b, a = a } } },
 		}
 	end
 	return frames
@@ -743,8 +820,7 @@ function builders.build_fade_frames(params)
 		local overlay_g = base.g + (accent.g - base.g) * mix
 		local overlay_b = base.b + (accent.b - base.b) * mix
 		frames[#frames + 1] = {
-			overlay = { r = overlay_r, g = overlay_g, b = overlay_b, a = a },
-			swap = frame_index == swap_frame,
+			overlay = { sprite_component = { colorize = { r = overlay_r, g = overlay_g, b = overlay_b, a = a } } },
 		}
 	end
 

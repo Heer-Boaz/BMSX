@@ -262,8 +262,8 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		this.spriteAmbientEnabledDefault = !!enabled;
 		this.spriteAmbientFactorDefault = Math.max(0, Math.min(1, factor));
 	}
-	public setSpriteParallaxRig(vy: number, scale: number, impact: number, impact_t: number): void {
-		render_queues.setSpriteParallaxRig(vy, scale, impact, impact_t);
+	public setSpriteParallaxRig(vy: number, scale: number, impact: number, impact_t: number, bias_px: number, parallax_strength: number, scale_strength: number, flip_strength: number, flip_window: number): void {
+		render_queues.setSpriteParallaxRig(vy, scale, impact, impact_t, bias_px, parallax_strength, scale_strength, flip_strength, flip_window);
 	}
 
 	private applyPresentationPassState(): void {

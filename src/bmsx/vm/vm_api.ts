@@ -626,8 +626,11 @@ export class BmsxVMApi {
 		$.sndmaster.volume = volume;
 	}
 
-	public set_sprite_parallax_rig(vy: number, scale: number, impact: number, impact_t: number): void {
-		$.view.setSpriteParallaxRig(vy, scale, impact, impact_t);
+	public set_sprite_parallax_rig(vy: number, scale: number, impact: number, impact_t: number, bias_px: number, parallax_strength: number, scale_strength: number, flip_strength: number, flip_window: number): void {
+		if (arguments.length !== 9) {
+			throw new Error('set_sprite_parallax_rig(vy, scale, impact, impact_t, bias_px, parallax_strength, scale_strength, flip_strength, flip_window) requires exactly 9 arguments.');
+		}
+		$.view.setSpriteParallaxRig(vy, scale, impact, impact_t, bias_px, parallax_strength, scale_strength, flip_strength, flip_window);
 	}
 
 	public pause_audio(): void {

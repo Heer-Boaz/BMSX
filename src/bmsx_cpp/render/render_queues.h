@@ -138,7 +138,9 @@ extern f32 particleAmbientFactorDefault;
 void setAmbientDefaults(i32 mode, f32 factor = 1.0f);
 
 extern SpriteParallaxRig spriteParallaxRig;
-void setSpriteParallaxRig(f32 vy, f32 scale, f32 impact, f32 impact_t);
+void setSpriteParallaxRig(f32 vy, f32 scale, f32 impact, f32 impact_t,
+						  f32 bias_px, f32 parallax_strength, f32 scale_strength,
+						  f32 flip_strength, f32 flip_window);
 
 // --- Skybox exposure defaults ---
 

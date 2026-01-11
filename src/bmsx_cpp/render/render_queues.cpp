@@ -396,11 +396,21 @@ void setAmbientDefaults(i32 mode, f32 factor) {
 	particleAmbientFactorDefault = clamp(factor, 0.0f, 1.0f);
 }
 
-void setSpriteParallaxRig(f32 vy, f32 scale, f32 impact, f32 impact_t) {
+void setSpriteParallaxRig(f32 vy, f32 scale, f32 impact, f32 impact_t,
+						  f32 bias_px, f32 parallax_strength, f32 scale_strength,
+						  f32 flip_strength, f32 flip_window) {
+	if (flip_window <= 0.0f) {
+		throw BMSX_RUNTIME_ERROR("[RenderQueues] setSpriteParallaxRig requires flip_window > 0.");
+	}
 	spriteParallaxRig.vy = vy;
 	spriteParallaxRig.scale = scale;
 	spriteParallaxRig.impact = impact;
 	spriteParallaxRig.impact_t = impact_t;
+	spriteParallaxRig.bias_px = bias_px;
+	spriteParallaxRig.parallax_strength = parallax_strength;
+	spriteParallaxRig.scale_strength = scale_strength;
+	spriteParallaxRig.flip_strength = flip_strength;
+	spriteParallaxRig.flip_window = flip_window;
 }
 
 void setSkyboxTintExposure(const std::array<f32, 3>& tint, f32 exposure) {

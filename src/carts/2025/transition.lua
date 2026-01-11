@@ -35,15 +35,15 @@ function transition.register_states(states)
 		return p3_transition_palette_dialogue
 	end
 
-	local function setup_overlay()
-		local overlay = object(transition_overlay_id)
-		overlay.visible = true
-		overlay:set_image('whitepixel')
-		overlay.x = 0
-		overlay.y = 0
-		overlay:get_component_by_id('base_sprite').scale = { x = display_width(), y = display_height() }
-		return overlay
-	end
+		local function setup_overlay()
+			local overlay = object(transition_overlay_id)
+			overlay.visible = true
+			overlay:set_image('whitepixel')
+			overlay.x = 0
+			overlay.y = 0
+			overlay.sprite_component.scale = { x = display_width(), y = display_height() }
+			return overlay
+		end
 
 	local function hide_transition_panels()
 		for i = 1, #transition_panel_ids do
@@ -120,14 +120,14 @@ function transition.register_states(states)
 		return panels, accent
 	end
 
-	local function configure_panel(panel)
-		local sprite = object(panel.id)
-		sprite.visible = true
-		sprite:set_image('whitepixel')
-		sprite.x = panel.x_in
-		sprite.y = panel.y
-		sprite:get_component_by_id('base_sprite').scale = { x = panel.width, y = panel.height }
-	end
+		local function configure_panel(panel)
+			local sprite = object(panel.id)
+			sprite.visible = true
+			sprite:set_image('whitepixel')
+			sprite.x = panel.x_in
+			sprite.y = panel.y
+			sprite.sprite_component.scale = { x = panel.width, y = panel.height }
+		end
 
 	local function finish_transition(self)
 		local node = story[self.node_id]
@@ -240,8 +240,16 @@ function transition.register_states(states)
 				apply_background(self.transition_target_bg)
 			end
 			local w = display_width()
+			local target = {
+				overlay = overlay,
+				panels = {},
+				accent = accent,
+				text = transition_text,
+			}
+			for i = 1, #transition_panel_ids do
+				target.panels[i] = object(transition_panel_ids[i])
+			end
 			local frames = build_transition_frames({
-				frame_count = overgang_frame_count,
 				fade_out_frames = overgang_fade_out_frames,
 				fade_in_frames = overgang_fade_in_frames,
 				fade_in_start = self.transition_fade_in_start,
@@ -259,6 +267,11 @@ function transition.register_states(states)
 				frames = frames,
 				ticks_per_frame = overgang_ticks_per_frame,
 				playback_mode = 'once',
+				target = target,
+				apply = true,
+				markers = {
+					{ frame = overgang_fade_out_frames - 1, event = 'transition.swap_bg' },
+				},
 			}))
 			self:play_timeline(overgang_timeline_id, { rewind = true, snap_to_start = true })
 		end,
@@ -271,34 +284,12 @@ function transition.register_states(states)
 			},
 		},
 		on = {
-			['timeline.frame.' .. overgang_timeline_id] = {
-				go = function(self, _state, event)
-					local frame = event.frame_value
-					if frame.swap then
-						apply_background(self.transition_target_bg)
+			['transition.swap_bg'] = {
+				go = function(self)
+					if self.skip_transition_fade then
+						return
 					end
-					local overlay = object(transition_overlay_id)
-					overlay.sprite_component.colorize = frame.overlay
-					for i = 1, #frame.panels do
-						local panel = self.transition_panels[i]
-						local state = frame.panels[i]
-						local sprite = object(panel.id)
-						sprite.visible = state.a > 0
-						sprite.x = state.x
-						sprite.y = state.y
-						sprite.sprite_component.colorize = { r = panel.color.r, g = panel.color.g, b = panel.color.b, a = state.a }
-					end
-					local accent_panel = self.transition_accent
-					local accent_state = frame.accent
-					local accent_sprite = object(accent_panel.id)
-					accent_sprite.visible = accent_state.a > 0
-					accent_sprite.x = accent_state.x
-					accent_sprite.y = accent_state.y
-					accent_sprite.sprite_component.colorize = { r = accent_panel.color.r, g = accent_panel.color.g, b = accent_panel.color.b, a = accent_state.a }
-					object(text_transition_id).centered_block_x = frame.text_x
-					if frame.finish then
-						return finish_transition(self)
-					end
+					apply_background(self.transition_target_bg)
 				end,
 			},
 			['timeline.end.' .. overgang_timeline_id] = {
@@ -328,12 +319,15 @@ function transition.register_states(states)
 			local overlay = setup_overlay()
 			local base = self.transition_palette.overlay
 			overlay.sprite_component.colorize = { r = base.r, g = base.g, b = base.b, a = 1 }
+			local target = { overlay = overlay }
 			local frames = build_transition_fade_in_frames(self.transition_palette)
 			self:define_timeline(new_timeline({
 				id = overgang_post_fade_in_timeline_id,
 				frames = frames,
 				ticks_per_frame = overgang_ticks_per_frame,
 				playback_mode = 'once',
+				target = target,
+				apply = true,
 			}))
 			self:play_timeline(overgang_post_fade_in_timeline_id, { rewind = true, snap_to_start = true })
 		end,
@@ -346,12 +340,6 @@ function transition.register_states(states)
 			},
 		},
 		on = {
-			['timeline.frame.' .. overgang_post_fade_in_timeline_id] = {
-				go = function(self, _state, event)
-					local overlay = object(transition_overlay_id)
-					overlay.sprite_component.colorize = event.frame_value.overlay
-				end,
-			},
 			['timeline.end.' .. overgang_post_fade_in_timeline_id] = {
 				go = function(self)
 					return finish_transition_fade_in(self)
@@ -390,6 +378,7 @@ function transition.register_states(states)
 			local overlay = setup_overlay()
 			local base = self.fade_palette.overlay
 			overlay.sprite_component.colorize = { r = base.r, g = base.g, b = base.b, a = 0 }
+			local target = { overlay = overlay }
 			local frames = build_fade_frames({
 				palette = self.fade_palette,
 				hold_black = self.fade_hold_black,
@@ -399,6 +388,11 @@ function transition.register_states(states)
 				frames = frames,
 				ticks_per_frame = fade_ticks_per_frame,
 				playback_mode = 'once',
+				target = target,
+				apply = true,
+				markers = {
+					{ frame = fade_out_frames - 1, event = 'fade.swap_bg' },
+				},
 			}))
 			self:play_timeline(fade_timeline_id, { rewind = true, snap_to_start = true })
 		end,
@@ -411,14 +405,9 @@ function transition.register_states(states)
 			},
 		},
 		on = {
-			['timeline.frame.' .. fade_timeline_id] = {
-				go = function(self, _state, event)
-					local frame = event.frame_value
-					if frame.swap then
-						apply_background(self.fade_target_bg)
-					end
-					local overlay = object(transition_overlay_id)
-					overlay.sprite_component.colorize = frame.overlay
+			['fade.swap_bg'] = {
+				go = function(self)
+					apply_background(self.fade_target_bg)
 				end,
 			},
 			['timeline.end.' .. fade_timeline_id] = {

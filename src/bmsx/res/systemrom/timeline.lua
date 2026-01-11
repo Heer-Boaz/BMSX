@@ -112,8 +112,15 @@ function timeline.new(def)
 	local self = setmetatable({}, timeline)
 	self.def = def
 	self.id = def.id
+	self.tracks = def.tracks
 	self.repetitions = def.repetitions or 1
+	local continuous = def.continuous
 	local frame_source = def.frames
+	if frame_source == nil and self.tracks ~= nil then
+		self.frames = { {} }
+		self.length = 1
+		self.built = true
+	end
 	local source_type = type(frame_source)
 	if source_type == "function" then
 		self.frame_builder = frame_source
@@ -124,18 +131,25 @@ function timeline.new(def)
 		self.frames = expand_frames(frame_source, self.repetitions)
 		self.length = #self.frames
 		self.built = true
-	else
+	elseif frame_source ~= nil then
 		error("[timeline] timeline '" .. tostring(def.id) .. "' requires a frames table or builder function.")
 	end
 	self.ticks_per_frame = def.ticks_per_frame or 0
 	self.playback_mode = def.playback_mode or "once"
+	if continuous == nil and frame_source == nil and self.tracks ~= nil then
+		continuous = true
+	end
+	self.continuous = continuous
 	local autotick = def.autotick
 	if autotick == nil then
-		autotick = self.ticks_per_frame ~= 0
+		autotick = self.continuous == true or self.ticks_per_frame ~= 0
 	end
 	self.auto_tick = autotick
 	self.head = timeline_start_index
 	self.ticks = 0
+	self.time_ms = 0
+	self.duration_ms = def.duration_ms or (def.duration_seconds and (def.duration_seconds * 1000))
+	self.ended = false
 	self.direction = 1
 	return self
 end
@@ -164,6 +178,8 @@ end
 function timeline:rewind()
 	self.head = timeline_start_index
 	self.ticks = 0
+	self.time_ms = 0
+	self.ended = false
 	self.direction = 1
 end
 
@@ -171,7 +187,28 @@ function timeline:tick(dt)
 	if not self.auto_tick or self.length == 0 then
 		return {}
 	end
+	if self.ended then
+		return {}
+	end
 	self.ticks = self.ticks + dt
+	self.time_ms = self.time_ms + dt
+	if self.continuous then
+		local head = self.head
+		if head < 0 then
+			head = 0
+		end
+		local events = self:apply_frame(head, "tick")
+		if self.duration_ms and self.time_ms >= self.duration_ms then
+			self.ended = true
+			events[#events + 1] = {
+				kind = "end",
+				frame = self.head,
+				mode = self.playback_mode,
+				wrapped = false,
+			}
+		end
+		return events
+	end
 	if self.ticks_per_frame <= 0 or self.ticks >= self.ticks_per_frame then
 		return self:advance_internal("advance")
 	end

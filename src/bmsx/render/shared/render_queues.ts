@@ -335,12 +335,30 @@ export function setAmbientDefaults(mode: 0 | 1, factor = 1.0): void {
 	particleAmbientFactorDefault = clamp(factor, 0, 1);
 }
 
-export const spriteParallaxRig: SpriteParallaxRig = { vy: 0, scale: 1, impact: 0, impact_t: 0 };
-export function setSpriteParallaxRig(vy: number, scale: number, impact: number, impact_t: number): void {
+export const spriteParallaxRig: SpriteParallaxRig = {
+	vy: 0,
+	scale: 1,
+	impact: 0,
+	impact_t: 0,
+	bias_px: 0,
+	parallax_strength: 1,
+	scale_strength: 1,
+	flip_strength: 0,
+	flip_window: 0.6,
+};
+export function setSpriteParallaxRig(vy: number, scale: number, impact: number, impact_t: number, bias_px: number, parallax_strength: number, scale_strength: number, flip_strength: number, flip_window: number): void {
+	if (flip_window <= 0) {
+		throw new Error(`[Sprite Pipeline] setSpriteParallaxRig requires flip_window > 0, got ${flip_window}.`);
+	}
 	spriteParallaxRig.vy = vy;
 	spriteParallaxRig.scale = scale;
 	spriteParallaxRig.impact = impact;
 	spriteParallaxRig.impact_t = impact_t;
+	spriteParallaxRig.bias_px = bias_px;
+	spriteParallaxRig.parallax_strength = parallax_strength;
+	spriteParallaxRig.scale_strength = scale_strength;
+	spriteParallaxRig.flip_strength = flip_strength;
+	spriteParallaxRig.flip_window = flip_window;
 }
 
 export let _skyTint: [number, number, number] = [1, 1, 1];

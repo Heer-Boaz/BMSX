@@ -51,10 +51,11 @@ const SPRITE_CORNER_DATA = new Float32Array([
 
 const MAX_U16 = 0xffff;
 const MAX_U8 = 0xff;
+const MAX_S8 = 0x7f;
 
 const packUnorm8 = (value: number) => Math.round(clamp(value, 0, 1) * MAX_U8);
 const packUnorm16 = (value: number) => Math.round(clamp(value, 0, 1) * MAX_U16);
-const packSignedWeight = (value: number) => Math.round((clamp(value, -1, 1) * 0.5 + 0.5) * MAX_U8);
+const packSnorm8 = (value: number) => Math.round(clamp(value, -1, 1) * MAX_S8);
 
 export let spriteShaderProgram: WebGLProgram;
 let cornerLocation: number;
@@ -77,9 +78,12 @@ const spriteShaderData = {
 	instanceF32: new Float32Array(spriteInstanceData),
 	instanceU16: new Uint16Array(spriteInstanceData),
 	instanceU8: new Uint8Array(spriteInstanceData),
+	instanceS8: new Int8Array(spriteInstanceData),
 };
 let spriteShaderScaleLocation: WebGLUniformLocation;
 let spriteShaderParallaxRigLocation: WebGLUniformLocation;
+let spriteShaderParallaxRig2Location: WebGLUniformLocation;
+let spriteShaderParallaxFlipWindowLocation: WebGLUniformLocation;
 
 interface SpriteRuntime {
 	backend: WebGLBackend;
@@ -120,12 +124,17 @@ export function setupSpriteShaderLocations(backend: GPUBackend): void {
 	texture2Location = gl.getUniformLocation(spriteShaderProgram, 'u_texture2')!;
 	spriteShaderScaleLocation = gl.getUniformLocation(spriteShaderProgram, 'u_scale');
 	spriteShaderParallaxRigLocation = gl.getUniformLocation(spriteShaderProgram, 'u_parallax_rig')!;
+	spriteShaderParallaxRig2Location = gl.getUniformLocation(spriteShaderProgram, 'u_parallax_rig2')!;
+	spriteShaderParallaxFlipWindowLocation = gl.getUniformLocation(spriteShaderProgram, 'u_parallax_flip_window')!;
 }
 
 export function setupDefaultUniformValues(backend: WebGLBackend): void {
 	const gl = backend.gl;
 	gl.useProgram(spriteShaderProgram);
 	gl.uniform1f(spriteShaderScaleLocation, 1);
+	gl.uniform4f(spriteShaderParallaxRigLocation, 0, 1, 0, 0);
+	gl.uniform4f(spriteShaderParallaxRig2Location, 0, 1, 1, 0);
+	gl.uniform1f(spriteShaderParallaxFlipWindowLocation, 0.6);
 	gl.uniform1i(texture0Location, TEXTURE_UNIT_ATLAS_PRIMARY);
 	gl.uniform1i(texture1Location, TEXTURE_UNIT_ATLAS_SECONDARY);
 	gl.uniform1i(texture2Location, TEXTURE_UNIT_ATLAS_ENGINE);
@@ -178,7 +187,7 @@ export function setupSpriteLocations(backend: WebGLBackend): void {
 	backend.vertexAttribDivisor(instAtlasLocation, 1);
 
 	backend.enableVertexAttrib(instFxLocation);
-	backend.vertexAttribPointer(instFxLocation, 1, gl.UNSIGNED_BYTE, true, SPRITE_INSTANCE_STRIDE, SPRITE_INSTANCE_FX_OFFSET);
+	backend.vertexAttribPointer(instFxLocation, 1, gl.BYTE, true, SPRITE_INSTANCE_STRIDE, SPRITE_INSTANCE_FX_OFFSET);
 	backend.vertexAttribDivisor(instFxLocation, 1);
 
 	backend.enableVertexAttrib(instColorLocation);
@@ -206,6 +215,14 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 		spriteParallaxRig.impact,
 		spriteParallaxRig.impact_t,
 	);
+	gl.uniform4f(
+		spriteShaderParallaxRig2Location,
+		spriteParallaxRig.bias_px,
+		spriteParallaxRig.parallax_strength,
+		spriteParallaxRig.scale_strength,
+		spriteParallaxRig.flip_strength,
+	);
+	gl.uniform1f(spriteShaderParallaxFlipWindowLocation, spriteParallaxRig.flip_window);
 
 	const ideScale = state.viewportTypeIde === 'viewport' ? 1 : (state.baseWidth / state.width);
 	let currentScale = 1;
@@ -232,7 +249,7 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 		context.activeTexUnit = TEXTURE_UNIT_ATLAS_ENGINE;
 		context.bind2DTex(state.atlasEngineTex);
 	}
-	const { instanceF32, instanceU16, instanceU8 } = spriteShaderData;
+	const { instanceF32, instanceU16, instanceU8, instanceS8 } = spriteShaderData;
 	// Ambient sprites are disabled for now; when we have a more efficient path, reuse the block below.
 	// const ambientFrameIntensity = state.ambientIntensity;
 	// const ambientFrameColor = state.ambientColor;
@@ -289,7 +306,7 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 		const zNorm = 1 - (pos.z ?? DEFAULT_ZCOORD) / ZCOORD_MAX;
 		instanceU16[(byteOffset + SPRITE_INSTANCE_Z_OFFSET) >> 1] = packUnorm16(zNorm);
 		instanceU8[byteOffset + SPRITE_INSTANCE_ATLAS_OFFSET] = imgmeta.atlasid;
-		instanceU8[byteOffset + SPRITE_INSTANCE_FX_OFFSET] = packSignedWeight(parallaxWeightValue);
+		instanceS8[byteOffset + SPRITE_INSTANCE_FX_OFFSET] = packSnorm8(parallaxWeightValue);
 		instanceU8[byteOffset + SPRITE_INSTANCE_COLOR_OFFSET + 0] = packUnorm8(colorize.r);
 		instanceU8[byteOffset + SPRITE_INSTANCE_COLOR_OFFSET + 1] = packUnorm8(colorize.g);
 		instanceU8[byteOffset + SPRITE_INSTANCE_COLOR_OFFSET + 2] = packUnorm8(colorize.b);

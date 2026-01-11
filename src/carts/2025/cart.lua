@@ -1,8 +1,8 @@
 require('globals.lua')
 require('story.lua')
 
-local start_node = 'title'
--- local start_node = 'combat_wekker'
+-- local start_node = 'title'
+local start_node = 'combat_wekker'
 
 local combat_module = require('combat.lua')
 local dialogue_module = require('dialogue.lua')

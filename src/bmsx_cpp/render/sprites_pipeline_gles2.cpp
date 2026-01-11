@@ -62,6 +62,8 @@ struct SpriteGLES2State {
   GLint uniform_resolution = -1;
   GLint uniform_scale = -1;
   GLint uniform_parallax_rig = -1;
+  GLint uniform_parallax_rig2 = -1;
+  GLint uniform_parallax_flip_window = -1;
   GLint uniform_tex0 = -1;
   GLint uniform_tex1 = -1;
   GLint uniform_tex2 = -1;
@@ -90,6 +92,8 @@ uniform vec2 u_resolution;
 uniform float u_scale;
 uniform float u_time;
 uniform vec4 u_parallax_rig;
+uniform vec4 u_parallax_rig2;
+uniform float u_parallax_flip_window;
 
 varying vec2 v_texcoord;
 varying vec4 v_color_override;
@@ -101,12 +105,20 @@ float wobble(float t) {
 
 void main() {
 	float depth = smoothstep(0.0, 1.0, a_pos_z);
-	float weight = (a_parallax_weight * 2.0 - 1.0) * depth;
-	float dy_px = wobble(u_time) * u_parallax_rig.x * weight;
-	float baseScale = 1.0 + (u_parallax_rig.y - 1.0) * weight;
+	float dir = sign(a_parallax_weight);
+	float weight = abs(a_parallax_weight) * depth;
+	float wob = wobble(u_time);
+	float dy_px = (u_parallax_rig2.x + wob * u_parallax_rig.x) * weight * u_parallax_rig2.y * dir;
+	float flipWindowSeconds = max(u_parallax_flip_window, 0.0001);
+	float hold = 0.2 * flipWindowSeconds;
+	float flipU = clamp((u_parallax_rig.w - hold) / max(flipWindowSeconds - hold, 0.0001), 0.0, 1.0);
+	float flipWindow = 1.0 - smoothstep(0.0, 1.0, flipU);
+	float flip = mix(1.0, -1.0, flipWindow * u_parallax_rig2.w);
+	dy_px *= flip;
+	float baseScale = 1.0 + (u_parallax_rig.y - 1.0) * weight * u_parallax_rig2.z;
 	float impactSign = sign(u_parallax_rig.z);
-	float impactWeight = max(0.0, weight * impactSign);
-	float pulse = exp(-8.0 * u_parallax_rig.w) * abs(u_parallax_rig.z) * impactWeight;
+	float impactMask = max(0.0, dir * impactSign);
+	float pulse = exp(-8.0 * u_parallax_rig.w) * abs(u_parallax_rig.z) * weight * impactMask;
 	float parallaxScale = baseScale + pulse;
 	vec2 parallaxPos = (a_position - a_center) * parallaxScale + a_center + vec2(0.0, dy_px);
 	vec2 scaledPosition = parallaxPos * u_scale;
@@ -275,7 +287,7 @@ void setupAttributes() {
 	  static_cast<GLuint>(g_sprite.attrib_parallax_weight));
   glVertexAttribPointer(
 	  static_cast<GLuint>(g_sprite.attrib_parallax_weight),
-	  kParallaxWeightComponents, GL_UNSIGNED_BYTE, GL_TRUE, kVertexStride,
+	  kParallaxWeightComponents, GL_BYTE, GL_TRUE, kVertexStride,
 	  reinterpret_cast<void*>(static_cast<intptr_t>(kParallaxWeightOffset)));
 
   glEnableVertexAttribArray(static_cast<GLuint>(g_sprite.attrib_color));
@@ -299,13 +311,13 @@ uint8_t packUnorm8(float value) {
   return static_cast<uint8_t>(std::lround(clamped * 255.0f));
 }
 
-uint8_t packSignedWeight(float value) {
+int8_t packSnorm8(float value) {
   const float clamped = clamp(value, -1.0f, 1.0f);
-  return static_cast<uint8_t>(std::lround((clamped * 0.5f + 0.5f) * 255.0f));
+  return static_cast<int8_t>(std::lround(clamped * 127.0f));
 }
 
 void writeVertex(uint8_t* dst, float x, float y, uint16_t u, uint16_t v,
-				 uint16_t z, uint8_t atlas, uint8_t weight, uint8_t r,
+				 uint16_t z, uint8_t atlas, int8_t weight, uint8_t r,
 				 uint8_t g, uint8_t b, uint8_t a, int16_t cx,
 				 int16_t cy) {
   std::memcpy(dst + kPositionOffset, &x, sizeof(float));
@@ -315,7 +327,7 @@ void writeVertex(uint8_t* dst, float x, float y, uint16_t u, uint16_t v,
 			  sizeof(uint16_t));
   std::memcpy(dst + kZOffset, &z, sizeof(uint16_t));
   dst[kAtlasOffset] = atlas;
-  dst[kParallaxWeightOffset] = weight;
+  dst[kParallaxWeightOffset] = static_cast<uint8_t>(weight);
   dst[kColorOffset + 0] = r;
   dst[kColorOffset + 1] = g;
   dst[kColorOffset + 2] = b;
@@ -357,6 +369,10 @@ void initGLES2(OpenGLES2Backend* backend, GameView* context) {
   g_sprite.uniform_scale = glGetUniformLocation(g_sprite.program, "u_scale");
   g_sprite.uniform_parallax_rig =
 	  glGetUniformLocation(g_sprite.program, "u_parallax_rig");
+  g_sprite.uniform_parallax_rig2 =
+	  glGetUniformLocation(g_sprite.program, "u_parallax_rig2");
+  g_sprite.uniform_parallax_flip_window =
+	  glGetUniformLocation(g_sprite.program, "u_parallax_flip_window");
   g_sprite.uniform_tex0 = glGetUniformLocation(g_sprite.program, "u_texture0");
   g_sprite.uniform_tex1 = glGetUniformLocation(g_sprite.program, "u_texture1");
   g_sprite.uniform_tex2 = glGetUniformLocation(g_sprite.program, "u_texture2");
@@ -456,6 +472,10 @@ void renderSpriteBatchGLES2(OpenGLES2Backend* backend, GameView* context,
   const SpriteParallaxRig& parallaxRig = RenderQueues::spriteParallaxRig;
   glUniform4f(g_sprite.uniform_parallax_rig, parallaxRig.vy, parallaxRig.scale,
 			  parallaxRig.impact, parallaxRig.impact_t);
+  glUniform4f(g_sprite.uniform_parallax_rig2, parallaxRig.bias_px,
+			  parallaxRig.parallax_strength, parallaxRig.scale_strength,
+			  parallaxRig.flip_strength);
+  glUniform1f(g_sprite.uniform_parallax_flip_window, parallaxRig.flip_window);
 
   const bool ideIsViewport = (state.viewportTypeIde == "viewport");
   const float ideScale =
@@ -543,7 +563,7 @@ void renderSpriteBatchGLES2(OpenGLES2Backend* backend, GameView* context,
 			: (flip.flip_v ? imgmeta->texcoords_flipv : imgmeta->texcoords);
 	const uint16_t zPacked = packUnorm16(zNorm);
 	const uint8_t atlasPacked = static_cast<uint8_t>(imgmeta->atlasid);
-	const uint8_t weightPacked = packSignedWeight(parallaxWeight);
+	const int8_t weightPacked = packSnorm8(parallaxWeight);
 	const uint8_t colorR = packUnorm8(colorize.r);
 	const uint8_t colorG = packUnorm8(colorize.g);
 	const uint8_t colorB = packUnorm8(colorize.b);

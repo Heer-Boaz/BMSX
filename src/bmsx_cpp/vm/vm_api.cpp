@@ -825,11 +825,19 @@ m_runtime.registerNativeFunction("set_master_volume", [this](const std::vector<V
 });
 
 m_runtime.registerNativeFunction("set_sprite_parallax_rig", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+	if (args.size() != 9) {
+		throw BMSX_RUNTIME_ERROR("set_sprite_parallax_rig expects 9 arguments.");
+	}
 	float vy = static_cast<float>(asNumber(args.at(0)));
 	float scale = static_cast<float>(asNumber(args.at(1)));
 	float impact = static_cast<float>(asNumber(args.at(2)));
 	float impact_t = static_cast<float>(asNumber(args.at(3)));
-	set_sprite_parallax_rig(vy, scale, impact, impact_t);
+	float bias_px = static_cast<float>(asNumber(args.at(4)));
+	float parallax_strength = static_cast<float>(asNumber(args.at(5)));
+	float scale_strength = static_cast<float>(asNumber(args.at(6)));
+	float flip_strength = static_cast<float>(asNumber(args.at(7)));
+	float flip_window = static_cast<float>(asNumber(args.at(8)));
+	set_sprite_parallax_rig(vy, scale, impact, impact_t, bias_px, parallax_strength, scale_strength, flip_strength, flip_window);
 	(void)out;
 });
 
@@ -1038,8 +1046,13 @@ void VMApi::set_master_volume(double volume) {
 	EngineCore::instance().soundMaster()->setMasterVolume(static_cast<f32>(volume));
 }
 
-void VMApi::set_sprite_parallax_rig(f32 vy, f32 scale, f32 impact, f32 impact_t) {
-	EngineCore::instance().view()->setSpriteParallaxRig(vy, scale, impact, impact_t);
+void VMApi::set_sprite_parallax_rig(f32 vy, f32 scale, f32 impact, f32 impact_t,
+									f32 bias_px, f32 parallax_strength,
+									f32 scale_strength, f32 flip_strength,
+									f32 flip_window) {
+	EngineCore::instance().view()->setSpriteParallaxRig(
+		vy, scale, impact, impact_t, bias_px, parallax_strength, scale_strength,
+		flip_strength, flip_window);
 }
 
 void VMApi::pause_audio() {

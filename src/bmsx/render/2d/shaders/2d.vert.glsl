@@ -14,6 +14,8 @@ in vec4 i_color;
 
 uniform float u_scale;
 uniform vec4 u_parallax_rig; // (vy, scale, impact, impact_t)
+uniform vec4 u_parallax_rig2; // (bias_px, parallax_strength, scale_strength, flip_strength)
+uniform float u_parallax_flip_window;
 
 // Frame-shared UBO (std140). Only first fields are used in this shader.
 layout(std140) uniform FrameUniforms {
@@ -36,12 +38,20 @@ float wobble(float t) {
 
 void main() {
 	float depth = smoothstep(0.0, 1.0, i_z);
-	float weight = (i_fx * 2.0 - 1.0) * depth;
-	float dy_px = wobble(u_timeDelta.x) * u_parallax_rig.x * weight;
-	float baseScale = 1.0 + (u_parallax_rig.y - 1.0) * weight;
+	float dir = sign(i_fx);
+	float weight = abs(i_fx) * depth;
+	float wob = wobble(u_timeDelta.x);
+	float dy_px = (u_parallax_rig2.x + wob * u_parallax_rig.x) * weight * u_parallax_rig2.y * dir;
+	float flipWindowSeconds = max(u_parallax_flip_window, 0.0001);
+	float hold = 0.2 * flipWindowSeconds;
+	float flipU = clamp((u_parallax_rig.w - hold) / max(flipWindowSeconds - hold, 0.0001), 0.0, 1.0);
+	float flipWindow = 1.0 - smoothstep(0.0, 1.0, flipU);
+	float flip = mix(1.0, -1.0, flipWindow * u_parallax_rig2.w);
+	dy_px *= flip;
+	float baseScale = 1.0 + (u_parallax_rig.y - 1.0) * weight * u_parallax_rig2.z;
 	float impactSign = sign(u_parallax_rig.z);
-	float impactWeight = max(0.0, weight * impactSign);
-	float pulse = exp(-8.0 * u_parallax_rig.w) * abs(u_parallax_rig.z) * impactWeight;
+	float impactMask = max(0.0, dir * impactSign);
+	float pulse = exp(-8.0 * u_parallax_rig.w) * abs(u_parallax_rig.z) * weight * impactMask;
 	float parallaxScale = baseScale + pulse;
 
 	vec2 center = i_pos + i_size * 0.5;

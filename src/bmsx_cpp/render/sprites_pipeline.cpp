@@ -118,16 +118,22 @@ void renderSpriteBatchSoftware(SoftwareBackend* softBackend,
 	const f32 zValue = (options.pos.z == 0.0f) ? DEFAULT_ZCOORD : options.pos.z;
 	const f32 zNorm = 1.0f - (zValue / ZCOORD_MAX);
 	const f32 depth = smoothstep01(zNorm);
-	const f32 weight = parallaxWeight * depth;
-	const f32 dy = wobble * parallaxRig.vy * weight;
-	const f32 baseScale = 1.0f + ((parallaxRig.scale - 1.0f) * weight);
+	const f32 dir = (parallaxWeight > 0.0f) ? 1.0f : ((parallaxWeight < 0.0f) ? -1.0f : 0.0f);
+	const f32 weight = std::abs(parallaxWeight) * depth;
+	f32 dy = (parallaxRig.bias_px + wobble * parallaxRig.vy) * weight * parallaxRig.parallax_strength * dir;
+	const f32 flipWindowSeconds = std::max(parallaxRig.flip_window, 0.0001f);
+	const f32 hold = 0.2f * flipWindowSeconds;
+	const f32 flipU = clamp((parallaxRig.impact_t - hold) / std::max(flipWindowSeconds - hold, 0.0001f), 0.0f, 1.0f);
+	const f32 flipWindow = 1.0f - smoothstep01(flipU);
+		const f32 axisFlip = 1.0f - 2.0f * flipWindow * parallaxRig.flip_strength;
+		dy *= axisFlip;
+	const f32 baseScale = 1.0f + ((parallaxRig.scale - 1.0f) * weight * parallaxRig.scale_strength);
 	const f32 impactSign = (parallaxRig.impact > 0.0f)
 							   ? 1.0f
 							   : ((parallaxRig.impact < 0.0f) ? -1.0f : 0.0f);
-	const f32 impactWeight =
-		(weight * impactSign > 0.0f) ? (weight * impactSign) : 0.0f;
+	const f32 impactMask = (dir * impactSign > 0.0f) ? 1.0f : 0.0f;
 	const f32 pulse = std::exp(-8.0f * parallaxRig.impact_t)
-					  * std::abs(parallaxRig.impact) * impactWeight;
+					  * std::abs(parallaxRig.impact) * weight * impactMask;
 	const f32 parallaxScaleMul = baseScale + pulse;
 
 	// Destination position and size

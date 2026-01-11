@@ -295,8 +295,13 @@ void GameView::setSpritesAmbient(bool enabled, f32 factor) {
 	spriteAmbientFactorDefault = clamp(factor, 0.0f, 1.0f);
 }
 
-void GameView::setSpriteParallaxRig(f32 vy, f32 scale, f32 impact, f32 impact_t) {
-	RenderQueues::setSpriteParallaxRig(vy, scale, impact, impact_t);
+void GameView::setSpriteParallaxRig(f32 vy, f32 scale, f32 impact, f32 impact_t,
+									f32 bias_px, f32 parallax_strength,
+									f32 scale_strength, f32 flip_strength,
+									f32 flip_window) {
+	RenderQueues::setSpriteParallaxRig(vy, scale, impact, impact_t, bias_px,
+									   parallax_strength, scale_strength,
+									   flip_strength, flip_window);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
