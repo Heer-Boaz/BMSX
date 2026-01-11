@@ -1,4 +1,5 @@
 local combat = {}
+local timeline_builders = require('timeline_builders.lua')
 
 local function stat_label(stat_id)
 	if stat_id == 'planning' then
@@ -15,229 +16,11 @@ local function stat_label(stat_id)
 	end
 end
 
-local function round(x)
-	if x >= 0 then
-		return math.floor(x + 0.5)
-	end
-	return -math.floor((-x) + 0.5)
-end
+local all_out_shake = timeline_builders.build_all_out_shake(combat_all_out_frame_count)
 
-local function shake_hash(seed)
-	seed = seed ~ (seed << 13)
-	seed = seed ~ (seed >> 17)
-	seed = seed ~ (seed << 5)
-	return seed
-end
-
-local function shake_signed(seed)
-	local h = shake_hash(seed)
-	local u = (h & 0xffff) / 0xffff
-	return (u * 2) - 1
-end
-
-local function build_all_out_shake(total_frames)
-	local ramp_in_frames = 10
-	local ramp_out_frames = 18
-	local ramp_out_start = total_frames - ramp_out_frames
-
-	local swing_period_frames = 10
-	local swing_amp_x = 28
-	local swing_amp_y = 10
-
-	local jitter_amp_x = 10
-	local jitter_amp_y = 7
-	local micro_jitter_amp_x = 4
-	local micro_jitter_amp_y = 3
-
-	local hit_segment_len = 7
-	local hit_len = 3
-	local hit_amp_x = 36
-	local hit_amp_y = 20
-	local hit_window = hit_segment_len - hit_len + 1
-
-	local boom_frames = 10
-	local boom_amp_x = 44
-	local boom_amp_y = 28
-
-	return function(frame_index)
-		if frame_index >= (total_frames - 1) then
-			return 0, 0
-		end
-
-		local intensity = 1
-		if frame_index < ramp_in_frames then
-			local u = frame_index / (ramp_in_frames - 1)
-			intensity = easing.smoothstep(u)
-		elseif frame_index >= ramp_out_start then
-			local u = (total_frames - 1 - frame_index) / (ramp_out_frames - 1)
-			intensity = easing.smoothstep(u)
-		end
-
-		local swing_u = (frame_index / swing_period_frames) + 0.15
-		local swing = easing.pingpong01(swing_u)
-		swing = (easing.ease_in_out_quad(swing) - 0.5) * 2
-
-		local bob_u = (frame_index / (swing_period_frames * 0.75)) + 0.37
-		local bob = (easing.smoothstep(easing.pingpong01(bob_u)) - 0.5) * 2
-
-		local dx = (swing * swing_amp_x)
-		local dy = (bob * swing_amp_y)
-
-		dx = dx + (shake_signed(1000 + frame_index * 31 + 7) * jitter_amp_x)
-		dy = dy + (shake_signed(2000 + frame_index * 47 + 13) * jitter_amp_y)
-		dx = dx + (shake_signed(3000 + frame_index * 97 + 3) * micro_jitter_amp_x)
-		dy = dy + (shake_signed(4000 + frame_index * 89 + 9) * micro_jitter_amp_y)
-
-		local segment_index = math.floor(frame_index / hit_segment_len)
-		local segment_start = segment_index * hit_segment_len
-		local accent_at = segment_start + (shake_hash(segment_index * 73 + 11) % hit_window)
-		if frame_index >= accent_at and frame_index < (accent_at + hit_len) then
-			local u = (frame_index - accent_at) / (hit_len - 1)
-			local hit_u = easing.arc01(u)
-			local strength = 0.7 + (((shake_hash(segment_index * 53 + 7) & 0xff) / 0xff) * 0.7)
-			dx = dx + (shake_signed(segment_index * 199 + frame_index * 17 + 5) * hit_amp_x * hit_u * strength)
-			dy = dy + (shake_signed(segment_index * 211 + frame_index * 19 + 9) * hit_amp_y * hit_u * strength)
-		end
-
-		if frame_index < boom_frames then
-			local u = frame_index / (boom_frames - 1)
-			local boom = 1 - easing.smoothstep(u)
-			dx = dx + (shake_signed(5000 + frame_index * 19 + 1) * boom_amp_x * boom)
-			dy = dy + (shake_signed(6000 + frame_index * 23 + 5) * boom_amp_y * boom)
-		end
-
-		return round(dx * intensity), round(dy * intensity)
-	end
-end
-
-local all_out_shake = build_all_out_shake(combat_all_out_frame_count)
-
-local function build_combat_fade_frames()
-	local frames = {}
-	for frame_index = 0, combat_fade_frame_count - 1 do
-		local c = 0
-		if frame_index < combat_fade_out_frames then
-			local u = frame_index / (combat_fade_out_frames - 1)
-			c = 1 - easing.smoothstep(u)
-		end
-		frames[#frames + 1] = { c = c }
-	end
-	return frames
-end
-
-local function build_combat_dodge_frames(params)
-	local frames = {}
-	local dir = params.dir
-	local anticipate_frames = combat_dodge_anticipation_frames
-	local peak_frames = combat_dodge_peak_frames
-	local recover_frames = combat_dodge_recover_frames
-	local move_frames = combat_dodge_frame_count - anticipate_frames - peak_frames - recover_frames
-	local move_end = anticipate_frames + move_frames
-	local peak_end = move_end + peak_frames
-
-	for frame_index = 0, combat_dodge_frame_count - 1 do
-		local offset = 0
-		local scale_x = 1
-		local scale_y = 1
-		if frame_index < anticipate_frames then
-			local u = frame_index / (anticipate_frames - 1)
-			offset = -combat_monster_dodge_distance * 0.2 * easing.smoothstep(u) * dir
-			local t = easing.smoothstep(u)
-			scale_x = 1 + (combat_dodge_anticipation_scale_x * t)
-			scale_y = 1 + (combat_dodge_anticipation_scale_y * t)
-		elseif frame_index < move_end then
-			local u = (frame_index - anticipate_frames) / (move_frames - 1)
-			offset = combat_monster_dodge_distance * easing.ease_out_quad(u) * dir
-			local t = easing.ease_out_quad(u)
-			scale_x = 1 + (combat_dodge_move_scale_x * t)
-			scale_y = 1 + (combat_dodge_move_scale_y * t)
-		elseif frame_index < peak_end then
-			offset = combat_monster_dodge_distance * dir
-			scale_x = 1 + combat_dodge_move_scale_x
-			scale_y = 1 + combat_dodge_move_scale_y
-		else
-			local u = (frame_index - peak_end) / (recover_frames - 1)
-			local t = 1 - easing.ease_in_quad(u)
-			offset = combat_monster_dodge_distance * t * dir
-			scale_x = 1 + (combat_dodge_move_scale_x * t)
-			scale_y = 1 + (combat_dodge_move_scale_y * t)
-		end
-		frames[#frames + 1] = { offset = offset, scale_x = scale_x, scale_y = scale_y }
-	end
-
-	return frames
-end
-
-local function build_combat_all_out_frames(params)
-	local frames = {}
-	local origin_x = params.origin_x
-	local origin_y = params.origin_y
-	local sprite_w = params.sprite_w
-	local sprite_h = params.sprite_h
-
-	for frame_index = 0, combat_all_out_frame_count - 1 do
-		local dx, dy = all_out_shake(frame_index)
-		local u = (frame_index / combat_all_out_pulse_period_frames) + 0.25
-		local pulse = easing.smoothstep(easing.pingpong01(u))
-		local s_base = 1 + (pulse * combat_all_out_pulse_amp)
-		local squash_u = (frame_index / (combat_all_out_pulse_period_frames * 0.5)) + 0.15
-		local squash = easing.pingpong01(squash_u)
-		squash = (easing.ease_in_out_quad(squash) - 0.5) * 2
-		local jitter = shake_signed(7000 + frame_index * 29 + 9) * 0.04
-		local sx = s_base + (squash * combat_all_out_pulse_amp * 0.6) + jitter
-		local sy = s_base - (squash * combat_all_out_pulse_amp * 0.4) - (jitter * 0.6)
-		local ox = (sprite_w * (sx - 1)) / 2
-		local oy = (sprite_h * (sy - 1)) / 2
-		frames[#frames + 1] = { x = origin_x + dx - ox, y = origin_y + dy - oy, sx = sx, sy = sy }
-	end
-
-	return frames
-end
-
-local function build_combat_results_fade_in_frames(params)
-	local frames = {}
-	local maya_start_x = params.maya_start_x
-	local maya_target_x = params.maya_target_x
-	local text_start_x = params.text_start_x
-	local text_target_x = params.text_target_x
-
-	for frame_index = 0, combat_results_fade_in_frames - 1 do
-		local u = frame_index / (combat_results_fade_in_frames - 1)
-		local a = easing.smoothstep(u)
-		frames[#frames + 1] = {
-			a = a,
-			bg_a = combat_results_bg_a * a,
-			maya_x = maya_start_x + (maya_target_x - maya_start_x) * a,
-			text_x = text_start_x + (text_target_x - text_start_x) * a,
-		}
-	end
-
-	return frames
-end
-
-local function build_combat_results_fade_out_frames()
-	local frames = {}
-	for frame_index = 0, combat_results_fade_out_frames - 1 do
-		local u = frame_index / (combat_results_fade_out_frames - 1)
-		local a = 1 - easing.smoothstep(u)
-		frames[#frames + 1] = { a = a, bg_a = combat_results_bg_a * a }
-	end
-	return frames
-end
-
-local function build_combat_exit_fade_in_frames()
-	local frames = {}
-	for frame_index = 0, combat_exit_fade_in_frames - 1 do
-		local u = frame_index / (combat_exit_fade_in_frames - 1)
-		local c = easing.smoothstep(u)
-		frames[#frames + 1] = { c = c }
-	end
-	return frames
-end
-
-local combat_fade_frames = build_combat_fade_frames()
-local combat_results_fade_out_frames_table = build_combat_results_fade_out_frames()
-local combat_exit_fade_in_frames_table = build_combat_exit_fade_in_frames()
+local combat_fade_frames = timeline_builders.build_combat_fade_frames()
+local combat_results_fade_out_frames_table = timeline_builders.build_combat_results_fade_out_frames()
+local combat_exit_fade_in_frames_table = timeline_builders.build_combat_exit_fade_in_frames()
 
 local combat_director = {}
 combat_director.__index = combat_director
@@ -358,68 +141,9 @@ function combat_director:resolve_combat_rewards(node)
 end
 
 	function combat.setup_timelines(self)
-
-		local function build_combat_focus_frames(params)
-			local frames = {}
-
-			local monster = params.monster
-			local base_x = params.base_x
-			local base_y = params.base_y
-
-			local zoom_scale = combat_focus_zoom_scale
-			local zoom_target_x = (display_width() - (monster.sx * zoom_scale)) / 2
-			local zoom_target_y = (display_height() - (monster.sy * zoom_scale)) / 2
-
-			local vanish_scale_x = combat_focus_vanish_scale_x
-			local vanish_scale_y = combat_focus_vanish_scale_y
-			local vanish_center_x = display_width() / 2
-			local vanish_bottom_y = zoom_target_y + (monster.sy * zoom_scale)
-
-			for i = 0, combat_focus_zoom_frames - 1 do
-				local u = i / (combat_focus_zoom_frames - 1)
-				local eased = easing.smoothstep(u)
-				local turn = easing.arc01(u)
-			local s = 1 + ((zoom_scale - 1) * eased)
-			local x = base_x + (zoom_target_x - base_x) * eased + (combat_focus_zoom_arc_x * turn)
-			local y = base_y + (zoom_target_y - base_y) * eased + (combat_focus_zoom_arc_y * turn)
-
-			frames[#frames + 1] = {
-				visible = true,
-				x = x,
-				y = y,
-				scale = { x = s, y = s },
-				colorize = { r = 1, g = 1, b = 1, a = 1 },
-			}
-		end
-
-			for i = 0, combat_focus_vanish_frames - 1 do
-				local u = i / (combat_focus_vanish_frames - 1)
-				local eased = easing.smoothstep(u)
-				local melt = easing.ease_out_quad(eased)
-				local turn = easing.arc01(u)
-				local sx = zoom_scale + ((vanish_scale_x - zoom_scale) * melt)
-				local sy = zoom_scale + ((vanish_scale_y - zoom_scale) * melt)
-				local center_x = vanish_center_x + (combat_focus_vanish_arc_x * turn)
-				local bottom_y = vanish_bottom_y + (combat_focus_vanish_lift * melt) + (combat_focus_vanish_arc_y * turn)
-				local x = center_x - (monster.sx * sx) / 2
-				local y = bottom_y - (monster.sy * sy)
-				local alpha = 1 - easing.ease_in_quad(u)
-
-				frames[#frames + 1] = {
-					visible = alpha > 0,
-					x = x,
-					y = y,
-					scale = { x = sx, y = sy },
-					colorize = { r = 1, g = 1, b = 1, a = alpha },
-				}
-			end
-
-		return frames
-	end
-
 	self:define_timeline(new_timeline({
 		id = combat_focus_timeline_id,
-		frames = build_combat_focus_frames,
+		frames = timeline_builders.build_combat_focus_frames,
 		ticks_per_frame = combat_focus_ticks_per_frame,
 		playback_mode = 'once',
 		markers = {
@@ -479,319 +203,6 @@ function combat.define_fsm()
 			return '/idle'
 		end,
 	}
-
-	local function build_combat_intro_frames(self, monster, maya_a, maya_b)
-		local frames = {}
-
-		local monster_start_scale = self.combat_monster_start_scale
-		local monster_start_x = self.combat_monster_start_x
-		local monster_start_y = self.combat_monster_start_y
-		local monster_base_x = self.combat_monster_base_x
-		local monster_base_y = self.combat_monster_base_y
-		local monster_start_ox = (monster.sx * (monster_start_scale - 1)) / 2
-		local monster_start_oy = (monster.sy * (monster_start_scale - 1)) / 2
-		local monster_hidden_x = monster_start_x - monster_start_ox
-		local monster_hidden_y = monster_start_y - monster_start_oy
-
-		local maya_a_start_scale = self.combat_maya_a_start_scale
-		local maya_a_start_x = self.combat_maya_a_start_x
-		local maya_a_base_x = self.combat_maya_a_base_x
-		local maya_a_base_y = self.combat_maya_a_base_y
-		local maya_a_hidden_y = maya_a_base_y - (maya_a.sy * (maya_a_start_scale - 1))
-
-		local maya_b_start_scale = self.combat_maya_b_start_scale
-		local maya_b_end_scale = self.combat_maya_b_end_scale
-		local maya_b_start_right_x = self.combat_maya_b_start_right_x
-		local maya_b_exit_right_x = self.combat_maya_b_exit_right_x
-		local maya_b_base_x = self.combat_maya_b_start_x
-		local maya_b_base_y = self.combat_maya_b_base_y
-
-		for i = 0, combat_intro_maya_b_frames - 1 do
-			local u = i / (combat_intro_maya_b_frames - 1)
-			local eased = easing.smoothstep(u)
-			local turn = easing.arc01(u)
-			local s = maya_b_start_scale + (maya_b_end_scale - maya_b_start_scale) * eased
-			local right_x = maya_b_start_right_x + (maya_b_exit_right_x - maya_b_start_right_x) * eased
-			local x = right_x - (maya_b.sx * s)
-			local y = maya_b_base_y - (maya_b.sy * (s - 1)) + (combat_intro_maya_b_arc_y * turn)
-
-			frames[#frames + 1] = {
-				monster_visible = false,
-				monster_x = monster_hidden_x,
-				monster_y = monster_hidden_y,
-				monster_scale = monster_start_scale,
-				maya_a_visible = false,
-				maya_a_x = maya_a_start_x,
-				maya_a_y = maya_a_hidden_y,
-				maya_a_scale = maya_a_start_scale,
-				maya_b_visible = true,
-				maya_b_x = x,
-				maya_b_y = y,
-				maya_b_scale = s,
-			}
-		end
-
-		for i = 0, combat_intro_reveal_frames - 1 do
-			local u = i / (combat_intro_reveal_frames - 1)
-			local eased = easing.smoothstep(u)
-			local turn = easing.arc01(u)
-
-			local monster_scale = monster_start_scale + (1 - monster_start_scale) * eased
-			local monster_ox = (monster.sx * (monster_scale - 1)) / 2
-			local monster_oy = (monster.sy * (monster_scale - 1)) / 2
-			local monster_x = monster_start_x + (monster_base_x - monster_start_x) * eased + (combat_intro_monster_arc_x * turn) - monster_ox
-			local monster_y = monster_start_y + (monster_base_y - monster_start_y) * eased + (combat_intro_monster_arc_y * turn) - monster_oy
-
-			local maya_a_scale = maya_a_start_scale + (1 - maya_a_start_scale) * eased
-			local maya_a_x = maya_a_start_x + (maya_a_base_x - maya_a_start_x) * eased + (combat_intro_maya_a_arc_x * turn)
-			local maya_a_y = maya_a_base_y - (maya_a.sy * (maya_a_scale - 1)) + (combat_intro_maya_a_arc_y * turn)
-
-			frames[#frames + 1] = {
-				monster_visible = true,
-				monster_x = monster_x,
-				monster_y = monster_y,
-				monster_scale = monster_scale,
-				maya_a_visible = true,
-				maya_a_x = maya_a_x,
-				maya_a_y = maya_a_y,
-				maya_a_scale = maya_a_scale,
-				maya_b_visible = false,
-				maya_b_x = maya_b_base_x,
-				maya_b_y = maya_b_base_y,
-				maya_b_scale = 1,
-			}
-		end
-
-		return frames
-	end
-
-	local function build_combat_exchange_frames(self, params)
-		local frames = {}
-		local frame_count = params.frame_count
-		local monster_base_x = self.combat_monster_base_x
-		local monster_base_y = self.combat_monster_base_y
-		local maya_base_x = self.combat_maya_a_base_x
-		local maya_base_y = self.combat_maya_a_base_y
-		local impact_start = math.floor(frame_count * combat_exchange_impact_start_ratio)
-		local impact_end = math.floor(frame_count * combat_exchange_impact_end_ratio)
-		local impact_frames = impact_end - impact_start + 1
-		local maya_hold_frames = params.maya_hold_frames or 0
-		local maya_recover_frames = params.maya_recover_frames or 0
-		local maya_bob_amp = params.maya_bob_amp
-		local maya_bob_period_frames = params.maya_bob_period_frames
-		local maya_react_scale_x = params.maya_react_scale_x
-		local maya_react_scale_y = params.maya_react_scale_y
-		local maya_impact_scale_x = params.maya_impact_scale_x
-		local maya_impact_scale_y = params.maya_impact_scale_y
-		local maya_hold_end = impact_end + maya_hold_frames
-		local maya_recover_end = maya_hold_end + maya_recover_frames
-		local anticipate_frames = combat_exchange_anticipate_frames
-		local lunge_frames = combat_exchange_lunge_frames
-		local hitstop_frames = combat_exchange_hitstop_frames
-		local recover_frames = frame_count - anticipate_frames - lunge_frames - hitstop_frames
-		local lunge_end = anticipate_frames + lunge_frames
-		local hitstop_end = lunge_end + hitstop_frames
-
-		for i = 0, frame_count - 1 do
-			local lunge = 0
-			if i < anticipate_frames then
-			local u = i / (anticipate_frames - 1)
-			lunge = -0.10 * easing.smoothstep(u)
-		elseif i < lunge_end then
-			local u = (i - anticipate_frames) / (lunge_frames - 1)
-			lunge = easing.ease_in_out_quad(u)
-		elseif i < hitstop_end then
-			lunge = 1.0
-		else
-			local u = (i - hitstop_end) / (recover_frames - 1)
-			lunge = 1.0 - easing.ease_in_quad(u)
-			end
-
-			local impact_u = 0
-			if i >= impact_start and i <= impact_end then
-				local ru = (i - impact_start) / (impact_frames - 1)
-				impact_u = easing.arc01(ru)
-			end
-
-			local maya_u = 0
-			if i >= impact_start and i <= impact_end then
-				local ru = (i - impact_start) / (impact_frames - 1)
-				maya_u = easing.ease_out_quad(ru)
-			elseif i > impact_end and i <= maya_hold_end then
-				maya_u = 1
-			elseif i > maya_hold_end and i <= maya_recover_end and maya_recover_frames > 0 then
-				local ru = (i - maya_hold_end) / (maya_recover_frames - 1)
-				maya_u = 1 - easing.ease_in_quad(ru)
-			end
-
-			local forward = lunge
-			if forward < 0 then
-				forward = 0
-			end
-
-			local monster_x = monster_base_x - (combat_exchange_lunge_distance * forward)
-			local monster_y = monster_base_y + (combat_exchange_lunge_lift * forward)
-			if impact_u > 0 then
-				monster_x = monster_x - (combat_exchange_lunge_distance * combat_exchange_lunge_punch * impact_u)
-				monster_y = monster_y + (combat_exchange_lunge_lift * combat_exchange_lunge_punch * impact_u)
-			end
-
-			local s = 1
-			if lunge < 0 then
-				s = 1 - (0.04 * (-lunge))
-			else
-				s = 1 + ((combat_exchange_lunge_scale - 1) * forward)
-			end
-
-			local maya_x = maya_base_x
-			local maya_y = maya_base_y
-			local maya_scale = { x = 1, y = 1 }
-			local maya_colorize = { r = 1, g = 1, b = 1, a = 1 }
-			local overlay_alpha = 0
-			local bob = 0
-
-			if maya_u > 0 then
-				maya_x = maya_x + (params.maya_offset_x * maya_u)
-				maya_y = maya_y + (params.maya_offset_y * maya_u)
-				maya_scale = {
-					x = 1 + (maya_react_scale_x * maya_u),
-					y = 1 + (maya_react_scale_y * maya_u),
-				}
-				local bob_u = easing.pingpong01((i - impact_start) / maya_bob_period_frames)
-				bob = (bob_u - 0.5) * 2 * maya_bob_amp
-			end
-
-			if impact_u > 0 then
-				if params.squash then
-					maya_scale = {
-						x = maya_scale.x + (maya_impact_scale_x * impact_u),
-						y = maya_scale.y + (maya_impact_scale_y * impact_u),
-					}
-				end
-				if params.flash then
-					local flash_index = i - impact_start
-					if (flash_index % 2) == 1 then
-						maya_colorize = { r = params.flash_r, g = params.flash_g, b = params.flash_b, a = 1 }
-					end
-				end
-				local cam_dx = round(shake_signed(i * 19 + 5) * params.cam_shake_x * impact_u)
-				local cam_dy = round(shake_signed(i * 23 + 11) * params.cam_shake_y * impact_u)
-				monster_x = monster_x + cam_dx
-				monster_y = monster_y + cam_dy
-				maya_x = maya_x + cam_dx
-				maya_y = maya_y + cam_dy
-				overlay_alpha = params.overlay_alpha * impact_u
-			end
-			maya_y = maya_y + bob
-
-			frames[#frames + 1] = {
-				monster_x = monster_x,
-				monster_y = monster_y,
-				monster_scale = { x = s, y = s },
-				monster_colorize = { r = 1, g = 1, b = 1, a = 1 },
-				maya_x = maya_x,
-				maya_y = maya_y,
-				maya_scale = maya_scale,
-				maya_colorize = maya_colorize,
-				impact_u = impact_u,
-				overlay_alpha = overlay_alpha,
-			}
-		end
-
-		return frames
-	end
-
-	local function build_combat_hit_frames(self, monster)
-		local frames = {}
-		local base_x = self.combat_hit_origin_x
-		local base_y = self.combat_hit_origin_y
-		local hold_in = combat_hit_stop_frames
-		local peak_frames = combat_hit_peak_frames
-		local recover_frames = combat_hit_recover_frames
-		local move_frames = combat_hit_frame_count - hold_in - peak_frames - recover_frames
-		local peak_start = hold_in + move_frames
-		local recover_start = peak_start + peak_frames
-		local slash_start = hold_in
-		local slash_end = recover_start - 1
-		local path_dx = (combat_hit_slash_path_end_x_ratio - combat_hit_slash_path_start_x_ratio) * monster.sx
-		local path_dy = (combat_hit_slash_path_end_y_ratio - combat_hit_slash_path_start_y_ratio) * monster.sy
-		local path_len = math.sqrt((path_dx * path_dx) + (path_dy * path_dy))
-		local path_nx = path_dx / path_len
-		local path_ny = path_dy / path_len
-		local base_length = monster.sx * combat_hit_slash_length_ratio
-		local base_thickness = monster.sy * combat_hit_slash_thickness_ratio
-
-		for frame_index = 0, combat_hit_frame_count - 1 do
-			local kick = 0
-			if frame_index >= hold_in and frame_index < peak_start then
-				local u = (frame_index - hold_in) / (move_frames - 1)
-				kick = easing.ease_out_quad(u)
-			elseif frame_index >= peak_start and frame_index < recover_start then
-				kick = 1
-			elseif frame_index >= recover_start then
-				local u = (frame_index - recover_start) / (recover_frames - 1)
-				kick = 1 - easing.ease_in_quad(u)
-			end
-
-			local dx = combat_hit_knockback_x * kick
-			local dy = combat_hit_knockback_y * kick
-			if frame_index >= hold_in and frame_index < (hold_in + combat_hit_shake_frames) then
-				local k = frame_index - hold_in
-				local intensity = (combat_hit_shake_frames - k) / combat_hit_shake_frames
-				dx = dx + round(shake_signed(frame_index * 31 + 7) * combat_hit_shake_x * intensity)
-				dy = dy + round(shake_signed(frame_index * 37 + 11) * combat_hit_shake_y * intensity)
-			end
-
-			local monster_x = base_x + dx
-			local monster_y = base_y + dy
-			local monster_scale = {
-				x = 1 + (combat_hit_scale_x * kick),
-				y = 1 + (combat_hit_scale_y * kick),
-			}
-
-			local monster_colorize = { r = 1, g = 1, b = 1, a = 1 }
-			if frame_index >= hold_in and frame_index < recover_start then
-				local flash_index = frame_index - hold_in
-				if (flash_index % 2) == 1 then
-					monster_colorize = { r = 1, g = 0.2, b = 0.2, a = 1 }
-				end
-			end
-
-			local slash_active = frame_index >= slash_start and frame_index <= slash_end
-			local slash_points = nil
-			local slash_thickness = 0
-			local slash_color = nil
-			if slash_active then
-				local u = (frame_index - slash_start) / (slash_end - slash_start)
-				local arc = easing.arc01(u)
-				local center_x = monster_x + (monster.sx * (combat_hit_slash_path_start_x_ratio + ((combat_hit_slash_path_end_x_ratio - combat_hit_slash_path_start_x_ratio) * u)))
-				local center_y = monster_y + (monster.sy * (combat_hit_slash_path_start_y_ratio + ((combat_hit_slash_path_end_y_ratio - combat_hit_slash_path_start_y_ratio) * u)))
-				local scale = 1 + ((combat_hit_slash_peak_scale - 1) * arc)
-				local half = (base_length * scale) / 2
-				local x0 = center_x - (path_nx * half)
-				local y0 = center_y - (path_ny * half)
-				local x1 = center_x + (path_nx * half)
-				local y1 = center_y + (path_ny * half)
-				slash_points = { x0, y0, x1, y1 }
-				slash_thickness = base_thickness * (combat_hit_slash_taper_floor + ((1 - combat_hit_slash_taper_floor) * arc))
-				slash_color = { r = 1, g = 1, b = 1, a = combat_hit_slash_alpha * arc }
-			end
-
-			frames[#frames + 1] = {
-				monster_x = monster_x,
-				monster_y = monster_y,
-				monster_scale = monster_scale,
-				monster_colorize = monster_colorize,
-				slash_active = slash_active,
-				slash_points = slash_points,
-				slash_thickness = slash_thickness,
-				slash_color = slash_color,
-				slash_z = combat_hit_slash_z,
-			}
-		end
-
-		return frames
-	end
 
 	local function finish_combat_fade_in(self)
 		return '/combat_init'
@@ -1041,7 +452,26 @@ function combat.define_fsm()
 			local monster = object(combat_monster_id)
 			local maya_a = object(combat_maya_a_id)
 			local maya_b = object(combat_maya_b_id)
-			local frames = build_combat_intro_frames(self, monster, maya_a, maya_b)
+			local frames = timeline_builders.build_combat_intro_frames({
+				monster = monster,
+				maya_a = maya_a,
+				maya_b = maya_b,
+				monster_start_scale = self.combat_monster_start_scale,
+				monster_start_x = self.combat_monster_start_x,
+				monster_start_y = self.combat_monster_start_y,
+				monster_base_x = self.combat_monster_base_x,
+				monster_base_y = self.combat_monster_base_y,
+				maya_a_start_scale = self.combat_maya_a_start_scale,
+				maya_a_start_x = self.combat_maya_a_start_x,
+				maya_a_base_x = self.combat_maya_a_base_x,
+				maya_a_base_y = self.combat_maya_a_base_y,
+				maya_b_start_scale = self.combat_maya_b_start_scale,
+				maya_b_end_scale = self.combat_maya_b_end_scale,
+				maya_b_start_right_x = self.combat_maya_b_start_right_x,
+				maya_b_exit_right_x = self.combat_maya_b_exit_right_x,
+				maya_b_base_x = self.combat_maya_b_start_x,
+				maya_b_base_y = self.combat_maya_b_base_y,
+			})
 			self:define_timeline(new_timeline({
 				id = combat_intro_timeline_id,
 				frames = frames,
@@ -1181,7 +611,12 @@ function combat.define_fsm()
 			monster:get_component_by_id('base_sprite').scale = { x = 1, y = 1 }
 			self.combat_hit_origin_x = monster.x
 			self.combat_hit_origin_y = monster.y
-			local frames = build_combat_hit_frames(self, monster)
+			local frames = timeline_builders.build_combat_hit_frames({
+				base_x = self.combat_hit_origin_x,
+				base_y = self.combat_hit_origin_y,
+				monster_sx = monster.sx,
+				monster_sy = monster.sy,
+			})
 			self:define_timeline(new_timeline({
 				id = combat_hit_timeline_id,
 				frames = frames,
@@ -1232,7 +667,7 @@ function combat.define_fsm()
 				create = function()
 					return new_timeline({
 						id = combat_dodge_timeline_id,
-						frames = build_combat_dodge_frames,
+						frames = timeline_builders.build_combat_dodge_frames,
 						ticks_per_frame = combat_dodge_ticks_per_frame,
 						playback_mode = 'once',
 					})
@@ -1302,8 +737,12 @@ function combat.define_fsm()
 			overlay:get_component_by_id('base_sprite').scale = { x = display_width(), y = display_height() }
 			overlay.sprite_component.colorize = { r = 0, g = 0, b = 0, a = 0 }
 
-			local frames = build_combat_exchange_frames(self, {
+			local frames = timeline_builders.build_combat_exchange_frames({
 				frame_count = combat_exchange_hit_frame_count,
+				monster_base_x = self.combat_monster_base_x,
+				monster_base_y = self.combat_monster_base_y,
+				maya_base_x = self.combat_maya_a_base_x,
+				maya_base_y = self.combat_maya_a_base_y,
 				maya_offset_x = combat_exchange_hit_recoil_distance,
 				maya_offset_y = combat_exchange_hit_recoil_lift,
 				maya_hold_frames = combat_exchange_hit_recoil_hold_frames,
@@ -1408,8 +847,12 @@ function combat.define_fsm()
 			overlay:get_component_by_id('base_sprite').scale = { x = display_width(), y = display_height() }
 			overlay.sprite_component.colorize = { r = 0, g = 0, b = 0, a = 0 }
 
-			local frames = build_combat_exchange_frames(self, {
+			local frames = timeline_builders.build_combat_exchange_frames({
 				frame_count = combat_exchange_miss_frame_count,
+				monster_base_x = self.combat_monster_base_x,
+				monster_base_y = self.combat_monster_base_y,
+				maya_base_x = self.combat_maya_a_base_x,
+				maya_base_y = self.combat_maya_a_base_y,
 				maya_offset_x = combat_exchange_miss_dodge_distance,
 				maya_offset_y = combat_exchange_miss_dodge_lift,
 				maya_hold_frames = combat_exchange_miss_dodge_hold_frames,
@@ -1528,7 +971,7 @@ function combat.define_fsm()
 				create = function()
 					return new_timeline({
 						id = combat_all_out_timeline_id,
-						frames = build_combat_all_out_frames,
+						frames = timeline_builders.build_combat_all_out_frames,
 						ticks_per_frame = combat_all_out_ticks_per_frame,
 						playback_mode = 'once',
 					})
@@ -1555,6 +998,7 @@ function combat.define_fsm()
 					origin_y = self.all_out_origin_y,
 					sprite_w = all_out.sx,
 					sprite_h = all_out.sy,
+					shake = all_out_shake,
 				},
 			})
 		end,
@@ -1699,13 +1143,13 @@ function combat.define_fsm()
 		timelines = {
 			[combat_results_fade_in_timeline_id] = {
 				create = function()
-					return new_timeline({
-						id = combat_results_fade_in_timeline_id,
-						frames = build_combat_results_fade_in_frames,
-						ticks_per_frame = combat_results_fade_in_ticks_per_frame,
-						playback_mode = 'once',
-					})
-				end,
+			return new_timeline({
+				id = combat_results_fade_in_timeline_id,
+				frames = timeline_builders.build_combat_results_fade_in_frames,
+				ticks_per_frame = combat_results_fade_in_ticks_per_frame,
+				playback_mode = 'once',
+			})
+		end,
 				autoplay = false,
 				stop_on_exit = true,
 			},
@@ -1769,9 +1213,9 @@ function combat.define_fsm()
 		timelines = {
 			[combat_results_fade_out_timeline_id] = {
 				create = function()
-					return new_timeline({
-						id = combat_results_fade_out_timeline_id,
-						frames = combat_results_fade_out_frames_table,
+			return new_timeline({
+				id = combat_results_fade_out_timeline_id,
+				frames = combat_results_fade_out_frames_table,
 						ticks_per_frame = combat_results_fade_out_ticks_per_frame,
 						playback_mode = 'once',
 					})
@@ -1816,9 +1260,9 @@ function combat.define_fsm()
 		timelines = {
 			[combat_exit_fade_in_timeline_id] = {
 				create = function()
-					return new_timeline({
-						id = combat_exit_fade_in_timeline_id,
-						frames = combat_exit_fade_in_frames_table,
+			return new_timeline({
+				id = combat_exit_fade_in_timeline_id,
+				frames = combat_exit_fade_in_frames_table,
 						ticks_per_frame = combat_exit_fade_in_ticks_per_frame,
 						playback_mode = 'once',
 					})
