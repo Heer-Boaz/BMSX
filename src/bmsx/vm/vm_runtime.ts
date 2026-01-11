@@ -3721,37 +3721,8 @@ export class BmsxVMRuntime {
 		return source.list('lua').length > 0;
 	}
 
-	private collectVmModulePathsFromSourceRegistries(): string[] {
-		const modulePaths: string[] = [];
-		const seen = new Set<string>();
-		const registries = this.resolveModuleRegistries();
-		for (const registry of registries) {
-			if (!registry) {
-				continue;
-			}
-			for (const asset of Object.values(registry.path2lua)) {
-				const key = asset.normalized_source_path ?? asset.source_path; // Why this defensive coding?
-				if (!key || seen.has(key)) {
-					continue;
-				}
-				seen.add(key);
-				modulePaths.push(key);
-			}
-		}
-		return modulePaths;
-	}
-
 	private shouldBootLuaProgramFromSources(): boolean {
-		if (!this.hasLuaAssets()) {
-			return false;
-		}
-		const modulePaths = this.collectVmModulePathsFromSourceRegistries();
-		for (const entry of buildModuleAliasesFromPaths(modulePaths)) {
-			if (entry.alias === 'engine') {
-				return false;
-			}
-		}
-		return false;
+		return this.hasLuaAssets();
 	}
 
 	private resolveProgramAssetSourceFor(source: VmProgramSource): RawAssetSource {
