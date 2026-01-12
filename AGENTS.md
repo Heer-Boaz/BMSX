@@ -144,7 +144,6 @@
 		// (...)
 		openLuaCodeTab({ path: entryPath, type: 'lua', asset_id: entryAsset.resid });
 	}
-	}
 	```
 
 	Also avoid code like this:
