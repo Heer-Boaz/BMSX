@@ -49,6 +49,7 @@ function combat_director:apply_combat_round(node)
 	end
 	stagger.play(self, 'combat', {
 		bg = object(bg_id),
+		bg_dim = false,
 		pose_targets = {
 			object(combat_maya_a_id),
 		},
