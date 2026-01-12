@@ -20,18 +20,10 @@ local CART_ROM_MAGIC = 0x58534D42
 local boot_start = os.clock()
 local boot_requested = false
 
-local function read_u32(addr)
-	return peek(addr)
-end
-
-local function read_u8(addr)
-	return read_u32(addr) % 256
-end
-
 local function read_zstr(addr)
 	local t = {}
 	while true do
-		local b = read_u8(addr)
+		local b = peek(addr) % 256 -- read u8
 		addr = addr + 1
 		if b == 0 then break end
 		t[#t + 1] = string.char(b)
@@ -40,23 +32,23 @@ local function read_zstr(addr)
 end
 
 local function read_cart_header(base)
-	if read_u32(base) ~= CART_ROM_MAGIC then
+	if peek(base) ~= CART_ROM_MAGIC then
 		return nil
 	end
 	return {
-		header_size = read_u32(base + 4),
-		manifest_off = read_u32(base + 8),
-		manifest_len = read_u32(base + 12),
-		toc_off = read_u32(base + 16),
-		toc_len = read_u32(base + 20),
-		data_off = read_u32(base + 24),
-		data_len = read_u32(base + 28),
+		header_size = peek(base + 4),
+		manifest_off = peek(base + 8),
+		manifest_len = peek(base + 12),
+		toc_off = peek(base + 16),
+		toc_len = peek(base + 20),
+		data_off = peek(base + 24),
+		data_len = peek(base + 28),
 	}
 end
 
 local function read_bios_manifest(base, header)
 	local p = base + header.manifest_off
-	local entry_kind = read_u32(p)
+	local entry_kind = peek(p)
 	p = p + 4
 	local title; title, p = read_zstr(p)
 	local short_name; short_name, p = read_zstr(p)
@@ -171,7 +163,7 @@ function new_game()
 end
 
 function update(_dt)
-	local cart_present_and_ready = read_u32(CART_ROM_BASE) == CART_ROM_MAGIC and peek(sys_cart_bootready) == 1
+	local cart_present_and_ready = peek(CART_ROM_BASE) == CART_ROM_MAGIC and peek(sys_cart_bootready) == 1
 
 	if cart_present_and_ready and not boot_requested and elapsed_seconds() >= boot_delay then
 		boot_requested = true
@@ -227,7 +219,7 @@ function draw()
 	write(divider(width, left), left, y, 0, color_accent)
 	y = y + line_height
 
-	local cart_present = read_u32(CART_ROM_BASE) == CART_ROM_MAGIC
+	local cart_present = peek(CART_ROM_BASE) == CART_ROM_MAGIC
 	local elapsed = elapsed_seconds()
 	local cursor = (math.floor(elapsed * 2) % 2 == 0) and '█' or ' '
 	if cart_present then
