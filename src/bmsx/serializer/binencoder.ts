@@ -186,7 +186,8 @@ class BinWriter {
 	}
 
 	varintSigned(v: number) {
-		let zz = ((v | 0) << 1) ^ ((v | 0) >> 31);
+		const v32 = v | 0;
+		let zz = ((v32 << 1) ^ (v32 >> 31)) >>> 0;
 		while (zz >= 0x80) {
 			this.u8((zz & 0x7F) | 0x80);
 			zz >>>= 7;
