@@ -31,7 +31,8 @@ inline double to_ms(std::chrono::steady_clock::duration duration) {
 }
 
 constexpr uint32_t CART_ROM_MAGIC = 0x58534D42u;
-constexpr std::array<u8, 4> CART_ROM_EMPTY_HEADER = { 0u, 0u, 0u, 0u };
+constexpr size_t CART_ROM_HEADER_SIZE = 32;
+constexpr std::array<u8, CART_ROM_HEADER_SIZE> CART_ROM_EMPTY_HEADER = {};
 
 bool isAtlasName(const std::string& name) {
 	static constexpr const char* kPrefix = "_atlas_";

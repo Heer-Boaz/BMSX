@@ -139,33 +139,65 @@ void RuntimeAssets::clear() {
  * ROM loading
  * ============================================================================ */
 
-RomMeta parseRomMeta(const u8* buffer, size_t size) {
-	if (size < 16) {
-		throw BMSX_RUNTIME_ERROR("ROM file too small for footer");
+struct CartRomHeader {
+	u32 headerSize = 0;
+	u32 manifestOffset = 0;
+	u32 manifestLength = 0;
+	u32 tocOffset = 0;
+	u32 tocLength = 0;
+	u32 dataOffset = 0;
+	u32 dataLength = 0;
+};
+
+static constexpr u8 CART_ROM_MAGIC[4] = { 0x42, 0x4d, 0x53, 0x58 };
+static constexpr size_t CART_ROM_HEADER_SIZE = 32;
+
+static u32 readLE32(const u8* data);
+
+static bool hasCartHeader(const u8* data, size_t size) {
+	if (size < CART_ROM_HEADER_SIZE) {
+		return false;
 	}
-
-	// Footer is last 16 bytes: 8 bytes offset + 8 bytes length (little endian)
-	const u8* footer = buffer + size - 16;
-
-	u64 metaOffset = 0;
-	u64 metaLength = 0;
-
-	// Read little-endian u64
-	for (int i = 0; i < 8; i++) {
-		metaOffset |= static_cast<u64>(footer[i]) << (i * 8);
+	if (std::memcmp(data, CART_ROM_MAGIC, sizeof(CART_ROM_MAGIC)) != 0) {
+		return false;
 	}
-	for (int i = 0; i < 8; i++) {
-		metaLength |= static_cast<u64>(footer[8 + i]) << (i * 8);
-	}
+	const u32 headerSize = readLE32(data + 4);
+	return headerSize >= CART_ROM_HEADER_SIZE && headerSize <= size;
+}
 
-	if (metaOffset + metaLength > size) {
-		throw BMSX_RUNTIME_ERROR("Invalid ROM metadata footer");
+static void assertSectionRange(u32 offset, u32 length, size_t total, const char* label) {
+	if (static_cast<size_t>(offset) + static_cast<size_t>(length) > total) {
+		throw BMSX_RUNTIME_ERROR(std::string("Invalid ROM ") + label + " range.");
 	}
+}
 
-	return RomMeta{
-		static_cast<size_t>(metaOffset),
-		static_cast<size_t>(metaOffset + metaLength)
-	};
+static CartRomHeader parseCartHeader(const u8* data, size_t size) {
+	if (size < CART_ROM_HEADER_SIZE) {
+		throw BMSX_RUNTIME_ERROR("ROM payload is too small for cart header.");
+	}
+	if (std::memcmp(data, CART_ROM_MAGIC, sizeof(CART_ROM_MAGIC)) != 0) {
+		throw BMSX_RUNTIME_ERROR("Invalid ROM cart header.");
+	}
+	CartRomHeader header{};
+	header.headerSize = readLE32(data + 4);
+	if (header.headerSize < CART_ROM_HEADER_SIZE) {
+		throw BMSX_RUNTIME_ERROR("ROM header size is too small.");
+	}
+	if (header.headerSize > size) {
+		throw BMSX_RUNTIME_ERROR("ROM header size exceeds payload length.");
+	}
+	header.manifestOffset = readLE32(data + 8);
+	header.manifestLength = readLE32(data + 12);
+	header.tocOffset = readLE32(data + 16);
+	header.tocLength = readLE32(data + 20);
+	header.dataOffset = readLE32(data + 24);
+	header.dataLength = readLE32(data + 28);
+
+	assertSectionRange(header.manifestOffset, header.manifestLength, size, "manifest");
+	assertSectionRange(header.tocOffset, header.tocLength, size, "toc");
+	assertSectionRange(header.dataOffset, header.dataLength, size, "data");
+
+	return header;
 }
 
 // Check if buffer has PNG signature
@@ -311,26 +343,6 @@ static std::vector<u8> zlibDecompress(const u8* data, size_t size) {
 }
 #endif
 
-// Check if ROM has valid metadata footer
-static bool hasRomMetaFooter(const u8* buffer, size_t size) {
-	if (size < 16) return false;
-
-	const u8* footer = buffer + size - 16;
-	u64 metaOffset = 0;
-	u64 metaLength = 0;
-
-	for (int i = 0; i < 8; i++) {
-		metaOffset |= static_cast<u64>(footer[i]) << (i * 8);
-	}
-	for (int i = 0; i < 8; i++) {
-		metaLength |= static_cast<u64>(footer[8 + i]) << (i * 8);
-	}
-
-	return metaOffset + metaLength <= size && metaLength > 0;
-}
-
-static constexpr u8 CART_ROM_MAGIC[4] = { 0x42, 0x4d, 0x53, 0x58 };
-
 bool loadAssetsFromRom(const u8* buffer,
 					   size_t size,
 					   RuntimeAssets& assets,
@@ -345,16 +357,19 @@ bool loadAssetsFromRom(const u8* buffer,
 	if (pngEnd > 0) {
 		const u8* candidate = buffer + pngEnd;
 		const size_t candidateSize = size - pngEnd;
-		if (hasRomMetaFooter(candidate, candidateSize) || looksZlibCompressed(candidate, candidateSize)) {
+		if (hasCartHeader(candidate, candidateSize) || looksZlibCompressed(candidate, candidateSize)) {
 			romData = candidate;
 			romSize = candidateSize;
 		}
 	}
 
-	// Step 2: Check if data is compressed (no valid footer = compressed)
+	// Step 2: Check if data is compressed
 	std::vector<u8> decompressed;
-	if (!hasRomMetaFooter(romData, romSize)) {
+	if (!hasCartHeader(romData, romSize)) {
 		#if BMSX_ENABLE_ZLIB
+		if (!looksZlibCompressed(romData, romSize)) {
+			throw BMSX_RUNTIME_ERROR("ROM payload is missing cart header.");
+		}
 		decompressed = zlibDecompress(romData, romSize);
 		#else
 		throw BMSX_RUNTIME_ERROR("ROM payload is compressed but zlib support is disabled.");
@@ -362,22 +377,16 @@ bool loadAssetsFromRom(const u8* buffer,
 		romData = decompressed.data();
 		romSize = decompressed.size();
 
-		if (!hasRomMetaFooter(romData, romSize)) {
-			throw BMSX_RUNTIME_ERROR("Invalid ROM payload after decompression");
+		if (!hasCartHeader(romData, romSize)) {
+			throw BMSX_RUNTIME_ERROR("Invalid ROM payload after decompression.");
 		}
 	}
 	const bool romDataPersistent = decompressed.empty();
-	if (romSize < sizeof(CART_ROM_MAGIC)) {
-		throw BMSX_RUNTIME_ERROR("ROM payload is too small for cart header");
-	}
-	if (std::memcmp(romData, CART_ROM_MAGIC, sizeof(CART_ROM_MAGIC)) != 0) {
-		throw BMSX_RUNTIME_ERROR("Invalid ROM cart header");
-	}
+	const CartRomHeader header = parseCartHeader(romData, romSize);
 
 	// Step 3: Parse metadata to get asset list
-	RomMeta meta = parseRomMeta(romData, romSize);
-	const u8* metaData = romData + meta.start;
-	size_t metaSize = meta.end - meta.start;
+	const u8* metaData = romData + header.tocOffset;
+	size_t metaSize = header.tocLength;
 
 	BinValue assetListPayload = decodeBinary(metaData, metaSize);
 	if (!assetListPayload.isObject()) {

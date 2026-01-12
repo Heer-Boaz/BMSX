@@ -47,6 +47,17 @@ function buildMsxCharMap(): GlyphMap {
 		'~': withPrefix('code_0x7e'),
 		'•': withPrefix('ctrl_bel'),
 		'¡': withPrefix('code_0x80'),
+		// '¤': withPrefix('flower'),
+		// '¦': withPrefix('brokenbar'),
+		// '§': withPrefix('section'),
+		// '£': withPrefix('pound'),
+		// '¥': withPrefix('yen'),
+		// '€': withPrefix('euro'),
+		// 'µ': withPrefix('euler'),
+		// 'ĳ': withPrefix('low_ij'),
+		// 'Ĳ': withPrefix('ij'),
+		'█': withPrefix('code_0xc8'),
+		'—': withPrefix('ctrl_etb'), // etb = "extended dash/break" and the associated ASCII control code is 0x17
 	};
 	for (let i = 0; i < 10; i += 1) {
 		const digit = String.fromCharCode(48 + i);

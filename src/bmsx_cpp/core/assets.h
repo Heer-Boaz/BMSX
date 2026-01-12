@@ -277,14 +277,6 @@ struct AssetLoadCallbacks {
  * ROM loader functions
  * ============================================================================ */
 
-// Parse ROM metadata from buffer
-struct RomMeta {
-	size_t start = 0;
-	size_t end = 0;
-};
-
-RomMeta parseRomMeta(const u8* buffer, size_t size);
-
 // Load assets from ROM buffer into RuntimeAssets
 bool loadAssetsFromRom(const u8* buffer,
 			   size_t size,

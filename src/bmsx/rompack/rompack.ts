@@ -7,7 +7,17 @@ import { InputMap } from '../input/inputtypes';
 export const GAME_FPS = 50;
 export const CART_ROM_MAGIC = 0x58534D42;
 export const CART_ROM_MAGIC_BYTES = new Uint8Array([0x42, 0x4d, 0x53, 0x58]);
-export const CART_ROM_HEADER_SIZE = CART_ROM_MAGIC_BYTES.length;
+export const CART_ROM_HEADER_SIZE = 32;
+
+export type CartRomHeader = {
+	headerSize: number;
+	manifestOffset: number;
+	manifestLength: number;
+	tocOffset: number;
+	tocLength: number;
+	dataOffset: number;
+	dataLength: number;
+};
 
 export type CartridgeLayerId = 'system' | 'cart' | 'overlay';
 export type CartridgePayloads = Partial<Record<CartridgeLayerId, ArrayBuffer>>;
@@ -74,11 +84,6 @@ export type RomLuaAsset = RomAsset & {
 	src: string; // The Lua source code of the Lua script asset. Known at pack time
 	normalized_source_path?: string; // Normalized absolute source path for this Lua asset, used for source mapping and debugging.
 	update_timestamp: number; // Timestamp of the last update to this Lua asset, used for caching and reloading during development.
-}
-
-export interface RomMeta {
-	start: number; // The start offset of the RomPack metadata in the ROM (file) buffer itself.
-	end: number; // The end offset of the RomPack metadata in the ROM (file) buffer itself.
 }
 
 export type id2res = Record<asset_id, RomAsset>;

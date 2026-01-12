@@ -1068,12 +1068,12 @@ async function main() {
 		}
 		if (skipTypecheck) {
 			progress.removeTasks(typecheckTasks);
+			removeTaskNamesFromList(romBuildTasks, typecheckTasks);
 		}
 		// split-engine removed
 		logDivider('Pipeline');
 		let typeCheckError: Error = null;
 		logInfo(`Starting for ${pc.bold(pc.blue(`${rom_name}`))}`);
-		progress.showInitial();
 
 		if (!force) {
 			rebuildRequired = await progress.runWithDetail('Check timestamps', () => isRebuildRequired(rom_name, bootloader_path, respath, { includeCode, extraLuaPaths: Array.from(extraLuaPathSet), resolveAtlasIndex: false }));
@@ -1092,11 +1092,12 @@ async function main() {
 			if (!rebuildRequired) {
 				logInfo('Rebuild skipped: game rom is newer than code/assets (use --force to override)');
 			}
-			await progress.taskCompleted();
+			progress.skipTasks(rebuildCheckTasks.length);
 		} else rebuildRequired = true;
 		if (!rebuildRequired) {
 			progress.removeTasks(romBuildTasks);
 		}
+		progress.showInitial();
 
 		let romManifest: RomManifest;
 		let short_name: string = 'BMSX';

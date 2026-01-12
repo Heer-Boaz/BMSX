@@ -7,9 +7,9 @@ import * as contrib from 'blessed-contrib';
 import * as fs from 'fs/promises';
 import * as pako from 'pako';
 import { PNG } from 'pngjs';
-import type { asset_type, AudioMeta, GLTFModel, ImgMeta, RomAsset, RomMeta } from '../../src/bmsx/rompack/rompack';
+import type { asset_type, AudioMeta, GLTFModel, ImgMeta, RomAsset, CartRomHeader } from '../../src/bmsx/rompack/rompack';
 import { decodeBinary } from '../../src/bmsx/serializer/binencoder';
-import { getZippedRomAndRomLabelFromBlob, loadAssetList, loadModelFromBuffer as loadGLTFModelFromBuffer, parseMetaFromBuffer, loadRuntimeAssetsFromBuffer } from '../../src/bmsx/rompack/romloader';
+import { getZippedRomAndRomLabelFromBlob, loadAssetList, loadModelFromBuffer as loadGLTFModelFromBuffer, parseCartHeader, loadRuntimeAssetsFromBuffer } from '../../src/bmsx/rompack/romloader';
 import { disassembleProgram } from '../../src/bmsx/vm/disassembler';
 import type { Program, ProgramMetadata } from '../../src/bmsx/vm/cpu';
 import { decodeProgramAsset, decodeProgramSymbolsAsset, inflateProgram, VM_PROGRAM_ASSET_ID, VM_PROGRAM_SYMBOLS_ASSET_ID } from '../../src/bmsx/vm/vm_program_asset';
@@ -264,33 +264,31 @@ function generateOverlayAscii(imgW: number, imgH: number, polys: number[][], mod
 	return generateBrailleAsciiArt(buf, imgW, imgH, modalWidth);
 }
 
-function getMetadataBuffer(rombin: Buffer | ArrayBuffer, rommeta: RomMeta) {
-	const metadataOffset = rommeta.start;
-	const metadataLength = rommeta.end - rommeta.start;
-	// Validate metadataOffset and metadataLength
-	if (
-		!Number.isFinite(metadataOffset) ||
-		!Number.isFinite(metadataLength) ||
-		metadataOffset < 0 ||
-		metadataLength < 0 ||
-		metadataOffset + metadataLength > rombin.byteLength ||
-		metadataOffset > rombin.byteLength - 16
-	) {
-		console.error(`Invalid metadata offset or length: offset=${metadataOffset} (${formatByteSize(metadataOffset)}), length=${metadataLength} (${formatByteSize(metadataLength)})`);
+function getTocBuffer(rombin: Buffer | ArrayBuffer, header: CartRomHeader) {
+	const metadataOffset = header.tocOffset;
+	const metadataLength = header.tocLength;
+	if (metadataOffset + metadataLength > rombin.byteLength) {
+		console.error(`Invalid TOC offset or length: offset=${metadataOffset} (${formatByteSize(metadataOffset)}), length=${metadataLength} (${formatByteSize(metadataLength)})`);
 		process.exit(1);
 	}
 
 	const metaBuf = rombin.slice(metadataOffset, metadataOffset + metadataLength);
 	if (!metaBuf || metaBuf.byteLength === 0) {
-		console.error('No metadata found in ROM file, invalid ROM file.');
+		console.error('No TOC found in ROM file, invalid ROM file.');
 		process.exit(1);
 	}
 	if (metaBuf.byteLength !== metadataLength) {
-		console.error(`Metadata length mismatch: expected ${metadataLength} bytes, got ${metaBuf.byteLength} bytes`);
+		console.error(`TOC length mismatch: expected ${metadataLength} bytes, got ${metaBuf.byteLength} bytes`);
 		process.exit(1);
 	}
-	console.log(`Metadata buffer loaded: offset=${metadataOffset} (${formatByteSize(metadataOffset)}), length=${metadataLength} (${formatByteSize(metadataLength)})`);
-	return { metaBuf, metadataOffset, metadataLength };
+	console.log(`TOC buffer loaded: offset=${metadataOffset} (${formatByteSize(metadataOffset)}), length=${metadataLength} (${formatByteSize(metadataLength)})`);
+	return {
+		metaBuf,
+		metadataOffset,
+		metadataLength,
+		manifestOffset: header.manifestOffset,
+		manifestLength: header.manifestLength,
+	};
 }
 
 async function loadRompackFromFile(romfile: string): Promise<Buffer | ArrayBuffer> {
@@ -439,14 +437,15 @@ async function main() {
 		process.exit(1);
 	}
 
-	const rommeta = parseMetaFromBuffer(rombin);
-	if (!rommeta || !rommeta.start || !rommeta.end) {
-		console.error('Invalid ROM metadata, unable to parse ROM file.');
-		process.exit(1);
-	}
-	console.log(`ROM metadata: start=${rommeta.start} (${formatByteSize(rommeta.start)}), end=${rommeta.end} (${formatByteSize(rommeta.end)}, length=${rommeta.end - rommeta.start} (${formatByteSize(rommeta.end - rommeta.start)}))`);
+	const header = parseCartHeader(rombin);
+	console.log(
+		`ROM header: header=${header.headerSize} ` +
+		`manifest=${header.manifestOffset}+${header.manifestLength} ` +
+		`toc=${header.tocOffset}+${header.tocLength} ` +
+		`data=${header.dataOffset}+${header.dataLength}`
+	);
 
-	const { metaBuf, metadataOffset, metadataLength } = getMetadataBuffer(rombin, rommeta);
+	const { metadataOffset, metadataLength, manifestOffset, manifestLength } = getTocBuffer(rombin, header);
 	assetList = await loadAssets(rombin);
 
 	if (programAsmFlag) {
@@ -553,15 +552,19 @@ async function main() {
 				summaryRegions.push({ start, end, colorTag, label });
 			}
 		}
-		// Global metadata region
-		summaryRegions.push({ start: metadataOffset, end: metadataOffset + metadataLength, colorTag: '{light-red-fg}', label: 'global metadata' });
+		// Manifest + TOC regions
+		if (manifestLength > 0) {
+			summaryRegions.push({ start: manifestOffset, end: manifestOffset + manifestLength, colorTag: '{light-red-fg}', label: 'manifest' });
+		}
+		summaryRegions.push({ start: metadataOffset, end: metadataOffset + metadataLength, colorTag: '{light-magenta-fg}', label: 'toc' });
 
 		const imageSizePercent = (imagesSize / totalSize * 100).toFixed(1);
 		const audioSizePercent = (audioSize / totalSize * 100).toFixed(1);
 		const dataSizePercent = (dataSize / totalSize * 100).toFixed(1);
 		const modelSizePercent = (modelSize / totalSize * 100).toFixed(1);
 		const atlasSizePercent = (atlasSize / totalSize * 100).toFixed(1);
-		const metaSizePercent = (metaBuf.byteLength / totalSize * 100).toFixed(1);
+		const metaSize = metadataLength + manifestLength;
+		const metaSizePercent = (metaSize / totalSize * 100).toFixed(1);
 
 		return `Total assets: ${assetList?.length ?? 0} (images: ${imageAssets?.length ?? 0
 			}, audio: ${audioCount}, data: ${dataCount}, models: ${modelCount}, other: ${otherCount}) \n` +
@@ -572,7 +575,7 @@ async function main() {
 			`Data: ${formatByteSize(dataSize)} (${dataSizePercent}%) | ` +
 			`Models: ${formatByteSize(modelSize)} (${modelSizePercent}%) | ` +
 			`Atlas: ${formatByteSize(atlasSize)} (${atlasSizePercent}%) | ` +
-			`Metadata: ${formatByteSize(metaBuf.byteLength)} (${metaSizePercent}%)`;
+			`Metadata: ${formatByteSize(metaSize)} (${metaSizePercent}%)`;
 	}
 
 	const summaryBox = blessed.box({

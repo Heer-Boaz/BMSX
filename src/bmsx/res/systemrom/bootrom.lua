@@ -11,54 +11,113 @@ local color_header_text = 1
 local color_text = 15
 local color_muted = 14
 local color_accent = 11
-local color_warn = 8
+local color_warn = 9
+
+local ENGINE_ROM_BASE = 0x00000000
+local CART_ROM_BASE = 0x01000000
+local CART_ROM_MAGIC = 0x58534D42
 
 local boot_start = os.clock()
 local boot_requested = false
+
+local function read_u32(addr)
+	return peek(addr)
+end
+
+local function read_u8(addr)
+	return read_u32(addr) % 256
+end
+
+local function read_zstr(addr)
+	local t = {}
+	while true do
+		local b = read_u8(addr)
+		addr = addr + 1
+		if b == 0 then break end
+		t[#t + 1] = string.char(b)
+	end
+	return table.concat(t), addr
+end
+
+local function read_cart_header(base)
+	if read_u32(base) ~= CART_ROM_MAGIC then
+		return nil
+	end
+	return {
+		header_size = read_u32(base + 4),
+		manifest_off = read_u32(base + 8),
+		manifest_len = read_u32(base + 12),
+		toc_off = read_u32(base + 16),
+		toc_len = read_u32(base + 20),
+		data_off = read_u32(base + 24),
+		data_len = read_u32(base + 28),
+	}
+end
+
+local function read_bios_manifest(base, header)
+	local p = base + header.manifest_off
+	local entry_kind = read_u32(p)
+	p = p + 4
+	local title; title, p = read_zstr(p)
+	local short_name; short_name, p = read_zstr(p)
+	local rom_name; rom_name, p = read_zstr(p)
+	local entry_path; entry_path, p = read_zstr(p)
+	local namespace; namespace, p = read_zstr(p)
+	local viewport; viewport, p = read_zstr(p)
+	local canonicalization; canonicalization, p = read_zstr(p)
+	local input; input, p = read_zstr(p)
+	local root; root, p = read_zstr(p)
+	return {
+		entry_kind = entry_kind,
+		title = title,
+		short_name = short_name,
+		rom_name = rom_name,
+		entry_path = entry_path,
+		namespace = namespace,
+		viewport = viewport,
+		canonicalization = canonicalization,
+		input = input,
+		root = root,
+	}
+end
+
+local function display_text(value)
+	if value == nil or value == '' then
+		return '--'
+	end
+	return value
+end
 
 local function elapsed_seconds()
 	return os.clock() - boot_start
 end
 
 local function center_x(text, width)
-	return math.floor((width - (#text * font_width)) / 2)
+	-- center text in given width, but ensure that the result is dividable by font_width
+	return math.floor((width - (#text * font_width)) / 2 / font_width) * font_width
 end
 
 local function build_info()
-	local cart = cart_manifest
-	local cart_vm = cart.vm
-	local engine = engine_manifest
-	local engine_vm = engine.vm
+	local cart_header = read_cart_header(CART_ROM_BASE)
+	local cart_manifest = cart_header and read_bios_manifest(CART_ROM_BASE, cart_header) or nil
+	local engine_header = read_cart_header(ENGINE_ROM_BASE)
+	local engine_manifest = engine_header and read_bios_manifest(ENGINE_ROM_BASE, engine_header) or nil
 
-	local cart_title = cart.title or '--'
-	local cart_short = cart.short_name or cart.rom_name or '--'
-	local cart_rom = cart.rom_name or '--'
-	local cart_ns = cart_vm.namespace or '--'
-	local cart_view = cart_vm.viewport or { width = display_width(), height = display_height() }
-	local cart_view_label = tostring(cart_view.width) .. 'x' .. tostring(cart_view.height)
-	local cart_canon = cart_vm.canonicalization or '--'
-	local cart_entry = cart.lua.entry_path
-	local cart_input_label = 'DEFAULT'
-	local cart_input_count = 1
-	if cart_manifest.input then
-		cart_input_label = 'CUSTOM'
-		cart_input_count = 0
-		for _ in pairs(cart_manifest.input) do
-			cart_input_count = cart_input_count + 1
-		end
-		if cart_input_count == 0 then
-			cart_input_count = 1
-		end
-	end
-	local cart_input = cart_input_label .. ' (' .. tostring(cart_input_count) .. 'P)'
+	local cart_title = cart_manifest and display_text(cart_manifest.title) or '--'
+	local cart_short = cart_manifest and display_text(cart_manifest.short_name) or '--'
+	local cart_rom = cart_manifest and display_text(cart_manifest.rom_name) or '--'
+	local cart_ns = cart_manifest and display_text(cart_manifest.namespace) or '--'
+	local cart_view_label = cart_manifest and display_text(cart_manifest.viewport) or '--'
+	local cart_canon = cart_manifest and display_text(cart_manifest.canonicalization) or '--'
+	local cart_entry = cart_manifest and display_text(cart_manifest.entry_path) or '--'
+	local cart_input = cart_manifest and display_text(cart_manifest.input) or '--'
 
-	local engine_title = engine.title or '--'
-	local engine_rom = engine.rom_name or '--'
-	local engine_ns = engine_vm.namespace or '--'
-	local engine_view = engine_vm.viewport or { width = display_width(), height = display_height() }
-	local engine_view_label = tostring(engine_view.width) .. 'x' .. tostring(engine_view.height)
-	local engine_canon = engine_vm.canonicalization or '--'
-	local engine_entry = engine.lua.entry_path
+	local engine_title = engine_manifest and display_text(engine_manifest.title) or '--'
+	local engine_rom = engine_manifest and display_text(engine_manifest.rom_name) or '--'
+	local engine_ns = engine_manifest and display_text(engine_manifest.namespace) or '--'
+	local engine_view_label = engine_manifest and display_text(engine_manifest.viewport) or '--'
+	local engine_canon = engine_manifest and display_text(engine_manifest.canonicalization) or '--'
+	local engine_entry = engine_manifest and display_text(engine_manifest.entry_path) or '--'
 
 	return {
 		engine_title = engine_title,
@@ -75,7 +134,7 @@ local function build_info()
 		cart_canon = cart_canon,
 		cart_entry = cart_entry,
 		cart_input = cart_input,
-		root = assets.project_root_path or '--',
+		root = cart_manifest and display_text(cart_manifest.root) or '--',
 	}
 end
 
@@ -85,7 +144,12 @@ local function divider(width, left)
 	if slots < 8 then
 		slots = 8
 	end
-	return string.rep('-', slots)
+	-- optie 1
+	-- return string.rep(string.char(0x2014), slots)
+	-- optie 2
+	-- return (utf8 and utf8.char) and utf8.char(0x2014) or '-'
+	return string.rep('—', slots)
+	-- return string.rep(string.char(0xE2, 0x80, 0x94), slots)
 end
 
 local function build_progress_bar(progress, width)
@@ -107,7 +171,7 @@ function new_game()
 end
 
 function update(_dt)
-	local cart_present_and_ready = peek(sys_cart_magic_addr) == sys_cart_magic and peek(sys_cart_bootready) == 1
+	local cart_present_and_ready = read_u32(CART_ROM_BASE) == CART_ROM_MAGIC and peek(sys_cart_bootready) == 1
 
 	if cart_present_and_ready and not boot_requested and elapsed_seconds() >= boot_delay then
 		boot_requested = true
@@ -117,12 +181,12 @@ end
 
 function draw()
 	local width = display_width()
-	local left = 10
-	local top = 24
+	local left = 8
+	local top = 32
 
 	cls(color_bg)
-	put_rectfill(0, 0, width - 1, 15, 0, color_header_bg)
-	write('BMSX BIOS', center_x('BMSX BIOS', width), 4, 0, color_header_text)
+	put_rectfill(0, 0, width, 24, 0, color_header_bg)
+	write('BMSX BIOS', center_x('BMSX BIOS', width), 8, 0, color_header_text)
 
 	local info = build_info()
 	local y = top
@@ -163,9 +227,9 @@ function draw()
 	write(divider(width, left), left, y, 0, color_accent)
 	y = y + line_height
 
-	local cart_present = peek(sys_cart_magic_addr) == sys_cart_magic
+	local cart_present = read_u32(CART_ROM_BASE) == CART_ROM_MAGIC
 	local elapsed = elapsed_seconds()
-	local cursor = (math.floor(elapsed * 2) % 2 == 0) and '_' or ' '
+	local cursor = (math.floor(elapsed * 2) % 2 == 0) and '█' or ' '
 	if cart_present then
 		local remaining = boot_delay - elapsed
 		if remaining < 0 then remaining = 0 end
@@ -174,9 +238,10 @@ function draw()
 		write('STATUS     : ' .. status, left, y, 0, color_text)
 		y = y + line_height
 		local bar = build_progress_bar(elapsed / boot_delay, 20)
-		write('BOOT STATUS : ' .. bar .. ' ' .. cursor, left, y, 0, color_text)
-		-- write('BOOTING IN : ' .. bar .. ' ' .. cursor, left, y, 0, color_text)
+		write('BOOT STATUS : ' .. bar .. cursor, left, y, 0, color_text)
 	else
-		write('STATUS     : NO CART DETECTED' .. ' ' .. cursor, left, y, 0, color_warn)
+		write('                             ' .. cursor, left, y, 0, color_text)
+		write('             NO CART DETECTED', left, y, 0, color_warn)
+		write('STATUS     :', left, y, 0, color_text)
 	end
 end

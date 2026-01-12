@@ -9,16 +9,16 @@ import type {
 	RomAssetListPayload,
 	RomImgAsset,
 	RomManifest,
-	RomMeta,
 	RuntimeAssets,
 	TextureSource,
 	BmsxCartridgeBlob,
 	CartridgeIndex,
 	CartridgeLayerId,
 	color_arr,
+	CartRomHeader,
 } from './rompack';
 import { decodeBinary, toF32, typedArrayFromBytes } from '../serializer/binencoder';
-import { CART_ROM_MAGIC_BYTES, generateAtlasName } from './rompack';
+import { CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES, generateAtlasName } from './rompack';
 import { inflate } from 'pako';
 import { AssetSourceStack, type RawAssetSource } from './asset_source';
 
@@ -29,31 +29,65 @@ export type RomLoadOptions = {
 	loadModelFromBuffer?: (buffer: ArrayBuffer, textures?: ArrayBuffer) => Promise<any>;
 };
 
-export function parseMetaFromBuffer(to_parse: ArrayBuffer): RomMeta {
-	const bytearray = new Uint8Array(to_parse);
-	const footerOffset = bytearray.length - 16;
-	if (footerOffset < 0) throw new Error('ROM file too small for footer');
-	let metaOffset = -1;
-	let metaLength = -1;
-	if (footerOffset < 16) {
-		throw new Error('ROM file too small for metadata footer');
+function hasCartHeader(buffer: ArrayBuffer): boolean {
+	if (buffer.byteLength < CART_ROM_HEADER_SIZE) {
+		return false;
 	}
-	const dv = new DataView(to_parse, footerOffset, 16);
-	metaOffset = Number(dv.getBigUint64(0, true));
-	metaLength = Number(dv.getBigUint64(8, true));
-	if (metaOffset < 0 || metaLength <= 0 || metaOffset + metaLength > bytearray.length) {
-		throw new Error('Invalid ROM metadata footer');
+	const headerView = new Uint8Array(buffer, 0, CART_ROM_MAGIC_BYTES.length);
+	for (let index = 0; index < CART_ROM_MAGIC_BYTES.length; index += 1) {
+		if (headerView[index] !== CART_ROM_MAGIC_BYTES[index]) {
+			return false;
+		}
 	}
-	return { start: metaOffset, end: metaOffset + metaLength };
+	const dv = new DataView(buffer, 0, CART_ROM_HEADER_SIZE);
+	const headerSize = dv.getUint32(4, true);
+	return headerSize >= CART_ROM_HEADER_SIZE && headerSize <= buffer.byteLength;
 }
 
-function getSubBufferAsPerMeta(buffer: ArrayBuffer, meta: RomMeta): ArrayBuffer {
-	return buffer.slice(meta.start, meta.end);
+function assertSectionRange(offset: number, length: number, total: number, label: string): void {
+	if (offset + length > total) {
+		throw new Error(`Invalid ROM ${label} range: offset=${offset} len=${length} total=${total}.`);
+	}
 }
 
-export function getSubBufferFromBufferWithMeta(buffer: ArrayBuffer): ArrayBuffer {
-	const buffer_meta: RomMeta = parseMetaFromBuffer(buffer);
-	return getSubBufferAsPerMeta(buffer, buffer_meta);
+export function parseCartHeader(payload: ArrayBuffer): CartRomHeader {
+	if (payload.byteLength < CART_ROM_HEADER_SIZE) {
+		throw new Error('ROM payload is too small for cart header.');
+	}
+	const headerView = new Uint8Array(payload, 0, CART_ROM_MAGIC_BYTES.length);
+	for (let index = 0; index < CART_ROM_MAGIC_BYTES.length; index += 1) {
+		if (headerView[index] !== CART_ROM_MAGIC_BYTES[index]) {
+			throw new Error('Invalid ROM cart header.');
+		}
+	}
+	const dv = new DataView(payload, 0, CART_ROM_HEADER_SIZE);
+	const headerSize = dv.getUint32(4, true);
+	if (headerSize < CART_ROM_HEADER_SIZE) {
+		throw new Error(`ROM header size is too small: ${headerSize}.`);
+	}
+	if (headerSize > payload.byteLength) {
+		throw new Error(`ROM header size exceeds payload length: ${headerSize}.`);
+	}
+	const manifestOffset = dv.getUint32(8, true);
+	const manifestLength = dv.getUint32(12, true);
+	const tocOffset = dv.getUint32(16, true);
+	const tocLength = dv.getUint32(20, true);
+	const dataOffset = dv.getUint32(24, true);
+	const dataLength = dv.getUint32(28, true);
+
+	assertSectionRange(manifestOffset, manifestLength, payload.byteLength, 'manifest');
+	assertSectionRange(tocOffset, tocLength, payload.byteLength, 'toc');
+	assertSectionRange(dataOffset, dataLength, payload.byteLength, 'data');
+
+	return {
+		headerSize,
+		manifestOffset,
+		manifestLength,
+		tocOffset,
+		tocLength,
+		dataOffset,
+		dataLength,
+	};
 }
 
 function toArrayBuffer(blob: BmsxCartridgeBlob): ArrayBuffer {
@@ -64,21 +98,6 @@ function toArrayBuffer(blob: BmsxCartridgeBlob): ArrayBuffer {
 	const buffer = new ArrayBuffer(view.byteLength);
 	new Uint8Array(buffer).set(new Uint8Array(view.buffer, view.byteOffset, view.byteLength));
 	return buffer;
-}
-
-function hasRomMetaFooter(buffer: ArrayBuffer): boolean {
-	const length = buffer.byteLength;
-	if (length < 16) {
-		return false;
-	}
-	const footerOffset = length - 16;
-	const dv = new DataView(buffer, footerOffset, 16);
-	const metaOffset = Number(dv.getBigUint64(0, true));
-	const metaLength = Number(dv.getBigUint64(8, true));
-	if (metaOffset < 0 || metaLength <= 0) {
-		return false;
-	}
-	return metaOffset + metaLength <= length;
 }
 
 function splitPng(blob: ArrayBuffer): { png?: ArrayBuffer; rest: ArrayBuffer } {
@@ -128,7 +147,7 @@ export function getZippedRomAndRomLabelFromBlob(blob_buffer: ArrayBuffer): { zip
 	const { png, rest } = splitPng(blob_buffer);
 	if (png) {
 		// Only treat the leading PNG as a romlabel if the remaining payload looks like a ROM.
-		if (hasRomMetaFooter(rest) || looksPakoCompressed(rest)) {
+		if (hasCartHeader(rest) || looksPakoCompressed(rest)) {
 			return { zipped_rom: rest, romlabel: png };
 		}
 	}
@@ -139,31 +158,22 @@ export function normalizeCartridgeBlob(blob: BmsxCartridgeBlob): { payload: Arra
 	const input = toArrayBuffer(blob);
 	const { zipped_rom, romlabel } = getZippedRomAndRomLabelFromBlob(input);
 	let payload: ArrayBuffer;
-	if (hasRomMetaFooter(zipped_rom)) {
+	if (hasCartHeader(zipped_rom)) {
 		payload = zipped_rom;
-	} else {
-		// Assume zipped ROM as we don't have the footer
+	} else if (looksPakoCompressed(zipped_rom)) {
 		const inflated = inflate(new Uint8Array(zipped_rom));
 		payload = new ArrayBuffer(inflated.byteLength);
 		new Uint8Array(payload).set(inflated);
-		if (!hasRomMetaFooter(payload)) {
-			throw new Error('Invalid ROM payload after decompression.');
-		}
+	} else {
+		throw new Error('ROM payload is missing cart header.');
 	}
-	if (payload.byteLength < CART_ROM_MAGIC_BYTES.length) {
-		throw new Error('ROM payload is too small for cart header.');
-	}
-	const headerView = new Uint8Array(payload, 0, CART_ROM_MAGIC_BYTES.length);
-	for (let index = 0; index < CART_ROM_MAGIC_BYTES.length; index += 1) {
-		if (headerView[index] !== CART_ROM_MAGIC_BYTES[index]) {
-			throw new Error('Invalid ROM cart header.');
-		}
-	}
+	parseCartHeader(payload);
 	return { payload, romlabel };
 }
 
 export async function loadAssetList(rom: ArrayBuffer): Promise<{ assets: RomAsset[]; projectRootPath: string; manifest: RomManifest }> {
-	const sliced = new Uint8Array(getSubBufferFromBufferWithMeta(rom));
+	const header = parseCartHeader(rom);
+	const sliced = new Uint8Array(rom, header.tocOffset, header.tocLength);
 	const decoded = decodeBinary(sliced) as RomAssetListPayload;
 	const assetList = decoded.assets;
 	const projectRootPath = decoded.projectRootPath;

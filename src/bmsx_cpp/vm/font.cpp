@@ -46,8 +46,11 @@ GlyphMap buildMsxCharMap() {
     map[static_cast<u32>('{')] = withPrefix("code_0x7b");
     map[static_cast<u32>('|')] = withPrefix("code_0x7c");
     map[static_cast<u32>('}')] = withPrefix("code_0x7d");
-    map[static_cast<u32>('~')] = withPrefix("code_0x7e");
-    map[0x2022] = withPrefix("ctrl_bel");
+	map[static_cast<u32>('~')] = withPrefix("code_0x7e");
+	map[static_cast<u32>(L'█')] = withPrefix("code_0xc8");
+
+	map[0x2014] = withPrefix("ctrl_etb"); // etb = "extended dash/break" and the associated ASCII control code is 0x17
+    // map[0x2022] = withPrefix("ctrl_bel");
     map[0x00A1] = withPrefix("code_0x80");
 
     for (int i = 0; i < 10; ++i) {

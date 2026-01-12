@@ -1,7 +1,7 @@
 import { glsl } from "esbuild-plugin-glsl";
 // @ts-ignore
 import type { Stats } from 'fs';
-import { CART_ROM_MAGIC_BYTES } from '../../src/bmsx/rompack/rompack';
+import { CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES } from '../../src/bmsx/rompack/rompack';
 import type { asset_type, AudioMeta, CanonicalizationType, GLTFMesh, ImgMeta, Polygon, RomAsset, RomAssetListPayload, RomManifest } from '../../src/bmsx/rompack/rompack';
 import type { LuaChunk } from '../../src/bmsx/lua/lua_ast';
 import type { Value } from '../../src/bmsx/vm/cpu';
@@ -19,7 +19,7 @@ const { spawnSync } = require('child_process');
 const { join, parse, relative, resolve, sep } = require('path');
 
 // @ts-ignore
-const { access, mkdir, readdir, readFile, stat, writeFile, unlink, copyFile } = require('fs/promises');
+const { access, mkdir, readdir, readFile, stat, writeFile, unlink, copyFile, open } = require('fs/promises');
 // @ts-ignore
 const { createWriteStream, statSync } = require('fs');
 // @ts-ignore
@@ -1544,7 +1544,15 @@ export function appendVmProgramAsset(
 		if (!asset.compiled_buffer || asset.compiled_buffer.length === 0) {
 			throw new Error(`[RomPacker] Lua asset '${asset.resid}' is missing its compiled buffer.`);
 		}
-		const decoded = decodeBinary(new Uint8Array(asset.compiled_buffer)) as LuaChunk;
+		let decoded: LuaChunk;
+		try {
+			decoded = decodeBinary(new Uint8Array(asset.compiled_buffer)) as LuaChunk;
+		} catch (error) {
+			const bufferPreview = Buffer.from(asset.compiled_buffer).subarray(0, 24);
+			const previewHex = Array.from(bufferPreview, byte => byte.toString(16).padStart(2, '0')).join(' ');
+			const pathLabel = asset.normalized_source_path ?? asset.source_path ?? asset.resid;
+			throw new Error(`[RomPacker] Failed to decode compiled Lua chunk for "${pathLabel}". First bytes: ${previewHex}. ${error?.message ?? error}`);
+		}
 		const path = asset.normalized_source_path;
 		chunksByPath.set(path, decoded);
 		modulePaths.push(path);
@@ -1711,6 +1719,55 @@ export async function createAtlasses(resources: Resource[], reportProgress?: Pro
 	}
 }
 
+function encodeZeroTerminated(text: string): Buffer {
+	const payload = Buffer.from(text, 'utf8');
+	const out = Buffer.alloc(payload.length + 1);
+	payload.copy(out, 0);
+	out[out.length - 1] = 0;
+	return out;
+}
+
+function buildInputLabel(manifest: RomManifest): string {
+	const input = manifest.input;
+	if (!input) {
+		return 'DEFAULT (1P)';
+	}
+	const count = Math.max(1, Object.keys(input).length);
+	return `CUSTOM (${count}P)`;
+}
+
+function encodeBiosManifest(manifest: RomManifest, projectRootPath?: string): Buffer {
+	if (!manifest.lua || !manifest.lua.entry_path) {
+		throw new Error('[RomPacker] Manifest is missing lua.entry_path; cannot encode BIOS manifest.');
+	}
+	const entryKind = 0;
+	const title = manifest.title ?? '';
+	const shortName = manifest.short_name ?? '';
+	const romName = manifest.rom_name ?? '';
+	const entryPath = manifest.lua.entry_path;
+	const namespace = manifest.vm.namespace ?? '';
+	const viewport = `${manifest.vm.viewport.width}x${manifest.vm.viewport.height}`;
+	const canonicalization = manifest.vm.canonicalization ?? '';
+	const inputLabel = buildInputLabel(manifest);
+	const rootPath = projectRootPath ?? '';
+
+	const header = Buffer.alloc(4);
+	header.writeUInt32LE(entryKind, 0);
+	const chunks = [
+		header,
+		encodeZeroTerminated(title),
+		encodeZeroTerminated(shortName),
+		encodeZeroTerminated(romName),
+		encodeZeroTerminated(entryPath),
+		encodeZeroTerminated(namespace),
+		encodeZeroTerminated(viewport),
+		encodeZeroTerminated(canonicalization),
+		encodeZeroTerminated(inputLabel),
+		encodeZeroTerminated(rootPath),
+	];
+	return Buffer.concat(chunks);
+}
+
 /**
  * Finalizes the ROM pack by concatenating all asset buffers, encoding metadata, and writing the packed ROM file.
  *
@@ -1748,6 +1805,7 @@ export async function finalizeRompack(
 	const tempFile = `${ignoreDir}/.${outfileBasename}.work`;
 	const writer = createWriteStream(tempFile);
 	let offset = 0;
+	let headerBuffer: Buffer = null;
 
 	const writeBuffer = async (payload: Buffer) => {
 		if (!payload || payload.length === 0) return;
@@ -1759,7 +1817,8 @@ export async function finalizeRompack(
 	};
 
 	try {
-		await writeBuffer(Buffer.from(CART_ROM_MAGIC_BYTES));
+		await writeBuffer(Buffer.alloc(CART_ROM_HEADER_SIZE));
+		const dataOffset = offset;
 		for (const asset of assetList) {
 			status?.(`pack ${asset.type}:${asset.resid}`);
 			if (asset.buffer && asset.buffer.length > 0) {
@@ -1795,27 +1854,49 @@ export async function finalizeRompack(
 			delete asset.texture_buffer;
 		}
 
-		status?.('encode manifest');
+		const dataLength = offset - dataOffset;
+		if (!options.manifest) {
+			throw new Error('[RomPacker] Missing manifest for ROM; cannot build header.');
+		}
+		status?.('encode bios manifest');
+		const biosManifestBuffer = encodeBiosManifest(options.manifest, options.projectRootPath);
+		const manifestOffset = offset;
+		const manifestLength = biosManifestBuffer.length;
+		await writeBuffer(biosManifestBuffer);
+
+		status?.('encode toc');
 		const metadataPayload: RomAssetListPayload = {
 			assets: assetList,
 			projectRootPath: options.projectRootPath,
 			manifest: options.manifest,
 		};
-		const metadataBuffer = Buffer.from(encodeBinary(metadataPayload));
-		const globalMetadataOffset = offset;
-		const globalMetadataLength = metadataBuffer.length;
-		await writeBuffer(metadataBuffer);
+		const tocBuffer = Buffer.from(encodeBinary(metadataPayload));
+		const tocOffset = offset;
+		const tocLength = tocBuffer.length;
+		await writeBuffer(tocBuffer);
 
-		status?.('write footer');
-		const footer = Buffer.alloc(16);
-		footer.writeBigUInt64LE(BigInt(globalMetadataOffset), 0);
-		footer.writeBigUInt64LE(BigInt(globalMetadataLength), 8);
-		await writeBuffer(footer);
+		headerBuffer = Buffer.alloc(CART_ROM_HEADER_SIZE);
+		Buffer.from(CART_ROM_MAGIC_BYTES).copy(headerBuffer, 0);
+		headerBuffer.writeUInt32LE(CART_ROM_HEADER_SIZE, 4);
+		headerBuffer.writeUInt32LE(manifestOffset, 8);
+		headerBuffer.writeUInt32LE(manifestLength, 12);
+		headerBuffer.writeUInt32LE(tocOffset, 16);
+		headerBuffer.writeUInt32LE(tocLength, 20);
+		headerBuffer.writeUInt32LE(dataOffset, 24);
+		headerBuffer.writeUInt32LE(dataLength, 28);
 	} finally {
 		writer.end();
 	}
 
 	await finished(writer);
+	if (headerBuffer) {
+		const file = await open(tempFile, 'r+');
+		try {
+			await file.write(headerBuffer, 0, headerBuffer.length, 0);
+		} finally {
+			await file.close();
+		}
+	}
 	const romBinary = await readFile(tempFile);
 	const payload = options.zipRom ? Buffer.from(zip(romBinary)) : romBinary;
 	const finalPayload = romlabelBuffer ? Buffer.concat([romlabelBuffer, payload]) : payload;
