@@ -40,6 +40,7 @@ run_linux() {
 		zlib1g-dev \
 		libegl1-mesa-dev \
 		libgles2-mesa-dev \
+		libsdl2-dev \
 		libx11-dev \
 		libx11-xcb-dev \
 		libxext-dev \

@@ -304,8 +304,21 @@ void EngineCore::refreshRenderAssets() {
 	}
 
 bool EngineCore::loadEngineAssets(const u8* data, size_t size) {
+	m_engine_rom_owned.clear();
+	m_engine_rom_data = data;
+	m_engine_rom_size = size;
+	return loadEngineAssetsInternal(data, size);
+}
+
+bool EngineCore::loadEngineAssetsOwned(std::vector<u8>&& data) {
+	m_engine_rom_owned = std::move(data);
+	m_engine_rom_data = m_engine_rom_owned.data();
+	m_engine_rom_size = m_engine_rom_owned.size();
+	return loadEngineAssetsInternal(m_engine_rom_data, m_engine_rom_size);
+}
+
+bool EngineCore::loadEngineAssetsInternal(const u8* data, size_t size) {
 	m_engine_assets.clear();
-	m_engine_rom_bytes.assign(data, data + size);
 	if (m_texture_manager) {
 		m_texture_manager->setBackend(m_view ? m_view->backend() : nullptr);
 	}
@@ -356,7 +369,7 @@ bool EngineCore::loadEngineAssetsFromPath(const char* path) {
 		return false;
 	}
 
-	return loadEngineAssets(data.data(), data.size());
+	return loadEngineAssetsOwned(std::move(data));
 }
 
 bool EngineCore::bootWithoutCart() {
@@ -424,7 +437,21 @@ bool EngineCore::bootWithoutCart() {
 
 bool EngineCore::loadRom(const u8* data, size_t size) {
 	unloadRom();
-	m_cart_rom_bytes.assign(data, data + size);
+	m_cart_rom_owned.clear();
+	m_cart_rom_data = data;
+	m_cart_rom_size = size;
+	return loadRomInternal(data, size);
+}
+
+bool EngineCore::loadRomOwned(std::vector<u8>&& data) {
+	unloadRom();
+	m_cart_rom_owned = std::move(data);
+	m_cart_rom_data = m_cart_rom_owned.data();
+	m_cart_rom_size = m_cart_rom_owned.size();
+	return loadRomInternal(m_cart_rom_data, m_cart_rom_size);
+}
+
+bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 	if (m_texture_manager) {
 		m_texture_manager->setBackend(m_view ? m_view->backend() : nullptr);
 	}
@@ -763,7 +790,9 @@ void EngineCore::unloadRom() {
 		m_assets.clear();
 		m_linked_vm_program.reset();
 		m_linked_vm_program_symbols.reset();
-		m_cart_rom_bytes.clear();
+		m_cart_rom_owned.clear();
+		m_cart_rom_data = nullptr;
+		m_cart_rom_size = 0;
 		if (m_texture_manager) {
 			m_texture_manager->clear();
 		}

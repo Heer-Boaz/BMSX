@@ -24,7 +24,7 @@ libretro-snesmini-debug:
 	BMSX_SNESMINI_BUILDER_IMAGE="$(SNESMINI_BUILDER_IMAGE)" \
 		"$(CURDIR)/scripts/setup-snesmini-local-core.sh" "$(SNESMINI_SYSROOT)"
 
-.PHONY: libretro-host-snesmini-debug libretro-host-snesmini-debug-inner
+.PHONY: libretro-host-snesmini-debug libretro-host-snesmini-debug-inner libretro-host-wsl-debug
 libretro-host-snesmini-debug:
 	SNESMINI_BUILD_TYPE="$(SNESMINI_BUILD_TYPE)" \
 	BMSX_SNESMINI_MAKE_TARGET="libretro-host-snesmini-debug-host" \
@@ -32,6 +32,15 @@ libretro-host-snesmini-debug:
 	BMSX_SNESMINI_USE_BUILDER_IMAGE="$(SNESMINI_USE_BUILDER_IMAGE)" \
 	BMSX_SNESMINI_BUILDER_IMAGE="$(SNESMINI_BUILDER_IMAGE)" \
 		"$(CURDIR)/scripts/setup-snesmini-local-core.sh" "$(SNESMINI_SYSROOT)"
+
+libretro-host-wsl-debug:
+	cmake -S src/bmsx_cpp -B build-libretro-host \
+		-DCMAKE_BUILD_TYPE=Debug \
+		-DBMSX_BUILD_LIBRETRO_HOST=ON \
+		-DBMSX_BUILD_LIBRETRO=OFF
+	cmake --build build-libretro-host --config Debug --target bmsx_libretro_host
+	@mkdir -p "$(SNESMINI_DIST_DIR)"
+	cp build-libretro-host/bmsx_libretro_host "$(SNESMINI_DIST_DIR)/bmsx_libretro_host.wsl"
 
 snesmini-sysroot:
 	@if [ -f "$(SNESMINI_SYSROOT)/.snesmini-ready" ]; then \

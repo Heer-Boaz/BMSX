@@ -7,6 +7,9 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <GLES2/gl2.h>
+#ifdef BMSX_LIBRETRO_HOST_SDL
+#include <SDL.h>
+#endif
 #include <linux/fb.h>
 #include <linux/input.h>
 #include <pthread.h>
@@ -125,6 +128,17 @@ static char g_opt_crt_postprocessing[8] = "off";
 static char g_opt_postprocess_detail[8] = "off";
 static bool g_vars_updated = false;
 static LibretroCore* g_core = NULL;
+
+#ifdef BMSX_LIBRETRO_HOST_SDL
+static bool g_use_sdl = false;
+static SDL_Window* g_sdl_window = NULL;
+static SDL_Renderer* g_sdl_renderer = NULL;
+static SDL_Texture* g_sdl_texture = NULL;
+static SDL_GameController* g_sdl_gamepad = NULL;
+static SDL_JoystickID g_sdl_gamepad_id = -1;
+static uint16_t g_sdl_pad_state = 0;
+static SDL_AudioDeviceID g_sdl_audio_device = 0;
+#endif
 
 static enum retro_pixel_format g_core_pixel_format = RETRO_PIXEL_FORMAT_XRGB8888;
 static struct retro_hw_render_callback g_hw_render;
@@ -461,6 +475,13 @@ static uint64_t monotonic_ns(void);
 static uint64_t monotonic_ms(void);
 static inline uint16_t rgb888_to_rgb565(uint8_t r, uint8_t g, uint8_t b);
 static inline uint32_t rgb565_to_xrgb8888(uint16_t p);
+#ifdef BMSX_LIBRETRO_HOST_SDL
+static void sdl_init(void);
+static void sdl_shutdown(void);
+static void sdl_prepare_frame(unsigned frame_w, unsigned frame_h);
+static void sdl_present(void);
+static void poll_input_devices_sdl(void);
+#endif
 
 static uintptr_t RETRO_CALLCONV hw_get_current_framebuffer(void) {
 	unsigned target_w = g_geom_base_w ? g_geom_base_w : g_last_video_w;
@@ -2258,6 +2279,124 @@ static void egl_shutdown(void) {
 	egl_unload();
 }
 
+#ifdef BMSX_LIBRETRO_HOST_SDL
+static void sdl_open_first_controller(void) {
+	const int num = SDL_NumJoysticks();
+	for (int i = 0; i < num; ++i) {
+		if (!SDL_IsGameController(i)) {
+			continue;
+		}
+		g_sdl_gamepad = SDL_GameControllerOpen(i);
+		if (!g_sdl_gamepad) {
+			continue;
+		}
+		SDL_Joystick* joy = SDL_GameControllerGetJoystick(g_sdl_gamepad);
+		g_sdl_gamepad_id = SDL_JoystickInstanceID(joy);
+		fprintf(stderr, "[libretro-host] SDL gamepad: %s\n", SDL_GameControllerName(g_sdl_gamepad));
+		return;
+	}
+}
+
+static void sdl_resize(unsigned width, unsigned height) {
+	if (width == 0 || height == 0) {
+		return;
+	}
+	g_fb.width = (int)width;
+	g_fb.height = (int)height;
+	g_fb.bpp = 32;
+	g_fb.stride = (int)(width * 4u);
+	g_fb.map_size = (size_t)g_fb.stride * (size_t)g_fb.height;
+	uint8_t* map = (uint8_t*)realloc(g_fb.map, g_fb.map_size);
+	if (!map) {
+		die("realloc(%zu) failed", g_fb.map_size);
+	}
+	g_fb.map = map;
+	memset(g_fb.map, 0, g_fb.map_size);
+	if (g_sdl_texture) {
+		SDL_DestroyTexture(g_sdl_texture);
+	}
+	g_sdl_texture = SDL_CreateTexture(g_sdl_renderer, SDL_PIXELFORMAT_XRGB8888,
+		SDL_TEXTUREACCESS_STREAMING, g_fb.width, g_fb.height);
+	if (!g_sdl_texture) {
+		die("SDL_CreateTexture failed: %s", SDL_GetError());
+	}
+	SDL_RenderSetLogicalSize(g_sdl_renderer, g_fb.width, g_fb.height);
+	fps_mark_dirty();
+	msg_mark_dirty();
+	menu_mark_dirty();
+}
+
+static void sdl_init(void) {
+	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER | SDL_INIT_AUDIO) != 0) {
+		die("SDL_Init failed: %s", SDL_GetError());
+	}
+	SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "nearest");
+	unsigned base_w = g_geom_base_w ? g_geom_base_w : 320;
+	unsigned base_h = g_geom_base_h ? g_geom_base_h : 240;
+	unsigned window_w = base_w * 3u;
+	unsigned window_h = base_h * 3u;
+	if (window_w < 640) window_w = 640;
+	if (window_h < 480) window_h = 480;
+	g_sdl_window = SDL_CreateWindow("bmsx_libretro_host",
+		SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+		(int)window_w, (int)window_h,
+		SDL_WINDOW_RESIZABLE);
+	if (!g_sdl_window) {
+		die("SDL_CreateWindow failed: %s", SDL_GetError());
+	}
+	g_sdl_renderer = SDL_CreateRenderer(g_sdl_window, -1, SDL_RENDERER_PRESENTVSYNC);
+	if (!g_sdl_renderer) {
+		die("SDL_CreateRenderer failed: %s", SDL_GetError());
+	}
+	sdl_resize(base_w, base_h);
+	SDL_ShowCursor(SDL_DISABLE);
+	sdl_open_first_controller();
+}
+
+static void sdl_shutdown(void) {
+	if (g_sdl_gamepad) {
+		SDL_GameControllerClose(g_sdl_gamepad);
+		g_sdl_gamepad = NULL;
+		g_sdl_gamepad_id = -1;
+	}
+	if (g_sdl_texture) {
+		SDL_DestroyTexture(g_sdl_texture);
+		g_sdl_texture = NULL;
+	}
+	if (g_sdl_renderer) {
+		SDL_DestroyRenderer(g_sdl_renderer);
+		g_sdl_renderer = NULL;
+	}
+	if (g_sdl_window) {
+		SDL_DestroyWindow(g_sdl_window);
+		g_sdl_window = NULL;
+	}
+	SDL_Quit();
+	free(g_fb.map);
+	memset(&g_fb, 0, sizeof(g_fb));
+}
+
+static void sdl_prepare_frame(unsigned frame_w, unsigned frame_h) {
+	unsigned target_w = g_geom_base_w ? g_geom_base_w : frame_w;
+	unsigned target_h = g_geom_base_h ? g_geom_base_h : frame_h;
+	if (target_w == 0 || target_h == 0) {
+		return;
+	}
+	if (g_fb.width != (int)target_w || g_fb.height != (int)target_h) {
+		sdl_resize(target_w, target_h);
+	} else if (g_geom_dirty) {
+		g_geom_dirty = false;
+	}
+}
+
+static void sdl_present(void) {
+	SDL_UpdateTexture(g_sdl_texture, NULL, g_fb.map, g_fb.stride);
+	SDL_RenderClear(g_sdl_renderer);
+	SDL_RenderCopy(g_sdl_renderer, g_sdl_texture, NULL, NULL);
+	SDL_RenderPresent(g_sdl_renderer);
+}
+#endif
+
 static bool environ_cb(unsigned cmd, void* data) {
 	switch (cmd) {
 		case RETRO_ENVIRONMENT_GET_LOG_INTERFACE: {
@@ -2353,6 +2492,12 @@ static bool environ_cb(unsigned cmd, void* data) {
 		}
 		case RETRO_ENVIRONMENT_SET_HW_RENDER: {
 			struct retro_hw_render_callback* cb = (struct retro_hw_render_callback*)data;
+#ifdef BMSX_LIBRETRO_HOST_SDL
+			if (g_use_sdl) {
+				fprintf(stderr, "[libretro-host] SDL video backend does not support HW render\n");
+				return false;
+			}
+#endif
 			if (cb->context_type != RETRO_HW_CONTEXT_OPENGLES2) {
 				return false;
 			}
@@ -2448,6 +2593,11 @@ static void video_cb(const void* data, unsigned width, unsigned height, size_t p
 	if (!data || width == 0 || height == 0) {
 		return;
 	}
+#ifdef BMSX_LIBRETRO_HOST_SDL
+	if (g_use_sdl) {
+		sdl_prepare_frame(width, height);
+	}
+#endif
 	g_last_video_w = width;
 	g_last_video_h = height;
 	if (!g_menu_active) {
@@ -2521,6 +2671,11 @@ static void video_cb(const void* data, unsigned width, unsigned height, size_t p
 		msg_render_software();
 		fps_render_software();
 		menu_render_software();
+#ifdef BMSX_LIBRETRO_HOST_SDL
+		if (g_use_sdl) {
+			sdl_present();
+		}
+#endif
 		return;
 	}
 
@@ -2566,6 +2721,11 @@ static void video_cb(const void* data, unsigned width, unsigned height, size_t p
 		msg_render_software();
 		fps_render_software();
 		menu_render_software();
+#ifdef BMSX_LIBRETRO_HOST_SDL
+		if (g_use_sdl) {
+			sdl_present();
+		}
+#endif
 		return;
 	}
 
@@ -2807,11 +2967,27 @@ static void* audio_thread_main(void* arg) {
 	return NULL;
 }
 
+static void audio_push_frames(const int16_t* data, size_t frames) {
+	if (frames == 0) {
+		return;
+	}
+#ifdef BMSX_LIBRETRO_HOST_SDL
+	if (g_use_sdl) {
+		if (SDL_QueueAudio(g_sdl_audio_device, data,
+				(Uint32)(frames * g_audio_channels * sizeof(int16_t))) != 0) {
+			die("SDL_QueueAudio failed: %s", SDL_GetError());
+		}
+		return;
+	}
+#endif
+	audio_queue_push_frames(data, frames);
+}
+
 static void audio_flush_sample_buffer(void) {
 	if (g_audio_sample_buf_frames == 0) {
 		return;
 	}
-	audio_queue_push_frames(g_audio_sample_buf, g_audio_sample_buf_frames);
+	audio_push_frames(g_audio_sample_buf, g_audio_sample_buf_frames);
 	g_audio_sample_buf_frames = 0;
 }
 
@@ -2883,7 +3059,41 @@ static void audio_set_sw_params(void) {
 	}
 }
 
+#ifdef BMSX_LIBRETRO_HOST_SDL
+static void audio_init_sdl(int sample_rate) {
+	SDL_AudioSpec want;
+	memset(&want, 0, sizeof(want));
+	want.freq = sample_rate;
+	want.format = AUDIO_S16SYS;
+	want.channels = (Uint8)g_audio_channels;
+	want.samples = (Uint16)kAudioPeriodFrames;
+	g_sdl_audio_device = SDL_OpenAudioDevice(NULL, 0, &want, NULL, 0);
+	if (!g_sdl_audio_device) {
+		die("SDL_OpenAudioDevice failed: %s", SDL_GetError());
+	}
+	SDL_PauseAudioDevice(g_sdl_audio_device, 0);
+	g_audio_sample_rate = sample_rate;
+	g_audio_sample_buf_frames = 0;
+	fprintf(stderr, "[libretro-host] audio: sdl rate=%d ch=%u samples=%u\n",
+			sample_rate, g_audio_channels, want.samples);
+}
+
+static void audio_shutdown_sdl(void) {
+	SDL_CloseAudioDevice(g_sdl_audio_device);
+	g_sdl_audio_device = 0;
+	g_audio_sample_rate = 0;
+	g_audio_sample_buf_frames = 0;
+	g_audio_underruns = 0;
+}
+#endif
+
 static void audio_init(int sample_rate) {
+#ifdef BMSX_LIBRETRO_HOST_SDL
+	if (g_use_sdl) {
+		audio_init_sdl(sample_rate);
+		return;
+	}
+#endif
 	g_audio_fd = open(g_audio_device, O_WRONLY);
 	if (g_audio_fd < 0) {
 		die("Failed to open %s: %s", g_audio_device, strerror(errno));
@@ -2950,6 +3160,12 @@ static void audio_init(int sample_rate) {
 
 static void audio_shutdown(void) {
 	audio_flush_sample_buffer();
+#ifdef BMSX_LIBRETRO_HOST_SDL
+	if (g_use_sdl) {
+		audio_shutdown_sdl();
+		return;
+	}
+#endif
 	if (g_audio_thread_started) {
 		audio_queue_stop();
 		int err = pthread_join(g_audio_thread, NULL);
@@ -2984,14 +3200,14 @@ static void audio_sample_cb(int16_t left, int16_t right) {
 	g_audio_sample_buf[idx + 1] = right;
 	++g_audio_sample_buf_frames;
 	if (g_audio_sample_buf_frames >= kAudioSampleBufferFrames) {
-		audio_queue_push_frames(g_audio_sample_buf, g_audio_sample_buf_frames);
+		audio_push_frames(g_audio_sample_buf, g_audio_sample_buf_frames);
 		g_audio_sample_buf_frames = 0;
 	}
 }
 
 static size_t audio_batch_cb(const int16_t* data, size_t frames) {
 	audio_flush_sample_buffer();
-	audio_queue_push_frames(data, frames);
+	audio_push_frames(data, frames);
 	return frames;
 }
 
@@ -3053,6 +3269,77 @@ static uint16_t map_ev_key_to_pad(uint16_t code) {
 			return 0;
 	}
 }
+
+#ifdef BMSX_LIBRETRO_HOST_SDL
+static uint16_t map_sdl_key_to_pad(SDL_Keycode code) {
+	switch (code) {
+		case SDLK_UP:
+			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_UP);
+		case SDLK_DOWN:
+			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_DOWN);
+		case SDLK_LEFT:
+			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_LEFT);
+		case SDLK_RIGHT:
+			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_RIGHT);
+
+		case SDLK_q:
+			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_L);
+		case SDLK_w:
+			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_R);
+
+		case SDLK_RETURN:
+			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_START);
+		case SDLK_BACKSPACE:
+		case SDLK_ESCAPE:
+			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_SELECT);
+
+		case SDLK_x:
+			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_A);
+		case SDLK_z:
+			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_B);
+		case SDLK_s:
+			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_X);
+		case SDLK_a:
+			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_Y);
+		default:
+			return 0;
+	}
+}
+
+static uint16_t map_sdl_button_to_pad(uint8_t button) {
+	switch (button) {
+		case SDL_CONTROLLER_BUTTON_DPAD_UP:
+			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_UP);
+		case SDL_CONTROLLER_BUTTON_DPAD_DOWN:
+			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_DOWN);
+		case SDL_CONTROLLER_BUTTON_DPAD_LEFT:
+			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_LEFT);
+		case SDL_CONTROLLER_BUTTON_DPAD_RIGHT:
+			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_RIGHT);
+
+		case SDL_CONTROLLER_BUTTON_LEFTSHOULDER:
+			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_L);
+		case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER:
+			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_R);
+
+		case SDL_CONTROLLER_BUTTON_START:
+			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_START);
+		case SDL_CONTROLLER_BUTTON_BACK:
+			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_SELECT);
+
+		case SDL_CONTROLLER_BUTTON_A:
+			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_A);
+		case SDL_CONTROLLER_BUTTON_B:
+			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_B);
+		case SDL_CONTROLLER_BUTTON_X:
+			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_X);
+		case SDL_CONTROLLER_BUTTON_Y:
+			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_Y);
+		default:
+			return 0;
+	}
+}
+#endif
 
 static bool input_init_abs_axis(InputDev* dev, unsigned code, int32_t* min_out, int32_t* max_out, bool* has_axis) {
 	struct input_absinfo absinfo;
@@ -3233,6 +3520,39 @@ static void menu_handle_input(uint16_t state, uint16_t prev, bool skip_nav) {
 	}
 }
 
+static void input_finalize(uint16_t merged) {
+	g_pad_state_raw = merged;
+	static uint64_t combo_start_ms = 0;
+	const bool combo_down =
+		(g_pad_state_raw & (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_START)) &&
+		(g_pad_state_raw & (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_SELECT)) &&
+		(g_pad_state_raw & (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_L)) &&
+		(g_pad_state_raw & (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_R));
+	if (combo_down) {
+		uint64_t now = monotonic_ms();
+		if (combo_start_ms == 0) {
+			combo_start_ms = now;
+		} else if (now - combo_start_ms >= kExitComboHoldMs) {
+			fprintf(stderr, "[libretro-host] exit combo held %llums, exiting\n",
+				(unsigned long long)(now - combo_start_ms));
+			g_should_quit = 1;
+			combo_start_ms = 0;
+		}
+	} else {
+		combo_start_ms = 0;
+	}
+	menu_handle_input(g_pad_state_raw, g_menu_prev_pad, combo_down);
+	if (g_menu_active) {
+		g_pad_state_port0 = 0;
+	} else {
+		g_pad_state_port0 = g_pad_state_raw;
+	}
+	g_menu_prev_pad = g_pad_state_raw;
+	if (g_input_debug) {
+		fprintf(stderr, "[libretro-host][input] port0=0x%04x\n", g_pad_state_port0);
+	}
+}
+
 static void poll_input_devices(void) {
 	uint16_t merged = 0;
 	for (size_t i = 0; i < g_input_dev_count; ++i) {
@@ -3324,39 +3644,74 @@ static void poll_input_devices(void) {
 			if (dev->abs_y > y_mid + y_dead) merged |= (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_DOWN);
 		}
 	}
-	g_pad_state_raw = merged;
-	static uint64_t combo_start_ms = 0;
-	const bool combo_down =
-		(g_pad_state_raw & (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_START)) &&
-		(g_pad_state_raw & (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_SELECT)) &&
-		(g_pad_state_raw & (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_L)) &&
-		(g_pad_state_raw & (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_R));
-	if (combo_down) {
-		uint64_t now = monotonic_ms();
-		if (combo_start_ms == 0) {
-			combo_start_ms = now;
-		} else if (now - combo_start_ms >= kExitComboHoldMs) {
-			fprintf(stderr, "[libretro-host] exit combo held %llums, exiting\n",
-				(unsigned long long)(now - combo_start_ms));
-			g_should_quit = 1;
-			combo_start_ms = 0;
-		}
-	} else {
-		combo_start_ms = 0;
-	}
-	menu_handle_input(g_pad_state_raw, g_menu_prev_pad, combo_down);
-	if (g_menu_active) {
-		g_pad_state_port0 = 0;
-	} else {
-		g_pad_state_port0 = g_pad_state_raw;
-	}
-	g_menu_prev_pad = g_pad_state_raw;
-	if (g_input_debug) {
-		fprintf(stderr, "[libretro-host][input] port0=0x%04x\n", g_pad_state_port0);
-	}
+	input_finalize(merged);
 }
 
+#ifdef BMSX_LIBRETRO_HOST_SDL
+static void poll_input_devices_sdl(void) {
+	SDL_Event ev;
+	while (SDL_PollEvent(&ev)) {
+		switch (ev.type) {
+			case SDL_QUIT:
+				g_should_quit = 1;
+				break;
+			case SDL_KEYDOWN:
+			case SDL_KEYUP: {
+				const uint16_t bit = map_sdl_key_to_pad(ev.key.keysym.sym);
+				if (bit) {
+					if (ev.key.state == SDL_PRESSED) {
+						g_sdl_pad_state |= bit;
+					} else {
+						g_sdl_pad_state &= (uint16_t)~bit;
+					}
+				}
+				break;
+			}
+			case SDL_CONTROLLERBUTTONDOWN:
+			case SDL_CONTROLLERBUTTONUP: {
+				const uint16_t bit = map_sdl_button_to_pad(ev.cbutton.button);
+				if (bit) {
+					if (ev.cbutton.state == SDL_PRESSED) {
+						g_sdl_pad_state |= bit;
+					} else {
+						g_sdl_pad_state &= (uint16_t)~bit;
+					}
+				}
+				break;
+			}
+			case SDL_CONTROLLERDEVICEADDED:
+				if (!g_sdl_gamepad && SDL_IsGameController(ev.cdevice.which)) {
+					g_sdl_gamepad = SDL_GameControllerOpen(ev.cdevice.which);
+					if (g_sdl_gamepad) {
+						SDL_Joystick* joy = SDL_GameControllerGetJoystick(g_sdl_gamepad);
+						g_sdl_gamepad_id = SDL_JoystickInstanceID(joy);
+						fprintf(stderr, "[libretro-host] SDL gamepad: %s\n", SDL_GameControllerName(g_sdl_gamepad));
+					}
+				}
+				break;
+			case SDL_CONTROLLERDEVICEREMOVED:
+				if (g_sdl_gamepad && ev.cdevice.which == g_sdl_gamepad_id) {
+					SDL_GameControllerClose(g_sdl_gamepad);
+					g_sdl_gamepad = NULL;
+					g_sdl_gamepad_id = -1;
+					g_sdl_pad_state = 0;
+				}
+				break;
+			default:
+				break;
+		}
+	}
+	input_finalize(g_sdl_pad_state);
+}
+#endif
+
 static void input_poll_cb(void) {
+#ifdef BMSX_LIBRETRO_HOST_SDL
+	if (g_use_sdl) {
+		poll_input_devices_sdl();
+		return;
+	}
+#endif
 	poll_input_devices();
 }
 
@@ -3460,8 +3815,8 @@ static void load_core(LibretroCore* core, const char* path) {
 static void usage(const char* argv0) {
 	fprintf(stderr,
 			"Usage:\n"
-			"  %s --core ./bmsx_libretro.so --no-game [--backend software|gles2] [--system-dir PATH] [--save-dir PATH] [--input-debug]\n"
-			"  %s --core ./bmsx_libretro.so GAME.rom [--backend software|gles2] [--system-dir PATH] [--save-dir PATH] [--input-debug]\n",
+			"  %s --core ./bmsx_libretro.so --no-game [--backend software|gles2] [--video fb|sdl] [--system-dir PATH] [--save-dir PATH] [--input-debug]\n"
+			"  %s --core ./bmsx_libretro.so GAME.rom [--backend software|gles2] [--video fb|sdl] [--system-dir PATH] [--save-dir PATH] [--input-debug]\n",
 			argv0, argv0);
 	exit(2);
 }
@@ -3474,6 +3829,7 @@ int main(int argc, char** argv) {
 	const char* system_dir = "";
 	const char* save_dir = "";
 	const char* backend = "software";
+	const char* video_backend = "fb";
 
 	for (int i = 1; i < argc; ++i) {
 		if (strcmp(argv[i], "--core") == 0) {
@@ -3500,6 +3856,11 @@ int main(int argc, char** argv) {
 			backend = argv[++i];
 			continue;
 		}
+		if (strcmp(argv[i], "--video") == 0) {
+			if (i + 1 >= argc) usage(argv[0]);
+			video_backend = argv[++i];
+			continue;
+		}
 		if (strcmp(argv[i], "--input-debug") == 0) {
 			g_input_debug = true;
 			continue;
@@ -3516,6 +3877,21 @@ int main(int argc, char** argv) {
 	if (strcmp(backend, "software") != 0 && strcmp(backend, "gles2") != 0) {
 		die("Invalid --backend %s (expected software|gles2)", backend);
 	}
+	if (strcmp(video_backend, "fb") != 0 && strcmp(video_backend, "sdl") != 0) {
+		die("Invalid --video %s (expected fb|sdl)", video_backend);
+	}
+#ifdef BMSX_LIBRETRO_HOST_SDL
+	if (strcmp(video_backend, "sdl") == 0) {
+		if (strcmp(backend, "gles2") == 0) {
+			die("SDL video backend only supports --backend software");
+		}
+		g_use_sdl = true;
+	}
+#else
+	if (strcmp(video_backend, "sdl") == 0) {
+		die("SDL video backend not available in this build");
+	}
+#endif
 
 	snprintf(g_system_dir, sizeof(g_system_dir), "%s", system_dir);
 	snprintf(g_save_dir, sizeof(g_save_dir), "%s", save_dir);
@@ -3535,8 +3911,17 @@ int main(int argc, char** argv) {
 	core.retro_set_input_poll(input_poll_cb);
 	core.retro_set_input_state(input_state_cb);
 
+#ifdef BMSX_LIBRETRO_HOST_SDL
+	if (g_use_sdl) {
+		sdl_init();
+	} else {
+		fb_init(&g_fb, "/dev/fb0");
+		input_open_default_devices();
+	}
+#else
 	fb_init(&g_fb, "/dev/fb0");
 	input_open_default_devices();
+#endif
 
 	core.retro_init();
 	if (g_use_hw_render && g_hw_context_pending_reset && g_hw_render.context_reset) {
@@ -3551,6 +3936,8 @@ int main(int argc, char** argv) {
 			sysinfo.library_name ? sysinfo.library_name : "(unknown)",
 			sysinfo.library_version ? sysinfo.library_version : "(unknown)",
 			core.retro_api_version());
+	fprintf(stderr, "[libretro-host] need_fullpath=%s\n",
+			sysinfo.need_fullpath ? "true" : "false");
 
 	struct retro_system_av_info av;
 	memset(&av, 0, sizeof(av));
@@ -3571,10 +3958,12 @@ int main(int argc, char** argv) {
 	if (no_game) {
 		loaded_ok = core.retro_load_game(NULL);
 	} else {
-		game_buf = read_file(game_path, &game_size);
 		game_info.path = game_path;
-		game_info.data = game_buf;
-		game_info.size = game_size;
+		if (!sysinfo.need_fullpath) {
+			game_buf = read_file(game_path, &game_size);
+			game_info.data = game_buf;
+			game_info.size = game_size;
+		}
 		game_info.meta = NULL;
 		loaded_ok = core.retro_load_game(&game_info);
 	}
@@ -3609,12 +3998,17 @@ int main(int argc, char** argv) {
 		for (unsigned i = 0; i < frames_to_run && !g_should_quit; ++i) {
 			g_drop_video = (frames_to_run > 1) && (i + 1 < frames_to_run);
 			if (g_menu_active) {
-				poll_input_devices();
+				input_poll_cb();
 				if (g_use_hw_render) {
 					menu_render_hw();
 					eglSwapBuffers_ptr(g_egl_display, g_egl_surface);
 				} else {
 					menu_render_software();
+#ifdef BMSX_LIBRETRO_HOST_SDL
+					if (g_use_sdl) {
+						sdl_present();
+					}
+#endif
 				}
 			} else {
 				core.retro_run();
@@ -3641,7 +4035,15 @@ int main(int argc, char** argv) {
 			close(g_input_devs[i].fd);
 		}
 	}
+#ifdef BMSX_LIBRETRO_HOST_SDL
+	if (g_use_sdl) {
+		sdl_shutdown();
+	} else {
+		fb_shutdown(&g_fb);
+	}
+#else
 	fb_shutdown(&g_fb);
+#endif
 	free(g_menu_surface);
 	g_menu_surface = NULL;
 	free(g_fps_surface);

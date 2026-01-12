@@ -1126,7 +1126,7 @@ void retro_get_system_info(struct retro_system_info* info) {
   info->library_name = CORE_NAME;
   info->library_version = CORE_VERSION;
   info->valid_extensions = VALID_EXTENSIONS;
-  info->need_fullpath = false;  // We can load from memory
+  info->need_fullpath = true;  // Load ROM from path to avoid duplicate in-memory copy
   info->block_extract = false;  // We can handle zipped files ourselves
 }
 

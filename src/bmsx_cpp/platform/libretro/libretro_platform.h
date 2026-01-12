@@ -225,6 +225,7 @@ private:
 	void processAudio();
 	void log(retro_log_level level, const char* fmt, ...);
 	bool loadEngineAssetsFromFile(const std::string& path);
+	bool loadRomOwned(std::vector<uint8_t>&& data);
 
 	// Libretro callbacks
 	retro_environment_t m_environ_cb = nullptr;

@@ -95,8 +95,12 @@ public:
 	Clock* clock() { return m_platform ? m_platform->clock() : nullptr; }
 	SoundMaster* soundMaster() { return m_sound_master.get(); }
 	TextureManager* texmanager() { return m_texture_manager.get(); }
-	const std::vector<u8>& engineRomBytes() const { return m_engine_rom_bytes; }
-	const std::vector<u8>& cartRomBytes() const { return m_cart_rom_bytes; }
+	struct RomView {
+		const u8* data;
+		size_t size;
+	};
+	RomView engineRomView() const { return { m_engine_rom_data, m_engine_rom_size }; }
+	RomView cartRomView() const { return { m_cart_rom_data, m_cart_rom_size }; }
 
 	// Time
 	f64 totalTime() const { return m_total_time; }
@@ -111,8 +115,10 @@ public:
 
 	// ROM loading
 	bool loadEngineAssets(const u8* data, size_t size);  // Load bmsx-bios.rom first
+	bool loadEngineAssetsOwned(std::vector<u8>&& data);  // Load engine assets without extra copy
 	bool loadEngineAssetsFromPath(const char* path);     // Load engine assets from file
 	bool loadRom(const u8* data, size_t size);            // Load game cartridge ROM
+	bool loadRomOwned(std::vector<u8>&& data);            // Load game cartridge ROM without extra copy
 	void unloadRom();
 	bool resetLoadedRom();
 	bool romLoaded() const { return m_rom_loaded; }
@@ -165,14 +171,21 @@ private:
 	bool m_rom_loaded = false;
 	bool m_engine_assets_loaded = false;
 	RuntimeAssets m_engine_assets;  // Base engine assets (fonts, UI sprites, etc.)
-	std::vector<u8> m_engine_rom_bytes;
-	std::vector<u8> m_cart_rom_bytes;
+	std::vector<u8> m_engine_rom_owned;
+	const u8* m_engine_rom_data = nullptr;
+	size_t m_engine_rom_size = 0;
+	std::vector<u8> m_cart_rom_owned;
+	const u8* m_cart_rom_data = nullptr;
+	size_t m_cart_rom_size = 0;
 	std::unique_ptr<VmProgramAsset> m_linked_vm_program;
 	std::unique_ptr<ProgramMetadata> m_linked_vm_program_symbols;
 	TickTiming m_last_tick_timing;
 	RenderTiming m_last_render_timing;
 
 	static EngineCore* s_instance;
+
+	bool loadEngineAssetsInternal(const u8* data, size_t size);
+	bool loadRomInternal(const u8* data, size_t size);
 };
 
 /* ============================================================================

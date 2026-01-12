@@ -32,5 +32,7 @@ Options:
 - `--system-dir <path>`: used for `RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY`
 - `--save-dir <path>`: used for `RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY`
 - `--backend software|gles2`: sets the `bmsx_render_backend` core option (host only provides software video)
+- `--video fb|sdl`: `fb` uses `/dev/fb0` + evdev, `sdl` opens a window and uses SDL input (software-only)
 - `--input-debug`: logs evdev events and the resulting RETRO_DEVICE_JOYPAD state
 
+SDL video support is enabled when SDL2 is available during the host build (non-cross builds only).

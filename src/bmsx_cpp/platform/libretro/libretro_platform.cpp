@@ -337,7 +337,14 @@ void LibretroPlatform::applyManifestViewport() {
 }
 
 bool LibretroPlatform::loadRom(const uint8_t* data, size_t size) {
+	std::vector<uint8_t> owned(size);
+	std::memcpy(owned.data(), data, size);
+	return loadRomOwned(std::move(owned));
+}
+
+bool LibretroPlatform::loadRomOwned(std::vector<uint8_t>&& data) {
 	unloadRom();
+	const size_t size = data.size();
 	{
 		const std::string line = memSnapshotLine("libretro:before_loadRom");
 		if (!line.empty()) {
@@ -345,8 +352,7 @@ bool LibretroPlatform::loadRom(const uint8_t* data, size_t size) {
 		}
 	}
 
-	// Load ROM into engine
-	if (m_engine && !m_engine->loadRom(data, size)) {
+	if (!m_engine->loadRomOwned(std::move(data))) {
 		log(RETRO_LOG_ERROR, "[BMSX] Failed to load ROM into engine\n");
 		return false;
 	}
@@ -415,7 +421,7 @@ bool LibretroPlatform::loadRomFromPath(const char* path) {
 		return false;
 	}
 
-	return loadRom(data.data(), data.size());
+	return loadRomOwned(std::move(data));
 }
 
 bool LibretroPlatform::loadEmptyCart() {
@@ -479,7 +485,7 @@ bool LibretroPlatform::loadEngineAssetsFromFile(const std::string& path) {
 		return false;
 	}
 
-	if (!m_engine->loadEngineAssets(data.data(), data.size())) {
+	if (!m_engine->loadEngineAssetsOwned(std::move(data))) {
 		log(RETRO_LOG_WARN, "[BMSX] Failed to parse engine assets: %s\n", path.c_str());
 		return false;
 	}

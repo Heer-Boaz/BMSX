@@ -675,13 +675,13 @@ void VMRuntime::setCanonicalization(CanonicalizationType canonicalization) {
 }
 
 void VMRuntime::refreshMemoryMap() {
-	const auto& engineRom = EngineCore::instance().engineRomBytes();
-	if (!engineRom.empty()) {
-		m_memory.setEngineRom(engineRom.data(), engineRom.size());
+	const auto engineRom = EngineCore::instance().engineRomView();
+	if (engineRom.size > 0) {
+		m_memory.setEngineRom(engineRom.data, engineRom.size);
 	}
-	const auto& cartRom = EngineCore::instance().cartRomBytes();
-	if (!cartRom.empty()) {
-		m_memory.setCartRom(cartRom.data(), cartRom.size());
+	const auto cartRom = EngineCore::instance().cartRomView();
+	if (cartRom.size > 0) {
+		m_memory.setCartRom(cartRom.data, cartRom.size);
 	} else {
 		m_memory.setCartRom(CART_ROM_EMPTY_HEADER.data(), CART_ROM_EMPTY_HEADER.size());
 	}

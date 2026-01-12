@@ -214,11 +214,22 @@ if(BMSX_BUILD_LIBRETRO_HOST)
     )
 
     # SNES Mini sysroot uses glibc 2.19; the cross toolchain defaults to time64.
-    target_compile_definitions(bmsx_libretro_host PRIVATE _TIME_BITS=32)
+    if(CMAKE_CROSSCOMPILING)
+        target_compile_definitions(bmsx_libretro_host PRIVATE _TIME_BITS=32)
+    endif()
     target_link_libraries(bmsx_libretro_host PRIVATE dl rt pthread)
     target_include_directories(bmsx_libretro_host PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/platform/libretro
     )
+
+    if(NOT CMAKE_CROSSCOMPILING)
+        find_package(SDL2)
+        if(SDL2_FOUND)
+            target_compile_definitions(bmsx_libretro_host PRIVATE BMSX_LIBRETRO_HOST_SDL=1)
+            target_include_directories(bmsx_libretro_host PRIVATE ${SDL2_INCLUDE_DIRS})
+            target_link_libraries(bmsx_libretro_host PRIVATE ${SDL2_LIBRARIES})
+        endif()
+    endif()
 endif()
 
 # =============================================================================
