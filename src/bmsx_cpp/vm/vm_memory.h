@@ -17,7 +17,7 @@ public:
 
 	void setEngineRom(const u8* data, size_t size);
 	void setCartRom(const u8* data, size_t size);
-	void setOverlayRom(const u8* data, size_t size);
+	void setOverlayRom(u8* data, size_t size);
 
 	Value readValue(uint32_t addr) const;
 	void writeValue(uint32_t addr, Value value);
@@ -36,9 +36,18 @@ public:
 	void clearIoSlots();
 
 private:
-	std::vector<u8> m_engineRom;
-	std::vector<u8> m_cartRom;
-	std::vector<u8> m_overlayRom;
+	struct RomSpan {
+		const u8* data = nullptr;
+		size_t size = 0;
+	};
+	struct MutableRomSpan {
+		u8* data = nullptr;
+		size_t size = 0;
+	};
+
+	RomSpan m_engineRom;
+	RomSpan m_cartRom;
+	MutableRomSpan m_overlayRom;
 	std::vector<u8> m_ram;
 	std::vector<Value> m_ioSlots;
 
@@ -46,8 +55,8 @@ private:
 	size_t ioIndex(uint32_t addr) const;
 	size_t ramOffset(uint32_t addr, size_t length) const;
 	uint32_t readU32FromRegion(uint32_t addr) const;
-	const std::vector<u8>& readRegion(uint32_t addr, size_t length, size_t& outOffset) const;
-	std::vector<u8>& writeRegion(uint32_t addr, size_t length, size_t& outOffset);
+	const u8* readRegion(uint32_t addr, size_t length, size_t& outOffset) const;
+	u8* writeRegion(uint32_t addr, size_t length, size_t& outOffset);
 };
 
 } // namespace bmsx

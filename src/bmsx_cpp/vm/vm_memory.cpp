@@ -11,27 +11,27 @@ VmMemory::VmMemory()
 }
 
 void VmMemory::setEngineRom(const u8* data, size_t size) {
-	if (!data || size == 0) {
-		m_engineRom.clear();
+	if (size == 0) {
+		m_engineRom = {};
 		return;
 	}
-	m_engineRom.assign(data, data + size);
+	m_engineRom = { data, size };
 }
 
 void VmMemory::setCartRom(const u8* data, size_t size) {
-	if (!data || size == 0) {
-		m_cartRom.clear();
+	if (size == 0) {
+		m_cartRom = {};
 		return;
 	}
-	m_cartRom.assign(data, data + size);
+	m_cartRom = { data, size };
 }
 
-void VmMemory::setOverlayRom(const u8* data, size_t size) {
-	if (!data || size == 0) {
-		m_overlayRom.clear();
+void VmMemory::setOverlayRom(u8* data, size_t size) {
+	if (size == 0) {
+		m_overlayRom = {};
 		return;
 	}
-	m_overlayRom.assign(data, data + size);
+	m_overlayRom = { data, size };
 }
 
 Value VmMemory::readValue(uint32_t addr) const {
@@ -57,13 +57,13 @@ void VmMemory::writeValue(uint32_t addr, Value value) {
 
 u8 VmMemory::readU8(uint32_t addr) const {
 	size_t offset = 0;
-	const auto& region = readRegion(addr, 1, offset);
+	const auto* region = readRegion(addr, 1, offset);
 	return region[offset];
 }
 
 void VmMemory::writeU8(uint32_t addr, u8 value) {
 	size_t offset = 0;
-	auto& region = writeRegion(addr, 1, offset);
+	auto* region = writeRegion(addr, 1, offset);
 	region[offset] = value;
 }
 
@@ -76,7 +76,7 @@ uint32_t VmMemory::readU32(uint32_t addr) const {
 
 uint32_t VmMemory::readU32FromRegion(uint32_t addr) const {
 	size_t offset = 0;
-	const auto& region = readRegion(addr, 4, offset);
+	const auto* region = readRegion(addr, 4, offset);
 	return static_cast<uint32_t>(region[offset])
 		| (static_cast<uint32_t>(region[offset + 1]) << 8)
 		| (static_cast<uint32_t>(region[offset + 2]) << 16)
@@ -90,14 +90,14 @@ void VmMemory::writeU32(uint32_t addr, uint32_t value) {
 
 void VmMemory::writeBytes(uint32_t addr, const u8* data, size_t length) {
 	size_t offset = 0;
-	auto& region = writeRegion(addr, length, offset);
-	std::memcpy(region.data() + offset, data, length);
+	auto* region = writeRegion(addr, length, offset);
+	std::memcpy(region + offset, data, length);
 }
 
 void VmMemory::readBytes(uint32_t addr, u8* out, size_t length) const {
 	size_t offset = 0;
-	const auto& region = readRegion(addr, length, offset);
-	std::memcpy(out, region.data() + offset, length);
+	const auto* region = readRegion(addr, length, offset);
+	std::memcpy(out, region + offset, length);
 }
 
 void VmMemory::loadIoSlots(const std::vector<Value>& slots) {
@@ -140,30 +140,30 @@ size_t VmMemory::ramOffset(uint32_t addr, size_t length) const {
 	return static_cast<size_t>(addr - RAM_BASE);
 }
 
-const std::vector<u8>& VmMemory::readRegion(uint32_t addr, size_t length, size_t& outOffset) const {
-	if (!m_engineRom.empty() && addr >= ENGINE_ROM_BASE && addr + length <= ENGINE_ROM_BASE + m_engineRom.size()) {
+const u8* VmMemory::readRegion(uint32_t addr, size_t length, size_t& outOffset) const {
+	if (m_engineRom.size > 0 && addr >= ENGINE_ROM_BASE && addr + length <= ENGINE_ROM_BASE + m_engineRom.size) {
 		outOffset = static_cast<size_t>(addr - ENGINE_ROM_BASE);
-		return m_engineRom;
+		return m_engineRom.data;
 	}
-	if (!m_cartRom.empty() && addr >= CART_ROM_BASE && addr + length <= CART_ROM_BASE + m_cartRom.size()) {
+	if (m_cartRom.size > 0 && addr >= CART_ROM_BASE && addr + length <= CART_ROM_BASE + m_cartRom.size) {
 		outOffset = static_cast<size_t>(addr - CART_ROM_BASE);
-		return m_cartRom;
+		return m_cartRom.data;
 	}
-	if (!m_overlayRom.empty() && addr >= OVERLAY_ROM_BASE && addr + length <= OVERLAY_ROM_BASE + m_overlayRom.size()) {
+	if (m_overlayRom.size > 0 && addr >= OVERLAY_ROM_BASE && addr + length <= OVERLAY_ROM_BASE + m_overlayRom.size) {
 		outOffset = static_cast<size_t>(addr - OVERLAY_ROM_BASE);
-		return m_overlayRom;
+		return m_overlayRom.data;
 	}
 	outOffset = ramOffset(addr, length);
-	return m_ram;
+	return m_ram.data();
 }
 
-std::vector<u8>& VmMemory::writeRegion(uint32_t addr, size_t length, size_t& outOffset) {
-	if (!m_overlayRom.empty() && addr >= OVERLAY_ROM_BASE && addr + length <= OVERLAY_ROM_BASE + m_overlayRom.size()) {
+u8* VmMemory::writeRegion(uint32_t addr, size_t length, size_t& outOffset) {
+	if (m_overlayRom.size > 0 && addr >= OVERLAY_ROM_BASE && addr + length <= OVERLAY_ROM_BASE + m_overlayRom.size) {
 		outOffset = static_cast<size_t>(addr - OVERLAY_ROM_BASE);
-		return m_overlayRom;
+		return m_overlayRom.data;
 	}
 	outOffset = ramOffset(addr, length);
-	return m_ram;
+	return m_ram.data();
 }
 
 } // namespace bmsx
