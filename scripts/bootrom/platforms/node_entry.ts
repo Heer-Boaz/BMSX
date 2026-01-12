@@ -163,7 +163,7 @@ function printHelp(): void {
 	console.log('  --input-timeline <file>  JSON timeline of InputEvt entries to schedule.');
 	console.log('  --input-module <file>    JS/TS module exporting a scheduler for custom input logic.');
 	console.log('  --engine-runtime <path>  JS runtime bundle for the engine (defaults to dist/engine.js).');
-	console.log('  --engine-assets <path>   Engine asset pack ROM (defaults to dist/engine.assets.rom).');
+	console.log('  --engine-assets <path>   Engine asset pack ROM (defaults to dist/bmsx-bios.rom).');
 	console.log('  --help, -h               Show this help message.');
 }
 
@@ -589,7 +589,7 @@ async function main(): Promise<void> {
 	const romDirectory = path.resolve(path.dirname(romPath));
 	const engineAssetsPath = cliOptions.engineAssetsPath
 		? path.resolve(cliOptions.engineAssetsPath)
-		: path.join(romDirectory, 'engine.assets.rom');
+		: path.join(romDirectory, 'bmsx-bios.rom');
 	console.log(`[bootrom:${__BOOTROM_TARGET__}] Loading engine assets: ${engineAssetsPath}`);
 	const engineAssetsBuffer = await readRomFile(engineAssetsPath);
 

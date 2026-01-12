@@ -88,7 +88,7 @@ void submitSprite(const ImgRenderSubmission& options) {
 	if (options.imgid == "none") return;
 
 	auto& engine = EngineCore::instance();
-	const auto* imgAsset = engine.assets().getImg(options.imgid);
+	const auto* imgAsset = bmsx-bios().getImg(options.imgid);
 	if (!imgAsset) {
 		throw BMSX_RUNTIME_ERROR("[Sprite Queue] submitSprite called with unknown image id '" + options.imgid + "'.");
 	}

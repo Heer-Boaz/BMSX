@@ -110,7 +110,7 @@ public:
 	void log(LogLevel level, const char* fmt, ...);
 
 	// ROM loading
-	bool loadEngineAssets(const u8* data, size_t size);  // Load engine.assets.rom first
+	bool loadEngineAssets(const u8* data, size_t size);  // Load bmsx-bios.rom first
 	bool loadEngineAssetsFromPath(const char* path);     // Load engine assets from file
 	bool loadRom(const u8* data, size_t size);            // Load game cartridge ROM
 	void unloadRom();

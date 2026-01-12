@@ -1005,7 +1005,7 @@ async function main() {
 		if (!isEngineMode) {
 			const engineManifest = await getRomManifest(engineResPath);
 			if (!engineManifest) throw new Error(`Rom manifest not found at "${engineResPath}"!`);
-			engineRomName = engineManifest.rom_name ?? 'engine.assets';
+			engineRomName = engineManifest.rom_name ?? 'bmsx-bios';
 			const engineAssetsNeedRebuild = force || await isRebuildRequired(engineRomName, engineBootloaderPath, engineResPath, {
 				includeCode: false,
 				extraLuaPaths: [],

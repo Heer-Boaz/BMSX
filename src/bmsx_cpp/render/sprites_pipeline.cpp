@@ -55,7 +55,7 @@ void renderSpriteBatchSoftware(SoftwareBackend* softBackend,
   const bool useDepth = false;
 
   auto& engine = EngineCore::instance();
-  const auto& assets = engine.assets();
+  const auto& assets = bmsx-bios();
   const TextureHandle atlasPrimary = context->textures.at("_atlas_primary");
   const TextureHandle atlasSecondary = context->textures.at("_atlas_secondary");
 

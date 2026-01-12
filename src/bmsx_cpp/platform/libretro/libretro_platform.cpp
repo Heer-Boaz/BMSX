@@ -42,7 +42,7 @@ std::string buildEngineAssetsPath(const std::string& directory) {
 	if (last != '/' && last != '\\') {
 		path.push_back('/');
 	}
-	path.append("engine.assets.rom");
+	path.append("bmsx-bios.rom");
 	return path;
 }
 
@@ -60,7 +60,7 @@ std::string buildEngineAssetsPathInSubdir(const std::string& directory, const ch
 	if (subdirLast != '/' && subdirLast != '\\') {
 		path.push_back('/');
 	}
-	path.append("engine.assets.rom");
+	path.append("bmsx-bios.rom");
 	return path;
 }
 }
@@ -429,9 +429,9 @@ bool LibretroPlatform::loadEmptyCart() {
 		engineAssetsPaths.push_back(buildEngineAssetsPathInSubdir(m_system_dir, "BMSX"));
 		engineAssetsPaths.push_back(buildEngineAssetsPathInSubdir(m_system_dir, "bmsx"));
 	}
-	engineAssetsPaths.emplace_back("dist/engine.assets.rom");
-	engineAssetsPaths.emplace_back("./engine.assets.rom");
-	engineAssetsPaths.emplace_back("../engine.assets.rom");
+	engineAssetsPaths.emplace_back("dist/bmsx-bios.rom");
+	engineAssetsPaths.emplace_back("./bmsx-bios.rom");
+	engineAssetsPaths.emplace_back("../bmsx-bios.rom");
 
 	bool assetsLoaded = false;
 	for (const auto& path : engineAssetsPaths) {

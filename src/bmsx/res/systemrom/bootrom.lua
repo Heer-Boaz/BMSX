@@ -25,19 +25,19 @@ local function center_x(text, width)
 end
 
 local function build_info()
-	local cart_manifest = cart_manifest
-	local cart_vm = cart_manifest.vm
-	local engine_manifest = engine_manifest
-	local engine_vm = engine_manifest.vm
+	local cart = cart_manifest
+	local cart_vm = cart.vm
+	local engine = engine_manifest
+	local engine_vm = engine.vm
 
-	local cart_title = cart_manifest.title or '--'
-	local cart_short = cart_manifest.short_name or cart_manifest.rom_name or '--'
-	local cart_rom = cart_manifest.rom_name or '--'
+	local cart_title = cart.title or '--'
+	local cart_short = cart.short_name or cart.rom_name or '--'
+	local cart_rom = cart.rom_name or '--'
 	local cart_ns = cart_vm.namespace or '--'
 	local cart_view = cart_vm.viewport or { width = display_width(), height = display_height() }
 	local cart_view_label = tostring(cart_view.width) .. 'x' .. tostring(cart_view.height)
 	local cart_canon = cart_vm.canonicalization or '--'
-	local cart_entry = cart_manifest.lua.entry_path
+	local cart_entry = cart.lua.entry_path
 	local cart_input_label = 'DEFAULT'
 	local cart_input_count = 1
 	if cart_manifest.input then
@@ -52,13 +52,13 @@ local function build_info()
 	end
 	local cart_input = cart_input_label .. ' (' .. tostring(cart_input_count) .. 'P)'
 
-	local engine_title = engine_manifest.title or '--'
-	local engine_rom = engine_manifest.rom_name or '--'
+	local engine_title = engine.title or '--'
+	local engine_rom = engine.rom_name or '--'
 	local engine_ns = engine_vm.namespace or '--'
 	local engine_view = engine_vm.viewport or { width = display_width(), height = display_height() }
 	local engine_view_label = tostring(engine_view.width) .. 'x' .. tostring(engine_view.height)
 	local engine_canon = engine_vm.canonicalization or '--'
-	local engine_entry = engine_manifest.lua.entry_path
+	local engine_entry = engine.lua.entry_path
 
 	return {
 		engine_title = engine_title,
@@ -122,7 +122,7 @@ function draw()
 
 	cls(color_bg)
 	put_rectfill(0, 0, width - 1, 15, 0, color_header_bg)
-	write('MSX SYSTEM ROM', center_x('MSX SYSTEM ROM', width), 4, 0, color_header_text)
+	write('BMSX BIOS', center_x('BMSX BIOS', width), 4, 0, color_header_text)
 
 	local info = build_info()
 	local y = top
@@ -174,7 +174,7 @@ function draw()
 		write('STATUS     : ' .. status, left, y, 0, color_text)
 		y = y + line_height
 		local bar = build_progress_bar(elapsed / boot_delay, 20)
-		write('BOAZ IS STOER : ' .. bar .. ' ' .. cursor, left, y, 0, color_text)
+		write('BOOT STATUS : ' .. bar .. ' ' .. cursor, left, y, 0, color_text)
 		-- write('BOOTING IN : ' .. bar .. ' ' .. cursor, left, y, 0, color_text)
 	else
 		write('STATUS     : NO CART DETECTED' .. ' ' .. cursor, left, y, 0, color_warn)
