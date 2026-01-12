@@ -1,5 +1,6 @@
 local combat = {}
 local timeline_builders = require('timeline_builders.lua')
+local stagger = require('stagger.lua')
 
 local function stat_label(stat_id)
 	if stat_id == 'planning' then
@@ -42,12 +43,22 @@ end
 
 function combat_director:apply_combat_round(node)
 	local round = node.rounds[self.combat_round_index]
-	set_text_lines(text_main_id, round.prompt, true)
 	local choice_lines = {}
 	for i = 1, #round.options do
 		choice_lines[i] = round.options[i].label
 	end
-	set_text_lines(text_choice_id, choice_lines, false)
+	stagger.play(self, 'combat', {
+		bg = object(bg_id),
+		pose_targets = {
+			object(combat_maya_a_id),
+		},
+		text_main = object(text_main_id),
+		text_choice = object(text_choice_id),
+		text_prompt = object(text_prompt_id),
+		text_lines = round.prompt,
+		text_choice_lines = choice_lines,
+		text_typed = true,
+	})
 	self.choice_index = 1
 end
 
@@ -598,6 +609,9 @@ function combat.define_fsm()
 			})
 		end,
 		tick = function(self)
+			if self.stagger_blocked then
+				return
+			end
 			local main = object(text_main_id)
 			if main.is_typing then
 				main:type_next()
@@ -611,21 +625,27 @@ function combat.define_fsm()
 		input_event_handlers = {
 			['up[jp]'] = {
 				go = function(self)
+					if self.stagger_blocked then return end
 					self.choice_index = math.max(1, self.choice_index - 1)
 				end,
 			},
 			['down[jp]'] = {
 				go = function(self)
+					if self.stagger_blocked then return end
 					local node = story[self.node_id]
 					local round = node.rounds[self.combat_round_index]
 					self.choice_index = math.min(#round.options, self.choice_index + 1)
 				end,
 			},
 			['b[jp]'] = {
-				go = function(self) self:skip_typing() end
+				go = function(self)
+					if self.stagger_blocked then return end
+					self:skip_typing()
+				end
 			},
 			['a[jp]'] = {
 				go = function(self)
+					if self.stagger_blocked then return end
 					if self:is_typing() then return end
 					local node = story[self.node_id]
 					local round = node.rounds[self.combat_round_index]

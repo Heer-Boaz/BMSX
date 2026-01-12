@@ -1,11 +1,20 @@
 local dialogue = {}
+local stagger = require('stagger.lua')
 
 function dialogue.register_methods(director)
 
 	function director:show_dialogue_page(typed)
 		local page = self.pages[self.page_index]
-		set_text_lines(text_main_id, page, typed)
 		clear_text(text_choice_id)
+		stagger.play(self, 'calm', {
+			bg = object(bg_id),
+			bg_dim = false,
+			text_main = object(text_main_id),
+			text_choice = object(text_choice_id),
+			text_prompt = object(text_prompt_id),
+			text_lines = page,
+			text_typed = typed,
+		})
 	end
 
 	function director:is_typing()
@@ -36,12 +45,20 @@ function dialogue.register_methods(director)
 	end
 
 	function director:setup_choice_menu(node)
-		set_text_lines(text_main_id, node.prompt, true)
 		local choice_lines = {}
 		for i = 1, #node.options do
 			choice_lines[i] = node.options[i].label
 		end
-		set_text_lines(text_choice_id, choice_lines, false)
+		stagger.play(self, 'calm', {
+			bg = object(bg_id),
+			bg_dim = false,
+			text_main = object(text_main_id),
+			text_choice = object(text_choice_id),
+			text_prompt = object(text_prompt_id),
+			text_lines = node.prompt,
+			text_choice_lines = choice_lines,
+			text_typed = true,
+		})
 		self.choice_index = 1
 	end
 end
@@ -88,7 +105,9 @@ function dialogue.register_states(states)
 			self:update_dialogue_prompt()
 		end,
 		tick = function(self)
-			-- write('BLADIEBLAP', 100, 100, 1000, 10)
+			if self.stagger_blocked then
+				return
+			end
 
 			local main = object(text_main_id)
 			if main.is_typing then
@@ -99,10 +118,14 @@ function dialogue.register_states(states)
 		input_eval = 'first',
 		input_event_handlers = {
 			['b[jp]'] = {
-				go = function(self) self:skip_typing() end
+				go = function(self)
+					if self.stagger_blocked then return end
+					self:skip_typing()
+				end
 			},
 			['a[jp]'] = {
 				go = function(self)
+					if self.stagger_blocked then return end
 					if self:is_typing() then return end
 
 					if self.page_index < #self.pages then
@@ -170,6 +193,9 @@ function dialogue.register_states(states)
 			self:show_dialogue_page(node.typed)
 		end,
 		tick = function(self)
+			if self.stagger_blocked then
+				return
+			end
 			local main = object(text_main_id)
 			if main.is_typing then
 				main:type_next()
@@ -184,10 +210,14 @@ function dialogue.register_states(states)
 		input_eval = 'first',
 		input_event_handlers = {
 			['b[jp]'] = {
-				go = function(self) self:skip_typing() end
+				go = function(self)
+					if self.stagger_blocked then return end
+					self:skip_typing()
+				end
 			},
 			['a[jp]'] = {
 				go = function(self)
+					if self.stagger_blocked then return end
 					if self:is_typing() then return end
 					if self.page_index < #self.pages then
 						self.page_index = self.page_index + 1
@@ -209,6 +239,9 @@ function dialogue.register_states(states)
 			self:setup_choice_menu(node)
 		end,
 		tick = function(self)
+			if self.stagger_blocked then
+				return
+			end
 			local main = object(text_main_id)
 			local choice_text = object(text_choice_id)
 			if main.is_typing then
@@ -223,20 +256,26 @@ function dialogue.register_states(states)
 		input_event_handlers = {
 			['up[jp]'] = {
 				go = function(self)
+					if self.stagger_blocked then return end
 					self.choice_index = math.max(1, self.choice_index - 1)
 				end,
 			},
 			['down[jp]'] = {
 				go = function(self)
+					if self.stagger_blocked then return end
 					local node = story[self.node_id]
 					self.choice_index = math.min(#node.options, self.choice_index + 1)
 				end,
 			},
 			['b[jp]'] = {
-				go = function(self) self:skip_typing() end
+				go = function(self)
+					if self.stagger_blocked then return end
+					self:skip_typing()
+				end
 			},
 			['a[jp]'] = {
 				go = function(self)
+					if self.stagger_blocked then return end
 					if self:is_typing() then return end
 					local node = story[self.node_id]
 					local option = node.options[self.choice_index]
