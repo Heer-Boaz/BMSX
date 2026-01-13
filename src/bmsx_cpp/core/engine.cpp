@@ -559,8 +559,20 @@ bool EngineCore::resetLoadedRom() {
 	if (m_sound_master) {
 		m_sound_master->resetPlaybackState();
 	}
+	if (m_texture_manager) {
+		m_texture_manager->clear();
+	}
+	if (m_view) {
+		m_view->reset();
+		m_view->initializeDefaultTextures();
+	}
 
 	if (m_assets.vmProgram && m_assets.vmProgram->program) {
+		VMRuntime& runtime = VMRuntime::instance();
+		runtime.refreshMemoryMap();
+		runtime.buildAssetMemory(m_assets, false);
+		uploadTexturesToBackend(true);
+		refreshAudioAssets();
 		bootVMFromProgram();
 		return true;
 	}

@@ -186,6 +186,149 @@ export class BmsxVMRuntime {
 		return new BmsxVMRuntime(options);
 	}
 
+	public readonly storage: BmsxVMStorage;
+	public readonly storageService: StorageService;
+	public readonly luaJsBridge!: LuaJsBridge;
+	public readonly apiFunctionNames = new Set<string>();
+	public readonly luaBuiltinMetadata = new Map<string, VMLuaBuiltinDescriptor>();
+	private _activeIdeFontVariant: VMFontVariant = EDITOR_FONT_VARIANT;
+	public playerIndex: number;
+	public tickEnabled: boolean = true;
+	public editor!: VMCartEditor;
+	private readonly overlayRenderBackend = new VMRenderFacade();
+	public readonly terminal!: TerminalMode;
+	private _overlayResolutionMode: 'offscreen' | 'viewport'; // Set in constructor
+	private readonly debuggerController = new LuaDebuggerController();
+	private readonly pauseCoordinator = new DebugPauseCoordinator();
+	public debuggerSuspendSignal: LuaDebuggerPauseSignal = null;
+	private debuggerPaused = false;
+	private debuggerMetrics: LuaDebuggerSessionMetrics = null;
+	private lastIdeInputFrame = -1;
+	private lastTerminalInputFrame = -1;
+	public set overlayResolutionMode(value: 'offscreen' | 'viewport') {
+		this._overlayResolutionMode = value;
+		this.overlayRenderBackend.setRenderingViewportType(value);
+		this.editor.updateViewport(this.overlayRenderBackend.viewportSize);
+	}
+
+	public get overlayResolutionMode() {
+		return this._overlayResolutionMode;
+	}
+
+	public get overlayViewportSize(): Viewport {
+		return this.overlayRenderBackend.viewportSize;
+	}
+
+	private shortcutDisposers: Array<() => void> = [];
+	private luaInterpreter!: LuaInterpreter;
+	private static readonly UPDATE_STATEMENT_BUDGET = 1_000_000;
+	private vmInitClosure: Closure = null;
+	private vmNewGameClosure: Closure = null;
+	private vmUpdateClosure: Closure = null;
+	private vmDrawClosure: Closure = null;
+	private pendingVmCall: 'update' | 'draw' = null;
+	private pendingProgramReload: { runInit?: boolean } = null;
+	private readonly memory: VmMemory;
+	private readonly cpu: VMCPU;
+	private readonly stringHandles: StringHandleTable;
+	private readonly runtimeStringPool: StringPool;
+	private vmProgramMetadata: ProgramMetadata | null = null;
+	private vmConsoleMetadata: ProgramMetadata | null = null;
+	private _luaPath: string = null;
+	public get currentPath(): string {
+		return this._luaPath;
+	}
+	private luaVmInitialized = false;
+	public get isVmInitialized(): boolean {
+		return this.luaVmInitialized;
+	}
+	private luaRuntimeFailed = false;
+	public get hasRuntimeFailed(): boolean {
+		return this.luaRuntimeFailed;
+	}
+	private includeJsStackTraces = false;
+	private currentFrameState: VMFrameState = null;
+	private pendingLuaWarnings: string[] = [];
+	public readonly vmModuleAliases: Map<string, string> = new Map();
+	public readonly luaChunkEnvironmentsByPath: Map<string, LuaEnvironment> = new Map();
+	private readonly luaGenericChunksExecuted: Set<string> = new Set();
+	private readonly luaPatternRegexCache: Map<string, RegExp> = new Map();
+	private readonly valueScratchPool: Value[][] = [];
+	private readonly stringScratchPool: string[][] = [];
+	public readonly luaFunctionRedirectCache = new LuaFunctionRedirectCache();
+	// Wrap Lua closures with stable JS stubs so FSM/input/events can hold onto durable references even across hot-reload.
+	private readonly luaHandlerCache = new LuaHandlerCache(
+		(fn, thisArg, args) => this.invokeLuaHandler(fn, thisArg, args),
+		(error, meta) => this.handleLuaHandlerError(error, meta),
+	);
+	private readonly vmHandlerCache = new VmHandlerCache(
+		(fn, thisArg, args) => this.invokeVmHandler(fn, thisArg, args),
+		(error, meta) => this.handleVmHandlerError(error, meta),
+	);
+	private readonly vmModuleProtos = new Map<string, number>();
+	private readonly vmModuleCache = new Map<string, Value>();
+	private readonly nativeObjectCache = new WeakMap<object, NativeObject>();
+	private readonly nativeFunctionCache = new WeakMap<Function, NativeFunction>();
+	private readonly nativeMemberCache = new WeakMap<object, Map<string, NativeFunction>>();
+	private readonly vmTableIds = new WeakMap<Table, number>();
+	private nextVmTableId = 1;
+	private vmRandomSeedValue = 0;
+	public nativeMemberCompletionCache: WeakMap<object, { dot?: VMLuaMemberCompletion[]; colon?: VMLuaMemberCompletion[] }> = new WeakMap();
+	public readonly pathSemanticCache: Map<string, { source: string; model: LuaSemanticModel; definitions: ReadonlyArray<LuaDefinitionInfo>; parsed?: ParsedLuaChunk; lines?: readonly string[]; analysis?: FileSemanticData }> = new Map();
+
+	private readonly luaVmGate = taskGate.group('console:lua_vm');
+	private readonly assetMemoryGate = taskGate.group('asset:ram');
+	private readonly assetUpdateGate = taskGate.group('asset:update');
+	private handledLuaErrors = new WeakSet<any>();
+	private lastVmCallStack: StackTraceFrame[] = [];
+	public faultSnapshot: FaultSnapshot = null;
+	private faultOverlayNeedsFlush = false;
+	public get doesFaultOverlayNeedFlush(): boolean {
+		return this.faultOverlayNeedsFlush;
+	}
+	public flushedFaultOverlay(): void {
+		this.faultOverlayNeedsFlush = false;
+	}
+	private hasCompletedInitialBoot = false;
+	private cartEntryAvailable = true;
+	private pendingCartBoot = false;
+	private engineLuaSources: LuaSourceRegistry = null;
+	private cartLuaSources: LuaSourceRegistry = null;
+	private engineAssetSource: RawAssetSource = null;
+	private cartAssetSource: RawAssetSource = null;
+	private cartAssetLayer: RuntimeAssetLayer = null;
+	private overlayAssetLayer: RuntimeAssetLayer = null;
+	private readonly assetEntryById = new Map<string, VmAssetEntry>();
+	private readonly atlasSlotById = new Map<number, number>();
+	private readonly atlasViewsById = new Map<number, VmAssetEntry[]>();
+	private readonly atlasResourcesById = new Map<number, RomAsset>();
+	private skyboxSlotEntries: VmAssetEntry[] = [];
+	private readonly slotAtlasIds: Array<number | null> = [null, null];
+	private atlasSlotEntries: VmAssetEntry[] = [];
+	private engineCanonicalization: CanonicalizationType = null;
+	private cartCanonicalization: CanonicalizationType = null;
+	private preparedCartProgram: {
+		program: Program;
+		metadata: ProgramMetadata;
+		entryProtoIndex: number;
+		moduleProtoMap: Map<string, number>;
+		moduleAliases: Array<{ alias: string; path: string }>;
+		entryPath: string;
+		canonicalization: CanonicalizationType;
+	} = null;
+	private _canonicalization: CanonicalizationType;
+	private canonicalizeIdentifierFn: (value: string) => string;
+	public get canonicalization(): CanonicalizationType {
+		return this._canonicalization;
+	}
+	public get interpreter(): LuaInterpreter {
+		return this.luaInterpreter;
+	}
+	public get hasProgramSymbols(): boolean {
+		return this.vmProgramMetadata !== null;
+	}
+
+
 	public static async init(cartridge?: BmsxCartridgeBlob): Promise<void> {
 		const engineLayer = $.engine_layer;
 		const playerIndex = Input.instance.startupGamepadIndex ?? 1;
@@ -354,10 +497,6 @@ export class BmsxVMRuntime {
 		$.assets.canonicalization = layer.assets.canonicalization;
 	}
 
-	public setCartEntryAvailable(value: boolean): void {
-		this.cartEntryAvailable = value;
-	}
-
 	private configureProgramSources(params: {
 		engineSources: LuaSourceRegistry;
 		cartSources?: LuaSourceRegistry;
@@ -373,7 +512,6 @@ export class BmsxVMRuntime {
 		this.engineCanonicalization = params.engineCanonicalization;
 		this.cartCanonicalization = params.cartCanonicalization ?? params.engineCanonicalization;
 		this.pendingCartBoot = false;
-		this.cartAssetsApplied = false;
 		this.preparedCartProgram = null;
 		this.setCartBootReadyFlag(false);
 	}
@@ -389,150 +527,6 @@ export class BmsxVMRuntime {
 	private requestCartBoot(): void {
 		this.pendingCartBoot = true;
 		this.setCartBootReadyFlag(false);
-	}
-
-	public readonly storage: BmsxVMStorage;
-	public readonly storageService: StorageService;
-	public readonly luaJsBridge!: LuaJsBridge;
-	public readonly apiFunctionNames = new Set<string>();
-	public readonly luaBuiltinMetadata = new Map<string, VMLuaBuiltinDescriptor>();
-	private _activeIdeFontVariant: VMFontVariant = EDITOR_FONT_VARIANT;
-	public playerIndex: number;
-	public tickEnabled: boolean = true;
-	public editor!: VMCartEditor;
-	private readonly overlayRenderBackend = new VMRenderFacade();
-	public readonly terminal!: TerminalMode;
-	private _overlayResolutionMode: 'offscreen' | 'viewport'; // Set in constructor
-	private readonly debuggerController = new LuaDebuggerController();
-	private readonly pauseCoordinator = new DebugPauseCoordinator();
-	public debuggerSuspendSignal: LuaDebuggerPauseSignal = null;
-	private debuggerPaused = false;
-	private debuggerMetrics: LuaDebuggerSessionMetrics = null;
-	private lastIdeInputFrame = -1;
-	private lastTerminalInputFrame = -1;
-	public set overlayResolutionMode(value: 'offscreen' | 'viewport') {
-		this._overlayResolutionMode = value;
-		this.overlayRenderBackend.setRenderingViewportType(value);
-		this.editor.updateViewport(this.overlayRenderBackend.viewportSize);
-	}
-
-	public get overlayResolutionMode() {
-		return this._overlayResolutionMode;
-	}
-
-	public get overlayViewportSize(): Viewport {
-		return this.overlayRenderBackend.viewportSize;
-	}
-
-	private shortcutDisposers: Array<() => void> = [];
-	private luaInterpreter!: LuaInterpreter;
-	private static readonly UPDATE_STATEMENT_BUDGET = 1_000_000;
-	private vmInitClosure: Closure = null;
-	private vmNewGameClosure: Closure = null;
-	private vmUpdateClosure: Closure = null;
-	private vmDrawClosure: Closure = null;
-	private pendingVmCall: 'update' | 'draw' = null;
-	private pendingProgramReload: { runInit?: boolean } = null;
-	private readonly memory: VmMemory;
-	private readonly cpu: VMCPU;
-	private readonly stringHandles: StringHandleTable;
-	private readonly runtimeStringPool: StringPool;
-	private vmProgramMetadata: ProgramMetadata | null = null;
-	private vmConsoleMetadata: ProgramMetadata | null = null;
-	private _luaPath: string = null;
-	public get currentPath(): string {
-		return this._luaPath;
-	}
-	private luaVmInitialized = false;
-	public get isVmInitialized(): boolean {
-		return this.luaVmInitialized;
-	}
-	private luaRuntimeFailed = false;
-	public get hasRuntimeFailed(): boolean {
-		return this.luaRuntimeFailed;
-	}
-	private includeJsStackTraces = false;
-	private currentFrameState: VMFrameState = null;
-	private pendingLuaWarnings: string[] = [];
-	public readonly vmModuleAliases: Map<string, string> = new Map();
-	public readonly luaChunkEnvironmentsByPath: Map<string, LuaEnvironment> = new Map();
-	public readonly pathFunctionDefinitionKeys: Map<string, Set<string>> = new Map();
-	private readonly luaGenericChunksExecuted: Set<string> = new Set();
-	private readonly luaPatternRegexCache: Map<string, RegExp> = new Map();
-	private readonly valueScratchPool: Value[][] = [];
-	private readonly stringScratchPool: string[][] = [];
-	public readonly luaFunctionRedirectCache = new LuaFunctionRedirectCache();
-	// Wrap Lua closures with stable JS stubs so FSM/input/events can hold onto durable references even across hot-reload.
-	private readonly luaHandlerCache = new LuaHandlerCache(
-		(fn, thisArg, args) => this.invokeLuaHandler(fn, thisArg, args),
-		(error, meta) => this.handleLuaHandlerError(error, meta),
-	);
-	private readonly vmHandlerCache = new VmHandlerCache(
-		(fn, thisArg, args) => this.invokeVmHandler(fn, thisArg, args),
-		(error, meta) => this.handleVmHandlerError(error, meta),
-	);
-	private readonly vmModuleProtos = new Map<string, number>();
-	private readonly vmModuleCache = new Map<string, Value>();
-	private readonly nativeObjectCache = new WeakMap<object, NativeObject>();
-	private readonly nativeFunctionCache = new WeakMap<Function, NativeFunction>();
-	private readonly nativeMemberCache = new WeakMap<object, Map<string, NativeFunction>>();
-	private readonly vmTableIds = new WeakMap<Table, number>();
-	private nextVmTableId = 1;
-	private vmRandomSeedValue = 0;
-	public nativeMemberCompletionCache: WeakMap<object, { dot?: VMLuaMemberCompletion[]; colon?: VMLuaMemberCompletion[] }> = new WeakMap();
-	public readonly pathSemanticCache: Map<string, { source: string; model: LuaSemanticModel; definitions: ReadonlyArray<LuaDefinitionInfo>; parsed?: ParsedLuaChunk; lines?: readonly string[]; analysis?: FileSemanticData }> = new Map();
-
-	private readonly luaVmGate = taskGate.group('console:lua_vm');
-	private readonly assetMemoryGate = taskGate.group('asset:ram');
-	private readonly assetUpdateGate = taskGate.group('asset:update');
-	private handledLuaErrors = new WeakSet<any>();
-	private lastVmCallStack: StackTraceFrame[] = [];
-	public faultSnapshot: FaultSnapshot = null;
-	private faultOverlayNeedsFlush = false;
-	public get doesFaultOverlayNeedFlush(): boolean {
-		return this.faultOverlayNeedsFlush;
-	}
-	public flushedFaultOverlay(): void {
-		this.faultOverlayNeedsFlush = false;
-	}
-	private hasCompletedInitialBoot = false;
-	private cartEntryAvailable = true;
-	private pendingCartBoot = false;
-	private engineLuaSources: LuaSourceRegistry = null;
-	private cartLuaSources: LuaSourceRegistry = null;
-	private engineAssetSource: RawAssetSource = null;
-	private cartAssetSource: RawAssetSource = null;
-	private cartAssetLayer: RuntimeAssetLayer = null;
-	private overlayAssetLayer: RuntimeAssetLayer = null;
-	private readonly assetEntryById = new Map<string, VmAssetEntry>();
-	private readonly atlasSlotById = new Map<number, number>();
-	private readonly atlasViewsById = new Map<number, VmAssetEntry[]>();
-	private readonly atlasResourcesById = new Map<number, RomAsset>();
-	private skyboxSlotEntries: VmAssetEntry[] = [];
-	private readonly slotAtlasIds: Array<number | null> = [null, null];
-	private atlasSlotEntries: VmAssetEntry[] = [];
-	private engineCanonicalization: CanonicalizationType = null;
-	private cartCanonicalization: CanonicalizationType = null;
-	private cartAssetsApplied = false;
-	private preparedCartProgram: {
-		program: Program;
-		metadata: ProgramMetadata;
-		entryProtoIndex: number;
-		moduleProtoMap: Map<string, number>;
-		moduleAliases: Array<{ alias: string; path: string }>;
-		entryPath: string;
-		canonicalization: CanonicalizationType;
-	} = null;
-	private _canonicalization: CanonicalizationType;
-	private canonicalizeIdentifierFn: (value: string) => string;
-	public get canonicalization(): CanonicalizationType {
-		return this._canonicalization;
-	}
-	public get interpreter(): LuaInterpreter {
-		return this.luaInterpreter;
-	}
-	public get hasProgramSymbols(): boolean {
-		return this.vmProgramMetadata !== null;
 	}
 
 	private constructor(options: BmsxVMRuntimeOptions) {
@@ -553,7 +547,6 @@ export class BmsxVMRuntime {
 		this.memory.writeValue(IO_WRITE_PTR_ADDR, 0);
 		this.memory.writeValue(IO_SYS_BOOT_CART, 0);
 		this.memory.writeValue(IO_SYS_CART_BOOTREADY, 0);
-		this.cartAssetsApplied = false;
 		this.cpu = new VMCPU(this.memory, this.runtimeStringPool);
 		this.vmRandomSeedValue = $.platform.clock.now();
 
@@ -933,21 +926,6 @@ export class BmsxVMRuntime {
 		this.resumeDebugger({ mode: 'continue', strategy: 'skip_statement' });
 	}
 
-	// private pauseDebuggerForException(location: { path: string; line: number; column: number }, callStack: ReadonlyArray<LuaCallFrame>): void {
-	// 	const suspension: LuaDebuggerPauseSignal = {
-	// 		kind: 'pause',
-	// 		reason: 'exception',
-	// 		location: {
-	// 			path: location.path,
-	// 			line: location.line,
-	// 			column: location.column,
-	// 		},
-	// 		callStack: callStack ?? [],
-	// 		resume: () => ({ kind: 'normal' }),
-	// 	};
-	// 	this.onLuaDebuggerPause(suspension);
-	// }
-
 	public async boot(): Promise<void> {
 		const vmToken = this.luaVmGate.begin({ blocking: true, tag: 'new_game' });
 		try {
@@ -961,8 +939,8 @@ export class BmsxVMRuntime {
 			this.editor.clearRuntimeErrorOverlay();
 			if (this.hasCompletedInitialBoot) { // Subsequent boot: reset to fresh world
 				await $.reset_to_fresh_world();
-				$.view.primaryAtlas = this.slotAtlasIds[0];
-				$.view.secondaryAtlas = this.slotAtlasIds[1];
+				await this.uploadAtlasTextures();
+				await $.refreshAudioAssets();
 			}
 			api.cartdata($.lua_sources.namespace);
 			this.bootActiveProgram();
@@ -978,7 +956,6 @@ export class BmsxVMRuntime {
 
 	// Frame state is owned by the runtime: it is created per-frame, kept intact for debugger inspection on faults,
 	// and only cleared via finalize/abandon during explicit reboot/reset flows.
-	// Frame state is owned by the runtime and is always finalized/abandoned by the runtime; faults capture a snapshot for inspection.
 	private beginFrameState(): VMFrameState {
 		if (this.currentFrameState) {
 			throw new Error('[BmsxVMRuntime] Attempted to begin a new frame while another frame is active.');
@@ -1013,8 +990,6 @@ export class BmsxVMRuntime {
 		if (!this.tickEnabled) {
 			return;
 		}
-		this.processPendingCartBoot();
-		this.processPendingProgramReload();
 		if (this.isOverlayActive()) {
 			return;
 		}
@@ -1032,7 +1007,6 @@ export class BmsxVMRuntime {
 		if (!this.tickEnabled) {
 			return;
 		}
-		this.processPendingCartBoot();
 		this.processPendingProgramReload();
 		if (this.currentFrameState !== null) {
 			return;
@@ -1046,7 +1020,6 @@ export class BmsxVMRuntime {
 		if (!this.tickEnabled) {
 			return;
 		}
-		this.processPendingCartBoot();
 		if (!this.currentFrameState) {
 			return;
 		}
@@ -1061,7 +1034,6 @@ export class BmsxVMRuntime {
 		if (!this.tickEnabled) {
 			return;
 		}
-		this.processPendingCartBoot();
 		this.processPendingProgramReload();
 		if (this.currentFrameState !== null) {
 			return;
@@ -1075,7 +1047,6 @@ export class BmsxVMRuntime {
 		if (!this.tickEnabled) {
 			return;
 		}
-		this.processPendingCartBoot();
 		if (!this.currentFrameState) {
 			return;
 		}
@@ -1270,10 +1241,6 @@ export class BmsxVMRuntime {
 		this.currentFrameState = null;
 	}
 
-	public requestProgramReload(options?: { runInit?: boolean }): void {
-		this.pendingProgramReload = { runInit: options?.runInit };
-	}
-
 	public getAssetEntry(id: string): VmAssetEntry {
 		const entry = this.assetEntryById.get(id);
 		if (!entry) {
@@ -1381,7 +1348,6 @@ export class BmsxVMRuntime {
 	private async prepareCartBoot(): Promise<void> {
 		this.setCartBootReadyFlag(false);
 		this.preparedCartProgram = null;
-		this.cartAssetsApplied = false;
 		if (!this.cartAssetLayer || !this.cartAssetSource || !this.cartLuaSources) {
 			return;
 		}
@@ -1389,7 +1355,6 @@ export class BmsxVMRuntime {
 		await this.buildAssetMemory();
 		await this.uploadAtlasTextures();
 		await $.refreshAudioAssets();
-		this.cartAssetsApplied = true;
 		if (this.shouldBootLuaProgramFromSources()) {
 			this.preparedCartProgram = this.compileCartLuaProgramForBoot();
 			this.setCartBootReadyFlag(this.editor.exists);
@@ -1761,6 +1726,8 @@ export class BmsxVMRuntime {
 			);
 			$.view.textures[ATLAS_SECONDARY_SLOT_ID] = secondaryHandle;
 		}
+		$.view.primaryAtlas = this.slotAtlasIds[0];
+		$.view.secondaryAtlas = this.slotAtlasIds[1];
 	}
 
 	private pollSystemBootRequest(): void {
@@ -1787,7 +1754,7 @@ export class BmsxVMRuntime {
 		}
 		this.pendingCartBoot = false;
 		this.activateProgramSource('cart');
-		void this.reloadProgramAndResetWorld({ applyCartAssets: !this.cartAssetsApplied });
+		void this.reloadProgramAndResetWorld();
 	}
 
 	private processPendingProgramReload(): void {
@@ -2408,9 +2375,6 @@ export class BmsxVMRuntime {
 		this.cpu.globals.clear();
 		this.vmModuleCache.clear();
 		this.vmModuleProtos.clear();
-		// for (let index = 0; index < this.cpuMemory.length; index += 1) {
-		// 	this.cpuMemory[index] = null;
-		// }
 		this.seedVmGlobals();
 	}
 
@@ -4551,7 +4515,7 @@ export class BmsxVMRuntime {
 		return this.runLuaLifecycleHandler('new_game');
 	}
 
-	public async reloadProgramAndResetWorld(options?: { runInit?: boolean; applyCartAssets?: boolean }): Promise<void> {
+	public async reloadProgramAndResetWorld(options?: { runInit?: boolean; }): Promise<void> {
 		const vmToken = this.luaVmGate.begin({ blocking: true, tag: 'reload_and_reset' });
 		try {
 			const preservingSuspension = this.pauseCoordinator.hasSuspension();
@@ -4567,16 +4531,11 @@ export class BmsxVMRuntime {
 			this.luaGenericChunksExecuted.clear();
 
 			// Reload the active program source and reset the world
-			if (options?.applyCartAssets) {
-				this.applyCartAssetLayers();
-				await this.buildAssetMemory();
-				await this.uploadAtlasTextures();
-				await $.refreshAudioAssets();
-				this.cartAssetsApplied = true;
-			}
+			this.applyCartAssetLayers();
+			await this.buildAssetMemory();
 			await $.reset_to_fresh_world();
-			$.view.primaryAtlas = this.slotAtlasIds[0];
-			$.view.secondaryAtlas = this.slotAtlasIds[1];
+			await this.uploadAtlasTextures();
+			await $.refreshAudioAssets();
 			try {
 				this.resetVmState();
 				if (this.shouldBootLuaProgramFromSources()) {

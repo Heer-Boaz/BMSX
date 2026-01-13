@@ -202,9 +202,6 @@ export const SKYBOX_SLOT_IDS = [
 	SKYBOX_SLOT_NEGZ_ID,
 ] as const;
 
-export function getAtlasSlotId(slot: AtlasSlotIndex): string {
-	return slot === 0 ? ATLAS_PRIMARY_SLOT_ID : ATLAS_SECONDARY_SLOT_ID;
-}
 const atlasNameCache = new Map<number, string>(); // Cache for atlas names to avoid regenerating them for each request
 
 export function generateAtlasName(atlasIndex: number): string {
