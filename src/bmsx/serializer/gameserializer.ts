@@ -283,6 +283,15 @@ export class Serializer {
 								break;
 							case 'float32array':
 							case 'float64array':
+							case 'int8array':
+							case 'uint8array':
+							case 'uint8clampedarray':
+							case 'int16array':
+							case 'uint16array':
+							case 'int32array':
+							case 'uint32array':
+							case 'bigint64array':
+							case 'biguint64array':
 							case 'sharedarraybuffer':
 							case 'dataview':
 							case 'arraybuffer':
@@ -511,8 +520,8 @@ type SoundMasterState = {
 };
 
 type ViewState = {
-	primaryAtlasIndex: number;
-	secondaryAtlasIndex: number;
+	primaryAtlasIndex: number | null;
+	secondaryAtlasIndex: number | null;
 	activeCameraId: string;
 	skyboxFaceIds: SkyboxImageIds;
 };

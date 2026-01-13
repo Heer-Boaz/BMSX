@@ -381,7 +381,6 @@ bool loadAssetsFromRom(const u8* buffer,
 			throw BMSX_RUNTIME_ERROR("Invalid ROM payload after decompression.");
 		}
 	}
-	const bool romDataPersistent = decompressed.empty();
 	const CartRomHeader header = parseCartHeader(romData, romSize);
 
 	// Step 3: Parse metadata to get asset list
@@ -416,6 +415,9 @@ bool loadAssetsFromRom(const u8* buffer,
 			if (vmObj.count("namespace")) assets.manifest.namespaceName = vmObj.at("namespace").asString();
 			assets.manifest.canonicalization = parseCanonicalization(vmObj.at("canonicalization").asString());
 			assets.canonicalization = assets.manifest.canonicalization;
+			if (vmObj.count("skybox_face_size")) {
+				assets.manifest.skyboxFaceSize = vmObj.at("skybox_face_size").toI32();
+			}
 			if (vmObj.count("viewport") && vmObj.at("viewport").isObject()) {
 				const auto& vpObj = vmObj.at("viewport").asObject();
 				if (vpObj.count("width")) assets.manifest.viewportWidth = vpObj.at("width").toI32();
@@ -557,22 +559,12 @@ bool loadAssetsFromRom(const u8* buffer,
 			audioAsset.sampleRate = wav.sampleRate;
 			audioAsset.channels = wav.channels;
 			audioAsset.bitsPerSample = wav.bitsPerSample;
-			audioAsset.totalSamples = wav.dataSize / static_cast<size_t>(wav.bitsPerSample / 8);
-			if (romDataPersistent) {
-				audioAsset.romDataPtr = audioData;
-				audioAsset.romDataOffset = static_cast<size_t>(wav.data - audioData);
-			} else {
-				audioAsset.samples.resize(audioAsset.totalSamples);
-				if (wav.bitsPerSample == 16) {
-					for (size_t i = 0; i < audioAsset.totalSamples; ++i) {
-						audioAsset.samples[i] = static_cast<i16>(readLE16(wav.data + i * 2));
-					}
-				} else {
-					for (size_t i = 0; i < audioAsset.totalSamples; ++i) {
-						audioAsset.samples[i] = static_cast<i16>(static_cast<int>(wav.data[i]) - 128) << 8;
-					}
-				}
-			}
+			audioAsset.dataOffset = static_cast<size_t>(wav.data - audioData);
+			audioAsset.dataSize = wav.dataSize;
+			const size_t bytesPerSample = static_cast<size_t>(wav.bitsPerSample / 8);
+			const size_t totalSamples = wav.dataSize / bytesPerSample;
+			audioAsset.frames = totalSamples / static_cast<size_t>(wav.channels);
+			audioAsset.bytes.assign(audioData, audioData + audioSize);
 
 			assets.audio[assetId] = std::move(audioAsset);
 		}

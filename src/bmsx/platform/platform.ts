@@ -178,6 +178,7 @@ export interface AudioService {
 	getMasterGain(): number;
 	setMasterGain(v: number): void;
 	decode(bytes: ArrayBuffer): Promise<AudioClipHandle>;
+	createClipFromPcm(samples: Int16Array, sampleRate: number, channels: number): AudioClipHandle;
 	createVoice(clip: AudioClipHandle, params: AudioPlaybackParams): VoiceHandle;
 }
 

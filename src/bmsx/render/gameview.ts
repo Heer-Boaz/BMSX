@@ -35,7 +35,12 @@ import type {
 	GlyphRenderSubmission,
 	SkyboxImageIds,
 } from './shared/render_types';
-import { generateAtlasName, ENGINE_ATLAS_INDEX, ENGINE_ATLAS_TEXTURE_KEY } from 'bmsx/rompack/rompack';
+import {
+	ATLAS_PRIMARY_SLOT_ID,
+	ATLAS_SECONDARY_SLOT_ID,
+	ENGINE_ATLAS_INDEX,
+	ENGINE_ATLAS_TEXTURE_KEY,
+} from 'bmsx/rompack/rompack';
 import { renderGate } from 'bmsx/core/engine_core';
 
 const PRESENTATION_PASS_IDS = ['skybox', 'meshbatch', 'particles', 'sprites', 'crt'];
@@ -153,8 +158,8 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	private lightingSystem: LightingSystem = null;
 	public offscreenCanvasSize!: vec2;
 	public textures: { [k: string]: TextureHandle } = {};
-	private _primaryAtlasIndex: number = null;
-	private _secondaryAtlasIndex: number = null;
+	private _primaryAtlasIndex: number | null = null;
+	private _secondaryAtlasIndex: number | null = null;
 	public pipelineRegistry?: RenderPassLibrary;
 	private presentationPassTokens: RenderPassToken[] = [];
 	private presentationEnabled = true;
@@ -853,24 +858,26 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	}
 	public async initializeDefaultTextures(): Promise<void> {
 		const fallback = this.backend.createSolidTexture2D(1, 1, [1, 1, 1, 1]);
-		this.textures['_atlas_primary'] = fallback; // Start with fallback to avoid undefined states and race conditions
-		this.textures['_atlas_secondary'] = fallback;
+		this.textures[ATLAS_PRIMARY_SLOT_ID] = fallback; // Start with fallback to avoid undefined states and race conditions
+		this.textures[ATLAS_SECONDARY_SLOT_ID] = fallback;
 		this.textures['_atlas_fallback'] = fallback;
 		this._primaryAtlasIndex = null;
 		this._secondaryAtlasIndex = null;
-		const engineAtlasName = generateAtlasName(ENGINE_ATLAS_INDEX);
-		const engineAtlas = $.assets.img[engineAtlasName];
-		if (!engineAtlas) {
-			throw new Error(`[GameView] Engine atlas '${engineAtlasName}' missing.`);
-		}
-		const engineAtlasTexture = await $.texmanager.loadTextureFromAsset(engineAtlas, {}, engineAtlasName);
-		this.textures[ENGINE_ATLAS_TEXTURE_KEY] = engineAtlasTexture;
+		this.textures[ENGINE_ATLAS_TEXTURE_KEY] = fallback;
 		// Default material textures for meshes
 		this.textures['_default_albedo'] = this.backend.createSolidTexture2D(1, 1, [1, 1, 1, 1]);
 		// Normal map default (0.5,0.5,1.0)
 		this.textures['_default_normal'] = this.backend.createSolidTexture2D(1, 1, [0.5, 0.5, 1.0, 1.0]);
 		// Metallic/Roughness default: neutral (mr.g=1 keeps roughnessFactor, mr.b=1 keeps metallicFactor)
 		this.textures['_default_mr'] = this.backend.createSolidTexture2D(1, 1, [1.0, 1.0, 1.0, 1.0]);
+	}
+
+	public loadEngineAtlasTexture(): void {
+		const engineAtlasTexture = $.texmanager.getTextureByUri(ENGINE_ATLAS_TEXTURE_KEY);
+		if (!engineAtlasTexture) {
+			throw new Error(`[GameView] Engine atlas '${ENGINE_ATLAS_TEXTURE_KEY}' not uploaded.`);
+		}
+		this.textures[ENGINE_ATLAS_TEXTURE_KEY] = engineAtlasTexture;
 	}
 
 	// (single handleResize implementation above in the class)
@@ -886,42 +893,29 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		this.renderGraph = this.pipelineRegistry.buildRenderGraph(this, this.lightingSystem);
 		renderGate.end(token);
 	}
-	public setSkybox(images: SkyboxImageIds): void { SkyboxPipeline.setSkyboxImages(images); }
+	public setSkybox(images: SkyboxImageIds): void { $.setSkyboxImages(images); }
 	public get skyboxFaceIds(): SkyboxImageIds { return SkyboxPipeline.skyboxFaceIds; }
-	private async resolveAtlasTexture(atlasName: string): Promise<TextureHandle> {
-		const atlas = $.assets.img[atlasName];
-		if (!atlas) {
-			throw new Error(`[GameView] atlas '${atlasName}' not found.`);
+	public resolveAtlasBindingId(atlasId: number): number {
+		if (atlasId === ENGINE_ATLAS_INDEX) {
+			return ENGINE_ATLAS_INDEX;
 		}
-		return $.texmanager.loadTextureFromAsset(atlas, {}, atlasName);
-	}
-	private setAtlasIndex(indexKey: '_primaryAtlasIndex' | '_secondaryAtlasIndex', index: number | null): void {
-		if (this[indexKey] === index) return;
-		const atlas_id = indexKey === '_primaryAtlasIndex' ? '_atlas_primary' : '_atlas_secondary';
-		if (index == null) {
-			this[indexKey] = null;
-			const fallback = this.textures['_atlas_fallback'] as TextureHandle;
-			this.textures[atlas_id] = fallback;
-			return;
+		if (this._primaryAtlasIndex === atlasId) {
+			return 0;
 		}
-		const atlasName = generateAtlasName(index);
-		this[indexKey] = index;
-		const fallback = this.textures['_atlas_fallback'] as TextureHandle;
-		this.textures[atlas_id] = fallback;
-		void this.resolveAtlasTexture(atlasName).then((handle) => {
-			if (this[indexKey] !== index) return;
-			this.textures[atlas_id] = handle;
-		});
+		if (this._secondaryAtlasIndex === atlasId) {
+			return 1;
+		}
+		throw new Error(`[GameView] Atlas ${atlasId} not loaded into a slot.`);
 	}
 
-	public get primaryAtlas(): number { return this._primaryAtlasIndex; }
-	public set primaryAtlas(index: number) {
-		this.setAtlasIndex('_primaryAtlasIndex', index)
+	public get primaryAtlas(): number | null { return this._primaryAtlasIndex; }
+	public set primaryAtlas(index: number | null) {
+		this._primaryAtlasIndex = index;
 	}
 
-	public get secondaryAtlas(): number { return this._secondaryAtlasIndex; }
-	public set secondaryAtlas(index: number) {
-		this.setAtlasIndex('_secondaryAtlasIndex', index)
+	public get secondaryAtlas(): number | null { return this._secondaryAtlasIndex; }
+	public set secondaryAtlas(index: number | null) {
+		this._secondaryAtlasIndex = index;
 	}
 
 	// Texture binding helpers

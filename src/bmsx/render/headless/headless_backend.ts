@@ -1,4 +1,4 @@
-import type { color_arr } from '../../rompack/rompack';
+import type { color_arr, TextureSource } from '../../rompack/rompack';
 import type {
 	GPUBackend,
 	TextureHandle,
@@ -28,9 +28,10 @@ export class HeadlessGPUBackend implements GPUBackend {
 	bindTexture2D(_tex: TextureHandle): void { }
 	bindTextureCube(_tex: TextureHandle): void { }
 
-	createTexture(_src: unknown, _desc: TextureParams): TextureHandle {
+	createTexture(_src: TextureSource | Promise<TextureSource>, _desc: TextureParams): TextureHandle {
 		return makeTextureHandle('texture');
 	}
+	updateTexture(_handle: TextureHandle, _src: TextureSource): void { }
 	createSolidTexture2D(_width: number, _height: number, _rgba: color_arr, _desc: TextureParams = {}): TextureHandle {
 		return makeTextureHandle('solid2d');
 	}

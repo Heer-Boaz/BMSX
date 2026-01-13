@@ -1,13 +1,39 @@
 #include "vm_memory.h"
 
+#include <algorithm>
 #include <cstring>
 #include <stdexcept>
 
 namespace bmsx {
+namespace {
+constexpr uint32_t ASSET_TABLE_MAGIC = 0x54534D41u; // 'AMST'
+constexpr uint32_t ASSET_TABLE_HEADER_SIZE = 32;
+constexpr uint32_t ASSET_TABLE_ENTRY_SIZE = 64;
+constexpr uint32_t ASSET_PAGE_SHIFT = 12;
+constexpr uint32_t ASSET_PAGE_SIZE = 1u << ASSET_PAGE_SHIFT;
+constexpr uint32_t ASSET_TYPE_IMAGE = 1;
+constexpr uint32_t ASSET_TYPE_AUDIO = 2;
+constexpr uint32_t ASSET_FLAG_VIEW = 1u << 1;
+
+inline uint32_t alignUp(uint32_t value, uint32_t alignment) {
+	const uint32_t mask = alignment - 1;
+	return (value + mask) & ~mask;
+}
+
+inline void writeU32LE(u8* dst, uint32_t value) {
+	dst[0] = static_cast<u8>(value & 0xffu);
+	dst[1] = static_cast<u8>((value >> 8) & 0xffu);
+	dst[2] = static_cast<u8>((value >> 16) & 0xffu);
+	dst[3] = static_cast<u8>((value >> 24) & 0xffu);
+}
+}
 
 VmMemory::VmMemory()
 	: m_ram(RAM_USED_END - RAM_BASE)
 	, m_ioSlots(VM_IO_SLOT_COUNT, valueNil()) {
+	const size_t pageCount = (ASSET_DATA_END - ASSET_DATA_BASE + ASSET_PAGE_SIZE - 1) / ASSET_PAGE_SIZE;
+	m_assetOwnerPages.assign(pageCount, -1);
+	resetAssetMemory();
 }
 
 void VmMemory::setEngineRom(const u8* data, size_t size) {
@@ -32,6 +58,277 @@ void VmMemory::setOverlayRom(u8* data, size_t size) {
 		return;
 	}
 	m_overlayRom = { data, size };
+}
+
+void VmMemory::resetAssetMemory() {
+	m_assetEntries.clear();
+	m_assetIndexById.clear();
+	m_assetDirtyFlags.clear();
+	m_assetDirtyList.clear();
+	m_assetCapacity.clear();
+	m_assetTableFinalized = false;
+	std::fill(m_assetOwnerPages.begin(), m_assetOwnerPages.end(), -1);
+	m_assetDataCursor = ASSET_DATA_BASE;
+	const size_t offset = static_cast<size_t>(ASSET_RAM_BASE - RAM_BASE);
+	std::fill(m_ram.begin() + offset, m_ram.begin() + offset + ASSET_RAM_SIZE, 0);
+}
+
+VmMemory::AssetEntry& VmMemory::registerImageBuffer(const std::string& id, const u8* rgba, uint32_t width, uint32_t height, uint32_t flags) {
+	const uint32_t stride = width * 4u;
+	const uint32_t size = stride * height;
+	const uint32_t addr = allocateAssetData(size, 4);
+	const size_t offset = static_cast<size_t>(addr - RAM_BASE);
+	std::memcpy(m_ram.data() + offset, rgba, size);
+	AssetEntry entry;
+	entry.id = id;
+	entry.type = AssetType::Image;
+	entry.flags = flags;
+	entry.baseAddr = addr;
+	entry.baseSize = size;
+	entry.baseStride = stride;
+	entry.regionW = width;
+	entry.regionH = height;
+	const size_t index = addAssetEntry(std::move(entry));
+	m_assetEntries[index].ownerIndex = index;
+	m_assetCapacity[index] = size;
+	mapAssetPages(index, addr, size);
+	return m_assetEntries[index];
+}
+
+VmMemory::AssetEntry& VmMemory::registerImageSlot(const std::string& id, uint32_t capacityBytes, uint32_t flags) {
+	const uint32_t addr = allocateAssetData(capacityBytes, 4);
+	const size_t offset = static_cast<size_t>(addr - RAM_BASE);
+	std::memset(m_ram.data() + offset, 0, capacityBytes);
+	AssetEntry entry;
+	entry.id = id;
+	entry.type = AssetType::Image;
+	entry.flags = flags;
+	entry.baseAddr = addr;
+	entry.baseSize = 0;
+	entry.baseStride = 0;
+	entry.regionW = 0;
+	entry.regionH = 0;
+	const size_t index = addAssetEntry(std::move(entry));
+	m_assetEntries[index].ownerIndex = index;
+	m_assetCapacity[index] = capacityBytes;
+	mapAssetPages(index, addr, capacityBytes);
+	return m_assetEntries[index];
+}
+
+VmMemory::AssetEntry& VmMemory::registerImageView(const std::string& id, const AssetEntry& base, uint32_t regionX, uint32_t regionY, uint32_t regionW, uint32_t regionH, uint32_t flags) {
+	AssetEntry entry;
+	entry.id = id;
+	entry.type = AssetType::Image;
+	entry.flags = flags | ASSET_FLAG_VIEW;
+	entry.ownerIndex = base.ownerIndex;
+	entry.baseAddr = base.baseAddr;
+	entry.baseSize = base.baseSize;
+	entry.baseStride = base.baseStride;
+	entry.regionX = regionX;
+	entry.regionY = regionY;
+	entry.regionW = regionW;
+	entry.regionH = regionH;
+	const size_t index = addAssetEntry(std::move(entry));
+	m_assetEntries[index].ownerIndex = base.ownerIndex;
+	m_assetCapacity[index] = base.baseSize;
+	return m_assetEntries[index];
+}
+
+VmMemory::AssetEntry& VmMemory::registerAudioBuffer(
+	const std::string& id,
+	const u8* bytes,
+	size_t byteCount,
+	uint32_t sampleRate,
+	uint32_t channels,
+	uint32_t bitsPerSample,
+	uint32_t frames,
+	uint32_t dataOffset,
+	uint32_t dataSize
+) {
+	const uint32_t size = static_cast<uint32_t>(byteCount);
+	const uint32_t addr = allocateAssetData(size, 2);
+	const size_t offset = static_cast<size_t>(addr - RAM_BASE);
+	std::memcpy(m_ram.data() + offset, bytes, size);
+	AssetEntry entry;
+	entry.id = id;
+	entry.type = AssetType::Audio;
+	entry.baseAddr = addr;
+	entry.baseSize = size;
+	entry.sampleRate = sampleRate;
+	entry.channels = channels;
+	entry.frames = frames;
+	entry.bitsPerSample = bitsPerSample;
+	entry.audioDataOffset = dataOffset;
+	entry.audioDataSize = dataSize;
+	const size_t index = addAssetEntry(std::move(entry));
+	m_assetEntries[index].ownerIndex = index;
+	m_assetCapacity[index] = size;
+	mapAssetPages(index, addr, size);
+	return m_assetEntries[index];
+}
+
+void VmMemory::finalizeAssetTable() {
+	const size_t entryCount = m_assetEntries.size();
+	const uint32_t entryBaseAddr = ASSET_TABLE_BASE + ASSET_TABLE_HEADER_SIZE;
+	const uint32_t entriesSize = static_cast<uint32_t>(entryCount * ASSET_TABLE_ENTRY_SIZE);
+	std::unordered_map<std::string, uint32_t> stringOffsets;
+	std::vector<u8> stringTable;
+	stringTable.reserve(entryCount * 16u);
+	for (const auto& entry : m_assetEntries) {
+		if (stringOffsets.count(entry.id) != 0) {
+			continue;
+		}
+		const uint32_t offset = static_cast<uint32_t>(stringTable.size());
+		stringOffsets[entry.id] = offset;
+		stringTable.insert(stringTable.end(), entry.id.begin(), entry.id.end());
+		stringTable.push_back(0);
+	}
+	const uint32_t stringTableAddr = entryBaseAddr + entriesSize;
+	const uint32_t tableEnd = ASSET_TABLE_BASE + ASSET_TABLE_SIZE;
+	if (stringTableAddr + stringTable.size() > tableEnd) {
+		throw std::runtime_error("[VmMemory] Asset table overflow.");
+	}
+
+	u8* base = m_ram.data();
+	const uint32_t headerOffset = ASSET_TABLE_BASE - RAM_BASE;
+	writeU32LE(base + headerOffset + 0, ASSET_TABLE_MAGIC);
+	writeU32LE(base + headerOffset + 4, ASSET_TABLE_HEADER_SIZE);
+	writeU32LE(base + headerOffset + 8, ASSET_TABLE_ENTRY_SIZE);
+	writeU32LE(base + headerOffset + 12, static_cast<uint32_t>(entryCount));
+	writeU32LE(base + headerOffset + 16, stringTableAddr);
+	writeU32LE(base + headerOffset + 20, static_cast<uint32_t>(stringTable.size()));
+	writeU32LE(base + headerOffset + 24, ASSET_DATA_BASE);
+	writeU32LE(base + headerOffset + 28, m_assetDataCursor - ASSET_DATA_BASE);
+
+	for (size_t index = 0; index < m_assetEntries.size(); ++index) {
+		const auto& entry = m_assetEntries[index];
+		const uint32_t entryAddr = entryBaseAddr + static_cast<uint32_t>(index * ASSET_TABLE_ENTRY_SIZE);
+		const uint32_t entryOffset = entryAddr - RAM_BASE;
+		const uint32_t typeId = entry.type == AssetType::Image ? ASSET_TYPE_IMAGE : ASSET_TYPE_AUDIO;
+		const uint32_t idAddr = stringTableAddr + stringOffsets.at(entry.id);
+		writeU32LE(base + entryOffset + 0, typeId);
+		writeU32LE(base + entryOffset + 4, entry.flags);
+		writeU32LE(base + entryOffset + 8, idAddr);
+		writeU32LE(base + entryOffset + 12, entry.baseAddr);
+		writeU32LE(base + entryOffset + 16, entry.baseSize);
+		writeU32LE(base + entryOffset + 20, entry.baseStride);
+		writeU32LE(base + entryOffset + 24, entry.regionX);
+		writeU32LE(base + entryOffset + 28, entry.regionY);
+		writeU32LE(base + entryOffset + 32, entry.regionW);
+		writeU32LE(base + entryOffset + 36, entry.regionH);
+		writeU32LE(base + entryOffset + 40, entry.sampleRate);
+		writeU32LE(base + entryOffset + 44, entry.channels);
+		writeU32LE(base + entryOffset + 48, entry.frames);
+		writeU32LE(base + entryOffset + 52, entry.bitsPerSample);
+		writeU32LE(base + entryOffset + 56, entry.audioDataOffset);
+		writeU32LE(base + entryOffset + 60, entry.audioDataSize);
+	}
+
+	const uint32_t stringOffset = stringTableAddr - RAM_BASE;
+	std::memcpy(base + stringOffset, stringTable.data(), stringTable.size());
+	m_assetTableFinalized = true;
+}
+
+std::vector<VmMemory::AssetEntry*> VmMemory::consumeDirtyAssets() {
+	std::vector<AssetEntry*> entries;
+	entries.reserve(m_assetDirtyList.size());
+	for (const size_t index : m_assetDirtyList) {
+		entries.push_back(&m_assetEntries[index]);
+		m_assetDirtyFlags[index] = 0;
+	}
+	m_assetDirtyList.clear();
+	return entries;
+}
+
+void VmMemory::markAllAssetsDirty() {
+	for (size_t index = 0; index < m_assetEntries.size(); ++index) {
+		if (m_assetEntries[index].ownerIndex != index) {
+			continue;
+		}
+		if (m_assetDirtyFlags[index] == 0) {
+			m_assetDirtyFlags[index] = 1;
+			m_assetDirtyList.push_back(index);
+		}
+	}
+}
+
+std::vector<u8> VmMemory::dumpAssetMemory() const {
+	std::vector<u8> snapshot(ASSET_RAM_SIZE);
+	const size_t offset = static_cast<size_t>(ASSET_RAM_BASE - RAM_BASE);
+	std::memcpy(snapshot.data(), m_ram.data() + offset, snapshot.size());
+	return snapshot;
+}
+
+void VmMemory::restoreAssetMemory(const u8* data, size_t size) {
+	if (size != ASSET_RAM_SIZE) {
+		throw std::runtime_error("[VmMemory] Asset RAM snapshot length mismatch.");
+	}
+	const size_t offset = static_cast<size_t>(ASSET_RAM_BASE - RAM_BASE);
+	std::memcpy(m_ram.data() + offset, data, size);
+	markAllAssetsDirty();
+}
+
+const VmMemory::AssetEntry& VmMemory::getAssetEntry(const std::string& id) const {
+	return m_assetEntries.at(m_assetIndexById.at(id));
+}
+
+VmMemory::AssetEntry& VmMemory::getAssetEntry(const std::string& id) {
+	return m_assetEntries.at(m_assetIndexById.at(id));
+}
+
+const u8* VmMemory::getImagePixels(const AssetEntry& entry) const {
+	if (entry.flags & ASSET_FLAG_VIEW) {
+		throw std::runtime_error("[VmMemory] Image view entries do not expose direct pixel buffers.");
+	}
+	const size_t offset = ramOffset(entry.baseAddr, entry.baseSize);
+	return m_ram.data() + offset;
+}
+
+const u8* VmMemory::getAudioBytes(const AssetEntry& entry) const {
+	const size_t offset = ramOffset(entry.baseAddr, entry.baseSize);
+	return m_ram.data() + offset;
+}
+
+const u8* VmMemory::getAudioData(const AssetEntry& entry) const {
+	const uint32_t dataAddr = entry.baseAddr + entry.audioDataOffset;
+	const size_t offset = ramOffset(dataAddr, entry.audioDataSize);
+	return m_ram.data() + offset;
+}
+
+void VmMemory::writeImageSlot(AssetEntry& entry, const u8* pixels, size_t pixelBytes, uint32_t width, uint32_t height) {
+	const size_t index = m_assetIndexById.at(entry.id);
+	const uint32_t capacity = m_assetCapacity.at(index);
+	const uint32_t stride = width * 4u;
+	const uint32_t size = stride * height;
+	const uint32_t maxWritable = ASSET_DATA_END - entry.baseAddr;
+	const size_t writeLen = std::min(pixelBytes, static_cast<size_t>(maxWritable));
+	if (writeLen > 0) {
+		const size_t offset = ramOffset(entry.baseAddr, writeLen);
+		std::memcpy(m_ram.data() + offset, pixels, writeLen);
+	}
+	entry.baseSize = std::min(size, capacity);
+	entry.baseStride = stride;
+	entry.regionX = 0;
+	entry.regionY = 0;
+	entry.regionW = width;
+	entry.regionH = height;
+	if (m_assetTableFinalized) {
+		updateAssetEntryData(index, entry);
+	}
+	if (writeLen > 0) {
+		markAssetDirty(entry.baseAddr, static_cast<uint32_t>(writeLen));
+	}
+}
+
+void VmMemory::updateImageViewBase(AssetEntry& entry, const AssetEntry& base) {
+	const size_t index = m_assetIndexById.at(entry.id);
+	entry.baseAddr = base.baseAddr;
+	entry.baseSize = base.baseSize;
+	entry.baseStride = base.baseStride;
+	entry.ownerIndex = base.ownerIndex;
+	if (m_assetTableFinalized) {
+		updateAssetEntryData(index, entry);
+	}
 }
 
 Value VmMemory::readValue(uint32_t addr) const {
@@ -65,6 +362,7 @@ void VmMemory::writeU8(uint32_t addr, u8 value) {
 	size_t offset = 0;
 	auto* region = writeRegion(addr, 1, offset);
 	region[offset] = value;
+	markAssetDirty(addr, 1);
 }
 
 uint32_t VmMemory::readU32(uint32_t addr) const {
@@ -86,12 +384,14 @@ uint32_t VmMemory::readU32FromRegion(uint32_t addr) const {
 void VmMemory::writeU32(uint32_t addr, uint32_t value) {
 	const size_t offset = ramOffset(addr, 4);
 	std::memcpy(m_ram.data() + offset, &value, sizeof(uint32_t));
+	markAssetDirty(addr, 4);
 }
 
 void VmMemory::writeBytes(uint32_t addr, const u8* data, size_t length) {
 	size_t offset = 0;
 	auto* region = writeRegion(addr, length, offset);
 	std::memcpy(region + offset, data, length);
+	markAssetDirty(addr, static_cast<uint32_t>(length));
 }
 
 void VmMemory::readBytes(uint32_t addr, u8* out, size_t length) const {
@@ -164,6 +464,75 @@ u8* VmMemory::writeRegion(uint32_t addr, size_t length, size_t& outOffset) {
 	}
 	outOffset = ramOffset(addr, length);
 	return m_ram.data();
+}
+
+void VmMemory::mapAssetPages(size_t ownerIndex, uint32_t addr, uint32_t size) {
+	const uint32_t startPage = (addr - ASSET_DATA_BASE) >> ASSET_PAGE_SHIFT;
+	const uint32_t endPage = (addr + size - ASSET_DATA_BASE - 1) >> ASSET_PAGE_SHIFT;
+	for (uint32_t page = startPage; page <= endPage; ++page) {
+		m_assetOwnerPages[page] = static_cast<int32_t>(ownerIndex);
+	}
+}
+
+void VmMemory::markAssetDirty(uint32_t addr, uint32_t size) {
+	const uint32_t start = addr < ASSET_DATA_BASE ? ASSET_DATA_BASE : addr;
+	uint32_t end = addr + size;
+	if (end > ASSET_DATA_END) {
+		end = ASSET_DATA_END;
+	}
+	if (start >= end) {
+		return;
+	}
+	const uint32_t startPage = (start - ASSET_DATA_BASE) >> ASSET_PAGE_SHIFT;
+	const uint32_t endPage = (end - ASSET_DATA_BASE - 1) >> ASSET_PAGE_SHIFT;
+	for (uint32_t page = startPage; page <= endPage; ++page) {
+		const int32_t owner = m_assetOwnerPages[page];
+		if (owner < 0) {
+			continue;
+		}
+		const size_t index = static_cast<size_t>(owner);
+		if (m_assetDirtyFlags[index] == 0) {
+			m_assetDirtyFlags[index] = 1;
+			m_assetDirtyList.push_back(index);
+		}
+	}
+}
+
+uint32_t VmMemory::allocateAssetData(uint32_t size, uint32_t alignment) {
+	uint32_t addr = alignment > 1 ? alignUp(m_assetDataCursor, alignment) : m_assetDataCursor;
+	const uint32_t end = addr + size;
+	if (end > ASSET_DATA_END) {
+		throw std::runtime_error("[VmMemory] Asset RAM exhausted.");
+	}
+	m_assetDataCursor = end;
+	return addr;
+}
+
+size_t VmMemory::addAssetEntry(AssetEntry entry) {
+	const size_t index = m_assetEntries.size();
+	m_assetEntries.push_back(std::move(entry));
+	m_assetIndexById[m_assetEntries.back().id] = index;
+	m_assetDirtyFlags.push_back(0);
+	m_assetCapacity.push_back(0);
+	return index;
+}
+
+void VmMemory::updateAssetEntryData(size_t index, const AssetEntry& entry) {
+	const uint32_t entryAddr = ASSET_TABLE_BASE + ASSET_TABLE_HEADER_SIZE + static_cast<uint32_t>(index * ASSET_TABLE_ENTRY_SIZE);
+	const uint32_t entryOffset = entryAddr - RAM_BASE;
+	writeU32LE(m_ram.data() + entryOffset + 12, entry.baseAddr);
+	writeU32LE(m_ram.data() + entryOffset + 16, entry.baseSize);
+	writeU32LE(m_ram.data() + entryOffset + 20, entry.baseStride);
+	writeU32LE(m_ram.data() + entryOffset + 24, entry.regionX);
+	writeU32LE(m_ram.data() + entryOffset + 28, entry.regionY);
+	writeU32LE(m_ram.data() + entryOffset + 32, entry.regionW);
+	writeU32LE(m_ram.data() + entryOffset + 36, entry.regionH);
+	writeU32LE(m_ram.data() + entryOffset + 40, entry.sampleRate);
+	writeU32LE(m_ram.data() + entryOffset + 44, entry.channels);
+	writeU32LE(m_ram.data() + entryOffset + 48, entry.frames);
+	writeU32LE(m_ram.data() + entryOffset + 52, entry.bitsPerSample);
+	writeU32LE(m_ram.data() + entryOffset + 56, entry.audioDataOffset);
+	writeU32LE(m_ram.data() + entryOffset + 60, entry.audioDataSize);
 }
 
 } // namespace bmsx

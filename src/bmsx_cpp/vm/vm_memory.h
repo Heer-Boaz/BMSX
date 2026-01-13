@@ -2,6 +2,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "cpu.h"
@@ -31,6 +33,59 @@ public:
 	void writeBytes(uint32_t addr, const u8* data, size_t length);
 	void readBytes(uint32_t addr, u8* out, size_t length) const;
 
+	enum class AssetType {
+		Image,
+		Audio,
+	};
+
+	struct AssetEntry {
+		std::string id;
+		AssetType type = AssetType::Image;
+		uint32_t flags = 0;
+		size_t ownerIndex = 0;
+		uint32_t baseAddr = 0;
+		uint32_t baseSize = 0;
+		uint32_t baseStride = 0;
+		uint32_t regionX = 0;
+		uint32_t regionY = 0;
+		uint32_t regionW = 0;
+		uint32_t regionH = 0;
+		uint32_t sampleRate = 0;
+		uint32_t channels = 0;
+		uint32_t frames = 0;
+		uint32_t bitsPerSample = 0;
+		uint32_t audioDataOffset = 0;
+		uint32_t audioDataSize = 0;
+	};
+
+	void resetAssetMemory();
+	AssetEntry& registerImageBuffer(const std::string& id, const u8* rgba, uint32_t width, uint32_t height, uint32_t flags);
+	AssetEntry& registerImageSlot(const std::string& id, uint32_t capacityBytes, uint32_t flags);
+	AssetEntry& registerImageView(const std::string& id, const AssetEntry& base, uint32_t regionX, uint32_t regionY, uint32_t regionW, uint32_t regionH, uint32_t flags);
+	AssetEntry& registerAudioBuffer(
+		const std::string& id,
+		const u8* bytes,
+		size_t byteCount,
+		uint32_t sampleRate,
+		uint32_t channels,
+		uint32_t bitsPerSample,
+		uint32_t frames,
+		uint32_t dataOffset,
+		uint32_t dataSize
+	);
+	void writeImageSlot(AssetEntry& entry, const u8* pixels, size_t pixelBytes, uint32_t width, uint32_t height);
+	void updateImageViewBase(AssetEntry& entry, const AssetEntry& base);
+	void finalizeAssetTable();
+	std::vector<AssetEntry*> consumeDirtyAssets();
+	void markAllAssetsDirty();
+	std::vector<u8> dumpAssetMemory() const;
+	void restoreAssetMemory(const u8* data, size_t size);
+	AssetEntry& getAssetEntry(const std::string& id);
+	const AssetEntry& getAssetEntry(const std::string& id) const;
+	const u8* getImagePixels(const AssetEntry& entry) const;
+	const u8* getAudioBytes(const AssetEntry& entry) const;
+	const u8* getAudioData(const AssetEntry& entry) const;
+
 	const std::vector<Value>& ioSlots() const { return m_ioSlots; }
 	void loadIoSlots(const std::vector<Value>& slots);
 	void clearIoSlots();
@@ -51,12 +106,26 @@ private:
 	std::vector<u8> m_ram;
 	std::vector<Value> m_ioSlots;
 
+	std::vector<AssetEntry> m_assetEntries;
+	std::unordered_map<std::string, size_t> m_assetIndexById;
+	std::vector<int32_t> m_assetOwnerPages;
+	std::vector<uint8_t> m_assetDirtyFlags;
+	std::vector<size_t> m_assetDirtyList;
+	std::vector<uint32_t> m_assetCapacity;
+	uint32_t m_assetDataCursor = 0;
+	bool m_assetTableFinalized = false;
+
 	bool isIoAddress(uint32_t addr) const;
 	size_t ioIndex(uint32_t addr) const;
 	size_t ramOffset(uint32_t addr, size_t length) const;
 	uint32_t readU32FromRegion(uint32_t addr) const;
 	const u8* readRegion(uint32_t addr, size_t length, size_t& outOffset) const;
 	u8* writeRegion(uint32_t addr, size_t length, size_t& outOffset);
+	void mapAssetPages(size_t ownerIndex, uint32_t addr, uint32_t size);
+	void markAssetDirty(uint32_t addr, uint32_t size);
+	uint32_t allocateAssetData(uint32_t size, uint32_t alignment);
+	size_t addAssetEntry(AssetEntry entry);
+	void updateAssetEntryData(size_t index, const AssetEntry& entry);
 };
 
 } // namespace bmsx

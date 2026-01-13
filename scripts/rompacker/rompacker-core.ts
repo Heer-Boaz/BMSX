@@ -2004,6 +2004,9 @@ async function buildNodeBootrom(options: BootromBuildOptions): Promise<void> {
 		}
 		rebuild = !outStats || !entryStats || entryStats.mtime > outStats.mtime;
 	}
+	if (!rebuild) {
+		rebuild = await isEngineRuntimeRebuildRequired(outPath);
+	}
 
 	if (!rebuild) return;
 

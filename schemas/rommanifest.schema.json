@@ -73,6 +73,11 @@
 				"namespace": {
 					"type": "string",
 					"description": "Namespace used for this cart (e.g. for Lua globals)."
+				},
+				"skybox_face_size": {
+					"type": "integer",
+					"minimum": 1,
+					"description": "Maximum skybox face size in pixels (square)."
 				}
 			},
 			"required": [

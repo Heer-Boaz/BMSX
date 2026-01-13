@@ -116,6 +116,8 @@ export type BmsxVMState = {
 	luaLocals?: LuaEntrySnapshot;
 	luaRandomSeed?: number;
 	luaProgramCounter?: number;
+	assetMemory?: Uint8Array;
+	atlasSlots?: { primary: number | null; secondary: number | null };
 };
 
 export type LuaMarshalContext = {

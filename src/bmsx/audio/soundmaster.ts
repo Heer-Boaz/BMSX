@@ -57,9 +57,11 @@ export interface ModulationPresetResolver {
 	resolve(key: asset_id): RandomModulationParams | ModulationParams;
 }
 
+export type AudioBytesResolver = (id: asset_id) => Uint8Array;
+
 type RomAudioResource = RomAsset & {
-	start: number;
-	end: number;
+	start?: number;
+	end?: number;
 	audiometa: AudioMeta;
 	payload_id: CartridgeLayerId;
 };
@@ -107,6 +109,7 @@ export class SoundMaster implements RegisterablePersistent {
 	private audio!: AudioService;
 	private rng!: RngService;
 	private modulationResolver: ModulationPresetResolver;
+	private audioResolver: AudioBytesResolver;
 	private modulationPresetCache: Map<asset_id, RandomModulationParams | ModulationParams>;
 	private voicesByType: Record<AudioType, ActiveVoiceRecord[]>;
 	private currentVoiceByType: Record<AudioType, VoiceHandle>;
@@ -127,6 +130,7 @@ export class SoundMaster implements RegisterablePersistent {
 		this.clips = {};
 		this.clipPromises = {};
 		this.modulationResolver = null;
+		this.audioResolver = null;
 		this.modulationPresetCache = new Map();
 		this.voicesByType = { sfx: [], music: [], ui: [] };
 		this.currentVoiceByType = { sfx: null, music: null, ui: null };
@@ -153,10 +157,11 @@ export class SoundMaster implements RegisterablePersistent {
 		return this.rng;
 	}
 
-	public async init(audioResources: id2res, startingVolume: number, resolver?: ModulationPresetResolver) {
+	public async init(audioResources: id2res, startingVolume: number, resolver: ModulationPresetResolver | null, audioResolver: AudioBytesResolver) {
 		this.audio = $.platform.audio;
 		this.rng = $.platform.rng;
-		this.modulationResolver = resolver ;
+		this.modulationResolver = resolver;
+		this.audioResolver = audioResolver;
 		this.modulationPresetCache.clear();
 
 		await this.A.resume();
@@ -250,8 +255,11 @@ export class SoundMaster implements RegisterablePersistent {
 		for (let i = 0; i < limit; i++) launch();
 	}
 
-	private async decode(audioData: ArrayBuffer): Promise<AudioClipHandle> {
-		return this.A.decode(audioData);
+	private getRuntimeBytes(id: asset_id): Uint8Array {
+		if (!this.audioResolver) {
+			throw new Error('[SoundMaster] Audio resolver not configured.');
+		}
+		return this.audioResolver(id);
 	}
 
 	private async bufferFor(id: asset_id): Promise<AudioClipHandle> {
@@ -264,8 +272,9 @@ export class SoundMaster implements RegisterablePersistent {
 		if (!resource) {
 			throw new Error(`SoundMaster: missing track resource for ${String(id)}`);
 		}
-		const slice = $.asset_source.getBuffer(resource);
-		const promise = this.decode(slice)
+		const bytes = this.getRuntimeBytes(id);
+		const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+		const promise = this.A.decode(buffer)
 			.then(clip => {
 				this.clips[id] = clip;
 				this.clipPromises[id] = undefined;
@@ -277,6 +286,16 @@ export class SoundMaster implements RegisterablePersistent {
 			});
 		this.clipPromises[id] = promise;
 		return promise;
+	}
+
+	public invalidateClip(id: asset_id): void {
+		const clip = this.clips[id];
+		if (clip) {
+			clip.dispose();
+		}
+		this.clips[id] = undefined;
+		this.clipPromises[id] = undefined;
+		this.stop(id);
 	}
 
 	private normalizePlayRequest(options?: SoundMasterPlayRequest | ModulationParams | RandomModulationParams): SoundMasterPlayRequest {

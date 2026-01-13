@@ -109,7 +109,12 @@ TextureKey TextureManager::acquireTexture(const TextureKey& key,
 		return key;
 	}
 
-	m_gpuCache.emplace(key, GPUCacheEntry{fallbackHandle, 1, false});
+	GPUCacheEntry entry;
+	entry.handle = fallbackHandle;
+	entry.refCount = 1;
+	entry.ownedFallback = false;
+	entry.params = desc;
+	m_gpuCache.emplace(key, entry);
 	TextureHandle handle = m_textureBarrier.acquire(
 		key,
 		[this, &loadBitmapFn, &desc]() {
@@ -174,6 +179,49 @@ TextureHandle TextureManager::getOrCreateTexture(const TextureKey& key,
 	return getTexture(key);
 }
 
+void TextureManager::updateTexture(TextureHandle handle,
+								   const u8* pixels,
+								   i32 width,
+								   i32 height,
+								   const TextureParams& desc) {
+	if (!m_backend) {
+		throw BMSX_RUNTIME_ERROR("TextureManager backend not set");
+	}
+	if (!handle) {
+		throw BMSX_RUNTIME_ERROR("TextureManager: invalid texture handle");
+	}
+	m_backend->updateTexture(handle, pixels, width, height, desc);
+}
+
+void TextureManager::updateTexturesForAsset(const AssetId& assetId,
+											const u8* pixels,
+											i32 width,
+											i32 height) {
+	if (!m_backend) {
+		throw BMSX_RUNTIME_ERROR("TextureManager backend not set");
+	}
+	if (assetId.empty()) {
+		throw BMSX_RUNTIME_ERROR("TextureManager: asset id missing for texture update");
+	}
+	if (!pixels || width <= 0 || height <= 0) {
+		throw BMSX_RUNTIME_ERROR("TextureManager: image asset missing pixel data");
+	}
+	const std::string prefix = assetId + "|";
+	for (auto& [key, gpuEntry] : m_gpuCache) {
+		if (key.rfind(prefix, 0) != 0) {
+			continue;
+		}
+		if (!gpuEntry.handle) {
+			continue;
+		}
+		m_backend->updateTexture(gpuEntry.handle,
+								 pixels,
+								 width,
+								 height,
+								 gpuEntry.params);
+	}
+}
+
 TextureHandle TextureManager::replaceTexture(const TextureKey& key,
 											 const u8* pixels,
 											 i32 width,
@@ -195,16 +243,6 @@ TextureHandle TextureManager::replaceTexture(const TextureKey& key,
 	return getOrCreateTexture(key, pixels, width, height, desc);
 }
 
-TextureHandle TextureManager::getOrCreateTexture(const ImgAsset& asset,
-												 const TextureParams& desc) {
-	if (asset.id.empty()) {
-		throw BMSX_RUNTIME_ERROR("TextureManager: asset id missing for texture key");
-	}
-	const TextureKey key = makeKey(asset.id, desc);
-	TextureSource src = fromAsset(asset, false);
-	ensureTextureReady(key, [src]() { return src; }, desc);
-	return getTexture(key);
-}
 
 TextureSource TextureManager::fromBuffer(const ImageKey& key,
 										 const u8* buffer,
@@ -243,18 +281,6 @@ TextureSource TextureManager::fromBuffer(const ImageKey& key,
 	return src;
 }
 
-TextureSource TextureManager::fromAsset(const ImgAsset& asset, bool flipY) {
-	if (asset.meta.atlassed) {
-		throw BMSX_RUNTIME_ERROR("TextureManager: atlassed assets must use atlas textures");
-	}
-	if (asset.pixels.empty() || asset.meta.width <= 0 || asset.meta.height <= 0) {
-		throw BMSX_RUNTIME_ERROR("TextureManager: image asset missing pixel data");
-	}
-	TextureSource src = TextureSource::fromView(asset.pixels.data(),
-												asset.meta.width,
-												asset.meta.height);
-	return flipY ? flippedCopy(src) : src;
-}
 
 TextureSource TextureManager::createSolid(i32 size, const Color& color) {
 	const u8 r = static_cast<u8>(color.r * 255.0f);

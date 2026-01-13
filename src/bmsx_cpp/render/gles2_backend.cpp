@@ -95,6 +95,32 @@ TextureHandle OpenGLES2Backend::createTexture(const u8* data, i32 width,
   return static_cast<TextureHandle>(tex);
 }
 
+void OpenGLES2Backend::updateTexture(TextureHandle handle, const u8* data, i32 width,
+									 i32 height,
+									 const TextureParams& params) {
+  auto* tex = static_cast<GLES2Texture*>(handle);
+  tex->width = width;
+  tex->height = height;
+
+  const u8* uploadData = data;
+  std::vector<u8> linearized;
+  if (data && params.srgb) {
+	const size_t pixels = static_cast<size_t>(width) * static_cast<size_t>(height);
+	convertSrgbToLinear(data, pixels, linearized);
+	uploadData = linearized.data();
+  }
+
+  glBindTexture(GL_TEXTURE_2D, tex->id);
+  glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+  glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, uploadData);
+  if (kGLES2VerboseLog) {
+	std::fprintf(stderr,
+				 "[BMSX][GLES2] updateTexture id=%u size=%dx%d data=%p\n",
+				 static_cast<unsigned>(tex->id), width, height,
+				 static_cast<const void*>(data));
+  }
+}
+
 TextureHandle OpenGLES2Backend::createSolidTexture2D(i32 width, i32 height,
 													 const Color& color) {
   std::vector<u8> pixels(static_cast<size_t>(width * height * 4));

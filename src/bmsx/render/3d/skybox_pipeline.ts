@@ -14,18 +14,6 @@ import type { TextureSource } from '../../rompack/rompack';
 import { SkyboxImageIds } from '../shared/render_types';
 import { _skyTint, _skyExposure } from '../shared/render_queues';
 
-function resolveSkyboxImage(assetId: string): Promise<TextureSource> {
-	const asset = $.assets.img[assetId];
-	if (!asset) {
-		throw new Error(`[SkyboxPipeline] Skybox image '${assetId}' not found.`);
-	}
-	const binPromise = asset.imgbin;
-	if (!binPromise) {
-		throw new Error(`[SkyboxPipeline] Skybox asset '${assetId}' does not expose an imgbin promise.`);
-	}
-	return binPromise;
-}
-
 let vaoSkybox: WebGLVertexArrayObject = null;
 let skyboxProgram: WebGLProgram;
 let skyboxPositionLocation: number;
@@ -101,21 +89,10 @@ export function createSkyboxBuffer(gl: WebGL2RenderingContext): void {
 	gl.bindBuffer(gl.ARRAY_BUFFER, skyboxBuffer);
 	gl.bufferData(gl.ARRAY_BUFFER, p, gl.STATIC_DRAW);
 }
-export function setSkyboxImages(ids: SkyboxImageIds) {
+export function setSkyboxSources(ids: SkyboxImageIds, loaders: readonly Promise<TextureSource>[]) {
 	// Extract all face ids to avoid unsafe casts
 	const { posx: posX, negx: negX, posy: posY, negy: negY, posz: posZ, negz: negZ } = ids;
 
-	// If an id is missing, use null for that face loader so the texture system can use the fallback
-	const loaders = [
-		posX != null ? resolveSkyboxImage(posX) : null,
-		negX != null ? resolveSkyboxImage(negX) : null,
-		posY != null ? resolveSkyboxImage(posY) : null,
-		negY != null ? resolveSkyboxImage(negY) : null,
-		posZ != null ? resolveSkyboxImage(posZ) : null,
-		negZ != null ? resolveSkyboxImage(negZ) : null,
-	] as const;
-
-	// Keep face id tuple in parallel; missing ids are represented as null
 	const faceIdsForKey = [
 		posX ,
 		negX ,
@@ -125,6 +102,9 @@ export function setSkyboxImages(ids: SkyboxImageIds) {
 		negZ ,
 	] as const;
 
+	if (skyboxKey) {
+		$.texmanager.releaseByKey(skyboxKey);
+	}
 	skyboxKey = $.texmanager.acquireCubemap({
 		name: "skybox/main",
 		faceLoaders: loaders,

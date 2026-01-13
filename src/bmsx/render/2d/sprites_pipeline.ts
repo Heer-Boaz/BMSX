@@ -305,7 +305,7 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 		const byteOffset = i * SPRITE_INSTANCE_STRIDE;
 		const zNorm = 1 - (pos.z ?? DEFAULT_ZCOORD) / ZCOORD_MAX;
 		instanceU16[(byteOffset + SPRITE_INSTANCE_Z_OFFSET) >> 1] = packUnorm16(zNorm);
-		instanceU8[byteOffset + SPRITE_INSTANCE_ATLAS_OFFSET] = imgmeta.atlasid;
+		instanceU8[byteOffset + SPRITE_INSTANCE_ATLAS_OFFSET] = $.view.resolveAtlasBindingId(imgmeta.atlasid!);
 		instanceS8[byteOffset + SPRITE_INSTANCE_FX_OFFSET] = packSnorm8(parallaxWeightValue);
 		instanceU8[byteOffset + SPRITE_INSTANCE_COLOR_OFFSET + 0] = packUnorm8(colorize.r);
 		instanceU8[byteOffset + SPRITE_INSTANCE_COLOR_OFFSET + 1] = packUnorm8(colorize.g);

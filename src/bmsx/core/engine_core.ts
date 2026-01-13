@@ -9,6 +9,7 @@ import { GameView } from "../render/gameview";
 import { TextureManager } from "../render/texturemanager";
 import { RenderPassLibrary } from "../render/backend/renderpasslib";
 import { ensureBrowserBackendFactory } from "../render/backend/browser_backend_factory";
+import type { SkyboxImageIds } from "../render/shared/render_types";
 import type { GameViewHost, Platform, PlatformExitEvent, SubscriptionHandle } from '../platform';
 import { setMicrotaskQueue } from '../platform';
 import { asset_id, Identifiable, Identifier, Registerable, RuntimeAssets, type vec3, type vec2, GAME_FPS, type BmsxCartridgeBlob } from "../rompack/rompack";
@@ -364,7 +365,17 @@ export class EngineCore {
 
 	public async refreshAudioAssets(): Promise<void> {
 		const resolver = this.buildModulationResolver(this._assets);
-		await SoundMaster.instance.init(this._assets.audio, GameOptions.volumePercentage, resolver);
+		const runtime = BmsxVMRuntime.instance;
+		await SoundMaster.instance.init(
+			this._assets.audio,
+			GameOptions.volumePercentage,
+			resolver,
+			(id) => runtime.getAudioBytes(runtime.getAssetEntry(id))
+		);
+	}
+
+	public setSkyboxImages(ids: SkyboxImageIds): void {
+		BmsxVMRuntime.instance.setSkyboxImages(ids);
 	}
 
 	/**
@@ -443,7 +454,6 @@ export class EngineCore {
 		gview.init();
 		await gview.initializeDefaultTextures();
 
-		await this.refreshAudioAssets();
 		if (this._sndcontext) {
 			try {
 				await PSG.init(this._sndcontext, GameOptions.volumePercentage, this._gainnode);

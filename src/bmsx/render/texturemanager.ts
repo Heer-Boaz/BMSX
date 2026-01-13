@@ -3,8 +3,6 @@ import { Registry } from '../core/registry';
 import { GateGroup, taskGate } from '../core/taskgate';
 import { color_arr, GLTFModel, Identifier, Index2GpuTexture, RegisterablePersistent, type RomImgAsset, type TextureSource } from '../rompack/rompack';
 import { GPUBackend, TextureHandle, TextureParams } from './backend/pipeline_interfaces';
-import { $ } from '../core/engine_core';
-import { generateAtlasName } from 'bmsx/rompack/rompack';
 
 export interface ModelTextureIdentifier {
 	modelName: string;
@@ -334,10 +332,37 @@ export class TextureManager implements RegisterablePersistent {
 		return this.loadAndCacheTexture(key, () => this.fromBuffer(uri, buffer), desc);
 	}
 
-	public async loadTextureFromAsset(asset: RomImgAsset, desc: TextureParams = {}, keyOverride?: string): Promise<TextureHandle> {
-		const key = this.makeKey(keyOverride ?? asset.resid, desc);
-		await this.ensureTextureReady(key, () => this.fromAsset(asset), desc, { closeSource: false });
+	public async loadTextureFromPixels(keyBase: string, pixels: Uint8Array, width: number, height: number, desc: TextureParams = {}): Promise<TextureHandle> {
+		const key = this.makeKey(keyBase, desc);
+		const source: TextureSource = { width, height, data: pixels };
+		await this.ensureTextureReady(key, async () => source, desc, { closeSource: false });
 		return this.getTexture(key);
+	}
+
+	public async updateTexturesForAsset(asset: RomImgAsset, pixels: Uint8Array, width: number, height: number): Promise<void> {
+		await this.updateTexturesForKey(asset.resid, pixels, width, height);
+	}
+
+	public async updateTexturesForKey(keyBase: string, pixels: Uint8Array, width: number, height: number): Promise<void> {
+		if (!this.backend) throw new Error('TextureManager backend not set');
+		const prefix = `${keyBase}|`;
+		const keys: TextureKey[] = [];
+		for (const key of this.gpuCache.keys()) {
+			if (key.startsWith(prefix)) {
+				keys.push(key);
+			}
+		}
+		if (keys.length === 0) {
+			return;
+		}
+		const source: TextureSource = { width, height, data: pixels };
+		for (let i = 0; i < keys.length; i += 1) {
+			const entry = this.gpuCache.get(keys[i]);
+			if (!entry || !entry.handle) {
+				continue;
+			}
+			this.backend.updateTexture(entry.handle, source);
+		}
 	}
 
 	public getImage(key: ImageKey): TextureSource {
@@ -407,55 +432,6 @@ export class TextureManager implements RegisterablePersistent {
 		ctx.fillStyle = cssColor;
 		ctx.fillRect(0, 0, size, size);
 		return createImageBitmap(canvas, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
-	}
-
-	// load image from RomImgAsset (possibly atlassed); does not cache result
-	// uses private _imgbin and _imgbinYFlipped properties to avoid double caching
-	// if options.flipY is true, uses or creates _imgbinYFlipped instead of _imgbin
-	// if the asset is atlassed, extracts the region from the atlas image
-	// returns ImageBitmap or equivalent platform-specific typed objects
-	async fromAsset(romImgAsset: RomImgAsset, options?: { flipY?: boolean; }): Promise<TextureSource> {
-		let source: ImageBitmap | Promise<ImageBitmap>;
-		if (options?.flipY) {
-			source = romImgAsset._imgbinYFlipped as ImageBitmap | Promise<ImageBitmap>; // Use the private _imgbinYFlipped property
-		} else {
-			source = romImgAsset._imgbin as ImageBitmap | Promise<ImageBitmap>; // Use the private _imgbin property
-		}
-		if (source) return source;
-
-		// If the image was packed into an atlas, extract its region and cache the result in the `_imgbin` property
-		const imgmeta = romImgAsset.imgmeta;
-		if (!source && imgmeta.atlassed) {
-			const atlasKey = generateAtlasName(imgmeta.atlasid ?? 0);
-			const atlasAsset = $.assets.img[atlasKey];
-			const atlas = atlasAsset?._imgbin as ImageBitmap;
-			if (!atlas) throw new Error(`Texture atlas image not found for atlas ID ${imgmeta.atlasid}`);
-			const coords = imgmeta.texcoords;
-			if (!coords) throw new Error(`No texture coordinates for atlassed image '${romImgAsset.resid}'`);
-
-			const xs = [coords[0], coords[2], coords[4], coords[6], coords[8], coords[10]];
-			const ys = [coords[1], coords[3], coords[5], coords[7], coords[9], coords[11]];
-			const minU = Math.min(...xs), maxU = Math.max(...xs);
-			const minV = Math.min(...ys), maxV = Math.max(...ys);
-
-			// Convert to pixel coordinates and clamp inside atlas bounds
-			const offsetX = Math.floor(minU * atlas.width);
-			const offsetY = Math.floor(minV * atlas.height);
-			const imgWidth = Math.max(1, Math.min(atlas.width - offsetX, Math.round((maxU - minU) * atlas.width)));
-			const imgHeight = Math.max(1, Math.min(atlas.height - offsetY, Math.round((maxV - minV) * atlas.height)));
-
-			if (typeof createImageBitmap !== 'function') {
-				throw new Error('[TextureManager] Atlas extraction requires browser createImageBitmap support.');
-			}
-			source = createImageBitmap(atlas, offsetX, offsetY, imgWidth, imgHeight, {
-				imageOrientation: options?.flipY ? 'flipY' : 'none',
-				premultiplyAlpha: 'none',
-				colorSpaceConversion: 'none',
-			});
-		}
-
-		if (!source) throw new Error(`Image asset '${romImgAsset.resid}' has no image data`);
-		return source;
 	}
 
 	public getTexture(key: TextureKey): TextureHandle {

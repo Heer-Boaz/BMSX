@@ -81,8 +81,15 @@ public:
 									 i32 width,
 									 i32 height,
 									 const TextureParams& desc = {});
-	TextureHandle getOrCreateTexture(const ImgAsset& asset,
-									 const TextureParams& desc = {});
+	void updateTexture(TextureHandle handle,
+					   const u8* pixels,
+					   i32 width,
+					   i32 height,
+					   const TextureParams& desc = {});
+	void updateTexturesForAsset(const AssetId& assetId,
+								const u8* pixels,
+								i32 width,
+								i32 height);
 
 	/// Replace an existing texture with new pixel data, or create if not exists.
 	/// This is used when cart assets override engine assets with the same key.
@@ -96,7 +103,6 @@ public:
 							 const u8* buffer,
 							 size_t size,
 							 bool flipY = false);
-	TextureSource fromAsset(const ImgAsset& asset, bool flipY = false);
 	TextureSource createSolid(i32 size, const Color& color);
 
 	void releaseByKey(const TextureKey& key);
@@ -113,6 +119,7 @@ private:
 		TextureHandle handle = nullptr;
 		int refCount = 0;
 		bool ownedFallback = false;
+		TextureParams params;
 	};
 
 	TextureKey ensureTextureReady(const TextureKey& key,

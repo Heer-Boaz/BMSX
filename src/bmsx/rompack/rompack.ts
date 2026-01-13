@@ -28,7 +28,7 @@ export type RomAssetOp = 'delete';
 
 export interface RuntimeAssets {
 	// Runtime asset cache resolved for the engine. Raw cartridge bytes live outside of this structure.
-	img: id2imgres; // Reference to the loaded image assets in the ROM pack, including metadata and the cached binary payload. ALWAYS PRESENT DURING GAME!
+	img: id2imgres; // Reference to the loaded image assets in the ROM pack, including metadata. ALWAYS PRESENT DURING GAME!
 	audio: id2res; // Reference to the loaded audio assets in the ROM pack, including metadata. ALWAYS PRESENT DURING GAME!
 	model: id2model; // Reference to the loaded model assets in the ROM pack, including metadata. ALWAYS PRESENT DURING GAME!
 	data: id2data; // Reference to the loaded data assets in the ROM pack, including metadata. ALWAYS PRESENT DURING GAME!
@@ -74,10 +74,6 @@ export interface RomAsset {
 }
 
 export interface RomImgAsset extends RomAsset {
-	_imgbin?: TextureSource | Promise<TextureSource>;
-	_imgbinYFlipped?: TextureSource | Promise<TextureSource>;
-	get imgbin(): Promise<TextureSource>;
-	get imgbinYFlipped(): Promise<TextureSource>;
 }
 
 export type RomLuaAsset = RomAsset & {
@@ -187,6 +183,28 @@ export const ENGINE_ATLAS_INDEX = 254;
  * Texture dictionary key used by GameView to cache the engine atlas texture.
  */
 export const ENGINE_ATLAS_TEXTURE_KEY = '_atlas_engine';
+export const ATLAS_PRIMARY_SLOT_ID = '_atlas_primary';
+export const ATLAS_SECONDARY_SLOT_ID = '_atlas_secondary';
+export type AtlasSlotIndex = 0 | 1;
+export const SKYBOX_FACE_DEFAULT_SIZE = 512;
+export const SKYBOX_SLOT_POSX_ID = '_skybox_posx';
+export const SKYBOX_SLOT_NEGX_ID = '_skybox_negx';
+export const SKYBOX_SLOT_POSY_ID = '_skybox_posy';
+export const SKYBOX_SLOT_NEGY_ID = '_skybox_negy';
+export const SKYBOX_SLOT_POSZ_ID = '_skybox_posz';
+export const SKYBOX_SLOT_NEGZ_ID = '_skybox_negz';
+export const SKYBOX_SLOT_IDS = [
+	SKYBOX_SLOT_POSX_ID,
+	SKYBOX_SLOT_NEGX_ID,
+	SKYBOX_SLOT_POSY_ID,
+	SKYBOX_SLOT_NEGY_ID,
+	SKYBOX_SLOT_POSZ_ID,
+	SKYBOX_SLOT_NEGZ_ID,
+] as const;
+
+export function getAtlasSlotId(slot: AtlasSlotIndex): string {
+	return slot === 0 ? ATLAS_PRIMARY_SLOT_ID : ATLAS_SECONDARY_SLOT_ID;
+}
 const atlasNameCache = new Map<number, string>(); // Cache for atlas names to avoid regenerating them for each request
 
 export function generateAtlasName(atlasIndex: number): string {
@@ -403,7 +421,7 @@ export interface ImgMeta {
 	hitpolygons?: HitPolygonsPrecalc; // The concave hull polygons for collision detection, with flipped variants.
 }
 
-export type TextureSource = unknown & { close?(): void; width: number; height: number; }; // platform-specific source type (e.g. ImageBitmap in browsers)
+export type TextureSource = unknown & { close?(): void; width: number; height: number; data?: Uint8Array; }; // platform-specific source type (e.g. ImageBitmap in browsers)
 export type Viewport = { width: number; height: number; };
 export type CanonicalizationType = 'none' | 'upper' | 'lower';
 
@@ -415,6 +433,7 @@ export type CartManifest = {
 		viewport: Viewport;
 		canonicalization: CanonicalizationType;
 		namespace: string;
+		skybox_face_size?: number;
 	};
 	input?: {
 		1: InputMap,

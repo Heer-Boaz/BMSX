@@ -201,6 +201,24 @@ export class WebAudioService implements AudioService {
 		return new WebClip(buf);
 	}
 
+	createClipFromPcm(samples: Int16Array, sampleRate: number, channels: number): AudioClipHandle {
+		if (channels <= 0) {
+			throw new Error('WebAudioService: Invalid channel count.');
+		}
+		const frames = Math.floor(samples.length / channels);
+		const buffer = this.ctx.createBuffer(channels, frames, sampleRate);
+		const scale = 1 / 32768;
+		for (let channel = 0; channel < channels; channel += 1) {
+			const channelData = buffer.getChannelData(channel);
+			let cursor = channel;
+			for (let frame = 0; frame < frames; frame += 1) {
+				channelData[frame] = samples[cursor] * scale;
+				cursor += channels;
+			}
+		}
+		return new WebClip(buffer);
+	}
+
 	createVoice(clip: AudioClipHandle, params: AudioPlaybackParams): VoiceHandle {
 		if (!(clip instanceof WebClip)) {
 			throw new Error('WebAudioService: Unsupported clip handle.');

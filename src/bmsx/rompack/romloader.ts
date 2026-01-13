@@ -10,7 +10,6 @@ import type {
 	RomImgAsset,
 	RomManifest,
 	RuntimeAssets,
-	TextureSource,
 	BmsxCartridgeBlob,
 	CartridgeIndex,
 	CartridgeLayerId,
@@ -18,12 +17,11 @@ import type {
 	CartRomHeader,
 } from './rompack';
 import { decodeBinary, toF32, typedArrayFromBytes } from '../serializer/binencoder';
-import { CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES, generateAtlasName } from './rompack';
+import { CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES } from './rompack';
 import { inflate } from 'pako';
 import { AssetSourceStack, type RawAssetSource } from './asset_source';
 
 export type RomLoadOptions = {
-	loadImageFromBuffer?: (buffer: ArrayBuffer) => Promise<TextureSource>;
 	loadAudioFromBuffer?: (buffer: ArrayBuffer) => Promise<any>;
 	loadDataFromBuffer?: (buffer: ArrayBuffer) => Promise<any>;
 	loadModelFromBuffer?: (buffer: ArrayBuffer, textures?: ArrayBuffer) => Promise<any>;
@@ -317,11 +315,6 @@ export async function parseCartridgeIndex(payload: ArrayBuffer): Promise<Cartrid
 	return { assets, projectRootPath, manifest };
 }
 
-async function getImageFromBuffer(buffer: ArrayBuffer): Promise<ImageBitmap> {
-	const blob = new Blob([new Uint8Array(buffer)], { type: 'image/png' });
-	return createImageBitmap(blob, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' } as any);
-}
-
 async function loadDataFromBuffer(buffer: ArrayBuffer): Promise<any> {
 	return decodeBinary(new Uint8Array(buffer));
 }
@@ -450,52 +443,6 @@ export async function loadModelFromBuffer(asset_id: string, buffer: ArrayBuffer,
 	return { name: asset_id, meshes, materials, animations, imageURIs: obj.imageURIs, imageOffsets: obj.imageOffsets, imageBuffers, textures, nodes, scenes, scene, skins };
 }
 
-async function fromAsset(romImgAsset: RomImgAsset, assets: RuntimeAssets, options?: { flipY?: boolean; }): Promise<ImageBitmap | TextureSource> {
-	let source: TextureSource | ImageBitmap | Promise<ImageBitmap>;
-	if (options?.flipY) {
-		source = romImgAsset._imgbinYFlipped as TextureSource;
-	} else {
-		source = romImgAsset._imgbin as TextureSource;
-	}
-	if (source) return source;
-
-	const imgmeta = romImgAsset.imgmeta;
-	if (!source && imgmeta.atlassed) {
-		const atlasName = generateAtlasName(imgmeta.atlasid ?? 0);
-		const atlas = assets.img[atlasName]._imgbin as TextureSource;
-		if (!atlas) throw new Error(`Texture atlas image not found for atlas ID ${imgmeta.atlasid}`);
-		const coords = imgmeta.texcoords;
-		if (!coords) throw new Error(`No texture coordinates for atlassed image '${romImgAsset.resid}'`);
-
-		const xs = [coords[0], coords[2], coords[4], coords[6], coords[8], coords[10]];
-		const ys = [coords[1], coords[3], coords[5], coords[7], coords[9], coords[11]];
-		const minU = Math.min(...xs), maxU = Math.max(...xs);
-		const minV = Math.min(...ys), maxV = Math.max(...ys);
-
-		const offsetX = Math.floor(minU * atlas.width);
-		const offsetY = Math.floor(minV * atlas.height);
-		const imgWidth = Math.max(1, Math.min(atlas.width - offsetX, Math.round((maxU - minU) * atlas.width)));
-		const imgHeight = Math.max(1, Math.min(atlas.height - offsetY, Math.round((maxV - minV) * atlas.height)));
-
-		const canvas = document.createElement('canvas');
-		canvas.width = imgWidth;
-		canvas.height = imgHeight;
-		const ctx = canvas.getContext('2d')!;
-		ctx.drawImage(atlas as ImageBitmap, offsetX, offsetY, imgWidth, imgHeight, 0, 0, imgWidth, imgHeight);
-		source = createImageBitmap(canvas, {
-			imageOrientation: options?.flipY ? 'flipY' : 'none',
-			premultiplyAlpha: 'none',
-			colorSpaceConversion: 'none',
-		});
-	}
-
-	if (!source) {
-		// console.warn(`Rom image asset '${romImgAsset.resid}' has no image data loaded`);
-		throw new Error(`Image asset '${romImgAsset.resid}' has no image data`);
-	}
-	return source;
-}
-
 async function load(source: RawAssetSource, res: RomAsset, assets: RuntimeAssets, opts?: RomLoadOptions) {
 	if (res.op === 'delete') {
 		return;
@@ -504,31 +451,9 @@ async function load(source: RawAssetSource, res: RomAsset, assets: RuntimeAssets
 	switch (res.type) {
 		case 'image':
 		case 'atlas': {
-			let img: TextureSource = undefined;
-			if (!baseAsset.imgmeta?.atlassed) {
-				if (opts && opts.loadImageFromBuffer) {
-					img = await opts.loadImageFromBuffer(source.getBuffer(baseAsset));
-				} else {
-					img = await getImageFromBuffer(source.getBuffer(baseAsset));
-				}
-			}
 			const imgAsset = {
 				...baseAsset,
-				_imgbin: img,
-				_imgbinYFlipped: undefined,
 			} as RomImgAsset;
-			Object.defineProperty(imgAsset, 'imgbin', {
-				enumerable: false,
-				get: function () {
-					return fromAsset(this as RomImgAsset, assets);
-				},
-			});
-			Object.defineProperty(imgAsset, 'imgbinYFlipped', {
-				enumerable: false,
-				get: function () {
-					return fromAsset(this as RomImgAsset, assets, { flipY: true });
-				},
-			});
 			assets.img[res.resid] = imgAsset;
 			break;
 		}

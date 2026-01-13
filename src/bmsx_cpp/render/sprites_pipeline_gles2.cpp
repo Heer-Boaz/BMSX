@@ -562,7 +562,7 @@ void renderSpriteBatchGLES2(OpenGLES2Backend* backend, GameView* context,
 						   : imgmeta->texcoords_fliph)
 			: (flip.flip_v ? imgmeta->texcoords_flipv : imgmeta->texcoords);
 	const uint16_t zPacked = packUnorm16(zNorm);
-	const uint8_t atlasPacked = static_cast<uint8_t>(imgmeta->atlasid);
+	const uint8_t atlasPacked = static_cast<uint8_t>(context->resolveAtlasBindingId(imgmeta->atlasid));
 	const int8_t weightPacked = packSnorm8(parallaxWeight);
 	const uint8_t colorR = packUnorm8(colorize.r);
 	const uint8_t colorG = packUnorm8(colorize.g);

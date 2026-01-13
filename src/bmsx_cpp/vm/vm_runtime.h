@@ -4,6 +4,7 @@
 #include "vm_io.h"
 #include "vm_memory.h"
 #include "../core/types.h"
+#include <array>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -19,6 +20,7 @@ namespace bmsx {
 class VMApi;
 class VMStorage;
 struct VmProgramAsset;
+class RuntimeAssets;
 
 /**
  * Standard button actions for gamepad/keyboard input.
@@ -58,6 +60,8 @@ struct VMRuntimeOptions {
 struct VMState {
 	std::vector<Value> ioMemory;
 	std::vector<std::pair<Value, Value>> globals; // key-value pairs
+	std::vector<u8> assetMemory;
+	std::array<i32, 2> atlasSlots{{-1, -1}};
 };
 
 /**
@@ -187,6 +191,8 @@ public:
 	void setProgramSource(VmProgramSource source) { m_programSource = source; }
 	bool isEngineProgramActive() const { return m_programSource == VmProgramSource::Engine; }
 
+	const std::array<i32, 2>& atlasSlots() const { return m_slotAtlasIds; }
+
 	/**
 	 * Get the player index for this runtime.
 	 */
@@ -202,6 +208,8 @@ public:
 	 */
 	VMCPU& cpu() { return m_cpu; }
 	const VMCPU& cpu() const { return m_cpu; }
+	VmMemory& memory() { return m_memory; }
+	const VmMemory& memory() const { return m_memory; }
 
 	/**
 	 * Get the API instance.
@@ -231,6 +239,7 @@ public:
 	void setCanonicalization(CanonicalizationType canonicalization);
 	Value canonicalizeIdentifier(std::string_view value);
 	void refreshMemoryMap();
+	void buildAssetMemory(RuntimeAssets& assets, bool keepDecodedData);
 
 private:
 	enum class PendingCall {
@@ -257,6 +266,9 @@ private:
 	void setCartBootReadyFlag(bool value);
 	void prepareCartBootIfNeeded();
 	bool pollSystemBootRequest();
+	void flushAssetEdits();
+	void loadAtlasIntoSlot(RuntimeAssets& assets, i32 slot, i32 atlasId);
+	void applyAtlasSlotMapping(const std::array<i32, 2>& slots);
 	std::vector<Value> acquireValueScratch();
 	void releaseValueScratch(std::vector<Value>&& values);
 
@@ -304,6 +316,10 @@ private:
 	std::unordered_map<std::string, std::string> m_vmModuleAliases;
 	std::unordered_map<std::string, Value> m_vmModuleCache;
 	std::unordered_map<std::string, std::unique_ptr<std::regex>> m_luaPatternRegexCache;
+	std::unordered_map<i32, std::string> m_atlasResourceById;
+	std::unordered_map<i32, std::vector<std::string>> m_atlasViewIdsById;
+	std::unordered_map<i32, i32> m_atlasSlotById;
+	std::array<i32, 2> m_slotAtlasIds{{-1, -1}};
 	std::vector<std::vector<Value>> m_valueScratchPool;
 };
 

@@ -9,7 +9,7 @@ import * as pako from 'pako';
 import { PNG } from 'pngjs';
 import type { asset_type, AudioMeta, GLTFModel, ImgMeta, RomAsset, CartRomHeader } from '../../src/bmsx/rompack/rompack';
 import { decodeBinary } from '../../src/bmsx/serializer/binencoder';
-import { getZippedRomAndRomLabelFromBlob, loadAssetList, loadModelFromBuffer as loadGLTFModelFromBuffer, parseCartHeader, loadRuntimeAssetsFromBuffer } from '../../src/bmsx/rompack/romloader';
+import { getZippedRomAndRomLabelFromBlob, loadAssetList, loadModelFromBuffer as loadGLTFModelFromBuffer, parseCartHeader } from '../../src/bmsx/rompack/romloader';
 import { disassembleProgram } from '../../src/bmsx/vm/disassembler';
 import type { Program, ProgramMetadata } from '../../src/bmsx/vm/cpu';
 import { decodeProgramAsset, decodeProgramSymbolsAsset, inflateProgram, VM_PROGRAM_ASSET_ID, VM_PROGRAM_SYMBOLS_ASSET_ID } from '../../src/bmsx/vm/vm_program_asset';
@@ -731,7 +731,7 @@ async function main() {
 					}
 				} else {
 					// Prefer embedded PNG slice for non-atlassed images
-					const hasRange = selected.start; // We have a range if start is defined because we trust the ROM pack loader here
+					const hasRange = typeof selected.start === 'number' && typeof selected.end === 'number';
 					let rendered = false;
 					if (hasRange) {
 						try {
@@ -748,17 +748,16 @@ async function main() {
 						} catch { /* fall back below */ }
 					}
 					if (!rendered) {
-						// Fallback: reconstruct via ROM loader (populates RomImgAsset._imgbin)
+						// Fallback: decode from any buffered payload when range is unavailable.
 						try {
-							const rom = await loadRuntimeAssetsFromBuffer(
-								// @ts-ignore
-								rombin as any,
-								{ loadImageFromBuffer: async (ab: ArrayBuffer) => PNG.sync.read(Buffer.from(ab.slice(0))) }
-							);
-							const imgAsset = rom.img[String(selected.resid)];
-							// @ts-ignore
-							const png = imgAsset?._imgbin as { width: number, height: number, data: Buffer };
-							if (png && png.data) {
+							let buf: Buffer | null = null;
+							if (selected.buffer instanceof Uint8Array) {
+								buf = Buffer.from(selected.buffer);
+							} else if (selected.buffer instanceof ArrayBuffer) {
+								buf = Buffer.from(new Uint8Array(selected.buffer));
+							}
+							if (buf) {
+								const png = PNG.sync.read(buf);
 								const sizeString = `Size: ${png.width}x${png.height}\n`;
 								if (png.width <= PER_PIXEL_RENDERING_THRESHOLD && png.height <= PER_PIXEL_RENDERING_THRESHOLD) {
 									asciiArt = sizeString + generatePixelPerfectAsciiArt(png.data, png.width, png.height);

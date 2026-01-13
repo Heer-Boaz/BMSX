@@ -139,32 +139,13 @@ struct AudioMeta {
 struct AudioAsset {
 	AssetId id;
 	AudioMeta meta;
-
-	// Decoded PCM data (16-bit signed, interleaved)
-	std::vector<i16> samples;
+	std::vector<u8> bytes;
 	i32 sampleRate = 44100;
 	i32 channels = 2;
 	i32 bitsPerSample = 16;
-	size_t totalSamples = 0;
-
-	// Pointer to WAV data inside ROM (for streaming, no duplicate buffer)
-	const u8* romDataPtr = nullptr;
-	size_t romDataOffset = 0;
-
-	bool isStreaming() const { return samples.empty(); }
-	size_t sampleCount() const { return samples.empty() ? totalSamples : samples.size(); }
-	size_t frameCount() const { return sampleCount() / static_cast<size_t>(channels); }
-	i16 getSample(size_t index) const {
-		if (!samples.empty()) {
-			return samples[index];
-		}
-		const u8* ptr = romDataPtr + romDataOffset;
-		if (bitsPerSample == 16) {
-			const u8* s = ptr + index * 2;
-			return static_cast<i16>(static_cast<u16>(s[0] | (s[1] << 8)));
-		}
-		return static_cast<i16>((static_cast<int>(ptr[index]) - 128) << 8);
-	}
+	size_t frames = 0;
+	size_t dataOffset = 0;
+	size_t dataSize = 0;
 };
 
 /* ============================================================================
@@ -200,6 +181,7 @@ struct RomManifest {
 
 	i32 viewportWidth = 0;
 	i32 viewportHeight = 0;
+	i32 skyboxFaceSize = 0;
 	CanonicalizationType canonicalization = CanonicalizationType::None;
 
 	std::string entryPoint;  // Main Lua file

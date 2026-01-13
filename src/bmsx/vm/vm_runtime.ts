@@ -20,12 +20,29 @@ import {
 } from '../lua/luavalue';
 import type { StorageService } from '../platform/platform';
 import { publishOverlayFrame } from '../render/editor/editor_overlay_queue';
-import type { Viewport, BmsxCartridgeBlob, CartridgeIndex } from '../rompack/rompack';
-import { CanonicalizationType, CART_ROM_HEADER_SIZE, CART_ROM_MAGIC } from '../rompack/rompack';
+import * as SkyboxPipeline from '../render/3d/skybox_pipeline';
+import type { SkyboxImageIds } from '../render/shared/render_types';
+import type { Viewport, BmsxCartridgeBlob, CartridgeIndex, RomAsset, RuntimeAssets } from '../rompack/rompack';
+import {
+	ATLAS_PRIMARY_SLOT_ID,
+	ATLAS_SECONDARY_SLOT_ID,
+	SKYBOX_FACE_DEFAULT_SIZE,
+	SKYBOX_SLOT_IDS,
+	type AtlasSlotIndex,
+	CanonicalizationType,
+	CART_ROM_HEADER_SIZE,
+	CART_ROM_MAGIC,
+	ENGINE_ATLAS_INDEX,
+	ENGINE_ATLAS_TEXTURE_KEY,
+	generateAtlasName,
+	type TextureSource,
+} from '../rompack/rompack';
 import { AssetSourceStack, type RawAssetSource } from '../rompack/asset_source';
 import { applyRuntimeAssetLayer, buildRuntimeAssetLayer, type RuntimeAssetLayer } from '../rompack/romloader';
 import { decodeuint8arr } from '../serializer/binencoder';
 import { createIdentifierCanonicalizer } from '../utils/identifier_canonicalizer';
+import { decodePngToRgba } from '../utils/image_decode';
+import { parseWavInfo } from '../utils/wav';
 import { clamp01, clamp_fallback } from '../utils/clamp';
 import { BmsxVMApi } from './vm_api';
 import { VMCPU, Table, OpCode, type Closure, type Value, type Program, type ProgramMetadata, RunResult, createNativeFunction, createNativeObject, isNativeFunction, isNativeObject, type NativeFunction, type NativeObject } from './cpu';
@@ -68,7 +85,7 @@ import { compileLuaChunkToProgram, appendLuaChunkToProgram } from './program_com
 import { linkProgramAssets } from './program_linker';
 import { IO_ARG0_OFFSET, IO_BUFFER_BASE, IO_COMMAND_STRIDE, IO_CMD_PRINT, IO_SYS_BOOT_CART, IO_WRITE_PTR_ADDR, IO_SYS_CART_BOOTREADY } from './vm_io';
 import { VmHandlerCache } from './vm_handler_cache';
-import { VmMemory } from './vm_memory';
+import { VmMemory, type VmAssetEntry } from './vm_memory';
 import { CART_ROM_MAGIC_ADDR, ENGINE_STRING_HANDLE_LIMIT } from './memory_map';
 import {
 	buildModuleAliasMap,
@@ -83,6 +100,9 @@ import {
 	type VmProgramSymbolsAsset,
 } from './vm_program_asset';
 import { INSTRUCTION_BYTES, readInstructionWord } from './instruction_format';
+
+const SKYBOX_FACE_KEYS = ['posx', 'negx', 'posy', 'negy', 'posz', 'negz'] as const;
+const SKYBOX_SLOT_ID_SET = new Set<string>(SKYBOX_SLOT_IDS);
 
 export const VM_BUTTON_ACTIONS: ReadonlyArray<string> = [
 	'left',
@@ -195,6 +215,9 @@ export class BmsxVMRuntime {
 				engineAssetSource: engineSource,
 				engineCanonicalization: engineLayer.index.manifest.vm.canonicalization,
 			});
+			await runtime.buildAssetMemory({ source: engineSource, assets: $.assets });
+			await runtime.uploadAtlasTextures();
+			await $.refreshAudioAssets();
 			await runtime.boot();
 			$.start();
 			return;
@@ -215,7 +238,6 @@ export class BmsxVMRuntime {
 		layers.push({ id: engineLayer.id, index: engineLayer.index, payload: engineLayer.payload });
 		const assetSource = new AssetSourceStack(layers);
 		$.set_asset_source(assetSource);
-		$.view.primaryAtlas = 0;
 
 		const cartSource = new AssetSourceStack([{ id: cartLayer.id, index: cartLayer.index, payload: cartLayer.payload }]);
 		const cartLuaSources = BmsxVMRuntime.buildLuaSources({
@@ -255,6 +277,9 @@ export class BmsxVMRuntime {
 			engineCanonicalization: engineLayer.index.manifest.vm.canonicalization,
 			cartCanonicalization: cartLayer.index.manifest.vm.canonicalization,
 		});
+		await runtime.buildAssetMemory({ source: engineSource, assets: $.assets });
+		await runtime.uploadAtlasTextures();
+		await $.refreshAudioAssets();
 		await runtime.boot();
 		void runtime.prepareCartBoot();
 		$.start();
@@ -458,6 +483,8 @@ export class BmsxVMRuntime {
 	public readonly pathSemanticCache: Map<string, { source: string; model: LuaSemanticModel; definitions: ReadonlyArray<LuaDefinitionInfo>; parsed?: ParsedLuaChunk; lines?: readonly string[]; analysis?: FileSemanticData }> = new Map();
 
 	private readonly luaVmGate = taskGate.group('console:lua_vm');
+	private readonly assetMemoryGate = taskGate.group('asset:ram');
+	private readonly assetUpdateGate = taskGate.group('asset:update');
 	private handledLuaErrors = new WeakSet<any>();
 	private lastVmCallStack: StackTraceFrame[] = [];
 	public faultSnapshot: FaultSnapshot = null;
@@ -477,6 +504,13 @@ export class BmsxVMRuntime {
 	private cartAssetSource: RawAssetSource = null;
 	private cartAssetLayer: RuntimeAssetLayer = null;
 	private overlayAssetLayer: RuntimeAssetLayer = null;
+	private readonly assetEntryById = new Map<string, VmAssetEntry>();
+	private readonly atlasSlotById = new Map<number, number>();
+	private readonly atlasViewsById = new Map<number, VmAssetEntry[]>();
+	private readonly atlasResourcesById = new Map<number, RomAsset>();
+	private skyboxSlotEntries: VmAssetEntry[] = [];
+	private readonly slotAtlasIds: Array<number | null> = [null, null];
+	private atlasSlotEntries: VmAssetEntry[] = [];
 	private engineCanonicalization: CanonicalizationType = null;
 	private cartCanonicalization: CanonicalizationType = null;
 	private cartAssetsApplied = false;
@@ -927,7 +961,8 @@ export class BmsxVMRuntime {
 			this.editor.clearRuntimeErrorOverlay();
 			if (this.hasCompletedInitialBoot) { // Subsequent boot: reset to fresh world
 				await $.reset_to_fresh_world();
-				$.view.primaryAtlas = 0;
+				$.view.primaryAtlas = this.slotAtlasIds[0];
+				$.view.secondaryAtlas = this.slotAtlasIds[1];
 			}
 			api.cartdata($.lua_sources.namespace);
 			this.bootActiveProgram();
@@ -1004,6 +1039,7 @@ export class BmsxVMRuntime {
 		}
 		const state = this.beginFrameState();
 		this.terminal.update(state.deltaSeconds);
+		this.flushAssetEdits();
 	}
 
 	public tickTerminalModeDraw(): void {
@@ -1032,6 +1068,7 @@ export class BmsxVMRuntime {
 		}
 		const state = this.beginFrameState();
 		this.editor.update(state.deltaSeconds);
+		this.flushAssetEdits();
 	}
 
 	public tickIDEDraw(): void {
@@ -1054,6 +1091,7 @@ export class BmsxVMRuntime {
 		try {
 			const state = this.beginFrameState();
 			this.runUpdatePhase(state);
+			this.flushAssetEdits();
 		} catch (error) {
 			fault = error;
 			this.handleLuaError(error);
@@ -1236,6 +1274,102 @@ export class BmsxVMRuntime {
 		this.pendingProgramReload = { runInit: options?.runInit };
 	}
 
+	public getAssetEntry(id: string): VmAssetEntry {
+		const entry = this.assetEntryById.get(id);
+		if (!entry) {
+			throw new Error(`[BmsxVMRuntime] Asset entry '${id}' not registered in VM memory.`);
+		}
+		return entry;
+	}
+
+	public getImagePixels(entry: VmAssetEntry): Uint8Array {
+		if (entry.type !== 'image') {
+			throw new Error(`[BmsxVMRuntime] Asset '${entry.id}' is not an image.`);
+		}
+		return this.memory.getImagePixels(entry);
+	}
+
+	public getAudioBytes(entry: VmAssetEntry): Uint8Array {
+		if (entry.type !== 'audio') {
+			throw new Error(`[BmsxVMRuntime] Asset '${entry.id}' is not audio.`);
+		}
+		return this.memory.getAudioBytes(entry);
+	}
+
+	public setSkyboxImages(ids: SkyboxImageIds): void {
+		const source = $.asset_source;
+		if (!source) {
+			throw new Error('[BmsxVMRuntime] Asset source not configured.');
+		}
+		const slots = this.getSkyboxSlotEntries();
+		const assets = $.assets;
+		const tasks = SKYBOX_FACE_KEYS.map((key, index) =>
+			this.loadSkyboxFaceIntoSlot(slots[index], ids[key], source, assets)
+		);
+		void Promise.all(tasks).then(() => {
+			this.applySkyboxSlots(ids);
+		});
+	}
+
+	private getSkyboxSlotEntries(): VmAssetEntry[] {
+		if (this.skyboxSlotEntries.length !== SKYBOX_FACE_KEYS.length) {
+			throw new Error('[BmsxVMRuntime] Skybox slots not allocated in asset RAM.');
+		}
+		return this.skyboxSlotEntries;
+	}
+
+	private async loadSkyboxFaceIntoSlot(
+		slotEntry: VmAssetEntry,
+		assetId: string,
+		source: RawAssetSource,
+		assets: RuntimeAssets,
+	): Promise<void> {
+		const entry = source.getEntry(assetId);
+		if (!entry) {
+			throw new Error(`[BmsxVMRuntime] Skybox image '${assetId}' not found.`);
+		}
+		if (entry.type !== 'image') {
+			throw new Error(`[BmsxVMRuntime] Skybox image '${assetId}' is not an image.`);
+		}
+		if (typeof entry.start !== 'number' || typeof entry.end !== 'number') {
+			throw new Error(`[BmsxVMRuntime] Skybox image '${assetId}' missing ROM buffer offsets.`);
+		}
+		const asset = assets.img[assetId];
+		if (!asset || !asset.imgmeta) {
+			throw new Error(`[BmsxVMRuntime] Skybox image '${assetId}' missing metadata.`);
+		}
+		if (asset.imgmeta.atlassed) {
+			throw new Error(`[BmsxVMRuntime] Skybox image '${assetId}' must not be atlassed.`);
+		}
+		const decoded = await decodePngToRgba(source.getBuffer(entry));
+		if (asset.imgmeta.width <= 0) {
+			asset.imgmeta.width = decoded.width;
+		}
+		if (asset.imgmeta.height <= 0) {
+			asset.imgmeta.height = decoded.height;
+		}
+		const faceSize = assets.manifest.vm.skybox_face_size ?? SKYBOX_FACE_DEFAULT_SIZE;
+		this.memory.writeImageSlot(slotEntry, {
+			pixels: decoded.pixels,
+			width: faceSize,
+			height: faceSize,
+		});
+	}
+
+	private applySkyboxSlots(ids: SkyboxImageIds): void {
+		const slots = this.getSkyboxSlotEntries();
+		const loaders = slots.map((entry) => this.resolveSkyboxSlotSource(entry));
+		SkyboxPipeline.setSkyboxSources(ids, loaders);
+	}
+
+	private resolveSkyboxSlotSource(entry: VmAssetEntry): Promise<TextureSource> {
+		if (entry.type !== 'image') {
+			throw new Error(`[BmsxVMRuntime] Skybox slot '${entry.id}' is not an image.`);
+		}
+		const pixels = this.memory.getImagePixels(entry);
+		return Promise.resolve({ width: entry.regionW, height: entry.regionH, data: pixels });
+	}
+
 	private isEngineProgramActive(): boolean {
 		return $.lua_sources === this.engineLuaSources;
 	}
@@ -1252,8 +1386,9 @@ export class BmsxVMRuntime {
 			return;
 		}
 		this.applyCartAssetLayers();
+		await this.buildAssetMemory();
+		await this.uploadAtlasTextures();
 		await $.refreshAudioAssets();
-		await this.preloadAtlasTextures();
 		this.cartAssetsApplied = true;
 		if (this.shouldBootLuaProgramFromSources()) {
 			this.preparedCartProgram = this.compileCartLuaProgramForBoot();
@@ -1263,6 +1398,326 @@ export class BmsxVMRuntime {
 		this.setCartBootReadyFlag(this.editor.exists);
 	}
 
+	private async buildAssetMemory(params?: { source?: RawAssetSource; assets?: RuntimeAssets }): Promise<void> {
+		const token = this.assetMemoryGate.begin({ blocking: true, category: 'asset', tag: 'asset_ram' });
+		try {
+			const assetSource = params?.source ?? $.asset_source;
+			const assets = params?.assets ?? $.assets;
+			if (!assetSource) {
+				throw new Error('[BmsxVMRuntime] Asset source not configured.');
+			}
+			this.memory.resetAssetMemory();
+			this.assetEntryById.clear();
+			await this.registerImageAssets(assetSource, assets);
+			this.registerAudioAssets(assetSource, assets);
+			this.memory.finalizeAssetTable();
+			this.memory.markAllAssetsDirty();
+		} finally {
+			this.assetMemoryGate.end(token);
+		}
+	}
+
+	private async registerImageAssets(source: RawAssetSource, assets: RuntimeAssets): Promise<void> {
+		const entries = source.list();
+		const viewEntries: RomAsset[] = [];
+		const engineAtlasName = generateAtlasName(ENGINE_ATLAS_INDEX);
+		let engineAtlasEntry: RomAsset | null = null;
+		this.atlasResourcesById.clear();
+		this.atlasViewsById.clear();
+		this.atlasSlotById.clear();
+		this.slotAtlasIds[0] = null;
+		this.slotAtlasIds[1] = null;
+		this.skyboxSlotEntries = [];
+
+		for (let index = 0; index < entries.length; index += 1) {
+			const entry = entries[index];
+			if (entry.type !== 'image' && entry.type !== 'atlas') {
+				continue;
+			}
+			const imgAsset = assets.img[entry.resid];
+			if (!imgAsset) {
+				throw new Error(`[BmsxVMRuntime] Image asset '${entry.resid}' not found.`);
+			}
+			const meta = imgAsset.imgmeta;
+			if (!meta) {
+				throw new Error(`[BmsxVMRuntime] Image asset '${entry.resid}' missing metadata.`);
+			}
+			if (entry.type === 'atlas') {
+				if (entry.resid === engineAtlasName) {
+					engineAtlasEntry = entry;
+					continue;
+				}
+				if (typeof meta.atlasid !== 'number') {
+					throw new Error(`[BmsxVMRuntime] Atlas '${entry.resid}' missing atlas id.`);
+				}
+				this.atlasResourcesById.set(meta.atlasid, entry);
+				continue;
+			}
+			if (meta.atlassed) {
+				viewEntries.push(entry);
+				continue;
+			}
+		}
+
+		if (!engineAtlasEntry) {
+			throw new Error('[BmsxVMRuntime] Engine atlas missing from asset list.');
+		}
+		if (typeof engineAtlasEntry.start !== 'number' || typeof engineAtlasEntry.end !== 'number') {
+			throw new Error('[BmsxVMRuntime] Engine atlas missing ROM buffer offsets.');
+		}
+		const engineImgAsset = assets.img[engineAtlasEntry.resid];
+		const engineDecoded = await decodePngToRgba(source.getBuffer(engineAtlasEntry));
+		if (engineImgAsset.imgmeta.width <= 0) {
+			engineImgAsset.imgmeta.width = engineDecoded.width;
+		}
+		if (engineImgAsset.imgmeta.height <= 0) {
+			engineImgAsset.imgmeta.height = engineDecoded.height;
+		}
+		const engineEntryRecord = this.memory.registerImageBuffer({
+			id: engineAtlasEntry.resid,
+			width: engineDecoded.width,
+			height: engineDecoded.height,
+			pixels: engineDecoded.pixels,
+		});
+		this.assetEntryById.set(engineAtlasEntry.resid, engineEntryRecord);
+
+		const skyboxFaceSize = assets.manifest.vm.skybox_face_size ?? SKYBOX_FACE_DEFAULT_SIZE;
+		if (skyboxFaceSize <= 0) {
+			throw new Error(`[BmsxVMRuntime] Invalid skybox_face_size: ${skyboxFaceSize}.`);
+		}
+		const skyboxBytes = skyboxFaceSize * skyboxFaceSize * 4;
+		for (let index = 0; index < SKYBOX_SLOT_IDS.length; index += 1) {
+			const slotEntry = this.memory.registerImageSlot({
+				id: SKYBOX_SLOT_IDS[index],
+				capacityBytes: skyboxBytes,
+			});
+			this.skyboxSlotEntries.push(slotEntry);
+			this.assetEntryById.set(SKYBOX_SLOT_IDS[index], slotEntry);
+		}
+
+		let maxAtlasBytes = 0;
+		for (const atlasEntry of this.atlasResourcesById.values()) {
+			const atlasAsset = assets.img[atlasEntry.resid];
+			const meta = atlasAsset.imgmeta;
+			const width = meta.width;
+			const height = meta.height;
+			const bytes = width * height * 4;
+			if (bytes > maxAtlasBytes) {
+				maxAtlasBytes = bytes;
+			}
+		}
+		if (maxAtlasBytes <= 0) {
+			throw new Error('[BmsxVMRuntime] No atlas resources available for slot allocation.');
+		}
+
+		const primarySlotEntry = this.memory.registerImageSlot({
+			id: ATLAS_PRIMARY_SLOT_ID,
+			capacityBytes: maxAtlasBytes,
+		});
+		const secondarySlotEntry = this.memory.registerImageSlot({
+			id: ATLAS_SECONDARY_SLOT_ID,
+			capacityBytes: maxAtlasBytes,
+		});
+		this.atlasSlotEntries = [primarySlotEntry, secondarySlotEntry];
+		this.assetEntryById.set(ATLAS_PRIMARY_SLOT_ID, primarySlotEntry);
+		this.assetEntryById.set(ATLAS_SECONDARY_SLOT_ID, secondarySlotEntry);
+
+		const atlasIds = Array.from(this.atlasResourcesById.keys()).sort((a, b) => a - b);
+		const primaryAtlasId = atlasIds.length > 0 ? atlasIds[0] : null;
+		const secondaryAtlasId = atlasIds.length > 1 ? atlasIds[1] : null;
+		if (primaryAtlasId !== null) {
+			this.atlasSlotById.set(primaryAtlasId, 0);
+			this.slotAtlasIds[0] = primaryAtlasId;
+		}
+		if (secondaryAtlasId !== null) {
+			this.atlasSlotById.set(secondaryAtlasId, 1);
+			this.slotAtlasIds[1] = secondaryAtlasId;
+		}
+
+		for (let index = 0; index < viewEntries.length; index += 1) {
+			const entry = viewEntries[index];
+			const imgAsset = assets.img[entry.resid];
+			const meta = imgAsset.imgmeta;
+			if (!meta.atlassed) {
+				throw new Error(`[BmsxVMRuntime] Image asset '${entry.resid}' expected to be atlassed.`);
+			}
+			if (!meta.texcoords) {
+				throw new Error(`[BmsxVMRuntime] Image asset '${entry.resid}' missing atlas texcoords.`);
+			}
+			const atlasId = meta.atlasid;
+			if (atlasId === undefined || atlasId === null) {
+				throw new Error(`[BmsxVMRuntime] Image asset '${entry.resid}' missing atlas id.`);
+			}
+			let atlasWidth = 0;
+			let atlasHeight = 0;
+			let baseEntry = primarySlotEntry;
+			if (atlasId === ENGINE_ATLAS_INDEX) {
+				baseEntry = engineEntryRecord;
+				atlasWidth = engineEntryRecord.regionW;
+				atlasHeight = engineEntryRecord.regionH;
+			} else {
+				const atlasEntry = this.atlasResourcesById.get(atlasId);
+				if (!atlasEntry) {
+					throw new Error(`[BmsxVMRuntime] Atlas ${atlasId} not registered for '${entry.resid}'.`);
+				}
+				const atlasAsset = assets.img[atlasEntry.resid];
+				atlasWidth = atlasAsset.imgmeta.width;
+				atlasHeight = atlasAsset.imgmeta.height;
+				const mappedSlot = this.atlasSlotById.get(atlasId);
+				if (mappedSlot !== undefined) {
+					baseEntry = this.atlasSlotEntries[mappedSlot];
+				}
+			}
+			const coords = meta.texcoords;
+			const minU = Math.min(coords[0], coords[2], coords[4], coords[6], coords[8], coords[10]);
+			const maxU = Math.max(coords[0], coords[2], coords[4], coords[6], coords[8], coords[10]);
+			const minV = Math.min(coords[1], coords[3], coords[5], coords[7], coords[9], coords[11]);
+			const maxV = Math.max(coords[1], coords[3], coords[5], coords[7], coords[9], coords[11]);
+			const offsetX = Math.floor(minU * atlasWidth);
+			const offsetY = Math.floor(minV * atlasHeight);
+			const regionW = Math.max(1, Math.min(atlasWidth - offsetX, Math.round((maxU - minU) * atlasWidth)));
+			const regionH = Math.max(1, Math.min(atlasHeight - offsetY, Math.round((maxV - minV) * atlasHeight)));
+			const viewEntry = this.memory.registerImageView({
+				id: entry.resid,
+				baseEntry,
+				regionX: offsetX,
+				regionY: offsetY,
+				regionW,
+				regionH,
+			});
+			this.assetEntryById.set(entry.resid, viewEntry);
+			let list = this.atlasViewsById.get(atlasId);
+			if (!list) {
+				list = [];
+				this.atlasViewsById.set(atlasId, list);
+			}
+			list.push(viewEntry);
+		}
+
+		if (primaryAtlasId !== null) {
+			await this.loadAtlasIntoSlot(0, primaryAtlasId, source, assets);
+		}
+		if (secondaryAtlasId !== null) {
+			await this.loadAtlasIntoSlot(1, secondaryAtlasId, source, assets);
+		}
+	}
+
+	private registerAudioAssets(source: RawAssetSource, assets: RuntimeAssets): void {
+		const entries = source.list('audio');
+		for (let index = 0; index < entries.length; index += 1) {
+			const entry = entries[index];
+			if (typeof entry.start !== 'number' || typeof entry.end !== 'number') {
+				throw new Error(`[BmsxVMRuntime] Audio asset '${entry.resid}' missing ROM buffer offsets.`);
+			}
+			const audioAsset = assets.audio[entry.resid];
+			if (!audioAsset) {
+				throw new Error(`[BmsxVMRuntime] Audio asset '${entry.resid}' not found.`);
+			}
+			if (!audioAsset.audiometa) {
+				throw new Error(`[BmsxVMRuntime] Audio asset '${entry.resid}' missing metadata.`);
+			}
+			const buffer = source.getBuffer(entry);
+			const info = parseWavInfo(buffer);
+			const bytes = new Uint8Array(buffer);
+			const entryRecord = this.memory.registerAudioBuffer({
+				id: entry.resid,
+				bytes,
+				sampleRate: info.sampleRate,
+				channels: info.channels,
+				bitsPerSample: info.bitsPerSample,
+				frames: info.frames,
+				dataOffset: info.dataOffset,
+				dataSize: info.dataLength,
+			});
+			this.assetEntryById.set(entry.resid, entryRecord);
+		}
+	}
+
+	private async loadAtlasIntoSlot(
+		slot: AtlasSlotIndex,
+		atlasId: number,
+		source: RawAssetSource,
+		assets: RuntimeAssets,
+	): Promise<void> {
+		const atlasEntry = this.atlasResourcesById.get(atlasId);
+		if (!atlasEntry) {
+			throw new Error(`[BmsxVMRuntime] Atlas ${atlasId} not found in ROM assets.`);
+		}
+		if (typeof atlasEntry.start !== 'number' || typeof atlasEntry.end !== 'number') {
+			throw new Error(`[BmsxVMRuntime] Atlas '${atlasEntry.resid}' missing ROM buffer offsets.`);
+		}
+		const decoded = await decodePngToRgba(source.getBuffer(atlasEntry));
+		const atlasAsset = assets.img[atlasEntry.resid];
+		if (atlasAsset.imgmeta.width <= 0) {
+			atlasAsset.imgmeta.width = decoded.width;
+		}
+		if (atlasAsset.imgmeta.height <= 0) {
+			atlasAsset.imgmeta.height = decoded.height;
+		}
+		const slotEntry = this.atlasSlotEntries[slot];
+		this.memory.writeImageSlot(slotEntry, {
+			pixels: decoded.pixels,
+			width: decoded.width,
+			height: decoded.height,
+		});
+		const existingSlot = this.atlasSlotById.get(atlasId);
+		if (existingSlot !== undefined && existingSlot !== slot) {
+			this.slotAtlasIds[existingSlot] = null;
+			if (existingSlot === 0) {
+				$.view.primaryAtlas = null;
+			} else {
+				$.view.secondaryAtlas = null;
+			}
+		}
+		const previousAtlasId = this.slotAtlasIds[slot];
+		if (previousAtlasId !== null) {
+			this.atlasSlotById.delete(previousAtlasId);
+		}
+		this.atlasSlotById.set(atlasId, slot);
+		this.slotAtlasIds[slot] = atlasId;
+		if (slot === 0) {
+			$.view.primaryAtlas = atlasId;
+		} else {
+			$.view.secondaryAtlas = atlasId;
+		}
+		const viewEntries = this.atlasViewsById.get(atlasId);
+		if (viewEntries) {
+			for (let index = 0; index < viewEntries.length; index += 1) {
+				this.memory.updateImageViewBase(viewEntries[index], slotEntry);
+			}
+		}
+	}
+
+	private flushAssetEdits(): void {
+		const dirty = this.memory.consumeDirtyAssets();
+		if (dirty.length === 0) {
+			return;
+		}
+		const skyboxIds = SkyboxPipeline.skyboxFaceIds;
+		let refreshSkybox = false;
+		for (let index = 0; index < dirty.length; index += 1) {
+			const entry = dirty[index];
+			if (entry.type === 'image') {
+				if (SKYBOX_SLOT_ID_SET.has(entry.id)) {
+					refreshSkybox = true;
+					continue;
+				}
+				const pixels = this.memory.getImagePixels(entry);
+				const width = entry.regionW;
+				const height = entry.regionH;
+				const token = this.assetUpdateGate.begin({ blocking: false, category: 'texture', tag: `asset:${entry.id}` });
+				const textureKey = entry.id === generateAtlasName(ENGINE_ATLAS_INDEX) ? ENGINE_ATLAS_TEXTURE_KEY : entry.id;
+				void $.texmanager.updateTexturesForKey(textureKey, pixels, width, height)
+					.finally(() => this.assetUpdateGate.end(token));
+			} else if (entry.type === 'audio') {
+				$.sndmaster.invalidateClip(entry.id);
+			}
+		}
+		if (refreshSkybox && skyboxIds) {
+			this.applySkyboxSlots(skyboxIds);
+		}
+	}
+
 	private applyCartAssetLayers(): void {
 		applyRuntimeAssetLayer($.assets, this.cartAssetLayer);
 		if (this.overlayAssetLayer) {
@@ -1270,31 +1725,42 @@ export class BmsxVMRuntime {
 		}
 	}
 
-	private async preloadAtlasTextures(): Promise<void> {
-		const atlasKeys = new Set<string>();
-		for (const asset of this.cartAssetLayer.index.assets) {
-			if (asset.type !== 'atlas') {
-				continue;
-			}
-			atlasKeys.add(asset.resid);
+	private async uploadAtlasTextures(): Promise<void> {
+		const engineAtlasName = generateAtlasName(ENGINE_ATLAS_INDEX);
+		const engineEntry = this.assetEntryById.get(engineAtlasName);
+		if (!engineEntry) {
+			throw new Error(`[BmsxVMRuntime] Engine atlas '${engineAtlasName}' not registered in asset RAM.`);
 		}
-		if (this.overlayAssetLayer) {
-			for (const asset of this.overlayAssetLayer.index.assets) {
-				if (asset.type !== 'atlas') {
-					continue;
-				}
-				atlasKeys.add(asset.resid);
-			}
+		const enginePixels = this.memory.getImagePixels(engineEntry);
+		await $.texmanager.loadTextureFromPixels(ENGINE_ATLAS_TEXTURE_KEY, enginePixels, engineEntry.regionW, engineEntry.regionH);
+		$.view.loadEngineAtlasTexture();
+
+		const primaryEntry = this.assetEntryById.get(ATLAS_PRIMARY_SLOT_ID);
+		if (!primaryEntry) {
+			throw new Error(`[BmsxVMRuntime] Primary atlas slot '${ATLAS_PRIMARY_SLOT_ID}' not registered in asset RAM.`);
 		}
-		const loads: Promise<unknown>[] = [];
-		for (const atlasKey of atlasKeys) {
-			const atlas = $.assets.img[atlasKey];
-			if (!atlas) {
-				throw new Error(`[BmsxVMRuntime] atlas '${atlasKey}' not found.`);
-			}
-			loads.push($.texmanager.loadTextureFromAsset(atlas, {}, atlasKey));
+		if (primaryEntry.regionW > 0 && primaryEntry.regionH > 0) {
+			const primaryPixels = this.memory.getImagePixels(primaryEntry);
+			const primaryHandle = await $.texmanager.loadTextureFromPixels(
+				ATLAS_PRIMARY_SLOT_ID,
+				primaryPixels,
+				primaryEntry.regionW,
+				primaryEntry.regionH,
+			);
+			$.view.textures[ATLAS_PRIMARY_SLOT_ID] = primaryHandle;
 		}
-		await Promise.all(loads);
+
+		const secondaryEntry = this.assetEntryById.get(ATLAS_SECONDARY_SLOT_ID);
+		if (secondaryEntry && secondaryEntry.regionW > 0 && secondaryEntry.regionH > 0) {
+			const secondaryPixels = this.memory.getImagePixels(secondaryEntry);
+			const secondaryHandle = await $.texmanager.loadTextureFromPixels(
+				ATLAS_SECONDARY_SLOT_ID,
+				secondaryPixels,
+				secondaryEntry.regionW,
+				secondaryEntry.regionH,
+			);
+			$.view.textures[ATLAS_SECONDARY_SLOT_ID] = secondaryHandle;
+		}
 	}
 
 	private pollSystemBootRequest(): void {
@@ -1361,6 +1827,11 @@ export class BmsxVMRuntime {
 			luaRuntimeFailed: this.luaRuntimeFailed,
 			luaPath: this._luaPath,
 			storage,
+			assetMemory: this.memory.dumpAssetMemory(),
+			atlasSlots: {
+				primary: this.slotAtlasIds[0],
+				secondary: this.slotAtlasIds[1],
+			},
 		};
 		if (vmState) {
 			if (vmState.globals) {
@@ -1388,6 +1859,9 @@ export class BmsxVMRuntime {
 		const asset = $.lua_sources.path2lua[$.lua_sources.entry_path];
 		this._luaPath = asset.source_path;
 		this.luaVmInitialized = false;
+		await this.buildAssetMemory();
+		await this.uploadAtlasTextures();
+		await $.refreshAudioAssets();
 		await this.boot();
 	}
 
@@ -1417,11 +1891,54 @@ export class BmsxVMRuntime {
 		}
 
 		this.luaRuntimeFailed = false;
+		this.applyAssetMemorySnapshot(snapshot);
 		// const shouldRunInit = snapshot.luaRuntimeFailed !== true;
 		this.reinitializeLuaProgramFromSnapshot(snapshot, { runInit: false, hotReload: false });
 
 		if (savedRuntimeFailed) {
 			this.luaRuntimeFailed = true;
+		}
+	}
+
+	private applyAssetMemorySnapshot(snapshot: BmsxVMState): void {
+		if (!snapshot.assetMemory) {
+			return;
+		}
+		this.memory.restoreAssetMemory(snapshot.assetMemory);
+		this.memory.rehydrateAssetEntriesFromTable();
+		if (snapshot.atlasSlots) {
+			this.restoreAtlasSlotMapping(snapshot.atlasSlots);
+		}
+		this.flushAssetEdits();
+	}
+
+	private restoreAtlasSlotMapping(mapping: { primary: number | null; secondary: number | null }): void {
+		this.atlasSlotById.clear();
+		this.slotAtlasIds[0] = mapping.primary ?? null;
+		this.slotAtlasIds[1] = mapping.secondary ?? null;
+		if (mapping.primary !== null) {
+			this.atlasSlotById.set(mapping.primary, 0);
+		}
+		if (mapping.secondary !== null) {
+			this.atlasSlotById.set(mapping.secondary, 1);
+		}
+		$.view.primaryAtlas = mapping.primary;
+		$.view.secondaryAtlas = mapping.secondary;
+		if (mapping.primary !== null) {
+			const viewEntries = this.atlasViewsById.get(mapping.primary);
+			if (viewEntries) {
+				for (let index = 0; index < viewEntries.length; index += 1) {
+					this.memory.updateImageViewBase(viewEntries[index], this.atlasSlotEntries[0]);
+				}
+			}
+		}
+		if (mapping.secondary !== null) {
+			const viewEntries = this.atlasViewsById.get(mapping.secondary);
+			if (viewEntries) {
+				for (let index = 0; index < viewEntries.length; index += 1) {
+					this.memory.updateImageViewBase(viewEntries[index], this.atlasSlotEntries[1]);
+				}
+			}
 		}
 	}
 
@@ -1443,6 +1960,7 @@ export class BmsxVMRuntime {
 		// Clear flag and any queued overlay frame before we resume swapping handlers.
 		this.luaRuntimeFailed = false;
 		publishOverlayFrame(null);
+		this.applyAssetMemorySnapshot(snapshot);
 		this.resumeLuaProgramState(snapshot);
 		this.luaVmInitialized = true;
 	}
@@ -4052,11 +4570,14 @@ export class BmsxVMRuntime {
 			// Reload the active program source and reset the world
 			if (options?.applyCartAssets) {
 				this.applyCartAssetLayers();
+				await this.buildAssetMemory();
+				await this.uploadAtlasTextures();
 				await $.refreshAudioAssets();
 				this.cartAssetsApplied = true;
 			}
 			await $.reset_to_fresh_world();
-			$.view.primaryAtlas = 0;
+			$.view.primaryAtlas = this.slotAtlasIds[0];
+			$.view.secondaryAtlas = this.slotAtlasIds[1];
 			try {
 				this.resetVmState();
 				if (this.shouldBootLuaProgramFromSources()) {

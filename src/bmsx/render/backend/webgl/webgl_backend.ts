@@ -1,5 +1,5 @@
 // WebGL backend implementation extracted from legacy gpu_backend.ts
-import { color_arr } from '../../../rompack/rompack';
+import { color_arr, type TextureSource } from '../../../rompack/rompack';
 // Legacy-specific pipeline hooks removed; pipelines own their setup/exec.
 import * as GLR from './gl_resources';
 import { GPUBackend, GraphicsPipelineBuildDesc, PassEncoder, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateRegistry, RenderTargetHandle, TextureParams } from '../pipeline_interfaces';
@@ -44,11 +44,46 @@ export class WebGLBackend implements GPUBackend {
 		this._context = gl;
 	}
 
-	createTexture(img: ImageBitmap, desc: TextureParams): WebGLTexture {
+	createTexture(src: TextureSource | Promise<TextureSource>, desc: TextureParams): WebGLTexture {
+		const source = src as TextureSource;
+		const data = (source as { data?: Uint8Array }).data;
+		if (data) {
+			const gl = this.gl;
+			const tex = gl.createTexture()!;
+			gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_UPLOAD);
+			gl.bindTexture(gl.TEXTURE_2D, tex);
+			gl.texImage2D(gl.TEXTURE_2D, 0, gl.SRGB8_ALPHA8, source.width, source.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, desc.wrapS ?? gl.CLAMP_TO_EDGE);
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, desc.wrapT ?? gl.CLAMP_TO_EDGE);
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, desc.minFilter ?? gl.NEAREST);
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, desc.magFilter ?? gl.NEAREST);
+			gl.bindTexture(gl.TEXTURE_2D, null);
+			const bytes = source.width * source.height * 4;
+			this.frameStats.bytesUploaded += bytes;
+			this.frameStats.textureBytes += bytes;
+			return tex;
+		}
+		const img = source as ImageBitmap;
 		const t = GLR.glCreateTextureFromImage(this.gl, img, desc, null);
 		this.frameStats.bytesUploaded += img.width * img.height * 4;
 		this.frameStats.textureBytes += img.width * img.height * 4;
 		return t;
+	}
+
+	updateTexture(handle: WebGLTexture, src: TextureSource): void {
+		const gl = this.gl;
+		const data = (src as { data?: Uint8Array }).data;
+		gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_UPLOAD);
+		gl.bindTexture(gl.TEXTURE_2D, handle);
+		if (data) {
+			gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, src.width, src.height, gl.RGBA, gl.UNSIGNED_BYTE, data);
+		} else {
+			gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, src as ImageBitmap);
+		}
+		const bytes = src.width * src.height * 4;
+		this.frameStats.bytesUploaded += bytes;
+		this.frameStats.textureBytes += bytes;
+		gl.bindTexture(gl.TEXTURE_2D, null);
 	}
 
 	createSolidTexture2D(width: number, height: number, rgba: color_arr, desc: TextureParams = {}): WebGLTexture {

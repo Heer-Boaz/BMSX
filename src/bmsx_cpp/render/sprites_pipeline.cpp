@@ -83,16 +83,14 @@ void renderSpriteBatchSoftware(SoftwareBackend* softBackend,
 
 	TextureHandle tex = nullptr;
 	if (meta.atlassed) {
-	  if (meta.atlasid == 0) {
-		tex = atlasPrimary;
-	  } else if (meta.atlasid == 1) {
-		tex = atlasSecondary;
-	  } else if (meta.atlasid == ENGINE_ATLAS_INDEX) {
+	  if (meta.atlasid == ENGINE_ATLAS_INDEX) {
 		tex = context->textures.at(ENGINE_ATLAS_TEXTURE_KEY);
+	  } else if (meta.atlasid == context->primaryAtlas()) {
+		tex = atlasPrimary;
+	  } else if (meta.atlasid == context->secondaryAtlas()) {
+		tex = atlasSecondary;
 	  } else {
-		const std::string atlasName = generateAtlasName(meta.atlasid);
-		const auto* atlasAsset = assets.getImg(atlasName);
-		tex = reinterpret_cast<TextureHandle>(atlasAsset->textureHandle);
+		throw BMSX_RUNTIME_ERROR("[SpritesPipeline] Atlas not loaded into a slot.");
 	  }
 	} else {
 	  const auto* imgAsset = assets.getImg(options.imgid);

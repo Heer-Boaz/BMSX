@@ -94,6 +94,23 @@ TextureHandle SoftwareBackend::createTexture(const u8* data, i32 width, i32 heig
 	return static_cast<TextureHandle>(ptr);
 }
 
+void SoftwareBackend::updateTexture(TextureHandle handle, const u8* data, i32 width, i32 height, const TextureParams& params) {
+	(void)params;
+	auto* tex = static_cast<SoftwareTexture*>(handle);
+	if (tex->width != width || tex->height != height) {
+		tex->width = width;
+		tex->height = height;
+		tex->data.resize(static_cast<size_t>(width) * height);
+	}
+	for (i32 i = 0; i < width * height; ++i) {
+		u8 r = data[i * 4 + 0];
+		u8 g = data[i * 4 + 1];
+		u8 b = data[i * 4 + 2];
+		u8 a = data[i * 4 + 3];
+		tex->data[i] = (a << 24) | (r << 16) | (g << 8) | b;
+	}
+}
+
 TextureHandle SoftwareBackend::createSolidTexture2D(i32 width, i32 height, const Color& color) {
 	auto tex = std::make_unique<SoftwareTexture>();
 	tex->width = width;

@@ -1,5 +1,5 @@
 /// <reference types="@webgpu/types" />
-import { color_arr } from '../../../rompack/rompack';
+import { color_arr, type TextureSource } from '../../../rompack/rompack';
 import { BackendCaps, GPUBackend, GraphicsPipelineBuildDesc, PassEncoder, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateId, TextureHandle, TextureParams } from '../pipeline_interfaces';
 
 export type WebGPUPassEncoder = PassEncoder & { encoder: GPURenderPassEncoder };
@@ -40,23 +40,59 @@ export class WebGPUBackend implements GPUBackend {
 		this._bytesUploaded += bytes;
 	}
 
-	createTexture(img: ImageBitmap, _desc: TextureParams): TextureHandle {
-		// Use defaults since properties not in TextureParams
+	createTexture(src: TextureSource | Promise<TextureSource>, _desc: TextureParams): TextureHandle {
+		const source = src as TextureSource;
+		const data = (source as { data?: Uint8Array }).data;
 		const texture = this.device.createTexture({
-			size: { width: img.width, height: img.height, depthOrArrayLayers: 1 },
+			size: { width: source.width, height: source.height, depthOrArrayLayers: 1 },
 			format: 'rgba8unorm',
 			usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
 			mipLevelCount: 1,
 			dimension: '2d',
 		});
 
+		if (data) {
+			const upload = new Uint8Array(data.buffer as ArrayBuffer, data.byteOffset, data.byteLength);
+			this.device.queue.writeTexture(
+				{ texture },
+				upload,
+				{ bytesPerRow: source.width * 4 },
+				{ width: source.width, height: source.height, depthOrArrayLayers: 1 },
+			);
+			this.accountUpload('texture', source.width * source.height * 4);
+			return texture;
+		}
+
+		const img = source as ImageBitmap;
 		this.device.queue.copyExternalImageToTexture(
 			{ source: img, flipY: false },
 			{ texture },
 			{ width: img.width, height: img.height }
 		);
-
+		this.accountUpload('texture', img.width * img.height * 4);
 		return texture;
+	}
+
+	updateTexture(handle: TextureHandle, src: TextureSource): void {
+		const data = (src as { data?: Uint8Array }).data;
+		if (data) {
+			const upload = new Uint8Array(data.buffer as ArrayBuffer, data.byteOffset, data.byteLength);
+			this.device.queue.writeTexture(
+				{ texture: handle as GPUTexture },
+				upload,
+				{ bytesPerRow: src.width * 4 },
+				{ width: src.width, height: src.height, depthOrArrayLayers: 1 },
+			);
+			this.accountUpload('texture', src.width * src.height * 4);
+			return;
+		}
+		const img = src as ImageBitmap;
+		this.device.queue.copyExternalImageToTexture(
+			{ source: img, flipY: false },
+			{ texture: handle as GPUTexture },
+			{ width: img.width, height: img.height }
+		);
+		this.accountUpload('texture', img.width * img.height * 4);
 	}
 
 	createSolidTexture2D(width: number, height: number, rgba: color_arr, _desc: TextureParams = {}): TextureHandle {

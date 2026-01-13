@@ -136,32 +136,26 @@ void GameView::initializeDefaultTextures() {
 	textures["_atlas_fallback"] = fallback;
 	m_primaryAtlasIndex = -1;
 	m_secondaryAtlasIndex = -1;
-
-	const std::string engineAtlasName = generateAtlasName(ENGINE_ATLAS_INDEX);
-	auto& assets = EngineCore::instance().assets();
-	auto* texmanager = EngineCore::instance().texmanager();
-	if (!texmanager) {
-		throw BMSX_RUNTIME_ERROR("[GameView] TextureManager not configured.");
-	}
-	const auto* engineAtlas = assets.getImg(engineAtlasName);
-	if (!engineAtlas) {
-		if (assets.hasAnyImg()) {
-			throw BMSX_RUNTIME_ERROR("[GameView] Engine atlas '" + engineAtlasName + "' missing.");
-		}
-	} else {
-		TextureHandle handle = texmanager->getTextureByUri(engineAtlasName);
-		if (!handle) {
-			if (engineAtlas->pixels.empty()) {
-				throw BMSX_RUNTIME_ERROR("[GameView] Engine atlas '" + engineAtlasName + "' not uploaded.");
-			}
-			handle = texmanager->getOrCreateTexture(*engineAtlas);
-		}
-		textures[ENGINE_ATLAS_TEXTURE_KEY] = handle;
-	}
+	textures[ENGINE_ATLAS_TEXTURE_KEY] = fallback;
 
 	textures["_default_albedo"] = m_backend->createSolidTexture2D(1, 1, {1.0f, 1.0f, 1.0f, 1.0f});
 	textures["_default_normal"] = m_backend->createSolidTexture2D(1, 1, {0.5f, 0.5f, 1.0f, 1.0f});
 	textures["_default_mr"] = m_backend->createSolidTexture2D(1, 1, {1.0f, 1.0f, 1.0f, 1.0f});
+}
+
+void GameView::loadEngineAtlasTexture() {
+	if (!m_backend) {
+		throw BMSX_RUNTIME_ERROR("[GameView] loadEngineAtlasTexture called before backend was configured.");
+	}
+	auto* texmanager = EngineCore::instance().texmanager();
+	if (!texmanager) {
+		throw BMSX_RUNTIME_ERROR("[GameView] TextureManager not configured.");
+	}
+	TextureHandle handle = texmanager->getTextureByUri(ENGINE_ATLAS_TEXTURE_KEY);
+	if (!handle) {
+		throw BMSX_RUNTIME_ERROR("[GameView] Engine atlas not uploaded.");
+	}
+	textures[ENGINE_ATLAS_TEXTURE_KEY] = handle;
 }
 
 void GameView::beginFrame() {
@@ -201,33 +195,6 @@ void GameView::endFrame() {
 void GameView::setAtlasIndex(bool isPrimary, i32 index) {
 	i32& currentIndex = isPrimary ? m_primaryAtlasIndex : m_secondaryAtlasIndex;
 	if (currentIndex == index) return;
-
-	const char* atlasId = isPrimary ? "_atlas_primary" : "_atlas_secondary";
-
-	if (index < 0) {
-		currentIndex = -1;
-		textures[atlasId] = textures.at("_atlas_fallback");
-		return;
-	}
-
-	const std::string atlasName = generateAtlasName(index);
-	auto& assets = EngineCore::instance().assets();
-	auto* texmanager = EngineCore::instance().texmanager();
-	if (!texmanager) {
-		throw BMSX_RUNTIME_ERROR("[GameView] TextureManager not configured.");
-	}
-	const auto* atlas = assets.getImg(atlasName);
-	if (!atlas) {
-		throw BMSX_RUNTIME_ERROR("[GameView] atlas '" + atlasName + "' not found.");
-	}
-	TextureHandle handle = texmanager->getTextureByUri(atlasName);
-	if (!handle) {
-		if (atlas->pixels.empty()) {
-			throw BMSX_RUNTIME_ERROR("[GameView] atlas '" + atlasName + "' not uploaded.");
-		}
-		handle = texmanager->getOrCreateTexture(*atlas);
-	}
-	textures[atlasId] = handle;
 	currentIndex = index;
 }
 
@@ -237,6 +204,19 @@ void GameView::setPrimaryAtlas(i32 index) {
 
 void GameView::setSecondaryAtlas(i32 index) {
 	setAtlasIndex(false, index);
+}
+
+i32 GameView::resolveAtlasBindingId(i32 atlasId) const {
+	if (atlasId == ENGINE_ATLAS_INDEX) {
+		return ENGINE_ATLAS_INDEX;
+	}
+	if (m_primaryAtlasIndex == atlasId) {
+		return 0;
+	}
+	if (m_secondaryAtlasIndex == atlasId) {
+		return 1;
+	}
+	throw BMSX_RUNTIME_ERROR("[GameView] Atlas not loaded into a slot.");
 }
 
 void GameView::setPipelineRegistry(std::unique_ptr<RenderPassLibrary> registry) {

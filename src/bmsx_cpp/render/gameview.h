@@ -96,6 +96,7 @@ public:
 	// ─────────────────────────────────────────────────────────────────────────
 	void init();
 	void initializeDefaultTextures();
+	void loadEngineAtlasTexture();
 	void beginFrame();
 	void drawGame();
 	void endFrame();
@@ -136,6 +137,8 @@ public:
 
 	i32 secondaryAtlas() const { return m_secondaryAtlasIndex; }
 	void setSecondaryAtlas(i32 index);
+
+	i32 resolveAtlasBindingId(i32 atlasId) const;
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// Pipeline registry (mirrors TypeScript pipelineRegistry)

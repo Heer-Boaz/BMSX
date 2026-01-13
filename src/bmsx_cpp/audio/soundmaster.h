@@ -99,6 +99,13 @@ struct MusicTransitionRequest {
 	bool startFresh = false;
 };
 
+struct AudioDataView {
+	const u8* data = nullptr;
+	size_t frames = 0;
+};
+
+using AudioDataResolver = std::function<AudioDataView(const AssetId& id)>;
+
 class SoundMaster final : public Registerable {
 public:
 	SoundMaster();
@@ -107,7 +114,7 @@ public:
 	const Identifier& registryId() const override;
 	bool isRegistryPersistent() const override { return true; }
 
-	void init(const RuntimeAssets& assets, f32 startingVolume);
+	void init(const RuntimeAssets& assets, f32 startingVolume, AudioDataResolver audioResolver);
 	void resetPlaybackState();
 	void dispose();
 
@@ -148,6 +155,8 @@ private:
 		VoiceId voiceId = 0;
 		AssetId id;
 		const AudioAsset* asset = nullptr;
+		const u8* data = nullptr;
+		size_t frames = 0;
 		AudioMeta meta;
 		AudioType type = AudioType::Sfx;
 		i32 priority = 0;
@@ -175,6 +184,7 @@ private:
 	ModulationInput parseModulationInput(const Table& table) const;
 
 	const AudioAsset& getAudioOrThrow(const AssetId& id) const;
+	AudioDataView resolveAudioData(const AssetId& id) const;
 
 	VoiceId startVoice(AudioType type, const AssetId& id, const AudioAsset& asset, const ModulationParams& params, i32 priority, f32 initialGain);
 	void removeVoice(AudioType type, size_t index);
@@ -193,6 +203,7 @@ private:
 	static size_t typeIndex(AudioType type);
 
 	const RuntimeAssets* m_assets = nullptr;
+	AudioDataResolver m_audioResolver;
 	f32 m_masterVolume = 1.0f;
 	f64 m_audioTimeSec = 0.0;
 
