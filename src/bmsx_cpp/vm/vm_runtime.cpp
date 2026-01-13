@@ -908,9 +908,6 @@ void VMRuntime::buildAssetMemory(RuntimeAssets& assets, bool keepDecodedData) {
 			static_cast<uint32_t>(audioAsset.dataOffset),
 			static_cast<uint32_t>(audioAsset.dataSize)
 		);
-		if (!keepDecodedData) {
-			std::vector<u8>().swap(audioAsset.bytes);
-		}
 	}
 	if (fallback) {
 		for (const auto& [id, audioAsset] : fallback->audio) {
