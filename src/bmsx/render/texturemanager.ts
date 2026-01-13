@@ -345,6 +345,7 @@ export class TextureManager implements RegisterablePersistent {
 
 	public async updateTexturesForKey(keyBase: string, pixels: Uint8Array, width: number, height: number): Promise<void> {
 		if (!this.backend) throw new Error('TextureManager backend not set');
+		if (width <= 0 || height <= 0) return;
 		const prefix = `${keyBase}|`;
 		const keys: TextureKey[] = [];
 		for (const key of this.gpuCache.keys()) {

@@ -277,11 +277,27 @@ export class RenderPassLibrary {
 			execute: () => { },
 		});
 
+		// Ensure the frame UBO is uploaded/bound before any draw pass.
+		rg.addPass({
+			name: 'FrameResolve',
+			alwaysExecute: true,
+			setup: (io) => {
+				if (frameColorHandle != null) io.writeTex(frameColorHandle);
+				return null;
+			},
+			execute: () => {
+				this.execute('frame_resolve', null);
+			},
+		});
+
 		// Per-frame shared state aggregation (camera + lighting + frame UBO update)
 		rg.addPass({
 			name: 'FrameSharedState',
 			alwaysExecute: true,
-			setup: () => null,
+			setup: (io) => {
+				if (frameColorHandle != null) io.writeTex(frameColorHandle);
+				return null;
+			},
 			execute: (_ctx, frame) => {
 				const cam = $.world.activeCamera3D; if (!cam) return;
 				const mats = cam.getMatrices();
@@ -321,6 +337,9 @@ export class RenderPassLibrary {
 		// Build pass sequence from registry
 		const passList = this.getPipelinePasses();
 		for (const desc of passList) {
+			if (desc.id === 'frame_resolve' || desc.id === 'frame_shared') {
+				continue;
+			}
 			const isPresent = !!desc.present;
 			const isStateOnly = !!desc.stateOnly;
 			rg.addPass({

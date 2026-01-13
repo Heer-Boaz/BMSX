@@ -662,16 +662,36 @@ export class EngineCore {
 	private run = (currentTime: number): void => {
 		if (!this.running) return;
 
+		const profile = (globalThis as any).__bmsx_profile_frames;
+		const t0 = profile ? performance.now() : 0;
+		let tPoll = 0;
+		let tUpdate = 0;
+		let tPresentTick = 0;
+		let tDraw = 0;
+		let t1 = 0;
+
 		try {
+			if (profile) t1 = performance.now();
 			Input.instance.pollInput();
+			if (profile) tPoll = performance.now() - t1;
 
 			this.deltatime = Math.min(currentTime - this.last_update, MAX_FRAME_DELTA);
 			this.last_update = currentTime;
 
 			if (this._paused) {
 				this.accumulated_time = 0;
+				if (profile) t1 = performance.now();
 				this.world.runTickGroups(PRESENTATION_TICK_GROUPS);
+				if (profile) tPresentTick = performance.now() - t1;
+				if (profile) t1 = performance.now();
 				this.view.drawgame();
+				if (profile) tDraw = performance.now() - t1;
+				if (profile) {
+					const total = performance.now() - t0;
+					if (total > 50) {
+						console.warn(`[BMSX][frame] slow=${total.toFixed(1)}ms poll=${tPoll.toFixed(1)}ms presentTick=${tPresentTick.toFixed(1)}ms draw=${tDraw.toFixed(1)}ms paused=true`);
+					}
+				}
 				return;
 			}
 
@@ -679,6 +699,7 @@ export class EngineCore {
 			this.wasupdated = false;
 
 			let steps = 0;
+			if (profile) t1 = performance.now();
 			while (this.accumulated_time >= this.timestep_ms && steps < MAX_SUBSTEPS) {
 				if (!this.paused) {
 					if (runGate.ready) {
@@ -691,6 +712,7 @@ export class EngineCore {
 				this.accumulated_time -= this.timestep_ms;
 				++steps;
 			}
+			if (profile) tUpdate = performance.now() - t1;
 		} catch (error) {
 			// Surface engine/runtime errors to the in-game terminal when active
 			const vmRuntime = BmsxVMRuntime.instance;
@@ -708,8 +730,18 @@ export class EngineCore {
 		}
 
 		if (this.wasupdated) {
+			if (profile) t1 = performance.now();
 			this.world.runTickGroups(PRESENTATION_TICK_GROUPS, false);
+			if (profile) tPresentTick = performance.now() - t1;
+			if (profile) t1 = performance.now();
 			this.view.drawgame();
+			if (profile) tDraw = performance.now() - t1;
+			if (profile) {
+				const total = performance.now() - t0;
+				if (total > 50) {
+					console.warn(`[BMSX][frame] slow=${total.toFixed(1)}ms poll=${tPoll.toFixed(1)}ms update=${tUpdate.toFixed(1)}ms presentTick=${tPresentTick.toFixed(1)}ms draw=${tDraw.toFixed(1)}ms steps?`);
+				}
+			}
 		}
 	}
 

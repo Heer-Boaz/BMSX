@@ -1827,7 +1827,6 @@ export class BmsxVMRuntime {
 			luaRuntimeFailed: this.luaRuntimeFailed,
 			luaPath: this._luaPath,
 			storage,
-			assetMemory: this.memory.dumpAssetMemory(),
 			atlasSlots: {
 				primary: this.slotAtlasIds[0],
 				secondary: this.slotAtlasIds[1],

@@ -34,6 +34,7 @@ export class WebGLBackend implements GPUBackend {
 	private currentActiveTexUnit: number = null;
 	private boundTex2D: (WebGLTexture)[] = [];
 	private boundTexCube: (WebGLTexture)[] = [];
+	private texSizes = new WeakMap<WebGLTexture, { w: number; h: number }>();
 	private uniformCache = new WeakMap<WebGLProgram, Map<string, WebGLUniformLocation>>();
 	private attribCache = new WeakMap<WebGLProgram, Map<string, number>>();
 	private bufferSizes = new WeakMap<WebGLBuffer, number>();
@@ -58,6 +59,7 @@ export class WebGLBackend implements GPUBackend {
 			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, desc.minFilter ?? gl.NEAREST);
 			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, desc.magFilter ?? gl.NEAREST);
 			gl.bindTexture(gl.TEXTURE_2D, null);
+			this.texSizes.set(tex, { w: source.width, h: source.height });
 			const bytes = source.width * source.height * 4;
 			this.frameStats.bytesUploaded += bytes;
 			this.frameStats.textureBytes += bytes;
@@ -65,6 +67,7 @@ export class WebGLBackend implements GPUBackend {
 		}
 		const img = source as ImageBitmap;
 		const t = GLR.glCreateTextureFromImage(this.gl, img, desc, null);
+		this.texSizes.set(t, { w: img.width, h: img.height });
 		this.frameStats.bytesUploaded += img.width * img.height * 4;
 		this.frameStats.textureBytes += img.width * img.height * 4;
 		return t;
@@ -75,10 +78,23 @@ export class WebGLBackend implements GPUBackend {
 		const data = (src as { data?: Uint8Array }).data;
 		gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_UPLOAD);
 		gl.bindTexture(gl.TEXTURE_2D, handle);
+		const size = this.texSizes.get(handle);
+		const needsResize = !size || size.w !== src.width || size.h !== src.height;
 		if (data) {
-			gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, src.width, src.height, gl.RGBA, gl.UNSIGNED_BYTE, data);
+			if (needsResize) {
+				gl.texImage2D(gl.TEXTURE_2D, 0, gl.SRGB8_ALPHA8, src.width, src.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
+				this.texSizes.set(handle, { w: src.width, h: src.height });
+			} else {
+				gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, src.width, src.height, gl.RGBA, gl.UNSIGNED_BYTE, data);
+			}
 		} else {
-			gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, src as ImageBitmap);
+			const img = src as ImageBitmap;
+			if (needsResize) {
+				gl.texImage2D(gl.TEXTURE_2D, 0, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, img);
+				this.texSizes.set(handle, { w: img.width, h: img.height });
+			} else {
+				gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, img);
+			}
 		}
 		const bytes = src.width * src.height * 4;
 		this.frameStats.bytesUploaded += bytes;
@@ -109,6 +125,7 @@ export class WebGLBackend implements GPUBackend {
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, desc.wrapS ?? gl.CLAMP_TO_EDGE);
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, desc.wrapT ?? gl.CLAMP_TO_EDGE);
 		gl.bindTexture(gl.TEXTURE_2D, null);
+		this.texSizes.set(tex, { w: width, h: height });
 		return tex;
 	}
 	createCubemapFromSources(faces: readonly [ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap], desc: TextureParams): WebGLTexture {
@@ -174,6 +191,7 @@ export class WebGLBackend implements GPUBackend {
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 		gl.bindTexture(gl.TEXTURE_2D, null);
+		this.texSizes.set(tex, { w: desc.width, h: desc.height });
 		return tex;
 	}
 	createDepthTexture(desc: { width: number; height: number }): WebGLTexture { return GLR.glCreateDepthTexture(this.gl, desc.width, desc.height, TEXTURE_UNIT_UPLOAD); }
