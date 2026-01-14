@@ -319,6 +319,15 @@ export class RenderPassLibrary {
 				return null;
 			},
 			execute: (_ctx, frame) => {
+				const frameTime = frame ? frame.time : 0;
+				const frameDelta = frame ? frame.delta : 0;
+				const gv = $.view;
+				updateAndBindFrameUniforms(gv.backend, {
+					offscreen: { x: gv.offscreenCanvasSize.x, y: gv.offscreenCanvasSize.y },
+					logical: { x: gv.viewportSize.x, y: gv.viewportSize.y },
+					time: frameTime,
+					delta: frameDelta,
+				});
 				const cam = $.world.activeCamera3D; if (!cam) return;
 				const mats = cam.getMatrices();
 				const viewState = { camPos: cam.position, viewProj: mats.vp, skyboxView: cam.skyboxView, proj: mats.proj };
@@ -326,7 +335,6 @@ export class RenderPassLibrary {
 				const ambientLight = activeAmbient ? (activeAmbient.light as AmbientLight) : null;
 				const lighting = lightingSystem.update(ambientLight);
 				// Build fog state alongside frame-shared so consumers can rely on it
-				const gv = $.view;
 				const fog: FogUniforms = {
 					fogD50: gv.atmosphere.fogD50,
 					fogStart: gv.atmosphere.fogStart,
@@ -336,8 +344,6 @@ export class RenderPassLibrary {
 					fogYMax: gv.atmosphere.fogYMax,
 				};
 				this.setState('frame_shared', { view: viewState, lighting, fog });
-				const frameTime = frame ? frame.time : 0;
-				const frameDelta = frame ? frame.delta : 0;
 				const ambientUniform = (lighting && lighting.ambient)
 					? { color: lighting.ambient.color, intensity: lighting.ambient.intensity }
 					: undefined;
