@@ -2021,7 +2021,7 @@ export class BmsxVMRuntime {
 		let binding = $.lua_sources.path2lua[$.lua_sources.entry_path] as LuaSourceRecord;
 		if (!binding) {
 			// This can happen if there is no Lua entry point defined in the cart. For example, when there is no cart loaded and the player still tried to write code and run it.
-			// Luckily, this is not a fatal error as the description will point towards `res/systemrom/bootrom.lua`
+			// Luckily, this is not a fatal error as the description will point towards `res/bios/bootrom.lua`
 			// binding =  { source_path: $.luaSources.entry_path, resid: $.luaSources.entry_path, type: 'lua', src: '', normalized_source_path: $.luaSources.entry_path, update_timestamp: $.platform.clock.dateNow(), base_src: '' };
 			console.info(`[BmsxVMRuntime] No Lua entry point defined; cannot reload program. Please save the entry point and try again.`);
 			return;

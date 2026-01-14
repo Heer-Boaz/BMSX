@@ -8,6 +8,6 @@
 		"namespace": "bmsx"
 	},
 	"lua": {
-		"entry_path": "res/systemrom/bootrom.lua"
+		"entry_path": "res/bios/bootrom.lua"
 	}
 }
