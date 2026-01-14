@@ -116,7 +116,7 @@ static bool g_crt_blur_enabled = false;
 static bool g_crt_glow_enabled = false;
 static bool g_crt_fringing_enabled = false;
 static bool g_crt_aperture_enabled = false;
-static i32 g_dither_type = 2;
+static int g_dither_type = 2;
 static bool g_frameskip_enabled = false;
 static bool g_frameskip_next = false;
 
@@ -491,7 +491,7 @@ static bool read_crt_blur_enabled();
 static bool read_crt_glow_enabled();
 static bool read_crt_fringing_enabled();
 static bool read_crt_aperture_enabled();
-static i32 read_dither_type();
+static int read_dither_type();
 static bool read_toggle_option(const char* key, const char* label, bool default_value);
 static bool read_frameskip_enabled();
 
@@ -887,7 +887,7 @@ static bool read_crt_aperture_enabled() {
 	return read_toggle_option(kOptionCrtAperture, "CRT Aperture", false);
 }
 
-static i32 read_dither_type() {
+static int read_dither_type() {
 #if defined(BMSX_SNESMINI_LEGACY)
 	return 0;
 #else
@@ -1404,7 +1404,7 @@ void retro_run(void) {
 									  g_crt_fringing_enabled,
 									  g_crt_aperture_enabled);
 	}
-	const i32 new_dither = read_dither_type();
+	const int new_dither = read_dither_type();
 	if (new_dither != g_dither_type) {
 	  g_dither_type = new_dither;
 	  g_platform->setDitherType(static_cast<bmsx::GameView::DitherType>(g_dither_type));
