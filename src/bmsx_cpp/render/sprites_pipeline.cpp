@@ -43,14 +43,10 @@ void renderSpriteBatchSoftware(SoftwareBackend* softBackend,
   const f32 renderScaleY = offscreenHeight / baseHeight;
 
   const f32 time = static_cast<f32>(EngineCore::instance().totalTime());
-  const f32 phase = time * 60.0f;
-  const f32 frac = phase - std::floor(phase);
   const f32 wobble = (std::sin(time * 2.2f) * 0.5f)
 					 + (std::sin(time * 1.1f + 1.7f) * 0.5f);
-  DitherParams dither;
-  dither.enabled = context->psx_dither_2d_enabled;
-  dither.intensity = context->psx_dither2d_intensity;
-  dither.jitter = static_cast<i32>(frac * 4.0f);
+  DitherParams dither{};
+  dither.enabled = false;
 
   const bool useDepth = false;
 
@@ -76,7 +72,7 @@ void renderSpriteBatchSoftware(SoftwareBackend* softBackend,
 	const f32 totalScaleX = renderScaleX * desiredScale;
 	const f32 totalScaleY = renderScaleY * desiredScale;
 	const SpriteParallaxRig& parallaxRig = RenderQueues::spriteParallaxRig;
-	f32 parallaxWeight = options.parallax_weight.value_or(0.0f);
+	f32 parallaxWeight = clamp(options.parallax_weight.value_or(0.0f), -1.0f, 1.0f);
 	if (layer != RenderLayer::World) {
 	  parallaxWeight = 0.0f;
 	}
@@ -198,8 +194,6 @@ void renderSpriteBatch(GPUBackend* backend, GameView* context) {
 
 	  spriteState.ambientEnabledDefault = view->spriteAmbientEnabledDefault;
 	  spriteState.ambientFactorDefault = view->spriteAmbientFactorDefault;
-	  spriteState.psxDither2dEnabled = view->psx_dither_2d_enabled;
-	  spriteState.psxDither2dIntensity = view->psx_dither2d_intensity;
 	  spriteState.viewportTypeIde =
 		  (view->viewportTypeIde == GameView::ViewportType::Viewport)
 			  ? "viewport"

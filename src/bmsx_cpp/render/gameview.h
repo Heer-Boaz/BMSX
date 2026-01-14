@@ -149,11 +149,10 @@ public:
 	BFont* default_font = nullptr;
 
 	// ─────────────────────────────────────────────────────────────────────────
-	// Post-processing settings (mirrors TypeScript properties exactly)
+	// Post-processing settings (mirrors current TypeScript properties)
 	// ─────────────────────────────────────────────────────────────────────────
 	bool crt_postprocessing_enabled = true;
-	bool psx_dither_2d_enabled = true;
-	f32 psx_dither2d_intensity = 1.0f;
+	bool enable_rgb565dither = true;
 
 	// CRT effect toggles and parameters (mirrors TypeScript GameView)
 	bool applyNoise = true;

@@ -92,7 +92,7 @@ static constexpr const char* kOptionCrtBlur = "bmsx_crt_blur";
 static constexpr const char* kOptionCrtGlow = "bmsx_crt_glow";
 static constexpr const char* kOptionCrtFringing = "bmsx_crt_fringing";
 static constexpr const char* kOptionCrtAperture = "bmsx_crt_aperture";
-static constexpr const char* kOptionPsxDither2d = "bmsx_psx_dither_2d";
+static constexpr const char* kOptionDither = "bmsx_dither";
 static constexpr const char* kOptionFrameSkip = "bmsx_frameskip";
 static constexpr const char* kToggleOff = "off";
 static constexpr const char* kToggleOn = "on";
@@ -113,7 +113,7 @@ static bool g_crt_blur_enabled = false;
 static bool g_crt_glow_enabled = false;
 static bool g_crt_fringing_enabled = false;
 static bool g_crt_aperture_enabled = false;
-static bool g_psx_dither_2d_enabled = false;
+static bool g_dither_enabled = true;
 static bool g_frameskip_enabled = false;
 static bool g_frameskip_next = false;
 
@@ -264,11 +264,11 @@ static retro_core_option_v2_definition g_option_defs_us[] = {
 		kToggleOff
 	},
 	{
-		kOptionPsxDither2d,
-		"PSX Dither 2D",
-		"PSX Dither 2D",
-		"Toggle PSX-style dither for 2D sprites.",
-		"Toggle PSX-style dither for 2D sprites.",
+		kOptionDither,
+		"Dither",
+		"Dither",
+		"Toggle RGB565 dither.",
+		"Toggle RGB565 dither.",
 		"video",
 		{
 			{kToggleOff, "Off"},
@@ -411,9 +411,9 @@ static retro_core_option_definition g_option_defs_v1_us[] = {
 		kToggleOff
 	},
 	{
-		kOptionPsxDither2d,
-		"PSX Dither 2D",
-		"Toggle PSX-style dither for 2D sprites.",
+		kOptionDither,
+		"Dither",
+		"Toggle RGB565 dither.",
 		{
 			{kToggleOff, "Off"},
 			{kToggleOn, "On"},
@@ -445,7 +445,7 @@ static char g_option_crt_blur_var[128] = {};
 static char g_option_crt_glow_var[128] = {};
 static char g_option_crt_fringing_var[128] = {};
 static char g_option_crt_aperture_var[128] = {};
-static char g_option_psx_dither_2d_var[128] = {};
+static char g_option_dither_var[128] = {};
 static char g_option_frameskip_var[128] = {};
 static retro_variable g_option_vars[] = {
 	{kOptionRenderBackend, nullptr},
@@ -458,7 +458,7 @@ static retro_variable g_option_vars[] = {
 	{kOptionCrtGlow, nullptr},
 	{kOptionCrtFringing, nullptr},
 	{kOptionCrtAperture, nullptr},
-	{kOptionPsxDither2d, nullptr},
+	{kOptionDither, nullptr},
 	{kOptionFrameSkip, nullptr},
 	{nullptr, nullptr}
 };
@@ -486,7 +486,7 @@ static bool read_crt_blur_enabled();
 static bool read_crt_glow_enabled();
 static bool read_crt_fringing_enabled();
 static bool read_crt_aperture_enabled();
-static bool read_psx_dither_2d_enabled();
+static bool read_dither_enabled();
 static bool read_toggle_option(const char* key, const char* label, bool default_value);
 static bool read_frameskip_enabled();
 
@@ -561,6 +561,58 @@ static void try_update_backend_option() {
 	}
 }
 
+static void set_crt_option_values(bool enabled) {
+	const char* const value_off = kToggleOff;
+	const char* const value_on = kToggleOn;
+	const char* const label_off = "Off";
+	const char* const label_on = "On";
+
+	const auto set_toggle = [&](int idx, bool allow_on) {
+		if (allow_on) {
+			g_option_defs_us[idx].values[0] = {value_off, label_off};
+			g_option_defs_us[idx].values[1] = {value_on, label_on};
+			g_option_defs_us[idx].values[2] = {nullptr, nullptr};
+			g_option_defs_v1_us[idx].values[0] = {value_off, label_off};
+			g_option_defs_v1_us[idx].values[1] = {value_on, label_on};
+			g_option_defs_v1_us[idx].values[2] = {nullptr, nullptr};
+			return;
+		}
+
+		g_option_defs_us[idx].values[0] = {value_off, label_off};
+		g_option_defs_us[idx].values[1] = {nullptr, nullptr};
+		g_option_defs_us[idx].values[2] = {nullptr, nullptr};
+		g_option_defs_v1_us[idx].values[0] = {value_off, label_off};
+		g_option_defs_v1_us[idx].values[1] = {nullptr, nullptr};
+		g_option_defs_v1_us[idx].values[2] = {nullptr, nullptr};
+	};
+
+	const auto set_default = [&](int idx, const char* value) {
+		g_option_defs_us[idx].default_value = value;
+		g_option_defs_v1_us[idx].default_value = value;
+	};
+
+	const bool allow_crt = enabled;
+	set_toggle(1, allow_crt);
+	set_toggle(2, allow_crt);
+	set_toggle(3, allow_crt);
+	set_toggle(4, allow_crt);
+	set_toggle(5, allow_crt);
+	set_toggle(6, allow_crt);
+	set_toggle(7, allow_crt);
+	set_toggle(8, allow_crt);
+	set_toggle(9, allow_crt);
+
+	set_default(1, kCrtPostprocessingOff);
+	set_default(2, kPostprocessDetailOff);
+	set_default(3, kToggleOff);
+	set_default(4, kToggleOff);
+	set_default(5, kToggleOff);
+	set_default(6, kToggleOff);
+	set_default(7, kToggleOff);
+	set_default(8, kToggleOff);
+	set_default(9, kToggleOff);
+}
+
 static void set_core_options(bool default_gles2) {
 #if BMSX_ENABLE_GLES2
 	const char* default_backend = default_gles2 ? kRenderBackendGLES2 : kRenderBackendSoftware;
@@ -599,6 +651,33 @@ static void set_core_options(bool default_gles2) {
 	g_option_defs_v1_us[2].values[1] = {kPostprocessDetailOn, "On"};
 	g_option_defs_v1_us[2].values[2] = {nullptr, nullptr};
 
+	const bool crt_readonly = false;
+	set_crt_option_values(true);
+
+#if defined(BMSX_SNESMINI_LEGACY)
+	g_option_defs_us[10].default_value = kToggleOff;
+	g_option_defs_v1_us[10].default_value = kToggleOff;
+#else
+	g_option_defs_us[10].default_value = kToggleOn;
+	g_option_defs_v1_us[10].default_value = kToggleOn;
+#endif
+
+#if defined(BMSX_SNESMINI_LEGACY)
+	g_option_defs_us[10].values[0] = {kToggleOff, "Off"};
+	g_option_defs_us[10].values[1] = {nullptr, nullptr};
+	g_option_defs_us[10].values[2] = {nullptr, nullptr};
+	g_option_defs_v1_us[10].values[0] = {kToggleOff, "Off"};
+	g_option_defs_v1_us[10].values[1] = {nullptr, nullptr};
+	g_option_defs_v1_us[10].values[2] = {nullptr, nullptr};
+#else
+	g_option_defs_us[10].values[0] = {kToggleOff, "Off"};
+	g_option_defs_us[10].values[1] = {kToggleOn, "On"};
+	g_option_defs_us[10].values[2] = {nullptr, nullptr};
+	g_option_defs_v1_us[10].values[0] = {kToggleOff, "Off"};
+	g_option_defs_v1_us[10].values[1] = {kToggleOn, "On"};
+	g_option_defs_v1_us[10].values[2] = {nullptr, nullptr};
+#endif
+
 #if BMSX_ENABLE_GLES2
 	if (default_gles2) {
 		std::snprintf(g_option_render_backend_var, sizeof(g_option_render_backend_var),
@@ -613,35 +692,49 @@ static void set_core_options(bool default_gles2) {
 #endif
 	g_option_vars[0].value = g_option_render_backend_var;
 	std::snprintf(g_option_crt_postprocessing_var, sizeof(g_option_crt_postprocessing_var),
-				  "CRT Post-processing; %s|%s", kCrtPostprocessingOff, kCrtPostprocessingOn);
+				  crt_readonly ? "CRT Post-processing; %s" : "CRT Post-processing; %s|%s",
+				  kCrtPostprocessingOff, kCrtPostprocessingOn);
 	g_option_vars[1].value = g_option_crt_postprocessing_var;
 	std::snprintf(g_option_postprocess_detail_var, sizeof(g_option_postprocess_detail_var),
-				  "Post-processing Detail; %s|%s", kPostprocessDetailOff, kPostprocessDetailOn);
+				  crt_readonly ? "Post-processing Detail; %s" : "Post-processing Detail; %s|%s",
+				  kPostprocessDetailOff, kPostprocessDetailOn);
 	g_option_vars[2].value = g_option_postprocess_detail_var;
 	std::snprintf(g_option_crt_noise_var, sizeof(g_option_crt_noise_var),
-				  "CRT Noise; %s|%s", kToggleOff, kToggleOn);
+				  crt_readonly ? "CRT Noise; %s" : "CRT Noise; %s|%s",
+				  kToggleOff, kToggleOn);
 	g_option_vars[3].value = g_option_crt_noise_var;
 	std::snprintf(g_option_crt_color_bleed_var, sizeof(g_option_crt_color_bleed_var),
-				  "CRT Color Bleed; %s|%s", kToggleOff, kToggleOn);
+				  crt_readonly ? "CRT Color Bleed; %s" : "CRT Color Bleed; %s|%s",
+				  kToggleOff, kToggleOn);
 	g_option_vars[4].value = g_option_crt_color_bleed_var;
 	std::snprintf(g_option_crt_scanlines_var, sizeof(g_option_crt_scanlines_var),
-				  "CRT Scanlines; %s|%s", kToggleOff, kToggleOn);
+				  crt_readonly ? "CRT Scanlines; %s" : "CRT Scanlines; %s|%s",
+				  kToggleOff, kToggleOn);
 	g_option_vars[5].value = g_option_crt_scanlines_var;
 	std::snprintf(g_option_crt_blur_var, sizeof(g_option_crt_blur_var),
-				  "CRT Blur; %s|%s", kToggleOff, kToggleOn);
+				  crt_readonly ? "CRT Blur; %s" : "CRT Blur; %s|%s",
+				  kToggleOff, kToggleOn);
 	g_option_vars[6].value = g_option_crt_blur_var;
 	std::snprintf(g_option_crt_glow_var, sizeof(g_option_crt_glow_var),
-				  "CRT Glow; %s|%s", kToggleOff, kToggleOn);
+				  crt_readonly ? "CRT Glow; %s" : "CRT Glow; %s|%s",
+				  kToggleOff, kToggleOn);
 	g_option_vars[7].value = g_option_crt_glow_var;
 	std::snprintf(g_option_crt_fringing_var, sizeof(g_option_crt_fringing_var),
-				  "CRT Fringing; %s|%s", kToggleOff, kToggleOn);
+				  crt_readonly ? "CRT Fringing; %s" : "CRT Fringing; %s|%s",
+				  kToggleOff, kToggleOn);
 	g_option_vars[8].value = g_option_crt_fringing_var;
 	std::snprintf(g_option_crt_aperture_var, sizeof(g_option_crt_aperture_var),
-				  "CRT Aperture; %s|%s", kToggleOff, kToggleOn);
+				  crt_readonly ? "CRT Aperture; %s" : "CRT Aperture; %s|%s",
+				  kToggleOff, kToggleOn);
 	g_option_vars[9].value = g_option_crt_aperture_var;
-	std::snprintf(g_option_psx_dither_2d_var, sizeof(g_option_psx_dither_2d_var),
-				  "PSX Dither 2D; %s|%s", kToggleOff, kToggleOn);
-	g_option_vars[10].value = g_option_psx_dither_2d_var;
+#if defined(BMSX_SNESMINI_LEGACY)
+	std::snprintf(g_option_dither_var, sizeof(g_option_dither_var),
+				  "Dither; %s", kToggleOff);
+#else
+	std::snprintf(g_option_dither_var, sizeof(g_option_dither_var),
+				  "Dither; %s|%s", kToggleOff, kToggleOn);
+#endif
+	g_option_vars[10].value = g_option_dither_var;
 	std::snprintf(g_option_frameskip_var, sizeof(g_option_frameskip_var),
 				  "Frame Skip; %s|%s", kToggleOn, kToggleOff);
 	g_option_vars[11].value = g_option_frameskip_var;
@@ -793,8 +886,12 @@ static bool read_crt_aperture_enabled() {
 	return read_toggle_option(kOptionCrtAperture, "CRT Aperture", false);
 }
 
-static bool read_psx_dither_2d_enabled() {
-	return read_toggle_option(kOptionPsxDither2d, "PSX Dither 2D", false);
+static bool read_dither_enabled() {
+#if defined(BMSX_SNESMINI_LEGACY)
+	return false;
+#else
+	return read_toggle_option(kOptionDither, "Dither", true);
+#endif
 }
 
 static void apply_backend_preference(RenderBackendPreference preference) {
@@ -878,6 +975,7 @@ static void handle_backend_fallback(bmsx::BackendType backend, const char* reaso
 	if (g_platform) {
 		g_platform->switchToSoftwareBackend();
 	}
+	set_core_options(BMSX_ENABLE_GLES2);
 }
 
 static void request_hw_context_for_backend(bmsx::BackendType backend) {
@@ -1009,11 +1107,12 @@ void retro_init(void) {
   g_crt_glow_enabled = read_crt_glow_enabled();
   g_crt_fringing_enabled = read_crt_fringing_enabled();
   g_crt_aperture_enabled = read_crt_aperture_enabled();
-  g_psx_dither_2d_enabled = read_psx_dither_2d_enabled();
+  g_dither_enabled = read_dither_enabled();
   g_frameskip_enabled = read_frameskip_enabled();
   g_frameskip_next = false;
   request_hw_context_for_backend(desired_backend);
   apply_backend_preference(preference);
+  set_core_options(BMSX_ENABLE_GLES2);
 
   const char* system_dir = nullptr;
   if (environ_cb(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &system_dir) && system_dir && system_dir[0]) {
@@ -1067,7 +1166,7 @@ void retro_init(void) {
 								  g_crt_glow_enabled,
 								  g_crt_fringing_enabled,
 								  g_crt_aperture_enabled);
-  g_platform->setPsxDither2dOptions(g_psx_dither_2d_enabled);
+  g_platform->setDitherOptions(g_dither_enabled);
   g_platform->setFrameSkipOptions(g_frameskip_enabled);
   if (isHardwareBackendActive()) {
 	try {
@@ -1294,10 +1393,10 @@ void retro_run(void) {
 									  g_crt_fringing_enabled,
 									  g_crt_aperture_enabled);
 	}
-	const bool new_psx_dither_2d = read_psx_dither_2d_enabled();
-	if (new_psx_dither_2d != g_psx_dither_2d_enabled) {
-	  g_psx_dither_2d_enabled = new_psx_dither_2d;
-	  g_platform->setPsxDither2dOptions(g_psx_dither_2d_enabled);
+	const bool new_dither = read_dither_enabled();
+	if (new_dither != g_dither_enabled) {
+	  g_dither_enabled = new_dither;
+	  g_platform->setDitherOptions(g_dither_enabled);
 	}
 	const bool new_frameskip = read_frameskip_enabled();
 	if (new_frameskip != g_frameskip_enabled) {

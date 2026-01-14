@@ -13,7 +13,9 @@ namespace bmsx {
 namespace CRTPipeline {
 
 void initGLES2(OpenGLES2Backend* backend);
+void initPresentGLES2(OpenGLES2Backend* backend);
 void shutdownGLES2(OpenGLES2Backend* backend);
+void renderPresentGLES2(OpenGLES2Backend* backend, GameView* context, const CRTPipelineState& state);
 void renderCRTGLES2(OpenGLES2Backend* backend, GameView* context, const CRTPipelineState& state);
 
 } // namespace CRTPipeline

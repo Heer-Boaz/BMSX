@@ -17,9 +17,8 @@ option(BMSX_ENABLE_LTO "Enable Link Time Optimization" OFF)
 option(BMSX_ENABLE_ZLIB "Enable zlib-based ROM decompression" ON)
 option(BMSX_ENABLE_PERFORMANCE_LOGS "Enable per-frame performance logging" OFF)
 set(BMSX_ENABLE_GLES2_DEFAULT ON)
-if(WIN32)
-    set(BMSX_ENABLE_GLES2_DEFAULT OFF)
-endif()
+# Previously GLES2 was disabled by default on Windows; enable by default on all platforms
+message(STATUS "BMSX: Default BMSX_ENABLE_GLES2=${BMSX_ENABLE_GLES2_DEFAULT}")
 option(BMSX_ENABLE_GLES2 "Enable OpenGLES2 backend" ${BMSX_ENABLE_GLES2_DEFAULT})
 
 # =============================================================================

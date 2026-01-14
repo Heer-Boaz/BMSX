@@ -17,6 +17,7 @@
 #include "../utils/clamp.h"
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <stdexcept>
 
@@ -351,9 +352,6 @@ void GameView::rebuildGraph() {
 namespace {
 
 constexpr f32 kPi = 3.14159265359f;
-constexpr f32 kGamma = 2.2f;
-constexpr f32 kInvGamma = 1.0f / kGamma;
-
 constexpr f32 kLumaR = 0.299f;
 constexpr f32 kLumaG = 0.587f;
 constexpr f32 kLumaB = 0.114f;
@@ -389,8 +387,17 @@ inline f32 smoothstep(f32 edge0, f32 edge1, f32 x) {
 	return t * t * (3.0f - 2.0f * t);
 }
 
-inline f32 linearToSrgb(f32 c) {
-	return std::pow(std::max(0.0f, c), kInvGamma);
+// --- Exact sRGB transfer functions (IEC 61966-2-1) ---
+inline f32 srgbToLinearExact(f32 c) {
+	c = std::max(0.0f, c);
+	if (c <= 0.04045f) return c / 12.92f;
+	return std::pow((c + 0.055f) / 1.055f, 2.4f);
+}
+
+inline f32 linearToSrgbExact(f32 c) {
+	c = std::max(0.0f, c);
+	if (c <= 0.0031308f) return 12.92f * c;
+	return 1.055f * std::pow(c, 1.0f / 2.4f) - 0.055f;
 }
 
 inline f32 fract(f32 v) {
@@ -402,7 +409,7 @@ const std::array<f32, 256>& srgbToLinearTable() {
 		std::array<f32, 256> t{};
 		for (i32 i = 0; i < 256; ++i) {
 			f32 c = static_cast<f32>(i) / 255.0f;
-			t[static_cast<size_t>(i)] = std::pow(c, kGamma);
+			t[static_cast<size_t>(i)] = srgbToLinearExact(c);
 		}
 		return t;
 	}();
@@ -511,6 +518,18 @@ inline f32 hashNoise(f32 u, f32 v, f32 t) {
 	return fract((px + py) * pz);
 }
 
+inline f32 dither2x2_0_1(i32 x, i32 y) {
+	const bool oddX = (x & 1) != 0;
+	const bool oddY = (y & 1) != 0;
+	const i32 v = oddY ? (oddX ? 1 : 3) : (oddX ? 2 : 0);
+	return (static_cast<f32>(v) + 0.5f) * 0.25f;
+}
+
+inline f32 quantizeRgb565Dither(f32 c, f32 levels, f32 threshold) {
+	const f32 clamped = clamp01(c);
+	return std::floor(clamped * levels + threshold) / levels;
+}
+
 } // namespace
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -541,6 +560,11 @@ void GameView::applyCRTPostProcessing(const u32* src,
 	const f32 srcHf = static_cast<f32>(srcHeight);
 	const f32 srcMaxX = srcWf - 1.0f;
 	const f32 srcMaxY = srcHf - 1.0f;
+
+	// Anchor dither grid to "game pixels" like the GPU path: p = floor(gl_FragCoord / fragscale).
+	// Use integer scales derived from dst/src sizes (fallback assumes integer upscale).
+	const i32 fragscaleX = std::max(1, dstWidth  / std::max(1, srcWidth));
+	const i32 fragscaleY = std::max(1, dstHeight / std::max(1, srcHeight));
 	const f32 time = static_cast<f32>(EngineCore::instance().totalTime());
 	static u32 noiseState = 0x12345678u;
 	noiseState = noiseState * 1664525u + 1013904223u;
@@ -555,6 +579,7 @@ void GameView::applyCRTPostProcessing(const u32* src,
 	const bool useFringing = enableCrt && applyFringing;
 	const bool useAperture = enableCrt && applyAperture;
 	const f32 blurMix = clamp01(blurIntensity);
+	const bool useDither = enable_rgb565dither;
 
 	const u32* scratch = m_crtScratchBuffer.data();
 
@@ -671,9 +696,21 @@ void GameView::applyCRTPostProcessing(const u32* src,
 			color.g *= keep;
 			color.b *= keep;
 
-			const u8 r = static_cast<u8>(clamp01(linearToSrgb(color.r)) * 255.0f);
-			const u8 g = static_cast<u8>(clamp01(linearToSrgb(color.g)) * 255.0f);
-			const u8 b = static_cast<u8>(clamp01(linearToSrgb(color.b)) * 255.0f);
+			f32 outR = clamp01(linearToSrgbExact(color.r));
+			f32 outG = clamp01(linearToSrgbExact(color.g));
+			f32 outB = clamp01(linearToSrgbExact(color.b));
+			if (useDither) {
+				// Hard RGB565 quantize+dither (no guard-mix). Matches shader path when enabled.
+				const i32 px = x / fragscaleX;
+				const i32 py = y / fragscaleY;
+				const f32 threshold = dither2x2_0_1(px, py);
+				outR = quantizeRgb565Dither(outR, 31.0f, threshold);
+				outG = quantizeRgb565Dither(outG, 63.0f, threshold);
+				outB = quantizeRgb565Dither(outB, 31.0f, threshold);
+			}
+			const u8 r = static_cast<u8>(outR * 255.0f);
+			const u8 g = static_cast<u8>(outG * 255.0f);
+			const u8 b = static_cast<u8>(outB * 255.0f);
 			dst[dstIdx] = (0xFF << 24) | (r << 16) | (g << 8) | b;
 		}
 	}

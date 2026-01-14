@@ -67,9 +67,6 @@ struct SpriteGLES2State {
   GLint uniform_tex0 = -1;
   GLint uniform_tex1 = -1;
   GLint uniform_tex2 = -1;
-  GLint uniform_engine_atlas_id = -1;
-  GLint uniform_dither_intensity = -1;
-  GLint uniform_dither_enabled = -1;
   GLint uniform_time = -1;
   GLuint vbo = 0;
   std::vector<uint8_t> vertex_data;
@@ -136,57 +133,24 @@ precision mediump float;
 uniform sampler2D u_texture0;
 uniform sampler2D u_texture1;
 uniform sampler2D u_texture2;
-uniform float u_engineAtlasId;
-uniform float u_ditherIntensity;
-uniform bool u_ditherEnabled;
-uniform float u_time;
 
 varying vec2 v_texcoord;
 varying vec4 v_color_override;
 varying float v_atlas_id;
 
-float bayer4x4(vec2 p) {
-	vec2 wrapped = mod(p, 4.0);
-	int xi = int(wrapped.x);
-	int yi = int(wrapped.y);
-	vec4 row;
-	if (yi == 0) row = vec4(0.0, 8.0, 2.0, 10.0);
-	else if (yi == 1) row = vec4(12.0, 4.0, 14.0, 6.0);
-	else if (yi == 2) row = vec4(3.0, 11.0, 1.0, 9.0);
-	else row = vec4(15.0, 7.0, 13.0, 5.0);
-	return (row[xi] + 0.5) / 16.0;
-}
-
-vec3 quantize_psx_ordered(vec3 sRGB, vec2 pix, float guard0_1) {
-	vec3 levels = vec3(31.0);
-	float threshold = bayer4x4(pix) * clamp(guard0_1, 0.0, 1.0);
-	return floor(sRGB * levels + threshold) / levels;
-}
-
-vec3 srgb_to_linear(vec3 c) { return pow(c, vec3(2.2)); }
-vec3 linear_to_srgb(vec3 c) { return pow(max(c, vec3(0.0)), vec3(1.0 / 2.2)); }
+const float ENGINE_ATLAS_ID = 254.0;
 
 void main() {
 	vec4 texColor;
 	if (v_atlas_id < 0.5) {
 		texColor = texture2D(u_texture0, v_texcoord);
-	} else if (abs(v_atlas_id - u_engineAtlasId) < 0.5) {
+	} else if (abs(v_atlas_id - ENGINE_ATLAS_ID) < 0.5) {
 		texColor = texture2D(u_texture2, v_texcoord);
 	} else {
 		texColor = texture2D(u_texture1, v_texcoord);
 	}
 	texColor *= v_color_override;
 
-	if (u_ditherEnabled) {
-		vec3 colS = linear_to_srgb(texColor.rgb);
-		float stepSz = 1.0 / 31.0;
-		float lumS = dot(colS, vec3(0.299, 0.587, 0.114));
-		float guard = smoothstep(stepSz, 3.0 * stepSz, lumS) * u_ditherIntensity;
-		int jitter = int(fract(u_time * 60.0) * 4.0);
-		vec2 pix = gl_FragCoord.xy + vec2(float(jitter));
-		vec3 qS = quantize_psx_ordered(colS, pix, guard);
-		texColor.rgb = srgb_to_linear(clamp(qS, 0.0, 1.0));
-	}
 	gl_FragColor = texColor;
 }
 )";
@@ -376,12 +340,6 @@ void initGLES2(OpenGLES2Backend* backend, GameView* context) {
   g_sprite.uniform_tex0 = glGetUniformLocation(g_sprite.program, "u_texture0");
   g_sprite.uniform_tex1 = glGetUniformLocation(g_sprite.program, "u_texture1");
   g_sprite.uniform_tex2 = glGetUniformLocation(g_sprite.program, "u_texture2");
-  g_sprite.uniform_engine_atlas_id =
-	  glGetUniformLocation(g_sprite.program, "u_engineAtlasId");
-  g_sprite.uniform_dither_intensity =
-	  glGetUniformLocation(g_sprite.program, "u_ditherIntensity");
-  g_sprite.uniform_dither_enabled =
-	  glGetUniformLocation(g_sprite.program, "u_ditherEnabled");
   g_sprite.uniform_time = glGetUniformLocation(g_sprite.program, "u_time");
 
   setupBuffers();
@@ -392,8 +350,6 @@ void initGLES2(OpenGLES2Backend* backend, GameView* context) {
   glUniform1i(g_sprite.uniform_tex0, kTexUnitAtlasPrimary);
   glUniform1i(g_sprite.uniform_tex1, kTexUnitAtlasSecondary);
   glUniform1i(g_sprite.uniform_tex2, kTexUnitAtlasEngine);
-  glUniform1f(g_sprite.uniform_engine_atlas_id,
-			  static_cast<float>(ENGINE_ATLAS_INDEX));
   if (kSpritesVerboseLog) {
 	std::fprintf(stderr,
 				 "[BMSX][GLES2][Sprites] init program=%u attribs(pos=%d uv=%d "
@@ -451,8 +407,6 @@ void renderSpriteBatchGLES2(OpenGLES2Backend* backend, GameView* context,
   glUniform1i(g_sprite.uniform_tex0, kTexUnitAtlasPrimary);
   glUniform1i(g_sprite.uniform_tex1, kTexUnitAtlasSecondary);
   glUniform1i(g_sprite.uniform_tex2, kTexUnitAtlasEngine);
-  glUniform1f(g_sprite.uniform_engine_atlas_id,
-			  static_cast<float>(ENGINE_ATLAS_INDEX));
   setupAttributes();
 
   glDisable(GL_CULL_FACE);
@@ -464,9 +418,6 @@ void renderSpriteBatchGLES2(OpenGLES2Backend* backend, GameView* context,
   const float baseWidth = static_cast<float>(state.baseWidth);
   const float baseHeight = static_cast<float>(state.baseHeight);
   glUniform2f(g_sprite.uniform_resolution, baseWidth, baseHeight);
-  glUniform1i(g_sprite.uniform_dither_enabled,
-			  state.psxDither2dEnabled ? 1 : 0);
-  glUniform1f(g_sprite.uniform_dither_intensity, state.psxDither2dIntensity);
   glUniform1f(g_sprite.uniform_time,
 			  static_cast<float>(EngineCore::instance().totalTime()));
   const SpriteParallaxRig& parallaxRig = RenderQueues::spriteParallaxRig;

@@ -162,7 +162,7 @@ public:
 							 bool applyGlow,
 							 bool applyFringing,
 							 bool applyAperture);
-	void setPsxDither2dOptions(bool enabled);
+	void setDitherOptions(bool enabled);
 	void setFrameSkipOptions(bool enabled);
 	void setFrameSkipNext(bool skip);
 	void setPlatformPaused(bool paused);
@@ -250,6 +250,7 @@ private:
 	retro_hw_get_current_framebuffer_t m_hw_get_current_framebuffer = nullptr;
 	bool m_crt_postprocessing_enabled = false;
 	i32 m_postprocess_scale = 1;
+	bool m_rgb565_dither_enabled = true;
 	bool m_frameskip_enabled = false;
 	bool m_frameskip_next = false;
 

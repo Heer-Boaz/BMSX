@@ -62,8 +62,6 @@ struct SpritesPipelineState {
 	std::array<f32, 3> ambientColor = {0, 0, 0};
 	f32 ambientIntensity = 0.0f;
 	std::string viewportTypeIde = "viewport";
-	bool psxDither2dEnabled = true;
-	f32 psxDither2dIntensity = 1.0f;
 };
 
 struct CRTPipelineOptions {
@@ -76,6 +74,7 @@ struct CRTPipelineOptions {
 	bool applyGlow = true;
 	bool applyFringing = true;
 	bool applyAperture = true;
+	bool applyRgb565Dither = true;
 	f32 blurIntensity = 0.6f;
 	std::array<f32, 3> glowColor = {0.12f, 0.10f, 0.09f};
 };

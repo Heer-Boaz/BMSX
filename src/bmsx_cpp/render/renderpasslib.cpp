@@ -37,12 +37,6 @@ void RenderPassLibrary::registerBuiltin() {
 			throw BMSX_RUNTIME_ERROR("[RenderPassLibrary] OpenGLES2 backend disabled at compile time.");
 #endif
 			break;
-		case BackendType::WebGL2:
-			// TODO: WebGL2 passes
-			break;
-		case BackendType::WebGPU:
-			// TODO: WebGPU passes
-			break;
 		case BackendType::Headless:
 			// Minimal headless passes
 			break;
@@ -113,8 +107,6 @@ void RenderPassLibrary::registerBuiltinPassesSoftware() {
 
 			spriteState.ambientEnabledDefault = gv->spriteAmbientEnabledDefault;
 			spriteState.ambientFactorDefault = gv->spriteAmbientFactorDefault;
-			spriteState.psxDither2dEnabled = gv->psx_dither_2d_enabled;
-			spriteState.psxDither2dIntensity = gv->psx_dither2d_intensity;
 			spriteState.viewportTypeIde = (gv->viewportTypeIde == GameView::ViewportType::Viewport) ? "viewport" : "offscreen";
 
 			state = spriteState;
@@ -122,32 +114,35 @@ void RenderPassLibrary::registerBuiltinPassesSoftware() {
 		registerPass(desc);
 	}
 
-	// CRT post-processing pass
+	// Present pass (software: direct blit)
 	{
 		RenderPassDef desc;
-		desc.id = "crt";
-		desc.name = "CRT";
+		desc.id = "present";
+		desc.name = "Present";
 		desc.present = true;
 		desc.exec = [](GPUBackend* backend, void*, std::any& state) {
-			auto& engine = EngineCore::instance();
-			auto* view = engine.view();
 			auto& crtState = std::any_cast<CRTPipelineState&>(state);
+			auto* view = EngineCore::instance().view();
 			auto* colorTex = static_cast<SoftwareTexture*>(crtState.colorTex);
 			auto* softBackend = static_cast<SoftwareBackend*>(backend);
 			if (view->crt_postprocessing_enabled) {
-				view->applyCRTPostProcessing(colorTex->data.data(), colorTex->width,
-											 colorTex->height, softBackend->framebuffer(),
-											 softBackend->width(), softBackend->height(),
+				view->applyCRTPostProcessing(colorTex->data.data(),
+											 colorTex->width,
+											 colorTex->height,
+											 softBackend->framebuffer(),
+											 softBackend->width(),
+											 softBackend->height(),
 											 softBackend->pitch());
-				return;
+			} else {
+				DitherParams dither;
+				dither.enabled = view->enable_rgb565dither;
+				dither.intensity = dither.enabled ? 1.0f : 0.0f;
+				dither.jitter = 0;
+				const Color tint{1.0f, 1.0f, 1.0f, 1.0f};
+				softBackend->blitTexture(colorTex, 0, 0, colorTex->width, colorTex->height,
+										 0, 0, softBackend->width(), softBackend->height(),
+										 0.0f, tint, false, false, dither, false);
 			}
-
-			DitherParams dither;
-			dither.enabled = false;
-			const Color tint{1.0f, 1.0f, 1.0f, 1.0f};
-			softBackend->blitTexture(colorTex, 0, 0, colorTex->width, colorTex->height,
-									 0, 0, softBackend->width(), softBackend->height(),
-									 0.0f, tint, false, false, dither, false);
 		};
 		desc.prepare = [](GPUBackend*, std::any&) {};
 		registerPass(desc);
@@ -222,12 +217,31 @@ void RenderPassLibrary::registerBuiltinPassesOpenGLES2() {
 
 			spriteState.ambientEnabledDefault = gv->spriteAmbientEnabledDefault;
 			spriteState.ambientFactorDefault = gv->spriteAmbientFactorDefault;
-			spriteState.psxDither2dEnabled = gv->psx_dither_2d_enabled;
-			spriteState.psxDither2dIntensity = gv->psx_dither2d_intensity;
 			spriteState.viewportTypeIde = (gv->viewportTypeIde == GameView::ViewportType::Viewport) ? "viewport" : "offscreen";
 
 			state = spriteState;
 		};
+		registerPass(desc);
+	}
+
+	// Present pass (GLES2, no CRT)
+	{
+		RenderPassDef desc;
+		desc.id = "present";
+		desc.name = "Present";
+		desc.present = true;
+		desc.bootstrap = [](GPUBackend* backend) {
+			CRTPipeline::initPresentGLES2(static_cast<OpenGLES2Backend*>(backend));
+		};
+		desc.exec = [](GPUBackend* backend, void*, std::any& state) {
+			auto& engine = EngineCore::instance();
+			auto& crtState = std::any_cast<CRTPipelineState&>(state);
+			CRTPipeline::renderPresentGLES2(static_cast<OpenGLES2Backend*>(backend), engine.view(), crtState);
+		};
+		desc.shouldExecute = []() {
+			return !EngineCore::instance().view()->crt_postprocessing_enabled;
+		};
+		desc.prepare = [](GPUBackend*, std::any&) { };
 		registerPass(desc);
 	}
 
@@ -244,6 +258,9 @@ void RenderPassLibrary::registerBuiltinPassesOpenGLES2() {
 			auto& engine = EngineCore::instance();
 			auto& crtState = std::any_cast<CRTPipelineState&>(state);
 			CRTPipeline::renderCRTGLES2(static_cast<OpenGLES2Backend*>(backend), engine.view(), crtState);
+		};
+		desc.shouldExecute = []() {
+			return EngineCore::instance().view()->crt_postprocessing_enabled;
 		};
 		desc.prepare = [](GPUBackend*, std::any&) { };
 		registerPass(desc);
@@ -446,6 +463,7 @@ std::unique_ptr<RenderGraphRuntime> RenderPassLibrary::buildRenderGraph(GameView
 					crtState.options.glowColor = view->glowColor;
 					crtState.options.applyFringing = view->applyFringing;
 					crtState.options.applyAperture = view->applyAperture;
+					crtState.options.applyRgb565Dither = view->enable_rgb565dither;
 				} else {
 					crtState.options.applyNoise = false;
 					crtState.options.applyColorBleed = false;
@@ -454,13 +472,14 @@ std::unique_ptr<RenderGraphRuntime> RenderPassLibrary::buildRenderGraph(GameView
 					crtState.options.applyGlow = false;
 					crtState.options.applyFringing = false;
 					crtState.options.applyAperture = false;
+					crtState.options.applyRgb565Dither = view->enable_rgb565dither;
 					crtState.options.noiseIntensity = view->noiseIntensity;
 					crtState.options.colorBleed = view->colorBleed;
 					crtState.options.blurIntensity = view->blurIntensity;
 					crtState.options.glowColor = view->glowColor;
 				}
 
-				setState("crt", crtState);
+				setState(passId, crtState);
 				execute(passId, nullptr);
 			} else if (isStateOnly) {
 				execute(passId, nullptr);

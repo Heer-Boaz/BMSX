@@ -126,7 +126,7 @@ void submitSprite(const ImgRenderSubmission& options) {
 	// Colorize
 	const Color defaultColor{1.0f, 1.0f, 1.0f, 1.0f};
 	pooled.options.colorize = options.colorize ? *options.colorize : defaultColor;
-	pooled.options.parallax_weight = options.parallax_weight;
+	pooled.options.parallax_weight = options.parallax_weight.value_or(0.0f);
 
 	s_spriteQueue.submit(pooled);
 }
@@ -183,7 +183,7 @@ const std::vector<RenderSubmission>& copySpriteQueueForPlayback() {
 		dst.scale = src.scale;
 		dst.flip = src.flip;
 		dst.colorize = src.colorize;
-		dst.parallax_weight = src.parallax_weight;
+		dst.parallax_weight = src.parallax_weight.value_or(0.0f);
 		count += 1;
 	});
 	s_spriteQueuePlaybackBuffer.resize(count);
