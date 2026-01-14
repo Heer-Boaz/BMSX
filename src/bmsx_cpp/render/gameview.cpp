@@ -606,6 +606,11 @@ void GameView::applyCRTPostProcessing(const u32* src,
 					qR = quantizeRgb565Bias(sigR, 31.0f, thr);
 					qG = quantizeRgb565Bias(sigG, 63.0f, thr);
 					qB = quantizeRgb565Bias(sigB, 31.0f, thr);
+				} else if (ditherType == 3) {
+					const f32 thr = bayer4x4_0_1(sx, sy);
+					qR = quantizeRgb565Bias(sigR, 7.0f, thr);
+					qG = quantizeRgb565Bias(sigG, 15.0f, thr);
+					qB = quantizeRgb565Bias(sigB, 7.0f, thr);
 				}
 				color.r = srgbToLinearExact(qR);
 				color.g = srgbToLinearExact(qG);

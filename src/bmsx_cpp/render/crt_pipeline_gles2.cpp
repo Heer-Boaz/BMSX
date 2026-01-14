@@ -407,6 +407,39 @@ vec3 quantize_rgb565_dither(vec3 sRGB, vec2 pix){
 	return floor(x * levels + thrNorm) / levels;
 }
 
+vec3 quantize_msx10_343(vec3 sRGB, vec2 pix){
+	vec3 levels = vec3(7.0, 15.0, 7.0);
+	float fx = mod(pix.x, 4.0);
+	float fy = mod(pix.y, 4.0);
+	int ix = int(fx < 0.0 ? fx + 4.0 : fx);
+	int iy = int(fy < 0.0 ? fy + 4.0 : fy);
+	float thr;
+	if (iy == 0) {
+		if (ix == 0) thr = 0.0;
+		else if (ix == 1) thr = 8.0;
+		else if (ix == 2) thr = 2.0;
+		else thr = 10.0;
+	} else if (iy == 1) {
+		if (ix == 0) thr = 12.0;
+		else if (ix == 1) thr = 4.0;
+		else if (ix == 2) thr = 14.0;
+		else thr = 6.0;
+	} else if (iy == 2) {
+		if (ix == 0) thr = 3.0;
+		else if (ix == 1) thr = 11.0;
+		else if (ix == 2) thr = 1.0;
+		else thr = 9.0;
+	} else {
+		if (ix == 0) thr = 15.0;
+		else if (ix == 1) thr = 7.0;
+		else if (ix == 2) thr = 13.0;
+		else thr = 5.0;
+	}
+	float thrNorm = (thr + 0.5) / 16.0;
+	vec3 x = clamp(sRGB, 0.0, 1.0);
+	return floor(x * levels + thrNorm) / levels;
+}
+
 int psxDitherOffset4x4(vec2 pix){
 	float fx = mod(pix.x, 4.0);
 	float fy = mod(pix.y, 4.0);
@@ -455,6 +488,8 @@ void main(){
 		sigS = quantize_rgb555_psx(sigS, sPix);
 	} else if (u_dither_type == 2) {
 		sigS = quantize_rgb565_dither(sigS, sPix);
+	} else if (u_dither_type == 3) {
+		sigS = quantize_msx10_343(sigS, sPix);
 	}
 	color = srgb_to_linear(sigS);
 

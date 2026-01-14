@@ -57,7 +57,8 @@ public:
 	enum class DitherType : i32 {
 		None = 0,
 		PSX = 1,
-		RGB565 = 2
+		RGB565 = 2,
+		MSX10 = 3
 	};
 	GameView(GameViewHost* host, i32 viewportWidth, i32 viewportHeight);
 	~GameView();

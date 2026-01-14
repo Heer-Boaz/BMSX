@@ -296,6 +296,7 @@ export const enum CRTDitherType {
 	None = 0,
 	PSX = 1,
 	RGB565 = 2,
+	MSX10 = 3,
 }
 
 export interface DeviceQuantizePipelineState {

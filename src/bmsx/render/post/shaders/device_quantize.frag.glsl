@@ -6,7 +6,7 @@ precision highp float;
 uniform sampler2D u_texture;  // offscreen scene (linear)
 uniform vec2 u_srcResolution; // base "logical" resolution (e.g., 256x212)
 uniform float u_fragscale;    // integer upscale (e.g., 2.0)
-uniform uint u_dither_type;   // 1=rgb555_psx, 2=rgb565
+uniform uint u_dither_type;   // 1=rgb555_psx, 2=rgb565, 3=msx10_343
 
 in vec2 v_texcoord;
 out vec4 outputColor;
@@ -36,11 +36,39 @@ const float B4[16] = float[16](
   15.0, 7.0, 13.0, 5.0
 );
 
+vec3 quantize_levels(vec3 s, vec3 levels) {
+  return floor(clamp(s, 0.0, 1.0) * levels) / levels;
+}
+const vec3 LUMA = vec3(0.299, 0.587, 0.114);
+
 float bayer4x4_0_1(ivec2 p){
   ivec2 w = p & ivec2(3);
   int idx = w.x + (w.y << 2);
   return (B4[idx] + 0.5) / 16.0;
 }
+
+// vec3 quantize_msx2_rgb343_luma(vec3 sRGB, ivec2 pix) {
+//   vec3 levels = vec3(7.0, 15.0, 7.0);            // RGB343 = 0..7/15/7 → 8/16/8 levels → 1024 colors
+
+//   float thr = bayer4x4_0_1(pix);      // 0..1
+
+//   vec3 q0 = quantize_levels(sRGB, levels);
+//   vec3 q1 = quantize_levels(sRGB + (1.0 / levels), levels); // candidate one step up
+
+//   float l  = dot(sRGB, LUMA);
+//   float l0 = dot(q0, LUMA);
+//   float l1 = dot(q1, LUMA);
+
+//   // threshold decides whether we push brightness up
+//   // (robust version: compare l against interpolated threshold between l0 and l1)
+//   float cut = mix(l0, l1, thr);
+//   return (l > cut) ? q1 : q0;
+// }
+
+// vec3 limit_rgb333(vec3 sRGB) {
+//   vec3 levels = vec3(7.0, 7.0, 7.0);
+//   return quantize_levels(sRGB, levels);
+// }
 
 // Quantize to RGB565 using 4x4 threshold-bias (no per-channel offsets)
 vec3 quantize_rgb565_dither(vec3 sRGB, ivec2 pix){
@@ -49,6 +77,26 @@ vec3 quantize_rgb565_dither(vec3 sRGB, ivec2 pix){
   vec3 x = clamp(sRGB, 0.0, 1.0);
   return floor(x * levels + thr) / levels;
 }
+
+// MSX 10-bit 3:4:3 quantize with ordered dither
+vec3 quantize_msx10_343(vec3 sRGB, ivec2 pix){
+  vec3 levels = vec3(7.0, 15.0, 7.0);
+  float thr = bayer4x4_0_1(pix);
+  vec3 x = clamp(sRGB, 0.0, 1.0);
+  return floor(x * levels + thr) / levels;
+}
+
+// vec3 quantize_msx10_343(vec3 sRGB, ivec2 pix){
+//   vec3 levels = vec3(7.0, 15.0, 7.0);
+
+//   float tr = bayer4x4_0_1(pix);
+//   float tg = bayer4x4_0_1(pix + ivec2(1,0));
+//   float tb = bayer4x4_0_1(pix + ivec2(0,1));
+//   vec3  thr = vec3(tr,tg,tb);
+
+//   vec3 x = clamp(sRGB, 0.0, 1.0);
+//   return floor(x * levels + thr) / levels;
+// }
 
 // PSX 4x4 signed dither offsets (8-bit domain)
 const int PSX_DITHER[16] = int[16](
@@ -94,6 +142,8 @@ void main(){
     sigS = quantize_rgb555_psx(sigS, sPix);
   } else if (u_dither_type == 2u) {
     sigS = quantize_rgb565_dither(sigS, sPix);
+  } else if (u_dither_type == 3u) {
+    sigS = quantize_msx10_343(sigS, sPix);
   }
 
   color = srgb_to_linear(sigS);
