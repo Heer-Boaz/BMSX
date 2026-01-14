@@ -76,24 +76,26 @@ vec3 srgb_to_linear(vec3 c) {
   return mix(hi, lo, vec3(cutoff));
 }
 
-// --- RGB565 "GL_DITHER-like" 2x2 ordered dither (checkerboard-ish) ---
-const float D2[4] = float[4](
-  0.0, 2.0,
-  3.0, 1.0
+// --- RGB565 ordered dither (4x4 Bayer matrix) ---
+const float B4[16] = float[16](
+  0.0,  8.0,  2.0, 10.0,
+  12.0, 4.0, 14.0, 6.0,
+  3.0, 11.0, 1.0,  9.0,
+  15.0, 7.0, 13.0, 5.0
 );
 
-float dither2x2_0_1(ivec2 p){
-  ivec2 w = p & ivec2(1);           // wrap 2x2
-  int idx = w.x + (w.y << 1);
-  return (D2[idx] + 0.5) / 4.0;     // 0..1
+float bayer4x4_0_1(ivec2 p){
+  ivec2 w = p & ivec2(3);
+  int idx = w.x + (w.y << 2);
+  return (B4[idx] + 0.5) / 16.0;
 }
 
-// Quantize to RGB565 using 2x2 threshold-bias (no per-channel offsets)
+// Quantize to RGB565 using 4x4 threshold-bias (no per-channel offsets)
 vec3 quantize_rgb565_glDither(vec3 sRGB, ivec2 pix){
   vec3 levels = vec3(31.0, 63.0, 31.0);
-  float thr = dither2x2_0_1(pix);
+  float thr = bayer4x4_0_1(pix);
   vec3 x = clamp(sRGB, 0.0, 1.0);
-  return floor(x * levels + thr) / levels; // truncation-style
+  return floor(x * levels + thr) / levels;
 }
 
 // --- Noise ---

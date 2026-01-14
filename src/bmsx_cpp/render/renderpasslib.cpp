@@ -239,7 +239,8 @@ void RenderPassLibrary::registerBuiltinPassesOpenGLES2() {
 			CRTPipeline::renderPresentGLES2(static_cast<OpenGLES2Backend*>(backend), engine.view(), crtState);
 		};
 		desc.shouldExecute = []() {
-			return !EngineCore::instance().view()->crt_postprocessing_enabled;
+			const auto* view = EngineCore::instance().view();
+			return !view->crt_postprocessing_enabled && !view->enable_rgb565dither;
 		};
 		desc.prepare = [](GPUBackend*, std::any&) { };
 		registerPass(desc);
@@ -260,7 +261,8 @@ void RenderPassLibrary::registerBuiltinPassesOpenGLES2() {
 			CRTPipeline::renderCRTGLES2(static_cast<OpenGLES2Backend*>(backend), engine.view(), crtState);
 		};
 		desc.shouldExecute = []() {
-			return EngineCore::instance().view()->crt_postprocessing_enabled;
+			const auto* view = EngineCore::instance().view();
+			return view->crt_postprocessing_enabled || view->enable_rgb565dither;
 		};
 		desc.prepare = [](GPUBackend*, std::any&) { };
 		registerPass(desc);

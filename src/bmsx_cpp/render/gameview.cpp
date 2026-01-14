@@ -518,16 +518,21 @@ inline f32 hashNoise(f32 u, f32 v, f32 t) {
 	return fract((px + py) * pz);
 }
 
-inline f32 dither2x2_0_1(i32 x, i32 y) {
-	const bool oddX = (x & 1) != 0;
-	const bool oddY = (y & 1) != 0;
-	const i32 v = oddY ? (oddX ? 1 : 3) : (oddX ? 2 : 0);
-	return (static_cast<f32>(v) + 0.5f) * 0.25f;
+inline f32 bayer4x4_0_1(i32 x, i32 y) {
+	static const f32 B4[16] = {
+		0.0f,  8.0f,  2.0f, 10.0f,
+		12.0f, 4.0f, 14.0f, 6.0f,
+		3.0f, 11.0f, 1.0f,  9.0f,
+		15.0f, 7.0f, 13.0f, 5.0f,
+	};
+	const i32 ix = x & 3;
+	const i32 iy = y & 3;
+	return (B4[ix + (iy << 2)] + 0.5f) * (1.0f / 16.0f);
 }
 
-inline f32 quantizeRgb565Dither(f32 c, f32 levels, f32 threshold) {
-	const f32 clamped = clamp01(c);
-	return std::floor(clamped * levels + threshold) / levels;
+inline f32 quantizeRgb565Bias(f32 c, f32 levels, f32 thr0_1) {
+	const f32 x = clamp01(c);
+	return std::floor(x * levels + thr0_1) / levels;
 }
 
 } // namespace
@@ -560,11 +565,6 @@ void GameView::applyCRTPostProcessing(const u32* src,
 	const f32 srcHf = static_cast<f32>(srcHeight);
 	const f32 srcMaxX = srcWf - 1.0f;
 	const f32 srcMaxY = srcHf - 1.0f;
-
-	// Anchor dither grid to "game pixels" like the GPU path: p = floor(gl_FragCoord / fragscale).
-	// Use integer scales derived from dst/src sizes (fallback assumes integer upscale).
-	const i32 fragscaleX = std::max(1, dstWidth  / std::max(1, srcWidth));
-	const i32 fragscaleY = std::max(1, dstHeight / std::max(1, srcHeight));
 	const f32 time = static_cast<f32>(EngineCore::instance().totalTime());
 	static u32 noiseState = 0x12345678u;
 	noiseState = noiseState * 1664525u + 1013904223u;
@@ -700,13 +700,12 @@ void GameView::applyCRTPostProcessing(const u32* src,
 			f32 outG = clamp01(linearToSrgbExact(color.g));
 			f32 outB = clamp01(linearToSrgbExact(color.b));
 			if (useDither) {
-				// Hard RGB565 quantize+dither (no guard-mix). Matches shader path when enabled.
-				const i32 px = x / fragscaleX;
-				const i32 py = y / fragscaleY;
-				const f32 threshold = dither2x2_0_1(px, py);
-				outR = quantizeRgb565Dither(outR, 31.0f, threshold);
-				outG = quantizeRgb565Dither(outG, 63.0f, threshold);
-				outB = quantizeRgb565Dither(outB, 31.0f, threshold);
+				const i32 sx = static_cast<i32>(std::floor(srcX + 0.5f));
+				const i32 sy = static_cast<i32>(std::floor(srcY + 0.5f));
+				const f32 thr = bayer4x4_0_1(sx, sy);
+				outR = quantizeRgb565Bias(outR, 31.0f, thr);
+				outG = quantizeRgb565Bias(outG, 63.0f, thr);
+				outB = quantizeRgb565Bias(outB, 31.0f, thr);
 			}
 			const u8 r = static_cast<u8>(outR * 255.0f);
 			const u8 g = static_cast<u8>(outG * 255.0f);

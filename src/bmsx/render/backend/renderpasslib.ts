@@ -364,38 +364,26 @@ export class RenderPassLibrary {
 						const colorTex = frameColorHandle != null ? ctx.getTex(frameColorHandle) : null;
 						const gv = $.view;
 						// TODO: Move CRT state setup to prepare()?
+						const applyCrt = !!gv.crt_postprocessing_enabled;
 						this.setState('crt', {
 							width: gv.offscreenCanvasSize.x,
 							height: gv.offscreenCanvasSize.y,
 							baseWidth: gv.viewportSize.x,
 							baseHeight: gv.viewportSize.y,
 							colorTex,
-							options: !!gv.crt_postprocessing_enabled ? {
-								applyNoise: !!gv.enable_noise,
-								applyColorBleed: !!gv.enable_colorbleed,
-								applyScanlines: !!gv.enable_scanlines,
-								applyBlur: !!gv.enable_blur,
-								applyGlow: !!gv.enable_glow,
-								applyFringing: !!gv.enable_fringing,
-								applyAperture: !!gv.enable_aperture,
+							options: {
+								applyNoise: applyCrt && !!gv.enable_noise,
+								applyColorBleed: applyCrt && !!gv.enable_colorbleed,
+								applyScanlines: applyCrt && !!gv.enable_scanlines,
+								applyBlur: applyCrt && !!gv.enable_blur,
+								applyGlow: applyCrt && !!gv.enable_glow,
+								applyFringing: applyCrt && !!gv.enable_fringing,
+								applyAperture: applyCrt && !!gv.enable_aperture,
 								applyRgb565Dither: !!gv.enable_rgb565dither,
 								noiseIntensity: gv.noiseIntensity,
 								colorBleed: gv.colorBleed,
 								blurIntensity: gv.blurIntensity,
 								glowColor: gv.glowColor,
-							} as CRTPipelineState['options'] : {
-								applyNoise: false,
-								applyColorBleed: false,
-								applyScanlines: false,
-								applyBlur: false,
-								applyGlow: false,
-								applyFringing: false,
-								applyAperture: false,
-								applyRgb565Dither: false,
-								noiseIntensity: gv.noiseIntensity, // Will be unused
-								colorBleed: gv.colorBleed, // Will be unused
-								blurIntensity: gv.blurIntensity, // Will be unused
-								glowColor: gv.glowColor, // Will be unused
 							},
 						});
 						this.execute(desc.id, null);

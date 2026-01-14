@@ -88,17 +88,9 @@ precision mediump float;
 uniform sampler2D u_texture;
 varying vec2 v_texcoord;
 
-vec3 linear_to_srgb(vec3 c) {
-	c = max(c, vec3(0.0));
-	bvec3 cutoff = lessThanEqual(c, vec3(0.0031308));
-	vec3 lo = c * 12.92;
-	vec3 hi = 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055;
-	return mix(hi, lo, vec3(cutoff));
-}
-
 void main() {
 	vec3 color = texture2D(u_texture, v_texcoord).rgb;
-	gl_FragColor = vec4(linear_to_srgb(color), 1.0);
+	gl_FragColor = vec4(color, 1.0);
 }
 )";
 
@@ -160,23 +152,37 @@ vec3 srgb_to_linear(vec3 c) {
 	return mix(hi, lo, vec3(cutoff));
 }
 
-float dither2x2_0_1(vec2 p){
-	float x = mod(p.x, 2.0);
-	float y = mod(p.y, 2.0);
-	float v = 0.0;
-	if (y < 1.0) {
-		v = (x < 1.0) ? 0.0 : 2.0;
-	} else {
-		v = (x < 1.0) ? 3.0 : 1.0;
-	}
-	return (v + 0.5) / 4.0;
-}
-
 vec3 quantize_rgb565_glDither(vec3 sRGB, vec2 pix){
 	vec3 levels = vec3(31.0, 63.0, 31.0);
-	float thr = dither2x2_0_1(pix);
+	float fx = mod(pix.x, 4.0);
+	float fy = mod(pix.y, 4.0);
+	int ix = int(fx < 0.0 ? fx + 4.0 : fx);
+	int iy = int(fy < 0.0 ? fy + 4.0 : fy);
+	float thr;
+	if (iy == 0) {
+		if (ix == 0) thr = 0.0;
+		else if (ix == 1) thr = 8.0;
+		else if (ix == 2) thr = 2.0;
+		else thr = 10.0;
+	} else if (iy == 1) {
+		if (ix == 0) thr = 12.0;
+		else if (ix == 1) thr = 4.0;
+		else if (ix == 2) thr = 14.0;
+		else thr = 6.0;
+	} else if (iy == 2) {
+		if (ix == 0) thr = 3.0;
+		else if (ix == 1) thr = 11.0;
+		else if (ix == 2) thr = 1.0;
+		else thr = 9.0;
+	} else {
+		if (ix == 0) thr = 15.0;
+		else if (ix == 1) thr = 7.0;
+		else if (ix == 2) thr = 13.0;
+		else thr = 5.0;
+	}
+	float thrNorm = (thr + 0.5) / 16.0;
 	vec3 x = clamp(sRGB, 0.0, 1.0);
-	return floor(x * levels + thr) / levels;
+	return floor(x * levels + thrNorm) / levels;
 }
 
 float hashNoise(vec2 uv, float t){
