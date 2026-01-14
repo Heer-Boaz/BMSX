@@ -63,6 +63,9 @@ endif()
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     add_compile_options(-O3 -Wall -Wextra -Wpedantic)
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        add_compile_options(-Wno-psabi)
+    endif()
     if(BMSX_ENABLE_LTO)
         add_compile_options(-flto)
         add_link_options(-flto)
@@ -85,7 +88,7 @@ add_library(bmsx_core STATIC
     subscription.cpp
 
     # Vendor (header-only implementations)
-    vendor/stb_impl.cpp
+    vendor/stb_impl.c
 
     # Core systems
     core/types.cpp
@@ -131,7 +134,6 @@ add_library(bmsx_core STATIC
 )
 
 # stb is plain C; compile it as C to avoid libstdc++'s legacy C wrappers (e.g. <math.h>)
-set_source_files_properties(vendor/stb_impl.cpp PROPERTIES LANGUAGE C)
 
 # Required for linking static library into shared library
 set_target_properties(bmsx_core PROPERTIES POSITION_INDEPENDENT_CODE ON)

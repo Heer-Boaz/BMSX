@@ -1158,6 +1158,10 @@ std::string VMRuntime::formatVmString(const std::string& templateStr, const std:
 			break;
 		}
 
+		if (cursor >= templateStr.size()) {
+			throw BMSX_RUNTIME_ERROR("string.format incomplete format specifier.");
+		}
+
 		std::optional<int> width;
 		if (templateStr[cursor] == '*') {
 			int widthArg = static_cast<int>(asNumber(takeArgument()));
@@ -1177,11 +1181,18 @@ std::string VMRuntime::formatVmString(const std::string& templateStr, const std:
 		}
 
 		std::optional<int> precision;
-		if (templateStr[cursor] == '.') {
+		if (cursor < templateStr.size() && templateStr[cursor] == '.') {
 			cursor += 1;
+			if (cursor >= templateStr.size()) {
+				throw BMSX_RUNTIME_ERROR("string.format incomplete format specifier.");
+			}
 			if (templateStr[cursor] == '*') {
 				int precisionArg = static_cast<int>(asNumber(takeArgument()));
-				precision = precisionArg >= 0 ? precisionArg : std::optional<int>{};
+				if (precisionArg >= 0) {
+					precision = precisionArg;
+				} else {
+					precision.reset();
+				}
 				cursor += 1;
 			} else {
 				const ParsedInt parsedPrecision = readInteger(cursor);

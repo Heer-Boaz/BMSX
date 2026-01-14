@@ -1422,6 +1422,7 @@ void retro_run(void) {
 //   static double minMs = std::numeric_limits<double>::infinity();
 //   static double maxMs = 0.0;
 //   static uint64_t accCalls = 0;
+#if BMSX_ENABLE_PERFORMANCE_LOGS
   static auto perfStart = std::chrono::steady_clock::now();
   static double accRunMs = 0.0;
   static double accTickMs = 0.0;
@@ -1438,6 +1439,7 @@ void retro_run(void) {
   static double maxVmDrawMs = 0.0;
   static double maxDrawGameMs = 0.0;
   static uint64_t perfFrames = 0;
+#endif
 
   // const auto now = std::chrono::steady_clock::now();
   // const double dtSec = std::chrono::duration<double>(now - lastFrameTime).count();
