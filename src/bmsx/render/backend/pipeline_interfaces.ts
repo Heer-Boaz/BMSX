@@ -41,6 +41,7 @@ export type RenderPassId =
 	| 'meshbatch'
 	| 'particles'
 	| 'sprites'
+	| 'device_quantize'
 	| 'crt'
 	| 'frame_shared'
 	| 'frame_resolve'
@@ -54,6 +55,21 @@ export interface GraphicsPipelineBindingLayout {
 	textures?: { name: string }[];
 	samplers?: { name: string }[];
 	buffers?: { name: string; size: number; usage: 'uniform' | 'storage' }[];
+}
+
+export type RenderGraphSlot = 'frame_color' | 'frame_depth' | 'device_color';
+
+export interface RenderGraphPassContext {
+	view: RenderContext;
+	getTex(slot: RenderGraphSlot): TextureHandle;
+}
+
+export interface RenderPassGraphDef<S = unknown> {
+	reads?: RenderGraphSlot[];
+	writes?: RenderGraphSlot[];
+	presentInput?: 'auto' | RenderGraphSlot;
+	skip?: boolean;
+	buildState?: (ctx: RenderGraphPassContext) => S;
 }
 
 // Attachments for a render pass instance (runtime execution)
@@ -81,6 +97,7 @@ export interface RenderPassDef<S = unknown> {
 	vsCode?: string;
 	fsCode?: string;
 	bindingLayout?: GraphicsPipelineBindingLayout;
+	graph?: RenderPassGraphDef<S>;
 	name: string;
 	writesDepth?: boolean;
 	depthTest?: boolean;   // pipeline uses depth testing (may be read-only)
@@ -186,6 +203,7 @@ export interface RenderPassStateRegistry {
 	['meshbatch']: MeshBatchPipelineState;
 	['particles']: ParticlePipelineState;
 	['sprites']: SpritesPipelineState;
+	['device_quantize']: DeviceQuantizePipelineState;
 	['crt']: CRTPipelineState;
 	['frame_shared']: FrameSharedState;
 	['frame_resolve']: never;
@@ -280,6 +298,15 @@ export const enum CRTDitherType {
 	RGB565 = 2,
 }
 
+export interface DeviceQuantizePipelineState {
+	width: number;
+	height: number;
+	baseWidth: number;
+	baseHeight: number;
+	colorTex: TextureHandle;
+	ditherType: CRTDitherType;
+}
+
 export interface CRTPipelineState {
 	width: number;
 	height: number;
@@ -296,7 +323,6 @@ export interface CRTPipelineState {
 		enableGlow: boolean;
 		enableFringing: boolean;
 		enableAperture: boolean;
-		ditherType: CRTDitherType;
 		blurIntensity: number;
 		glowColor: [number, number, number];
 	};

@@ -34,7 +34,6 @@ struct CRTGLES2State {
 	GLint uniform_apply_glow = -1;
 	GLint uniform_apply_fringing = -1;
 	GLint uniform_apply_aperture = -1;
-	GLint uniform_apply_rgb565_dither = -1;
 	GLint uniform_noise_intensity = -1;
 	GLint uniform_color_bleed = -1;
 	GLint uniform_blur_intensity = -1;
@@ -47,6 +46,24 @@ struct CRTGLES2State {
 };
 
 CRTGLES2State g_crt;
+
+struct DeviceQuantizeGLES2State {
+	GLuint program = 0;
+	GLint attrib_pos = -1;
+	GLint attrib_uv = -1;
+	GLint uniform_resolution = -1;
+	GLint uniform_src_resolution = -1;
+	GLint uniform_scale = -1;
+	GLint uniform_fragscale = -1;
+	GLint uniform_dither_type = -1;
+	GLint uniform_texture = -1;
+	GLuint vbo_pos = 0;
+	GLuint vbo_uv = 0;
+	i32 width = -1;
+	i32 height = -1;
+};
+
+DeviceQuantizeGLES2State g_device;
 
 struct PresentGLES2State {
 	GLuint program = 0;
@@ -88,9 +105,17 @@ precision mediump float;
 uniform sampler2D u_texture;
 varying vec2 v_texcoord;
 
+vec3 linear_to_srgb(vec3 c) {
+	c = max(c, vec3(0.0));
+	bvec3 cutoff = lessThanEqual(c, vec3(0.0031308));
+	vec3 lo = c * 12.92;
+	vec3 hi = 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055;
+	return mix(hi, lo, vec3(cutoff));
+}
+
 void main() {
 	vec3 color = texture2D(u_texture, v_texcoord).rgb;
-	gl_FragColor = vec4(color, 1.0);
+	gl_FragColor = vec4(linear_to_srgb(color), 1.0);
 }
 )";
 
@@ -111,7 +136,6 @@ uniform bool u_enableBlur;
 uniform bool u_enableGlow;
 uniform bool u_enableFringing;
 uniform bool u_enableAperture;
-uniform int u_dither_type;
 
 uniform float u_noiseIntensity;
 uniform vec3 u_colorBleed;
@@ -143,81 +167,6 @@ vec3 linear_to_srgb(vec3 c) {
 	vec3 lo = c * 12.92;
 	vec3 hi = 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055;
 	return mix(hi, lo, vec3(cutoff));
-}
-vec3 srgb_to_linear(vec3 c) {
-	c = max(c, vec3(0.0));
-	bvec3 cutoff = lessThanEqual(c, vec3(0.04045));
-	vec3 lo = c / 12.92;
-	vec3 hi = pow((c + 0.055) / 1.055, vec3(2.4));
-	return mix(hi, lo, vec3(cutoff));
-}
-
-vec3 quantize_rgb565_dither(vec3 sRGB, vec2 pix){
-	vec3 levels = vec3(31.0, 63.0, 31.0);
-	float fx = mod(pix.x, 4.0);
-	float fy = mod(pix.y, 4.0);
-	int ix = int(fx < 0.0 ? fx + 4.0 : fx);
-	int iy = int(fy < 0.0 ? fy + 4.0 : fy);
-	float thr;
-	if (iy == 0) {
-		if (ix == 0) thr = 0.0;
-		else if (ix == 1) thr = 8.0;
-		else if (ix == 2) thr = 2.0;
-		else thr = 10.0;
-	} else if (iy == 1) {
-		if (ix == 0) thr = 12.0;
-		else if (ix == 1) thr = 4.0;
-		else if (ix == 2) thr = 14.0;
-		else thr = 6.0;
-	} else if (iy == 2) {
-		if (ix == 0) thr = 3.0;
-		else if (ix == 1) thr = 11.0;
-		else if (ix == 2) thr = 1.0;
-		else thr = 9.0;
-	} else {
-		if (ix == 0) thr = 15.0;
-		else if (ix == 1) thr = 7.0;
-		else if (ix == 2) thr = 13.0;
-		else thr = 5.0;
-	}
-	float thrNorm = (thr + 0.5) / 16.0;
-	vec3 x = clamp(sRGB, 0.0, 1.0);
-	return floor(x * levels + thrNorm) / levels;
-}
-
-int psxDitherOffset4x4(vec2 pix){
-	float fx = mod(pix.x, 4.0);
-	float fy = mod(pix.y, 4.0);
-	int ix = int(fx < 0.0 ? fx + 4.0 : fx);
-	int iy = int(fy < 0.0 ? fy + 4.0 : fy);
-	if (iy == 0) {
-		if (ix == 0) return -4;
-		if (ix == 1) return 0;
-		if (ix == 2) return -3;
-		return 1;
-	} else if (iy == 1) {
-		if (ix == 0) return 2;
-		if (ix == 1) return -2;
-		if (ix == 2) return 3;
-		return -1;
-	} else if (iy == 2) {
-		if (ix == 0) return -3;
-		if (ix == 1) return 1;
-		if (ix == 2) return -4;
-		return 0;
-	}
-	if (ix == 0) return 3;
-	if (ix == 1) return -1;
-	if (ix == 2) return 2;
-	return -2;
-}
-
-vec3 quantize_rgb555_psx(vec3 sRGB, vec2 pix){
-	int off = psxDitherOffset4x4(pix);
-	vec3 v8 = sRGB * 255.0 + float(off);
-	v8 = clamp(v8, 0.0, 255.0);
-	vec3 v5 = floor(v8 / 8.0);
-	return v5 / 31.0;
 }
 
 float hashNoise(vec2 uv, float t){
@@ -370,21 +319,6 @@ void main(){
 
 	vec3 color = texture2D(u_texture, v_texcoord).rgb;
 
-	if (u_dither_type != 0) {
-		vec2 dst = gl_FragCoord.xy - vec2(0.5);
-		vec2 uvp = (dst + vec2(0.5)) / (u_srcResolution * u_fragscale);
-		vec2 srcMax = u_srcResolution - vec2(1.0);
-		vec2 srcXY = uvp * srcMax;
-		vec2 sPix = floor(srcXY + vec2(0.5));
-		vec3 sigS = linear_to_srgb(color);
-		if (u_dither_type == 1) {
-			sigS = quantize_rgb555_psx(sigS, sPix);
-		} else if (u_dither_type == 2) {
-			sigS = quantize_rgb565_dither(sigS, sPix);
-		}
-		color = srgb_to_linear(sigS);
-	}
-
 	if (u_enableColorBleed) color += u_colorBleed;
 
 	BlurContrast bc;
@@ -411,7 +345,120 @@ void main(){
 	float keep     = smoothstep(BLACK_CUTOFF, BLACK_SOFT, lumFinal);
 	color *= keep;
 
-	gl_FragColor = vec4(linear_to_srgb(color), 1.0);
+gl_FragColor = vec4(linear_to_srgb(color), 1.0);
+}
+)";
+
+const char* kDeviceQuantizeFragmentShader = R"(
+precision mediump float;
+
+uniform sampler2D u_texture;
+uniform vec2 u_srcResolution;
+uniform float u_fragscale;
+uniform int u_dither_type;
+
+varying vec2 v_texcoord;
+
+vec3 linear_to_srgb(vec3 c) {
+	c = max(c, vec3(0.0));
+	bvec3 cutoff = lessThanEqual(c, vec3(0.0031308));
+	vec3 lo = c * 12.92;
+	vec3 hi = 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055;
+	return mix(hi, lo, vec3(cutoff));
+}
+vec3 srgb_to_linear(vec3 c) {
+	c = max(c, vec3(0.0));
+	bvec3 cutoff = lessThanEqual(c, vec3(0.04045));
+	vec3 lo = c / 12.92;
+	vec3 hi = pow((c + 0.055) / 1.055, vec3(2.4));
+	return mix(hi, lo, vec3(cutoff));
+}
+
+vec3 quantize_rgb565_dither(vec3 sRGB, vec2 pix){
+	vec3 levels = vec3(31.0, 63.0, 31.0);
+	float fx = mod(pix.x, 4.0);
+	float fy = mod(pix.y, 4.0);
+	int ix = int(fx < 0.0 ? fx + 4.0 : fx);
+	int iy = int(fy < 0.0 ? fy + 4.0 : fy);
+	float thr;
+	if (iy == 0) {
+		if (ix == 0) thr = 0.0;
+		else if (ix == 1) thr = 8.0;
+		else if (ix == 2) thr = 2.0;
+		else thr = 10.0;
+	} else if (iy == 1) {
+		if (ix == 0) thr = 12.0;
+		else if (ix == 1) thr = 4.0;
+		else if (ix == 2) thr = 14.0;
+		else thr = 6.0;
+	} else if (iy == 2) {
+		if (ix == 0) thr = 3.0;
+		else if (ix == 1) thr = 11.0;
+		else if (ix == 2) thr = 1.0;
+		else thr = 9.0;
+	} else {
+		if (ix == 0) thr = 15.0;
+		else if (ix == 1) thr = 7.0;
+		else if (ix == 2) thr = 13.0;
+		else thr = 5.0;
+	}
+	float thrNorm = (thr + 0.5) / 16.0;
+	vec3 x = clamp(sRGB, 0.0, 1.0);
+	return floor(x * levels + thrNorm) / levels;
+}
+
+int psxDitherOffset4x4(vec2 pix){
+	float fx = mod(pix.x, 4.0);
+	float fy = mod(pix.y, 4.0);
+	int ix = int(fx < 0.0 ? fx + 4.0 : fx);
+	int iy = int(fy < 0.0 ? fy + 4.0 : fy);
+	if (iy == 0) {
+		if (ix == 0) return -4;
+		if (ix == 1) return 0;
+		if (ix == 2) return -3;
+		return 1;
+	} else if (iy == 1) {
+		if (ix == 0) return 2;
+		if (ix == 1) return -2;
+		if (ix == 2) return 3;
+		return -1;
+	} else if (iy == 2) {
+		if (ix == 0) return -3;
+		if (ix == 1) return 1;
+		if (ix == 2) return -4;
+		return 0;
+	}
+	if (ix == 0) return 3;
+	if (ix == 1) return -1;
+	if (ix == 2) return 2;
+	return -2;
+}
+
+vec3 quantize_rgb555_psx(vec3 sRGB, vec2 pix){
+	int off = psxDitherOffset4x4(pix);
+	vec3 v8 = sRGB * 255.0 + float(off);
+	v8 = clamp(v8, 0.0, 255.0);
+	vec3 v5 = floor(v8 / 8.0);
+	return v5 / 31.0;
+}
+
+void main(){
+	vec2 dst = gl_FragCoord.xy - vec2(0.5);
+	vec2 uvp = (dst + vec2(0.5)) / (u_srcResolution * u_fragscale);
+	vec2 srcMax = u_srcResolution - vec2(1.0);
+	vec2 srcXY = uvp * srcMax;
+	vec2 sPix = floor(srcXY + vec2(0.5));
+
+	vec3 color = texture2D(u_texture, v_texcoord).rgb;
+	vec3 sigS = linear_to_srgb(color);
+	if (u_dither_type == 1) {
+		sigS = quantize_rgb555_psx(sigS, sPix);
+	} else if (u_dither_type == 2) {
+		sigS = quantize_rgb565_dither(sigS, sPix);
+	}
+	color = srgb_to_linear(sigS);
+
+	gl_FragColor = vec4(color, 1.0);
 }
 )";
 
@@ -504,6 +551,38 @@ void updateFullscreenQuad(i32 width, i32 height) {
 	glBufferData(GL_ARRAY_BUFFER, sizeof(texcoords), texcoords, GL_STATIC_DRAW);
 }
 
+void updateDeviceQuad(i32 width, i32 height) {
+	if (g_device.width == width && g_device.height == height) return;
+
+	g_device.width = width;
+	g_device.height = height;
+
+	const float w = static_cast<float>(width);
+	const float h = static_cast<float>(height);
+	const float positions[12] = {
+		0.0f, 0.0f,
+		0.0f, h,
+		w, 0.0f,
+		w, 0.0f,
+		0.0f, h,
+		w, h
+	};
+	const float texcoords[12] = {
+		0.0f, 1.0f,
+		0.0f, 0.0f,
+		1.0f, 1.0f,
+		1.0f, 1.0f,
+		0.0f, 0.0f,
+		1.0f, 0.0f
+	};
+
+	glBindBuffer(GL_ARRAY_BUFFER, g_device.vbo_pos);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(positions), positions, GL_STATIC_DRAW);
+
+	glBindBuffer(GL_ARRAY_BUFFER, g_device.vbo_uv);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(texcoords), texcoords, GL_STATIC_DRAW);
+}
+
 } // namespace
 
 void initPresentGLES2(OpenGLES2Backend* backend) {
@@ -525,6 +604,30 @@ void initPresentGLES2(OpenGLES2Backend* backend) {
 
 	glUseProgram(g_present.program);
 	glUniform1i(g_present.uniform_texture, kTexUnitPostProcess);
+}
+
+void initDeviceQuantizeGLES2(OpenGLES2Backend* backend) {
+	(void)backend;
+
+	GLuint vs = compileShader(GL_VERTEX_SHADER, kCRTVertexShader);
+	GLuint fs = compileShader(GL_FRAGMENT_SHADER, kDeviceQuantizeFragmentShader);
+	g_device.program = linkProgram(vs, fs);
+
+	g_device.attrib_pos = glGetAttribLocation(g_device.program, "a_position");
+	g_device.attrib_uv = glGetAttribLocation(g_device.program, "a_texcoord");
+
+	g_device.uniform_resolution = glGetUniformLocation(g_device.program, "u_resolution");
+	g_device.uniform_src_resolution = glGetUniformLocation(g_device.program, "u_srcResolution");
+	g_device.uniform_scale = glGetUniformLocation(g_device.program, "u_scale");
+	g_device.uniform_fragscale = glGetUniformLocation(g_device.program, "u_fragscale");
+	g_device.uniform_dither_type = glGetUniformLocation(g_device.program, "u_dither_type");
+	g_device.uniform_texture = glGetUniformLocation(g_device.program, "u_texture");
+
+	glGenBuffers(1, &g_device.vbo_pos);
+	glGenBuffers(1, &g_device.vbo_uv);
+
+	glUseProgram(g_device.program);
+	glUniform1i(g_device.uniform_texture, kTexUnitPostProcess);
 }
 
 void initGLES2(OpenGLES2Backend* backend) {
@@ -550,7 +653,6 @@ void initGLES2(OpenGLES2Backend* backend) {
 	g_crt.uniform_apply_glow = glGetUniformLocation(g_crt.program, "u_enableGlow");
 	g_crt.uniform_apply_fringing = glGetUniformLocation(g_crt.program, "u_enableFringing");
 	g_crt.uniform_apply_aperture = glGetUniformLocation(g_crt.program, "u_enableAperture");
-	g_crt.uniform_apply_rgb565_dither = glGetUniformLocation(g_crt.program, "u_dither_type");
 	g_crt.uniform_noise_intensity = glGetUniformLocation(g_crt.program, "u_noiseIntensity");
 	g_crt.uniform_color_bleed = glGetUniformLocation(g_crt.program, "u_colorBleed");
 	g_crt.uniform_blur_intensity = glGetUniformLocation(g_crt.program, "u_blurIntensity");
@@ -580,10 +682,14 @@ void shutdownGLES2(OpenGLES2Backend* backend) {
 	if (g_crt.program != 0) glDeleteProgram(g_crt.program);
 	if (g_crt.vbo_pos != 0) glDeleteBuffers(1, &g_crt.vbo_pos);
 	if (g_crt.vbo_uv != 0) glDeleteBuffers(1, &g_crt.vbo_uv);
+	if (g_device.program != 0) glDeleteProgram(g_device.program);
+	if (g_device.vbo_pos != 0) glDeleteBuffers(1, &g_device.vbo_pos);
+	if (g_device.vbo_uv != 0) glDeleteBuffers(1, &g_device.vbo_uv);
 	if (g_present.program != 0) glDeleteProgram(g_present.program);
 	if (g_present.vbo_pos != 0) glDeleteBuffers(1, &g_present.vbo_pos);
 	if (g_present.vbo_uv != 0) glDeleteBuffers(1, &g_present.vbo_uv);
 	g_crt = CRTGLES2State{};
+	g_device = DeviceQuantizeGLES2State{};
 	g_present = PresentGLES2State{};
 }
 
@@ -643,6 +749,38 @@ void renderPresentGLES2(OpenGLES2Backend* backend, GameView* context, const CRTP
 	glDrawArrays(GL_TRIANGLES, 0, 6);
 }
 
+void renderDeviceQuantizeGLES2(OpenGLES2Backend* backend, GameView* context, const DeviceQuantizePipelineState& state) {
+	(void)context;
+
+	glUseProgram(g_device.program);
+	glUniform1i(g_device.uniform_texture, kTexUnitPostProcess);
+
+	updateDeviceQuad(state.width, state.height);
+
+	glDisable(GL_DEPTH_TEST);
+	glDisable(GL_CULL_FACE);
+	glDisable(GL_BLEND);
+
+	glBindBuffer(GL_ARRAY_BUFFER, g_device.vbo_pos);
+	glEnableVertexAttribArray(static_cast<GLuint>(g_device.attrib_pos));
+	glVertexAttribPointer(static_cast<GLuint>(g_device.attrib_pos), 2, GL_FLOAT, GL_FALSE, 0, nullptr);
+
+	glBindBuffer(GL_ARRAY_BUFFER, g_device.vbo_uv);
+	glEnableVertexAttribArray(static_cast<GLuint>(g_device.attrib_uv));
+	glVertexAttribPointer(static_cast<GLuint>(g_device.attrib_uv), 2, GL_FLOAT, GL_FALSE, 0, nullptr);
+
+	glUniform2f(g_device.uniform_resolution, static_cast<float>(state.width), static_cast<float>(state.height));
+	glUniform2f(g_device.uniform_src_resolution, static_cast<float>(state.baseWidth), static_cast<float>(state.baseHeight));
+	glUniform1f(g_device.uniform_scale, 1.0f);
+	glUniform1f(g_device.uniform_fragscale, static_cast<float>(state.width) / static_cast<float>(state.baseWidth));
+	glUniform1i(g_device.uniform_dither_type, state.ditherType);
+
+	backend->setActiveTextureUnit(kTexUnitPostProcess);
+	backend->bindTexture2D(state.colorTex);
+
+	glDrawArrays(GL_TRIANGLES, 0, 6);
+}
+
 void renderCRTGLES2(OpenGLES2Backend* backend, GameView* context, const CRTPipelineState& state) {
 	(void)context;
 
@@ -686,7 +824,6 @@ void renderCRTGLES2(OpenGLES2Backend* backend, GameView* context, const CRTPipel
 	glUniform1i(g_crt.uniform_apply_glow, state.options.applyGlow ? 1 : 0);
 	glUniform1i(g_crt.uniform_apply_fringing, state.options.applyFringing ? 1 : 0);
 	glUniform1i(g_crt.uniform_apply_aperture, state.options.applyAperture ? 1 : 0);
-	glUniform1i(g_crt.uniform_apply_rgb565_dither, state.options.ditherType);
 
 	glUniform1f(g_crt.uniform_noise_intensity, state.options.noiseIntensity);
 	glUniform3f(g_crt.uniform_color_bleed, state.options.colorBleed[0], state.options.colorBleed[1], state.options.colorBleed[2]);

@@ -532,15 +532,21 @@ void LibretroPlatform::reset() {
 void LibretroPlatform::runFrame() {
 	if (!m_rom_loaded || !m_engine) return;
 
+#if ENABLE_PERFORMANCE_LOGS
 	const auto frameStart = std::chrono::steady_clock::now();
+#endif
 
 	// Clear audio buffer
 	m_audio_buffer.clear();
 
 	// Poll input
+#if ENABLE_PERFORMANCE_LOGS
 	const auto pollStart = std::chrono::steady_clock::now();
+#endif
 	pollInput();
+#if ENABLE_PERFORMANCE_LOGS
 	const auto pollEnd = std::chrono::steady_clock::now();
+#endif
 
 	// Advance clock
 	if (auto* clock = dynamic_cast<LibretroClock*>(m_clock.get())) {
@@ -557,25 +563,37 @@ void LibretroPlatform::runFrame() {
 	}
 
 	// Update game logic
+#if ENABLE_PERFORMANCE_LOGS
 	const auto tickStart = std::chrono::steady_clock::now();
+#endif
 	if (!m_platform_paused) {
 		m_engine->tick(dt);
 	}
+#if ENABLE_PERFORMANCE_LOGS
 	const auto tickEnd = std::chrono::steady_clock::now();
+#endif
 
 	// Render
 	bool skipRender = m_frameskip_enabled && m_frameskip_next;
 	m_frameskip_next = false;
+#if ENABLE_PERFORMANCE_LOGS
 	const auto renderStart = std::chrono::steady_clock::now();
+#endif
 	if (!skipRender) {
 		m_engine->render();
 	}
+#if ENABLE_PERFORMANCE_LOGS
 	const auto renderEnd = std::chrono::steady_clock::now();
+#endif
 
 	// Collect audio
+#if ENABLE_PERFORMANCE_LOGS
 	const auto audioStart = std::chrono::steady_clock::now();
+#endif
 	processAudio();
+#if ENABLE_PERFORMANCE_LOGS
 	const auto audioEnd = std::chrono::steady_clock::now();
+#endif
 
 #if ENABLE_PERFORMANCE_LOGS
 	const auto frameEnd = std::chrono::steady_clock::now();

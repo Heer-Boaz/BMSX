@@ -1,0 +1,101 @@
+#version 300 es
+precision highp float;
+
+// Device framebuffer quantize/dither pass (linear -> sRGB -> quantize -> linear).
+
+uniform sampler2D u_texture;  // offscreen scene (linear)
+uniform vec2 u_srcResolution; // base "logical" resolution (e.g., 256x212)
+uniform float u_fragscale;    // integer upscale (e.g., 2.0)
+uniform uint u_dither_type;   // 1=rgb555_psx, 2=rgb565
+
+in vec2 v_texcoord;
+out vec4 outputColor;
+
+// --- Exact sRGB transfer functions (IEC 61966-2-1) ---
+vec3 linear_to_srgb(vec3 c) {
+  c = max(c, vec3(0.0));
+  bvec3 cutoff = lessThanEqual(c, vec3(0.0031308));
+  vec3 lo = c * 12.92;
+  vec3 hi = 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055;
+  return mix(hi, lo, vec3(cutoff));
+}
+
+vec3 srgb_to_linear(vec3 c) {
+  c = max(c, vec3(0.0));
+  bvec3 cutoff = lessThanEqual(c, vec3(0.04045));
+  vec3 lo = c / 12.92;
+  vec3 hi = pow((c + 0.055) / 1.055, vec3(2.4));
+  return mix(hi, lo, vec3(cutoff));
+}
+
+// --- RGB565 ordered dither (4x4 Bayer matrix) ---
+const float B4[16] = float[16](
+  0.0,  8.0,  2.0, 10.0,
+  12.0, 4.0, 14.0, 6.0,
+  3.0, 11.0, 1.0,  9.0,
+  15.0, 7.0, 13.0, 5.0
+);
+
+float bayer4x4_0_1(ivec2 p){
+  ivec2 w = p & ivec2(3);
+  int idx = w.x + (w.y << 2);
+  return (B4[idx] + 0.5) / 16.0;
+}
+
+// Quantize to RGB565 using 4x4 threshold-bias (no per-channel offsets)
+vec3 quantize_rgb565_dither(vec3 sRGB, ivec2 pix){
+  vec3 levels = vec3(31.0, 63.0, 31.0);
+  float thr = bayer4x4_0_1(pix);
+  vec3 x = clamp(sRGB, 0.0, 1.0);
+  return floor(x * levels + thr) / levels;
+}
+
+// PSX 4x4 signed dither offsets (8-bit domain)
+const int PSX_DITHER[16] = int[16](
+  -4,  0, -3,  1,
+   2, -2,  3, -1,
+  -3,  1, -4,  0,
+   3, -1,  2, -2
+);
+
+int psxIdx(ivec2 p){
+  ivec2 w = p & ivec2(3);
+  return w.x + (w.y << 2);
+}
+
+// sRGB (0..1) -> PSX dithered RGB555 in sRGB (0..1), emulator-style
+vec3 quantize_rgb555_psx(vec3 sRGB, ivec2 pix){
+  int off = PSX_DITHER[psxIdx(pix)];
+
+  // work in 8-bit domain like the real thing
+  vec3 v8 = sRGB * 255.0 + float(off);
+
+  // saturate to 0..255
+  v8 = clamp(v8, 0.0, 255.0);
+
+  // trunc to 5-bit via >>3 (divide by 8, floor)
+  vec3 v5 = floor(v8 / 8.0);          // 0..31
+
+  // back to normalized sRGB-like 0..1 at 5-bit precision
+  return v5 / 31.0;
+}
+
+void main(){
+  vec2 dst    = gl_FragCoord.xy - vec2(0.5);
+  vec2 uvp    = (dst + vec2(0.5)) / (u_srcResolution * u_fragscale);
+  vec2 srcMax = u_srcResolution - vec2(1.0);
+  vec2 srcXY  = uvp * srcMax;
+  ivec2 sPix  = ivec2(floor(srcXY + vec2(0.5)));
+
+  vec3 color = texture(u_texture, v_texcoord).rgb; // linear
+  vec3 sigS  = linear_to_srgb(color);
+
+  if (u_dither_type == 1u) {
+    sigS = quantize_rgb555_psx(sigS, sPix);
+  } else if (u_dither_type == 2u) {
+    sigS = quantize_rgb565_dither(sigS, sPix);
+  }
+
+  color = srgb_to_linear(sigS);
+  outputColor = vec4(color, 1.0);
+}

@@ -14,9 +14,63 @@
 #include "rendergraph.h"
 #include "../core/engine.h"
 #include "../core/rompack.h"
+#include <algorithm>
 #include <stdexcept>
 
 namespace bmsx {
+
+namespace {
+
+CRTPipelineState buildCRTPipelineState(const RenderPassDef::RenderGraphPassContext& ctx,
+									   RenderPassDef::RenderPassGraphDef::PresentInput presentInput) {
+	auto* view = ctx.view;
+	CRTPipelineState crtState;
+	crtState.width = static_cast<i32>(view->canvasSize.x);
+	crtState.height = static_cast<i32>(view->canvasSize.y);
+	crtState.baseWidth = static_cast<i32>(view->viewportSize.x);
+	crtState.baseHeight = static_cast<i32>(view->viewportSize.y);
+	crtState.srcWidth = static_cast<i32>(view->offscreenCanvasSize.x);
+	crtState.srcHeight = static_cast<i32>(view->offscreenCanvasSize.y);
+
+	const bool allowDevice = presentInput == RenderPassDef::RenderPassGraphDef::PresentInput::Auto
+		|| presentInput == RenderPassDef::RenderPassGraphDef::PresentInput::DeviceColor;
+	const bool useDither = allowDevice && ctx.deviceColorEnabled && static_cast<i32>(view->dither_type) != 0;
+	TextureHandle baseTex = ctx.getTexture(RenderPassDef::RenderGraphSlot::FrameColor);
+	TextureHandle deviceTex = ctx.deviceColorEnabled
+		? ctx.getTexture(RenderPassDef::RenderGraphSlot::DeviceColor)
+		: nullptr;
+	crtState.colorTex = useDither ? deviceTex : baseTex;
+
+	if (view->crt_postprocessing_enabled) {
+		crtState.options.applyNoise = view->applyNoise;
+		crtState.options.noiseIntensity = view->noiseIntensity;
+		crtState.options.applyColorBleed = view->applyColorBleed;
+		crtState.options.colorBleed = view->colorBleed;
+		crtState.options.applyScanlines = view->applyScanlines;
+		crtState.options.applyBlur = view->applyBlur;
+		crtState.options.blurIntensity = view->blurIntensity;
+		crtState.options.applyGlow = view->applyGlow;
+		crtState.options.glowColor = view->glowColor;
+		crtState.options.applyFringing = view->applyFringing;
+		crtState.options.applyAperture = view->applyAperture;
+	} else {
+		crtState.options.applyNoise = false;
+		crtState.options.applyColorBleed = false;
+		crtState.options.applyScanlines = false;
+		crtState.options.applyBlur = false;
+		crtState.options.applyGlow = false;
+		crtState.options.applyFringing = false;
+		crtState.options.applyAperture = false;
+		crtState.options.noiseIntensity = view->noiseIntensity;
+		crtState.options.colorBleed = view->colorBleed;
+		crtState.options.blurIntensity = view->blurIntensity;
+		crtState.options.glowColor = view->glowColor;
+	}
+
+	return crtState;
+}
+
+} // namespace
 
 RenderPassLibrary::RenderPassLibrary(GPUBackend* backend)
 	: m_backend(backend)
@@ -50,6 +104,8 @@ void RenderPassLibrary::registerBuiltinPassesSoftware() {
 		desc.id = "frame_resolve";
 		desc.name = "FrameResolve";
 		desc.stateOnly = true;
+		desc.graph = RenderPassDef::RenderPassGraphDef{};
+		desc.graph->skip = true;
 		desc.exec = [](GPUBackend*, void*, std::any&) { /* state only */ };
 		desc.prepare = [](GPUBackend*, std::any&) {
 			// Upload minimal frame-shared values
@@ -64,6 +120,8 @@ void RenderPassLibrary::registerBuiltinPassesSoftware() {
 		desc.id = "frame_shared";
 		desc.name = "FrameShared";
 		desc.stateOnly = true;
+		desc.graph = RenderPassDef::RenderPassGraphDef{};
+		desc.graph->skip = true;
 		desc.exec = [](GPUBackend*, void*, std::any&) { /* populated per frame */ };
 		registerPass(desc);
 	}
@@ -120,29 +178,23 @@ void RenderPassLibrary::registerBuiltinPassesSoftware() {
 		desc.id = "present";
 		desc.name = "Present";
 		desc.present = true;
+		desc.graph = RenderPassDef::RenderPassGraphDef{};
+		desc.graph->presentInput = RenderPassDef::RenderPassGraphDef::PresentInput::Auto;
+		desc.graph->buildState = [](const RenderPassDef::RenderGraphPassContext& ctx) -> std::any {
+			return buildCRTPipelineState(ctx, RenderPassDef::RenderPassGraphDef::PresentInput::Auto);
+		};
 		desc.exec = [](GPUBackend* backend, void*, std::any& state) {
 			auto& crtState = std::any_cast<CRTPipelineState&>(state);
 			auto* view = EngineCore::instance().view();
 			auto* colorTex = static_cast<SoftwareTexture*>(crtState.colorTex);
 			auto* softBackend = static_cast<SoftwareBackend*>(backend);
-			if (view->crt_postprocessing_enabled || static_cast<i32>(view->dither_type) != 0) {
-				view->applyCRTPostProcessing(colorTex->data.data(),
-											 colorTex->width,
-											 colorTex->height,
-											 softBackend->framebuffer(),
-											 softBackend->width(),
-											 softBackend->height(),
-											 softBackend->pitch());
-			} else {
-				DitherParams dither;
-				dither.enabled = false;
-				dither.intensity = dither.enabled ? 1.0f : 0.0f;
-				dither.jitter = 0;
-				const Color tint{1.0f, 1.0f, 1.0f, 1.0f};
-				softBackend->blitTexture(colorTex, 0, 0, colorTex->width, colorTex->height,
-										 0, 0, softBackend->width(), softBackend->height(),
-										 0.0f, tint, false, false, dither, false);
-			}
+			view->applyCRTPostProcessing(colorTex->data.data(),
+										 colorTex->width,
+										 colorTex->height,
+										 softBackend->framebuffer(),
+										 softBackend->width(),
+										 softBackend->height(),
+										 softBackend->pitch());
 		};
 		desc.prepare = [](GPUBackend*, std::any&) {};
 		registerPass(desc);
@@ -159,6 +211,8 @@ void RenderPassLibrary::registerBuiltinPassesOpenGLES2() {
 		desc.id = "frame_resolve";
 		desc.name = "FrameResolve";
 		desc.stateOnly = true;
+		desc.graph = RenderPassDef::RenderPassGraphDef{};
+		desc.graph->skip = true;
 		desc.exec = [](GPUBackend*, void*, std::any&) { };
 		desc.prepare = [](GPUBackend*, std::any&) { };
 		registerPass(desc);
@@ -170,6 +224,8 @@ void RenderPassLibrary::registerBuiltinPassesOpenGLES2() {
 		desc.id = "frame_shared";
 		desc.name = "FrameShared";
 		desc.stateOnly = true;
+		desc.graph = RenderPassDef::RenderPassGraphDef{};
+		desc.graph->skip = true;
 		desc.exec = [](GPUBackend*, void*, std::any&) { };
 		registerPass(desc);
 	}
@@ -224,12 +280,53 @@ void RenderPassLibrary::registerBuiltinPassesOpenGLES2() {
 		registerPass(desc);
 	}
 
+	// Device quantize/dither pass (GLES2)
+	{
+		RenderPassDef desc;
+		desc.id = "device_quantize";
+		desc.name = "DeviceQuantize";
+		desc.graph = RenderPassDef::RenderPassGraphDef{};
+		desc.graph->reads = { RenderPassDef::RenderGraphSlot::FrameColor };
+		desc.graph->writes = { RenderPassDef::RenderGraphSlot::DeviceColor };
+		desc.graph->buildState = [](const RenderPassDef::RenderGraphPassContext& ctx) -> std::any {
+			auto* view = ctx.view;
+			DeviceQuantizePipelineState deviceState;
+			deviceState.width = static_cast<i32>(view->offscreenCanvasSize.x);
+			deviceState.height = static_cast<i32>(view->offscreenCanvasSize.y);
+			deviceState.baseWidth = static_cast<i32>(view->viewportSize.x);
+			deviceState.baseHeight = static_cast<i32>(view->viewportSize.y);
+			deviceState.colorTex = ctx.getTexture(RenderPassDef::RenderGraphSlot::FrameColor);
+			deviceState.ditherType = static_cast<i32>(view->dither_type);
+			return deviceState;
+		};
+		desc.bootstrap = [](GPUBackend* backend) {
+			CRTPipeline::initDeviceQuantizeGLES2(static_cast<OpenGLES2Backend*>(backend));
+		};
+		desc.exec = [](GPUBackend* backend, void* fbo, std::any& state) {
+			(void)fbo;
+			auto& engine = EngineCore::instance();
+			auto& deviceState = std::any_cast<DeviceQuantizePipelineState&>(state);
+			CRTPipeline::renderDeviceQuantizeGLES2(static_cast<OpenGLES2Backend*>(backend), engine.view(), deviceState);
+		};
+		desc.shouldExecute = []() {
+			const auto* view = EngineCore::instance().view();
+			return static_cast<i32>(view->dither_type) != 0;
+		};
+		desc.prepare = [](GPUBackend*, std::any&) { };
+		registerPass(desc);
+	}
+
 	// Present pass (GLES2, no CRT)
 	{
 		RenderPassDef desc;
 		desc.id = "present";
 		desc.name = "Present";
 		desc.present = true;
+		desc.graph = RenderPassDef::RenderPassGraphDef{};
+		desc.graph->presentInput = RenderPassDef::RenderPassGraphDef::PresentInput::Auto;
+		desc.graph->buildState = [](const RenderPassDef::RenderGraphPassContext& ctx) -> std::any {
+			return buildCRTPipelineState(ctx, RenderPassDef::RenderPassGraphDef::PresentInput::Auto);
+		};
 		desc.bootstrap = [](GPUBackend* backend) {
 			CRTPipeline::initPresentGLES2(static_cast<OpenGLES2Backend*>(backend));
 		};
@@ -240,7 +337,7 @@ void RenderPassLibrary::registerBuiltinPassesOpenGLES2() {
 		};
 		desc.shouldExecute = []() {
 			const auto* view = EngineCore::instance().view();
-			return !view->crt_postprocessing_enabled && static_cast<i32>(view->dither_type) == 0;
+			return !view->crt_postprocessing_enabled;
 		};
 		desc.prepare = [](GPUBackend*, std::any&) { };
 		registerPass(desc);
@@ -252,6 +349,11 @@ void RenderPassLibrary::registerBuiltinPassesOpenGLES2() {
 		desc.id = "crt";
 		desc.name = "Present/CRT";
 		desc.present = true;
+		desc.graph = RenderPassDef::RenderPassGraphDef{};
+		desc.graph->presentInput = RenderPassDef::RenderPassGraphDef::PresentInput::Auto;
+		desc.graph->buildState = [](const RenderPassDef::RenderGraphPassContext& ctx) -> std::any {
+			return buildCRTPipelineState(ctx, RenderPassDef::RenderPassGraphDef::PresentInput::Auto);
+		};
 		desc.bootstrap = [](GPUBackend* backend) {
 			CRTPipeline::initGLES2(static_cast<OpenGLES2Backend*>(backend));
 		};
@@ -262,7 +364,7 @@ void RenderPassLibrary::registerBuiltinPassesOpenGLES2() {
 		};
 		desc.shouldExecute = []() {
 			const auto* view = EngineCore::instance().view();
-			return view->crt_postprocessing_enabled || static_cast<i32>(view->dither_type) != 0;
+			return view->crt_postprocessing_enabled;
 		};
 		desc.prepare = [](GPUBackend*, std::any&) { };
 		registerPass(desc);
@@ -360,9 +462,22 @@ std::unique_ptr<RenderGraphRuntime> RenderPassLibrary::buildRenderGraph(GameView
 	(void)lightingSystem; // TODO: Use for lighting state
 
 	auto rg = std::make_unique<RenderGraphRuntime>(m_backend);
+	std::vector<const RenderPassDef*> passList;
+	passList.reserve(m_passes.size());
+	for (const auto& desc : m_passes) {
+		if (desc.graph && desc.graph->skip) continue;
+		passList.push_back(&desc);
+	}
+	const bool deviceColorEnabled = std::any_of(passList.begin(), passList.end(),
+		[](const RenderPassDef* pass) {
+			if (!pass->graph) return false;
+			const auto& writes = pass->graph->writes;
+			return std::find(writes.begin(), writes.end(), RenderPassDef::RenderGraphSlot::DeviceColor) != writes.end();
+		});
 	struct GraphHandles {
 		RenderGraphTexHandle color = -1;
 		RenderGraphTexHandle depth = -1;
+		RenderGraphTexHandle device = -1;
 	};
 	auto handles = std::make_shared<GraphHandles>();
 
@@ -370,7 +485,7 @@ std::unique_ptr<RenderGraphRuntime> RenderPassLibrary::buildRenderGraph(GameView
 	{
 		RenderGraphPass pass;
 		pass.name = "Clear";
-		pass.setup = [view, handles](RenderGraphIO& io, FrameData*) -> std::any {
+		pass.setup = [view, handles, deviceColorEnabled](RenderGraphIO& io, FrameData*) -> std::any {
 			TexDesc colorDesc;
 			colorDesc.width = static_cast<i32>(view->offscreenCanvasSize.x);
 			colorDesc.height = static_cast<i32>(view->offscreenCanvasSize.y);
@@ -384,6 +499,14 @@ std::unique_ptr<RenderGraphRuntime> RenderPassLibrary::buildRenderGraph(GameView
 
 			handles->color = io.createTex(colorDesc);
 			handles->depth = io.createTex(depthDesc);
+			if (deviceColorEnabled) {
+				TexDesc deviceDesc;
+				deviceDesc.width = static_cast<i32>(view->offscreenCanvasSize.x);
+				deviceDesc.height = static_cast<i32>(view->offscreenCanvasSize.y);
+				deviceDesc.name = "DeviceColor";
+				deviceDesc.transient = true;
+				handles->device = io.createTex(deviceDesc);
+			}
 			io.writeTex(handles->color, {0, 0, 0, 1});
 			io.writeTex(handles->depth, 1.0f);
 			io.exportToBackbuffer(handles->color);
@@ -393,12 +516,30 @@ std::unique_ptr<RenderGraphRuntime> RenderPassLibrary::buildRenderGraph(GameView
 		rg->addPass(pass);
 	}
 
+	// Frame resolve pass
+	{
+		RenderGraphPass pass;
+		pass.name = "FrameResolve";
+		pass.alwaysExecute = true;
+		pass.setup = [handles](RenderGraphIO& io, FrameData*) -> std::any {
+			io.writeTex(handles->color);
+			return std::any{};
+		};
+		pass.execute = [this](RenderGraphContext&, FrameData*, const std::any&) {
+			execute("frame_resolve", nullptr);
+		};
+		rg->addPass(pass);
+	}
+
 	// Frame shared state pass
 	{
 		RenderGraphPass pass;
 		pass.name = "FrameSharedState";
 		pass.alwaysExecute = true;
-		pass.setup = [](RenderGraphIO&, FrameData*) -> std::any { return std::any{}; };
+		pass.setup = [handles](RenderGraphIO& io, FrameData*) -> std::any {
+			io.writeTex(handles->color);
+			return std::any{};
+		};
 		pass.execute = [this, view](RenderGraphContext&, FrameData* frame, const std::any&) {
 			FrameSharedState frameShared;
 			// TODO: Fill from camera and lighting
@@ -416,7 +557,8 @@ std::unique_ptr<RenderGraphRuntime> RenderPassLibrary::buildRenderGraph(GameView
 	}
 
 	// Add registered passes
-	for (const auto& desc : m_passes) {
+	for (const auto* descPtr : passList) {
+		const auto& desc = *descPtr;
 		RenderGraphPass pass;
 		pass.name = desc.name;
 		pass.alwaysExecute = desc.stateOnly;
@@ -428,8 +570,24 @@ std::unique_ptr<RenderGraphRuntime> RenderPassLibrary::buildRenderGraph(GameView
 		const bool depthTest = desc.depthTest;
 		const auto shouldExecute = desc.shouldExecute;
 
-		pass.setup = [handles, isPresent, isStateOnly, writesDepth, depthTest](RenderGraphIO& io, FrameData*) -> std::any {
-			if (!isPresent && !isStateOnly) {
+		const auto* graph = desc.graph ? &desc.graph.value() : nullptr;
+		auto getHandle = [handles](RenderPassDef::RenderGraphSlot slot) -> RenderGraphTexHandle {
+			if (slot == RenderPassDef::RenderGraphSlot::FrameColor) return handles->color;
+			if (slot == RenderPassDef::RenderGraphSlot::FrameDepth) return handles->depth;
+			return handles->device;
+		};
+
+		pass.setup = [handles, isPresent, isStateOnly, writesDepth, depthTest, graph, deviceColorEnabled, getHandle](RenderGraphIO& io, FrameData*) -> std::any {
+			if (isPresent) {
+				const auto presentInput = graph ? graph->presentInput : RenderPassDef::RenderPassGraphDef::PresentInput::Auto;
+				io.readTex(handles->color);
+				if (deviceColorEnabled && presentInput != RenderPassDef::RenderPassGraphDef::PresentInput::FrameColor) {
+					io.readTex(handles->device);
+				}
+			} else if (graph && (!graph->reads.empty() || !graph->writes.empty())) {
+				for (const auto& slot : graph->reads) io.readTex(getHandle(slot));
+				for (const auto& slot : graph->writes) io.writeTex(getHandle(slot));
+			} else if (!isPresent && !isStateOnly) {
 				io.writeTex(handles->color);
 				if (writesDepth) io.writeTex(handles->depth);
 				else if (depthTest) io.readTex(handles->depth);
@@ -439,55 +597,42 @@ std::unique_ptr<RenderGraphRuntime> RenderPassLibrary::buildRenderGraph(GameView
 			return std::any{};
 		};
 
-		pass.execute = [this, view, handles, passId, isPresent, isStateOnly, shouldExecute](RenderGraphContext& ctx, FrameData*, const std::any&) {
+		pass.execute = [this, view, handles, passId, isPresent, isStateOnly, writesDepth, depthTest, shouldExecute,
+					   graph, deviceColorEnabled, getHandle](RenderGraphContext& ctx, FrameData*, const std::any&) {
 			if (!isPassEnabled(passId)) return;
 			if (shouldExecute && !shouldExecute()) return;
 
-			if (isPresent) {
-				CRTPipelineState crtState;
-				crtState.width = static_cast<i32>(view->canvasSize.x);
-				crtState.height = static_cast<i32>(view->canvasSize.y);
-				crtState.baseWidth = static_cast<i32>(view->viewportSize.x);
-				crtState.baseHeight = static_cast<i32>(view->viewportSize.y);
-				crtState.srcWidth = static_cast<i32>(view->offscreenCanvasSize.x);
-				crtState.srcHeight = static_cast<i32>(view->offscreenCanvasSize.y);
-				crtState.colorTex = ctx.getTexture(handles->color);
-
-				if (view->crt_postprocessing_enabled) {
-					crtState.options.applyNoise = view->applyNoise;
-					crtState.options.noiseIntensity = view->noiseIntensity;
-					crtState.options.applyColorBleed = view->applyColorBleed;
-					crtState.options.colorBleed = view->colorBleed;
-					crtState.options.applyScanlines = view->applyScanlines;
-					crtState.options.applyBlur = view->applyBlur;
-					crtState.options.blurIntensity = view->blurIntensity;
-					crtState.options.applyGlow = view->applyGlow;
-					crtState.options.glowColor = view->glowColor;
-					crtState.options.applyFringing = view->applyFringing;
-					crtState.options.applyAperture = view->applyAperture;
-					crtState.options.ditherType = static_cast<i32>(view->dither_type);
-				} else {
-					crtState.options.applyNoise = false;
-					crtState.options.applyColorBleed = false;
-					crtState.options.applyScanlines = false;
-					crtState.options.applyBlur = false;
-					crtState.options.applyGlow = false;
-					crtState.options.applyFringing = false;
-					crtState.options.applyAperture = false;
-					crtState.options.ditherType = static_cast<i32>(view->dither_type);
-					crtState.options.noiseIntensity = view->noiseIntensity;
-					crtState.options.colorBleed = view->colorBleed;
-					crtState.options.blurIntensity = view->blurIntensity;
-					crtState.options.glowColor = view->glowColor;
-				}
-
-				setState(passId, crtState);
-				execute(passId, nullptr);
-			} else if (isStateOnly) {
-				execute(passId, nullptr);
-			} else {
-				execute(passId, ctx.getFBO(handles->color, handles->depth));
+			if (graph && graph->buildState) {
+				RenderPassDef::RenderGraphPassContext passCtx;
+				passCtx.view = view;
+				passCtx.deviceColorEnabled = deviceColorEnabled;
+				passCtx.getTexture = [&ctx, getHandle](RenderPassDef::RenderGraphSlot slot) -> TextureHandle {
+					return ctx.getTexture(getHandle(slot));
+				};
+				std::any builtState = graph->buildState(passCtx);
+				setState(passId, builtState);
 			}
+
+			if (isPresent) {
+				execute(passId, nullptr);
+				return;
+			}
+			if (isStateOnly) {
+				execute(passId, nullptr);
+				return;
+			}
+
+			RenderGraphTexHandle colorHandle = handles->color;
+			RenderGraphTexHandle depthHandle = (writesDepth || depthTest) ? handles->depth : -1;
+			if (graph && !graph->writes.empty()) {
+				colorHandle = -1;
+				depthHandle = -1;
+				for (const auto& slot : graph->writes) {
+					if (slot == RenderPassDef::RenderGraphSlot::FrameDepth) depthHandle = handles->depth;
+					else colorHandle = getHandle(slot);
+				}
+			}
+			execute(passId, ctx.getFBO(colorHandle, depthHandle));
 		};
 		rg->addPass(pass);
 	}

@@ -15,9 +15,10 @@ import { registerSolidColorPass_WebGPU } from '../debug/solidcolor_pipeline.wgpu
 import { RenderGraphRuntime } from '../graph/rendergraph';
 import { LightingSystem } from '../lighting/lightingsystem';
 import { registerCRT_WebGL } from '../post/crt_pipeline';
+import { registerDeviceQuantize_WebGL } from '../post/device_quantize_pipeline';
 import { registerCRT_WebGPU } from '../post/crt_pipeline.wgpu';
 import { FRAME_UNIFORM_BINDING, updateAndBindFrameUniforms } from './frame_uniforms';
-import { AnyBackend, CRTPipelineState, FogUniforms, FrameSharedState, GPUBackend, MeshBatchPipelineState, ParticlePipelineState, PassEncoder, RenderContext, RenderPassDef, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateId, RenderPassToken, SkyboxPipelineState, SpritesPipelineState } from './pipeline_interfaces';
+import { AnyBackend, CRTPipelineState, DeviceQuantizePipelineState, FogUniforms, FrameSharedState, GPUBackend, MeshBatchPipelineState, ParticlePipelineState, PassEncoder, RenderContext, RenderGraphSlot, RenderPassDef, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateId, RenderPassStateRegistry, RenderPassToken, SkyboxPipelineState, SpritesPipelineState } from './pipeline_interfaces';
 import { checkWebGLError } from './webgl/webgl.helpers';
 import { WebGLBackend } from './webgl/webgl_backend';
 import { registerHeadlessPasses } from '../headless/headless_render_passes';
@@ -29,6 +30,7 @@ type PassStateTypes = {
 	meshbatch: MeshBatchPipelineState;
 	particles: ParticlePipelineState;
 	sprites: SpritesPipelineState;
+	device_quantize: DeviceQuantizePipelineState;
 	crt: CRTPipelineState;
 	frame_shared: FrameSharedState;
 	frame_resolve: undefined;
@@ -69,6 +71,7 @@ export class RenderPassLibrary {
 		// Common state-only passes (backend-agnostic)
 		this.register({
 			id: 'frame_resolve', name: 'FrameResolve', stateOnly: true,
+			graph: { skip: true },
 			exec: () => { /* state only */ },
 			prepare: (backend, _state) => {
 				const gv = $.view;
@@ -83,7 +86,7 @@ export class RenderPassLibrary {
 			},
 		});
 		// Removed: standalone fog pass. Fog state is produced in FrameSharedState.
-		this.register({ id: 'frame_shared', name: 'FrameShared', stateOnly: true, exec: () => { } });
+		this.register({ id: 'frame_shared', name: 'FrameShared', stateOnly: true, graph: { skip: true }, exec: () => { } });
 		// Backend-specific pass registrations (stubs for now)
 		registerSkyboxPass_WebGPU(this);
 		registerMeshBatchPass_WebGPU(this);
@@ -99,6 +102,7 @@ export class RenderPassLibrary {
 			id: 'frame_resolve',
 			name: 'FrameResolve',
 			stateOnly: true,
+			graph: { skip: true },
 			exec: () => { /* state only */ },
 			prepare: (backend, _state) => {
 				// Upload minimal frame-shared values via a UBO foundation
@@ -126,6 +130,9 @@ export class RenderPassLibrary {
 		// Sprites (WebGL)
 		registerSpritesPass_WebGL(this);
 
+		// Device quantize/dither (WebGL)
+		registerDeviceQuantize_WebGL(this);
+
 		// Debug solid writer (WebGL) — ensures content is written before present
 		// registerSolidColorPass_WebGL(this);
 
@@ -137,6 +144,7 @@ export class RenderPassLibrary {
 			id: 'frame_shared',
 			name: 'FrameShared',
 			stateOnly: true,
+			graph: { skip: true },
 			exec: () => { /* populated per frame by graph */ }
 		});
 	}
@@ -258,6 +266,14 @@ export class RenderPassLibrary {
 		const rg = new RenderGraphRuntime(view.backend);
 		let frameColorHandle: number = null;
 		let frameDepthHandle: number = null;
+		let deviceColorHandle: number = null;
+		const passList = this.getPipelinePasses().filter(pass => !pass.graph?.skip);
+		const deviceColorEnabled = passList.some(pass => pass.graph?.writes?.includes('device_color'));
+		const getHandle = (slot: RenderGraphSlot): number => {
+			if (slot === 'frame_color') return frameColorHandle;
+			if (slot === 'frame_depth') return frameDepthHandle;
+			return deviceColorHandle;
+		};
 
 		// Clear pass: create frame color/depth and export to backbuffer
 		const DEBUG_FORCE_VISIBLE_CLEAR = false;
@@ -266,12 +282,16 @@ export class RenderPassLibrary {
 			setup: (io) => {
 				const color = io.createTex({ width: view.offscreenCanvasSize.x, height: view.offscreenCanvasSize.y, name: 'FrameColor' });
 				const depth = io.createTex({ width: view.offscreenCanvasSize.x, height: view.offscreenCanvasSize.y, depth: true, name: 'FrameDepth' });
+				const deviceColor = deviceColorEnabled
+					? io.createTex({ width: view.offscreenCanvasSize.x, height: view.offscreenCanvasSize.y, name: 'DeviceColor', transient: true })
+					: null;
 				const clearCol: color_arr = DEBUG_FORCE_VISIBLE_CLEAR ? [1, 0, 1, 1] : [0, 0, 0, 1];
 				io.writeTex(color, { clearColor: clearCol });
 				io.writeTex(depth, { clearDepth: 1.0 });
 				io.exportToBackbuffer(color);
 				frameColorHandle = color;
 				frameDepthHandle = depth;
+				deviceColorHandle = deviceColor;
 				return null;
 			},
 			execute: () => { },
@@ -335,18 +355,22 @@ export class RenderPassLibrary {
 		});
 
 		// Build pass sequence from registry
-		const passList = this.getPipelinePasses();
 		for (const desc of passList) {
-			if (desc.id === 'frame_resolve' || desc.id === 'frame_shared') {
-				continue;
-			}
 			const isPresent = !!desc.present;
 			const isStateOnly = !!desc.stateOnly;
 			rg.addPass({
 				name: desc.name,
 				alwaysExecute: isStateOnly,
 				setup: (io) => {
-					if (!isPresent && !isStateOnly) {
+					const graph = desc.graph;
+					if (isPresent) {
+						const presentInput = graph?.presentInput ?? 'auto';
+						if (frameColorHandle != null) io.readTex(frameColorHandle);
+						if (deviceColorEnabled && presentInput !== 'frame_color') io.readTex(deviceColorHandle);
+					} else if (graph && (graph.reads?.length || graph.writes?.length)) {
+						if (graph.reads) for (const slot of graph.reads) io.readTex(getHandle(slot));
+						if (graph.writes) for (const slot of graph.writes) io.writeTex(getHandle(slot));
+					} else if (!isPresent && !isStateOnly) {
 						if (frameColorHandle != null) io.writeTex(frameColorHandle);
 						if (desc.writesDepth && frameDepthHandle != null) io.writeTex(frameDepthHandle);
 						else if (desc.depthTest && frameDepthHandle != null) io.readTex(frameDepthHandle);
@@ -359,13 +383,27 @@ export class RenderPassLibrary {
 					const enabled = this.isPassEnabled(desc.id);
 					const willRun = enabled && (!desc.shouldExecute || desc.shouldExecute());
 					if (!willRun) return;
+					const graph = desc.graph;
+					if (graph?.buildState) {
+						const graphCtx = {
+							view: $.view,
+							getTex: (slot: RenderGraphSlot) => ctx.getTex(getHandle(slot)),
+						};
+						const builtState = graph.buildState(graphCtx) as RenderPassStateRegistry[RenderPassStateId];
+						const passId = desc.id as keyof PassStateTypes & RenderPassStateId;
+						this.setState(passId, builtState as PassStateTypes[typeof passId]);
+					}
 					if (data.present) {
 						// Execute the pass; PipelineRegistry ensures the program/pipeline is bound.
-						const colorTex = frameColorHandle != null ? ctx.getTex(frameColorHandle) : null;
 						const gv = $.view;
+						const presentInput = graph?.presentInput ?? 'auto';
+						const allowDevice = presentInput === 'device_color' || presentInput === 'auto';
+						const useDither = allowDevice && deviceColorEnabled && gv.dither_type !== 0;
+						const baseTex = frameColorHandle != null ? ctx.getTex(frameColorHandle) : null;
+						const deviceTex = deviceColorEnabled ? ctx.getTex(deviceColorHandle) : null;
+						const colorTex = useDither ? deviceTex : baseTex;
 						// TODO: Move CRT state setup to prepare()?
 						const applyCrt = !!gv.crt_postprocessing_enabled;
-						const ditherType = gv.dither_type;
 						this.setState('crt', {
 							width: gv.offscreenCanvasSize.x,
 							height: gv.offscreenCanvasSize.y,
@@ -380,7 +418,6 @@ export class RenderPassLibrary {
 								enableGlow: applyCrt && !!gv.enable_glow,
 								enableFringing: applyCrt && !!gv.enable_fringing,
 								enableAperture: applyCrt && !!gv.enable_aperture,
-								ditherType,
 								noiseIntensity: gv.noiseIntensity,
 								colorBleed: gv.colorBleed,
 								blurIntensity: gv.blurIntensity,
@@ -393,8 +430,16 @@ export class RenderPassLibrary {
 						this.execute(desc.id, null);
 					} else {
 						if (frameColorHandle == null || frameDepthHandle == null) return;
-						// Execute with the current frame FBO; registry binds pipeline then calls prepare().
-						this.execute(desc.id, ctx.getFBO(frameColorHandle, frameDepthHandle) as WebGLFramebuffer);
+						const needsDepth = !!(desc.writesDepth || desc.depthTest);
+						const defaultWrites: RenderGraphSlot[] = needsDepth ? ['frame_color', 'frame_depth'] : ['frame_color'];
+						const writeSlots = (graph && graph.writes && graph.writes.length) ? graph.writes : defaultWrites;
+						let colorHandle: number = null;
+						let depthHandle: number = null;
+						for (const slot of writeSlots) {
+							if (slot === 'frame_depth') depthHandle = getHandle(slot);
+							else colorHandle = getHandle(slot);
+						}
+						this.execute(desc.id, ctx.getFBO(colorHandle, depthHandle) as WebGLFramebuffer);
 					}
 				}
 			});

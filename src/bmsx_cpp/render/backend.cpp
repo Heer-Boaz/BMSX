@@ -46,6 +46,33 @@ static std::array<u8, 256> buildDitherGuardLut() {
 
 static const std::array<u8, 256> kDitherGuardLut = buildDitherGuardLut();
 
+std::array<u8, 256> buildSrgbToLinearLut() {
+	std::array<u8, 256> lut{};
+	for (i32 i = 0; i < 256; ++i) {
+		const f32 c = static_cast<f32>(i) / 255.0f;
+		const f32 linear = std::pow(c, 2.2f);
+		lut[static_cast<size_t>(i)] = static_cast<u8>(std::round(linear * 255.0f));
+	}
+	return lut;
+}
+
+const std::array<u8, 256>& srgbToLinearLut() {
+	static const std::array<u8, 256> lut = buildSrgbToLinearLut();
+	return lut;
+}
+
+void convertSrgbToLinear(const u8* src, size_t pixels, std::vector<u8>& out) {
+	out.resize(pixels * 4);
+	const auto& lut = srgbToLinearLut();
+	for (size_t i = 0; i < pixels; ++i) {
+		const size_t idx = i * 4;
+		out[idx + 0] = lut[src[idx + 0]];
+		out[idx + 1] = lut[src[idx + 1]];
+		out[idx + 2] = lut[src[idx + 2]];
+		out[idx + 3] = src[idx + 3];
+	}
+}
+
 } // namespace
 
 /* ============================================================================
@@ -73,19 +100,25 @@ void SoftwareBackend::setFramebuffer(u32* fb, i32 width, i32 height, i32 pitch) 
 }
 
 TextureHandle SoftwareBackend::createTexture(const u8* data, i32 width, i32 height, const TextureParams& params) {
-	(void)params;
-
 	auto tex = std::make_unique<SoftwareTexture>();
 	tex->width = width;
 	tex->height = height;
 	tex->data.resize(width * height);
 
+	const u8* uploadData = data;
+	std::vector<u8> linearized;
+	if (data && params.srgb) {
+		const size_t pixels = static_cast<size_t>(width) * static_cast<size_t>(height);
+		convertSrgbToLinear(data, pixels, linearized);
+		uploadData = linearized.data();
+	}
+
 	// Convert RGBA8 to ARGB32
 	for (i32 i = 0; i < width * height; ++i) {
-		u8 r = data[i * 4 + 0];
-		u8 g = data[i * 4 + 1];
-		u8 b = data[i * 4 + 2];
-		u8 a = data[i * 4 + 3];
+		u8 r = uploadData[i * 4 + 0];
+		u8 g = uploadData[i * 4 + 1];
+		u8 b = uploadData[i * 4 + 2];
+		u8 a = uploadData[i * 4 + 3];
 		tex->data[i] = (a << 24) | (r << 16) | (g << 8) | b;
 	}
 
@@ -95,18 +128,24 @@ TextureHandle SoftwareBackend::createTexture(const u8* data, i32 width, i32 heig
 }
 
 void SoftwareBackend::updateTexture(TextureHandle handle, const u8* data, i32 width, i32 height, const TextureParams& params) {
-	(void)params;
 	auto* tex = static_cast<SoftwareTexture*>(handle);
 	if (tex->width != width || tex->height != height) {
 		tex->width = width;
 		tex->height = height;
 		tex->data.resize(static_cast<size_t>(width) * height);
 	}
+	const u8* uploadData = data;
+	std::vector<u8> linearized;
+	if (data && params.srgb) {
+		const size_t pixels = static_cast<size_t>(width) * static_cast<size_t>(height);
+		convertSrgbToLinear(data, pixels, linearized);
+		uploadData = linearized.data();
+	}
 	for (i32 i = 0; i < width * height; ++i) {
-		u8 r = data[i * 4 + 0];
-		u8 g = data[i * 4 + 1];
-		u8 b = data[i * 4 + 2];
-		u8 a = data[i * 4 + 3];
+		u8 r = uploadData[i * 4 + 0];
+		u8 g = uploadData[i * 4 + 1];
+		u8 b = uploadData[i * 4 + 2];
+		u8 a = uploadData[i * 4 + 3];
 		tex->data[i] = (a << 24) | (r << 16) | (g << 8) | b;
 	}
 }

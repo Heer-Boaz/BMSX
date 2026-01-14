@@ -404,12 +404,11 @@ inline f32 fract(f32 v) {
 	return v - std::floor(v);
 }
 
-const std::array<f32, 256>& srgbToLinearTable() {
+const std::array<f32, 256>& byteToLinearTable() {
 	static std::array<f32, 256> table = []() {
 		std::array<f32, 256> t{};
 		for (i32 i = 0; i < 256; ++i) {
-			f32 c = static_cast<f32>(i) / 255.0f;
-			t[static_cast<size_t>(i)] = srgbToLinearExact(c);
+			t[static_cast<size_t>(i)] = static_cast<f32>(i) / 255.0f;
 		}
 		return t;
 	}();
@@ -425,37 +424,11 @@ inline Color unpackLinear(u32 pixel, const std::array<f32, 256>& table) {
 
 inline Color sampleLinear(const u32* src, i32 width, i32 height, f32 x, f32 y,
 						  const std::array<f32, 256>& table) {
-	const f32 maxX = static_cast<f32>(width - 1);
-	const f32 maxY = static_cast<f32>(height - 1);
-	x = std::min(maxX, std::max(0.0f, x));
-	y = std::min(maxY, std::max(0.0f, y));
-
-	const i32 x0 = static_cast<i32>(std::floor(x));
-	const i32 y0 = static_cast<i32>(std::floor(y));
-	const i32 x1 = std::min(x0 + 1, width - 1);
-	const i32 y1 = std::min(y0 + 1, height - 1);
-	const f32 tx = x - static_cast<f32>(x0);
-	const f32 ty = y - static_cast<f32>(y0);
-
-	const Color c00 = unpackLinear(src[y0 * width + x0], table);
-	const Color c10 = unpackLinear(src[y0 * width + x1], table);
-	const Color c01 = unpackLinear(src[y1 * width + x0], table);
-	const Color c11 = unpackLinear(src[y1 * width + x1], table);
-
-	const f32 r0 = c00.r + (c10.r - c00.r) * tx;
-	const f32 g0 = c00.g + (c10.g - c00.g) * tx;
-	const f32 b0 = c00.b + (c10.b - c00.b) * tx;
-
-	const f32 r1 = c01.r + (c11.r - c01.r) * tx;
-	const f32 g1 = c01.g + (c11.g - c01.g) * tx;
-	const f32 b1 = c01.b + (c11.b - c01.b) * tx;
-
-	return {
-		r0 + (r1 - r0) * ty,
-		g0 + (g1 - g0) * ty,
-		b0 + (b1 - b0) * ty,
-		1.0f
-	};
+	const i32 xi = static_cast<i32>(std::floor(x + 0.5f));
+	const i32 yi = static_cast<i32>(std::floor(y + 0.5f));
+	const i32 clampedX = std::min(width - 1, std::max(0, xi));
+	const i32 clampedY = std::min(height - 1, std::max(0, yi));
+	return unpackLinear(src[clampedY * width + clampedX], table);
 }
 
 inline f32 luminance(const Color& c) {
@@ -577,7 +550,7 @@ void GameView::applyCRTPostProcessing(const u32* src,
 	}
 	std::memcpy(m_crtScratchBuffer.data(), src, srcSize * sizeof(u32));
 
-	const auto& table = srgbToLinearTable();
+	const auto& table = byteToLinearTable();
 	const f32 invOutW = 1.0f / static_cast<f32>(dstWidth);
 	const f32 invOutH = 1.0f / static_cast<f32>(dstHeight);
 	const f32 srcWf = static_cast<f32>(srcWidth);
@@ -735,11 +708,13 @@ void GameView::applyCRTPostProcessing(const u32* src,
 				color.b += color.b * (n * amp * k);
 			}
 
-			const f32 lumFinal = luminance(color);
-			const f32 keep = smoothstep(kBlackCutoff, kBlackSoft, lumFinal);
-			color.r *= keep;
-			color.g *= keep;
-			color.b *= keep;
+			if (enableCrt) {
+				const f32 lumFinal = luminance(color);
+				const f32 keep = smoothstep(kBlackCutoff, kBlackSoft, lumFinal);
+				color.r *= keep;
+				color.g *= keep;
+				color.b *= keep;
+			}
 
 			f32 outR = clamp01(linearToSrgbExact(color.r));
 			f32 outG = clamp01(linearToSrgbExact(color.g));

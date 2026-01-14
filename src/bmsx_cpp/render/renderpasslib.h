@@ -16,6 +16,7 @@
 #include <functional>
 #include <memory>
 #include <any>
+#include <optional>
 #include <stdexcept>
 
 namespace bmsx {
@@ -24,6 +25,7 @@ namespace bmsx {
 class GameView;
 class LightingSystem;
 class RenderGraphRuntime;
+class RenderGraphContext;
 
 /* ============================================================================
  * Render pass state types
@@ -74,7 +76,6 @@ struct CRTPipelineOptions {
 	bool applyGlow = true;
 	bool applyFringing = true;
 	bool applyAperture = true;
-	i32 ditherType = 0;
 	f32 blurIntensity = 0.6f;
 	std::array<f32, 3> glowColor = {0.12f, 0.10f, 0.09f};
 };
@@ -88,6 +89,15 @@ struct CRTPipelineState {
 	i32 srcHeight = 0;
 	TextureHandle colorTex = nullptr;
 	CRTPipelineOptions options;
+};
+
+struct DeviceQuantizePipelineState {
+	i32 width = 0;
+	i32 height = 0;
+	i32 baseWidth = 0;
+	i32 baseHeight = 0;
+	TextureHandle colorTex = nullptr;
+	i32 ditherType = 0;
 };
 
 struct FrameSharedState {
@@ -142,6 +152,32 @@ struct RenderPassDef {
 		std::vector<std::string> samplers;
 	};
 	std::optional<BindingLayout> bindingLayout;
+
+	enum class RenderGraphSlot {
+		FrameColor,
+		FrameDepth,
+		DeviceColor,
+	};
+
+	struct RenderGraphPassContext {
+		GameView* view = nullptr;
+		bool deviceColorEnabled = false;
+		std::function<TextureHandle(RenderGraphSlot)> getTexture;
+	};
+
+	struct RenderPassGraphDef {
+		enum class PresentInput {
+			Auto,
+			FrameColor,
+			DeviceColor,
+		};
+		std::vector<RenderGraphSlot> reads;
+		std::vector<RenderGraphSlot> writes;
+		PresentInput presentInput = PresentInput::Auto;
+		bool skip = false;
+		std::function<std::any(const RenderGraphPassContext&)> buildState;
+	};
+	std::optional<RenderPassGraphDef> graph;
 
 	// Execution callbacks
 	std::function<void(GPUBackend*, void*, std::any&)> exec;
