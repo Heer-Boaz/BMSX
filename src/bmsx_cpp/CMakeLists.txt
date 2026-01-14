@@ -115,6 +115,7 @@ add_library(bmsx_core STATIC
     # Render systems
     render/backend.cpp
     render/gameview.cpp
+    render/frame_uniforms.cpp
     render/render_queues.cpp
     render/sprites_pipeline.cpp
     render/texturemanager.cpp

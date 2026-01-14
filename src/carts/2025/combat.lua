@@ -1086,6 +1086,7 @@ function combat.define_fsm()
 
 	states.combat_results_setup = {
 		entering_state = function(self)
+			self:disable_combat_parallax()
 			local node = story[self.node_id]
 			local rewards = self:resolve_combat_rewards(node)
 			self.combat_rewards = rewards

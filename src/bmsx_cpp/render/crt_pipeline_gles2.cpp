@@ -814,7 +814,7 @@ void renderCRTGLES2(OpenGLES2Backend* backend, GameView* context, const CRTPipel
 	glUniform2f(g_crt.uniform_src_resolution, static_cast<float>(state.baseWidth), static_cast<float>(state.baseHeight));
 	glUniform1f(g_crt.uniform_scale, 1.0f);
 	glUniform1f(g_crt.uniform_fragscale, static_cast<float>(state.srcWidth) / static_cast<float>(state.baseWidth));
-	glUniform1f(g_crt.uniform_time, static_cast<float>(EngineCore::instance().clock()->now() / 1000.0));
+  glUniform1f(g_crt.uniform_time, static_cast<float>(EngineCore::instance().totalTime()));
 	glUniform1f(g_crt.uniform_random, static_cast<float>(std::rand()) / static_cast<float>(RAND_MAX));
 
 	glUniform1i(g_crt.uniform_apply_noise, state.options.applyNoise ? 1 : 0);
