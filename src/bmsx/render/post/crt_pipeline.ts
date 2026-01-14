@@ -41,6 +41,7 @@ export function registerCRT_WebGL(registry: RenderPassLibrary): void {
 		name: 'Present/CRT',
 		vsCode: vertexShaderCRTCode,
 		fsCode: fragmentShaderCRTCode,
+		bindingLayout: { uniforms: ['FrameUniforms'] },
 		present: true,
 		exec: (be: WebGLBackend, _fbo, state: RenderPassStateRegistry['crt']) => {
 			const runtime: CRTRuntime = { backend: be, gl: be.gl as WebGL2RenderingContext, context: $.view };
@@ -61,7 +62,6 @@ export function registerCRT_WebGL(registry: RenderPassLibrary): void {
 }
 
 function bindCRTUniforms(gl: WebGL2RenderingContext, state: RenderPassStateRegistry['crt']): void {
-	const now = $.platform.clock.now() / 1000;
 	const program = gl.getParameter(gl.CURRENT_PROGRAM);
 	const u = (n: string) => gl.getUniformLocation(program, n);
 	const set1f = (n: string, v: number) => { const loc = u(n); gl.uniform1f(loc, v); };
@@ -69,7 +69,7 @@ function bindCRTUniforms(gl: WebGL2RenderingContext, state: RenderPassStateRegis
 
 	const outW = state.width;
 	const outH = state.height;
-	set1f('u_time', now); set1f('u_random', Math.random());
+	set1f('u_random', Math.random());
 	set2f('u_resolution', outW, outH);
 	set2f('u_srcResolution', state.baseWidth, state.baseHeight);
 	set1f('u_scale', 1.0);
