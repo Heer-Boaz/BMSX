@@ -26,12 +26,11 @@ namespace bmsx {
  * GameView implementation
  * ============================================================================ */
 
-GameView::GameView(i32 viewportWidth, i32 viewportHeight)
+GameView::GameView(GameViewHost* host, i32 viewportWidth, i32 viewportHeight)
 	: viewportSize{static_cast<f32>(viewportWidth), static_cast<f32>(viewportHeight)}
 	, canvasSize{static_cast<f32>(viewportWidth), static_cast<f32>(viewportHeight)}
 	, offscreenCanvasSize{static_cast<f32>(viewportWidth) * 2.0f, static_cast<f32>(viewportHeight) * 2.0f}
-	, windowSize{static_cast<f32>(viewportWidth), static_cast<f32>(viewportHeight)}
-	, availableWindowSize{static_cast<f32>(viewportWidth), static_cast<f32>(viewportHeight)}
+	, m_host(host)
 {
 	initializeRenderer();
 }
@@ -94,10 +93,12 @@ void GameView::setViewportSize(i32 width, i32 height) {
 	viewportSize.y = static_cast<f32>(height);
 }
 
-void GameView::configureRenderTargets(const Vec2* viewport, const Vec2* canvas, const Vec2* offscreen) {
+void GameView::configureRenderTargets(const Vec2* viewport, const Vec2* canvas, const Vec2* offscreen, const f32* viewportScaleOverride, const f32* canvasScaleOverride) {
 	bool viewportChanged = false;
 	bool canvasChanged = false;
 	bool offscreenChanged = false;
+	bool viewportScaleChanged = false;
+	bool canvasScaleChanged = false;
 
 	if (viewport) {
 		viewportChanged = (viewportSize.x != viewport->x || viewportSize.y != viewport->y);
@@ -112,7 +113,21 @@ void GameView::configureRenderTargets(const Vec2* viewport, const Vec2* canvas, 
 		offscreenCanvasSize = *offscreen;
 	}
 
-	if (!(viewportChanged || canvasChanged || offscreenChanged)) {
+	const ViewportDimensions dims = m_host->getSize(viewportSize, canvasSize);
+
+	f32 targetViewportScale = viewportScaleOverride ? *viewportScaleOverride : dims.viewportScale;
+	f32 targetCanvasScale = canvasScaleOverride ? *canvasScaleOverride : dims.canvasScale;
+
+	if (viewportScale != targetViewportScale) {
+		viewportScaleChanged = true;
+		viewportScale = targetViewportScale;
+	}
+	if (canvasScale != targetCanvasScale) {
+		canvasScaleChanged = true;
+		canvasScale = targetCanvasScale;
+	}
+
+	if (!(viewportChanged || canvasChanged || offscreenChanged || viewportScaleChanged || canvasScaleChanged)) {
 		return;
 	}
 

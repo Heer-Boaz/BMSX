@@ -1,3 +1,5 @@
+import { type vec2 } from 'bmsx/rompack/rompack';
+
 /**
  * Core platform contract.
  *
@@ -345,6 +347,8 @@ export type GameViewHostHandle = unknown;
 export interface ViewportDimensions {
 	width: number;
 	height: number;
+	viewportScale: number;
+	canvasScale: number;
 }
 
 export interface VisibleViewportMetrics {
@@ -366,9 +370,9 @@ export interface VisibleViewportMetrics {
  * numbers as authoritative when positioning the main canvas and the onscreen gamepad.
  */
 export interface ViewportMetrics {
-	document: ViewportDimensions;
-	windowInner: ViewportDimensions;
-	screen: ViewportDimensions;
+	document: { width: number; height: number; };
+	windowInner: { width: number; height: number; };
+	screen: { width: number; height: number; };
 	visible: VisibleViewportMetrics;
 }
 
@@ -488,6 +492,9 @@ export interface GameViewHost {
 	readonly surface: GameViewCanvas;
 	createBackend(): Promise<unknown>;
 	getCapability<T extends GameViewHostCapabilityId>(capability: T): GameViewHostCapabilityMap[T];
+	getSize(viewportSize: vec2, canvasSize: vec2): ViewportDimensions;
+	onResize(handler: (size: ViewportDimensions) => void): SubscriptionHandle;
+	onFocusChange(handler: (focused: boolean) => void): SubscriptionHandle;
 }
 
 export type HttpResponse = {

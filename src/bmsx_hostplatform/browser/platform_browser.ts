@@ -38,6 +38,8 @@ import {
 } from 'bmsx/platform';
 import { WebAudioService } from './web_audio';
 import type { GamepadControlHandle, GameViewCanvas, GameViewHost, HostEventListenerTarget, HostEventOptions, HostWindowEventType, OnscreenGamepadHandles, OverlayHandle, SurfaceBounds, ViewportDimensions } from '../platform';
+import { type vec2 } from 'bmsx/rompack/rompack';
+import { GameOptions } from 'bmsx/core/gameoptions';
 
 declare const $: any; // avoid circular dependency issues
 
@@ -1255,18 +1257,18 @@ export class BrowserGameViewHost implements GameViewHost {
 
 	private computeViewportMetrics(): ViewportMetrics {
 		const documentElement = document.documentElement!;
-		const documentDimensions: ViewportDimensions = {
+		const documentDimensions = {
 			width: documentElement.clientWidth,
 			height: documentElement.clientHeight,
-		};
-		const windowDimensions: ViewportDimensions = {
+		} as any;
+		const windowDimensions = {
 			width: window.innerWidth,
 			height: window.innerHeight,
-		};
-		const screenDimensions: ViewportDimensions = {
+		} as any;
+		const screenDimensions = {
 			width: window.screen.width,
 			height: window.screen.height,
-		};
+		} as any;
 		const visual = window.visualViewport!;
 		const visible = {
 			width: visual.width,
@@ -1328,6 +1330,223 @@ export class BrowserGameViewHost implements GameViewHost {
 			default:
 				return null;
 		}
+	}
+
+	private lastViewportSize: vec2 = { x: 256, y: 212 };
+	private lastCanvasSize: vec2 = { x: 512, y: 424 };
+
+	/**
+	 * Comprehensive viewport sizing routine.
+	 *
+	 * This method gathers every dimension the host environment exposes (document, inner, screen, or any
+	 * custom source supplied by the active platform)
+	 * and derives two related concepts:
+	 *  - `windowSize`/`availableWindowSize`: how much real estate we believe we can inhabit,
+	 *    factoring in host shells that report a zero `innerWidth`/`innerHeight` while
+	 *    an onscreen keyboard is sliding in (observed on several mobile web views).
+	 *  - `viewportScale` and `canvasScale`: the ratio between that real estate and the
+	 *    logical render sizes (`viewportSize` for gameplay, `canvasSize` for the backing buffer).
+	 *    Ensure scale is a half-integer multiple of the logical viewport
+	 *    (`viewportSize * viewportScale`) to reduce subpixel jitter when scaling non-integer factors.
+	 *    We centre the resulting surface within the **largest** container reported by either
+	 *
+	 * Historical context / pitfalls:
+	 *  - When the onscreen gamepad is enabled it becomes a first-class surface sharing the same
+	 *    presentation field as the main canvas. Ignoring its footprint leads to either the game
+	 *    canvas shrinking unpredictably or the controls falling off-screen. Every calculation in
+	 *    this method treats those controls as essential viewports, not optional chrome.
+	 *  - Prior to the onscreen-gamepad refactors we assumed the canvas could always consume
+	 *    the full width of the container. Once the onscreen controls started participating
+	 *    in normal flow (instead of being absolutely positioned), the gamepad effectively started
+	 *    negotiating for horizontal space with the canvas. The layout simulator in
+	 *    `tests/simulate_gamepad_positions_for_codex.js` captures how that shift collapses
+	 *    available width if we do not pre-allocate "Lebensraum" for the gamepad.
+	 *  - Fixed clamping to 20% of the larger screen dimension keeps the control overlays legible on
+	 *    phones yet avoids dwarfing the canvas on tablets/desktops.
+	 *  - We deliberately avoid defensive null checks here: the platform layer guarantees that
+	 *    viewport metrics exist and that `OnscreenGamepadHandleProvider` returns handles while
+	 *    the onscreen gamepad is enabled.
+	 *
+	 * The landscape branch further subtracts the horizontal footprint of both control clusters when
+	 * the canvas is configured to "own" the shared space (`canvas_or_onscreengamepad_must_respect_lebensraum === 'canvas'`).
+	 * That mirrors how the static-flow layout squeezes the canvas; without this subtraction, the canvas
+	 * scale would be computed optimistically and the host flow would shove the controls off-screen.
+	 *
+	 * After all of the above, we convert to integers (via `~~`) to stabilise pixel snapping.
+	 * This method calls `performLayout` internally to ensure the host surface is synchronized
+	 * with the new dimensions before returning.
+	 */
+	public getSize(viewportSize: vec2, canvasSize: vec2): ViewportDimensions {
+		this.lastViewportSize = viewportSize;
+		this.lastCanvasSize = canvasSize;
+		const metrics = this.computeViewportMetrics();
+		const documentWidth = metrics.document.width;
+		const documentHeight = metrics.document.height;
+		const innerWidth = metrics.windowInner.width;
+		const innerHeight = metrics.windowInner.height;
+		const screenWidth = metrics.screen.width;
+		const screenHeight = metrics.screen.height;
+
+		const fallbackWidth = innerWidth > 0 ? innerWidth : screenWidth;
+		const fallbackHeight = innerHeight > 0 ? innerHeight : screenHeight;
+		let effectiveWidth = documentWidth;
+		let effectiveHeight = documentHeight;
+		if (fallbackWidth > effectiveWidth) {
+			effectiveWidth = fallbackWidth;
+		}
+		if (fallbackHeight > effectiveHeight) {
+			effectiveHeight = fallbackHeight;
+		}
+
+		const viewportWidth = innerWidth > 0 ? innerWidth : screenWidth;
+		const viewportHeight = innerHeight > 0 ? innerHeight : screenHeight;
+		const viewportIsLandscape = viewportWidth > viewportHeight && viewportWidth !== 0 && viewportHeight !== 0;
+
+		let adjustedWidth = effectiveWidth;
+		const onscreenGamepadEnabled = $.input?.isOnscreenGamepadEnabled;
+		if (onscreenGamepadEnabled
+			&& GameOptions.canvas_or_onscreengamepad_must_respect_lebensraum === 'canvas'
+			&& viewportIsLandscape) {
+			const handles = this.resolveOnscreenGamepadHandles();
+			if (handles) {
+				const referenceDimension = viewportWidth > viewportHeight ? viewportWidth : viewportHeight;
+				const maxControlScale = referenceDimension * 0.20 / 100;
+				const dpadWidthAttr = handles.dpad.getNumericAttribute('width');
+				const actionButtonsWidthAttr = handles.actionButtons.getNumericAttribute('width');
+				if (dpadWidthAttr !== null && actionButtonsWidthAttr !== null) {
+					const dpadWidth = dpadWidthAttr * maxControlScale;
+					const actionButtonsWidth = actionButtonsWidthAttr * maxControlScale;
+					const reduction = dpadWidth + actionButtonsWidth;
+					adjustedWidth = Math.max(0, adjustedWidth - reduction);
+				}
+			}
+		}
+
+		const dx = adjustedWidth / viewportSize.x;
+		const dy = effectiveHeight / viewportSize.y;
+		const viewportScale = Math.floor(Math.min(dx, dy) * 2) / 2;
+
+		const targetWidth = viewportSize.x * viewportScale;
+		const targetHeight = viewportSize.y * viewportScale;
+		const canvasScale = Math.min(targetWidth / canvasSize.x, targetHeight / canvasSize.y);
+
+		const dims: ViewportDimensions = {
+			width: adjustedWidth,
+			height: effectiveHeight,
+			viewportScale,
+			canvasScale,
+		};
+		this.performLayout(dims);
+		return dims;
+	}
+
+	public onResize(handler: (size: ViewportDimensions) => void): SubscriptionHandle {
+		const listener = () => {
+			const size = this.getSize(this.lastViewportSize, this.lastCanvasSize);
+			handler(size);
+		};
+		window.addEventListener('resize', listener);
+		window.addEventListener('orientationchange', listener);
+		return createSubscriptionHandle(() => {
+			window.removeEventListener('resize', listener);
+			window.removeEventListener('orientationchange', listener);
+		});
+	}
+
+	private performLayout(size: ViewportDimensions): void {
+		const metrics = this.computeViewportMetrics();
+		const viewportWidth = metrics.windowInner.width > 0 ? metrics.windowInner.width : metrics.screen.width;
+		const viewportHeight = metrics.windowInner.height > 0 ? metrics.windowInner.height : metrics.screen.height;
+		const visibleViewportHeight = metrics.visible.height;
+		const visibleViewportBottom = metrics.visible.offsetTop + visibleViewportHeight;
+		const viewportBottomInset = Math.max(0, viewportHeight - visibleViewportBottom);
+
+		const displayWidth = Math.round(this.lastViewportSize.x * size.viewportScale);
+		const displayHeight = Math.round(this.lastViewportSize.y * size.viewportScale);
+
+		const horizontalContainer = Math.max(viewportWidth, size.width, displayWidth);
+		const verticalContainer = Math.max(viewportHeight, size.height, displayHeight);
+		let displayLeft = ~~((horizontalContainer - displayWidth) / 2);
+		if (displayLeft < 0) displayLeft = 0;
+
+		const isLandscape = size.width >= size.height;
+		const onscreenGamepadEnabled = $.input?.isOnscreenGamepadEnabled;
+		let displayTop = isLandscape || !onscreenGamepadEnabled
+			? ~~((verticalContainer - displayHeight) / 2)
+			: 0;
+		if (displayTop < 0) displayTop = 0;
+
+		this.surface.setDisplaySize(displayWidth, displayHeight);
+		this.surface.setDisplayPosition(displayLeft, displayTop);
+
+		if (onscreenGamepadEnabled) {
+			const handles = this.resolveOnscreenGamepadHandles();
+			if (handles) {
+				const { dpad, actionButtons } = handles;
+				const referenceDimension = viewportWidth > viewportHeight ? viewportWidth : viewportHeight;
+				const bottomInset = viewportBottomInset;
+				const canvasRect = this.surface.measureDisplay();
+
+				const updateScale = (control: typeof dpad, isRightSide: boolean): void => {
+					let newScale = referenceDimension * 0.20 / 100;
+					if (isLandscape && GameOptions.canvas_or_onscreengamepad_must_respect_lebensraum === 'gamepad') {
+						let maxControlWidth: number;
+						if (isRightSide) {
+							maxControlWidth = viewportWidth - (canvasRect.left + canvasRect.width);
+						} else {
+							maxControlWidth = canvasRect.left;
+						}
+						if (maxControlWidth < 0) maxControlWidth = 0;
+						const widthAttr = control.getNumericAttribute('width');
+						if (widthAttr !== null && widthAttr > 0 && widthAttr * newScale > maxControlWidth) {
+							newScale = maxControlWidth / widthAttr;
+						}
+					}
+					const heightAttr = control.getNumericAttribute('height');
+					if (heightAttr !== null && heightAttr > 0 && visibleViewportHeight > 0) {
+						const maxScaleByHeight = visibleViewportHeight / heightAttr;
+						if (maxScaleByHeight > 0 && newScale > maxScaleByHeight) {
+							newScale = maxScaleByHeight;
+						}
+					}
+					control.setScale(newScale);
+				};
+
+				updateScale(dpad, false);
+				updateScale(actionButtons, true);
+				const dpadSize = dpad.measure();
+				const actionSize = actionButtons.measure();
+				const centeredSpan = visibleViewportHeight;
+				const clampBottom = (value: number): number => value > 0 ? Math.round(value) : 0;
+				const updateBottomPosition = (control: typeof dpad, size: { height: number; }, isRightSide: boolean): void => {
+					let newBottom: number;
+					if (isLandscape) {
+						const verticalRoom = Math.max(centeredSpan - size.height, 0);
+						newBottom = bottomInset + verticalRoom / 2;
+					} else if (isRightSide) {
+						newBottom = bottomInset;
+					} else {
+						const referenceHeight = Math.max(actionSize.height, size.height);
+						const verticalRoom = Math.max(referenceHeight - size.height, 0);
+						newBottom = bottomInset + verticalRoom / 2;
+					}
+					control.setBottom(clampBottom(newBottom));
+				};
+				updateBottomPosition(dpad, dpadSize, false);
+				updateBottomPosition(actionButtons, actionSize, true);
+			}
+		}
+	}
+
+	public onFocusChange(handler: (focused: boolean) => void): SubscriptionHandle {
+		const focusListener = () => handler(true);
+		const blurListener = () => handler(false);
+		window.addEventListener('focus', focusListener);
+		window.addEventListener('blur', blurListener);
+		return createSubscriptionHandle(() => {
+			window.removeEventListener('focus', focusListener);
+			window.removeEventListener('blur', blurListener);
+		});
 	}
 
 	public async createBackend() {

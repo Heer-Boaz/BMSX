@@ -21,7 +21,7 @@
 namespace bmsx {
 
 // Forward declarations
-class BFont;
+class GameViewHost;
 class RenderPassLibrary;
 class RenderGraphRuntime;
 
@@ -54,8 +54,11 @@ struct AtmosphereParams {
 
 class GameView : public Registerable {
 public:
-	GameView(i32 viewportWidth, i32 viewportHeight);
+	GameView(GameViewHost* host, i32 viewportWidth, i32 viewportHeight);
 	~GameView();
+
+	GameViewHost* host() { return m_host; }
+	const GameViewHost* host() const { return m_host; }
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// Registerable interface
@@ -79,17 +82,11 @@ public:
 	Vec2 viewportSize;       // The logical game resolution (e.g. 256x212 for MSX2)
 	Vec2 canvasSize;         // The backing buffer size
 	Vec2 offscreenCanvasSize;// Offscreen render target size
-	Vec2 windowSize;         // Available window size
-	Vec2 availableWindowSize;
 	f32 viewportScale = 1.0f;
 	f32 canvasScale = 1.0f;
-	f32 dx = 0.0f;
-	f32 dy = 0.0f;
-	f32 canvas_dx = 0.0f;
-	f32 canvas_dy = 0.0f;
 
 	void setViewportSize(i32 width, i32 height);
-	void configureRenderTargets(const Vec2* viewport, const Vec2* canvas, const Vec2* offscreen);
+	void configureRenderTargets(const Vec2* viewportDimensions = nullptr, const Vec2* canvasDimensions = nullptr, const Vec2* offscreenDimensions = nullptr, const f32* viewportScaleOverride = nullptr, const f32* canvasScaleOverride = nullptr);
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// Frame rendering
@@ -240,6 +237,7 @@ private:
 	void initializeRenderer();
 	void setAtlasIndex(bool isPrimary, i32 index);
 
+	GameViewHost* m_host;
 	std::unique_ptr<GPUBackend> m_backend;
 	std::unique_ptr<RenderPassLibrary> m_pipelineRegistry;
 	std::unique_ptr<RenderGraphRuntime> m_renderGraph;

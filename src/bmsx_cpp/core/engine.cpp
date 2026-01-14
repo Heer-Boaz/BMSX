@@ -57,11 +57,24 @@ bool EngineCore::initialize(Platform* platform) {
 
 	// Get viewport size from platform
 	auto* host = platform->gameviewHost();
-	i32 width = host->width();
-	i32 height = host->height();
+	Vec2 defaultViewport{ 256.0f, 212.0f };
+	ViewportDimensions dims = host->getSize(defaultViewport, defaultViewport * 2.0f);
 
-	// Create GameView with viewport from platform
-	m_view = std::make_unique<GameView>(width, height);
+	// Create GameView with logical viewport
+	m_view = std::make_unique<GameView>(host, static_cast<i32>(defaultViewport.x), static_cast<i32>(defaultViewport.y));
+	m_view->viewportScale = dims.viewportScale;
+	m_view->canvasScale = dims.canvasScale;
+	m_viewport_scale = dims.viewportScale;
+	m_canvas_scale = dims.canvasScale;
+
+	// Subscribe to resize events
+	m_resize_sub = host->onResize([this](const ViewportDimensions& dims) {
+		m_viewport_scale = dims.viewportScale;
+		m_canvas_scale = dims.canvasScale;
+		if (m_view) {
+			m_view->configureRenderTargets(nullptr, nullptr, nullptr, &m_viewport_scale, &m_canvas_scale);
+		}
+	});
 
 	// Get backend from platform (SoftwareBackend for libretro)
 	if (host) {
@@ -71,6 +84,10 @@ bool EngineCore::initialize(Platform* platform) {
 		}
 	}
 	m_view->bind();
+
+	// Update view with initial size (after backend is set)
+	m_view->configureRenderTargets(nullptr, nullptr, nullptr, &m_viewport_scale, &m_canvas_scale);
+
 	m_texture_manager = std::make_unique<TextureManager>(m_view->backend());
 	m_texture_manager->bind();
 	m_view->initializeDefaultTextures();
@@ -383,7 +400,7 @@ bool EngineCore::bootWithoutCart() {
 		viewportSize.x * 2.0f,
 		viewportSize.y * 2.0f
 	};
-	m_view->configureRenderTargets(&viewportSize, &viewportSize, &offscreenSize);
+	m_view->configureRenderTargets(&viewportSize, &viewportSize, &offscreenSize, &m_viewport_scale, &m_canvas_scale);
 
 	// Boot the VM with the engine's system program
 	if (m_engine_assets.vmProgram && m_engine_assets.vmProgram->program) {
@@ -483,7 +500,7 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 		viewportSize.x * 2.0f,
 		viewportSize.y * 2.0f
 	};
-	m_view->configureRenderTargets(&viewportSize, &viewportSize, &offscreenSize);
+	m_view->configureRenderTargets(&viewportSize, &viewportSize, &offscreenSize, &m_viewport_scale, &m_canvas_scale);
 
 	const bool hasEngineProgram = m_engine_assets_loaded
 		&& m_engine_assets.vmProgram

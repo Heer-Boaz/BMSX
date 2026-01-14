@@ -55,10 +55,9 @@ public:
 
 	// GameViewHost interface
 	void* getCapability(std::string_view name) override;
-	SubscriptionHandle onResize(std::function<void(const ResizeEvt&)> handler) override;
+	ViewportDimensions getSize(Vec2 viewportSize, Vec2 canvasSize) override;
+	SubscriptionHandle onResize(std::function<void(const ViewportDimensions&)> handler) override;
 	SubscriptionHandle onFocusChange(std::function<void(bool)> handler) override;
-	int width() override { return m_framebuffer.width; }
-	int height() override { return m_framebuffer.height; }
 
 	// Create a backend for this platform
 	std::unique_ptr<GPUBackend> createBackend() override;

@@ -1081,10 +1081,21 @@ void* LibretroGameViewHost::getCapability(std::string_view name) {
 	return nullptr;
 }
 
-SubscriptionHandle LibretroGameViewHost::onResize(std::function<void(const ResizeEvt&)> handler) {
+ViewportDimensions LibretroGameViewHost::getSize(Vec2 viewportSize, Vec2 canvasSize) {
+	(void)viewportSize;
+	(void)canvasSize;
+	ViewportDimensions dims;
+	dims.width = static_cast<i32>(m_framebuffer.width);
+	dims.height = static_cast<i32>(m_framebuffer.height);
+	dims.viewportScale = 1.0f;
+	dims.canvasScale = 1.0f;
+	return dims;
+}
+
+SubscriptionHandle LibretroGameViewHost::onResize(std::function<void(const ViewportDimensions&)> handler) {
 	// Libretro doesn't really have dynamic resizing, but we keep the interface
 	(void)handler;
-	return SubscriptionHandle::create([](){});
+	return SubscriptionHandle::create([]() {});
 }
 
 SubscriptionHandle LibretroGameViewHost::onFocusChange(std::function<void(bool)> handler) {

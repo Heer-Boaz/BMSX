@@ -23,10 +23,12 @@ import {
 	MicrotaskQueue,
 	SubscriptionHandle,
 	createSubscriptionHandle,
+	ViewportDimensions,
 } from 'bmsx/platform';
 import { HeadlessPlatformServices, HeadlessPlatformOptions } from '../headless/platform_headless';
 import { HeadlessGameViewHost } from 'bmsx/render/headless/headless_view';
 import { new_vec2 } from 'bmsx/utils/vector_operations';
+import { type vec2 } from 'bmsx/rompack/rompack';
 
 interface TerminalDimensions {
 	columns: number;
@@ -117,6 +119,18 @@ export class CLIGameViewHost implements GameViewHost {
 			screen: { width, height },
 			visible: { width, height, offsetTop: 0, offsetLeft: 0 },
 		};
+	}
+
+	public getSize(viewportSize: vec2, canvasSize: vec2): ViewportDimensions {
+		return this.delegate.getSize(viewportSize, canvasSize);
+	}
+
+	public onResize(handler: (size: ViewportDimensions) => void): SubscriptionHandle {
+		return this.delegate.onResize(handler);
+	}
+
+	public onFocusChange(handler: (focused: boolean) => void): SubscriptionHandle {
+		return this.delegate.onFocusChange(handler);
 	}
 }
 

@@ -11,6 +11,7 @@ import type {
 	GameViewHostCapabilityMap,
 	WindowEventHub,
 	SubscriptionHandle,
+	ViewportDimensions,
 } from '../../platform';
 import { createSubscriptionHandle } from '../../platform';
 import { HeadlessGPUBackend } from './headless_backend';
@@ -109,5 +110,23 @@ export class HeadlessGameViewHost implements GameViewHost {
 
 	async createBackend(): Promise<HeadlessGPUBackend> {
 		return new HeadlessGPUBackend();
+	}
+
+	public getSize(viewportSize: vec2, canvasSize: vec2): ViewportDimensions {
+		const bounds = this.surface.measureDisplay();
+		return {
+			width: bounds.width,
+			height: bounds.height,
+			viewportScale: Math.min(bounds.width / viewportSize.x, bounds.height / viewportSize.y),
+			canvasScale: Math.min(bounds.width / canvasSize.x, bounds.height / canvasSize.y),
+		};
+	}
+
+	public onResize(_handler: (size: ViewportDimensions) => void): SubscriptionHandle {
+		return createSubscriptionHandle(() => void 0);
+	}
+
+	public onFocusChange(_handler: (focused: boolean) => void): SubscriptionHandle {
+		return createSubscriptionHandle(() => void 0);
 	}
 }

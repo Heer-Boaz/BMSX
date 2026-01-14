@@ -452,6 +452,21 @@ export class EngineCore {
 		gview.pipelineRegistry = pipelineRegistry;
 		gview.initializePresentationPassTokens();
 		gview.init();
+
+		resolvedViewHost.onResize((dims) => {
+			gview.configureRenderTargets({
+				viewportScale: dims.viewportScale,
+				canvasScale: dims.canvasScale,
+			});
+		});
+
+		// Perform initial layout - this will call host.getSize which triggers browser layout
+		const initialDims = resolvedViewHost.getSize(viewportSize, gview.canvasSize);
+		gview.configureRenderTargets({
+			viewportScale: initialDims.viewportScale,
+			canvasScale: initialDims.canvasScale,
+		});
+
 		await gview.initializeDefaultTextures();
 
 		if (this._sndcontext) {
@@ -758,7 +773,6 @@ export class EngineCore {
 		const platform = this.platform;
 		const handle = platform.frames.start(() => {
 			handle.stop();
-			this.view.handleResize();
 			this.sndmaster.stopEffect();
 			this.sndmaster.stopMusic();
 		});

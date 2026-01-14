@@ -44,12 +44,14 @@ struct InputEvt {
 };
 
 /* ============================================================================
- * Resize event
+ * Viewport dimensions
  * ============================================================================ */
 
-struct ResizeEvt {
+struct ViewportDimensions {
 	i32 width = 0;
 	i32 height = 0;
+	f32 viewportScale = 1.0f;
+	f32 canvasScale = 1.0f;
 };
 
 /* ============================================================================
@@ -161,10 +163,9 @@ class GameViewHost {
 public:
 	virtual ~GameViewHost() = default;
 	virtual void* getCapability(std::string_view name) = 0;
-	virtual SubscriptionHandle onResize(std::function<void(const ResizeEvt&)> handler) = 0;
+	virtual ViewportDimensions getSize(Vec2 viewportSize, Vec2 canvasSize) = 0;
+	virtual SubscriptionHandle onResize(std::function<void(const ViewportDimensions&)> handler) = 0;
 	virtual SubscriptionHandle onFocusChange(std::function<void(bool)> handler) = 0;
-	virtual i32 width() = 0;
-	virtual i32 height() = 0;
 
 	// Create a GPU backend for rendering (platform-specific implementation)
 	// Returns nullptr if the platform doesn't provide its own backend

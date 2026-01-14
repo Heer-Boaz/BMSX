@@ -186,6 +186,10 @@ private:
 
 	bool loadEngineAssetsInternal(const u8* data, size_t size);
 	bool loadRomInternal(const u8* data, size_t size);
+
+	f32 m_viewport_scale = 1.0f;
+	f32 m_canvas_scale = 1.0f;
+	SubscriptionHandle m_resize_sub;
 };
 
 /* ============================================================================
