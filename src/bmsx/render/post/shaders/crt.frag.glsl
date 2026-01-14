@@ -9,8 +9,18 @@ uniform vec2 u_srcResolution;         // base "logical" resolution (e.g., 256x21
 uniform float u_fragscale;            // integer upscale (e.g., 2.0)
 
 // Time/random for noise
-uniform float u_time;
 uniform float u_random;
+
+// Frame-shared UBO (std140). Only time is used in this shader.
+layout(std140) uniform FrameUniforms {
+  vec2 u_offscreenSize;
+  vec2 u_logicalSize;
+  vec4 u_timeDelta; // x=time, y=delta, z,w unused
+  mat4 u_view;
+  mat4 u_proj;
+  vec4 u_cameraPos; // xyz, w pad
+  vec4 u_ambient_frame; // rgb,intensity
+};
 
 // --- Feature toggles ---
 uniform bool u_enableNoise;
@@ -156,8 +166,8 @@ vec3 applyFringing(vec3 color, vec2 uv, vec2 texel, float contrast, float mixAmo
 // --- Noise helper ---
 vec3 applyNoise(vec3 color, vec2 uv, vec2 srcPxRes){
   float y_src     = uv.y * srcPxRes.y;
-  float lineNoise = hashNoise(vec2(0.0, floor(y_src) + u_time * 30.0), 0.0) - 0.5;
-  float pixNoise  = hashNoise(uv * srcPxRes + vec2(u_random), u_time) - 0.5;
+  float lineNoise = hashNoise(vec2(0.0, floor(y_src) + u_timeDelta.x * 30.0), 0.0) - 0.5;
+  float pixNoise  = hashNoise(uv * srcPxRes + vec2(u_random), u_timeDelta.x) - 0.5;
   float lum       = dot(color, LUMA);
   float n         = mix(pixNoise, lineNoise, 0.35);
   float k         = smoothstep(BLACK_CUTOFF, BLACK_SOFT, lum);
