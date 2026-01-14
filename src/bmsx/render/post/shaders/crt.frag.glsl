@@ -1,6 +1,8 @@
 #version 300 es
 precision highp float;
 
+// NOTE: Dither/quantize is now applied BEFORE CRT optics (scanlines/aperture/glow/noise/blur/fringe).
+
 // --- Textures & core uniforms ---
 uniform sampler2D u_texture;          // offscreen scene (size = u_srcResolution * u_fragscale)
 uniform vec2 u_srcResolution;         // base "logical" resolution (e.g., 256x212)
@@ -11,16 +13,14 @@ uniform float u_time;
 uniform float u_random;
 
 // --- Feature toggles ---
-uniform bool u_applyNoise;
-uniform bool u_applyColorBleed;
-uniform bool u_applyScanlines;
-uniform bool u_applyBlur;
-uniform bool u_applyGlow;
-uniform bool u_applyFringing;
-uniform bool u_applyAperture;
-
-// Only remaining dither toggle (you asked to keep it)
-uniform bool u_applyRgb565Dither;
+uniform bool u_enableNoise;
+uniform bool u_enableColorBleed;
+uniform bool u_enableScanlines;
+uniform bool u_enableBlur;
+uniform bool u_enableGlow;
+uniform bool u_enableFringing;
+uniform bool u_enableAperture;
+uniform uint u_dither_type; // 0=none, 1=rgb555_psx, 2=rgb565
 
 // --- Parameters ---
 uniform float u_noiseIntensity;       // 0..~0.5
@@ -68,6 +68,7 @@ vec3 linear_to_srgb(vec3 c) {
   vec3 hi = 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055;
   return mix(hi, lo, vec3(cutoff));
 }
+
 vec3 srgb_to_linear(vec3 c) {
   c = max(c, vec3(0.0));
   bvec3 cutoff = lessThanEqual(c, vec3(0.04045));
@@ -91,11 +92,41 @@ float bayer4x4_0_1(ivec2 p){
 }
 
 // Quantize to RGB565 using 4x4 threshold-bias (no per-channel offsets)
-vec3 quantize_rgb565_glDither(vec3 sRGB, ivec2 pix){
+vec3 quantize_rgb565_dither(vec3 sRGB, ivec2 pix){
   vec3 levels = vec3(31.0, 63.0, 31.0);
   float thr = bayer4x4_0_1(pix);
   vec3 x = clamp(sRGB, 0.0, 1.0);
   return floor(x * levels + thr) / levels;
+}
+
+// PSX 4x4 signed dither offsets (8-bit domain)
+const int PSX_DITHER[16] = int[16](
+  -4,  0, -3,  1,
+   2, -2,  3, -1,
+  -3,  1, -4,  0,
+   3, -1,  2, -2
+);
+
+int psxIdx(ivec2 p){
+  ivec2 w = p & ivec2(3);
+  return w.x + (w.y << 2);
+}
+
+// sRGB (0..1) -> PSX dithered RGB555 in sRGB (0..1), emulator-style
+vec3 quantize_rgb555_psx(vec3 sRGB, ivec2 pix){
+  int off = PSX_DITHER[psxIdx(pix)];
+
+  // work in 8-bit domain like the real thing
+  vec3 v8 = sRGB * 255.0 + float(off);
+
+  // saturate to 0..255
+  v8 = clamp(v8, 0.0, 255.0);
+
+  // trunc to 5-bit via >>3 (divide by 8, floor)
+  vec3 v5 = floor(v8 / 8.0);          // 0..31
+
+  // back to normalized sRGB-like 0..1 at 5-bit precision
+  return v5 / 31.0;
 }
 
 // --- Noise ---
@@ -199,58 +230,69 @@ void main(){
   vec2 srcPxRes = u_srcResolution * u_fragscale;
   vec2 texel    = 1.0 / srcPxRes;
 
+  // ---------------------------------------------------------------------------
+  // Pixel coordinate for deterministic dither anchoring (matches software path):
+  // sPix = floor(srcXY + vec2(0.5)), where srcXY is derived from dst pixel coord.
+  // ---------------------------------------------------------------------------
+  vec2 dst    = gl_FragCoord.xy - vec2(0.5);
+  vec2 uvp    = (dst + vec2(0.5)) / (u_srcResolution * u_fragscale);
+  vec2 srcMax = u_srcResolution - vec2(1.0);
+  vec2 srcXY  = uvp * srcMax;
+  ivec2 sPix  = ivec2(floor(srcXY + vec2(0.5)));
+
   // base (texture() returns linear if the texture is SRGB8_A8)
   vec3 color = texture(u_texture, v_texcoord).rgb;
 
+  // ---------------------------------------------------------------------------
+  // DEVICE STAGE: encode -> dither/quantize -> decode
+  // Apply framebuffer-level dither/quantization BEFORE CRT optics.
+  // ---------------------------------------------------------------------------
+  if (u_dither_type != 0u) {
+    vec3 sigS = linear_to_srgb(color);
+    if (u_dither_type == 1u) {
+      sigS = quantize_rgb555_psx(sigS, sPix);
+    } else if (u_dither_type == 2u) {
+      sigS = quantize_rgb565_dither(sigS, sPix);
+    }
+    color = srgb_to_linear(sigS);
+  }
+
   // 1) signal tweak
-  if (u_applyColorBleed) color += u_colorBleed;
+  if (u_enableColorBleed) color += u_colorBleed;
 
   // 2) blur (pre-scanline/fringing)
   BlurContrast bc;
-  if (u_applyBlur || u_applyFringing) {
+  if (u_enableBlur || u_enableFringing) {
     bc = applyBlurAndContrast(v_texcoord, texel, BLUR_FOOTPRINT_PX);
   } else {
     bc.blurred = color; bc.contrast = 0.0;
   }
-  if (u_applyBlur) color = mix(color, bc.blurred, clamp(u_blurIntensity, 0.0, 1.0));
+  if (u_enableBlur) color = mix(color, bc.blurred, clamp(u_blurIntensity, 0.0, 1.0));
 
   // 3) fringing
-  if (u_applyFringing) color = applyFringing(color, v_texcoord, texel, bc.contrast, FRINGING_MIX);
+  if (u_enableFringing) color = applyFringing(color, v_texcoord, texel, bc.contrast, FRINGING_MIX);
 
   // 4) scanlines
-  if (u_applyScanlines) color = applyScanlines(color, v_texcoord, srcPxRes);
+  if (u_enableScanlines) color = applyScanlines(color, v_texcoord, srcPxRes);
 
   // 5) aperture mask
-  if (u_applyAperture) color = applyApertureMask(color, v_texcoord, srcPxRes);
+  if (u_enableAperture) color = applyApertureMask(color, v_texcoord, srcPxRes);
 
   // 6) glow (gate by near-black)
-  if (u_applyGlow) {
+  if (u_enableGlow) {
     float b = dot(color, LUMA);
     float k = smoothstep(BLACK_CUTOFF, BLACK_SOFT, b);
     color += u_glowColor * clamp(b, 0.0, GLOW_BRIGHTNESS_CLAMP) * k;
   }
 
   // 7) noise (gate by near-black)
-  if (u_applyNoise) color += applyNoise(color, v_texcoord, srcPxRes);
+  if (u_enableNoise) color += applyNoise(color, v_texcoord, srcPxRes);
 
   // final black clamp (safety net)
   float lumFinal = dot(color, LUMA);
   float keep     = smoothstep(BLACK_CUTOFF, BLACK_SOFT, lumFinal);
   color *= keep;
 
-  // --- FINAL OUTPUT ENCODE + RGB565 LIMIT ---
-  vec3 outS = linear_to_srgb(color);
-
-  if (u_applyRgb565Dither) {
-    ivec2 p = ivec2(gl_FragCoord.xy / u_fragscale); // pixel coords in src res
-
-    // Keep the dither stable in near-black only (do not "soften" mids)
-    float lumS  = dot(outS, LUMA);
-    float guard = smoothstep(2.0/255.0, 12.0/255.0, lumS);
-
-    vec3 qS = quantize_rgb565_glDither(outS, p);
-    outS = mix(outS, qS, guard);
-  }
-
-  outputColor = vec4(outS, 1.0);
+  // Final output encode (single encode at the end; no dither here)
+  outputColor = vec4(linear_to_srgb(color), 1.0);
 }

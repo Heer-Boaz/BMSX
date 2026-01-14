@@ -274,6 +274,12 @@ export interface SpritesPipelineState {
 	viewportTypeIde: RenderingViewportType;
 }
 
+export const enum CRTDitherType {
+	None = 0,
+	PSX = 1,
+	RGB565 = 2,
+}
+
 export interface CRTPipelineState {
 	width: number;
 	height: number;
@@ -281,16 +287,16 @@ export interface CRTPipelineState {
 	baseHeight: number;
 	colorTex: TextureHandle;
 	options: {
-		applyNoise: boolean;
+		enableNoise: boolean;
 		noiseIntensity: number;
-		applyColorBleed: boolean;
+		enableColorBleed: boolean;
 		colorBleed: [number, number, number];
-		applyScanlines: boolean;
-		applyBlur: boolean;
-		applyGlow: boolean;
-		applyFringing: boolean;
-		applyAperture: boolean;
-		applyRgb565Dither: boolean;
+		enableScanlines: boolean;
+		enableBlur: boolean;
+		enableGlow: boolean;
+		enableFringing: boolean;
+		enableAperture: boolean;
+		ditherType: CRTDitherType;
 		blurIntensity: number;
 		glowColor: [number, number, number];
 	};

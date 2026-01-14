@@ -161,7 +161,7 @@ void LibretroPlatform::onContextReset() {
 	auto* backend = static_cast<OpenGLES2Backend*>(view->backend());
 	backend->setFramebufferGetter(m_hw_get_current_framebuffer);
 	backend->onContextReset();
-	setDitherOptions(m_rgb565_dither_enabled);
+	setDitherType(m_dither_type);
 	static_cast<LibretroGameViewHost*>(m_gameview_host.get())->updateBackend(backend);
 
 	auto registry = std::make_unique<RenderPassLibrary>(backend);
@@ -277,12 +277,12 @@ void LibretroPlatform::setCrtEffectOptions(bool applyNoise,
 	view->applyAperture = applyAperture;
 }
 
-void LibretroPlatform::setDitherOptions(bool enabled) {
+void LibretroPlatform::setDitherType(GameView::DitherType type) {
 #if defined(BMSX_SNESMINI_LEGACY)
-	enabled = false;
+	type = GameView::DitherType::None;
 #endif
-	m_rgb565_dither_enabled = enabled;
-	m_engine->view()->enable_rgb565dither = m_rgb565_dither_enabled;
+	m_dither_type = type;
+	m_engine->view()->dither_type = m_dither_type;
 }
 
 void LibretroPlatform::setFrameSkipOptions(bool enabled) {

@@ -76,16 +76,16 @@ function bindCRTUniforms(gl: WebGL2RenderingContext, state: RenderPassStateRegis
 	set1f('u_fragscale', state.width / state.baseWidth);
 	const opts = state.options;
 	const booleans: Array<[string, boolean]> = [
-		['u_applyNoise', opts.applyNoise],
-		['u_applyColorBleed', opts.applyColorBleed],
-		['u_applyScanlines', opts.applyScanlines],
-		['u_applyBlur', opts.applyBlur],
-		['u_applyGlow', opts.applyGlow],
-		['u_applyFringing', opts.applyFringing],
-		['u_applyAperture', opts.applyAperture],
-		['u_applyRgb565Dither', opts.applyRgb565Dither]
+		['u_enableNoise', opts.enableNoise],
+		['u_enableColorBleed', opts.enableColorBleed],
+		['u_enableScanlines', opts.enableScanlines],
+		['u_enableBlur', opts.enableBlur],
+		['u_enableGlow', opts.enableGlow],
+		['u_enableFringing', opts.enableFringing],
+		['u_enableAperture', opts.enableAperture],
 	];
 	for (const [name, val] of booleans) gl.uniform1i(u(name), val ? 1 : 0);
+	gl.uniform1ui(u('u_dither_type'), opts.ditherType >>> 0);
 	set1f('u_noiseIntensity', opts.noiseIntensity);
 	{ const loc = u('u_colorBleed'); gl.uniform3fv(loc, new Float32Array(opts.colorBleed)); }
 	set1f('u_blurIntensity', opts.blurIntensity);

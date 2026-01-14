@@ -1498,12 +1498,12 @@ export function activate(): void {
 
 export function applyEditorCrtDimming(): void {
 	$.view.crt_postprocessing_enabled = false;
-	$.view.enable_rgb565dither = false;
+	$.view.dither_type = 0;
 }
 
 export function restoreCrtOptions(): void {
 	$.view.crt_postprocessing_enabled = true;
-	$.view.enable_rgb565dither = true;
+	$.view.dither_type = 2;
 }
 
 export function deactivate(): void {

@@ -104,14 +104,14 @@ uniform float u_fragscale;
 uniform float u_time;
 uniform float u_random;
 
-uniform bool u_applyNoise;
-uniform bool u_applyColorBleed;
-uniform bool u_applyScanlines;
-uniform bool u_applyBlur;
-uniform bool u_applyGlow;
-uniform bool u_applyFringing;
-uniform bool u_applyAperture;
-uniform bool u_applyRgb565Dither;
+uniform bool u_enableNoise;
+uniform bool u_enableColorBleed;
+uniform bool u_enableScanlines;
+uniform bool u_enableBlur;
+uniform bool u_enableGlow;
+uniform bool u_enableFringing;
+uniform bool u_enableAperture;
+uniform int u_dither_type;
 
 uniform float u_noiseIntensity;
 uniform vec3 u_colorBleed;
@@ -152,7 +152,7 @@ vec3 srgb_to_linear(vec3 c) {
 	return mix(hi, lo, vec3(cutoff));
 }
 
-vec3 quantize_rgb565_glDither(vec3 sRGB, vec2 pix){
+vec3 quantize_rgb565_dither(vec3 sRGB, vec2 pix){
 	vec3 levels = vec3(31.0, 63.0, 31.0);
 	float fx = mod(pix.x, 4.0);
 	float fy = mod(pix.y, 4.0);
@@ -183,6 +183,41 @@ vec3 quantize_rgb565_glDither(vec3 sRGB, vec2 pix){
 	float thrNorm = (thr + 0.5) / 16.0;
 	vec3 x = clamp(sRGB, 0.0, 1.0);
 	return floor(x * levels + thrNorm) / levels;
+}
+
+int psxDitherOffset4x4(vec2 pix){
+	float fx = mod(pix.x, 4.0);
+	float fy = mod(pix.y, 4.0);
+	int ix = int(fx < 0.0 ? fx + 4.0 : fx);
+	int iy = int(fy < 0.0 ? fy + 4.0 : fy);
+	if (iy == 0) {
+		if (ix == 0) return -4;
+		if (ix == 1) return 0;
+		if (ix == 2) return -3;
+		return 1;
+	} else if (iy == 1) {
+		if (ix == 0) return 2;
+		if (ix == 1) return -2;
+		if (ix == 2) return 3;
+		return -1;
+	} else if (iy == 2) {
+		if (ix == 0) return -3;
+		if (ix == 1) return 1;
+		if (ix == 2) return -4;
+		return 0;
+	}
+	if (ix == 0) return 3;
+	if (ix == 1) return -1;
+	if (ix == 2) return 2;
+	return -2;
+}
+
+vec3 quantize_rgb555_psx(vec3 sRGB, vec2 pix){
+	int off = psxDitherOffset4x4(pix);
+	vec3 v8 = sRGB * 255.0 + float(off);
+	v8 = clamp(v8, 0.0, 255.0);
+	vec3 v5 = floor(v8 / 8.0);
+	return v5 / 31.0;
 }
 
 float hashNoise(vec2 uv, float t){
@@ -335,42 +370,48 @@ void main(){
 
 	vec3 color = texture2D(u_texture, v_texcoord).rgb;
 
-	if (u_applyColorBleed) color += u_colorBleed;
+	if (u_dither_type != 0) {
+		vec2 dst = gl_FragCoord.xy - vec2(0.5);
+		vec2 uvp = (dst + vec2(0.5)) / (u_srcResolution * u_fragscale);
+		vec2 srcMax = u_srcResolution - vec2(1.0);
+		vec2 srcXY = uvp * srcMax;
+		vec2 sPix = floor(srcXY + vec2(0.5));
+		vec3 sigS = linear_to_srgb(color);
+		if (u_dither_type == 1) {
+			sigS = quantize_rgb555_psx(sigS, sPix);
+		} else if (u_dither_type == 2) {
+			sigS = quantize_rgb565_dither(sigS, sPix);
+		}
+		color = srgb_to_linear(sigS);
+	}
+
+	if (u_enableColorBleed) color += u_colorBleed;
 
 	BlurContrast bc;
-	if (u_applyBlur || u_applyFringing) {
+	if (u_enableBlur || u_enableFringing) {
 		bc = applyBlurAndContrast(v_texcoord, texel, BLUR_FOOTPRINT_PX, color);
 	} else {
 		bc.blurred = color; bc.contrast = 0.0;
 	}
-	if (u_applyBlur) color = mix(color, bc.blurred, clamp(u_blurIntensity, 0.0, 1.0));
+	if (u_enableBlur) color = mix(color, bc.blurred, clamp(u_blurIntensity, 0.0, 1.0));
 
-	if (u_applyFringing) color = applyFringing(color, v_texcoord, texel, bc.contrast, FRINGING_MIX);
-	if (u_applyScanlines) color = applyScanlines(color, v_texcoord, srcPxRes);
-	if (u_applyAperture) color = applyApertureMask(color, v_texcoord, srcPxRes);
+	if (u_enableFringing) color = applyFringing(color, v_texcoord, texel, bc.contrast, FRINGING_MIX);
+	if (u_enableScanlines) color = applyScanlines(color, v_texcoord, srcPxRes);
+	if (u_enableAperture) color = applyApertureMask(color, v_texcoord, srcPxRes);
 
-	if (u_applyGlow) {
+	if (u_enableGlow) {
 		float b = dot(color, LUMA);
 		float k = smoothstep(BLACK_CUTOFF, BLACK_SOFT, b);
 		color += u_glowColor * clamp(b, 0.0, GLOW_BRIGHTNESS_CLAMP) * k;
 	}
 
-	if (u_applyNoise) color += applyNoise(color, v_texcoord, srcPxRes);
+	if (u_enableNoise) color += applyNoise(color, v_texcoord, srcPxRes);
 
 	float lumFinal = dot(color, LUMA);
 	float keep     = smoothstep(BLACK_CUTOFF, BLACK_SOFT, lumFinal);
 	color *= keep;
 
-	vec3 outS = linear_to_srgb(color);
-	if (u_applyRgb565Dither) {
-		vec2 p = gl_FragCoord.xy / u_fragscale;
-		float lumS = dot(outS, LUMA);
-		float guard = smoothstep(2.0 / 255.0, 12.0 / 255.0, lumS);
-		vec3 qS = quantize_rgb565_glDither(outS, p);
-		outS = mix(outS, qS, guard);
-	}
-
-	gl_FragColor = vec4(outS, 1.0);
+	gl_FragColor = vec4(linear_to_srgb(color), 1.0);
 }
 )";
 
@@ -502,14 +543,14 @@ void initGLES2(OpenGLES2Backend* backend) {
 	g_crt.uniform_fragscale = glGetUniformLocation(g_crt.program, "u_fragscale");
 	g_crt.uniform_time = glGetUniformLocation(g_crt.program, "u_time");
 	g_crt.uniform_random = glGetUniformLocation(g_crt.program, "u_random");
-	g_crt.uniform_apply_noise = glGetUniformLocation(g_crt.program, "u_applyNoise");
-	g_crt.uniform_apply_color_bleed = glGetUniformLocation(g_crt.program, "u_applyColorBleed");
-	g_crt.uniform_apply_scanlines = glGetUniformLocation(g_crt.program, "u_applyScanlines");
-	g_crt.uniform_apply_blur = glGetUniformLocation(g_crt.program, "u_applyBlur");
-	g_crt.uniform_apply_glow = glGetUniformLocation(g_crt.program, "u_applyGlow");
-	g_crt.uniform_apply_fringing = glGetUniformLocation(g_crt.program, "u_applyFringing");
-	g_crt.uniform_apply_aperture = glGetUniformLocation(g_crt.program, "u_applyAperture");
-	g_crt.uniform_apply_rgb565_dither = glGetUniformLocation(g_crt.program, "u_applyRgb565Dither");
+	g_crt.uniform_apply_noise = glGetUniformLocation(g_crt.program, "u_enableNoise");
+	g_crt.uniform_apply_color_bleed = glGetUniformLocation(g_crt.program, "u_enableColorBleed");
+	g_crt.uniform_apply_scanlines = glGetUniformLocation(g_crt.program, "u_enableScanlines");
+	g_crt.uniform_apply_blur = glGetUniformLocation(g_crt.program, "u_enableBlur");
+	g_crt.uniform_apply_glow = glGetUniformLocation(g_crt.program, "u_enableGlow");
+	g_crt.uniform_apply_fringing = glGetUniformLocation(g_crt.program, "u_enableFringing");
+	g_crt.uniform_apply_aperture = glGetUniformLocation(g_crt.program, "u_enableAperture");
+	g_crt.uniform_apply_rgb565_dither = glGetUniformLocation(g_crt.program, "u_dither_type");
 	g_crt.uniform_noise_intensity = glGetUniformLocation(g_crt.program, "u_noiseIntensity");
 	g_crt.uniform_color_bleed = glGetUniformLocation(g_crt.program, "u_colorBleed");
 	g_crt.uniform_blur_intensity = glGetUniformLocation(g_crt.program, "u_blurIntensity");
@@ -645,7 +686,7 @@ void renderCRTGLES2(OpenGLES2Backend* backend, GameView* context, const CRTPipel
 	glUniform1i(g_crt.uniform_apply_glow, state.options.applyGlow ? 1 : 0);
 	glUniform1i(g_crt.uniform_apply_fringing, state.options.applyFringing ? 1 : 0);
 	glUniform1i(g_crt.uniform_apply_aperture, state.options.applyAperture ? 1 : 0);
-	glUniform1i(g_crt.uniform_apply_rgb565_dither, state.options.applyRgb565Dither ? 1 : 0);
+	glUniform1i(g_crt.uniform_apply_rgb565_dither, state.options.ditherType);
 
 	glUniform1f(g_crt.uniform_noise_intensity, state.options.noiseIntensity);
 	glUniform3f(g_crt.uniform_color_bleed, state.options.colorBleed[0], state.options.colorBleed[1], state.options.colorBleed[2]);

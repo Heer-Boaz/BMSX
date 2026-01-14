@@ -54,6 +54,11 @@ struct AtmosphereParams {
 
 class GameView : public Registerable {
 public:
+	enum class DitherType : i32 {
+		None = 0,
+		PSX = 1,
+		RGB565 = 2
+	};
 	GameView(GameViewHost* host, i32 viewportWidth, i32 viewportHeight);
 	~GameView();
 
@@ -152,7 +157,7 @@ public:
 	// Post-processing settings (mirrors current TypeScript properties)
 	// ─────────────────────────────────────────────────────────────────────────
 	bool crt_postprocessing_enabled = true;
-	bool enable_rgb565dither = true;
+	DitherType dither_type = DitherType::RGB565;
 
 	// CRT effect toggles and parameters (mirrors TypeScript GameView)
 	bool applyNoise = true;

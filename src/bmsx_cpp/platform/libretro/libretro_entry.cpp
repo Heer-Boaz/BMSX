@@ -96,6 +96,9 @@ static constexpr const char* kOptionDither = "bmsx_dither";
 static constexpr const char* kOptionFrameSkip = "bmsx_frameskip";
 static constexpr const char* kToggleOff = "off";
 static constexpr const char* kToggleOn = "on";
+static constexpr const char* kDitherOff = "off";
+static constexpr const char* kDitherPSX = "psx";
+static constexpr const char* kDitherRGB565 = "rgb565";
 
 enum class RenderBackendPreference {
 	Auto,
@@ -113,7 +116,7 @@ static bool g_crt_blur_enabled = false;
 static bool g_crt_glow_enabled = false;
 static bool g_crt_fringing_enabled = false;
 static bool g_crt_aperture_enabled = false;
-static bool g_dither_enabled = true;
+static i32 g_dither_type = 2;
 static bool g_frameskip_enabled = false;
 static bool g_frameskip_next = false;
 
@@ -267,15 +270,16 @@ static retro_core_option_v2_definition g_option_defs_us[] = {
 		kOptionDither,
 		"Dither",
 		"Dither",
-		"Toggle RGB565 dither.",
-		"Toggle RGB565 dither.",
+		"Select dithering mode.",
+		"Select dithering mode.",
 		"video",
 		{
-			{kToggleOff, "Off"},
-			{kToggleOn, "On"},
+			{kDitherOff, "Off"},
+			{kDitherPSX, "PSX RGB555"},
+			{kDitherRGB565, "RGB565"},
 			{nullptr, nullptr},
 		},
-		kToggleOff
+		kDitherRGB565
 	},
 	{
 		kOptionFrameSkip,
@@ -413,13 +417,14 @@ static retro_core_option_definition g_option_defs_v1_us[] = {
 	{
 		kOptionDither,
 		"Dither",
-		"Toggle RGB565 dither.",
+		"Select dithering mode.",
 		{
-			{kToggleOff, "Off"},
-			{kToggleOn, "On"},
+			{kDitherOff, "Off"},
+			{kDitherPSX, "PSX RGB555"},
+			{kDitherRGB565, "RGB565"},
 			{nullptr, nullptr},
 		},
-		kToggleOff
+		kDitherRGB565
 	},
 	{
 		kOptionFrameSkip,
@@ -486,7 +491,7 @@ static bool read_crt_blur_enabled();
 static bool read_crt_glow_enabled();
 static bool read_crt_fringing_enabled();
 static bool read_crt_aperture_enabled();
-static bool read_dither_enabled();
+static i32 read_dither_type();
 static bool read_toggle_option(const char* key, const char* label, bool default_value);
 static bool read_frameskip_enabled();
 
@@ -655,27 +660,23 @@ static void set_core_options(bool default_gles2) {
 	set_crt_option_values(true);
 
 #if defined(BMSX_SNESMINI_LEGACY)
-	g_option_defs_us[10].default_value = kToggleOff;
-	g_option_defs_v1_us[10].default_value = kToggleOff;
-#else
-	g_option_defs_us[10].default_value = kToggleOn;
-	g_option_defs_v1_us[10].default_value = kToggleOn;
-#endif
-
-#if defined(BMSX_SNESMINI_LEGACY)
-	g_option_defs_us[10].values[0] = {kToggleOff, "Off"};
+	g_option_defs_us[10].default_value = kDitherOff;
+	g_option_defs_v1_us[10].default_value = kDitherOff;
+	g_option_defs_us[10].values[0] = {kDitherOff, "Off"};
 	g_option_defs_us[10].values[1] = {nullptr, nullptr};
 	g_option_defs_us[10].values[2] = {nullptr, nullptr};
-	g_option_defs_v1_us[10].values[0] = {kToggleOff, "Off"};
+	g_option_defs_v1_us[10].values[0] = {kDitherOff, "Off"};
 	g_option_defs_v1_us[10].values[1] = {nullptr, nullptr};
 	g_option_defs_v1_us[10].values[2] = {nullptr, nullptr};
 #else
-	g_option_defs_us[10].values[0] = {kToggleOff, "Off"};
-	g_option_defs_us[10].values[1] = {kToggleOn, "On"};
-	g_option_defs_us[10].values[2] = {nullptr, nullptr};
-	g_option_defs_v1_us[10].values[0] = {kToggleOff, "Off"};
-	g_option_defs_v1_us[10].values[1] = {kToggleOn, "On"};
-	g_option_defs_v1_us[10].values[2] = {nullptr, nullptr};
+	g_option_defs_us[10].default_value = kDitherRGB565;
+	g_option_defs_v1_us[10].default_value = kDitherRGB565;
+	g_option_defs_us[10].values[0] = {kDitherOff, "Off"};
+	g_option_defs_us[10].values[1] = {kDitherPSX, "PSX RGB555"};
+	g_option_defs_us[10].values[2] = {kDitherRGB565, "RGB565"};
+	g_option_defs_v1_us[10].values[0] = {kDitherOff, "Off"};
+	g_option_defs_v1_us[10].values[1] = {kDitherPSX, "PSX RGB555"};
+	g_option_defs_v1_us[10].values[2] = {kDitherRGB565, "RGB565"};
 #endif
 
 #if BMSX_ENABLE_GLES2
@@ -729,10 +730,10 @@ static void set_core_options(bool default_gles2) {
 	g_option_vars[9].value = g_option_crt_aperture_var;
 #if defined(BMSX_SNESMINI_LEGACY)
 	std::snprintf(g_option_dither_var, sizeof(g_option_dither_var),
-				  "Dither; %s", kToggleOff);
+				  "Dither; %s", kDitherOff);
 #else
 	std::snprintf(g_option_dither_var, sizeof(g_option_dither_var),
-				  "Dither; %s|%s", kToggleOff, kToggleOn);
+				  "Dither; %s|%s|%s", kDitherOff, kDitherPSX, kDitherRGB565);
 #endif
 	g_option_vars[10].value = g_option_dither_var;
 	std::snprintf(g_option_frameskip_var, sizeof(g_option_frameskip_var),
@@ -886,11 +887,21 @@ static bool read_crt_aperture_enabled() {
 	return read_toggle_option(kOptionCrtAperture, "CRT Aperture", false);
 }
 
-static bool read_dither_enabled() {
+static i32 read_dither_type() {
 #if defined(BMSX_SNESMINI_LEGACY)
-	return false;
+	return 0;
 #else
-	return read_toggle_option(kOptionDither, "Dither", true);
+	retro_variable var;
+	var.key = kOptionDither;
+	var.value = kDitherRGB565;
+	if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
+		if (std::strcmp(var.value, kDitherOff) == 0) return 0;
+		if (std::strcmp(var.value, kDitherPSX) == 0) return 1;
+		if (std::strcmp(var.value, kDitherRGB565) == 0) return 2;
+		if (std::strcmp(var.value, kToggleOn) == 0) return 2;
+		if (std::strcmp(var.value, kToggleOff) == 0) return 0;
+	}
+	return 2;
 #endif
 }
 
@@ -1107,7 +1118,7 @@ void retro_init(void) {
   g_crt_glow_enabled = read_crt_glow_enabled();
   g_crt_fringing_enabled = read_crt_fringing_enabled();
   g_crt_aperture_enabled = read_crt_aperture_enabled();
-  g_dither_enabled = read_dither_enabled();
+  g_dither_type = read_dither_type();
   g_frameskip_enabled = read_frameskip_enabled();
   g_frameskip_next = false;
   request_hw_context_for_backend(desired_backend);
@@ -1166,7 +1177,7 @@ void retro_init(void) {
 								  g_crt_glow_enabled,
 								  g_crt_fringing_enabled,
 								  g_crt_aperture_enabled);
-  g_platform->setDitherOptions(g_dither_enabled);
+  g_platform->setDitherType(static_cast<bmsx::GameView::DitherType>(g_dither_type));
   g_platform->setFrameSkipOptions(g_frameskip_enabled);
   if (isHardwareBackendActive()) {
 	try {
@@ -1393,10 +1404,10 @@ void retro_run(void) {
 									  g_crt_fringing_enabled,
 									  g_crt_aperture_enabled);
 	}
-	const bool new_dither = read_dither_enabled();
-	if (new_dither != g_dither_enabled) {
-	  g_dither_enabled = new_dither;
-	  g_platform->setDitherOptions(g_dither_enabled);
+	const i32 new_dither = read_dither_type();
+	if (new_dither != g_dither_type) {
+	  g_dither_type = new_dither;
+	  g_platform->setDitherType(static_cast<bmsx::GameView::DitherType>(g_dither_type));
 	}
 	const bool new_frameskip = read_frameskip_enabled();
 	if (new_frameskip != g_frameskip_enabled) {

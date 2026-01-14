@@ -535,6 +535,25 @@ inline f32 quantizeRgb565Bias(f32 c, f32 levels, f32 thr0_1) {
 	return std::floor(x * levels + thr0_1) / levels;
 }
 
+inline i32 psxDitherOffset4x4(i32 x, i32 y) {
+	static const i32 D4[16] = {
+		-4,  0, -3,  1,
+		 2, -2,  3, -1,
+		-3,  1, -4,  0,
+		 3, -1,  2, -2
+	};
+	const i32 ix = x & 3;
+	const i32 iy = y & 3;
+	return D4[ix + (iy << 2)];
+}
+
+inline f32 quantizeRgb555PSX(f32 c, i32 ditherOffset) {
+	const f32 v8 = clamp01(c) * 255.0f + static_cast<f32>(ditherOffset);
+	const f32 v8clamped = std::min(255.0f, std::max(0.0f, v8));
+	const f32 v5 = std::floor(v8clamped / 8.0f);
+	return v5 / 31.0f;
+}
+
 } // namespace
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -579,7 +598,8 @@ void GameView::applyCRTPostProcessing(const u32* src,
 	const bool useFringing = enableCrt && applyFringing;
 	const bool useAperture = enableCrt && applyAperture;
 	const f32 blurMix = clamp01(blurIntensity);
-	const bool useDither = enable_rgb565dither;
+	const i32 ditherType = static_cast<i32>(dither_type);
+	const bool useDither = ditherType != 0;
 
 	const u32* scratch = m_crtScratchBuffer.data();
 
@@ -593,6 +613,31 @@ void GameView::applyCRTPostProcessing(const u32* src,
 
 			const Color baseTex = sampleLinear(scratch, srcWidth, srcHeight, srcX, srcY, table);
 			Color color = baseTex;
+
+			if (useDither) {
+				const i32 sx = static_cast<i32>(std::floor(srcX + 0.5f));
+				const i32 sy = static_cast<i32>(std::floor(srcY + 0.5f));
+				const f32 sigR = linearToSrgbExact(color.r);
+				const f32 sigG = linearToSrgbExact(color.g);
+				const f32 sigB = linearToSrgbExact(color.b);
+				f32 qR = sigR;
+				f32 qG = sigG;
+				f32 qB = sigB;
+				if (ditherType == 1) {
+					const i32 off = psxDitherOffset4x4(sx, sy);
+					qR = quantizeRgb555PSX(sigR, off);
+					qG = quantizeRgb555PSX(sigG, off);
+					qB = quantizeRgb555PSX(sigB, off);
+				} else if (ditherType == 2) {
+					const f32 thr = bayer4x4_0_1(sx, sy);
+					qR = quantizeRgb565Bias(sigR, 31.0f, thr);
+					qG = quantizeRgb565Bias(sigG, 63.0f, thr);
+					qB = quantizeRgb565Bias(sigB, 31.0f, thr);
+				}
+				color.r = srgbToLinearExact(qR);
+				color.g = srgbToLinearExact(qG);
+				color.b = srgbToLinearExact(qB);
+			}
 
 			if (useColorBleed) {
 				color.r += colorBleed[0];
@@ -699,14 +744,6 @@ void GameView::applyCRTPostProcessing(const u32* src,
 			f32 outR = clamp01(linearToSrgbExact(color.r));
 			f32 outG = clamp01(linearToSrgbExact(color.g));
 			f32 outB = clamp01(linearToSrgbExact(color.b));
-			if (useDither) {
-				const i32 sx = static_cast<i32>(std::floor(srcX + 0.5f));
-				const i32 sy = static_cast<i32>(std::floor(srcY + 0.5f));
-				const f32 thr = bayer4x4_0_1(sx, sy);
-				outR = quantizeRgb565Bias(outR, 31.0f, thr);
-				outG = quantizeRgb565Bias(outG, 63.0f, thr);
-				outB = quantizeRgb565Bias(outB, 31.0f, thr);
-			}
 			const u8 r = static_cast<u8>(outR * 255.0f);
 			const u8 g = static_cast<u8>(outG * 255.0f);
 			const u8 b = static_cast<u8>(outB * 255.0f);

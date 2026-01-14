@@ -1040,7 +1040,7 @@ static const char* menu_option_value_label(const MenuOption* opt) {
 	return val->label[0] ? val->label : val->value;
 }
 
-static void menu_apply_option(MenuOption* opt, size_t index, bool mark_update) {
+static void menu_enable_option(MenuOption* opt, size_t index, bool mark_update) {
 	if (!opt || opt->value_count == 0 || index >= opt->value_count) return;
 	opt->current_index = index;
 	menu_sync_builtin(opt->key, opt->values[index].value);
@@ -1054,7 +1054,7 @@ static void menu_set_option_value(MenuOption* opt, const char* value, bool mark_
 	if (!opt || !value) return;
 	for (size_t i = 0; i < opt->value_count; ++i) {
 		if (strcmp(opt->values[i].value, value) == 0) {
-			menu_apply_option(opt, i, mark_update);
+			menu_enable_option(opt, i, mark_update);
 			return;
 		}
 	}
@@ -3498,7 +3498,7 @@ static void menu_handle_input(uint16_t state, uint16_t prev, bool skip_nav) {
 			}
 			if (opt->value_count > 0) {
 				size_t next = (opt->current_index == 0) ? (opt->value_count - 1) : (opt->current_index - 1);
-				menu_apply_option(opt, next, true);
+				menu_enable_option(opt, next, true);
 			}
 		}
 	}
@@ -3514,7 +3514,7 @@ static void menu_handle_input(uint16_t state, uint16_t prev, bool skip_nav) {
 			}
 			if (opt->value_count > 0) {
 				size_t next = (opt->current_index + 1) % opt->value_count;
-				menu_apply_option(opt, next, true);
+				menu_enable_option(opt, next, true);
 			}
 		}
 	}

@@ -125,7 +125,7 @@ void RenderPassLibrary::registerBuiltinPassesSoftware() {
 			auto* view = EngineCore::instance().view();
 			auto* colorTex = static_cast<SoftwareTexture*>(crtState.colorTex);
 			auto* softBackend = static_cast<SoftwareBackend*>(backend);
-			if (view->crt_postprocessing_enabled) {
+			if (view->crt_postprocessing_enabled || static_cast<i32>(view->dither_type) != 0) {
 				view->applyCRTPostProcessing(colorTex->data.data(),
 											 colorTex->width,
 											 colorTex->height,
@@ -135,7 +135,7 @@ void RenderPassLibrary::registerBuiltinPassesSoftware() {
 											 softBackend->pitch());
 			} else {
 				DitherParams dither;
-				dither.enabled = view->enable_rgb565dither;
+				dither.enabled = false;
 				dither.intensity = dither.enabled ? 1.0f : 0.0f;
 				dither.jitter = 0;
 				const Color tint{1.0f, 1.0f, 1.0f, 1.0f};
@@ -240,7 +240,7 @@ void RenderPassLibrary::registerBuiltinPassesOpenGLES2() {
 		};
 		desc.shouldExecute = []() {
 			const auto* view = EngineCore::instance().view();
-			return !view->crt_postprocessing_enabled && !view->enable_rgb565dither;
+			return !view->crt_postprocessing_enabled && static_cast<i32>(view->dither_type) == 0;
 		};
 		desc.prepare = [](GPUBackend*, std::any&) { };
 		registerPass(desc);
@@ -262,7 +262,7 @@ void RenderPassLibrary::registerBuiltinPassesOpenGLES2() {
 		};
 		desc.shouldExecute = []() {
 			const auto* view = EngineCore::instance().view();
-			return view->crt_postprocessing_enabled || view->enable_rgb565dither;
+			return view->crt_postprocessing_enabled || static_cast<i32>(view->dither_type) != 0;
 		};
 		desc.prepare = [](GPUBackend*, std::any&) { };
 		registerPass(desc);
@@ -465,7 +465,7 @@ std::unique_ptr<RenderGraphRuntime> RenderPassLibrary::buildRenderGraph(GameView
 					crtState.options.glowColor = view->glowColor;
 					crtState.options.applyFringing = view->applyFringing;
 					crtState.options.applyAperture = view->applyAperture;
-					crtState.options.applyRgb565Dither = view->enable_rgb565dither;
+					crtState.options.ditherType = static_cast<i32>(view->dither_type);
 				} else {
 					crtState.options.applyNoise = false;
 					crtState.options.applyColorBleed = false;
@@ -474,7 +474,7 @@ std::unique_ptr<RenderGraphRuntime> RenderPassLibrary::buildRenderGraph(GameView
 					crtState.options.applyGlow = false;
 					crtState.options.applyFringing = false;
 					crtState.options.applyAperture = false;
-					crtState.options.applyRgb565Dither = view->enable_rgb565dither;
+					crtState.options.ditherType = static_cast<i32>(view->dither_type);
 					crtState.options.noiseIntensity = view->noiseIntensity;
 					crtState.options.colorBleed = view->colorBleed;
 					crtState.options.blurIntensity = view->blurIntensity;

@@ -162,7 +162,7 @@ public:
 							 bool applyGlow,
 							 bool applyFringing,
 							 bool applyAperture);
-	void setDitherOptions(bool enabled);
+	void setDitherType(GameView::DitherType type);
 	void setFrameSkipOptions(bool enabled);
 	void setFrameSkipNext(bool skip);
 	void setPlatformPaused(bool paused);
@@ -250,7 +250,7 @@ private:
 	retro_hw_get_current_framebuffer_t m_hw_get_current_framebuffer = nullptr;
 	bool m_crt_postprocessing_enabled = false;
 	i32 m_postprocess_scale = 1;
-	bool m_rgb565_dither_enabled = true;
+	GameView::DitherType m_dither_type = GameView::DitherType::RGB565;
 	bool m_frameskip_enabled = false;
 	bool m_frameskip_next = false;
 

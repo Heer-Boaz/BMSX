@@ -365,6 +365,7 @@ export class RenderPassLibrary {
 						const gv = $.view;
 						// TODO: Move CRT state setup to prepare()?
 						const applyCrt = !!gv.crt_postprocessing_enabled;
+						const ditherType = gv.dither_type;
 						this.setState('crt', {
 							width: gv.offscreenCanvasSize.x,
 							height: gv.offscreenCanvasSize.y,
@@ -372,14 +373,14 @@ export class RenderPassLibrary {
 							baseHeight: gv.viewportSize.y,
 							colorTex,
 							options: {
-								applyNoise: applyCrt && !!gv.enable_noise,
-								applyColorBleed: applyCrt && !!gv.enable_colorbleed,
-								applyScanlines: applyCrt && !!gv.enable_scanlines,
-								applyBlur: applyCrt && !!gv.enable_blur,
-								applyGlow: applyCrt && !!gv.enable_glow,
-								applyFringing: applyCrt && !!gv.enable_fringing,
-								applyAperture: applyCrt && !!gv.enable_aperture,
-								applyRgb565Dither: !!gv.enable_rgb565dither,
+								enableNoise: applyCrt && !!gv.enable_noise,
+								enableColorBleed: applyCrt && !!gv.enable_colorbleed,
+								enableScanlines: applyCrt && !!gv.enable_scanlines,
+								enableBlur: applyCrt && !!gv.enable_blur,
+								enableGlow: applyCrt && !!gv.enable_glow,
+								enableFringing: applyCrt && !!gv.enable_fringing,
+								enableAperture: applyCrt && !!gv.enable_aperture,
+								ditherType,
 								noiseIntensity: gv.noiseIntensity,
 								colorBleed: gv.colorBleed,
 								blurIntensity: gv.blurIntensity,
