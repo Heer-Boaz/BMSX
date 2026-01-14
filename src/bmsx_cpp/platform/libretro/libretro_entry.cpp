@@ -677,9 +677,13 @@ static void set_core_options(bool default_gles2) {
 	g_option_defs_us[10].values[0] = {kDitherOff, "Off"};
 	g_option_defs_us[10].values[1] = {kDitherPSX, "PSX RGB555"};
 	g_option_defs_us[10].values[2] = {kDitherRGB565, "RGB565"};
+	g_option_defs_us[10].values[3] = {kDitherMSX10, "MSX10 3:4:3"};
+	g_option_defs_us[10].values[4] = {nullptr, nullptr};
 	g_option_defs_v1_us[10].values[0] = {kDitherOff, "Off"};
 	g_option_defs_v1_us[10].values[1] = {kDitherPSX, "PSX RGB555"};
 	g_option_defs_v1_us[10].values[2] = {kDitherRGB565, "RGB565"};
+	g_option_defs_v1_us[10].values[3] = {kDitherMSX10, "MSX10 3:4:3"};
+	g_option_defs_v1_us[10].values[4] = {nullptr, nullptr};
 #endif
 
 #if BMSX_ENABLE_GLES2
