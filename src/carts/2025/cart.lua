@@ -141,6 +141,7 @@ local function register_director()
 end
 
 function init()
+	$.view.dither_type = 1 -- DitherType.PSX
 	combat_module.define_fsm()
 	build_director_fsm()
 	combat_module.register_director()

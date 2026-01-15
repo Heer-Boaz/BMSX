@@ -158,7 +158,7 @@ public:
 	// Post-processing settings (mirrors current TypeScript properties)
 	// ─────────────────────────────────────────────────────────────────────────
 	bool crt_postprocessing_enabled = true;
-	DitherType dither_type = DitherType::RGB565;
+	DitherType dither_type = DitherType::None;
 
 	// CRT effect toggles and parameters (mirrors TypeScript GameView)
 	bool applyNoise = true;

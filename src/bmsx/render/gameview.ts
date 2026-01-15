@@ -124,7 +124,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	public enable_glow = true;
 	public enable_fringing = true;
 	public enable_aperture = true;
-	public dither_type: number = DitherType.MSX10;
+	public dither_type: number = DitherType.None;
 	public noiseIntensity = 0.4;
 	public colorBleed: [number, number, number] = [0.02, 0.0, 0.0];
 	public blurIntensity = 0.6;
