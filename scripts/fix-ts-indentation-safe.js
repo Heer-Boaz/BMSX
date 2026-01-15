@@ -29,6 +29,61 @@ const INCLUDED_BASENAMES = new Set([
 ]);
 const SPACE_ONLY_EXTS = new Set(['yaml', 'yml', 'md']);
 
+function loadEditorConfig() {
+	const configPath = path.join(ROOT, '.editorconfig');
+	if (!fs.existsSync(configPath)) return { global: {}, sections: [] };
+	const lines = fs.readFileSync(configPath, 'utf8').split(/\r?\n/);
+	const sections = [];
+	let current = { pattern: '*', props: {} };
+	let haveSection = false;
+	for (const raw of lines) {
+		const line = raw.trim();
+		if (!line || line.startsWith('#') || line.startsWith(';')) continue;
+		if (line.startsWith('[') && line.endsWith(']')) {
+			if (haveSection) sections.push(current);
+			current = { pattern: line.slice(1, -1).trim(), props: {} };
+			haveSection = true;
+			continue;
+		}
+		const idx = line.indexOf('=');
+		if (idx === -1) continue;
+		const key = line.slice(0, idx).trim();
+		const value = line.slice(idx + 1).trim();
+		current.props[key] = value;
+	}
+	if (haveSection) sections.push(current);
+	const globalProps = haveSection ? {} : current.props;
+	return { global: globalProps, sections };
+}
+
+function expandBracePattern(pattern) {
+	const match = pattern.match(/\{([^}]+)\}/);
+	if (!match) return [pattern];
+	const choices = match[1].split(',').map(part => part.trim()).filter(Boolean);
+	return choices.map(choice => pattern.replace(match[0], choice));
+}
+
+function matchEditorConfigPattern(filePath, pattern) {
+	const normalized = filePath.replace(/\\/g, '/');
+	for (const expanded of expandBracePattern(pattern)) {
+		const escaped = expanded.replace(/[.+^$()|[\]\\]/g, '\\$&');
+		const regexBody = escaped.replace(/\*/g, '.*').replace(/\?/g, '.');
+		const regex = new RegExp(`^${regexBody}$`);
+		if (regex.test(normalized)) return true;
+	}
+	return false;
+}
+
+function getIndentStyleForPath(filePath, editorConfig) {
+	let style = editorConfig.global.indent_style || '';
+	for (const section of editorConfig.sections) {
+		if (matchEditorConfigPattern(filePath, section.pattern)) {
+			if (section.props.indent_style) style = section.props.indent_style;
+		}
+	}
+	return style || '';
+}
+
 function splitNullDelimited(buffer) {
 	return buffer
 		.toString('utf8')
@@ -139,22 +194,32 @@ function convertFile(src, tabWidth = TAB_WIDTH) {
 		pos += line.length + 1; // account for removed/newline
 	}
 
+	const indentSizes = new Map();
+	for (const { text, inTemplateContent } of lines) {
+		if (inTemplateContent) continue;
+		const indentMatch = text.match(/^[ ]+/);
+		if (!indentMatch) continue;
+		const indent = indentMatch[0];
+		const len = indent.length;
+		if (len < 2) continue;
+		indentSizes.set(len, (indentSizes.get(len) || 0) + 1);
+	}
+	let indentUnit = tabWidth;
+	for (const [len, count] of indentSizes.entries()) {
+		if (count > 1 && len < indentUnit) indentUnit = len;
+	}
+
 	// Finally convert leading indentation for lines not in template content
 	const outLines = lines.map(({ text, inTemplateContent }) => {
 		if (inTemplateContent) return text; // don't touch lines which are inside template literal content
-		// convert leading spaces/tabs to tabs
-		let i = 0; let spaces = 0;
-		while (i < text.length) {
-			const ch = text[i];
-			if (ch === ' ') { spaces++; i++; }
-			else if (ch === '\t') { spaces += tabWidth; i++; }
-			else break;
-		}
-		if (spaces === 0 && i === 0) return text;
-		const tabs = Math.floor(spaces / tabWidth);
-		const rem = spaces % tabWidth;
-		const newIndent = '\t'.repeat(tabs) + ' '.repeat(rem);
-		return newIndent + text.slice(i);
+		const indentMatch = text.match(/^[ \t]+/);
+		if (!indentMatch) return text;
+		const indent = indentMatch[0];
+		if (indent.includes('\t')) return text;
+		if (indentUnit <= 0 || (indent.length % indentUnit) !== 0) return text;
+		const tabs = indent.length / indentUnit;
+		const newIndent = '\t'.repeat(tabs);
+		return newIndent + text.slice(indent.length);
 	});
 
 	return outLines.join('\n');
@@ -162,6 +227,7 @@ function convertFile(src, tabWidth = TAB_WIDTH) {
 
 function main() {
 	const checkOnly = process.argv.indexOf('--check') !== -1 || process.argv.indexOf('-c') !== -1;
+	const editorConfig = loadEditorConfig();
 	const files = listCandidateFiles()
 		.filter(p => !p.startsWith('tools/retroarch-gles2/') && p !== 'tools/retroarch-gles2')
 		.filter(p => {
@@ -173,10 +239,12 @@ function main() {
 	const changed = [];
 	for (const f of files) {
 		try {
+			const rel = path.relative(ROOT, f).replace(/\\/g, '/');
+			const indentStyle = getIndentStyleForPath(rel, editorConfig);
 			const src = fs.readFileSync(f, 'utf8');
 			const ext = path.extname(f).toLowerCase().replace(/^\./, '');
 			let out;
-			if (SPACE_ONLY_EXTS.has(ext)) {
+			if (indentStyle === 'space' || SPACE_ONLY_EXTS.has(ext)) {
 				// Replace all tab characters with TAB_WIDTH spaces for space-only files.
 				out = src.replace(/\t/g, ' '.repeat(TAB_WIDTH));
 			} else {
