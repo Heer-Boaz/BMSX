@@ -193,6 +193,7 @@ export const VM_API_METHOD_METADATA = {
 			{ name: 'y', optional: true, description: 'Optional Y coordinate in pixels.' },
 			{ name: 'z', optional: true, description: 'Optional Z coordinate for ordering.' },
 			{ name: 'colorindex', optional: true, description: 'Optional palette index for the text color.' },
+			{ name: 'options', optional: true, description: 'Optional text options (color, background_color, wrap_chars, center_block_width, glyph_start, glyph_end, align, baseline, layer, font, auto_advance).' },
 		],
 		returnType: 'void',
 	},

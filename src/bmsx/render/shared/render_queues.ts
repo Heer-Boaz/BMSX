@@ -392,6 +392,10 @@ export function renderGlyphs(x: number, y: number, textToWrite: string | string[
 	start = start ?? 0;
 
 	const renderSpan = (text: string) => {
+		if (text.length === 0) {
+			y += font.lineHeight;
+			return;
+		}
 		const endIndex = end ?? text.length;
 		for (let i = start; i < endIndex; i += 1) {
 			const code = text.charCodeAt(i);

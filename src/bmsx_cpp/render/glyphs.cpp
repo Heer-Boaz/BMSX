@@ -111,6 +111,13 @@ void renderGlyphs(GameView* view,
 	const i32 startIndex = start.value_or(0);
 	const i32 endIndex = end.value_or(std::numeric_limits<i32>::max());
 	for (const auto& line : lines) {
+		if (line.empty()) {
+			y += static_cast<f32>(font->lineHeight());
+			if (y >= view->canvasSize.y) {
+				return;
+			}
+			continue;
+		}
 		renderGlyphSpan(view, line, startIndex, endIndex, x, y, startX, stepY,
 						z, font, color, backgroundColor, layer);
 		if (y >= view->canvasSize.y) {

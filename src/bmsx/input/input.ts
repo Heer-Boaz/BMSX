@@ -15,15 +15,13 @@ import { OnscreenGamepad } from './onscreengamepad';
 import { GlobalShortcutRegistry } from './global_shortcut_registry';
 import { excludepropfromsavegame } from '../serializer/serializationhooks';
 
-const DEBUG_HUD_TOGGLE_KEY = 'F10';
 import { PendingAssignmentProcessor } from './pendingassignmentprocessor';
 import { ControllerAssignmentUI } from '../ui/controller_assignment_ui';
 import { PlayerInput, InputSource } from './playerinput';
 import { PointerInput } from './pointerinput';
-import type { DeviceKind, InputDevice, InputEvt, SubscriptionHandle } from '../platform';
+import type { DeviceKind, InputDevice, InputEvt, SubscriptionHandle, GameViewCanvas } from '../platform';
 
-import type { GameViewCanvas } from '../platform';
-
+const DEBUG_HUD_TOGGLE_KEY = 'F10';
 /**
  * Resets the properties of an object by deleting all keys except for the ones specified in the `except` array.
  * If no `except` array is provided, all keys will be deleted.
@@ -522,11 +520,11 @@ export class Input implements RegisterablePersistent {
 		x: ['KeyA'],
 		y: ['KeyS'],
 		lb: ['ShiftLeft'],
-		rb: ['Capslock'],
-		lt: ['KeyC'],
-		rt: ['KeyD'],
-		select: ['Enter'],
-		start: ['Space'],
+		rb: ['ShiftRight'],
+		lt: ['LeftControl'],
+		rt: ['RightControl'],
+		select: ['Backspace'],
+		start: ['Enter'],
 		ls: ['KeyQ'],
 		rs: ['KeyW'],
 		up: ['ArrowUp'],
@@ -534,7 +532,7 @@ export class Input implements RegisterablePersistent {
 		left: ['ArrowLeft'],
 		right: ['ArrowRight'],
 		home: ['Escape'],
-		touch: ['Backspace'],
+		touch: ['Space'],
 	});
 
 	private static readonly DEFAULT_GAMEPAD_INPUT_MAPPING: GamepadInputMapping = Object.freeze({

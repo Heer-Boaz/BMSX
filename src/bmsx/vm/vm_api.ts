@@ -11,6 +11,7 @@ import type {
 	RectRenderSubmission,
 	RenderLayer
 } from '../render/shared/render_types';
+import { wrapGlyphs } from '../render/shared/render_queues';
 import { Msx1Colors } from '../systems/msx';
 import { VMFont } from './font';
 import { BmsxVMStorage } from './storage';
@@ -510,11 +511,58 @@ export class BmsxVMApi {
 		this.renderBackend.particle(submission);
 	}
 
-	public write(text: string, x?: number, y?: number, z?: number, colorindex?: number): void {
-		const { baseX, baseY, color, font, autoAdvance } = this.resolve_write_context(this.font, x, y, z, colorindex);
-		this.draw_multiline_text(text, baseX, baseY, z, color, font);
-		if (autoAdvance) {
-			this.advance_print_cursor(font.lineHeight);
+	public write(
+		text: string,
+		x?: number,
+		y?: number,
+		z?: number,
+		colorindex?: number,
+		options?: {
+			color?: number | color;
+			background_color?: number | color;
+			wrap_chars?: number;
+			center_block_width?: number;
+			glyph_start?: number;
+			glyph_end?: number;
+			align?: CanvasTextAlign;
+			baseline?: CanvasTextBaseline;
+			layer?: RenderLayer;
+			font?: VMFont;
+			auto_advance?: boolean;
+		},
+	): void {
+		const renderFont = options?.font ?? this.font;
+		const { baseX, baseY, color, autoAdvance } = this.resolve_write_context(renderFont, x, y, z, colorindex);
+		const resolvedColor = options?.color !== undefined ? this.resolve_color(options.color) : color;
+		const backgroundColor = options?.background_color !== undefined ? this.resolve_color(options.background_color) : undefined;
+		const expanded = this.expand_tabs(text);
+		let lines: string[] | null = null;
+		if (options?.wrap_chars && options.wrap_chars > 0) {
+			lines = wrapGlyphs(expanded, options.wrap_chars);
+		} else if (expanded.indexOf('\n') !== -1) {
+			lines = expanded.split('\n');
+		}
+		const glyphs: GlyphRenderSubmission = {
+			glyphs: lines ?? expanded,
+			x: baseX,
+			y: baseY,
+			z,
+			font: renderFont,
+			color: resolvedColor,
+			background_color: backgroundColor,
+			center_block_width: options?.center_block_width,
+			glyph_start: options?.glyph_start,
+			glyph_end: options?.glyph_end,
+			align: options?.align,
+			baseline: options?.baseline,
+			layer: options?.layer,
+		};
+		this.renderBackend.glyphs(glyphs);
+		const shouldAdvance = options?.auto_advance === undefined ? autoAdvance : options.auto_advance;
+		if (shouldAdvance) {
+			const lineCount = lines ? lines.length : 1;
+			this.textCursorY = baseY + ((lineCount - 1) * renderFont.lineHeight);
+			this.advance_print_cursor(renderFont.lineHeight);
 		}
 	}
 
@@ -698,7 +746,7 @@ export class BmsxVMApi {
 			this.textCursorX = this.textCursorHomeX;
 			this.textCursorY = y;
 		}
-		if (colorindex) {
+		if (colorindex !== undefined) {
 			this.textCursorColorIndex = colorindex;
 		}
 		const baseX = this.textCursorX;

@@ -11,6 +11,7 @@ local components = require("components")
 local service = require("service")
 local registry = require("registry")
 local eventemitter = require("eventemitter").eventemitter
+local quickmenu = require("quickmenu")
 
 local world = world_module.instance
 
@@ -259,11 +260,16 @@ function engine.attach_component(object_or_id, component_or_type)
 end
 
 function engine.update(dt)
+	quickmenu.update(dt)
+	if quickmenu.is_open() then
+		return
+	end
 	world:update(dt)
 end
 
 function engine.draw()
 	world:draw()
+	quickmenu.draw()
 end
 
 function engine.reset()

@@ -665,6 +665,9 @@ const evaluateBinary = (op: OpCode, left: Value, right: Value): Value | null => 
 
 const isTruthy = (value: Value): boolean => value !== null && value !== false;
 
+const isConstPoolValue = (value: Value): boolean =>
+	value === null || typeof value === 'boolean' || typeof value === 'number' || isStringValue(value);
+
 const evaluateComparison = (op: OpCode, left: Value, right: Value): boolean | null => {
 	switch (op) {
 		case OpCode.EQ:
@@ -842,7 +845,7 @@ const evaluateSccpDef = (
 			const operand = getSccpOperand(instruction, 'b', uses[0], context, valueKind, valueConst);
 			if (operand.kind === SCCP_CONST && operand.constVal) {
 				const result = evaluateUnary(instruction.op, operand.constVal.value);
-				if (result !== null) {
+				if (result !== null && isConstPoolValue(result)) {
 					return { kind: SCCP_CONST, constVal: { value: result, constIndex: context.constIndex(result) } };
 				}
 				return { kind: SCCP_OVERDEFINED, constVal: null };
@@ -883,7 +886,7 @@ const evaluateSccpDef = (
 				throw new Error('[ProgramOptimizer] Missing SCCP constants.');
 			}
 			const result = evaluateBinary(instruction.op, left.constVal.value, right.constVal.value);
-			if (result !== null) {
+			if (result !== null && isConstPoolValue(result)) {
 				return { kind: SCCP_CONST, constVal: { value: result, constIndex: context.constIndex(result) } };
 			}
 			return { kind: SCCP_OVERDEFINED, constVal: null };
@@ -3144,11 +3147,17 @@ export const applyGlobalOptimizations = (
 	for (let i = 0; i < instructions.length; i += 1) {
 		const instruction = instructions[i];
 		const defValue = instrPrimaryDef[i];
+		let replacedWithConst = false;
 		if (defValue !== null && isValueNumberable(instruction.op)) {
 			const constVal = resolveConst(defValue, valueConst, valueCopy);
 			if (constVal) {
 				replaceWithConst(instruction, instruction.a, constVal.value, context);
+				instrUses[i] = [];
+				replacedWithConst = true;
 			}
+		}
+		if (replacedWithConst) {
+			continue;
 		}
 		const uses = instrUses[i];
 		if (!uses) {

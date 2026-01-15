@@ -35,7 +35,7 @@ public:
 	void put_particle(const ParticleRenderSubmission& submission);
 
 	void write(const std::string& text, std::optional<int> x, std::optional<int> y,
-			   std::optional<int> z, std::optional<int> colorIndex);
+			   std::optional<int> z, std::optional<int> colorIndex, const Value& options);
 	void write_color(const std::string& text, std::optional<int> x, std::optional<int> y,
 					 std::optional<int> z, const Value& colorValue);
 	void write_with_font(const std::string& text, std::optional<int> x, std::optional<int> y,

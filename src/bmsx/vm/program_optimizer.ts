@@ -64,6 +64,9 @@ const getJumpTarget = (instruction: Instruction): number => {
 
 const isTruthy = (value: Value): boolean => value !== null && value !== false;
 
+const isConstPoolValue = (value: Value): boolean =>
+	value === null || typeof value === 'boolean' || typeof value === 'number' || isStringValue(value);
+
 const replaceWithJump = (instruction: Instruction, target: number): void => {
 	instruction.op = OpCode.JMP;
 	instruction.a = 0;
@@ -737,7 +740,7 @@ const computeBlockConstantIn = (
 						const operand = constants.get(instruction.b);
 						if (operand) {
 							const result = evaluateUnary(instruction.op, operand.value);
-							if (result !== null) {
+							if (result !== null && isConstPoolValue(result)) {
 								constants.set(instruction.a, { value: result, constIndex: context.constIndex(result) });
 								break;
 							}
@@ -761,7 +764,7 @@ const computeBlockConstantIn = (
 						const right = getConstForOperand(instruction.c, (instruction.rkMask & RK_C) !== 0, constants, context);
 						if (left && right) {
 							const result = evaluateBinary(instruction.op, left.value, right.value);
-							if (result !== null) {
+							if (result !== null && isConstPoolValue(result)) {
 								constants.set(instruction.a, { value: result, constIndex: context.constIndex(result) });
 								break;
 							}
@@ -889,7 +892,7 @@ const foldConstants = (set: InstructionSet, context: OptimizationContext): Instr
 				const operand = constants.get(instruction.b);
 				if (operand) {
 					const result = evaluateUnary(instruction.op, operand.value);
-					if (result !== null) {
+					if (result !== null && isConstPoolValue(result)) {
 						const folded = replaceWithConst(instruction, instruction.a, result, context);
 						constants.set(instruction.a, folded);
 						continue;
@@ -915,7 +918,7 @@ const foldConstants = (set: InstructionSet, context: OptimizationContext): Instr
 				const right = getConstForOperand(instruction.c, (instruction.rkMask & RK_C) !== 0, constants, context);
 				if (left && right) {
 					const result = evaluateBinary(instruction.op, left.value, right.value);
-					if (result !== null) {
+					if (result !== null && isConstPoolValue(result)) {
 						const folded = replaceWithConst(instruction, instruction.a, result, context);
 						constants.set(instruction.a, folded);
 						continue;
@@ -1098,7 +1101,7 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 						changed = true;
 					}
 					const constant = constants.get(instruction.b);
-					if (constant) {
+					if (constant && isConstPoolValue(constant.value)) {
 						replaceWithConst(instruction, instruction.a, constant.value, context);
 						changed = true;
 					}

@@ -1830,7 +1830,7 @@ static void menu_rebuild_surface(void) {
 		return;
 	}
 	const char* title = "CORE OPTIONS";
-	const char* footer = "START+SELECT: CLOSE";
+	const char* footer = "START+SELECT+L+R: CLOSE";
 	size_t max_chars = strlen(title);
 	if (strlen(footer) > max_chars) {
 		max_chars = strlen(footer);
@@ -3442,8 +3442,8 @@ static void menu_handle_input(uint16_t state, uint16_t prev, bool skip_nav) {
 	const uint16_t l_bit = (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_L);
 	const uint16_t r_bit = (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_R);
 
-	const bool combo_now = (state & start_bit) && (state & select_bit) && !(state & l_bit) && !(state & r_bit);
-	const bool combo_prev = (prev & start_bit) && (prev & select_bit) && !(prev & l_bit) && !(prev & r_bit);
+	const bool combo_now = (state & start_bit) && (state & select_bit) && (state & l_bit) && (state & r_bit);
+	const bool combo_prev = (prev & start_bit) && (prev & select_bit) && (prev & l_bit) && (prev & r_bit);
 	if (combo_now && !combo_prev) {
 		menu_toggle();
 		skip_nav = true;

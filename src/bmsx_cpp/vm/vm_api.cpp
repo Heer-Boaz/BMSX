@@ -2,6 +2,7 @@
 
 #include "../core/engine.h"
 #include "../input/input.h"
+#include "../render/render_queues.h"
 #include "vm_runtime.h"
 #include <algorithm>
 #include <cctype>
@@ -102,6 +103,25 @@ static AudioType parseAudioChannel(const std::string& value) {
 	if (value == "music") return AudioType::Music;
 	if (value == "ui") return AudioType::Ui;
 	throw BMSX_RUNTIME_ERROR("Unknown audio channel '" + value + "'");
+}
+
+static TextAlign parseTextAlign(const std::string& value) {
+	if (value == "left") return TextAlign::Left;
+	if (value == "right") return TextAlign::Right;
+	if (value == "center") return TextAlign::Center;
+	if (value == "start") return TextAlign::Start;
+	if (value == "end") return TextAlign::End;
+	throw BMSX_RUNTIME_ERROR("Unknown text align '" + value + "'");
+}
+
+static TextBaseline parseTextBaseline(const std::string& value) {
+	if (value == "top") return TextBaseline::Top;
+	if (value == "hanging") return TextBaseline::Hanging;
+	if (value == "middle") return TextBaseline::Middle;
+	if (value == "alphabetic") return TextBaseline::Alphabetic;
+	if (value == "ideographic") return TextBaseline::Ideographic;
+	if (value == "bottom") return TextBaseline::Bottom;
+	throw BMSX_RUNTIME_ERROR("Unknown text baseline '" + value + "'");
 }
 
 static bool hasModulationFields(const Table& table) {
@@ -703,7 +723,8 @@ m_runtime.registerNativeFunction("put_particle", [this, key](const std::vector<V
 
 m_runtime.registerNativeFunction("write", [this, readOptionalInt, asText](const std::vector<Value>& args, std::vector<Value>& out) {
 	const std::string& text = asText(args.at(0));
-	write(text, readOptionalInt(args, 1), readOptionalInt(args, 2), readOptionalInt(args, 3), readOptionalInt(args, 4));
+	const Value options = args.size() > 5 ? args.at(5) : valueNil();
+	write(text, readOptionalInt(args, 1), readOptionalInt(args, 2), readOptionalInt(args, 3), readOptionalInt(args, 4), options);
 	(void)out;
 });
 
@@ -922,7 +943,8 @@ void VMApi::put_particle(const ParticleRenderSubmission& submission) {
 }
 
 void VMApi::write(const std::string& text, std::optional<int> x, std::optional<int> y,
-				  std::optional<int> z, std::optional<int> colorIndex) {
+				  std::optional<int> z, std::optional<int> colorIndex, const Value& options) {
+	VMFont* renderFont = m_font.get();
 	int baseX = m_textCursorX;
 	int baseY = m_textCursorY;
 	if (x.has_value() && y.has_value()) {
@@ -932,12 +954,113 @@ void VMApi::write(const std::string& text, std::optional<int> x, std::optional<i
 		baseX = m_textCursorX;
 		baseY = m_textCursorY;
 	}
-	if (colorIndex.has_value() && colorIndex.value() != 0) {
+	if (colorIndex.has_value()) {
 		m_textCursorColorIndex = colorIndex.value();
 	}
 	Color color = palette_color(m_textCursorColorIndex);
-	draw_multiline_text(text, baseX, baseY, z.value_or(0), color, *m_font);
-	advance_print_cursor(m_font->lineHeight());
+	std::optional<Color> backgroundColor;
+	std::optional<int> wrapChars;
+	std::optional<int> centerBlockWidth;
+	std::optional<int> glyphStart;
+	std::optional<int> glyphEnd;
+	std::optional<TextAlign> align;
+	std::optional<TextBaseline> baseline;
+	std::optional<RenderLayer> layer;
+	std::optional<bool> autoAdvance;
+
+	if (!isNil(options)) {
+		if (!valueIsTable(options)) {
+			throw BMSX_RUNTIME_ERROR("write options must be a table.");
+		}
+		auto* table = asTable(options);
+		auto key = [this](std::string_view name) {
+			return m_runtime.canonicalizeIdentifier(name);
+		};
+		Value colorValue = table->get(key("color"));
+		if (!isNil(colorValue)) {
+			color = resolve_color(colorValue);
+		}
+		Value backgroundValue = table->get(key("background_color"));
+		if (!isNil(backgroundValue)) {
+			backgroundColor = resolve_color(backgroundValue);
+		}
+		Value wrapValue = table->get(key("wrap_chars"));
+		if (!isNil(wrapValue)) {
+			wrapChars = static_cast<int>(std::floor(asNumber(wrapValue)));
+		}
+		Value centerValue = table->get(key("center_block_width"));
+		if (!isNil(centerValue)) {
+			centerBlockWidth = static_cast<int>(std::floor(asNumber(centerValue)));
+		}
+		Value startValue = table->get(key("glyph_start"));
+		if (!isNil(startValue)) {
+			glyphStart = static_cast<int>(std::floor(asNumber(startValue)));
+		}
+		Value endValue = table->get(key("glyph_end"));
+		if (!isNil(endValue)) {
+			glyphEnd = static_cast<int>(std::floor(asNumber(endValue)));
+		}
+		Value alignValue = table->get(key("align"));
+		if (!isNil(alignValue)) {
+			align = parseTextAlign(m_runtime.cpu().stringPool().toString(asStringId(alignValue)));
+		}
+		Value baselineValue = table->get(key("baseline"));
+		if (!isNil(baselineValue)) {
+			baseline = parseTextBaseline(m_runtime.cpu().stringPool().toString(asStringId(baselineValue)));
+		}
+		Value layerValue = table->get(key("layer"));
+		if (!isNil(layerValue)) {
+			layer = resolve_layer(layerValue);
+		}
+		Value autoValue = table->get(key("auto_advance"));
+		if (!isNil(autoValue)) {
+			autoAdvance = valueIsBool(autoValue) && valueToBool(autoValue);
+		}
+		Value fontValue = table->get(key("font"));
+		if (!isNil(fontValue)) {
+			throw BMSX_RUNTIME_ERROR("write options font is not supported in C++ VM.");
+		}
+	}
+
+	const std::string expanded = expand_tabs(text);
+	std::vector<std::string> lines;
+	if (wrapChars.has_value() && wrapChars.value() > 0) {
+		lines = RenderQueues::wrapGlyphs(expanded, wrapChars.value());
+	} else {
+		size_t start = 0;
+		while (true) {
+			size_t end = expanded.find('\n', start);
+			if (end == std::string::npos) {
+				lines.push_back(expanded.substr(start));
+				break;
+			}
+			lines.push_back(expanded.substr(start, end - start));
+			start = end + 1;
+		}
+	}
+
+	GlyphRenderSubmission submission;
+	submission.glyphs = std::move(lines);
+	submission.x = static_cast<f32>(baseX);
+	submission.y = static_cast<f32>(baseY);
+	submission.z = static_cast<f32>(z.value_or(0));
+	submission.font = renderFont;
+	submission.color = color;
+	submission.background_color = backgroundColor;
+	submission.center_block_width = centerBlockWidth;
+	submission.glyph_start = glyphStart;
+	submission.glyph_end = glyphEnd;
+	submission.align = align;
+	submission.baseline = baseline;
+	submission.layer = layer;
+	EngineCore::instance().view()->renderer.submit.glyphs(submission);
+
+	const bool shouldAdvance = autoAdvance.value_or(true);
+	if (shouldAdvance) {
+		const int lineCount = static_cast<int>(submission.glyphs.size());
+		m_textCursorY = baseY + ((lineCount - 1) * renderFont->lineHeight());
+		advance_print_cursor(renderFont->lineHeight());
+	}
 }
 
 void VMApi::write_color(const std::string& text, std::optional<int> x, std::optional<int> y,
@@ -969,7 +1092,7 @@ void VMApi::write_with_font(const std::string& text, std::optional<int> x, std::
 		baseX = m_textCursorX;
 		baseY = m_textCursorY;
 	}
-	if (colorIndex.has_value() && colorIndex.value() != 0) {
+	if (colorIndex.has_value()) {
 		m_textCursorColorIndex = colorIndex.value();
 	}
 	Color color = palette_color(m_textCursorColorIndex);

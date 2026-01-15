@@ -431,6 +431,13 @@ class FunctionBuilder {
 			totalInstr += wideFlags[index] ? 2 : 1;
 		}
 
+		for (let index = 0; index < instructions.length; index += 1) {
+			const instr = instructions[index];
+			if (instr.format === 'ABx' && instr.b < 0) {
+				throw new Error(`[FunctionBuilder] Negative Bx operand at ${index} (op=${instr.op}, b=${instr.b}).`);
+			}
+		}
+
 		const code = new Uint8Array(totalInstr * INSTRUCTION_BYTES);
 		const finalRanges: Array<SourceRange | null> = new Array(totalInstr);
 		let cursor = 0;
