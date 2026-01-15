@@ -11,7 +11,22 @@ const TAB_WIDTH = 4;
 // sets: INCLUDED_EXTS (what file extensions we process) and
 // SPACE_ONLY_EXTS (those extensions where tabs should be replaced with
 // spaces, not converted to tabs).
-const INCLUDED_EXTS = new Set(['ts', 'tsx', 'js', 'jsx', 'jsm', 'json', 'md', 'css', 'html', 'ps1', 'sh', 'glsl', 'yaml', 'yml', 'cpp', 'h', 'c', 'hpp']);
+const INCLUDED_EXTS = new Set([
+	'ts', 'tsx', 'js', 'jsx', 'jsm', 'mjs', 'cjs',
+	'json', 'md', 'css', 'html', 'ps1', 'sh',
+	'glsl', 'yaml', 'yml', 'toml', 'ini', 'cfg',
+	'cpp', 'h', 'c', 'hpp', 'cmake', 'make',
+	'lua', 'txt', 'rommanifest',
+]);
+const INCLUDED_BASENAMES = new Set([
+	'Makefile',
+	'CMakeLists.txt',
+	'.editorconfig',
+	'.gitignore',
+	'.gitattributes',
+	'.npmrc',
+	'.nvmrc',
+]);
 const SPACE_ONLY_EXTS = new Set(['yaml', 'yml', 'md']);
 
 function splitNullDelimited(buffer) {
@@ -150,8 +165,9 @@ function main() {
 	const files = listCandidateFiles()
 		.filter(p => !p.startsWith('tools/retroarch-gles2/') && p !== 'tools/retroarch-gles2')
 		.filter(p => {
+			const base = path.basename(p);
 			const ext = path.extname(p).toLowerCase().replace(/^\./, '');
-			return INCLUDED_EXTS.has(ext);
+			return INCLUDED_BASENAMES.has(base) || INCLUDED_EXTS.has(ext);
 		})
 		.map(p => path.join(ROOT, p));
 	const changed = [];
