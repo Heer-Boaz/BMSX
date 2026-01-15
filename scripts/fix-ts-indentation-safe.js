@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 const fs = require('fs');
 const path = require('path');
+const child = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..');
 const TAB_WIDTH = 4;
@@ -13,35 +14,24 @@ const TAB_WIDTH = 4;
 const INCLUDED_EXTS = new Set(['ts', 'tsx', 'js', 'jsx', 'jsm', 'json', 'md', 'css', 'html', 'ps1', 'sh', 'glsl', 'yaml', 'yml', 'cpp', 'h', 'c', 'hpp']);
 const SPACE_ONLY_EXTS = new Set(['yaml', 'yml', 'md']);
 
-function parseGitignore() {
-	const gitignorePath = path.join(ROOT, '.gitignore');
-	if (!fs.existsSync(gitignorePath)) return [];
-	const content = fs.readFileSync(gitignorePath, 'utf8');
-	return content.split('\n').filter(line => line.trim() && !line.startsWith('#'));
+function splitNullDelimited(buffer) {
+	return buffer
+		.toString('utf8')
+		.split('\0')
+		.filter(Boolean);
 }
 
-function isIgnored(file, ignorePatterns) {
-	const rel = path.relative(ROOT, file);
-	for (const pattern of ignorePatterns) {
-		const p = pattern.replace(/\/$/, '');
-		if (rel === p || rel.startsWith(p + '/') || rel.startsWith(p)) return true;
+function listCandidateFiles() {
+	const tracked = child.spawnSync('git', ['ls-files', '-z'], { cwd: ROOT, encoding: 'buffer' });
+	if (tracked.status !== 0) {
+		throw new Error(`git ls-files failed: ${tracked.stderr ? tracked.stderr.toString('utf8') : tracked.status}`);
 	}
-	return false;
-}
-
-function walk(dir, list = [], ignorePatterns = []) {
-	const entries = fs.readdirSync(dir, { withFileTypes: true });
-	for (const e of entries) {
-		if (e.name === 'node_modules' || e.name === '.git') continue;
-		const full = path.join(dir, e.name);
-		if (isIgnored(full, ignorePatterns)) continue;
-		if (e.isDirectory()) walk(full, list, ignorePatterns);
-		else if (e.isFile()) {
-			const ext = path.extname(full).toLowerCase().replace(/^\./, '');
-			if (INCLUDED_EXTS.has(ext)) list.push(full);
-		}
+	const untracked = child.spawnSync('git', ['ls-files', '-z', '--others', '--exclude-standard'], { cwd: ROOT, encoding: 'buffer' });
+	if (untracked.status !== 0) {
+		throw new Error(`git ls-files --others failed: ${untracked.stderr ? untracked.stderr.toString('utf8') : untracked.status}`);
 	}
-	return list;
+	const files = new Set([...splitNullDelimited(tracked.stdout), ...splitNullDelimited(untracked.stdout)]);
+	return Array.from(files);
 }
 
 function convertFile(src, tabWidth = TAB_WIDTH) {
@@ -157,8 +147,13 @@ function convertFile(src, tabWidth = TAB_WIDTH) {
 
 function main() {
 	const checkOnly = process.argv.indexOf('--check') !== -1 || process.argv.indexOf('-c') !== -1;
-	const ignorePatterns = parseGitignore();
-	const files = walk(ROOT, [], ignorePatterns);
+	const files = listCandidateFiles()
+		.filter(p => !p.startsWith('tools/retroarch-gles2/') && p !== 'tools/retroarch-gles2')
+		.filter(p => {
+			const ext = path.extname(p).toLowerCase().replace(/^\./, '');
+			return INCLUDED_EXTS.has(ext);
+		})
+		.map(p => path.join(ROOT, p));
 	const changed = [];
 	for (const f of files) {
 		try {
