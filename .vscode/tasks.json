@@ -1,44 +1,14 @@
 {
 	"version": "2.0.0",
-	// "_runner": "terminal",
 	"tasks": [
 		{
-			"label": "build the game DEBUG-MODE",
-			"detail": "Runs rompacker.js to create the DEBUG ROM + resources. Doesn't run dependent tasks for building rom.js & rompacker.js!",
+			"label": "GAME BUILD: browser (release)",
 			"type": "shell",
-			"command": "npx",
-			"args": [
-				"tsx",
-				"${workspaceFolder}/scripts/rompacker/rompacker.ts",
-				"-romname",
-				"${input:romtobuild}",
-				"-bootloaderpath",
-				"src/${input:romtobuild}",
-				"-respath",
-				"./src/${input:romtobuild}/res",
-				"-title",
-				"${input:romtobuild}",
-				"--debug",
-				"--nodeploy",
-				"--skiptypecheck",
-				"--usepkgtsconfig"
-			],
-			"problemMatcher": [
-				"$node-sass",
-				"$tsc"
-			],
-			"group": {
-				"kind": "build",
-				"isDefault": true
-			},
-			"dependsOrder": "sequence",
-			"dependsOn": [
-				"output romtobuild"
-			],
-			"icon": {
-				"id": "game",
-				"color": "terminal.ansiGreen"
-			},
+			"command": "npm",
+			"args": ["run", "build:game", "--", "${input:romtobuild}"],
+			"problemMatcher": ["$tsc"],
+			"group": { "kind": "build", "isDefault": true },
+			"icon": { "id": "globe", "color": "terminal.ansiGreen" },
 			"presentation": {
 				"echo": false,
 				"reveal": "always",
@@ -47,221 +17,309 @@
 				"showReuseMessage": false,
 				"clear": true,
 				"revealProblems": "onProblem",
-				"group": "ROMPACKER"
-			}
+				"group": "GAME BUILD",
+			},
 		},
 		{
-			"label": "Forcefully build the game DEBUG-MODE",
-			"detail": "Runs rompacker.js to create the DEBUG ROM + resources. Doesn't run dependent tasks for building rom.js & rompacker.js!",
+			"label": "GAME BUILD: browser (debug)",
 			"type": "shell",
-			"command": "npx",
-			"args": [
-				"tsx",
-				"${workspaceFolder}/scripts/rompacker/rompacker.ts",
-				"-romname",
-				"${input:romtobuild}",
-				"-bootloaderpath",
-				"src/${input:romtobuild}",
-				"-respath",
-				"./src/${input:romtobuild}/res",
-				"-title",
-				"${input:romtobuild}",
-				"--debug",
-				"--nodeploy",
-				"--force",
-				"--skiptypecheck",
-				"--usepkgtsconfig"
-			],
-			"problemMatcher": [
-				"$node-sass",
-				"$tsc"
-			],
-			"group": {
-				"kind": "build",
-				"isDefault": false
-			},
-			"dependsOrder": "sequence",
-			"dependsOn": [
-				"output romtobuild"
-			],
-			"icon": {
-				"id": "sync",
-				"color": "terminal.ansiRed"
-			},
-			"presentation": {
-				"echo": false,
-				"reveal": "always",
-				"focus": false,
-				"panel": "shared",
-				"showReuseMessage": false,
-				"clear": true,
-				"revealProblems": "onProblem",
-				"group": "ROMPACKER"
-			}
-		},
-		{
-			"label": "Forcefully typecheck & build the game DEBUG-MODE",
-			"detail": "Runs rompacker.js to create the DEBUG ROM + resources. Doesn't run dependent tasks for building rom.js & rompacker.js!",
-			"type": "shell",
-			"command": "npx",
-			"args": [
-				"tsx",
-				"${workspaceFolder}/scripts/rompacker/rompacker.ts",
-				"-romname",
-				"${input:romtobuild}",
-				"-bootloaderpath",
-				"src/${input:romtobuild}",
-				"-respath",
-				"./src/${input:romtobuild}/res",
-				"-title",
-				"${input:romtobuild}",
-				"--debug",
-				"--nodeploy",
-				"--force",
-				"--usepkgtsconfig"
-			],
-			"problemMatcher": [
-				"$node-sass",
-				"$tsc"
-			],
-			"group": {
-				"kind": "build",
-				"isDefault": false
-			},
-			"dependsOrder": "sequence",
-			"dependsOn": [
-				"output romtobuild"
-			],
-			"icon": {
-				"id": "verified-filled",
-				"color": "terminal.ansiMagenta"
-			},
-			"presentation": {
-				"echo": false,
-				"reveal": "always",
-				"focus": false,
-				"panel": "shared",
-				"showReuseMessage": false,
-				"clear": true,
-				"revealProblems": "onProblem",
-				"group": "ROMPACKER"
-			}
-		},
-		{
-			"label": "build the game NON-DEBUG",
-			"detail": "Runs rompacker.js to create the NON-DEBUG ROM + resources. Doesn't run dependent tasks for building rom.js & rompacker.js!",
-			"type": "shell",
-			"command": "npx",
-			"args": [
-				"tsx",
-				"${workspaceFolder}/scripts/rompacker/rompacker.ts",
-				"-romname",
-				"${input:romtobuild}",
-				"-bootloaderpath",
-				"src/${input:romtobuild}",
-				"-respath",
-				"./src/${input:romtobuild}/res",
-				"-title",
-				"${input:romtobuild}",
-				"--nodeploy"
-			],
-			"problemMatcher": [
-				"$node-sass",
-				"$tsc"
-			],
-			"group": {
-				"kind": "build",
-				"isDefault": true
-			},
-			"dependsOrder": "sequence",
-			"dependsOn": [
-				"output romtobuild"
-			],
-			"icon": {
-				"id": "game",
-				"color": "terminal.ansiGreen"
-			},
-			"presentation": {
-				"echo": false,
-				"reveal": "always",
-				"focus": false,
-				"panel": "shared",
-				"showReuseMessage": false,
-				"clear": true,
-				"revealProblems": "onProblem",
-				"group": "ROMPACKER"
-			}
-		},
-		{
-			"label": "Forcefully build the game NON-DEBUG",
-			"detail": "Runs rompacker.js to create the NON-DEBUG ROM + resources. Doesn't run dependent tasks for building rom.js & rompacker.js!",
-			"type": "shell",
-			"command": "npx",
-			"args": [
-				"tsx",
-				"${workspaceFolder}/scripts/rompacker/rompacker.ts",
-				"-romname",
-				"${input:romtobuild}",
-				"-bootloaderpath",
-				"src/${input:romtobuild}",
-				"-respath",
-				"./src/${input:romtobuild}/res",
-				"-title",
-				"${input:romtobuild}",
-				"--nodeploy",
-				"--force"
-			],
-			"problemMatcher": [
-				"$node-sass",
-				"$tsc"
-			],
-			"group": {
-				"kind": "build",
-				"isDefault": false
-			},
-			"dependsOrder": "sequence",
-			"dependsOn": [
-				"output romtobuild"
-			],
-			"icon": {
-				"id": "sync",
-				"color": "terminal.ansiRed"
-			},
-			"presentation": {
-				"echo": false,
-				"reveal": "always",
-				"focus": false,
-				"panel": "shared",
-				"showReuseMessage": false,
-				"clear": true,
-				"revealProblems": "onProblem",
-				"group": "ROMPACKER"
-			}
-		},
-		{
-			"label": "pack rom resources (resourceids.ts)",
-			"detail": "Runs rompacker.js to create resourceids.ts + texture atlas",
-			"type": "shell",
-			"command": "npx",
-			"args": [
-				"tsx",
-				"${workspaceFolder}/scripts/rompacker/rompacker.ts",
-				"-respath",
-				"./src/${input:romtobuild}/res",
-				"--buildreslist"
-			],
-			"problemMatcher": [
-				"$node-sass"
-			],
+			"command": "npm",
+			"args": ["run", "build:game", "--", "${input:romtobuild}", "--debug"],
+			"problemMatcher": ["$tsc"],
 			"group": "build",
-			"dependsOrder": "sequence",
-			"dependsOn": [
-				"output romtobuild"
-			],
-			"icon": {
-				"id": "package",
-				"color": "terminal.ansiYellow"
+			"icon": { "id": "globe", "color": "terminal.ansiGreen" },
+			"presentation": {
+				"echo": false,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": false,
+				"clear": true,
+				"revealProblems": "onProblem",
+				"group": "GAME BUILD",
 			},
+		},
+		{
+			"label": "GAME VALIDATE: browser (typecheck + force)",
+			"type": "shell",
+			"command": "npm",
+			"args": ["run", "validate:game", "--", "${input:romtobuild}"],
+			"problemMatcher": ["$tsc"],
+			"group": "build",
+			"icon": { "id": "verified-filled", "color": "terminal.ansiCyan" },
+			"presentation": {
+				"echo": false,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": false,
+				"clear": true,
+				"revealProblems": "onProblem",
+				"group": "GAME BUILD",
+			},
+		},
+		{
+			"label": "GAME RESOURCES: build resource list (resourceids.ts)",
+			"type": "shell",
+			"command": "npm",
+			"args": ["run", "build:game", "--", "${input:romtobuild}", "--buildreslist"],
+			"problemMatcher": ["$tsc"],
+			"group": "build",
+			"icon": { "id": "package", "color": "terminal.ansiYellow" },
+			"presentation": {
+				"echo": false,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": false,
+				"clear": true,
+				"revealProblems": "onProblem",
+				"group": "GAME BUILD",
+			},
+		},
+		{
+			"label": "GAME BUILD: headless (debug)",
+			"type": "shell",
+			"command": "npm",
+			"args": ["run", "build:game:headless", "--", "${input:romtobuild}"],
+			"problemMatcher": ["$tsc"],
+			"group": "build",
+			"icon": { "id": "terminal", "color": "terminal.ansiCyan" },
+			"presentation": {
+				"echo": false,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": false,
+				"clear": true,
+				"revealProblems": "onProblem",
+				"group": "GAME BUILD",
+			},
+		},
+		{
+			"label": "GAME BUILD: cli (debug)",
+			"type": "shell",
+			"command": "npm",
+			"args": ["run", "build:game:cli", "--", "${input:romtobuild}"],
+			"problemMatcher": ["$tsc"],
+			"group": "build",
+			"icon": { "id": "terminal", "color": "terminal.ansiCyan" },
+			"presentation": {
+				"echo": false,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": false,
+				"clear": true,
+				"revealProblems": "onProblem",
+				"group": "GAME BUILD",
+			},
+		},
+		{
+			"label": "GAME RUN: headless",
+			"type": "shell",
+			"command": "npm",
+			"args": ["run", "headless:game", "--", "${input:romtobuild}"],
+			"problemMatcher": [],
+			"group": "test",
+			"icon": { "id": "play", "color": "terminal.ansiGreen" },
+			"presentation": {
+				"echo": false,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": false,
+				"clear": true,
+				"group": "GAME BUILD",
+			},
+		},
+		{
+			"label": "ENGINE: build",
+			"type": "shell",
+			"command": "npm",
+			"args": ["run", "build:engine"],
+			"problemMatcher": ["$tsc"],
+			"group": "build",
+			"icon": { "id": "gear", "color": "terminal.ansiBlue" },
+			"presentation": {
+				"echo": false,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": false,
+				"clear": true,
+				"revealProblems": "onProblem",
+				"group": "ROMPACKER",
+			},
+		},
+		{
+			"label": "ENGINE: build (debug)",
+			"type": "shell",
+			"command": "npm",
+			"args": ["run", "build:engine", "--", "--debug"],
+			"problemMatcher": ["$tsc"],
+			"group": "build",
+			"icon": { "id": "gear", "color": "terminal.ansiBlue" },
+			"presentation": {
+				"echo": false,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": false,
+				"clear": true,
+				"revealProblems": "onProblem",
+				"group": "ROMPACKER",
+			},
+		},
+		{
+			"label": "ENGINE: validate",
+			"type": "shell",
+			"command": "npm",
+			"args": ["run", "validate:engine"],
+			"problemMatcher": ["$tsc"],
+			"group": "build",
+			"icon": { "id": "verified-filled", "color": "terminal.ansiCyan" },
+			"presentation": {
+				"echo": false,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": false,
+				"clear": true,
+				"revealProblems": "onProblem",
+				"group": "ROMPACKER",
+			},
+		},
+		{
+			"type": "npm",
+			"script": "fix:indent",
+			"problemMatcher": [],
+			"label": "npm: fix:indent",
+			"detail": "node scripts/fix-ts-indentation-safe.js",
+			"icon": { "id": "wand", "color": "terminal.ansiMagenta" },
+		},
+		{
+			"label": "LIBRETRO BUILD: WSL",
+			"type": "shell",
+			"command": "npm",
+			"args": ["run", "build:libretro-wsl"],
+			"problemMatcher": ["$tsc"],
+			"group": "build",
+			"icon": { "id": "terminal", "color": "terminal.ansiYellow" },
+			"presentation": {
+				"echo": false,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": false,
+				"clear": true,
+				"revealProblems": "onProblem",
+				"group": "LIBRETRO",
+			},
+		},
+		{
+			"label": "LIBRETRO BUILD: WSL (debug)",
+			"type": "shell",
+			"command": "npm",
+			"args": ["run", "build:libretro-wsl:debug"],
+			"problemMatcher": ["$tsc"],
+			"group": "build",
+			"icon": { "id": "terminal", "color": "terminal.ansiYellow" },
+			"presentation": {
+				"echo": false,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": false,
+				"clear": true,
+				"revealProblems": "onProblem",
+				"group": "LIBRETRO",
+			},
+		},
+		{
+			"label": "LIBRETRO BUILD: Windows",
+			"type": "shell",
+			"command": "npm",
+			"args": ["run", "build:libretro-win"],
+			"problemMatcher": ["$tsc"],
+			"group": "build",
+			"icon": { "id": "device-desktop", "color": "terminal.ansiYellow" },
+			"presentation": {
+				"echo": false,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": false,
+				"clear": true,
+				"revealProblems": "onProblem",
+				"group": "LIBRETRO",
+			},
+		},
+		{
+			"label": "LIBRETRO BUILD: SNES Mini (debug)",
+			"type": "shell",
+			"command": "npm",
+			"args": ["run", "build:libretro-snesmini:debug"],
+			"problemMatcher": [],
+			"group": "build",
+			"icon": { "id": "device-mobile", "color": "terminal.ansiYellow" },
+			"presentation": {
+				"echo": false,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": false,
+				"clear": true,
+				"revealProblems": "onProblem",
+				"group": "LIBRETRO",
+			},
+		},
+		{
+			"label": "LIBRETRO BUILD: host SNES Mini (debug)",
+			"type": "shell",
+			"command": "npm",
+			"args": ["run", "build:libretro-host-snesmini:debug"],
+			"problemMatcher": [],
+			"group": "build",
+			"icon": { "id": "device-desktop", "color": "terminal.ansiYellow" },
+			"presentation": {
+				"echo": false,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": false,
+				"clear": true,
+				"revealProblems": "onProblem",
+				"group": "LIBRETRO",
+			},
+		},
+		{
+			"label": "LIBRETRO BUILD: host WSL (debug)",
+			"type": "shell",
+			"command": "npm",
+			"args": ["run", "build:libretro-host-wsl:debug"],
+			"problemMatcher": [],
+			"group": "build",
+			"icon": { "id": "device-desktop", "color": "terminal.ansiYellow" },
+			"presentation": {
+				"echo": false,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": false,
+				"clear": true,
+				"revealProblems": "onProblem",
+				"group": "LIBRETRO",
+			},
+		},
+		{
+			"label": "LIBRETRO RUN: RetroArch",
+			"type": "shell",
+			"command": "npm",
+			"args": ["run", "run:retroarch", "--", "./dist/${input:romtobuild}.debug.rom"],
+			"problemMatcher": [],
+			"group": "test",
+			"icon": { "id": "play", "color": "terminal.ansiGreen" },
 			"presentation": {
 				"echo": false,
 				"reveal": "always",
@@ -269,49 +327,24 @@
 				"panel": "shared",
 				"showReuseMessage": false,
 				"clear": false,
-				"revealProblems": "onProblem",
-				"group": "ROMPACKER"
-			}
+				"group": "LIBRETRO",
+			},
 		},
 		{
-			"label": "output romtobuild",
+			"label": "start server (background)",
 			"type": "shell",
-			"command": "echo",
-			"args": [
-				"${input:romtobuild}"
-			],
-			"hide": true,
-			"group": "build",
-			"icon": {
-				"id": "output",
-				"color": "terminal.ansiBlack"
-			},
+			"command": "${workspaceFolder}/startserver.sh",
+			"isBackground": true,
+			"problemMatcher": [],
+			"icon": { "id": "server", "color": "terminal.ansiYellow" },
 			"presentation": {
-				"echo": false,
-				"reveal": "never",
+				"echo": true,
+				"reveal": "always",
 				"focus": false,
 				"panel": "shared",
 				"showReuseMessage": false,
-				"close": true,
-				"clear": true,
-				"group": "ROMPACKER"
+				"clear": false,
 			},
-			"problemMatcher": []
-		},
-		{
-			"type": "npm",
-			"script": "fix:indent",
-			"problemMatcher": [],
-			"label": "npm: fix:indent",
-			"detail": "node scripts/fix-ts-indentation-safe.js"
-		},
-		{
-			"type": "npm",
-			"script": "build:game",
-			"group": "build",
-			"problemMatcher": [],
-			"label": "npm: build:game",
-			"detail": "npx tsx scripts/rompacker/rompacker.ts --nodeploy -romname testrom"
 		},
 	],
 	"inputs": [
@@ -320,10 +353,8 @@
 			"id": "romtobuild",
 			"description": "Choose ROM to build",
 			"options": [
-				"marlies2020console",
-				"luashell",
-				"luademo",
-				"bmsxconsole",
+				"2025",
+				"emptycart",
 				"sint2024",
 				"ella2023",
 				"testrom",
@@ -332,7 +363,7 @@
 				"marlies2020",
 				"sintervania",
 			],
-			"default": "luashell"
-		}
-	]
+			"default": "2025",
+		},
+	],
 }

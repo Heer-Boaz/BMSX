@@ -774,6 +774,21 @@ export type ResourceScanOptions = {
 	extraLuaPaths?: string[];
 	virtualRoot?: string;
 	resolveAtlasIndex?: boolean;
+	/**
+	 * When set, rebuild checks use the debug ROM output (`dist/<romname>.debug.rom`).
+	 * Note: the JS bundle output path does not change with debug/non-debug builds.
+	 */
+	debug?: boolean;
+	/**
+	 * Optional override for the expected ROM output path used by rebuild checks.
+	 * Defaults to `dist/<romname>[.debug].rom` (based on `debug`).
+	 */
+	romFilePath?: string;
+	/**
+	 * Optional override for the expected JS bundle output path used by rebuild checks.
+	 * Defaults to `rom/<romname>.js`.
+	 */
+	minifiedJsFilePath?: string;
 };
 
 function isWorkspaceStateDirectory(name: string): boolean {
@@ -2072,8 +2087,8 @@ export const shouldCheckFile = (filename: string, checkCodeFiles: boolean, check
  * @returns {Promise<boolean>} A Promise that resolves with a boolean indicating whether a rebuild is required.
  */
 export async function isRebuildRequired(romname: string, bootloaderPath: string, resPath: string, options: ResourceScanOptions = {}): Promise<boolean> {
-	const romFilePath = `./dist/${romname}.rom`;
-	const minifiedJsFilePath = `./rom/${romname}.js`;
+	const romFilePath = options.romFilePath ?? `./dist/${romname}${options.debug ? '.debug' : ''}.rom`;
+	const minifiedJsFilePath = options.minifiedJsFilePath ?? `./rom/${romname}.js`;
 	const extraLuaRoots = options.extraLuaPaths ?? [];
 	const cartProject = isCartPath(resPath) || isCartPath(bootloaderPath) || isDefaultCartBootloader(bootloaderPath);
 	const includeCode = options.includeCode !== false && !cartProject;
