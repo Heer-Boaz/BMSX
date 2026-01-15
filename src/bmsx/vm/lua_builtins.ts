@@ -117,6 +117,7 @@ export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<VMLuaBuiltinDescriptor
 	{ name: 'SYS_BOOT_CART', params: [], signature: 'SYS_BOOT_CART', description: 'System register address; write 1 to boot the cart.' },
 	{ name: 'SYS_CART_MAGIC_ADDR', params: [], signature: 'SYS_CART_MAGIC_ADDR', description: 'Cart ROM magic header address.' },
 	{ name: 'SYS_CART_MAGIC', params: [], signature: 'SYS_CART_MAGIC', description: 'Cart ROM magic header value.' },
+	{ name: 'SYS_VDP_DITHER', params: [], signature: 'SYS_VDP_DITHER', description: 'VDP dither register; write to this register to control dithering. Values 0=off, 1=PSX, 2=RGB565, 3=MSX10' },
 ];
 
 const DEFAULT_LUA_BUILTIN_IDENTIFIER_EXTRAS = [
@@ -128,6 +129,7 @@ const DEFAULT_LUA_BUILTIN_IDENTIFIER_EXTRAS = [
 	'SYS_BOOT_CART',
 	'SYS_CART_MAGIC_ADDR',
 	'SYS_CART_MAGIC',
+	'SYS_VDP_DITHER',
 ];
 
 export const DEFAULT_LUA_BUILTIN_NAMES: ReadonlyArray<string> = (() => {

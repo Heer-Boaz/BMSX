@@ -3,6 +3,7 @@
 #include "cpu.h"
 #include "vm_io.h"
 #include "vm_memory.h"
+#include "vdp.h"
 #include "../core/types.h"
 #include <array>
 #include <functional>
@@ -191,7 +192,8 @@ public:
 	void setProgramSource(VmProgramSource source) { m_programSource = source; }
 	bool isEngineProgramActive() const { return m_programSource == VmProgramSource::Engine; }
 
-	const std::array<i32, 2>& atlasSlots() const { return m_slotAtlasIds; }
+	const std::array<i32, 2>& atlasSlots() const { return m_vdp.atlasSlots(); }
+	void setVdpDitherType(i32 type) { m_vdp.setDitherType(type); }
 
 	/**
 	 * Get the player index for this runtime.
@@ -267,7 +269,6 @@ private:
 	void prepareCartBootIfNeeded();
 	bool pollSystemBootRequest();
 	void flushAssetEdits();
-	void loadAtlasIntoSlot(RuntimeAssets& assets, i32 slot, i32 atlasId);
 	void applyAtlasSlotMapping(const std::array<i32, 2>& slots);
 	std::vector<Value> acquireValueScratch();
 	void releaseValueScratch(std::vector<Value>&& values);
@@ -278,6 +279,7 @@ private:
 
 	// VM core
 	VmMemory m_memory;
+	VDP m_vdp;
 	StringHandleTable m_stringHandles;
 	VMCPU m_cpu;
 	Program* m_program = nullptr;
@@ -316,10 +318,6 @@ private:
 	std::unordered_map<std::string, std::string> m_vmModuleAliases;
 	std::unordered_map<std::string, Value> m_vmModuleCache;
 	std::unordered_map<std::string, std::unique_ptr<std::regex>> m_luaPatternRegexCache;
-	std::unordered_map<i32, std::string> m_atlasResourceById;
-	std::unordered_map<i32, std::vector<std::string>> m_atlasViewIdsById;
-	std::unordered_map<i32, i32> m_atlasSlotById;
-	std::array<i32, 2> m_slotAtlasIds{{-1, -1}};
 	std::vector<std::vector<Value>> m_valueScratchPool;
 };
 

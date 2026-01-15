@@ -34,11 +34,6 @@ inline double to_ms(std::chrono::steady_clock::duration duration) {
 constexpr uint32_t CART_ROM_MAGIC = 0x58534D42u;
 constexpr size_t CART_ROM_HEADER_SIZE = 32;
 constexpr std::array<u8, CART_ROM_HEADER_SIZE> CART_ROM_EMPTY_HEADER = {};
-
-bool isAtlasName(const std::string& name) {
-	static constexpr const char* kPrefix = "_atlas_";
-	return name.rfind(kPrefix, 0) == 0;
-}
 }
 
 // Button actions for standard gamepad/keyboard mapping
@@ -330,6 +325,7 @@ void VMRuntime::destroy() {
 
 VMRuntime::VMRuntime(const VMRuntimeOptions& options)
 	: m_memory()
+	, m_vdp(m_memory)
 	, m_stringHandles(m_memory)
 	, m_cpu(m_memory, &m_stringHandles)
 	, m_playerIndex(options.playerIndex)
@@ -343,6 +339,7 @@ VMRuntime::VMRuntime(const VMRuntimeOptions& options)
 	// System flags
 	m_memory.writeValue(IO_SYS_BOOT_CART, valueNumber(0.0));
 	m_memory.writeValue(IO_SYS_CART_BOOTREADY, valueNumber(0.0));
+	m_vdp.initializeRegisters();
 	m_vmRandomSeedValue = static_cast<uint32_t>(EngineCore::instance().clock()->now());
 	refreshMemoryMap();
 	m_cpu.setExternalRootMarker([this](VMHeap& heap) {
@@ -402,6 +399,7 @@ void VMRuntime::boot(Program* program, ProgramMetadata* metadata, int entryProto
 	m_memory.writeValue(IO_WRITE_PTR_ADDR, valueNumber(0.0));
 	m_memory.writeValue(IO_SYS_BOOT_CART, valueNumber(0.0));
 	m_memory.writeValue(IO_SYS_CART_BOOTREADY, valueNumber(0.0));
+	m_vdp.initializeRegisters();
 	m_vmRandomSeedValue = static_cast<uint32_t>(EngineCore::instance().clock()->now());
 	setupBuiltins();
 	m_api->registerAllFunctions();
@@ -572,6 +570,7 @@ void VMRuntime::tickTerminalModeDraw() {
 
 void VMRuntime::processIOCommands() {
 	// Get write pointer
+	m_vdp.syncRegisters();
 	int writePtr = static_cast<int>(asNumber(m_memory.readValue(IO_WRITE_PTR_ADDR)));
 	if (writePtr <= 0) {
 		return;
@@ -612,13 +611,14 @@ VMState VMRuntime::captureCurrentState() const {
 	state.ioMemory = m_memory.ioSlots();
 	state.globals = m_cpu.globals->entries();
 	state.assetMemory = m_memory.dumpAssetMemory();
-	state.atlasSlots = m_slotAtlasIds;
+	state.atlasSlots = m_vdp.atlasSlots();
 	return state;
 }
 
 void VMRuntime::applyState(const VMState& state) {
 	// Restore memory
 	m_memory.loadIoSlots(state.ioMemory);
+	m_vdp.syncRegisters();
 	if (!state.assetMemory.empty()) {
 		m_memory.restoreAssetMemory(state.assetMemory.data(), state.assetMemory.size());
 	}
@@ -633,38 +633,7 @@ void VMRuntime::applyState(const VMState& state) {
 }
 
 void VMRuntime::applyAtlasSlotMapping(const std::array<i32, 2>& slots) {
-	m_atlasSlotById.clear();
-	m_slotAtlasIds = slots;
-	if (slots[0] >= 0) {
-		m_atlasSlotById[slots[0]] = 0;
-	}
-	if (slots[1] >= 0) {
-		m_atlasSlotById[slots[1]] = 1;
-	}
-	if (auto* view = EngineCore::instance().view()) {
-		view->setPrimaryAtlas(slots[0]);
-		view->setSecondaryAtlas(slots[1]);
-	}
-	auto& primaryEntry = m_memory.getAssetEntry(ATLAS_PRIMARY_SLOT_ID);
-	auto& secondaryEntry = m_memory.getAssetEntry(ATLAS_SECONDARY_SLOT_ID);
-	if (slots[0] >= 0) {
-		const auto viewIt = m_atlasViewIdsById.find(slots[0]);
-		if (viewIt != m_atlasViewIdsById.end()) {
-			for (const auto& viewId : viewIt->second) {
-				auto& viewEntry = m_memory.getAssetEntry(viewId);
-				m_memory.updateImageViewBase(viewEntry, primaryEntry);
-			}
-		}
-	}
-	if (slots[1] >= 0) {
-		const auto viewIt = m_atlasViewIdsById.find(slots[1]);
-		if (viewIt != m_atlasViewIdsById.end()) {
-			for (const auto& viewId : viewIt->second) {
-				auto& viewEntry = m_memory.getAssetEntry(viewId);
-				m_memory.updateImageViewBase(viewEntry, secondaryEntry);
-			}
-		}
-	}
+	m_vdp.applyAtlasSlotMapping(slots);
 }
 
 std::vector<Value> VMRuntime::callLuaFunction(Closure* fn, const std::vector<Value>& args) {
@@ -709,190 +678,8 @@ void VMRuntime::refreshMemoryMap() {
 
 void VMRuntime::buildAssetMemory(RuntimeAssets& assets, bool keepDecodedData) {
 	m_memory.resetAssetMemory();
-	m_atlasResourceById.clear();
-	m_atlasViewIdsById.clear();
-	m_atlasSlotById.clear();
-	m_slotAtlasIds = {{-1, -1}};
+	m_vdp.registerImageAssets(assets, keepDecodedData);
 	const RuntimeAssets* fallback = assets.fallback;
-
-	std::vector<std::string> viewAssets;
-	viewAssets.reserve(assets.img.size());
-
-	const std::string engineAtlasName = generateAtlasName(ENGINE_ATLAS_INDEX);
-	const ImgAsset* engineAtlasAsset = nullptr;
-
-	for (auto& [id, imgAsset] : assets.img) {
-		if (imgAsset.meta.atlassed) {
-			viewAssets.push_back(id);
-			continue;
-		}
-		if (id == engineAtlasName) {
-			engineAtlasAsset = &imgAsset;
-			continue;
-		}
-		if (!isAtlasName(id)) {
-			continue;
-		}
-		const i32 atlasId = imgAsset.meta.atlasid;
-		m_atlasResourceById[atlasId] = id;
-	}
-
-	if (fallback) {
-		for (const auto& [id, imgAsset] : fallback->img) {
-			if (assets.img.find(id) != assets.img.end()) {
-				continue;
-			}
-			if (imgAsset.meta.atlassed) {
-				viewAssets.push_back(id);
-				continue;
-			}
-			if (id == engineAtlasName && !engineAtlasAsset) {
-				engineAtlasAsset = &imgAsset;
-				continue;
-			}
-			if (!isAtlasName(id)) {
-				continue;
-			}
-			const i32 atlasId = imgAsset.meta.atlasid;
-			m_atlasResourceById[atlasId] = id;
-		}
-	}
-
-	if (!engineAtlasAsset) {
-		throw BMSX_RUNTIME_ERROR("[VMRuntime] Engine atlas missing from assets.");
-	}
-	if (engineAtlasAsset->pixels.empty() || engineAtlasAsset->meta.width <= 0 || engineAtlasAsset->meta.height <= 0) {
-		throw BMSX_RUNTIME_ERROR("[VMRuntime] Engine atlas missing pixel data.");
-	}
-	auto& engineEntry = m_memory.registerImageBuffer(
-		engineAtlasName,
-		engineAtlasAsset->pixels.data(),
-		static_cast<uint32_t>(engineAtlasAsset->meta.width),
-		static_cast<uint32_t>(engineAtlasAsset->meta.height),
-		0
-	);
-
-	const i32 skyboxFaceSize = assets.manifest.skyboxFaceSize > 0
-		? assets.manifest.skyboxFaceSize
-		: SKYBOX_FACE_DEFAULT_SIZE;
-	if (skyboxFaceSize <= 0) {
-		throw BMSX_RUNTIME_ERROR("[VMRuntime] Invalid skybox_face_size: " + std::to_string(skyboxFaceSize));
-	}
-	const uint32_t skyboxBytes = static_cast<uint32_t>(skyboxFaceSize)
-		* static_cast<uint32_t>(skyboxFaceSize)
-		* 4u;
-	m_memory.registerImageSlot(SKYBOX_SLOT_POSX_ID, skyboxBytes, 0);
-	m_memory.registerImageSlot(SKYBOX_SLOT_NEGX_ID, skyboxBytes, 0);
-	m_memory.registerImageSlot(SKYBOX_SLOT_POSY_ID, skyboxBytes, 0);
-	m_memory.registerImageSlot(SKYBOX_SLOT_NEGY_ID, skyboxBytes, 0);
-	m_memory.registerImageSlot(SKYBOX_SLOT_POSZ_ID, skyboxBytes, 0);
-	m_memory.registerImageSlot(SKYBOX_SLOT_NEGZ_ID, skyboxBytes, 0);
-
-	uint32_t maxAtlasBytes = 0;
-	for (const auto& entry : m_atlasResourceById) {
-		const auto* atlasAsset = assets.getImg(entry.second);
-		if (!atlasAsset || atlasAsset->pixels.empty()) {
-			throw BMSX_RUNTIME_ERROR("[VMRuntime] Atlas '" + entry.second + "' missing pixel data.");
-		}
-		const uint32_t width = static_cast<uint32_t>(atlasAsset->meta.width);
-		const uint32_t height = static_cast<uint32_t>(atlasAsset->meta.height);
-		const uint32_t bytes = width * height * 4u;
-		if (bytes > maxAtlasBytes) {
-			maxAtlasBytes = bytes;
-		}
-	}
-	if (maxAtlasBytes == 0) {
-		throw BMSX_RUNTIME_ERROR("[VMRuntime] No atlas resources available for slot allocation.");
-	}
-
-	m_memory.registerImageSlot(ATLAS_PRIMARY_SLOT_ID, maxAtlasBytes, 0);
-	m_memory.registerImageSlot(ATLAS_SECONDARY_SLOT_ID, maxAtlasBytes, 0);
-
-	std::vector<i32> atlasIds;
-	atlasIds.reserve(m_atlasResourceById.size());
-	for (const auto& [atlasId, _] : m_atlasResourceById) {
-		atlasIds.push_back(atlasId);
-	}
-	std::sort(atlasIds.begin(), atlasIds.end());
-	if (!atlasIds.empty()) {
-		m_atlasSlotById[atlasIds[0]] = 0;
-		m_slotAtlasIds[0] = atlasIds[0];
-	}
-	if (atlasIds.size() > 1) {
-		m_atlasSlotById[atlasIds[1]] = 1;
-		m_slotAtlasIds[1] = atlasIds[1];
-	}
-
-	for (const auto& id : viewAssets) {
-		auto* imgAsset = assets.getImg(id);
-		if (!imgAsset) {
-			throw BMSX_RUNTIME_ERROR("[VMRuntime] Image asset '" + id + "' not found.");
-		}
-		if (!imgAsset->meta.atlassed) {
-			throw BMSX_RUNTIME_ERROR("[VMRuntime] Image asset '" + id + "' expected to be atlassed.");
-		}
-		const i32 atlasId = imgAsset->meta.atlasid;
-		const auto& tc = imgAsset->meta.texcoords;
-		const f32 minU = std::min({tc[0], tc[2], tc[4], tc[6], tc[8], tc[10]});
-		const f32 maxU = std::max({tc[0], tc[2], tc[4], tc[6], tc[8], tc[10]});
-		const f32 minV = std::min({tc[1], tc[3], tc[5], tc[7], tc[9], tc[11]});
-		const f32 maxV = std::max({tc[1], tc[3], tc[5], tc[7], tc[9], tc[11]});
-		const VmMemory::AssetEntry* baseEntry = nullptr;
-		i32 atlasWidth = 0;
-		i32 atlasHeight = 0;
-		if (atlasId == ENGINE_ATLAS_INDEX) {
-			baseEntry = &engineEntry;
-			atlasWidth = static_cast<i32>(engineEntry.regionW);
-			atlasHeight = static_cast<i32>(engineEntry.regionH);
-		} else {
-			const auto atlasNameIt = m_atlasResourceById.find(atlasId);
-			if (atlasNameIt == m_atlasResourceById.end()) {
-				throw BMSX_RUNTIME_ERROR("[VMRuntime] Atlas " + std::to_string(atlasId) + " missing for image '" + id + "'.");
-			}
-			const auto* atlasAsset = assets.getImg(atlasNameIt->second);
-			atlasWidth = atlasAsset->meta.width;
-			atlasHeight = atlasAsset->meta.height;
-			const auto slotIt = m_atlasSlotById.find(atlasId);
-			const bool useSecondary = (slotIt != m_atlasSlotById.end() && slotIt->second == 1);
-			const std::string& slotId = useSecondary ? ATLAS_SECONDARY_SLOT_ID : ATLAS_PRIMARY_SLOT_ID;
-			baseEntry = &m_memory.getAssetEntry(slotId);
-		}
-		const i32 offsetX = static_cast<i32>(std::floor(minU * static_cast<f32>(atlasWidth)));
-		const i32 offsetY = static_cast<i32>(std::floor(minV * static_cast<f32>(atlasHeight)));
-		const i32 regionW = std::max(1, std::min(atlasWidth - offsetX,
-			static_cast<i32>(std::round((maxU - minU) * static_cast<f32>(atlasWidth)))));
-		const i32 regionH = std::max(1, std::min(atlasHeight - offsetY,
-			static_cast<i32>(std::round((maxV - minV) * static_cast<f32>(atlasHeight)))));
-		m_memory.registerImageView(
-			id,
-			*baseEntry,
-			static_cast<uint32_t>(offsetX),
-			static_cast<uint32_t>(offsetY),
-			static_cast<uint32_t>(regionW),
-			static_cast<uint32_t>(regionH),
-			0
-		);
-		m_atlasViewIdsById[atlasId].push_back(id);
-	}
-
-	if (m_slotAtlasIds[0] >= 0) {
-		loadAtlasIntoSlot(assets, 0, m_slotAtlasIds[0]);
-	}
-	if (m_slotAtlasIds[1] >= 0) {
-		loadAtlasIntoSlot(assets, 1, m_slotAtlasIds[1]);
-	}
-
-	if (!keepDecodedData) {
-		for (auto& [id, imgAsset] : assets.img) {
-			if (id == engineAtlasName || isAtlasName(id)) {
-				continue;
-			}
-			if (!imgAsset.pixels.empty()) {
-				std::vector<u8>().swap(imgAsset.pixels);
-			}
-		}
-	}
-
 	for (auto& [id, audioAsset] : assets.audio) {
 		if (audioAsset.bytes.empty()) {
 			throw BMSX_RUNTIME_ERROR("[VMRuntime] Audio asset '" + id + "' missing encoded bytes.");
@@ -935,80 +722,8 @@ void VMRuntime::buildAssetMemory(RuntimeAssets& assets, bool keepDecodedData) {
 	m_memory.markAllAssetsDirty();
 }
 
-void VMRuntime::loadAtlasIntoSlot(RuntimeAssets& assets, i32 slot, i32 atlasId) {
-	const auto atlasNameIt = m_atlasResourceById.find(atlasId);
-	if (atlasNameIt == m_atlasResourceById.end()) {
-		throw BMSX_RUNTIME_ERROR("[VMRuntime] Atlas " + std::to_string(atlasId) + " not found in assets.");
-	}
-	const std::string& atlasName = atlasNameIt->second;
-	auto* atlasAsset = assets.getImg(atlasName);
-	if (!atlasAsset || atlasAsset->pixels.empty()) {
-		throw BMSX_RUNTIME_ERROR("[VMRuntime] Atlas '" + atlasName + "' missing pixel data.");
-	}
-	const std::string& slotId = (slot == 1) ? ATLAS_SECONDARY_SLOT_ID : ATLAS_PRIMARY_SLOT_ID;
-	auto& slotEntry = m_memory.getAssetEntry(slotId);
-	m_memory.writeImageSlot(
-		slotEntry,
-		atlasAsset->pixels.data(),
-		atlasAsset->pixels.size(),
-		static_cast<uint32_t>(atlasAsset->meta.width),
-		static_cast<uint32_t>(atlasAsset->meta.height)
-	);
-	const auto existingSlot = m_atlasSlotById.find(atlasId);
-	if (existingSlot != m_atlasSlotById.end() && existingSlot->second != slot) {
-		m_slotAtlasIds[existingSlot->second] = -1;
-		if (auto* view = EngineCore::instance().view()) {
-			if (existingSlot->second == 0) {
-				view->setPrimaryAtlas(-1);
-			} else {
-				view->setSecondaryAtlas(-1);
-			}
-		}
-	}
-	const i32 previousAtlasId = m_slotAtlasIds[slot];
-	if (previousAtlasId >= 0) {
-		m_atlasSlotById.erase(previousAtlasId);
-	}
-	m_atlasSlotById[atlasId] = slot;
-	m_slotAtlasIds[slot] = atlasId;
-	if (auto* view = EngineCore::instance().view()) {
-		if (slot == 0) {
-			view->setPrimaryAtlas(atlasId);
-		} else {
-			view->setSecondaryAtlas(atlasId);
-		}
-	}
-	const auto viewIt = m_atlasViewIdsById.find(atlasId);
-	if (viewIt != m_atlasViewIdsById.end()) {
-		for (const auto& viewId : viewIt->second) {
-			auto& viewEntry = m_memory.getAssetEntry(viewId);
-			m_memory.updateImageViewBase(viewEntry, slotEntry);
-		}
-	}
-}
-
 void VMRuntime::flushAssetEdits() {
-	auto dirty = m_memory.consumeDirtyAssets();
-	if (dirty.empty()) {
-		return;
-	}
-	auto* texmanager = EngineCore::instance().texmanager();
-	if (!texmanager) {
-		throw BMSX_RUNTIME_ERROR("[VMRuntime] TextureManager not configured.");
-	}
-	const std::string engineAtlasName = generateAtlasName(ENGINE_ATLAS_INDEX);
-	for (const auto* entry : dirty) {
-		if (entry->type == VmMemory::AssetType::Image) {
-			if (entry->regionW == 0 || entry->regionH == 0) {
-				continue;
-			}
-			const u8* pixels = m_memory.getImagePixels(*entry);
-			const i32 width = static_cast<i32>(entry->regionW);
-			const i32 height = static_cast<i32>(entry->regionH);
-			const std::string& textureKey = (entry->id == engineAtlasName) ? ENGINE_ATLAS_TEXTURE_KEY : entry->id;
-			texmanager->updateTexturesForAsset(textureKey, pixels, width, height);
-		}
-	}
+	m_vdp.flushAssetEdits();
 }
 
 Value VMRuntime::requireVmModule(const std::string& moduleName) {
@@ -1882,6 +1597,7 @@ void VMRuntime::setupBuiltins() {
 	setGlobal("SYS_CART_BOOTREADY", valueNumber(static_cast<double>(IO_SYS_CART_BOOTREADY)));
 	setGlobal("SYS_CART_MAGIC_ADDR", valueNumber(static_cast<double>(CART_ROM_MAGIC_ADDR)));
 	setGlobal("SYS_CART_MAGIC", valueNumber(static_cast<double>(CART_ROM_MAGIC)));
+	setGlobal("SYS_VDP_DITHER", valueNumber(static_cast<double>(IO_VDP_DITHER)));
 
 	registerNativeFunction("peek", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 		uint32_t address = static_cast<uint32_t>(asNumber(args.at(0)));

@@ -39,7 +39,10 @@ constexpr int IO_SYS_CART_BOOTREADY_INDEX = IO_SYS_BASE_INDEX + 1;
 
 // Number of system flag slots
 constexpr int IO_SYS_SIZE = 2;
-constexpr int VM_IO_SLOT_COUNT = IO_SYS_BASE_INDEX + IO_SYS_SIZE;
+constexpr int IO_VDP_BASE_INDEX = IO_SYS_BASE_INDEX + IO_SYS_SIZE;
+constexpr int IO_VDP_DITHER_INDEX = IO_VDP_BASE_INDEX;
+constexpr int IO_VDP_SIZE = 1;
+constexpr int VM_IO_SLOT_COUNT = IO_VDP_BASE_INDEX + IO_VDP_SIZE;
 
 constexpr uint32_t IO_WRITE_PTR_ADDR = IO_BASE + IO_WRITE_PTR_INDEX * IO_WORD_SIZE;
 constexpr uint32_t IO_BUFFER_BASE = IO_BASE + IO_BUFFER_BASE_INDEX * IO_WORD_SIZE;
@@ -50,5 +53,7 @@ constexpr uint32_t IO_ARG_STRIDE = IO_WORD_SIZE;
 constexpr uint32_t IO_SYS_BASE = IO_BASE + IO_SYS_BASE_INDEX * IO_WORD_SIZE;
 constexpr uint32_t IO_SYS_BOOT_CART = IO_BASE + IO_SYS_BOOT_CART_INDEX * IO_WORD_SIZE;
 constexpr uint32_t IO_SYS_CART_BOOTREADY = IO_BASE + IO_SYS_CART_BOOTREADY_INDEX * IO_WORD_SIZE;
+constexpr uint32_t IO_VDP_BASE = IO_BASE + IO_VDP_BASE_INDEX * IO_WORD_SIZE;
+constexpr uint32_t IO_VDP_DITHER = IO_BASE + IO_VDP_DITHER_INDEX * IO_WORD_SIZE;
 
 } // namespace bmsx

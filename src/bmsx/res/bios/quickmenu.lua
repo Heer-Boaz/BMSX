@@ -60,6 +60,20 @@ local function make_enum(label, key, values)
 	}
 end
 
+local function make_vdp_enum(label, register, values)
+	return {
+		kind = "enum",
+		label = label,
+		get = function()
+			return peek(register)
+		end,
+		set = function(value)
+			poke(register, value)
+		end,
+		values = values,
+	}
+end
+
 local function make_action(label, action)
 	return {
 		kind = "action",
@@ -77,7 +91,7 @@ local entries = {
 	make_toggle("GLOW", "enable_glow"),
 	make_toggle("FRINGING", "enable_fringing"),
 	make_toggle("APERTURE", "enable_aperture"),
-	make_enum("DITHER", "dither_type", {
+	make_vdp_enum("DITHER", SYS_VDP_DITHER, {
 		{ value = 0, label = "OFF" },
 		{ value = 1, label = "PSX" },
 		{ value = 2, label = "RGB565" },

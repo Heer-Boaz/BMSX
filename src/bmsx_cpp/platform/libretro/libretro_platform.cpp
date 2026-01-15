@@ -9,6 +9,7 @@
 #include "../../input/keyboardinput.h"
 #include "../../render/renderpasslib.h"
 #include "../../utils/mem_snapshot.h"
+#include "../../vm/vm_runtime.h"
 #if BMSX_ENABLE_GLES2
 #include "../../render/gles2_backend.h"
 #include "../../render/sprites_pipeline_gles2.h"
@@ -282,7 +283,7 @@ void LibretroPlatform::setDitherType(GameView::DitherType type) {
 	type = GameView::DitherType::None;
 #endif
 	m_dither_type = type;
-	m_engine->view()->dither_type = m_dither_type;
+	VMRuntime::instance().setVdpDitherType(static_cast<i32>(m_dither_type));
 }
 
 void LibretroPlatform::setFrameSkipOptions(bool enabled) {
