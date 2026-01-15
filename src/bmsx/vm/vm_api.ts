@@ -416,7 +416,15 @@ export class BmsxVMApi {
 		this.renderBackend.rect(rect);
 	}
 
-	public put_rectfillcolor(x0: number, y0: number, x1: number, y1: number, z: number, colorvalue: number | color): void {
+	public put_rectfillcolor(
+		x0: number,
+		y0: number,
+		x1: number,
+		y1: number,
+		z: number,
+		colorvalue: number | color,
+		options?: { layer?: RenderLayer },
+	): void {
 		const resolved = this.resolve_color(colorvalue);
 		const rect: RectRenderSubmission = {
 			kind: 'fill',
@@ -428,6 +436,7 @@ export class BmsxVMApi {
 				z: z,
 			},
 			color: resolved,
+			layer: options?.layer,
 		};
 		this.renderBackend.rect(rect);
 	}

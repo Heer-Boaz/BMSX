@@ -200,26 +200,34 @@ function new_game()
 		id = text_main_id,
 		dimensions = { left = horizontal_margin, right = w - horizontal_margin, top = main_top, bottom = choice_top },
 		pos = { z = 1000 },
+		layer = 'ui',
 	})
 	spawn_textobject('p3.text.choice.def', {
 		id = text_choice_id,
 		dimensions = { left = horizontal_margin, right = w - horizontal_margin, top = choice_top, bottom = prompt_top },
 		pos = { z = 1001 },
+		highlight_move_enabled = true,
+		highlight_pulse_enabled = true,
+		highlight_jitter_enabled = false,
+		layer = 'ui',
 	})
 	spawn_textobject('p3.text.prompt.def', {
 		id = text_prompt_id,
 		dimensions = { left = horizontal_margin, right = w - horizontal_margin, top = prompt_top, bottom = h },
 		pos = { z = 1002 },
+		layer = 'ui',
 	})
 	spawn_textobject('p3.text.transition.def', {
 		id = text_transition_id,
 		dimensions = { left = 0, right = w, top = (h / 2) - (line_height * 2), bottom = (h / 2) + (line_height * 2) },
 		pos = { z = 900 },
+		layer = 'ui',
 	})
 	spawn_textobject('p3.text.results.def', {
 		id = text_results_id,
 		dimensions = { left = horizontal_margin, right = w - (w / 3), top = line_height * 2, bottom = h - (h / 3) },
 		pos = { z = 1003 },
+		layer = 'ui',
 	})
 
 	clear_texts(text_ids_all)

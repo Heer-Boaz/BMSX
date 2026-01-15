@@ -3220,21 +3220,74 @@ public fallbackSourceRange(): LuaSourceRange {
 			return [null];
 		}));
 
+		const maxSafeInteger = Number.MAX_SAFE_INTEGER;
+		const radToDeg = 180 / Math.PI;
+		const degToRad = Math.PI / 180;
 		const mathTable = createLuaTable();
 		mathTable.set(this.canonicalize('abs'), new LuaNativeFunction(this.canonicalize('abs'), (args) => {
 			const value = args.length > 0 ? args[0] : null;
 			const number = this.expectNumber(value, 'math.abs expects a number.', null);
 			return [Math.abs(number)];
 		}));
+		mathTable.set(this.canonicalize('acos'), new LuaNativeFunction(this.canonicalize('acos'), (args) => {
+			const value = args.length > 0 ? args[0] : null;
+			const number = this.expectNumber(value, 'math.acos expects a number.', null);
+			return [Math.acos(number)];
+		}));
+		mathTable.set(this.canonicalize('asin'), new LuaNativeFunction(this.canonicalize('asin'), (args) => {
+			const value = args.length > 0 ? args[0] : null;
+			const number = this.expectNumber(value, 'math.asin expects a number.', null);
+			return [Math.asin(number)];
+		}));
+		mathTable.set(this.canonicalize('atan'), new LuaNativeFunction(this.canonicalize('atan'), (args) => {
+			const value = args.length > 0 ? args[0] : null;
+			const y = this.expectNumber(value, 'math.atan expects a number.', null);
+			if (args.length > 1) {
+				const x = this.expectNumber(args[1], 'math.atan expects a number.', null);
+				return [Math.atan2(y, x)];
+			}
+			return [Math.atan(y)];
+		}));
 		mathTable.set(this.canonicalize('ceil'), new LuaNativeFunction(this.canonicalize('ceil'), (args) => {
 			const value = args.length > 0 ? args[0] : null;
 			const number = this.expectNumber(value, 'math.ceil expects a number.', null);
 			return [Math.ceil(number)];
 		}));
+		mathTable.set(this.canonicalize('cos'), new LuaNativeFunction(this.canonicalize('cos'), (args) => {
+			const value = args.length > 0 ? args[0] : null;
+			const number = this.expectNumber(value, 'math.cos expects a number.', null);
+			return [Math.cos(number)];
+		}));
+		mathTable.set(this.canonicalize('deg'), new LuaNativeFunction(this.canonicalize('deg'), (args) => {
+			const value = args.length > 0 ? args[0] : null;
+			const number = this.expectNumber(value, 'math.deg expects a number.', null);
+			return [number * radToDeg];
+		}));
+		mathTable.set(this.canonicalize('exp'), new LuaNativeFunction(this.canonicalize('exp'), (args) => {
+			const value = args.length > 0 ? args[0] : null;
+			const number = this.expectNumber(value, 'math.exp expects a number.', null);
+			return [Math.exp(number)];
+		}));
 		mathTable.set(this.canonicalize('floor'), new LuaNativeFunction(this.canonicalize('floor'), (args) => {
 			const value = args.length > 0 ? args[0] : null;
 			const number = this.expectNumber(value, 'math.floor expects a number.', null);
 			return [Math.floor(number)];
+		}));
+		mathTable.set(this.canonicalize('fmod'), new LuaNativeFunction(this.canonicalize('fmod'), (args) => {
+			const value = args.length > 0 ? args[0] : null;
+			const divisorValue = args.length > 1 ? args[1] : null;
+			const number = this.expectNumber(value, 'math.fmod expects a number.', null);
+			const divisor = this.expectNumber(divisorValue, 'math.fmod expects a number.', null);
+			return [number % divisor];
+		}));
+		mathTable.set(this.canonicalize('log'), new LuaNativeFunction(this.canonicalize('log'), (args) => {
+			const value = args.length > 0 ? args[0] : null;
+			const number = this.expectNumber(value, 'math.log expects a number.', null);
+			if (args.length > 1) {
+				const base = this.expectNumber(args[1], 'math.log expects a number.', null);
+				return [Math.log(number) / Math.log(base)];
+			}
+			return [Math.log(number)];
 		}));
 		mathTable.set(this.canonicalize('max'), new LuaNativeFunction(this.canonicalize('max'), (args) => {
 			if (args.length === 0) {
@@ -3262,6 +3315,22 @@ public fallbackSourceRange(): LuaSourceRange {
 			}
 			return [result];
 		}));
+		mathTable.set(this.canonicalize('modf'), new LuaNativeFunction(this.canonicalize('modf'), (args) => {
+			const value = args.length > 0 ? args[0] : null;
+			const number = this.expectNumber(value, 'math.modf expects a number.', null);
+			const integerPart = Math.trunc(number);
+			return [integerPart, number - integerPart];
+		}));
+		mathTable.set(this.canonicalize('rad'), new LuaNativeFunction(this.canonicalize('rad'), (args) => {
+			const value = args.length > 0 ? args[0] : null;
+			const number = this.expectNumber(value, 'math.rad expects a number.', null);
+			return [number * degToRad];
+		}));
+		mathTable.set(this.canonicalize('sin'), new LuaNativeFunction(this.canonicalize('sin'), (args) => {
+			const value = args.length > 0 ? args[0] : null;
+			const number = this.expectNumber(value, 'math.sin expects a number.', null);
+			return [Math.sin(number)];
+		}));
 		mathTable.set(this.canonicalize('sqrt'), new LuaNativeFunction(this.canonicalize('sqrt'), (args) => {
 			const value = args.length > 0 ? args[0] : null;
 			const number = this.expectNumber(value, 'math.sqrt expects a number.', null);
@@ -3269,6 +3338,33 @@ public fallbackSourceRange(): LuaSourceRange {
 				throw this.runtimeError('math.sqrt cannot operate on negative numbers.');
 			}
 			return [Math.sqrt(number)];
+		}));
+		mathTable.set(this.canonicalize('tan'), new LuaNativeFunction(this.canonicalize('tan'), (args) => {
+			const value = args.length > 0 ? args[0] : null;
+			const number = this.expectNumber(value, 'math.tan expects a number.', null);
+			return [Math.tan(number)];
+		}));
+		mathTable.set(this.canonicalize('tointeger'), new LuaNativeFunction(this.canonicalize('tointeger'), (args) => {
+			const value = args.length > 0 ? args[0] : null;
+			if (typeof value !== 'number' || !Number.isFinite(value) || !Number.isInteger(value)) {
+				return [null];
+			}
+			return [value];
+		}));
+		mathTable.set(this.canonicalize('type'), new LuaNativeFunction(this.canonicalize('type'), (args) => {
+			const value = args.length > 0 ? args[0] : null;
+			if (typeof value !== 'number') {
+				return [null];
+			}
+			if (Number.isInteger(value)) {
+				return ['integer'];
+			}
+			return ['float'];
+		}));
+		mathTable.set(this.canonicalize('ult'), new LuaNativeFunction(this.canonicalize('ult'), (args) => {
+			const left = this.expectNumber(args[0], 'math.ult expects a number.', null) >>> 0;
+			const right = this.expectNumber(args[1], 'math.ult expects a number.', null) >>> 0;
+			return [left < right];
 		}));
 		mathTable.set(this.canonicalize('random'), new LuaNativeFunction(this.canonicalize('random'), (args) => {
 			const randomValue = this.nextRandom();
@@ -3298,6 +3394,9 @@ public fallbackSourceRange(): LuaSourceRange {
 			this.randomSeedValue = Math.floor(seedValue) >>> 0;
 			return EMPTY_VALUES;
 		}));
+		mathTable.set(this.canonicalize('huge'), Number.POSITIVE_INFINITY);
+		mathTable.set(this.canonicalize('maxinteger'), maxSafeInteger);
+		mathTable.set(this.canonicalize('mininteger'), -maxSafeInteger);
 		mathTable.set(this.canonicalize('pi'), Math.PI);
 		this.globals.set(this.canonicalize('math'), mathTable);
 

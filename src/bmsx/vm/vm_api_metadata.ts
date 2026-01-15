@@ -141,6 +141,7 @@ export const VM_API_METHOD_METADATA = {
 			{ name: 'y1', description: 'Bottom coordinate in pixels.' },
 			{ name: 'z', description: 'Z coordinate for ordering.' },
 			{ name: 'colorvalue', description: 'Palette index (number) or a color object.' },
+			{ name: 'options', optional: true, description: 'Optional rectangle options (layer).' },
 		],
 		returnType: 'void',
 	},

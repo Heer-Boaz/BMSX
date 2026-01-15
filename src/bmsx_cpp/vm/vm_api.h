@@ -28,7 +28,7 @@ public:
 	void cls(int colorIndex = 0);
 	void put_rect(int x0, int y0, int x1, int y1, int z, int colorIndex);
 	void put_rectfill(int x0, int y0, int x1, int y1, int z, int colorIndex);
-	void put_rectfillcolor(int x0, int y0, int x1, int y1, int z, const Color& color);
+	void put_rectfillcolor(int x0, int y0, int x1, int y1, int z, const Color& color, std::optional<RenderLayer> layer);
 	void put_sprite(const ImgRenderSubmission& submission);
 	void put_poly(const PolyRenderSubmission& submission);
 	void put_mesh(const MeshRenderSubmission& submission);

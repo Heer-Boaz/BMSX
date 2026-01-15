@@ -1664,19 +1664,66 @@ void VMRuntime::setupBuiltins() {
 		}
 		return (p < 1.0) ? p : (2.0 - p);
 	};
+	const double kPi = 3.14159265358979323846;
+	const double radToDeg = 180.0 / kPi;
+	const double degToRad = kPi / 180.0;
+	const double maxSafeInteger = 9007199254740991.0;
 
 	auto* mathTable = m_cpu.createTable();
 	mathTable->set(key("abs"), m_cpu.createNativeFunction("math.abs", [](const std::vector<Value>& args, std::vector<Value>& out) {
 		double value = asNumber(args.at(0));
 		out.push_back(valueNumber(std::abs(value)));
 	}));
+	mathTable->set(key("acos"), m_cpu.createNativeFunction("math.acos", [](const std::vector<Value>& args, std::vector<Value>& out) {
+		double value = asNumber(args.at(0));
+		out.push_back(valueNumber(std::acos(value)));
+	}));
+	mathTable->set(key("asin"), m_cpu.createNativeFunction("math.asin", [](const std::vector<Value>& args, std::vector<Value>& out) {
+		double value = asNumber(args.at(0));
+		out.push_back(valueNumber(std::asin(value)));
+	}));
+	mathTable->set(key("atan"), m_cpu.createNativeFunction("math.atan", [](const std::vector<Value>& args, std::vector<Value>& out) {
+		double y = asNumber(args.at(0));
+		if (args.size() > 1) {
+			double x = asNumber(args.at(1));
+			out.push_back(valueNumber(std::atan2(y, x)));
+			return;
+		}
+		out.push_back(valueNumber(std::atan(y)));
+	}));
 	mathTable->set(key("ceil"), m_cpu.createNativeFunction("math.ceil", [](const std::vector<Value>& args, std::vector<Value>& out) {
 		double value = asNumber(args.at(0));
 		out.push_back(valueNumber(std::ceil(value)));
 	}));
+	mathTable->set(key("cos"), m_cpu.createNativeFunction("math.cos", [](const std::vector<Value>& args, std::vector<Value>& out) {
+		double value = asNumber(args.at(0));
+		out.push_back(valueNumber(std::cos(value)));
+	}));
+	mathTable->set(key("deg"), m_cpu.createNativeFunction("math.deg", [radToDeg](const std::vector<Value>& args, std::vector<Value>& out) {
+		double value = asNumber(args.at(0));
+		out.push_back(valueNumber(value * radToDeg));
+	}));
+	mathTable->set(key("exp"), m_cpu.createNativeFunction("math.exp", [](const std::vector<Value>& args, std::vector<Value>& out) {
+		double value = asNumber(args.at(0));
+		out.push_back(valueNumber(std::exp(value)));
+	}));
 	mathTable->set(key("floor"), m_cpu.createNativeFunction("math.floor", [](const std::vector<Value>& args, std::vector<Value>& out) {
 		double value = asNumber(args.at(0));
 		out.push_back(valueNumber(std::floor(value)));
+	}));
+	mathTable->set(key("fmod"), m_cpu.createNativeFunction("math.fmod", [](const std::vector<Value>& args, std::vector<Value>& out) {
+		double value = asNumber(args.at(0));
+		double divisor = asNumber(args.at(1));
+		out.push_back(valueNumber(std::fmod(value, divisor)));
+	}));
+	mathTable->set(key("log"), m_cpu.createNativeFunction("math.log", [](const std::vector<Value>& args, std::vector<Value>& out) {
+		double value = asNumber(args.at(0));
+		if (args.size() > 1) {
+			double base = asNumber(args.at(1));
+			out.push_back(valueNumber(std::log(value) / std::log(base)));
+			return;
+		}
+		out.push_back(valueNumber(std::log(value)));
 	}));
 	mathTable->set(key("max"), m_cpu.createNativeFunction("math.max", [](const std::vector<Value>& args, std::vector<Value>& out) {
 		double result = asNumber(args.at(0));
@@ -1692,9 +1739,66 @@ void VMRuntime::setupBuiltins() {
 		}
 		out.push_back(valueNumber(result));
 	}));
+	mathTable->set(key("modf"), m_cpu.createNativeFunction("math.modf", [](const std::vector<Value>& args, std::vector<Value>& out) {
+		double value = asNumber(args.at(0));
+		double intPart = 0.0;
+		double fracPart = std::modf(value, &intPart);
+		out.push_back(valueNumber(intPart));
+		out.push_back(valueNumber(fracPart));
+	}));
+	mathTable->set(key("rad"), m_cpu.createNativeFunction("math.rad", [degToRad](const std::vector<Value>& args, std::vector<Value>& out) {
+		double value = asNumber(args.at(0));
+		out.push_back(valueNumber(value * degToRad));
+	}));
+	mathTable->set(key("sin"), m_cpu.createNativeFunction("math.sin", [](const std::vector<Value>& args, std::vector<Value>& out) {
+		double value = asNumber(args.at(0));
+		out.push_back(valueNumber(std::sin(value)));
+	}));
 	mathTable->set(key("sqrt"), m_cpu.createNativeFunction("math.sqrt", [](const std::vector<Value>& args, std::vector<Value>& out) {
 		double value = asNumber(args.at(0));
 		out.push_back(valueNumber(std::sqrt(value)));
+	}));
+	mathTable->set(key("tan"), m_cpu.createNativeFunction("math.tan", [](const std::vector<Value>& args, std::vector<Value>& out) {
+		double value = asNumber(args.at(0));
+		out.push_back(valueNumber(std::tan(value)));
+	}));
+	mathTable->set(key("tointeger"), m_cpu.createNativeFunction("math.tointeger", [](const std::vector<Value>& args, std::vector<Value>& out) {
+		const Value& v = args.empty() ? valueNil() : args.at(0);
+		if (!valueIsNumber(v)) {
+			out.push_back(valueNil());
+			return;
+		}
+		double value = valueToNumber(v);
+		if (!std::isfinite(value)) {
+			out.push_back(valueNil());
+			return;
+		}
+		double intPart = std::trunc(value);
+		if (intPart == value) {
+			out.push_back(valueNumber(intPart));
+			return;
+		}
+		out.push_back(valueNil());
+	}));
+	mathTable->set(key("type"), m_cpu.createNativeFunction("math.type", [str](const std::vector<Value>& args, std::vector<Value>& out) {
+		const Value& v = args.empty() ? valueNil() : args.at(0);
+		if (!valueIsNumber(v)) {
+			out.push_back(valueNil());
+			return;
+		}
+		double value = valueToNumber(v);
+		if (std::trunc(value) == value) {
+			out.push_back(str("integer"));
+			return;
+		}
+		out.push_back(str("float"));
+	}));
+	mathTable->set(key("ult"), m_cpu.createNativeFunction("math.ult", [](const std::vector<Value>& args, std::vector<Value>& out) {
+		double leftValue = asNumber(args.at(0));
+		double rightValue = asNumber(args.at(1));
+		uint32_t left = static_cast<uint32_t>(static_cast<int64_t>(std::trunc(leftValue)));
+		uint32_t right = static_cast<uint32_t>(static_cast<int64_t>(std::trunc(rightValue)));
+		out.push_back(valueBool(left < right));
 	}));
 	mathTable->set(key("random"), m_cpu.createNativeFunction("math.random", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 		double randomValue = nextVmRandom();
@@ -1724,7 +1828,10 @@ void VMRuntime::setupBuiltins() {
 		m_vmRandomSeedValue = static_cast<uint32_t>(seed & 0xffffffffu);
 		(void)out;
 	}));
-	mathTable->set(key("pi"), valueNumber(3.14159265358979323846));
+	mathTable->set(key("huge"), valueNumber(std::numeric_limits<double>::infinity()));
+	mathTable->set(key("maxinteger"), valueNumber(maxSafeInteger));
+	mathTable->set(key("mininteger"), valueNumber(-maxSafeInteger));
+	mathTable->set(key("pi"), valueNumber(kPi));
 
 	auto* easingTable = m_cpu.createTable();
 	easingTable->set(key("linear"), m_cpu.createNativeFunction("easing.linear", [clamp01](const std::vector<Value>& args, std::vector<Value>& out) {

@@ -552,7 +552,21 @@ m_runtime.registerNativeFunction("put_rectfillcolor", [this](const std::vector<V
 	int y1 = static_cast<int>(std::floor(asNumber(args.at(3))));
 	int z = static_cast<int>(std::floor(asNumber(args.at(4))));
 	Color color = resolve_color(args.at(5));
-	put_rectfillcolor(x0, y0, x1, y1, z, color);
+	std::optional<RenderLayer> layer;
+	if (args.size() > 6) {
+		const Value optionsValue = args.at(6);
+		if (!isNil(optionsValue)) {
+			if (!valueIsTable(optionsValue)) {
+				throw BMSX_RUNTIME_ERROR("put_rectfillcolor options must be a table.");
+			}
+			auto* options = asTable(optionsValue);
+			Value layerValue = options->get(key("layer"));
+			if (!isNil(layerValue)) {
+				layer = resolve_layer(layerValue);
+			}
+		}
+	}
+	put_rectfillcolor(x0, y0, x1, y1, z, color, layer);
 	(void)out;
 });
 
@@ -918,11 +932,12 @@ void VMApi::put_rectfill(int x0, int y0, int x1, int y1, int z, int colorIndex) 
 	EngineCore::instance().view()->renderer.submit.rect(submission);
 }
 
-void VMApi::put_rectfillcolor(int x0, int y0, int x1, int y1, int z, const Color& color) {
+void VMApi::put_rectfillcolor(int x0, int y0, int x1, int y1, int z, const Color& color, std::optional<RenderLayer> layer) {
 	RectRenderSubmission submission;
 	submission.kind = RectRenderSubmission::Kind::Fill;
 	submission.area = {static_cast<f32>(x0), static_cast<f32>(y0), static_cast<f32>(x1), static_cast<f32>(y1), static_cast<f32>(z)};
 	submission.color = color;
+	submission.layer = layer;
 	EngineCore::instance().view()->renderer.submit.rect(submission);
 }
 

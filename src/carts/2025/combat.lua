@@ -18,6 +18,70 @@ local function stat_label(stat_id)
 end
 
 local all_out_shake = timeline_builders.build_all_out_shake(combat_all_out_frame_count)
+local round = timeline_builders.round
+local combat_all_out_prompt_timeline_id = 'combat_all_out_prompt'
+
+local function build_all_out_prompt_portrait_frames(params)
+	local frames = {}
+	local in_frames = params.in_frames
+	local settle_frames = params.settle_frames
+	for i = 0, in_frames - 1 do
+		local u = i / (in_frames - 1)
+		local eased = easing.smoothstep(u)
+		local x = params.from_x + ((params.to_x - params.from_x) * eased)
+		local y = params.from_y + ((params.to_y - params.from_y) * eased)
+		local scale = params.from_scale + ((params.overshoot_scale - params.from_scale) * easing.smoothstep(u))
+		frames[#frames + 1] = {
+			x = x,
+			y = y,
+			sprite_component = { scale = { x = scale, y = scale } },
+		}
+	end
+	for i = 0, settle_frames - 1 do
+		local u = i / (settle_frames - 1)
+		local eased = easing.smoothstep(u)
+		local scale = params.overshoot_scale + ((params.to_scale - params.overshoot_scale) * eased)
+		local bob = math.sin(u * math.pi) * params.settle_bob
+		frames[#frames + 1] = {
+			x = params.to_x,
+			y = params.to_y + bob,
+			sprite_component = { scale = { x = scale, y = scale } },
+		}
+	end
+	return frames
+end
+
+local function build_all_out_screen_shake_frames(params)
+	local frames = {}
+	for frame_index = 0, combat_all_out_frame_count - 1 do
+		local dx, dy = all_out_shake(frame_index)
+		dx = round(dx)
+		dy = round(dy)
+		frames[#frames + 1] = {
+			bg = {
+				x = params.bg_x + dx,
+				y = params.bg_y + dy,
+			},
+			all_out = {
+				x = params.all_out_x + dx,
+				y = params.all_out_y + dy,
+			},
+			monster = {
+				x = params.monster_x + dx,
+				y = params.monster_y + dy,
+			},
+			maya_a = {
+				x = params.maya_a_x + dx,
+				y = params.maya_a_y + dy,
+			},
+			maya_b = {
+				x = params.maya_b_x + dx,
+				y = params.maya_b_y + dy,
+			},
+		}
+	end
+	return frames
+end
 
 local combat_fade_frames = timeline_builders.build_combat_fade_frames()
 local combat_results_fade_out_frames_table = timeline_builders.build_combat_results_fade_out_frames()
@@ -217,6 +281,13 @@ function combat.setup_timelines(self)
 		id = combat_exchange_miss_timeline_id,
 		frames = timeline_builders.build_combat_exchange_frames,
 		ticks_per_frame = combat_exchange_miss_ticks_per_frame,
+		playback_mode = 'once',
+		apply = true,
+	}))
+	self:define_timeline(new_timeline({
+		id = combat_all_out_prompt_timeline_id,
+		frames = build_all_out_prompt_portrait_frames,
+		ticks_per_frame = 16,
 		playback_mode = 'once',
 		apply = true,
 	}))
@@ -949,6 +1020,31 @@ function combat.define_fsm()
 			set_text_lines(text_main_id, { 'Het monster lijkt rijp voor de sloop!' }, true)
 			set_text_lines(text_choice_id, { 'ALL-OUT-ATTACK!!' }, false)
 			self.choice_index = 1
+			object(text_choice_id).highlight_jitter_enabled = true
+			local portrait = object(combat_all_out_id)
+			portrait:set_image('maya_v_s')
+			portrait.visible = true
+			portrait.z = 750
+			portrait.sprite_component.scale = { x = 1, y = 1 }
+			local target_x = math.floor(display_width() * 0.08)
+			local target_y = math.floor(display_height() - portrait.sy)
+			self:play_timeline(combat_all_out_prompt_timeline_id, {
+				rewind = true,
+				snap_to_start = true,
+				target = portrait,
+				params = {
+					from_x = -portrait.sx * 0.6,
+					from_y = target_y + 20,
+					to_x = target_x,
+					to_y = target_y,
+					from_scale = 0.9,
+					overshoot_scale = 1.08,
+					to_scale = 1,
+					in_frames = 10,
+					settle_frames = 6,
+					settle_bob = 6,
+				},
+			})
 			self:play_timeline(combat_hover_timeline_id, {
 				rewind = true,
 				snap_to_start = true,
@@ -979,6 +1075,11 @@ function combat.define_fsm()
 		},
 		leaving_state = function(self)
 			self:stop_timeline(combat_hover_timeline_id)
+			self:stop_timeline(combat_all_out_prompt_timeline_id)
+			local portrait = object(combat_all_out_id)
+			portrait.visible = false
+			portrait.sprite_component.scale = { x = 1, y = 1 }
+			object(text_choice_id).highlight_jitter_enabled = false
 		end,
 	}
 
@@ -988,7 +1089,7 @@ function combat.define_fsm()
 				create = function()
 					return new_timeline({
 						id = combat_all_out_timeline_id,
-						frames = timeline_builders.build_combat_all_out_frames,
+						frames = build_all_out_screen_shake_frames,
 						ticks_per_frame = combat_all_out_ticks_per_frame,
 						playback_mode = 'once',
 						apply = true,
@@ -998,26 +1099,51 @@ function combat.define_fsm()
 				stop_on_exit = true,
 			},
 		},
-			entering_state = function(self)
-				hide_combat_sprites()
-				clear_texts(text_ids_all)
-				local all_out = object(combat_all_out_id)
-				all_out.sprite_component.scale = { x = 1, y = 1 }
-				all_out.visible = true
-				all_out.x = 0
-				all_out.y = 0
-			self.all_out_origin_x = all_out.x
-			self.all_out_origin_y = all_out.y
-				self:play_timeline(combat_all_out_timeline_id, {
-					rewind = true,
-					snap_to_start = true,
-					target = all_out,
-					params = {
-						origin_x = self.all_out_origin_x,
-						origin_y = self.all_out_origin_y,
-					sprite_w = all_out.sx,
-					sprite_h = all_out.sy,
-					shake = all_out_shake,
+		entering_state = function(self)
+			self:disable_combat_parallax() -- Disable parallax during "All Out" sequence.
+			clear_texts(text_ids_all)
+			local all_out = object(combat_all_out_id)
+			all_out:set_image('all_out')
+			all_out.sprite_component.scale = { x = 1, y = 1 }
+			all_out.visible = true
+			all_out.x = 0
+			all_out.y = 0
+			all_out.z = 800
+			local monster = object(combat_monster_id)
+			local maya_a = object(combat_maya_a_id)
+			local maya_b = object(combat_maya_b_id)
+			local bg = object(bg_id)
+			self.all_out_shake_all_out_x = all_out.x
+			self.all_out_shake_all_out_y = all_out.y
+			self.all_out_shake_monster_x = monster.x
+			self.all_out_shake_monster_y = monster.y
+			self.all_out_shake_maya_a_x = maya_a.x
+			self.all_out_shake_maya_a_y = maya_a.y
+			self.all_out_shake_maya_b_x = maya_b.x
+			self.all_out_shake_maya_b_y = maya_b.y
+			self.all_out_shake_bg_x = bg.x
+			self.all_out_shake_bg_y = bg.y
+			self:play_timeline(combat_all_out_timeline_id, {
+				rewind = true,
+				snap_to_start = true,
+				target = {
+					bg = bg,
+					all_out = all_out,
+					monster = monster,
+					maya_a = maya_a,
+					maya_b = maya_b,
+				},
+				params = {
+					bg_x = self.all_out_shake_bg_x,
+					bg_y = self.all_out_shake_bg_y,
+					all_out_x = self.all_out_shake_all_out_x,
+					all_out_y = self.all_out_shake_all_out_y,
+					monster_x = self.all_out_shake_monster_x,
+					monster_y = self.all_out_shake_monster_y,
+					maya_a_x = self.all_out_shake_maya_a_x,
+					maya_a_y = self.all_out_shake_maya_a_y,
+					maya_b_x = self.all_out_shake_maya_b_x,
+					maya_b_y = self.all_out_shake_maya_b_y,
 				},
 			})
 		end,
@@ -1036,12 +1162,23 @@ function combat.define_fsm()
 				end,
 			},
 		},
-			leaving_state = function(self)
-				local all_out = object(combat_all_out_id)
-				all_out.sprite_component.scale = { x = 1, y = 1 }
-				all_out.visible = false
-				all_out.x = self.all_out_origin_x
-				all_out.y = self.all_out_origin_y
+		leaving_state = function(self)
+			local all_out = object(combat_all_out_id)
+			local monster = object(combat_monster_id)
+			local maya_a = object(combat_maya_a_id)
+			local maya_b = object(combat_maya_b_id)
+			local bg = object(bg_id)
+			all_out.x = self.all_out_shake_all_out_x
+			all_out.y = self.all_out_shake_all_out_y
+			all_out.visible = false
+			monster.x = self.all_out_shake_monster_x
+			monster.y = self.all_out_shake_monster_y
+			maya_a.x = self.all_out_shake_maya_a_x
+			maya_a.y = self.all_out_shake_maya_a_y
+			maya_b.x = self.all_out_shake_maya_b_x
+			maya_b.y = self.all_out_shake_maya_b_y
+			bg.x = self.all_out_shake_bg_x
+			bg.y = self.all_out_shake_bg_y
 		end,
 	}
 
@@ -1086,7 +1223,7 @@ function combat.define_fsm()
 
 	states.combat_results_setup = {
 		entering_state = function(self)
-			self:disable_combat_parallax()
+			self:disable_combat_parallax() -- Not required, as the "All Out" state already does this, but just to be safe.
 			local node = story[self.node_id]
 			local rewards = self:resolve_combat_rewards(node)
 			self.combat_rewards = rewards
@@ -1326,6 +1463,16 @@ function combat.register_director()
 			combat_dodge_dir = 1,
 			all_out_origin_x = 0,
 			all_out_origin_y = 0,
+			all_out_shake_all_out_x = 0,
+			all_out_shake_all_out_y = 0,
+			all_out_shake_monster_x = 0,
+			all_out_shake_monster_y = 0,
+			all_out_shake_maya_a_x = 0,
+			all_out_shake_maya_a_y = 0,
+			all_out_shake_maya_b_x = 0,
+			all_out_shake_maya_b_y = 0,
+			all_out_shake_bg_x = 0,
+			all_out_shake_bg_y = 0,
 			combat_exit_target_bg = '',
 			combat_results_prev_bg_imgid = '',
 			combat_results_prev_bg_scale_x = 1,

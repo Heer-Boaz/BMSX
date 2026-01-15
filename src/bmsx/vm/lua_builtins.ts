@@ -63,13 +63,31 @@ export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<VMLuaBuiltinDescriptor
 	{ name: 'table.sort', params: ['list', 'comp?'], signature: 'table.sort(list [, comp])' },
 	{ name: 'table.unpack', params: ['list', 'i?', 'j?'], signature: 'table.unpack(list [, i [, j]])' },
 	{ name: 'math.abs', params: ['x'], signature: 'math.abs(x)' },
+	{ name: 'math.acos', params: ['x'], signature: 'math.acos(x)' },
+	{ name: 'math.asin', params: ['x'], signature: 'math.asin(x)' },
+	{ name: 'math.atan', params: ['y', 'x?'], signature: 'math.atan(y [, x])' },
 	{ name: 'math.ceil', params: ['x'], signature: 'math.ceil(x)' },
+	{ name: 'math.cos', params: ['x'], signature: 'math.cos(x)' },
+	{ name: 'math.deg', params: ['x'], signature: 'math.deg(x)' },
+	{ name: 'math.exp', params: ['x'], signature: 'math.exp(x)' },
 	{ name: 'math.floor', params: ['x'], signature: 'math.floor(x)' },
+	{ name: 'math.fmod', params: ['x', 'y'], signature: 'math.fmod(x, y)' },
+	{ name: 'math.log', params: ['x', 'base?'], signature: 'math.log(x [, base])' },
 	{ name: 'math.max', params: ['x', '...'], signature: 'math.max(x, ...)' },
 	{ name: 'math.min', params: ['x', '...'], signature: 'math.min(x, ...)' },
+	{ name: 'math.modf', params: ['x'], signature: 'math.modf(x)' },
+	{ name: 'math.sin', params: ['x'], signature: 'math.sin(x)' },
 	{ name: 'math.random', params: ['m?', 'n?'], signature: 'math.random([m [, n]])' },
 	{ name: 'math.randomseed', params: ['seed?'], signature: 'math.randomseed([seed])' },
 	{ name: 'math.sqrt', params: ['x'], signature: 'math.sqrt(x)' },
+	{ name: 'math.rad', params: ['x'], signature: 'math.rad(x)' },
+	{ name: 'math.tan', params: ['x'], signature: 'math.tan(x)' },
+	{ name: 'math.tointeger', params: ['x'], signature: 'math.tointeger(x)' },
+	{ name: 'math.type', params: ['x'], signature: 'math.type(x)' },
+	{ name: 'math.ult', params: ['m', 'n'], signature: 'math.ult(m, n)' },
+	{ name: 'math.huge', params: [], signature: 'math.huge' },
+	{ name: 'math.maxinteger', params: [], signature: 'math.maxinteger' },
+	{ name: 'math.mininteger', params: [], signature: 'math.mininteger' },
 	{ name: 'easing.linear', params: ['t'], signature: 'easing.linear(t)' },
 	{ name: 'easing.ease_in_quad', params: ['t'], signature: 'easing.ease_in_quad(t)' },
 	{ name: 'easing.ease_out_quad', params: ['t'], signature: 'easing.ease_out_quad(t)' },
@@ -101,7 +119,16 @@ export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<VMLuaBuiltinDescriptor
 	{ name: 'SYS_CART_MAGIC', params: [], signature: 'SYS_CART_MAGIC', description: 'Cart ROM magic header value.' },
 ];
 
-const DEFAULT_LUA_BUILTIN_IDENTIFIER_EXTRAS = ['package', 'math.pi', 'SYS_BOOT_CART', 'SYS_CART_MAGIC_ADDR', 'SYS_CART_MAGIC'];
+const DEFAULT_LUA_BUILTIN_IDENTIFIER_EXTRAS = [
+	'package',
+	'math.pi',
+	'math.huge',
+	'math.maxinteger',
+	'math.mininteger',
+	'SYS_BOOT_CART',
+	'SYS_CART_MAGIC_ADDR',
+	'SYS_CART_MAGIC',
+];
 
 export const DEFAULT_LUA_BUILTIN_NAMES: ReadonlyArray<string> = (() => {
 	const names = new Set<string>();

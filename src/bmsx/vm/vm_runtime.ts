@@ -2447,19 +2447,57 @@ export class BmsxVMRuntime {
 			const p = ((value % 2) + 2) % 2;
 			return p < 1 ? p : (2 - p);
 		};
+		const maxSafeInteger = 9007199254740991;
+		const radToDeg = 180 / Math.PI;
+		const degToRad = Math.PI / 180;
 
 		const mathTable = new Table(0, 0);
 		setKey(mathTable, 'abs', createNativeFunction('math.abs', (args, out) => {
 			const value = args[0] as number;
 			out.push(Math.abs(value));
 		}));
+		setKey(mathTable, 'acos', createNativeFunction('math.acos', (args, out) => {
+			out.push(Math.acos(args[0] as number));
+		}));
+		setKey(mathTable, 'asin', createNativeFunction('math.asin', (args, out) => {
+			out.push(Math.asin(args[0] as number));
+		}));
+		setKey(mathTable, 'atan', createNativeFunction('math.atan', (args, out) => {
+			const y = args[0] as number;
+			if (args.length > 1) {
+				out.push(Math.atan2(y, args[1] as number));
+				return;
+			}
+			out.push(Math.atan(y));
+		}));
 		setKey(mathTable, 'ceil', createNativeFunction('math.ceil', (args, out) => {
 			const value = args[0] as number;
 			out.push(Math.ceil(value));
 		}));
+		setKey(mathTable, 'cos', createNativeFunction('math.cos', (args, out) => {
+			out.push(Math.cos(args[0] as number));
+		}));
+		setKey(mathTable, 'deg', createNativeFunction('math.deg', (args, out) => {
+			out.push((args[0] as number) * radToDeg);
+		}));
+		setKey(mathTable, 'exp', createNativeFunction('math.exp', (args, out) => {
+			out.push(Math.exp(args[0] as number));
+		}));
 		setKey(mathTable, 'floor', createNativeFunction('math.floor', (args, out) => {
 			const value = args[0] as number;
 			out.push(Math.floor(value));
+		}));
+		setKey(mathTable, 'fmod', createNativeFunction('math.fmod', (args, out) => {
+			out.push((args[0] as number) % (args[1] as number));
+		}));
+		setKey(mathTable, 'log', createNativeFunction('math.log', (args, out) => {
+			const value = args[0] as number;
+			if (args.length > 1) {
+				const base = args[1] as number;
+				out.push(Math.log(value) / Math.log(base));
+				return;
+			}
+			out.push(Math.log(value));
 		}));
 		setKey(mathTable, 'max', createNativeFunction('math.max', (args, out) => {
 			let result = args[0] as number;
@@ -2481,9 +2519,48 @@ export class BmsxVMRuntime {
 			}
 			out.push(result);
 		}));
+		setKey(mathTable, 'modf', createNativeFunction('math.modf', (args, out) => {
+			const value = args[0] as number;
+			const intPart = Math.trunc(value);
+			out.push(intPart, value - intPart);
+		}));
+		setKey(mathTable, 'rad', createNativeFunction('math.rad', (args, out) => {
+			out.push((args[0] as number) * degToRad);
+		}));
+		setKey(mathTable, 'sin', createNativeFunction('math.sin', (args, out) => {
+			out.push(Math.sin(args[0] as number));
+		}));
 		setKey(mathTable, 'sqrt', createNativeFunction('math.sqrt', (args, out) => {
 			const value = args[0] as number;
 			out.push(Math.sqrt(value));
+		}));
+		setKey(mathTable, 'tan', createNativeFunction('math.tan', (args, out) => {
+			out.push(Math.tan(args[0] as number));
+		}));
+		setKey(mathTable, 'tointeger', createNativeFunction('math.tointeger', (args, out) => {
+			const value = args.length > 0 ? args[0] : null;
+			if (typeof value !== 'number' || !Number.isFinite(value) || !Number.isInteger(value)) {
+				out.push(null);
+				return;
+			}
+			out.push(value);
+		}));
+		setKey(mathTable, 'type', createNativeFunction('math.type', (args, out) => {
+			const value = args.length > 0 ? args[0] : null;
+			if (typeof value !== 'number') {
+				out.push(null);
+				return;
+			}
+			if (Number.isInteger(value)) {
+				out.push(this.internVmString('integer'));
+				return;
+			}
+			out.push(this.internVmString('float'));
+		}));
+		setKey(mathTable, 'ult', createNativeFunction('math.ult', (args, out) => {
+			const left = (args[0] as number) >>> 0;
+			const right = (args[1] as number) >>> 0;
+			out.push(left < right);
 		}));
 		setKey(mathTable, 'random', createNativeFunction('math.random', (args, out) => {
 			const randomValue = this.nextVmRandom();
@@ -2512,6 +2589,9 @@ export class BmsxVMRuntime {
 			this.vmRandomSeedValue = Math.floor(seedValue) >>> 0;
 			out.length = 0;
 		}));
+		setKey(mathTable, 'huge', Number.POSITIVE_INFINITY);
+		setKey(mathTable, 'maxinteger', maxSafeInteger);
+		setKey(mathTable, 'mininteger', -maxSafeInteger);
 		setKey(mathTable, 'pi', Math.PI);
 
 		const easingTable = new Table(0, 0);

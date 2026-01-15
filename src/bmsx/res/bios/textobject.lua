@@ -10,6 +10,12 @@ setmetatable(textobject, { __index = worldobject })
 
 local default_char_width = 6
 local default_line_height = 16
+local highlight_move_timeline_id = 'textobject.highlight.move'
+local highlight_vibe_timeline_id = 'textobject.highlight.vibe'
+local highlight_move_in_frames = 6
+local highlight_move_settle_frames = 3
+local highlight_move_overshoot = 0.12
+local highlight_move_ticks_per_frame = 12
 
 local function trim(text)
 	return string.gsub(text, "^%s*(.-)%s*$", "%1")
@@ -69,6 +75,33 @@ local function wrap_glyphs(text, max_line_length)
 	return lines, line_map
 end
 
+local function build_highlight_move_frames(params)
+	local frames = {}
+	local from_y = params.from_y
+	local to_y = params.to_y
+	local from_h = params.from_h
+	local to_h = params.to_h
+	local overshoot_y = to_y + ((to_y - from_y) * highlight_move_overshoot)
+	local overshoot_h = to_h + ((to_h - from_h) * highlight_move_overshoot)
+	for i = 0, highlight_move_in_frames - 1 do
+		local u = i / (highlight_move_in_frames - 1)
+		local eased = easing.smoothstep(u)
+		frames[#frames + 1] = {
+			highlight_anim_y = from_y + ((overshoot_y - from_y) * eased),
+			highlight_anim_h = from_h + ((overshoot_h - from_h) * eased),
+		}
+	end
+	for i = 0, highlight_move_settle_frames - 1 do
+		local u = i / (highlight_move_settle_frames - 1)
+		local eased = easing.smoothstep(u)
+		frames[#frames + 1] = {
+			highlight_anim_y = overshoot_y + ((to_y - overshoot_y) * eased),
+			highlight_anim_h = overshoot_h + ((to_h - overshoot_h) * eased),
+		}
+	end
+	return frames
+end
+
 function textobject.new(opts)
 	local self = setmetatable(worldobject.new(opts), textobject)
 	opts = opts or {}
@@ -80,6 +113,18 @@ function textobject.new(opts)
 	self.current_char_index = 0
 	self.maximum_characters_per_line = 0
 	self.highlighted_line_index = nil
+	self.highlight_anim_y = nil
+	self.highlight_anim_h = nil
+	self.highlight_target_y = nil
+	self.highlight_target_h = nil
+	self.highlight_last_line_index = nil
+	self.highlight_move_enabled = false
+	self.highlight_pulse_enabled = false
+	self.highlight_jitter_enabled = false
+	self.layer = opts.layer or 'ui'
+	self.highlight_vibe_scale = 1
+	self.highlight_vibe_offset_x = 0
+	self.highlight_vibe_offset_y = 0
 	self.wrapped_line_to_logical_line = {}
 	self.is_typing = false
 	self.text_color = { r = 1, g = 1, b = 1, a = 1 }
@@ -96,6 +141,48 @@ function textobject.new(opts)
 		end,
 	})
 	self:add_component(self.custom_visual)
+	self:define_timeline(new_timeline({
+		id = highlight_move_timeline_id,
+		frames = build_highlight_move_frames,
+		ticks_per_frame = highlight_move_ticks_per_frame,
+		playback_mode = 'once',
+		apply = true,
+	}))
+	self:define_timeline(new_timeline({
+		id = highlight_vibe_timeline_id,
+		playback_mode = 'loop',
+		tracks = {
+			{
+				kind = 'wave',
+				path = { 'highlight_vibe_scale' },
+				base = 1,
+				amp = 0.12,
+				period = 0.9,
+				phase = 0.12,
+				wave = 'pingpong',
+				ease = easing.smoothstep,
+			},
+			{
+				kind = 'wave',
+				path = { 'highlight_vibe_offset_x' },
+				base = 0,
+				amp = 0.6,
+				period = 0.35,
+				phase = 0.4,
+				wave = 'sin',
+			},
+			{
+				kind = 'wave',
+				path = { 'highlight_vibe_offset_y' },
+				base = 0,
+				amp = 0.5,
+				period = 0.4,
+				phase = 0.08,
+				wave = 'sin',
+			},
+		},
+	}))
+	self:play_timeline(highlight_vibe_timeline_id, { rewind = true, snap_to_start = true })
 	return self
 end
 
@@ -119,6 +206,77 @@ end
 
 function textobject:update_displayed_text()
 	self.text = self.displayed_lines
+end
+
+function textobject:compute_highlight_block()
+	local highlighted = self.highlighted_line_index
+	if highlighted == nil then
+		return nil
+	end
+	local target_line = highlighted + 1
+	local first = nil
+	local last = nil
+	for i = 1, #self.text do
+		if self.wrapped_line_to_logical_line[i] == target_line then
+			if first == nil then
+				first = i
+			end
+			last = i
+		end
+	end
+	if first == nil then
+		return nil
+	end
+	local y = self.dimensions.top + (self.line_height * (first - 1))
+	local h = self.line_height * (last - first + 1)
+	return y, h
+end
+
+function textobject:update_highlight_animation()
+	if self.highlighted_line_index == nil then
+		self.highlight_last_line_index = nil
+		self.highlight_anim_y = nil
+		self.highlight_anim_h = nil
+		self.highlight_target_y = nil
+		self.highlight_target_h = nil
+		return
+	end
+	local target_y, target_h = self:compute_highlight_block()
+	if target_y == nil then
+		self.highlight_anim_y = nil
+		self.highlight_anim_h = nil
+		self.highlight_target_y = nil
+		self.highlight_target_h = nil
+		return
+	end
+	if not self.highlight_move_enabled then
+		self:stop_timeline(highlight_move_timeline_id)
+		self.highlight_anim_y = target_y
+		self.highlight_anim_h = target_h
+		self.highlight_target_y = target_y
+		self.highlight_target_h = target_h
+		self.highlight_last_line_index = self.highlighted_line_index
+		return
+	end
+	if self.highlight_anim_y == nil then
+		self.highlight_anim_y = target_y
+		self.highlight_anim_h = target_h
+	end
+	if self.highlight_target_y ~= target_y or self.highlight_target_h ~= target_h or self.highlight_last_line_index ~= self.highlighted_line_index then
+		self.highlight_target_y = target_y
+		self.highlight_target_h = target_h
+		self.highlight_last_line_index = self.highlighted_line_index
+		self:play_timeline(highlight_move_timeline_id, {
+			rewind = true,
+			snap_to_start = true,
+			params = {
+				from_y = self.highlight_anim_y,
+				to_y = target_y,
+				from_h = self.highlight_anim_h,
+				to_h = target_h,
+			},
+		})
+	end
 end
 
 function textobject:set_text(text_or_lines, opts)
@@ -193,6 +351,7 @@ function textobject:draw()
 	if not self.visible then
 		return
 	end
+	self:update_highlight_animation()
 	local dims = self.dimensions
 	local text_color = self.text_color
 	local highlight = self.highlight_color
@@ -201,21 +360,32 @@ function textobject:draw()
 	local normal_bg_color = { r = 0, g = 0, b = 0, a = bg_alpha }
 	local highlight_bg_color = { r = highlight.r, g = highlight.g, b = highlight.b, a = highlight.a * bg_alpha }
 	local highlighted_logical_line = self.highlighted_line_index
+	if highlighted_logical_line ~= nil and self.highlight_anim_y ~= nil then
+		local margin = self.char_width / 2
+		local scale = self.highlight_pulse_enabled and self.highlight_vibe_scale or 1
+		local offset_x = self.highlight_jitter_enabled and self.highlight_vibe_offset_x or 0
+		local offset_y = self.highlight_jitter_enabled and self.highlight_vibe_offset_y or 0
+		local padded = margin * scale
+		put_rectfillcolor(
+			dims.left - padded + offset_x,
+			self.highlight_anim_y - padded + offset_y,
+			dims.right + padded + offset_x,
+			self.highlight_anim_y + self.highlight_anim_h - padded + offset_y,
+			self.z,
+			{
+				r = highlight_bg_color.r,
+				g = highlight_bg_color.g,
+				b = highlight_bg_color.b,
+				a = highlight_bg_color.a,
+			},
+			{ layer = self.layer }
+		)
+	end
 	for i = 1, #self.text do
 		local line = self.text[i]
 		local y = dims.top + line_height * (i - 1)
 		local bg = normal_bg_color
-		if highlighted_logical_line ~= nil and self.wrapped_line_to_logical_line[i] == (highlighted_logical_line + 1) then
-			local margin = self.char_width / 2
-			bg = highlight_bg_color
-			put_rectfillcolor(dims.left - margin, y - margin, dims.right + margin, y + line_height - margin, self.z, {
-				r = bg.r,
-				g = bg.g,
-				b = bg.b,
-				a = bg.a,
-			})
-		end
-		put_glyphs(line, self.centered_block_x, y, self.z, { color = text_color, background_color = bg })
+		put_glyphs(line, self.centered_block_x, y, self.z, { color = text_color, background_color = bg, layer = self.layer })
 	end
 end
 
