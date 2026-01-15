@@ -388,13 +388,13 @@ PlayerInput::ModifierState PlayerInput::getModifiersState() {
 	
 	ModifierState state;
 	state.ctrl = keyboard->getButtonState("ControlLeft").pressed ||
-				 keyboard->getButtonState("ControlRight").pressed;
+					keyboard->getButtonState("ControlRight").pressed;
 	state.alt = keyboard->getButtonState("AltLeft").pressed ||
 				keyboard->getButtonState("AltRight").pressed;
 	state.shift = keyboard->getButtonState("ShiftLeft").pressed ||
-				  keyboard->getButtonState("ShiftRight").pressed;
+					keyboard->getButtonState("ShiftRight").pressed;
 	state.meta = keyboard->getButtonState("MetaLeft").pressed ||
-				 keyboard->getButtonState("MetaRight").pressed;
+					keyboard->getButtonState("MetaRight").pressed;
 	return state;
 }
 
@@ -544,7 +544,7 @@ void PlayerInput::clearEdgeState() {
  * ============================================================================ */
 
 bool PlayerInput::evaluateActionGuard(const std::string& action, const ActionState& state,
-									   std::optional<f64> windowOverride) {
+										std::optional<f64> windowOverride) {
 	if (!state.justpressed) return false;
 	
 	f64 timestamp = resolveActionTimestamp(state);
@@ -593,7 +593,7 @@ bool PlayerInput::evaluateActionGuard(const std::string& action, const ActionSta
 }
 
 PlayerInput::RepeatResult PlayerInput::evaluateActionRepeat(const std::string& action, 
-															 const ActionState& state) {
+																const ActionState& state) {
 	auto& repeat = ensureRepeatState(action);
 	
 	if (repeat.lastFrameEvaluated == m_frameCounter) {

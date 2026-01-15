@@ -326,10 +326,10 @@ if [ "$USE_BUILDER_IMAGE" = "1" ]; then
 FROM debian:bullseye
 LABEL $BUILDER_MARKER=1
 RUN apt-get update && apt-get install -y \\
-  ca-certificates debootstrap cmake make pkg-config git \\
-  gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf binutils-arm-linux-gnueabihf \\
-  qemu-user-static binfmt-support \\
-  libegl1-mesa-dev libgles2-mesa-dev
+	ca-certificates debootstrap cmake make pkg-config git \\
+	gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf binutils-arm-linux-gnueabihf \\
+	qemu-user-static binfmt-support \\
+	libegl1-mesa-dev libgles2-mesa-dev
 EOF
 	fi
 fi

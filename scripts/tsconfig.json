@@ -1,6 +1,6 @@
 {
-  "extends": "../tsconfig.base.json", // path to the main tsconfig.json file
-  "compilerOptions": {
+	"extends": "../tsconfig.base.json", // path to the main tsconfig.json file
+	"compilerOptions": {
 	"composite": false,
 	"noEmit": true,
 	"strict": false,
@@ -9,10 +9,10 @@
 	"skipLibCheck": true,
 	"types": ["node"],
 	"rootDir": "../"
-  },
-  "include": [
+	},
+	"include": [
 	"**/*.ts",
 	"../src/bmsx/**/*.d.ts"
-  ],
-  "exclude": ["../bmsx/bmsx.js", "../bmsx/bmsx.d.ts", "../tests/**.*", "./scripts/**.*"]
+	],
+	"exclude": ["../bmsx/bmsx.js", "../bmsx/bmsx.d.ts", "../tests/**.*", "./scripts/**.*"]
 }

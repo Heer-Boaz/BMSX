@@ -93,12 +93,12 @@ export interface MusicTransitionSpec {
 	music_transition: {
 		audio_id: AudioId;
 		/**
-			 * How to schedule the transition:
-			 * - 'immediate': switch now
-			 * - 'loop': switch at next loop boundary of current track (uses audiometa.loop)
-			 * - { delay_ms }: switch after delay
+		 * How to schedule the transition:
+		 * - 'immediate': switch now
+		 * - 'loop': switch at next loop boundary of current track (uses audiometa.loop)
+		 * - { delay_ms }: switch after delay
 		 * - { stinger, return_to?: AudioId, return_to_previous?: boolean }: play stinger immediately, then switch to either a specific id (return_to) or the previously playing music (return_to_previous). Specify at most one of these follow-up targets.
-			 */
+		 */
 		sync?: AudioSyncMode;
 		fade_ms?: number;
 		/** If true and target has a loop point, start at its loopStart (skip intro) */
@@ -180,8 +180,8 @@ type CompiledAudioEventEntry = Omit<AudioEventMapEntry, 'rules'> & { rules: Comp
 
 export class AudioEventManager implements RegisterablePersistent {
 	/**
-	* The singleton instance of the AudioManager class.
-	*/
+	 * The singleton instance of the AudioManager class.
+	 */
 	public static readonly instance: AudioEventManager = new AudioEventManager();
 
 	public get registrypersistent(): true {

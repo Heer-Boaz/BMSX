@@ -220,7 +220,7 @@ private:
 	
 	// Evaluate action guard (debouncing)
 	bool evaluateActionGuard(const std::string& action, const ActionState& state, 
-							 std::optional<f64> windowOverride = std::nullopt);
+								std::optional<f64> windowOverride = std::nullopt);
 	
 	// Evaluate action repeat
 	struct RepeatResult {

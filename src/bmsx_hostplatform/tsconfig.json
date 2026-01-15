@@ -1,14 +1,14 @@
 {
-  "extends": "../../tsconfig.base.json",
-  "compilerOptions": {
+	"extends": "../../tsconfig.base.json",
+	"compilerOptions": {
 	"noEmit": true,
 	"composite": false,
 	"baseUrl": "./",
 	"paths": {
-	  "bmsx": ["../bmsx/index.ts"],
-	  "bmsx/*": ["../bmsx/*"]
+		"bmsx": ["../bmsx/index.ts"],
+		"bmsx/*": ["../bmsx/*"]
 	}
-  },
-  "include": ["**/*.ts", "**/*.d.ts", "../bmsx/glsl.d.ts"],
-  "exclude": ["node_modules"]
+	},
+	"include": ["**/*.ts", "**/*.d.ts", "../bmsx/glsl.d.ts"],
+	"exclude": ["node_modules"]
 }

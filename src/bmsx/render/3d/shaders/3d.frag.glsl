@@ -120,8 +120,8 @@ void main() {
 	vec2 uv = ndc.xy * 0.5f + 0.5f;
 	float dep = ndc.z * 0.5f + 0.5f;
 	float inLight = step(0.0f, uv.x) * step(uv.x, 1.0f) *
-						 step(0.0f, uv.y) * step(uv.y, 1.0f) *
-						 step(0.0f, dep)  * step(dep, 1.0f);
+							step(0.0f, uv.y) * step(uv.y, 1.0f) *
+							step(0.0f, dep)  * step(dep, 1.0f);
 	float bias = 0.0015f;
 	float smEn = u_useShadowMap ? 1.0f : 0.0f;
 	float closest = texture(u_shadowMap, uv).r;

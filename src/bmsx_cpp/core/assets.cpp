@@ -204,7 +204,7 @@ static CartRomHeader parseCartHeader(const u8* data, size_t size) {
 static bool isPNG(const u8* data, size_t size) {
 	if (size < 8) return false;
 	return data[0] == 0x89 && data[1] == 0x50 && data[2] == 0x4E && data[3] == 0x47 &&
-		   data[4] == 0x0D && data[5] == 0x0A && data[6] == 0x1A && data[7] == 0x0A;
+			data[4] == 0x0D && data[5] == 0x0A && data[6] == 0x1A && data[7] == 0x0A;
 }
 
 // Find end of PNG file (returns size of PNG, or 0 if not valid)
@@ -344,9 +344,9 @@ static std::vector<u8> zlibDecompress(const u8* data, size_t size) {
 #endif
 
 bool loadAssetsFromRom(const u8* buffer,
-					   size_t size,
-					   RuntimeAssets& assets,
-					   const AssetLoadCallbacks* callbacks) {
+						size_t size,
+						RuntimeAssets& assets,
+						const AssetLoadCallbacks* callbacks) {
 	assets.clear();
 
 	// Step 1: Check for optional PNG label at start, skip it if present
@@ -507,7 +507,7 @@ bool loadAssetsFromRom(const u8* buffer,
 
 				int width, height, channels;
 				u8* pixels = stbi_load_from_memory(imgData, static_cast<int>(imgSize),
-												   &width, &height, &channels, 4);  // Force RGBA
+													&width, &height, &channels, 4);  // Force RGBA
 
 				if (pixels) {
 					if (imgAsset.meta.width <= 0) {

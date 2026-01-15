@@ -1832,10 +1832,10 @@ export class BmsxVMRuntime {
 	}
 
 	/**
-	  * Restore from a snapshot captured via the `state` getter. This is a soft-resume that only restores Lua
-	  * global/local state and storage; it does not reset the world or engine state.
-	  * It is only used when the user hits "Resume" after a runtime error or debugger pause.
-	  */
+	 * Restore from a snapshot captured via the `state` getter. This is a soft-resume that only restores Lua
+	 * global/local state and storage; it does not reset the world or engine state.
+	 * It is only used when the user hits "Resume" after a runtime error or debugger pause.
+	 */
 	private restoreFromStateSnapshot(snapshot: BmsxVMState): void {
 		this.clearActiveDebuggerPause();
 		// The editor deliberately clears luaRuntimeFailed before calling setState when the

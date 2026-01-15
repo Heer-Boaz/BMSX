@@ -363,9 +363,9 @@ void SoftwareBackend::drawRect(i32 x, i32 y, i32 w, i32 h, const Color& color) {
 }
 
 void SoftwareBackend::blitTexture(TextureHandle tex, i32 srcX, i32 srcY, i32 srcW, i32 srcH,
-								   i32 dstX, i32 dstY, i32 dstW, i32 dstH, f32 depth,
-								   const Color& tint, bool flipH, bool flipV,
-								   const DitherParams& dither, bool useDepth) {
+									i32 dstX, i32 dstY, i32 dstW, i32 dstH, f32 depth,
+									const Color& tint, bool flipH, bool flipV,
+									const DitherParams& dither, bool useDepth) {
 	auto* softTex = static_cast<SoftwareTexture*>(tex);
 	if (!softTex || softTex->data.empty()) return;
 
@@ -456,9 +456,9 @@ void SoftwareBackend::blitTexture(TextureHandle tex, i32 srcX, i32 srcY, i32 src
 
 				if (a >= 255) {
 					dstRow[dx] = (0xFF << 24) |
-								 (static_cast<u32>(r) << 16) |
-								 (static_cast<u32>(g) << 8) |
-								 static_cast<u32>(b);
+									(static_cast<u32>(r) << 16) |
+									(static_cast<u32>(g) << 8) |
+									static_cast<u32>(b);
 				} else {
 					const u32 dst = dstRow[dx];
 					const u32 invA = 255 - static_cast<u32>(a);
@@ -525,9 +525,9 @@ void SoftwareBackend::blitTexture(TextureHandle tex, i32 srcX, i32 srcY, i32 src
 
 			if (a >= 255) {
 				dstRow[dx] = (0xFF << 24) |
-							 (static_cast<u32>(r) << 16) |
-							 (static_cast<u32>(g) << 8) |
-							 static_cast<u32>(b);
+								(static_cast<u32>(r) << 16) |
+								(static_cast<u32>(g) << 8) |
+								static_cast<u32>(b);
 			} else {
 				const u32 dst = dstRow[dx];
 				const u32 invA = 255 - static_cast<u32>(a);

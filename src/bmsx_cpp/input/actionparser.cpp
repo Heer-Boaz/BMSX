@@ -120,7 +120,7 @@ Token Tokenizer::scanToken() {
 	if (std::isalpha(c) || c == '_') {
 		size_t start = m_pos;
 		while (m_pos < m_input.size() && 
-			   (std::isalnum(m_input[m_pos]) || m_input[m_pos] == '_')) {
+				(std::isalnum(m_input[m_pos]) || m_input[m_pos] == '_')) {
 			m_pos++;
 		}
 		
@@ -146,7 +146,7 @@ Token Tokenizer::scanToken() {
 							std::isdigit(m_input[m_pos + 1]))) {
 		size_t start = m_pos;
 		while (m_pos < m_input.size() && 
-			   (std::isdigit(m_input[m_pos]) || m_input[m_pos] == '.')) {
+				(std::isdigit(m_input[m_pos]) || m_input[m_pos] == '.')) {
 			m_pos++;
 		}
 		return {TokenType::Ident, std::string(m_input.substr(start, m_pos - start))};
@@ -206,12 +206,12 @@ Token InputActionParser::take(TokenType expected, const std::string& expectedVal
 	Token t = eat();
 	if (t.kind != expected) {
 		throw BMSX_RUNTIME_ERROR("[Action Parser] Expected token type " + 
-								 std::to_string(static_cast<int>(expected)) +
-								 " but got " + std::to_string(static_cast<int>(t.kind)));
+									std::to_string(static_cast<int>(expected)) +
+									" but got " + std::to_string(static_cast<int>(t.kind)));
 	}
 	if (!expectedValue.empty() && t.value != expectedValue) {
 		throw BMSX_RUNTIME_ERROR("[Action Parser] Expected '" + expectedValue + 
-								 "' but got '" + t.value + "'");
+									"' but got '" + t.value + "'");
 	}
 	return t;
 }
@@ -630,8 +630,8 @@ EvalFn compileAction(const std::string& name, const std::vector<std::string>& mo
  * ============================================================================ */
 
 EvalFn compileFunction(const std::string& fname, 
-					   const std::vector<std::unique_ptr<AstNode>>& args, 
-					   std::optional<i32> window) {
+						const std::vector<std::unique_ptr<AstNode>>& args, 
+						std::optional<i32> window) {
 	// Get raw pointers for lambda capture (nodes are owned by FunNode)
 	std::vector<AstNode*> argPtrs;
 	for (const auto& arg : args) {

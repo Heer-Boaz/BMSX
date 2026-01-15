@@ -42,8 +42,8 @@ TextureManager* TextureManager::s_instance = nullptr;
 
 TextureManager::TextureManager(GPUBackend* backend)
 	: m_backend(backend),
-	  m_group(textureGate().group("texture:default")),
-	  m_textureBarrier(m_group) {
+		m_group(textureGate().group("texture:default")),
+		m_textureBarrier(m_group) {
 	s_instance = this;
 }
 
@@ -96,9 +96,9 @@ TextureKey TextureManager::makeModelBufferKey(const ModelTextureIdentifier& iden
 }
 
 TextureKey TextureManager::acquireTexture(const TextureKey& key,
-										  const std::function<TextureSource()>& loadBitmapFn,
-										  const TextureParams& desc,
-										  TextureHandle fallbackHandle) {
+											const std::function<TextureSource()>& loadBitmapFn,
+											const TextureParams& desc,
+											TextureHandle fallbackHandle) {
 	if (!m_backend) {
 		throw BMSX_RUNTIME_ERROR("TextureManager backend not set");
 	}
@@ -142,8 +142,8 @@ TextureKey TextureManager::acquireTexture(const TextureKey& key,
 }
 
 TextureKey TextureManager::ensureTextureReady(const TextureKey& key,
-											  const std::function<TextureSource()>& loadBitmapFn,
-											  const TextureParams& desc) {
+												const std::function<TextureSource()>& loadBitmapFn,
+												const TextureParams& desc) {
 	return acquireTexture(key, loadBitmapFn, desc, nullptr);
 }
 
@@ -161,7 +161,7 @@ TextureHandle TextureManager::getTexture(const TextureKey& key) const {
 }
 
 TextureHandle TextureManager::getTextureByUri(const std::string& uri,
-											  const TextureParams& desc) const {
+												const TextureParams& desc) const {
 	return getTexture(makeKey(uri, desc));
 }
 
@@ -170,20 +170,20 @@ void TextureManager::releaseByUri(const std::string& uri, const TextureParams& d
 }
 
 TextureHandle TextureManager::getOrCreateTexture(const TextureKey& key,
-												 const u8* pixels,
-												 i32 width,
-												 i32 height,
-												 const TextureParams& desc) {
+													const u8* pixels,
+													i32 width,
+													i32 height,
+													const TextureParams& desc) {
 	TextureSource src = TextureSource::fromView(pixels, width, height);
 	ensureTextureReady(key, [src]() { return src; }, desc);
 	return getTexture(key);
 }
 
 void TextureManager::updateTexture(TextureHandle handle,
-								   const u8* pixels,
-								   i32 width,
-								   i32 height,
-								   const TextureParams& desc) {
+									const u8* pixels,
+									i32 width,
+									i32 height,
+									const TextureParams& desc) {
 	if (!m_backend) {
 		throw BMSX_RUNTIME_ERROR("TextureManager backend not set");
 	}
@@ -215,18 +215,18 @@ void TextureManager::updateTexturesForAsset(const AssetId& assetId,
 			continue;
 		}
 		m_backend->updateTexture(gpuEntry.handle,
-								 pixels,
-								 width,
-								 height,
-								 gpuEntry.params);
+									pixels,
+									width,
+									height,
+									gpuEntry.params);
 	}
 }
 
 TextureHandle TextureManager::replaceTexture(const TextureKey& key,
-											 const u8* pixels,
-											 i32 width,
-											 i32 height,
-											 const TextureParams& desc) {
+												const u8* pixels,
+												i32 width,
+												i32 height,
+												const TextureParams& desc) {
 	// Force remove existing texture regardless of refcount
 	auto it = m_gpuCache.find(key);
 	if (it != m_gpuCache.end()) {
@@ -245,9 +245,9 @@ TextureHandle TextureManager::replaceTexture(const TextureKey& key,
 
 
 TextureSource TextureManager::fromBuffer(const ImageKey& key,
-										 const u8* buffer,
-										 size_t size,
-										 bool flipY) {
+											const u8* buffer,
+											size_t size,
+											bool flipY) {
 	auto it = m_imageCache.find(key);
 	if (it != m_imageCache.end()) {
 		it->second.refCount++;
@@ -260,7 +260,7 @@ TextureSource TextureManager::fromBuffer(const ImageKey& key,
 	int height = 0;
 	int channels = 0;
 	u8* pixels = stbi_load_from_memory(buffer, static_cast<int>(size),
-									   &width, &height, &channels, 4);
+										&width, &height, &channels, 4);
 	if (!pixels) {
 		throw BMSX_RUNTIME_ERROR("TextureManager: failed to decode image buffer");
 	}
@@ -298,7 +298,7 @@ TextureSource TextureManager::createSolid(i32 size, const Color& color) {
 }
 
 TextureHandle TextureManager::createTextureFromSource(const TextureSource& source,
-													  const TextureParams& desc) {
+														const TextureParams& desc) {
 	if (!m_backend) {
 		throw BMSX_RUNTIME_ERROR("TextureManager backend not set");
 	}

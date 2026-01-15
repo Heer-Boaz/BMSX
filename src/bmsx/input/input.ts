@@ -452,10 +452,10 @@ export class Input implements RegisterablePersistent {
 	}
 
 	/**
-	* The mapping of gamepad button names to their corresponding names.
-	* We use this mapping to get a list of all gamepad buttons.
-	* @see BGamepadButton
-	*/
+	 * The mapping of gamepad button names to their corresponding names.
+	 * We use this mapping to get a list of all gamepad buttons.
+	 * @see BGamepadButton
+	 */
 	public static readonly BUTTON_IDS = [
 		'a', // Bottom face button
 		'b', // Right face button
@@ -478,10 +478,10 @@ export class Input implements RegisterablePersistent {
 	] as const;
 
 	/**
-		* The mapping of keyboard key names to their corresponding gamepad button names.
-		* We use this mapping to map keyboard keys to gamepad buttons during the polling of keyboard input and conversion to gamepad input.
-		* @see BGamepadButton
-		*/
+	 * The mapping of keyboard key names to their corresponding gamepad button names.
+	 * We use this mapping to map keyboard keys to gamepad buttons during the polling of keyboard input and conversion to gamepad input.
+	 * @see BGamepadButton
+	 */
 	public static readonly KEYBOARDKEY2GAMEPADBUTTON = {
 		'ArrowUp': 'up',
 		'ArrowLeft': 'left',

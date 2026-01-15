@@ -46,7 +46,7 @@ public:
 	
 	// Ingest a button press/release
 	void ingestButton(const std::string& code, bool down, f32 value, 
-					  f64 timestamp, std::optional<i32> pressId = std::nullopt);
+						f64 timestamp, std::optional<i32> pressId = std::nullopt);
 	
 	// Ingest 2D axis values (for sticks)
 	void ingestAxis2(const std::string& code, f32 x, f32 y, f64 timestamp);

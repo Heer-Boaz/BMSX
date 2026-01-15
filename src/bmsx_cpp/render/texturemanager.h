@@ -68,24 +68,24 @@ public:
 	TextureKey makeModelBufferKey(const ModelTextureIdentifier& identifier) const;
 
 	TextureKey acquireTexture(const TextureKey& key,
-							  const std::function<TextureSource()>& loadBitmapFn,
-							  const TextureParams& desc = {},
-							  TextureHandle fallbackHandle = nullptr);
+								const std::function<TextureSource()>& loadBitmapFn,
+								const TextureParams& desc = {},
+								TextureHandle fallbackHandle = nullptr);
 	TextureSource getImage(const ImageKey& key) const;
 	TextureHandle getTexture(const TextureKey& key) const;
 	TextureHandle getTextureByUri(const std::string& uri, const TextureParams& desc = {}) const;
 	void releaseByUri(const std::string& uri, const TextureParams& desc = {});
 
 	TextureHandle getOrCreateTexture(const TextureKey& key,
-									 const u8* pixels,
-									 i32 width,
-									 i32 height,
-									 const TextureParams& desc = {});
+										const u8* pixels,
+										i32 width,
+										i32 height,
+										const TextureParams& desc = {});
 	void updateTexture(TextureHandle handle,
-					   const u8* pixels,
-					   i32 width,
-					   i32 height,
-					   const TextureParams& desc = {});
+						const u8* pixels,
+						i32 width,
+						i32 height,
+						const TextureParams& desc = {});
 	void updateTexturesForAsset(const AssetId& assetId,
 								const u8* pixels,
 								i32 width,
@@ -94,15 +94,15 @@ public:
 	/// Replace an existing texture with new pixel data, or create if not exists.
 	/// This is used when cart assets override engine assets with the same key.
 	TextureHandle replaceTexture(const TextureKey& key,
-								 const u8* pixels,
-								 i32 width,
-								 i32 height,
-								 const TextureParams& desc = {});
+									const u8* pixels,
+									i32 width,
+									i32 height,
+									const TextureParams& desc = {});
 
 	TextureSource fromBuffer(const ImageKey& key,
-							 const u8* buffer,
-							 size_t size,
-							 bool flipY = false);
+								const u8* buffer,
+								size_t size,
+								bool flipY = false);
 	TextureSource createSolid(i32 size, const Color& color);
 
 	void releaseByKey(const TextureKey& key);
@@ -123,11 +123,11 @@ private:
 	};
 
 	TextureKey ensureTextureReady(const TextureKey& key,
-								  const std::function<TextureSource()>& loadBitmapFn,
-								  const TextureParams& desc);
+									const std::function<TextureSource()>& loadBitmapFn,
+									const TextureParams& desc);
 
 	TextureHandle createTextureFromSource(const TextureSource& source,
-										  const TextureParams& desc);
+											const TextureParams& desc);
 
 	GPUBackend* m_backend = nullptr;
 	GateGroup m_group;

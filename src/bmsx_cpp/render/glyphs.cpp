@@ -33,8 +33,8 @@ u32 readUtf8Codepoint(const std::string& text, size_t& index) {
 }
 
 void renderGlyphSpan(GameView* view, const std::string& text, i32 start, i32 end, f32& x, f32& y,
-					 f32 startX, f32& stepY, f32 z, BFont* font, const std::optional<Color>& color,
-					 const std::optional<Color>& backgroundColor, const std::optional<RenderLayer>& layer) {
+						f32 startX, f32& stepY, f32 z, BFont* font, const std::optional<Color>& color,
+						const std::optional<Color>& backgroundColor, const std::optional<RenderLayer>& layer) {
 	ImgRenderSubmission spriteOptions;
 	spriteOptions.imgid = "none";
 	spriteOptions.pos = {x, y, z};
@@ -93,16 +93,16 @@ void renderGlyphSpan(GameView* view, const std::string& text, i32 start, i32 end
 } // namespace
 
 void renderGlyphs(GameView* view,
-				  f32 x,
-				  f32 y,
-				  const std::vector<std::string>& lines,
-				  std::optional<i32> start,
-				  std::optional<i32> end,
-				  f32 z,
-				  BFont* font,
-				  const std::optional<Color>& color,
-				  const std::optional<Color>& backgroundColor,
-				  const std::optional<RenderLayer>& layer) {
+					f32 x,
+					f32 y,
+					const std::vector<std::string>& lines,
+					std::optional<i32> start,
+					std::optional<i32> end,
+					f32 z,
+					BFont* font,
+					const std::optional<Color>& color,
+					const std::optional<Color>& backgroundColor,
+					const std::optional<RenderLayer>& layer) {
 	if (!font) {
 		throw BMSX_RUNTIME_ERROR("No font or default font available for renderGlyphs");
 	}

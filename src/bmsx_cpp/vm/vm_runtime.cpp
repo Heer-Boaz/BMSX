@@ -388,7 +388,7 @@ void VMRuntime::boot(const VmProgramAsset& asset, ProgramMetadata* metadata) {
 void VMRuntime::boot(Program* program, ProgramMetadata* metadata, int entryProtoIndex) {
 	std::cout << "[VMRuntime] boot: program=" << program << " entryProtoIndex=" << entryProtoIndex << std::endl;
 	std::cout << "[VMRuntime] boot: module protos=" << m_vmModuleProtos.size()
-			  << " aliases=" << m_vmModuleAliases.size() << std::endl;
+				<< " aliases=" << m_vmModuleAliases.size() << std::endl;
 	m_runtimeFailed = false;
 	m_vmInitialized = false;
 	m_pendingVmCall = PendingCall::None;
@@ -1052,7 +1052,7 @@ void VMRuntime::logVmCallStack() const {
 		auto range = m_cpu.getDebugRange(pc);
 		if (range.has_value()) {
 			std::cerr << "  at " << protoId << " (" << range->path << ":" << range->startLine << ":" << range->startColumn << ")"
-					  << std::endl;
+						<< std::endl;
 		} else {
 			std::cerr << "  at " << protoId << " (pc=" << pc << ")" << std::endl;
 		}

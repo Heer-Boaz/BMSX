@@ -1,16 +1,16 @@
 #!/usr/bin/env node
 /*
-  ts-morph based converter for class members.
+	ts-morph based converter for class members.
 
-  - Converts class fields to top-level vars (exported if public) using const/let with initializer awareness
-  - Converts constructor to function init; parameter properties become top-level vars
-  - Converts methods to function / export function, preserves async
-  - Groups static members (fields + methods) into exported object: `<ClassName>Statics`
-  - Rewrites `this.` to bare identifier inside non-static methods and constructors
+	- Converts class fields to top-level vars (exported if public) using const/let with initializer awareness
+	- Converts constructor to function init; parameter properties become top-level vars
+	- Converts methods to function / export function, preserves async
+	- Groups static members (fields + methods) into exported object: `<ClassName>Statics`
+	- Rewrites `this.` to bare identifier inside non-static methods and constructors
 
-  Usage:
+	Usage:
 	node scripts/ast-transform/convert_with_tsmorph.js <file1.ts> [file2.ts ...]
-  Output:
+	Output:
 	Writes `<file>.morph.ts` next to each input
 */
 

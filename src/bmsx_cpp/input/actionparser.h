@@ -196,8 +196,8 @@ EvalFn compileAction(const std::string& name, const std::vector<std::string>& mo
 
 // Compile function into evaluation function
 EvalFn compileFunction(const std::string& fname, 
-					   const std::vector<std::unique_ptr<AstNode>>& args, 
-					   std::optional<i32> window);
+						const std::vector<std::unique_ptr<AstNode>>& args, 
+						std::optional<i32> window);
 
 /* ============================================================================
  * ActionDefinitionEvaluator

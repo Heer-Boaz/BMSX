@@ -134,12 +134,12 @@ struct Rect {
 
 	bool contains(const Vec2& point) const {
 		return point.x >= x && point.x < x + width &&
-			   point.y >= y && point.y < y + height;
+				point.y >= y && point.y < y + height;
 	}
 
 	bool intersects(const Rect& other) const {
 		return x < other.x + other.width && x + width > other.x &&
-			   y < other.y + other.height && y + height > other.y;
+				y < other.y + other.height && y + height > other.y;
 	}
 };
 
@@ -181,9 +181,9 @@ struct Color {
 
 	u32 toRGBA8() const {
 		return (static_cast<u32>(r * 255) << 24) |
-			   (static_cast<u32>(g * 255) << 16) |
-			   (static_cast<u32>(b * 255) << 8) |
-			   static_cast<u32>(a * 255);
+				(static_cast<u32>(g * 255) << 16) |
+				(static_cast<u32>(b * 255) << 8) |
+				static_cast<u32>(a * 255);
 	}
 
 	// Convert to ARGB32 format (common for framebuffers)

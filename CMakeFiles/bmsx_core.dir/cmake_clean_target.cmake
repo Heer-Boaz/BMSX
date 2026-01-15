@@ -1,3 +1,3 @@
 file(REMOVE_RECURSE
-  "libbmsx_core.a"
+	"libbmsx_core.a"
 )

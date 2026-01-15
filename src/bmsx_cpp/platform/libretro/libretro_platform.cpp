@@ -261,12 +261,12 @@ void LibretroPlatform::setPostProcessOptions(bool enableCrt, bool highDetail) {
 }
 
 void LibretroPlatform::setCrtEffectOptions(bool applyNoise,
-										   bool applyColorBleed,
-										   bool applyScanlines,
-										   bool applyBlur,
-										   bool applyGlow,
-										   bool applyFringing,
-										   bool applyAperture) {
+											bool applyColorBleed,
+											bool applyScanlines,
+											bool applyBlur,
+											bool applyGlow,
+											bool applyFringing,
+											bool applyAperture) {
 	auto* view = m_engine->view();
 	view->applyNoise = applyNoise;
 	view->applyColorBleed = applyColorBleed;
@@ -1081,7 +1081,7 @@ void LibretroGameViewHost::updateBackend(GPUBackend* backend) {
 	if (backend->type() == BackendType::OpenGLES2) {
 		auto* glBackend = static_cast<OpenGLES2Backend*>(backend);
 		glBackend->setViewportSize(static_cast<i32>(m_framebuffer.width),
-								   static_cast<i32>(m_framebuffer.height));
+									static_cast<i32>(m_framebuffer.height));
 		return;
 	}
 #else

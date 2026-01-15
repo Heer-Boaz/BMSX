@@ -52,8 +52,8 @@ public:
 	}
 
 	RenderPassBuilder& color(TextureHandle tex,
-							 const std::array<f32, 4>* clear = nullptr,
-							 bool discardAfter = false) {
+								const std::array<f32, 4>* clear = nullptr,
+								bool discardAfter = false) {
 		BuilderColorAttachmentSpec spec;
 		spec.tex = tex;
 		if (clear) spec.clear = *clear;
@@ -76,8 +76,8 @@ public:
 	}
 
 	RenderPassBuilder& depth(TextureHandle tex,
-							 const f32* clearDepth = nullptr,
-							 bool discardAfter = false) {
+								const f32* clearDepth = nullptr,
+								bool discardAfter = false) {
 		BuilderDepthAttachmentSpec spec;
 		spec.tex = tex;
 		if (clearDepth) spec.clearDepth = *clearDepth;

@@ -95,9 +95,9 @@ A UE5-inspired, light-weight design for the render/pipeline system that fits the
 ### Shader Modules & Binding Layout
 
   * Introduce a small “module” wrapper for shader code:
-	* Declares its binding layout and specialization constants (defines).
-	* Provides a stable “material signature” key for permutation caching.
-	* Optional: lightweight string preprocessor for defines, but keep it simple.
+    * Declares its binding layout and specialization constants (defines).
+    * Provides a stable “material signature” key for permutation caching.
+    * Optional: lightweight string preprocessor for defines, but keep it simple.
 
 ### Validation & Debug HUD
 
@@ -105,9 +105,9 @@ A UE5-inspired, light-weight design for the render/pipeline system that fits the
   * Pass ID uniqueness, binding layout agreement (declared vs. used), graph cycle/alias warnings.
   * Check for missing prepare state or null textures for required bindings.
   * HUD in bmsxdebugger.ts:
-	* Framegraph pass list with timings (you already collect stats).
-	* Per-pass resource usage, active pipelines count, draw call counts.
-	* Toggles to pause/step frame, show viewports, visualize overdraw, runtime “force clear color” (your Clear pass already supports a debug color flag).
+    * Framegraph pass list with timings (you already collect stats).
+    * Per-pass resource usage, active pipelines count, draw call counts.
+    * Toggles to pause/step frame, show viewports, visualize overdraw, runtime “force clear color” (your Clear pass already supports a debug color flag).
 
 ### Performance Practices
 

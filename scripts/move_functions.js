@@ -1,19 +1,19 @@
 #!/usr/bin/env node
 /* Move root-level `export function <name>` blocks between files using ts-morph.
 
-   Usage:
-	 node scripts/move_functions.js \
-	   --source src/file.ts \
-	   --dest   src/other.ts \
-	   -n foo -n bar \
-	   [--names-file names.txt] \
-	   [--dry-run]
+	Usage:
+		node scripts/move_functions.js \
+		--source src/file.ts \
+		--dest   src/other.ts \
+		-n foo -n bar \
+		[--names-file names.txt] \
+		[--dry-run]
 
-   Only root-level exported function declarations are moved:
-	 export function foo() {}
-	 export async function bar<T extends { a: number }>(x: T): { b: string } { ... }
+	Only root-level exported function declarations are moved:
+		export function foo() {}
+		export async function bar<T extends { a: number }>(x: T): { b: string } { ... }
 
-   Overload sets are moved as a single contiguous block.
+	Overload sets are moved as a single contiguous block.
 */
 
 const { Project } = require('ts-morph');

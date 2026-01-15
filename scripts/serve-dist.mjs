@@ -273,12 +273,12 @@ function getType(p) {
 }
 
 function safeJoin(root, urlPath) {
-    const decoded = decodeURIComponent(urlPath || '/');
-    const rel = decoded.startsWith('/') ? decoded.slice(1) : decoded;
-    const joined = path.resolve(path.join(root, rel));
-    if (joined === root) return joined; // root allowed
-    if (!joined.startsWith(root + path.sep)) return null; // block traversal
-    return joined;
+	const decoded = decodeURIComponent(urlPath || '/');
+	const rel = decoded.startsWith('/') ? decoded.slice(1) : decoded;
+	const joined = path.resolve(path.join(root, rel));
+	if (joined === root) return joined; // root allowed
+	if (!joined.startsWith(root + path.sep)) return null; // block traversal
+	return joined;
 }
 
 function getLocalIPs() {
@@ -302,30 +302,30 @@ const root = dir;
 const defaultCandidates = ['game_debug.html', 'game.html', 'index.html'];
 let defaultFile = null;
 for (const c of defaultCandidates) {
-    if (await fileExists(path.join(root, c))) { defaultFile = c; break; }
+	if (await fileExists(path.join(root, c))) { defaultFile = c; break; }
 }
 
 const server = createServer(async (req, res) => {
 	try {
-    const requestUrl = new URL(req.url || '/', 'http://x');
-    if (await handleWorkspaceApi(req, res, requestUrl)) {
-        return;
-    }
-    if (await handleLuaApi(req, res, requestUrl)) {
-        return;
-    }
-    if (await handleCartsApi(req, res, requestUrl)) {
-        return;
-    }
-    const urlPath = requestUrl.pathname;
+	const requestUrl = new URL(req.url || '/', 'http://x');
+	if (await handleWorkspaceApi(req, res, requestUrl)) {
+		return;
+	}
+	if (await handleLuaApi(req, res, requestUrl)) {
+		return;
+	}
+	if (await handleCartsApi(req, res, requestUrl)) {
+		return;
+	}
+	const urlPath = requestUrl.pathname;
 
-    // Redirect root to preferred default file if available
-    if (urlPath === '/' || urlPath === '') {
-        if (defaultFile) {
-            res.writeHead(302, { 'Location': `/${defaultFile}` }).end();
-            return;
-        }
-    }
+	// Redirect root to preferred default file if available
+	if (urlPath === '/' || urlPath === '') {
+		if (defaultFile) {
+			res.writeHead(302, { 'Location': `/${defaultFile}` }).end();
+			return;
+		}
+	}
 		let target = safeJoin(root, urlPath);
 		if (!target) {
 			res.writeHead(403).end('Forbidden');
@@ -373,20 +373,20 @@ const server = createServer(async (req, res) => {
 });
 
 server.listen(port, host, () => {
-    const ips = getLocalIPs();
-    console.log(`Serving ${root}\n  http://localhost:${port}/\n`);
-    if (defaultFile) {
-        console.log(`Default file: /${defaultFile}`);
-    }
-    if (ips.length) {
-        console.log('On your LAN:');
-        for (const ip of ips) console.log(`  http://${ip}:${port}/`);
-    } else {
-        console.log('No external IPv4 found. Is your network up?');
-    }
-    if (defaultFile) {
-        console.log(`\nTip: open http://localhost:${port}/${defaultFile}`);
-    } else {
-        console.log('\nTip: open your HTML file, e.g. /game_debug.html');
-    }
+	const ips = getLocalIPs();
+	console.log(`Serving ${root}\n  http://localhost:${port}/\n`);
+	if (defaultFile) {
+		console.log(`Default file: /${defaultFile}`);
+	}
+	if (ips.length) {
+		console.log('On your LAN:');
+		for (const ip of ips) console.log(`  http://${ip}:${port}/`);
+	} else {
+		console.log('No external IPv4 found. Is your network up?');
+	}
+	if (defaultFile) {
+		console.log(`\nTip: open http://localhost:${port}/${defaultFile}`);
+	} else {
+		console.log('\nTip: open your HTML file, e.g. /game_debug.html');
+	}
 });

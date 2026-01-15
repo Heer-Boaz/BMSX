@@ -689,62 +689,62 @@ static void set_core_options(bool default_gles2) {
 #if BMSX_ENABLE_GLES2
 	if (default_gles2) {
 		std::snprintf(g_option_render_backend_var, sizeof(g_option_render_backend_var),
-					  "Render Backend; %s|%s", kRenderBackendGLES2, kRenderBackendSoftware);
+						"Render Backend; %s|%s", kRenderBackendGLES2, kRenderBackendSoftware);
 	} else {
 		std::snprintf(g_option_render_backend_var, sizeof(g_option_render_backend_var),
-					  "Render Backend; %s|%s", kRenderBackendSoftware, kRenderBackendGLES2);
+						"Render Backend; %s|%s", kRenderBackendSoftware, kRenderBackendGLES2);
 	}
 #else
 	std::snprintf(g_option_render_backend_var, sizeof(g_option_render_backend_var),
-				  "Render Backend; %s", kRenderBackendSoftware);
+					"Render Backend; %s", kRenderBackendSoftware);
 #endif
 	g_option_vars[0].value = g_option_render_backend_var;
 	std::snprintf(g_option_crt_postprocessing_var, sizeof(g_option_crt_postprocessing_var),
-				  crt_readonly ? "CRT Post-processing; %s" : "CRT Post-processing; %s|%s",
-				  kCrtPostprocessingOff, kCrtPostprocessingOn);
+					crt_readonly ? "CRT Post-processing; %s" : "CRT Post-processing; %s|%s",
+					kCrtPostprocessingOff, kCrtPostprocessingOn);
 	g_option_vars[1].value = g_option_crt_postprocessing_var;
 	std::snprintf(g_option_postprocess_detail_var, sizeof(g_option_postprocess_detail_var),
-				  crt_readonly ? "Post-processing Detail; %s" : "Post-processing Detail; %s|%s",
-				  kPostprocessDetailOff, kPostprocessDetailOn);
+					crt_readonly ? "Post-processing Detail; %s" : "Post-processing Detail; %s|%s",
+					kPostprocessDetailOff, kPostprocessDetailOn);
 	g_option_vars[2].value = g_option_postprocess_detail_var;
 	std::snprintf(g_option_crt_noise_var, sizeof(g_option_crt_noise_var),
-				  crt_readonly ? "CRT Noise; %s" : "CRT Noise; %s|%s",
-				  kToggleOff, kToggleOn);
+					crt_readonly ? "CRT Noise; %s" : "CRT Noise; %s|%s",
+					kToggleOff, kToggleOn);
 	g_option_vars[3].value = g_option_crt_noise_var;
 	std::snprintf(g_option_crt_color_bleed_var, sizeof(g_option_crt_color_bleed_var),
-				  crt_readonly ? "CRT Color Bleed; %s" : "CRT Color Bleed; %s|%s",
-				  kToggleOff, kToggleOn);
+					crt_readonly ? "CRT Color Bleed; %s" : "CRT Color Bleed; %s|%s",
+					kToggleOff, kToggleOn);
 	g_option_vars[4].value = g_option_crt_color_bleed_var;
 	std::snprintf(g_option_crt_scanlines_var, sizeof(g_option_crt_scanlines_var),
-				  crt_readonly ? "CRT Scanlines; %s" : "CRT Scanlines; %s|%s",
-				  kToggleOff, kToggleOn);
+					crt_readonly ? "CRT Scanlines; %s" : "CRT Scanlines; %s|%s",
+					kToggleOff, kToggleOn);
 	g_option_vars[5].value = g_option_crt_scanlines_var;
 	std::snprintf(g_option_crt_blur_var, sizeof(g_option_crt_blur_var),
-				  crt_readonly ? "CRT Blur; %s" : "CRT Blur; %s|%s",
-				  kToggleOff, kToggleOn);
+					crt_readonly ? "CRT Blur; %s" : "CRT Blur; %s|%s",
+					kToggleOff, kToggleOn);
 	g_option_vars[6].value = g_option_crt_blur_var;
 	std::snprintf(g_option_crt_glow_var, sizeof(g_option_crt_glow_var),
-				  crt_readonly ? "CRT Glow; %s" : "CRT Glow; %s|%s",
-				  kToggleOff, kToggleOn);
+					crt_readonly ? "CRT Glow; %s" : "CRT Glow; %s|%s",
+					kToggleOff, kToggleOn);
 	g_option_vars[7].value = g_option_crt_glow_var;
 	std::snprintf(g_option_crt_fringing_var, sizeof(g_option_crt_fringing_var),
-				  crt_readonly ? "CRT Fringing; %s" : "CRT Fringing; %s|%s",
-				  kToggleOff, kToggleOn);
+					crt_readonly ? "CRT Fringing; %s" : "CRT Fringing; %s|%s",
+					kToggleOff, kToggleOn);
 	g_option_vars[8].value = g_option_crt_fringing_var;
 	std::snprintf(g_option_crt_aperture_var, sizeof(g_option_crt_aperture_var),
-				  crt_readonly ? "CRT Aperture; %s" : "CRT Aperture; %s|%s",
-				  kToggleOff, kToggleOn);
+					crt_readonly ? "CRT Aperture; %s" : "CRT Aperture; %s|%s",
+					kToggleOff, kToggleOn);
 	g_option_vars[9].value = g_option_crt_aperture_var;
 #if defined(BMSX_SNESMINI_LEGACY)
 	std::snprintf(g_option_dither_var, sizeof(g_option_dither_var),
-				  "Dither; %s", kDitherOff);
+					"Dither; %s", kDitherOff);
 #else
 	std::snprintf(g_option_dither_var, sizeof(g_option_dither_var),
-				  "Dither; %s|%s|%s|%s", kDitherOff, kDitherPSX, kDitherRGB565, kDitherMSX10);
+					"Dither; %s|%s|%s|%s", kDitherOff, kDitherPSX, kDitherRGB565, kDitherMSX10);
 #endif
 	g_option_vars[10].value = g_option_dither_var;
 	std::snprintf(g_option_frameskip_var, sizeof(g_option_frameskip_var),
-				  "Frame Skip; %s|%s", kToggleOn, kToggleOff);
+					"Frame Skip; %s|%s", kToggleOn, kToggleOff);
 	g_option_vars[11].value = g_option_frameskip_var;
 
 	unsigned version = 0;
@@ -973,8 +973,8 @@ static void handle_backend_fallback(bmsx::BackendType backend, const char* reaso
 	}
 	static char fallback_message[128];
 	std::snprintf(fallback_message, sizeof(fallback_message),
-				  "BMSX: %s failed, reverted to Software rendering.",
-				  backend_label(backend));
+					"BMSX: %s failed, reverted to Software rendering.",
+					backend_label(backend));
 	retro_message msg;
 	msg.msg = fallback_message;
 	msg.frames = 240;
@@ -1041,71 +1041,71 @@ static void request_hw_context_for_backend(bmsx::BackendType backend) {
 }
 
 void retro_set_environment(retro_environment_t cb) {
-  environ_cb = cb;
+	environ_cb = cb;
 
-  // Try to get logging interface
-  if (!cb(RETRO_ENVIRONMENT_GET_LOG_INTERFACE, &logging)) {
+	// Try to get logging interface
+	if (!cb(RETRO_ENVIRONMENT_GET_LOG_INTERFACE, &logging)) {
 	logging.log = fallback_log;
-  }
+	}
 
-  // We don't need a game to run (for testing empty cart)
-  bool no_game = true;
-  cb(RETRO_ENVIRONMENT_SET_SUPPORT_NO_GAME, &no_game);
+	// We don't need a game to run (for testing empty cart)
+	bool no_game = true;
+	cb(RETRO_ENVIRONMENT_SET_SUPPORT_NO_GAME, &no_game);
 
-  // Set input descriptors
-  static const struct retro_input_descriptor input_desc[] = {
-	  {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP, "Up"},
-	  {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN, "Down"},
-	  {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT, "Left"},
-	  {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT, "Right"},
-	  {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A, "A"},
-	  {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B, "B"},
-	  {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X, "X"},
-	  {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y, "Y"},
-	  {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L, "L"},
-	  {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R, "R"},
-	  {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_START, "Start"},
-	  {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT, "Select"},
-	  // Player 2
-	  {1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP, "Up (P2)"},
-	  {1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN, "Down (P2)"},
-	  {1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT, "Left (P2)"},
-	  {1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT, "Right (P2)"},
-	  {1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A, "A (P2)"},
-	  {1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B, "B (P2)"},
-	  {0, 0, 0, 0, nullptr}};
-  cb(RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS, (void*)input_desc);
+	// Set input descriptors
+	static const struct retro_input_descriptor input_desc[] = {
+		{0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP, "Up"},
+		{0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN, "Down"},
+		{0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT, "Left"},
+		{0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT, "Right"},
+		{0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A, "A"},
+		{0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B, "B"},
+		{0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X, "X"},
+		{0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y, "Y"},
+		{0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L, "L"},
+		{0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R, "R"},
+		{0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_START, "Start"},
+		{0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT, "Select"},
+		// Player 2
+		{1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP, "Up (P2)"},
+		{1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN, "Down (P2)"},
+		{1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT, "Left (P2)"},
+		{1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT, "Right (P2)"},
+		{1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A, "A (P2)"},
+		{1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B, "B (P2)"},
+		{0, 0, 0, 0, nullptr}};
+	cb(RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS, (void*)input_desc);
 
-  // retro_frame_time_callback frame_time{};
-  // frame_time.callback = frame_time_cb;
-  // frame_time.reference = 0;
-  // cb(RETRO_ENVIRONMENT_SET_FRAME_TIME_CALLBACK, &frame_time);
+	// retro_frame_time_callback frame_time{};
+	// frame_time.callback = frame_time_cb;
+	// frame_time.reference = 0;
+	// cb(RETRO_ENVIRONMENT_SET_FRAME_TIME_CALLBACK, &frame_time);
 
-  set_core_options(BMSX_ENABLE_GLES2);
+	set_core_options(BMSX_ENABLE_GLES2);
 }
 
 void retro_set_video_refresh(retro_video_refresh_t cb) {
-  video_cb = cb;
+	video_cb = cb;
 }
 
 void retro_set_audio_sample(retro_audio_sample_t cb) { audio_cb = cb; }
 
 void retro_set_audio_sample_batch(retro_audio_sample_batch_t cb) {
-  audio_batch_cb = cb;
+	audio_batch_cb = cb;
 }
 
 void retro_set_input_poll(retro_input_poll_t cb) {
-  input_poll_cb = cb;
-  if (g_platform) {
+	input_poll_cb = cb;
+	if (g_platform) {
 	g_platform->setInputPollCallback(cb);
-  }
+	}
 }
 
 void retro_set_input_state(retro_input_state_t cb) {
-  input_state_cb = cb;
-  if (g_platform) {
+	input_state_cb = cb;
+	if (g_platform) {
 	g_platform->setInputStateCallback(cb);
-  }
+	}
 }
 
 /* ============================================================================
@@ -1114,174 +1114,174 @@ void retro_set_input_state(retro_input_state_t cb) {
  */
 
 void retro_init(void) {
-  logging.log(RETRO_LOG_INFO, "[BMSX] retro_init\n");
-  const RenderBackendPreference preference = read_backend_preference();
-  const bmsx::BackendType desired_backend = resolve_backend_preference(preference);
-  g_crt_postprocessing_enabled = read_crt_postprocessing_enabled();
-  g_postprocess_detail_enabled = read_postprocess_detail_enabled();
-  g_crt_noise_enabled = read_crt_noise_enabled();
-  g_crt_color_bleed_enabled = read_crt_color_bleed_enabled();
-  g_crt_scanlines_enabled = read_crt_scanlines_enabled();
-  g_crt_blur_enabled = read_crt_blur_enabled();
-  g_crt_glow_enabled = read_crt_glow_enabled();
-  g_crt_fringing_enabled = read_crt_fringing_enabled();
-  g_crt_aperture_enabled = read_crt_aperture_enabled();
-  g_dither_type = read_dither_type();
-  g_frameskip_enabled = read_frameskip_enabled();
-  g_frameskip_next = false;
-  request_hw_context_for_backend(desired_backend);
-  apply_backend_preference(preference);
-  set_core_options(BMSX_ENABLE_GLES2);
+	logging.log(RETRO_LOG_INFO, "[BMSX] retro_init\n");
+	const RenderBackendPreference preference = read_backend_preference();
+	const bmsx::BackendType desired_backend = resolve_backend_preference(preference);
+	g_crt_postprocessing_enabled = read_crt_postprocessing_enabled();
+	g_postprocess_detail_enabled = read_postprocess_detail_enabled();
+	g_crt_noise_enabled = read_crt_noise_enabled();
+	g_crt_color_bleed_enabled = read_crt_color_bleed_enabled();
+	g_crt_scanlines_enabled = read_crt_scanlines_enabled();
+	g_crt_blur_enabled = read_crt_blur_enabled();
+	g_crt_glow_enabled = read_crt_glow_enabled();
+	g_crt_fringing_enabled = read_crt_fringing_enabled();
+	g_crt_aperture_enabled = read_crt_aperture_enabled();
+	g_dither_type = read_dither_type();
+	g_frameskip_enabled = read_frameskip_enabled();
+	g_frameskip_next = false;
+	request_hw_context_for_backend(desired_backend);
+	apply_backend_preference(preference);
+	set_core_options(BMSX_ENABLE_GLES2);
 
-  const char* system_dir = nullptr;
-  if (environ_cb(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &system_dir) && system_dir && system_dir[0]) {
+	const char* system_dir = nullptr;
+	if (environ_cb(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &system_dir) && system_dir && system_dir[0]) {
 	g_system_dir = sanitizeSystemDir(system_dir);
 	if (!g_system_dir.empty()) {
 		logging.log(RETRO_LOG_INFO, "[BMSX] System directory: %s\n", g_system_dir.c_str());
 	} else {
 		logging.log(RETRO_LOG_INFO, "[BMSX] System directory not provided\n");
 	}
-  } else {
+	} else {
 	g_system_dir.clear();
 	logging.log(RETRO_LOG_INFO, "[BMSX] System directory not provided\n");
-  }
-  if (!isHardwareBackendActive()) {
+	}
+	if (!isHardwareBackendActive()) {
 	const bmsx::BackendType desired_backend = resolve_backend_preference(g_backend_preference);
 	if (is_hardware_backend(desired_backend)) {
-	  logging.log(RETRO_LOG_WARN,
-				  "[BMSX] %s hardware backend not initialized; using software backend\n",
-				  backend_label(desired_backend));
+		logging.log(RETRO_LOG_WARN,
+					"[BMSX] %s hardware backend not initialized; using software backend\n",
+					backend_label(desired_backend));
 	} else {
-	  logging.log(RETRO_LOG_INFO,
-				  "[BMSX] Software backend selected via core option\n");
+		logging.log(RETRO_LOG_INFO,
+					"[BMSX] Software backend selected via core option\n");
 	}
 	g_hw_context_pending = false;
 	g_hw_context_ready = false;
-  }
+	}
 
-  // Set pixel format
-  enum retro_pixel_format fmt = RETRO_PIXEL_FORMAT_XRGB8888;
-  if (!environ_cb(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &fmt)) {
+	// Set pixel format
+	enum retro_pixel_format fmt = RETRO_PIXEL_FORMAT_XRGB8888;
+	if (!environ_cb(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &fmt)) {
 	logging.log(RETRO_LOG_WARN,
 				"[BMSX] XRGB8888 not supported, trying RGB565\n");
 	fmt = RETRO_PIXEL_FORMAT_RGB565;
 	environ_cb(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &fmt);
-  }
-
-  // Create platform instance
-  g_platform = new bmsx::LibretroPlatform(g_active_backend);
-  g_platform->setEnvironmentCallback(environ_cb);
-  g_platform->setLogCallback(logging.log);
-  g_platform->setSystemDirectory(g_system_dir);
-  g_platform->setVideoCallback(video_cb);
-  g_platform->setAudioBatchCallback(audio_batch_cb);
-  g_platform->setInputPollCallback(input_poll_cb);
-  g_platform->setInputStateCallback(input_state_cb);
-  g_platform->setPostProcessOptions(g_crt_postprocessing_enabled, g_postprocess_detail_enabled);
-  g_platform->setCrtEffectOptions(g_crt_noise_enabled,
-								  g_crt_color_bleed_enabled,
-								  g_crt_scanlines_enabled,
-								  g_crt_blur_enabled,
-								  g_crt_glow_enabled,
-								  g_crt_fringing_enabled,
-								  g_crt_aperture_enabled);
-  g_platform->setDitherType(static_cast<bmsx::GameView::DitherType>(g_dither_type));
-  g_platform->setFrameSkipOptions(g_frameskip_enabled);
-  if (isHardwareBackendActive()) {
-	try {
-	  g_platform->setHwRenderCallbacks(g_hw_render.get_current_framebuffer);
-	} catch (const std::exception& err) {
-	  logging.log(RETRO_LOG_ERROR,
-				  "[BMSX] %s setup exception: %s\n",
-				  backend_label(g_active_backend),
-				  err.what());
-	  g_hw_render_failure_reason = err.what();
-	  const std::string reason =
-		  std::string("[BMSX] ") + backend_label(g_active_backend) +
-		  " setup failed: " + err.what();
-	  handle_backend_fallback(g_active_backend, reason.c_str());
 	}
-  }
-  if (g_cached_av_info_valid) {
-	g_platform->setAVInfo(g_cached_av_info);
-  }
-  if (g_has_pending_frame_time) {
-  g_platform->setFrameTimeUsec(g_pending_frame_time_usec);
-  g_has_pending_frame_time = false;
-  }
-  
-  if (isHardwareBackendActive() && g_hw_context_pending) {
+
+	// Create platform instance
+	g_platform = new bmsx::LibretroPlatform(g_active_backend);
+	g_platform->setEnvironmentCallback(environ_cb);
+	g_platform->setLogCallback(logging.log);
+	g_platform->setSystemDirectory(g_system_dir);
+	g_platform->setVideoCallback(video_cb);
+	g_platform->setAudioBatchCallback(audio_batch_cb);
+	g_platform->setInputPollCallback(input_poll_cb);
+	g_platform->setInputStateCallback(input_state_cb);
+	g_platform->setPostProcessOptions(g_crt_postprocessing_enabled, g_postprocess_detail_enabled);
+	g_platform->setCrtEffectOptions(g_crt_noise_enabled,
+									g_crt_color_bleed_enabled,
+									g_crt_scanlines_enabled,
+									g_crt_blur_enabled,
+									g_crt_glow_enabled,
+									g_crt_fringing_enabled,
+									g_crt_aperture_enabled);
+	g_platform->setDitherType(static_cast<bmsx::GameView::DitherType>(g_dither_type));
+	g_platform->setFrameSkipOptions(g_frameskip_enabled);
+	if (isHardwareBackendActive()) {
 	try {
-	  g_platform->onContextReset();
-	  g_hw_context_ready = true;
-	  g_hw_render_failure_reason.clear();
+		g_platform->setHwRenderCallbacks(g_hw_render.get_current_framebuffer);
 	} catch (const std::exception& err) {
-	  logging.log(RETRO_LOG_ERROR,
-				  "[BMSX] %s context reset exception: %s\n",
-				  backend_label(g_active_backend),
-				  err.what());
-	  g_hw_render_failure_reason = err.what();
-	  const std::string reason =
-		  std::string("[BMSX] ") + backend_label(g_active_backend) +
-		  " context reset failed: " + err.what();
-	  handle_backend_fallback(g_active_backend, reason.c_str());
+		logging.log(RETRO_LOG_ERROR,
+					"[BMSX] %s setup exception: %s\n",
+					backend_label(g_active_backend),
+					err.what());
+		g_hw_render_failure_reason = err.what();
+		const std::string reason =
+			std::string("[BMSX] ") + backend_label(g_active_backend) +
+			" setup failed: " + err.what();
+		handle_backend_fallback(g_active_backend, reason.c_str());
+	}
+	}
+	if (g_cached_av_info_valid) {
+	g_platform->setAVInfo(g_cached_av_info);
+	}
+	if (g_has_pending_frame_time) {
+	g_platform->setFrameTimeUsec(g_pending_frame_time_usec);
+	g_has_pending_frame_time = false;
+	}
+	
+	if (isHardwareBackendActive() && g_hw_context_pending) {
+	try {
+		g_platform->onContextReset();
+		g_hw_context_ready = true;
+		g_hw_render_failure_reason.clear();
+	} catch (const std::exception& err) {
+		logging.log(RETRO_LOG_ERROR,
+					"[BMSX] %s context reset exception: %s\n",
+					backend_label(g_active_backend),
+					err.what());
+		g_hw_render_failure_reason = err.what();
+		const std::string reason =
+			std::string("[BMSX] ") + backend_label(g_active_backend) +
+			" context reset failed: " + err.what();
+		handle_backend_fallback(g_active_backend, reason.c_str());
 	}
 	g_hw_context_pending = false;
-  }
+	}
 }
 
 void retro_deinit(void) {
-  logging.log(RETRO_LOG_INFO, "[BMSX] retro_deinit\n");
+	logging.log(RETRO_LOG_INFO, "[BMSX] retro_deinit\n");
 
-  delete g_platform;
-  g_platform = nullptr;
+	delete g_platform;
+	g_platform = nullptr;
 }
 
 unsigned retro_api_version(void) { return RETRO_API_VERSION; }
 
 void retro_get_system_info(struct retro_system_info* info) {
-  std::memset(info, 0, sizeof(*info));
-  info->library_name = CORE_NAME;
-  info->library_version = CORE_VERSION;
-  info->valid_extensions = VALID_EXTENSIONS;
-  info->need_fullpath = true;  // Load ROM from path to avoid duplicate in-memory copy
-  info->block_extract = false;  // We can handle zipped files ourselves
+	std::memset(info, 0, sizeof(*info));
+	info->library_name = CORE_NAME;
+	info->library_version = CORE_VERSION;
+	info->valid_extensions = VALID_EXTENSIONS;
+	info->need_fullpath = true;  // Load ROM from path to avoid duplicate in-memory copy
+	info->block_extract = false;  // We can handle zipped files ourselves
 }
 
 void retro_get_system_av_info(struct retro_system_av_info* info) {
-  // Default resolution - this should match your game's base resolution
-  constexpr unsigned BASE_WIDTH = 100;
-  constexpr unsigned BASE_HEIGHT = 100;
-  constexpr unsigned MAX_WIDTH = 512;
-  constexpr unsigned MAX_HEIGHT = 448;
-  constexpr double FPS = 50.0;
-  constexpr double SAMPLE_RATE = 48000.0;
+	// Default resolution - this should match your game's base resolution
+	constexpr unsigned BASE_WIDTH = 100;
+	constexpr unsigned BASE_HEIGHT = 100;
+	constexpr unsigned MAX_WIDTH = 512;
+	constexpr unsigned MAX_HEIGHT = 448;
+	constexpr double FPS = 50.0;
+	constexpr double SAMPLE_RATE = 48000.0;
 	
-  info->geometry.base_width = BASE_WIDTH;
-  info->geometry.base_height = BASE_HEIGHT;
-  info->geometry.max_width = MAX_WIDTH;
-  info->geometry.max_height = MAX_HEIGHT;
-  info->geometry.aspect_ratio =
-	  static_cast<float>(BASE_WIDTH) / static_cast<float>(BASE_HEIGHT);
+	info->geometry.base_width = BASE_WIDTH;
+	info->geometry.base_height = BASE_HEIGHT;
+	info->geometry.max_width = MAX_WIDTH;
+	info->geometry.max_height = MAX_HEIGHT;
+	info->geometry.aspect_ratio =
+		static_cast<float>(BASE_WIDTH) / static_cast<float>(BASE_HEIGHT);
 
-  info->timing.fps = FPS;
-  info->timing.sample_rate = SAMPLE_RATE;
+	info->timing.fps = FPS;
+	info->timing.sample_rate = SAMPLE_RATE;
 
-  logging.log(
-	  RETRO_LOG_INFO,
-	  "[BMSX] System AV Info requested: %ux%u @ %.2fHz, Sample Rate: %.2fHz\n",
-	  info->geometry.base_width, info->geometry.base_height, info->timing.fps,
-	  info->timing.sample_rate);
-  g_cached_av_info = *info;
-  g_cached_av_info_valid = true;
-  g_platform->setAVInfo(*info);
-  g_platform->applyManifestViewport();
+	logging.log(
+		RETRO_LOG_INFO,
+		"[BMSX] System AV Info requested: %ux%u @ %.2fHz, Sample Rate: %.2fHz\n",
+		info->geometry.base_width, info->geometry.base_height, info->timing.fps,
+		info->timing.sample_rate);
+	g_cached_av_info = *info;
+	g_cached_av_info_valid = true;
+	g_platform->setAVInfo(*info);
+	g_platform->applyManifestViewport();
 }
 
 void retro_set_controller_port_device(unsigned port, unsigned device) {
-  logging.log(RETRO_LOG_INFO, "[BMSX] Port %u set to device %u\n", port,
-			  device);
-  g_platform->setControllerDevice(port, device);
+	logging.log(RETRO_LOG_INFO, "[BMSX] Port %u set to device %u\n", port,
+				device);
+	g_platform->setControllerDevice(port, device);
 }
 
 /* ============================================================================
@@ -1290,43 +1290,43 @@ void retro_set_controller_port_device(unsigned port, unsigned device) {
  */
 
 bool retro_load_game(const struct retro_game_info* game) {
-  if (!game) {
+	if (!game) {
 	logging.log(RETRO_LOG_INFO,
 				"[BMSX] No game provided, loading empty cart\n");
 	return g_platform->loadEmptyCart();
-  }
+	}
 
-  logging.log(RETRO_LOG_INFO, "[BMSX] Loading game: %s\n",
-			  game->path ? game->path : "(memory)");
-  // Try to load engine assets from the same directory as the ROM
-  if (game->path) {
+	logging.log(RETRO_LOG_INFO, "[BMSX] Loading game: %s\n",
+				game->path ? game->path : "(memory)");
+	// Try to load engine assets from the same directory as the ROM
+	if (game->path) {
 	g_platform->tryLoadEngineAssets(game->path);
-  }
+	}
 
-  if (game->data && game->size > 0) {
+	if (game->data && game->size > 0) {
 	return g_platform->loadRom(static_cast<const uint8_t*>(game->data),
-							   game->size);
-  } else if (game->path) {
+								game->size);
+	} else if (game->path) {
 	return g_platform->loadRomFromPath(game->path);
-  }
+	}
 
-  logging.log(RETRO_LOG_ERROR, "[BMSX] No game data or path provided\n");
-  return false;
+	logging.log(RETRO_LOG_ERROR, "[BMSX] No game data or path provided\n");
+	return false;
 }
 
 bool retro_load_game_special(unsigned game_type,
-							 const struct retro_game_info* info,
-							 size_t num_info) {
-  // We don't support special game loading
-  (void)game_type;
-  (void)info;
-  (void)num_info;
-  return false;
+								const struct retro_game_info* info,
+								size_t num_info) {
+	// We don't support special game loading
+	(void)game_type;
+	(void)info;
+	(void)num_info;
+	return false;
 }
 
 void retro_unload_game(void) {
-  logging.log(RETRO_LOG_INFO, "[BMSX] Unloading game\n");
-  g_platform->unloadRom();
+	logging.log(RETRO_LOG_INFO, "[BMSX] Unloading game\n");
+	g_platform->unloadRom();
 }
 
 /* ============================================================================
@@ -1335,37 +1335,37 @@ void retro_unload_game(void) {
  */
 
 void retro_reset(void) {
-  logging.log(RETRO_LOG_INFO, "[BMSX] Reset\n");
-  g_platform->reset();
+	logging.log(RETRO_LOG_INFO, "[BMSX] Reset\n");
+	g_platform->reset();
 }
 
 void retro_run(void) {
-  try_update_backend_option();
-  if (isHardwareBackendActive() && !g_hw_context_ready) {
+	try_update_backend_option();
+	if (isHardwareBackendActive() && !g_hw_context_ready) {
 	logging.log(RETRO_LOG_WARN, "[BMSX] retro_run: HW backend active but context not ready. g_hw_context_pending=%d\n", g_hw_context_pending);
 	const std::string reason =
 		std::string("[BMSX] ") + backend_label(g_active_backend) +
 		" hw render context not initialized; falling back to software";
 	handle_backend_fallback(g_active_backend, reason.c_str());
-  }
-  bool vars_updated = false;
-  if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &vars_updated) && vars_updated) {
+	}
+	bool vars_updated = false;
+	if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &vars_updated) && vars_updated) {
 	const RenderBackendPreference new_preference = read_backend_preference();
 	if (new_preference != g_backend_preference) {
-	  g_backend_preference = new_preference;
-	  retro_message msg;
-	  msg.msg = "BMSX: Render backend change requires core restart.";
-	  msg.frames = 180;
-	  environ_cb(RETRO_ENVIRONMENT_SET_MESSAGE, &msg);
-	  logging.log(RETRO_LOG_WARN,
-				  "[BMSX] Render backend change detected; restart required\n");
+		g_backend_preference = new_preference;
+		retro_message msg;
+		msg.msg = "BMSX: Render backend change requires core restart.";
+		msg.frames = 180;
+		environ_cb(RETRO_ENVIRONMENT_SET_MESSAGE, &msg);
+		logging.log(RETRO_LOG_WARN,
+					"[BMSX] Render backend change detected; restart required\n");
 	}
 	const bool new_crt = read_crt_postprocessing_enabled();
 	const bool new_detail = read_postprocess_detail_enabled();
 	if (new_crt != g_crt_postprocessing_enabled || new_detail != g_postprocess_detail_enabled) {
-	  g_crt_postprocessing_enabled = new_crt;
-	  g_postprocess_detail_enabled = new_detail;
-	  g_platform->setPostProcessOptions(g_crt_postprocessing_enabled, g_postprocess_detail_enabled);
+		g_crt_postprocessing_enabled = new_crt;
+		g_postprocess_detail_enabled = new_detail;
+		g_platform->setPostProcessOptions(g_crt_postprocessing_enabled, g_postprocess_detail_enabled);
 	}
 	const bool new_crt_noise = read_crt_noise_enabled();
 	const bool new_crt_color_bleed = read_crt_color_bleed_enabled();
@@ -1376,54 +1376,54 @@ void retro_run(void) {
 	const bool new_crt_aperture = read_crt_aperture_enabled();
 	bool crt_effects_changed = false;
 	if (new_crt_noise != g_crt_noise_enabled) {
-	  g_crt_noise_enabled = new_crt_noise;
-	  crt_effects_changed = true;
+		g_crt_noise_enabled = new_crt_noise;
+		crt_effects_changed = true;
 	}
 	if (new_crt_color_bleed != g_crt_color_bleed_enabled) {
-	  g_crt_color_bleed_enabled = new_crt_color_bleed;
-	  crt_effects_changed = true;
+		g_crt_color_bleed_enabled = new_crt_color_bleed;
+		crt_effects_changed = true;
 	}
 	if (new_crt_scanlines != g_crt_scanlines_enabled) {
-	  g_crt_scanlines_enabled = new_crt_scanlines;
-	  crt_effects_changed = true;
+		g_crt_scanlines_enabled = new_crt_scanlines;
+		crt_effects_changed = true;
 	}
 	if (new_crt_blur != g_crt_blur_enabled) {
-	  g_crt_blur_enabled = new_crt_blur;
-	  crt_effects_changed = true;
+		g_crt_blur_enabled = new_crt_blur;
+		crt_effects_changed = true;
 	}
 	if (new_crt_glow != g_crt_glow_enabled) {
-	  g_crt_glow_enabled = new_crt_glow;
-	  crt_effects_changed = true;
+		g_crt_glow_enabled = new_crt_glow;
+		crt_effects_changed = true;
 	}
 	if (new_crt_fringing != g_crt_fringing_enabled) {
-	  g_crt_fringing_enabled = new_crt_fringing;
-	  crt_effects_changed = true;
+		g_crt_fringing_enabled = new_crt_fringing;
+		crt_effects_changed = true;
 	}
 	if (new_crt_aperture != g_crt_aperture_enabled) {
-	  g_crt_aperture_enabled = new_crt_aperture;
-	  crt_effects_changed = true;
+		g_crt_aperture_enabled = new_crt_aperture;
+		crt_effects_changed = true;
 	}
 	if (crt_effects_changed) {
-	  g_platform->setCrtEffectOptions(g_crt_noise_enabled,
-									  g_crt_color_bleed_enabled,
-									  g_crt_scanlines_enabled,
-									  g_crt_blur_enabled,
-									  g_crt_glow_enabled,
-									  g_crt_fringing_enabled,
-									  g_crt_aperture_enabled);
+		g_platform->setCrtEffectOptions(g_crt_noise_enabled,
+										g_crt_color_bleed_enabled,
+										g_crt_scanlines_enabled,
+										g_crt_blur_enabled,
+										g_crt_glow_enabled,
+										g_crt_fringing_enabled,
+										g_crt_aperture_enabled);
 	}
 	const int new_dither = read_dither_type();
 	if (new_dither != g_dither_type) {
-	  g_dither_type = new_dither;
-	  g_platform->setDitherType(static_cast<bmsx::GameView::DitherType>(g_dither_type));
+		g_dither_type = new_dither;
+		g_platform->setDitherType(static_cast<bmsx::GameView::DitherType>(g_dither_type));
 	}
 	const bool new_frameskip = read_frameskip_enabled();
 	if (new_frameskip != g_frameskip_enabled) {
-	  g_frameskip_enabled = new_frameskip;
-	  g_frameskip_next = false;
-	  g_platform->setFrameSkipOptions(g_frameskip_enabled);
+		g_frameskip_enabled = new_frameskip;
+		g_frameskip_next = false;
+		g_platform->setFrameSkipOptions(g_frameskip_enabled);
 	}
-  }
+	}
 //   static auto lastFrameTime = std::chrono::steady_clock::now();
 //   static double accSec = 0.0;
 //   static double accMs = 0.0;
@@ -1431,35 +1431,35 @@ void retro_run(void) {
 //   static double maxMs = 0.0;
 //   static uint64_t accCalls = 0;
 #if BMSX_ENABLE_PERFORMANCE_LOGS
-  static auto perfStart = std::chrono::steady_clock::now();
-  static double accRunMs = 0.0;
-  static double accTickMs = 0.0;
-  static double accRenderMs = 0.0;
-  static double accOverheadMs = 0.0;
-  static double accVmUpdateMs = 0.0;
-  static double accVmDrawMs = 0.0;
-  static double accDrawGameMs = 0.0;
-  static double maxRunMs = 0.0;
-  static double maxTickMs = 0.0;
-  static double maxRenderMs = 0.0;
-  static double maxOverheadMs = 0.0;
-  static double maxVmUpdateMs = 0.0;
-  static double maxVmDrawMs = 0.0;
-  static double maxDrawGameMs = 0.0;
-  static uint64_t perfFrames = 0;
+	static auto perfStart = std::chrono::steady_clock::now();
+	static double accRunMs = 0.0;
+	static double accTickMs = 0.0;
+	static double accRenderMs = 0.0;
+	static double accOverheadMs = 0.0;
+	static double accVmUpdateMs = 0.0;
+	static double accVmDrawMs = 0.0;
+	static double accDrawGameMs = 0.0;
+	static double maxRunMs = 0.0;
+	static double maxTickMs = 0.0;
+	static double maxRenderMs = 0.0;
+	static double maxOverheadMs = 0.0;
+	static double maxVmUpdateMs = 0.0;
+	static double maxVmDrawMs = 0.0;
+	static double maxDrawGameMs = 0.0;
+	static uint64_t perfFrames = 0;
 #endif
 
-  // const auto now = std::chrono::steady_clock::now();
-  // const double dtSec = std::chrono::duration<double>(now - lastFrameTime).count();
-  // const double dtMs = dtSec * 1000.0;
-  // lastFrameTime = now;
+	// const auto now = std::chrono::steady_clock::now();
+	// const double dtSec = std::chrono::duration<double>(now - lastFrameTime).count();
+	// const double dtMs = dtSec * 1000.0;
+	// lastFrameTime = now;
 
-  // accSec += dtSec;
-  // accMs += dtMs;
-  // accCalls += 1;
-  // if (dtMs < minMs) minMs = dtMs;
-  // if (dtMs > maxMs) maxMs = dtMs;
-  // if (accSec >= 1.0) {
+	// accSec += dtSec;
+	// accMs += dtMs;
+	// accCalls += 1;
+	// if (dtMs < minMs) minMs = dtMs;
+	// if (dtMs > maxMs) maxMs = dtMs;
+	// if (accSec >= 1.0) {
 	// const double avgMs = accMs / static_cast<double>(accCalls);
 	// const double fps = static_cast<double>(accCalls) / accSec;
 	// const double targetMs = g_platform->frameTimeSec() * 1000.0;
@@ -1478,14 +1478,14 @@ void retro_run(void) {
 	// minMs = std::numeric_limits<double>::infinity();
 	// maxMs = 0.0;
 	// accCalls = 0;
-  // }
+	// }
 
-  // Run one frame
-  const auto frameStart = std::chrono::steady_clock::now();
-  g_platform->setFrameSkipNext(g_frameskip_enabled && g_frameskip_next);
-  g_frameskip_next = false;
+	// Run one frame
+	const auto frameStart = std::chrono::steady_clock::now();
+	g_platform->setFrameSkipNext(g_frameskip_enabled && g_frameskip_next);
+	g_frameskip_next = false;
 //   const auto runStart = std::chrono::steady_clock::now();
-  g_platform->runFrame();
+	g_platform->runFrame();
 //   const auto runEnd = std::chrono::steady_clock::now();
 //   const double runMs = std::chrono::duration<double, std::milli>(runEnd - runStart).count();
 //   const auto& tickTiming = g_platform->engine()->lastTickTiming();
@@ -1545,29 +1545,29 @@ void retro_run(void) {
 // 	perfFrames = 0;
 //   }
 
-  // Output video
-  const auto& fb = g_platform->getFramebuffer();
-  if (isHardwareBackendActive()) {
+	// Output video
+	const auto& fb = g_platform->getFramebuffer();
+	if (isHardwareBackendActive()) {
 	video_cb(RETRO_HW_FRAME_BUFFER_VALID, fb.width, fb.height, 0);
-  } else {
+	} else {
 	video_cb(fb.data, fb.width, fb.height, fb.pitch);
-  }
+	}
 
-  // Output audio
-  const auto& audio = g_platform->getAudioBuffer();
-  if (audio_batch_cb && audio.samples > 0) {
+	// Output audio
+	const auto& audio = g_platform->getAudioBuffer();
+	if (audio_batch_cb && audio.samples > 0) {
 	audio_batch_cb(audio.data, audio.samples);
-  }
+	}
 
-  const auto frameEnd = std::chrono::steady_clock::now();
-  if (g_frameskip_enabled) {
+	const auto frameEnd = std::chrono::steady_clock::now();
+	if (g_frameskip_enabled) {
 	const double budgetMs = g_platform->frameTimeSec() * 1000.0;
 	const double frameMs =
 		std::chrono::duration<double, std::milli>(frameEnd - frameStart).count();
 	if (frameMs > budgetMs) {
-	  g_frameskip_next = true;
+		g_frameskip_next = true;
 	}
-  }
+	}
 }
 
 /* ============================================================================
@@ -1578,10 +1578,10 @@ void retro_run(void) {
 size_t retro_serialize_size(void) { return g_platform->getStateSize(); }
 
 bool retro_serialize(void* data, size_t size) {
-  return g_platform->saveState(data, size);
+	return g_platform->saveState(data, size);
 }
 bool retro_unserialize(const void* data, size_t size) {
-  return g_platform->loadState(data, size);
+	return g_platform->loadState(data, size);
 }
 
 /* ============================================================================
@@ -1592,7 +1592,7 @@ bool retro_unserialize(const void* data, size_t size) {
 void retro_cheat_reset(void) { g_platform->resetCheats(); }
 
 void retro_cheat_set(unsigned index, bool enabled, const char* code) {
-  g_platform->setCheat(index, enabled, code);
+	g_platform->setCheat(index, enabled, code);
 }
 
 /* ============================================================================
@@ -1601,30 +1601,30 @@ void retro_cheat_set(unsigned index, bool enabled, const char* code) {
  */
 
 unsigned retro_get_region(void) {
-  // TODO: Detect region from ROM
-  return RETRO_REGION_PAL;
+	// TODO: Detect region from ROM
+	return RETRO_REGION_PAL;
 }
 
 void* retro_get_memory_data(unsigned id) {
-  switch (id) {
+	switch (id) {
 	case RETRO_MEMORY_SAVE_RAM:
-	  return g_platform->getSaveRAM();
+		return g_platform->getSaveRAM();
 	case RETRO_MEMORY_SYSTEM_RAM:
-	  return g_platform->getSystemRAM();
+		return g_platform->getSystemRAM();
 	default:
-	  return nullptr;
-  }
+		return nullptr;
+	}
 }
 
 size_t retro_get_memory_size(unsigned id) {
-  switch (id) {
+	switch (id) {
 	case RETRO_MEMORY_SAVE_RAM:
-	  return g_platform->getSaveRAMSize();
+		return g_platform->getSaveRAMSize();
 	case RETRO_MEMORY_SYSTEM_RAM:
-	  return g_platform->getSystemRAMSize();
+		return g_platform->getSystemRAMSize();
 	default:
-	  return 0;
-  }
+		return 0;
+	}
 }
 
 /* ============================================================================
@@ -1633,11 +1633,11 @@ size_t retro_get_memory_size(unsigned id) {
  */
 
 static void fallback_log(enum retro_log_level level, const char* fmt, ...) {
-  (void)level;
-  va_list args;
-  va_start(args, fmt);
-  vfprintf(stderr, fmt, args);
-  va_end(args);
+	(void)level;
+	va_list args;
+	va_start(args, fmt);
+	vfprintf(stderr, fmt, args);
+	va_end(args);
 }
 
 // static void frame_time_cb(retro_usec_t usec) {
@@ -1654,44 +1654,44 @@ static void fallback_log(enum retro_log_level level, const char* fmt, ...) {
 // }
 
 static void hw_context_reset() {
-  logging.log(RETRO_LOG_INFO, "[BMSX] hw_context_reset called. g_platform=%p\n", g_platform);
-  if (!g_hw_render_requested) {
+	logging.log(RETRO_LOG_INFO, "[BMSX] hw_context_reset called. g_platform=%p\n", g_platform);
+	if (!g_hw_render_requested) {
 	logging.log(RETRO_LOG_INFO, "[BMSX] hw_context_reset ignored (not requested)\n");
 	return;
-  }
-  if (g_platform) {
-	try {
-	  g_platform->onContextReset();
-	  g_hw_context_ready = true;
-	  g_hw_context_pending = false;
-	  g_hw_render_failure_reason.clear();
-	  logging.log(RETRO_LOG_INFO, "[BMSX] hw_context_reset success. g_hw_context_ready=true\n");
-	  return;
-	} catch (const std::exception& err) {
-	  logging.log(RETRO_LOG_ERROR,
-				  "[BMSX] %s context reset exception: %s\n",
-				  backend_label(g_active_backend),
-				  err.what());
-	  g_hw_render_failure_reason = err.what();
-	  const std::string reason =
-		  std::string("[BMSX] ") + backend_label(g_active_backend) +
-		  " context reset failed: " + err.what();
-	  handle_backend_fallback(g_active_backend, reason.c_str());
-	  return;
 	}
-  }
-  g_hw_context_pending = true;
-  g_hw_context_ready = false;
+	if (g_platform) {
+	try {
+		g_platform->onContextReset();
+		g_hw_context_ready = true;
+		g_hw_context_pending = false;
+		g_hw_render_failure_reason.clear();
+		logging.log(RETRO_LOG_INFO, "[BMSX] hw_context_reset success. g_hw_context_ready=true\n");
+		return;
+	} catch (const std::exception& err) {
+		logging.log(RETRO_LOG_ERROR,
+					"[BMSX] %s context reset exception: %s\n",
+					backend_label(g_active_backend),
+					err.what());
+		g_hw_render_failure_reason = err.what();
+		const std::string reason =
+			std::string("[BMSX] ") + backend_label(g_active_backend) +
+			" context reset failed: " + err.what();
+		handle_backend_fallback(g_active_backend, reason.c_str());
+		return;
+	}
+	}
+	g_hw_context_pending = true;
+	g_hw_context_ready = false;
 }
 
 static void hw_context_destroy() {
-  logging.log(RETRO_LOG_INFO, "[BMSX] hw_context_destroy called\n");
-  if (!g_hw_render_requested) {
+	logging.log(RETRO_LOG_INFO, "[BMSX] hw_context_destroy called\n");
+	if (!g_hw_render_requested) {
 	return;
-  }
-  if (g_platform) {
+	}
+	if (g_platform) {
 	g_platform->onContextDestroy();
-  }
-  g_hw_context_ready = false;
-  g_hw_context_pending = false;
+	}
+	g_hw_context_ready = false;
+	g_hw_context_pending = false;
 }

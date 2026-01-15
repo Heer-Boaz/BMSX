@@ -1,15 +1,15 @@
 {
-  "extends": "../../tsconfig.base.json",
-  "compilerOptions": {
+	"extends": "../../tsconfig.base.json",
+	"compilerOptions": {
 	"noEmit": true,
 	"composite": false,
 	"rootDir": "./",
 	"baseUrl": "./",
 	"paths": {
-	  "bmsx": ["./", "./index.ts"],
-	  "bmsx/*": ["./*"]
+		"bmsx": ["./", "./index.ts"],
+		"bmsx/*": ["./*"]
 	}
-  },
-  "include": ["**/*.ts", "**/*.d.ts", "../../scripts/rompacker/convex_decomp_2d.ts", "../../scripts/bootrom/cart_normalizer.ts"],
-  "exclude": ["node_modules"]
+	},
+	"include": ["**/*.ts", "**/*.d.ts", "../../scripts/rompacker/convex_decomp_2d.ts", "../../scripts/bootrom/cart_normalizer.ts"],
+	"exclude": ["node_modules"]
 }

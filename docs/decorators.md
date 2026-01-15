@@ -90,8 +90,8 @@ Provided by `src/bmsx/core/eventemitter.ts`.
 
   - Method decorators that register subscription metadata on the class (stored in `eventSubscriptions`).
   - Binding occurs once per instance at late‑init:
-	- WorldObject: `onLoadSetup()`
-	- Component: `onloadSetup()` (called by `add_component` and during hydration)
+    - WorldObject: `onLoadSetup()`
+    - Component: `onloadSetup()` (called by `add_component` and during hydration)
   - Duplicate registration is prevented by the emitter.
 
 - `@emits_event(event)`

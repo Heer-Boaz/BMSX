@@ -126,7 +126,7 @@ void GamepadInput::dispose() {
  * ============================================================================ */
 
 void GamepadInput::ingestButton(const std::string& code, bool down, f32 value,
-								 f64 timestamp, std::optional<i32> pressId) {
+									f64 timestamp, std::optional<i32> pressId) {
 	auto& state = m_buttonStates[code];
 	
 	if (down) {

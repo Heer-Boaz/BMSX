@@ -147,7 +147,7 @@ void RenderGraphRuntime::compile(FrameData* frame) {
 	}
 	if (kRenderGraphVerboseLog) {
 		std::fprintf(stderr, "[BMSX][RG] compile passes=%zu presentHandle=%d\n",
-					 m_passes.size(), m_presentHandle);
+						m_passes.size(), m_presentHandle);
 	}
 
 	const i32 passCount = static_cast<i32>(m_passes.size());
@@ -264,7 +264,7 @@ void RenderGraphRuntime::execute(FrameData* frame) {
 			const std::any& data = m_setupData[passIndex];
 			if (kRenderGraphVerboseLog) {
 				std::fprintf(stderr, "[BMSX][RG] execute pass index=%d name=%s\n",
-							 passIndex, pass.name.c_str());
+								passIndex, pass.name.c_str());
 			}
 
 			const auto& writes = m_passWrites[passIndex];
@@ -284,10 +284,10 @@ void RenderGraphRuntime::execute(FrameData* frame) {
 				const void* fboHandle = getFBO(colorHandle, depthHandle);
 				if (kRenderGraphVerboseLog) {
 					std::fprintf(stderr,
-								 "[BMSX][RG] pass=%s colorHandle=%d depthHandle=%d fbo=%u size=%dx%d\n",
-								 pass.name.c_str(), colorHandle, depthHandle,
-								 static_cast<unsigned>(reinterpret_cast<uintptr_t>(fboHandle)),
-								 width, height);
+									"[BMSX][RG] pass=%s colorHandle=%d depthHandle=%d fbo=%u size=%dx%d\n",
+									pass.name.c_str(), colorHandle, depthHandle,
+									static_cast<unsigned>(reinterpret_cast<uintptr_t>(fboHandle)),
+									width, height);
 				}
 
 				auto* gles = static_cast<OpenGLES2Backend*>(m_backend);
@@ -344,7 +344,7 @@ void RenderGraphRuntime::execute(FrameData* frame) {
 			const std::any& data = m_setupData[passIndex];
 			if (kRenderGraphVerboseLog) {
 				std::fprintf(stderr, "[BMSX][RG] execute pass index=%d name=%s\n",
-							 passIndex, pass.name.c_str());
+								passIndex, pass.name.c_str());
 			}
 
 			const auto& writes = m_passWrites[passIndex];
@@ -519,8 +519,8 @@ void RenderGraphRuntime::realizeAll() {
 				res.tex = reinterpret_cast<TextureHandle>(depth);
 				if (kRenderGraphVerboseLog) {
 					std::fprintf(stderr,
-								 "[BMSX][RG] create depth handle=%d rb=%u size=%dx%d\n",
-								 i, static_cast<unsigned>(depth->id), depth->width, depth->height);
+									"[BMSX][RG] create depth handle=%d rb=%u size=%dx%d\n",
+									i, static_cast<unsigned>(depth->id), depth->width, depth->height);
 				}
 			} else {
 				res.tex = gles->createTexture(nullptr, res.desc.width, res.desc.height, TextureParams{});
@@ -533,9 +533,9 @@ void RenderGraphRuntime::realizeAll() {
 				if (kRenderGraphVerboseLog) {
 					const GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
 					std::fprintf(stderr,
-								 "[BMSX][RG] create color handle=%d tex=%u size=%dx%d fbo=%u status=0x%x\n",
-								 i, static_cast<unsigned>(glTex->id), res.desc.width, res.desc.height,
-								 static_cast<unsigned>(fbo), static_cast<unsigned>(status));
+									"[BMSX][RG] create color handle=%d tex=%u size=%dx%d fbo=%u status=0x%x\n",
+									i, static_cast<unsigned>(glTex->id), res.desc.width, res.desc.height,
+									static_cast<unsigned>(fbo), static_cast<unsigned>(status));
 				}
 			}
 		}
@@ -648,9 +648,9 @@ void* RenderGraphRuntime::ensureFBO(RenderGraphTexHandle color, RenderGraphTexHa
 		if (kRenderGraphVerboseLog) {
 			const GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
 			std::fprintf(stderr,
-						 "[BMSX][RG] create color+depth fbo=%u colorHandle=%d depthHandle=%d status=0x%x\n",
-						 static_cast<unsigned>(fbo), color, depth,
-						 static_cast<unsigned>(status));
+							"[BMSX][RG] create color+depth fbo=%u colorHandle=%d depthHandle=%d status=0x%x\n",
+							static_cast<unsigned>(fbo), color, depth,
+							static_cast<unsigned>(status));
 		}
 		return handle;
 #endif

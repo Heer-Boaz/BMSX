@@ -339,19 +339,19 @@ void Input::handleKeyboardEvent(const std::string& deviceId, const std::string& 
 		handler->keyup(keyCode, pressId, m_currentTimeMs);
 	}
 	enqueueButtonEvent(binding->assignedPlayer.value(), keyCode,
-					   down ? InputEvent::Type::Press : InputEvent::Type::Release,
-					   m_currentTimeMs, pressId);
+						down ? InputEvent::Type::Press : InputEvent::Type::Release,
+						m_currentTimeMs, pressId);
 }
 
 void Input::handleGamepadButtonEvent(const std::string& deviceId, const std::string& button,
-									  bool down, f32 value) {
+										bool down, f32 value) {
 	auto* binding = getDeviceBinding(deviceId);
 	auto* handler = static_cast<GamepadInput*>(binding->handler);
 	i32 pressId = assignPressId(deviceId, button, down);
 	handler->ingestButton(button, down, value, m_currentTimeMs, pressId);
 	enqueueButtonEvent(binding->assignedPlayer.value(), button,
-					   down ? InputEvent::Type::Press : InputEvent::Type::Release,
-					   m_currentTimeMs, pressId);
+						down ? InputEvent::Type::Press : InputEvent::Type::Release,
+						m_currentTimeMs, pressId);
 }
 
 void Input::handleGamepadAxisEvent(const std::string& deviceId, const std::string& axis,
@@ -365,8 +365,8 @@ void Input::handlePointerButtonEvent(const std::string& deviceId, const std::str
 	auto* binding = getDeviceBinding(deviceId);
 	i32 pressId = assignPressId(deviceId, button, down);
 	enqueueButtonEvent(binding->assignedPlayer.value(), button,
-					   down ? InputEvent::Type::Press : InputEvent::Type::Release,
-					   m_currentTimeMs, pressId);
+						down ? InputEvent::Type::Press : InputEvent::Type::Release,
+						m_currentTimeMs, pressId);
 }
 
 void Input::handlePointerMoveEvent(const std::string& /*deviceId*/, f32 /*x*/, f32 /*y*/) {

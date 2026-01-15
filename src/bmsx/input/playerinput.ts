@@ -596,11 +596,11 @@ export class PlayerInput {
 	}
 
 	/**
-	* Assigns a gamepad to a player and returns the player index.
-	* If no player index is available, returns null.
-	* @param gamepad The gamepad to assign to a player.
-	* @returns The player index the gamepad was assigned to, or null if no player index was available.
-	*/
+	 * Assigns a gamepad to a player and returns the player index.
+	 * If no player index is available, returns null.
+	 * @param gamepad The gamepad to assign to a player.
+	 * @returns The player index the gamepad was assigned to, or null if no player index was available.
+	 */
 	assignGamepadToPlayer(gamepadInput: InputHandler): void {
 		if (this.inputHandlers['gamepad'] && this.inputHandlers['gamepad'] !== gamepadInput) {
 			console.warn(`Replacing existing gamepad for player ${this.playerIndex} with gamepad ${gamepadInput.gamepadIndex}.`);

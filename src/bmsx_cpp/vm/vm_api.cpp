@@ -958,7 +958,7 @@ void VMApi::put_particle(const ParticleRenderSubmission& submission) {
 }
 
 void VMApi::write(const std::string& text, std::optional<int> x, std::optional<int> y,
-				  std::optional<int> z, std::optional<int> colorIndex, const Value& options) {
+					std::optional<int> z, std::optional<int> colorIndex, const Value& options) {
 	VMFont* renderFont = m_font.get();
 	int baseX = m_textCursorX;
 	int baseY = m_textCursorY;

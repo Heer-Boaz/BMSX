@@ -29,7 +29,7 @@ export class ActionEffectComponent extends Component {
 		- Input-driven triggers: FSM/process_input or InputActionEffect programs call api.trigger_effect/component.trigger(...).
 		- This component enforces cooldown (timeMs advanced by ActionEffectRuntimeSystem) and emits owner events (owner.events + owner.sc.dispatch_event).
 		- Handlers should apply side effects directly and optionally return { event, payload } to customize the emitted event.
-	*/
+	 */
 
 	constructor(opts: ComponentAttachOptions) {
 		super(opts);

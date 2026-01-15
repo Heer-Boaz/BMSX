@@ -30,7 +30,7 @@ public:
 	explicit AssetBarrier(GateGroup group) : group_(std::move(group)) {}
 
 	T acquire(const std::string& key, const std::function<T()>& loader,
-			  const BarrierAcquireOptions<T>& opts = {}) {
+				const BarrierAcquireOptions<T>& opts = {}) {
 		Entry& entry = ensureEntry(key, opts);
 		if (entry.value.has_value()) {
 			if (!opts.tag.empty() && entry.tag.empty()) entry.tag = opts.tag;
@@ -59,7 +59,7 @@ public:
 				std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
 			if (elapsed_ms > opts.warnIfLongerMs) {
 				std::cerr << "[AssetBarrier] Slow load > " << opts.warnIfLongerMs
-						  << "ms for key=\"" << key << "\"" << std::endl;
+							<< "ms for key=\"" << key << "\"" << std::endl;
 			}
 		}
 
@@ -138,7 +138,7 @@ public:
 					try { callDisposer(*entry.value); }
 					catch (const std::exception& e) {
 						std::cerr << "[AssetBarrier] disposer threw on clear for key=\"" << key << "\": "
-								  << e.what() << std::endl;
+									<< e.what() << std::endl;
 					}
 				}
 			}

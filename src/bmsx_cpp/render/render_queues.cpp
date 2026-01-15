@@ -320,27 +320,27 @@ void submitGlyphs(const GlyphRenderSubmission& options) {
 	f32 x = options.x;
 	if (options.center_block_width && *options.center_block_width > 0) {
 		x += calculateCenteredBlockX(*lines, font->char_width('a'),
-									 *options.center_block_width);
+										*options.center_block_width);
 	}
 
 	const f32 z = options.z.value_or(950.0f);
 	renderGlyphs(x, options.y, *lines, options.glyph_start, options.glyph_end,
-				 z, font, options.color, options.background_color, options.layer);
+					z, font, options.color, options.background_color, options.layer);
 }
 
 void renderGlyphs(f32 x,
-				  f32 y,
-				  const std::vector<std::string>& lines,
-				  std::optional<i32> start,
-				  std::optional<i32> end,
-				  f32 z,
-				  BFont* font,
-				  const std::optional<Color>& color,
-				  const std::optional<Color>& backgroundColor,
-				  const std::optional<RenderLayer>& layer) {
+					f32 y,
+					const std::vector<std::string>& lines,
+					std::optional<i32> start,
+					std::optional<i32> end,
+					f32 z,
+					BFont* font,
+					const std::optional<Color>& color,
+					const std::optional<Color>& backgroundColor,
+					const std::optional<RenderLayer>& layer) {
 	GameView* view = EngineCore::instance().view();
 	::bmsx::renderGlyphs(view, x, y, lines, start, end, z, font, color,
-						 backgroundColor, layer);
+							backgroundColor, layer);
 }
 
 f32 calculateCenteredBlockX(const std::vector<std::string>& lines, i32 charWidth, i32 blockWidth) {
@@ -397,8 +397,8 @@ void setAmbientDefaults(i32 mode, f32 factor) {
 }
 
 void setSpriteParallaxRig(f32 vy, f32 scale, f32 impact, f32 impact_t,
-						  f32 bias_px, f32 parallax_strength, f32 scale_strength,
-						  f32 flip_strength, f32 flip_window) {
+							f32 bias_px, f32 parallax_strength, f32 scale_strength,
+							f32 flip_strength, f32 flip_window) {
 	if (flip_window <= 0.0f) {
 		throw BMSX_RUNTIME_ERROR("[RenderQueues] setSpriteParallaxRig requires flip_window > 0.");
 	}

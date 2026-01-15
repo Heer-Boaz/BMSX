@@ -107,7 +107,7 @@ const std::string& BFont::char_to_img(u32 codepoint) const {
 		return it->second;
 	}
 	std::cerr << "[BFont] Character codepoint " << codepoint << " not found in letter_to_img map. Using fallback '?'."
-			  << std::endl;
+				<< std::endl;
 	auto fallbackIt = m_letter_to_img.find(static_cast<u32>('?'));
 	if (fallbackIt == m_letter_to_img.end()) {
 		throw BMSX_RUNTIME_ERROR("[BFont] Fallback character '?' not found in letter_to_img map.");

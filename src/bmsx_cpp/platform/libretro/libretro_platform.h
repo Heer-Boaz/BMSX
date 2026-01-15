@@ -156,12 +156,12 @@ public:
 	void switchToSoftwareBackend();
 	void setPostProcessOptions(bool enableCrt, bool highDetail);
 	void setCrtEffectOptions(bool applyNoise,
-							 bool applyColorBleed,
-							 bool applyScanlines,
-							 bool applyBlur,
-							 bool applyGlow,
-							 bool applyFringing,
-							 bool applyAperture);
+								bool applyColorBleed,
+								bool applyScanlines,
+								bool applyBlur,
+								bool applyGlow,
+								bool applyFringing,
+								bool applyAperture);
 	void setDitherType(GameView::DitherType type);
 	void setFrameSkipOptions(bool enabled);
 	void setFrameSkipNext(bool skip);

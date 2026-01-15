@@ -62,7 +62,7 @@ UI flow, combat ability gating, cutscenes, dialogue trees, and more.
   - `emit` and `dispatch_event` to notify other systems or controller machines.
   - `set_ticks_to_last_frame` for clip shortening.
   - Conditional execution (`when`/`then`/`else`) with argument, value, and
-	`state_matches` predicates.
+    `state_matches` predicates.
   - Sequencing (arrays of actions).
   You can keep things simple or drop down to TypeScript handlers whenever you
   need specialised behaviour.

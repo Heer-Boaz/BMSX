@@ -1176,7 +1176,7 @@ export async function getResourcesList(resMetaList: Resource[]): Promise<Resourc
 	/**
 	 * Loads an image from the specified resource object.
 	 * @param _meta The resource object containing information about the image to load.
-		 * @returns A Promise that resolves with the loaded image.
+	 * @returns A Promise that resolves with the loaded image.
 	 */
 	// @ts-ignore
 	async function getImageFromBuffer(buffer: Buffer) {

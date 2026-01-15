@@ -139,8 +139,8 @@ void setAmbientDefaults(i32 mode, f32 factor = 1.0f);
 
 extern SpriteParallaxRig spriteParallaxRig;
 void setSpriteParallaxRig(f32 vy, f32 scale, f32 impact, f32 impact_t,
-						  f32 bias_px, f32 parallax_strength, f32 scale_strength,
-						  f32 flip_strength, f32 flip_window);
+							f32 bias_px, f32 parallax_strength, f32 scale_strength,
+							f32 flip_strength, f32 flip_window);
 
 // --- Skybox exposure defaults ---
 
@@ -151,15 +151,15 @@ void setSkyboxTintExposure(const std::array<f32, 3>& tint, f32 exposure = 1.0f);
 // --- Glyph helpers ---
 
 void renderGlyphs(f32 x,
-				  f32 y,
-				  const std::vector<std::string>& lines,
-				  std::optional<i32> start,
-				  std::optional<i32> end,
-				  f32 z,
-				  BFont* font,
-				  const std::optional<Color>& color,
-				  const std::optional<Color>& backgroundColor,
-				  const std::optional<RenderLayer>& layer);
+					f32 y,
+					const std::vector<std::string>& lines,
+					std::optional<i32> start,
+					std::optional<i32> end,
+					f32 z,
+					BFont* font,
+					const std::optional<Color>& color,
+					const std::optional<Color>& backgroundColor,
+					const std::optional<RenderLayer>& layer);
 f32 calculateCenteredBlockX(const std::vector<std::string>& lines, i32 charWidth, i32 blockWidth);
 std::vector<std::string> wrapGlyphs(const std::string& text, i32 maxLineLength);
 

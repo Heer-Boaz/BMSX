@@ -23,14 +23,14 @@ struct FrameUniformsData {
 std::array<f32, 16> makeIdentityMat4();
 
 FrameUniformsData buildFrameUniforms(const Vec2& offscreen,
-									 const Vec2& logical,
-									 f32 time,
-									 f32 delta,
-									 const std::array<f32, 16>& view,
-									 const std::array<f32, 16>& proj,
-									 const Vec3& cameraPos,
-									 const std::array<f32, 3>& ambientColor,
-									 f32 ambientIntensity);
+										const Vec2& logical,
+										f32 time,
+										f32 delta,
+										const std::array<f32, 16>& view,
+										const std::array<f32, 16>& proj,
+										const Vec3& cameraPos,
+										const std::array<f32, 3>& ambientColor,
+										f32 ambientIntensity);
 
 constexpr const char* kFrameUniformsBlockGLSL = R"(
 layout(std140) uniform FrameUniforms {

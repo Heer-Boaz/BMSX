@@ -398,37 +398,37 @@ static int16_t g_audio_sample_buf[kAudioSampleBufferFrames * 2];
 static size_t g_audio_sample_buf_frames = 0;
 
 static void crash_handler(int sig, siginfo_t* si, void* ctx_) {
-  ucontext_t* uc = (ucontext_t*)ctx_;
+	ucontext_t* uc = (ucontext_t*)ctx_;
 
 #if defined(__arm__)
-  unsigned long pc = uc->uc_mcontext.arm_pc;
-  unsigned long lr = uc->uc_mcontext.arm_lr;
-  unsigned long sp = uc->uc_mcontext.arm_sp;
-  fprintf(stderr, "\nCRASH sig=%d addr=%p pc=%08lx lr=%08lx sp=%08lx\n",
-          sig, si->si_addr, pc, lr, sp);
+	unsigned long pc = uc->uc_mcontext.arm_pc;
+	unsigned long lr = uc->uc_mcontext.arm_lr;
+	unsigned long sp = uc->uc_mcontext.arm_sp;
+	fprintf(stderr, "\nCRASH sig=%d addr=%p pc=%08lx lr=%08lx sp=%08lx\n",
+			sig, si->si_addr, pc, lr, sp);
 #elif defined(__aarch64__)
-  unsigned long pc = uc->uc_mcontext.pc;
-  unsigned long sp = uc->uc_mcontext.sp;
-  fprintf(stderr, "\nCRASH sig=%d addr=%p pc=%016lx sp=%016lx\n",
-          sig, si->si_addr, pc, sp);
+	unsigned long pc = uc->uc_mcontext.pc;
+	unsigned long sp = uc->uc_mcontext.sp;
+	fprintf(stderr, "\nCRASH sig=%d addr=%p pc=%016lx sp=%016lx\n",
+			sig, si->si_addr, pc, sp);
 #else
-  fprintf(stderr, "\nCRASH sig=%d addr=%p\n", sig, si->si_addr);
+	fprintf(stderr, "\nCRASH sig=%d addr=%p\n", sig, si->si_addr);
 #endif
 
-  fflush(stderr);
-  _Exit(128 + sig);
+	fflush(stderr);
+	_Exit(128 + sig);
 }
 
 static void install_crash_handlers(void) {
-  struct sigaction sa;
-  sa.sa_sigaction = crash_handler;
-  sigemptyset(&sa.sa_mask);
-  sa.sa_flags = SA_SIGINFO | SA_RESETHAND;
+	struct sigaction sa;
+	sa.sa_sigaction = crash_handler;
+	sigemptyset(&sa.sa_mask);
+	sa.sa_flags = SA_SIGINFO | SA_RESETHAND;
 
-  sigaction(SIGSEGV, &sa, NULL);
-  sigaction(SIGBUS,  &sa, NULL);
-  sigaction(SIGILL,  &sa, NULL);
-  sigaction(SIGABRT, &sa, NULL);
+	sigaction(SIGSEGV, &sa, NULL);
+	sigaction(SIGBUS,  &sa, NULL);
+	sigaction(SIGILL,  &sa, NULL);
+	sigaction(SIGABRT, &sa, NULL);
 }
 
 static void on_signal(int signum) {
@@ -673,9 +673,9 @@ static bool hw_init_blitter(void) {
 
 	const float quad[] = {
 		-1.0f, -1.0f, 0.0f, 0.0f,
-		 1.0f, -1.0f, 1.0f, 0.0f,
+			1.0f, -1.0f, 1.0f, 0.0f,
 		-1.0f,  1.0f, 0.0f, 1.0f,
-		 1.0f,  1.0f, 1.0f, 1.0f,
+			1.0f,  1.0f, 1.0f, 1.0f,
 	};
 	glGenBuffers_ptr(1, &g_blit_vbo);
 	glBindBuffer_ptr(GL_ARRAY_BUFFER, g_blit_vbo);
@@ -913,13 +913,13 @@ static bool menu_option_is_disabled(const MenuOption* opt) {
 	}
 	const char* key = opt->key;
 	return strcmp(key, "bmsx_postprocess_detail") == 0 ||
-		   strcmp(key, "bmsx_crt_noise") == 0 ||
-		   strcmp(key, "bmsx_crt_color_bleed") == 0 ||
-		   strcmp(key, "bmsx_crt_scanlines") == 0 ||
-		   strcmp(key, "bmsx_crt_blur") == 0 ||
-		   strcmp(key, "bmsx_crt_glow") == 0 ||
-		   strcmp(key, "bmsx_crt_fringing") == 0 ||
-		   strcmp(key, "bmsx_crt_aperture") == 0;
+			strcmp(key, "bmsx_crt_noise") == 0 ||
+			strcmp(key, "bmsx_crt_color_bleed") == 0 ||
+			strcmp(key, "bmsx_crt_scanlines") == 0 ||
+			strcmp(key, "bmsx_crt_blur") == 0 ||
+			strcmp(key, "bmsx_crt_glow") == 0 ||
+			strcmp(key, "bmsx_crt_fringing") == 0 ||
+			strcmp(key, "bmsx_crt_aperture") == 0;
 }
 
 static size_t menu_next_selectable(size_t index, int dir) {
@@ -1129,8 +1129,8 @@ static void menu_ingest_variables(const struct retro_variable* vars) {
 		size_t count = 0;
 		char* saveptr = NULL;
 		for (char* tok = strtok_r(values_str, "|", &saveptr);
-			 tok && count < MENU_MAX_VALUES;
-			 tok = strtok_r(NULL, "|", &saveptr)) {
+				tok && count < MENU_MAX_VALUES;
+				tok = strtok_r(NULL, "|", &saveptr)) {
 			menu_trim(tok);
 			menu_copy_str(values[count].value, sizeof(values[count].value), tok);
 			menu_copy_str(values[count].label, sizeof(values[count].label), tok);
@@ -3461,7 +3461,7 @@ static void menu_handle_input(uint16_t state, uint16_t prev, bool skip_nav) {
 	}
 
 	if (is_action && (menu_pad_pressed(state, prev, RETRO_DEVICE_ID_JOYPAD_A) ||
-					  menu_pad_pressed(state, prev, RETRO_DEVICE_ID_JOYPAD_START))) {
+						menu_pad_pressed(state, prev, RETRO_DEVICE_ID_JOYPAD_START))) {
 		menu_execute_action(selected->key);
 		return;
 	}

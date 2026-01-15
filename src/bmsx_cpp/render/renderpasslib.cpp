@@ -22,7 +22,7 @@ namespace bmsx {
 namespace {
 
 CRTPipelineState buildCRTPipelineState(const RenderPassDef::RenderGraphPassContext& ctx,
-									   RenderPassDef::RenderPassGraphDef::PresentInput presentInput) {
+										RenderPassDef::RenderPassGraphDef::PresentInput presentInput) {
 	auto* view = ctx.view;
 	CRTPipelineState crtState;
 	crtState.width = static_cast<i32>(view->canvasSize.x);
@@ -189,12 +189,12 @@ void RenderPassLibrary::registerBuiltinPassesSoftware() {
 			auto* colorTex = static_cast<SoftwareTexture*>(crtState.colorTex);
 			auto* softBackend = static_cast<SoftwareBackend*>(backend);
 			view->applyCRTPostProcessing(colorTex->data.data(),
-										 colorTex->width,
-										 colorTex->height,
-										 softBackend->framebuffer(),
-										 softBackend->width(),
-										 softBackend->height(),
-										 softBackend->pitch());
+											colorTex->width,
+											colorTex->height,
+											softBackend->framebuffer(),
+											softBackend->width(),
+											softBackend->height(),
+											softBackend->pitch());
 		};
 		desc.prepare = [](GPUBackend*, std::any&) {};
 		registerPass(desc);
@@ -598,7 +598,7 @@ std::unique_ptr<RenderGraphRuntime> RenderPassLibrary::buildRenderGraph(GameView
 		};
 
 		pass.execute = [this, view, handles, passId, isPresent, isStateOnly, writesDepth, depthTest, shouldExecute,
-					   graph, deviceColorEnabled, getHandle](RenderGraphContext& ctx, FrameData*, const std::any&) {
+						graph, deviceColorEnabled, getHandle](RenderGraphContext& ctx, FrameData*, const std::any&) {
 			if (!isPassEnabled(passId)) return;
 			if (shouldExecute && !shouldExecute()) return;
 

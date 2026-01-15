@@ -27,40 +27,40 @@ static constexpr f32 ZCOORD_MAX = 10000.0f;
 
 namespace {
 void renderSpriteBatchSoftware(SoftwareBackend* softBackend,
-							   GameView* context) {
-  // Swap and sort the sprite queue (returns count)
-  i32 spriteCount = RenderQueues::beginSpriteQueue();
-  if (spriteCount == 0) return;
+								GameView* context) {
+	// Swap and sort the sprite queue (returns count)
+	i32 spriteCount = RenderQueues::beginSpriteQueue();
+	if (spriteCount == 0) return;
 
-  const f32 baseWidth = context->viewportSize.x;
-  const f32 baseHeight = context->viewportSize.y;
-  const f32 offscreenWidth = context->offscreenCanvasSize.x;
-  const f32 offscreenHeight = context->offscreenCanvasSize.y;
-  const bool ideIsViewport =
-	  (context->viewportTypeIde == GameView::ViewportType::Viewport);
-  const f32 ideScale = ideIsViewport ? 1.0f : (baseWidth / offscreenWidth);
-  const f32 renderScaleX = offscreenWidth / baseWidth;
-  const f32 renderScaleY = offscreenHeight / baseHeight;
+	const f32 baseWidth = context->viewportSize.x;
+	const f32 baseHeight = context->viewportSize.y;
+	const f32 offscreenWidth = context->offscreenCanvasSize.x;
+	const f32 offscreenHeight = context->offscreenCanvasSize.y;
+	const bool ideIsViewport =
+		(context->viewportTypeIde == GameView::ViewportType::Viewport);
+	const f32 ideScale = ideIsViewport ? 1.0f : (baseWidth / offscreenWidth);
+	const f32 renderScaleX = offscreenWidth / baseWidth;
+	const f32 renderScaleY = offscreenHeight / baseHeight;
 
-  const f32 time = static_cast<f32>(EngineCore::instance().totalTime());
-  const f32 wobble = (std::sin(time * 2.2f) * 0.5f)
-					 + (std::sin(time * 1.1f + 1.7f) * 0.5f);
-  DitherParams dither{};
-  dither.enabled = false;
+	const f32 time = static_cast<f32>(EngineCore::instance().totalTime());
+	const f32 wobble = (std::sin(time * 2.2f) * 0.5f)
+						+ (std::sin(time * 1.1f + 1.7f) * 0.5f);
+	DitherParams dither{};
+	dither.enabled = false;
 
-  const bool useDepth = false;
+	const bool useDepth = false;
 
-  auto& engine = EngineCore::instance();
-  const auto& assets = engine.assets();
-  const TextureHandle atlasPrimary = context->textures.at("_atlas_primary");
-  const TextureHandle atlasSecondary = context->textures.at("_atlas_secondary");
+	auto& engine = EngineCore::instance();
+	const auto& assets = engine.assets();
+	const TextureHandle atlasPrimary = context->textures.at("_atlas_primary");
+	const TextureHandle atlasSecondary = context->textures.at("_atlas_secondary");
 
-  auto smoothstep01 = [](f32 t) {
+	auto smoothstep01 = [](f32 t) {
 	t = clamp(t, 0.0f, 1.0f);
 	return t * t * (3.0f - 2.0f * t);
-  };
-  // Iterate over all sprites in the sorted front queue
-  RenderQueues::forEachSprite([&](const SpriteQueueItem& item, size_t) {
+	};
+	// Iterate over all sprites in the sorted front queue
+	RenderQueues::forEachSprite([&](const SpriteQueueItem& item, size_t) {
 	const auto& options = item.options;
 	const ImgMeta* imgmeta = item.imgmeta;
 	const auto& meta = *imgmeta;
@@ -74,23 +74,23 @@ void renderSpriteBatchSoftware(SoftwareBackend* softBackend,
 	const SpriteParallaxRig& parallaxRig = RenderQueues::spriteParallaxRig;
 	f32 parallaxWeight = clamp(options.parallax_weight.value_or(0.0f), -1.0f, 1.0f);
 	if (layer != RenderLayer::World) {
-	  parallaxWeight = 0.0f;
+		parallaxWeight = 0.0f;
 	}
 
 	TextureHandle tex = nullptr;
 	if (meta.atlassed) {
-	  if (meta.atlasid == ENGINE_ATLAS_INDEX) {
+		if (meta.atlasid == ENGINE_ATLAS_INDEX) {
 		tex = context->textures.at(ENGINE_ATLAS_TEXTURE_KEY);
-	  } else if (meta.atlasid == context->primaryAtlas()) {
+		} else if (meta.atlasid == context->primaryAtlas()) {
 		tex = atlasPrimary;
-	  } else if (meta.atlasid == context->secondaryAtlas()) {
+		} else if (meta.atlasid == context->secondaryAtlas()) {
 		tex = atlasSecondary;
-	  } else {
+		} else {
 		throw BMSX_RUNTIME_ERROR("[SpritesPipeline] Atlas not loaded into a slot.");
-	  }
+		}
 	} else {
-	  const auto* imgAsset = assets.getImg(options.imgid);
-	  tex = reinterpret_cast<TextureHandle>(imgAsset->textureHandle);
+		const auto* imgAsset = assets.getImg(options.imgid);
+		tex = reinterpret_cast<TextureHandle>(imgAsset->textureHandle);
 	}
 
 	// Get UV coordinates based on flip options
@@ -123,11 +123,11 @@ void renderSpriteBatchSoftware(SoftwareBackend* softBackend,
 		dy *= axisFlip;
 	const f32 baseScale = 1.0f + ((parallaxRig.scale - 1.0f) * weight * parallaxRig.scale_strength);
 	const f32 impactSign = (parallaxRig.impact > 0.0f)
-							   ? 1.0f
-							   : ((parallaxRig.impact < 0.0f) ? -1.0f : 0.0f);
+								? 1.0f
+								: ((parallaxRig.impact < 0.0f) ? -1.0f : 0.0f);
 	const f32 impactMask = (dir * impactSign > 0.0f) ? 1.0f : 0.0f;
 	const f32 pulse = std::exp(-8.0f * parallaxRig.impact_t)
-					  * std::abs(parallaxRig.impact) * weight * impactMask;
+						* std::abs(parallaxRig.impact) * weight * impactMask;
 	const f32 parallaxScaleMul = baseScale + pulse;
 
 	// Destination position and size
@@ -149,9 +149,9 @@ void renderSpriteBatchSoftware(SoftwareBackend* softBackend,
 	i32 dstH = static_cast<i32>(scaledY1) - dstY;
 
 	softBackend->blitTexture(tex, srcX, srcY, srcW, srcH, dstX, dstY, dstW,
-							 dstH, zNorm, colorize, flip.flip_h, flip.flip_v,
-							 dither, useDepth);
-  });
+								dstH, zNorm, colorize, flip.flip_h, flip.flip_v,
+								dither, useDepth);
+	});
 }
 }  // namespace
 
@@ -160,53 +160,53 @@ void renderSpriteBatchSoftware(SoftwareBackend* softBackend,
  * Mirrors TypeScript renderSpriteBatch().
  */
 void renderSpriteBatch(GPUBackend* backend, GameView* context) {
-  switch (backend->type()) {
+	switch (backend->type()) {
 	case BackendType::Software:
-	  renderSpriteBatchSoftware(static_cast<SoftwareBackend*>(backend),
+		renderSpriteBatchSoftware(static_cast<SoftwareBackend*>(backend),
 								context);
-	  return;
+		return;
 	case BackendType::OpenGLES2: {
 #if !BMSX_ENABLE_GLES2
-	  throw BMSX_RUNTIME_ERROR("[SpritesPipeline] OpenGLES2 backend disabled at compile time.");
+		throw BMSX_RUNTIME_ERROR("[SpritesPipeline] OpenGLES2 backend disabled at compile time.");
 #else
-	  auto& engine = EngineCore::instance();
-	  auto* view = engine.view();
+		auto& engine = EngineCore::instance();
+		auto* view = engine.view();
 
-	  SpritesPipelineState spriteState;
-	  spriteState.width = static_cast<i32>(view->offscreenCanvasSize.x);
-	  spriteState.height = static_cast<i32>(view->offscreenCanvasSize.y);
-	  spriteState.baseWidth = static_cast<i32>(view->viewportSize.x);
-	  spriteState.baseHeight = static_cast<i32>(view->viewportSize.y);
+		SpritesPipelineState spriteState;
+		spriteState.width = static_cast<i32>(view->offscreenCanvasSize.x);
+		spriteState.height = static_cast<i32>(view->offscreenCanvasSize.y);
+		spriteState.baseWidth = static_cast<i32>(view->viewportSize.x);
+		spriteState.baseHeight = static_cast<i32>(view->viewportSize.y);
 
-	  auto primaryIt = view->textures.find("_atlas_primary");
-	  if (primaryIt == view->textures.end() || !primaryIt->second) {
+		auto primaryIt = view->textures.find("_atlas_primary");
+		if (primaryIt == view->textures.end() || !primaryIt->second) {
 		throw BMSX_RUNTIME_ERROR("[SpritesPipeline] Texture '_atlas_primary' missing from view textures.");
-	  }
-	  spriteState.atlasPrimaryTex = primaryIt->second;
-	  auto secondaryIt = view->textures.find("_atlas_secondary");
-	  if (secondaryIt != view->textures.end()) {
+		}
+		spriteState.atlasPrimaryTex = primaryIt->second;
+		auto secondaryIt = view->textures.find("_atlas_secondary");
+		if (secondaryIt != view->textures.end()) {
 		spriteState.atlasSecondaryTex = secondaryIt->second;
-	  }
-	  auto engineIt = view->textures.find(ENGINE_ATLAS_TEXTURE_KEY);
-	  if (engineIt != view->textures.end()) {
+		}
+		auto engineIt = view->textures.find(ENGINE_ATLAS_TEXTURE_KEY);
+		if (engineIt != view->textures.end()) {
 		spriteState.atlasEngineTex = engineIt->second;
-	  }
+		}
 
-	  spriteState.ambientEnabledDefault = view->spriteAmbientEnabledDefault;
-	  spriteState.ambientFactorDefault = view->spriteAmbientFactorDefault;
-	  spriteState.viewportTypeIde =
-		  (view->viewportTypeIde == GameView::ViewportType::Viewport)
-			  ? "viewport"
-			  : "offscreen";
+		spriteState.ambientEnabledDefault = view->spriteAmbientEnabledDefault;
+		spriteState.ambientFactorDefault = view->spriteAmbientFactorDefault;
+		spriteState.viewportTypeIde =
+			(view->viewportTypeIde == GameView::ViewportType::Viewport)
+				? "viewport"
+				: "offscreen";
 
-	  renderSpriteBatchGLES2(static_cast<OpenGLES2Backend*>(backend), view,
-							 spriteState);
-	  return;
+		renderSpriteBatchGLES2(static_cast<OpenGLES2Backend*>(backend), view,
+								spriteState);
+		return;
 #endif
 	}
 	default:
-	  return;
-  }
+		return;
+	}
 }
 
 }  // namespace SpritesPipeline

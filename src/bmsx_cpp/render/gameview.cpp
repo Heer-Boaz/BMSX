@@ -296,8 +296,8 @@ void GameView::setSpriteParallaxRig(f32 vy, f32 scale, f32 impact, f32 impact_t,
 									f32 scale_strength, f32 flip_strength,
 									f32 flip_window) {
 	RenderQueues::setSpriteParallaxRig(vy, scale, impact, impact_t, bias_px,
-									   parallax_strength, scale_strength,
-									   flip_strength, flip_window);
+										parallax_strength, scale_strength,
+										flip_strength, flip_window);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -423,7 +423,7 @@ inline Color unpackLinear(u32 pixel, const std::array<f32, 256>& table) {
 }
 
 inline Color sampleLinear(const u32* src, i32 width, i32 height, f32 x, f32 y,
-						  const std::array<f32, 256>& table) {
+							const std::array<f32, 256>& table) {
 	const i32 xi = static_cast<i32>(std::floor(x + 0.5f));
 	const i32 yi = static_cast<i32>(std::floor(y + 0.5f));
 	const i32 clampedX = std::min(width - 1, std::max(0, xi));
@@ -441,8 +441,8 @@ struct BlurContrast {
 };
 
 inline BlurContrast applyBlurAndContrast(const u32* src, i32 width, i32 height,
-										 f32 x, f32 y,
-										 const std::array<f32, 256>& table) {
+											f32 x, f32 y,
+											const std::array<f32, 256>& table) {
 	f32 accumR = 0.0f;
 	f32 accumG = 0.0f;
 	f32 accumB = 0.0f;
@@ -511,9 +511,9 @@ inline f32 quantizeRgb565Bias(f32 c, f32 levels, f32 thr0_1) {
 inline i32 psxDitherOffset4x4(i32 x, i32 y) {
 	static const i32 D4[16] = {
 		-4,  0, -3,  1,
-		 2, -2,  3, -1,
+			2, -2,  3, -1,
 		-3,  1, -4,  0,
-		 3, -1,  2, -2
+			3, -1,  2, -2
 	};
 	const i32 ix = x & 3;
 	const i32 iy = y & 3;
@@ -536,12 +536,12 @@ inline f32 quantizeRgb555PSX(f32 c, i32 ditherOffset) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 void GameView::applyCRTPostProcessing(const u32* src,
-									  i32 srcWidth,
-									  i32 srcHeight,
-									  u32* dst,
-									  i32 dstWidth,
-									  i32 dstHeight,
-									  i32 dstPitch) {
+										i32 srcWidth,
+										i32 srcHeight,
+										u32* dst,
+										i32 dstWidth,
+										i32 dstHeight,
+										i32 dstPitch) {
 	const i32 dstPixelsPerRow = dstPitch / sizeof(u32);
 	const size_t srcSize = static_cast<size_t>(srcWidth) * static_cast<size_t>(srcHeight);
 
@@ -656,9 +656,9 @@ void GameView::applyCRTPostProcessing(const u32* src,
 				const f32 shiftY = dirY * shiftPx;
 
 				const Color rSample = sampleLinear(scratch, srcWidth, srcHeight,
-												   srcX + shiftX, srcY + shiftY, table);
+													srcX + shiftX, srcY + shiftY, table);
 				const Color bSample = sampleLinear(scratch, srcWidth, srcHeight,
-												   srcX - shiftX, srcY - shiftY, table);
+													srcX - shiftX, srcY - shiftY, table);
 				const Color fringed{rSample.r, baseTex.g, bSample.b, 1.0f};
 				color.r += (fringed.r - color.r) * mixK;
 				color.g += (fringed.g - color.g) * mixK;
@@ -717,8 +717,8 @@ void GameView::applyCRTPostProcessing(const u32* src,
 					hashNoise(0.0f, std::floor(ySrc) + time * 30.0f, 0.0f) - 0.5f;
 				const f32 pixNoise =
 					hashNoise(uvX * srcWf + random,
-							  uvY * srcHf + random,
-							  time) - 0.5f;
+								uvY * srcHf + random,
+								time) - 0.5f;
 				const f32 lum = luminance(color);
 				const f32 n = pixNoise * 0.65f + lineNoise * 0.35f;
 				const f32 k = smoothstep(kBlackCutoff, kBlackSoft, lum);

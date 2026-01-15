@@ -2,8 +2,8 @@ title: Pietsona 2025
 short_name: '2025'
 rom_name: '2025'
 vm:
-  viewport: {width: 320, height: 240}
-  canonicalization: lower
-  namespace: 'pietsona2025'
+	viewport: {width: 320, height: 240}
+	canonicalization: lower
+	namespace: 'pietsona2025'
 lua:
-  entry_path: cart.lua
+	entry_path: cart.lua

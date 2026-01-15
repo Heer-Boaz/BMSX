@@ -73,7 +73,7 @@ export const bootrom = {
 	 * @function start - Starts the game using the loaded cart and engine assets.
 	 * @returns {Promise<void>} Resolves when startup finishes.
 	 *
-	* @var {boolean} snd_unlocked - A flag indicating whether the audio has been unlocked.
+	 * @var {boolean} snd_unlocked - A flag indicating whether the audio has been unlocked.
 	 */
 	cartridge: null as ArrayBuffer,
 	engineAssets: null as ArrayBuffer,

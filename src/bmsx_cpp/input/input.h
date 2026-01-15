@@ -167,11 +167,11 @@ public:
 	
 	// Handle gamepad button event
 	void handleGamepadButtonEvent(const std::string& deviceId, const std::string& button, 
-								   bool down, f32 value = 1.0f);
+									bool down, f32 value = 1.0f);
 	
 	// Handle gamepad axis event
 	void handleGamepadAxisEvent(const std::string& deviceId, const std::string& axis, 
-								 f32 x, f32 y = 0.0f);
+									f32 x, f32 y = 0.0f);
 	
 	// Handle pointer button event
 	void handlePointerButtonEvent(const std::string& deviceId, const std::string& button, bool down);

@@ -23,9 +23,9 @@ BMSX_SYSTEM_ROM_NAME="${BMSX_SYSTEM_ROM_NAME:-}"
 
 echo "[1/7] Core check..."
 if [ ! -f "$CORE_SRC" ]; then
-  echo "ERROR: $CORE_SRC not found."
-  echo "Upload your core to /etc/libretro/core/bmsx_libretro.so first."
-  exit 1
+	echo "ERROR: $CORE_SRC not found."
+	echo "Upload your core to /etc/libretro/core/bmsx_libretro.so first."
+	exit 1
 fi
 
 echo "[2/7] Ensure libretro directories exist..."
@@ -48,23 +48,23 @@ echo "[5/7] Locate RetroArch host..."
 HOST=""
 # Prefer the clover-specific host if present
 for p in \
-  /bin/retroarch-clover /usr/bin/retroarch-clover /sbin/retroarch-clover /usr/sbin/retroarch-clover \
-  /bin/retroarch /usr/bin/retroarch /sbin/retroarch /usr/sbin/retroarch \
-  /var/lib/hakchi/rootfs/bin/retroarch-clover /var/lib/hakchi/rootfs/usr/bin/retroarch-clover \
-  /var/lib/hakchi/rootfs/bin/retroarch /var/lib/hakchi/rootfs/usr/bin/retroarch
+	/bin/retroarch-clover /usr/bin/retroarch-clover /sbin/retroarch-clover /usr/sbin/retroarch-clover \
+	/bin/retroarch /usr/bin/retroarch /sbin/retroarch /usr/sbin/retroarch \
+	/var/lib/hakchi/rootfs/bin/retroarch-clover /var/lib/hakchi/rootfs/usr/bin/retroarch-clover \
+	/var/lib/hakchi/rootfs/bin/retroarch /var/lib/hakchi/rootfs/usr/bin/retroarch
 do
-  if [ -x "$p" ]; then HOST="$p"; break; fi
+	if [ -x "$p" ]; then HOST="$p"; break; fi
 done
 
 if [ -z "$HOST" ]; then
-  # Last resort: search (can take a while)
-  HOST="$(find / -type f -name 'retroarch*' -perm /111 2>/dev/null | head -n 1 || true)"
+	# Last resort: search (can take a while)
+	HOST="$(find / -type f -name 'retroarch*' -perm /111 2>/dev/null | head -n 1 || true)"
 fi
 
 if [ -z "$HOST" ] || [ ! -x "$HOST" ]; then
-  echo "ERROR: No RetroArch host binary found."
-  echo "Install a RetroArch module (KMFD hub), sync to the mini, then rerun this script."
-  exit 2
+	echo "ERROR: No RetroArch host binary found."
+	echo "Install a RetroArch module (KMFD hub), sync to the mini, then rerun this script."
+	exit 2
 fi
 echo "OK: host = $HOST"
 
@@ -82,17 +82,17 @@ mkdir -p "$SYSTEM_DIR" "$MACHINES_DIR" "$BMSX_MACHINE_DIR"
 chmod 755 "$SYSTEM_DIR" "$MACHINES_DIR" "$BMSX_MACHINE_DIR" 2>/dev/null || true
 
 if [ -n "$BMSX_SYSTEM_ROM_SRC" ]; then
-  if [ ! -f "$BMSX_SYSTEM_ROM_SRC" ]; then
-    echo "WARN: BMSX_SYSTEM_ROM_SRC set but file not found: $BMSX_SYSTEM_ROM_SRC"
-  else
-    if [ -z "$BMSX_SYSTEM_ROM_NAME" ]; then
-      # Default to source basename if not provided
-      BMSX_SYSTEM_ROM_NAME="$(basename "$BMSX_SYSTEM_ROM_SRC")"
-    fi
-    echo "Installing system ROM: $BMSX_SYSTEM_ROM_SRC -> $BMSX_MACHINE_DIR/$BMSX_SYSTEM_ROM_NAME"
-    cp "$BMSX_SYSTEM_ROM_SRC" "$BMSX_MACHINE_DIR/$BMSX_SYSTEM_ROM_NAME"
-    chmod 644 "$BMSX_MACHINE_DIR/$BMSX_SYSTEM_ROM_NAME"
-  fi
+	if [ ! -f "$BMSX_SYSTEM_ROM_SRC" ]; then
+	echo "WARN: BMSX_SYSTEM_ROM_SRC set but file not found: $BMSX_SYSTEM_ROM_SRC"
+	else
+	if [ -z "$BMSX_SYSTEM_ROM_NAME" ]; then
+		# Default to source basename if not provided
+		BMSX_SYSTEM_ROM_NAME="$(basename "$BMSX_SYSTEM_ROM_SRC")"
+	fi
+	echo "Installing system ROM: $BMSX_SYSTEM_ROM_SRC -> $BMSX_MACHINE_DIR/$BMSX_SYSTEM_ROM_NAME"
+	cp "$BMSX_SYSTEM_ROM_SRC" "$BMSX_MACHINE_DIR/$BMSX_SYSTEM_ROM_NAME"
+	chmod 644 "$BMSX_MACHINE_DIR/$BMSX_SYSTEM_ROM_NAME"
+	fi
 fi
 
 sync

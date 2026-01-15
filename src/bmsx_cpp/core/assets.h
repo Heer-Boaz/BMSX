@@ -74,7 +74,7 @@ struct ImgMeta {
 	// Helper to get UV rect (u0, v0, u1, v1) for simple blitting
 	void getUVRect(f32& u0, f32& v0, f32& u1, f32& v1, bool flipH = false, bool flipV = false) const {
 		const auto& tc = flipH ? (flipV ? texcoords_fliphv : texcoords_fliph)
-							   : (flipV ? texcoords_flipv : texcoords);
+								: (flipV ? texcoords_flipv : texcoords);
 		const f32 umin = std::min({tc[0], tc[2], tc[4], tc[6], tc[8], tc[10]});
 		const f32 umax = std::max({tc[0], tc[2], tc[4], tc[6], tc[8], tc[10]});
 		const f32 vmin = std::min({tc[1], tc[3], tc[5], tc[7], tc[9], tc[11]});
@@ -249,10 +249,10 @@ public:
 struct AssetLoadCallbacks {
 	// Return true to keep a copy of pixel data in ImgAsset, false to skip.
 	std::function<bool(const std::string& assetId,
-				   ImgAsset& asset,
-				   const u8* rgba,
-				   i32 width,
-				   i32 height)> onImageDecoded;
+					ImgAsset& asset,
+					const u8* rgba,
+					i32 width,
+					i32 height)> onImageDecoded;
 };
 
 /* ============================================================================
@@ -261,9 +261,9 @@ struct AssetLoadCallbacks {
 
 // Load assets from ROM buffer into RuntimeAssets
 bool loadAssetsFromRom(const u8* buffer,
-			   size_t size,
-			   RuntimeAssets& assets,
-			   const AssetLoadCallbacks* callbacks = nullptr);
+				size_t size,
+				RuntimeAssets& assets,
+				const AssetLoadCallbacks* callbacks = nullptr);
 
 } // namespace bmsx
 

@@ -48,14 +48,14 @@ ts-morph converter specifics
 - Rewrites `this.prop` to `prop` within constructor and non-static methods using AST, respecting different this-scopes (arrow functions keep lexical this; function expressions/declarations start a new this and are not rewritten inside).
 - Collects all static fields/methods into `export const <ClassName>Statics = { ... }` and rewires `ClassName.something` to `<ClassName>Statics.something` when using `--project` mode.
 - When run with `--project tsconfig.json`, the converter will:
-	- Update import module specifiers to point at the generated `.morph` files.
-	- Rewrite `new ClassName(...)` to `init(...)` and add a named import for `init`.
-	- Rewrite static accesses `ClassName.foo` to `<ClassName>Statics.foo` and add a named import for `<ClassName>Statics`.
-	- Remove now-unused class imports from the import clause.
-	- With `--flatten-instances`, conservatively rewrite patterns:
-		- `const obj = init(...); obj.method(a, b)` → `method(a, b)`
-		- `const obj = init(...); obj.prop` → `prop`
-		Constraints: `obj` must be declared as `const` in the same file; no writes to `obj` or its properties; no aliasing or complex usage. If not safe, instance usages are left untouched.
+    - Update import module specifiers to point at the generated `.morph` files.
+    - Rewrite `new ClassName(...)` to `init(...)` and add a named import for `init`.
+    - Rewrite static accesses `ClassName.foo` to `<ClassName>Statics.foo` and add a named import for `<ClassName>Statics`.
+    - Remove now-unused class imports from the import clause.
+    - With `--flatten-instances`, conservatively rewrite patterns:
+        - `const obj = init(...); obj.method(a, b)` → `method(a, b)`
+        - `const obj = init(...); obj.prop` → `prop`
+        Constraints: `obj` must be declared as `const` in the same file; no writes to `obj` or its properties; no aliasing or complex usage. If not safe, instance usages are left untouched.
 
 Feedback
 --------

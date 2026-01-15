@@ -1,236 +1,236 @@
 [
-  {
+	{
 	"description": "navigate down",
 	"frame": 30,
 	"event": {
-	  "type": "button",
-	  "deviceId": "keyboard:0",
-	  "code": "ArrowDown",
-	  "down": true,
-	  "value": 1,
-	  "timestamp": 0,
-	  "pressId": 201
+		"type": "button",
+		"deviceId": "keyboard:0",
+		"code": "ArrowDown",
+		"down": true,
+		"value": 1,
+		"timestamp": 0,
+		"pressId": 201
 	}
-  },
-  {
+	},
+	{
 	"description": "navigate down release",
 	"frame": 32,
 	"event": {
-	  "type": "button",
-	  "deviceId": "keyboard:0",
-	  "code": "ArrowDown",
-	  "down": false,
-	  "value": 0,
-	  "timestamp": 0,
-	  "pressId": 201
+		"type": "button",
+		"deviceId": "keyboard:0",
+		"code": "ArrowDown",
+		"down": false,
+		"value": 0,
+		"timestamp": 0,
+		"pressId": 201
 	}
-  },
-  {
+	},
+	{
 	"description": "confirm",
 	"frame": 60,
 	"event": {
-	  "type": "button",
-	  "deviceId": "keyboard:0",
-	  "code": "KeyZ",
-	  "down": true,
-	  "value": 1,
-	  "timestamp": 0,
-	  "pressId": 202
+		"type": "button",
+		"deviceId": "keyboard:0",
+		"code": "KeyZ",
+		"down": true,
+		"value": 1,
+		"timestamp": 0,
+		"pressId": 202
 	}
-  },
-  {
+	},
+	{
 	"description": "confirm release",
 	"frame": 62,
 	"event": {
-	  "type": "button",
-	  "deviceId": "keyboard:0",
-	  "code": "KeyZ",
-	  "down": false,
-	  "value": 0,
-	  "timestamp": 0,
-	  "pressId": 202
+		"type": "button",
+		"deviceId": "keyboard:0",
+		"code": "KeyZ",
+		"down": false,
+		"value": 0,
+		"timestamp": 0,
+		"pressId": 202
 	}
-  },
-  {
+	},
+	{
 	"description": "walk right start",
 	"frame": 280,
 	"event": {
-	  "type": "button",
-	  "deviceId": "keyboard:0",
-	  "code": "ArrowRight",
-	  "down": true,
-	  "value": 1,
-	  "timestamp": 0,
-	  "pressId": 203
+		"type": "button",
+		"deviceId": "keyboard:0",
+		"code": "ArrowRight",
+		"down": true,
+		"value": 1,
+		"timestamp": 0,
+		"pressId": 203
 	}
-  },
-  {
+	},
+	{
 	"description": "walk right end",
 	"frame": 310,
 	"event": {
-	  "type": "button",
-	  "deviceId": "keyboard:0",
-	  "code": "ArrowRight",
-	  "down": false,
-	  "value": 0,
-	  "timestamp": 0,
-	  "pressId": 203
+		"type": "button",
+		"deviceId": "keyboard:0",
+		"code": "ArrowRight",
+		"down": false,
+		"value": 0,
+		"timestamp": 0,
+		"pressId": 203
 	}
-  },
-  {
+	},
+	{
 	"description": "punch",
 	"frame": 320,
 	"event": {
-	  "type": "button",
-	  "deviceId": "keyboard:0",
-	  "code": "KeyX",
-	  "down": true,
-	  "value": 1,
-	  "timestamp": 0,
-	  "pressId": 204
+		"type": "button",
+		"deviceId": "keyboard:0",
+		"code": "KeyX",
+		"down": true,
+		"value": 1,
+		"timestamp": 0,
+		"pressId": 204
 	}
-  },
-  {
+	},
+	{
 	"description": "punch release",
 	"frame": 322,
 	"event": {
-	  "type": "button",
-	  "deviceId": "keyboard:0",
-	  "code": "KeyX",
-	  "down": false,
-	  "value": 0,
-	  "timestamp": 0,
-	  "pressId": 204
+		"type": "button",
+		"deviceId": "keyboard:0",
+		"code": "KeyX",
+		"down": false,
+		"value": 0,
+		"timestamp": 0,
+		"pressId": 204
 	}
-  },
-  {
+	},
+	{
 	"description": "highkick",
 	"frame": 340,
 	"event": {
-	  "type": "button",
-	  "deviceId": "keyboard:0",
-	  "code": "KeyA",
-	  "down": true,
-	  "value": 1,
-	  "timestamp": 0,
-	  "pressId": 205
+		"type": "button",
+		"deviceId": "keyboard:0",
+		"code": "KeyA",
+		"down": true,
+		"value": 1,
+		"timestamp": 0,
+		"pressId": 205
 	}
-  },
-  {
+	},
+	{
 	"description": "highkick release",
 	"frame": 342,
 	"event": {
-	  "type": "button",
-	  "deviceId": "keyboard:0",
-	  "code": "KeyA",
-	  "down": false,
-	  "value": 0,
-	  "timestamp": 0,
-	  "pressId": 205
+		"type": "button",
+		"deviceId": "keyboard:0",
+		"code": "KeyA",
+		"down": false,
+		"value": 0,
+		"timestamp": 0,
+		"pressId": 205
 	}
-  },
-  {
+	},
+	{
 	"description": "walk right for jump",
 	"frame": 360,
 	"event": {
-	  "type": "button",
-	  "deviceId": "keyboard:0",
-	  "code": "ArrowRight",
-	  "down": true,
-	  "value": 1,
-	  "timestamp": 0,
-	  "pressId": 206
+		"type": "button",
+		"deviceId": "keyboard:0",
+		"code": "ArrowRight",
+		"down": true,
+		"value": 1,
+		"timestamp": 0,
+		"pressId": 206
 	}
-  },
-  {
+	},
+	{
 	"description": "jump right",
 	"frame": 362,
 	"event": {
-	  "type": "button",
-	  "deviceId": "keyboard:0",
-	  "code": "ArrowUp",
-	  "down": true,
-	  "value": 1,
-	  "timestamp": 0,
-	  "pressId": 207
+		"type": "button",
+		"deviceId": "keyboard:0",
+		"code": "ArrowUp",
+		"down": true,
+		"value": 1,
+		"timestamp": 0,
+		"pressId": 207
 	}
-  },
-  {
+	},
+	{
 	"description": "jump release",
 	"frame": 364,
 	"event": {
-	  "type": "button",
-	  "deviceId": "keyboard:0",
-	  "code": "ArrowUp",
-	  "down": false,
-	  "value": 0,
-	  "timestamp": 0,
-	  "pressId": 207
+		"type": "button",
+		"deviceId": "keyboard:0",
+		"code": "ArrowUp",
+		"down": false,
+		"value": 0,
+		"timestamp": 0,
+		"pressId": 207
 	}
-  },
-  {
+	},
+	{
 	"description": "walk right release after jump",
 	"frame": 380,
 	"event": {
-	  "type": "button",
-	  "deviceId": "keyboard:0",
-	  "code": "ArrowRight",
-	  "down": false,
-	  "value": 0,
-	  "timestamp": 0,
-	  "pressId": 206
+		"type": "button",
+		"deviceId": "keyboard:0",
+		"code": "ArrowRight",
+		"down": false,
+		"value": 0,
+		"timestamp": 0,
+		"pressId": 206
 	}
-  },
-  {
+	},
+	{
 	"description": "duck start",
 	"frame": 400,
 	"event": {
-	  "type": "button",
-	  "deviceId": "keyboard:0",
-	  "code": "ArrowDown",
-	  "down": true,
-	  "value": 1,
-	  "timestamp": 0,
-	  "pressId": 208
+		"type": "button",
+		"deviceId": "keyboard:0",
+		"code": "ArrowDown",
+		"down": true,
+		"value": 1,
+		"timestamp": 0,
+		"pressId": 208
 	}
-  },
-  {
+	},
+	{
 	"description": "duckkick",
 	"frame": 410,
 	"event": {
-	  "type": "button",
-	  "deviceId": "keyboard:0",
-	  "code": "KeyZ",
-	  "down": true,
-	  "value": 1,
-	  "timestamp": 0,
-	  "pressId": 209
+		"type": "button",
+		"deviceId": "keyboard:0",
+		"code": "KeyZ",
+		"down": true,
+		"value": 1,
+		"timestamp": 0,
+		"pressId": 209
 	}
-  },
-  {
+	},
+	{
 	"description": "duckkick release",
 	"frame": 412,
 	"event": {
-	  "type": "button",
-	  "deviceId": "keyboard:0",
-	  "code": "KeyZ",
-	  "down": false,
-	  "value": 0,
-	  "timestamp": 0,
-	  "pressId": 209
+		"type": "button",
+		"deviceId": "keyboard:0",
+		"code": "KeyZ",
+		"down": false,
+		"value": 0,
+		"timestamp": 0,
+		"pressId": 209
 	}
-  },
-  {
+	},
+	{
 	"description": "duck end",
 	"frame": 430,
 	"event": {
-	  "type": "button",
-	  "deviceId": "keyboard:0",
-	  "code": "ArrowDown",
-	  "down": false,
-	  "value": 0,
-	  "timestamp": 0,
-	  "pressId": 208
+		"type": "button",
+		"deviceId": "keyboard:0",
+		"code": "ArrowDown",
+		"down": false,
+		"value": 0,
+		"timestamp": 0,
+		"pressId": 208
 	}
-  }
+	}
 ]

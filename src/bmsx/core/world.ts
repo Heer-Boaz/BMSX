@@ -447,9 +447,9 @@ export class World implements Stateful, RegisterablePersistent {
 	}
 
 	/**
-	* Init world after construction. Needed as the states have not been build at
-	* the constructor's scope yet. So, this is a kind of `onspawn` for the world.
-	*/
+	 * Init world after construction. Needed as the states have not been build at
+	 * the constructor's scope yet. So, this is a kind of `onspawn` for the world.
+	 */
 	public startWorldStateMachine(): this {
 		// Check if the FSM ID refers to a valid state machine in the library, but only if it was explicitly passed as an argument
 		if (this._fsmId && !StateDefinitions[this._fsmId]) {

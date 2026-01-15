@@ -19,7 +19,7 @@ static constexpr f32 MIN_GAIN = 0.0001f;
 
 SoundMaster::SoundMaster()
 	: m_rng(std::random_device{}()),
-	  m_unitDist(0.0f, 1.0f) {
+		m_unitDist(0.0f, 1.0f) {
 	m_maxVoicesByType = {16, 1, 8};
 	resetPlaybackState();
 }
