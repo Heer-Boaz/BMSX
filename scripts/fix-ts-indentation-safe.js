@@ -10,8 +10,8 @@ const TAB_WIDTH = 4;
 // sets: INCLUDED_EXTS (what file extensions we process) and
 // SPACE_ONLY_EXTS (those extensions where tabs should be replaced with
 // spaces, not converted to tabs).
-const INCLUDED_EXTS = new Set(['ts', 'tsx', 'js', 'jsx', 'jsm', 'json', 'md', 'css', 'html', 'ps1', 'sh', 'glsl', 'yaml', 'yml', 'cpp', 'h']);
-const SPACE_ONLY_EXTS = new Set(['yaml', 'yml']);
+const INCLUDED_EXTS = new Set(['ts', 'tsx', 'js', 'jsx', 'jsm', 'json', 'md', 'css', 'html', 'ps1', 'sh', 'glsl', 'yaml', 'yml', 'cpp', 'h', 'c', 'hpp']);
+const SPACE_ONLY_EXTS = new Set(['yaml', 'yml', 'md']);
 
 function parseGitignore() {
 	const gitignorePath = path.join(ROOT, '.gitignore');
