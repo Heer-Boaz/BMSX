@@ -194,30 +194,23 @@ function convertFile(src, tabWidth = TAB_WIDTH) {
 		pos += line.length + 1; // account for removed/newline
 	}
 
-	const indentSizes = new Map();
-	for (const { text, inTemplateContent } of lines) {
-		if (inTemplateContent) continue;
-		const indentMatch = text.match(/^[ ]+/);
-		if (!indentMatch) continue;
-		const indent = indentMatch[0];
-		const len = indent.length;
-		if (len < 2) continue;
-		indentSizes.set(len, (indentSizes.get(len) || 0) + 1);
-	}
-	let indentUnit = tabWidth;
-	for (const [len, count] of indentSizes.entries()) {
-		if (count > 1 && len < indentUnit) indentUnit = len;
-	}
-
 	// Finally convert leading indentation for lines not in template content
 	const outLines = lines.map(({ text, inTemplateContent }) => {
 		if (inTemplateContent) return text; // don't touch lines which are inside template literal content
 		const indentMatch = text.match(/^[ \t]+/);
 		if (!indentMatch) return text;
 		const indent = indentMatch[0];
-		if (indent.includes('\t')) return text;
-		if (indentUnit <= 0 || (indent.length % indentUnit) !== 0) return text;
-		const tabs = indent.length / indentUnit;
+		let columns = 0;
+		for (const ch of indent) {
+			if (ch === '\t') {
+				const toNext = tabWidth - (columns % tabWidth);
+				columns += toNext;
+			} else {
+				columns += 1;
+			}
+		}
+		if (columns === 0) return text;
+		const tabs = Math.ceil(columns / tabWidth);
 		const newIndent = '\t'.repeat(tabs);
 		return newIndent + text.slice(indent.length);
 	});
