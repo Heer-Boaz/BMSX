@@ -1,0 +1,3 @@
+[submodule "tools/retroarch-gles2"]
+	path = tools/retroarch-gles2
+	url = https://github.com/libretro/RetroArch.git
