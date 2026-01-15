@@ -200,6 +200,12 @@ function convertFile(src, tabWidth = TAB_WIDTH) {
 		const indentMatch = text.match(/^[ \t]+/);
 		if (!indentMatch) return text;
 		const indent = indentMatch[0];
+		const rest = text.slice(indent.length);
+		const isCommentStar = rest.startsWith('*');
+		if (isCommentStar && !indent.includes('\t') && indent.length < tabWidth) {
+			// Keep short comment padding (e.g. " *") from being blown up to a tab.
+			return text;
+		}
 		let columns = 0;
 		for (const ch of indent) {
 			if (ch === '\t') {
@@ -212,7 +218,10 @@ function convertFile(src, tabWidth = TAB_WIDTH) {
 		if (columns === 0) return text;
 		const tabs = Math.max(1, Math.ceil(columns / tabWidth));
 		const newIndent = '\t'.repeat(tabs);
-		return newIndent + text.slice(indent.length);
+		if (isCommentStar) {
+			return newIndent + ' ' + rest;
+		}
+		return newIndent + rest;
 	});
 
 	return outLines.join('\n');
