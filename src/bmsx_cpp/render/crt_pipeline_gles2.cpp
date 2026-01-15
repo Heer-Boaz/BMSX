@@ -178,9 +178,10 @@ float hashNoise(vec2 uv, float t){
 
 struct BlurContrast { vec3 blurred; float contrast; };
 
-BlurContrast applyBlurAndContrast(vec2 uv, vec2 texel, float footprintPx, vec3 centerColor){
+BlurContrast applyBlurAndContrast(vec2 uv, vec2 texel, float footprintPx){
 	vec2 stepUV = texel * footprintPx;
 	vec3 accum = vec3(0.0);
+	float centerLum = 0.0;
 	float neighLum = 0.0;
 	vec3 s;
 
@@ -215,7 +216,9 @@ BlurContrast applyBlurAndContrast(vec2 uv, vec2 texel, float footprintPx, vec3 c
 	s = texture2D(u_texture, uv + vec2(-1.0, 0.0) * stepUV).rgb;
 	accum += s * 24.0;
 	neighLum += dot(s, LUMA);
-	accum += centerColor * 36.0;
+	s = texture2D(u_texture, uv).rgb;
+	accum += s * 36.0;
+	centerLum = dot(s, LUMA);
 	s = texture2D(u_texture, uv + vec2(1.0, 0.0) * stepUV).rgb;
 	accum += s * 24.0;
 	neighLum += dot(s, LUMA);
@@ -251,7 +254,7 @@ BlurContrast applyBlurAndContrast(vec2 uv, vec2 texel, float footprintPx, vec3 c
 
 	BlurContrast bc;
 	bc.blurred = accum;
-	bc.contrast = abs(dot(centerColor, LUMA) - (neighLum * 0.125));
+	bc.contrast = abs(centerLum - (neighLum * 0.125));
 	return bc;
 }
 
@@ -272,14 +275,16 @@ vec3 applyScanlines(vec3 colorLinear, vec2 uv, vec2 srcPxRes){
 }
 
 vec3 applyApertureMask(vec3 colorLinear, vec2 uv, vec2 srcPxRes){
-	float x_src = uv.x * srcPxRes.x;
-	float triad = 0.5 + 0.5 * cos(6.2831853 * x_src);
-	vec3  mask  = vec3(1.0 + APERTURE_STRENGTH * triad,
-					   1.0,
-					   1.0 - APERTURE_STRENGTH * triad);
+	float x = floor(uv.x * srcPxRes.x);
+	float p = mod(x, 3.0);
+	float r = step(0.0, 1.0 - abs(p - 0.0));
+	float g = step(0.0, 1.0 - abs(p - 1.0));
+	float b = step(0.0, 1.0 - abs(p - 2.0));
+	vec3 mask = vec3(1.0) + APERTURE_STRENGTH * (vec3(r, g, b) * 2.0 - 1.0);
 
 	float lum = dot(colorLinear, LUMA);
-	float k   = smoothstep(BLACK_CUTOFF, BLACK_SOFT, lum);
+	float k   = smoothstep(0.0, 0.25, lum);
+	k = sqrt(k);
 	return colorLinear * (1.0 + k * (mask - 1.0));
 }
 
@@ -322,16 +327,34 @@ void main(){
 	if (u_enableColorBleed) color += u_colorBleed;
 
 	BlurContrast bc;
-	if (u_enableBlur || u_enableFringing) {
-		bc = applyBlurAndContrast(v_texcoord, texel, BLUR_FOOTPRINT_PX, color);
+	if (u_enableBlur || u_enableFringing || u_enableAperture || u_enableScanlines) {
+		bc = applyBlurAndContrast(v_texcoord, texel, BLUR_FOOTPRINT_PX);
 	} else {
-		bc.blurred = color; bc.contrast = 0.0;
+		bc.blurred = color;
+		bc.contrast = 0.0;
 	}
-	if (u_enableBlur) color = mix(color, bc.blurred, clamp(u_blurIntensity, 0.0, 1.0));
 
-	if (u_enableFringing) color = applyFringing(color, v_texcoord, texel, bc.contrast, FRINGING_MIX);
-	if (u_enableScanlines) color = applyScanlines(color, v_texcoord, srcPxRes);
-	if (u_enableAperture) color = applyApertureMask(color, v_texcoord, srcPxRes);
+	float edge = smoothstep(0.01, 0.05, bc.contrast);
+
+	if (u_enableBlur) {
+		float blurK = mix(0.25, 1.0, 1.0 - edge) * u_blurIntensity;
+		color = mix(color, bc.blurred, blurK);
+	}
+
+	if (u_enableFringing) {
+		float mixK = FRINGING_MIX * edge;
+		color = applyFringing(color, v_texcoord, texel, bc.contrast, mixK);
+	}
+
+	if (u_enableScanlines) {
+		vec3 s = applyScanlines(color, v_texcoord, srcPxRes);
+		color = mix(s, color, edge);
+	}
+
+	if (u_enableAperture) {
+		vec3 a = applyApertureMask(color, v_texcoord, srcPxRes);
+		color = mix(a, color, edge);
+	}
 
 	if (u_enableGlow) {
 		float b = dot(color, LUMA);

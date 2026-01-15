@@ -220,21 +220,21 @@ function menu.draw()
 	if y < 0 then y = 0 end
 	local z = 10000
 
-	put_rectfill(x, y + box_y, x + menu_w, y + box_y + box_h, z, colors.panel)
-	write(title, x + padding, y, z, colors.title)
+	put_rectfillcolor(x, y + box_y, x + menu_w, y + box_y + box_h, z, colors.panel, { layer = 'ui' })
+	write(title, x + padding, y, z, colors.title, { layer = 'ui' })
 
 	local row_y = y + box_y + padding
 	for i = 1, #entries do
 		local entry = entries[i]
 		if i == state.selected then
-			put_rectfill(x, row_y - 2, x + menu_w, row_y + line_h, z, colors.highlight)
+			put_rectfillcolor(x, row_y - 2, x + menu_w, row_y + line_h, z, colors.highlight, { layer = 'ui' })
 		end
 		local value = entry_value_label(entry)
 		local line = entry.label
 		if value ~= "-" and value ~= "" then
 			line = line .. ": " .. value
 		end
-		write(line, x + padding, row_y, z, colors.text)
+		write(line, x + padding, row_y, z, colors.text, { layer = 'ui' })
 		row_y = row_y + line_h
 	end
 

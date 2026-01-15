@@ -168,7 +168,7 @@ public:
 	bool applyGlow = true;
 	bool applyFringing = true;
 	bool applyAperture = true;
-	f32 noiseIntensity = 0.4f;
+	f32 noiseIntensity = 0.3f;
 	std::array<f32, 3> colorBleed = {0.02f, 0.0f, 0.0f};
 	f32 blurIntensity = 0.6f;
 	std::array<f32, 3> glowColor = {0.12f, 0.10f, 0.09f};

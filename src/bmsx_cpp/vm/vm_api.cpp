@@ -545,7 +545,7 @@ m_runtime.registerNativeFunction("put_rectfill", [this](const std::vector<Value>
 	(void)out;
 });
 
-m_runtime.registerNativeFunction("put_rectfillcolor", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+m_runtime.registerNativeFunction("put_rectfillcolor", [this, key](const std::vector<Value>& args, std::vector<Value>& out) {
 	int x0 = static_cast<int>(std::floor(asNumber(args.at(0))));
 	int y0 = static_cast<int>(std::floor(asNumber(args.at(1))));
 	int x1 = static_cast<int>(std::floor(asNumber(args.at(2))));

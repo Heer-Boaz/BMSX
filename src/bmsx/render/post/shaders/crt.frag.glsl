@@ -131,16 +131,37 @@ vec3 applyScanlines(vec3 colorLinear, vec2 uv, vec2 srcPxRes){
 }
 
 // --- Aperture grille: delta-only gating ---
-vec3 applyApertureMask(vec3 colorLinear, vec2 uv, vec2 srcPxRes){
-  float x_src = uv.x * srcPxRes.x;
-  float triad = 0.5 + 0.5 * cos(6.2831853 * x_src);
-  vec3  mask  = vec3(1.0 + APERTURE_STRENGTH * triad,
-                     1.0,
-                     1.0 - APERTURE_STRENGTH * triad);
+// vec3 applyApertureMask(vec3 c, vec2 uv, vec2 srcPxRes){ // More compute heavy version, but still relatively light
+//   float x_src = uv.x * srcPxRes.x;
+//   float x = floor(x_src);
 
-  float lum = dot(colorLinear, LUMA);
-  float k   = smoothstep(BLACK_CUTOFF, BLACK_SOFT, lum);
-  return colorLinear * (1.0 + k * (mask - 1.0));
+//   // 3-stripe triad per pixel group
+//   float p = mod(x, 3.0);
+//   vec3 stripe =
+//       (p < 1.0) ? vec3(1.0 + APERTURE_STRENGTH, 1.0, 1.0 - APERTURE_STRENGTH) :
+//       (p < 2.0) ? vec3(1.0, 1.0, 1.0) :
+//                   vec3(1.0 - APERTURE_STRENGTH, 1.0, 1.0 + APERTURE_STRENGTH);
+
+//   float lum = dot(c, LUMA);
+//   float k = smoothstep(0.0, 0.25, lum); // earlier activation
+//   k = sqrt(k);
+
+//   return c * (1.0 + k * (stripe - 1.0));
+// }
+
+vec3 applyApertureMask(vec3 c, vec2 uv, vec2 srcPxRes){
+	float x = floor(uv.x * srcPxRes.x);
+	float p = mod(x, 3.0);
+	float r = step(0.0, 1.0 - abs(p - 0.0)); // 1 als p≈0
+	float g = step(0.0, 1.0 - abs(p - 1.0)); // 1 als p≈1
+	float b = step(0.0, 1.0 - abs(p - 2.0)); // 1 als p≈2
+	vec3 stripe = vec3(r, g, b);
+	vec3 mask = vec3(1.0) + APERTURE_STRENGTH * (stripe * 2.0 - 1.0);
+	  float lum = dot(c, LUMA);
+  float k = smoothstep(0.0, 0.25, lum); // earlier activation
+  k = sqrt(k);
+
+  return c * (1.0 + k * (mask - 1.0));
 }
 
 // --- Fringing ---
@@ -185,25 +206,43 @@ void main(){
   // 1) signal tweak
   if (u_enableColorBleed) color += u_colorBleed;
 
-  // 2) blur (pre-scanline/fringing)
-  BlurContrast bc;
-  if (u_enableBlur || u_enableFringing) {
+// 2) blur (pre-scanline/fringing)
+BlurContrast bc;
+if (u_enableBlur || u_enableFringing || u_enableAperture || u_enableScanlines) {
     bc = applyBlurAndContrast(v_texcoord, texel, BLUR_FOOTPRINT_PX);
-  } else {
-    bc.blurred = color; bc.contrast = 0.0;
-  }
-  if (u_enableBlur) color = mix(color, bc.blurred, clamp(u_blurIntensity, 0.0, 1.0));
+} else {
+    bc.blurred = color;
+    bc.contrast = 0.0;
+}
 
-  // 3) fringing
-  if (u_enableFringing) color = applyFringing(color, v_texcoord, texel, bc.contrast, FRINGING_MIX);
+// edge metric (0=flat, 1=edge) — compute AFTER bc is valid
+float edge = smoothstep(0.01, 0.05, bc.contrast);
 
-  // 4) scanlines
-  if (u_enableScanlines) color = applyScanlines(color, v_texcoord, srcPxRes);
+// blur: reduce on edges (text)
+if (u_enableBlur) {
+    float blurK = mix(0.25, 1.0, 1.0 - edge) * u_blurIntensity;
+    color = mix(color, bc.blurred, blurK);
+}
 
-  // 5) aperture mask
-  if (u_enableAperture) color = applyApertureMask(color, v_texcoord, srcPxRes);
+// fringing: apply only on edges
+if (u_enableFringing) {
+    float mixK = FRINGING_MIX * edge;
+    color = applyFringing(color, v_texcoord, texel, bc.contrast, mixK);
+}
 
-  // 6) glow (gate by near-black)
+// scanlines: reduce on edges (optional but usually helps text)
+if (u_enableScanlines) {
+    vec3 s = applyScanlines(color, v_texcoord, srcPxRes);
+    color = mix(s, color, edge);
+}
+
+// aperture: reduce on edges
+if (u_enableAperture) {
+    vec3 a = applyApertureMask(color, v_texcoord, srcPxRes);
+    color = mix(a, color, edge);
+}
+
+// 6) glow (gate by near-black)
   if (u_enableGlow) {
     float b = dot(color, LUMA);
     float k = smoothstep(BLACK_CUTOFF, BLACK_SOFT, b);

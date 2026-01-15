@@ -30,7 +30,7 @@ namespace bmsx {
 GameView::GameView(GameViewHost* host, i32 viewportWidth, i32 viewportHeight)
 	: viewportSize{static_cast<f32>(viewportWidth), static_cast<f32>(viewportHeight)}
 	, canvasSize{static_cast<f32>(viewportWidth), static_cast<f32>(viewportHeight)}
-	, offscreenCanvasSize{static_cast<f32>(viewportWidth) * 2.0f, static_cast<f32>(viewportHeight) * 2.0f}
+	, offscreenCanvasSize{static_cast<f32>(viewportWidth), static_cast<f32>(viewportHeight)}
 	, m_host(host)
 {
 	initializeRenderer();
@@ -624,20 +624,25 @@ void GameView::applyCRTPostProcessing(const u32* src,
 			}
 
 			BlurContrast bc;
-			if (useBlur || useFringing) {
+			if (useBlur || useFringing || useAperture || useScanlines) {
 				bc = applyBlurAndContrast(scratch, srcWidth, srcHeight, srcX, srcY, table);
 			} else {
 				bc.blurred = color;
 				bc.contrast = 0.0f;
 			}
 
+			const f32 edge = smoothstep(0.01f, 0.05f, bc.contrast);
+
 			if (useBlur) {
-				color.r += (bc.blurred.r - color.r) * blurMix;
-				color.g += (bc.blurred.g - color.g) * blurMix;
-				color.b += (bc.blurred.b - color.b) * blurMix;
+				const f32 blurEdge = 1.0f - (0.75f * edge);
+				const f32 blurK = blurEdge * blurMix;
+				color.r += (bc.blurred.r - color.r) * blurK;
+				color.g += (bc.blurred.g - color.g) * blurK;
+				color.b += (bc.blurred.b - color.b) * blurK;
 			}
 
 			if (useFringing) {
+				const f32 mixK = kFringingMix * edge;
 				const f32 dUVx = uvX - kFringingOffset;
 				const f32 dUVy = uvY - kFringingOffset;
 				const f32 d = std::sqrt(dUVx * dUVx + dUVy * dUVy) * 1.41421356f;
@@ -655,9 +660,9 @@ void GameView::applyCRTPostProcessing(const u32* src,
 				const Color bSample = sampleLinear(scratch, srcWidth, srcHeight,
 												   srcX - shiftX, srcY - shiftY, table);
 				const Color fringed{rSample.r, baseTex.g, bSample.b, 1.0f};
-				color.r += (fringed.r - color.r) * kFringingMix;
-				color.g += (fringed.g - color.g) * kFringingMix;
-				color.b += (fringed.b - color.b) * kFringingMix;
+				color.r += (fringed.r - color.r) * mixK;
+				color.g += (fringed.g - color.g) * mixK;
+				color.b += (fringed.b - color.b) * mixK;
 			}
 
 			if (useScanlines) {
@@ -669,22 +674,32 @@ void GameView::applyCRTPostProcessing(const u32* src,
 				mask /= (1.0f - 0.5f * A);
 				const f32 k = smoothstep(kBlackCutoff, kBlackSoft, lum);
 				const f32 scale = 1.0f + k * (mask - 1.0f);
-				color.r *= scale;
-				color.g *= scale;
-				color.b *= scale;
+				const f32 scanR = color.r * scale;
+				const f32 scanG = color.g * scale;
+				const f32 scanB = color.b * scale;
+				color.r = scanR * (1.0f - edge) + color.r * edge;
+				color.g = scanG * (1.0f - edge) + color.g * edge;
+				color.b = scanB * (1.0f - edge) + color.b * edge;
 			}
 
 			if (useAperture) {
-				const f32 xSrc = uvX * srcWf;
-				const f32 triad = 0.5f + 0.5f * std::cos(6.2831853f * xSrc);
+				const f32 x = std::floor(uvX * srcWf);
+				const f32 p = std::fmod(x, 3.0f);
+				const f32 r = (std::abs(p - 0.0f) <= 1.0f) ? 1.0f : 0.0f;
+				const f32 g = (std::abs(p - 1.0f) <= 1.0f) ? 1.0f : 0.0f;
+				const f32 b = (std::abs(p - 2.0f) <= 1.0f) ? 1.0f : 0.0f;
+				const f32 maskR = 1.0f + kApertureStrength * ((r * 2.0f) - 1.0f);
+				const f32 maskG = 1.0f + kApertureStrength * ((g * 2.0f) - 1.0f);
+				const f32 maskB = 1.0f + kApertureStrength * ((b * 2.0f) - 1.0f);
 				const f32 lum = luminance(color);
-				const f32 k = smoothstep(kBlackCutoff, kBlackSoft, lum);
-				const f32 maskR = 1.0f + kApertureStrength * triad;
-				const f32 maskG = 1.0f;
-				const f32 maskB = 1.0f - kApertureStrength * triad;
-				color.r *= 1.0f + k * (maskR - 1.0f);
-				color.g *= 1.0f + k * (maskG - 1.0f);
-				color.b *= 1.0f + k * (maskB - 1.0f);
+				f32 k = smoothstep(0.0f, 0.25f, lum);
+				k = std::sqrt(k);
+				const f32 apertureR = color.r * (1.0f + k * (maskR - 1.0f));
+				const f32 apertureG = color.g * (1.0f + k * (maskG - 1.0f));
+				const f32 apertureB = color.b * (1.0f + k * (maskB - 1.0f));
+				color.r = apertureR * (1.0f - edge) + color.r * edge;
+				color.g = apertureG * (1.0f - edge) + color.g * edge;
+				color.b = apertureB * (1.0f - edge) + color.b * edge;
 			}
 
 			if (useGlow) {

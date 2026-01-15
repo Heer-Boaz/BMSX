@@ -125,7 +125,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	public enable_fringing = true;
 	public enable_aperture = true;
 	public dither_type: number = DitherType.None;
-	public noiseIntensity = 0.4;
+	public noiseIntensity = 0.3;
 	public colorBleed: [number, number, number] = [0.02, 0.0, 0.0];
 	public blurIntensity = 0.6;
 	public glowColor: [number, number, number] = [0.12, 0.10, 0.09];
@@ -256,9 +256,9 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		this.host = opts.host;
 		this.surface = this.host.surface;
 		this.viewportSize = shallowcopy(opts.viewportSize) as vec2;
-		this.canvasSize = (shallowcopy(opts.canvasSize) ?? multiply_vec2(this.viewportSize, 2)) as vec2; // By default, the canvas is twice the size of the viewport!!
+		this.canvasSize = (shallowcopy(opts.canvasSize) ?? multiply_vec2(this.viewportSize, 1)) as vec2; // By default, the canvas is twice the size of the viewport!!
 		// Offscreen resolution for internal render graph targets (view-agnostic, but usually twice the viewport size to allow for effects like CRT post processing)
-		this.offscreenCanvasSize = shallowcopy(opts.offscreenSize ?? multiply_vec2(this.viewportSize, 2)) as vec2;
+		this.offscreenCanvasSize = shallowcopy(opts.offscreenSize ?? multiply_vec2(this.viewportSize, 1)) as vec2;
 		this.lastRenderTimeSeconds = $.platform.clock.now() / 1000;
 		renderGate.begin({ blocking: true, category: 'init', tag: 'init' }); // Note that we don't store the token; We can end the scope by calling renderGate.end() without a token, assuming that the category is unique fot init. It means that we can safely end the scope later without worrying about late resolves or lifecycle issues.
 	}
