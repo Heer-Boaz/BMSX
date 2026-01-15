@@ -210,7 +210,7 @@ function convertFile(src, tabWidth = TAB_WIDTH) {
 			}
 		}
 		if (columns === 0) return text;
-		const tabs = Math.ceil(columns / tabWidth);
+		const tabs = Math.max(1, Math.ceil(columns / tabWidth));
 		const newIndent = '\t'.repeat(tabs);
 		return newIndent + text.slice(indent.length);
 	});
