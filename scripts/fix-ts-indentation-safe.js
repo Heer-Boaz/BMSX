@@ -11,8 +11,11 @@ const TAB_WIDTH = 4;
 // sets: INCLUDED_EXTS (what file extensions we process) and
 // SPACE_ONLY_EXTS (those extensions where tabs should be replaced with
 // spaces, not converted to tabs).
-const INCLUDED_EXTS = new Set(['ts', 'tsx', 'js', 'jsx', 'jsm', 'json', 'md', 'css', 'html', 'ps1', 'sh', 'glsl', 'yaml', 'yml', 'cpp', 'h', 'c', 'hpp']);
+const INCLUDED_EXTS = new Set(['ts', 'tsx', 'js', 'jsx', 'jsm', 'json', 'md', 'css', 'html', 'ps1', 'sh', 'yaml', 'yml']);
 const SPACE_ONLY_EXTS = new Set(['yaml', 'yml', 'md']);
+
+const INCLUDED_PATH_PREFIXES = ['src/', 'scripts/', 'tests/', '.vscode/'];
+const EXCLUDED_PATH_PREFIXES = ['src/bmsx_cpp/', 'tools/', 'CMakeFiles/', 'build/', 'dist/', 'rom/'];
 
 function splitNullDelimited(buffer) {
 	return buffer
@@ -148,7 +151,8 @@ function convertFile(src, tabWidth = TAB_WIDTH) {
 function main() {
 	const checkOnly = process.argv.indexOf('--check') !== -1 || process.argv.indexOf('-c') !== -1;
 	const files = listCandidateFiles()
-		.filter(p => !p.startsWith('tools/retroarch-gles2/') && p !== 'tools/retroarch-gles2')
+		.filter(p => INCLUDED_PATH_PREFIXES.some(prefix => p.startsWith(prefix)))
+		.filter(p => !EXCLUDED_PATH_PREFIXES.some(prefix => p.startsWith(prefix)))
 		.filter(p => {
 			const ext = path.extname(p).toLowerCase().replace(/^\./, '');
 			return INCLUDED_EXTS.has(ext);
