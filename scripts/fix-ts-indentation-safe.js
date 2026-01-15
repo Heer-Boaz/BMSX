@@ -194,18 +194,7 @@ function convertFile(src, tabWidth = TAB_WIDTH) {
 		pos += line.length + 1; // account for removed/newline
 	}
 
-	// Finally convert leading indentation for lines not in template content
-	const outLines = lines.map(({ text, inTemplateContent }) => {
-		if (inTemplateContent) return text; // don't touch lines which are inside template literal content
-		const indentMatch = text.match(/^[ \t]+/);
-		if (!indentMatch) return text;
-		const indent = indentMatch[0];
-		const rest = text.slice(indent.length);
-		const isCommentStar = rest.startsWith('*');
-		if (isCommentStar && !indent.includes('\t') && indent.length < tabWidth) {
-			// Keep short comment padding (e.g. " *") from being blown up to a tab.
-			return text;
-		}
+	const indentColumns = (indent) => {
 		let columns = 0;
 		for (const ch of indent) {
 			if (ch === '\t') {
@@ -215,14 +204,63 @@ function convertFile(src, tabWidth = TAB_WIDTH) {
 				columns += 1;
 			}
 		}
-		if (columns === 0) return text;
-		const tabs = Math.max(1, Math.ceil(columns / tabWidth));
-		const newIndent = '\t'.repeat(tabs);
-		if (isCommentStar) {
-			return newIndent + ' ' + rest;
+		return columns;
+	};
+
+	// Finally convert leading indentation for lines not in template content
+	const outLines = [];
+	let inBlockComment = false;
+	let blockIndentColumns = 0;
+
+	for (const { text, inTemplateContent } of lines) {
+		if (inTemplateContent) {
+			outLines.push(text);
+			continue;
 		}
-		return newIndent + rest;
-	});
+
+		const indentMatch = text.match(/^[ \t]+/);
+		if (!indentMatch) {
+			const trimmed = text.trimStart();
+			const startsBlock = trimmed.startsWith('/*');
+			const endsBlock = trimmed.includes('*/');
+			if (!inBlockComment && startsBlock && !endsBlock) {
+				inBlockComment = true;
+				blockIndentColumns = 0;
+			} else if (inBlockComment && endsBlock) {
+				inBlockComment = false;
+				blockIndentColumns = 0;
+			}
+			outLines.push(text);
+			continue;
+		}
+
+		const indent = indentMatch[0];
+		const rest = text.slice(indent.length);
+		const startsBlock = rest.startsWith('/*');
+		const endsBlock = rest.includes('*/');
+
+		if (inBlockComment && (rest.startsWith('*') || rest.startsWith('*/'))) {
+			const baseTabs = blockIndentColumns > 0 ? Math.max(1, Math.ceil(blockIndentColumns / tabWidth)) : 0;
+			const baseIndent = '\t'.repeat(baseTabs);
+			outLines.push(baseIndent + ' ' + rest);
+		} else {
+			const columns = indentColumns(indent);
+			if (columns === 0) {
+				outLines.push(text);
+			} else {
+				const tabs = Math.max(1, Math.ceil(columns / tabWidth));
+				outLines.push('\t'.repeat(tabs) + rest);
+			}
+		}
+
+		if (!inBlockComment && startsBlock && !endsBlock) {
+			inBlockComment = true;
+			blockIndentColumns = indentColumns(indent);
+		} else if (inBlockComment && endsBlock) {
+			inBlockComment = false;
+			blockIndentColumns = 0;
+		}
+	}
 
 	return outLines.join('\n');
 }
