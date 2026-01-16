@@ -27,7 +27,7 @@ const INCLUDED_BASENAMES = new Set([
 	'.npmrc',
 	'.nvmrc',
 ]);
-const SPACE_ONLY_EXTS = new Set(['yaml', 'yml', 'md']);
+const SPACE_ONLY_EXTS = new Set(['yaml', 'yml', 'md', 'rommanifest']);
 
 function loadEditorConfig() {
 	const configPath = path.join(ROOT, '.editorconfig');
@@ -265,6 +265,21 @@ function convertFile(src, tabWidth = TAB_WIDTH) {
 	return outLines.join('\n');
 }
 
+function convertLeadingIndentToSpaces(src, tabWidth = TAB_WIDTH) {
+	return src.replace(/^[ \t]+/gm, (indent) => {
+		let columns = 0;
+		for (const ch of indent) {
+			if (ch === '\t') {
+				const toNext = tabWidth - (columns % tabWidth);
+				columns += toNext;
+			} else {
+				columns += 1;
+			}
+		}
+		return ' '.repeat(columns);
+	});
+}
+
 function main() {
 	const checkOnly = process.argv.indexOf('--check') !== -1 || process.argv.indexOf('-c') !== -1;
 	const editorConfig = loadEditorConfig();
@@ -284,9 +299,10 @@ function main() {
 			const src = fs.readFileSync(f, 'utf8');
 			const ext = path.extname(f).toLowerCase().replace(/^\./, '');
 			let out;
-			if (indentStyle === 'space' || SPACE_ONLY_EXTS.has(ext)) {
-				// Replace all tab characters with TAB_WIDTH spaces for space-only files.
-				out = src.replace(/\t/g, ' '.repeat(TAB_WIDTH));
+			const effectiveIndentStyle = SPACE_ONLY_EXTS.has(ext) ? 'space' : indentStyle;
+			if (effectiveIndentStyle === 'space') {
+				// Replace leading indentation tabs with spaces for space-indented files (e.g. YAML).
+				out = convertLeadingIndentToSpaces(src, TAB_WIDTH);
 			} else {
 				out = convertFile(src, TAB_WIDTH);
 			}

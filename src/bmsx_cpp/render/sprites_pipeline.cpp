@@ -81,9 +81,9 @@ void renderSpriteBatchSoftware(SoftwareBackend* softBackend,
 	if (meta.atlassed) {
 		if (meta.atlasid == ENGINE_ATLAS_INDEX) {
 		tex = context->textures.at(ENGINE_ATLAS_TEXTURE_KEY);
-		} else if (meta.atlasid == context->primaryAtlas()) {
+		} else if (meta.atlasid == context->primaryAtlasIdInSlot) {
 		tex = atlasPrimary;
-		} else if (meta.atlasid == context->secondaryAtlas()) {
+		} else if (meta.atlasid == context->secondaryAtlasIdInSlot) {
 		tex = atlasSecondary;
 		} else {
 		throw BMSX_RUNTIME_ERROR("[SpritesPipeline] Atlas not loaded into a slot.");

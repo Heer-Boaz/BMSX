@@ -283,6 +283,10 @@ void LibretroPlatform::setDitherType(GameView::DitherType type) {
 	type = GameView::DitherType::None;
 #endif
 	m_dither_type = type;
+	m_engine->view()->dither_type = type;
+	if (!VMRuntime::hasInstance()) {
+		return;
+	}
 	VMRuntime::instance().setVdpDitherType(static_cast<i32>(m_dither_type));
 }
 
@@ -362,6 +366,7 @@ bool LibretroPlatform::loadRomOwned(std::vector<uint8_t>&& data) {
 		log(RETRO_LOG_ERROR, "[BMSX] Failed to load ROM into engine\n");
 		return false;
 	}
+	VMRuntime::instance().setVdpDitherType(static_cast<i32>(m_dither_type));
 	{
 		const std::string line = memSnapshotLine("libretro:after_loadRom");
 		if (!line.empty()) {

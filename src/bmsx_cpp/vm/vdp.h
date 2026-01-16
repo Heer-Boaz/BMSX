@@ -4,6 +4,7 @@
 #include "vm_io.h"
 #include "vm_memory.h"
 #include "../core/rompack.h"
+#include "../render/render_types.h"
 #include <array>
 #include <string>
 #include <unordered_map>
@@ -12,6 +13,7 @@
 namespace bmsx {
 
 class RuntimeAssets;
+class GameView;
 
 class VDP {
 public:
@@ -25,6 +27,7 @@ public:
 	void loadAtlasIntoSlot(RuntimeAssets& assets, i32 slot, i32 atlasId);
 	void flushAssetEdits();
 	void applyAtlasSlotMapping(const std::array<i32, 2>& slots);
+	void commitViewSnapshot(GameView& view);
 
 	const std::array<i32, 2>& atlasSlots() const { return m_slotAtlasIds; }
 
@@ -34,6 +37,9 @@ private:
 	std::unordered_map<i32, std::vector<std::string>> m_atlasViewIdsById;
 	std::unordered_map<i32, i32> m_atlasSlotById;
 	std::array<i32, 2> m_slotAtlasIds{{-1, -1}};
+	bool m_dirtyAtlasBindings = false;
+	bool m_dirtySkybox = false;
+	SkyboxImageIds m_skyboxFaceIds;
 	i32 m_lastDitherType = 0;
 };
 

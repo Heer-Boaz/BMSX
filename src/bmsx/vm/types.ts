@@ -1,5 +1,6 @@
 import type { LuaFunctionValue } from '../lua/luavalue';
 import type { asset_id, CanonicalizationType, Viewport } from '../rompack/rompack';
+import type { SkyboxImageIds } from '../render/shared/render_types';
 import type { VmMemory } from './vm_memory';
 import { LuaEntrySnapshot } from './lua_js_bridge';
 
@@ -118,6 +119,8 @@ export type BmsxVMState = {
 	luaProgramCounter?: number;
 	assetMemory?: Uint8Array;
 	atlasSlots?: { primary: number | null; secondary: number | null };
+	skyboxFaceIds?: SkyboxImageIds | null;
+	vdpDitherType?: number;
 };
 
 export type LuaMarshalContext = {

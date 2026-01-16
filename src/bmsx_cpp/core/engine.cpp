@@ -632,9 +632,6 @@ void EngineCore::uploadTexturesToBackend(bool includeCartAssets) {
 	RuntimeAssets& assets = includeCartAssets ? m_assets : m_engine_assets;
 
 	m_view->initializeDefaultTextures();
-	const auto& slots = runtime.atlasSlots();
-	m_view->setPrimaryAtlas(slots[0]);
-	m_view->setSecondaryAtlas(slots[1]);
 
 	const bool replaceExisting = includeCartAssets;
 	auto uploadSlot = [&](const std::string& slotId, const VmMemory::AssetEntry& assetEntry) {

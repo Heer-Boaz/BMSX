@@ -44,6 +44,9 @@ void VDP::registerImageAssets(RuntimeAssets& assets, bool keepDecodedData) {
 	m_atlasViewIdsById.clear();
 	m_atlasSlotById.clear();
 	m_slotAtlasIds = {{-1, -1}};
+	m_dirtyAtlasBindings = true;
+	m_dirtySkybox = true;
+	m_skyboxFaceIds = {};
 	const RuntimeAssets* fallback = assets.fallback;
 
 	std::vector<std::string> viewAssets;
@@ -247,11 +250,6 @@ void VDP::loadAtlasIntoSlot(RuntimeAssets& assets, i32 slot, i32 atlasId) {
 	const auto existingSlot = m_atlasSlotById.find(atlasId);
 	if (existingSlot != m_atlasSlotById.end() && existingSlot->second != slot) {
 		m_slotAtlasIds[existingSlot->second] = -1;
-		if (existingSlot->second == 0) {
-			EngineCore::instance().view()->setPrimaryAtlas(-1);
-		} else {
-			EngineCore::instance().view()->setSecondaryAtlas(-1);
-		}
 	}
 	const i32 previousAtlasId = m_slotAtlasIds[slot];
 	if (previousAtlasId >= 0) {
@@ -259,11 +257,7 @@ void VDP::loadAtlasIntoSlot(RuntimeAssets& assets, i32 slot, i32 atlasId) {
 	}
 	m_atlasSlotById[atlasId] = slot;
 	m_slotAtlasIds[slot] = atlasId;
-	if (slot == 0) {
-		EngineCore::instance().view()->setPrimaryAtlas(atlasId);
-	} else {
-		EngineCore::instance().view()->setSecondaryAtlas(atlasId);
-	}
+	m_dirtyAtlasBindings = true;
 	const auto viewIt = m_atlasViewIdsById.find(atlasId);
 	if (viewIt != m_atlasViewIdsById.end()) {
 		for (const auto& viewId : viewIt->second) {
@@ -306,8 +300,7 @@ void VDP::applyAtlasSlotMapping(const std::array<i32, 2>& slots) {
 	if (slots[1] >= 0) {
 		m_atlasSlotById[slots[1]] = 1;
 	}
-	EngineCore::instance().view()->setPrimaryAtlas(slots[0]);
-	EngineCore::instance().view()->setSecondaryAtlas(slots[1]);
+	m_dirtyAtlasBindings = true;
 	auto& primaryEntry = m_memory.getAssetEntry(ATLAS_PRIMARY_SLOT_ID);
 	auto& secondaryEntry = m_memory.getAssetEntry(ATLAS_SECONDARY_SLOT_ID);
 	if (slots[0] >= 0) {
@@ -327,6 +320,18 @@ void VDP::applyAtlasSlotMapping(const std::array<i32, 2>& slots) {
 				m_memory.updateImageViewBase(viewEntry, secondaryEntry);
 			}
 		}
+	}
+}
+
+void VDP::commitViewSnapshot(GameView& view) {
+	if (m_dirtyAtlasBindings) {
+		view.primaryAtlasIdInSlot = m_slotAtlasIds[0];
+		view.secondaryAtlasIdInSlot = m_slotAtlasIds[1];
+		m_dirtyAtlasBindings = false;
+	}
+	if (m_dirtySkybox) {
+		view.skyboxFaceIds = m_skyboxFaceIds;
+		m_dirtySkybox = false;
 	}
 }
 

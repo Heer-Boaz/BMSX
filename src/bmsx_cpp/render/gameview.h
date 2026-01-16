@@ -133,15 +133,11 @@ public:
 	std::unordered_map<std::string, TextureHandle> textures;
 
 	// ─────────────────────────────────────────────────────────────────────────
-	// Atlas management (mirrors TypeScript primaryAtlas/secondaryAtlas)
+	// Video snapshot fields (owned by VDP, consumed by renderer)
 	// ─────────────────────────────────────────────────────────────────────────
-	i32 primaryAtlas() const { return m_primaryAtlasIndex; }
-	void setPrimaryAtlas(i32 index);
-
-	i32 secondaryAtlas() const { return m_secondaryAtlasIndex; }
-	void setSecondaryAtlas(i32 index);
-
-	i32 resolveAtlasBindingId(i32 atlasId) const;
+	i32 primaryAtlasIdInSlot = -1;
+	i32 secondaryAtlasIdInSlot = -1;
+	SkyboxImageIds skyboxFaceIds;
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// Pipeline registry (mirrors TypeScript pipelineRegistry)
@@ -240,15 +236,12 @@ public:
 
 private:
 	void initializeRenderer();
-	void setAtlasIndex(bool isPrimary, i32 index);
 
 	GameViewHost* m_host;
 	std::unique_ptr<GPUBackend> m_backend;
 	std::unique_ptr<RenderPassLibrary> m_pipelineRegistry;
 	std::unique_ptr<RenderGraphRuntime> m_renderGraph;
 
-	i32 m_primaryAtlasIndex = -1;
-	i32 m_secondaryAtlasIndex = -1;
 	i32 m_activeTexUnit = -1;
 	TextureHandle m_activeTexture2D = nullptr;
 	TextureHandle m_activeCubemap = nullptr;

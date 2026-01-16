@@ -5,7 +5,6 @@ import { multiply_vec2 } from '../utils/vector_operations';
 import { shallowcopy } from '../utils/shallowcopy';
 import type { vec2 } from '../rompack/rompack';
 import { type RegisterablePersistent } from '../rompack/rompack';
-import * as SkyboxPipeline from './3d/skybox_pipeline';
 import * as render_queues from './shared/render_queues';
 import type { AtmosphereParams, BackendContext, GPUBackend, RenderContext, RenderSubmission, RenderSubmitQueue, TextureHandle } from './backend/pipeline_interfaces';
 import { RenderPassLibrary } from './backend/renderpasslib';
@@ -30,7 +29,6 @@ import type {
 import {
 	ATLAS_PRIMARY_SLOT_ID,
 	ATLAS_SECONDARY_SLOT_ID,
-	ENGINE_ATLAS_INDEX,
 	ENGINE_ATLAS_TEXTURE_KEY,
 } from 'bmsx/rompack/rompack';
 import { renderGate } from 'bmsx/core/engine_core';
@@ -107,8 +105,9 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	private lightingSystem: LightingSystem = null;
 	public offscreenCanvasSize!: vec2;
 	public textures: { [k: string]: TextureHandle } = {};
-	private _primaryAtlasIndex: number | null = null;
-	private _secondaryAtlasIndex: number | null = null;
+	public primaryAtlasIdInSlot: number | null = null;
+	public secondaryAtlasIdInSlot: number | null = null;
+	public skyboxFaceIds: SkyboxImageIds | null = null;
 	public pipelineRegistry?: RenderPassLibrary;
 	private presentationPassTokens: RenderPassToken[] = [];
 	private presentationEnabled = true;
@@ -546,8 +545,9 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		this.textures[ATLAS_PRIMARY_SLOT_ID] = fallback; // Start with fallback to avoid undefined states and race conditions
 		this.textures[ATLAS_SECONDARY_SLOT_ID] = fallback;
 		this.textures['_atlas_fallback'] = fallback;
-		this._primaryAtlasIndex = null;
-		this._secondaryAtlasIndex = null;
+		this.primaryAtlasIdInSlot = null;
+		this.secondaryAtlasIdInSlot = null;
+		this.skyboxFaceIds = null;
 		this.textures[ENGINE_ATLAS_TEXTURE_KEY] = fallback;
 		// Default material textures for meshes
 		this.textures['_default_albedo'] = this.backend.createSolidTexture2D(1, 1, [1, 1, 1, 1]);
@@ -577,30 +577,6 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		// GameView implements RenderContext directly
 		this.renderGraph = this.pipelineRegistry.buildRenderGraph(this, this.lightingSystem);
 		renderGate.end(token);
-	}
-	public setSkybox(images: SkyboxImageIds): void { $.setSkyboxImages(images); }
-	public get skyboxFaceIds(): SkyboxImageIds { return SkyboxPipeline.skyboxFaceIds; }
-	public resolveAtlasBindingId(atlasId: number): number {
-		if (atlasId === ENGINE_ATLAS_INDEX) {
-			return ENGINE_ATLAS_INDEX;
-		}
-		if (this._primaryAtlasIndex === atlasId) {
-			return 0;
-		}
-		if (this._secondaryAtlasIndex === atlasId) {
-			return 1;
-		}
-		throw new Error(`[GameView] Atlas ${atlasId} not loaded into a slot.`);
-	}
-
-	public get primaryAtlas(): number | null { return this._primaryAtlasIndex; }
-	public set primaryAtlas(index: number | null) {
-		this._primaryAtlasIndex = index;
-	}
-
-	public get secondaryAtlas(): number | null { return this._secondaryAtlasIndex; }
-	public set secondaryAtlas(index: number | null) {
-		this._secondaryAtlasIndex = index;
 	}
 
 	// Texture binding helpers

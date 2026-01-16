@@ -16,12 +16,10 @@ import { Space } from '../core/space';
 import { $ } from '../core/engine_core';
 import type { BmsxVMState } from '../vm/types';
 import { Registry } from "../core/registry";
-import { GameView } from '../render/gameview';
 import { decodeBinary, encodeBinary } from "./binencoder";
 import { Bindable } from "../rompack/rompack";
 import { insavegame, type RevivableObjectArgs, onsave, onload } from './serializationhooks';
 import { typedarray_to_numberarray } from '../utils/typedarray_to_numberarray';
-import { SkyboxImageIds } from '../render/shared/render_types';
 
 // Decorators onload/onsave are defined locally in this file
 export type ConstructorWithSaveGame<T = Bindable> = (new (...args: any[]) => T) & { __exclude_savegame__?: boolean };
@@ -520,10 +518,7 @@ type SoundMasterState = {
 };
 
 type ViewState = {
-	primaryAtlasIndex: number | null;
-	secondaryAtlasIndex: number | null;
 	activeCameraId: string;
-	skyboxFaceIds: SkyboxImageIds;
 };
 
 @insavegame
@@ -546,31 +541,17 @@ export class Savegame {
 	@onsave
 	saveViewState() {
 		// Capture current view state
-		const view = $.view as GameView;
 		const viewState: ViewState = {
-			primaryAtlasIndex: view.primaryAtlas,
-			secondaryAtlasIndex: view.secondaryAtlas,
-			activeCameraId: $.world.activeCameraId ,
-			skyboxFaceIds: view.skyboxFaceIds,
+			activeCameraId: $.world.activeCameraId,
 		};
 		return { viewState };
 	}
 
 	@onload
 	restoreViewState() {
-		const view = $.view as GameView;
 		// Restore view state
 		if (this.viewState) {
-			if (this.viewState.primaryAtlasIndex !== undefined) {
-				view.primaryAtlas = this.viewState.primaryAtlasIndex;
-			}
-			if (this.viewState.secondaryAtlasIndex !== undefined) {
-				view.secondaryAtlas = this.viewState.secondaryAtlasIndex;
-			}
 			$.world.activeCameraId = this.viewState.activeCameraId;
-			if (this.viewState.skyboxFaceIds) {
-				view.setSkybox(this.viewState.skyboxFaceIds);
-			}
 		}
 	}
 

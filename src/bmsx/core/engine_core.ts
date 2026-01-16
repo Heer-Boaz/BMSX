@@ -363,7 +363,7 @@ export class EngineCore {
 		};
 	}
 
-	public async refreshAudioAssets(): Promise<void> {
+	public async refresh_audio_assets(): Promise<void> {
 		const resolver = this.buildModulationResolver(this._assets);
 		const runtime = BmsxVMRuntime.instance;
 		await SoundMaster.instance.init(
@@ -374,7 +374,7 @@ export class EngineCore {
 		);
 	}
 
-	public setSkyboxImages(ids: SkyboxImageIds): void {
+	public set_skybox_imgs(ids: SkyboxImageIds): void {
 		BmsxVMRuntime.instance.setSkyboxImages(ids);
 	}
 

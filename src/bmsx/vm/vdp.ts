@@ -31,6 +31,9 @@ export class VDP {
 	private readonly slotAtlasIds: Array<number | null> = [null, null];
 	private atlasSlotEntries: VmAssetEntry[] = [];
 	private skyboxSlotEntries: VmAssetEntry[] = [];
+	private dirtyAtlasBindings = false;
+	private dirtySkybox = false;
+	private skyboxFaceIds: SkyboxImageIds | null = null;
 	private lastDitherType = 0;
 
 	public constructor(
@@ -58,6 +61,27 @@ export class VDP {
 		this.syncRegisters();
 	}
 
+	public getDitherType(): number {
+		return this.lastDitherType;
+	}
+
+	public getSkyboxFaceIds(): SkyboxImageIds | null {
+		return this.skyboxFaceIds;
+	}
+
+	public commitViewSnapshot(): void {
+		const view = $.view;
+		if (this.dirtyAtlasBindings) {
+			view.primaryAtlasIdInSlot = this.slotAtlasIds[0];
+			view.secondaryAtlasIdInSlot = this.slotAtlasIds[1];
+			this.dirtyAtlasBindings = false;
+		}
+		if (this.dirtySkybox) {
+			view.skyboxFaceIds = this.skyboxFaceIds;
+			this.dirtySkybox = false;
+		}
+	}
+
 	public getAtlasSlotMapping(): { primary: number | null; secondary: number | null } {
 		return { primary: this.slotAtlasIds[0], secondary: this.slotAtlasIds[1] };
 	}
@@ -72,8 +96,7 @@ export class VDP {
 		if (mapping.secondary !== null) {
 			this.atlasSlotById.set(mapping.secondary, 1);
 		}
-		$.view.primaryAtlas = mapping.primary;
-		$.view.secondaryAtlas = mapping.secondary;
+		this.dirtyAtlasBindings = true;
 		if (mapping.primary !== null) {
 			const viewEntries = this.atlasViewsById.get(mapping.primary);
 			if (viewEntries) {
@@ -99,12 +122,21 @@ export class VDP {
 		}
 		const slots = this.getSkyboxSlotEntries();
 		const assets = $.assets;
+		this.skyboxFaceIds = ids;
+		this.dirtySkybox = true;
+		SkyboxPipeline.clearSkyboxSources();
 		const tasks = SKYBOX_FACE_KEYS.map((key, index) =>
 			this.loadSkyboxFaceIntoSlot(slots[index], ids[key], source, assets)
 		);
 		void Promise.all(tasks).then(() => {
 			this.applySkyboxSlots(ids);
 		});
+	}
+
+	public clearSkybox(): void {
+		this.skyboxFaceIds = null;
+		this.dirtySkybox = true;
+		SkyboxPipeline.clearSkyboxSources();
 	}
 
 	public async registerImageAssets(source: RawAssetSource, assets: RuntimeAssets): Promise<void> {
@@ -117,7 +149,11 @@ export class VDP {
 		this.atlasSlotById.clear();
 		this.slotAtlasIds[0] = null;
 		this.slotAtlasIds[1] = null;
+		this.dirtyAtlasBindings = true;
 		this.skyboxSlotEntries = [];
+		this.skyboxFaceIds = null;
+		this.dirtySkybox = true;
+		SkyboxPipeline.clearSkyboxSources();
 
 		for (let index = 0; index < entries.length; index += 1) {
 			const entry = entries[index];
@@ -297,7 +333,7 @@ export class VDP {
 		if (dirty.length === 0) {
 			return;
 		}
-		const skyboxIds = SkyboxPipeline.skyboxFaceIds;
+		const skyboxIds = this.skyboxFaceIds;
 		let refreshSkybox = false;
 		for (let index = 0; index < dirty.length; index += 1) {
 			const entry = dirty[index];
@@ -358,8 +394,7 @@ export class VDP {
 			);
 			$.view.textures[ATLAS_SECONDARY_SLOT_ID] = secondaryHandle;
 		}
-		$.view.primaryAtlas = this.slotAtlasIds[0];
-		$.view.secondaryAtlas = this.slotAtlasIds[1];
+		this.dirtyAtlasBindings = true;
 	}
 
 	private getSkyboxSlotEntries(): VmAssetEntry[] {
@@ -451,11 +486,6 @@ export class VDP {
 		const existingSlot = this.atlasSlotById.get(atlasId);
 		if (existingSlot !== undefined && existingSlot !== slot) {
 			this.slotAtlasIds[existingSlot] = null;
-			if (existingSlot === 0) {
-				$.view.primaryAtlas = null;
-			} else {
-				$.view.secondaryAtlas = null;
-			}
 		}
 		const previousAtlasId = this.slotAtlasIds[slot];
 		if (previousAtlasId !== null) {
@@ -463,11 +493,7 @@ export class VDP {
 		}
 		this.atlasSlotById.set(atlasId, slot);
 		this.slotAtlasIds[slot] = atlasId;
-		if (slot === 0) {
-			$.view.primaryAtlas = atlasId;
-		} else {
-			$.view.secondaryAtlas = atlasId;
-		}
+		this.dirtyAtlasBindings = true;
 		const viewEntries = this.atlasViewsById.get(atlasId);
 		if (viewEntries) {
 			for (let index = 0; index < viewEntries.length; index += 1) {

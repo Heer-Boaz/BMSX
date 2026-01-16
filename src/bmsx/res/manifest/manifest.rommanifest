@@ -1,13 +1,13 @@
 {
-	"title": "BMSX Engine Assets",
-	"short_name": "BMSX Assets",
-	"rom_name": "bmsx-bios",
-	"vm": {
-		"viewport": { "width": 256, "height": 212 },
-		"canonicalization": "lower",
-		"namespace": "bmsx"
-	},
-	"lua": {
-		"entry_path": "res/bios/bootrom.lua"
-	}
+    "title": "BMSX Engine Assets",
+    "short_name": "BMSX Assets",
+    "rom_name": "bmsx-bios",
+    "vm": {
+        "viewport": { "width": 256, "height": 212 },
+        "canonicalization": "lower",
+        "namespace": "bmsx"
+    },
+    "lua": {
+        "entry_path": "res/bios/bootrom.lua"
+    }
 }

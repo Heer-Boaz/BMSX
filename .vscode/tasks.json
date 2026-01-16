@@ -316,7 +316,7 @@
 			"label": "LIBRETRO RUN: RetroArch",
 			"type": "shell",
 			"command": "npm",
-			"args": ["run", "run:retroarch", "--", "./dist/${input:romtobuild}.debug.rom"],
+			"args": ["run", "run:retroarch", "--", "./dist/${input:romtobuild}.rom"], // We don't support debug builds yet for libretro, because that also requires the debug BIOS
 			"problemMatcher": [],
 			"group": "test",
 			"icon": { "id": "play", "color": "terminal.ansiGreen" },

@@ -150,8 +150,9 @@ void GameView::initializeDefaultTextures() {
 	textures["_atlas_primary"] = fallback;
 	textures["_atlas_secondary"] = fallback;
 	textures["_atlas_fallback"] = fallback;
-	m_primaryAtlasIndex = -1;
-	m_secondaryAtlasIndex = -1;
+	primaryAtlasIdInSlot = -1;
+	secondaryAtlasIdInSlot = -1;
+	skyboxFaceIds = {};
 	textures[ENGINE_ATLAS_TEXTURE_KEY] = fallback;
 
 	textures["_default_albedo"] = m_backend->createSolidTexture2D(1, 1, {1.0f, 1.0f, 1.0f, 1.0f});
@@ -202,37 +203,6 @@ void GameView::drawGame() {
 void GameView::endFrame() {
 	if (!m_backend) return;
 	m_backend->endFrame();
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Atlas management (mirrors TypeScript setAtlasIndex)
-// ─────────────────────────────────────────────────────────────────────────────
-
-void GameView::setAtlasIndex(bool isPrimary, i32 index) {
-	i32& currentIndex = isPrimary ? m_primaryAtlasIndex : m_secondaryAtlasIndex;
-	if (currentIndex == index) return;
-	currentIndex = index;
-}
-
-void GameView::setPrimaryAtlas(i32 index) {
-	setAtlasIndex(true, index);
-}
-
-void GameView::setSecondaryAtlas(i32 index) {
-	setAtlasIndex(false, index);
-}
-
-i32 GameView::resolveAtlasBindingId(i32 atlasId) const {
-	if (atlasId == ENGINE_ATLAS_INDEX) {
-		return ENGINE_ATLAS_INDEX;
-	}
-	if (m_primaryAtlasIndex == atlasId) {
-		return 0;
-	}
-	if (m_secondaryAtlasIndex == atlasId) {
-		return 1;
-	}
-	throw BMSX_RUNTIME_ERROR("[GameView] Atlas not loaded into a slot.");
 }
 
 void GameView::setPipelineRegistry(std::unique_ptr<RenderPassLibrary> registry) {

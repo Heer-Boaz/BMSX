@@ -286,11 +286,11 @@ function engine.apply_default_pipeline()
 	return world:apply_default_pipeline()
 end
 
-function engine.register(value)
+function engine.enlist(value)
 	registry.instance:register(value)
 end
 
-function engine.deregister(id)
+function engine.delist(id)
 	registry.instance:deregister(id)
 end
 

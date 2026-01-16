@@ -28,8 +28,8 @@ export const ENGINE_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<VMLuaBuiltinDescriptor>
 	{ name: 'attach_component', params: ['object_or_id', 'component_or_type'], signature: 'attach_component(object_or_id, component_or_type)' },
 	{ name: 'configure_ecs', params: ['nodes'], signature: 'configure_ecs(nodes)' },
 	{ name: 'apply_default_pipeline', params: [], signature: 'apply_default_pipeline()' },
-	{ name: 'register', params: ['value'], signature: 'register(value)' },
-	{ name: 'deregister', params: ['id'], signature: 'deregister(id)' },
+	{ name: 'enlist', params: ['value'], signature: 'enlist(value)' },
+	{ name: 'delist', params: ['id'], signature: 'delist(id)' },
 	{ name: 'grant_effect', params: ['object_id', 'effect_id'], signature: 'grant_effect(object_id, effect_id)' },
 	{ name: 'trigger_effect', params: ['object_id', 'effect_id', 'options?'], signature: 'trigger_effect(object_id, effect_id [, options])' },
 ];

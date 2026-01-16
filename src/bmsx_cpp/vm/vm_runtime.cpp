@@ -539,6 +539,7 @@ void VMRuntime::tickDraw() {
 	}
 
 	// Call _draw if present
+	m_vdp.commitViewSnapshot(*EngineCore::instance().view());
 	executeDrawCallback();
 }
 
@@ -794,8 +795,8 @@ void VMRuntime::runEngineBuiltinPrelude() {
 		"attach_component",
 		"configure_ecs",
 		"apply_default_pipeline",
-		"register",
-		"deregister",
+		"enlist",
+		"delist",
 		"grant_effect",
 		"trigger_effect",
 	};

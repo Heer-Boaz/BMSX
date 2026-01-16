@@ -22,6 +22,5 @@ _global['h406A'] = async function (args: BootArgs): Promise<void> {
 		viewHost: args.viewHost,
 	});
 	$.hide_onscreen_gamepad_buttons(['ls', 'rs', 'select', 'y']);
-	$.view.secondaryAtlas = null; // Must set this after creating the Game, otherwise GameView.images will not be initialized properly.
 	$.view.default_font = new BFont(BitmapId);
 };

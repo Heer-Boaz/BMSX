@@ -341,7 +341,7 @@ export class BmsxVMRuntime {
 			});
 			await runtime.buildAssetMemory({ source: engineSource, assets: $.assets });
 			await runtime.vdp.uploadAtlasTextures();
-			await $.refreshAudioAssets();
+			await $.refresh_audio_assets();
 			await runtime.boot();
 			$.start();
 			return;
@@ -403,7 +403,7 @@ export class BmsxVMRuntime {
 		});
 		await runtime.buildAssetMemory({ source: engineSource, assets: $.assets });
 		await runtime.vdp.uploadAtlasTextures();
-		await $.refreshAudioAssets();
+		await $.refresh_audio_assets();
 		await runtime.boot();
 		void runtime.prepareCartBoot();
 		$.start();
@@ -923,7 +923,7 @@ export class BmsxVMRuntime {
 			if (this.hasCompletedInitialBoot) { // Subsequent boot: reset to fresh world
 				await $.reset_to_fresh_world();
 				await this.vdp.uploadAtlasTextures();
-				await $.refreshAudioAssets();
+				await $.refresh_audio_assets();
 			}
 			api.cartdata($.lua_sources.namespace);
 			this.bootActiveProgram();
@@ -980,6 +980,7 @@ export class BmsxVMRuntime {
 			return;
 		}
 		try {
+			this.vdp.commitViewSnapshot();
 			this.drawGameFrame();
 		} finally {
 			this.abandonFrameState();
@@ -1271,7 +1272,7 @@ export class BmsxVMRuntime {
 		this.applyCartAssetLayers();
 		await this.buildAssetMemory();
 		await this.vdp.uploadAtlasTextures();
-		await $.refreshAudioAssets();
+		await $.refresh_audio_assets();
 		if (this.shouldBootLuaProgramFromSources()) {
 			this.preparedCartProgram = this.compileCartLuaProgramForBoot();
 			this.setCartBootReadyFlag(this.editor.exists);
@@ -1398,11 +1399,15 @@ export class BmsxVMRuntime {
 		const storage = this.storage.dump();
 		const vmState = this.captureVmState();
 		const atlasSlots = this.vdp.getAtlasSlotMapping();
+		const skyboxFaceIds = this.vdp.getSkyboxFaceIds();
+		const vdpDitherType = this.vdp.getDitherType();
 		const state: BmsxVMState = {
 			luaRuntimeFailed: this.luaRuntimeFailed,
 			luaPath: this._luaPath,
 			storage,
 			atlasSlots,
+			skyboxFaceIds,
+			vdpDitherType,
 		};
 		if (vmState) {
 			if (vmState.globals) {
@@ -1432,7 +1437,7 @@ export class BmsxVMRuntime {
 		this.luaVmInitialized = false;
 		await this.buildAssetMemory();
 		await this.vdp.uploadAtlasTextures();
-		await $.refreshAudioAssets();
+		await $.refresh_audio_assets();
 		await this.boot();
 	}
 
@@ -1472,13 +1477,22 @@ export class BmsxVMRuntime {
 	}
 
 	private applyAssetMemorySnapshot(snapshot: BmsxVMState): void {
-		if (!snapshot.assetMemory) {
-			return;
+		if (snapshot.assetMemory) {
+			this.memory.restoreAssetMemory(snapshot.assetMemory);
+			this.memory.rehydrateAssetEntriesFromTable();
 		}
-		this.memory.restoreAssetMemory(snapshot.assetMemory);
-		this.memory.rehydrateAssetEntriesFromTable();
 		if (snapshot.atlasSlots) {
 			this.vdp.restoreAtlasSlotMapping(snapshot.atlasSlots);
+		}
+		if (snapshot.skyboxFaceIds !== undefined) {
+			if (snapshot.skyboxFaceIds === null) {
+				this.vdp.clearSkybox();
+			} else {
+				this.vdp.setSkyboxImages(snapshot.skyboxFaceIds);
+			}
+		}
+		if (snapshot.vdpDitherType !== undefined) {
+			this.vdp.setDitherType(snapshot.vdpDitherType);
 		}
 		this.vdp.flushAssetEdits();
 	}
@@ -4192,7 +4206,7 @@ export class BmsxVMRuntime {
 			await this.buildAssetMemory();
 			await $.reset_to_fresh_world();
 			await this.vdp.uploadAtlasTextures();
-			await $.refreshAudioAssets();
+			await $.refresh_audio_assets();
 			try {
 				this.resetVmState();
 				if (this.shouldBootLuaProgramFromSources()) {

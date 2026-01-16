@@ -50,6 +50,8 @@ constexpr int kTexUnitAtlasPrimary = 0;
 constexpr int kTexUnitAtlasSecondary = 1;
 constexpr int kTexUnitAtlasEngine = 2;
 
+static_assert(ENGINE_ATLAS_INDEX <= 255, "ENGINE_ATLAS_INDEX must fit in uint8_t sprite atlas selector.");
+
 struct SpriteGLES2State {
 	GLuint program = 0;
 	GLint attrib_pos = -1;
@@ -513,7 +515,18 @@ void renderSpriteBatchGLES2(OpenGLES2Backend* backend, GameView* context,
 							: imgmeta->texcoords_fliph)
 			: (flip.flip_v ? imgmeta->texcoords_flipv : imgmeta->texcoords);
 	const uint16_t zPacked = packUnorm16(zNorm);
-	const uint8_t atlasPacked = static_cast<uint8_t>(context->resolveAtlasBindingId(imgmeta->atlasid));
+	const i32 atlasId = imgmeta->atlasid;
+	// Sprite binding selector uses ENGINE_ATLAS_INDEX for engine atlas in the shader.
+	uint8_t atlasPacked = static_cast<uint8_t>(ENGINE_ATLAS_INDEX);
+	if (atlasId != ENGINE_ATLAS_INDEX) {
+		if (atlasId == context->primaryAtlasIdInSlot) {
+			atlasPacked = 0;
+		} else if (atlasId == context->secondaryAtlasIdInSlot) {
+			atlasPacked = 1;
+		} else {
+			throw BMSX_RUNTIME_ERROR("[SpritesPipeline] Atlas not loaded into a slot.");
+		}
+	}
 	const int8_t weightPacked = packSnorm8(parallaxWeight);
 	const uint8_t colorR = packUnorm8(colorize.r);
 	const uint8_t colorG = packUnorm8(colorize.g);

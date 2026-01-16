@@ -155,13 +155,10 @@ export function createTestromModule() {
 			world.spawn(extraSun);
 			world.spawn(lamp);
 
-			$.view.setSkybox({
-				posx: null,
-				negx: null,
-				posy: null,
-				// posX: BitmapId.skybox,
-				// negX: BitmapId.skybox,
-				// posY: BitmapId.skybox,
+			$.set_skybox_imgs({
+				posx: BitmapId.skybox,
+				negx: BitmapId.skybox,
+				posy: BitmapId.skybox,
 				negy: BitmapId.skybox,
 				posz: BitmapId.skybox,
 				negz: BitmapId.skybox,

@@ -1,8 +1,8 @@
 require('globals.lua')
 require('story.lua')
 
--- local start_node = 'title'
-local start_node = 'combat_wekker'
+local start_node = 'title'
+-- local start_node = 'combat_wekker'
 
 local combat_module = require('combat.lua')
 local dialogue_module = require('dialogue.lua')
@@ -11,8 +11,6 @@ local transition_module = require('transition.lua')
 local director_def_id = 'p3.director'
 local director_fsm_id = 'p3.director.fsm'
 local combat_director_instance = nil
-
--- { planning = 0, opdekin = 0, rust = 0, makeup = 0 }
 
 local director = {}
 director.__index = director

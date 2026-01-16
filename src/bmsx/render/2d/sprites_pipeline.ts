@@ -16,7 +16,7 @@ import {
 	VERTICES_PER_SPRITE,
 	ZCOORD_MAX,
 } from '../backend/webgl/webgl.constants';
-import { ENGINE_ATLAS_TEXTURE_KEY } from 'bmsx/rompack/rompack';
+import { ENGINE_ATLAS_INDEX, ENGINE_ATLAS_TEXTURE_KEY } from 'bmsx/rompack/rompack';
 import { $ } from '../../core/engine_core';
 import type { WebGLBackend } from '../backend/webgl/webgl_backend';
 import { makePipelineBuildDesc, shaderModule } from '../backend/shader_module';
@@ -56,6 +56,15 @@ const MAX_S8 = 0x7f;
 const packUnorm8 = (value: number) => Math.round(clamp(value, 0, 1) * MAX_U8);
 const packUnorm16 = (value: number) => Math.round(clamp(value, 0, 1) * MAX_U16);
 const packSnorm8 = (value: number) => Math.round(clamp(value, -1, 1) * MAX_S8);
+
+let atlasSelectorChecked = false;
+const assertAtlasSelectorRange = () => {
+	if (atlasSelectorChecked || !$.debug) return;
+	atlasSelectorChecked = true;
+	if (ENGINE_ATLAS_INDEX > MAX_U8) {
+		throw new Error(`[SpritesPipeline] ENGINE_ATLAS_INDEX (${ENGINE_ATLAS_INDEX}) exceeds sprite atlas selector range.`);
+	}
+};
 
 export let spriteShaderProgram: WebGLProgram;
 let cornerLocation: number;
@@ -201,6 +210,7 @@ export function setupSpriteLocations(backend: WebGLBackend): void {
 // PassEncoder shape for backend.draw(). WebGL draw ignores it; WebGPU may use it.
 export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: SpritesPipelineState): void {
 	const { backend, gl, context } = runtime;
+	assertAtlasSelectorRange();
 	const spriteCount = beginSpriteQueue();
 	if (spriteCount === 0) return;
 	backend.setViewport({ x: 0, y: 0, w: state.width, h: state.height });
@@ -305,7 +315,21 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 		const byteOffset = i * SPRITE_INSTANCE_STRIDE;
 		const zNorm = 1 - (pos.z ?? DEFAULT_ZCOORD) / ZCOORD_MAX;
 		instanceU16[(byteOffset + SPRITE_INSTANCE_Z_OFFSET) >> 1] = packUnorm16(zNorm);
-		instanceU8[byteOffset + SPRITE_INSTANCE_ATLAS_OFFSET] = $.view.resolveAtlasBindingId(imgmeta.atlasid!);
+		const atlasId = imgmeta.atlasid!;
+		// Sprite binding selector uses ENGINE_ATLAS_INDEX for engine atlas in the shader.
+		let atlasBindingId = ENGINE_ATLAS_INDEX;
+		if (atlasId !== ENGINE_ATLAS_INDEX) {
+			const primaryAtlasIdInSlot = $.view.primaryAtlasIdInSlot;
+			const secondaryAtlasIdInSlot = $.view.secondaryAtlasIdInSlot;
+			if (atlasId === primaryAtlasIdInSlot) {
+				atlasBindingId = 0;
+			} else if (atlasId === secondaryAtlasIdInSlot) {
+				atlasBindingId = 1;
+			} else {
+				throw new Error(`[SpritesPipeline] Atlas ${atlasId} not loaded into a slot.`);
+			}
+		}
+		instanceU8[byteOffset + SPRITE_INSTANCE_ATLAS_OFFSET] = atlasBindingId;
 		instanceS8[byteOffset + SPRITE_INSTANCE_FX_OFFSET] = packSnorm8(parallaxWeightValue);
 		instanceU8[byteOffset + SPRITE_INSTANCE_COLOR_OFFSET + 0] = packUnorm8(colorize.r);
 		instanceU8[byteOffset + SPRITE_INSTANCE_COLOR_OFFSET + 1] = packUnorm8(colorize.g);

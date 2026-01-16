@@ -23,7 +23,9 @@ let skyboxTextureLocation: WebGLUniformLocation;
 let skyboxTintLocation: WebGLUniformLocation;
 let skyboxExposureLocation: WebGLUniformLocation;
 
-export let skyboxKey: TextureKey; export let skyboxFaceIds: SkyboxImageIds; const skyboxGroup = taskGate.group('texture:skybox:main');
+export let skyboxKey: TextureKey | null = null;
+export let skyboxFaceIds: SkyboxImageIds | null = null;
+const skyboxGroup = taskGate.group('texture:skybox:main');
 let lastBoundSkyboxTexture: TextureHandle = null;
 export let skyboxBuffer: WebGLBuffer; export let skyboxTexture: TextureHandle = null;
 export function init(backend: WebGLBackend): void {
@@ -117,6 +119,16 @@ export function setSkyboxSources(ids: SkyboxImageIds, loaders: readonly Promise<
 	skyboxFaceIds = ids;
 	lastBoundSkyboxTexture = null;
 }
+
+export function clearSkyboxSources(): void {
+	if (skyboxKey) {
+		$.texmanager.releaseByKey(skyboxKey);
+		skyboxKey = null;
+	}
+	skyboxFaceIds = null;
+	lastBoundSkyboxTexture = null;
+	skyboxTexture = null;
+}
 interface SkyboxRuntime {
 	backend: WebGLBackend;
 	gl: WebGL2RenderingContext;
@@ -159,7 +171,7 @@ export function registerSkyboxPass_WebGL(registry: RenderPassLibrary) {
 			init(backend as WebGLBackend);
 		},
 		writesDepth: false,
-		shouldExecute: () => !!$.world.activeCamera3D && !!skyboxKey,
+		shouldExecute: () => !!$.world.activeCamera3D && !!$.view.skyboxFaceIds && !!skyboxKey,
 		exec: (backend, fbo, s) => {
 			const webglBackend = backend as WebGLBackend;
 			const runtime: SkyboxRuntime = { backend: webglBackend, gl: webglBackend.gl as WebGL2RenderingContext, context: $.view };
@@ -167,6 +179,7 @@ export function registerSkyboxPass_WebGL(registry: RenderPassLibrary) {
 		},
 		prepare: (backend, _state) => {
 			const gv = $.view;
+			if (!gv.skyboxFaceIds || !skyboxKey) return;
 			const width = gv.offscreenCanvasSize.x; const height = gv.offscreenCanvasSize.y;
 			const cam = $.world.activeCamera3D;
 			if (!cam) return;
