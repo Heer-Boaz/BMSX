@@ -43,6 +43,666 @@ static void logMemSnapshot(const char* label) {
 	}
 }
 
+static const BinValue* findObjectField(const BinObject& obj, const char* key) {
+	auto it = obj.find(key);
+	if (it == obj.end() || it->second.isNull()) {
+		return nullptr;
+	}
+	return &it->second;
+}
+
+static const BinValue& requireObjectField(const BinObject& obj, const std::string& assetId, const char* key) {
+	const BinValue* value = findObjectField(obj, key);
+	if (!value) {
+		throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' missing field '" + std::string(key) + "'.");
+	}
+	return *value;
+}
+
+static std::vector<f32> readF32Array(const BinValue& value, const std::string& assetId, const char* field) {
+	if (value.isBinary()) {
+		const auto& bin = value.asBinary();
+		if (bin.size() % sizeof(f32) != 0) {
+			throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' field '" + std::string(field) + "' has invalid float buffer size.");
+		}
+		std::vector<f32> out(bin.size() / sizeof(f32));
+		if (!bin.empty()) {
+			std::memcpy(out.data(), bin.data(), bin.size());
+		}
+		return out;
+	}
+	if (value.isArray()) {
+		const auto& arr = value.asArray();
+		std::vector<f32> out;
+		out.reserve(arr.size());
+		for (const auto& entry : arr) {
+			if (!entry.isNumber()) {
+				throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' field '" + std::string(field) + "' contains non-number entries.");
+			}
+			out.push_back(static_cast<f32>(entry.toNumber()));
+		}
+		return out;
+	}
+	throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' field '" + std::string(field) + "' expected array or binary.");
+}
+
+static std::vector<u16> readU16Array(const BinValue& value, const std::string& assetId, const char* field) {
+	if (value.isBinary()) {
+		const auto& bin = value.asBinary();
+		if (bin.size() % sizeof(u16) != 0) {
+			throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' field '" + std::string(field) + "' has invalid uint16 buffer size.");
+		}
+		std::vector<u16> out(bin.size() / sizeof(u16));
+		if (!bin.empty()) {
+			std::memcpy(out.data(), bin.data(), bin.size());
+		}
+		return out;
+	}
+	if (value.isArray()) {
+		const auto& arr = value.asArray();
+		std::vector<u16> out;
+		out.reserve(arr.size());
+		for (const auto& entry : arr) {
+			if (!entry.isNumber()) {
+				throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' field '" + std::string(field) + "' contains non-number entries.");
+			}
+			out.push_back(static_cast<u16>(entry.toI32()));
+		}
+		return out;
+	}
+	throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' field '" + std::string(field) + "' expected array or binary.");
+}
+
+static std::vector<u32> readU32Array(const BinValue& value, const std::string& assetId, const char* field) {
+	if (value.isBinary()) {
+		const auto& bin = value.asBinary();
+		if (bin.size() % sizeof(u32) != 0) {
+			throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' field '" + std::string(field) + "' has invalid uint32 buffer size.");
+		}
+		std::vector<u32> out(bin.size() / sizeof(u32));
+		if (!bin.empty()) {
+			std::memcpy(out.data(), bin.data(), bin.size());
+		}
+		return out;
+	}
+	if (value.isArray()) {
+		const auto& arr = value.asArray();
+		std::vector<u32> out;
+		out.reserve(arr.size());
+		for (const auto& entry : arr) {
+			if (!entry.isNumber()) {
+				throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' field '" + std::string(field) + "' contains non-number entries.");
+			}
+			out.push_back(static_cast<u32>(entry.toI32()));
+		}
+		return out;
+	}
+	throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' field '" + std::string(field) + "' expected array or binary.");
+}
+
+static std::vector<u8> readU8Array(const BinValue& value, const std::string& assetId, const char* field) {
+	if (value.isBinary()) {
+		return value.asBinary();
+	}
+	if (value.isArray()) {
+		const auto& arr = value.asArray();
+		std::vector<u8> out;
+		out.reserve(arr.size());
+		for (const auto& entry : arr) {
+			if (!entry.isNumber()) {
+				throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' field '" + std::string(field) + "' contains non-number entries.");
+			}
+			out.push_back(static_cast<u8>(entry.toI32()));
+		}
+		return out;
+	}
+	throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' field '" + std::string(field) + "' expected array or binary.");
+}
+
+static std::vector<i32> readI32Array(const BinValue& value, const std::string& assetId, const char* field) {
+	if (!value.isArray()) {
+		throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' field '" + std::string(field) + "' expected array.");
+	}
+	const auto& arr = value.asArray();
+	std::vector<i32> out;
+	out.reserve(arr.size());
+	for (const auto& entry : arr) {
+		if (!entry.isNumber()) {
+			throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' field '" + std::string(field) + "' contains non-number entries.");
+		}
+		out.push_back(entry.toI32());
+	}
+	return out;
+}
+
+static std::vector<std::string> readStringArray(const BinValue& value, const std::string& assetId, const char* field) {
+	if (!value.isArray()) {
+		throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' field '" + std::string(field) + "' expected array.");
+	}
+	const auto& arr = value.asArray();
+	std::vector<std::string> out;
+	out.reserve(arr.size());
+	for (const auto& entry : arr) {
+		if (!entry.isString()) {
+			throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' field '" + std::string(field) + "' contains non-string entries.");
+		}
+		out.push_back(entry.asString());
+	}
+	return out;
+}
+
+static std::vector<std::vector<f32>> readF32ArrayList(const BinValue& value, const std::string& assetId, const char* field) {
+	if (!value.isArray()) {
+		throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' field '" + std::string(field) + "' expected array.");
+	}
+	const auto& arr = value.asArray();
+	std::vector<std::vector<f32>> out;
+	out.reserve(arr.size());
+	for (const auto& entry : arr) {
+		out.push_back(readF32Array(entry, assetId, field));
+	}
+	return out;
+}
+
+static std::optional<f32> readOptionalF32(const BinObject& obj, const std::string& assetId, const char* field) {
+	const BinValue* value = findObjectField(obj, field);
+	if (!value) {
+		return std::nullopt;
+	}
+	if (!value->isNumber()) {
+		throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' field '" + std::string(field) + "' expected number.");
+	}
+	return static_cast<f32>(value->toNumber());
+}
+
+static std::optional<i32> readOptionalI32(const BinObject& obj, const std::string& assetId, const char* field) {
+	const BinValue* value = findObjectField(obj, field);
+	if (!value) {
+		return std::nullopt;
+	}
+	if (!value->isNumber()) {
+		throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' field '" + std::string(field) + "' expected number.");
+	}
+	return value->toI32();
+}
+
+static std::optional<bool> readOptionalBool(const BinObject& obj, const std::string& assetId, const char* field) {
+	const BinValue* value = findObjectField(obj, field);
+	if (!value) {
+		return std::nullopt;
+	}
+	if (!value->isBool()) {
+		throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' field '" + std::string(field) + "' expected bool.");
+	}
+	return value->asBool();
+}
+
+static std::optional<std::string> readOptionalString(const BinObject& obj, const std::string& assetId, const char* field) {
+	const BinValue* value = findObjectField(obj, field);
+	if (!value) {
+		return std::nullopt;
+	}
+	if (!value->isString()) {
+		throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' field '" + std::string(field) + "' expected string.");
+	}
+	return value->asString();
+}
+
+static std::optional<std::array<f32, 3>> readOptionalVec3(const BinObject& obj, const std::string& assetId, const char* field) {
+	const BinValue* value = findObjectField(obj, field);
+	if (!value) {
+		return std::nullopt;
+	}
+	const std::vector<f32> data = readF32Array(*value, assetId, field);
+	if (data.size() != 3) {
+		throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' field '" + std::string(field) + "' expected 3 elements.");
+	}
+	return std::array<f32, 3>{data[0], data[1], data[2]};
+}
+
+static std::optional<std::array<f32, 4>> readOptionalVec4(const BinObject& obj, const std::string& assetId, const char* field) {
+	const BinValue* value = findObjectField(obj, field);
+	if (!value) {
+		return std::nullopt;
+	}
+	const std::vector<f32> data = readF32Array(*value, assetId, field);
+	if (data.size() != 4) {
+		throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' field '" + std::string(field) + "' expected 4 elements.");
+	}
+	return std::array<f32, 4>{data[0], data[1], data[2], data[3]};
+}
+
+static std::optional<std::array<f32, 16>> readOptionalMat4(const BinObject& obj, const std::string& assetId, const char* field) {
+	const BinValue* value = findObjectField(obj, field);
+	if (!value) {
+		return std::nullopt;
+	}
+	const std::vector<f32> data = readF32Array(*value, assetId, field);
+	if (data.size() != 16) {
+		throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' field '" + std::string(field) + "' expected 16 elements.");
+	}
+	return std::array<f32, 16>{
+		data[0], data[1], data[2], data[3],
+		data[4], data[5], data[6], data[7],
+		data[8], data[9], data[10], data[11],
+		data[12], data[13], data[14], data[15]
+	};
+}
+
+static std::optional<std::array<f32, 4>> readOptionalColor(const BinObject& obj, const std::string& assetId, const char* field, bool allowRgb) {
+	const BinValue* value = findObjectField(obj, field);
+	if (!value) {
+		return std::nullopt;
+	}
+	std::vector<f32> data = readF32Array(*value, assetId, field);
+	if (data.size() == 3 && allowRgb) {
+		data.push_back(1.0f);
+	}
+	if (data.size() != 4) {
+		const std::string expected = allowRgb ? "3 or 4" : "4";
+		throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' field '" + std::string(field) + "' expected " + expected + " elements.");
+	}
+	return std::array<f32, 4>{data[0], data[1], data[2], data[3]};
+}
+
+static std::vector<u32> readIndexArray(const BinValue& value, std::optional<u32>& componentType, const std::string& assetId) {
+	if (!componentType.has_value()) {
+		if (value.isBinary()) {
+			const auto& bin = value.asBinary();
+			componentType = (bin.size() % 4 == 0) ? 5125u : 5123u;
+		} else if (value.isArray()) {
+			componentType = value.asArray().size() > 65535 ? 5125u : 5123u;
+		} else {
+			throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' field 'indices' expected array or binary.");
+		}
+	}
+	switch (componentType.value()) {
+		case 5121: {
+			const std::vector<u8> raw = readU8Array(value, assetId, "indices");
+			std::vector<u32> out;
+			out.reserve(raw.size());
+			for (u8 entry : raw) {
+				out.push_back(static_cast<u32>(entry));
+			}
+			return out;
+		}
+		case 5123: {
+			const std::vector<u16> raw = readU16Array(value, assetId, "indices");
+			std::vector<u32> out;
+			out.reserve(raw.size());
+			for (u16 entry : raw) {
+				out.push_back(static_cast<u32>(entry));
+			}
+			return out;
+		}
+		case 5125:
+			return readU32Array(value, assetId, "indices");
+		default:
+			throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' field 'indices' has unsupported component type.");
+	}
+}
+
+static ModelMaterial parseModelMaterial(const BinValue& value, const std::string& assetId) {
+	if (!value.isObject()) {
+		throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' material entry is not an object.");
+	}
+	const auto& obj = value.asObject();
+	ModelMaterial material;
+	material.baseColorFactor = readOptionalColor(obj, assetId, "baseColorFactor", false);
+	material.metallicFactor = readOptionalF32(obj, assetId, "metallicFactor");
+	material.roughnessFactor = readOptionalF32(obj, assetId, "roughnessFactor");
+	material.baseColorTexture = readOptionalI32(obj, assetId, "baseColorTexture");
+	material.baseColorTexCoord = readOptionalI32(obj, assetId, "baseColorTexCoord");
+	material.normalTexture = readOptionalI32(obj, assetId, "normalTexture");
+	material.normalTexCoord = readOptionalI32(obj, assetId, "normalTexCoord");
+	material.normalScale = readOptionalF32(obj, assetId, "normalScale");
+	material.metallicRoughnessTexture = readOptionalI32(obj, assetId, "metallicRoughnessTexture");
+	material.metallicRoughnessTexCoord = readOptionalI32(obj, assetId, "metallicRoughnessTexCoord");
+	material.occlusionTexture = readOptionalI32(obj, assetId, "occlusionTexture");
+	material.occlusionTexCoord = readOptionalI32(obj, assetId, "occlusionTexCoord");
+	material.occlusionStrength = readOptionalF32(obj, assetId, "occlusionStrength");
+	material.emissiveTexture = readOptionalI32(obj, assetId, "emissiveTexture");
+	material.emissiveTexCoord = readOptionalI32(obj, assetId, "emissiveTexCoord");
+	material.emissiveFactor = readOptionalColor(obj, assetId, "emissiveFactor", true);
+	material.alphaMode = readOptionalString(obj, assetId, "alphaMode");
+	material.alphaCutoff = readOptionalF32(obj, assetId, "alphaCutoff");
+	material.doubleSided = readOptionalBool(obj, assetId, "doubleSided");
+	material.unlit = readOptionalBool(obj, assetId, "unlit");
+	return material;
+}
+
+static ModelMesh parseModelMesh(const BinValue& value, const std::string& assetId) {
+	if (!value.isObject()) {
+		throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' mesh entry is not an object.");
+	}
+	const auto& obj = value.asObject();
+	ModelMesh mesh;
+	mesh.positions = readF32Array(requireObjectField(obj, assetId, "positions"), assetId, "positions");
+	if (const BinValue* texcoords = findObjectField(obj, "texcoords")) {
+		mesh.texcoords = readF32Array(*texcoords, assetId, "texcoords");
+	}
+	if (const BinValue* texcoords1 = findObjectField(obj, "texcoords1")) {
+		mesh.texcoords1 = readF32Array(*texcoords1, assetId, "texcoords1");
+	}
+	if (const BinValue* normals = findObjectField(obj, "normals")) {
+		mesh.normals = readF32Array(*normals, assetId, "normals");
+	}
+	if (const BinValue* tangents = findObjectField(obj, "tangents")) {
+		mesh.tangents = readF32Array(*tangents, assetId, "tangents");
+	}
+	if (const BinValue* colors = findObjectField(obj, "colors")) {
+		mesh.colors = readF32Array(*colors, assetId, "colors");
+	}
+	mesh.materialIndex = readOptionalI32(obj, assetId, "materialIndex");
+	if (const BinValue* weights = findObjectField(obj, "weights")) {
+		mesh.weights = readF32Array(*weights, assetId, "weights");
+	}
+	if (const BinValue* joints = findObjectField(obj, "jointIndices")) {
+		mesh.jointIndices = readU16Array(*joints, assetId, "jointIndices");
+	}
+	if (const BinValue* jointWeights = findObjectField(obj, "jointWeights")) {
+		mesh.jointWeights = readF32Array(*jointWeights, assetId, "jointWeights");
+	}
+	if (const BinValue* morphPositions = findObjectField(obj, "morphPositions")) {
+		mesh.morphPositions = readF32ArrayList(*morphPositions, assetId, "morphPositions");
+	}
+	if (const BinValue* morphNormals = findObjectField(obj, "morphNormals")) {
+		mesh.morphNormals = readF32ArrayList(*morphNormals, assetId, "morphNormals");
+	}
+	if (const BinValue* morphTangents = findObjectField(obj, "morphTangents")) {
+		mesh.morphTangents = readF32ArrayList(*morphTangents, assetId, "morphTangents");
+	}
+	if (const BinValue* indexType = findObjectField(obj, "indexComponentType")) {
+		if (!indexType->isNumber()) {
+			throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' field 'indexComponentType' expected number.");
+		}
+		mesh.indexComponentType = static_cast<u32>(indexType->toI32());
+	}
+	if (const BinValue* indices = findObjectField(obj, "indices")) {
+		mesh.indices = readIndexArray(*indices, mesh.indexComponentType, assetId);
+	}
+	return mesh;
+}
+
+static ModelAnimationSampler parseModelAnimationSampler(const BinValue& value, const std::string& assetId) {
+	if (!value.isObject()) {
+		throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' animation sampler is not an object.");
+	}
+	const auto& obj = value.asObject();
+	ModelAnimationSampler sampler;
+	const BinValue& interpolation = requireObjectField(obj, assetId, "interpolation");
+	if (!interpolation.isString()) {
+		throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' animation sampler interpolation expected string.");
+	}
+	sampler.interpolation = interpolation.asString();
+	sampler.input = readF32Array(requireObjectField(obj, assetId, "input"), assetId, "input");
+	sampler.output = readF32Array(requireObjectField(obj, assetId, "output"), assetId, "output");
+	return sampler;
+}
+
+static ModelAnimationChannel parseModelAnimationChannel(const BinValue& value, const std::string& assetId) {
+	if (!value.isObject()) {
+		throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' animation channel is not an object.");
+	}
+	const auto& obj = value.asObject();
+	ModelAnimationChannel channel;
+	const BinValue& samplerVal = requireObjectField(obj, assetId, "sampler");
+	if (!samplerVal.isNumber()) {
+		throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' animation channel sampler expected number.");
+	}
+	channel.sampler = samplerVal.toI32();
+	const BinValue& targetVal = requireObjectField(obj, assetId, "target");
+	if (!targetVal.isObject()) {
+		throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' animation channel target is not an object.");
+	}
+	const auto& targetObj = targetVal.asObject();
+	const BinValue& pathVal = requireObjectField(targetObj, assetId, "path");
+	if (!pathVal.isString()) {
+		throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' animation channel target path expected string.");
+	}
+	channel.target.path = pathVal.asString();
+	if (const BinValue* nodeVal = findObjectField(targetObj, "node")) {
+		if (!nodeVal->isNumber()) {
+			throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' animation channel target node expected number.");
+		}
+		channel.target.node = nodeVal->toI32();
+	}
+	return channel;
+}
+
+static ModelAnimation parseModelAnimation(const BinValue& value, const std::string& assetId) {
+	if (!value.isObject()) {
+		throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' animation entry is not an object.");
+	}
+	const auto& obj = value.asObject();
+	ModelAnimation animation;
+	if (const BinValue* nameVal = findObjectField(obj, "name")) {
+		if (!nameVal->isString()) {
+			throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' animation name expected string.");
+		}
+		animation.name = nameVal->asString();
+	}
+	const BinValue& samplersVal = requireObjectField(obj, assetId, "samplers");
+	if (!samplersVal.isArray()) {
+		throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' animation samplers expected array.");
+	}
+	for (const auto& samplerVal : samplersVal.asArray()) {
+		animation.samplers.push_back(parseModelAnimationSampler(samplerVal, assetId));
+	}
+	const BinValue& channelsVal = requireObjectField(obj, assetId, "channels");
+	if (!channelsVal.isArray()) {
+		throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' animation channels expected array.");
+	}
+	for (const auto& channelVal : channelsVal.asArray()) {
+		animation.channels.push_back(parseModelAnimationChannel(channelVal, assetId));
+	}
+	return animation;
+}
+
+static ModelNode parseModelNode(const BinValue& value, const std::string& assetId) {
+	if (!value.isObject()) {
+		throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' node entry is not an object.");
+	}
+	const auto& obj = value.asObject();
+	ModelNode node;
+	node.mesh = readOptionalI32(obj, assetId, "mesh");
+	if (const BinValue* childrenVal = findObjectField(obj, "children")) {
+		node.children = readI32Array(*childrenVal, assetId, "children");
+	}
+	node.translation = readOptionalVec3(obj, assetId, "translation");
+	node.rotation = readOptionalVec4(obj, assetId, "rotation");
+	node.scale = readOptionalVec3(obj, assetId, "scale");
+	node.matrix = readOptionalMat4(obj, assetId, "matrix");
+	node.skin = readOptionalI32(obj, assetId, "skin");
+	if (const BinValue* weights = findObjectField(obj, "weights")) {
+		node.weights = readF32Array(*weights, assetId, "weights");
+	}
+	node.visible = readOptionalBool(obj, assetId, "visible");
+	return node;
+}
+
+static ModelScene parseModelScene(const BinValue& value, const std::string& assetId) {
+	if (!value.isObject()) {
+		throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' scene entry is not an object.");
+	}
+	const auto& obj = value.asObject();
+	ModelScene scene;
+	if (const BinValue* nodesVal = findObjectField(obj, "nodes")) {
+		scene.nodes = readI32Array(*nodesVal, assetId, "nodes");
+	}
+	return scene;
+}
+
+static ModelSkin parseModelSkin(const BinValue& value, const std::string& assetId) {
+	if (!value.isObject()) {
+		throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' skin entry is not an object.");
+	}
+	const auto& obj = value.asObject();
+	ModelSkin skin;
+	const BinValue& jointsVal = requireObjectField(obj, assetId, "joints");
+	skin.joints = readI32Array(jointsVal, assetId, "joints");
+	if (const BinValue* matricesVal = findObjectField(obj, "inverseBindMatrices")) {
+		if (!matricesVal->isArray()) {
+			throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' inverseBindMatrices expected array.");
+		}
+		for (const auto& entry : matricesVal->asArray()) {
+			const std::vector<f32> data = readF32Array(entry, assetId, "inverseBindMatrices");
+			if (data.size() != 16) {
+				throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' inverseBindMatrices entry expected 16 elements.");
+			}
+			skin.inverseBindMatrices.push_back(std::array<f32, 16>{
+				data[0], data[1], data[2], data[3],
+				data[4], data[5], data[6], data[7],
+				data[8], data[9], data[10], data[11],
+				data[12], data[13], data[14], data[15]
+			});
+		}
+	}
+	return skin;
+}
+
+static void remapMaterialTextureIndex(std::optional<i32>& value, const std::vector<i32>& textures, const std::string& assetId, const char* field) {
+	if (!value.has_value()) {
+		return;
+	}
+	const i32 index = value.value();
+	if (index < 0 || static_cast<size_t>(index) >= textures.size()) {
+		throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' material " + std::string(field) + " index out of range.");
+	}
+	value = textures[static_cast<size_t>(index)];
+}
+
+static ModelAsset parseModelAsset(const std::string& assetId, const BinValue& value, const u8* textureData, size_t textureSize) {
+	if (!value.isObject()) {
+		throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' payload is not an object.");
+	}
+	const auto& obj = value.asObject();
+	ModelAsset model;
+	model.id = assetId;
+
+	const BinValue& meshesVal = requireObjectField(obj, assetId, "meshes");
+	if (!meshesVal.isArray()) {
+		throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' meshes expected array.");
+	}
+	for (const auto& meshVal : meshesVal.asArray()) {
+		model.meshes.push_back(parseModelMesh(meshVal, assetId));
+	}
+
+	if (const BinValue* materialsVal = findObjectField(obj, "materials")) {
+		if (!materialsVal->isArray()) {
+			throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' materials expected array.");
+		}
+		for (const auto& matVal : materialsVal->asArray()) {
+			model.materials.push_back(parseModelMaterial(matVal, assetId));
+		}
+	}
+
+	if (const BinValue* animationsVal = findObjectField(obj, "animations")) {
+		if (!animationsVal->isArray()) {
+			throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' animations expected array.");
+		}
+		for (const auto& animVal : animationsVal->asArray()) {
+			model.animations.push_back(parseModelAnimation(animVal, assetId));
+		}
+	}
+
+	if (const BinValue* nodesVal = findObjectField(obj, "nodes")) {
+		if (!nodesVal->isArray()) {
+			throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' nodes expected array.");
+		}
+		for (const auto& nodeVal : nodesVal->asArray()) {
+			model.nodes.push_back(parseModelNode(nodeVal, assetId));
+		}
+	}
+
+	if (const BinValue* scenesVal = findObjectField(obj, "scenes")) {
+		if (!scenesVal->isArray()) {
+			throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' scenes expected array.");
+		}
+		for (const auto& sceneVal : scenesVal->asArray()) {
+			model.scenes.push_back(parseModelScene(sceneVal, assetId));
+		}
+	}
+
+	if (const BinValue* sceneVal = findObjectField(obj, "scene")) {
+		if (!sceneVal->isNumber()) {
+			throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' scene expected number.");
+		}
+		model.scene = sceneVal->toI32();
+	}
+
+	if (const BinValue* skinsVal = findObjectField(obj, "skins")) {
+		if (!skinsVal->isArray()) {
+			throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' skins expected array.");
+		}
+		for (const auto& skinVal : skinsVal->asArray()) {
+			model.skins.push_back(parseModelSkin(skinVal, assetId));
+		}
+	}
+
+	if (const BinValue* texturesVal = findObjectField(obj, "textures")) {
+		model.textures = readI32Array(*texturesVal, assetId, "textures");
+	}
+
+	if (const BinValue* imageOffsetsVal = findObjectField(obj, "imageOffsets")) {
+		if (!imageOffsetsVal->isArray()) {
+			throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' imageOffsets expected array.");
+		}
+		for (const auto& entry : imageOffsetsVal->asArray()) {
+			if (!entry.isObject()) {
+				throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' imageOffsets entry is not an object.");
+			}
+			const auto& offsetObj = entry.asObject();
+			const BinValue& startVal = requireObjectField(offsetObj, assetId, "start");
+			const BinValue& endVal = requireObjectField(offsetObj, assetId, "end");
+			if (!startVal.isNumber() || !endVal.isNumber()) {
+				throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' imageOffsets expected numeric start/end.");
+			}
+			ModelImageOffset offset;
+			offset.start = startVal.toI32();
+			offset.end = endVal.toI32();
+			model.imageOffsets.push_back(offset);
+		}
+	}
+
+	if (const BinValue* imageBuffersVal = findObjectField(obj, "imageBuffers")) {
+		if (!imageBuffersVal->isArray()) {
+			throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' imageBuffers expected array.");
+		}
+		for (const auto& entry : imageBuffersVal->asArray()) {
+			model.imageBuffers.push_back(readU8Array(entry, assetId, "imageBuffers"));
+		}
+	}
+
+	if (const BinValue* imageURIsVal = findObjectField(obj, "imageURIs")) {
+		model.imageURIs = readStringArray(*imageURIsVal, assetId, "imageURIs");
+	}
+
+	if (model.imageBuffers.empty() && textureData && textureSize > 0 && !model.imageOffsets.empty()) {
+		for (const auto& offset : model.imageOffsets) {
+			if (offset.start < 0 || offset.end < offset.start || static_cast<size_t>(offset.end) > textureSize) {
+				throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' imageOffsets out of range.");
+			}
+			const size_t start = static_cast<size_t>(offset.start);
+			const size_t end = static_cast<size_t>(offset.end);
+			std::vector<u8> slice(textureData + start, textureData + end);
+			model.imageBuffers.push_back(std::move(slice));
+		}
+	}
+
+	if (!model.textures.empty() && !model.materials.empty()) {
+		for (auto& material : model.materials) {
+			remapMaterialTextureIndex(material.baseColorTexture, model.textures, assetId, "baseColorTexture");
+			remapMaterialTextureIndex(material.normalTexture, model.textures, assetId, "normalTexture");
+			remapMaterialTextureIndex(material.metallicRoughnessTexture, model.textures, assetId, "metallicRoughnessTexture");
+			remapMaterialTextureIndex(material.occlusionTexture, model.textures, assetId, "occlusionTexture");
+			remapMaterialTextureIndex(material.emissiveTexture, model.textures, assetId, "emissiveTexture");
+		}
+	}
+
+	return model;
+}
+
 /* ============================================================================
  * RuntimeAssets implementation
  * ============================================================================ */
@@ -454,6 +1114,8 @@ bool loadAssetsFromRom(const u8* buffer,
 		i32 bufEnd = asset.count("end") ? asset.at("end").toI32() : -1;
 		i32 metaBufStart = asset.count("metabuffer_start") ? asset.at("metabuffer_start").toI32() : -1;
 		i32 metaBufEnd = asset.count("metabuffer_end") ? asset.at("metabuffer_end").toI32() : -1;
+		i32 textureBufStart = asset.count("texture_start") ? asset.at("texture_start").toI32() : -1;
+		i32 textureBufEnd = asset.count("texture_end") ? asset.at("texture_end").toI32() : -1;
 
 		if (assetType == "image" || assetType == "atlas") {
 			ImgAsset imgAsset;
@@ -567,6 +1229,22 @@ bool loadAssetsFromRom(const u8* buffer,
 			audioAsset.bytes.assign(audioData, audioData + audioSize);
 
 			assets.audio[assetId] = std::move(audioAsset);
+		}
+		else if (assetType == "model") {
+			if (bufStart < 0 || bufEnd <= bufStart) {
+				throw BMSX_RUNTIME_ERROR("Model asset missing payload: " + assetId);
+			}
+			const u8* modelData = romData + bufStart;
+			const size_t modelSize = static_cast<size_t>(bufEnd - bufStart);
+			BinValue modelValue = decodeBinary(modelData, modelSize);
+			const u8* textureData = nullptr;
+			size_t textureSize = 0;
+			if (textureBufStart >= 0 && textureBufEnd > textureBufStart) {
+				textureData = romData + textureBufStart;
+				textureSize = static_cast<size_t>(textureBufEnd - textureBufStart);
+			}
+			ModelAsset modelAsset = parseModelAsset(assetId, modelValue, textureData, textureSize);
+			assets.model[assetId] = std::move(modelAsset);
 		}
 		else if (assetType == "aem") {
 			if (bufStart < 0 || bufEnd <= bufStart) {

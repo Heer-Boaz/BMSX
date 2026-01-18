@@ -320,24 +320,42 @@ export class VmMemory {
 			const entry = this.assetEntries[index];
 			const entryAddr = entryBaseAddr + index * ASSET_TABLE_ENTRY_SIZE;
 			const entryOffset = entryAddr - RAM_BASE;
-			const typeId = entry.type === 'image' ? ASSET_TYPE_IMAGE : ASSET_TYPE_AUDIO;
+			let typeId = 0;
+			switch (entry.type) {
+				case 'image':
+					typeId = ASSET_TYPE_IMAGE;
+					break;
+				case 'audio':
+					typeId = ASSET_TYPE_AUDIO;
+					break;
+				default:
+					throw new Error(`[VmMemory] Asset entry has unknown type: ${entry.type}.`);
+			}
 			const idOffset = stringTableAddr + stringOffsets.get(entry.id);
 			this.ramView.setUint32(entryOffset + 0, typeId, true);
 			this.ramView.setUint32(entryOffset + 4, entry.flags, true);
 			this.ramView.setUint32(entryOffset + 8, idOffset, true);
 			this.ramView.setUint32(entryOffset + 12, entry.baseAddr, true);
 			this.ramView.setUint32(entryOffset + 16, entry.baseSize, true);
-			this.ramView.setUint32(entryOffset + 20, entry.baseStride, true);
-			this.ramView.setUint32(entryOffset + 24, entry.regionX, true);
-			this.ramView.setUint32(entryOffset + 28, entry.regionY, true);
-			this.ramView.setUint32(entryOffset + 32, entry.regionW, true);
-			this.ramView.setUint32(entryOffset + 36, entry.regionH, true);
-			this.ramView.setUint32(entryOffset + 40, entry.sampleRate, true);
-			this.ramView.setUint32(entryOffset + 44, entry.channels, true);
-			this.ramView.setUint32(entryOffset + 48, entry.frames, true);
-			this.ramView.setUint32(entryOffset + 52, entry.bitsPerSample, true);
-			this.ramView.setUint32(entryOffset + 56, entry.audioDataOffset, true);
-			this.ramView.setUint32(entryOffset + 60, entry.audioDataSize, true);
+			switch (entry.type) {
+				case 'image':
+					this.ramView.setUint32(entryOffset + 20, entry.baseStride, true);
+					this.ramView.setUint32(entryOffset + 24, entry.regionX, true);
+					this.ramView.setUint32(entryOffset + 28, entry.regionY, true);
+					this.ramView.setUint32(entryOffset + 32, entry.regionW, true);
+					this.ramView.setUint32(entryOffset + 36, entry.regionH, true);
+					break;
+				case 'audio':
+					this.ramView.setUint32(entryOffset + 40, entry.sampleRate, true);
+					this.ramView.setUint32(entryOffset + 44, entry.channels, true);
+					this.ramView.setUint32(entryOffset + 48, entry.frames, true);
+					this.ramView.setUint32(entryOffset + 52, entry.bitsPerSample, true);
+					this.ramView.setUint32(entryOffset + 56, entry.audioDataOffset, true);
+					this.ramView.setUint32(entryOffset + 60, entry.audioDataSize, true);
+					break;
+				default:
+					throw new Error(`[VmMemory] Asset entry has unknown type: ${entry.type}.`);
+			}
 		}
 
 		const stringOffset = stringTableAddr - RAM_BASE;
@@ -661,17 +679,25 @@ export class VmMemory {
 		const entryOffset = entryAddr - RAM_BASE;
 		this.ramView.setUint32(entryOffset + 12, entry.baseAddr, true);
 		this.ramView.setUint32(entryOffset + 16, entry.baseSize, true);
-		this.ramView.setUint32(entryOffset + 20, entry.baseStride, true);
-		this.ramView.setUint32(entryOffset + 24, entry.regionX, true);
-		this.ramView.setUint32(entryOffset + 28, entry.regionY, true);
-		this.ramView.setUint32(entryOffset + 32, entry.regionW, true);
-		this.ramView.setUint32(entryOffset + 36, entry.regionH, true);
-		this.ramView.setUint32(entryOffset + 40, entry.sampleRate, true);
-		this.ramView.setUint32(entryOffset + 44, entry.channels, true);
-		this.ramView.setUint32(entryOffset + 48, entry.frames, true);
-		this.ramView.setUint32(entryOffset + 52, entry.bitsPerSample, true);
-		this.ramView.setUint32(entryOffset + 56, entry.audioDataOffset, true);
-		this.ramView.setUint32(entryOffset + 60, entry.audioDataSize, true);
+		switch (entry.type) {
+			case 'image':
+				this.ramView.setUint32(entryOffset + 20, entry.baseStride, true);
+				this.ramView.setUint32(entryOffset + 24, entry.regionX, true);
+				this.ramView.setUint32(entryOffset + 28, entry.regionY, true);
+				this.ramView.setUint32(entryOffset + 32, entry.regionW, true);
+				this.ramView.setUint32(entryOffset + 36, entry.regionH, true);
+				break;
+			case 'audio':
+				this.ramView.setUint32(entryOffset + 40, entry.sampleRate, true);
+				this.ramView.setUint32(entryOffset + 44, entry.channels, true);
+				this.ramView.setUint32(entryOffset + 48, entry.frames, true);
+				this.ramView.setUint32(entryOffset + 52, entry.bitsPerSample, true);
+				this.ramView.setUint32(entryOffset + 56, entry.audioDataOffset, true);
+				this.ramView.setUint32(entryOffset + 60, entry.audioDataSize, true);
+				break;
+			default:
+				throw new Error(`[VmMemory] Asset entry has unknown type: ${entry.type}.`);
+		}
 	}
 
 	private mapAssetPages(ownerIndex: number, addr: number, size: number): void {

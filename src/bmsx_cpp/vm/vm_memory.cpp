@@ -204,24 +204,42 @@ void VmMemory::finalizeAssetTable() {
 		const auto& entry = m_assetEntries[index];
 		const uint32_t entryAddr = entryBaseAddr + static_cast<uint32_t>(index * ASSET_TABLE_ENTRY_SIZE);
 		const uint32_t entryOffset = entryAddr - RAM_BASE;
-		const uint32_t typeId = entry.type == AssetType::Image ? ASSET_TYPE_IMAGE : ASSET_TYPE_AUDIO;
+		uint32_t typeId = 0;
+		switch (entry.type) {
+			case AssetType::Image:
+				typeId = ASSET_TYPE_IMAGE;
+				break;
+			case AssetType::Audio:
+				typeId = ASSET_TYPE_AUDIO;
+				break;
+			default:
+				throw std::runtime_error("[VmMemory] Asset entry has unknown type.");
+		}
 		const uint32_t idAddr = stringTableAddr + stringOffsets.at(entry.id);
 		writeU32LE(base + entryOffset + 0, typeId);
 		writeU32LE(base + entryOffset + 4, entry.flags);
 		writeU32LE(base + entryOffset + 8, idAddr);
 		writeU32LE(base + entryOffset + 12, entry.baseAddr);
 		writeU32LE(base + entryOffset + 16, entry.baseSize);
-		writeU32LE(base + entryOffset + 20, entry.baseStride);
-		writeU32LE(base + entryOffset + 24, entry.regionX);
-		writeU32LE(base + entryOffset + 28, entry.regionY);
-		writeU32LE(base + entryOffset + 32, entry.regionW);
-		writeU32LE(base + entryOffset + 36, entry.regionH);
-		writeU32LE(base + entryOffset + 40, entry.sampleRate);
-		writeU32LE(base + entryOffset + 44, entry.channels);
-		writeU32LE(base + entryOffset + 48, entry.frames);
-		writeU32LE(base + entryOffset + 52, entry.bitsPerSample);
-		writeU32LE(base + entryOffset + 56, entry.audioDataOffset);
-		writeU32LE(base + entryOffset + 60, entry.audioDataSize);
+		switch (entry.type) {
+			case AssetType::Image:
+				writeU32LE(base + entryOffset + 20, entry.baseStride);
+				writeU32LE(base + entryOffset + 24, entry.regionX);
+				writeU32LE(base + entryOffset + 28, entry.regionY);
+				writeU32LE(base + entryOffset + 32, entry.regionW);
+				writeU32LE(base + entryOffset + 36, entry.regionH);
+				break;
+			case AssetType::Audio:
+				writeU32LE(base + entryOffset + 40, entry.sampleRate);
+				writeU32LE(base + entryOffset + 44, entry.channels);
+				writeU32LE(base + entryOffset + 48, entry.frames);
+				writeU32LE(base + entryOffset + 52, entry.bitsPerSample);
+				writeU32LE(base + entryOffset + 56, entry.audioDataOffset);
+				writeU32LE(base + entryOffset + 60, entry.audioDataSize);
+				break;
+			default:
+				throw std::runtime_error("[VmMemory] Asset entry has unknown type.");
+		}
 	}
 
 	const uint32_t stringOffset = stringTableAddr - RAM_BASE;
@@ -522,17 +540,25 @@ void VmMemory::updateAssetEntryData(size_t index, const AssetEntry& entry) {
 	const uint32_t entryOffset = entryAddr - RAM_BASE;
 	writeU32LE(m_ram.data() + entryOffset + 12, entry.baseAddr);
 	writeU32LE(m_ram.data() + entryOffset + 16, entry.baseSize);
-	writeU32LE(m_ram.data() + entryOffset + 20, entry.baseStride);
-	writeU32LE(m_ram.data() + entryOffset + 24, entry.regionX);
-	writeU32LE(m_ram.data() + entryOffset + 28, entry.regionY);
-	writeU32LE(m_ram.data() + entryOffset + 32, entry.regionW);
-	writeU32LE(m_ram.data() + entryOffset + 36, entry.regionH);
-	writeU32LE(m_ram.data() + entryOffset + 40, entry.sampleRate);
-	writeU32LE(m_ram.data() + entryOffset + 44, entry.channels);
-	writeU32LE(m_ram.data() + entryOffset + 48, entry.frames);
-	writeU32LE(m_ram.data() + entryOffset + 52, entry.bitsPerSample);
-	writeU32LE(m_ram.data() + entryOffset + 56, entry.audioDataOffset);
-	writeU32LE(m_ram.data() + entryOffset + 60, entry.audioDataSize);
+	switch (entry.type) {
+		case AssetType::Image:
+			writeU32LE(m_ram.data() + entryOffset + 20, entry.baseStride);
+			writeU32LE(m_ram.data() + entryOffset + 24, entry.regionX);
+			writeU32LE(m_ram.data() + entryOffset + 28, entry.regionY);
+			writeU32LE(m_ram.data() + entryOffset + 32, entry.regionW);
+			writeU32LE(m_ram.data() + entryOffset + 36, entry.regionH);
+			break;
+		case AssetType::Audio:
+			writeU32LE(m_ram.data() + entryOffset + 40, entry.sampleRate);
+			writeU32LE(m_ram.data() + entryOffset + 44, entry.channels);
+			writeU32LE(m_ram.data() + entryOffset + 48, entry.frames);
+			writeU32LE(m_ram.data() + entryOffset + 52, entry.bitsPerSample);
+			writeU32LE(m_ram.data() + entryOffset + 56, entry.audioDataOffset);
+			writeU32LE(m_ram.data() + entryOffset + 60, entry.audioDataSize);
+			break;
+		default:
+			throw std::runtime_error("[VmMemory] Asset entry has unknown type.");
+	}
 }
 
 } // namespace bmsx

@@ -149,20 +149,111 @@ struct AudioAsset {
 };
 
 /* ============================================================================
- * 3D Model (simplified GLTF-like structure)
+ * 3D Model (GLTF-like structure)
  * ============================================================================ */
 
+struct ModelImageOffset {
+	i32 start = 0;
+	i32 end = 0;
+};
+
+struct ModelMaterial {
+	std::optional<std::array<f32, 4>> baseColorFactor;
+	std::optional<f32> metallicFactor;
+	std::optional<f32> roughnessFactor;
+	std::optional<i32> baseColorTexture;
+	std::optional<i32> baseColorTexCoord;
+	std::optional<i32> normalTexture;
+	std::optional<i32> normalTexCoord;
+	std::optional<f32> normalScale;
+	std::optional<i32> metallicRoughnessTexture;
+	std::optional<i32> metallicRoughnessTexCoord;
+	std::optional<i32> occlusionTexture;
+	std::optional<i32> occlusionTexCoord;
+	std::optional<f32> occlusionStrength;
+	std::optional<i32> emissiveTexture;
+	std::optional<i32> emissiveTexCoord;
+	std::optional<std::array<f32, 4>> emissiveFactor;
+	std::optional<std::string> alphaMode;
+	std::optional<f32> alphaCutoff;
+	std::optional<bool> doubleSided;
+	std::optional<bool> unlit;
+};
+
+struct ModelAnimationSampler {
+	std::string interpolation;
+	std::vector<f32> input;
+	std::vector<f32> output;
+};
+
+struct ModelAnimationChannelTarget {
+	std::optional<i32> node;
+	std::string path;
+};
+
+struct ModelAnimationChannel {
+	i32 sampler = 0;
+	ModelAnimationChannelTarget target;
+};
+
+struct ModelAnimation {
+	std::optional<std::string> name;
+	std::vector<ModelAnimationSampler> samplers;
+	std::vector<ModelAnimationChannel> channels;
+};
+
+struct ModelNode {
+	std::optional<i32> mesh;
+	std::vector<i32> children;
+	std::optional<std::array<f32, 3>> translation;
+	std::optional<std::array<f32, 4>> rotation;
+	std::optional<std::array<f32, 3>> scale;
+	std::optional<std::array<f32, 16>> matrix;
+	std::optional<i32> skin;
+	std::vector<f32> weights;
+	std::optional<bool> visible;
+};
+
+struct ModelScene {
+	std::vector<i32> nodes;
+};
+
+struct ModelSkin {
+	std::vector<i32> joints;
+	std::vector<std::array<f32, 16>> inverseBindMatrices;
+};
+
 struct ModelMesh {
-	std::vector<f32> positions;   // xyz interleaved
-	std::vector<f32> normals;     // xyz interleaved
-	std::vector<f32> uvs;         // uv interleaved
+	std::vector<f32> positions;
+	std::vector<f32> texcoords;
+	std::vector<f32> texcoords1;
+	std::vector<f32> normals;
+	std::vector<f32> tangents;
 	std::vector<u32> indices;
-	AssetId textureId;            // Reference to ImgAsset
+	std::optional<u32> indexComponentType;
+	std::optional<i32> materialIndex;
+	std::vector<std::vector<f32>> morphPositions;
+	std::vector<std::vector<f32>> morphNormals;
+	std::vector<std::vector<f32>> morphTangents;
+	std::vector<f32> weights;
+	std::vector<u16> jointIndices;
+	std::vector<f32> jointWeights;
+	std::vector<f32> colors;
 };
 
 struct ModelAsset {
 	AssetId id;
 	std::vector<ModelMesh> meshes;
+	std::vector<ModelMaterial> materials;
+	std::vector<ModelAnimation> animations;
+	std::vector<ModelImageOffset> imageOffsets;
+	std::vector<i32> textures;
+	std::vector<ModelNode> nodes;
+	std::vector<ModelScene> scenes;
+	std::optional<i32> scene;
+	std::vector<ModelSkin> skins;
+	std::vector<std::string> imageURIs;
+	std::vector<std::vector<u8>> imageBuffers;
 };
 
 /* ============================================================================
