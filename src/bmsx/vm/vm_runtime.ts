@@ -26,6 +26,8 @@ import {
 	CanonicalizationType,
 	CART_ROM_HEADER_SIZE,
 	CART_ROM_MAGIC,
+	ENGINE_ATLAS_INDEX,
+	generateAtlasName,
 } from '../rompack/rompack';
 import { AssetSourceStack, type RawAssetSource } from '../rompack/asset_source';
 import { applyRuntimeAssetLayer, buildRuntimeAssetLayer, type RuntimeAssetLayer } from '../rompack/romloader';
@@ -314,7 +316,6 @@ export class BmsxVMRuntime {
 	public static async init(cartridge?: BmsxCartridgeBlob): Promise<void> {
 		const engineLayer = $.engine_layer;
 		const playerIndex = Input.instance.startupGamepadIndex ?? 1;
-		$.view.default_font = new VMFont();
 
 		const engineSource = new AssetSourceStack([{ id: engineLayer.id, index: engineLayer.index, payload: engineLayer.payload }]);
 		const engineLuaSources = BmsxVMRuntime.buildLuaSources({
@@ -341,6 +342,8 @@ export class BmsxVMRuntime {
 				engineCanonicalization: engineLayer.index.manifest.vm.canonicalization,
 			});
 			await runtime.buildAssetMemory({ source: engineSource, assets: $.assets });
+			runtime.memory.sealEngineAssets();
+			$.view.default_font = new VMFont();
 			await runtime.vdp.uploadAtlasTextures();
 			await $.refresh_audio_assets();
 			await runtime.boot();
@@ -403,6 +406,8 @@ export class BmsxVMRuntime {
 			cartCanonicalization: cartLayer.index.manifest.vm.canonicalization,
 		});
 		await runtime.buildAssetMemory({ source: engineSource, assets: $.assets });
+		runtime.memory.sealEngineAssets();
+		$.view.default_font = new VMFont();
 		await runtime.vdp.uploadAtlasTextures();
 		await $.refresh_audio_assets();
 		await runtime.boot();
@@ -795,7 +800,7 @@ export class BmsxVMRuntime {
 		const messages = this.pendingLuaWarnings;
 		this.pendingLuaWarnings = [];
 		for (const warning of messages) {
-			this.editor!.showWarningBanner(warning, 6.0);
+			ide_state.showWarningBanner(warning, 6.0);
 		}
 	}
 
@@ -1314,7 +1319,7 @@ export class BmsxVMRuntime {
 			return;
 		}
 		this.applyCartAssetLayers();
-		await this.buildAssetMemory();
+		await this.buildAssetMemory({ mode: 'cart' });
 		await this.vdp.uploadAtlasTextures();
 		await $.refresh_audio_assets();
 		if (this.shouldBootLuaProgramFromSources()) {
@@ -1325,15 +1330,20 @@ export class BmsxVMRuntime {
 		this.setCartBootReadyFlag(this.editor.exists);
 	}
 
-	private async buildAssetMemory(params?: { source?: RawAssetSource; assets?: RuntimeAssets }): Promise<void> {
+	private async buildAssetMemory(params?: { source?: RawAssetSource; assets?: RuntimeAssets; mode?: 'full' | 'cart' }): Promise<void> {
 		const token = this.assetMemoryGate.begin({ blocking: true, category: 'asset', tag: 'asset_ram' });
 		try {
+			const mode = params?.mode ?? 'full';
 			const assetSource = params?.source ?? $.asset_source;
 			const assets = params?.assets ?? $.assets;
 			if (!assetSource) {
 				throw new Error('[BmsxVMRuntime] Asset source not configured.');
 			}
-			this.memory.resetAssetMemory();
+			if (mode === 'cart') {
+				this.memory.resetCartAssets();
+			} else {
+				this.memory.resetAssetMemory();
+			}
 			await this.vdp.registerImageAssets(assetSource, assets);
 			this.registerAudioAssets(assetSource, assets);
 			this.rebuildAssetMetaCaches(assets);
@@ -1348,6 +1358,9 @@ export class BmsxVMRuntime {
 		const entries = source.list('audio');
 		for (let index = 0; index < entries.length; index += 1) {
 			const entry = entries[index];
+			if (this.memory.hasAsset(entry.resid)) {
+				continue;
+			}
 			if (typeof entry.start !== 'number' || typeof entry.end !== 'number') {
 				throw new Error(`[BmsxVMRuntime] Audio asset '${entry.resid}' missing ROM buffer offsets.`);
 			}
@@ -1377,10 +1390,14 @@ export class BmsxVMRuntime {
 	private rebuildAssetMetaCaches(assets: RuntimeAssets): void {
 		this.imageMetaByHandle.clear();
 		this.audioMetaByHandle.clear();
+		const engineAtlasId = generateAtlasName(ENGINE_ATLAS_INDEX);
 		const imgKeys = Object.keys(assets.img);
 		for (let index = 0; index < imgKeys.length; index += 1) {
 			const id = imgKeys[index]!;
 			const asset = assets.img[id];
+			if (asset.type === 'atlas' && id !== engineAtlasId) {
+				continue;
+			}
 			const meta = asset.imgmeta;
 			if (!meta) {
 				throw new Error(`[BmsxVMRuntime] Image asset '${id}' missing metadata.`);
@@ -1505,7 +1522,11 @@ export class BmsxVMRuntime {
 		const asset = $.lua_sources.path2lua[$.lua_sources.entry_path];
 		this._luaPath = asset.source_path;
 		this.luaVmInitialized = false;
-		await this.buildAssetMemory();
+		const mode = this.cartAssetLayer ? 'cart' : 'full';
+		await this.buildAssetMemory({ mode });
+		if (mode === 'full') {
+			this.memory.sealEngineAssets();
+		}
 		await this.vdp.uploadAtlasTextures();
 		await $.refresh_audio_assets();
 		await this.boot();
@@ -4273,7 +4294,11 @@ export class BmsxVMRuntime {
 
 			// Reload the active program source and reset the world
 			this.applyCartAssetLayers();
-			await this.buildAssetMemory();
+			const mode = this.cartAssetLayer ? 'cart' : 'full';
+			await this.buildAssetMemory({ mode });
+			if (mode === 'full') {
+				this.memory.sealEngineAssets();
+			}
 			await $.reset_to_fresh_world();
 			await this.vdp.uploadAtlasTextures();
 			await $.refresh_audio_assets();

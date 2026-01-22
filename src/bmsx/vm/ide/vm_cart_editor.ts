@@ -133,7 +133,6 @@ export const editorFacade = {
 	shutdown,
 	updateViewport,
 	setFontVariant,
-	showWarningBanner: ide_state.showWarningBanner,
 	showRuntimeErrorInChunk,
 	showRuntimeError,
 	clearRuntimeErrorOverlay,

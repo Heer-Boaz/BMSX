@@ -20,6 +20,10 @@ import type { Polygon, vec3arr, asset_id, AudioType } from '../rompack/rompack';
 import { taskGate, GateGroup } from '../core/taskgate';
 import { VMRenderFacade } from './vm_render_facade';
 import { BmsxVMRuntime } from './vm_runtime';
+import { listResources } from './workspace';
+import { getWorkspaceCachedSource } from './workspace_cache';
+import { DEFAULT_LUA_BUILTIN_NAMES } from './lua_builtins';
+import { createLuaTable, type LuaTable } from '../lua/luavalue';
 
 type AudioPlaybackMode = 'replace' | 'ignore' | 'queue' | 'stop' | 'pause';
 type MusicTransitionSync = 'immediate' | 'loop'
@@ -637,6 +641,38 @@ export class BmsxVMApi {
 
 	public cartdata(namespace: string): void {
 		this.storage.setNamespace(namespace);
+	}
+
+	public list_lua_resources(): LuaTable {
+		const descriptors = listResources();
+		const table = createLuaTable();
+		for (let index = 0; index < descriptors.length; index += 1) {
+			table.set(index + 1, this._runtime.luaJsBridge.toLua(descriptors[index]));
+		}
+		return table;
+	}
+
+	public get_lua_entry_path(): string {
+		return this._runtime.listLuaSourceRegistries()[0].registry.entry_path;
+	}
+
+	public get_lua_resource_source(path: string): string {
+		const record = this._runtime.resolveLuaSourceRecord(path);
+		const canonical = record.normalized_source_path;
+		const cached = getWorkspaceCachedSource(canonical);
+		return cached ?? record.src;
+	}
+
+	public list_lua_builtins(): LuaTable {
+		const table = createLuaTable();
+		for (let index = 0; index < DEFAULT_LUA_BUILTIN_NAMES.length; index += 1) {
+			table.set(index + 1, DEFAULT_LUA_BUILTIN_NAMES[index]);
+		}
+		return table;
+	}
+
+	public get_default_font(): VMFont {
+		return this.font;
 	}
 
 	public dset(index: number, value: number): void {

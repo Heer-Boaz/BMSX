@@ -397,11 +397,11 @@ export class EngineCore {
 		if (!resolvedViewHost) {
 			throw new Error('[Game] Platform did not expose a GameViewHost. Provide one in GameInitArgs.');
 		}
-		this._sndcontext = sndcontext ?? null;
-		this._gainnode = gainnode ?? null;
+		this._sndcontext = sndcontext;
+		this._gainnode = gainnode;
 		const engineLayer = await buildRuntimeAssetLayer({ blob: engineRom, id: 'system' });
 		this._engine_layer = engineLayer;
-		this._workspace_overlay = workspaceOverlay ?? null;
+		this._workspace_overlay = workspaceOverlay;
 		this._assets = engineLayer.assets;
 		this._asset_source = new AssetSourceStack([{ id: engineLayer.id, index: engineLayer.index, payload: engineLayer.payload }]);
 		platform.gameviewHost = resolvedViewHost;

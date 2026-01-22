@@ -237,6 +237,38 @@ export const VM_API_METHOD_METADATA = {
 		],
 		returnType: 'void',
 	},
+	list_lua_resources: {
+		description: 'Lists Lua resources available to the VM (engine + cart), including read-only flags.',
+		parameters: [],
+		returnType: 'table',
+		returnDescription: 'Array-like table of resource records: { path, type, asset_id?, readOnly? }.',
+	},
+	get_lua_entry_path: {
+		description: 'Returns the Lua entry path for the active registry (engine or cart).',
+		parameters: [],
+		returnType: 'string',
+		returnDescription: 'Entry Lua path.',
+	},
+	get_lua_resource_source: {
+		description: 'Returns the current source for a Lua resource, including workspace overrides.',
+		parameters: [
+			{ name: 'path', description: 'Lua resource path to read.' },
+		],
+		returnType: 'string',
+		returnDescription: 'Lua source text.',
+	},
+	list_lua_builtins: {
+		description: 'Returns the list of builtin Lua identifiers used by the runtime.',
+		parameters: [],
+		returnType: 'table',
+		returnDescription: 'Array-like table of builtin identifier names.',
+	},
+	get_default_font: {
+		description: 'Returns the default VM font handle.',
+		parameters: [],
+		returnType: 'VMFont',
+		returnDescription: 'Native VMFont instance.',
+	},
 	dset: {
 		description: 'Writes a number to persistent cart storage.',
 		parameters: [

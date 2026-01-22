@@ -83,6 +83,9 @@ export class VmMemory {
 	private assetDirtyOwners = new Set<number>();
 	private assetDataCursor = ASSET_DATA_BASE;
 	private assetTableFinalized = false;
+	private engineAssetEntryCount = 0;
+	private engineAssetDataEnd = ASSET_DATA_BASE;
+	private cartAssetDataBase = ASSET_DATA_BASE;
 	private readonly assetIdEncoder = new TextEncoder();
 
 	public constructor(init: VmMemoryInit) {
@@ -110,10 +113,57 @@ export class VmMemory {
 		this.assetIndexByToken.clear();
 		this.assetDirtyOwners.clear();
 		this.assetTableFinalized = false;
+		this.engineAssetEntryCount = 0;
+		this.engineAssetDataEnd = ASSET_DATA_BASE;
+		this.cartAssetDataBase = ASSET_DATA_BASE;
 		this.assetOwnerPages.fill(-1);
 		this.assetDataCursor = ASSET_DATA_BASE;
 		const assetOffset = ASSET_RAM_BASE - RAM_BASE;
 		this.ram.fill(0, assetOffset, assetOffset + ASSET_RAM_SIZE);
+	}
+
+	public hasAsset(id: string): boolean {
+		if (this.assetIndexById.has(id)) {
+			return true;
+		}
+		const { lo, hi } = this.hashAssetId(id);
+		return this.assetIndexByToken.has(this.tokenKey(lo, hi));
+	}
+
+	public sealEngineAssets(): void {
+		this.engineAssetEntryCount = this.assetEntries.length;
+		this.engineAssetDataEnd = this.assetDataCursor;
+		const mask = ASSET_PAGE_SIZE - 1;
+		const aligned = (this.engineAssetDataEnd + mask) & ~mask;
+		if (aligned > ASSET_DATA_END) {
+			throw new Error(`[VmMemory] Engine asset data exceeds asset RAM (${aligned} > ${ASSET_DATA_END}).`);
+		}
+		this.cartAssetDataBase = aligned;
+	}
+
+	public resetCartAssets(): void {
+		this.assetEntries.length = this.engineAssetEntryCount;
+		this.assetIndexById.clear();
+		this.assetIndexByToken.clear();
+		this.assetDirtyOwners.clear();
+		this.assetTableFinalized = false;
+		this.assetOwnerPages.fill(-1);
+		for (let index = 0; index < this.assetEntries.length; index += 1) {
+			const entry = this.assetEntries[index];
+			this.assetIndexById.set(entry.id, index);
+			this.assetIndexByToken.set(this.tokenKey(entry.idTokenLo, entry.idTokenHi), index);
+		}
+		for (let index = 0; index < this.assetEntries.length; index += 1) {
+			const entry = this.assetEntries[index];
+			if (entry.ownerIndex !== index) {
+				continue;
+			}
+			this.mapAssetPages(index, entry.baseAddr, entry.capacity);
+		}
+		this.assetDataCursor = this.cartAssetDataBase;
+		const cartOffset = this.cartAssetDataBase - RAM_BASE;
+		const cartEnd = ASSET_DATA_END - RAM_BASE;
+		this.ram.fill(0, cartOffset, cartEnd);
 	}
 
 	public registerImageSlot(params: {
@@ -219,6 +269,7 @@ export class VmMemory {
 			audioDataSize: 0,
 			ownerIndex: params.baseEntry.ownerIndex,
 		});
+		// @ts-ignore
 		const index = this.registerAssetEntry(entry);
 		return entry;
 	}

@@ -87,8 +87,8 @@ export class VDP {
 
 	public restoreAtlasSlotMapping(mapping: { primary: number | null; secondary: number | null }): void {
 		this.atlasSlotById.clear();
-		this.slotAtlasIds[0] = mapping.primary ?? null;
-		this.slotAtlasIds[1] = mapping.secondary ?? null;
+		this.slotAtlasIds[0] = mapping.primary;
+		this.slotAtlasIds[1] = mapping.secondary;
 		if (mapping.primary !== null) {
 			this.atlasSlotById.set(mapping.primary, 0);
 		}
@@ -143,6 +143,7 @@ export class VDP {
 		const viewEntries: RomAsset[] = [];
 		const engineAtlasName = generateAtlasName(ENGINE_ATLAS_INDEX);
 		let engineAtlasEntry: RomAsset | null = null;
+		let engineEntryRecord: VmAssetEntry | null = null;
 		this.atlasResourcesById.clear();
 		this.atlasViewsById.clear();
 		this.atlasSlotById.clear();
@@ -169,7 +170,11 @@ export class VDP {
 			}
 			if (entry.type === 'atlas') {
 				if (entry.resid === engineAtlasName) {
-					engineAtlasEntry = entry;
+					if (this.memory.hasAsset(engineAtlasName)) {
+						engineEntryRecord = this.memory.getAssetEntry(engineAtlasName);
+					} else {
+						engineAtlasEntry = entry;
+					}
 					continue;
 				}
 				if (typeof meta.atlasid !== 'number') {
@@ -184,26 +189,32 @@ export class VDP {
 			}
 		}
 
-		if (!engineAtlasEntry) {
-			throw new Error('[BmsxVDP] Engine atlas missing from asset list.');
+		if (!engineEntryRecord && this.memory.hasAsset(engineAtlasName)) {
+			engineEntryRecord = this.memory.getAssetEntry(engineAtlasName);
 		}
-		if (typeof engineAtlasEntry.start !== 'number' || typeof engineAtlasEntry.end !== 'number') {
-			throw new Error('[BmsxVDP] Engine atlas missing ROM buffer offsets.');
+
+		if (!engineEntryRecord) {
+			if (!engineAtlasEntry) {
+				throw new Error('[BmsxVDP] Engine atlas missing from asset list.');
+			}
+			if (typeof engineAtlasEntry.start !== 'number' || typeof engineAtlasEntry.end !== 'number') {
+				throw new Error('[BmsxVDP] Engine atlas missing ROM buffer offsets.');
+			}
+			const engineImgAsset = assets.img[engineAtlasEntry.resid];
+			const engineDecoded = await decodePngToRgba(source.getBuffer(engineAtlasEntry));
+			if (engineImgAsset.imgmeta.width <= 0) {
+				engineImgAsset.imgmeta.width = engineDecoded.width;
+			}
+			if (engineImgAsset.imgmeta.height <= 0) {
+				engineImgAsset.imgmeta.height = engineDecoded.height;
+			}
+			engineEntryRecord = this.memory.registerImageBuffer({
+				id: engineAtlasEntry.resid,
+				width: engineDecoded.width,
+				height: engineDecoded.height,
+				pixels: engineDecoded.pixels,
+			});
 		}
-		const engineImgAsset = assets.img[engineAtlasEntry.resid];
-		const engineDecoded = await decodePngToRgba(source.getBuffer(engineAtlasEntry));
-		if (engineImgAsset.imgmeta.width <= 0) {
-			engineImgAsset.imgmeta.width = engineDecoded.width;
-		}
-		if (engineImgAsset.imgmeta.height <= 0) {
-			engineImgAsset.imgmeta.height = engineDecoded.height;
-		}
-		const engineEntryRecord = this.memory.registerImageBuffer({
-			id: engineAtlasEntry.resid,
-			width: engineDecoded.width,
-			height: engineDecoded.height,
-			pixels: engineDecoded.pixels,
-		});
 
 		const skyboxFaceSize = assets.manifest.vm.skybox_face_size ?? SKYBOX_FACE_DEFAULT_SIZE;
 		if (skyboxFaceSize <= 0) {
@@ -211,10 +222,13 @@ export class VDP {
 		}
 		const skyboxBytes = skyboxFaceSize * skyboxFaceSize * 4;
 		for (let index = 0; index < SKYBOX_SLOT_IDS.length; index += 1) {
-			const slotEntry = this.memory.registerImageSlot({
-				id: SKYBOX_SLOT_IDS[index],
-				capacityBytes: skyboxBytes,
-			});
+			const slotId = SKYBOX_SLOT_IDS[index];
+			const slotEntry = this.memory.hasAsset(slotId)
+				? this.memory.getAssetEntry(slotId)
+				: this.memory.registerImageSlot({
+					id: slotId,
+					capacityBytes: skyboxBytes,
+				});
 			this.skyboxSlotEntries.push(slotEntry);
 		}
 
@@ -233,14 +247,18 @@ export class VDP {
 			throw new Error('[BmsxVDP] No atlas resources available for slot allocation.');
 		}
 
-		const primarySlotEntry = this.memory.registerImageSlot({
-			id: ATLAS_PRIMARY_SLOT_ID,
-			capacityBytes: maxAtlasBytes,
-		});
-		const secondarySlotEntry = this.memory.registerImageSlot({
-			id: ATLAS_SECONDARY_SLOT_ID,
-			capacityBytes: maxAtlasBytes,
-		});
+		const primarySlotEntry = this.memory.hasAsset(ATLAS_PRIMARY_SLOT_ID)
+			? this.memory.getAssetEntry(ATLAS_PRIMARY_SLOT_ID)
+			: this.memory.registerImageSlot({
+				id: ATLAS_PRIMARY_SLOT_ID,
+				capacityBytes: maxAtlasBytes,
+			});
+		const secondarySlotEntry = this.memory.hasAsset(ATLAS_SECONDARY_SLOT_ID)
+			? this.memory.getAssetEntry(ATLAS_SECONDARY_SLOT_ID)
+			: this.memory.registerImageSlot({
+				id: ATLAS_SECONDARY_SLOT_ID,
+				capacityBytes: maxAtlasBytes,
+			});
 		this.atlasSlotEntries = [primarySlotEntry, secondarySlotEntry];
 
 		const atlasIds = Array.from(this.atlasResourcesById.keys()).sort((a, b) => a - b);
@@ -298,14 +316,16 @@ export class VDP {
 			const offsetY = Math.floor(minV * atlasHeight);
 			const regionW = Math.max(1, Math.min(atlasWidth - offsetX, Math.round((maxU - minU) * atlasWidth)));
 			const regionH = Math.max(1, Math.min(atlasHeight - offsetY, Math.round((maxV - minV) * atlasHeight)));
-			const viewEntry = this.memory.registerImageView({
-				id: entry.resid,
-				baseEntry,
-				regionX: offsetX,
-				regionY: offsetY,
-				regionW,
-				regionH,
-			});
+			const viewEntry = this.memory.hasAsset(entry.resid)
+				? this.memory.getAssetEntry(entry.resid)
+				: this.memory.registerImageView({
+					id: entry.resid,
+					baseEntry,
+					regionX: offsetX,
+					regionY: offsetY,
+					regionW,
+					regionH,
+				});
 			let list = this.atlasViewsById.get(atlasId);
 			if (!list) {
 				list = [];
