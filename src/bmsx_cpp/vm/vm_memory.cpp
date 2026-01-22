@@ -6,14 +6,18 @@
 
 namespace bmsx {
 namespace {
-constexpr uint32_t ASSET_TABLE_MAGIC = 0x54534D41u; // 'AMST'
-constexpr uint32_t ASSET_TABLE_HEADER_SIZE = 32;
+constexpr uint32_t ASSET_TABLE_MAGIC = 0x32534D41u; // 'AMS2'
+constexpr uint32_t ASSET_TABLE_HEADER_SIZE = 40;
 constexpr uint32_t ASSET_TABLE_ENTRY_SIZE = 64;
+// 1 = FNV-1a 64 over canonical UTF-8 (lowercase, slash-normalized, collapse "//", trim leading "./").
+constexpr uint32_t ASSET_TABLE_HASH_ALG_ID = 1;
 constexpr uint32_t ASSET_PAGE_SHIFT = 12;
 constexpr uint32_t ASSET_PAGE_SIZE = 1u << ASSET_PAGE_SHIFT;
 constexpr uint32_t ASSET_TYPE_IMAGE = 1;
 constexpr uint32_t ASSET_TYPE_AUDIO = 2;
 constexpr uint32_t ASSET_FLAG_VIEW = 1u << 1;
+constexpr uint64_t ASSET_TOKEN_OFFSET_BASIS = 0xcbf29ce484222325ull;
+constexpr uint64_t ASSET_TOKEN_PRIME = 0x100000001b3ull;
 
 inline uint32_t alignUp(uint32_t value, uint32_t alignment) {
 	const uint32_t mask = alignment - 1;
@@ -25,6 +29,46 @@ inline void writeU32LE(u8* dst, uint32_t value) {
 	dst[1] = static_cast<u8>((value >> 8) & 0xffu);
 	dst[2] = static_cast<u8>((value >> 16) & 0xffu);
 	dst[3] = static_cast<u8>((value >> 24) & 0xffu);
+}
+
+std::string canonicalizeAssetId(const std::string& id) {
+	std::string out;
+	out.reserve(id.size());
+	size_t index = 0;
+	if (id.size() >= 2 && id[0] == '.' && (id[1] == '/' || id[1] == '\\')) {
+		index = 2;
+	}
+	bool prevSlash = false;
+	for (; index < id.size(); ++index) {
+		unsigned char c = static_cast<unsigned char>(id[index]);
+		if (c == '\\') {
+			c = '/';
+		}
+		if (c == '/') {
+			if (prevSlash) {
+				continue;
+			}
+			prevSlash = true;
+			out.push_back('/');
+			continue;
+		}
+		prevSlash = false;
+		if (c >= 'A' && c <= 'Z') {
+			c = static_cast<unsigned char>(c - 'A' + 'a');
+		}
+		out.push_back(static_cast<char>(c));
+	}
+	return out;
+}
+
+uint64_t hashAssetId(const std::string& id) {
+	const std::string canonical = canonicalizeAssetId(id);
+	uint64_t hash = ASSET_TOKEN_OFFSET_BASIS;
+	for (unsigned char c : canonical) {
+		hash ^= static_cast<uint64_t>(c);
+		hash *= ASSET_TOKEN_PRIME;
+	}
+	return hash;
 }
 }
 
@@ -63,9 +107,9 @@ void VmMemory::setOverlayRom(u8* data, size_t size) {
 void VmMemory::resetAssetMemory() {
 	m_assetEntries.clear();
 	m_assetIndexById.clear();
+	m_assetIndexByToken.clear();
 	m_assetDirtyFlags.clear();
 	m_assetDirtyList.clear();
-	m_assetCapacity.clear();
 	m_assetTableFinalized = false;
 	std::fill(m_assetOwnerPages.begin(), m_assetOwnerPages.end(), -1);
 	m_assetDataCursor = ASSET_DATA_BASE;
@@ -85,12 +129,12 @@ VmMemory::AssetEntry& VmMemory::registerImageBuffer(const std::string& id, const
 	entry.flags = flags;
 	entry.baseAddr = addr;
 	entry.baseSize = size;
+	entry.capacity = size;
 	entry.baseStride = stride;
 	entry.regionW = width;
 	entry.regionH = height;
 	const size_t index = addAssetEntry(std::move(entry));
 	m_assetEntries[index].ownerIndex = index;
-	m_assetCapacity[index] = size;
 	mapAssetPages(index, addr, size);
 	return m_assetEntries[index];
 }
@@ -105,12 +149,12 @@ VmMemory::AssetEntry& VmMemory::registerImageSlot(const std::string& id, uint32_
 	entry.flags = flags;
 	entry.baseAddr = addr;
 	entry.baseSize = 0;
+	entry.capacity = capacityBytes;
 	entry.baseStride = 0;
 	entry.regionW = 0;
 	entry.regionH = 0;
 	const size_t index = addAssetEntry(std::move(entry));
 	m_assetEntries[index].ownerIndex = index;
-	m_assetCapacity[index] = capacityBytes;
 	mapAssetPages(index, addr, capacityBytes);
 	return m_assetEntries[index];
 }
@@ -123,6 +167,7 @@ VmMemory::AssetEntry& VmMemory::registerImageView(const std::string& id, const A
 	entry.ownerIndex = base.ownerIndex;
 	entry.baseAddr = base.baseAddr;
 	entry.baseSize = base.baseSize;
+	entry.capacity = 0;
 	entry.baseStride = base.baseStride;
 	entry.regionX = regionX;
 	entry.regionY = regionY;
@@ -130,7 +175,6 @@ VmMemory::AssetEntry& VmMemory::registerImageView(const std::string& id, const A
 	entry.regionH = regionH;
 	const size_t index = addAssetEntry(std::move(entry));
 	m_assetEntries[index].ownerIndex = base.ownerIndex;
-	m_assetCapacity[index] = base.baseSize;
 	return m_assetEntries[index];
 }
 
@@ -154,6 +198,7 @@ VmMemory::AssetEntry& VmMemory::registerAudioBuffer(
 	entry.type = AssetType::Audio;
 	entry.baseAddr = addr;
 	entry.baseSize = size;
+	entry.capacity = size;
 	entry.sampleRate = sampleRate;
 	entry.channels = channels;
 	entry.frames = frames;
@@ -162,7 +207,6 @@ VmMemory::AssetEntry& VmMemory::registerAudioBuffer(
 	entry.audioDataSize = dataSize;
 	const size_t index = addAssetEntry(std::move(entry));
 	m_assetEntries[index].ownerIndex = index;
-	m_assetCapacity[index] = size;
 	mapAssetPages(index, addr, size);
 	return m_assetEntries[index];
 }
@@ -199,6 +243,8 @@ void VmMemory::finalizeAssetTable() {
 	writeU32LE(base + headerOffset + 20, static_cast<uint32_t>(stringTable.size()));
 	writeU32LE(base + headerOffset + 24, ASSET_DATA_BASE);
 	writeU32LE(base + headerOffset + 28, m_assetDataCursor - ASSET_DATA_BASE);
+	writeU32LE(base + headerOffset + 32, ASSET_TABLE_HASH_ALG_ID);
+	writeU32LE(base + headerOffset + 36, 0u);
 
 	for (size_t index = 0; index < m_assetEntries.size(); ++index) {
 		const auto& entry = m_assetEntries[index];
@@ -216,26 +262,31 @@ void VmMemory::finalizeAssetTable() {
 				throw std::runtime_error("[VmMemory] Asset entry has unknown type.");
 		}
 		const uint32_t idAddr = stringTableAddr + stringOffsets.at(entry.id);
+		const uint32_t tokenLo = static_cast<uint32_t>(entry.idToken & 0xffffffffu);
+		const uint32_t tokenHi = static_cast<uint32_t>((entry.idToken >> 32) & 0xffffffffu);
 		writeU32LE(base + entryOffset + 0, typeId);
 		writeU32LE(base + entryOffset + 4, entry.flags);
-		writeU32LE(base + entryOffset + 8, idAddr);
-		writeU32LE(base + entryOffset + 12, entry.baseAddr);
-		writeU32LE(base + entryOffset + 16, entry.baseSize);
+		writeU32LE(base + entryOffset + 8, tokenLo);
+		writeU32LE(base + entryOffset + 12, tokenHi);
+		writeU32LE(base + entryOffset + 16, idAddr);
+		writeU32LE(base + entryOffset + 20, entry.baseAddr);
+		writeU32LE(base + entryOffset + 24, entry.baseSize);
+		writeU32LE(base + entryOffset + 28, entry.capacity);
 		switch (entry.type) {
 			case AssetType::Image:
-				writeU32LE(base + entryOffset + 20, entry.baseStride);
-				writeU32LE(base + entryOffset + 24, entry.regionX);
-				writeU32LE(base + entryOffset + 28, entry.regionY);
-				writeU32LE(base + entryOffset + 32, entry.regionW);
-				writeU32LE(base + entryOffset + 36, entry.regionH);
+				writeU32LE(base + entryOffset + 32, entry.baseStride);
+				writeU32LE(base + entryOffset + 36, entry.regionX);
+				writeU32LE(base + entryOffset + 40, entry.regionY);
+				writeU32LE(base + entryOffset + 44, entry.regionW);
+				writeU32LE(base + entryOffset + 48, entry.regionH);
 				break;
 			case AssetType::Audio:
-				writeU32LE(base + entryOffset + 40, entry.sampleRate);
-				writeU32LE(base + entryOffset + 44, entry.channels);
-				writeU32LE(base + entryOffset + 48, entry.frames);
-				writeU32LE(base + entryOffset + 52, entry.bitsPerSample);
-				writeU32LE(base + entryOffset + 56, entry.audioDataOffset);
-				writeU32LE(base + entryOffset + 60, entry.audioDataSize);
+				writeU32LE(base + entryOffset + 32, entry.sampleRate);
+				writeU32LE(base + entryOffset + 36, entry.channels);
+				writeU32LE(base + entryOffset + 40, entry.frames);
+				writeU32LE(base + entryOffset + 44, entry.bitsPerSample);
+				writeU32LE(base + entryOffset + 48, entry.audioDataOffset);
+				writeU32LE(base + entryOffset + 52, entry.audioDataSize);
 				break;
 			default:
 				throw std::runtime_error("[VmMemory] Asset entry has unknown type.");
@@ -315,7 +366,7 @@ const u8* VmMemory::getAudioData(const AssetEntry& entry) const {
 
 void VmMemory::writeImageSlot(AssetEntry& entry, const u8* pixels, size_t pixelBytes, uint32_t width, uint32_t height) {
 	const size_t index = m_assetIndexById.at(entry.id);
-	const uint32_t capacity = m_assetCapacity.at(index);
+	const uint32_t capacity = entry.capacity;
 	const uint32_t stride = width * 4u;
 	const uint32_t size = stride * height;
 	const uint32_t maxWritable = ASSET_DATA_END - entry.baseAddr;
@@ -527,34 +578,43 @@ uint32_t VmMemory::allocateAssetData(uint32_t size, uint32_t alignment) {
 }
 
 size_t VmMemory::addAssetEntry(AssetEntry entry) {
+	if (m_assetIndexById.count(entry.id) != 0) {
+		throw std::runtime_error("[VmMemory] Asset entry already registered.");
+	}
+	entry.idToken = hashAssetId(entry.id);
+	const auto tokenIt = m_assetIndexByToken.find(entry.idToken);
+	if (tokenIt != m_assetIndexByToken.end()) {
+		throw std::runtime_error("[VmMemory] Asset token collision detected.");
+	}
 	const size_t index = m_assetEntries.size();
 	m_assetEntries.push_back(std::move(entry));
 	m_assetIndexById[m_assetEntries.back().id] = index;
+	m_assetIndexByToken[m_assetEntries.back().idToken] = index;
 	m_assetDirtyFlags.push_back(0);
-	m_assetCapacity.push_back(0);
 	return index;
 }
 
 void VmMemory::updateAssetEntryData(size_t index, const AssetEntry& entry) {
 	const uint32_t entryAddr = ASSET_TABLE_BASE + ASSET_TABLE_HEADER_SIZE + static_cast<uint32_t>(index * ASSET_TABLE_ENTRY_SIZE);
 	const uint32_t entryOffset = entryAddr - RAM_BASE;
-	writeU32LE(m_ram.data() + entryOffset + 12, entry.baseAddr);
-	writeU32LE(m_ram.data() + entryOffset + 16, entry.baseSize);
+	writeU32LE(m_ram.data() + entryOffset + 20, entry.baseAddr);
+	writeU32LE(m_ram.data() + entryOffset + 24, entry.baseSize);
+	writeU32LE(m_ram.data() + entryOffset + 28, entry.capacity);
 	switch (entry.type) {
 		case AssetType::Image:
-			writeU32LE(m_ram.data() + entryOffset + 20, entry.baseStride);
-			writeU32LE(m_ram.data() + entryOffset + 24, entry.regionX);
-			writeU32LE(m_ram.data() + entryOffset + 28, entry.regionY);
-			writeU32LE(m_ram.data() + entryOffset + 32, entry.regionW);
-			writeU32LE(m_ram.data() + entryOffset + 36, entry.regionH);
+			writeU32LE(m_ram.data() + entryOffset + 32, entry.baseStride);
+			writeU32LE(m_ram.data() + entryOffset + 36, entry.regionX);
+			writeU32LE(m_ram.data() + entryOffset + 40, entry.regionY);
+			writeU32LE(m_ram.data() + entryOffset + 44, entry.regionW);
+			writeU32LE(m_ram.data() + entryOffset + 48, entry.regionH);
 			break;
 		case AssetType::Audio:
-			writeU32LE(m_ram.data() + entryOffset + 40, entry.sampleRate);
-			writeU32LE(m_ram.data() + entryOffset + 44, entry.channels);
-			writeU32LE(m_ram.data() + entryOffset + 48, entry.frames);
-			writeU32LE(m_ram.data() + entryOffset + 52, entry.bitsPerSample);
-			writeU32LE(m_ram.data() + entryOffset + 56, entry.audioDataOffset);
-			writeU32LE(m_ram.data() + entryOffset + 60, entry.audioDataSize);
+			writeU32LE(m_ram.data() + entryOffset + 32, entry.sampleRate);
+			writeU32LE(m_ram.data() + entryOffset + 36, entry.channels);
+			writeU32LE(m_ram.data() + entryOffset + 40, entry.frames);
+			writeU32LE(m_ram.data() + entryOffset + 44, entry.bitsPerSample);
+			writeU32LE(m_ram.data() + entryOffset + 48, entry.audioDataOffset);
+			writeU32LE(m_ram.data() + entryOffset + 52, entry.audioDataSize);
 			break;
 		default:
 			throw std::runtime_error("[VmMemory] Asset entry has unknown type.");

@@ -3,9 +3,9 @@ import { insavegame, type RevivableObjectArgs } from '../../serializer/serializa
 import { WorldObject } from "./worldobject";
 import { SpriteComponent } from '../../component/sprite_component';
 import { Collider2DComponent } from '../../component/collisioncomponents';
-import { $ } from '../engine_core';
 import { TimelinePlayOptions } from '../..';
 import { color } from '../../render/shared/render_types';
+import { BmsxVMRuntime } from '../../vm/vm_runtime';
 
 const BASE_SPRITE_ID = 'base_sprite';
 const PRIMARY_COLLIDER_ID = 'primary';
@@ -34,17 +34,17 @@ export class SpriteObject extends WorldObject {
 	public set imgid(id: string) {
 		const comp = this.sprite_component;
 		comp.imgid = id;
-		const entry = $.assets.img[id];
-		if (!entry) {
-			if (id === 'none') { this.updateHitareas(); return; }
-			throw new Error(`[SpriteObject:${this.id}] Sprite asset '${id}' not found in assets.`);
+		if (id === 'none') {
+			this.updateHitareas();
+			return;
 		}
-		const imgmeta = entry.imgmeta;
-		if (!imgmeta) {
-			throw new Error(`[SpriteObject:${this.id}] Sprite asset '${id}' is missing metadata.`);
+		const runtime = BmsxVMRuntime.instance;
+		const entry = runtime.getAssetEntry(id);
+		if (entry.type !== 'image') {
+			throw new Error(`[SpriteObject:${this.id}] Sprite asset '${id}' is not an image.`);
 		}
-		this.sx = imgmeta['width'];
-		this.sy = imgmeta['height'];
+		this.sx = entry.regionW;
+		this.sy = entry.regionH;
 		this.updateHitareas();
 	}
 	public get colorize(): color { return this.sprite_component.colorize; }
@@ -58,14 +58,12 @@ export class SpriteObject extends WorldObject {
 			collider.set_local_poly(null);
 			return;
 		}
-		const entry = $.assets.img[id];
-		if (!entry) {
-			throw new Error(`[SpriteObject:${this.id}] Sprite asset '${id}' not found in assets.`);
+		const runtime = BmsxVMRuntime.instance;
+		const entry = runtime.getAssetEntry(id);
+		if (entry.type !== 'image') {
+			throw new Error(`[SpriteObject:${this.id}] Sprite asset '${id}' is not an image.`);
 		}
-		const imgmeta = entry.imgmeta;
-		if (!imgmeta) {
-			throw new Error(`[SpriteObject:${this.id}] Sprite asset '${id}' is missing metadata.`);
-		}
+		const imgmeta = runtime.getImageMeta(id);
 		const col = this.collider;
 		const boundingbox = imgmeta['boundingbox'];
 		if (boundingbox) {

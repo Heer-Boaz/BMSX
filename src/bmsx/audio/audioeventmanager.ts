@@ -2,6 +2,7 @@ import { EventEmitter, EventHandler } from '../core/eventemitter';
 import type { GameEvent } from '../core/game_event';
 import { $ } from '../core/engine_core';
 import { Registry } from '../core/registry';
+import { BmsxVMRuntime } from '../vm/vm_runtime';
 import type {
 	asset_id,
 	AudioId,
@@ -350,11 +351,13 @@ export class AudioEventManager implements RegisterablePersistent {
 
 		// voice policy / priority handling per channel
 		const channel = entry.channel ?? 'sfx';
-		const audioAsset = $.assets.audio[action.audio_id];
-		if (!audioAsset) {
-			throw new Error(`[AudioEventManager] Audio asset '${action.audio_id}' not found.`);
+		const runtime = BmsxVMRuntime.instance;
+		const assetEntry = runtime.getAssetEntry(action.audio_id);
+		if (assetEntry.type !== 'audio') {
+			throw new Error(`[AudioEventManager] Asset '${action.audio_id}' is not audio.`);
 		}
-		const fallbackPriority = audioAsset.audiometa ? audioAsset.audiometa.priority : 0;
+		const audioMeta = runtime.getAudioMeta(action.audio_id);
+		const fallbackPriority = audioMeta.priority;
 		const pr = action.priority ?? fallbackPriority;
 		const max_voices = entry.max_voices ?? 1;
 		const active = $.sndmaster.activeCountByType(channel);

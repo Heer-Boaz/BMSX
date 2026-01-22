@@ -21,7 +21,7 @@ import {
 import type { StorageService } from '../platform/platform';
 import { publishOverlayFrame } from '../render/editor/editor_overlay_queue';
 import type { SkyboxImageIds } from '../render/shared/render_types';
-import type { Viewport, BmsxCartridgeBlob, CartridgeIndex, RuntimeAssets } from '../rompack/rompack';
+import type { AudioMeta, ImgMeta, Viewport, BmsxCartridgeBlob, CartridgeIndex, RuntimeAssets, id2res } from '../rompack/rompack';
 import {
 	CanonicalizationType,
 	CART_ROM_HEADER_SIZE,
@@ -284,7 +284,8 @@ export class BmsxVMRuntime {
 	private cartAssetSource: RawAssetSource = null;
 	private cartAssetLayer: RuntimeAssetLayer = null;
 	private overlayAssetLayer: RuntimeAssetLayer = null;
-	private readonly assetEntryById = new Map<string, VmAssetEntry>();
+	private readonly imageMetaByHandle = new Map<number, ImgMeta>();
+	private readonly audioMetaByHandle = new Map<number, AudioMeta>();
 	private readonly vdp: VDP;
 	private engineCanonicalization: CanonicalizationType = null;
 	private cartCanonicalization: CanonicalizationType = null;
@@ -523,7 +524,7 @@ export class BmsxVMRuntime {
 		this.luaJsBridge = new LuaJsBridge(this, this.luaHandlerCache);
 		this.terminal = new TerminalMode(this);
 		this.memory = options.memory;
-		this.vdp = new VDP(this.memory, this.assetEntryById);
+		this.vdp = new VDP(this.memory);
 		this.stringHandles = new StringHandleTable(this.memory);
 		this.runtimeStringPool = new StringPool(this.stringHandles);
 		this.memory.writeValue(IO_WRITE_PTR_ADDR, 0);
@@ -1225,12 +1226,55 @@ export class BmsxVMRuntime {
 		this.currentFrameState = null;
 	}
 
+	public resolveAssetHandle(id: string): number {
+		return this.memory.resolveAssetHandle(id);
+	}
+
+	public getAssetEntryByHandle(handle: number): VmAssetEntry {
+		return this.memory.getAssetEntryByHandle(handle);
+	}
+
 	public getAssetEntry(id: string): VmAssetEntry {
-		const entry = this.assetEntryById.get(id);
-		if (!entry) {
-			throw new Error(`[BmsxVMRuntime] Asset entry '${id}' not registered in VM memory.`);
+		return this.getAssetEntryByHandle(this.resolveAssetHandle(id));
+	}
+
+	public getImageMetaByHandle(handle: number): ImgMeta {
+		const meta = this.imageMetaByHandle.get(handle);
+		if (!meta) {
+			throw new Error(`[BmsxVMRuntime] Image metadata missing for handle ${handle}.`);
 		}
-		return entry;
+		return meta;
+	}
+
+	public getImageMeta(id: string): ImgMeta {
+		return this.getImageMetaByHandle(this.resolveAssetHandle(id));
+	}
+
+	public getAudioMetaByHandle(handle: number): AudioMeta {
+		const meta = this.audioMetaByHandle.get(handle);
+		if (!meta) {
+			throw new Error(`[BmsxVMRuntime] Audio metadata missing for handle ${handle}.`);
+		}
+		return meta;
+	}
+
+	public getAudioMeta(id: string): AudioMeta {
+		return this.getAudioMetaByHandle(this.resolveAssetHandle(id));
+	}
+
+	public buildAudioResourcesForSoundMaster(): id2res {
+		const resources: id2res = {};
+		for (const [handle, meta] of this.audioMetaByHandle.entries()) {
+			const entry = this.getAssetEntryByHandle(handle);
+			resources[entry.id] = {
+				resid: entry.id,
+				type: 'audio',
+				start: entry.baseAddr,
+				end: entry.baseAddr + entry.baseSize,
+				audiometa: meta,
+			};
+		}
+		return resources;
 	}
 
 	public getImagePixels(entry: VmAssetEntry): Uint8Array {
@@ -1290,9 +1334,9 @@ export class BmsxVMRuntime {
 				throw new Error('[BmsxVMRuntime] Asset source not configured.');
 			}
 			this.memory.resetAssetMemory();
-			this.assetEntryById.clear();
 			await this.vdp.registerImageAssets(assetSource, assets);
 			this.registerAudioAssets(assetSource, assets);
+			this.rebuildAssetMetaCaches(assets);
 			this.memory.finalizeAssetTable();
 			this.memory.markAllAssetsDirty();
 		} finally {
@@ -1317,7 +1361,7 @@ export class BmsxVMRuntime {
 			const buffer = source.getBuffer(entry);
 			const info = parseWavInfo(buffer);
 			const bytes = new Uint8Array(buffer);
-			const entryRecord = this.memory.registerAudioBuffer({
+			this.memory.registerAudioBuffer({
 				id: entry.resid,
 				bytes,
 				sampleRate: info.sampleRate,
@@ -1327,7 +1371,33 @@ export class BmsxVMRuntime {
 				dataOffset: info.dataOffset,
 				dataSize: info.dataLength,
 			});
-			this.assetEntryById.set(entry.resid, entryRecord);
+		}
+	}
+
+	private rebuildAssetMetaCaches(assets: RuntimeAssets): void {
+		this.imageMetaByHandle.clear();
+		this.audioMetaByHandle.clear();
+		const imgKeys = Object.keys(assets.img);
+		for (let index = 0; index < imgKeys.length; index += 1) {
+			const id = imgKeys[index]!;
+			const asset = assets.img[id];
+			const meta = asset.imgmeta;
+			if (!meta) {
+				throw new Error(`[BmsxVMRuntime] Image asset '${id}' missing metadata.`);
+			}
+			const handle = this.resolveAssetHandle(id);
+			this.imageMetaByHandle.set(handle, meta);
+		}
+		const audioKeys = Object.keys(assets.audio);
+		for (let index = 0; index < audioKeys.length; index += 1) {
+			const id = audioKeys[index]!;
+			const asset = assets.audio[id];
+			const meta = asset.audiometa;
+			if (!meta) {
+				throw new Error(`[BmsxVMRuntime] Audio asset '${id}' missing metadata.`);
+			}
+			const handle = this.resolveAssetHandle(id);
+			this.audioMetaByHandle.set(handle, meta);
 		}
 	}
 

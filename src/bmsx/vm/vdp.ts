@@ -38,7 +38,6 @@ export class VDP {
 
 	public constructor(
 		private readonly memory: VmMemory,
-		private readonly assetEntryById: Map<string, VmAssetEntry>,
 	) {}
 
 	public initializeRegisters(): void {
@@ -205,7 +204,6 @@ export class VDP {
 			height: engineDecoded.height,
 			pixels: engineDecoded.pixels,
 		});
-		this.assetEntryById.set(engineAtlasEntry.resid, engineEntryRecord);
 
 		const skyboxFaceSize = assets.manifest.vm.skybox_face_size ?? SKYBOX_FACE_DEFAULT_SIZE;
 		if (skyboxFaceSize <= 0) {
@@ -218,7 +216,6 @@ export class VDP {
 				capacityBytes: skyboxBytes,
 			});
 			this.skyboxSlotEntries.push(slotEntry);
-			this.assetEntryById.set(SKYBOX_SLOT_IDS[index], slotEntry);
 		}
 
 		let maxAtlasBytes = 0;
@@ -245,8 +242,6 @@ export class VDP {
 			capacityBytes: maxAtlasBytes,
 		});
 		this.atlasSlotEntries = [primarySlotEntry, secondarySlotEntry];
-		this.assetEntryById.set(ATLAS_PRIMARY_SLOT_ID, primarySlotEntry);
-		this.assetEntryById.set(ATLAS_SECONDARY_SLOT_ID, secondarySlotEntry);
 
 		const atlasIds = Array.from(this.atlasResourcesById.keys()).sort((a, b) => a - b);
 		const primaryAtlasId = atlasIds.length > 0 ? atlasIds[0] : null;
@@ -311,7 +306,6 @@ export class VDP {
 				regionW,
 				regionH,
 			});
-			this.assetEntryById.set(entry.resid, viewEntry);
 			let list = this.atlasViewsById.get(atlasId);
 			if (!list) {
 				list = [];
@@ -360,18 +354,12 @@ export class VDP {
 
 	public async uploadAtlasTextures(): Promise<void> {
 		const engineAtlasName = generateAtlasName(ENGINE_ATLAS_INDEX);
-		const engineEntry = this.assetEntryById.get(engineAtlasName);
-		if (!engineEntry) {
-			throw new Error(`[BmsxVDP] Engine atlas '${engineAtlasName}' not registered in asset RAM.`);
-		}
+		const engineEntry = this.memory.getAssetEntry(engineAtlasName);
 		const enginePixels = this.memory.getImagePixels(engineEntry);
 		await $.texmanager.loadTextureFromPixels(ENGINE_ATLAS_TEXTURE_KEY, enginePixels, engineEntry.regionW, engineEntry.regionH);
 		$.view.loadEngineAtlasTexture();
 
-		const primaryEntry = this.assetEntryById.get(ATLAS_PRIMARY_SLOT_ID);
-		if (!primaryEntry) {
-			throw new Error(`[BmsxVDP] Primary atlas slot '${ATLAS_PRIMARY_SLOT_ID}' not registered in asset RAM.`);
-		}
+		const primaryEntry = this.memory.getAssetEntry(ATLAS_PRIMARY_SLOT_ID);
 		if (primaryEntry.regionW > 0 && primaryEntry.regionH > 0) {
 			const primaryPixels = this.memory.getImagePixels(primaryEntry);
 			const primaryHandle = await $.texmanager.loadTextureFromPixels(
@@ -383,7 +371,7 @@ export class VDP {
 			$.view.textures[ATLAS_PRIMARY_SLOT_ID] = primaryHandle;
 		}
 
-		const secondaryEntry = this.assetEntryById.get(ATLAS_SECONDARY_SLOT_ID);
+		const secondaryEntry = this.memory.getAssetEntry(ATLAS_SECONDARY_SLOT_ID);
 		if (secondaryEntry && secondaryEntry.regionW > 0 && secondaryEntry.regionH > 0) {
 			const secondaryPixels = this.memory.getImagePixels(secondaryEntry);
 			const secondaryHandle = await $.texmanager.loadTextureFromPixels(

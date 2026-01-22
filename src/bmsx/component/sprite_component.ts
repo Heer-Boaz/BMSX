@@ -5,9 +5,9 @@ import { excludepropfromsavegame, insavegame } from '../serializer/serialization
 import type { TimelinePlayOptions } from './timeline_component';
 import { new_vec2 } from '../utils/vector_operations';
 import { Collider2DComponent } from './collisioncomponents';
-import { $ } from '../core/engine_core';
 import { WorldObject } from '../core/object/worldobject';
 import { color, FlipOptions, RenderLayer } from '../render/shared/render_types';
+import { BmsxVMRuntime } from '../vm/vm_runtime';
 
 @insavegame
 @componenttags_postprocessing('render')
@@ -133,16 +133,14 @@ export class SpriteComponent extends Component<WorldObject> {
 			return;
 		}
 
-		const entry = $.assets.img[id];
-		if (!entry) {
+		const runtime = BmsxVMRuntime.instance;
+		const entry = runtime.getAssetEntry(id);
+		if (entry.type !== 'image') {
 			const ownerId = this.parent.id;
 			const componentId = this.id;
-			throw new Error(`[SpriteComponent] Sprite asset '${id}' not found in assets (object='${ownerId}', component='${componentId}').`);
+			throw new Error(`[SpriteComponent] Sprite asset '${id}' is not an image (object='${ownerId}', component='${componentId}').`);
 		}
-		const imgmeta = entry['imgmeta'];
-		if (!imgmeta) {
-			throw new Error(`[SpriteComponent] Sprite asset '${id}' is missing metadata.`);
-		}
+		const imgmeta = runtime.getImageMeta(id);
 
 		const box = imgmeta['boundingbox'] as BoundingBoxPrecalc;
 		if (box) collider.set_local_area(selectBoundingBox(flipH, flipV, box)); else collider.set_local_area(null);

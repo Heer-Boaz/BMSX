@@ -229,11 +229,13 @@ const resolveMusicTransition = (options: AudioPlayOptions | undefined, id?: asse
 };
 
 const playWithPolicy = (channel: AudioType, id: asset_id, options: ParsedAudioOptions): void => {
-	const audioAsset = $.assets.audio[id];
-	if (!audioAsset) {
-		throw new Error(`Audio asset '${id}' not found.`);
+	const runtime = BmsxVMRuntime.instance;
+	const entry = runtime.getAssetEntry(id);
+	if (entry.type !== 'audio') {
+		throw new Error(`Asset '${id}' is not an audio resource.`);
 	}
-	const fallbackPriority = audioAsset.audiometa ? audioAsset.audiometa.priority : 0;
+	const audioMeta = runtime.getAudioMeta(id);
+	const fallbackPriority = audioMeta.priority;
 	const priority = options.request.priority ?? fallbackPriority;
 	options.request.priority = priority;
 	const policy = options.policy ?? 'replace';

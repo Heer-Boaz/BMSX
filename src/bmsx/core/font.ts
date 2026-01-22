@@ -1,4 +1,4 @@
-import { $ } from './engine_core';
+import { BmsxVMRuntime } from '../vm/vm_runtime';
 
 export type GlyphMap = Record<string, string>;
 
@@ -185,12 +185,13 @@ export class BFont {
 			return glyph;
 		}
 		const imgid = this.char_to_img(char);
-		const entry = $.assets.img[imgid];
-		if (!entry || !entry.imgmeta) {
-			throw new Error(`[VMFont] Glyph asset "${imgid}" for character "${char}" not found in assets.`);
+		const runtime = BmsxVMRuntime.instance;
+		const entry = runtime.getAssetEntry(imgid);
+		if (entry.type !== 'image') {
+			throw new Error(`[VMFont] Glyph asset "${imgid}" for character "${char}" is not an image.`);
 		}
-		const width = entry.imgmeta.width;
-		const height = entry.imgmeta.height;
+		const width = entry.regionW;
+		const height = entry.regionH;
 		const computed: FontGlyph = {
 			imgid: imgid,
 			width,

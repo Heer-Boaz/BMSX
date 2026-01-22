@@ -366,8 +366,9 @@ export class EngineCore {
 	public async refresh_audio_assets(): Promise<void> {
 		const resolver = this.buildModulationResolver(this._assets);
 		const runtime = BmsxVMRuntime.instance;
+		const resources = runtime.buildAudioResourcesForSoundMaster();
 		await SoundMaster.instance.init(
-			this._assets.audio,
+			resources,
 			GameOptions.volumePercentage,
 			resolver,
 			(id) => runtime.getAudioBytes(runtime.getAssetEntry(id))

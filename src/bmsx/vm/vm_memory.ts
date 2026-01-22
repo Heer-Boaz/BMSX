@@ -20,11 +20,14 @@ export type VmAssetType = 'image' | 'audio';
 
 export type VmAssetEntry = {
 	id: string;
+	idTokenLo: number;
+	idTokenHi: number;
 	type: VmAssetType;
 	flags: number;
 	ownerIndex: number;
 	baseAddr: number;
 	baseSize: number;
+	capacity: number;
 	baseStride: number;
 	regionX: number;
 	regionY: number;
@@ -44,16 +47,26 @@ export type VmMemoryInit = {
 	overlayRom?: Uint8Array | null;
 };
 
-const ASSET_TABLE_MAGIC = 0x54534d41; // 'AMST'
-const ASSET_TABLE_HEADER_SIZE = 32;
+const ASSET_TABLE_MAGIC = 0x32534d41; // 'AMS2'
+const ASSET_TABLE_HEADER_SIZE = 40;
 const ASSET_TABLE_ENTRY_SIZE = 64;
+// 1 = FNV-1a 64 over canonical UTF-8 (lowercase, slash-normalized, collapse "//", trim leading "./").
+const ASSET_TABLE_HASH_ALG_ID = 1;
 const ASSET_PAGE_SHIFT = 12;
 const ASSET_PAGE_SIZE = 1 << ASSET_PAGE_SHIFT;
 
 const ASSET_TYPE_IMAGE = 1;
 const ASSET_TYPE_AUDIO = 2;
 
-const ASSET_FLAG_VIEW = 1 << 1;
+export const ASSET_FLAG_VIEW = 1 << 1;
+
+const HASH_SELF_TEST_VECTORS = [
+	{ id: '', lo: 0x84222325, hi: 0xcbf29ce4 },
+	{ id: 'a', lo: 0x8601ec8c, hi: 0xaf63dc4c },
+	{ id: './Foo\\Bar', lo: 0xef2def0d, hi: 0x571d17d6 },
+];
+
+let hashSelfTested = false;
 
 export class VmMemory {
 	private readonly engineRom: Uint8Array;
@@ -65,11 +78,12 @@ export class VmMemory {
 
 	private assetEntries: VmAssetEntry[] = [];
 	private assetIndexById = new Map<string, number>();
+	private assetIndexByToken = new Map<string, number>();
 	private assetOwnerPages: Int32Array;
 	private assetDirtyOwners = new Set<number>();
 	private assetDataCursor = ASSET_DATA_BASE;
-	private assetCapacity: number[] = [];
 	private assetTableFinalized = false;
+	private readonly assetIdEncoder = new TextEncoder();
 
 	public constructor(init: VmMemoryInit) {
 		this.engineRom = init.engineRom;
@@ -93,8 +107,8 @@ export class VmMemory {
 	public resetAssetMemory(): void {
 		this.assetEntries = [];
 		this.assetIndexById.clear();
+		this.assetIndexByToken.clear();
 		this.assetDirtyOwners.clear();
-		this.assetCapacity = [];
 		this.assetTableFinalized = false;
 		this.assetOwnerPages.fill(-1);
 		this.assetDataCursor = ASSET_DATA_BASE;
@@ -111,10 +125,13 @@ export class VmMemory {
 		view.fill(0);
 		const entry = this.createAssetEntry({
 			id: params.id,
+			idTokenLo: 0,
+			idTokenHi: 0,
 			type: 'image',
 			flags: params.flags ?? 0,
 			baseAddr: addr,
 			baseSize: 0,
+			capacity: params.capacityBytes,
 			baseStride: 0,
 			regionX: 0,
 			regionY: 0,
@@ -129,7 +146,6 @@ export class VmMemory {
 			ownerIndex: -1,
 		});
 		entry.ownerIndex = this.registerAssetEntry(entry);
-		this.assetCapacity[entry.ownerIndex] = params.capacityBytes;
 		this.mapAssetPages(entry.ownerIndex, addr, params.capacityBytes);
 		return entry;
 	}
@@ -147,10 +163,13 @@ export class VmMemory {
 		view.set(params.pixels);
 		const entry = this.createAssetEntry({
 			id: params.id,
+			idTokenLo: 0,
+			idTokenHi: 0,
 			type: 'image',
 			flags: params.flags ?? 0,
 			baseAddr: addr,
 			baseSize: size,
+			capacity: size,
 			baseStride: stride,
 			regionX: 0,
 			regionY: 0,
@@ -165,7 +184,6 @@ export class VmMemory {
 			ownerIndex: -1,
 		});
 		entry.ownerIndex = this.registerAssetEntry(entry);
-		this.assetCapacity[entry.ownerIndex] = size;
 		this.mapAssetPages(entry.ownerIndex, addr, size);
 		return entry;
 	}
@@ -181,10 +199,13 @@ export class VmMemory {
 	}): VmAssetEntry {
 		const entry = this.createAssetEntry({
 			id: params.id,
+			idTokenLo: 0,
+			idTokenHi: 0,
 			type: 'image',
 			flags: (params.flags ?? 0) | ASSET_FLAG_VIEW,
 			baseAddr: params.baseEntry.baseAddr,
 			baseSize: params.baseEntry.baseSize,
+			capacity: 0,
 			baseStride: params.baseEntry.baseStride,
 			regionX: params.regionX,
 			regionY: params.regionY,
@@ -199,7 +220,6 @@ export class VmMemory {
 			ownerIndex: params.baseEntry.ownerIndex,
 		});
 		const index = this.registerAssetEntry(entry);
-		this.assetCapacity[index] = params.baseEntry.baseSize;
 		return entry;
 	}
 
@@ -217,10 +237,13 @@ export class VmMemory {
 		view.set(params.bytes);
 		const entry = this.createAssetEntry({
 			id: params.id,
+			idTokenLo: 0,
+			idTokenHi: 0,
 			type: 'audio',
 			flags: 0,
 			baseAddr: addr,
 			baseSize: params.bytes.byteLength,
+			capacity: params.bytes.byteLength,
 			baseStride: 0,
 			regionX: 0,
 			regionY: 0,
@@ -235,14 +258,33 @@ export class VmMemory {
 			ownerIndex: -1,
 		});
 		entry.ownerIndex = this.registerAssetEntry(entry);
-		this.assetCapacity[entry.ownerIndex] = params.bytes.byteLength;
 		this.mapAssetPages(entry.ownerIndex, addr, params.bytes.byteLength);
 		return entry;
 	}
 
 	public getAssetEntry(id: string): VmAssetEntry {
-		const index = this.assetIndexById.get(id);
-		return this.assetEntries[index];
+		return this.getAssetEntryByHandle(this.resolveAssetHandle(id));
+	}
+
+	public getAssetEntryByHandle(handle: number): VmAssetEntry {
+		if (handle < 0 || handle >= this.assetEntries.length) {
+			throw new Error(`[VmMemory] Asset handle out of range: ${handle}.`);
+		}
+		return this.assetEntries[handle];
+	}
+
+	public resolveAssetHandle(id: string): number {
+		const direct = this.assetIndexById.get(id);
+		if (direct !== undefined) {
+			return direct;
+		}
+		const { lo, hi } = this.hashAssetId(id);
+		const key = this.tokenKey(lo, hi);
+		const handle = this.assetIndexByToken.get(key);
+		if (handle === undefined) {
+			throw new Error(`[VmMemory] Asset '${id}' not registered in VM memory.`);
+		}
+		return handle;
 	}
 
 	public getImagePixels(entry: VmAssetEntry): Uint8Array {
@@ -315,6 +357,8 @@ export class VmMemory {
 		this.ramView.setUint32(headerOffset + 20, stringTableLength, true);
 		this.ramView.setUint32(headerOffset + 24, ASSET_DATA_BASE, true);
 		this.ramView.setUint32(headerOffset + 28, this.assetDataCursor - ASSET_DATA_BASE, true);
+		this.ramView.setUint32(headerOffset + 32, ASSET_TABLE_HASH_ALG_ID, true);
+		this.ramView.setUint32(headerOffset + 36, 0, true);
 
 		for (let index = 0; index < this.assetEntries.length; index += 1) {
 			const entry = this.assetEntries[index];
@@ -334,24 +378,27 @@ export class VmMemory {
 			const idOffset = stringTableAddr + stringOffsets.get(entry.id);
 			this.ramView.setUint32(entryOffset + 0, typeId, true);
 			this.ramView.setUint32(entryOffset + 4, entry.flags, true);
-			this.ramView.setUint32(entryOffset + 8, idOffset, true);
-			this.ramView.setUint32(entryOffset + 12, entry.baseAddr, true);
-			this.ramView.setUint32(entryOffset + 16, entry.baseSize, true);
+			this.ramView.setUint32(entryOffset + 8, entry.idTokenLo, true);
+			this.ramView.setUint32(entryOffset + 12, entry.idTokenHi, true);
+			this.ramView.setUint32(entryOffset + 16, idOffset, true);
+			this.ramView.setUint32(entryOffset + 20, entry.baseAddr, true);
+			this.ramView.setUint32(entryOffset + 24, entry.baseSize, true);
+			this.ramView.setUint32(entryOffset + 28, entry.capacity, true);
 			switch (entry.type) {
 				case 'image':
-					this.ramView.setUint32(entryOffset + 20, entry.baseStride, true);
-					this.ramView.setUint32(entryOffset + 24, entry.regionX, true);
-					this.ramView.setUint32(entryOffset + 28, entry.regionY, true);
-					this.ramView.setUint32(entryOffset + 32, entry.regionW, true);
-					this.ramView.setUint32(entryOffset + 36, entry.regionH, true);
+					this.ramView.setUint32(entryOffset + 32, entry.baseStride, true);
+					this.ramView.setUint32(entryOffset + 36, entry.regionX, true);
+					this.ramView.setUint32(entryOffset + 40, entry.regionY, true);
+					this.ramView.setUint32(entryOffset + 44, entry.regionW, true);
+					this.ramView.setUint32(entryOffset + 48, entry.regionH, true);
 					break;
 				case 'audio':
-					this.ramView.setUint32(entryOffset + 40, entry.sampleRate, true);
-					this.ramView.setUint32(entryOffset + 44, entry.channels, true);
-					this.ramView.setUint32(entryOffset + 48, entry.frames, true);
-					this.ramView.setUint32(entryOffset + 52, entry.bitsPerSample, true);
-					this.ramView.setUint32(entryOffset + 56, entry.audioDataOffset, true);
-					this.ramView.setUint32(entryOffset + 60, entry.audioDataSize, true);
+					this.ramView.setUint32(entryOffset + 32, entry.sampleRate, true);
+					this.ramView.setUint32(entryOffset + 36, entry.channels, true);
+					this.ramView.setUint32(entryOffset + 40, entry.frames, true);
+					this.ramView.setUint32(entryOffset + 44, entry.bitsPerSample, true);
+					this.ramView.setUint32(entryOffset + 48, entry.audioDataOffset, true);
+					this.ramView.setUint32(entryOffset + 52, entry.audioDataSize, true);
 					break;
 				default:
 					throw new Error(`[VmMemory] Asset entry has unknown type: ${entry.type}.`);
@@ -371,7 +418,7 @@ export class VmMemory {
 
 	public writeImageSlot(entry: VmAssetEntry, params: { pixels: Uint8Array; width: number; height: number }): void {
 		const index = this.assetIndexById.get(entry.id)!;
-		const capacity = this.assetCapacity[index];
+		const capacity = entry.capacity;
 		const stride = params.width * 4;
 		const size = stride * params.height;
 		const offset = entry.baseAddr - RAM_BASE;
@@ -434,15 +481,16 @@ export class VmMemory {
 			throw new Error(`[VmMemory] Asset table entry size mismatch (${entrySize} != ${ASSET_TABLE_ENTRY_SIZE}).`);
 		}
 		const entryCount = this.ramView.getUint32(headerOffset + 12, true);
-		if (entryCount !== this.assetEntries.length) {
-			throw new Error(`[VmMemory] Asset table entry count mismatch (${entryCount} != ${this.assetEntries.length}).`);
-		}
 		const stringTableAddr = this.ramView.getUint32(headerOffset + 16, true);
 		const stringTableLength = this.ramView.getUint32(headerOffset + 20, true);
 		const dataBase = this.ramView.getUint32(headerOffset + 24, true);
 		const dataLength = this.ramView.getUint32(headerOffset + 28, true);
+		const hashAlgId = this.ramView.getUint32(headerOffset + 32, true);
 		if (dataBase !== ASSET_DATA_BASE) {
 			throw new Error(`[VmMemory] Asset table data base mismatch (${dataBase} != ${ASSET_DATA_BASE}).`);
+		}
+		if (hashAlgId !== ASSET_TABLE_HASH_ALG_ID) {
+			throw new Error(`[VmMemory] Asset table hash algorithm mismatch (${hashAlgId} != ${ASSET_TABLE_HASH_ALG_ID}).`);
 		}
 
 		const stringTableOffset = stringTableAddr - RAM_BASE;
@@ -464,16 +512,19 @@ export class VmMemory {
 		};
 
 		const entryBaseAddr = ASSET_TABLE_BASE + ASSET_TABLE_HEADER_SIZE;
+		const reuseEntries = this.assetEntries.length === entryCount;
+		const entries = reuseEntries ? this.assetEntries : new Array<VmAssetEntry>(entryCount);
+		this.assetIndexById.clear();
+		this.assetIndexByToken.clear();
+		this.assetDirtyOwners.clear();
 		for (let index = 0; index < entryCount; index += 1) {
 			const entryOffset = entryBaseAddr + index * ASSET_TABLE_ENTRY_SIZE - RAM_BASE;
 			const typeId = this.ramView.getUint32(entryOffset + 0, true);
 			const flags = this.ramView.getUint32(entryOffset + 4, true);
-			const idAddr = this.ramView.getUint32(entryOffset + 8, true);
+			const tokenLo = this.ramView.getUint32(entryOffset + 8, true);
+			const tokenHi = this.ramView.getUint32(entryOffset + 12, true);
+			const idAddr = this.ramView.getUint32(entryOffset + 16, true);
 			const id = readString(idAddr);
-			const entry = this.assetEntries[index];
-			if (entry.id !== id) {
-				throw new Error(`[VmMemory] Asset table entry ${index} mismatch (${id} != ${entry.id}).`);
-			}
 			let type: VmAssetType;
 			if (typeId === ASSET_TYPE_IMAGE) {
 				type = 'image';
@@ -482,25 +533,84 @@ export class VmMemory {
 			} else {
 				throw new Error(`[VmMemory] Asset '${id}' has unknown type id ${typeId}.`);
 			}
-			if (entry.type !== type) {
-				throw new Error(`[VmMemory] Asset '${id}' type mismatch (${entry.type} != ${type}).`);
-			}
+			const baseAddr = this.ramView.getUint32(entryOffset + 20, true);
+			const baseSize = this.ramView.getUint32(entryOffset + 24, true);
+			const capacity = this.ramView.getUint32(entryOffset + 28, true);
+			const entry = reuseEntries ? entries[index]! : {
+				id,
+				idTokenLo: tokenLo,
+				idTokenHi: tokenHi,
+				type,
+				flags,
+				ownerIndex: -1,
+				baseAddr,
+				baseSize,
+				capacity,
+				baseStride: 0,
+				regionX: 0,
+				regionY: 0,
+				regionW: 0,
+				regionH: 0,
+				sampleRate: 0,
+				channels: 0,
+				frames: 0,
+				bitsPerSample: 0,
+				audioDataOffset: 0,
+				audioDataSize: 0,
+			};
+			entry.id = id;
+			entry.idTokenLo = tokenLo;
+			entry.idTokenHi = tokenHi;
 			entry.type = type;
 			entry.flags = flags;
-			entry.baseAddr = this.ramView.getUint32(entryOffset + 12, true);
-			entry.baseSize = this.ramView.getUint32(entryOffset + 16, true);
-			entry.baseStride = this.ramView.getUint32(entryOffset + 20, true);
-			entry.regionX = this.ramView.getUint32(entryOffset + 24, true);
-			entry.regionY = this.ramView.getUint32(entryOffset + 28, true);
-			entry.regionW = this.ramView.getUint32(entryOffset + 32, true);
-			entry.regionH = this.ramView.getUint32(entryOffset + 36, true);
-			entry.sampleRate = this.ramView.getUint32(entryOffset + 40, true);
-			entry.channels = this.ramView.getUint32(entryOffset + 44, true);
-			entry.frames = this.ramView.getUint32(entryOffset + 48, true);
-			entry.bitsPerSample = this.ramView.getUint32(entryOffset + 52, true);
-			entry.audioDataOffset = this.ramView.getUint32(entryOffset + 56, true);
-			entry.audioDataSize = this.ramView.getUint32(entryOffset + 60, true);
+			entry.ownerIndex = -1;
+			entry.baseAddr = baseAddr;
+			entry.baseSize = baseSize;
+			entry.capacity = capacity;
+			entry.baseStride = 0;
+			entry.regionX = 0;
+			entry.regionY = 0;
+			entry.regionW = 0;
+			entry.regionH = 0;
+			entry.sampleRate = 0;
+			entry.channels = 0;
+			entry.frames = 0;
+			entry.bitsPerSample = 0;
+			entry.audioDataOffset = 0;
+			entry.audioDataSize = 0;
+			switch (type) {
+				case 'image':
+					entry.baseStride = this.ramView.getUint32(entryOffset + 32, true);
+					entry.regionX = this.ramView.getUint32(entryOffset + 36, true);
+					entry.regionY = this.ramView.getUint32(entryOffset + 40, true);
+					entry.regionW = this.ramView.getUint32(entryOffset + 44, true);
+					entry.regionH = this.ramView.getUint32(entryOffset + 48, true);
+					break;
+				case 'audio':
+					entry.sampleRate = this.ramView.getUint32(entryOffset + 32, true);
+					entry.channels = this.ramView.getUint32(entryOffset + 36, true);
+					entry.frames = this.ramView.getUint32(entryOffset + 40, true);
+					entry.bitsPerSample = this.ramView.getUint32(entryOffset + 44, true);
+					entry.audioDataOffset = this.ramView.getUint32(entryOffset + 48, true);
+					entry.audioDataSize = this.ramView.getUint32(entryOffset + 52, true);
+					break;
+			}
+			const expectedToken = this.hashAssetId(id);
+			if (expectedToken.lo !== tokenLo || expectedToken.hi !== tokenHi) {
+				throw new Error(`[VmMemory] Asset token mismatch for '${id}'.`);
+			}
+			const tokenKey = this.tokenKey(tokenLo, tokenHi);
+			if (this.assetIndexById.has(id)) {
+				throw new Error(`[VmMemory] Duplicate asset id '${id}' in asset table.`);
+			}
+			if (this.assetIndexByToken.has(tokenKey)) {
+				throw new Error(`[VmMemory] Duplicate asset token for '${id}' in asset table.`);
+			}
+			entries[index] = entry;
+			this.assetIndexById.set(id, index);
+			this.assetIndexByToken.set(tokenKey, index);
 		}
+		this.assetEntries = entries;
 
 		const ownerByBaseAddr = new Map<number, number>();
 		for (let index = 0; index < entryCount; index += 1) {
@@ -528,11 +638,7 @@ export class VmMemory {
 			if (entry.ownerIndex !== index) {
 				continue;
 			}
-			const capacity = this.assetCapacity[index];
-			if (capacity === undefined) {
-				throw new Error(`[VmMemory] Asset capacity missing for '${entry.id}'.`);
-			}
-			this.mapAssetPages(index, entry.baseAddr, capacity);
+			this.mapAssetPages(index, entry.baseAddr, entry.capacity);
 		}
 		this.assetDataCursor = dataBase + dataLength;
 		this.assetTableFinalized = true;
@@ -667,33 +773,115 @@ export class VmMemory {
 		return { ...entry };
 	}
 
+	private canonicalizeAssetId(id: string): string {
+		const normalized = id.replace(/\\/g, '/');
+		const start = normalized.startsWith('./') ? 2 : 0;
+		let prevSlash = false;
+		let out = '';
+		for (let i = start; i < normalized.length; i += 1) {
+			let ch = normalized[i];
+			if (ch === '/') {
+				if (prevSlash) {
+					continue;
+				}
+				prevSlash = true;
+				out += '/';
+				continue;
+			}
+			prevSlash = false;
+			const code = ch.charCodeAt(0);
+			if (code >= 65 && code <= 90) {
+				ch = String.fromCharCode(code + 32);
+			}
+			out += ch;
+		}
+		return out;
+	}
+
+	private ensureHashSelfTest(): void {
+		if (hashSelfTested) {
+			return;
+		}
+		for (let index = 0; index < HASH_SELF_TEST_VECTORS.length; index += 1) {
+			const vector = HASH_SELF_TEST_VECTORS[index];
+			const actual = this.hashAssetIdInternal(vector.id);
+			if (actual.lo !== vector.lo || actual.hi !== vector.hi) {
+				throw new Error(
+					`[VmMemory] Asset hash self-test failed for '${vector.id}' (${this.tokenKey(actual.lo, actual.hi)}).`
+				);
+			}
+		}
+		hashSelfTested = true;
+	}
+
+	private hashAssetId(id: string): { lo: number; hi: number } {
+		this.ensureHashSelfTest();
+		return this.hashAssetIdInternal(id);
+	}
+
+	private hashAssetIdInternal(id: string): { lo: number; hi: number } {
+		const canonical = this.canonicalizeAssetId(id);
+		const bytes = this.assetIdEncoder.encode(canonical);
+		let lo = 0x84222325;
+		let hi = 0xcbf29ce4;
+		for (let i = 0; i < bytes.length; i += 1) {
+			lo = (lo ^ bytes[i]) >>> 0;
+			const loMul = lo * 0x1b3;
+			const loLow = loMul >>> 0;
+			const carry = (loMul / 0x100000000) >>> 0;
+			const hiMul = hi * 0x1b3 + carry;
+			let hiLow = hiMul >>> 0;
+			hiLow = (hiLow + ((lo << 8) >>> 0)) >>> 0;
+			lo = loLow;
+			hi = hiLow;
+		}
+		return { lo, hi };
+	}
+
+	private tokenKey(lo: number, hi: number): string {
+		return `${hi.toString(16).padStart(8, '0')}${lo.toString(16).padStart(8, '0')}`;
+	}
+
 	private registerAssetEntry(entry: VmAssetEntry): number {
+		if (this.assetIndexById.has(entry.id)) {
+			throw new Error(`[VmMemory] Asset entry '${entry.id}' is already registered.`);
+		}
+		const { lo, hi } = this.hashAssetId(entry.id);
+		entry.idTokenLo = lo;
+		entry.idTokenHi = hi;
+		const key = this.tokenKey(lo, hi);
+		const existing = this.assetIndexByToken.get(key);
+		if (existing !== undefined) {
+			throw new Error(`[VmMemory] Asset token collision for '${entry.id}'.`);
+		}
 		const index = this.assetEntries.length;
 		this.assetEntries.push(entry);
 		this.assetIndexById.set(entry.id, index);
+		this.assetIndexByToken.set(key, index);
 		return index;
 	}
 
 	private writeAssetEntryData(index: number, entry: VmAssetEntry): void {
 		const entryAddr = ASSET_TABLE_BASE + ASSET_TABLE_HEADER_SIZE + index * ASSET_TABLE_ENTRY_SIZE;
 		const entryOffset = entryAddr - RAM_BASE;
-		this.ramView.setUint32(entryOffset + 12, entry.baseAddr, true);
-		this.ramView.setUint32(entryOffset + 16, entry.baseSize, true);
+		this.ramView.setUint32(entryOffset + 20, entry.baseAddr, true);
+		this.ramView.setUint32(entryOffset + 24, entry.baseSize, true);
+		this.ramView.setUint32(entryOffset + 28, entry.capacity, true);
 		switch (entry.type) {
 			case 'image':
-				this.ramView.setUint32(entryOffset + 20, entry.baseStride, true);
-				this.ramView.setUint32(entryOffset + 24, entry.regionX, true);
-				this.ramView.setUint32(entryOffset + 28, entry.regionY, true);
-				this.ramView.setUint32(entryOffset + 32, entry.regionW, true);
-				this.ramView.setUint32(entryOffset + 36, entry.regionH, true);
+				this.ramView.setUint32(entryOffset + 32, entry.baseStride, true);
+				this.ramView.setUint32(entryOffset + 36, entry.regionX, true);
+				this.ramView.setUint32(entryOffset + 40, entry.regionY, true);
+				this.ramView.setUint32(entryOffset + 44, entry.regionW, true);
+				this.ramView.setUint32(entryOffset + 48, entry.regionH, true);
 				break;
 			case 'audio':
-				this.ramView.setUint32(entryOffset + 40, entry.sampleRate, true);
-				this.ramView.setUint32(entryOffset + 44, entry.channels, true);
-				this.ramView.setUint32(entryOffset + 48, entry.frames, true);
-				this.ramView.setUint32(entryOffset + 52, entry.bitsPerSample, true);
-				this.ramView.setUint32(entryOffset + 56, entry.audioDataOffset, true);
-				this.ramView.setUint32(entryOffset + 60, entry.audioDataSize, true);
+				this.ramView.setUint32(entryOffset + 32, entry.sampleRate, true);
+				this.ramView.setUint32(entryOffset + 36, entry.channels, true);
+				this.ramView.setUint32(entryOffset + 40, entry.frames, true);
+				this.ramView.setUint32(entryOffset + 44, entry.bitsPerSample, true);
+				this.ramView.setUint32(entryOffset + 48, entry.audioDataOffset, true);
+				this.ramView.setUint32(entryOffset + 52, entry.audioDataSize, true);
 				break;
 			default:
 				throw new Error(`[VmMemory] Asset entry has unknown type: ${entry.type}.`);

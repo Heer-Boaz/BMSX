@@ -1,5 +1,4 @@
 // Provides batched 2D sprite + primitive rendering using shared buffers.
-import type { ImgMeta } from '../../rompack/rompack';
 import spriteFS from '../2d/shaders/2d.frag.glsl';
 import spriteVS from '../2d/shaders/2d.vert.glsl';
 import type { GPUBackend, RenderContext, RenderPassStateRegistry } from '../backend/pipeline_interfaces';
@@ -278,7 +277,7 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 		backend.drawInstanced!(passStub, VERTICES_PER_SPRITE, i, SPRITE_DRAW_OFFSET);
 		i = 0;
 	};
-	forEachSprite(({ options, imgmeta }) => {
+	forEachSprite(({ options, entry, baseEntry, atlasId }) => {
 		const layer = options.layer;
 		const desiredScale = layer === 'ide' ? ideScale : 1;
 		if (desiredScale !== currentScale) {
@@ -299,23 +298,40 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 		// const mixR = (1 - ambientFactor) + ambientFactor * ambientMixR;
 		// const mixG = (1 - ambientFactor) + ambientFactor * ambientMixG;
 		// const mixB = (1 - ambientFactor) + ambientFactor * ambientMixB;
-		const sizeX = imgmeta.width * scale.x;
-		const sizeY = imgmeta.height * scale.y;
-		const texcoords = getTexCoords(flip.flip_h, flip.flip_v, imgmeta);
+		const sizeX = entry.regionW * scale.x;
+		const sizeY = entry.regionH * scale.y;
+		const baseW = baseEntry.regionW;
+		const baseH = baseEntry.regionH;
+		if (baseW <= 0 || baseH <= 0) {
+			throw new Error(`[SpritesPipeline] Invalid atlas dimensions for '${options.imgid}'.`);
+		}
+		let u0 = entry.regionX / baseW;
+		let v0 = entry.regionY / baseH;
+		let u1 = (entry.regionX + entry.regionW) / baseW;
+		let v1 = (entry.regionY + entry.regionH) / baseH;
+		if (flip.flip_h) {
+			const tmp = u0;
+			u0 = u1;
+			u1 = tmp;
+		}
+		if (flip.flip_v) {
+			const tmp = v0;
+			v0 = v1;
+			v1 = tmp;
+		}
 		const floatOffset = i * SPRITE_INSTANCE_FLOAT_STRIDE;
 		instanceF32[floatOffset + 0] = pos.x;
 		instanceF32[floatOffset + 1] = pos.y;
 		instanceF32[floatOffset + 2] = sizeX;
 		instanceF32[floatOffset + 3] = sizeY;
-		instanceF32[floatOffset + 4] = texcoords[0];
-		instanceF32[floatOffset + 5] = texcoords[1];
-		instanceF32[floatOffset + 6] = texcoords[10];
-		instanceF32[floatOffset + 7] = texcoords[11];
+		instanceF32[floatOffset + 4] = u0;
+		instanceF32[floatOffset + 5] = v0;
+		instanceF32[floatOffset + 6] = u1;
+		instanceF32[floatOffset + 7] = v1;
 
 		const byteOffset = i * SPRITE_INSTANCE_STRIDE;
 		const zNorm = 1 - (pos.z ?? DEFAULT_ZCOORD) / ZCOORD_MAX;
 		instanceU16[(byteOffset + SPRITE_INSTANCE_Z_OFFSET) >> 1] = packUnorm16(zNorm);
-		const atlasId = imgmeta.atlasid!;
 		// Sprite binding selector uses ENGINE_ATLAS_INDEX for engine atlas in the shader.
 		let atlasBindingId = ENGINE_ATLAS_INDEX;
 		if (atlasId !== ENGINE_ATLAS_INDEX) {
@@ -341,13 +357,6 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 	if (i > 0) { flush(); }
 	backend.bindVertexArray(null);
 	gl.depthMask(true);
-}
-
-export function getTexCoords(flip_h: boolean, flip_v: boolean, imgmeta: ImgMeta): number[] {
-	if (flip_h && flip_v) return imgmeta['texcoords_fliphv'];
-	if (flip_h) return imgmeta['texcoords_fliph'];
-	if (flip_v) return imgmeta['texcoords_flipv'];
-	return imgmeta['texcoords'];
 }
 
 export function registerSpritesPass_WebGL(registry: RenderPassLibrary): void {

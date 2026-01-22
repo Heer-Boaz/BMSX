@@ -169,13 +169,13 @@ function registerSpritePass(registry: RenderPassLibrary): void {
 			if (count > 0) {
 				let index = 0;
 				forEachSprite((submission: SpriteQueueItem) => {
-					const { options, imgmeta } = submission;
+					const { options, atlasId } = submission;
 					const layer = options.layer ?? 'world';
 					const pos = formatVec3({ x: options.pos.x, y: options.pos.y, z: options.pos.z ?? 0 });
 					const scale = formatScale(options.scale);
 					const flipH = options.flip?.flip_h ? 'H' : '-';
 					const flipV = options.flip?.flip_v ? 'V' : '-';
-					const atlas = imgmeta.atlasid ?? 'na';
+					const atlas = atlasId ?? 'na';
 					// Ambient sprites are disabled in the runtime; logging follows suit until a new approach is added.
 					snapshot.push(`[sprite#${index}] id=${options.imgid} layer=${layer} pos=${pos} scale=${scale} flip=${flipH}${flipV} atlas=${atlas}`);
 					index += 1;

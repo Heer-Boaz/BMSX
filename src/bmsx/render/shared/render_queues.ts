@@ -1,17 +1,20 @@
 import { FeatureQueue } from '../../utils/feature_queue';
-import type { ImgMeta } from '../../rompack/rompack';
 import type { color, GlyphRenderSubmission, ImgRenderSubmission, MeshRenderSubmission, ParticleRenderSubmission, PolyRenderSubmission, RectRenderSubmission, SpriteParallaxRig } from './render_types';
 import type { RenderLayer } from './render_types';
 import { DEFAULT_ZCOORD } from '../backend/webgl/webgl.constants';
 import { RenderSubmission } from '../backend/pipeline_interfaces';
-import { $ } from '../../core/engine_core';
+import { ASSET_FLAG_VIEW, type VmAssetEntry } from '../../vm/vm_memory';
+import { BmsxVMRuntime } from '../../vm/vm_runtime';
+import { ENGINE_ATLAS_INDEX } from '../../rompack/rompack';
 import { new_vec3, new_vec2 } from '../../utils/vector_operations';
 import { clamp } from '../../utils/clamp';
 import { BFont } from '../../core/font';
 
 export interface SpriteQueueItem {
 	options: ImgRenderSubmission;
-	imgmeta: ImgMeta;
+	entry: VmAssetEntry;
+	baseEntry: VmAssetEntry;
+	atlasId: number;
 	submissionIndex: number;
 }
 
@@ -22,10 +25,27 @@ let spriteSubmissionCounter = 0;
 
 type PlaybackImgSubmission = Extract<RenderSubmission, { type: 'img' }>;
 
-const DEFAULT_IMG_META: ImgMeta = {
-	atlassed: false,
-	width: 0,
-	height: 0,
+const DEFAULT_ASSET_ENTRY: VmAssetEntry = {
+	id: 'none',
+	idTokenLo: 0,
+	idTokenHi: 0,
+	type: 'image',
+	flags: 0,
+	ownerIndex: -1,
+	baseAddr: 0,
+	baseSize: 0,
+	capacity: 0,
+	baseStride: 0,
+	regionX: 0,
+	regionY: 0,
+	regionW: 0,
+	regionH: 0,
+	sampleRate: 0,
+	channels: 0,
+	frames: 0,
+	bitsPerSample: 0,
+	audioDataOffset: 0,
+	audioDataSize: 0,
 };
 
 const spriteQueuePlaybackBuffer: PlaybackImgSubmission[] = [];
@@ -64,7 +84,9 @@ function createSpriteQueueItem(): SpriteQueueItem {
 			ambient_factor: undefined,
 			parallax_weight: 0,
 		},
-		imgmeta: DEFAULT_IMG_META,
+		entry: DEFAULT_ASSET_ENTRY,
+		baseEntry: DEFAULT_ASSET_ENTRY,
+		atlasId: ENGINE_ATLAS_INDEX,
 		submissionIndex: 0,
 	};
 }
@@ -89,16 +111,22 @@ export function submitSprite(options: ImgRenderSubmission): void {
 
 	const { imgid } = options;
 	if (imgid === 'none') return;
-	const asset = $.assets.img[imgid];
-	if (!asset) {
-		throw new Error(`[Sprite Pipeline] drawImg called with unknown image id '${imgid}'.`);
+	const runtime = BmsxVMRuntime.instance;
+	const handle = runtime.resolveAssetHandle(imgid);
+	const entry = runtime.getAssetEntryByHandle(handle);
+	if (entry.type !== 'image') {
+		throw new Error(`[Sprite Pipeline] Asset '${imgid}' is not an image.`);
 	}
-	const imgmeta = asset.imgmeta;
-	if (!imgmeta) {
-		throw new Error(`[Sprite Pipeline] Image metadata missing for imgid '${imgid}'.`);
+	const meta = runtime.getImageMetaByHandle(handle);
+	if (meta.atlasid === undefined || meta.atlasid === null) {
+		throw new Error(`[Sprite Pipeline] Image metadata missing atlas id for imgid '${imgid}'.`);
 	}
-
-	pooled.imgmeta = imgmeta;
+	const baseEntry = (entry.flags & ASSET_FLAG_VIEW)
+		? runtime.getAssetEntryByHandle(entry.ownerIndex)
+		: entry;
+	pooled.entry = entry;
+	pooled.baseEntry = baseEntry;
+	pooled.atlasId = meta.atlasid;
 	const src = options;
 	const dst = pooled.options;
 	dst.imgid = src.imgid;

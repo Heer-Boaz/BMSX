@@ -40,11 +40,13 @@ public:
 
 	struct AssetEntry {
 		std::string id;
+		uint64_t idToken = 0;
 		AssetType type = AssetType::Image;
 		uint32_t flags = 0;
 		size_t ownerIndex = 0;
 		uint32_t baseAddr = 0;
 		uint32_t baseSize = 0;
+		uint32_t capacity = 0;
 		uint32_t baseStride = 0;
 		uint32_t regionX = 0;
 		uint32_t regionY = 0;
@@ -108,10 +110,10 @@ private:
 
 	std::vector<AssetEntry> m_assetEntries;
 	std::unordered_map<std::string, size_t> m_assetIndexById;
+	std::unordered_map<uint64_t, size_t> m_assetIndexByToken;
 	std::vector<int32_t> m_assetOwnerPages;
 	std::vector<uint8_t> m_assetDirtyFlags;
 	std::vector<size_t> m_assetDirtyList;
-	std::vector<uint32_t> m_assetCapacity;
 	uint32_t m_assetDataCursor = 0;
 	bool m_assetTableFinalized = false;
 
