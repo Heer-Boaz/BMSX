@@ -4,7 +4,7 @@
 
 #include "rendergraph.h"
 #if BMSX_ENABLE_GLES2
-#include "gles2_backend.h"
+#include "../backend/gles2_backend.h"
 #endif
 #include <algorithm>
 #include <cstdint>

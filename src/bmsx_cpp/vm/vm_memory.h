@@ -63,6 +63,7 @@ public:
 	void resetAssetMemory();
 	AssetEntry& registerImageBuffer(const std::string& id, const u8* rgba, uint32_t width, uint32_t height, uint32_t flags);
 	AssetEntry& registerImageSlot(const std::string& id, uint32_t capacityBytes, uint32_t flags);
+	AssetEntry& registerImageSlotAt(const std::string& id, uint32_t baseAddr, uint32_t capacityBytes, uint32_t flags);
 	AssetEntry& registerImageView(const std::string& id, const AssetEntry& base, uint32_t regionX, uint32_t regionY, uint32_t regionW, uint32_t regionH, uint32_t flags);
 	AssetEntry& registerAudioBuffer(
 		const std::string& id,
@@ -75,6 +76,9 @@ public:
 		uint32_t dataOffset,
 		uint32_t dataSize
 	);
+	bool hasAsset(const std::string& id) const;
+	void sealEngineAssets();
+	void resetCartAssets();
 	void writeImageSlot(AssetEntry& entry, const u8* pixels, size_t pixelBytes, uint32_t width, uint32_t height);
 	void updateImageViewBase(AssetEntry& entry, const AssetEntry& base);
 	void finalizeAssetTable();
@@ -115,6 +119,9 @@ private:
 	std::vector<uint8_t> m_assetDirtyFlags;
 	std::vector<size_t> m_assetDirtyList;
 	uint32_t m_assetDataCursor = 0;
+	size_t m_engineAssetEntryCount = 0;
+	uint32_t m_engineAssetDataEnd = ASSET_DATA_BASE;
+	uint32_t m_cartAssetDataBase = ASSET_DATA_BASE;
 	bool m_assetTableFinalized = false;
 
 	bool isIoAddress(uint32_t addr) const;

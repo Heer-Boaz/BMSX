@@ -9,11 +9,12 @@
 #include <cmath>
 #include <stdexcept>
 
-#include "../core/assets.h"
-#include "../core/engine.h"
-#include "../core/rompack.h"
-#include "gameview.h"
-#include "../utils/clamp.h"
+#include "../../rompack/runtime_assets.h"
+#include "../../core/engine_core.h"
+#include "../../rompack/rompack.h"
+#include "../../vm/vm_runtime.h"
+#include "../gameview.h"
+#include "../../utils/clamp.h"
 #if BMSX_ENABLE_GLES2
 #include "sprites_pipeline_gles2.h"
 #endif
@@ -51,9 +52,14 @@ void renderSpriteBatchSoftware(SoftwareBackend* softBackend,
 	const bool useDepth = false;
 
 	auto& engine = EngineCore::instance();
+	auto& runtime = VMRuntime::instance();
+	auto& memory = runtime.memory();
 	const auto& assets = engine.assets();
 	const TextureHandle atlasPrimary = context->textures.at("_atlas_primary");
 	const TextureHandle atlasSecondary = context->textures.at("_atlas_secondary");
+	const auto& engineEntry = memory.getAssetEntry(generateAtlasName(ENGINE_ATLAS_INDEX));
+	const auto& primaryEntry = memory.getAssetEntry(ATLAS_PRIMARY_SLOT_ID);
+	const auto& secondaryEntry = memory.getAssetEntry(ATLAS_SECONDARY_SLOT_ID);
 
 	auto smoothstep01 = [](f32 t) {
 	t = clamp(t, 0.0f, 1.0f);
@@ -78,15 +84,23 @@ void renderSpriteBatchSoftware(SoftwareBackend* softBackend,
 	}
 
 	TextureHandle tex = nullptr;
+	const VmMemory::AssetEntry* baseEntry = nullptr;
 	if (meta.atlassed) {
 		if (meta.atlasid == ENGINE_ATLAS_INDEX) {
 		tex = context->textures.at(ENGINE_ATLAS_TEXTURE_KEY);
+		baseEntry = &engineEntry;
 		} else if (meta.atlasid == context->primaryAtlasIdInSlot) {
 		tex = atlasPrimary;
+		baseEntry = &primaryEntry;
 		} else if (meta.atlasid == context->secondaryAtlasIdInSlot) {
 		tex = atlasSecondary;
+		baseEntry = &secondaryEntry;
 		} else {
 		throw BMSX_RUNTIME_ERROR("[SpritesPipeline] Atlas not loaded into a slot.");
+		}
+		if (baseEntry->regionW == 0 || baseEntry->regionH == 0) {
+			runtime.handleLuaError("[SpritesPipeline] Invalid atlas dimensions for '" + options.imgid + "'.");
+			return;
 		}
 	} else {
 		const auto* imgAsset = assets.getImg(options.imgid);

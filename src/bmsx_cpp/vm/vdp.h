@@ -3,8 +3,8 @@
 #include "cpu.h"
 #include "vm_io.h"
 #include "vm_memory.h"
-#include "../core/rompack.h"
-#include "../render/render_types.h"
+#include "../rompack/rompack.h"
+#include "../render/shared/render_types.h"
 #include <array>
 #include <string>
 #include <unordered_map>
@@ -24,7 +24,6 @@ public:
 	void setDitherType(i32 type);
 
 	void registerImageAssets(RuntimeAssets& assets, bool keepDecodedData);
-	void loadAtlasIntoSlot(RuntimeAssets& assets, i32 slot, i32 atlasId);
 	void flushAssetEdits();
 	void applyAtlasSlotMapping(const std::array<i32, 2>& slots);
 	void commitViewSnapshot(GameView& view);

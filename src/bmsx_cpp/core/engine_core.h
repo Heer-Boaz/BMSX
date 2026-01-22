@@ -1,5 +1,5 @@
 /*
- * engine.h - Core engine interface (EngineCore in TypeScript)
+ * engine_core.h - Core engine interface (EngineCore in TypeScript)
  *
  * This mirrors the TypeScript EngineCore class which:
  * - Manages the game loop and frame timing
@@ -7,12 +7,12 @@
  * - Provides the global $ accessor pattern
  */
 
-#ifndef BMSX_ENGINE_H
-#define BMSX_ENGINE_H
+#ifndef BMSX_ENGINE_CORE_H
+#define BMSX_ENGINE_CORE_H
 
 #include "types.h"
 #include "registry.h"
-#include "assets.h"
+#include "../rompack/runtime_assets.h"
 #include "../platform.h"
 #include "../render/gameview.h"
 #include "../audio/soundmaster.h"
@@ -203,4 +203,4 @@ inline EngineCore& $() {
 
 } // namespace bmsx
 
-#endif // BMSX_ENGINE_H
+#endif // BMSX_ENGINE_CORE_H

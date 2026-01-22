@@ -7,7 +7,7 @@
 #ifndef BMSX_FONT_H
 #define BMSX_FONT_H
 
-#include "assets.h"
+#include "../rompack/runtime_assets.h"
 #include "types.h"
 #include <string>
 #include <unordered_map>

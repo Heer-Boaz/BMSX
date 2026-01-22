@@ -3,7 +3,7 @@
  */
 
 #include "soundmaster.h"
-#include "../core/engine.h"
+#include "../core/engine_core.h"
 #include "../vm/cpu.h"
 #include "../vm/vm_runtime.h"
 #include <algorithm>

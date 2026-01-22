@@ -1,5 +1,5 @@
 #include "program_loader.h"
-#include "../core/binencoder.h"
+#include "../serializer/binencoder.h"
 #include <cstring>
 #include <stdexcept>
 

@@ -41,8 +41,35 @@ constexpr int IO_SYS_CART_BOOTREADY_INDEX = IO_SYS_BASE_INDEX + 1;
 constexpr int IO_SYS_SIZE = 2;
 constexpr int IO_VDP_BASE_INDEX = IO_SYS_BASE_INDEX + IO_SYS_SIZE;
 constexpr int IO_VDP_DITHER_INDEX = IO_VDP_BASE_INDEX;
-constexpr int IO_VDP_SIZE = 1;
-constexpr int VM_IO_SLOT_COUNT = IO_VDP_BASE_INDEX + IO_VDP_SIZE;
+constexpr int IO_VDP_PRIMARY_ATLAS_ID_INDEX = IO_VDP_BASE_INDEX + 1;
+constexpr int IO_VDP_SECONDARY_ATLAS_ID_INDEX = IO_VDP_BASE_INDEX + 2;
+constexpr int IO_VDP_SIZE = 3;
+
+constexpr int IO_IRQ_BASE_INDEX = IO_VDP_BASE_INDEX + IO_VDP_SIZE;
+constexpr int IO_IRQ_FLAGS_INDEX = IO_IRQ_BASE_INDEX;
+constexpr int IO_IRQ_ACK_INDEX = IO_IRQ_BASE_INDEX + 1;
+constexpr int IO_IRQ_SIZE = 2;
+
+constexpr int IO_DMA_BASE_INDEX = IO_IRQ_BASE_INDEX + IO_IRQ_SIZE;
+constexpr int IO_DMA_SRC_INDEX = IO_DMA_BASE_INDEX;
+constexpr int IO_DMA_DST_INDEX = IO_DMA_BASE_INDEX + 1;
+constexpr int IO_DMA_LEN_INDEX = IO_DMA_BASE_INDEX + 2;
+constexpr int IO_DMA_CTRL_INDEX = IO_DMA_BASE_INDEX + 3;
+constexpr int IO_DMA_STATUS_INDEX = IO_DMA_BASE_INDEX + 4;
+constexpr int IO_DMA_WRITTEN_INDEX = IO_DMA_BASE_INDEX + 5;
+constexpr int IO_DMA_SIZE = 6;
+
+constexpr int IO_IMG_BASE_INDEX = IO_DMA_BASE_INDEX + IO_DMA_SIZE;
+constexpr int IO_IMG_SRC_INDEX = IO_IMG_BASE_INDEX;
+constexpr int IO_IMG_LEN_INDEX = IO_IMG_BASE_INDEX + 1;
+constexpr int IO_IMG_DST_INDEX = IO_IMG_BASE_INDEX + 2;
+constexpr int IO_IMG_CAP_INDEX = IO_IMG_BASE_INDEX + 3;
+constexpr int IO_IMG_CTRL_INDEX = IO_IMG_BASE_INDEX + 4;
+constexpr int IO_IMG_STATUS_INDEX = IO_IMG_BASE_INDEX + 5;
+constexpr int IO_IMG_WRITTEN_INDEX = IO_IMG_BASE_INDEX + 6;
+constexpr int IO_IMG_SIZE = 7;
+
+constexpr int VM_IO_SLOT_COUNT = IO_IMG_BASE_INDEX + IO_IMG_SIZE;
 
 constexpr uint32_t IO_WRITE_PTR_ADDR = IO_BASE + IO_WRITE_PTR_INDEX * IO_WORD_SIZE;
 constexpr uint32_t IO_BUFFER_BASE = IO_BASE + IO_BUFFER_BASE_INDEX * IO_WORD_SIZE;
@@ -55,5 +82,48 @@ constexpr uint32_t IO_SYS_BOOT_CART = IO_BASE + IO_SYS_BOOT_CART_INDEX * IO_WORD
 constexpr uint32_t IO_SYS_CART_BOOTREADY = IO_BASE + IO_SYS_CART_BOOTREADY_INDEX * IO_WORD_SIZE;
 constexpr uint32_t IO_VDP_BASE = IO_BASE + IO_VDP_BASE_INDEX * IO_WORD_SIZE;
 constexpr uint32_t IO_VDP_DITHER = IO_BASE + IO_VDP_DITHER_INDEX * IO_WORD_SIZE;
+constexpr uint32_t IO_VDP_PRIMARY_ATLAS_ID = IO_BASE + IO_VDP_PRIMARY_ATLAS_ID_INDEX * IO_WORD_SIZE;
+constexpr uint32_t IO_VDP_SECONDARY_ATLAS_ID = IO_BASE + IO_VDP_SECONDARY_ATLAS_ID_INDEX * IO_WORD_SIZE;
+
+constexpr uint32_t IO_IRQ_BASE = IO_BASE + IO_IRQ_BASE_INDEX * IO_WORD_SIZE;
+constexpr uint32_t IO_IRQ_FLAGS = IO_BASE + IO_IRQ_FLAGS_INDEX * IO_WORD_SIZE;
+constexpr uint32_t IO_IRQ_ACK = IO_BASE + IO_IRQ_ACK_INDEX * IO_WORD_SIZE;
+
+constexpr uint32_t IO_DMA_BASE = IO_BASE + IO_DMA_BASE_INDEX * IO_WORD_SIZE;
+constexpr uint32_t IO_DMA_SRC = IO_BASE + IO_DMA_SRC_INDEX * IO_WORD_SIZE;
+constexpr uint32_t IO_DMA_DST = IO_BASE + IO_DMA_DST_INDEX * IO_WORD_SIZE;
+constexpr uint32_t IO_DMA_LEN = IO_BASE + IO_DMA_LEN_INDEX * IO_WORD_SIZE;
+constexpr uint32_t IO_DMA_CTRL = IO_BASE + IO_DMA_CTRL_INDEX * IO_WORD_SIZE;
+constexpr uint32_t IO_DMA_STATUS = IO_BASE + IO_DMA_STATUS_INDEX * IO_WORD_SIZE;
+constexpr uint32_t IO_DMA_WRITTEN = IO_BASE + IO_DMA_WRITTEN_INDEX * IO_WORD_SIZE;
+
+constexpr uint32_t IO_IMG_BASE = IO_BASE + IO_IMG_BASE_INDEX * IO_WORD_SIZE;
+constexpr uint32_t IO_IMG_SRC = IO_BASE + IO_IMG_SRC_INDEX * IO_WORD_SIZE;
+constexpr uint32_t IO_IMG_LEN = IO_BASE + IO_IMG_LEN_INDEX * IO_WORD_SIZE;
+constexpr uint32_t IO_IMG_DST = IO_BASE + IO_IMG_DST_INDEX * IO_WORD_SIZE;
+constexpr uint32_t IO_IMG_CAP = IO_BASE + IO_IMG_CAP_INDEX * IO_WORD_SIZE;
+constexpr uint32_t IO_IMG_CTRL = IO_BASE + IO_IMG_CTRL_INDEX * IO_WORD_SIZE;
+constexpr uint32_t IO_IMG_STATUS = IO_BASE + IO_IMG_STATUS_INDEX * IO_WORD_SIZE;
+constexpr uint32_t IO_IMG_WRITTEN = IO_BASE + IO_IMG_WRITTEN_INDEX * IO_WORD_SIZE;
+
+constexpr uint32_t IRQ_DMA_DONE = 1 << 0;
+constexpr uint32_t IRQ_DMA_ERROR = 1 << 1;
+constexpr uint32_t IRQ_IMG_DONE = 1 << 2;
+constexpr uint32_t IRQ_IMG_ERROR = 1 << 3;
+
+constexpr uint32_t DMA_CTRL_START = 1 << 0;
+constexpr uint32_t DMA_CTRL_STRICT = 1 << 1;
+constexpr uint32_t DMA_STATUS_BUSY = 1 << 0;
+constexpr uint32_t DMA_STATUS_DONE = 1 << 1;
+constexpr uint32_t DMA_STATUS_ERROR = 1 << 2;
+constexpr uint32_t DMA_STATUS_CLIPPED = 1 << 3;
+
+constexpr uint32_t IMG_CTRL_START = 1 << 0;
+constexpr uint32_t IMG_STATUS_BUSY = 1 << 0;
+constexpr uint32_t IMG_STATUS_DONE = 1 << 1;
+constexpr uint32_t IMG_STATUS_ERROR = 1 << 2;
+constexpr uint32_t IMG_STATUS_CLIPPED = 1 << 3;
+
+constexpr uint32_t VDP_ATLAS_ID_NONE = 0xffffffffu;
 
 } // namespace bmsx

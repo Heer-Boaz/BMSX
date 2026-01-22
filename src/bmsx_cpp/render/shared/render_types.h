@@ -8,7 +8,7 @@
 #ifndef BMSX_RENDER_TYPES_H
 #define BMSX_RENDER_TYPES_H
 
-#include "../core/types.h"
+#include "../../core/types.h"
 #include <string>
 #include <vector>
 #include <array>

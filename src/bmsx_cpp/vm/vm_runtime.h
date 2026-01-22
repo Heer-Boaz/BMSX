@@ -1,6 +1,8 @@
 #pragma once
 
 #include "cpu.h"
+#include "devices/dma_controller.h"
+#include "devices/imgdec_controller.h"
 #include "vm_io.h"
 #include "vm_memory.h"
 #include "vdp.h"
@@ -81,6 +83,10 @@ public:
 		Engine,
 		Cart,
 	};
+	enum class AssetBuildMode {
+		Full,
+		Cart,
+	};
 
 	/**
 	 * Create the singleton instance. Throws if already created.
@@ -111,6 +117,7 @@ public:
 	 */
 	void boot(Program* program, ProgramMetadata* metadata, int entryProtoIndex);
 	void boot(const VmProgramAsset& asset, ProgramMetadata* metadata);
+	void handleLuaError(const std::string& message);
 
 	/**
 	 * Tick the VM update phase (called by BmsxCartUpdateSystem).
@@ -241,7 +248,7 @@ public:
 	void setCanonicalization(CanonicalizationType canonicalization);
 	Value canonicalizeIdentifier(std::string_view value);
 	void refreshMemoryMap();
-	void buildAssetMemory(RuntimeAssets& assets, bool keepDecodedData);
+	void buildAssetMemory(RuntimeAssets& assets, bool keepDecodedData, AssetBuildMode mode = AssetBuildMode::Full);
 
 private:
 	enum class PendingCall {
@@ -257,6 +264,9 @@ private:
 	void runEngineBuiltinPrelude();
 	void executeUpdateCallback(double deltaSeconds);
 	void executeDrawCallback();
+	void tickHardware();
+	void raiseIrqFlags(uint32_t mask);
+	void dispatchIrqFlags();
 	Value requireVmModule(const std::string& moduleName);
 	std::vector<Value> callEngineModuleMember(const std::string& name, const std::vector<Value>& args);
 	const std::regex& buildLuaPatternRegex(const std::string& pattern);
@@ -282,6 +292,8 @@ private:
 	VDP m_vdp;
 	StringHandleTable m_stringHandles;
 	VMCPU m_cpu;
+	DmaController m_dmaController;
+	ImgDecController m_imgDecController;
 	Program* m_program = nullptr;
 	ProgramMetadata* m_programMetadata = nullptr;
 
@@ -310,6 +322,7 @@ private:
 	Closure* m_drawFn = nullptr;
 	Closure* m_initFn = nullptr;
 	Closure* m_newGameFn = nullptr;
+	Closure* m_irqFn = nullptr;
 	Value m_ipairsIterator = valueNil();
 	PendingCall m_pendingVmCall = PendingCall::None;
 	uint32_t m_vmRandomSeedValue = 0;

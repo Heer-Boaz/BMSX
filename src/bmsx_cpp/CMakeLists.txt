@@ -92,11 +92,11 @@ add_library(bmsx_core STATIC
 
 	# Core systems
 	core/types.cpp
-	core/engine.cpp
+	core/engine_core.cpp
 	core/registry.cpp
-	core/assets.cpp
-	core/binencoder.cpp
-	core/rompack.cpp
+	rompack/runtime_assets.cpp
+	serializer/binencoder.cpp
+	rompack/rompack.cpp
 	core/font.cpp
 	core/taskgate.cpp
 	utils/mem_snapshot.cpp
@@ -113,19 +113,21 @@ add_library(bmsx_core STATIC
 	input/gamepadinput.cpp
 
 	# Render systems
-	render/backend.cpp
+	render/backend/backend.cpp
 	render/gameview.cpp
-	render/frame_uniforms.cpp
-	render/render_queues.cpp
-	render/sprites_pipeline.cpp
+	render/backend/frame_uniforms.cpp
+	render/shared/render_queues.cpp
+	render/2d/sprites_pipeline.cpp
 	render/texturemanager.cpp
-	render/renderpasslib.cpp
-	render/rendergraph.cpp
-	render/glyphs.cpp
+	render/backend/renderpasslib.cpp
+	render/graph/rendergraph.cpp
+	render/shared/glyphs.cpp
 
 	# VM (Lua bytecode interpreter)
 	vm/cpu.cpp
 	vm/font.cpp
+	vm/devices/dma_controller.cpp
+	vm/devices/imgdec_controller.cpp
 	vm/vm_api.cpp
 	vm/vm_runtime.cpp
 	vm/vm_memory.cpp
@@ -152,9 +154,9 @@ target_compile_definitions(bmsx_core PUBLIC
 
 if(BMSX_ENABLE_GLES2)
 	target_sources(bmsx_core PRIVATE
-		render/gles2_backend.cpp
-		render/sprites_pipeline_gles2.cpp
-		render/crt_pipeline_gles2.cpp
+		render/backend/gles2_backend.cpp
+		render/2d/sprites_pipeline_gles2.cpp
+		render/post/crt_pipeline_gles2.cpp
 	)
 endif()
 

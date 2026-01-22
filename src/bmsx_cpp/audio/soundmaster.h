@@ -4,7 +4,7 @@
 
 #pragma once
 
-#include "../core/assets.h"
+#include "../rompack/runtime_assets.h"
 #include "../core/registry.h"
 #include "../subscription.h"
 #include <array>

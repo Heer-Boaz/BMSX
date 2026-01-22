@@ -8,7 +8,7 @@
 #define BMSX_RENDERPASS_BUILDER_H
 
 #include "backend.h"
-#include "render_types.h"
+#include "../shared/render_types.h"
 #include <array>
 #include <vector>
 #include <optional>

@@ -3,8 +3,8 @@
  */
 
 #include "glyphs.h"
-#include "gameview.h"
-#include "../core/font.h"
+#include "../gameview.h"
+#include "../../core/font.h"
 #include <cctype>
 #include <limits>
 #include <stdexcept>

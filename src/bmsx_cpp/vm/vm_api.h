@@ -3,7 +3,7 @@
 #include "cpu.h"
 #include "font.h"
 #include "../core/types.h"
-#include "../render/render_types.h"
+#include "../render/shared/render_types.h"
 #include <array>
 #include <memory>
 #include <optional>

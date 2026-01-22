@@ -11,22 +11,86 @@ bmsx_cpp/
 ├── platform.cpp                # Base platform implementations
 ├── subscription.h              # SubscriptionHandle pattern
 ├── subscription.cpp
+├── audio/
 ├── core/
 │   ├── types.h                 # Core type definitions (Vec2, Vec3, Color, Rect, etc.)
 │   ├── types.cpp
 │   ├── registry.h              # Global object registry (mirrors TS Registry)
 │   ├── registry.cpp
-│   ├── assets.h                # RuntimeAssets (img, audio, model, data)
-│   ├── assets.cpp
-│   ├── engine.h                # EngineCore with global $ accessor
-│   └── engine.cpp
+│   ├── engine_core.h           # EngineCore with global $ accessor
+│   ├── engine_core.cpp
+│   ├── font.h                  # Font rendering helpers
+│   ├── font.cpp
+│   ├── taskgate.h              # Async gate (mirrors TS TaskGate)
+│   ├── taskgate.cpp
+│   ├── assetbarrier.h          # AssetBarrier (mirrors TS AssetBarrier)
+│   └── assetbarrier.cpp
+├── input/
+├── render/
+│   ├── gameview.h              # GameView abstraction
+│   ├── gameview.cpp
+│   ├── texturemanager.h        # Texture manager
+│   ├── texturemanager.cpp
+│   ├── 2d/
+│   │   ├── sprites_pipeline.h
+│   │   ├── sprites_pipeline.cpp
+│   │   ├── sprites_pipeline_gles2.h
+│   │   └── sprites_pipeline_gles2.cpp
+│   ├── backend/
+│   │   ├── backend.h
+│   │   ├── backend.cpp
+│   │   ├── frame_uniforms.h
+│   │   ├── frame_uniforms.cpp
+│   │   ├── gles2_backend.h
+│   │   ├── gles2_backend.cpp
+│   │   ├── renderpass_builder.h
+│   │   ├── renderpasslib.h
+│   │   └── renderpasslib.cpp
+│   ├── graph/
+│   │   ├── rendergraph.h
+│   │   └── rendergraph.cpp
+│   ├── post/
+│   │   ├── crt_pipeline_gles2.h
+│   │   └── crt_pipeline_gles2.cpp
+│   └── shared/
+│       ├── glyphs.h
+│       ├── glyphs.cpp
+│       ├── render_queues.h
+│       ├── render_queues.cpp
+│       └── render_types.h
+├── rompack/
+│   ├── rompack.h               # ROM pack utilities
+│   ├── rompack.cpp
+│   ├── runtime_assets.h        # RuntimeAssets (img, audio, model, data)
+│   └── runtime_assets.cpp
+├── serializer/
+│   ├── binencoder.h
+│   └── binencoder.cpp
+├── utils/
+│   ├── clamp.h
+│   ├── feature_queue.h
+│   ├── mem_snapshot.h
+│   ├── mem_snapshot.cpp
+│   ├── mmap_file.h
+│   ├── mmap_file.cpp
+│   └── scratchbatch.h
 ├── vm/
 │   ├── cpu.h                    # Lua bytecode VM
 │   ├── cpu.cpp
 │   ├── vm_runtime.h             # VM lifecycle + builtins
 │   ├── vm_runtime.cpp
 │   ├── vm_api.h                 # Lua API bindings
-│   └── vm_api.cpp
+│   ├── vm_api.cpp
+│   ├── vm_io.h                  # VM I/O map
+│   ├── vm_memory.h              # VM memory
+│   ├── vm_memory.cpp
+│   ├── vdp.h                    # VDP + render integration
+│   ├── vdp.cpp
+│   └── devices/
+│       ├── dma_controller.h
+│       ├── dma_controller.cpp
+│       ├── imgdec_controller.h
+│       └── imgdec_controller.cpp
 └── platform/
     └── libretro/
         ├── libretro.h          # Libretro API header

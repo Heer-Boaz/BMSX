@@ -9,7 +9,7 @@
 #define BMSX_RENDERPASSLIB_H
 
 #include "backend.h"
-#include "render_types.h"
+#include "../shared/render_types.h"
 #include <string>
 #include <vector>
 #include <unordered_map>

@@ -11,8 +11,8 @@
 
 #include "libretro.h"
 #include "../../platform.h"
-#include "../../core/engine.h"
-#include "../../render/backend.h"
+#include "../../core/engine_core.h"
+#include "../../render/backend/backend.h"
 #include <vector>
 #include <array>
 #include <memory>

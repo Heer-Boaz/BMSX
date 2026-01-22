@@ -8,9 +8,9 @@
 #ifndef BMSX_SPRITES_PIPELINE_H
 #define BMSX_SPRITES_PIPELINE_H
 
-#include "render_types.h"
-#include "render_queues.h"
-#include "backend.h"
+#include "../shared/render_types.h"
+#include "../shared/render_queues.h"
+#include "../backend/backend.h"
 #include <vector>
 
 namespace bmsx {

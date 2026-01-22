@@ -3,8 +3,8 @@
 #include "vm_io.h"
 #include "program_loader.h"
 #include "number_format.h"
-#include "../core/engine.h"
-#include "../core/rompack.h"
+#include "../core/engine_core.h"
+#include "../rompack/rompack.h"
 #include "../input/input.h"
 #include "../render/texturemanager.h"
 #include "../utils/clamp.h"
@@ -628,6 +628,8 @@ VMRuntime::VMRuntime(const VMRuntimeOptions& options)
 	, m_vdp(m_memory)
 	, m_stringHandles(m_memory)
 	, m_cpu(m_memory, &m_stringHandles)
+	, m_dmaController(m_memory, [this](uint32_t mask) { raiseIrqFlags(mask); })
+	, m_imgDecController(m_memory, [this](uint32_t mask) { raiseIrqFlags(mask); })
 	, m_playerIndex(options.playerIndex)
 	, m_viewport(options.viewport)
 	, m_canonicalization(options.canonicalization)
@@ -639,6 +641,23 @@ VMRuntime::VMRuntime(const VMRuntimeOptions& options)
 	// System flags
 	m_memory.writeValue(IO_SYS_BOOT_CART, valueNumber(0.0));
 	m_memory.writeValue(IO_SYS_CART_BOOTREADY, valueNumber(0.0));
+	m_memory.writeValue(IO_IRQ_FLAGS, valueNumber(0.0));
+	m_memory.writeValue(IO_IRQ_ACK, valueNumber(0.0));
+	m_memory.writeValue(IO_DMA_SRC, valueNumber(0.0));
+	m_memory.writeValue(IO_DMA_DST, valueNumber(0.0));
+	m_memory.writeValue(IO_DMA_LEN, valueNumber(0.0));
+	m_memory.writeValue(IO_DMA_CTRL, valueNumber(0.0));
+	m_memory.writeValue(IO_DMA_STATUS, valueNumber(0.0));
+	m_memory.writeValue(IO_DMA_WRITTEN, valueNumber(0.0));
+	m_memory.writeValue(IO_IMG_SRC, valueNumber(0.0));
+	m_memory.writeValue(IO_IMG_LEN, valueNumber(0.0));
+	m_memory.writeValue(IO_IMG_DST, valueNumber(0.0));
+	m_memory.writeValue(IO_IMG_CAP, valueNumber(0.0));
+	m_memory.writeValue(IO_IMG_CTRL, valueNumber(0.0));
+	m_memory.writeValue(IO_IMG_STATUS, valueNumber(0.0));
+	m_memory.writeValue(IO_IMG_WRITTEN, valueNumber(0.0));
+	m_memory.writeValue(IO_VDP_PRIMARY_ATLAS_ID, valueNumber(static_cast<double>(VDP_ATLAS_ID_NONE)));
+	m_memory.writeValue(IO_VDP_SECONDARY_ATLAS_ID, valueNumber(static_cast<double>(VDP_ATLAS_ID_NONE)));
 	m_vdp.initializeRegisters();
 	m_vmRandomSeedValue = static_cast<uint32_t>(EngineCore::instance().clock()->now());
 	refreshMemoryMap();
@@ -650,6 +669,7 @@ VMRuntime::VMRuntime(const VMRuntimeOptions& options)
 		heap.markObject(m_drawFn);
 		heap.markObject(m_initFn);
 		heap.markObject(m_newGameFn);
+		heap.markObject(m_irqFn);
 		heap.markValue(m_ipairsIterator);
 	});
 
@@ -693,12 +713,30 @@ void VMRuntime::boot(Program* program, ProgramMetadata* metadata, int entryProto
 	m_drawFn = nullptr;
 	m_initFn = nullptr;
 	m_newGameFn = nullptr;
+	m_irqFn = nullptr;
 	m_cpu.instructionBudgetRemaining = std::nullopt;
 	m_cpu.globals->clear();
 	m_memory.clearIoSlots();
 	m_memory.writeValue(IO_WRITE_PTR_ADDR, valueNumber(0.0));
 	m_memory.writeValue(IO_SYS_BOOT_CART, valueNumber(0.0));
 	m_memory.writeValue(IO_SYS_CART_BOOTREADY, valueNumber(0.0));
+	m_memory.writeValue(IO_IRQ_FLAGS, valueNumber(0.0));
+	m_memory.writeValue(IO_IRQ_ACK, valueNumber(0.0));
+	m_memory.writeValue(IO_DMA_SRC, valueNumber(0.0));
+	m_memory.writeValue(IO_DMA_DST, valueNumber(0.0));
+	m_memory.writeValue(IO_DMA_LEN, valueNumber(0.0));
+	m_memory.writeValue(IO_DMA_CTRL, valueNumber(0.0));
+	m_memory.writeValue(IO_DMA_STATUS, valueNumber(0.0));
+	m_memory.writeValue(IO_DMA_WRITTEN, valueNumber(0.0));
+	m_memory.writeValue(IO_IMG_SRC, valueNumber(0.0));
+	m_memory.writeValue(IO_IMG_LEN, valueNumber(0.0));
+	m_memory.writeValue(IO_IMG_DST, valueNumber(0.0));
+	m_memory.writeValue(IO_IMG_CAP, valueNumber(0.0));
+	m_memory.writeValue(IO_IMG_CTRL, valueNumber(0.0));
+	m_memory.writeValue(IO_IMG_STATUS, valueNumber(0.0));
+	m_memory.writeValue(IO_IMG_WRITTEN, valueNumber(0.0));
+	m_memory.writeValue(IO_VDP_PRIMARY_ATLAS_ID, valueNumber(static_cast<double>(VDP_ATLAS_ID_NONE)));
+	m_memory.writeValue(IO_VDP_SECONDARY_ATLAS_ID, valueNumber(static_cast<double>(VDP_ATLAS_ID_NONE)));
 	m_vdp.initializeRegisters();
 	m_vmRandomSeedValue = static_cast<uint32_t>(EngineCore::instance().clock()->now());
 	setupBuiltins();
@@ -744,12 +782,20 @@ void VMRuntime::boot(Program* program, ProgramMetadata* metadata, int entryProto
 		m_newGameFn = asClosure(newGameVal);
 		std::cout << "[VMRuntime] boot: found new_game" << std::endl;
 	}
+	Value irqVal = m_cpu.globals->get(canonicalizeIdentifier("irq"));
+	if (valueIsClosure(irqVal)) {
+		m_irqFn = asClosure(irqVal);
+		std::cout << "[VMRuntime] boot: found irq" << std::endl;
+	}
 
 	if (!m_initFn) {
 		throw BMSX_RUNTIME_ERROR("[VMRuntime] VM lifecycle handler 'init' is not defined.");
 	}
 	if (!m_newGameFn) {
 		throw BMSX_RUNTIME_ERROR("[VMRuntime] VM lifecycle handler 'new_game' is not defined.");
+	}
+	if (!m_irqFn) {
+		throw BMSX_RUNTIME_ERROR("[VMRuntime] VM lifecycle handler 'irq' is not defined.");
 	}
 	std::cout << "[VMRuntime] boot: calling init..." << std::endl;
 	callLuaFunction(m_initFn, {});
@@ -794,6 +840,33 @@ bool VMRuntime::pollSystemBootRequest() {
 	return true;
 }
 
+void VMRuntime::tickHardware() {
+	m_dmaController.tick();
+	m_imgDecController.tick();
+}
+
+void VMRuntime::raiseIrqFlags(uint32_t mask) {
+	const uint32_t current = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_IRQ_FLAGS)));
+	m_memory.writeValue(IO_IRQ_FLAGS, valueNumber(static_cast<double>(current | mask)));
+}
+
+void VMRuntime::dispatchIrqFlags() {
+	const uint32_t ack = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_IRQ_ACK)));
+	uint32_t flags = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_IRQ_FLAGS)));
+	if (ack != 0) {
+		flags &= ~ack;
+		m_memory.writeValue(IO_IRQ_FLAGS, valueNumber(static_cast<double>(flags)));
+		m_memory.writeValue(IO_IRQ_ACK, valueNumber(0.0));
+	}
+	if (flags == 0) {
+		return;
+	}
+	m_cpu.call(m_irqFn, { valueNumber(static_cast<double>(flags)) }, 0);
+	m_cpu.instructionBudgetRemaining = std::nullopt;
+	m_cpu.run(std::nullopt);
+	processIOCommands();
+}
+
 void VMRuntime::tickUpdate() {
 	if (!m_vmInitialized || !m_tickEnabled || m_runtimeFailed) {
 		// if (s_updateLogRemaining > 0) {
@@ -806,6 +879,7 @@ void VMRuntime::tickUpdate() {
 	}
 
 	prepareCartBootIfNeeded();
+	tickHardware();
 	if (pollSystemBootRequest()) {
 		return;
 	}
@@ -849,6 +923,7 @@ void VMRuntime::tickIdeInput() {
 
 void VMRuntime::tickIDE() {
 	// IDE update - stub for now
+	tickHardware();
 	flushAssetEdits();
 }
 
@@ -862,6 +937,7 @@ void VMRuntime::tickTerminalInput() {
 
 void VMRuntime::tickTerminalMode() {
 	// Terminal mode update - stub for now
+	tickHardware();
 	flushAssetEdits();
 }
 
@@ -977,11 +1053,18 @@ void VMRuntime::refreshMemoryMap() {
 	}
 }
 
-void VMRuntime::buildAssetMemory(RuntimeAssets& assets, bool keepDecodedData) {
-	m_memory.resetAssetMemory();
+void VMRuntime::buildAssetMemory(RuntimeAssets& assets, bool keepDecodedData, AssetBuildMode mode) {
+	if (mode == AssetBuildMode::Cart) {
+		m_memory.resetCartAssets();
+	} else {
+		m_memory.resetAssetMemory();
+	}
 	m_vdp.registerImageAssets(assets, keepDecodedData);
 	const RuntimeAssets* fallback = assets.fallback;
 	for (auto& [id, audioAsset] : assets.audio) {
+		if (m_memory.hasAsset(id)) {
+			continue;
+		}
 		if (audioAsset.bytes.empty()) {
 			throw BMSX_RUNTIME_ERROR("[VMRuntime] Audio asset '" + id + "' missing encoded bytes.");
 		}
@@ -1000,6 +1083,9 @@ void VMRuntime::buildAssetMemory(RuntimeAssets& assets, bool keepDecodedData) {
 	if (fallback) {
 		for (const auto& [id, audioAsset] : fallback->audio) {
 			if (assets.audio.find(id) != assets.audio.end()) {
+				continue;
+			}
+			if (m_memory.hasAsset(id)) {
 				continue;
 			}
 			if (audioAsset.bytes.empty()) {
@@ -1075,9 +1161,15 @@ void VMRuntime::logVmCallStack() const {
 	}
 }
 
+void VMRuntime::handleLuaError(const std::string& message) {
+	std::cerr << "[VMRuntime] Error: " << message << std::endl;
+	logVmCallStack();
+	m_runtimeFailed = true;
+}
+
 void VMRuntime::runEngineBuiltinPrelude() {
 	std::cerr << "[VMRuntime] prelude: binding engine builtins" << std::endl;
-	static const std::array<const char*, 21> engineBuiltins = {
+	static const std::array<const char*, 22> engineBuiltins = {
 		"define_fsm",
 		"define_world_object",
 		"define_service",
@@ -1099,6 +1191,7 @@ void VMRuntime::runEngineBuiltinPrelude() {
 		"delist",
 		"grant_effect",
 		"trigger_effect",
+		"irq",
 	};
 	auto* engineModule = asTable(requireVmModule("engine"));
 	for (const char* name : engineBuiltins) {
@@ -1899,6 +1992,50 @@ void VMRuntime::setupBuiltins() {
 	setGlobal("SYS_CART_MAGIC_ADDR", valueNumber(static_cast<double>(CART_ROM_MAGIC_ADDR)));
 	setGlobal("SYS_CART_MAGIC", valueNumber(static_cast<double>(CART_ROM_MAGIC)));
 	setGlobal("SYS_VDP_DITHER", valueNumber(static_cast<double>(IO_VDP_DITHER)));
+	setGlobal("SYS_VDP_PRIMARY_ATLAS_ID", valueNumber(static_cast<double>(IO_VDP_PRIMARY_ATLAS_ID)));
+	setGlobal("SYS_VDP_SECONDARY_ATLAS_ID", valueNumber(static_cast<double>(IO_VDP_SECONDARY_ATLAS_ID)));
+	setGlobal("SYS_VDP_ATLAS_NONE", valueNumber(static_cast<double>(VDP_ATLAS_ID_NONE)));
+	setGlobal("SYS_IRQ_FLAGS", valueNumber(static_cast<double>(IO_IRQ_FLAGS)));
+	setGlobal("SYS_IRQ_ACK", valueNumber(static_cast<double>(IO_IRQ_ACK)));
+	setGlobal("SYS_DMA_SRC", valueNumber(static_cast<double>(IO_DMA_SRC)));
+	setGlobal("SYS_DMA_DST", valueNumber(static_cast<double>(IO_DMA_DST)));
+	setGlobal("SYS_DMA_LEN", valueNumber(static_cast<double>(IO_DMA_LEN)));
+	setGlobal("SYS_DMA_CTRL", valueNumber(static_cast<double>(IO_DMA_CTRL)));
+	setGlobal("SYS_DMA_STATUS", valueNumber(static_cast<double>(IO_DMA_STATUS)));
+	setGlobal("SYS_DMA_WRITTEN", valueNumber(static_cast<double>(IO_DMA_WRITTEN)));
+	setGlobal("SYS_IMG_SRC", valueNumber(static_cast<double>(IO_IMG_SRC)));
+	setGlobal("SYS_IMG_LEN", valueNumber(static_cast<double>(IO_IMG_LEN)));
+	setGlobal("SYS_IMG_DST", valueNumber(static_cast<double>(IO_IMG_DST)));
+	setGlobal("SYS_IMG_CAP", valueNumber(static_cast<double>(IO_IMG_CAP)));
+	setGlobal("SYS_IMG_CTRL", valueNumber(static_cast<double>(IO_IMG_CTRL)));
+	setGlobal("SYS_IMG_STATUS", valueNumber(static_cast<double>(IO_IMG_STATUS)));
+	setGlobal("SYS_IMG_WRITTEN", valueNumber(static_cast<double>(IO_IMG_WRITTEN)));
+	setGlobal("SYS_ENGINE_ROM_BASE", valueNumber(static_cast<double>(ENGINE_ROM_BASE)));
+	setGlobal("SYS_CART_ROM_BASE", valueNumber(static_cast<double>(CART_ROM_BASE)));
+	setGlobal("SYS_OVERLAY_ROM_BASE", valueNumber(static_cast<double>(OVERLAY_ROM_BASE)));
+	setGlobal("SYS_VRAM_ENGINE_ATLAS_BASE", valueNumber(static_cast<double>(VRAM_ENGINE_ATLAS_BASE)));
+	setGlobal("SYS_VRAM_PRIMARY_ATLAS_BASE", valueNumber(static_cast<double>(VRAM_PRIMARY_ATLAS_BASE)));
+	setGlobal("SYS_VRAM_SECONDARY_ATLAS_BASE", valueNumber(static_cast<double>(VRAM_SECONDARY_ATLAS_BASE)));
+	setGlobal("SYS_VRAM_STAGING_BASE", valueNumber(static_cast<double>(VRAM_STAGING_BASE)));
+	setGlobal("SYS_VRAM_ENGINE_ATLAS_SIZE", valueNumber(static_cast<double>(VRAM_ENGINE_ATLAS_SIZE)));
+	setGlobal("SYS_VRAM_PRIMARY_ATLAS_SIZE", valueNumber(static_cast<double>(VRAM_PRIMARY_ATLAS_SIZE)));
+	setGlobal("SYS_VRAM_SECONDARY_ATLAS_SIZE", valueNumber(static_cast<double>(VRAM_SECONDARY_ATLAS_SIZE)));
+	setGlobal("SYS_VRAM_STAGING_SIZE", valueNumber(static_cast<double>(VRAM_STAGING_SIZE)));
+	setGlobal("IRQ_DMA_DONE", valueNumber(static_cast<double>(IRQ_DMA_DONE)));
+	setGlobal("IRQ_DMA_ERROR", valueNumber(static_cast<double>(IRQ_DMA_ERROR)));
+	setGlobal("IRQ_IMG_DONE", valueNumber(static_cast<double>(IRQ_IMG_DONE)));
+	setGlobal("IRQ_IMG_ERROR", valueNumber(static_cast<double>(IRQ_IMG_ERROR)));
+	setGlobal("DMA_CTRL_START", valueNumber(static_cast<double>(DMA_CTRL_START)));
+	setGlobal("DMA_CTRL_STRICT", valueNumber(static_cast<double>(DMA_CTRL_STRICT)));
+	setGlobal("DMA_STATUS_BUSY", valueNumber(static_cast<double>(DMA_STATUS_BUSY)));
+	setGlobal("DMA_STATUS_DONE", valueNumber(static_cast<double>(DMA_STATUS_DONE)));
+	setGlobal("DMA_STATUS_ERROR", valueNumber(static_cast<double>(DMA_STATUS_ERROR)));
+	setGlobal("DMA_STATUS_CLIPPED", valueNumber(static_cast<double>(DMA_STATUS_CLIPPED)));
+	setGlobal("IMG_CTRL_START", valueNumber(static_cast<double>(IMG_CTRL_START)));
+	setGlobal("IMG_STATUS_BUSY", valueNumber(static_cast<double>(IMG_STATUS_BUSY)));
+	setGlobal("IMG_STATUS_DONE", valueNumber(static_cast<double>(IMG_STATUS_DONE)));
+	setGlobal("IMG_STATUS_ERROR", valueNumber(static_cast<double>(IMG_STATUS_ERROR)));
+	setGlobal("IMG_STATUS_CLIPPED", valueNumber(static_cast<double>(IMG_STATUS_CLIPPED)));
 
 	registerNativeFunction("peek", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 		uint32_t address = static_cast<uint32_t>(asNumber(args.at(0)));
@@ -3214,6 +3351,9 @@ bool shouldRunEngineUpdate = (m_updateFn == nullptr);
 	double ioMs = 0.0;
 
 	try {
+		if (m_pendingVmCall == PendingCall::None) {
+			dispatchIrqFlags();
+		}
 		if (m_updateFn) {
 			if (m_pendingVmCall == PendingCall::None) {
 				m_cpu.call(m_updateFn, {valueNumber(deltaSeconds)}, 0);

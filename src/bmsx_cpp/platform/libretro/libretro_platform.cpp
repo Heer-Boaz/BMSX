@@ -7,13 +7,13 @@
 #include "../../input/input.h"
 #include "../../input/gamepadinput.h"
 #include "../../input/keyboardinput.h"
-#include "../../render/renderpasslib.h"
+#include "../../render/backend/renderpasslib.h"
 #include "../../utils/mem_snapshot.h"
 #include "../../vm/vm_runtime.h"
 #if BMSX_ENABLE_GLES2
-#include "../../render/gles2_backend.h"
-#include "../../render/sprites_pipeline_gles2.h"
-#include "../../render/crt_pipeline_gles2.h"
+#include "../../render/backend/gles2_backend.h"
+#include "../../render/2d/sprites_pipeline_gles2.h"
+#include "../../render/post/crt_pipeline_gles2.h"
 #endif
 #include <chrono>
 #include <cstring>

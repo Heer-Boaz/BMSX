@@ -7,12 +7,12 @@
 
 #include "gameview.h"
 #if BMSX_ENABLE_GLES2
-#include "gles2_backend.h"
+#include "backend/gles2_backend.h"
 #endif
-#include "renderpasslib.h"
-#include "rendergraph.h"
-#include "../core/engine.h"
-#include "../core/rompack.h"
+#include "backend/renderpasslib.h"
+#include "graph/rendergraph.h"
+#include "../core/engine_core.h"
+#include "../rompack/rompack.h"
 #include "texturemanager.h"
 #include "../utils/clamp.h"
 #include <algorithm>

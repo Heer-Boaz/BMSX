@@ -7,8 +7,8 @@
 #ifndef BMSX_RENDERGRAPH_H
 #define BMSX_RENDERGRAPH_H
 
-#include "backend.h"
-#include "render_types.h"
+#include "../backend/backend.h"
+#include "../shared/render_types.h"
 #include <any>
 #include <array>
 #include <functional>

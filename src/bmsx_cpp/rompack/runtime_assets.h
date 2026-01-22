@@ -1,5 +1,5 @@
 /*
- * assets.h - Runtime asset management for BMSX
+ * runtime_assets.h - Runtime asset management for BMSX
  *
  * This mirrors the TypeScript RuntimeAssets structure where:
  * - img: Image/texture assets
@@ -11,11 +11,11 @@
  * - vmProgramSymbols: VM program metadata (symbols/debug info)
  */
 
-#ifndef BMSX_ASSETS_H
-#define BMSX_ASSETS_H
+#ifndef BMSX_RUNTIME_ASSETS_H
+#define BMSX_RUNTIME_ASSETS_H
 
-#include "types.h"
-#include "binencoder.h"
+#include "../core/types.h"
+#include "../serializer/binencoder.h"
 #include "../vm/program_loader.h"
 #include <string>
 #include <unordered_map>
@@ -358,4 +358,4 @@ bool loadAssetsFromRom(const u8* buffer,
 
 } // namespace bmsx
 
-#endif // BMSX_ASSETS_H
+#endif // BMSX_RUNTIME_ASSETS_H

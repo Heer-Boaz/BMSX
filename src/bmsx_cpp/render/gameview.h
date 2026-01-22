@@ -8,9 +8,9 @@
 #ifndef BMSX_GAMEVIEW_H
 #define BMSX_GAMEVIEW_H
 
-#include "backend.h"
-#include "render_types.h"
-#include "render_queues.h"
+#include "backend/backend.h"
+#include "shared/render_types.h"
+#include "shared/render_queues.h"
 #include "../core/registry.h"
 #include "../subscription.h"
 #include <memory>

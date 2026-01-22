@@ -1,10 +1,10 @@
 #pragma once
 
 #include "../core/assetbarrier.h"
-#include "../core/assets.h"
+#include "../rompack/runtime_assets.h"
 #include "../core/registry.h"
 #include "../core/taskgate.h"
-#include "backend.h"
+#include "backend/backend.h"
 #include <functional>
 #include <memory>
 #include <string>

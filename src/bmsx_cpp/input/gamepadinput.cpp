@@ -6,7 +6,7 @@
 
 #include "gamepadinput.h"
 #include "input.h"
-#include "../core/engine.h"
+#include "../core/engine_core.h"
 #include <cmath>
 
 namespace bmsx {

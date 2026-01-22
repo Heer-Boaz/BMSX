@@ -8,7 +8,7 @@
 #ifndef BMSX_BACKEND_H
 #define BMSX_BACKEND_H
 
-#include "render_types.h"
+#include "../shared/render_types.h"
 #include <memory>
 #include <functional>
 #include <unordered_map>

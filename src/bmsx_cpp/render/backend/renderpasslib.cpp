@@ -5,15 +5,15 @@
  */
 
 #include "renderpasslib.h"
-#include "gameview.h"
-#include "sprites_pipeline.h"
+#include "../gameview.h"
+#include "../2d/sprites_pipeline.h"
 #if BMSX_ENABLE_GLES2
-#include "sprites_pipeline_gles2.h"
-#include "crt_pipeline_gles2.h"
+#include "../2d/sprites_pipeline_gles2.h"
+#include "../post/crt_pipeline_gles2.h"
 #endif
-#include "rendergraph.h"
-#include "../core/engine.h"
-#include "../core/rompack.h"
+#include "../graph/rendergraph.h"
+#include "../../core/engine_core.h"
+#include "../../rompack/rompack.h"
 #include <algorithm>
 #include <stdexcept>
 

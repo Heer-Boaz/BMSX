@@ -2,13 +2,13 @@
  * engine.cpp - Core engine implementation
  */
 
-#include "engine.h"
+#include "engine_core.h"
 #include "../input/input.h"
 #include "../render/texturemanager.h"
 #include "../vm/vm_runtime.h"
 #include "../vm/program_linker.h"
 #include "../vm/font.h"
-#include "rompack.h"
+#include "../rompack/rompack.h"
 #include "../vm/memory_map.h"
 #include <cstdio>
 #include <chrono>
@@ -419,6 +419,7 @@ bool EngineCore::bootWithoutCart() {
 		runtime.setProgramSource(VMRuntime::VmProgramSource::Engine);
 		runtime.setCanonicalization(m_engine_assets.manifest.canonicalization);
 		runtime.buildAssetMemory(m_engine_assets, true);
+		runtime.memory().sealEngineAssets();
 
 		// Upload textures/audio after asset RAM is ready.
 		uploadTexturesToBackend(false);
@@ -519,6 +520,7 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 		runtime.setProgramSource(VMRuntime::VmProgramSource::Engine);
 		runtime.setCanonicalization(m_engine_assets.manifest.canonicalization);
 		runtime.buildAssetMemory(m_engine_assets, true);
+		runtime.memory().sealEngineAssets();
 		uploadTexturesToBackend(false);
 		refreshAudioAssets(m_engine_assets);
 		runtime.boot(*m_engine_assets.vmProgram, m_engine_assets.vmProgramSymbols.get());
@@ -563,7 +565,7 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 
 void EngineCore::prepareLoadedRomAssets() {
 	VMRuntime& runtime = VMRuntime::instance();
-	runtime.buildAssetMemory(m_assets, false);
+	runtime.buildAssetMemory(m_assets, false, VMRuntime::AssetBuildMode::Cart);
 	uploadTexturesToBackend(true);
 	refreshAudioAssets();
 }
@@ -587,7 +589,7 @@ bool EngineCore::resetLoadedRom() {
 	if (m_assets.vmProgram && m_assets.vmProgram->program) {
 		VMRuntime& runtime = VMRuntime::instance();
 		runtime.refreshMemoryMap();
-		runtime.buildAssetMemory(m_assets, false);
+		runtime.buildAssetMemory(m_assets, false, VMRuntime::AssetBuildMode::Cart);
 		uploadTexturesToBackend(true);
 		refreshAudioAssets();
 		bootVMFromProgram();
@@ -608,6 +610,7 @@ bool EngineCore::resetLoadedRom() {
 		runtime.setProgramSource(VMRuntime::VmProgramSource::Engine);
 		runtime.setCanonicalization(m_engine_assets.manifest.canonicalization);
 		runtime.buildAssetMemory(m_engine_assets, true);
+		runtime.memory().sealEngineAssets();
 		uploadTexturesToBackend(false);
 		refreshAudioAssets(m_engine_assets);
 		runtime.boot(*m_engine_assets.vmProgram, m_engine_assets.vmProgramSymbols.get());

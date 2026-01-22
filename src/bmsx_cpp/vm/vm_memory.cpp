@@ -111,10 +111,59 @@ void VmMemory::resetAssetMemory() {
 	m_assetDirtyFlags.clear();
 	m_assetDirtyList.clear();
 	m_assetTableFinalized = false;
+	m_engineAssetEntryCount = 0;
+	m_engineAssetDataEnd = ASSET_DATA_BASE;
+	m_cartAssetDataBase = ASSET_DATA_BASE;
 	std::fill(m_assetOwnerPages.begin(), m_assetOwnerPages.end(), -1);
 	m_assetDataCursor = ASSET_DATA_BASE;
 	const size_t offset = static_cast<size_t>(ASSET_RAM_BASE - RAM_BASE);
 	std::fill(m_ram.begin() + offset, m_ram.begin() + offset + ASSET_RAM_SIZE, 0);
+}
+
+bool VmMemory::hasAsset(const std::string& id) const {
+	if (m_assetIndexById.find(id) != m_assetIndexById.end()) {
+		return true;
+	}
+	const uint64_t token = hashAssetId(id);
+	return m_assetIndexByToken.find(token) != m_assetIndexByToken.end();
+}
+
+void VmMemory::sealEngineAssets() {
+	m_engineAssetEntryCount = m_assetEntries.size();
+	m_engineAssetDataEnd = m_assetDataCursor;
+	const uint32_t mask = ASSET_PAGE_SIZE - 1u;
+	const uint32_t aligned = (m_engineAssetDataEnd + mask) & ~mask;
+	if (aligned > ASSET_DATA_ALLOC_END) {
+		throw std::runtime_error("[VmMemory] Engine asset data exceeds asset RAM.");
+	}
+	m_cartAssetDataBase = aligned;
+}
+
+void VmMemory::resetCartAssets() {
+	m_assetEntries.resize(m_engineAssetEntryCount);
+	m_assetIndexById.clear();
+	m_assetIndexByToken.clear();
+	m_assetDirtyFlags.clear();
+	m_assetDirtyList.clear();
+	m_assetTableFinalized = false;
+	std::fill(m_assetOwnerPages.begin(), m_assetOwnerPages.end(), -1);
+	for (size_t index = 0; index < m_assetEntries.size(); ++index) {
+		auto& entry = m_assetEntries[index];
+		m_assetIndexById[entry.id] = index;
+		m_assetIndexByToken[entry.idToken] = index;
+		m_assetDirtyFlags.push_back(0);
+	}
+	for (size_t index = 0; index < m_assetEntries.size(); ++index) {
+		const auto& entry = m_assetEntries[index];
+		if (entry.ownerIndex != index) {
+			continue;
+		}
+		mapAssetPages(index, entry.baseAddr, entry.capacity);
+	}
+	m_assetDataCursor = m_cartAssetDataBase;
+	const size_t cartOffset = static_cast<size_t>(m_cartAssetDataBase - RAM_BASE);
+	const size_t cartEnd = static_cast<size_t>(ASSET_DATA_ALLOC_END - RAM_BASE);
+	std::fill(m_ram.begin() + cartOffset, m_ram.begin() + cartEnd, 0);
 }
 
 VmMemory::AssetEntry& VmMemory::registerImageBuffer(const std::string& id, const u8* rgba, uint32_t width, uint32_t height, uint32_t flags) {
@@ -151,11 +200,35 @@ VmMemory::AssetEntry& VmMemory::registerImageSlot(const std::string& id, uint32_
 	entry.baseSize = 0;
 	entry.capacity = capacityBytes;
 	entry.baseStride = 0;
+	entry.regionX = 0;
+	entry.regionY = 0;
 	entry.regionW = 0;
 	entry.regionH = 0;
 	const size_t index = addAssetEntry(std::move(entry));
 	m_assetEntries[index].ownerIndex = index;
 	mapAssetPages(index, addr, capacityBytes);
+	return m_assetEntries[index];
+}
+
+VmMemory::AssetEntry& VmMemory::registerImageSlotAt(const std::string& id, uint32_t baseAddr, uint32_t capacityBytes, uint32_t flags) {
+	if (baseAddr < RAM_BASE || baseAddr + capacityBytes > RAM_USED_END) {
+		throw std::runtime_error("[VmMemory] Image slot out of RAM bounds.");
+	}
+	const size_t offset = static_cast<size_t>(baseAddr - RAM_BASE);
+	std::memset(m_ram.data() + offset, 0, capacityBytes);
+	AssetEntry entry;
+	entry.id = id;
+	entry.type = AssetType::Image;
+	entry.flags = flags;
+	entry.baseAddr = baseAddr;
+	entry.baseSize = 0;
+	entry.capacity = capacityBytes;
+	entry.baseStride = 0;
+	entry.regionW = 0;
+	entry.regionH = 0;
+	const size_t index = addAssetEntry(std::move(entry));
+	m_assetEntries[index].ownerIndex = index;
+	mapAssetPages(index, baseAddr, capacityBytes);
 	return m_assetEntries[index];
 }
 
@@ -369,8 +442,7 @@ void VmMemory::writeImageSlot(AssetEntry& entry, const u8* pixels, size_t pixelB
 	const uint32_t capacity = entry.capacity;
 	const uint32_t stride = width * 4u;
 	const uint32_t size = stride * height;
-	const uint32_t maxWritable = ASSET_DATA_END - entry.baseAddr;
-	const size_t writeLen = std::min(pixelBytes, static_cast<size_t>(maxWritable));
+	const size_t writeLen = std::min(pixelBytes, static_cast<size_t>(capacity));
 	if (writeLen > 0) {
 		const size_t offset = ramOffset(entry.baseAddr, writeLen);
 		std::memcpy(m_ram.data() + offset, pixels, writeLen);
@@ -570,7 +642,7 @@ void VmMemory::markAssetDirty(uint32_t addr, uint32_t size) {
 uint32_t VmMemory::allocateAssetData(uint32_t size, uint32_t alignment) {
 	uint32_t addr = alignment > 1 ? alignUp(m_assetDataCursor, alignment) : m_assetDataCursor;
 	const uint32_t end = addr + size;
-	if (end > ASSET_DATA_END) {
+	if (end > ASSET_DATA_ALLOC_END) {
 		throw std::runtime_error("[VmMemory] Asset RAM exhausted.");
 	}
 	m_assetDataCursor = end;

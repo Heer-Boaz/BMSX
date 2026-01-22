@@ -1,9 +1,9 @@
 /*
- * assets.cpp - Runtime asset management implementation
+ * runtime_assets.cpp - Runtime asset management implementation
  */
 
-#include "assets.h"
-#include "binencoder.h"
+#include "runtime_assets.h"
+#include "../serializer/binencoder.h"
 #include "../vm/program_loader.h"
 #include "../utils/mem_snapshot.h"
 #include <cstring>

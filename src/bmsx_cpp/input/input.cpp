@@ -7,7 +7,7 @@
 #include "input.h"
 #include "gamepadinput.h"
 #include "keyboardinput.h"
-#include "../core/engine.h"
+#include "../core/engine_core.h"
 
 namespace bmsx {
 

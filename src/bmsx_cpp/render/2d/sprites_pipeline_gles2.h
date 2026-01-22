@@ -5,9 +5,9 @@
 #ifndef BMSX_SPRITES_PIPELINE_GLES2_H
 #define BMSX_SPRITES_PIPELINE_GLES2_H
 
-#include "gameview.h"
-#include "renderpasslib.h"
-#include "gles2_backend.h"
+#include "../gameview.h"
+#include "../backend/renderpasslib.h"
+#include "../backend/gles2_backend.h"
 
 namespace bmsx {
 namespace SpritesPipeline {

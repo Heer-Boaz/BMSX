@@ -1,8 +1,8 @@
 #include "vm_api.h"
 
-#include "../core/engine.h"
+#include "../core/engine_core.h"
 #include "../input/input.h"
-#include "../render/render_queues.h"
+#include "../render/shared/render_queues.h"
 #include "vm_runtime.h"
 #include <algorithm>
 #include <cctype>

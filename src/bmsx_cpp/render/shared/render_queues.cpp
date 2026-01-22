@@ -6,10 +6,10 @@
 
 #include "render_queues.h"
 #include "glyphs.h"
-#include "../core/assets.h"
-#include "../core/engine.h"
-#include "../core/font.h"
-#include "../utils/clamp.h"
+#include "../../rompack/runtime_assets.h"
+#include "../../core/engine_core.h"
+#include "../../core/font.h"
+#include "../../utils/clamp.h"
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
