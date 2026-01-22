@@ -11,14 +11,14 @@ import {
 	SKYBOX_FACE_DEFAULT_SIZE,
 	SKYBOX_SLOT_IDS,
 	generateAtlasName,
-	type AtlasSlotIndex,
 	type TextureSource,
 } from '../rompack/rompack';
 import type { RawAssetSource } from '../rompack/asset_source';
 import { decodePngToRgba } from '../utils/image_decode';
-import { IO_VDP_DITHER } from './vm_io';
+import { IO_VDP_DITHER, IO_VDP_PRIMARY_ATLAS_ID, IO_VDP_SECONDARY_ATLAS_ID, VDP_ATLAS_ID_NONE } from './vm_io';
 import type { VmAssetEntry } from './vm_memory';
 import { VmMemory } from './vm_memory';
+import { VRAM_ENGINE_ATLAS_BASE, VRAM_ENGINE_ATLAS_SIZE, VRAM_PRIMARY_ATLAS_BASE, VRAM_PRIMARY_ATLAS_SIZE, VRAM_SECONDARY_ATLAS_BASE, VRAM_SECONDARY_ATLAS_SIZE } from './memory_map';
 
 const SKYBOX_FACE_KEYS = ['posx', 'negx', 'posy', 'negy', 'posz', 'negz'] as const;
 const SKYBOX_SLOT_ID_SET = new Set<string>(SKYBOX_SLOT_IDS);
@@ -48,11 +48,17 @@ export class VDP {
 
 	public syncRegisters(): void {
 		const dither = this.memory.readValue(IO_VDP_DITHER) as number;
-		if (dither === this.lastDitherType) {
-			return;
+		if (dither !== this.lastDitherType) {
+			this.lastDitherType = dither;
+			$.view.dither_type = dither;
 		}
-		this.lastDitherType = dither;
-		$.view.dither_type = dither;
+		const primaryRaw = (this.memory.readValue(IO_VDP_PRIMARY_ATLAS_ID) as number) >>> 0;
+		const secondaryRaw = (this.memory.readValue(IO_VDP_SECONDARY_ATLAS_ID) as number) >>> 0;
+		const primary = primaryRaw === VDP_ATLAS_ID_NONE ? null : primaryRaw;
+		const secondary = secondaryRaw === VDP_ATLAS_ID_NONE ? null : secondaryRaw;
+		if (primary !== this.slotAtlasIds[0] || secondary !== this.slotAtlasIds[1]) {
+			this.applyAtlasSlotMapping(primary, secondary);
+		}
 	}
 
 	public setDitherType(value: number): void {
@@ -86,26 +92,34 @@ export class VDP {
 	}
 
 	public restoreAtlasSlotMapping(mapping: { primary: number | null; secondary: number | null }): void {
+		const primaryValue = mapping.primary === null ? VDP_ATLAS_ID_NONE : mapping.primary;
+		const secondaryValue = mapping.secondary === null ? VDP_ATLAS_ID_NONE : mapping.secondary;
+		this.memory.writeValue(IO_VDP_PRIMARY_ATLAS_ID, primaryValue);
+		this.memory.writeValue(IO_VDP_SECONDARY_ATLAS_ID, secondaryValue);
+		this.applyAtlasSlotMapping(mapping.primary, mapping.secondary);
+	}
+
+	private applyAtlasSlotMapping(primary: number | null, secondary: number | null): void {
 		this.atlasSlotById.clear();
-		this.slotAtlasIds[0] = mapping.primary;
-		this.slotAtlasIds[1] = mapping.secondary;
-		if (mapping.primary !== null) {
-			this.atlasSlotById.set(mapping.primary, 0);
+		this.slotAtlasIds[0] = primary;
+		this.slotAtlasIds[1] = secondary;
+		if (primary !== null) {
+			this.atlasSlotById.set(primary, 0);
 		}
-		if (mapping.secondary !== null) {
-			this.atlasSlotById.set(mapping.secondary, 1);
+		if (secondary !== null) {
+			this.atlasSlotById.set(secondary, 1);
 		}
 		this.dirtyAtlasBindings = true;
-		if (mapping.primary !== null) {
-			const viewEntries = this.atlasViewsById.get(mapping.primary);
+		if (primary !== null) {
+			const viewEntries = this.atlasViewsById.get(primary);
 			if (viewEntries) {
 				for (let index = 0; index < viewEntries.length; index += 1) {
 					this.memory.updateImageViewBase(viewEntries[index], this.atlasSlotEntries[0]);
 				}
 			}
 		}
-		if (mapping.secondary !== null) {
-			const viewEntries = this.atlasViewsById.get(mapping.secondary);
+		if (secondary !== null) {
+			const viewEntries = this.atlasViewsById.get(secondary);
 			if (viewEntries) {
 				for (let index = 0; index < viewEntries.length; index += 1) {
 					this.memory.updateImageViewBase(viewEntries[index], this.atlasSlotEntries[1]);
@@ -208,11 +222,15 @@ export class VDP {
 			if (engineImgAsset.imgmeta.height <= 0) {
 				engineImgAsset.imgmeta.height = engineDecoded.height;
 			}
-			engineEntryRecord = this.memory.registerImageBuffer({
+			engineEntryRecord = this.memory.registerImageSlotAt({
 				id: engineAtlasEntry.resid,
+				baseAddr: VRAM_ENGINE_ATLAS_BASE,
+				capacityBytes: VRAM_ENGINE_ATLAS_SIZE,
+			});
+			this.memory.writeImageSlot(engineEntryRecord, {
+				pixels: engineDecoded.pixels,
 				width: engineDecoded.width,
 				height: engineDecoded.height,
-				pixels: engineDecoded.pixels,
 			});
 		}
 
@@ -243,35 +261,25 @@ export class VDP {
 				maxAtlasBytes = bytes;
 			}
 		}
-		if (maxAtlasBytes <= 0) {
-			throw new Error('[BmsxVDP] No atlas resources available for slot allocation.');
+		if (maxAtlasBytes > 0 && maxAtlasBytes > VRAM_PRIMARY_ATLAS_SIZE) {
+			throw new Error(`[BmsxVDP] Atlas size ${maxAtlasBytes} exceeds VRAM slot capacity ${VRAM_PRIMARY_ATLAS_SIZE}.`);
 		}
 
 		const primarySlotEntry = this.memory.hasAsset(ATLAS_PRIMARY_SLOT_ID)
 			? this.memory.getAssetEntry(ATLAS_PRIMARY_SLOT_ID)
-			: this.memory.registerImageSlot({
+			: this.memory.registerImageSlotAt({
 				id: ATLAS_PRIMARY_SLOT_ID,
-				capacityBytes: maxAtlasBytes,
+				baseAddr: VRAM_PRIMARY_ATLAS_BASE,
+				capacityBytes: VRAM_PRIMARY_ATLAS_SIZE,
 			});
 		const secondarySlotEntry = this.memory.hasAsset(ATLAS_SECONDARY_SLOT_ID)
 			? this.memory.getAssetEntry(ATLAS_SECONDARY_SLOT_ID)
-			: this.memory.registerImageSlot({
+			: this.memory.registerImageSlotAt({
 				id: ATLAS_SECONDARY_SLOT_ID,
-				capacityBytes: maxAtlasBytes,
+				baseAddr: VRAM_SECONDARY_ATLAS_BASE,
+				capacityBytes: VRAM_SECONDARY_ATLAS_SIZE,
 			});
 		this.atlasSlotEntries = [primarySlotEntry, secondarySlotEntry];
-
-		const atlasIds = Array.from(this.atlasResourcesById.keys()).sort((a, b) => a - b);
-		const primaryAtlasId = atlasIds.length > 0 ? atlasIds[0] : null;
-		const secondaryAtlasId = atlasIds.length > 1 ? atlasIds[1] : null;
-		if (primaryAtlasId !== null) {
-			this.atlasSlotById.set(primaryAtlasId, 0);
-			this.slotAtlasIds[0] = primaryAtlasId;
-		}
-		if (secondaryAtlasId !== null) {
-			this.atlasSlotById.set(secondaryAtlasId, 1);
-			this.slotAtlasIds[1] = secondaryAtlasId;
-		}
 
 		for (let index = 0; index < viewEntries.length; index += 1) {
 			const entry = viewEntries[index];
@@ -334,12 +342,7 @@ export class VDP {
 			list.push(viewEntry);
 		}
 
-		if (primaryAtlasId !== null) {
-			await this.loadAtlasIntoSlot(0, primaryAtlasId, source, assets);
-		}
-		if (secondaryAtlasId !== null) {
-			await this.loadAtlasIntoSlot(1, secondaryAtlasId, source, assets);
-		}
+		this.syncRegisters();
 	}
 
 	public flushAssetEdits(): void {
@@ -464,49 +467,4 @@ export class VDP {
 		return Promise.resolve({ width: entry.regionW, height: entry.regionH, data: pixels });
 	}
 
-	private async loadAtlasIntoSlot(
-		slot: AtlasSlotIndex,
-		atlasId: number,
-		source: RawAssetSource,
-		assets: RuntimeAssets,
-	): Promise<void> {
-		const atlasEntry = this.atlasResourcesById.get(atlasId);
-		if (!atlasEntry) {
-			throw new Error(`[BmsxVDP] Atlas ${atlasId} not found in ROM assets.`);
-		}
-		if (typeof atlasEntry.start !== 'number' || typeof atlasEntry.end !== 'number') {
-			throw new Error(`[BmsxVDP] Atlas '${atlasEntry.resid}' missing ROM buffer offsets.`);
-		}
-		const decoded = await decodePngToRgba(source.getBuffer(atlasEntry));
-		const atlasAsset = assets.img[atlasEntry.resid];
-		if (atlasAsset.imgmeta.width <= 0) {
-			atlasAsset.imgmeta.width = decoded.width;
-		}
-		if (atlasAsset.imgmeta.height <= 0) {
-			atlasAsset.imgmeta.height = decoded.height;
-		}
-		const slotEntry = this.atlasSlotEntries[slot];
-		this.memory.writeImageSlot(slotEntry, {
-			pixels: decoded.pixels,
-			width: decoded.width,
-			height: decoded.height,
-		});
-		const existingSlot = this.atlasSlotById.get(atlasId);
-		if (existingSlot !== undefined && existingSlot !== slot) {
-			this.slotAtlasIds[existingSlot] = null;
-		}
-		const previousAtlasId = this.slotAtlasIds[slot];
-		if (previousAtlasId !== null) {
-			this.atlasSlotById.delete(previousAtlasId);
-		}
-		this.atlasSlotById.set(atlasId, slot);
-		this.slotAtlasIds[slot] = atlasId;
-		this.dirtyAtlasBindings = true;
-		const viewEntries = this.atlasViewsById.get(atlasId);
-		if (viewEntries) {
-			for (let index = 0; index < viewEntries.length; index += 1) {
-				this.memory.updateImageViewBase(viewEntries[index], slotEntry);
-			}
-		}
-	}
 }

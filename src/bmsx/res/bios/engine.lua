@@ -267,6 +267,9 @@ function engine.update(dt)
 	world:update(dt)
 end
 
+function engine.irq(flags)
+end
+
 function engine.draw()
 	world:draw()
 	quickmenu.draw()

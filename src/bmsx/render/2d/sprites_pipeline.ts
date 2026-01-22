@@ -303,7 +303,7 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 		const baseW = baseEntry.regionW;
 		const baseH = baseEntry.regionH;
 		if (baseW <= 0 || baseH <= 0) {
-			throw new Error(`[SpritesPipeline] Invalid atlas dimensions for '${options.imgid}'.`);
+			throw new Error(`[SpritesPipeline] Invalid base atlas dimensions for '${options.imgid}'.`);
 		}
 		let u0 = entry.regionX / baseW;
 		let v0 = entry.regionY / baseH;

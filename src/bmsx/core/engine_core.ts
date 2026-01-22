@@ -729,6 +729,21 @@ export class EngineCore {
 				++steps;
 			}
 			if (profile) tUpdate = performance.now() - t1;
+
+			if (this.wasupdated) {
+				if (profile) t1 = performance.now();
+				this.world.runTickGroups(PRESENTATION_TICK_GROUPS, false);
+				if (profile) tPresentTick = performance.now() - t1;
+				if (profile) t1 = performance.now();
+				this.view.drawgame();
+				if (profile) tDraw = performance.now() - t1;
+				if (profile) {
+					const total = performance.now() - t0;
+					if (total > 50) {
+						console.warn(`[BMSX][frame] slow=${total.toFixed(1)}ms poll=${tPoll.toFixed(1)}ms update=${tUpdate.toFixed(1)}ms presentTick=${tPresentTick.toFixed(1)}ms draw=${tDraw.toFixed(1)}ms steps?`);
+					}
+				}
+			}
 		} catch (error) {
 			// Surface engine/runtime errors to the in-game terminal when active
 			const vmRuntime = BmsxVMRuntime.instance;
@@ -741,21 +756,6 @@ export class EngineCore {
 					// Abort the remainder of this update to keep state coherent this frame.
 					vmRuntime.abandonFrameState(); // ensure we abandon the frame state to prevent freezing
 					this.wasupdated = true; // Force a redraw to show the error state and prevent freezing the game
-				}
-			}
-		}
-
-		if (this.wasupdated) {
-			if (profile) t1 = performance.now();
-			this.world.runTickGroups(PRESENTATION_TICK_GROUPS, false);
-			if (profile) tPresentTick = performance.now() - t1;
-			if (profile) t1 = performance.now();
-			this.view.drawgame();
-			if (profile) tDraw = performance.now() - t1;
-			if (profile) {
-				const total = performance.now() - t0;
-				if (total > 50) {
-					console.warn(`[BMSX][frame] slow=${total.toFixed(1)}ms poll=${tPoll.toFixed(1)}ms update=${tUpdate.toFixed(1)}ms presentTick=${tPresentTick.toFixed(1)}ms draw=${tDraw.toFixed(1)}ms steps?`);
 				}
 			}
 		}

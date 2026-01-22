@@ -22,6 +22,7 @@ import { VMRenderFacade } from './vm_render_facade';
 import { BmsxVMRuntime } from './vm_runtime';
 import { listResources } from './workspace';
 import { getWorkspaceCachedSource } from './workspace_cache';
+import { buildDirtyFilePath } from './ide/workspace_storage';
 import { DEFAULT_LUA_BUILTIN_NAMES } from './lua_builtins';
 import { createLuaTable, type LuaTable } from '../lua/luavalue';
 
@@ -659,7 +660,8 @@ export class BmsxVMApi {
 	public get_lua_resource_source(path: string): string {
 		const record = this._runtime.resolveLuaSourceRecord(path);
 		const canonical = record.normalized_source_path;
-		const cached = getWorkspaceCachedSource(canonical);
+		const dirtyPath = buildDirtyFilePath(canonical);
+		const cached = getWorkspaceCachedSource(canonical) ?? getWorkspaceCachedSource(dirtyPath);
 		return cached ?? record.src;
 	}
 

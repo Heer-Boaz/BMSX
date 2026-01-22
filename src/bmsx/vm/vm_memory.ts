@@ -1,6 +1,7 @@
 import type { Value } from './cpu';
 import {
 	ASSET_DATA_BASE,
+	ASSET_DATA_ALLOC_END,
 	ASSET_DATA_END,
 	ASSET_RAM_BASE,
 	ASSET_RAM_SIZE,
@@ -135,8 +136,8 @@ export class VmMemory {
 		this.engineAssetDataEnd = this.assetDataCursor;
 		const mask = ASSET_PAGE_SIZE - 1;
 		const aligned = (this.engineAssetDataEnd + mask) & ~mask;
-		if (aligned > ASSET_DATA_END) {
-			throw new Error(`[VmMemory] Engine asset data exceeds asset RAM (${aligned} > ${ASSET_DATA_END}).`);
+		if (aligned > ASSET_DATA_ALLOC_END) {
+			throw new Error(`[VmMemory] Engine asset data exceeds asset RAM (${aligned} > ${ASSET_DATA_ALLOC_END}).`);
 		}
 		this.cartAssetDataBase = aligned;
 	}
@@ -162,7 +163,7 @@ export class VmMemory {
 		}
 		this.assetDataCursor = this.cartAssetDataBase;
 		const cartOffset = this.cartAssetDataBase - RAM_BASE;
-		const cartEnd = ASSET_DATA_END - RAM_BASE;
+		const cartEnd = ASSET_DATA_ALLOC_END - RAM_BASE;
 		this.ram.fill(0, cartOffset, cartEnd);
 	}
 
@@ -197,6 +198,45 @@ export class VmMemory {
 		});
 		entry.ownerIndex = this.registerAssetEntry(entry);
 		this.mapAssetPages(entry.ownerIndex, addr, params.capacityBytes);
+		return entry;
+	}
+
+	public registerImageSlotAt(params: {
+		id: string;
+		baseAddr: number;
+		capacityBytes: number;
+		flags?: number;
+	}): VmAssetEntry {
+		const offset = params.baseAddr - RAM_BASE;
+		if (offset < 0 || offset + params.capacityBytes > this.ram.byteLength) {
+			throw new Error(`[VmMemory] Image slot '${params.id}' out of RAM bounds.`);
+		}
+		const view = this.ram.subarray(offset, offset + params.capacityBytes);
+		view.fill(0);
+		const entry = this.createAssetEntry({
+			id: params.id,
+			idTokenLo: 0,
+			idTokenHi: 0,
+			type: 'image',
+			flags: params.flags ?? 0,
+			baseAddr: params.baseAddr,
+			baseSize: 0,
+			capacity: params.capacityBytes,
+			baseStride: 0,
+			regionX: 0,
+			regionY: 0,
+			regionW: 0,
+			regionH: 0,
+			sampleRate: 0,
+			channels: 0,
+			frames: 0,
+			bitsPerSample: 0,
+			audioDataOffset: 0,
+			audioDataSize: 0,
+			ownerIndex: -1,
+		});
+		entry.ownerIndex = this.registerAssetEntry(entry);
+		this.mapAssetPages(entry.ownerIndex, params.baseAddr, params.capacityBytes);
 		return entry;
 	}
 
@@ -473,8 +513,7 @@ export class VmMemory {
 		const stride = params.width * 4;
 		const size = stride * params.height;
 		const offset = entry.baseAddr - RAM_BASE;
-		const maxWritable = ASSET_DATA_END - entry.baseAddr;
-		const writeLen = Math.min(params.pixels.byteLength, maxWritable);
+		const writeLen = Math.min(params.pixels.byteLength, capacity);
 		if (writeLen > 0) {
 			this.ram.set(params.pixels.subarray(0, writeLen), offset);
 		}
@@ -812,8 +851,8 @@ export class VmMemory {
 			addr = (addr + mask) & ~mask;
 		}
 		const end = addr + size;
-		if (end > ASSET_DATA_END) {
-			throw new Error(`[VmMemory] Asset RAM exhausted: ${end} > ${ASSET_DATA_END}.`);
+		if (end > ASSET_DATA_ALLOC_END) {
+			throw new Error(`[VmMemory] Asset RAM exhausted: ${end} > ${ASSET_DATA_ALLOC_END}.`);
 		}
 		this.assetDataCursor = end;
 		const offset = addr - RAM_BASE;

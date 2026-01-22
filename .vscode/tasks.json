@@ -484,6 +484,32 @@
 			}
 		},
 		{
+			"label": "LIBRETRO RUN: Custom Host",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"run:libretro-host:wsl",
+				"--",
+				"./dist/${input:romtobuild}.rom"
+			],
+			"problemMatcher": [],
+			"group": "test",
+			"icon": {
+				"id": "vm-running",
+				"color": "terminal.ansiGreen"
+			},
+			"presentation": {
+				"echo": false,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": false,
+				"clear": false,
+				"group": "LIBRETRO"
+			}
+		},
+		{
 			"label": "START SERVER (background)",
 			"type": "shell",
 			"command": "${workspaceFolder}/startserver.sh",

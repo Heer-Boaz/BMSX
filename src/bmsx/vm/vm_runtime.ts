@@ -74,10 +74,68 @@ import { Msx1Colors } from '../systems/msx';
 import type { RectRenderSubmission } from '../render/shared/render_types';
 import { compileLuaChunkToProgram, appendLuaChunkToProgram } from './program_compiler';
 import { linkProgramAssets } from './program_linker';
-import { IO_ARG0_OFFSET, IO_BUFFER_BASE, IO_COMMAND_STRIDE, IO_CMD_PRINT, IO_SYS_BOOT_CART, IO_WRITE_PTR_ADDR, IO_SYS_CART_BOOTREADY, IO_VDP_DITHER } from './vm_io';
+import {
+  DMA_CTRL_START,
+  DMA_CTRL_STRICT,
+  DMA_STATUS_BUSY,
+  DMA_STATUS_CLIPPED,
+  DMA_STATUS_DONE,
+  DMA_STATUS_ERROR,
+  IMG_CTRL_START,
+  IMG_STATUS_BUSY,
+  IMG_STATUS_CLIPPED,
+  IMG_STATUS_DONE,
+  IMG_STATUS_ERROR,
+  IO_ARG0_OFFSET,
+  IO_BUFFER_BASE,
+  IO_COMMAND_STRIDE,
+  IO_CMD_PRINT,
+  IO_DMA_CTRL,
+  IO_DMA_DST,
+  IO_DMA_LEN,
+  IO_DMA_SRC,
+  IO_DMA_STATUS,
+  IO_DMA_WRITTEN,
+  IO_IMG_CAP,
+  IO_IMG_CTRL,
+  IO_IMG_DST,
+  IO_IMG_LEN,
+  IO_IMG_SRC,
+  IO_IMG_STATUS,
+  IO_IMG_WRITTEN,
+  IO_IRQ_ACK,
+  IO_IRQ_FLAGS,
+  IO_SYS_BOOT_CART,
+  IO_SYS_CART_BOOTREADY,
+  IO_VDP_DITHER,
+  IO_VDP_PRIMARY_ATLAS_ID,
+  IO_VDP_SECONDARY_ATLAS_ID,
+  IO_WRITE_PTR_ADDR,
+  IRQ_DMA_DONE,
+  IRQ_DMA_ERROR,
+  IRQ_IMG_DONE,
+  IRQ_IMG_ERROR,
+  VDP_ATLAS_ID_NONE,
+} from './vm_io';
 import { VmHandlerCache } from './vm_handler_cache';
 import { VmMemory, type VmAssetEntry } from './vm_memory';
-import { CART_ROM_MAGIC_ADDR, ENGINE_STRING_HANDLE_LIMIT } from './memory_map';
+import { DmaController } from './devices/dma_controller';
+import { ImgDecController } from './devices/imgdec_controller';
+import {
+  CART_ROM_BASE,
+  CART_ROM_MAGIC_ADDR,
+  ENGINE_ROM_BASE,
+  ENGINE_STRING_HANDLE_LIMIT,
+  OVERLAY_ROM_BASE,
+  VRAM_ENGINE_ATLAS_BASE,
+  VRAM_ENGINE_ATLAS_SIZE,
+  VRAM_PRIMARY_ATLAS_BASE,
+  VRAM_PRIMARY_ATLAS_SIZE,
+  VRAM_SECONDARY_ATLAS_BASE,
+  VRAM_SECONDARY_ATLAS_SIZE,
+  VRAM_STAGING_BASE,
+  VRAM_STAGING_SIZE,
+} from './memory_map';
 import { VDP } from './vdp';
 import {
 	buildModuleAliasMap,
@@ -158,8 +216,7 @@ export var api: BmsxVMApi; // Initialized in BmsxVMRuntime constructor
 export class BmsxVMRuntime {
 	private static _instance: BmsxVMRuntime = null;
 	private static readonly ENGINE_BUILTIN_PRELUDE_PATH = '__engine_builtin_prelude__';
-	private static readonly LUA_SNAPSHOT_EXCLUDED_GLOBALS = new Set<string>(['print', 'type', 'tostring', 'tonumber', 'setmetatable', 'getmetatable', 'require', 'pairs', 'ipairs', 'serialize', 'deserialize', 'math', 'easing', 'string', 'os', 'table', 'coroutine', 'debug', 'package', 'api', 'peek', 'poke', 'SYS_BOOT_CART', 'SYS_CART_MAGIC_ADDR', 'SYS_CART_MAGIC',
-	]);
+	private static readonly LUA_SNAPSHOT_EXCLUDED_GLOBALS = new Set<string>(['print', 'type', 'tostring', 'tonumber', 'setmetatable', 'getmetatable', 'require', 'pairs', 'ipairs', 'serialize', 'deserialize', 'math', 'easing', 'string', 'os', 'table', 'coroutine', 'debug', 'package', 'api', 'peek', 'poke', 'SYS_BOOT_CART', 'SYS_CART_MAGIC_ADDR', 'SYS_CART_MAGIC', 'SYS_VDP_DITHER', 'SYS_VDP_PRIMARY_ATLAS_ID', 'SYS_VDP_SECONDARY_ATLAS_ID', 'SYS_VDP_ATLAS_NONE', 'SYS_IRQ_FLAGS', 'SYS_IRQ_ACK', 'SYS_DMA_SRC', 'SYS_DMA_DST', 'SYS_DMA_LEN', 'SYS_DMA_CTRL', 'SYS_DMA_STATUS', 'SYS_DMA_WRITTEN', 'SYS_IMG_SRC', 'SYS_IMG_LEN', 'SYS_IMG_DST', 'SYS_IMG_CAP', 'SYS_IMG_CTRL', 'SYS_IMG_STATUS', 'SYS_IMG_WRITTEN', 'SYS_ENGINE_ROM_BASE', 'SYS_CART_ROM_BASE', 'SYS_OVERLAY_ROM_BASE', 'SYS_VRAM_ENGINE_ATLAS_BASE', 'SYS_VRAM_PRIMARY_ATLAS_BASE', 'SYS_VRAM_SECONDARY_ATLAS_BASE', 'SYS_VRAM_STAGING_BASE', 'SYS_VRAM_ENGINE_ATLAS_SIZE', 'SYS_VRAM_PRIMARY_ATLAS_SIZE', 'SYS_VRAM_SECONDARY_ATLAS_SIZE', 'SYS_VRAM_STAGING_SIZE', 'IRQ_DMA_DONE', 'IRQ_DMA_ERROR', 'IRQ_IMG_DONE', 'IRQ_IMG_ERROR', 'DMA_CTRL_START', 'DMA_CTRL_STRICT', 'DMA_STATUS_BUSY', 'DMA_STATUS_DONE', 'DMA_STATUS_ERROR', 'DMA_STATUS_CLIPPED', 'IMG_CTRL_START', 'IMG_STATUS_BUSY', 'IMG_STATUS_DONE', 'IMG_STATUS_ERROR', 'IMG_STATUS_CLIPPED']);
 	/**
 	 * Preserved render queue when a fault occurs
 	 * This is used to restore the render queue to its previous state
@@ -215,6 +272,7 @@ export class BmsxVMRuntime {
 	private vmNewGameClosure: Closure = null;
 	private vmUpdateClosure: Closure = null;
 	private vmDrawClosure: Closure = null;
+	private vmIrqClosure: Closure = null;
 	private pendingVmCall: 'update' | 'draw' = null;
 	private pendingProgramReload: { runInit?: boolean } = null;
 	private readonly memory: VmMemory;
@@ -289,6 +347,8 @@ export class BmsxVMRuntime {
 	private readonly imageMetaByHandle = new Map<number, ImgMeta>();
 	private readonly audioMetaByHandle = new Map<number, AudioMeta>();
 	private readonly vdp: VDP;
+	private readonly dmaController: DmaController;
+	private readonly imgDecController: ImgDecController;
 	private engineCanonicalization: CanonicalizationType = null;
 	private cartCanonicalization: CanonicalizationType = null;
 	private preparedCartProgram: {
@@ -535,7 +595,26 @@ export class BmsxVMRuntime {
 		this.memory.writeValue(IO_WRITE_PTR_ADDR, 0);
 		this.memory.writeValue(IO_SYS_BOOT_CART, 0);
 		this.memory.writeValue(IO_SYS_CART_BOOTREADY, 0);
+		this.memory.writeValue(IO_IRQ_FLAGS, 0);
+		this.memory.writeValue(IO_IRQ_ACK, 0);
+		this.memory.writeValue(IO_DMA_SRC, 0);
+		this.memory.writeValue(IO_DMA_DST, 0);
+		this.memory.writeValue(IO_DMA_LEN, 0);
+		this.memory.writeValue(IO_DMA_CTRL, 0);
+		this.memory.writeValue(IO_DMA_STATUS, 0);
+		this.memory.writeValue(IO_DMA_WRITTEN, 0);
+		this.memory.writeValue(IO_IMG_SRC, 0);
+		this.memory.writeValue(IO_IMG_LEN, 0);
+		this.memory.writeValue(IO_IMG_DST, 0);
+		this.memory.writeValue(IO_IMG_CAP, 0);
+		this.memory.writeValue(IO_IMG_CTRL, 0);
+		this.memory.writeValue(IO_IMG_STATUS, 0);
+		this.memory.writeValue(IO_IMG_WRITTEN, 0);
+		this.memory.writeValue(IO_VDP_PRIMARY_ATLAS_ID, VDP_ATLAS_ID_NONE);
+		this.memory.writeValue(IO_VDP_SECONDARY_ATLAS_ID, VDP_ATLAS_ID_NONE);
 		this.vdp.initializeRegisters();
+		this.dmaController = new DmaController(this.memory, (mask) => this.raiseIrqFlags(mask));
+		this.imgDecController = new ImgDecController(this.memory, (mask) => this.raiseIrqFlags(mask));
 		this.cpu = new VMCPU(this.memory, this.runtimeStringPool);
 		this.vmRandomSeedValue = $.platform.clock.now();
 
@@ -612,6 +691,7 @@ export class BmsxVMRuntime {
 		this.vmNewGameClosure = null;
 		this.vmUpdateClosure = null;
 		this.vmDrawClosure = null;
+		this.vmIrqClosure = null;
 		this.vmConsoleMetadata = null;
 		this.pendingVmCall = null;
 		this.luaRuntimeFailed = false;
@@ -960,12 +1040,18 @@ export class BmsxVMRuntime {
 		return state;
 	}
 
+	private tickHardware(): void {
+		this.dmaController.tick();
+		this.imgDecController.tick();
+	}
+
 	public tickUpdate(): void {
 		if (!this.tickEnabled) {
 			return;
 		}
 		this.processPendingCartBoot();
 		this.processPendingProgramReload();
+		this.tickHardware();
 		if (this.isOverlayActive()) {
 			return;
 		}
@@ -998,6 +1084,7 @@ export class BmsxVMRuntime {
 			return;
 		}
 		this.processPendingProgramReload();
+		this.tickHardware();
 		if (this.currentFrameState !== null) {
 			return;
 		}
@@ -1025,6 +1112,7 @@ export class BmsxVMRuntime {
 			return;
 		}
 		this.processPendingProgramReload();
+		this.tickHardware();
 		if (this.currentFrameState !== null) {
 			return;
 		}
@@ -1063,6 +1151,28 @@ export class BmsxVMRuntime {
 		}
 	}
 
+	private raiseIrqFlags(mask: number): void {
+		const current = (this.memory.readValue(IO_IRQ_FLAGS) as number) >>> 0;
+		this.memory.writeValue(IO_IRQ_FLAGS, (current | mask) >>> 0);
+	}
+
+	private dispatchIrqFlags(): void {
+		const ack = (this.memory.readValue(IO_IRQ_ACK) as number) >>> 0;
+		let flags = (this.memory.readValue(IO_IRQ_FLAGS) as number) >>> 0;
+		if (ack !== 0) {
+			flags &= ~ack;
+			this.memory.writeValue(IO_IRQ_FLAGS, flags);
+			this.memory.writeValue(IO_IRQ_ACK, 0);
+		}
+		if (flags === 0) {
+			return;
+		}
+		this.cpu.call(this.vmIrqClosure, [flags], 0);
+		this.cpu.instructionBudgetRemaining = null;
+		this.cpu.run(null);
+		this.processVmIo();
+	}
+
 	private runUpdatePhase(state: VMFrameState): void {
 		if (state.updateExecuted) {
 			return;
@@ -1085,6 +1195,9 @@ export class BmsxVMRuntime {
 			return;
 		}
 		try {
+			if (!this.pendingVmCall) {
+				this.dispatchIrqFlags();
+			}
 			let shouldRunEngineUpdate = this.vmUpdateClosure === null;
 			if (this.pendingVmCall && this.pendingVmCall !== 'update') {
 				state.updateExecuted = true;
@@ -1671,6 +1784,7 @@ export class BmsxVMRuntime {
 		this.vmInitClosure = globals.get(this.vmKey('init')) as Closure;
 		this.vmUpdateClosure = globals.get(this.vmKey('update')) as Closure;
 		this.vmDrawClosure = globals.get(this.vmKey('draw')) as Closure;
+		this.vmIrqClosure = globals.get(this.vmKey('irq')) as Closure;
 	}
 
 	private runLuaLifecycleHandler(kind: 'init' | 'new_game'): boolean {
@@ -2051,6 +2165,7 @@ export class BmsxVMRuntime {
 		this.vmNewGameClosure = null;
 		this.vmUpdateClosure = null;
 		this.vmDrawClosure = null;
+		this.vmIrqClosure = null;
 		this.cpu.instructionBudgetRemaining = null;
 		this.cpu.globals.clear();
 		this.vmModuleCache.clear();
@@ -2323,6 +2438,50 @@ export class BmsxVMRuntime {
 		this.registerVmGlobal('SYS_CART_MAGIC_ADDR', CART_ROM_MAGIC_ADDR);
 		this.registerVmGlobal('SYS_CART_MAGIC', CART_ROM_MAGIC);
 		this.registerVmGlobal('SYS_VDP_DITHER', IO_VDP_DITHER);
+		this.registerVmGlobal('SYS_VDP_PRIMARY_ATLAS_ID', IO_VDP_PRIMARY_ATLAS_ID);
+		this.registerVmGlobal('SYS_VDP_SECONDARY_ATLAS_ID', IO_VDP_SECONDARY_ATLAS_ID);
+		this.registerVmGlobal('SYS_VDP_ATLAS_NONE', VDP_ATLAS_ID_NONE);
+		this.registerVmGlobal('SYS_IRQ_FLAGS', IO_IRQ_FLAGS);
+		this.registerVmGlobal('SYS_IRQ_ACK', IO_IRQ_ACK);
+		this.registerVmGlobal('SYS_DMA_SRC', IO_DMA_SRC);
+		this.registerVmGlobal('SYS_DMA_DST', IO_DMA_DST);
+		this.registerVmGlobal('SYS_DMA_LEN', IO_DMA_LEN);
+		this.registerVmGlobal('SYS_DMA_CTRL', IO_DMA_CTRL);
+		this.registerVmGlobal('SYS_DMA_STATUS', IO_DMA_STATUS);
+		this.registerVmGlobal('SYS_DMA_WRITTEN', IO_DMA_WRITTEN);
+		this.registerVmGlobal('SYS_IMG_SRC', IO_IMG_SRC);
+		this.registerVmGlobal('SYS_IMG_LEN', IO_IMG_LEN);
+		this.registerVmGlobal('SYS_IMG_DST', IO_IMG_DST);
+		this.registerVmGlobal('SYS_IMG_CAP', IO_IMG_CAP);
+		this.registerVmGlobal('SYS_IMG_CTRL', IO_IMG_CTRL);
+		this.registerVmGlobal('SYS_IMG_STATUS', IO_IMG_STATUS);
+		this.registerVmGlobal('SYS_IMG_WRITTEN', IO_IMG_WRITTEN);
+		this.registerVmGlobal('SYS_ENGINE_ROM_BASE', ENGINE_ROM_BASE);
+		this.registerVmGlobal('SYS_CART_ROM_BASE', CART_ROM_BASE);
+		this.registerVmGlobal('SYS_OVERLAY_ROM_BASE', OVERLAY_ROM_BASE);
+		this.registerVmGlobal('SYS_VRAM_ENGINE_ATLAS_BASE', VRAM_ENGINE_ATLAS_BASE);
+		this.registerVmGlobal('SYS_VRAM_PRIMARY_ATLAS_BASE', VRAM_PRIMARY_ATLAS_BASE);
+		this.registerVmGlobal('SYS_VRAM_SECONDARY_ATLAS_BASE', VRAM_SECONDARY_ATLAS_BASE);
+		this.registerVmGlobal('SYS_VRAM_STAGING_BASE', VRAM_STAGING_BASE);
+		this.registerVmGlobal('SYS_VRAM_ENGINE_ATLAS_SIZE', VRAM_ENGINE_ATLAS_SIZE);
+		this.registerVmGlobal('SYS_VRAM_PRIMARY_ATLAS_SIZE', VRAM_PRIMARY_ATLAS_SIZE);
+		this.registerVmGlobal('SYS_VRAM_SECONDARY_ATLAS_SIZE', VRAM_SECONDARY_ATLAS_SIZE);
+		this.registerVmGlobal('SYS_VRAM_STAGING_SIZE', VRAM_STAGING_SIZE);
+		this.registerVmGlobal('IRQ_DMA_DONE', IRQ_DMA_DONE);
+		this.registerVmGlobal('IRQ_DMA_ERROR', IRQ_DMA_ERROR);
+		this.registerVmGlobal('IRQ_IMG_DONE', IRQ_IMG_DONE);
+		this.registerVmGlobal('IRQ_IMG_ERROR', IRQ_IMG_ERROR);
+		this.registerVmGlobal('DMA_CTRL_START', DMA_CTRL_START);
+		this.registerVmGlobal('DMA_CTRL_STRICT', DMA_CTRL_STRICT);
+		this.registerVmGlobal('DMA_STATUS_BUSY', DMA_STATUS_BUSY);
+		this.registerVmGlobal('DMA_STATUS_DONE', DMA_STATUS_DONE);
+		this.registerVmGlobal('DMA_STATUS_ERROR', DMA_STATUS_ERROR);
+		this.registerVmGlobal('DMA_STATUS_CLIPPED', DMA_STATUS_CLIPPED);
+		this.registerVmGlobal('IMG_CTRL_START', IMG_CTRL_START);
+		this.registerVmGlobal('IMG_STATUS_BUSY', IMG_STATUS_BUSY);
+		this.registerVmGlobal('IMG_STATUS_DONE', IMG_STATUS_DONE);
+		this.registerVmGlobal('IMG_STATUS_ERROR', IMG_STATUS_ERROR);
+		this.registerVmGlobal('IMG_STATUS_CLIPPED', IMG_STATUS_CLIPPED);
 		this.registerVmGlobal('peek', createNativeFunction('peek', (args, out) => {
 			const address = args[0] as number;
 			out.push(this.memory.readValue(address));

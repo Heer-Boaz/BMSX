@@ -7,14 +7,13 @@ local code_layout = require("code_layout")
 local editor = {}
 
 local state = {
-	initialized = false,
 	font = nil,
 	line_height = 0,
 	char_advance = 0,
-	space_advance = 0,
 	header_height = 0,
 	status_height = 0,
 	gutter_width = 2,
+	gutter_padding = 3,
 	scroll_row = 0,
 	scroll_column = 0,
 	word_wrap_enabled = false,
@@ -44,6 +43,16 @@ local function compute_max_line_length()
 	state.max_line_length = max_length
 	state.max_line_length_version = state.buffer.version
 	return max_length
+end
+
+local function update_gutter_width()
+	local line_count = state.buffer:get_line_count()
+	local digits = #tostring(line_count)
+	local next_width = (digits * state.char_advance) + (state.gutter_padding * 2)
+	if next_width ~= state.gutter_width then
+		state.gutter_width = next_width
+		state.layout:mark_visual_lines_dirty()
+	end
 end
 
 local function get_code_area_bounds()
@@ -102,6 +111,7 @@ local function update_layout()
 end
 
 local function draw_code_area()
+	update_gutter_width()
 	update_layout()
 	local bounds = get_code_area_bounds()
 	local gutter_offset = bounds.text_left - bounds.code_left
@@ -138,10 +148,6 @@ local function draw_code_area()
 	state.cached_visible_row_count = row_capacity
 	state.cached_visible_column_count = column_capacity
 
-	local content_right = math.max(
-		bounds.text_left,
-		bounds.code_right - (vertical_visible and constants.scrollbar_width or 0) - constants.code_area_right_margin
-	)
 	local content_bottom = bounds.code_bottom - (horizontal_visible and constants.scrollbar_width or 0)
 
 	put_rectfill(bounds.code_left, bounds.code_top, bounds.code_right, bounds.code_bottom, 0, constants.color_code_background)
@@ -162,6 +168,11 @@ local function draw_code_area()
 		else
 			local segment = state.layout:visual_index_to_segment(visual_index)
 			local line_index = segment.row
+			if segment.start_column == 0 and bounds.gutter_right > bounds.gutter_left then
+				local line_number = tostring(line_index + 1)
+				local number_x = bounds.gutter_right - state.gutter_padding - (#line_number * state.char_advance)
+				write_inline_with_font(line_number, math.floor(number_x), row_y, 0, constants.color_text_dim, state.font)
+			end
 			local entry = state.layout:get_cached_highlight(state.buffer, line_index)
 			local highlight = entry.hi
 			local render_text = highlight.text
@@ -221,10 +232,19 @@ function editor.init()
 	state.font = get_default_font()
 	state.line_height = state.font.lineHeight
 	state.char_advance = state.font:advance("M")
-	state.space_advance = state.font:advance(" ")
 	state.header_height = state.line_height + 4
 	state.status_height = state.line_height + 6
 	state.gutter_width = 2
+	state.gutter_padding = 3
+	state.scroll_row = 0
+	state.scroll_column = 0
+	state.word_wrap_enabled = false
+	state.code_vertical_scrollbar_visible = false
+	state.code_horizontal_scrollbar_visible = false
+	state.cached_visible_row_count = 1
+	state.cached_visible_column_count = 1
+	state.max_line_length = 0
+	state.max_line_length_version = -1
 	state.active_path = get_lua_entry_path()
 	local source = get_lua_resource_source(state.active_path)
 	state.buffer = piece_tree_buffer.new(source)
@@ -232,10 +252,9 @@ function editor.init()
 		max_highlight_cache = 512,
 		builtin_identifiers = list_lua_builtins(),
 	})
-	state.initialized = true
 end
 
-function editor.update(_dt)
+function editor.update(dt)
 end
 
 function editor.draw()
