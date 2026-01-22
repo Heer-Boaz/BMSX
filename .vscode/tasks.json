@@ -5,10 +5,23 @@
 			"label": "GAME BUILD: browser (release)",
 			"type": "shell",
 			"command": "npm",
-			"args": ["run", "build:game", "--", "${input:romtobuild}"],
-			"problemMatcher": ["$tsc"],
-			"group": { "kind": "build", "isDefault": true },
-			"icon": { "id": "globe", "color": "terminal.ansiGreen" },
+			"args": [
+				"run",
+				"build:game",
+				"--",
+				"${input:romtobuild}"
+			],
+			"problemMatcher": [
+				"$tsc"
+			],
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"icon": {
+				"id": "globe",
+				"color": "terminal.ansiGreen"
+			},
 			"presentation": {
 				"echo": false,
 				"reveal": "always",
@@ -17,17 +30,28 @@
 				"showReuseMessage": false,
 				"clear": true,
 				"revealProblems": "onProblem",
-				"group": "GAME BUILD",
-			},
+				"group": "GAME BUILD"
+			}
 		},
 		{
 			"label": "GAME BUILD: browser (debug)",
 			"type": "shell",
 			"command": "npm",
-			"args": ["run", "build:game", "--", "${input:romtobuild}", "--debug"],
-			"problemMatcher": ["$tsc"],
+			"args": [
+				"run",
+				"build:game",
+				"--",
+				"${input:romtobuild}",
+				"--debug"
+			],
+			"problemMatcher": [
+				"$tsc"
+			],
 			"group": "build",
-			"icon": { "id": "globe", "color": "terminal.ansiGreen" },
+			"icon": {
+				"id": "globe",
+				"color": "terminal.ansiGreen"
+			},
 			"presentation": {
 				"echo": false,
 				"reveal": "always",
@@ -36,17 +60,28 @@
 				"showReuseMessage": false,
 				"clear": true,
 				"revealProblems": "onProblem",
-				"group": "GAME BUILD",
-			},
+				"group": "GAME BUILD"
+			}
 		},
 		{
 			"label": "GAME VALIDATE: browser (typecheck + force)",
 			"type": "shell",
 			"command": "npm",
-			"args": ["run", "validate:game", "--", "${input:romtobuild}"],
-			"problemMatcher": ["$tsc"],
+			"args": [
+				"run",
+				"validate:game",
+				"--",
+				"${input:romtobuild}",
+				"--force"
+			],
+			"problemMatcher": [
+				"$tsc"
+			],
 			"group": "build",
-			"icon": { "id": "verified-filled", "color": "terminal.ansiCyan" },
+			"icon": {
+				"id": "loading~spin",
+				"color": "terminal.ansiRed"
+			},
 			"presentation": {
 				"echo": false,
 				"reveal": "always",
@@ -55,17 +90,28 @@
 				"showReuseMessage": false,
 				"clear": true,
 				"revealProblems": "onProblem",
-				"group": "GAME BUILD",
-			},
+				"group": "GAME BUILD"
+			}
 		},
 		{
 			"label": "GAME RESOURCES: build resource list (resourceids.ts)",
 			"type": "shell",
 			"command": "npm",
-			"args": ["run", "build:game", "--", "${input:romtobuild}", "--buildreslist"],
-			"problemMatcher": ["$tsc"],
+			"args": [
+				"run",
+				"build:game",
+				"--",
+				"${input:romtobuild}",
+				"--buildreslist"
+			],
+			"problemMatcher": [
+				"$tsc"
+			],
 			"group": "build",
-			"icon": { "id": "package", "color": "terminal.ansiYellow" },
+			"icon": {
+				"id": "folder-library",
+				"color": "terminal.ansiGreen"
+			},
 			"presentation": {
 				"echo": false,
 				"reveal": "always",
@@ -74,17 +120,27 @@
 				"showReuseMessage": false,
 				"clear": true,
 				"revealProblems": "onProblem",
-				"group": "GAME BUILD",
-			},
+				"group": "GAME BUILD"
+			}
 		},
 		{
 			"label": "GAME BUILD: headless (debug)",
 			"type": "shell",
 			"command": "npm",
-			"args": ["run", "build:game:headless", "--", "${input:romtobuild}"],
-			"problemMatcher": ["$tsc"],
+			"args": [
+				"run",
+				"build:game:headless",
+				"--",
+				"${input:romtobuild}"
+			],
+			"problemMatcher": [
+				"$tsc"
+			],
 			"group": "build",
-			"icon": { "id": "terminal", "color": "terminal.ansiCyan" },
+			"icon": {
+				"id": "terminal",
+				"color": "terminal.ansiCyan"
+			},
 			"presentation": {
 				"echo": false,
 				"reveal": "always",
@@ -93,17 +149,27 @@
 				"showReuseMessage": false,
 				"clear": true,
 				"revealProblems": "onProblem",
-				"group": "GAME BUILD",
-			},
+				"group": "GAME BUILD"
+			}
 		},
 		{
 			"label": "GAME BUILD: cli (debug)",
 			"type": "shell",
 			"command": "npm",
-			"args": ["run", "build:game:cli", "--", "${input:romtobuild}"],
-			"problemMatcher": ["$tsc"],
+			"args": [
+				"run",
+				"build:game:cli",
+				"--",
+				"${input:romtobuild}"
+			],
+			"problemMatcher": [
+				"$tsc"
+			],
 			"group": "build",
-			"icon": { "id": "terminal", "color": "terminal.ansiCyan" },
+			"icon": {
+				"id": "terminal",
+				"color": "terminal.ansiCyan"
+			},
 			"presentation": {
 				"echo": false,
 				"reveal": "always",
@@ -112,17 +178,25 @@
 				"showReuseMessage": false,
 				"clear": true,
 				"revealProblems": "onProblem",
-				"group": "GAME BUILD",
-			},
+				"group": "GAME BUILD"
+			}
 		},
 		{
 			"label": "GAME RUN: headless",
 			"type": "shell",
 			"command": "npm",
-			"args": ["run", "headless:game", "--", "${input:romtobuild}"],
+			"args": [
+				"run",
+				"headless:game",
+				"--",
+				"${input:romtobuild}"
+			],
 			"problemMatcher": [],
 			"group": "test",
-			"icon": { "id": "play", "color": "terminal.ansiGreen" },
+			"icon": {
+				"id": "play",
+				"color": "terminal.ansiGreen"
+			},
 			"presentation": {
 				"echo": false,
 				"reveal": "always",
@@ -130,17 +204,25 @@
 				"panel": "shared",
 				"showReuseMessage": false,
 				"clear": true,
-				"group": "GAME BUILD",
-			},
+				"group": "GAME BUILD"
+			}
 		},
 		{
 			"label": "ENGINE: build",
 			"type": "shell",
 			"command": "npm",
-			"args": ["run", "build:engine"],
-			"problemMatcher": ["$tsc"],
+			"args": [
+				"run",
+				"build:engine"
+			],
+			"problemMatcher": [
+				"$tsc"
+			],
 			"group": "build",
-			"icon": { "id": "gear", "color": "terminal.ansiBlue" },
+			"icon": {
+				"id": "gear",
+				"color": "terminal.ansiBlue"
+			},
 			"presentation": {
 				"echo": false,
 				"reveal": "always",
@@ -149,17 +231,27 @@
 				"showReuseMessage": false,
 				"clear": true,
 				"revealProblems": "onProblem",
-				"group": "ROMPACKER",
-			},
+				"group": "ROMPACKER"
+			}
 		},
 		{
 			"label": "ENGINE: build (debug)",
 			"type": "shell",
 			"command": "npm",
-			"args": ["run", "build:engine", "--", "--debug"],
-			"problemMatcher": ["$tsc"],
+			"args": [
+				"run",
+				"build:engine",
+				"--",
+				"--debug"
+			],
+			"problemMatcher": [
+				"$tsc"
+			],
 			"group": "build",
-			"icon": { "id": "gear", "color": "terminal.ansiBlue" },
+			"icon": {
+				"id": "gear",
+				"color": "terminal.ansiBlue"
+			},
 			"presentation": {
 				"echo": false,
 				"reveal": "always",
@@ -168,17 +260,25 @@
 				"showReuseMessage": false,
 				"clear": true,
 				"revealProblems": "onProblem",
-				"group": "ROMPACKER",
-			},
+				"group": "ROMPACKER"
+			}
 		},
 		{
 			"label": "ENGINE: validate",
 			"type": "shell",
 			"command": "npm",
-			"args": ["run", "validate:engine"],
-			"problemMatcher": ["$tsc"],
+			"args": [
+				"run",
+				"validate:engine"
+			],
+			"problemMatcher": [
+				"$tsc"
+			],
 			"group": "build",
-			"icon": { "id": "verified-filled", "color": "terminal.ansiCyan" },
+			"icon": {
+				"id": "verified-filled",
+				"color": "terminal.ansiCyan"
+			},
 			"presentation": {
 				"echo": false,
 				"reveal": "always",
@@ -187,8 +287,8 @@
 				"showReuseMessage": false,
 				"clear": true,
 				"revealProblems": "onProblem",
-				"group": "ROMPACKER",
-			},
+				"group": "ROMPACKER"
+			}
 		},
 		{
 			"type": "npm",
@@ -196,16 +296,27 @@
 			"problemMatcher": [],
 			"label": "npm: fix:indent",
 			"detail": "node scripts/fix-ts-indentation-safe.js",
-			"icon": { "id": "wand", "color": "terminal.ansiMagenta" },
+			"icon": {
+				"id": "indent",
+				"color": "terminal.ansiMagenta"
+			}
 		},
 		{
 			"label": "LIBRETRO BUILD: WSL",
 			"type": "shell",
 			"command": "npm",
-			"args": ["run", "build:libretro-wsl"],
-			"problemMatcher": ["$tsc"],
+			"args": [
+				"run",
+				"build:libretro-wsl"
+			],
+			"problemMatcher": [
+				"$tsc"
+			],
 			"group": "build",
-			"icon": { "id": "terminal", "color": "terminal.ansiYellow" },
+			"icon": {
+				"id": "terminal-bash",
+				"color": "terminal.ansiYellow"
+			},
 			"presentation": {
 				"echo": false,
 				"reveal": "always",
@@ -214,17 +325,25 @@
 				"showReuseMessage": false,
 				"clear": true,
 				"revealProblems": "onProblem",
-				"group": "LIBRETRO",
-			},
+				"group": "LIBRETRO"
+			}
 		},
 		{
 			"label": "LIBRETRO BUILD: WSL (debug)",
 			"type": "shell",
 			"command": "npm",
-			"args": ["run", "build:libretro-wsl:debug"],
-			"problemMatcher": ["$tsc"],
+			"args": [
+				"run",
+				"build:libretro-wsl:debug"
+			],
+			"problemMatcher": [
+				"$tsc"
+			],
 			"group": "build",
-			"icon": { "id": "terminal", "color": "terminal.ansiYellow" },
+			"icon": {
+				"id": "terminal",
+				"color": "terminal.ansiYellow"
+			},
 			"presentation": {
 				"echo": false,
 				"reveal": "always",
@@ -233,17 +352,25 @@
 				"showReuseMessage": false,
 				"clear": true,
 				"revealProblems": "onProblem",
-				"group": "LIBRETRO",
-			},
+				"group": "LIBRETRO"
+			}
 		},
 		{
 			"label": "LIBRETRO BUILD: Windows",
 			"type": "shell",
 			"command": "npm",
-			"args": ["run", "build:libretro-win"],
-			"problemMatcher": ["$tsc"],
+			"args": [
+				"run",
+				"build:libretro-win"
+			],
+			"problemMatcher": [
+				"$tsc"
+			],
 			"group": "build",
-			"icon": { "id": "device-desktop", "color": "terminal.ansiYellow" },
+			"icon": {
+				"id": "terminal-powershell",
+				"color": "terminal.ansiYellow"
+			},
 			"presentation": {
 				"echo": false,
 				"reveal": "always",
@@ -252,17 +379,23 @@
 				"showReuseMessage": false,
 				"clear": true,
 				"revealProblems": "onProblem",
-				"group": "LIBRETRO",
-			},
+				"group": "LIBRETRO"
+			}
 		},
 		{
 			"label": "LIBRETRO BUILD: SNES Mini (debug)",
 			"type": "shell",
 			"command": "npm",
-			"args": ["run", "build:libretro-snesmini:debug"],
+			"args": [
+				"run",
+				"build:libretro-snesmini:debug"
+			],
 			"problemMatcher": [],
 			"group": "build",
-			"icon": { "id": "device-mobile", "color": "terminal.ansiYellow" },
+			"icon": {
+				"id": "game",
+				"color": "terminal.ansiYellow"
+			},
 			"presentation": {
 				"echo": false,
 				"reveal": "always",
@@ -271,17 +404,23 @@
 				"showReuseMessage": false,
 				"clear": true,
 				"revealProblems": "onProblem",
-				"group": "LIBRETRO",
-			},
+				"group": "LIBRETRO"
+			}
 		},
 		{
-			"label": "LIBRETRO BUILD: host SNES Mini (debug)",
+			"label": "LIBRETRO BUILD: HOST SNES Mini (debug)",
 			"type": "shell",
 			"command": "npm",
-			"args": ["run", "build:libretro-host-snesmini:debug"],
+			"args": [
+				"run",
+				"build:libretro-host-snesmini:debug"
+			],
 			"problemMatcher": [],
 			"group": "build",
-			"icon": { "id": "device-desktop", "color": "terminal.ansiYellow" },
+			"icon": {
+				"id": "game",
+				"color": "terminal.ansiBlack"
+			},
 			"presentation": {
 				"echo": false,
 				"reveal": "always",
@@ -290,17 +429,23 @@
 				"showReuseMessage": false,
 				"clear": true,
 				"revealProblems": "onProblem",
-				"group": "LIBRETRO",
-			},
+				"group": "LIBRETRO"
+			}
 		},
 		{
-			"label": "LIBRETRO BUILD: host WSL (debug)",
+			"label": "LIBRETRO BUILD: HOST WSL (debug)",
 			"type": "shell",
 			"command": "npm",
-			"args": ["run", "build:libretro-host-wsl:debug"],
+			"args": [
+				"run",
+				"build:libretro-host-wsl:debug"
+			],
 			"problemMatcher": [],
 			"group": "build",
-			"icon": { "id": "device-desktop", "color": "terminal.ansiYellow" },
+			"icon": {
+				"id": "coffee",
+				"color": "terminal.ansiBlack"
+			},
 			"presentation": {
 				"echo": false,
 				"reveal": "always",
@@ -309,17 +454,25 @@
 				"showReuseMessage": false,
 				"clear": true,
 				"revealProblems": "onProblem",
-				"group": "LIBRETRO",
-			},
+				"group": "LIBRETRO"
+			}
 		},
 		{
 			"label": "LIBRETRO RUN: RetroArch",
 			"type": "shell",
 			"command": "npm",
-			"args": ["run", "run:retroarch", "--", "./dist/${input:romtobuild}.rom"], // We don't support debug builds yet for libretro, because that also requires the debug BIOS
+			"args": [
+				"run",
+				"run:retroarch",
+				"--",
+				"./dist/${input:romtobuild}.rom"
+			],
 			"problemMatcher": [],
 			"group": "test",
-			"icon": { "id": "play", "color": "terminal.ansiGreen" },
+			"icon": {
+				"id": "play",
+				"color": "terminal.ansiGreen"
+			},
 			"presentation": {
 				"echo": false,
 				"reveal": "always",
@@ -327,25 +480,52 @@
 				"panel": "shared",
 				"showReuseMessage": false,
 				"clear": false,
-				"group": "LIBRETRO",
-			},
+				"group": "LIBRETRO"
+			}
 		},
 		{
-			"label": "start server (background)",
+			"label": "START SERVER (background)",
 			"type": "shell",
 			"command": "${workspaceFolder}/startserver.sh",
 			"isBackground": true,
 			"problemMatcher": [],
-			"icon": { "id": "server", "color": "terminal.ansiYellow" },
+			"icon": {
+				"id": "gear~spin",
+				"color": "terminal.ansiMagenta"
+			},
 			"presentation": {
 				"echo": true,
 				"reveal": "always",
 				"focus": false,
 				"panel": "shared",
 				"showReuseMessage": false,
-				"clear": false,
-			},
+				"clear": false
+			}
 		},
+		{
+			"label": "DEPLOY TO GITHUB",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"run:retroarch",
+				"--",
+				"./dist/${input:romtobuild}.rom"
+			],
+			"problemMatcher": [],
+			"icon": {
+				"id": "sync~spin",
+				"color": "terminal.ansiRed"
+			},
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": false,
+				"clear": false
+			}
+		}
 	],
 	"inputs": [
 		{
