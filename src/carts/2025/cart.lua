@@ -147,6 +147,7 @@ function init()
 	poke(SYS_VDP_DITHER, 1)
 	on_vdp_load(on_vdp_load_example) -- Example registration; remove if not needed.
 	vdp_load_slot(0, 0)
+	vdp_map_slot(0, 0)
 	combat_module.define_fsm()
 	build_director_fsm()
 	combat_module.register_director()

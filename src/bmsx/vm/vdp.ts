@@ -194,6 +194,9 @@ export class VDP {
 				if (typeof meta.atlasid !== 'number') {
 					throw new Error(`[BmsxVDP] Atlas '${entry.resid}' missing atlas id.`);
 				}
+				if (meta.width <= 0 || meta.height <= 0) {
+					throw new Error(`[BmsxVDP] Atlas '${entry.resid}' missing dimensions.`);
+				}
 				this.atlasResourcesById.set(meta.atlasid, entry);
 				continue;
 			}
@@ -248,21 +251,6 @@ export class VDP {
 					capacityBytes: skyboxBytes,
 				});
 			this.skyboxSlotEntries.push(slotEntry);
-		}
-
-		let maxAtlasBytes = 0;
-		for (const atlasEntry of this.atlasResourcesById.values()) {
-			const atlasAsset = assets.img[atlasEntry.resid];
-			const meta = atlasAsset.imgmeta;
-			const width = meta.width;
-			const height = meta.height;
-			const bytes = width * height * 4;
-			if (bytes > maxAtlasBytes) {
-				maxAtlasBytes = bytes;
-			}
-		}
-		if (maxAtlasBytes > 0 && maxAtlasBytes > VRAM_PRIMARY_ATLAS_SIZE) {
-			throw new Error(`[BmsxVDP] Atlas size ${maxAtlasBytes} exceeds VRAM slot capacity ${VRAM_PRIMARY_ATLAS_SIZE}.`);
 		}
 
 		const primarySlotEntry = this.memory.hasAsset(ATLAS_PRIMARY_SLOT_ID)
@@ -364,8 +352,15 @@ export class VDP {
 				const height = entry.regionH;
 				const token = this.assetUpdateGate.begin({ blocking: false, category: 'texture', tag: `asset:${entry.id}` });
 				const textureKey = entry.id === generateAtlasName(ENGINE_ATLAS_INDEX) ? ENGINE_ATLAS_TEXTURE_KEY : entry.id;
-				void $.texmanager.updateTexturesForKey(textureKey, pixels, width, height)
-					.finally(() => this.assetUpdateGate.end(token));
+				if ((entry.id === ATLAS_PRIMARY_SLOT_ID || entry.id === ATLAS_SECONDARY_SLOT_ID)
+					&& !$.texmanager.getTextureByUri(textureKey)) {
+					void $.texmanager.loadTextureFromPixels(textureKey, pixels, width, height)
+						.then((handle) => { $.view.textures[textureKey] = handle; })
+						.finally(() => this.assetUpdateGate.end(token));
+				} else {
+					void $.texmanager.updateTexturesForKey(textureKey, pixels, width, height)
+						.finally(() => this.assetUpdateGate.end(token));
+				}
 			} else if (entry.type === 'audio') {
 				$.sndmaster.invalidateClip(entry.id);
 			}

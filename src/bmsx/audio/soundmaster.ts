@@ -175,6 +175,28 @@ export class SoundMaster implements RegisterablePersistent {
 		this.volume = clamp01(startingVolume);
 	}
 
+	public setMaxVoicesByType(limits: Partial<Record<AudioType, number>>): void {
+		for (let index = 0; index < AudioTypes.length; index += 1) {
+			const type = AudioTypes[index];
+			const limit = limits[type];
+			if (limit === undefined) {
+				continue;
+			}
+			if (!Number.isFinite(limit)) {
+				throw new Error(`[SoundMaster] max voices for '${type}' must be a finite number.`);
+			}
+			const value = Math.floor(limit);
+			if (value < 1) {
+				throw new Error(`[SoundMaster] max voices for '${type}' must be at least 1.`);
+			}
+			this.maxVoicesByType[type] = value;
+			const pool = this.voicesByType[type];
+			while (pool.length > value) {
+				this.stopVoiceRecord(type, pool[0]);
+			}
+		}
+	}
+
 	public bind(): void {
 		Registry.instance.register(this);
 	}

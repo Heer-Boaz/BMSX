@@ -79,7 +79,7 @@ public:
 	bool hasAsset(const std::string& id) const;
 	void sealEngineAssets();
 	void resetCartAssets();
-	void writeImageSlot(AssetEntry& entry, const u8* pixels, size_t pixelBytes, uint32_t width, uint32_t height);
+	void writeImageSlot(AssetEntry& entry, const u8* pixels, size_t pixelBytes, uint32_t width, uint32_t height, uint32_t capacity);
 	void updateImageViewBase(AssetEntry& entry, const AssetEntry& base);
 	void finalizeAssetTable();
 	std::vector<AssetEntry*> consumeDirtyAssets();

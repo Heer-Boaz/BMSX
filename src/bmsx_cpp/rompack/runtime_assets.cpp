@@ -221,9 +221,20 @@ static std::optional<i32> readOptionalI32(const BinObject& obj, const std::strin
 		return std::nullopt;
 	}
 	if (!value->isNumber()) {
-		throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' field '" + std::string(field) + "' expected number.");
+		throw BMSX_RUNTIME_ERROR("Asset '" + assetId + "' field '" + std::string(field) + "' expected number.");
 	}
 	return value->toI32();
+}
+
+static std::optional<i64> readOptionalI64(const BinObject& obj, const std::string& assetId, const char* field) {
+	const BinValue* value = findObjectField(obj, field);
+	if (!value) {
+		return std::nullopt;
+	}
+	if (!value->isNumber()) {
+		throw BMSX_RUNTIME_ERROR("Asset '" + assetId + "' field '" + std::string(field) + "' expected number.");
+	}
+	return static_cast<i64>(value->toNumber());
 }
 
 static std::optional<bool> readOptionalBool(const BinObject& obj, const std::string& assetId, const char* field) {
@@ -232,7 +243,7 @@ static std::optional<bool> readOptionalBool(const BinObject& obj, const std::str
 		return std::nullopt;
 	}
 	if (!value->isBool()) {
-		throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' field '" + std::string(field) + "' expected bool.");
+		throw BMSX_RUNTIME_ERROR("Asset '" + assetId + "' field '" + std::string(field) + "' expected bool.");
 	}
 	return value->asBool();
 }
@@ -243,7 +254,7 @@ static std::optional<std::string> readOptionalString(const BinObject& obj, const
 		return std::nullopt;
 	}
 	if (!value->isString()) {
-		throw BMSX_RUNTIME_ERROR("Model asset '" + assetId + "' field '" + std::string(field) + "' expected string.");
+		throw BMSX_RUNTIME_ERROR("Asset '" + assetId + "' field '" + std::string(field) + "' expected string.");
 	}
 	return value->asString();
 }
@@ -1006,7 +1017,8 @@ static std::vector<u8> zlibDecompress(const u8* data, size_t size) {
 bool loadAssetsFromRom(const u8* buffer,
 						size_t size,
 						RuntimeAssets& assets,
-						const AssetLoadCallbacks* callbacks) {
+						const AssetLoadCallbacks* callbacks,
+						const char* payloadId) {
 	assets.clear();
 
 	// Step 1: Check for optional PNG label at start, skip it if present
@@ -1078,6 +1090,21 @@ bool loadAssetsFromRom(const u8* buffer,
 			if (vmObj.count("skybox_face_size")) {
 				assets.manifest.skyboxFaceSize = vmObj.at("skybox_face_size").toI32();
 			}
+			if (vmObj.count("limits") && vmObj.at("limits").isObject()) {
+				const auto& limitsObj = vmObj.at("limits").asObject();
+				if (limitsObj.count("atlas_slot_bytes")) {
+					assets.manifest.atlasSlotBytes = limitsObj.at("atlas_slot_bytes").toI32();
+				}
+				if (limitsObj.count("staging_bytes")) {
+					assets.manifest.stagingBytes = limitsObj.at("staging_bytes").toI32();
+				}
+				if (limitsObj.count("max_voices") && limitsObj.at("max_voices").isObject()) {
+					const auto& voicesObj = limitsObj.at("max_voices").asObject();
+					if (voicesObj.count("sfx")) assets.manifest.maxVoicesSfx = voicesObj.at("sfx").toI32();
+					if (voicesObj.count("music")) assets.manifest.maxVoicesMusic = voicesObj.at("music").toI32();
+					if (voicesObj.count("ui")) assets.manifest.maxVoicesUi = voicesObj.at("ui").toI32();
+				}
+			}
 			if (vmObj.count("viewport") && vmObj.at("viewport").isObject()) {
 				const auto& vpObj = vmObj.at("viewport").asObject();
 				if (vpObj.count("width")) assets.manifest.viewportWidth = vpObj.at("width").toI32();
@@ -1109,17 +1136,51 @@ bool loadAssetsFromRom(const u8* buffer,
 		std::string assetId = asset.count("resid") ? asset.at("resid").asString() : "";
 		std::string assetType = asset.count("type") ? asset.at("type").asString() : "";
 
-		// ROM format uses 'start'/'end', not 'buffer_start'/'buffer_end'
-		i32 bufStart = asset.count("start") ? asset.at("start").toI32() : -1;
-		i32 bufEnd = asset.count("end") ? asset.at("end").toI32() : -1;
-		i32 metaBufStart = asset.count("metabuffer_start") ? asset.at("metabuffer_start").toI32() : -1;
-		i32 metaBufEnd = asset.count("metabuffer_end") ? asset.at("metabuffer_end").toI32() : -1;
-		i32 textureBufStart = asset.count("texture_start") ? asset.at("texture_start").toI32() : -1;
-		i32 textureBufEnd = asset.count("texture_end") ? asset.at("texture_end").toI32() : -1;
+		const std::optional<i32> bufStartOpt = readOptionalI32(asset, assetId, "start");
+		const std::optional<i32> bufEndOpt = readOptionalI32(asset, assetId, "end");
+		const std::optional<i32> metaBufStartOpt = readOptionalI32(asset, assetId, "metabuffer_start");
+		const std::optional<i32> metaBufEndOpt = readOptionalI32(asset, assetId, "metabuffer_end");
+		const std::optional<i32> textureBufStartOpt = readOptionalI32(asset, assetId, "texture_start");
+		const std::optional<i32> textureBufEndOpt = readOptionalI32(asset, assetId, "texture_end");
+		const std::optional<i32> compiledStartOpt = readOptionalI32(asset, assetId, "compiled_start");
+		const std::optional<i32> compiledEndOpt = readOptionalI32(asset, assetId, "compiled_end");
+		const std::optional<i64> updateTimestampOpt = readOptionalI64(asset, assetId, "update_timestamp");
+		const std::optional<std::string> opOpt = readOptionalString(asset, assetId, "op");
+		const std::optional<std::string> sourcePathOpt = readOptionalString(asset, assetId, "source_path");
+		const std::optional<std::string> normalizedSourcePathOpt = readOptionalString(asset, assetId, "normalized_source_path");
+		const std::optional<std::string> payloadIdOpt = readOptionalString(asset, assetId, "payload_id");
+
+		RomAssetInfo romInfo;
+		romInfo.type = assetType;
+		romInfo.op = opOpt;
+		romInfo.start = bufStartOpt;
+		romInfo.end = bufEndOpt;
+		romInfo.compiledStart = compiledStartOpt;
+		romInfo.compiledEnd = compiledEndOpt;
+		romInfo.metabufferStart = metaBufStartOpt;
+		romInfo.metabufferEnd = metaBufEndOpt;
+		romInfo.textureStart = textureBufStartOpt;
+		romInfo.textureEnd = textureBufEndOpt;
+		romInfo.sourcePath = sourcePathOpt;
+		romInfo.normalizedSourcePath = normalizedSourcePathOpt;
+		romInfo.updateTimestamp = updateTimestampOpt;
+		if (payloadId && payloadId[0] != '\0') {
+			romInfo.payloadId = std::string(payloadId);
+		} else if (payloadIdOpt) {
+			romInfo.payloadId = *payloadIdOpt;
+		}
+
+		const i32 bufStart = bufStartOpt ? *bufStartOpt : -1;
+		const i32 bufEnd = bufEndOpt ? *bufEndOpt : -1;
+		const i32 metaBufStart = metaBufStartOpt ? *metaBufStartOpt : -1;
+		const i32 metaBufEnd = metaBufEndOpt ? *metaBufEndOpt : -1;
+		const i32 textureBufStart = textureBufStartOpt ? *textureBufStartOpt : -1;
+		const i32 textureBufEnd = textureBufEndOpt ? *textureBufEndOpt : -1;
 
 		if (assetType == "image" || assetType == "atlas") {
 			ImgAsset imgAsset;
 			imgAsset.id = assetId;
+			imgAsset.rom = romInfo;
 
 			// Load image metadata
 			if (metaBufStart >= 0 && metaBufEnd > metaBufStart) {
@@ -1158,6 +1219,29 @@ bool loadAssetsFromRom(const u8* buffer,
 							imgAsset.meta.boundingbox.height = (origBB.count("bottom") ? origBB.at("bottom").toI32() : 0) - imgAsset.meta.boundingbox.y;
 						}
 					}
+
+					if (imgMeta.count("centerpoint")) {
+						const auto center = readF32Array(imgMeta.at("centerpoint"), assetId, "centerpoint");
+						if (center.size() < 2) {
+							throw BMSX_RUNTIME_ERROR("Asset '" + assetId + "' field 'centerpoint' expected 2 elements.");
+						}
+						imgAsset.meta.centerX = center[0];
+						imgAsset.meta.centerY = center[1];
+						imgAsset.meta.hasCenterpoint = true;
+					}
+
+					if (imgMeta.count("hitpolygons") && imgMeta.at("hitpolygons").isObject()) {
+						const auto& hpObj = imgMeta.at("hitpolygons").asObject();
+						if (!hpObj.count("original") || !hpObj.count("fliph") || !hpObj.count("flipv") || !hpObj.count("fliphv")) {
+							throw BMSX_RUNTIME_ERROR("Asset '" + assetId + "' field 'hitpolygons' expected original/fliph/flipv/fliphv.");
+						}
+						ImgMeta::HitPolygons hitpolygons{};
+						hitpolygons.original = readF32ArrayList(hpObj.at("original"), assetId, "hitpolygons.original");
+						hitpolygons.fliph = readF32ArrayList(hpObj.at("fliph"), assetId, "hitpolygons.fliph");
+						hitpolygons.flipv = readF32ArrayList(hpObj.at("flipv"), assetId, "hitpolygons.flipv");
+						hitpolygons.fliphv = readF32ArrayList(hpObj.at("fliphv"), assetId, "hitpolygons.fliphv");
+						imgAsset.meta.hitpolygons = std::move(hitpolygons);
+					}
 				}
 			}
 
@@ -1195,6 +1279,7 @@ bool loadAssetsFromRom(const u8* buffer,
 		else if (assetType == "audio") {
 			AudioAsset audioAsset;
 			audioAsset.id = assetId;
+			audioAsset.rom = romInfo;
 
 			// Load audio metadata
 			if (metaBufStart < 0 || metaBufEnd <= metaBufStart) {

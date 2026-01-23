@@ -7,6 +7,7 @@
 #include "../../rompack/rompack.h"
 #include "../../vendor/stb_image.h"
 
+#include <algorithm>
 #include <cstring>
 #include <stdexcept>
 #include <string>
@@ -42,7 +43,7 @@ void ImgDecController::tick() {
 		m_pendingResult.reset();
 		auto* entry = m_pendingEntry;
 		m_pendingEntry = nullptr;
-		finishSuccess(std::move(result), *entry, m_pendingCap);
+		finishSuccess(std::move(result), *entry);
 	}
 }
 
@@ -64,7 +65,6 @@ void ImgDecController::tryStart() {
 	m_pendingResult.reset();
 	m_pendingError = nullptr;
 	m_pendingEntry = nullptr;
-	m_pendingCap = cap;
 	m_status = IMG_STATUS_BUSY;
 	m_memory.writeValue(IO_IMG_STATUS, valueNumber(static_cast<double>(m_status)));
 	m_memory.writeValue(IO_IMG_WRITTEN, valueNumber(0.0));
@@ -76,10 +76,12 @@ void ImgDecController::tryStart() {
 		finishError();
 		return;
 	}
-	if (cap == 0 || cap > entry->capacity) {
+	const uint32_t effectiveCap = std::min(cap, entry->capacity);
+	if (effectiveCap == 0) {
 		finishError();
 		return;
 	}
+	m_pendingCap = effectiveCap;
 	std::vector<uint8_t> buffer(len);
 	try {
 		if (len > 0) {
@@ -142,16 +144,19 @@ VmMemory::AssetEntry& ImgDecController::resolveSlotEntry(uint32_t dst) {
 	throw std::runtime_error("[ImgDec] Unsupported destination address " + std::to_string(dst) + ".");
 }
 
-void ImgDecController::finishSuccess(DecodedImage&& result, VmMemory::AssetEntry& entry, uint32_t cap) {
-	const uint32_t bytes = static_cast<uint32_t>(result.pixels.size());
-	if (bytes > cap) {
-		finishError();
-		return;
-	}
-	m_memory.writeImageSlot(entry, result.pixels.data(), result.pixels.size(), result.width, result.height);
+void ImgDecController::finishSuccess(DecodedImage&& result, VmMemory::AssetEntry& entry) {
+	const size_t pixelBytes = result.pixels.size();
+	const uint32_t cap = m_pendingCap;
+	m_pendingCap = 0;
+	m_memory.writeImageSlot(entry, result.pixels.data(), pixelBytes, result.width, result.height, cap);
+	const uint32_t bytes = entry.baseSize;
+	const bool clipped = (entry.regionW != result.width) || (entry.regionH != result.height);
 	m_memory.writeValue(IO_IMG_WRITTEN, valueNumber(static_cast<double>(bytes)));
 	m_active = false;
 	m_status = (m_status & ~IMG_STATUS_BUSY) | IMG_STATUS_DONE;
+	if (clipped) {
+		m_status |= IMG_STATUS_CLIPPED;
+	}
 	m_memory.writeValue(IO_IMG_STATUS, valueNumber(static_cast<double>(m_status)));
 	m_raiseIrq(IRQ_IMG_DONE);
 }

@@ -3,6 +3,7 @@ import { decodePngToRgba } from '../../utils/image_decode';
 import {
 	IMG_CTRL_START,
 	IMG_STATUS_BUSY,
+	IMG_STATUS_CLIPPED,
 	IMG_STATUS_DONE,
 	IMG_STATUS_ERROR,
 	IO_IMG_CAP,
@@ -53,7 +54,7 @@ export class ImgDecController {
 			const entry = this.pendingEntry;
 			this.pendingResult = null;
 			this.pendingEntry = null;
-			this.finishSuccess(result, entry, this.pendingCap);
+			this.finishSuccess(result, entry);
 		}
 	}
 
@@ -75,7 +76,6 @@ export class ImgDecController {
 		this.pendingResult = null;
 		this.pendingError = null;
 		this.pendingEntry = null;
-		this.pendingCap = cap;
 		this.status = IMG_STATUS_BUSY;
 		this.memory.writeValue(IO_IMG_STATUS, this.status);
 		this.memory.writeValue(IO_IMG_WRITTEN, 0);
@@ -87,10 +87,12 @@ export class ImgDecController {
 			this.finishError();
 			return;
 		}
-		if (cap === 0 || cap > entry.capacity) {
+		const effectiveCap = Math.min(cap, entry.capacity);
+		if (effectiveCap === 0) {
 			this.finishError();
 			return;
 		}
+		this.pendingCap = effectiveCap;
 		let buffer: ArrayBuffer;
 		try {
 			const bytes = this.memory.readBytes(src, len);
@@ -121,16 +123,15 @@ export class ImgDecController {
 		throw new Error(`[ImgDec] Unsupported destination address ${dst}.`);
 	}
 
-	private finishSuccess(result: DecodedImage, entry: VmAssetEntry, cap: number): void {
-		const bytes = result.pixels.byteLength;
-		if (bytes > cap) {
-			this.finishError();
-			return;
-		}
-		this.memory.writeImageSlot(entry, { pixels: result.pixels, width: result.width, height: result.height });
+	private finishSuccess(result: DecodedImage, entry: VmAssetEntry): void {
+		const cap = this.pendingCap;
+		this.pendingCap = 0;
+		this.memory.writeImageSlot(entry, { pixels: result.pixels, width: result.width, height: result.height, capacity: cap });
+		const bytes = entry.baseSize;
+		const clipped = entry.regionW !== result.width || entry.regionH !== result.height;
 		this.memory.writeValue(IO_IMG_WRITTEN, bytes);
 		this.active = false;
-		this.status = (this.status & ~IMG_STATUS_BUSY) | IMG_STATUS_DONE;
+		this.status = (this.status & ~IMG_STATUS_BUSY) | IMG_STATUS_DONE | (clipped ? IMG_STATUS_CLIPPED : 0);
 		this.memory.writeValue(IO_IMG_STATUS, this.status);
 		this.raiseIrq(IRQ_IMG_DONE);
 	}

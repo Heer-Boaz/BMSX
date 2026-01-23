@@ -390,11 +390,8 @@ void renderSpriteBatchGLES2(OpenGLES2Backend* backend, GameView* context,
 	if (spriteCount == 0) {
 	return;
 	}
-	auto& runtime = VMRuntime::instance();
-	auto& memory = runtime.memory();
-	const auto& engineEntry = memory.getAssetEntry(generateAtlasName(ENGINE_ATLAS_INDEX));
-	const auto& primaryEntry = memory.getAssetEntry(ATLAS_PRIMARY_SLOT_ID);
-	const auto& secondaryEntry = memory.getAssetEntry(ATLAS_SECONDARY_SLOT_ID);
+	// auto& runtime = VMRuntime::instance();
+	// auto& memory = runtime.memory();
 	if (kSpritesVerboseLog) {
 	auto* primary = OpenGLES2Backend::asTexture(state.atlasPrimaryTex);
 	auto* secondary = state.atlasSecondaryTex
@@ -524,23 +521,14 @@ void renderSpriteBatchGLES2(OpenGLES2Backend* backend, GameView* context,
 	const i32 atlasId = imgmeta->atlasid;
 	// Sprite binding selector uses ENGINE_ATLAS_INDEX for engine atlas in the shader.
 	uint8_t atlasPacked = static_cast<uint8_t>(ENGINE_ATLAS_INDEX);
-	const VmMemory::AssetEntry* baseEntry = nullptr;
 	if (atlasId != ENGINE_ATLAS_INDEX) {
 		if (atlasId == context->primaryAtlasIdInSlot) {
 			atlasPacked = 0;
-			baseEntry = &primaryEntry;
 		} else if (atlasId == context->secondaryAtlasIdInSlot) {
 			atlasPacked = 1;
-			baseEntry = &secondaryEntry;
 		} else {
-			throw BMSX_RUNTIME_ERROR("[SpritesPipeline] Atlas not loaded into a slot.");
+			atlasPacked = 0;
 		}
-	} else {
-		baseEntry = &engineEntry;
-	}
-	if (baseEntry->regionW == 0 || baseEntry->regionH == 0) {
-		runtime.handleLuaError("[SpritesPipeline] Invalid atlas dimensions for '" + options.imgid + "'.");
-		return;
 	}
 	const int8_t weightPacked = packSnorm8(parallaxWeight);
 	const uint8_t colorR = packUnorm8(colorize.r);

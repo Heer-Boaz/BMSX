@@ -25,7 +25,7 @@ private:
 
 	void tryStart();
 	VmMemory::AssetEntry& resolveSlotEntry(uint32_t dst);
-	void finishSuccess(DecodedImage&& result, VmMemory::AssetEntry& entry, uint32_t cap);
+	void finishSuccess(DecodedImage&& result, VmMemory::AssetEntry& entry);
 	void finishError();
 
 	GateGroup m_gate;

@@ -8,7 +8,7 @@
 #ifndef BMSX_BINENCODER_H
 #define BMSX_BINENCODER_H
 
-#include "types.h"
+#include "../core/types.h"
 #if defined(BMSX_SNESMINI_LEGACY)
 #include <memory>
 #endif

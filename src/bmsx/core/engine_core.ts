@@ -373,6 +373,10 @@ export class EngineCore {
 			resolver,
 			(id) => runtime.getAudioBytes(runtime.getAssetEntry(id))
 		);
+		const limits = this._assets.manifest.vm.limits;
+		if (limits && limits.max_voices) {
+			SoundMaster.instance.setMaxVoicesByType(limits.max_voices);
+		}
 	}
 
 	public set_skybox_imgs(ids: SkyboxImageIds): void {

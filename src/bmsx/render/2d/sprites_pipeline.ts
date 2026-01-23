@@ -302,9 +302,6 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 		const sizeY = entry.regionH * scale.y;
 		const baseW = baseEntry.regionW;
 		const baseH = baseEntry.regionH;
-		if (baseW <= 0 || baseH <= 0) {
-			throw new Error(`[SpritesPipeline] Invalid base atlas dimensions for '${options.imgid}'.`);
-		}
 		let u0 = entry.regionX / baseW;
 		let v0 = entry.regionY / baseH;
 		let u1 = (entry.regionX + entry.regionW) / baseW;
@@ -342,7 +339,7 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 			} else if (atlasId === secondaryAtlasIdInSlot) {
 				atlasBindingId = 1;
 			} else {
-				throw new Error(`[SpritesPipeline] Atlas ${atlasId} not loaded into a slot.`);
+				atlasBindingId = 0;
 			}
 		}
 		instanceU8[byteOffset + SPRITE_INSTANCE_ATLAS_OFFSET] = atlasBindingId;

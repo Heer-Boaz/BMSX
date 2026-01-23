@@ -40,6 +40,7 @@ private:
 	bool m_dirtySkybox = false;
 	SkyboxImageIds m_skyboxFaceIds;
 	i32 m_lastDitherType = 0;
+
 };
 
 } // namespace bmsx

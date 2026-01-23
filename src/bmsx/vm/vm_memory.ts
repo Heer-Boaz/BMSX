@@ -507,27 +507,52 @@ export class VmMemory {
 		this.assetTableFinalized = true;
 	}
 
-	public writeImageSlot(entry: VmAssetEntry, params: { pixels: Uint8Array; width: number; height: number }): void {
+	public writeImageSlot(entry: VmAssetEntry, params: { pixels: Uint8Array; width: number; height: number; capacity?: number }): void {
 		const index = this.assetIndexById.get(entry.id)!;
-		const capacity = entry.capacity;
-		const stride = params.width * 4;
-		const size = stride * params.height;
-		const offset = entry.baseAddr - RAM_BASE;
-		const writeLen = Math.min(params.pixels.byteLength, capacity);
-		if (writeLen > 0) {
-			this.ram.set(params.pixels.subarray(0, writeLen), offset);
+		const capacity = params.capacity === undefined ? entry.capacity : Math.min(entry.capacity, Math.floor(params.capacity));
+		const sourceWidth = Math.floor(params.width);
+		const sourceHeight = Math.floor(params.height);
+		const sourceStride = sourceWidth * 4;
+		const maxPixels = Math.floor(capacity / 4);
+		let writeWidth = sourceWidth;
+		let writeHeight = sourceHeight;
+		if (sourceStride <= 0 || sourceHeight <= 0 || maxPixels <= 0) {
+			writeWidth = 0;
+			writeHeight = 0;
+		} else if (sourceWidth > maxPixels) {
+			const maxRowsByPixels = Math.floor(params.pixels.byteLength / sourceStride);
+			writeWidth = Math.min(sourceWidth, maxPixels);
+			writeHeight = Math.min(1, maxRowsByPixels);
+		} else {
+			const maxRowsByCapacity = Math.floor(capacity / sourceStride);
+			const maxRowsByPixels = Math.floor(params.pixels.byteLength / sourceStride);
+			writeHeight = Math.min(sourceHeight, maxRowsByCapacity, maxRowsByPixels);
 		}
-		entry.baseSize = Math.min(size, capacity);
-		entry.baseStride = stride;
+		const writeStride = writeWidth * 4;
+		const writeSize = writeStride * writeHeight;
+		const offset = entry.baseAddr - RAM_BASE;
+		if (writeSize > 0) {
+			if (writeWidth === sourceWidth) {
+				this.ram.set(params.pixels.subarray(0, writeSize), offset);
+			} else {
+				for (let row = 0; row < writeHeight; row += 1) {
+					const srcOffset = row * sourceStride;
+					const dstOffset = offset + row * writeStride;
+					this.ram.set(params.pixels.subarray(srcOffset, srcOffset + writeStride), dstOffset);
+				}
+			}
+		}
+		entry.baseSize = writeSize;
+		entry.baseStride = writeStride;
 		entry.regionX = 0;
 		entry.regionY = 0;
-		entry.regionW = params.width;
-		entry.regionH = params.height;
+		entry.regionW = writeWidth;
+		entry.regionH = writeHeight;
 		if (this.assetTableFinalized) {
 			this.writeAssetEntryData(index, entry);
 		}
-		if (writeLen > 0) {
-			this.markAssetDirty(entry.baseAddr, writeLen);
+		if (writeSize > 0) {
+			this.markAssetDirty(entry.baseAddr, writeSize);
 		}
 	}
 

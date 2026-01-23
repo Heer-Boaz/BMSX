@@ -119,7 +119,8 @@ void VDP::registerImageAssets(RuntimeAssets& assets, bool keepDecodedData) {
 			engineAtlasAsset->pixels.data(),
 			engineAtlasAsset->pixels.size(),
 			static_cast<uint32_t>(engineAtlasAsset->meta.width),
-			static_cast<uint32_t>(engineAtlasAsset->meta.height)
+			static_cast<uint32_t>(engineAtlasAsset->meta.height),
+			slotEntry.capacity
 		);
 		engineEntry = &slotEntry;
 	}
@@ -150,23 +151,6 @@ void VDP::registerImageAssets(RuntimeAssets& assets, bool keepDecodedData) {
 	}
 	if (!m_memory.hasAsset(SKYBOX_SLOT_NEGZ_ID)) {
 		m_memory.registerImageSlot(SKYBOX_SLOT_NEGZ_ID, skyboxBytes, 0);
-	}
-
-	uint32_t maxAtlasBytes = 0;
-	for (const auto& entry : m_atlasResourceById) {
-		const auto* atlasAsset = assets.getImg(entry.second);
-		if (!atlasAsset) {
-			throw BMSX_RUNTIME_ERROR("[VDP] Atlas '" + entry.second + "' missing image asset.");
-		}
-		const uint32_t width = static_cast<uint32_t>(atlasAsset->meta.width);
-		const uint32_t height = static_cast<uint32_t>(atlasAsset->meta.height);
-		const uint32_t bytes = width * height * 4u;
-		if (bytes > maxAtlasBytes) {
-			maxAtlasBytes = bytes;
-		}
-	}
-	if (maxAtlasBytes > VRAM_PRIMARY_ATLAS_SIZE) {
-		throw BMSX_RUNTIME_ERROR("[VDP] Atlas size exceeds VRAM slot capacity.");
 	}
 
 	VmMemory::AssetEntry* primarySlotEntry = nullptr;
@@ -270,6 +254,10 @@ void VDP::flushAssetEdits() {
 	if (!texmanager) {
 		throw BMSX_RUNTIME_ERROR("[VDP] TextureManager not configured.");
 	}
+	auto* view = EngineCore::instance().view();
+	if (!view) {
+		throw BMSX_RUNTIME_ERROR("[VDP] GameView not configured.");
+	}
 	const std::string engineAtlasName = generateAtlasName(ENGINE_ATLAS_INDEX);
 	for (const auto* entry : dirty) {
 		if (entry->type == VmMemory::AssetType::Image) {
@@ -280,7 +268,13 @@ void VDP::flushAssetEdits() {
 			const i32 width = static_cast<i32>(entry->regionW);
 			const i32 height = static_cast<i32>(entry->regionH);
 			const std::string& textureKey = (entry->id == engineAtlasName) ? ENGINE_ATLAS_TEXTURE_KEY : entry->id;
-			texmanager->updateTexturesForAsset(textureKey, pixels, width, height);
+			if ((entry->id == ATLAS_PRIMARY_SLOT_ID || entry->id == ATLAS_SECONDARY_SLOT_ID)
+				&& !texmanager->getTextureByUri(textureKey)) {
+				TextureHandle handle = texmanager->getOrCreateTexture(textureKey, pixels, width, height, {});
+				view->textures[textureKey] = handle;
+			} else {
+				texmanager->updateTexturesForAsset(textureKey, pixels, width, height);
+			}
 		}
 	}
 }

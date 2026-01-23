@@ -437,22 +437,48 @@ const u8* VmMemory::getAudioData(const AssetEntry& entry) const {
 	return m_ram.data() + offset;
 }
 
-void VmMemory::writeImageSlot(AssetEntry& entry, const u8* pixels, size_t pixelBytes, uint32_t width, uint32_t height) {
+void VmMemory::writeImageSlot(AssetEntry& entry, const u8* pixels, size_t pixelBytes, uint32_t width, uint32_t height, uint32_t capacityOverride) {
 	const size_t index = m_assetIndexById.at(entry.id);
-	const uint32_t capacity = entry.capacity;
-	const uint32_t stride = width * 4u;
-	const uint32_t size = stride * height;
-	const size_t writeLen = std::min(pixelBytes, static_cast<size_t>(capacity));
+	const uint32_t capacity = std::min(entry.capacity, capacityOverride);
+	const uint32_t sourceWidth = width;
+	const uint32_t sourceHeight = height;
+	const uint32_t sourceStride = sourceWidth * 4u;
+	const uint32_t maxPixels = capacity / 4u;
+	uint32_t writeWidth = sourceWidth;
+	uint32_t writeHeight = sourceHeight;
+	if (sourceStride == 0 || sourceHeight == 0 || maxPixels == 0) {
+		writeWidth = 0;
+		writeHeight = 0;
+	} else if (sourceWidth > maxPixels) {
+		const uint32_t maxRowsByPixels = static_cast<uint32_t>(pixelBytes / sourceStride);
+		writeWidth = std::min(sourceWidth, maxPixels);
+		writeHeight = std::min<uint32_t>(1, maxRowsByPixels);
+	} else {
+		const uint32_t maxRowsByCapacity = capacity / sourceStride;
+		const uint32_t maxRowsByPixels = static_cast<uint32_t>(pixelBytes / sourceStride);
+		writeHeight = std::min({sourceHeight, maxRowsByCapacity, maxRowsByPixels});
+	}
+	const uint32_t writeStride = writeWidth * 4u;
+	const uint32_t size = writeStride * writeHeight;
+	const size_t writeLen = std::min(static_cast<size_t>(size), static_cast<size_t>(capacity));
 	if (writeLen > 0) {
 		const size_t offset = ramOffset(entry.baseAddr, writeLen);
-		std::memcpy(m_ram.data() + offset, pixels, writeLen);
+		if (writeWidth == sourceWidth) {
+			std::memcpy(m_ram.data() + offset, pixels, writeLen);
+		} else {
+			for (uint32_t row = 0; row < writeHeight; ++row) {
+				const size_t srcOffset = static_cast<size_t>(row) * sourceStride;
+				const size_t dstOffset = offset + static_cast<size_t>(row) * writeStride;
+				std::memcpy(m_ram.data() + dstOffset, pixels + srcOffset, writeStride);
+			}
+		}
 	}
-	entry.baseSize = std::min(size, capacity);
-	entry.baseStride = stride;
+	entry.baseSize = size;
+	entry.baseStride = writeStride;
 	entry.regionX = 0;
 	entry.regionY = 0;
-	entry.regionW = width;
-	entry.regionH = height;
+	entry.regionW = writeWidth;
+	entry.regionH = writeHeight;
 	if (m_assetTableFinalized) {
 		updateAssetEntryData(index, entry);
 	}

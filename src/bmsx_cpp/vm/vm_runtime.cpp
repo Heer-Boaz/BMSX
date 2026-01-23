@@ -242,6 +242,12 @@ Table* buildBoundingBoxTable(VMCPU& cpu, const ImgMeta& meta, const KeyFn& key) 
 	return table;
 }
 
+template <typename Container>
+Table* buildNumericArrayTable(VMCPU& cpu, const Container& values);
+
+template <typename T, typename BuildFn>
+Table* buildTableArray(VMCPU& cpu, const std::vector<T>& values, const BuildFn& buildFn);
+
 template <typename KeyFn>
 Table* buildImgMetaTable(VMCPU& cpu, const ImgMeta& meta, const KeyFn& key) {
 	auto* table = cpu.createTable(0, 12);
@@ -257,10 +263,42 @@ Table* buildImgMetaTable(VMCPU& cpu, const ImgMeta& meta, const KeyFn& key) {
 	table->set(key("texcoords_fliphv"), valueTable(buildArrayTable(cpu, meta.texcoords_fliphv)));
 	table->set(key("boundingbox"), valueTable(buildBoundingBoxTable(cpu, meta, key)));
 
-	auto* centerpoint = cpu.createTable(2, 0);
-	centerpoint->set(valueNumber(1.0), valueNumber(static_cast<double>(meta.centerX)));
-	centerpoint->set(valueNumber(2.0), valueNumber(static_cast<double>(meta.centerY)));
-	table->set(key("centerpoint"), valueTable(centerpoint));
+	if (meta.hasCenterpoint) {
+		auto* centerpoint = cpu.createTable(2, 0);
+		centerpoint->set(valueNumber(1.0), valueNumber(static_cast<double>(meta.centerX)));
+		centerpoint->set(valueNumber(2.0), valueNumber(static_cast<double>(meta.centerY)));
+		table->set(key("centerpoint"), valueTable(centerpoint));
+	}
+	if (meta.hitpolygons) {
+		auto* hitTable = cpu.createTable(0, 4);
+		hitTable->set(key("original"), valueTable(buildTableArray(cpu, meta.hitpolygons->original, [&cpu](const std::vector<f32>& poly) {
+			return buildNumericArrayTable(cpu, poly);
+		})));
+		hitTable->set(key("fliph"), valueTable(buildTableArray(cpu, meta.hitpolygons->fliph, [&cpu](const std::vector<f32>& poly) {
+			return buildNumericArrayTable(cpu, poly);
+		})));
+		hitTable->set(key("flipv"), valueTable(buildTableArray(cpu, meta.hitpolygons->flipv, [&cpu](const std::vector<f32>& poly) {
+			return buildNumericArrayTable(cpu, poly);
+		})));
+		hitTable->set(key("fliphv"), valueTable(buildTableArray(cpu, meta.hitpolygons->fliphv, [&cpu](const std::vector<f32>& poly) {
+			return buildNumericArrayTable(cpu, poly);
+		})));
+		table->set(key("hitpolygons"), valueTable(hitTable));
+	}
+	return table;
+}
+
+template <typename KeyFn>
+Table* buildAudioMetaTable(VMCPU& cpu, const AudioMeta& meta, const KeyFn& key) {
+	auto* table = cpu.createTable(0, 4);
+	table->set(key("audiotype"), valueString(cpu.internString(audioTypeToString(meta.type))));
+	table->set(key("priority"), valueNumber(static_cast<double>(meta.priority)));
+	if (meta.loopStart) {
+		table->set(key("loop"), valueNumber(static_cast<double>(*meta.loopStart)));
+	}
+	if (meta.loopEnd) {
+		table->set(key("loopEnd"), valueNumber(static_cast<double>(*meta.loopEnd)));
+	}
 	return table;
 }
 
@@ -1052,6 +1090,18 @@ void VMRuntime::refreshMemoryMap() {
 	} else {
 		m_memory.setCartRom(CART_ROM_EMPTY_HEADER.data(), CART_ROM_EMPTY_HEADER.size());
 	}
+	refreshMemoryMapGlobals();
+}
+
+void VMRuntime::refreshMemoryMapGlobals() {
+	setGlobal("SYS_VRAM_ENGINE_ATLAS_BASE", valueNumber(static_cast<double>(VRAM_ENGINE_ATLAS_BASE)));
+	setGlobal("SYS_VRAM_PRIMARY_ATLAS_BASE", valueNumber(static_cast<double>(VRAM_PRIMARY_ATLAS_BASE)));
+	setGlobal("SYS_VRAM_SECONDARY_ATLAS_BASE", valueNumber(static_cast<double>(VRAM_SECONDARY_ATLAS_BASE)));
+	setGlobal("SYS_VRAM_STAGING_BASE", valueNumber(static_cast<double>(VRAM_STAGING_BASE)));
+	setGlobal("SYS_VRAM_ENGINE_ATLAS_SIZE", valueNumber(static_cast<double>(VRAM_ENGINE_ATLAS_SIZE)));
+	setGlobal("SYS_VRAM_PRIMARY_ATLAS_SIZE", valueNumber(static_cast<double>(VRAM_PRIMARY_ATLAS_SIZE)));
+	setGlobal("SYS_VRAM_SECONDARY_ATLAS_SIZE", valueNumber(static_cast<double>(VRAM_SECONDARY_ATLAS_SIZE)));
+	setGlobal("SYS_VRAM_STAGING_SIZE", valueNumber(static_cast<double>(VRAM_STAGING_SIZE)));
 }
 
 void VMRuntime::buildAssetMemory(RuntimeAssets& assets, bool keepDecodedData, AssetBuildMode mode) {
@@ -2018,14 +2068,7 @@ void VMRuntime::setupBuiltins() {
 	setGlobal("SYS_ENGINE_ROM_BASE", valueNumber(static_cast<double>(ENGINE_ROM_BASE)));
 	setGlobal("SYS_CART_ROM_BASE", valueNumber(static_cast<double>(CART_ROM_BASE)));
 	setGlobal("SYS_OVERLAY_ROM_BASE", valueNumber(static_cast<double>(OVERLAY_ROM_BASE)));
-	setGlobal("SYS_VRAM_ENGINE_ATLAS_BASE", valueNumber(static_cast<double>(VRAM_ENGINE_ATLAS_BASE)));
-	setGlobal("SYS_VRAM_PRIMARY_ATLAS_BASE", valueNumber(static_cast<double>(VRAM_PRIMARY_ATLAS_BASE)));
-	setGlobal("SYS_VRAM_SECONDARY_ATLAS_BASE", valueNumber(static_cast<double>(VRAM_SECONDARY_ATLAS_BASE)));
-	setGlobal("SYS_VRAM_STAGING_BASE", valueNumber(static_cast<double>(VRAM_STAGING_BASE)));
-	setGlobal("SYS_VRAM_ENGINE_ATLAS_SIZE", valueNumber(static_cast<double>(VRAM_ENGINE_ATLAS_SIZE)));
-	setGlobal("SYS_VRAM_PRIMARY_ATLAS_SIZE", valueNumber(static_cast<double>(VRAM_PRIMARY_ATLAS_SIZE)));
-	setGlobal("SYS_VRAM_SECONDARY_ATLAS_SIZE", valueNumber(static_cast<double>(VRAM_SECONDARY_ATLAS_SIZE)));
-	setGlobal("SYS_VRAM_STAGING_SIZE", valueNumber(static_cast<double>(VRAM_STAGING_SIZE)));
+	refreshMemoryMapGlobals();
 	setGlobal("IRQ_DMA_DONE", valueNumber(static_cast<double>(IRQ_DMA_DONE)));
 	setGlobal("IRQ_DMA_ERROR", valueNumber(static_cast<double>(IRQ_DMA_ERROR)));
 	setGlobal("IRQ_IMG_DONE", valueNumber(static_cast<double>(IRQ_IMG_DONE)));
@@ -3632,6 +3675,51 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 			}
 		);
 	};
+	auto appendRomAssetFields = [key, str](Table* table, const RomAssetInfo& info, std::string_view resid) {
+		table->set(key("resid"), str(resid));
+		if (!info.type.empty()) {
+			table->set(key("type"), str(info.type));
+		}
+		if (info.op) {
+			table->set(key("op"), str(*info.op));
+		}
+		if (info.start) {
+			table->set(key("start"), valueNumber(static_cast<double>(*info.start)));
+		}
+		if (info.end) {
+			table->set(key("end"), valueNumber(static_cast<double>(*info.end)));
+		}
+		if (info.compiledStart) {
+			table->set(key("compiled_start"), valueNumber(static_cast<double>(*info.compiledStart)));
+		}
+		if (info.compiledEnd) {
+			table->set(key("compiled_end"), valueNumber(static_cast<double>(*info.compiledEnd)));
+		}
+		if (info.metabufferStart) {
+			table->set(key("metabuffer_start"), valueNumber(static_cast<double>(*info.metabufferStart)));
+		}
+		if (info.metabufferEnd) {
+			table->set(key("metabuffer_end"), valueNumber(static_cast<double>(*info.metabufferEnd)));
+		}
+		if (info.textureStart) {
+			table->set(key("texture_start"), valueNumber(static_cast<double>(*info.textureStart)));
+		}
+		if (info.textureEnd) {
+			table->set(key("texture_end"), valueNumber(static_cast<double>(*info.textureEnd)));
+		}
+		if (info.sourcePath) {
+			table->set(key("source_path"), str(*info.sourcePath));
+		}
+		if (info.normalizedSourcePath) {
+			table->set(key("normalized_source_path"), str(*info.normalizedSourcePath));
+		}
+		if (info.updateTimestamp) {
+			table->set(key("update_timestamp"), valueNumber(static_cast<double>(*info.updateTimestamp)));
+		}
+		if (info.payloadId) {
+			table->set(key("payload_id"), str(*info.payloadId));
+		}
+	};
 	std::unordered_set<AssetId> imgIds;
 	if (assets.fallback) {
 		for (const auto& [id, _] : assets.fallback->img) {
@@ -3645,7 +3733,8 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 	for (const auto& id : imgIds) {
 		const ImgAsset* imgAsset = assets.getImg(id);
 		if (!imgAsset) continue;
-		auto* imgEntry = m_cpu.createTable(0, 2);
+		auto* imgEntry = m_cpu.createTable(0, 8);
+		appendRomAssetFields(imgEntry, imgAsset->rom, id);
 		imgEntry->set(key("imgmeta"), valueTable(buildImgMetaTable(m_cpu, imgAsset->meta, key)));
 		imgTable->set(str(id), valueTable(imgEntry));
 	}
@@ -3667,7 +3756,24 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 		dataTable->set(str(id), binValueToVmValue(m_cpu, *value));
 	}
 	assetsTable->set(key("data"), makeAssetMapNativeObject(dataTable));
-	auto* audioTable = m_cpu.createTable();
+	std::unordered_set<AssetId> audioIds;
+	if (assets.fallback) {
+		for (const auto& [id, _] : assets.fallback->audio) {
+			audioIds.insert(id);
+		}
+	}
+	for (const auto& [id, _] : assets.audio) {
+		audioIds.insert(id);
+	}
+	auto* audioTable = m_cpu.createTable(0, static_cast<int>(audioIds.size()));
+	for (const auto& id : audioIds) {
+		const AudioAsset* audioAsset = assets.getAudio(id);
+		if (!audioAsset) continue;
+		auto* audioEntry = m_cpu.createTable(0, 6);
+		appendRomAssetFields(audioEntry, audioAsset->rom, id);
+		audioEntry->set(key("audiometa"), valueTable(buildAudioMetaTable(m_cpu, audioAsset->meta, key)));
+		audioTable->set(str(id), valueTable(audioEntry));
+	}
 	assetsTable->set(key("audio"), makeAssetMapNativeObject(audioTable));
 	std::unordered_set<AssetId> audioEventIds;
 	if (assets.fallback) {
@@ -3781,16 +3887,42 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 		if (!shortName.empty()) {
 			manifestTable->set(key("short_name"), str(shortName));
 		}
-		auto* vmTable = m_cpu.createTable(0, 2);
+		auto* vmTable = m_cpu.createTable(0, 3);
 		if (!manifest.namespaceName.empty()) {
 			vmTable->set(key("namespace"), str(manifest.namespaceName));
 		}
 		vmTable->set(key("canonicalization"), str(canonicalizationLabel(manifest.canonicalization)));
+		if (manifest.skyboxFaceSize > 0) {
+			vmTable->set(key("skybox_face_size"), valueNumber(static_cast<double>(manifest.skyboxFaceSize)));
+		}
 		if (manifest.viewportWidth > 0 && manifest.viewportHeight > 0) {
 			auto* viewportTable = m_cpu.createTable(0, 2);
 			viewportTable->set(key("width"), valueNumber(static_cast<double>(manifest.viewportWidth)));
 			viewportTable->set(key("height"), valueNumber(static_cast<double>(manifest.viewportHeight)));
 			vmTable->set(key("viewport"), valueTable(viewportTable));
+		}
+		if (manifest.atlasSlotBytes || manifest.stagingBytes || manifest.maxVoicesSfx || manifest.maxVoicesMusic || manifest.maxVoicesUi) {
+			auto* limitsTable = m_cpu.createTable(0, 3);
+			if (manifest.atlasSlotBytes) {
+				limitsTable->set(key("atlas_slot_bytes"), valueNumber(static_cast<double>(*manifest.atlasSlotBytes)));
+			}
+			if (manifest.stagingBytes) {
+				limitsTable->set(key("staging_bytes"), valueNumber(static_cast<double>(*manifest.stagingBytes)));
+			}
+			if (manifest.maxVoicesSfx || manifest.maxVoicesMusic || manifest.maxVoicesUi) {
+				auto* voicesTable = m_cpu.createTable(0, 3);
+				if (manifest.maxVoicesSfx) {
+					voicesTable->set(key("sfx"), valueNumber(static_cast<double>(*manifest.maxVoicesSfx)));
+				}
+				if (manifest.maxVoicesMusic) {
+					voicesTable->set(key("music"), valueNumber(static_cast<double>(*manifest.maxVoicesMusic)));
+				}
+				if (manifest.maxVoicesUi) {
+					voicesTable->set(key("ui"), valueNumber(static_cast<double>(*manifest.maxVoicesUi)));
+				}
+				limitsTable->set(key("max_voices"), valueTable(voicesTable));
+			}
+			vmTable->set(key("limits"), valueTable(limitsTable));
 		}
 		manifestTable->set(key("vm"), valueTable(vmTable));
 		auto* luaTable = m_cpu.createTable(0, 1);
@@ -3799,6 +3931,8 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 		return manifestTable;
 	};
 	const RuntimeAssets* engineAssets = assets.fallback ? assets.fallback : &assets;
+	assetsTable->set(key("manifest"), valueTable(buildManifestTable(assets)));
+	assetsTable->set(key("canonicalization"), str(canonicalizationLabel(assets.canonicalization)));
 	setGlobal("cart_manifest", valueTable(buildManifestTable(assets)));
 	setGlobal("engine_manifest", valueTable(buildManifestTable(*engineAssets)));
 

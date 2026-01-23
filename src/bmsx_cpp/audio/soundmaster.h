@@ -115,6 +115,7 @@ public:
 	bool isRegistryPersistent() const override { return true; }
 
 	void init(const RuntimeAssets& assets, f32 startingVolume, AudioDataResolver audioResolver);
+	void setMaxVoicesByType(std::optional<int> sfx, std::optional<int> music, std::optional<int> ui);
 	void resetPlaybackState();
 	void dispose();
 

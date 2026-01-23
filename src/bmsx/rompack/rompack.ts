@@ -421,6 +421,16 @@ export interface ImgMeta {
 export type TextureSource = unknown & { close?(): void; width: number; height: number; data?: Uint8Array; }; // platform-specific source type (e.g. ImageBitmap in browsers)
 export type Viewport = { width: number; height: number; };
 export type CanonicalizationType = 'none' | 'upper' | 'lower';
+export type VmVoiceLimits = {
+	sfx?: number;
+	music?: number;
+	ui?: number;
+};
+export type VmLimits = {
+	atlas_slot_bytes?: number;
+	staging_bytes?: number;
+	max_voices?: VmVoiceLimits;
+};
 
 export type CartManifest = {
 	title?: string;
@@ -431,6 +441,7 @@ export type CartManifest = {
 		canonicalization: CanonicalizationType;
 		namespace: string;
 		skybox_face_size?: number;
+		limits?: VmLimits;
 	};
 	input?: {
 		1: InputMap,

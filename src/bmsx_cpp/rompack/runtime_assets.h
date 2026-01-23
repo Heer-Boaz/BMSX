@@ -43,6 +43,27 @@ using ModelId = AssetId;
 using DataId = AssetId;
 
 /* ============================================================================
+ * ROM asset metadata (mirrors TypeScript RomAsset fields)
+ * ============================================================================ */
+
+struct RomAssetInfo {
+	std::string type;
+	std::optional<std::string> op;
+	std::optional<i32> start;
+	std::optional<i32> end;
+	std::optional<i32> compiledStart;
+	std::optional<i32> compiledEnd;
+	std::optional<i32> metabufferStart;
+	std::optional<i32> metabufferEnd;
+	std::optional<i32> textureStart;
+	std::optional<i32> textureEnd;
+	std::optional<std::string> sourcePath;
+	std::optional<std::string> normalizedSourcePath;
+	std::optional<i64> updateTimestamp;
+	std::optional<std::string> payloadId;
+};
+
+/* ============================================================================
  * Image metadata
  * ============================================================================ */
 
@@ -67,9 +88,19 @@ struct ImgMeta {
 		i32 height = 0;
 	} boundingbox;
 
+	struct HitPolygons {
+		std::vector<std::vector<f32>> original;
+		std::vector<std::vector<f32>> fliph;
+		std::vector<std::vector<f32>> flipv;
+		std::vector<std::vector<f32>> fliphv;
+	};
+
 	// Center point for rotation/positioning
 	f32 centerX = 0.0f;
 	f32 centerY = 0.0f;
+	bool hasCenterpoint = false;
+
+	std::optional<HitPolygons> hitpolygons;
 
 	// Helper to get UV rect (u0, v0, u1, v1) for simple blitting
 	void getUVRect(f32& u0, f32& v0, f32& u1, f32& v1, bool flipH = false, bool flipV = false) const {
@@ -91,6 +122,7 @@ struct ImgMeta {
 struct ImgAsset {
 	AssetId id;
 	ImgMeta meta;
+	RomAssetInfo rom;
 
 	// Raw pixel data (RGBA8888)
 	std::vector<u8> pixels;
@@ -139,6 +171,7 @@ struct AudioMeta {
 struct AudioAsset {
 	AssetId id;
 	AudioMeta meta;
+	RomAssetInfo rom;
 	std::vector<u8> bytes;
 	i32 sampleRate = 44100;
 	i32 channels = 2;
@@ -274,6 +307,11 @@ struct RomManifest {
 	i32 viewportHeight = 0;
 	i32 skyboxFaceSize = 0;
 	CanonicalizationType canonicalization = CanonicalizationType::None;
+	std::optional<i32> atlasSlotBytes;
+	std::optional<i32> stagingBytes;
+	std::optional<i32> maxVoicesSfx;
+	std::optional<i32> maxVoicesMusic;
+	std::optional<i32> maxVoicesUi;
 
 	std::string entryPoint;  // Main Lua file
 };
@@ -354,7 +392,8 @@ struct AssetLoadCallbacks {
 bool loadAssetsFromRom(const u8* buffer,
 				size_t size,
 				RuntimeAssets& assets,
-				const AssetLoadCallbacks* callbacks = nullptr);
+				const AssetLoadCallbacks* callbacks = nullptr,
+				const char* payloadId = "cart");
 
 } // namespace bmsx
 

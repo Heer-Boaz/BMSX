@@ -127,6 +127,7 @@ import {
   ENGINE_ROM_BASE,
   ENGINE_STRING_HANDLE_LIMIT,
   OVERLAY_ROM_BASE,
+  configureMemoryMap,
   VRAM_ENGINE_ATLAS_BASE,
   VRAM_ENGINE_ATLAS_SIZE,
   VRAM_PRIMARY_ATLAS_BASE,
@@ -386,6 +387,7 @@ export class BmsxVMRuntime {
 
 		if (!cartridge) {
 			$.set_lua_sources(engineLuaSources);
+			configureMemoryMap(engineLayer.index.manifest.vm.limits);
 			const memory = new VmMemory({
 				engineRom: new Uint8Array(engineLayer.payload),
 				cartRom: new Uint8Array(CART_ROM_HEADER_SIZE),
@@ -444,6 +446,8 @@ export class BmsxVMRuntime {
 		await applyWorkspaceOverridesToCart({ cart: cartLuaSources, storage: $.platform.storage, includeServer: true });
 		$.set_lua_sources(engineLuaSources);
 
+		const vmLimits = cartLayer.index.manifest.vm.limits ?? engineLayer.index.manifest.vm.limits;
+		configureMemoryMap(vmLimits);
 		const memory = new VmMemory({
 			engineRom: new Uint8Array(engineLayer.payload),
 			cartRom: new Uint8Array(cartLayer.payload),

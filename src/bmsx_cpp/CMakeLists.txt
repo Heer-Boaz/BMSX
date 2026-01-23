@@ -131,6 +131,7 @@ add_library(bmsx_core STATIC
 	vm/vm_api.cpp
 	vm/vm_runtime.cpp
 	vm/vm_memory.cpp
+	vm/memory_map.cpp
 	vm/vdp.cpp
 	vm/string_memory.cpp
 	vm/program_loader.cpp

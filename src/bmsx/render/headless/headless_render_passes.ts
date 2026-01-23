@@ -175,7 +175,7 @@ function registerSpritePass(registry: RenderPassLibrary): void {
 					const scale = formatScale(options.scale);
 					const flipH = options.flip?.flip_h ? 'H' : '-';
 					const flipV = options.flip?.flip_v ? 'V' : '-';
-					const atlas = atlasId ?? 'na';
+					const atlas = atlasId;
 					// Ambient sprites are disabled in the runtime; logging follows suit until a new approach is added.
 					snapshot.push(`[sprite#${index}] id=${options.imgid} layer=${layer} pos=${pos} scale=${scale} flip=${flipH}${flipV} atlas=${atlas}`);
 					index += 1;

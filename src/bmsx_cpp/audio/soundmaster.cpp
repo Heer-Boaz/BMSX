@@ -40,6 +40,24 @@ void SoundMaster::init(const RuntimeAssets& assets, f32 startingVolume, AudioDat
 	resetPlaybackState();
 }
 
+void SoundMaster::setMaxVoicesByType(std::optional<int> sfx, std::optional<int> music, std::optional<int> ui) {
+	auto applyLimit = [this](AudioType type, int value) {
+		if (value < 1) {
+			throw std::runtime_error("[SoundMaster] max voices must be at least 1.");
+		}
+		const size_t idx = typeIndex(type);
+		const size_t limit = static_cast<size_t>(value);
+		m_maxVoicesByType[idx] = limit;
+		auto& pool = m_voicesByType[idx];
+		while (pool.size() > limit) {
+			removeVoice(type, 0);
+		}
+	};
+	if (sfx) applyLimit(AudioType::Sfx, *sfx);
+	if (music) applyLimit(AudioType::Music, *music);
+	if (ui) applyLimit(AudioType::Ui, *ui);
+}
+
 void SoundMaster::resetPlaybackState() {
 	for (auto& pool : m_voicesByType) pool.clear();
 	for (auto& pool : m_pausedByType) pool.clear();

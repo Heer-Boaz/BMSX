@@ -25,6 +25,26 @@ namespace {
 inline f64 to_ms(std::chrono::steady_clock::duration duration) {
 	return std::chrono::duration<f64, std::milli>(duration).count();
 }
+
+void applyManifestMemoryLimits(const RomManifest& manifest) {
+	uint32_t atlasSlotBytes = DEFAULT_VRAM_ATLAS_SLOT_SIZE;
+	uint32_t stagingBytes = DEFAULT_VRAM_STAGING_SIZE;
+	if (manifest.atlasSlotBytes) {
+		const i32 value = *manifest.atlasSlotBytes;
+		if (value <= 0) {
+			throw std::runtime_error("[EngineCore] atlas_slot_bytes must be greater than 0.");
+		}
+		atlasSlotBytes = static_cast<uint32_t>(value);
+	}
+	if (manifest.stagingBytes) {
+		const i32 value = *manifest.stagingBytes;
+		if (value <= 0) {
+			throw std::runtime_error("[EngineCore] staging_bytes must be greater than 0.");
+		}
+		stagingBytes = static_cast<uint32_t>(value);
+	}
+	configureMemoryMap(atlasSlotBytes, stagingBytes);
+}
 }
 
 EngineCore* EngineCore::s_instance = nullptr;
@@ -341,7 +361,7 @@ bool EngineCore::loadEngineAssetsInternal(const u8* data, size_t size) {
 	}
 
 	// Load engine assets from ROM
-	if (!loadAssetsFromRom(data, size, m_engine_assets, nullptr)) {
+	if (!loadAssetsFromRom(data, size, m_engine_assets, nullptr, "system")) {
 		return false;
 	}
 
@@ -390,6 +410,7 @@ bool EngineCore::bootWithoutCart() {
 	m_assets.setFallback(&m_engine_assets);
 	m_assets.manifest = m_engine_assets.manifest;
 	m_assets.projectRootPath = m_engine_assets.projectRootPath;
+	applyManifestMemoryLimits(m_assets.manifest);
 	// Don't copy vmProgram - use engine_assets.vmProgram directly below
 
 	Vec2 viewportSize{
@@ -462,7 +483,7 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 
 	// Load cartridge assets from ROM (overwrites engine assets with same ID)
 	RuntimeAssets cartAssets;
-	if (!loadAssetsFromRom(data, size, cartAssets, nullptr)) {
+	if (!loadAssetsFromRom(data, size, cartAssets, nullptr, "cart")) {
 		m_assets.clear();
 		return false;
 	}
@@ -492,6 +513,7 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 	m_assets.vmProgramSymbols = std::move(cartAssets.vmProgramSymbols);
 	m_assets.manifest = std::move(cartAssets.manifest);
 	m_assets.projectRootPath = std::move(cartAssets.projectRootPath);
+	applyManifestMemoryLimits(m_assets.manifest);
 
 	Vec2 viewportSize{
 		static_cast<f32>(m_assets.manifest.viewportWidth),
@@ -821,6 +843,16 @@ void EngineCore::refreshAudioAssets(const RuntimeAssets& assets) {
 		return AudioDataView{ runtime.memory().getAudioData(entry), entry.frames };
 	};
 	m_sound_master->init(assets, volume, audioResolver);
+	const std::optional<int> maxSfx = assets.manifest.maxVoicesSfx
+		? std::optional<int>(static_cast<int>(*assets.manifest.maxVoicesSfx))
+		: std::nullopt;
+	const std::optional<int> maxMusic = assets.manifest.maxVoicesMusic
+		? std::optional<int>(static_cast<int>(*assets.manifest.maxVoicesMusic))
+		: std::nullopt;
+	const std::optional<int> maxUi = assets.manifest.maxVoicesUi
+		? std::optional<int>(static_cast<int>(*assets.manifest.maxVoicesUi))
+		: std::nullopt;
+	m_sound_master->setMaxVoicesByType(maxSfx, maxMusic, maxUi);
 }
 
 } // namespace bmsx
