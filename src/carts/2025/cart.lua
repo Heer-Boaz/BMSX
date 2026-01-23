@@ -15,6 +15,11 @@ local combat_director_instance = nil
 local director = {}
 director.__index = director
 
+-- Example: optional hook for atlas load completion (return true to skip BIOS mapping).
+local function on_vdp_load_example(job_id, slot, atlas_id, status)
+	-- Example: handle "done"/"error" and optionally call vdp_map_slot(slot, atlas_id).
+end
+
 function director:apply_effects(effects)
 	for i = 1, #effects do
 		local effect = effects[i]
@@ -140,6 +145,8 @@ end
 
 function init()
 	poke(SYS_VDP_DITHER, 1)
+	on_vdp_load(on_vdp_load_example) -- Example registration; remove if not needed.
+	vdp_load_slot(0, 0)
 	combat_module.define_fsm()
 	build_director_fsm()
 	combat_module.register_director()

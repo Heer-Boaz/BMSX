@@ -3401,6 +3401,345 @@ public fallbackSourceRange(): LuaSourceRange {
 		this.globals.set(this.canonicalize('math'), mathTable);
 
 		const stringTable = createLuaTable();
+		const packNativeEndian = (() => {
+			const probe = new Uint8Array([1, 0]);
+			return new Uint16Array(probe.buffer)[0] === 1 ? 'little' : 'big';
+		})();
+		const packDefaultAlign = 8;
+		const packIntSize = 4;
+		const packLongSize = 4;
+		const packSizeTSize = 4;
+		const packLuaIntegerSize = 8;
+		const packLuaNumberSize = 8;
+		const packMaxSafeInteger = Number.MAX_SAFE_INTEGER;
+		const packStringToBytes = (text: string): Uint8Array => {
+			const bytes = new Uint8Array(text.length);
+			for (let i = 0; i < text.length; i += 1) {
+				const code = text.charCodeAt(i);
+				if (code > 0xff) {
+					throw this.runtimeError('string.pack expects a byte string.');
+				}
+				bytes[i] = code;
+			}
+			return bytes;
+		};
+		const packBytesToString = (bytes: Uint8Array): string => {
+			if (bytes.length === 0) {
+				return '';
+			}
+			const chunkSize = 0x8000;
+			let out = '';
+			for (let i = 0; i < bytes.length; i += chunkSize) {
+				const chunk = bytes.subarray(i, i + chunkSize);
+				out += String.fromCharCode(...chunk);
+			}
+			return out;
+		};
+		const packParseFormat = (format: string): Array<{
+			kind: 'pad' | 'align' | 'int' | 'float' | 'fixed' | 'z' | 'len';
+			size?: number;
+			signed?: boolean;
+			littleEndian?: boolean;
+			align?: number;
+			lenSize?: number;
+		}> => {
+			const tokens: Array<{
+				kind: 'pad' | 'align' | 'int' | 'float' | 'fixed' | 'z' | 'len';
+				size?: number;
+				signed?: boolean;
+				littleEndian?: boolean;
+				align?: number;
+				lenSize?: number;
+			}> = [];
+			let index = 0;
+			let littleEndian = packNativeEndian === 'little';
+			let maxAlign = packDefaultAlign;
+			const readNumber = (start: number): { found: boolean; value: number; nextIndex: number } => {
+				let cursor = start;
+				let value = 0;
+				let found = false;
+				while (cursor < format.length) {
+					const code = format.charCodeAt(cursor);
+					if (code < 48 || code > 57) {
+						break;
+					}
+					found = true;
+					value = value * 10 + (code - 48);
+					cursor += 1;
+				}
+				return { found, value, nextIndex: cursor };
+			};
+			const pushInt = (size: number, signed: boolean): void => {
+				if (size < 1 || size > 8) {
+					throw this.runtimeError(`string.pack invalid integer size ${size}.`);
+				}
+				tokens.push({
+					kind: 'int',
+					size,
+					signed,
+					littleEndian,
+					align: Math.min(size, maxAlign),
+				});
+			};
+			const pushFloat = (size: number): void => {
+				tokens.push({
+					kind: 'float',
+					size,
+					littleEndian,
+					align: Math.min(size, maxAlign),
+				});
+			};
+			while (index < format.length) {
+				const ch = format.charAt(index);
+				if (ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r') {
+					index += 1;
+					continue;
+				}
+				if (ch === '<') {
+					littleEndian = true;
+					index += 1;
+					continue;
+				}
+				if (ch === '>') {
+					littleEndian = false;
+					index += 1;
+					continue;
+				}
+				if (ch === '=') {
+					littleEndian = packNativeEndian === 'little';
+					index += 1;
+					continue;
+				}
+				if (ch === '!') {
+					const parsed = readNumber(index + 1);
+					if (!parsed.found || parsed.value <= 0) {
+						throw this.runtimeError('string.pack alignment must be a positive integer.');
+					}
+					maxAlign = parsed.value;
+					index = parsed.nextIndex;
+					continue;
+				}
+				if (ch === 'x') {
+					tokens.push({ kind: 'pad' });
+					index += 1;
+					continue;
+				}
+				if (ch === 'X') {
+					tokens.push({ kind: 'align' });
+					index += 1;
+					continue;
+				}
+				if (ch === 'b') {
+					pushInt(1, true);
+					index += 1;
+					continue;
+				}
+				if (ch === 'B') {
+					pushInt(1, false);
+					index += 1;
+					continue;
+				}
+				if (ch === 'h') {
+					pushInt(2, true);
+					index += 1;
+					continue;
+				}
+				if (ch === 'H') {
+					pushInt(2, false);
+					index += 1;
+					continue;
+				}
+				if (ch === 'l') {
+					pushInt(packLongSize, true);
+					index += 1;
+					continue;
+				}
+				if (ch === 'L') {
+					pushInt(packLongSize, false);
+					index += 1;
+					continue;
+				}
+				if (ch === 'j') {
+					pushInt(packLuaIntegerSize, true);
+					index += 1;
+					continue;
+				}
+				if (ch === 'J') {
+					pushInt(packLuaIntegerSize, false);
+					index += 1;
+					continue;
+				}
+				if (ch === 'T') {
+					pushInt(packSizeTSize, false);
+					index += 1;
+					continue;
+				}
+				if (ch === 'i' || ch === 'I') {
+					const parsed = readNumber(index + 1);
+					const size = parsed.found ? parsed.value : packIntSize;
+					pushInt(size, ch === 'i');
+					index = parsed.nextIndex;
+					continue;
+				}
+				if (ch === 'f') {
+					pushFloat(4);
+					index += 1;
+					continue;
+				}
+				if (ch === 'd') {
+					pushFloat(8);
+					index += 1;
+					continue;
+				}
+				if (ch === 'n') {
+					pushFloat(packLuaNumberSize);
+					index += 1;
+					continue;
+				}
+				if (ch === 'c') {
+					const parsed = readNumber(index + 1);
+					if (!parsed.found) {
+						throw this.runtimeError('string.pack expected a size for c format.');
+					}
+					tokens.push({ kind: 'fixed', size: parsed.value });
+					index = parsed.nextIndex;
+					continue;
+				}
+				if (ch === 'z') {
+					tokens.push({ kind: 'z' });
+					index += 1;
+					continue;
+				}
+				if (ch === 's') {
+					const parsed = readNumber(index + 1);
+					const lenSize = parsed.found ? parsed.value : packSizeTSize;
+					if (lenSize < 1 || lenSize > 8) {
+						throw this.runtimeError(`string.pack invalid length size ${lenSize}.`);
+					}
+					tokens.push({
+						kind: 'len',
+						lenSize,
+						littleEndian,
+						align: Math.min(lenSize, maxAlign),
+					});
+					index = parsed.nextIndex;
+					continue;
+				}
+				throw this.runtimeError(`string.pack unsupported format option '${ch}'.`);
+			}
+			return tokens;
+		};
+		const packGetNextAlign = (tokens: ReturnType<typeof packParseFormat>, startIndex: number): number => {
+			for (let i = startIndex + 1; i < tokens.length; i += 1) {
+				const token = tokens[i];
+				if (token.kind === 'pad' || token.kind === 'align') {
+					continue;
+				}
+				if (token.align) {
+					return token.align;
+				}
+				return 1;
+			}
+			return 1;
+		};
+		const packPadToAlign = (bytes: number[], offset: number, align: number): number => {
+			if (align <= 1) {
+				return offset;
+			}
+			const padding = (align - (offset % align)) % align;
+			for (let i = 0; i < padding; i += 1) {
+				bytes.push(0);
+			}
+			return offset + padding;
+		};
+		const packWriteInt = (value: number, size: number, signed: boolean, littleEndian: boolean, bytes: number[]): void => {
+			if (!Number.isFinite(value) || !Number.isInteger(value)) {
+				throw this.runtimeError('string.pack integer value must be a finite integer.');
+			}
+			if (!Number.isSafeInteger(value)) {
+				throw this.runtimeError('string.pack integer value exceeds safe integer range.');
+			}
+			const bits = BigInt(size * 8);
+			let big = BigInt(value);
+			if (signed) {
+				const min = -(1n << (bits - 1n));
+				const max = (1n << (bits - 1n)) - 1n;
+				if (big < min || big > max) {
+					throw this.runtimeError('string.pack integer value out of range.');
+				}
+				if (big < 0) {
+					big = (1n << bits) + big;
+				}
+			}
+			else {
+				const max = (1n << bits) - 1n;
+				if (big < 0 || big > max) {
+					throw this.runtimeError('string.pack unsigned integer value out of range.');
+				}
+			}
+			const tmp: number[] = new Array(size);
+			for (let i = 0; i < size; i += 1) {
+				tmp[i] = Number(big & 0xffn);
+				big >>= 8n;
+			}
+			if (littleEndian) {
+				for (let i = 0; i < size; i += 1) {
+					bytes.push(tmp[i]);
+				}
+				return;
+			}
+			for (let i = size - 1; i >= 0; i -= 1) {
+				bytes.push(tmp[i]);
+			}
+		};
+		const packReadInt = (bytes: Uint8Array, offset: number, size: number, signed: boolean, littleEndian: boolean): number => {
+			let big = 0n;
+			if (littleEndian) {
+				for (let i = 0; i < size; i += 1) {
+					big |= BigInt(bytes[offset + i]) << (8n * BigInt(i));
+				}
+			}
+			else {
+				for (let i = 0; i < size; i += 1) {
+					big = (big << 8n) | BigInt(bytes[offset + i]);
+				}
+			}
+			if (signed) {
+				const bits = BigInt(size * 8);
+				const signBit = 1n << (bits - 1n);
+				if (big & signBit) {
+					big -= 1n << bits;
+				}
+			}
+			const num = Number(big);
+			if (!Number.isSafeInteger(num) || Math.abs(num) > packMaxSafeInteger) {
+				throw this.runtimeError('string.unpack integer exceeds safe integer range.');
+			}
+			return num;
+		};
+		const packWriteFloat = (value: number, size: number, littleEndian: boolean, bytes: number[]): void => {
+			const buffer = new ArrayBuffer(size);
+			const view = new DataView(buffer);
+			if (size === 4) {
+				view.setFloat32(0, value, littleEndian);
+			}
+			else {
+				view.setFloat64(0, value, littleEndian);
+			}
+			const u8 = new Uint8Array(buffer);
+			for (let i = 0; i < u8.length; i += 1) {
+				bytes.push(u8[i]);
+			}
+		};
+		const packReadFloat = (bytes: Uint8Array, offset: number, size: number, littleEndian: boolean): number => {
+			const buffer = new ArrayBuffer(size);
+			const u8 = new Uint8Array(buffer);
+			for (let i = 0; i < size; i += 1) {
+				u8[i] = bytes[offset + i];
+			}
+			const view = new DataView(buffer);
+			return size === 4 ? view.getFloat32(0, littleEndian) : view.getFloat64(0, littleEndian);
+		};
 		stringTable.set(this.canonicalize('len'), new LuaNativeFunction(this.canonicalize('len'), (args) => {
 			const value = args.length > 0 ? args[0] : '';
 			const str = this.expectString(value, 'string.len expects a string.', null);
@@ -3809,6 +4148,230 @@ public fallbackSourceRange(): LuaSourceRange {
 			}
 
 			return [output];
+		}));
+		stringTable.set(this.canonicalize('pack'), new LuaNativeFunction(this.canonicalize('pack'), (args) => {
+			if (args.length === 0) {
+				throw this.runtimeError('string.pack expects a format string.');
+			}
+			const format = this.expectString(args[0], 'string.pack expects a format string.', null);
+			const tokens = packParseFormat(format);
+			const bytes: number[] = [];
+			let offset = 0;
+			let argIndex = 1;
+			const takeArg = (): LuaValue => {
+				if (argIndex >= args.length) {
+					throw this.runtimeError('string.pack missing value for format.');
+				}
+				const value = args[argIndex];
+				argIndex += 1;
+				return value;
+			};
+			for (let i = 0; i < tokens.length; i += 1) {
+				const token = tokens[i];
+				switch (token.kind) {
+					case 'pad':
+						bytes.push(0);
+						offset += 1;
+						break;
+					case 'align': {
+						const align = packGetNextAlign(tokens, i);
+						offset = packPadToAlign(bytes, offset, align);
+						break;
+					}
+					case 'int': {
+						offset = packPadToAlign(bytes, offset, token.align);
+						const value = this.expectNumber(takeArg(), 'string.pack expects a number.', null);
+						packWriteInt(value, token.size, token.signed, token.littleEndian, bytes);
+						offset += token.size;
+						break;
+					}
+					case 'float': {
+						offset = packPadToAlign(bytes, offset, token.align);
+						const value = this.expectNumber(takeArg(), 'string.pack expects a number.', null);
+						packWriteFloat(value, token.size, token.littleEndian, bytes);
+						offset += token.size;
+						break;
+					}
+					case 'fixed': {
+						const text = this.expectString(takeArg(), 'string.pack expects a string.', null);
+						const raw = packStringToBytes(text);
+						const length = token.size;
+						for (let j = 0; j < length; j += 1) {
+							bytes.push(j < raw.length ? raw[j] : 0);
+						}
+						offset += length;
+						break;
+					}
+					case 'z': {
+						const text = this.expectString(takeArg(), 'string.pack expects a string.', null);
+						const raw = packStringToBytes(text);
+						for (let j = 0; j < raw.length; j += 1) {
+							if (raw[j] === 0) {
+								throw this.runtimeError('string.pack z strings must not contain zero bytes.');
+							}
+							bytes.push(raw[j]);
+						}
+						bytes.push(0);
+						offset += raw.length + 1;
+						break;
+					}
+					case 'len': {
+						offset = packPadToAlign(bytes, offset, token.align);
+						const text = this.expectString(takeArg(), 'string.pack expects a string.', null);
+						const raw = packStringToBytes(text);
+						packWriteInt(raw.length, token.lenSize, false, token.littleEndian, bytes);
+						offset += token.lenSize;
+						for (let j = 0; j < raw.length; j += 1) {
+							bytes.push(raw[j]);
+						}
+						offset += raw.length;
+						break;
+					}
+					default:
+						throw this.runtimeError('string.pack invalid format token.');
+				}
+			}
+			return [packBytesToString(new Uint8Array(bytes))];
+		}));
+		stringTable.set(this.canonicalize('packsize'), new LuaNativeFunction(this.canonicalize('packsize'), (args) => {
+			if (args.length === 0) {
+				throw this.runtimeError('string.packsize expects a format string.');
+			}
+			const format = this.expectString(args[0], 'string.packsize expects a format string.', null);
+			const tokens = packParseFormat(format);
+			let offset = 0;
+			for (let i = 0; i < tokens.length; i += 1) {
+				const token = tokens[i];
+				switch (token.kind) {
+					case 'pad':
+						offset += 1;
+						break;
+					case 'align': {
+						const align = packGetNextAlign(tokens, i);
+						const padding = (align - (offset % align)) % align;
+						offset += padding;
+						break;
+					}
+					case 'int': {
+						const align = token.align;
+						const padding = (align - (offset % align)) % align;
+						offset += padding + token.size;
+						break;
+					}
+					case 'float': {
+						const align = token.align;
+						const padding = (align - (offset % align)) % align;
+						offset += padding + token.size;
+						break;
+					}
+					case 'fixed':
+						offset += token.size;
+						break;
+					case 'z':
+					case 'len':
+						throw this.runtimeError('string.packsize format is variable-length.');
+					default:
+						throw this.runtimeError('string.packsize invalid format token.');
+				}
+			}
+			return [offset];
+		}));
+		stringTable.set(this.canonicalize('unpack'), new LuaNativeFunction(this.canonicalize('unpack'), (args) => {
+			if (args.length < 2) {
+				throw this.runtimeError('string.unpack expects a format string and source string.');
+			}
+			const format = this.expectString(args[0], 'string.unpack expects a format string.', null);
+			const source = this.expectString(args[1], 'string.unpack expects a source string.', null);
+			const startValue = args.length > 2 ? this.expectNumber(args[2], 'string.unpack expects a numeric start index.', null) : 1;
+			const startIndex = Math.floor(startValue);
+			const bytes = packStringToBytes(source);
+			if (startIndex < 1 || startIndex > bytes.length + 1) {
+				throw this.runtimeError('string.unpack start index out of range.');
+			}
+			const tokens = packParseFormat(format);
+			const results: LuaValue[] = [];
+			let offset = startIndex - 1;
+			const ensure = (length: number): void => {
+				if (offset + length > bytes.length) {
+					throw this.runtimeError('string.unpack string is too short.');
+				}
+			};
+			for (let i = 0; i < tokens.length; i += 1) {
+				const token = tokens[i];
+				switch (token.kind) {
+					case 'pad':
+						ensure(1);
+						offset += 1;
+						break;
+					case 'align': {
+						const align = packGetNextAlign(tokens, i);
+						const padding = (align - (offset % align)) % align;
+						ensure(padding);
+						offset += padding;
+						break;
+					}
+					case 'int': {
+						const align = token.align;
+						const padding = (align - (offset % align)) % align;
+						ensure(padding + token.size);
+						offset += padding;
+						const value = packReadInt(bytes, offset, token.size, token.signed, token.littleEndian);
+						results.push(value);
+						offset += token.size;
+						break;
+					}
+					case 'float': {
+						const align = token.align;
+						const padding = (align - (offset % align)) % align;
+						ensure(padding + token.size);
+						offset += padding;
+						const value = packReadFloat(bytes, offset, token.size, token.littleEndian);
+						results.push(value);
+						offset += token.size;
+						break;
+					}
+					case 'fixed': {
+						ensure(token.size);
+						const slice = bytes.subarray(offset, offset + token.size);
+						results.push(packBytesToString(slice));
+						offset += token.size;
+						break;
+					}
+					case 'z': {
+						let end = offset;
+						while (end < bytes.length && bytes[end] !== 0) {
+							end += 1;
+						}
+						if (end >= bytes.length) {
+							throw this.runtimeError('string.unpack zero-terminated string not found.');
+						}
+						const slice = bytes.subarray(offset, end);
+						results.push(packBytesToString(slice));
+						offset = end + 1;
+						break;
+					}
+					case 'len': {
+						const align = token.align;
+						const padding = (align - (offset % align)) % align;
+						ensure(padding + token.lenSize);
+						offset += padding;
+						const length = packReadInt(bytes, offset, token.lenSize, false, token.littleEndian);
+						offset += token.lenSize;
+						if (length < 0) {
+							throw this.runtimeError('string.unpack invalid length.');
+						}
+						ensure(length);
+						const slice = bytes.subarray(offset, offset + length);
+						results.push(packBytesToString(slice));
+						offset += length;
+						break;
+					}
+					default:
+						throw this.runtimeError('string.unpack invalid format token.');
+				}
+			}
+			results.push(offset + 1);
+			return results;
 		}));
 		this.globals.set(this.canonicalize('string'), stringTable);
 

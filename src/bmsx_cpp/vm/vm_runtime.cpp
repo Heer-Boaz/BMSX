@@ -17,6 +17,7 @@
 #include <ctime>
 #include <cstdlib>
 #include <cstdio>
+#include <cstring>
 #include <iomanip>
 #include <iostream>
 #include <limits>
@@ -1169,7 +1170,7 @@ void VMRuntime::handleLuaError(const std::string& message) {
 
 void VMRuntime::runEngineBuiltinPrelude() {
 	std::cerr << "[VMRuntime] prelude: binding engine builtins" << std::endl;
-	static const std::array<const char*, 22> engineBuiltins = {
+	static const std::array<const char*, 26> engineBuiltins = {
 		"define_fsm",
 		"define_world_object",
 		"define_service",
@@ -1191,7 +1192,11 @@ void VMRuntime::runEngineBuiltinPrelude() {
 		"delist",
 		"grant_effect",
 		"trigger_effect",
+		"vdp_map_slot",
+		"vdp_load_slot",
 		"irq",
+		"on_irq",
+		"on_vdp_load",
 	};
 	auto* engineModule = asTable(requireVmModule("engine"));
 	for (const char* name : engineBuiltins) {
@@ -2389,6 +2394,363 @@ registerNativeFunction("error", [this](const std::vector<Value>& args, std::vect
 	});
 
 auto* stringTable = m_cpu.createTable();
+	const bool packNativeLittleEndian = []() {
+		uint16_t value = 1;
+		return *reinterpret_cast<uint8_t*>(&value) == 1;
+	}();
+	const int packDefaultAlign = 8;
+	const int packIntSize = 4;
+	const int packLongSize = 4;
+	const int packSizeTSize = 4;
+	const int packLuaIntegerSize = 8;
+	const int packLuaNumberSize = 8;
+	enum class PackTokenKind { Pad, Align, Int, Float, Fixed, Z, Len };
+	struct PackToken {
+		PackTokenKind kind = PackTokenKind::Pad;
+		int size = 0;
+		bool isSigned = false;
+		bool littleEndian = true;
+		int align = 1;
+		int lenSize = 0;
+	};
+	auto packParseFormat = [this, packNativeLittleEndian, packDefaultAlign, packIntSize, packLongSize, packSizeTSize, packLuaIntegerSize, packLuaNumberSize](const std::string& format) {
+		std::vector<PackToken> tokens;
+		size_t index = 0;
+		bool littleEndian = packNativeLittleEndian;
+		int maxAlign = packDefaultAlign;
+		auto readNumber = [&](size_t start, bool& found) -> std::pair<int, size_t> {
+			size_t cursor = start;
+			int value = 0;
+			found = false;
+			while (cursor < format.size()) {
+				unsigned char ch = static_cast<unsigned char>(format[cursor]);
+				if (ch < '0' || ch > '9') {
+					break;
+				}
+				found = true;
+				value = value * 10 + (ch - '0');
+				cursor += 1;
+			}
+			return {value, cursor};
+		};
+		auto pushInt = [&](int size, bool isSigned) {
+			if (size < 1 || size > 8) {
+				throw BMSX_RUNTIME_ERROR("string.pack invalid integer size " + std::to_string(size) + ".");
+			}
+			PackToken token;
+			token.kind = PackTokenKind::Int;
+			token.size = size;
+			token.isSigned = isSigned;
+			token.littleEndian = littleEndian;
+			token.align = std::min(size, maxAlign);
+			tokens.push_back(token);
+		};
+		auto pushFloat = [&](int size) {
+			PackToken token;
+			token.kind = PackTokenKind::Float;
+			token.size = size;
+			token.littleEndian = littleEndian;
+			token.align = std::min(size, maxAlign);
+			tokens.push_back(token);
+		};
+		while (index < format.size()) {
+			char ch = format[index];
+			if (ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r') {
+				index += 1;
+				continue;
+			}
+			if (ch == '<') {
+				littleEndian = true;
+				index += 1;
+				continue;
+			}
+			if (ch == '>') {
+				littleEndian = false;
+				index += 1;
+				continue;
+			}
+			if (ch == '=') {
+				littleEndian = packNativeLittleEndian;
+				index += 1;
+				continue;
+			}
+			if (ch == '!') {
+				bool found = false;
+				auto [value, next] = readNumber(index + 1, found);
+				if (!found || value <= 0) {
+					throw BMSX_RUNTIME_ERROR("string.pack alignment must be a positive integer.");
+				}
+				maxAlign = value;
+				index = next;
+				continue;
+			}
+			if (ch == 'x') {
+				PackToken token;
+				token.kind = PackTokenKind::Pad;
+				tokens.push_back(token);
+				index += 1;
+				continue;
+			}
+			if (ch == 'X') {
+				PackToken token;
+				token.kind = PackTokenKind::Align;
+				tokens.push_back(token);
+				index += 1;
+				continue;
+			}
+			if (ch == 'b') {
+				pushInt(1, true);
+				index += 1;
+				continue;
+			}
+			if (ch == 'B') {
+				pushInt(1, false);
+				index += 1;
+				continue;
+			}
+			if (ch == 'h') {
+				pushInt(2, true);
+				index += 1;
+				continue;
+			}
+			if (ch == 'H') {
+				pushInt(2, false);
+				index += 1;
+				continue;
+			}
+			if (ch == 'l') {
+				pushInt(packLongSize, true);
+				index += 1;
+				continue;
+			}
+			if (ch == 'L') {
+				pushInt(packLongSize, false);
+				index += 1;
+				continue;
+			}
+			if (ch == 'j') {
+				pushInt(packLuaIntegerSize, true);
+				index += 1;
+				continue;
+			}
+			if (ch == 'J') {
+				pushInt(packLuaIntegerSize, false);
+				index += 1;
+				continue;
+			}
+			if (ch == 'T') {
+				pushInt(packSizeTSize, false);
+				index += 1;
+				continue;
+			}
+			if (ch == 'i' || ch == 'I') {
+				bool found = false;
+				auto [value, next] = readNumber(index + 1, found);
+				const int size = found ? value : packIntSize;
+				pushInt(size, ch == 'i');
+				index = next;
+				continue;
+			}
+			if (ch == 'f') {
+				pushFloat(4);
+				index += 1;
+				continue;
+			}
+			if (ch == 'd') {
+				pushFloat(8);
+				index += 1;
+				continue;
+			}
+			if (ch == 'n') {
+				pushFloat(packLuaNumberSize);
+				index += 1;
+				continue;
+			}
+			if (ch == 'c') {
+				bool found = false;
+				auto [value, next] = readNumber(index + 1, found);
+				if (!found) {
+					throw BMSX_RUNTIME_ERROR("string.pack expected a size for c format.");
+				}
+				PackToken token;
+				token.kind = PackTokenKind::Fixed;
+				token.size = value;
+				tokens.push_back(token);
+				index = next;
+				continue;
+			}
+			if (ch == 'z') {
+				PackToken token;
+				token.kind = PackTokenKind::Z;
+				tokens.push_back(token);
+				index += 1;
+				continue;
+			}
+			if (ch == 's') {
+				bool found = false;
+				auto [value, next] = readNumber(index + 1, found);
+				const int lenSize = found ? value : packSizeTSize;
+				if (lenSize < 1 || lenSize > 8) {
+					throw BMSX_RUNTIME_ERROR("string.pack invalid length size " + std::to_string(lenSize) + ".");
+				}
+				PackToken token;
+				token.kind = PackTokenKind::Len;
+				token.lenSize = lenSize;
+				token.littleEndian = littleEndian;
+				token.align = std::min(lenSize, maxAlign);
+				tokens.push_back(token);
+				index = next;
+				continue;
+			}
+			throw BMSX_RUNTIME_ERROR(std::string("string.pack unsupported format option '") + ch + "'.");
+		}
+		return tokens;
+	};
+	auto packGetNextAlign = [](const std::vector<PackToken>& tokens, size_t startIndex) {
+		for (size_t i = startIndex + 1; i < tokens.size(); ++i) {
+			const auto& token = tokens[i];
+			if (token.kind == PackTokenKind::Pad || token.kind == PackTokenKind::Align) {
+				continue;
+			}
+			if (token.align > 0) {
+				return token.align;
+			}
+			return 1;
+		}
+		return 1;
+	};
+	auto packPadToAlign = [](std::vector<uint8_t>& bytes, size_t offset, int align) -> size_t {
+		if (align <= 1) {
+			return offset;
+		}
+		const size_t padding = (static_cast<size_t>(align) - (offset % static_cast<size_t>(align))) % static_cast<size_t>(align);
+		bytes.insert(bytes.end(), padding, 0);
+		return offset + padding;
+	};
+	auto packReadInteger = [maxSafeInteger](const Value& value) -> int64_t {
+		double num = asNumber(value);
+		if (!std::isfinite(num) || std::floor(num) != num) {
+			throw BMSX_RUNTIME_ERROR("string.pack integer value must be a finite integer.");
+		}
+		if (std::abs(num) > maxSafeInteger) {
+			throw BMSX_RUNTIME_ERROR("string.pack integer value exceeds safe integer range.");
+		}
+		return static_cast<int64_t>(num);
+	};
+	auto packWriteInt = [](int64_t value, int size, bool isSigned, bool littleEndian, std::vector<uint8_t>& bytes) {
+		if (size < 1 || size > 8) {
+			throw BMSX_RUNTIME_ERROR("string.pack invalid integer size.");
+		}
+		if (isSigned) {
+			int64_t minValue = 0;
+			int64_t maxValue = 0;
+			if (size == 8) {
+				minValue = std::numeric_limits<int64_t>::min();
+				maxValue = std::numeric_limits<int64_t>::max();
+			} else {
+				const int shift = size * 8 - 1;
+				minValue = -(int64_t(1) << shift);
+				maxValue = (int64_t(1) << shift) - 1;
+			}
+			if (value < minValue || value > maxValue) {
+				throw BMSX_RUNTIME_ERROR("string.pack integer value out of range.");
+			}
+		} else {
+			if (value < 0) {
+				throw BMSX_RUNTIME_ERROR("string.pack unsigned integer value out of range.");
+			}
+			uint64_t maxValue = 0;
+			if (size == 8) {
+				maxValue = std::numeric_limits<uint64_t>::max();
+			} else {
+				maxValue = (uint64_t(1) << (size * 8)) - 1;
+			}
+			if (static_cast<uint64_t>(value) > maxValue) {
+				throw BMSX_RUNTIME_ERROR("string.pack unsigned integer value out of range.");
+			}
+		}
+		uint64_t unsignedValue = static_cast<uint64_t>(value);
+		if (littleEndian) {
+			for (int i = 0; i < size; ++i) {
+				bytes.push_back(static_cast<uint8_t>((unsignedValue >> (8 * i)) & 0xff));
+			}
+			return;
+		}
+		for (int i = size - 1; i >= 0; --i) {
+			bytes.push_back(static_cast<uint8_t>((unsignedValue >> (8 * i)) & 0xff));
+		}
+	};
+	auto packReadInt = [maxSafeInteger](const std::string& source, size_t offset, int size, bool isSigned, bool littleEndian) -> int64_t {
+		uint64_t value = 0;
+		const uint8_t* data = reinterpret_cast<const uint8_t*>(source.data());
+		if (littleEndian) {
+			for (int i = 0; i < size; ++i) {
+				value |= uint64_t(data[offset + static_cast<size_t>(i)]) << (8 * i);
+			}
+		} else {
+			for (int i = 0; i < size; ++i) {
+				value = (value << 8) | data[offset + static_cast<size_t>(i)];
+			}
+		}
+		int64_t signedValue = 0;
+		if (isSigned) {
+			if (size == 8) {
+				signedValue = static_cast<int64_t>(value);
+			} else {
+				const uint64_t signBit = uint64_t(1) << (size * 8 - 1);
+				if (value & signBit) {
+					const uint64_t mask = ~((uint64_t(1) << (size * 8)) - 1);
+					signedValue = static_cast<int64_t>(value | mask);
+				} else {
+					signedValue = static_cast<int64_t>(value);
+				}
+			}
+		} else {
+			if (value > static_cast<uint64_t>(maxSafeInteger)) {
+				throw BMSX_RUNTIME_ERROR("string.unpack integer exceeds safe integer range.");
+			}
+			return static_cast<int64_t>(value);
+		}
+		if (std::abs(static_cast<double>(signedValue)) > maxSafeInteger) {
+			throw BMSX_RUNTIME_ERROR("string.unpack integer exceeds safe integer range.");
+		}
+		return signedValue;
+	};
+	auto packWriteFloat = [](double value, int size, bool littleEndian, std::vector<uint8_t>& bytes) {
+		uint8_t buffer[8] = {};
+		if (size == 4) {
+			float f = static_cast<float>(value);
+			std::memcpy(buffer, &f, sizeof(float));
+		} else {
+			std::memcpy(buffer, &value, sizeof(double));
+		}
+		if (littleEndian) {
+			bytes.insert(bytes.end(), buffer, buffer + size);
+		} else {
+			for (int i = size - 1; i >= 0; --i) {
+				bytes.push_back(buffer[i]);
+			}
+		}
+	};
+	auto packReadFloat = [](const std::string& source, size_t offset, int size, bool littleEndian) -> double {
+		uint8_t buffer[8] = {};
+		const uint8_t* data = reinterpret_cast<const uint8_t*>(source.data());
+		if (littleEndian) {
+			std::memcpy(buffer, data + offset, static_cast<size_t>(size));
+		} else {
+			for (int i = 0; i < size; ++i) {
+				buffer[i] = data[offset + static_cast<size_t>(size - 1 - i)];
+			}
+		}
+		if (size == 4) {
+			float value = 0.0f;
+			std::memcpy(&value, buffer, sizeof(float));
+			return static_cast<double>(value);
+		}
+		double value = 0.0;
+		std::memcpy(&value, buffer, sizeof(double));
+		return value;
+	};
 stringTable->set(key("len"), m_cpu.createNativeFunction("string.len", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 	StringId textId = asStringId(args.at(0));
 	out.push_back(valueNumber(static_cast<double>(m_cpu.stringPool().codepointCount(textId))));
@@ -2719,6 +3081,221 @@ stringTable->set(key("char"), m_cpu.createNativeFunction("string.char", [str](co
 stringTable->set(key("format"), m_cpu.createNativeFunction("string.format", [this, str, asText](const std::vector<Value>& args, std::vector<Value>& out) {
 	const std::string& templateStr = asText(args.at(0));
 	out.push_back(str(formatVmString(templateStr, args, 1)));
+}));
+stringTable->set(key("pack"), m_cpu.createNativeFunction("string.pack", [str, asText, packParseFormat, packGetNextAlign, packPadToAlign, packReadInteger, packWriteInt, packWriteFloat](const std::vector<Value>& args, std::vector<Value>& out) {
+	if (args.empty()) {
+		throw BMSX_RUNTIME_ERROR("string.pack expects a format string.");
+	}
+	const std::string& format = asText(args.at(0));
+	const std::vector<PackToken> tokens = packParseFormat(format);
+	std::vector<uint8_t> bytes;
+	size_t offset = 0;
+	size_t argIndex = 1;
+	auto takeArg = [&]() -> const Value& {
+		if (argIndex >= args.size()) {
+			throw BMSX_RUNTIME_ERROR("string.pack missing value for format.");
+		}
+		return args[argIndex++];
+	};
+	for (size_t i = 0; i < tokens.size(); ++i) {
+		const auto& token = tokens[i];
+		switch (token.kind) {
+			case PackTokenKind::Pad:
+				bytes.push_back(0);
+				offset += 1;
+				break;
+			case PackTokenKind::Align: {
+				const int align = packGetNextAlign(tokens, i);
+				offset = packPadToAlign(bytes, offset, align);
+				break;
+			}
+			case PackTokenKind::Int: {
+				offset = packPadToAlign(bytes, offset, token.align);
+				const int64_t value = packReadInteger(takeArg());
+				packWriteInt(value, token.size, token.isSigned, token.littleEndian, bytes);
+				offset += static_cast<size_t>(token.size);
+				break;
+			}
+			case PackTokenKind::Float: {
+				offset = packPadToAlign(bytes, offset, token.align);
+				const double value = asNumber(takeArg());
+				packWriteFloat(value, token.size, token.littleEndian, bytes);
+				offset += static_cast<size_t>(token.size);
+				break;
+			}
+			case PackTokenKind::Fixed: {
+				const std::string& text = asText(takeArg());
+				const size_t length = static_cast<size_t>(token.size);
+				for (size_t j = 0; j < length; ++j) {
+					bytes.push_back(j < text.size() ? static_cast<uint8_t>(text[j]) : 0);
+				}
+				offset += length;
+				break;
+			}
+			case PackTokenKind::Z: {
+				const std::string& text = asText(takeArg());
+				for (size_t j = 0; j < text.size(); ++j) {
+					const uint8_t b = static_cast<uint8_t>(text[j]);
+					if (b == 0) {
+						throw BMSX_RUNTIME_ERROR("string.pack z strings must not contain zero bytes.");
+					}
+					bytes.push_back(b);
+				}
+				bytes.push_back(0);
+				offset += text.size() + 1;
+				break;
+			}
+			case PackTokenKind::Len: {
+				offset = packPadToAlign(bytes, offset, token.align);
+				const std::string& text = asText(takeArg());
+				const int64_t length = static_cast<int64_t>(text.size());
+				packWriteInt(length, token.lenSize, false, token.littleEndian, bytes);
+				offset += static_cast<size_t>(token.lenSize);
+				for (size_t j = 0; j < text.size(); ++j) {
+					bytes.push_back(static_cast<uint8_t>(text[j]));
+				}
+				offset += text.size();
+				break;
+			}
+			default:
+				throw BMSX_RUNTIME_ERROR("string.pack invalid format token.");
+		}
+	}
+	std::string packed;
+	packed.resize(bytes.size());
+	if (!bytes.empty()) {
+		std::memcpy(packed.data(), bytes.data(), bytes.size());
+	}
+	out.push_back(str(packed));
+}));
+stringTable->set(key("packsize"), m_cpu.createNativeFunction("string.packsize", [asText, packParseFormat, packGetNextAlign](const std::vector<Value>& args, std::vector<Value>& out) {
+	if (args.empty()) {
+		throw BMSX_RUNTIME_ERROR("string.packsize expects a format string.");
+	}
+	const std::string& format = asText(args.at(0));
+	const std::vector<PackToken> tokens = packParseFormat(format);
+	size_t offset = 0;
+	for (size_t i = 0; i < tokens.size(); ++i) {
+		const auto& token = tokens[i];
+		switch (token.kind) {
+			case PackTokenKind::Pad:
+				offset += 1;
+				break;
+			case PackTokenKind::Align: {
+				const int align = packGetNextAlign(tokens, i);
+				const size_t padding = (static_cast<size_t>(align) - (offset % static_cast<size_t>(align))) % static_cast<size_t>(align);
+				offset += padding;
+				break;
+			}
+			case PackTokenKind::Int: {
+				const size_t padding = (static_cast<size_t>(token.align) - (offset % static_cast<size_t>(token.align))) % static_cast<size_t>(token.align);
+				offset += padding + static_cast<size_t>(token.size);
+				break;
+			}
+			case PackTokenKind::Float: {
+				const size_t padding = (static_cast<size_t>(token.align) - (offset % static_cast<size_t>(token.align))) % static_cast<size_t>(token.align);
+				offset += padding + static_cast<size_t>(token.size);
+				break;
+			}
+			case PackTokenKind::Fixed:
+				offset += static_cast<size_t>(token.size);
+				break;
+			case PackTokenKind::Z:
+			case PackTokenKind::Len:
+				throw BMSX_RUNTIME_ERROR("string.packsize format is variable-length.");
+			default:
+				throw BMSX_RUNTIME_ERROR("string.packsize invalid format token.");
+		}
+	}
+	out.push_back(valueNumber(static_cast<double>(offset)));
+}));
+stringTable->set(key("unpack"), m_cpu.createNativeFunction("string.unpack", [str, asText, packParseFormat, packGetNextAlign, packReadInt, packReadFloat](const std::vector<Value>& args, std::vector<Value>& out) {
+	if (args.size() < 2) {
+		throw BMSX_RUNTIME_ERROR("string.unpack expects a format string and source string.");
+	}
+	const std::string& format = asText(args.at(0));
+	const std::string& source = asText(args.at(1));
+	const double startValue = args.size() > 2 ? asNumber(args.at(2)) : 1.0;
+	const int startIndex = static_cast<int>(std::floor(startValue));
+	if (startIndex < 1 || startIndex > static_cast<int>(source.size()) + 1) {
+		throw BMSX_RUNTIME_ERROR("string.unpack start index out of range.");
+	}
+	const std::vector<PackToken> tokens = packParseFormat(format);
+	size_t offset = static_cast<size_t>(startIndex - 1);
+	auto ensure = [&](size_t length) {
+		if (offset + length > source.size()) {
+			throw BMSX_RUNTIME_ERROR("string.unpack string is too short.");
+		}
+	};
+	for (size_t i = 0; i < tokens.size(); ++i) {
+		const auto& token = tokens[i];
+		switch (token.kind) {
+			case PackTokenKind::Pad:
+				ensure(1);
+				offset += 1;
+				break;
+			case PackTokenKind::Align: {
+				const int align = packGetNextAlign(tokens, i);
+				const size_t padding = (static_cast<size_t>(align) - (offset % static_cast<size_t>(align))) % static_cast<size_t>(align);
+				ensure(padding);
+				offset += padding;
+				break;
+			}
+			case PackTokenKind::Int: {
+				const size_t padding = (static_cast<size_t>(token.align) - (offset % static_cast<size_t>(token.align))) % static_cast<size_t>(token.align);
+				ensure(padding + static_cast<size_t>(token.size));
+				offset += padding;
+				const int64_t value = packReadInt(source, offset, token.size, token.isSigned, token.littleEndian);
+				out.push_back(valueNumber(static_cast<double>(value)));
+				offset += static_cast<size_t>(token.size);
+				break;
+			}
+			case PackTokenKind::Float: {
+				const size_t padding = (static_cast<size_t>(token.align) - (offset % static_cast<size_t>(token.align))) % static_cast<size_t>(token.align);
+				ensure(padding + static_cast<size_t>(token.size));
+				offset += padding;
+				const double value = packReadFloat(source, offset, token.size, token.littleEndian);
+				out.push_back(valueNumber(value));
+				offset += static_cast<size_t>(token.size);
+				break;
+			}
+			case PackTokenKind::Fixed: {
+				ensure(static_cast<size_t>(token.size));
+				out.push_back(str(std::string(source.data() + offset, static_cast<size_t>(token.size))));
+				offset += static_cast<size_t>(token.size);
+				break;
+			}
+			case PackTokenKind::Z: {
+				size_t end = offset;
+				while (end < source.size() && source[end] != '\0') {
+					end += 1;
+				}
+				if (end >= source.size()) {
+					throw BMSX_RUNTIME_ERROR("string.unpack zero-terminated string not found.");
+				}
+				out.push_back(str(std::string(source.data() + offset, end - offset)));
+				offset = end + 1;
+				break;
+			}
+			case PackTokenKind::Len: {
+				const size_t padding = (static_cast<size_t>(token.align) - (offset % static_cast<size_t>(token.align))) % static_cast<size_t>(token.align);
+				ensure(padding + static_cast<size_t>(token.lenSize));
+				offset += padding;
+				const int64_t length = packReadInt(source, offset, token.lenSize, false, token.littleEndian);
+				if (length < 0) {
+					throw BMSX_RUNTIME_ERROR("string.unpack invalid length.");
+				}
+				offset += static_cast<size_t>(token.lenSize);
+				ensure(static_cast<size_t>(length));
+				out.push_back(str(std::string(source.data() + offset, static_cast<size_t>(length))));
+				offset += static_cast<size_t>(length);
+				break;
+			}
+			default:
+				throw BMSX_RUNTIME_ERROR("string.unpack invalid format token.");
+		}
+	}
+	out.push_back(valueNumber(static_cast<double>(offset + 1)));
 }));
 
 	setGlobal("string", valueTable(stringTable));

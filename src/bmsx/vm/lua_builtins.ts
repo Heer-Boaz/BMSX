@@ -32,7 +32,11 @@ export const ENGINE_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<VMLuaBuiltinDescriptor>
 	{ name: 'delist', params: ['id'], signature: 'delist(id)' },
 	{ name: 'grant_effect', params: ['object_id', 'effect_id'], signature: 'grant_effect(object_id, effect_id)' },
 	{ name: 'trigger_effect', params: ['object_id', 'effect_id', 'options?'], signature: 'trigger_effect(object_id, effect_id [, options])' },
+	{ name: 'vdp_map_slot', params: ['slot', 'atlas_id?'], signature: 'vdp_map_slot(slot, atlas_id)', description: 'Maps an atlas resource id into a VRAM slot (slot 0=primary, 1=secondary; pass nil to clear).' },
+	{ name: 'vdp_load_slot', params: ['slot', 'atlas_id'], signature: 'vdp_load_slot(slot, atlas_id)', description: 'Starts an async atlas load into a VRAM slot; BIOS maps the slot on completion; returns a job id.' },
 	{ name: 'irq', params: ['flags'], signature: 'irq(flags)' },
+	{ name: 'on_irq', params: ['handler?'], signature: 'on_irq(handler)', description: 'Registers a cart IRQ handler; pass nil to clear.' },
+	{ name: 'on_vdp_load', params: ['handler?'], signature: 'on_vdp_load(handler)', description: 'Registers a VDP load callback; return true to skip BIOS mapping.' },
 ];
 
 // Keep this list in sync with runtime builtins (TS/C++) so editor metadata matches actual VM behavior.
@@ -104,6 +108,9 @@ export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<VMLuaBuiltinDescriptor
 	{ name: 'string.gsub', params: ['s', 'pattern', 'repl', 'n?'], signature: 'string.gsub(s, pattern, repl [, n])' },
 	{ name: 'string.gmatch', params: ['s', 'pattern'], signature: 'string.gmatch(s, pattern)' },
 	{ name: 'string.format', params: ['format', '...'], signature: 'string.format(format, ...)' },
+	{ name: 'string.pack', params: ['format', '...'], signature: 'string.pack(format, ...)' },
+	{ name: 'string.packsize', params: ['format'], signature: 'string.packsize(format)' },
+	{ name: 'string.unpack', params: ['format', 's', 'pos?'], signature: 'string.unpack(format, s [, pos])' },
 	{ name: 'string.len', params: ['s'], signature: 'string.len(s)' },
 	{ name: 'string.lower', params: ['s'], signature: 'string.lower(s)' },
 	{ name: 'string.rep', params: ['s', 'n', 'sep?'], signature: 'string.rep(s, n [, sep])' },
