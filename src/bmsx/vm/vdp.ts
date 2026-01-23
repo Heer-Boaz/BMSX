@@ -41,9 +41,10 @@ export class VDP {
 	) {}
 
 	public initializeRegisters(): void {
-		const dither = $.view.dither_type;
+		const dither = 0;
 		this.memory.writeValue(IO_VDP_DITHER, dither);
 		this.lastDitherType = dither;
+		$.view.dither_type = dither;
 	}
 
 	public syncRegisters(): void {

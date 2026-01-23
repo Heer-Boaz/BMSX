@@ -20,9 +20,10 @@ VDP::VDP(VmMemory& memory)
 	: m_memory(memory) {}
 
 void VDP::initializeRegisters() {
-	const auto dither = static_cast<i32>(EngineCore::instance().view()->dither_type);
+	const i32 dither = 0;
 	m_memory.writeValue(IO_VDP_DITHER, valueNumber(static_cast<double>(dither)));
 	m_lastDitherType = dither;
+	EngineCore::instance().view()->dither_type = static_cast<GameView::DitherType>(dither);
 }
 
 void VDP::syncRegisters() {
