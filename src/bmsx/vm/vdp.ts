@@ -156,8 +156,20 @@ export class VDP {
 		const entries = source.list();
 		const viewEntries: RomAsset[] = [];
 		const engineAtlasName = generateAtlasName(ENGINE_ATLAS_INDEX);
-		let engineAtlasEntry: RomAsset | null = null;
 		let engineEntryRecord: VmAssetEntry | null = null;
+		// NOTE: Atlas priming is not allowed; slot sizing must not derive from atlas metadata.
+		const seedAtlasSlot = (slotEntry: VmAssetEntry): void => {
+			const maxPixels = Math.floor(slotEntry.capacity / 4);
+			const side = Math.floor(Math.sqrt(maxPixels));
+			const stride = side * 4;
+			const size = stride * side;
+			slotEntry.baseSize = size;
+			slotEntry.baseStride = stride;
+			slotEntry.regionX = 0;
+			slotEntry.regionY = 0;
+			slotEntry.regionW = side;
+			slotEntry.regionH = side;
+		};
 		this.atlasResourcesById.clear();
 		this.atlasViewsById.clear();
 		this.atlasSlotById.clear();
@@ -183,14 +195,6 @@ export class VDP {
 				throw new Error(`[BmsxVDP] Image asset '${entry.resid}' missing metadata.`);
 			}
 			if (entry.type === 'atlas') {
-				if (entry.resid === engineAtlasName) {
-					if (this.memory.hasAsset(engineAtlasName)) {
-						engineEntryRecord = this.memory.getAssetEntry(engineAtlasName);
-					} else {
-						engineAtlasEntry = entry;
-					}
-					continue;
-				}
 				if (typeof meta.atlasid !== 'number') {
 					throw new Error(`[BmsxVDP] Atlas '${entry.resid}' missing atlas id.`);
 				}
@@ -210,31 +214,26 @@ export class VDP {
 			engineEntryRecord = this.memory.getAssetEntry(engineAtlasName);
 		}
 
+		const engineAtlasAsset = assets.img[engineAtlasName];
+		if (!engineAtlasAsset) {
+			throw new Error(`[BmsxVDP] Engine atlas '${engineAtlasName}' not found.`);
+		}
+		const engineAtlasMeta = engineAtlasAsset.imgmeta;
+		if (!engineAtlasMeta || engineAtlasMeta.width <= 0 || engineAtlasMeta.height <= 0) {
+			throw new Error(`[BmsxVDP] Engine atlas '${engineAtlasName}' missing dimensions.`);
+		}
+		let engineEntryCreated = false;
 		if (!engineEntryRecord) {
-			if (!engineAtlasEntry) {
-				throw new Error('[BmsxVDP] Engine atlas missing from asset list.');
-			}
-			if (typeof engineAtlasEntry.start !== 'number' || typeof engineAtlasEntry.end !== 'number') {
-				throw new Error('[BmsxVDP] Engine atlas missing ROM buffer offsets.');
-			}
-			const engineImgAsset = assets.img[engineAtlasEntry.resid];
-			const engineDecoded = await decodePngToRgba(source.getBuffer(engineAtlasEntry));
-			if (engineImgAsset.imgmeta.width <= 0) {
-				engineImgAsset.imgmeta.width = engineDecoded.width;
-			}
-			if (engineImgAsset.imgmeta.height <= 0) {
-				engineImgAsset.imgmeta.height = engineDecoded.height;
-			}
 			engineEntryRecord = this.memory.registerImageSlotAt({
-				id: engineAtlasEntry.resid,
+				id: engineAtlasName,
 				baseAddr: VRAM_ENGINE_ATLAS_BASE,
 				capacityBytes: VRAM_ENGINE_ATLAS_SIZE,
+				clear: false,
 			});
-			this.memory.writeImageSlot(engineEntryRecord, {
-				pixels: engineDecoded.pixels,
-				width: engineDecoded.width,
-				height: engineDecoded.height,
-			});
+			engineEntryCreated = true;
+		}
+		if (engineEntryCreated) {
+			seedAtlasSlot(engineEntryRecord);
 		}
 
 		const skyboxFaceSize = assets.manifest.vm.skybox_face_size ?? SKYBOX_FACE_DEFAULT_SIZE;
@@ -259,6 +258,7 @@ export class VDP {
 				id: ATLAS_PRIMARY_SLOT_ID,
 				baseAddr: VRAM_PRIMARY_ATLAS_BASE,
 				capacityBytes: VRAM_PRIMARY_ATLAS_SIZE,
+				clear: false,
 			});
 		const secondarySlotEntry = this.memory.hasAsset(ATLAS_SECONDARY_SLOT_ID)
 			? this.memory.getAssetEntry(ATLAS_SECONDARY_SLOT_ID)
@@ -266,7 +266,10 @@ export class VDP {
 				id: ATLAS_SECONDARY_SLOT_ID,
 				baseAddr: VRAM_SECONDARY_ATLAS_BASE,
 				capacityBytes: VRAM_SECONDARY_ATLAS_SIZE,
+				clear: false,
 			});
+		seedAtlasSlot(primarySlotEntry);
+		seedAtlasSlot(secondarySlotEntry);
 		this.atlasSlotEntries = [primarySlotEntry, secondarySlotEntry];
 
 		for (let index = 0; index < viewEntries.length; index += 1) {
@@ -288,8 +291,8 @@ export class VDP {
 			let baseEntry = primarySlotEntry;
 			if (atlasId === ENGINE_ATLAS_INDEX) {
 				baseEntry = engineEntryRecord;
-				atlasWidth = engineEntryRecord.regionW;
-				atlasHeight = engineEntryRecord.regionH;
+				atlasWidth = engineAtlasMeta.width;
+				atlasHeight = engineAtlasMeta.height;
 			} else {
 				const atlasEntry = this.atlasResourcesById.get(atlasId);
 				if (!atlasEntry) {

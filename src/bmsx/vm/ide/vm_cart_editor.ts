@@ -1496,13 +1496,13 @@ export function activate(): void {
 }
 
 export function applyEditorCrtDimming(): void {
-	$.view.crt_postprocessing_enabled = false;
-	BmsxVMRuntime.instance.setVdpDitherType(0);
+	// $.view.crt_postprocessing_enabled = false;
+	// BmsxVMRuntime.instance.setVdpDitherType(0);
 }
 
 export function restoreCrtOptions(): void {
-	$.view.crt_postprocessing_enabled = true;
-	BmsxVMRuntime.instance.setVdpDitherType(2);
+	// $.view.crt_postprocessing_enabled = true;
+	// BmsxVMRuntime.instance.setVdpDitherType(2);
 }
 
 export function deactivate(): void {

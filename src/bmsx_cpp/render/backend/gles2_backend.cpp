@@ -99,8 +99,7 @@ void OpenGLES2Backend::updateTexture(TextureHandle handle, const u8* data, i32 w
 										i32 height,
 										const TextureParams& params) {
 	auto* tex = static_cast<GLES2Texture*>(handle);
-	tex->width = width;
-	tex->height = height;
+	const bool needsResize = tex->width != width || tex->height != height;
 
 	const u8* uploadData = data;
 	std::vector<u8> linearized;
@@ -112,7 +111,13 @@ void OpenGLES2Backend::updateTexture(TextureHandle handle, const u8* data, i32 w
 
 	glBindTexture(GL_TEXTURE_2D, tex->id);
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, uploadData);
+	if (needsResize) {
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, uploadData);
+	} else {
+		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, uploadData);
+	}
+	tex->width = width;
+	tex->height = height;
 	if (kGLES2VerboseLog) {
 	std::fprintf(stderr,
 					"[BMSX][GLES2] updateTexture id=%u size=%dx%d data=%p\n",

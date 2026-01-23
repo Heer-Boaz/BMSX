@@ -101,10 +101,23 @@ void VDP::registerImageAssets(RuntimeAssets& assets, bool keepDecodedData) {
 	if (!engineAtlasAsset) {
 		throw BMSX_RUNTIME_ERROR("[VDP] Engine atlas missing from assets.");
 	}
-	if (engineAtlasAsset->pixels.empty() || engineAtlasAsset->meta.width <= 0 || engineAtlasAsset->meta.height <= 0) {
-		throw BMSX_RUNTIME_ERROR("[VDP] Engine atlas missing pixel data.");
+	if (engineAtlasAsset->meta.width <= 0 || engineAtlasAsset->meta.height <= 0) {
+		throw BMSX_RUNTIME_ERROR("[VDP] Engine atlas missing dimensions.");
 	}
+	// NOTE: Atlas priming is not allowed; slot sizing must not derive from atlas metadata.
+	auto seedAtlasSlot = [](VmMemory::AssetEntry& slotEntry) {
+		const double maxPixels = static_cast<double>(slotEntry.capacity) / 4.0;
+		const uint32_t side = static_cast<uint32_t>(std::floor(std::sqrt(maxPixels)));
+		const uint32_t stride = side * 4u;
+		slotEntry.baseSize = stride * side;
+		slotEntry.baseStride = stride;
+		slotEntry.regionX = 0;
+		slotEntry.regionY = 0;
+		slotEntry.regionW = side;
+		slotEntry.regionH = side;
+	};
 	VmMemory::AssetEntry* engineEntry = nullptr;
+	bool engineEntryCreated = false;
 	if (m_memory.hasAsset(engineAtlasName)) {
 		engineEntry = &m_memory.getAssetEntry(engineAtlasName);
 	} else {
@@ -112,17 +125,14 @@ void VDP::registerImageAssets(RuntimeAssets& assets, bool keepDecodedData) {
 			engineAtlasName,
 			VRAM_ENGINE_ATLAS_BASE,
 			VRAM_ENGINE_ATLAS_SIZE,
-			0
-		);
-		m_memory.writeImageSlot(
-			slotEntry,
-			engineAtlasAsset->pixels.data(),
-			engineAtlasAsset->pixels.size(),
-			static_cast<uint32_t>(engineAtlasAsset->meta.width),
-			static_cast<uint32_t>(engineAtlasAsset->meta.height),
-			slotEntry.capacity
+			0,
+			false
 		);
 		engineEntry = &slotEntry;
+		engineEntryCreated = true;
+	}
+	if (engineEntryCreated) {
+		seedAtlasSlot(*engineEntry);
 	}
 
 	const i32 skyboxFaceSize = assets.manifest.skyboxFaceSize > 0
@@ -161,7 +171,8 @@ void VDP::registerImageAssets(RuntimeAssets& assets, bool keepDecodedData) {
 			ATLAS_PRIMARY_SLOT_ID,
 			VRAM_PRIMARY_ATLAS_BASE,
 			VRAM_PRIMARY_ATLAS_SIZE,
-			0
+			0,
+			false
 		);
 	}
 	VmMemory::AssetEntry* secondarySlotEntry = nullptr;
@@ -172,9 +183,12 @@ void VDP::registerImageAssets(RuntimeAssets& assets, bool keepDecodedData) {
 			ATLAS_SECONDARY_SLOT_ID,
 			VRAM_SECONDARY_ATLAS_BASE,
 			VRAM_SECONDARY_ATLAS_SIZE,
-			0
+			0,
+			false
 		);
 	}
+	seedAtlasSlot(*primarySlotEntry);
+	seedAtlasSlot(*secondarySlotEntry);
 
 	for (const auto& id : viewAssets) {
 		auto* imgAsset = assets.getImg(id);
@@ -195,8 +209,8 @@ void VDP::registerImageAssets(RuntimeAssets& assets, bool keepDecodedData) {
 		i32 atlasHeight = 0;
 		if (atlasId == ENGINE_ATLAS_INDEX) {
 			baseEntry = engineEntry;
-			atlasWidth = static_cast<i32>(engineEntry->regionW);
-			atlasHeight = static_cast<i32>(engineEntry->regionH);
+			atlasWidth = engineAtlasAsset->meta.width;
+			atlasHeight = engineAtlasAsset->meta.height;
 		} else {
 			const auto atlasNameIt = m_atlasResourceById.find(atlasId);
 			if (atlasNameIt == m_atlasResourceById.end()) {

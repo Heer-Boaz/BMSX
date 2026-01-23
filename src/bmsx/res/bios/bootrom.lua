@@ -157,6 +157,7 @@ end
 function init()
 	boot_start = os.clock()
 	boot_requested = false
+	vdp_load_engine_atlas()
 end
 
 function new_game()

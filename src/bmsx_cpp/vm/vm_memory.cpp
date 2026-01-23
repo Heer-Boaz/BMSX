@@ -1,6 +1,7 @@
 #include "vm_memory.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstring>
 #include <stdexcept>
 
@@ -118,6 +119,43 @@ void VmMemory::resetAssetMemory() {
 	m_assetDataCursor = ASSET_DATA_BASE;
 	const size_t offset = static_cast<size_t>(ASSET_RAM_BASE - RAM_BASE);
 	std::fill(m_ram.begin() + offset, m_ram.begin() + offset + ASSET_RAM_SIZE, 0);
+	seedVramGarbage(nextVramGarbageSeed());
+}
+
+uint32_t VmMemory::nextVramGarbageSeed() const {
+	const auto now = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+	const uint64_t mixed = static_cast<uint64_t>(now) ^ static_cast<uint64_t>(reinterpret_cast<uintptr_t>(this));
+	return static_cast<uint32_t>((mixed ^ (mixed >> 32)) | 1u);
+}
+
+void VmMemory::seedVramGarbage(uint32_t seed) {
+	uint32_t state = seed | 1u;
+	const size_t start = static_cast<size_t>(VRAM_STAGING_BASE - RAM_BASE);
+	const size_t end = static_cast<size_t>(ASSET_DATA_END - RAM_BASE);
+	size_t cursor = start;
+	const size_t alignedEnd = end - ((end - start) & 3u);
+	while (cursor < alignedEnd) {
+		state ^= state << 13;
+		state ^= state >> 17;
+		state ^= state << 5;
+		const uint32_t value = state;
+		m_ram[cursor] = static_cast<u8>(value & 0xffu);
+		m_ram[cursor + 1] = static_cast<u8>((value >> 8) & 0xffu);
+		m_ram[cursor + 2] = static_cast<u8>((value >> 16) & 0xffu);
+		m_ram[cursor + 3] = static_cast<u8>((value >> 24) & 0xffu);
+		cursor += 4;
+	}
+	if (cursor < end) {
+		state ^= state << 13;
+		state ^= state >> 17;
+		state ^= state << 5;
+		uint32_t value = state;
+		while (cursor < end) {
+			m_ram[cursor] = static_cast<u8>(value & 0xffu);
+			value >>= 8;
+			cursor += 1;
+		}
+	}
 }
 
 bool VmMemory::hasAsset(const std::string& id) const {
@@ -210,12 +248,14 @@ VmMemory::AssetEntry& VmMemory::registerImageSlot(const std::string& id, uint32_
 	return m_assetEntries[index];
 }
 
-VmMemory::AssetEntry& VmMemory::registerImageSlotAt(const std::string& id, uint32_t baseAddr, uint32_t capacityBytes, uint32_t flags) {
+VmMemory::AssetEntry& VmMemory::registerImageSlotAt(const std::string& id, uint32_t baseAddr, uint32_t capacityBytes, uint32_t flags, bool clear) {
 	if (baseAddr < RAM_BASE || baseAddr + capacityBytes > RAM_USED_END) {
 		throw std::runtime_error("[VmMemory] Image slot out of RAM bounds.");
 	}
 	const size_t offset = static_cast<size_t>(baseAddr - RAM_BASE);
-	std::memset(m_ram.data() + offset, 0, capacityBytes);
+	if (clear) {
+		std::memset(m_ram.data() + offset, 0, capacityBytes);
+	}
 	AssetEntry entry;
 	entry.id = id;
 	entry.type = AssetType::Image;

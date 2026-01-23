@@ -141,6 +141,9 @@ VmMemory::AssetEntry& ImgDecController::resolveSlotEntry(uint32_t dst) {
 	if (dst == VRAM_SECONDARY_ATLAS_BASE) {
 		return m_memory.getAssetEntry(ATLAS_SECONDARY_SLOT_ID);
 	}
+	if (dst == VRAM_ENGINE_ATLAS_BASE) {
+		return m_memory.getAssetEntry(generateAtlasName(ENGINE_ATLAS_INDEX));
+	}
 	throw std::runtime_error("[ImgDec] Unsupported destination address " + std::to_string(dst) + ".");
 }
 

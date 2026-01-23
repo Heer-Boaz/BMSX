@@ -63,7 +63,7 @@ public:
 	void resetAssetMemory();
 	AssetEntry& registerImageBuffer(const std::string& id, const u8* rgba, uint32_t width, uint32_t height, uint32_t flags);
 	AssetEntry& registerImageSlot(const std::string& id, uint32_t capacityBytes, uint32_t flags);
-	AssetEntry& registerImageSlotAt(const std::string& id, uint32_t baseAddr, uint32_t capacityBytes, uint32_t flags);
+	AssetEntry& registerImageSlotAt(const std::string& id, uint32_t baseAddr, uint32_t capacityBytes, uint32_t flags, bool clear = true);
 	AssetEntry& registerImageView(const std::string& id, const AssetEntry& base, uint32_t regionX, uint32_t regionY, uint32_t regionW, uint32_t regionH, uint32_t flags);
 	AssetEntry& registerAudioBuffer(
 		const std::string& id,
@@ -123,6 +123,9 @@ private:
 	uint32_t m_engineAssetDataEnd = ASSET_DATA_BASE;
 	uint32_t m_cartAssetDataBase = ASSET_DATA_BASE;
 	bool m_assetTableFinalized = false;
+
+	uint32_t nextVramGarbageSeed() const;
+	void seedVramGarbage(uint32_t seed);
 
 	bool isIoAddress(uint32_t addr) const;
 	size_t ioIndex(uint32_t addr) const;

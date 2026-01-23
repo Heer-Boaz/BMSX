@@ -1220,7 +1220,7 @@ void VMRuntime::handleLuaError(const std::string& message) {
 
 void VMRuntime::runEngineBuiltinPrelude() {
 	std::cerr << "[VMRuntime] prelude: binding engine builtins" << std::endl;
-	static const std::array<const char*, 26> engineBuiltins = {
+	static const std::array<const char*, 27> engineBuiltins = {
 		"define_fsm",
 		"define_world_object",
 		"define_service",
@@ -1244,6 +1244,7 @@ void VMRuntime::runEngineBuiltinPrelude() {
 		"trigger_effect",
 		"vdp_map_slot",
 		"vdp_load_slot",
+		"vdp_load_engine_atlas",
 		"irq",
 		"on_irq",
 		"on_vdp_load",

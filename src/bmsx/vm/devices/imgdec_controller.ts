@@ -19,8 +19,9 @@ import {
 import {
 	VRAM_PRIMARY_ATLAS_BASE,
 	VRAM_SECONDARY_ATLAS_BASE,
+	VRAM_ENGINE_ATLAS_BASE,
 } from '../memory_map';
-import { ATLAS_PRIMARY_SLOT_ID, ATLAS_SECONDARY_SLOT_ID } from '../../rompack/rompack';
+import { ATLAS_PRIMARY_SLOT_ID, ATLAS_SECONDARY_SLOT_ID, ENGINE_ATLAS_INDEX, generateAtlasName } from '../../rompack/rompack';
 import type { VmAssetEntry } from '../vm_memory';
 import { VmMemory } from '../vm_memory';
 import type { DecodedImage } from '../../utils/image_decode';
@@ -119,6 +120,9 @@ export class ImgDecController {
 		}
 		if (dst === VRAM_SECONDARY_ATLAS_BASE) {
 			return this.memory.getAssetEntry(ATLAS_SECONDARY_SLOT_ID);
+		}
+		if (dst === VRAM_ENGINE_ATLAS_BASE) {
+			return this.memory.getAssetEntry(generateAtlasName(ENGINE_ATLAS_INDEX));
 		}
 		throw new Error(`[ImgDec] Unsupported destination address ${dst}.`);
 	}

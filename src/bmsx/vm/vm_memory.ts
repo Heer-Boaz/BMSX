@@ -14,6 +14,7 @@ import {
 	OVERLAY_ROM_BASE,
 	RAM_BASE,
 	RAM_USED_END,
+	VRAM_STAGING_BASE,
 } from './memory_map';
 import { VM_IO_SLOT_COUNT } from './vm_io';
 
@@ -121,6 +122,7 @@ export class VmMemory {
 		this.assetDataCursor = ASSET_DATA_BASE;
 		const assetOffset = ASSET_RAM_BASE - RAM_BASE;
 		this.ram.fill(0, assetOffset, assetOffset + ASSET_RAM_SIZE);
+		this.seedVramGarbage(this.nextVramGarbageSeed());
 	}
 
 	public hasAsset(id: string): boolean {
@@ -206,13 +208,16 @@ export class VmMemory {
 		baseAddr: number;
 		capacityBytes: number;
 		flags?: number;
+		clear?: boolean;
 	}): VmAssetEntry {
 		const offset = params.baseAddr - RAM_BASE;
 		if (offset < 0 || offset + params.capacityBytes > this.ram.byteLength) {
 			throw new Error(`[VmMemory] Image slot '${params.id}' out of RAM bounds.`);
 		}
 		const view = this.ram.subarray(offset, offset + params.capacityBytes);
-		view.fill(0);
+		if (params.clear !== false) {
+			view.fill(0);
+		}
 		const entry = this.createAssetEntry({
 			id: params.id,
 			idTokenLo: 0,
@@ -1026,6 +1031,53 @@ export class VmMemory {
 			const owner = this.assetOwnerPages[page];
 			if (owner >= 0) {
 				this.assetDirtyOwners.add(owner);
+			}
+		}
+	}
+
+	private nextVramGarbageSeed(): number {
+		const time = Date.now() >>> 0;
+		const rand = Math.floor(Math.random() * 0xffffffff) >>> 0;
+		return (time ^ rand) | 1;
+	}
+
+	private seedVramGarbage(seed: number): void {
+		const start = VRAM_STAGING_BASE - RAM_BASE;
+		const end = ASSET_DATA_END - RAM_BASE;
+		this.fillRangeWithGarbage(start, end - start, seed);
+	}
+
+	private fillRangeWithGarbage(offset: number, length: number, seed: number): void {
+		let state = seed | 1;
+		const end = offset + length;
+		const alignedEnd = end - ((end - offset) & 3);
+		let cursor = offset;
+		while (cursor < alignedEnd) {
+			state ^= state << 13;
+			state >>>= 0;
+			state ^= state >>> 17;
+			state >>>= 0;
+			state ^= state << 5;
+			state >>>= 0;
+			const value = state;
+			this.ram[cursor] = value & 0xff;
+			this.ram[cursor + 1] = (value >>> 8) & 0xff;
+			this.ram[cursor + 2] = (value >>> 16) & 0xff;
+			this.ram[cursor + 3] = (value >>> 24) & 0xff;
+			cursor += 4;
+		}
+		if (cursor < end) {
+			state ^= state << 13;
+			state >>>= 0;
+			state ^= state >>> 17;
+			state >>>= 0;
+			state ^= state << 5;
+			state >>>= 0;
+			let value = state;
+			while (cursor < end) {
+				this.ram[cursor] = value & 0xff;
+				value >>>= 8;
+				cursor += 1;
 			}
 		}
 	}

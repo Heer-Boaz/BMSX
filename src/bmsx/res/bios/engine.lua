@@ -25,6 +25,7 @@ local vdp_load_queue_tail = 0
 local vdp_active_job = nil
 local vdp_load_handler = nil
 local cart_irq_handler = nil
+local ENGINE_ATLAS_ID = 254
 
 local excluded_class_keys = {
 	def_id = true,
@@ -286,10 +287,49 @@ function engine.vdp_load_slot(slot, atlas_id)
 		job_id = vdp_load_job_seq,
 		slot = slot,
 		atlas_id = atlas_id_int,
+		allow_handler = true,
 		src = src,
 		len = len,
 		dst = dst,
 		cap = cap,
+	}
+	vdp_try_start_next_job()
+	return vdp_load_job_seq
+end
+
+function engine.vdp_load_engine_atlas()
+	local atlas_name = string.format("_atlas_%02d", ENGINE_ATLAS_ID)
+	local asset = assets.img[atlas_name]
+	if asset == nil then
+		error("vdp_load_engine_atlas: engine atlas asset missing")
+	end
+	local start = asset.start
+	local finish = asset["end"]
+	if start == nil or finish == nil then
+		error("vdp_load_engine_atlas: engine atlas missing ROM range")
+	end
+	local payload_id = asset.payload_id
+	local base = SYS_ENGINE_ROM_BASE
+	if payload_id == "overlay" then
+		base = SYS_OVERLAY_ROM_BASE
+	elseif payload_id == "cart" then
+		base = SYS_CART_ROM_BASE
+	elseif payload_id ~= nil and payload_id ~= "system" then
+		error("vdp_load_engine_atlas: unsupported payload_id " .. tostring(payload_id))
+	end
+	local src = base + start
+	local len = finish - start
+	vdp_load_job_seq = vdp_load_job_seq + 1
+	vdp_load_queue_tail = vdp_load_queue_tail + 1
+	vdp_load_queue[vdp_load_queue_tail] = {
+		job_id = vdp_load_job_seq,
+		slot = nil,
+		atlas_id = ENGINE_ATLAS_ID,
+		allow_handler = false,
+		src = src,
+		len = len,
+		dst = SYS_VRAM_ENGINE_ATLAS_BASE,
+		cap = SYS_VRAM_ENGINE_ATLAS_SIZE,
 	}
 	vdp_try_start_next_job()
 	return vdp_load_job_seq
@@ -383,13 +423,13 @@ function engine.irq(flags)
 			error("irq: IMG_DONE without pending atlas load")
 		end
 		local skip_map = false
-		if vdp_load_handler ~= nil then
+		if vdp_active_job.allow_handler ~= false and vdp_load_handler ~= nil then
 			local should_skip = vdp_load_handler(vdp_active_job.job_id, vdp_active_job.slot, vdp_active_job.atlas_id, "done")
 			if should_skip == true then
 				skip_map = true
 			end
 		end
-		if not skip_map then
+		if vdp_active_job.slot ~= nil and not skip_map then
 			vdp_map_slot(vdp_active_job.slot, vdp_active_job.atlas_id)
 		end
 		vdp_active_job = nil
@@ -400,7 +440,7 @@ function engine.irq(flags)
 		if vdp_active_job == nil then
 			error("irq: IMG_ERROR without pending atlas load")
 		end
-		if vdp_load_handler ~= nil then
+		if vdp_active_job.allow_handler ~= false and vdp_load_handler ~= nil then
 			vdp_load_handler(vdp_active_job.job_id, vdp_active_job.slot, vdp_active_job.atlas_id, "error")
 		end
 		vdp_active_job = nil
