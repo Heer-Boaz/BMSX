@@ -310,11 +310,24 @@ export class BmsxVMRuntime {
 	private engineUpdateClosure: Closure = null;
 	private engineDrawClosure: Closure = null;
 	private engineResetClosure: Closure = null;
-	private pendingVmCall: 'update' | 'draw' | 'engine_update' | 'engine_draw' | 'init' | 'new_game_reset' | 'new_game' | 'irq' = null;
+	private pendingVmCall: 'entry' | 'update' | 'draw' | 'engine_update' | 'engine_draw' | 'init' | 'new_game_reset' | 'new_game' | 'irq' = null;
+	private pendingEntryLifecycle: { runInit: boolean; runNewGame: boolean } = null;
 	private pendingLifecycleQueue: Array<'init' | 'new_game_reset' | 'new_game'> = [];
 	private pendingProgramReload: { runInit?: boolean } = null;
 	public get isDrawPending(): boolean {
-		return this.pendingVmCall === 'draw' || this.pendingVmCall === 'engine_draw';
+		return this.pendingVmCall === 'entry'
+			|| this.pendingVmCall === 'update'
+			|| this.pendingVmCall === 'engine_update'
+			|| this.pendingVmCall === 'init'
+			|| this.pendingVmCall === 'new_game_reset'
+			|| this.pendingVmCall === 'new_game'
+			|| this.pendingVmCall === 'irq'
+			|| this.pendingVmCall === 'draw'
+			|| this.pendingVmCall === 'engine_draw'
+			|| this.pendingLifecycleQueue.length > 0
+			|| this.debuggerPaused
+			|| this.luaRuntimeFailed
+			|| this.faultSnapshot !== null;
 	}
 	private readonly memory: VmMemory;
 	private readonly cpu: VMCPU;
@@ -745,6 +758,7 @@ export class BmsxVMRuntime {
 		this.engineResetClosure = null;
 		this.vmConsoleMetadata = null;
 		this.pendingVmCall = null;
+		this.pendingEntryLifecycle = null;
 		this.pendingLifecycleQueue = [];
 		this.luaRuntimeFailed = false;
 		this.luaVmInitialized = false;
@@ -1252,6 +1266,21 @@ export class BmsxVMRuntime {
 			return;
 		}
 		try {
+			if (this.pendingVmCall === 'entry') {
+				const result = this.runVmWithBudget(state);
+				this.processVmIo();
+				if (result === RunResult.Halted) {
+					this.pendingVmCall = null;
+					this.bindLifecycleHandlers();
+					const lifecycle = this.pendingEntryLifecycle;
+					this.pendingEntryLifecycle = null;
+					if (lifecycle) {
+						this.queueLifecycleHandlers(lifecycle);
+					}
+				}
+				state.updateExecuted = true;
+				return;
+			}
 			if (this.pendingVmCall === 'irq') {
 				const result = this.runVmWithBudget(state);
 				this.processVmIo();
@@ -1382,6 +1411,7 @@ export class BmsxVMRuntime {
 			if (this.luaVmGate.ready) {
 				if (this.pendingVmCall === 'update'
 					|| this.pendingVmCall === 'engine_update'
+					|| this.pendingVmCall === 'entry'
 					|| this.pendingVmCall === 'init'
 					|| this.pendingVmCall === 'new_game_reset'
 					|| this.pendingVmCall === 'new_game'
@@ -1867,12 +1897,7 @@ export class BmsxVMRuntime {
 		this.memory.writeValue(IO_WRITE_PTR_ADDR, 0);
 		const prelude = this.runEngineBuiltinPrelude(program, metadata);
 		const finalizedMetadata = prelude.metadata;
-		this.cpu.start(entryProtoIndex);
-		this.pendingVmCall = null;
-		this.pendingLifecycleQueue = [];
-		this.cpu.run(null);
-		this.processVmIo();
-		this.bindLifecycleHandlers();
+		this.beginEntryExecution(entryProtoIndex);
 		this.luaRuntimeFailed = preserveRuntimeFailure;
 		this._luaPath = binding;
 		this.vmProgramMetadata = finalizedMetadata;
@@ -1902,8 +1927,20 @@ export class BmsxVMRuntime {
 		this.engineResetClosure = engineModule.get(this.vmKey('reset')) as Closure;
 	}
 
+	private beginEntryExecution(entryProtoIndex: number): void {
+		this.cpu.start(entryProtoIndex);
+		this.pendingVmCall = 'entry';
+		this.pendingLifecycleQueue = [];
+		this.pendingEntryLifecycle = null;
+	}
+
 	private queueLifecycleHandlers(options: { runInit: boolean; runNewGame: boolean }): void {
 		this.pendingLifecycleQueue = [];
+		this.pendingEntryLifecycle = null;
+		if (this.pendingVmCall === 'entry') {
+			this.pendingEntryLifecycle = options;
+			return;
+		}
 		if (options.runInit) {
 			if (!this.vmInitClosure) {
 				throw new Error(`VM lifecycle handler 'init' is not defined.`);
@@ -2091,13 +2128,8 @@ export class BmsxVMRuntime {
 		this.memory.writeValue(IO_WRITE_PTR_ADDR, 0);
 		const prelude = this.runEngineBuiltinPrelude(program, metadata);
 		this.vmProgramMetadata = prelude.metadata;
-		this.cpu.start(entryProtoIndex);
-		this.pendingVmCall = null;
-		this.cpu.run(null);
-		this.processVmIo();
+		this.beginEntryExecution(entryProtoIndex);
 		this.luaVmInitialized = true;
-
-		this.bindLifecycleHandlers();
 
 		if (params.runInit && !savedRuntimeFailed) {
 			this.queueLifecycleHandlers({ runInit: true, runNewGame: false });
@@ -2318,6 +2350,7 @@ export class BmsxVMRuntime {
 
 	private resetVmState(): void {
 		this.pendingVmCall = null;
+		this.pendingEntryLifecycle = null;
 		this.pendingLifecycleQueue = [];
 		this.pendingCartBoot = false;
 		this.vmInitClosure = null;
@@ -4455,13 +4488,9 @@ export class BmsxVMRuntime {
 			this.applyEngineBuiltinGlobals();
 			this.processVmIo();
 
-			this.cpu.start(programAsset.entryProtoIndex);
-			this.pendingVmCall = null;
-			this.cpu.run(null);
-			this.processVmIo();
+			this.beginEntryExecution(programAsset.entryProtoIndex);
 			this.luaVmInitialized = true;
 
-			this.bindLifecycleHandlers();
 			if (options?.runInit === false) {
 				return true;
 			}
@@ -4498,13 +4527,9 @@ export class BmsxVMRuntime {
 		this.memory.writeValue(IO_WRITE_PTR_ADDR, 0);
 		const prelude = this.runEngineBuiltinPrelude(prepared.program, prepared.metadata);
 		this.vmProgramMetadata = prelude.metadata;
-		this.cpu.start(prepared.entryProtoIndex);
-		this.pendingVmCall = null;
-		this.cpu.run(null);
-		this.processVmIo();
+		this.beginEntryExecution(prepared.entryProtoIndex);
 		this.luaVmInitialized = true;
 
-		this.bindLifecycleHandlers();
 		if (options?.runInit === false) {
 			return true;
 		}
@@ -4562,10 +4587,7 @@ export class BmsxVMRuntime {
 			this.memory.writeValue(IO_WRITE_PTR_ADDR, 0);
 			const prelude = this.runEngineBuiltinPrelude(program, metadata);
 			this.vmProgramMetadata = prelude.metadata;
-			this.cpu.start(entryProtoIndex);
-			this.pendingVmCall = null;
-			this.cpu.run(null);
-			this.processVmIo();
+			this.beginEntryExecution(entryProtoIndex);
 			this.luaVmInitialized = true;
 		}
 		catch (error) {
@@ -4574,8 +4596,6 @@ export class BmsxVMRuntime {
 			this.handleLuaError(error);
 			return false;
 		}
-
-		this.bindLifecycleHandlers();
 
 		this.queueLifecycleHandlers({ runInit: true, runNewGame: true });
 		return true;

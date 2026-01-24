@@ -759,6 +759,7 @@ void VMRuntime::boot(Program* program, ProgramMetadata* metadata, int entryProto
 	m_engineResetFn = nullptr;
 	m_pendingLifecycleQueue.clear();
 	m_pendingLifecycleIndex = 0;
+	m_pendingEntryLifecycle.reset();
 	m_cpu.globals->clear();
 	m_memory.clearIoSlots();
 	m_memory.writeValue(IO_WRITE_PTR_ADDR, valueNumber(0.0));
@@ -795,69 +796,7 @@ void VMRuntime::boot(Program* program, ProgramMetadata* metadata, int entryProto
 	// Start execution at entry point
 	std::cout << "[VMRuntime] boot: starting CPU at entry point..." << std::endl;
 	m_cpu.start(entryProtoIndex);
-
-	// Run until halted to execute top-level code
-	std::cout << "[VMRuntime] boot: running top-level code..." << std::endl;
-	m_cpu.run();
-	processIOCommands();
-	std::cout << "[VMRuntime] boot: top-level code executed" << std::endl;
-
-	// Cache callback functions (use Lua-style names: update, draw, init, new_game)
-	Value updateVal = m_cpu.globals->get(canonicalizeIdentifier("update"));
-	if (valueIsClosure(updateVal)) {
-		m_updateFn = asClosure(updateVal);
-		std::cout << "[VMRuntime] boot: found update" << std::endl;
-	}
-
-	Value drawVal = m_cpu.globals->get(canonicalizeIdentifier("draw"));
-	if (valueIsClosure(drawVal)) {
-		m_drawFn = asClosure(drawVal);
-		std::cout << "[VMRuntime] boot: found draw" << std::endl;
-	}
-
-	Value initVal = m_cpu.globals->get(canonicalizeIdentifier("init"));
-	if (valueIsClosure(initVal)) {
-		m_initFn = asClosure(initVal);
-		std::cout << "[VMRuntime] boot: found init" << std::endl;
-	}
-
-	Value newGameVal = m_cpu.globals->get(canonicalizeIdentifier("new_game"));
-	if (valueIsClosure(newGameVal)) {
-		m_newGameFn = asClosure(newGameVal);
-		std::cout << "[VMRuntime] boot: found new_game" << std::endl;
-	}
-	Value irqVal = m_cpu.globals->get(canonicalizeIdentifier("irq"));
-	if (valueIsClosure(irqVal)) {
-		m_irqFn = asClosure(irqVal);
-		std::cout << "[VMRuntime] boot: found irq" << std::endl;
-	}
-	auto* engineModule = asTable(requireVmModule("engine"));
-	Value engineUpdateVal = engineModule->get(canonicalizeIdentifier("update"));
-	if (valueIsClosure(engineUpdateVal)) {
-		m_engineUpdateFn = asClosure(engineUpdateVal);
-	}
-	Value engineDrawVal = engineModule->get(canonicalizeIdentifier("draw"));
-	if (valueIsClosure(engineDrawVal)) {
-		m_engineDrawFn = asClosure(engineDrawVal);
-	}
-	Value engineResetVal = engineModule->get(canonicalizeIdentifier("reset"));
-	if (valueIsClosure(engineResetVal)) {
-		m_engineResetFn = asClosure(engineResetVal);
-	}
-
-	if (!m_initFn) {
-		throw BMSX_RUNTIME_ERROR("[VMRuntime] VM lifecycle handler 'init' is not defined.");
-	}
-	if (!m_newGameFn) {
-		throw BMSX_RUNTIME_ERROR("[VMRuntime] VM lifecycle handler 'new_game' is not defined.");
-	}
-	if (!m_irqFn) {
-		throw BMSX_RUNTIME_ERROR("[VMRuntime] VM lifecycle handler 'irq' is not defined.");
-	}
-	if (!m_engineResetFn) {
-		throw BMSX_RUNTIME_ERROR("[VMRuntime] VM lifecycle handler 'engine.reset' is not defined.");
-	}
-
+	m_pendingVmCall = PendingCall::Entry;
 	queueLifecycleHandlers(true, true);
 	m_vmInitialized = true;
 	std::cout << "[VMRuntime] boot: VM initialized!" << std::endl;
@@ -934,9 +873,59 @@ RunResult VMRuntime::runVmWithBudget() {
 	return result;
 }
 
+void VMRuntime::cacheLifecycleHandlers() {
+	// Cache callback functions (use Lua-style names: update, draw, init, new_game)
+	Value updateVal = m_cpu.globals->get(canonicalizeIdentifier("update"));
+	if (valueIsClosure(updateVal)) {
+		m_updateFn = asClosure(updateVal);
+		std::cout << "[VMRuntime] boot: found update" << std::endl;
+	}
+
+	Value drawVal = m_cpu.globals->get(canonicalizeIdentifier("draw"));
+	if (valueIsClosure(drawVal)) {
+		m_drawFn = asClosure(drawVal);
+		std::cout << "[VMRuntime] boot: found draw" << std::endl;
+	}
+
+	Value initVal = m_cpu.globals->get(canonicalizeIdentifier("init"));
+	if (valueIsClosure(initVal)) {
+		m_initFn = asClosure(initVal);
+		std::cout << "[VMRuntime] boot: found init" << std::endl;
+	}
+
+	Value newGameVal = m_cpu.globals->get(canonicalizeIdentifier("new_game"));
+	if (valueIsClosure(newGameVal)) {
+		m_newGameFn = asClosure(newGameVal);
+		std::cout << "[VMRuntime] boot: found new_game" << std::endl;
+	}
+	Value irqVal = m_cpu.globals->get(canonicalizeIdentifier("irq"));
+	if (valueIsClosure(irqVal)) {
+		m_irqFn = asClosure(irqVal);
+		std::cout << "[VMRuntime] boot: found irq" << std::endl;
+	}
+	auto* engineModule = asTable(requireVmModule("engine"));
+	Value engineUpdateVal = engineModule->get(canonicalizeIdentifier("update"));
+	if (valueIsClosure(engineUpdateVal)) {
+		m_engineUpdateFn = asClosure(engineUpdateVal);
+	}
+	Value engineDrawVal = engineModule->get(canonicalizeIdentifier("draw"));
+	if (valueIsClosure(engineDrawVal)) {
+		m_engineDrawFn = asClosure(engineDrawVal);
+	}
+	Value engineResetVal = engineModule->get(canonicalizeIdentifier("reset"));
+	if (valueIsClosure(engineResetVal)) {
+		m_engineResetFn = asClosure(engineResetVal);
+	}
+}
+
 void VMRuntime::queueLifecycleHandlers(bool runInit, bool runNewGame) {
 	m_pendingLifecycleQueue.clear();
 	m_pendingLifecycleIndex = 0;
+	m_pendingEntryLifecycle.reset();
+	if (m_pendingVmCall == PendingCall::Entry) {
+		m_pendingEntryLifecycle = PendingEntryLifecycle{runInit, runNewGame};
+		return;
+	}
 	if (runInit) {
 		if (!m_initFn) {
 			throw BMSX_RUNTIME_ERROR("[VMRuntime] VM lifecycle handler 'init' is not defined.");
@@ -1202,7 +1191,18 @@ void VMRuntime::setInstructionBudgetPerFrame(int budget) {
 }
 
 bool VMRuntime::isDrawPending() const {
-	return m_pendingVmCall == PendingCall::Draw || m_pendingVmCall == PendingCall::EngineDraw;
+	const bool lifecycleQueued = m_pendingLifecycleIndex < m_pendingLifecycleQueue.size();
+	return m_pendingVmCall == PendingCall::Entry
+		|| m_pendingVmCall == PendingCall::Update
+		|| m_pendingVmCall == PendingCall::EngineUpdate
+		|| m_pendingVmCall == PendingCall::Init
+		|| m_pendingVmCall == PendingCall::NewGameReset
+		|| m_pendingVmCall == PendingCall::NewGame
+		|| m_pendingVmCall == PendingCall::Irq
+		|| m_pendingVmCall == PendingCall::Draw
+		|| m_pendingVmCall == PendingCall::EngineDraw
+		|| lifecycleQueued
+		|| m_runtimeFailed;
 }
 
 void VMRuntime::refreshMemoryMap() {
@@ -4201,6 +4201,20 @@ auto emitFn = m_cpu.createNativeFunction("game.emit", [](const std::vector<Value
 
 void VMRuntime::executeUpdateCallback(double deltaSeconds) {
 	bool shouldRunEngineUpdate = (m_updateFn == nullptr);
+	if (m_pendingVmCall == PendingCall::Entry) {
+		RunResult result = runVmWithBudget();
+		processIOCommands();
+		if (result == RunResult::Halted) {
+			m_pendingVmCall = PendingCall::None;
+			cacheLifecycleHandlers();
+			const auto pendingLifecycle = m_pendingEntryLifecycle;
+			m_pendingEntryLifecycle.reset();
+			if (pendingLifecycle.has_value()) {
+				queueLifecycleHandlers(pendingLifecycle->runInit, pendingLifecycle->runNewGame);
+			}
+		}
+		return;
+	}
 	if (m_pendingVmCall == PendingCall::EngineUpdate) {
 		RunResult result = runVmWithBudget();
 		processIOCommands();

@@ -259,6 +259,7 @@ public:
 private:
 	enum class PendingCall {
 		None,
+		Entry,
 		Init,
 		NewGameReset,
 		NewGame,
@@ -267,6 +268,10 @@ private:
 		Draw,
 		EngineUpdate,
 		EngineDraw,
+	};
+	struct PendingEntryLifecycle {
+		bool runInit;
+		bool runNewGame;
 	};
 
 	explicit VMRuntime(const VMRuntimeOptions& options);
@@ -280,6 +285,7 @@ private:
 	void raiseIrqFlags(uint32_t mask);
 	bool dispatchIrqFlags();
 	RunResult runVmWithBudget();
+	void cacheLifecycleHandlers();
 	void queueLifecycleHandlers(bool runInit, bool runNewGame);
 	void startNextLifecycleCall();
 	bool runLifecyclePhase();
@@ -344,6 +350,7 @@ private:
 	Closure* m_engineResetFn = nullptr;
 	Value m_ipairsIterator = valueNil();
 	PendingCall m_pendingVmCall = PendingCall::None;
+	std::optional<PendingEntryLifecycle> m_pendingEntryLifecycle;
 	std::vector<PendingCall> m_pendingLifecycleQueue;
 	size_t m_pendingLifecycleIndex = 0;
 	uint32_t m_vmRandomSeedValue = 0;
