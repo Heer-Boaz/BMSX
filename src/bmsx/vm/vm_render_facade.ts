@@ -83,6 +83,10 @@ export class VMRenderFacade {
 		this.commands.length = 0;
 	}
 
+	public isCapturingFrame(): boolean {
+		return this.capturingFrame;
+	}
+
 	public setDefaultLayer(layer: RenderLayer): void {
 		this.defaultLayer = layer;
 	}
@@ -175,6 +179,24 @@ export class VMRenderFacade {
 			commands: frameCommands,
 		};
 		publishOverlayFrame(frame);
+	}
+
+	public endFrameToRenderer(): void {
+		this.capturingFrame = false;
+		if (this.commands.length === 0) {
+			return;
+		}
+		const frameCommands = this.commands;
+		this.commands = this.commandBuffer;
+		this.commandBuffer = frameCommands;
+		for (let i = 0; i < frameCommands.length; i += 1) {
+			$.view.renderer.submit.typed(frameCommands[i]);
+		}
+	}
+
+	public abandonFrame(): void {
+		this.capturingFrame = false;
+		this.commands.length = 0;
 	}
 }
 

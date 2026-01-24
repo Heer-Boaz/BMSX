@@ -377,6 +377,22 @@ export class BmsxVMApi {
 		// }
 	}
 
+	public isFrameCaptureActive(): boolean {
+		return this.renderBackend.isCapturingFrame();
+	}
+
+	public beginFrameCapture(): void {
+		this.renderBackend.beginFrame();
+	}
+
+	public commitFrameCapture(): void {
+		this.renderBackend.endFrameToRenderer();
+	}
+
+	public abandonFrameCapture(): void {
+		this.renderBackend.abandonFrame();
+	}
+
 	public cls(colorindex: number = 0): void {
 		const color = this.palette_color(colorindex);
 		const rect: RectRenderSubmission = {

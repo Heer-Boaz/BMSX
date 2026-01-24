@@ -1404,6 +1404,7 @@ export class BmsxVMRuntime {
 			// No try catch here; caller handles faults
 			this.overlayRenderBackend.setDefaultLayer('world');
 			if (!this.cartEntryAvailable) {
+				api.abandonFrameCapture();
 				this.drawBlueScreen();
 				this.preservedRenderQueue = this.overlayRenderBackend.captureCurrentFrameRenderQueue();
 				return;
@@ -1425,13 +1426,21 @@ export class BmsxVMRuntime {
 				else {
 					try {
 						const frameState = this.currentFrameState;
+						if (!api.isFrameCaptureActive()) {
+							api.beginFrameCapture();
+						}
 						if (this.pendingVmCall === 'engine_draw') {
 							const result = this.runVmWithBudget(frameState);
 							this.processVmIo();
 							if (result === RunResult.Halted) {
 								this.pendingVmCall = null;
 							}
-							this.preservedRenderQueue = this.overlayRenderBackend.captureCurrentFrameRenderQueue();
+							if (!this.pendingVmCall) {
+								api.commitFrameCapture();
+								this.preservedRenderQueue = this.overlayRenderBackend.captureCurrentFrameRenderQueue();
+							} else {
+								this.overlayRenderBackend.playbackRenderQueue(this.preservedRenderQueue);
+							}
 							return;
 						}
 						let shouldRunEngineDraw = this.vmDrawClosure === null;
@@ -1456,8 +1465,14 @@ export class BmsxVMRuntime {
 								this.pendingVmCall = null;
 							}
 						}
-						this.preservedRenderQueue = this.overlayRenderBackend.captureCurrentFrameRenderQueue();
+						if (!this.pendingVmCall) {
+							api.commitFrameCapture();
+							this.preservedRenderQueue = this.overlayRenderBackend.captureCurrentFrameRenderQueue();
+						} else {
+							this.overlayRenderBackend.playbackRenderQueue(this.preservedRenderQueue);
+						}
 					} catch (error) {
+						api.abandonFrameCapture();
 						this.preservedRenderQueue = this.overlayRenderBackend.captureCurrentFrameRenderQueue();
 
 						if (isLuaDebuggerPauseSignal(error)) {
