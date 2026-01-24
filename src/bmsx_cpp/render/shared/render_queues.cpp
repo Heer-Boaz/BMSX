@@ -136,17 +136,12 @@ i32 beginSpriteQueue() {
 	if (VMRuntime::instance().isDrawPending()) {
 		return static_cast<i32>(s_spriteQueue.sizeFront());
 	}
-	const bool hasBack = s_spriteQueue.sizeBack() > 0;
 	s_spriteSubmissionCounter = 0;
 
-	// Swap pools even if we keep the previous front buffer.
+	s_spriteQueue.swap();
+	// Swap pools.
 	std::swap(s_spriteItemPool, s_spriteItemPoolAlt);
 	s_spriteItemPoolIndex = 0;
-
-	if (!hasBack) {
-		return static_cast<i32>(s_spriteQueue.sizeFront());
-	}
-	s_spriteQueue.swap();
 	sortSpriteQueueForRendering();
 	return static_cast<i32>(s_spriteQueue.sizeFront());
 }

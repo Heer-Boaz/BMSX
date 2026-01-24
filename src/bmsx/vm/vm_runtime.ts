@@ -1870,7 +1870,6 @@ export class BmsxVMRuntime {
 		this.cpu.start(entryProtoIndex);
 		this.pendingVmCall = null;
 		this.pendingLifecycleQueue = [];
-		this.cpu.instructionBudgetRemaining = null;
 		this.cpu.run(null);
 		this.processVmIo();
 		this.bindLifecycleHandlers();

@@ -795,7 +795,6 @@ void VMRuntime::boot(Program* program, ProgramMetadata* metadata, int entryProto
 	// Start execution at entry point
 	std::cout << "[VMRuntime] boot: starting CPU at entry point..." << std::endl;
 	m_cpu.start(entryProtoIndex);
-	m_cpu.instructionBudgetRemaining = std::nullopt;
 
 	// Run until halted to execute top-level code
 	std::cout << "[VMRuntime] boot: running top-level code..." << std::endl;

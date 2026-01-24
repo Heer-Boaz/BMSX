@@ -173,16 +173,15 @@ export function beginSpriteQueue(): number {
 	if (BmsxVMRuntime.instance.isDrawPending) {
 		return spriteQueue.sizeFront();
 	}
-	const hasBack = spriteQueue.sizeBack() > 0;
 	spriteSubmissionCounter = 0;
+	if (spriteQueue.sizeBack() === 0) {
+		return spriteQueue.sizeFront();
+	}
+	spriteQueue.swap();
 	const tmpPool = spriteItemPool;
 	spriteItemPool = spriteItemPoolAlt;
 	spriteItemPoolAlt = tmpPool;
 	spriteItemPoolIndex = 0;
-	if (!hasBack) {
-		return spriteQueue.sizeFront();
-	}
-	spriteQueue.swap();
 	sortSpriteQueueForRendering();
 	return spriteQueue.sizeFront();
 }
