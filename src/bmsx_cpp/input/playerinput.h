@@ -196,9 +196,13 @@ private:
 	
 	// Guard records for debouncing
 	std::unordered_map<std::string, ActionGuardRecord> m_actionGuardRecords;
-	
+
 	// Repeat records for repeat pulse
 	std::unordered_map<std::string, ActionRepeatRecord> m_actionRepeatRecords;
+
+	// Last press/release ids surfaced as justpressed/justreleased per action
+	std::unordered_map<std::string, i32> m_actionPressRecords;
+	std::unordered_map<std::string, i32> m_actionReleaseRecords;
 	
 	// Frame counter
 	i64 m_frameCounter = 0;

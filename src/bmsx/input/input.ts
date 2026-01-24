@@ -288,6 +288,28 @@ export class InputStateManager {
 		return false;
 	}
 
+	public getLatestUnconsumedPressId(identifier: ButtonId): number | null {
+		for (let i = this.inputBuffer.length - 1; i >= 0; i -= 1) {
+			const event = this.inputBuffer[i]!;
+			if (event.identifier !== identifier) continue;
+			if (event.eventType !== 'press') continue;
+			if (event.consumed) continue;
+			return event.pressId ?? null;
+		}
+		return null;
+	}
+
+	public getLatestUnconsumedReleaseId(identifier: ButtonId): number | null {
+		for (let i = this.inputBuffer.length - 1; i >= 0; i -= 1) {
+			const event = this.inputBuffer[i]!;
+			if (event.identifier !== identifier) continue;
+			if (event.eventType !== 'release') continue;
+			if (event.consumed) continue;
+			return event.pressId ?? null;
+		}
+		return null;
+	}
+
 	/**
 	 * Marks the specified button as consumed, preventing further interactions.
 	 *

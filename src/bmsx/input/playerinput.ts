@@ -74,6 +74,8 @@ export class PlayerInput {
 
 	private readonly actionGuardRecords: Map<string, ActionGuardRecord> = new Map();
 	private readonly actionRepeatRecords: Map<string, ActionRepeatRecord> = new Map();
+	private readonly actionPressRecords: Map<string, number> = new Map();
+	private readonly actionReleaseRecords: Map<string, number> = new Map();
 	private lastPollTimestampMs: number = null;
 	private guardWindowMs: number = ACTION_GUARD_MIN_MS;
 	private frameCounter = 0;
@@ -242,6 +244,7 @@ export class PlayerInput {
 			allJustReleased: boolean; anyWasReleased: boolean; allWasReleased: boolean;
 			anyConsumed: boolean; leastPressTime: number; recentestTimestamp: number;
 			lastPressId: number; best1DVal: number; best1DAbs: number; best2DVal: [number, number]; best2DAbs: number;
+			bufferPressId: number; bufferReleaseId: number;
 		};
 		// Aggregate a single action across multiple bindings (keyboard / gamepad / pointer).
 		// Treat bindings as an OR: anyPressed drives `pressed`, while `all*` flags stay true only when every binding matches.
@@ -262,6 +265,8 @@ export class PlayerInput {
 			let leastPressTime: number = null;
 			let recentestTimestamp: number = null;
 			let lastPressId: number = null;
+			let bufferPressId: number = null;
+			let bufferReleaseId: number = null;
 			let best1DVal: number = null; let best1DAbs = -Infinity;
 			let best2DVal: [number, number] = null; let best2DAbs = -Infinity;
 
@@ -288,6 +293,14 @@ export class PlayerInput {
 					if (state?.pressId != null && (state.justpressed || lastPressId === null || (state.timestamp != null && recentestTimestamp != null && state.timestamp >= recentestTimestamp))) {
 						lastPressId = state.pressId;
 					}
+					const bufferedPress = this._stateManager.getLatestUnconsumedPressId(key);
+					if (bufferedPress != null && (bufferPressId == null || bufferedPress > bufferPressId)) {
+						bufferPressId = bufferedPress;
+					}
+					const bufferedRelease = this._stateManager.getLatestUnconsumedReleaseId(key);
+					if (bufferedRelease != null && (bufferReleaseId == null || bufferedRelease > bufferReleaseId)) {
+						bufferReleaseId = bufferedRelease;
+					}
 					if (typeof state?.value === 'number') {
 						const abs = Math.abs(state.value);
 						if (abs > best1DAbs) { best1DAbs = abs; best1DVal = state.value; }
@@ -306,7 +319,7 @@ export class PlayerInput {
 			// Only consider anyJustReleased if none of the buttons are pressed, because if any button is pressed then the action is not just released
 			anyJustReleased = anyJustReleased && !anyPressed;
 
-			return { allPressed, anyPressed, anyJustPressed, allJustPressed, anyWasPressed, allWasPressed, anyJustReleased, allJustReleased, anyWasReleased, allWasReleased, anyConsumed, leastPressTime, recentestTimestamp, lastPressId, best1DVal, best1DAbs, best2DVal, best2DAbs };
+			return { allPressed, anyPressed, anyJustPressed, allJustPressed, anyWasPressed, allWasPressed, anyJustReleased, allJustReleased, anyWasReleased, allWasReleased, anyConsumed, leastPressTime, recentestTimestamp, lastPressId, best1DVal, best1DAbs, best2DVal, best2DAbs, bufferPressId, bufferReleaseId };
 		};
 
 		const keyboardState = getStates(
@@ -327,9 +340,9 @@ export class PlayerInput {
 		);
 		const deviceStates = [keyboardState, gamepadState, pointerState];
 		const pressed = deviceStates.some(state => state.anyPressed);
-		const justpressed = deviceStates.some(state => state.anyJustPressed);
+		let justpressed = deviceStates.some(state => state.anyJustPressed);
 		const alljustpressed = deviceStates.some(state => state.allJustPressed);
-		const justreleased = deviceStates.some(state => state.anyJustReleased);
+		let justreleased = deviceStates.some(state => state.anyJustReleased);
 		const alljustreleased = deviceStates.some(state => state.allJustReleased);
 		const waspressed = deviceStates.some(state => state.anyWasPressed);
 		const wasreleased = deviceStates.some(state => state.anyWasReleased);
@@ -361,6 +374,17 @@ export class PlayerInput {
 		}
 		const minPresstime = minPresstimeRaw === Infinity ? null : minPresstimeRaw;
 
+		let bufferedPressId: number = null;
+		let bufferedReleaseId: number = null;
+		for (const state of deviceStates) {
+			if (state.bufferPressId != null && (bufferedPressId == null || state.bufferPressId > bufferedPressId)) {
+				bufferedPressId = state.bufferPressId;
+			}
+			if (state.bufferReleaseId != null && (bufferedReleaseId == null || state.bufferReleaseId > bufferedReleaseId)) {
+				bufferedReleaseId = state.bufferReleaseId;
+			}
+		}
+
 		let pressId: number = null;
 		let pressTimestamp: number = null;
 		for (const state of deviceStates) {
@@ -369,6 +393,23 @@ export class PlayerInput {
 				pressTimestamp = state.recentestTimestamp;
 				pressId = state.lastPressId;
 			}
+		}
+		const lastBufferedPressId = this.actionPressRecords.get(action) ?? null;
+		if (!justpressed && bufferedPressId != null && bufferedPressId !== lastBufferedPressId) {
+			justpressed = true;
+		}
+		if (justpressed && bufferedPressId != null && (pressId == null || bufferedPressId > pressId)) {
+			pressId = bufferedPressId;
+		}
+		if (justpressed && pressId != null) {
+			this.actionPressRecords.set(action, pressId);
+		}
+		const lastBufferedReleaseId = this.actionReleaseRecords.get(action) ?? null;
+		if (!justreleased && bufferedReleaseId != null && bufferedReleaseId !== lastBufferedReleaseId) {
+			justreleased = true;
+		}
+		if (justreleased && bufferedReleaseId != null && bufferedReleaseId !== lastBufferedReleaseId) {
+			this.actionReleaseRecords.set(action, bufferedReleaseId);
 		}
 
 		const timestamp = maxTimestamp === -Infinity ? null : maxTimestamp;
@@ -852,6 +893,8 @@ export class PlayerInput {
 		}
 		this.actionGuardRecords.clear();
 		this.actionRepeatRecords.clear();
+		this.actionPressRecords.clear();
+		this.actionReleaseRecords.clear();
 		this.lastPollTimestampMs = null;
 		this.guardWindowMs = ACTION_GUARD_MIN_MS;
 		this.frameCounter = 0;

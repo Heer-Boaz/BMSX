@@ -140,6 +140,38 @@ bool InputStateManager::wasReleasedInWindow(const std::string& button, f64 windo
 	return false;
 }
 
+std::optional<i32> InputStateManager::getLatestUnconsumedPressId(const std::string& button) const {
+	for (auto it = m_inputBuffer.rbegin(); it != m_inputBuffer.rend(); ++it) {
+		if (it->identifier != button) {
+			continue;
+		}
+		if (it->eventType != InputEvent::Type::Press) {
+			continue;
+		}
+		if (it->consumed) {
+			continue;
+		}
+		return it->pressId;
+	}
+	return std::nullopt;
+}
+
+std::optional<i32> InputStateManager::getLatestUnconsumedReleaseId(const std::string& button) const {
+	for (auto it = m_inputBuffer.rbegin(); it != m_inputBuffer.rend(); ++it) {
+		if (it->identifier != button) {
+			continue;
+		}
+		if (it->eventType != InputEvent::Type::Release) {
+			continue;
+		}
+		if (it->consumed) {
+			continue;
+		}
+		return it->pressId;
+	}
+	return std::nullopt;
+}
+
 /* ============================================================================
  * State management
  * ============================================================================ */

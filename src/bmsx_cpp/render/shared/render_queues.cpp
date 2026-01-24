@@ -133,11 +133,7 @@ void submitSprite(const ImgRenderSubmission& options) {
 }
 
 i32 beginSpriteQueue() {
-	if (VMRuntime::instance().isDrawPending()) {
-		return static_cast<i32>(s_spriteQueue.sizeFront());
-	}
 	s_spriteSubmissionCounter = 0;
-
 	s_spriteQueue.swap();
 	// Swap pools.
 	std::swap(s_spriteItemPool, s_spriteItemPoolAlt);

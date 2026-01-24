@@ -170,13 +170,7 @@ export function submitSprite(options: ImgRenderSubmission): void {
 }
 
 export function beginSpriteQueue(): number {
-	if (BmsxVMRuntime.instance.isDrawPending) {
-		return spriteQueue.sizeFront();
-	}
 	spriteSubmissionCounter = 0;
-	if (spriteQueue.sizeBack() === 0) {
-		return spriteQueue.sizeFront();
-	}
 	spriteQueue.swap();
 	const tmpPool = spriteItemPool;
 	spriteItemPool = spriteItemPoolAlt;

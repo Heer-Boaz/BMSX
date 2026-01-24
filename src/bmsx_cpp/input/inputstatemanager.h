@@ -57,6 +57,10 @@ public:
 	
 	// Check if button was released within window
 	bool wasReleasedInWindow(const std::string& button, f64 windowMs) const;
+
+	// Return latest unconsumed press/release pressId for a button
+	std::optional<i32> getLatestUnconsumedPressId(const std::string& button) const;
+	std::optional<i32> getLatestUnconsumedReleaseId(const std::string& button) const;
 	
 	// ─────────────────────────────────────────────────────────────────────────
 	// State management

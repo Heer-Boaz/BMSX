@@ -101,6 +101,19 @@ ActionState PlayerInput::getActionState(const std::string& action, std::optional
 	f64 latestPressedAt = 0.0;
 	f64 latestTimestamp = 0.0;
 	std::optional<i32> latestPressId;
+	std::optional<i32> bufferedPressId;
+	std::optional<i32> bufferedReleaseId;
+
+	const auto updateBufferedIds = [&](const std::string& id) {
+		auto pressId = m_stateManager.getLatestUnconsumedPressId(id);
+		if (pressId.has_value() && (!bufferedPressId.has_value() || pressId.value() > bufferedPressId.value())) {
+			bufferedPressId = pressId;
+		}
+		auto releaseId = m_stateManager.getLatestUnconsumedReleaseId(id);
+		if (releaseId.has_value() && (!bufferedReleaseId.has_value() || releaseId.value() > bufferedReleaseId.value())) {
+			bufferedReleaseId = releaseId;
+		}
+	};
 	
 	// Check keyboard bindings
 	{
@@ -145,6 +158,7 @@ ActionState PlayerInput::getActionState(const std::string& action, std::optional
 					latestTimestamp = state.timestamp.value();
 					latestPressId = state.pressId;
 				}
+				updateBufferedIds(binding.id);
 				
 				bindingCount++;
 			}
@@ -192,6 +206,7 @@ ActionState PlayerInput::getActionState(const std::string& action, std::optional
 					latestTimestamp = state.timestamp.value();
 					latestPressId = state.pressId;
 				}
+				updateBufferedIds(binding.id);
 				
 				bindingCount++;
 			}
@@ -239,6 +254,7 @@ ActionState PlayerInput::getActionState(const std::string& action, std::optional
 					latestTimestamp = state.timestamp.value();
 					latestPressId = state.pressId;
 				}
+				updateBufferedIds(binding.id);
 				
 				bindingCount++;
 			}
@@ -252,6 +268,27 @@ ActionState PlayerInput::getActionState(const std::string& action, std::optional
 	
 	// Aggregate results
 	result.pressed = anyPressed;
+	auto lastPressIt = m_actionPressRecords.find(action);
+	const i32 lastPressId = lastPressIt == m_actionPressRecords.end() ? -1 : lastPressIt->second;
+	if (!anyJustPressed && bufferedPressId.has_value() && bufferedPressId.value() != lastPressId) {
+		anyJustPressed = true;
+	}
+	if (anyJustPressed && bufferedPressId.has_value() && (!latestPressId.has_value() || bufferedPressId.value() > latestPressId.value())) {
+		latestPressId = bufferedPressId;
+	}
+	if (anyJustPressed && latestPressId.has_value()) {
+		m_actionPressRecords[action] = latestPressId.value();
+	}
+
+	auto lastReleaseIt = m_actionReleaseRecords.find(action);
+	const i32 lastReleaseId = lastReleaseIt == m_actionReleaseRecords.end() ? -1 : lastReleaseIt->second;
+	if (!anyJustReleased && bufferedReleaseId.has_value() && bufferedReleaseId.value() != lastReleaseId) {
+		anyJustReleased = true;
+	}
+	if (anyJustReleased && bufferedReleaseId.has_value() && bufferedReleaseId.value() != lastReleaseId) {
+		m_actionReleaseRecords[action] = bufferedReleaseId.value();
+	}
+
 	result.justpressed = anyJustPressed;
 	result.justreleased = anyJustReleased;
 	result.waspressed = anyWasPressed;
@@ -530,6 +567,8 @@ void PlayerInput::reset(const std::vector<std::string>* except) {
 	
 	m_actionGuardRecords.clear();
 	m_actionRepeatRecords.clear();
+	m_actionPressRecords.clear();
+	m_actionReleaseRecords.clear();
 	m_lastPollTimestampMs.reset();
 	m_guardWindowMs = ACTION_GUARD_MIN_MS;
 	m_frameCounter = 0;
