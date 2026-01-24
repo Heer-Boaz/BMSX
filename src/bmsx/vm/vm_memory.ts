@@ -50,8 +50,8 @@ export type VmMemoryInit = {
 };
 
 const ASSET_TABLE_MAGIC = 0x32534d41; // 'AMS2'
-const ASSET_TABLE_HEADER_SIZE = 40;
-const ASSET_TABLE_ENTRY_SIZE = 64;
+export const ASSET_TABLE_HEADER_SIZE = 40;
+export const ASSET_TABLE_ENTRY_SIZE = 64;
 // 1 = FNV-1a 64 over canonical UTF-8 (lowercase, slash-normalized, collapse "//", trim leading "./").
 const ASSET_TABLE_HASH_ALG_ID = 1;
 const ASSET_PAGE_SHIFT = 12;

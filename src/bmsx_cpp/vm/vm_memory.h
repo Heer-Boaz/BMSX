@@ -13,6 +13,9 @@
 
 namespace bmsx {
 
+constexpr uint32_t ASSET_TABLE_HEADER_SIZE = 40;
+constexpr uint32_t ASSET_TABLE_ENTRY_SIZE = 64;
+
 class VmMemory {
 public:
 	VmMemory();

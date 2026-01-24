@@ -2047,6 +2047,12 @@ void VMRuntime::setupBuiltins() {
 	setGlobal("SYS_CART_BOOTREADY", valueNumber(static_cast<double>(IO_SYS_CART_BOOTREADY)));
 	setGlobal("SYS_CART_MAGIC_ADDR", valueNumber(static_cast<double>(CART_ROM_MAGIC_ADDR)));
 	setGlobal("SYS_CART_MAGIC", valueNumber(static_cast<double>(CART_ROM_MAGIC)));
+	const uint32_t maxAssets = (ASSET_TABLE_SIZE - ASSET_TABLE_HEADER_SIZE) / ASSET_TABLE_ENTRY_SIZE;
+	setGlobal("SYS_CART_ROM_SIZE", valueNumber(static_cast<double>(CART_ROM_SIZE)));
+	setGlobal("SYS_RAM_SIZE", valueNumber(static_cast<double>(RAM_SIZE)));
+	setGlobal("SYS_MAX_ASSETS", valueNumber(static_cast<double>(maxAssets)));
+	setGlobal("SYS_STRING_HANDLE_COUNT", valueNumber(static_cast<double>(STRING_HANDLE_COUNT)));
+	setGlobal("SYS_MAX_INSTRUCTIONS_PER_FRAME", valueNumber(static_cast<double>(UPDATE_STATEMENT_BUDGET)));
 	setGlobal("SYS_VDP_DITHER", valueNumber(static_cast<double>(IO_VDP_DITHER)));
 	setGlobal("SYS_VDP_PRIMARY_ATLAS_ID", valueNumber(static_cast<double>(IO_VDP_PRIMARY_ATLAS_ID)));
 	setGlobal("SYS_VDP_SECONDARY_ATLAS_ID", valueNumber(static_cast<double>(IO_VDP_SECONDARY_ATLAS_ID)));

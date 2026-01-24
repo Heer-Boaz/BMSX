@@ -10,8 +10,11 @@ local color_header_bg = 7
 local color_header_text = 1
 local color_text = 15
 local color_muted = 14
-local color_accent = 11
+local color_accent = 15
+local color_section = 1
 local color_warn = 9
+local color_ok = 15
+local color_info_total = 15
 
 local ENGINE_ROM_BASE = 0x00000000
 local CART_ROM_BASE = 0x01000000
@@ -89,6 +92,26 @@ local function center_x(text, width)
 	return math.floor((width - (#text * font_width)) / 2 / font_width) * font_width
 end
 
+local function format_bytes(value)
+	local kb = 1024
+	local mb = kb * 1024
+	if value >= mb then
+		local scaled = value / mb
+		if scaled == math.floor(scaled) then
+			return string.format("%d MB", scaled)
+		end
+		return string.format("%.1f MB", scaled)
+	end
+	if value >= kb then
+		local scaled = value / kb
+		if scaled == math.floor(scaled) then
+			return string.format("%d KB", scaled)
+		end
+		return string.format("%.1f KB", scaled)
+	end
+	return tostring(value) .. " B"
+end
+
 local function build_info()
 	local cart_header = read_cart_header(CART_ROM_BASE)
 	local cart_manifest = cart_header and read_bios_manifest(CART_ROM_BASE, cart_header) or nil
@@ -110,6 +133,7 @@ local function build_info()
 	local engine_view_label = engine_manifest and display_text(engine_manifest.viewport) or '--'
 	local engine_canon = engine_manifest and display_text(engine_manifest.canonicalization) or '--'
 	local engine_entry = engine_manifest and display_text(engine_manifest.entry_path) or '--'
+	local vram_total = SYS_VRAM_ENGINE_ATLAS_SIZE + SYS_VRAM_PRIMARY_ATLAS_SIZE + SYS_VRAM_SECONDARY_ATLAS_SIZE + SYS_VRAM_STAGING_SIZE
 
 	return {
 		engine_title = engine_title,
@@ -127,6 +151,12 @@ local function build_info()
 		cart_entry = cart_entry,
 		cart_input = cart_input,
 		root = cart_manifest and display_text(cart_manifest.root) or '--',
+		hw_cart_max = format_bytes(SYS_CART_ROM_SIZE),
+		hw_ram_total = format_bytes(SYS_RAM_SIZE),
+		hw_vram_total = format_bytes(vram_total),
+		hw_max_assets = tostring(SYS_MAX_ASSETS),
+		hw_max_strings = tostring(SYS_STRING_HANDLE_COUNT),
+		hw_max_instructions = tostring(SYS_MAX_INSTRUCTIONS_PER_FRAME),
 	}
 end
 
@@ -152,6 +182,10 @@ local function build_progress_bar(progress, width)
 	if filled < 0 then filled = 0 end
 	if filled > width then filled = width end
 	return '[' .. string.rep('#', filled) .. string.rep('-', width - filled) .. ']'
+end
+
+local function write_kv(label, value, x, y, color, label_width)
+	write(string.format("%-" .. label_width .. "s : %s", label, value), x, y, 0, color)
 end
 
 function init()
@@ -183,39 +217,60 @@ function draw()
 
 	local info = build_info()
 	local y = top
+	local hw_specs = {
+		{ label = 'MAX CART ROM', value = info.hw_cart_max, color = color_accent },
+		{ label = 'TOTAL RAM', value = info.hw_ram_total, color = color_info_total },
+		{ label = 'TOTAL VRAM', value = info.hw_vram_total, color = color_info_total },
+		{ label = 'MAX ASSETS', value = info.hw_max_assets, color = color_accent },
+		{ label = 'MAX STRING ENTRIES', value = info.hw_max_strings, color = color_accent },
+		{ label = 'MAX INSTRUCTIONS/FRAME', value = info.hw_max_instructions, color = color_accent },
+	}
+	local cart_specs = {
+		{ label = 'CART ROM', value = info.cart_rom, color = color_accent },
+		{ label = 'CART NAME', value = info.cart_title, color = color_ok },
+		{ label = 'SHORT NAME', value = info.cart_short, color = color_text },
+		{ label = 'NAMESPACE', value = info.cart_ns, color = color_muted },
+		{ label = 'VIEWPORT', value = info.cart_view, color = color_info_total },
+		{ label = 'CANON', value = info.cart_canon, color = color_muted },
+		{ label = 'CART LUA', value = info.cart_entry, color = color_text },
+		{ label = 'INPUT MAP', value = info.cart_input, color = color_accent },
+		{ label = 'ROOT', value = info.root, color = color_muted },
+	}
+	local label_width = 0
+	for i = 1, #hw_specs do
+		local len = #hw_specs[i].label
+		if len > label_width then label_width = len end
+	end
+	for i = 1, #cart_specs do
+		local len = #cart_specs[i].label
+		if len > label_width then label_width = len end
+	end
+	local status_labels = { 'STATUS', 'BOOT STATUS' }
+	for i = 1, #status_labels do
+		local len = #status_labels[i]
+		if len > label_width then label_width = len end
+	end
+	write('SYSTEM SPECS', left, y, 0, color_section)
+	y = y + line_height
 	write(divider(width, left), left, y, color_accent)
 	y = y + line_height
-	write('ENGINE NAME: ' .. info.engine_title, left, y, 0, color_text)
+	for i = 1, #hw_specs do
+		local spec = hw_specs[i]
+		write_kv(spec.label, spec.value, left, y, spec.color or color_text, label_width)
+		y = y + line_height
+	end
 	y = y + line_height
-	write('ENGINE ROM : ' .. info.engine_rom, left, y, 0, color_text)
-	y = y + line_height
-	write('ENGINE NS  : ' .. info.engine_ns, left, y, 0, color_text)
-	y = y + line_height
-	write('ENGINE VIEW: ' .. info.engine_view, left, y, 0, color_text)
-	y = y + line_height
-	write('ENGINE LUA : ' .. info.engine_entry, left, y, 0, color_text)
-	y = y + line_height
-	write('ENGINE CAN : ' .. info.engine_canon, left, y, 0, color_text)
+	write('CARTRIDGE', left, y, 0, color_section)
 	y = y + line_height
 	write(divider(width, left), left, y, 0, color_accent)
 	y = y + line_height
-	write('CART ROM   : ' .. info.cart_rom, left, y, 0, color_text)
+	for i = 1, #cart_specs do
+		local spec = cart_specs[i]
+		write_kv(spec.label, spec.value, left, y, spec.color or color_text, label_width)
+		y = y + line_height
+	end
 	y = y + line_height
-	write('CART NAME  : ' .. info.cart_title, left, y, 0, color_text)
-	y = y + line_height
-	write('SHORT NAME : ' .. info.cart_short, left, y, 0, color_text)
-	y = y + line_height
-	write('NAMESPACE  : ' .. info.cart_ns, left, y, 0, color_text)
-	y = y + line_height
-	write('VIEWPORT   : ' .. info.cart_view, left, y, 0, color_text)
-	y = y + line_height
-	write('CANON      : ' .. info.cart_canon, left, y, 0, color_text)
-	y = y + line_height
-	write('CART LUA   : ' .. info.cart_entry, left, y, 0, color_text)
-	y = y + line_height
-	write('INPUT MAP  : ' .. info.cart_input, left, y, 0, color_text)
-	y = y + line_height
-	write('ROOT       : ' .. info.root, left, y, 0, color_muted)
+	write('BOOT STATUS', left, y, 0, color_section)
 	y = y + line_height
 	write(divider(width, left), left, y, 0, color_accent)
 	y = y + line_height
@@ -227,14 +282,14 @@ function draw()
 		local remaining = boot_delay - elapsed
 		if remaining < 0 then remaining = 0 end
 		-- local status = 'AUTOBOOT IN ' .. string.format('%.1f', remaining) .. 'S'
-		local status = peek(sys_cart_bootready) == 0 and 'LOADING CART' or 'CART LOADED'
-		write('STATUS     : ' .. status, left, y, 0, color_text)
+		local cart_ready = peek(sys_cart_bootready) ~= 0
+		local status = cart_ready and 'CART LOADED' or 'LOADING CART'
+		local status_color = cart_ready and color_ok or color_accent
+		write(status, left, y, 0, status_color)
 		y = y + line_height
-		local bar = build_progress_bar(elapsed / boot_delay, 20)
-		write('BOOT STATUS : ' .. bar .. cursor, left, y, 0, color_text)
+		local bar = build_progress_bar(elapsed / boot_delay, 40)
+		write(bar .. cursor, left, y, 0, color_text)
 	else
-		write('                             ' .. cursor, left, y, 0, color_text)
-		write('             NO CART DETECTED', left, y, 0, color_warn)
-		write('STATUS     :', left, y, 0, color_text)
+		write('NO CART DETECTED ' .. cursor, left, y, 0, color_warn)
 	end
 end

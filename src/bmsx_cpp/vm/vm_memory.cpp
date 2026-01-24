@@ -8,8 +8,6 @@
 namespace bmsx {
 namespace {
 constexpr uint32_t ASSET_TABLE_MAGIC = 0x32534D41u; // 'AMS2'
-constexpr uint32_t ASSET_TABLE_HEADER_SIZE = 40;
-constexpr uint32_t ASSET_TABLE_ENTRY_SIZE = 64;
 // 1 = FNV-1a 64 over canonical UTF-8 (lowercase, slash-normalized, collapse "//", trim leading "./").
 constexpr uint32_t ASSET_TABLE_HASH_ALG_ID = 1;
 constexpr uint32_t ASSET_PAGE_SHIFT = 12;

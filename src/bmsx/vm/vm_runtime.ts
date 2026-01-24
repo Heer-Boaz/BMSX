@@ -118,15 +118,19 @@ import {
   VDP_ATLAS_ID_NONE,
 } from './vm_io';
 import { VmHandlerCache } from './vm_handler_cache';
-import { VmMemory, type VmAssetEntry } from './vm_memory';
+import { VmMemory, ASSET_TABLE_ENTRY_SIZE, ASSET_TABLE_HEADER_SIZE, type VmAssetEntry } from './vm_memory';
 import { DmaController } from './devices/dma_controller';
 import { ImgDecController } from './devices/imgdec_controller';
 import {
+  ASSET_TABLE_SIZE,
   CART_ROM_BASE,
   CART_ROM_MAGIC_ADDR,
+  CART_ROM_SIZE,
   ENGINE_ROM_BASE,
   ENGINE_STRING_HANDLE_LIMIT,
   OVERLAY_ROM_BASE,
+  RAM_SIZE,
+  STRING_HANDLE_COUNT,
   configureMemoryMap,
   VRAM_ENGINE_ATLAS_BASE,
   VRAM_ENGINE_ATLAS_SIZE,
@@ -168,6 +172,8 @@ export const VM_BUTTON_ACTIONS: ReadonlyArray<string> = [
 	'rb',
 	'lb',
 ];
+
+const MAX_ASSETS = Math.floor((ASSET_TABLE_SIZE - ASSET_TABLE_HEADER_SIZE) / ASSET_TABLE_ENTRY_SIZE);
 
 // Flip back to 'msx' to restore default font in vm/editor
 export const EDITOR_FONT_VARIANT: VMFontVariant = 'tiny';
@@ -217,7 +223,7 @@ export var api: BmsxVMApi; // Initialized in BmsxVMRuntime constructor
 export class BmsxVMRuntime {
 	private static _instance: BmsxVMRuntime = null;
 	private static readonly ENGINE_BUILTIN_PRELUDE_PATH = '__engine_builtin_prelude__';
-	private static readonly LUA_SNAPSHOT_EXCLUDED_GLOBALS = new Set<string>(['print', 'type', 'tostring', 'tonumber', 'setmetatable', 'getmetatable', 'require', 'pairs', 'ipairs', 'serialize', 'deserialize', 'math', 'easing', 'string', 'os', 'table', 'coroutine', 'debug', 'package', 'api', 'peek', 'poke', 'SYS_BOOT_CART', 'SYS_CART_MAGIC_ADDR', 'SYS_CART_MAGIC', 'SYS_VDP_DITHER', 'SYS_VDP_PRIMARY_ATLAS_ID', 'SYS_VDP_SECONDARY_ATLAS_ID', 'SYS_VDP_ATLAS_NONE', 'SYS_IRQ_FLAGS', 'SYS_IRQ_ACK', 'SYS_DMA_SRC', 'SYS_DMA_DST', 'SYS_DMA_LEN', 'SYS_DMA_CTRL', 'SYS_DMA_STATUS', 'SYS_DMA_WRITTEN', 'SYS_IMG_SRC', 'SYS_IMG_LEN', 'SYS_IMG_DST', 'SYS_IMG_CAP', 'SYS_IMG_CTRL', 'SYS_IMG_STATUS', 'SYS_IMG_WRITTEN', 'SYS_ENGINE_ROM_BASE', 'SYS_CART_ROM_BASE', 'SYS_OVERLAY_ROM_BASE', 'SYS_VRAM_ENGINE_ATLAS_BASE', 'SYS_VRAM_PRIMARY_ATLAS_BASE', 'SYS_VRAM_SECONDARY_ATLAS_BASE', 'SYS_VRAM_STAGING_BASE', 'SYS_VRAM_ENGINE_ATLAS_SIZE', 'SYS_VRAM_PRIMARY_ATLAS_SIZE', 'SYS_VRAM_SECONDARY_ATLAS_SIZE', 'SYS_VRAM_STAGING_SIZE', 'IRQ_DMA_DONE', 'IRQ_DMA_ERROR', 'IRQ_IMG_DONE', 'IRQ_IMG_ERROR', 'DMA_CTRL_START', 'DMA_CTRL_STRICT', 'DMA_STATUS_BUSY', 'DMA_STATUS_DONE', 'DMA_STATUS_ERROR', 'DMA_STATUS_CLIPPED', 'IMG_CTRL_START', 'IMG_STATUS_BUSY', 'IMG_STATUS_DONE', 'IMG_STATUS_ERROR', 'IMG_STATUS_CLIPPED']);
+	private static readonly LUA_SNAPSHOT_EXCLUDED_GLOBALS = new Set<string>(['print', 'type', 'tostring', 'tonumber', 'setmetatable', 'getmetatable', 'require', 'pairs', 'ipairs', 'serialize', 'deserialize', 'math', 'easing', 'string', 'os', 'table', 'coroutine', 'debug', 'package', 'api', 'peek', 'poke', 'SYS_BOOT_CART', 'SYS_CART_MAGIC_ADDR', 'SYS_CART_MAGIC', 'SYS_CART_ROM_SIZE', 'SYS_RAM_SIZE', 'SYS_MAX_ASSETS', 'SYS_STRING_HANDLE_COUNT', 'SYS_MAX_INSTRUCTIONS_PER_FRAME', 'SYS_VDP_DITHER', 'SYS_VDP_PRIMARY_ATLAS_ID', 'SYS_VDP_SECONDARY_ATLAS_ID', 'SYS_VDP_ATLAS_NONE', 'SYS_IRQ_FLAGS', 'SYS_IRQ_ACK', 'SYS_DMA_SRC', 'SYS_DMA_DST', 'SYS_DMA_LEN', 'SYS_DMA_CTRL', 'SYS_DMA_STATUS', 'SYS_DMA_WRITTEN', 'SYS_IMG_SRC', 'SYS_IMG_LEN', 'SYS_IMG_DST', 'SYS_IMG_CAP', 'SYS_IMG_CTRL', 'SYS_IMG_STATUS', 'SYS_IMG_WRITTEN', 'SYS_ENGINE_ROM_BASE', 'SYS_CART_ROM_BASE', 'SYS_OVERLAY_ROM_BASE', 'SYS_VRAM_ENGINE_ATLAS_BASE', 'SYS_VRAM_PRIMARY_ATLAS_BASE', 'SYS_VRAM_SECONDARY_ATLAS_BASE', 'SYS_VRAM_STAGING_BASE', 'SYS_VRAM_ENGINE_ATLAS_SIZE', 'SYS_VRAM_PRIMARY_ATLAS_SIZE', 'SYS_VRAM_SECONDARY_ATLAS_SIZE', 'SYS_VRAM_STAGING_SIZE', 'IRQ_DMA_DONE', 'IRQ_DMA_ERROR', 'IRQ_IMG_DONE', 'IRQ_IMG_ERROR', 'DMA_CTRL_START', 'DMA_CTRL_STRICT', 'DMA_STATUS_BUSY', 'DMA_STATUS_DONE', 'DMA_STATUS_ERROR', 'DMA_STATUS_CLIPPED', 'IMG_CTRL_START', 'IMG_STATUS_BUSY', 'IMG_STATUS_DONE', 'IMG_STATUS_ERROR', 'IMG_STATUS_CLIPPED']);
 	/**
 	 * Preserved render queue when a fault occurs
 	 * This is used to restore the render queue to its previous state
@@ -2441,6 +2447,11 @@ export class BmsxVMRuntime {
 		this.registerVmGlobal('SYS_CART_BOOTREADY', IO_SYS_CART_BOOTREADY);
 		this.registerVmGlobal('SYS_CART_MAGIC_ADDR', CART_ROM_MAGIC_ADDR);
 		this.registerVmGlobal('SYS_CART_MAGIC', CART_ROM_MAGIC);
+		this.registerVmGlobal('SYS_CART_ROM_SIZE', CART_ROM_SIZE);
+		this.registerVmGlobal('SYS_RAM_SIZE', RAM_SIZE);
+		this.registerVmGlobal('SYS_MAX_ASSETS', MAX_ASSETS);
+		this.registerVmGlobal('SYS_STRING_HANDLE_COUNT', STRING_HANDLE_COUNT);
+		this.registerVmGlobal('SYS_MAX_INSTRUCTIONS_PER_FRAME', BmsxVMRuntime.UPDATE_STATEMENT_BUDGET);
 		this.registerVmGlobal('SYS_VDP_DITHER', IO_VDP_DITHER);
 		this.registerVmGlobal('SYS_VDP_PRIMARY_ATLAS_ID', IO_VDP_PRIMARY_ATLAS_ID);
 		this.registerVmGlobal('SYS_VDP_SECONDARY_ATLAS_ID', IO_VDP_SECONDARY_ATLAS_ID);
