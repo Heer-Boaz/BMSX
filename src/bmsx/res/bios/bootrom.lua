@@ -252,7 +252,7 @@ function draw()
 	end
 	write('SYSTEM SPECS', left, y, 0, color_section)
 	y = y + line_height
-	write(divider(width, left), left, y, color_accent)
+	write(divider(width, left), left, y, color_section)
 	y = y + line_height
 	for i = 1, #hw_specs do
 		local spec = hw_specs[i]
@@ -262,7 +262,7 @@ function draw()
 	y = y + line_height
 	write('CARTRIDGE', left, y, 0, color_section)
 	y = y + line_height
-	write(divider(width, left), left, y, 0, color_accent)
+	write(divider(width, left), left, y, 0, color_section)
 	y = y + line_height
 	for i = 1, #cart_specs do
 		local spec = cart_specs[i]
@@ -272,7 +272,7 @@ function draw()
 	y = y + line_height
 	write('BOOT STATUS', left, y, 0, color_section)
 	y = y + line_height
-	write(divider(width, left), left, y, 0, color_accent)
+	write(divider(width, left), left, y, 0, color_section)
 	y = y + line_height
 
 	local cart_present = peek(CART_ROM_BASE) == CART_ROM_MAGIC
