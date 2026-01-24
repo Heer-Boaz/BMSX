@@ -112,6 +112,24 @@ local function format_bytes(value)
 	return tostring(value) .. " B"
 end
 
+local function format_bignumbers(value)
+	if value >= 1000000 then
+		local scaled = value / 1000000
+		if scaled == math.floor(scaled) then
+			return string.format("%dM", scaled)
+		end
+		return string.format("%.1fM", scaled)
+	end
+	if value >= 1000 then
+		local scaled = value / 1000
+		if scaled == math.floor(scaled) then
+			return string.format("%dK", scaled)
+		end
+		return string.format("%.1fK", scaled)
+	end
+	return tostring(value)
+end
+
 local function build_info()
 	local cart_header = read_cart_header(CART_ROM_BASE)
 	local cart_manifest = cart_header and read_bios_manifest(CART_ROM_BASE, cart_header) or nil
@@ -154,9 +172,9 @@ local function build_info()
 		hw_cart_max = format_bytes(SYS_CART_ROM_SIZE),
 		hw_ram_total = format_bytes(SYS_RAM_SIZE),
 		hw_vram_total = format_bytes(vram_total),
-		hw_max_assets = tostring(SYS_MAX_ASSETS),
-		hw_max_strings = tostring(SYS_STRING_HANDLE_COUNT),
-		hw_max_instructions = tostring(SYS_MAX_INSTRUCTIONS_PER_FRAME),
+		hw_max_assets = format_bignumbers(SYS_MAX_ASSETS),
+		hw_max_strings = format_bignumbers(SYS_STRING_HANDLE_COUNT),
+		hw_max_instructions = format_bignumbers(SYS_MAX_INSTRUCTIONS_PER_FRAME),
 	}
 end
 

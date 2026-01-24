@@ -330,32 +330,44 @@ export async function esbuild(romname: string, bootloader_path: string, debug: b
 export async function buildEngineRuntime(options: { debug: boolean }): Promise<void> {
 	const { debug } = options;
 	await mkdir('./rom', { recursive: true });
-	await build({
-		entryPoints: ['./src/bmsx/vm/engine_entry.ts'],
-		bundle: true,
-		platform: 'browser',
-		format: 'iife',
-		target: 'es2020',
-		outfile: './rom/engine.js',
-		keepNames: true,
-		minify: !debug,
-		sourcemap: debug ? 'inline' : false,
-		sourcesContent: debug,
-		define: {
-			'process.env.NODE_ENV': debug ? '"development"' : '"production"',
-		},
-		plugins: [
-			glsl({ minify: !debug }),
-		],
-		loader: {
-			'.png': 'dataurl',
-			'.glsl': 'text',
-			'.json': 'json',
-			'.html': 'text',
-		},
-	});
+
+	const buildRuntime = async (outfile: string, buildDebug: boolean): Promise<void> => {
+		await build({
+			entryPoints: ['./src/bmsx/vm/engine_entry.ts'],
+			bundle: true,
+			platform: 'browser',
+			format: 'iife',
+			target: 'es2020',
+			outfile,
+			keepNames: true,
+			minify: !buildDebug,
+			sourcemap: buildDebug ? 'inline' : false,
+			sourcesContent: buildDebug,
+			define: {
+				'process.env.NODE_ENV': buildDebug ? '"development"' : '"production"',
+			},
+			plugins: [
+				glsl({ minify: !buildDebug }),
+			],
+			loader: {
+				'.png': 'dataurl',
+				'.glsl': 'text',
+				'.json': 'json',
+				'.html': 'text',
+			},
+		});
+	};
+
+	await buildRuntime('./rom/engine.js', false);
+	if (debug) {
+		await buildRuntime('./rom/engine.debug.js', true);
+	}
+
 	await mkdir('./dist', { recursive: true });
 	await copyFile('./rom/engine.js', './dist/engine.js');
+	if (debug) {
+		await copyFile('./rom/engine.debug.js', './dist/engine.debug.js');
+	}
 }
 
 /**
@@ -554,6 +566,7 @@ export async function buildGameHtmlAndManifest(rom_name: string, title: string, 
 			'//#zipjs': zipjs,
 			'/*#css*/': cssMinified,
 			'#title': title,
+			'#enginejs': debug ? 'engine.debug.js' : 'engine.js',
 			'//#debug': `bootrom.debug = ${debug};\n\t\tbootrom.romname = getRomNameFromUrlParameter() ?? '${rom_name}';\n`,
 			'#outfile': `${rom_name}.${debug ? 'debug.' : ''}rom`,
 			'#biospath': `./bmsx-bios.${debug ? 'debug.' : ''}rom`,

@@ -744,25 +744,43 @@ void VMCPU::callExternal(Closure* closure, const std::vector<Value>& args) {
 }
 
 RunResult VMCPU::run(std::optional<int> instructionBudget) {
-	instructionBudgetRemaining = instructionBudget;
+	const auto previousBudget = instructionBudgetRemaining;
+	const bool ownsBudget = instructionBudget.has_value();
+	if (ownsBudget) {
+		instructionBudgetRemaining = instructionBudget;
+	}
+	RunResult result = RunResult::Halted;
 	while (!m_frames.empty()) {
 		if (instructionBudgetRemaining.has_value() && *instructionBudgetRemaining <= 0) {
-			return RunResult::Yielded;
+			result = RunResult::Yielded;
+			break;
 		}
 		step();
 	}
-	return RunResult::Halted;
+	if (ownsBudget) {
+		instructionBudgetRemaining = previousBudget;
+	}
+	return result;
 }
 
 RunResult VMCPU::runUntilDepth(int targetDepth, std::optional<int> instructionBudget) {
-	instructionBudgetRemaining = instructionBudget;
+	const auto previousBudget = instructionBudgetRemaining;
+	const bool ownsBudget = instructionBudget.has_value();
+	if (ownsBudget) {
+		instructionBudgetRemaining = instructionBudget;
+	}
+	RunResult result = RunResult::Halted;
 	while (static_cast<int>(m_frames.size()) > targetDepth) {
 		if (instructionBudgetRemaining.has_value() && *instructionBudgetRemaining <= 0) {
-			return RunResult::Yielded;
+			result = RunResult::Yielded;
+			break;
 		}
 		step();
 	}
-	return RunResult::Halted;
+	if (ownsBudget) {
+		instructionBudgetRemaining = previousBudget;
+	}
+	return result;
 }
 
 void VMCPU::step() {

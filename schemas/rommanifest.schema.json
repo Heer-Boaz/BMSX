@@ -78,11 +78,55 @@
 					"type": "integer",
 					"minimum": 1,
 					"description": "Maximum skybox face size in pixels (square)."
+				},
+				"limits": {
+					"$ref": "#/definitions/vmLimits"
 				}
 			},
 			"required": [
 				"namespace"
 			],
+			"additionalProperties": false
+		},
+		"vmLimits": {
+			"type": "object",
+			"description": "Soft VM limits for memory and runtime budgets.",
+			"properties": {
+				"atlas_slot_bytes": {
+					"type": "integer",
+					"minimum": 1
+				},
+				"staging_bytes": {
+					"type": "integer",
+					"minimum": 1
+				},
+				"max_instructions_per_frame": {
+					"type": "integer",
+					"minimum": 1
+				},
+				"max_voices": {
+					"$ref": "#/definitions/vmVoiceLimits"
+				}
+			},
+			"additionalProperties": false
+		},
+		"vmVoiceLimits": {
+			"type": "object",
+			"description": "Per-channel voice caps.",
+			"properties": {
+				"sfx": {
+					"type": "integer",
+					"minimum": 1
+				},
+				"music": {
+					"type": "integer",
+					"minimum": 1
+				},
+				"ui": {
+					"type": "integer",
+					"minimum": 1
+				}
+			},
 			"additionalProperties": false
 		},
 		"inputMap": {

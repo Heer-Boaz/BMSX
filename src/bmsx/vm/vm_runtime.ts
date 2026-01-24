@@ -21,7 +21,7 @@ import {
 import type { StorageService } from '../platform/platform';
 import { publishOverlayFrame } from '../render/editor/editor_overlay_queue';
 import type { SkyboxImageIds } from '../render/shared/render_types';
-import type { AudioMeta, ImgMeta, Viewport, BmsxCartridgeBlob, CartridgeIndex, RuntimeAssets, id2res } from '../rompack/rompack';
+import type { AudioMeta, ImgMeta, Viewport, BmsxCartridgeBlob, CartridgeIndex, RuntimeAssets, VmLimits, id2res } from '../rompack/rompack';
 import {
 	CanonicalizationType,
 	CART_ROM_HEADER_SIZE,
@@ -185,6 +185,7 @@ type VMFrameState = {
 	updateExecuted: boolean;
 	luaFaulted: boolean;
 	deltaSeconds: number;
+	instructionBudgetRemaining: number;
 };
 
 class DebugPauseCoordinator {
@@ -239,6 +240,32 @@ export class BmsxVMRuntime {
 		return new BmsxVMRuntime(options);
 	}
 
+	private static resolveInstructionBudget(limits?: VmLimits): number {
+		if (limits && limits.max_instructions_per_frame !== undefined) {
+			if (!Number.isFinite(limits.max_instructions_per_frame)) {
+				throw new Error('[BmsxVMRuntime] max_instructions_per_frame must be a finite number.');
+			}
+			const value = Math.floor(limits.max_instructions_per_frame);
+			if (value <= 0) {
+				throw new Error('[BmsxVMRuntime] max_instructions_per_frame must be greater than 0.');
+			}
+			return value;
+		}
+		return BmsxVMRuntime.UPDATE_STATEMENT_BUDGET;
+	}
+
+	private setInstructionBudgetPerFrame(value: number): void {
+		this.instructionBudgetPerFrame = value;
+		this.registerVmGlobal('SYS_MAX_INSTRUCTIONS_PER_FRAME', value);
+	}
+
+	private runVmWithBudget(state: VMFrameState): RunResult {
+		this.cpu.instructionBudgetRemaining = state.instructionBudgetRemaining;
+		const result = this.cpu.run(null);
+		state.instructionBudgetRemaining = this.cpu.instructionBudgetRemaining as number;
+		return result;
+	}
+
 	public readonly storage: BmsxVMStorage;
 	public readonly storageService: StorageService;
 	public readonly luaJsBridge!: LuaJsBridge;
@@ -280,8 +307,15 @@ export class BmsxVMRuntime {
 	private vmUpdateClosure: Closure = null;
 	private vmDrawClosure: Closure = null;
 	private vmIrqClosure: Closure = null;
-	private pendingVmCall: 'update' | 'draw' = null;
+	private engineUpdateClosure: Closure = null;
+	private engineDrawClosure: Closure = null;
+	private engineResetClosure: Closure = null;
+	private pendingVmCall: 'update' | 'draw' | 'engine_update' | 'engine_draw' | 'init' | 'new_game_reset' | 'new_game' | 'irq' = null;
+	private pendingLifecycleQueue: Array<'init' | 'new_game_reset' | 'new_game'> = [];
 	private pendingProgramReload: { runInit?: boolean } = null;
+	public get isDrawPending(): boolean {
+		return this.pendingVmCall === 'draw' || this.pendingVmCall === 'engine_draw';
+	}
 	private readonly memory: VmMemory;
 	private readonly cpu: VMCPU;
 	private readonly stringHandles: StringHandleTable;
@@ -302,6 +336,7 @@ export class BmsxVMRuntime {
 	}
 	private includeJsStackTraces = false;
 	private currentFrameState: VMFrameState = null;
+	private instructionBudgetPerFrame: number;
 	private pendingLuaWarnings: string[] = [];
 	public readonly vmModuleAliases: Map<string, string> = new Map();
 	public readonly luaChunkEnvironmentsByPath: Map<string, LuaEnvironment> = new Map();
@@ -394,6 +429,7 @@ export class BmsxVMRuntime {
 		if (!cartridge) {
 			$.set_lua_sources(engineLuaSources);
 			configureMemoryMap(engineLayer.index.manifest.vm.limits);
+			const instructionBudgetPerFrame = BmsxVMRuntime.resolveInstructionBudget(engineLayer.index.manifest.vm.limits);
 			const memory = new VmMemory({
 				engineRom: new Uint8Array(engineLayer.payload),
 				cartRom: new Uint8Array(CART_ROM_HEADER_SIZE),
@@ -403,6 +439,7 @@ export class BmsxVMRuntime {
 				canonicalization: engineLayer.index.manifest.vm.canonicalization,
 				viewport: engineLayer.index.manifest.vm.viewport,
 				memory,
+				instructionBudgetPerFrame,
 			});
 			runtime.configureProgramSources({
 				engineSources: engineLuaSources,
@@ -454,6 +491,7 @@ export class BmsxVMRuntime {
 
 		const vmLimits = cartLayer.index.manifest.vm.limits ?? engineLayer.index.manifest.vm.limits;
 		configureMemoryMap(vmLimits);
+		const instructionBudgetPerFrame = BmsxVMRuntime.resolveInstructionBudget(vmLimits);
 		const memory = new VmMemory({
 			engineRom: new Uint8Array(engineLayer.payload),
 			cartRom: new Uint8Array(cartLayer.payload),
@@ -464,6 +502,7 @@ export class BmsxVMRuntime {
 			canonicalization: engineLayer.index.manifest.vm.canonicalization,
 			viewport: cartLayer.index.manifest.vm.viewport,
 			memory,
+			instructionBudgetPerFrame,
 		});
 		runtime.cartAssetLayer = cartLayer;
 		runtime.overlayAssetLayer = overlayLayer;
@@ -589,6 +628,7 @@ export class BmsxVMRuntime {
 	private constructor(options: BmsxVMRuntimeOptions) {
 		BmsxVMRuntime._instance = this;
 		this.playerIndex = options.playerIndex;
+		this.instructionBudgetPerFrame = options.instructionBudgetPerFrame;
 		this.storageService = $.platform.storage;
 		this.storage = new BmsxVMStorage(this.storageService, $.lua_sources.namespace);
 		const resolvedCanonicalization = options.canonicalization ?? 'none';
@@ -702,8 +742,10 @@ export class BmsxVMRuntime {
 		this.vmUpdateClosure = null;
 		this.vmDrawClosure = null;
 		this.vmIrqClosure = null;
+		this.engineResetClosure = null;
 		this.vmConsoleMetadata = null;
 		this.pendingVmCall = null;
+		this.pendingLifecycleQueue = [];
 		this.luaRuntimeFailed = false;
 		this.luaVmInitialized = false;
 	}
@@ -1045,6 +1087,7 @@ export class BmsxVMRuntime {
 			updateExecuted: false,
 			luaFaulted: this.luaRuntimeFailed,
 			deltaSeconds,
+			instructionBudgetRemaining: this.instructionBudgetPerFrame,
 		};
 		this.currentFrameState = state;
 		return state;
@@ -1166,7 +1209,7 @@ export class BmsxVMRuntime {
 		this.memory.writeValue(IO_IRQ_FLAGS, (current | mask) >>> 0);
 	}
 
-	private dispatchIrqFlags(): void {
+	private dispatchIrqFlags(state: VMFrameState): boolean {
 		const ack = (this.memory.readValue(IO_IRQ_ACK) as number) >>> 0;
 		let flags = (this.memory.readValue(IO_IRQ_FLAGS) as number) >>> 0;
 		if (ack !== 0) {
@@ -1175,12 +1218,16 @@ export class BmsxVMRuntime {
 			this.memory.writeValue(IO_IRQ_ACK, 0);
 		}
 		if (flags === 0) {
-			return;
+			return false;
 		}
 		this.cpu.call(this.vmIrqClosure, [flags], 0);
-		this.cpu.instructionBudgetRemaining = null;
-		this.cpu.run(null);
+		this.pendingVmCall = 'irq';
+		const result = this.runVmWithBudget(state);
 		this.processVmIo();
+		if (result === RunResult.Halted) {
+			this.pendingVmCall = null;
+		}
+		return this.pendingVmCall === 'irq';
 	}
 
 	private runUpdatePhase(state: VMFrameState): void {
@@ -1205,10 +1252,35 @@ export class BmsxVMRuntime {
 			return;
 		}
 		try {
+			if (this.pendingVmCall === 'irq') {
+				const result = this.runVmWithBudget(state);
+				this.processVmIo();
+				if (result === RunResult.Halted) {
+					this.pendingVmCall = null;
+				}
+				state.updateExecuted = true;
+				return;
+			}
+			if (this.runLifecyclePhase(state)) {
+				state.updateExecuted = true;
+				return;
+			}
 			if (!this.pendingVmCall) {
-				this.dispatchIrqFlags();
+				if (this.dispatchIrqFlags(state)) {
+					state.updateExecuted = true;
+					return;
+				}
 			}
 			let shouldRunEngineUpdate = this.vmUpdateClosure === null;
+			if (this.pendingVmCall === 'engine_update') {
+				const result = this.runVmWithBudget(state);
+				this.processVmIo();
+				if (result === RunResult.Halted) {
+					this.pendingVmCall = null;
+				}
+				state.updateExecuted = true;
+				return;
+			}
 			if (this.pendingVmCall && this.pendingVmCall !== 'update') {
 				state.updateExecuted = true;
 				return;
@@ -1218,8 +1290,7 @@ export class BmsxVMRuntime {
 					this.cpu.call(this.vmUpdateClosure, [state.deltaSeconds], 0);
 					this.pendingVmCall = 'update';
 				}
-				const budget = BmsxVMRuntime.UPDATE_STATEMENT_BUDGET;
-				const result = this.cpu.run(budget);
+				const result = this.runVmWithBudget(state);
 				this.processVmIo();
 				if (result === RunResult.Halted) {
 					this.pendingVmCall = null;
@@ -1227,8 +1298,14 @@ export class BmsxVMRuntime {
 				}
 			}
 			if (shouldRunEngineUpdate) {
-				this.callEngineModuleMember('update', [$.deltatime]);
+				const deltaMs = state.deltaSeconds * 1000;
+				this.cpu.call(this.engineUpdateClosure, [deltaMs], 0);
+				this.pendingVmCall = 'engine_update';
+				const result = this.runVmWithBudget(state);
 				this.processVmIo();
+				if (result === RunResult.Halted) {
+					this.pendingVmCall = null;
+				}
 			}
 		} catch (error) {
 			if (isLuaDebuggerPauseSignal(error)) {
@@ -1303,18 +1380,37 @@ export class BmsxVMRuntime {
 				return;
 			}
 			if (this.luaVmGate.ready) {
-				if (this.pendingVmCall === 'update' || this.debuggerPaused || this.luaRuntimeFailed || this.faultSnapshot) {
+				if (this.pendingVmCall === 'update'
+					|| this.pendingVmCall === 'engine_update'
+					|| this.pendingVmCall === 'init'
+					|| this.pendingVmCall === 'new_game_reset'
+					|| this.pendingVmCall === 'new_game'
+					|| this.pendingVmCall === 'irq'
+					|| this.pendingLifecycleQueue.length > 0
+					|| this.debuggerPaused
+					|| this.luaRuntimeFailed
+					|| this.faultSnapshot) {
 					this.overlayRenderBackend.playbackRenderQueue(this.preservedRenderQueue);
 				}
 				else {
 					try {
+						const frameState = this.currentFrameState;
+						if (this.pendingVmCall === 'engine_draw') {
+							const result = this.runVmWithBudget(frameState);
+							this.processVmIo();
+							if (result === RunResult.Halted) {
+								this.pendingVmCall = null;
+							}
+							this.preservedRenderQueue = this.overlayRenderBackend.captureCurrentFrameRenderQueue();
+							return;
+						}
 						let shouldRunEngineDraw = this.vmDrawClosure === null;
 						if (this.vmDrawClosure !== null) {
 							if (!this.pendingVmCall) {
 								this.cpu.call(this.vmDrawClosure, [], 0);
 								this.pendingVmCall = 'draw';
 							}
-							const result = this.cpu.run(BmsxVMRuntime.UPDATE_STATEMENT_BUDGET);
+							const result = this.runVmWithBudget(frameState);
 							this.processVmIo();
 							if (result === RunResult.Halted) {
 								this.pendingVmCall = null;
@@ -1322,8 +1418,13 @@ export class BmsxVMRuntime {
 							}
 						}
 						if (shouldRunEngineDraw) {
-							this.callEngineModuleMember('draw', []);
+							this.cpu.call(this.engineDrawClosure, [], 0);
+							this.pendingVmCall = 'engine_draw';
+							const result = this.runVmWithBudget(frameState);
 							this.processVmIo();
+							if (result === RunResult.Halted) {
+								this.pendingVmCall = null;
+							}
 						}
 						this.preservedRenderQueue = this.overlayRenderBackend.captureCurrentFrameRenderQueue();
 					} catch (error) {
@@ -1567,7 +1668,7 @@ export class BmsxVMRuntime {
 		if (!this.luaVmGate.ready) {
 			return;
 		}
-		if (this.currentFrameState || this.pendingVmCall) {
+		if (this.currentFrameState || this.pendingVmCall || this.pendingLifecycleQueue.length > 0) {
 			return;
 		}
 		this.pendingCartBoot = false;
@@ -1583,7 +1684,7 @@ export class BmsxVMRuntime {
 			this.pendingProgramReload = null;
 			return;
 		}
-		if (this.currentFrameState || this.pendingVmCall) {
+		if (this.currentFrameState || this.pendingVmCall || this.pendingLifecycleQueue.length > 0) {
 			return;
 		}
 		const options = this.pendingProgramReload;
@@ -1768,6 +1869,7 @@ export class BmsxVMRuntime {
 		const finalizedMetadata = prelude.metadata;
 		this.cpu.start(entryProtoIndex);
 		this.pendingVmCall = null;
+		this.pendingLifecycleQueue = [];
 		this.cpu.instructionBudgetRemaining = null;
 		this.cpu.run(null);
 		this.processVmIo();
@@ -1795,29 +1897,83 @@ export class BmsxVMRuntime {
 		this.vmUpdateClosure = globals.get(this.vmKey('update')) as Closure;
 		this.vmDrawClosure = globals.get(this.vmKey('draw')) as Closure;
 		this.vmIrqClosure = globals.get(this.vmKey('irq')) as Closure;
+		const engineModule = this.requireVmModule('engine') as Table;
+		this.engineUpdateClosure = engineModule.get(this.vmKey('update')) as Closure;
+		this.engineDrawClosure = engineModule.get(this.vmKey('draw')) as Closure;
+		this.engineResetClosure = engineModule.get(this.vmKey('reset')) as Closure;
 	}
 
-	private runLuaLifecycleHandler(kind: 'init' | 'new_game'): boolean {
-		const fn = kind === 'init' ? this.vmInitClosure : this.vmNewGameClosure;
-		try {
-			if (!fn) throw new Error(`VM lifecycle handler '${kind}' is not defined.`);
-			if (kind === 'new_game') {
-				this.callEngineModuleMember('reset', []);
+	private queueLifecycleHandlers(options: { runInit: boolean; runNewGame: boolean }): void {
+		this.pendingLifecycleQueue = [];
+		if (options.runInit) {
+			if (!this.vmInitClosure) {
+				throw new Error(`VM lifecycle handler 'init' is not defined.`);
 			}
-			this.cpu.call(fn, [], 0);
-			this.cpu.instructionBudgetRemaining = null;
-			this.cpu.run(null);
-			this.processVmIo();
-			return true;
+			this.pendingLifecycleQueue.push('init');
 		}
-		catch (error) {
-			if (isLuaDebuggerPauseSignal(error)) {
-				this.onLuaDebuggerPause(error);
-			} else {
-				this.handleLuaError(error);
+		if (options.runNewGame) {
+			if (!this.engineResetClosure) {
+				throw new Error(`VM lifecycle handler 'engine.reset' is not defined.`);
 			}
+			if (!this.vmNewGameClosure) {
+				throw new Error(`VM lifecycle handler 'new_game' is not defined.`);
+			}
+			this.pendingLifecycleQueue.push('new_game_reset', 'new_game');
+		}
+		if (!this.pendingVmCall) {
+			this.startNextLifecycleCall();
+		}
+	}
+
+	private startNextLifecycleCall(): void {
+		if (this.pendingVmCall) {
+			return;
+		}
+		const next = this.pendingLifecycleQueue.shift();
+		if (!next) {
+			return;
+		}
+		if (next === 'init') {
+			this.cpu.call(this.vmInitClosure, [], 0);
+			this.pendingVmCall = 'init';
+			return;
+		}
+		if (next === 'new_game_reset') {
+			this.cpu.call(this.engineResetClosure, [], 0);
+			this.pendingVmCall = 'new_game_reset';
+			return;
+		}
+		this.cpu.call(this.vmNewGameClosure, [], 0);
+		this.pendingVmCall = 'new_game';
+	}
+
+	private runLifecyclePhase(state: VMFrameState): boolean {
+		const lifecyclePending = this.pendingVmCall === 'init'
+			|| this.pendingVmCall === 'new_game_reset'
+			|| this.pendingVmCall === 'new_game';
+		if (!lifecyclePending && this.pendingLifecycleQueue.length === 0) {
 			return false;
 		}
+		if (!lifecyclePending && this.pendingVmCall) {
+			return false;
+		}
+		let ranLifecycle = false;
+		while (true) {
+			if (!this.pendingVmCall) {
+				this.startNextLifecycleCall();
+				if (!this.pendingVmCall) {
+					break;
+				}
+			}
+			ranLifecycle = true;
+			const result = this.runVmWithBudget(state);
+			this.processVmIo();
+			if (result !== RunResult.Halted) {
+				break;
+			}
+			this.pendingVmCall = null;
+		}
+		return ranLifecycle;
 	}
 
 	public reloadLuaProgramState(options: { runInit?: boolean; }): void {
@@ -1840,12 +1996,7 @@ export class BmsxVMRuntime {
 		else {
 			this.hotReloadProgramEntry({ source: getSourceForChunk(binding.source_path), path: binding.source_path });
 			if (runInit) {
-				if (this.runLuaLifecycleHandler('init')) {
-					// Initialization successful
-					if (!this.runLuaLifecycleHandler('new_game')) {
-						console.info(`[BmsxVMRuntime] Lua 'new_game' lifecycle handler failed during reload.`);
-					}
-				}
+				this.queueLifecycleHandlers({ runInit: true, runNewGame: true });
 			}
 		}
 		this.luaVmInitialized = true;
@@ -1870,7 +2021,7 @@ export class BmsxVMRuntime {
 		}
 		this.refreshLuaModulesOnResume(binding);
 		clearNativeMemberCompletionCache();
-		this.runLuaLifecycleHandler('init');
+		this.queueLifecycleHandlers({ runInit: true, runNewGame: false });
 		this.restoreVmState(snapshot);
 		if (savedRuntimeFailed) {
 			this.luaRuntimeFailed = true;
@@ -1911,8 +2062,7 @@ export class BmsxVMRuntime {
 		if (params.hotReload) {
 			this.hotReloadProgramEntry({ source: params.source, path: binding.source_path, preserveEngineModules: !this.isEngineProgramActive() });
 			if (params.runInit && !savedRuntimeFailed) {
-				this.runLuaLifecycleHandler('init');
-				this.runLuaLifecycleHandler('new_game');
+				this.queueLifecycleHandlers({ runInit: true, runNewGame: true });
 			}
 			this.restoreVmState(snapshot);
 			if (savedRuntimeFailed) {
@@ -1944,7 +2094,6 @@ export class BmsxVMRuntime {
 		this.vmProgramMetadata = prelude.metadata;
 		this.cpu.start(entryProtoIndex);
 		this.pendingVmCall = null;
-		this.cpu.instructionBudgetRemaining = null;
 		this.cpu.run(null);
 		this.processVmIo();
 		this.luaVmInitialized = true;
@@ -1952,7 +2101,7 @@ export class BmsxVMRuntime {
 		this.bindLifecycleHandlers();
 
 		if (params.runInit && !savedRuntimeFailed) {
-			this.runLuaLifecycleHandler('init');
+			this.queueLifecycleHandlers({ runInit: true, runNewGame: false });
 		}
 		this.restoreVmState(snapshot);
 		if (savedRuntimeFailed) {
@@ -2170,13 +2319,14 @@ export class BmsxVMRuntime {
 
 	private resetVmState(): void {
 		this.pendingVmCall = null;
+		this.pendingLifecycleQueue = [];
 		this.pendingCartBoot = false;
 		this.vmInitClosure = null;
 		this.vmNewGameClosure = null;
 		this.vmUpdateClosure = null;
 		this.vmDrawClosure = null;
 		this.vmIrqClosure = null;
-		this.cpu.instructionBudgetRemaining = null;
+		this.engineResetClosure = null;
 		this.cpu.globals.clear();
 		this.vmModuleCache.clear();
 		this.vmModuleProtos.clear();
@@ -2186,13 +2336,6 @@ export class BmsxVMRuntime {
 	private registerVmGlobal(name: string, value: Value): void {
 		const key = this.vmKey(name);
 		this.cpu.globals.set(key, value);
-	}
-
-	private callEngineModuleMember(name: string, args: ReadonlyArray<Value>): Value[] {
-		const engine = this.requireVmModule('engine') as Table;
-		const key = this.vmKey(name);
-		const member = engine.get(key) as Closure;
-		return this.callVmFunction(member, args as Value[]);
 	}
 
 	private buildEngineBuiltinPreludeSource(): string {
@@ -2451,7 +2594,7 @@ export class BmsxVMRuntime {
 		this.registerVmGlobal('SYS_RAM_SIZE', RAM_SIZE);
 		this.registerVmGlobal('SYS_MAX_ASSETS', MAX_ASSETS);
 		this.registerVmGlobal('SYS_STRING_HANDLE_COUNT', STRING_HANDLE_COUNT);
-		this.registerVmGlobal('SYS_MAX_INSTRUCTIONS_PER_FRAME', BmsxVMRuntime.UPDATE_STATEMENT_BUDGET);
+		this.registerVmGlobal('SYS_MAX_INSTRUCTIONS_PER_FRAME', this.instructionBudgetPerFrame);
 		this.registerVmGlobal('SYS_VDP_DITHER', IO_VDP_DITHER);
 		this.registerVmGlobal('SYS_VDP_PRIMARY_ATLAS_ID', IO_VDP_PRIMARY_ATLAS_ID);
 		this.registerVmGlobal('SYS_VDP_SECONDARY_ATLAS_ID', IO_VDP_SECONDARY_ATLAS_ID);
@@ -4315,7 +4458,6 @@ export class BmsxVMRuntime {
 
 			this.cpu.start(programAsset.entryProtoIndex);
 			this.pendingVmCall = null;
-			this.cpu.instructionBudgetRemaining = null;
 			this.cpu.run(null);
 			this.processVmIo();
 			this.luaVmInitialized = true;
@@ -4324,11 +4466,8 @@ export class BmsxVMRuntime {
 			if (options?.runInit === false) {
 				return true;
 			}
-			const ok = this.runLuaLifecycleHandler('init');
-			if (!ok) {
-				return false;
-			}
-			return this.runLuaLifecycleHandler('new_game');
+			this.queueLifecycleHandlers({ runInit: true, runNewGame: true });
+			return true;
 		} catch (error) {
 			console.info(`[BmsxVMRuntime] VM program-asset boot failed.`);
 			this.logVmDebugState();
@@ -4362,7 +4501,6 @@ export class BmsxVMRuntime {
 		this.vmProgramMetadata = prelude.metadata;
 		this.cpu.start(prepared.entryProtoIndex);
 		this.pendingVmCall = null;
-		this.cpu.instructionBudgetRemaining = null;
 		this.cpu.run(null);
 		this.processVmIo();
 		this.luaVmInitialized = true;
@@ -4371,11 +4509,8 @@ export class BmsxVMRuntime {
 		if (options?.runInit === false) {
 			return true;
 		}
-		const ok = this.runLuaLifecycleHandler('init');
-		if (!ok) {
-			return false;
-		}
-		return this.runLuaLifecycleHandler('new_game');
+		this.queueLifecycleHandlers({ runInit: true, runNewGame: true });
+		return true;
 	}
 
 	private bootActiveProgram(options?: { preserveState?: boolean; runInit?: boolean }): boolean {
@@ -4430,7 +4565,6 @@ export class BmsxVMRuntime {
 			this.vmProgramMetadata = prelude.metadata;
 			this.cpu.start(entryProtoIndex);
 			this.pendingVmCall = null;
-			this.cpu.instructionBudgetRemaining = null;
 			this.cpu.run(null);
 			this.processVmIo();
 			this.luaVmInitialized = true;
@@ -4444,11 +4578,8 @@ export class BmsxVMRuntime {
 
 		this.bindLifecycleHandlers();
 
-		const ok = this.runLuaLifecycleHandler('init');
-		if (!ok) {
-			return false;
-		}
-		return this.runLuaLifecycleHandler('new_game');
+		this.queueLifecycleHandlers({ runInit: true, runNewGame: true });
+		return true;
 	}
 
 	public async reloadProgramAndResetWorld(options?: { runInit?: boolean; }): Promise<void> {
@@ -4460,6 +4591,7 @@ export class BmsxVMRuntime {
 				this.setDebuggerPaused(false);
 				this.clearRuntimeFault();
 			}
+			this.luaVmInitialized = false;
 
 			// Full reboot starts from a clean Lua path environment cache to avoid merging
 			// stale per-path tables (from previously loaded modules) into the fresh program.
@@ -4494,6 +4626,10 @@ export class BmsxVMRuntime {
 			} catch (error) {
 				this.handleLuaError(error);
 			}
+			const limits = this.cartAssetLayer
+				? this.cartAssetLayer.index.manifest.vm.limits
+				: $.engine_layer.index.manifest.vm.limits;
+			this.setInstructionBudgetPerFrame(BmsxVMRuntime.resolveInstructionBudget(limits));
 		}
 		finally {
 			this.luaVmGate.end(vmToken);
@@ -4761,11 +4897,21 @@ export class BmsxVMRuntime {
 
 	private callVmFunction(fn: Closure, args: Value[]): Value[] {
 		const depth = this.cpu.getFrameDepth();
-		this.cpu.callExternal(fn, args);
 		const previousBudget = this.cpu.instructionBudgetRemaining;
-		this.cpu.instructionBudgetRemaining = null;
-		this.cpu.runUntilDepth(depth);
-		this.cpu.instructionBudgetRemaining = previousBudget;
+		if (previousBudget !== null) {
+			const budgetSentinel = Number.MAX_SAFE_INTEGER;
+			this.cpu.instructionBudgetRemaining = budgetSentinel;
+			try {
+				this.cpu.callExternal(fn, args);
+				this.cpu.runUntilDepth(depth);
+			} finally {
+				const remaining = this.cpu.instructionBudgetRemaining as number;
+				this.cpu.instructionBudgetRemaining = previousBudget - (budgetSentinel - remaining);
+			}
+		} else {
+			this.cpu.callExternal(fn, args);
+			this.cpu.runUntilDepth(depth);
+		}
 		return this.cpu.lastReturnValues;
 	}
 

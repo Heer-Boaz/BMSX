@@ -25,6 +25,8 @@ class VMStorage;
 struct VmProgramAsset;
 class RuntimeAssets;
 
+constexpr int DEFAULT_STATEMENT_BUDGET = 1'000'000;
+
 /**
  * Standard button actions for gamepad/keyboard input.
  */
@@ -38,6 +40,7 @@ struct VMFrameState {
 	bool updateExecuted = false;
 	bool luaFaulted = false;
 	float deltaSeconds = 0.0f;
+	int instructionBudgetRemaining = 0;
 };
 
 /**
@@ -55,6 +58,7 @@ struct VMRuntimeOptions {
 	int playerIndex = 0;
 	Viewport viewport{0, 0};
 	CanonicalizationType canonicalization = CanonicalizationType::None;
+	int instructionBudgetPerFrame = DEFAULT_STATEMENT_BUDGET;
 };
 
 /**
@@ -246,6 +250,8 @@ public:
 	void registerNativeFunction(std::string_view name, NativeFunctionInvoke fn);
 
 	void setCanonicalization(CanonicalizationType canonicalization);
+	void setInstructionBudgetPerFrame(int budget);
+	bool isDrawPending() const;
 	Value canonicalizeIdentifier(std::string_view value);
 	void refreshMemoryMap();
 	void buildAssetMemory(RuntimeAssets& assets, bool keepDecodedData, AssetBuildMode mode = AssetBuildMode::Full);
@@ -253,8 +259,14 @@ public:
 private:
 	enum class PendingCall {
 		None,
+		Init,
+		NewGameReset,
+		NewGame,
+		Irq,
 		Update,
 		Draw,
+		EngineUpdate,
+		EngineDraw,
 	};
 
 	explicit VMRuntime(const VMRuntimeOptions& options);
@@ -266,7 +278,11 @@ private:
 	void executeDrawCallback();
 	void tickHardware();
 	void raiseIrqFlags(uint32_t mask);
-	void dispatchIrqFlags();
+	bool dispatchIrqFlags();
+	RunResult runVmWithBudget();
+	void queueLifecycleHandlers(bool runInit, bool runNewGame);
+	void startNextLifecycleCall();
+	bool runLifecyclePhase();
 	Value requireVmModule(const std::string& moduleName);
 	std::vector<Value> callEngineModuleMember(const std::string& name, const std::vector<Value>& args);
 	const std::regex& buildLuaPatternRegex(const std::string& pattern);
@@ -285,7 +301,6 @@ private:
 	void releaseValueScratch(std::vector<Value>&& values);
 
 	static VMRuntime* s_instance;
-	static constexpr int UPDATE_STATEMENT_BUDGET = 1'000'000;
 	static constexpr size_t MAX_POOLED_VM_RUNTIME_SCRATCH = 32;
 
 	// VM core
@@ -324,8 +339,13 @@ private:
 	Closure* m_initFn = nullptr;
 	Closure* m_newGameFn = nullptr;
 	Closure* m_irqFn = nullptr;
+	Closure* m_engineUpdateFn = nullptr;
+	Closure* m_engineDrawFn = nullptr;
+	Closure* m_engineResetFn = nullptr;
 	Value m_ipairsIterator = valueNil();
 	PendingCall m_pendingVmCall = PendingCall::None;
+	std::vector<PendingCall> m_pendingLifecycleQueue;
+	size_t m_pendingLifecycleIndex = 0;
 	uint32_t m_vmRandomSeedValue = 0;
 
 	std::unordered_map<std::string, int> m_vmModuleProtos;
@@ -333,6 +353,7 @@ private:
 	std::unordered_map<std::string, Value> m_vmModuleCache;
 	std::unordered_map<std::string, std::unique_ptr<std::regex>> m_luaPatternRegexCache;
 	std::vector<std::vector<Value>> m_valueScratchPool;
+	int m_instructionBudgetPerFrame = DEFAULT_STATEMENT_BUDGET;
 };
 
 } // namespace bmsx

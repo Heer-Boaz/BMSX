@@ -672,6 +672,7 @@ VMRuntime::VMRuntime(const VMRuntimeOptions& options)
 	, m_playerIndex(options.playerIndex)
 	, m_viewport(options.viewport)
 	, m_canonicalization(options.canonicalization)
+	, m_instructionBudgetPerFrame(options.instructionBudgetPerFrame)
 {
 	// Initialize I/O memory region
 	m_memory.clearIoSlots();
@@ -753,7 +754,11 @@ void VMRuntime::boot(Program* program, ProgramMetadata* metadata, int entryProto
 	m_initFn = nullptr;
 	m_newGameFn = nullptr;
 	m_irqFn = nullptr;
-	m_cpu.instructionBudgetRemaining = std::nullopt;
+	m_engineUpdateFn = nullptr;
+	m_engineDrawFn = nullptr;
+	m_engineResetFn = nullptr;
+	m_pendingLifecycleQueue.clear();
+	m_pendingLifecycleIndex = 0;
 	m_cpu.globals->clear();
 	m_memory.clearIoSlots();
 	m_memory.writeValue(IO_WRITE_PTR_ADDR, valueNumber(0.0));
@@ -790,6 +795,7 @@ void VMRuntime::boot(Program* program, ProgramMetadata* metadata, int entryProto
 	// Start execution at entry point
 	std::cout << "[VMRuntime] boot: starting CPU at entry point..." << std::endl;
 	m_cpu.start(entryProtoIndex);
+	m_cpu.instructionBudgetRemaining = std::nullopt;
 
 	// Run until halted to execute top-level code
 	std::cout << "[VMRuntime] boot: running top-level code..." << std::endl;
@@ -826,6 +832,19 @@ void VMRuntime::boot(Program* program, ProgramMetadata* metadata, int entryProto
 		m_irqFn = asClosure(irqVal);
 		std::cout << "[VMRuntime] boot: found irq" << std::endl;
 	}
+	auto* engineModule = asTable(requireVmModule("engine"));
+	Value engineUpdateVal = engineModule->get(canonicalizeIdentifier("update"));
+	if (valueIsClosure(engineUpdateVal)) {
+		m_engineUpdateFn = asClosure(engineUpdateVal);
+	}
+	Value engineDrawVal = engineModule->get(canonicalizeIdentifier("draw"));
+	if (valueIsClosure(engineDrawVal)) {
+		m_engineDrawFn = asClosure(engineDrawVal);
+	}
+	Value engineResetVal = engineModule->get(canonicalizeIdentifier("reset"));
+	if (valueIsClosure(engineResetVal)) {
+		m_engineResetFn = asClosure(engineResetVal);
+	}
 
 	if (!m_initFn) {
 		throw BMSX_RUNTIME_ERROR("[VMRuntime] VM lifecycle handler 'init' is not defined.");
@@ -836,12 +855,11 @@ void VMRuntime::boot(Program* program, ProgramMetadata* metadata, int entryProto
 	if (!m_irqFn) {
 		throw BMSX_RUNTIME_ERROR("[VMRuntime] VM lifecycle handler 'irq' is not defined.");
 	}
-	std::cout << "[VMRuntime] boot: calling init..." << std::endl;
-	callLuaFunction(m_initFn, {});
-	std::cout << "[VMRuntime] boot: calling new_game..." << std::endl;
-	callEngineModuleMember("reset", {});
-	callLuaFunction(m_newGameFn, {});
+	if (!m_engineResetFn) {
+		throw BMSX_RUNTIME_ERROR("[VMRuntime] VM lifecycle handler 'engine.reset' is not defined.");
+	}
 
+	queueLifecycleHandlers(true, true);
 	m_vmInitialized = true;
 	std::cout << "[VMRuntime] boot: VM initialized!" << std::endl;
 }
@@ -889,7 +907,7 @@ void VMRuntime::raiseIrqFlags(uint32_t mask) {
 	m_memory.writeValue(IO_IRQ_FLAGS, valueNumber(static_cast<double>(current | mask)));
 }
 
-void VMRuntime::dispatchIrqFlags() {
+bool VMRuntime::dispatchIrqFlags() {
 	const uint32_t ack = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_IRQ_ACK)));
 	uint32_t flags = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_IRQ_FLAGS)));
 	if (ack != 0) {
@@ -898,12 +916,98 @@ void VMRuntime::dispatchIrqFlags() {
 		m_memory.writeValue(IO_IRQ_ACK, valueNumber(0.0));
 	}
 	if (flags == 0) {
-		return;
+		return false;
 	}
 	m_cpu.call(m_irqFn, { valueNumber(static_cast<double>(flags)) }, 0);
-	m_cpu.instructionBudgetRemaining = std::nullopt;
-	m_cpu.run(std::nullopt);
+	m_pendingVmCall = PendingCall::Irq;
+	RunResult result = runVmWithBudget();
 	processIOCommands();
+	if (result == RunResult::Halted) {
+		m_pendingVmCall = PendingCall::None;
+	}
+	return m_pendingVmCall == PendingCall::Irq;
+}
+
+RunResult VMRuntime::runVmWithBudget() {
+	m_cpu.instructionBudgetRemaining = m_frameState.instructionBudgetRemaining;
+	RunResult result = m_cpu.run(std::nullopt);
+	m_frameState.instructionBudgetRemaining = *m_cpu.instructionBudgetRemaining;
+	return result;
+}
+
+void VMRuntime::queueLifecycleHandlers(bool runInit, bool runNewGame) {
+	m_pendingLifecycleQueue.clear();
+	m_pendingLifecycleIndex = 0;
+	if (runInit) {
+		if (!m_initFn) {
+			throw BMSX_RUNTIME_ERROR("[VMRuntime] VM lifecycle handler 'init' is not defined.");
+		}
+		m_pendingLifecycleQueue.push_back(PendingCall::Init);
+	}
+	if (runNewGame) {
+		if (!m_engineResetFn) {
+			throw BMSX_RUNTIME_ERROR("[VMRuntime] VM lifecycle handler 'engine.reset' is not defined.");
+		}
+		if (!m_newGameFn) {
+			throw BMSX_RUNTIME_ERROR("[VMRuntime] VM lifecycle handler 'new_game' is not defined.");
+		}
+		m_pendingLifecycleQueue.push_back(PendingCall::NewGameReset);
+		m_pendingLifecycleQueue.push_back(PendingCall::NewGame);
+	}
+	if (m_pendingVmCall == PendingCall::None) {
+		startNextLifecycleCall();
+	}
+}
+
+void VMRuntime::startNextLifecycleCall() {
+	if (m_pendingVmCall != PendingCall::None) {
+		return;
+	}
+	if (m_pendingLifecycleIndex >= m_pendingLifecycleQueue.size()) {
+		return;
+	}
+	const PendingCall next = m_pendingLifecycleQueue[m_pendingLifecycleIndex++];
+	if (next == PendingCall::Init) {
+		m_cpu.call(m_initFn, {}, 0);
+		m_pendingVmCall = PendingCall::Init;
+		return;
+	}
+	if (next == PendingCall::NewGameReset) {
+		m_cpu.call(m_engineResetFn, {}, 0);
+		m_pendingVmCall = PendingCall::NewGameReset;
+		return;
+	}
+	m_cpu.call(m_newGameFn, {}, 0);
+	m_pendingVmCall = PendingCall::NewGame;
+}
+
+bool VMRuntime::runLifecyclePhase() {
+	const bool lifecyclePending = (m_pendingVmCall == PendingCall::Init)
+		|| (m_pendingVmCall == PendingCall::NewGameReset)
+		|| (m_pendingVmCall == PendingCall::NewGame);
+	if (!lifecyclePending && m_pendingLifecycleIndex >= m_pendingLifecycleQueue.size()) {
+		return false;
+	}
+	if (!lifecyclePending && m_pendingVmCall != PendingCall::None) {
+		return false;
+	}
+	bool ranLifecycle = false;
+	while (true) {
+		if (m_pendingVmCall == PendingCall::None) {
+			startNextLifecycleCall();
+			if (m_pendingVmCall == PendingCall::None) {
+				break;
+			}
+		}
+		ranLifecycle = true;
+		RunResult result = runVmWithBudget();
+		processIOCommands();
+		if (result != RunResult::Halted) {
+			break;
+		}
+		m_pendingVmCall = PendingCall::None;
+	}
+	return ranLifecycle;
 }
 
 void VMRuntime::tickUpdate() {
@@ -924,6 +1028,7 @@ void VMRuntime::tickUpdate() {
 	}
 
 	m_frameState.updateExecuted = false;
+	m_frameState.instructionBudgetRemaining = m_instructionBudgetPerFrame;
 	m_frameState.deltaSeconds = static_cast<float>(EngineCore::instance().deltaTime());
 	auto* gameTable = asTable(m_cpu.globals->get(canonicalizeIdentifier("game")));
 	gameTable->set(canonicalizeIdentifier("deltatime_seconds"), valueNumber(static_cast<double>(m_frameState.deltaSeconds)));
@@ -1054,11 +1159,24 @@ void VMRuntime::applyAtlasSlotMapping(const std::array<i32, 2>& slots) {
 
 std::vector<Value> VMRuntime::callLuaFunction(Closure* fn, const std::vector<Value>& args) {
 	int depthBefore = m_cpu.getFrameDepth();
-	m_cpu.callExternal(fn, args);
-	std::optional<int> previousBudget = m_cpu.instructionBudgetRemaining;
-	m_cpu.instructionBudgetRemaining = std::nullopt;
-	m_cpu.runUntilDepth(depthBefore);
-	m_cpu.instructionBudgetRemaining = previousBudget;
+	const auto previousBudget = m_cpu.instructionBudgetRemaining;
+	if (previousBudget.has_value()) {
+		const int budgetSentinel = std::numeric_limits<int>::max();
+		m_cpu.instructionBudgetRemaining = budgetSentinel;
+		try {
+			m_cpu.callExternal(fn, args);
+			m_cpu.runUntilDepth(depthBefore);
+		} catch (...) {
+			const int remaining = *m_cpu.instructionBudgetRemaining;
+			m_cpu.instructionBudgetRemaining = *previousBudget - (budgetSentinel - remaining);
+			throw;
+		}
+		const int remaining = *m_cpu.instructionBudgetRemaining;
+		m_cpu.instructionBudgetRemaining = *previousBudget - (budgetSentinel - remaining);
+	} else {
+		m_cpu.callExternal(fn, args);
+		m_cpu.runUntilDepth(depthBefore);
+	}
 	return m_cpu.lastReturnValues;
 }
 
@@ -1077,6 +1195,15 @@ void VMRuntime::registerNativeFunction(std::string_view name, NativeFunctionInvo
 
 void VMRuntime::setCanonicalization(CanonicalizationType canonicalization) {
 	m_canonicalization = canonicalization;
+}
+
+void VMRuntime::setInstructionBudgetPerFrame(int budget) {
+	m_instructionBudgetPerFrame = budget;
+	setGlobal("SYS_MAX_INSTRUCTIONS_PER_FRAME", valueNumber(static_cast<double>(budget)));
+}
+
+bool VMRuntime::isDrawPending() const {
+	return m_pendingVmCall == PendingCall::Draw || m_pendingVmCall == PendingCall::EngineDraw;
 }
 
 void VMRuntime::refreshMemoryMap() {
@@ -1794,11 +1921,24 @@ void VMRuntime::setupBuiltins() {
 		}
 		if (valueIsClosure(callee)) {
 			int depthBefore = m_cpu.getFrameDepth();
-			m_cpu.callExternal(asClosure(callee), args);
-			std::optional<int> previousBudget = m_cpu.instructionBudgetRemaining;
-			m_cpu.instructionBudgetRemaining = std::nullopt;
-			m_cpu.runUntilDepth(depthBefore);
-			m_cpu.instructionBudgetRemaining = previousBudget;
+			const auto previousBudget = m_cpu.instructionBudgetRemaining;
+			if (previousBudget.has_value()) {
+				const int budgetSentinel = std::numeric_limits<int>::max();
+				m_cpu.instructionBudgetRemaining = budgetSentinel;
+				try {
+					m_cpu.callExternal(asClosure(callee), args);
+					m_cpu.runUntilDepth(depthBefore);
+				} catch (...) {
+					const int remaining = *m_cpu.instructionBudgetRemaining;
+					m_cpu.instructionBudgetRemaining = *previousBudget - (budgetSentinel - remaining);
+					throw;
+				}
+				const int remaining = *m_cpu.instructionBudgetRemaining;
+				m_cpu.instructionBudgetRemaining = *previousBudget - (budgetSentinel - remaining);
+			} else {
+				m_cpu.callExternal(asClosure(callee), args);
+				m_cpu.runUntilDepth(depthBefore);
+			}
 			out.clear();
 			const auto& results = m_cpu.lastReturnValues;
 			out.insert(out.end(), results.begin(), results.end());
@@ -2052,7 +2192,7 @@ void VMRuntime::setupBuiltins() {
 	setGlobal("SYS_RAM_SIZE", valueNumber(static_cast<double>(RAM_SIZE)));
 	setGlobal("SYS_MAX_ASSETS", valueNumber(static_cast<double>(maxAssets)));
 	setGlobal("SYS_STRING_HANDLE_COUNT", valueNumber(static_cast<double>(STRING_HANDLE_COUNT)));
-	setGlobal("SYS_MAX_INSTRUCTIONS_PER_FRAME", valueNumber(static_cast<double>(UPDATE_STATEMENT_BUDGET)));
+	setGlobal("SYS_MAX_INSTRUCTIONS_PER_FRAME", valueNumber(static_cast<double>(m_instructionBudgetPerFrame)));
 	setGlobal("SYS_VDP_DITHER", valueNumber(static_cast<double>(IO_VDP_DITHER)));
 	setGlobal("SYS_VDP_PRIMARY_ATLAS_ID", valueNumber(static_cast<double>(IO_VDP_PRIMARY_ATLAS_ID)));
 	setGlobal("SYS_VDP_SECONDARY_ATLAS_ID", valueNumber(static_cast<double>(IO_VDP_SECONDARY_ATLAS_ID)));
@@ -3908,13 +4048,16 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 			viewportTable->set(key("height"), valueNumber(static_cast<double>(manifest.viewportHeight)));
 			vmTable->set(key("viewport"), valueTable(viewportTable));
 		}
-		if (manifest.atlasSlotBytes || manifest.stagingBytes || manifest.maxVoicesSfx || manifest.maxVoicesMusic || manifest.maxVoicesUi) {
-			auto* limitsTable = m_cpu.createTable(0, 3);
+		if (manifest.atlasSlotBytes || manifest.stagingBytes || manifest.maxInstructionsPerFrame || manifest.maxVoicesSfx || manifest.maxVoicesMusic || manifest.maxVoicesUi) {
+			auto* limitsTable = m_cpu.createTable(0, 4);
 			if (manifest.atlasSlotBytes) {
 				limitsTable->set(key("atlas_slot_bytes"), valueNumber(static_cast<double>(*manifest.atlasSlotBytes)));
 			}
 			if (manifest.stagingBytes) {
 				limitsTable->set(key("staging_bytes"), valueNumber(static_cast<double>(*manifest.stagingBytes)));
+			}
+			if (manifest.maxInstructionsPerFrame) {
+				limitsTable->set(key("max_instructions_per_frame"), valueNumber(static_cast<double>(*manifest.maxInstructionsPerFrame)));
 			}
 			if (manifest.maxVoicesSfx || manifest.maxVoicesMusic || manifest.maxVoicesUi) {
 				auto* voicesTable = m_cpu.createTable(0, 3);
@@ -4058,7 +4201,32 @@ auto emitFn = m_cpu.createNativeFunction("game.emit", [](const std::vector<Value
 }
 
 void VMRuntime::executeUpdateCallback(double deltaSeconds) {
-bool shouldRunEngineUpdate = (m_updateFn == nullptr);
+	bool shouldRunEngineUpdate = (m_updateFn == nullptr);
+	if (m_pendingVmCall == PendingCall::EngineUpdate) {
+		RunResult result = runVmWithBudget();
+		processIOCommands();
+		if (result == RunResult::Halted) {
+			m_pendingVmCall = PendingCall::None;
+		}
+		return;
+	}
+	if (m_pendingVmCall == PendingCall::Irq) {
+		RunResult result = runVmWithBudget();
+		processIOCommands();
+		if (result == RunResult::Halted) {
+			m_pendingVmCall = PendingCall::None;
+		}
+		return;
+	}
+	const bool lifecycleQueued = m_pendingLifecycleIndex < m_pendingLifecycleQueue.size();
+	if (m_pendingVmCall == PendingCall::Init
+		|| m_pendingVmCall == PendingCall::NewGameReset
+		|| m_pendingVmCall == PendingCall::NewGame
+		|| (m_pendingVmCall == PendingCall::None && lifecycleQueued)) {
+		if (runLifecyclePhase()) {
+			return;
+		}
+	}
 	if (m_pendingVmCall != PendingCall::None && m_pendingVmCall != PendingCall::Update) {
 		return;
 	}
@@ -4070,7 +4238,9 @@ bool shouldRunEngineUpdate = (m_updateFn == nullptr);
 
 	try {
 		if (m_pendingVmCall == PendingCall::None) {
-			dispatchIrqFlags();
+			if (dispatchIrqFlags()) {
+				return;
+			}
 		}
 		if (m_updateFn) {
 			if (m_pendingVmCall == PendingCall::None) {
@@ -4078,7 +4248,7 @@ bool shouldRunEngineUpdate = (m_updateFn == nullptr);
 				m_pendingVmCall = PendingCall::Update;
 			}
 			const auto vmStart = std::chrono::steady_clock::now();
-			RunResult result = m_cpu.run(UPDATE_STATEMENT_BUDGET);
+			RunResult result = runVmWithBudget();
 			const auto vmEnd = std::chrono::steady_clock::now();
 			vmRunMs += to_ms(vmEnd - vmStart);
 			const auto ioStart = std::chrono::steady_clock::now();
@@ -4092,14 +4262,19 @@ bool shouldRunEngineUpdate = (m_updateFn == nullptr);
 		}
 		if (shouldRunEngineUpdate) {
 			const double deltaMs = deltaSeconds * 1000.0;
+			m_cpu.call(m_engineUpdateFn, {valueNumber(deltaMs)}, 0);
+			m_pendingVmCall = PendingCall::EngineUpdate;
 			const auto engineStart = std::chrono::steady_clock::now();
-			callEngineModuleMember("update", {valueNumber(deltaMs)});
+			RunResult result = runVmWithBudget();
 			const auto engineEnd = std::chrono::steady_clock::now();
 			engineMs += to_ms(engineEnd - engineStart);
 			const auto ioStart = std::chrono::steady_clock::now();
 			processIOCommands();
 			const auto ioEnd = std::chrono::steady_clock::now();
 			ioMs += to_ms(ioEnd - ioStart);
+			if (result == RunResult::Halted) {
+				m_pendingVmCall = PendingCall::None;
+			}
 		}
 		// const double totalMs = to_ms(std::chrono::steady_clock::now() - updateStart);
 		// static double accSimSec = 0.0;
@@ -4167,6 +4342,21 @@ bool shouldRunEngineUpdate = (m_updateFn == nullptr);
 
 void VMRuntime::executeDrawCallback() {
 bool shouldRunEngineDraw = (m_drawFn == nullptr);
+	const bool lifecycleQueued = m_pendingLifecycleIndex < m_pendingLifecycleQueue.size();
+	if (lifecycleQueued) {
+		return;
+	}
+	if (m_pendingVmCall == PendingCall::Irq) {
+		return;
+	}
+	if (m_pendingVmCall == PendingCall::EngineDraw) {
+		RunResult result = runVmWithBudget();
+		processIOCommands();
+		if (result == RunResult::Halted) {
+			m_pendingVmCall = PendingCall::None;
+		}
+		return;
+	}
 	if (m_pendingVmCall != PendingCall::None && m_pendingVmCall != PendingCall::Draw) {
 		return;
 	}
@@ -4182,8 +4372,10 @@ bool shouldRunEngineDraw = (m_drawFn == nullptr);
 				m_cpu.call(m_drawFn, {}, 0);
 				m_pendingVmCall = PendingCall::Draw;
 			}
+			m_cpu.instructionBudgetRemaining = m_frameState.instructionBudgetRemaining;
 			const auto vmStart = std::chrono::steady_clock::now();
-			RunResult result = m_cpu.run(UPDATE_STATEMENT_BUDGET);
+			RunResult result = m_cpu.run(std::nullopt);
+			m_frameState.instructionBudgetRemaining = *m_cpu.instructionBudgetRemaining;
 			const auto vmEnd = std::chrono::steady_clock::now();
 			vmRunMs += to_ms(vmEnd - vmStart);
 			const auto ioStart = std::chrono::steady_clock::now();
@@ -4196,14 +4388,19 @@ bool shouldRunEngineDraw = (m_drawFn == nullptr);
 			}
 		}
 		if (shouldRunEngineDraw) {
+			m_cpu.call(m_engineDrawFn, {}, 0);
+			m_pendingVmCall = PendingCall::EngineDraw;
 			const auto engineStart = std::chrono::steady_clock::now();
-			callEngineModuleMember("draw", {});
+			RunResult result = runVmWithBudget();
 			const auto engineEnd = std::chrono::steady_clock::now();
 			engineMs += to_ms(engineEnd - engineStart);
 			const auto ioStart = std::chrono::steady_clock::now();
 			processIOCommands();
 			const auto ioEnd = std::chrono::steady_clock::now();
 			ioMs += to_ms(ioEnd - ioStart);
+			if (result == RunResult::Halted) {
+				m_pendingVmCall = PendingCall::None;
+			}
 		}
 		// const double totalMs = to_ms(std::chrono::steady_clock::now() - drawStart);
 		// static double accSimSec = 0.0;

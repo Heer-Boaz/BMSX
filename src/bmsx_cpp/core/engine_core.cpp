@@ -45,6 +45,17 @@ void applyManifestMemoryLimits(const RomManifest& manifest) {
 	}
 	configureMemoryMap(atlasSlotBytes, stagingBytes);
 }
+
+int resolveInstructionBudget(const RomManifest& manifest) {
+	if (!manifest.maxInstructionsPerFrame) {
+		return DEFAULT_STATEMENT_BUDGET;
+	}
+	const i32 value = *manifest.maxInstructionsPerFrame;
+	if (value <= 0) {
+		throw std::runtime_error("[EngineCore] max_instructions_per_frame must be greater than 0.");
+	}
+	return value;
+}
 }
 
 EngineCore* EngineCore::s_instance = nullptr;
@@ -432,10 +443,12 @@ bool EngineCore::bootWithoutCart() {
 			options.viewport.x = m_engine_assets.manifest.viewportWidth;
 			options.viewport.y = m_engine_assets.manifest.viewportHeight;
 			options.canonicalization = m_engine_assets.manifest.canonicalization;
+			options.instructionBudgetPerFrame = resolveInstructionBudget(m_engine_assets.manifest);
 			VMRuntime::createInstance(options);
 		}
 
 		VMRuntime& runtime = VMRuntime::instance();
+		runtime.setInstructionBudgetPerFrame(resolveInstructionBudget(m_engine_assets.manifest));
 		runtime.refreshMemoryMap();
 		runtime.setProgramSource(VMRuntime::VmProgramSource::Engine);
 		runtime.setCanonicalization(m_engine_assets.manifest.canonicalization);
@@ -535,9 +548,11 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 			options.viewport.x = m_assets.manifest.viewportWidth;
 			options.viewport.y = m_assets.manifest.viewportHeight;
 			options.canonicalization = m_engine_assets.manifest.canonicalization;
+			options.instructionBudgetPerFrame = resolveInstructionBudget(m_engine_assets.manifest);
 			VMRuntime::createInstance(options);
 		}
 		VMRuntime& runtime = VMRuntime::instance();
+		runtime.setInstructionBudgetPerFrame(resolveInstructionBudget(m_engine_assets.manifest));
 		runtime.refreshMemoryMap();
 		runtime.setProgramSource(VMRuntime::VmProgramSource::Engine);
 		runtime.setCanonicalization(m_engine_assets.manifest.canonicalization);
@@ -556,9 +571,11 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 				options.viewport.x = m_assets.manifest.viewportWidth;
 				options.viewport.y = m_assets.manifest.viewportHeight;
 				options.canonicalization = m_assets.manifest.canonicalization;
+				options.instructionBudgetPerFrame = resolveInstructionBudget(m_assets.manifest);
 				VMRuntime::createInstance(options);
 			}
 			VMRuntime& runtime = VMRuntime::instance();
+			runtime.setInstructionBudgetPerFrame(resolveInstructionBudget(m_assets.manifest));
 			runtime.refreshMemoryMap();
 			runtime.buildAssetMemory(m_assets, false);
 			uploadTexturesToBackend(true);
@@ -571,9 +588,11 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 				options.viewport.x = m_assets.manifest.viewportWidth;
 				options.viewport.y = m_assets.manifest.viewportHeight;
 				options.canonicalization = m_assets.manifest.canonicalization;
+				options.instructionBudgetPerFrame = resolveInstructionBudget(m_assets.manifest);
 				VMRuntime::createInstance(options);
 			}
 			VMRuntime& runtime = VMRuntime::instance();
+			runtime.setInstructionBudgetPerFrame(resolveInstructionBudget(m_assets.manifest));
 			runtime.refreshMemoryMap();
 			runtime.buildAssetMemory(m_assets, false);
 			uploadTexturesToBackend(true);
@@ -610,6 +629,7 @@ bool EngineCore::resetLoadedRom() {
 
 	if (m_assets.vmProgram && m_assets.vmProgram->program) {
 		VMRuntime& runtime = VMRuntime::instance();
+		runtime.setInstructionBudgetPerFrame(resolveInstructionBudget(m_assets.manifest));
 		runtime.refreshMemoryMap();
 		runtime.buildAssetMemory(m_assets, false, VMRuntime::AssetBuildMode::Cart);
 		uploadTexturesToBackend(true);
@@ -625,9 +645,11 @@ bool EngineCore::resetLoadedRom() {
 			options.viewport.x = m_engine_assets.manifest.viewportWidth;
 			options.viewport.y = m_engine_assets.manifest.viewportHeight;
 			options.canonicalization = m_engine_assets.manifest.canonicalization;
+			options.instructionBudgetPerFrame = resolveInstructionBudget(m_engine_assets.manifest);
 			VMRuntime::createInstance(options);
 		}
 		VMRuntime& runtime = VMRuntime::instance();
+		runtime.setInstructionBudgetPerFrame(resolveInstructionBudget(m_engine_assets.manifest));
 		runtime.refreshMemoryMap();
 		runtime.setProgramSource(VMRuntime::VmProgramSource::Engine);
 		runtime.setCanonicalization(m_engine_assets.manifest.canonicalization);
@@ -804,11 +826,13 @@ void EngineCore::bootVMFromProgram() {
 		options.viewport.x = m_assets.manifest.viewportWidth;
 		options.viewport.y = m_assets.manifest.viewportHeight;
 		options.canonicalization = m_assets.manifest.canonicalization;
+		options.instructionBudgetPerFrame = resolveInstructionBudget(m_assets.manifest);
 		VMRuntime::createInstance(options);
 	}
 
 	// Boot the VM with the pre-compiled program
 	VMRuntime& runtime = VMRuntime::instance();
+	runtime.setInstructionBudgetPerFrame(resolveInstructionBudget(m_assets.manifest));
 	runtime.refreshMemoryMap();
 	runtime.setProgramSource(VMRuntime::VmProgramSource::Cart);
 	runtime.setCanonicalization(m_assets.manifest.canonicalization);

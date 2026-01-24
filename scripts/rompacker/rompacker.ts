@@ -1000,7 +1000,7 @@ async function main() {
 		const engineVirtualRoot = engineProjectRootPath;
 		luaErrorVirtualRoots.push(engineVirtualRoot);
 		const engineBootloaderPath = normalizePathKey('./src/bmsx/vm/default_cart');
-		const engineRuntimeNeedsRebuild = force || await isEngineRuntimeRebuildRequired();
+		const engineRuntimeNeedsRebuild = force || await isEngineRuntimeRebuildRequired(debug ? './dist/engine.debug.js' : './dist/engine.js');
 
 		if (!isEngineMode) {
 			const engineManifest = await getRomManifest(engineResPath);

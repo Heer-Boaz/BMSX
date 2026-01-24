@@ -1098,6 +1098,9 @@ bool loadAssetsFromRom(const u8* buffer,
 				if (limitsObj.count("staging_bytes")) {
 					assets.manifest.stagingBytes = limitsObj.at("staging_bytes").toI32();
 				}
+				if (limitsObj.count("max_instructions_per_frame")) {
+					assets.manifest.maxInstructionsPerFrame = limitsObj.at("max_instructions_per_frame").toI32();
+				}
 				if (limitsObj.count("max_voices") && limitsObj.at("max_voices").isObject()) {
 					const auto& voicesObj = limitsObj.at("max_voices").asObject();
 					if (voicesObj.count("sfx")) assets.manifest.maxVoicesSfx = voicesObj.at("sfx").toI32();

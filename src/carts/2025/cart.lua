@@ -274,6 +274,7 @@ end
 
 function update(_dt)
 	-- assert(false)
+	-- print(_dt)
 	test()
 end
 

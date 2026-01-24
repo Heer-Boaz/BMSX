@@ -5,5 +5,7 @@ vm:
     viewport: {width: 320, height: 240}
     canonicalization: lower
     namespace: 'pietsona2025'
+    limits:
+        max_instructions_per_frame: 5000
 lua:
     entry_path: cart.lua

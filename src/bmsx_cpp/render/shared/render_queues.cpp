@@ -9,6 +9,7 @@
 #include "../../rompack/runtime_assets.h"
 #include "../../core/engine_core.h"
 #include "../../core/font.h"
+#include "../../vm/vm_runtime.h"
 #include "../../utils/clamp.h"
 #include <algorithm>
 #include <cmath>
@@ -132,13 +133,20 @@ void submitSprite(const ImgRenderSubmission& options) {
 }
 
 i32 beginSpriteQueue() {
-	s_spriteQueue.swap();
+	if (VMRuntime::instance().isDrawPending()) {
+		return static_cast<i32>(s_spriteQueue.sizeFront());
+	}
+	const bool hasBack = s_spriteQueue.sizeBack() > 0;
 	s_spriteSubmissionCounter = 0;
 
-	// Swap pools
+	// Swap pools even if we keep the previous front buffer.
 	std::swap(s_spriteItemPool, s_spriteItemPoolAlt);
 	s_spriteItemPoolIndex = 0;
 
+	if (!hasBack) {
+		return static_cast<i32>(s_spriteQueue.sizeFront());
+	}
+	s_spriteQueue.swap();
 	sortSpriteQueueForRendering();
 	return static_cast<i32>(s_spriteQueue.sizeFront());
 }
