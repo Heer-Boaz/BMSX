@@ -283,6 +283,14 @@ InputMap Input::getDefaultInputMapping() {
 void Input::pollInput() {
 	m_currentTimeMs = $().clock()->now();
 
+	// Reset edge flags from previous frame FIRST, before processing new events
+	for (auto& player : m_playerInputs) {
+		if (player) {
+			player->pollInput(m_currentTimeMs);
+		}
+	}
+
+	// Process events from hub - these will set edge flags in the freshly reset state
 	auto* hub = $().platform()->inputHub();
 	std::optional<InputEvt> evt = hub->nextEvt();
 	while (evt.has_value()) {
@@ -316,10 +324,9 @@ void Input::pollInput() {
 		evt = hub->nextEvt();
 	}
 	
-	// Poll all player inputs
+	// Update player input buffers after all events have been processed
 	for (auto& player : m_playerInputs) {
 		if (player) {
-			player->pollInput(m_currentTimeMs);
 			player->update(m_currentTimeMs);
 		}
 	}

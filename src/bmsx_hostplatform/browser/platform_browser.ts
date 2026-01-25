@@ -570,6 +570,9 @@ class BrowserInputHub implements InputHub {
 	private devicesList: InputDevice[] = [];
 	private clock: Clock;
 	private keyboardCapture: ((code: string) => boolean) = null;
+	private nextPressId = 1;
+	private readonly activeKeyPressIds = new Map<string, number>();
+	private readonly activePointerPressIds = new Map<string, number>();
 
 	constructor(surface: HTMLElement, clock: Clock) {
 		this.clock = clock;
@@ -626,7 +629,12 @@ class BrowserInputHub implements InputHub {
 			event.returnValue = false;
 		}
 		const now = this.clock.now();
-		this.post({ type: 'button', deviceId: 'keyboard:0', code: event.code, down: true, value: 1, timestamp: now, pressId: null });
+		let pressId = this.activeKeyPressIds.get(event.code);
+		if (!pressId) {
+			pressId = this.nextPressId++;
+			this.activeKeyPressIds.set(event.code, pressId);
+		}
+		this.post({ type: 'button', deviceId: 'keyboard:0', code: event.code, down: true, value: 1, timestamp: now, pressId });
 	};
 
 	private onKeyUp = (event: KeyboardEvent) => {
@@ -638,7 +646,12 @@ class BrowserInputHub implements InputHub {
 			event.returnValue = false;
 		}
 		const now = this.clock.now();
-		this.post({ type: 'button', deviceId: 'keyboard:0', code: event.code, down: false, value: 0, timestamp: now, pressId: null });
+		let pressId = this.activeKeyPressIds.get(event.code);
+		if (!pressId) {
+			pressId = this.nextPressId++;
+		}
+		this.activeKeyPressIds.delete(event.code);
+		this.post({ type: 'button', deviceId: 'keyboard:0', code: event.code, down: false, value: 0, timestamp: now, pressId });
 	};
 
 	private onPointerDown = (event: PointerEvent) => {
@@ -651,7 +664,13 @@ class BrowserInputHub implements InputHub {
 		}
 		const now = this.clock.now();
 		const modifiers = modifiersFrom(event);
-		this.post({ type: 'button', deviceId: 'pointer:0', code: pointerButton(event.button), down: true, value: 1, timestamp: now, pressId: null, modifiers });
+		const pointerKey = `${event.pointerId}:${pointerButton(event.button)}`;
+		let pressId = this.activePointerPressIds.get(pointerKey);
+		if (!pressId) {
+			pressId = this.nextPressId++;
+			this.activePointerPressIds.set(pointerKey, pressId);
+		}
+		this.post({ type: 'button', deviceId: 'pointer:0', code: pointerButton(event.button), down: true, value: 1, timestamp: now, pressId, modifiers });
 		this.post({ type: 'axis2', deviceId: 'pointer:0', code: 'pointer_position', x: event.clientX, y: event.clientY, timestamp: now, modifiers });
 	};
 
@@ -665,7 +684,13 @@ class BrowserInputHub implements InputHub {
 		}
 		const now = this.clock.now();
 		const modifiers = modifiersFrom(event);
-		this.post({ type: 'button', deviceId: 'pointer:0', code: pointerButton(event.button), down: false, value: 0, timestamp: now, pressId: null, modifiers });
+		const pointerKey = `${event.pointerId}:${pointerButton(event.button)}`;
+		let pressId = this.activePointerPressIds.get(pointerKey);
+		if (!pressId) {
+			pressId = this.nextPressId++;
+		}
+		this.activePointerPressIds.delete(pointerKey);
+		this.post({ type: 'button', deviceId: 'pointer:0', code: pointerButton(event.button), down: false, value: 0, timestamp: now, pressId, modifiers });
 		this.post({ type: 'axis2', deviceId: 'pointer:0', code: 'pointer_position', x: event.clientX, y: event.clientY, timestamp: now, modifiers });
 	};
 
@@ -703,7 +728,13 @@ class BrowserInputHub implements InputHub {
 		}
 		const now = this.clock.now();
 		const modifiers = modifiersFrom(event);
-		this.post({ type: 'button', deviceId: 'pointer:0', code: pointerButton(event.button), down: false, value: 0, timestamp: now, pressId: null, modifiers });
+		const pointerKey = `${event.pointerId}:${pointerButton(event.button)}`;
+		let pressId = this.activePointerPressIds.get(pointerKey);
+		if (!pressId) {
+			pressId = this.nextPressId++;
+		}
+		this.activePointerPressIds.delete(pointerKey);
+		this.post({ type: 'button', deviceId: 'pointer:0', code: pointerButton(event.button), down: false, value: 0, timestamp: now, pressId, modifiers });
 		this.post({ type: 'axis2', deviceId: 'pointer:0', code: 'pointer_position', x: event.clientX, y: event.clientY, timestamp: now, modifiers });
 	};
 

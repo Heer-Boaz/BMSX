@@ -42,7 +42,7 @@ static std::vector<SpriteQueueItem> s_spriteItemPoolB;
 static std::vector<SpriteQueueItem>* s_spriteItemPool = &s_spriteItemPoolA;
 static std::vector<SpriteQueueItem>* s_spriteItemPoolAlt = &s_spriteItemPoolB;
 static size_t s_spriteItemPoolIndex = 0;
-static std::vector<RenderSubmission> s_spriteQueuePlaybackBuffer;
+static std::vector<RenderSubmission> s_renderQueuePlaybackBuffer;
 
 static SpriteQueueItem& acquireSpriteQueueItem() {
 	size_t index = s_spriteItemPoolIndex++;
@@ -155,20 +155,13 @@ void sortSpriteQueue(const std::function<bool(const SpriteQueueItem&, const Spri
 	s_spriteQueue.sortFront(compare);
 }
 
-const std::vector<RenderSubmission>& copySpriteQueueForPlayback() {
+const std::vector<RenderSubmission>& copyRenderQueueForPlayback() {
 	size_t count = 0;
 	s_spriteQueue.forEachBack([&](const SpriteQueueItem& item, size_t) {
-		if (count >= s_spriteQueuePlaybackBuffer.size()) {
-			RenderSubmission created;
-			created.type = RenderSubmissionType::Img;
-			created.img.imgid = "none";
-			created.img.pos = {0.0f, 0.0f, DEFAULT_ZCOORD};
-			created.img.scale = Vec2{1.0f, 1.0f};
-			created.img.flip = FlipOptions{};
-			created.img.colorize = Color{1.0f, 1.0f, 1.0f, 1.0f};
-			s_spriteQueuePlaybackBuffer.push_back(created);
+		if (count >= s_renderQueuePlaybackBuffer.size()) {
+			s_renderQueuePlaybackBuffer.emplace_back();
 		}
-		RenderSubmission& op = s_spriteQueuePlaybackBuffer[count];
+		RenderSubmission& op = s_renderQueuePlaybackBuffer[count];
 		op.type = RenderSubmissionType::Img;
 		const ImgRenderSubmission& src = item.options;
 		ImgRenderSubmission& dst = op.img;
@@ -185,8 +178,26 @@ const std::vector<RenderSubmission>& copySpriteQueueForPlayback() {
 		dst.parallax_weight = src.parallax_weight.value_or(0.0f);
 		count += 1;
 	});
-	s_spriteQueuePlaybackBuffer.resize(count);
-	return s_spriteQueuePlaybackBuffer;
+	s_meshQueue.forEachBack([&](const MeshRenderSubmission& item, size_t) {
+		if (count >= s_renderQueuePlaybackBuffer.size()) {
+			s_renderQueuePlaybackBuffer.emplace_back();
+		}
+		RenderSubmission& op = s_renderQueuePlaybackBuffer[count];
+		op.type = RenderSubmissionType::Mesh;
+		op.mesh = item;
+		count += 1;
+	});
+	s_particleQueue.forEachBack([&](const ParticleRenderSubmission& item, size_t) {
+		if (count >= s_renderQueuePlaybackBuffer.size()) {
+			s_renderQueuePlaybackBuffer.emplace_back();
+		}
+		RenderSubmission& op = s_renderQueuePlaybackBuffer[count];
+		op.type = RenderSubmissionType::Particle;
+		op.particle = item;
+		count += 1;
+	});
+	s_renderQueuePlaybackBuffer.resize(count);
+	return s_renderQueuePlaybackBuffer;
 }
 
 void correctAreaStartEnd(f32& x, f32& y, f32& ex, f32& ey) {

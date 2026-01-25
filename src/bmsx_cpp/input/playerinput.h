@@ -88,8 +88,8 @@ public:
 	// Action state
 	// ─────────────────────────────────────────────────────────────────────────
 	
-	// Get action state (aggregated from all sources)
-	ActionState getActionState(const std::string& action, std::optional<f64> windowMs = std::nullopt);
+	// Get action state (aggregated from all sources); window is in frames.
+	ActionState getActionState(const std::string& action, std::optional<f64> windowFrames = std::nullopt);
 	
 	// Get all currently pressed actions
 	std::vector<ActionState> getPressedActions(const PressedActionsQuery* query = nullptr);

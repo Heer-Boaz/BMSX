@@ -103,9 +103,9 @@ size_t spriteQueueBackSize();
 size_t spriteQueueFrontSize();
 
 /**
- * Copy sprite queue into a reusable playback buffer.
+ * Copy render queues into a reusable playback buffer.
  */
-const std::vector<RenderSubmission>& copySpriteQueueForPlayback();
+const std::vector<RenderSubmission>& copyRenderQueueForPlayback();
 
 /**
  * Sprite queue debug counts.

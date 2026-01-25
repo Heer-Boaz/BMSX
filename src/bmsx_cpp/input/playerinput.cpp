@@ -6,6 +6,7 @@
 
 #include "playerinput.h"
 #include "actionparser.h"
+#include "../core/engine_core.h"
 #include "../utils/clamp.h"
 #include <algorithm>
 #include <cmath>
@@ -86,9 +87,16 @@ void PlayerInput::enableContext(const std::string& id, bool enabled) {
  * Action state
  * ============================================================================ */
 
-ActionState PlayerInput::getActionState(const std::string& action, std::optional<f64> windowMs) {
+ActionState PlayerInput::getActionState(const std::string& action, std::optional<f64> windowFrames) {
 	// Result state - aggregate from all sources
 	ActionState result(action);
+	std::optional<f64> windowMs;
+	if (windowFrames.has_value()) {
+		windowMs = windowFrames.value() * EngineCore::instance().deltaTime() * 1000.0;
+	} else {
+		// Parity with TS: If no window provided, use default retention window
+		windowMs = 150.0 * EngineCore::instance().deltaTime() * 1000.0;
+	}
 	
 	bool anyPressed = false;
 	bool anyJustPressed = false;
@@ -138,8 +146,8 @@ ActionState PlayerInput::getActionState(const std::string& action, std::optional
 			for (const auto& binding : bindings) {
 				ButtonState state = handler->getButtonState(binding.id);
 				if (windowMs.has_value()) {
-					state.waspressed = m_stateManager.wasPressedInWindow(binding.id, windowMs.value());
-					state.wasreleased = m_stateManager.wasReleasedInWindow(binding.id, windowMs.value());
+					state.waspressed = state.pressed || m_stateManager.wasPressedInWindow(binding.id, windowMs.value());
+					state.wasreleased = state.justreleased || m_stateManager.wasReleasedInWindow(binding.id, windowMs.value());
 				}
 				
 				if (state.pressed) anyPressed = true;
@@ -186,8 +194,8 @@ ActionState PlayerInput::getActionState(const std::string& action, std::optional
 			for (const auto& binding : bindings) {
 				ButtonState state = handler->getButtonState(binding.id);
 				if (windowMs.has_value()) {
-					state.waspressed = m_stateManager.wasPressedInWindow(binding.id, windowMs.value());
-					state.wasreleased = m_stateManager.wasReleasedInWindow(binding.id, windowMs.value());
+					state.waspressed = state.pressed || m_stateManager.wasPressedInWindow(binding.id, windowMs.value());
+					state.wasreleased = state.justreleased || m_stateManager.wasReleasedInWindow(binding.id, windowMs.value());
 				}
 				
 				if (state.pressed) anyPressed = true;
@@ -234,8 +242,8 @@ ActionState PlayerInput::getActionState(const std::string& action, std::optional
 			for (const auto& binding : bindings) {
 				ButtonState state = handler->getButtonState(binding.id);
 				if (windowMs.has_value()) {
-					state.waspressed = m_stateManager.wasPressedInWindow(binding.id, windowMs.value());
-					state.wasreleased = m_stateManager.wasReleasedInWindow(binding.id, windowMs.value());
+					state.waspressed = state.pressed || m_stateManager.wasPressedInWindow(binding.id, windowMs.value());
+					state.wasreleased = state.justreleased || m_stateManager.wasReleasedInWindow(binding.id, windowMs.value());
 				}
 				
 				if (state.pressed) anyPressed = true;

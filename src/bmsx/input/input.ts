@@ -136,6 +136,8 @@ export class InputStateManager {
 	 */
 	private inputBuffer: InputEvent[];
 	private readonly buttonStates = new Map<ButtonId, ButtonState>();
+	private readonly latestUnconsumedPressIdByButton = new Map<ButtonId, number>();
+	private readonly latestUnconsumedReleaseIdByButton = new Map<ButtonId, number>();
 
 	/**
 	 * Constructs an instance of the InputStateManager.
@@ -198,6 +200,9 @@ export class InputStateManager {
 			state.pressId = event.pressId ?? state.pressId;
 			state.value = state.value ?? 1;
 			state.consumed = event.consumed ?? false;
+			if (event.consumed !== true && event.pressId != null) {
+				this.latestUnconsumedPressIdByButton.set(event.identifier, event.pressId);
+			}
 		} else {
 			this.inputBuffer.push(event);
 			state.pressed = false;
@@ -209,6 +214,9 @@ export class InputStateManager {
 			state.pressId = event.pressId ?? state.pressId;
 			state.value = 0;
 			state.consumed = event.consumed ?? false;
+			if (event.consumed !== true && event.pressId != null) {
+				this.latestUnconsumedReleaseIdByButton.set(event.identifier, event.pressId);
+			}
 		}
 	}
 
@@ -288,26 +296,12 @@ export class InputStateManager {
 		return false;
 	}
 
-	public getLatestUnconsumedPressId(identifier: ButtonId): number | null {
-		for (let i = this.inputBuffer.length - 1; i >= 0; i -= 1) {
-			const event = this.inputBuffer[i]!;
-			if (event.identifier !== identifier) continue;
-			if (event.eventType !== 'press') continue;
-			if (event.consumed) continue;
-			return event.pressId ?? null;
-		}
-		return null;
+	public getLatestUnconsumedPressId(identifier: ButtonId): number | null | undefined {
+		return this.latestUnconsumedPressIdByButton.get(identifier) ?? null;
 	}
 
 	public getLatestUnconsumedReleaseId(identifier: ButtonId): number | null {
-		for (let i = this.inputBuffer.length - 1; i >= 0; i -= 1) {
-			const event = this.inputBuffer[i]!;
-			if (event.identifier !== identifier) continue;
-			if (event.eventType !== 'release') continue;
-			if (event.consumed) continue;
-			return event.pressId ?? null;
-		}
-		return null;
+		return this.latestUnconsumedReleaseIdByButton.get(identifier) ?? null;
 	}
 
 	/**
@@ -320,6 +314,19 @@ export class InputStateManager {
 		for (const event of this.inputBuffer) {
 			if (event.identifier === identifier && (pressId == null || event.pressId === pressId)) {
 				event.consumed = true;
+			}
+		}
+		if (pressId == null) {
+			this.latestUnconsumedPressIdByButton.delete(identifier);
+			this.latestUnconsumedReleaseIdByButton.delete(identifier);
+		} else {
+			const latestPressId = this.latestUnconsumedPressIdByButton.get(identifier);
+			if (latestPressId === pressId) {
+				this.latestUnconsumedPressIdByButton.delete(identifier);
+			}
+			const latestReleaseId = this.latestUnconsumedReleaseIdByButton.get(identifier);
+			if (latestReleaseId === pressId) {
+				this.latestUnconsumedReleaseIdByButton.delete(identifier);
 			}
 		}
 		const state = this.buttonStates.get(identifier);
@@ -343,6 +350,8 @@ export class InputStateManager {
 			}
 		}
 		this.inputBuffer = [];
+		this.latestUnconsumedPressIdByButton.clear();
+		this.latestUnconsumedReleaseIdByButton.clear();
 	}
 }
 

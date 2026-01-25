@@ -6,6 +6,7 @@
 #include "vm_io.h"
 #include "vm_memory.h"
 #include "vdp.h"
+#include "../render/shared/render_types.h"
 #include "../core/types.h"
 #include <array>
 #include <functional>
@@ -354,6 +355,7 @@ private:
 	std::vector<PendingCall> m_pendingLifecycleQueue;
 	size_t m_pendingLifecycleIndex = 0;
 	uint32_t m_vmRandomSeedValue = 0;
+	std::vector<RenderSubmission> m_preservedRenderQueue;
 
 	std::unordered_map<std::string, int> m_vmModuleProtos;
 	std::unordered_map<std::string, std::string> m_vmModuleAliases;

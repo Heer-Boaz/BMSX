@@ -5,6 +5,7 @@
  */
 
 #include "inputstatemanager.h"
+#include "../core/engine_core.h"
 #include <algorithm>
 
 namespace bmsx {
@@ -65,6 +66,9 @@ void InputStateManager::addInputEvent(InputEvent evt) {
 		state.pressId = evt.pressId;
 		state.value = 1.0f;
 		state.consumed = false;
+		if (!evt.consumed && evt.pressId.has_value()) {
+			m_latestUnconsumedPressIdByButton[evt.identifier] = evt.pressId.value();
+		}
 	} else {
 		bool wasPressed = state.pressed;
 		state.pressed = false;
@@ -76,6 +80,9 @@ void InputStateManager::addInputEvent(InputEvent evt) {
 		state.presstime.reset();
 		state.value = 0.0f;
 		state.consumed = false;
+		if (!evt.consumed && evt.pressId.has_value()) {
+			m_latestUnconsumedReleaseIdByButton[evt.identifier] = evt.pressId.value();
+		}
 	}
 }
 
@@ -86,6 +93,19 @@ void InputStateManager::consumeBufferedEvent(const std::string& identifier, std:
 				evt.consumed = true;
 			}
 		}
+	}
+	if (!pressId.has_value()) {
+		m_latestUnconsumedPressIdByButton.erase(identifier);
+		m_latestUnconsumedReleaseIdByButton.erase(identifier);
+		return;
+	}
+	auto pressIt = m_latestUnconsumedPressIdByButton.find(identifier);
+	if (pressIt != m_latestUnconsumedPressIdByButton.end() && pressIt->second == pressId.value()) {
+		m_latestUnconsumedPressIdByButton.erase(pressIt);
+	}
+	auto releaseIt = m_latestUnconsumedReleaseIdByButton.find(identifier);
+	if (releaseIt != m_latestUnconsumedReleaseIdByButton.end() && releaseIt->second == pressId.value()) {
+		m_latestUnconsumedReleaseIdByButton.erase(releaseIt);
 	}
 }
 
@@ -141,33 +161,17 @@ bool InputStateManager::wasReleasedInWindow(const std::string& button, f64 windo
 }
 
 std::optional<i32> InputStateManager::getLatestUnconsumedPressId(const std::string& button) const {
-	for (auto it = m_inputBuffer.rbegin(); it != m_inputBuffer.rend(); ++it) {
-		if (it->identifier != button) {
-			continue;
-		}
-		if (it->eventType != InputEvent::Type::Press) {
-			continue;
-		}
-		if (it->consumed) {
-			continue;
-		}
-		return it->pressId;
+	auto it = m_latestUnconsumedPressIdByButton.find(button);
+	if (it != m_latestUnconsumedPressIdByButton.end()) {
+		return it->second;
 	}
 	return std::nullopt;
 }
 
 std::optional<i32> InputStateManager::getLatestUnconsumedReleaseId(const std::string& button) const {
-	for (auto it = m_inputBuffer.rbegin(); it != m_inputBuffer.rend(); ++it) {
-		if (it->identifier != button) {
-			continue;
-		}
-		if (it->eventType != InputEvent::Type::Release) {
-			continue;
-		}
-		if (it->consumed) {
-			continue;
-		}
-		return it->pressId;
+	auto it = m_latestUnconsumedReleaseIdByButton.find(button);
+	if (it != m_latestUnconsumedReleaseIdByButton.end()) {
+		return it->second;
 	}
 	return std::nullopt;
 }
@@ -186,11 +190,15 @@ void InputStateManager::resetEdgeState() {
 	
 	// Clear input buffer
 	m_inputBuffer.clear();
+	m_latestUnconsumedPressIdByButton.clear();
+	m_latestUnconsumedReleaseIdByButton.clear();
 }
 
 void InputStateManager::clear() {
 	m_buttonStates.clear();
 	m_inputBuffer.clear();
+	m_latestUnconsumedPressIdByButton.clear();
+	m_latestUnconsumedReleaseIdByButton.clear();
 	m_currentTimeMs = 0.0;
 }
 
@@ -199,7 +207,7 @@ void InputStateManager::clear() {
  * ============================================================================ */
 
 void InputStateManager::pruneOldEvents() {
-	f64 cutoff = m_currentTimeMs - BUFFER_RETENTION_MS;
+	f64 cutoff = m_currentTimeMs - (BUFFER_FRAME_RETENTION * EngineCore::instance().deltaTime() * 1000.0);
 	
 	while (!m_inputBuffer.empty() && m_inputBuffer.front().timestamp < cutoff) {
 		m_inputBuffer.pop_front();

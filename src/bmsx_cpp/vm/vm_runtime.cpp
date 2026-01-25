@@ -6,6 +6,7 @@
 #include "../core/engine_core.h"
 #include "../rompack/rompack.h"
 #include "../input/input.h"
+#include "../render/shared/render_queues.h"
 #include "../render/texturemanager.h"
 #include "../utils/clamp.h"
 #include <array>
@@ -4354,23 +4355,34 @@ void VMRuntime::executeUpdateCallback(double deltaSeconds) {
 }
 
 void VMRuntime::executeDrawCallback() {
-bool shouldRunEngineDraw = (m_drawFn == nullptr);
+	bool shouldRunEngineDraw = (m_drawFn == nullptr);
 	const bool lifecycleQueued = m_pendingLifecycleIndex < m_pendingLifecycleQueue.size();
 	if (lifecycleQueued) {
+		api().playbackRenderQueue(m_preservedRenderQueue);
 		return;
 	}
 	if (m_pendingVmCall == PendingCall::Irq) {
+		api().playbackRenderQueue(m_preservedRenderQueue);
 		return;
 	}
 	if (m_pendingVmCall == PendingCall::EngineDraw) {
+		if (!api().isFrameCaptureActive()) {
+			api().beginFrameCapture();
+		}
 		RunResult result = runVmWithBudget();
 		processIOCommands();
 		if (result == RunResult::Halted) {
 			m_pendingVmCall = PendingCall::None;
+			api().commitFrameCapture();
+			const auto& captured = RenderQueues::copyRenderQueueForPlayback();
+			m_preservedRenderQueue.assign(captured.begin(), captured.end());
+		} else {
+			api().playbackRenderQueue(m_preservedRenderQueue);
 		}
 		return;
 	}
 	if (m_pendingVmCall != PendingCall::None && m_pendingVmCall != PendingCall::Draw) {
+		api().playbackRenderQueue(m_preservedRenderQueue);
 		return;
 	}
 
@@ -4380,6 +4392,9 @@ bool shouldRunEngineDraw = (m_drawFn == nullptr);
 	double ioMs = 0.0;
 
 	try {
+		if (!api().isFrameCaptureActive()) {
+			api().beginFrameCapture();
+		}
 		if (m_drawFn) {
 			if (m_pendingVmCall == PendingCall::None) {
 				m_cpu.call(m_drawFn, {}, 0);
@@ -4414,6 +4429,13 @@ bool shouldRunEngineDraw = (m_drawFn == nullptr);
 			if (result == RunResult::Halted) {
 				m_pendingVmCall = PendingCall::None;
 			}
+		}
+		if (m_pendingVmCall == PendingCall::None) {
+			api().commitFrameCapture();
+			const auto& captured = RenderQueues::copyRenderQueueForPlayback();
+			m_preservedRenderQueue.assign(captured.begin(), captured.end());
+		} else {
+			api().playbackRenderQueue(m_preservedRenderQueue);
 		}
 		// const double totalMs = to_ms(std::chrono::steady_clock::now() - drawStart);
 		// static double accSimSec = 0.0;
@@ -4473,6 +4495,8 @@ bool shouldRunEngineDraw = (m_drawFn == nullptr);
 		// 	--s_drawLogRemaining;
 		// }
 	} catch (const std::exception& e) {
+		api().abandonFrameCapture();
+		api().playbackRenderQueue(m_preservedRenderQueue);
 		std::cerr << "[VMRuntime] Error in draw: " << e.what() << std::endl;
 		logVmCallStack();
 		m_runtimeFailed = true;

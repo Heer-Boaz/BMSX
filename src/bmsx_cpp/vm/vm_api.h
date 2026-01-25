@@ -24,6 +24,11 @@ public:
 	int display_width() const;
 	int display_height() const;
 	double stat(int index) const;
+	bool isFrameCaptureActive() const;
+	void beginFrameCapture();
+	void commitFrameCapture();
+	void abandonFrameCapture();
+	void playbackRenderQueue(const std::vector<RenderSubmission>& queue);
 
 	void cls(int colorIndex = 0);
 	void put_rect(int x0, int y0, int x1, int y1, int z, int colorIndex);
@@ -64,6 +69,9 @@ public:
 	void reboot();
 
 private:
+	void submit(RenderSubmission submission);
+	void submitToRenderer(const RenderSubmission& submission);
+
 	VMRuntime& m_runtime;
 	std::unique_ptr<VMFont> m_font;
 
@@ -72,6 +80,9 @@ private:
 	int m_textCursorHomeX = 0;
 	int m_textCursorColorIndex = 0;
 	int m_defaultPrintColorIndex = 15;
+	bool m_frameCaptureActive = false;
+	std::vector<RenderSubmission> m_frameCommands;
+	std::vector<RenderSubmission> m_frameCommandBuffer;
 
 	std::string m_cartDataNamespace;
 	std::vector<double> m_persistentData;

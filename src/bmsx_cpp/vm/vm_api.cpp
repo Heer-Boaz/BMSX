@@ -8,6 +8,7 @@
 #include <cctype>
 #include <cmath>
 #include <stdexcept>
+#include <utility>
 
 namespace bmsx {
 namespace {
@@ -671,7 +672,10 @@ m_runtime.registerNativeFunction("put_glyphs", [this, key, asText](const std::ve
 			}
 	}
 
-	EngineCore::instance().view()->renderer.submit.glyphs(submission);
+	RenderSubmission op{};
+	op.type = RenderSubmissionType::Glyphs;
+	op.glyphs = submission;
+	submit(std::move(op));
 	(void)out;
 });
 
@@ -907,12 +911,47 @@ double VMApi::stat(int /*index*/) const {
 	throw BMSX_RUNTIME_ERROR("stat is not implemented.");
 }
 
+bool VMApi::isFrameCaptureActive() const {
+	return m_frameCaptureActive;
+}
+
+void VMApi::beginFrameCapture() {
+	m_frameCaptureActive = true;
+	m_frameCommands.clear();
+}
+
+void VMApi::commitFrameCapture() {
+	m_frameCaptureActive = false;
+	if (m_frameCommands.empty()) {
+		return;
+	}
+	m_frameCommandBuffer.clear();
+	m_frameCommandBuffer.swap(m_frameCommands);
+	for (const RenderSubmission& submission : m_frameCommandBuffer) {
+		submitToRenderer(submission);
+	}
+}
+
+void VMApi::abandonFrameCapture() {
+	m_frameCaptureActive = false;
+	m_frameCommands.clear();
+}
+
+void VMApi::playbackRenderQueue(const std::vector<RenderSubmission>& queue) {
+	for (const RenderSubmission& submission : queue) {
+		submitToRenderer(submission);
+	}
+}
+
 void VMApi::cls(int colorIndex) {
 	RectRenderSubmission submission;
 	submission.kind = RectRenderSubmission::Kind::Fill;
 	submission.area = {0.0f, 0.0f, static_cast<f32>(display_width()), static_cast<f32>(display_height())};
 	submission.color = palette_color(colorIndex);
-	EngineCore::instance().view()->renderer.submit.rect(submission);
+	RenderSubmission op{};
+	op.type = RenderSubmissionType::Rect;
+	op.rect = submission;
+	submit(std::move(op));
 	reset_print_cursor();
 }
 
@@ -921,7 +960,10 @@ void VMApi::put_rect(int x0, int y0, int x1, int y1, int z, int colorIndex) {
 	submission.kind = RectRenderSubmission::Kind::Rect;
 	submission.area = {static_cast<f32>(x0), static_cast<f32>(y0), static_cast<f32>(x1), static_cast<f32>(y1), static_cast<f32>(z)};
 	submission.color = palette_color(colorIndex);
-	EngineCore::instance().view()->renderer.submit.rect(submission);
+	RenderSubmission op{};
+	op.type = RenderSubmissionType::Rect;
+	op.rect = submission;
+	submit(std::move(op));
 }
 
 void VMApi::put_rectfill(int x0, int y0, int x1, int y1, int z, int colorIndex) {
@@ -929,7 +971,10 @@ void VMApi::put_rectfill(int x0, int y0, int x1, int y1, int z, int colorIndex) 
 	submission.kind = RectRenderSubmission::Kind::Fill;
 	submission.area = {static_cast<f32>(x0), static_cast<f32>(y0), static_cast<f32>(x1), static_cast<f32>(y1), static_cast<f32>(z)};
 	submission.color = palette_color(colorIndex);
-	EngineCore::instance().view()->renderer.submit.rect(submission);
+	RenderSubmission op{};
+	op.type = RenderSubmissionType::Rect;
+	op.rect = submission;
+	submit(std::move(op));
 }
 
 void VMApi::put_rectfillcolor(int x0, int y0, int x1, int y1, int z, const Color& color, std::optional<RenderLayer> layer) {
@@ -938,23 +983,38 @@ void VMApi::put_rectfillcolor(int x0, int y0, int x1, int y1, int z, const Color
 	submission.area = {static_cast<f32>(x0), static_cast<f32>(y0), static_cast<f32>(x1), static_cast<f32>(y1), static_cast<f32>(z)};
 	submission.color = color;
 	submission.layer = layer;
-	EngineCore::instance().view()->renderer.submit.rect(submission);
+	RenderSubmission op{};
+	op.type = RenderSubmissionType::Rect;
+	op.rect = submission;
+	submit(std::move(op));
 }
 
 void VMApi::put_sprite(const ImgRenderSubmission& submission) {
-	EngineCore::instance().view()->renderer.submit.sprite(submission);
+	RenderSubmission op{};
+	op.type = RenderSubmissionType::Img;
+	op.img = submission;
+	submit(std::move(op));
 }
 
 void VMApi::put_poly(const PolyRenderSubmission& submission) {
-	EngineCore::instance().view()->renderer.submit.poly(submission);
+	RenderSubmission op{};
+	op.type = RenderSubmissionType::Poly;
+	op.poly = submission;
+	submit(std::move(op));
 }
 
 void VMApi::put_mesh(const MeshRenderSubmission& submission) {
-	EngineCore::instance().view()->renderer.submit.mesh(submission);
+	RenderSubmission op{};
+	op.type = RenderSubmissionType::Mesh;
+	op.mesh = submission;
+	submit(std::move(op));
 }
 
 void VMApi::put_particle(const ParticleRenderSubmission& submission) {
-	EngineCore::instance().view()->renderer.submit.particle(submission);
+	RenderSubmission op{};
+	op.type = RenderSubmissionType::Particle;
+	op.particle = submission;
+	submit(std::move(op));
 }
 
 void VMApi::write(const std::string& text, std::optional<int> x, std::optional<int> y,
@@ -1068,7 +1128,10 @@ void VMApi::write(const std::string& text, std::optional<int> x, std::optional<i
 	submission.align = align;
 	submission.baseline = baseline;
 	submission.layer = layer;
-	EngineCore::instance().view()->renderer.submit.glyphs(submission);
+	RenderSubmission op{};
+	op.type = RenderSubmissionType::Glyphs;
+	op.glyphs = submission;
+	submit(std::move(op));
 
 	const bool shouldAdvance = autoAdvance.value_or(true);
 	if (shouldAdvance) {
@@ -1123,7 +1186,10 @@ void VMApi::write_inline_with_font(const std::string& text, int x, int y, int z,
 	submission.z = static_cast<f32>(z);
 	submission.color = palette_color(colorIndex);
 	submission.font = font ? font : m_font.get();
-	EngineCore::instance().view()->renderer.submit.glyphs(submission);
+	RenderSubmission op{};
+	op.type = RenderSubmissionType::Glyphs;
+	op.glyphs = submission;
+	submit(std::move(op));
 }
 
 void VMApi::write_inline_span_with_font(const std::string& text, int start, int end,
@@ -1137,7 +1203,10 @@ void VMApi::write_inline_span_with_font(const std::string& text, int start, int 
 	submission.z = static_cast<f32>(z);
 	submission.color = palette_color(colorIndex);
 	submission.font = font ? font : m_font.get();
-	EngineCore::instance().view()->renderer.submit.glyphs(submission);
+	RenderSubmission op{};
+	op.type = RenderSubmissionType::Glyphs;
+	op.glyphs = submission;
+	submit(std::move(op));
 }
 
 bool VMApi::action_triggered(const std::string& actionDefinition, std::optional<int> playerIndex) const {
@@ -1205,6 +1274,37 @@ void VMApi::reboot() {
 	m_runtime.requestProgramReload();
 }
 
+void VMApi::submit(RenderSubmission submission) {
+	if (!m_frameCaptureActive) {
+		submitToRenderer(submission);
+		return;
+	}
+	m_frameCommands.push_back(std::move(submission));
+}
+
+void VMApi::submitToRenderer(const RenderSubmission& submission) {
+	switch (submission.type) {
+		case RenderSubmissionType::Img:
+			EngineCore::instance().view()->renderer.submit.sprite(submission.img);
+			return;
+		case RenderSubmissionType::Mesh:
+			EngineCore::instance().view()->renderer.submit.mesh(submission.mesh);
+			return;
+		case RenderSubmissionType::Particle:
+			EngineCore::instance().view()->renderer.submit.particle(submission.particle);
+			return;
+		case RenderSubmissionType::Poly:
+			EngineCore::instance().view()->renderer.submit.poly(submission.poly);
+			return;
+		case RenderSubmissionType::Rect:
+			EngineCore::instance().view()->renderer.submit.rect(submission.rect);
+			return;
+		case RenderSubmissionType::Glyphs:
+			EngineCore::instance().view()->renderer.submit.glyphs(submission.glyphs);
+			return;
+	}
+}
+
 std::string VMApi::expand_tabs(const std::string& text) const {
 	if (text.find('\t') == std::string::npos) {
 		return text;
@@ -1238,7 +1338,10 @@ void VMApi::draw_multiline_text(const std::string& text, int x, int y, int z, co
 			submission.z = static_cast<f32>(z);
 			submission.color = color;
 			submission.font = &font;
-			EngineCore::instance().view()->renderer.submit.glyphs(submission);
+			RenderSubmission op{};
+			op.type = RenderSubmissionType::Glyphs;
+			op.glyphs = submission;
+			submit(std::move(op));
 		}
 		if (end == expanded.size()) {
 			break;

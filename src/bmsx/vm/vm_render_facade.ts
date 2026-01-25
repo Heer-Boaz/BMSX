@@ -10,7 +10,7 @@ import type {
 import { $ } from '../core/engine_core';
 import { consumeOverlayFrame, publishOverlayFrame, type EditorOverlayFrame } from '../render/editor/editor_overlay_queue';
 import type { Viewport } from '../rompack/rompack';
-import { copySpriteQueueForPlayback } from '../render/shared/render_queues';
+import { copyRenderQueueForPlayback } from '../render/shared/render_queues';
 import { RenderSubmission } from '../render/backend/pipeline_interfaces';
 
 export type VMRenderCommand = RenderSubmission;
@@ -35,7 +35,7 @@ export class VMRenderFacade {
 	public captureCurrentFrameRenderQueue() {
 		// Preserve the current frame's submissions so they can be replayed under overlays.
 		// We rely on playback to skip editor/overlay layers so we don't duplicate UI layers.
-		return copySpriteQueueForPlayback();
+		return copyRenderQueueForPlayback();
 	}
 
 	private commands: VMRenderCommand[] = [];

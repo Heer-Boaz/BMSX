@@ -25,6 +25,8 @@ const particleQueue = new FeatureQueue<ParticleRenderSubmission>(1024);
 let spriteSubmissionCounter = 0;
 
 type PlaybackImgSubmission = Extract<RenderSubmission, { type: 'img' }>;
+type PlaybackMeshSubmission = Extract<RenderSubmission, { type: 'mesh' }>;
+type PlaybackParticleSubmission = Extract<RenderSubmission, { type: 'particle' }>;
 
 const DEFAULT_ASSET_ENTRY: VmAssetEntry = {
 	id: 'none',
@@ -49,7 +51,7 @@ const DEFAULT_ASSET_ENTRY: VmAssetEntry = {
 	audioDataSize: 0,
 };
 
-const spriteQueuePlaybackBuffer: PlaybackImgSubmission[] = [];
+const renderQueuePlaybackBuffer: RenderSubmission[] = [];
 
 function createPlaybackImgSubmission(): PlaybackImgSubmission {
 	return {
@@ -64,6 +66,64 @@ function createPlaybackImgSubmission(): PlaybackImgSubmission {
 		ambient_factor: undefined,
 		parallax_weight: 0,
 	};
+}
+
+function setPlaybackSpriteSubmission(index: number, src: ImgRenderSubmission): void {
+	let op = renderQueuePlaybackBuffer[index] as PlaybackImgSubmission;
+	if (!op || op.type !== 'img') {
+		op = createPlaybackImgSubmission();
+		renderQueuePlaybackBuffer[index] = op;
+	}
+	op.imgid = src.imgid;
+	op.layer = src.layer;
+	op.ambient_affected = src.ambient_affected;
+	op.ambient_factor = src.ambient_factor;
+	op.pos.x = src.pos.x;
+	op.pos.y = src.pos.y;
+	op.pos.z = src.pos.z;
+	op.scale.x = src.scale.x;
+	op.scale.y = src.scale.y;
+	op.flip.flip_h = src.flip.flip_h;
+	op.flip.flip_v = src.flip.flip_v;
+	op.colorize.r = src.colorize.r;
+	op.colorize.g = src.colorize.g;
+	op.colorize.b = src.colorize.b;
+	op.colorize.a = src.colorize.a;
+	op.parallax_weight = src.parallax_weight ?? 0;
+}
+
+function setPlaybackMeshSubmission(index: number, src: MeshRenderSubmission): void {
+	let op = renderQueuePlaybackBuffer[index] as PlaybackMeshSubmission;
+	if (!op || op.type !== 'mesh') {
+		op = { type: 'mesh', mesh: src.mesh, matrix: src.matrix };
+		renderQueuePlaybackBuffer[index] = op;
+	}
+	op.mesh = src.mesh;
+	op.matrix = src.matrix;
+	op.joint_matrices = src.joint_matrices;
+	op.morph_weights = src.morph_weights;
+	op.receive_shadow = src.receive_shadow;
+	op.layer = src.layer;
+}
+
+function setPlaybackParticleSubmission(index: number, src: ParticleRenderSubmission): void {
+	let op = renderQueuePlaybackBuffer[index] as PlaybackParticleSubmission;
+	if (!op || op.type !== 'particle') {
+		op = {
+			type: 'particle',
+			position: src.position,
+			size: src.size,
+			color: src.color,
+		};
+		renderQueuePlaybackBuffer[index] = op;
+	}
+	op.position = src.position;
+	op.size = src.size;
+	op.color = src.color;
+	op.texture = src.texture;
+	op.ambient_mode = src.ambient_mode;
+	op.ambient_factor = src.ambient_factor;
+	op.layer = src.layer;
 }
 
 const spriteItemPoolA: SpriteQueueItem[] = [];
@@ -214,37 +274,23 @@ export function spriteQueueFrontSize(): number {
 	return spriteQueue.sizeFront();
 }
 
-export function copySpriteQueueForPlayback(): RenderSubmission[] {
-	const items = spriteQueuePlaybackBuffer;
+export function copyRenderQueueForPlayback(): RenderSubmission[] {
 	let count = 0;
 	spriteQueue.forEachBack((item) => {
-		let op = items[count];
-		if (!op) {
-			op = createPlaybackImgSubmission();
-			items[count] = op;
-		}
 		const src = item.options;
-		const dst = op;
-		dst.imgid = src.imgid;
-		dst.layer = src.layer;
-		dst.ambient_affected = src.ambient_affected;
-		dst.ambient_factor = src.ambient_factor;
-		dst.pos.x = src.pos.x;
-		dst.pos.y = src.pos.y;
-		dst.pos.z = src.pos.z;
-		dst.scale.x = src.scale.x;
-		dst.scale.y = src.scale.y;
-		dst.flip.flip_h = src.flip.flip_h;
-		dst.flip.flip_v = src.flip.flip_v;
-		dst.colorize.r = src.colorize.r;
-		dst.colorize.g = src.colorize.g;
-		dst.colorize.b = src.colorize.b;
-		dst.colorize.a = src.colorize.a;
-		dst.parallax_weight = src.parallax_weight ?? 0;
+		setPlaybackSpriteSubmission(count, src);
 		count += 1;
 	});
-	items.length = count;
-	return items;
+	meshQueue.forEachBack((item) => {
+		setPlaybackMeshSubmission(count, item);
+		count += 1;
+	});
+	particleQueue.forEachBack((item) => {
+		setPlaybackParticleSubmission(count, item);
+		count += 1;
+	});
+	renderQueuePlaybackBuffer.length = count;
+	return renderQueuePlaybackBuffer;
 }
 
 // --- Mesh queue helpers -----------------------------------------------------

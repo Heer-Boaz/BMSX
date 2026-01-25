@@ -10,6 +10,7 @@
 
 #include "inputtypes.h"
 #include <deque>
+#include <unordered_map>
 
 namespace bmsx {
 
@@ -82,12 +83,16 @@ private:
 	
 	// Current button states
 	std::unordered_map<std::string, ButtonState> m_buttonStates;
+
+	// Latest unconsumed press/release ids per button
+	std::unordered_map<std::string, i32> m_latestUnconsumedPressIdByButton;
+	std::unordered_map<std::string, i32> m_latestUnconsumedReleaseIdByButton;
 	
 	// Current frame timestamp
 	f64 m_currentTimeMs = 0.0;
 	
 	// Buffer retention time (oldest events to keep)
-	static constexpr f64 BUFFER_RETENTION_MS = 500.0;
+	static constexpr f64 BUFFER_FRAME_RETENTION = 150.0;
 	
 	// ─────────────────────────────────────────────────────────────────────────
 	// Helpers
