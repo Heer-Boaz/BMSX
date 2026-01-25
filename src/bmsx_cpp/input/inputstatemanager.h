@@ -33,7 +33,7 @@ public:
 	// Called at start of each frame - resets edge flags
 	void beginFrame(f64 currentTimeMs);
 	
-	// Called during frame - updates button states
+	// Called during frame - updates button states and prunes old events
 	void update(f64 currentTimeMs);
 	
 	// ─────────────────────────────────────────────────────────────────────────

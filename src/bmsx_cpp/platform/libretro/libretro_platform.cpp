@@ -572,7 +572,10 @@ void LibretroPlatform::runFrame() {
 #if ENABLE_PERFORMANCE_LOGS
 	const auto tickStart = std::chrono::steady_clock::now();
 #endif
-	if (!m_platform_paused) {
+	if (m_platform_paused) {
+		// Keep input state in sync while paused to avoid desynced press ids on resume.
+		Input::instance().pollInput();
+	} else {
 		m_engine->tick(dt);
 	}
 #if ENABLE_PERFORMANCE_LOGS
@@ -826,21 +829,6 @@ void LibretroInputHub::poll() {
 			}
 		}
 		new_state.buttons[player] = buttons;
-
-		if (player == 0 && m_platform) {
-			const bool start_pressed = (new_state.buttons[player] & (1 << RETRO_DEVICE_ID_JOYPAD_START)) != 0;
-			if (start_pressed && !m_pause_hotkey_down) {
-				m_platform->setPlatformPaused(!m_platform->platformPaused());
-				m_event_queue.clear();
-				m_pause_hotkey_down = true;
-			} else if (!start_pressed && m_pause_hotkey_down) {
-				m_pause_hotkey_down = false;
-			}
-
-			if (m_pause_hotkey_down) {
-				new_state.buttons[player] &= ~(1 << RETRO_DEVICE_ID_JOYPAD_START);
-			}
-		}
 
 		// Poll analog sticks
 		new_state.analog[player * 4 + 0] = m_input_state_cb(player, RETRO_DEVICE_ANALOG,

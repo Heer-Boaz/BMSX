@@ -3251,8 +3251,7 @@ static uint16_t map_ev_key_to_pad(uint16_t code) {
 		case KEY_ENTER:
 			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_START);
 		case BTN_SELECT:
-		case KEY_BACKSPACE:
-		case KEY_ESC:
+		case KEY_RIGHTSHIFT:
 			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_SELECT);
 
 		case BTN_SOUTH:
@@ -3289,8 +3288,7 @@ static uint16_t map_sdl_key_to_pad(SDL_Keycode code) {
 
 		case SDLK_RETURN:
 			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_START);
-		case SDLK_BACKSPACE:
-		case SDLK_ESCAPE:
+		case SDLK_RSHIFT:
 			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_SELECT);
 
 		case SDLK_x:

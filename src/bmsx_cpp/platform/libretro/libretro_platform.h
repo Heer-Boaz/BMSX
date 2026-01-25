@@ -306,7 +306,6 @@ private:
 	std::vector<InputEvt> m_event_queue;
 	std::vector<std::function<void(const InputEvt&)>> m_handlers;
 	int m_next_handle_id = 1;
-	bool m_pause_hotkey_down = false;
 
 	// Previous state for edge detection
 	InputState m_prev_state;

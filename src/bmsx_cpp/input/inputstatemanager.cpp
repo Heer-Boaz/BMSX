@@ -20,14 +20,17 @@ InputStateManager::InputStateManager() = default;
  * Frame lifecycle
  * ============================================================================ */
 
+/* ============================================================================
+ * Frame lifecycle
+ * ============================================================================ */
+
 void InputStateManager::beginFrame(f64 currentTimeMs) {
 	m_currentTimeMs = currentTimeMs;
 	
-	// Reset edge flags for all buttons
+	// Reset edge flags for all buttons (parity with TS)
 	for (auto& [id, state] : m_buttonStates) {
 		state.justpressed = false;
 		state.justreleased = false;
-		// Keep waspressed/wasreleased - they're for windowed detection
 	}
 }
 
@@ -121,11 +124,11 @@ ButtonState InputStateManager::getButtonState(const std::string& button, std::op
 	
 	ButtonState state = it->second;
 	
-	// If windowed detection requested, check buffer
-	if (windowMs.has_value()) {
-		state.waspressed = wasPressedInWindow(button, windowMs.value());
-		state.wasreleased = wasReleasedInWindow(button, windowMs.value());
-	}
+	// Parity with TS: Always compute windowed waspressed/wasreleased, using default if not specified
+	// TS uses: bufferframeDuration * $.timestep_ms = 150 * (1000/60) = 2500ms
+	f64 effectiveWindow = windowMs.value_or(BUFFER_FRAME_RETENTION * (1000.0 / 60.0));
+	state.waspressed = state.pressed || wasPressedInWindow(button, effectiveWindow);
+	state.wasreleased = state.justreleased || wasReleasedInWindow(button, effectiveWindow);
 	
 	return state;
 }
@@ -207,7 +210,8 @@ void InputStateManager::clear() {
  * ============================================================================ */
 
 void InputStateManager::pruneOldEvents() {
-	f64 cutoff = m_currentTimeMs - (BUFFER_FRAME_RETENTION * EngineCore::instance().deltaTime() * 1000.0);
+	// Parity with TS: Use fixed timestep for window calculation (150 * 16.666ms)
+	f64 cutoff = m_currentTimeMs - (BUFFER_FRAME_RETENTION * (1000.0 / 50.0));
 	
 	while (!m_inputBuffer.empty() && m_inputBuffer.front().timestamp < cutoff) {
 		m_inputBuffer.pop_front();

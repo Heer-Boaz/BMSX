@@ -93,10 +93,11 @@ ActionState PlayerInput::getActionState(const std::string& action, std::optional
 	std::optional<f64> windowMs;
 	if (windowFrames.has_value()) {
 		windowMs = windowFrames.value() * EngineCore::instance().deltaTime() * 1000.0;
-	} else {
-		// Parity with TS: If no window provided, use default retention window
-		windowMs = 150.0 * EngineCore::instance().deltaTime() * 1000.0;
 	}
+	//  else {
+	// 	// Parity with TS: If no window provided, use default retention window
+	// 	windowMs = 150.0 * EngineCore::instance().deltaTime() * 1000.0;
+	// }
 	
 	bool anyPressed = false;
 	bool anyJustPressed = false;
@@ -144,11 +145,23 @@ ActionState PlayerInput::getActionState(const std::string& action, std::optional
 			}
 			
 			for (const auto& binding : bindings) {
-				ButtonState state = handler->getButtonState(binding.id);
-				if (windowMs.has_value()) {
-					state.waspressed = state.pressed || m_stateManager.wasPressedInWindow(binding.id, windowMs.value());
-					state.wasreleased = state.justreleased || m_stateManager.wasReleasedInWindow(binding.id, windowMs.value());
-				}
+				// Read from BOTH handler (for held state) and stateManager (for fresh events)
+				ButtonState handlerState = handler->getButtonState(binding.id);
+				ButtonState smState = m_stateManager.getButtonState(binding.id, windowMs);
+				
+				// Combine: pressed from handler OR stateManager, edges from stateManager (fresh events)
+				ButtonState state;
+				state.pressed = handlerState.pressed || smState.pressed;
+				state.justpressed = smState.justpressed;
+				state.justreleased = smState.justreleased;
+				state.waspressed = smState.waspressed;
+				state.wasreleased = smState.wasreleased;
+				state.presstime = handlerState.presstime.has_value() ? handlerState.presstime : smState.presstime;
+				state.timestamp = smState.timestamp.has_value() ? smState.timestamp : handlerState.timestamp;
+				state.pressedAtMs = smState.pressedAtMs.has_value() ? smState.pressedAtMs : handlerState.pressedAtMs;
+				state.pressId = smState.pressId.has_value() ? smState.pressId : handlerState.pressId;
+				state.value = handlerState.value;
+				state.consumed = smState.consumed || handlerState.consumed;
 				
 				if (state.pressed) anyPressed = true;
 				if (state.justpressed) anyJustPressed = true;
@@ -192,11 +205,23 @@ ActionState PlayerInput::getActionState(const std::string& action, std::optional
 			}
 			
 			for (const auto& binding : bindings) {
-				ButtonState state = handler->getButtonState(binding.id);
-				if (windowMs.has_value()) {
-					state.waspressed = state.pressed || m_stateManager.wasPressedInWindow(binding.id, windowMs.value());
-					state.wasreleased = state.justreleased || m_stateManager.wasReleasedInWindow(binding.id, windowMs.value());
-				}
+				// Read from BOTH handler (for held state) and stateManager (for fresh events)
+				ButtonState handlerState = handler->getButtonState(binding.id);
+				ButtonState smState = m_stateManager.getButtonState(binding.id, windowMs);
+				
+				// Combine: pressed from handler OR stateManager, edges from stateManager (fresh events)
+				ButtonState state;
+				state.pressed = handlerState.pressed || smState.pressed;
+				state.justpressed = smState.justpressed;
+				state.justreleased = smState.justreleased;
+				state.waspressed = smState.waspressed;
+				state.wasreleased = smState.wasreleased;
+				state.presstime = handlerState.presstime.has_value() ? handlerState.presstime : smState.presstime;
+				state.timestamp = smState.timestamp.has_value() ? smState.timestamp : handlerState.timestamp;
+				state.pressedAtMs = smState.pressedAtMs.has_value() ? smState.pressedAtMs : handlerState.pressedAtMs;
+				state.pressId = smState.pressId.has_value() ? smState.pressId : handlerState.pressId;
+				state.value = handlerState.value;
+				state.consumed = smState.consumed || handlerState.consumed;
 				
 				if (state.pressed) anyPressed = true;
 				if (state.justpressed) anyJustPressed = true;
@@ -240,11 +265,23 @@ ActionState PlayerInput::getActionState(const std::string& action, std::optional
 			}
 			
 			for (const auto& binding : bindings) {
-				ButtonState state = handler->getButtonState(binding.id);
-				if (windowMs.has_value()) {
-					state.waspressed = state.pressed || m_stateManager.wasPressedInWindow(binding.id, windowMs.value());
-					state.wasreleased = state.justreleased || m_stateManager.wasReleasedInWindow(binding.id, windowMs.value());
-				}
+				// Read from BOTH handler (for held state) and stateManager (for fresh events)
+				ButtonState handlerState = handler->getButtonState(binding.id);
+				ButtonState smState = m_stateManager.getButtonState(binding.id, windowMs);
+				
+				// Combine: pressed from handler OR stateManager, edges from stateManager (fresh events)
+				ButtonState state;
+				state.pressed = handlerState.pressed || smState.pressed;
+				state.justpressed = smState.justpressed;
+				state.justreleased = smState.justreleased;
+				state.waspressed = smState.waspressed;
+				state.wasreleased = smState.wasreleased;
+				state.presstime = handlerState.presstime.has_value() ? handlerState.presstime : smState.presstime;
+				state.timestamp = smState.timestamp.has_value() ? smState.timestamp : handlerState.timestamp;
+				state.pressedAtMs = smState.pressedAtMs.has_value() ? smState.pressedAtMs : handlerState.pressedAtMs;
+				state.pressId = smState.pressId.has_value() ? smState.pressId : handlerState.pressId;
+				state.value = handlerState.value;
+				state.consumed = smState.consumed || handlerState.consumed;
 				
 				if (state.pressed) anyPressed = true;
 				if (state.justpressed) anyJustPressed = true;
@@ -281,11 +318,13 @@ ActionState PlayerInput::getActionState(const std::string& action, std::optional
 	if (!anyJustPressed && bufferedPressId.has_value() && bufferedPressId.value() != lastPressId) {
 		anyJustPressed = true;
 	}
-	if (anyJustPressed && bufferedPressId.has_value() && (!latestPressId.has_value() || bufferedPressId.value() > latestPressId.value())) {
-		latestPressId = bufferedPressId;
-	}
-	if (anyJustPressed && latestPressId.has_value()) {
-		m_actionPressRecords[action] = latestPressId.value();
+	
+	// Parity with TS: Prefer bufferPressId over latestPressId (bufferPressId ?? latestPressId)
+	if (anyJustPressed) {
+		std::optional<i32> recordId = bufferedPressId.has_value() ? bufferedPressId : latestPressId;
+		if (recordId.has_value()) {
+			m_actionPressRecords[action] = recordId.value();
+		}
 	}
 
 	auto lastReleaseIt = m_actionReleaseRecords.find(action);
@@ -538,6 +577,9 @@ void PlayerInput::consumeButton(const std::string& button, InputSource source) {
 void PlayerInput::pollInput(f64 currentTimeMs) {
 	m_frameCounter++;
 	
+	// Reset edge flags at start of frame (parity with TS)
+	m_stateManager.beginFrame(currentTimeMs);
+	
 	// Update guard window based on frame timing
 	if (m_lastPollTimestampMs.has_value()) {
 		f64 delta = currentTimeMs - m_lastPollTimestampMs.value();
@@ -545,16 +587,14 @@ void PlayerInput::pollInput(f64 currentTimeMs) {
 	}
 	m_lastPollTimestampMs = currentTimeMs;
 	
-	// Begin frame for state manager
-	m_stateManager.beginFrame(currentTimeMs);
-	
-	// Poll all handlers
+	// Poll all handlers (they read their internal state from device input)
 	for (size_t i = 0; i < INPUT_SOURCE_COUNT; i++) {
 		if (m_handlers[i]) {
 			m_handlers[i]->pollInput();
 		}
 	}
 }
+
 
 void PlayerInput::update(f64 currentTimeMs) {
 	m_stateManager.update(currentTimeMs);
