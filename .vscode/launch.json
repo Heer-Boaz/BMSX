@@ -135,5 +135,67 @@
 			"smartStep": true,
 			"disableNetworkCache": true,
 		}
+		{
+			"type": "pwa-node",
+			"request": "launch",
+			"name": "LIBRETRO RUN: RetroArch",
+			"runtimeExecutable": "npm",
+			"runtimeArgs": [
+				"run",
+				"run:retroarch",
+				"--",
+				"./dist/${input:romtobuild}.rom"
+			],
+			"cwd": "${workspaceFolder}",
+			"console": "integratedTerminal"
+		},
+		{
+			"type": "pwa-node",
+			"request": "launch",
+			"name": "LIBRETRO RUN: Custom Host",
+			"runtimeExecutable": "npm",
+			"runtimeArgs": [
+				"run",
+				"run:libretro-host:wsl",
+				"--",
+				"./dist/${input:romtobuild}.rom"
+			],
+			"cwd": "${workspaceFolder}",
+			"console": "integratedTerminal"
+		}
+		,
+		{
+			"type": "pwa-node",
+			"request": "launch",
+			"name": "GAME RUN: headless",
+			"runtimeExecutable": "npm",
+			"runtimeArgs": [
+				"run",
+				"headless:game",
+				"--",
+				"${input:romtobuild}"
+			],
+			"cwd": "${workspaceFolder}",
+			"console": "integratedTerminal"
+		}
+	],
+	"inputs": [
+		{
+			"type": "pickString",
+			"id": "romtobuild",
+			"description": "Choose ROM to build",
+			"options": [
+				"2025",
+				"emptycart",
+				"sint2024",
+				"ella2023",
+				"testrom",
+				"joanneke2022",
+				"marlies2021",
+				"marlies2020",
+				"sintervania"
+			],
+			"default": "2025"
+		}
 	],
 }
