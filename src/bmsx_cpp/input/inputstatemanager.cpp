@@ -53,10 +53,10 @@ void InputStateManager::update(f64 currentTimeMs) {
  * ============================================================================ */
 
 void InputStateManager::addInputEvent(InputEvent evt) {
-	m_inputBuffer.push_back(std::move(evt));
+	const std::string id = evt.identifier;
 	
 	// Update corresponding button state
-	auto& state = m_buttonStates[evt.identifier];
+	auto& state = m_buttonStates[id];
 	
 	if (evt.eventType == InputEvent::Type::Press) {
 		bool wasPressed = state.pressed;
@@ -70,7 +70,7 @@ void InputStateManager::addInputEvent(InputEvent evt) {
 		state.value = 1.0f;
 		state.consumed = false;
 		if (!evt.consumed && evt.pressId.has_value()) {
-			m_latestUnconsumedPressIdByButton[evt.identifier] = evt.pressId.value();
+			m_latestUnconsumedPressIdByButton[id] = evt.pressId.value();
 		}
 	} else {
 		bool wasPressed = state.pressed;
@@ -84,9 +84,11 @@ void InputStateManager::addInputEvent(InputEvent evt) {
 		state.value = 0.0f;
 		state.consumed = false;
 		if (!evt.consumed && evt.pressId.has_value()) {
-			m_latestUnconsumedReleaseIdByButton[evt.identifier] = evt.pressId.value();
+			m_latestUnconsumedReleaseIdByButton[id] = evt.pressId.value();
 		}
 	}
+
+	m_inputBuffer.push_back(std::move(evt));
 }
 
 void InputStateManager::consumeBufferedEvent(const std::string& identifier, std::optional<i32> pressId) {

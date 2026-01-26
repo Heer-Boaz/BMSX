@@ -545,14 +545,6 @@ void LibretroPlatform::runFrame() {
 	// Clear audio buffer
 	m_audio_buffer.clear();
 
-	// Poll input
-#if ENABLE_PERFORMANCE_LOGS
-	const auto pollStart = std::chrono::steady_clock::now();
-#endif
-	pollInput();
-#if ENABLE_PERFORMANCE_LOGS
-	const auto pollEnd = std::chrono::steady_clock::now();
-#endif
 
 	// Advance clock
 	if (auto* clock = dynamic_cast<LibretroClock*>(m_clock.get())) {
@@ -576,6 +568,9 @@ void LibretroPlatform::runFrame() {
 		// Keep input state in sync while paused to avoid desynced press ids on resume.
 		Input::instance().pollInput();
 	} else {
+		// Ensure host input is polled so events are queued into the input hub
+		// before the engine tick consumes them.
+		pollInput();
 		m_engine->tick(dt);
 	}
 #if ENABLE_PERFORMANCE_LOGS

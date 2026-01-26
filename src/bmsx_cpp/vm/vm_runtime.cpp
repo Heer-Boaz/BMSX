@@ -1026,9 +1026,42 @@ void VMRuntime::tickUpdate() {
 	auto viewSize = EngineCore::instance().view()->viewportSize;
 	viewportTable->set(canonicalizeIdentifier("x"), valueNumber(static_cast<double>(viewSize.x)));
 	viewportTable->set(canonicalizeIdentifier("y"), valueNumber(static_cast<double>(viewSize.y)));
+	auto* viewTable = asTable(gameTable->get(canonicalizeIdentifier("view")));
+	auto* view = EngineCore::instance().view();
+	const Value viewCrtKey = canonicalizeIdentifier("crt_postprocessing_enabled");
+	const Value viewNoiseKey = canonicalizeIdentifier("enable_noise");
+	const Value viewColorBleedKey = canonicalizeIdentifier("enable_colorbleed");
+	const Value viewScanlinesKey = canonicalizeIdentifier("enable_scanlines");
+	const Value viewBlurKey = canonicalizeIdentifier("enable_blur");
+	const Value viewGlowKey = canonicalizeIdentifier("enable_glow");
+	const Value viewFringingKey = canonicalizeIdentifier("enable_fringing");
+	const Value viewApertureKey = canonicalizeIdentifier("enable_aperture");
+	viewTable->set(viewCrtKey, valueBool(view->crt_postprocessing_enabled));
+	viewTable->set(viewNoiseKey, valueBool(view->applyNoise));
+	viewTable->set(viewColorBleedKey, valueBool(view->applyColorBleed));
+	viewTable->set(viewScanlinesKey, valueBool(view->applyScanlines));
+	viewTable->set(viewBlurKey, valueBool(view->applyBlur));
+	viewTable->set(viewGlowKey, valueBool(view->applyGlow));
+	viewTable->set(viewFringingKey, valueBool(view->applyFringing));
+	viewTable->set(viewApertureKey, valueBool(view->applyAperture));
 
 	// Call _update if present
 	executeUpdateCallback(m_frameState.deltaSeconds);
+
+	auto readViewBool = [](Value value, const char* field) -> bool {
+		if (!valueIsBool(value)) {
+			throw BMSX_RUNTIME_ERROR(std::string("game.view.") + field + " must be boolean.");
+		}
+		return valueToBool(value);
+	};
+	view->crt_postprocessing_enabled = readViewBool(viewTable->get(viewCrtKey), "crt_postprocessing_enabled");
+	view->applyNoise = readViewBool(viewTable->get(viewNoiseKey), "enable_noise");
+	view->applyColorBleed = readViewBool(viewTable->get(viewColorBleedKey), "enable_colorbleed");
+	view->applyScanlines = readViewBool(viewTable->get(viewScanlinesKey), "enable_scanlines");
+	view->applyBlur = readViewBool(viewTable->get(viewBlurKey), "enable_blur");
+	view->applyGlow = readViewBool(viewTable->get(viewGlowKey), "enable_glow");
+	view->applyFringing = readViewBool(viewTable->get(viewFringingKey), "enable_fringing");
+	view->applyAperture = readViewBool(viewTable->get(viewApertureKey), "enable_aperture");
 
 	m_frameState.updateExecuted = true;
 	flushAssetEdits();
@@ -4090,6 +4123,16 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 	auto* viewportTable = m_cpu.createTable(0, 2);
 	viewportTable->set(key("x"), valueNumber(static_cast<double>(viewSize.x)));
 	viewportTable->set(key("y"), valueNumber(static_cast<double>(viewSize.y)));
+	auto* view = EngineCore::instance().view();
+	auto* viewTable = m_cpu.createTable(0, 8);
+	viewTable->set(key("crt_postprocessing_enabled"), valueBool(view->crt_postprocessing_enabled));
+	viewTable->set(key("enable_noise"), valueBool(view->applyNoise));
+	viewTable->set(key("enable_colorbleed"), valueBool(view->applyColorBleed));
+	viewTable->set(key("enable_scanlines"), valueBool(view->applyScanlines));
+	viewTable->set(key("enable_blur"), valueBool(view->applyBlur));
+	viewTable->set(key("enable_glow"), valueBool(view->applyGlow));
+	viewTable->set(key("enable_fringing"), valueBool(view->applyFringing));
+	viewTable->set(key("enable_aperture"), valueBool(view->applyAperture));
 
 auto clockNowFn = m_cpu.createNativeFunction("platform.clock.now", [](const std::vector<Value>& args, std::vector<Value>& out) {
 	(void)args;
@@ -4187,9 +4230,10 @@ auto emitFn = m_cpu.createNativeFunction("game.emit", [](const std::vector<Value
 	(void)out;
 });
 
-	auto* gameTable = m_cpu.createTable(0, 9);
+	auto* gameTable = m_cpu.createTable(0, 10);
 	gameTable->set(key("platform"), valueTable(platformTable));
 	gameTable->set(key("viewportsize"), valueTable(viewportTable));
+	gameTable->set(key("view"), valueTable(viewTable));
 	gameTable->set(key("deltatime"), valueNumber(0.0));
 	gameTable->set(key("deltatime_seconds"), valueNumber(0.0));
 	gameTable->set(key("emit"), emitFn);

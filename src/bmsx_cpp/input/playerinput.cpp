@@ -362,7 +362,7 @@ ActionState PlayerInput::getActionState(const std::string& action, std::optional
 	auto repeat = evaluateActionRepeat(action, result);
 	result.repeatpressed = repeat.triggered;
 	result.repeatcount = repeat.count;
-	
+
 	return result;
 }
 
@@ -577,9 +577,6 @@ void PlayerInput::consumeButton(const std::string& button, InputSource source) {
 void PlayerInput::pollInput(f64 currentTimeMs) {
 	m_frameCounter++;
 	
-	// Reset edge flags at start of frame (parity with TS)
-	m_stateManager.beginFrame(currentTimeMs);
-	
 	// Update guard window based on frame timing
 	if (m_lastPollTimestampMs.has_value()) {
 		f64 delta = currentTimeMs - m_lastPollTimestampMs.value();
@@ -595,6 +592,10 @@ void PlayerInput::pollInput(f64 currentTimeMs) {
 	}
 }
 
+
+void PlayerInput::beginFrame(f64 currentTimeMs) {
+	m_stateManager.beginFrame(currentTimeMs);
+}
 
 void PlayerInput::update(f64 currentTimeMs) {
 	m_stateManager.update(currentTimeMs);

@@ -94,6 +94,7 @@ class RailDemoDriver extends WorldObject {
 
 		const input = $.input.getPlayerInput(1);
 		if (input.getActionState('fire').justpressed) {
+			console.log('[TEST][input] fire justpressed @', $.platform.clock.now());
 			this.bullets.spawn([camObj.position.x, camObj.position.y, camObj.position.z], [aimDir.x, aimDir.y, aimDir.z]);
 			$.spawn(MuzzleFlash.create([camObj.position.x + aimDir.x * 2, camObj.position.y + aimDir.y * 2, camObj.position.z + aimDir.z * 2]));
 		}

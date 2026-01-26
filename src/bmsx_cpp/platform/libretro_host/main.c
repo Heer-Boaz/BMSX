@@ -3546,9 +3546,6 @@ static void input_finalize(uint16_t merged) {
 		g_pad_state_port0 = g_pad_state_raw;
 	}
 	g_menu_prev_pad = g_pad_state_raw;
-	if (g_input_debug) {
-		fprintf(stderr, "[libretro-host][input] port0=0x%04x\n", g_pad_state_port0);
-	}
 }
 
 static void poll_input_devices(void) {
@@ -3569,11 +3566,6 @@ static void poll_input_devices(void) {
 			}
 			if ((size_t)n != sizeof(ev)) {
 				die("Short read from %s: %zd", dev->path, n);
-			}
-
-			if (g_input_debug) {
-				fprintf(stderr, "[libretro-host][input] %s type=%u code=%u value=%d\n",
-						dev->path, ev.type, ev.code, ev.value);
 			}
 
 			if (ev.type == EV_KEY) {
@@ -3648,35 +3640,61 @@ static void poll_input_devices(void) {
 #ifdef BMSX_LIBRETRO_HOST_SDL
 static void poll_input_devices_sdl(void) {
 	SDL_Event ev;
+	SDL_PumpEvents();
+	uint16_t pad_state = 0;
+	const Uint8* keystate = SDL_GetKeyboardState(NULL);
+	if (keystate) {
+		static const SDL_Keycode keys[] = {
+			SDLK_UP,
+			SDLK_DOWN,
+			SDLK_LEFT,
+			SDLK_RIGHT,
+			SDLK_q,
+			SDLK_w,
+			SDLK_RETURN,
+			SDLK_BACKSPACE,
+			SDLK_ESCAPE,
+			SDLK_RSHIFT,
+			SDLK_x,
+			SDLK_z,
+			SDLK_s,
+			SDLK_a,
+		};
+		for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); ++i) {
+			SDL_Scancode sc = SDL_GetScancodeFromKey(keys[i]);
+			if (sc != SDL_SCANCODE_UNKNOWN && keystate[sc]) {
+				pad_state |= map_sdl_key_to_pad(keys[i]);
+			}
+		}
+	}
+	if (g_sdl_gamepad) {
+		static const SDL_GameControllerButton buttons[] = {
+			SDL_CONTROLLER_BUTTON_DPAD_UP,
+			SDL_CONTROLLER_BUTTON_DPAD_DOWN,
+			SDL_CONTROLLER_BUTTON_DPAD_LEFT,
+			SDL_CONTROLLER_BUTTON_DPAD_RIGHT,
+			SDL_CONTROLLER_BUTTON_LEFTSHOULDER,
+			SDL_CONTROLLER_BUTTON_RIGHTSHOULDER,
+			SDL_CONTROLLER_BUTTON_START,
+			SDL_CONTROLLER_BUTTON_BACK,
+			SDL_CONTROLLER_BUTTON_A,
+			SDL_CONTROLLER_BUTTON_B,
+			SDL_CONTROLLER_BUTTON_X,
+			SDL_CONTROLLER_BUTTON_Y,
+		};
+		for (size_t i = 0; i < sizeof(buttons) / sizeof(buttons[0]); ++i) {
+			if (SDL_GameControllerGetButton(g_sdl_gamepad, buttons[i])) {
+				pad_state |= map_sdl_button_to_pad((uint8_t)buttons[i]);
+			}
+		}
+	}
+	int saw_event = 0;
 	while (SDL_PollEvent(&ev)) {
+		saw_event = 1;
 		switch (ev.type) {
 			case SDL_QUIT:
 				g_should_quit = 1;
 				break;
-			case SDL_KEYDOWN:
-			case SDL_KEYUP: {
-				const uint16_t bit = map_sdl_key_to_pad(ev.key.keysym.sym);
-				if (bit) {
-					if (ev.key.state == SDL_PRESSED) {
-						g_sdl_pad_state |= bit;
-					} else {
-						g_sdl_pad_state &= (uint16_t)~bit;
-					}
-				}
-				break;
-			}
-			case SDL_CONTROLLERBUTTONDOWN:
-			case SDL_CONTROLLERBUTTONUP: {
-				const uint16_t bit = map_sdl_button_to_pad(ev.cbutton.button);
-				if (bit) {
-					if (ev.cbutton.state == SDL_PRESSED) {
-						g_sdl_pad_state |= bit;
-					} else {
-						g_sdl_pad_state &= (uint16_t)~bit;
-					}
-				}
-				break;
-			}
 			case SDL_CONTROLLERDEVICEADDED:
 				if (!g_sdl_gamepad && SDL_IsGameController(ev.cdevice.which)) {
 					g_sdl_gamepad = SDL_GameControllerOpen(ev.cdevice.which);
@@ -3699,6 +3717,7 @@ static void poll_input_devices_sdl(void) {
 				break;
 		}
 	}
+	g_sdl_pad_state = pad_state;
 	input_finalize(g_sdl_pad_state);
 }
 #endif
@@ -3733,7 +3752,8 @@ static int16_t input_state_cb(unsigned port, unsigned device, unsigned index, un
 	if (device != RETRO_DEVICE_JOYPAD) {
 		return 0;
 	}
-	return (g_pad_state_port0 & (uint16_t)(1u << id)) ? 1 : 0;
+	int16_t v = (g_pad_state_port0 & (uint16_t)(1u << id)) ? 1 : 0;
+	return v;
 }
 
 static void* read_file(const char* path, size_t* out_size) {

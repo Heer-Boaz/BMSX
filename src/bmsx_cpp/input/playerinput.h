@@ -151,6 +151,9 @@ public:
 	// Frame lifecycle
 	// ─────────────────────────────────────────────────────────────────────────
 	
+	// Reset edge flags at start of frame (call BEFORE processing events)
+	void beginFrame(f64 currentTimeMs);
+
 	// Poll all input sources
 	void pollInput(f64 currentTimeMs);
 	

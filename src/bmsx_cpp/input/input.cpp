@@ -297,7 +297,14 @@ InputMap Input::getDefaultInputMapping() {
 void Input::pollInput() {
 	m_currentTimeMs = $().clock()->now();
 
-	// 1. First, process any queued events from platform
+	// 1. Reset edge flags for all players BEFORE events are processed (parity with TS)
+	for (auto& player : m_playerInputs) {
+		if (player) {
+			player->beginFrame(m_currentTimeMs);
+		}
+	}
+
+	// 2. Process events from hub - these set NEW edge flags in the freshly reset state
 	auto* hub = $().platform()->inputHub();
 	std::optional<InputEvt> evt = hub->nextEvt();
 	while (evt.has_value()) {
@@ -331,7 +338,7 @@ void Input::pollInput() {
 		evt = hub->nextEvt();
 	}
 	
-	// 2. Then poll players (this calls beginFrame() -> handler polling)
+	// 3. Poll handlers - they read updated keyStates set by events above
 	for (auto& player : m_playerInputs) {
 		if (player) {
 			player->pollInput(m_currentTimeMs);
@@ -409,7 +416,6 @@ void Input::enqueueButtonEvent(i32 playerIndex, const std::string& code,
 	evt.timestamp = timestamp;
 	evt.consumed = false;
 	evt.pressId = pressId;
-	
 	player->stateManager().addInputEvent(evt);
 }
 
