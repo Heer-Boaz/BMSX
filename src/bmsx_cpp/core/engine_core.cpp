@@ -56,6 +56,10 @@ int resolveInstructionBudget(const RomManifest& manifest) {
 	}
 	return value;
 }
+
+const RomManifest& selectInstructionBudgetManifest(const RomManifest& cartManifest, const RomManifest& engineManifest) {
+	return cartManifest.maxInstructionsPerFrame ? cartManifest : engineManifest;
+}
 }
 
 EngineCore* EngineCore::s_instance = nullptr;
@@ -542,17 +546,18 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 		&& m_engine_assets.vmProgram
 		&& m_engine_assets.vmProgram->program;
 	if (hasEngineProgram) {
+		const RomManifest& budgetManifest = selectInstructionBudgetManifest(m_assets.manifest, m_engine_assets.manifest);
 		if (!VMRuntime::hasInstance()) {
 			VMRuntimeOptions options;
 			options.playerIndex = 1;
 			options.viewport.x = m_assets.manifest.viewportWidth;
 			options.viewport.y = m_assets.manifest.viewportHeight;
 			options.canonicalization = m_engine_assets.manifest.canonicalization;
-			options.instructionBudgetPerFrame = resolveInstructionBudget(m_engine_assets.manifest);
+			options.instructionBudgetPerFrame = resolveInstructionBudget(budgetManifest);
 			VMRuntime::createInstance(options);
 		}
 		VMRuntime& runtime = VMRuntime::instance();
-		runtime.setInstructionBudgetPerFrame(resolveInstructionBudget(m_engine_assets.manifest));
+		runtime.setInstructionBudgetPerFrame(resolveInstructionBudget(budgetManifest));
 		runtime.refreshMemoryMap();
 		runtime.setProgramSource(VMRuntime::VmProgramSource::Engine);
 		runtime.setCanonicalization(m_engine_assets.manifest.canonicalization);
@@ -639,17 +644,18 @@ bool EngineCore::resetLoadedRom() {
 	}
 
 	if (m_engine_assets.vmProgram && m_engine_assets.vmProgram->program) {
+		const RomManifest& budgetManifest = selectInstructionBudgetManifest(m_assets.manifest, m_engine_assets.manifest);
 		if (!VMRuntime::hasInstance()) {
 			VMRuntimeOptions options;
 			options.playerIndex = 1;
 			options.viewport.x = m_engine_assets.manifest.viewportWidth;
 			options.viewport.y = m_engine_assets.manifest.viewportHeight;
 			options.canonicalization = m_engine_assets.manifest.canonicalization;
-			options.instructionBudgetPerFrame = resolveInstructionBudget(m_engine_assets.manifest);
+			options.instructionBudgetPerFrame = resolveInstructionBudget(budgetManifest);
 			VMRuntime::createInstance(options);
 		}
 		VMRuntime& runtime = VMRuntime::instance();
-		runtime.setInstructionBudgetPerFrame(resolveInstructionBudget(m_engine_assets.manifest));
+		runtime.setInstructionBudgetPerFrame(resolveInstructionBudget(budgetManifest));
 		runtime.refreshMemoryMap();
 		runtime.setProgramSource(VMRuntime::VmProgramSource::Engine);
 		runtime.setCanonicalization(m_engine_assets.manifest.canonicalization);

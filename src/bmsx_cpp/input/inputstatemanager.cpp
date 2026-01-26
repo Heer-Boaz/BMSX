@@ -102,16 +102,17 @@ void InputStateManager::consumeBufferedEvent(const std::string& identifier, std:
 	if (!pressId.has_value()) {
 		m_latestUnconsumedPressIdByButton.erase(identifier);
 		m_latestUnconsumedReleaseIdByButton.erase(identifier);
-		return;
+	} else {
+		auto pressIt = m_latestUnconsumedPressIdByButton.find(identifier);
+		if (pressIt != m_latestUnconsumedPressIdByButton.end() && pressIt->second == pressId.value()) {
+			m_latestUnconsumedPressIdByButton.erase(pressIt);
+		}
+		auto releaseIt = m_latestUnconsumedReleaseIdByButton.find(identifier);
+		if (releaseIt != m_latestUnconsumedReleaseIdByButton.end() && releaseIt->second == pressId.value()) {
+			m_latestUnconsumedReleaseIdByButton.erase(releaseIt);
+		}
 	}
-	auto pressIt = m_latestUnconsumedPressIdByButton.find(identifier);
-	if (pressIt != m_latestUnconsumedPressIdByButton.end() && pressIt->second == pressId.value()) {
-		m_latestUnconsumedPressIdByButton.erase(pressIt);
-	}
-	auto releaseIt = m_latestUnconsumedReleaseIdByButton.find(identifier);
-	if (releaseIt != m_latestUnconsumedReleaseIdByButton.end() && releaseIt->second == pressId.value()) {
-		m_latestUnconsumedReleaseIdByButton.erase(releaseIt);
-	}
+	m_buttonStates[identifier].consumed = true;
 }
 
 /* ============================================================================
@@ -131,6 +132,15 @@ ButtonState InputStateManager::getButtonState(const std::string& button, std::op
 	f64 effectiveWindow = windowMs.value_or(BUFFER_FRAME_RETENTION * (1000.0 / 60.0));
 	state.waspressed = state.pressed || wasPressedInWindow(button, effectiveWindow);
 	state.wasreleased = state.justreleased || wasReleasedInWindow(button, effectiveWindow);
+	if (!state.consumed) {
+		f64 cutoff = m_currentTimeMs - effectiveWindow;
+		for (const auto& evt : m_inputBuffer) {
+			if (evt.identifier == button && evt.timestamp >= cutoff && evt.consumed) {
+				state.consumed = true;
+				break;
+			}
+		}
+	}
 	
 	return state;
 }
