@@ -104,6 +104,7 @@ ActionState PlayerInput::getActionState(const std::string& action, std::optional
 	bool anyJustReleased = false;
 	bool anyWasPressed = false;
 	bool anyWasReleased = false;
+	bool anyConsumed = false;
 	bool allJustPressed = true;
 	bool allJustReleased = true;
 	i32 bindingCount = 0;
@@ -168,6 +169,7 @@ ActionState PlayerInput::getActionState(const std::string& action, std::optional
 				if (state.justreleased) anyJustReleased = true;
 				if (state.waspressed) anyWasPressed = true;
 				if (state.wasreleased) anyWasReleased = true;
+				if (state.consumed) anyConsumed = true;
 				
 				if (!state.justpressed) allJustPressed = false;
 				if (!state.justreleased) allJustReleased = false;
@@ -228,6 +230,7 @@ ActionState PlayerInput::getActionState(const std::string& action, std::optional
 				if (state.justreleased) anyJustReleased = true;
 				if (state.waspressed) anyWasPressed = true;
 				if (state.wasreleased) anyWasReleased = true;
+				if (state.consumed) anyConsumed = true;
 				
 				if (!state.justpressed) allJustPressed = false;
 				if (!state.justreleased) allJustReleased = false;
@@ -288,6 +291,7 @@ ActionState PlayerInput::getActionState(const std::string& action, std::optional
 				if (state.justreleased) anyJustReleased = true;
 				if (state.waspressed) anyWasPressed = true;
 				if (state.wasreleased) anyWasReleased = true;
+				if (state.consumed) anyConsumed = true;
 				
 				if (!state.justpressed) allJustPressed = false;
 				if (!state.justreleased) allJustReleased = false;
@@ -311,6 +315,11 @@ ActionState PlayerInput::getActionState(const std::string& action, std::optional
 		return result;
 	}
 	
+	// Parity with TS: don't treat as just released while any binding is still pressed
+	if (anyPressed) {
+		anyJustReleased = false;
+	}
+
 	// Aggregate results
 	result.pressed = anyPressed;
 	auto lastPressIt = m_actionPressRecords.find(action);
@@ -337,12 +346,13 @@ ActionState PlayerInput::getActionState(const std::string& action, std::optional
 	}
 
 	result.justpressed = anyJustPressed;
-	result.justreleased = anyJustReleased;
+	result.justreleased = anyJustReleased && !anyPressed;
 	result.waspressed = anyWasPressed;
 	result.wasreleased = anyWasReleased;
 	result.alljustpressed = allJustPressed && anyJustPressed;
 	result.alljustreleased = allJustReleased && anyJustReleased;
 	result.allwaspressed = anyWasPressed;  // Simplified from TS
+	result.consumed = anyConsumed;
 	
 	if (latestPressedAt > 0.0) {
 		result.pressedAtMs = latestPressedAt;
