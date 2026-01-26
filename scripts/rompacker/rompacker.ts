@@ -622,6 +622,7 @@ function ensureLibretroCoreBuilt(debug: boolean, platform: RomPackerTarget): voi
 	const cmakeBin = findCMake();
 	const buildType = debug ? 'Debug' : 'Release';
 	const buildDir = getLibretroBuildDir(platform, debug);
+	logInfo(`Using build dir ${pc.white(buildDir)} (${buildType})`);
 	const cmakeArgs = ['-S', 'src/bmsx_cpp', '-B', buildDir, `-DCMAKE_BUILD_TYPE=${buildType}`, '-DBMSX_BUILD_LIBRETRO=ON', '-DBMSX_BUILD_LIBRETRO_HOST=OFF'];
 	if (platform === 'libretro-wsl') {
 		cmakeArgs.push('-DCMAKE_CXX_STANDARD=20');

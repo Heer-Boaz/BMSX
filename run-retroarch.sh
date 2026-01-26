@@ -2,7 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CORE_SRC="$ROOT_DIR/build/bmsx_libretro.so"
+BUILD_KIND="${BMSX_LIBRETRO_BUILD:-release}"
+CORE_SRC="$ROOT_DIR/build-${BUILD_KIND}/bmsx_libretro.so"
 RETROARCH_BIN="$ROOT_DIR/tools/retroarch-gles2/retroarch"
 CORES_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/retroarch/cores"
 CORE_DST="$CORES_DIR/bmsx_libretro.so"

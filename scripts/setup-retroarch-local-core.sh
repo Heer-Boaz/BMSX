@@ -3,7 +3,6 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CPP_DIR="$ROOT_DIR/src/bmsx_cpp"
-BUILD_DIR="$ROOT_DIR/build"
 LOCAL_CFG="$ROOT_DIR/scripts/retroarch.local.cfg"
 BUILD_TYPE="Release"
 
@@ -23,6 +22,7 @@ while [[ $# -gt 0 ]]; do
 	esac
 done
 
+BUILD_DIR="$ROOT_DIR/build-${BUILD_TYPE,,}"
 ROM_PATH="${1:-$ROOT_DIR/dist/2025.debug.rom}"
 
 run_linux() {
