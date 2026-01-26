@@ -74,7 +74,8 @@
 	"serve:dist": "node scripts/serve-dist.mjs --dir dist --host 0.0.0.0 --port 8080",
 	"serve:dist:wsl": "bash scripts/serve-dist-wsl.sh --port 8080 --dir dist",
 	"run:retroarch": "bash run-retroarch.sh",
-	"run:libretro-host:wsl": "./build-libretro-host/bmsx_libretro_host --core ./dist/bmsx_libretro.so --video sdl --backend software",
+	"run:libretro-host:wsl:sdl": "./build-libretro-host/bmsx_libretro_host --core ./dist/bmsx_libretro.so --video sdl --backend software",
+	"run:libretro-host:wsl:fb": "./build-libretro-host/bmsx_libretro_host --core ./dist/bmsx_libretro.so --video fb --backend software",
 	"fix:indent": "node scripts/fix-ts-indentation-safe.js",
 	"check:indent": "node scripts/fix-ts-indentation-safe.js --check"
 	},

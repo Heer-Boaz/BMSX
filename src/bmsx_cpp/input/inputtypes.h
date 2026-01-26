@@ -118,10 +118,10 @@ enum class GamepadButton : u8 {
 inline std::string gamepadButtonToString(GamepadButton btn) {
 	static const char* names[] = {
 		"a", "b", "x", "y",
-		"l1", "r1", "l2", "r2",
-		"select", "start", "l3", "r3",
+		"lb", "rb", "lt", "rt",
+		"select", "start", "ls", "rs",
 		"up", "down", "left", "right",
-		"home", "touchpad",
+		"home", "touch",
 		"leftstick_x", "leftstick_y",
 		"rightstick_x", "rightstick_y"
 	};

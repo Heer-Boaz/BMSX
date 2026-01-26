@@ -306,6 +306,30 @@
 			}
 		},
 		{
+			"label": "SETUP: RetroArch Local Core",
+			"type": "shell",
+			"command": "bash",
+			"args": [
+				"${workspaceFolder}/scripts/setup-retroarch-local-core.sh"
+			],
+			"problemMatcher": [],
+			"group": "build",
+			"icon": {
+				"id": "rocket",
+				"color": "terminal.ansiBlue"
+			},
+			"presentation": {
+				"echo": false,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": false,
+				"clear": true,
+				"revealProblems": "onProblem",
+				"group": "SETUP"
+			}
+		},
+		{
 			"label": "LIBRETRO BUILD: WSL",
 			"type": "shell",
 			"command": "npm",
@@ -488,12 +512,38 @@
 			}
 		},
 		{
-			"label": "LIBRETRO RUN: Custom Host",
+			"label": "LIBRETRO RUN: Custom Host (SDL)",
 			"type": "shell",
 			"command": "npm",
 			"args": [
 				"run",
-				"run:libretro-host:wsl",
+				"run:libretro-host:wsl:sdl",
+				"--",
+				"./dist/${input:romtobuild}.rom"
+			],
+			"problemMatcher": [],
+			"group": "test",
+			"icon": {
+				"id": "vm-running",
+				"color": "terminal.ansiGreen"
+			},
+			"presentation": {
+				"echo": false,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": false,
+				"clear": false,
+				"group": "LIBRETRO"
+			}
+		},
+		{
+			"label": "LIBRETRO RUN: Custom Host (FB)",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"run:libretro-host:wsl:fb",
 				"--",
 				"./dist/${input:romtobuild}.rom"
 			],

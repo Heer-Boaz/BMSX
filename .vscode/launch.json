@@ -152,11 +152,11 @@
 		{
 			"type": "pwa-node",
 			"request": "launch",
-			"name": "LIBRETRO RUN: Custom Host",
+			"name": "LIBRETRO RUN: Custom Host (SDL)",
 			"runtimeExecutable": "npm",
 			"runtimeArgs": [
 				"run",
-				"run:libretro-host:wsl",
+				"run:libretro-host:wsl:sdl",
 				"--",
 				"./dist/${input:romtobuild}.rom"
 			],
@@ -164,6 +164,20 @@
 			"console": "integratedTerminal"
 		}
 		,
+		{
+			"type": "pwa-node",
+			"request": "launch",
+			"name": "LIBRETRO RUN: Custom Host (FB)",
+			"runtimeExecutable": "npm",
+			"runtimeArgs": [
+				"run",
+				"run:libretro-host:wsl:fb",
+				"--",
+				"./dist/${input:romtobuild}.rom"
+			],
+			"cwd": "${workspaceFolder}",
+			"console": "integratedTerminal"
+		},
 		{
 			"type": "pwa-node",
 			"request": "launch",

@@ -798,12 +798,12 @@ constexpr std::array<const char*, InputState::BUTTONS_PER_PLAYER> kLibretroButto
 	"right",  // RETRO_DEVICE_ID_JOYPAD_RIGHT
 	kLibretroBtnA,      // RETRO_DEVICE_ID_JOYPAD_A
 	"y",      // RETRO_DEVICE_ID_JOYPAD_X
-	"l1",     // RETRO_DEVICE_ID_JOYPAD_L
-	"r1",     // RETRO_DEVICE_ID_JOYPAD_R
-	"l2",     // RETRO_DEVICE_ID_JOYPAD_L2
-	"r2",     // RETRO_DEVICE_ID_JOYPAD_R2
-	"l3",     // RETRO_DEVICE_ID_JOYPAD_L3
-	"r3"      // RETRO_DEVICE_ID_JOYPAD_R3
+	"lb",     // RETRO_DEVICE_ID_JOYPAD_L
+	"rb",     // RETRO_DEVICE_ID_JOYPAD_R
+	"lt",     // RETRO_DEVICE_ID_JOYPAD_L2
+	"rt",     // RETRO_DEVICE_ID_JOYPAD_R2
+	"ls",     // RETRO_DEVICE_ID_JOYPAD_L3
+	"rs"      // RETRO_DEVICE_ID_JOYPAD_R3
 };
 
 f32 normalizeAxis(i16 value) {
@@ -869,7 +869,7 @@ void LibretroInputHub::poll() {
 			InputEvt evt;
 			evt.type = InputEvtType::AxisMove;
 			evt.deviceId = deviceId;
-			evt.code = "leftstick";
+			evt.code = "ls";
 			evt.x = normalizeAxis(new_state.analog[analogBase]);
 			evt.y = normalizeAxis(new_state.analog[analogBase + 1]);
 			m_event_queue.push_back(evt);
@@ -884,7 +884,7 @@ void LibretroInputHub::poll() {
 			InputEvt evt;
 			evt.type = InputEvtType::AxisMove;
 			evt.deviceId = deviceId;
-			evt.code = "rightstick";
+			evt.code = "rs";
 			evt.x = normalizeAxis(new_state.analog[analogBase + 2]);
 			evt.y = normalizeAxis(new_state.analog[analogBase + 3]);
 			m_event_queue.push_back(evt);
