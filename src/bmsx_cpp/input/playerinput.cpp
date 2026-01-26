@@ -146,23 +146,9 @@ ActionState PlayerInput::getActionState(const std::string& action, std::optional
 			}
 			
 			for (const auto& binding : bindings) {
-				// Read from BOTH handler (for held state) and stateManager (for fresh events)
-				ButtonState handlerState = handler->getButtonState(binding.id);
-				ButtonState smState = m_stateManager.getButtonState(binding.id, windowMs);
-				
-				// Combine: pressed from handler OR stateManager, edges from stateManager (fresh events)
-				ButtonState state;
-				state.pressed = handlerState.pressed || smState.pressed;
-				state.justpressed = smState.justpressed;
-				state.justreleased = smState.justreleased;
-				state.waspressed = smState.waspressed;
-				state.wasreleased = smState.wasreleased;
-				state.presstime = handlerState.presstime.has_value() ? handlerState.presstime : smState.presstime;
-				state.timestamp = smState.timestamp.has_value() ? smState.timestamp : handlerState.timestamp;
-				state.pressedAtMs = smState.pressedAtMs.has_value() ? smState.pressedAtMs : handlerState.pressedAtMs;
-				state.pressId = smState.pressId.has_value() ? smState.pressId : handlerState.pressId;
-				state.value = handlerState.value;
-				state.consumed = smState.consumed || handlerState.consumed;
+				ButtonState state = windowMs.has_value()
+					? m_stateManager.getButtonState(binding.id, windowMs)
+					: handler->getButtonState(binding.id);
 				
 				if (state.pressed) anyPressed = true;
 				if (state.justpressed) anyJustPressed = true;
@@ -207,23 +193,9 @@ ActionState PlayerInput::getActionState(const std::string& action, std::optional
 			}
 			
 			for (const auto& binding : bindings) {
-				// Read from BOTH handler (for held state) and stateManager (for fresh events)
-				ButtonState handlerState = handler->getButtonState(binding.id);
-				ButtonState smState = m_stateManager.getButtonState(binding.id, windowMs);
-				
-				// Combine: pressed from handler OR stateManager, edges from stateManager (fresh events)
-				ButtonState state;
-				state.pressed = handlerState.pressed || smState.pressed;
-				state.justpressed = smState.justpressed;
-				state.justreleased = smState.justreleased;
-				state.waspressed = smState.waspressed;
-				state.wasreleased = smState.wasreleased;
-				state.presstime = handlerState.presstime.has_value() ? handlerState.presstime : smState.presstime;
-				state.timestamp = smState.timestamp.has_value() ? smState.timestamp : handlerState.timestamp;
-				state.pressedAtMs = smState.pressedAtMs.has_value() ? smState.pressedAtMs : handlerState.pressedAtMs;
-				state.pressId = smState.pressId.has_value() ? smState.pressId : handlerState.pressId;
-				state.value = handlerState.value;
-				state.consumed = smState.consumed || handlerState.consumed;
+				ButtonState state = windowMs.has_value()
+					? m_stateManager.getButtonState(binding.id, windowMs)
+					: handler->getButtonState(binding.id);
 				
 				if (state.pressed) anyPressed = true;
 				if (state.justpressed) anyJustPressed = true;
@@ -268,23 +240,9 @@ ActionState PlayerInput::getActionState(const std::string& action, std::optional
 			}
 			
 			for (const auto& binding : bindings) {
-				// Read from BOTH handler (for held state) and stateManager (for fresh events)
-				ButtonState handlerState = handler->getButtonState(binding.id);
-				ButtonState smState = m_stateManager.getButtonState(binding.id, windowMs);
-				
-				// Combine: pressed from handler OR stateManager, edges from stateManager (fresh events)
-				ButtonState state;
-				state.pressed = handlerState.pressed || smState.pressed;
-				state.justpressed = smState.justpressed;
-				state.justreleased = smState.justreleased;
-				state.waspressed = smState.waspressed;
-				state.wasreleased = smState.wasreleased;
-				state.presstime = handlerState.presstime.has_value() ? handlerState.presstime : smState.presstime;
-				state.timestamp = smState.timestamp.has_value() ? smState.timestamp : handlerState.timestamp;
-				state.pressedAtMs = smState.pressedAtMs.has_value() ? smState.pressedAtMs : handlerState.pressedAtMs;
-				state.pressId = smState.pressId.has_value() ? smState.pressId : handlerState.pressId;
-				state.value = handlerState.value;
-				state.consumed = smState.consumed || handlerState.consumed;
+				ButtonState state = windowMs.has_value()
+					? m_stateManager.getButtonState(binding.id, windowMs)
+					: handler->getButtonState(binding.id);
 				
 				if (state.pressed) anyPressed = true;
 				if (state.justpressed) anyJustPressed = true;

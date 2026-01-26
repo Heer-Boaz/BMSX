@@ -572,12 +572,13 @@ function runCommand(command: string, args: string[]): void {
 	}
 }
 
-function getLibretroBuildDir(platform: RomPackerTarget): string {
-	return platform === 'libretro-win' ? 'build-win' : 'build';
+function getLibretroBuildDir(platform: RomPackerTarget, debug: boolean): string {
+	const base = platform === 'libretro-win' ? 'build-win' : 'build';
+	return debug ? `${base}-debug` : `${base}-release`;
 }
 
 function getLibretroBuildOutputPath(platform: RomPackerTarget, debug: boolean): string {
-	const buildDir = getLibretroBuildDir(platform);
+	const buildDir = getLibretroBuildDir(platform, debug);
 	const coreFilename = getLibretroCoreFilename(platform);
 	if (platform === 'libretro-win') {
 		const configDir = debug ? 'Debug' : 'Release';
@@ -620,7 +621,7 @@ function findCMake(): string {
 function ensureLibretroCoreBuilt(debug: boolean, platform: RomPackerTarget): void {
 	const cmakeBin = findCMake();
 	const buildType = debug ? 'Debug' : 'Release';
-	const buildDir = getLibretroBuildDir(platform);
+	const buildDir = getLibretroBuildDir(platform, debug);
 	const cmakeArgs = ['-S', 'src/bmsx_cpp', '-B', buildDir, `-DCMAKE_BUILD_TYPE=${buildType}`, '-DBMSX_BUILD_LIBRETRO=ON', '-DBMSX_BUILD_LIBRETRO_HOST=OFF'];
 	if (platform === 'libretro-wsl') {
 		cmakeArgs.push('-DCMAKE_CXX_STANDARD=20');

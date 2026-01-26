@@ -127,9 +127,9 @@ ButtonState InputStateManager::getButtonState(const std::string& button, std::op
 	
 	ButtonState state = it->second;
 	
-	// Parity with TS: Always compute windowed waspressed/wasreleased, using default if not specified
-	// TS uses: bufferframeDuration * $.timestep_ms = 150 * (1000/60) = 2500ms
-	f64 effectiveWindow = windowMs.value_or(BUFFER_FRAME_RETENTION * (1000.0 / 60.0));
+	// Parity with TS: windowed checks use bufferframeDuration * timestep_ms.
+	const f64 timestepMs = EngineCore::instance().deltaTime() * 1000.0;
+	f64 effectiveWindow = windowMs.value_or(BUFFER_FRAME_RETENTION * timestepMs);
 	state.waspressed = state.pressed || wasPressedInWindow(button, effectiveWindow);
 	state.wasreleased = state.justreleased || wasReleasedInWindow(button, effectiveWindow);
 	if (!state.consumed) {
@@ -222,8 +222,9 @@ void InputStateManager::clear() {
  * ============================================================================ */
 
 void InputStateManager::pruneOldEvents() {
-	// Parity with TS: Use fixed timestep for window calculation (150 * 16.666ms)
-	f64 cutoff = m_currentTimeMs - (BUFFER_FRAME_RETENTION * (1000.0 / 50.0));
+	// Parity with TS: Use timestep_ms for window calculation.
+	const f64 timestepMs = EngineCore::instance().deltaTime() * 1000.0;
+	f64 cutoff = m_currentTimeMs - (BUFFER_FRAME_RETENTION * timestepMs);
 	
 	while (!m_inputBuffer.empty() && m_inputBuffer.front().timestamp < cutoff) {
 		m_inputBuffer.pop_front();
