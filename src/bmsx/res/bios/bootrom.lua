@@ -135,7 +135,7 @@ end
 local CART_MANIFEST_VALIDATORS = {
 	function(manifest, errors)
 		if not is_valid_cpu_freq_hz(manifest.cpu_freq_hz) then
-			errors[#errors + 1] = 'VM.CPU_FREQ_HZ IS MISSING OR INVALID'
+			errors[#errors + 1] = 'VM.CPU_HZ IS MISSING OR INVALID'
 		end
 	end,
 	function(manifest, errors)
@@ -247,13 +247,13 @@ local function build_info()
 	local engine_manifest = engine_header and read_bios_manifest(ENGINE_ROM_BASE, engine_header) or nil
 
 	local cart_title = cart_manifest and display_text(cart_manifest.title) or '--'
-	local cart_short = cart_manifest and display_text(cart_manifest.short_name) or '--'
+	-- local cart_short = cart_manifest and display_text(cart_manifest.short_name) or '--'
 	local cart_rom = cart_manifest and display_text(cart_manifest.rom_name) or '--'
-	local cart_ns = cart_manifest and display_text(cart_manifest.namespace) or '--'
+	-- local cart_ns = cart_manifest and display_text(cart_manifest.namespace) or '--'
 	local cart_view_label = cart_manifest and display_text(cart_manifest.viewport) or '--'
-	local cart_canon = cart_manifest and display_text(cart_manifest.canonicalization) or '--'
-	local cart_entry = cart_manifest and display_text(cart_manifest.entry_path) or '--'
-	local cart_input = cart_manifest and display_text(cart_manifest.input) or '--'
+	-- local cart_canon = cart_manifest and display_text(cart_manifest.canonicalization) or '--'
+	-- local cart_entry = cart_manifest and display_text(cart_manifest.entry_path) or '--'
+	-- local cart_input = cart_manifest and display_text(cart_manifest.input) or '--'
 	local cart_cpu_raw = cart_manifest and cart_manifest.cpu_freq_hz or nil
 	local cart_cpu_label = format_cpu_mhz_from_hz(cart_cpu_raw)
 	local cart_errors = cart_header and collect_cart_manifest_errors(cart_manifest) or {}
@@ -261,27 +261,27 @@ local function build_info()
 
 	local engine_title = engine_manifest and display_text(engine_manifest.title) or '--'
 	local engine_rom = engine_manifest and display_text(engine_manifest.rom_name) or '--'
-	local engine_ns = engine_manifest and display_text(engine_manifest.namespace) or '--'
+	-- local engine_ns = engine_manifest and display_text(engine_manifest.namespace) or '--'
 	local engine_view_label = engine_manifest and display_text(engine_manifest.viewport) or '--'
-	local engine_canon = engine_manifest and display_text(engine_manifest.canonicalization) or '--'
-	local engine_entry = engine_manifest and display_text(engine_manifest.entry_path) or '--'
+	-- local engine_canon = engine_manifest and display_text(engine_manifest.canonicalization) or '--'
+	-- local engine_entry = engine_manifest and display_text(engine_manifest.entry_path) or '--'
 	local vram_total = SYS_VRAM_ENGINE_ATLAS_SIZE + SYS_VRAM_PRIMARY_ATLAS_SIZE + SYS_VRAM_SECONDARY_ATLAS_SIZE + SYS_VRAM_STAGING_SIZE
 
 	return {
 		engine_title = engine_title,
 		engine_rom = engine_rom,
-		engine_ns = engine_ns,
+		-- engine_ns = engine_ns,
 		engine_view = engine_view_label,
-		engine_canon = engine_canon,
-		engine_entry = engine_entry,
+		-- engine_canon = engine_canon,
+		-- engine_entry = engine_entry,
 		cart_title = cart_title,
-		cart_short = cart_short,
+		-- cart_short = cart_short,
 		cart_rom = cart_rom,
-		cart_ns = cart_ns,
+		-- cart_ns = cart_ns,
 		cart_view = cart_view_label,
-		cart_canon = cart_canon,
-		cart_entry = cart_entry,
-		cart_input = cart_input,
+		-- cart_canon = cart_canon,
+		-- cart_entry = cart_entry,
+		-- cart_input = cart_input,
 		cart_cpu_mhz = cart_cpu_label,
 		cart_errors = cart_errors,
 		cart_has_errors = cart_has_errors,
@@ -428,14 +428,14 @@ function draw()
 	local cart_specs = {
 		{ label = 'CART ROM', value = info.cart_rom, color = color_accent },
 		{ label = 'CART NAME', value = info.cart_title, color = color_ok },
-		{ label = 'SHORT NAME', value = info.cart_short, color = color_text },
-		{ label = 'NAMESPACE', value = info.cart_ns, color = color_muted },
+		-- { label = 'SHORT NAME', value = info.cart_short, color = color_text },
+		-- { label = 'NAMESPACE', value = info.cart_ns, color = color_muted },
 		{ label = 'VIEWPORT', value = info.cart_view, color = color_info_total },
 		{ label = 'CPU MHZ', value = info.cart_cpu_mhz, color = color_accent },
-		{ label = 'CANON', value = info.cart_canon, color = color_muted },
-		{ label = 'CART LUA', value = info.cart_entry, color = color_text },
-		{ label = 'INPUT MAP', value = info.cart_input, color = color_accent },
-		{ label = 'ROOT', value = info.root, color = color_muted },
+		-- { label = 'CANON', value = info.cart_canon, color = color_muted },
+		-- { label = 'CART LUA', value = info.cart_entry, color = color_text },
+		-- { label = 'INPUT MAP', value = info.cart_input, color = color_accent },
+		-- { label = 'ROOT', value = info.root, color = color_muted },
 	}
 	local label_width = 0
 	for i = 1, #hw_specs do
@@ -474,6 +474,7 @@ function draw()
 		write_kv(spec.label, spec.value, left, y, spec.color or color_text, label_width)
 		y = y + line_height
 	end
+	y = y + line_height
 	write('BOOT STATUS', left, y, 0, color_section)
 	y = y + line_height
 	write(divider(width, left), left, y, 0, color_section)

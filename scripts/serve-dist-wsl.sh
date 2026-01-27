@@ -55,7 +55,7 @@ fi
 echo "Serving ${DIR} on port ${PORT} (WSL: ${is_wsl})"
 if [[ -n "${WIN_IPS}" ]]; then
 	echo "Windows LAN IP(s): ${WIN_IPS}"
-	echo "Try on iPhone: http://<one-of-these>:${PORT}/game_debug.html"
+	echo "Try on iPhone: http://<one-of-these>:${PORT}/index.html?rom=<your-rom>.rom"
 fi
 
 EXTRA_OPTS=()

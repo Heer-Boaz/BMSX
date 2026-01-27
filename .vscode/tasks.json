@@ -2,7 +2,90 @@
 	"version": "2.0.0",
 	"tasks": [
 		{
-			"label": "GAME BUILD: browser (release)",
+			"label": "BUILD BROWSER + LIBRETRO WSL + BIOS (debug+release)",
+				"dependsOn": [
+					"PLATFORM BUILD: browser",
+					"PLATFORM BUILD: browser (debug)",
+					"BIOS: build",
+					"BIOS: build (debug)",
+					"LIBRETRO BUILD: WSL",
+					"LIBRETRO BUILD: WSL (debug)"
+				],
+			"type": "shell",
+			"problemMatcher": [],
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"icon": {
+				"id": "layers",
+				"color": "terminal.ansiRed"
+			},
+				"presentation": {
+					"echo": false,
+					"reveal": "always",
+					"focus": false,
+					"panel": "shared",
+					"showReuseMessage": false,
+					"clear": true,
+					"revealProblems": "onProblem",
+					"group": "FULL BUILD"
+				}
+			},
+		{
+			"label": "PLATFORM BUILD: browser",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build:browser"
+			],
+			"problemMatcher": [],
+			"group": "build",
+			"icon": {
+				"id": "globe",
+				"color": "terminal.ansiCyan"
+			},
+			"presentation": {
+				"echo": false,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": false,
+				"clear": true,
+				"revealProblems": "onProblem",
+				"group": "PLATFORM BUILD"
+			}
+		},
+		{
+			"label": "PLATFORM BUILD: browser (debug)",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build:browser",
+				"--",
+				"--debug"
+			],
+			"problemMatcher": [],
+			"group": "build",
+			"icon": {
+				"id": "globe",
+				"color": "terminal.ansiCyan"
+			},
+			"presentation": {
+				"echo": false,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": false,
+				"clear": true,
+				"revealProblems": "onProblem",
+				"group": "PLATFORM BUILD"
+			}
+		},
+		{
+			"label": "GAME ROMPACK BUILD",
 			"type": "shell",
 			"command": "npm",
 			"args": [
@@ -19,7 +102,7 @@
 				"isDefault": true
 			},
 			"icon": {
-				"id": "globe",
+				"id": "game",
 				"color": "terminal.ansiGreen"
 			},
 			"presentation": {
@@ -34,7 +117,7 @@
 			}
 		},
 		{
-			"label": "GAME BUILD: browser (debug)",
+			"label": "GAME ROMPACK BUILD (debug)",
 			"type": "shell",
 			"command": "npm",
 			"args": [
@@ -49,7 +132,7 @@
 			],
 			"group": "build",
 			"icon": {
-				"id": "globe",
+				"id": "game",
 				"color": "terminal.ansiGreen"
 			},
 			"presentation": {
@@ -94,7 +177,7 @@
 				"group": "GAME BUILD"
 			},
 			"dependsOn": [
-				"ENGINE: build (debug)"
+				"BIOS: build (debug)"
 			]
 		},
 		{
@@ -128,22 +211,20 @@
 			}
 		},
 		{
-			"label": "GAME BUILD: headless (debug)",
+			"label": "PLATFORM BUILD: headless (debug)",
 			"type": "shell",
 			"command": "npm",
 			"args": [
 				"run",
-				"build:game:headless",
+				"build:platform:headless",
 				"--",
-				"${input:romtobuild}"
+				"--debug"
 			],
-			"problemMatcher": [
-				"$tsc"
-			],
+			"problemMatcher": [],
 			"group": "build",
 			"icon": {
 				"id": "terminal",
-				"color": "terminal.ansiCyan"
+				"color": "terminal.ansiBlue"
 			},
 			"presentation": {
 				"echo": false,
@@ -153,26 +234,24 @@
 				"showReuseMessage": false,
 				"clear": true,
 				"revealProblems": "onProblem",
-				"group": "GAME BUILD"
+				"group": "PLATFORM BUILD"
 			}
 		},
 		{
-			"label": "GAME BUILD: cli (debug)",
+			"label": "PLATFORM BUILD: cli (debug)",
 			"type": "shell",
 			"command": "npm",
 			"args": [
 				"run",
-				"build:game:cli",
+				"build:platform:cli",
 				"--",
-				"${input:romtobuild}"
+				"--debug"
 			],
-			"problemMatcher": [
-				"$tsc"
-			],
+			"problemMatcher": [],
 			"group": "build",
 			"icon": {
 				"id": "terminal",
-				"color": "terminal.ansiCyan"
+				"color": "terminal.ansiBlue"
 			},
 			"presentation": {
 				"echo": false,
@@ -182,7 +261,32 @@
 				"showReuseMessage": false,
 				"clear": true,
 				"revealProblems": "onProblem",
-				"group": "GAME BUILD"
+				"group": "PLATFORM BUILD"
+			}
+		},
+		{
+			"label": "DEPLOY: browser (PLATFORM+BIOS+ROMPACK)",
+			"type": "shell",
+			"dependsOrder": "parallel",
+			"dependsOn": [
+				"GAME ROMPACK BUILD",
+				"BIOS: build",
+				"PLATFORM BUILD: browser"
+			],
+			"problemMatcher": [],
+			"group": "build",
+			"icon": {
+				"id": "cloud-upload",
+				"color": "terminal.ansiRed"
+			},
+			"presentation": {
+				"echo": false,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": false,
+				"clear": true,
+				"group": "DEPLOY"
 			}
 		},
 		{
@@ -212,7 +316,7 @@
 			}
 		},
 		{
-			"label": "ENGINE: build",
+			"label": "BIOS: build",
 			"type": "shell",
 			"command": "npm",
 			"args": [
@@ -224,7 +328,7 @@
 			],
 			"group": "build",
 			"icon": {
-				"id": "gear",
+				"id": "library",
 				"color": "terminal.ansiBlue"
 			},
 			"presentation": {
@@ -239,7 +343,7 @@
 			}
 		},
 		{
-			"label": "ENGINE: build (debug)",
+			"label": "BIOS: build (debug)",
 			"type": "shell",
 			"command": "npm",
 			"args": [
@@ -253,7 +357,7 @@
 			],
 			"group": "build",
 			"icon": {
-				"id": "gear",
+				"id": "library",
 				"color": "terminal.ansiBlue"
 			},
 			"presentation": {
@@ -268,7 +372,7 @@
 			}
 		},
 		{
-			"label": "ENGINE: validate",
+			"label": "BIOS: validate",
 			"type": "shell",
 			"command": "npm",
 			"args": [
@@ -362,14 +466,16 @@
 			"command": "npm",
 			"args": [
 				"run",
-				"build:libretro-wsl:debug"
+				"build:libretro-wsl",
+				"--",
+				"--debug"
 			],
 			"problemMatcher": [
 				"$tsc"
 			],
 			"group": "build",
 			"icon": {
-				"id": "terminal",
+				"id": "terminal-bash",
 				"color": "terminal.ansiYellow"
 			},
 			"presentation": {
@@ -421,7 +527,7 @@
 			"problemMatcher": [],
 			"group": "build",
 			"icon": {
-				"id": "game",
+				"id": "preview",
 				"color": "terminal.ansiYellow"
 			},
 			"presentation": {
@@ -446,7 +552,7 @@
 			"problemMatcher": [],
 			"group": "build",
 			"icon": {
-				"id": "game",
+				"id": "preview",
 				"color": "terminal.ansiBlack"
 			},
 			"presentation": {
@@ -471,7 +577,7 @@
 			"problemMatcher": [],
 			"group": "build",
 			"icon": {
-				"id": "coffee",
+				"id": "device-desktop",
 				"color": "terminal.ansiBlack"
 			},
 			"presentation": {
@@ -583,7 +689,7 @@
 			}
 		},
 		{
-			"label": "DEPLOY TO GITHUB",
+			"label": "LIBRETRO RUN: RetroArch (rom)",
 			"type": "shell",
 			"command": "npm",
 			"args": [
@@ -594,8 +700,8 @@
 			],
 			"problemMatcher": [],
 			"icon": {
-				"id": "sync~spin",
-				"color": "terminal.ansiRed"
+				"id": "play",
+				"color": "terminal.ansiGreen"
 			},
 			"presentation": {
 				"echo": true,
@@ -605,7 +711,28 @@
 				"showReuseMessage": false,
 				"clear": false
 			}
-		}
+		},
+		// {
+		// 	"label": "DEPLOY TO GITHUB",
+		// 	"type": "shell",
+		// 	"dependsOn": [
+		// 		"DEPLOY: browser (ROMPACK + index.html)"
+		// 	],
+		// 	"problemMatcher": [],
+		// 	"icon": {
+		// 		"id": "cloud-upload",
+		// 		"color": "terminal.ansiCyan"
+		// 	},
+		// 	"presentation": {
+		// 		"echo": false,
+		// 		"reveal": "always",
+		// 		"focus": false,
+		// 		"panel": "shared",
+		// 		"showReuseMessage": false,
+		// 		"clear": true,
+		// 		"group": "DEPLOY"
+		// 	}
+		// }
 	],
 	"inputs": [
 		{
@@ -621,9 +748,9 @@
 				"joanneke2022",
 				"marlies2021",
 				"marlies2020",
-				"sintervania",
+				"sintervania"
 			],
-			"default": "2025",
-		},
-	],
+			"default": "2025"
+		}
+	]
 }

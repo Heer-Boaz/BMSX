@@ -8,7 +8,7 @@ npm run serve:dist:wsl
 # How to use
 
 # Start from WSL: npm run serve:dist:wsl
-# Then open on iPhone: http://<your-windows-lan-ip>:8080/game_debug.html
+# Then open on iPhone: http://<your-windows-lan-ip>:8080/index.html?rom=<your-rom>.rom
 # Options
 
 # Port: npm run serve:dist:wsl -- --port 3000

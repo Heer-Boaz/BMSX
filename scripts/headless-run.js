@@ -49,6 +49,21 @@ if (result.status !== 0) {
 	process.exit(result.status || 1);
 }
 
+result = child.spawnSync('npx', [
+	'tsx',
+	'scripts/rompacker/rompacker.ts',
+	'--platform-only',
+	'--platform',
+	'headless',
+	'--debug',
+	'--force',
+	'-respath', `./${cartResPath}`
+], { stdio: 'inherit' });
+if (result.status !== 0) {
+	console.error('Error: headless platform build failed.');
+	process.exit(result.status || 1);
+}
+
 const headlessArgs = [
 	'dist/headless_debug.js',
 	'--rom', romPath,

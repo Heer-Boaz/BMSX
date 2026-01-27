@@ -491,7 +491,7 @@ export function applyStringReplacements(str: string, replacements: { [key: strin
  * @param {string} short_name - The short name of the game.
  * @returns {Promise<any>} A promise that resolves when the game HTML and manifest files have been built.
  */
-export async function buildGameHtmlAndManifest(rom_name: string, title: string, short_name: string, debug: boolean): Promise<any> {
+export async function buildGameHtmlAndManifest(rom_name: string, title: string, short_name: string, debug: boolean, deploy: boolean): Promise<any> {
 	const IMAGE_PATHS = [
 		'./rom/bmsx.png',
 		'./rom/d-pad-neutral.png',
@@ -560,15 +560,16 @@ export async function buildGameHtmlAndManifest(rom_name: string, title: string, 
 	 */
 	async function transformHtml(htmlToTransform: string, cssMinified: string, debug: boolean): Promise<string> {
 		const imgPrefix = 'data:image/png;base64,';
+		const defaultRom = deploy ? `${rom_name}.${debug ? 'debug.' : ''}rom` : '';
 		const replacements = {
 			'//#bootromjs': romjs,
 			'//#zipjs': zipjs,
 			'/*#css*/': cssMinified,
 			'#title': title,
 			'#enginejs': debug ? 'engine.debug.js' : 'engine.js',
-			'//#debug': `bootrom.debug = ${debug};\n\t\tbootrom.romname = getRomNameFromUrlParameter() ?? '${rom_name}';\n`,
-			'#outfile': `${rom_name}.${debug ? 'debug.' : ''}rom`,
+			'//#debug': `bootrom.debug = ${debug};\n`,
 			'#biospath': `./bmsx-bios.${debug ? 'debug.' : ''}rom`,
+			'__DEFAULT_ROM__': defaultRom,
 			'@@BMSX_LOGO@@': `${imgPrefix}${images['./rom/bmsx.png']}`,
 			'@@DPAD_D@@': `${imgPrefix}${images['./rom/d-pad-d.png']}`,
 			'@@DPAD_L@@': `${imgPrefix}${images['./rom/d-pad-l.png']}`,
@@ -602,12 +603,13 @@ export async function buildGameHtmlAndManifest(rom_name: string, title: string, 
 	});
 
 	const transformedHtml = await transformHtml(html, cssMinified, debug);
-	await writeFile(`./dist/game${debug ? '_debug' : ''}.html`, transformedHtml);
+	await writeFile(`./dist/index.html`, transformedHtml);
 
-	// Update the manifest.json-file that is used for app-versions of the webpage
-	const manifest = (await readFile("./rom/manifest.json", 'utf8')).replace('#title', title).replace('#short_name', short_name);
-
-	// Write updated manifest to dist-folder
+	// Write the PWA manifest to dist-folder. Keep it generic unless we explicitly deploy a game.
+	const manifestTemplate = await readFile("./rom/manifest.json", 'utf8');
+	const appName = deploy ? title : 'BMSX';
+	const appShortName = deploy ? short_name : 'BMSX';
+	const manifest = manifestTemplate.replace('#title', appName).replace('#short_name', appShortName);
 	await writeFile("./dist/manifest.webmanifest", manifest);
 }
 
@@ -1953,7 +1955,6 @@ export interface BootromBuildOptions {
 	debug: boolean;
 	forceBuild: boolean;
 	platform: RomPackerTarget;
-	romName: string;
 	canonicalization: CanonicalizationType;
 }
 
@@ -2049,7 +2050,6 @@ async function buildNodeBootrom(options: BootromBuildOptions): Promise<void> {
 
 	const define = {
 		'__BOOTROM_TARGET__': JSON.stringify(options.platform),
-		'__BOOTROM_ROM_NAME__': JSON.stringify(options.romName),
 		'__BOOTROM_DEBUG__': options.debug ? 'true' : 'false',
 		'__BOOTROM_CANONICALIZATION__': JSON.stringify(options.canonicalization),
 	};

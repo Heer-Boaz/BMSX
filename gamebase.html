@@ -150,12 +150,13 @@
 			//#debug
 			window.onload = async function () {
 				try {
-					const romurl = getRomFromUrlParameter() ?? '#outfile';
+					const romurl = getRomFromUrlParameter() ?? '__DEFAULT_ROM__';
+					if (!romurl || romurl.length === 0) {
+						throw new Error('Missing required URL parameter: ?rom=<path-to-rom>');
+					}
 					const engineAssetsPath = '#biospath';
 					await bootrom.loadEngineAssets(engineAssetsPath);
-					if (romurl && romurl.length > 0) {
-						await bootrom.loadCart(`./${romurl ?? ''}`);
-					}
+					await bootrom.loadCart(`./${romurl}`);
 					await bootrom.start();
 				} catch (err) {
 					bootrom.outputError('Failed to boot rom.\n' + err.stack ?? err ?? 'No error information available :-(');

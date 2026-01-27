@@ -5,7 +5,7 @@
 			"type": "msedge",
 			"request": "launch",
 			"name": "Debug the game!",
-			"url": "${workspaceFolder}/dist/game_debug.html",
+			"url": "${workspaceFolder}/dist/index.html?rom=${input:romtobuild}.debug.rom",
 			"userDataDir": "${workspaceFolder}/.vscode/edge-profile",
 			"runtimeArgs": [
 				"--nolazy",
@@ -13,7 +13,7 @@
 				"--disable-session-crashed-bubble",
 				"--disable-features=IsolateOrigins,site-per-process,web-security",
 				"--remote-debugging-port=9222",
-				// "--app=file://${workspaceFolder}/dist/game_debug.html"
+				// "--app=file://${workspaceFolder}/dist/index.html?rom=${input:romtobuild}.debug.rom"
 			],
 			"webRoot": "${workspaceFolder}",
 			"sourceMaps": true,
@@ -31,7 +31,7 @@
 			"type": "msedge",
 			"request": "launch",
 			"name": "Run the game in non-debug mode!",
-			"url": "${workspaceFolder}/dist/game.html",
+			"url": "${workspaceFolder}/dist/index.html?rom=${input:romtobuild}.rom",
 			"runtimeArgs": [
 				"--nolazy",
 				"--allow-file-access-from-files",
@@ -54,7 +54,7 @@
 			"type": "msedge",
 			"name": "Open Edge DevTools",
 			"request": "attach",
-			"url": "${workspaceFolder}/dist/game_debug.html",
+			"url": "${workspaceFolder}/dist/index.html?rom=${input:romtobuild}.debug.rom",
 			"port": 9222,
 			"presentation": {
 				"hidden": true
@@ -64,7 +64,7 @@
 			"type": "msedge",
 			"request": "launch",
 			"name": "Debug the game! (WSL)",
-			"url": "file:////wsl$/Ubuntu/home/boaz/BMSX/dist/game_debug.html",
+			"url": "file:////wsl$/Ubuntu/home/boaz/BMSX/dist/index.html?rom=${input:romtobuild}.debug.rom",
 			"userDataDir": "${workspaceFolder}/.vscode/edge-profile-wsl",
 			"runtimeArgs": [
 				"--nolazy",
@@ -72,7 +72,7 @@
 				"--disable-session-crashed-bubble",
 				"--disable-features=IsolateOrigins,site-per-process,web-security",
 				"--remote-debugging-port=9222",
-				"--app=file:////wsl$/Ubuntu/home/boaz/BMSX/dist/game_debug.html"
+				"--app=file:////wsl$/Ubuntu/home/boaz/BMSX/dist/index.html?rom=${input:romtobuild}.debug.rom"
 			],
 			"webRoot": "${workspaceFolder}",
 			"sourceMaps": true,
@@ -89,7 +89,7 @@
 			"type": "msedge",
 			"request": "launch",
 			"name": "Debug the game from WSL Server!",
-			"url": "http://localhost:8080/game_debug.html",
+			"url": "http://localhost:8080/index.html?rom=${input:romtobuild}.debug.rom",
 			"userDataDir": "${workspaceFolder}/.vscode/edge-profile-wsl",
 			"runtimeArgs": [
 				"--nolazy",
@@ -97,7 +97,7 @@
 				"--disable-session-crashed-bubble",
 				"--disable-features=IsolateOrigins,site-per-process,web-security",
 				"--remote-debugging-port=9222",
-				"--app=http://localhost:8080/game_debug.html"
+				"--app=http://localhost:8080/index.html?rom=${input:romtobuild}.debug.rom"
 			],
 			"webRoot": "${workspaceFolder}",
 			"sourceMaps": true,
@@ -114,7 +114,7 @@
 			"type": "msedge",
 			"request": "launch",
 			"name": "Release the game from WSL Server!",
-			"url": "http://localhost:8080/game.html",
+			"url": "http://localhost:8080/index.html?rom=${input:romtobuild}.rom",
 			"userDataDir": "${workspaceFolder}/.vscode/edge-profile-wsl",
 			"runtimeArgs": [
 				"--nolazy",
@@ -122,7 +122,7 @@
 				"--disable-session-crashed-bubble",
 				"--disable-features=IsolateOrigins,site-per-process,web-security",
 				"--remote-debugging-port=9222",
-				"--app=http://localhost:8080/game.html"
+				"--app=http://localhost:8080/index.html?rom=${input:romtobuild}.rom"
 			],
 			"webRoot": "${workspaceFolder}",
 			"sourceMaps": true,
@@ -134,7 +134,7 @@
 			"showAsyncStacks": false,
 			"smartStep": true,
 			"disableNetworkCache": true,
-		}
+		},
 		{
 			"type": "pwa-node",
 			"request": "launch",

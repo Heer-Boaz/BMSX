@@ -1,6 +1,6 @@
 {
-    "title": "BMSX Engine Assets",
-    "short_name": "BMSX Assets",
+    "title": "Engine Assets",
+    "short_name": "Engine",
     "rom_name": "bmsx-bios",
     "vm": {
         "viewport": { "width": 256, "height": 212 },

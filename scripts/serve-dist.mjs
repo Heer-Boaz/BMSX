@@ -299,7 +299,7 @@ async function fileExists(p) {
 const root = dir;
 
 // Decide default file to open/redirect when path is '/'
-const defaultCandidates = ['game_debug.html', 'game.html', 'index.html'];
+const defaultCandidates = ['index.html'];
 let defaultFile = null;
 for (const c of defaultCandidates) {
 	if (await fileExists(path.join(root, c))) { defaultFile = c; break; }
@@ -387,6 +387,6 @@ server.listen(port, host, () => {
 	if (defaultFile) {
 		console.log(`\nTip: open http://localhost:${port}/${defaultFile}`);
 	} else {
-		console.log('\nTip: open your HTML file, e.g. /game_debug.html');
+		console.log('\nTip: open your HTML file, e.g. /index.html?rom=<your-rom>.rom');
 	}
 });

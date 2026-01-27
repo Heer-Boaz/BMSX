@@ -7,7 +7,7 @@ import type { asset_type } from '../../src/bmsx/rompack/rompack';
 import type { CanonicalizationType } from '../../src/bmsx/rompack/rompack';
 
 export type RomPackerTarget = 'browser' | 'cli' | 'headless' | 'libretro-wsl' | 'libretro-win' | 'libretro-snesmini';
-export type RomPackerMode = 'bundle' | 'engine';
+export type RomPackerMode = 'rompack' | 'engine' | 'platform' | 'deploy';
 
 export interface RomPackerOptions {
 	rom_name: string;
@@ -17,7 +17,6 @@ export interface RomPackerOptions {
 	force: boolean;
 	debug: boolean;
 	buildreslist: boolean;
-	deploy: boolean;
 	useTextureAtlas: boolean;
 	platform: RomPackerTarget;
 	/** Optional path to a directory of bmsx declarations to use for type-checking games. */
