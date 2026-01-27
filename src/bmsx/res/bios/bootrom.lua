@@ -38,7 +38,7 @@ local function read_zstr(addr)
 	return table.concat(t), addr
 end
 
-local function read_zstr_optional(addr, limit)a
+local function read_zstr_optional(addr, limit)
 	if addr >= limit then
 		return nil, addr
 	end
