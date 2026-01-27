@@ -9,6 +9,7 @@
 #include "../render/shared/render_types.h"
 #include "../core/types.h"
 #include <array>
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -59,7 +60,7 @@ struct VMRuntimeOptions {
 	int playerIndex = 0;
 	Viewport viewport{0, 0};
 	CanonicalizationType canonicalization = CanonicalizationType::None;
-	double cpuMhz = 0.0;
+	i64 cpuHz = 0;
 	int cycleBudgetPerFrame = DEFAULT_CYCLE_BUDGET;
 };
 
@@ -252,8 +253,9 @@ public:
 	void registerNativeFunction(std::string_view name, NativeFunctionInvoke fn);
 
 	void setCanonicalization(CanonicalizationType canonicalization);
-	void setCpuMhz(double mhz);
-	double cpuMhz() const { return m_cpuMhz; }
+	void setCpuHz(i64 hz);
+	i64 cpuHz() const { return m_cpuHz; }
+	i64 updateCountTotal() const { return m_debugUpdateCountTotal; }
 	void setCycleBudgetPerFrame(int budget);
 	bool isDrawPending() const;
 	Value canonicalizeIdentifier(std::string_view value);
@@ -365,7 +367,21 @@ private:
 	std::unordered_map<std::string, Value> m_vmModuleCache;
 	std::unordered_map<std::string, std::unique_ptr<std::regex>> m_luaPatternRegexCache;
 	std::vector<std::vector<Value>> m_valueScratchPool;
-	double m_cpuMhz = 0.0;
+	bool m_debugVmReportInitialized = false;
+	std::chrono::steady_clock::time_point m_debugVmReportAt;
+	i64 m_debugVmRuns = 0;
+	i64 m_debugVmYields = 0;
+	double m_debugVmRemainingAcc = 0.0;
+	i64 m_debugVmRunsTotal = 0;
+	i64 m_debugVmYieldsTotal = 0;
+	bool m_debugVmFrameReportInitialized = false;
+	std::chrono::steady_clock::time_point m_debugVmFrameReportAt;
+	i64 m_debugVmFrameCount = 0;
+	double m_debugVmFrameCyclesUsedAcc = 0.0;
+	double m_debugVmFrameRemainingAcc = 0.0;
+	double m_debugVmFrameYieldsAcc = 0.0;
+	i64 m_debugUpdateCountTotal = 0;
+	i64 m_cpuHz = 0;
 	int m_cycleBudgetPerFrame = DEFAULT_CYCLE_BUDGET;
 };
 

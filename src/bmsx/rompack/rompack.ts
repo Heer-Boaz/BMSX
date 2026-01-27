@@ -20,9 +20,7 @@ export type CartRomHeader = {
 };
 
 export type CartridgeLayerId = 'system' | 'cart' | 'overlay';
-export type CartridgePayloads = Partial<Record<CartridgeLayerId, ArrayBuffer>>;
-export type BmsxCartridgeBlob = ArrayBuffer | Uint8Array;
-export type BmsxCartridge = BmsxCartridgeBlob;
+export type CartridgePayloads = Partial<Record<CartridgeLayerId, Uint8Array>>;
 
 export type RomAssetOp = 'delete';
 
@@ -107,9 +105,9 @@ export type CartridgeIndex = {
  * Arguments passed from the bootloader to the game constructor.
  */
 export interface BootArgs {
-	cartridge?: BmsxCartridge;
-	engineAssets: BmsxCartridge;
-	workspaceOverlay?: BmsxCartridge;
+	cartridge?: Uint8Array;
+	engineAssets: Uint8Array;
+	workspaceOverlay?: Uint8Array;
 	sndcontext?: AudioContext;
 	gainnode?: GainNode;
 	debug?: boolean;
@@ -440,7 +438,8 @@ export type CartManifest = {
 		viewport: Viewport;
 		canonicalization: CanonicalizationType;
 		namespace: string;
-		cpu_mhz: number;
+		cpu_freq_hz: number;
+		ufps: number;
 		skybox_face_size?: number;
 		limits?: VmLimits;
 	};

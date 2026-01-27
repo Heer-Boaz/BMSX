@@ -6,7 +6,7 @@ import { Presets, SingleBar } from 'cli-progress';
 import { validateAudioEventReferences } from './audioeventvalidator';
 import { appendVmProgramAsset, buildBootromScriptIfNewer, buildEngineRuntime, buildGameHtmlAndManifest, buildResourceList, commonResPath, createAtlasses, deployToServer, esbuild, finalizeRompack, GENERATE_AND_USE_TEXTURE_ATLAS, generateRomAssets, getNodeLauncherFilename, getResMetaList, getResourcesList, getRomManifest, isEngineRuntimeRebuildRequired, isRebuildRequired, LUA_CANONICALIZATION, setAtlasFlag, setLuaCanonicalization, typecheckBeforeBuild, typecheckGameWithDts } from './rompacker-core';
 import type { RomPackerMode, RomPackerOptions, RomPackerTarget } from './rompacker.rompack';
-import type { CanonicalizationType, RomAsset, RomManifest } from '../../src/bmsx/rompack/rompack';
+import type { CanonicalizationType, RomAsset } from '../../src/bmsx/rompack/rompack';
 import type { Value } from '../../src/bmsx/vm/cpu';
 import { LuaError } from '../../src/bmsx/lua/luaerrors';
 import { inflateProgram, decodeProgramAsset, VM_PROGRAM_ASSET_ID } from '../../src/bmsx/vm/vm_program_asset';

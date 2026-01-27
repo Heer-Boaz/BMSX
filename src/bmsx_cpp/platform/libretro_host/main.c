@@ -18,6 +18,7 @@
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -64,6 +65,9 @@ typedef struct LibretroCore {
 
 	void (*retro_cheat_reset)(void);
 	void (*retro_cheat_set)(unsigned, bool, const char*);
+
+	void (*bmsx_set_frame_time_usec)(retro_usec_t);
+	int64_t (*bmsx_get_ufps)(void);
 } LibretroCore;
 
 typedef struct FbDev {
@@ -120,6 +124,7 @@ static const unsigned kAudioPeriodCount = 4;
 static const unsigned kAudioPrimePeriods = 4;
 static const int kAudioThreadPriority = 20;
 static const unsigned kMaxCatchUpFrames = 4;
+static const int64_t kVmHzScale = 1000000ll;
 
 static char g_system_dir[1024] = "";
 static char g_save_dir[1024] = "";
@@ -3744,6 +3749,16 @@ static uint64_t monotonic_ms(void) {
 	return (uint64_t)ts.tv_sec * 1000ull + (uint64_t)ts.tv_nsec / 1000000ull;
 }
 
+static uint64_t frame_time_usec_from_scaled(int64_t hz_scaled) {
+	const __int128 numerator = (__int128)kVmHzScale * (__int128)1000000ll;
+	return (uint64_t)((numerator + (__int128)hz_scaled / 2) / (__int128)hz_scaled);
+}
+
+static uint64_t frame_time_ns_from_scaled(int64_t hz_scaled) {
+	const __int128 numerator = (__int128)kVmHzScale * (__int128)1000000000ll;
+	return (uint64_t)((numerator + (__int128)hz_scaled / 2) / (__int128)hz_scaled);
+}
+
 static int16_t input_state_cb(unsigned port, unsigned device, unsigned index, unsigned id) {
 	(void)index;
 	if (port != 0) {
@@ -3828,6 +3843,8 @@ static void load_core(LibretroCore* core, const char* path) {
 	load_symbol(core->handle, "retro_get_memory_size", &core->retro_get_memory_size);
 	load_symbol(core->handle, "retro_cheat_reset", &core->retro_cheat_reset);
 	load_symbol(core->handle, "retro_cheat_set", &core->retro_cheat_set);
+	load_symbol(core->handle, "bmsx_set_frame_time_usec", &core->bmsx_set_frame_time_usec);
+	load_symbol(core->handle, "bmsx_get_ufps", &core->bmsx_get_ufps);
 }
 
 static void usage(const char* argv0) {
@@ -3989,17 +4006,16 @@ int main(int argc, char** argv) {
 		die("retro_load_game failed");
 	}
 
-	double fps = av.timing.fps;
-	if (fps <= 0.0) {
-		fps = 50.0;
-	}
-	g_target_fps = fps;
+	const int64_t ufps_scaled = core.bmsx_get_ufps();
+	g_target_fps = (double)ufps_scaled / (double)kVmHzScale;
 	int audio_rate = (int)(av.timing.sample_rate + 0.5);
 	if (audio_rate <= 0) {
 		die("Invalid audio sample rate: %.2f", av.timing.sample_rate);
 	}
 	audio_init(audio_rate);
-	const uint64_t frame_ns = (uint64_t)(1000000000.0 / fps);
+	const uint64_t frame_usec = frame_time_usec_from_scaled(ufps_scaled);
+	core.bmsx_set_frame_time_usec((retro_usec_t)frame_usec);
+	const uint64_t frame_ns = frame_time_ns_from_scaled(ufps_scaled);
 	uint64_t next_frame_ns = monotonic_ns() + frame_ns;
 
 	while (!g_should_quit) {

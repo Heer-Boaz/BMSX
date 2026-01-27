@@ -26,8 +26,8 @@ function readTag(dv: DataView, offset: number): string {
 	);
 }
 
-export function parseWavInfo(buffer: ArrayBuffer): WavInfo {
-	const dv = new DataView(buffer);
+export function parseWavInfo(buffer: Uint8Array): WavInfo {
+	const dv = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
 	if (dv.byteLength < 12) {
 		throw new Error('[parseWavInfo] WAV data too small.');
 	}

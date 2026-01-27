@@ -580,8 +580,8 @@ interface WavInfo {
  *   - dataLen: Length of the audio data in bytes.
  * @throws Error if the file is not a valid RIFF-WAVE or if the PCM format is unsupported.
  */
-export function parseWav(buf: ArrayBuffer): WavInfo {
-	const dv = new DataView(buf);
+export function parseWav(buf: Uint8Array): WavInfo {
+	const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
 
 	if (dv.getUint32(0, false) !== 0x52494646) throw new Error('No RIFF');
 	if (dv.getUint32(8, false) !== 0x57415645) throw new Error('No WAVE');

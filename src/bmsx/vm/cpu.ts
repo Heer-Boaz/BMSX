@@ -942,7 +942,7 @@ const signExtend = (value: number, bits: number): number => {
 };
 
 export class VMCPU {
-	public instructionBudgetRemaining: number | null = null;
+	public instructionBudgetRemaining: number = 0;
 	public lastReturnValues: Value[] = [];
 	public lastPc: number = 0;
 	public lastInstruction: number = 0;
@@ -1166,35 +1166,23 @@ export class VMCPU {
 		return this.frames.length > 0;
 	}
 
-	public run(instructionBudget: number | null = null): RunResult {
+	public run(instructionBudget: number): RunResult {
 		return this.runUntilDepth(0, instructionBudget);
 	}
 
-	public runUntilDepth(targetDepth: number, instructionBudget: number | null = null): RunResult {
-		const ownsBudget = instructionBudget !== null;
-		const previousBudget = this.instructionBudgetRemaining;
-		if (ownsBudget) {
-			this.instructionBudgetRemaining = instructionBudget;
-		}
-		try {
-			while (this.frames.length > targetDepth) {
-				if (this.instructionBudgetRemaining !== null && this.instructionBudgetRemaining <= 0) {
-					return RunResult.Yielded;
-				}
-				this.step();
+	public runUntilDepth(targetDepth: number, instructionBudget: number): RunResult {
+		this.instructionBudgetRemaining = instructionBudget;
+		while (this.frames.length > targetDepth) {
+			if (this.instructionBudgetRemaining <= 0) {
+				return RunResult.Yielded;
 			}
-			return RunResult.Halted;
-		} finally {
-			if (ownsBudget) {
-				this.instructionBudgetRemaining = previousBudget;
-			}
+			this.step();
 		}
+		return RunResult.Halted;
 	}
 
 	private charge(cycles: number): void {
-		if (this.instructionBudgetRemaining !== null) {
-			this.instructionBudgetRemaining -= cycles;
-		}
+		this.instructionBudgetRemaining -= cycles;
 	}
 
 	public step(): void {
@@ -1465,8 +1453,10 @@ export class VMCPU {
 				const left = this.readRK(frame, rkRawB, rkBitsB);
 				const right = this.readRK(frame, rkRawC, rkBitsC);
 				const text = this.valueToString(left) + this.valueToString(right);
-				this.charge(CEIL_DIV8(text.length));
-				this.setRegisterString(frame, a, this.stringPool.intern(text));
+				const handle = this.stringPool.intern(text);
+				const cp = this.stringPool.codepointCount(handle);
+				this.charge(CEIL_DIV8(cp));
+				this.setRegisterString(frame, a, handle);
 				return;
 			}
 			case OpCode.CONCATN: {
@@ -1475,8 +1465,10 @@ export class VMCPU {
 				for (let index = 0; index < c; index += 1) {
 					text += this.valueToString(frame.registers.get(b + index));
 				}
-				this.charge(CEIL_DIV8(text.length));
-				this.setRegisterString(frame, a, this.stringPool.intern(text));
+				const handle = this.stringPool.intern(text);
+				const cp = this.stringPool.codepointCount(handle);
+				this.charge(CEIL_DIV8(cp));
+				this.setRegisterString(frame, a, handle);
 				return;
 			}
 			case OpCode.UNM: {
@@ -1636,11 +1628,12 @@ export class VMCPU {
 				}
 				if (isNativeFunction(callee)) {
 					const cost = callee.cost ?? DEFAULT_NATIVE_COST;
-					const rc = c === 0 ? 2 : c;
-					this.charge(cost.base + cost.perArg * argCount + cost.perRet * rc);
+					this.charge(cost.base + cost.perArg * argCount);
 					const results = this.acquireNativeReturnScratch();
 					try {
 						callee.invoke(args, results);
+						const returnSlotCount = c === 0 ? results.length : c;
+						this.charge(cost.perRet * returnSlotCount);
 						this.writeReturnValues(frame, a, c, results);
 					} finally {
 						this.releaseNativeReturnScratch(results);

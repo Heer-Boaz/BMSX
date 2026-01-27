@@ -2,7 +2,7 @@ import { BrowserGameViewHost, BrowserPlatform } from './browser/platform_browser
 import type { GameViewHostHandle, Platform } from 'bmsx/platform';
 
 export * from 'bmsx/platform';
-export { BrowserGameViewHost, BrowserPlatform } from './browser/platform_browser';
+export { BrowserGameViewHost, BrowserPlatform, type BrowserPlatformOptions } from './browser/platform_browser';
 export { CLIPlatformServices, CLIGameViewHost, CLIPlatformOptions } from './cli/platform_cli';
 
 export function constructPlatformFromViewHostHandle(handle: GameViewHostHandle): Platform {

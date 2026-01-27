@@ -300,6 +300,9 @@ void LibretroPlatform::setFrameSkipNext(bool skip) {
 }
 
 void LibretroPlatform::setFrameTimeUsec(retro_usec_t usec) {
+	if (usec == 0) {
+		throw std::runtime_error("[LibretroPlatform] Frame time override must be greater than zero.");
+	}
 	const double nextFrameTimeSec = static_cast<double>(usec) / 1000000.0;
 	static double lastLoggedFrameTimeSec = -1.0;
 	m_frame_time_sec = nextFrameTimeSec;

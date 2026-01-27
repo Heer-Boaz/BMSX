@@ -5,7 +5,9 @@
     "vm": {
         "viewport": { "width": 256, "height": 212 },
         "canonicalization": "lower",
-        "namespace": "testrom"
+        "namespace": "testrom",
+        "cpu_freq_hz": 8000000,
+        "ufps": 50000000
     },
     "lua": {
         "entry_path": "entry.lua"

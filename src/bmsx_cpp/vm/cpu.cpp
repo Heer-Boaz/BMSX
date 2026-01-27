@@ -826,72 +826,28 @@ void VMCPU::callExternal(Closure* closure, const std::vector<Value>& args) {
 	pushFrame(closure, args, 0, 0, true, m_program->protos[closure->protoIndex].entryPC);
 }
 
-RunResult VMCPU::run(std::optional<int> instructionBudget) {
-	const auto previousBudget = instructionBudgetRemaining;
-	const int previousCycleBudget = m_cycleBudget;
-	const bool previousLimited = m_cycleLimited;
-	const bool ownsBudget = instructionBudget.has_value();
-	if (ownsBudget) {
-		instructionBudgetRemaining = instructionBudget;
-	}
-	if (instructionBudgetRemaining.has_value()) {
-		m_cycleLimited = true;
-		m_cycleBudget = *instructionBudgetRemaining;
-	} else {
-		m_cycleLimited = false;
-	}
+RunResult VMCPU::run(int instructionBudget) {
+	instructionBudgetRemaining = instructionBudget;
 	RunResult result = RunResult::Halted;
 	while (!m_frames.empty()) {
-		if (m_cycleLimited && m_cycleBudget <= 0) {
+		if (instructionBudgetRemaining <= 0) {
 			result = RunResult::Yielded;
 			break;
 		}
 		step();
-	}
-	if (m_cycleLimited) {
-		instructionBudgetRemaining = m_cycleBudget;
-	} else {
-		instructionBudgetRemaining = std::nullopt;
-	}
-	if (ownsBudget) {
-		instructionBudgetRemaining = previousBudget;
-		m_cycleBudget = previousCycleBudget;
-		m_cycleLimited = previousLimited;
 	}
 	return result;
 }
 
-RunResult VMCPU::runUntilDepth(int targetDepth, std::optional<int> instructionBudget) {
-	const auto previousBudget = instructionBudgetRemaining;
-	const int previousCycleBudget = m_cycleBudget;
-	const bool previousLimited = m_cycleLimited;
-	const bool ownsBudget = instructionBudget.has_value();
-	if (ownsBudget) {
-		instructionBudgetRemaining = instructionBudget;
-	}
-	if (instructionBudgetRemaining.has_value()) {
-		m_cycleLimited = true;
-		m_cycleBudget = *instructionBudgetRemaining;
-	} else {
-		m_cycleLimited = false;
-	}
+RunResult VMCPU::runUntilDepth(int targetDepth, int instructionBudget) {
+	instructionBudgetRemaining = instructionBudget;
 	RunResult result = RunResult::Halted;
 	while (static_cast<int>(m_frames.size()) > targetDepth) {
-		if (m_cycleLimited && m_cycleBudget <= 0) {
+		if (instructionBudgetRemaining <= 0) {
 			result = RunResult::Yielded;
 			break;
 		}
 		step();
-	}
-	if (m_cycleLimited) {
-		instructionBudgetRemaining = m_cycleBudget;
-	} else {
-		instructionBudgetRemaining = std::nullopt;
-	}
-	if (ownsBudget) {
-		instructionBudgetRemaining = previousBudget;
-		m_cycleBudget = previousCycleBudget;
-		m_cycleLimited = previousLimited;
 	}
 	return result;
 }
@@ -899,9 +855,6 @@ RunResult VMCPU::runUntilDepth(int targetDepth, std::optional<int> instructionBu
 void VMCPU::step() {
 	if (m_frames.empty()) return;
 	if (m_heap.needsCollection()) {
-		if (m_cycleLimited) {
-			m_cycleBudget -= 200;
-		}
 		m_heap.collect();
 	}
 	CallFrame& frame = *m_frames.back();
@@ -928,9 +881,7 @@ void VMCPU::step() {
 	frame.pc = pc + INSTRUCTION_BYTES;
 	lastPc = pc;
 	lastInstruction = decoded->word;
-	if (m_cycleLimited) {
-		m_cycleBudget -= static_cast<int>(kBaseCycles[op]) + (hasWide ? 1 : 0);
-	}
+	instructionBudgetRemaining -= static_cast<int>(kBaseCycles[op]) + (hasWide ? 1 : 0);
 	executeInstruction(frame, static_cast<OpCode>(op), decoded->a, decoded->b, decoded->c, ext, wideA, wideB, wideC, hasWide);
 }
 
@@ -1010,7 +961,7 @@ void VMCPU::executeInstruction(
 		| (static_cast<uint32_t>(extC) << MAX_OPERAND_BITS)
 		| cLow;
 
-#define CYCLES_ADD(n) do { if (m_cycleLimited) m_cycleBudget -= (n); } while (0)
+#define CYCLES_ADD(n) do { instructionBudgetRemaining -= (n); } while (0)
 
 	switch (op) {
 		case OpCode::WIDE:
@@ -1189,8 +1140,10 @@ void VMCPU::executeInstruction(
 		case OpCode::CONCAT: {
 			std::string text = valueToString(readRK(frame, rkRawB, rkBitsB), m_stringPool);
 			text += valueToString(readRK(frame, rkRawC, rkBitsC), m_stringPool);
-			CYCLES_ADD(ceilDiv8(static_cast<int>(text.size())));
-			setRegister(frame, a, valueString(m_stringPool.intern(text)));
+			const StringId textId = m_stringPool.intern(text);
+			const int cp = m_stringPool.codepointCount(textId);
+			CYCLES_ADD(ceilDiv8(cp));
+			setRegister(frame, a, valueString(textId));
 			return;
 		}
 
@@ -1200,8 +1153,10 @@ void VMCPU::executeInstruction(
 			for (int index = 0; index < c; ++index) {
 				text += valueToString(frame.registers[static_cast<size_t>(b + index)], m_stringPool);
 			}
-			CYCLES_ADD(ceilDiv8(static_cast<int>(text.size())));
-			setRegister(frame, a, valueString(m_stringPool.intern(text)));
+			const StringId textId = m_stringPool.intern(text);
+			const int cp = m_stringPool.codepointCount(textId);
+			CYCLES_ADD(ceilDiv8(cp));
+			setRegister(frame, a, valueString(textId));
 			return;
 		}
 
@@ -1452,10 +1407,8 @@ void VMCPU::executeInstruction(
 			}
 			if (valueIsNativeFunction(callee)) {
 				NativeFunction* fn = asNativeFunction(callee);
-				const int rc = retCount == 0 ? 2 : retCount;
 				CYCLES_ADD(static_cast<int>(fn->cycleBase)
-					+ static_cast<int>(fn->cyclePerArg) * argCount
-					+ static_cast<int>(fn->cyclePerRet) * rc);
+					+ static_cast<int>(fn->cyclePerArg) * argCount);
 				std::vector<Value> args = acquireArgScratch();
 				args.resize(static_cast<size_t>(argCount));
 				for (int i = 0; i < argCount; ++i) {
@@ -1463,6 +1416,8 @@ void VMCPU::executeInstruction(
 				}
 				std::vector<Value> out = acquireNativeReturnScratch();
 				fn->invoke(args, out);
+				const int returnSlots = retCount == 0 ? static_cast<int>(out.size()) : retCount;
+				CYCLES_ADD(static_cast<int>(fn->cyclePerRet) * returnSlots);
 				writeReturnValues(frame, a, retCount, out);
 				releaseNativeReturnScratch(std::move(out));
 				releaseArgScratch(std::move(args));

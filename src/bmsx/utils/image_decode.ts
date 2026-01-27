@@ -4,11 +4,11 @@ export type DecodedImage = {
 	pixels: Uint8Array;
 };
 
-export async function decodePngToRgba(buffer: ArrayBuffer): Promise<DecodedImage> {
+export async function decodePngToRgba(buffer: Uint8Array): Promise<DecodedImage> {
 	if (typeof createImageBitmap !== 'function') {
 		throw new Error('[decodePngToRgba] createImageBitmap is not available.');
 	}
-	const blob = new Blob([new Uint8Array(buffer)], { type: 'image/png' });
+	const blob = new Blob([buffer as any], { type: 'image/png' });
 	const bitmap = await createImageBitmap(blob, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' } as any);
 	const width = bitmap.width;
 	const height = bitmap.height;

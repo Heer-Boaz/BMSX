@@ -312,7 +312,8 @@ struct RomManifest {
 	std::optional<i32> maxVoicesSfx;
 	std::optional<i32> maxVoicesMusic;
 	std::optional<i32> maxVoicesUi;
-	std::optional<double> cpuMhz;
+	std::optional<i64> cpuHz;
+	std::optional<i64> ufpsScaled;
 
 	std::string entryPoint;  // Main Lua file
 };

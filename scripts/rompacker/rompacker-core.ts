@@ -10,7 +10,6 @@ import { atlasIndexResolver, createOptimizedAtlas, generateAtlasName } from './a
 import { BoundingBoxExtractor } from './boundingbox_extractor';
 import { loadGLTFModel } from './gltfloader';
 import type { AtlasResource, ImageResource, Resource, resourcetype, RomPackerTarget } from './rompacker.rompack';
-import { encodeWavToAacLc } from './audioencoder';
 // @ts-ignore
 const { build } = require('esbuild');
 // @ts-ignore
@@ -1778,7 +1777,8 @@ function encodeBiosManifest(manifest: RomManifest, projectRootPath?: string): Bu
 	const canonicalization = manifest.vm.canonicalization ?? '';
 	const inputLabel = buildInputLabel(manifest);
 	const rootPath = projectRootPath ?? '';
-	const cpuMhz = String(manifest.vm.cpu_mhz);
+	const cpuHz = String(manifest.vm.cpu_freq_hz);
+	const ufps = String(manifest.vm.ufps);
 
 	const header = Buffer.alloc(4);
 	header.writeUInt32LE(entryKind, 0);
@@ -1793,7 +1793,8 @@ function encodeBiosManifest(manifest: RomManifest, projectRootPath?: string): Bu
 		encodeZeroTerminated(canonicalization),
 		encodeZeroTerminated(inputLabel),
 		encodeZeroTerminated(rootPath),
-		encodeZeroTerminated(cpuMhz),
+		encodeZeroTerminated(cpuHz),
+		encodeZeroTerminated(ufps),
 	];
 	return Buffer.concat(chunks);
 }

@@ -16,12 +16,18 @@
 #include "../platform.h"
 #include "../render/gameview.h"
 #include "../audio/soundmaster.h"
+#include <chrono>
 #include <memory>
 
 namespace bmsx {
 
+constexpr i64 VM_HZ_SCALE = 1'000'000;
+constexpr i64 DEFAULT_UFPS = 50;
+constexpr i64 DEFAULT_UFPS_SCALED = DEFAULT_UFPS * VM_HZ_SCALE;
+
 class BFont;
 class TextureManager;
+class VMRuntime;
 struct VmProgramAsset;
 struct ProgramMetadata;
 
@@ -107,8 +113,12 @@ public:
 	f64 deltaTime() const { return m_delta_time; }
 	u64 frameCount() const { return m_frame_count; }
 	f64 fps() const { return m_fps; }
+	f64 ufps() const { return static_cast<f64>(m_ufps_scaled) / static_cast<f64>(VM_HZ_SCALE); }
+	i64 ufpsScaled() const { return m_ufps_scaled; }
 	const TickTiming& lastTickTiming() const { return m_last_tick_timing; }
 	const RenderTiming& lastRenderTiming() const { return m_last_render_timing; }
+	void setUfps(f64 ufps);
+	void setUfpsScaled(i64 ufpsScaled);
 
 	void refreshRenderAssets();
 	void log(LogLevel level, const char* fmt, ...);
@@ -147,6 +157,7 @@ public:
 	static EngineCore* instancePtr();
 
 private:
+	void applyVmCycleBudget(VMRuntime& runtime);
 	void renderTestPattern();  // Visual test when no ROM loaded
 	void uploadTexturesToBackend(bool includeCartAssets);  // Upload asset textures to GPU backend
 	void bootVMFromProgram();  // Boot VM with pre-compiled program from ROM
@@ -165,7 +176,13 @@ private:
 	f64 m_total_time = 0.0;
 	f64 m_delta_time = 0.0;
 	u64 m_frame_count = 0;
-	f64 m_fps = 60.0;
+	f64 m_fps = DEFAULT_UFPS;
+	i64 m_ufps_scaled = DEFAULT_UFPS_SCALED;
+	bool m_debugTickReportInitialized = false;
+	std::chrono::steady_clock::time_point m_debugTickReportAt;
+	u64 m_debugTickHostFrames = 0;
+	u64 m_debugTickUpdates = 0;
+	i64 m_debugLastUpdateCountTotal = 0;
 	bool m_presentation_pending = false;
 
 	bool m_rom_loaded = false;

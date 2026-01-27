@@ -146,6 +146,7 @@ export class CLIPlatformServices implements Platform {
 	readonly input: InputHub;
 	readonly storage: StorageService;
 	readonly microtasks: MicrotaskQueue;
+	readonly ufpsScaled: number;
 	requestShutdown(): void {
 		process.exit(0);
 	}
@@ -164,6 +165,7 @@ export class CLIPlatformServices implements Platform {
 		this.input = base.input;
 		this.storage = base.storage;
 		this.microtasks = base.microtasks;
+		this.ufpsScaled = base.ufpsScaled;
 		this.clipboard = base.clipboard;
 		this.hid = base.hid;
 		this.onscreenGamepad = base.onscreenGamepad;

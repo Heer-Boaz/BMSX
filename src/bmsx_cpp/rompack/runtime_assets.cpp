@@ -1090,9 +1090,24 @@ bool loadAssetsFromRom(const u8* buffer,
 			if (vmObj.count("skybox_face_size")) {
 				assets.manifest.skyboxFaceSize = vmObj.at("skybox_face_size").toI32();
 			}
-			if (vmObj.count("cpu_mhz")) {
-				assets.manifest.cpuMhz = vmObj.at("cpu_mhz").toNumber();
+			if (!vmObj.count("cpu_freq_hz")) {
+				throw std::runtime_error("[RuntimeAssets] vm.cpu_freq_hz is required.");
 			}
+			const double cpuHzNumber = vmObj.at("cpu_freq_hz").toNumber();
+			const i64 cpuHz = static_cast<i64>(cpuHzNumber);
+			if (cpuHzNumber != static_cast<double>(cpuHz) || cpuHz <= 0) {
+				throw std::runtime_error("[RuntimeAssets] vm.cpu_freq_hz must be a positive integer.");
+			}
+			assets.manifest.cpuHz = cpuHz;
+			if (!vmObj.count("ufps")) {
+				throw std::runtime_error("[RuntimeAssets] vm.ufps is required.");
+			}
+			const double ufpsScaledNumber = vmObj.at("ufps").toNumber();
+			const i64 ufpsScaled = static_cast<i64>(ufpsScaledNumber);
+			if (ufpsScaledNumber != static_cast<double>(ufpsScaled) || ufpsScaled <= 0) {
+				throw std::runtime_error("[RuntimeAssets] vm.ufps must be a positive integer.");
+			}
+			assets.manifest.ufpsScaled = ufpsScaled;
 			if (vmObj.count("limits") && vmObj.at("limits").isObject()) {
 				const auto& limitsObj = vmObj.at("limits").asObject();
 				if (limitsObj.count("atlas_slot_bytes")) {

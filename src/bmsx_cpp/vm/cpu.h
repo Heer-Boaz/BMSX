@@ -673,8 +673,8 @@ public:
 	void start(int entryProtoIndex, const std::vector<Value>& args = {});
 	void call(Closure* closure, const std::vector<Value>& args = {}, int returnCount = 0);
 	void callExternal(Closure* closure, const std::vector<Value>& args = {});
-	RunResult run(std::optional<int> instructionBudget = std::nullopt);
-	RunResult runUntilDepth(int targetDepth, std::optional<int> instructionBudget = std::nullopt);
+	RunResult run(int instructionBudget);
+	RunResult runUntilDepth(int targetDepth, int instructionBudget);
 	void step();
 
 	int getFrameDepth() const { return static_cast<int>(m_frames.size()); }
@@ -682,7 +682,7 @@ public:
 	std::optional<SourceRange> getDebugRange(int pc) const;
 	std::vector<std::pair<int, int>> getCallStack() const;
 
-	std::optional<int> instructionBudgetRemaining;
+	int instructionBudgetRemaining = 0;
 	std::vector<Value> lastReturnValues;
 	int lastPc = 0;
 	uint32_t lastInstruction = 0;
@@ -734,8 +734,6 @@ private:
 	StringPool m_stringPool;
 	VMHeap m_heap;
 	std::function<void(VMHeap&)> m_externalRootMarker;
-	int m_cycleBudget = 0;
-	bool m_cycleLimited = false;
 
 	std::vector<Value> m_returnScratch;
 	std::vector<std::vector<Value>> m_nativeReturnPool;

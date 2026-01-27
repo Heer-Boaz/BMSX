@@ -107,7 +107,7 @@ export type BmsxVMRuntimeOptions = {
 	canonicalization?: CanonicalizationType;
 	viewport: Viewport;
 	memory: VmMemory;
-	cpuMhz: number;
+	cpuHz: number;
 	cycleBudgetPerFrame: number;
 };
 

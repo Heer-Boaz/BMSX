@@ -13,8 +13,8 @@ declare global {
 		getRomFromUrlParameter: () => string;
 		getRomNameFromUrlParameter: () => string;
 		bootrom: {
-			cartridge: ArrayBuffer;
-			engineAssets: ArrayBuffer;
+			cartridge: Uint8Array;
+			engineAssets: Uint8Array;
 			debug: boolean;
 			sndcontext: AudioContext;
 			snd_unlocked: boolean;
@@ -22,8 +22,8 @@ declare global {
 			theshowsover: boolean;
 			startingGamepadIndex: number;
 			enableOnscreenGamepad: boolean;
-			loadCart: (url: string) => Promise<ArrayBuffer>;
-			loadEngineAssets: (url: string) => Promise<ArrayBuffer>;
+			loadCart: (url: string) => Promise<Uint8Array>;
+			loadEngineAssets: (url: string) => Promise<Uint8Array>;
 			start: () => Promise<void>;
 			outputError: (errormsg: string) => void;
 			resizeHandler: () => void;
@@ -41,7 +41,7 @@ declare global {
 
 /**
  * Function that initializes the boot ROM and starts the game.
- * @param {ArrayBuffer} rom - The cart ROM blob.
+ * @param {Uint8Array} rom - The cart ROM blob.
  * @param {AudioContext} sndcontext - The audio context for the boot ROM.
  * @param {GainNode} gainnode - The gain node for the boot ROM.
  * @returns {void}
@@ -54,8 +54,8 @@ export const bootrom = {
 	/**
 	 * This section of code defines the boot ROM object and its properties and methods.
 	 *
-	 * @property {ArrayBuffer} cartridge - The cart ROM blob.
-	 * @property {ArrayBuffer} engineAssets - The engine asset blob.
+	 * @property {Uint8Array} cartridge - The cart ROM blob.
+	 * @property {Uint8Array} engineAssets - The engine asset blob.
 	 * @property {boolean} debug - A flag indicating whether debug mode is enabled.
 	 * @property {AudioContext} sndcontext - The audio context for the boot ROM.
 	 * @property {GainNode} gainnode - The gain node for the boot ROM.
@@ -64,19 +64,19 @@ export const bootrom = {
 	 *
 	 * @function loadCart - Asynchronously loads a cart ROM blob from the specified URL.
 	 * @param {string} url - The URL of the ROM pack to load.
-	 * @returns {Promise<ArrayBuffer>} A Promise that resolves to the loaded ROM blob, or null if the loading failed.
+	 * @returns {Promise<Uint8Array>} A Promise that resolves to the loaded ROM blob, or null if the loading failed.
 	 *
 	 * @function loadEngineAssets - Asynchronously loads the engine asset blob.
 	 * @param {string} url - The URL of the asset pack to load.
-	 * @returns {Promise<ArrayBuffer>} A Promise that resolves to the loaded asset blob.
+	 * @returns {Promise<Uint8Array>} A Promise that resolves to the loaded asset blob.
 	 *
 	 * @function start - Starts the game using the loaded cart and engine assets.
 	 * @returns {Promise<void>} Resolves when startup finishes.
 	 *
 	 * @var {boolean} snd_unlocked - A flag indicating whether the audio has been unlocked.
 	 */
-	cartridge: null as ArrayBuffer,
-	engineAssets: null as ArrayBuffer,
+	cartridge: null as Uint8Array,
+	engineAssets: null as Uint8Array,
 	debug: false,
 	sndcontext: null as AudioContext,
 	snd_unlocked: false,
@@ -169,7 +169,7 @@ export const bootrom = {
 	 * @param url - The URL of the ROM pack to load.
 	 * @returns A Promise that resolves to the loaded ROM pack, or null if the loading failed.
 	 */
-	async loadCart(url: string): Promise<ArrayBuffer> {
+	async loadCart(url: string): Promise<Uint8Array> {
 		if (typeof window !== 'undefined') {
 			window.onunhandledrejection = (event: PromiseRejectionEvent) => {
 				event.preventDefault();
@@ -209,7 +209,7 @@ export const bootrom = {
 		};
 
 		return new Promise((resolve, reject) => {
-			let loadedRomBlob: ArrayBuffer = null;
+			let loadedRomBlob: Uint8Array = null;
 			let romlabel_bloburl: string = null;
 
 			function replaceBMSXImgWithRomLabel() {
@@ -235,7 +235,7 @@ export const bootrom = {
 			}
 
 			fetchRom()
-				.then((response_array: ArrayBuffer) => {
+				.then((response_array: Uint8Array) => {
 					if (response_array) {
 						const split = splitRomLabel(response_array);
 						if (split.romlabel) {
@@ -262,7 +262,7 @@ export const bootrom = {
 		});
 	},
 
-	async loadEngineAssets(url: string): Promise<ArrayBuffer> {
+	async loadEngineAssets(url: string): Promise<Uint8Array> {
 		const response = await fetchBuffer(url).catch(err => {
 			throw new Error(`Error while fetching engine assets: "${err.message}"`);
 		});
@@ -327,24 +327,24 @@ function getParameterByName(name: string, url: string = window.location.href) {
 	return decodeURIComponent(results[2].replace(/\+/g, ' '));
 }
 
-function splitPng(blob: ArrayBuffer): { png?: ArrayBuffer; rest: ArrayBuffer } {
-	const u8 = new Uint8Array(blob);
+// TODO: DUPLICATE CODE WITH `romloader.ts`!!!
+function splitPng(blob: Uint8Array): { png?: Uint8Array; rest: Uint8Array } {
 	if (
-		u8[0] !== 0x89 || u8[1] !== 0x50 || u8[2] !== 0x4E || u8[3] !== 0x47 ||
-		u8[4] !== 0x0D || u8[5] !== 0x0A || u8[6] !== 0x1A || u8[7] !== 0x0A
+		blob[0] !== 0x89 || blob[1] !== 0x50 || blob[2] !== 0x4E || blob[3] !== 0x47 ||
+		blob[4] !== 0x0D || blob[5] !== 0x0A || blob[6] !== 0x1A || blob[7] !== 0x0A
 	) {
 		return { rest: blob };
 	}
 	let p = 8;
-	while (p + 8 <= u8.length) {
-		const len = (u8[p] << 24) | (u8[p + 1] << 16) | (u8[p + 2] << 8) | u8[p + 3];
+	while (p + 8 <= blob.length) {
+		const len = (blob[p] << 24) | (blob[p + 1] << 16) | (blob[p + 2] << 8) | blob[p + 3];
 		p += 4;
-		const type = (u8[p] << 24) | (u8[p + 1] << 16) | (u8[p + 2] << 8) | u8[p + 3];
+		const type = (blob[p] << 24) | (blob[p + 1] << 16) | (blob[p + 2] << 8) | blob[p + 3];
 		p += 4;
 		const end = p + len + 4;
 		if (type === 0x49454E44) {
-			const png = u8.slice(0, end).buffer;
-			const rest = u8.slice(end).buffer;
+			const png = blob.slice(0, end);
+			const rest = blob.slice(end);
 			return { png, rest };
 		}
 		p = end;
@@ -352,7 +352,7 @@ function splitPng(blob: ArrayBuffer): { png?: ArrayBuffer; rest: ArrayBuffer } {
 	throw new Error('PNG IEND chunk not found');
 }
 
-function splitRomLabel(blob: ArrayBuffer): { zipped_rom: ArrayBuffer; romlabel?: ArrayBuffer } {
+function splitRomLabel(blob: Uint8Array): { zipped_rom: Uint8Array; romlabel?: Uint8Array } {
 	const { png, rest } = splitPng(blob);
 	if (png) {
 		return { zipped_rom: rest, romlabel: png };
@@ -360,7 +360,7 @@ function splitRomLabel(blob: ArrayBuffer): { zipped_rom: ArrayBuffer; romlabel?:
 	return { zipped_rom: blob, romlabel: undefined };
 }
 
-function getImageUrlFromBuffer(buffer: ArrayBuffer): string {
+function getImageUrlFromBuffer(buffer: Uint8Array): string {
 	return URL.createObjectURL(new Blob([new Uint8Array(buffer)], { type: 'image/png' }));
 }
 
@@ -506,12 +506,12 @@ export async function fetchText(url: string): Promise<string> {
 }
 
 /**
- * Asynchronously fetches an ArrayBuffer from the given URL using XMLHttpRequest.
- * @param url - The URL to fetch the ArrayBuffer from.
- * @returns A Promise that resolves with the fetched ArrayBuffer.
+ * Asynchronously fetches an Uint8Array from the given URL using XMLHttpRequest.
+ * @param url - The URL to fetch the Uint8Array from.
+ * @returns A Promise that resolves with the fetched Uint8Array.
  * If an error occurs during fetching, the Promise is rejected with an error message.
  */
-async function fetchBuffer(url: string): Promise<ArrayBuffer> {
+async function fetchBuffer(url: string): Promise<Uint8Array> {
 	try {
 		const response = await fetch(url, {
 			headers: {
@@ -521,7 +521,7 @@ async function fetchBuffer(url: string): Promise<ArrayBuffer> {
 		if (!response.ok) {
 			throw new Error(`Failed @fetchBuffer for URL "${url}"`);
 		}
-		return await response.arrayBuffer();
+		return new Uint8Array(await response.arrayBuffer());
 	} catch (err) {
 		throw new Error(`Failed @fetchBuffer for URL "${url}": ${err.message}`);
 	}

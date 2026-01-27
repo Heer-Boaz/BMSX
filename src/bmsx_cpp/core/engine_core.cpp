@@ -16,6 +16,7 @@
 #include <cmath>
 #include <cstdarg>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <unordered_set>
 #include <stdexcept>
@@ -46,41 +47,65 @@ void applyManifestMemoryLimits(const RomManifest& manifest) {
 	configureMemoryMap(atlasSlotBytes, stagingBytes);
 }
 
-bool tryResolveCpuMhz(const RomManifest& manifest, double& outMhz) {
-	if (!manifest.cpuMhz) {
+bool tryResolveCpuHz(const RomManifest& manifest, i64& outHz) {
+	if (!manifest.cpuHz) {
 		return false;
 	}
-	const double mhz = *manifest.cpuMhz;
-	if (!(mhz > 0.0) || !std::isfinite(mhz)) {
+	const i64 hz = *manifest.cpuHz;
+	if (hz <= 0) {
 		return false;
 	}
-	outMhz = mhz;
+	outHz = hz;
 	return true;
 }
 
-double resolveCpuMhz(const RomManifest& manifest) {
-	if (!manifest.cpuMhz) {
-		throw std::runtime_error("[EngineCore] vm.cpu_mhz is required.");
+i64 resolveCpuHz(const RomManifest& manifest) {
+	if (!manifest.cpuHz) {
+		throw std::runtime_error("[EngineCore] vm.cpu_freq_hz is required.");
 	}
-	const double mhz = *manifest.cpuMhz;
-	if (!(mhz > 0.0) || !std::isfinite(mhz)) {
-		throw std::runtime_error("[EngineCore] vm.cpu_mhz must be a finite number greater than 0.");
+	const i64 hz = *manifest.cpuHz;
+	if (hz <= 0) {
+		throw std::runtime_error("[EngineCore] vm.cpu_freq_hz must be a positive integer.");
 	}
-	return mhz;
+	return hz;
 }
 
-int calcCyclesPerFrame(double cpuMhz, double refreshHz) {
-	if (!(refreshHz > 1.0) || !std::isfinite(refreshHz)) {
-		refreshHz = 60.0;
+bool tryResolveUfpsScaled(const RomManifest& manifest, i64& outUfpsScaled) {
+	if (!manifest.ufpsScaled) {
+		return false;
 	}
-	refreshHz = std::clamp(refreshHz, 30.0, 240.0);
-	const double cyclesPerSecond = cpuMhz * 1'000'000.0;
-	const double cyclesPerFrame = std::floor(cyclesPerSecond / refreshHz);
-	if (cyclesPerFrame < 1'000.0) return 1'000;
-	if (cyclesPerFrame > 50'000'000.0) return 50'000'000;
+	const i64 ufpsScaled = *manifest.ufpsScaled;
+	if (ufpsScaled <= 0) {
+		return false;
+	}
+	outUfpsScaled = ufpsScaled;
+	return true;
+}
+
+i64 resolveUfpsScaled(const RomManifest& manifest) {
+	if (!manifest.ufpsScaled) {
+		throw std::runtime_error("[EngineCore] vm.ufps is required.");
+	}
+	const i64 ufpsScaled = *manifest.ufpsScaled;
+	if (ufpsScaled <= 0) {
+		throw std::runtime_error("[EngineCore] vm.ufps must be a positive integer.");
+	}
+	return ufpsScaled;
+}
+
+using i128 = __int128_t;
+
+i64 hzToScaledHz(f64 hz) {
+	return static_cast<i64>(std::llround(hz * static_cast<f64>(VM_HZ_SCALE)));
+}
+
+int calcCyclesPerFrame(i64 cpuHz, i64 refreshHzScaled) {
+	const i128 numerator = static_cast<i128>(cpuHz) * static_cast<i128>(VM_HZ_SCALE);
+	const i64 cyclesPerFrame = static_cast<i64>(numerator / static_cast<i128>(refreshHzScaled));
 	return static_cast<int>(cyclesPerFrame);
 }
-}
+
+} // namespace
 
 EngineCore* EngineCore::s_instance = nullptr;
 
@@ -208,12 +233,37 @@ void EngineCore::stop() {
 	}
 }
 
+void EngineCore::setUfps(f64 ufps) {
+	setUfpsScaled(hzToScaledHz(ufps));
+}
+
+void EngineCore::setUfpsScaled(i64 ufpsScaled) {
+	if (ufpsScaled <= VM_HZ_SCALE) {
+		throw std::runtime_error("[EngineCore] ufps must be greater than 1.");
+	}
+	m_ufps_scaled = ufpsScaled;
+	if (VMRuntime::hasInstance()) {
+		VMRuntime& runtime = VMRuntime::instance();
+		applyVmCycleBudget(runtime);
+	}
+}
+
+void EngineCore::applyVmCycleBudget(VMRuntime& runtime) {
+	const int cycleBudget = calcCyclesPerFrame(runtime.cpuHz(), m_ufps_scaled);
+	runtime.setCycleBudgetPerFrame(cycleBudget);
+}
+
 void EngineCore::tick(f64 deltaTime) {
 	if (m_state != EngineState::Running) {
 		return;
 	}
 
 	const auto tickStart = std::chrono::steady_clock::now();
+	if (!m_debugTickReportInitialized) {
+		m_debugTickReportInitialized = true;
+		m_debugTickReportAt = tickStart;
+	}
+	m_debugTickHostFrames += 1;
 
 	m_delta_time = deltaTime;
 	m_total_time += deltaTime;
@@ -234,11 +284,9 @@ void EngineCore::tick(f64 deltaTime) {
 	m_last_tick_timing.vmUpdateMs = 0.0;
 	m_last_tick_timing.vmIdeMs = 0.0;
 	m_last_tick_timing.vmTerminalMs = 0.0;
+	// TODO: THIS IS UGLY AS SHIT BECAUSE IT DOESN'T USE THE TS-VERSION'S ECSYSTEMS!!
 	if (VMRuntime::hasInstance()) {
 		VMRuntime& runtime = VMRuntime::instance();
-		const double refreshHz = (deltaTime > 0.0) ? (1.0 / deltaTime) : 60.0;
-		const int cycleBudget = calcCyclesPerFrame(runtime.cpuMhz(), refreshHz);
-		runtime.setCycleBudgetPerFrame(cycleBudget);
 		auto ideInputStart = std::chrono::steady_clock::now();
 		runtime.tickIdeInput();
 		auto ideInputEnd = std::chrono::steady_clock::now();
@@ -250,6 +298,7 @@ void EngineCore::tick(f64 deltaTime) {
 		m_last_tick_timing.vmTerminalInputMs = to_ms(terminalInputEnd - terminalInputStart);
 
 		auto updateStart = std::chrono::steady_clock::now();
+		applyVmCycleBudget(runtime);
 		runtime.tickUpdate();
 		auto updateEnd = std::chrono::steady_clock::now();
 		m_last_tick_timing.vmUpdateMs = to_ms(updateEnd - updateStart);
@@ -263,6 +312,13 @@ void EngineCore::tick(f64 deltaTime) {
 		runtime.tickTerminalMode();
 		auto terminalEnd = std::chrono::steady_clock::now();
 		m_last_tick_timing.vmTerminalMs = to_ms(terminalEnd - terminalStart);
+		const i64 updateTotal = runtime.updateCountTotal();
+		if (m_debugLastUpdateCountTotal == 0) {
+			m_debugLastUpdateCountTotal = updateTotal;
+		}
+		const i64 updateDelta = updateTotal - m_debugLastUpdateCountTotal;
+		m_debugLastUpdateCountTotal = updateTotal;
+		m_debugTickUpdates += static_cast<u64>(updateDelta);
 	}
 
 	// Process microtasks
@@ -276,6 +332,23 @@ void EngineCore::tick(f64 deltaTime) {
 
 	m_presentation_pending = true;
 	m_last_tick_timing.totalMs = to_ms(std::chrono::steady_clock::now() - tickStart);
+	const auto tickEnd = std::chrono::steady_clock::now();
+	const double elapsedMs = to_ms(tickEnd - m_debugTickReportAt);
+	if (elapsedMs >= 1000.0) {
+		const double scale = 1000.0 / elapsedMs;
+		const double updatesPerSec = static_cast<double>(m_debugTickUpdates) * scale;
+		const double hostFramesPerSec = static_cast<double>(m_debugTickHostFrames) * scale;
+		const double updatesPerHostFrame = static_cast<double>(m_debugTickUpdates) / static_cast<double>(m_debugTickHostFrames);
+		std::cout << "[BMSX][tickrate] target=" << std::fixed << std::setprecision(3) << ufps()
+			<< " ufps=" << std::fixed << std::setprecision(3) << ufps()
+			<< " updates=" << std::fixed << std::setprecision(3) << updatesPerSec
+			<< " host=" << std::fixed << std::setprecision(3) << hostFramesPerSec
+			<< " updates/host=" << std::fixed << std::setprecision(3) << updatesPerHostFrame
+			<< std::endl;
+		m_debugTickReportAt = tickEnd;
+		m_debugTickHostFrames = 0;
+		m_debugTickUpdates = 0;
+	}
 }
 
 void EngineCore::render() {
@@ -406,6 +479,8 @@ bool EngineCore::loadEngineAssetsInternal(const u8* data, size_t size) {
 	m_engine_assets_loaded = true;
 	m_default_font = std::make_unique<VMFont>(m_engine_assets);
 	m_view->default_font = m_default_font.get();
+	const i64 ufpsScaled = resolveUfpsScaled(m_engine_assets.manifest);
+	setUfpsScaled(ufpsScaled);
 	return true;
 }
 
@@ -448,6 +523,8 @@ bool EngineCore::bootWithoutCart() {
 	m_assets.setFallback(&m_engine_assets);
 	m_assets.manifest = m_engine_assets.manifest;
 	m_assets.projectRootPath = m_engine_assets.projectRootPath;
+	const i64 ufpsScaled = resolveUfpsScaled(m_engine_assets.manifest);
+	setUfpsScaled(ufpsScaled);
 	applyManifestMemoryLimits(m_assets.manifest);
 	// Don't copy vmProgram - use engine_assets.vmProgram directly below
 
@@ -463,8 +540,8 @@ bool EngineCore::bootWithoutCart() {
 
 	// Boot the VM with the engine's system program
 	if (m_engine_assets.vmProgram && m_engine_assets.vmProgram->program) {
-		const double cpuMhz = resolveCpuMhz(m_engine_assets.manifest);
-		const int cycleBudget = calcCyclesPerFrame(cpuMhz, 60.0);
+		const i64 cpuHz = resolveCpuHz(m_engine_assets.manifest);
+		const int cycleBudget = calcCyclesPerFrame(cpuHz, m_ufps_scaled);
 		// Create VMRuntime instance if it doesn't exist
 		if (!VMRuntime::hasInstance()) {
 			VMRuntimeOptions options;
@@ -472,13 +549,13 @@ bool EngineCore::bootWithoutCart() {
 			options.viewport.x = m_engine_assets.manifest.viewportWidth;
 			options.viewport.y = m_engine_assets.manifest.viewportHeight;
 			options.canonicalization = m_engine_assets.manifest.canonicalization;
-			options.cpuMhz = cpuMhz;
+			options.cpuHz = cpuHz;
 			options.cycleBudgetPerFrame = cycleBudget;
 			VMRuntime::createInstance(options);
 		}
 
 		VMRuntime& runtime = VMRuntime::instance();
-		runtime.setCpuMhz(cpuMhz);
+		runtime.setCpuHz(cpuHz);
 		runtime.setCycleBudgetPerFrame(cycleBudget);
 		runtime.refreshMemoryMap();
 		runtime.setProgramSource(VMRuntime::VmProgramSource::Engine);
@@ -557,18 +634,24 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 	m_assets.vmProgramSymbols = std::move(cartAssets.vmProgramSymbols);
 	m_assets.manifest = std::move(cartAssets.manifest);
 	m_assets.projectRootPath = std::move(cartAssets.projectRootPath);
+	const i64 ufpsScaled = resolveUfpsScaled(m_assets.manifest);
+	setUfpsScaled(ufpsScaled);
 	applyManifestMemoryLimits(m_assets.manifest);
-	double cpuMhz = 0.0;
-	const bool cartCpuValid = tryResolveCpuMhz(m_assets.manifest, cpuMhz);
+	i64 cpuHz = 0;
+	const bool cartCpuValid = tryResolveCpuHz(m_assets.manifest, cpuHz);
 	if (!cartCpuValid) {
-		double engineCpuMhz = 0.0;
-		if (!m_engine_assets_loaded || !tryResolveCpuMhz(m_engine_assets.manifest, engineCpuMhz)) {
-			throw std::runtime_error("[EngineCore] vm.cpu_mhz is required.");
+		i64 engineUfpsScaled = 0;
+		i64 engineCpuHz = 0;
+		if (!m_engine_assets_loaded
+			|| !tryResolveCpuHz(m_engine_assets.manifest, engineCpuHz)
+			|| !tryResolveUfpsScaled(m_engine_assets.manifest, engineUfpsScaled)) {
+			throw std::runtime_error("[EngineCore] vm.cpu_freq_hz is required.");
 		}
-		std::cerr << "[EngineCore] Cart manifest vm.cpu_mhz is required; booting BIOS only." << std::endl;
-		cpuMhz = engineCpuMhz;
+		std::cerr << "[EngineCore] Cart manifest vm.cpu_freq_hz is required; booting BIOS only." << std::endl;
+		cpuHz = engineCpuHz;
+		setUfpsScaled(engineUfpsScaled);
 	}
-	const int cycleBudget = calcCyclesPerFrame(cpuMhz, 60.0);
+	const int cycleBudget = calcCyclesPerFrame(cpuHz, m_ufps_scaled);
 
 	Vec2 viewportSize{
 		static_cast<f32>(m_assets.manifest.viewportWidth),
@@ -590,12 +673,12 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 			options.viewport.x = m_assets.manifest.viewportWidth;
 			options.viewport.y = m_assets.manifest.viewportHeight;
 			options.canonicalization = m_engine_assets.manifest.canonicalization;
-			options.cpuMhz = cpuMhz;
+			options.cpuHz = cpuHz;
 			options.cycleBudgetPerFrame = cycleBudget;
 			VMRuntime::createInstance(options);
 		}
 		VMRuntime& runtime = VMRuntime::instance();
-		runtime.setCpuMhz(cpuMhz);
+		runtime.setCpuHz(cpuHz);
 		runtime.setCycleBudgetPerFrame(cycleBudget);
 		runtime.refreshMemoryMap();
 		runtime.setProgramSource(VMRuntime::VmProgramSource::Engine);
@@ -608,7 +691,7 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 		runtime.resetCartBootState();
 	} else {
 		if (!cartCpuValid) {
-			std::cerr << "[EngineCore] Cart manifest vm.cpu_mhz is required; cannot boot cart without BIOS." << std::endl;
+			std::cerr << "[EngineCore] Cart manifest vm.cpu_freq_hz is required; cannot boot cart without BIOS." << std::endl;
 			return false;
 		}
 		// Boot the VM if we have a pre-compiled program
@@ -619,12 +702,12 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 				options.viewport.x = m_assets.manifest.viewportWidth;
 				options.viewport.y = m_assets.manifest.viewportHeight;
 				options.canonicalization = m_assets.manifest.canonicalization;
-				options.cpuMhz = cpuMhz;
+				options.cpuHz = cpuHz;
 				options.cycleBudgetPerFrame = cycleBudget;
 				VMRuntime::createInstance(options);
 			}
 			VMRuntime& runtime = VMRuntime::instance();
-			runtime.setCpuMhz(cpuMhz);
+			runtime.setCpuHz(cpuHz);
 			runtime.setCycleBudgetPerFrame(cycleBudget);
 			runtime.refreshMemoryMap();
 			runtime.buildAssetMemory(m_assets, false);
@@ -638,12 +721,12 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 				options.viewport.x = m_assets.manifest.viewportWidth;
 				options.viewport.y = m_assets.manifest.viewportHeight;
 				options.canonicalization = m_assets.manifest.canonicalization;
-				options.cpuMhz = cpuMhz;
+				options.cpuHz = cpuHz;
 				options.cycleBudgetPerFrame = cycleBudget;
 				VMRuntime::createInstance(options);
 			}
 			VMRuntime& runtime = VMRuntime::instance();
-			runtime.setCpuMhz(cpuMhz);
+			runtime.setCpuHz(cpuHz);
 			runtime.setCycleBudgetPerFrame(cycleBudget);
 			runtime.refreshMemoryMap();
 			runtime.buildAssetMemory(m_assets, false);
@@ -679,20 +762,28 @@ bool EngineCore::resetLoadedRom() {
 		m_view->initializeDefaultTextures();
 	}
 
-	double cpuMhz = 0.0;
-	const bool cartCpuValid = tryResolveCpuMhz(m_assets.manifest, cpuMhz);
+	i64 cpuHz = 0;
+	const bool cartCpuValid = tryResolveCpuHz(m_assets.manifest, cpuHz);
 	if (!cartCpuValid) {
-		if (!m_engine_assets_loaded || !tryResolveCpuMhz(m_engine_assets.manifest, cpuMhz)) {
-			std::cerr << "[EngineCore] Cart manifest vm.cpu_mhz is required; cannot reset cart." << std::endl;
+		i64 engineUfpsScaled = 0;
+		if (!m_engine_assets_loaded || !tryResolveCpuHz(m_engine_assets.manifest, cpuHz)) {
+			std::cerr << "[EngineCore] Cart manifest vm.cpu_freq_hz is required; cannot reset cart." << std::endl;
 			return false;
 		}
-		std::cerr << "[EngineCore] Cart manifest vm.cpu_mhz is required; booting BIOS only." << std::endl;
+		std::cerr << "[EngineCore] Cart manifest vm.cpu_freq_hz is required; booting BIOS only." << std::endl;
+		if (!tryResolveUfpsScaled(m_engine_assets.manifest, engineUfpsScaled)) {
+			throw std::runtime_error("[EngineCore] vm.ufps is required.");
+		}
+		setUfpsScaled(engineUfpsScaled);
+	} else {
+		const i64 ufpsScaled = resolveUfpsScaled(m_assets.manifest);
+		setUfpsScaled(ufpsScaled);
 	}
-	const int cycleBudget = calcCyclesPerFrame(cpuMhz, 60.0);
+	const int cycleBudget = calcCyclesPerFrame(cpuHz, m_ufps_scaled);
 
 	if (cartCpuValid && m_assets.vmProgram && m_assets.vmProgram->program) {
 		VMRuntime& runtime = VMRuntime::instance();
-		runtime.setCpuMhz(cpuMhz);
+		runtime.setCpuHz(cpuHz);
 		runtime.setCycleBudgetPerFrame(cycleBudget);
 		runtime.refreshMemoryMap();
 		runtime.buildAssetMemory(m_assets, false, VMRuntime::AssetBuildMode::Cart);
@@ -709,12 +800,12 @@ bool EngineCore::resetLoadedRom() {
 			options.viewport.x = m_engine_assets.manifest.viewportWidth;
 			options.viewport.y = m_engine_assets.manifest.viewportHeight;
 			options.canonicalization = m_engine_assets.manifest.canonicalization;
-			options.cpuMhz = cpuMhz;
+			options.cpuHz = cpuHz;
 			options.cycleBudgetPerFrame = cycleBudget;
 			VMRuntime::createInstance(options);
 		}
 		VMRuntime& runtime = VMRuntime::instance();
-		runtime.setCpuMhz(cpuMhz);
+		runtime.setCpuHz(cpuHz);
 		runtime.setCycleBudgetPerFrame(cycleBudget);
 		runtime.refreshMemoryMap();
 		runtime.setProgramSource(VMRuntime::VmProgramSource::Engine);
@@ -884,8 +975,10 @@ void EngineCore::bootVMFromProgram() {
 	}
 	m_linked_vm_program.reset();
 	m_linked_vm_program_symbols.reset();
-	const double cpuMhz = resolveCpuMhz(m_assets.manifest);
-	const int cycleBudget = calcCyclesPerFrame(cpuMhz, 60.0);
+	const i64 cpuHz = resolveCpuHz(m_assets.manifest);
+	const i64 ufpsScaled = resolveUfpsScaled(m_assets.manifest);
+	setUfpsScaled(ufpsScaled);
+	const int cycleBudget = calcCyclesPerFrame(cpuHz, m_ufps_scaled);
 
 	// Create VMRuntime instance if it doesn't exist
 	if (!VMRuntime::hasInstance()) {
@@ -894,14 +987,14 @@ void EngineCore::bootVMFromProgram() {
 		options.viewport.x = m_assets.manifest.viewportWidth;
 		options.viewport.y = m_assets.manifest.viewportHeight;
 		options.canonicalization = m_assets.manifest.canonicalization;
-		options.cpuMhz = cpuMhz;
+		options.cpuHz = cpuHz;
 		options.cycleBudgetPerFrame = cycleBudget;
 		VMRuntime::createInstance(options);
 	}
 
 	// Boot the VM with the pre-compiled program
 	VMRuntime& runtime = VMRuntime::instance();
-	runtime.setCpuMhz(cpuMhz);
+	runtime.setCpuHz(cpuHz);
 	runtime.setCycleBudgetPerFrame(cycleBudget);
 	runtime.refreshMemoryMap();
 	runtime.setProgramSource(VMRuntime::VmProgramSource::Cart);

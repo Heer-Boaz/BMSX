@@ -673,7 +673,7 @@ VMRuntime::VMRuntime(const VMRuntimeOptions& options)
 	, m_playerIndex(options.playerIndex)
 	, m_viewport(options.viewport)
 	, m_canonicalization(options.canonicalization)
-	, m_cpuMhz(options.cpuMhz)
+	, m_cpuHz(options.cpuHz)
 	, m_cycleBudgetPerFrame(options.cycleBudgetPerFrame)
 {
 	// Initialize I/O memory region
@@ -869,9 +869,39 @@ bool VMRuntime::dispatchIrqFlags() {
 }
 
 RunResult VMRuntime::runVmWithBudget() {
-	m_cpu.instructionBudgetRemaining = m_frameState.cycleBudgetRemaining;
-	RunResult result = m_cpu.run(std::nullopt);
-	m_frameState.cycleBudgetRemaining = *m_cpu.instructionBudgetRemaining;
+	const auto now = std::chrono::steady_clock::now();
+	if (!m_debugVmReportInitialized) {
+		m_debugVmReportInitialized = true;
+		m_debugVmReportAt = now;
+	}
+	m_debugVmRuns += 1;
+	m_debugVmRunsTotal += 1;
+	RunResult result = m_cpu.run(m_frameState.cycleBudgetRemaining);
+	const int remaining = m_cpu.instructionBudgetRemaining;
+	m_frameState.cycleBudgetRemaining = remaining;
+	if (result == RunResult::Yielded) {
+		m_debugVmYields += 1;
+		m_debugVmYieldsTotal += 1;
+	}
+	m_debugVmRemainingAcc += remaining;
+	const double elapsedMs = to_ms(now - m_debugVmReportAt);
+	if (elapsedMs >= 1000.0) {
+		const double scale = 1000.0 / elapsedMs;
+		const double runsPerSec = static_cast<double>(m_debugVmRuns) * scale;
+		const double yieldsPerSec = static_cast<double>(m_debugVmYields) * scale;
+		const double yieldPct = (static_cast<double>(m_debugVmYields) / static_cast<double>(m_debugVmRuns)) * 100.0;
+		const double avgRemaining = m_debugVmRemainingAcc / static_cast<double>(m_debugVmRuns);
+		std::cout << "[BMSX][vm] runs=" << std::fixed << std::setprecision(3) << runsPerSec
+			<< " yields=" << std::fixed << std::setprecision(3) << yieldsPerSec
+			<< " yield%=" << std::fixed << std::setprecision(2) << yieldPct
+			<< " avgRemaining=" << std::fixed << std::setprecision(1) << avgRemaining
+			<< " budget=" << m_cycleBudgetPerFrame
+			<< std::endl;
+		m_debugVmReportAt = now;
+		m_debugVmRuns = 0;
+		m_debugVmYields = 0;
+		m_debugVmRemainingAcc = 0.0;
+	}
 	return result;
 }
 
@@ -1011,6 +1041,13 @@ void VMRuntime::tickUpdate() {
 		return;
 	}
 
+	const auto frameNow = std::chrono::steady_clock::now();
+	if (!m_debugVmFrameReportInitialized) {
+		m_debugVmFrameReportInitialized = true;
+		m_debugVmFrameReportAt = frameNow;
+	}
+	const i64 yieldsBefore = m_debugVmYieldsTotal;
+
 	prepareCartBootIfNeeded();
 	tickHardware();
 	if (pollSystemBootRequest()) {
@@ -1063,6 +1100,33 @@ void VMRuntime::tickUpdate() {
 	view->applyGlow = readViewBool(viewTable->get(viewGlowKey), "enable_glow");
 	view->applyFringing = readViewBool(viewTable->get(viewFringingKey), "enable_fringing");
 	view->applyAperture = readViewBool(viewTable->get(viewApertureKey), "enable_aperture");
+
+	m_debugUpdateCountTotal += 1;
+	const double cyclesUsed = static_cast<double>(m_cycleBudgetPerFrame - m_frameState.cycleBudgetRemaining);
+	const i64 yieldsThisFrame = m_debugVmYieldsTotal - yieldsBefore;
+	m_debugVmFrameCount += 1;
+	m_debugVmFrameCyclesUsedAcc += cyclesUsed;
+	m_debugVmFrameRemainingAcc += static_cast<double>(m_frameState.cycleBudgetRemaining);
+	m_debugVmFrameYieldsAcc += static_cast<double>(yieldsThisFrame);
+	const double frameElapsedMs = to_ms(frameNow - m_debugVmFrameReportAt);
+	if (frameElapsedMs >= 1000.0) {
+		const double scale = 1000.0 / frameElapsedMs;
+		const double cyclesPerSec = m_debugVmFrameCyclesUsedAcc * scale;
+		const double cyclesPerFrame = m_debugVmFrameCyclesUsedAcc / static_cast<double>(m_debugVmFrameCount);
+		const double remainingPerFrame = m_debugVmFrameRemainingAcc / static_cast<double>(m_debugVmFrameCount);
+		const double yieldsPerFrame = m_debugVmFrameYieldsAcc / static_cast<double>(m_debugVmFrameCount);
+		std::cout << "[BMSX][vmframe] cycles/sec=" << std::fixed << std::setprecision(1) << cyclesPerSec
+			<< " cycles/frame=" << std::fixed << std::setprecision(1) << cyclesPerFrame
+			<< " remaining/frame=" << std::fixed << std::setprecision(1) << remainingPerFrame
+			<< " yields/frame=" << std::fixed << std::setprecision(2) << yieldsPerFrame
+			<< " budget=" << m_cycleBudgetPerFrame
+			<< std::endl;
+		m_debugVmFrameReportAt = frameNow;
+		m_debugVmFrameCount = 0;
+		m_debugVmFrameCyclesUsedAcc = 0.0;
+		m_debugVmFrameRemainingAcc = 0.0;
+		m_debugVmFrameYieldsAcc = 0.0;
+	}
 
 	m_frameState.updateExecuted = true;
 	flushAssetEdits();
@@ -1182,24 +1246,18 @@ void VMRuntime::applyAtlasSlotMapping(const std::array<i32, 2>& slots) {
 
 std::vector<Value> VMRuntime::callLuaFunction(Closure* fn, const std::vector<Value>& args) {
 	int depthBefore = m_cpu.getFrameDepth();
-	const auto previousBudget = m_cpu.instructionBudgetRemaining;
-	if (previousBudget.has_value()) {
-		const int budgetSentinel = std::numeric_limits<int>::max();
-		m_cpu.instructionBudgetRemaining = budgetSentinel;
-		try {
-			m_cpu.callExternal(fn, args);
-			m_cpu.runUntilDepth(depthBefore);
-		} catch (...) {
-			const int remaining = *m_cpu.instructionBudgetRemaining;
-			m_cpu.instructionBudgetRemaining = *previousBudget - (budgetSentinel - remaining);
-			throw;
-		}
-		const int remaining = *m_cpu.instructionBudgetRemaining;
-		m_cpu.instructionBudgetRemaining = *previousBudget - (budgetSentinel - remaining);
-	} else {
+	const int previousBudget = m_cpu.instructionBudgetRemaining;
+	const int budgetSentinel = std::numeric_limits<int>::max();
+	try {
 		m_cpu.callExternal(fn, args);
-		m_cpu.runUntilDepth(depthBefore);
+		m_cpu.runUntilDepth(depthBefore, budgetSentinel);
+	} catch (...) {
+		const int remaining = m_cpu.instructionBudgetRemaining;
+		m_cpu.instructionBudgetRemaining = previousBudget - (budgetSentinel - remaining);
+		throw;
 	}
+	const int remaining = m_cpu.instructionBudgetRemaining;
+	m_cpu.instructionBudgetRemaining = previousBudget - (budgetSentinel - remaining);
 	return m_cpu.lastReturnValues;
 }
 
@@ -1220,8 +1278,8 @@ void VMRuntime::setCanonicalization(CanonicalizationType canonicalization) {
 	m_canonicalization = canonicalization;
 }
 
-void VMRuntime::setCpuMhz(double mhz) {
-	m_cpuMhz = mhz;
+void VMRuntime::setCpuHz(i64 hz) {
+	m_cpuHz = hz;
 }
 
 void VMRuntime::setCycleBudgetPerFrame(int budget) {
@@ -1962,24 +2020,18 @@ void VMRuntime::setupBuiltins() {
 		}
 		if (valueIsClosure(callee)) {
 			int depthBefore = m_cpu.getFrameDepth();
-			const auto previousBudget = m_cpu.instructionBudgetRemaining;
-			if (previousBudget.has_value()) {
-				const int budgetSentinel = std::numeric_limits<int>::max();
-				m_cpu.instructionBudgetRemaining = budgetSentinel;
-				try {
-					m_cpu.callExternal(asClosure(callee), args);
-					m_cpu.runUntilDepth(depthBefore);
-				} catch (...) {
-					const int remaining = *m_cpu.instructionBudgetRemaining;
-					m_cpu.instructionBudgetRemaining = *previousBudget - (budgetSentinel - remaining);
-					throw;
-				}
-				const int remaining = *m_cpu.instructionBudgetRemaining;
-				m_cpu.instructionBudgetRemaining = *previousBudget - (budgetSentinel - remaining);
-			} else {
+			const int previousBudget = m_cpu.instructionBudgetRemaining;
+			const int budgetSentinel = std::numeric_limits<int>::max();
+			try {
 				m_cpu.callExternal(asClosure(callee), args);
-				m_cpu.runUntilDepth(depthBefore);
+				m_cpu.runUntilDepth(depthBefore, budgetSentinel);
+			} catch (...) {
+				const int remaining = m_cpu.instructionBudgetRemaining;
+				m_cpu.instructionBudgetRemaining = previousBudget - (budgetSentinel - remaining);
+				throw;
 			}
+			const int remaining = m_cpu.instructionBudgetRemaining;
+			m_cpu.instructionBudgetRemaining = previousBudget - (budgetSentinel - remaining);
 			out.clear();
 			const auto& results = m_cpu.lastReturnValues;
 			out.insert(out.end(), results.begin(), results.end());
@@ -4083,8 +4135,8 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 		if (manifest.skyboxFaceSize > 0) {
 			vmTable->set(key("skybox_face_size"), valueNumber(static_cast<double>(manifest.skyboxFaceSize)));
 		}
-		if (manifest.cpuMhz) {
-			vmTable->set(key("cpu_mhz"), valueNumber(*manifest.cpuMhz));
+		if (manifest.cpuHz) {
+			vmTable->set(key("cpu_freq_hz"), valueNumber(static_cast<double>(*manifest.cpuHz)));
 		}
 		if (manifest.viewportWidth > 0 && manifest.viewportHeight > 0) {
 			auto* viewportTable = m_cpu.createTable(0, 2);
@@ -4452,10 +4504,9 @@ void VMRuntime::executeDrawCallback() {
 				m_cpu.call(m_drawFn, {}, 0);
 				m_pendingVmCall = PendingCall::Draw;
 			}
-			m_cpu.instructionBudgetRemaining = m_frameState.cycleBudgetRemaining;
 			const auto vmStart = std::chrono::steady_clock::now();
-			RunResult result = m_cpu.run(std::nullopt);
-			m_frameState.cycleBudgetRemaining = *m_cpu.instructionBudgetRemaining;
+			RunResult result = m_cpu.run(m_frameState.cycleBudgetRemaining);
+			m_frameState.cycleBudgetRemaining = m_cpu.instructionBudgetRemaining;
 			const auto vmEnd = std::chrono::steady_clock::now();
 			vmRunMs += to_ms(vmEnd - vmStart);
 			const auto ioStart = std::chrono::steady_clock::now();

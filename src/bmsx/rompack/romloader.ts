@@ -10,7 +10,6 @@ import type {
 	RomImgAsset,
 	RomManifest,
 	RuntimeAssets,
-	BmsxCartridgeBlob,
 	CartridgeIndex,
 	CartridgeLayerId,
 	color_arr,
@@ -22,22 +21,22 @@ import { inflate } from 'pako';
 import { AssetSourceStack, type RawAssetSource } from './asset_source';
 
 export type RomLoadOptions = {
-	loadAudioFromBuffer?: (buffer: ArrayBuffer) => Promise<any>;
-	loadDataFromBuffer?: (buffer: ArrayBuffer) => Promise<any>;
-	loadModelFromBuffer?: (buffer: ArrayBuffer, textures?: ArrayBuffer) => Promise<any>;
+	loadAudioFromBuffer?: (buffer: Uint8Array) => Promise<any>;
+	loadDataFromBuffer?: (buffer: Uint8Array) => Promise<any>;
+	loadModelFromBuffer?: (buffer: Uint8Array, textures?: Uint8Array) => Promise<any>;
 };
 
-function hasCartHeader(buffer: ArrayBuffer): boolean {
+function hasCartHeader(buffer: Uint8Array): boolean {
 	if (buffer.byteLength < CART_ROM_HEADER_SIZE) {
 		return false;
 	}
-	const headerView = new Uint8Array(buffer, 0, CART_ROM_MAGIC_BYTES.length);
+	const headerView = buffer.subarray(0, CART_ROM_MAGIC_BYTES.length);
 	for (let index = 0; index < CART_ROM_MAGIC_BYTES.length; index += 1) {
 		if (headerView[index] !== CART_ROM_MAGIC_BYTES[index]) {
 			return false;
 		}
 	}
-	const dv = new DataView(buffer, 0, CART_ROM_HEADER_SIZE);
+	const dv = new DataView(buffer.buffer, buffer.byteOffset, CART_ROM_HEADER_SIZE);
 	const headerSize = dv.getUint32(4, true);
 	return headerSize >= CART_ROM_HEADER_SIZE && headerSize <= buffer.byteLength;
 }
@@ -48,17 +47,17 @@ function assertSectionRange(offset: number, length: number, total: number, label
 	}
 }
 
-export function parseCartHeader(payload: ArrayBuffer): CartRomHeader {
+export function parseCartHeader(payload: Uint8Array): CartRomHeader {
 	if (payload.byteLength < CART_ROM_HEADER_SIZE) {
 		throw new Error('ROM payload is too small for cart header.');
 	}
-	const headerView = new Uint8Array(payload, 0, CART_ROM_MAGIC_BYTES.length);
+	const headerView = payload.subarray(0, CART_ROM_MAGIC_BYTES.length);
 	for (let index = 0; index < CART_ROM_MAGIC_BYTES.length; index += 1) {
 		if (headerView[index] !== CART_ROM_MAGIC_BYTES[index]) {
 			throw new Error('Invalid ROM cart header.');
 		}
 	}
-	const dv = new DataView(payload, 0, CART_ROM_HEADER_SIZE);
+	const dv = new DataView(payload.buffer, payload.byteOffset, CART_ROM_HEADER_SIZE);
 	const headerSize = dv.getUint32(4, true);
 	if (headerSize < CART_ROM_HEADER_SIZE) {
 		throw new Error(`ROM header size is too small: ${headerSize}.`);
@@ -88,34 +87,24 @@ export function parseCartHeader(payload: ArrayBuffer): CartRomHeader {
 	};
 }
 
-function toArrayBuffer(blob: BmsxCartridgeBlob): ArrayBuffer {
-	if (blob instanceof ArrayBuffer) {
-		return blob;
-	}
-	const view = blob;
-	const buffer = new ArrayBuffer(view.byteLength);
-	new Uint8Array(buffer).set(new Uint8Array(view.buffer, view.byteOffset, view.byteLength));
-	return buffer;
-}
-
-function splitPng(blob: ArrayBuffer): { png?: ArrayBuffer; rest: ArrayBuffer } {
-	const u8 = new Uint8Array(blob);
+// TODO: DUPLICATE CODE WITH `bootrom.ts`!!!
+function splitPng(blob: Uint8Array): { png?: Uint8Array; rest: Uint8Array } {
 	if (
-		u8[0] !== 0x89 || u8[1] !== 0x50 || u8[2] !== 0x4E || u8[3] !== 0x47 ||
-		u8[4] !== 0x0D || u8[5] !== 0x0A || u8[6] !== 0x1A || u8[7] !== 0x0A
+		blob[0] !== 0x89 || blob[1] !== 0x50 || blob[2] !== 0x4E || blob[3] !== 0x47 ||
+		blob[4] !== 0x0D || blob[5] !== 0x0A || blob[6] !== 0x1A || blob[7] !== 0x0A
 	) {
 		return { rest: blob };
 	}
 	let p = 8;
-	while (p + 8 <= u8.length) {
-		const len = (u8[p] << 24) | (u8[p + 1] << 16) | (u8[p + 2] << 8) | u8[p + 3];
+	while (p + 8 <= blob.length) {
+		const len = (blob[p] << 24) | (blob[p + 1] << 16) | (blob[p + 2] << 8) | blob[p + 3];
 		p += 4;
-		const type = (u8[p] << 24) | (u8[p + 1] << 16) | (u8[p + 2] << 8) | u8[p + 3];
+		const type = (blob[p] << 24) | (blob[p + 1] << 16) | (blob[p + 2] << 8) | blob[p + 3];
 		p += 4;
 		const end = p + len + 4;
 		if (type === 0x49454E44) {
-			const png = u8.slice(0, end).buffer;
-			const rest = u8.slice(end).buffer;
+			const png = blob.slice(0, end);
+			const rest = blob.slice(end);
 			return { png, rest };
 		}
 		p = end;
@@ -123,7 +112,7 @@ function splitPng(blob: ArrayBuffer): { png?: ArrayBuffer; rest: ArrayBuffer } {
 	throw new Error('PNG IEND chunk not found');
 }
 
-function looksPakoCompressed(buffer: ArrayBuffer): boolean {
+function looksPakoCompressed(buffer: Uint8Array): boolean {
 	const u8 = new Uint8Array(buffer);
 	if (u8.length < 2) {
 		return false;
@@ -141,7 +130,7 @@ function looksPakoCompressed(buffer: ArrayBuffer): boolean {
 	return false;
 }
 
-export function getZippedRomAndRomLabelFromBlob(blob_buffer: ArrayBuffer): { zipped_rom: ArrayBuffer, romlabel?: ArrayBuffer } {
+export function getZippedRomAndRomLabelFromBlob(blob_buffer: Uint8Array): { zipped_rom: Uint8Array, romlabel?: Uint8Array } {
 	const { png, rest } = splitPng(blob_buffer);
 	if (png) {
 		// Only treat the leading PNG as a romlabel if the remaining payload looks like a ROM.
@@ -152,16 +141,14 @@ export function getZippedRomAndRomLabelFromBlob(blob_buffer: ArrayBuffer): { zip
 	return { zipped_rom: blob_buffer, romlabel: undefined };
 }
 
-export function normalizeCartridgeBlob(blob: BmsxCartridgeBlob): { payload: ArrayBuffer; romlabel?: ArrayBuffer } {
-	const input = toArrayBuffer(blob);
+export function normalizeCartridgeBlob(blob: Uint8Array): { payload: Uint8Array; romlabel?: Uint8Array } {
+	const input = blob;
 	const { zipped_rom, romlabel } = getZippedRomAndRomLabelFromBlob(input);
-	let payload: ArrayBuffer;
+	let payload: Uint8Array;
 	if (hasCartHeader(zipped_rom)) {
 		payload = zipped_rom;
 	} else if (looksPakoCompressed(zipped_rom)) {
-		const inflated = inflate(new Uint8Array(zipped_rom));
-		payload = new ArrayBuffer(inflated.byteLength);
-		new Uint8Array(payload).set(inflated);
+		payload = inflate(new Uint8Array(zipped_rom));
 	} else {
 		throw new Error('ROM payload is missing cart header.');
 	}
@@ -169,9 +156,9 @@ export function normalizeCartridgeBlob(blob: BmsxCartridgeBlob): { payload: Arra
 	return { payload, romlabel };
 }
 
-export async function loadAssetList(rom: ArrayBuffer): Promise<{ assets: RomAsset[]; projectRootPath: string; manifest: RomManifest }> {
+export async function loadAssetList(rom: Uint8Array): Promise<{ assets: RomAsset[]; projectRootPath: string; manifest: RomManifest }> {
 	const header = parseCartHeader(rom);
-	const sliced = new Uint8Array(rom, header.tocOffset, header.tocLength);
+	const sliced = rom.subarray(header.tocOffset, header.tocOffset + header.tocLength);
 	const decoded = decodeBinary(sliced) as RomAssetListPayload;
 	const assetList = decoded.assets;
 	const projectRootPath = decoded.projectRootPath;
@@ -310,16 +297,16 @@ export async function loadAssetList(rom: ArrayBuffer): Promise<{ assets: RomAsse
 	return { assets: assetList, projectRootPath, manifest };
 }
 
-export async function parseCartridgeIndex(payload: ArrayBuffer): Promise<CartridgeIndex> {
+export async function parseCartridgeIndex(payload: Uint8Array): Promise<CartridgeIndex> {
 	const { assets, projectRootPath, manifest } = await loadAssetList(payload);
 	return { assets, projectRootPath, manifest };
 }
 
-async function loadDataFromBuffer(buffer: ArrayBuffer): Promise<any> {
+async function loadDataFromBuffer(buffer: Uint8Array): Promise<any> {
 	return decodeBinary(new Uint8Array(buffer));
 }
 
-export async function loadModelFromBuffer(asset_id: string, buffer: ArrayBuffer, textureBuf?: ArrayBuffer): Promise<GLTFModel> {
+export async function loadModelFromBuffer(asset_id: string, buffer: Uint8Array, textureBuf?: Uint8Array): Promise<GLTFModel> {
 	const obj = decodeBinary(new Uint8Array(buffer), { zeroCopyBin: true });
 
 	function toIndices(v: any, componentType?: number): Uint8Array | Uint16Array | Uint32Array {
@@ -372,7 +359,7 @@ export async function loadModelFromBuffer(asset_id: string, buffer: ArrayBuffer,
 	let imageBuffers: ArrayBuffer[] = undefined;
 	if (Array.isArray(obj.imageBuffers) && obj.imageBuffers.length) {
 		imageBuffers = obj.imageBuffers.map((buf: any) => {
-			if (buf instanceof ArrayBuffer) return buf;
+			if (buf instanceof Uint8Array) return buf;
 			if (ArrayBuffer.isView(buf)) {
 				const view = buf as ArrayBufferView;
 				return view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength);
@@ -459,28 +446,28 @@ async function load(source: RawAssetSource, res: RomAsset, assets: RuntimeAssets
 		}
 		case 'audio':
 			if (opts && opts.loadAudioFromBuffer) {
-				assets.audio[res.resid] = await opts.loadAudioFromBuffer(source.getBuffer(baseAsset));
+				assets.audio[res.resid] = await opts.loadAudioFromBuffer(source.getBytes(baseAsset));
 			} else {
 				assets.audio[res.resid] = baseAsset;
 			}
 			break;
 		case 'model': {
 			const texBuf = (baseAsset.texture_start != null && baseAsset.texture_end != null)
-				? source.getBuffer({ ...baseAsset, start: baseAsset.texture_start, end: baseAsset.texture_end })
+				? source.getBytes({ ...baseAsset, start: baseAsset.texture_start, end: baseAsset.texture_end })
 				: undefined;
 			if (opts && opts.loadModelFromBuffer) {
-				assets.model[res.resid] = await opts.loadModelFromBuffer(source.getBuffer(baseAsset), texBuf);
+				assets.model[res.resid] = await opts.loadModelFromBuffer(source.getBytes(baseAsset), texBuf);
 			} else {
-				assets.model[res.resid] = await loadModelFromBuffer(res.resid, source.getBuffer(baseAsset), texBuf);
+				assets.model[res.resid] = await loadModelFromBuffer(res.resid, source.getBytes(baseAsset), texBuf);
 			}
 			break;
 		}
 		case 'data':
 			if (opts && opts.loadDataFromBuffer) {
-				const data = await opts.loadDataFromBuffer(source.getBuffer(baseAsset));
+				const data = await opts.loadDataFromBuffer(source.getBytes(baseAsset));
 				assets.data[res.resid] = data;
 			} else {
-				const data = await loadDataFromBuffer(source.getBuffer(baseAsset));
+				const data = await loadDataFromBuffer(source.getBytes(baseAsset));
 				assets.data[res.resid] = data;
 			}
 			break;
@@ -502,7 +489,7 @@ async function load(source: RawAssetSource, res: RomAsset, assets: RuntimeAssets
 export type RuntimeAssetLayer = {
 	id: CartridgeLayerId;
 	index: CartridgeIndex;
-	payload: ArrayBuffer;
+	payload: Uint8Array;
 	assets: RuntimeAssets;
 };
 
@@ -522,13 +509,13 @@ async function loadRuntimeAssetsFromSource(source: RawAssetSource, index: Cartri
 	return assets;
 }
 
-export async function loadRuntimeAssetsFromBuffer(rom: ArrayBuffer, opts?: RomLoadOptions, payloadId: CartridgeLayerId = 'cart'): Promise<RuntimeAssets> {
+export async function loadRuntimeAssetsFromBuffer(rom: Uint8Array, opts?: RomLoadOptions, payloadId: CartridgeLayerId = 'cart'): Promise<RuntimeAssets> {
 	const index = await parseCartridgeIndex(rom);
 	const source = new AssetSourceStack([{ id: payloadId, index, payload: rom }]);
 	return loadRuntimeAssetsFromSource(source, index, opts);
 }
 
-export async function buildRuntimeAssetLayer(params: { blob: BmsxCartridgeBlob; id: CartridgeLayerId; opts?: RomLoadOptions }): Promise<RuntimeAssetLayer> {
+export async function buildRuntimeAssetLayer(params: { blob: Uint8Array; id: CartridgeLayerId; opts?: RomLoadOptions }): Promise<RuntimeAssetLayer> {
 	const normalized = normalizeCartridgeBlob(params.blob);
 	const index = await parseCartridgeIndex(normalized.payload);
 	const source = new AssetSourceStack([{ id: params.id, index, payload: normalized.payload }]);

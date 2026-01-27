@@ -79,7 +79,7 @@ function parseBiasValue(raw: string): number {
 	}
 	return parsed;
 }
-function buildLuaSourceLookup(rombin: ArrayBuffer, assets: RomAsset[]): (path: string) => string {
+function buildLuaSourceLookup(rombin: Uint8Array, assets: RomAsset[]): (path: string) => string {
 	const sources = new Map<string, string>();
 	for (const asset of assets) {
 		if (asset.type !== 'lua') {
@@ -109,7 +109,7 @@ function buildLuaSourceLookup(rombin: ArrayBuffer, assets: RomAsset[]): (path: s
 	};
 }
 
-function loadVmProgramFromAssets(rombin: ArrayBuffer, assets: RomAsset[]) {
+function loadVmProgramFromAssets(rombin: Uint8Array, assets: RomAsset[]) {
 	const programAssetEntry = assets.find(asset => asset.resid === VM_PROGRAM_ASSET_ID);
 	if (!programAssetEntry) {
 		throw new Error('[RomInspector] VM program asset not found.');
@@ -183,24 +183,24 @@ function buildManifestAsset(header: CartRomHeader): RomAsset {
 	};
 }
 
-async function nodeImageLoader(buffer: ArrayBuffer) {
+async function nodeImageLoader(buffer: Uint8Array) {
 	return PNG.sync.read(Buffer.from(buffer.slice(0)));
 }
 
-async function loadAudio(buffer: ArrayBuffer) {
+async function loadAudio(buffer: Uint8Array) {
 	return buffer.slice(0);
 }
 
-async function loadDataFromBuffer(buf: ArrayBuffer): Promise<any> {
-	if (!(buf instanceof ArrayBuffer)) {
-		console.error('loadDataFromBuffer expects an ArrayBuffer, got:', buf);
-		throw new Error('Invalid buffer type, expected ArrayBuffer, please check the ROM file.');
+async function loadDataFromBuffer(buf: Uint8Array): Promise<any> {
+	if (!(buf instanceof Uint8Array)) {
+		console.error('loadDataFromBuffer expects an Uint8Array, got:', buf);
+		throw new Error('Invalid buffer type, expected Uint8Array, please check the ROM file.');
 	}
 	if (buf.byteLength === 0) {
 		throw new Error(`loadDataFromBuffer received an empty buffer, please check the ROM file.`);
 	}
-	// First create a copy of the ArrayBuffer to avoid issues with shared memory
-	let copyBuffer = new ArrayBuffer(buf.byteLength);
+	// First create a copy of the Uint8Array to avoid issues with shared memory
+	let copyBuffer = new Uint8Array(buf.byteLength);
 	copyBuffer = buf.slice(0);
 
 	// Use decodeBinary to parse the binary data
@@ -211,19 +211,18 @@ async function loadDataFromBuffer(buf: ArrayBuffer): Promise<any> {
 	}
 }
 
-async function loadAssets(rombin: Buffer | ArrayBuffer): Promise<{ assets: RomAsset[]; manifest: RomManifest | null; projectRootPath: string | null }> {
+async function loadAssets(rombin: Uint8Array): Promise<{ assets: RomAsset[]; manifest: RomManifest | null; projectRootPath: string | null }> {
 	let assets: RomAsset[] = [];
 	let manifest: RomManifest | null = null;
 	let projectRootPath: string | null = null;
 	try {
-		const arrayBuffer = rombin instanceof ArrayBuffer ? rombin : rombin.buffer.slice(rombin.byteOffset, rombin.byteOffset + rombin.byteLength);
 		// Load the ROM pack metadata using the loadResources function
 		console.log('Loading ROM pack metadata...');
-		if (!arrayBuffer || !(arrayBuffer instanceof ArrayBuffer)) {
-			console.error('Invalid metadata format: expected an ArrayBuffer');
+		if (!rombin || !(rombin instanceof Uint8Array)) {
+			console.error('Invalid metadata format: expected an Uint8Array');
 			process.exit(1);
 		}
-		if (arrayBuffer.byteLength < 16) {
+		if (rombin.byteLength < 16) {
 			console.error('Metadata buffer is too short, expected at least 16 bytes');
 			process.exit(1);
 		}
@@ -232,13 +231,13 @@ async function loadAssets(rombin: Buffer | ArrayBuffer): Promise<{ assets: RomAs
 		// Use the nodeImageLoader to load images from the buffer
 		// Note: loadResources will handle the image loading using the provided nodeImageLoader
 		console.log('Loading resources from metadata buffer...');
-		// Ensure nodeImageLoader is a function that can handle ArrayBuffer input
+		// Ensure nodeImageLoader is a function that can handle Uint8Array input
 		if (typeof nodeImageLoader !== 'function') {
-			console.error('nodeImageLoader must be a function that accepts an ArrayBuffer');
+			console.error('nodeImageLoader must be a function that accepts an Uint8Array');
 			process.exit(1);
 		}
-		// @ts-ignore
-		({ assets, manifest, projectRootPath } = await loadAssetList(arrayBuffer));
+		// Load asset list from the ROM binary buffer
+		({ assets, manifest, projectRootPath } = await loadAssetList(rombin));
 
 		console.log('ROM pack metadata and resources loaded successfully.');
 
@@ -283,7 +282,7 @@ function generateOverlayAscii(imgW: number, imgH: number, polys: number[][], mod
 	return generateBrailleAsciiArt(buf, imgW, imgH, modalWidth);
 }
 
-function getTocBuffer(rombin: Buffer | ArrayBuffer, header: CartRomHeader) {
+function getTocBuffer(rombin: Buffer | Uint8Array, header: CartRomHeader) {
 	const metadataOffset = header.tocOffset;
 	const metadataLength = header.tocLength;
 	if (metadataOffset + metadataLength > rombin.byteLength) {
@@ -310,7 +309,7 @@ function getTocBuffer(rombin: Buffer | ArrayBuffer, header: CartRomHeader) {
 	};
 }
 
-async function loadRompackFromFile(romfile: string): Promise<Buffer | ArrayBuffer> {
+async function loadRompackFromFile(romfile: string): Promise<Uint8Array> {
 	let raw: Buffer
 	let error: any;
 	let rawSize = 0;
@@ -354,13 +353,13 @@ async function loadRompackFromFile(romfile: string): Promise<Buffer | ArrayBuffe
 		return false;
 	}
 
-	const zippedView = new Uint8Array(zipped_rom) as Uint8Array<ArrayBufferLike>;
+	const zippedView = new Uint8Array(zipped_rom);
 	const isCompressed = isPakoCompressed(zippedView);
-	let rombin: Buffer | ArrayBuffer | null = null;
+	let rombin: Uint8Array | null = null;
 	if (isCompressed) {
 		console.log('ROM is compressed, decompressing...');
 		let zipped = zippedView;
-		let decompressed: Uint8Array;
+		let decompressed: Uint8Array | null = null;
 		try {
 			decompressed = pako.inflate(zipped);
 		} catch (e: any) {
@@ -369,7 +368,7 @@ async function loadRompackFromFile(romfile: string): Promise<Buffer | ArrayBuffe
 			console.error(e?.stack ?? 'No stack trace available');
 			decompressed = null; // fallback to null if decompression fails
 		}
-		rombin = decompressed.buffer ?? raw; // Use decompressed data if available, otherwise fallback to raw
+		rombin = decompressed ?? raw; // Use decompressed data if available, otherwise fallback to raw
 		deflatedSize = rombin.byteLength;
 		console.log(`Decompressed ROM size: ${formatByteSize(deflatedSize)}`);
 		console.log(`Compressed size vs uncompressed size (lower is better): ${((rawSize / deflatedSize) * 100).toFixed(2)}%`);
@@ -455,12 +454,9 @@ async function main() {
 	}
 
 	// Load the ROM pack from the specified file
-	let rombin: ArrayBuffer;
+	let rombin: Uint8Array;
 	try {
-		const loaded = await loadRompackFromFile(romfile);
-		rombin = loaded instanceof ArrayBuffer
-			? loaded
-			: loaded.buffer.slice(loaded.byteOffset, loaded.byteOffset + loaded.byteLength);
+		rombin = await loadRompackFromFile(romfile);
 	} catch (e: any) {
 		console.error(`Failed to load ROM file "${romfile}": ${e.message}`);
 		console.error(e?.stack ?? 'No stack trace available');
@@ -791,10 +787,8 @@ async function main() {
 						// Fallback: decode from any buffered payload when range is unavailable.
 						try {
 							let buf: Buffer | null = null;
-							if (selected.buffer instanceof Uint8Array) {
+							if (selected.buffer) {
 								buf = Buffer.from(selected.buffer);
-							} else if (selected.buffer instanceof ArrayBuffer) {
-								buf = Buffer.from(new Uint8Array(selected.buffer));
 							}
 							if (buf) {
 								const png = PNG.sync.read(buf);
@@ -848,10 +842,10 @@ async function main() {
 				try {
 					asciiArt = '[No audio buffer available]';
 					// @ts-ignore
-					if (!selected.buffer || !(selected.buffer instanceof ArrayBuffer) || selected.buffer?.byteLength === 0) {
+					if (!selected.buffer || !(selected.buffer instanceof Uint8Array) || selected.buffer?.byteLength === 0) {
 						// Load the audio buffer from the ROM pack
 						// @ts-ignore
-						(selected.buffer as ArrayBuffer) = await loadAudio(rombin.slice(selected.start, selected.end));
+						(selected.buffer as Uint8Array) = await loadAudio(rombin.slice(selected.start, selected.end));
 					}
 					// @ts-ignore
 					const info = parseWav(selected.buffer as Uint8Array);
@@ -1416,7 +1410,7 @@ function generateAsciiArtFromImageBuffer(img: Buffer, modalWidth: number): strin
 	}
 }
 
-function asciiHexDump(buf: Uint8Array | ArrayBuffer, maxBytes?: number): string {
+function asciiHexDump(buf: Uint8Array | Uint8Array, maxBytes?: number): string {
 	if (!(buf instanceof Uint8Array)) buf = new Uint8Array(buf);
 	const bytesPerLine = 16;
 	let result = '';
@@ -1453,8 +1447,8 @@ function isGLTFModel(obj: unknown): obj is GLTFModel {
 	return Array.isArray(anyObj.meshes);
 }
 
-// New helper: robust binary buffer detector (Buffer | Uint8Array | ArrayBuffer)
-function isBinaryBuffer(x: unknown): x is ArrayBuffer | Uint8Array | Buffer {
+// New helper: robust binary buffer detector (Buffer | Uint8Array | Uint8Array)
+function isBinaryBuffer(x: unknown): x is Uint8Array | Uint8Array | Buffer {
 	if (!x) return false;
 	// Node Buffer
 	// Buffer should be available in Node environments used by this script
@@ -1463,6 +1457,6 @@ function isBinaryBuffer(x: unknown): x is ArrayBuffer | Uint8Array | Buffer {
 	// @ts-ignore
 	if (typeof Buffer !== 'undefined' && typeof Buffer.isBuffer === 'function' && Buffer.isBuffer(x)) return true;
 	if (x instanceof Uint8Array) return true;
-	if (x instanceof ArrayBuffer) return true;
+	if (x instanceof Uint8Array) return true;
 	return false;
 }

@@ -35,10 +35,11 @@ import {
 	GameViewHostCapabilityMap,
 	SubscriptionHandle,
 	createSubscriptionHandle,
+	VM_HZ_SCALE,
 } from 'bmsx/platform';
 import { WebAudioService } from './web_audio';
 import type { GamepadControlHandle, GameViewCanvas, GameViewHost, HostEventListenerTarget, HostEventOptions, HostWindowEventType, OnscreenGamepadHandles, OverlayHandle, SurfaceBounds, ViewportDimensions } from '../platform';
-import { type vec2 } from 'bmsx/rompack/rompack';
+import { GAME_FPS, type vec2 } from 'bmsx/rompack/rompack';
 import { GameOptions } from 'bmsx/core/gameoptions';
 
 declare const $: any; // avoid circular dependency issues
@@ -58,6 +59,7 @@ export class BrowserPlatform implements Platform {
 	lifecycle: Lifecycle;
 	input: InputHub;
 	storage: StorageService;
+	ufpsScaled: number;
 	requestShutdown(): void {
 		const target = window;
 		target.close();
@@ -73,12 +75,13 @@ export class BrowserPlatform implements Platform {
 	gameviewHost: BrowserGameViewHost;
 	microtasks: MicrotaskQueue;
 
-	constructor(surface: HTMLElement, canvas: HTMLCanvasElement) {
+	constructor(surface: HTMLElement, canvas: HTMLCanvasElement, options: BrowserPlatformOptions = {}) {
 		this.clock = new BrowserClock();
 		this.frames = new BrowserFrameLoop();
 		this.lifecycle = new BrowserLifecycle();
 		this.storage = new BrowserStorage();
 		this.microtasks = defaultMicrotaskQueue;
+		this.ufpsScaled = options.ufpsScaled ?? (GAME_FPS * VM_HZ_SCALE);
 		this.clipboard = new BrowserClipboardService(surface);
 		this.input = new BrowserInputHub(surface, this.clock);
 		const ownerDoc = surface.ownerDocument;
@@ -99,6 +102,10 @@ export class BrowserPlatform implements Platform {
 		this.rng = new BrowserRngService();
 		this.gameviewHost = new BrowserGameViewHost(canvas);
 	}
+}
+
+export interface BrowserPlatformOptions {
+	ufpsScaled?: number;
 }
 
 class BrowserClock implements Clock {

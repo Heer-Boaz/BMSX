@@ -1,4 +1,4 @@
-import { $ } from '../core/engine_core';
+import { $, calcCyclesPerFrameScaled } from '../core/engine_core';
 import { taskGate } from '../core/taskgate';
 import { Input } from '../input/input';
 import { KeyModifier } from '../input/playerinput';
@@ -21,7 +21,7 @@ import {
 import type { StorageService } from '../platform/platform';
 import { publishOverlayFrame } from '../render/editor/editor_overlay_queue';
 import type { SkyboxImageIds } from '../render/shared/render_types';
-import type { AudioMeta, ImgMeta, Viewport, BmsxCartridgeBlob, CartridgeIndex, RuntimeAssets, id2res } from '../rompack/rompack';
+import type { AudioMeta, ImgMeta, Viewport, CartridgeIndex, RuntimeAssets, id2res } from '../rompack/rompack';
 import {
 	CanonicalizationType,
 	CART_ROM_HEADER_SIZE,
@@ -240,23 +240,32 @@ export class BmsxVMRuntime {
 		return new BmsxVMRuntime(options);
 	}
 
-	private static resolveCpuMhz(vm: { cpu_mhz?: number }): number {
-		const value = vm.cpu_mhz;
+	private static resolveCpuHz(vm: { cpu_freq_hz?: number }): number {
+		const value = vm.cpu_freq_hz;
 		if (value === undefined) {
-			throw new Error('[BmsxVMRuntime] vm.cpu_mhz is required.');
+			throw new Error('[BmsxVMRuntime] vm.cpu_freq_hz is required.');
 		}
-		if (!Number.isFinite(value) || value <= 0) {
-			throw new Error('[BmsxVMRuntime] vm.cpu_mhz must be a finite number greater than 0.');
+		if (!Number.isSafeInteger(value) || value <= 0) {
+			throw new Error('[BmsxVMRuntime] vm.cpu_freq_hz must be a positive safe integer.');
 		}
 		return value;
 	}
 
-	public static calcCyclesPerFrame(cpuMhz: number, refreshHz: number): number {
-		const clampedHz = clamp_fallback(refreshHz, 30, 240, 60);
-		const cycles = Math.floor((cpuMhz * 1_000_000) / clampedHz);
-		if (cycles < 1_000) return 1_000;
-		if (cycles > 50_000_000) return 50_000_000;
-		return cycles;
+	private static resolveUfpsScaled(vm: { ufps?: number }): number {
+		const value = vm.ufps;
+		if (value === undefined) {
+			throw new Error('[BmsxVMRuntime] vm.ufps is required.');
+		}
+		if (!Number.isSafeInteger(value) || value <= 0) {
+			throw new Error('[BmsxVMRuntime] vm.ufps must be a positive safe integer.');
+		}
+		return value;
+	}
+
+	private static applyUfpsScaled(vm: { ufps?: number }): number {
+		const ufpsScaled = BmsxVMRuntime.resolveUfpsScaled(vm);
+		$.setUfpsScaled(ufpsScaled);
+		return ufpsScaled;
 	}
 
 	public setCycleBudgetPerFrame(value: number): void {
@@ -268,9 +277,38 @@ export class BmsxVMRuntime {
 	}
 
 	private runVmWithBudget(state: VMFrameState): RunResult {
-		this.cpu.instructionBudgetRemaining = state.cycleBudgetRemaining;
-		const result = this.cpu.run(null);
-		state.cycleBudgetRemaining = this.cpu.instructionBudgetRemaining as number;
+		const debugCycle = Boolean((globalThis as any).__bmsx_debug_tickrate);
+		if (debugCycle) {
+			if (this.debugCycleReportAtMs === 0) {
+				this.debugCycleReportAtMs = performance.now();
+			}
+			this.debugCycleRuns += 1;
+			this.debugCycleRunsTotal += 1;
+		}
+		const result = this.cpu.run(state.cycleBudgetRemaining);
+		const remaining = this.cpu.instructionBudgetRemaining;
+		state.cycleBudgetRemaining = remaining;
+		if (debugCycle) {
+			if (result === RunResult.Yielded) {
+				this.debugCycleYields += 1;
+				this.debugCycleYieldsTotal += 1;
+			}
+			this.debugCycleRemainingAcc += remaining;
+			const now = performance.now();
+			const elapsedMs = now - this.debugCycleReportAtMs;
+			if (elapsedMs >= 1000) {
+				const scale = 1000 / elapsedMs;
+				const runsPerSec = this.debugCycleRuns * scale;
+				const yieldsPerSec = this.debugCycleYields * scale;
+				const yieldPct = (this.debugCycleYields / this.debugCycleRuns) * 100;
+				const avgRemaining = this.debugCycleRemainingAcc / this.debugCycleRuns;
+				console.info(`[BMSX][vm] runs=${runsPerSec.toFixed(3)} yields=${yieldsPerSec.toFixed(3)} yield%=${yieldPct.toFixed(2)} avgRemaining=${avgRemaining.toFixed(1)} budget=${this.cycleBudgetPerFrame}`);
+				this.debugCycleReportAtMs = now;
+				this.debugCycleRuns = 0;
+				this.debugCycleYields = 0;
+				this.debugCycleRemainingAcc = 0;
+			}
+		}
 		return result;
 	}
 
@@ -354,16 +392,28 @@ export class BmsxVMRuntime {
 	public get hasRuntimeFailed(): boolean {
 		return this.luaRuntimeFailed;
 	}
-	public get cpuMhz(): number {
-		return this._cpuMhz;
+	public get cpuHz(): number {
+		return this._cpuHz;
 	}
-	private setCpuMhz(value: number): void {
-		this._cpuMhz = value;
+	private setCpuHz(value: number): void {
+		this._cpuHz = value;
 	}
 	private includeJsStackTraces = false;
 	private currentFrameState: VMFrameState = null;
+	private drawFrameState: VMFrameState = null;
 	private cycleBudgetPerFrame: number;
-	private _cpuMhz: number;
+	private _cpuHz: number;
+	private debugCycleReportAtMs: number = 0;
+	private debugCycleRuns: number = 0;
+	private debugCycleYields: number = 0;
+	private debugCycleRemainingAcc: number = 0;
+	private debugCycleRunsTotal: number = 0;
+	private debugCycleYieldsTotal: number = 0;
+	private debugFrameReportAtMs: number = 0;
+	private debugFrameCount: number = 0;
+	private debugFrameCyclesUsedAcc: number = 0;
+	private debugFrameRemainingAcc: number = 0;
+	private debugFrameYieldsAcc: number = 0;
 	private pendingLuaWarnings: string[] = [];
 	public readonly vmModuleAliases: Map<string, string> = new Map();
 	public readonly luaChunkEnvironmentsByPath: Map<string, LuaEnvironment> = new Map();
@@ -442,7 +492,7 @@ export class BmsxVMRuntime {
 	}
 
 
-	public static async init(cartridge?: BmsxCartridgeBlob): Promise<void> {
+	public static async init(cartridge?: Uint8Array): Promise<void> {
 		const engineLayer = $.engine_layer;
 		const playerIndex = Input.instance.startupGamepadIndex ?? 1;
 
@@ -456,8 +506,9 @@ export class BmsxVMRuntime {
 		if (!cartridge) {
 			$.set_lua_sources(engineLuaSources);
 			configureMemoryMap(engineLayer.index.manifest.vm.limits);
-			const cpuMhz = BmsxVMRuntime.resolveCpuMhz(engineLayer.index.manifest.vm);
-			const cycleBudgetPerFrame = BmsxVMRuntime.calcCyclesPerFrame(cpuMhz, $.target_fps);
+			BmsxVMRuntime.applyUfpsScaled(engineLayer.index.manifest.vm);
+			const cpuHz = BmsxVMRuntime.resolveCpuHz(engineLayer.index.manifest.vm);
+			const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuHz, $.ufps_scaled);
 			const memory = new VmMemory({
 				engineRom: new Uint8Array(engineLayer.payload),
 				cartRom: new Uint8Array(CART_ROM_HEADER_SIZE),
@@ -467,7 +518,7 @@ export class BmsxVMRuntime {
 				canonicalization: engineLayer.index.manifest.vm.canonicalization,
 				viewport: engineLayer.index.manifest.vm.viewport,
 				memory,
-				cpuMhz,
+				cpuHz,
 				cycleBudgetPerFrame,
 			});
 			runtime.configureProgramSources({
@@ -520,8 +571,9 @@ export class BmsxVMRuntime {
 
 		const vmLimits = cartLayer.index.manifest.vm.limits ?? engineLayer.index.manifest.vm.limits;
 		configureMemoryMap(vmLimits);
-		const cpuMhz = BmsxVMRuntime.resolveCpuMhz(cartLayer.index.manifest.vm);
-		const cycleBudgetPerFrame = BmsxVMRuntime.calcCyclesPerFrame(cpuMhz, $.target_fps);
+		BmsxVMRuntime.applyUfpsScaled(cartLayer.index.manifest.vm);
+		const cpuHz = BmsxVMRuntime.resolveCpuHz(cartLayer.index.manifest.vm);
+		const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuHz, $.ufps_scaled);
 		const memory = new VmMemory({
 			engineRom: new Uint8Array(engineLayer.payload),
 			cartRom: new Uint8Array(cartLayer.payload),
@@ -532,7 +584,7 @@ export class BmsxVMRuntime {
 			canonicalization: engineLayer.index.manifest.vm.canonicalization,
 			viewport: cartLayer.index.manifest.vm.viewport,
 			memory,
-			cpuMhz,
+			cpuHz,
 			cycleBudgetPerFrame,
 		});
 		runtime.cartAssetLayer = cartLayer;
@@ -660,7 +712,7 @@ export class BmsxVMRuntime {
 		BmsxVMRuntime._instance = this;
 		this.playerIndex = options.playerIndex;
 		this.cycleBudgetPerFrame = options.cycleBudgetPerFrame;
-		this.setCpuMhz(options.cpuMhz);
+		this.setCpuHz(options.cpuHz);
 		this.storageService = $.platform.storage;
 		this.storage = new BmsxVMStorage(this.storageService, $.lua_sources.namespace);
 		const resolvedCanonicalization = options.canonicalization ?? 'none';
@@ -1154,13 +1206,15 @@ export class BmsxVMRuntime {
 		if (this.isOverlayActive()) {
 			return;
 		}
-		if (!this.currentFrameState) {
+		if (!this.drawFrameState) {
 			return;
 		}
+		this.currentFrameState = this.drawFrameState;
 		try {
 			this.vdp.commitViewSnapshot();
 			this.drawGameFrame();
 		} finally {
+			this.drawFrameState = null;
 			this.abandonFrameState();
 		}
 	}
@@ -1177,18 +1231,22 @@ export class BmsxVMRuntime {
 		const state = this.beginFrameState();
 		this.terminal.update(state.deltaSeconds);
 		this.vdp.flushAssetEdits();
+		this.drawFrameState = state;
+		this.abandonFrameState();
 	}
 
 	public tickTerminalModeDraw(): void {
 		if (!this.tickEnabled) {
 			return;
 		}
-		if (!this.currentFrameState) {
+		if (!this.drawFrameState) {
 			return;
 		}
+		this.currentFrameState = this.drawFrameState;
 		try {
 			this.drawTerminal();
 		} finally {
+			this.drawFrameState = null;
 			this.abandonFrameState();
 		}
 	}
@@ -1205,33 +1263,72 @@ export class BmsxVMRuntime {
 		const state = this.beginFrameState();
 		this.editor.update(state.deltaSeconds);
 		this.vdp.flushAssetEdits();
+		this.drawFrameState = state;
+		this.abandonFrameState();
 	}
 
 	public tickIDEDraw(): void {
 		if (!this.tickEnabled) {
 			return;
 		}
-		if (!this.currentFrameState) {
+		if (!this.drawFrameState) {
 			return;
 		}
+		this.currentFrameState = this.drawFrameState;
 		try {
 			this.drawIde();
 		} finally {
+			this.drawFrameState = null;
 			this.abandonFrameState();
 		}
 	}
 
 	private runCartUpdateTick(): void {
 		let fault: unknown = null;
+		let state: VMFrameState = null;
+		const debugTickRate = Boolean((globalThis as any).__bmsx_debug_tickrate);
+		let yieldsBefore = 0;
+		if (debugTickRate) {
+			if (this.debugFrameReportAtMs === 0) {
+				this.debugFrameReportAtMs = performance.now();
+			}
+			yieldsBefore = this.debugCycleYieldsTotal;
+		}
 		try {
-			const state = this.beginFrameState();
+			state = this.beginFrameState();
 			this.runUpdatePhase(state);
 			this.vdp.flushAssetEdits();
 		} catch (error) {
 			fault = error;
 			this.handleLuaError(error);
 		} finally {
-			if (fault !== null && this.currentFrameState !== null) {
+			if (fault === null) {
+				this.drawFrameState = state;
+				if (debugTickRate) {
+					const cyclesUsed = this.cycleBudgetPerFrame - state.cycleBudgetRemaining;
+					const yieldsThisFrame = this.debugCycleYieldsTotal - yieldsBefore;
+					this.debugFrameCount += 1;
+					this.debugFrameCyclesUsedAcc += cyclesUsed;
+					this.debugFrameRemainingAcc += state.cycleBudgetRemaining;
+					this.debugFrameYieldsAcc += yieldsThisFrame;
+					const now = performance.now();
+					const elapsedMs = now - this.debugFrameReportAtMs;
+					if (elapsedMs >= 1000) {
+						const scale = 1000 / elapsedMs;
+						const cyclesPerSec = this.debugFrameCyclesUsedAcc * scale;
+						const cyclesPerFrame = this.debugFrameCyclesUsedAcc / this.debugFrameCount;
+						const remainingPerFrame = this.debugFrameRemainingAcc / this.debugFrameCount;
+						const yieldsPerFrame = this.debugFrameYieldsAcc / this.debugFrameCount;
+						console.info(`[BMSX][vmframe] cycles/sec=${cyclesPerSec.toFixed(1)} cycles/frame=${cyclesPerFrame.toFixed(1)} remaining/frame=${remainingPerFrame.toFixed(1)} yields/frame=${yieldsPerFrame.toFixed(2)} budget=${this.cycleBudgetPerFrame}`);
+						this.debugFrameReportAtMs = now;
+						this.debugFrameCount = 0;
+						this.debugFrameCyclesUsedAcc = 0;
+						this.debugFrameRemainingAcc = 0;
+						this.debugFrameYieldsAcc = 0;
+					}
+				}
+			}
+			if (this.currentFrameState !== null) {
 				this.abandonFrameState();
 			}
 		}
@@ -1659,7 +1756,7 @@ export class BmsxVMRuntime {
 			if (!audioAsset.audiometa) {
 				throw new Error(`[BmsxVMRuntime] Audio asset '${entry.resid}' missing metadata.`);
 			}
-			const buffer = source.getBuffer(entry);
+			const buffer = source.getBytes(entry);
 			const info = parseWavInfo(buffer);
 			const bytes = new Uint8Array(buffer);
 			this.memory.registerAudioBuffer({
@@ -1711,8 +1808,10 @@ export class BmsxVMRuntime {
 		if (this.overlayAssetLayer) {
 			applyRuntimeAssetLayer($.assets, this.overlayAssetLayer);
 		}
-		const cpuMhz = BmsxVMRuntime.resolveCpuMhz($.assets.manifest.vm);
-		this.setCpuMhz(cpuMhz);
+		BmsxVMRuntime.applyUfpsScaled($.assets.manifest.vm);
+		const cpuHz = BmsxVMRuntime.resolveCpuHz($.assets.manifest.vm);
+		this.setCpuHz(cpuHz);
+		this.setCycleBudgetPerFrame(calcCyclesPerFrameScaled(cpuHz, $.ufps_scaled));
 	}
 
 	private pollSystemBootRequest(): void {
@@ -1734,7 +1833,7 @@ export class BmsxVMRuntime {
 		if (!this.luaVmGate.ready) {
 			return;
 		}
-		if (this.currentFrameState || this.pendingVmCall || this.pendingLifecycleQueue.length > 0) {
+		if (this.currentFrameState || this.drawFrameState || this.pendingVmCall || this.pendingLifecycleQueue.length > 0) {
 			return;
 		}
 		this.pendingCartBoot = false;
@@ -1750,7 +1849,7 @@ export class BmsxVMRuntime {
 			this.pendingProgramReload = null;
 			return;
 		}
-		if (this.currentFrameState || this.pendingVmCall || this.pendingLifecycleQueue.length > 0) {
+		if (this.currentFrameState || this.drawFrameState || this.pendingVmCall || this.pendingLifecycleQueue.length > 0) {
 			return;
 		}
 		const options = this.pendingProgramReload;
@@ -4684,9 +4783,10 @@ export class BmsxVMRuntime {
 			const manifest = this.cartAssetLayer
 				? this.cartAssetLayer.index.manifest
 				: $.engine_layer.index.manifest;
-			const cpuMhz = BmsxVMRuntime.resolveCpuMhz(manifest.vm);
-			this.setCpuMhz(cpuMhz);
-			this.setCycleBudgetPerFrame(BmsxVMRuntime.calcCyclesPerFrame(cpuMhz, $.target_fps));
+			BmsxVMRuntime.applyUfpsScaled(manifest.vm);
+			const cpuHz = BmsxVMRuntime.resolveCpuHz(manifest.vm);
+			this.setCpuHz(cpuHz);
+			this.setCycleBudgetPerFrame(calcCyclesPerFrameScaled(cpuHz, $.ufps_scaled));
 		}
 		finally {
 			this.luaVmGate.end(vmToken);
@@ -4955,19 +5055,13 @@ export class BmsxVMRuntime {
 	private callVmFunction(fn: Closure, args: Value[]): Value[] {
 		const depth = this.cpu.getFrameDepth();
 		const previousBudget = this.cpu.instructionBudgetRemaining;
-		if (previousBudget !== null) {
-			const budgetSentinel = Number.MAX_SAFE_INTEGER;
-			this.cpu.instructionBudgetRemaining = budgetSentinel;
-			try {
-				this.cpu.callExternal(fn, args);
-				this.cpu.runUntilDepth(depth);
-			} finally {
-				const remaining = this.cpu.instructionBudgetRemaining as number;
-				this.cpu.instructionBudgetRemaining = previousBudget - (budgetSentinel - remaining);
-			}
-		} else {
+		const budgetSentinel = Number.MAX_SAFE_INTEGER;
+		try {
 			this.cpu.callExternal(fn, args);
-			this.cpu.runUntilDepth(depth);
+			this.cpu.runUntilDepth(depth, budgetSentinel);
+		} finally {
+			const remaining = this.cpu.instructionBudgetRemaining;
+			this.cpu.instructionBudgetRemaining = previousBudget - (budgetSentinel - remaining);
 		}
 		return this.cpu.lastReturnValues;
 	}

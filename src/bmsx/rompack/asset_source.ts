@@ -3,14 +3,14 @@ import type { asset_id, asset_type, CartridgeIndex, CartridgeLayerId, RomAsset }
 export type AssetSourceLayer = {
 	id: CartridgeLayerId;
 	index: CartridgeIndex;
-	payload: ArrayBuffer;
+	payload: Uint8Array;
 };
 
 export interface RawAssetSource {
 	getEntry(id: asset_id): RomAsset | null;
 	getEntryByPath(path: string): RomAsset | null;
 	getBytes(entry: RomAsset): Uint8Array;
-	getBuffer(entry: RomAsset): ArrayBuffer;
+	getBytes(entry: RomAsset): Uint8Array;
 	list(type?: asset_type): RomAsset[];
 }
 
@@ -18,7 +18,7 @@ export class AssetSourceStack implements RawAssetSource {
 	private readonly layers: AssetSourceLayer[];
 	private readonly idMaps: Map<asset_id, RomAsset>[];
 	private readonly pathMaps: Map<string, RomAsset>[];
-	private readonly payloads: Partial<Record<CartridgeLayerId, ArrayBuffer>>;
+	private readonly payloads: Partial<Record<CartridgeLayerId, Uint8Array>>;
 
 	public constructor(layers: AssetSourceLayer[]) {
 		this.layers = layers;
@@ -42,7 +42,7 @@ export class AssetSourceStack implements RawAssetSource {
 			}
 			return map;
 		});
-		const payloads: Partial<Record<CartridgeLayerId, ArrayBuffer>> = {};
+		const payloads: Partial<Record<CartridgeLayerId, Uint8Array>> = {};
 		for (const layer of layers) {
 			payloads[layer.id] = layer.payload;
 		}
@@ -103,11 +103,6 @@ export class AssetSourceStack implements RawAssetSource {
 	}
 
 	public getBytes(entry: RomAsset): Uint8Array {
-		const payload = this.payloads[entry.payload_id];
-		return new Uint8Array(payload, entry.start, entry.end - entry.start);
-	}
-
-	public getBuffer(entry: RomAsset): ArrayBuffer {
 		const payload = this.payloads[entry.payload_id];
 		return payload.slice(entry.start, entry.end);
 	}

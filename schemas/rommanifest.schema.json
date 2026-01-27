@@ -79,18 +79,24 @@
 					"minimum": 1,
 					"description": "Maximum skybox face size in pixels (square)."
 				},
-				"cpu_mhz": {
-					"type": "number",
-					"exclusiveMinimum": 0,
-					"description": "VM cycle rate in MHz."
+				"cpu_freq_hz": {
+					"type": "integer",
+					"minimum": 1,
+					"description": "VM cycle rate in Hz."
 				},
+					"ufps": {
+						"type": "integer",
+						"minimum": 1,
+						"description": "VM tick rate in scaled Hz (micro-Hz). Example: 59.94 Hz => 59940000."
+					},
 				"limits": {
 					"$ref": "#/definitions/vmLimits"
 				}
 			},
 			"required": [
 				"namespace",
-				"cpu_mhz"
+				"cpu_freq_hz",
+				"ufps"
 			],
 			"additionalProperties": false
 		},

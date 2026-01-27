@@ -94,12 +94,12 @@ export class ImgDecController {
 			return;
 		}
 		this.pendingCap = effectiveCap;
-		let buffer: ArrayBuffer;
+		let buffer: Uint8Array;
 		try {
 			const bytes = this.memory.readBytes(src, len);
 			const copy = new Uint8Array(bytes.byteLength);
 			copy.set(bytes);
-			buffer = copy.buffer;
+			buffer = copy;
 		} catch (error) {
 			this.finishError();
 			return;

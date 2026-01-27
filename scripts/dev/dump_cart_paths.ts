@@ -15,7 +15,7 @@ async function main(): Promise<void> {
 	const arrayBuffer = romBuffer.buffer.slice(romBuffer.byteOffset, romBuffer.byteOffset + romBuffer.byteLength);
 	// @ts-ignore
 	const { zipped_rom } = await getZippedRomAndRomLabelFromBlob(arrayBuffer);
-	const inflated = pako.inflate(zipped_rom).buffer;
+	const inflated = pako.inflate(zipped_rom);
 	const { assets, projectRootPath } = await loadAssetList(inflated);
 
 	console.log(`ROM: ${absoluteRomPath}`);

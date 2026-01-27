@@ -81,7 +81,8 @@ local function read_bios_manifest(base, header)
 	local canonicalization; canonicalization, p = read_zstr(p)
 	local input; input, p = read_zstr(p)
 	local root; root, p = read_zstr(p)
-	local cpu_mhz; cpu_mhz, p = read_zstr_optional(p, manifest_end)
+	local cpu_freq_hz; cpu_freq_hz, p = read_zstr_optional(p, manifest_end)
+	local ufps; ufps, p = read_zstr_optional(p, manifest_end)
 	return {
 		entry_kind = entry_kind,
 		title = title,
@@ -93,7 +94,8 @@ local function read_bios_manifest(base, header)
 		canonicalization = canonicalization,
 		input = input,
 		root = root,
-		cpu_mhz = cpu_mhz,
+		cpu_freq_hz = cpu_freq_hz,
+		ufps = ufps,
 	}
 end
 
@@ -104,18 +106,41 @@ local function display_text(value)
 	return value
 end
 
-local function is_valid_cpu_mhz(value)
+local function format_cpu_mhz_from_hz(value)
+	local hz = tonumber(value)
+	if hz == nil then
+		return '--'
+	end
+	local mhz_int = math.floor(hz / 1000000)
+	local mhz_frac = math.floor((hz % 1000000) / 1000)
+	return string.format('%d.%03d', mhz_int, mhz_frac)
+end
+
+local function is_valid_cpu_freq_hz(value)
 	if value == nil or value == '' then
 		return false
 	end
 	local num = tonumber(value)
-	return num ~= nil and num > 0
+	return num ~= nil and num > 0 and num == math.floor(num)
+end
+
+local function is_valid_ufps(value)
+	if value == nil or value == '' then
+		return false
+	end
+	local num = tonumber(value)
+	return num ~= nil and num > 0 and num == math.floor(num)
 end
 
 local CART_MANIFEST_VALIDATORS = {
 	function(manifest, errors)
-		if not is_valid_cpu_mhz(manifest.cpu_mhz) then
-			errors[#errors + 1] = 'VM.CPU_MHZ IS MISSING OR INVALID'
+		if not is_valid_cpu_freq_hz(manifest.cpu_freq_hz) then
+			errors[#errors + 1] = 'VM.CPU_FREQ_HZ IS MISSING OR INVALID'
+		end
+	end,
+	function(manifest, errors)
+		if not is_valid_ufps(manifest.ufps) then
+			errors[#errors + 1] = 'VM.UFPS IS MISSING OR INVALID'
 		end
 	end,
 }
@@ -229,8 +254,8 @@ local function build_info()
 	local cart_canon = cart_manifest and display_text(cart_manifest.canonicalization) or '--'
 	local cart_entry = cart_manifest and display_text(cart_manifest.entry_path) or '--'
 	local cart_input = cart_manifest and display_text(cart_manifest.input) or '--'
-	local cart_cpu_raw = cart_manifest and cart_manifest.cpu_mhz or nil
-	local cart_cpu_label = display_text(cart_cpu_raw)
+	local cart_cpu_raw = cart_manifest and cart_manifest.cpu_freq_hz or nil
+	local cart_cpu_label = format_cpu_mhz_from_hz(cart_cpu_raw)
 	local cart_errors = cart_header and collect_cart_manifest_errors(cart_manifest) or {}
 	local cart_has_errors = #cart_errors > 0
 

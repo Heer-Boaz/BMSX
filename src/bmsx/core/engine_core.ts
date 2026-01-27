@@ -10,9 +10,9 @@ import { TextureManager } from "../render/texturemanager";
 import { RenderPassLibrary } from "../render/backend/renderpasslib";
 import { ensureBrowserBackendFactory } from "../render/backend/browser_backend_factory";
 import type { SkyboxImageIds } from "../render/shared/render_types";
+import { VM_HZ_SCALE as PLATFORM_VM_HZ_SCALE, setMicrotaskQueue } from '../platform';
 import type { GameViewHost, Platform, PlatformExitEvent, SubscriptionHandle } from '../platform';
-import { setMicrotaskQueue } from '../platform';
-import { asset_id, Identifiable, Identifier, Registerable, RuntimeAssets, type vec3, type vec2, GAME_FPS, type BmsxCartridgeBlob } from "../rompack/rompack";
+import { asset_id, Identifiable, Identifier, Registerable, RuntimeAssets, type vec3, type vec2, GAME_FPS } from "../rompack/rompack";
 import { AssetSourceStack, type RawAssetSource } from '../rompack/asset_source';
 import { buildRuntimeAssetLayer, normalizeCartridgeBlob, parseCartridgeIndex, type RuntimeAssetLayer } from '../rompack/romloader';
 import type { LuaSourceRegistry } from '../vm/lua_sources';
@@ -51,9 +51,9 @@ global = globalScope; // Ensure global is defined
 export var $debug: boolean;
 
 export interface EngineStartupOptions {
-	engineRom: BmsxCartridgeBlob;
-	cartridge?: BmsxCartridgeBlob;
-	workspaceOverlay?: BmsxCartridgeBlob;
+	engineRom: Uint8Array;
+	cartridge?: Uint8Array;
+	workspaceOverlay?: Uint8Array;
 	worldConfig?: WorldConfiguration;
 	sndcontext?: AudioContext;
 	gainnode?: GainNode;
@@ -74,6 +74,30 @@ const REWIND_BUFFER_ACTIVATED = true;
 const REWIND_BUFFER_WRITE_FREQUENCY = 1; // Frames
 const PRESENTATION_TICK_GROUPS: ReadonlyArray<TickGroup> = [TickGroup.Presentation, TickGroup.EventFlush];
 
+export const VM_HZ_SCALE = PLATFORM_VM_HZ_SCALE;
+
+export function calcCyclesPerFrameScaled(cpuHz: number, refreshHzScaled: number): number {
+	if (!Number.isSafeInteger(cpuHz) || cpuHz <= 0) {
+		throw new Error('[EngineCore] cpuHz must be a positive safe integer.');
+	}
+	if (!Number.isSafeInteger(refreshHzScaled) || refreshHzScaled <= 0) {
+		throw new Error('[EngineCore] refreshHzScaled must be a positive safe integer.');
+	}
+	const numerator = cpuHz * VM_HZ_SCALE;
+	if (!Number.isSafeInteger(numerator) || numerator <= 0) {
+		throw new Error('[EngineCore] cpuHz scaled numerator must be a positive safe integer.');
+	}
+	return Math.floor(numerator / refreshHzScaled);
+}
+
+export function calcCyclesPerFrame(cpuHz: number, refreshHz: number): number {
+	if (!Number.isFinite(refreshHz) || refreshHz <= 0) {
+		throw new Error('[EngineCore] refreshHz must be a positive number.');
+	}
+	const refreshHzScaled = Math.round(refreshHz * VM_HZ_SCALE);
+	return calcCyclesPerFrameScaled(cpuHz, refreshHzScaled);
+}
+
 // Gate to block the game update/run loop (used when loading/hydrating game state)
 export const runGate: GateGroup = taskGate.group('run:main');
 export const renderGate: GateGroup = taskGate.group('render:main');
@@ -92,6 +116,8 @@ export class EngineCore {
 	 * The target frames per second for the game.
 	 */
 	public target_fps: number = GAME_FPS;
+	public ufps_scaled: number = GAME_FPS * VM_HZ_SCALE;
+	public get ufps(): number { return this.ufps_scaled / VM_HZ_SCALE; }
 	private update_interval_ms!: number; // ms per update = 1000 / fps
 	/**
 	 * The timestamp of the last update.
@@ -101,16 +127,38 @@ export class EngineCore {
 	 * The time difference between the current frame and the previous frame.
 	 */
 	public deltatime: number = 0;
+	private debugTickReportAtMs: number = 0;
+	private debugTickHostFrames: number = 0;
+	private debugTickUpdates: number = 0;
 
 	public get timestep_ms(): number { return this.update_interval_ms; } // ms per update = 1000 / fps
 
 	public get deltatime_seconds(): number { return this.deltatime / 1000; }
 
+	public setUfpsScaled(ufpsScaled: number): void {
+		if (!Number.isSafeInteger(ufpsScaled) || ufpsScaled <= VM_HZ_SCALE) {
+			throw new Error('[EngineCore] ufps scaled must be a safe integer greater than 1 Hz.');
+		}
+		this.ufps_scaled = ufpsScaled;
+		this.target_fps = ufpsScaled / VM_HZ_SCALE;
+		if (this.initialized) {
+			this.recomputeTimingCaches();
+		}
+	}
+
+	public setUfps(ufps: number): void {
+		if (!Number.isFinite(ufps) || ufps <= 0) {
+			throw new Error('[EngineCore] ufps must be a positive number.');
+		}
+		const ufpsScaled = Math.round(ufps * VM_HZ_SCALE);
+		this.setUfpsScaled(ufpsScaled);
+	}
+
 	private _assets: RuntimeAssets = null;
 	private _asset_source: RawAssetSource = null;
 	private _lua_sources: LuaSourceRegistry = null;
 	private _engine_layer: RuntimeAssetLayer = null;
-	private _workspace_overlay: BmsxCartridgeBlob = null;
+	private _workspace_overlay: Uint8Array = null;
 	private _sndcontext: AudioContext = null;
 	private _gainnode: GainNode = null;
 
@@ -201,7 +249,7 @@ export class EngineCore {
 	public get asset_source(): RawAssetSource { return this._asset_source; }
 	public get lua_sources(): LuaSourceRegistry { return this._lua_sources; }
 	public get engine_layer(): RuntimeAssetLayer { return this._engine_layer; }
-	public get workspace_overlay(): BmsxCartridgeBlob { return this._workspace_overlay; }
+	public get workspace_overlay(): Uint8Array { return this._workspace_overlay; }
 	public set_lua_sources(sources: LuaSourceRegistry): void {
 		this._lua_sources = sources;
 	}
@@ -337,6 +385,11 @@ export class EngineCore {
 		this.initialized = false;
 	}
 
+	private recomputeTimingCaches(): void {
+		this.update_interval_ms = 1000 / this.target_fps;
+		this.rewindBuffer = new RewindBuffer(this.target_fps, this.REWINDBUFFER_LENGTH_SECONDS);
+	}
+
 	private buildModulationResolver(assets: RuntimeAssets): ModulationPresetResolver {
 		return {
 			resolve: (key: asset_id) => {
@@ -414,8 +467,8 @@ export class EngineCore {
 		this.running = false;
 		this._paused = false;
 		this.wasupdated = true;
-		this.update_interval_ms = 1000 / this.target_fps;
-		this.rewindBuffer = new RewindBuffer(this.target_fps, this.REWINDBUFFER_LENGTH_SECONDS);
+		this.setUfpsScaled(engineLayer.index.manifest.vm.ufps);
+		this.recomputeTimingCaches();
 
 		this._debug = debug ?? this._debug;
 		$debug = this._debug;
@@ -676,8 +729,8 @@ export class EngineCore {
 
 	private applyVmCycleBudget(): void {
 		const runtime = BmsxVMRuntime.instance;
-		const cycles = BmsxVMRuntime.calcCyclesPerFrame(runtime.cpuMhz, this.target_fps);
-		runtime.setCycleBudgetPerFrame(cycles);
+		const cycleBudget = calcCyclesPerFrameScaled(runtime.cpuHz, this.ufps_scaled);
+		runtime.setCycleBudgetPerFrame(cycleBudget);
 	}
 
 	/**
@@ -689,6 +742,13 @@ export class EngineCore {
 		if (!this.running) return;
 
 		const profile = (globalThis as any).__bmsx_profile_frames;
+		const debugTickRate = Boolean((globalThis as any).__bmsx_debug_tickrate);
+		if (debugTickRate) {
+			if (this.debugTickReportAtMs === 0) {
+				this.debugTickReportAtMs = currentTime;
+			}
+			this.debugTickHostFrames += 1;
+		}
 		const t0 = profile ? performance.now() : 0;
 		let tPoll = 0;
 		let tUpdate = 0;
@@ -701,15 +761,15 @@ export class EngineCore {
 			Input.instance.pollInput();
 			if (profile) tPoll = performance.now() - t1;
 
-			this.deltatime = Math.min(currentTime - this.last_update, MAX_FRAME_DELTA);
-			this.last_update = currentTime;
-			this.applyVmCycleBudget();
+				const hostDeltaMs = Math.min(currentTime - this.last_update, MAX_FRAME_DELTA);
+				this.last_update = currentTime;
 
-			if (this._paused) {
-				this.accumulated_time = 0;
-				if (profile) t1 = performance.now();
-				this.world.runTickGroups(PRESENTATION_TICK_GROUPS);
-				if (profile) tPresentTick = performance.now() - t1;
+				if (this._paused) {
+					this.deltatime = hostDeltaMs;
+					this.accumulated_time = 0;
+					if (profile) t1 = performance.now();
+					this.world.runTickGroups(PRESENTATION_TICK_GROUPS);
+					if (profile) tPresentTick = performance.now() - t1;
 				if (profile) t1 = performance.now();
 				this.view.drawgame();
 				if (profile) tDraw = performance.now() - t1;
@@ -722,24 +782,46 @@ export class EngineCore {
 				return;
 			}
 
-			this.accumulated_time += this.deltatime;
-			this.wasupdated = false;
+				this.accumulated_time += hostDeltaMs;
+				this.wasupdated = false;
 
-			let steps = 0;
-			if (profile) t1 = performance.now();
-			while (this.accumulated_time >= this.timestep_ms && steps < MAX_SUBSTEPS) {
-				if (!this.paused) {
-					if (runGate.ready) {
-						this.update(this.timestep_ms);
-					} else {
-						this.accumulated_time = 0;
-						break;
+				let steps = 0;
+				if (profile) t1 = performance.now();
+				while (this.accumulated_time >= this.timestep_ms && steps < MAX_SUBSTEPS) {
+					if (!this.paused) {
+							if (runGate.ready) {
+								// Cycle budget is defined per virtual update tick, not per host frame.
+								this.applyVmCycleBudget();
+								// Update-facing delta time must match the fixed-step virtual frame.
+								this.deltatime = this.timestep_ms;
+								this.update(this.timestep_ms);
+								if (debugTickRate) {
+									this.debugTickUpdates += 1;
+								}
+							} else {
+								this.accumulated_time = 0;
+								break;
+							}
+						}
+					this.accumulated_time -= this.timestep_ms;
+					++steps;
+				}
+				// Presentation-facing delta time should reflect host timing.
+				this.deltatime = hostDeltaMs;
+				if (debugTickRate) {
+					const elapsedMs = currentTime - this.debugTickReportAtMs;
+					if (elapsedMs >= 1000) {
+						const scale = 1000 / elapsedMs;
+						const updatesPerSec = this.debugTickUpdates * scale;
+						const hostFramesPerSec = this.debugTickHostFrames * scale;
+						const updatesPerHostFrame = this.debugTickUpdates / this.debugTickHostFrames;
+						console.info(`[BMSX][tickrate] target=${this.target_fps.toFixed(3)} ufps=${this.ufps.toFixed(3)} updates=${updatesPerSec.toFixed(3)} host=${hostFramesPerSec.toFixed(3)} updates/host=${updatesPerHostFrame.toFixed(3)}`);
+						this.debugTickReportAtMs = currentTime;
+						this.debugTickHostFrames = 0;
+						this.debugTickUpdates = 0;
 					}
 				}
-				this.accumulated_time -= this.timestep_ms;
-				++steps;
-			}
-			if (profile) tUpdate = performance.now() - t1;
+				if (profile) tUpdate = performance.now() - t1;
 
 			if (this.wasupdated) {
 				if (profile) t1 = performance.now();

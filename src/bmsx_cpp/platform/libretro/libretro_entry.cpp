@@ -1278,6 +1278,16 @@ void retro_get_system_av_info(struct retro_system_av_info* info) {
 	g_platform->applyManifestViewport();
 }
 
+extern "C" void bmsx_set_frame_time_usec(retro_usec_t usec) {
+	g_pending_frame_time_usec = usec;
+	g_has_pending_frame_time = true;
+	g_platform->setFrameTimeUsec(usec);
+}
+
+extern "C" int64_t bmsx_get_ufps(void) {
+	return bmsx::EngineCore::instance().assets().manifest.ufpsScaled.value();
+}
+
 void retro_set_controller_port_device(unsigned port, unsigned device) {
 	logging.log(RETRO_LOG_INFO, "[BMSX] Port %u set to device %u\n", port,
 				device);

@@ -437,7 +437,7 @@ export class VDP {
 		if (asset.imgmeta.atlassed) {
 			throw new Error(`[BmsxVDP] Skybox image '${assetId}' must not be atlassed.`);
 		}
-		const decoded = await decodePngToRgba(source.getBuffer(entry));
+		const decoded = await decodePngToRgba(source.getBytes(entry));
 		if (asset.imgmeta.width <= 0) {
 			asset.imgmeta.width = decoded.width;
 		}

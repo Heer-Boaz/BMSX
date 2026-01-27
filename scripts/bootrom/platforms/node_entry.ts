@@ -417,13 +417,13 @@ function resolveRomPath(options: LaunchOptions): string {
 	throw new Error('ROM path is required. Pass --rom <path>.');
 }
 
-async function readRomFile(filePath: string): Promise<ArrayBuffer> {
+async function readRomFile(filePath: string): Promise<Uint8Array> {
 	try {
 		const buffer = await fs.readFile(filePath);
 		const start = buffer.byteOffset;
 		const end = buffer.byteOffset + buffer.byteLength;
 		const slice = buffer.buffer.slice(start, end);
-		return slice instanceof ArrayBuffer ? slice : new Uint8Array(slice).slice().buffer;
+		return slice instanceof ArrayBuffer ? new Uint8Array(slice) : new Uint8Array(slice).slice();
 	} catch (err) {
 		throw new Error(`Unable to read ROM file at ${filePath}: ${err instanceof Error ? err.message : String(err)}`);
 	}
