@@ -147,8 +147,8 @@ end
 
 function menu.update(_dt)
 	if action_triggered('&wp{5}(select, start)', 1) then
-		$.consume_action(1, 'select')
-		$.consume_action(1, 'start')
+		consume_action('select')
+		consume_action('start')
 		toggle_menu()
 	end
 	if not state.open then
@@ -157,30 +157,30 @@ function menu.update(_dt)
 
 	if action_triggered('b[jp]', 1) then
 		toggle_menu()
-		$.consume_action(1, 'b')
+		consume_action('b')
 	end
 
 	if action_triggered('up[jp]', 1) then
 		state.selected = state.selected - 1
 		if state.selected < 1 then state.selected = #entries end
-		$.consume_action(1, 'up')
+		consume_action('up')
 	end
 	if action_triggered('down[jp]', 1) then
 		state.selected = state.selected + 1
 		if state.selected > #entries then state.selected = 1 end
-		$.consume_action(1, 'down')
+		consume_action('down')
 	end
 	if action_triggered('left[jp]', 1) then
 		entry_cycle(entries[state.selected], -1)
-		$.consume_action(1, 'left')
+		consume_action('left')
 	end
 	if action_triggered('right[jp]', 1) then
 		entry_cycle(entries[state.selected], 1)
-		$.consume_action(1, 'right')
+		consume_action('right')
 	end
 	if action_triggered('a[jp]', 1) then
 		entry_cycle(entries[state.selected], 1)
-		$.consume_action(1, 'a')
+		consume_action('a')
 	end
 end
 

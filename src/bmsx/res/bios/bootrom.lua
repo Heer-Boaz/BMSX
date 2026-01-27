@@ -4,6 +4,7 @@
 local boot_delay = 2.0
 local font_width = 6
 local line_height = 8
+local content_top = 32
 
 local color_bg = 4
 local color_header_bg = 7
@@ -22,10 +23,27 @@ local CART_ROM_MAGIC = 0x58534D42
 
 local boot_start = os.clock()
 local boot_requested = false
+local error_page = 1
+local last_error_count = 0
+local view_mode = 'overview'
 
 local function read_zstr(addr)
 	local t = {}
 	while true do
+		local b = peek(addr) % 256 -- read u8
+		addr = addr + 1
+		if b == 0 then break end
+		t[#t + 1] = string.char(b)
+	end
+	return table.concat(t), addr
+end
+
+local function read_zstr_optional(addr, limit)a
+	if addr >= limit then
+		return nil, addr
+	end
+	local t = {}
+	while addr < limit do
 		local b = peek(addr) % 256 -- read u8
 		addr = addr + 1
 		if b == 0 then break end
@@ -51,6 +69,7 @@ end
 
 local function read_bios_manifest(base, header)
 	local p = base + header.manifest_off
+	local manifest_end = p + header.manifest_len
 	local entry_kind = peek(p)
 	p = p + 4
 	local title; title, p = read_zstr(p)
@@ -62,6 +81,7 @@ local function read_bios_manifest(base, header)
 	local canonicalization; canonicalization, p = read_zstr(p)
 	local input; input, p = read_zstr(p)
 	local root; root, p = read_zstr(p)
+	local cpu_mhz; cpu_mhz, p = read_zstr_optional(p, manifest_end)
 	return {
 		entry_kind = entry_kind,
 		title = title,
@@ -73,6 +93,7 @@ local function read_bios_manifest(base, header)
 		canonicalization = canonicalization,
 		input = input,
 		root = root,
+		cpu_mhz = cpu_mhz,
 	}
 end
 
@@ -81,6 +102,70 @@ local function display_text(value)
 		return '--'
 	end
 	return value
+end
+
+local function is_valid_cpu_mhz(value)
+	if value == nil or value == '' then
+		return false
+	end
+	local num = tonumber(value)
+	return num ~= nil and num > 0
+end
+
+local CART_MANIFEST_VALIDATORS = {
+	function(manifest, errors)
+		if not is_valid_cpu_mhz(manifest.cpu_mhz) then
+			errors[#errors + 1] = 'VM.CPU_MHZ IS MISSING OR INVALID'
+		end
+	end,
+}
+
+local function collect_cart_manifest_errors(cart_manifest)
+	local errors = {}
+	if not cart_manifest then
+		errors[#errors + 1] = 'CART MANIFEST IS MISSING'
+		return errors
+	end
+	for i = 1, #CART_MANIFEST_VALIDATORS do
+		CART_MANIFEST_VALIDATORS[i](cart_manifest, errors)
+	end
+	return errors
+end
+
+local function calc_error_page_size(top)
+	local height = display_height()
+	local total_lines = math.floor((height - top) / line_height)
+	local reserved_lines = 7
+	local page_size = total_lines - reserved_lines
+	if page_size < 1 then page_size = 1 end
+	return page_size
+end
+
+local function calc_page_count(count, page_size)
+	return math.max(1, math.floor((count + page_size - 1) / page_size))
+end
+
+local function update_error_page(error_count, page_size)
+	if error_count ~= last_error_count then
+		error_page = 1
+		last_error_count = error_count
+	end
+	local page_count = calc_page_count(error_count, page_size)
+	if error_page > page_count then error_page = page_count end
+	if page_count == 1 then
+		return page_count
+	end
+	if action_triggered('down[jp]', 1) then
+		error_page = error_page + 1
+		if error_page > page_count then error_page = 1 end
+		consume_action('down')
+	end
+	if action_triggered('up[jp]', 1) then
+		error_page = error_page - 1
+		if error_page < 1 then error_page = page_count end
+		consume_action('up')
+	end
+	return page_count
 end
 
 local function elapsed_seconds()
@@ -144,6 +229,10 @@ local function build_info()
 	local cart_canon = cart_manifest and display_text(cart_manifest.canonicalization) or '--'
 	local cart_entry = cart_manifest and display_text(cart_manifest.entry_path) or '--'
 	local cart_input = cart_manifest and display_text(cart_manifest.input) or '--'
+	local cart_cpu_raw = cart_manifest and cart_manifest.cpu_mhz or nil
+	local cart_cpu_label = display_text(cart_cpu_raw)
+	local cart_errors = cart_header and collect_cart_manifest_errors(cart_manifest) or {}
+	local cart_has_errors = #cart_errors > 0
 
 	local engine_title = engine_manifest and display_text(engine_manifest.title) or '--'
 	local engine_rom = engine_manifest and display_text(engine_manifest.rom_name) or '--'
@@ -168,13 +257,16 @@ local function build_info()
 		cart_canon = cart_canon,
 		cart_entry = cart_entry,
 		cart_input = cart_input,
+		cart_cpu_mhz = cart_cpu_label,
+		cart_errors = cart_errors,
+		cart_has_errors = cart_has_errors,
 		root = cart_manifest and display_text(cart_manifest.root) or '--',
 		hw_cart_max = format_bytes(SYS_CART_ROM_SIZE),
 		hw_ram_total = format_bytes(SYS_RAM_SIZE),
 		hw_vram_total = format_bytes(vram_total),
 		hw_max_assets = format_bignumbers(SYS_MAX_ASSETS),
 		hw_max_strings = format_bignumbers(SYS_STRING_HANDLE_COUNT),
-		hw_max_instructions = format_bignumbers(SYS_MAX_INSTRUCTIONS_PER_FRAME),
+		hw_max_cycles = format_bignumbers(SYS_MAX_CYCLES_PER_FRAME),
 	}
 end
 
@@ -184,9 +276,9 @@ local function divider(width, left)
 	if slots < 8 then
 		slots = 8
 	end
-	-- optie 1
+	-- option 1
 	-- return string.rep(string.char(0x2014), slots)
-	-- optie 2
+	-- option 2
 	-- return (utf8 and utf8.char) and utf8.char(0x2014) or '-'
 	return string.rep('—', slots)
 	-- return string.rep(string.char(0xE2, 0x80, 0x94), slots)
@@ -206,6 +298,40 @@ local function write_kv(label, value, x, y, color, label_width)
 	write(string.format("%-" .. label_width .. "s : %s", label, value), x, y, 0, color)
 end
 
+local function draw_cart_manifest_errors(info, left, top, width, cursor)
+	local y = top
+	local page_size = calc_error_page_size(top)
+	local error_count = #info.cart_errors
+	local page_count = calc_page_count(error_count, page_size)
+	if error_page > page_count then error_page = page_count end
+
+	write('CART MANIFEST INVALID', left, y, 0, color_warn)
+	y = y + line_height
+	write('ROM: ' .. info.cart_rom, left, y, 0, color_accent)
+	y = y + line_height
+	write('TITLE: ' .. info.cart_title, left, y, 0, color_text)
+	y = y + line_height
+	write('CPU MHZ: ' .. info.cart_cpu_mhz, left, y, 0, color_text)
+	y = y + line_height
+	write(divider(width, left), left, y, 0, color_section)
+	y = y + line_height
+
+	local start_index = ((error_page - 1) * page_size) + 1
+	local end_index = math.min(start_index + page_size - 1, error_count)
+	for i = start_index, end_index do
+		write('- ' .. info.cart_errors[i], left, y, 0, color_warn)
+		y = y + line_height
+	end
+
+	if page_count > 1 then
+		write('UP/DOWN: PAGE ' .. error_page .. '/' .. page_count, left, y, 0, color_muted)
+		y = y + line_height
+	end
+	write('A: OVERVIEW', left, y, 0, color_muted)
+	y = y + line_height
+	write(cursor, left, y, 0, color_warn)
+end
+
 function init()
 	boot_start = os.clock()
 	boot_requested = false
@@ -216,7 +342,30 @@ function new_game()
 end
 
 function update(_dt)
-	local cart_present_and_ready = peek(CART_ROM_BASE) == CART_ROM_MAGIC and peek(sys_cart_bootready) == 1
+	local cart_header = read_cart_header(CART_ROM_BASE)
+	local cart_manifest = cart_header and read_bios_manifest(CART_ROM_BASE, cart_header) or nil
+	local cart_errors = cart_header and collect_cart_manifest_errors(cart_manifest) or {}
+	local cart_has_errors = cart_header and #cart_errors > 0
+	if cart_has_errors then
+		if action_triggered('a[jp]', 1) then
+			view_mode = (view_mode == 'errors') and 'overview' or 'errors'
+			if view_mode == 'errors' then
+				error_page = 1
+				last_error_count = 0
+			end
+			consume_action('a')
+		end
+		local page_size = calc_error_page_size(content_top)
+		if view_mode == 'errors' then
+			update_error_page(#cart_errors, page_size)
+		end
+		return
+	end
+	view_mode = 'overview'
+	error_page = 1
+	last_error_count = 0
+	local cart_valid = cart_header and #cart_errors == 0
+	local cart_present_and_ready = peek(CART_ROM_BASE) == CART_ROM_MAGIC and peek(sys_cart_bootready) == 1 and cart_valid
 
 	if cart_present_and_ready and not boot_requested and elapsed_seconds() >= boot_delay then
 		boot_requested = true
@@ -227,13 +376,21 @@ end
 function draw()
 	local width = display_width()
 	local left = 8
-	local top = 32
+	local top = content_top
 
 	cls(color_bg)
 	put_rectfill(0, 0, width, 24, 0, color_header_bg)
 	write('BMSX BIOS', center_x('BMSX BIOS', width), 8, 0, color_header_text)
 
 	local info = build_info()
+	local cart_present = peek(CART_ROM_BASE) == CART_ROM_MAGIC
+	local elapsed = elapsed_seconds()
+	local cursor = (math.floor(elapsed * 2) % 2 == 0) and '█' or ' '
+	local cart_has_errors = cart_present and info.cart_has_errors
+	if cart_has_errors and view_mode == 'errors' then
+		draw_cart_manifest_errors(info, left, top, width, cursor)
+		return
+	end
 	local y = top
 	local hw_specs = {
 		{ label = 'MAX CART ROM', value = info.hw_cart_max, color = color_accent },
@@ -241,7 +398,7 @@ function draw()
 		{ label = 'TOTAL VRAM', value = info.hw_vram_total, color = color_info_total },
 		{ label = 'MAX ASSETS', value = info.hw_max_assets, color = color_accent },
 		{ label = 'MAX STRING ENTRIES', value = info.hw_max_strings, color = color_accent },
-		{ label = 'MAX INSTRUCTIONS/FRAME', value = info.hw_max_instructions, color = color_accent },
+		{ label = 'MAX CYCLES/FRAME', value = info.hw_max_cycles, color = color_accent },
 	}
 	local cart_specs = {
 		{ label = 'CART ROM', value = info.cart_rom, color = color_accent },
@@ -249,6 +406,7 @@ function draw()
 		{ label = 'SHORT NAME', value = info.cart_short, color = color_text },
 		{ label = 'NAMESPACE', value = info.cart_ns, color = color_muted },
 		{ label = 'VIEWPORT', value = info.cart_view, color = color_info_total },
+		{ label = 'CPU MHZ', value = info.cart_cpu_mhz, color = color_accent },
 		{ label = 'CANON', value = info.cart_canon, color = color_muted },
 		{ label = 'CART LUA', value = info.cart_entry, color = color_text },
 		{ label = 'INPUT MAP', value = info.cart_input, color = color_accent },
@@ -282,21 +440,27 @@ function draw()
 	y = y + line_height
 	write(divider(width, left), left, y, 0, color_section)
 	y = y + line_height
+	if cart_has_errors then
+		write('CART MANIFEST INVALID', left, y, 0, color_warn)
+		y = y + line_height
+	end
 	for i = 1, #cart_specs do
 		local spec = cart_specs[i]
 		write_kv(spec.label, spec.value, left, y, spec.color or color_text, label_width)
 		y = y + line_height
 	end
-	y = y + line_height
 	write('BOOT STATUS', left, y, 0, color_section)
 	y = y + line_height
 	write(divider(width, left), left, y, 0, color_section)
 	y = y + line_height
 
-	local cart_present = peek(CART_ROM_BASE) == CART_ROM_MAGIC
-	local elapsed = elapsed_seconds()
-	local cursor = (math.floor(elapsed * 2) % 2 == 0) and '█' or ' '
 	if cart_present then
+		if cart_has_errors then
+			write('BOOT BLOCKED: CART MANIFEST INVALID', left, y, 0, color_warn)
+			y = y + line_height
+			write('PRESS A FOR DETAILS ' .. cursor, left, y, 0, color_muted)
+			return
+		end
 		local remaining = boot_delay - elapsed
 		if remaining < 0 then remaining = 0 end
 		-- local status = 'AUTOBOOT IN ' .. string.format('%.1f', remaining) .. 'S'

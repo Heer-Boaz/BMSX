@@ -674,6 +674,12 @@ export class EngineCore {
 		$.wasupdated = true;
 	}
 
+	private applyVmCycleBudget(): void {
+		const runtime = BmsxVMRuntime.instance;
+		const cycles = BmsxVMRuntime.calcCyclesPerFrame(runtime.cpuMhz, this.target_fps);
+		runtime.setCycleBudgetPerFrame(cycles);
+	}
+
 	/**
 	 * Runs the game loop and updates the game state.
 	 * @param currentTime - The current time in milliseconds`
@@ -697,6 +703,7 @@ export class EngineCore {
 
 			this.deltatime = Math.min(currentTime - this.last_update, MAX_FRAME_DELTA);
 			this.last_update = currentTime;
+			this.applyVmCycleBudget();
 
 			if (this._paused) {
 				this.accumulated_time = 0;

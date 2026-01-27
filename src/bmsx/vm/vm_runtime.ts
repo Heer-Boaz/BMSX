@@ -21,7 +21,7 @@ import {
 import type { StorageService } from '../platform/platform';
 import { publishOverlayFrame } from '../render/editor/editor_overlay_queue';
 import type { SkyboxImageIds } from '../render/shared/render_types';
-import type { AudioMeta, ImgMeta, Viewport, BmsxCartridgeBlob, CartridgeIndex, RuntimeAssets, VmLimits, id2res } from '../rompack/rompack';
+import type { AudioMeta, ImgMeta, Viewport, BmsxCartridgeBlob, CartridgeIndex, RuntimeAssets, id2res } from '../rompack/rompack';
 import {
 	CanonicalizationType,
 	CART_ROM_HEADER_SIZE,
@@ -185,7 +185,7 @@ type VMFrameState = {
 	updateExecuted: boolean;
 	luaFaulted: boolean;
 	deltaSeconds: number;
-	instructionBudgetRemaining: number;
+	cycleBudgetRemaining: number;
 };
 
 class DebugPauseCoordinator {
@@ -224,7 +224,7 @@ export var api: BmsxVMApi; // Initialized in BmsxVMRuntime constructor
 export class BmsxVMRuntime {
 	private static _instance: BmsxVMRuntime = null;
 	private static readonly ENGINE_BUILTIN_PRELUDE_PATH = '__engine_builtin_prelude__';
-	private static readonly LUA_SNAPSHOT_EXCLUDED_GLOBALS = new Set<string>(['print', 'type', 'tostring', 'tonumber', 'setmetatable', 'getmetatable', 'require', 'pairs', 'ipairs', 'serialize', 'deserialize', 'math', 'easing', 'string', 'os', 'table', 'coroutine', 'debug', 'package', 'api', 'peek', 'poke', 'SYS_BOOT_CART', 'SYS_CART_MAGIC_ADDR', 'SYS_CART_MAGIC', 'SYS_CART_ROM_SIZE', 'SYS_RAM_SIZE', 'SYS_MAX_ASSETS', 'SYS_STRING_HANDLE_COUNT', 'SYS_MAX_INSTRUCTIONS_PER_FRAME', 'SYS_VDP_DITHER', 'SYS_VDP_PRIMARY_ATLAS_ID', 'SYS_VDP_SECONDARY_ATLAS_ID', 'SYS_VDP_ATLAS_NONE', 'SYS_IRQ_FLAGS', 'SYS_IRQ_ACK', 'SYS_DMA_SRC', 'SYS_DMA_DST', 'SYS_DMA_LEN', 'SYS_DMA_CTRL', 'SYS_DMA_STATUS', 'SYS_DMA_WRITTEN', 'SYS_IMG_SRC', 'SYS_IMG_LEN', 'SYS_IMG_DST', 'SYS_IMG_CAP', 'SYS_IMG_CTRL', 'SYS_IMG_STATUS', 'SYS_IMG_WRITTEN', 'SYS_ENGINE_ROM_BASE', 'SYS_CART_ROM_BASE', 'SYS_OVERLAY_ROM_BASE', 'SYS_VRAM_ENGINE_ATLAS_BASE', 'SYS_VRAM_PRIMARY_ATLAS_BASE', 'SYS_VRAM_SECONDARY_ATLAS_BASE', 'SYS_VRAM_STAGING_BASE', 'SYS_VRAM_ENGINE_ATLAS_SIZE', 'SYS_VRAM_PRIMARY_ATLAS_SIZE', 'SYS_VRAM_SECONDARY_ATLAS_SIZE', 'SYS_VRAM_STAGING_SIZE', 'IRQ_DMA_DONE', 'IRQ_DMA_ERROR', 'IRQ_IMG_DONE', 'IRQ_IMG_ERROR', 'DMA_CTRL_START', 'DMA_CTRL_STRICT', 'DMA_STATUS_BUSY', 'DMA_STATUS_DONE', 'DMA_STATUS_ERROR', 'DMA_STATUS_CLIPPED', 'IMG_CTRL_START', 'IMG_STATUS_BUSY', 'IMG_STATUS_DONE', 'IMG_STATUS_ERROR', 'IMG_STATUS_CLIPPED']);
+	private static readonly LUA_SNAPSHOT_EXCLUDED_GLOBALS = new Set<string>(['print', 'type', 'tostring', 'tonumber', 'setmetatable', 'getmetatable', 'require', 'pairs', 'ipairs', 'serialize', 'deserialize', 'math', 'easing', 'string', 'os', 'table', 'coroutine', 'debug', 'package', 'api', 'peek', 'poke', 'SYS_BOOT_CART', 'SYS_CART_MAGIC_ADDR', 'SYS_CART_MAGIC', 'SYS_CART_ROM_SIZE', 'SYS_RAM_SIZE', 'SYS_MAX_ASSETS', 'SYS_STRING_HANDLE_COUNT', 'SYS_MAX_CYCLES_PER_FRAME', 'SYS_VDP_DITHER', 'SYS_VDP_PRIMARY_ATLAS_ID', 'SYS_VDP_SECONDARY_ATLAS_ID', 'SYS_VDP_ATLAS_NONE', 'SYS_IRQ_FLAGS', 'SYS_IRQ_ACK', 'SYS_DMA_SRC', 'SYS_DMA_DST', 'SYS_DMA_LEN', 'SYS_DMA_CTRL', 'SYS_DMA_STATUS', 'SYS_DMA_WRITTEN', 'SYS_IMG_SRC', 'SYS_IMG_LEN', 'SYS_IMG_DST', 'SYS_IMG_CAP', 'SYS_IMG_CTRL', 'SYS_IMG_STATUS', 'SYS_IMG_WRITTEN', 'SYS_ENGINE_ROM_BASE', 'SYS_CART_ROM_BASE', 'SYS_OVERLAY_ROM_BASE', 'SYS_VRAM_ENGINE_ATLAS_BASE', 'SYS_VRAM_PRIMARY_ATLAS_BASE', 'SYS_VRAM_SECONDARY_ATLAS_BASE', 'SYS_VRAM_STAGING_BASE', 'SYS_VRAM_ENGINE_ATLAS_SIZE', 'SYS_VRAM_PRIMARY_ATLAS_SIZE', 'SYS_VRAM_SECONDARY_ATLAS_SIZE', 'SYS_VRAM_STAGING_SIZE', 'IRQ_DMA_DONE', 'IRQ_DMA_ERROR', 'IRQ_IMG_DONE', 'IRQ_IMG_ERROR', 'DMA_CTRL_START', 'DMA_CTRL_STRICT', 'DMA_STATUS_BUSY', 'DMA_STATUS_DONE', 'DMA_STATUS_ERROR', 'DMA_STATUS_CLIPPED', 'IMG_CTRL_START', 'IMG_STATUS_BUSY', 'IMG_STATUS_DONE', 'IMG_STATUS_ERROR', 'IMG_STATUS_CLIPPED']);
 	/**
 	 * Preserved render queue when a fault occurs
 	 * This is used to restore the render queue to its previous state
@@ -240,29 +240,37 @@ export class BmsxVMRuntime {
 		return new BmsxVMRuntime(options);
 	}
 
-	private static resolveInstructionBudget(limits?: VmLimits): number {
-		if (limits && limits.max_instructions_per_frame !== undefined) {
-			if (!Number.isFinite(limits.max_instructions_per_frame)) {
-				throw new Error('[BmsxVMRuntime] max_instructions_per_frame must be a finite number.');
-			}
-			const value = Math.floor(limits.max_instructions_per_frame);
-			if (value <= 0) {
-				throw new Error('[BmsxVMRuntime] max_instructions_per_frame must be greater than 0.');
-			}
-			return value;
+	private static resolveCpuMhz(vm: { cpu_mhz?: number }): number {
+		const value = vm.cpu_mhz;
+		if (value === undefined) {
+			throw new Error('[BmsxVMRuntime] vm.cpu_mhz is required.');
 		}
-		return BmsxVMRuntime.UPDATE_STATEMENT_BUDGET;
+		if (!Number.isFinite(value) || value <= 0) {
+			throw new Error('[BmsxVMRuntime] vm.cpu_mhz must be a finite number greater than 0.');
+		}
+		return value;
 	}
 
-	private setInstructionBudgetPerFrame(value: number): void {
-		this.instructionBudgetPerFrame = value;
-		this.registerVmGlobal('SYS_MAX_INSTRUCTIONS_PER_FRAME', value);
+	public static calcCyclesPerFrame(cpuMhz: number, refreshHz: number): number {
+		const clampedHz = clamp_fallback(refreshHz, 30, 240, 60);
+		const cycles = Math.floor((cpuMhz * 1_000_000) / clampedHz);
+		if (cycles < 1_000) return 1_000;
+		if (cycles > 50_000_000) return 50_000_000;
+		return cycles;
+	}
+
+	public setCycleBudgetPerFrame(value: number): void {
+		if (value === this.cycleBudgetPerFrame) {
+			return;
+		}
+		this.cycleBudgetPerFrame = value;
+		this.registerVmGlobal('SYS_MAX_CYCLES_PER_FRAME', value);
 	}
 
 	private runVmWithBudget(state: VMFrameState): RunResult {
-		this.cpu.instructionBudgetRemaining = state.instructionBudgetRemaining;
+		this.cpu.instructionBudgetRemaining = state.cycleBudgetRemaining;
 		const result = this.cpu.run(null);
-		state.instructionBudgetRemaining = this.cpu.instructionBudgetRemaining as number;
+		state.cycleBudgetRemaining = this.cpu.instructionBudgetRemaining as number;
 		return result;
 	}
 
@@ -301,7 +309,6 @@ export class BmsxVMRuntime {
 
 	private shortcutDisposers: Array<() => void> = [];
 	private luaInterpreter!: LuaInterpreter;
-	private static readonly UPDATE_STATEMENT_BUDGET = 1_000_000;
 	private vmInitClosure: Closure = null;
 	private vmNewGameClosure: Closure = null;
 	private vmUpdateClosure: Closure = null;
@@ -347,9 +354,16 @@ export class BmsxVMRuntime {
 	public get hasRuntimeFailed(): boolean {
 		return this.luaRuntimeFailed;
 	}
+	public get cpuMhz(): number {
+		return this._cpuMhz;
+	}
+	private setCpuMhz(value: number): void {
+		this._cpuMhz = value;
+	}
 	private includeJsStackTraces = false;
 	private currentFrameState: VMFrameState = null;
-	private instructionBudgetPerFrame: number;
+	private cycleBudgetPerFrame: number;
+	private _cpuMhz: number;
 	private pendingLuaWarnings: string[] = [];
 	public readonly vmModuleAliases: Map<string, string> = new Map();
 	public readonly luaChunkEnvironmentsByPath: Map<string, LuaEnvironment> = new Map();
@@ -442,7 +456,8 @@ export class BmsxVMRuntime {
 		if (!cartridge) {
 			$.set_lua_sources(engineLuaSources);
 			configureMemoryMap(engineLayer.index.manifest.vm.limits);
-			const instructionBudgetPerFrame = BmsxVMRuntime.resolveInstructionBudget(engineLayer.index.manifest.vm.limits);
+			const cpuMhz = BmsxVMRuntime.resolveCpuMhz(engineLayer.index.manifest.vm);
+			const cycleBudgetPerFrame = BmsxVMRuntime.calcCyclesPerFrame(cpuMhz, $.target_fps);
 			const memory = new VmMemory({
 				engineRom: new Uint8Array(engineLayer.payload),
 				cartRom: new Uint8Array(CART_ROM_HEADER_SIZE),
@@ -452,7 +467,8 @@ export class BmsxVMRuntime {
 				canonicalization: engineLayer.index.manifest.vm.canonicalization,
 				viewport: engineLayer.index.manifest.vm.viewport,
 				memory,
-				instructionBudgetPerFrame,
+				cpuMhz,
+				cycleBudgetPerFrame,
 			});
 			runtime.configureProgramSources({
 				engineSources: engineLuaSources,
@@ -504,7 +520,8 @@ export class BmsxVMRuntime {
 
 		const vmLimits = cartLayer.index.manifest.vm.limits ?? engineLayer.index.manifest.vm.limits;
 		configureMemoryMap(vmLimits);
-		const instructionBudgetPerFrame = BmsxVMRuntime.resolveInstructionBudget(vmLimits);
+		const cpuMhz = BmsxVMRuntime.resolveCpuMhz(cartLayer.index.manifest.vm);
+		const cycleBudgetPerFrame = BmsxVMRuntime.calcCyclesPerFrame(cpuMhz, $.target_fps);
 		const memory = new VmMemory({
 			engineRom: new Uint8Array(engineLayer.payload),
 			cartRom: new Uint8Array(cartLayer.payload),
@@ -515,7 +532,8 @@ export class BmsxVMRuntime {
 			canonicalization: engineLayer.index.manifest.vm.canonicalization,
 			viewport: cartLayer.index.manifest.vm.viewport,
 			memory,
-			instructionBudgetPerFrame,
+			cpuMhz,
+			cycleBudgetPerFrame,
 		});
 		runtime.cartAssetLayer = cartLayer;
 		runtime.overlayAssetLayer = overlayLayer;
@@ -641,7 +659,8 @@ export class BmsxVMRuntime {
 	private constructor(options: BmsxVMRuntimeOptions) {
 		BmsxVMRuntime._instance = this;
 		this.playerIndex = options.playerIndex;
-		this.instructionBudgetPerFrame = options.instructionBudgetPerFrame;
+		this.cycleBudgetPerFrame = options.cycleBudgetPerFrame;
+		this.setCpuMhz(options.cpuMhz);
 		this.storageService = $.platform.storage;
 		this.storage = new BmsxVMStorage(this.storageService, $.lua_sources.namespace);
 		const resolvedCanonicalization = options.canonicalization ?? 'none';
@@ -1101,7 +1120,7 @@ export class BmsxVMRuntime {
 			updateExecuted: false,
 			luaFaulted: this.luaRuntimeFailed,
 			deltaSeconds,
-			instructionBudgetRemaining: this.instructionBudgetPerFrame,
+			cycleBudgetRemaining: this.cycleBudgetPerFrame,
 		};
 		this.currentFrameState = state;
 		return state;
@@ -1692,6 +1711,8 @@ export class BmsxVMRuntime {
 		if (this.overlayAssetLayer) {
 			applyRuntimeAssetLayer($.assets, this.overlayAssetLayer);
 		}
+		const cpuMhz = BmsxVMRuntime.resolveCpuMhz($.assets.manifest.vm);
+		this.setCpuMhz(cpuMhz);
 	}
 
 	private pollSystemBootRequest(): void {
@@ -2641,7 +2662,7 @@ export class BmsxVMRuntime {
 		this.registerVmGlobal('SYS_RAM_SIZE', RAM_SIZE);
 		this.registerVmGlobal('SYS_MAX_ASSETS', MAX_ASSETS);
 		this.registerVmGlobal('SYS_STRING_HANDLE_COUNT', STRING_HANDLE_COUNT);
-		this.registerVmGlobal('SYS_MAX_INSTRUCTIONS_PER_FRAME', this.instructionBudgetPerFrame);
+		this.registerVmGlobal('SYS_MAX_CYCLES_PER_FRAME', this.cycleBudgetPerFrame);
 		this.registerVmGlobal('SYS_VDP_DITHER', IO_VDP_DITHER);
 		this.registerVmGlobal('SYS_VDP_PRIMARY_ATLAS_ID', IO_VDP_PRIMARY_ATLAS_ID);
 		this.registerVmGlobal('SYS_VDP_SECONDARY_ATLAS_ID', IO_VDP_SECONDARY_ATLAS_ID);
@@ -4660,10 +4681,12 @@ export class BmsxVMRuntime {
 			} catch (error) {
 				this.handleLuaError(error);
 			}
-			const limits = this.cartAssetLayer
-				? this.cartAssetLayer.index.manifest.vm.limits
-				: $.engine_layer.index.manifest.vm.limits;
-			this.setInstructionBudgetPerFrame(BmsxVMRuntime.resolveInstructionBudget(limits));
+			const manifest = this.cartAssetLayer
+				? this.cartAssetLayer.index.manifest
+				: $.engine_layer.index.manifest;
+			const cpuMhz = BmsxVMRuntime.resolveCpuMhz(manifest.vm);
+			this.setCpuMhz(cpuMhz);
+			this.setCycleBudgetPerFrame(BmsxVMRuntime.calcCyclesPerFrame(cpuMhz, $.target_fps));
 		}
 		finally {
 			this.luaVmGate.end(vmToken);

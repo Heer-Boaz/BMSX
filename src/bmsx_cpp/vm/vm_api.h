@@ -50,6 +50,7 @@ public:
 										int x, int y, int z, int colorIndex, VMFont* font);
 
 	bool action_triggered(const std::string& actionDefinition, std::optional<int> playerIndex) const;
+	void consume_action(const std::string& action, std::optional<int> playerIndex);
 
 	void cartdata(const std::string& ns);
 	void dset(int index, double value);

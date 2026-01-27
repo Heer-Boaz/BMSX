@@ -25,6 +25,7 @@ import { getWorkspaceCachedSource } from './workspace_cache';
 import { buildDirtyFilePath } from './ide/workspace_storage';
 import { DEFAULT_LUA_BUILTIN_NAMES } from './lua_builtins';
 import { createLuaTable, type LuaTable } from '../lua/luavalue';
+import { ActionState } from 'bmsx/input/inputtypes';
 
 type AudioPlaybackMode = 'replace' | 'ignore' | 'queue' | 'stop' | 'pause';
 type MusicTransitionSync = 'immediate' | 'loop'
@@ -654,6 +655,10 @@ export class BmsxVMApi {
 
 	public action_triggered(actiondefinition: string, playerindex?: number): boolean {
 		return $.action_triggered(playerindex ?? this.playerindex, actiondefinition)
+	}
+
+	public consume_action(actionToConsume: ActionState | string, playerindex?: number): void {
+		$.consume_action(playerindex ?? this.playerindex, actionToConsume);
 	}
 
 	public cartdata(namespace: string): void {

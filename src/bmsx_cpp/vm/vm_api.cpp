@@ -790,6 +790,68 @@ m_runtime.registerNativeFunction("action_triggered", [this, asText](const std::v
 	out.push_back(valueBool(action_triggered(action, playerIndex)));
 });
 
+m_runtime.registerNativeFunction("consume_action", [this, asText](const std::vector<Value>& args, std::vector<Value>& out) {
+	(void)out;
+	std::optional<int> playerIndex;
+	Value actionVal;
+	if (args.size() == 1) {
+		actionVal = args.at(0);
+	} else {
+		if (!isNil(args[0])) {
+			playerIndex = static_cast<int>(std::floor(asNumber(args.at(0))));
+		}
+		actionVal = args.size() > 1 ? args.at(1) : valueNil();
+	}
+	if (isNil(actionVal)) {
+		return;
+	}
+	std::string action;
+	if (valueIsString(actionVal)) {
+		action = asText(actionVal);
+	} else if (valueIsTable(actionVal)) {
+		auto* tbl = asTable(actionVal);
+		auto key = [this](std::string_view name) { return m_runtime.canonicalizeIdentifier(name); };
+		Value def = tbl->get(key("definition"));
+		if (!isNil(def) && valueIsString(def)) {
+			action = asText(def);
+		} else {
+			Value act = tbl->get(key("action"));
+			if (!isNil(act) && valueIsString(act)) {
+				action = asText(act);
+			} else {
+				Value name = tbl->get(key("name"));
+				if (!isNil(name) && valueIsString(name)) {
+					action = asText(name);
+				} else {
+					throw BMSX_RUNTIME_ERROR("consume_action expects an action string or ActionState");
+				}
+			}
+		}
+	} else if (valueIsNativeObject(actionVal)) {
+		auto* obj = asNativeObject(actionVal);
+		Value def = obj->get(valueNumber(1.0));
+		if (!isNil(def) && valueIsString(def)) {
+			action = asText(def);
+		} else {
+			auto key = [this](std::string_view name) { return m_runtime.canonicalizeIdentifier(name); };
+			Value def2 = obj->get(key("definition"));
+			if (!isNil(def2) && valueIsString(def2)) {
+				action = asText(def2);
+			} else {
+				Value act = obj->get(key("action"));
+				if (!isNil(act) && valueIsString(act)) {
+					action = asText(act);
+				} else {
+					throw BMSX_RUNTIME_ERROR("consume_action expects an action string or ActionState");
+				}
+			}
+		}
+	} else {
+		throw BMSX_RUNTIME_ERROR("consume_action expects an action string or ActionState");
+	}
+	consume_action(action, playerIndex);
+});
+
 m_runtime.registerNativeFunction("cartdata", [this, asText](const std::vector<Value>& args, std::vector<Value>& out) {
 	const std::string& ns = asText(args.at(0));
 	cartdata(ns);
@@ -1210,9 +1272,17 @@ void VMApi::write_inline_span_with_font(const std::string& text, int start, int 
 }
 
 bool VMApi::action_triggered(const std::string& actionDefinition, std::optional<int> playerIndex) const {
+	// TODO: WHY DIDN'T CODEX ACTUALLY REPLICATE THE TYPESCRIPT FUNCTIONALITY BY CALLING THE ENGINE-CORE'S API DIRECTLY???
 	int index = playerIndex.has_value() ? playerIndex.value() : m_runtime.playerIndex();
 	PlayerInput* input = Input::instance().getPlayerInput(index);
 	return input->checkActionTriggered(actionDefinition);
+}
+
+void VMApi::consume_action(const std::string& action, std::optional<int> playerIndex) {
+	// TODO: WHY DIDN'T CODEX ACTUALLY REPLICATE THE TYPESCRIPT FUNCTIONALITY BY CALLING THE ENGINE-CORE'S API DIRECTLY???
+	int index = playerIndex.has_value() ? playerIndex.value() : m_runtime.playerIndex();
+	PlayerInput* input = Input::instance().getPlayerInput(index);
+	input->consumeAction(action);
 }
 
 void VMApi::cartdata(const std::string& ns) {

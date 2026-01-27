@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 // ROM Pack Inspector CLI
-// Usage: npx tsx scripts/rominspector.ts <romfile> [--ui] [--list-assets] [--program-asm]
+// Usage: npx tsx scripts/rominspector.ts <romfile> [--ui] [--list-assets] [--manifest] [--program-asm]
 
 import * as blessed from 'blessed';
 import * as contrib from 'blessed-contrib';
 import * as fs from 'fs/promises';
 import * as pako from 'pako';
 import { PNG } from 'pngjs';
-import type { asset_type, AudioMeta, GLTFModel, ImgMeta, RomAsset, CartRomHeader } from '../../src/bmsx/rompack/rompack';
+import type { asset_type, AudioMeta, GLTFModel, ImgMeta, RomAsset, CartRomHeader, RomManifest } from '../../src/bmsx/rompack/rompack';
 import { decodeBinary } from '../../src/bmsx/serializer/binencoder';
 import { getZippedRomAndRomLabelFromBlob, loadAssetList, loadModelFromBuffer as loadGLTFModelFromBuffer, parseCartHeader } from '../../src/bmsx/rompack/romloader';
 import { disassembleProgram } from '../../src/bmsx/vm/disassembler';
@@ -21,6 +21,8 @@ const PER_PIXEL_RENDERING_THRESHOLD = 64; // sprites ≤64×64 get per-pixel ren
 let modal: blessed.Widgets.BoxElement = null;
 let filteredAssetList: RomAsset[] = [];
 let assetList: RomAsset[] = [];
+let romManifest: RomManifest | null = null;
+let romProjectRootPath: string | null = null;
 
 // function formatNumber(n: number): string {
 // 	const units = ['', 'K', 'M', 'G', 'T', 'P', 'E', 'Z', 'Y'];
@@ -36,10 +38,12 @@ let assetList: RomAsset[] = [];
 function formatNumberAsHex(n: number, width?: number): string {
 	const hex = n.toString(16).toUpperCase();
 	const padded = width === undefined ? hex : hex.padStart(width, '0');
-	return `#${padded}`;
+	return `${padded}h`;
 }
 
 const PROGRAM_ASM_BIAS_FLAG = '--program-asm-bias';
+const ROM_MANIFEST_ASSET_ID = '__rom_manifest__';
+const ROM_MANIFEST_SOURCE_PATH = 'manifest.rommanifest';
 
 function parseProgramAsmBias(args: string[]): number | null {
 	for (const arg of args) {
@@ -166,6 +170,19 @@ function formatByteSize(size: number): string {
 	return i === 0 ? `${size} ${units[0]}` : `${n.toFixed(2)} ${units[i]}`;
 }
 
+function buildManifestAsset(header: CartRomHeader): RomAsset {
+	const start = header.manifestOffset;
+	const end = header.manifestOffset + header.manifestLength;
+	return {
+		resid: ROM_MANIFEST_ASSET_ID,
+		type: 'data',
+		source_path: ROM_MANIFEST_SOURCE_PATH,
+		normalized_source_path: ROM_MANIFEST_SOURCE_PATH,
+		start,
+		end,
+	};
+}
+
 async function nodeImageLoader(buffer: ArrayBuffer) {
 	return PNG.sync.read(Buffer.from(buffer.slice(0)));
 }
@@ -194,8 +211,10 @@ async function loadDataFromBuffer(buf: ArrayBuffer): Promise<any> {
 	}
 }
 
-async function loadAssets(rombin: Buffer | ArrayBuffer) {
+async function loadAssets(rombin: Buffer | ArrayBuffer): Promise<{ assets: RomAsset[]; manifest: RomManifest | null; projectRootPath: string | null }> {
 	let assets: RomAsset[] = [];
+	let manifest: RomManifest | null = null;
+	let projectRootPath: string | null = null;
 	try {
 		const arrayBuffer = rombin instanceof ArrayBuffer ? rombin : rombin.buffer.slice(rombin.byteOffset, rombin.byteOffset + rombin.byteLength);
 		// Load the ROM pack metadata using the loadResources function
@@ -219,7 +238,7 @@ async function loadAssets(rombin: Buffer | ArrayBuffer) {
 			process.exit(1);
 		}
 		// @ts-ignore
-		({ assets } = await loadAssetList(arrayBuffer));
+		({ assets, manifest, projectRootPath } = await loadAssetList(arrayBuffer));
 
 		console.log('ROM pack metadata and resources loaded successfully.');
 
@@ -229,7 +248,7 @@ async function loadAssets(rombin: Buffer | ArrayBuffer) {
 		console.error(e?.stack ?? 'No stack trace available');
 		process.exit(1);
 	}
-	return assets;
+	return { assets, manifest, projectRootPath };
 }
 
 function generateOverlayAscii(imgW: number, imgH: number, polys: number[][], modalWidth: number): string {
@@ -406,10 +425,20 @@ function printAssetList(assets: RomAsset[]): void {
 	}
 }
 
+function printManifest(manifest: RomManifest | null, projectRootPath: string | null): void {
+	if (!manifest) {
+		console.log('Manifest: <missing>');
+		return;
+	}
+	const payload = projectRootPath ? { project_root_path: projectRootPath, manifest } : { manifest };
+	console.log(JSON.stringify(payload, null, 2));
+}
+
 async function main() {
 	const args = process.argv.slice(2);
 	const uiFlag = args.includes('--ui');
 	const listAssetsFlag = args.includes('--list-assets');
+	const manifestFlag = args.includes('--manifest');
 	const programAsmFlag = args.includes('--program-asm');
 	const programAsmBias = parseProgramAsmBias(args);
 	const romfile = args.find(arg => !arg.startsWith('--'));
@@ -419,6 +448,7 @@ async function main() {
 		console.error('Options:');
 		console.error('  --ui            Open the interactive UI');
 		console.error('  --list-assets   Print asset list to stdout (default)');
+		console.error('  --manifest      Print cart manifest details to stdout');
 		console.error('  --program-asm   Print VM program disassembly and exit');
 		console.error('  --program-asm-bias  Base PC to add (e.g. 0x80000 or 80000h)');
 		process.exit(1);
@@ -446,13 +476,23 @@ async function main() {
 	);
 
 	const { metadataOffset, metadataLength, manifestOffset, manifestLength } = getTocBuffer(rombin, header);
-	assetList = await loadAssets(rombin);
+	({ assets: assetList, manifest: romManifest, projectRootPath: romProjectRootPath } = await loadAssets(rombin));
+	if (!assetList.some(asset => asset.resid === ROM_MANIFEST_ASSET_ID)) {
+		assetList.unshift(buildManifestAsset(header));
+	}
 
 	if (programAsmFlag) {
 		const { program, metadata, sourceTextForPath } = loadVmProgramFromAssets(rombin, assetList);
 		const pcBias = programAsmBias === null ? undefined : programAsmBias;
 		console.log(disassembleVmProgram(program, metadata, sourceTextForPath, { assembly: true, pcBias }));
 		process.exit(0);
+	}
+
+	if (manifestFlag) {
+		printManifest(romManifest, romProjectRootPath);
+		if (!uiFlag && !listAssetsFlag) {
+			process.exit(0);
+		}
 	}
 
 	// Print assets by default; UI is only enabled with --ui
@@ -831,7 +871,13 @@ async function main() {
 				}
 				break;
 			case 'data':
-				if (selected.resid === VM_PROGRAM_ASSET_ID) {
+				if (selected.resid === ROM_MANIFEST_ASSET_ID) {
+					const payload = romProjectRootPath
+						? { project_root_path: romProjectRootPath, manifest: romManifest }
+						: { manifest: romManifest };
+					metadataLines.push(`Manifest size: ${formatByteSize(selected.end - selected.start)}`);
+					asciiArt = JSON.stringify(payload, null, 2);
+				} else if (selected.resid === VM_PROGRAM_ASSET_ID) {
 					const { programAsset, program, metadata, sourceTextForPath } = loadVmProgramFromAssets(rombin, assetList);
 					disassembly = disassembleVmProgram(program, metadata, sourceTextForPath);
 					metadataLines.push(`VM program entry proto: ${programAsset.entryProtoIndex}`);

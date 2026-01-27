@@ -25,7 +25,7 @@ function dialogue.register_methods(director)
 		if self:is_typing() then
 			finish_text(text_main_id)
 			self:update_dialogue_prompt()
-			$.consume_action('b')
+			consume_action('b')
 			return true
 		end
 		return false

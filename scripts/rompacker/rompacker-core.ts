@@ -1778,6 +1778,7 @@ function encodeBiosManifest(manifest: RomManifest, projectRootPath?: string): Bu
 	const canonicalization = manifest.vm.canonicalization ?? '';
 	const inputLabel = buildInputLabel(manifest);
 	const rootPath = projectRootPath ?? '';
+	const cpuMhz = String(manifest.vm.cpu_mhz);
 
 	const header = Buffer.alloc(4);
 	header.writeUInt32LE(entryKind, 0);
@@ -1792,6 +1793,7 @@ function encodeBiosManifest(manifest: RomManifest, projectRootPath?: string): Bu
 		encodeZeroTerminated(canonicalization),
 		encodeZeroTerminated(inputLabel),
 		encodeZeroTerminated(rootPath),
+		encodeZeroTerminated(cpuMhz),
 	];
 	return Buffer.concat(chunks);
 }

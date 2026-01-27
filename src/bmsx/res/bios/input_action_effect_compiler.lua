@@ -55,7 +55,7 @@ local function compile_effect(effect, slot, analysis)
 		end
 		return function(env)
 			for i = 1, #actions do
-				$.consume_action(env.player_index, actions[i])
+				consume_action(env.player_index, actions[i])
 			end
 		end
 	end

@@ -19,10 +19,17 @@ export type SourceRange = {
 const NATIVE_FUNCTION_KIND = 'native_function';
 const NATIVE_OBJECT_KIND = 'native_object';
 
+export type NativeFnCost = {
+	base: number;
+	perArg: number;
+	perRet: number;
+};
+
 export type NativeFunction = {
 	readonly kind: typeof NATIVE_FUNCTION_KIND;
 	readonly name: string;
 	invoke(args: ReadonlyArray<Value>, out: Value[]): void;
+	cost?: NativeFnCost;
 };
 
 export type NativeObject = {
@@ -44,10 +51,17 @@ function valueTypeName(value: Value): string {
 	return 'closure';
 }
 
-export function createNativeFunction(name: string, invoke: (args: ReadonlyArray<Value>, out: Value[]) => void): NativeFunction {
+const DEFAULT_NATIVE_COST: NativeFnCost = { base: 20, perArg: 2, perRet: 1 };
+
+export function createNativeFunction(
+	name: string,
+	invoke: (args: ReadonlyArray<Value>, out: Value[]) => void,
+	cost: NativeFnCost = DEFAULT_NATIVE_COST,
+): NativeFunction {
 	return {
 		kind: NATIVE_FUNCTION_KIND,
 		name,
+		cost,
 		// Keep diagnostics aligned with the C++ VM when native calls receive wrong arg types.
 		invoke: (args, out) => {
 			out.length = 0;
@@ -159,6 +173,77 @@ export const enum RunResult {
 	Halted,
 	Yielded,
 }
+
+const CEIL_DIV4 = (value: number) => (value + 3) >> 2;
+const CEIL_DIV8 = (value: number) => (value + 7) >> 3;
+const CEIL_DIV16 = (value: number) => (value + 15) >> 4;
+
+const BASE_CYCLES: Uint8Array = (() => {
+	const table = new Uint8Array(64);
+	table.fill(2);
+
+	const set = (op: OpCode, cost: number) => {
+		table[op] = cost;
+	};
+
+	set(OpCode.WIDE, 0);
+
+	set(OpCode.MOV, 1);
+	set(OpCode.LOADK, 1);
+	set(OpCode.LOADBOOL, 1);
+	set(OpCode.LOADNIL, 1);
+
+	set(OpCode.GETG, 6);
+	set(OpCode.SETG, 7);
+	set(OpCode.GETT, 8);
+	set(OpCode.SETT, 10);
+	set(OpCode.NEWT, 10);
+
+	set(OpCode.ADD, 2);
+	set(OpCode.SUB, 2);
+	set(OpCode.MUL, 3);
+	set(OpCode.DIV, 4);
+	set(OpCode.MOD, 6);
+	set(OpCode.FLOORDIV, 6);
+	set(OpCode.POW, 12);
+
+	set(OpCode.BAND, 2);
+	set(OpCode.BOR, 2);
+	set(OpCode.BXOR, 2);
+	set(OpCode.SHL, 2);
+	set(OpCode.SHR, 2);
+	set(OpCode.BNOT, 2);
+
+	set(OpCode.CONCAT, 12);
+	set(OpCode.CONCATN, 14);
+
+	set(OpCode.UNM, 1);
+	set(OpCode.NOT, 1);
+	set(OpCode.LEN, 4);
+
+	set(OpCode.EQ, 3);
+	set(OpCode.LT, 6);
+	set(OpCode.LE, 6);
+	set(OpCode.TEST, 2);
+	set(OpCode.TESTSET, 3);
+
+	set(OpCode.JMP, 1);
+	set(OpCode.JMPIF, 2);
+	set(OpCode.JMPIFNOT, 2);
+
+	set(OpCode.CLOSURE, 20);
+	set(OpCode.GETUP, 3);
+	set(OpCode.SETUP, 3);
+	set(OpCode.VARARG, 2);
+
+	set(OpCode.CALL, 18);
+	set(OpCode.RET, 18);
+
+	set(OpCode.LOAD_MEM, 5);
+	set(OpCode.STORE_MEM, 6);
+
+	return table;
+})();
 
 type Upvalue = {
 	open: boolean;
@@ -1106,6 +1191,12 @@ export class VMCPU {
 		}
 	}
 
+	private charge(cycles: number): void {
+		if (this.instructionBudgetRemaining !== null) {
+			this.instructionBudgetRemaining -= cycles;
+		}
+	}
+
 	public step(): void {
 		const frame = this.frames[this.frames.length - 1];
 		let pc = frame.pc;
@@ -1137,9 +1228,7 @@ export class VMCPU {
 		frame.pc = pc + INSTRUCTION_BYTES;
 		this.lastPc = pc;
 		this.lastInstruction = instr;
-		if (this.instructionBudgetRemaining !== null) {
-			this.instructionBudgetRemaining -= 1;
-		}
+		this.charge(BASE_CYCLES[op] + (hasWide ? 1 : 0));
 		this.executeInstruction(frame, op, decodedA[wordIndex], decodedB[wordIndex], decodedC[wordIndex], ext, wideA, wideB, wideC, hasWide);
 	}
 
@@ -1247,6 +1336,7 @@ export class VMCPU {
 				return;
 			}
 			case OpCode.LOADNIL:
+				this.charge(CEIL_DIV4(b));
 				for (let index = 0; index < b; index += 1) {
 					this.setRegisterNil(frame, a + index);
 				}
@@ -1254,6 +1344,7 @@ export class VMCPU {
 			case OpCode.LOADBOOL:
 				this.setRegisterBool(frame, a, b !== 0);
 				if (c !== 0) {
+					this.charge(1);
 					this.skipNextInstruction(frame);
 				}
 				return;
@@ -1295,6 +1386,7 @@ export class VMCPU {
 				throw new Error('Attempted to assign to a non-table value.');
 			}
 			case OpCode.NEWT:
+				this.charge(CEIL_DIV4(b) + CEIL_DIV4(c));
 				this.setRegisterTable(frame, a, new Table(b, c));
 				return;
 			case OpCode.ADD: {
@@ -1373,14 +1465,17 @@ export class VMCPU {
 				const left = this.readRK(frame, rkRawB, rkBitsB);
 				const right = this.readRK(frame, rkRawC, rkBitsC);
 				const text = this.valueToString(left) + this.valueToString(right);
+				this.charge(CEIL_DIV8(text.length));
 				this.setRegisterString(frame, a, this.stringPool.intern(text));
 				return;
 			}
 			case OpCode.CONCATN: {
 				let text = '';
+				this.charge(c << 1);
 				for (let index = 0; index < c; index += 1) {
 					text += this.valueToString(frame.registers.get(b + index));
 				}
+				this.charge(CEIL_DIV8(text.length));
 				this.setRegisterString(frame, a, this.stringPool.intern(text));
 				return;
 			}
@@ -1395,7 +1490,9 @@ export class VMCPU {
 			case OpCode.LEN: {
 				const value = frame.registers.get(b);
 			if (isStringValue(value)) {
-				this.setRegisterNumber(frame, a, this.stringPool.codepointCount(value));
+				const cp = this.stringPool.codepointCount(value);
+				this.charge(CEIL_DIV16(cp));
+				this.setRegisterNumber(frame, a, cp);
 				return;
 			}
 				if (value instanceof Table) {
@@ -1410,13 +1507,14 @@ export class VMCPU {
 								if (!range) return '<unknown>';
 								return `${range.path}:${range.start.line}:${range.start.column}`;
 							})
-							.reverse()
-							.join(' <- ');
-						throw new Error(`Length operator expects a native object with a length. stack=${stack}`);
-					}
-					this.setRegisterNumber(frame, a, value.len());
-					return;
+						.reverse()
+						.join(' <- ');
+					throw new Error(`Length operator expects a native object with a length. stack=${stack}`);
 				}
+				this.charge(12);
+				this.setRegisterNumber(frame, a, value.len());
+				return;
+			}
 				const stack = this.getCallStack()
 					.map(entry => {
 						const range = this.getDebugRange(entry.pc);
@@ -1437,6 +1535,7 @@ export class VMCPU {
 				const right = this.readRK(frame, rkRawC, rkBitsC);
 				const eq = left === right;
 				if (eq !== (a !== 0)) {
+					this.charge(1);
 					this.skipNextInstruction(frame);
 				}
 				return;
@@ -1448,6 +1547,7 @@ export class VMCPU {
 					? stringValueToString(left) < stringValueToString(right)
 					: (left as number) < (right as number);
 				if (ok !== (a !== 0)) {
+					this.charge(1);
 					this.skipNextInstruction(frame);
 				}
 				return;
@@ -1459,6 +1559,7 @@ export class VMCPU {
 					? stringValueToString(left) <= stringValueToString(right)
 					: (left as number) <= (right as number);
 				if (ok !== (a !== 0)) {
+					this.charge(1);
 					this.skipNextInstruction(frame);
 				}
 				return;
@@ -1466,6 +1567,7 @@ export class VMCPU {
 			case OpCode.TEST: {
 				const ok = frame.registers.isTruthy(a);
 				if (ok !== (c !== 0)) {
+					this.charge(1);
 					this.skipNextInstruction(frame);
 				}
 				return;
@@ -1476,6 +1578,7 @@ export class VMCPU {
 					this.copyRegister(frame, a, b);
 					return;
 				}
+				this.charge(1);
 				this.skipNextInstruction(frame);
 				return;
 			}
@@ -1511,6 +1614,7 @@ export class VMCPU {
 			}
 			case OpCode.VARARG: {
 				const count = b === 0 ? frame.varargs.length : b;
+				this.charge(CEIL_DIV4(count));
 				for (let index = 0; index < count; index += 1) {
 					const value = index < frame.varargs.length ? frame.varargs[index] : null;
 					this.setRegister(frame, a + index, value);
@@ -1531,6 +1635,9 @@ export class VMCPU {
 					throw new Error(`Attempted to call a nil value. at ${location}`);
 				}
 				if (isNativeFunction(callee)) {
+					const cost = callee.cost ?? DEFAULT_NATIVE_COST;
+					const rc = c === 0 ? 2 : c;
+					this.charge(cost.base + cost.perArg * argCount + cost.perRet * rc);
 					const results = this.acquireNativeReturnScratch();
 					try {
 						callee.invoke(args, results);
@@ -1551,6 +1658,11 @@ export class VMCPU {
 							: '';
 					throw new Error(`Attempted to call a non-function value (${calleeType}${calleeValue}). at ${location}`);
 				}
+				const proto = this.program.protos[(callee as Closure).protoIndex];
+				this.charge(argCount + CEIL_DIV4(proto.maxStack));
+				if (proto.isVararg && argCount > proto.numParams) {
+					this.charge(CEIL_DIV4(argCount - proto.numParams));
+				}
 				this.pushFrame(callee as Closure, args, a, c, false, frame.pc - INSTRUCTION_BYTES);
 				return;
 			}
@@ -1558,6 +1670,7 @@ export class VMCPU {
 				const scratch = this.returnScratch;
 				scratch.length = 0;
 				const total = b === 0 ? Math.max(frame.top - a, 0) : b;
+				this.charge(total + frame.openUpvalues.size * 3);
 				for (let index = 0; index < total; index += 1) {
 					scratch.push(frame.registers.get(a + index));
 				}

@@ -401,6 +401,9 @@ struct GCObject {
 struct NativeFunction : GCObject {
 	std::string name;
 	NativeFunctionInvoke invoke;
+	uint16_t cycleBase = 20;
+	uint8_t cyclePerArg = 2;
+	uint8_t cyclePerRet = 1;
 };
 
 /**
@@ -731,6 +734,8 @@ private:
 	StringPool m_stringPool;
 	VMHeap m_heap;
 	std::function<void(VMHeap&)> m_externalRootMarker;
+	int m_cycleBudget = 0;
+	bool m_cycleLimited = false;
 
 	std::vector<Value> m_returnScratch;
 	std::vector<std::vector<Value>> m_nativeReturnPool;

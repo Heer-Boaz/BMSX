@@ -673,7 +673,8 @@ VMRuntime::VMRuntime(const VMRuntimeOptions& options)
 	, m_playerIndex(options.playerIndex)
 	, m_viewport(options.viewport)
 	, m_canonicalization(options.canonicalization)
-	, m_instructionBudgetPerFrame(options.instructionBudgetPerFrame)
+	, m_cpuMhz(options.cpuMhz)
+	, m_cycleBudgetPerFrame(options.cycleBudgetPerFrame)
 {
 	// Initialize I/O memory region
 	m_memory.clearIoSlots();
@@ -868,9 +869,9 @@ bool VMRuntime::dispatchIrqFlags() {
 }
 
 RunResult VMRuntime::runVmWithBudget() {
-	m_cpu.instructionBudgetRemaining = m_frameState.instructionBudgetRemaining;
+	m_cpu.instructionBudgetRemaining = m_frameState.cycleBudgetRemaining;
 	RunResult result = m_cpu.run(std::nullopt);
-	m_frameState.instructionBudgetRemaining = *m_cpu.instructionBudgetRemaining;
+	m_frameState.cycleBudgetRemaining = *m_cpu.instructionBudgetRemaining;
 	return result;
 }
 
@@ -1017,7 +1018,7 @@ void VMRuntime::tickUpdate() {
 	}
 
 	m_frameState.updateExecuted = false;
-	m_frameState.instructionBudgetRemaining = m_instructionBudgetPerFrame;
+	m_frameState.cycleBudgetRemaining = m_cycleBudgetPerFrame;
 	m_frameState.deltaSeconds = static_cast<float>(EngineCore::instance().deltaTime());
 	auto* gameTable = asTable(m_cpu.globals->get(canonicalizeIdentifier("game")));
 	gameTable->set(canonicalizeIdentifier("deltatime_seconds"), valueNumber(static_cast<double>(m_frameState.deltaSeconds)));
@@ -1219,9 +1220,16 @@ void VMRuntime::setCanonicalization(CanonicalizationType canonicalization) {
 	m_canonicalization = canonicalization;
 }
 
-void VMRuntime::setInstructionBudgetPerFrame(int budget) {
-	m_instructionBudgetPerFrame = budget;
-	setGlobal("SYS_MAX_INSTRUCTIONS_PER_FRAME", valueNumber(static_cast<double>(budget)));
+void VMRuntime::setCpuMhz(double mhz) {
+	m_cpuMhz = mhz;
+}
+
+void VMRuntime::setCycleBudgetPerFrame(int budget) {
+	if (budget == m_cycleBudgetPerFrame) {
+		return;
+	}
+	m_cycleBudgetPerFrame = budget;
+	setGlobal("SYS_MAX_CYCLES_PER_FRAME", valueNumber(static_cast<double>(budget)));
 }
 
 bool VMRuntime::isDrawPending() const {
@@ -2225,7 +2233,7 @@ void VMRuntime::setupBuiltins() {
 	setGlobal("SYS_RAM_SIZE", valueNumber(static_cast<double>(RAM_SIZE)));
 	setGlobal("SYS_MAX_ASSETS", valueNumber(static_cast<double>(maxAssets)));
 	setGlobal("SYS_STRING_HANDLE_COUNT", valueNumber(static_cast<double>(STRING_HANDLE_COUNT)));
-	setGlobal("SYS_MAX_INSTRUCTIONS_PER_FRAME", valueNumber(static_cast<double>(m_instructionBudgetPerFrame)));
+	setGlobal("SYS_MAX_CYCLES_PER_FRAME", valueNumber(static_cast<double>(m_cycleBudgetPerFrame)));
 	setGlobal("SYS_VDP_DITHER", valueNumber(static_cast<double>(IO_VDP_DITHER)));
 	setGlobal("SYS_VDP_PRIMARY_ATLAS_ID", valueNumber(static_cast<double>(IO_VDP_PRIMARY_ATLAS_ID)));
 	setGlobal("SYS_VDP_SECONDARY_ATLAS_ID", valueNumber(static_cast<double>(IO_VDP_SECONDARY_ATLAS_ID)));
@@ -4075,22 +4083,22 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 		if (manifest.skyboxFaceSize > 0) {
 			vmTable->set(key("skybox_face_size"), valueNumber(static_cast<double>(manifest.skyboxFaceSize)));
 		}
+		if (manifest.cpuMhz) {
+			vmTable->set(key("cpu_mhz"), valueNumber(*manifest.cpuMhz));
+		}
 		if (manifest.viewportWidth > 0 && manifest.viewportHeight > 0) {
 			auto* viewportTable = m_cpu.createTable(0, 2);
 			viewportTable->set(key("width"), valueNumber(static_cast<double>(manifest.viewportWidth)));
 			viewportTable->set(key("height"), valueNumber(static_cast<double>(manifest.viewportHeight)));
 			vmTable->set(key("viewport"), valueTable(viewportTable));
 		}
-		if (manifest.atlasSlotBytes || manifest.stagingBytes || manifest.maxInstructionsPerFrame || manifest.maxVoicesSfx || manifest.maxVoicesMusic || manifest.maxVoicesUi) {
-			auto* limitsTable = m_cpu.createTable(0, 4);
+		if (manifest.atlasSlotBytes || manifest.stagingBytes || manifest.maxVoicesSfx || manifest.maxVoicesMusic || manifest.maxVoicesUi) {
+			auto* limitsTable = m_cpu.createTable(0, 3);
 			if (manifest.atlasSlotBytes) {
 				limitsTable->set(key("atlas_slot_bytes"), valueNumber(static_cast<double>(*manifest.atlasSlotBytes)));
 			}
 			if (manifest.stagingBytes) {
 				limitsTable->set(key("staging_bytes"), valueNumber(static_cast<double>(*manifest.stagingBytes)));
-			}
-			if (manifest.maxInstructionsPerFrame) {
-				limitsTable->set(key("max_instructions_per_frame"), valueNumber(static_cast<double>(*manifest.maxInstructionsPerFrame)));
 			}
 			if (manifest.maxVoicesSfx || manifest.maxVoicesMusic || manifest.maxVoicesUi) {
 				auto* voicesTable = m_cpu.createTable(0, 3);
@@ -4444,10 +4452,10 @@ void VMRuntime::executeDrawCallback() {
 				m_cpu.call(m_drawFn, {}, 0);
 				m_pendingVmCall = PendingCall::Draw;
 			}
-			m_cpu.instructionBudgetRemaining = m_frameState.instructionBudgetRemaining;
+			m_cpu.instructionBudgetRemaining = m_frameState.cycleBudgetRemaining;
 			const auto vmStart = std::chrono::steady_clock::now();
 			RunResult result = m_cpu.run(std::nullopt);
-			m_frameState.instructionBudgetRemaining = *m_cpu.instructionBudgetRemaining;
+			m_frameState.cycleBudgetRemaining = *m_cpu.instructionBudgetRemaining;
 			const auto vmEnd = std::chrono::steady_clock::now();
 			vmRunMs += to_ms(vmEnd - vmStart);
 			const auto ioStart = std::chrono::steady_clock::now();

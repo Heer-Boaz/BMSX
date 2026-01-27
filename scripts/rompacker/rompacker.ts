@@ -924,23 +924,31 @@ async function main() {
 			return;
 		} else {
 			// Check for required arguments
-			if (!rom_name) {
+			if (!rom_name && !isEngineMode) {
 				throw new Error('Missing required argument: --romname or ROM_NAME environment variable, or --buildreslist (to build resource list only).');
 			}
 
-			if (rom_name.includes('.')) {
-				throw new Error(`'-romname' should not contain any extensions! The given romname was ${rom_name}. Example of good '-romname': 'testrom'.`);
+			if (rom_name) {
+				if (rom_name.includes('.')) {
+					throw new Error(`'-romname' should not contain any extensions! The given romname was ${rom_name}. Example of good '-romname': 'testrom'.`);
+				}
+				rom_name = rom_name.toLowerCase();
 			}
-			rom_name = rom_name.toLowerCase();
 		}
 
-		if (!title) throw new Error("Missing parameter for title ('title', e.g. 'Sintervania'.");
+		if (!title && !isEngineMode) throw new Error("Missing parameter for title ('title', e.g. 'Sintervania'.");
 		resourceRoots = isEngineMode
 			? [respath || commonResPath]
 			: [respath || commonResPath, commonResPath];
 		if (!isEngineMode && shouldBundleCartCode) {
 			extraLuaPathSet.add(normalizePathKey(bootloader_path));
 		}
+		let romManifest = await getRomManifest(respath);
+		if (!romManifest) throw new Error(`Rom manifest not found at "${respath}"!`);
+		rom_name = romManifest.rom_name ?? rom_name;
+		title = romManifest.title ?? title;
+		let short_name: string = romManifest.short_name ?? 'BMSX';
+		romOutputPath = `dist/${rom_name}${romPackDebug ? '.debug' : ''}.rom`;
 
 		logDivider('Run setup');
 		logBullet('ROM', pc.bold(pc.white(rom_name)));
@@ -1102,14 +1110,7 @@ async function main() {
 		}
 		progress.showInitial();
 
-		let romManifest: RomManifest;
-		let short_name: string = 'BMSX';
-		romManifest = await getRomManifest(respath);
 		await progress.taskCompleted();
-		if (!romManifest) throw new Error(`Rom manifest not found at "${respath}"!`);
-		rom_name = romManifest?.rom_name ?? rom_name;
-		title = romManifest?.title ?? title;
-		short_name = romManifest?.short_name ?? short_name;
 		romOutputPath = `dist/${rom_name}${romPackDebug ? '.debug' : ''}.rom`;
 
 		if (rebuildRequired) {

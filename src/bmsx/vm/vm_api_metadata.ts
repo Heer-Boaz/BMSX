@@ -230,6 +230,14 @@ export const VM_API_METHOD_METADATA = {
 		returnType: 'boolean',
 		returnDescription: 'True when the action definition evaluates to triggered.',
 	},
+	consume_action: {
+		description: 'Consumes an input action definition for a given player.',
+		parameters: [
+			{ name: 'actiondefinition', description: 'Action string (e.g. "jump" or "a").' },
+			{ name: 'playerindex', optional: true, description: 'Player index (1-based).' },
+		],
+		returnType: 'void',
+	},
 	cartdata: {
 		description: 'Sets the persistent storage namespace for this cart (used by dget/dset).',
 		parameters: [

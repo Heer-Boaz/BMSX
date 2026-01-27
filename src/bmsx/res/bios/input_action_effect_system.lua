@@ -136,7 +136,7 @@ function inputactioneffectsystem:run_intent_assignments(owner, player_index, bin
 		local resolved_value = should_clear and nil or (assignment.value == nil and (edge == "hold" or edge == "press") or assignment.value)
 		self:assign_owner_path(owner, path, resolved_value, should_clear)
 		if assignment.consume == true then
-			$.consume_action(player_index, binding.action)
+			consume_action(player_index, binding.action)
 		end
 	end
 end

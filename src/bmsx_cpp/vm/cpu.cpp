@@ -2,6 +2,7 @@
 #include "vm_memory.h"
 #include "number_format.h"
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
@@ -45,6 +46,88 @@ static inline size_t ceilLog2(size_t value) {
 	}
 	return log;
 }
+
+static inline int ceilDiv4(int value) {
+	return (value + 3) >> 2;
+}
+
+static inline int ceilDiv8(int value) {
+	return (value + 7) >> 3;
+}
+
+static inline int ceilDiv16(int value) {
+	return (value + 15) >> 4;
+}
+
+static constexpr void setCycle(std::array<uint8_t, 64>& table, OpCode op, uint8_t cost) {
+	table[static_cast<size_t>(op)] = cost;
+}
+
+static constexpr std::array<uint8_t, 64> makeBaseCycles() {
+	std::array<uint8_t, 64> table{};
+	for (size_t i = 0; i < table.size(); ++i) {
+		table[i] = 2;
+	}
+	setCycle(table, OpCode::WIDE, 0);
+
+	setCycle(table, OpCode::MOV, 1);
+	setCycle(table, OpCode::LOADK, 1);
+	setCycle(table, OpCode::LOADBOOL, 1);
+	setCycle(table, OpCode::LOADNIL, 1);
+
+	setCycle(table, OpCode::GETG, 6);
+	setCycle(table, OpCode::SETG, 7);
+	setCycle(table, OpCode::GETT, 8);
+	setCycle(table, OpCode::SETT, 10);
+	setCycle(table, OpCode::NEWT, 10);
+
+	setCycle(table, OpCode::ADD, 2);
+	setCycle(table, OpCode::SUB, 2);
+	setCycle(table, OpCode::MUL, 3);
+	setCycle(table, OpCode::DIV, 4);
+	setCycle(table, OpCode::MOD, 6);
+	setCycle(table, OpCode::FLOORDIV, 6);
+	setCycle(table, OpCode::POW, 12);
+
+	setCycle(table, OpCode::BAND, 2);
+	setCycle(table, OpCode::BOR, 2);
+	setCycle(table, OpCode::BXOR, 2);
+	setCycle(table, OpCode::SHL, 2);
+	setCycle(table, OpCode::SHR, 2);
+	setCycle(table, OpCode::BNOT, 2);
+
+	setCycle(table, OpCode::CONCAT, 12);
+	setCycle(table, OpCode::CONCATN, 14);
+
+	setCycle(table, OpCode::UNM, 1);
+	setCycle(table, OpCode::NOT, 1);
+	setCycle(table, OpCode::LEN, 4);
+
+	setCycle(table, OpCode::EQ, 3);
+	setCycle(table, OpCode::LT, 6);
+	setCycle(table, OpCode::LE, 6);
+	setCycle(table, OpCode::TEST, 2);
+	setCycle(table, OpCode::TESTSET, 3);
+
+	setCycle(table, OpCode::JMP, 1);
+	setCycle(table, OpCode::JMPIF, 2);
+	setCycle(table, OpCode::JMPIFNOT, 2);
+
+	setCycle(table, OpCode::CLOSURE, 20);
+	setCycle(table, OpCode::GETUP, 3);
+	setCycle(table, OpCode::SETUP, 3);
+	setCycle(table, OpCode::VARARG, 2);
+
+	setCycle(table, OpCode::CALL, 18);
+	setCycle(table, OpCode::RET, 18);
+
+	setCycle(table, OpCode::LOAD_MEM, 5);
+	setCycle(table, OpCode::STORE_MEM, 6);
+
+	return table;
+}
+
+static constexpr std::array<uint8_t, 64> kBaseCycles = makeBaseCycles();
 
 } // namespace
 
@@ -745,40 +828,70 @@ void VMCPU::callExternal(Closure* closure, const std::vector<Value>& args) {
 
 RunResult VMCPU::run(std::optional<int> instructionBudget) {
 	const auto previousBudget = instructionBudgetRemaining;
+	const int previousCycleBudget = m_cycleBudget;
+	const bool previousLimited = m_cycleLimited;
 	const bool ownsBudget = instructionBudget.has_value();
 	if (ownsBudget) {
 		instructionBudgetRemaining = instructionBudget;
 	}
+	if (instructionBudgetRemaining.has_value()) {
+		m_cycleLimited = true;
+		m_cycleBudget = *instructionBudgetRemaining;
+	} else {
+		m_cycleLimited = false;
+	}
 	RunResult result = RunResult::Halted;
 	while (!m_frames.empty()) {
-		if (instructionBudgetRemaining.has_value() && *instructionBudgetRemaining <= 0) {
+		if (m_cycleLimited && m_cycleBudget <= 0) {
 			result = RunResult::Yielded;
 			break;
 		}
 		step();
 	}
+	if (m_cycleLimited) {
+		instructionBudgetRemaining = m_cycleBudget;
+	} else {
+		instructionBudgetRemaining = std::nullopt;
+	}
 	if (ownsBudget) {
 		instructionBudgetRemaining = previousBudget;
+		m_cycleBudget = previousCycleBudget;
+		m_cycleLimited = previousLimited;
 	}
 	return result;
 }
 
 RunResult VMCPU::runUntilDepth(int targetDepth, std::optional<int> instructionBudget) {
 	const auto previousBudget = instructionBudgetRemaining;
+	const int previousCycleBudget = m_cycleBudget;
+	const bool previousLimited = m_cycleLimited;
 	const bool ownsBudget = instructionBudget.has_value();
 	if (ownsBudget) {
 		instructionBudgetRemaining = instructionBudget;
 	}
+	if (instructionBudgetRemaining.has_value()) {
+		m_cycleLimited = true;
+		m_cycleBudget = *instructionBudgetRemaining;
+	} else {
+		m_cycleLimited = false;
+	}
 	RunResult result = RunResult::Halted;
 	while (static_cast<int>(m_frames.size()) > targetDepth) {
-		if (instructionBudgetRemaining.has_value() && *instructionBudgetRemaining <= 0) {
+		if (m_cycleLimited && m_cycleBudget <= 0) {
 			result = RunResult::Yielded;
 			break;
 		}
 		step();
 	}
+	if (m_cycleLimited) {
+		instructionBudgetRemaining = m_cycleBudget;
+	} else {
+		instructionBudgetRemaining = std::nullopt;
+	}
 	if (ownsBudget) {
 		instructionBudgetRemaining = previousBudget;
+		m_cycleBudget = previousCycleBudget;
+		m_cycleLimited = previousLimited;
 	}
 	return result;
 }
@@ -786,6 +899,9 @@ RunResult VMCPU::runUntilDepth(int targetDepth, std::optional<int> instructionBu
 void VMCPU::step() {
 	if (m_frames.empty()) return;
 	if (m_heap.needsCollection()) {
+		if (m_cycleLimited) {
+			m_cycleBudget -= 200;
+		}
 		m_heap.collect();
 	}
 	CallFrame& frame = *m_frames.back();
@@ -812,8 +928,8 @@ void VMCPU::step() {
 	frame.pc = pc + INSTRUCTION_BYTES;
 	lastPc = pc;
 	lastInstruction = decoded->word;
-	if (instructionBudgetRemaining.has_value()) {
-		--(*instructionBudgetRemaining);
+	if (m_cycleLimited) {
+		m_cycleBudget -= static_cast<int>(kBaseCycles[op]) + (hasWide ? 1 : 0);
 	}
 	executeInstruction(frame, static_cast<OpCode>(op), decoded->a, decoded->b, decoded->c, ext, wideA, wideB, wideC, hasWide);
 }
@@ -894,6 +1010,8 @@ void VMCPU::executeInstruction(
 		| (static_cast<uint32_t>(extC) << MAX_OPERAND_BITS)
 		| cLow;
 
+#define CYCLES_ADD(n) do { if (m_cycleLimited) m_cycleBudget -= (n); } while (0)
+
 	switch (op) {
 		case OpCode::WIDE:
 			throw BMSX_RUNTIME_ERROR("Unexpected WIDE opcode.");
@@ -907,6 +1025,7 @@ void VMCPU::executeInstruction(
 			return;
 
 		case OpCode::LOADNIL:
+			CYCLES_ADD(ceilDiv4(b));
 			for (int i = 0; i < b; ++i) {
 				setRegister(frame, a + i, valueNil());
 			}
@@ -915,6 +1034,7 @@ void VMCPU::executeInstruction(
 		case OpCode::LOADBOOL:
 			setRegister(frame, a, valueBool(b != 0));
 			if (c != 0) {
+				CYCLES_ADD(1);
 				skipNextInstruction(frame);
 			}
 			return;
@@ -976,6 +1096,7 @@ void VMCPU::executeInstruction(
 		}
 
 		case OpCode::NEWT: {
+			CYCLES_ADD(ceilDiv4(b) + ceilDiv4(c));
 			auto* table = m_heap.allocate<Table>(ObjType::Table, b, c);
 			setRegister(frame, a, valueTable(table));
 			return;
@@ -1068,15 +1189,18 @@ void VMCPU::executeInstruction(
 		case OpCode::CONCAT: {
 			std::string text = valueToString(readRK(frame, rkRawB, rkBitsB), m_stringPool);
 			text += valueToString(readRK(frame, rkRawC, rkBitsC), m_stringPool);
+			CYCLES_ADD(ceilDiv8(static_cast<int>(text.size())));
 			setRegister(frame, a, valueString(m_stringPool.intern(text)));
 			return;
 		}
 
 		case OpCode::CONCATN: {
 			std::string text;
+			CYCLES_ADD(c << 1);
 			for (int index = 0; index < c; ++index) {
 				text += valueToString(frame.registers[static_cast<size_t>(b + index)], m_stringPool);
 			}
+			CYCLES_ADD(ceilDiv8(static_cast<int>(text.size())));
 			setRegister(frame, a, valueString(m_stringPool.intern(text)));
 			return;
 		}
@@ -1094,7 +1218,9 @@ void VMCPU::executeInstruction(
 		case OpCode::LEN: {
 			const Value& val = frame.registers[b];
 			if (valueIsString(val)) {
-				setRegister(frame, a, valueNumber(static_cast<double>(m_stringPool.codepointCount(asStringId(val)))));
+				int cp = static_cast<int>(m_stringPool.codepointCount(asStringId(val)));
+				CYCLES_ADD(ceilDiv16(cp));
+				setRegister(frame, a, valueNumber(static_cast<double>(cp)));
 				return;
 			}
 			if (valueIsTable(val)) {
@@ -1120,6 +1246,7 @@ void VMCPU::executeInstruction(
 					}
 					throw BMSX_RUNTIME_ERROR("Length operator expects a native object with a length. stack=" + stack);
 				}
+				CYCLES_ADD(12);
 				setRegister(frame, a, valueNumber(static_cast<double>(obj->len())));
 				return;
 			}
@@ -1156,6 +1283,7 @@ void VMCPU::executeInstruction(
 				eq = left == right;
 			}
 			if (eq != (a != 0)) {
+				CYCLES_ADD(1);
 				skipNextInstruction(frame);
 			}
 			return;
@@ -1197,6 +1325,7 @@ void VMCPU::executeInstruction(
 				ok = left < right;
 			}
 			if (ok != (a != 0)) {
+				CYCLES_ADD(1);
 				skipNextInstruction(frame);
 			}
 			return;
@@ -1238,6 +1367,7 @@ void VMCPU::executeInstruction(
 				ok = left <= right;
 			}
 			if (ok != (a != 0)) {
+				CYCLES_ADD(1);
 				skipNextInstruction(frame);
 			}
 			return;
@@ -1246,6 +1376,7 @@ void VMCPU::executeInstruction(
 		case OpCode::TEST: {
 			const Value& val = frame.registers[a];
 			if (isTruthy(val) != (c != 0)) {
+				CYCLES_ADD(1);
 				skipNextInstruction(frame);
 			}
 			return;
@@ -1256,6 +1387,7 @@ void VMCPU::executeInstruction(
 			if (isTruthy(val) == (c != 0)) {
 				setRegister(frame, a, val);
 			} else {
+				CYCLES_ADD(1);
 				skipNextInstruction(frame);
 			}
 			return;
@@ -1295,6 +1427,7 @@ void VMCPU::executeInstruction(
 
 		case OpCode::VARARG: {
 			int count = b == 0 ? static_cast<int>(frame.varargs.size()) : b;
+			CYCLES_ADD(ceilDiv4(count));
 			for (int i = 0; i < count; ++i) {
 				Value value = i < static_cast<int>(frame.varargs.size()) ? frame.varargs[static_cast<size_t>(i)] : valueNil();
 				setRegister(frame, a + i, value);
@@ -1308,11 +1441,21 @@ void VMCPU::executeInstruction(
 			const Value& callee = frame.registers[a];
 			if (valueIsClosure(callee)) {
 				Closure* closure = asClosure(callee);
+				const Proto& proto = m_program->protos[closure->protoIndex];
+				CYCLES_ADD(argCount);
+				CYCLES_ADD(ceilDiv4(proto.maxStack));
+				if (proto.isVararg && argCount > proto.numParams) {
+					CYCLES_ADD(ceilDiv4(argCount - proto.numParams));
+				}
 				pushFrame(closure, &frame.registers[a + 1], static_cast<size_t>(argCount), a, retCount, false, frame.pc - INSTRUCTION_BYTES);
 				return;
 			}
 			if (valueIsNativeFunction(callee)) {
 				NativeFunction* fn = asNativeFunction(callee);
+				const int rc = retCount == 0 ? 2 : retCount;
+				CYCLES_ADD(static_cast<int>(fn->cycleBase)
+					+ static_cast<int>(fn->cyclePerArg) * argCount
+					+ static_cast<int>(fn->cyclePerRet) * rc);
 				std::vector<Value> args = acquireArgScratch();
 				args.resize(static_cast<size_t>(argCount));
 				for (int i = 0; i < argCount; ++i) {
@@ -1332,6 +1475,8 @@ void VMCPU::executeInstruction(
 			auto& results = m_returnScratch;
 			results.clear();
 			int count = b == 0 ? std::max(frame.top - a, 0) : b;
+			CYCLES_ADD(count);
+			CYCLES_ADD(static_cast<int>(frame.openUpvalues.size()) * 3);
 			results.reserve(static_cast<size_t>(count));
 			for (int i = 0; i < count; ++i) {
 				results.push_back(frame.registers[a + i]);
@@ -1366,6 +1511,8 @@ void VMCPU::executeInstruction(
 			return;
 		}
 	}
+
+#undef CYCLES_ADD
 }
 
 Closure* VMCPU::createClosure(CallFrame& frame, int protoIndex) {

@@ -5,7 +5,8 @@
     "vm": {
         "viewport": { "width": 256, "height": 212 },
         "canonicalization": "lower",
-        "namespace": "bmsx"
+        "namespace": "bmsx",
+        "cpu_mhz": 8.0
     },
     "lua": {
         "entry_path": "res/bios/bootrom.lua"

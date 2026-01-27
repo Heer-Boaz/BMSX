@@ -1090,6 +1090,9 @@ bool loadAssetsFromRom(const u8* buffer,
 			if (vmObj.count("skybox_face_size")) {
 				assets.manifest.skyboxFaceSize = vmObj.at("skybox_face_size").toI32();
 			}
+			if (vmObj.count("cpu_mhz")) {
+				assets.manifest.cpuMhz = vmObj.at("cpu_mhz").toNumber();
+			}
 			if (vmObj.count("limits") && vmObj.at("limits").isObject()) {
 				const auto& limitsObj = vmObj.at("limits").asObject();
 				if (limitsObj.count("atlas_slot_bytes")) {
@@ -1097,9 +1100,6 @@ bool loadAssetsFromRom(const u8* buffer,
 				}
 				if (limitsObj.count("staging_bytes")) {
 					assets.manifest.stagingBytes = limitsObj.at("staging_bytes").toI32();
-				}
-				if (limitsObj.count("max_instructions_per_frame")) {
-					assets.manifest.maxInstructionsPerFrame = limitsObj.at("max_instructions_per_frame").toI32();
 				}
 				if (limitsObj.count("max_voices") && limitsObj.at("max_voices").isObject()) {
 					const auto& voicesObj = limitsObj.at("max_voices").asObject();

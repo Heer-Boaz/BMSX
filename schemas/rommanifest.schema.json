@@ -79,12 +79,18 @@
 					"minimum": 1,
 					"description": "Maximum skybox face size in pixels (square)."
 				},
+				"cpu_mhz": {
+					"type": "number",
+					"exclusiveMinimum": 0,
+					"description": "VM cycle rate in MHz."
+				},
 				"limits": {
 					"$ref": "#/definitions/vmLimits"
 				}
 			},
 			"required": [
-				"namespace"
+				"namespace",
+				"cpu_mhz"
 			],
 			"additionalProperties": false
 		},
@@ -97,10 +103,6 @@
 					"minimum": 1
 				},
 				"staging_bytes": {
-					"type": "integer",
-					"minimum": 1
-				},
-				"max_instructions_per_frame": {
 					"type": "integer",
 					"minimum": 1
 				},

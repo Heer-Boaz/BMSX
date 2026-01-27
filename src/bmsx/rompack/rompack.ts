@@ -430,7 +430,6 @@ export type VmLimits = {
 	atlas_slot_bytes?: number;
 	staging_bytes?: number;
 	max_voices?: VmVoiceLimits;
-	max_instructions_per_frame?: number;
 };
 
 export type CartManifest = {
@@ -441,6 +440,7 @@ export type CartManifest = {
 		viewport: Viewport;
 		canonicalization: CanonicalizationType;
 		namespace: string;
+		cpu_mhz: number;
 		skybox_face_size?: number;
 		limits?: VmLimits;
 	};

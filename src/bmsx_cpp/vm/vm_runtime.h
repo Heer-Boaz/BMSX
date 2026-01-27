@@ -26,7 +26,7 @@ class VMStorage;
 struct VmProgramAsset;
 class RuntimeAssets;
 
-constexpr int DEFAULT_STATEMENT_BUDGET = 1'000'000;
+constexpr int DEFAULT_CYCLE_BUDGET = 1'000'000;
 
 /**
  * Standard button actions for gamepad/keyboard input.
@@ -41,7 +41,7 @@ struct VMFrameState {
 	bool updateExecuted = false;
 	bool luaFaulted = false;
 	float deltaSeconds = 0.0f;
-	int instructionBudgetRemaining = 0;
+	int cycleBudgetRemaining = 0;
 };
 
 /**
@@ -59,7 +59,8 @@ struct VMRuntimeOptions {
 	int playerIndex = 0;
 	Viewport viewport{0, 0};
 	CanonicalizationType canonicalization = CanonicalizationType::None;
-	int instructionBudgetPerFrame = DEFAULT_STATEMENT_BUDGET;
+	double cpuMhz = 0.0;
+	int cycleBudgetPerFrame = DEFAULT_CYCLE_BUDGET;
 };
 
 /**
@@ -251,7 +252,9 @@ public:
 	void registerNativeFunction(std::string_view name, NativeFunctionInvoke fn);
 
 	void setCanonicalization(CanonicalizationType canonicalization);
-	void setInstructionBudgetPerFrame(int budget);
+	void setCpuMhz(double mhz);
+	double cpuMhz() const { return m_cpuMhz; }
+	void setCycleBudgetPerFrame(int budget);
 	bool isDrawPending() const;
 	Value canonicalizeIdentifier(std::string_view value);
 	void refreshMemoryMap();
@@ -362,7 +365,8 @@ private:
 	std::unordered_map<std::string, Value> m_vmModuleCache;
 	std::unordered_map<std::string, std::unique_ptr<std::regex>> m_luaPatternRegexCache;
 	std::vector<std::vector<Value>> m_valueScratchPool;
-	int m_instructionBudgetPerFrame = DEFAULT_STATEMENT_BUDGET;
+	double m_cpuMhz = 0.0;
+	int m_cycleBudgetPerFrame = DEFAULT_CYCLE_BUDGET;
 };
 
 } // namespace bmsx
