@@ -1164,6 +1164,20 @@ async function main() {
 			logBullet('VM opt', pc.white(`-O${optLevel}`));
 
 			const includeCode = shouldBundleCartCode;
+			let engineConstPoolSeed: { constPool: ReadonlyArray<Value>; stringPool: StringPool } | null = null;
+			if (!isEngineMode && mode === 'rompack') {
+				const engineResPath = commonResPath;
+				const engineManifest = await getRomManifest(engineResPath);
+				if (!engineManifest) {
+					throw new Error(`Engine manifest not found at "${engineResPath}".`);
+				}
+				const engineRomName = engineManifest.rom_name ?? 'bmsx-bios';
+				const engineRomPath = join(process.cwd(), 'dist', `${engineRomName}${romPackDebug ? '.debug' : ''}.rom`);
+				if (!existsSync(engineRomPath)) {
+					throw new Error(`Engine ROM not found at "${engineRomPath}". Build the engine ROM first.`);
+				}
+				engineConstPoolSeed = await loadEngineConstPoolSeed(engineRomPath);
+			}
 
 		let rebuildRequired = true;
 		if (force) {
@@ -1258,7 +1272,7 @@ async function main() {
 			validateAudioEventReferences(resources);
 
 				const romAssets = await progress.runWithDetail('Generate ROM assets', () => generateRomAssets(resources, message => progress.setDetail(message)));
-				appendVmProgramAsset(romAssets, romManifest, { includeSymbols: romPackDebug, optLevel });
+				appendVmProgramAsset(romAssets, romManifest, { includeSymbols: romPackDebug, constPoolSeed: engineConstPoolSeed ?? undefined, optLevel });
 				stripLuaAssets(romAssets, romPackDebug);
 				await progress.taskCompleted();
 
