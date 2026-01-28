@@ -870,39 +870,30 @@ bool VMRuntime::dispatchIrqFlags() {
 }
 
 RunResult VMRuntime::runVmWithBudget() {
-	const auto now = std::chrono::steady_clock::now();
-	if (!m_debugVmReportInitialized) {
-		m_debugVmReportInitialized = true;
-		m_debugVmReportAt = now;
-	}
-	m_debugVmRuns += 1;
-	m_debugVmRunsTotal += 1;
+	// PERF LOGS DISABLED
+	// const auto now = std::chrono::steady_clock::now();
+	// if (!m_debugVmReportInitialized) {
+	// 	m_debugVmReportInitialized = true;
+	// 	m_debugVmReportAt = now;
+	// }
+	// m_debugVmRuns += 1;
+	// m_debugVmRunsTotal += 1;
 	RunResult result = m_cpu.run(m_frameState.cycleBudgetRemaining);
 	const int remaining = m_cpu.instructionBudgetRemaining;
 	m_frameState.cycleBudgetRemaining = remaining;
-	if (result == RunResult::Yielded) {
-		m_debugVmYields += 1;
-		m_debugVmYieldsTotal += 1;
-	}
-	m_debugVmRemainingAcc += remaining;
-	const double elapsedMs = to_ms(now - m_debugVmReportAt);
-	if (elapsedMs >= 1000.0) {
-		const double scale = 1000.0 / elapsedMs;
-		const double runsPerSec = static_cast<double>(m_debugVmRuns) * scale;
-		const double yieldsPerSec = static_cast<double>(m_debugVmYields) * scale;
-		const double yieldPct = (static_cast<double>(m_debugVmYields) / static_cast<double>(m_debugVmRuns)) * 100.0;
-		const double avgRemaining = m_debugVmRemainingAcc / static_cast<double>(m_debugVmRuns);
-		std::cout << "[BMSX][vm] runs=" << std::fixed << std::setprecision(3) << runsPerSec
-			<< " yields=" << std::fixed << std::setprecision(3) << yieldsPerSec
-			<< " yield%=" << std::fixed << std::setprecision(2) << yieldPct
-			<< " avgRemaining=" << std::fixed << std::setprecision(1) << avgRemaining
-			<< " budget=" << m_cycleBudgetPerFrame
-			<< std::endl;
-		m_debugVmReportAt = now;
-		m_debugVmRuns = 0;
-		m_debugVmYields = 0;
-		m_debugVmRemainingAcc = 0.0;
-	}
+	// PERF LOGS DISABLED
+	// if (result == RunResult::Yielded) {
+	// 	m_debugVmYields += 1;
+	// 	m_debugVmYieldsTotal += 1;
+	// }
+	// m_debugVmRemainingAcc += remaining;
+	// const double elapsedMs = to_ms(now - m_debugVmReportAt);
+	// if (elapsedMs >= 1000.0) {
+	// 	m_debugVmReportAt = now;
+	// 	m_debugVmRuns = 0;
+	// 	m_debugVmYields = 0;
+	// 	m_debugVmRemainingAcc = 0.0;
+	// }
 	return result;
 }
 
@@ -1163,44 +1154,30 @@ void VMRuntime::tickDraw() {
 	m_lastTickCompleted = true;
 	m_lastTickSequence += 1;
 
-	const auto frameNow = std::chrono::steady_clock::now();
-	if (!m_debugVmFrameReportInitialized) {
-		m_debugVmFrameReportInitialized = true;
-		m_debugVmFrameReportAt = frameNow;
-	}
-	const double cyclesUsed = static_cast<double>(m_frameState.cycleBudgetGranted - m_frameState.cycleBudgetRemaining);
-	const i64 yieldsThisFrame = m_debugVmYieldsTotal - m_debugTickYieldsBefore;
-	m_debugVmFrameCount += 1;
-	m_debugVmFrameCyclesUsedAcc += cyclesUsed;
-	m_debugVmFrameRemainingAcc += static_cast<double>(m_frameState.cycleBudgetRemaining);
-	m_debugVmFrameYieldsAcc += static_cast<double>(yieldsThisFrame);
-	m_debugVmFrameGrantedAcc += static_cast<double>(m_frameState.cycleBudgetGranted);
-	m_debugVmFrameCarryAcc += static_cast<double>(m_frameState.cycleCarryGranted);
-	const double frameElapsedMs = to_ms(frameNow - m_debugVmFrameReportAt);
-	if (frameElapsedMs >= 1000.0) {
-		const double scale = 1000.0 / frameElapsedMs;
-		const double cyclesPerSec = m_debugVmFrameCyclesUsedAcc * scale;
-		const double cyclesPerFrame = m_debugVmFrameCyclesUsedAcc / static_cast<double>(m_debugVmFrameCount);
-		const double remainingPerFrame = m_debugVmFrameRemainingAcc / static_cast<double>(m_debugVmFrameCount);
-		const double yieldsPerFrame = m_debugVmFrameYieldsAcc / static_cast<double>(m_debugVmFrameCount);
-		const double grantedPerFrame = m_debugVmFrameGrantedAcc / static_cast<double>(m_debugVmFrameCount);
-		const double carryPerFrame = m_debugVmFrameCarryAcc / static_cast<double>(m_debugVmFrameCount);
-		std::cout << "[BMSX][vmframe] cycles/sec=" << std::fixed << std::setprecision(1) << cyclesPerSec
-			<< " cycles/frame=" << std::fixed << std::setprecision(1) << cyclesPerFrame
-			<< " remaining/frame=" << std::fixed << std::setprecision(1) << remainingPerFrame
-			<< " yields/frame=" << std::fixed << std::setprecision(2) << yieldsPerFrame
-			<< " budget=" << m_cycleBudgetPerFrame
-			<< " granted=" << std::fixed << std::setprecision(1) << grantedPerFrame
-			<< " carry=" << std::fixed << std::setprecision(1) << carryPerFrame
-			<< std::endl;
-		m_debugVmFrameReportAt = frameNow;
-		m_debugVmFrameCount = 0;
-		m_debugVmFrameCyclesUsedAcc = 0.0;
-		m_debugVmFrameRemainingAcc = 0.0;
-		m_debugVmFrameYieldsAcc = 0.0;
-		m_debugVmFrameGrantedAcc = 0.0;
-		m_debugVmFrameCarryAcc = 0.0;
-	}
+	// PERF LOGS DISABLED
+	// const auto frameNow = std::chrono::steady_clock::now();
+	// if (!m_debugVmFrameReportInitialized) {
+	// 	m_debugVmFrameReportInitialized = true;
+	// 	m_debugVmFrameReportAt = frameNow;
+	// }
+	// const double cyclesUsed = static_cast<double>(m_frameState.cycleBudgetGranted - m_frameState.cycleBudgetRemaining);
+	// const i64 yieldsThisFrame = m_debugVmYieldsTotal - m_debugTickYieldsBefore;
+	// m_debugVmFrameCount += 1;
+	// m_debugVmFrameCyclesUsedAcc += cyclesUsed;
+	// m_debugVmFrameRemainingAcc += static_cast<double>(m_frameState.cycleBudgetRemaining);
+	// m_debugVmFrameYieldsAcc += static_cast<double>(yieldsThisFrame);
+	// m_debugVmFrameGrantedAcc += static_cast<double>(m_frameState.cycleBudgetGranted);
+	// m_debugVmFrameCarryAcc += static_cast<double>(m_frameState.cycleCarryGranted);
+	// const double frameElapsedMs = to_ms(frameNow - m_debugVmFrameReportAt);
+	// if (frameElapsedMs >= 1000.0) {
+	// 	m_debugVmFrameReportAt = frameNow;
+	// 	m_debugVmFrameCount = 0;
+	// 	m_debugVmFrameCyclesUsedAcc = 0.0;
+	// 	m_debugVmFrameRemainingAcc = 0.0;
+	// 	m_debugVmFrameYieldsAcc = 0.0;
+	// 	m_debugVmFrameGrantedAcc = 0.0;
+	// 	m_debugVmFrameCarryAcc = 0.0;
+	// }
 
 	m_frameActive = false;
 }

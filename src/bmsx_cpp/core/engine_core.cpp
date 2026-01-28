@@ -16,7 +16,6 @@
 #include <cmath>
 #include <cstdarg>
 #include <fstream>
-#include <iomanip>
 #include <iostream>
 #include <unordered_set>
 #include <stdexcept>
@@ -266,11 +265,12 @@ void EngineCore::tick(f64 deltaTime) {
 	}
 
 	const auto tickStart = std::chrono::steady_clock::now();
-	if (!m_debugTickReportInitialized) {
-		m_debugTickReportInitialized = true;
-		m_debugTickReportAt = tickStart;
-	}
-	m_debugTickHostFrames += 1;
+	// PERF LOGS DISABLED
+	// if (!m_debugTickReportInitialized) {
+	// 	m_debugTickReportInitialized = true;
+	// 	m_debugTickReportAt = tickStart;
+	// }
+	// m_debugTickHostFrames += 1;
 
 	const double hostDeltaMs = std::min(deltaTime * 1000.0, MAX_FRAME_DELTA_MS);
 	m_delta_time = deltaTime;
@@ -345,13 +345,14 @@ void EngineCore::tick(f64 deltaTime) {
 		runtime.tickTerminalMode();
 		auto terminalEnd = std::chrono::steady_clock::now();
 		m_last_tick_timing.vmTerminalMs = to_ms(terminalEnd - terminalStart);
-		const i64 updateTotal = runtime.updateCountTotal();
-		if (m_debugLastUpdateCountTotal == 0) {
-			m_debugLastUpdateCountTotal = updateTotal;
-		}
-		const i64 updateDelta = updateTotal - m_debugLastUpdateCountTotal;
-		m_debugLastUpdateCountTotal = updateTotal;
-		m_debugTickUpdates += static_cast<u64>(updateDelta);
+		// PERF LOGS DISABLED
+		// const i64 updateTotal = runtime.updateCountTotal();
+		// if (m_debugLastUpdateCountTotal == 0) {
+		// 	m_debugLastUpdateCountTotal = updateTotal;
+		// }
+		// const i64 updateDelta = updateTotal - m_debugLastUpdateCountTotal;
+		// m_debugLastUpdateCountTotal = updateTotal;
+		// m_debugTickUpdates += static_cast<u64>(updateDelta);
 	}
 
 	// Process microtasks
@@ -367,23 +368,14 @@ void EngineCore::tick(f64 deltaTime) {
 		m_presentation_pending = true;
 	}
 	m_last_tick_timing.totalMs = to_ms(std::chrono::steady_clock::now() - tickStart);
-	const auto tickEnd = std::chrono::steady_clock::now();
-	const double elapsedMs = to_ms(tickEnd - m_debugTickReportAt);
-	if (elapsedMs >= 1000.0) {
-		const double scale = 1000.0 / elapsedMs;
-		const double updatesPerSec = static_cast<double>(m_debugTickUpdates) * scale;
-		const double hostFramesPerSec = static_cast<double>(m_debugTickHostFrames) * scale;
-		const double updatesPerHostFrame = static_cast<double>(m_debugTickUpdates) / static_cast<double>(m_debugTickHostFrames);
-		std::cout << "[BMSX][tickrate] target=" << std::fixed << std::setprecision(3) << ufps()
-			<< " ufps=" << std::fixed << std::setprecision(3) << ufps()
-			<< " updates=" << std::fixed << std::setprecision(3) << updatesPerSec
-			<< " host=" << std::fixed << std::setprecision(3) << hostFramesPerSec
-			<< " updates/host=" << std::fixed << std::setprecision(3) << updatesPerHostFrame
-			<< std::endl;
-		m_debugTickReportAt = tickEnd;
-		m_debugTickHostFrames = 0;
-		m_debugTickUpdates = 0;
-	}
+	// PERF LOGS DISABLED
+	// const auto tickEnd = std::chrono::steady_clock::now();
+	// const double elapsedMs = to_ms(tickEnd - m_debugTickReportAt);
+	// if (elapsedMs >= 1000.0) {
+	// 	m_debugTickReportAt = tickEnd;
+	// 	m_debugTickHostFrames = 0;
+	// 	m_debugTickUpdates = 0;
+	// }
 }
 
 void EngineCore::render() {

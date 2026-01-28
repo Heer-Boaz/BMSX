@@ -565,7 +565,8 @@ void LibretroPlatform::runFrame() {
 
 	// Update game logic
 #if ENABLE_PERFORMANCE_LOGS
-	const auto tickStart = std::chrono::steady_clock::now();
+	// PERF LOGS DISABLED
+	// const auto tickStart = std::chrono::steady_clock::now();
 #endif
 	if (m_platform_paused) {
 		// Keep input state in sync while paused to avoid desynced press ids on resume.
@@ -577,80 +578,86 @@ void LibretroPlatform::runFrame() {
 		m_engine->tick(dt);
 	}
 #if ENABLE_PERFORMANCE_LOGS
-	const auto tickEnd = std::chrono::steady_clock::now();
+	// PERF LOGS DISABLED
+	// const auto tickEnd = std::chrono::steady_clock::now();
 #endif
 
 	// Render
 	bool skipRender = m_frameskip_enabled && m_frameskip_next;
 	m_frameskip_next = false;
 #if ENABLE_PERFORMANCE_LOGS
-	const auto renderStart = std::chrono::steady_clock::now();
+	// PERF LOGS DISABLED
+	// const auto renderStart = std::chrono::steady_clock::now();
 #endif
 	if (!skipRender) {
 		m_engine->render();
 	}
 #if ENABLE_PERFORMANCE_LOGS
-	const auto renderEnd = std::chrono::steady_clock::now();
+	// PERF LOGS DISABLED
+	// const auto renderEnd = std::chrono::steady_clock::now();
 #endif
 
 	// Collect audio
 #if ENABLE_PERFORMANCE_LOGS
-	const auto audioStart = std::chrono::steady_clock::now();
+	// PERF LOGS DISABLED
+	// const auto audioStart = std::chrono::steady_clock::now();
 #endif
 	processAudio();
 #if ENABLE_PERFORMANCE_LOGS
-	const auto audioEnd = std::chrono::steady_clock::now();
+	// PERF LOGS DISABLED
+	// const auto audioEnd = std::chrono::steady_clock::now();
 #endif
 
 #if ENABLE_PERFORMANCE_LOGS
-	const auto frameEnd = std::chrono::steady_clock::now();
-
-	const double budgetMs = m_frame_time_sec * 1000.0;
-	const double pollMs = std::chrono::duration<double, std::milli>(pollEnd - pollStart).count();
-	const double tickMs = std::chrono::duration<double, std::milli>(tickEnd - tickStart).count();
-	const double renderMs = std::chrono::duration<double, std::milli>(renderEnd - renderStart).count();
-	const double audioMs = std::chrono::duration<double, std::milli>(audioEnd - audioStart).count();
-	const double totalMs = std::chrono::duration<double, std::milli>(frameEnd - frameStart).count();
-	const auto& tickTiming = m_engine->lastTickTiming();
-	const auto& renderTiming = m_engine->lastRenderTiming();
-
-	if (totalMs > budgetMs * kFrameSpikeMultiplier) {
-		const char* slowest = "poll";
-		double slowestMs = pollMs;
-		if (tickMs > slowestMs) { slowest = "tick"; slowestMs = tickMs; }
-		if (renderMs > slowestMs) { slowest = "render"; slowestMs = renderMs; }
-		if (audioMs > slowestMs) { slowest = "audio"; slowestMs = audioMs; }
-		log(RETRO_LOG_WARN,
-			"[BMSX] frame spike %.2fms (budget %.2f) poll=%.2f tick=%.2f render=%.2f audio=%.2f slowest=%s %.2fms\n",
-			totalMs,
-			budgetMs,
-			pollMs,
-			tickMs,
-			renderMs,
-			audioMs,
-			slowest,
-			slowestMs);
-		log(RETRO_LOG_WARN,
-			"[BMSX] tick ms total=%.2f input=%.2f ide_in=%.2f term_in=%.2f update=%.2f ide=%.2f term=%.2f micro=%.2f\n",
-			tickTiming.totalMs,
-			tickTiming.inputMs,
-			tickTiming.vmIdeInputMs,
-			tickTiming.vmTerminalInputMs,
-			tickTiming.vmUpdateMs,
-			tickTiming.vmIdeMs,
-			tickTiming.vmTerminalMs,
-			tickTiming.microtaskMs);
-		log(RETRO_LOG_WARN,
-			"[BMSX] render ms total=%.2f begin=%.2f test=%.2f vm_draw=%.2f vm_ide=%.2f vm_term=%.2f draw=%.2f end=%.2f\n",
-			renderTiming.totalMs,
-			renderTiming.beginFrameMs,
-			renderTiming.testPatternMs,
-			renderTiming.vmDrawMs,
-			renderTiming.vmIdeDrawMs,
-			renderTiming.vmTerminalDrawMs,
-			renderTiming.drawGameMs,
-			renderTiming.endFrameMs);
-	}
+	// PERF LOGS DISABLED
+	// const auto frameEnd = std::chrono::steady_clock::now();
+	//
+	// const double budgetMs = m_frame_time_sec * 1000.0;
+	// const double pollMs = std::chrono::duration<double, std::milli>(pollEnd - pollStart).count();
+	// const double tickMs = std::chrono::duration<double, std::milli>(tickEnd - tickStart).count();
+	// const double renderMs = std::chrono::duration<double, std::milli>(renderEnd - renderStart).count();
+	// const double audioMs = std::chrono::duration<double, std::milli>(audioEnd - audioStart).count();
+	// const double totalMs = std::chrono::duration<double, std::milli>(frameEnd - frameStart).count();
+	// const auto& tickTiming = m_engine->lastTickTiming();
+	// const auto& renderTiming = m_engine->lastRenderTiming();
+	//
+	// if (totalMs > budgetMs * kFrameSpikeMultiplier) {
+	// 	const char* slowest = "poll";
+	// 	double slowestMs = pollMs;
+	// 	if (tickMs > slowestMs) { slowest = "tick"; slowestMs = tickMs; }
+	// 	if (renderMs > slowestMs) { slowest = "render"; slowestMs = renderMs; }
+	// 	if (audioMs > slowestMs) { slowest = "audio"; slowestMs = audioMs; }
+	// 	log(RETRO_LOG_WARN,
+	// 		"[BMSX] frame spike %.2fms (budget %.2f) poll=%.2f tick=%.2f render=%.2f audio=%.2f slowest=%s %.2fms\n",
+	// 		totalMs,
+	// 		budgetMs,
+	// 		pollMs,
+	// 		tickMs,
+	// 		renderMs,
+	// 		audioMs,
+	// 		slowest,
+	// 		slowestMs);
+	// 	log(RETRO_LOG_WARN,
+	// 		"[BMSX] tick ms total=%.2f input=%.2f ide_in=%.2f term_in=%.2f update=%.2f ide=%.2f term=%.2f micro=%.2f\n",
+	// 		tickTiming.totalMs,
+	// 		tickTiming.inputMs,
+	// 		tickTiming.vmIdeInputMs,
+	// 		tickTiming.vmTerminalInputMs,
+	// 		tickTiming.vmUpdateMs,
+	// 		tickTiming.vmIdeMs,
+	// 		tickTiming.vmTerminalMs,
+	// 		tickTiming.microtaskMs);
+	// 	log(RETRO_LOG_WARN,
+	// 		"[BMSX] render ms total=%.2f begin=%.2f test=%.2f vm_draw=%.2f vm_ide=%.2f vm_term=%.2f draw=%.2f end=%.2f\n",
+	// 		renderTiming.totalMs,
+	// 		renderTiming.beginFrameMs,
+	// 		renderTiming.testPatternMs,
+	// 		renderTiming.vmDrawMs,
+	// 		renderTiming.vmIdeDrawMs,
+	// 		renderTiming.vmTerminalDrawMs,
+	// 		renderTiming.drawGameMs,
+	// 		renderTiming.endFrameMs);
+	// }
 #endif
 }
 
