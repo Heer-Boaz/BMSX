@@ -186,6 +186,8 @@ type VMFrameState = {
 	luaFaulted: boolean;
 	deltaSeconds: number;
 	cycleBudgetRemaining: number;
+	cycleBudgetGranted: number;
+	cycleCarryGranted: number;
 };
 
 class DebugPauseCoordinator {
@@ -274,6 +276,57 @@ export class BmsxVMRuntime {
 		}
 		this.cycleBudgetPerFrame = value;
 		this.registerVmGlobal('SYS_MAX_CYCLES_PER_FRAME', value);
+	}
+
+	public getLastTickSequence(): number {
+		return this.lastTickSequence;
+	}
+
+	public getLastTickBudgetRemaining(): number {
+		return this.lastTickBudgetRemaining;
+	}
+
+	public didLastTickComplete(): boolean {
+		return this.lastTickCompleted;
+	}
+
+	public hasActiveTick(): boolean {
+		return this.currentFrameState !== null || this.drawFrameState !== null;
+	}
+
+	public consumeLastTickCompletion(): { sequence: number; remaining: number } | null {
+		if (!this.lastTickCompleted) {
+			return null;
+		}
+		if (this.lastTickSequence === this.lastTickConsumedSequence) {
+			return null;
+		}
+		this.lastTickConsumedSequence = this.lastTickSequence;
+		return {
+			sequence: this.lastTickSequence,
+			remaining: this.lastTickBudgetRemaining,
+		};
+	}
+
+	public grantCycleBudget(baseBudget: number, carryBudget: number): void {
+		if (baseBudget !== this.cycleBudgetPerFrame) {
+			this.cycleBudgetPerFrame = baseBudget;
+			this.registerVmGlobal('SYS_MAX_CYCLES_PER_FRAME', baseBudget);
+		}
+		const totalBudget = baseBudget + carryBudget;
+		if (this.currentFrameState !== null) {
+			this.currentFrameState.cycleBudgetRemaining += totalBudget;
+			this.currentFrameState.cycleBudgetGranted += totalBudget;
+			return;
+		}
+		if (this.drawFrameState !== null) {
+			this.drawFrameState.cycleBudgetRemaining += totalBudget;
+			this.drawFrameState.cycleBudgetGranted += totalBudget;
+			return;
+		}
+		if (carryBudget !== 0) {
+			this.pendingCarryBudget = carryBudget;
+		}
 	}
 
 	private runVmWithBudget(state: VMFrameState): RunResult {
@@ -374,6 +427,17 @@ export class BmsxVMRuntime {
 			|| this.luaRuntimeFailed
 			|| this.faultSnapshot !== null;
 	}
+
+	private isUpdatePhasePending(): boolean {
+		return this.pendingVmCall === 'entry'
+			|| this.pendingVmCall === 'update'
+			|| this.pendingVmCall === 'engine_update'
+			|| this.pendingVmCall === 'init'
+			|| this.pendingVmCall === 'new_game_reset'
+			|| this.pendingVmCall === 'new_game'
+			|| this.pendingVmCall === 'irq'
+			|| this.pendingLifecycleQueue.length > 0;
+	}
 	private readonly memory: VmMemory;
 	private readonly cpu: VMCPU;
 	private readonly stringHandles: StringHandleTable;
@@ -403,6 +467,9 @@ export class BmsxVMRuntime {
 	private drawFrameState: VMFrameState = null;
 	private cycleBudgetPerFrame: number;
 	private _cpuHz: number;
+	private lastTickSequence: number = 0;
+	private lastTickBudgetRemaining: number = 0;
+	private lastTickCompleted: boolean = false;
 	private debugCycleReportAtMs: number = 0;
 	private debugCycleRuns: number = 0;
 	private debugCycleYields: number = 0;
@@ -414,7 +481,12 @@ export class BmsxVMRuntime {
 	private debugFrameCyclesUsedAcc: number = 0;
 	private debugFrameRemainingAcc: number = 0;
 	private debugFrameYieldsAcc: number = 0;
+	private debugFrameGrantedAcc: number = 0;
+	private debugFrameCarryAcc: number = 0;
+	private debugTickYieldsBefore: number = 0;
 	private pendingLuaWarnings: string[] = [];
+	private pendingCarryBudget: number = 0;
+	private lastTickConsumedSequence: number = 0;
 	public readonly vmModuleAliases: Map<string, string> = new Map();
 	public readonly luaChunkEnvironmentsByPath: Map<string, LuaEnvironment> = new Map();
 	private readonly luaGenericChunksExecuted: Set<string> = new Set();
@@ -504,6 +576,8 @@ export class BmsxVMRuntime {
 		});
 
 		if (!cartridge) {
+			$.set_inputmap(1, { 1: { keyboard: null, gamepad: null, pointer: null } }); // Default input mapping for player 1 is required even with no cart to prevent errors
+
 			$.set_lua_sources(engineLuaSources);
 			configureMemoryMap(engineLayer.index.manifest.vm.limits);
 			BmsxVMRuntime.applyUfpsScaled(engineLayer.index.manifest.vm);
@@ -1163,16 +1237,21 @@ export class BmsxVMRuntime {
 	// Frame state is owned by the runtime: it is created per-frame, kept intact for debugger inspection on faults,
 	// and only cleared via finalize/abandon during explicit reboot/reset flows.
 	private beginFrameState(): VMFrameState {
-		if (this.currentFrameState) {
+		if (this.currentFrameState || this.drawFrameState) {
 			throw new Error('[BmsxVMRuntime] Attempted to begin a new frame while another frame is active.');
 		}
 		const deltaSeconds = $.deltatime_seconds; // Align with fixed-step update cadence to avoid over-counting when substepping
+		const carryBudget = this.pendingCarryBudget;
+		this.pendingCarryBudget = 0;
+		const budget = this.cycleBudgetPerFrame + carryBudget;
 		const state: VMFrameState = {
 			haltGame: this.debuggerPaused,
 			updateExecuted: false,
 			luaFaulted: this.luaRuntimeFailed,
 			deltaSeconds,
-			cycleBudgetRemaining: this.cycleBudgetPerFrame,
+			cycleBudgetRemaining: budget,
+			cycleBudgetGranted: budget,
+			cycleCarryGranted: carryBudget,
 		};
 		this.currentFrameState = state;
 		return state;
@@ -1196,6 +1275,19 @@ export class BmsxVMRuntime {
 		if (this.currentFrameState !== null) {
 			return;
 		}
+		if (this.drawFrameState !== null) {
+			this.currentFrameState = this.drawFrameState;
+			try {
+				if (this.isUpdatePhasePending()) {
+					this.runUpdatePhase(this.currentFrameState);
+					this.vdp.flushAssetEdits();
+				}
+			} finally {
+				this.drawFrameState = this.currentFrameState;
+				this.abandonFrameState();
+			}
+			return;
+		}
 		this.runCartUpdateTick();
 	}
 
@@ -1213,9 +1305,53 @@ export class BmsxVMRuntime {
 		try {
 			this.vdp.commitViewSnapshot();
 			this.drawGameFrame();
-		} finally {
-			this.drawFrameState = null;
+			const frameState = this.currentFrameState;
+			if (this.pendingVmCall === null) {
+				this.lastTickBudgetRemaining = frameState.cycleBudgetRemaining;
+				this.lastTickCompleted = true;
+				this.lastTickSequence += 1;
+				const debugTickRate = Boolean((globalThis as any).__bmsx_debug_tickrate);
+				if (debugTickRate) {
+					const cyclesUsed = frameState.cycleBudgetGranted - frameState.cycleBudgetRemaining;
+					const yieldsThisFrame = this.debugCycleYieldsTotal - this.debugTickYieldsBefore;
+					this.debugFrameCount += 1;
+					this.debugFrameCyclesUsedAcc += cyclesUsed;
+					this.debugFrameRemainingAcc += frameState.cycleBudgetRemaining;
+					this.debugFrameYieldsAcc += yieldsThisFrame;
+					this.debugFrameGrantedAcc += frameState.cycleBudgetGranted;
+					this.debugFrameCarryAcc += frameState.cycleCarryGranted;
+					const now = performance.now();
+					const elapsedMs = now - this.debugFrameReportAtMs;
+					if (elapsedMs >= 1000) {
+						const scale = 1000 / elapsedMs;
+						const cyclesPerSec = this.debugFrameCyclesUsedAcc * scale;
+						const cyclesPerFrame = this.debugFrameCyclesUsedAcc / this.debugFrameCount;
+						const remainingPerFrame = this.debugFrameRemainingAcc / this.debugFrameCount;
+						const yieldsPerFrame = this.debugFrameYieldsAcc / this.debugFrameCount;
+						const grantedPerFrame = this.debugFrameGrantedAcc / this.debugFrameCount;
+						const carryPerFrame = this.debugFrameCarryAcc / this.debugFrameCount;
+						console.info(`[BMSX][vmframe] cycles/sec=${cyclesPerSec.toFixed(1)} cycles/frame=${cyclesPerFrame.toFixed(1)} remaining/frame=${remainingPerFrame.toFixed(1)} yields/frame=${yieldsPerFrame.toFixed(2)} budget=${this.cycleBudgetPerFrame} granted=${grantedPerFrame.toFixed(1)} carry=${carryPerFrame.toFixed(1)}`);
+						this.debugFrameReportAtMs = now;
+						this.debugFrameCount = 0;
+						this.debugFrameCyclesUsedAcc = 0;
+						this.debugFrameRemainingAcc = 0;
+						this.debugFrameYieldsAcc = 0;
+						this.debugFrameGrantedAcc = 0;
+						this.debugFrameCarryAcc = 0;
+					}
+				}
+				this.drawFrameState = null;
+				this.abandonFrameState();
+				return;
+			}
+			this.drawFrameState = frameState;
 			this.abandonFrameState();
+		} catch (error) {
+			this.pendingVmCall = null;
+			this.pendingLifecycleQueue.length = 0;
+			this.pendingEntryLifecycle = null;
+			this.drawFrameState = null;
+			throw error;
 		}
 	}
 
@@ -1225,7 +1361,7 @@ export class BmsxVMRuntime {
 		}
 		this.processPendingProgramReload();
 		this.tickHardware();
-		if (this.currentFrameState !== null) {
+		if (this.currentFrameState !== null || this.drawFrameState !== null) {
 			return;
 		}
 		const state = this.beginFrameState();
@@ -1257,7 +1393,7 @@ export class BmsxVMRuntime {
 		}
 		this.processPendingProgramReload();
 		this.tickHardware();
-		if (this.currentFrameState !== null) {
+		if (this.currentFrameState !== null || this.drawFrameState !== null) {
 			return;
 		}
 		const state = this.beginFrameState();
@@ -1287,15 +1423,16 @@ export class BmsxVMRuntime {
 		let fault: unknown = null;
 		let state: VMFrameState = null;
 		const debugTickRate = Boolean((globalThis as any).__bmsx_debug_tickrate);
-		let yieldsBefore = 0;
 		if (debugTickRate) {
 			if (this.debugFrameReportAtMs === 0) {
 				this.debugFrameReportAtMs = performance.now();
 			}
-			yieldsBefore = this.debugCycleYieldsTotal;
+			this.debugTickYieldsBefore = this.debugCycleYieldsTotal;
 		}
 		try {
 			state = this.beginFrameState();
+			this.lastTickCompleted = false;
+			this.lastTickBudgetRemaining = 0;
 			this.runUpdatePhase(state);
 			this.vdp.flushAssetEdits();
 		} catch (error) {
@@ -1304,29 +1441,6 @@ export class BmsxVMRuntime {
 		} finally {
 			if (fault === null) {
 				this.drawFrameState = state;
-				if (debugTickRate) {
-					const cyclesUsed = this.cycleBudgetPerFrame - state.cycleBudgetRemaining;
-					const yieldsThisFrame = this.debugCycleYieldsTotal - yieldsBefore;
-					this.debugFrameCount += 1;
-					this.debugFrameCyclesUsedAcc += cyclesUsed;
-					this.debugFrameRemainingAcc += state.cycleBudgetRemaining;
-					this.debugFrameYieldsAcc += yieldsThisFrame;
-					const now = performance.now();
-					const elapsedMs = now - this.debugFrameReportAtMs;
-					if (elapsedMs >= 1000) {
-						const scale = 1000 / elapsedMs;
-						const cyclesPerSec = this.debugFrameCyclesUsedAcc * scale;
-						const cyclesPerFrame = this.debugFrameCyclesUsedAcc / this.debugFrameCount;
-						const remainingPerFrame = this.debugFrameRemainingAcc / this.debugFrameCount;
-						const yieldsPerFrame = this.debugFrameYieldsAcc / this.debugFrameCount;
-						console.info(`[BMSX][vmframe] cycles/sec=${cyclesPerSec.toFixed(1)} cycles/frame=${cyclesPerFrame.toFixed(1)} remaining/frame=${remainingPerFrame.toFixed(1)} yields/frame=${yieldsPerFrame.toFixed(2)} budget=${this.cycleBudgetPerFrame}`);
-						this.debugFrameReportAtMs = now;
-						this.debugFrameCount = 0;
-						this.debugFrameCyclesUsedAcc = 0;
-						this.debugFrameRemainingAcc = 0;
-						this.debugFrameYieldsAcc = 0;
-					}
-				}
 			}
 			if (this.currentFrameState !== null) {
 				this.abandonFrameState();
@@ -1457,10 +1571,12 @@ export class BmsxVMRuntime {
 				this.onLuaDebuggerPause(error);
 			} else {
 				state.luaFaulted = true;
+				this.pendingVmCall = null;
+				this.pendingLifecycleQueue.length = 0;
 				this.handleLuaError(error);
 			}
 		} finally {
-			state.updateExecuted = true;
+			state.updateExecuted = !this.isUpdatePhasePending();
 		}
 	}
 
@@ -2063,6 +2179,7 @@ export class BmsxVMRuntime {
 	}
 
 	private beginEntryExecution(entryProtoIndex: number): void {
+		this.resetFrameState();
 		this.cpu.start(entryProtoIndex);
 		this.pendingVmCall = 'entry';
 		this.pendingLifecycleQueue = [];
@@ -2484,6 +2601,7 @@ export class BmsxVMRuntime {
 	}
 
 	private resetVmState(): void {
+		this.resetFrameState();
 		this.pendingVmCall = null;
 		this.pendingEntryLifecycle = null;
 		this.pendingLifecycleQueue = [];
@@ -2498,6 +2616,16 @@ export class BmsxVMRuntime {
 		this.vmModuleCache.clear();
 		this.vmModuleProtos.clear();
 		this.seedVmGlobals();
+	}
+
+	private resetFrameState(): void {
+		this.currentFrameState = null;
+		this.drawFrameState = null;
+		this.pendingCarryBudget = 0;
+		this.lastTickCompleted = false;
+		this.lastTickBudgetRemaining = 0;
+		this.lastTickSequence = 0;
+		this.lastTickConsumedSequence = 0;
 	}
 
 	private registerVmGlobal(name: string, value: Value): void {

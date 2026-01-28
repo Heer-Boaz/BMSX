@@ -41,6 +41,7 @@ import type { GPUBackend } from '../render/backend/pipeline_interfaces';
 import { ActionEffectRegistry } from '../action_effects/effect_registry';
 import { InputSource, KeyModifier } from '../input/playerinput';
 import { shallowcopy } from '../utils/shallowcopy';
+import { clamp } from '../utils/clamp';
 // No direct space helpers needed here; Spaces are revived as part of the world.
 
 const globalScope: any = typeof window !== 'undefined' ? window : globalThis;
@@ -130,6 +131,7 @@ export class EngineCore {
 	private debugTickReportAtMs: number = 0;
 	private debugTickHostFrames: number = 0;
 	private debugTickUpdates: number = 0;
+	private cycleCarry: number = 0;
 
 	public get timestep_ms(): number { return this.update_interval_ms; } // ms per update = 1000 / fps
 
@@ -677,6 +679,7 @@ export class EngineCore {
 		this.last_update = now;
 		this.last_gametick_time = now;
 		this._turnCounter = 0;
+		this.cycleCarry = 0;
 		this.frameLoopHandle = platform.frames.start(this.run);
 		this.running = true;
 	}
@@ -727,10 +730,8 @@ export class EngineCore {
 		$.wasupdated = true;
 	}
 
-	private applyVmCycleBudget(): void {
-		const runtime = BmsxVMRuntime.instance;
-		const cycleBudget = calcCyclesPerFrameScaled(runtime.cpuHz, this.ufps_scaled);
-		runtime.setCycleBudgetPerFrame(cycleBudget);
+	private computeVmCycleBudget(runtime: BmsxVMRuntime): number {
+		return calcCyclesPerFrameScaled(runtime.cpuHz, this.ufps_scaled);
 	}
 
 	/**
@@ -752,6 +753,7 @@ export class EngineCore {
 		const t0 = profile ? performance.now() : 0;
 		let tPoll = 0;
 		let tUpdate = 0;
+		let tUpdateStart = 0;
 		let tPresentTick = 0;
 		let tDraw = 0;
 		let t1 = 0;
@@ -782,32 +784,64 @@ export class EngineCore {
 				return;
 			}
 
-				this.accumulated_time += hostDeltaMs;
+				const maxAccumulated = this.timestep_ms * MAX_SUBSTEPS;
+				this.accumulated_time = clamp(this.accumulated_time + hostDeltaMs, 0, maxAccumulated);
 				this.wasupdated = false;
 
-				let steps = 0;
-				if (profile) t1 = performance.now();
-				while (this.accumulated_time >= this.timestep_ms && steps < MAX_SUBSTEPS) {
-					if (!this.paused) {
-							if (runGate.ready) {
-								// Cycle budget is defined per virtual update tick, not per host frame.
-								this.applyVmCycleBudget();
-								// Update-facing delta time must match the fixed-step virtual frame.
-								this.deltatime = this.timestep_ms;
-								this.update(this.timestep_ms);
-								if (debugTickRate) {
-									this.debugTickUpdates += 1;
-								}
-							} else {
-								this.accumulated_time = 0;
-								break;
-							}
+				const runtime = BmsxVMRuntime.instance;
+				let ticksStarted = 0;
+				let slicesProcessed = 0;
+				if (profile) tUpdateStart = performance.now();
+				const baseBudget = this.computeVmCycleBudget(runtime);
+				const runTickPresentation = () => {
+					// Presentation-facing delta time should reflect host timing.
+					this.deltatime = hostDeltaMs;
+					if (profile) t1 = performance.now();
+					this.world.runTickGroups(PRESENTATION_TICK_GROUPS, false);
+					if (profile) tPresentTick += performance.now() - t1;
+					this.wasupdated = true;
+				};
+				if (!runGate.ready || this.paused) {
+					this.accumulated_time = 0;
+				} else {
+					const slicesAvailable = Math.min(Math.floor(this.accumulated_time / this.timestep_ms), MAX_SUBSTEPS);
+					for (; slicesProcessed < slicesAvailable; slicesProcessed += 1) {
+						if (!runGate.ready || this.paused) {
+							this.accumulated_time = 0;
+							break;
 						}
-					this.accumulated_time -= this.timestep_ms;
-					++steps;
+						const tickActive = runtime.hasActiveTick();
+						const carryBudget = tickActive ? 0 : this.cycleCarry;
+						if (carryBudget !== 0) {
+							this.cycleCarry = 0;
+						}
+						runtime.grantCycleBudget(baseBudget, carryBudget);
+						if (tickActive) {
+							runtime.tickUpdate();
+						} else {
+							this.deltatime = this.timestep_ms;
+							this.update(this.timestep_ms);
+							if (debugTickRate) {
+								this.debugTickUpdates += 1;
+							}
+							ticksStarted += 1;
+						}
+						runTickPresentation();
+						const completion = runtime.consumeLastTickCompletion();
+						if (completion) {
+							this.cycleCarry = completion.remaining > baseBudget ? baseBudget : completion.remaining;
+						}
+					}
+					if (slicesProcessed > 0) {
+						const consumed = slicesProcessed * this.timestep_ms;
+						this.accumulated_time = clamp(this.accumulated_time - consumed, 0, maxAccumulated);
+					}
 				}
-				// Presentation-facing delta time should reflect host timing.
-				this.deltatime = hostDeltaMs;
+				if (this.wasupdated) {
+					if (profile) t1 = performance.now();
+					this.view.drawgame();
+					if (profile) tDraw += performance.now() - t1;
+				}
 				if (debugTickRate) {
 					const elapsedMs = currentTime - this.debugTickReportAtMs;
 					if (elapsedMs >= 1000) {
@@ -821,20 +855,12 @@ export class EngineCore {
 						this.debugTickUpdates = 0;
 					}
 				}
-				if (profile) tUpdate = performance.now() - t1;
+				if (profile) tUpdate = performance.now() - tUpdateStart;
 
-			if (this.wasupdated) {
-				if (profile) t1 = performance.now();
-				this.world.runTickGroups(PRESENTATION_TICK_GROUPS, false);
-				if (profile) tPresentTick = performance.now() - t1;
-				if (profile) t1 = performance.now();
-				this.view.drawgame();
-				if (profile) tDraw = performance.now() - t1;
-				if (profile) {
-					const total = performance.now() - t0;
-					if (total > 50) {
-						console.warn(`[BMSX][frame] slow=${total.toFixed(1)}ms poll=${tPoll.toFixed(1)}ms update=${tUpdate.toFixed(1)}ms presentTick=${tPresentTick.toFixed(1)}ms draw=${tDraw.toFixed(1)}ms steps?`);
-					}
+			if (this.wasupdated && profile) {
+				const total = performance.now() - t0;
+				if (total > 50) {
+					console.warn(`[BMSX][frame] slow=${total.toFixed(1)}ms poll=${tPoll.toFixed(1)}ms update=${tUpdate.toFixed(1)}ms presentTick=${tPresentTick.toFixed(1)}ms draw=${tDraw.toFixed(1)}ms steps?`);
 				}
 			}
 		} catch (error) {

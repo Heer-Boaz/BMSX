@@ -23,6 +23,8 @@
 
 namespace bmsx {
 namespace {
+constexpr double MAX_FRAME_DELTA_MS = 250.0;
+constexpr int MAX_SUBSTEPS = 5;
 inline f64 to_ms(std::chrono::steady_clock::duration duration) {
 	return std::chrono::duration<f64, std::milli>(duration).count();
 }
@@ -212,6 +214,8 @@ void EngineCore::shutdown() {
 void EngineCore::start() {
 	if (m_state == EngineState::Initialized || m_state == EngineState::Stopped) {
 		m_state = EngineState::Running;
+		m_cycleCarry = 0;
+		m_lastGrantedBaseBudget = 0;
 	}
 }
 
@@ -224,6 +228,8 @@ void EngineCore::pause() {
 void EngineCore::resume() {
 	if (m_state == EngineState::Paused) {
 		m_state = EngineState::Running;
+		m_cycleCarry = 0;
+		m_lastGrantedBaseBudget = 0;
 	}
 }
 
@@ -242,6 +248,7 @@ void EngineCore::setUfpsScaled(i64 ufpsScaled) {
 		throw std::runtime_error("[EngineCore] ufps must be greater than 1.");
 	}
 	m_ufps_scaled = ufpsScaled;
+	m_update_interval_ms = (1000.0 * static_cast<f64>(VM_HZ_SCALE)) / static_cast<f64>(m_ufps_scaled);
 	if (VMRuntime::hasInstance()) {
 		VMRuntime& runtime = VMRuntime::instance();
 		applyVmCycleBudget(runtime);
@@ -265,6 +272,7 @@ void EngineCore::tick(f64 deltaTime) {
 	}
 	m_debugTickHostFrames += 1;
 
+	const double hostDeltaMs = std::min(deltaTime * 1000.0, MAX_FRAME_DELTA_MS);
 	m_delta_time = deltaTime;
 	m_total_time += deltaTime;
 	m_frame_count++;
@@ -297,9 +305,34 @@ void EngineCore::tick(f64 deltaTime) {
 		auto terminalInputEnd = std::chrono::steady_clock::now();
 		m_last_tick_timing.vmTerminalInputMs = to_ms(terminalInputEnd - terminalInputStart);
 
+		m_accumulated_time = std::min(m_accumulated_time + hostDeltaMs, m_update_interval_ms * MAX_SUBSTEPS);
+		int slicesProcessed = 0;
+		const double fixedDeltaSeconds = m_update_interval_ms / 1000.0;
 		auto updateStart = std::chrono::steady_clock::now();
-		applyVmCycleBudget(runtime);
-		runtime.tickUpdate();
+		const int baseBudget = calcCyclesPerFrame(runtime.cpuHz(), m_ufps_scaled);
+		const int slicesAvailable = std::min(static_cast<int>(m_accumulated_time / m_update_interval_ms), MAX_SUBSTEPS);
+		for (; slicesProcessed < slicesAvailable; slicesProcessed += 1) {
+			const bool tickActive = runtime.hasActiveTick();
+			const int carryBudget = tickActive ? 0 : (m_cycleCarry > 0 ? static_cast<int>(m_cycleCarry) : 0);
+			if (carryBudget != 0) {
+				m_cycleCarry = 0;
+			}
+			runtime.grantCycleBudget(baseBudget, carryBudget);
+			m_lastGrantedBaseBudget = baseBudget;
+			m_delta_time = fixedDeltaSeconds;
+			runtime.tickUpdate();
+			runtime.tickDraw();
+			i64 completionSequence = 0;
+			int remaining = 0;
+			if (runtime.consumeLastTickCompletion(completionSequence, remaining)) {
+				(void)completionSequence;
+				m_cycleCarry = remaining > baseBudget ? baseBudget : remaining;
+			}
+			m_presentation_pending = true;
+		}
+		if (slicesProcessed > 0) {
+			m_accumulated_time = std::max(m_accumulated_time - static_cast<double>(slicesProcessed) * m_update_interval_ms, 0.0);
+		}
 		auto updateEnd = std::chrono::steady_clock::now();
 		m_last_tick_timing.vmUpdateMs = to_ms(updateEnd - updateStart);
 
@@ -330,7 +363,9 @@ void EngineCore::tick(f64 deltaTime) {
 		m_last_tick_timing.microtaskMs = to_ms(microtaskEnd - microtaskStart);
 	}
 
-	m_presentation_pending = true;
+	if (!VMRuntime::hasInstance()) {
+		m_presentation_pending = true;
+	}
 	m_last_tick_timing.totalMs = to_ms(std::chrono::steady_clock::now() - tickStart);
 	const auto tickEnd = std::chrono::steady_clock::now();
 	const double elapsedMs = to_ms(tickEnd - m_debugTickReportAt);
@@ -380,26 +415,21 @@ void EngineCore::render() {
 			m_last_render_timing.testPatternMs = 0.0;
 		}
 
-		m_last_render_timing.vmDrawMs = 0.0;
-		m_last_render_timing.vmIdeDrawMs = 0.0;
-		m_last_render_timing.vmTerminalDrawMs = 0.0;
-		if (VMRuntime::hasInstance()) {
-			VMRuntime& runtime = VMRuntime::instance();
-			auto drawStart = std::chrono::steady_clock::now();
-			runtime.tickDraw();
-			auto drawEnd = std::chrono::steady_clock::now();
-			m_last_render_timing.vmDrawMs = to_ms(drawEnd - drawStart);
+			m_last_render_timing.vmDrawMs = 0.0;
+			m_last_render_timing.vmIdeDrawMs = 0.0;
+			m_last_render_timing.vmTerminalDrawMs = 0.0;
+			if (VMRuntime::hasInstance()) {
+				VMRuntime& runtime = VMRuntime::instance();
+				auto ideDrawStart = std::chrono::steady_clock::now();
+				runtime.tickIDEDraw();
+				auto ideDrawEnd = std::chrono::steady_clock::now();
+				m_last_render_timing.vmIdeDrawMs = to_ms(ideDrawEnd - ideDrawStart);
 
-			auto ideDrawStart = std::chrono::steady_clock::now();
-			runtime.tickIDEDraw();
-			auto ideDrawEnd = std::chrono::steady_clock::now();
-			m_last_render_timing.vmIdeDrawMs = to_ms(ideDrawEnd - ideDrawStart);
-
-			auto terminalDrawStart = std::chrono::steady_clock::now();
-			runtime.tickTerminalModeDraw();
-			auto terminalDrawEnd = std::chrono::steady_clock::now();
-			m_last_render_timing.vmTerminalDrawMs = to_ms(terminalDrawEnd - terminalDrawStart);
-		}
+				auto terminalDrawStart = std::chrono::steady_clock::now();
+				runtime.tickTerminalModeDraw();
+				auto terminalDrawEnd = std::chrono::steady_clock::now();
+				m_last_render_timing.vmTerminalDrawMs = to_ms(terminalDrawEnd - terminalDrawStart);
+			}
 
 		const auto drawGameStart = std::chrono::steady_clock::now();
 		m_view->drawGame();

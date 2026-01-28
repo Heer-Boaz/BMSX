@@ -178,11 +178,15 @@ private:
 	u64 m_frame_count = 0;
 	f64 m_fps = DEFAULT_UFPS;
 	i64 m_ufps_scaled = DEFAULT_UFPS_SCALED;
+	f64 m_update_interval_ms = 1000.0 / static_cast<f64>(DEFAULT_UFPS);
+	f64 m_accumulated_time = 0.0;
 	bool m_debugTickReportInitialized = false;
 	std::chrono::steady_clock::time_point m_debugTickReportAt;
 	u64 m_debugTickHostFrames = 0;
 	u64 m_debugTickUpdates = 0;
 	i64 m_debugLastUpdateCountTotal = 0;
+	i64 m_cycleCarry = 0;
+	int m_lastGrantedBaseBudget = 0;
 	bool m_presentation_pending = false;
 
 	bool m_rom_loaded = false;

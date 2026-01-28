@@ -43,6 +43,8 @@ struct VMFrameState {
 	bool luaFaulted = false;
 	float deltaSeconds = 0.0f;
 	int cycleBudgetRemaining = 0;
+	int cycleBudgetGranted = 0;
+	int cycleCarryGranted = 0;
 };
 
 /**
@@ -257,6 +259,12 @@ public:
 	i64 cpuHz() const { return m_cpuHz; }
 	i64 updateCountTotal() const { return m_debugUpdateCountTotal; }
 	void setCycleBudgetPerFrame(int budget);
+	void grantCycleBudget(int baseBudget, int carryBudget);
+	bool hasActiveTick() const;
+	i64 lastTickSequence() const { return m_lastTickSequence; }
+	int lastTickBudgetRemaining() const { return m_lastTickBudgetRemaining; }
+	bool didLastTickComplete() const { return m_lastTickCompleted; }
+	bool consumeLastTickCompletion(i64& outSequence, int& outRemaining);
 	bool isDrawPending() const;
 	Value canonicalizeIdentifier(std::string_view value);
 	void refreshMemoryMap();
@@ -285,6 +293,7 @@ private:
 
 	void setupBuiltins();
 	void runEngineBuiltinPrelude();
+	void resetFrameState();
 	void executeUpdateCallback(double deltaSeconds);
 	void executeDrawCallback();
 	void tickHardware();
@@ -344,6 +353,7 @@ private:
 
 	// Frame state
 	VMFrameState m_frameState;
+	bool m_frameActive = false;
 
 	// Cached function references
 	Closure* m_updateFn = nullptr;
@@ -380,9 +390,17 @@ private:
 	double m_debugVmFrameCyclesUsedAcc = 0.0;
 	double m_debugVmFrameRemainingAcc = 0.0;
 	double m_debugVmFrameYieldsAcc = 0.0;
-	i64 m_debugUpdateCountTotal = 0;
-	i64 m_cpuHz = 0;
-	int m_cycleBudgetPerFrame = DEFAULT_CYCLE_BUDGET;
+	double m_debugVmFrameGrantedAcc = 0.0;
+	double m_debugVmFrameCarryAcc = 0.0;
+		i64 m_debugTickYieldsBefore = 0;
+		i64 m_debugUpdateCountTotal = 0;
+		i64 m_lastTickSequence = 0;
+		int m_lastTickBudgetRemaining = 0;
+		bool m_lastTickCompleted = false;
+		i64 m_lastTickConsumedSequence = 0;
+		int m_pendingCarryBudget = 0;
+		i64 m_cpuHz = 0;
+		int m_cycleBudgetPerFrame = DEFAULT_CYCLE_BUDGET;
 };
 
 } // namespace bmsx

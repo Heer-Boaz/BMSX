@@ -748,6 +748,7 @@ void VMRuntime::boot(Program* program, ProgramMetadata* metadata, int entryProto
 	std::cout << "[VMRuntime] boot: program=" << program << " entryProtoIndex=" << entryProtoIndex << std::endl;
 	std::cout << "[VMRuntime] boot: module protos=" << m_vmModuleProtos.size()
 				<< " aliases=" << m_vmModuleAliases.size() << std::endl;
+	resetFrameState();
 	m_runtimeFailed = false;
 	m_vmInitialized = false;
 	m_pendingVmCall = PendingCall::None;
@@ -1041,21 +1042,50 @@ void VMRuntime::tickUpdate() {
 		return;
 	}
 
-	const auto frameNow = std::chrono::steady_clock::now();
-	if (!m_debugVmFrameReportInitialized) {
-		m_debugVmFrameReportInitialized = true;
-		m_debugVmFrameReportAt = frameNow;
-	}
-	const i64 yieldsBefore = m_debugVmYieldsTotal;
-
 	prepareCartBootIfNeeded();
 	tickHardware();
 	if (pollSystemBootRequest()) {
 		return;
 	}
 
+	const auto isUpdatePhasePending = [this]() {
+		const bool lifecycleQueued = m_pendingLifecycleIndex < m_pendingLifecycleQueue.size();
+		return m_pendingVmCall == PendingCall::Entry
+			|| m_pendingVmCall == PendingCall::Update
+			|| m_pendingVmCall == PendingCall::EngineUpdate
+			|| m_pendingVmCall == PendingCall::Init
+			|| m_pendingVmCall == PendingCall::NewGameReset
+			|| m_pendingVmCall == PendingCall::NewGame
+			|| m_pendingVmCall == PendingCall::Irq
+			|| lifecycleQueued;
+	};
+
+	if (m_frameActive) {
+		if (isUpdatePhasePending()) {
+			executeUpdateCallback(m_frameState.deltaSeconds);
+			flushAssetEdits();
+			m_frameState.updateExecuted = !isUpdatePhasePending();
+		}
+		return;
+	}
+
+	const auto frameNow = std::chrono::steady_clock::now();
+	if (!m_debugVmFrameReportInitialized) {
+		m_debugVmFrameReportInitialized = true;
+		m_debugVmFrameReportAt = frameNow;
+	}
+	m_debugTickYieldsBefore = m_debugVmYieldsTotal;
+
+	m_frameActive = true;
+	m_lastTickCompleted = false;
+	m_lastTickBudgetRemaining = 0;
+
+	const int carryBudget = m_pendingCarryBudget;
+	m_pendingCarryBudget = 0;
 	m_frameState.updateExecuted = false;
-	m_frameState.cycleBudgetRemaining = m_cycleBudgetPerFrame;
+	m_frameState.cycleBudgetRemaining = m_cycleBudgetPerFrame + carryBudget;
+	m_frameState.cycleBudgetGranted = m_cycleBudgetPerFrame + carryBudget;
+	m_frameState.cycleCarryGranted = carryBudget;
 	m_frameState.deltaSeconds = static_cast<float>(EngineCore::instance().deltaTime());
 	auto* gameTable = asTable(m_cpu.globals->get(canonicalizeIdentifier("game")));
 	gameTable->set(canonicalizeIdentifier("deltatime_seconds"), valueNumber(static_cast<double>(m_frameState.deltaSeconds)));
@@ -1102,33 +1132,7 @@ void VMRuntime::tickUpdate() {
 	view->applyAperture = readViewBool(viewTable->get(viewApertureKey), "enable_aperture");
 
 	m_debugUpdateCountTotal += 1;
-	const double cyclesUsed = static_cast<double>(m_cycleBudgetPerFrame - m_frameState.cycleBudgetRemaining);
-	const i64 yieldsThisFrame = m_debugVmYieldsTotal - yieldsBefore;
-	m_debugVmFrameCount += 1;
-	m_debugVmFrameCyclesUsedAcc += cyclesUsed;
-	m_debugVmFrameRemainingAcc += static_cast<double>(m_frameState.cycleBudgetRemaining);
-	m_debugVmFrameYieldsAcc += static_cast<double>(yieldsThisFrame);
-	const double frameElapsedMs = to_ms(frameNow - m_debugVmFrameReportAt);
-	if (frameElapsedMs >= 1000.0) {
-		const double scale = 1000.0 / frameElapsedMs;
-		const double cyclesPerSec = m_debugVmFrameCyclesUsedAcc * scale;
-		const double cyclesPerFrame = m_debugVmFrameCyclesUsedAcc / static_cast<double>(m_debugVmFrameCount);
-		const double remainingPerFrame = m_debugVmFrameRemainingAcc / static_cast<double>(m_debugVmFrameCount);
-		const double yieldsPerFrame = m_debugVmFrameYieldsAcc / static_cast<double>(m_debugVmFrameCount);
-		std::cout << "[BMSX][vmframe] cycles/sec=" << std::fixed << std::setprecision(1) << cyclesPerSec
-			<< " cycles/frame=" << std::fixed << std::setprecision(1) << cyclesPerFrame
-			<< " remaining/frame=" << std::fixed << std::setprecision(1) << remainingPerFrame
-			<< " yields/frame=" << std::fixed << std::setprecision(2) << yieldsPerFrame
-			<< " budget=" << m_cycleBudgetPerFrame
-			<< std::endl;
-		m_debugVmFrameReportAt = frameNow;
-		m_debugVmFrameCount = 0;
-		m_debugVmFrameCyclesUsedAcc = 0.0;
-		m_debugVmFrameRemainingAcc = 0.0;
-		m_debugVmFrameYieldsAcc = 0.0;
-	}
-
-	m_frameState.updateExecuted = true;
+	m_frameState.updateExecuted = !isUpdatePhasePending();
 	flushAssetEdits();
 }
 
@@ -1143,9 +1147,62 @@ void VMRuntime::tickDraw() {
 		return;
 	}
 
+	if (!m_frameActive) {
+		api().playbackRenderQueue(m_preservedRenderQueue);
+		return;
+	}
+
 	// Call _draw if present
 	m_vdp.commitViewSnapshot(*EngineCore::instance().view());
 	executeDrawCallback();
+	if (m_pendingVmCall != PendingCall::None) {
+		return;
+	}
+
+	m_lastTickBudgetRemaining = m_frameState.cycleBudgetRemaining;
+	m_lastTickCompleted = true;
+	m_lastTickSequence += 1;
+
+	const auto frameNow = std::chrono::steady_clock::now();
+	if (!m_debugVmFrameReportInitialized) {
+		m_debugVmFrameReportInitialized = true;
+		m_debugVmFrameReportAt = frameNow;
+	}
+	const double cyclesUsed = static_cast<double>(m_frameState.cycleBudgetGranted - m_frameState.cycleBudgetRemaining);
+	const i64 yieldsThisFrame = m_debugVmYieldsTotal - m_debugTickYieldsBefore;
+	m_debugVmFrameCount += 1;
+	m_debugVmFrameCyclesUsedAcc += cyclesUsed;
+	m_debugVmFrameRemainingAcc += static_cast<double>(m_frameState.cycleBudgetRemaining);
+	m_debugVmFrameYieldsAcc += static_cast<double>(yieldsThisFrame);
+	m_debugVmFrameGrantedAcc += static_cast<double>(m_frameState.cycleBudgetGranted);
+	m_debugVmFrameCarryAcc += static_cast<double>(m_frameState.cycleCarryGranted);
+	const double frameElapsedMs = to_ms(frameNow - m_debugVmFrameReportAt);
+	if (frameElapsedMs >= 1000.0) {
+		const double scale = 1000.0 / frameElapsedMs;
+		const double cyclesPerSec = m_debugVmFrameCyclesUsedAcc * scale;
+		const double cyclesPerFrame = m_debugVmFrameCyclesUsedAcc / static_cast<double>(m_debugVmFrameCount);
+		const double remainingPerFrame = m_debugVmFrameRemainingAcc / static_cast<double>(m_debugVmFrameCount);
+		const double yieldsPerFrame = m_debugVmFrameYieldsAcc / static_cast<double>(m_debugVmFrameCount);
+		const double grantedPerFrame = m_debugVmFrameGrantedAcc / static_cast<double>(m_debugVmFrameCount);
+		const double carryPerFrame = m_debugVmFrameCarryAcc / static_cast<double>(m_debugVmFrameCount);
+		std::cout << "[BMSX][vmframe] cycles/sec=" << std::fixed << std::setprecision(1) << cyclesPerSec
+			<< " cycles/frame=" << std::fixed << std::setprecision(1) << cyclesPerFrame
+			<< " remaining/frame=" << std::fixed << std::setprecision(1) << remainingPerFrame
+			<< " yields/frame=" << std::fixed << std::setprecision(2) << yieldsPerFrame
+			<< " budget=" << m_cycleBudgetPerFrame
+			<< " granted=" << std::fixed << std::setprecision(1) << grantedPerFrame
+			<< " carry=" << std::fixed << std::setprecision(1) << carryPerFrame
+			<< std::endl;
+		m_debugVmFrameReportAt = frameNow;
+		m_debugVmFrameCount = 0;
+		m_debugVmFrameCyclesUsedAcc = 0.0;
+		m_debugVmFrameRemainingAcc = 0.0;
+		m_debugVmFrameYieldsAcc = 0.0;
+		m_debugVmFrameGrantedAcc = 0.0;
+		m_debugVmFrameCarryAcc = 0.0;
+	}
+
+	m_frameActive = false;
 }
 
 void VMRuntime::tickIdeInput() {
@@ -1207,6 +1264,17 @@ void VMRuntime::processIOCommands() {
 void VMRuntime::requestProgramReload() {
 	// Mark for reload - actual reload happens in the appropriate phase
 	m_vmInitialized = false;
+	resetFrameState();
+}
+
+void VMRuntime::resetFrameState() {
+	m_frameActive = false;
+	m_frameState = VMFrameState{};
+	m_pendingCarryBudget = 0;
+	m_lastTickCompleted = false;
+	m_lastTickBudgetRemaining = 0;
+	m_lastTickSequence = 0;
+	m_lastTickConsumedSequence = 0;
 }
 
 void VMRuntime::resetCartBootState() {
@@ -1290,6 +1358,36 @@ void VMRuntime::setCycleBudgetPerFrame(int budget) {
 	setGlobal("SYS_MAX_CYCLES_PER_FRAME", valueNumber(static_cast<double>(budget)));
 }
 
+void VMRuntime::grantCycleBudget(int baseBudget, int carryBudget) {
+	setCycleBudgetPerFrame(baseBudget);
+	const int totalBudget = baseBudget + carryBudget;
+	if (hasActiveTick()) {
+		m_frameState.cycleBudgetRemaining += totalBudget;
+		m_frameState.cycleBudgetGranted += totalBudget;
+		return;
+	}
+	if (carryBudget != 0) {
+		m_pendingCarryBudget = carryBudget;
+	}
+}
+
+bool VMRuntime::hasActiveTick() const {
+	return m_frameActive && m_vmInitialized && m_tickEnabled && !m_runtimeFailed;
+}
+
+bool VMRuntime::consumeLastTickCompletion(i64& outSequence, int& outRemaining) {
+	if (!m_lastTickCompleted) {
+		return false;
+	}
+	if (m_lastTickSequence == m_lastTickConsumedSequence) {
+		return false;
+	}
+	m_lastTickConsumedSequence = m_lastTickSequence;
+	outSequence = m_lastTickSequence;
+	outRemaining = m_lastTickBudgetRemaining;
+	return true;
+}
+
 bool VMRuntime::isDrawPending() const {
 	const bool lifecycleQueued = m_pendingLifecycleIndex < m_pendingLifecycleQueue.size();
 	return m_pendingVmCall == PendingCall::Entry
@@ -1315,6 +1413,8 @@ void VMRuntime::refreshMemoryMap() {
 		m_memory.setCartRom(cartRom.data, cartRom.size);
 	} else {
 		m_memory.setCartRom(CART_ROM_EMPTY_HEADER.data(), CART_ROM_EMPTY_HEADER.size());
+		InputMap emptyMapping;
+		Input::instance().getPlayerInput(DEFAULT_KEYBOARD_PLAYER_INDEX)->setInputMap(emptyMapping);
 	}
 	refreshMemoryMapGlobals();
 }
@@ -4454,6 +4554,11 @@ void VMRuntime::executeUpdateCallback(double deltaSeconds) {
 	} catch (const std::exception& e) {
 		std::cerr << "[VMRuntime] Error in update: " << e.what() << std::endl;
 		logVmCallStack();
+		m_pendingVmCall = PendingCall::None;
+		m_pendingLifecycleQueue.clear();
+		m_pendingLifecycleIndex = 0;
+		m_pendingEntryLifecycle.reset();
+		m_frameActive = false;
 		m_runtimeFailed = true;
 	}
 }
@@ -4602,6 +4707,11 @@ void VMRuntime::executeDrawCallback() {
 		api().playbackRenderQueue(m_preservedRenderQueue);
 		std::cerr << "[VMRuntime] Error in draw: " << e.what() << std::endl;
 		logVmCallStack();
+		m_pendingVmCall = PendingCall::None;
+		m_pendingLifecycleQueue.clear();
+		m_pendingLifecycleIndex = 0;
+		m_pendingEntryLifecycle.reset();
+		m_frameActive = false;
 		m_runtimeFailed = true;
 	}
 }
