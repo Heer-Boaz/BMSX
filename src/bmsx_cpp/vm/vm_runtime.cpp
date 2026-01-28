@@ -922,14 +922,9 @@ RunResult VMRuntime::runVmWithBudget() {
 	// }
 	// m_debugVmRuns += 1;
 	// m_debugVmRunsTotal += 1;
-	const int before = m_frameState.cycleBudgetRemaining;
-	RunResult result = m_cpu.run(before);
+	RunResult result = m_cpu.run(m_frameState.cycleBudgetRemaining);
 	const int remaining = m_cpu.instructionBudgetRemaining;
 	m_frameState.cycleBudgetRemaining = remaining;
-	const int consumed = before - remaining;
-	if (consumed > 0) {
-		advanceHardware(consumed);
-	}
 	// PERF LOGS DISABLED
 	// if (result == RunResult::Yielded) {
 	// 	m_debugVmYields += 1;
@@ -1403,6 +1398,7 @@ void VMRuntime::setCycleBudgetPerFrame(int budget) {
 void VMRuntime::grantCycleBudget(int baseBudget, int carryBudget) {
 	setCycleBudgetPerFrame(baseBudget);
 	const int totalBudget = baseBudget + carryBudget;
+	advanceHardware(totalBudget);
 	if (hasActiveTick()) {
 		m_frameState.cycleBudgetRemaining += totalBudget;
 		m_frameState.cycleBudgetGranted += totalBudget;

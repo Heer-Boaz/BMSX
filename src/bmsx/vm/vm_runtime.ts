@@ -358,6 +358,7 @@ export class BmsxVMRuntime {
 			this.registerVmGlobal('SYS_MAX_CYCLES_PER_FRAME', baseBudget);
 		}
 		const totalBudget = baseBudget + carryBudget;
+		this.advanceHardware(totalBudget);
 		if (this.currentFrameState !== null) {
 			this.currentFrameState.cycleBudgetRemaining += totalBudget;
 			this.currentFrameState.cycleBudgetGranted += totalBudget;
@@ -382,14 +383,9 @@ export class BmsxVMRuntime {
 			this.debugCycleRuns += 1;
 			this.debugCycleRunsTotal += 1;
 		}
-		const before = state.cycleBudgetRemaining;
-		const result = this.cpu.run(before);
+		const result = this.cpu.run(state.cycleBudgetRemaining);
 		const remaining = this.cpu.instructionBudgetRemaining;
 		state.cycleBudgetRemaining = remaining;
-		const consumed = before - remaining;
-		if (consumed > 0) {
-			this.advanceHardware(consumed);
-		}
 		if (debugCycle) {
 			if (result === RunResult.Yielded) {
 				this.debugCycleYields += 1;

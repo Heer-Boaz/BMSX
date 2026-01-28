@@ -36,6 +36,12 @@ static retro_input_state_t input_state_cb = nullptr;
 static retro_log_callback logging;
 static retro_usec_t g_pending_frame_time_usec = 0;
 static bool g_has_pending_frame_time = false;
+
+extern "C" void bmsx_set_frame_time_usec(retro_usec_t usec);
+
+static void frame_time_cb(retro_usec_t usec) {
+	bmsx_set_frame_time_usec(usec);
+}
 static retro_hw_render_callback g_hw_render;
 static bool g_hw_render_supported = false;
 static bool g_hw_render_requested = false;
@@ -1076,10 +1082,12 @@ void retro_set_environment(retro_environment_t cb) {
 		{0, 0, 0, 0, nullptr}};
 	cb(RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS, (void*)input_desc);
 
-	// retro_frame_time_callback frame_time{};
-	// frame_time.callback = frame_time_cb;
-	// frame_time.reference = 0;
-	// cb(RETRO_ENVIRONMENT_SET_FRAME_TIME_CALLBACK, &frame_time);
+	retro_frame_time_callback frame_time{};
+	frame_time.callback = frame_time_cb;
+	frame_time.reference = 0;
+	if (!cb(RETRO_ENVIRONMENT_SET_FRAME_TIME_CALLBACK, &frame_time)) {
+		throw std::runtime_error("[BMSX] RETRO_ENVIRONMENT_SET_FRAME_TIME_CALLBACK rejected by frontend.");
+	}
 
 	set_core_options(BMSX_ENABLE_GLES2);
 }
