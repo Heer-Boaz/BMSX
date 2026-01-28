@@ -871,6 +871,17 @@ async function runPlatformBuild(options: ParsedOptions): Promise<void> {
 		return;
 	}
 
+	// Browser platform needs the engine runtime bundle (`dist/engine(.debug).js`).
+	if (platform === 'browser') {
+		const engineRuntimeOut = debug ? './dist/engine.debug.js' : './dist/engine.js';
+		const runtimeNeedsRebuild = force || await isEngineRuntimeRebuildRequired(engineRuntimeOut);
+		if (runtimeNeedsRebuild) {
+			logInfo('Build engine runtime');
+			await buildEngineRuntime({ debug });
+			logOk(`Engine runtime ready → ${pc.white(engineRuntimeOut.replace('./dist/', 'dist/'))}`);
+		}
+	}
+
 	logInfo('Building platform artifacts');
 	await buildBootromScriptIfNewer({ debug, forceBuild: force, platform, canonicalization });
 	logOk('Boot ROM ready');
@@ -915,6 +926,14 @@ async function runBrowserDeploy(options: ParsedOptions): Promise<void> {
 	logBullet('Title', pc.white(resolvedTitle));
 	logBullet('Debug', debug ? pc.green('enabled') : pc.dim('disabled'));
 
+	const engineRuntimeOut = debug ? './dist/engine.debug.js' : './dist/engine.js';
+	const runtimeNeedsRebuild = force || await isEngineRuntimeRebuildRequired(engineRuntimeOut);
+	if (runtimeNeedsRebuild) {
+		logInfo('Build engine runtime');
+		await buildEngineRuntime({ debug });
+		logOk(`Engine runtime ready → ${pc.white(engineRuntimeOut.replace('./dist/', 'dist/'))}`);
+	}
+
 	await buildBootromScriptIfNewer({ debug, forceBuild: force, platform, canonicalization });
 	await buildGameHtmlAndManifest(romName, resolvedTitle, short_name, debug, true);
 	logOk(`Browser loader → ${pc.white('dist/index.html')}`);
@@ -945,14 +964,6 @@ async function runEngineBuild(options: ParsedOptions): Promise<void> {
 	logDivider('Engine');
 	logBullet('ROM', pc.bold(pc.white(engineRomName)));
 	logBullet('Debug', debug ? pc.green('enabled') : pc.dim('disabled'));
-
-	const engineRuntimeOut = debug ? './dist/engine.debug.js' : './dist/engine.js';
-	const runtimeNeedsRebuild = force || await isEngineRuntimeRebuildRequired(engineRuntimeOut);
-	if (runtimeNeedsRebuild) {
-		logInfo('Build engine runtime');
-		await buildEngineRuntime({ debug });
-		logOk(`Engine runtime ready → ${pc.white(engineRuntimeOut.replace('./dist/', 'dist/'))}`);
-	}
 
 	const assetsNeedRebuild = force || await isRebuildRequired(engineRomName, bootloader_path, engineResPath, {
 		includeCode: false,

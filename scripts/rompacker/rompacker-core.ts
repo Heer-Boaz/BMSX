@@ -357,15 +357,17 @@ export async function buildEngineRuntime(options: { debug: boolean }): Promise<v
 		});
 	};
 
-	await buildRuntime('./rom/engine.js', false);
 	if (debug) {
 		await buildRuntime('./rom/engine.debug.js', true);
+	} else {
+		await buildRuntime('./rom/engine.js', false);
 	}
 
 	await mkdir('./dist', { recursive: true });
-	await copyFile('./rom/engine.js', './dist/engine.js');
 	if (debug) {
 		await copyFile('./rom/engine.debug.js', './dist/engine.debug.js');
+	} else {
+		await copyFile('./rom/engine.js', './dist/engine.js');
 	}
 }
 
