@@ -563,7 +563,6 @@ export class BmsxVMRuntime {
 		return this.vmProgramMetadata !== null;
 	}
 
-
 	public static async init(cartridge?: Uint8Array): Promise<void> {
 		const engineLayer = $.engine_layer;
 		const playerIndex = Input.instance.startupGamepadIndex ?? 1;
@@ -576,7 +575,7 @@ export class BmsxVMRuntime {
 		});
 
 		if (!cartridge) {
-			$.set_inputmap(1, { 1: { keyboard: null, gamepad: null, pointer: null } }); // Default input mapping for player 1 is required even with no cart to prevent errors
+			$.set_inputmap(1, { keyboard: null, gamepad: null, pointer: null }); // Default input mapping for player 1 is required even with no cart to prevent errors
 
 			$.set_lua_sources(engineLuaSources);
 			configureMemoryMap(engineLayer.index.manifest.vm.limits);

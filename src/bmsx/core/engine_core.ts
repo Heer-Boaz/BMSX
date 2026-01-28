@@ -42,6 +42,7 @@ import { ActionEffectRegistry } from '../action_effects/effect_registry';
 import { InputSource, KeyModifier } from '../input/playerinput';
 import { shallowcopy } from '../utils/shallowcopy';
 import { clamp } from '../utils/clamp';
+import { clearBackQueues } from '../render/shared/render_queues';
 // No direct space helpers needed here; Spaces are revived as part of the world.
 
 const globalScope: any = typeof window !== 'undefined' ? window : globalThis;
@@ -727,7 +728,6 @@ export class EngineCore {
 			$.paused = true;
 		}
 		$._turnCounter++;
-		$.wasupdated = true;
 	}
 
 	private computeVmCycleBudget(runtime: BmsxVMRuntime): number {
@@ -767,6 +767,7 @@ export class EngineCore {
 				this.last_update = currentTime;
 
 				if (this._paused) {
+					this.wasupdated = true;
 					this.deltatime = hostDeltaMs;
 					this.accumulated_time = 0;
 					if (profile) t1 = performance.now();
@@ -787,6 +788,7 @@ export class EngineCore {
 				const maxAccumulated = this.timestep_ms * MAX_SUBSTEPS;
 				this.accumulated_time = clamp(this.accumulated_time + hostDeltaMs, 0, maxAccumulated);
 				this.wasupdated = false;
+				let presentQueued = false;
 
 				const runtime = BmsxVMRuntime.instance;
 				let ticksStarted = 0;
@@ -794,12 +796,13 @@ export class EngineCore {
 				if (profile) tUpdateStart = performance.now();
 				const baseBudget = this.computeVmCycleBudget(runtime);
 				const runTickPresentation = () => {
+					clearBackQueues();
 					// Presentation-facing delta time should reflect host timing.
 					this.deltatime = hostDeltaMs;
 					if (profile) t1 = performance.now();
 					this.world.runTickGroups(PRESENTATION_TICK_GROUPS, false);
 					if (profile) tPresentTick += performance.now() - t1;
-					this.wasupdated = true;
+					presentQueued = true;
 				};
 				if (!runGate.ready || this.paused) {
 					this.accumulated_time = 0;
@@ -837,7 +840,8 @@ export class EngineCore {
 						this.accumulated_time = clamp(this.accumulated_time - consumed, 0, maxAccumulated);
 					}
 				}
-				if (this.wasupdated) {
+				if (presentQueued) {
+					this.wasupdated = true;
 					if (profile) t1 = performance.now();
 					this.view.drawgame();
 					if (profile) tDraw += performance.now() - t1;

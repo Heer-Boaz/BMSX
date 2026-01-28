@@ -328,10 +328,10 @@ void EngineCore::tick(f64 deltaTime) {
 				(void)completionSequence;
 				m_cycleCarry = remaining > baseBudget ? baseBudget : remaining;
 			}
-			m_presentation_pending = true;
 		}
 		if (slicesProcessed > 0) {
 			m_accumulated_time = std::max(m_accumulated_time - static_cast<double>(slicesProcessed) * m_update_interval_ms, 0.0);
+			m_presentation_pending = true;
 		}
 		auto updateEnd = std::chrono::steady_clock::now();
 		m_last_tick_timing.vmUpdateMs = to_ms(updateEnd - updateStart);

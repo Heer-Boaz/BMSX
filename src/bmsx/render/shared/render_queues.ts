@@ -240,6 +240,14 @@ export function beginSpriteQueue(): number {
 	return spriteQueue.sizeFront();
 }
 
+export function clearBackQueues(): void {
+	spriteSubmissionCounter = 0;
+	spriteItemPoolIndex = 0;
+	spriteQueue.clearBack();
+	meshQueue.clearBack();
+	particleQueue.clearBack();
+}
+
 function renderLayerWeight(layer?: RenderLayer): number {
 	if (layer === 'ide') return 2;
 	if (layer === 'ui') return 1;

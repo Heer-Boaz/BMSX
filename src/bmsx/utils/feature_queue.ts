@@ -34,6 +34,7 @@ export class FeatureQueue<T> {
 	forEachFront(fn: (item: T, index: number) => void): void { this._front.forEach(fn); }
 	forEachBack(fn: (item: T, index: number) => void): void { this._back.forEach(fn); }
 	sortFront(compare: (a: T, b: T) => number): void { this._front.sort(compare); }
+	clearBack(): void { this._back.clear(); }
 
 	// Debug-only: return counts without exposing internal storage
 	debugCounts(): { front: number; back: number } { return { front: this._front.size, back: this._back.size }; }
