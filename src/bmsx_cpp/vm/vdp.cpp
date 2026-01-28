@@ -282,11 +282,27 @@ void VDP::flushAssetEdits() {
 			const u8* pixels = m_memory.getImagePixels(*entry);
 			const i32 width = static_cast<i32>(entry->regionW);
 			const i32 height = static_cast<i32>(entry->regionH);
-			const std::string& textureKey = (entry->id == engineAtlasName) ? ENGINE_ATLAS_TEXTURE_KEY : entry->id;
-			if ((entry->id == ATLAS_PRIMARY_SLOT_ID || entry->id == ATLAS_SECONDARY_SLOT_ID)
-				&& !texmanager->getTextureByUri(textureKey)) {
-				TextureHandle handle = texmanager->getOrCreateTexture(textureKey, pixels, width, height, {});
+			const bool isEngineAtlas = entry->id == engineAtlasName;
+			const bool isAtlasSlot = (entry->id == ATLAS_PRIMARY_SLOT_ID || entry->id == ATLAS_SECONDARY_SLOT_ID);
+			const std::string& textureKey = isEngineAtlas ? ENGINE_ATLAS_TEXTURE_KEY : entry->id;
+			if (isAtlasSlot || isEngineAtlas) {
+				TextureParams params;
+				const TextureKey key = texmanager->makeKey(textureKey, params);
+				TextureHandle handle = texmanager->getTexture(key);
+				if (!handle) {
+					handle = texmanager->getOrCreateTexture(key, pixels, width, height, params);
+				} else {
+					texmanager->updateTexture(handle, pixels, width, height, params);
+				}
 				view->textures[textureKey] = handle;
+				if (isEngineAtlas) {
+					ImgAsset* engineAsset = EngineCore::instance().assets().getImg(engineAtlasName);
+					if (!engineAsset) {
+						throw BMSX_RUNTIME_ERROR("[VDP] Engine atlas asset missing during texture upload.");
+					}
+					engineAsset->textureHandle = reinterpret_cast<uintptr_t>(handle);
+					engineAsset->uploaded = true;
+				}
 			} else {
 				texmanager->updateTexturesForAsset(textureKey, pixels, width, height);
 			}

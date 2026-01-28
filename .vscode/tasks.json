@@ -147,7 +147,7 @@
 			}
 		},
 		{
-			"label": "GAME VALIDATE: browser (+engine+force+debug)",
+			"label": "GAME VALIDATE (+bios+force+debug)",
 			"type": "shell",
 			"command": "npm",
 			"args": [

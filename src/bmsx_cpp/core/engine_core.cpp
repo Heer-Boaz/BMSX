@@ -855,7 +855,6 @@ void EngineCore::uploadTexturesToBackend(bool includeCartAssets) {
 
 	VMRuntime& runtime = VMRuntime::instance();
 	auto& memory = runtime.memory();
-	RuntimeAssets& assets = includeCartAssets ? m_assets : m_engine_assets;
 
 	m_view->initializeDefaultTextures();
 
@@ -879,16 +878,6 @@ void EngineCore::uploadTexturesToBackend(bool includeCartAssets) {
 		}
 		m_view->textures[slotId] = handle;
 	};
-
-	const std::string engineAtlasName = generateAtlasName(ENGINE_ATLAS_INDEX);
-	const auto& engineEntry = memory.getAssetEntry(engineAtlasName);
-	uploadSlot(ENGINE_ATLAS_TEXTURE_KEY, engineEntry);
-	ImgAsset* engineAsset = assets.getImg(engineAtlasName);
-	if (engineAsset) {
-		engineAsset->textureHandle = reinterpret_cast<uintptr_t>(m_view->textures[ENGINE_ATLAS_TEXTURE_KEY]);
-		engineAsset->uploaded = true;
-	}
-	m_view->loadEngineAtlasTexture();
 
 	uploadSlot(ATLAS_PRIMARY_SLOT_ID, memory.getAssetEntry(ATLAS_PRIMARY_SLOT_ID));
 	uploadSlot(ATLAS_SECONDARY_SLOT_ID, memory.getAssetEntry(ATLAS_SECONDARY_SLOT_ID));

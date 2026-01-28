@@ -127,9 +127,13 @@ uint32_t VmMemory::nextVramGarbageSeed() const {
 }
 
 void VmMemory::seedVramGarbage(uint32_t seed) {
+	seedVramGarbageRange(seed, VRAM_STAGING_BASE, ASSET_DATA_END);
+}
+
+void VmMemory::seedVramGarbageRange(uint32_t seed, uint32_t startAddr, uint32_t endAddr) {
 	uint32_t state = seed | 1u;
-	const size_t start = static_cast<size_t>(VRAM_STAGING_BASE - RAM_BASE);
-	const size_t end = static_cast<size_t>(ASSET_DATA_END - RAM_BASE);
+	const size_t start = static_cast<size_t>(startAddr - RAM_BASE);
+	const size_t end = static_cast<size_t>(endAddr - RAM_BASE);
 	size_t cursor = start;
 	const size_t alignedEnd = end - ((end - start) & 3u);
 	while (cursor < alignedEnd) {
@@ -200,6 +204,14 @@ void VmMemory::resetCartAssets() {
 	const size_t cartOffset = static_cast<size_t>(m_cartAssetDataBase - RAM_BASE);
 	const size_t cartEnd = static_cast<size_t>(ASSET_DATA_ALLOC_END - RAM_BASE);
 	std::fill(m_ram.begin() + cartOffset, m_ram.begin() + cartEnd, 0);
+	const uint32_t seed = nextVramGarbageSeed();
+	seedVramGarbageRange(seed, VRAM_STAGING_BASE, VRAM_ENGINE_ATLAS_BASE);
+	seedVramGarbageRange(seed ^ 0x9E3779B9u,
+		VRAM_PRIMARY_ATLAS_BASE,
+		VRAM_PRIMARY_ATLAS_BASE + VRAM_PRIMARY_ATLAS_SIZE);
+	seedVramGarbageRange(seed ^ 0x7F4A7C15u,
+		VRAM_SECONDARY_ATLAS_BASE,
+		VRAM_SECONDARY_ATLAS_BASE + VRAM_SECONDARY_ATLAS_SIZE);
 }
 
 VmMemory::AssetEntry& VmMemory::registerImageBuffer(const std::string& id, const u8* rgba, uint32_t width, uint32_t height, uint32_t flags) {

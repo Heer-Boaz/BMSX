@@ -129,6 +129,7 @@ private:
 
 	uint32_t nextVramGarbageSeed() const;
 	void seedVramGarbage(uint32_t seed);
+	void seedVramGarbageRange(uint32_t seed, uint32_t startAddr, uint32_t endAddr);
 
 	bool isIoAddress(uint32_t addr) const;
 	size_t ioIndex(uint32_t addr) const;

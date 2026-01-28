@@ -14,6 +14,11 @@ import {
 	OVERLAY_ROM_BASE,
 	RAM_BASE,
 	RAM_USED_END,
+	VRAM_ENGINE_ATLAS_BASE,
+	VRAM_PRIMARY_ATLAS_BASE,
+	VRAM_PRIMARY_ATLAS_SIZE,
+	VRAM_SECONDARY_ATLAS_BASE,
+	VRAM_SECONDARY_ATLAS_SIZE,
 	VRAM_STAGING_BASE,
 } from './memory_map';
 import { VM_IO_SLOT_COUNT } from './vm_io';
@@ -167,6 +172,10 @@ export class VmMemory {
 		const cartOffset = this.cartAssetDataBase - RAM_BASE;
 		const cartEnd = ASSET_DATA_ALLOC_END - RAM_BASE;
 		this.ram.fill(0, cartOffset, cartEnd);
+		const seed = this.nextVramGarbageSeed();
+		this.seedVramGarbageRange(seed, VRAM_STAGING_BASE, VRAM_ENGINE_ATLAS_BASE);
+		this.seedVramGarbageRange(seed ^ 0x9E3779B9, VRAM_PRIMARY_ATLAS_BASE, VRAM_PRIMARY_ATLAS_BASE + VRAM_PRIMARY_ATLAS_SIZE);
+		this.seedVramGarbageRange(seed ^ 0x7F4A7C15, VRAM_SECONDARY_ATLAS_BASE, VRAM_SECONDARY_ATLAS_BASE + VRAM_SECONDARY_ATLAS_SIZE);
 	}
 
 	public registerImageSlot(params: {
@@ -1042,9 +1051,13 @@ export class VmMemory {
 	}
 
 	private seedVramGarbage(seed: number): void {
-		const start = VRAM_STAGING_BASE - RAM_BASE;
-		const end = ASSET_DATA_END - RAM_BASE;
-		this.fillRangeWithGarbage(start, end - start, seed);
+		this.seedVramGarbageRange(seed, VRAM_STAGING_BASE, ASSET_DATA_END);
+	}
+
+	private seedVramGarbageRange(seed: number, startAddr: number, endAddr: number): void {
+		const start = startAddr - RAM_BASE;
+		const length = endAddr - startAddr;
+		this.fillRangeWithGarbage(start, length, seed);
 	}
 
 	private fillRangeWithGarbage(offset: number, length: number, seed: number): void {
