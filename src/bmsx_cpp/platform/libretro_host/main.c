@@ -158,6 +158,8 @@ static unsigned g_geom_base_w = 0;
 static unsigned g_geom_base_h = 0;
 static float g_geom_aspect = 0.0f;
 static bool g_geom_dirty = false;
+static struct retro_frame_time_callback g_frame_time_cb = {0};
+static bool g_has_frame_time_cb = false;
 static unsigned g_last_video_w = 0;
 static unsigned g_last_video_h = 0;
 static bool g_drop_video = false;
@@ -2516,6 +2518,15 @@ static bool environ_cb(unsigned cmd, void* data) {
 			g_hw_context_pending_reset = (g_hw_render.context_reset != NULL);
 			return true;
 		}
+		case RETRO_ENVIRONMENT_SET_FRAME_TIME_CALLBACK: {
+			const struct retro_frame_time_callback* cb = (const struct retro_frame_time_callback*)data;
+			if (!cb || !cb->callback) {
+				return false;
+			}
+			g_frame_time_cb = *cb;
+			g_has_frame_time_cb = true;
+			return true;
+		}
 		case RETRO_ENVIRONMENT_SHUTDOWN:
 			g_should_quit = 1;
 			return true;
@@ -4031,6 +4042,9 @@ int main(int argc, char** argv) {
 		}
 		for (unsigned i = 0; i < frames_to_run && !g_should_quit; ++i) {
 			g_drop_video = (frames_to_run > 1) && (i + 1 < frames_to_run);
+			if (g_has_frame_time_cb) {
+				g_frame_time_cb.callback((retro_usec_t)frame_usec);
+			}
 			if (g_menu_active) {
 				input_poll_cb();
 				if (g_use_hw_render) {

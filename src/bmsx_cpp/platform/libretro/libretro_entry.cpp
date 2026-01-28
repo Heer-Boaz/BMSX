@@ -1321,15 +1321,34 @@ bool retro_load_game(const struct retro_game_info* game) {
 	g_platform->tryLoadEngineAssets(game->path);
 	}
 
+	bool loaded_ok = false;
 	if (game->data && game->size > 0) {
-	return g_platform->loadRom(static_cast<const uint8_t*>(game->data),
-								game->size);
+		loaded_ok = g_platform->loadRom(static_cast<const uint8_t*>(game->data),
+										game->size);
 	} else if (game->path) {
-	return g_platform->loadRomFromPath(game->path);
+		loaded_ok = g_platform->loadRomFromPath(game->path);
+	} else {
+		logging.log(RETRO_LOG_ERROR, "[BMSX] No game data or path provided\n");
+		return false;
+	}
+	if (!loaded_ok) {
+		return false;
 	}
 
-	logging.log(RETRO_LOG_ERROR, "[BMSX] No game data or path provided\n");
-	return false;
+	const int64_t ufps_scaled = bmsx_get_ufps();
+	struct retro_system_av_info av = g_cached_av_info;
+	if (!g_cached_av_info_valid) {
+		memset(&av, 0, sizeof(av));
+		retro_get_system_av_info(&av);
+	}
+	av.timing.fps = (double)ufps_scaled / (double)bmsx::VM_HZ_SCALE;
+	environ_cb(RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO, &av);
+	g_cached_av_info = av;
+	g_cached_av_info_valid = true;
+	g_platform->setAVInfo(av);
+	g_platform->applyManifestViewport();
+
+	return true;
 }
 
 bool retro_load_game_special(unsigned game_type,
