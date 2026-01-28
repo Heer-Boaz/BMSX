@@ -118,14 +118,34 @@
 			],
 			"additionalProperties": false
 		},
-		"vmLimits": {
-			"type": "object",
-			"description": "Soft VM limits for memory and runtime budgets.",
-			"properties": {
-				"atlas_slot_bytes": {
-					"type": "integer",
-					"minimum": 1
-				},
+			"vmLimits": {
+				"type": "object",
+				"description": "Soft VM limits for memory and runtime budgets.",
+				"properties": {
+					"ram_bytes": {
+						"type": "integer",
+						"minimum": 1
+					},
+					"string_handle_count": {
+						"type": "integer",
+						"minimum": 1
+					},
+					"string_heap_bytes": {
+						"type": "integer",
+						"minimum": 1
+					},
+					"asset_table_bytes": {
+						"type": "integer",
+						"minimum": 1
+					},
+					"asset_data_bytes": {
+						"type": "integer",
+						"minimum": 1
+					},
+					"atlas_slot_bytes": {
+						"type": "integer",
+						"minimum": 1
+					},
 				"staging_bytes": {
 					"type": "integer",
 					"minimum": 1

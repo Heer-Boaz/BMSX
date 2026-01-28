@@ -1137,6 +1137,21 @@ bool loadAssetsFromRom(const u8* buffer,
 			assets.manifest.ufpsScaled = ufpsScaled;
 			if (vmObj.count("limits") && vmObj.at("limits").isObject()) {
 				const auto& limitsObj = vmObj.at("limits").asObject();
+				if (limitsObj.count("ram_bytes")) {
+					assets.manifest.ramBytes = limitsObj.at("ram_bytes").toI32();
+				}
+				if (limitsObj.count("string_handle_count")) {
+					assets.manifest.stringHandleCount = limitsObj.at("string_handle_count").toI32();
+				}
+				if (limitsObj.count("string_heap_bytes")) {
+					assets.manifest.stringHeapBytes = limitsObj.at("string_heap_bytes").toI32();
+				}
+				if (limitsObj.count("asset_table_bytes")) {
+					assets.manifest.assetTableBytes = limitsObj.at("asset_table_bytes").toI32();
+				}
+				if (limitsObj.count("asset_data_bytes")) {
+					assets.manifest.assetDataBytes = limitsObj.at("asset_data_bytes").toI32();
+				}
 				if (limitsObj.count("atlas_slot_bytes")) {
 					assets.manifest.atlasSlotBytes = limitsObj.at("atlas_slot_bytes").toI32();
 				}

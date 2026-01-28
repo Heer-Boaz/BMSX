@@ -24,9 +24,13 @@ import type { SkyboxImageIds } from '../render/shared/render_types';
 import type { AudioMeta, ImgMeta, Viewport, CartridgeIndex, RuntimeAssets, id2res } from '../rompack/rompack';
 import {
 	CanonicalizationType,
+	ATLAS_PRIMARY_SLOT_ID,
+	ATLAS_SECONDARY_SLOT_ID,
 	CART_ROM_HEADER_SIZE,
 	CART_ROM_MAGIC,
 	ENGINE_ATLAS_INDEX,
+	SKYBOX_FACE_DEFAULT_SIZE,
+	SKYBOX_SLOT_IDS,
 	generateAtlasName,
 } from '../rompack/rompack';
 import { AssetSourceStack, type RawAssetSource } from '../rompack/asset_source';
@@ -118,7 +122,7 @@ import {
 	VDP_ATLAS_ID_NONE,
 } from './vm_io';
 import { VmHandlerCache } from './vm_handler_cache';
-import { VmMemory, ASSET_TABLE_ENTRY_SIZE, ASSET_TABLE_HEADER_SIZE, type VmAssetEntry } from './vm_memory';
+import { VmMemory, ASSET_PAGE_SIZE, ASSET_TABLE_ENTRY_SIZE, ASSET_TABLE_HEADER_SIZE, type VmAssetEntry } from './vm_memory';
 import { DmaController } from './devices/dma_controller';
 import { ImgDecController } from './devices/imgdec_controller';
 import {
@@ -128,9 +132,15 @@ import {
 	CART_ROM_SIZE,
 	ENGINE_ROM_BASE,
 	ENGINE_STRING_HANDLE_LIMIT,
+	DEFAULT_STRING_HANDLE_COUNT,
+	DEFAULT_STRING_HEAP_SIZE,
+	DEFAULT_VRAM_ATLAS_SLOT_SIZE,
+	DEFAULT_VRAM_STAGING_SIZE,
+	IO_REGION_SIZE,
 	OVERLAY_ROM_BASE,
 	RAM_SIZE,
 	STRING_HANDLE_COUNT,
+	STRING_HANDLE_ENTRY_SIZE,
 	configureMemoryMap,
 	VRAM_ENGINE_ATLAS_BASE,
 	VRAM_ENGINE_ATLAS_SIZE,
@@ -140,6 +150,7 @@ import {
 	VRAM_SECONDARY_ATLAS_SIZE,
 	VRAM_STAGING_BASE,
 	VRAM_STAGING_SIZE,
+	type MemoryMapLimits,
 } from './memory_map';
 import { VDP } from './vdp';
 import {
@@ -173,7 +184,6 @@ export const VM_BUTTON_ACTIONS: ReadonlyArray<string> = [
 	'lb',
 ];
 
-const MAX_ASSETS = Math.floor((ASSET_TABLE_SIZE - ASSET_TABLE_HEADER_SIZE) / ASSET_TABLE_ENTRY_SIZE);
 
 // Flip back to 'msx' to restore default font in vm/editor
 export const EDITOR_FONT_VARIANT: VMFontVariant = 'tiny';
@@ -645,7 +655,13 @@ export class BmsxVMRuntime {
 			$.set_inputmap(1, { keyboard: null, gamepad: null, pointer: null }); // Default input mapping for player 1 is required even with no cart to prevent errors
 
 			$.set_lua_sources(engineLuaSources);
-			configureMemoryMap(engineLayer.index.manifest.vm.limits);
+			const engineMemoryLimits = BmsxVMRuntime.resolveMemoryMapLimits({
+				manifest: engineLayer.index.manifest,
+				engineSource,
+				assetSource: engineSource,
+				assets: engineLayer.assets,
+			});
+			configureMemoryMap(engineMemoryLimits);
 			BmsxVMRuntime.applyUfpsScaled(engineLayer.index.manifest.vm);
 			const cpuHz = BmsxVMRuntime.resolveCpuHz(engineLayer.index.manifest.vm);
 			const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuHz, $.ufps_scaled);
@@ -710,8 +726,18 @@ export class BmsxVMRuntime {
 		await applyWorkspaceOverridesToCart({ cart: cartLuaSources, storage: $.platform.storage, includeServer: true });
 		$.set_lua_sources(engineLuaSources);
 
-		const vmLimits = cartLayer.index.manifest.vm.limits ?? engineLayer.index.manifest.vm.limits;
-		configureMemoryMap(vmLimits);
+		const sizingAssets = BmsxVMRuntime.cloneRuntimeAssets(engineLayer.assets);
+		applyRuntimeAssetLayer(sizingAssets, cartLayer);
+		if (overlayLayer) {
+			applyRuntimeAssetLayer(sizingAssets, overlayLayer);
+		}
+		const memoryLimits = BmsxVMRuntime.resolveMemoryMapLimits({
+			manifest: cartLayer.index.manifest,
+			engineSource,
+			assetSource,
+			assets: sizingAssets,
+		});
+		configureMemoryMap(memoryLimits);
 		BmsxVMRuntime.applyUfpsScaled(cartLayer.index.manifest.vm);
 		const cpuHz = BmsxVMRuntime.resolveCpuHz(cartLayer.index.manifest.vm);
 		const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuHz, $.ufps_scaled);
@@ -810,6 +836,193 @@ export class BmsxVMRuntime {
 		// No defense against multiple calls; let it throw if misused.
 		BmsxVMRuntime._instance.dispose();
 		BmsxVMRuntime._instance = null;
+	}
+
+	private static cloneRuntimeAssets(base: RuntimeAssets): RuntimeAssets {
+		return {
+			img: { ...base.img },
+			audio: { ...base.audio },
+			model: { ...base.model },
+			data: { ...base.data },
+			audioevents: { ...base.audioevents },
+			project_root_path: base.project_root_path,
+			canonicalization: base.canonicalization,
+			manifest: base.manifest,
+		};
+	}
+
+	private static collectVmAssetEntryIds(engineSource: RawAssetSource, assetSource: RawAssetSource, assets: RuntimeAssets): Set<string> {
+		const ids = new Set<string>();
+		const engineAtlasId = generateAtlasName(ENGINE_ATLAS_INDEX);
+		const engineAtlas = assets.img[engineAtlasId];
+		if (!engineAtlas) {
+			throw new Error(`[BmsxVMRuntime] Engine atlas '${engineAtlasId}' not found for memory sizing.`);
+		}
+		ids.add(engineAtlasId);
+		ids.add(ATLAS_PRIMARY_SLOT_ID);
+		ids.add(ATLAS_SECONDARY_SLOT_ID);
+		for (let index = 0; index < SKYBOX_SLOT_IDS.length; index += 1) {
+			ids.add(SKYBOX_SLOT_IDS[index]!);
+		}
+
+		const sources = [engineSource, assetSource];
+		for (let sourceIndex = 0; sourceIndex < sources.length; sourceIndex += 1) {
+			const entries = sources[sourceIndex].list();
+			for (let index = 0; index < entries.length; index += 1) {
+				const entry = entries[index];
+				if (entry.type !== 'image') {
+					continue;
+				}
+				const asset = assets.img[entry.resid];
+				if (!asset) {
+					throw new Error(`[BmsxVMRuntime] Image asset '${entry.resid}' not found for memory sizing.`);
+				}
+				const meta = asset.imgmeta;
+				if (!meta) {
+					throw new Error(`[BmsxVMRuntime] Image asset '${entry.resid}' missing metadata for memory sizing.`);
+				}
+				if (meta.atlassed) {
+					ids.add(entry.resid);
+				}
+			}
+			const audioEntries = sources[sourceIndex].list('audio');
+			for (let index = 0; index < audioEntries.length; index += 1) {
+				const entry = audioEntries[index];
+				if (typeof entry.start !== 'number' || typeof entry.end !== 'number') {
+					throw new Error(`[BmsxVMRuntime] Audio asset '${entry.resid}' missing ROM buffer offsets for memory sizing.`);
+				}
+				ids.add(entry.resid);
+			}
+		}
+
+		return ids;
+	}
+
+	private static computeAssetTableBytes(engineSource: RawAssetSource, assetSource: RawAssetSource, assets: RuntimeAssets): { bytes: number; entryCount: number; stringBytes: number } {
+		const ids = this.collectVmAssetEntryIds(engineSource, assetSource, assets);
+		const encoder = new TextEncoder();
+		let stringBytes = 0;
+		for (const id of ids) {
+			stringBytes += encoder.encode(id).byteLength + 1;
+		}
+		const entryCount = ids.size;
+		const bytes = ASSET_TABLE_HEADER_SIZE + (entryCount * ASSET_TABLE_ENTRY_SIZE) + stringBytes;
+		return { bytes, entryCount, stringBytes };
+	}
+
+	private static alignUp(value: number, alignment: number): number {
+		const mod = value % alignment;
+		if (mod === 0) {
+			return value;
+		}
+		return value + (alignment - mod);
+	}
+
+	private static computeAssetDataBytes(
+		engineSource: RawAssetSource,
+		assetSource: RawAssetSource,
+		assetDataBaseOffset: number,
+		skyboxFaceSize: number,
+	): number {
+		if (skyboxFaceSize <= 0) {
+			throw new Error(`[BmsxVMRuntime] Invalid skybox_face_size: ${skyboxFaceSize}.`);
+		}
+		const skyboxBytes = skyboxFaceSize * skyboxFaceSize * 4;
+		let cursor = assetDataBaseOffset;
+		for (let index = 0; index < SKYBOX_SLOT_IDS.length; index += 1) {
+			cursor = this.alignUp(cursor, 4);
+			cursor += skyboxBytes;
+		}
+		const engineAudioEntries = engineSource.list('audio');
+		const engineAudioIds = new Set<string>();
+		for (let index = 0; index < engineAudioEntries.length; index += 1) {
+			const entry = engineAudioEntries[index];
+			if (typeof entry.start !== 'number' || typeof entry.end !== 'number') {
+				throw new Error(`[BmsxVMRuntime] Audio asset '${entry.resid}' missing ROM buffer offsets for memory sizing.`);
+			}
+			const size = entry.end - entry.start;
+			if (size < 0) {
+				throw new Error(`[BmsxVMRuntime] Audio asset '${entry.resid}' has invalid ROM buffer range for memory sizing.`);
+			}
+			cursor = this.alignUp(cursor, 2);
+			cursor += size;
+			engineAudioIds.add(entry.resid);
+		}
+		cursor = this.alignUp(cursor, ASSET_PAGE_SIZE);
+		const audioEntries = assetSource.list('audio');
+		for (let index = 0; index < audioEntries.length; index += 1) {
+			const entry = audioEntries[index];
+			if (engineAudioIds.has(entry.resid)) {
+				continue;
+			}
+			if (typeof entry.start !== 'number' || typeof entry.end !== 'number') {
+				throw new Error(`[BmsxVMRuntime] Audio asset '${entry.resid}' missing ROM buffer offsets for memory sizing.`);
+			}
+			const size = entry.end - entry.start;
+			if (size < 0) {
+				throw new Error(`[BmsxVMRuntime] Audio asset '${entry.resid}' has invalid ROM buffer range for memory sizing.`);
+			}
+			cursor = this.alignUp(cursor, 2);
+			cursor += size;
+		}
+		return cursor - assetDataBaseOffset;
+	}
+
+	private static resolveMemoryMapLimits(params: {
+		manifest: CartridgeIndex['manifest'];
+		engineSource: RawAssetSource;
+		assetSource: RawAssetSource;
+		assets: RuntimeAssets;
+	}): MemoryMapLimits {
+		const vm = params.manifest.vm;
+		const limits = vm.limits;
+		const stringHandleCount = limits?.string_handle_count ?? DEFAULT_STRING_HANDLE_COUNT;
+		const stringHeapBytes = limits?.string_heap_bytes ?? DEFAULT_STRING_HEAP_SIZE;
+		const atlasSlotBytes = limits?.atlas_slot_bytes ?? DEFAULT_VRAM_ATLAS_SLOT_SIZE;
+		const stagingBytes = limits?.staging_bytes ?? DEFAULT_VRAM_STAGING_SIZE;
+		const assetTableInfo = this.computeAssetTableBytes(params.engineSource, params.assetSource, params.assets);
+		const requiredAssetTableBytes = assetTableInfo.bytes;
+		const assetTableBytes = limits?.asset_table_bytes ?? requiredAssetTableBytes;
+		if (limits?.asset_table_bytes !== undefined && assetTableBytes !== requiredAssetTableBytes) {
+			throw new Error(`[BmsxVMRuntime] vm.limits.asset_table_bytes (${assetTableBytes}) must match required size ${requiredAssetTableBytes}.`);
+		}
+		const assetDataBaseOffset = IO_REGION_SIZE
+			+ (stringHandleCount * STRING_HANDLE_ENTRY_SIZE)
+			+ stringHeapBytes
+			+ assetTableBytes;
+		const skyboxFaceSize = vm.skybox_face_size ?? SKYBOX_FACE_DEFAULT_SIZE;
+		const requiredAssetDataBytes = this.computeAssetDataBytes(params.engineSource, params.assetSource, assetDataBaseOffset, skyboxFaceSize);
+		const assetDataBytes = limits?.asset_data_bytes ?? requiredAssetDataBytes;
+		if (limits?.asset_data_bytes !== undefined && assetDataBytes !== requiredAssetDataBytes) {
+			throw new Error(`[BmsxVMRuntime] vm.limits.asset_data_bytes (${assetDataBytes}) must match required size ${requiredAssetDataBytes}.`);
+		}
+		const computedRamBytes = IO_REGION_SIZE
+			+ (stringHandleCount * STRING_HANDLE_ENTRY_SIZE)
+			+ stringHeapBytes
+			+ assetTableBytes
+			+ assetDataBytes
+			+ stagingBytes
+			+ (atlasSlotBytes * 3);
+		const ramBytes = limits?.ram_bytes ?? computedRamBytes;
+		if (limits?.ram_bytes !== undefined && ramBytes !== computedRamBytes) {
+			throw new Error(`[BmsxVMRuntime] vm.limits.ram_bytes (${ramBytes}) must match required size ${computedRamBytes}.`);
+		}
+		const footprintMiB = (ramBytes / (1024 * 1024)).toFixed(2);
+		console.info(
+			`[BmsxVMRuntime] VM memory footprint: ram=${ramBytes} bytes (${footprintMiB} MiB) `
+			+ `(io=${IO_REGION_SIZE}, string_handles=${stringHandleCount}, string_heap=${stringHeapBytes}, `
+			+ `asset_table=${assetTableBytes} (${assetTableInfo.entryCount} entries, ${assetTableInfo.stringBytes} string bytes), `
+			+ `asset_data=${assetDataBytes}, vram_staging=${stagingBytes}, atlas_slot=${atlasSlotBytes}x3=${atlasSlotBytes * 3}).`,
+		);
+		return {
+			ram_bytes: ramBytes,
+			string_handle_count: stringHandleCount,
+			string_heap_bytes: stringHeapBytes,
+			asset_table_bytes: assetTableBytes,
+			asset_data_bytes: assetDataBytes,
+			atlas_slot_bytes: atlasSlotBytes,
+			staging_bytes: stagingBytes,
+		};
 	}
 
 	private static applyLayerMetadata(layer: RuntimeAssetLayer): void {
@@ -2965,7 +3178,8 @@ export class BmsxVMRuntime {
 		this.registerVmGlobal('SYS_CART_MAGIC', CART_ROM_MAGIC);
 		this.registerVmGlobal('SYS_CART_ROM_SIZE', CART_ROM_SIZE);
 		this.registerVmGlobal('SYS_RAM_SIZE', RAM_SIZE);
-		this.registerVmGlobal('SYS_MAX_ASSETS', MAX_ASSETS);
+		const maxAssets = Math.floor((ASSET_TABLE_SIZE - ASSET_TABLE_HEADER_SIZE) / ASSET_TABLE_ENTRY_SIZE);
+		this.registerVmGlobal('SYS_MAX_ASSETS', maxAssets);
 		this.registerVmGlobal('SYS_STRING_HANDLE_COUNT', STRING_HANDLE_COUNT);
 		this.registerVmGlobal('SYS_MAX_CYCLES_PER_FRAME', this.cycleBudgetPerFrame);
 		this.registerVmGlobal('SYS_VDP_DITHER', IO_VDP_DITHER);

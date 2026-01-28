@@ -10,5 +10,13 @@ vm:
     dma_bytes_per_sec_iso: 10000 # 8388608 # 8 MB/s
     dma_bytes_per_sec_bulk: 10000 # 26214400 # 25 MB/s
     ufps: 50000000 # 50 FPS
+    limits:
+        ram_bytes: 132303400
+        string_handle_count: 262144
+        string_heap_bytes: 33554432
+        asset_table_bytes: 34473
+        asset_data_bytes: 39977855
+        atlas_slot_bytes: 16777216
+        staging_bytes: 4194304
 lua:
     entry_path: cart.lua

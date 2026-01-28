@@ -4,6 +4,18 @@
 
 namespace bmsx {
 
+uint32_t RAM_SIZE = DEFAULT_RAM_SIZE;
+uint32_t STRING_HANDLE_COUNT = DEFAULT_STRING_HANDLE_COUNT;
+uint32_t STRING_HANDLE_TABLE_SIZE = DEFAULT_STRING_HANDLE_COUNT * STRING_HANDLE_ENTRY_SIZE;
+uint32_t STRING_HEAP_SIZE = DEFAULT_STRING_HEAP_SIZE;
+uint32_t ASSET_TABLE_SIZE = DEFAULT_ASSET_TABLE_SIZE;
+uint32_t STRING_HANDLE_TABLE_BASE = IO_BASE + IO_REGION_SIZE;
+uint32_t STRING_HEAP_BASE = STRING_HANDLE_TABLE_BASE + STRING_HANDLE_TABLE_SIZE;
+uint32_t ASSET_RAM_BASE = STRING_HEAP_BASE + STRING_HEAP_SIZE;
+uint32_t ASSET_RAM_SIZE = RAM_SIZE - (ASSET_RAM_BASE - RAM_BASE);
+uint32_t ASSET_TABLE_BASE = ASSET_RAM_BASE;
+uint32_t ASSET_DATA_BASE = ASSET_TABLE_BASE + ASSET_TABLE_SIZE;
+uint32_t ASSET_DATA_END = ASSET_RAM_BASE + ASSET_RAM_SIZE;
 uint32_t VRAM_ATLAS_SLOT_SIZE = DEFAULT_VRAM_ATLAS_SLOT_SIZE;
 uint32_t VRAM_STAGING_SIZE = DEFAULT_VRAM_STAGING_SIZE;
 uint32_t VRAM_SECONDARY_ATLAS_BASE = 0;
@@ -14,8 +26,25 @@ uint32_t VRAM_ENGINE_ATLAS_SIZE = 0;
 uint32_t VRAM_PRIMARY_ATLAS_SIZE = 0;
 uint32_t VRAM_SECONDARY_ATLAS_SIZE = 0;
 uint32_t ASSET_DATA_ALLOC_END = 0;
+uint32_t RAM_USED_END = RAM_BASE + DEFAULT_RAM_SIZE;
 
-static void recomputeVramLayout() {
+static void recomputeMemoryLayout(const MemoryMapConfig& config) {
+	RAM_SIZE = config.ramBytes;
+	STRING_HANDLE_COUNT = config.stringHandleCount;
+	STRING_HANDLE_TABLE_SIZE = STRING_HANDLE_COUNT * STRING_HANDLE_ENTRY_SIZE;
+	STRING_HEAP_SIZE = config.stringHeapBytes;
+	ASSET_TABLE_SIZE = config.assetTableBytes;
+	VRAM_ATLAS_SLOT_SIZE = config.atlasSlotBytes;
+	VRAM_STAGING_SIZE = config.stagingBytes;
+
+	STRING_HANDLE_TABLE_BASE = IO_BASE + IO_REGION_SIZE;
+	STRING_HEAP_BASE = STRING_HANDLE_TABLE_BASE + STRING_HANDLE_TABLE_SIZE;
+	ASSET_RAM_BASE = STRING_HEAP_BASE + STRING_HEAP_SIZE;
+	ASSET_TABLE_BASE = ASSET_RAM_BASE;
+	ASSET_DATA_BASE = ASSET_TABLE_BASE + ASSET_TABLE_SIZE;
+	ASSET_DATA_END = ASSET_DATA_BASE + config.assetDataBytes + VRAM_STAGING_SIZE + (VRAM_ATLAS_SLOT_SIZE * 3u);
+	ASSET_RAM_SIZE = ASSET_DATA_END - ASSET_RAM_BASE;
+
 	VRAM_SECONDARY_ATLAS_BASE = ASSET_DATA_END - VRAM_ATLAS_SLOT_SIZE;
 	VRAM_PRIMARY_ATLAS_BASE = VRAM_SECONDARY_ATLAS_BASE - VRAM_ATLAS_SLOT_SIZE;
 	VRAM_ENGINE_ATLAS_BASE = VRAM_PRIMARY_ATLAS_BASE - VRAM_ATLAS_SLOT_SIZE;
@@ -27,23 +56,43 @@ static void recomputeVramLayout() {
 	if (ASSET_DATA_ALLOC_END < ASSET_DATA_BASE) {
 		throw std::runtime_error("[MemoryMap] VRAM layout exceeds asset RAM.");
 	}
+	RAM_USED_END = RAM_BASE + RAM_SIZE;
 }
 
-void configureMemoryMap(uint32_t atlasSlotBytes, uint32_t stagingBytes) {
-	if (atlasSlotBytes == 0) {
+void configureMemoryMap(const MemoryMapConfig& config) {
+	if (config.ramBytes == 0) {
+		throw std::runtime_error("[MemoryMap] ram_bytes must be greater than 0.");
+	}
+	if (config.stringHandleCount == 0) {
+		throw std::runtime_error("[MemoryMap] string_handle_count must be greater than 0.");
+	}
+	if (config.stringHeapBytes == 0) {
+		throw std::runtime_error("[MemoryMap] string_heap_bytes must be greater than 0.");
+	}
+	if (config.assetTableBytes == 0) {
+		throw std::runtime_error("[MemoryMap] asset_table_bytes must be greater than 0.");
+	}
+	if (config.assetDataBytes == 0) {
+		throw std::runtime_error("[MemoryMap] asset_data_bytes must be greater than 0.");
+	}
+	if (config.atlasSlotBytes == 0) {
 		throw std::runtime_error("[MemoryMap] atlas_slot_bytes must be greater than 0.");
 	}
-	if (stagingBytes == 0) {
+	if (config.stagingBytes == 0) {
 		throw std::runtime_error("[MemoryMap] staging_bytes must be greater than 0.");
 	}
-	VRAM_ATLAS_SLOT_SIZE = atlasSlotBytes;
-	VRAM_STAGING_SIZE = stagingBytes;
-	recomputeVramLayout();
+	recomputeMemoryLayout(config);
 }
 
 struct MemoryMapInitializer {
 	MemoryMapInitializer() {
-		recomputeVramLayout();
+		MemoryMapConfig config;
+		const uint32_t stringHandleTableBytes = config.stringHandleCount * STRING_HANDLE_ENTRY_SIZE;
+		const uint32_t assetDataBytes = DEFAULT_RAM_SIZE
+			- (IO_REGION_SIZE + stringHandleTableBytes + DEFAULT_STRING_HEAP_SIZE + DEFAULT_ASSET_TABLE_SIZE + DEFAULT_VRAM_STAGING_SIZE + (DEFAULT_VRAM_ATLAS_SLOT_SIZE * 3u));
+		config.assetDataBytes = assetDataBytes;
+		config.ramBytes = DEFAULT_RAM_SIZE;
+		recomputeMemoryLayout(config);
 	}
 };
 

@@ -191,6 +191,7 @@ void VDP::registerImageAssets(RuntimeAssets& assets, bool keepDecodedData) {
 	seedAtlasSlot(*primarySlotEntry);
 	seedAtlasSlot(*secondarySlotEntry);
 
+	std::sort(viewAssets.begin(), viewAssets.end());
 	for (const auto& id : viewAssets) {
 		auto* imgAsset = assets.getImg(id);
 		if (!imgAsset) {

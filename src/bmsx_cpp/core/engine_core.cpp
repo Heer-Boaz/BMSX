@@ -16,8 +16,11 @@
 #include <cmath>
 #include <cstdarg>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <unordered_set>
+#include <vector>
+#include <limits>
 #include <stdexcept>
 
 namespace bmsx {
@@ -28,24 +31,227 @@ inline f64 to_ms(std::chrono::steady_clock::duration duration) {
 	return std::chrono::duration<f64, std::milli>(duration).count();
 }
 
-void applyManifestMemoryLimits(const RomManifest& manifest) {
-	uint32_t atlasSlotBytes = DEFAULT_VRAM_ATLAS_SLOT_SIZE;
-	uint32_t stagingBytes = DEFAULT_VRAM_STAGING_SIZE;
+constexpr uint32_t ASSET_PAGE_SIZE = 1u << 12;
+
+uint32_t alignUp(uint32_t value, uint32_t alignment) {
+	const uint32_t mask = alignment - 1u;
+	return (value + mask) & ~mask;
+}
+
+std::vector<std::string> collectAudioIds(const RuntimeAssets& assets) {
+	std::vector<std::string> ids;
+	ids.reserve(assets.audio.size());
+	for (const auto& [id, audioAsset] : assets.audio) {
+		ids.push_back(id);
+	}
+	std::sort(ids.begin(), ids.end());
+	return ids;
+}
+
+void collectVmAssetIds(const RuntimeAssets& engineAssets, const RuntimeAssets& assets, std::unordered_set<std::string>& ids) {
+	const std::string engineAtlasId = generateAtlasName(ENGINE_ATLAS_INDEX);
+	const ImgAsset* engineAtlas = engineAssets.getImg(engineAtlasId);
+	if (!engineAtlas) {
+		throw std::runtime_error("[EngineCore] Engine atlas missing from assets.");
+	}
+	ids.insert(engineAtlasId);
+	ids.insert(ATLAS_PRIMARY_SLOT_ID);
+	ids.insert(ATLAS_SECONDARY_SLOT_ID);
+	ids.insert(SKYBOX_SLOT_POSX_ID);
+	ids.insert(SKYBOX_SLOT_NEGX_ID);
+	ids.insert(SKYBOX_SLOT_POSY_ID);
+	ids.insert(SKYBOX_SLOT_NEGY_ID);
+	ids.insert(SKYBOX_SLOT_POSZ_ID);
+	ids.insert(SKYBOX_SLOT_NEGZ_ID);
+
+	for (const auto& [id, imgAsset] : engineAssets.img) {
+		if (imgAsset.meta.atlassed) {
+			ids.insert(id);
+		}
+	}
+	for (const auto& [id, imgAsset] : assets.img) {
+		if (imgAsset.meta.atlassed) {
+			ids.insert(id);
+		}
+	}
+
+	for (const auto& [id, audioAsset] : engineAssets.audio) {
+		ids.insert(id);
+	}
+	for (const auto& [id, audioAsset] : assets.audio) {
+		ids.insert(id);
+	}
+}
+
+uint32_t computeAssetTableBytes(const RuntimeAssets& engineAssets, const RuntimeAssets& assets) {
+	std::unordered_set<std::string> ids;
+	collectVmAssetIds(engineAssets, assets, ids);
+	uint64_t stringBytes = 0;
+	for (const auto& id : ids) {
+		stringBytes += static_cast<uint64_t>(id.size()) + 1u;
+	}
+	const uint64_t entryCount = ids.size();
+	const uint64_t bytes = static_cast<uint64_t>(ASSET_TABLE_HEADER_SIZE)
+		+ (entryCount * static_cast<uint64_t>(ASSET_TABLE_ENTRY_SIZE))
+		+ stringBytes;
+	if (bytes > std::numeric_limits<uint32_t>::max()) {
+		throw std::runtime_error("[EngineCore] Asset table size exceeds addressable range.");
+	}
+	return static_cast<uint32_t>(bytes);
+}
+
+uint32_t computeAssetDataBytes(const RuntimeAssets& engineAssets, const RuntimeAssets& assets, uint32_t assetDataBaseOffset) {
+	const i32 faceSize = assets.manifest.skyboxFaceSize > 0
+		? assets.manifest.skyboxFaceSize
+		: SKYBOX_FACE_DEFAULT_SIZE;
+	if (faceSize <= 0) {
+		throw std::runtime_error("[EngineCore] Invalid skybox_face_size.");
+	}
+	const uint32_t skyboxBytes = static_cast<uint32_t>(faceSize) * static_cast<uint32_t>(faceSize) * 4u;
+	uint32_t cursor = assetDataBaseOffset;
+	for (int i = 0; i < 6; i += 1) {
+		cursor = alignUp(cursor, 4u);
+		cursor += skyboxBytes;
+	}
+	const auto engineAudioIds = collectAudioIds(engineAssets);
+	std::unordered_set<std::string> engineAudioSet(engineAudioIds.begin(), engineAudioIds.end());
+	for (const auto& id : engineAudioIds) {
+		const AudioAsset* audio = engineAssets.getAudio(id);
+		if (!audio) {
+			throw std::runtime_error("[EngineCore] Audio asset '" + id + "' missing from assets.");
+		}
+		if (audio->bytes.empty()) {
+			throw std::runtime_error("[EngineCore] Audio asset '" + id + "' missing encoded bytes.");
+		}
+		const uint32_t size = static_cast<uint32_t>(audio->bytes.size());
+		cursor = alignUp(cursor, 2u);
+		cursor += size;
+	}
+	cursor = alignUp(cursor, ASSET_PAGE_SIZE);
+	const auto audioIds = collectAudioIds(assets);
+	for (const auto& id : audioIds) {
+		if (engineAudioSet.find(id) != engineAudioSet.end()) {
+			continue;
+		}
+		const AudioAsset* audio = assets.getAudio(id);
+		if (!audio) {
+			throw std::runtime_error("[EngineCore] Audio asset '" + id + "' missing from assets.");
+		}
+		if (audio->bytes.empty()) {
+			throw std::runtime_error("[EngineCore] Audio asset '" + id + "' missing encoded bytes.");
+		}
+		const uint32_t size = static_cast<uint32_t>(audio->bytes.size());
+		cursor = alignUp(cursor, 2u);
+		cursor += size;
+	}
+	return cursor - assetDataBaseOffset;
+}
+
+MemoryMapConfig resolveMemoryMapConfig(const RomManifest& manifest, const RuntimeAssets& assets, const RuntimeAssets& engineAssets) {
+	MemoryMapConfig config;
+	if (manifest.stringHandleCount) {
+		const i32 value = *manifest.stringHandleCount;
+		if (value <= 0) {
+			throw std::runtime_error("[EngineCore] string_handle_count must be greater than 0.");
+		}
+		config.stringHandleCount = static_cast<uint32_t>(value);
+	}
+	if (manifest.stringHeapBytes) {
+		const i32 value = *manifest.stringHeapBytes;
+		if (value <= 0) {
+			throw std::runtime_error("[EngineCore] string_heap_bytes must be greater than 0.");
+		}
+		config.stringHeapBytes = static_cast<uint32_t>(value);
+	}
 	if (manifest.atlasSlotBytes) {
 		const i32 value = *manifest.atlasSlotBytes;
 		if (value <= 0) {
 			throw std::runtime_error("[EngineCore] atlas_slot_bytes must be greater than 0.");
 		}
-		atlasSlotBytes = static_cast<uint32_t>(value);
+		config.atlasSlotBytes = static_cast<uint32_t>(value);
 	}
 	if (manifest.stagingBytes) {
 		const i32 value = *manifest.stagingBytes;
 		if (value <= 0) {
 			throw std::runtime_error("[EngineCore] staging_bytes must be greater than 0.");
 		}
-		stagingBytes = static_cast<uint32_t>(value);
+		config.stagingBytes = static_cast<uint32_t>(value);
 	}
-	configureMemoryMap(atlasSlotBytes, stagingBytes);
+
+	const uint32_t requiredAssetTableBytes = computeAssetTableBytes(engineAssets, assets);
+	if (manifest.assetTableBytes) {
+		const i32 value = *manifest.assetTableBytes;
+		if (value <= 0) {
+			throw std::runtime_error("[EngineCore] asset_table_bytes must be greater than 0.");
+		}
+		const uint32_t resolved = static_cast<uint32_t>(value);
+		if (resolved != requiredAssetTableBytes) {
+			throw std::runtime_error("[EngineCore] asset_table_bytes must match required size.");
+		}
+		config.assetTableBytes = resolved;
+	} else {
+		config.assetTableBytes = requiredAssetTableBytes;
+	}
+
+	const uint32_t stringHandleTableBytes = config.stringHandleCount * STRING_HANDLE_ENTRY_SIZE;
+	const uint32_t assetDataBaseOffset = IO_REGION_SIZE + stringHandleTableBytes + config.stringHeapBytes + config.assetTableBytes;
+	const uint32_t requiredAssetDataBytes = computeAssetDataBytes(engineAssets, assets, assetDataBaseOffset);
+	if (manifest.assetDataBytes) {
+		const i32 value = *manifest.assetDataBytes;
+		if (value <= 0) {
+			throw std::runtime_error("[EngineCore] asset_data_bytes must be greater than 0.");
+		}
+		const uint32_t resolved = static_cast<uint32_t>(value);
+		if (resolved != requiredAssetDataBytes) {
+			throw std::runtime_error("[EngineCore] asset_data_bytes must match required size.");
+		}
+		config.assetDataBytes = resolved;
+	} else {
+		config.assetDataBytes = requiredAssetDataBytes;
+	}
+
+	const uint64_t computedRamBytes = static_cast<uint64_t>(IO_REGION_SIZE)
+		+ static_cast<uint64_t>(stringHandleTableBytes)
+		+ static_cast<uint64_t>(config.stringHeapBytes)
+		+ static_cast<uint64_t>(config.assetTableBytes)
+		+ static_cast<uint64_t>(config.assetDataBytes)
+		+ static_cast<uint64_t>(config.stagingBytes)
+		+ static_cast<uint64_t>(config.atlasSlotBytes) * 3u;
+	if (computedRamBytes > std::numeric_limits<uint32_t>::max()) {
+		throw std::runtime_error("[EngineCore] ram_bytes exceeds addressable range.");
+	}
+	const uint32_t requiredRamBytes = static_cast<uint32_t>(computedRamBytes);
+	if (manifest.ramBytes) {
+		const i32 value = *manifest.ramBytes;
+		if (value <= 0) {
+			throw std::runtime_error("[EngineCore] ram_bytes must be greater than 0.");
+		}
+		const uint32_t resolved = static_cast<uint32_t>(value);
+		if (resolved != requiredRamBytes) {
+			throw std::runtime_error("[EngineCore] ram_bytes must match required size.");
+		}
+		config.ramBytes = resolved;
+	} else {
+		config.ramBytes = requiredRamBytes;
+	}
+	const double ramMiB = static_cast<double>(config.ramBytes) / (1024.0 * 1024.0);
+	std::cerr
+		<< "[EngineCore] VM memory footprint: ram=" << config.ramBytes << " bytes ("
+		<< std::fixed << std::setprecision(2) << ramMiB << " MiB) "
+		<< "(io=" << IO_REGION_SIZE
+		<< ", string_handles=" << config.stringHandleCount
+		<< ", string_heap=" << config.stringHeapBytes
+		<< ", asset_table=" << config.assetTableBytes
+		<< ", asset_data=" << config.assetDataBytes
+		<< ", vram_staging=" << config.stagingBytes
+		<< ", atlas_slot=" << config.atlasSlotBytes << "x3=" << (config.atlasSlotBytes * 3u)
+		<< ")." << std::endl;
+	return config;
+}
+
+void applyManifestMemoryLimits(const RomManifest& manifest, const RuntimeAssets& assets, const RuntimeAssets& engineAssets) {
+	const MemoryMapConfig config = resolveMemoryMapConfig(manifest, assets, engineAssets);
+	configureMemoryMap(config);
 }
 
 bool tryResolveCpuHz(const RomManifest& manifest, i64& outHz) {
@@ -580,7 +786,7 @@ bool EngineCore::bootWithoutCart() {
 	m_assets.projectRootPath = m_engine_assets.projectRootPath;
 	const i64 ufpsScaled = resolveUfpsScaled(m_engine_assets.manifest);
 	setUfpsScaled(ufpsScaled);
-	applyManifestMemoryLimits(m_assets.manifest);
+	applyManifestMemoryLimits(m_assets.manifest, m_assets, m_engine_assets);
 	// Don't copy vmProgram - use engine_assets.vmProgram directly below
 
 	Vec2 viewportSize{
@@ -695,7 +901,7 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 	m_assets.projectRootPath = std::move(cartAssets.projectRootPath);
 	const i64 ufpsScaled = resolveUfpsScaled(m_assets.manifest);
 	setUfpsScaled(ufpsScaled);
-	applyManifestMemoryLimits(m_assets.manifest);
+	applyManifestMemoryLimits(m_assets.manifest, m_assets, m_engine_assets);
 	i64 cpuHz = 0;
 	const bool cartCpuValid = tryResolveCpuHz(m_assets.manifest, cpuHz);
 	if (!cartCpuValid) {

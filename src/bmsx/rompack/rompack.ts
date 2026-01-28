@@ -425,6 +425,11 @@ export type VmVoiceLimits = {
 	ui?: number;
 };
 export type VmLimits = {
+	ram_bytes?: number;
+	string_handle_count?: number;
+	string_heap_bytes?: number;
+	asset_table_bytes?: number;
+	asset_data_bytes?: number;
 	atlas_slot_bytes?: number;
 	staging_bytes?: number;
 	max_voices?: VmVoiceLimits;

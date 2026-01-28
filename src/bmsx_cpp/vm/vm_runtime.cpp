@@ -26,6 +26,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <unordered_set>
+#include <vector>
 
 namespace bmsx {
 namespace {
@@ -1464,7 +1465,14 @@ void VMRuntime::buildAssetMemory(RuntimeAssets& assets, bool keepDecodedData, As
 	}
 	m_vdp.registerImageAssets(assets, keepDecodedData);
 	const RuntimeAssets* fallback = assets.fallback;
-	for (auto& [id, audioAsset] : assets.audio) {
+	std::vector<std::string> audioIds;
+	audioIds.reserve(assets.audio.size());
+	for (const auto& [id, audioAsset] : assets.audio) {
+		audioIds.push_back(id);
+	}
+	std::sort(audioIds.begin(), audioIds.end());
+	for (const auto& id : audioIds) {
+		auto& audioAsset = assets.audio.at(id);
 		if (m_memory.hasAsset(id)) {
 			continue;
 		}
@@ -1484,10 +1492,17 @@ void VMRuntime::buildAssetMemory(RuntimeAssets& assets, bool keepDecodedData, As
 		);
 	}
 	if (fallback) {
+		std::vector<std::string> fallbackIds;
+		fallbackIds.reserve(fallback->audio.size());
 		for (const auto& [id, audioAsset] : fallback->audio) {
 			if (assets.audio.find(id) != assets.audio.end()) {
 				continue;
 			}
+			fallbackIds.push_back(id);
+		}
+		std::sort(fallbackIds.begin(), fallbackIds.end());
+		for (const auto& id : fallbackIds) {
+			const auto& audioAsset = fallback->audio.at(id);
 			if (m_memory.hasAsset(id)) {
 				continue;
 			}
