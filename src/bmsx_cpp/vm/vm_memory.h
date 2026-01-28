@@ -63,6 +63,16 @@ public:
 		uint32_t audioDataSize = 0;
 	};
 
+	struct ImageWritePlan {
+		uint32_t baseAddr = 0;
+		uint32_t writeWidth = 0;
+		uint32_t writeHeight = 0;
+		uint32_t writeStride = 0;
+		uint32_t sourceStride = 0;
+		size_t writeLen = 0;
+		bool clipped = false;
+	};
+
 	void resetAssetMemory();
 	AssetEntry& registerImageBuffer(const std::string& id, const u8* rgba, uint32_t width, uint32_t height, uint32_t flags);
 	AssetEntry& registerImageSlot(const std::string& id, uint32_t capacityBytes, uint32_t flags);
@@ -82,6 +92,7 @@ public:
 	bool hasAsset(const std::string& id) const;
 	void sealEngineAssets();
 	void resetCartAssets();
+	ImageWritePlan planImageSlotWrite(AssetEntry& entry, size_t pixelBytes, uint32_t width, uint32_t height, uint32_t capacity);
 	void writeImageSlot(AssetEntry& entry, const u8* pixels, size_t pixelBytes, uint32_t width, uint32_t height, uint32_t capacity);
 	void updateImageViewBase(AssetEntry& entry, const AssetEntry& base);
 	void finalizeAssetTable();

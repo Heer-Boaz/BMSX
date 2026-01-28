@@ -23,6 +23,8 @@ local CART_ROM_MAGIC = 0x58534D42
 
 local boot_start = os.clock()
 local boot_requested = false
+local engine_atlas_ready = false
+local engine_atlas_failed = false
 local error_page = 1
 local last_error_count = 0
 local view_mode = 'overview'
@@ -360,6 +362,16 @@ end
 function init()
 	boot_start = os.clock()
 	boot_requested = false
+	engine_atlas_ready = false
+	engine_atlas_failed = false
+	on_irq(function(flags)
+		if (flags & IRQ_IMG_DONE) ~= 0 then
+			engine_atlas_ready = true
+		end
+		if (flags & IRQ_IMG_ERROR) ~= 0 then
+			engine_atlas_failed = true
+		end
+	end)
 	vdp_load_engine_atlas()
 end
 
@@ -392,11 +404,12 @@ function update(_dt)
 	local cart_valid = cart_header and #cart_errors == 0
 	local cart_present_and_ready = peek(CART_ROM_BASE) == CART_ROM_MAGIC and peek(sys_cart_bootready) == 1 and cart_valid
 
-	if cart_present_and_ready and not boot_requested and elapsed_seconds() >= boot_delay then
+	if cart_present_and_ready and not boot_requested and elapsed_seconds() >= boot_delay and engine_atlas_ready and not engine_atlas_failed then
 		boot_requested = true
 		poke(sys_boot_cart, 1)
 	end
 end
+
 
 function draw()
 	local width = display_width()

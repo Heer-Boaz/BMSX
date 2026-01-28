@@ -256,7 +256,9 @@ public:
 
 	void setCanonicalization(CanonicalizationType canonicalization);
 	void setCpuHz(i64 hz);
+	void setTransferRates(i64 imgDecBytesPerSec, i64 dmaBytesPerSecIso, i64 dmaBytesPerSecBulk);
 	i64 cpuHz() const { return m_cpuHz; }
+	void resetHardwareState();
 	i64 updateCountTotal() const { return m_debugUpdateCountTotal; }
 	void setCycleBudgetPerFrame(int budget);
 	void grantCycleBudget(int baseBudget, int carryBudget);
@@ -271,6 +273,15 @@ public:
 	void buildAssetMemory(RuntimeAssets& assets, bool keepDecodedData, AssetBuildMode mode = AssetBuildMode::Full);
 
 private:
+	struct RateBudget {
+		i64 bytesPerSec = 0;
+		i64 carry = 0;
+
+		void setBytesPerSec(i64 value) { bytesPerSec = value; }
+		void resetCarry() { carry = 0; }
+		uint32_t calcBytesPerTick(i64 cpuHz, i64 cyclesPerTick);
+	};
+
 	enum class PendingCall {
 		None,
 		Entry,
@@ -297,6 +308,8 @@ private:
 	void executeUpdateCallback(double deltaSeconds);
 	void executeDrawCallback();
 	void tickHardware();
+	void refreshTransferBudgets();
+	void resetTransferCarry();
 	void raiseIrqFlags(uint32_t mask);
 	bool dispatchIrqFlags();
 	RunResult runVmWithBudget();
@@ -400,6 +413,12 @@ private:
 		i64 m_lastTickConsumedSequence = 0;
 		int m_pendingCarryBudget = 0;
 		i64 m_cpuHz = 0;
+		i64 m_imgDecBytesPerSec = 0;
+		i64 m_dmaBytesPerSecIso = 0;
+		i64 m_dmaBytesPerSecBulk = 0;
+		RateBudget m_imgRate;
+		RateBudget m_dmaIsoRate;
+		RateBudget m_dmaBulkRate;
 		int m_cycleBudgetPerFrame = DEFAULT_CYCLE_BUDGET;
 };
 

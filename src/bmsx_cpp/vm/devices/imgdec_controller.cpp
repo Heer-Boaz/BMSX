@@ -1,5 +1,6 @@
 #include "imgdec_controller.h"
 
+#include "dma_controller.h"
 #include "../memory_map.h"
 #include "../vm_io.h"
 #include "../vm_memory.h"
@@ -23,10 +24,37 @@ TaskGate& imgdecGate() {
 
 }
 
-ImgDecController::ImgDecController(VmMemory& memory, std::function<void(uint32_t)> raiseIrq)
+ImgDecController::ImgDecController(VmMemory& memory, DmaController& dma, std::function<void(uint32_t)> raiseIrq)
 	: m_gate(imgdecGate().group("imgdec"))
 	, m_memory(memory)
+	, m_dma(dma)
 	, m_raiseIrq(std::move(raiseIrq)) {}
+
+void ImgDecController::setDecodeBudget(uint32_t bytesPerTick) {
+	m_decodeBudget = bytesPerTick;
+}
+
+void ImgDecController::reset() {
+	m_decodeToken += 1;
+	m_active = false;
+	m_status = 0;
+	m_pendingError = nullptr;
+	m_pendingResult.reset();
+	m_pendingEntry = nullptr;
+	m_pendingCap = 0;
+	m_decodeActive = false;
+	m_decodeRemaining = 0;
+	m_decodePlan = VmMemory::ImageWritePlan{};
+	m_decodePixels.clear();
+	m_decodeQueued = false;
+	m_memory.writeValue(IO_IMG_SRC, valueNumber(0.0));
+	m_memory.writeValue(IO_IMG_LEN, valueNumber(0.0));
+	m_memory.writeValue(IO_IMG_DST, valueNumber(0.0));
+	m_memory.writeValue(IO_IMG_CAP, valueNumber(0.0));
+	m_memory.writeValue(IO_IMG_CTRL, valueNumber(0.0));
+	m_memory.writeValue(IO_IMG_STATUS, valueNumber(0.0));
+	m_memory.writeValue(IO_IMG_WRITTEN, valueNumber(0.0));
+}
 
 void ImgDecController::tick() {
 	tryStart();
@@ -43,7 +71,10 @@ void ImgDecController::tick() {
 		m_pendingResult.reset();
 		auto* entry = m_pendingEntry;
 		m_pendingEntry = nullptr;
-		finishSuccess(std::move(result), *entry);
+		beginDecode(std::move(result), *entry);
+	}
+	if (m_decodeActive) {
+		advanceDecode();
 	}
 }
 
@@ -92,13 +123,20 @@ void ImgDecController::tryStart() {
 		return;
 	}
 	m_active = true;
+	m_decodeActive = false;
+	m_decodeRemaining = 0;
+	m_decodePlan = VmMemory::ImageWritePlan{};
+	m_decodePixels.clear();
+	m_decodeQueued = false;
 	GateScope scope;
 	scope.blocking = false;
 	scope.category = "texture";
 	scope.tag = "imgdec";
+	const uint64_t token = m_decodeToken + 1;
+	m_decodeToken = token;
 	m_gateToken = m_gate.begin(scope);
 	auto* queue = EngineCore::instance().platform()->microtaskQueue();
-	queue->queueMicrotask([this, entry, buffer = std::move(buffer)]() mutable {
+	queue->queueMicrotask([this, entry, token, buffer = std::move(buffer)]() mutable {
 		try {
 			int width = 0;
 			int height = 0;
@@ -125,10 +163,14 @@ void ImgDecController::tryStart() {
 			result.pixels.resize(byteCount);
 			std::memcpy(result.pixels.data(), pixels, byteCount);
 			stbi_image_free(pixels);
-			m_pendingResult = std::move(result);
-			m_pendingEntry = entry;
+			if (token == m_decodeToken) {
+				m_pendingResult = std::move(result);
+				m_pendingEntry = entry;
+			}
 		} catch (...) {
-			m_pendingError = std::current_exception();
+			if (token == m_decodeToken) {
+				m_pendingError = std::current_exception();
+			}
 		}
 		m_gate.end(m_gateToken);
 	});
@@ -147,15 +189,51 @@ VmMemory::AssetEntry& ImgDecController::resolveSlotEntry(uint32_t dst) {
 	throw std::runtime_error("[ImgDec] Unsupported destination address " + std::to_string(dst) + ".");
 }
 
-void ImgDecController::finishSuccess(DecodedImage&& result, VmMemory::AssetEntry& entry) {
-	const size_t pixelBytes = result.pixels.size();
+void ImgDecController::beginDecode(DecodedImage&& result, VmMemory::AssetEntry& entry) {
 	const uint32_t cap = m_pendingCap;
 	m_pendingCap = 0;
-	m_memory.writeImageSlot(entry, result.pixels.data(), pixelBytes, result.width, result.height, cap);
-	const uint32_t bytes = entry.baseSize;
-	const bool clipped = (entry.regionW != result.width) || (entry.regionH != result.height);
-	m_memory.writeValue(IO_IMG_WRITTEN, valueNumber(static_cast<double>(bytes)));
+	const size_t pixelBytes = result.pixels.size();
+	m_decodePlan = m_memory.planImageSlotWrite(entry, pixelBytes, result.width, result.height, cap);
+	m_decodePixels = std::move(result.pixels);
+	m_decodeRemaining = m_decodePlan.writeLen;
+	m_decodeActive = true;
+	m_decodeQueued = false;
+	if (m_decodePlan.writeLen == 0) {
+		finishSuccess(m_decodePlan.clipped);
+	}
+}
+
+void ImgDecController::advanceDecode() {
+	if (!m_decodeActive) {
+		return;
+	}
+	if (m_decodeRemaining > 0 && m_decodeBudget > 0) {
+		const size_t budget = m_decodeBudget;
+		const size_t consume = m_decodeRemaining > budget ? budget : m_decodeRemaining;
+		m_decodeRemaining -= consume;
+	}
+	if (m_decodeRemaining > 0 || m_decodeQueued) {
+		return;
+	}
+	m_decodeQueued = true;
+	const auto plan = m_decodePlan;
+	auto pixels = std::move(m_decodePixels);
+	m_decodePixels.clear();
+	m_dma.enqueueImageCopy(plan, std::move(pixels), [this](bool error, bool clipped) {
+		if (error) {
+			finishError();
+			return;
+		}
+		finishSuccess(clipped);
+	});
+}
+
+void ImgDecController::finishSuccess(bool clipped) {
 	m_active = false;
+	m_decodeActive = false;
+	m_decodeRemaining = 0;
+	m_decodeQueued = false;
+	m_decodePixels.clear();
 	m_status = (m_status & ~IMG_STATUS_BUSY) | IMG_STATUS_DONE;
 	if (clipped) {
 		m_status |= IMG_STATUS_CLIPPED;
@@ -166,6 +244,10 @@ void ImgDecController::finishSuccess(DecodedImage&& result, VmMemory::AssetEntry
 
 void ImgDecController::finishError() {
 	m_active = false;
+	m_decodeActive = false;
+	m_decodeRemaining = 0;
+	m_decodeQueued = false;
+	m_decodePixels.clear();
 	m_status = (m_status & ~IMG_STATUS_BUSY) | IMG_STATUS_DONE | IMG_STATUS_ERROR;
 	m_memory.writeValue(IO_IMG_STATUS, valueNumber(static_cast<double>(m_status)));
 	m_raiseIrq(IRQ_IMG_ERROR);

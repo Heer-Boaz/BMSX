@@ -38,6 +38,16 @@ constexpr size_t CART_ROM_HEADER_SIZE = 32;
 constexpr std::array<u8, CART_ROM_HEADER_SIZE> CART_ROM_EMPTY_HEADER = {};
 }
 
+uint32_t VMRuntime::RateBudget::calcBytesPerTick(i64 cpuHz, i64 cyclesPerTick) {
+	const __int128 numerator = static_cast<__int128>(bytesPerSec) * static_cast<__int128>(cyclesPerTick)
+		+ static_cast<__int128>(carry);
+	const i64 out = static_cast<i64>(numerator / cpuHz);
+	carry = static_cast<i64>(numerator % cpuHz);
+	const i64 maxValue = static_cast<i64>(std::numeric_limits<uint32_t>::max());
+	const i64 clamped = out > maxValue ? maxValue : out;
+	return static_cast<uint32_t>(clamped);
+}
+
 // Button actions for standard gamepad/keyboard mapping
 const std::vector<std::string> VM_BUTTON_ACTIONS = {
 	"left",
@@ -669,7 +679,7 @@ VMRuntime::VMRuntime(const VMRuntimeOptions& options)
 	, m_stringHandles(m_memory)
 	, m_cpu(m_memory, &m_stringHandles)
 	, m_dmaController(m_memory, [this](uint32_t mask) { raiseIrqFlags(mask); })
-	, m_imgDecController(m_memory, [this](uint32_t mask) { raiseIrqFlags(mask); })
+	, m_imgDecController(m_memory, m_dmaController, [this](uint32_t mask) { raiseIrqFlags(mask); })
 	, m_playerIndex(options.playerIndex)
 	, m_viewport(options.viewport)
 	, m_canonicalization(options.canonicalization)
@@ -698,6 +708,8 @@ VMRuntime::VMRuntime(const VMRuntimeOptions& options)
 	m_memory.writeValue(IO_IMG_CTRL, valueNumber(0.0));
 	m_memory.writeValue(IO_IMG_STATUS, valueNumber(0.0));
 	m_memory.writeValue(IO_IMG_WRITTEN, valueNumber(0.0));
+	m_dmaController.reset();
+	m_imgDecController.reset();
 	m_memory.writeValue(IO_VDP_PRIMARY_ATLAS_ID, valueNumber(static_cast<double>(VDP_ATLAS_ID_NONE)));
 	m_memory.writeValue(IO_VDP_SECONDARY_ATLAS_ID, valueNumber(static_cast<double>(VDP_ATLAS_ID_NONE)));
 	m_vdp.initializeRegisters();
@@ -783,6 +795,8 @@ void VMRuntime::boot(Program* program, ProgramMetadata* metadata, int entryProto
 	m_memory.writeValue(IO_IMG_CTRL, valueNumber(0.0));
 	m_memory.writeValue(IO_IMG_STATUS, valueNumber(0.0));
 	m_memory.writeValue(IO_IMG_WRITTEN, valueNumber(0.0));
+	m_dmaController.reset();
+	m_imgDecController.reset();
 	m_memory.writeValue(IO_VDP_PRIMARY_ATLAS_ID, valueNumber(static_cast<double>(VDP_ATLAS_ID_NONE)));
 	m_memory.writeValue(IO_VDP_SECONDARY_ATLAS_ID, valueNumber(static_cast<double>(VDP_ATLAS_ID_NONE)));
 	m_vdp.initializeRegisters();
@@ -839,8 +853,24 @@ bool VMRuntime::pollSystemBootRequest() {
 }
 
 void VMRuntime::tickHardware() {
+	refreshTransferBudgets();
 	m_dmaController.tick();
 	m_imgDecController.tick();
+}
+
+void VMRuntime::refreshTransferBudgets() {
+	const i64 cyclesPerTick = static_cast<i64>(m_cycleBudgetPerFrame);
+	const uint32_t imgBudget = m_imgRate.calcBytesPerTick(m_cpuHz, cyclesPerTick);
+	const uint32_t isoBudget = m_dmaIsoRate.calcBytesPerTick(m_cpuHz, cyclesPerTick);
+	const uint32_t bulkBudget = m_dmaBulkRate.calcBytesPerTick(m_cpuHz, cyclesPerTick);
+	m_imgDecController.setDecodeBudget(imgBudget);
+	m_dmaController.setChannelBudgets(isoBudget, bulkBudget);
+}
+
+void VMRuntime::resetTransferCarry() {
+	m_imgRate.resetCarry();
+	m_dmaIsoRate.resetCarry();
+	m_dmaBulkRate.resetCarry();
 }
 
 void VMRuntime::raiseIrqFlags(uint32_t mask) {
@@ -1325,6 +1355,24 @@ void VMRuntime::setCanonicalization(CanonicalizationType canonicalization) {
 
 void VMRuntime::setCpuHz(i64 hz) {
 	m_cpuHz = hz;
+	resetTransferCarry();
+}
+
+void VMRuntime::resetHardwareState() {
+	m_memory.writeValue(IO_IRQ_FLAGS, valueNumber(0.0));
+	m_memory.writeValue(IO_IRQ_ACK, valueNumber(0.0));
+	m_dmaController.reset();
+	m_imgDecController.reset();
+}
+
+void VMRuntime::setTransferRates(i64 imgDecBytesPerSec, i64 dmaBytesPerSecIso, i64 dmaBytesPerSecBulk) {
+	m_imgDecBytesPerSec = imgDecBytesPerSec;
+	m_dmaBytesPerSecIso = dmaBytesPerSecIso;
+	m_dmaBytesPerSecBulk = dmaBytesPerSecBulk;
+	m_imgRate.setBytesPerSec(imgDecBytesPerSec);
+	m_dmaIsoRate.setBytesPerSec(dmaBytesPerSecIso);
+	m_dmaBulkRate.setBytesPerSec(dmaBytesPerSecBulk);
+	resetTransferCarry();
 }
 
 void VMRuntime::setCycleBudgetPerFrame(int budget) {
@@ -1333,6 +1381,7 @@ void VMRuntime::setCycleBudgetPerFrame(int budget) {
 	}
 	m_cycleBudgetPerFrame = budget;
 	setGlobal("SYS_MAX_CYCLES_PER_FRAME", valueNumber(static_cast<double>(budget)));
+	resetTransferCarry();
 }
 
 void VMRuntime::grantCycleBudget(int baseBudget, int carryBudget) {
@@ -4214,6 +4263,15 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 		}
 		if (manifest.cpuHz) {
 			vmTable->set(key("cpu_freq_hz"), valueNumber(static_cast<double>(*manifest.cpuHz)));
+		}
+		if (manifest.imgDecBytesPerSec) {
+			vmTable->set(key("imgdec_bytes_per_sec"), valueNumber(static_cast<double>(*manifest.imgDecBytesPerSec)));
+		}
+		if (manifest.dmaBytesPerSecIso) {
+			vmTable->set(key("dma_bytes_per_sec_iso"), valueNumber(static_cast<double>(*manifest.dmaBytesPerSecIso)));
+		}
+		if (manifest.dmaBytesPerSecBulk) {
+			vmTable->set(key("dma_bytes_per_sec_bulk"), valueNumber(static_cast<double>(*manifest.dmaBytesPerSecBulk)));
 		}
 		if (manifest.viewportWidth > 0 && manifest.viewportHeight > 0) {
 			auto* viewportTable = m_cpu.createTable(0, 2);

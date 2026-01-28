@@ -71,6 +71,39 @@ i64 resolveCpuHz(const RomManifest& manifest) {
 	return hz;
 }
 
+i64 resolveImgDecBytesPerSec(const RomManifest& manifest) {
+	if (!manifest.imgDecBytesPerSec) {
+		throw std::runtime_error("[EngineCore] vm.imgdec_bytes_per_sec is required.");
+	}
+	const i64 value = *manifest.imgDecBytesPerSec;
+	if (value <= 0) {
+		throw std::runtime_error("[EngineCore] vm.imgdec_bytes_per_sec must be a positive integer.");
+	}
+	return value;
+}
+
+i64 resolveDmaBytesPerSecIso(const RomManifest& manifest) {
+	if (!manifest.dmaBytesPerSecIso) {
+		throw std::runtime_error("[EngineCore] vm.dma_bytes_per_sec_iso is required.");
+	}
+	const i64 value = *manifest.dmaBytesPerSecIso;
+	if (value <= 0) {
+		throw std::runtime_error("[EngineCore] vm.dma_bytes_per_sec_iso must be a positive integer.");
+	}
+	return value;
+}
+
+i64 resolveDmaBytesPerSecBulk(const RomManifest& manifest) {
+	if (!manifest.dmaBytesPerSecBulk) {
+		throw std::runtime_error("[EngineCore] vm.dma_bytes_per_sec_bulk is required.");
+	}
+	const i64 value = *manifest.dmaBytesPerSecBulk;
+	if (value <= 0) {
+		throw std::runtime_error("[EngineCore] vm.dma_bytes_per_sec_bulk must be a positive integer.");
+	}
+	return value;
+}
+
 bool tryResolveUfpsScaled(const RomManifest& manifest, i64& outUfpsScaled) {
 	if (!manifest.ufpsScaled) {
 		return false;
@@ -563,6 +596,9 @@ bool EngineCore::bootWithoutCart() {
 	// Boot the VM with the engine's system program
 	if (m_engine_assets.vmProgram && m_engine_assets.vmProgram->program) {
 		const i64 cpuHz = resolveCpuHz(m_engine_assets.manifest);
+		const i64 imgDecBytesPerSec = resolveImgDecBytesPerSec(m_engine_assets.manifest);
+		const i64 dmaBytesPerSecIso = resolveDmaBytesPerSecIso(m_engine_assets.manifest);
+		const i64 dmaBytesPerSecBulk = resolveDmaBytesPerSecBulk(m_engine_assets.manifest);
 		const int cycleBudget = calcCyclesPerFrame(cpuHz, m_ufps_scaled);
 		// Create VMRuntime instance if it doesn't exist
 		if (!VMRuntime::hasInstance()) {
@@ -579,6 +615,7 @@ bool EngineCore::bootWithoutCart() {
 		VMRuntime& runtime = VMRuntime::instance();
 		runtime.setCpuHz(cpuHz);
 		runtime.setCycleBudgetPerFrame(cycleBudget);
+		runtime.setTransferRates(imgDecBytesPerSec, dmaBytesPerSecIso, dmaBytesPerSecBulk);
 		runtime.refreshMemoryMap();
 		runtime.setProgramSource(VMRuntime::VmProgramSource::Engine);
 		runtime.setCanonicalization(m_engine_assets.manifest.canonicalization);
@@ -674,6 +711,10 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 		setUfpsScaled(engineUfpsScaled);
 	}
 	const int cycleBudget = calcCyclesPerFrame(cpuHz, m_ufps_scaled);
+	const RomManifest& transferManifest = cartCpuValid ? m_assets.manifest : m_engine_assets.manifest;
+	const i64 imgDecBytesPerSec = resolveImgDecBytesPerSec(transferManifest);
+	const i64 dmaBytesPerSecIso = resolveDmaBytesPerSecIso(transferManifest);
+	const i64 dmaBytesPerSecBulk = resolveDmaBytesPerSecBulk(transferManifest);
 
 	Vec2 viewportSize{
 		static_cast<f32>(m_assets.manifest.viewportWidth),
@@ -702,6 +743,7 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 		VMRuntime& runtime = VMRuntime::instance();
 		runtime.setCpuHz(cpuHz);
 		runtime.setCycleBudgetPerFrame(cycleBudget);
+		runtime.setTransferRates(imgDecBytesPerSec, dmaBytesPerSecIso, dmaBytesPerSecBulk);
 		runtime.refreshMemoryMap();
 		runtime.setProgramSource(VMRuntime::VmProgramSource::Engine);
 		runtime.setCanonicalization(m_engine_assets.manifest.canonicalization);
@@ -731,6 +773,7 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 			VMRuntime& runtime = VMRuntime::instance();
 			runtime.setCpuHz(cpuHz);
 			runtime.setCycleBudgetPerFrame(cycleBudget);
+			runtime.setTransferRates(imgDecBytesPerSec, dmaBytesPerSecIso, dmaBytesPerSecBulk);
 			runtime.refreshMemoryMap();
 			runtime.buildAssetMemory(m_assets, false);
 			uploadTexturesToBackend(true);
@@ -750,6 +793,7 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 			VMRuntime& runtime = VMRuntime::instance();
 			runtime.setCpuHz(cpuHz);
 			runtime.setCycleBudgetPerFrame(cycleBudget);
+			runtime.setTransferRates(imgDecBytesPerSec, dmaBytesPerSecIso, dmaBytesPerSecBulk);
 			runtime.refreshMemoryMap();
 			runtime.buildAssetMemory(m_assets, false);
 			uploadTexturesToBackend(true);
@@ -802,11 +846,16 @@ bool EngineCore::resetLoadedRom() {
 		setUfpsScaled(ufpsScaled);
 	}
 	const int cycleBudget = calcCyclesPerFrame(cpuHz, m_ufps_scaled);
+	const RomManifest& transferManifest = cartCpuValid ? m_assets.manifest : m_engine_assets.manifest;
+	const i64 imgDecBytesPerSec = resolveImgDecBytesPerSec(transferManifest);
+	const i64 dmaBytesPerSecIso = resolveDmaBytesPerSecIso(transferManifest);
+	const i64 dmaBytesPerSecBulk = resolveDmaBytesPerSecBulk(transferManifest);
 
 	if (cartCpuValid && m_assets.vmProgram && m_assets.vmProgram->program) {
 		VMRuntime& runtime = VMRuntime::instance();
 		runtime.setCpuHz(cpuHz);
 		runtime.setCycleBudgetPerFrame(cycleBudget);
+		runtime.setTransferRates(imgDecBytesPerSec, dmaBytesPerSecIso, dmaBytesPerSecBulk);
 		runtime.refreshMemoryMap();
 		runtime.buildAssetMemory(m_assets, false, VMRuntime::AssetBuildMode::Cart);
 		uploadTexturesToBackend(true);
@@ -829,6 +878,7 @@ bool EngineCore::resetLoadedRom() {
 		VMRuntime& runtime = VMRuntime::instance();
 		runtime.setCpuHz(cpuHz);
 		runtime.setCycleBudgetPerFrame(cycleBudget);
+		runtime.setTransferRates(imgDecBytesPerSec, dmaBytesPerSecIso, dmaBytesPerSecBulk);
 		runtime.refreshMemoryMap();
 		runtime.setProgramSource(VMRuntime::VmProgramSource::Engine);
 		runtime.setCanonicalization(m_engine_assets.manifest.canonicalization);
@@ -987,6 +1037,9 @@ void EngineCore::bootVMFromProgram() {
 	m_linked_vm_program.reset();
 	m_linked_vm_program_symbols.reset();
 	const i64 cpuHz = resolveCpuHz(m_assets.manifest);
+	const i64 imgDecBytesPerSec = resolveImgDecBytesPerSec(m_assets.manifest);
+	const i64 dmaBytesPerSecIso = resolveDmaBytesPerSecIso(m_assets.manifest);
+	const i64 dmaBytesPerSecBulk = resolveDmaBytesPerSecBulk(m_assets.manifest);
 	const i64 ufpsScaled = resolveUfpsScaled(m_assets.manifest);
 	setUfpsScaled(ufpsScaled);
 	const int cycleBudget = calcCyclesPerFrame(cpuHz, m_ufps_scaled);
@@ -1007,6 +1060,7 @@ void EngineCore::bootVMFromProgram() {
 	VMRuntime& runtime = VMRuntime::instance();
 	runtime.setCpuHz(cpuHz);
 	runtime.setCycleBudgetPerFrame(cycleBudget);
+	runtime.setTransferRates(imgDecBytesPerSec, dmaBytesPerSecIso, dmaBytesPerSecBulk);
 	runtime.refreshMemoryMap();
 	runtime.setProgramSource(VMRuntime::VmProgramSource::Cart);
 	runtime.setCanonicalization(m_assets.manifest.canonicalization);

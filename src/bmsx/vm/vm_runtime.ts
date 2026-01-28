@@ -222,6 +222,29 @@ type VmProgramSource = 'engine' | 'cart';
 
 export var api: BmsxVMApi; // Initialized in BmsxVMRuntime constructor
 
+class RateBudget {
+	private bytesPerSec: bigint = 0n;
+	private carry: bigint = 0n;
+
+	public set(bytesPerSec: number): void {
+		this.bytesPerSec = BigInt(bytesPerSec);
+	}
+
+	public resetCarry(): void {
+		this.carry = 0n;
+	}
+
+	public calcBytesPerTick(cpuHz: number, cyclesPerTick: number): number {
+		const hz = BigInt(cpuHz);
+		const cycles = BigInt(cyclesPerTick);
+		const numerator = this.bytesPerSec * cycles + this.carry;
+		const out = numerator / hz;
+		this.carry = numerator % hz;
+		const max = 0xFFFF_FFFFn;
+		const clamped = out > max ? max : out;
+		return Number(clamped);
+	}
+}
 
 export class BmsxVMRuntime {
 	private static _instance: BmsxVMRuntime = null;
@@ -253,6 +276,17 @@ export class BmsxVMRuntime {
 		return value;
 	}
 
+	private static resolveBytesPerSec(vm: { [key: string]: number | undefined }, key: string): number {
+		const value = vm[key];
+		if (value === undefined) {
+			throw new Error(`[BmsxVMRuntime] vm.${key} is required.`);
+		}
+		if (!Number.isSafeInteger(value) || value <= 0) {
+			throw new Error(`[BmsxVMRuntime] vm.${key} must be a positive safe integer.`);
+		}
+		return value;
+	}
+
 	private static resolveUfpsScaled(vm: { ufps?: number }): number {
 		const value = vm.ufps;
 		if (value === undefined) {
@@ -276,6 +310,7 @@ export class BmsxVMRuntime {
 		}
 		this.cycleBudgetPerFrame = value;
 		this.registerVmGlobal('SYS_MAX_CYCLES_PER_FRAME', value);
+		this.resetTransferCarry();
 	}
 
 	public getLastTickSequence(): number {
@@ -461,12 +496,44 @@ export class BmsxVMRuntime {
 	}
 	private setCpuHz(value: number): void {
 		this._cpuHz = value;
+		this.resetTransferCarry();
+	}
+	private setTransferRatesFromManifest(vm: { imgdec_bytes_per_sec?: number; dma_bytes_per_sec_iso?: number; dma_bytes_per_sec_bulk?: number }): void {
+		this.imgDecBytesPerSec = BmsxVMRuntime.resolveBytesPerSec(vm, 'imgdec_bytes_per_sec');
+		this.dmaBytesPerSecIso = BmsxVMRuntime.resolveBytesPerSec(vm, 'dma_bytes_per_sec_iso');
+		this.dmaBytesPerSecBulk = BmsxVMRuntime.resolveBytesPerSec(vm, 'dma_bytes_per_sec_bulk');
+		this.imgRate.set(this.imgDecBytesPerSec);
+		this.dmaIsoRate.set(this.dmaBytesPerSecIso);
+		this.dmaBulkRate.set(this.dmaBytesPerSecBulk);
+		this.resetTransferCarry();
+	}
+	private refreshTransferBudgets(): void {
+		const cyclesPerTick = this.cycleBudgetPerFrame;
+		const imgBudget = this.imgRate.calcBytesPerTick(this._cpuHz, cyclesPerTick);
+		const isoBudget = this.dmaIsoRate.calcBytesPerTick(this._cpuHz, cyclesPerTick);
+		const bulkBudget = this.dmaBulkRate.calcBytesPerTick(this._cpuHz, cyclesPerTick);
+		this.imgDecController.setDecodeBudget(imgBudget);
+		this.dmaController.setChannelBudgets({
+			iso: isoBudget,
+			bulk: bulkBudget,
+		});
+	}
+	private resetTransferCarry(): void {
+		this.imgRate.resetCarry();
+		this.dmaIsoRate.resetCarry();
+		this.dmaBulkRate.resetCarry();
 	}
 	private includeJsStackTraces = false;
 	private currentFrameState: VMFrameState = null;
 	private drawFrameState: VMFrameState = null;
 	private cycleBudgetPerFrame: number;
 	private _cpuHz: number;
+	private imgDecBytesPerSec = 0;
+	private dmaBytesPerSecIso = 0;
+	private dmaBytesPerSecBulk = 0;
+	private readonly imgRate = new RateBudget();
+	private readonly dmaIsoRate = new RateBudget();
+	private readonly dmaBulkRate = new RateBudget();
 	private lastTickSequence: number = 0;
 	private lastTickBudgetRemaining: number = 0;
 	private lastTickCompleted: boolean = false;
@@ -594,6 +661,7 @@ export class BmsxVMRuntime {
 				cpuHz,
 				cycleBudgetPerFrame,
 			});
+			runtime.setTransferRatesFromManifest(engineLayer.index.manifest.vm);
 			runtime.configureProgramSources({
 				engineSources: engineLuaSources,
 				engineAssetSource: engineSource,
@@ -660,6 +728,7 @@ export class BmsxVMRuntime {
 			cpuHz,
 			cycleBudgetPerFrame,
 		});
+		runtime.setTransferRatesFromManifest(cartLayer.index.manifest.vm);
 		runtime.cartAssetLayer = cartLayer;
 		runtime.overlayAssetLayer = overlayLayer;
 		runtime.configureProgramSources({
@@ -785,7 +854,6 @@ export class BmsxVMRuntime {
 		BmsxVMRuntime._instance = this;
 		this.playerIndex = options.playerIndex;
 		this.cycleBudgetPerFrame = options.cycleBudgetPerFrame;
-		this.setCpuHz(options.cpuHz);
 		this.storageService = $.platform.storage;
 		this.storage = new BmsxVMStorage(this.storageService, $.lua_sources.namespace);
 		const resolvedCanonicalization = options.canonicalization ?? 'none';
@@ -821,8 +889,9 @@ export class BmsxVMRuntime {
 		this.memory.writeValue(IO_VDP_SECONDARY_ATLAS_ID, VDP_ATLAS_ID_NONE);
 		this.vdp.initializeRegisters();
 		this.dmaController = new DmaController(this.memory, (mask) => this.raiseIrqFlags(mask));
-		this.imgDecController = new ImgDecController(this.memory, (mask) => this.raiseIrqFlags(mask));
+		this.imgDecController = new ImgDecController(this.memory, this.dmaController, (mask) => this.raiseIrqFlags(mask));
 		this.cpu = new VMCPU(this.memory, this.runtimeStringPool);
+		this.setCpuHz(options.cpuHz);
 		this.vmRandomSeedValue = $.platform.clock.now();
 
 		api = new BmsxVMApi({
@@ -1257,6 +1326,7 @@ export class BmsxVMRuntime {
 	}
 
 	private tickHardware(): void {
+		this.refreshTransferBudgets();
 		this.dmaController.tick();
 		this.imgDecController.tick();
 	}
@@ -1927,6 +1997,7 @@ export class BmsxVMRuntime {
 		const cpuHz = BmsxVMRuntime.resolveCpuHz($.assets.manifest.vm);
 		this.setCpuHz(cpuHz);
 		this.setCycleBudgetPerFrame(calcCyclesPerFrameScaled(cpuHz, $.ufps_scaled));
+		this.setTransferRatesFromManifest($.assets.manifest.vm);
 	}
 
 	private pollSystemBootRequest(): void {
@@ -2605,6 +2676,7 @@ export class BmsxVMRuntime {
 		this.pendingEntryLifecycle = null;
 		this.pendingLifecycleQueue = [];
 		this.pendingCartBoot = false;
+		this.resetHardwareState();
 		this.vmInitClosure = null;
 		this.vmNewGameClosure = null;
 		this.vmUpdateClosure = null;
@@ -2625,6 +2697,13 @@ export class BmsxVMRuntime {
 		this.lastTickBudgetRemaining = 0;
 		this.lastTickSequence = 0;
 		this.lastTickConsumedSequence = 0;
+	}
+
+	private resetHardwareState(): void {
+		this.memory.writeValue(IO_IRQ_FLAGS, 0);
+		this.memory.writeValue(IO_IRQ_ACK, 0);
+		this.dmaController.reset();
+		this.imgDecController.reset();
 	}
 
 	private registerVmGlobal(name: string, value: Value): void {
@@ -4914,6 +4993,7 @@ export class BmsxVMRuntime {
 			const cpuHz = BmsxVMRuntime.resolveCpuHz(manifest.vm);
 			this.setCpuHz(cpuHz);
 			this.setCycleBudgetPerFrame(calcCyclesPerFrameScaled(cpuHz, $.ufps_scaled));
+			this.setTransferRatesFromManifest(manifest.vm);
 		}
 		finally {
 			this.luaVmGate.end(vmToken);

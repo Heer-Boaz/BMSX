@@ -439,6 +439,9 @@ export type CartManifest = {
 		canonicalization: CanonicalizationType;
 		namespace: string;
 		cpu_freq_hz: number;
+		imgdec_bytes_per_sec: number;
+		dma_bytes_per_sec_iso: number;
+		dma_bytes_per_sec_bulk: number;
 		ufps: number;
 		skybox_face_size?: number;
 		limits?: VmLimits;

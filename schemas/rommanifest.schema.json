@@ -84,6 +84,21 @@
 					"minimum": 1,
 					"description": "VM cycle rate in Hz."
 				},
+				"imgdec_bytes_per_sec": {
+					"type": "integer",
+					"minimum": 1,
+					"description": "IMGDEC output (decoded RGBA) throughput in bytes per second."
+				},
+				"dma_bytes_per_sec_iso": {
+					"type": "integer",
+					"minimum": 1,
+					"description": "DMA isochronous channel bandwidth in bytes per second."
+				},
+				"dma_bytes_per_sec_bulk": {
+					"type": "integer",
+					"minimum": 1,
+					"description": "DMA bulk channel bandwidth in bytes per second."
+				},
 					"ufps": {
 						"type": "integer",
 						"minimum": 1,
@@ -96,6 +111,9 @@
 			"required": [
 				"namespace",
 				"cpu_freq_hz",
+				"imgdec_bytes_per_sec",
+				"dma_bytes_per_sec_iso",
+				"dma_bytes_per_sec_bulk",
 				"ufps"
 			],
 			"additionalProperties": false

@@ -1099,6 +1099,33 @@ bool loadAssetsFromRom(const u8* buffer,
 				throw std::runtime_error("[RuntimeAssets] vm.cpu_freq_hz must be a positive integer.");
 			}
 			assets.manifest.cpuHz = cpuHz;
+			if (!vmObj.count("imgdec_bytes_per_sec")) {
+				throw std::runtime_error("[RuntimeAssets] vm.imgdec_bytes_per_sec is required.");
+			}
+			const double imgDecBytesPerSecNumber = vmObj.at("imgdec_bytes_per_sec").toNumber();
+			const i64 imgDecBytesPerSec = static_cast<i64>(imgDecBytesPerSecNumber);
+			if (imgDecBytesPerSecNumber != static_cast<double>(imgDecBytesPerSec) || imgDecBytesPerSec <= 0) {
+				throw std::runtime_error("[RuntimeAssets] vm.imgdec_bytes_per_sec must be a positive integer.");
+			}
+			assets.manifest.imgDecBytesPerSec = imgDecBytesPerSec;
+			if (!vmObj.count("dma_bytes_per_sec_iso")) {
+				throw std::runtime_error("[RuntimeAssets] vm.dma_bytes_per_sec_iso is required.");
+			}
+			const double dmaBytesPerSecIsoNumber = vmObj.at("dma_bytes_per_sec_iso").toNumber();
+			const i64 dmaBytesPerSecIso = static_cast<i64>(dmaBytesPerSecIsoNumber);
+			if (dmaBytesPerSecIsoNumber != static_cast<double>(dmaBytesPerSecIso) || dmaBytesPerSecIso <= 0) {
+				throw std::runtime_error("[RuntimeAssets] vm.dma_bytes_per_sec_iso must be a positive integer.");
+			}
+			assets.manifest.dmaBytesPerSecIso = dmaBytesPerSecIso;
+			if (!vmObj.count("dma_bytes_per_sec_bulk")) {
+				throw std::runtime_error("[RuntimeAssets] vm.dma_bytes_per_sec_bulk is required.");
+			}
+			const double dmaBytesPerSecBulkNumber = vmObj.at("dma_bytes_per_sec_bulk").toNumber();
+			const i64 dmaBytesPerSecBulk = static_cast<i64>(dmaBytesPerSecBulkNumber);
+			if (dmaBytesPerSecBulkNumber != static_cast<double>(dmaBytesPerSecBulk) || dmaBytesPerSecBulk <= 0) {
+				throw std::runtime_error("[RuntimeAssets] vm.dma_bytes_per_sec_bulk must be a positive integer.");
+			}
+			assets.manifest.dmaBytesPerSecBulk = dmaBytesPerSecBulk;
 			if (!vmObj.count("ufps")) {
 				throw std::runtime_error("[RuntimeAssets] vm.ufps is required.");
 			}

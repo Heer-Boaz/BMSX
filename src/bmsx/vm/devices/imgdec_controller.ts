@@ -22,9 +22,10 @@ import {
 	VRAM_ENGINE_ATLAS_BASE,
 } from '../memory_map';
 import { ATLAS_PRIMARY_SLOT_ID, ATLAS_SECONDARY_SLOT_ID, ENGINE_ATLAS_INDEX, generateAtlasName } from '../../rompack/rompack';
-import type { VmAssetEntry } from '../vm_memory';
+import type { ImageWritePlan, VmAssetEntry } from '../vm_memory';
 import { VmMemory } from '../vm_memory';
 import type { DecodedImage } from '../../utils/image_decode';
+import { DmaController } from './dma_controller';
 
 export class ImgDecController {
 	private readonly gate = taskGate.group('imgdec');
@@ -34,11 +35,45 @@ export class ImgDecController {
 	private pendingResult: DecodedImage | null = null;
 	private pendingEntry: VmAssetEntry | null = null;
 	private pendingCap = 0;
+	private decodeBudget = 0;
+	private decodeActive = false;
+	private decodeRemaining = 0;
+	private decodePlan: ImageWritePlan | null = null;
+	private decodePixels: Uint8Array | null = null;
+	private decodeQueued = false;
+	private decodeToken = 0;
 
 	public constructor(
 		private readonly memory: VmMemory,
+		private readonly dma: DmaController,
 		private readonly raiseIrq: (mask: number) => void,
 	) {}
+
+	public setDecodeBudget(bytesPerTick: number): void {
+		this.decodeBudget = bytesPerTick;
+	}
+
+	public reset(): void {
+		this.decodeToken += 1;
+		this.active = false;
+		this.status = 0;
+		this.pendingError = null;
+		this.pendingResult = null;
+		this.pendingEntry = null;
+		this.pendingCap = 0;
+		this.decodeActive = false;
+		this.decodeRemaining = 0;
+		this.decodePlan = null;
+		this.decodePixels = null;
+		this.decodeQueued = false;
+		this.memory.writeValue(IO_IMG_SRC, 0);
+		this.memory.writeValue(IO_IMG_LEN, 0);
+		this.memory.writeValue(IO_IMG_DST, 0);
+		this.memory.writeValue(IO_IMG_CAP, 0);
+		this.memory.writeValue(IO_IMG_CTRL, 0);
+		this.memory.writeValue(IO_IMG_STATUS, 0);
+		this.memory.writeValue(IO_IMG_WRITTEN, 0);
+	}
 
 	public tick(): void {
 		this.tryStart();
@@ -55,7 +90,10 @@ export class ImgDecController {
 			const entry = this.pendingEntry;
 			this.pendingResult = null;
 			this.pendingEntry = null;
-			this.finishSuccess(result, entry);
+			this.beginDecode(result, entry);
+		}
+		if (this.decodeActive) {
+			this.advanceDecode();
 		}
 	}
 
@@ -105,11 +143,24 @@ export class ImgDecController {
 			return;
 		}
 		this.active = true;
+		this.decodeActive = false;
+		this.decodeRemaining = 0;
+		this.decodePlan = null;
+		this.decodePixels = null;
+		this.decodeQueued = false;
+		const token = this.decodeToken + 1;
+		this.decodeToken = token;
 		const promise = this.gate.track(decodePngToRgba(buffer), { blocking: false, category: 'texture', tag: 'imgdec' });
 		promise.then((result) => {
+			if (token !== this.decodeToken) {
+				return;
+			}
 			this.pendingResult = result;
 			this.pendingEntry = entry;
 		}).catch((error) => {
+			if (token !== this.decodeToken) {
+				return;
+			}
 			this.pendingError = error;
 		});
 	}
@@ -127,14 +178,50 @@ export class ImgDecController {
 		throw new Error(`[ImgDec] Unsupported destination address ${dst}.`);
 	}
 
-	private finishSuccess(result: DecodedImage, entry: VmAssetEntry): void {
+	private beginDecode(result: DecodedImage, entry: VmAssetEntry): void {
 		const cap = this.pendingCap;
 		this.pendingCap = 0;
-		this.memory.writeImageSlot(entry, { pixels: result.pixels, width: result.width, height: result.height, capacity: cap });
-		const bytes = entry.baseSize;
-		const clipped = entry.regionW !== result.width || entry.regionH !== result.height;
-		this.memory.writeValue(IO_IMG_WRITTEN, bytes);
+		const plan = this.memory.planImageSlotWrite(entry, { pixels: result.pixels, width: result.width, height: result.height, capacity: cap });
+		this.decodePlan = plan;
+		this.decodePixels = result.pixels;
+		this.decodeRemaining = plan.writeSize;
+		this.decodeActive = true;
+		this.decodeQueued = false;
+		if (plan.writeSize === 0) {
+			this.finishSuccess(plan.clipped);
+		}
+	}
+
+	private advanceDecode(): void {
+		const budget = this.decodeBudget;
+		if (this.decodeRemaining > 0 && budget > 0) {
+			const consume = this.decodeRemaining > budget ? budget : this.decodeRemaining;
+			this.decodeRemaining -= consume;
+		}
+		if (this.decodeRemaining > 0 || this.decodeQueued) {
+			return;
+		}
+		this.decodeQueued = true;
+		const plan = this.decodePlan!;
+		const pixels = this.decodePixels!;
+		this.decodePlan = null;
+		this.decodePixels = null;
+		this.dma.enqueueImageCopy(plan, pixels, (result) => {
+			if (result.error) {
+				this.finishError();
+				return;
+			}
+			this.finishSuccess(result.clipped);
+		});
+	}
+
+	private finishSuccess(clipped: boolean): void {
 		this.active = false;
+		this.decodeActive = false;
+		this.decodePlan = null;
+		this.decodePixels = null;
+		this.decodeRemaining = 0;
+		this.decodeQueued = false;
 		this.status = (this.status & ~IMG_STATUS_BUSY) | IMG_STATUS_DONE | (clipped ? IMG_STATUS_CLIPPED : 0);
 		this.memory.writeValue(IO_IMG_STATUS, this.status);
 		this.raiseIrq(IRQ_IMG_DONE);
@@ -142,6 +229,11 @@ export class ImgDecController {
 
 	private finishError(): void {
 		this.active = false;
+		this.decodeActive = false;
+		this.decodePlan = null;
+		this.decodePixels = null;
+		this.decodeRemaining = 0;
+		this.decodeQueued = false;
 		this.status = (this.status & ~IMG_STATUS_BUSY) | IMG_STATUS_DONE | IMG_STATUS_ERROR;
 		this.memory.writeValue(IO_IMG_STATUS, this.status);
 		this.raiseIrq(IRQ_IMG_ERROR);

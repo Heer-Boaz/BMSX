@@ -48,6 +48,16 @@ export type VmAssetEntry = {
 	audioDataSize: number;
 };
 
+export type ImageWritePlan = {
+	baseAddr: number;
+	writeWidth: number;
+	writeHeight: number;
+	writeStride: number;
+	sourceStride: number;
+	writeSize: number;
+	clipped: boolean;
+};
+
 export type VmMemoryInit = {
 	engineRom: Uint8Array;
 	cartRom?: Uint8Array | null;
@@ -522,6 +532,23 @@ export class VmMemory {
 	}
 
 	public writeImageSlot(entry: VmAssetEntry, params: { pixels: Uint8Array; width: number; height: number; capacity?: number }): void {
+		const plan = this.planImageSlotWrite(entry, params);
+		if (plan.writeSize > 0) {
+			const offset = entry.baseAddr - RAM_BASE;
+			if (plan.writeWidth === Math.floor(params.width)) {
+				this.ram.set(params.pixels.subarray(0, plan.writeSize), offset);
+			} else {
+				for (let row = 0; row < plan.writeHeight; row += 1) {
+					const srcOffset = row * plan.sourceStride;
+					const dstOffset = offset + row * plan.writeStride;
+					this.ram.set(params.pixels.subarray(srcOffset, srcOffset + plan.writeStride), dstOffset);
+				}
+			}
+			this.markAssetDirty(entry.baseAddr, plan.writeSize);
+		}
+	}
+
+	public planImageSlotWrite(entry: VmAssetEntry, params: { pixels: Uint8Array; width: number; height: number; capacity?: number }): ImageWritePlan {
 		const index = this.assetIndexById.get(entry.id)!;
 		const capacity = params.capacity === undefined ? entry.capacity : Math.min(entry.capacity, Math.floor(params.capacity));
 		const sourceWidth = Math.floor(params.width);
@@ -544,18 +571,6 @@ export class VmMemory {
 		}
 		const writeStride = writeWidth * 4;
 		const writeSize = writeStride * writeHeight;
-		const offset = entry.baseAddr - RAM_BASE;
-		if (writeSize > 0) {
-			if (writeWidth === sourceWidth) {
-				this.ram.set(params.pixels.subarray(0, writeSize), offset);
-			} else {
-				for (let row = 0; row < writeHeight; row += 1) {
-					const srcOffset = row * sourceStride;
-					const dstOffset = offset + row * writeStride;
-					this.ram.set(params.pixels.subarray(srcOffset, srcOffset + writeStride), dstOffset);
-				}
-			}
-		}
 		entry.baseSize = writeSize;
 		entry.baseStride = writeStride;
 		entry.regionX = 0;
@@ -565,9 +580,15 @@ export class VmMemory {
 		if (this.assetTableFinalized) {
 			this.writeAssetEntryData(index, entry);
 		}
-		if (writeSize > 0) {
-			this.markAssetDirty(entry.baseAddr, writeSize);
-		}
+		return {
+			baseAddr: entry.baseAddr,
+			writeWidth,
+			writeHeight,
+			writeStride,
+			sourceStride,
+			writeSize,
+			clipped: writeWidth !== sourceWidth || writeHeight !== sourceHeight,
+		};
 	}
 
 	public updateImageViewBase(entry: VmAssetEntry, baseEntry: VmAssetEntry): void {
@@ -835,6 +856,14 @@ export class VmMemory {
 		const { data, offset } = this.resolveWriteRegion(addr, bytes.byteLength);
 		data.set(bytes, offset);
 		this.markAssetDirty(addr, bytes.byteLength);
+	}
+
+	public writeBytesFrom(src: Uint8Array, srcOffset: number, dstAddr: number, length: number): void {
+		const { data, offset } = this.resolveWriteRegion(dstAddr, length);
+		const dst = data.subarray(offset, offset + length);
+		const slice = src.subarray(srcOffset, srcOffset + length);
+		dst.set(slice);
+		this.markAssetDirty(dstAddr, length);
 	}
 
 	private isIoAddress(addr: number): boolean {

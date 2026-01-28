@@ -487,7 +487,7 @@ const u8* VmMemory::getAudioData(const AssetEntry& entry) const {
 	return m_ram.data() + offset;
 }
 
-void VmMemory::writeImageSlot(AssetEntry& entry, const u8* pixels, size_t pixelBytes, uint32_t width, uint32_t height, uint32_t capacityOverride) {
+VmMemory::ImageWritePlan VmMemory::planImageSlotWrite(AssetEntry& entry, size_t pixelBytes, uint32_t width, uint32_t height, uint32_t capacityOverride) {
 	const size_t index = m_assetIndexById.at(entry.id);
 	const uint32_t capacity = std::min(entry.capacity, capacityOverride);
 	const uint32_t sourceWidth = width;
@@ -511,18 +511,6 @@ void VmMemory::writeImageSlot(AssetEntry& entry, const u8* pixels, size_t pixelB
 	const uint32_t writeStride = writeWidth * 4u;
 	const uint32_t size = writeStride * writeHeight;
 	const size_t writeLen = std::min(static_cast<size_t>(size), static_cast<size_t>(capacity));
-	if (writeLen > 0) {
-		const size_t offset = ramOffset(entry.baseAddr, writeLen);
-		if (writeWidth == sourceWidth) {
-			std::memcpy(m_ram.data() + offset, pixels, writeLen);
-		} else {
-			for (uint32_t row = 0; row < writeHeight; ++row) {
-				const size_t srcOffset = static_cast<size_t>(row) * sourceStride;
-				const size_t dstOffset = offset + static_cast<size_t>(row) * writeStride;
-				std::memcpy(m_ram.data() + dstOffset, pixels + srcOffset, writeStride);
-			}
-		}
-	}
 	entry.baseSize = size;
 	entry.baseStride = writeStride;
 	entry.regionX = 0;
@@ -532,7 +520,31 @@ void VmMemory::writeImageSlot(AssetEntry& entry, const u8* pixels, size_t pixelB
 	if (m_assetTableFinalized) {
 		updateAssetEntryData(index, entry);
 	}
+	ImageWritePlan plan;
+	plan.baseAddr = entry.baseAddr;
+	plan.writeWidth = writeWidth;
+	plan.writeHeight = writeHeight;
+	plan.writeStride = writeStride;
+	plan.sourceStride = sourceStride;
+	plan.writeLen = writeLen;
+	plan.clipped = (writeWidth != sourceWidth) || (writeHeight != sourceHeight);
+	return plan;
+}
+
+void VmMemory::writeImageSlot(AssetEntry& entry, const u8* pixels, size_t pixelBytes, uint32_t width, uint32_t height, uint32_t capacityOverride) {
+	const ImageWritePlan plan = planImageSlotWrite(entry, pixelBytes, width, height, capacityOverride);
+	const size_t writeLen = plan.writeLen;
 	if (writeLen > 0) {
+		const size_t offset = ramOffset(entry.baseAddr, writeLen);
+		if (plan.writeWidth == width) {
+			std::memcpy(m_ram.data() + offset, pixels, writeLen);
+		} else {
+			for (uint32_t row = 0; row < plan.writeHeight; ++row) {
+				const size_t srcOffset = static_cast<size_t>(row) * plan.sourceStride;
+				const size_t dstOffset = offset + static_cast<size_t>(row) * plan.writeStride;
+				std::memcpy(m_ram.data() + dstOffset, pixels + srcOffset, plan.writeStride);
+			}
+		}
 		markAssetDirty(entry.baseAddr, static_cast<uint32_t>(writeLen));
 	}
 }

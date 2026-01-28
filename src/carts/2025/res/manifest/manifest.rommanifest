@@ -6,6 +6,9 @@ vm:
     canonicalization: lower
     namespace: 'pietsona2025'
     cpu_freq_hz: 5000000 # 5 MHz
+    imgdec_bytes_per_sec: 10000 # 26214400 # 25 MB/s
+    dma_bytes_per_sec_iso: 10000 # 8388608 # 8 MB/s
+    dma_bytes_per_sec_bulk: 10000 # 26214400 # 25 MB/s
     ufps: 50000000 # 50 FPS
 lua:
     entry_path: cart.lua

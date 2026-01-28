@@ -10,11 +10,15 @@
 
 namespace bmsx {
 
+class DmaController;
+
 class ImgDecController {
 public:
-	ImgDecController(VmMemory& memory, std::function<void(uint32_t)> raiseIrq);
+	ImgDecController(VmMemory& memory, DmaController& dma, std::function<void(uint32_t)> raiseIrq);
 
 	void tick();
+	void setDecodeBudget(uint32_t bytesPerTick);
+	void reset();
 
 private:
 	struct DecodedImage {
@@ -25,7 +29,9 @@ private:
 
 	void tryStart();
 	VmMemory::AssetEntry& resolveSlotEntry(uint32_t dst);
-	void finishSuccess(DecodedImage&& result, VmMemory::AssetEntry& entry);
+	void beginDecode(DecodedImage&& result, VmMemory::AssetEntry& entry);
+	void advanceDecode();
+	void finishSuccess(bool clipped);
 	void finishError();
 
 	GateGroup m_gate;
@@ -36,7 +42,15 @@ private:
 	std::optional<DecodedImage> m_pendingResult;
 	VmMemory::AssetEntry* m_pendingEntry = nullptr;
 	uint32_t m_pendingCap = 0;
+	uint32_t m_decodeBudget = 0;
+	bool m_decodeActive = false;
+	size_t m_decodeRemaining = 0;
+	VmMemory::ImageWritePlan m_decodePlan;
+	std::vector<uint8_t> m_decodePixels;
+	bool m_decodeQueued = false;
+	uint64_t m_decodeToken = 0;
 	VmMemory& m_memory;
+	DmaController& m_dma;
 	std::function<void(uint32_t)> m_raiseIrq;
 };
 
