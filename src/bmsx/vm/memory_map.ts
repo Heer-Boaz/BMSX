@@ -19,8 +19,6 @@ export const IO_REGION_SIZE = 0x00004000; // 16 KB
 
 export const DEFAULT_STRING_HANDLE_COUNT = 0x40000; // 256k handles
 export const STRING_HANDLE_ENTRY_SIZE = 16;
-export const ENGINE_STRING_HANDLE_LIMIT = 0x8000; // 32k reserved for engine/system
-
 export const DEFAULT_STRING_HEAP_SIZE = 0x02000000; // 32 MB
 export const DEFAULT_ASSET_TABLE_SIZE = 0x00100000; // 1 MB
 export const DEFAULT_VRAM_ATLAS_SLOT_SIZE = 0x01000000; // 16 MB
@@ -32,6 +30,7 @@ export let STRING_HANDLE_TABLE_SIZE = STRING_HANDLE_COUNT * STRING_HANDLE_ENTRY_
 export let STRING_HEAP_SIZE = DEFAULT_STRING_HEAP_SIZE;
 export let ASSET_TABLE_SIZE = DEFAULT_ASSET_TABLE_SIZE;
 export let VRAM_ATLAS_SLOT_SIZE = DEFAULT_VRAM_ATLAS_SLOT_SIZE;
+export let VRAM_ENGINE_ATLAS_SLOT_SIZE = DEFAULT_VRAM_ATLAS_SLOT_SIZE;
 export let VRAM_STAGING_SIZE = DEFAULT_VRAM_STAGING_SIZE;
 
 export let IO_BASE = RAM_BASE;
@@ -59,6 +58,7 @@ export type MemoryMapLimits = {
 	asset_table_bytes?: number;
 	asset_data_bytes?: number;
 	atlas_slot_bytes?: number;
+	engine_atlas_slot_bytes?: number;
 	staging_bytes?: number;
 };
 
@@ -80,6 +80,7 @@ function recomputeMemoryLayout(config: {
 	assetTableBytes: number;
 	assetDataBytes: number;
 	atlasSlotBytes: number;
+	engineAtlasSlotBytes: number;
 	stagingBytes: number;
 }): void {
 	RAM_SIZE = config.ramBytes;
@@ -88,6 +89,7 @@ function recomputeMemoryLayout(config: {
 	STRING_HEAP_SIZE = config.stringHeapBytes;
 	ASSET_TABLE_SIZE = config.assetTableBytes;
 	VRAM_ATLAS_SLOT_SIZE = config.atlasSlotBytes;
+	VRAM_ENGINE_ATLAS_SLOT_SIZE = config.engineAtlasSlotBytes;
 	VRAM_STAGING_SIZE = config.stagingBytes;
 
 	IO_BASE = RAM_BASE;
@@ -96,14 +98,14 @@ function recomputeMemoryLayout(config: {
 	ASSET_RAM_BASE = STRING_HEAP_BASE + STRING_HEAP_SIZE;
 	ASSET_TABLE_BASE = ASSET_RAM_BASE;
 	ASSET_DATA_BASE = ASSET_TABLE_BASE + ASSET_TABLE_SIZE;
-	ASSET_DATA_END = ASSET_DATA_BASE + config.assetDataBytes + VRAM_STAGING_SIZE + (VRAM_ATLAS_SLOT_SIZE * 3);
+	ASSET_DATA_END = ASSET_DATA_BASE + config.assetDataBytes + VRAM_STAGING_SIZE + (VRAM_ATLAS_SLOT_SIZE * 2) + VRAM_ENGINE_ATLAS_SLOT_SIZE;
 	ASSET_RAM_SIZE = ASSET_DATA_END - ASSET_RAM_BASE;
 
 	VRAM_SECONDARY_ATLAS_BASE = ASSET_DATA_END - VRAM_ATLAS_SLOT_SIZE;
 	VRAM_PRIMARY_ATLAS_BASE = VRAM_SECONDARY_ATLAS_BASE - VRAM_ATLAS_SLOT_SIZE;
-	VRAM_ENGINE_ATLAS_BASE = VRAM_PRIMARY_ATLAS_BASE - VRAM_ATLAS_SLOT_SIZE;
+	VRAM_ENGINE_ATLAS_BASE = VRAM_PRIMARY_ATLAS_BASE - VRAM_ENGINE_ATLAS_SLOT_SIZE;
 	VRAM_STAGING_BASE = VRAM_ENGINE_ATLAS_BASE - VRAM_STAGING_SIZE;
-	VRAM_ENGINE_ATLAS_SIZE = VRAM_ATLAS_SLOT_SIZE;
+	VRAM_ENGINE_ATLAS_SIZE = VRAM_ENGINE_ATLAS_SLOT_SIZE;
 	VRAM_PRIMARY_ATLAS_SIZE = VRAM_ATLAS_SLOT_SIZE;
 	VRAM_SECONDARY_ATLAS_SIZE = VRAM_ATLAS_SLOT_SIZE;
 	ASSET_DATA_ALLOC_END = VRAM_STAGING_BASE;
@@ -118,10 +120,11 @@ export function configureMemoryMap(limits?: MemoryMapLimits): void {
 	const stringHeapBytes = resolvePositiveInteger(limits?.string_heap_bytes ?? DEFAULT_STRING_HEAP_SIZE, 'string_heap_bytes');
 	const assetTableBytes = resolvePositiveInteger(limits?.asset_table_bytes ?? DEFAULT_ASSET_TABLE_SIZE, 'asset_table_bytes');
 	const atlasSlotBytes = resolvePositiveInteger(limits?.atlas_slot_bytes ?? DEFAULT_VRAM_ATLAS_SLOT_SIZE, 'atlas_slot_bytes');
+	const engineAtlasSlotBytes = resolvePositiveInteger(limits?.engine_atlas_slot_bytes ?? atlasSlotBytes, 'engine_atlas_slot_bytes');
 	const stagingBytes = resolvePositiveInteger(limits?.staging_bytes ?? DEFAULT_VRAM_STAGING_SIZE, 'staging_bytes');
 	const stringHandleTableBytes = stringHandleCount * STRING_HANDLE_ENTRY_SIZE;
 	const defaultAssetDataBytes = DEFAULT_RAM_SIZE
-		- (IO_REGION_SIZE + stringHandleTableBytes + stringHeapBytes + assetTableBytes + stagingBytes + (atlasSlotBytes * 3));
+		- (IO_REGION_SIZE + stringHandleTableBytes + stringHeapBytes + assetTableBytes + stagingBytes + (atlasSlotBytes * 2) + engineAtlasSlotBytes);
 	const assetDataBytes = resolvePositiveInteger(limits?.asset_data_bytes ?? defaultAssetDataBytes, 'asset_data_bytes');
 	const computedRamBytes = IO_REGION_SIZE
 		+ stringHandleTableBytes
@@ -129,7 +132,8 @@ export function configureMemoryMap(limits?: MemoryMapLimits): void {
 		+ assetTableBytes
 		+ assetDataBytes
 		+ stagingBytes
-		+ (atlasSlotBytes * 3);
+		+ (atlasSlotBytes * 2)
+		+ engineAtlasSlotBytes;
 	if (limits?.ram_bytes !== undefined) {
 		const ramBytes = resolvePositiveInteger(limits.ram_bytes, 'ram_bytes');
 		if (ramBytes !== computedRamBytes) {
@@ -142,6 +146,7 @@ export function configureMemoryMap(limits?: MemoryMapLimits): void {
 			assetTableBytes,
 			assetDataBytes,
 			atlasSlotBytes,
+			engineAtlasSlotBytes,
 			stagingBytes,
 		});
 		return;
@@ -153,6 +158,7 @@ export function configureMemoryMap(limits?: MemoryMapLimits): void {
 		assetTableBytes,
 		assetDataBytes,
 		atlasSlotBytes,
+		engineAtlasSlotBytes,
 		stagingBytes,
 	});
 }

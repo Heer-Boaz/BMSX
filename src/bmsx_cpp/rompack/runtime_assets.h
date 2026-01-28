@@ -313,6 +313,7 @@ struct RomManifest {
 	std::optional<i32> assetTableBytes;
 	std::optional<i32> assetDataBytes;
 	std::optional<i32> atlasSlotBytes;
+	std::optional<i32> engineAtlasSlotBytes;
 	std::optional<i32> stagingBytes;
 	std::optional<i32> maxVoicesSfx;
 	std::optional<i32> maxVoicesMusic;

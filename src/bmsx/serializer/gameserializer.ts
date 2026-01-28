@@ -53,7 +53,7 @@ export class Serializer {
 	// A place to collect all @onsave hooks by class name
 	static onSaves: Record<string, ((...args: any[]) => any)[]> = {};
 
-	/**
+	/** 
 	 * Main parameterized serialization entry point.
 	 *
 	 * @param obj - The object to serialize.

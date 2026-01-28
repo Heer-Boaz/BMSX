@@ -4,9 +4,9 @@ import pc from 'picocolors';
 import { Presets, SingleBar } from 'cli-progress';
 
 import { validateAudioEventReferences } from './audioeventvalidator';
-import { appendVmProgramAsset, buildBootromScriptIfNewer, buildEngineRuntime, buildGameHtmlAndManifest, buildResourceList, commonResPath, createAtlasses, deployToServer, esbuild, finalizeRompack, GENERATE_AND_USE_TEXTURE_ATLAS, generateRomAssets, getNodeLauncherFilename, getResMetaList, getResourcesList, getRomManifest, isEngineRuntimeRebuildRequired, isRebuildRequired, LUA_CANONICALIZATION, setAtlasFlag, setLuaCanonicalization, typecheckBeforeBuild, typecheckGameWithDts } from './rompacker-core';
-import type { RomPackerMode, RomPackerOptions, RomPackerTarget } from './rompacker.rompack';
-import type { CanonicalizationType, RomAsset } from '../../src/bmsx/rompack/rompack';
+import { appendVmProgramAsset, buildBootromScriptIfNewer, buildEngineRuntime, buildGameHtmlAndManifest, buildResourceList, commonResPath, createAtlasses, deployToServer, ENGINE_ATLAS_INDEX, esbuild, finalizeRompack, GENERATE_AND_USE_TEXTURE_ATLAS, generateRomAssets, getNodeLauncherFilename, getResMetaList, getResourcesList, getRomManifest, isEngineRuntimeRebuildRequired, isRebuildRequired, LUA_CANONICALIZATION, setAtlasFlag, setLuaCanonicalization, typecheckBeforeBuild, typecheckGameWithDts } from './rompacker-core';
+import type { AtlasResource, Resource, RomPackerMode, RomPackerOptions, RomPackerTarget } from './rompacker.rompack';
+import type { CanonicalizationType, RomAsset, RomManifest } from '../../src/bmsx/rompack/rompack';
 import type { Value } from '../../src/bmsx/vm/cpu';
 import { LuaError } from '../../src/bmsx/lua/luaerrors';
 import { inflateProgram, decodeProgramAsset, VM_PROGRAM_ASSET_ID } from '../../src/bmsx/vm/vm_program_asset';
@@ -120,6 +120,23 @@ function stripLuaAssets(assets: RomAsset[], debug: boolean): void {
 			assets.splice(index, 1);
 		}
 	}
+}
+
+function applyEngineAtlasLimit(manifest: RomManifest, resources: Resource[]): void {
+	const atlas = resources.find((res): res is AtlasResource => res.type === 'atlas' && res.atlasid === ENGINE_ATLAS_INDEX);
+	if (!atlas || !atlas.img) {
+		throw new Error('[RomPacker] Engine atlas missing; cannot compute engine_atlas_slot_bytes.');
+	}
+	const width = atlas.img.width;
+	const height = atlas.img.height;
+	if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+		throw new Error('[RomPacker] Engine atlas dimensions are invalid; cannot compute engine_atlas_slot_bytes.');
+	}
+	const bytes = Math.floor(width) * Math.floor(height) * 4;
+	if (!manifest.vm.limits) {
+		manifest.vm.limits = {};
+	}
+	manifest.vm.limits.engine_atlas_slot_bytes = bytes;
 }
 
 // --- Individual lists that allow us to easily remove tasks from the main task list (visualisation only!) ---
@@ -990,6 +1007,7 @@ async function runEngineBuild(options: ParsedOptions): Promise<void> {
 		const engineResources = await getResourcesList(engineResMetaList);
 		if (GENERATE_AND_USE_TEXTURE_ATLAS) {
 			await createAtlasses(engineResources);
+			applyEngineAtlasLimit(engineManifest, engineResources);
 		}
 		validateAudioEventReferences(engineResources);
 		const engineRomAssets = await generateRomAssets(engineResources);

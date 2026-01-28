@@ -131,7 +131,6 @@ import {
 	CART_ROM_MAGIC_ADDR,
 	CART_ROM_SIZE,
 	ENGINE_ROM_BASE,
-	ENGINE_STRING_HANDLE_LIMIT,
 	DEFAULT_STRING_HANDLE_COUNT,
 	DEFAULT_STRING_HEAP_SIZE,
 	DEFAULT_VRAM_ATLAS_SLOT_SIZE,
@@ -244,10 +243,10 @@ class RateBudget {
 		this.carry = 0n;
 	}
 
-	public calcBytesPerTick(cpuHz: number, cyclesPerTick: number): number {
+	public calcBytesForCycles(cpuHz: number, cycles: number): number {
 		const hz = BigInt(cpuHz);
-		const cycles = BigInt(cyclesPerTick);
-		const numerator = this.bytesPerSec * cycles + this.carry;
+		const cycleCount = BigInt(cycles);
+		const numerator = this.bytesPerSec * cycleCount + this.carry;
 		const out = numerator / hz;
 		this.carry = numerator % hz;
 		const max = 0xFFFF_FFFFn;
@@ -383,9 +382,14 @@ export class BmsxVMRuntime {
 			this.debugCycleRuns += 1;
 			this.debugCycleRunsTotal += 1;
 		}
-		const result = this.cpu.run(state.cycleBudgetRemaining);
+		const before = state.cycleBudgetRemaining;
+		const result = this.cpu.run(before);
 		const remaining = this.cpu.instructionBudgetRemaining;
 		state.cycleBudgetRemaining = remaining;
+		const consumed = before - remaining;
+		if (consumed > 0) {
+			this.advanceHardware(consumed);
+		}
 		if (debugCycle) {
 			if (result === RunResult.Yielded) {
 				this.debugCycleYields += 1;
@@ -517,16 +521,20 @@ export class BmsxVMRuntime {
 		this.dmaBulkRate.set(this.dmaBytesPerSecBulk);
 		this.resetTransferCarry();
 	}
-	private refreshTransferBudgets(): void {
-		const cyclesPerTick = this.cycleBudgetPerFrame;
-		const imgBudget = this.imgRate.calcBytesPerTick(this._cpuHz, cyclesPerTick);
-		const isoBudget = this.dmaIsoRate.calcBytesPerTick(this._cpuHz, cyclesPerTick);
-		const bulkBudget = this.dmaBulkRate.calcBytesPerTick(this._cpuHz, cyclesPerTick);
+	private advanceHardware(cycles: number): void {
+		if (cycles <= 0) {
+			return;
+		}
+		const imgBudget = this.imgRate.calcBytesForCycles(this._cpuHz, cycles);
+		const isoBudget = this.dmaIsoRate.calcBytesForCycles(this._cpuHz, cycles);
+		const bulkBudget = this.dmaBulkRate.calcBytesForCycles(this._cpuHz, cycles);
 		this.imgDecController.setDecodeBudget(imgBudget);
 		this.dmaController.setChannelBudgets({
 			iso: isoBudget,
 			bulk: bulkBudget,
 		});
+		this.dmaController.tick();
+		this.imgDecController.tick();
 	}
 	private resetTransferCarry(): void {
 		this.imgRate.resetCarry();
@@ -657,6 +665,7 @@ export class BmsxVMRuntime {
 			$.set_lua_sources(engineLuaSources);
 			const engineMemoryLimits = BmsxVMRuntime.resolveMemoryMapLimits({
 				manifest: engineLayer.index.manifest,
+				engineManifest: engineLayer.index.manifest,
 				engineSource,
 				assetSource: engineSource,
 				assets: engineLayer.assets,
@@ -733,6 +742,7 @@ export class BmsxVMRuntime {
 		}
 		const memoryLimits = BmsxVMRuntime.resolveMemoryMapLimits({
 			manifest: cartLayer.index.manifest,
+			engineManifest: engineLayer.index.manifest,
 			engineSource,
 			assetSource,
 			assets: sizingAssets,
@@ -970,15 +980,24 @@ export class BmsxVMRuntime {
 
 	private static resolveMemoryMapLimits(params: {
 		manifest: CartridgeIndex['manifest'];
+		engineManifest: CartridgeIndex['manifest'];
 		engineSource: RawAssetSource;
 		assetSource: RawAssetSource;
 		assets: RuntimeAssets;
 	}): MemoryMapLimits {
 		const vm = params.manifest.vm;
+		const engineVm = params.engineManifest.vm;
 		const limits = vm.limits;
 		const stringHandleCount = limits?.string_handle_count ?? DEFAULT_STRING_HANDLE_COUNT;
 		const stringHeapBytes = limits?.string_heap_bytes ?? DEFAULT_STRING_HEAP_SIZE;
 		const atlasSlotBytes = limits?.atlas_slot_bytes ?? DEFAULT_VRAM_ATLAS_SLOT_SIZE;
+		const engineAtlasSlotBytes = engineVm.limits?.engine_atlas_slot_bytes;
+		if (engineAtlasSlotBytes === undefined) {
+			throw new Error('[BmsxVMRuntime] vm.limits.engine_atlas_slot_bytes is required in the engine manifest.');
+		}
+		if (!Number.isSafeInteger(engineAtlasSlotBytes) || engineAtlasSlotBytes <= 0) {
+			throw new Error('[BmsxVMRuntime] vm.limits.engine_atlas_slot_bytes must be a positive integer.');
+		}
 		const stagingBytes = limits?.staging_bytes ?? DEFAULT_VRAM_STAGING_SIZE;
 		const assetTableInfo = this.computeAssetTableBytes(params.engineSource, params.assetSource, params.assets);
 		const requiredAssetTableBytes = assetTableInfo.bytes;
@@ -1002,7 +1021,8 @@ export class BmsxVMRuntime {
 			+ assetTableBytes
 			+ assetDataBytes
 			+ stagingBytes
-			+ (atlasSlotBytes * 3);
+			+ (atlasSlotBytes * 2)
+			+ engineAtlasSlotBytes;
 		const ramBytes = limits?.ram_bytes ?? computedRamBytes;
 		if (limits?.ram_bytes !== undefined && ramBytes !== computedRamBytes) {
 			throw new Error(`[BmsxVMRuntime] vm.limits.ram_bytes (${ramBytes}) must match required size ${computedRamBytes}.`);
@@ -1012,7 +1032,8 @@ export class BmsxVMRuntime {
 			`[BmsxVMRuntime] VM memory footprint: ram=${ramBytes} bytes (${footprintMiB} MiB) `
 			+ `(io=${IO_REGION_SIZE}, string_handles=${stringHandleCount}, string_heap=${stringHeapBytes}, `
 			+ `asset_table=${assetTableBytes} (${assetTableInfo.entryCount} entries, ${assetTableInfo.stringBytes} string bytes), `
-			+ `asset_data=${assetDataBytes}, vram_staging=${stagingBytes}, atlas_slot=${atlasSlotBytes}x3=${atlasSlotBytes * 3}).`,
+			+ `asset_data=${assetDataBytes}, vram_staging=${stagingBytes}, `
+			+ `engine_atlas_slot=${engineAtlasSlotBytes}, atlas_slot=${atlasSlotBytes}x2=${atlasSlotBytes * 2}).`,
 		);
 		return {
 			ram_bytes: ramBytes,
@@ -1021,6 +1042,7 @@ export class BmsxVMRuntime {
 			asset_table_bytes: assetTableBytes,
 			asset_data_bytes: assetDataBytes,
 			atlas_slot_bytes: atlasSlotBytes,
+			engine_atlas_slot_bytes: engineAtlasSlotBytes,
 			staging_bytes: stagingBytes,
 		};
 	}
@@ -1538,19 +1560,12 @@ export class BmsxVMRuntime {
 		return state;
 	}
 
-	private tickHardware(): void {
-		this.refreshTransferBudgets();
-		this.dmaController.tick();
-		this.imgDecController.tick();
-	}
-
 	public tickUpdate(): void {
 		if (!this.tickEnabled) {
 			return;
 		}
 		this.processPendingCartBoot();
 		this.processPendingProgramReload();
-		this.tickHardware();
 		if (this.isOverlayActive()) {
 			return;
 		}
@@ -1642,7 +1657,6 @@ export class BmsxVMRuntime {
 			return;
 		}
 		this.processPendingProgramReload();
-		this.tickHardware();
 		if (this.currentFrameState !== null || this.drawFrameState !== null) {
 			return;
 		}
@@ -1674,7 +1688,6 @@ export class BmsxVMRuntime {
 			return;
 		}
 		this.processPendingProgramReload();
-		this.tickHardware();
 		if (this.currentFrameState !== null || this.drawFrameState !== null) {
 			return;
 		}
@@ -5031,10 +5044,6 @@ export class BmsxVMRuntime {
 		}
 		this.vmModuleCache.clear();
 		this.memory.writeValue(IO_WRITE_PTR_ADDR, 0);
-
-		if (engineAssets) {
-			this.runtimeStringPool.reserveHandles(ENGINE_STRING_HANDLE_LIMIT);
-		}
 
 		const inflated = inflateProgram(programAsset.program);
 		try {

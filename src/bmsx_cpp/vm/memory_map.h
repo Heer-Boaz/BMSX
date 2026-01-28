@@ -25,8 +25,6 @@ constexpr uint32_t IO_REGION_SIZE = 0x00004000u; // 16 KB
 
 constexpr uint32_t DEFAULT_STRING_HANDLE_COUNT = 0x40000u; // 256k handles
 constexpr uint32_t STRING_HANDLE_ENTRY_SIZE = 16;
-constexpr uint32_t ENGINE_STRING_HANDLE_LIMIT = 0x8000u; // 32k reserved for engine/system
-
 constexpr uint32_t DEFAULT_STRING_HEAP_SIZE = 0x02000000u; // 32 MB
 constexpr uint32_t DEFAULT_ASSET_TABLE_SIZE = 0x00100000u; // 1 MB
 
@@ -65,6 +63,7 @@ struct MemoryMapConfig {
 	uint32_t assetTableBytes = DEFAULT_ASSET_TABLE_SIZE;
 	uint32_t assetDataBytes = 0;
 	uint32_t atlasSlotBytes = DEFAULT_VRAM_ATLAS_SLOT_SIZE;
+	uint32_t engineAtlasSlotBytes = DEFAULT_VRAM_ATLAS_SLOT_SIZE;
 	uint32_t stagingBytes = DEFAULT_VRAM_STAGING_SIZE;
 };
 

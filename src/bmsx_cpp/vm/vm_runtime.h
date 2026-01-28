@@ -279,7 +279,7 @@ private:
 
 		void setBytesPerSec(i64 value) { bytesPerSec = value; }
 		void resetCarry() { carry = 0; }
-		uint32_t calcBytesPerTick(i64 cpuHz, i64 cyclesPerTick);
+		uint32_t calcBytesForCycles(i64 cpuHz, i64 cycles);
 	};
 
 	enum class PendingCall {
@@ -307,8 +307,7 @@ private:
 	void resetFrameState();
 	void executeUpdateCallback(double deltaSeconds);
 	void executeDrawCallback();
-	void tickHardware();
-	void refreshTransferBudgets();
+	void advanceHardware(int cycles);
 	void resetTransferCarry();
 	void raiseIrqFlags(uint32_t mask);
 	bool dispatchIrqFlags();

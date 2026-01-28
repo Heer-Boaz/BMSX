@@ -6,17 +6,17 @@ vm:
     canonicalization: lower
     namespace: 'pietsona2025'
     cpu_freq_hz: 5000000 # 5 MHz
-    imgdec_bytes_per_sec: 10000 # 26214400 # 25 MB/s
-    dma_bytes_per_sec_iso: 10000 # 8388608 # 8 MB/s
-    dma_bytes_per_sec_bulk: 10000 # 26214400 # 25 MB/s
+    imgdec_bytes_per_sec: 100000 # 26214400 # 25 MB/s
+    dma_bytes_per_sec_iso: 100000 # 8388608 # 8 MB/s
+    dma_bytes_per_sec_bulk: 100000 # 26214400 # 25 MB/s
     ufps: 50000000 # 50 FPS
     limits:
-        ram_bytes: 132303400
-        string_handle_count: 262144
-        string_heap_bytes: 33554432
-        asset_table_bytes: 34473
-        asset_data_bytes: 39977855
-        atlas_slot_bytes: 16777216
-        staging_bytes: 4194304
+        # Breakdown of string_heap, asset_table, asset_data, atlas_slot, and staging:
+        string_handle_count: 32768 # 32K
+        string_heap_bytes: 4194304 # 4 MB
+        asset_table_bytes: 34473 # ~34 KB
+        asset_data_bytes: 39977855 # ~40 MB
+        atlas_slot_bytes: 16777216 # 16 MB
+        staging_bytes: 4194304 # 4 MB
 lua:
     entry_path: cart.lua

@@ -1155,6 +1155,9 @@ bool loadAssetsFromRom(const u8* buffer,
 				if (limitsObj.count("atlas_slot_bytes")) {
 					assets.manifest.atlasSlotBytes = limitsObj.at("atlas_slot_bytes").toI32();
 				}
+				if (limitsObj.count("engine_atlas_slot_bytes")) {
+					assets.manifest.engineAtlasSlotBytes = limitsObj.at("engine_atlas_slot_bytes").toI32();
+				}
 				if (limitsObj.count("staging_bytes")) {
 					assets.manifest.stagingBytes = limitsObj.at("staging_bytes").toI32();
 				}

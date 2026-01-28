@@ -431,6 +431,7 @@ export type VmLimits = {
 	asset_table_bytes?: number;
 	asset_data_bytes?: number;
 	atlas_slot_bytes?: number;
+	engine_atlas_slot_bytes?: number;
 	staging_bytes?: number;
 	max_voices?: VmVoiceLimits;
 };

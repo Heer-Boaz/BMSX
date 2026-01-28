@@ -147,7 +147,7 @@ uint32_t computeAssetDataBytes(const RuntimeAssets& engineAssets, const RuntimeA
 	return cursor - assetDataBaseOffset;
 }
 
-MemoryMapConfig resolveMemoryMapConfig(const RomManifest& manifest, const RuntimeAssets& assets, const RuntimeAssets& engineAssets) {
+MemoryMapConfig resolveMemoryMapConfig(const RomManifest& manifest, const RomManifest& engineManifest, const RuntimeAssets& assets, const RuntimeAssets& engineAssets) {
 	MemoryMapConfig config;
 	if (manifest.stringHandleCount) {
 		const i32 value = *manifest.stringHandleCount;
@@ -169,6 +169,15 @@ MemoryMapConfig resolveMemoryMapConfig(const RomManifest& manifest, const Runtim
 			throw std::runtime_error("[EngineCore] atlas_slot_bytes must be greater than 0.");
 		}
 		config.atlasSlotBytes = static_cast<uint32_t>(value);
+	}
+	if (engineManifest.engineAtlasSlotBytes) {
+		const i32 value = *engineManifest.engineAtlasSlotBytes;
+		if (value <= 0) {
+			throw std::runtime_error("[EngineCore] engine_atlas_slot_bytes must be greater than 0.");
+		}
+		config.engineAtlasSlotBytes = static_cast<uint32_t>(value);
+	} else {
+		throw std::runtime_error("[EngineCore] engine_atlas_slot_bytes is required in the engine manifest.");
 	}
 	if (manifest.stagingBytes) {
 		const i32 value = *manifest.stagingBytes;
@@ -216,7 +225,8 @@ MemoryMapConfig resolveMemoryMapConfig(const RomManifest& manifest, const Runtim
 		+ static_cast<uint64_t>(config.assetTableBytes)
 		+ static_cast<uint64_t>(config.assetDataBytes)
 		+ static_cast<uint64_t>(config.stagingBytes)
-		+ static_cast<uint64_t>(config.atlasSlotBytes) * 3u;
+		+ static_cast<uint64_t>(config.atlasSlotBytes) * 2u
+		+ static_cast<uint64_t>(config.engineAtlasSlotBytes);
 	if (computedRamBytes > std::numeric_limits<uint32_t>::max()) {
 		throw std::runtime_error("[EngineCore] ram_bytes exceeds addressable range.");
 	}
@@ -244,13 +254,14 @@ MemoryMapConfig resolveMemoryMapConfig(const RomManifest& manifest, const Runtim
 		<< ", asset_table=" << config.assetTableBytes
 		<< ", asset_data=" << config.assetDataBytes
 		<< ", vram_staging=" << config.stagingBytes
-		<< ", atlas_slot=" << config.atlasSlotBytes << "x3=" << (config.atlasSlotBytes * 3u)
+		<< ", engine_atlas_slot=" << config.engineAtlasSlotBytes
+		<< ", atlas_slot=" << config.atlasSlotBytes << "x2=" << (config.atlasSlotBytes * 2u)
 		<< ")." << std::endl;
 	return config;
 }
 
-void applyManifestMemoryLimits(const RomManifest& manifest, const RuntimeAssets& assets, const RuntimeAssets& engineAssets) {
-	const MemoryMapConfig config = resolveMemoryMapConfig(manifest, assets, engineAssets);
+void applyManifestMemoryLimits(const RomManifest& manifest, const RomManifest& engineManifest, const RuntimeAssets& assets, const RuntimeAssets& engineAssets) {
+	const MemoryMapConfig config = resolveMemoryMapConfig(manifest, engineManifest, assets, engineAssets);
 	configureMemoryMap(config);
 }
 
@@ -786,7 +797,7 @@ bool EngineCore::bootWithoutCart() {
 	m_assets.projectRootPath = m_engine_assets.projectRootPath;
 	const i64 ufpsScaled = resolveUfpsScaled(m_engine_assets.manifest);
 	setUfpsScaled(ufpsScaled);
-	applyManifestMemoryLimits(m_assets.manifest, m_assets, m_engine_assets);
+	applyManifestMemoryLimits(m_assets.manifest, m_engine_assets.manifest, m_assets, m_engine_assets);
 	// Don't copy vmProgram - use engine_assets.vmProgram directly below
 
 	Vec2 viewportSize{
@@ -901,7 +912,7 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 	m_assets.projectRootPath = std::move(cartAssets.projectRootPath);
 	const i64 ufpsScaled = resolveUfpsScaled(m_assets.manifest);
 	setUfpsScaled(ufpsScaled);
-	applyManifestMemoryLimits(m_assets.manifest, m_assets, m_engine_assets);
+	applyManifestMemoryLimits(m_assets.manifest, m_engine_assets.manifest, m_assets, m_engine_assets);
 	i64 cpuHz = 0;
 	const bool cartCpuValid = tryResolveCpuHz(m_assets.manifest, cpuHz);
 	if (!cartCpuValid) {
@@ -1271,7 +1282,6 @@ void EngineCore::bootVMFromProgram() {
 	runtime.setProgramSource(VMRuntime::VmProgramSource::Cart);
 	runtime.setCanonicalization(m_assets.manifest.canonicalization);
 	if (m_engine_assets_loaded && m_engine_assets.vmProgram && m_engine_assets.vmProgram->program) {
-		runtime.cpu().reserveStringHandles(ENGINE_STRING_HANDLE_LIMIT);
 		auto linked = linkProgramAssets(
 			*m_engine_assets.vmProgram,
 			m_engine_assets.vmProgramSymbols.get(),

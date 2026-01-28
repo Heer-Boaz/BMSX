@@ -146,10 +146,14 @@
 						"type": "integer",
 						"minimum": 1
 					},
-				"staging_bytes": {
-					"type": "integer",
-					"minimum": 1
-				},
+					"engine_atlas_slot_bytes": {
+						"type": "integer",
+						"minimum": 1
+					},
+					"staging_bytes": {
+						"type": "integer",
+						"minimum": 1
+					},
 				"max_voices": {
 					"$ref": "#/definitions/vmVoiceLimits"
 				}

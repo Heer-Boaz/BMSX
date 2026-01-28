@@ -42,14 +42,14 @@ static void recomputeMemoryLayout(const MemoryMapConfig& config) {
 	ASSET_RAM_BASE = STRING_HEAP_BASE + STRING_HEAP_SIZE;
 	ASSET_TABLE_BASE = ASSET_RAM_BASE;
 	ASSET_DATA_BASE = ASSET_TABLE_BASE + ASSET_TABLE_SIZE;
-	ASSET_DATA_END = ASSET_DATA_BASE + config.assetDataBytes + VRAM_STAGING_SIZE + (VRAM_ATLAS_SLOT_SIZE * 3u);
+	ASSET_DATA_END = ASSET_DATA_BASE + config.assetDataBytes + VRAM_STAGING_SIZE + (VRAM_ATLAS_SLOT_SIZE * 2u) + config.engineAtlasSlotBytes;
 	ASSET_RAM_SIZE = ASSET_DATA_END - ASSET_RAM_BASE;
 
 	VRAM_SECONDARY_ATLAS_BASE = ASSET_DATA_END - VRAM_ATLAS_SLOT_SIZE;
 	VRAM_PRIMARY_ATLAS_BASE = VRAM_SECONDARY_ATLAS_BASE - VRAM_ATLAS_SLOT_SIZE;
-	VRAM_ENGINE_ATLAS_BASE = VRAM_PRIMARY_ATLAS_BASE - VRAM_ATLAS_SLOT_SIZE;
+	VRAM_ENGINE_ATLAS_BASE = VRAM_PRIMARY_ATLAS_BASE - config.engineAtlasSlotBytes;
 	VRAM_STAGING_BASE = VRAM_ENGINE_ATLAS_BASE - VRAM_STAGING_SIZE;
-	VRAM_ENGINE_ATLAS_SIZE = VRAM_ATLAS_SLOT_SIZE;
+	VRAM_ENGINE_ATLAS_SIZE = config.engineAtlasSlotBytes;
 	VRAM_PRIMARY_ATLAS_SIZE = VRAM_ATLAS_SLOT_SIZE;
 	VRAM_SECONDARY_ATLAS_SIZE = VRAM_ATLAS_SLOT_SIZE;
 	ASSET_DATA_ALLOC_END = VRAM_STAGING_BASE;
@@ -78,6 +78,9 @@ void configureMemoryMap(const MemoryMapConfig& config) {
 	if (config.atlasSlotBytes == 0) {
 		throw std::runtime_error("[MemoryMap] atlas_slot_bytes must be greater than 0.");
 	}
+	if (config.engineAtlasSlotBytes == 0) {
+		throw std::runtime_error("[MemoryMap] engine_atlas_slot_bytes must be greater than 0.");
+	}
 	if (config.stagingBytes == 0) {
 		throw std::runtime_error("[MemoryMap] staging_bytes must be greater than 0.");
 	}
@@ -89,7 +92,7 @@ struct MemoryMapInitializer {
 		MemoryMapConfig config;
 		const uint32_t stringHandleTableBytes = config.stringHandleCount * STRING_HANDLE_ENTRY_SIZE;
 		const uint32_t assetDataBytes = DEFAULT_RAM_SIZE
-			- (IO_REGION_SIZE + stringHandleTableBytes + DEFAULT_STRING_HEAP_SIZE + DEFAULT_ASSET_TABLE_SIZE + DEFAULT_VRAM_STAGING_SIZE + (DEFAULT_VRAM_ATLAS_SLOT_SIZE * 3u));
+			- (IO_REGION_SIZE + stringHandleTableBytes + DEFAULT_STRING_HEAP_SIZE + DEFAULT_ASSET_TABLE_SIZE + DEFAULT_VRAM_STAGING_SIZE + (DEFAULT_VRAM_ATLAS_SLOT_SIZE * 2u) + config.engineAtlasSlotBytes);
 		config.assetDataBytes = assetDataBytes;
 		config.ramBytes = DEFAULT_RAM_SIZE;
 		recomputeMemoryLayout(config);

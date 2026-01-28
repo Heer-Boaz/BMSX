@@ -34,14 +34,28 @@ inline double to_ms(std::chrono::steady_clock::duration duration) {
 	return std::chrono::duration<double, std::milli>(duration).count();
 }
 
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wpedantic"
+#elif defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpedantic"
+#endif
+using i128 = __int128_t;
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#elif defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
+
 constexpr uint32_t CART_ROM_MAGIC = 0x58534D42u;
 constexpr size_t CART_ROM_HEADER_SIZE = 32;
 constexpr std::array<u8, CART_ROM_HEADER_SIZE> CART_ROM_EMPTY_HEADER = {};
 }
 
-uint32_t VMRuntime::RateBudget::calcBytesPerTick(i64 cpuHz, i64 cyclesPerTick) {
-	const __int128 numerator = static_cast<__int128>(bytesPerSec) * static_cast<__int128>(cyclesPerTick)
-		+ static_cast<__int128>(carry);
+uint32_t VMRuntime::RateBudget::calcBytesForCycles(i64 cpuHz, i64 cycles) {
+	const i128 numerator = static_cast<i128>(bytesPerSec) * static_cast<i128>(cycles)
+		+ static_cast<i128>(carry);
 	const i64 out = static_cast<i64>(numerator / cpuHz);
 	carry = static_cast<i64>(numerator % cpuHz);
 	const i64 maxValue = static_cast<i64>(std::numeric_limits<uint32_t>::max());
@@ -853,19 +867,18 @@ bool VMRuntime::pollSystemBootRequest() {
 	return true;
 }
 
-void VMRuntime::tickHardware() {
-	refreshTransferBudgets();
-	m_dmaController.tick();
-	m_imgDecController.tick();
-}
-
-void VMRuntime::refreshTransferBudgets() {
-	const i64 cyclesPerTick = static_cast<i64>(m_cycleBudgetPerFrame);
-	const uint32_t imgBudget = m_imgRate.calcBytesPerTick(m_cpuHz, cyclesPerTick);
-	const uint32_t isoBudget = m_dmaIsoRate.calcBytesPerTick(m_cpuHz, cyclesPerTick);
-	const uint32_t bulkBudget = m_dmaBulkRate.calcBytesPerTick(m_cpuHz, cyclesPerTick);
+void VMRuntime::advanceHardware(int cycles) {
+	if (cycles <= 0) {
+		return;
+	}
+	const i64 cycleCount = static_cast<i64>(cycles);
+	const uint32_t imgBudget = m_imgRate.calcBytesForCycles(m_cpuHz, cycleCount);
+	const uint32_t isoBudget = m_dmaIsoRate.calcBytesForCycles(m_cpuHz, cycleCount);
+	const uint32_t bulkBudget = m_dmaBulkRate.calcBytesForCycles(m_cpuHz, cycleCount);
 	m_imgDecController.setDecodeBudget(imgBudget);
 	m_dmaController.setChannelBudgets(isoBudget, bulkBudget);
+	m_dmaController.tick();
+	m_imgDecController.tick();
 }
 
 void VMRuntime::resetTransferCarry() {
@@ -909,9 +922,14 @@ RunResult VMRuntime::runVmWithBudget() {
 	// }
 	// m_debugVmRuns += 1;
 	// m_debugVmRunsTotal += 1;
-	RunResult result = m_cpu.run(m_frameState.cycleBudgetRemaining);
+	const int before = m_frameState.cycleBudgetRemaining;
+	RunResult result = m_cpu.run(before);
 	const int remaining = m_cpu.instructionBudgetRemaining;
 	m_frameState.cycleBudgetRemaining = remaining;
+	const int consumed = before - remaining;
+	if (consumed > 0) {
+		advanceHardware(consumed);
+	}
 	// PERF LOGS DISABLED
 	// if (result == RunResult::Yielded) {
 	// 	m_debugVmYields += 1;
@@ -1065,7 +1083,6 @@ void VMRuntime::tickUpdate() {
 	}
 
 	prepareCartBootIfNeeded();
-	tickHardware();
 	if (pollSystemBootRequest()) {
 		return;
 	}
@@ -1219,7 +1236,6 @@ void VMRuntime::tickIdeInput() {
 
 void VMRuntime::tickIDE() {
 	// IDE update - stub for now
-	tickHardware();
 	flushAssetEdits();
 }
 
@@ -1233,7 +1249,6 @@ void VMRuntime::tickTerminalInput() {
 
 void VMRuntime::tickTerminalMode() {
 	// Terminal mode update - stub for now
-	tickHardware();
 	flushAssetEdits();
 }
 
