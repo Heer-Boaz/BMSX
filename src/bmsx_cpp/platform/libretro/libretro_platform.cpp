@@ -549,13 +549,12 @@ void LibretroPlatform::runFrame() {
 	m_audio_buffer.clear();
 
 
+	const f64 dt = m_frame_time_sec;
+
 	// Advance clock
 	if (auto* clock = dynamic_cast<LibretroClock*>(m_clock.get())) {
-		clock->advanceFrame(1.0 / m_frame_time_sec);
+		clock->advanceFrame(1.0 / dt);
 	}
-
-	// Calculate delta time in seconds
-	f64 dt = m_frame_time_sec;
 
 	// Start engine if not running and not paused
 	if (!m_platform_paused && !m_engine->isRunning() &&

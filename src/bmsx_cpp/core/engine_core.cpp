@@ -10,6 +10,7 @@
 #include "../vm/font.h"
 #include "../rompack/rompack.h"
 #include "../vm/memory_map.h"
+#include "../utils/clamp.h"
 #include <cstdio>
 #include <chrono>
 #include <algorithm>
@@ -523,13 +524,14 @@ void EngineCore::tick(f64 deltaTime) {
 	// m_debugTickHostFrames += 1;
 
 	const double hostDeltaMs = std::min(deltaTime * 1000.0, MAX_FRAME_DELTA_MS);
-	m_delta_time = deltaTime;
-	m_total_time += deltaTime;
+	const double hostDeltaSeconds = hostDeltaMs / 1000.0;
+	m_delta_time = hostDeltaSeconds;
+	m_total_time += hostDeltaSeconds;
 	m_frame_count++;
 
 	// Calculate FPS
-	if (deltaTime > 0.0) {
-		m_fps = 1.0 / deltaTime;
+	if (hostDeltaSeconds > 0.0) {
+		m_fps = 1.0 / hostDeltaSeconds;
 	}
 
 	const auto inputStart = std::chrono::steady_clock::now();
@@ -555,7 +557,7 @@ void EngineCore::tick(f64 deltaTime) {
 		auto terminalInputEnd = std::chrono::steady_clock::now();
 		m_last_tick_timing.vmTerminalInputMs = to_ms(terminalInputEnd - terminalInputStart);
 
-		m_accumulated_time = std::min(m_accumulated_time + hostDeltaMs, m_update_interval_ms * MAX_SUBSTEPS);
+		m_accumulated_time = clamp(m_accumulated_time + hostDeltaMs, 0.0, m_update_interval_ms * MAX_SUBSTEPS);
 		int slicesProcessed = 0;
 		const double fixedDeltaSeconds = m_update_interval_ms / 1000.0;
 		auto updateStart = std::chrono::steady_clock::now();

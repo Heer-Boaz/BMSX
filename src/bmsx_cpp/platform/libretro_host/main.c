@@ -158,6 +158,8 @@ static unsigned g_geom_base_w = 0;
 static unsigned g_geom_base_h = 0;
 static float g_geom_aspect = 0.0f;
 static bool g_geom_dirty = false;
+static uint64_t g_frame_usec = 20000;
+static uint64_t g_frame_ns = 20000000;
 static struct retro_frame_time_callback g_frame_time_cb = {0};
 static bool g_has_frame_time_cb = false;
 static unsigned g_last_video_w = 0;
@@ -405,20 +407,21 @@ static int16_t g_audio_sample_buf[kAudioSampleBufferFrames * 2];
 static size_t g_audio_sample_buf_frames = 0;
 
 static void crash_handler(int sig, siginfo_t* si, void* ctx_) {
-	ucontext_t* uc = (ucontext_t*)ctx_;
-
 #if defined(__arm__)
+	ucontext_t* uc = (ucontext_t*)ctx_;
 	unsigned long pc = uc->uc_mcontext.arm_pc;
 	unsigned long lr = uc->uc_mcontext.arm_lr;
 	unsigned long sp = uc->uc_mcontext.arm_sp;
 	fprintf(stderr, "\nCRASH sig=%d addr=%p pc=%08lx lr=%08lx sp=%08lx\n",
 			sig, si->si_addr, pc, lr, sp);
 #elif defined(__aarch64__)
+	ucontext_t* uc = (ucontext_t*)ctx_;
 	unsigned long pc = uc->uc_mcontext.pc;
 	unsigned long sp = uc->uc_mcontext.sp;
 	fprintf(stderr, "\nCRASH sig=%d addr=%p pc=%016lx sp=%016lx\n",
 			sig, si->si_addr, pc, sp);
 #else
+	(void)ctx_;
 	fprintf(stderr, "\nCRASH sig=%d addr=%p\n", sig, si->si_addr);
 #endif
 
@@ -482,6 +485,22 @@ static uint64_t monotonic_ns(void);
 static uint64_t monotonic_ms(void);
 static inline uint16_t rgb888_to_rgb565(uint8_t r, uint8_t g, uint8_t b);
 static inline uint32_t rgb565_to_xrgb8888(uint16_t p);
+#define ASSIGN_PROC(dst, src) do { \
+	void* _src = (src); \
+	memcpy(&(dst), &_src, sizeof(dst)); \
+} while (0)
+#define ASSIGN_EGL_PROC(dst, src) do { \
+	__eglMustCastToProperFunctionPointerType _src = (src); \
+	memcpy(&(dst), &_src, sizeof(dst)); \
+} while (0)
+#define PTR_TO_RETRO_PROC(dst, src) do { \
+	void* _src = (src); \
+	memcpy(&(dst), &_src, sizeof(dst)); \
+} while (0)
+#define EGL_TO_RETRO_PROC(dst, src) do { \
+	__eglMustCastToProperFunctionPointerType _src = (src); \
+	memcpy(&(dst), &_src, sizeof(dst)); \
+} while (0)
 #ifdef BMSX_LIBRETRO_HOST_SDL
 static void sdl_init(void);
 static void sdl_shutdown(void);
@@ -509,13 +528,17 @@ static retro_proc_address_t RETRO_CALLCONV hw_get_proc_address(const char* sym) 
 	if (sym && g_gles_lib) {
 		void* proc = dlsym(g_gles_lib, sym);
 		if (proc) {
-			return (retro_proc_address_t)proc;
+			retro_proc_address_t fn = NULL;
+			PTR_TO_RETRO_PROC(fn, proc);
+			return fn;
 		}
 	}
 	if (!eglGetProcAddress_ptr) {
 		return NULL;
 	}
-	return (retro_proc_address_t)eglGetProcAddress_ptr(sym);
+	retro_proc_address_t fn = NULL;
+	EGL_TO_RETRO_PROC(fn, eglGetProcAddress_ptr(sym));
+	return fn;
 }
 
 static void update_geometry(const struct retro_game_geometry* geom) {
@@ -540,7 +563,7 @@ static void* get_gl_proc(const char* name) {
 		proc = dlsym(g_gles_lib, name);
 	}
 	if (!proc && eglGetProcAddress_ptr) {
-		proc = (void*)eglGetProcAddress_ptr(name);
+		ASSIGN_EGL_PROC(proc, eglGetProcAddress_ptr(name));
 	}
 	return proc;
 }
@@ -550,11 +573,12 @@ static bool gl_load(void) {
 		return true;
 	}
 #define GL_LOAD(name, type) do { \
-	name##_ptr = (type)get_gl_proc(#name); \
-	if (!name##_ptr) { \
+	void* _proc = get_gl_proc(#name); \
+	if (!_proc) { \
 		fprintf(stderr, "[libretro-host] missing GL proc %s\n", #name); \
 		return false; \
 	} \
+	ASSIGN_PROC(name##_ptr, _proc); \
 } while (0)
 	GL_LOAD(glActiveTexture, PFNGLACTIVETEXTUREPROC);
 	GL_LOAD(glAttachShader, PFNGLATTACHSHADERPROC);
@@ -1237,6 +1261,32 @@ static int menu_text_width(const char* text, int scale) {
 	return (int)strlen(text) * (5 + 1) * scale;
 }
 
+static void menu_write_line(char* line, size_t line_size, const char* label, const char* value) {
+	const size_t max_line = line_size - 1;
+	size_t label_len = strlen(label);
+	if (!value || !value[0] || strcmp(value, "-") == 0) {
+		if (label_len > max_line) {
+			label_len = max_line;
+		}
+		snprintf(line, line_size, "%.*s", (int)label_len, label);
+		return;
+	}
+	size_t value_len = strlen(value);
+	if (max_line <= 2) {
+		line[0] = '\0';
+		return;
+	}
+	size_t label_cap = max_line - 2;
+	if (label_len > label_cap) {
+		label_len = label_cap;
+	}
+	size_t remaining = max_line - (label_len + 2);
+	if (value_len > remaining) {
+		value_len = remaining;
+	}
+	snprintf(line, line_size, "%.*s: %.*s", (int)label_len, label, (int)value_len, value);
+}
+
 static void fps_mark_dirty(void) {
 	g_fps_dirty = true;
 	g_fps_gl_dirty = true;
@@ -1251,14 +1301,6 @@ static void fps_draw_pixel(int x, int y, uint8_t r, uint8_t g, uint8_t b, uint8_
 	p[1] = g;
 	p[2] = b;
 	p[3] = a;
-}
-
-static void fps_draw_rect(int x, int y, int w, int h, uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
-	for (int yy = 0; yy < h; ++yy) {
-		for (int xx = 0; xx < w; ++xx) {
-			fps_draw_pixel(x + xx, y + yy, r, g, b, a);
-		}
-	}
 }
 
 static void fps_draw_char(int x, int y, char c, uint8_t r, uint8_t g, uint8_t b, uint8_t a, int scale) {
@@ -1925,14 +1967,10 @@ static void menu_rebuild_surface(void) {
 			const char* label = opt->label[0] ? opt->label : opt->key;
 			char line[256];
 			if (menu_option_is_action(opt)) {
-				snprintf(line, sizeof(line), "%s", label);
+				menu_write_line(line, sizeof(line), label, NULL);
 			} else {
 				const char* value = menu_option_value_label(opt);
-				if (value && value[0] && strcmp(value, "-") != 0) {
-					snprintf(line, sizeof(line), "%s: %s", label, value);
-				} else {
-					snprintf(line, sizeof(line), "%s", label);
-				}
+				menu_write_line(line, sizeof(line), label, value);
 			}
 			const uint8_t line_r = disabled ? dim_r : text_r;
 			const uint8_t line_g = disabled ? dim_g : text_g;
@@ -2170,20 +2208,20 @@ static bool egl_load(void) {
 		return false;
 	}
 
-	eglGetDisplay_ptr = (PFNEGLGETDISPLAY)dlsym(g_egl_lib, "eglGetDisplay");
-	eglBindAPI_ptr = (PFNEGLBINDAPI)dlsym(g_egl_lib, "eglBindAPI");
-	eglInitialize_ptr = (PFNEGLINITIALIZE)dlsym(g_egl_lib, "eglInitialize");
-	eglChooseConfig_ptr = (PFNEGLCHOOSECONFIG)dlsym(g_egl_lib, "eglChooseConfig");
-	eglCreateWindowSurface_ptr = (PFNEGLCREATEWINDOWSURFACE)dlsym(g_egl_lib, "eglCreateWindowSurface");
-	eglCreateContext_ptr = (PFNEGLCREATECONTEXT)dlsym(g_egl_lib, "eglCreateContext");
-	eglMakeCurrent_ptr = (PFNEGLMAKECURRENT)dlsym(g_egl_lib, "eglMakeCurrent");
-	eglSwapInterval_ptr = (PFNEGLSWAPINTERVAL)dlsym(g_egl_lib, "eglSwapInterval");
-	eglSwapBuffers_ptr = (PFNEGLSWAPBUFFERS)dlsym(g_egl_lib, "eglSwapBuffers");
-	eglDestroyContext_ptr = (PFNEGLDESTROYCONTEXT)dlsym(g_egl_lib, "eglDestroyContext");
-	eglDestroySurface_ptr = (PFNEGLDESTROYSURFACE)dlsym(g_egl_lib, "eglDestroySurface");
-	eglTerminate_ptr = (PFNEGLTERMINATE)dlsym(g_egl_lib, "eglTerminate");
-	eglGetError_ptr = (PFNEGLGETERROR)dlsym(g_egl_lib, "eglGetError");
-	eglGetProcAddress_ptr = (PFNEGLGETPROCADDRESS)dlsym(g_egl_lib, "eglGetProcAddress");
+	ASSIGN_PROC(eglGetDisplay_ptr, dlsym(g_egl_lib, "eglGetDisplay"));
+	ASSIGN_PROC(eglBindAPI_ptr, dlsym(g_egl_lib, "eglBindAPI"));
+	ASSIGN_PROC(eglInitialize_ptr, dlsym(g_egl_lib, "eglInitialize"));
+	ASSIGN_PROC(eglChooseConfig_ptr, dlsym(g_egl_lib, "eglChooseConfig"));
+	ASSIGN_PROC(eglCreateWindowSurface_ptr, dlsym(g_egl_lib, "eglCreateWindowSurface"));
+	ASSIGN_PROC(eglCreateContext_ptr, dlsym(g_egl_lib, "eglCreateContext"));
+	ASSIGN_PROC(eglMakeCurrent_ptr, dlsym(g_egl_lib, "eglMakeCurrent"));
+	ASSIGN_PROC(eglSwapInterval_ptr, dlsym(g_egl_lib, "eglSwapInterval"));
+	ASSIGN_PROC(eglSwapBuffers_ptr, dlsym(g_egl_lib, "eglSwapBuffers"));
+	ASSIGN_PROC(eglDestroyContext_ptr, dlsym(g_egl_lib, "eglDestroyContext"));
+	ASSIGN_PROC(eglDestroySurface_ptr, dlsym(g_egl_lib, "eglDestroySurface"));
+	ASSIGN_PROC(eglTerminate_ptr, dlsym(g_egl_lib, "eglTerminate"));
+	ASSIGN_PROC(eglGetError_ptr, dlsym(g_egl_lib, "eglGetError"));
+	ASSIGN_PROC(eglGetProcAddress_ptr, dlsym(g_egl_lib, "eglGetProcAddress"));
 
 	if (!eglGetDisplay_ptr || !eglBindAPI_ptr || !eglInitialize_ptr || !eglChooseConfig_ptr ||
 		!eglCreateWindowSurface_ptr || !eglCreateContext_ptr ||
@@ -2492,6 +2530,19 @@ static bool environ_cb(unsigned cmd, void* data) {
 		case RETRO_ENVIRONMENT_SET_GEOMETRY:
 			update_geometry((const struct retro_game_geometry*)data);
 			return true;
+		case RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO: {
+			const struct retro_system_av_info* info = (const struct retro_system_av_info*)data;
+			if (!info) {
+				return false;
+			}
+			update_geometry(&info->geometry);
+			g_target_fps = info->timing.fps > 0.0 ? info->timing.fps : g_target_fps;
+			if (g_target_fps > 0.0) {
+				g_frame_usec = (uint64_t)(1000000.0 / g_target_fps + 0.5);
+				g_frame_ns = (uint64_t)(1000000000.0 / g_target_fps + 0.5);
+			}
+			return true;
+		}
 		case RETRO_ENVIRONMENT_SET_PIXEL_FORMAT: {
 			const enum retro_pixel_format* fmt = (const enum retro_pixel_format*)data;
 			g_core_pixel_format = *fmt;
@@ -3417,7 +3468,9 @@ static void input_open_default_devices(void) {
 				continue;
 			}
 			char path[64];
-			snprintf(path, sizeof(path), "/dev/input/%s", ent->d_name);
+			const size_t prefix_len = sizeof("/dev/input/") - 1;
+			const size_t max_name = sizeof(path) - prefix_len - 1;
+			snprintf(path, sizeof(path), "/dev/input/%.*s", (int)max_name, ent->d_name);
 			input_register_device(path);
 			if (g_input_dev_count >= kMaxInputDevs) {
 				break;
@@ -3704,9 +3757,7 @@ static void poll_input_devices_sdl(void) {
 			}
 		}
 	}
-	int saw_event = 0;
 	while (SDL_PollEvent(&ev)) {
-		saw_event = 1;
 		switch (ev.type) {
 			case SDL_QUIT:
 				g_should_quit = 1;
@@ -3761,13 +3812,15 @@ static uint64_t monotonic_ms(void) {
 }
 
 static uint64_t frame_time_usec_from_scaled(int64_t hz_scaled) {
-	const __int128 numerator = (__int128)kVmHzScale * (__int128)1000000ll;
-	return (uint64_t)((numerator + (__int128)hz_scaled / 2) / (__int128)hz_scaled);
+	const uint64_t numerator = (uint64_t)kVmHzScale * 1000000ull;
+	const uint64_t hz = (uint64_t)hz_scaled;
+	return (numerator + hz / 2u) / hz;
 }
 
 static uint64_t frame_time_ns_from_scaled(int64_t hz_scaled) {
-	const __int128 numerator = (__int128)kVmHzScale * (__int128)1000000000ll;
-	return (uint64_t)((numerator + (__int128)hz_scaled / 2) / (__int128)hz_scaled);
+	const uint64_t numerator = (uint64_t)kVmHzScale * 1000000000ull;
+	const uint64_t hz = (uint64_t)hz_scaled;
+	return (numerator + hz / 2u) / hz;
 }
 
 static int16_t input_state_cb(unsigned port, unsigned device, unsigned index, unsigned id) {
@@ -4024,17 +4077,17 @@ int main(int argc, char** argv) {
 		die("Invalid audio sample rate: %.2f", av.timing.sample_rate);
 	}
 	audio_init(audio_rate);
-	const uint64_t frame_usec = frame_time_usec_from_scaled(ufps_scaled);
-	core.bmsx_set_frame_time_usec((retro_usec_t)frame_usec);
-	const uint64_t frame_ns = frame_time_ns_from_scaled(ufps_scaled);
-	uint64_t next_frame_ns = monotonic_ns() + frame_ns;
+	g_frame_usec = frame_time_usec_from_scaled(ufps_scaled);
+	core.bmsx_set_frame_time_usec((retro_usec_t)g_frame_usec);
+	g_frame_ns = frame_time_ns_from_scaled(ufps_scaled);
+	uint64_t next_frame_ns = monotonic_ns() + g_frame_ns;
 
 	while (!g_should_quit) {
 		uint64_t now_ns = monotonic_ns();
 		unsigned frames_to_run = 1;
 		if (!g_menu_active && now_ns > next_frame_ns) {
 			uint64_t lag_ns = now_ns - next_frame_ns;
-			unsigned catch_up = (unsigned)(lag_ns / frame_ns) + 1;
+			unsigned catch_up = (unsigned)(lag_ns / g_frame_ns) + 1;
 			if (catch_up > kMaxCatchUpFrames) {
 				catch_up = kMaxCatchUpFrames;
 			}
@@ -4043,7 +4096,7 @@ int main(int argc, char** argv) {
 		for (unsigned i = 0; i < frames_to_run && !g_should_quit; ++i) {
 			g_drop_video = (frames_to_run > 1) && (i + 1 < frames_to_run);
 			if (g_has_frame_time_cb) {
-				g_frame_time_cb.callback((retro_usec_t)frame_usec);
+				g_frame_time_cb.callback((retro_usec_t)g_frame_usec);
 			}
 			if (g_menu_active) {
 				input_poll_cb();
@@ -4063,7 +4116,7 @@ int main(int argc, char** argv) {
 			}
 		}
 		g_drop_video = false;
-		next_frame_ns += frame_ns * (uint64_t)frames_to_run;
+		next_frame_ns += g_frame_ns * (uint64_t)frames_to_run;
 		now_ns = monotonic_ns();
 		if (now_ns < next_frame_ns) {
 			uint64_t sleep_ns = next_frame_ns - now_ns;
