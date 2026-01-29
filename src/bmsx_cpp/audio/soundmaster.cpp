@@ -4,8 +4,8 @@
 
 #include "soundmaster.h"
 #include "../core/engine_core.h"
-#include "../vm/cpu.h"
-#include "../vm/vm_runtime.h"
+#include "../emulator/cpu.h"
+#include "../emulator/runtime.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -813,10 +813,10 @@ ModulationInput SoundMaster::parseModulationInput(const BinValue& value) const {
 
 ModulationInput SoundMaster::parseModulationInput(const Table& table) const {
 	auto key = [](const std::string& name) {
-		return VMRuntime::instance().canonicalizeIdentifier(name);
+		return Runtime::instance().canonicalizeIdentifier(name);
 	};
-	auto vmString = [](Value value) -> const std::string& {
-		return VMRuntime::instance().cpu().stringPool().toString(asStringId(value));
+	auto valueString = [](Value value) -> const std::string& {
+		return Runtime::instance().cpu().stringPool().toString(asStringId(value));
 	};
 
 	auto getNumber = [&](const std::string& field, std::optional<f32>& out) {
@@ -867,7 +867,7 @@ ModulationInput SoundMaster::parseModulationInput(const Table& table) const {
 		FilterModulationParams filter;
 		Value typeVal = ftable.get(key("type"));
 		if (valueIsString(typeVal)) {
-			filter.type = vmString(typeVal);
+			filter.type = valueString(typeVal);
 		}
 		Value freqVal = ftable.get(key("frequency"));
 		if (valueIsNumber(freqVal)) {

@@ -1,6 +1,6 @@
-# Bmsx Console Lua API Notes
+# Console Lua API Notes
 
-Lua carts get every `BmsxConsoleApi` method as a global (in addition to the injected `api` object). This page spells out the shapes that are only visible through runtime usage, so Codex (and humans) can rely on them without guessing.
+Lua carts get every `Api` method as a global (in addition to the injected `api` object). This page spells out the shapes that are only visible through runtime usage, so Codex (and humans) can rely on them without guessing.
 
 ## Input / Action State
 

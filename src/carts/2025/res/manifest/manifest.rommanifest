@@ -1,7 +1,7 @@
 title: Pietsona 2025
 short_name: '2025'
 rom_name: '2025'
-vm:
+machine:
     viewport: {width: 320, height: 240}
     canonicalization: lower
     namespace: 'pietsona2025'

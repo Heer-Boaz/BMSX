@@ -137,12 +137,12 @@ end
 local CART_MANIFEST_VALIDATORS = {
 	function(manifest, errors)
 		if not is_valid_cpu_freq_hz(manifest.cpu_freq_hz) then
-			errors[#errors + 1] = 'VM.CPU_HZ IS MISSING OR INVALID'
+			errors[#errors + 1] = 'MACHINE.CPU_FREQ_HZ IS MISSING OR INVALID'
 		end
 	end,
 	function(manifest, errors)
 		if not is_valid_ufps(manifest.ufps) then
-			errors[#errors + 1] = 'VM.UFPS IS MISSING OR INVALID'
+			errors[#errors + 1] = 'MACHINE.UFPS IS MISSING OR INVALID'
 		end
 	end,
 }

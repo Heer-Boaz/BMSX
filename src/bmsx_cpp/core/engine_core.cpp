@@ -5,11 +5,11 @@
 #include "engine_core.h"
 #include "../input/input.h"
 #include "../render/texturemanager.h"
-#include "../vm/vm_runtime.h"
-#include "../vm/program_linker.h"
-#include "../vm/font.h"
+#include "../emulator/runtime.h"
+#include "../emulator/program_linker.h"
+#include "../emulator/font.h"
 #include "../rompack/rompack.h"
-#include "../vm/memory_map.h"
+#include "../emulator/memory_map.h"
 #include "../utils/clamp.h"
 #include <cstdio>
 #include <chrono>
@@ -49,7 +49,7 @@ std::vector<std::string> collectAudioIds(const RuntimeAssets& assets) {
 	return ids;
 }
 
-void collectVmAssetIds(const RuntimeAssets& engineAssets, const RuntimeAssets& assets, std::unordered_set<std::string>& ids) {
+void collectAssetIds(const RuntimeAssets& engineAssets, const RuntimeAssets& assets, std::unordered_set<std::string>& ids) {
 	const std::string engineAtlasId = generateAtlasName(ENGINE_ATLAS_INDEX);
 	const ImgAsset* engineAtlas = engineAssets.getImg(engineAtlasId);
 	if (!engineAtlas) {
@@ -86,7 +86,7 @@ void collectVmAssetIds(const RuntimeAssets& engineAssets, const RuntimeAssets& a
 
 uint32_t computeAssetTableBytes(const RuntimeAssets& engineAssets, const RuntimeAssets& assets) {
 	std::unordered_set<std::string> ids;
-	collectVmAssetIds(engineAssets, assets, ids);
+	collectAssetIds(engineAssets, assets, ids);
 	uint64_t stringBytes = 0;
 	for (const auto& id : ids) {
 		stringBytes += static_cast<uint64_t>(id.size()) + 1u;
@@ -247,7 +247,7 @@ MemoryMapConfig resolveMemoryMapConfig(const RomManifest& manifest, const RomMan
 	}
 	const double ramMiB = static_cast<double>(config.ramBytes) / (1024.0 * 1024.0);
 	std::cerr
-		<< "[EngineCore] VM memory footprint: ram=" << config.ramBytes << " bytes ("
+		<< "[EngineCore] memory footprint: ram=" << config.ramBytes << " bytes ("
 		<< std::fixed << std::setprecision(2) << ramMiB << " MiB) "
 		<< "(io=" << IO_REGION_SIZE
 		<< ", string_handles=" << config.stringHandleCount
@@ -280,44 +280,44 @@ bool tryResolveCpuHz(const RomManifest& manifest, i64& outHz) {
 
 i64 resolveCpuHz(const RomManifest& manifest) {
 	if (!manifest.cpuHz) {
-		throw std::runtime_error("[EngineCore] vm.cpu_freq_hz is required.");
+		throw std::runtime_error("[EngineCore] machine.cpu_freq_hz is required.");
 	}
 	const i64 hz = *manifest.cpuHz;
 	if (hz <= 0) {
-		throw std::runtime_error("[EngineCore] vm.cpu_freq_hz must be a positive integer.");
+		throw std::runtime_error("[EngineCore] machine.cpu_freq_hz must be a positive integer.");
 	}
 	return hz;
 }
 
 i64 resolveImgDecBytesPerSec(const RomManifest& manifest) {
 	if (!manifest.imgDecBytesPerSec) {
-		throw std::runtime_error("[EngineCore] vm.imgdec_bytes_per_sec is required.");
+		throw std::runtime_error("[EngineCore] machine.imgdec_bytes_per_sec is required.");
 	}
 	const i64 value = *manifest.imgDecBytesPerSec;
 	if (value <= 0) {
-		throw std::runtime_error("[EngineCore] vm.imgdec_bytes_per_sec must be a positive integer.");
+		throw std::runtime_error("[EngineCore] machine.imgdec_bytes_per_sec must be a positive integer.");
 	}
 	return value;
 }
 
 i64 resolveDmaBytesPerSecIso(const RomManifest& manifest) {
 	if (!manifest.dmaBytesPerSecIso) {
-		throw std::runtime_error("[EngineCore] vm.dma_bytes_per_sec_iso is required.");
+		throw std::runtime_error("[EngineCore] machine.dma_bytes_per_sec_iso is required.");
 	}
 	const i64 value = *manifest.dmaBytesPerSecIso;
 	if (value <= 0) {
-		throw std::runtime_error("[EngineCore] vm.dma_bytes_per_sec_iso must be a positive integer.");
+		throw std::runtime_error("[EngineCore] machine.dma_bytes_per_sec_iso must be a positive integer.");
 	}
 	return value;
 }
 
 i64 resolveDmaBytesPerSecBulk(const RomManifest& manifest) {
 	if (!manifest.dmaBytesPerSecBulk) {
-		throw std::runtime_error("[EngineCore] vm.dma_bytes_per_sec_bulk is required.");
+		throw std::runtime_error("[EngineCore] machine.dma_bytes_per_sec_bulk is required.");
 	}
 	const i64 value = *manifest.dmaBytesPerSecBulk;
 	if (value <= 0) {
-		throw std::runtime_error("[EngineCore] vm.dma_bytes_per_sec_bulk must be a positive integer.");
+		throw std::runtime_error("[EngineCore] machine.dma_bytes_per_sec_bulk must be a positive integer.");
 	}
 	return value;
 }
@@ -336,11 +336,11 @@ bool tryResolveUfpsScaled(const RomManifest& manifest, i64& outUfpsScaled) {
 
 i64 resolveUfpsScaled(const RomManifest& manifest) {
 	if (!manifest.ufpsScaled) {
-		throw std::runtime_error("[EngineCore] vm.ufps is required.");
+		throw std::runtime_error("[EngineCore] machine.ufps is required.");
 	}
 	const i64 ufpsScaled = *manifest.ufpsScaled;
 	if (ufpsScaled <= 0) {
-		throw std::runtime_error("[EngineCore] vm.ufps must be a positive integer.");
+		throw std::runtime_error("[EngineCore] machine.ufps must be a positive integer.");
 	}
 	return ufpsScaled;
 }
@@ -348,11 +348,11 @@ i64 resolveUfpsScaled(const RomManifest& manifest) {
 using i128 = __int128_t;
 
 i64 hzToScaledHz(f64 hz) {
-	return static_cast<i64>(std::llround(hz * static_cast<f64>(VM_HZ_SCALE)));
+	return static_cast<i64>(std::llround(hz * static_cast<f64>(HZ_SCALE)));
 }
 
 int calcCyclesPerFrame(i64 cpuHz, i64 refreshHzScaled) {
-	const i128 numerator = static_cast<i128>(cpuHz) * static_cast<i128>(VM_HZ_SCALE);
+	const i128 numerator = static_cast<i128>(cpuHz) * static_cast<i128>(HZ_SCALE);
 	const i64 cyclesPerFrame = static_cast<i64>(numerator / static_cast<i128>(refreshHzScaled));
 	return static_cast<int>(cyclesPerFrame);
 }
@@ -494,18 +494,18 @@ void EngineCore::setUfps(f64 ufps) {
 }
 
 void EngineCore::setUfpsScaled(i64 ufpsScaled) {
-	if (ufpsScaled <= VM_HZ_SCALE) {
+	if (ufpsScaled <= HZ_SCALE) {
 		throw std::runtime_error("[EngineCore] ufps must be greater than 1.");
 	}
 	m_ufps_scaled = ufpsScaled;
-	m_update_interval_ms = (1000.0 * static_cast<f64>(VM_HZ_SCALE)) / static_cast<f64>(m_ufps_scaled);
-	if (VMRuntime::hasInstance()) {
-		VMRuntime& runtime = VMRuntime::instance();
-		applyVmCycleBudget(runtime);
+	m_update_interval_ms = (1000.0 * static_cast<f64>(HZ_SCALE)) / static_cast<f64>(m_ufps_scaled);
+	if (Runtime::hasInstance()) {
+		Runtime& runtime = Runtime::instance();
+		applyRuntimeCycleBudget(runtime);
 	}
 }
 
-void EngineCore::applyVmCycleBudget(VMRuntime& runtime) {
+void EngineCore::applyRuntimeCycleBudget(Runtime& runtime) {
 	const int cycleBudget = calcCyclesPerFrame(runtime.cpuHz(), m_ufps_scaled);
 	runtime.setCycleBudgetPerFrame(cycleBudget);
 }
@@ -539,23 +539,23 @@ void EngineCore::tick(f64 deltaTime) {
 	const auto inputEnd = std::chrono::steady_clock::now();
 	m_last_tick_timing.inputMs = to_ms(inputEnd - inputStart);
 
-	m_last_tick_timing.vmIdeInputMs = 0.0;
-	m_last_tick_timing.vmTerminalInputMs = 0.0;
-	m_last_tick_timing.vmUpdateMs = 0.0;
-	m_last_tick_timing.vmIdeMs = 0.0;
-	m_last_tick_timing.vmTerminalMs = 0.0;
+	m_last_tick_timing.runtimeIdeInputMs = 0.0;
+	m_last_tick_timing.runtimeTerminalInputMs = 0.0;
+	m_last_tick_timing.runtimeUpdateMs = 0.0;
+	m_last_tick_timing.runtimeIdeMs = 0.0;
+	m_last_tick_timing.runtimeTerminalMs = 0.0;
 	// TODO: THIS IS UGLY AS SHIT BECAUSE IT DOESN'T USE THE TS-VERSION'S ECSYSTEMS!!
-	if (VMRuntime::hasInstance()) {
-		VMRuntime& runtime = VMRuntime::instance();
+	if (Runtime::hasInstance()) {
+		Runtime& runtime = Runtime::instance();
 		auto ideInputStart = std::chrono::steady_clock::now();
 		runtime.tickIdeInput();
 		auto ideInputEnd = std::chrono::steady_clock::now();
-		m_last_tick_timing.vmIdeInputMs = to_ms(ideInputEnd - ideInputStart);
+		m_last_tick_timing.runtimeIdeInputMs = to_ms(ideInputEnd - ideInputStart);
 
 		auto terminalInputStart = std::chrono::steady_clock::now();
 		runtime.tickTerminalInput();
 		auto terminalInputEnd = std::chrono::steady_clock::now();
-		m_last_tick_timing.vmTerminalInputMs = to_ms(terminalInputEnd - terminalInputStart);
+		m_last_tick_timing.runtimeTerminalInputMs = to_ms(terminalInputEnd - terminalInputStart);
 
 		m_accumulated_time = clamp(m_accumulated_time + hostDeltaMs, 0.0, m_update_interval_ms * MAX_SUBSTEPS);
 		int slicesProcessed = 0;
@@ -586,17 +586,17 @@ void EngineCore::tick(f64 deltaTime) {
 			m_presentation_pending = true;
 		}
 		auto updateEnd = std::chrono::steady_clock::now();
-		m_last_tick_timing.vmUpdateMs = to_ms(updateEnd - updateStart);
+		m_last_tick_timing.runtimeUpdateMs = to_ms(updateEnd - updateStart);
 
 		auto ideStart = std::chrono::steady_clock::now();
 		runtime.tickIDE();
 		auto ideEnd = std::chrono::steady_clock::now();
-		m_last_tick_timing.vmIdeMs = to_ms(ideEnd - ideStart);
+		m_last_tick_timing.runtimeIdeMs = to_ms(ideEnd - ideStart);
 
 		auto terminalStart = std::chrono::steady_clock::now();
 		runtime.tickTerminalMode();
 		auto terminalEnd = std::chrono::steady_clock::now();
-		m_last_tick_timing.vmTerminalMs = to_ms(terminalEnd - terminalStart);
+		m_last_tick_timing.runtimeTerminalMs = to_ms(terminalEnd - terminalStart);
 		// PERF LOGS DISABLED
 		// const i64 updateTotal = runtime.updateCountTotal();
 		// if (m_debugLastUpdateCountTotal == 0) {
@@ -616,7 +616,7 @@ void EngineCore::tick(f64 deltaTime) {
 		m_last_tick_timing.microtaskMs = to_ms(microtaskEnd - microtaskStart);
 	}
 
-	if (!VMRuntime::hasInstance()) {
+	if (!Runtime::hasInstance()) {
 		m_presentation_pending = true;
 	}
 	m_last_tick_timing.totalMs = to_ms(std::chrono::steady_clock::now() - tickStart);
@@ -659,20 +659,20 @@ void EngineCore::render() {
 			m_last_render_timing.testPatternMs = 0.0;
 		}
 
-			m_last_render_timing.vmDrawMs = 0.0;
-			m_last_render_timing.vmIdeDrawMs = 0.0;
-			m_last_render_timing.vmTerminalDrawMs = 0.0;
-			if (VMRuntime::hasInstance()) {
-				VMRuntime& runtime = VMRuntime::instance();
+			m_last_render_timing.runtimeDrawMs = 0.0;
+			m_last_render_timing.runtimeIdeDrawMs = 0.0;
+			m_last_render_timing.runtimeTerminalDrawMs = 0.0;
+			if (Runtime::hasInstance()) {
+				Runtime& runtime = Runtime::instance();
 				auto ideDrawStart = std::chrono::steady_clock::now();
 				runtime.tickIDEDraw();
 				auto ideDrawEnd = std::chrono::steady_clock::now();
-				m_last_render_timing.vmIdeDrawMs = to_ms(ideDrawEnd - ideDrawStart);
+				m_last_render_timing.runtimeIdeDrawMs = to_ms(ideDrawEnd - ideDrawStart);
 
 				auto terminalDrawStart = std::chrono::steady_clock::now();
 				runtime.tickTerminalModeDraw();
 				auto terminalDrawEnd = std::chrono::steady_clock::now();
-				m_last_render_timing.vmTerminalDrawMs = to_ms(terminalDrawEnd - terminalDrawStart);
+				m_last_render_timing.runtimeTerminalDrawMs = to_ms(terminalDrawEnd - terminalDrawStart);
 			}
 
 		const auto drawGameStart = std::chrono::steady_clock::now();
@@ -751,7 +751,7 @@ bool EngineCore::loadEngineAssetsInternal(const u8* data, size_t size) {
 	}
 
 	m_engine_assets_loaded = true;
-	m_default_font = std::make_unique<VMFont>(m_engine_assets);
+	m_default_font = std::make_unique<Font>(m_engine_assets);
 	m_view->default_font = m_default_font.get();
 	const i64 ufpsScaled = resolveUfpsScaled(m_engine_assets.manifest);
 	setUfpsScaled(ufpsScaled);
@@ -784,13 +784,13 @@ bool EngineCore::bootWithoutCart() {
 		return false;
 	}
 
-	// Check if engine assets have a VM program
-	if (!m_engine_assets.hasVmProgram()) {
-		std::cerr << "[BMSX] bootWithoutCart: no VM program in engine assets" << std::endl;
+	// Check if engine assets have a program
+	if (!m_engine_assets.hasProgram()) {
+		std::cerr << "[BMSX] bootWithoutCart: no program in engine assets" << std::endl;
 		return false;
 	}
 
-	std::cerr << "[BMSX] bootWithoutCart: VM program found, booting..." << std::endl;
+	std::cerr << "[BMSX] bootWithoutCart: program found, booting..." << std::endl;
 
 	// Reference engine assets as fallback to avoid duplicating memory.
 	m_assets.clear();
@@ -800,7 +800,7 @@ bool EngineCore::bootWithoutCart() {
 	const i64 ufpsScaled = resolveUfpsScaled(m_engine_assets.manifest);
 	setUfpsScaled(ufpsScaled);
 	applyManifestMemoryLimits(m_assets.manifest, m_engine_assets.manifest, m_assets, m_engine_assets);
-	// Don't copy vmProgram - use engine_assets.vmProgram directly below
+	// Don't copy programAsset - use engine_assets.programAsset directly below
 
 	Vec2 viewportSize{
 		static_cast<f32>(m_engine_assets.manifest.viewportWidth),
@@ -812,31 +812,31 @@ bool EngineCore::bootWithoutCart() {
 	};
 	m_view->configureRenderTargets(&viewportSize, &viewportSize, &offscreenSize, &m_viewport_scale, &m_canvas_scale);
 
-	// Boot the VM with the engine's system program
-	if (m_engine_assets.vmProgram && m_engine_assets.vmProgram->program) {
+	// Boot the runtime with the engine's system program
+	if (m_engine_assets.programAsset && m_engine_assets.programAsset->program) {
 		const i64 cpuHz = resolveCpuHz(m_engine_assets.manifest);
 		const i64 imgDecBytesPerSec = resolveImgDecBytesPerSec(m_engine_assets.manifest);
 		const i64 dmaBytesPerSecIso = resolveDmaBytesPerSecIso(m_engine_assets.manifest);
 		const i64 dmaBytesPerSecBulk = resolveDmaBytesPerSecBulk(m_engine_assets.manifest);
 		const int cycleBudget = calcCyclesPerFrame(cpuHz, m_ufps_scaled);
-		// Create VMRuntime instance if it doesn't exist
-		if (!VMRuntime::hasInstance()) {
-			VMRuntimeOptions options;
+		// Create Runtime instance if it doesn't exist
+		if (!Runtime::hasInstance()) {
+			RuntimeOptions options;
 			options.playerIndex = 1;
 			options.viewport.x = m_engine_assets.manifest.viewportWidth;
 			options.viewport.y = m_engine_assets.manifest.viewportHeight;
 			options.canonicalization = m_engine_assets.manifest.canonicalization;
 			options.cpuHz = cpuHz;
 			options.cycleBudgetPerFrame = cycleBudget;
-			VMRuntime::createInstance(options);
+			Runtime::createInstance(options);
 		}
 
-		VMRuntime& runtime = VMRuntime::instance();
+		Runtime& runtime = Runtime::instance();
 		runtime.setCpuHz(cpuHz);
 		runtime.setCycleBudgetPerFrame(cycleBudget);
 		runtime.setTransferRates(imgDecBytesPerSec, dmaBytesPerSecIso, dmaBytesPerSecBulk);
 		runtime.refreshMemoryMap();
-		runtime.setProgramSource(VMRuntime::VmProgramSource::Engine);
+		runtime.setProgramSource(Runtime::ProgramSource::Engine);
 		runtime.setCanonicalization(m_engine_assets.manifest.canonicalization);
 		runtime.buildAssetMemory(m_engine_assets, true);
 		runtime.memory().sealEngineAssets();
@@ -845,8 +845,8 @@ bool EngineCore::bootWithoutCart() {
 		uploadTexturesToBackend(false);
 		refreshAudioAssets(m_engine_assets);
 
-		// Boot the VM with the pre-compiled program from engine assets
-		runtime.boot(*m_engine_assets.vmProgram, m_engine_assets.vmProgramSymbols.get());
+		// Boot the runtime with the pre-compiled program from engine assets
+		runtime.boot(*m_engine_assets.programAsset, m_engine_assets.programSymbols.get());
 	}
 
 	m_rom_loaded = true;  // Engine is running (with system program)
@@ -907,9 +907,9 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 		m_assets.atlasTextures[id] = std::move(asset);
 	}
 
-	// VM program and manifest always come from cartridge
-	m_assets.vmProgram = std::move(cartAssets.vmProgram);
-	m_assets.vmProgramSymbols = std::move(cartAssets.vmProgramSymbols);
+	// Program and manifest always come from cartridge
+	m_assets.programAsset = std::move(cartAssets.programAsset);
+	m_assets.programSymbols = std::move(cartAssets.programSymbols);
 	m_assets.manifest = std::move(cartAssets.manifest);
 	m_assets.projectRootPath = std::move(cartAssets.projectRootPath);
 	const i64 ufpsScaled = resolveUfpsScaled(m_assets.manifest);
@@ -923,9 +923,9 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 		if (!m_engine_assets_loaded
 			|| !tryResolveCpuHz(m_engine_assets.manifest, engineCpuHz)
 			|| !tryResolveUfpsScaled(m_engine_assets.manifest, engineUfpsScaled)) {
-			throw std::runtime_error("[EngineCore] vm.cpu_freq_hz is required.");
+			throw std::runtime_error("[EngineCore] machine.cpu_freq_hz is required.");
 		}
-		std::cerr << "[EngineCore] Cart manifest vm.cpu_freq_hz is required; booting BIOS only." << std::endl;
+		std::cerr << "[EngineCore] Cart manifest machine.cpu_freq_hz is required; booting BIOS only." << std::endl;
 		cpuHz = engineCpuHz;
 		setUfpsScaled(engineUfpsScaled);
 	}
@@ -946,50 +946,50 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 	m_view->configureRenderTargets(&viewportSize, &viewportSize, &offscreenSize, &m_viewport_scale, &m_canvas_scale);
 
 	const bool hasEngineProgram = m_engine_assets_loaded
-		&& m_engine_assets.vmProgram
-		&& m_engine_assets.vmProgram->program;
+		&& m_engine_assets.programAsset
+		&& m_engine_assets.programAsset->program;
 	if (hasEngineProgram) {
-		if (!VMRuntime::hasInstance()) {
-			VMRuntimeOptions options;
+		if (!Runtime::hasInstance()) {
+			RuntimeOptions options;
 			options.playerIndex = 1;
 			options.viewport.x = m_assets.manifest.viewportWidth;
 			options.viewport.y = m_assets.manifest.viewportHeight;
 			options.canonicalization = m_engine_assets.manifest.canonicalization;
 			options.cpuHz = cpuHz;
 			options.cycleBudgetPerFrame = cycleBudget;
-			VMRuntime::createInstance(options);
+			Runtime::createInstance(options);
 		}
-		VMRuntime& runtime = VMRuntime::instance();
+		Runtime& runtime = Runtime::instance();
 		runtime.setCpuHz(cpuHz);
 		runtime.setCycleBudgetPerFrame(cycleBudget);
 		runtime.setTransferRates(imgDecBytesPerSec, dmaBytesPerSecIso, dmaBytesPerSecBulk);
 		runtime.refreshMemoryMap();
-		runtime.setProgramSource(VMRuntime::VmProgramSource::Engine);
+		runtime.setProgramSource(Runtime::ProgramSource::Engine);
 		runtime.setCanonicalization(m_engine_assets.manifest.canonicalization);
 		runtime.buildAssetMemory(m_engine_assets, true);
 		runtime.memory().sealEngineAssets();
 		uploadTexturesToBackend(false);
 		refreshAudioAssets(m_engine_assets);
-		runtime.boot(*m_engine_assets.vmProgram, m_engine_assets.vmProgramSymbols.get());
+		runtime.boot(*m_engine_assets.programAsset, m_engine_assets.programSymbols.get());
 		runtime.resetCartBootState();
 	} else {
 		if (!cartCpuValid) {
-			std::cerr << "[EngineCore] Cart manifest vm.cpu_freq_hz is required; cannot boot cart without BIOS." << std::endl;
+			std::cerr << "[EngineCore] Cart manifest machine.cpu_freq_hz is required; cannot boot cart without BIOS." << std::endl;
 			return false;
 		}
-		// Boot the VM if we have a pre-compiled program
-		if (m_assets.hasVmProgram()) {
-			if (!VMRuntime::hasInstance()) {
-				VMRuntimeOptions options;
+		// Boot the runtime if we have a pre-compiled program
+		if (m_assets.hasProgram()) {
+			if (!Runtime::hasInstance()) {
+				RuntimeOptions options;
 				options.playerIndex = 1;
 				options.viewport.x = m_assets.manifest.viewportWidth;
 				options.viewport.y = m_assets.manifest.viewportHeight;
 				options.canonicalization = m_assets.manifest.canonicalization;
 				options.cpuHz = cpuHz;
 				options.cycleBudgetPerFrame = cycleBudget;
-				VMRuntime::createInstance(options);
+				Runtime::createInstance(options);
 			}
-			VMRuntime& runtime = VMRuntime::instance();
+			Runtime& runtime = Runtime::instance();
 			runtime.setCpuHz(cpuHz);
 			runtime.setCycleBudgetPerFrame(cycleBudget);
 			runtime.setTransferRates(imgDecBytesPerSec, dmaBytesPerSecIso, dmaBytesPerSecBulk);
@@ -997,19 +997,19 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 			runtime.buildAssetMemory(m_assets, false);
 			uploadTexturesToBackend(true);
 			refreshAudioAssets();
-			bootVMFromProgram();
+			bootRuntimeFromProgram();
 		} else {
-			if (!VMRuntime::hasInstance()) {
-				VMRuntimeOptions options;
+			if (!Runtime::hasInstance()) {
+				RuntimeOptions options;
 				options.playerIndex = 1;
 				options.viewport.x = m_assets.manifest.viewportWidth;
 				options.viewport.y = m_assets.manifest.viewportHeight;
 				options.canonicalization = m_assets.manifest.canonicalization;
 				options.cpuHz = cpuHz;
 				options.cycleBudgetPerFrame = cycleBudget;
-				VMRuntime::createInstance(options);
+				Runtime::createInstance(options);
 			}
-			VMRuntime& runtime = VMRuntime::instance();
+			Runtime& runtime = Runtime::instance();
 			runtime.setCpuHz(cpuHz);
 			runtime.setCycleBudgetPerFrame(cycleBudget);
 			runtime.setTransferRates(imgDecBytesPerSec, dmaBytesPerSecIso, dmaBytesPerSecBulk);
@@ -1025,8 +1025,8 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 }
 
 void EngineCore::prepareLoadedRomAssets() {
-	VMRuntime& runtime = VMRuntime::instance();
-	runtime.buildAssetMemory(m_assets, false, VMRuntime::AssetBuildMode::Cart);
+	Runtime& runtime = Runtime::instance();
+	runtime.buildAssetMemory(m_assets, false, Runtime::AssetBuildMode::Cart);
 	uploadTexturesToBackend(true);
 	refreshAudioAssets();
 }
@@ -1052,12 +1052,12 @@ bool EngineCore::resetLoadedRom() {
 	if (!cartCpuValid) {
 		i64 engineUfpsScaled = 0;
 		if (!m_engine_assets_loaded || !tryResolveCpuHz(m_engine_assets.manifest, cpuHz)) {
-			std::cerr << "[EngineCore] Cart manifest vm.cpu_freq_hz is required; cannot reset cart." << std::endl;
+			std::cerr << "[EngineCore] Cart manifest machine.cpu_freq_hz is required; cannot reset cart." << std::endl;
 			return false;
 		}
-		std::cerr << "[EngineCore] Cart manifest vm.cpu_freq_hz is required; booting BIOS only." << std::endl;
+		std::cerr << "[EngineCore] Cart manifest machine.cpu_freq_hz is required; booting BIOS only." << std::endl;
 		if (!tryResolveUfpsScaled(m_engine_assets.manifest, engineUfpsScaled)) {
-			throw std::runtime_error("[EngineCore] vm.ufps is required.");
+			throw std::runtime_error("[EngineCore] machine.ufps is required.");
 		}
 		setUfpsScaled(engineUfpsScaled);
 	} else {
@@ -1070,42 +1070,42 @@ bool EngineCore::resetLoadedRom() {
 	const i64 dmaBytesPerSecIso = resolveDmaBytesPerSecIso(transferManifest);
 	const i64 dmaBytesPerSecBulk = resolveDmaBytesPerSecBulk(transferManifest);
 
-	if (cartCpuValid && m_assets.vmProgram && m_assets.vmProgram->program) {
-		VMRuntime& runtime = VMRuntime::instance();
+	if (cartCpuValid && m_assets.programAsset && m_assets.programAsset->program) {
+		Runtime& runtime = Runtime::instance();
 		runtime.setCpuHz(cpuHz);
 		runtime.setCycleBudgetPerFrame(cycleBudget);
 		runtime.setTransferRates(imgDecBytesPerSec, dmaBytesPerSecIso, dmaBytesPerSecBulk);
 		runtime.refreshMemoryMap();
-		runtime.buildAssetMemory(m_assets, false, VMRuntime::AssetBuildMode::Cart);
+		runtime.buildAssetMemory(m_assets, false, Runtime::AssetBuildMode::Cart);
 		uploadTexturesToBackend(true);
 		refreshAudioAssets();
-		bootVMFromProgram();
+		bootRuntimeFromProgram();
 		return true;
 	}
 
-	if (m_engine_assets.vmProgram && m_engine_assets.vmProgram->program) {
-		if (!VMRuntime::hasInstance()) {
-			VMRuntimeOptions options;
+	if (m_engine_assets.programAsset && m_engine_assets.programAsset->program) {
+		if (!Runtime::hasInstance()) {
+			RuntimeOptions options;
 			options.playerIndex = 1;
 			options.viewport.x = m_engine_assets.manifest.viewportWidth;
 			options.viewport.y = m_engine_assets.manifest.viewportHeight;
 			options.canonicalization = m_engine_assets.manifest.canonicalization;
 			options.cpuHz = cpuHz;
 			options.cycleBudgetPerFrame = cycleBudget;
-			VMRuntime::createInstance(options);
+			Runtime::createInstance(options);
 		}
-		VMRuntime& runtime = VMRuntime::instance();
+		Runtime& runtime = Runtime::instance();
 		runtime.setCpuHz(cpuHz);
 		runtime.setCycleBudgetPerFrame(cycleBudget);
 		runtime.setTransferRates(imgDecBytesPerSec, dmaBytesPerSecIso, dmaBytesPerSecBulk);
 		runtime.refreshMemoryMap();
-		runtime.setProgramSource(VMRuntime::VmProgramSource::Engine);
+		runtime.setProgramSource(Runtime::ProgramSource::Engine);
 		runtime.setCanonicalization(m_engine_assets.manifest.canonicalization);
 		runtime.buildAssetMemory(m_engine_assets, true);
 		runtime.memory().sealEngineAssets();
 		uploadTexturesToBackend(false);
 		refreshAudioAssets(m_engine_assets);
-		runtime.boot(*m_engine_assets.vmProgram, m_engine_assets.vmProgramSymbols.get());
+		runtime.boot(*m_engine_assets.programAsset, m_engine_assets.programSymbols.get());
 		return true;
 	}
 
@@ -1122,13 +1122,13 @@ void EngineCore::uploadTexturesToBackend(bool includeCartAssets) {
 	}
 	m_texture_manager->setBackend(m_view->backend());
 
-	VMRuntime& runtime = VMRuntime::instance();
+	Runtime& runtime = Runtime::instance();
 	auto& memory = runtime.memory();
 
 	m_view->initializeDefaultTextures();
 
 	const bool replaceExisting = includeCartAssets;
-	auto uploadSlot = [&](const std::string& slotId, const VmMemory::AssetEntry& assetEntry) {
+	auto uploadSlot = [&](const std::string& slotId, const Memory::AssetEntry& assetEntry) {
 		if (assetEntry.regionW == 0 || assetEntry.regionH == 0) {
 			return;
 		}
@@ -1155,8 +1155,8 @@ void EngineCore::uploadTexturesToBackend(bool includeCartAssets) {
 void EngineCore::unloadRom() {
 	if (m_rom_loaded) {
 		m_assets.clear();
-		m_linked_vm_program.reset();
-		m_linked_vm_program_symbols.reset();
+		m_linked_program.reset();
+		m_linked_program_symbols.reset();
 		m_cart_rom_owned.clear();
 		m_cart_rom_data = nullptr;
 		m_cart_rom_size = 0;
@@ -1248,13 +1248,13 @@ void EngineCore::renderTestPattern() {
 	}
 }
 
-void EngineCore::bootVMFromProgram() {
+void EngineCore::bootRuntimeFromProgram() {
 	// Get the pre-compiled program from assets
-	if (!m_assets.vmProgram || !m_assets.vmProgram->program) {
+	if (!m_assets.programAsset || !m_assets.programAsset->program) {
 		return;
 	}
-	m_linked_vm_program.reset();
-	m_linked_vm_program_symbols.reset();
+	m_linked_program.reset();
+	m_linked_program_symbols.reset();
 	const i64 cpuHz = resolveCpuHz(m_assets.manifest);
 	const i64 imgDecBytesPerSec = resolveImgDecBytesPerSec(m_assets.manifest);
 	const i64 dmaBytesPerSecIso = resolveDmaBytesPerSecIso(m_assets.manifest);
@@ -1263,39 +1263,39 @@ void EngineCore::bootVMFromProgram() {
 	setUfpsScaled(ufpsScaled);
 	const int cycleBudget = calcCyclesPerFrame(cpuHz, m_ufps_scaled);
 
-	// Create VMRuntime instance if it doesn't exist
-	if (!VMRuntime::hasInstance()) {
-		VMRuntimeOptions options;
+	// Create Runtime instance if it doesn't exist
+	if (!Runtime::hasInstance()) {
+		RuntimeOptions options;
 		options.playerIndex = 1;
 		options.viewport.x = m_assets.manifest.viewportWidth;
 		options.viewport.y = m_assets.manifest.viewportHeight;
 		options.canonicalization = m_assets.manifest.canonicalization;
 		options.cpuHz = cpuHz;
 		options.cycleBudgetPerFrame = cycleBudget;
-		VMRuntime::createInstance(options);
+		Runtime::createInstance(options);
 	}
 
-	// Boot the VM with the pre-compiled program
-	VMRuntime& runtime = VMRuntime::instance();
+	// Boot the runtime with the pre-compiled program
+	Runtime& runtime = Runtime::instance();
 	runtime.setCpuHz(cpuHz);
 	runtime.setCycleBudgetPerFrame(cycleBudget);
 	runtime.setTransferRates(imgDecBytesPerSec, dmaBytesPerSecIso, dmaBytesPerSecBulk);
 	runtime.refreshMemoryMap();
-	runtime.setProgramSource(VMRuntime::VmProgramSource::Cart);
+	runtime.setProgramSource(Runtime::ProgramSource::Cart);
 	runtime.setCanonicalization(m_assets.manifest.canonicalization);
-	if (m_engine_assets_loaded && m_engine_assets.vmProgram && m_engine_assets.vmProgram->program) {
+	if (m_engine_assets_loaded && m_engine_assets.programAsset && m_engine_assets.programAsset->program) {
 		auto linked = linkProgramAssets(
-			*m_engine_assets.vmProgram,
-			m_engine_assets.vmProgramSymbols.get(),
-			*m_assets.vmProgram,
-			m_assets.vmProgramSymbols.get()
+			*m_engine_assets.programAsset,
+			m_engine_assets.programSymbols.get(),
+			*m_assets.programAsset,
+			m_assets.programSymbols.get()
 		);
-		m_linked_vm_program = std::move(linked.program);
-		m_linked_vm_program_symbols = std::move(linked.metadata);
-		runtime.boot(*m_linked_vm_program, m_linked_vm_program_symbols.get());
+		m_linked_program = std::move(linked.program);
+	m_linked_program_symbols = std::move(linked.metadata);
+	runtime.boot(*m_linked_program, m_linked_program_symbols.get());
 		return;
 	}
-	runtime.boot(*m_assets.vmProgram, m_assets.vmProgramSymbols.get());
+	runtime.boot(*m_assets.programAsset, m_assets.programSymbols.get());
 }
 
 void EngineCore::refreshAudioAssets() {
@@ -1305,9 +1305,9 @@ void EngineCore::refreshAudioAssets() {
 void EngineCore::refreshAudioAssets(const RuntimeAssets& assets) {
 	const f32 volume = m_sound_master->masterVolume();
 	auto audioResolver = [](const AssetId& id) -> AudioDataView {
-		VMRuntime& runtime = VMRuntime::instance();
+		Runtime& runtime = Runtime::instance();
 		const auto& entry = runtime.memory().getAssetEntry(id);
-		if (entry.type != VmMemory::AssetType::Audio) {
+		if (entry.type != Memory::AssetType::Audio) {
 			throw BMSX_RUNTIME_ERROR("Audio asset memory entry missing for: " + id);
 		}
 		return AudioDataView{ runtime.memory().getAudioData(entry), entry.frames };

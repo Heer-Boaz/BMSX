@@ -74,16 +74,16 @@ bmsx_cpp/
 │   ├── mmap_file.h
 │   ├── mmap_file.cpp
 │   └── scratchbatch.h
-├── vm/
-│   ├── cpu.h                    # Lua bytecode VM
+├── emulator/
+│   ├── cpu.h                    # Lua bytecode CPU
 │   ├── cpu.cpp
-│   ├── vm_runtime.h             # VM lifecycle + builtins
-│   ├── vm_runtime.cpp
-│   ├── vm_api.h                 # Lua API bindings
-│   ├── vm_api.cpp
-│   ├── vm_io.h                  # VM I/O map
-│   ├── vm_memory.h              # VM memory
-│   ├── vm_memory.cpp
+│   ├── runtime.h             # Runtime lifecycle + builtins
+│   ├── runtime.cpp
+│   ├── api.h                 # Lua API bindings
+│   ├── api.cpp
+│   ├── io.h                  # I/O map
+│   ├── memory.h              # Memory
+│   ├── memory.cpp
 │   ├── vdp.h                    # VDP + render integration
 │   ├── vdp.cpp
 │   └── devices/
@@ -99,11 +99,11 @@ bmsx_cpp/
         └── libretro_platform.cpp
 ```
 
-## Architecture (VM-first)
+## Architecture (Runtime-first)
 
-The C++ runtime focuses on the Lua bytecode VM and render/input subsystems.
+The C++ runtime focuses on the Lua bytecode interpreter and render/input subsystems.
 
-- `EngineCore` drives `VMRuntime` update/draw directly each frame.
+- `EngineCore` drives `Runtime` update/draw directly each frame.
 - Rendering happens through `GameView` + render queues.
 - Input is polled through the `Input` singleton.
 
@@ -199,7 +199,7 @@ The libretro implementation provides:
 - [ ] Save state serialization
 
 ### Planned
-- [ ] Lua VM integration (via custom Lua compiler (see existing TS implementation))
+- [ ] Lua interpreter integration (via custom Lua compiler (see existing TS implementation))
 - [ ] FSM system
 - [ ] Collision system
 - [ ] Animation system

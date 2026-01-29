@@ -7,8 +7,8 @@
  * - model: 3D model assets
  * - data: Generic data assets (JSON, etc.)
  * - audioevents: Audio event definitions
- * - vmProgram: Pre-compiled Lua bytecode program
- * - vmProgramSymbols: VM program metadata (symbols/debug info)
+ * - programAsset: Pre-compiled Lua bytecode program
+ * - programSymbols: Program metadata (symbols/debug info)
  */
 
 #ifndef BMSX_RUNTIME_ASSETS_H
@@ -16,7 +16,7 @@
 
 #include "../core/types.h"
 #include "../serializer/binencoder.h"
-#include "../vm/program_loader.h"
+#include "../emulator/program_loader.h"
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -28,9 +28,9 @@
 
 namespace bmsx {
 
-// VM program asset ID (matches TypeScript VM_PROGRAM_ASSET_ID)
-constexpr const char* VM_PROGRAM_ASSET_ID = "__vm_program__";
-constexpr const char* VM_PROGRAM_SYMBOLS_ASSET_ID = "__vm_program_symbols__";
+// Program asset ID (matches TypeScript PROGRAM_ASSET_ID)
+constexpr const char* PROGRAM_ASSET_ID = "__program__";
+constexpr const char* PROGRAM_SYMBOLS_ASSET_ID = "__program_symbols__";
 
 /* ============================================================================
  * Asset identifiers (string-based, like TypeScript)
@@ -346,10 +346,10 @@ public:
 	// Atlas textures (atlasid -> ImgAsset with full texture data)
 	std::unordered_map<i32, ImgAsset> atlasTextures;
 
-	// Pre-compiled VM program (loaded from __vm_program__ asset)
-	std::unique_ptr<VmProgramAsset> vmProgram;
-	// VM program symbols (loaded from __vm_program_symbols__ asset)
-	std::unique_ptr<ProgramMetadata> vmProgramSymbols;
+	// Pre-compiled program (loaded from __program__ asset)
+	std::unique_ptr<ProgramAsset> programAsset;
+	// Program symbols (loaded from __program_symbols__ asset)
+	std::unique_ptr<ProgramMetadata> programSymbols;
 
 	// Project metadata
 	std::string projectRootPath;
@@ -380,7 +380,7 @@ public:
 	bool hasModel(const AssetId& id) const { return model.find(id) != model.end() || (fallback && fallback->hasModel(id)); }
 	bool hasData(const AssetId& id) const { return data.find(id) != data.end() || (fallback && fallback->hasData(id)); }
 	bool hasAudioEvent(const AssetId& id) const { return audioevents.find(id) != audioevents.end() || (fallback && fallback->hasAudioEvent(id)); }
-	bool hasVmProgram() const { return vmProgram != nullptr || (fallback && fallback->hasVmProgram()); }
+	bool hasProgram() const { return programAsset != nullptr || (fallback && fallback->hasProgram()); }
 	bool hasAnyImg() const { return !img.empty() || (fallback && fallback->hasAnyImg()); }
 
 	void setFallback(const RuntimeAssets* assets) { fallback = assets; }

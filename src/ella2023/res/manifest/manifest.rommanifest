@@ -2,7 +2,7 @@
     "title": "Yie Ar Sint Fu",
     "short_name": "Yie Ar Sint",
     "rom_name": "yiear",
-    "vm": {
+    "machine": {
         "viewport": { "width": 256, "height": 212 },
         "canonicalization": "lower",
         "namespace": "yiear",

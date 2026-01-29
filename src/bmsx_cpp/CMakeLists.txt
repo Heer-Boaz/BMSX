@@ -123,19 +123,19 @@ add_library(bmsx_core STATIC
 	render/graph/rendergraph.cpp
 	render/shared/glyphs.cpp
 
-	# VM (Lua bytecode interpreter)
-	vm/cpu.cpp
-	vm/font.cpp
-	vm/devices/dma_controller.cpp
-	vm/devices/imgdec_controller.cpp
-	vm/vm_api.cpp
-	vm/vm_runtime.cpp
-	vm/vm_memory.cpp
-	vm/memory_map.cpp
-	vm/vdp.cpp
-	vm/string_memory.cpp
-	vm/program_loader.cpp
-	vm/program_linker.cpp
+	# Emulator runtime (Lua bytecode interpreter)
+	emulator/cpu.cpp
+	emulator/font.cpp
+	emulator/devices/dma_controller.cpp
+	emulator/devices/imgdec_controller.cpp
+	emulator/api.cpp
+	emulator/runtime.cpp
+	emulator/memory.cpp
+	emulator/memory_map.cpp
+	emulator/vdp.cpp
+	emulator/string_memory.cpp
+	emulator/program_loader.cpp
+	emulator/program_linker.cpp
 )
 
 # stb is plain C; compile it as C to avoid libstdc++'s legacy C wrappers (e.g. <math.h>)

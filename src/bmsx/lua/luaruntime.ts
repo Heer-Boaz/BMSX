@@ -54,9 +54,9 @@ import {
 } from './luavalue';
 import { LuaDebuggerController, type LuaDebuggerPauseReason } from './luadebugger';
 import { $ } from '../core/engine_core';
-import { BmsxVMRuntime } from '../vm/vm_runtime';
+import { Runtime } from '../emulator/runtime';
 import { isLuaHandlerFunction } from './luahandler_cache';
-import { LuaInteropAdapter } from '../vm/lua_js_bridge';
+import { LuaInteropAdapter } from '../emulator/lua_js_bridge';
 
 type ExecutionFrame = any;
 type StatementsFrame = any;
@@ -74,7 +74,7 @@ export type LuaCallFrame = {
 const EMPTY_VALUES: LuaValue[] = Object.freeze([]) as unknown as LuaValue[];
 const EMPTY_CALLSTACK: ReadonlyArray<LuaCallFrame> = Object.freeze([]) as unknown as ReadonlyArray<LuaCallFrame>;
 
-export const enum VmSliceResult {
+export const enum SliceResult {
 	Done = 0,
 	Yield = 1,
 	Pause = 2,
@@ -147,21 +147,21 @@ export class LuaExecutionThread {
 		this.runImpl = runImpl;
 	}
 
-	public runSlice(instructionBudget: number | null): VmSliceResult {
+	public runSlice(instructionBudget: number | null): SliceResult {
 		try {
 			const signal = this.runImpl(instructionBudget);
 			return this.consumeSignal(signal);
 		} catch (error) {
 			if (isLuaDebuggerPauseSignal(error)) {
 				this.paused = error as PauseSignal;
-				return VmSliceResult.Pause;
+				return SliceResult.Pause;
 			}
 			this.fault = error as Error;
-			return VmSliceResult.Fault;
+			return SliceResult.Fault;
 		}
 	}
 
-	public resumeSlice(instructionBudget: number): VmSliceResult {
+	public resumeSlice(instructionBudget: number): SliceResult {
 		try {
 			const yielded = this.yielded;
 			this.yielded = null;
@@ -170,26 +170,26 @@ export class LuaExecutionThread {
 		} catch (error) {
 			if (isLuaDebuggerPauseSignal(error)) {
 				this.paused = error as PauseSignal;
-				return VmSliceResult.Pause;
+				return SliceResult.Pause;
 			}
 			this.fault = error as Error;
-			return VmSliceResult.Fault;
+			return SliceResult.Fault;
 		}
 	}
 
-	private consumeSignal(signal: ExecutionSignal): VmSliceResult {
+	private consumeSignal(signal: ExecutionSignal): SliceResult {
 		if (!signal) {
-			return VmSliceResult.Done;
+			return SliceResult.Done;
 		}
 		switch (signal.kind) {
 			case 'yield':
 				this.yielded = signal as YieldSignal;
-				return VmSliceResult.Yield;
+				return SliceResult.Yield;
 			case 'pause':
 				this.paused = signal as PauseSignal;
-				return VmSliceResult.Pause;
+				return SliceResult.Pause;
 			default:
-				return VmSliceResult.Done;
+				return SliceResult.Done;
 		}
 	}
 
@@ -233,7 +233,7 @@ export class LuaNativeFunction implements LuaFunctionValue {
 			if (isLuaDebuggerPauseSignal(error)) {
 				throw error;
 			}
-			BmsxVMRuntime.instance.interpreter.recordFaultCallStack();
+			Runtime.instance.interpreter.recordFaultCallStack();
 			throw error;
 		}
 	}
@@ -306,7 +306,7 @@ export class LuaInterpreter {
 	private readonly packageTable: LuaTable;
 	private readonly packageLoaded: LuaTable;
 	private _requireHandler: ((interpreter: LuaInterpreter, moduleName: string) => LuaValue) = null;
-	private _outputHandler: ((text: string) => void) = (text: string) => { console.log(text); BmsxVMRuntime.instance.terminal.appendStdout(text); };
+	private _outputHandler: ((text: string) => void) = (text: string) => { console.log(text); Runtime.instance.terminal.appendStdout(text); };
 	private instructionBudgetRemaining: number | null = null;
 	private frameStack: ExecutionFrame[] = [];
 	private envStack: LuaEnvironment[] = [];

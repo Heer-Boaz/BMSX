@@ -3,8 +3,8 @@ import type { color, GlyphRenderSubmission, ImgRenderSubmission, MeshRenderSubmi
 import type { RenderLayer } from './render_types';
 import { DEFAULT_ZCOORD } from '../backend/webgl/webgl.constants';
 import { RenderSubmission } from '../backend/pipeline_interfaces';
-import { ASSET_FLAG_VIEW, type VmAssetEntry } from '../../vm/vm_memory';
-import { BmsxVMRuntime } from '../../vm/vm_runtime';
+import { ASSET_FLAG_VIEW, type AssetEntry } from '../../emulator/memory';
+import { Runtime } from '../../emulator/runtime';
 import { ENGINE_ATLAS_INDEX } from '../../rompack/rompack';
 import { new_vec3, new_vec2 } from '../../utils/vector_operations';
 import { clamp } from '../../utils/clamp';
@@ -13,8 +13,8 @@ import { $ } from '../../core/engine_core';
 
 export interface SpriteQueueItem {
 	options: ImgRenderSubmission;
-	entry: VmAssetEntry;
-	baseEntry: VmAssetEntry;
+	entry: AssetEntry;
+	baseEntry: AssetEntry;
 	atlasId: number;
 	submissionIndex: number;
 }
@@ -28,7 +28,7 @@ type PlaybackImgSubmission = Extract<RenderSubmission, { type: 'img' }>;
 type PlaybackMeshSubmission = Extract<RenderSubmission, { type: 'mesh' }>;
 type PlaybackParticleSubmission = Extract<RenderSubmission, { type: 'particle' }>;
 
-const DEFAULT_ASSET_ENTRY: VmAssetEntry = {
+const DEFAULT_ASSET_ENTRY: AssetEntry = {
 	id: 'none',
 	idTokenLo: 0,
 	idTokenHi: 0,
@@ -172,7 +172,7 @@ export function submitSprite(options: ImgRenderSubmission): void {
 
 	const { imgid } = options;
 	if (imgid === 'none') return;
-	const runtime = BmsxVMRuntime.instance;
+	const runtime = Runtime.instance;
 	const handle = runtime.resolveAssetHandle(imgid);
 	const entry = runtime.getAssetEntryByHandle(handle);
 	if (entry.type !== 'image') {

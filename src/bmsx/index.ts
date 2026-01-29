@@ -152,4 +152,4 @@ export * from './utils/timers';
 export * from './utils/typedarray_to_numberarray';
 export * from './utils/unique_strings';
 export * from './utils/vector_operations';
-export * from './vm/start_cart';
+export * from './emulator/start_cart';

@@ -9,7 +9,7 @@
 #include "../../rompack/runtime_assets.h"
 #include "../../core/engine_core.h"
 #include "../../core/font.h"
-#include "../../vm/vm_runtime.h"
+#include "../../emulator/runtime.h"
 #include "../../utils/clamp.h"
 #include <algorithm>
 #include <cmath>

@@ -35,7 +35,7 @@ import {
 	GameViewHostCapabilityMap,
 	SubscriptionHandle,
 	createSubscriptionHandle,
-	VM_HZ_SCALE,
+	HZ_SCALE,
 } from 'bmsx/platform';
 import { WebAudioService } from './web_audio';
 import type { GamepadControlHandle, GameViewCanvas, GameViewHost, HostEventListenerTarget, HostEventOptions, HostWindowEventType, OnscreenGamepadHandles, OverlayHandle, SurfaceBounds, ViewportDimensions } from '../platform';
@@ -81,7 +81,7 @@ export class BrowserPlatform implements Platform {
 		this.lifecycle = new BrowserLifecycle();
 		this.storage = new BrowserStorage();
 		this.microtasks = defaultMicrotaskQueue;
-		this.ufpsScaled = options.ufpsScaled ?? (GAME_FPS * VM_HZ_SCALE);
+		this.ufpsScaled = options.ufpsScaled ?? (GAME_FPS * HZ_SCALE);
 		this.clipboard = new BrowserClipboardService(surface);
 		this.input = new BrowserInputHub(surface, this.clock);
 		const ownerDoc = surface.ownerDocument;

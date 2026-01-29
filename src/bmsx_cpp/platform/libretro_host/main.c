@@ -124,7 +124,7 @@ static const unsigned kAudioPeriodCount = 4;
 static const unsigned kAudioPrimePeriods = 4;
 static const int kAudioThreadPriority = 20;
 static const unsigned kMaxCatchUpFrames = 4;
-static const int64_t kVmHzScale = 1000000ll;
+static const int64_t kHzScale = 1000000ll;
 
 static char g_system_dir[1024] = "";
 static char g_save_dir[1024] = "";
@@ -3812,13 +3812,13 @@ static uint64_t monotonic_ms(void) {
 }
 
 static uint64_t frame_time_usec_from_scaled(int64_t hz_scaled) {
-	const uint64_t numerator = (uint64_t)kVmHzScale * 1000000ull;
+	const uint64_t numerator = (uint64_t)kHzScale * 1000000ull;
 	const uint64_t hz = (uint64_t)hz_scaled;
 	return (numerator + hz / 2u) / hz;
 }
 
 static uint64_t frame_time_ns_from_scaled(int64_t hz_scaled) {
-	const uint64_t numerator = (uint64_t)kVmHzScale * 1000000000ull;
+	const uint64_t numerator = (uint64_t)kHzScale * 1000000000ull;
 	const uint64_t hz = (uint64_t)hz_scaled;
 	return (numerator + hz / 2u) / hz;
 }
@@ -4071,7 +4071,7 @@ int main(int argc, char** argv) {
 	}
 
 	const int64_t ufps_scaled = core.bmsx_get_ufps();
-	g_target_fps = (double)ufps_scaled / (double)kVmHzScale;
+	g_target_fps = (double)ufps_scaled / (double)kHzScale;
 	int audio_rate = (int)(av.timing.sample_rate + 0.5);
 	if (audio_rate <= 0) {
 		die("Invalid audio sample rate: %.2f", av.timing.sample_rate);

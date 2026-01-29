@@ -1,6 +1,6 @@
 const STUB_MODULES = new Map([
-	['src/bmsx/console/api.ts', `
-export class BmsxConsoleApi {
+	['src/bmsx/emulator/api.ts', `
+export class Api {
 	emit(_eventName, _payload, _emitterId) {}
 	emit_gameplay(_eventName, _emitterId, _payload) {}
 }

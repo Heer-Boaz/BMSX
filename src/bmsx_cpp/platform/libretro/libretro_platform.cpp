@@ -9,7 +9,7 @@
 #include "../../input/keyboardinput.h"
 #include "../../render/backend/renderpasslib.h"
 #include "../../utils/mem_snapshot.h"
-#include "../../vm/vm_runtime.h"
+#include "../../emulator/runtime.h"
 #if BMSX_ENABLE_GLES2
 #include "../../render/backend/gles2_backend.h"
 #include "../../render/2d/sprites_pipeline_gles2.h"
@@ -284,10 +284,10 @@ void LibretroPlatform::setDitherType(GameView::DitherType type) {
 #endif
 	m_dither_type = type;
 	m_engine->view()->dither_type = type;
-	if (!VMRuntime::hasInstance()) {
+	if (!Runtime::hasInstance()) {
 		return;
 	}
-	VMRuntime::instance().setVdpDitherType(static_cast<i32>(m_dither_type));
+	Runtime::instance().setVdpDitherType(static_cast<i32>(m_dither_type));
 }
 
 void LibretroPlatform::setFrameSkipOptions(bool enabled) {
@@ -369,7 +369,7 @@ bool LibretroPlatform::loadRomOwned(std::vector<uint8_t>&& data) {
 		log(RETRO_LOG_ERROR, "[BMSX] Failed to load ROM into engine\n");
 		return false;
 	}
-	VMRuntime::instance().setVdpDitherType(static_cast<i32>(m_dither_type));
+	Runtime::instance().setVdpDitherType(static_cast<i32>(m_dither_type));
 	{
 		const std::string line = memSnapshotLine("libretro:after_loadRom");
 		if (!line.empty()) {
@@ -526,7 +526,7 @@ void LibretroPlatform::reset() {
 
 	if (m_engine && m_engine->romLoaded()) {
 		if (!m_engine->resetLoadedRom()) {
-			log(RETRO_LOG_ERROR, "[BMSX] Reset failed: VM reset failed\n");
+			log(RETRO_LOG_ERROR, "[BMSX] Reset failed: runtime reset failed\n");
 			return;
 		}
 	} else if (!loadEmptyCart()) {
@@ -535,7 +535,7 @@ void LibretroPlatform::reset() {
 	}
 
 	m_engine->start();
-	log(RETRO_LOG_INFO, "[BMSX] Game reset (VM rebooted)\n");
+	log(RETRO_LOG_INFO, "[BMSX] Game reset (runtime rebooted)\n");
 }
 
 void LibretroPlatform::runFrame() {
@@ -640,20 +640,20 @@ void LibretroPlatform::runFrame() {
 	// 		"[BMSX] tick ms total=%.2f input=%.2f ide_in=%.2f term_in=%.2f update=%.2f ide=%.2f term=%.2f micro=%.2f\n",
 	// 		tickTiming.totalMs,
 	// 		tickTiming.inputMs,
-	// 		tickTiming.vmIdeInputMs,
-	// 		tickTiming.vmTerminalInputMs,
-	// 		tickTiming.vmUpdateMs,
-	// 		tickTiming.vmIdeMs,
-	// 		tickTiming.vmTerminalMs,
+	// 		tickTiming.runtimeIdeInputMs,
+	// 		tickTiming.runtimeTerminalInputMs,
+	// 		tickTiming.runtimeUpdateMs,
+	// 		tickTiming.runtimeIdeMs,
+	// 		tickTiming.runtimeTerminalMs,
 	// 		tickTiming.microtaskMs);
 	// 	log(RETRO_LOG_WARN,
-	// 		"[BMSX] render ms total=%.2f begin=%.2f test=%.2f vm_draw=%.2f vm_ide=%.2f vm_term=%.2f draw=%.2f end=%.2f\n",
+	// 		"[BMSX] render ms total=%.2f begin=%.2f test=%.2f runtime_draw=%.2f runtime_ide=%.2f runtime_term=%.2f draw=%.2f end=%.2f\n",
 	// 		renderTiming.totalMs,
 	// 		renderTiming.beginFrameMs,
 	// 		renderTiming.testPatternMs,
-	// 		renderTiming.vmDrawMs,
-	// 		renderTiming.vmIdeDrawMs,
-	// 		renderTiming.vmTerminalDrawMs,
+	// 		renderTiming.runtimeDrawMs,
+	// 		renderTiming.runtimeIdeDrawMs,
+	// 		renderTiming.runtimeTerminalDrawMs,
 	// 		renderTiming.drawGameMs,
 	// 		renderTiming.endFrameMs);
 	// }

@@ -10,12 +10,12 @@ import { TextureManager } from "../render/texturemanager";
 import { RenderPassLibrary } from "../render/backend/renderpasslib";
 import { ensureBrowserBackendFactory } from "../render/backend/browser_backend_factory";
 import type { SkyboxImageIds } from "../render/shared/render_types";
-import { VM_HZ_SCALE as PLATFORM_VM_HZ_SCALE, setMicrotaskQueue } from '../platform';
+import { HZ_SCALE as PLATFORM_HZ_SCALE, setMicrotaskQueue } from '../platform';
 import type { GameViewHost, Platform, PlatformExitEvent, SubscriptionHandle } from '../platform';
 import { asset_id, Identifiable, Identifier, Registerable, RuntimeAssets, type vec3, type vec2, GAME_FPS } from "../rompack/rompack";
 import { AssetSourceStack, type RawAssetSource } from '../rompack/asset_source';
 import { buildRuntimeAssetLayer, normalizeCartridgeBlob, parseCartridgeIndex, type RuntimeAssetLayer } from '../rompack/romloader';
-import type { LuaSourceRegistry } from '../vm/lua_sources';
+import type { LuaSourceRegistry } from '../emulator/lua_sources';
 import { BinaryCompressor } from "../serializer/bincompressor";
 import { Reviver, Savegame, Serializer } from "../serializer/gameserializer";
 import { Service } from "./service";
@@ -35,8 +35,8 @@ import { registerBuiltinECS } from "../ecs/builtin_pipeline";
 import type { NodeSpec } from "../ecs/pipeline";
 import { collectEcsPipelineExtensionsFromWorldModules, } from "../ecs/extensions";
 import { gameplaySpec } from './pipelines/gameplay_pipeline';
-import { BmsxVMRuntime } from '../vm/vm_runtime';
-import { createBmsxVMModule } from '../vm/module';
+import { Runtime } from '../emulator/runtime';
+import { createEmulatorModule } from '../emulator/module';
 import type { GPUBackend } from '../render/backend/pipeline_interfaces';
 import { ActionEffectRegistry } from '../action_effects/effect_registry';
 import { InputSource, KeyModifier } from '../input/playerinput';
@@ -76,7 +76,7 @@ const REWIND_BUFFER_ACTIVATED = true;
 const REWIND_BUFFER_WRITE_FREQUENCY = 1; // Frames
 const PRESENTATION_TICK_GROUPS: ReadonlyArray<TickGroup> = [TickGroup.Presentation, TickGroup.EventFlush];
 
-export const VM_HZ_SCALE = PLATFORM_VM_HZ_SCALE;
+export const HZ_SCALE = PLATFORM_HZ_SCALE;
 
 export function calcCyclesPerFrameScaled(cpuHz: number, refreshHzScaled: number): number {
 	if (!Number.isSafeInteger(cpuHz) || cpuHz <= 0) {
@@ -85,7 +85,7 @@ export function calcCyclesPerFrameScaled(cpuHz: number, refreshHzScaled: number)
 	if (!Number.isSafeInteger(refreshHzScaled) || refreshHzScaled <= 0) {
 		throw new Error('[EngineCore] refreshHzScaled must be a positive safe integer.');
 	}
-	const numerator = cpuHz * VM_HZ_SCALE;
+	const numerator = cpuHz * HZ_SCALE;
 	if (!Number.isSafeInteger(numerator) || numerator <= 0) {
 		throw new Error('[EngineCore] cpuHz scaled numerator must be a positive safe integer.');
 	}
@@ -96,7 +96,7 @@ export function calcCyclesPerFrame(cpuHz: number, refreshHz: number): number {
 	if (!Number.isFinite(refreshHz) || refreshHz <= 0) {
 		throw new Error('[EngineCore] refreshHz must be a positive number.');
 	}
-	const refreshHzScaled = Math.round(refreshHz * VM_HZ_SCALE);
+	const refreshHzScaled = Math.round(refreshHz * HZ_SCALE);
 	return calcCyclesPerFrameScaled(cpuHz, refreshHzScaled);
 }
 
@@ -118,8 +118,8 @@ export class EngineCore {
 	 * The target frames per second for the game.
 	 */
 	public target_fps: number = GAME_FPS;
-	public ufps_scaled: number = GAME_FPS * VM_HZ_SCALE;
-	public get ufps(): number { return this.ufps_scaled / VM_HZ_SCALE; }
+	public ufps_scaled: number = GAME_FPS * HZ_SCALE;
+	public get ufps(): number { return this.ufps_scaled / HZ_SCALE; }
 	private update_interval_ms!: number; // ms per update = 1000 / fps
 	/**
 	 * The timestamp of the last update.
@@ -139,11 +139,11 @@ export class EngineCore {
 	public get deltatime_seconds(): number { return this.deltatime / 1000; }
 
 	public setUfpsScaled(ufpsScaled: number): void {
-		if (!Number.isSafeInteger(ufpsScaled) || ufpsScaled <= VM_HZ_SCALE) {
+		if (!Number.isSafeInteger(ufpsScaled) || ufpsScaled <= HZ_SCALE) {
 			throw new Error('[EngineCore] ufps scaled must be a safe integer greater than 1 Hz.');
 		}
 		this.ufps_scaled = ufpsScaled;
-		this.target_fps = ufpsScaled / VM_HZ_SCALE;
+		this.target_fps = ufpsScaled / HZ_SCALE;
 		if (this.initialized) {
 			this.recomputeTimingCaches();
 		}
@@ -153,7 +153,7 @@ export class EngineCore {
 		if (!Number.isFinite(ufps) || ufps <= 0) {
 			throw new Error('[EngineCore] ufps must be a positive number.');
 		}
-		const ufpsScaled = Math.round(ufps * VM_HZ_SCALE);
+		const ufpsScaled = Math.round(ufps * HZ_SCALE);
 		this.setUfpsScaled(ufpsScaled);
 	}
 
@@ -421,7 +421,7 @@ export class EngineCore {
 
 	public async refresh_audio_assets(): Promise<void> {
 		const resolver = this.buildModulationResolver(this._assets);
-		const runtime = BmsxVMRuntime.instance;
+		const runtime = Runtime.instance;
 		const resources = runtime.buildAudioResourcesForSoundMaster();
 		await SoundMaster.instance.init(
 			resources,
@@ -429,14 +429,14 @@ export class EngineCore {
 			resolver,
 			(id) => runtime.getAudioBytes(runtime.getAssetEntry(id))
 		);
-		const limits = this._assets.manifest.vm.limits;
+		const limits = this._assets.manifest.machine.limits;
 		if (limits && limits.max_voices) {
 			SoundMaster.instance.setMaxVoicesByType(limits.max_voices);
 		}
 	}
 
 	public set_skybox_imgs(ids: SkyboxImageIds): void {
-		BmsxVMRuntime.instance.setSkyboxImages(ids);
+		Runtime.instance.setSkyboxImages(ids);
 	}
 
 	/**
@@ -470,7 +470,7 @@ export class EngineCore {
 		this.running = false;
 		this._paused = false;
 		this.wasupdated = true;
-		this.setUfpsScaled(engineLayer.index.manifest.vm.ufps);
+		this.setUfpsScaled(engineLayer.index.manifest.machine.ufps);
 		this.recomputeTimingCaches();
 
 		this._debug = debug ?? this._debug;
@@ -487,15 +487,15 @@ export class EngineCore {
 		}
 		let resolvedWorldConfig = worldConfig;
 		if (!resolvedWorldConfig) {
-			let viewport = engineLayer.index.manifest.vm.viewport;
+			let viewport = engineLayer.index.manifest.machine.viewport;
 			if (cartridge) {
 				const cartNormalized = normalizeCartridgeBlob(cartridge);
 				const cartIndex = await parseCartridgeIndex(cartNormalized.payload);
-				viewport = cartIndex.manifest.vm.viewport;
+				viewport = cartIndex.manifest.machine.viewport;
 			}
 			resolvedWorldConfig = {
 				viewportSize: shallowcopy(viewport),
-				modules: [createBmsxVMModule()],
+				modules: [createEmulatorModule()],
 			};
 		}
 		const viewportInput = resolvedWorldConfig.viewportSize as { width?: number; height?: number; x?: number; y?: number };
@@ -572,7 +572,7 @@ export class EngineCore {
 			this.removeWillExit = $.platform.lifecycle.onWillExit(this.onBeforeUnload);
 		}
 		this.initialized = true; // Mark the game as initialized
-		await BmsxVMRuntime.init(cartridge);
+		await Runtime.init(cartridge);
 		// SoundMaster.instance.volume = 0;
 		return this!; // Allow chaining
 	}
@@ -698,13 +698,13 @@ export class EngineCore {
 		} catch (error) {
 			failed = true;
 			// Surface engine/runtime errors to the in-game terminal when active
-			const vmRuntime = BmsxVMRuntime.instance;
-			if (vmRuntime) {
+			const runtime = Runtime.instance;
+			if (runtime) {
 				try {
-					vmRuntime.handleLuaError(error);
-					vmRuntime.abandonFrameState(); // ensure we abandon the frame state to prevent freezing
+					runtime.handleLuaError(error);
+					runtime.abandonFrameState(); // ensure we abandon the frame state to prevent freezing
 				} catch (error) { /* ignore secondary failures, but log them */
-					console.error(`Error while handling surfaced game error in vm runtime: ${error?.message ?? '<unknown error>'}`);
+					console.error(`Error while handling surfaced game error in runtime: ${error?.message ?? '<unknown error>'}`);
 					// ignore secondary failures, but log them
 				}
 				failed = true;
@@ -730,7 +730,7 @@ export class EngineCore {
 		$._turnCounter++;
 	}
 
-	private computeVmCycleBudget(runtime: BmsxVMRuntime): number {
+	private computeCycleBudget(runtime: Runtime): number {
 		return calcCyclesPerFrameScaled(runtime.cpuHz, this.ufps_scaled);
 	}
 
@@ -790,11 +790,11 @@ export class EngineCore {
 				this.wasupdated = false;
 				let presentQueued = false;
 
-				const runtime = BmsxVMRuntime.instance;
+				const runtime = Runtime.instance;
 				let ticksStarted = 0;
 				let slicesProcessed = 0;
 				if (profile) tUpdateStart = performance.now();
-				const baseBudget = this.computeVmCycleBudget(runtime);
+				const baseBudget = this.computeCycleBudget(runtime);
 				const runTickPresentation = () => {
 					clearBackQueues();
 					// Presentation-facing delta time should reflect host timing.
@@ -869,15 +869,15 @@ export class EngineCore {
 			}
 		} catch (error) {
 			// Surface engine/runtime errors to the in-game terminal when active
-			const vmRuntime = BmsxVMRuntime.instance;
-			if (vmRuntime) {
+			const runtime = Runtime.instance;
+			if (runtime) {
 				try {
-					vmRuntime.handleLuaError(error);
-					vmRuntime.abandonFrameState();
+					runtime.handleLuaError(error);
+					runtime.abandonFrameState();
 				} catch { /* ignore secondary failures, but log them */
-					console.error(`Error while handling surfaced game error in vm runtime: ${error}`);
+					console.error(`Error while handling surfaced game error in runtime: ${error}`);
 					// Abort the remainder of this update to keep state coherent this frame.
-					vmRuntime.abandonFrameState(); // ensure we abandon the frame state to prevent freezing
+					runtime.abandonFrameState(); // ensure we abandon the frame state to prevent freezing
 					this.wasupdated = true; // Force a redraw to show the error state and prevent freezing the game
 				}
 			}
@@ -923,7 +923,7 @@ export class EngineCore {
 		sg.modelprops = data;
 		sg.spaces = this.world.spaces; // Spaces and their contained objects are serialized directly via references.
 
-		sg.bmsxVMState = BmsxVMRuntime.instance?.captureCurrentState();
+		sg.machineState = Runtime.instance?.captureCurrentState();
 		const serialized = Serializer.serialize(sg) as Uint8Array;
 		return compress ? BinaryCompressor.compressBinary(serialized) : serialized;
 	}
@@ -959,8 +959,8 @@ export class EngineCore {
 			// Do not override revived flags or controller state; onspawn('revive') and @onload hooks handled wiring.
 
 			// Restore service state (opt-in)
-			if (sg.bmsxVMState) {
-				BmsxVMRuntime.instance.applyState(sg.bmsxVMState).then(() => {
+			if (sg.machineState) {
+				Runtime.instance.applyState(sg.machineState).then(() => {
 					this.wasupdated = true;
 					renderGate.end(gateToken);
 					runGate.end(runToken);

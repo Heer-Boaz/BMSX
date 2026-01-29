@@ -14,7 +14,7 @@
 import { type ModulationParams } from "../audio/soundmaster";
 import { Space } from '../core/space';
 import { $ } from '../core/engine_core';
-import type { BmsxVMState } from '../vm/types';
+import type { RuntimeState } from '../emulator/types';
 import { Registry } from "../core/registry";
 import { decodeBinary, encodeBinary } from "./binencoder";
 import { Bindable } from "../rompack/rompack";
@@ -532,7 +532,7 @@ export class Savegame {
 	SMState: SoundMasterState;
 	viewState: ViewState;
 	timestamp: number;
-	bmsxVMState?: BmsxVMState;
+	machineState?: RuntimeState;
 
 	constructor(_opts?: RevivableObjectArgs) {
 		this.timestamp = $.platform.clock.dateNow();

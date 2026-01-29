@@ -502,7 +502,7 @@ async function loadRuntimeAssetsFromSource(source: RawAssetSource, index: Cartri
 		audioevents: {},
 		project_root_path: index.projectRootPath,
 		manifest: index.manifest,
-		canonicalization: index.manifest.vm.canonicalization,
+		canonicalization: index.manifest.machine.canonicalization,
 	};
 	const entries = source.list();
 	await Promise.all(entries.map(entry => load(source, entry, assets, opts)));

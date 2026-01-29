@@ -2,7 +2,7 @@ import { EventEmitter, EventHandler } from '../core/eventemitter';
 import type { GameEvent } from '../core/game_event';
 import { $ } from '../core/engine_core';
 import { Registry } from '../core/registry';
-import { BmsxVMRuntime } from '../vm/vm_runtime';
+import { Runtime } from '../emulator/runtime';
 import type {
 	asset_id,
 	AudioId,
@@ -351,7 +351,7 @@ export class AudioEventManager implements RegisterablePersistent {
 
 		// voice policy / priority handling per channel
 		const channel = entry.channel ?? 'sfx';
-		const runtime = BmsxVMRuntime.instance;
+		const runtime = Runtime.instance;
 		const assetEntry = runtime.getAssetEntry(action.audio_id);
 		if (assetEntry.type !== 'audio') {
 			throw new Error(`[AudioEventManager] Asset '${action.audio_id}' is not audio.`);

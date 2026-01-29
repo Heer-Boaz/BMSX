@@ -2,7 +2,7 @@
     "title": "Sinterklaas 2024",
     "short_name": "Sint 2024",
     "rom_name": "sint24",
-    "vm": {
+    "machine": {
         "viewport": { "width": 256, "height": 212 },
         "canonicalization": "lower",
         "namespace": "sint24",

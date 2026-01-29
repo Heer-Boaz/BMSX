@@ -7,7 +7,7 @@ import { new_vec2 } from '../utils/vector_operations';
 import { Collider2DComponent } from './collisioncomponents';
 import { WorldObject } from '../core/object/worldobject';
 import { color, FlipOptions, RenderLayer } from '../render/shared/render_types';
-import { BmsxVMRuntime } from '../vm/vm_runtime';
+import { Runtime } from '../emulator/runtime';
 
 @insavegame
 @componenttags_postprocessing('render')
@@ -133,7 +133,7 @@ export class SpriteComponent extends Component<WorldObject> {
 			return;
 		}
 
-		const runtime = BmsxVMRuntime.instance;
+		const runtime = Runtime.instance;
 		const entry = runtime.getAssetEntry(id);
 		if (entry.type !== 'image') {
 			const ownerId = this.parent.id;

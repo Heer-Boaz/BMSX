@@ -24,7 +24,7 @@ export class ActionEffectComponent extends Component {
 
 	/*
 		Wiring map (effects):
-		- Effects are registered via define_effect/define_effect (Lua/vm runtime) into the ActionEffectRegistry.
+		- Effects are registered via define_effect/define_effect (Lua runtime) into the ActionEffectRegistry.
 		- World objects attach ActionEffectComponent and list effect ids in their definition; attachWorldObjectEffects grants those definitions here.
 		- Input-driven triggers: FSM/process_input or InputActionEffect programs call api.trigger_effect/component.trigger(...).
 		- This component enforces cooldown (timeMs advanced by ActionEffectRuntimeSystem) and emits owner events (owner.events + owner.sc.dispatch_event).

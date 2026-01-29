@@ -5,7 +5,7 @@ import { Registry } from '../core/registry';
 import { toggleRenderHUD } from '../debugger/renderhud';
 import { toggleECSHUD } from '../debugger/ecshud';
 import { toggleInputHUD } from '../debugger/inputhud';
-import { openDebugOverviewTab, openEventInspectorTab, openObjectInspectorTab } from '../vm/ide/vm_cart_editor';
+import { openDebugOverviewTab, openEventInspectorTab, openObjectInspectorTab } from '../emulator/ide/cart_editor';
 import type { Identifier, RegisterablePersistent } from '../rompack/rompack';
 import { GamepadInput } from './gamepad';
 import { controllerUnassignedToast } from '../ui/ui_toast';

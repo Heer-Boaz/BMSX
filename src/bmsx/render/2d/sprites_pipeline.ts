@@ -19,7 +19,7 @@ import { ENGINE_ATLAS_INDEX, ENGINE_ATLAS_TEXTURE_KEY } from 'bmsx/rompack/rompa
 import { $ } from '../../core/engine_core';
 import type { WebGLBackend } from '../backend/webgl/webgl_backend';
 import { makePipelineBuildDesc, shaderModule } from '../backend/shader_module';
-import { drainOverlayFrameIntoSpriteQueue } from '../../vm/vm_render_facade';
+import { drainOverlayFrameIntoSpriteQueue } from '../../emulator/render_facade';
 import type { LightingFrameState } from '../lighting/lightingsystem';
 import { clamp } from '../../utils/clamp';
 import {

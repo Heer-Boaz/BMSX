@@ -4,8 +4,8 @@ import type { Stats } from 'fs';
 import { CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES } from '../../src/bmsx/rompack/rompack';
 import type { asset_type, AudioMeta, CanonicalizationType, GLTFMesh, ImgMeta, Polygon, RomAsset, RomAssetListPayload, RomManifest } from '../../src/bmsx/rompack/rompack';
 import type { LuaChunk } from '../../src/bmsx/lua/lua_ast';
-import type { Value } from '../../src/bmsx/vm/cpu';
-import type { StringPool } from '../../src/bmsx/vm/string_pool';
+import type { Value } from '../../src/bmsx/emulator/cpu';
+import type { StringPool } from '../../src/bmsx/emulator/string_pool';
 import { atlasIndexResolver, createOptimizedAtlas, generateAtlasName } from './atlasbuilder';
 import { BoundingBoxExtractor } from './boundingbox_extractor';
 import { loadGLTFModel } from './gltfloader';
@@ -35,9 +35,9 @@ const { LuaLexer } = require('../../src/bmsx/lua/lualexer');
 // @ts-ignore
 const { LuaParser } = require('../../src/bmsx/lua/luaparser');
 // @ts-ignore
-const { compileLuaChunkToProgram } = require('../../src/bmsx/vm/program_compiler');
+const { compileLuaChunkToProgram } = require('../../src/bmsx/emulator/program_compiler');
 // @ts-ignore
-const { VM_PROGRAM_ASSET_ID, VM_PROGRAM_SYMBOLS_ASSET_ID, buildModuleAliasesFromPaths, encodeProgram, encodeProgramAsset, encodeProgramSymbolsAsset } = require('../../src/bmsx/vm/vm_program_asset');
+const { PROGRAM_ASSET_ID, PROGRAM_SYMBOLS_ASSET_ID, buildModuleAliasesFromPaths, encodeProgram, encodeProgramAsset, encodeProgramSymbolsAsset } = require('../../src/bmsx/emulator/program_asset');
 // @ts-ignore
 // @ts-ignore
 const pako = require('pako');
@@ -118,7 +118,7 @@ export function normalizeWorkspacePath(input: string): string {
 
 const CART_ROOT_SEGMENT = 'src/carts/';
 const ENGINE_RES_SEGMENT = 'src/bmsx/res';
-const DEFAULT_CART_BOOTLOADER_SEGMENT = 'src/bmsx/vm/default_cart';
+const DEFAULT_CART_BOOTLOADER_SEGMENT = 'src/bmsx/emulator/default_cart';
 
 function isCartPath(path?: string): boolean {
 	if (!path || path.length === 0) return false;
@@ -332,7 +332,7 @@ export async function buildEngineRuntime(options: { debug: boolean }): Promise<v
 
 	const buildRuntime = async (outfile: string, buildDebug: boolean): Promise<void> => {
 		await build({
-			entryPoints: ['./src/bmsx/vm/engine_entry.ts'],
+			entryPoints: ['./src/bmsx/emulator/engine_entry.ts'],
 			bundle: true,
 			platform: 'browser',
 			format: 'iife',
@@ -1516,7 +1516,7 @@ export async function generateRomAssets(resources: Resource[], reportProgress?: 
 	return romAssets;
 }
 
-export function appendVmProgramAsset(
+export function appendProgramAsset(
 	assetList: RomAsset[],
 	manifest: RomManifest,
 	options: {
@@ -1526,15 +1526,15 @@ export function appendVmProgramAsset(
 		optLevel?: 0 | 1 | 2 | 3;
 	} = {},
 ): void {
-	const hasProgramAsset = assetList.some(asset => asset.resid === VM_PROGRAM_ASSET_ID);
-	const hasSymbolsAsset = assetList.some(asset => asset.resid === VM_PROGRAM_SYMBOLS_ASSET_ID);
+	const hasProgramAsset = assetList.some(asset => asset.resid === PROGRAM_ASSET_ID);
+	const hasSymbolsAsset = assetList.some(asset => asset.resid === PROGRAM_SYMBOLS_ASSET_ID);
 	const includeSymbols = options.includeSymbols === true;
 	if (hasProgramAsset || hasSymbolsAsset) {
 		if (hasSymbolsAsset && !hasProgramAsset) {
-			throw new Error('[RomPacker] VM program symbols asset requires the program asset.');
+			throw new Error('[RomPacker] Program symbols asset requires the program asset.');
 		}
 		if (includeSymbols && !hasSymbolsAsset) {
-			throw new Error('[RomPacker] VM program asset and symbols asset must be added together in debug builds.');
+			throw new Error('[RomPacker] Program asset and symbols asset must be added together in debug builds.');
 		}
 		return;
 	}
@@ -1560,7 +1560,7 @@ export function appendVmProgramAsset(
 		return;
 	}
 	if (!manifest || !manifest.lua || !manifest.lua.entry_path) {
-		throw new Error('[RomPacker] Manifest is missing lua.entry_path; cannot build VM program asset.');
+		throw new Error('[RomPacker] Manifest is missing lua.entry_path; cannot build program asset.');
 	}
 	const entryPath = manifest.lua.entry_path;
 	const entryAsset = luaAssets.find(asset => asset.source_path === entryPath);
@@ -1620,10 +1620,10 @@ export function appendVmProgramAsset(
 
 	const buffer = Buffer.from(encodeProgramAsset(programAsset));
 	assetList.push({
-		resid: VM_PROGRAM_ASSET_ID,
+		resid: PROGRAM_ASSET_ID,
 		type: 'data',
 		buffer,
-		source_path: VM_PROGRAM_ASSET_ID,
+		source_path: PROGRAM_ASSET_ID,
 	});
 	if (includeSymbols) {
 		const symbolsAsset = {
@@ -1631,10 +1631,10 @@ export function appendVmProgramAsset(
 		};
 		const symbolsBuffer = Buffer.from(encodeProgramSymbolsAsset(symbolsAsset));
 		assetList.push({
-			resid: VM_PROGRAM_SYMBOLS_ASSET_ID,
+			resid: PROGRAM_SYMBOLS_ASSET_ID,
 			type: 'data',
 			buffer: symbolsBuffer,
-			source_path: VM_PROGRAM_SYMBOLS_ASSET_ID,
+			source_path: PROGRAM_SYMBOLS_ASSET_ID,
 		});
 	}
 }
@@ -1776,13 +1776,13 @@ function encodeBiosManifest(manifest: RomManifest, projectRootPath?: string): Bu
 	const shortName = manifest.short_name ?? '';
 	const romName = manifest.rom_name ?? '';
 	const entryPath = manifest.lua.entry_path;
-	const namespace = manifest.vm.namespace ?? '';
-	const viewport = `${manifest.vm.viewport.width}x${manifest.vm.viewport.height}`;
-	const canonicalization = manifest.vm.canonicalization ?? '';
+	const namespace = manifest.machine.namespace ?? '';
+	const viewport = `${manifest.machine.viewport.width}x${manifest.machine.viewport.height}`;
+	const canonicalization = manifest.machine.canonicalization ?? '';
 	const inputLabel = buildInputLabel(manifest);
 	const rootPath = projectRootPath ?? '';
-	const cpuHz = String(manifest.vm.cpu_freq_hz);
-	const ufps = String(manifest.vm.ufps);
+	const cpuHz = String(manifest.machine.cpu_freq_hz);
+	const ufps = String(manifest.machine.ufps);
 
 	const header = Buffer.alloc(4);
 	header.writeUInt32LE(entryKind, 0);

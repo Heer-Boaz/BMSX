@@ -21,14 +21,14 @@
 
 namespace bmsx {
 
-constexpr i64 VM_HZ_SCALE = 1'000'000;
+constexpr i64 HZ_SCALE = 1'000'000;
 constexpr i64 DEFAULT_UFPS = 50;
-constexpr i64 DEFAULT_UFPS_SCALED = DEFAULT_UFPS * VM_HZ_SCALE;
+constexpr i64 DEFAULT_UFPS_SCALED = DEFAULT_UFPS * HZ_SCALE;
 
 class BFont;
 class TextureManager;
-class VMRuntime;
-struct VmProgramAsset;
+class Runtime;
+struct ProgramAsset;
 struct ProgramMetadata;
 
 /* ============================================================================
@@ -52,11 +52,11 @@ public:
 	struct TickTiming {
 		f64 totalMs = 0.0;
 		f64 inputMs = 0.0;
-		f64 vmIdeInputMs = 0.0;
-		f64 vmTerminalInputMs = 0.0;
-		f64 vmUpdateMs = 0.0;
-		f64 vmIdeMs = 0.0;
-		f64 vmTerminalMs = 0.0;
+		f64 runtimeIdeInputMs = 0.0;
+		f64 runtimeTerminalInputMs = 0.0;
+		f64 runtimeUpdateMs = 0.0;
+		f64 runtimeIdeMs = 0.0;
+		f64 runtimeTerminalMs = 0.0;
 		f64 microtaskMs = 0.0;
 	};
 
@@ -64,9 +64,9 @@ public:
 		f64 totalMs = 0.0;
 		f64 beginFrameMs = 0.0;
 		f64 testPatternMs = 0.0;
-		f64 vmDrawMs = 0.0;
-		f64 vmIdeDrawMs = 0.0;
-		f64 vmTerminalDrawMs = 0.0;
+		f64 runtimeDrawMs = 0.0;
+		f64 runtimeIdeDrawMs = 0.0;
+		f64 runtimeTerminalDrawMs = 0.0;
 		f64 drawGameMs = 0.0;
 		f64 endFrameMs = 0.0;
 	};
@@ -113,7 +113,7 @@ public:
 	f64 deltaTime() const { return m_delta_time; }
 	u64 frameCount() const { return m_frame_count; }
 	f64 fps() const { return m_fps; }
-	f64 ufps() const { return static_cast<f64>(m_ufps_scaled) / static_cast<f64>(VM_HZ_SCALE); }
+	f64 ufps() const { return static_cast<f64>(m_ufps_scaled) / static_cast<f64>(HZ_SCALE); }
 	i64 ufpsScaled() const { return m_ufps_scaled; }
 	const TickTiming& lastTickTiming() const { return m_last_tick_timing; }
 	const RenderTiming& lastRenderTiming() const { return m_last_render_timing; }
@@ -135,7 +135,7 @@ public:
 	bool engineAssetsLoaded() const { return m_engine_assets_loaded; }
 	void prepareLoadedRomAssets();
 
-	// Boot engine without cart - uses VM program from engine assets (bootrom.lua)
+	// Boot engine without cart - uses program from engine assets (bootrom.lua)
 	bool bootWithoutCart();
 
 	// Registry shortcuts (like TypeScript $)
@@ -157,10 +157,10 @@ public:
 	static EngineCore* instancePtr();
 
 private:
-	void applyVmCycleBudget(VMRuntime& runtime);
+	void applyRuntimeCycleBudget(Runtime& runtime);
 	void renderTestPattern();  // Visual test when no ROM loaded
 	void uploadTexturesToBackend(bool includeCartAssets);  // Upload asset textures to GPU backend
-	void bootVMFromProgram();  // Boot VM with pre-compiled program from ROM
+	void bootRuntimeFromProgram();  // Boot runtime with pre-compiled program from ROM
 	void refreshAudioAssets();
 	void refreshAudioAssets(const RuntimeAssets& assets);
 
@@ -198,8 +198,8 @@ private:
 	std::vector<u8> m_cart_rom_owned;
 	const u8* m_cart_rom_data = nullptr;
 	size_t m_cart_rom_size = 0;
-	std::unique_ptr<VmProgramAsset> m_linked_vm_program;
-	std::unique_ptr<ProgramMetadata> m_linked_vm_program_symbols;
+	std::unique_ptr<ProgramAsset> m_linked_program;
+	std::unique_ptr<ProgramMetadata> m_linked_program_symbols;
 	TickTiming m_last_tick_timing;
 	RenderTiming m_last_render_timing;
 

@@ -419,12 +419,12 @@ export interface ImgMeta {
 export type TextureSource = unknown & { close?(): void; width: number; height: number; data?: Uint8Array; }; // platform-specific source type (e.g. ImageBitmap in browsers)
 export type Viewport = { width: number; height: number; };
 export type CanonicalizationType = 'none' | 'upper' | 'lower';
-export type VmVoiceLimits = {
+export type MachineVoiceLimits = {
 	sfx?: number;
 	music?: number;
 	ui?: number;
 };
-export type VmLimits = {
+export type MachineLimits = {
 	ram_bytes?: number;
 	string_handle_count?: number;
 	string_heap_bytes?: number;
@@ -433,14 +433,14 @@ export type VmLimits = {
 	atlas_slot_bytes?: number;
 	engine_atlas_slot_bytes?: number;
 	staging_bytes?: number;
-	max_voices?: VmVoiceLimits;
+	max_voices?: MachineVoiceLimits;
 };
 
 export type CartManifest = {
 	title?: string;
 	short_name?: string;
 	rom_name?: string;
-	vm: {
+	machine: {
 		viewport: Viewport;
 		canonicalization: CanonicalizationType;
 		namespace: string;
@@ -450,7 +450,7 @@ export type CartManifest = {
 		dma_bytes_per_sec_bulk: number;
 		ufps: number;
 		skybox_face_size?: number;
-		limits?: VmLimits;
+		limits?: MachineLimits;
 	};
 	input?: {
 		1: InputMap,

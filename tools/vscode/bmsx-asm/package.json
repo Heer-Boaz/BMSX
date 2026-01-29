@@ -1,7 +1,7 @@
 {
 	"name": "bmsx-asm",
 	"displayName": "BMSX ASM",
-	"description": "Syntax highlighting for BMSX VM assembly.",
+	"description": "Syntax highlighting for BMSX CPU assembly.",
 	"version": "0.0.1",
 	"publisher": "bmsx-local",
 	"engines": {

@@ -4,13 +4,13 @@ import pc from 'picocolors';
 import { Presets, SingleBar } from 'cli-progress';
 
 import { validateAudioEventReferences } from './audioeventvalidator';
-import { appendVmProgramAsset, buildBootromScriptIfNewer, buildEngineRuntime, buildGameHtmlAndManifest, buildResourceList, commonResPath, createAtlasses, deployToServer, ENGINE_ATLAS_INDEX, esbuild, finalizeRompack, GENERATE_AND_USE_TEXTURE_ATLAS, generateRomAssets, getNodeLauncherFilename, getResMetaList, getResourcesList, getRomManifest, isEngineRuntimeRebuildRequired, isRebuildRequired, LUA_CANONICALIZATION, setAtlasFlag, setLuaCanonicalization, typecheckBeforeBuild, typecheckGameWithDts } from './rompacker-core';
+import { appendProgramAsset, buildBootromScriptIfNewer, buildEngineRuntime, buildGameHtmlAndManifest, buildResourceList, commonResPath, createAtlasses, deployToServer, ENGINE_ATLAS_INDEX, esbuild, finalizeRompack, GENERATE_AND_USE_TEXTURE_ATLAS, generateRomAssets, getNodeLauncherFilename, getResMetaList, getResourcesList, getRomManifest, isEngineRuntimeRebuildRequired, isRebuildRequired, LUA_CANONICALIZATION, setAtlasFlag, setLuaCanonicalization, typecheckBeforeBuild, typecheckGameWithDts } from './rompacker-core';
 import type { AtlasResource, Resource, RomPackerMode, RomPackerOptions, RomPackerTarget } from './rompacker.rompack';
 import type { CanonicalizationType, RomAsset, RomManifest } from '../../src/bmsx/rompack/rompack';
-import type { Value } from '../../src/bmsx/vm/cpu';
+import type { Value } from '../../src/bmsx/emulator/cpu';
 import { LuaError } from '../../src/bmsx/lua/luaerrors';
-import { inflateProgram, decodeProgramAsset, VM_PROGRAM_ASSET_ID } from '../../src/bmsx/vm/vm_program_asset';
-import { StringPool } from '../../src/bmsx/vm/string_pool';
+import { inflateProgram, decodeProgramAsset, PROGRAM_ASSET_ID } from '../../src/bmsx/emulator/program_asset';
+import { StringPool } from '../../src/bmsx/emulator/string_pool';
 import { loadAssetList, normalizeCartridgeBlob } from '../../src/bmsx/rompack/romloader';
 
 import { join, isAbsolute } from 'node:path';
@@ -40,7 +40,7 @@ async function loadEngineConstPoolSeed(engineRomPath: string): Promise<{ constPo
 	const romData = await readFile(engineRomPath);
 	const { payload } = normalizeCartridgeBlob(romData);
 	const { assets } = await loadAssetList(payload);
-	const programAsset = assets.find(asset => asset.resid === VM_PROGRAM_ASSET_ID);
+	const programAsset = assets.find(asset => asset.resid === PROGRAM_ASSET_ID);
 	if (!programAsset) {
 		throw new Error(`[RomPacker] Engine program asset not found in "${engineRomPath}".`);
 	}
@@ -133,10 +133,10 @@ function applyEngineAtlasLimit(manifest: RomManifest, resources: Resource[]): vo
 		throw new Error('[RomPacker] Engine atlas dimensions are invalid; cannot compute engine_atlas_slot_bytes.');
 	}
 	const bytes = Math.floor(width) * Math.floor(height) * 4;
-	if (!manifest.vm.limits) {
-		manifest.vm.limits = {};
+	if (!manifest.machine.limits) {
+		manifest.machine.limits = {};
 	}
-	manifest.vm.limits.engine_atlas_slot_bytes = bytes;
+	manifest.machine.limits.engine_atlas_slot_bytes = bytes;
 }
 
 // --- Individual lists that allow us to easily remove tasks from the main task list (visualisation only!) ---
@@ -317,7 +317,7 @@ function parseOptions(args: string[]): ParsedOptions {
 			writeOut(`  --usepkgtsconfig         Use per-game tsconfig.pkg.json for bundling/type-checking`, 'warning');
 			writeOut(`  --platform <target>      Target platform: browser (default), cli, headless, libretro, or libretro-win`, 'warning');
 			writeOut(`  --mode <rompack|engine|platform|deploy>  What to build (default: rompack)`, 'warning');
-			writeOut(`  -O0|-O1|-O2|-O3         VM optimizer level (default: -O3)`, 'warning');
+			writeOut(`  -O0|-O1|-O2|-O3         Bytecode optimizer level (default: -O3)`, 'warning');
 			process.exit(0);
 		}
 
@@ -364,7 +364,7 @@ function parseOptions(args: string[]): ParsedOptions {
 	const rom_name = getParamOrEnv(args, '-romname', 'ROM_NAME', '');
 	const title = getParamOrEnv(args, '-title', 'TITLE', rom_name);
 	const defaultBootloaderPath = mode === 'engine'
-		? './src/bmsx/console/default_cart'
+		? './src/bmsx/emulator/default_cart'
 		: (rom_name ? `./src/${rom_name}` : '');
 	let bootloader_path = getParamOrEnv(args, '-bootloaderpath', 'BOOTLOADER_PATH', defaultBootloaderPath);
 	const defaultResPath = mode === 'engine'
@@ -430,14 +430,14 @@ function parseOptions(args: string[]): ParsedOptions {
 		cartBootloaderFound = true;
 	}
 
-	const vmBootloaderPath = normalizePathKey('./src/bmsx/vm/default_cart');
+	const defaultBootloaderPath = normalizePathKey('./src/bmsx/emulator/default_cart');
 	const bootloaderFile = join(normalizePathKey(bootloader_path), 'bootloader.ts');
 	let bootloaderFallbackApplied = false;
 	if (!existsSync(bootloaderFile)) {
-		bootloader_path = vmBootloaderPath;
+		bootloader_path = defaultBootloaderPath;
 		bootloaderFallbackApplied = true;
 	}
-	const bootloaderFallbackPath = bootloaderFallbackApplied ? vmBootloaderPath : undefined;
+	const bootloaderFallbackPath = bootloaderFallbackApplied ? defaultBootloaderPath : undefined;
 
 	const resCandidates: Array<string> = [
 		respath,
@@ -995,7 +995,7 @@ async function runEngineBuild(options: ParsedOptions): Promise<void> {
 
 	logInfo(`Build engine assets (${engineRomName})`);
 	const previousCanonicalization = LUA_CANONICALIZATION;
-	const engineCanonicalization = engineManifest.vm.canonicalization ?? previousCanonicalization;
+	const engineCanonicalization = engineManifest.machine.canonicalization ?? previousCanonicalization;
 	setLuaCanonicalization(engineCanonicalization);
 	try {
 		const engineResMetaList = await getResMetaList([engineResPath], engineRomName, {
@@ -1011,7 +1011,7 @@ async function runEngineBuild(options: ParsedOptions): Promise<void> {
 		}
 		validateAudioEventReferences(engineResources);
 		const engineRomAssets = await generateRomAssets(engineResources);
-		appendVmProgramAsset(engineRomAssets, engineManifest, { includeSymbols: debug, optLevel });
+		appendProgramAsset(engineRomAssets, engineManifest, { includeSymbols: debug, optLevel });
 		stripLuaAssets(engineRomAssets, debug);
 		await finalizeRompack(engineRomAssets, engineRomName, { projectRootPath: engineProjectRootPath, manifest: engineManifest, zipRom: false, debug });
 		logOk(`Engine assets ready → ${pc.white(`dist/${engineRomName}${debug ? '.debug' : ''}.rom`)}`);
@@ -1179,7 +1179,7 @@ async function main() {
 			logBullet('Lua case', canonicalization !== 'none' ? pc.green(`fold ${canonicalization}`) : pc.yellow('preserve case'));
 			logBullet('Typecheck', skipTypecheck ? pc.red('skipped') : pc.green('enabled'));
 			logBullet('Build', debug ? pc.cyan('DEBUG') : pc.blue('NON-DEBUG'));
-			logBullet('VM opt', pc.white(`-O${optLevel}`));
+			logBullet('Opt level', pc.white(`-O${optLevel}`));
 
 			const includeCode = shouldBundleCartCode;
 			let engineConstPoolSeed: { constPool: ReadonlyArray<Value>; stringPool: StringPool } | null = null;
@@ -1290,7 +1290,7 @@ async function main() {
 			validateAudioEventReferences(resources);
 
 				const romAssets = await progress.runWithDetail('Generate ROM assets', () => generateRomAssets(resources, message => progress.setDetail(message)));
-				appendVmProgramAsset(romAssets, romManifest, { includeSymbols: romPackDebug, constPoolSeed: engineConstPoolSeed ?? undefined, optLevel });
+				appendProgramAsset(romAssets, romManifest, { includeSymbols: romPackDebug, constPoolSeed: engineConstPoolSeed ?? undefined, optLevel });
 				stripLuaAssets(romAssets, romPackDebug);
 				await progress.taskCompleted();
 

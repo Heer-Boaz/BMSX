@@ -4,7 +4,7 @@
 
 #include "runtime_assets.h"
 #include "../serializer/binencoder.h"
-#include "../vm/program_loader.h"
+#include "../emulator/program_loader.h"
 #include "../utils/mem_snapshot.h"
 #include <cstring>
 #include <stdexcept>
@@ -798,8 +798,8 @@ void RuntimeAssets::clear() {
 	data.clear();
 	audioevents.clear();
 	atlasTextures.clear();
-	vmProgram.reset();
-	vmProgramSymbols.reset();
+	programAsset.reset();
+	programSymbols.reset();
 	projectRootPath.clear();
 	manifest = RomManifest{};
 	canonicalization = CanonicalizationType::None;
@@ -1082,61 +1082,61 @@ bool loadAssetsFromRom(const u8* buffer,
 		if (manifestObj.count("author")) assets.manifest.author = manifestObj.at("author").asString();
 		if (manifestObj.count("description")) assets.manifest.description = manifestObj.at("description").asString();
 
-		if (manifestObj.count("vm") && manifestObj.at("vm").isObject()) {
-			const auto& vmObj = manifestObj.at("vm").asObject();
-			if (vmObj.count("namespace")) assets.manifest.namespaceName = vmObj.at("namespace").asString();
-			assets.manifest.canonicalization = parseCanonicalization(vmObj.at("canonicalization").asString());
+		if (manifestObj.count("machine") && manifestObj.at("machine").isObject()) {
+			const auto& machineObj = manifestObj.at("machine").asObject();
+			if (machineObj.count("namespace")) assets.manifest.namespaceName = machineObj.at("namespace").asString();
+			assets.manifest.canonicalization = parseCanonicalization(machineObj.at("canonicalization").asString());
 			assets.canonicalization = assets.manifest.canonicalization;
-			if (vmObj.count("skybox_face_size")) {
-				assets.manifest.skyboxFaceSize = vmObj.at("skybox_face_size").toI32();
+			if (machineObj.count("skybox_face_size")) {
+				assets.manifest.skyboxFaceSize = machineObj.at("skybox_face_size").toI32();
 			}
-			if (!vmObj.count("cpu_freq_hz")) {
-				throw std::runtime_error("[RuntimeAssets] vm.cpu_freq_hz is required.");
+			if (!machineObj.count("cpu_freq_hz")) {
+				throw std::runtime_error("[RuntimeAssets] machine.cpu_freq_hz is required.");
 			}
-			const double cpuHzNumber = vmObj.at("cpu_freq_hz").toNumber();
+			const double cpuHzNumber = machineObj.at("cpu_freq_hz").toNumber();
 			const i64 cpuHz = static_cast<i64>(cpuHzNumber);
 			if (cpuHzNumber != static_cast<double>(cpuHz) || cpuHz <= 0) {
-				throw std::runtime_error("[RuntimeAssets] vm.cpu_freq_hz must be a positive integer.");
+				throw std::runtime_error("[RuntimeAssets] machine.cpu_freq_hz must be a positive integer.");
 			}
 			assets.manifest.cpuHz = cpuHz;
-			if (!vmObj.count("imgdec_bytes_per_sec")) {
-				throw std::runtime_error("[RuntimeAssets] vm.imgdec_bytes_per_sec is required.");
+			if (!machineObj.count("imgdec_bytes_per_sec")) {
+				throw std::runtime_error("[RuntimeAssets] machine.imgdec_bytes_per_sec is required.");
 			}
-			const double imgDecBytesPerSecNumber = vmObj.at("imgdec_bytes_per_sec").toNumber();
+			const double imgDecBytesPerSecNumber = machineObj.at("imgdec_bytes_per_sec").toNumber();
 			const i64 imgDecBytesPerSec = static_cast<i64>(imgDecBytesPerSecNumber);
 			if (imgDecBytesPerSecNumber != static_cast<double>(imgDecBytesPerSec) || imgDecBytesPerSec <= 0) {
-				throw std::runtime_error("[RuntimeAssets] vm.imgdec_bytes_per_sec must be a positive integer.");
+				throw std::runtime_error("[RuntimeAssets] machine.imgdec_bytes_per_sec must be a positive integer.");
 			}
 			assets.manifest.imgDecBytesPerSec = imgDecBytesPerSec;
-			if (!vmObj.count("dma_bytes_per_sec_iso")) {
-				throw std::runtime_error("[RuntimeAssets] vm.dma_bytes_per_sec_iso is required.");
+			if (!machineObj.count("dma_bytes_per_sec_iso")) {
+				throw std::runtime_error("[RuntimeAssets] machine.dma_bytes_per_sec_iso is required.");
 			}
-			const double dmaBytesPerSecIsoNumber = vmObj.at("dma_bytes_per_sec_iso").toNumber();
+			const double dmaBytesPerSecIsoNumber = machineObj.at("dma_bytes_per_sec_iso").toNumber();
 			const i64 dmaBytesPerSecIso = static_cast<i64>(dmaBytesPerSecIsoNumber);
 			if (dmaBytesPerSecIsoNumber != static_cast<double>(dmaBytesPerSecIso) || dmaBytesPerSecIso <= 0) {
-				throw std::runtime_error("[RuntimeAssets] vm.dma_bytes_per_sec_iso must be a positive integer.");
+				throw std::runtime_error("[RuntimeAssets] machine.dma_bytes_per_sec_iso must be a positive integer.");
 			}
 			assets.manifest.dmaBytesPerSecIso = dmaBytesPerSecIso;
-			if (!vmObj.count("dma_bytes_per_sec_bulk")) {
-				throw std::runtime_error("[RuntimeAssets] vm.dma_bytes_per_sec_bulk is required.");
+			if (!machineObj.count("dma_bytes_per_sec_bulk")) {
+				throw std::runtime_error("[RuntimeAssets] machine.dma_bytes_per_sec_bulk is required.");
 			}
-			const double dmaBytesPerSecBulkNumber = vmObj.at("dma_bytes_per_sec_bulk").toNumber();
+			const double dmaBytesPerSecBulkNumber = machineObj.at("dma_bytes_per_sec_bulk").toNumber();
 			const i64 dmaBytesPerSecBulk = static_cast<i64>(dmaBytesPerSecBulkNumber);
 			if (dmaBytesPerSecBulkNumber != static_cast<double>(dmaBytesPerSecBulk) || dmaBytesPerSecBulk <= 0) {
-				throw std::runtime_error("[RuntimeAssets] vm.dma_bytes_per_sec_bulk must be a positive integer.");
+				throw std::runtime_error("[RuntimeAssets] machine.dma_bytes_per_sec_bulk must be a positive integer.");
 			}
 			assets.manifest.dmaBytesPerSecBulk = dmaBytesPerSecBulk;
-			if (!vmObj.count("ufps")) {
-				throw std::runtime_error("[RuntimeAssets] vm.ufps is required.");
+			if (!machineObj.count("ufps")) {
+				throw std::runtime_error("[RuntimeAssets] machine.ufps is required.");
 			}
-			const double ufpsScaledNumber = vmObj.at("ufps").toNumber();
+			const double ufpsScaledNumber = machineObj.at("ufps").toNumber();
 			const i64 ufpsScaled = static_cast<i64>(ufpsScaledNumber);
 			if (ufpsScaledNumber != static_cast<double>(ufpsScaled) || ufpsScaled <= 0) {
-				throw std::runtime_error("[RuntimeAssets] vm.ufps must be a positive integer.");
+				throw std::runtime_error("[RuntimeAssets] machine.ufps must be a positive integer.");
 			}
 			assets.manifest.ufpsScaled = ufpsScaled;
-			if (vmObj.count("limits") && vmObj.at("limits").isObject()) {
-				const auto& limitsObj = vmObj.at("limits").asObject();
+			if (machineObj.count("limits") && machineObj.at("limits").isObject()) {
+				const auto& limitsObj = machineObj.at("limits").asObject();
 				if (limitsObj.count("ram_bytes")) {
 					assets.manifest.ramBytes = limitsObj.at("ram_bytes").toI32();
 				}
@@ -1168,8 +1168,8 @@ bool loadAssetsFromRom(const u8* buffer,
 					if (voicesObj.count("ui")) assets.manifest.maxVoicesUi = voicesObj.at("ui").toI32();
 				}
 			}
-			if (vmObj.count("viewport") && vmObj.at("viewport").isObject()) {
-				const auto& vpObj = vmObj.at("viewport").asObject();
+			if (machineObj.count("viewport") && machineObj.at("viewport").isObject()) {
+				const auto& vpObj = machineObj.at("viewport").asObject();
 				if (vpObj.count("width")) assets.manifest.viewportWidth = vpObj.at("width").toI32();
 				if (vpObj.count("height")) assets.manifest.viewportHeight = vpObj.at("height").toI32();
 			}
@@ -1404,31 +1404,31 @@ bool loadAssetsFromRom(const u8* buffer,
 		else if (assetType == "data") {
 			std::cerr << "[BMSX] Data asset found: id='" << assetId << "' bufStart=" << bufStart << " bufEnd=" << bufEnd << std::endl;
 			if (bufStart >= 0 && bufEnd > bufStart) {
-				// Check if this is the VM program asset
-				if (assetId == VM_PROGRAM_ASSET_ID) {
-					std::cerr << "[BMSX] Loading VM program asset (" << (bufEnd - bufStart) << " bytes)" << std::endl;
+				// Check if this is the program asset
+				if (assetId == PROGRAM_ASSET_ID) {
+					std::cerr << "[BMSX] Loading program asset (" << (bufEnd - bufStart) << " bytes)" << std::endl;
 					try {
 						// Load pre-compiled Lua bytecode program
-						assets.vmProgram = ProgramLoader::load(romData + bufStart, bufEnd - bufStart);
-						if (assets.vmProgram) {
-							std::cerr << "[BMSX] VM program loaded successfully!" << std::endl;
+						assets.programAsset = ProgramLoader::load(romData + bufStart, bufEnd - bufStart);
+						if (assets.programAsset) {
+							std::cerr << "[BMSX] Program loaded successfully!" << std::endl;
 						} else {
-							std::cerr << "[BMSX] VM program load returned nullptr!" << std::endl;
+							std::cerr << "[BMSX] Program load returned nullptr!" << std::endl;
 						}
 					} catch (const std::exception& e) {
-						std::cerr << "[BMSX] VM program load FAILED: " << e.what() << std::endl;
+						std::cerr << "[BMSX] Program load FAILED: " << e.what() << std::endl;
 					}
-				} else if (assetId == VM_PROGRAM_SYMBOLS_ASSET_ID) {
-					std::cerr << "[BMSX] Loading VM program symbols asset (" << (bufEnd - bufStart) << " bytes)" << std::endl;
+				} else if (assetId == PROGRAM_SYMBOLS_ASSET_ID) {
+					std::cerr << "[BMSX] Loading program symbols asset (" << (bufEnd - bufStart) << " bytes)" << std::endl;
 					try {
-						assets.vmProgramSymbols = ProgramLoader::loadSymbols(romData + bufStart, bufEnd - bufStart);
-						if (assets.vmProgramSymbols) {
-							std::cerr << "[BMSX] VM program symbols loaded successfully!" << std::endl;
+						assets.programSymbols = ProgramLoader::loadSymbols(romData + bufStart, bufEnd - bufStart);
+						if (assets.programSymbols) {
+							std::cerr << "[BMSX] Program symbols loaded successfully!" << std::endl;
 						} else {
-							std::cerr << "[BMSX] VM program symbols load returned nullptr!" << std::endl;
+							std::cerr << "[BMSX] Program symbols load returned nullptr!" << std::endl;
 						}
 					} catch (const std::exception& e) {
-						std::cerr << "[BMSX] VM program symbols load FAILED: " << e.what() << std::endl;
+						std::cerr << "[BMSX] Program symbols load FAILED: " << e.what() << std::endl;
 					}
 				} else {
 					BinValue dataValue = decodeBinary(romData + bufStart, bufEnd - bufStart);
@@ -1438,8 +1438,8 @@ bool loadAssetsFromRom(const u8* buffer,
 		}
 	}
 
-	if (!assets.vmProgram && assets.vmProgramSymbols) {
-		throw BMSX_RUNTIME_ERROR("VM program symbols asset requires the program asset.");
+	if (!assets.programAsset && assets.programSymbols) {
+		throw BMSX_RUNTIME_ERROR("Program symbols asset requires the program asset.");
 	}
 
 	logMemSnapshot("assets:end");

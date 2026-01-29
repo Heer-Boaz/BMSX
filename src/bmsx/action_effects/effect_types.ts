@@ -1,6 +1,6 @@
 import type { EventPayload } from '../core/eventemitter';
 import type { WorldObject } from '../core/object/worldobject';
-import type { LuaScriptHandler } from 'bmsx/vm/lua_handler_registry';
+import type { LuaScriptHandler } from 'bmsx/emulator/lua_handler_registry';
 
 export interface ActionEffectPayloadTable {
 	// Games and engine modules augment this interface with effect ids and their payload contracts.

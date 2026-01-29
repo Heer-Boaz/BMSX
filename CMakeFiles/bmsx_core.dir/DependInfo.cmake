@@ -50,11 +50,11 @@ set(CMAKE_DEPENDS_CHECK_CXX
 	"/src/src/bmsx_cpp/render/texturemanager.cpp" "/src/CMakeFiles/bmsx_core.dir/render/texturemanager.cpp.o"
 	"/src/src/bmsx_cpp/subscription.cpp" "/src/CMakeFiles/bmsx_core.dir/subscription.cpp.o"
 	"/src/src/bmsx_cpp/utils/mem_snapshot.cpp" "/src/CMakeFiles/bmsx_core.dir/utils/mem_snapshot.cpp.o"
-	"/src/src/bmsx_cpp/vm/cpu.cpp" "/src/CMakeFiles/bmsx_core.dir/vm/cpu.cpp.o"
-	"/src/src/bmsx_cpp/vm/font.cpp" "/src/CMakeFiles/bmsx_core.dir/vm/font.cpp.o"
-	"/src/src/bmsx_cpp/vm/program_loader.cpp" "/src/CMakeFiles/bmsx_core.dir/vm/program_loader.cpp.o"
-	"/src/src/bmsx_cpp/vm/vm_api.cpp" "/src/CMakeFiles/bmsx_core.dir/vm/vm_api.cpp.o"
-	"/src/src/bmsx_cpp/vm/vm_runtime.cpp" "/src/CMakeFiles/bmsx_core.dir/vm/vm_runtime.cpp.o"
+	"/src/src/bmsx_cpp/emulator/cpu.cpp" "/src/CMakeFiles/bmsx_core.dir/emulator/cpu.cpp.o"
+	"/src/src/bmsx_cpp/emulator/font.cpp" "/src/CMakeFiles/bmsx_core.dir/emulator/font.cpp.o"
+	"/src/src/bmsx_cpp/emulator/program_loader.cpp" "/src/CMakeFiles/bmsx_core.dir/emulator/program_loader.cpp.o"
+	"/src/src/bmsx_cpp/emulator/vm_api.cpp" "/src/CMakeFiles/bmsx_core.dir/emulator/vm_api.cpp.o"
+	"/src/src/bmsx_cpp/emulator/vm_runtime.cpp" "/src/CMakeFiles/bmsx_core.dir/emulator/vm_runtime.cpp.o"
 	)
 set(CMAKE_CXX_COMPILER_ID "GNU")
 

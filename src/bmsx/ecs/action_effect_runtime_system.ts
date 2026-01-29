@@ -1,7 +1,7 @@
 import { $ } from '../core/engine_core';
 import { ECSystem, TickGroup } from './ecsystem';
 import { ActionEffectComponent } from '../component/actioneffectcomponent';
-import { BmsxVMRuntime } from '../vm/vm_runtime';
+import { Runtime } from '../emulator/runtime';
 import { extractErrorMessage } from '../lua/luavalue';
 
 export class ActionEffectRuntimeSystem extends ECSystem {
@@ -17,7 +17,7 @@ export class ActionEffectRuntimeSystem extends ECSystem {
 			} catch (error) {
 				const message = extractErrorMessage(error);
 				const ownerId = component.parent.id ? component.parent.id : '<unknown>';
-				const runtime = BmsxVMRuntime.instance;
+				const runtime = Runtime.instance;
 				if (runtime) {
 					runtime.handleLuaError(error);
 				}

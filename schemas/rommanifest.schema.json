@@ -17,8 +17,8 @@
 			"type": "string",
 			"description": "ROM filename base (without extension)."
 		},
-		"vm": {
-			"$ref": "#/definitions/vmConfig"
+		"machine": {
+			"$ref": "#/definitions/machineConfig"
 		},
 		"input": {
 			"$ref": "#/definitions/inputConfig"
@@ -60,9 +60,9 @@
 			],
 			"description": "Canonicalization mode for Lua identifiers."
 		},
-		"vmConfig": {
+		"machineConfig": {
 			"type": "object",
-			"description": "VM configuration for the cartridge.",
+			"description": "Machine configuration for the cartridge.",
 			"properties": {
 				"viewport": {
 					"$ref": "#/definitions/viewport"
@@ -82,7 +82,7 @@
 				"cpu_freq_hz": {
 					"type": "integer",
 					"minimum": 1,
-					"description": "VM cycle rate in Hz."
+					"description": "CPU cycle rate in Hz."
 				},
 				"imgdec_bytes_per_sec": {
 					"type": "integer",
@@ -99,13 +99,13 @@
 					"minimum": 1,
 					"description": "DMA bulk channel bandwidth in bytes per second."
 				},
-					"ufps": {
-						"type": "integer",
-						"minimum": 1,
-						"description": "VM tick rate in scaled Hz (micro-Hz). Example: 59.94 Hz => 59940000."
-					},
+				"ufps": {
+					"type": "integer",
+					"minimum": 1,
+					"description": "Machine tick rate in scaled Hz (micro-Hz). Example: 59.94 Hz => 59940000."
+				},
 				"limits": {
-					"$ref": "#/definitions/vmLimits"
+					"$ref": "#/definitions/machineLimits"
 				}
 			},
 			"required": [
@@ -118,49 +118,49 @@
 			],
 			"additionalProperties": false
 		},
-			"vmLimits": {
-				"type": "object",
-				"description": "Soft VM limits for memory and runtime budgets.",
-				"properties": {
-					"ram_bytes": {
-						"type": "integer",
-						"minimum": 1
-					},
-					"string_handle_count": {
-						"type": "integer",
-						"minimum": 1
-					},
-					"string_heap_bytes": {
-						"type": "integer",
-						"minimum": 1
-					},
-					"asset_table_bytes": {
-						"type": "integer",
-						"minimum": 1
-					},
-					"asset_data_bytes": {
-						"type": "integer",
-						"minimum": 1
-					},
-					"atlas_slot_bytes": {
-						"type": "integer",
-						"minimum": 1
-					},
-					"engine_atlas_slot_bytes": {
-						"type": "integer",
-						"minimum": 1
-					},
-					"staging_bytes": {
-						"type": "integer",
-						"minimum": 1
-					},
+		"machineLimits": {
+			"type": "object",
+			"description": "Soft machine limits for memory and budgets.",
+			"properties": {
+				"ram_bytes": {
+					"type": "integer",
+					"minimum": 1
+				},
+				"string_handle_count": {
+					"type": "integer",
+					"minimum": 1
+				},
+				"string_heap_bytes": {
+					"type": "integer",
+					"minimum": 1
+				},
+				"asset_table_bytes": {
+					"type": "integer",
+					"minimum": 1
+				},
+				"asset_data_bytes": {
+					"type": "integer",
+					"minimum": 1
+				},
+				"atlas_slot_bytes": {
+					"type": "integer",
+					"minimum": 1
+				},
+				"engine_atlas_slot_bytes": {
+					"type": "integer",
+					"minimum": 1
+				},
+				"staging_bytes": {
+					"type": "integer",
+					"minimum": 1
+				},
 				"max_voices": {
-					"$ref": "#/definitions/vmVoiceLimits"
+					"$ref": "#/definitions/machineVoiceLimits"
 				}
 			},
 			"additionalProperties": false
 		},
-		"vmVoiceLimits": {
+		"machineVoiceLimits": {
 			"type": "object",
 			"description": "Per-channel voice caps.",
 			"properties": {
@@ -185,21 +185,21 @@
 			"properties": {
 				"keyboard": {
 					"type": "object",
-					"description": "Keyboard mapping for vm controls.",
+					"description": "Keyboard mapping for console controls.",
 					"additionalProperties": {
 						"$ref": "#/definitions/stringArray"
 					}
 				},
 				"gamepad": {
 					"type": "object",
-					"description": "Gamepad mapping for vm controls.",
+					"description": "Gamepad mapping for console controls.",
 					"additionalProperties": {
 						"$ref": "#/definitions/stringArray"
 					}
 				},
 				"pointer": {
 					"type": "object",
-					"description": "Pointer / mouse / touch mapping for vm controls.",
+					"description": "Pointer / mouse / touch mapping for console controls.",
 					"additionalProperties": true
 				}
 			},

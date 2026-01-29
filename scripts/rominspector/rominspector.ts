@@ -10,9 +10,9 @@ import { PNG } from 'pngjs';
 import type { asset_type, AudioMeta, GLTFModel, ImgMeta, RomAsset, CartRomHeader, RomManifest } from '../../src/bmsx/rompack/rompack';
 import { decodeBinary } from '../../src/bmsx/serializer/binencoder';
 import { getZippedRomAndRomLabelFromBlob, loadAssetList, loadModelFromBuffer as loadGLTFModelFromBuffer, parseCartHeader } from '../../src/bmsx/rompack/romloader';
-import { disassembleProgram } from '../../src/bmsx/vm/disassembler';
-import type { Program, ProgramMetadata } from '../../src/bmsx/vm/cpu';
-import { decodeProgramAsset, decodeProgramSymbolsAsset, inflateProgram, VM_PROGRAM_ASSET_ID, VM_PROGRAM_SYMBOLS_ASSET_ID } from '../../src/bmsx/vm/vm_program_asset';
+import { disassembleProgram } from '../../src/bmsx/emulator/disassembler';
+import type { Program, ProgramMetadata } from '../../src/bmsx/emulator/cpu';
+import { decodeProgramAsset, decodeProgramSymbolsAsset, inflateProgram, PROGRAM_ASSET_ID, PROGRAM_SYMBOLS_ASSET_ID } from '../../src/bmsx/emulator/program_asset';
 import { generateAtlasName } from '../rompacker/atlasbuilder';
 import { asciiWaveBraille, generateBrailleAsciiArt, generatePixelPerfectAsciiArt, parseWav, renderBufferBar, renderSummaryBar } from './asciiart';
 
@@ -109,26 +109,26 @@ function buildLuaSourceLookup(rombin: Uint8Array, assets: RomAsset[]): (path: st
 	};
 }
 
-function loadVmProgramFromAssets(rombin: Uint8Array, assets: RomAsset[]) {
-	const programAssetEntry = assets.find(asset => asset.resid === VM_PROGRAM_ASSET_ID);
+function loadProgramFromAssets(rombin: Uint8Array, assets: RomAsset[]) {
+	const programAssetEntry = assets.find(asset => asset.resid === PROGRAM_ASSET_ID);
 	if (!programAssetEntry) {
-		throw new Error('[RomInspector] VM program asset not found.');
+		throw new Error('[RomInspector] Program asset not found.');
 	}
 	const programStart = programAssetEntry.start;
 	const programEnd = programAssetEntry.end;
 	if (programStart === undefined || programEnd === undefined) {
-		throw new Error(`[RomInspector] VM program asset '${programAssetEntry.resid}' is missing buffer range.`);
+		throw new Error(`[RomInspector] Program asset '${programAssetEntry.resid}' is missing buffer range.`);
 	}
 	const programBytes = new Uint8Array(rombin.slice(programStart, programEnd));
 	const programAsset = decodeProgramAsset(programBytes);
 	const program = inflateProgram(programAsset.program);
-	const symbolsAsset = assets.find(asset => asset.resid === VM_PROGRAM_SYMBOLS_ASSET_ID);
+	const symbolsAsset = assets.find(asset => asset.resid === PROGRAM_SYMBOLS_ASSET_ID);
 	const metadata = symbolsAsset
 		? (() => {
 			const symbolsStart = symbolsAsset.start;
 			const symbolsEnd = symbolsAsset.end;
 			if (symbolsStart === undefined || symbolsEnd === undefined) {
-				throw new Error(`[RomInspector] VM program symbols asset '${symbolsAsset.resid}' is missing buffer range.`);
+				throw new Error(`[RomInspector] Program symbols asset '${symbolsAsset.resid}' is missing buffer range.`);
 			}
 			const symbolsBytes = new Uint8Array(rombin.slice(symbolsStart, symbolsEnd));
 			const symbols = decodeProgramSymbolsAsset(symbolsBytes);
@@ -139,14 +139,14 @@ function loadVmProgramFromAssets(rombin: Uint8Array, assets: RomAsset[]) {
 	return { programAsset, program, metadata, sourceTextForPath };
 }
 
-function disassembleVmProgram(
+function disassembleProgramAsset(
 	program: Program,
 	metadata: ProgramMetadata | null,
 	sourceTextForPath: ((path: string) => string) | null,
 	options: { assembly?: boolean; pcBias?: number } = {},
 ): string {
 	if (metadata && !sourceTextForPath) {
-		throw new Error('[RomInspector] VM program symbols found but Lua sources were not resolved.');
+		throw new Error('[RomInspector] Program symbols found but Lua sources were not resolved.');
 	}
 	const assembly = options.assembly === true;
 	return disassembleProgram(program, metadata, {
@@ -448,7 +448,7 @@ async function main() {
 		console.error('  --ui            Open the interactive UI');
 		console.error('  --list-assets   Print asset list to stdout (default)');
 		console.error('  --manifest      Print cart manifest details to stdout');
-		console.error('  --program-asm   Print VM program disassembly and exit');
+		console.error('  --program-asm   Print program disassembly and exit');
 		console.error('  --program-asm-bias  Base PC to add (e.g. 0x80000 or 80000h)');
 		process.exit(1);
 	}
@@ -478,9 +478,9 @@ async function main() {
 	}
 
 	if (programAsmFlag) {
-		const { program, metadata, sourceTextForPath } = loadVmProgramFromAssets(rombin, assetList);
+		const { program, metadata, sourceTextForPath } = loadProgramFromAssets(rombin, assetList);
 		const pcBias = programAsmBias === null ? undefined : programAsmBias;
-		console.log(disassembleVmProgram(program, metadata, sourceTextForPath, { assembly: true, pcBias }));
+		console.log(disassembleProgramAsset(program, metadata, sourceTextForPath, { assembly: true, pcBias }));
 		process.exit(0);
 	}
 
@@ -871,23 +871,23 @@ async function main() {
 						: { manifest: romManifest };
 					metadataLines.push(`Manifest size: ${formatByteSize(selected.end - selected.start)}`);
 					asciiArt = JSON.stringify(payload, null, 2);
-				} else if (selected.resid === VM_PROGRAM_ASSET_ID) {
-					const { programAsset, program, metadata, sourceTextForPath } = loadVmProgramFromAssets(rombin, assetList);
-					disassembly = disassembleVmProgram(program, metadata, sourceTextForPath);
-					metadataLines.push(`VM program entry proto: ${programAsset.entryProtoIndex}`);
-					metadataLines.push(`VM program protos: ${program.protos.length}`);
-					metadataLines.push(`VM program consts: ${program.constPool.length}`);
-					metadataLines.push(`VM program code bytes: ${program.code.length}`);
-					asciiArt = '[VM program asset: open Details tab for disassembly]';
-				} else if (selected.resid === VM_PROGRAM_SYMBOLS_ASSET_ID) {
+				} else if (selected.resid === PROGRAM_ASSET_ID) {
+					const { programAsset, program, metadata, sourceTextForPath } = loadProgramFromAssets(rombin, assetList);
+					disassembly = disassembleProgramAsset(program, metadata, sourceTextForPath);
+					metadataLines.push(`Program entry proto: ${programAsset.entryProtoIndex}`);
+					metadataLines.push(`Program protos: ${program.protos.length}`);
+					metadataLines.push(`Program consts: ${program.constPool.length}`);
+					metadataLines.push(`Program code bytes: ${program.code.length}`);
+					asciiArt = '[Program asset: open Details tab for disassembly]';
+				} else if (selected.resid === PROGRAM_SYMBOLS_ASSET_ID) {
 					const symbolsStart = selected.start;
 					const symbolsEnd = selected.end;
 					if (symbolsStart === undefined || symbolsEnd === undefined) {
-						throw new Error(`[RomInspector] VM program symbols asset '${selected.resid}' is missing buffer range.`);
+						throw new Error(`[RomInspector] Program symbols asset '${selected.resid}' is missing buffer range.`);
 					}
 					const symbolsBytes = new Uint8Array(rombin.slice(symbolsStart, symbolsEnd));
 					const symbols = decodeProgramSymbolsAsset(symbolsBytes);
-					metadataLines.push(`VM program symbols protos: ${symbols.metadata.protoIds.length}`);
+					metadataLines.push(`Program symbols protos: ${symbols.metadata.protoIds.length}`);
 					asciiArt = JSON.stringify(symbols.metadata, null, 2);
 				} else {
 					if (!selected.buffer || typeof selected.buffer !== 'object') {

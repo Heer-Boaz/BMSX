@@ -2,7 +2,7 @@
     "title": "The Test Rompack!",
     "short_name": "Testrompack",
     "rom_name": "testrom",
-    "vm": {
+    "machine": {
         "viewport": { "width": 256, "height": 212 },
         "canonicalization": "lower",
         "namespace": "testrom",

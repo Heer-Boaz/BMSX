@@ -1,7 +1,7 @@
 title: Empty Cart
 short_name: 'emptycart'
 rom_name: 'emptycart'
-vm:
+machine:
     viewport: {width: 256, height: 212}
     canonicalization: lower
     namespace: 'emptycart'

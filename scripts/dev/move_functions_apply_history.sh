@@ -11,8 +11,8 @@ set -euo pipefail
 
 # diagnostics -> diagnostics.ts
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/console_cart_editor.ts \
-	--dest src/bmsx/console/ide/diagnostics.ts \
+	--source src/bmsx/emulator/ide/console_cart_editor.ts \
+	--dest src/bmsx/emulator/ide/diagnostics.ts \
 	-n enqueueDiagnosticsJob -n executeDiagnosticsComputation -n findContextByChunk \
 	-n getActiveSemanticDefinitions -n getConsoleRuntime -n getDiagnosticsForRow \
 	-n getLuaModuleAliases -n handleRuntimeTaskError -n buildRuntimeErrorLines \
@@ -26,65 +26,65 @@ node scripts/move_functions.js \
 
 # search_ui -> search_ui.ts
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/console_cart_editor.ts \
-	--dest src/bmsx/console/ide/search_ui.ts \
+	--source src/bmsx/emulator/ide/console_cart_editor.ts \
+	--dest src/bmsx/emulator/ide/search_ui.ts \
 	-n searchVisibleResultCount -n searchResultEntryHeight \
 	-n renderSearchResults -n openSearch -n closeSearch -n toggleSearch -n focusSearchField \
 	-n applySearchFilter -n computeSearchMatches -n collectSymbolSearchResults -n symbolCatalogDedupKey
 
 # window_listeners -> window_listeners.ts
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/console_cart_editor.ts \
-	--dest src/bmsx/console/ide/window_listeners.ts \
+	--source src/bmsx/emulator/ide/console_cart_editor.ts \
+	--dest src/bmsx/emulator/ide/window_listeners.ts \
 	-n installPlatformVisibilityListener -n installWindowEventListeners \
 	-n resetInputFocusState -n requestWindowFocusState -n flushWindowFocusState
 
 # runtime_overlay -> runtime_overlay.ts
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/console_cart_editor.ts \
-	--dest src/bmsx/console/ide/runtime_overlay.ts \
+	--source src/bmsx/emulator/ide/console_cart_editor.ts \
+	--dest src/bmsx/emulator/ide/runtime_overlay.ts \
 	-n syncRuntimeErrorOverlayFromContext -n updateRuntimeErrorOverlay \
 	-n showRuntimeOverlay -n hideRuntimeOverlay -n computeOverlayBounds -n renderRuntimeOverlay \
 	-n handleRuntimeHover -n clearRuntimeOverlay -n enqueueRuntimeOverlayUpdate -n processRuntimeOverlayQueue
 
 # draw -> draw.ts
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/console_cart_editor.ts \
-	--dest src/bmsx/console/ide/draw.ts \
+	--source src/bmsx/emulator/ide/console_cart_editor.ts \
+	--dest src/bmsx/emulator/ide/draw.ts \
 	-n drawCodeArea -n drawRuntimeErrorOverlay -n drawTopBar -n drawStatusArea
 
 # ui_layout -> ui_layout.ts
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/console_cart_editor.ts \
-	--dest src/bmsx/console/ide/ui_layout.ts \
+	--source src/bmsx/emulator/ide/console_cart_editor.ts \
+	--dest src/bmsx/emulator/ide/ui_layout.ts \
 	-n computeEditorBounds -n getSymbolSearchBarHeight -n computeInlineBarBounds \
 	-n topBarHeight -n computeTabBarHeight -n visibleRowCount -n statusAreaHeight -n computeProblemsPanelHeight
 
 # topbar -> topbar.ts
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/console_cart_editor.ts \
-	--dest src/bmsx/console/ide/topbar.ts \
+	--source src/bmsx/emulator/ide/console_cart_editor.ts \
+	--dest src/bmsx/emulator/ide/topbar.ts \
 	-n renderTopBar -n handleTopBarButtonClick -n updateTopBarState -n openActionPrompt \
 	-n closeActionPrompt -n computeTopBarButtonBounds -n topBarPointerHandler -n drawTopBarButtons -n updateTopBarTooltip
 
 # pointer -> pointer.ts
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/console_cart_editor.ts \
-	--dest src/bmsx/console/ide/pointer.ts \
+	--source src/bmsx/emulator/ide/console_cart_editor.ts \
+	--dest src/bmsx/emulator/ide/pointer.ts \
 	-n registerPointerClick -n resetPointerClickTracking -n handlePointerMove -n handlePointerDown \
 	-n handlePointerUp -n handlePointerLeave -n updateHoverState -n pointerHoverTooltip -n processPointerWheel -n computePointerPosition -n handlePointerDoubleClick
 
 # navigation -> navigation.ts
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/console_cart_editor.ts \
-	--dest src/bmsx/console/ide/navigation.ts \
+	--source src/bmsx/emulator/ide/console_cart_editor.ts \
+	--dest src/bmsx/emulator/ide/navigation.ts \
 	-n beginNavigationCapture -n completeNavigation -n setActiveTab -n closeTab -n navigateToSymbol \
 	-n navigateBackward -n navigateForward -n computeNavigationCheckpoint -n saveNavigationState -n restoreNavigationState
 
 # editor_core -> editor_core.ts
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/console_cart_editor.ts \
-	--dest src/bmsx/console/ide/editor_core.ts \
+	--source src/bmsx/emulator/ide/console_cart_editor.ts \
+	--dest src/bmsx/emulator/ide/editor_core.ts \
 	-n invalidateLineRange -n findWordLeft -n findWordRight -n getLineRangeForMovement \
 	-n getTabBarTotalHeight -n topMargin -n statusAreaHeight -n bottomMargin -n getVisibleProblemsPanelHeight \
 	-n getStatusMessageLines -n tryShowLuaErrorOverlay -n safeInspectLuaExpression -n update -n processDiagnosticsQueue \
@@ -92,8 +92,8 @@ node scripts/move_functions.js \
 
 # lifecycle -> lifecycle.ts
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/console_cart_editor.ts \
-	--dest src/bmsx/console/ide/lifecycle.ts \
+	--source src/bmsx/emulator/ide/console_cart_editor.ts \
+	--dest src/bmsx/emulator/ide/lifecycle.ts \
 	-n serializeState -n restoreState -n shutdown -n getKeyboard -n handleEscapeShortcut \
 	-n toggleEditorFromShortcut -n handleEscapeKey -n activate -n applyEditorCrtDimming -n restoreCrtOptions -n deactivate \
 	-n applyCaseNormalizationIfNeeded -n applyDocumentFormatting -n applySourceToDocument -n bumpTextVersion \
@@ -106,21 +106,21 @@ node scripts/move_functions.js \
 
 # input_and_prompt -> input_and_prompt.ts
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/console_cart_editor.ts \
-	--dest src/bmsx/console/ide/input_and_prompt.ts \
+	--source src/bmsx/emulator/ide/console_cart_editor.ts \
+	--dest src/bmsx/emulator/ide/input_and_prompt.ts \
 	-n splitLines -n handleActionPromptInput -n handleEditorInput -n handleCustomKeybinding \
 	-n handleCreateResourceInput -n openCreateResourcePrompt -n closeCreateResourcePrompt -n cancelCreateResourcePrompt
 
 # symbols_focus -> symbols_focus.ts
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/console_cart_editor.ts \
-	--dest src/bmsx/console/ide/symbols_focus.ts \
+	--source src/bmsx/emulator/ide/console_cart_editor.ts \
+	--dest src/bmsx/emulator/ide/symbols_focus.ts \
 	-n symbolPriority -n symbolKindLabel -n symbolSourceLabel -n focusEditorFromProblemsPanel -n focusEditorFromResourcePanel
 
 # topbar_pointer_actions -> topbar_pointer_actions.ts
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/console_cart_editor.ts \
-	--dest src/bmsx/console/ide/topbar_pointer_actions.ts \
+	--source src/bmsx/emulator/ide/console_cart_editor.ts \
+	--dest src/bmsx/emulator/ide/topbar_pointer_actions.ts \
 	-n handleActionPromptPointer -n handleTopBarPointer -n handleTabBarPointer -n handleTabBarMiddleClick \
 	-n handlePointerWheel -n handleTopBarButtonPress -n openActionPrompt -n executePendingAction -n performAction -n performResume -n performReboot \
 	-n attemptPromptSave -n executePendingAction -n handleActionPromptSelection -n openActionPrompt \
@@ -128,15 +128,15 @@ node scripts/move_functions.js \
 
 # pointer_inline -> pointer_inline.ts
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/console_cart_editor.ts \
-	--dest src/bmsx/console/ide/pointer_inline.ts \
+	--source src/bmsx/emulator/ide/console_cart_editor.ts \
+	--dest src/bmsx/emulator/ide/pointer_inline.ts \
 	-n applySymbolSearchFieldText -n inlineFieldMetrics -n createInlineFieldEditingHandlers \
 	-n processInlineFieldEditing -n processInlineFieldPointer -n updateRuntimeErrorOverlay -n pasteFromClipboard -n registerPointerClick -n resetPointerClickTracking
 
 # resource_panel -> resource_panel.ts
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/console_cart_editor.ts \
-	--dest src/bmsx/console/ide/resource_panel.ts \
+	--source src/bmsx/emulator/ide/console_cart_editor.ts \
+	--dest src/bmsx/emulator/ide/resource_panel.ts \
 	-n findFunctionDefinitionRowInActiveFile -n notifyReadOnlyEdit -n toggleResourcePanel -n toggleProblemsPanel \
 	-n showProblemsPanel -n hideProblemsPanel -n toggleResourcePanelFilterMode -n updateViewport -n toggleResolutionMode -n toggleWordWrap \
 	-n hideResourcePanel -n openLuaCodeTab -n openResourceViewerTab -n closeActiveTab -n resetEditorContent -n resetResourcePanelState \
@@ -152,8 +152,8 @@ node scripts/move_functions.js \
 
 # text_editing -> text_editing.ts
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/console_cart_editor.ts \
-	--dest src/bmsx/console/ide/text_editing.ts \
+	--source src/bmsx/emulator/ide/console_cart_editor.ts \
+	--dest src/bmsx/emulator/ide/text_editing.ts \
 	-n addLineComments -n countLeadingIndent -n currentLine -n deleteActiveLines \
 	-n deleteCharLeft -n deleteCharRight -n deleteSelection -n deleteWordBackward \
 	-n deleteWordForward -n firstNonWhitespaceIndex -n indentSelectionOrLine -n insertNewline \
@@ -163,15 +163,15 @@ node scripts/move_functions.js \
 
 # undo_snapshot -> undo_snapshot.ts
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/console_cart_editor.ts \
-	--dest src/bmsx/console/ide/undo_snapshot.ts \
+	--source src/bmsx/emulator/ide/console_cart_editor.ts \
+	--dest src/bmsx/emulator/ide/undo_snapshot.ts \
 	-n breakUndoSequence -n captureSnapshot -n prepareUndo -n recordSnapshotPre \
 	-n recordSnapshotPost -n redo -n restoreSnapshot -n undo
 
 # viewport -> viewport.ts
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/console_cart_editor.ts \
-	--dest src/bmsx/console/ide/viewport.ts \
+	--source src/bmsx/emulator/ide/console_cart_editor.ts \
+	--dest src/bmsx/emulator/ide/viewport.ts \
 	-n applyScrollbarScroll -n clampScrollColumn -n clampScrollRow -n codeViewportTop \
 	-n computeMaximumScrollColumn -n computeWrapWidth -n ensureCursorVisible -n getCodeAreaBounds \
 	-n getVisualLineCount -n mapScreenPointToViewport -n maximumLineLength -n resolvePointerColumn \
@@ -179,8 +179,8 @@ node scripts/move_functions.js \
 
 # cursor -> cursor.ts
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/console_cart_editor.ts \
-	--dest src/bmsx/console/ide/cursor.ts \
+	--source src/bmsx/emulator/ide/console_cart_editor.ts \
+	--dest src/bmsx/emulator/ide/cursor.ts \
 	-n centerCursorVertically -n clampCursorColumn -n clampCursorRow -n clampSelectionPosition \
 	-n moveCursorDown -n moveCursorEnd -n moveCursorHome -n moveCursorHorizontal -n moveCursorLeft \
 	-n moveCursorRight -n moveCursorUp -n moveCursorVertical -n moveWordLeft -n moveWordRight \
@@ -189,8 +189,8 @@ node scripts/move_functions.js \
 
 # search_navigation -> search_navigation.ts
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/console_cart_editor.ts \
-	--dest src/bmsx/console/ide/search_navigation.ts \
+	--source src/bmsx/emulator/ide/console_cart_editor.ts \
+	--dest src/bmsx/emulator/ide/search_navigation.ts \
 	-n applyDefinitionSelection -n applyLineJump -n applySearchFieldText -n applySymbolSearchSelection \
 	-n buildReferenceCatalogForExpression -n cancelSearchJob -n clearGotoHoverHighlight -n clearReferenceHighlights \
 	-n closeLineJump -n closeResourceSearch -n closeSymbolSearch -n commitRename -n ensureResourceSearchSelectionVisible \
@@ -206,8 +206,8 @@ node scripts/move_functions.js \
 
 # resources -> resources.ts
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/console_cart_editor.ts \
-	--dest src/bmsx/console/ide/resources.ts \
+	--source src/bmsx/emulator/ide/console_cart_editor.ts \
+	--dest src/bmsx/emulator/ide/resources.ts \
 	-n applyCreateResourceFieldText -n applyResourceSearchFieldText -n applyResourceSearchSelection \
 	-n buildDefaultResourceContents -n buildResourceViewerState -n determineCreateResourceDefaultPath \
 	-n ensureDirectorySuffix -n findResourceDescriptorByasset_id -n findResourceDescriptorForChunk \
@@ -220,8 +220,8 @@ node scripts/move_functions.js \
 
 # ui_render -> ui_render.ts
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/console_cart_editor.ts \
-	--dest src/bmsx/console/ide/ui_render.ts \
+	--source src/bmsx/emulator/ide/console_cart_editor.ts \
+	--dest src/bmsx/emulator/ide/ui_render.ts \
 	-n adjustHoverTooltipScroll -n assertMonospace -n buildHoverContentLines -n buildStatusLeftInfo \
 	-n clearHoverTooltip -n columnToDisplay -n computeCursorScreenInfo -n draw -n drawActionPromptOverlay \
 	-n drawCodeArea -n drawCreateResourceBar -n drawCreateResourceErrorDialog -n drawLineJumpBar \
@@ -242,8 +242,8 @@ node scripts/move_functions.js \
 
 # input_handlers -> input_handlers.ts
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/console_cart_editor.ts \
-	--dest src/bmsx/console/ide/input_handlers.ts \
+	--source src/bmsx/emulator/ide/console_cart_editor.ts \
+	--dest src/bmsx/emulator/ide/input_handlers.ts \
 	-n createInlineFieldEditingHandlers -n handleActionPromptInput -n handleActionPromptPointer \
 	-n handleCodeFormattingShortcut -n handleCreateResourceInput -n handleCustomKeybinding -n handleEditorInput \
 	-n handleEscapeKey -n handleEscapeShortcut -n handlePointerInput -n handlePointerWheel -n handleResourceViewerInput \
@@ -253,8 +253,8 @@ node scripts/move_functions.js \
 
 # tabs_nav -> tabs_nav.ts
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/console_cart_editor.ts \
-	--dest src/bmsx/console/ide/tabs_nav.ts \
+	--source src/bmsx/emulator/ide/console_cart_editor.ts \
+	--dest src/bmsx/emulator/ide/tabs_nav.ts \
 	-n applyNavigationEntry -n areNavigationEntriesEqual -n beginNavigationCapture -n cloneNavigationEntry \
 	-n completeNavigation -n createNavigationEntry -n goBackwardInNavigationHistory -n goForwardInNavigationHistory \
 	-n openDebugOverviewTab -n openDebugPanelTab -n openEventInspectorTab -n openLuaCodeTab -n openObjectInspectorTab \
@@ -262,16 +262,16 @@ node scripts/move_functions.js \
 
 # utils_editor -> utils_editor.ts
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/console_cart_editor.ts \
-	--dest src/bmsx/console/ide/utils_editor.ts \
+	--source src/bmsx/emulator/ide/console_cart_editor.ts \
+	--dest src/bmsx/emulator/ide/utils_editor.ts \
 	-n bottomMargin -n buildDebugPanelLines -n buildProjectReferenceContext -n debugPanelTabId \
 	-n digitFilter -n findWordLeft -n findWordRight -n getLineRangeForMovement -n lowerBound \
 	-n notifyReadOnlyEdit -n pointInRect -n showProblemsPanel -n statusAreaHeight
 
 # search_helpers -> search_helpers.ts
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/console_cart_editor.ts \
-	--dest src/bmsx/console/ide/search_helpers.ts \
+	--source src/bmsx/emulator/ide/console_cart_editor.ts \
+	--dest src/bmsx/emulator/ide/search_helpers.ts \
 	-n isResourceSearchCompactMode -n isSymbolSearchCompactMode -n resourceSearchEntryHeight \
 	-n resourceSearchPageSize -n resourceSearchVisibleResultCount -n resourceSearchWindowCapacity \
 	-n searchResultEntryHeight -n searchVisibleResultCount -n symbolSearchEntryHeight \
@@ -279,161 +279,161 @@ node scripts/move_functions.js \
 
 # Merge debugger files into debugger.ts
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/debugger_breakpoints.ts \
-	--dest src/bmsx/console/ide/debugger.ts \
+	--source src/bmsx/emulator/ide/debugger_breakpoints.ts \
+	--dest src/bmsx/emulator/ide/debugger.ts \
 	-n hasBreakpoint -n getBreakpointsForChunk -n toggleBreakpoint -n serializeBreakpoints -n restoreBreakpointsFromPayload -n syncRuntimeBreakpoints
 
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/debugger_controls.ts \
-	--dest src/bmsx/console/ide/debugger.ts \
+	--source src/bmsx/emulator/ide/debugger_controls.ts \
+	--dest src/bmsx/emulator/ide/debugger.ts \
 	-n getDebuggerCommandExecutor -n issueDebuggerCommand
 
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/debugger_overlay_controller.ts \
-	--dest src/bmsx/console/ide/debugger.ts \
+	--source src/bmsx/emulator/ide/debugger_overlay_controller.ts \
+	--dest src/bmsx/emulator/ide/debugger.ts \
 	-n showDebuggerPauseOverlay -n clearDebuggerPauseOverlay -n prepareDebuggerStepOverlay
 
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/debugger_shortcuts.ts \
-	--dest src/bmsx/console/ide/debugger.ts \
+	--source src/bmsx/emulator/ide/debugger_shortcuts.ts \
+	--dest src/bmsx/emulator/ide/debugger.ts \
 	-n handleDebuggerShortcuts
 
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/debugger_shortcuts_core.ts \
-	--dest src/bmsx/console/ide/debugger.ts \
+	--source src/bmsx/emulator/ide/debugger_shortcuts_core.ts \
+	--dest src/bmsx/emulator/ide/debugger.ts \
 	-n evaluateDebuggerShortcuts
 
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/debugger_ui_state.ts \
-	--dest src/bmsx/console/ide/debugger.ts \
+	--source src/bmsx/emulator/ide/debugger_ui_state.ts \
+	--dest src/bmsx/emulator/ide/debugger.ts \
 	-n initializeDebuggerUiState
 
 # Merge render files into render.ts
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/render_caret.ts \
-	--dest src/bmsx/console/ide/render.ts \
+	--source src/bmsx/emulator/ide/render_caret.ts \
+	--dest src/bmsx/emulator/ide/render.ts \
 	-n renderInlineCaret -n drawInlineCaret -n getCaretGlyphForDisplay -n drawCursor
 
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/render_code_area.ts \
-	--dest src/bmsx/console/ide/render.ts \
+	--source src/bmsx/emulator/ide/render_code_area.ts \
+	--dest src/bmsx/emulator/ide/render.ts \
 	-n renderCodeArea
 
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/render_error_overlay.ts \
-	--dest src/bmsx/console/ide/render.ts \
+	--source src/bmsx/emulator/ide/render_error_overlay.ts \
+	--dest src/bmsx/emulator/ide/render.ts \
 	-n renderRuntimeErrorOverlay
 
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/render_inline_bars.ts \
-	--dest src/bmsx/console/ide/render.ts \
+	--source src/bmsx/emulator/ide/render_inline_bars.ts \
+	--dest src/bmsx/emulator/ide/render.ts \
 	-n renderCreateResourceBar -n renderSearchBar -n renderResourceSearchBar -n renderSymbolSearchBar -n renderRenameBar -n renderLineJumpBar
 
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/render_resource_panel.ts \
-	--dest src/bmsx/console/ide/render.ts \
+	--source src/bmsx/emulator/ide/render_resource_panel.ts \
+	--dest src/bmsx/emulator/ide/render.ts \
 	-n renderResourcePanel
 
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/render_status_bar.ts \
-	--dest src/bmsx/console/ide/render.ts \
+	--source src/bmsx/emulator/ide/render_status_bar.ts \
+	--dest src/bmsx/emulator/ide/render.ts \
 	-n renderStatusBar
 
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/render_tab_bar.ts \
-	--dest src/bmsx/console/ide/render.ts \
+	--source src/bmsx/emulator/ide/render_tab_bar.ts \
+	--dest src/bmsx/emulator/ide/render.ts \
 	-n renderTabBar
 
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/render_top_bar.ts \
-	--dest src/bmsx/console/ide/render.ts \
+	--source src/bmsx/emulator/ide/render_top_bar.ts \
+	--dest src/bmsx/emulator/ide/render.ts \
 	-n renderTopBar
 
 # Merge runtime error overlay files into runtime_error_overlay.ts
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/runtime_error_overlay_model.ts \
-	--dest src/bmsx/console/ide/runtime_error_overlay.ts \
+	--source src/bmsx/emulator/ide/runtime_error_overlay_model.ts \
+	--dest src/bmsx/emulator/ide/runtime_error_overlay.ts \
 	-n cloneRuntimeErrorDetails -n rebuildRuntimeErrorOverlayView -n buildRuntimeErrorOverlayCopyText
 
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/runtime_error_overlay_navigation.ts \
-	--dest src/bmsx/console/ide/runtime_error_overlay.ts \
+	--source src/bmsx/emulator/ide/runtime_error_overlay_navigation.ts \
+	--dest src/bmsx/emulator/ide/runtime_error_overlay.ts \
 	-n navigateRuntimeErrorOverlay
 
 # Merge rename files into rename.ts
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/rename_apply.ts \
-	--dest src/bmsx/console/ide/rename.ts \
+	--source src/bmsx/emulator/ide/rename_apply.ts \
+	--dest src/bmsx/emulator/ide/rename.ts \
 	-n applyRename
 
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/rename_controller.ts \
-	--dest src/bmsx/console/ide/rename.ts \
+	--source src/bmsx/emulator/ide/rename_controller.ts \
+	--dest src/bmsx/emulator/ide/rename.ts \
 	-n handleRename
 
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/rename_cross_file.ts \
-	--dest src/bmsx/console/ide/rename.ts \
+	--source src/bmsx/emulator/ide/rename_cross_file.ts \
+	--dest src/bmsx/emulator/ide/rename.ts \
 	-n renameCrossFile
 
 # Merge reference files into reference.ts
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/reference_navigation.ts \
-	--dest src/bmsx/console/ide/reference.ts \
+	--source src/bmsx/emulator/ide/reference_navigation.ts \
+	--dest src/bmsx/emulator/ide/reference.ts \
 	-n navigateReferences
 
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/reference_sources.ts \
-	--dest src/bmsx/console/ide/reference.ts \
+	--source src/bmsx/emulator/ide/reference_sources.ts \
+	--dest src/bmsx/emulator/ide/reference.ts \
 	-n getReferenceSources
 
 # Merge text utils files into text_utils.ts
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/text_utils_local.ts \
-	--dest src/bmsx/console/ide/text_utils.ts \
+	--source src/bmsx/emulator/ide/text_utils_local.ts \
+	--dest src/bmsx/emulator/ide/text_utils.ts \
 	-n localTextUtils
 
 # Merge input files into input.ts
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/input_controller.ts \
-	--dest src/bmsx/console/ide/input.ts \
+	--source src/bmsx/emulator/ide/input_controller.ts \
+	--dest src/bmsx/emulator/ide/input.ts \
 	-n handleInput
 
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/input_helpers.ts \
-	--dest src/bmsx/console/ide/input.ts \
+	--source src/bmsx/emulator/ide/input_helpers.ts \
+	--dest src/bmsx/emulator/ide/input.ts \
 	-n resetKeyPressRecords -n clearKeyPressRecord -n shouldAcceptKeyPress -n isKeyJustPressed -n isModifierPressed -n isKeyPressed -n isKeyTyped
 
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/player_input_adapter.ts \
-	--dest src/bmsx/console/ide/input.ts \
+	--source src/bmsx/emulator/ide/player_input_adapter.ts \
+	--dest src/bmsx/emulator/ide/input.ts \
 	-n adaptPlayerInput
 
 # Merge semantic files into semantic.ts
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/semantic_model.ts \
-	--dest src/bmsx/console/ide/semantic.ts \
+	--source src/bmsx/emulator/ide/semantic_model.ts \
+	--dest src/bmsx/emulator/ide/semantic.ts \
 	-n buildSemanticModel
 
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/semantic_worker.ts \
-	--dest src/bmsx/console/ide/semantic.ts \
+	--source src/bmsx/emulator/ide/semantic_worker.ts \
+	--dest src/bmsx/emulator/ide/semantic.ts \
 	-n runSemanticWorker
 
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/semantic_workspace.ts \
-	--dest src/bmsx/console/ide/semantic.ts \
+	--source src/bmsx/emulator/ide/semantic_workspace.ts \
+	--dest src/bmsx/emulator/ide/semantic.ts \
 	-n manageSemanticWorkspace
 
 # Merge editor inputs into editor_inputs.ts
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/editor_modal_inputs.ts \
-	--dest src/bmsx/console/ide/editor_inputs.ts \
+	--source src/bmsx/emulator/ide/editor_modal_inputs.ts \
+	--dest src/bmsx/emulator/ide/editor_inputs.ts \
 	-n handleModalInputs
 
 node scripts/move_functions.js \
-	--source src/bmsx/console/ide/inline_text_field.ts \
-	--dest src/bmsx/console/ide/editor_inputs.ts \
+	--source src/bmsx/emulator/ide/inline_text_field.ts \
+	--dest src/bmsx/emulator/ide/editor_inputs.ts \
 	-n handleInlineTextField
 
 # End of migration apply history

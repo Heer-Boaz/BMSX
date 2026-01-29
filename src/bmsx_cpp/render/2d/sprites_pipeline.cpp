@@ -12,7 +12,7 @@
 #include "../../rompack/runtime_assets.h"
 #include "../../core/engine_core.h"
 #include "../../rompack/rompack.h"
-#include "../../vm/vm_runtime.h"
+#include "../../emulator/runtime.h"
 #include "../gameview.h"
 #include "../../utils/clamp.h"
 #if BMSX_ENABLE_GLES2
@@ -52,7 +52,7 @@ void renderSpriteBatchSoftware(SoftwareBackend* softBackend,
 	const bool useDepth = false;
 
 	auto& engine = EngineCore::instance();
-	// auto& runtime = VMRuntime::instance();
+	// auto& runtime = Runtime::instance();
 	// auto& memory = runtime.memory();
 	const auto& assets = engine.assets();
 	const TextureHandle atlasPrimary = context->textures.at("_atlas_primary");

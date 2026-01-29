@@ -1341,7 +1341,7 @@ bool retro_load_game(const struct retro_game_info* game) {
 		memset(&av, 0, sizeof(av));
 		retro_get_system_av_info(&av);
 	}
-	av.timing.fps = (double)ufps_scaled / (double)bmsx::VM_HZ_SCALE;
+	av.timing.fps = (double)ufps_scaled / (double)bmsx::HZ_SCALE;
 	environ_cb(RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO, &av);
 	g_cached_av_info = av;
 	g_cached_av_info_valid = true;
@@ -1473,15 +1473,15 @@ void retro_run(void) {
 	static double accTickMs = 0.0;
 	static double accRenderMs = 0.0;
 	static double accOverheadMs = 0.0;
-	static double accVmUpdateMs = 0.0;
-	static double accVmDrawMs = 0.0;
+	static double accRuntimeUpdateMs = 0.0;
+	static double accRuntimeDrawMs = 0.0;
 	static double accDrawGameMs = 0.0;
 	static double maxRunMs = 0.0;
 	static double maxTickMs = 0.0;
 	static double maxRenderMs = 0.0;
 	static double maxOverheadMs = 0.0;
-	static double maxVmUpdateMs = 0.0;
-	static double maxVmDrawMs = 0.0;
+	static double maxRuntimeUpdateMs = 0.0;
+	static double maxRuntimeDrawMs = 0.0;
 	static double maxDrawGameMs = 0.0;
 	static uint64_t perfFrames = 0;
 #endif
@@ -1533,15 +1533,15 @@ void retro_run(void) {
 //   accTickMs += tickTiming.totalMs;
 //   accRenderMs += renderTiming.totalMs;
 //   accOverheadMs += overheadMs;
-//   accVmUpdateMs += tickTiming.vmUpdateMs;
-//   accVmDrawMs += renderTiming.vmDrawMs;
+//   accRuntimeUpdateMs += tickTiming.runtimeUpdateMs;
+//   accRuntimeDrawMs += renderTiming.runtimeDrawMs;
 //   accDrawGameMs += renderTiming.drawGameMs;
 //   if (runMs > maxRunMs) maxRunMs = runMs;
 //   if (tickTiming.totalMs > maxTickMs) maxTickMs = tickTiming.totalMs;
 //   if (renderTiming.totalMs > maxRenderMs) maxRenderMs = renderTiming.totalMs;
 //   if (overheadMs > maxOverheadMs) maxOverheadMs = overheadMs;
-//   if (tickTiming.vmUpdateMs > maxVmUpdateMs) maxVmUpdateMs = tickTiming.vmUpdateMs;
-//   if (renderTiming.vmDrawMs > maxVmDrawMs) maxVmDrawMs = renderTiming.vmDrawMs;
+//   if (tickTiming.runtimeUpdateMs > maxRuntimeUpdateMs) maxRuntimeUpdateMs = tickTiming.runtimeUpdateMs;
+//   if (renderTiming.runtimeDrawMs > maxRuntimeDrawMs) maxRuntimeDrawMs = renderTiming.runtimeDrawMs;
 //   if (renderTiming.drawGameMs > maxDrawGameMs) maxDrawGameMs = renderTiming.drawGameMs;
 //   perfFrames += 1;
 
@@ -1557,27 +1557,27 @@ void retro_run(void) {
 // 				accOverheadMs * invFrames,
 // 				static_cast<unsigned long long>(perfFrames));
 // 	logging.log(RETRO_LOG_WARN,
-// 				"[BMSX] vm avg update=%.2f draw=%.2f draw_game=%.2f max_update=%.2f max_draw=%.2f max_draw_game=%.2f\n",
-// 				accVmUpdateMs * invFrames,
-// 				accVmDrawMs * invFrames,
+// 				"[BMSX] runtime avg update=%.2f draw=%.2f draw_game=%.2f max_update=%.2f max_draw=%.2f max_draw_game=%.2f\n",
+// 				accRuntimeUpdateMs * invFrames,
+// 				accRuntimeDrawMs * invFrames,
 // 				accDrawGameMs * invFrames,
-// 				maxVmUpdateMs,
-// 				maxVmDrawMs,
+// 				maxRuntimeUpdateMs,
+// 				maxRuntimeDrawMs,
 // 				maxDrawGameMs);
 // 	perfStart = runEnd;
 // 	accRunMs = 0.0;
 // 	accTickMs = 0.0;
 // 	accRenderMs = 0.0;
 // 	accOverheadMs = 0.0;
-// 	accVmUpdateMs = 0.0;
-// 	accVmDrawMs = 0.0;
+// 	accRuntimeUpdateMs = 0.0;
+// 	accRuntimeDrawMs = 0.0;
 // 	accDrawGameMs = 0.0;
 // 	maxRunMs = 0.0;
 // 	maxTickMs = 0.0;
 // 	maxRenderMs = 0.0;
 // 	maxOverheadMs = 0.0;
-// 	maxVmUpdateMs = 0.0;
-// 	maxVmDrawMs = 0.0;
+// 	maxRuntimeUpdateMs = 0.0;
+// 	maxRuntimeDrawMs = 0.0;
 // 	maxDrawGameMs = 0.0;
 // 	perfFrames = 0;
 //   }

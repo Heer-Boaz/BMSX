@@ -88,8 +88,8 @@ export interface Platform {
 	storage: StorageService;
 	microtasks: MicrotaskQueue;
 	/**
-	 * VM tick rate expressed in scaled Hz (micro-Hz).
-	 * The scale factor is {@link VM_HZ_SCALE}.
+	 * Runtime tick rate expressed in scaled Hz (micro-Hz).
+	 * The scale factor is {@link HZ_SCALE}.
 	 */
 	ufpsScaled: number;
 	requestShutdown(): void;
@@ -107,7 +107,7 @@ export type MonoTime = number;
  * Scale factor for representing Hz as integers (micro-Hz).
  * Example: 59.94 Hz => 59_940_000.
  */
-export const VM_HZ_SCALE = 1_000_000;
+export const HZ_SCALE = 1_000_000;
 
 /**
  * Generic handle returned by the platform when scheduling a delayed callback.

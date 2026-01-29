@@ -35,7 +35,7 @@ import {
 	GameViewHostCapabilityMap,
 	SubscriptionHandle,
 	createSubscriptionHandle,
-	VM_HZ_SCALE,
+	HZ_SCALE,
 } from 'bmsx/platform';
 import { HeadlessGameViewHost } from 'bmsx/render/headless/headless_view';
 
@@ -324,7 +324,7 @@ export class HeadlessPlatformServices implements Platform {
 
 	constructor(options: HeadlessPlatformOptions = {}) {
 		const step = options.frameIntervalMs ?? 20;
-		this.ufpsScaled = Math.round((1000 / step) * VM_HZ_SCALE);
+		this.ufpsScaled = Math.round((1000 / step) * HZ_SCALE);
 		this.clock = new HeadlessClock();
 		this.frames = new HeadlessFrameLoop(this.clock, step);
 		this.lifecycle = new HeadlessLifecycle();

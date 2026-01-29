@@ -1,0 +1,257 @@
+import { Api } from '../../api';
+import { api } from '../../runtime';
+import { getTabBarTotalHeight, getCreateResourceBarHeight, getSearchBarHeight, getResourceSearchBarHeight, getSymbolSearchBarHeight, getRenameBarHeight, getLineJumpBarHeight, searchVisibleResultCount, searchResultEntryHeight, symbolSearchVisibleResultCount, symbolSearchEntryHeight, isSymbolSearchCompactMode } from '../cart_editor';
+import { drawCreateResourceErrorDialog } from './render_resource_panel';
+import { activeSearchMatchCount, getVisibleSearchResultEntries } from '../editor_search';
+import { ide_state } from '../ide_state';
+import { selectionRange as inlineFieldSelectionRange, type InlineFieldMetrics, measureRange as inlineFieldMeasureRange, caretX as inlineFieldCaretX } from '../inline_text_field';
+import { drawInlineCaret } from './render_caret';
+import { type InlineBarsHost, renderCreateResourceBar, renderLineJumpBar, renderRenameBar, renderSearchBar, renderSymbolSearchBar } from './render_inline_bars';
+import { drawEditorText } from '../text_renderer';
+import { measureText } from '../text_utils';
+import type { TextField } from '../types';
+
+export function drawSearchBar(): void {
+	const host: InlineBarsHost = {
+		viewportWidth: ide_state.viewportWidth,
+		headerHeight: ide_state.headerHeight,
+		tabBarHeight: getTabBarTotalHeight(),
+		lineHeight: ide_state.lineHeight,
+		spaceAdvance: ide_state.spaceAdvance,
+		charAdvance: ide_state.charAdvance,
+		measureText: (t: string) => measureText(t),
+		drawText: (t, x, y, c) => drawEditorText(ide_state.font, t, x, y, undefined, c),
+		inlineFieldMetrics: () => ide_state.inlineFieldMetricsRef,
+		createResourceActive: ide_state.createResourceActive,
+		createResourceVisible: ide_state.createResourceVisible,
+		createResourceField: ide_state.createResourceField,
+		createResourceWorking: ide_state.createResourceWorking,
+		createResourceError: ide_state.createResourceError,
+		drawCreateResourceErrorDialog: (_a, m) => drawCreateResourceErrorDialog(m),
+		getCreateResourceBarHeight: () => getCreateResourceBarHeight(),
+		getSearchBarHeight: () => getSearchBarHeight(),
+		getResourceSearchBarHeight: () => getResourceSearchBarHeight(),
+		getSymbolSearchBarHeight: () => getSymbolSearchBarHeight(),
+		getRenameBarHeight: () => getRenameBarHeight(),
+		getLineJumpBarHeight: () => getLineJumpBarHeight(),
+		drawInlineCaret: (
+			a: Api,
+			f: TextField,
+			l: number,
+			t: number,
+			r: number,
+			b: number,
+			bx: number,
+			ac: boolean,
+			cc: { r: number; g: number; b: number; a: number; },
+			tc: number
+		) => drawInlineCaret(a, f, l, t, r, b, bx, ac, cc, tc),
+		inlineFieldSelectionRange: (f: TextField) => inlineFieldSelectionRange(f),
+		inlineFieldMeasureRange: (f: TextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
+		inlineFieldCaretX: (f: TextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
+		blockActiveCarets: (ide_state.problemsPanel.isVisible && ide_state.problemsPanel.isFocused),
+		searchActive: ide_state.searchActive,
+		searchField: ide_state.searchField,
+		searchQuery: ide_state.searchQuery,
+		searchMatchesCount: activeSearchMatchCount(),
+		searchCurrentIndex: ide_state.searchCurrentIndex,
+		searchScope: ide_state.searchScope,
+		searchWorking: ide_state.searchScope === 'global' ? ide_state.globalSearchJob !== null : ide_state.searchJob !== null,
+		searchVisibleResultCount: () => searchVisibleResultCount(),
+		searchResultEntryHeight: () => searchResultEntryHeight(),
+		searchResultEntries: getVisibleSearchResultEntries(),
+		searchResultEntriesBaseOffset: ide_state.searchDisplayOffset,
+		searchSelectionIndex: ide_state.searchCurrentIndex,
+		searchHoverIndex: ide_state.searchHoverIndex,
+		searchDisplayOffset: ide_state.searchDisplayOffset,
+	};
+	renderSearchBar(host);
+}
+
+export function drawSymbolSearchBar(): void {
+	const host: InlineBarsHost = {
+		viewportWidth: ide_state.viewportWidth,
+		headerHeight: ide_state.headerHeight,
+		tabBarHeight: getTabBarTotalHeight(),
+		lineHeight: ide_state.lineHeight,
+		spaceAdvance: ide_state.spaceAdvance,
+		charAdvance: ide_state.charAdvance,
+		measureText: (t: string) => measureText(t),
+		drawText: (t, x, y, c) => drawEditorText(ide_state.font, t, x, y, undefined, c),
+		inlineFieldMetrics: () => ide_state.inlineFieldMetricsRef,
+		createResourceActive: ide_state.createResourceActive,
+		createResourceVisible: ide_state.createResourceVisible,
+		createResourceField: ide_state.createResourceField,
+		createResourceWorking: ide_state.createResourceWorking,
+		createResourceError: ide_state.createResourceError,
+		drawCreateResourceErrorDialog: (_a, m) => drawCreateResourceErrorDialog(m),
+		getCreateResourceBarHeight: () => getCreateResourceBarHeight(),
+		getSearchBarHeight: () => getSearchBarHeight(),
+		getResourceSearchBarHeight: () => getResourceSearchBarHeight(),
+		getSymbolSearchBarHeight: () => getSymbolSearchBarHeight(),
+		getRenameBarHeight: () => getRenameBarHeight(),
+		getLineJumpBarHeight: () => getLineJumpBarHeight(),
+		drawInlineCaret: (
+			a: Api,
+			f: TextField,
+			l: number,
+			t: number,
+			r: number,
+			b: number,
+			bx: number,
+			ac: boolean,
+			cc: { r: number; g: number; b: number; a: number; },
+			tc: number
+		) => drawInlineCaret(a, f, l, t, r, b, bx, ac, cc, tc),
+		inlineFieldSelectionRange: (f: TextField) => inlineFieldSelectionRange(f),
+		inlineFieldMeasureRange: (f: TextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
+		inlineFieldCaretX: (f: TextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
+		blockActiveCarets: (ide_state.problemsPanel.isVisible && ide_state.problemsPanel.isFocused),
+		symbolSearchGlobal: ide_state.symbolSearchGlobal,
+		symbolSearchActive: ide_state.symbolSearchActive,
+		symbolSearchMode: ide_state.symbolSearchMode,
+		symbolSearchField: ide_state.symbolSearchField,
+		symbolSearchVisibleResultCount: () => symbolSearchVisibleResultCount(),
+		symbolSearchEntryHeight: () => symbolSearchEntryHeight(),
+		isSymbolSearchCompactMode: () => isSymbolSearchCompactMode(),
+		symbolSearchMatches: ide_state.symbolSearchMatches,
+		symbolSearchSelectionIndex: ide_state.symbolSearchSelectionIndex,
+		symbolSearchHoverIndex: ide_state.symbolSearchHoverIndex,
+		symbolSearchDisplayOffset: ide_state.symbolSearchDisplayOffset,
+	};
+	renderSymbolSearchBar(api, host);
+}export function drawLineJumpBar(): void {
+	const host: InlineBarsHost = {
+		viewportWidth: ide_state.viewportWidth,
+		headerHeight: ide_state.headerHeight,
+		tabBarHeight: getTabBarTotalHeight(),
+		lineHeight: ide_state.lineHeight,
+		spaceAdvance: ide_state.spaceAdvance,
+		charAdvance: ide_state.charAdvance,
+		measureText: (t: string) => measureText(t),
+		drawText: (t, x, y, c) => drawEditorText(ide_state.font, t, x, y, undefined, c),
+		inlineFieldMetrics: () => ide_state.inlineFieldMetricsRef,
+		createResourceActive: ide_state.createResourceActive,
+		createResourceVisible: ide_state.createResourceVisible,
+		createResourceField: ide_state.createResourceField,
+		createResourceWorking: ide_state.createResourceWorking,
+		createResourceError: ide_state.createResourceError,
+		drawCreateResourceErrorDialog: (_a, m) => drawCreateResourceErrorDialog(m),
+		getCreateResourceBarHeight: () => getCreateResourceBarHeight(),
+		getSearchBarHeight: () => getSearchBarHeight(),
+		getResourceSearchBarHeight: () => getResourceSearchBarHeight(),
+		getSymbolSearchBarHeight: () => getSymbolSearchBarHeight(),
+		getRenameBarHeight: () => getRenameBarHeight(),
+		getLineJumpBarHeight: () => getLineJumpBarHeight(),
+		drawInlineCaret: (
+			a: Api,
+			f: TextField,
+			l: number,
+			t: number,
+			r: number,
+			b: number,
+			bx: number,
+			ac: boolean,
+			cc: { r: number; g: number; b: number; a: number; },
+			tc: number
+		) => drawInlineCaret(a, f, l, t, r, b, bx, ac, cc, tc),
+		inlineFieldSelectionRange: (f: TextField) => inlineFieldSelectionRange(f),
+		inlineFieldMeasureRange: (f: TextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
+		inlineFieldCaretX: (f: TextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
+		blockActiveCarets: (ide_state.problemsPanel.isVisible && ide_state.problemsPanel.isFocused),
+		lineJumpActive: ide_state.lineJumpActive,
+		lineJumpField: ide_state.lineJumpField,
+	};
+	renderLineJumpBar(api, host);
+}
+export function drawRenameBar(): void {
+	const host: InlineBarsHost = {
+		viewportWidth: ide_state.viewportWidth,
+		headerHeight: ide_state.headerHeight,
+		tabBarHeight: getTabBarTotalHeight(),
+		lineHeight: ide_state.lineHeight,
+		spaceAdvance: ide_state.spaceAdvance,
+		charAdvance: ide_state.charAdvance,
+		measureText: (t: string) => measureText(t),
+		drawText: (t, x, y, c) => drawEditorText(ide_state.font, t, x, y, undefined, c),
+		inlineFieldMetrics: () => ide_state.inlineFieldMetricsRef,
+		createResourceActive: ide_state.createResourceActive,
+		createResourceVisible: ide_state.createResourceVisible,
+		createResourceField: ide_state.createResourceField,
+		createResourceWorking: ide_state.createResourceWorking,
+		createResourceError: ide_state.createResourceError,
+		drawCreateResourceErrorDialog: (_a, m) => drawCreateResourceErrorDialog(m),
+		getCreateResourceBarHeight: () => getCreateResourceBarHeight(),
+		getSearchBarHeight: () => getSearchBarHeight(),
+		getResourceSearchBarHeight: () => getResourceSearchBarHeight(),
+		getSymbolSearchBarHeight: () => getSymbolSearchBarHeight(),
+		getRenameBarHeight: () => getRenameBarHeight(),
+		getLineJumpBarHeight: () => getLineJumpBarHeight(),
+		drawInlineCaret: (
+			a: Api,
+			f: TextField,
+			l: number,
+			t: number,
+			r: number,
+			b: number,
+			bx: number,
+			ac: boolean,
+			cc: { r: number; g: number; b: number; a: number; },
+			tc: number
+		) => drawInlineCaret(a, f, l, t, r, b, bx, ac, cc, tc),
+		inlineFieldSelectionRange: (f: TextField) => inlineFieldSelectionRange(f),
+		inlineFieldMeasureRange: (f: TextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
+		inlineFieldCaretX: (f: TextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
+		blockActiveCarets: (ide_state.problemsPanel.isVisible && ide_state.problemsPanel.isFocused),
+		renameActive: ide_state.renameController.isActive(),
+		renameField: ide_state.renameController.getField(),
+		renameMatchCount: ide_state.renameController.getMatchCount(),
+		renameExpression: ide_state.renameController.getExpressionLabel(),
+		renameOriginalName: ide_state.renameController.getOriginalName(),
+	};
+	renderRenameBar(api, host);
+}
+
+export function drawCreateResourceBar(): void {
+	const host = {
+		viewportWidth: ide_state.viewportWidth,
+		headerHeight: ide_state.headerHeight,
+		tabBarHeight: getTabBarTotalHeight(),
+		lineHeight: ide_state.lineHeight,
+		spaceAdvance: ide_state.spaceAdvance,
+		charAdvance: ide_state.charAdvance,
+		measureText: (t: string) => measureText(t),
+		drawText: (t: string, x: number, y: number, c: number) => drawEditorText(ide_state.font, t, x, y, undefined, c),
+		inlineFieldMetrics: () => ide_state.inlineFieldMetricsRef,
+		createResourceActive: ide_state.createResourceActive,
+		createResourceVisible: ide_state.createResourceVisible,
+		createResourceField: ide_state.createResourceField,
+		createResourceWorking: ide_state.createResourceWorking,
+		createResourceError: ide_state.createResourceError,
+		drawCreateResourceErrorDialog: (_a, m) => drawCreateResourceErrorDialog(m),
+		getCreateResourceBarHeight: () => getCreateResourceBarHeight(),
+		getSearchBarHeight: () => getSearchBarHeight(),
+		getResourceSearchBarHeight: () => getResourceSearchBarHeight(),
+		getSymbolSearchBarHeight: () => getSymbolSearchBarHeight(),
+		getRenameBarHeight: () => getRenameBarHeight(),
+		getLineJumpBarHeight: () => getLineJumpBarHeight(),
+		drawInlineCaret: (
+			api3: Api,
+			field: TextField,
+			l: number,
+			t: number,
+			r: number,
+			b: number,
+			baseX: number,
+			active: boolean,
+			caretColor: { r: number; g: number; b: number; a: number; },
+			textColor: number
+		) => drawInlineCaret(api3, field, l, t, r, b, baseX, active, caretColor, textColor),
+		inlineFieldSelectionRange: (f: TextField) => inlineFieldSelectionRange(f),
+		inlineFieldMeasureRange: (f: TextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
+		inlineFieldCaretX: (f: TextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
+		blockActiveCarets: (ide_state.problemsPanel.isVisible && ide_state.problemsPanel.isFocused),
+	};
+	renderCreateResourceBar(api, host);
+}
+

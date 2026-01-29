@@ -14,7 +14,7 @@
 #include "../../rompack/runtime_assets.h"
 #include "../../core/engine_core.h"
 #include "../../rompack/rompack.h"
-#include "../../vm/vm_runtime.h"
+#include "../../emulator/runtime.h"
 #include "../../utils/clamp.h"
 #include "../shared/render_queues.h"
 
@@ -390,7 +390,7 @@ void renderSpriteBatchGLES2(OpenGLES2Backend* backend, GameView* context,
 	if (spriteCount == 0) {
 	return;
 	}
-	// auto& runtime = VMRuntime::instance();
+	// auto& runtime = Runtime::instance();
 	// auto& memory = runtime.memory();
 	if (kSpritesVerboseLog) {
 	auto* primary = OpenGLES2Backend::asTexture(state.atlasPrimaryTex);

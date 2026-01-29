@@ -2,7 +2,7 @@
     "title": "Diamand Slijpen",
     "short_name": "diamand",
     "rom_name": "diamand",
-    "vm": {
+    "machine": {
         "viewport": { "width": 256, "height": 212 },
         "canonicalization": "lower",
         "namespace": "diamand",
