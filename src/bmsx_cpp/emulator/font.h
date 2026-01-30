@@ -4,8 +4,8 @@
  * Mirrors TypeScript emulator/font.ts.
  */
 
-#ifndef BMSX_FONT_H
-#define BMSX_FONT_H
+#ifndef BMSX_EMULATOR_FONT_H
+#define BMSX_EMULATOR_FONT_H
 
 #include "../core/font.h"
 
@@ -25,4 +25,4 @@ public:
 
 } // namespace bmsx
 
-#endif // BMSX_FONT_H
+#endif // BMSX_EMULATOR_FONT_H

@@ -1781,8 +1781,8 @@ function encodeBiosManifest(manifest: RomManifest, projectRootPath?: string): Bu
 	const canonicalization = manifest.machine.canonicalization ?? '';
 	const inputLabel = buildInputLabel(manifest);
 	const rootPath = projectRootPath ?? '';
-	const cpuHz = String(manifest.machine.cpu_freq_hz);
-	const ufps = String(manifest.machine.ufps);
+	const cpuHz = String(manifest.machine.specs.cpu_freq_hz);
+	const ufps = String(manifest.machine.specs.ufps);
 
 	const header = Buffer.alloc(4);
 	header.writeUInt32LE(entryKind, 0);

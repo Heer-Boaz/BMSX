@@ -133,10 +133,7 @@ function applyEngineAtlasLimit(manifest: RomManifest, resources: Resource[]): vo
 		throw new Error('[RomPacker] Engine atlas dimensions are invalid; cannot compute engine_atlas_slot_bytes.');
 	}
 	const bytes = Math.floor(width) * Math.floor(height) * 4;
-	if (!manifest.machine.limits) {
-		manifest.machine.limits = {};
-	}
-	manifest.machine.limits.engine_atlas_slot_bytes = bytes;
+	manifest.machine.specs.engine_atlas_slot_bytes = bytes;
 }
 
 // --- Individual lists that allow us to easily remove tasks from the main task list (visualisation only!) ---
@@ -430,14 +427,14 @@ function parseOptions(args: string[]): ParsedOptions {
 		cartBootloaderFound = true;
 	}
 
-	const defaultBootloaderPath = normalizePathKey('./src/bmsx/emulator/default_cart');
+	const engineDefaultBootloaderPath = normalizePathKey('./src/bmsx/emulator/default_cart');
 	const bootloaderFile = join(normalizePathKey(bootloader_path), 'bootloader.ts');
 	let bootloaderFallbackApplied = false;
 	if (!existsSync(bootloaderFile)) {
-		bootloader_path = defaultBootloaderPath;
+		bootloader_path = engineDefaultBootloaderPath;
 		bootloaderFallbackApplied = true;
 	}
-	const bootloaderFallbackPath = bootloaderFallbackApplied ? defaultBootloaderPath : undefined;
+	const bootloaderFallbackPath = bootloaderFallbackApplied ? engineDefaultBootloaderPath : undefined;
 
 	const resCandidates: Array<string> = [
 		respath,

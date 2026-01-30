@@ -1087,86 +1087,87 @@ bool loadAssetsFromRom(const u8* buffer,
 			if (machineObj.count("namespace")) assets.manifest.namespaceName = machineObj.at("namespace").asString();
 			assets.manifest.canonicalization = parseCanonicalization(machineObj.at("canonicalization").asString());
 			assets.canonicalization = assets.manifest.canonicalization;
-			if (machineObj.count("skybox_face_size")) {
-				assets.manifest.skyboxFaceSize = machineObj.at("skybox_face_size").toI32();
+			if (!machineObj.count("specs") || !machineObj.at("specs").isObject()) {
+				throw std::runtime_error("[RuntimeAssets] machine.specs is required.");
 			}
-			if (!machineObj.count("cpu_freq_hz")) {
-				throw std::runtime_error("[RuntimeAssets] machine.cpu_freq_hz is required.");
+			const auto& specsObj = machineObj.at("specs").asObject();
+			if (specsObj.count("skybox_face_size")) {
+				assets.manifest.skyboxFaceSize = specsObj.at("skybox_face_size").toI32();
 			}
-			const double cpuHzNumber = machineObj.at("cpu_freq_hz").toNumber();
+			if (!specsObj.count("cpu_freq_hz")) {
+				throw std::runtime_error("[RuntimeAssets] machine.specs.cpu_freq_hz is required.");
+			}
+			const double cpuHzNumber = specsObj.at("cpu_freq_hz").toNumber();
 			const i64 cpuHz = static_cast<i64>(cpuHzNumber);
 			if (cpuHzNumber != static_cast<double>(cpuHz) || cpuHz <= 0) {
-				throw std::runtime_error("[RuntimeAssets] machine.cpu_freq_hz must be a positive integer.");
+				throw std::runtime_error("[RuntimeAssets] machine.specs.cpu_freq_hz must be a positive integer.");
 			}
 			assets.manifest.cpuHz = cpuHz;
-			if (!machineObj.count("imgdec_bytes_per_sec")) {
-				throw std::runtime_error("[RuntimeAssets] machine.imgdec_bytes_per_sec is required.");
+			if (!specsObj.count("imgdec_bytes_per_sec")) {
+				throw std::runtime_error("[RuntimeAssets] machine.specs.imgdec_bytes_per_sec is required.");
 			}
-			const double imgDecBytesPerSecNumber = machineObj.at("imgdec_bytes_per_sec").toNumber();
+			const double imgDecBytesPerSecNumber = specsObj.at("imgdec_bytes_per_sec").toNumber();
 			const i64 imgDecBytesPerSec = static_cast<i64>(imgDecBytesPerSecNumber);
 			if (imgDecBytesPerSecNumber != static_cast<double>(imgDecBytesPerSec) || imgDecBytesPerSec <= 0) {
-				throw std::runtime_error("[RuntimeAssets] machine.imgdec_bytes_per_sec must be a positive integer.");
+				throw std::runtime_error("[RuntimeAssets] machine.specs.imgdec_bytes_per_sec must be a positive integer.");
 			}
 			assets.manifest.imgDecBytesPerSec = imgDecBytesPerSec;
-			if (!machineObj.count("dma_bytes_per_sec_iso")) {
-				throw std::runtime_error("[RuntimeAssets] machine.dma_bytes_per_sec_iso is required.");
+			if (!specsObj.count("dma_bytes_per_sec_iso")) {
+				throw std::runtime_error("[RuntimeAssets] machine.specs.dma_bytes_per_sec_iso is required.");
 			}
-			const double dmaBytesPerSecIsoNumber = machineObj.at("dma_bytes_per_sec_iso").toNumber();
+			const double dmaBytesPerSecIsoNumber = specsObj.at("dma_bytes_per_sec_iso").toNumber();
 			const i64 dmaBytesPerSecIso = static_cast<i64>(dmaBytesPerSecIsoNumber);
 			if (dmaBytesPerSecIsoNumber != static_cast<double>(dmaBytesPerSecIso) || dmaBytesPerSecIso <= 0) {
-				throw std::runtime_error("[RuntimeAssets] machine.dma_bytes_per_sec_iso must be a positive integer.");
+				throw std::runtime_error("[RuntimeAssets] machine.specs.dma_bytes_per_sec_iso must be a positive integer.");
 			}
 			assets.manifest.dmaBytesPerSecIso = dmaBytesPerSecIso;
-			if (!machineObj.count("dma_bytes_per_sec_bulk")) {
-				throw std::runtime_error("[RuntimeAssets] machine.dma_bytes_per_sec_bulk is required.");
+			if (!specsObj.count("dma_bytes_per_sec_bulk")) {
+				throw std::runtime_error("[RuntimeAssets] machine.specs.dma_bytes_per_sec_bulk is required.");
 			}
-			const double dmaBytesPerSecBulkNumber = machineObj.at("dma_bytes_per_sec_bulk").toNumber();
+			const double dmaBytesPerSecBulkNumber = specsObj.at("dma_bytes_per_sec_bulk").toNumber();
 			const i64 dmaBytesPerSecBulk = static_cast<i64>(dmaBytesPerSecBulkNumber);
 			if (dmaBytesPerSecBulkNumber != static_cast<double>(dmaBytesPerSecBulk) || dmaBytesPerSecBulk <= 0) {
-				throw std::runtime_error("[RuntimeAssets] machine.dma_bytes_per_sec_bulk must be a positive integer.");
+				throw std::runtime_error("[RuntimeAssets] machine.specs.dma_bytes_per_sec_bulk must be a positive integer.");
 			}
 			assets.manifest.dmaBytesPerSecBulk = dmaBytesPerSecBulk;
-			if (!machineObj.count("ufps")) {
-				throw std::runtime_error("[RuntimeAssets] machine.ufps is required.");
+			if (!specsObj.count("ufps")) {
+				throw std::runtime_error("[RuntimeAssets] machine.specs.ufps is required.");
 			}
-			const double ufpsScaledNumber = machineObj.at("ufps").toNumber();
+			const double ufpsScaledNumber = specsObj.at("ufps").toNumber();
 			const i64 ufpsScaled = static_cast<i64>(ufpsScaledNumber);
 			if (ufpsScaledNumber != static_cast<double>(ufpsScaled) || ufpsScaled <= 0) {
-				throw std::runtime_error("[RuntimeAssets] machine.ufps must be a positive integer.");
+				throw std::runtime_error("[RuntimeAssets] machine.specs.ufps must be a positive integer.");
 			}
 			assets.manifest.ufpsScaled = ufpsScaled;
-			if (machineObj.count("limits") && machineObj.at("limits").isObject()) {
-				const auto& limitsObj = machineObj.at("limits").asObject();
-				if (limitsObj.count("ram_bytes")) {
-					assets.manifest.ramBytes = limitsObj.at("ram_bytes").toI32();
-				}
-				if (limitsObj.count("string_handle_count")) {
-					assets.manifest.stringHandleCount = limitsObj.at("string_handle_count").toI32();
-				}
-				if (limitsObj.count("string_heap_bytes")) {
-					assets.manifest.stringHeapBytes = limitsObj.at("string_heap_bytes").toI32();
-				}
-				if (limitsObj.count("asset_table_bytes")) {
-					assets.manifest.assetTableBytes = limitsObj.at("asset_table_bytes").toI32();
-				}
-				if (limitsObj.count("asset_data_bytes")) {
-					assets.manifest.assetDataBytes = limitsObj.at("asset_data_bytes").toI32();
-				}
-				if (limitsObj.count("atlas_slot_bytes")) {
-					assets.manifest.atlasSlotBytes = limitsObj.at("atlas_slot_bytes").toI32();
-				}
-				if (limitsObj.count("engine_atlas_slot_bytes")) {
-					assets.manifest.engineAtlasSlotBytes = limitsObj.at("engine_atlas_slot_bytes").toI32();
-				}
-				if (limitsObj.count("staging_bytes")) {
-					assets.manifest.stagingBytes = limitsObj.at("staging_bytes").toI32();
-				}
-				if (limitsObj.count("max_voices") && limitsObj.at("max_voices").isObject()) {
-					const auto& voicesObj = limitsObj.at("max_voices").asObject();
-					if (voicesObj.count("sfx")) assets.manifest.maxVoicesSfx = voicesObj.at("sfx").toI32();
-					if (voicesObj.count("music")) assets.manifest.maxVoicesMusic = voicesObj.at("music").toI32();
-					if (voicesObj.count("ui")) assets.manifest.maxVoicesUi = voicesObj.at("ui").toI32();
-				}
+			if (specsObj.count("ram_bytes")) {
+				assets.manifest.ramBytes = specsObj.at("ram_bytes").toI32();
+			}
+			if (specsObj.count("string_handle_count")) {
+				assets.manifest.stringHandleCount = specsObj.at("string_handle_count").toI32();
+			}
+			if (specsObj.count("string_heap_bytes")) {
+				assets.manifest.stringHeapBytes = specsObj.at("string_heap_bytes").toI32();
+			}
+			if (specsObj.count("asset_table_bytes")) {
+				assets.manifest.assetTableBytes = specsObj.at("asset_table_bytes").toI32();
+			}
+			if (specsObj.count("asset_data_bytes")) {
+				assets.manifest.assetDataBytes = specsObj.at("asset_data_bytes").toI32();
+			}
+			if (specsObj.count("atlas_slot_bytes")) {
+				assets.manifest.atlasSlotBytes = specsObj.at("atlas_slot_bytes").toI32();
+			}
+			if (specsObj.count("engine_atlas_slot_bytes")) {
+				assets.manifest.engineAtlasSlotBytes = specsObj.at("engine_atlas_slot_bytes").toI32();
+			}
+			if (specsObj.count("staging_bytes")) {
+				assets.manifest.stagingBytes = specsObj.at("staging_bytes").toI32();
+			}
+			if (specsObj.count("max_voices") && specsObj.at("max_voices").isObject()) {
+				const auto& voicesObj = specsObj.at("max_voices").asObject();
+				if (voicesObj.count("sfx")) assets.manifest.maxVoicesSfx = voicesObj.at("sfx").toI32();
+				if (voicesObj.count("music")) assets.manifest.maxVoicesMusic = voicesObj.at("music").toI32();
+				if (voicesObj.count("ui")) assets.manifest.maxVoicesUi = voicesObj.at("ui").toI32();
 			}
 			if (machineObj.count("viewport") && machineObj.at("viewport").isObject()) {
 				const auto& vpObj = machineObj.at("viewport").asObject();

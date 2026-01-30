@@ -51,7 +51,7 @@ export let VRAM_SECONDARY_ATLAS_SIZE = 0;
 export let ASSET_DATA_ALLOC_END = 0;
 export let RAM_USED_END = RAM_BASE + RAM_SIZE;
 
-export type MemoryMapLimits = {
+export type MemoryMapSpecs = {
 	ram_bytes?: number;
 	string_handle_count?: number;
 	string_heap_bytes?: number;
@@ -115,17 +115,17 @@ function recomputeMemoryLayout(config: {
 	RAM_USED_END = RAM_BASE + RAM_SIZE;
 }
 
-export function configureMemoryMap(limits?: MemoryMapLimits): void {
-	const stringHandleCount = resolvePositiveInteger(limits?.string_handle_count ?? DEFAULT_STRING_HANDLE_COUNT, 'string_handle_count');
-	const stringHeapBytes = resolvePositiveInteger(limits?.string_heap_bytes ?? DEFAULT_STRING_HEAP_SIZE, 'string_heap_bytes');
-	const assetTableBytes = resolvePositiveInteger(limits?.asset_table_bytes ?? DEFAULT_ASSET_TABLE_SIZE, 'asset_table_bytes');
-	const atlasSlotBytes = resolvePositiveInteger(limits?.atlas_slot_bytes ?? DEFAULT_VRAM_ATLAS_SLOT_SIZE, 'atlas_slot_bytes');
-	const engineAtlasSlotBytes = resolvePositiveInteger(limits?.engine_atlas_slot_bytes ?? atlasSlotBytes, 'engine_atlas_slot_bytes');
-	const stagingBytes = resolvePositiveInteger(limits?.staging_bytes ?? DEFAULT_VRAM_STAGING_SIZE, 'staging_bytes');
+export function configureMemoryMap(specs?: MemoryMapSpecs): void {
+	const stringHandleCount = resolvePositiveInteger(specs?.string_handle_count ?? DEFAULT_STRING_HANDLE_COUNT, 'string_handle_count');
+	const stringHeapBytes = resolvePositiveInteger(specs?.string_heap_bytes ?? DEFAULT_STRING_HEAP_SIZE, 'string_heap_bytes');
+	const assetTableBytes = resolvePositiveInteger(specs?.asset_table_bytes ?? DEFAULT_ASSET_TABLE_SIZE, 'asset_table_bytes');
+	const atlasSlotBytes = resolvePositiveInteger(specs?.atlas_slot_bytes ?? DEFAULT_VRAM_ATLAS_SLOT_SIZE, 'atlas_slot_bytes');
+	const engineAtlasSlotBytes = resolvePositiveInteger(specs?.engine_atlas_slot_bytes ?? atlasSlotBytes, 'engine_atlas_slot_bytes');
+	const stagingBytes = resolvePositiveInteger(specs?.staging_bytes ?? DEFAULT_VRAM_STAGING_SIZE, 'staging_bytes');
 	const stringHandleTableBytes = stringHandleCount * STRING_HANDLE_ENTRY_SIZE;
 	const defaultAssetDataBytes = DEFAULT_RAM_SIZE
 		- (IO_REGION_SIZE + stringHandleTableBytes + stringHeapBytes + assetTableBytes + stagingBytes + (atlasSlotBytes * 2) + engineAtlasSlotBytes);
-	const assetDataBytes = resolvePositiveInteger(limits?.asset_data_bytes ?? defaultAssetDataBytes, 'asset_data_bytes');
+	const assetDataBytes = resolvePositiveInteger(specs?.asset_data_bytes ?? defaultAssetDataBytes, 'asset_data_bytes');
 	const computedRamBytes = IO_REGION_SIZE
 		+ stringHandleTableBytes
 		+ stringHeapBytes
@@ -134,8 +134,8 @@ export function configureMemoryMap(limits?: MemoryMapLimits): void {
 		+ stagingBytes
 		+ (atlasSlotBytes * 2)
 		+ engineAtlasSlotBytes;
-	if (limits?.ram_bytes !== undefined) {
-		const ramBytes = resolvePositiveInteger(limits.ram_bytes, 'ram_bytes');
+	if (specs?.ram_bytes !== undefined) {
+		const ramBytes = resolvePositiveInteger(specs.ram_bytes, 'ram_bytes');
 		if (ramBytes !== computedRamBytes) {
 			throw new Error(`[MemoryMap] ram_bytes mismatch (${ramBytes} != ${computedRamBytes}).`);
 		}

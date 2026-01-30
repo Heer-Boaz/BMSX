@@ -149,7 +149,7 @@ import {
 	VRAM_SECONDARY_ATLAS_SIZE,
 	VRAM_STAGING_BASE,
 	VRAM_STAGING_SIZE,
-	type MemoryMapLimits,
+	type MemoryMapSpecs as MemoryMapSpecs,
 } from './memory_map';
 import { VDP } from './vdp';
 import {
@@ -274,41 +274,41 @@ export class Runtime {
 		return new Runtime(options);
 	}
 
-	private static resolveCpuHz(machineConfig: { cpu_freq_hz?: number }): number {
-		const value = machineConfig.cpu_freq_hz;
+	private static resolveCpuHz(specs: { cpu_freq_hz: number }): number {
+		const value = specs.cpu_freq_hz;
 		if (value === undefined) {
-			throw new Error('[Runtime] machine.cpu_freq_hz is required.');
+			throw new Error('[Runtime] machine.specs.cpu_freq_hz is required.');
 		}
 		if (!Number.isSafeInteger(value) || value <= 0) {
-			throw new Error('[Runtime] machine.cpu_freq_hz must be a positive safe integer.');
+			throw new Error('[Runtime] machine.specs.cpu_freq_hz must be a positive safe integer.');
 		}
 		return value;
 	}
 
-	private static resolveBytesPerSec(machineConfig: { [key: string]: number | undefined }, key: string): number {
-		const value = machineConfig[key];
+	private static resolveBytesPerSec(specs: { [key: string]: number | undefined }, key: string): number {
+		const value = specs[key];
 		if (value === undefined) {
-			throw new Error(`[Runtime] machine.${key} is required.`);
+			throw new Error(`[Runtime] machine.specs.${key} is required.`);
 		}
 		if (!Number.isSafeInteger(value) || value <= 0) {
-			throw new Error(`[Runtime] machine.${key} must be a positive safe integer.`);
+			throw new Error(`[Runtime] machine.specs.${key} must be a positive safe integer.`);
 		}
 		return value;
 	}
 
-	private static resolveUfpsScaled(machineConfig: { ufps?: number }): number {
-		const value = machineConfig.ufps;
+	private static resolveUfpsScaled(specs: { ufps: number }): number {
+		const value = specs.ufps;
 		if (value === undefined) {
-			throw new Error('[Runtime] machine.ufps is required.');
+			throw new Error('[Runtime] machine.specs.ufps is required.');
 		}
 		if (!Number.isSafeInteger(value) || value <= 0) {
-			throw new Error('[Runtime] machine.ufps must be a positive safe integer.');
+			throw new Error('[Runtime] machine.specs.ufps must be a positive safe integer.');
 		}
 		return value;
 	}
 
-	private static applyUfpsScaled(machineConfig: { ufps?: number }): number {
-		const ufpsScaled = Runtime.resolveUfpsScaled(machineConfig);
+	private static applyUfpsScaled(specs: { ufps: number }): number {
+		const ufpsScaled = Runtime.resolveUfpsScaled(specs);
 		$.setUfpsScaled(ufpsScaled);
 		return ufpsScaled;
 	}
@@ -508,10 +508,10 @@ export class Runtime {
 		this._cpuHz = value;
 		this.resetTransferCarry();
 	}
-	private setTransferRatesFromManifest(machineConfig: { imgdec_bytes_per_sec?: number; dma_bytes_per_sec_iso?: number; dma_bytes_per_sec_bulk?: number }): void {
-		this.imgDecBytesPerSec = Runtime.resolveBytesPerSec(machineConfig, 'imgdec_bytes_per_sec');
-		this.dmaBytesPerSecIso = Runtime.resolveBytesPerSec(machineConfig, 'dma_bytes_per_sec_iso');
-		this.dmaBytesPerSecBulk = Runtime.resolveBytesPerSec(machineConfig, 'dma_bytes_per_sec_bulk');
+	private setTransferRatesFromManifest(specs: { imgdec_bytes_per_sec: number; dma_bytes_per_sec_iso: number; dma_bytes_per_sec_bulk: number }): void {
+		this.imgDecBytesPerSec = Runtime.resolveBytesPerSec(specs, 'imgdec_bytes_per_sec');
+		this.dmaBytesPerSecIso = Runtime.resolveBytesPerSec(specs, 'dma_bytes_per_sec_iso');
+		this.dmaBytesPerSecBulk = Runtime.resolveBytesPerSec(specs, 'dma_bytes_per_sec_bulk');
 		this.imgRate.set(this.imgDecBytesPerSec);
 		this.dmaIsoRate.set(this.dmaBytesPerSecIso);
 		this.dmaBulkRate.set(this.dmaBytesPerSecBulk);
@@ -659,16 +659,16 @@ export class Runtime {
 			$.set_inputmap(1, { keyboard: null, gamepad: null, pointer: null }); // Default input mapping for player 1 is required even with no cart to prevent errors
 
 			$.set_lua_sources(engineLuaSources);
-			const engineMemoryLimits = Runtime.resolveMemoryMapLimits({
+			const engineMemorySpecs = Runtime.resolveMemoryMapSpecs({
 				manifest: engineLayer.index.manifest,
 				engineManifest: engineLayer.index.manifest,
 				engineSource,
 				assetSource: engineSource,
 				assets: engineLayer.assets,
 			});
-			configureMemoryMap(engineMemoryLimits);
-			Runtime.applyUfpsScaled(engineLayer.index.manifest.machine);
-			const cpuHz = Runtime.resolveCpuHz(engineLayer.index.manifest.machine);
+			configureMemoryMap(engineMemorySpecs);
+			Runtime.applyUfpsScaled(engineLayer.index.manifest.machine.specs);
+			const cpuHz = Runtime.resolveCpuHz(engineLayer.index.manifest.machine.specs);
 			const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuHz, $.ufps_scaled);
 			const memory = new Memory({
 				engineRom: new Uint8Array(engineLayer.payload),
@@ -682,7 +682,7 @@ export class Runtime {
 				cpuHz,
 				cycleBudgetPerFrame,
 			});
-			runtime.setTransferRatesFromManifest(engineLayer.index.manifest.machine);
+			runtime.setTransferRatesFromManifest(engineLayer.index.manifest.machine.specs);
 			runtime.configureProgramSources({
 				engineSources: engineLuaSources,
 				engineAssetSource: engineSource,
@@ -736,7 +736,7 @@ export class Runtime {
 		if (overlayLayer) {
 			applyRuntimeAssetLayer(sizingAssets, overlayLayer);
 		}
-		const memoryLimits = Runtime.resolveMemoryMapLimits({
+		const memoryLimits = Runtime.resolveMemoryMapSpecs({
 			manifest: cartLayer.index.manifest,
 			engineManifest: engineLayer.index.manifest,
 			engineSource,
@@ -744,8 +744,8 @@ export class Runtime {
 			assets: sizingAssets,
 		});
 		configureMemoryMap(memoryLimits);
-		Runtime.applyUfpsScaled(cartLayer.index.manifest.machine);
-		const cpuHz = Runtime.resolveCpuHz(cartLayer.index.manifest.machine);
+		Runtime.applyUfpsScaled(cartLayer.index.manifest.machine.specs);
+		const cpuHz = Runtime.resolveCpuHz(cartLayer.index.manifest.machine.specs);
 		const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuHz, $.ufps_scaled);
 		const memory = new Memory({
 			engineRom: new Uint8Array(engineLayer.payload),
@@ -760,7 +760,7 @@ export class Runtime {
 			cpuHz,
 			cycleBudgetPerFrame,
 		});
-		runtime.setTransferRatesFromManifest(cartLayer.index.manifest.machine);
+		runtime.setTransferRatesFromManifest(cartLayer.index.manifest.machine.specs);
 		runtime.cartAssetLayer = cartLayer;
 		runtime.overlayAssetLayer = overlayLayer;
 		runtime.configureProgramSources({
@@ -974,42 +974,42 @@ export class Runtime {
 		return cursor - assetDataBaseOffset;
 	}
 
-	private static resolveMemoryMapLimits(params: {
+	private static resolveMemoryMapSpecs(params: {
 		manifest: CartridgeIndex['manifest'];
 		engineManifest: CartridgeIndex['manifest'];
 		engineSource: RawAssetSource;
 		assetSource: RawAssetSource;
 		assets: RuntimeAssets;
-	}): MemoryMapLimits {
+	}): MemoryMapSpecs {
 		const machineConfig = params.manifest.machine;
 		const engineMachine = params.engineManifest.machine;
-		const limits = machineConfig.limits;
-		const stringHandleCount = limits?.string_handle_count ?? DEFAULT_STRING_HANDLE_COUNT;
-		const stringHeapBytes = limits?.string_heap_bytes ?? DEFAULT_STRING_HEAP_SIZE;
-		const atlasSlotBytes = limits?.atlas_slot_bytes ?? DEFAULT_VRAM_ATLAS_SLOT_SIZE;
-		const engineAtlasSlotBytes = engineMachine.limits?.engine_atlas_slot_bytes;
+		const specs = machineConfig.specs;
+		const stringHandleCount = specs.string_handle_count ?? DEFAULT_STRING_HANDLE_COUNT;
+		const stringHeapBytes = specs.string_heap_bytes ?? DEFAULT_STRING_HEAP_SIZE;
+		const atlasSlotBytes = specs.atlas_slot_bytes ?? DEFAULT_VRAM_ATLAS_SLOT_SIZE;
+		const engineAtlasSlotBytes = engineMachine.specs.engine_atlas_slot_bytes;
 		if (engineAtlasSlotBytes === undefined) {
-			throw new Error('[Runtime] machine.limits.engine_atlas_slot_bytes is required in the engine manifest.');
+			throw new Error('[Runtime] machine.specs.engine_atlas_slot_bytes is required in the engine manifest.');
 		}
 		if (!Number.isSafeInteger(engineAtlasSlotBytes) || engineAtlasSlotBytes <= 0) {
-			throw new Error('[Runtime] machine.limits.engine_atlas_slot_bytes must be a positive integer.');
+			throw new Error('[Runtime] machine.specs.engine_atlas_slot_bytes must be a positive integer.');
 		}
-		const stagingBytes = limits?.staging_bytes ?? DEFAULT_VRAM_STAGING_SIZE;
+		const stagingBytes = specs.staging_bytes ?? DEFAULT_VRAM_STAGING_SIZE;
 		const assetTableInfo = this.computeAssetTableBytes(params.engineSource, params.assetSource, params.assets);
 		const requiredAssetTableBytes = assetTableInfo.bytes;
-		const assetTableBytes = limits?.asset_table_bytes ?? requiredAssetTableBytes;
-		if (limits?.asset_table_bytes !== undefined && assetTableBytes !== requiredAssetTableBytes) {
-			throw new Error(`[Runtime] machine.limits.asset_table_bytes (${assetTableBytes}) must match required size ${requiredAssetTableBytes}.`);
+		const assetTableBytes = specs.asset_table_bytes ?? requiredAssetTableBytes;
+		if (specs.asset_table_bytes !== undefined && assetTableBytes !== requiredAssetTableBytes) {
+			throw new Error(`[Runtime] machine.specs.asset_table_bytes (${assetTableBytes}) must match required size ${requiredAssetTableBytes}.`);
 		}
 		const assetDataBaseOffset = IO_REGION_SIZE
 			+ (stringHandleCount * STRING_HANDLE_ENTRY_SIZE)
 			+ stringHeapBytes
 			+ assetTableBytes;
-		const skyboxFaceSize = machineConfig.skybox_face_size ?? SKYBOX_FACE_DEFAULT_SIZE;
+		const skyboxFaceSize = specs.skybox_face_size ?? SKYBOX_FACE_DEFAULT_SIZE;
 		const requiredAssetDataBytes = this.computeAssetDataBytes(params.engineSource, params.assetSource, assetDataBaseOffset, skyboxFaceSize);
-		const assetDataBytes = limits?.asset_data_bytes ?? requiredAssetDataBytes;
-		if (limits?.asset_data_bytes !== undefined && assetDataBytes !== requiredAssetDataBytes) {
-			throw new Error(`[Runtime] machine.limits.asset_data_bytes (${assetDataBytes}) must match required size ${requiredAssetDataBytes}.`);
+		const assetDataBytes = specs.asset_data_bytes ?? requiredAssetDataBytes;
+		if (specs.asset_data_bytes !== undefined && assetDataBytes !== requiredAssetDataBytes) {
+			throw new Error(`[Runtime] machine.specs.asset_data_bytes (${assetDataBytes}) must match required size ${requiredAssetDataBytes}.`);
 		}
 		const computedRamBytes = IO_REGION_SIZE
 			+ (stringHandleCount * STRING_HANDLE_ENTRY_SIZE)
@@ -1019,9 +1019,9 @@ export class Runtime {
 			+ stagingBytes
 			+ (atlasSlotBytes * 2)
 			+ engineAtlasSlotBytes;
-		const ramBytes = limits?.ram_bytes ?? computedRamBytes;
-		if (limits?.ram_bytes !== undefined && ramBytes !== computedRamBytes) {
-			throw new Error(`[Runtime] machine.limits.ram_bytes (${ramBytes}) must match required size ${computedRamBytes}.`);
+		const ramBytes = specs.ram_bytes ?? computedRamBytes;
+		if (specs.ram_bytes !== undefined && ramBytes !== computedRamBytes) {
+			throw new Error(`[Runtime] machine.specs.ram_bytes (${ramBytes}) must match required size ${computedRamBytes}.`);
 		}
 		const footprintMiB = (ramBytes / (1024 * 1024)).toFixed(2);
 		console.info(
@@ -2215,11 +2215,11 @@ export class Runtime {
 		if (this.overlayAssetLayer) {
 			applyRuntimeAssetLayer($.assets, this.overlayAssetLayer);
 		}
-		Runtime.applyUfpsScaled($.assets.manifest.machine);
-		const cpuHz = Runtime.resolveCpuHz($.assets.manifest.machine);
+		Runtime.applyUfpsScaled($.assets.manifest.machine.specs);
+		const cpuHz = Runtime.resolveCpuHz($.assets.manifest.machine.specs);
 		this.setCpuHz(cpuHz);
 		this.setCycleBudgetPerFrame(calcCyclesPerFrameScaled(cpuHz, $.ufps_scaled));
-		this.setTransferRatesFromManifest($.assets.manifest.machine);
+		this.setTransferRatesFromManifest($.assets.manifest.machine.specs);
 	}
 
 	private pollSystemBootRequest(): void {
@@ -5208,11 +5208,11 @@ export class Runtime {
 			const manifest = this.cartAssetLayer
 				? this.cartAssetLayer.index.manifest
 				: $.engine_layer.index.manifest;
-			Runtime.applyUfpsScaled(manifest.machine);
-			const cpuHz = Runtime.resolveCpuHz(manifest.machine);
+			Runtime.applyUfpsScaled(manifest.machine.specs);
+			const cpuHz = Runtime.resolveCpuHz(manifest.machine.specs);
 			this.setCpuHz(cpuHz);
 			this.setCycleBudgetPerFrame(calcCyclesPerFrameScaled(cpuHz, $.ufps_scaled));
-			this.setTransferRatesFromManifest(manifest.machine);
+			this.setTransferRatesFromManifest(manifest.machine.specs);
 		}
 		finally {
 			this.luaGate.end(gateToken);

@@ -5,10 +5,11 @@ machine:
     viewport: {width: 256, height: 212}
     canonicalization: lower
     namespace: 'emptycart'
-    cpu_freq_hz: 8000000
-    imgdec_bytes_per_sec: 26214400
-    dma_bytes_per_sec_iso: 8388608
-    dma_bytes_per_sec_bulk: 26214400
-    ufps: 50000000
+    specs:
+        cpu_freq_hz: 8000000
+        imgdec_bytes_per_sec: 26214400
+        dma_bytes_per_sec_iso: 8388608
+        dma_bytes_per_sec_bulk: 26214400
+        ufps: 50000000
 lua:
     entry_path: entry.lua

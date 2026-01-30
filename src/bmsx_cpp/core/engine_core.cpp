@@ -261,7 +261,7 @@ MemoryMapConfig resolveMemoryMapConfig(const RomManifest& manifest, const RomMan
 	return config;
 }
 
-void applyManifestMemoryLimits(const RomManifest& manifest, const RomManifest& engineManifest, const RuntimeAssets& assets, const RuntimeAssets& engineAssets) {
+void applyManifestMemorySpecs(const RomManifest& manifest, const RomManifest& engineManifest, const RuntimeAssets& assets, const RuntimeAssets& engineAssets) {
 	const MemoryMapConfig config = resolveMemoryMapConfig(manifest, engineManifest, assets, engineAssets);
 	configureMemoryMap(config);
 }
@@ -280,44 +280,44 @@ bool tryResolveCpuHz(const RomManifest& manifest, i64& outHz) {
 
 i64 resolveCpuHz(const RomManifest& manifest) {
 	if (!manifest.cpuHz) {
-		throw std::runtime_error("[EngineCore] machine.cpu_freq_hz is required.");
+		throw std::runtime_error("[EngineCore] machine.specs.cpu_freq_hz is required.");
 	}
 	const i64 hz = *manifest.cpuHz;
 	if (hz <= 0) {
-		throw std::runtime_error("[EngineCore] machine.cpu_freq_hz must be a positive integer.");
+		throw std::runtime_error("[EngineCore] machine.specs.cpu_freq_hz must be a positive integer.");
 	}
 	return hz;
 }
 
 i64 resolveImgDecBytesPerSec(const RomManifest& manifest) {
 	if (!manifest.imgDecBytesPerSec) {
-		throw std::runtime_error("[EngineCore] machine.imgdec_bytes_per_sec is required.");
+		throw std::runtime_error("[EngineCore] machine.specs.imgdec_bytes_per_sec is required.");
 	}
 	const i64 value = *manifest.imgDecBytesPerSec;
 	if (value <= 0) {
-		throw std::runtime_error("[EngineCore] machine.imgdec_bytes_per_sec must be a positive integer.");
+		throw std::runtime_error("[EngineCore] machine.specs.imgdec_bytes_per_sec must be a positive integer.");
 	}
 	return value;
 }
 
 i64 resolveDmaBytesPerSecIso(const RomManifest& manifest) {
 	if (!manifest.dmaBytesPerSecIso) {
-		throw std::runtime_error("[EngineCore] machine.dma_bytes_per_sec_iso is required.");
+		throw std::runtime_error("[EngineCore] machine.specs.dma_bytes_per_sec_iso is required.");
 	}
 	const i64 value = *manifest.dmaBytesPerSecIso;
 	if (value <= 0) {
-		throw std::runtime_error("[EngineCore] machine.dma_bytes_per_sec_iso must be a positive integer.");
+		throw std::runtime_error("[EngineCore] machine.specs.dma_bytes_per_sec_iso must be a positive integer.");
 	}
 	return value;
 }
 
 i64 resolveDmaBytesPerSecBulk(const RomManifest& manifest) {
 	if (!manifest.dmaBytesPerSecBulk) {
-		throw std::runtime_error("[EngineCore] machine.dma_bytes_per_sec_bulk is required.");
+		throw std::runtime_error("[EngineCore] machine.specs.dma_bytes_per_sec_bulk is required.");
 	}
 	const i64 value = *manifest.dmaBytesPerSecBulk;
 	if (value <= 0) {
-		throw std::runtime_error("[EngineCore] machine.dma_bytes_per_sec_bulk must be a positive integer.");
+		throw std::runtime_error("[EngineCore] machine.specs.dma_bytes_per_sec_bulk must be a positive integer.");
 	}
 	return value;
 }
@@ -336,11 +336,11 @@ bool tryResolveUfpsScaled(const RomManifest& manifest, i64& outUfpsScaled) {
 
 i64 resolveUfpsScaled(const RomManifest& manifest) {
 	if (!manifest.ufpsScaled) {
-		throw std::runtime_error("[EngineCore] machine.ufps is required.");
+		throw std::runtime_error("[EngineCore] machine.specs.ufps is required.");
 	}
 	const i64 ufpsScaled = *manifest.ufpsScaled;
 	if (ufpsScaled <= 0) {
-		throw std::runtime_error("[EngineCore] machine.ufps must be a positive integer.");
+		throw std::runtime_error("[EngineCore] machine.specs.ufps must be a positive integer.");
 	}
 	return ufpsScaled;
 }
@@ -799,7 +799,7 @@ bool EngineCore::bootWithoutCart() {
 	m_assets.projectRootPath = m_engine_assets.projectRootPath;
 	const i64 ufpsScaled = resolveUfpsScaled(m_engine_assets.manifest);
 	setUfpsScaled(ufpsScaled);
-	applyManifestMemoryLimits(m_assets.manifest, m_engine_assets.manifest, m_assets, m_engine_assets);
+	applyManifestMemorySpecs(m_assets.manifest, m_engine_assets.manifest, m_assets, m_engine_assets);
 	// Don't copy programAsset - use engine_assets.programAsset directly below
 
 	Vec2 viewportSize{
@@ -914,7 +914,7 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 	m_assets.projectRootPath = std::move(cartAssets.projectRootPath);
 	const i64 ufpsScaled = resolveUfpsScaled(m_assets.manifest);
 	setUfpsScaled(ufpsScaled);
-	applyManifestMemoryLimits(m_assets.manifest, m_engine_assets.manifest, m_assets, m_engine_assets);
+	applyManifestMemorySpecs(m_assets.manifest, m_engine_assets.manifest, m_assets, m_engine_assets);
 	i64 cpuHz = 0;
 	const bool cartCpuValid = tryResolveCpuHz(m_assets.manifest, cpuHz);
 	if (!cartCpuValid) {
@@ -923,9 +923,9 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 		if (!m_engine_assets_loaded
 			|| !tryResolveCpuHz(m_engine_assets.manifest, engineCpuHz)
 			|| !tryResolveUfpsScaled(m_engine_assets.manifest, engineUfpsScaled)) {
-			throw std::runtime_error("[EngineCore] machine.cpu_freq_hz is required.");
+			throw std::runtime_error("[EngineCore] machine.specs.cpu_freq_hz is required.");
 		}
-		std::cerr << "[EngineCore] Cart manifest machine.cpu_freq_hz is required; booting BIOS only." << std::endl;
+		std::cerr << "[EngineCore] Cart manifest machine.specs.cpu_freq_hz is required; booting BIOS only." << std::endl;
 		cpuHz = engineCpuHz;
 		setUfpsScaled(engineUfpsScaled);
 	}
@@ -974,7 +974,7 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 		runtime.resetCartBootState();
 	} else {
 		if (!cartCpuValid) {
-			std::cerr << "[EngineCore] Cart manifest machine.cpu_freq_hz is required; cannot boot cart without BIOS." << std::endl;
+			std::cerr << "[EngineCore] Cart manifest machine.specs.cpu_freq_hz is required; cannot boot cart without BIOS." << std::endl;
 			return false;
 		}
 		// Boot the runtime if we have a pre-compiled program
@@ -1052,12 +1052,12 @@ bool EngineCore::resetLoadedRom() {
 	if (!cartCpuValid) {
 		i64 engineUfpsScaled = 0;
 		if (!m_engine_assets_loaded || !tryResolveCpuHz(m_engine_assets.manifest, cpuHz)) {
-			std::cerr << "[EngineCore] Cart manifest machine.cpu_freq_hz is required; cannot reset cart." << std::endl;
+			std::cerr << "[EngineCore] Cart manifest machine.specs.cpu_freq_hz is required; cannot reset cart." << std::endl;
 			return false;
 		}
-		std::cerr << "[EngineCore] Cart manifest machine.cpu_freq_hz is required; booting BIOS only." << std::endl;
+		std::cerr << "[EngineCore] Cart manifest machine.specs.cpu_freq_hz is required; booting BIOS only." << std::endl;
 		if (!tryResolveUfpsScaled(m_engine_assets.manifest, engineUfpsScaled)) {
-			throw std::runtime_error("[EngineCore] machine.ufps is required.");
+			throw std::runtime_error("[EngineCore] machine.specs.ufps is required.");
 		}
 		setUfpsScaled(engineUfpsScaled);
 	} else {

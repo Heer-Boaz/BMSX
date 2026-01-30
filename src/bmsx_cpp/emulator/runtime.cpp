@@ -4284,50 +4284,51 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 			machineTable->set(key("namespace"), str(manifest.namespaceName));
 		}
 		machineTable->set(key("canonicalization"), str(canonicalizationLabel(manifest.canonicalization)));
-		if (manifest.skyboxFaceSize > 0) {
-			machineTable->set(key("skybox_face_size"), valueNumber(static_cast<double>(manifest.skyboxFaceSize)));
-		}
-		if (manifest.cpuHz) {
-			machineTable->set(key("cpu_freq_hz"), valueNumber(static_cast<double>(*manifest.cpuHz)));
-		}
-		if (manifest.imgDecBytesPerSec) {
-			machineTable->set(key("imgdec_bytes_per_sec"), valueNumber(static_cast<double>(*manifest.imgDecBytesPerSec)));
-		}
-		if (manifest.dmaBytesPerSecIso) {
-			machineTable->set(key("dma_bytes_per_sec_iso"), valueNumber(static_cast<double>(*manifest.dmaBytesPerSecIso)));
-		}
-		if (manifest.dmaBytesPerSecBulk) {
-			machineTable->set(key("dma_bytes_per_sec_bulk"), valueNumber(static_cast<double>(*manifest.dmaBytesPerSecBulk)));
-		}
 		if (manifest.viewportWidth > 0 && manifest.viewportHeight > 0) {
 			auto* viewportTable = m_cpu.createTable(0, 2);
 			viewportTable->set(key("width"), valueNumber(static_cast<double>(manifest.viewportWidth)));
 			viewportTable->set(key("height"), valueNumber(static_cast<double>(manifest.viewportHeight)));
 			machineTable->set(key("viewport"), valueTable(viewportTable));
 		}
-		if (manifest.atlasSlotBytes || manifest.stagingBytes || manifest.maxVoicesSfx || manifest.maxVoicesMusic || manifest.maxVoicesUi) {
-			auto* limitsTable = m_cpu.createTable(0, 3);
-			if (manifest.atlasSlotBytes) {
-				limitsTable->set(key("atlas_slot_bytes"), valueNumber(static_cast<double>(*manifest.atlasSlotBytes)));
-			}
-			if (manifest.stagingBytes) {
-				limitsTable->set(key("staging_bytes"), valueNumber(static_cast<double>(*manifest.stagingBytes)));
-			}
-			if (manifest.maxVoicesSfx || manifest.maxVoicesMusic || manifest.maxVoicesUi) {
-				auto* voicesTable = m_cpu.createTable(0, 3);
-				if (manifest.maxVoicesSfx) {
-					voicesTable->set(key("sfx"), valueNumber(static_cast<double>(*manifest.maxVoicesSfx)));
-				}
-				if (manifest.maxVoicesMusic) {
-					voicesTable->set(key("music"), valueNumber(static_cast<double>(*manifest.maxVoicesMusic)));
-				}
-				if (manifest.maxVoicesUi) {
-					voicesTable->set(key("ui"), valueNumber(static_cast<double>(*manifest.maxVoicesUi)));
-				}
-				limitsTable->set(key("max_voices"), valueTable(voicesTable));
-			}
-			machineTable->set(key("limits"), valueTable(limitsTable));
+		auto* specsTable = m_cpu.createTable(0, 6);
+		if (manifest.cpuHz) {
+			specsTable->set(key("cpu_freq_hz"), valueNumber(static_cast<double>(*manifest.cpuHz)));
 		}
+		if (manifest.imgDecBytesPerSec) {
+			specsTable->set(key("imgdec_bytes_per_sec"), valueNumber(static_cast<double>(*manifest.imgDecBytesPerSec)));
+		}
+		if (manifest.dmaBytesPerSecIso) {
+			specsTable->set(key("dma_bytes_per_sec_iso"), valueNumber(static_cast<double>(*manifest.dmaBytesPerSecIso)));
+		}
+		if (manifest.dmaBytesPerSecBulk) {
+			specsTable->set(key("dma_bytes_per_sec_bulk"), valueNumber(static_cast<double>(*manifest.dmaBytesPerSecBulk)));
+		}
+		if (manifest.ufpsScaled) {
+			specsTable->set(key("ufps"), valueNumber(static_cast<double>(*manifest.ufpsScaled)));
+		}
+		if (manifest.skyboxFaceSize > 0) {
+			specsTable->set(key("skybox_face_size"), valueNumber(static_cast<double>(manifest.skyboxFaceSize)));
+		}
+		if (manifest.atlasSlotBytes) {
+			specsTable->set(key("atlas_slot_bytes"), valueNumber(static_cast<double>(*manifest.atlasSlotBytes)));
+		}
+		if (manifest.stagingBytes) {
+			specsTable->set(key("staging_bytes"), valueNumber(static_cast<double>(*manifest.stagingBytes)));
+		}
+		if (manifest.maxVoicesSfx || manifest.maxVoicesMusic || manifest.maxVoicesUi) {
+			auto* voicesTable = m_cpu.createTable(0, 3);
+			if (manifest.maxVoicesSfx) {
+				voicesTable->set(key("sfx"), valueNumber(static_cast<double>(*manifest.maxVoicesSfx)));
+			}
+			if (manifest.maxVoicesMusic) {
+				voicesTable->set(key("music"), valueNumber(static_cast<double>(*manifest.maxVoicesMusic)));
+			}
+			if (manifest.maxVoicesUi) {
+				voicesTable->set(key("ui"), valueNumber(static_cast<double>(*manifest.maxVoicesUi)));
+			}
+			specsTable->set(key("max_voices"), valueTable(voicesTable));
+		}
+		machineTable->set(key("specs"), valueTable(specsTable));
 		manifestTable->set(key("machine"), valueTable(machineTable));
 		auto* luaTable = m_cpu.createTable(0, 1);
 		luaTable->set(key("entry_path"), str(manifest.entryPoint));

@@ -2,15 +2,17 @@ title: Pietsona 2025
 short_name: '2025'
 rom_name: '2025'
 machine:
-    viewport: {width: 320, height: 240}
+    viewport: 
+        width: 320
+        height: 240
     canonicalization: lower
     namespace: 'pietsona2025'
-    cpu_freq_hz: 5000000 # 5 MHz
-    imgdec_bytes_per_sec: 26214400 # 25 MB/s
-    dma_bytes_per_sec_iso: 8388608 # 8 MB/s
-    dma_bytes_per_sec_bulk: 26214400 # 25 MB/s
-    ufps: 50000000 # 50 FPS
-    limits:
+    specs:
+        cpu_freq_hz: 5000000 # 5 MHz
+        imgdec_bytes_per_sec: 26214400 # 25 MB/s
+        dma_bytes_per_sec_iso: 8388608 # 8 MB/s
+        dma_bytes_per_sec_bulk: 26214400 # 25 MB/s
+        ufps: 50000000 # 50 FPS
         # Breakdown of string_heap, asset_table, asset_data, atlas_slot, and staging:
         string_handle_count: 32768 # 32K
         string_heap_bytes: 4194304 # 4 MB

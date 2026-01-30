@@ -429,9 +429,9 @@ export class EngineCore {
 			resolver,
 			(id) => runtime.getAudioBytes(runtime.getAssetEntry(id))
 		);
-		const limits = this._assets.manifest.machine.limits;
-		if (limits && limits.max_voices) {
-			SoundMaster.instance.setMaxVoicesByType(limits.max_voices);
+		const specs = this._assets.manifest.machine.specs;
+		if (specs.max_voices) {
+			SoundMaster.instance.setMaxVoicesByType(specs.max_voices);
 		}
 	}
 
@@ -470,7 +470,7 @@ export class EngineCore {
 		this.running = false;
 		this._paused = false;
 		this.wasupdated = true;
-		this.setUfpsScaled(engineLayer.index.manifest.machine.ufps);
+		this.setUfpsScaled(engineLayer.index.manifest.machine.specs.ufps);
 		this.recomputeTimingCaches();
 
 		this._debug = debug ?? this._debug;

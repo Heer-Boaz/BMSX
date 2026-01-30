@@ -74,11 +74,20 @@
 					"type": "string",
 					"description": "Namespace used for this cart (e.g. for Lua globals)."
 				},
-				"skybox_face_size": {
-					"type": "integer",
-					"minimum": 1,
-					"description": "Maximum skybox face size in pixels (square)."
-				},
+				"specs": {
+					"$ref": "#/definitions/machineSpecs"
+				}
+			},
+			"required": [
+				"namespace",
+				"specs"
+			],
+			"additionalProperties": false
+		},
+		"machineSpecs": {
+			"type": "object",
+			"description": "Machine specs for performance limits and memory budgets.",
+			"properties": {
 				"cpu_freq_hz": {
 					"type": "integer",
 					"minimum": 1,
@@ -104,24 +113,11 @@
 					"minimum": 1,
 					"description": "Machine tick rate in scaled Hz (micro-Hz). Example: 59.94 Hz => 59940000."
 				},
-				"limits": {
-					"$ref": "#/definitions/machineLimits"
-				}
-			},
-			"required": [
-				"namespace",
-				"cpu_freq_hz",
-				"imgdec_bytes_per_sec",
-				"dma_bytes_per_sec_iso",
-				"dma_bytes_per_sec_bulk",
-				"ufps"
-			],
-			"additionalProperties": false
-		},
-		"machineLimits": {
-			"type": "object",
-			"description": "Soft machine limits for memory and budgets.",
-			"properties": {
+				"skybox_face_size": {
+					"type": "integer",
+					"minimum": 1,
+					"description": "Maximum skybox face size in pixels (square)."
+				},
 				"ram_bytes": {
 					"type": "integer",
 					"minimum": 1
@@ -155,12 +151,19 @@
 					"minimum": 1
 				},
 				"max_voices": {
-					"$ref": "#/definitions/machineVoiceLimits"
+					"$ref": "#/definitions/machineVoiceSpecs"
 				}
 			},
+			"required": [
+				"cpu_freq_hz",
+				"imgdec_bytes_per_sec",
+				"dma_bytes_per_sec_iso",
+				"dma_bytes_per_sec_bulk",
+				"ufps"
+			],
 			"additionalProperties": false
 		},
-		"machineVoiceLimits": {
+		"machineVoiceSpecs": {
 			"type": "object",
 			"description": "Per-channel voice caps.",
 			"properties": {
