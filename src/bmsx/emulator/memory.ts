@@ -187,6 +187,9 @@ export class Memory {
 			if (entry.ownerIndex !== index) {
 				continue;
 			}
+			if (this.isVramRange(entry.baseAddr, entry.capacity)) {
+				continue;
+			}
 			this.mapAssetPages(index, entry.baseAddr, entry.capacity);
 		}
 		this.assetDataCursor = this.cartAssetDataBase;
@@ -447,6 +450,9 @@ export class Memory {
 		for (let index = 0; index < this.assetEntries.length; index += 1) {
 			const entry = this.assetEntries[index];
 			if (entry.ownerIndex === index) {
+				if (this.isVramRange(entry.baseAddr, entry.capacity)) {
+					continue;
+				}
 				this.assetDirtyOwners.add(index);
 			}
 		}
@@ -801,6 +807,9 @@ export class Memory {
 		for (let index = 0; index < entryCount; index += 1) {
 			const entry = this.assetEntries[index];
 			if (entry.ownerIndex !== index) {
+				continue;
+			}
+			if (this.isVramRange(entry.baseAddr, entry.capacity)) {
 				continue;
 			}
 			this.mapAssetPages(index, entry.baseAddr, entry.capacity);

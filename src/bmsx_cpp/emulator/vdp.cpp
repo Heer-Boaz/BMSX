@@ -4,6 +4,7 @@
 #include "../render/texturemanager.h"
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <stdexcept>
 
 namespace bmsx {
@@ -17,11 +18,17 @@ bool isAtlasName(const std::string& name) {
 }
 
 VDP::VDP(Memory& memory)
-	: m_memory(memory) {
+	: m_memory(memory)
+	, m_vramStaging(VRAM_STAGING_SIZE) {
 	m_memory.setVramWriter(this);
 }
 
 void VDP::writeVram(uint32_t addr, const u8* data, size_t length) {
+	if (addr >= VRAM_STAGING_BASE && addr + length <= VRAM_STAGING_BASE + VRAM_STAGING_SIZE) {
+		const uint32_t offset = addr - VRAM_STAGING_BASE;
+		std::memcpy(m_vramStaging.data() + offset, data, length);
+		return;
+	}
 	const auto& slot = findVramSlot(addr, length);
 	auto* entry = slot.entry;
 	if (!entry || entry->baseStride == 0 || entry->regionW == 0 || entry->regionH == 0) {

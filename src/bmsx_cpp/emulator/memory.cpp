@@ -176,6 +176,9 @@ void Memory::resetCartAssets() {
 		if (entry.ownerIndex != index) {
 			continue;
 		}
+		if (isVramRange(entry.baseAddr, entry.capacity)) {
+			continue;
+		}
 		mapAssetPages(index, entry.baseAddr, entry.capacity);
 	}
 	m_assetDataCursor = m_cartAssetDataBase;
@@ -410,6 +413,9 @@ std::vector<Memory::AssetEntry*> Memory::consumeDirtyAssets() {
 void Memory::markAllAssetsDirty() {
 	for (size_t index = 0; index < m_assetEntries.size(); ++index) {
 		if (m_assetEntries[index].ownerIndex != index) {
+			continue;
+		}
+		if (isVramRange(m_assetEntries[index].baseAddr, m_assetEntries[index].capacity)) {
 			continue;
 		}
 		if (m_assetDirtyFlags[index] == 0) {

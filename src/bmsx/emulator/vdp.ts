@@ -19,7 +19,7 @@ import { decodePngToRgba } from '../utils/image_decode';
 import { IO_VDP_DITHER, IO_VDP_PRIMARY_ATLAS_ID, IO_VDP_SECONDARY_ATLAS_ID, VDP_ATLAS_ID_NONE } from './io';
 import type { AssetEntry, VramWriteSink } from './memory';
 import { Memory } from './memory';
-import { VRAM_ENGINE_ATLAS_BASE, VRAM_ENGINE_ATLAS_SIZE, VRAM_PRIMARY_ATLAS_BASE, VRAM_PRIMARY_ATLAS_SIZE, VRAM_SECONDARY_ATLAS_BASE, VRAM_SECONDARY_ATLAS_SIZE } from './memory_map';
+import { VRAM_ENGINE_ATLAS_BASE, VRAM_ENGINE_ATLAS_SIZE, VRAM_PRIMARY_ATLAS_BASE, VRAM_PRIMARY_ATLAS_SIZE, VRAM_SECONDARY_ATLAS_BASE, VRAM_SECONDARY_ATLAS_SIZE, VRAM_STAGING_BASE, VRAM_STAGING_SIZE } from './memory_map';
 
 const SKYBOX_FACE_KEYS = ['posx', 'negx', 'posy', 'negy', 'posz', 'negz'] as const;
 const SKYBOX_SLOT_ID_SET = new Set<string>(SKYBOX_SLOT_IDS);
@@ -32,6 +32,7 @@ export class VDP implements VramWriteSink {
 	private readonly slotAtlasIds: Array<number | null> = [null, null];
 	private atlasSlotEntries: AssetEntry[] = [];
 	private vramSlots: Array<{ baseAddr: number; capacity: number; entry: AssetEntry; textureKey: string }> = [];
+	private vramStaging = new Uint8Array(VRAM_STAGING_SIZE);
 	private skyboxSlotEntries: AssetEntry[] = [];
 	private dirtyAtlasBindings = false;
 	private dirtySkybox = false;
@@ -45,6 +46,10 @@ export class VDP implements VramWriteSink {
 	}
 
 	public writeVram(addr: number, bytes: Uint8Array): void {
+		if (addr >= VRAM_STAGING_BASE && addr + bytes.byteLength <= VRAM_STAGING_BASE + VRAM_STAGING_SIZE) {
+			this.writeVramStaging(addr, bytes);
+			return;
+		}
 		const slot = this.findVramSlot(addr, bytes.byteLength);
 		const entry = slot.entry;
 		if (entry.baseStride === 0 || entry.regionW === 0 || entry.regionH === 0) {
@@ -449,6 +454,14 @@ export class VDP implements VramWriteSink {
 
 	private updateTextureRegion(textureKey: string, pixels: Uint8Array, width: number, height: number, x: number, y: number): void {
 		$.texmanager.updateTextureRegionForKey(textureKey, pixels, width, height, x, y);
+	}
+
+	private writeVramStaging(addr: number, bytes: Uint8Array): void {
+		const offset = addr - VRAM_STAGING_BASE;
+		if (offset < 0 || offset + bytes.byteLength > this.vramStaging.byteLength) {
+			throw new Error(`[BmsxVDP] VRAM staging write out of bounds (addr=${addr}, len=${bytes.byteLength}).`);
+		}
+		this.vramStaging.set(bytes, offset);
 	}
 
 	private registerVramSlot(entry: AssetEntry, textureKey: string): void {

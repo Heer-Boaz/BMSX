@@ -45,6 +45,7 @@ private:
 	std::unordered_map<i32, i32> m_atlasSlotById;
 	std::array<i32, 2> m_slotAtlasIds{{-1, -1}};
 	std::vector<VramSlot> m_vramSlots;
+	std::vector<u8> m_vramStaging;
 	bool m_dirtyAtlasBindings = false;
 	bool m_dirtySkybox = false;
 	SkyboxImageIds m_skyboxFaceIds;
