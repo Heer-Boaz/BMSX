@@ -224,10 +224,7 @@ MemoryMapConfig resolveMemoryMapConfig(const RomManifest& manifest, const RomMan
 		+ static_cast<uint64_t>(stringHandleTableBytes)
 		+ static_cast<uint64_t>(config.stringHeapBytes)
 		+ static_cast<uint64_t>(config.assetTableBytes)
-		+ static_cast<uint64_t>(config.assetDataBytes)
-		+ static_cast<uint64_t>(config.stagingBytes)
-		+ static_cast<uint64_t>(config.atlasSlotBytes) * 2u
-		+ static_cast<uint64_t>(config.engineAtlasSlotBytes);
+		+ static_cast<uint64_t>(config.assetDataBytes);
 	if (computedRamBytes > std::numeric_limits<uint32_t>::max()) {
 		throw std::runtime_error("[EngineCore] ram_bytes exceeds addressable range.");
 	}

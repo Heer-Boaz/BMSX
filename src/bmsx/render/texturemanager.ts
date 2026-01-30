@@ -366,6 +366,25 @@ export class TextureManager implements RegisterablePersistent {
 		}
 	}
 
+	public updateTextureRegionForKey(keyBase: string, pixels: Uint8Array, width: number, height: number, x: number, y: number): void {
+		if (!this.backend) throw new Error('TextureManager backend not set');
+		if (width <= 0 || height <= 0) {
+			return;
+		}
+		const prefix = `${keyBase}|`;
+		const source: TextureSource = { width, height, data: pixels };
+		for (const key of this.gpuCache.keys()) {
+			if (!key.startsWith(prefix)) {
+				continue;
+			}
+			const entry = this.gpuCache.get(key);
+			if (!entry || !entry.handle) {
+				continue;
+			}
+			this.backend.updateTextureRegion(entry.handle, source, x, y);
+		}
+	}
+
 	public getImage(key: ImageKey): TextureSource {
 		const imgEntry = this.imageCache.get(key);
 		return imgEntry?.bitmap;

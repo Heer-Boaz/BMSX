@@ -17,20 +17,21 @@ import {
 import type { RawAssetSource } from '../rompack/asset_source';
 import { decodePngToRgba } from '../utils/image_decode';
 import { IO_VDP_DITHER, IO_VDP_PRIMARY_ATLAS_ID, IO_VDP_SECONDARY_ATLAS_ID, VDP_ATLAS_ID_NONE } from './io';
-import type { AssetEntry } from './memory';
+import type { AssetEntry, VramWriteSink } from './memory';
 import { Memory } from './memory';
 import { VRAM_ENGINE_ATLAS_BASE, VRAM_ENGINE_ATLAS_SIZE, VRAM_PRIMARY_ATLAS_BASE, VRAM_PRIMARY_ATLAS_SIZE, VRAM_SECONDARY_ATLAS_BASE, VRAM_SECONDARY_ATLAS_SIZE } from './memory_map';
 
 const SKYBOX_FACE_KEYS = ['posx', 'negx', 'posy', 'negy', 'posz', 'negz'] as const;
 const SKYBOX_SLOT_ID_SET = new Set<string>(SKYBOX_SLOT_IDS);
 
-export class VDP {
+export class VDP implements VramWriteSink {
 	private readonly assetUpdateGate = taskGate.group('asset:update');
 	private readonly atlasSlotById = new Map<number, number>();
 	private readonly atlasViewsById = new Map<number, AssetEntry[]>();
 	private readonly atlasResourcesById = new Map<number, RomAsset>();
 	private readonly slotAtlasIds: Array<number | null> = [null, null];
 	private atlasSlotEntries: AssetEntry[] = [];
+	private vramSlots: Array<{ baseAddr: number; capacity: number; entry: AssetEntry; textureKey: string }> = [];
 	private skyboxSlotEntries: AssetEntry[] = [];
 	private dirtyAtlasBindings = false;
 	private dirtySkybox = false;
@@ -39,7 +40,43 @@ export class VDP {
 
 	public constructor(
 		private readonly memory: Memory,
-	) {}
+	) {
+		this.memory.setVramWriter(this);
+	}
+
+	public writeVram(addr: number, bytes: Uint8Array): void {
+		const slot = this.findVramSlot(addr, bytes.byteLength);
+		const entry = slot.entry;
+		if (entry.baseStride === 0 || entry.regionW === 0 || entry.regionH === 0) {
+			throw new Error(`[BmsxVDP] VRAM slot '${entry.id}' is not initialized.`);
+		}
+		const offset = addr - slot.baseAddr;
+		const stride = entry.baseStride;
+		const rowCount = entry.regionH;
+		const totalBytes = rowCount * stride;
+		if (offset + bytes.byteLength > totalBytes) {
+			throw new Error(`[BmsxVDP] VRAM write out of bounds for '${entry.id}'.`);
+		}
+		if ((offset & 3) !== 0 || (bytes.byteLength & 3) !== 0) {
+			throw new Error(`[BmsxVDP] VRAM writes must be 32-bit aligned for '${entry.id}'.`);
+		}
+		let remaining = bytes.byteLength;
+		let cursor = 0;
+		let row = Math.floor(offset / stride);
+		let rowOffset = offset - row * stride;
+		while (remaining > 0) {
+			const rowAvailable = stride - rowOffset;
+			const rowBytes = remaining < rowAvailable ? remaining : rowAvailable;
+			const x = rowOffset / 4;
+			const width = rowBytes / 4;
+			const slice = bytes.subarray(cursor, cursor + rowBytes);
+			this.updateTextureRegion(slot.textureKey, slice, width, 1, x, row);
+			remaining -= rowBytes;
+			cursor += rowBytes;
+			row += 1;
+			rowOffset = 0;
+		}
+	}
 
 	public initializeRegisters(): void {
 		const dither = 0;
@@ -178,6 +215,7 @@ export class VDP {
 		this.slotAtlasIds[0] = null;
 		this.slotAtlasIds[1] = null;
 		this.dirtyAtlasBindings = true;
+		this.vramSlots = [];
 		this.skyboxSlotEntries = [];
 		this.skyboxFaceIds = null;
 		this.dirtySkybox = true;
@@ -237,6 +275,7 @@ export class VDP {
 		if (engineEntryCreated) {
 			seedAtlasSlot(engineEntryRecord);
 		}
+		this.registerVramSlot(engineEntryRecord, ENGINE_ATLAS_TEXTURE_KEY);
 
 		const skyboxFaceSize = getMachinePerfSpecs(assets.manifest.machine).skybox_face_size ?? SKYBOX_FACE_DEFAULT_SIZE;
 		if (skyboxFaceSize <= 0) {
@@ -273,6 +312,8 @@ export class VDP {
 		seedAtlasSlot(primarySlotEntry);
 		seedAtlasSlot(secondarySlotEntry);
 		this.atlasSlotEntries = [primarySlotEntry, secondarySlotEntry];
+		this.registerVramSlot(primarySlotEntry, ATLAS_PRIMARY_SLOT_ID);
+		this.registerVramSlot(secondarySlotEntry, ATLAS_SECONDARY_SLOT_ID);
 
 		for (let index = 0; index < viewEntries.length; index += 1) {
 			const entry = viewEntries[index];
@@ -376,36 +417,52 @@ export class VDP {
 	}
 
 	public async uploadAtlasTextures(): Promise<void> {
+		const source = $.asset_source;
+		if (!source) {
+			throw new Error('[BmsxVDP] Asset source not configured.');
+		}
 		const engineAtlasName = generateAtlasName(ENGINE_ATLAS_INDEX);
-		const engineEntry = this.memory.getAssetEntry(engineAtlasName);
-		const enginePixels = this.memory.getImagePixels(engineEntry);
-		await $.texmanager.loadTextureFromPixels(ENGINE_ATLAS_TEXTURE_KEY, enginePixels, engineEntry.regionW, engineEntry.regionH);
+		const engineAsset = source.getEntry(engineAtlasName);
+		if (!engineAsset) {
+			throw new Error(`[BmsxVDP] Engine atlas '${engineAtlasName}' missing from asset source.`);
+		}
+		const engineBytes = source.getBytes(engineAsset);
+		const engineDecoded = await decodePngToRgba(engineBytes);
+		await $.texmanager.loadTextureFromPixels(ENGINE_ATLAS_TEXTURE_KEY, engineDecoded.pixels, engineDecoded.width, engineDecoded.height);
 		$.view.loadEngineAtlasTexture();
 
 		const primaryEntry = this.memory.getAssetEntry(ATLAS_PRIMARY_SLOT_ID);
-		if (primaryEntry.regionW > 0 && primaryEntry.regionH > 0) {
-			const primaryPixels = this.memory.getImagePixels(primaryEntry);
-			const primaryHandle = await $.texmanager.loadTextureFromPixels(
-				ATLAS_PRIMARY_SLOT_ID,
-				primaryPixels,
-				primaryEntry.regionW,
-				primaryEntry.regionH,
-			);
-			$.view.textures[ATLAS_PRIMARY_SLOT_ID] = primaryHandle;
-		}
-
+		await this.ensureAtlasSlotTexture(primaryEntry, ATLAS_PRIMARY_SLOT_ID);
 		const secondaryEntry = this.memory.getAssetEntry(ATLAS_SECONDARY_SLOT_ID);
-		if (secondaryEntry && secondaryEntry.regionW > 0 && secondaryEntry.regionH > 0) {
-			const secondaryPixels = this.memory.getImagePixels(secondaryEntry);
-			const secondaryHandle = await $.texmanager.loadTextureFromPixels(
-				ATLAS_SECONDARY_SLOT_ID,
-				secondaryPixels,
-				secondaryEntry.regionW,
-				secondaryEntry.regionH,
-			);
-			$.view.textures[ATLAS_SECONDARY_SLOT_ID] = secondaryHandle;
-		}
+		await this.ensureAtlasSlotTexture(secondaryEntry, ATLAS_SECONDARY_SLOT_ID);
 		this.dirtyAtlasBindings = true;
+	}
+
+	private async ensureAtlasSlotTexture(entry: AssetEntry, textureKey: string): Promise<void> {
+		if (entry.regionW === 0 || entry.regionH === 0) {
+			throw new Error(`[BmsxVDP] VRAM slot '${entry.id}' missing dimensions.`);
+		}
+		const pixels = new Uint8Array(entry.regionW * entry.regionH * 4);
+		const handle = await $.texmanager.loadTextureFromPixels(textureKey, pixels, entry.regionW, entry.regionH);
+		$.view.textures[textureKey] = handle;
+	}
+
+	private updateTextureRegion(textureKey: string, pixels: Uint8Array, width: number, height: number, x: number, y: number): void {
+		$.texmanager.updateTextureRegionForKey(textureKey, pixels, width, height, x, y);
+	}
+
+	private registerVramSlot(entry: AssetEntry, textureKey: string): void {
+		this.vramSlots.push({ baseAddr: entry.baseAddr, capacity: entry.capacity, entry, textureKey });
+	}
+
+	private findVramSlot(addr: number, length: number): { baseAddr: number; capacity: number; entry: AssetEntry; textureKey: string } {
+		for (let index = 0; index < this.vramSlots.length; index += 1) {
+			const slot = this.vramSlots[index];
+			if (addr >= slot.baseAddr && addr + length <= slot.baseAddr + slot.capacity) {
+				return slot;
+			}
+		}
+		throw new Error(`[BmsxVDP] VRAM write has no mapped slot (addr=${addr}, len=${length}).`);
 	}
 
 	private getSkyboxSlotEntries(): AssetEntry[] {

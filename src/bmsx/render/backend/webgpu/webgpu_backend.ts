@@ -95,6 +95,28 @@ export class WebGPUBackend implements GPUBackend {
 		this.accountUpload('texture', img.width * img.height * 4);
 	}
 
+	updateTextureRegion(handle: TextureHandle, src: TextureSource, x: number, y: number): void {
+		const data = (src as { data?: Uint8Array }).data;
+		if (data) {
+			const upload = new Uint8Array(data.buffer as ArrayBuffer, data.byteOffset, data.byteLength);
+			this.device.queue.writeTexture(
+				{ texture: handle as GPUTexture, origin: { x, y, z: 0 } },
+				upload,
+				{ bytesPerRow: src.width * 4 },
+				{ width: src.width, height: src.height, depthOrArrayLayers: 1 },
+			);
+			this.accountUpload('texture', src.width * src.height * 4);
+			return;
+		}
+		const img = src as ImageBitmap;
+		this.device.queue.copyExternalImageToTexture(
+			{ source: img, flipY: false },
+			{ texture: handle as GPUTexture, origin: { x, y, z: 0 } },
+			{ width: img.width, height: img.height }
+		);
+		this.accountUpload('texture', img.width * img.height * 4);
+	}
+
 	createSolidTexture2D(width: number, height: number, rgba: color_arr, _desc: TextureParams = {}): TextureHandle {
 		const texture = this.device.createTexture({
 			size: { width, height, depthOrArrayLayers: 1 },

@@ -18,11 +18,18 @@ constexpr uint32_t ASSET_TABLE_ENTRY_SIZE = 64;
 
 class Memory {
 public:
+	class VramWriter {
+	public:
+		virtual ~VramWriter() = default;
+		virtual void writeVram(uint32_t addr, const u8* data, size_t length) = 0;
+	};
+
 	Memory();
 
 	void setEngineRom(const u8* data, size_t size);
 	void setCartRom(const u8* data, size_t size);
 	void setOverlayRom(u8* data, size_t size);
+	void setVramWriter(VramWriter* writer);
 
 	Value readValue(uint32_t addr) const;
 	void writeValue(uint32_t addr, Value value);
@@ -125,6 +132,7 @@ private:
 	MutableRomSpan m_overlayRom;
 	std::vector<u8> m_ram;
 	std::vector<Value> m_ioSlots;
+	VramWriter* m_vramWriter = nullptr;
 
 	std::vector<AssetEntry> m_assetEntries;
 	std::unordered_map<std::string, size_t> m_assetIndexById;
@@ -138,9 +146,6 @@ private:
 	uint32_t m_cartAssetDataBase = ASSET_DATA_BASE;
 	bool m_assetTableFinalized = false;
 
-	uint32_t nextVramGarbageSeed() const;
-	void seedVramGarbage(uint32_t seed);
-	void seedVramGarbageRange(uint32_t seed, uint32_t startAddr, uint32_t endAddr);
 
 	bool isIoAddress(uint32_t addr) const;
 	size_t ioIndex(uint32_t addr) const;

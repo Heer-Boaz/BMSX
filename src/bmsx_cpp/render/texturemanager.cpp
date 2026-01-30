@@ -222,6 +222,39 @@ void TextureManager::updateTexturesForAsset(const AssetId& assetId,
 	}
 }
 
+void TextureManager::updateTextureRegionForKey(const std::string& keyBase,
+												const u8* pixels,
+												i32 width,
+												i32 height,
+												i32 x,
+												i32 y) {
+	if (!m_backend) {
+		throw BMSX_RUNTIME_ERROR("TextureManager backend not set");
+	}
+	if (keyBase.empty()) {
+		throw BMSX_RUNTIME_ERROR("TextureManager: texture key missing for region update");
+	}
+	if (!pixels || width <= 0 || height <= 0) {
+		throw BMSX_RUNTIME_ERROR("TextureManager: region update missing pixel data");
+	}
+	const std::string prefix = keyBase + "|";
+	for (auto& [key, gpuEntry] : m_gpuCache) {
+		if (key.rfind(prefix, 0) != 0) {
+			continue;
+		}
+		if (!gpuEntry.handle) {
+			continue;
+		}
+		m_backend->updateTextureRegion(gpuEntry.handle,
+										pixels,
+										width,
+										height,
+										x,
+										y,
+										gpuEntry.params);
+	}
+}
+
 TextureHandle TextureManager::replaceTexture(const TextureKey& key,
 												const u8* pixels,
 												i32 width,

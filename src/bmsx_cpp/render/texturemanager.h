@@ -90,6 +90,12 @@ public:
 								const u8* pixels,
 								i32 width,
 								i32 height);
+	void updateTextureRegionForKey(const std::string& keyBase,
+									const u8* pixels,
+									i32 width,
+									i32 height,
+									i32 x,
+									i32 y);
 
 	/// Replace an existing texture with new pixel data, or create if not exists.
 	/// This is used when cart assets override engine assets with the same key.

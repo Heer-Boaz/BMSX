@@ -647,6 +647,7 @@ export class Runtime {
 		});
 
 		if (!cartridge) {
+			$.set_asset_source(engineSource);
 			$.set_inputmap(1, { keyboard: null, gamepad: null, pointer: null }); // Default input mapping for player 1 is required even with no cart to prevent errors
 
 			$.set_lua_sources(engineLuaSources);
@@ -1010,10 +1011,7 @@ export class Runtime {
 			+ (stringHandleCount * STRING_HANDLE_ENTRY_SIZE)
 			+ stringHeapBytes
 			+ assetTableBytes
-			+ assetDataBytes
-			+ stagingBytes
-			+ (atlasSlotBytes * 2)
-			+ engineAtlasSlotBytes;
+			+ assetDataBytes;
 		const ramBytes = memorySpecs.ram_bytes ?? computedRamBytes;
 		if (memorySpecs.ram_bytes !== undefined && ramBytes !== computedRamBytes) {
 			throw new Error(`[Runtime] machine.specs.ram.ram_bytes (${ramBytes}) must match required size ${computedRamBytes}.`);

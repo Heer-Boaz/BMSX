@@ -17,7 +17,52 @@ bool isAtlasName(const std::string& name) {
 }
 
 VDP::VDP(Memory& memory)
-	: m_memory(memory) {}
+	: m_memory(memory) {
+	m_memory.setVramWriter(this);
+}
+
+void VDP::writeVram(uint32_t addr, const u8* data, size_t length) {
+	const auto& slot = findVramSlot(addr, length);
+	auto* entry = slot.entry;
+	if (!entry || entry->baseStride == 0 || entry->regionW == 0 || entry->regionH == 0) {
+		throw BMSX_RUNTIME_ERROR("[VDP] VRAM slot not initialized for writes.");
+	}
+	const uint32_t offset = addr - slot.baseAddr;
+	const uint32_t stride = entry->baseStride;
+	const uint32_t totalBytes = entry->regionH * stride;
+	if (offset + length > totalBytes) {
+		throw BMSX_RUNTIME_ERROR("[VDP] VRAM write exceeds slot bounds.");
+	}
+	if ((offset & 3u) != 0u || (length & 3u) != 0u) {
+		throw BMSX_RUNTIME_ERROR("[VDP] VRAM writes must be 32-bit aligned.");
+	}
+	auto* texmanager = EngineCore::instance().texmanager();
+	if (!texmanager) {
+		throw BMSX_RUNTIME_ERROR("[VDP] TextureManager not configured.");
+	}
+	size_t remaining = length;
+	size_t cursor = 0;
+	uint32_t row = offset / stride;
+	uint32_t rowOffset = offset - row * stride;
+	while (remaining > 0) {
+		const uint32_t rowAvailable = stride - rowOffset;
+		const uint32_t rowBytes = static_cast<uint32_t>(std::min<size_t>(remaining, rowAvailable));
+		const i32 x = static_cast<i32>(rowOffset / 4u);
+		const i32 width = static_cast<i32>(rowBytes / 4u);
+		texmanager->updateTextureRegionForKey(
+			slot.textureKey,
+			data + cursor,
+			width,
+			1,
+			x,
+			static_cast<i32>(row)
+		);
+		remaining -= rowBytes;
+		cursor += rowBytes;
+		row += 1;
+		rowOffset = 0;
+	}
+}
 
 void VDP::initializeRegisters() {
 	const i32 dither = 0;
@@ -51,6 +96,7 @@ void VDP::registerImageAssets(RuntimeAssets& assets, bool keepDecodedData) {
 	m_atlasViewIdsById.clear();
 	m_atlasSlotById.clear();
 	m_slotAtlasIds = {{-1, -1}};
+	m_vramSlots.clear();
 	m_dirtyAtlasBindings = true;
 	m_dirtySkybox = true;
 	m_skyboxFaceIds = {};
@@ -135,6 +181,7 @@ void VDP::registerImageAssets(RuntimeAssets& assets, bool keepDecodedData) {
 	if (engineEntryCreated) {
 		seedAtlasSlot(*engineEntry);
 	}
+	registerVramSlot(*engineEntry, ENGINE_ATLAS_TEXTURE_KEY);
 
 	const i32 skyboxFaceSize = assets.manifest.skyboxFaceSize > 0
 		? assets.manifest.skyboxFaceSize
@@ -190,6 +237,8 @@ void VDP::registerImageAssets(RuntimeAssets& assets, bool keepDecodedData) {
 	}
 	seedAtlasSlot(*primarySlotEntry);
 	seedAtlasSlot(*secondarySlotEntry);
+	registerVramSlot(*primarySlotEntry, ATLAS_PRIMARY_SLOT_ID);
+	registerVramSlot(*secondarySlotEntry, ATLAS_SECONDARY_SLOT_ID);
 
 	std::sort(viewAssets.begin(), viewAssets.end());
 	for (const auto& id : viewAssets) {
@@ -246,6 +295,51 @@ void VDP::registerImageAssets(RuntimeAssets& assets, bool keepDecodedData) {
 		}
 		m_atlasViewIdsById[atlasId].push_back(id);
 	}
+
+	auto* texmanager = EngineCore::instance().texmanager();
+	if (!texmanager) {
+		throw BMSX_RUNTIME_ERROR("[VDP] TextureManager not configured.");
+	}
+	auto* view = EngineCore::instance().view();
+	if (!view) {
+		throw BMSX_RUNTIME_ERROR("[VDP] GameView not configured.");
+	}
+	if (engineAtlasAsset->pixels.empty()) {
+		throw BMSX_RUNTIME_ERROR("[VDP] Engine atlas pixels missing.");
+	}
+	TextureHandle engineHandle = texmanager->getOrCreateTexture(
+		ENGINE_ATLAS_TEXTURE_KEY,
+		engineAtlasAsset->pixels.data(),
+		engineAtlasAsset->meta.width,
+		engineAtlasAsset->meta.height,
+		{}
+	);
+	view->textures[ENGINE_ATLAS_TEXTURE_KEY] = engineHandle;
+	view->loadEngineAtlasTexture();
+
+	const i32 primaryW = static_cast<i32>(primarySlotEntry->regionW);
+	const i32 primaryH = static_cast<i32>(primarySlotEntry->regionH);
+	std::vector<u8> blankPrimary(static_cast<size_t>(primaryW) * static_cast<size_t>(primaryH) * 4u);
+	TextureHandle primaryHandle = texmanager->getOrCreateTexture(
+		ATLAS_PRIMARY_SLOT_ID,
+		blankPrimary.data(),
+		primaryW,
+		primaryH,
+		{}
+	);
+	view->textures[ATLAS_PRIMARY_SLOT_ID] = primaryHandle;
+
+	const i32 secondaryW = static_cast<i32>(secondarySlotEntry->regionW);
+	const i32 secondaryH = static_cast<i32>(secondarySlotEntry->regionH);
+	std::vector<u8> blankSecondary(static_cast<size_t>(secondaryW) * static_cast<size_t>(secondaryH) * 4u);
+	TextureHandle secondaryHandle = texmanager->getOrCreateTexture(
+		ATLAS_SECONDARY_SLOT_ID,
+		blankSecondary.data(),
+		secondaryW,
+		secondaryH,
+		{}
+	);
+	view->textures[ATLAS_SECONDARY_SLOT_ID] = secondaryHandle;
 
 	syncRegisters();
 
@@ -341,6 +435,25 @@ void VDP::applyAtlasSlotMapping(const std::array<i32, 2>& slots) {
 			}
 		}
 	}
+}
+
+void VDP::registerVramSlot(Memory::AssetEntry& entry, const std::string& textureKey) {
+	VramSlot slot;
+	slot.baseAddr = entry.baseAddr;
+	slot.capacity = entry.capacity;
+	slot.entry = &entry;
+	slot.textureKey = textureKey;
+	m_vramSlots.push_back(std::move(slot));
+}
+
+const VDP::VramSlot& VDP::findVramSlot(uint32_t addr, size_t length) const {
+	for (const auto& slot : m_vramSlots) {
+		const uint32_t end = slot.baseAddr + slot.capacity;
+		if (addr >= slot.baseAddr && addr + length <= end) {
+			return slot;
+		}
+	}
+	throw BMSX_RUNTIME_ERROR("[VDP] VRAM write has no mapped slot.");
 }
 
 void VDP::commitViewSnapshot(GameView& view) {

@@ -102,6 +102,23 @@ export class WebGLBackend implements GPUBackend {
 		gl.bindTexture(gl.TEXTURE_2D, null);
 	}
 
+	updateTextureRegion(handle: WebGLTexture, src: TextureSource, x: number, y: number): void {
+		const gl = this.gl;
+		const data = (src as { data?: Uint8Array }).data;
+		gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_UPLOAD);
+		gl.bindTexture(gl.TEXTURE_2D, handle);
+		if (data) {
+			gl.texSubImage2D(gl.TEXTURE_2D, 0, x, y, src.width, src.height, gl.RGBA, gl.UNSIGNED_BYTE, data);
+		} else {
+			const img = src as ImageBitmap;
+			gl.texSubImage2D(gl.TEXTURE_2D, 0, x, y, gl.RGBA, gl.UNSIGNED_BYTE, img);
+		}
+		const bytes = src.width * src.height * 4;
+		this.frameStats.bytesUploaded += bytes;
+		this.frameStats.textureBytes += bytes;
+		gl.bindTexture(gl.TEXTURE_2D, null);
+	}
+
 	createSolidTexture2D(width: number, height: number, rgba: color_arr, desc: TextureParams = {}): WebGLTexture {
 		const gl = this.gl;
 		gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_UPLOAD);

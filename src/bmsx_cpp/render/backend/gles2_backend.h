@@ -30,6 +30,7 @@ public:
 
 	TextureHandle createTexture(const u8* data, i32 width, i32 height, const TextureParams& params) override;
 	void updateTexture(TextureHandle handle, const u8* data, i32 width, i32 height, const TextureParams& params) override;
+	void updateTextureRegion(TextureHandle handle, const u8* data, i32 width, i32 height, i32 x, i32 y, const TextureParams& params) override;
 	TextureHandle createSolidTexture2D(i32 width, i32 height, const Color& color) override;
 	void destroyTexture(TextureHandle handle) override;
 

@@ -150,6 +150,29 @@ void SoftwareBackend::updateTexture(TextureHandle handle, const u8* data, i32 wi
 	}
 }
 
+void SoftwareBackend::updateTextureRegion(TextureHandle handle, const u8* data, i32 width, i32 height, i32 x, i32 y, const TextureParams& params) {
+	auto* tex = static_cast<SoftwareTexture*>(handle);
+	const u8* uploadData = data;
+	std::vector<u8> linearized;
+	if (data && params.srgb) {
+		const size_t pixels = static_cast<size_t>(width) * static_cast<size_t>(height);
+		convertSrgbToLinear(data, pixels, linearized);
+		uploadData = linearized.data();
+	}
+	for (i32 row = 0; row < height; ++row) {
+		const size_t srcOffset = static_cast<size_t>(row) * static_cast<size_t>(width) * 4u;
+		const size_t dstOffset = static_cast<size_t>(y + row) * static_cast<size_t>(tex->width) + static_cast<size_t>(x);
+		for (i32 col = 0; col < width; ++col) {
+			const size_t srcIndex = srcOffset + static_cast<size_t>(col) * 4u;
+			u8 r = uploadData[srcIndex + 0];
+			u8 g = uploadData[srcIndex + 1];
+			u8 b = uploadData[srcIndex + 2];
+			u8 a = uploadData[srcIndex + 3];
+			tex->data[dstOffset + static_cast<size_t>(col)] = (a << 24) | (r << 16) | (g << 8) | b;
+		}
+	}
+}
+
 TextureHandle SoftwareBackend::createSolidTexture2D(i32 width, i32 height, const Color& color) {
 	auto tex = std::make_unique<SoftwareTexture>();
 	tex->width = width;

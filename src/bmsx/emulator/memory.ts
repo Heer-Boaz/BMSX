@@ -15,11 +15,13 @@ import {
 	RAM_BASE,
 	RAM_USED_END,
 	VRAM_ENGINE_ATLAS_BASE,
+	VRAM_ENGINE_ATLAS_SIZE,
 	VRAM_PRIMARY_ATLAS_BASE,
 	VRAM_PRIMARY_ATLAS_SIZE,
 	VRAM_SECONDARY_ATLAS_BASE,
 	VRAM_SECONDARY_ATLAS_SIZE,
 	VRAM_STAGING_BASE,
+	VRAM_STAGING_SIZE,
 } from './memory_map';
 import { IO_SLOT_COUNT } from './io';
 
@@ -58,6 +60,10 @@ export type ImageWritePlan = {
 	clipped: boolean;
 };
 
+export type VramWriteSink = {
+	writeVram(addr: number, bytes: Uint8Array): void;
+};
+
 export type MemoryInit = {
 	engineRom: Uint8Array;
 	cartRom?: Uint8Array | null;
@@ -92,6 +98,8 @@ export class Memory {
 	private readonly ram: Uint8Array;
 	private readonly ramView: DataView;
 	private readonly ioSlots: Value[];
+	private vramWriter: VramWriteSink;
+	private readonly vramScratch = new Uint8Array(4);
 
 	private assetEntries: AssetEntry[] = [];
 	private assetIndexById = new Map<string, number>();
@@ -120,6 +128,10 @@ export class Memory {
 		this.resetAssetMemory();
 	}
 
+	public setVramWriter(writer: VramWriteSink): void {
+		this.vramWriter = writer;
+	}
+
 	public getIoSlotCount(): number {
 		return this.ioSlots.length;
 	}
@@ -137,7 +149,6 @@ export class Memory {
 		this.assetDataCursor = ASSET_DATA_BASE;
 		const assetOffset = ASSET_RAM_BASE - RAM_BASE;
 		this.ram.fill(0, assetOffset, assetOffset + ASSET_RAM_SIZE);
-		this.seedVramGarbage(this.nextVramGarbageSeed());
 	}
 
 	public hasAsset(id: string): boolean {
@@ -182,10 +193,6 @@ export class Memory {
 		const cartOffset = this.cartAssetDataBase - RAM_BASE;
 		const cartEnd = ASSET_DATA_ALLOC_END - RAM_BASE;
 		this.ram.fill(0, cartOffset, cartEnd);
-		const seed = this.nextVramGarbageSeed();
-		this.seedVramGarbageRange(seed, VRAM_STAGING_BASE, VRAM_ENGINE_ATLAS_BASE);
-		this.seedVramGarbageRange(seed ^ 0x9E3779B9, VRAM_PRIMARY_ATLAS_BASE, VRAM_PRIMARY_ATLAS_BASE + VRAM_PRIMARY_ATLAS_SIZE);
-		this.seedVramGarbageRange(seed ^ 0x7F4A7C15, VRAM_SECONDARY_ATLAS_BASE, VRAM_SECONDARY_ATLAS_BASE + VRAM_SECONDARY_ATLAS_SIZE);
 	}
 
 	public registerImageSlot(params: {
@@ -229,13 +236,16 @@ export class Memory {
 		flags?: number;
 		clear?: boolean;
 	}): AssetEntry {
-		const offset = params.baseAddr - RAM_BASE;
-		if (offset < 0 || offset + params.capacityBytes > this.ram.byteLength) {
-			throw new Error(`[Memory] Image slot '${params.id}' out of RAM bounds.`);
-		}
-		const view = this.ram.subarray(offset, offset + params.capacityBytes);
-		if (params.clear !== false) {
-			view.fill(0);
+		const isVramSlot = this.isVramRange(params.baseAddr, params.capacityBytes);
+		if (!isVramSlot) {
+			const offset = params.baseAddr - RAM_BASE;
+			if (offset < 0 || offset + params.capacityBytes > this.ram.byteLength) {
+				throw new Error(`[Memory] Image slot '${params.id}' out of RAM bounds.`);
+			}
+			const slotView = this.ram.subarray(offset, offset + params.capacityBytes);
+			if (params.clear !== false) {
+				slotView.fill(0);
+			}
 		}
 		const entry = this.createAssetEntry({
 			id: params.id,
@@ -260,7 +270,9 @@ export class Memory {
 			ownerIndex: -1,
 		});
 		entry.ownerIndex = this.registerAssetEntry(entry);
-		this.mapAssetPages(entry.ownerIndex, params.baseAddr, params.capacityBytes);
+		if (!isVramSlot) {
+			this.mapAssetPages(entry.ownerIndex, params.baseAddr, params.capacityBytes);
+		}
 		return entry;
 	}
 
@@ -405,6 +417,9 @@ export class Memory {
 	public getImagePixels(entry: AssetEntry): Uint8Array {
 		if (entry.flags & ASSET_FLAG_VIEW) {
 			throw new Error(`[Memory] Asset '${entry.id}' is a view and has no direct pixel buffer.`);
+		}
+		if (this.isVramRange(entry.baseAddr, entry.capacity)) {
+			throw new Error(`[Memory] Asset '${entry.id}' lives in VRAM and has no CPU pixel buffer.`);
 		}
 		const offset = entry.baseAddr - RAM_BASE;
 		const size = entry.regionW * entry.regionH * 4;
@@ -821,12 +836,21 @@ export class Memory {
 	}
 
 	public writeU8(addr: number, value: number): void {
+		if (this.isVramRange(addr, 1)) {
+			this.vramScratch[0] = value & 0xff;
+			this.vramScratch[1] = 0;
+			this.vramScratch[2] = 0;
+			this.vramScratch[3] = 0;
+			this.writeVram(addr, this.vramScratch.subarray(0, 1));
+			return;
+		}
 		const { data, offset } = this.resolveWriteRegion(addr, 1);
 		data[offset] = value & 0xff;
 		this.markAssetDirty(addr, 1);
 	}
 
 	public readU32(addr: number): number {
+		this.assertReadableRange(addr, 4);
 		const offset = this.resolveRamOffset(addr, 4);
 		return this.ramView.getUint32(offset, true);
 	}
@@ -842,6 +866,14 @@ export class Memory {
 	}
 
 	public writeU32(addr: number, value: number): void {
+		if (this.isVramRange(addr, 4)) {
+			this.vramScratch[0] = value & 0xff;
+			this.vramScratch[1] = (value >>> 8) & 0xff;
+			this.vramScratch[2] = (value >>> 16) & 0xff;
+			this.vramScratch[3] = (value >>> 24) & 0xff;
+			this.writeVram(addr, this.vramScratch);
+			return;
+		}
 		const offset = this.resolveRamOffset(addr, 4);
 		this.ramView.setUint32(offset, value >>> 0, true);
 		this.markAssetDirty(addr, 4);
@@ -853,15 +885,23 @@ export class Memory {
 	}
 
 	public writeBytes(addr: number, bytes: Uint8Array): void {
+		if (this.isVramRange(addr, bytes.byteLength)) {
+			this.writeVram(addr, bytes);
+			return;
+		}
 		const { data, offset } = this.resolveWriteRegion(addr, bytes.byteLength);
 		data.set(bytes, offset);
 		this.markAssetDirty(addr, bytes.byteLength);
 	}
 
 	public writeBytesFrom(src: Uint8Array, srcOffset: number, dstAddr: number, length: number): void {
+		const slice = src.subarray(srcOffset, srcOffset + length);
+		if (this.isVramRange(dstAddr, length)) {
+			this.writeVram(dstAddr, slice);
+			return;
+		}
 		const { data, offset } = this.resolveWriteRegion(dstAddr, length);
 		const dst = data.subarray(offset, offset + length);
-		const slice = src.subarray(srcOffset, srcOffset + length);
 		dst.set(slice);
 		this.markAssetDirty(dstAddr, length);
 	}
@@ -884,6 +924,7 @@ export class Memory {
 	}
 
 	private resolveReadRegion(addr: number, length: number): { data: Uint8Array; offset: number } {
+		this.assertReadableRange(addr, length);
 		if (addr >= ENGINE_ROM_BASE && addr + length <= ENGINE_ROM_BASE + this.engineRom.byteLength) {
 			return { data: this.engineRom, offset: addr - ENGINE_ROM_BASE };
 		}
@@ -910,6 +951,28 @@ export class Memory {
 			throw new Error(`[Memory] Address out of RAM bounds: ${addr} (len=${length}).`);
 		}
 		return addr - RAM_BASE;
+	}
+
+	private assertReadableRange(addr: number, length: number): void {
+		if (this.isVramRange(addr, length)) {
+			throw new Error(`[Memory] VRAM is write-only: ${addr} (len=${length}).`);
+		}
+	}
+
+	private writeVram(addr: number, bytes: Uint8Array): void {
+		this.vramWriter.writeVram(addr, bytes);
+	}
+
+	private isVramRange(addr: number, length: number): boolean {
+		if (length <= 0) {
+			return false;
+		}
+		const end = addr + length;
+		const overlaps = (base: number, size: number): boolean => addr < base + size && end > base;
+		return overlaps(VRAM_STAGING_BASE, VRAM_STAGING_SIZE)
+			|| overlaps(VRAM_ENGINE_ATLAS_BASE, VRAM_ENGINE_ATLAS_SIZE)
+			|| overlaps(VRAM_PRIMARY_ATLAS_BASE, VRAM_PRIMARY_ATLAS_SIZE)
+			|| overlaps(VRAM_SECONDARY_ATLAS_BASE, VRAM_SECONDARY_ATLAS_SIZE);
 	}
 
 	private allocateAssetData(size: number, alignment: number): { addr: number; view: Uint8Array } {
@@ -1073,54 +1136,4 @@ export class Memory {
 		}
 	}
 
-	private nextVramGarbageSeed(): number {
-		const time = Date.now() >>> 0;
-		const rand = Math.floor(Math.random() * 0xffffffff) >>> 0;
-		return (time ^ rand) | 1;
-	}
-
-	private seedVramGarbage(seed: number): void {
-		this.seedVramGarbageRange(seed, VRAM_STAGING_BASE, ASSET_DATA_END);
-	}
-
-	private seedVramGarbageRange(seed: number, startAddr: number, endAddr: number): void {
-		const start = startAddr - RAM_BASE;
-		const length = endAddr - startAddr;
-		this.fillRangeWithGarbage(start, length, seed);
-	}
-
-	private fillRangeWithGarbage(offset: number, length: number, seed: number): void {
-		let state = seed | 1;
-		const end = offset + length;
-		const alignedEnd = end - ((end - offset) & 3);
-		let cursor = offset;
-		while (cursor < alignedEnd) {
-			state ^= state << 13;
-			state >>>= 0;
-			state ^= state >>> 17;
-			state >>>= 0;
-			state ^= state << 5;
-			state >>>= 0;
-			const value = state;
-			this.ram[cursor] = value & 0xff;
-			this.ram[cursor + 1] = (value >>> 8) & 0xff;
-			this.ram[cursor + 2] = (value >>> 16) & 0xff;
-			this.ram[cursor + 3] = (value >>> 24) & 0xff;
-			cursor += 4;
-		}
-		if (cursor < end) {
-			state ^= state << 13;
-			state >>>= 0;
-			state ^= state >>> 17;
-			state >>>= 0;
-			state ^= state << 5;
-			state >>>= 0;
-			let value = state;
-			while (cursor < end) {
-				this.ram[cursor] = value & 0xff;
-				value >>>= 8;
-				cursor += 1;
-			}
-		}
-	}
 }

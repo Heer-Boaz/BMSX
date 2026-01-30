@@ -1,7 +1,6 @@
 #include "memory.h"
 
 #include <algorithm>
-#include <chrono>
 #include <cstring>
 #include <stdexcept>
 
@@ -28,6 +27,22 @@ inline void writeU32LE(u8* dst, uint32_t value) {
 	dst[1] = static_cast<u8>((value >> 8) & 0xffu);
 	dst[2] = static_cast<u8>((value >> 16) & 0xffu);
 	dst[3] = static_cast<u8>((value >> 24) & 0xffu);
+}
+
+bool rangeOverlaps(uint32_t addr, size_t length, uint32_t base, uint32_t size) {
+	if (length == 0) {
+		return false;
+	}
+	const uint32_t end = addr + static_cast<uint32_t>(length);
+	const uint32_t baseEnd = base + size;
+	return addr < baseEnd && end > base;
+}
+
+bool isVramRange(uint32_t addr, size_t length) {
+	return rangeOverlaps(addr, length, VRAM_STAGING_BASE, VRAM_STAGING_SIZE)
+		|| rangeOverlaps(addr, length, VRAM_ENGINE_ATLAS_BASE, VRAM_ENGINE_ATLAS_SIZE)
+		|| rangeOverlaps(addr, length, VRAM_PRIMARY_ATLAS_BASE, VRAM_PRIMARY_ATLAS_SIZE)
+		|| rangeOverlaps(addr, length, VRAM_SECONDARY_ATLAS_BASE, VRAM_SECONDARY_ATLAS_SIZE);
 }
 
 std::string canonicalizeAssetId(const std::string& id) {
@@ -103,6 +118,10 @@ void Memory::setOverlayRom(u8* data, size_t size) {
 	m_overlayRom = { data, size };
 }
 
+void Memory::setVramWriter(VramWriter* writer) {
+	m_vramWriter = writer;
+}
+
 void Memory::resetAssetMemory() {
 	m_assetEntries.clear();
 	m_assetIndexById.clear();
@@ -117,47 +136,6 @@ void Memory::resetAssetMemory() {
 	m_assetDataCursor = ASSET_DATA_BASE;
 	const size_t offset = static_cast<size_t>(ASSET_RAM_BASE - RAM_BASE);
 	std::fill(m_ram.begin() + offset, m_ram.begin() + offset + ASSET_RAM_SIZE, 0);
-	seedVramGarbage(nextVramGarbageSeed());
-}
-
-uint32_t Memory::nextVramGarbageSeed() const {
-	const auto now = std::chrono::high_resolution_clock::now().time_since_epoch().count();
-	const uint64_t mixed = static_cast<uint64_t>(now) ^ static_cast<uint64_t>(reinterpret_cast<uintptr_t>(this));
-	return static_cast<uint32_t>((mixed ^ (mixed >> 32)) | 1u);
-}
-
-void Memory::seedVramGarbage(uint32_t seed) {
-	seedVramGarbageRange(seed, VRAM_STAGING_BASE, ASSET_DATA_END);
-}
-
-void Memory::seedVramGarbageRange(uint32_t seed, uint32_t startAddr, uint32_t endAddr) {
-	uint32_t state = seed | 1u;
-	const size_t start = static_cast<size_t>(startAddr - RAM_BASE);
-	const size_t end = static_cast<size_t>(endAddr - RAM_BASE);
-	size_t cursor = start;
-	const size_t alignedEnd = end - ((end - start) & 3u);
-	while (cursor < alignedEnd) {
-		state ^= state << 13;
-		state ^= state >> 17;
-		state ^= state << 5;
-		const uint32_t value = state;
-		m_ram[cursor] = static_cast<u8>(value & 0xffu);
-		m_ram[cursor + 1] = static_cast<u8>((value >> 8) & 0xffu);
-		m_ram[cursor + 2] = static_cast<u8>((value >> 16) & 0xffu);
-		m_ram[cursor + 3] = static_cast<u8>((value >> 24) & 0xffu);
-		cursor += 4;
-	}
-	if (cursor < end) {
-		state ^= state << 13;
-		state ^= state >> 17;
-		state ^= state << 5;
-		uint32_t value = state;
-		while (cursor < end) {
-			m_ram[cursor] = static_cast<u8>(value & 0xffu);
-			value >>= 8;
-			cursor += 1;
-		}
-	}
 }
 
 bool Memory::hasAsset(const std::string& id) const {
@@ -204,14 +182,6 @@ void Memory::resetCartAssets() {
 	const size_t cartOffset = static_cast<size_t>(m_cartAssetDataBase - RAM_BASE);
 	const size_t cartEnd = static_cast<size_t>(ASSET_DATA_ALLOC_END - RAM_BASE);
 	std::fill(m_ram.begin() + cartOffset, m_ram.begin() + cartEnd, 0);
-	const uint32_t seed = nextVramGarbageSeed();
-	seedVramGarbageRange(seed, VRAM_STAGING_BASE, VRAM_ENGINE_ATLAS_BASE);
-	seedVramGarbageRange(seed ^ 0x9E3779B9u,
-		VRAM_PRIMARY_ATLAS_BASE,
-		VRAM_PRIMARY_ATLAS_BASE + VRAM_PRIMARY_ATLAS_SIZE);
-	seedVramGarbageRange(seed ^ 0x7F4A7C15u,
-		VRAM_SECONDARY_ATLAS_BASE,
-		VRAM_SECONDARY_ATLAS_BASE + VRAM_SECONDARY_ATLAS_SIZE);
 }
 
 Memory::AssetEntry& Memory::registerImageBuffer(const std::string& id, const u8* rgba, uint32_t width, uint32_t height, uint32_t flags) {
@@ -259,12 +229,15 @@ Memory::AssetEntry& Memory::registerImageSlot(const std::string& id, uint32_t ca
 }
 
 Memory::AssetEntry& Memory::registerImageSlotAt(const std::string& id, uint32_t baseAddr, uint32_t capacityBytes, uint32_t flags, bool clear) {
-	if (baseAddr < RAM_BASE || baseAddr + capacityBytes > RAM_USED_END) {
-		throw std::runtime_error("[Memory] Image slot out of RAM bounds.");
-	}
-	const size_t offset = static_cast<size_t>(baseAddr - RAM_BASE);
-	if (clear) {
-		std::memset(m_ram.data() + offset, 0, capacityBytes);
+	const bool isVramSlot = isVramRange(baseAddr, capacityBytes);
+	if (!isVramSlot) {
+		if (baseAddr < RAM_BASE || baseAddr + capacityBytes > RAM_USED_END) {
+			throw std::runtime_error("[Memory] Image slot out of RAM bounds.");
+		}
+		const size_t offset = static_cast<size_t>(baseAddr - RAM_BASE);
+		if (clear) {
+			std::memset(m_ram.data() + offset, 0, capacityBytes);
+		}
 	}
 	AssetEntry entry;
 	entry.id = id;
@@ -278,7 +251,9 @@ Memory::AssetEntry& Memory::registerImageSlotAt(const std::string& id, uint32_t 
 	entry.regionH = 0;
 	const size_t index = addAssetEntry(std::move(entry));
 	m_assetEntries[index].ownerIndex = index;
-	mapAssetPages(index, baseAddr, capacityBytes);
+	if (!isVramSlot) {
+		mapAssetPages(index, baseAddr, capacityBytes);
+	}
 	return m_assetEntries[index];
 }
 
@@ -472,6 +447,9 @@ const u8* Memory::getImagePixels(const AssetEntry& entry) const {
 	if (entry.flags & ASSET_FLAG_VIEW) {
 		throw std::runtime_error("[Memory] Image view entries do not expose direct pixel buffers.");
 	}
+	if (isVramRange(entry.baseAddr, entry.capacity)) {
+		throw std::runtime_error("[Memory] Image asset lives in VRAM and has no CPU pixel buffer.");
+	}
 	const size_t offset = ramOffset(entry.baseAddr, entry.baseSize);
 	return m_ram.data() + offset;
 }
@@ -589,12 +567,19 @@ u8 Memory::readU8(uint32_t addr) const {
 
 void Memory::writeU8(uint32_t addr, u8 value) {
 	size_t offset = 0;
+	if (isVramRange(addr, 1)) {
+		m_vramWriter->writeVram(addr, &value, 1);
+		return;
+	}
 	auto* region = writeRegion(addr, 1, offset);
 	region[offset] = value;
 	markAssetDirty(addr, 1);
 }
 
 uint32_t Memory::readU32(uint32_t addr) const {
+	if (isVramRange(addr, 4)) {
+		throw std::runtime_error("[Memory] VRAM is write-only.");
+	}
 	const size_t offset = ramOffset(addr, 4);
 	uint32_t value = 0;
 	std::memcpy(&value, m_ram.data() + offset, sizeof(uint32_t));
@@ -611,6 +596,16 @@ uint32_t Memory::readU32FromRegion(uint32_t addr) const {
 }
 
 void Memory::writeU32(uint32_t addr, uint32_t value) {
+	if (isVramRange(addr, 4)) {
+		u8 bytes[4] = {
+			static_cast<u8>(value & 0xffu),
+			static_cast<u8>((value >> 8) & 0xffu),
+			static_cast<u8>((value >> 16) & 0xffu),
+			static_cast<u8>((value >> 24) & 0xffu),
+		};
+		m_vramWriter->writeVram(addr, bytes, 4);
+		return;
+	}
 	const size_t offset = ramOffset(addr, 4);
 	std::memcpy(m_ram.data() + offset, &value, sizeof(uint32_t));
 	markAssetDirty(addr, 4);
@@ -618,6 +613,10 @@ void Memory::writeU32(uint32_t addr, uint32_t value) {
 
 void Memory::writeBytes(uint32_t addr, const u8* data, size_t length) {
 	size_t offset = 0;
+	if (isVramRange(addr, length)) {
+		m_vramWriter->writeVram(addr, data, length);
+		return;
+	}
 	auto* region = writeRegion(addr, length, offset);
 	std::memcpy(region + offset, data, length);
 	markAssetDirty(addr, static_cast<uint32_t>(length));
@@ -670,6 +669,9 @@ size_t Memory::ramOffset(uint32_t addr, size_t length) const {
 }
 
 const u8* Memory::readRegion(uint32_t addr, size_t length, size_t& outOffset) const {
+	if (isVramRange(addr, length)) {
+		throw std::runtime_error("[Memory] VRAM is write-only.");
+	}
 	if (m_engineRom.size > 0 && addr >= ENGINE_ROM_BASE && addr + length <= ENGINE_ROM_BASE + m_engineRom.size) {
 		outOffset = static_cast<size_t>(addr - ENGINE_ROM_BASE);
 		return m_engineRom.data;

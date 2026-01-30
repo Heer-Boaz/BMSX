@@ -32,6 +32,7 @@ export class HeadlessGPUBackend implements GPUBackend {
 		return makeTextureHandle('texture');
 	}
 	updateTexture(_handle: TextureHandle, _src: TextureSource): void { }
+	updateTextureRegion(_handle: TextureHandle, _src: TextureSource, _x: number, _y: number): void { }
 	createSolidTexture2D(_width: number, _height: number, _rgba: color_arr, _desc: TextureParams = {}): TextureHandle {
 		return makeTextureHandle('solid2d');
 	}

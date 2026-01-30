@@ -98,21 +98,18 @@ function recomputeMemoryLayout(config: {
 	ASSET_RAM_BASE = STRING_HEAP_BASE + STRING_HEAP_SIZE;
 	ASSET_TABLE_BASE = ASSET_RAM_BASE;
 	ASSET_DATA_BASE = ASSET_TABLE_BASE + ASSET_TABLE_SIZE;
-	ASSET_DATA_END = ASSET_DATA_BASE + config.assetDataBytes + VRAM_STAGING_SIZE + (VRAM_ATLAS_SLOT_SIZE * 2) + VRAM_ENGINE_ATLAS_SLOT_SIZE;
+	ASSET_DATA_END = ASSET_DATA_BASE + config.assetDataBytes;
 	ASSET_RAM_SIZE = ASSET_DATA_END - ASSET_RAM_BASE;
 
-	VRAM_SECONDARY_ATLAS_BASE = ASSET_DATA_END - VRAM_ATLAS_SLOT_SIZE;
-	VRAM_PRIMARY_ATLAS_BASE = VRAM_SECONDARY_ATLAS_BASE - VRAM_ATLAS_SLOT_SIZE;
-	VRAM_ENGINE_ATLAS_BASE = VRAM_PRIMARY_ATLAS_BASE - VRAM_ENGINE_ATLAS_SLOT_SIZE;
-	VRAM_STAGING_BASE = VRAM_ENGINE_ATLAS_BASE - VRAM_STAGING_SIZE;
+	VRAM_STAGING_BASE = ASSET_DATA_END;
+	VRAM_ENGINE_ATLAS_BASE = VRAM_STAGING_BASE + VRAM_STAGING_SIZE;
+	VRAM_PRIMARY_ATLAS_BASE = VRAM_ENGINE_ATLAS_BASE + VRAM_ENGINE_ATLAS_SLOT_SIZE;
+	VRAM_SECONDARY_ATLAS_BASE = VRAM_PRIMARY_ATLAS_BASE + VRAM_ATLAS_SLOT_SIZE;
 	VRAM_ENGINE_ATLAS_SIZE = VRAM_ENGINE_ATLAS_SLOT_SIZE;
 	VRAM_PRIMARY_ATLAS_SIZE = VRAM_ATLAS_SLOT_SIZE;
 	VRAM_SECONDARY_ATLAS_SIZE = VRAM_ATLAS_SLOT_SIZE;
-	ASSET_DATA_ALLOC_END = VRAM_STAGING_BASE;
-	if (ASSET_DATA_ALLOC_END < ASSET_DATA_BASE) {
-		throw new Error(`[MemoryMap] VRAM layout exceeds asset RAM (${ASSET_DATA_ALLOC_END} < ${ASSET_DATA_BASE}).`);
-	}
-	RAM_USED_END = RAM_BASE + RAM_SIZE;
+	ASSET_DATA_ALLOC_END = ASSET_DATA_END;
+	RAM_USED_END = ASSET_DATA_END;
 }
 
 export function configureMemoryMap(specs?: MemoryMapSpecs): void {
@@ -124,16 +121,13 @@ export function configureMemoryMap(specs?: MemoryMapSpecs): void {
 	const stagingBytes = resolvePositiveInteger(specs?.staging_bytes ?? DEFAULT_VRAM_STAGING_SIZE, 'staging_bytes');
 	const stringHandleTableBytes = stringHandleCount * STRING_HANDLE_ENTRY_SIZE;
 	const defaultAssetDataBytes = DEFAULT_RAM_SIZE
-		- (IO_REGION_SIZE + stringHandleTableBytes + stringHeapBytes + assetTableBytes + stagingBytes + (atlasSlotBytes * 2) + engineAtlasSlotBytes);
+		- (IO_REGION_SIZE + stringHandleTableBytes + stringHeapBytes + assetTableBytes);
 	const assetDataBytes = resolvePositiveInteger(specs?.asset_data_bytes ?? defaultAssetDataBytes, 'asset_data_bytes');
 	const computedRamBytes = IO_REGION_SIZE
 		+ stringHandleTableBytes
 		+ stringHeapBytes
 		+ assetTableBytes
-		+ assetDataBytes
-		+ stagingBytes
-		+ (atlasSlotBytes * 2)
-		+ engineAtlasSlotBytes;
+		+ assetDataBytes;
 	if (specs?.ram_bytes !== undefined) {
 		const ramBytes = resolvePositiveInteger(specs.ram_bytes, 'ram_bytes');
 		if (ramBytes !== computedRamBytes) {
