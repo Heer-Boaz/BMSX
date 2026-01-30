@@ -38,7 +38,7 @@ bool rangeOverlaps(uint32_t addr, size_t length, uint32_t base, uint32_t size) {
 	return addr < baseEnd && end > base;
 }
 
-bool isVramRange(uint32_t addr, size_t length) {
+bool isVramRangeLocal(uint32_t addr, size_t length) {
 	return rangeOverlaps(addr, length, VRAM_STAGING_BASE, VRAM_STAGING_SIZE)
 		|| rangeOverlaps(addr, length, VRAM_ENGINE_ATLAS_BASE, VRAM_ENGINE_ATLAS_SIZE)
 		|| rangeOverlaps(addr, length, VRAM_PRIMARY_ATLAS_BASE, VRAM_PRIMARY_ATLAS_SIZE)
@@ -116,6 +116,10 @@ void Memory::setOverlayRom(u8* data, size_t size) {
 		return;
 	}
 	m_overlayRom = { data, size };
+}
+
+void Memory::setVdpIoHandler(VdpIoHandler* handler) {
+	m_vdpIoHandler = handler;
 }
 
 void Memory::setVramWriter(VramWriter* writer) {
@@ -546,6 +550,12 @@ void Memory::updateImageViewBase(AssetEntry& entry, const AssetEntry& base) {
 
 Value Memory::readValue(uint32_t addr) const {
 	if (isIoAddress(addr)) {
+		if (addr == IO_VDP_RD_STATUS) {
+			return valueFromNumber(static_cast<double>(m_vdpIoHandler->readVdpStatus()));
+		}
+		if (addr == IO_VDP_RD_DATA) {
+			return valueFromNumber(static_cast<double>(m_vdpIoHandler->readVdpData()));
+		}
 		return m_ioSlots[ioIndex(addr)];
 	}
 	if (addr < RAM_BASE) {
@@ -632,6 +642,10 @@ void Memory::readBytes(uint32_t addr, u8* out, size_t length) const {
 	size_t offset = 0;
 	const auto* region = readRegion(addr, length, offset);
 	std::memcpy(out, region + offset, length);
+}
+
+bool Memory::isVramRange(uint32_t addr, size_t length) const {
+	return isVramRangeLocal(addr, length);
 }
 
 void Memory::loadIoSlots(const std::vector<Value>& slots) {

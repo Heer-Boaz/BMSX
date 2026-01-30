@@ -151,6 +151,20 @@ export class AssetBarrier<T> {
 		this.map.clear();
 	}
 
+	replaceValue(key: string, value: T, disposer?: Disposer<T>): void {
+		const e = this.map.get(key);
+		if (!e) {
+			throw new Error(`[AssetBarrier] replaceValue called for unknown key "${key}".`);
+		}
+		const old = e.value;
+		const oldWasFallback = e.isFallback;
+		e.value = value;
+		e.isFallback = false;
+		if (old !== undefined && old !== value && !oldWasFallback) {
+			(disposer ?? e.disposer)?.(old);
+		}
+	}
+
 	snapshot() {
 		const obj: Record<string, {
 			ref: number; hasValue: boolean; loading: boolean; gen: number;

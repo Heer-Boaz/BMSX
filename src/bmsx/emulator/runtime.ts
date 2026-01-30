@@ -115,6 +115,12 @@ import {
 	IO_SYS_CART_BOOTREADY,
 	IO_VDP_DITHER,
 	IO_VDP_PRIMARY_ATLAS_ID,
+	IO_VDP_RD_DATA,
+	IO_VDP_RD_MODE,
+	IO_VDP_RD_STATUS,
+	IO_VDP_RD_SURFACE,
+	IO_VDP_RD_X,
+	IO_VDP_RD_Y,
 	IO_VDP_SECONDARY_ATLAS_ID,
 	IO_WRITE_PTR_ADDR,
 	IRQ_DMA_DONE,
@@ -122,6 +128,9 @@ import {
 	IRQ_IMG_DONE,
 	IRQ_IMG_ERROR,
 	VDP_ATLAS_ID_NONE,
+	VDP_RD_MODE_RGBA8888,
+	VDP_RD_STATUS_OVERFLOW,
+	VDP_RD_STATUS_READY,
 } from './io';
 import { HandlerCache } from './handler_cache';
 import { Memory, ASSET_PAGE_SIZE, ASSET_TABLE_ENTRY_SIZE, ASSET_TABLE_HEADER_SIZE, type AssetEntry } from './memory';
@@ -260,7 +269,7 @@ class RateBudget {
 export class Runtime {
 	private static _instance: Runtime = null;
 	private static readonly ENGINE_BUILTIN_PRELUDE_PATH = '__engine_builtin_prelude__';
-	private static readonly LUA_SNAPSHOT_EXCLUDED_GLOBALS = new Set<string>(['print', 'type', 'tostring', 'tonumber', 'setmetatable', 'getmetatable', 'require', 'pairs', 'ipairs', 'serialize', 'deserialize', 'math', 'easing', 'string', 'os', 'table', 'coroutine', 'debug', 'package', 'api', 'peek', 'poke', 'SYS_BOOT_CART', 'SYS_CART_MAGIC_ADDR', 'SYS_CART_MAGIC', 'SYS_CART_ROM_SIZE', 'SYS_RAM_SIZE', 'SYS_MAX_ASSETS', 'SYS_STRING_HANDLE_COUNT', 'SYS_MAX_CYCLES_PER_FRAME', 'SYS_VDP_DITHER', 'SYS_VDP_PRIMARY_ATLAS_ID', 'SYS_VDP_SECONDARY_ATLAS_ID', 'SYS_VDP_ATLAS_NONE', 'SYS_IRQ_FLAGS', 'SYS_IRQ_ACK', 'SYS_DMA_SRC', 'SYS_DMA_DST', 'SYS_DMA_LEN', 'SYS_DMA_CTRL', 'SYS_DMA_STATUS', 'SYS_DMA_WRITTEN', 'SYS_IMG_SRC', 'SYS_IMG_LEN', 'SYS_IMG_DST', 'SYS_IMG_CAP', 'SYS_IMG_CTRL', 'SYS_IMG_STATUS', 'SYS_IMG_WRITTEN', 'SYS_ENGINE_ROM_BASE', 'SYS_CART_ROM_BASE', 'SYS_OVERLAY_ROM_BASE', 'SYS_VRAM_ENGINE_ATLAS_BASE', 'SYS_VRAM_PRIMARY_ATLAS_BASE', 'SYS_VRAM_SECONDARY_ATLAS_BASE', 'SYS_VRAM_STAGING_BASE', 'SYS_VRAM_ENGINE_ATLAS_SIZE', 'SYS_VRAM_PRIMARY_ATLAS_SIZE', 'SYS_VRAM_SECONDARY_ATLAS_SIZE', 'SYS_VRAM_STAGING_SIZE', 'IRQ_DMA_DONE', 'IRQ_DMA_ERROR', 'IRQ_IMG_DONE', 'IRQ_IMG_ERROR', 'DMA_CTRL_START', 'DMA_CTRL_STRICT', 'DMA_STATUS_BUSY', 'DMA_STATUS_DONE', 'DMA_STATUS_ERROR', 'DMA_STATUS_CLIPPED', 'IMG_CTRL_START', 'IMG_STATUS_BUSY', 'IMG_STATUS_DONE', 'IMG_STATUS_ERROR', 'IMG_STATUS_CLIPPED']);
+	private static readonly LUA_SNAPSHOT_EXCLUDED_GLOBALS = new Set<string>(['print', 'type', 'tostring', 'tonumber', 'setmetatable', 'getmetatable', 'require', 'pairs', 'ipairs', 'serialize', 'deserialize', 'math', 'easing', 'string', 'os', 'table', 'coroutine', 'debug', 'package', 'api', 'peek', 'poke', 'SYS_BOOT_CART', 'SYS_CART_MAGIC_ADDR', 'SYS_CART_MAGIC', 'SYS_CART_ROM_SIZE', 'SYS_RAM_SIZE', 'SYS_MAX_ASSETS', 'SYS_STRING_HANDLE_COUNT', 'SYS_MAX_CYCLES_PER_FRAME', 'SYS_VDP_DITHER', 'SYS_VDP_PRIMARY_ATLAS_ID', 'SYS_VDP_SECONDARY_ATLAS_ID', 'SYS_VDP_ATLAS_NONE', 'SYS_VDP_RD_SURFACE', 'SYS_VDP_RD_X', 'SYS_VDP_RD_Y', 'SYS_VDP_RD_MODE', 'SYS_VDP_RD_STATUS', 'SYS_VDP_RD_DATA', 'SYS_VDP_RD_MODE_RGBA8888', 'SYS_VDP_RD_STATUS_READY', 'SYS_VDP_RD_STATUS_OVERFLOW', 'SYS_IRQ_FLAGS', 'SYS_IRQ_ACK', 'SYS_DMA_SRC', 'SYS_DMA_DST', 'SYS_DMA_LEN', 'SYS_DMA_CTRL', 'SYS_DMA_STATUS', 'SYS_DMA_WRITTEN', 'SYS_IMG_SRC', 'SYS_IMG_LEN', 'SYS_IMG_DST', 'SYS_IMG_CAP', 'SYS_IMG_CTRL', 'SYS_IMG_STATUS', 'SYS_IMG_WRITTEN', 'SYS_ENGINE_ROM_BASE', 'SYS_CART_ROM_BASE', 'SYS_OVERLAY_ROM_BASE', 'SYS_VRAM_ENGINE_ATLAS_BASE', 'SYS_VRAM_PRIMARY_ATLAS_BASE', 'SYS_VRAM_SECONDARY_ATLAS_BASE', 'SYS_VRAM_STAGING_BASE', 'SYS_VRAM_ENGINE_ATLAS_SIZE', 'SYS_VRAM_PRIMARY_ATLAS_SIZE', 'SYS_VRAM_SECONDARY_ATLAS_SIZE', 'SYS_VRAM_STAGING_SIZE', 'IRQ_DMA_DONE', 'IRQ_DMA_ERROR', 'IRQ_IMG_DONE', 'IRQ_IMG_ERROR', 'DMA_CTRL_START', 'DMA_CTRL_STRICT', 'DMA_STATUS_BUSY', 'DMA_STATUS_DONE', 'DMA_STATUS_ERROR', 'DMA_STATUS_CLIPPED', 'IMG_CTRL_START', 'IMG_STATUS_BUSY', 'IMG_STATUS_DONE', 'IMG_STATUS_ERROR', 'IMG_STATUS_CLIPPED']);
 	/**
 	 * Preserved render queue when a fault occurs
 	 * This is used to restore the render queue to its previous state
@@ -1111,6 +1120,10 @@ export class Runtime {
 		this.memory.writeValue(IO_IMG_WRITTEN, 0);
 		this.memory.writeValue(IO_VDP_PRIMARY_ATLAS_ID, VDP_ATLAS_ID_NONE);
 		this.memory.writeValue(IO_VDP_SECONDARY_ATLAS_ID, VDP_ATLAS_ID_NONE);
+		this.memory.writeValue(IO_VDP_RD_SURFACE, 0);
+		this.memory.writeValue(IO_VDP_RD_X, 0);
+		this.memory.writeValue(IO_VDP_RD_Y, 0);
+		this.memory.writeValue(IO_VDP_RD_MODE, VDP_RD_MODE_RGBA8888);
 		this.vdp.initializeRegisters();
 		this.dmaController = new DmaController(this.memory, (mask) => this.raiseIrqFlags(mask));
 		this.imgDecController = new ImgDecController(this.memory, this.dmaController, (mask) => this.raiseIrqFlags(mask));
@@ -1545,6 +1558,7 @@ export class Runtime {
 			cycleBudgetGranted: budget,
 			cycleCarryGranted: carryBudget,
 		};
+		this.vdp.beginFrame();
 		this.currentFrameState = state;
 		return state;
 	}
@@ -3189,6 +3203,15 @@ export class Runtime {
 		this.registerGlobal('SYS_VDP_PRIMARY_ATLAS_ID', IO_VDP_PRIMARY_ATLAS_ID);
 		this.registerGlobal('SYS_VDP_SECONDARY_ATLAS_ID', IO_VDP_SECONDARY_ATLAS_ID);
 		this.registerGlobal('SYS_VDP_ATLAS_NONE', VDP_ATLAS_ID_NONE);
+		this.registerGlobal('SYS_VDP_RD_SURFACE', IO_VDP_RD_SURFACE);
+		this.registerGlobal('SYS_VDP_RD_X', IO_VDP_RD_X);
+		this.registerGlobal('SYS_VDP_RD_Y', IO_VDP_RD_Y);
+		this.registerGlobal('SYS_VDP_RD_MODE', IO_VDP_RD_MODE);
+		this.registerGlobal('SYS_VDP_RD_STATUS', IO_VDP_RD_STATUS);
+		this.registerGlobal('SYS_VDP_RD_DATA', IO_VDP_RD_DATA);
+		this.registerGlobal('SYS_VDP_RD_MODE_RGBA8888', VDP_RD_MODE_RGBA8888);
+		this.registerGlobal('SYS_VDP_RD_STATUS_READY', VDP_RD_STATUS_READY);
+		this.registerGlobal('SYS_VDP_RD_STATUS_OVERFLOW', VDP_RD_STATUS_OVERFLOW);
 		this.registerGlobal('SYS_IRQ_FLAGS', IO_IRQ_FLAGS);
 		this.registerGlobal('SYS_IRQ_ACK', IO_IRQ_ACK);
 		this.registerGlobal('SYS_DMA_SRC', IO_DMA_SRC);

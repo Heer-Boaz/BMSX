@@ -117,7 +117,9 @@ public:
 	// ─────────────────────────────────────────────────────────────────────────
 	virtual TextureHandle createTexture(const u8* data, i32 width, i32 height, const TextureParams& params) = 0;
 	virtual void updateTexture(TextureHandle handle, const u8* data, i32 width, i32 height, const TextureParams& params) = 0;
+	virtual TextureHandle resizeTexture(TextureHandle handle, i32 width, i32 height, const TextureParams& params) = 0;
 	virtual void updateTextureRegion(TextureHandle handle, const u8* data, i32 width, i32 height, i32 x, i32 y, const TextureParams& params) = 0;
+	virtual void readTextureRegion(TextureHandle handle, u8* out, i32 width, i32 height, i32 x, i32 y, const TextureParams& params) = 0;
 	virtual TextureHandle createSolidTexture2D(i32 width, i32 height, const Color& color) = 0;
 	virtual void destroyTexture(TextureHandle handle) = 0;
 
@@ -163,7 +165,9 @@ public:
 	// Texture management
 	TextureHandle createTexture(const u8* data, i32 width, i32 height, const TextureParams& params) override;
 	void updateTexture(TextureHandle handle, const u8* data, i32 width, i32 height, const TextureParams& params) override;
+	TextureHandle resizeTexture(TextureHandle handle, i32 width, i32 height, const TextureParams& params) override;
 	void updateTextureRegion(TextureHandle handle, const u8* data, i32 width, i32 height, i32 x, i32 y, const TextureParams& params) override;
+	void readTextureRegion(TextureHandle handle, u8* out, i32 width, i32 height, i32 x, i32 y, const TextureParams& params) override;
 	TextureHandle createSolidTexture2D(i32 width, i32 height, const Color& color) override;
 	void destroyTexture(TextureHandle handle) override;
 

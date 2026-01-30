@@ -23,7 +23,7 @@ import {
 	VRAM_STAGING_BASE,
 	VRAM_STAGING_SIZE,
 } from './memory_map';
-import { IO_SLOT_COUNT } from './io';
+import { IO_SLOT_COUNT, IO_VDP_RD_DATA, IO_VDP_RD_STATUS } from './io';
 
 export type AssetType = 'image' | 'audio';
 
@@ -64,6 +64,11 @@ export type VramWriteSink = {
 	writeVram(addr: number, bytes: Uint8Array): void;
 };
 
+export type VdpIoHandler = {
+	readVdpStatus(): number;
+	readVdpData(): number;
+};
+
 export type MemoryInit = {
 	engineRom: Uint8Array;
 	cartRom?: Uint8Array | null;
@@ -99,6 +104,7 @@ export class Memory {
 	private readonly ramView: DataView;
 	private readonly ioSlots: Value[];
 	private vramWriter: VramWriteSink;
+	private vdpIoHandler: VdpIoHandler;
 	private readonly vramScratch = new Uint8Array(4);
 
 	private assetEntries: AssetEntry[] = [];
@@ -130,6 +136,10 @@ export class Memory {
 
 	public setVramWriter(writer: VramWriteSink): void {
 		this.vramWriter = writer;
+	}
+
+	public setVdpIoHandler(handler: VdpIoHandler): void {
+		this.vdpIoHandler = handler;
 	}
 
 	public getIoSlotCount(): number {
@@ -820,6 +830,12 @@ export class Memory {
 
 	public readValue(addr: number): Value {
 		if (this.isIoAddress(addr)) {
+			if (addr === IO_VDP_RD_STATUS) {
+				return this.vdpIoHandler.readVdpStatus();
+			}
+			if (addr === IO_VDP_RD_DATA) {
+				return this.vdpIoHandler.readVdpData();
+			}
 			return this.ioSlots[this.ioIndex(addr)];
 		}
 		if (addr < RAM_BASE) {
@@ -972,7 +988,7 @@ export class Memory {
 		this.vramWriter.writeVram(addr, bytes);
 	}
 
-	private isVramRange(addr: number, length: number): boolean {
+	public isVramRange(addr: number, length: number): boolean {
 		if (length <= 0) {
 			return false;
 		}

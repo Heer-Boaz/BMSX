@@ -222,6 +222,43 @@ void TextureManager::updateTexturesForAsset(const AssetId& assetId,
 	}
 }
 
+TextureHandle TextureManager::resizeTextureForKey(const std::string& keyBase, i32 width, i32 height) {
+	if (!m_backend) {
+		throw BMSX_RUNTIME_ERROR("TextureManager backend not set");
+	}
+	if (keyBase.empty()) {
+		throw BMSX_RUNTIME_ERROR("TextureManager: texture key missing for resize");
+	}
+	if (width <= 0 || height <= 0) {
+		throw BMSX_RUNTIME_ERROR("TextureManager: invalid resize dimensions");
+	}
+	const std::string prefix = keyBase + "|";
+	bool updated = false;
+	TextureHandle updatedHandle = nullptr;
+	for (auto& [key, gpuEntry] : m_gpuCache) {
+		if (key.rfind(prefix, 0) != 0) {
+			continue;
+		}
+		if (!gpuEntry.handle) {
+			throw BMSX_RUNTIME_ERROR("TextureManager: texture handle missing for resize");
+		}
+		TextureHandle newHandle = m_backend->resizeTexture(gpuEntry.handle, width, height, gpuEntry.params);
+		if (newHandle != gpuEntry.handle) {
+			m_textureBarrier.replaceValue(key, newHandle, [this](const TextureHandle& h) {
+				if (m_backend) m_backend->destroyTexture(h);
+			});
+			gpuEntry.handle = newHandle;
+			gpuEntry.ownedFallback = false;
+		}
+		updated = true;
+		updatedHandle = gpuEntry.handle;
+	}
+	if (!updated) {
+		throw BMSX_RUNTIME_ERROR("TextureManager: texture not found for resize");
+	}
+	return updatedHandle;
+}
+
 void TextureManager::updateTextureRegionForKey(const std::string& keyBase,
 												const u8* pixels,
 												i32 width,

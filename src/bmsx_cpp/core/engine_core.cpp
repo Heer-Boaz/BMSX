@@ -1129,6 +1129,10 @@ void EngineCore::uploadTexturesToBackend(bool includeCartAssets) {
 		if (assetEntry.regionW == 0 || assetEntry.regionH == 0) {
 			return;
 		}
+		const uint32_t span = assetEntry.capacity > 0 ? assetEntry.capacity : 1u;
+		if (memory.isVramRange(assetEntry.baseAddr, span)) {
+			return;
+		}
 		const u8* pixels = memory.getImagePixels(assetEntry);
 		const i32 width = static_cast<i32>(assetEntry.regionW);
 		const i32 height = static_cast<i32>(assetEntry.regionH);

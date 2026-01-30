@@ -25,6 +25,7 @@ void DmaController::enqueueImageCopy(const Memory::ImageWritePlan& plan, std::ve
 	job.pixels = std::move(pixels);
 	job.row = 0;
 	job.rowOffset = 0;
+	job.vramTarget = m_memory.isVramRange(plan.baseAddr, plan.writeLen > 0 ? plan.writeLen : 1);
 	job.written = 0;
 	job.clipped = plan.clipped;
 	job.error = false;
@@ -102,9 +103,15 @@ uint32_t DmaController::processJob(DmaJob& job, uint32_t budget) {
 		return 0;
 	}
 	if (job.kind == DmaJob::Kind::Io) {
-		const uint32_t chunk = job.remaining > budget ? budget : job.remaining;
+		uint32_t chunk = job.remaining > budget ? budget : job.remaining;
 		if (chunk == 0) {
 			return 0;
+		}
+		if (m_memory.isVramRange(job.dst, 1)) {
+			chunk &= ~3u;
+			if (chunk == 0) {
+				return 0;
+			}
 		}
 		try {
 			if (m_buffer.size() < chunk) {
@@ -129,7 +136,13 @@ uint32_t DmaController::processImageJob(DmaJob& job, uint32_t budget) {
 	uint32_t remaining = budget;
 	while (remaining > 0 && job.row < job.plan.writeHeight) {
 		const uint32_t rowRemaining = job.plan.writeStride - job.rowOffset;
-		const uint32_t toCopy = remaining < rowRemaining ? remaining : rowRemaining;
+		uint32_t toCopy = remaining < rowRemaining ? remaining : rowRemaining;
+		if (job.vramTarget) {
+			toCopy &= ~3u;
+			if (toCopy == 0) {
+				return budget - remaining;
+			}
+		}
 		const size_t srcOffset = static_cast<size_t>(job.row) * job.plan.sourceStride + job.rowOffset;
 		const uint32_t dstAddr = job.plan.baseAddr + job.row * job.plan.writeStride + job.rowOffset;
 		try {

@@ -146,6 +146,27 @@ public:
 		map_.clear();
 	}
 
+	void replaceValue(const std::string& key, const T& value, BarrierDisposer<T> disposer = {}) {
+		auto it = map_.find(key);
+		if (it == map_.end()) {
+			throw BMSX_RUNTIME_ERROR("[AssetBarrier] replaceValue called for unknown key \"" + key + "\".");
+		}
+		Entry& entry = it->second;
+		const bool oldWasFallback = entry.isFallback;
+		const std::optional<T> oldValue = entry.value;
+		entry.value = value;
+		entry.isFallback = false;
+		if (oldValue.has_value() && !oldWasFallback) {
+			auto callDisposer = disposer ? disposer : entry.disposer;
+			if (callDisposer) {
+				try { callDisposer(*oldValue); }
+				catch (const std::exception& e) {
+					std::cerr << "[AssetBarrier] disposer threw on replaceValue: " << e.what() << std::endl;
+				}
+			}
+		}
+	}
+
 	struct SnapshotEntry {
 		int ref = 0;
 		bool hasValue = false;

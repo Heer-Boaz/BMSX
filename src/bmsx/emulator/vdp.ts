@@ -16,23 +16,73 @@ import {
 } from '../rompack/rompack';
 import type { RawAssetSource } from '../rompack/asset_source';
 import { decodePngToRgba } from '../utils/image_decode';
-import { IO_VDP_DITHER, IO_VDP_PRIMARY_ATLAS_ID, IO_VDP_SECONDARY_ATLAS_ID, VDP_ATLAS_ID_NONE } from './io';
-import type { AssetEntry, VramWriteSink } from './memory';
+import {
+	IO_VDP_DITHER,
+	IO_VDP_PRIMARY_ATLAS_ID,
+	IO_VDP_RD_MODE,
+	IO_VDP_RD_SURFACE,
+	IO_VDP_RD_X,
+	IO_VDP_RD_Y,
+	IO_VDP_SECONDARY_ATLAS_ID,
+	VDP_ATLAS_ID_NONE,
+	VDP_RD_MODE_RGBA8888,
+	VDP_RD_STATUS_OVERFLOW,
+	VDP_RD_STATUS_READY,
+} from './io';
+import type { AssetEntry, VdpIoHandler, VramWriteSink } from './memory';
 import { Memory } from './memory';
 import { VRAM_ENGINE_ATLAS_BASE, VRAM_ENGINE_ATLAS_SIZE, VRAM_PRIMARY_ATLAS_BASE, VRAM_PRIMARY_ATLAS_SIZE, VRAM_SECONDARY_ATLAS_BASE, VRAM_SECONDARY_ATLAS_SIZE, VRAM_STAGING_BASE, VRAM_STAGING_SIZE } from './memory_map';
 
 const SKYBOX_FACE_KEYS = ['posx', 'negx', 'posy', 'negy', 'posz', 'negz'] as const;
 const SKYBOX_SLOT_ID_SET = new Set<string>(SKYBOX_SLOT_IDS);
 
-export class VDP implements VramWriteSink {
+const VDP_RD_SURFACE_ENGINE = 0;
+const VDP_RD_SURFACE_PRIMARY = 1;
+const VDP_RD_SURFACE_SECONDARY = 2;
+const VDP_RD_SURFACE_COUNT = 3;
+const VDP_RD_BUDGET_BYTES = 4096;
+const VDP_RD_MAX_CHUNK_PIXELS = 256;
+const VRAM_GARBAGE_CHUNK_BYTES = 64 * 1024;
+
+type VdpReadSurface = {
+	entry: AssetEntry;
+	textureKey: string;
+};
+
+type VdpReadCache = {
+	x0: number;
+	y: number;
+	width: number;
+	data: Uint8Array;
+};
+
+type VramSlot = {
+	baseAddr: number;
+	capacity: number;
+	entry: AssetEntry;
+	textureKey: string;
+	surfaceId: number;
+	textureWidth: number;
+	textureHeight: number;
+};
+
+export class VDP implements VramWriteSink, VdpIoHandler {
 	private readonly assetUpdateGate = taskGate.group('asset:update');
 	private readonly atlasSlotById = new Map<number, number>();
 	private readonly atlasViewsById = new Map<number, AssetEntry[]>();
 	private readonly atlasResourcesById = new Map<number, RomAsset>();
 	private readonly slotAtlasIds: Array<number | null> = [null, null];
 	private atlasSlotEntries: AssetEntry[] = [];
-	private vramSlots: Array<{ baseAddr: number; capacity: number; entry: AssetEntry; textureKey: string }> = [];
+	private vramSlots: VramSlot[] = [];
 	private vramStaging = new Uint8Array(VRAM_STAGING_SIZE);
+	private readonly vramGarbageScratch = new Uint8Array(VRAM_GARBAGE_CHUNK_BYTES);
+	private readonly vramSeedPixel = new Uint8Array(4);
+	private vramGarbageSeed = 0;
+	private readSurfaces: Array<VdpReadSurface | null> = [null, null, null];
+	private readCaches: VdpReadCache[] = [];
+	private readBudgetBytes = VDP_RD_BUDGET_BYTES;
+	private readOverflow = false;
+	private cpuReadbackByKey = new Map<string, Uint8Array>();
 	private skyboxSlotEntries: AssetEntry[] = [];
 	private dirtyAtlasBindings = false;
 	private dirtySkybox = false;
@@ -43,6 +93,10 @@ export class VDP implements VramWriteSink {
 		private readonly memory: Memory,
 	) {
 		this.memory.setVramWriter(this);
+		this.memory.setVdpIoHandler(this);
+		for (let index = 0; index < VDP_RD_SURFACE_COUNT; index += 1) {
+			this.readCaches.push({ x0: 0, y: 0, width: 0, data: new Uint8Array(0) });
+		}
 	}
 
 	public writeVram(addr: number, bytes: Uint8Array): void {
@@ -55,6 +109,7 @@ export class VDP implements VramWriteSink {
 		if (entry.baseStride === 0 || entry.regionW === 0 || entry.regionH === 0) {
 			throw new Error(`[BmsxVDP] VRAM slot '${entry.id}' is not initialized.`);
 		}
+		this.ensureVramSlotTextureSize(slot);
 		const offset = addr - slot.baseAddr;
 		const stride = entry.baseStride;
 		const rowCount = entry.regionH;
@@ -76,11 +131,66 @@ export class VDP implements VramWriteSink {
 			const width = rowBytes / 4;
 			const slice = bytes.subarray(cursor, cursor + rowBytes);
 			this.updateTextureRegion(slot.textureKey, slice, width, 1, x, row);
+			this.invalidateReadCache(slot.surfaceId);
+			this.updateCpuReadback(slot.surfaceId, slice, x, row);
 			remaining -= rowBytes;
 			cursor += rowBytes;
 			row += 1;
 			rowOffset = 0;
 		}
+	}
+
+	public beginFrame(): void {
+		this.readBudgetBytes = VDP_RD_BUDGET_BYTES;
+		this.readOverflow = false;
+	}
+
+	public readVdpStatus(): number {
+		let status = 0;
+		if (this.readBudgetBytes >= 4) {
+			status |= VDP_RD_STATUS_READY;
+		}
+		if (this.readOverflow) {
+			status |= VDP_RD_STATUS_OVERFLOW;
+		}
+		return status;
+	}
+
+	public readVdpData(): number {
+		const surfaceId = (this.memory.readValue(IO_VDP_RD_SURFACE) as number) >>> 0;
+		const x = (this.memory.readValue(IO_VDP_RD_X) as number) >>> 0;
+		const y = (this.memory.readValue(IO_VDP_RD_Y) as number) >>> 0;
+		const mode = (this.memory.readValue(IO_VDP_RD_MODE) as number) >>> 0;
+		if (mode !== VDP_RD_MODE_RGBA8888) {
+			throw new Error(`[BmsxVDP] Unsupported VDP read mode ${mode}.`);
+		}
+		const surface = this.getReadSurface(surfaceId);
+		const width = surface.entry.regionW;
+		const height = surface.entry.regionH;
+		if (x >= width || y >= height) {
+			throw new Error(`[BmsxVDP] VDP read out of bounds (${x}, ${y}) for surface ${surfaceId}.`);
+		}
+		if (this.readBudgetBytes < 4) {
+			this.readOverflow = true;
+			return 0;
+		}
+		const cache = this.getReadCache(surfaceId, surface, x, y);
+		const localX = x - cache.x0;
+		const byteIndex = localX * 4;
+		const r = cache.data[byteIndex];
+		const g = cache.data[byteIndex + 1];
+		const b = cache.data[byteIndex + 2];
+		const a = cache.data[byteIndex + 3];
+		this.readBudgetBytes -= 4;
+		let nextX = x + 1;
+		let nextY = y;
+		if (nextX >= width) {
+			nextX = 0;
+			nextY = y + 1;
+		}
+		this.memory.writeValue(IO_VDP_RD_X, nextX);
+		this.memory.writeValue(IO_VDP_RD_Y, nextY);
+		return (r | (g << 8) | (b << 16) | (a << 24)) >>> 0;
 	}
 
 	public initializeRegisters(): void {
@@ -221,10 +331,15 @@ export class VDP implements VramWriteSink {
 		this.slotAtlasIds[1] = null;
 		this.dirtyAtlasBindings = true;
 		this.vramSlots = [];
+		this.readSurfaces = [null, null, null];
+		this.clearReadCaches();
+		this.cpuReadbackByKey.clear();
 		this.skyboxSlotEntries = [];
 		this.skyboxFaceIds = null;
 		this.dirtySkybox = true;
 		SkyboxPipeline.clearSkyboxSources();
+		this.vramGarbageSeed = this.nextVramGarbageSeed();
+		this.seedVramStaging(this.vramGarbageSeed);
 
 		for (let index = 0; index < entries.length; index += 1) {
 			const entry = entries[index];
@@ -277,10 +392,10 @@ export class VDP implements VramWriteSink {
 			});
 			engineEntryCreated = true;
 		}
-		if (engineEntryCreated) {
+		if (engineEntryCreated || engineEntryRecord.regionW === 0 || engineEntryRecord.regionH === 0) {
 			seedAtlasSlot(engineEntryRecord);
 		}
-		this.registerVramSlot(engineEntryRecord, ENGINE_ATLAS_TEXTURE_KEY);
+		this.registerVramSlot(engineEntryRecord, ENGINE_ATLAS_TEXTURE_KEY, VDP_RD_SURFACE_ENGINE);
 
 		const skyboxFaceSize = getMachinePerfSpecs(assets.manifest.machine).skybox_face_size ?? SKYBOX_FACE_DEFAULT_SIZE;
 		if (skyboxFaceSize <= 0) {
@@ -317,8 +432,8 @@ export class VDP implements VramWriteSink {
 		seedAtlasSlot(primarySlotEntry);
 		seedAtlasSlot(secondarySlotEntry);
 		this.atlasSlotEntries = [primarySlotEntry, secondarySlotEntry];
-		this.registerVramSlot(primarySlotEntry, ATLAS_PRIMARY_SLOT_ID);
-		this.registerVramSlot(secondarySlotEntry, ATLAS_SECONDARY_SLOT_ID);
+		this.registerVramSlot(primarySlotEntry, ATLAS_PRIMARY_SLOT_ID, VDP_RD_SURFACE_PRIMARY);
+		this.registerVramSlot(secondarySlotEntry, ATLAS_SECONDARY_SLOT_ID, VDP_RD_SURFACE_SECONDARY);
 
 		for (let index = 0; index < viewEntries.length; index += 1) {
 			const entry = viewEntries[index];
@@ -394,6 +509,10 @@ export class VDP implements VramWriteSink {
 		for (let index = 0; index < dirty.length; index += 1) {
 			const entry = dirty[index];
 			if (entry.type === 'image') {
+				const vramSpan = entry.capacity > 0 ? entry.capacity : 1;
+				if (this.memory.isVramRange(entry.baseAddr, vramSpan)) {
+					continue;
+				}
 				if (SKYBOX_SLOT_ID_SET.has(entry.id)) {
 					refreshSkybox = true;
 					continue;
@@ -434,6 +553,7 @@ export class VDP implements VramWriteSink {
 		const engineBytes = source.getBytes(engineAsset);
 		const engineDecoded = await decodePngToRgba(engineBytes);
 		await $.texmanager.loadTextureFromPixels(ENGINE_ATLAS_TEXTURE_KEY, engineDecoded.pixels, engineDecoded.width, engineDecoded.height);
+		this.setSlotTextureSize(ENGINE_ATLAS_TEXTURE_KEY, engineDecoded.width, engineDecoded.height);
 		$.view.loadEngineAtlasTexture();
 
 		const primaryEntry = this.memory.getAssetEntry(ATLAS_PRIMARY_SLOT_ID);
@@ -447,13 +567,129 @@ export class VDP implements VramWriteSink {
 		if (entry.regionW === 0 || entry.regionH === 0) {
 			throw new Error(`[BmsxVDP] VRAM slot '${entry.id}' missing dimensions.`);
 		}
-		const pixels = new Uint8Array(entry.regionW * entry.regionH * 4);
-		const handle = await $.texmanager.loadTextureFromPixels(textureKey, pixels, entry.regionW, entry.regionH);
+		const seed = this.deriveVramGarbageSeed(textureKey);
+		this.fillGarbageBuffer(this.vramSeedPixel, seed | 1);
+		await $.texmanager.loadTextureFromPixels(textureKey, this.vramSeedPixel, 1, 1);
+		const handle = $.texmanager.resizeTextureForKey(textureKey, entry.regionW, entry.regionH);
 		$.view.textures[textureKey] = handle;
+		this.setSlotTextureSize(textureKey, entry.regionW, entry.regionH);
+		const slot = this.getVramSlotByTextureKey(textureKey);
+		this.seedVramSlotTexture(slot, seed);
 	}
 
 	private updateTextureRegion(textureKey: string, pixels: Uint8Array, width: number, height: number, x: number, y: number): void {
 		$.texmanager.updateTextureRegionForKey(textureKey, pixels, width, height, x, y);
+	}
+
+	private clearReadCaches(): void {
+		for (let index = 0; index < this.readCaches.length; index += 1) {
+			this.readCaches[index].width = 0;
+		}
+	}
+
+	private invalidateReadCache(surfaceId: number): void {
+		const cache = this.readCaches[surfaceId];
+		if (cache) {
+			cache.width = 0;
+		}
+	}
+
+	private registerReadSurface(surfaceId: number, entry: AssetEntry, textureKey: string): void {
+		if (surfaceId < 0 || surfaceId >= VDP_RD_SURFACE_COUNT) {
+			throw new Error(`[BmsxVDP] Invalid read surface ${surfaceId}.`);
+		}
+		this.readSurfaces[surfaceId] = { entry, textureKey };
+		this.invalidateReadCache(surfaceId);
+	}
+
+	private getReadSurface(surfaceId: number): VdpReadSurface {
+		const surface = this.readSurfaces[surfaceId];
+		if (!surface) {
+			throw new Error(`[BmsxVDP] Read surface ${surfaceId} not registered.`);
+		}
+		return surface;
+	}
+
+	private getReadCache(surfaceId: number, surface: VdpReadSurface, x: number, y: number): VdpReadCache {
+		const cache = this.readCaches[surfaceId];
+		if (cache.width === 0 || cache.y !== y || x < cache.x0 || x >= cache.x0 + cache.width) {
+			this.prefetchReadCache(surfaceId, surface, x, y);
+		}
+		return this.readCaches[surfaceId];
+	}
+
+	private prefetchReadCache(surfaceId: number, surface: VdpReadSurface, x: number, y: number): void {
+		const width = surface.entry.regionW;
+		const height = surface.entry.regionH;
+		if (x >= width || y >= height) {
+			throw new Error(`[BmsxVDP] Read cache prefetch out of bounds (${x}, ${y}).`);
+		}
+		const maxPixelsByBudget = Math.floor(this.readBudgetBytes / 4);
+		if (maxPixelsByBudget <= 0) {
+			this.readOverflow = true;
+			const cache = this.readCaches[surfaceId];
+			cache.width = 0;
+			return;
+		}
+		const chunkW = Math.min(VDP_RD_MAX_CHUNK_PIXELS, width - x, maxPixelsByBudget);
+		const data = this.readSurfacePixels(surface, x, y, chunkW, 1);
+		const cache = this.readCaches[surfaceId];
+		cache.x0 = x;
+		cache.y = y;
+		cache.width = chunkW;
+		cache.data = data;
+	}
+
+	private readSurfacePixels(surface: VdpReadSurface, x: number, y: number, width: number, height: number): Uint8Array {
+		if (this.useCpuReadback()) {
+			return this.readCpuReadback(surface, x, y, width, height);
+		}
+		const handle = $.texmanager.getTextureByUri(surface.textureKey);
+		if (!handle) {
+			throw new Error(`[BmsxVDP] Readback texture missing for '${surface.textureKey}'.`);
+		}
+		return $.view.backend.readTextureRegion(handle, x, y, width, height);
+	}
+
+	private readCpuReadback(surface: VdpReadSurface, x: number, y: number, width: number, height: number): Uint8Array {
+		const buffer = this.getCpuReadbackBuffer(surface);
+		const stride = surface.entry.regionW * 4;
+		const out = new Uint8Array(width * height * 4);
+		for (let row = 0; row < height; row += 1) {
+			const srcOffset = (y + row) * stride + x * 4;
+			const dstOffset = row * width * 4;
+			out.set(buffer.subarray(srcOffset, srcOffset + width * 4), dstOffset);
+		}
+		return out;
+	}
+
+	private updateCpuReadback(surfaceId: number, slice: Uint8Array, x: number, y: number): void {
+		if (!this.useCpuReadback()) {
+			return;
+		}
+		const surface = this.readSurfaces[surfaceId];
+		if (!surface) {
+			return;
+		}
+		const buffer = this.getCpuReadbackBuffer(surface);
+		const stride = surface.entry.regionW * 4;
+		const offset = y * stride + x * 4;
+		buffer.set(slice, offset);
+	}
+
+	private getCpuReadbackBuffer(surface: VdpReadSurface): Uint8Array {
+		const key = surface.textureKey;
+		let buffer = this.cpuReadbackByKey.get(key);
+		const expectedSize = surface.entry.regionW * surface.entry.regionH * 4;
+		if (!buffer || buffer.byteLength !== expectedSize) {
+			buffer = new Uint8Array(expectedSize);
+			this.cpuReadbackByKey.set(key, buffer);
+		}
+		return buffer;
+	}
+
+	private useCpuReadback(): boolean {
+		return $.view.backend.type === 'headless';
 	}
 
 	private writeVramStaging(addr: number, bytes: Uint8Array): void {
@@ -464,11 +700,159 @@ export class VDP implements VramWriteSink {
 		this.vramStaging.set(bytes, offset);
 	}
 
-	private registerVramSlot(entry: AssetEntry, textureKey: string): void {
-		this.vramSlots.push({ baseAddr: entry.baseAddr, capacity: entry.capacity, entry, textureKey });
+	private registerVramSlot(entry: AssetEntry, textureKey: string, surfaceId: number): void {
+		this.vramSlots.push({
+			baseAddr: entry.baseAddr,
+			capacity: entry.capacity,
+			entry,
+			textureKey,
+			surfaceId,
+			textureWidth: entry.regionW,
+			textureHeight: entry.regionH,
+		});
+		this.registerReadSurface(surfaceId, entry, textureKey);
 	}
 
-	private findVramSlot(addr: number, length: number): { baseAddr: number; capacity: number; entry: AssetEntry; textureKey: string } {
+	private ensureVramSlotTextureSize(slot: VramSlot): void {
+		const width = slot.entry.regionW;
+		const height = slot.entry.regionH;
+		if (slot.textureWidth === width && slot.textureHeight === height) {
+			return;
+		}
+		const handle = $.texmanager.resizeTextureForKey(slot.textureKey, width, height);
+		$.view.textures[slot.textureKey] = handle;
+		slot.textureWidth = width;
+		slot.textureHeight = height;
+		this.invalidateReadCache(slot.surfaceId);
+		this.seedVramSlotTexture(slot, this.deriveVramGarbageSeed(slot.textureKey));
+	}
+
+	private getVramSlotByTextureKey(textureKey: string): VramSlot {
+		for (let index = 0; index < this.vramSlots.length; index += 1) {
+			const slot = this.vramSlots[index];
+			if (slot.textureKey === textureKey) {
+				return slot;
+			}
+		}
+		throw new Error(`[BmsxVDP] VRAM slot '${textureKey}' not registered.`);
+	}
+
+	private deriveVramGarbageSeed(textureKey: string): number {
+		if (textureKey === ATLAS_PRIMARY_SLOT_ID) {
+			return this.vramGarbageSeed ^ 0x9E3779B9;
+		}
+		if (textureKey === ATLAS_SECONDARY_SLOT_ID) {
+			return this.vramGarbageSeed ^ 0x7F4A7C15;
+		}
+		return this.vramGarbageSeed;
+	}
+
+	private nextVramGarbageSeed(): number {
+		const time = Date.now() >>> 0;
+		const rand = Math.floor(Math.random() * 0xffffffff) >>> 0;
+		return (time ^ rand) | 1;
+	}
+
+	private advanceGarbageState(state: number): number {
+		let next = state;
+		next ^= next << 13;
+		next >>>= 0;
+		next ^= next >>> 17;
+		next >>>= 0;
+		next ^= next << 5;
+		next >>>= 0;
+		return next;
+	}
+
+	private fillGarbageBuffer(buffer: Uint8Array, seed: number): number {
+		let state = seed;
+		let cursor = 0;
+		const end = buffer.byteLength;
+		const alignedEnd = end - (end & 3);
+		while (cursor < alignedEnd) {
+			state = this.advanceGarbageState(state);
+			const value = state;
+			buffer[cursor] = value & 0xff;
+			buffer[cursor + 1] = (value >>> 8) & 0xff;
+			buffer[cursor + 2] = (value >>> 16) & 0xff;
+			buffer[cursor + 3] = (value >>> 24) & 0xff;
+			cursor += 4;
+		}
+		if (cursor < end) {
+			state = this.advanceGarbageState(state);
+			let value = state;
+			while (cursor < end) {
+				buffer[cursor] = value & 0xff;
+				value >>>= 8;
+				cursor += 1;
+			}
+		}
+		return state;
+	}
+
+	private seedVramStaging(seed: number): void {
+		this.fillGarbageBuffer(this.vramStaging, seed | 1);
+	}
+
+	private seedVramSlotTexture(slot: VramSlot, seed: number): void {
+		const width = slot.entry.regionW;
+		const height = slot.entry.regionH;
+		if (width === 0 || height === 0) {
+			throw new Error(`[BmsxVDP] VRAM slot '${slot.entry.id}' missing dimensions.`);
+		}
+		const rowPixels = width;
+		const maxPixels = Math.floor(this.vramGarbageScratch.byteLength / 4);
+		if (maxPixels <= 0) {
+			throw new Error('[BmsxVDP] VRAM garbage scratch buffer is empty.');
+		}
+		let state = seed | 1;
+		if (rowPixels <= maxPixels) {
+			const rowsPerChunk = Math.max(1, Math.floor(maxPixels / rowPixels));
+			for (let y = 0; y < height; ) {
+				const rows = Math.min(rowsPerChunk, height - y);
+				const chunkBytes = rowPixels * rows * 4;
+				const chunk = this.vramGarbageScratch.subarray(0, chunkBytes);
+				state = this.fillGarbageBuffer(chunk, state);
+				this.updateTextureRegion(slot.textureKey, chunk, rowPixels, rows, 0, y);
+				if (this.useCpuReadback()) {
+					for (let row = 0; row < rows; row += 1) {
+						const rowOffset = row * rowPixels * 4;
+						const slice = chunk.subarray(rowOffset, rowOffset + rowPixels * 4);
+						this.updateCpuReadback(slot.surfaceId, slice, 0, y + row);
+					}
+				}
+				y += rows;
+			}
+		} else {
+			for (let y = 0; y < height; y += 1) {
+				for (let x = 0; x < width; ) {
+					const segmentWidth = Math.min(maxPixels, width - x);
+					const segmentBytes = segmentWidth * 4;
+					const segment = this.vramGarbageScratch.subarray(0, segmentBytes);
+					state = this.fillGarbageBuffer(segment, state);
+					this.updateTextureRegion(slot.textureKey, segment, segmentWidth, 1, x, y);
+					if (this.useCpuReadback()) {
+						this.updateCpuReadback(slot.surfaceId, segment, x, y);
+					}
+					x += segmentWidth;
+				}
+			}
+		}
+		this.invalidateReadCache(slot.surfaceId);
+	}
+
+	private setSlotTextureSize(textureKey: string, width: number, height: number): void {
+		for (let index = 0; index < this.vramSlots.length; index += 1) {
+			const slot = this.vramSlots[index];
+			if (slot.textureKey === textureKey) {
+				slot.textureWidth = width;
+				slot.textureHeight = height;
+				return;
+			}
+		}
+	}
+
+	private findVramSlot(addr: number, length: number): VramSlot {
 		for (let index = 0; index < this.vramSlots.length; index += 1) {
 			const slot = this.vramSlots[index];
 			if (addr >= slot.baseAddr && addr + length <= slot.baseAddr + slot.capacity) {

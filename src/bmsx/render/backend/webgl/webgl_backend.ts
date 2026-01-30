@@ -35,6 +35,7 @@ export class WebGLBackend implements GPUBackend {
 	private boundTex2D: (WebGLTexture)[] = [];
 	private boundTexCube: (WebGLTexture)[] = [];
 	private texSizes = new WeakMap<WebGLTexture, { w: number; h: number }>();
+	private readbackFbo: WebGLFramebuffer = null;
 	private uniformCache = new WeakMap<WebGLProgram, Map<string, WebGLUniformLocation>>();
 	private attribCache = new WeakMap<WebGLProgram, Map<string, number>>();
 	private bufferSizes = new WeakMap<WebGLBuffer, number>();
@@ -102,6 +103,16 @@ export class WebGLBackend implements GPUBackend {
 		gl.bindTexture(gl.TEXTURE_2D, null);
 	}
 
+	resizeTexture(handle: WebGLTexture, width: number, height: number, _desc: TextureParams): WebGLTexture {
+		const gl = this.gl;
+		gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_UPLOAD);
+		gl.bindTexture(gl.TEXTURE_2D, handle);
+		gl.texImage2D(gl.TEXTURE_2D, 0, gl.SRGB8_ALPHA8, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+		this.texSizes.set(handle, { w: width, h: height });
+		gl.bindTexture(gl.TEXTURE_2D, null);
+		return handle;
+	}
+
 	updateTextureRegion(handle: WebGLTexture, src: TextureSource, x: number, y: number): void {
 		const gl = this.gl;
 		const data = (src as { data?: Uint8Array }).data;
@@ -117,6 +128,32 @@ export class WebGLBackend implements GPUBackend {
 		this.frameStats.bytesUploaded += bytes;
 		this.frameStats.textureBytes += bytes;
 		gl.bindTexture(gl.TEXTURE_2D, null);
+	}
+
+	readTextureRegion(handle: WebGLTexture, x: number, y: number, width: number, height: number): Uint8Array {
+		const gl = this.gl;
+		const size = this.texSizes.get(handle);
+		if (!size) {
+			throw new Error('[WebGLBackend] Texture size not tracked for readback.');
+		}
+		if (!this.readbackFbo) {
+			this.readbackFbo = gl.createFramebuffer();
+			if (!this.readbackFbo) {
+				throw new Error('[WebGLBackend] Failed to create readback framebuffer.');
+			}
+		}
+		const prevFbo = gl.getParameter(gl.FRAMEBUFFER_BINDING) as WebGLFramebuffer | null;
+		gl.bindFramebuffer(gl.FRAMEBUFFER, this.readbackFbo);
+		gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, handle, 0);
+		const glY = size.h - y - height;
+		if (glY < 0) {
+			throw new Error('[WebGLBackend] Readback Y coordinate out of bounds.');
+		}
+		const buffer = new Uint8Array(width * height * 4);
+		gl.pixelStorei(gl.PACK_ALIGNMENT, 1);
+		gl.readPixels(x, glY, width, height, gl.RGBA, gl.UNSIGNED_BYTE, buffer);
+		gl.bindFramebuffer(gl.FRAMEBUFFER, prevFbo);
+		return buffer;
 	}
 
 	createSolidTexture2D(width: number, height: number, rgba: color_arr, desc: TextureParams = {}): WebGLTexture {

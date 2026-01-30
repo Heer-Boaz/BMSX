@@ -10,9 +10,11 @@ import { CLIPlatformServices } from '../../../src/bmsx_hostplatform/cli/platform
 import type { Platform, InputEvt } from '../../../src/bmsx_hostplatform/platform';
 
 declare const __BOOTROM_TARGET__: 'cli' | 'headless';
+declare const __BOOTROM_DEBUG__: boolean;
 
 interface LaunchOptions {
 	romPath?: string;
+	romFolder?: string;
 	frameIntervalMs?: number;
 	debugOverride?: boolean;
 	inputTimelinePath?: string;
@@ -152,19 +154,24 @@ if (typeof (globalThis as any).document === 'undefined') {
 function printHelp(): void {
 	console.log('Run a packaged BMSX ROM in a Node environment.');
 	console.log('');
-	console.log('Usage: node <bundle>.js [options]');
+	console.log('Usage: node <bundle>.js [options] [romFolder]');
 	console.log('');
 	console.log('Options:');
-	console.log('  --rom, -r <path>         Override ROM file location (defaults to dist directory).');
+	console.log('  --rom, -r <path>         Override ROM file location.');
 	console.log('  --frame-interval <ms>    Override frame loop interval in milliseconds (default 20).');
 	console.log('  --debug                  Force debug mode.');
 	console.log('  --no-debug               Force non-debug mode.');
 	console.log('  --ttl <seconds>          Auto-terminate after the given number of seconds (default 10).');
 	console.log('  --input-timeline <file>  JSON timeline of InputEvt entries to schedule.');
 	console.log('  --input-module <file>    JS/TS module exporting a scheduler for custom input logic.');
-	console.log('  --engine-runtime <path>  JS runtime bundle for the engine (defaults to dist/engine.js).');
-	console.log('  --engine-assets <path>   Engine asset pack ROM (defaults to dist/bmsx-bios.rom).');
+	console.log('  --engine-runtime <path>  JS runtime bundle for the engine (defaults to dist/engine(.debug).js).');
+	console.log('  --engine-assets <path>   Engine asset pack ROM (defaults to dist/bmsx-bios(.debug).rom).');
 	console.log('  --help, -h               Show this help message.');
+	console.log('');
+	console.log('romFolder:');
+	console.log('  If --rom is omitted, a romFolder positional argument resolves to');
+	console.log('  dist/<romFolder>(.debug).rom and auto-looks for timeline/module under');
+	console.log('  src/carts/<romFolder>/test/.');
 }
 
 function parseArgs(argv: string[]): LaunchOptions {
@@ -246,6 +253,14 @@ function parseArgs(argv: string[]): LaunchOptions {
 		if (arg === '--help' || arg === '-h') {
 			printHelp();
 			process.exit(0);
+		}
+		if (!arg.startsWith('-')) {
+			if (!options.romFolder) {
+				options.romFolder = arg;
+				index += 1;
+				continue;
+			}
+			throw new Error(`Unexpected argument: ${arg}`);
 		}
 		throw new Error(`Unrecognized argument: ${arg}`);
 	}
@@ -410,11 +425,40 @@ async function handleWorkspaceFetch(descriptor: WorkspaceFetchDescriptor, worksp
 	return new Response(null, { status: 405, headers: { Allow: 'GET,POST,DELETE' } });
 }
 
-function resolveRomPath(options: LaunchOptions): string {
+function resolveRomPath(options: LaunchOptions, debugFlag: boolean): string {
 	if (options.romPath) {
 		return path.resolve(options.romPath);
 	}
-	throw new Error('ROM path is required. Pass --rom <path>.');
+	if (options.romFolder) {
+		const suffix = debugFlag ? '.debug' : '';
+		return path.resolve('dist', `${options.romFolder}${suffix}.rom`);
+	}
+	throw new Error('ROM path is required. Pass --rom <path> or supply a romFolder.');
+}
+
+async function resolveCartRoot(romFolder: string): Promise<string> {
+	const candidates = [
+		path.resolve('src', 'carts', romFolder),
+		path.resolve('src', romFolder),
+	];
+	for (const candidate of candidates) {
+		try {
+			await fs.access(candidate);
+			return candidate;
+		} catch {
+			// continue
+		}
+	}
+	throw new Error(`Cart folder "${romFolder}" not found under src/carts or src.`);
+}
+
+async function fileExists(filePath: string): Promise<boolean> {
+	try {
+		await fs.access(filePath);
+		return true;
+	} catch {
+		return false;
+	}
 }
 
 async function readRomFile(filePath: string): Promise<Uint8Array> {
@@ -556,13 +600,13 @@ function createPlatform(frameIntervalMs: number): Platform {
 	throw new Error(`Unsupported boot platform: ${__BOOTROM_TARGET__}`);
 }
 
-async function prepareRuntime(cliOptions: LaunchOptions, romPath: string): Promise<EngineNamespace> {
+async function prepareRuntime(cliOptions: LaunchOptions, romPath: string, debugFlag: boolean): Promise<EngineNamespace> {
 	ensureHostEnvironment();
 	const globals = globalThis as BootGlobals;
 	const romDirectory = path.resolve(path.dirname(romPath));
 	const engineRuntimePath = cliOptions.engineRuntimePath
 		? path.resolve(cliOptions.engineRuntimePath)
-		: path.join(romDirectory, 'engine.js');
+		: path.join(romDirectory, debugFlag ? 'engine.debug.js' : 'engine.js');
 
 	await loadEngineRuntimeFromFile(engineRuntimePath);
 	const runtime = globals.bmsx;
@@ -574,22 +618,22 @@ async function prepareRuntime(cliOptions: LaunchOptions, romPath: string): Promi
 
 async function main(): Promise<void> {
 	const cliOptions = parseArgs(process.argv.slice(2));
-	const romPath = resolveRomPath(cliOptions);
-	let debugFlag = false;
+	let debugFlag = __BOOTROM_DEBUG__;
 	if (typeof cliOptions.debugOverride === 'boolean') {
 		debugFlag = cliOptions.debugOverride;
 	}
+	const romPath = resolveRomPath(cliOptions, debugFlag);
 	let frameInterval = 20;
 	if (typeof cliOptions.frameIntervalMs === 'number') {
 		frameInterval = cliOptions.frameIntervalMs;
 	}
 
 	console.log(`[bootrom:${__BOOTROM_TARGET__}] Loading ROM: ${romPath}`);
-	const runtime = await prepareRuntime(cliOptions, romPath);
+	const runtime = await prepareRuntime(cliOptions, romPath, debugFlag);
 	const romDirectory = path.resolve(path.dirname(romPath));
 	const engineAssetsPath = cliOptions.engineAssetsPath
 		? path.resolve(cliOptions.engineAssetsPath)
-		: path.join(romDirectory, 'bmsx-bios.rom');
+		: path.join(romDirectory, debugFlag ? 'bmsx-bios.debug.rom' : 'bmsx-bios.rom');
 	console.log(`[bootrom:${__BOOTROM_TARGET__}] Loading engine assets: ${engineAssetsPath}`);
 	const engineAssetsBuffer = await readRomFile(engineAssetsPath);
 
@@ -606,11 +650,28 @@ async function main(): Promise<void> {
 		globals.postHeadlessInput = postInput;
 	}
 	const inputLogger = (message: string) => console.log(`[bootrom:${__BOOTROM_TARGET__}:input] ${message}`);
+	const romFolder = cliOptions.romFolder;
+	let cartRoot: string | null = null;
+	if (romFolder) {
+		cartRoot = await resolveCartRoot(romFolder);
+	}
 	if (cliOptions.inputTimelinePath) {
 		await scheduleInputTimelineFromFile(cliOptions.inputTimelinePath, frameInterval, postInput, inputLogger);
+	} else if (cartRoot && romFolder) {
+		const timelinePath = path.join(cartRoot, 'test', `${romFolder}_demo.json`);
+		if (await fileExists(timelinePath)) {
+			await scheduleInputTimelineFromFile(timelinePath, frameInterval, postInput, inputLogger);
+		} else {
+			console.warn(`[bootrom:${__BOOTROM_TARGET__}:input] Optional input timeline not found at ${timelinePath}.`);
+		}
 	}
 	if (cliOptions.inputModulePath) {
 		await runInputModuleScheduler(cliOptions.inputModulePath, frameInterval, postInput, inputLogger);
+	} else if (cartRoot && romFolder) {
+		const modulePath = path.join(cartRoot, 'test', `${romFolder}_assert_results.mjs`);
+		if (await fileExists(modulePath)) {
+			await runInputModuleScheduler(modulePath, frameInterval, postInput, inputLogger);
+		}
 	}
 	const defaultTtl = 1_000; // minimum 1 second default TTL to allow gameboot and graceful shutdown
 	const minTtl = maxScheduledMs > 0 ? maxScheduledMs + 5_000 : defaultTtl;

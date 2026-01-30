@@ -29,6 +29,21 @@ const std::array<uint8_t, 256>& srgbToLinearLut() {
 	return lut;
 }
 
+std::array<uint8_t, 256> buildLinearToSrgbLut() {
+	std::array<uint8_t, 256> lut{};
+	for (size_t i = 0; i < lut.size(); ++i) {
+		const double c = static_cast<double>(i) / 255.0;
+		const double encoded = std::pow(c, 1.0 / 2.2);
+		lut[i] = static_cast<uint8_t>(std::round(encoded * 255.0));
+	}
+	return lut;
+}
+
+const std::array<uint8_t, 256>& linearToSrgbLut() {
+	static const std::array<uint8_t, 256> lut = buildLinearToSrgbLut();
+	return lut;
+}
+
 void convertSrgbToLinear(const bmsx::u8* src, size_t pixels, std::vector<bmsx::u8>& out) {
 	out.resize(pixels * 4);
 	const auto& lut = srgbToLinearLut();
@@ -126,6 +141,21 @@ void OpenGLES2Backend::updateTexture(TextureHandle handle, const u8* data, i32 w
 	}
 }
 
+TextureHandle OpenGLES2Backend::resizeTexture(TextureHandle handle, i32 width, i32 height, const TextureParams& params) {
+	auto* tex = static_cast<GLES2Texture*>(handle);
+	glBindTexture(GL_TEXTURE_2D, tex->id);
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+	tex->width = width;
+	tex->height = height;
+	if (kGLES2VerboseLog) {
+	std::fprintf(stderr,
+					"[BMSX][GLES2] resizeTexture id=%u size=%dx%d\n",
+					static_cast<unsigned>(tex->id), width, height);
+	}
+	return handle;
+}
+
 void OpenGLES2Backend::updateTextureRegion(TextureHandle handle, const u8* data, i32 width, i32 height, i32 x, i32 y, const TextureParams& params) {
 	auto* tex = static_cast<GLES2Texture*>(handle);
 	const u8* uploadData = data;
@@ -143,6 +173,39 @@ void OpenGLES2Backend::updateTextureRegion(TextureHandle handle, const u8* data,
 					"[BMSX][GLES2] updateTextureRegion id=%u size=%dx%d offset=%d,%d data=%p\n",
 					static_cast<unsigned>(tex->id), width, height, x, y,
 					static_cast<const void*>(data));
+	}
+}
+
+void OpenGLES2Backend::readTextureRegion(TextureHandle handle, u8* out, i32 width, i32 height, i32 x, i32 y, const TextureParams& params) {
+	auto* tex = static_cast<GLES2Texture*>(handle);
+	if (!tex || tex->id == 0) {
+		throw std::runtime_error("[GLES2] Readback texture missing.");
+	}
+	if (x < 0 || y < 0 || x + width > tex->width || y + height > tex->height) {
+		throw std::runtime_error("[GLES2] Readback out of bounds.");
+	}
+	if (m_readback_fbo == 0) {
+		glGenFramebuffers(1, &m_readback_fbo);
+	}
+	const GLuint prevFbo = m_current_fbo;
+	glBindFramebuffer(GL_FRAMEBUFFER, m_readback_fbo);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex->id, 0);
+	const GLint glY = tex->height - y - height;
+	if (glY < 0) {
+		throw std::runtime_error("[GLES2] Readback Y coordinate out of bounds.");
+	}
+	glPixelStorei(GL_PACK_ALIGNMENT, 1);
+	glReadPixels(x, glY, width, height, GL_RGBA, GL_UNSIGNED_BYTE, out);
+	glBindFramebuffer(GL_FRAMEBUFFER, prevFbo);
+	if (params.srgb) {
+		const auto& lut = linearToSrgbLut();
+		const size_t pixels = static_cast<size_t>(width) * static_cast<size_t>(height);
+		for (size_t i = 0; i < pixels; ++i) {
+			const size_t idx = i * 4u;
+			out[idx + 0] = lut[out[idx + 0]];
+			out[idx + 1] = lut[out[idx + 1]];
+			out[idx + 2] = lut[out[idx + 2]];
+		}
 	}
 }
 
@@ -305,6 +368,10 @@ void OpenGLES2Backend::onContextReset() {
 void OpenGLES2Backend::onContextDestroy() {
 	m_active_texture_unit = -1;
 	m_bound_texture_2d_by_unit.fill(0);
+	if (m_readback_fbo != 0) {
+		glDeleteFramebuffers(1, &m_readback_fbo);
+		m_readback_fbo = 0;
+	}
 }
 
 void OpenGLES2Backend::setActiveTextureUnit(i32 unit) {

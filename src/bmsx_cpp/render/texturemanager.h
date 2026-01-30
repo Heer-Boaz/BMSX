@@ -90,6 +90,7 @@ public:
 								const u8* pixels,
 								i32 width,
 								i32 height);
+	TextureHandle resizeTextureForKey(const std::string& keyBase, i32 width, i32 height);
 	void updateTextureRegionForKey(const std::string& keyBase,
 									const u8* pixels,
 									i32 width,

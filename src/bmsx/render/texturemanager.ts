@@ -366,6 +366,37 @@ export class TextureManager implements RegisterablePersistent {
 		}
 	}
 
+	public resizeTextureForKey(keyBase: string, width: number, height: number, desc: TextureParams = {}): TextureHandle {
+		if (!this.backend) throw new Error('TextureManager backend not set');
+		if (width <= 0 || height <= 0) {
+			throw new Error('TextureManager: invalid resize dimensions');
+		}
+		const prefix = `${keyBase}|`;
+		let updated = false;
+		let updatedHandle: TextureHandle = null;
+		for (const key of this.gpuCache.keys()) {
+			if (!key.startsWith(prefix)) {
+				continue;
+			}
+			const entry = this.gpuCache.get(key);
+			if (!entry || !entry.handle) {
+				throw new Error(`TextureManager: texture '${keyBase}' is not initialized.`);
+			}
+			const newHandle = this.backend.resizeTexture(entry.handle, width, height, desc);
+			if (newHandle !== entry.handle) {
+				this.textureBarrier.replaceValue(key, newHandle, (h) => this.backend.destroyTexture(h));
+				entry.handle = newHandle;
+				entry.ownedFallback = false;
+			}
+			updated = true;
+			updatedHandle = entry.handle;
+		}
+		if (!updated) {
+			throw new Error(`TextureManager: texture '${keyBase}' not found for resize.`);
+		}
+		return updatedHandle;
+	}
+
 	public updateTextureRegionForKey(keyBase: string, pixels: Uint8Array, width: number, height: number, x: number, y: number): void {
 		if (!this.backend) throw new Error('TextureManager backend not set');
 		if (width <= 0 || height <= 0) {

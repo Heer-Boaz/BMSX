@@ -727,6 +727,10 @@ Runtime::Runtime(const RuntimeOptions& options)
 	m_imgDecController.reset();
 	m_memory.writeValue(IO_VDP_PRIMARY_ATLAS_ID, valueNumber(static_cast<double>(VDP_ATLAS_ID_NONE)));
 	m_memory.writeValue(IO_VDP_SECONDARY_ATLAS_ID, valueNumber(static_cast<double>(VDP_ATLAS_ID_NONE)));
+	m_memory.writeValue(IO_VDP_RD_SURFACE, valueNumber(0.0));
+	m_memory.writeValue(IO_VDP_RD_X, valueNumber(0.0));
+	m_memory.writeValue(IO_VDP_RD_Y, valueNumber(0.0));
+	m_memory.writeValue(IO_VDP_RD_MODE, valueNumber(static_cast<double>(VDP_RD_MODE_RGBA8888)));
 	m_vdp.initializeRegisters();
 	m_randomSeedValue = static_cast<uint32_t>(EngineCore::instance().clock()->now());
 	refreshMemoryMap();
@@ -1121,6 +1125,7 @@ void Runtime::tickUpdate() {
 	m_frameState.cycleBudgetGranted = m_cycleBudgetPerFrame + carryBudget;
 	m_frameState.cycleCarryGranted = carryBudget;
 	m_frameState.deltaSeconds = static_cast<float>(EngineCore::instance().deltaTime());
+	m_vdp.beginFrame();
 	auto* gameTable = asTable(m_cpu.globals->get(canonicalizeIdentifier("game")));
 	gameTable->set(canonicalizeIdentifier("deltatime_seconds"), valueNumber(static_cast<double>(m_frameState.deltaSeconds)));
 	gameTable->set(canonicalizeIdentifier("deltatime"), valueNumber(static_cast<double>(m_frameState.deltaSeconds) * 1000.0));
@@ -2442,6 +2447,15 @@ void Runtime::setupBuiltins() {
 	setGlobal("SYS_VDP_PRIMARY_ATLAS_ID", valueNumber(static_cast<double>(IO_VDP_PRIMARY_ATLAS_ID)));
 	setGlobal("SYS_VDP_SECONDARY_ATLAS_ID", valueNumber(static_cast<double>(IO_VDP_SECONDARY_ATLAS_ID)));
 	setGlobal("SYS_VDP_ATLAS_NONE", valueNumber(static_cast<double>(VDP_ATLAS_ID_NONE)));
+	setGlobal("SYS_VDP_RD_SURFACE", valueNumber(static_cast<double>(IO_VDP_RD_SURFACE)));
+	setGlobal("SYS_VDP_RD_X", valueNumber(static_cast<double>(IO_VDP_RD_X)));
+	setGlobal("SYS_VDP_RD_Y", valueNumber(static_cast<double>(IO_VDP_RD_Y)));
+	setGlobal("SYS_VDP_RD_MODE", valueNumber(static_cast<double>(IO_VDP_RD_MODE)));
+	setGlobal("SYS_VDP_RD_STATUS", valueNumber(static_cast<double>(IO_VDP_RD_STATUS)));
+	setGlobal("SYS_VDP_RD_DATA", valueNumber(static_cast<double>(IO_VDP_RD_DATA)));
+	setGlobal("SYS_VDP_RD_MODE_RGBA8888", valueNumber(static_cast<double>(VDP_RD_MODE_RGBA8888)));
+	setGlobal("SYS_VDP_RD_STATUS_READY", valueNumber(static_cast<double>(VDP_RD_STATUS_READY)));
+	setGlobal("SYS_VDP_RD_STATUS_OVERFLOW", valueNumber(static_cast<double>(VDP_RD_STATUS_OVERFLOW)));
 	setGlobal("SYS_IRQ_FLAGS", valueNumber(static_cast<double>(IO_IRQ_FLAGS)));
 	setGlobal("SYS_IRQ_ACK", valueNumber(static_cast<double>(IO_IRQ_ACK)));
 	setGlobal("SYS_DMA_SRC", valueNumber(static_cast<double>(IO_DMA_SRC)));

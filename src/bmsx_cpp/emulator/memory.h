@@ -23,6 +23,12 @@ public:
 		virtual ~VramWriter() = default;
 		virtual void writeVram(uint32_t addr, const u8* data, size_t length) = 0;
 	};
+	class VdpIoHandler {
+	public:
+		virtual ~VdpIoHandler() = default;
+		virtual uint32_t readVdpStatus() = 0;
+		virtual uint32_t readVdpData() = 0;
+	};
 
 	Memory();
 
@@ -30,6 +36,7 @@ public:
 	void setCartRom(const u8* data, size_t size);
 	void setOverlayRom(u8* data, size_t size);
 	void setVramWriter(VramWriter* writer);
+	void setVdpIoHandler(VdpIoHandler* handler);
 
 	Value readValue(uint32_t addr) const;
 	void writeValue(uint32_t addr, Value value);
@@ -42,6 +49,7 @@ public:
 
 	void writeBytes(uint32_t addr, const u8* data, size_t length);
 	void readBytes(uint32_t addr, u8* out, size_t length) const;
+	bool isVramRange(uint32_t addr, size_t length) const;
 
 	enum class AssetType {
 		Image,
@@ -133,6 +141,7 @@ private:
 	std::vector<u8> m_ram;
 	std::vector<Value> m_ioSlots;
 	VramWriter* m_vramWriter = nullptr;
+	VdpIoHandler* m_vdpIoHandler = nullptr;
 
 	std::vector<AssetEntry> m_assetEntries;
 	std::unordered_map<std::string, size_t> m_assetIndexById;

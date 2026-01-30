@@ -61,6 +61,21 @@ const std::array<u8, 256>& srgbToLinearLut() {
 	return lut;
 }
 
+std::array<u8, 256> buildLinearToSrgbLut() {
+	std::array<u8, 256> lut{};
+	for (i32 i = 0; i < 256; ++i) {
+		const f32 c = static_cast<f32>(i) / 255.0f;
+		const f32 encoded = std::pow(c, 1.0f / 2.2f);
+		lut[static_cast<size_t>(i)] = static_cast<u8>(std::round(encoded * 255.0f));
+	}
+	return lut;
+}
+
+const std::array<u8, 256>& linearToSrgbLut() {
+	static const std::array<u8, 256> lut = buildLinearToSrgbLut();
+	return lut;
+}
+
 void convertSrgbToLinear(const u8* src, size_t pixels, std::vector<u8>& out) {
 	out.resize(pixels * 4);
 	const auto& lut = srgbToLinearLut();
@@ -150,6 +165,16 @@ void SoftwareBackend::updateTexture(TextureHandle handle, const u8* data, i32 wi
 	}
 }
 
+TextureHandle SoftwareBackend::resizeTexture(TextureHandle handle, i32 width, i32 height, const TextureParams& params) {
+	auto* tex = static_cast<SoftwareTexture*>(handle);
+	if (tex->width != width || tex->height != height) {
+		tex->width = width;
+		tex->height = height;
+		tex->data.resize(static_cast<size_t>(width) * height);
+	}
+	return handle;
+}
+
 void SoftwareBackend::updateTextureRegion(TextureHandle handle, const u8* data, i32 width, i32 height, i32 x, i32 y, const TextureParams& params) {
 	auto* tex = static_cast<SoftwareTexture*>(handle);
 	const u8* uploadData = data;
@@ -169,6 +194,33 @@ void SoftwareBackend::updateTextureRegion(TextureHandle handle, const u8* data, 
 			u8 b = uploadData[srcIndex + 2];
 			u8 a = uploadData[srcIndex + 3];
 			tex->data[dstOffset + static_cast<size_t>(col)] = (a << 24) | (r << 16) | (g << 8) | b;
+		}
+	}
+}
+
+void SoftwareBackend::readTextureRegion(TextureHandle handle, u8* out, i32 width, i32 height, i32 x, i32 y, const TextureParams& params) {
+	auto* tex = static_cast<SoftwareTexture*>(handle);
+	const i32 texW = tex->width;
+	const i32 texH = tex->height;
+	if (x < 0 || y < 0 || x + width > texW || y + height > texH) {
+		throw std::runtime_error("[SoftwareBackend] Readback out of bounds.");
+	}
+	const auto* lut = params.srgb ? &linearToSrgbLut() : nullptr;
+	const size_t rowStride = static_cast<size_t>(width) * 4u;
+	for (i32 row = 0; row < height; ++row) {
+		const size_t dstOffset = static_cast<size_t>(row) * rowStride;
+		const size_t srcBase = static_cast<size_t>(y + row) * static_cast<size_t>(texW) + static_cast<size_t>(x);
+		for (i32 col = 0; col < width; ++col) {
+			const u32 pixel = tex->data[srcBase + static_cast<size_t>(col)];
+			const u8 a = static_cast<u8>((pixel >> 24) & 0xffu);
+			const u8 r = static_cast<u8>((pixel >> 16) & 0xffu);
+			const u8 g = static_cast<u8>((pixel >> 8) & 0xffu);
+			const u8 b = static_cast<u8>(pixel & 0xffu);
+			const size_t outIndex = dstOffset + static_cast<size_t>(col) * 4u;
+			out[outIndex + 0] = lut ? (*lut)[r] : r;
+			out[outIndex + 1] = lut ? (*lut)[g] : g;
+			out[outIndex + 2] = lut ? (*lut)[b] : b;
+			out[outIndex + 3] = a;
 		}
 	}
 }

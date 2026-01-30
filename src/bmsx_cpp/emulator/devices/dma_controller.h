@@ -41,6 +41,7 @@ private:
 		std::vector<uint8_t> pixels;
 		uint32_t row = 0;
 		uint32_t rowOffset = 0;
+		bool vramTarget = false;
 		std::function<void(bool error, bool clipped)> onComplete;
 	};
 

@@ -146,7 +146,9 @@ export interface GPUBackend {
 	createImageBitmapFromSource?(src: TextureSource): Promise<ImageBitmap>;
 	createTexture(src: TextureSource | Promise<TextureSource>, desc: TextureParams): TextureHandle;
 	updateTexture(handle: TextureHandle, src: TextureSource): void;
+	resizeTexture(handle: TextureHandle, width: number, height: number, desc: TextureParams): TextureHandle;
 	updateTextureRegion(handle: TextureHandle, src: TextureSource, x: number, y: number): void;
+	readTextureRegion(handle: TextureHandle, x: number, y: number, width: number, height: number): Uint8Array;
 	createSolidTexture2D(width: number, height: number, rgba: color_arr, desc?: TextureParams): TextureHandle;
 	createCubemapFromSources(faces: readonly [TextureSource, TextureSource, TextureSource, TextureSource, TextureSource, TextureSource], desc: TextureParams): TextureHandle;
 	createSolidCubemap(size: number, rgba: color_arr, desc: TextureParams): TextureHandle;

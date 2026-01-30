@@ -95,6 +95,16 @@ export class WebGPUBackend implements GPUBackend {
 		this.accountUpload('texture', img.width * img.height * 4);
 	}
 
+	resizeTexture(_handle: TextureHandle, width: number, height: number, _desc: TextureParams): TextureHandle {
+		return this.device.createTexture({
+			size: { width, height, depthOrArrayLayers: 1 },
+			format: 'rgba8unorm',
+			usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+			mipLevelCount: 1,
+			dimension: '2d',
+		});
+	}
+
 	updateTextureRegion(handle: TextureHandle, src: TextureSource, x: number, y: number): void {
 		const data = (src as { data?: Uint8Array }).data;
 		if (data) {
@@ -115,6 +125,10 @@ export class WebGPUBackend implements GPUBackend {
 			{ width: img.width, height: img.height }
 		);
 		this.accountUpload('texture', img.width * img.height * 4);
+	}
+
+	readTextureRegion(_handle: TextureHandle, _x: number, _y: number, _width: number, _height: number): Uint8Array {
+		throw new Error('[WebGPUBackend] Texture readback is not supported.');
 	}
 
 	createSolidTexture2D(width: number, height: number, rgba: color_arr, _desc: TextureParams = {}): TextureHandle {

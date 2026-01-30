@@ -32,7 +32,11 @@ export class HeadlessGPUBackend implements GPUBackend {
 		return makeTextureHandle('texture');
 	}
 	updateTexture(_handle: TextureHandle, _src: TextureSource): void { }
+	resizeTexture(handle: TextureHandle, _width: number, _height: number, _desc: TextureParams): TextureHandle { return handle; }
 	updateTextureRegion(_handle: TextureHandle, _src: TextureSource, _x: number, _y: number): void { }
+	readTextureRegion(_handle: TextureHandle, _x: number, _y: number, _width: number, _height: number): Uint8Array {
+		throw new Error('[HeadlessBackend] Texture readback not available in backend; use VDP headless buffers.');
+	}
 	createSolidTexture2D(_width: number, _height: number, _rgba: color_arr, _desc: TextureParams = {}): TextureHandle {
 		return makeTextureHandle('solid2d');
 	}

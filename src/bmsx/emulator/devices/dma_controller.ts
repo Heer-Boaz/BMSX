@@ -58,6 +58,7 @@ type DmaImageJob = DmaJobBase & {
 	pixels: Uint8Array;
 	row: number;
 	rowOffset: number;
+	vramTarget: boolean;
 	onComplete: (result: { error: boolean; clipped: boolean }) => void;
 };
 
@@ -109,6 +110,7 @@ export class DmaController {
 	}
 
 	public enqueueImageCopy(plan: ImageWritePlan, pixels: Uint8Array, onComplete: (result: { error: boolean; clipped: boolean }) => void): void {
+		const vramTarget = this.memory.isVramRange(plan.baseAddr, plan.writeSize > 0 ? plan.writeSize : 1);
 		const job: DmaImageJob = {
 			kind: 'image',
 			channel: DMA_CH_BULK,
@@ -116,6 +118,7 @@ export class DmaController {
 			pixels,
 			row: 0,
 			rowOffset: 0,
+			vramTarget,
 			written: 0,
 			clipped: plan.clipped,
 			error: false,
@@ -176,9 +179,15 @@ export class DmaController {
 			return 0;
 		}
 		if (job.kind === 'io') {
-			const chunk = job.remaining > budget ? budget : job.remaining;
+			let chunk = job.remaining > budget ? budget : job.remaining;
 			if (chunk === 0) {
 				return 0;
+			}
+			if (this.memory.isVramRange(job.dst, 1)) {
+				chunk &= ~3;
+				if (chunk === 0) {
+					return 0;
+				}
 			}
 			try {
 				const bytes = this.memory.readBytes(job.src, chunk);
@@ -200,7 +209,13 @@ export class DmaController {
 		let remaining = budget;
 		while (remaining > 0 && job.row < job.plan.writeHeight) {
 			const rowRemaining = job.plan.writeStride - job.rowOffset;
-			const toCopy = remaining < rowRemaining ? remaining : rowRemaining;
+			let toCopy = remaining < rowRemaining ? remaining : rowRemaining;
+			if (job.vramTarget) {
+				toCopy &= ~3;
+				if (toCopy === 0) {
+					return budget - remaining;
+				}
+			}
 			const srcOffset = job.row * job.plan.sourceStride + job.rowOffset;
 			const dstAddr = job.plan.baseAddr + (job.row * job.plan.writeStride) + job.rowOffset;
 			try {

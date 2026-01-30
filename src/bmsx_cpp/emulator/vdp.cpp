@@ -3,12 +3,21 @@
 #include "../core/engine_core.h"
 #include "../render/texturemanager.h"
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <stdexcept>
 
 namespace bmsx {
 namespace {
+
+constexpr uint32_t VDP_RD_SURFACE_ENGINE = 0u;
+constexpr uint32_t VDP_RD_SURFACE_PRIMARY = 1u;
+constexpr uint32_t VDP_RD_SURFACE_SECONDARY = 2u;
+constexpr uint32_t VDP_RD_SURFACE_COUNT = 3u;
+constexpr uint32_t VDP_RD_BUDGET_BYTES = 4096u;
+constexpr uint32_t VDP_RD_MAX_CHUNK_PIXELS = 256u;
+constexpr size_t VRAM_GARBAGE_CHUNK_BYTES = 64u * 1024u;
 
 bool isAtlasName(const std::string& name) {
 	static constexpr const char* kPrefix = "_atlas_";
@@ -19,8 +28,11 @@ bool isAtlasName(const std::string& name) {
 
 VDP::VDP(Memory& memory)
 	: m_memory(memory)
-	, m_vramStaging(VRAM_STAGING_SIZE) {
+	, m_vramStaging(VRAM_STAGING_SIZE)
+	, m_vramGarbageScratch(VRAM_GARBAGE_CHUNK_BYTES) {
 	m_memory.setVramWriter(this);
+	m_memory.setVdpIoHandler(this);
+	m_readBudgetBytes = VDP_RD_BUDGET_BYTES;
 }
 
 void VDP::writeVram(uint32_t addr, const u8* data, size_t length) {
@@ -29,11 +41,12 @@ void VDP::writeVram(uint32_t addr, const u8* data, size_t length) {
 		std::memcpy(m_vramStaging.data() + offset, data, length);
 		return;
 	}
-	const auto& slot = findVramSlot(addr, length);
+	auto& slot = findVramSlot(addr, length);
 	auto* entry = slot.entry;
 	if (!entry || entry->baseStride == 0 || entry->regionW == 0 || entry->regionH == 0) {
 		throw BMSX_RUNTIME_ERROR("[VDP] VRAM slot not initialized for writes.");
 	}
+	ensureVramSlotTextureSize(slot);
 	const uint32_t offset = addr - slot.baseAddr;
 	const uint32_t stride = entry->baseStride;
 	const uint32_t totalBytes = entry->regionH * stride;
@@ -64,11 +77,65 @@ void VDP::writeVram(uint32_t addr, const u8* data, size_t length) {
 			x,
 			static_cast<i32>(row)
 		);
+		invalidateReadCache(slot.surfaceId);
 		remaining -= rowBytes;
 		cursor += rowBytes;
 		row += 1;
 		rowOffset = 0;
 	}
+}
+
+void VDP::beginFrame() {
+	m_readBudgetBytes = VDP_RD_BUDGET_BYTES;
+	m_readOverflow = false;
+}
+
+uint32_t VDP::readVdpStatus() {
+	uint32_t status = 0;
+	if (m_readBudgetBytes >= 4u) {
+		status |= VDP_RD_STATUS_READY;
+	}
+	if (m_readOverflow) {
+		status |= VDP_RD_STATUS_OVERFLOW;
+	}
+	return status;
+}
+
+uint32_t VDP::readVdpData() {
+	const uint32_t surfaceId = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_VDP_RD_SURFACE)));
+	const uint32_t x = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_VDP_RD_X)));
+	const uint32_t y = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_VDP_RD_Y)));
+	const uint32_t mode = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_VDP_RD_MODE)));
+	if (mode != VDP_RD_MODE_RGBA8888) {
+		throw BMSX_RUNTIME_ERROR("[VDP] Unsupported VDP read mode.");
+	}
+	const auto& surface = getReadSurface(surfaceId);
+	const uint32_t width = surface.entry->regionW;
+	const uint32_t height = surface.entry->regionH;
+	if (x >= width || y >= height) {
+		throw BMSX_RUNTIME_ERROR("[VDP] VDP read out of bounds.");
+	}
+	if (m_readBudgetBytes < 4u) {
+		m_readOverflow = true;
+		return 0u;
+	}
+	auto& cache = getReadCache(surfaceId, surface, x, y);
+	const uint32_t localX = x - cache.x0;
+	const size_t byteIndex = static_cast<size_t>(localX) * 4u;
+	const u32 r = cache.data[byteIndex + 0];
+	const u32 g = cache.data[byteIndex + 1];
+	const u32 b = cache.data[byteIndex + 2];
+	const u32 a = cache.data[byteIndex + 3];
+	m_readBudgetBytes -= 4u;
+	uint32_t nextX = x + 1u;
+	uint32_t nextY = y;
+	if (nextX >= width) {
+		nextX = 0u;
+		nextY = y + 1u;
+	}
+	m_memory.writeValue(IO_VDP_RD_X, valueNumber(static_cast<double>(nextX)));
+	m_memory.writeValue(IO_VDP_RD_Y, valueNumber(static_cast<double>(nextY)));
+	return (r | (g << 8u) | (b << 16u) | (a << 24u));
 }
 
 void VDP::initializeRegisters() {
@@ -104,9 +171,16 @@ void VDP::registerImageAssets(RuntimeAssets& assets, bool keepDecodedData) {
 	m_atlasSlotById.clear();
 	m_slotAtlasIds = {{-1, -1}};
 	m_vramSlots.clear();
+	m_readSurfaces = {};
+	for (auto& cache : m_readCaches) {
+		cache.width = 0;
+		cache.data.clear();
+	}
 	m_dirtyAtlasBindings = true;
 	m_dirtySkybox = true;
 	m_skyboxFaceIds = {};
+	m_vramGarbageSeed = nextVramGarbageSeed();
+	seedVramStaging(m_vramGarbageSeed);
 	const RuntimeAssets* fallback = assets.fallback;
 
 	std::vector<std::string> viewAssets;
@@ -185,10 +259,10 @@ void VDP::registerImageAssets(RuntimeAssets& assets, bool keepDecodedData) {
 		engineEntry = &slotEntry;
 		engineEntryCreated = true;
 	}
-	if (engineEntryCreated) {
+	if (engineEntryCreated || engineEntry->regionW == 0 || engineEntry->regionH == 0) {
 		seedAtlasSlot(*engineEntry);
 	}
-	registerVramSlot(*engineEntry, ENGINE_ATLAS_TEXTURE_KEY);
+	registerVramSlot(*engineEntry, ENGINE_ATLAS_TEXTURE_KEY, VDP_RD_SURFACE_ENGINE);
 
 	const i32 skyboxFaceSize = assets.manifest.skyboxFaceSize > 0
 		? assets.manifest.skyboxFaceSize
@@ -244,8 +318,8 @@ void VDP::registerImageAssets(RuntimeAssets& assets, bool keepDecodedData) {
 	}
 	seedAtlasSlot(*primarySlotEntry);
 	seedAtlasSlot(*secondarySlotEntry);
-	registerVramSlot(*primarySlotEntry, ATLAS_PRIMARY_SLOT_ID);
-	registerVramSlot(*secondarySlotEntry, ATLAS_SECONDARY_SLOT_ID);
+	registerVramSlot(*primarySlotEntry, ATLAS_PRIMARY_SLOT_ID, VDP_RD_SURFACE_PRIMARY);
+	registerVramSlot(*secondarySlotEntry, ATLAS_SECONDARY_SLOT_ID, VDP_RD_SURFACE_SECONDARY);
 
 	std::sort(viewAssets.begin(), viewAssets.end());
 	for (const auto& id : viewAssets) {
@@ -314,39 +388,56 @@ void VDP::registerImageAssets(RuntimeAssets& assets, bool keepDecodedData) {
 	if (engineAtlasAsset->pixels.empty()) {
 		throw BMSX_RUNTIME_ERROR("[VDP] Engine atlas pixels missing.");
 	}
+	TextureParams engineParams;
+	const TextureKey engineKey = texmanager->makeKey(ENGINE_ATLAS_TEXTURE_KEY, engineParams);
 	TextureHandle engineHandle = texmanager->getOrCreateTexture(
-		ENGINE_ATLAS_TEXTURE_KEY,
+		engineKey,
 		engineAtlasAsset->pixels.data(),
 		engineAtlasAsset->meta.width,
 		engineAtlasAsset->meta.height,
-		{}
+		engineParams
 	);
 	view->textures[ENGINE_ATLAS_TEXTURE_KEY] = engineHandle;
+	setSlotTextureSize(ENGINE_ATLAS_TEXTURE_KEY,
+		static_cast<uint32_t>(engineAtlasAsset->meta.width),
+		static_cast<uint32_t>(engineAtlasAsset->meta.height));
 	view->loadEngineAtlasTexture();
 
 	const i32 primaryW = static_cast<i32>(primarySlotEntry->regionW);
 	const i32 primaryH = static_cast<i32>(primarySlotEntry->regionH);
-	std::vector<u8> blankPrimary(static_cast<size_t>(primaryW) * static_cast<size_t>(primaryH) * 4u);
+	const uint32_t primarySeed = deriveVramGarbageSeed(ATLAS_PRIMARY_SLOT_ID);
+	fillGarbageBuffer(m_vramSeedPixel.data(), m_vramSeedPixel.size(), primarySeed | 1u);
+	TextureParams primaryParams;
+	const TextureKey primaryKey = texmanager->makeKey(ATLAS_PRIMARY_SLOT_ID, primaryParams);
 	TextureHandle primaryHandle = texmanager->getOrCreateTexture(
-		ATLAS_PRIMARY_SLOT_ID,
-		blankPrimary.data(),
-		primaryW,
-		primaryH,
-		{}
+		primaryKey,
+		m_vramSeedPixel.data(),
+		1,
+		1,
+		primaryParams
 	);
+	primaryHandle = texmanager->resizeTextureForKey(ATLAS_PRIMARY_SLOT_ID, primaryW, primaryH);
 	view->textures[ATLAS_PRIMARY_SLOT_ID] = primaryHandle;
+	setSlotTextureSize(ATLAS_PRIMARY_SLOT_ID, primarySlotEntry->regionW, primarySlotEntry->regionH);
+	seedVramSlotTexture(getVramSlotByTextureKey(ATLAS_PRIMARY_SLOT_ID), primarySeed);
 
 	const i32 secondaryW = static_cast<i32>(secondarySlotEntry->regionW);
 	const i32 secondaryH = static_cast<i32>(secondarySlotEntry->regionH);
-	std::vector<u8> blankSecondary(static_cast<size_t>(secondaryW) * static_cast<size_t>(secondaryH) * 4u);
+	const uint32_t secondarySeed = deriveVramGarbageSeed(ATLAS_SECONDARY_SLOT_ID);
+	fillGarbageBuffer(m_vramSeedPixel.data(), m_vramSeedPixel.size(), secondarySeed | 1u);
+	TextureParams secondaryParams;
+	const TextureKey secondaryKey = texmanager->makeKey(ATLAS_SECONDARY_SLOT_ID, secondaryParams);
 	TextureHandle secondaryHandle = texmanager->getOrCreateTexture(
-		ATLAS_SECONDARY_SLOT_ID,
-		blankSecondary.data(),
-		secondaryW,
-		secondaryH,
-		{}
+		secondaryKey,
+		m_vramSeedPixel.data(),
+		1,
+		1,
+		secondaryParams
 	);
+	secondaryHandle = texmanager->resizeTextureForKey(ATLAS_SECONDARY_SLOT_ID, secondaryW, secondaryH);
 	view->textures[ATLAS_SECONDARY_SLOT_ID] = secondaryHandle;
+	setSlotTextureSize(ATLAS_SECONDARY_SLOT_ID, secondarySlotEntry->regionW, secondarySlotEntry->regionH);
+	seedVramSlotTexture(getVramSlotByTextureKey(ATLAS_SECONDARY_SLOT_ID), secondarySeed);
 
 	syncRegisters();
 
@@ -379,6 +470,10 @@ void VDP::flushAssetEdits() {
 	for (const auto* entry : dirty) {
 		if (entry->type == Memory::AssetType::Image) {
 			if (entry->regionW == 0 || entry->regionH == 0) {
+				continue;
+			}
+			const uint32_t span = entry->capacity > 0 ? entry->capacity : 1u;
+			if (m_memory.isVramRange(entry->baseAddr, span)) {
 				continue;
 			}
 			const u8* pixels = m_memory.getImagePixels(*entry);
@@ -444,13 +539,27 @@ void VDP::applyAtlasSlotMapping(const std::array<i32, 2>& slots) {
 	}
 }
 
-void VDP::registerVramSlot(Memory::AssetEntry& entry, const std::string& textureKey) {
+void VDP::registerVramSlot(Memory::AssetEntry& entry, const std::string& textureKey, uint32_t surfaceId) {
 	VramSlot slot;
 	slot.baseAddr = entry.baseAddr;
 	slot.capacity = entry.capacity;
 	slot.entry = &entry;
 	slot.textureKey = textureKey;
+	slot.surfaceId = surfaceId;
+	slot.textureWidth = entry.regionW;
+	slot.textureHeight = entry.regionH;
 	m_vramSlots.push_back(std::move(slot));
+	registerReadSurface(surfaceId, entry, textureKey);
+}
+
+VDP::VramSlot& VDP::findVramSlot(uint32_t addr, size_t length) {
+	for (auto& slot : m_vramSlots) {
+		const uint32_t end = slot.baseAddr + slot.capacity;
+		if (addr >= slot.baseAddr && addr + length <= end) {
+			return slot;
+		}
+	}
+	throw BMSX_RUNTIME_ERROR("[VDP] VRAM write has no mapped slot.");
 }
 
 const VDP::VramSlot& VDP::findVramSlot(uint32_t addr, size_t length) const {
@@ -461,6 +570,235 @@ const VDP::VramSlot& VDP::findVramSlot(uint32_t addr, size_t length) const {
 		}
 	}
 	throw BMSX_RUNTIME_ERROR("[VDP] VRAM write has no mapped slot.");
+}
+
+void VDP::ensureVramSlotTextureSize(VramSlot& slot) {
+	auto* entry = slot.entry;
+	const uint32_t width = entry->regionW;
+	const uint32_t height = entry->regionH;
+	if (slot.textureWidth == width && slot.textureHeight == height) {
+		return;
+	}
+	auto* texmanager = EngineCore::instance().texmanager();
+	if (!texmanager) {
+		throw BMSX_RUNTIME_ERROR("[VDP] TextureManager not configured.");
+	}
+	TextureHandle handle = texmanager->resizeTextureForKey(slot.textureKey,
+		static_cast<i32>(width),
+		static_cast<i32>(height));
+	auto* view = EngineCore::instance().view();
+	if (!view) {
+		throw BMSX_RUNTIME_ERROR("[VDP] GameView not configured.");
+	}
+	view->textures[slot.textureKey] = handle;
+	slot.textureWidth = width;
+	slot.textureHeight = height;
+	invalidateReadCache(slot.surfaceId);
+	seedVramSlotTexture(slot, deriveVramGarbageSeed(slot.textureKey));
+}
+
+VDP::VramSlot& VDP::getVramSlotByTextureKey(const std::string& textureKey) {
+	for (auto& slot : m_vramSlots) {
+		if (slot.textureKey == textureKey) {
+			return slot;
+		}
+	}
+	throw BMSX_RUNTIME_ERROR("[VDP] VRAM slot not registered for texture '" + textureKey + "'.");
+}
+
+uint32_t VDP::deriveVramGarbageSeed(const std::string& textureKey) const {
+	if (textureKey == ATLAS_PRIMARY_SLOT_ID) {
+		return m_vramGarbageSeed ^ 0x9E3779B9u;
+	}
+	if (textureKey == ATLAS_SECONDARY_SLOT_ID) {
+		return m_vramGarbageSeed ^ 0x7F4A7C15u;
+	}
+	return m_vramGarbageSeed;
+}
+
+uint32_t VDP::nextVramGarbageSeed() const {
+	const auto now = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+	const uint64_t mixed = static_cast<uint64_t>(now) ^ static_cast<uint64_t>(reinterpret_cast<uintptr_t>(this));
+	return static_cast<uint32_t>((mixed ^ (mixed >> 32)) | 1u);
+}
+
+uint32_t VDP::advanceGarbageState(uint32_t state) const {
+	uint32_t next = state;
+	next ^= next << 13;
+	next ^= next >> 17;
+	next ^= next << 5;
+	return next;
+}
+
+uint32_t VDP::fillGarbageBuffer(u8* data, size_t length, uint32_t seed) const {
+	uint32_t state = seed;
+	size_t cursor = 0;
+	const size_t alignedEnd = length - (length & 3u);
+	while (cursor < alignedEnd) {
+		state = advanceGarbageState(state);
+		const uint32_t value = state;
+		data[cursor] = static_cast<u8>(value & 0xffu);
+		data[cursor + 1] = static_cast<u8>((value >> 8) & 0xffu);
+		data[cursor + 2] = static_cast<u8>((value >> 16) & 0xffu);
+		data[cursor + 3] = static_cast<u8>((value >> 24) & 0xffu);
+		cursor += 4;
+	}
+	if (cursor < length) {
+		state = advanceGarbageState(state);
+		uint32_t value = state;
+		while (cursor < length) {
+			data[cursor] = static_cast<u8>(value & 0xffu);
+			value >>= 8;
+			cursor += 1;
+		}
+	}
+	return state;
+}
+
+void VDP::seedVramStaging(uint32_t seed) {
+	fillGarbageBuffer(m_vramStaging.data(), m_vramStaging.size(), seed | 1u);
+}
+
+void VDP::seedVramSlotTexture(VramSlot& slot, uint32_t seed) {
+	auto* entry = slot.entry;
+	if (!entry || entry->regionW == 0 || entry->regionH == 0) {
+		throw BMSX_RUNTIME_ERROR("[VDP] VRAM slot missing dimensions for seeding.");
+	}
+	auto* texmanager = EngineCore::instance().texmanager();
+	if (!texmanager) {
+		throw BMSX_RUNTIME_ERROR("[VDP] TextureManager not configured.");
+	}
+	const size_t rowPixels = static_cast<size_t>(entry->regionW);
+	const size_t maxPixels = m_vramGarbageScratch.size() / 4u;
+	if (maxPixels == 0u) {
+		throw BMSX_RUNTIME_ERROR("[VDP] VRAM garbage scratch buffer is empty.");
+	}
+	uint32_t state = seed | 1u;
+	const size_t rowBytes = rowPixels * 4u;
+	const uint32_t height = entry->regionH;
+	if (rowBytes <= m_vramGarbageScratch.size()) {
+		const size_t rowsPerChunk = std::max<size_t>(1u, m_vramGarbageScratch.size() / rowBytes);
+		for (uint32_t y = 0; y < height; ) {
+			const size_t rows = std::min<size_t>(rowsPerChunk, height - y);
+			const size_t chunkBytes = rowBytes * rows;
+			state = fillGarbageBuffer(m_vramGarbageScratch.data(), chunkBytes, state);
+			texmanager->updateTextureRegionForKey(
+				slot.textureKey,
+				m_vramGarbageScratch.data(),
+				static_cast<i32>(rowPixels),
+				static_cast<i32>(rows),
+				0,
+				static_cast<i32>(y)
+			);
+			y += static_cast<uint32_t>(rows);
+		}
+	} else {
+		for (uint32_t y = 0; y < height; ++y) {
+			for (uint32_t x = 0; x < entry->regionW; ) {
+				const size_t segmentWidth = std::min<size_t>(maxPixels, entry->regionW - x);
+				const size_t segmentBytes = segmentWidth * 4u;
+				state = fillGarbageBuffer(m_vramGarbageScratch.data(), segmentBytes, state);
+				texmanager->updateTextureRegionForKey(
+					slot.textureKey,
+					m_vramGarbageScratch.data(),
+					static_cast<i32>(segmentWidth),
+					1,
+					static_cast<i32>(x),
+					static_cast<i32>(y)
+				);
+				x += static_cast<uint32_t>(segmentWidth);
+			}
+		}
+	}
+	invalidateReadCache(slot.surfaceId);
+}
+
+void VDP::setSlotTextureSize(const std::string& textureKey, uint32_t width, uint32_t height) {
+	for (auto& slot : m_vramSlots) {
+		if (slot.textureKey == textureKey) {
+			slot.textureWidth = width;
+			slot.textureHeight = height;
+			return;
+		}
+	}
+}
+
+void VDP::registerReadSurface(uint32_t surfaceId, Memory::AssetEntry& entry, const std::string& textureKey) {
+	if (surfaceId >= VDP_RD_SURFACE_COUNT) {
+		throw BMSX_RUNTIME_ERROR("[VDP] Invalid read surface.");
+	}
+	m_readSurfaces[surfaceId].entry = &entry;
+	m_readSurfaces[surfaceId].textureKey = textureKey;
+	invalidateReadCache(surfaceId);
+}
+
+const VDP::ReadSurface& VDP::getReadSurface(uint32_t surfaceId) const {
+	if (surfaceId >= VDP_RD_SURFACE_COUNT) {
+		throw BMSX_RUNTIME_ERROR("[VDP] Invalid read surface.");
+	}
+	const auto& surface = m_readSurfaces[surfaceId];
+	if (!surface.entry) {
+		throw BMSX_RUNTIME_ERROR("[VDP] Read surface not registered.");
+	}
+	return surface;
+}
+
+void VDP::invalidateReadCache(uint32_t surfaceId) {
+	if (surfaceId >= VDP_RD_SURFACE_COUNT) {
+		return;
+	}
+	m_readCaches[surfaceId].width = 0;
+}
+
+VDP::ReadCache& VDP::getReadCache(uint32_t surfaceId, const ReadSurface& surface, uint32_t x, uint32_t y) {
+	if (surfaceId >= VDP_RD_SURFACE_COUNT) {
+		throw BMSX_RUNTIME_ERROR("[VDP] Invalid read surface.");
+	}
+	auto& cache = m_readCaches[surfaceId];
+	if (cache.width == 0 || cache.y != y || x < cache.x0 || x >= cache.x0 + cache.width) {
+		prefetchReadCache(surfaceId, surface, x, y);
+	}
+	return cache;
+}
+
+void VDP::prefetchReadCache(uint32_t surfaceId, const ReadSurface& surface, uint32_t x, uint32_t y) {
+	const uint32_t width = surface.entry->regionW;
+	const uint32_t height = surface.entry->regionH;
+	if (x >= width || y >= height) {
+		throw BMSX_RUNTIME_ERROR("[VDP] Read cache prefetch out of bounds.");
+	}
+	const uint32_t maxPixelsByBudget = m_readBudgetBytes / 4u;
+	if (maxPixelsByBudget == 0) {
+		m_readOverflow = true;
+		m_readCaches[surfaceId].width = 0;
+		return;
+	}
+	const uint32_t chunkW = std::min(VDP_RD_MAX_CHUNK_PIXELS, std::min(width - x, maxPixelsByBudget));
+	auto data = readSurfacePixels(surface, x, y, chunkW, 1);
+	auto& cache = m_readCaches[surfaceId];
+	cache.x0 = x;
+	cache.y = y;
+	cache.width = chunkW;
+	cache.data = std::move(data);
+}
+
+std::vector<u8> VDP::readSurfacePixels(const ReadSurface& surface, uint32_t x, uint32_t y, uint32_t width, uint32_t height) {
+	auto* texmanager = EngineCore::instance().texmanager();
+	if (!texmanager) {
+		throw BMSX_RUNTIME_ERROR("[VDP] TextureManager not configured.");
+	}
+	auto* backend = texmanager->backend();
+	if (!backend) {
+		throw BMSX_RUNTIME_ERROR("[VDP] Backend not configured.");
+	}
+	TextureHandle handle = texmanager->getTextureByUri(surface.textureKey);
+	if (!handle) {
+		throw BMSX_RUNTIME_ERROR("[VDP] Readback texture missing.");
+	}
+	std::vector<u8> out(static_cast<size_t>(width) * static_cast<size_t>(height) * 4u);
+	backend->readTextureRegion(handle, out.data(), static_cast<i32>(width), static_cast<i32>(height),
+								static_cast<i32>(x), static_cast<i32>(y), {});
+	return out;
 }
 
 void VDP::commitViewSnapshot(GameView& view) {
