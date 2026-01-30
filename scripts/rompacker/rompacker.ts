@@ -133,7 +133,12 @@ function applyEngineAtlasLimit(manifest: RomManifest, resources: Resource[]): vo
 		throw new Error('[RomPacker] Engine atlas dimensions are invalid; cannot compute engine_atlas_slot_bytes.');
 	}
 	const bytes = Math.floor(width) * Math.floor(height) * 4;
-	manifest.machine.specs.engine_atlas_slot_bytes = bytes;
+	let vramSpecs = manifest.machine.specs.vram;
+	if (!vramSpecs) {
+		vramSpecs = {};
+		manifest.machine.specs.vram = vramSpecs;
+	}
+	vramSpecs.engine_atlas_slot_bytes = bytes;
 }
 
 // --- Individual lists that allow us to easily remove tasks from the main task list (visualisation only!) ---

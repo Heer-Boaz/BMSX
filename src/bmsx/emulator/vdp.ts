@@ -10,6 +10,7 @@ import {
 	ENGINE_ATLAS_TEXTURE_KEY,
 	SKYBOX_FACE_DEFAULT_SIZE,
 	SKYBOX_SLOT_IDS,
+	getMachinePerfSpecs,
 	generateAtlasName,
 	type TextureSource,
 } from '../rompack/rompack';
@@ -237,7 +238,7 @@ export class VDP {
 			seedAtlasSlot(engineEntryRecord);
 		}
 
-		const skyboxFaceSize = assets.manifest.machine.specs.skybox_face_size ?? SKYBOX_FACE_DEFAULT_SIZE;
+		const skyboxFaceSize = getMachinePerfSpecs(assets.manifest.machine).skybox_face_size ?? SKYBOX_FACE_DEFAULT_SIZE;
 		if (skyboxFaceSize <= 0) {
 			throw new Error(`[BmsxVDP] Invalid skybox_face_size: ${skyboxFaceSize}.`);
 		}
@@ -444,7 +445,7 @@ export class VDP {
 		if (asset.imgmeta.height <= 0) {
 			asset.imgmeta.height = decoded.height;
 		}
-		const faceSize = assets.manifest.machine.specs.skybox_face_size ?? SKYBOX_FACE_DEFAULT_SIZE;
+		const faceSize = getMachinePerfSpecs(assets.manifest.machine).skybox_face_size ?? SKYBOX_FACE_DEFAULT_SIZE;
 		this.memory.writeImageSlot(slotEntry, {
 			pixels: decoded.pixels,
 			width: faceSize,

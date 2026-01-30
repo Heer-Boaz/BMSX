@@ -4284,38 +4284,69 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 			machineTable->set(key("namespace"), str(manifest.namespaceName));
 		}
 		machineTable->set(key("canonicalization"), str(canonicalizationLabel(manifest.canonicalization)));
+		if (manifest.ufpsScaled) {
+			machineTable->set(key("ufps"), valueNumber(static_cast<double>(*manifest.ufpsScaled)));
+		}
 		if (manifest.viewportWidth > 0 && manifest.viewportHeight > 0) {
 			auto* viewportTable = m_cpu.createTable(0, 2);
 			viewportTable->set(key("width"), valueNumber(static_cast<double>(manifest.viewportWidth)));
 			viewportTable->set(key("height"), valueNumber(static_cast<double>(manifest.viewportHeight)));
 			machineTable->set(key("viewport"), valueTable(viewportTable));
 		}
-		auto* specsTable = m_cpu.createTable(0, 6);
+		auto* specsTable = m_cpu.createTable(0, 4);
+		auto* cpuTable = m_cpu.createTable(0, 2);
 		if (manifest.cpuHz) {
-			specsTable->set(key("cpu_freq_hz"), valueNumber(static_cast<double>(*manifest.cpuHz)));
+			cpuTable->set(key("cpu_freq_hz"), valueNumber(static_cast<double>(*manifest.cpuHz)));
 		}
 		if (manifest.imgDecBytesPerSec) {
-			specsTable->set(key("imgdec_bytes_per_sec"), valueNumber(static_cast<double>(*manifest.imgDecBytesPerSec)));
+			cpuTable->set(key("imgdec_bytes_per_sec"), valueNumber(static_cast<double>(*manifest.imgDecBytesPerSec)));
 		}
+		specsTable->set(key("cpu"), valueTable(cpuTable));
+		auto* dmaTable = m_cpu.createTable(0, 2);
 		if (manifest.dmaBytesPerSecIso) {
-			specsTable->set(key("dma_bytes_per_sec_iso"), valueNumber(static_cast<double>(*manifest.dmaBytesPerSecIso)));
+			dmaTable->set(key("dma_bytes_per_sec_iso"), valueNumber(static_cast<double>(*manifest.dmaBytesPerSecIso)));
 		}
 		if (manifest.dmaBytesPerSecBulk) {
-			specsTable->set(key("dma_bytes_per_sec_bulk"), valueNumber(static_cast<double>(*manifest.dmaBytesPerSecBulk)));
+			dmaTable->set(key("dma_bytes_per_sec_bulk"), valueNumber(static_cast<double>(*manifest.dmaBytesPerSecBulk)));
 		}
-		if (manifest.ufpsScaled) {
-			specsTable->set(key("ufps"), valueNumber(static_cast<double>(*manifest.ufpsScaled)));
+		specsTable->set(key("dma"), valueTable(dmaTable));
+		if (manifest.ramBytes || manifest.stringHandleCount || manifest.stringHeapBytes || manifest.assetTableBytes || manifest.assetDataBytes) {
+			auto* ramTable = m_cpu.createTable(0, 5);
+			if (manifest.ramBytes) {
+				ramTable->set(key("ram_bytes"), valueNumber(static_cast<double>(*manifest.ramBytes)));
+			}
+			if (manifest.stringHandleCount) {
+				ramTable->set(key("string_handle_count"), valueNumber(static_cast<double>(*manifest.stringHandleCount)));
+			}
+			if (manifest.stringHeapBytes) {
+				ramTable->set(key("string_heap_bytes"), valueNumber(static_cast<double>(*manifest.stringHeapBytes)));
+			}
+			if (manifest.assetTableBytes) {
+				ramTable->set(key("asset_table_bytes"), valueNumber(static_cast<double>(*manifest.assetTableBytes)));
+			}
+			if (manifest.assetDataBytes) {
+				ramTable->set(key("asset_data_bytes"), valueNumber(static_cast<double>(*manifest.assetDataBytes)));
+			}
+			specsTable->set(key("ram"), valueTable(ramTable));
 		}
-		if (manifest.skyboxFaceSize > 0) {
-			specsTable->set(key("skybox_face_size"), valueNumber(static_cast<double>(manifest.skyboxFaceSize)));
-		}
-		if (manifest.atlasSlotBytes) {
-			specsTable->set(key("atlas_slot_bytes"), valueNumber(static_cast<double>(*manifest.atlasSlotBytes)));
-		}
-		if (manifest.stagingBytes) {
-			specsTable->set(key("staging_bytes"), valueNumber(static_cast<double>(*manifest.stagingBytes)));
+		if (manifest.atlasSlotBytes || manifest.engineAtlasSlotBytes || manifest.stagingBytes || manifest.skyboxFaceSize > 0) {
+			auto* vramTable = m_cpu.createTable(0, 4);
+			if (manifest.atlasSlotBytes) {
+				vramTable->set(key("atlas_slot_bytes"), valueNumber(static_cast<double>(*manifest.atlasSlotBytes)));
+			}
+			if (manifest.engineAtlasSlotBytes) {
+				vramTable->set(key("engine_atlas_slot_bytes"), valueNumber(static_cast<double>(*manifest.engineAtlasSlotBytes)));
+			}
+			if (manifest.stagingBytes) {
+				vramTable->set(key("staging_bytes"), valueNumber(static_cast<double>(*manifest.stagingBytes)));
+			}
+			if (manifest.skyboxFaceSize > 0) {
+				vramTable->set(key("skybox_face_size"), valueNumber(static_cast<double>(manifest.skyboxFaceSize)));
+			}
+			specsTable->set(key("vram"), valueTable(vramTable));
 		}
 		if (manifest.maxVoicesSfx || manifest.maxVoicesMusic || manifest.maxVoicesUi) {
+			auto* audioTable = m_cpu.createTable(0, 1);
 			auto* voicesTable = m_cpu.createTable(0, 3);
 			if (manifest.maxVoicesSfx) {
 				voicesTable->set(key("sfx"), valueNumber(static_cast<double>(*manifest.maxVoicesSfx)));
@@ -4326,7 +4357,8 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 			if (manifest.maxVoicesUi) {
 				voicesTable->set(key("ui"), valueNumber(static_cast<double>(*manifest.maxVoicesUi)));
 			}
-			specsTable->set(key("max_voices"), valueTable(voicesTable));
+			audioTable->set(key("max_voices"), valueTable(voicesTable));
+			specsTable->set(key("audio"), valueTable(audioTable));
 		}
 		machineTable->set(key("specs"), valueTable(specsTable));
 		manifestTable->set(key("machine"), valueTable(machineTable));

@@ -424,22 +424,36 @@ export type MachineVoiceSpecs = {
 	music?: number;
 	ui?: number;
 };
-export type MachineSpecs = {
+export type MachineCpuSpecs = {
 	cpu_freq_hz: number;
 	imgdec_bytes_per_sec: number;
+};
+export type MachineDmaSpecs = {
 	dma_bytes_per_sec_iso: number;
 	dma_bytes_per_sec_bulk: number;
-	ufps: number;
-	skybox_face_size?: number;
+};
+export type MachineRamSpecs = {
 	ram_bytes?: number;
 	string_handle_count?: number;
 	string_heap_bytes?: number;
 	asset_table_bytes?: number;
 	asset_data_bytes?: number;
+};
+export type MachineVramSpecs = {
 	atlas_slot_bytes?: number;
 	engine_atlas_slot_bytes?: number;
 	staging_bytes?: number;
+	skybox_face_size?: number;
+};
+export type MachineAudioSpecs = {
 	max_voices?: MachineVoiceSpecs;
+};
+export type MachineSpecs = {
+	cpu: MachineCpuSpecs;
+	dma: MachineDmaSpecs;
+	audio?: MachineAudioSpecs;
+	ram?: MachineRamSpecs;
+	vram?: MachineVramSpecs;
 };
 
 export type CartManifest = {
@@ -450,6 +464,7 @@ export type CartManifest = {
 		viewport: Viewport;
 		canonicalization: CanonicalizationType;
 		namespace: string;
+		ufps: number;
 		specs: MachineSpecs;
 	};
 	input?: {
@@ -462,6 +477,59 @@ export type CartManifest = {
 		entry_path: string;
 	};
 };
+
+export type MachinePerfSpecs = {
+	cpu_freq_hz: number;
+	imgdec_bytes_per_sec: number;
+	dma_bytes_per_sec_iso: number;
+	dma_bytes_per_sec_bulk: number;
+	ufps: number;
+	skybox_face_size?: number;
+};
+
+export type MachineMemorySpecs = {
+	ram_bytes?: number;
+	string_handle_count?: number;
+	string_heap_bytes?: number;
+	asset_table_bytes?: number;
+	asset_data_bytes?: number;
+	atlas_slot_bytes?: number;
+	engine_atlas_slot_bytes?: number;
+	staging_bytes?: number;
+};
+
+export function getMachinePerfSpecs(machine: CartManifest['machine']): MachinePerfSpecs {
+	const cpu = machine.specs.cpu;
+	const dma = machine.specs.dma;
+	const vram = machine.specs.vram;
+	return {
+		cpu_freq_hz: cpu.cpu_freq_hz,
+		imgdec_bytes_per_sec: cpu.imgdec_bytes_per_sec,
+		dma_bytes_per_sec_iso: dma.dma_bytes_per_sec_iso,
+		dma_bytes_per_sec_bulk: dma.dma_bytes_per_sec_bulk,
+		ufps: machine.ufps,
+		skybox_face_size: vram?.skybox_face_size,
+	};
+}
+
+export function getMachineMemorySpecs(machine: CartManifest['machine']): MachineMemorySpecs {
+	const ram = machine.specs.ram;
+	const vram = machine.specs.vram;
+	return {
+		ram_bytes: ram?.ram_bytes,
+		string_handle_count: ram?.string_handle_count,
+		string_heap_bytes: ram?.string_heap_bytes,
+		asset_table_bytes: ram?.asset_table_bytes,
+		asset_data_bytes: ram?.asset_data_bytes,
+		atlas_slot_bytes: vram?.atlas_slot_bytes,
+		engine_atlas_slot_bytes: vram?.engine_atlas_slot_bytes,
+		staging_bytes: vram?.staging_bytes,
+	};
+}
+
+export function getMachineMaxVoices(machine: CartManifest['machine']): MachineVoiceSpecs | undefined {
+	return machine.specs.audio?.max_voices;
+}
 // 		data: merge(bullshit.data, engine.data),
 // 		audioevents: merge(bullshit.audioevents, engine.audioevents),
 // 		cart: bullshit.cart,

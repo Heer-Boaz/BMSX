@@ -1,7 +1,7 @@
 import { glsl } from "esbuild-plugin-glsl";
 // @ts-ignore
 import type { Stats } from 'fs';
-import { CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES } from '../../src/bmsx/rompack/rompack';
+import { CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES, getMachinePerfSpecs } from '../../src/bmsx/rompack/rompack';
 import type { asset_type, AudioMeta, CanonicalizationType, GLTFMesh, ImgMeta, Polygon, RomAsset, RomAssetListPayload, RomManifest } from '../../src/bmsx/rompack/rompack';
 import type { LuaChunk } from '../../src/bmsx/lua/lua_ast';
 import type { Value } from '../../src/bmsx/emulator/cpu';
@@ -1781,8 +1781,9 @@ function encodeBiosManifest(manifest: RomManifest, projectRootPath?: string): Bu
 	const canonicalization = manifest.machine.canonicalization ?? '';
 	const inputLabel = buildInputLabel(manifest);
 	const rootPath = projectRootPath ?? '';
-	const cpuHz = String(manifest.machine.specs.cpu_freq_hz);
-	const ufps = String(manifest.machine.specs.ufps);
+	const perfSpecs = getMachinePerfSpecs(manifest.machine);
+	const cpuHz = String(perfSpecs.cpu_freq_hz);
+	const ufps = String(perfSpecs.ufps);
 
 	const header = Buffer.alloc(4);
 	header.writeUInt32LE(entryKind, 0);

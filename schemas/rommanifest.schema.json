@@ -74,12 +74,18 @@
 					"type": "string",
 					"description": "Namespace used for this cart (e.g. for Lua globals)."
 				},
+				"ufps": {
+					"type": "integer",
+					"minimum": 1,
+					"description": "Machine tick rate in scaled Hz (micro-Hz). Example: 59.94 Hz => 59940000."
+				},
 				"specs": {
 					"$ref": "#/definitions/machineSpecs"
 				}
 			},
 			"required": [
 				"namespace",
+				"ufps",
 				"specs"
 			],
 			"additionalProperties": false
@@ -87,6 +93,32 @@
 		"machineSpecs": {
 			"type": "object",
 			"description": "Machine specs for performance limits and memory budgets.",
+			"properties": {
+				"cpu": {
+					"$ref": "#/definitions/machineCpuSpecs"
+				},
+				"dma": {
+					"$ref": "#/definitions/machineDmaSpecs"
+				},
+				"audio": {
+					"$ref": "#/definitions/machineAudioSpecs"
+				},
+				"ram": {
+					"$ref": "#/definitions/machineRamSpecs"
+				},
+				"vram": {
+					"$ref": "#/definitions/machineVramSpecs"
+				}
+			},
+			"required": [
+				"cpu",
+				"dma"
+			],
+			"additionalProperties": false
+		},
+		"machineCpuSpecs": {
+			"type": "object",
+			"description": "CPU throughput specs.",
 			"properties": {
 				"cpu_freq_hz": {
 					"type": "integer",
@@ -97,7 +129,18 @@
 					"type": "integer",
 					"minimum": 1,
 					"description": "IMGDEC output (decoded RGBA) throughput in bytes per second."
-				},
+				}
+			},
+			"required": [
+				"cpu_freq_hz",
+				"imgdec_bytes_per_sec"
+			],
+			"additionalProperties": false
+		},
+		"machineDmaSpecs": {
+			"type": "object",
+			"description": "DMA throughput specs.",
+			"properties": {
 				"dma_bytes_per_sec_iso": {
 					"type": "integer",
 					"minimum": 1,
@@ -107,17 +150,18 @@
 					"type": "integer",
 					"minimum": 1,
 					"description": "DMA bulk channel bandwidth in bytes per second."
-				},
-				"ufps": {
-					"type": "integer",
-					"minimum": 1,
-					"description": "Machine tick rate in scaled Hz (micro-Hz). Example: 59.94 Hz => 59940000."
-				},
-				"skybox_face_size": {
-					"type": "integer",
-					"minimum": 1,
-					"description": "Maximum skybox face size in pixels (square)."
-				},
+				}
+			},
+			"required": [
+				"dma_bytes_per_sec_iso",
+				"dma_bytes_per_sec_bulk"
+			],
+			"additionalProperties": false
+		},
+		"machineRamSpecs": {
+			"type": "object",
+			"description": "RAM and asset memory budgets.",
+			"properties": {
 				"ram_bytes": {
 					"type": "integer",
 					"minimum": 1
@@ -137,7 +181,14 @@
 				"asset_data_bytes": {
 					"type": "integer",
 					"minimum": 1
-				},
+				}
+			},
+			"additionalProperties": false
+		},
+		"machineVramSpecs": {
+			"type": "object",
+			"description": "VRAM and rendering budgets.",
+			"properties": {
 				"atlas_slot_bytes": {
 					"type": "integer",
 					"minimum": 1
@@ -150,17 +201,22 @@
 					"type": "integer",
 					"minimum": 1
 				},
+				"skybox_face_size": {
+					"type": "integer",
+					"minimum": 1,
+					"description": "Maximum skybox face size in pixels (square)."
+				}
+			},
+			"additionalProperties": false
+		},
+		"machineAudioSpecs": {
+			"type": "object",
+			"description": "Audio budgets.",
+			"properties": {
 				"max_voices": {
 					"$ref": "#/definitions/machineVoiceSpecs"
 				}
 			},
-			"required": [
-				"cpu_freq_hz",
-				"imgdec_bytes_per_sec",
-				"dma_bytes_per_sec_iso",
-				"dma_bytes_per_sec_bulk",
-				"ufps"
-			],
 			"additionalProperties": false
 		},
 		"machineVoiceSpecs": {

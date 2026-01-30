@@ -12,7 +12,7 @@ import { ensureBrowserBackendFactory } from "../render/backend/browser_backend_f
 import type { SkyboxImageIds } from "../render/shared/render_types";
 import { HZ_SCALE as PLATFORM_HZ_SCALE, setMicrotaskQueue } from '../platform';
 import type { GameViewHost, Platform, PlatformExitEvent, SubscriptionHandle } from '../platform';
-import { asset_id, Identifiable, Identifier, Registerable, RuntimeAssets, type vec3, type vec2, GAME_FPS } from "../rompack/rompack";
+import { asset_id, getMachineMaxVoices, Identifiable, Identifier, Registerable, RuntimeAssets, type vec3, type vec2, GAME_FPS } from "../rompack/rompack";
 import { AssetSourceStack, type RawAssetSource } from '../rompack/asset_source';
 import { buildRuntimeAssetLayer, normalizeCartridgeBlob, parseCartridgeIndex, type RuntimeAssetLayer } from '../rompack/romloader';
 import type { LuaSourceRegistry } from '../emulator/lua_sources';
@@ -429,9 +429,9 @@ export class EngineCore {
 			resolver,
 			(id) => runtime.getAudioBytes(runtime.getAssetEntry(id))
 		);
-		const specs = this._assets.manifest.machine.specs;
-		if (specs.max_voices) {
-			SoundMaster.instance.setMaxVoicesByType(specs.max_voices);
+		const maxVoices = getMachineMaxVoices(this._assets.manifest.machine);
+		if (maxVoices) {
+			SoundMaster.instance.setMaxVoicesByType(maxVoices);
 		}
 	}
 
@@ -470,7 +470,7 @@ export class EngineCore {
 		this.running = false;
 		this._paused = false;
 		this.wasupdated = true;
-		this.setUfpsScaled(engineLayer.index.manifest.machine.specs.ufps);
+		this.setUfpsScaled(engineLayer.index.manifest.machine.ufps);
 		this.recomputeTimingCaches();
 
 		this._debug = debug ?? this._debug;
