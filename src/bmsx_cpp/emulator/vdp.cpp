@@ -26,6 +26,110 @@ bool isAtlasName(const std::string& name) {
 	return name.rfind(kPrefix, 0) == 0;
 }
 
+uint32_t fmix32(uint32_t h) {
+	h ^= h >> 16u;
+	h *= 0x85ebca6bU;
+	h ^= h >> 13u;
+	h *= 0xc2b2ae35U;
+	h ^= h >> 16u;
+	return h;
+}
+
+uint32_t xorshift32(uint32_t x) {
+	x ^= x << 13u;
+	x ^= x >> 17u;
+	x ^= x << 5u;
+	return x;
+}
+
+uint32_t scramble32(uint32_t x) {
+	return x * 0x9e3779bbU;
+}
+
+int signed8FromHash(uint32_t h) {
+	return static_cast<int>((h >> 24u) & 0xFFu) - 128;
+}
+
+struct BlockGen {
+	uint32_t forceMask = 0;
+	uint32_t prefWord = 0;
+	uint32_t weakMask = 0;
+	uint32_t baseState = 0;
+	uint32_t bootState = 0;
+	uint32_t genWordPos = 0;
+};
+
+BlockGen initBlockGen(uint32_t biasSeed, uint32_t bootSeedMix, uint32_t blockIndex) {
+	const uint32_t pageIndex = blockIndex >> 7u;
+	const uint32_t rowIndex = blockIndex >> 3u;
+
+	const uint32_t pageH = fmix32((biasSeed ^ (pageIndex * 0xc2b2ae35U) ^ 0xa5a5a5a5U));
+	const uint32_t rowH = fmix32((biasSeed ^ (rowIndex * 0x85ebca6bU) ^ 0x1b873593U));
+	const uint32_t blkH = fmix32((biasSeed ^ (blockIndex * 0x9e3779b9U) ^ 0x85ebca77U));
+
+	const int bias =
+		signed8FromHash(pageH) * 4 +
+		signed8FromHash(rowH) * 2 +
+		signed8FromHash(blkH) * 1;
+
+	const int absBias = bias < 0 ? -bias : bias;
+
+	const int forceLevel =
+		(absBias < 160) ? 0 :
+		(absBias < 360) ? 1 :
+		(absBias < 600) ? 2 : 3;
+
+	const int jitterLevel = 3 - forceLevel;
+
+	uint32_t ps = (blkH ^ rowH ^ 0xdeadbeefU) | 1u;
+	ps = xorshift32(ps); const uint32_t m1 = scramble32(ps);
+	ps = xorshift32(ps); const uint32_t m2 = scramble32(ps);
+	ps = xorshift32(ps); const uint32_t prefWord = scramble32(ps);
+	ps = xorshift32(ps); const uint32_t w1 = scramble32(ps);
+	ps = xorshift32(ps); const uint32_t w2 = scramble32(ps);
+	ps = xorshift32(ps); const uint32_t w3 = scramble32(ps);
+	ps = xorshift32(ps); const uint32_t w4 = scramble32(ps);
+
+	uint32_t forceMask = 0;
+	switch (forceLevel) {
+		case 0: forceMask = 0; break;
+		case 1: forceMask = (m1 & m2); break;
+		case 2: forceMask = m1; break;
+		default: forceMask = (m1 | m2); break;
+	}
+
+	uint32_t weak = (w1 & w2 & w3);
+	if (jitterLevel <= 2) weak &= w4;
+	if (jitterLevel <= 1) weak &= (weak >> 1);
+	if (jitterLevel <= 0) weak = 0;
+	weak &= ~forceMask;
+
+	const uint32_t baseState = (blkH ^ 0xa1b2c3d4U) | 1u;
+	const uint32_t bootState = (fmix32((bootSeedMix ^ (blockIndex * 0x7f4a7c15U) ^ 0x31415926U)) | 1u);
+
+	BlockGen gen;
+	gen.forceMask = forceMask;
+	gen.prefWord = prefWord;
+	gen.weakMask = weak;
+	gen.baseState = baseState;
+	gen.bootState = bootState;
+	gen.genWordPos = 0;
+	return gen;
+}
+
+uint32_t nextWord(BlockGen& gen) {
+	gen.baseState = xorshift32(gen.baseState);
+	gen.bootState = xorshift32(gen.bootState);
+	gen.genWordPos += 1;
+
+	const uint32_t baseWord = scramble32(gen.baseState);
+	const uint32_t bootWord = scramble32(gen.bootState);
+
+	uint32_t word = (baseWord & ~gen.forceMask) | (gen.prefWord & gen.forceMask);
+	word ^= (bootWord & gen.weakMask);
+	return word;
+}
+
 }
 
 VDP::VDP(Memory& memory)
@@ -34,6 +138,8 @@ VDP::VDP(Memory& memory)
 	, m_vramGarbageScratch(VRAM_GARBAGE_CHUNK_BYTES) {
 	m_memory.setVramWriter(this);
 	m_memory.setVdpIoHandler(this);
+	m_vramMachineSeed = nextVramMachineSeed();
+	m_vramBootSeed = nextVramBootSeed();
 	m_readBudgetBytes = VDP_RD_BUDGET_BYTES;
 }
 
@@ -183,8 +289,8 @@ void VDP::registerImageAssets(RuntimeAssets& assets, bool keepDecodedData) {
 	m_dirtySkybox = true;
 	m_skyboxFaceIds = {};
 	m_hasSkybox = false;
-	m_vramGarbageSeed = nextVramGarbageSeed();
-	seedVramStaging(m_vramGarbageSeed);
+	m_vramBootSeed = nextVramBootSeed();
+	seedVramStaging();
 	const RuntimeAssets* fallback = assets.fallback;
 
 	std::vector<std::string> viewAssets;
@@ -376,70 +482,6 @@ void VDP::registerImageAssets(RuntimeAssets& assets, bool keepDecodedData) {
 		m_atlasViewIdsById[atlasId].push_back(id);
 	}
 
-	auto* texmanager = EngineCore::instance().texmanager();
-	if (!texmanager) {
-		throw BMSX_RUNTIME_ERROR("[VDP] TextureManager not configured.");
-	}
-	auto* view = EngineCore::instance().view();
-	if (!view) {
-		throw BMSX_RUNTIME_ERROR("[VDP] GameView not configured.");
-	}
-	if (engineAtlasAsset->pixels.empty()) {
-		throw BMSX_RUNTIME_ERROR("[VDP] Engine atlas pixels missing.");
-	}
-	TextureParams engineParams;
-	const TextureKey engineKey = texmanager->makeKey(ENGINE_ATLAS_TEXTURE_KEY, engineParams);
-	TextureHandle engineHandle = texmanager->getOrCreateTexture(
-		engineKey,
-		engineAtlasAsset->pixels.data(),
-		engineAtlasAsset->meta.width,
-		engineAtlasAsset->meta.height,
-		engineParams
-	);
-	view->textures[ENGINE_ATLAS_TEXTURE_KEY] = engineHandle;
-	setSlotTextureSize(ENGINE_ATLAS_TEXTURE_KEY,
-		static_cast<uint32_t>(engineAtlasAsset->meta.width),
-		static_cast<uint32_t>(engineAtlasAsset->meta.height));
-	view->loadEngineAtlasTexture();
-
-	const auto& primarySlotEntryRef = m_memory.getAssetEntry(ATLAS_PRIMARY_SLOT_ID);
-	const auto& secondarySlotEntryRef = m_memory.getAssetEntry(ATLAS_SECONDARY_SLOT_ID);
-	const i32 primaryW = static_cast<i32>(primarySlotEntryRef.regionW);
-	const i32 primaryH = static_cast<i32>(primarySlotEntryRef.regionH);
-	const uint32_t primarySeed = deriveVramGarbageSeed(ATLAS_PRIMARY_SLOT_ID);
-	fillGarbageBuffer(m_vramSeedPixel.data(), m_vramSeedPixel.size(), primarySeed | 1u);
-	TextureParams primaryParams;
-	const TextureKey primaryKey = texmanager->makeKey(ATLAS_PRIMARY_SLOT_ID, primaryParams);
-	TextureHandle primaryHandle = texmanager->getOrCreateTexture(
-		primaryKey,
-		m_vramSeedPixel.data(),
-		1,
-		1,
-		primaryParams
-	);
-	primaryHandle = texmanager->resizeTextureForKey(ATLAS_PRIMARY_SLOT_ID, primaryW, primaryH);
-	view->textures[ATLAS_PRIMARY_SLOT_ID] = primaryHandle;
-	setSlotTextureSize(ATLAS_PRIMARY_SLOT_ID, primarySlotEntryRef.regionW, primarySlotEntryRef.regionH);
-	seedVramSlotTexture(getVramSlotByTextureKey(ATLAS_PRIMARY_SLOT_ID), primarySeed);
-
-	const i32 secondaryW = static_cast<i32>(secondarySlotEntryRef.regionW);
-	const i32 secondaryH = static_cast<i32>(secondarySlotEntryRef.regionH);
-	const uint32_t secondarySeed = deriveVramGarbageSeed(ATLAS_SECONDARY_SLOT_ID);
-	fillGarbageBuffer(m_vramSeedPixel.data(), m_vramSeedPixel.size(), secondarySeed | 1u);
-	TextureParams secondaryParams;
-	const TextureKey secondaryKey = texmanager->makeKey(ATLAS_SECONDARY_SLOT_ID, secondaryParams);
-	TextureHandle secondaryHandle = texmanager->getOrCreateTexture(
-		secondaryKey,
-		m_vramSeedPixel.data(),
-		1,
-		1,
-		secondaryParams
-	);
-	secondaryHandle = texmanager->resizeTextureForKey(ATLAS_SECONDARY_SLOT_ID, secondaryW, secondaryH);
-	view->textures[ATLAS_SECONDARY_SLOT_ID] = secondaryHandle;
-	setSlotTextureSize(ATLAS_SECONDARY_SLOT_ID, secondarySlotEntryRef.regionW, secondarySlotEntryRef.regionH);
-	seedVramSlotTexture(getVramSlotByTextureKey(ATLAS_SECONDARY_SLOT_ID), secondarySeed);
-
 	syncRegisters();
 
 	if (!keepDecodedData) {
@@ -452,6 +494,21 @@ void VDP::registerImageAssets(RuntimeAssets& assets, bool keepDecodedData) {
 			}
 		}
 	}
+}
+
+void VDP::uploadAtlasTextures() {
+	const auto& engineEntry = m_memory.getAssetEntry(generateAtlasName(ENGINE_ATLAS_INDEX));
+	ensureAtlasSlotTexture(engineEntry, ENGINE_ATLAS_TEXTURE_KEY);
+	auto* view = EngineCore::instance().view();
+	if (!view) {
+		throw BMSX_RUNTIME_ERROR("[VDP] GameView not configured.");
+	}
+	view->loadEngineAtlasTexture();
+	const auto& primaryEntry = m_memory.getAssetEntry(ATLAS_PRIMARY_SLOT_ID);
+	const auto& secondaryEntry = m_memory.getAssetEntry(ATLAS_SECONDARY_SLOT_ID);
+	ensureAtlasSlotTexture(primaryEntry, ATLAS_PRIMARY_SLOT_ID);
+	ensureAtlasSlotTexture(secondaryEntry, ATLAS_SECONDARY_SLOT_ID);
+	m_dirtyAtlasBindings = true;
 }
 
 void VDP::flushAssetEdits() {
@@ -621,7 +678,7 @@ void VDP::ensureVramSlotTextureSize(VramSlot& slot) {
 	slot.textureWidth = width;
 	slot.textureHeight = height;
 	invalidateReadCache(slot.surfaceId);
-	seedVramSlotTexture(slot, deriveVramGarbageSeed(slot.textureKey));
+	seedVramSlotTexture(slot);
 }
 
 VDP::VramSlot& VDP::getVramSlotByTextureKey(const std::string& textureKey) {
@@ -633,60 +690,91 @@ VDP::VramSlot& VDP::getVramSlotByTextureKey(const std::string& textureKey) {
 	throw BMSX_RUNTIME_ERROR("[VDP] VRAM slot not registered for texture '" + textureKey + "'.");
 }
 
-uint32_t VDP::deriveVramGarbageSeed(const std::string& textureKey) const {
-	if (textureKey == ATLAS_PRIMARY_SLOT_ID) {
-		return m_vramGarbageSeed ^ 0x9E3779B9u;
-	}
-	if (textureKey == ATLAS_SECONDARY_SLOT_ID) {
-		return m_vramGarbageSeed ^ 0x7F4A7C15u;
-	}
-	return m_vramGarbageSeed;
+uint32_t VDP::vramSlotSalt(const VramSlot& slot) const {
+	return slot.baseAddr;
 }
 
-uint32_t VDP::nextVramGarbageSeed() const {
+uint32_t VDP::nextVramMachineSeed() const {
 	const auto now = std::chrono::high_resolution_clock::now().time_since_epoch().count();
 	const uint64_t mixed = static_cast<uint64_t>(now) ^ static_cast<uint64_t>(reinterpret_cast<uintptr_t>(this));
-	return static_cast<uint32_t>((mixed ^ (mixed >> 32)) | 1u);
+	return static_cast<uint32_t>(mixed ^ (mixed >> 32));
 }
 
-uint32_t VDP::advanceGarbageState(uint32_t state) const {
-	uint32_t next = state;
-	next ^= next << 13;
-	next ^= next >> 17;
-	next ^= next << 5;
-	return next;
+uint32_t VDP::nextVramBootSeed() const {
+	static uint32_t counter = 0;
+	counter += 1;
+	const auto now = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+	const uint64_t mixed = static_cast<uint64_t>(now)
+		^ static_cast<uint64_t>(reinterpret_cast<uintptr_t>(this))
+		^ (static_cast<uint64_t>(counter) << 1u);
+	return static_cast<uint32_t>(mixed ^ (mixed >> 32) ^ (mixed >> 17));
 }
 
-uint32_t VDP::fillGarbageBuffer(u8* data, size_t length, uint32_t seed) const {
-	uint32_t state = seed;
-	size_t cursor = 0;
-	const size_t alignedEnd = length - (length & 3u);
-	while (cursor < alignedEnd) {
-		state = advanceGarbageState(state);
-		const uint32_t value = state;
-		data[cursor] = static_cast<u8>(value & 0xffu);
-		data[cursor + 1] = static_cast<u8>((value >> 8) & 0xffu);
-		data[cursor + 2] = static_cast<u8>((value >> 16) & 0xffu);
-		data[cursor + 3] = static_cast<u8>((value >> 24) & 0xffu);
-		cursor += 4;
-	}
-	if (cursor < length) {
-		state = advanceGarbageState(state);
-		uint32_t value = state;
-		while (cursor < length) {
-			data[cursor] = static_cast<u8>(value & 0xffu);
-			value >>= 8;
-			cursor += 1;
+void VDP::fillVramGarbageScratch(u8* buffer, size_t length, VramGarbageStream& s) const {
+	const size_t total = length;
+	const uint32_t startAddr = s.addr;
+
+	const uint32_t biasSeed = s.machineSeed ^ s.slotSalt;
+	const uint32_t bootSeedMix = s.bootSeed ^ s.slotSalt;
+
+	const size_t BLOCK_BYTES = 32u;
+	const uint32_t BLOCK_SHIFT = 5u;
+
+	size_t out = 0;
+	const bool aligned4 = (((startAddr | static_cast<uint32_t>(total)) & 3u) == 0u);
+
+	while (out < total) {
+		const uint32_t addr = startAddr + static_cast<uint32_t>(out);
+		const uint32_t blockIndex = addr >> BLOCK_SHIFT;
+		const uint32_t blockBase = blockIndex << BLOCK_SHIFT;
+
+		const uint32_t startOff = addr - blockBase;
+		const size_t maxBytesThisBlock = std::min<size_t>(BLOCK_BYTES - startOff, total - out);
+
+		BlockGen gen = initBlockGen(biasSeed, bootSeedMix, blockIndex);
+
+		if (aligned4 && startOff == 0u && maxBytesThisBlock == BLOCK_BYTES) {
+			for (uint32_t w = 0; w < 8u; ++w) {
+				const uint32_t word = nextWord(gen);
+				const size_t p = out + (static_cast<size_t>(w) << 2u);
+				buffer[p] = static_cast<u8>(word & 0xFFu);
+				buffer[p + 1] = static_cast<u8>((word >> 8u) & 0xFFu);
+				buffer[p + 2] = static_cast<u8>((word >> 16u) & 0xFFu);
+				buffer[p + 3] = static_cast<u8>((word >> 24u) & 0xFFu);
+			}
+		} else {
+			const uint32_t rangeStart = startOff;
+			const uint32_t rangeEnd = startOff + static_cast<uint32_t>(maxBytesThisBlock);
+
+			for (uint32_t w = 0; w < 8u; ++w) {
+				const uint32_t word = nextWord(gen);
+				const uint32_t wordByteStart = w << 2u;
+				const uint32_t wordByteEnd = wordByteStart + 4u;
+				const uint32_t a0 = std::max<uint32_t>(wordByteStart, rangeStart);
+				const uint32_t a1 = std::min<uint32_t>(wordByteEnd, rangeEnd);
+				if (a0 >= a1) {
+					continue;
+				}
+				uint32_t tmp = word >> ((a0 - wordByteStart) << 3u);
+				for (uint32_t k = a0; k < a1; ++k) {
+					buffer[out + static_cast<size_t>(k - rangeStart)] = static_cast<u8>(tmp & 0xFFu);
+					tmp >>= 8u;
+				}
+			}
 		}
+
+		out += maxBytesThisBlock;
 	}
-	return state;
+
+	s.addr = startAddr + static_cast<uint32_t>(total);
 }
 
-void VDP::seedVramStaging(uint32_t seed) {
-	fillGarbageBuffer(m_vramStaging.data(), m_vramStaging.size(), seed | 1u);
+void VDP::seedVramStaging() {
+	VramGarbageStream stream{m_vramMachineSeed, m_vramBootSeed, VRAM_STAGING_BASE, 0u};
+	fillVramGarbageScratch(m_vramStaging.data(), m_vramStaging.size(), stream);
 }
 
-void VDP::seedVramSlotTexture(VramSlot& slot, uint32_t seed) {
+void VDP::seedVramSlotTexture(VramSlot& slot) {
 	auto& entry = m_memory.getAssetEntry(slot.assetId);
 	if (entry.regionW == 0 || entry.regionH == 0) {
 		throw BMSX_RUNTIME_ERROR("[VDP] VRAM slot missing dimensions for seeding.");
@@ -700,7 +788,7 @@ void VDP::seedVramSlotTexture(VramSlot& slot, uint32_t seed) {
 	if (maxPixels == 0u) {
 		throw BMSX_RUNTIME_ERROR("[VDP] VRAM garbage scratch buffer is empty.");
 	}
-	uint32_t state = seed | 1u;
+	VramGarbageStream stream{m_vramMachineSeed, m_vramBootSeed, vramSlotSalt(slot), 0u};
 	const size_t rowBytes = rowPixels * 4u;
 	const uint32_t height = entry.regionH;
 	if (rowBytes <= m_vramGarbageScratch.size()) {
@@ -708,7 +796,7 @@ void VDP::seedVramSlotTexture(VramSlot& slot, uint32_t seed) {
 		for (uint32_t y = 0; y < height; ) {
 			const size_t rows = std::min<size_t>(rowsPerChunk, height - y);
 			const size_t chunkBytes = rowBytes * rows;
-			state = fillGarbageBuffer(m_vramGarbageScratch.data(), chunkBytes, state);
+			fillVramGarbageScratch(m_vramGarbageScratch.data(), chunkBytes, stream);
 			texmanager->updateTextureRegionForKey(
 				slot.textureKey,
 				m_vramGarbageScratch.data(),
@@ -724,7 +812,7 @@ void VDP::seedVramSlotTexture(VramSlot& slot, uint32_t seed) {
 			for (uint32_t x = 0; x < entry.regionW; ) {
 				const size_t segmentWidth = std::min<size_t>(maxPixels, entry.regionW - x);
 				const size_t segmentBytes = segmentWidth * 4u;
-				state = fillGarbageBuffer(m_vramGarbageScratch.data(), segmentBytes, state);
+				fillVramGarbageScratch(m_vramGarbageScratch.data(), segmentBytes, stream);
 				texmanager->updateTextureRegionForKey(
 					slot.textureKey,
 					m_vramGarbageScratch.data(),
@@ -738,6 +826,40 @@ void VDP::seedVramSlotTexture(VramSlot& slot, uint32_t seed) {
 		}
 	}
 	invalidateReadCache(slot.surfaceId);
+}
+
+void VDP::ensureAtlasSlotTexture(const Memory::AssetEntry& entry, const std::string& textureKey) {
+	if (entry.regionW == 0 || entry.regionH == 0) {
+		throw BMSX_RUNTIME_ERROR("[VDP] VRAM slot missing dimensions for seeding.");
+	}
+	auto* texmanager = EngineCore::instance().texmanager();
+	if (!texmanager) {
+		throw BMSX_RUNTIME_ERROR("[VDP] TextureManager not configured.");
+	}
+	auto* view = EngineCore::instance().view();
+	if (!view) {
+		throw BMSX_RUNTIME_ERROR("[VDP] GameView not configured.");
+	}
+	auto& slot = getVramSlotByTextureKey(textureKey);
+	VramGarbageStream stream{m_vramMachineSeed, m_vramBootSeed, vramSlotSalt(slot), 0u};
+	fillVramGarbageScratch(m_vramSeedPixel.data(), m_vramSeedPixel.size(), stream);
+	TextureParams params;
+	const TextureKey key = texmanager->makeKey(textureKey, params);
+	TextureHandle handle = texmanager->getOrCreateTexture(
+		key,
+		m_vramSeedPixel.data(),
+		1,
+		1,
+		params
+	);
+	handle = texmanager->resizeTextureForKey(
+		textureKey,
+		static_cast<i32>(entry.regionW),
+		static_cast<i32>(entry.regionH)
+	);
+	view->textures[textureKey] = handle;
+	setSlotTextureSize(textureKey, entry.regionW, entry.regionH);
+	seedVramSlotTexture(slot);
 }
 
 void VDP::setSlotTextureSize(const std::string& textureKey, uint32_t width, uint32_t height) {

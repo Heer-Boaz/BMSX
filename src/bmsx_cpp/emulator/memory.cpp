@@ -156,7 +156,7 @@ void Memory::sealEngineAssets() {
 	const uint32_t mask = ASSET_PAGE_SIZE - 1u;
 	const uint32_t aligned = (m_engineAssetDataEnd + mask) & ~mask;
 	if (aligned > ASSET_DATA_ALLOC_END) {
-		throw std::runtime_error("[Memory] Engine asset data exceeds asset RAM.");
+		throw std::runtime_error("[Memory] Engine asset data exceeds reserved RAM range.");
 	}
 	m_cartAssetDataBase = aligned;
 }
@@ -313,6 +313,32 @@ Memory::AssetEntry& Memory::registerAudioBuffer(
 	const size_t index = addAssetEntry(std::move(entry));
 	m_assetEntries[index].ownerIndex = index;
 	mapAssetPages(index, addr, size);
+	return m_assetEntries[index];
+}
+
+Memory::AssetEntry& Memory::registerAudioMeta(
+	const std::string& id,
+	uint32_t sampleRate,
+	uint32_t channels,
+	uint32_t bitsPerSample,
+	uint32_t frames,
+	uint32_t dataOffset,
+	uint32_t dataSize
+) {
+	AssetEntry entry;
+	entry.id = id;
+	entry.type = AssetType::Audio;
+	entry.baseAddr = 0;
+	entry.baseSize = 0;
+	entry.capacity = 0;
+	entry.sampleRate = sampleRate;
+	entry.channels = channels;
+	entry.frames = frames;
+	entry.bitsPerSample = bitsPerSample;
+	entry.audioDataOffset = dataOffset;
+	entry.audioDataSize = dataSize;
+	const size_t index = addAssetEntry(std::move(entry));
+	m_assetEntries[index].ownerIndex = index;
 	return m_assetEntries[index];
 }
 

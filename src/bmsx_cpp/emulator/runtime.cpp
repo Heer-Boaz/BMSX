@@ -1507,7 +1507,16 @@ void Runtime::buildAssetMemory(RuntimeAssets& assets, bool keepDecodedData, Asse
 			continue;
 		}
 		if (audioAsset.bytes.empty()) {
-			throw BMSX_RUNTIME_ERROR("[Runtime] Audio asset '" + id + "' missing encoded bytes.");
+			m_memory.registerAudioMeta(
+				id,
+				static_cast<uint32_t>(audioAsset.sampleRate),
+				static_cast<uint32_t>(audioAsset.channels),
+				static_cast<uint32_t>(audioAsset.bitsPerSample),
+				static_cast<uint32_t>(audioAsset.frames),
+				static_cast<uint32_t>(audioAsset.dataOffset),
+				static_cast<uint32_t>(audioAsset.dataSize)
+			);
+			continue;
 		}
 		m_memory.registerAudioBuffer(
 			id,
@@ -1537,7 +1546,16 @@ void Runtime::buildAssetMemory(RuntimeAssets& assets, bool keepDecodedData, Asse
 				continue;
 			}
 			if (audioAsset.bytes.empty()) {
-				throw BMSX_RUNTIME_ERROR("[Runtime] Audio asset '" + id + "' missing encoded bytes.");
+				m_memory.registerAudioMeta(
+					id,
+					static_cast<uint32_t>(audioAsset.sampleRate),
+					static_cast<uint32_t>(audioAsset.channels),
+					static_cast<uint32_t>(audioAsset.bitsPerSample),
+					static_cast<uint32_t>(audioAsset.frames),
+					static_cast<uint32_t>(audioAsset.dataOffset),
+					static_cast<uint32_t>(audioAsset.dataSize)
+				);
+				continue;
 			}
 			m_memory.registerAudioBuffer(
 				id,
@@ -1555,6 +1573,10 @@ void Runtime::buildAssetMemory(RuntimeAssets& assets, bool keepDecodedData, Asse
 
 	m_memory.finalizeAssetTable();
 	m_memory.markAllAssetsDirty();
+}
+
+void Runtime::uploadAtlasTextures() {
+	m_vdp.uploadAtlasTextures();
 }
 
 void Runtime::flushAssetEdits() {

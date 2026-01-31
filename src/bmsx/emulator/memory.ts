@@ -175,7 +175,7 @@ export class Memory {
 		const mask = ASSET_PAGE_SIZE - 1;
 		const aligned = (this.engineAssetDataEnd + mask) & ~mask;
 		if (aligned > ASSET_DATA_ALLOC_END) {
-			throw new Error(`[Memory] Engine asset data exceeds asset RAM (${aligned} > ${ASSET_DATA_ALLOC_END}).`);
+			throw new Error(`[Memory] Engine asset data exceeds reserved RAM range (${aligned} > ${ASSET_DATA_ALLOC_END}).`);
 		}
 		this.cartAssetDataBase = aligned;
 	}
@@ -399,6 +399,41 @@ export class Memory {
 		});
 		entry.ownerIndex = this.registerAssetEntry(entry);
 		this.mapAssetPages(entry.ownerIndex, addr, params.bytes.byteLength);
+		return entry;
+	}
+
+	public registerAudioMeta(params: {
+		id: string;
+		sampleRate: number;
+		channels: number;
+		bitsPerSample: number;
+		frames: number;
+		dataOffset: number;
+		dataSize: number;
+	}): AssetEntry {
+		const entry = this.createAssetEntry({
+			id: params.id,
+			idTokenLo: 0,
+			idTokenHi: 0,
+			type: 'audio',
+			flags: 0,
+			baseAddr: 0,
+			baseSize: 0,
+			capacity: 0,
+			baseStride: 0,
+			regionX: 0,
+			regionY: 0,
+			regionW: 0,
+			regionH: 0,
+			sampleRate: params.sampleRate,
+			channels: params.channels,
+			frames: params.frames,
+			bitsPerSample: params.bitsPerSample,
+			audioDataOffset: params.dataOffset,
+			audioDataSize: params.dataSize,
+			ownerIndex: -1,
+		});
+		entry.ownerIndex = this.registerAssetEntry(entry);
 		return entry;
 	}
 

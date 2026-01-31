@@ -427,7 +427,7 @@ export class EngineCore {
 			resources,
 			GameOptions.volumePercentage,
 			resolver,
-			(id) => runtime.getAudioBytes(runtime.getAssetEntry(id))
+			(id) => runtime.getAudioBytesById(id)
 		);
 		const maxVoices = getMachineMaxVoices(this._assets.manifest.machine);
 		if (maxVoices) {

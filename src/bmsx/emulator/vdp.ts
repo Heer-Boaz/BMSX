@@ -44,6 +44,181 @@ const VDP_RD_BUDGET_BYTES = 4096;
 const VDP_RD_MAX_CHUNK_PIXELS = 256;
 const VRAM_GARBAGE_CHUNK_BYTES = 64 * 1024;
 
+type VramGarbageStream = {
+	machineSeed: number;
+	bootSeed: number;
+	slotSalt: number;
+	addr: number;
+};
+
+type BlockGen = {
+	forceMask: number;
+	prefWord: number;
+	weakMask: number;
+	baseState: number;
+	bootState: number;
+	genWordPos: number;
+};
+
+function fmix32(h: number): number {
+	h >>>= 0;
+	h ^= h >>> 16;
+	h = Math.imul(h, 0x85ebca6b);
+	h ^= h >>> 13;
+	h = Math.imul(h, 0xc2b2ae35);
+	h ^= h >>> 16;
+	return h >>> 0;
+}
+
+function xorshift32(x: number): number {
+	x >>>= 0;
+	x ^= (x << 13) >>> 0;
+	x ^= x >>> 17;
+	x ^= (x << 5) >>> 0;
+	return x >>> 0;
+}
+
+function scramble32(x: number): number {
+	return Math.imul(x >>> 0, 0x9e3779bb) >>> 0;
+}
+
+function signed8FromHash(h: number): number {
+	return ((h >>> 24) & 0xff) - 128;
+}
+
+function initBlockGen(biasSeed: number, bootSeedMix: number, blockIndex: number): BlockGen {
+	const pageIndex = blockIndex >>> 7;
+	const rowIndex = blockIndex >>> 3;
+
+	const pageH = fmix32((biasSeed ^ Math.imul(pageIndex, 0xc2b2ae35) ^ 0xa5a5a5a5) >>> 0);
+	const rowH = fmix32((biasSeed ^ Math.imul(rowIndex, 0x85ebca6b) ^ 0x1b873593) >>> 0);
+	const blkH = fmix32((biasSeed ^ Math.imul(blockIndex, 0x9e3779b9) ^ 0x85ebca77) >>> 0);
+
+	const bias =
+		signed8FromHash(pageH) * 4 +
+		signed8FromHash(rowH) * 2 +
+		signed8FromHash(blkH) * 1;
+
+	const absBias = bias < 0 ? -bias : bias;
+
+	const forceLevel =
+		absBias < 160 ? 0 :
+		absBias < 360 ? 1 :
+		absBias < 600 ? 2 : 3;
+
+	const jitterLevel = 3 - forceLevel;
+
+	let ps = (blkH ^ rowH ^ 0xdeadbeef) >>> 0;
+	ps |= 1;
+
+	ps = xorshift32(ps); const m1 = scramble32(ps);
+	ps = xorshift32(ps); const m2 = scramble32(ps);
+	ps = xorshift32(ps); const prefWord = scramble32(ps);
+	ps = xorshift32(ps); const w1 = scramble32(ps);
+	ps = xorshift32(ps); const w2 = scramble32(ps);
+	ps = xorshift32(ps); const w3 = scramble32(ps);
+	ps = xorshift32(ps); const w4 = scramble32(ps);
+
+	let forceMask = 0;
+	switch (forceLevel) {
+		case 0: forceMask = 0; break;
+		case 1: forceMask = (m1 & m2) >>> 0; break;
+		case 2: forceMask = m1 >>> 0; break;
+		default: forceMask = (m1 | m2) >>> 0; break;
+	}
+
+	let weak = (w1 & w2 & w3) >>> 0;
+	if (jitterLevel <= 2) weak &= w4;
+	if (jitterLevel <= 1) weak &= (weak >>> 1);
+	if (jitterLevel <= 0) weak = 0;
+	weak &= (~forceMask) >>> 0;
+
+	const baseState = ((blkH ^ 0xa1b2c3d4) >>> 0) | 1;
+	const bootState = (fmix32((bootSeedMix ^ Math.imul(blockIndex, 0x7f4a7c15) ^ 0x31415926) >>> 0) | 1) >>> 0;
+
+	return {
+		forceMask,
+		prefWord,
+		weakMask: weak >>> 0,
+		baseState,
+		bootState,
+		genWordPos: 0,
+	};
+}
+
+function nextWord(gen: BlockGen): number {
+	gen.baseState = xorshift32(gen.baseState);
+	gen.bootState = xorshift32(gen.bootState);
+	gen.genWordPos += 1;
+
+	const baseWord = scramble32(gen.baseState);
+	const bootWord = scramble32(gen.bootState);
+
+	let word = (baseWord & ~gen.forceMask) | (gen.prefWord & gen.forceMask);
+	word ^= (bootWord & gen.weakMask);
+	return word >>> 0;
+}
+
+function fillVramGarbageScratch(buffer: Uint8Array, s: VramGarbageStream): void {
+	const total = buffer.byteLength;
+	const startAddr = s.addr >>> 0;
+
+	const biasSeed = (s.machineSeed ^ s.slotSalt) >>> 0;
+	const bootSeedMix = (s.bootSeed ^ s.slotSalt) >>> 0;
+
+	const BLOCK_BYTES = 32;
+	const BLOCK_SHIFT = 5;
+
+	let out = 0;
+
+	const aligned4 = (((startAddr | total) & 3) === 0);
+
+	while (out < total) {
+		const addr = (startAddr + out) >>> 0;
+		const blockIndex = addr >>> BLOCK_SHIFT;
+		const blockBase = (blockIndex << BLOCK_SHIFT) >>> 0;
+
+		const startOff = (addr - blockBase) >>> 0;
+		const maxBytesThisBlock = Math.min(BLOCK_BYTES - startOff, total - out);
+
+		const gen = initBlockGen(biasSeed, bootSeedMix, blockIndex);
+
+		if (aligned4 && startOff === 0 && maxBytesThisBlock === BLOCK_BYTES) {
+			for (let w = 0; w < 8; w += 1) {
+				const word = nextWord(gen);
+				const p = out + (w << 2);
+				buffer[p] = word & 0xff;
+				buffer[p + 1] = (word >>> 8) & 0xff;
+				buffer[p + 2] = (word >>> 16) & 0xff;
+				buffer[p + 3] = (word >>> 24) & 0xff;
+			}
+		} else {
+			const rangeStart = startOff;
+			const rangeEnd = startOff + maxBytesThisBlock;
+
+			for (let w = 0; w < 8; w += 1) {
+				const word = nextWord(gen);
+				const wordByteStart = w << 2;
+				const wordByteEnd = wordByteStart + 4;
+				const a0 = Math.max(wordByteStart, rangeStart);
+				const a1 = Math.min(wordByteEnd, rangeEnd);
+				if (a0 >= a1) {
+					continue;
+				}
+				let tmp = word >>> ((a0 - wordByteStart) << 3);
+				for (let k = a0; k < a1; k += 1) {
+					buffer[out + (k - rangeStart)] = tmp & 0xff;
+					tmp >>>= 8;
+				}
+			}
+		}
+
+		out += maxBytesThisBlock;
+	}
+
+	s.addr = (startAddr + total) >>> 0;
+}
+
 type VdpReadSurface = {
 	entry: AssetEntry;
 	textureKey: string;
@@ -77,7 +252,8 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 	private vramStaging = new Uint8Array(VRAM_STAGING_SIZE);
 	private readonly vramGarbageScratch = new Uint8Array(VRAM_GARBAGE_CHUNK_BYTES);
 	private readonly vramSeedPixel = new Uint8Array(4);
-	private vramGarbageSeed = 0;
+	private vramMachineSeed = 0;
+	private vramBootSeed = 0;
 	private readSurfaces: Array<VdpReadSurface | null> = [null, null, null];
 	private readCaches: VdpReadCache[] = [];
 	private readBudgetBytes = VDP_RD_BUDGET_BYTES;
@@ -94,6 +270,8 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 	) {
 		this.memory.setVramWriter(this);
 		this.memory.setVdpIoHandler(this);
+		this.vramMachineSeed = this.nextVramMachineSeed();
+		this.vramBootSeed = this.nextVramBootSeed();
 		for (let index = 0; index < VDP_RD_SURFACE_COUNT; index += 1) {
 			this.readCaches.push({ x0: 0, y: 0, width: 0, data: new Uint8Array(0) });
 		}
@@ -338,8 +516,8 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		this.skyboxFaceIds = null;
 		this.dirtySkybox = true;
 		SkyboxPipeline.clearSkyboxSources();
-		this.vramGarbageSeed = this.nextVramGarbageSeed();
-		this.seedVramStaging(this.vramGarbageSeed);
+		this.vramBootSeed = this.nextVramBootSeed();
+		this.seedVramStaging();
 
 		for (let index = 0; index < entries.length; index += 1) {
 			const entry = entries[index];
@@ -541,19 +719,11 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 	}
 
 	public async uploadAtlasTextures(): Promise<void> {
-		const source = $.asset_source;
-		if (!source) {
+		if (!$.asset_source) {
 			throw new Error('[BmsxVDP] Asset source not configured.');
 		}
-		const engineAtlasName = generateAtlasName(ENGINE_ATLAS_INDEX);
-		const engineAsset = source.getEntry(engineAtlasName);
-		if (!engineAsset) {
-			throw new Error(`[BmsxVDP] Engine atlas '${engineAtlasName}' missing from asset source.`);
-		}
-		const engineBytes = source.getBytes(engineAsset);
-		const engineDecoded = await decodePngToRgba(engineBytes);
-		await $.texmanager.loadTextureFromPixels(ENGINE_ATLAS_TEXTURE_KEY, engineDecoded.pixels, engineDecoded.width, engineDecoded.height);
-		this.setSlotTextureSize(ENGINE_ATLAS_TEXTURE_KEY, engineDecoded.width, engineDecoded.height);
+		const engineEntry = this.memory.getAssetEntry(generateAtlasName(ENGINE_ATLAS_INDEX));
+		await this.ensureAtlasSlotTexture(engineEntry, ENGINE_ATLAS_TEXTURE_KEY);
 		$.view.loadEngineAtlasTexture();
 
 		const primaryEntry = this.memory.getAssetEntry(ATLAS_PRIMARY_SLOT_ID);
@@ -567,14 +737,14 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		if (entry.regionW === 0 || entry.regionH === 0) {
 			throw new Error(`[BmsxVDP] VRAM slot '${entry.id}' missing dimensions.`);
 		}
-		const seed = this.deriveVramGarbageSeed(textureKey);
-		this.fillGarbageBuffer(this.vramSeedPixel, seed | 1);
+		const slot = this.getVramSlotByTextureKey(textureKey);
+		const stream = this.makeVramGarbageStream(this.getVramSlotSalt(slot), 0);
+		fillVramGarbageScratch(this.vramSeedPixel, stream);
 		await $.texmanager.loadTextureFromPixels(textureKey, this.vramSeedPixel, 1, 1);
 		const handle = $.texmanager.resizeTextureForKey(textureKey, entry.regionW, entry.regionH);
 		$.view.textures[textureKey] = handle;
 		this.setSlotTextureSize(textureKey, entry.regionW, entry.regionH);
-		const slot = this.getVramSlotByTextureKey(textureKey);
-		this.seedVramSlotTexture(slot, seed);
+		this.seedVramSlotTexture(slot);
 	}
 
 	private updateTextureRegion(textureKey: string, pixels: Uint8Array, width: number, height: number, x: number, y: number): void {
@@ -724,7 +894,7 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		slot.textureWidth = width;
 		slot.textureHeight = height;
 		this.invalidateReadCache(slot.surfaceId);
-		this.seedVramSlotTexture(slot, this.deriveVramGarbageSeed(slot.textureKey));
+		this.seedVramSlotTexture(slot);
 	}
 
 	private getVramSlotByTextureKey(textureKey: string): VramSlot {
@@ -737,64 +907,38 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		throw new Error(`[BmsxVDP] VRAM slot '${textureKey}' not registered.`);
 	}
 
-	private deriveVramGarbageSeed(textureKey: string): number {
-		if (textureKey === ATLAS_PRIMARY_SLOT_ID) {
-			return this.vramGarbageSeed ^ 0x9E3779B9;
-		}
-		if (textureKey === ATLAS_SECONDARY_SLOT_ID) {
-			return this.vramGarbageSeed ^ 0x7F4A7C15;
-		}
-		return this.vramGarbageSeed;
+	private getVramSlotSalt(slot: VramSlot): number {
+		return slot.baseAddr >>> 0;
 	}
 
-	private nextVramGarbageSeed(): number {
+	private makeVramGarbageStream(slotSalt: number, addr: number): VramGarbageStream {
+		return {
+			machineSeed: this.vramMachineSeed,
+			bootSeed: this.vramBootSeed,
+			slotSalt: slotSalt >>> 0,
+			addr: addr >>> 0,
+		};
+	}
+
+	private nextVramMachineSeed(): number {
 		const time = Date.now() >>> 0;
 		const rand = Math.floor(Math.random() * 0xffffffff) >>> 0;
-		return (time ^ rand) | 1;
+		return (time ^ rand) >>> 0;
 	}
 
-	private advanceGarbageState(state: number): number {
-		let next = state;
-		next ^= next << 13;
-		next >>>= 0;
-		next ^= next >>> 17;
-		next >>>= 0;
-		next ^= next << 5;
-		next >>>= 0;
-		return next;
+	private nextVramBootSeed(): number {
+		const time = Date.now() >>> 0;
+		const rand = Math.floor(Math.random() * 0xffffffff) >>> 0;
+		const jitter = Math.floor(Math.random() * 0xffffffff) >>> 0;
+		return (time ^ rand ^ jitter) >>> 0;
 	}
 
-	private fillGarbageBuffer(buffer: Uint8Array, seed: number): number {
-		let state = seed;
-		let cursor = 0;
-		const end = buffer.byteLength;
-		const alignedEnd = end - (end & 3);
-		while (cursor < alignedEnd) {
-			state = this.advanceGarbageState(state);
-			const value = state;
-			buffer[cursor] = value & 0xff;
-			buffer[cursor + 1] = (value >>> 8) & 0xff;
-			buffer[cursor + 2] = (value >>> 16) & 0xff;
-			buffer[cursor + 3] = (value >>> 24) & 0xff;
-			cursor += 4;
-		}
-		if (cursor < end) {
-			state = this.advanceGarbageState(state);
-			let value = state;
-			while (cursor < end) {
-				buffer[cursor] = value & 0xff;
-				value >>>= 8;
-				cursor += 1;
-			}
-		}
-		return state;
+	private seedVramStaging(): void {
+		const stream = this.makeVramGarbageStream(VRAM_STAGING_BASE >>> 0, 0);
+		fillVramGarbageScratch(this.vramStaging, stream);
 	}
 
-	private seedVramStaging(seed: number): void {
-		this.fillGarbageBuffer(this.vramStaging, seed | 1);
-	}
-
-	private seedVramSlotTexture(slot: VramSlot, seed: number): void {
+	private seedVramSlotTexture(slot: VramSlot): void {
 		const width = slot.entry.regionW;
 		const height = slot.entry.regionH;
 		if (width === 0 || height === 0) {
@@ -805,14 +949,14 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		if (maxPixels <= 0) {
 			throw new Error('[BmsxVDP] VRAM garbage scratch buffer is empty.');
 		}
-		let state = seed | 1;
+		const stream = this.makeVramGarbageStream(this.getVramSlotSalt(slot), 0);
 		if (rowPixels <= maxPixels) {
 			const rowsPerChunk = Math.max(1, Math.floor(maxPixels / rowPixels));
 			for (let y = 0; y < height; ) {
 				const rows = Math.min(rowsPerChunk, height - y);
 				const chunkBytes = rowPixels * rows * 4;
 				const chunk = this.vramGarbageScratch.subarray(0, chunkBytes);
-				state = this.fillGarbageBuffer(chunk, state);
+				fillVramGarbageScratch(chunk, stream);
 				this.updateTextureRegion(slot.textureKey, chunk, rowPixels, rows, 0, y);
 				if (this.useCpuReadback()) {
 					for (let row = 0; row < rows; row += 1) {
@@ -829,7 +973,7 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 					const segmentWidth = Math.min(maxPixels, width - x);
 					const segmentBytes = segmentWidth * 4;
 					const segment = this.vramGarbageScratch.subarray(0, segmentBytes);
-					state = this.fillGarbageBuffer(segment, state);
+					fillVramGarbageScratch(segment, stream);
 					this.updateTextureRegion(slot.textureKey, segment, segmentWidth, 1, x, y);
 					if (this.useCpuReadback()) {
 						this.updateCpuReadback(slot.surfaceId, segment, x, y);
@@ -864,7 +1008,7 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 
 	private getSkyboxSlotEntries(): AssetEntry[] {
 		if (this.skyboxSlotEntries.length !== SKYBOX_FACE_KEYS.length) {
-			throw new Error('[BmsxVDP] Skybox slots not allocated in asset RAM.');
+			throw new Error('[BmsxVDP] Skybox slots not allocated in RAM.');
 		}
 		return this.skyboxSlotEntries;
 	}

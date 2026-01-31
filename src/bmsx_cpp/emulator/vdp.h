@@ -31,6 +31,7 @@ public:
 	uint32_t readVdpData() override;
 
 	void registerImageAssets(RuntimeAssets& assets, bool keepDecodedData);
+	void uploadAtlasTextures();
 	void flushAssetEdits();
 	void applyAtlasSlotMapping(const std::array<i32, 2>& slots);
 	void setSkyboxImages(const SkyboxImageIds& ids);
@@ -60,6 +61,12 @@ private:
 		uint32_t textureWidth = 0;
 		uint32_t textureHeight = 0;
 	};
+	struct VramGarbageStream {
+		uint32_t machineSeed = 0;
+		uint32_t bootSeed = 0;
+		uint32_t slotSalt = 0;
+		uint32_t addr = 0;
+	};
 
 	Memory& m_memory;
 	std::unordered_map<i32, std::string> m_atlasResourceById;
@@ -70,7 +77,8 @@ private:
 	std::vector<u8> m_vramStaging;
 	std::vector<u8> m_vramGarbageScratch;
 	std::array<u8, 4> m_vramSeedPixel{{0, 0, 0, 0}};
-	uint32_t m_vramGarbageSeed = 0;
+	uint32_t m_vramMachineSeed = 0;
+	uint32_t m_vramBootSeed = 0;
 	std::array<ReadSurface, 3> m_readSurfaces{};
 	std::array<ReadCache, 3> m_readCaches{};
 	uint32_t m_readBudgetBytes = 0;
@@ -92,13 +100,14 @@ private:
 	const VramSlot& findVramSlot(uint32_t addr, size_t length) const;
 	void ensureVramSlotTextureSize(VramSlot& slot);
 	VramSlot& getVramSlotByTextureKey(const std::string& textureKey);
-	uint32_t deriveVramGarbageSeed(const std::string& textureKey) const;
-	uint32_t nextVramGarbageSeed() const;
-	uint32_t advanceGarbageState(uint32_t state) const;
-	uint32_t fillGarbageBuffer(u8* data, size_t length, uint32_t seed) const;
-	void seedVramStaging(uint32_t seed);
-	void seedVramSlotTexture(VramSlot& slot, uint32_t seed);
+	uint32_t vramSlotSalt(const VramSlot& slot) const;
+	uint32_t nextVramMachineSeed() const;
+	uint32_t nextVramBootSeed() const;
+	void fillVramGarbageScratch(u8* data, size_t length, VramGarbageStream& stream) const;
+	void seedVramStaging();
+	void seedVramSlotTexture(VramSlot& slot);
 	void setSlotTextureSize(const std::string& textureKey, uint32_t width, uint32_t height);
+	void ensureAtlasSlotTexture(const Memory::AssetEntry& entry, const std::string& textureKey);
 	void loadSkyboxFaceIntoSlot(const std::string& slotId, const std::string& assetId, RuntimeAssets& assets);
 	std::vector<u8> decodeImageFromRom(const ImgAsset& asset, i32& outWidth, i32& outHeight);
 };

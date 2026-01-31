@@ -104,6 +104,15 @@ public:
 		uint32_t dataOffset,
 		uint32_t dataSize
 	);
+	AssetEntry& registerAudioMeta(
+		const std::string& id,
+		uint32_t sampleRate,
+		uint32_t channels,
+		uint32_t bitsPerSample,
+		uint32_t frames,
+		uint32_t dataOffset,
+		uint32_t dataSize
+	);
 	bool hasAsset(const std::string& id) const;
 	void sealEngineAssets();
 	void resetCartAssets();

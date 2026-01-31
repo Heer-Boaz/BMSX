@@ -1375,7 +1375,6 @@ bool loadAssetsFromRom(const u8* buffer,
 			const size_t bytesPerSample = static_cast<size_t>(wav.bitsPerSample / 8);
 			const size_t totalSamples = wav.dataSize / bytesPerSample;
 			audioAsset.frames = totalSamples / static_cast<size_t>(wav.channels);
-			audioAsset.bytes.assign(audioData, audioData + audioSize);
 
 			assets.audio[assetId] = std::move(audioAsset);
 		}

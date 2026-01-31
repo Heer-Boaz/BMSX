@@ -933,6 +933,8 @@ export class Runtime {
 		assetDataBaseOffset: number,
 		skyboxFaceSize: number,
 	): number {
+		void engineSource;
+		void assetSource;
 		if (skyboxFaceSize <= 0) {
 			throw new Error(`[Runtime] Invalid skybox_face_size: ${skyboxFaceSize}.`);
 		}
@@ -941,38 +943,6 @@ export class Runtime {
 		for (let index = 0; index < SKYBOX_SLOT_IDS.length; index += 1) {
 			cursor = this.alignUp(cursor, 4);
 			cursor += skyboxBytes;
-		}
-		const engineAudioEntries = engineSource.list('audio');
-		const engineAudioIds = new Set<string>();
-		for (let index = 0; index < engineAudioEntries.length; index += 1) {
-			const entry = engineAudioEntries[index];
-			if (typeof entry.start !== 'number' || typeof entry.end !== 'number') {
-				throw new Error(`[Runtime] Audio asset '${entry.resid}' missing ROM buffer offsets for memory sizing.`);
-			}
-			const size = entry.end - entry.start;
-			if (size < 0) {
-				throw new Error(`[Runtime] Audio asset '${entry.resid}' has invalid ROM buffer range for memory sizing.`);
-			}
-			cursor = this.alignUp(cursor, 2);
-			cursor += size;
-			engineAudioIds.add(entry.resid);
-		}
-		cursor = this.alignUp(cursor, ASSET_PAGE_SIZE);
-		const audioEntries = assetSource.list('audio');
-		for (let index = 0; index < audioEntries.length; index += 1) {
-			const entry = audioEntries[index];
-			if (engineAudioIds.has(entry.resid)) {
-				continue;
-			}
-			if (typeof entry.start !== 'number' || typeof entry.end !== 'number') {
-				throw new Error(`[Runtime] Audio asset '${entry.resid}' missing ROM buffer offsets for memory sizing.`);
-			}
-			const size = entry.end - entry.start;
-			if (size < 0) {
-				throw new Error(`[Runtime] Audio asset '${entry.resid}' has invalid ROM buffer range for memory sizing.`);
-			}
-			cursor = this.alignUp(cursor, 2);
-			cursor += size;
 		}
 		return cursor - assetDataBaseOffset;
 	}
@@ -2068,14 +2038,41 @@ export class Runtime {
 
 	public buildAudioResourcesForSoundMaster(): id2res {
 		const resources: id2res = {};
+		const source = $.asset_source;
+		if (!source) {
+			throw new Error('[Runtime] Asset source not configured.');
+		}
+		const entries = source.list('audio');
+		for (let index = 0; index < entries.length; index += 1) {
+			const entry = entries[index];
+			if (typeof entry.start !== 'number' || typeof entry.end !== 'number') {
+				throw new Error(`[Runtime] Audio asset '${entry.resid}' missing ROM buffer offsets.`);
+			}
+			const audioAsset = $.assets.audio[entry.resid];
+			if (!audioAsset || !audioAsset.audiometa) {
+				throw new Error(`[Runtime] Audio asset '${entry.resid}' missing metadata.`);
+			}
+			resources[entry.resid] = {
+				resid: entry.resid,
+				type: 'audio',
+				start: entry.start,
+				end: entry.end,
+				audiometa: audioAsset.audiometa,
+				payload_id: entry.payload_id ?? 'cart',
+			};
+		}
 		for (const [handle, meta] of this.audioMetaByHandle.entries()) {
 			const entry = this.getAssetEntryByHandle(handle);
+			if (entry.type !== 'audio' || entry.baseSize <= 0) {
+				continue;
+			}
 			resources[entry.id] = {
 				resid: entry.id,
 				type: 'audio',
 				start: entry.baseAddr,
 				end: entry.baseAddr + entry.baseSize,
 				audiometa: meta,
+				payload_id: 'cart',
 			};
 		}
 		return resources;
@@ -2093,6 +2090,27 @@ export class Runtime {
 			throw new Error(`[Runtime] Asset '${entry.id}' is not audio.`);
 		}
 		return this.memory.getAudioBytes(entry);
+	}
+
+	public getAudioBytesById(id: string): Uint8Array {
+		if (this.memory.hasAsset(id)) {
+			const entry = this.memory.getAssetEntry(id);
+			if (entry.type === 'audio' && entry.baseSize > 0) {
+				return this.memory.getAudioBytes(entry);
+			}
+		}
+		const source = $.asset_source;
+		if (!source) {
+			throw new Error('[Runtime] Asset source not configured.');
+		}
+		const entry = source.getEntry(id);
+		if (!entry) {
+			throw new Error(`[Runtime] Audio asset '${id}' not found in ROM.`);
+		}
+		if (typeof entry.start !== 'number' || typeof entry.end !== 'number') {
+			throw new Error(`[Runtime] Audio asset '${id}' missing ROM buffer offsets.`);
+		}
+		return source.getBytesView(entry);
 	}
 
 	public setSkyboxImages(ids: SkyboxImageIds): void {
@@ -2130,7 +2148,7 @@ export class Runtime {
 	}
 
 	private async buildAssetMemory(params?: { source?: RawAssetSource; assets?: RuntimeAssets; mode?: 'full' | 'cart' }): Promise<void> {
-		const token = this.assetMemoryGate.begin({ blocking: true, category: 'asset', tag: 'asset_ram' });
+		const token = this.assetMemoryGate.begin({ blocking: true, category: 'asset', tag: 'asset_memory' });
 		try {
 			const mode = params?.mode ?? 'full';
 			const assetSource = params?.source ?? $.asset_source;
@@ -2170,12 +2188,10 @@ export class Runtime {
 			if (!audioAsset.audiometa) {
 				throw new Error(`[Runtime] Audio asset '${entry.resid}' missing metadata.`);
 			}
-			const buffer = source.getBytes(entry);
+			const buffer = source.getBytesView(entry);
 			const info = parseWavInfo(buffer);
-			const bytes = new Uint8Array(buffer);
-			this.memory.registerAudioBuffer({
+			this.memory.registerAudioMeta({
 				id: entry.resid,
-				bytes,
 				sampleRate: info.sampleRate,
 				channels: info.channels,
 				bitsPerSample: info.bitsPerSample,

@@ -122,7 +122,7 @@ uint32_t computeAssetDataBytes(const RuntimeAssets& engineAssets, const RuntimeA
 			throw std::runtime_error("[EngineCore] Audio asset '" + id + "' missing from assets.");
 		}
 		if (audio->bytes.empty()) {
-			throw std::runtime_error("[EngineCore] Audio asset '" + id + "' missing encoded bytes.");
+			continue;
 		}
 		const uint32_t size = static_cast<uint32_t>(audio->bytes.size());
 		cursor = alignUp(cursor, 2u);
@@ -139,7 +139,7 @@ uint32_t computeAssetDataBytes(const RuntimeAssets& engineAssets, const RuntimeA
 			throw std::runtime_error("[EngineCore] Audio asset '" + id + "' missing from assets.");
 		}
 		if (audio->bytes.empty()) {
-			throw std::runtime_error("[EngineCore] Audio asset '" + id + "' missing encoded bytes.");
+			continue;
 		}
 		const uint32_t size = static_cast<uint32_t>(audio->bytes.size());
 		cursor = alignUp(cursor, 2u);
@@ -850,7 +850,7 @@ bool EngineCore::bootWithoutCart() {
 		runtime.buildAssetMemory(m_engine_assets, true);
 		runtime.memory().sealEngineAssets();
 
-		// Upload textures/audio after asset RAM is ready.
+		// Upload textures/audio after asset memory is ready.
 		uploadTexturesToBackend(false);
 		refreshAudioAssets(m_engine_assets);
 
@@ -1135,25 +1135,7 @@ void EngineCore::uploadTexturesToBackend(bool includeCartAssets) {
 	auto& memory = runtime.memory();
 
 	m_view->initializeDefaultTextures();
-
-	const std::string engineAtlasName = generateAtlasName(ENGINE_ATLAS_INDEX);
-	const ImgAsset* engineAtlas = m_engine_assets.getImg(engineAtlasName);
-	if (!engineAtlas) {
-		throw std::runtime_error("[EngineCore] Engine atlas asset missing.");
-	}
-	if (engineAtlas->pixels.empty()) {
-		throw std::runtime_error("[EngineCore] Engine atlas pixels missing.");
-	}
-	TextureParams engineParams;
-	const TextureKey engineKey = m_texture_manager->makeKey(ENGINE_ATLAS_TEXTURE_KEY, engineParams);
-	TextureHandle engineHandle = m_texture_manager->getOrCreateTexture(
-		engineKey,
-		engineAtlas->pixels.data(),
-		static_cast<i32>(engineAtlas->meta.width),
-		static_cast<i32>(engineAtlas->meta.height),
-		engineParams
-	);
-	m_view->textures[ENGINE_ATLAS_TEXTURE_KEY] = engineHandle;
+	runtime.uploadAtlasTextures();
 
 	const bool replaceExisting = includeCartAssets;
 	auto uploadSlot = [&](const std::string& slotId, const Memory::AssetEntry& assetEntry) {
@@ -1336,13 +1318,33 @@ void EngineCore::refreshAudioAssets() {
 
 void EngineCore::refreshAudioAssets(const RuntimeAssets& assets) {
 	const f32 volume = m_sound_master->masterVolume();
-	auto audioResolver = [](const AssetId& id) -> AudioDataView {
+	auto audioResolver = [this, &assets](const AssetId& id) -> AudioDataView {
 		Runtime& runtime = Runtime::instance();
-		const auto& entry = runtime.memory().getAssetEntry(id);
-		if (entry.type != Memory::AssetType::Audio) {
-			throw BMSX_RUNTIME_ERROR("Audio asset memory entry missing for: " + id);
+		if (runtime.memory().hasAsset(id)) {
+			const auto& entry = runtime.memory().getAssetEntry(id);
+			if (entry.type == Memory::AssetType::Audio && entry.baseSize > 0) {
+				return AudioDataView{ runtime.memory().getAudioData(entry), entry.frames };
+			}
 		}
-		return AudioDataView{ runtime.memory().getAudioData(entry), entry.frames };
+		const AudioAsset* asset = assets.getAudio(id);
+		if (!asset) {
+			throw BMSX_RUNTIME_ERROR("Audio asset not found: " + id);
+		}
+		if (!asset->bytes.empty()) {
+			return AudioDataView{ asset->bytes.data() + asset->dataOffset, asset->frames };
+		}
+		const std::string payloadId = asset->rom.payloadId.value();
+		RomView view{};
+		if (payloadId == "system") {
+			view = engineRomView();
+		} else if (payloadId == "cart") {
+			view = cartRomView();
+		} else {
+			throw BMSX_RUNTIME_ERROR("Unsupported audio payload id: " + payloadId);
+		}
+		const i32 start = asset->rom.start.value();
+		const u8* wavBase = view.data + static_cast<size_t>(start);
+		return AudioDataView{ wavBase + asset->dataOffset, asset->frames };
 	};
 	m_sound_master->init(assets, volume, audioResolver);
 	const std::optional<int> maxSfx = assets.manifest.maxVoicesSfx

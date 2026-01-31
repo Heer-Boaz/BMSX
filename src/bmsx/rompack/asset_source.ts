@@ -11,6 +11,7 @@ export interface RawAssetSource {
 	getEntryByPath(path: string): RomAsset | null;
 	getBytes(entry: RomAsset): Uint8Array;
 	getBytes(entry: RomAsset): Uint8Array;
+	getBytesView(entry: RomAsset): Uint8Array;
 	list(type?: asset_type): RomAsset[];
 }
 
@@ -105,6 +106,11 @@ export class AssetSourceStack implements RawAssetSource {
 	public getBytes(entry: RomAsset): Uint8Array {
 		const payload = this.payloads[entry.payload_id];
 		return payload.slice(entry.start, entry.end);
+	}
+
+	public getBytesView(entry: RomAsset): Uint8Array {
+		const payload = this.payloads[entry.payload_id];
+		return payload.subarray(entry.start, entry.end);
 	}
 
 	private attachPayloadId(asset: RomAsset, payloadId: CartridgeLayerId): RomAsset {
