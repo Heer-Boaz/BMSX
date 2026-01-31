@@ -1124,6 +1124,25 @@ void EngineCore::uploadTexturesToBackend(bool includeCartAssets) {
 
 	m_view->initializeDefaultTextures();
 
+	const std::string engineAtlasName = generateAtlasName(ENGINE_ATLAS_INDEX);
+	const ImgAsset* engineAtlas = m_engine_assets.getImg(engineAtlasName);
+	if (!engineAtlas) {
+		throw std::runtime_error("[EngineCore] Engine atlas asset missing.");
+	}
+	if (engineAtlas->pixels.empty()) {
+		throw std::runtime_error("[EngineCore] Engine atlas pixels missing.");
+	}
+	TextureParams engineParams;
+	const TextureKey engineKey = m_texture_manager->makeKey(ENGINE_ATLAS_TEXTURE_KEY, engineParams);
+	TextureHandle engineHandle = m_texture_manager->getOrCreateTexture(
+		engineKey,
+		engineAtlas->pixels.data(),
+		static_cast<i32>(engineAtlas->meta.width),
+		static_cast<i32>(engineAtlas->meta.height),
+		engineParams
+	);
+	m_view->textures[ENGINE_ATLAS_TEXTURE_KEY] = engineHandle;
+
 	const bool replaceExisting = includeCartAssets;
 	auto uploadSlot = [&](const std::string& slotId, const Memory::AssetEntry& assetEntry) {
 		if (assetEntry.regionW == 0 || assetEntry.regionH == 0) {

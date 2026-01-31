@@ -36,7 +36,7 @@ public:
 
 private:
 	struct ReadSurface {
-		Memory::AssetEntry* entry = nullptr;
+		std::string assetId;
 		std::string textureKey;
 	};
 	struct ReadCache {
@@ -48,7 +48,7 @@ private:
 	struct VramSlot {
 		uint32_t baseAddr = 0;
 		uint32_t capacity = 0;
-		Memory::AssetEntry* entry = nullptr;
+		std::string assetId;
 		std::string textureKey;
 		uint32_t surfaceId = 0;
 		uint32_t textureWidth = 0;
@@ -74,8 +74,8 @@ private:
 	SkyboxImageIds m_skyboxFaceIds;
 	i32 m_lastDitherType = 0;
 
-	void registerVramSlot(Memory::AssetEntry& entry, const std::string& textureKey, uint32_t surfaceId);
-	void registerReadSurface(uint32_t surfaceId, Memory::AssetEntry& entry, const std::string& textureKey);
+	void registerVramSlot(const Memory::AssetEntry& entry, const std::string& textureKey, uint32_t surfaceId);
+	void registerReadSurface(uint32_t surfaceId, const std::string& assetId, const std::string& textureKey);
 	const ReadSurface& getReadSurface(uint32_t surfaceId) const;
 	void invalidateReadCache(uint32_t surfaceId);
 	ReadCache& getReadCache(uint32_t surfaceId, const ReadSurface& surface, uint32_t x, uint32_t y);
