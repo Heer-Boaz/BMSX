@@ -1272,17 +1272,13 @@ void Api::write_inline_span_with_font(const std::string& text, int start, int en
 }
 
 bool Api::action_triggered(const std::string& actionDefinition, std::optional<int> playerIndex) const {
-	// TODO: WHY DIDN'T CODEX ACTUALLY REPLICATE THE TYPESCRIPT FUNCTIONALITY BY CALLING THE ENGINE-CORE'S API DIRECTLY???
 	int index = playerIndex.has_value() ? playerIndex.value() : m_runtime.playerIndex();
-	PlayerInput* input = Input::instance().getPlayerInput(index);
-	return input->checkActionTriggered(actionDefinition);
+	return EngineCore::instance().action_triggered(index, actionDefinition);
 }
 
 void Api::consume_action(const std::string& action, std::optional<int> playerIndex) {
-	// TODO: WHY DIDN'T CODEX ACTUALLY REPLICATE THE TYPESCRIPT FUNCTIONALITY BY CALLING THE ENGINE-CORE'S API DIRECTLY???
 	int index = playerIndex.has_value() ? playerIndex.value() : m_runtime.playerIndex();
-	PlayerInput* input = Input::instance().getPlayerInput(index);
-	input->consumeAction(action);
+	EngineCore::instance().consume_action(index, action);
 }
 
 void Api::cartdata(const std::string& ns) {

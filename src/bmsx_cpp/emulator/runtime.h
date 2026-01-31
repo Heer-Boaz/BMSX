@@ -73,6 +73,7 @@ struct RuntimeState {
 	std::vector<std::pair<Value, Value>> globals; // key-value pairs
 	std::vector<u8> assetMemory;
 	std::array<i32, 2> atlasSlots{{-1, -1}};
+	std::optional<SkyboxImageIds> skyboxFaceIds;
 };
 
 /**
@@ -209,6 +210,8 @@ public:
 
 	const std::array<i32, 2>& atlasSlots() const { return m_vdp.atlasSlots(); }
 	void setVdpDitherType(i32 type) { m_vdp.setDitherType(type); }
+	void setSkyboxImages(const SkyboxImageIds& ids);
+	void clearSkybox();
 
 	/**
 	 * Get the player index for this runtime.

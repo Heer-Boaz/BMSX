@@ -722,6 +722,18 @@ void EngineCore::refreshRenderAssets() {
 		m_platform->log(level, message);
 	}
 
+bool EngineCore::action_triggered(int playerIndex, const std::string& action) {
+	return Input::instance().getPlayerInput(playerIndex)->checkActionTriggered(action);
+}
+
+void EngineCore::consume_action(int playerIndex, const std::string& action) {
+	Input::instance().getPlayerInput(playerIndex)->consumeAction(action);
+}
+
+void EngineCore::set_skybox_imgs(const SkyboxImageIds& ids) {
+	Runtime::instance().setSkyboxImages(ids);
+}
+
 bool EngineCore::loadEngineAssets(const u8* data, size_t size) {
 	m_engine_rom_owned.clear();
 	m_engine_rom_data = data;

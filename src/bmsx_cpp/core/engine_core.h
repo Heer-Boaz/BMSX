@@ -123,6 +123,13 @@ public:
 	void refreshRenderAssets();
 	void log(LogLevel level, const char* fmt, ...);
 
+	// Input helpers (mirror TypeScript EngineCore)
+	bool action_triggered(int playerIndex, const std::string& action);
+	void consume_action(int playerIndex, const std::string& action);
+
+	// Skybox helpers (mirror TypeScript EngineCore)
+	void set_skybox_imgs(const SkyboxImageIds& ids);
+
 	// ROM loading
 	bool loadEngineAssets(const u8* data, size_t size);  // Load bmsx-bios.rom first
 	bool loadEngineAssetsOwned(std::vector<u8>&& data);  // Load engine assets without extra copy

@@ -1311,6 +1311,7 @@ RuntimeState Runtime::captureCurrentState() const {
 	state.globals = m_cpu.globals->entries();
 	state.assetMemory = m_memory.dumpAssetMemory();
 	state.atlasSlots = m_vdp.atlasSlots();
+	state.skyboxFaceIds = m_vdp.skyboxFaceIds();
 	return state;
 }
 
@@ -1322,6 +1323,11 @@ void Runtime::applyState(const RuntimeState& state) {
 		m_memory.restoreAssetMemory(state.assetMemory.data(), state.assetMemory.size());
 	}
 	applyAtlasSlotMapping(state.atlasSlots);
+	if (state.skyboxFaceIds.has_value()) {
+		m_vdp.setSkyboxImages(*state.skyboxFaceIds);
+	} else {
+		m_vdp.clearSkybox();
+	}
 
 	// Restore globals
 	m_cpu.globals->clear();
@@ -1333,6 +1339,14 @@ void Runtime::applyState(const RuntimeState& state) {
 
 void Runtime::applyAtlasSlotMapping(const std::array<i32, 2>& slots) {
 	m_vdp.applyAtlasSlotMapping(slots);
+}
+
+void Runtime::setSkyboxImages(const SkyboxImageIds& ids) {
+	m_vdp.setSkyboxImages(ids);
+}
+
+void Runtime::clearSkybox() {
+	m_vdp.clearSkybox();
 }
 
 std::vector<Value> Runtime::callLuaFunction(Closure* fn, const std::vector<Value>& args) {

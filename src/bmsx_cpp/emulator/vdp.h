@@ -6,6 +6,7 @@
 #include "../rompack/rompack.h"
 #include "../render/shared/render_types.h"
 #include <array>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -14,6 +15,7 @@ namespace bmsx {
 
 class RuntimeAssets;
 class GameView;
+struct ImgAsset;
 
 class VDP : public Memory::VramWriter, public Memory::VdpIoHandler {
 public:
@@ -22,6 +24,7 @@ public:
 	void initializeRegisters();
 	void syncRegisters();
 	void setDitherType(i32 type);
+	i32 getDitherType() const { return m_lastDitherType; }
 	void writeVram(uint32_t addr, const u8* data, size_t length) override;
 	void beginFrame();
 	uint32_t readVdpStatus() override;
@@ -30,6 +33,9 @@ public:
 	void registerImageAssets(RuntimeAssets& assets, bool keepDecodedData);
 	void flushAssetEdits();
 	void applyAtlasSlotMapping(const std::array<i32, 2>& slots);
+	void setSkyboxImages(const SkyboxImageIds& ids);
+	void clearSkybox();
+	std::optional<SkyboxImageIds> skyboxFaceIds() const;
 	void commitViewSnapshot(GameView& view);
 
 	const std::array<i32, 2>& atlasSlots() const { return m_slotAtlasIds; }
@@ -72,6 +78,7 @@ private:
 	bool m_dirtyAtlasBindings = false;
 	bool m_dirtySkybox = false;
 	SkyboxImageIds m_skyboxFaceIds;
+	bool m_hasSkybox = false;
 	i32 m_lastDitherType = 0;
 
 	void registerVramSlot(const Memory::AssetEntry& entry, const std::string& textureKey, uint32_t surfaceId);
@@ -92,6 +99,8 @@ private:
 	void seedVramStaging(uint32_t seed);
 	void seedVramSlotTexture(VramSlot& slot, uint32_t seed);
 	void setSlotTextureSize(const std::string& textureKey, uint32_t width, uint32_t height);
+	void loadSkyboxFaceIntoSlot(const std::string& slotId, const std::string& assetId, RuntimeAssets& assets);
+	std::vector<u8> decodeImageFromRom(const ImgAsset& asset, i32& outWidth, i32& outHeight);
 };
 
 } // namespace bmsx

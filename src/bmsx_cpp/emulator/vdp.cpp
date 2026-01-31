@@ -1,7 +1,9 @@
 #include "vdp.h"
+#include "memory_map.h"
 #include "../rompack/runtime_assets.h"
 #include "../core/engine_core.h"
 #include "../render/texturemanager.h"
+#include "../vendor/stb_image.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -180,6 +182,7 @@ void VDP::registerImageAssets(RuntimeAssets& assets, bool keepDecodedData) {
 	m_dirtyAtlasBindings = true;
 	m_dirtySkybox = true;
 	m_skyboxFaceIds = {};
+	m_hasSkybox = false;
 	m_vramGarbageSeed = nextVramGarbageSeed();
 	seedVramStaging(m_vramGarbageSeed);
 	const RuntimeAssets* fallback = assets.fallback;
@@ -537,6 +540,32 @@ void VDP::applyAtlasSlotMapping(const std::array<i32, 2>& slots) {
 	}
 }
 
+void VDP::setSkyboxImages(const SkyboxImageIds& ids) {
+	auto& assets = EngineCore::instance().assets();
+	loadSkyboxFaceIntoSlot(SKYBOX_SLOT_POSX_ID, ids.posx, assets);
+	loadSkyboxFaceIntoSlot(SKYBOX_SLOT_NEGX_ID, ids.negx, assets);
+	loadSkyboxFaceIntoSlot(SKYBOX_SLOT_POSY_ID, ids.posy, assets);
+	loadSkyboxFaceIntoSlot(SKYBOX_SLOT_NEGY_ID, ids.negy, assets);
+	loadSkyboxFaceIntoSlot(SKYBOX_SLOT_POSZ_ID, ids.posz, assets);
+	loadSkyboxFaceIntoSlot(SKYBOX_SLOT_NEGZ_ID, ids.negz, assets);
+	m_skyboxFaceIds = ids;
+	m_hasSkybox = true;
+	m_dirtySkybox = true;
+}
+
+void VDP::clearSkybox() {
+	m_skyboxFaceIds = {};
+	m_hasSkybox = false;
+	m_dirtySkybox = true;
+}
+
+std::optional<SkyboxImageIds> VDP::skyboxFaceIds() const {
+	if (!m_hasSkybox) {
+		return std::nullopt;
+	}
+	return m_skyboxFaceIds;
+}
+
 void VDP::registerVramSlot(const Memory::AssetEntry& entry, const std::string& textureKey, uint32_t surfaceId) {
 	VramSlot slot;
 	slot.baseAddr = entry.baseAddr;
@@ -719,6 +748,91 @@ void VDP::setSlotTextureSize(const std::string& textureKey, uint32_t width, uint
 			return;
 		}
 	}
+}
+
+void VDP::loadSkyboxFaceIntoSlot(const std::string& slotId, const std::string& assetId, RuntimeAssets& assets) {
+	auto* asset = assets.getImg(assetId);
+	if (!asset) {
+		throw BMSX_RUNTIME_ERROR("[VDP] Skybox image '" + assetId + "' not found.");
+	}
+	if (asset->meta.atlassed) {
+		throw BMSX_RUNTIME_ERROR("[VDP] Skybox image '" + assetId + "' must not be atlassed.");
+	}
+	i32 width = asset->meta.width;
+	i32 height = asset->meta.height;
+	std::vector<u8> decoded;
+	const u8* pixels = nullptr;
+	size_t pixelBytes = 0;
+	if (!asset->pixels.empty() && width > 0 && height > 0) {
+		pixels = asset->pixels.data();
+		pixelBytes = asset->pixels.size();
+	} else {
+		decoded = decodeImageFromRom(*asset, width, height);
+		pixels = decoded.data();
+		pixelBytes = decoded.size();
+		if (asset->meta.width <= 0) {
+			asset->meta.width = width;
+		}
+		if (asset->meta.height <= 0) {
+			asset->meta.height = height;
+		}
+	}
+	const i32 faceSize = assets.manifest.skyboxFaceSize > 0
+		? assets.manifest.skyboxFaceSize
+		: SKYBOX_FACE_DEFAULT_SIZE;
+	auto& slotEntry = m_memory.getAssetEntry(slotId);
+	m_memory.writeImageSlot(slotEntry,
+		pixels,
+		pixelBytes,
+		static_cast<uint32_t>(faceSize),
+		static_cast<uint32_t>(faceSize),
+		slotEntry.capacity
+	);
+}
+
+std::vector<u8> VDP::decodeImageFromRom(const ImgAsset& asset, i32& outWidth, i32& outHeight) {
+	if (!asset.rom.start || !asset.rom.end) {
+		throw BMSX_RUNTIME_ERROR("[VDP] Skybox image '" + asset.id + "' missing ROM range.");
+	}
+	const i32 start = *asset.rom.start;
+	const i32 end = *asset.rom.end;
+	if (end <= start) {
+		throw BMSX_RUNTIME_ERROR("[VDP] Skybox image '" + asset.id + "' has invalid ROM range.");
+	}
+	uint32_t base = CART_ROM_BASE;
+	if (asset.rom.payloadId.has_value()) {
+		const auto& payload = *asset.rom.payloadId;
+		if (payload == "system") {
+			base = ENGINE_ROM_BASE;
+		} else if (payload == "overlay") {
+			base = OVERLAY_ROM_BASE;
+		} else if (payload == "cart") {
+			base = CART_ROM_BASE;
+		} else {
+			throw BMSX_RUNTIME_ERROR("[VDP] Skybox image '" + asset.id + "' has unsupported payload_id " + payload + ".");
+		}
+	}
+	const size_t len = static_cast<size_t>(end - start);
+	std::vector<u8> buffer(len);
+	m_memory.readBytes(base + static_cast<uint32_t>(start), buffer.data(), len);
+	int width = 0;
+	int height = 0;
+	int comp = 0;
+	unsigned char* pixels = stbi_load_from_memory(buffer.data(), static_cast<int>(buffer.size()), &width, &height, &comp, STBI_rgb_alpha);
+	(void)comp;
+	if (!pixels || width <= 0 || height <= 0) {
+		if (pixels) {
+			stbi_image_free(pixels);
+		}
+		throw BMSX_RUNTIME_ERROR("[VDP] Failed to decode skybox image '" + asset.id + "'.");
+	}
+	const size_t byteCount = static_cast<size_t>(width) * static_cast<size_t>(height) * 4u;
+	std::vector<u8> out(byteCount);
+	std::memcpy(out.data(), pixels, byteCount);
+	stbi_image_free(pixels);
+	outWidth = width;
+	outHeight = height;
+	return out;
 }
 
 void VDP::registerReadSurface(uint32_t surfaceId, const std::string& assetId, const std::string& textureKey) {
