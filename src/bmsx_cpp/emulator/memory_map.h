@@ -50,6 +50,15 @@ extern uint32_t VRAM_SECONDARY_ATLAS_BASE;
 extern uint32_t VRAM_PRIMARY_ATLAS_BASE;
 extern uint32_t VRAM_ENGINE_ATLAS_BASE;
 extern uint32_t VRAM_STAGING_BASE;
+extern uint32_t VRAM_SKYBOX_BASE;
+extern uint32_t VRAM_SKYBOX_FACE_BYTES;
+extern uint32_t VRAM_SKYBOX_SIZE;
+extern uint32_t VRAM_SKYBOX_POSX_BASE;
+extern uint32_t VRAM_SKYBOX_NEGX_BASE;
+extern uint32_t VRAM_SKYBOX_POSY_BASE;
+extern uint32_t VRAM_SKYBOX_NEGY_BASE;
+extern uint32_t VRAM_SKYBOX_POSZ_BASE;
+extern uint32_t VRAM_SKYBOX_NEGZ_BASE;
 extern uint32_t VRAM_ENGINE_ATLAS_SIZE;
 extern uint32_t VRAM_PRIMARY_ATLAS_SIZE;
 extern uint32_t VRAM_SECONDARY_ATLAS_SIZE;
@@ -65,6 +74,7 @@ struct MemoryMapConfig {
 	uint32_t atlasSlotBytes = DEFAULT_VRAM_ATLAS_SLOT_SIZE;
 	uint32_t engineAtlasSlotBytes = DEFAULT_VRAM_ATLAS_SLOT_SIZE;
 	uint32_t stagingBytes = DEFAULT_VRAM_STAGING_SIZE;
+	uint32_t skyboxFaceBytes = 0;
 };
 
 void configureMemoryMap(const MemoryMapConfig& config);

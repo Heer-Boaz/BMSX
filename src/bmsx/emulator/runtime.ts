@@ -1,4 +1,4 @@
-import { $, calcCyclesPerFrameScaled } from '../core/engine_core';
+import { $, calcCyclesPerFrameScaled, runGate } from '../core/engine_core';
 import { taskGate } from '../core/taskgate';
 import { Input } from '../input/input';
 import { KeyModifier } from '../input/playerinput';
@@ -30,7 +30,6 @@ import {
 	CART_ROM_MAGIC,
 	ENGINE_ATLAS_INDEX,
 	SKYBOX_FACE_DEFAULT_SIZE,
-	SKYBOX_SLOT_IDS,
 	getMachineMemorySpecs,
 	getMachinePerfSpecs,
 	generateAtlasName,
@@ -870,10 +869,6 @@ export class Runtime {
 		ids.add(engineAtlasId);
 		ids.add(ATLAS_PRIMARY_SLOT_ID);
 		ids.add(ATLAS_SECONDARY_SLOT_ID);
-		for (let index = 0; index < SKYBOX_SLOT_IDS.length; index += 1) {
-			ids.add(SKYBOX_SLOT_IDS[index]!);
-		}
-
 		const sources = [engineSource, assetSource];
 		for (let sourceIndex = 0; sourceIndex < sources.length; sourceIndex += 1) {
 			const entries = sources[sourceIndex].list();
@@ -927,22 +922,39 @@ export class Runtime {
 		return value + (alignment - mod);
 	}
 
-	private static computeAssetDataBytes(
-		engineSource: RawAssetSource,
-		assetSource: RawAssetSource,
-		assetDataBaseOffset: number,
-		skyboxFaceSize: number,
-	): number {
-		void engineSource;
-		void assetSource;
-		if (skyboxFaceSize <= 0) {
-			throw new Error(`[Runtime] Invalid skybox_face_size: ${skyboxFaceSize}.`);
-		}
-		const skyboxBytes = skyboxFaceSize * skyboxFaceSize * 4;
+	private static computeAssetDataBytes(engineSource: RawAssetSource, assetSource: RawAssetSource, assetDataBaseOffset: number): number {
 		let cursor = assetDataBaseOffset;
-		for (let index = 0; index < SKYBOX_SLOT_IDS.length; index += 1) {
-			cursor = this.alignUp(cursor, 4);
-			cursor += skyboxBytes;
+		const engineAudioEntries = engineSource.list('audio').slice();
+		engineAudioEntries.sort((left, right) => left.resid.localeCompare(right.resid));
+		const engineAudioIds = new Set<string>();
+		for (let index = 0; index < engineAudioEntries.length; index += 1) {
+			const entry = engineAudioEntries[index];
+			engineAudioIds.add(entry.resid);
+			if (typeof entry.start !== 'number' || typeof entry.end !== 'number') {
+				throw new Error(`[Runtime] Audio asset '${entry.resid}' missing ROM buffer offsets for memory sizing.`);
+			}
+			if (entry.end <= entry.start) {
+				throw new Error(`[Runtime] Audio asset '${entry.resid}' has invalid ROM buffer offsets for memory sizing.`);
+			}
+			cursor = this.alignUp(cursor, 2);
+			cursor += (entry.end - entry.start);
+		}
+		cursor = this.alignUp(cursor, ASSET_PAGE_SIZE);
+		const audioEntries = assetSource.list('audio').slice();
+		audioEntries.sort((left, right) => left.resid.localeCompare(right.resid));
+		for (let index = 0; index < audioEntries.length; index += 1) {
+			const entry = audioEntries[index];
+			if (engineAudioIds.has(entry.resid)) {
+				continue;
+			}
+			if (typeof entry.start !== 'number' || typeof entry.end !== 'number') {
+				throw new Error(`[Runtime] Audio asset '${entry.resid}' missing ROM buffer offsets for memory sizing.`);
+			}
+			if (entry.end <= entry.start) {
+				throw new Error(`[Runtime] Audio asset '${entry.resid}' has invalid ROM buffer offsets for memory sizing.`);
+			}
+			cursor = this.alignUp(cursor, 2);
+			cursor += (entry.end - entry.start);
 		}
 		return cursor - assetDataBaseOffset;
 	}
@@ -981,7 +993,10 @@ export class Runtime {
 			+ stringHeapBytes
 			+ assetTableBytes;
 		const skyboxFaceSize = perfSpecs.skybox_face_size ?? SKYBOX_FACE_DEFAULT_SIZE;
-		const requiredAssetDataBytes = this.computeAssetDataBytes(params.engineSource, params.assetSource, assetDataBaseOffset, skyboxFaceSize);
+		if (skyboxFaceSize <= 0) {
+			throw new Error(`[Runtime] Invalid skybox_face_size: ${skyboxFaceSize}.`);
+		}
+		const requiredAssetDataBytes = this.computeAssetDataBytes(params.engineSource, params.assetSource, assetDataBaseOffset);
 		const assetDataBytes = memorySpecs.asset_data_bytes ?? requiredAssetDataBytes;
 		if (memorySpecs.asset_data_bytes !== undefined && assetDataBytes !== requiredAssetDataBytes) {
 			throw new Error(`[Runtime] machine.specs.ram.asset_data_bytes (${assetDataBytes}) must match required size ${requiredAssetDataBytes}.`);
@@ -1012,6 +1027,7 @@ export class Runtime {
 			atlas_slot_bytes: atlasSlotBytes,
 			engine_atlas_slot_bytes: engineAtlasSlotBytes,
 			staging_bytes: stagingBytes,
+			skybox_face_size: skyboxFaceSize,
 		};
 	}
 
@@ -1097,6 +1113,7 @@ export class Runtime {
 		this.vdp.initializeRegisters();
 		this.dmaController = new DmaController(this.memory, (mask) => this.raiseIrqFlags(mask));
 		this.imgDecController = new ImgDecController(this.memory, this.dmaController, (mask) => this.raiseIrqFlags(mask));
+		this.vdp.attachImgDecController(this.imgDecController);
 		this.cpu = new CPU(this.memory, this.runtimeStringPool);
 		this.setCpuHz(options.cpuHz);
 		this.randomSeedValue = $.platform.clock.now();
@@ -2135,16 +2152,25 @@ export class Runtime {
 		if (!this.cartAssetLayer || !this.cartAssetSource || !this.cartLuaSources) {
 			return;
 		}
-		this.applyCartAssetLayers();
-		await this.buildAssetMemory({ mode: 'cart' });
-		await this.vdp.uploadAtlasTextures();
-		await $.refresh_audio_assets();
 		if (this.shouldBootLuaProgramFromSources()) {
 			this.preparedCartProgram = this.compileCartLuaProgramForBoot();
 			this.setCartBootReadyFlag(this.editor.exists);
 			return;
 		}
 		this.setCartBootReadyFlag(this.editor.exists);
+	}
+
+	public loadCartAssets(): void {
+		if (!this.cartAssetLayer || !this.cartAssetSource || !this.cartLuaSources) {
+			throw new Error('[Runtime] Cart assets not configured.');
+		}
+		this.applyCartAssetLayers();
+		const token = runGate.begin({ blocking: true, tag: 'cart-assets' });
+		void (async () => {
+			await this.buildAssetMemory({ mode: 'cart' });
+			await this.vdp.uploadAtlasTextures();
+			await $.refresh_audio_assets();
+		})().finally(() => runGate.end(token));
 	}
 
 	private async buildAssetMemory(params?: { source?: RawAssetSource; assets?: RuntimeAssets; mode?: 'full' | 'cart' }): Promise<void> {

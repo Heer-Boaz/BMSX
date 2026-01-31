@@ -9,13 +9,10 @@ import {
 	ENGINE_ATLAS_INDEX,
 	ENGINE_ATLAS_TEXTURE_KEY,
 	SKYBOX_FACE_DEFAULT_SIZE,
-	SKYBOX_SLOT_IDS,
 	getMachinePerfSpecs,
 	generateAtlasName,
-	type TextureSource,
 } from '../rompack/rompack';
 import type { RawAssetSource } from '../rompack/asset_source';
-import { decodePngToRgba } from '../utils/image_decode';
 import {
 	IO_VDP_DITHER,
 	IO_VDP_PRIMARY_ATLAS_ID,
@@ -29,12 +26,35 @@ import {
 	VDP_RD_STATUS_OVERFLOW,
 	VDP_RD_STATUS_READY,
 } from './io';
-import type { AssetEntry, VdpIoHandler, VramWriteSink } from './memory';
+import type { AssetEntry, ImageWriteEntry, VdpIoHandler, VramWriteSink } from './memory';
 import { Memory } from './memory';
-import { VRAM_ENGINE_ATLAS_BASE, VRAM_ENGINE_ATLAS_SIZE, VRAM_PRIMARY_ATLAS_BASE, VRAM_PRIMARY_ATLAS_SIZE, VRAM_SECONDARY_ATLAS_BASE, VRAM_SECONDARY_ATLAS_SIZE, VRAM_STAGING_BASE, VRAM_STAGING_SIZE } from './memory_map';
+import { ImgDecController } from './devices/imgdec_controller';
+import {
+	VRAM_ENGINE_ATLAS_BASE,
+	VRAM_ENGINE_ATLAS_SIZE,
+	VRAM_PRIMARY_ATLAS_BASE,
+	VRAM_PRIMARY_ATLAS_SIZE,
+	VRAM_SECONDARY_ATLAS_BASE,
+	VRAM_SECONDARY_ATLAS_SIZE,
+	VRAM_SKYBOX_NEGX_BASE,
+	VRAM_SKYBOX_NEGY_BASE,
+	VRAM_SKYBOX_NEGZ_BASE,
+	VRAM_SKYBOX_POSX_BASE,
+	VRAM_SKYBOX_POSY_BASE,
+	VRAM_SKYBOX_POSZ_BASE,
+	VRAM_STAGING_BASE,
+	VRAM_STAGING_SIZE
+} from './memory_map';
 
 const SKYBOX_FACE_KEYS = ['posx', 'negx', 'posy', 'negy', 'posz', 'negz'] as const;
-const SKYBOX_SLOT_ID_SET = new Set<string>(SKYBOX_SLOT_IDS);
+const SKYBOX_FACE_BASES = [
+	VRAM_SKYBOX_POSX_BASE,
+	VRAM_SKYBOX_NEGX_BASE,
+	VRAM_SKYBOX_POSY_BASE,
+	VRAM_SKYBOX_NEGY_BASE,
+	VRAM_SKYBOX_POSZ_BASE,
+	VRAM_SKYBOX_NEGZ_BASE,
+] as const;
 
 const VDP_RD_SURFACE_ENGINE = 0;
 const VDP_RD_SURFACE_PRIMARY = 1;
@@ -232,6 +252,7 @@ type VdpReadCache = {
 };
 
 type VramSlot = {
+	kind: 'asset';
 	baseAddr: number;
 	capacity: number;
 	entry: AssetEntry;
@@ -239,6 +260,18 @@ type VramSlot = {
 	surfaceId: number;
 	textureWidth: number;
 	textureHeight: number;
+} | {
+	kind: 'skybox';
+	baseAddr: number;
+	capacity: number;
+	entry: ImageWriteEntry;
+};
+
+type AssetVramSlot = Extract<VramSlot, { kind: 'asset' }>;
+
+type SkyboxSlot = {
+	face: typeof SKYBOX_FACE_KEYS[number];
+	entry: ImageWriteEntry;
 };
 
 export class VDP implements VramWriteSink, VdpIoHandler {
@@ -259,11 +292,12 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 	private readBudgetBytes = VDP_RD_BUDGET_BYTES;
 	private readOverflow = false;
 	private cpuReadbackByKey = new Map<string, Uint8Array>();
-	private skyboxSlotEntries: AssetEntry[] = [];
+	private skyboxSlots: SkyboxSlot[] = [];
 	private dirtyAtlasBindings = false;
 	private dirtySkybox = false;
 	private skyboxFaceIds: SkyboxImageIds | null = null;
 	private lastDitherType = 0;
+	private imgDecController: ImgDecController | null = null;
 
 	public constructor(
 		private readonly memory: Memory,
@@ -277,6 +311,10 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		}
 	}
 
+	public attachImgDecController(controller: ImgDecController): void {
+		this.imgDecController = controller;
+	}
+
 	public writeVram(addr: number, bytes: Uint8Array): void {
 		if (addr >= VRAM_STAGING_BASE && addr + bytes.byteLength <= VRAM_STAGING_BASE + VRAM_STAGING_SIZE) {
 			this.writeVramStaging(addr, bytes);
@@ -285,18 +323,20 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		const slot = this.findVramSlot(addr, bytes.byteLength);
 		const entry = slot.entry;
 		if (entry.baseStride === 0 || entry.regionW === 0 || entry.regionH === 0) {
-			throw new Error(`[BmsxVDP] VRAM slot '${entry.id}' is not initialized.`);
+			throw new Error('[BmsxVDP] VRAM slot is not initialized.');
 		}
-		this.ensureVramSlotTextureSize(slot);
+		if (slot.kind === 'asset') {
+			this.ensureVramSlotTextureSize(slot);
+		}
 		const offset = addr - slot.baseAddr;
 		const stride = entry.baseStride;
 		const rowCount = entry.regionH;
 		const totalBytes = rowCount * stride;
 		if (offset + bytes.byteLength > totalBytes) {
-			throw new Error(`[BmsxVDP] VRAM write out of bounds for '${entry.id}'.`);
+			throw new Error('[BmsxVDP] VRAM write out of bounds.');
 		}
 		if ((offset & 3) !== 0 || (bytes.byteLength & 3) !== 0) {
-			throw new Error(`[BmsxVDP] VRAM writes must be 32-bit aligned for '${entry.id}'.`);
+			throw new Error('[BmsxVDP] VRAM writes must be 32-bit aligned.');
 		}
 		let remaining = bytes.byteLength;
 		let cursor = 0;
@@ -308,9 +348,11 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 			const x = rowOffset / 4;
 			const width = rowBytes / 4;
 			const slice = bytes.subarray(cursor, cursor + rowBytes);
-			this.updateTextureRegion(slot.textureKey, slice, width, 1, x, row);
-			this.invalidateReadCache(slot.surfaceId);
-			this.updateCpuReadback(slot.surfaceId, slice, x, row);
+			if (slot.kind === 'asset') {
+				this.updateTextureRegion(slot.textureKey, slice, width, 1, x, row);
+				this.invalidateReadCache(slot.surfaceId);
+				this.updateCpuReadback(slot.surfaceId, slice, x, row);
+			}
 			remaining -= rowBytes;
 			cursor += rowBytes;
 			row += 1;
@@ -461,21 +503,56 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 	}
 
 	public setSkyboxImages(ids: SkyboxImageIds): void {
+		if (!this.imgDecController) {
+			throw new Error('[BmsxVDP] ImgDecController not attached.');
+		}
 		const source = $.asset_source;
 		if (!source) {
 			throw new Error('[BmsxVDP] Asset source not configured.');
 		}
-		const slots = this.getSkyboxSlotEntries();
 		const assets = $.assets;
 		this.skyboxFaceIds = ids;
 		this.dirtySkybox = true;
 		SkyboxPipeline.clearSkyboxSources();
-		const tasks = SKYBOX_FACE_KEYS.map((key, index) =>
-			this.loadSkyboxFaceIntoSlot(slots[index], ids[key], source, assets)
-		);
-		void Promise.all(tasks).then(() => {
-			this.applySkyboxSlots(ids);
+		const tasks = SKYBOX_FACE_KEYS.map((key, index) => {
+			const assetId = ids[key];
+			const entry = source.getEntry(assetId);
+			if (!entry) {
+				throw new Error(`[BmsxVDP] Skybox image '${assetId}' not found.`);
+			}
+			if (entry.type !== 'image') {
+				throw new Error(`[BmsxVDP] Skybox image '${assetId}' is not an image.`);
+			}
+			if (typeof entry.start !== 'number' || typeof entry.end !== 'number') {
+				throw new Error(`[BmsxVDP] Skybox image '${assetId}' missing ROM buffer offsets.`);
+			}
+			const asset = assets.img[assetId];
+			if (!asset || !asset.imgmeta) {
+				throw new Error(`[BmsxVDP] Skybox image '${assetId}' missing metadata.`);
+			}
+			if (asset.imgmeta.atlassed) {
+				throw new Error(`[BmsxVDP] Skybox image '${assetId}' must not be atlassed.`);
+			}
+			const slot = this.skyboxSlots[index];
+			return this.imgDecController.decodeToVram({
+				bytes: source.getBytes(entry),
+				dst: slot.entry.baseAddr,
+				cap: slot.entry.capacity,
+			}).then((decoded) => {
+				if (asset.imgmeta.width <= 0) {
+					asset.imgmeta.width = decoded.width;
+				}
+				if (asset.imgmeta.height <= 0) {
+					asset.imgmeta.height = decoded.height;
+				}
+				return {
+					width: slot.entry.regionW,
+					height: slot.entry.regionH,
+					data: decoded.pixels,
+				};
+			});
 		});
+		SkyboxPipeline.setSkyboxSources(ids, tasks);
 	}
 
 	public clearSkybox(): void {
@@ -485,6 +562,9 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 	}
 
 	public async registerImageAssets(source: RawAssetSource, assets: RuntimeAssets): Promise<void> {
+		if (!this.imgDecController) {
+			throw new Error('[BmsxVDP] ImgDecController not attached.');
+		}
 		const entries = source.list();
 		const viewEntries: RomAsset[] = [];
 		const engineAtlasName = generateAtlasName(ENGINE_ATLAS_INDEX);
@@ -512,7 +592,8 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		this.readSurfaces = [null, null, null];
 		this.clearReadCaches();
 		this.cpuReadbackByKey.clear();
-		this.skyboxSlotEntries = [];
+		this.skyboxSlots = [];
+		this.imgDecController.clearExternalSlots();
 		this.skyboxFaceIds = null;
 		this.dirtySkybox = true;
 		SkyboxPipeline.clearSkyboxSources();
@@ -580,15 +661,25 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 			throw new Error(`[BmsxVDP] Invalid skybox_face_size: ${skyboxFaceSize}.`);
 		}
 		const skyboxBytes = skyboxFaceSize * skyboxFaceSize * 4;
-		for (let index = 0; index < SKYBOX_SLOT_IDS.length; index += 1) {
-			const slotId = SKYBOX_SLOT_IDS[index];
-			const slotEntry = this.memory.hasAsset(slotId)
-				? this.memory.getAssetEntry(slotId)
-				: this.memory.registerImageSlot({
-					id: slotId,
-					capacityBytes: skyboxBytes,
-				});
-			this.skyboxSlotEntries.push(slotEntry);
+		for (let index = 0; index < SKYBOX_FACE_KEYS.length; index += 1) {
+			const entry: ImageWriteEntry = {
+				baseAddr: SKYBOX_FACE_BASES[index],
+				capacity: skyboxBytes,
+				baseSize: 0,
+				baseStride: 0,
+				regionX: 0,
+				regionY: 0,
+				regionW: 0,
+				regionH: 0,
+			};
+			this.skyboxSlots.push({ face: SKYBOX_FACE_KEYS[index], entry });
+			this.imgDecController.registerExternalSlot(entry.baseAddr, entry);
+			this.vramSlots.push({
+				kind: 'skybox',
+				baseAddr: entry.baseAddr,
+				capacity: entry.capacity,
+				entry,
+			});
 		}
 
 		const primarySlotEntry = this.memory.hasAsset(ATLAS_PRIMARY_SLOT_ID)
@@ -682,17 +773,11 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		if (dirty.length === 0) {
 			return;
 		}
-		const skyboxIds = this.skyboxFaceIds;
-		let refreshSkybox = false;
 		for (let index = 0; index < dirty.length; index += 1) {
 			const entry = dirty[index];
 			if (entry.type === 'image') {
 				const vramSpan = entry.capacity > 0 ? entry.capacity : 1;
 				if (this.memory.isVramRange(entry.baseAddr, vramSpan)) {
-					continue;
-				}
-				if (SKYBOX_SLOT_ID_SET.has(entry.id)) {
-					refreshSkybox = true;
 					continue;
 				}
 				const pixels = this.memory.getImagePixels(entry);
@@ -712,9 +797,6 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 			} else if (entry.type === 'audio') {
 				$.sndmaster.invalidateClip(entry.id);
 			}
-		}
-		if (refreshSkybox && skyboxIds) {
-			this.applySkyboxSlots(skyboxIds);
 		}
 	}
 
@@ -872,6 +954,7 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 
 	private registerVramSlot(entry: AssetEntry, textureKey: string, surfaceId: number): void {
 		this.vramSlots.push({
+			kind: 'asset',
 			baseAddr: entry.baseAddr,
 			capacity: entry.capacity,
 			entry,
@@ -883,7 +966,7 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		this.registerReadSurface(surfaceId, entry, textureKey);
 	}
 
-	private ensureVramSlotTextureSize(slot: VramSlot): void {
+	private ensureVramSlotTextureSize(slot: AssetVramSlot): void {
 		const width = slot.entry.regionW;
 		const height = slot.entry.regionH;
 		if (slot.textureWidth === width && slot.textureHeight === height) {
@@ -897,10 +980,10 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		this.seedVramSlotTexture(slot);
 	}
 
-	private getVramSlotByTextureKey(textureKey: string): VramSlot {
+	private getVramSlotByTextureKey(textureKey: string): AssetVramSlot {
 		for (let index = 0; index < this.vramSlots.length; index += 1) {
 			const slot = this.vramSlots[index];
-			if (slot.textureKey === textureKey) {
+			if (slot.kind === 'asset' && slot.textureKey === textureKey) {
 				return slot;
 			}
 		}
@@ -938,7 +1021,7 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		fillVramGarbageScratch(this.vramStaging, stream);
 	}
 
-	private seedVramSlotTexture(slot: VramSlot): void {
+	private seedVramSlotTexture(slot: AssetVramSlot): void {
 		const width = slot.entry.regionW;
 		const height = slot.entry.regionH;
 		if (width === 0 || height === 0) {
@@ -988,7 +1071,7 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 	private setSlotTextureSize(textureKey: string, width: number, height: number): void {
 		for (let index = 0; index < this.vramSlots.length; index += 1) {
 			const slot = this.vramSlots[index];
-			if (slot.textureKey === textureKey) {
+			if (slot.kind === 'asset' && slot.textureKey === textureKey) {
 				slot.textureWidth = width;
 				slot.textureHeight = height;
 				return;
@@ -1004,65 +1087,6 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 			}
 		}
 		throw new Error(`[BmsxVDP] VRAM write has no mapped slot (addr=${addr}, len=${length}).`);
-	}
-
-	private getSkyboxSlotEntries(): AssetEntry[] {
-		if (this.skyboxSlotEntries.length !== SKYBOX_FACE_KEYS.length) {
-			throw new Error('[BmsxVDP] Skybox slots not allocated in RAM.');
-		}
-		return this.skyboxSlotEntries;
-	}
-
-	private async loadSkyboxFaceIntoSlot(
-		slotEntry: AssetEntry,
-		assetId: string,
-		source: RawAssetSource,
-		assets: RuntimeAssets,
-	): Promise<void> {
-		const entry = source.getEntry(assetId);
-		if (!entry) {
-			throw new Error(`[BmsxVDP] Skybox image '${assetId}' not found.`);
-		}
-		if (entry.type !== 'image') {
-			throw new Error(`[BmsxVDP] Skybox image '${assetId}' is not an image.`);
-		}
-		if (typeof entry.start !== 'number' || typeof entry.end !== 'number') {
-			throw new Error(`[BmsxVDP] Skybox image '${assetId}' missing ROM buffer offsets.`);
-		}
-		const asset = assets.img[assetId];
-		if (!asset || !asset.imgmeta) {
-			throw new Error(`[BmsxVDP] Skybox image '${assetId}' missing metadata.`);
-		}
-		if (asset.imgmeta.atlassed) {
-			throw new Error(`[BmsxVDP] Skybox image '${assetId}' must not be atlassed.`);
-		}
-		const decoded = await decodePngToRgba(source.getBytes(entry));
-		if (asset.imgmeta.width <= 0) {
-			asset.imgmeta.width = decoded.width;
-		}
-		if (asset.imgmeta.height <= 0) {
-			asset.imgmeta.height = decoded.height;
-		}
-		const faceSize = getMachinePerfSpecs(assets.manifest.machine).skybox_face_size ?? SKYBOX_FACE_DEFAULT_SIZE;
-		this.memory.writeImageSlot(slotEntry, {
-			pixels: decoded.pixels,
-			width: faceSize,
-			height: faceSize,
-		});
-	}
-
-	private applySkyboxSlots(ids: SkyboxImageIds): void {
-		const slots = this.getSkyboxSlotEntries();
-		const loaders = slots.map((entry) => this.resolveSkyboxSlotSource(entry));
-		SkyboxPipeline.setSkyboxSources(ids, loaders);
-	}
-
-	private resolveSkyboxSlotSource(entry: AssetEntry): Promise<TextureSource> {
-		if (entry.type !== 'image') {
-			throw new Error(`[BmsxVDP] Skybox slot '${entry.id}' is not an image.`);
-		}
-		const pixels = this.memory.getImagePixels(entry);
-		return Promise.resolve({ width: entry.regionW, height: entry.regionH, data: pixels });
 	}
 
 }

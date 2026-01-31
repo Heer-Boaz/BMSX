@@ -858,6 +858,12 @@ m_runtime.registerNativeFunction("cartdata", [this, asText](const std::vector<Va
 	(void)out;
 });
 
+m_runtime.registerNativeFunction("load_cart_assets", [](const std::vector<Value>& args, std::vector<Value>& out) {
+	(void)args;
+	EngineCore::instance().prepareLoadedRomAssets();
+	(void)out;
+});
+
 m_runtime.registerNativeFunction("dset", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 	int index = static_cast<int>(std::floor(asNumber(args.at(0))));
 	double value = asNumber(args.at(1));

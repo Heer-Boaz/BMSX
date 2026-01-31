@@ -34,19 +34,48 @@ void ImgDecController::setDecodeBudget(uint32_t bytesPerTick) {
 	m_decodeBudget = bytesPerTick;
 }
 
+void ImgDecController::registerExternalSlot(uint32_t baseAddr, Memory::ImageWriteEntry* entry) {
+	m_externalSlots[baseAddr] = entry;
+}
+
+void ImgDecController::clearExternalSlots() {
+	m_externalSlots.clear();
+}
+
+void ImgDecController::decodeToVram(
+	std::vector<uint8_t>&& buffer,
+	uint32_t dst,
+	uint32_t cap,
+	std::function<void(uint32_t width, uint32_t height, bool clipped)> onComplete,
+	std::function<void(std::exception_ptr)> onError
+) {
+	ImgDecJob job;
+	job.buffer = std::move(buffer);
+	job.dst = dst;
+	job.cap = cap;
+	job.resolve = std::move(onComplete);
+	job.reject = std::move(onError);
+	m_queuedJobs.push_back(std::move(job));
+	tryStart();
+}
+
 void ImgDecController::reset() {
 	m_decodeToken += 1;
 	m_active = false;
 	m_status = 0;
 	m_pendingError = nullptr;
 	m_pendingResult.reset();
-	m_pendingEntry = nullptr;
+	m_pendingEntry.reset();
 	m_pendingCap = 0;
 	m_decodeActive = false;
 	m_decodeRemaining = 0;
 	m_decodePlan = Memory::ImageWritePlan{};
 	m_decodePixels.clear();
 	m_decodeQueued = false;
+	m_decodeWidth = 0;
+	m_decodeHeight = 0;
+	m_queuedJobs.clear();
+	m_activeJob.reset();
 	m_memory.writeValue(IO_IMG_SRC, valueNumber(0.0));
 	m_memory.writeValue(IO_IMG_LEN, valueNumber(0.0));
 	m_memory.writeValue(IO_IMG_DST, valueNumber(0.0));
@@ -62,16 +91,17 @@ void ImgDecController::tick() {
 		return;
 	}
 	if (m_pendingError) {
+		auto error = m_pendingError;
 		m_pendingError = nullptr;
-		finishError();
+		finishError(error);
 		return;
 	}
 	if (m_pendingResult && m_pendingEntry) {
 		auto result = std::move(*m_pendingResult);
 		m_pendingResult.reset();
-		auto* entry = m_pendingEntry;
-		m_pendingEntry = nullptr;
-		beginDecode(std::move(result), *entry);
+		auto entry = *m_pendingEntry;
+		m_pendingEntry.reset();
+		beginDecode(std::move(result), entry);
 	}
 	if (m_decodeActive) {
 		advanceDecode();
@@ -80,54 +110,80 @@ void ImgDecController::tick() {
 
 void ImgDecController::tryStart() {
 	const uint32_t ctrlValue = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_IMG_CTRL)));
-	if ((ctrlValue & IMG_CTRL_START) == 0) {
-		return;
-	}
-	const uint32_t ctrl = ctrlValue;
-	if (m_active) {
+	if ((ctrlValue & IMG_CTRL_START) != 0) {
+		const uint32_t ctrl = ctrlValue;
+		if (m_active) {
+			m_memory.writeValue(IO_IMG_CTRL, valueNumber(static_cast<double>(ctrl & ~IMG_CTRL_START)));
+			return;
+		}
+		const uint32_t src = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_IMG_SRC)));
+		const uint32_t len = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_IMG_LEN)));
+		const uint32_t dst = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_IMG_DST)));
+		const uint32_t cap = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_IMG_CAP)));
 		m_memory.writeValue(IO_IMG_CTRL, valueNumber(static_cast<double>(ctrl & ~IMG_CTRL_START)));
+		std::vector<uint8_t> buffer(len);
+		try {
+			if (len > 0) {
+				m_memory.readBytes(src, buffer.data(), len);
+			}
+		} catch (...) {
+			finishError(std::current_exception());
+			return;
+		}
+		startJob(std::move(buffer), dst, cap, src, len, std::nullopt);
 		return;
 	}
-	const uint32_t src = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_IMG_SRC)));
-	const uint32_t len = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_IMG_LEN)));
-	const uint32_t dst = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_IMG_DST)));
-	const uint32_t cap = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_IMG_CAP)));
-	m_memory.writeValue(IO_IMG_CTRL, valueNumber(static_cast<double>(ctrl & ~IMG_CTRL_START)));
+	if (m_active) {
+		return;
+	}
+	if (m_queuedJobs.empty()) {
+		return;
+	}
+	ImgDecJob job = std::move(m_queuedJobs.front());
+	m_queuedJobs.pop_front();
+	const uint32_t len = static_cast<uint32_t>(job.buffer.size());
+	startJob(std::move(job.buffer), job.dst, job.cap, 0u, len, std::move(job));
+}
+
+void ImgDecController::startJob(std::vector<uint8_t>&& buffer, uint32_t dst, uint32_t cap, uint32_t src, uint32_t len, std::optional<ImgDecJob> job) {
 	m_pendingResult.reset();
 	m_pendingError = nullptr;
-	m_pendingEntry = nullptr;
+	m_pendingEntry.reset();
 	m_status = IMG_STATUS_BUSY;
 	m_memory.writeValue(IO_IMG_STATUS, valueNumber(static_cast<double>(m_status)));
 	m_memory.writeValue(IO_IMG_WRITTEN, valueNumber(0.0));
+	m_memory.writeValue(IO_IMG_SRC, valueNumber(static_cast<double>(src)));
+	m_memory.writeValue(IO_IMG_LEN, valueNumber(static_cast<double>(len)));
+	m_memory.writeValue(IO_IMG_DST, valueNumber(static_cast<double>(dst)));
+	m_memory.writeValue(IO_IMG_CAP, valueNumber(static_cast<double>(cap)));
+	if (job.has_value()) {
+		m_activeJob = std::move(job);
+	} else {
+		m_activeJob.reset();
+	}
 
-	Memory::AssetEntry* entry = nullptr;
+	ImgDecEntry entry;
 	try {
-		entry = &resolveSlotEntry(dst);
+		entry = resolveSlotEntry(dst);
 	} catch (...) {
-		finishError();
+		finishError(std::current_exception());
 		return;
 	}
-	const uint32_t effectiveCap = std::min(cap, entry->capacity);
+	const uint32_t entryCap = entry.isAsset ? entry.asset->capacity : entry.external->capacity;
+	const uint32_t effectiveCap = std::min(cap, entryCap);
 	if (effectiveCap == 0) {
-		finishError();
+		finishError(std::make_exception_ptr(std::runtime_error("[ImgDec] Invalid destination capacity.")));
 		return;
 	}
 	m_pendingCap = effectiveCap;
-	std::vector<uint8_t> buffer(len);
-	try {
-		if (len > 0) {
-			m_memory.readBytes(src, buffer.data(), len);
-		}
-	} catch (...) {
-		finishError();
-		return;
-	}
 	m_active = true;
 	m_decodeActive = false;
 	m_decodeRemaining = 0;
 	m_decodePlan = Memory::ImageWritePlan{};
 	m_decodePixels.clear();
 	m_decodeQueued = false;
+	m_decodeWidth = 0;
+	m_decodeHeight = 0;
 	GateScope scope;
 	scope.blocking = false;
 	scope.category = "texture";
@@ -176,24 +232,46 @@ void ImgDecController::tryStart() {
 	});
 }
 
-Memory::AssetEntry& ImgDecController::resolveSlotEntry(uint32_t dst) {
+ImgDecController::ImgDecEntry ImgDecController::resolveSlotEntry(uint32_t dst) {
+	const auto externalIt = m_externalSlots.find(dst);
+	if (externalIt != m_externalSlots.end()) {
+		ImgDecEntry entry;
+		entry.isAsset = false;
+		entry.external = externalIt->second;
+		return entry;
+	}
 	if (dst == VRAM_PRIMARY_ATLAS_BASE) {
-		return m_memory.getAssetEntry(ATLAS_PRIMARY_SLOT_ID);
+		ImgDecEntry entry;
+		entry.isAsset = true;
+		entry.asset = &m_memory.getAssetEntry(ATLAS_PRIMARY_SLOT_ID);
+		return entry;
 	}
 	if (dst == VRAM_SECONDARY_ATLAS_BASE) {
-		return m_memory.getAssetEntry(ATLAS_SECONDARY_SLOT_ID);
+		ImgDecEntry entry;
+		entry.isAsset = true;
+		entry.asset = &m_memory.getAssetEntry(ATLAS_SECONDARY_SLOT_ID);
+		return entry;
 	}
 	if (dst == VRAM_ENGINE_ATLAS_BASE) {
-		return m_memory.getAssetEntry(generateAtlasName(ENGINE_ATLAS_INDEX));
+		ImgDecEntry entry;
+		entry.isAsset = true;
+		entry.asset = &m_memory.getAssetEntry(generateAtlasName(ENGINE_ATLAS_INDEX));
+		return entry;
 	}
 	throw std::runtime_error("[ImgDec] Unsupported destination address " + std::to_string(dst) + ".");
 }
 
-void ImgDecController::beginDecode(DecodedImage&& result, Memory::AssetEntry& entry) {
+void ImgDecController::beginDecode(DecodedImage&& result, const ImgDecEntry& entry) {
 	const uint32_t cap = m_pendingCap;
 	m_pendingCap = 0;
 	const size_t pixelBytes = result.pixels.size();
-	m_decodePlan = m_memory.planImageSlotWrite(entry, pixelBytes, result.width, result.height, cap);
+	if (entry.isAsset) {
+		m_decodePlan = m_memory.planImageSlotWrite(*entry.asset, pixelBytes, result.width, result.height, cap);
+	} else {
+		m_decodePlan = m_memory.planImageWrite(*entry.external, pixelBytes, result.width, result.height, cap);
+	}
+	m_decodeWidth = result.width;
+	m_decodeHeight = result.height;
 	m_decodePixels = std::move(result.pixels);
 	m_decodeRemaining = m_decodePlan.writeLen;
 	m_decodeActive = true;
@@ -221,7 +299,7 @@ void ImgDecController::advanceDecode() {
 	m_decodePixels.clear();
 	m_dma.enqueueImageCopy(plan, std::move(pixels), [this](bool error, bool clipped) {
 		if (error) {
-			finishError();
+			finishError(std::make_exception_ptr(std::runtime_error("[ImgDec] DMA transfer failed.")));
 			return;
 		}
 		finishSuccess(clipped);
@@ -229,6 +307,8 @@ void ImgDecController::advanceDecode() {
 }
 
 void ImgDecController::finishSuccess(bool clipped) {
+	auto activeJob = std::move(m_activeJob);
+	m_activeJob.reset();
 	m_active = false;
 	m_decodeActive = false;
 	m_decodeRemaining = 0;
@@ -240,9 +320,16 @@ void ImgDecController::finishSuccess(bool clipped) {
 	}
 	m_memory.writeValue(IO_IMG_STATUS, valueNumber(static_cast<double>(m_status)));
 	m_raiseIrq(IRQ_IMG_DONE);
+	if (activeJob && activeJob->resolve) {
+		activeJob->resolve(m_decodeWidth, m_decodeHeight, clipped);
+	}
+	m_decodeWidth = 0;
+	m_decodeHeight = 0;
 }
 
-void ImgDecController::finishError() {
+void ImgDecController::finishError(std::exception_ptr error) {
+	auto activeJob = std::move(m_activeJob);
+	m_activeJob.reset();
 	m_active = false;
 	m_decodeActive = false;
 	m_decodeRemaining = 0;
@@ -251,6 +338,14 @@ void ImgDecController::finishError() {
 	m_status = (m_status & ~IMG_STATUS_BUSY) | IMG_STATUS_DONE | IMG_STATUS_ERROR;
 	m_memory.writeValue(IO_IMG_STATUS, valueNumber(static_cast<double>(m_status)));
 	m_raiseIrq(IRQ_IMG_ERROR);
+	if (!error) {
+		error = std::make_exception_ptr(std::runtime_error("[ImgDec] Decode failed."));
+	}
+	if (activeJob && activeJob->reject) {
+		activeJob->reject(error);
+	}
+	m_decodeWidth = 0;
+	m_decodeHeight = 0;
 }
 
 } // namespace bmsx

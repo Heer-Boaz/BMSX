@@ -58,12 +58,6 @@ void collectAssetIds(const RuntimeAssets& engineAssets, const RuntimeAssets& ass
 	ids.insert(engineAtlasId);
 	ids.insert(ATLAS_PRIMARY_SLOT_ID);
 	ids.insert(ATLAS_SECONDARY_SLOT_ID);
-	ids.insert(SKYBOX_SLOT_POSX_ID);
-	ids.insert(SKYBOX_SLOT_NEGX_ID);
-	ids.insert(SKYBOX_SLOT_POSY_ID);
-	ids.insert(SKYBOX_SLOT_NEGY_ID);
-	ids.insert(SKYBOX_SLOT_POSZ_ID);
-	ids.insert(SKYBOX_SLOT_NEGZ_ID);
 
 	for (const auto& [id, imgAsset] : engineAssets.img) {
 		if (imgAsset.meta.atlassed) {
@@ -102,18 +96,7 @@ uint32_t computeAssetTableBytes(const RuntimeAssets& engineAssets, const Runtime
 }
 
 uint32_t computeAssetDataBytes(const RuntimeAssets& engineAssets, const RuntimeAssets& assets, uint32_t assetDataBaseOffset) {
-	const i32 faceSize = assets.manifest.skyboxFaceSize > 0
-		? assets.manifest.skyboxFaceSize
-		: SKYBOX_FACE_DEFAULT_SIZE;
-	if (faceSize <= 0) {
-		throw std::runtime_error("[EngineCore] Invalid skybox_face_size.");
-	}
-	const uint32_t skyboxBytes = static_cast<uint32_t>(faceSize) * static_cast<uint32_t>(faceSize) * 4u;
 	uint32_t cursor = assetDataBaseOffset;
-	for (int i = 0; i < 6; i += 1) {
-		cursor = alignUp(cursor, 4u);
-		cursor += skyboxBytes;
-	}
 	const auto engineAudioIds = collectAudioIds(engineAssets);
 	std::unordered_set<std::string> engineAudioSet(engineAudioIds.begin(), engineAudioIds.end());
 	for (const auto& id : engineAudioIds) {
@@ -121,10 +104,19 @@ uint32_t computeAssetDataBytes(const RuntimeAssets& engineAssets, const RuntimeA
 		if (!audio) {
 			throw std::runtime_error("[EngineCore] Audio asset '" + id + "' missing from assets.");
 		}
-		if (audio->bytes.empty()) {
-			continue;
+		uint32_t size = 0;
+		if (!audio->bytes.empty()) {
+			size = static_cast<uint32_t>(audio->bytes.size());
+		} else if (audio->rom.start && audio->rom.end) {
+			const i32 start = *audio->rom.start;
+			const i32 end = *audio->rom.end;
+			if (end <= start) {
+				throw std::runtime_error("[EngineCore] Audio asset '" + id + "' has invalid ROM range.");
+			}
+			size = static_cast<uint32_t>(end - start);
+		} else {
+			throw std::runtime_error("[EngineCore] Audio asset '" + id + "' missing ROM buffer offsets.");
 		}
-		const uint32_t size = static_cast<uint32_t>(audio->bytes.size());
 		cursor = alignUp(cursor, 2u);
 		cursor += size;
 	}
@@ -138,10 +130,19 @@ uint32_t computeAssetDataBytes(const RuntimeAssets& engineAssets, const RuntimeA
 		if (!audio) {
 			throw std::runtime_error("[EngineCore] Audio asset '" + id + "' missing from assets.");
 		}
-		if (audio->bytes.empty()) {
-			continue;
+		uint32_t size = 0;
+		if (!audio->bytes.empty()) {
+			size = static_cast<uint32_t>(audio->bytes.size());
+		} else if (audio->rom.start && audio->rom.end) {
+			const i32 start = *audio->rom.start;
+			const i32 end = *audio->rom.end;
+			if (end <= start) {
+				throw std::runtime_error("[EngineCore] Audio asset '" + id + "' has invalid ROM range.");
+			}
+			size = static_cast<uint32_t>(end - start);
+		} else {
+			throw std::runtime_error("[EngineCore] Audio asset '" + id + "' missing ROM buffer offsets.");
 		}
-		const uint32_t size = static_cast<uint32_t>(audio->bytes.size());
 		cursor = alignUp(cursor, 2u);
 		cursor += size;
 	}
@@ -187,6 +188,13 @@ MemoryMapConfig resolveMemoryMapConfig(const RomManifest& manifest, const RomMan
 		}
 		config.stagingBytes = static_cast<uint32_t>(value);
 	}
+	const i32 faceSize = manifest.skyboxFaceSize > 0
+		? manifest.skyboxFaceSize
+		: SKYBOX_FACE_DEFAULT_SIZE;
+	if (faceSize <= 0) {
+		throw std::runtime_error("[EngineCore] skybox_face_size must be greater than 0.");
+	}
+	config.skyboxFaceBytes = static_cast<uint32_t>(faceSize) * static_cast<uint32_t>(faceSize) * 4u;
 
 	const uint32_t requiredAssetTableBytes = computeAssetTableBytes(engineAssets, assets);
 	if (manifest.assetTableBytes) {

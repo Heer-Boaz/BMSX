@@ -18,6 +18,8 @@ import {
 	VRAM_ENGINE_ATLAS_SIZE,
 	VRAM_PRIMARY_ATLAS_BASE,
 	VRAM_PRIMARY_ATLAS_SIZE,
+	VRAM_SKYBOX_BASE,
+	VRAM_SKYBOX_SIZE,
 	VRAM_SECONDARY_ATLAS_BASE,
 	VRAM_SECONDARY_ATLAS_SIZE,
 	VRAM_STAGING_BASE,
@@ -58,6 +60,17 @@ export type ImageWritePlan = {
 	sourceStride: number;
 	writeSize: number;
 	clipped: boolean;
+};
+
+export type ImageWriteEntry = {
+	baseAddr: number;
+	capacity: number;
+	baseSize: number;
+	baseStride: number;
+	regionX: number;
+	regionY: number;
+	regionW: number;
+	regionH: number;
 };
 
 export type VramWriteSink = {
@@ -614,8 +627,7 @@ export class Memory {
 		}
 	}
 
-	public planImageSlotWrite(entry: AssetEntry, params: { pixels: Uint8Array; width: number; height: number; capacity?: number }): ImageWritePlan {
-		const index = this.assetIndexById.get(entry.id)!;
+	public planImageWrite(entry: ImageWriteEntry, params: { pixels: Uint8Array; width: number; height: number; capacity?: number }): ImageWritePlan {
 		const capacity = params.capacity === undefined ? entry.capacity : Math.min(entry.capacity, Math.floor(params.capacity));
 		const sourceWidth = Math.floor(params.width);
 		const sourceHeight = Math.floor(params.height);
@@ -643,9 +655,6 @@ export class Memory {
 		entry.regionY = 0;
 		entry.regionW = writeWidth;
 		entry.regionH = writeHeight;
-		if (this.assetTableFinalized) {
-			this.writeAssetEntryData(index, entry);
-		}
 		return {
 			baseAddr: entry.baseAddr,
 			writeWidth,
@@ -655,6 +664,15 @@ export class Memory {
 			writeSize,
 			clipped: writeWidth !== sourceWidth || writeHeight !== sourceHeight,
 		};
+	}
+
+	public planImageSlotWrite(entry: AssetEntry, params: { pixels: Uint8Array; width: number; height: number; capacity?: number }): ImageWritePlan {
+		const index = this.assetIndexById.get(entry.id)!;
+		const plan = this.planImageWrite(entry, params);
+		if (this.assetTableFinalized) {
+			this.writeAssetEntryData(index, entry);
+		}
+		return plan;
 	}
 
 	public updateImageViewBase(entry: AssetEntry, baseEntry: AssetEntry): void {
@@ -1030,6 +1048,7 @@ export class Memory {
 		const end = addr + length;
 		const overlaps = (base: number, size: number): boolean => addr < base + size && end > base;
 		return overlaps(VRAM_STAGING_BASE, VRAM_STAGING_SIZE)
+			|| overlaps(VRAM_SKYBOX_BASE, VRAM_SKYBOX_SIZE)
 			|| overlaps(VRAM_ENGINE_ATLAS_BASE, VRAM_ENGINE_ATLAS_SIZE)
 			|| overlaps(VRAM_PRIMARY_ATLAS_BASE, VRAM_PRIMARY_ATLAS_SIZE)
 			|| overlaps(VRAM_SECONDARY_ATLAS_BASE, VRAM_SECONDARY_ATLAS_SIZE);

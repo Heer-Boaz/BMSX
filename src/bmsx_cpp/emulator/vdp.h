@@ -16,6 +16,7 @@ namespace bmsx {
 class RuntimeAssets;
 class GameView;
 struct ImgAsset;
+class ImgDecController;
 
 class VDP : public Memory::VramWriter, public Memory::VdpIoHandler {
 public:
@@ -34,6 +35,7 @@ public:
 	void uploadAtlasTextures();
 	void flushAssetEdits();
 	void applyAtlasSlotMapping(const std::array<i32, 2>& slots);
+	void attachImgDecController(ImgDecController& controller);
 	void setSkyboxImages(const SkyboxImageIds& ids);
 	void clearSkybox();
 	std::optional<SkyboxImageIds> skyboxFaceIds() const;
@@ -52,7 +54,12 @@ private:
 		uint32_t width = 0;
 		std::vector<u8> data;
 	};
+	enum class VramSlotKind {
+		Asset,
+		Skybox,
+	};
 	struct VramSlot {
+		VramSlotKind kind = VramSlotKind::Asset;
 		uint32_t baseAddr = 0;
 		uint32_t capacity = 0;
 		std::string assetId;
@@ -69,6 +76,7 @@ private:
 	};
 
 	Memory& m_memory;
+	ImgDecController* m_imgDecController = nullptr;
 	std::unordered_map<i32, std::string> m_atlasResourceById;
 	std::unordered_map<i32, std::vector<std::string>> m_atlasViewIdsById;
 	std::unordered_map<i32, i32> m_atlasSlotById;
@@ -88,6 +96,7 @@ private:
 	SkyboxImageIds m_skyboxFaceIds;
 	bool m_hasSkybox = false;
 	i32 m_lastDitherType = 0;
+	std::array<Memory::ImageWriteEntry, 6> m_skyboxSlots{};
 
 	void registerVramSlot(const Memory::AssetEntry& entry, const std::string& textureKey, uint32_t surfaceId);
 	void registerReadSurface(uint32_t surfaceId, const std::string& assetId, const std::string& textureKey);
@@ -108,8 +117,6 @@ private:
 	void seedVramSlotTexture(VramSlot& slot);
 	void setSlotTextureSize(const std::string& textureKey, uint32_t width, uint32_t height);
 	void ensureAtlasSlotTexture(const Memory::AssetEntry& entry, const std::string& textureKey);
-	void loadSkyboxFaceIntoSlot(const std::string& slotId, const std::string& assetId, RuntimeAssets& assets);
-	std::vector<u8> decodeImageFromRom(const ImgAsset& asset, i32& outWidth, i32& outHeight);
 };
 
 } // namespace bmsx

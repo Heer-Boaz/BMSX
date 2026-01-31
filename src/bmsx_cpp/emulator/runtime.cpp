@@ -725,6 +725,7 @@ Runtime::Runtime(const RuntimeOptions& options)
 	m_memory.writeValue(IO_IMG_WRITTEN, valueNumber(0.0));
 	m_dmaController.reset();
 	m_imgDecController.reset();
+	m_vdp.attachImgDecController(m_imgDecController);
 	m_memory.writeValue(IO_VDP_PRIMARY_ATLAS_ID, valueNumber(static_cast<double>(VDP_ATLAS_ID_NONE)));
 	m_memory.writeValue(IO_VDP_SECONDARY_ATLAS_ID, valueNumber(static_cast<double>(VDP_ATLAS_ID_NONE)));
 	m_memory.writeValue(IO_VDP_RD_SURFACE, valueNumber(0.0));
@@ -854,7 +855,6 @@ void Runtime::prepareCartBootIfNeeded() {
 		return;
 	}
 	setCartBootReadyFlag(false);
-	EngineCore::instance().prepareLoadedRomAssets();
 	m_cartBootPrepared = true;
 	setCartBootReadyFlag(true);
 }

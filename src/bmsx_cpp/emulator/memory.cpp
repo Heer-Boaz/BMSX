@@ -40,6 +40,7 @@ bool rangeOverlaps(uint32_t addr, size_t length, uint32_t base, uint32_t size) {
 
 bool isVramRangeLocal(uint32_t addr, size_t length) {
 	return rangeOverlaps(addr, length, VRAM_STAGING_BASE, VRAM_STAGING_SIZE)
+		|| rangeOverlaps(addr, length, VRAM_SKYBOX_BASE, VRAM_SKYBOX_SIZE)
 		|| rangeOverlaps(addr, length, VRAM_ENGINE_ATLAS_BASE, VRAM_ENGINE_ATLAS_SIZE)
 		|| rangeOverlaps(addr, length, VRAM_PRIMARY_ATLAS_BASE, VRAM_PRIMARY_ATLAS_SIZE)
 		|| rangeOverlaps(addr, length, VRAM_SECONDARY_ATLAS_BASE, VRAM_SECONDARY_ATLAS_SIZE);
@@ -531,9 +532,49 @@ Memory::ImageWritePlan Memory::planImageSlotWrite(AssetEntry& entry, size_t pixe
 	entry.regionY = 0;
 	entry.regionW = writeWidth;
 	entry.regionH = writeHeight;
+	ImageWritePlan plan;
+	plan.baseAddr = entry.baseAddr;
+	plan.writeWidth = writeWidth;
+	plan.writeHeight = writeHeight;
+	plan.writeStride = writeStride;
+	plan.sourceStride = sourceStride;
+	plan.writeLen = writeLen;
+	plan.clipped = (writeWidth != sourceWidth) || (writeHeight != sourceHeight);
 	if (m_assetTableFinalized) {
 		updateAssetEntryData(index, entry);
 	}
+	return plan;
+}
+
+Memory::ImageWritePlan Memory::planImageWrite(ImageWriteEntry& entry, size_t pixelBytes, uint32_t width, uint32_t height, uint32_t capacityOverride) {
+	const uint32_t capacity = std::min(entry.capacity, capacityOverride);
+	const uint32_t sourceWidth = width;
+	const uint32_t sourceHeight = height;
+	const uint32_t sourceStride = sourceWidth * 4u;
+	const uint32_t maxPixels = capacity / 4u;
+	uint32_t writeWidth = sourceWidth;
+	uint32_t writeHeight = sourceHeight;
+	if (sourceStride == 0 || sourceHeight == 0 || maxPixels == 0) {
+		writeWidth = 0;
+		writeHeight = 0;
+	} else if (sourceWidth > maxPixels) {
+		const uint32_t maxRowsByPixels = static_cast<uint32_t>(pixelBytes / sourceStride);
+		writeWidth = std::min(sourceWidth, maxPixels);
+		writeHeight = std::min<uint32_t>(1, maxRowsByPixels);
+	} else {
+		const uint32_t maxRowsByCapacity = capacity / sourceStride;
+		const uint32_t maxRowsByPixels = static_cast<uint32_t>(pixelBytes / sourceStride);
+		writeHeight = std::min({sourceHeight, maxRowsByCapacity, maxRowsByPixels});
+	}
+	const uint32_t writeStride = writeWidth * 4u;
+	const uint32_t size = writeStride * writeHeight;
+	const size_t writeLen = std::min(static_cast<size_t>(size), static_cast<size_t>(capacity));
+	entry.baseSize = size;
+	entry.baseStride = writeStride;
+	entry.regionX = 0;
+	entry.regionY = 0;
+	entry.regionW = writeWidth;
+	entry.regionH = writeHeight;
 	ImageWritePlan plan;
 	plan.baseAddr = entry.baseAddr;
 	plan.writeWidth = writeWidth;

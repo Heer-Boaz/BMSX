@@ -22,10 +22,22 @@ import {
 	VRAM_ENGINE_ATLAS_BASE,
 } from '../memory_map';
 import { ATLAS_PRIMARY_SLOT_ID, ATLAS_SECONDARY_SLOT_ID, ENGINE_ATLAS_INDEX, generateAtlasName } from '../../rompack/rompack';
-import type { ImageWritePlan, AssetEntry } from '../memory';
+import type { AssetEntry, ImageWriteEntry, ImageWritePlan } from '../memory';
 import { Memory } from '../memory';
 import type { DecodedImage } from '../../utils/image_decode';
 import { DmaController } from './dma_controller';
+
+type ImgDecJob = {
+	buffer: Uint8Array;
+	dst: number;
+	cap: number;
+	resolve: (result: { pixels: Uint8Array; width: number; height: number; clipped: boolean }) => void;
+	reject: (error: unknown) => void;
+};
+
+type ImgDecEntry = AssetEntry | ImageWriteEntry;
+
+const isAssetEntry = (entry: ImgDecEntry): entry is AssetEntry => (entry as AssetEntry).id !== undefined;
 
 export class ImgDecController {
 	private readonly gate = taskGate.group('imgdec');
@@ -33,15 +45,19 @@ export class ImgDecController {
 	private status = 0;
 	private pendingError: unknown = null;
 	private pendingResult: DecodedImage | null = null;
-	private pendingEntry: AssetEntry | null = null;
+	private pendingEntry: ImgDecEntry | null = null;
 	private pendingCap = 0;
 	private decodeBudget = 0;
 	private decodeActive = false;
 	private decodeRemaining = 0;
 	private decodePlan: ImageWritePlan | null = null;
 	private decodePixels: Uint8Array | null = null;
+	private decodeResult: DecodedImage | null = null;
 	private decodeQueued = false;
 	private decodeToken = 0;
+	private readonly queuedJobs: ImgDecJob[] = [];
+	private activeJob: ImgDecJob | null = null;
+	private readonly externalSlots = new Map<number, ImageWriteEntry>();
 
 	public constructor(
 		private readonly memory: Memory,
@@ -51,6 +67,21 @@ export class ImgDecController {
 
 	public setDecodeBudget(bytesPerTick: number): void {
 		this.decodeBudget = bytesPerTick;
+	}
+
+	public registerExternalSlot(baseAddr: number, entry: ImageWriteEntry): void {
+		this.externalSlots.set(baseAddr, entry);
+	}
+
+	public clearExternalSlots(): void {
+		this.externalSlots.clear();
+	}
+
+	public decodeToVram(params: { bytes: Uint8Array; dst: number; cap: number }): Promise<{ pixels: Uint8Array; width: number; height: number; clipped: boolean }> {
+		return new Promise((resolve, reject) => {
+			this.queuedJobs.push({ buffer: params.bytes, dst: params.dst, cap: params.cap, resolve, reject });
+			this.tryStart();
+		});
 	}
 
 	public reset(): void {
@@ -65,7 +96,10 @@ export class ImgDecController {
 		this.decodeRemaining = 0;
 		this.decodePlan = null;
 		this.decodePixels = null;
+		this.decodeResult = null;
 		this.decodeQueued = false;
+		this.queuedJobs.length = 0;
+		this.activeJob = null;
 		this.memory.writeValue(IO_IMG_SRC, 0);
 		this.memory.writeValue(IO_IMG_LEN, 0);
 		this.memory.writeValue(IO_IMG_DST, 0);
@@ -81,8 +115,9 @@ export class ImgDecController {
 			return;
 		}
 		if (this.pendingError !== null) {
+			const error = this.pendingError;
 			this.pendingError = null;
-			this.finishError();
+			this.finishError(error);
 			return;
 		}
 		if (this.pendingResult !== null && this.pendingEntry !== null) {
@@ -99,58 +134,93 @@ export class ImgDecController {
 
 	private tryStart(): void {
 		const ctrlValue = this.memory.readValue(IO_IMG_CTRL) as number;
-		if ((ctrlValue & IMG_CTRL_START) === 0) {
-			return;
-		}
 		const ctrl = ctrlValue >>> 0;
-		if (this.active) {
+		if ((ctrl & IMG_CTRL_START) !== 0) {
+			if (this.active) {
+				this.memory.writeValue(IO_IMG_CTRL, ctrl & ~IMG_CTRL_START);
+				return;
+			}
+			const src = (this.memory.readValue(IO_IMG_SRC) as number) >>> 0;
+			const len = (this.memory.readValue(IO_IMG_LEN) as number) >>> 0;
+			const dst = (this.memory.readValue(IO_IMG_DST) as number) >>> 0;
+			const cap = (this.memory.readValue(IO_IMG_CAP) as number) >>> 0;
 			this.memory.writeValue(IO_IMG_CTRL, ctrl & ~IMG_CTRL_START);
+			let buffer: Uint8Array;
+			try {
+				const bytes = this.memory.readBytes(src, len);
+				const copy = new Uint8Array(bytes.byteLength);
+				copy.set(bytes);
+				buffer = copy;
+			} catch (error) {
+				this.finishError(error);
+				return;
+			}
+			this.startJob({ buffer, dst, cap, src, len, job: null });
 			return;
 		}
-		const src = (this.memory.readValue(IO_IMG_SRC) as number) >>> 0;
-		const len = (this.memory.readValue(IO_IMG_LEN) as number) >>> 0;
-		const dst = (this.memory.readValue(IO_IMG_DST) as number) >>> 0;
-		const cap = (this.memory.readValue(IO_IMG_CAP) as number) >>> 0;
-		this.memory.writeValue(IO_IMG_CTRL, ctrl & ~IMG_CTRL_START);
+		if (this.active) {
+			return;
+		}
+		if (this.queuedJobs.length === 0) {
+			return;
+		}
+		const job = this.queuedJobs.shift()!;
+		this.startJob({ buffer: job.buffer, dst: job.dst, cap: job.cap, src: 0, len: job.buffer.byteLength, job });
+	}
+
+	private resolveSlotEntry(dst: number): ImgDecEntry {
+		const external = this.externalSlots.get(dst);
+		if (external) {
+			return external;
+		}
+		if (dst === VRAM_PRIMARY_ATLAS_BASE) {
+			return this.memory.getAssetEntry(ATLAS_PRIMARY_SLOT_ID);
+		}
+		if (dst === VRAM_SECONDARY_ATLAS_BASE) {
+			return this.memory.getAssetEntry(ATLAS_SECONDARY_SLOT_ID);
+		}
+		if (dst === VRAM_ENGINE_ATLAS_BASE) {
+			return this.memory.getAssetEntry(generateAtlasName(ENGINE_ATLAS_INDEX));
+		}
+		throw new Error(`[ImgDec] Unsupported destination address ${dst}.`);
+	}
+
+	private startJob(params: { buffer: Uint8Array; dst: number; cap: number; src: number; len: number; job: ImgDecJob | null }): void {
 		this.pendingResult = null;
 		this.pendingError = null;
 		this.pendingEntry = null;
 		this.status = IMG_STATUS_BUSY;
 		this.memory.writeValue(IO_IMG_STATUS, this.status);
 		this.memory.writeValue(IO_IMG_WRITTEN, 0);
+		this.memory.writeValue(IO_IMG_SRC, params.src);
+		this.memory.writeValue(IO_IMG_LEN, params.len);
+		this.memory.writeValue(IO_IMG_DST, params.dst);
+		this.memory.writeValue(IO_IMG_CAP, params.cap);
 
-		let entry: AssetEntry;
+		let entry: ImgDecEntry;
 		try {
-			entry = this.resolveSlotEntry(dst);
+			entry = this.resolveSlotEntry(params.dst);
 		} catch (error) {
-			this.finishError();
+			this.finishError(error);
 			return;
 		}
-		const effectiveCap = Math.min(cap, entry.capacity);
+		const effectiveCap = Math.min(params.cap, entry.capacity);
 		if (effectiveCap === 0) {
-			this.finishError();
+			this.finishError(new Error(`[ImgDec] Invalid destination capacity ${params.cap}.`));
 			return;
 		}
 		this.pendingCap = effectiveCap;
-		let buffer: Uint8Array;
-		try {
-			const bytes = this.memory.readBytes(src, len);
-			const copy = new Uint8Array(bytes.byteLength);
-			copy.set(bytes);
-			buffer = copy;
-		} catch (error) {
-			this.finishError();
-			return;
-		}
 		this.active = true;
 		this.decodeActive = false;
 		this.decodeRemaining = 0;
 		this.decodePlan = null;
 		this.decodePixels = null;
+		this.decodeResult = null;
 		this.decodeQueued = false;
+		this.activeJob = params.job;
 		const token = this.decodeToken + 1;
 		this.decodeToken = token;
-		const promise = this.gate.track(decodePngToRgba(buffer), { blocking: false, category: 'texture', tag: 'imgdec' });
+		const promise = this.gate.track(decodePngToRgba(params.buffer), { blocking: false, category: 'texture', tag: 'imgdec' });
 		promise.then((result) => {
 			if (token !== this.decodeToken) {
 				return;
@@ -165,25 +235,15 @@ export class ImgDecController {
 		});
 	}
 
-	private resolveSlotEntry(dst: number): AssetEntry {
-		if (dst === VRAM_PRIMARY_ATLAS_BASE) {
-			return this.memory.getAssetEntry(ATLAS_PRIMARY_SLOT_ID);
-		}
-		if (dst === VRAM_SECONDARY_ATLAS_BASE) {
-			return this.memory.getAssetEntry(ATLAS_SECONDARY_SLOT_ID);
-		}
-		if (dst === VRAM_ENGINE_ATLAS_BASE) {
-			return this.memory.getAssetEntry(generateAtlasName(ENGINE_ATLAS_INDEX));
-		}
-		throw new Error(`[ImgDec] Unsupported destination address ${dst}.`);
-	}
-
-	private beginDecode(result: DecodedImage, entry: AssetEntry): void {
+	private beginDecode(result: DecodedImage, entry: ImgDecEntry): void {
 		const cap = this.pendingCap;
 		this.pendingCap = 0;
-		const plan = this.memory.planImageSlotWrite(entry, { pixels: result.pixels, width: result.width, height: result.height, capacity: cap });
+		const plan = isAssetEntry(entry)
+			? this.memory.planImageSlotWrite(entry, { pixels: result.pixels, width: result.width, height: result.height, capacity: cap })
+			: this.memory.planImageWrite(entry, { pixels: result.pixels, width: result.width, height: result.height, capacity: cap });
 		this.decodePlan = plan;
 		this.decodePixels = result.pixels;
+		this.decodeResult = result;
 		this.decodeRemaining = plan.writeSize;
 		this.decodeActive = true;
 		this.decodeQueued = false;
@@ -216,6 +276,10 @@ export class ImgDecController {
 	}
 
 	private finishSuccess(clipped: boolean): void {
+		const job = this.activeJob;
+		const decoded = this.decodeResult;
+		this.activeJob = null;
+		this.decodeResult = null;
 		this.active = false;
 		this.decodeActive = false;
 		this.decodePlan = null;
@@ -225,9 +289,15 @@ export class ImgDecController {
 		this.status = (this.status & ~IMG_STATUS_BUSY) | IMG_STATUS_DONE | (clipped ? IMG_STATUS_CLIPPED : 0);
 		this.memory.writeValue(IO_IMG_STATUS, this.status);
 		this.raiseIrq(IRQ_IMG_DONE);
+		if (job && decoded) {
+			job.resolve({ pixels: decoded.pixels, width: decoded.width, height: decoded.height, clipped });
+		}
 	}
 
-	private finishError(): void {
+	private finishError(error?: unknown): void {
+		const job = this.activeJob;
+		this.activeJob = null;
+		this.decodeResult = null;
 		this.active = false;
 		this.decodeActive = false;
 		this.decodePlan = null;
@@ -237,5 +307,8 @@ export class ImgDecController {
 		this.status = (this.status & ~IMG_STATUS_BUSY) | IMG_STATUS_DONE | IMG_STATUS_ERROR;
 		this.memory.writeValue(IO_IMG_STATUS, this.status);
 		this.raiseIrq(IRQ_IMG_ERROR);
+		if (job) {
+			job.reject(error ?? new Error('[ImgDec] Decode failed.'));
+		}
 	}
 }

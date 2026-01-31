@@ -1,3 +1,5 @@
+import { SKYBOX_FACE_DEFAULT_SIZE } from '../rompack/rompack';
+
 export const ADDRESS_BITS = 32;
 
 export const ENGINE_ROM_BASE = 0x00000000;
@@ -45,6 +47,15 @@ export let VRAM_SECONDARY_ATLAS_BASE = 0;
 export let VRAM_PRIMARY_ATLAS_BASE = 0;
 export let VRAM_ENGINE_ATLAS_BASE = 0;
 export let VRAM_STAGING_BASE = 0;
+export let VRAM_SKYBOX_BASE = 0;
+export let VRAM_SKYBOX_FACE_BYTES = 0;
+export let VRAM_SKYBOX_SIZE = 0;
+export let VRAM_SKYBOX_POSX_BASE = 0;
+export let VRAM_SKYBOX_NEGX_BASE = 0;
+export let VRAM_SKYBOX_POSY_BASE = 0;
+export let VRAM_SKYBOX_NEGY_BASE = 0;
+export let VRAM_SKYBOX_POSZ_BASE = 0;
+export let VRAM_SKYBOX_NEGZ_BASE = 0;
 export let VRAM_ENGINE_ATLAS_SIZE = 0;
 export let VRAM_PRIMARY_ATLAS_SIZE = 0;
 export let VRAM_SECONDARY_ATLAS_SIZE = 0;
@@ -60,6 +71,7 @@ export type MemoryMapSpecs = {
 	atlas_slot_bytes?: number;
 	engine_atlas_slot_bytes?: number;
 	staging_bytes?: number;
+	skybox_face_size?: number;
 };
 
 function resolvePositiveInteger(value: number, label: string): number {
@@ -82,6 +94,7 @@ function recomputeMemoryLayout(config: {
 	atlasSlotBytes: number;
 	engineAtlasSlotBytes: number;
 	stagingBytes: number;
+	skyboxFaceBytes: number;
 }): void {
 	RAM_SIZE = config.ramBytes;
 	STRING_HANDLE_COUNT = config.stringHandleCount;
@@ -102,7 +115,16 @@ function recomputeMemoryLayout(config: {
 	ASSET_RAM_SIZE = ASSET_DATA_END - ASSET_RAM_BASE;
 
 	VRAM_STAGING_BASE = ASSET_DATA_END;
-	VRAM_ENGINE_ATLAS_BASE = VRAM_STAGING_BASE + VRAM_STAGING_SIZE;
+	VRAM_SKYBOX_FACE_BYTES = config.skyboxFaceBytes;
+	VRAM_SKYBOX_SIZE = VRAM_SKYBOX_FACE_BYTES * 6;
+	VRAM_SKYBOX_BASE = VRAM_STAGING_BASE + VRAM_STAGING_SIZE;
+	VRAM_SKYBOX_POSX_BASE = VRAM_SKYBOX_BASE;
+	VRAM_SKYBOX_NEGX_BASE = VRAM_SKYBOX_POSX_BASE + VRAM_SKYBOX_FACE_BYTES;
+	VRAM_SKYBOX_POSY_BASE = VRAM_SKYBOX_NEGX_BASE + VRAM_SKYBOX_FACE_BYTES;
+	VRAM_SKYBOX_NEGY_BASE = VRAM_SKYBOX_POSY_BASE + VRAM_SKYBOX_FACE_BYTES;
+	VRAM_SKYBOX_POSZ_BASE = VRAM_SKYBOX_NEGY_BASE + VRAM_SKYBOX_FACE_BYTES;
+	VRAM_SKYBOX_NEGZ_BASE = VRAM_SKYBOX_POSZ_BASE + VRAM_SKYBOX_FACE_BYTES;
+	VRAM_ENGINE_ATLAS_BASE = VRAM_SKYBOX_BASE + VRAM_SKYBOX_SIZE;
 	VRAM_PRIMARY_ATLAS_BASE = VRAM_ENGINE_ATLAS_BASE + VRAM_ENGINE_ATLAS_SLOT_SIZE;
 	VRAM_SECONDARY_ATLAS_BASE = VRAM_PRIMARY_ATLAS_BASE + VRAM_ATLAS_SLOT_SIZE;
 	VRAM_ENGINE_ATLAS_SIZE = VRAM_ENGINE_ATLAS_SLOT_SIZE;
@@ -119,6 +141,8 @@ export function configureMemoryMap(specs?: MemoryMapSpecs): void {
 	const atlasSlotBytes = resolvePositiveInteger(specs?.atlas_slot_bytes ?? DEFAULT_VRAM_ATLAS_SLOT_SIZE, 'atlas_slot_bytes');
 	const engineAtlasSlotBytes = resolvePositiveInteger(specs?.engine_atlas_slot_bytes ?? atlasSlotBytes, 'engine_atlas_slot_bytes');
 	const stagingBytes = resolvePositiveInteger(specs?.staging_bytes ?? DEFAULT_VRAM_STAGING_SIZE, 'staging_bytes');
+	const skyboxFaceSize = resolvePositiveInteger(specs?.skybox_face_size ?? SKYBOX_FACE_DEFAULT_SIZE, 'skybox_face_size');
+	const skyboxFaceBytes = skyboxFaceSize * skyboxFaceSize * 4;
 	const stringHandleTableBytes = stringHandleCount * STRING_HANDLE_ENTRY_SIZE;
 	const defaultAssetDataBytes = DEFAULT_RAM_SIZE
 		- (IO_REGION_SIZE + stringHandleTableBytes + stringHeapBytes + assetTableBytes);
@@ -142,6 +166,7 @@ export function configureMemoryMap(specs?: MemoryMapSpecs): void {
 			atlasSlotBytes,
 			engineAtlasSlotBytes,
 			stagingBytes,
+			skyboxFaceBytes,
 		});
 		return;
 	}
@@ -154,6 +179,7 @@ export function configureMemoryMap(specs?: MemoryMapSpecs): void {
 		atlasSlotBytes,
 		engineAtlasSlotBytes,
 		stagingBytes,
+		skyboxFaceBytes,
 	});
 }
 
