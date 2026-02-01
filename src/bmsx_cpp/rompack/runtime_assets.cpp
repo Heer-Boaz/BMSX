@@ -94,6 +94,9 @@ static void parseMachineSpecs(const BinObject& machineObj, RomManifest& manifest
 		if (vramObj.count("skybox_face_size")) {
 			manifest.skyboxFaceSize = vramObj.at("skybox_face_size").toI32();
 		}
+		if (vramObj.count("skybox_face_bytes")) {
+			manifest.skyboxFaceBytes = vramObj.at("skybox_face_bytes").toI32();
+		}
 		if (vramObj.count("atlas_slot_bytes")) {
 			manifest.atlasSlotBytes = vramObj.at("atlas_slot_bytes").toI32();
 		}

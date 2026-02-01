@@ -157,7 +157,7 @@ void Memory::sealEngineAssets() {
 	const uint32_t mask = ASSET_PAGE_SIZE - 1u;
 	const uint32_t aligned = (m_engineAssetDataEnd + mask) & ~mask;
 	if (aligned > ASSET_DATA_ALLOC_END) {
-		throw std::runtime_error("[Memory] Engine asset data exceeds reserved RAM range.");
+		throw std::runtime_error("[Memory] Engine data exceeds reserved RAM range.");
 	}
 	m_cartAssetDataBase = aligned;
 }
@@ -465,7 +465,7 @@ std::vector<u8> Memory::dumpAssetMemory() const {
 
 void Memory::restoreAssetMemory(const u8* data, size_t size) {
 	if (size != ASSET_RAM_SIZE) {
-		throw std::runtime_error("[Memory] Asset RAM snapshot length mismatch.");
+		throw std::runtime_error("[Memory] RAM snapshot length mismatch.");
 	}
 	const size_t offset = static_cast<size_t>(ASSET_RAM_BASE - RAM_BASE);
 	std::memcpy(m_ram.data() + offset, data, size);
@@ -820,7 +820,7 @@ uint32_t Memory::allocateAssetData(uint32_t size, uint32_t alignment) {
 	uint32_t addr = alignment > 1 ? alignUp(m_assetDataCursor, alignment) : m_assetDataCursor;
 	const uint32_t end = addr + size;
 	if (end > ASSET_DATA_ALLOC_END) {
-		throw std::runtime_error("[Memory] Asset RAM exhausted.");
+		throw std::runtime_error("[Memory] RAM exhausted.");
 	}
 	m_assetDataCursor = end;
 	return addr;

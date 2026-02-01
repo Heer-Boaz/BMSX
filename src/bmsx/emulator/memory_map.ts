@@ -72,6 +72,7 @@ export type MemoryMapSpecs = {
 	engine_atlas_slot_bytes?: number;
 	staging_bytes?: number;
 	skybox_face_size?: number;
+	skybox_face_bytes?: number;
 };
 
 function resolvePositiveInteger(value: number, label: string): number {
@@ -81,6 +82,17 @@ function resolvePositiveInteger(value: number, label: string): number {
 	const resolved = Math.floor(value);
 	if (resolved <= 0) {
 		throw new Error(`[MemoryMap] ${label} must be greater than 0.`);
+	}
+	return resolved;
+}
+
+function resolveNonNegativeInteger(value: number, label: string): number {
+	if (!Number.isFinite(value)) {
+		throw new Error(`[MemoryMap] ${label} must be a finite number.`);
+	}
+	const resolved = Math.floor(value);
+	if (resolved < 0) {
+		throw new Error(`[MemoryMap] ${label} must be greater than or equal to 0.`);
 	}
 	return resolved;
 }
@@ -141,12 +153,16 @@ export function configureMemoryMap(specs?: MemoryMapSpecs): void {
 	const atlasSlotBytes = resolvePositiveInteger(specs?.atlas_slot_bytes ?? DEFAULT_VRAM_ATLAS_SLOT_SIZE, 'atlas_slot_bytes');
 	const engineAtlasSlotBytes = resolvePositiveInteger(specs?.engine_atlas_slot_bytes ?? atlasSlotBytes, 'engine_atlas_slot_bytes');
 	const stagingBytes = resolvePositiveInteger(specs?.staging_bytes ?? DEFAULT_VRAM_STAGING_SIZE, 'staging_bytes');
-	const skyboxFaceSize = resolvePositiveInteger(specs?.skybox_face_size ?? SKYBOX_FACE_DEFAULT_SIZE, 'skybox_face_size');
-	const skyboxFaceBytes = skyboxFaceSize * skyboxFaceSize * 4;
+	const skyboxFaceBytes = specs?.skybox_face_bytes !== undefined
+		? resolvePositiveInteger(specs.skybox_face_bytes, 'skybox_face_bytes')
+		: (() => {
+			const skyboxFaceSize = resolvePositiveInteger(specs?.skybox_face_size ?? SKYBOX_FACE_DEFAULT_SIZE, 'skybox_face_size');
+			return skyboxFaceSize * skyboxFaceSize * 4;
+		})();
 	const stringHandleTableBytes = stringHandleCount * STRING_HANDLE_ENTRY_SIZE;
 	const defaultAssetDataBytes = DEFAULT_RAM_SIZE
 		- (IO_REGION_SIZE + stringHandleTableBytes + stringHeapBytes + assetTableBytes);
-	const assetDataBytes = resolvePositiveInteger(specs?.asset_data_bytes ?? defaultAssetDataBytes, 'asset_data_bytes');
+	const assetDataBytes = resolveNonNegativeInteger(specs?.asset_data_bytes ?? defaultAssetDataBytes, 'asset_data_bytes');
 	const computedRamBytes = IO_REGION_SIZE
 		+ stringHandleTableBytes
 		+ stringHeapBytes

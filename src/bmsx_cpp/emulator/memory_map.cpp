@@ -88,9 +88,6 @@ void configureMemoryMap(const MemoryMapConfig& config) {
 	if (config.assetTableBytes == 0) {
 		throw std::runtime_error("[MemoryMap] asset_table_bytes must be greater than 0.");
 	}
-	if (config.assetDataBytes == 0) {
-		throw std::runtime_error("[MemoryMap] asset_data_bytes must be greater than 0.");
-	}
 	if (config.atlasSlotBytes == 0) {
 		throw std::runtime_error("[MemoryMap] atlas_slot_bytes must be greater than 0.");
 	}

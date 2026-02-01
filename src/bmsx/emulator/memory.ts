@@ -188,7 +188,7 @@ export class Memory {
 		const mask = ASSET_PAGE_SIZE - 1;
 		const aligned = (this.engineAssetDataEnd + mask) & ~mask;
 		if (aligned > ASSET_DATA_ALLOC_END) {
-			throw new Error(`[Memory] Engine asset data exceeds reserved RAM range (${aligned} > ${ASSET_DATA_ALLOC_END}).`);
+			throw new Error(`[Memory] Engine data exceeds reserved RAM range (${aligned} > ${ASSET_DATA_ALLOC_END}).`);
 		}
 		this.cartAssetDataBase = aligned;
 	}
@@ -694,7 +694,7 @@ export class Memory {
 	public restoreAssetMemory(snapshot: Uint8Array): void {
 		const offset = ASSET_RAM_BASE - RAM_BASE;
 		if (snapshot.byteLength !== ASSET_RAM_SIZE) {
-			throw new Error(`[Memory] Asset RAM snapshot length mismatch (${snapshot.byteLength} != ${ASSET_RAM_SIZE}).`);
+			throw new Error(`[Memory] RAM snapshot length mismatch (${snapshot.byteLength} != ${ASSET_RAM_SIZE}).`);
 		}
 		this.ram.set(snapshot, offset);
 		this.markAllAssetsDirty();
@@ -1062,7 +1062,7 @@ export class Memory {
 		}
 		const end = addr + size;
 		if (end > ASSET_DATA_ALLOC_END) {
-			throw new Error(`[Memory] Asset RAM exhausted: ${end} > ${ASSET_DATA_ALLOC_END}.`);
+			throw new Error(`[Memory] RAM exhausted: ${end} > ${ASSET_DATA_ALLOC_END}.`);
 		}
 		this.assetDataCursor = end;
 		const offset = addr - RAM_BASE;

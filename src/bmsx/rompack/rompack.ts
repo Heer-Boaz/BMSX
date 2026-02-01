@@ -444,6 +444,7 @@ export type MachineVramSpecs = {
 	engine_atlas_slot_bytes?: number;
 	staging_bytes?: number;
 	skybox_face_size?: number;
+	skybox_face_bytes?: number;
 };
 export type MachineAudioSpecs = {
 	max_voices?: MachineVoiceSpecs;
@@ -496,6 +497,8 @@ export type MachineMemorySpecs = {
 	atlas_slot_bytes?: number;
 	engine_atlas_slot_bytes?: number;
 	staging_bytes?: number;
+	skybox_face_size?: number;
+	skybox_face_bytes?: number;
 };
 
 export function getMachinePerfSpecs(machine: CartManifest['machine']): MachinePerfSpecs {
@@ -524,6 +527,8 @@ export function getMachineMemorySpecs(machine: CartManifest['machine']): Machine
 		atlas_slot_bytes: vram?.atlas_slot_bytes,
 		engine_atlas_slot_bytes: vram?.engine_atlas_slot_bytes,
 		staging_bytes: vram?.staging_bytes,
+		skybox_face_size: vram?.skybox_face_size,
+		skybox_face_bytes: vram?.skybox_face_bytes,
 	};
 }
 

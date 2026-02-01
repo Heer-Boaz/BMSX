@@ -8,8 +8,6 @@ import {
 	ATLAS_SECONDARY_SLOT_ID,
 	ENGINE_ATLAS_INDEX,
 	ENGINE_ATLAS_TEXTURE_KEY,
-	SKYBOX_FACE_DEFAULT_SIZE,
-	getMachinePerfSpecs,
 	generateAtlasName,
 } from '../rompack/rompack';
 import type { RawAssetSource } from '../rompack/asset_source';
@@ -36,6 +34,7 @@ import {
 	VRAM_PRIMARY_ATLAS_SIZE,
 	VRAM_SECONDARY_ATLAS_BASE,
 	VRAM_SECONDARY_ATLAS_SIZE,
+	VRAM_SKYBOX_FACE_BYTES,
 	VRAM_SKYBOX_NEGX_BASE,
 	VRAM_SKYBOX_NEGY_BASE,
 	VRAM_SKYBOX_NEGZ_BASE,
@@ -47,14 +46,18 @@ import {
 } from './memory_map';
 
 const SKYBOX_FACE_KEYS = ['posx', 'negx', 'posy', 'negy', 'posz', 'negz'] as const;
-const SKYBOX_FACE_BASES = [
-	VRAM_SKYBOX_POSX_BASE,
-	VRAM_SKYBOX_NEGX_BASE,
-	VRAM_SKYBOX_POSY_BASE,
-	VRAM_SKYBOX_NEGY_BASE,
-	VRAM_SKYBOX_POSZ_BASE,
-	VRAM_SKYBOX_NEGZ_BASE,
-] as const;
+function skyboxFaceBaseByIndex(index: number): number {
+	switch (index) {
+		case 0: return VRAM_SKYBOX_POSX_BASE;
+		case 1: return VRAM_SKYBOX_NEGX_BASE;
+		case 2: return VRAM_SKYBOX_POSY_BASE;
+		case 3: return VRAM_SKYBOX_NEGY_BASE;
+		case 4: return VRAM_SKYBOX_POSZ_BASE;
+		case 5: return VRAM_SKYBOX_NEGZ_BASE;
+		default: break;
+	}
+	throw new Error(`[BmsxVDP] Skybox face index out of range: ${index}.`);
+}
 
 const VDP_RD_SURFACE_ENGINE = 0;
 const VDP_RD_SURFACE_PRIMARY = 1;
@@ -656,14 +659,10 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		}
 		this.registerVramSlot(engineEntryRecord, ENGINE_ATLAS_TEXTURE_KEY, VDP_RD_SURFACE_ENGINE);
 
-		const skyboxFaceSize = getMachinePerfSpecs(assets.manifest.machine).skybox_face_size ?? SKYBOX_FACE_DEFAULT_SIZE;
-		if (skyboxFaceSize <= 0) {
-			throw new Error(`[BmsxVDP] Invalid skybox_face_size: ${skyboxFaceSize}.`);
-		}
-		const skyboxBytes = skyboxFaceSize * skyboxFaceSize * 4;
+		const skyboxBytes = VRAM_SKYBOX_FACE_BYTES;
 		for (let index = 0; index < SKYBOX_FACE_KEYS.length; index += 1) {
 			const entry: ImageWriteEntry = {
-				baseAddr: SKYBOX_FACE_BASES[index],
+				baseAddr: skyboxFaceBaseByIndex(index),
 				capacity: skyboxBytes,
 				baseSize: 0,
 				baseStride: 0,

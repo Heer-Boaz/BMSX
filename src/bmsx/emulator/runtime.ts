@@ -132,7 +132,7 @@ import {
 	VDP_RD_STATUS_READY,
 } from './io';
 import { HandlerCache } from './handler_cache';
-import { Memory, ASSET_PAGE_SIZE, ASSET_TABLE_ENTRY_SIZE, ASSET_TABLE_HEADER_SIZE, type AssetEntry } from './memory';
+import { Memory, ASSET_TABLE_ENTRY_SIZE, ASSET_TABLE_HEADER_SIZE, type AssetEntry } from './memory';
 import { DmaController } from './devices/dma_controller';
 import { ImgDecController } from './devices/imgdec_controller';
 import {
@@ -141,6 +141,7 @@ import {
 	CART_ROM_MAGIC_ADDR,
 	CART_ROM_SIZE,
 	ENGINE_ROM_BASE,
+	DEFAULT_RAM_SIZE,
 	DEFAULT_STRING_HANDLE_COUNT,
 	DEFAULT_STRING_HEAP_SIZE,
 	DEFAULT_VRAM_ATLAS_SLOT_SIZE,
@@ -914,51 +915,6 @@ export class Runtime {
 		return { bytes, entryCount, stringBytes };
 	}
 
-	private static alignUp(value: number, alignment: number): number {
-		const mod = value % alignment;
-		if (mod === 0) {
-			return value;
-		}
-		return value + (alignment - mod);
-	}
-
-	private static computeAssetDataBytes(engineSource: RawAssetSource, assetSource: RawAssetSource, assetDataBaseOffset: number): number {
-		let cursor = assetDataBaseOffset;
-		const engineAudioEntries = engineSource.list('audio').slice();
-		engineAudioEntries.sort((left, right) => left.resid.localeCompare(right.resid));
-		const engineAudioIds = new Set<string>();
-		for (let index = 0; index < engineAudioEntries.length; index += 1) {
-			const entry = engineAudioEntries[index];
-			engineAudioIds.add(entry.resid);
-			if (typeof entry.start !== 'number' || typeof entry.end !== 'number') {
-				throw new Error(`[Runtime] Audio asset '${entry.resid}' missing ROM buffer offsets for memory sizing.`);
-			}
-			if (entry.end <= entry.start) {
-				throw new Error(`[Runtime] Audio asset '${entry.resid}' has invalid ROM buffer offsets for memory sizing.`);
-			}
-			cursor = this.alignUp(cursor, 2);
-			cursor += (entry.end - entry.start);
-		}
-		cursor = this.alignUp(cursor, ASSET_PAGE_SIZE);
-		const audioEntries = assetSource.list('audio').slice();
-		audioEntries.sort((left, right) => left.resid.localeCompare(right.resid));
-		for (let index = 0; index < audioEntries.length; index += 1) {
-			const entry = audioEntries[index];
-			if (engineAudioIds.has(entry.resid)) {
-				continue;
-			}
-			if (typeof entry.start !== 'number' || typeof entry.end !== 'number') {
-				throw new Error(`[Runtime] Audio asset '${entry.resid}' missing ROM buffer offsets for memory sizing.`);
-			}
-			if (entry.end <= entry.start) {
-				throw new Error(`[Runtime] Audio asset '${entry.resid}' has invalid ROM buffer offsets for memory sizing.`);
-			}
-			cursor = this.alignUp(cursor, 2);
-			cursor += (entry.end - entry.start);
-		}
-		return cursor - assetDataBaseOffset;
-	}
-
 	private static resolveMemoryMapSpecs(params: {
 		manifest: CartridgeIndex['manifest'];
 		engineManifest: CartridgeIndex['manifest'];
@@ -970,7 +926,6 @@ export class Runtime {
 		const engineMachine = params.engineManifest.machine;
 		const memorySpecs = getMachineMemorySpecs(machineConfig);
 		const engineMemorySpecs = getMachineMemorySpecs(engineMachine);
-		const perfSpecs = getMachinePerfSpecs(machineConfig);
 		const stringHandleCount = memorySpecs.string_handle_count ?? DEFAULT_STRING_HANDLE_COUNT;
 		const stringHeapBytes = memorySpecs.string_heap_bytes ?? DEFAULT_STRING_HEAP_SIZE;
 		const atlasSlotBytes = memorySpecs.atlas_slot_bytes ?? DEFAULT_VRAM_ATLAS_SLOT_SIZE;
@@ -988,18 +943,21 @@ export class Runtime {
 		if (memorySpecs.asset_table_bytes !== undefined && assetTableBytes !== requiredAssetTableBytes) {
 			throw new Error(`[Runtime] machine.specs.ram.asset_table_bytes (${assetTableBytes}) must match required size ${requiredAssetTableBytes}.`);
 		}
-		const assetDataBaseOffset = IO_REGION_SIZE
-			+ (stringHandleCount * STRING_HANDLE_ENTRY_SIZE)
-			+ stringHeapBytes
-			+ assetTableBytes;
-		const skyboxFaceSize = perfSpecs.skybox_face_size ?? SKYBOX_FACE_DEFAULT_SIZE;
-		if (skyboxFaceSize <= 0) {
+		const skyboxFaceBytes = memorySpecs.skybox_face_bytes;
+		if (skyboxFaceBytes !== undefined) {
+			if (!Number.isSafeInteger(skyboxFaceBytes) || skyboxFaceBytes <= 0) {
+				throw new Error(`[Runtime] machine.specs.vram.skybox_face_bytes must be a positive integer (got ${skyboxFaceBytes}).`);
+			}
+		}
+		const skyboxFaceSize = memorySpecs.skybox_face_size ?? SKYBOX_FACE_DEFAULT_SIZE;
+		if (skyboxFaceBytes === undefined && skyboxFaceSize <= 0) {
 			throw new Error(`[Runtime] Invalid skybox_face_size: ${skyboxFaceSize}.`);
 		}
-		const requiredAssetDataBytes = this.computeAssetDataBytes(params.engineSource, params.assetSource, assetDataBaseOffset);
-		const assetDataBytes = memorySpecs.asset_data_bytes ?? requiredAssetDataBytes;
-		if (memorySpecs.asset_data_bytes !== undefined && assetDataBytes !== requiredAssetDataBytes) {
-			throw new Error(`[Runtime] machine.specs.ram.asset_data_bytes (${assetDataBytes}) must match required size ${requiredAssetDataBytes}.`);
+		const defaultAssetDataBytes = DEFAULT_RAM_SIZE
+			- (IO_REGION_SIZE + (stringHandleCount * STRING_HANDLE_ENTRY_SIZE) + stringHeapBytes + assetTableBytes);
+		const assetDataBytes = memorySpecs.asset_data_bytes ?? defaultAssetDataBytes;
+		if (!Number.isSafeInteger(assetDataBytes) || assetDataBytes < 0) {
+			throw new Error(`[Runtime] machine.specs.ram.asset_data_bytes must be a non-negative integer (got ${assetDataBytes}).`);
 		}
 		const computedRamBytes = IO_REGION_SIZE
 			+ (stringHandleCount * STRING_HANDLE_ENTRY_SIZE)
@@ -1027,7 +985,8 @@ export class Runtime {
 			atlas_slot_bytes: atlasSlotBytes,
 			engine_atlas_slot_bytes: engineAtlasSlotBytes,
 			staging_bytes: stagingBytes,
-			skybox_face_size: skyboxFaceSize,
+			skybox_face_size: skyboxFaceBytes === undefined ? skyboxFaceSize : memorySpecs.skybox_face_size,
+			skybox_face_bytes: skyboxFaceBytes,
 		};
 	}
 
@@ -2059,18 +2018,25 @@ export class Runtime {
 		if (!source) {
 			throw new Error('[Runtime] Asset source not configured.');
 		}
-		const entries = source.list('audio');
-		for (let index = 0; index < entries.length; index += 1) {
-			const entry = entries[index];
+		const audioKeys = Object.keys($.assets.audio);
+		for (let index = 0; index < audioKeys.length; index += 1) {
+			const id = audioKeys[index]!;
+			const entry = source.getEntry(id);
+			if (!entry) {
+				throw new Error(`[Runtime] Audio asset '${id}' not found in asset source.`);
+			}
+			if (entry.type !== 'audio') {
+				throw new Error(`[Runtime] Asset '${id}' is not audio.`);
+			}
 			if (typeof entry.start !== 'number' || typeof entry.end !== 'number') {
-				throw new Error(`[Runtime] Audio asset '${entry.resid}' missing ROM buffer offsets.`);
+				throw new Error(`[Runtime] Audio asset '${id}' missing ROM buffer offsets.`);
 			}
-			const audioAsset = $.assets.audio[entry.resid];
+			const audioAsset = $.assets.audio[id];
 			if (!audioAsset || !audioAsset.audiometa) {
-				throw new Error(`[Runtime] Audio asset '${entry.resid}' missing metadata.`);
+				throw new Error(`[Runtime] Audio asset '${id}' missing metadata.`);
 			}
-			resources[entry.resid] = {
-				resid: entry.resid,
+			resources[id] = {
+				resid: id,
 				type: 'audio',
 				start: entry.start,
 				end: entry.end,

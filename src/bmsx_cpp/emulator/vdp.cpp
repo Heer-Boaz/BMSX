@@ -21,16 +21,16 @@ constexpr uint32_t VDP_RD_BUDGET_BYTES = 4096u;
 constexpr uint32_t VDP_RD_MAX_CHUNK_PIXELS = 256u;
 constexpr size_t VRAM_GARBAGE_CHUNK_BYTES = 64u * 1024u;
 uint32_t skyboxFaceBaseByIndex(size_t index) {
-\tswitch (index) {
-\t\tcase 0: return VRAM_SKYBOX_POSX_BASE;
-\t\tcase 1: return VRAM_SKYBOX_NEGX_BASE;
-\t\tcase 2: return VRAM_SKYBOX_POSY_BASE;
-\t\tcase 3: return VRAM_SKYBOX_NEGY_BASE;
-\t\tcase 4: return VRAM_SKYBOX_POSZ_BASE;
-\t\tcase 5: return VRAM_SKYBOX_NEGZ_BASE;
-\t\tdefault: break;
-\t}
-\tthrow BMSX_RUNTIME_ERROR(\"[VDP] Skybox face index out of range.\");
+	switch (index) {
+		case 0: return VRAM_SKYBOX_POSX_BASE;
+		case 1: return VRAM_SKYBOX_NEGX_BASE;
+		case 2: return VRAM_SKYBOX_POSY_BASE;
+		case 3: return VRAM_SKYBOX_NEGY_BASE;
+		case 4: return VRAM_SKYBOX_POSZ_BASE;
+		case 5: return VRAM_SKYBOX_NEGZ_BASE;
+		default: break;
+	}
+	throw BMSX_RUNTIME_ERROR("[VDP] Skybox face index out of range.");
 }
 
 bool isAtlasName(const std::string& name) {
@@ -390,15 +390,7 @@ void VDP::registerImageAssets(RuntimeAssets& assets, bool keepDecodedData) {
 	}
 	registerVramSlot(engineEntry, ENGINE_ATLAS_TEXTURE_KEY, VDP_RD_SURFACE_ENGINE);
 
-	const i32 skyboxFaceSize = assets.manifest.skyboxFaceSize > 0
-		? assets.manifest.skyboxFaceSize
-		: SKYBOX_FACE_DEFAULT_SIZE;
-	if (skyboxFaceSize <= 0) {
-		throw BMSX_RUNTIME_ERROR("[VDP] Invalid skybox_face_size: " + std::to_string(skyboxFaceSize));
-	}
-	const uint32_t skyboxBytes = static_cast<uint32_t>(skyboxFaceSize)
-		* static_cast<uint32_t>(skyboxFaceSize)
-		* 4u;
+	const uint32_t skyboxBytes = VRAM_SKYBOX_FACE_BYTES;
 	for (size_t index = 0; index < m_skyboxSlots.size(); ++index) {
 		auto& slot = m_skyboxSlots[index];
 		slot.baseAddr = skyboxFaceBaseByIndex(index);

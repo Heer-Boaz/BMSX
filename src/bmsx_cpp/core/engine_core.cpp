@@ -34,21 +34,6 @@ inline f64 to_ms(std::chrono::steady_clock::duration duration) {
 
 constexpr uint32_t ASSET_PAGE_SIZE = 1u << 12;
 
-uint32_t alignUp(uint32_t value, uint32_t alignment) {
-	const uint32_t mask = alignment - 1u;
-	return (value + mask) & ~mask;
-}
-
-std::vector<std::string> collectAudioIds(const RuntimeAssets& assets) {
-	std::vector<std::string> ids;
-	ids.reserve(assets.audio.size());
-	for (const auto& [id, audioAsset] : assets.audio) {
-		ids.push_back(id);
-	}
-	std::sort(ids.begin(), ids.end());
-	return ids;
-}
-
 void collectAssetIds(const RuntimeAssets& engineAssets, const RuntimeAssets& assets, std::unordered_set<std::string>& ids) {
 	const std::string engineAtlasId = generateAtlasName(ENGINE_ATLAS_INDEX);
 	const ImgAsset* engineAtlas = engineAssets.getImg(engineAtlasId);
@@ -95,60 +80,6 @@ uint32_t computeAssetTableBytes(const RuntimeAssets& engineAssets, const Runtime
 	return static_cast<uint32_t>(bytes);
 }
 
-uint32_t computeAssetDataBytes(const RuntimeAssets& engineAssets, const RuntimeAssets& assets, uint32_t assetDataBaseOffset) {
-	uint32_t cursor = assetDataBaseOffset;
-	const auto engineAudioIds = collectAudioIds(engineAssets);
-	std::unordered_set<std::string> engineAudioSet(engineAudioIds.begin(), engineAudioIds.end());
-	for (const auto& id : engineAudioIds) {
-		const AudioAsset* audio = engineAssets.getAudio(id);
-		if (!audio) {
-			throw std::runtime_error("[EngineCore] Audio asset '" + id + "' missing from assets.");
-		}
-		uint32_t size = 0;
-		if (!audio->bytes.empty()) {
-			size = static_cast<uint32_t>(audio->bytes.size());
-		} else if (audio->rom.start && audio->rom.end) {
-			const i32 start = *audio->rom.start;
-			const i32 end = *audio->rom.end;
-			if (end <= start) {
-				throw std::runtime_error("[EngineCore] Audio asset '" + id + "' has invalid ROM range.");
-			}
-			size = static_cast<uint32_t>(end - start);
-		} else {
-			throw std::runtime_error("[EngineCore] Audio asset '" + id + "' missing ROM buffer offsets.");
-		}
-		cursor = alignUp(cursor, 2u);
-		cursor += size;
-	}
-	cursor = alignUp(cursor, ASSET_PAGE_SIZE);
-	const auto audioIds = collectAudioIds(assets);
-	for (const auto& id : audioIds) {
-		if (engineAudioSet.find(id) != engineAudioSet.end()) {
-			continue;
-		}
-		const AudioAsset* audio = assets.getAudio(id);
-		if (!audio) {
-			throw std::runtime_error("[EngineCore] Audio asset '" + id + "' missing from assets.");
-		}
-		uint32_t size = 0;
-		if (!audio->bytes.empty()) {
-			size = static_cast<uint32_t>(audio->bytes.size());
-		} else if (audio->rom.start && audio->rom.end) {
-			const i32 start = *audio->rom.start;
-			const i32 end = *audio->rom.end;
-			if (end <= start) {
-				throw std::runtime_error("[EngineCore] Audio asset '" + id + "' has invalid ROM range.");
-			}
-			size = static_cast<uint32_t>(end - start);
-		} else {
-			throw std::runtime_error("[EngineCore] Audio asset '" + id + "' missing ROM buffer offsets.");
-		}
-		cursor = alignUp(cursor, 2u);
-		cursor += size;
-	}
-	return cursor - assetDataBaseOffset;
-}
-
 MemoryMapConfig resolveMemoryMapConfig(const RomManifest& manifest, const RomManifest& engineManifest, const RuntimeAssets& assets, const RuntimeAssets& engineAssets) {
 	MemoryMapConfig config;
 	if (manifest.stringHandleCount) {
@@ -188,13 +119,21 @@ MemoryMapConfig resolveMemoryMapConfig(const RomManifest& manifest, const RomMan
 		}
 		config.stagingBytes = static_cast<uint32_t>(value);
 	}
-	const i32 faceSize = manifest.skyboxFaceSize > 0
-		? manifest.skyboxFaceSize
-		: SKYBOX_FACE_DEFAULT_SIZE;
-	if (faceSize <= 0) {
-		throw std::runtime_error("[EngineCore] skybox_face_size must be greater than 0.");
+	if (manifest.skyboxFaceBytes) {
+		const i32 value = *manifest.skyboxFaceBytes;
+		if (value <= 0) {
+			throw std::runtime_error("[EngineCore] skybox_face_bytes must be greater than 0.");
+		}
+		config.skyboxFaceBytes = static_cast<uint32_t>(value);
+	} else {
+		const i32 faceSize = manifest.skyboxFaceSize > 0
+			? manifest.skyboxFaceSize
+			: SKYBOX_FACE_DEFAULT_SIZE;
+		if (faceSize <= 0) {
+			throw std::runtime_error("[EngineCore] skybox_face_size must be greater than 0.");
+		}
+		config.skyboxFaceBytes = static_cast<uint32_t>(faceSize) * static_cast<uint32_t>(faceSize) * 4u;
 	}
-	config.skyboxFaceBytes = static_cast<uint32_t>(faceSize) * static_cast<uint32_t>(faceSize) * 4u;
 
 	const uint32_t requiredAssetTableBytes = computeAssetTableBytes(engineAssets, assets);
 	if (manifest.assetTableBytes) {
@@ -212,20 +151,16 @@ MemoryMapConfig resolveMemoryMapConfig(const RomManifest& manifest, const RomMan
 	}
 
 	const uint32_t stringHandleTableBytes = config.stringHandleCount * STRING_HANDLE_ENTRY_SIZE;
-	const uint32_t assetDataBaseOffset = IO_REGION_SIZE + stringHandleTableBytes + config.stringHeapBytes + config.assetTableBytes;
-	const uint32_t requiredAssetDataBytes = computeAssetDataBytes(engineAssets, assets, assetDataBaseOffset);
 	if (manifest.assetDataBytes) {
 		const i32 value = *manifest.assetDataBytes;
-		if (value <= 0) {
-			throw std::runtime_error("[EngineCore] asset_data_bytes must be greater than 0.");
+		if (value < 0) {
+			throw std::runtime_error("[EngineCore] asset_data_bytes must be greater than or equal to 0.");
 		}
-		const uint32_t resolved = static_cast<uint32_t>(value);
-		if (resolved != requiredAssetDataBytes) {
-			throw std::runtime_error("[EngineCore] asset_data_bytes must match required size.");
-		}
-		config.assetDataBytes = resolved;
+		config.assetDataBytes = static_cast<uint32_t>(value);
 	} else {
-		config.assetDataBytes = requiredAssetDataBytes;
+		const uint32_t defaultAssetDataBytes = DEFAULT_RAM_SIZE
+			- (IO_REGION_SIZE + stringHandleTableBytes + config.stringHeapBytes + config.assetTableBytes);
+		config.assetDataBytes = defaultAssetDataBytes;
 	}
 
 	const uint64_t computedRamBytes = static_cast<uint64_t>(IO_REGION_SIZE)
