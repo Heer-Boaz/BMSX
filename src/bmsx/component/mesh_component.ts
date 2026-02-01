@@ -8,6 +8,7 @@ import { Material } from '../render/3d/material';
 import { insavegame, excludepropfromsavegame, onsave, onload } from '../serializer/serializationhooks';
 import { clamp } from '../utils/clamp';
 import { MeshRenderSubmission } from '../render/shared/render_types';
+import { tokenKeyFromId } from '../util/asset_tokens';
 
 type MeshInstance = { mesh: RenderMesh; nodeIndex?: number; meshIndex?: number; skinIndex?: number; morphWeights?: number[]; worldMatrix?: Float32Array };
 
@@ -139,7 +140,7 @@ export class MeshComponent extends Component {
 		if (!rom) {
 			throw new Error(`[MeshComponent] Assets not loaded when constructing '${this.id}'.`);
 		}
-		const model = rom[this.modelId];
+		const model = rom[tokenKeyFromId(this.modelId)];
 		if (!model) {
 			throw new Error(`[MeshComponent] Model '${this.modelId}' not found for '${this.id}'.`);
 		}
@@ -1193,7 +1194,7 @@ export class MeshComponent extends Component {
 		if (!rom) {
 			throw new Error(`[MeshComponent] Assets unavailable during onLoad for '${this.id}'.`);
 		}
-		const loaded = rom[this.modelId] ?? this.model;
+		const loaded = rom[tokenKeyFromId(this.modelId)] ?? this.model;
 		if (!loaded) {
 			throw new Error(`[MeshComponent] Model '${this.modelId}' missing during onLoad for '${this.id}'.`);
 		}

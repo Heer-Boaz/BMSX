@@ -26,6 +26,7 @@ import {
 	VRAM_STAGING_SIZE,
 } from './memory_map';
 import { IO_SLOT_COUNT, IO_VDP_RD_DATA, IO_VDP_RD_STATUS } from './io';
+import { hashAssetId, tokenKey } from '../util/asset_tokens';
 
 export type AssetType = 'image' | 'audio';
 
@@ -101,14 +102,6 @@ const ASSET_TYPE_AUDIO = 2;
 
 export const ASSET_FLAG_VIEW = 1 << 1;
 
-const HASH_SELF_TEST_VECTORS = [
-	{ id: '', lo: 0x84222325, hi: 0xcbf29ce4 },
-	{ id: 'a', lo: 0x8601ec8c, hi: 0xaf63dc4c },
-	{ id: './Foo\\Bar', lo: 0xef2def0d, hi: 0x571d17d6 },
-];
-
-let hashSelfTested = false;
-
 export class Memory {
 	private readonly engineRom: Uint8Array;
 	private readonly cartRom: Uint8Array | null;
@@ -130,7 +123,6 @@ export class Memory {
 	private engineAssetEntryCount = 0;
 	private engineAssetDataEnd = ASSET_DATA_BASE;
 	private cartAssetDataBase = ASSET_DATA_BASE;
-	private readonly assetIdEncoder = new TextEncoder();
 
 	public constructor(init: MemoryInit) {
 		this.engineRom = init.engineRom;
@@ -178,8 +170,8 @@ export class Memory {
 		if (this.assetIndexById.has(id)) {
 			return true;
 		}
-		const { lo, hi } = this.hashAssetId(id);
-		return this.assetIndexByToken.has(this.tokenKey(lo, hi));
+		const { lo, hi } = hashAssetId(id);
+		return this.assetIndexByToken.has(tokenKey(lo, hi));
 	}
 
 	public sealEngineAssets(): void {
@@ -203,7 +195,7 @@ export class Memory {
 		for (let index = 0; index < this.assetEntries.length; index += 1) {
 			const entry = this.assetEntries[index];
 			this.assetIndexById.set(entry.id, index);
-			this.assetIndexByToken.set(this.tokenKey(entry.idTokenLo, entry.idTokenHi), index);
+			this.assetIndexByToken.set(tokenKey(entry.idTokenLo, entry.idTokenHi), index);
 		}
 		for (let index = 0; index < this.assetEntries.length; index += 1) {
 			const entry = this.assetEntries[index];
@@ -466,8 +458,8 @@ export class Memory {
 		if (direct !== undefined) {
 			return direct;
 		}
-		const { lo, hi } = this.hashAssetId(id);
-		const key = this.tokenKey(lo, hi);
+		const { lo, hi } = hashAssetId(id);
+		const key = tokenKey(lo, hi);
 		const handle = this.assetIndexByToken.get(key);
 		if (handle === undefined) {
 			throw new Error(`[Memory] Asset '${id}' not registered in memory.`);
@@ -829,20 +821,20 @@ export class Memory {
 					entry.audioDataSize = this.ramView.getUint32(entryOffset + 52, true);
 					break;
 			}
-			const expectedToken = this.hashAssetId(id);
+			const expectedToken = hashAssetId(id);
 			if (expectedToken.lo !== tokenLo || expectedToken.hi !== tokenHi) {
 				throw new Error(`[Memory] Asset token mismatch for '${id}'.`);
 			}
-			const tokenKey = this.tokenKey(tokenLo, tokenHi);
+			const tokenKeyValue = tokenKey(tokenLo, tokenHi);
 			if (this.assetIndexById.has(id)) {
 				throw new Error(`[Memory] Duplicate asset id '${id}' in asset table.`);
 			}
-			if (this.assetIndexByToken.has(tokenKey)) {
+			if (this.assetIndexByToken.has(tokenKeyValue)) {
 				throw new Error(`[Memory] Duplicate asset token for '${id}' in asset table.`);
 			}
 			entries[index] = entry;
 			this.assetIndexById.set(id, index);
-			this.assetIndexByToken.set(tokenKey, index);
+			this.assetIndexByToken.set(tokenKeyValue, index);
 		}
 		this.assetEntries = entries;
 
@@ -1073,83 +1065,14 @@ export class Memory {
 		return { ...entry };
 	}
 
-	private canonicalizeAssetId(id: string): string {
-		const normalized = id.replace(/\\/g, '/');
-		const start = normalized.startsWith('./') ? 2 : 0;
-		let prevSlash = false;
-		let out = '';
-		for (let i = start; i < normalized.length; i += 1) {
-			let ch = normalized[i];
-			if (ch === '/') {
-				if (prevSlash) {
-					continue;
-				}
-				prevSlash = true;
-				out += '/';
-				continue;
-			}
-			prevSlash = false;
-			const code = ch.charCodeAt(0);
-			if (code >= 65 && code <= 90) {
-				ch = String.fromCharCode(code + 32);
-			}
-			out += ch;
-		}
-		return out;
-	}
-
-	private ensureHashSelfTest(): void {
-		if (hashSelfTested) {
-			return;
-		}
-		for (let index = 0; index < HASH_SELF_TEST_VECTORS.length; index += 1) {
-			const vector = HASH_SELF_TEST_VECTORS[index];
-			const actual = this.hashAssetIdInternal(vector.id);
-			if (actual.lo !== vector.lo || actual.hi !== vector.hi) {
-				throw new Error(
-					`[Memory] Asset hash self-test failed for '${vector.id}' (${this.tokenKey(actual.lo, actual.hi)}).`
-				);
-			}
-		}
-		hashSelfTested = true;
-	}
-
-	private hashAssetId(id: string): { lo: number; hi: number } {
-		this.ensureHashSelfTest();
-		return this.hashAssetIdInternal(id);
-	}
-
-	private hashAssetIdInternal(id: string): { lo: number; hi: number } {
-		const canonical = this.canonicalizeAssetId(id);
-		const bytes = this.assetIdEncoder.encode(canonical);
-		let lo = 0x84222325;
-		let hi = 0xcbf29ce4;
-		for (let i = 0; i < bytes.length; i += 1) {
-			lo = (lo ^ bytes[i]) >>> 0;
-			const loMul = lo * 0x1b3;
-			const loLow = loMul >>> 0;
-			const carry = (loMul / 0x100000000) >>> 0;
-			const hiMul = hi * 0x1b3 + carry;
-			let hiLow = hiMul >>> 0;
-			hiLow = (hiLow + ((lo << 8) >>> 0)) >>> 0;
-			lo = loLow;
-			hi = hiLow;
-		}
-		return { lo, hi };
-	}
-
-	private tokenKey(lo: number, hi: number): string {
-		return `${hi.toString(16).padStart(8, '0')}${lo.toString(16).padStart(8, '0')}`;
-	}
-
 	private registerAssetEntry(entry: AssetEntry): number {
 		if (this.assetIndexById.has(entry.id)) {
 			throw new Error(`[Memory] Asset entry '${entry.id}' is already registered.`);
 		}
-		const { lo, hi } = this.hashAssetId(entry.id);
+		const { lo, hi } = hashAssetId(entry.id);
 		entry.idTokenLo = lo;
 		entry.idTokenHi = hi;
-		const key = this.tokenKey(lo, hi);
+		const key = tokenKey(lo, hi);
 		const existing = this.assetIndexByToken.get(key);
 		if (existing !== undefined) {
 			throw new Error(`[Memory] Asset token collision for '${entry.id}'.`);

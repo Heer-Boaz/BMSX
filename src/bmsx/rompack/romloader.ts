@@ -19,6 +19,7 @@ import { CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES } from './rompack';
 import { inflate } from 'pako';
 import { AssetSourceStack, type RawAssetSource } from './asset_source';
 import { decodeRomToc } from './rom_toc';
+import { tokenKeyFromAsset } from '../util/asset_tokens';
 
 export type RomLoadOptions = {
 	loadAudioFromBuffer?: (buffer: Uint8Array) => Promise<any>;
@@ -439,20 +440,21 @@ async function load(source: RawAssetSource, res: RomAsset, assets: RuntimeAssets
 		return;
 	}
 	const baseAsset = res;
+	const assetKey = tokenKeyFromAsset(baseAsset);
 	switch (res.type) {
 		case 'image':
 		case 'atlas': {
 			const imgAsset = {
 				...baseAsset,
 			} as RomImgAsset;
-			assets.img[res.resid] = imgAsset;
+			assets.img[assetKey] = imgAsset;
 			break;
 		}
 		case 'audio':
 			if (opts && opts.loadAudioFromBuffer) {
-				assets.audio[res.resid] = await opts.loadAudioFromBuffer(source.getBytes(baseAsset));
+				assets.audio[assetKey] = await opts.loadAudioFromBuffer(source.getBytes(baseAsset));
 			} else {
-				assets.audio[res.resid] = baseAsset;
+				assets.audio[assetKey] = baseAsset;
 			}
 			break;
 		case 'model': {
@@ -460,25 +462,25 @@ async function load(source: RawAssetSource, res: RomAsset, assets: RuntimeAssets
 				? source.getBytes({ ...baseAsset, start: baseAsset.texture_start, end: baseAsset.texture_end })
 				: undefined;
 			if (opts && opts.loadModelFromBuffer) {
-				assets.model[res.resid] = await opts.loadModelFromBuffer(source.getBytes(baseAsset), texBuf);
+				assets.model[assetKey] = await opts.loadModelFromBuffer(source.getBytes(baseAsset), texBuf);
 			} else {
-				assets.model[res.resid] = await loadModelFromBuffer(res.resid, source.getBytes(baseAsset), texBuf);
+				assets.model[assetKey] = await loadModelFromBuffer(res.resid, source.getBytes(baseAsset), texBuf);
 			}
 			break;
 		}
 		case 'data':
 			if (opts && opts.loadDataFromBuffer) {
 				const data = await opts.loadDataFromBuffer(source.getBytes(baseAsset));
-				assets.data[res.resid] = data;
+				assets.data[assetKey] = data;
 			} else {
 				const data = await loadDataFromBuffer(source.getBytes(baseAsset));
-				assets.data[res.resid] = data;
+				assets.data[assetKey] = data;
 			}
 			break;
 		case 'aem': {
 			const u8 = source.getBytes(baseAsset);
 			const audioevents = decodeBinary(u8);
-			assets.audioevents[res.resid] = audioevents;
+			assets.audioevents[assetKey] = audioevents;
 			break;
 		}
 		case 'lua':
@@ -545,22 +547,23 @@ export function applyRuntimeAssetLayer(target: RuntimeAssets, layer: RuntimeAsse
 }
 
 function removeRuntimeAsset(target: RuntimeAssets, asset: RomAsset): void {
+	const assetKey = tokenKeyFromAsset(asset);
 	switch (asset.type) {
 		case 'atlas':
 		case 'image':
-			delete target.img[asset.resid];
+			delete target.img[assetKey];
 			return;
 		case 'audio':
-			delete target.audio[asset.resid];
+			delete target.audio[assetKey];
 			return;
 		case 'model':
-			delete target.model[asset.resid];
+			delete target.model[assetKey];
 			return;
 		case 'data':
-			delete target.data[asset.resid];
+			delete target.data[assetKey];
 			return;
 		case 'aem':
-			delete target.audioevents[asset.resid];
+			delete target.audioevents[assetKey];
 			return;
 		case 'lua':
 		case 'code':

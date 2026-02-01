@@ -3,6 +3,7 @@ import { taskGate } from '../core/taskgate';
 import * as SkyboxPipeline from '../render/3d/skybox_pipeline';
 import type { SkyboxImageIds } from '../render/shared/render_types';
 import type { RomAsset, RuntimeAssets } from '../rompack/rompack';
+import { tokenKeyFromAsset, tokenKeyFromId } from '../util/asset_tokens';
 import {
 	ATLAS_PRIMARY_SLOT_ID,
 	ATLAS_SECONDARY_SLOT_ID,
@@ -529,7 +530,7 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 			if (typeof entry.start !== 'number' || typeof entry.end !== 'number') {
 				throw new Error(`[BmsxVDP] Skybox image '${assetId}' missing ROM buffer offsets.`);
 			}
-			const asset = assets.img[assetId];
+			const asset = assets.img[tokenKeyFromId(assetId)];
 			if (!asset || !asset.imgmeta) {
 				throw new Error(`[BmsxVDP] Skybox image '${assetId}' missing metadata.`);
 			}
@@ -608,7 +609,7 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 			if (entry.type !== 'image' && entry.type !== 'atlas') {
 				continue;
 			}
-			const imgAsset = assets.img[entry.resid];
+			const imgAsset = assets.img[tokenKeyFromAsset(entry)];
 			if (!imgAsset) {
 				throw new Error(`[BmsxVDP] Image asset '${entry.resid}' not found.`);
 			}
@@ -636,7 +637,7 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 			engineEntryRecord = this.memory.getAssetEntry(engineAtlasName);
 		}
 
-		const engineAtlasAsset = assets.img[engineAtlasName];
+		const engineAtlasAsset = assets.img[tokenKeyFromId(engineAtlasName)];
 		if (!engineAtlasAsset) {
 			throw new Error(`[BmsxVDP] Engine atlas '${engineAtlasName}' not found.`);
 		}
@@ -705,7 +706,7 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 
 		for (let index = 0; index < viewEntries.length; index += 1) {
 			const entry = viewEntries[index];
-			const imgAsset = assets.img[entry.resid];
+			const imgAsset = assets.img[tokenKeyFromAsset(entry)];
 			const meta = imgAsset.imgmeta;
 			if (!meta.atlassed) {
 				throw new Error(`[BmsxVDP] Image asset '${entry.resid}' expected to be atlassed.`);
@@ -729,7 +730,7 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 				if (!atlasEntry) {
 					throw new Error(`[BmsxVDP] Atlas ${atlasId} not registered for '${entry.resid}'.`);
 				}
-				const atlasAsset = assets.img[atlasEntry.resid];
+				const atlasAsset = assets.img[tokenKeyFromAsset(atlasEntry)];
 				atlasWidth = atlasAsset.imgmeta.width;
 				atlasHeight = atlasAsset.imgmeta.height;
 				const mappedSlot = this.atlasSlotById.get(atlasId);

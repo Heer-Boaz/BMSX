@@ -4,6 +4,7 @@ import type { Stats } from 'fs';
 import { CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES } from '../../src/bmsx/rompack/rompack';
 import type { asset_type, AudioMeta, CanonicalizationType, GLTFMesh, ImgMeta, Polygon, RomAsset, RomManifest } from '../../src/bmsx/rompack/rompack';
 import { encodeRomToc } from '../../src/bmsx/rompack/rom_toc';
+import { hashAssetId } from '../../src/bmsx/util/asset_tokens';
 import type { LuaChunk } from '../../src/bmsx/lua/lua_ast';
 import type { Value } from '../../src/bmsx/emulator/cpu';
 import type { StringPool } from '../../src/bmsx/emulator/string_pool';
@@ -1270,6 +1271,12 @@ export async function buildResourceList(respaths: string[], rom_name?: string, o
 	const tsdataout = new Array<string>();
 	const tsmodelout = new Array<string>();
 	const tsluaout = new Array<string>();
+	const tsimgtokens = new Array<string>();
+	const tssndtokens = new Array<string>();
+	const tsdatatokens = new Array<string>();
+	const tsmodeltokens = new Array<string>();
+	const tsluatokens = new Array<string>();
+	const tokenHex = (value: number) => value.toString(16).padStart(8, '0');
 
 	const metalist: Resource[] = await getResMetaList(respaths, rom_name, options);
 
@@ -1278,29 +1285,41 @@ export async function buildResourceList(respaths: string[], rom_name?: string, o
 	tsdataout.push(BOILERPLATE_RESOURCE_ID_DATA);
 	tsmodelout.push(BOILERPLATE_RESOURCE_ID_MODEL);
 	tsluaout.push(BOILERPLATE_RESOURCE_ID_LUA);
+	tsimgtokens.push('export const BitmapTokens = {');
+	tssndtokens.push('export const AudioTokens = {');
+	tsdatatokens.push('export const DataTokens = {');
+	tsmodeltokens.push('export const ModelTokens = {');
+	tsluatokens.push('export const LuaTokens = {');
 
 	for (let i = 0; i < metalist.length; i++) {
 		const current = metalist[i];
 
 		const type = current.type;
 		const name = current.name;
+		const token = hashAssetId(name);
+		const tokenEntry = `\t${name}: { lo: 0x${tokenHex(token.lo)}, hi: 0x${tokenHex(token.hi)} },`;
 		const enum_member_to_add = `\t${name} = '${name}', `;
 		switch (type) {
 			case 'image':
 			case 'atlas': // Atlas is also an image and thus is added to the image enum
 				tsimgout.push(`${enum_member_to_add} `);
+				tsimgtokens.push(tokenEntry);
 				break;
 			case 'audio':
 				tssndout.push(`${enum_member_to_add} `);
+				tssndtokens.push(tokenEntry);
 				break;
 			case 'data':
 				tsdataout.push(`${enum_member_to_add} `);
+				tsdatatokens.push(tokenEntry);
 				break;
 			case 'lua':
 				tsluaout.push(`${enum_member_to_add} `);
+				tsluatokens.push(tokenEntry);
 				break;
 			case 'model':
 				tsmodelout.push(`${enum_member_to_add} `);
+				tsmodeltokens.push(tokenEntry);
 				break;
 			case 'romlabel':
 				// Ignore this part
@@ -1316,8 +1335,15 @@ export async function buildResourceList(respaths: string[], rom_name?: string, o
 	tsdataout.push("}\n");
 	tsmodelout.push("}\n");
 	tsluaout.push("}\n");
+	tsimgtokens.push("} as const;\n");
+	tssndtokens.push("} as const;\n");
+	tsdatatokens.push("} as const;\n");
+	tsmodeltokens.push("} as const;\n");
+	tsluatokens.push("} as const;\n");
 
-	const total_output: string = tsimgout.concat(tssndout, tsdataout, tsmodelout, tsluaout).join('\n');
+	const total_output: string = tsimgout
+		.concat(tsimgtokens, tssndout, tssndtokens, tsdataout, tsdatatokens, tsmodelout, tsmodeltokens, tsluaout, tsluatokens)
+		.join('\n');
 
 	const targetPath = respaths[0].replace('/res', '/resourceids.ts');
 	await writeFile(targetPath, total_output);

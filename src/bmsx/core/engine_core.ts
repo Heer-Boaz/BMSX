@@ -13,6 +13,7 @@ import type { SkyboxImageIds } from "../render/shared/render_types";
 import { HZ_SCALE as PLATFORM_HZ_SCALE, setMicrotaskQueue } from '../platform';
 import type { GameViewHost, Platform, PlatformExitEvent, SubscriptionHandle } from '../platform';
 import { asset_id, getMachineMaxVoices, Identifiable, Identifier, Registerable, RuntimeAssets, type vec3, type vec2, GAME_FPS } from "../rompack/rompack";
+import { tokenKeyFromId } from '../util/asset_tokens';
 import { AssetSourceStack, type RawAssetSource } from '../rompack/asset_source';
 import { buildRuntimeAssetLayer, normalizeCartridgeBlob, parseCartridgeIndex, type RuntimeAssetLayer } from '../rompack/romloader';
 import type { LuaSourceRegistry } from '../emulator/lua_sources';
@@ -398,8 +399,12 @@ export class EngineCore {
 			resolve: (key: asset_id) => {
 				const data = assets.data;
 				const segments = key.split('.');
-				let cursor: unknown = data;
-				for (let i = 0; i < segments.length; i++) {
+				if (segments.length === 0) {
+					return undefined;
+				}
+				const rootKey = tokenKeyFromId(segments[0]);
+				let cursor: unknown = (data as Record<string, unknown>)[rootKey];
+				for (let i = 1; i < segments.length; i++) {
 					const segment = segments[i];
 					if (segment.length === 0) {
 						cursor = undefined;

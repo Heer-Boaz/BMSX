@@ -1,9 +1,10 @@
 import type { asset_type, RomAsset } from './rompack';
+import { hashAssetId } from '../util/asset_tokens';
 
 export const ROM_TOC_MAGIC = 0x434f5442; // 'BTOC' little-endian
-export const ROM_TOC_VERSION = 1;
+export const ROM_TOC_VERSION = 2;
 export const ROM_TOC_HEADER_SIZE = 48;
-export const ROM_TOC_ENTRY_SIZE = 72;
+export const ROM_TOC_ENTRY_SIZE = 80;
 export const ROM_TOC_INVALID_U32 = 0xffffffff;
 
 export type RomTocPayload = {
@@ -106,6 +107,9 @@ export function encodeRomToc(params: { assets: RomAsset[]; projectRootPath?: str
 		const base = i * ROM_TOC_ENTRY_SIZE;
 		const typeId = assetTypeToId(asset.type);
 		const opId = asset.op === 'delete' ? 1 : 0;
+		const token = (typeof asset.id_token_lo === 'number' && typeof asset.id_token_hi === 'number')
+			? { lo: asset.id_token_lo, hi: asset.id_token_hi }
+			: hashAssetId(asset.resid);
 		const residRef = intern(asset.resid);
 		const sourceRef = intern(asset.source_path);
 		const normalizedRef = intern(asset.normalized_source_path);
@@ -114,24 +118,26 @@ export function encodeRomToc(params: { assets: RomAsset[]; projectRootPath?: str
 		const updateLo = updateTimestamp >>> 0;
 		const updateHi = Math.floor(updateTimestamp / 0x100000000) >>> 0;
 
-		writeU32(entryView, base + 0, typeId);
-		writeU32(entryView, base + 4, opId);
-		writeU32(entryView, base + 8, residRef.offset);
-		writeU32(entryView, base + 12, residRef.length);
-		writeU32(entryView, base + 16, sourceRef.offset);
-		writeU32(entryView, base + 20, sourceRef.length);
-		writeU32(entryView, base + 24, normalizedRef.offset);
-		writeU32(entryView, base + 28, normalizedRef.length);
-		writeU32(entryView, base + 32, asU32(asset.start));
-		writeU32(entryView, base + 36, asU32(asset.end));
-		writeU32(entryView, base + 40, asU32(asset.compiled_start));
-		writeU32(entryView, base + 44, asU32(asset.compiled_end));
-		writeU32(entryView, base + 48, asU32(asset.metabuffer_start));
-		writeU32(entryView, base + 52, asU32(asset.metabuffer_end));
-		writeU32(entryView, base + 56, asU32(asset.texture_start));
-		writeU32(entryView, base + 60, asU32(asset.texture_end));
-		writeU32(entryView, base + 64, updateLo);
-		writeU32(entryView, base + 68, updateHi);
+		writeU32(entryView, base + 0, token.lo);
+		writeU32(entryView, base + 4, token.hi);
+		writeU32(entryView, base + 8, typeId);
+		writeU32(entryView, base + 12, opId);
+		writeU32(entryView, base + 16, residRef.offset);
+		writeU32(entryView, base + 20, residRef.length);
+		writeU32(entryView, base + 24, sourceRef.offset);
+		writeU32(entryView, base + 28, sourceRef.length);
+		writeU32(entryView, base + 32, normalizedRef.offset);
+		writeU32(entryView, base + 36, normalizedRef.length);
+		writeU32(entryView, base + 40, asU32(asset.start));
+		writeU32(entryView, base + 44, asU32(asset.end));
+		writeU32(entryView, base + 48, asU32(asset.compiled_start));
+		writeU32(entryView, base + 52, asU32(asset.compiled_end));
+		writeU32(entryView, base + 56, asU32(asset.metabuffer_start));
+		writeU32(entryView, base + 60, asU32(asset.metabuffer_end));
+		writeU32(entryView, base + 64, asU32(asset.texture_start));
+		writeU32(entryView, base + 68, asU32(asset.texture_end));
+		writeU32(entryView, base + 72, updateLo);
+		writeU32(entryView, base + 76, updateHi);
 	}
 
 	const stringTable = concatArrays(stringChunks, stringTableLength);
@@ -199,25 +205,27 @@ export function decodeRomToc(buffer: Uint8Array): RomTocPayload {
 	const assets: RomAsset[] = [];
 	for (let i = 0; i < entryCount; i += 1) {
 		const base = entryOffset + i * entrySize;
-		const typeId = view.getUint32(base + 0, true);
-		const opId = view.getUint32(base + 4, true);
-		const residOffset = view.getUint32(base + 8, true);
-		const residLength = view.getUint32(base + 12, true);
-		const sourceOffset = view.getUint32(base + 16, true);
-		const sourceLength = view.getUint32(base + 20, true);
-		const normalizedOffset = view.getUint32(base + 24, true);
-		const normalizedLength = view.getUint32(base + 28, true);
+		const tokenLo = view.getUint32(base + 0, true);
+		const tokenHi = view.getUint32(base + 4, true);
+		const typeId = view.getUint32(base + 8, true);
+		const opId = view.getUint32(base + 12, true);
+		const residOffset = view.getUint32(base + 16, true);
+		const residLength = view.getUint32(base + 20, true);
+		const sourceOffset = view.getUint32(base + 24, true);
+		const sourceLength = view.getUint32(base + 28, true);
+		const normalizedOffset = view.getUint32(base + 32, true);
+		const normalizedLength = view.getUint32(base + 36, true);
 
-		const start = view.getUint32(base + 32, true);
-		const end = view.getUint32(base + 36, true);
-		const compiledStart = view.getUint32(base + 40, true);
-		const compiledEnd = view.getUint32(base + 44, true);
-		const metaStart = view.getUint32(base + 48, true);
-		const metaEnd = view.getUint32(base + 52, true);
-		const textureStart = view.getUint32(base + 56, true);
-		const textureEnd = view.getUint32(base + 60, true);
-		const updateLo = view.getUint32(base + 64, true);
-		const updateHi = view.getUint32(base + 68, true);
+		const start = view.getUint32(base + 40, true);
+		const end = view.getUint32(base + 44, true);
+		const compiledStart = view.getUint32(base + 48, true);
+		const compiledEnd = view.getUint32(base + 52, true);
+		const metaStart = view.getUint32(base + 56, true);
+		const metaEnd = view.getUint32(base + 60, true);
+		const textureStart = view.getUint32(base + 64, true);
+		const textureEnd = view.getUint32(base + 68, true);
+		const updateLo = view.getUint32(base + 72, true);
+		const updateHi = view.getUint32(base + 76, true);
 
 		const resid = decodeString(stringTable, residOffset, residLength, decoder);
 		if (!resid) {
@@ -226,6 +234,8 @@ export function decodeRomToc(buffer: Uint8Array): RomTocPayload {
 		const asset: RomAsset = {
 			resid,
 			type: assetTypeFromId(typeId),
+			id_token_lo: tokenLo,
+			id_token_hi: tokenHi,
 		};
 		if (opId === 1) {
 			asset.op = 'delete';

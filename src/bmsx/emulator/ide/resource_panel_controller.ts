@@ -248,9 +248,10 @@ export class ResourcePanelController {
 		// Augment with atlas entries (moved from editor)
 		const augmented = descriptors.slice();
 		const assets = $.assets;
-		const img = assets.img;
-		const atlasKeys = Object.keys(img);
-		for (const key of atlasKeys) {
+		const imgAssets = Object.values(assets.img);
+		for (const asset of imgAssets) {
+			if (asset.type !== 'atlas') continue;
+			const key = asset.resid;
 			if (augmented.some(entry => entry.asset_id === key)) continue;
 			augmented.push({ path: `atlas/${key}`, type: 'atlas', asset_id: key });
 		}

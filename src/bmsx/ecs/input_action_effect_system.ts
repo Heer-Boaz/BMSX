@@ -17,6 +17,7 @@ import {
 import { isInputActionEffectProgram, type InputActionEffectProgram } from '../action_effects/input_action_effect_dsl';
 import { filter_iterable } from '../utils/filter_iterable';
 import { deep_clone } from '../utils/deep_clone';
+import { tokenKeyFromAsset, tokenKeyFromId } from '../util/asset_tokens';
 
 type IntentEdge = 'press' | 'hold' | 'release';
 
@@ -25,12 +26,13 @@ let assetProgramsValidated = false;
 function validatePrimaryAssetsOnBoot(): void {
 	if (assetProgramsValidated) return;
 	const data = $.assets.data;
-	const entries = Object.keys(data);
+	const entries = $.asset_source.list('data');
 	for (let i = 0; i < entries.length; i++) {
-		const key = entries[i]!;
+		const entry = entries[i]!;
+		const key = tokenKeyFromAsset(entry);
 		const value = (data as Record<string, unknown>)[key];
 		if (!isInputActionEffectProgram(value)) continue;
-		validateProgramEffects(value, key);
+		validateProgramEffects(value, entry.resid);
 	}
 	assetProgramsValidated = true;
 }
@@ -356,7 +358,7 @@ export class InputActionEffectSystem extends ECSystem {
 			throw new Error(`[InputActionEffectSystem] Program '${programId}' is marked as missing.`);
 		}
 
-		const data = $.assets.data[programId as keyof typeof $.assets.data];
+		const data = $.assets.data[tokenKeyFromId(programId) as keyof typeof $.assets.data];
 		if (!isInputActionEffectProgram(data)) {
 			this.missingProgramIds.add(programId);
 			throw new Error(`[InputActionEffectSystem] Program '${programId}' not found or invalid.`);

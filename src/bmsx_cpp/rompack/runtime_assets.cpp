@@ -121,9 +121,9 @@ static void parseMachineSpecs(const BinObject& machineObj, RomManifest& manifest
 }
 
 static constexpr u32 ROM_TOC_MAGIC = 0x434f5442; // 'BTOC' little-endian
-static constexpr u32 ROM_TOC_VERSION = 1;
+static constexpr u32 ROM_TOC_VERSION = 2;
 static constexpr u32 ROM_TOC_HEADER_SIZE = 48;
-static constexpr u32 ROM_TOC_ENTRY_SIZE = 72;
+static constexpr u32 ROM_TOC_ENTRY_SIZE = 80;
 static constexpr u32 ROM_TOC_INVALID_U32 = 0xffffffff;
 
 static std::string assetTypeFromId(u32 id) {
@@ -140,6 +140,53 @@ static std::string assetTypeFromId(u32 id) {
 		default:
 			throw BMSX_RUNTIME_ERROR("Unknown asset type id: " + std::to_string(id));
 	}
+}
+
+static constexpr u64 ASSET_TOKEN_OFFSET_BASIS = 0xcbf29ce484222325ull;
+static constexpr u64 ASSET_TOKEN_PRIME = 0x100000001b3ull;
+
+static std::string canonicalizeAssetId(const std::string& id) {
+	std::string out;
+	out.reserve(id.size());
+	size_t index = 0;
+	if (id.size() >= 2 && id[0] == '.' && (id[1] == '/' || id[1] == '\\')) {
+		index = 2;
+	}
+	bool prevSlash = false;
+	for (; index < id.size(); ++index) {
+		unsigned char c = static_cast<unsigned char>(id[index]);
+		if (c == '\\') {
+			c = '/';
+		}
+		if (c == '/') {
+			if (prevSlash) {
+				continue;
+			}
+			prevSlash = true;
+			out.push_back('/');
+			continue;
+		}
+		prevSlash = false;
+		if (c >= 'A' && c <= 'Z') {
+			c = static_cast<unsigned char>(c - 'A' + 'a');
+		}
+		out.push_back(static_cast<char>(c));
+	}
+	return out;
+}
+
+static AssetToken hashAssetToken(const std::string& id) {
+	const std::string canonical = canonicalizeAssetId(id);
+	AssetToken hash = ASSET_TOKEN_OFFSET_BASIS;
+	for (unsigned char c : canonical) {
+		hash ^= static_cast<AssetToken>(c);
+		hash *= ASSET_TOKEN_PRIME;
+	}
+	return hash;
+}
+
+static AssetToken makeAssetToken(u32 lo, u32 hi) {
+	return (static_cast<AssetToken>(hi) << 32) | static_cast<AssetToken>(lo);
 }
 
 static std::optional<i32> optionalI32FromU32(u32 value) {
@@ -849,7 +896,8 @@ static ModelAsset parseModelAsset(const std::string& assetId, const BinValue& va
  * ============================================================================ */
 
 ImgAsset* RuntimeAssets::getImg(const AssetId& id) {
-	auto it = img.find(id);
+	const AssetToken token = hashAssetToken(id);
+	auto it = img.find(token);
 	if (it != img.end()) {
 		return &it->second;
 	}
@@ -860,7 +908,8 @@ ImgAsset* RuntimeAssets::getImg(const AssetId& id) {
 }
 
 const ImgAsset* RuntimeAssets::getImg(const AssetId& id) const {
-	auto it = img.find(id);
+	const AssetToken token = hashAssetToken(id);
+	auto it = img.find(token);
 	if (it != img.end()) {
 		return &it->second;
 	}
@@ -868,7 +917,8 @@ const ImgAsset* RuntimeAssets::getImg(const AssetId& id) const {
 }
 
 AudioAsset* RuntimeAssets::getAudio(const AssetId& id) {
-	auto it = audio.find(id);
+	const AssetToken token = hashAssetToken(id);
+	auto it = audio.find(token);
 	if (it != audio.end()) {
 		return &it->second;
 	}
@@ -879,7 +929,8 @@ AudioAsset* RuntimeAssets::getAudio(const AssetId& id) {
 }
 
 const AudioAsset* RuntimeAssets::getAudio(const AssetId& id) const {
-	auto it = audio.find(id);
+	const AssetToken token = hashAssetToken(id);
+	auto it = audio.find(token);
 	if (it != audio.end()) {
 		return &it->second;
 	}
@@ -887,7 +938,8 @@ const AudioAsset* RuntimeAssets::getAudio(const AssetId& id) const {
 }
 
 ModelAsset* RuntimeAssets::getModel(const AssetId& id) {
-	auto it = model.find(id);
+	const AssetToken token = hashAssetToken(id);
+	auto it = model.find(token);
 	if (it != model.end()) {
 		return &it->second;
 	}
@@ -898,7 +950,8 @@ ModelAsset* RuntimeAssets::getModel(const AssetId& id) {
 }
 
 const ModelAsset* RuntimeAssets::getModel(const AssetId& id) const {
-	auto it = model.find(id);
+	const AssetToken token = hashAssetToken(id);
+	auto it = model.find(token);
 	if (it != model.end()) {
 		return &it->second;
 	}
@@ -906,19 +959,41 @@ const ModelAsset* RuntimeAssets::getModel(const AssetId& id) const {
 }
 
 const BinValue* RuntimeAssets::getData(const AssetId& id) const {
-	auto it = data.find(id);
+	const AssetToken token = hashAssetToken(id);
+	auto it = data.find(token);
 	if (it != data.end()) {
-		return &it->second;
+		return &it->second.value;
 	}
 	return fallback ? fallback->getData(id) : nullptr;
 }
 
 const BinValue* RuntimeAssets::getAudioEvent(const AssetId& id) const {
-	auto it = audioevents.find(id);
+	const AssetToken token = hashAssetToken(id);
+	auto it = audioevents.find(token);
 	if (it != audioevents.end()) {
-		return &it->second;
+		return &it->second.value;
 	}
 	return fallback ? fallback->getAudioEvent(id) : nullptr;
+}
+
+bool RuntimeAssets::hasImg(const AssetId& id) const {
+	return getImg(id) != nullptr;
+}
+
+bool RuntimeAssets::hasAudio(const AssetId& id) const {
+	return getAudio(id) != nullptr;
+}
+
+bool RuntimeAssets::hasModel(const AssetId& id) const {
+	return getModel(id) != nullptr;
+}
+
+bool RuntimeAssets::hasData(const AssetId& id) const {
+	return getData(id) != nullptr;
+}
+
+bool RuntimeAssets::hasAudioEvent(const AssetId& id) const {
+	return getAudioEvent(id) != nullptr;
 }
 
 void RuntimeAssets::clear() {
@@ -1277,28 +1352,35 @@ bool loadAssetsFromRom(const u8* buffer,
 
 	for (u32 index = 0; index < entryCount; index += 1) {
 		const u8* entry = tocData + entryOffset + (index * entrySize);
-		const u32 typeId = readLE32(entry + 0);
-		const u32 opId = readLE32(entry + 4);
-		const u32 residOffset = readLE32(entry + 8);
-		const u32 residLength = readLE32(entry + 12);
-		const u32 sourceOffset = readLE32(entry + 16);
-		const u32 sourceLength = readLE32(entry + 20);
-		const u32 normalizedOffset = readLE32(entry + 24);
-		const u32 normalizedLength = readLE32(entry + 28);
-		const u32 bufStartRaw = readLE32(entry + 32);
-		const u32 bufEndRaw = readLE32(entry + 36);
-		const u32 compiledStartRaw = readLE32(entry + 40);
-		const u32 compiledEndRaw = readLE32(entry + 44);
-		const u32 metaBufStartRaw = readLE32(entry + 48);
-		const u32 metaBufEndRaw = readLE32(entry + 52);
-		const u32 textureBufStartRaw = readLE32(entry + 56);
-		const u32 textureBufEndRaw = readLE32(entry + 60);
-		const u32 updateLo = readLE32(entry + 64);
-		const u32 updateHi = readLE32(entry + 68);
+		const u32 tokenLo = readLE32(entry + 0);
+		const u32 tokenHi = readLE32(entry + 4);
+		const AssetToken assetToken = makeAssetToken(tokenLo, tokenHi);
+		const u32 typeId = readLE32(entry + 8);
+		const u32 opId = readLE32(entry + 12);
+		const u32 residOffset = readLE32(entry + 16);
+		const u32 residLength = readLE32(entry + 20);
+		const u32 sourceOffset = readLE32(entry + 24);
+		const u32 sourceLength = readLE32(entry + 28);
+		const u32 normalizedOffset = readLE32(entry + 32);
+		const u32 normalizedLength = readLE32(entry + 36);
+		const u32 bufStartRaw = readLE32(entry + 40);
+		const u32 bufEndRaw = readLE32(entry + 44);
+		const u32 compiledStartRaw = readLE32(entry + 48);
+		const u32 compiledEndRaw = readLE32(entry + 52);
+		const u32 metaBufStartRaw = readLE32(entry + 56);
+		const u32 metaBufEndRaw = readLE32(entry + 60);
+		const u32 textureBufStartRaw = readLE32(entry + 64);
+		const u32 textureBufEndRaw = readLE32(entry + 68);
+		const u32 updateLo = readLE32(entry + 72);
+		const u32 updateHi = readLE32(entry + 76);
 
 		const std::string assetId = readStringFromTable(stringTable, stringTableSize, residOffset, residLength);
 		if (assetId.empty()) {
 			throw BMSX_RUNTIME_ERROR("ROM TOC entry missing asset id.");
+		}
+		const AssetToken expectedToken = hashAssetToken(assetId);
+		if (expectedToken != assetToken) {
+			throw BMSX_RUNTIME_ERROR("ROM TOC entry token mismatch for asset '" + assetId + "'.");
 		}
 		const std::string assetType = assetTypeFromId(typeId);
 
@@ -1433,7 +1515,7 @@ bool loadAssetsFromRom(const u8* buffer,
 			}
 
 			// Store atlas assets as regular images (matches TypeScript runtime)
-			assets.img[assetId] = std::move(imgAsset);
+			assets.img[assetToken] = std::move(imgAsset);
 		}
 		else if (assetType == "audio") {
 			AudioAsset audioAsset;
@@ -1471,7 +1553,7 @@ bool loadAssetsFromRom(const u8* buffer,
 			const size_t totalSamples = wav.dataSize / bytesPerSample;
 			audioAsset.frames = totalSamples / static_cast<size_t>(wav.channels);
 
-			assets.audio[assetId] = std::move(audioAsset);
+			assets.audio[assetToken] = std::move(audioAsset);
 		}
 		else if (assetType == "model") {
 			if (bufStart < 0 || bufEnd <= bufStart) {
@@ -1487,14 +1569,18 @@ bool loadAssetsFromRom(const u8* buffer,
 				textureSize = static_cast<size_t>(textureBufEnd - textureBufStart);
 			}
 			ModelAsset modelAsset = parseModelAsset(assetId, modelValue, textureData, textureSize);
-			assets.model[assetId] = std::move(modelAsset);
+			assets.model[assetToken] = std::move(modelAsset);
 		}
 		else if (assetType == "aem") {
 			if (bufStart < 0 || bufEnd <= bufStart) {
 				throw BMSX_RUNTIME_ERROR("Audio event asset missing payload: " + assetId);
 			}
 			BinValue audioEvents = decodeBinary(romData + bufStart, bufEnd - bufStart);
-			assets.audioevents[assetId] = std::move(audioEvents);
+			AudioEventAsset audioEventAsset;
+			audioEventAsset.id = assetId;
+			audioEventAsset.rom = romInfo;
+			audioEventAsset.value = std::move(audioEvents);
+			assets.audioevents[assetToken] = std::move(audioEventAsset);
 		}
 		else if (assetType == "data") {
 			std::cerr << "[BMSX] Data asset found: id='" << assetId << "' bufStart=" << bufStart << " bufEnd=" << bufEnd << std::endl;
@@ -1527,7 +1613,11 @@ bool loadAssetsFromRom(const u8* buffer,
 					}
 				} else {
 					BinValue dataValue = decodeBinary(romData + bufStart, bufEnd - bufStart);
-					assets.data[assetId] = std::move(dataValue);
+					DataAsset dataAsset;
+					dataAsset.id = assetId;
+					dataAsset.rom = romInfo;
+					dataAsset.value = std::move(dataValue);
+					assets.data[assetToken] = std::move(dataAsset);
 				}
 			}
 		}

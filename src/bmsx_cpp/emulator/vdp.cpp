@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstring>
 #include <stdexcept>
+#include <unordered_set>
 
 namespace bmsx {
 namespace {
@@ -314,11 +315,16 @@ void VDP::registerImageAssets(RuntimeAssets& assets, bool keepDecodedData) {
 
 	std::vector<std::string> viewAssets;
 	viewAssets.reserve(assets.img.size());
+	std::unordered_set<std::string> primaryIds;
+	primaryIds.reserve(assets.img.size());
 
 	const std::string engineAtlasName = generateAtlasName(ENGINE_ATLAS_INDEX);
 	const ImgAsset* engineAtlasAsset = nullptr;
 
-	for (auto& [id, imgAsset] : assets.img) {
+	for (auto& entry : assets.img) {
+		auto& imgAsset = entry.second;
+		const std::string& id = imgAsset.id;
+		primaryIds.insert(id);
 		if (imgAsset.meta.atlassed) {
 			viewAssets.push_back(id);
 			continue;
@@ -335,8 +341,10 @@ void VDP::registerImageAssets(RuntimeAssets& assets, bool keepDecodedData) {
 	}
 
 	if (fallback) {
-		for (const auto& [id, imgAsset] : fallback->img) {
-			if (assets.img.find(id) != assets.img.end()) {
+		for (const auto& entry : fallback->img) {
+			const auto& imgAsset = entry.second;
+			const std::string& id = imgAsset.id;
+			if (primaryIds.find(id) != primaryIds.end()) {
 				continue;
 			}
 			if (imgAsset.meta.atlassed) {
@@ -495,7 +503,9 @@ void VDP::registerImageAssets(RuntimeAssets& assets, bool keepDecodedData) {
 	syncRegisters();
 
 	if (!keepDecodedData) {
-		for (auto& [id, imgAsset] : assets.img) {
+		for (auto& entry : assets.img) {
+			auto& imgAsset = entry.second;
+			const std::string& id = imgAsset.id;
 			if (id == engineAtlasName || isAtlasName(id)) {
 				continue;
 			}

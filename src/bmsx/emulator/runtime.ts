@@ -37,6 +37,7 @@ import {
 import { AssetSourceStack, type RawAssetSource } from '../rompack/asset_source';
 import { applyRuntimeAssetLayer, buildRuntimeAssetLayer, type RuntimeAssetLayer } from '../rompack/romloader';
 import { decodeBinary, decodeuint8arr } from '../serializer/binencoder';
+import { tokenKeyFromAsset, tokenKeyFromId } from '../util/asset_tokens';
 import { createIdentifierCanonicalizer } from '../utils/identifier_canonicalizer';
 import { parseWavInfo } from '../utils/wav';
 import { clamp01, clamp_fallback } from '../utils/clamp';
@@ -863,7 +864,7 @@ export class Runtime {
 	private static collectAssetEntryIds(engineSource: RawAssetSource, assetSource: RawAssetSource, assets: RuntimeAssets): Set<string> {
 		const ids = new Set<string>();
 		const engineAtlasId = generateAtlasName(ENGINE_ATLAS_INDEX);
-		const engineAtlas = assets.img[engineAtlasId];
+		const engineAtlas = assets.img[tokenKeyFromId(engineAtlasId)];
 		if (!engineAtlas) {
 			throw new Error(`[Runtime] Engine atlas '${engineAtlasId}' not found for memory sizing.`);
 		}
@@ -878,7 +879,7 @@ export class Runtime {
 				if (entry.type !== 'image') {
 					continue;
 				}
-				const asset = assets.img[entry.resid];
+				const asset = assets.img[tokenKeyFromAsset(entry)];
 				if (!asset) {
 					throw new Error(`[Runtime] Image asset '${entry.resid}' not found for memory sizing.`);
 				}
@@ -2176,29 +2177,27 @@ export class Runtime {
 		this.imageMetaByHandle.clear();
 		this.audioMetaByHandle.clear();
 		const engineAtlasId = generateAtlasName(ENGINE_ATLAS_INDEX);
-		const imgKeys = Object.keys(assets.img);
-		for (let index = 0; index < imgKeys.length; index += 1) {
-			const id = imgKeys[index]!;
-			const asset = assets.img[id];
-			if (asset.type === 'atlas' && id !== engineAtlasId) {
+		const imgAssets = Object.values(assets.img);
+		for (let index = 0; index < imgAssets.length; index += 1) {
+			const asset = imgAssets[index]!;
+			if (asset.type === 'atlas' && asset.resid !== engineAtlasId) {
 				continue;
 			}
 			const meta = asset.imgmeta;
 			if (!meta) {
-				throw new Error(`[Runtime] Image asset '${id}' missing metadata.`);
+				throw new Error(`[Runtime] Image asset '${asset.resid}' missing metadata.`);
 			}
-			const handle = this.resolveAssetHandle(id);
+			const handle = this.resolveAssetHandle(asset.resid);
 			this.imageMetaByHandle.set(handle, meta);
 		}
-		const audioKeys = Object.keys(assets.audio);
-		for (let index = 0; index < audioKeys.length; index += 1) {
-			const id = audioKeys[index]!;
-			const asset = assets.audio[id];
+		const audioAssets = Object.values(assets.audio);
+		for (let index = 0; index < audioAssets.length; index += 1) {
+			const asset = audioAssets[index]!;
 			const meta = asset.audiometa;
 			if (!meta) {
-				throw new Error(`[Runtime] Audio asset '${id}' missing metadata.`);
+				throw new Error(`[Runtime] Audio asset '${asset.resid}' missing metadata.`);
 			}
-			const handle = this.resolveAssetHandle(id);
+			const handle = this.resolveAssetHandle(asset.resid);
 			this.audioMetaByHandle.set(handle, meta);
 		}
 	}

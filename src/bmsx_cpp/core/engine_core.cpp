@@ -44,22 +44,24 @@ void collectAssetIds(const RuntimeAssets& engineAssets, const RuntimeAssets& ass
 	ids.insert(ATLAS_PRIMARY_SLOT_ID);
 	ids.insert(ATLAS_SECONDARY_SLOT_ID);
 
-	for (const auto& [id, imgAsset] : engineAssets.img) {
+	for (const auto& entry : engineAssets.img) {
+		const auto& imgAsset = entry.second;
 		if (imgAsset.meta.atlassed) {
-			ids.insert(id);
+			ids.insert(imgAsset.id);
 		}
 	}
-	for (const auto& [id, imgAsset] : assets.img) {
+	for (const auto& entry : assets.img) {
+		const auto& imgAsset = entry.second;
 		if (imgAsset.meta.atlassed) {
-			ids.insert(id);
+			ids.insert(imgAsset.id);
 		}
 	}
 
-	for (const auto& [id, audioAsset] : engineAssets.audio) {
-		ids.insert(id);
+	for (const auto& entry : engineAssets.audio) {
+		ids.insert(entry.second.id);
 	}
-	for (const auto& [id, audioAsset] : assets.audio) {
-		ids.insert(id);
+	for (const auto& entry : assets.audio) {
+		ids.insert(entry.second.id);
 	}
 }
 
@@ -840,23 +842,23 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 	}
 
 	// Merge cartridge assets on top of engine assets
-	for (auto& [id, asset] : cartAssets.img) {
-		m_assets.img[id] = std::move(asset);
+	for (auto& entry : cartAssets.img) {
+		m_assets.img[entry.first] = std::move(entry.second);
 	}
-	for (auto& [id, asset] : cartAssets.audio) {
-		m_assets.audio[id] = std::move(asset);
+	for (auto& entry : cartAssets.audio) {
+		m_assets.audio[entry.first] = std::move(entry.second);
 	}
-	for (auto& [id, asset] : cartAssets.model) {
-		m_assets.model[id] = std::move(asset);
+	for (auto& entry : cartAssets.model) {
+		m_assets.model[entry.first] = std::move(entry.second);
 	}
-	for (auto& [id, asset] : cartAssets.data) {
-		m_assets.data[id] = std::move(asset);
+	for (auto& entry : cartAssets.data) {
+		m_assets.data[entry.first] = std::move(entry.second);
 	}
-	for (auto& [id, asset] : cartAssets.audioevents) {
-		m_assets.audioevents[id] = std::move(asset);
+	for (auto& entry : cartAssets.audioevents) {
+		m_assets.audioevents[entry.first] = std::move(entry.second);
 	}
-	for (auto& [id, asset] : cartAssets.atlasTextures) {
-		m_assets.atlasTextures[id] = std::move(asset);
+	for (auto& entry : cartAssets.atlasTextures) {
+		m_assets.atlasTextures[entry.first] = std::move(entry.second);
 	}
 
 	// Program and manifest always come from cartridge

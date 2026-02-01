@@ -1,4 +1,5 @@
 import type { asset_id, asset_type, CartridgeIndex, CartridgeLayerId, RomAsset } from './rompack';
+import { tokenKeyFromAsset, tokenKeyFromId } from '../util/asset_tokens';
 
 export type AssetSourceLayer = {
 	id: CartridgeLayerId;
@@ -17,16 +18,16 @@ export interface RawAssetSource {
 
 export class AssetSourceStack implements RawAssetSource {
 	private readonly layers: AssetSourceLayer[];
-	private readonly idMaps: Map<asset_id, RomAsset>[];
+	private readonly idMaps: Map<string, RomAsset>[];
 	private readonly pathMaps: Map<string, RomAsset>[];
 	private readonly payloads: Partial<Record<CartridgeLayerId, Uint8Array>>;
 
 	public constructor(layers: AssetSourceLayer[]) {
 		this.layers = layers;
 		this.idMaps = layers.map(layer => {
-			const map = new Map<asset_id, RomAsset>();
+			const map = new Map<string, RomAsset>();
 			for (const asset of layer.index.assets) {
-				map.set(asset.resid, asset);
+				map.set(tokenKeyFromAsset(asset), asset);
 			}
 			return map;
 		});
@@ -51,8 +52,9 @@ export class AssetSourceStack implements RawAssetSource {
 	}
 
 	public getEntry(id: asset_id): RomAsset | null {
+		const tokenKey = tokenKeyFromId(id);
 		for (let i = 0; i < this.layers.length; i++) {
-			const asset = this.idMaps[i].get(id);
+			const asset = this.idMaps[i].get(tokenKey);
 			if (!asset) {
 				continue;
 			}
@@ -79,15 +81,15 @@ export class AssetSourceStack implements RawAssetSource {
 	}
 
 	public list(type?: asset_type): RomAsset[] {
-		const resolved = new Map<asset_id, RomAsset>();
-		const blocked = new Set<asset_id>();
+		const resolved = new Map<string, RomAsset>();
+		const blocked = new Set<string>();
 		for (let layerIndex = 0; layerIndex < this.layers.length; layerIndex++) {
 			const layer = this.layers[layerIndex];
 			for (const asset of layer.index.assets) {
 				if (type && asset.type !== type) {
 					continue;
 				}
-				const id = asset.resid;
+				const id = tokenKeyFromAsset(asset);
 				if (blocked.has(id)) {
 					continue;
 				}

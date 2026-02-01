@@ -1495,78 +1495,87 @@ void Runtime::buildAssetMemory(RuntimeAssets& assets, bool keepDecodedData, Asse
 	}
 	m_vdp.registerImageAssets(assets, keepDecodedData);
 	const RuntimeAssets* fallback = assets.fallback;
-	std::vector<std::string> audioIds;
-	audioIds.reserve(assets.audio.size());
-	for (const auto& [id, audioAsset] : assets.audio) {
-		audioIds.push_back(id);
+	std::vector<const AudioAsset*> audioAssets;
+	audioAssets.reserve(assets.audio.size());
+	std::unordered_set<std::string> audioIdSet;
+	audioIdSet.reserve(assets.audio.size());
+	for (const auto& entry : assets.audio) {
+		const auto& audioAsset = entry.second;
+		audioAssets.push_back(&audioAsset);
+		audioIdSet.insert(audioAsset.id);
 	}
-	std::sort(audioIds.begin(), audioIds.end());
-	for (const auto& id : audioIds) {
-		auto& audioAsset = assets.audio.at(id);
+	std::sort(audioAssets.begin(), audioAssets.end(), [](const AudioAsset* lhs, const AudioAsset* rhs) {
+		return lhs->id < rhs->id;
+	});
+	for (const auto* audioAsset : audioAssets) {
+		const std::string& id = audioAsset->id;
 		if (m_memory.hasAsset(id)) {
 			continue;
 		}
-		if (audioAsset.bytes.empty()) {
+		if (audioAsset->bytes.empty()) {
 			m_memory.registerAudioMeta(
 				id,
-				static_cast<uint32_t>(audioAsset.sampleRate),
-				static_cast<uint32_t>(audioAsset.channels),
-				static_cast<uint32_t>(audioAsset.bitsPerSample),
-				static_cast<uint32_t>(audioAsset.frames),
-				static_cast<uint32_t>(audioAsset.dataOffset),
-				static_cast<uint32_t>(audioAsset.dataSize)
+				static_cast<uint32_t>(audioAsset->sampleRate),
+				static_cast<uint32_t>(audioAsset->channels),
+				static_cast<uint32_t>(audioAsset->bitsPerSample),
+				static_cast<uint32_t>(audioAsset->frames),
+				static_cast<uint32_t>(audioAsset->dataOffset),
+				static_cast<uint32_t>(audioAsset->dataSize)
 			);
 			continue;
 		}
 		m_memory.registerAudioBuffer(
 			id,
-			audioAsset.bytes.data(),
-			audioAsset.bytes.size(),
-			static_cast<uint32_t>(audioAsset.sampleRate),
-			static_cast<uint32_t>(audioAsset.channels),
-			static_cast<uint32_t>(audioAsset.bitsPerSample),
-			static_cast<uint32_t>(audioAsset.frames),
-			static_cast<uint32_t>(audioAsset.dataOffset),
-			static_cast<uint32_t>(audioAsset.dataSize)
+			audioAsset->bytes.data(),
+			audioAsset->bytes.size(),
+			static_cast<uint32_t>(audioAsset->sampleRate),
+			static_cast<uint32_t>(audioAsset->channels),
+			static_cast<uint32_t>(audioAsset->bitsPerSample),
+			static_cast<uint32_t>(audioAsset->frames),
+			static_cast<uint32_t>(audioAsset->dataOffset),
+			static_cast<uint32_t>(audioAsset->dataSize)
 		);
 	}
 	if (fallback) {
-		std::vector<std::string> fallbackIds;
-		fallbackIds.reserve(fallback->audio.size());
-		for (const auto& [id, audioAsset] : fallback->audio) {
-			if (assets.audio.find(id) != assets.audio.end()) {
+		std::vector<const AudioAsset*> fallbackAssets;
+		fallbackAssets.reserve(fallback->audio.size());
+		for (const auto& entry : fallback->audio) {
+			const auto& audioAsset = entry.second;
+			if (audioIdSet.find(audioAsset.id) != audioIdSet.end()) {
 				continue;
 			}
-			fallbackIds.push_back(id);
+			fallbackAssets.push_back(&audioAsset);
 		}
-		std::sort(fallbackIds.begin(), fallbackIds.end());
-		for (const auto& id : fallbackIds) {
-			const auto& audioAsset = fallback->audio.at(id);
+		std::sort(fallbackAssets.begin(), fallbackAssets.end(), [](const AudioAsset* lhs, const AudioAsset* rhs) {
+			return lhs->id < rhs->id;
+		});
+		for (const auto* audioAsset : fallbackAssets) {
+			const std::string& id = audioAsset->id;
 			if (m_memory.hasAsset(id)) {
 				continue;
 			}
-			if (audioAsset.bytes.empty()) {
+			if (audioAsset->bytes.empty()) {
 				m_memory.registerAudioMeta(
 					id,
-					static_cast<uint32_t>(audioAsset.sampleRate),
-					static_cast<uint32_t>(audioAsset.channels),
-					static_cast<uint32_t>(audioAsset.bitsPerSample),
-					static_cast<uint32_t>(audioAsset.frames),
-					static_cast<uint32_t>(audioAsset.dataOffset),
-					static_cast<uint32_t>(audioAsset.dataSize)
+					static_cast<uint32_t>(audioAsset->sampleRate),
+					static_cast<uint32_t>(audioAsset->channels),
+					static_cast<uint32_t>(audioAsset->bitsPerSample),
+					static_cast<uint32_t>(audioAsset->frames),
+					static_cast<uint32_t>(audioAsset->dataOffset),
+					static_cast<uint32_t>(audioAsset->dataSize)
 				);
 				continue;
 			}
 			m_memory.registerAudioBuffer(
 				id,
-				audioAsset.bytes.data(),
-				audioAsset.bytes.size(),
-				static_cast<uint32_t>(audioAsset.sampleRate),
-				static_cast<uint32_t>(audioAsset.channels),
-				static_cast<uint32_t>(audioAsset.bitsPerSample),
-				static_cast<uint32_t>(audioAsset.frames),
-				static_cast<uint32_t>(audioAsset.dataOffset),
-				static_cast<uint32_t>(audioAsset.dataSize)
+				audioAsset->bytes.data(),
+				audioAsset->bytes.size(),
+				static_cast<uint32_t>(audioAsset->sampleRate),
+				static_cast<uint32_t>(audioAsset->channels),
+				static_cast<uint32_t>(audioAsset->bitsPerSample),
+				static_cast<uint32_t>(audioAsset->frames),
+				static_cast<uint32_t>(audioAsset->dataOffset),
+				static_cast<uint32_t>(audioAsset->dataSize)
 			);
 		}
 	}
@@ -4164,12 +4173,12 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 	};
 	std::unordered_set<AssetId> imgIds;
 	if (assets.fallback) {
-		for (const auto& [id, _] : assets.fallback->img) {
-			imgIds.insert(id);
+		for (const auto& entry : assets.fallback->img) {
+			imgIds.insert(entry.second.id);
 		}
 	}
-	for (const auto& [id, _] : assets.img) {
-		imgIds.insert(id);
+	for (const auto& entry : assets.img) {
+		imgIds.insert(entry.second.id);
 	}
 	auto* imgTable = m_cpu.createTable(0, static_cast<int>(imgIds.size()));
 	for (const auto& id : imgIds) {
@@ -4184,12 +4193,12 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 
 	std::unordered_set<AssetId> dataIds;
 	if (assets.fallback) {
-		for (const auto& [id, _] : assets.fallback->data) {
-			dataIds.insert(id);
+		for (const auto& entry : assets.fallback->data) {
+			dataIds.insert(entry.second.id);
 		}
 	}
-	for (const auto& [id, _] : assets.data) {
-		dataIds.insert(id);
+	for (const auto& entry : assets.data) {
+		dataIds.insert(entry.second.id);
 	}
 	auto* dataTable = m_cpu.createTable(0, static_cast<int>(dataIds.size()));
 	for (const auto& id : dataIds) {
@@ -4200,12 +4209,12 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 	assetsTable->set(key("data"), makeAssetMapNativeObject(dataTable));
 	std::unordered_set<AssetId> audioIds;
 	if (assets.fallback) {
-		for (const auto& [id, _] : assets.fallback->audio) {
-			audioIds.insert(id);
+		for (const auto& entry : assets.fallback->audio) {
+			audioIds.insert(entry.second.id);
 		}
 	}
-	for (const auto& [id, _] : assets.audio) {
-		audioIds.insert(id);
+	for (const auto& entry : assets.audio) {
+		audioIds.insert(entry.second.id);
 	}
 	auto* audioTable = m_cpu.createTable(0, static_cast<int>(audioIds.size()));
 	for (const auto& id : audioIds) {
@@ -4219,12 +4228,12 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 	assetsTable->set(key("audio"), makeAssetMapNativeObject(audioTable));
 	std::unordered_set<AssetId> audioEventIds;
 	if (assets.fallback) {
-		for (const auto& [id, _] : assets.fallback->audioevents) {
-			audioEventIds.insert(id);
+		for (const auto& entry : assets.fallback->audioevents) {
+			audioEventIds.insert(entry.second.id);
 		}
 	}
-	for (const auto& [id, _] : assets.audioevents) {
-		audioEventIds.insert(id);
+	for (const auto& entry : assets.audioevents) {
+		audioEventIds.insert(entry.second.id);
 	}
 	auto* audioEventsTable = m_cpu.createTable(0, static_cast<int>(audioEventIds.size()));
 	for (const auto& id : audioEventIds) {
@@ -4235,12 +4244,12 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 	assetsTable->set(key("audioevents"), makeAssetMapNativeObject(audioEventsTable));
 	std::unordered_set<AssetId> modelIds;
 	if (assets.fallback) {
-		for (const auto& [id, _] : assets.fallback->model) {
-			modelIds.insert(id);
+		for (const auto& entry : assets.fallback->model) {
+			modelIds.insert(entry.second.id);
 		}
 	}
-	for (const auto& [id, _] : assets.model) {
-		modelIds.insert(id);
+	for (const auto& entry : assets.model) {
+		modelIds.insert(entry.second.id);
 	}
 	auto* modelTable = m_cpu.createTable(0, static_cast<int>(modelIds.size()));
 	for (const auto& id : modelIds) {

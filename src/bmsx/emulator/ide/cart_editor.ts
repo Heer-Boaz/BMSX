@@ -15,6 +15,7 @@ import { EventEmitter, type ListenerSet } from '../../core/eventemitter';
 import { Registry } from '../../core/registry';
 import { renderCodeArea } from './render/render_code_area';
 import { clamp } from '../../utils/clamp';
+import { tokenKeyFromId } from '../../util/asset_tokens';
 import { CompletionController } from './completion_controller';
 import { drawProblemsPanel, ProblemsPanelController } from './problems_panel';
 import { computeAggregatedEditorDiagnostics, markDiagnosticsDirty, type DiagnosticContextInput, type DiagnosticProviders } from './diagnostics';
@@ -2175,9 +2176,15 @@ export function refreshResourceCatalog(): void {
 	}
 	const augmented = descriptors.slice();
 	const assets = $.assets;
-	const img = assets.img;
-	const atlasKeys = Object.keys(img).filter(key => key === '_atlas_primary' || key.startsWith('atlas'));
-	for (const key of atlasKeys) {
+	const imgAssets = Object.values(assets.img);
+	for (const asset of imgAssets) {
+		if (asset.type !== 'atlas') {
+			continue;
+		}
+		const key = asset.resid;
+		if (key !== '_atlas_primary' && !key.startsWith('atlas') && !key.startsWith('_atlas_')) {
+			continue;
+		}
 		if (augmented.some(entry => entry.asset_id === key)) {
 			continue;
 		}
@@ -3716,7 +3723,7 @@ export function buildResourceViewerState(descriptor: ResourceDescriptor): Resour
 			break;
 		}
 		case 'data': {
-			const dataEntry = data?.[descriptor.asset_id];
+			const dataEntry = data?.[tokenKeyFromId(descriptor.asset_id)];
 			if (dataEntry !== undefined) {
 				const json = safeJsonStringify(dataEntry);
 				appendResourceViewerLines(lines, ['-- Data --', '']);
@@ -3729,7 +3736,7 @@ export function buildResourceViewerState(descriptor: ResourceDescriptor): Resour
 		case 'image':
 		case 'atlas':
 		case 'romlabel': {
-			const image = img?.[descriptor.asset_id];
+			const image = img?.[tokenKeyFromId(descriptor.asset_id)];
 			if (!image) {
 				error = `Image asset '${descriptor.asset_id}' not found.`;
 				break;
@@ -3761,7 +3768,7 @@ export function buildResourceViewerState(descriptor: ResourceDescriptor): Resour
 			break;
 		}
 		case 'audio': {
-			const audio = audioTable?.[descriptor.asset_id];
+			const audio = audioTable?.[tokenKeyFromId(descriptor.asset_id)];
 			if (!audio) {
 				error = `Audio asset '${descriptor.asset_id}' not found.`;
 				break;
@@ -3778,7 +3785,7 @@ export function buildResourceViewerState(descriptor: ResourceDescriptor): Resour
 			break;
 		}
 		case 'model': {
-			const model = modelTable?.[descriptor.asset_id];
+			const model = modelTable?.[tokenKeyFromId(descriptor.asset_id)];
 			if (!model) {
 				error = `Model asset '${descriptor.asset_id}' not found.`;
 				break;
@@ -3788,7 +3795,7 @@ export function buildResourceViewerState(descriptor: ResourceDescriptor): Resour
 			break;
 		}
 		case 'aem': {
-			const events = audioevents?.[descriptor.asset_id];
+			const events = audioevents?.[tokenKeyFromId(descriptor.asset_id)];
 			if (!events) {
 				error = `Audio event map '${descriptor.asset_id}' not found.`;
 				break;

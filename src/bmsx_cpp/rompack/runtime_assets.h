@@ -41,6 +41,7 @@ using BitmapId = AssetId;
 using AudioId = AssetId;
 using ModelId = AssetId;
 using DataId = AssetId;
+using AssetToken = uint64_t;
 
 /* ============================================================================
  * ROM asset metadata (mirrors TypeScript RomAsset fields)
@@ -179,6 +180,26 @@ struct AudioAsset {
 	size_t frames = 0;
 	size_t dataOffset = 0;
 	size_t dataSize = 0;
+};
+
+/* ============================================================================
+ * Data asset
+ * ============================================================================ */
+
+struct DataAsset {
+	AssetId id;
+	RomAssetInfo rom;
+	BinValue value;
+};
+
+/* ============================================================================
+ * Audio event asset
+ * ============================================================================ */
+
+struct AudioEventAsset {
+	AssetId id;
+	RomAssetInfo rom;
+	BinValue value;
 };
 
 /* ============================================================================
@@ -338,11 +359,11 @@ public:
 	~RuntimeAssets() = default;
 
 	// Asset storage
-	std::unordered_map<AssetId, ImgAsset> img;
-	std::unordered_map<AssetId, AudioAsset> audio;
-	std::unordered_map<AssetId, ModelAsset> model;
-	std::unordered_map<AssetId, BinValue> data;  // Generic decoded data assets
-	std::unordered_map<AssetId, BinValue> audioevents;
+	std::unordered_map<AssetToken, ImgAsset> img;
+	std::unordered_map<AssetToken, AudioAsset> audio;
+	std::unordered_map<AssetToken, ModelAsset> model;
+	std::unordered_map<AssetToken, DataAsset> data;  // Generic decoded data assets
+	std::unordered_map<AssetToken, AudioEventAsset> audioevents;
 
 	// Atlas textures (atlasid -> ImgAsset with full texture data)
 	std::unordered_map<i32, ImgAsset> atlasTextures;
@@ -376,11 +397,11 @@ public:
 	void clear();
 
 	// Check if asset exists
-	bool hasImg(const AssetId& id) const { return img.find(id) != img.end() || (fallback && fallback->hasImg(id)); }
-	bool hasAudio(const AssetId& id) const { return audio.find(id) != audio.end() || (fallback && fallback->hasAudio(id)); }
-	bool hasModel(const AssetId& id) const { return model.find(id) != model.end() || (fallback && fallback->hasModel(id)); }
-	bool hasData(const AssetId& id) const { return data.find(id) != data.end() || (fallback && fallback->hasData(id)); }
-	bool hasAudioEvent(const AssetId& id) const { return audioevents.find(id) != audioevents.end() || (fallback && fallback->hasAudioEvent(id)); }
+	bool hasImg(const AssetId& id) const;
+	bool hasAudio(const AssetId& id) const;
+	bool hasModel(const AssetId& id) const;
+	bool hasData(const AssetId& id) const;
+	bool hasAudioEvent(const AssetId& id) const;
 	bool hasProgram() const { return programAsset != nullptr || (fallback && fallback->hasProgram()); }
 	bool hasAnyImg() const { return !img.empty() || (fallback && fallback->hasAnyImg()); }
 

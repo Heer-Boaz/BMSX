@@ -1,4 +1,5 @@
 import { $ } from './engine_core';
+import { tokenKeyFromId } from '../util/asset_tokens';
 
 export type GlyphMap = Record<string, string>;
 
@@ -185,7 +186,7 @@ export class BFont {
 			return glyph;
 		}
 		const imgid = this.char_to_img(char);
-		const asset = $.assets.img[imgid];
+		const asset = $.assets.img[tokenKeyFromId(imgid)];
 		if (!asset) {
 			throw new Error(`[BFont] Glyph asset "${imgid}" for character "${char}" not found.`);
 		}
