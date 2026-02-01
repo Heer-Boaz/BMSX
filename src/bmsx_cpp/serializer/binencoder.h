@@ -2,7 +2,7 @@
  * binencoder.h - Binary encoder/decoder for ROM assets
  *
  * Mirrors TypeScript binencoder.ts format.
- * Used for decoding the ROM asset list and metadata.
+ * Used for decoding ROM metadata blobs.
  */
 
 #ifndef BMSX_BINENCODER_H

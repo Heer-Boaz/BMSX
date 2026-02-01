@@ -245,11 +245,6 @@ export const API_METHOD_METADATA = {
 		],
 		returnType: 'void',
 	},
-	load_cart_assets: {
-		description: 'Loads the cart asset table, atlas textures, and audio assets for the active cart.',
-		parameters: [],
-		returnType: 'void',
-	},
 	list_lua_resources: {
 		description: 'Lists Lua resources available to the runtime (engine + cart), including read-only flags.',
 		parameters: [],

@@ -36,12 +36,6 @@ export interface RuntimeAssets {
 	manifest: RomManifest; // The manifest of the ROM pack.
 }
 
-export type RomAssetListPayload = {
-	assets: RomAsset[];
-	projectRootPath: string;
-	manifest: RomManifest;
-};
-
 export type asset_type = 'image' | 'audio' | 'data' | 'atlas' | 'romlabel' | 'model' | 'aem' | 'lua' | 'code';
 export type asset_id = string;
 

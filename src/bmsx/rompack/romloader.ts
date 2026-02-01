@@ -6,7 +6,6 @@ import type {
 	ImgMeta,
 	Polygon,
 	RomAsset,
-	RomAssetListPayload,
 	RomImgAsset,
 	RomManifest,
 	RuntimeAssets,
@@ -19,6 +18,7 @@ import { decodeBinary, toF32, typedArrayFromBytes } from '../serializer/binencod
 import { CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES } from './rompack';
 import { inflate } from 'pako';
 import { AssetSourceStack, type RawAssetSource } from './asset_source';
+import { decodeRomToc } from './rom_toc';
 
 export type RomLoadOptions = {
 	loadAudioFromBuffer?: (buffer: Uint8Array) => Promise<any>;
@@ -158,11 +158,15 @@ export function normalizeCartridgeBlob(blob: Uint8Array): { payload: Uint8Array;
 
 export async function loadAssetList(rom: Uint8Array): Promise<{ assets: RomAsset[]; projectRootPath: string; manifest: RomManifest }> {
 	const header = parseCartHeader(rom);
+	if (header.manifestLength === 0) {
+		throw new Error('ROM header is missing manifest payload.');
+	}
+	const manifestSlice = rom.subarray(header.manifestOffset, header.manifestOffset + header.manifestLength);
+	const manifest = decodeBinary(manifestSlice) as RomManifest;
 	const sliced = rom.subarray(header.tocOffset, header.tocOffset + header.tocLength);
-	const decoded = decodeBinary(sliced) as RomAssetListPayload;
+	const decoded = decodeRomToc(sliced);
 	const assetList = decoded.assets;
-	const projectRootPath = decoded.projectRootPath;
-	const manifest = decoded.manifest;
+	const projectRootPath = decoded.projectRootPath ?? '';
 
 	function flipPolygons(polys: Polygon[], flipH: boolean, flipV: boolean, imgW: number, imgH: number): Polygon[] {
 		return polys.map(poly => {

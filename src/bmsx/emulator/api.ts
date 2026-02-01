@@ -665,10 +665,6 @@ export class Api {
 		this.storage.setNamespace(namespace);
 	}
 
-	public load_cart_assets(): void {
-		this._runtime.loadCartAssets();
-	}
-
 	public list_lua_resources(): LuaTable {
 		const descriptors = listResources();
 		const table = createLuaTable();

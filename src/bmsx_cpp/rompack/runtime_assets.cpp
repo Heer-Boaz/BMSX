@@ -120,6 +120,52 @@ static void parseMachineSpecs(const BinObject& machineObj, RomManifest& manifest
 	}
 }
 
+static constexpr u32 ROM_TOC_MAGIC = 0x434f5442; // 'BTOC' little-endian
+static constexpr u32 ROM_TOC_VERSION = 1;
+static constexpr u32 ROM_TOC_HEADER_SIZE = 48;
+static constexpr u32 ROM_TOC_ENTRY_SIZE = 72;
+static constexpr u32 ROM_TOC_INVALID_U32 = 0xffffffff;
+
+static std::string assetTypeFromId(u32 id) {
+	switch (id) {
+		case 1: return "image";
+		case 2: return "audio";
+		case 3: return "data";
+		case 4: return "atlas";
+		case 5: return "romlabel";
+		case 6: return "model";
+		case 7: return "aem";
+		case 8: return "lua";
+		case 9: return "code";
+		default:
+			throw BMSX_RUNTIME_ERROR("Unknown asset type id: " + std::to_string(id));
+	}
+}
+
+static std::optional<i32> optionalI32FromU32(u32 value) {
+	if (value == ROM_TOC_INVALID_U32) {
+		return std::nullopt;
+	}
+	return static_cast<i32>(value);
+}
+
+static std::optional<i64> optionalI64FromU64(u64 value) {
+	if (value == 0) {
+		return std::nullopt;
+	}
+	return static_cast<i64>(value);
+}
+
+static std::string readStringFromTable(const u8* table, size_t tableSize, u32 offset, u32 length) {
+	if (offset == ROM_TOC_INVALID_U32 || length == 0) {
+		return {};
+	}
+	if (static_cast<size_t>(offset) + static_cast<size_t>(length) > tableSize) {
+		throw BMSX_RUNTIME_ERROR("ROM TOC string table entry out of bounds.");
+	}
+	return std::string(reinterpret_cast<const char*>(table + offset), static_cast<size_t>(length));
+}
+
 static void logMemSnapshot(const char* label) {
 	const std::string line = memSnapshotLine(label);
 	if (!line.empty()) {
@@ -920,8 +966,8 @@ static bool hasCartHeader(const u8* data, size_t size) {
 	return headerSize >= CART_ROM_HEADER_SIZE && headerSize <= size;
 }
 
-static void assertSectionRange(u32 offset, u32 length, size_t total, const char* label) {
-	if (static_cast<size_t>(offset) + static_cast<size_t>(length) > total) {
+static void assertSectionRange(size_t offset, size_t length, size_t total, const char* label) {
+	if (offset + length > total) {
 		throw BMSX_RUNTIME_ERROR(std::string("Invalid ROM ") + label + " range.");
 	}
 }
@@ -948,9 +994,9 @@ static CartRomHeader parseCartHeader(const u8* data, size_t size) {
 	header.dataOffset = readLE32(data + 24);
 	header.dataLength = readLE32(data + 28);
 
-	assertSectionRange(header.manifestOffset, header.manifestLength, size, "manifest");
-	assertSectionRange(header.tocOffset, header.tocLength, size, "toc");
-	assertSectionRange(header.dataOffset, header.dataLength, size, "data");
+	assertSectionRange(static_cast<size_t>(header.manifestOffset), static_cast<size_t>(header.manifestLength), size, "manifest");
+	assertSectionRange(static_cast<size_t>(header.tocOffset), static_cast<size_t>(header.tocLength), size, "toc");
+	assertSectionRange(static_cast<size_t>(header.dataOffset), static_cast<size_t>(header.dataLength), size, "data");
 
 	return header;
 }
@@ -1139,110 +1185,156 @@ bool loadAssetsFromRom(const u8* buffer,
 	}
 	const CartRomHeader header = parseCartHeader(romData, romSize);
 
-	// Step 3: Parse metadata to get asset list
-	const u8* metaData = romData + header.tocOffset;
-	size_t metaSize = header.tocLength;
-
-	BinValue assetListPayload = decodeBinary(metaData, metaSize);
-	if (!assetListPayload.isObject()) {
-		throw BMSX_RUNTIME_ERROR("ROM asset list is not an object");
+	// Step 3: Parse manifest from header section
+	if (header.manifestLength == 0) {
+		throw BMSX_RUNTIME_ERROR("ROM header is missing manifest payload.");
 	}
-
-	const auto& payload = assetListPayload.asObject();
-
-	// Get project root path
-	if (payload.count("projectRootPath")) {
-		assets.projectRootPath = payload.at("projectRootPath").asString();
+	BinValue manifestValue = decodeBinary(romData + header.manifestOffset, header.manifestLength);
+	if (!manifestValue.isObject()) {
+		throw BMSX_RUNTIME_ERROR("ROM manifest payload is not an object.");
 	}
+	const auto& manifestObj = manifestValue.asObject();
+	if (manifestObj.count("name")) assets.manifest.name = manifestObj.at("name").asString();
+	if (manifestObj.count("title")) assets.manifest.title = manifestObj.at("title").asString();
+	if (manifestObj.count("short_name")) assets.manifest.shortName = manifestObj.at("short_name").asString();
+	if (manifestObj.count("rom_name")) assets.manifest.romName = manifestObj.at("rom_name").asString();
+	if (manifestObj.count("version")) assets.manifest.version = manifestObj.at("version").asString();
+	if (manifestObj.count("author")) assets.manifest.author = manifestObj.at("author").asString();
+	if (manifestObj.count("description")) assets.manifest.description = manifestObj.at("description").asString();
 
-	// Get manifest
-	if (payload.count("manifest") && payload.at("manifest").isObject()) {
-		const auto& manifestObj = payload.at("manifest").asObject();
-		if (manifestObj.count("name")) assets.manifest.name = manifestObj.at("name").asString();
-		if (manifestObj.count("title")) assets.manifest.title = manifestObj.at("title").asString();
-		if (manifestObj.count("short_name")) assets.manifest.shortName = manifestObj.at("short_name").asString();
-		if (manifestObj.count("rom_name")) assets.manifest.romName = manifestObj.at("rom_name").asString();
-		if (manifestObj.count("version")) assets.manifest.version = manifestObj.at("version").asString();
-		if (manifestObj.count("author")) assets.manifest.author = manifestObj.at("author").asString();
-		if (manifestObj.count("description")) assets.manifest.description = manifestObj.at("description").asString();
-
-		if (manifestObj.count("machine") && manifestObj.at("machine").isObject()) {
-			const auto& machineObj = manifestObj.at("machine").asObject();
-			if (machineObj.count("namespace")) assets.manifest.namespaceName = machineObj.at("namespace").asString();
-			assets.manifest.canonicalization = parseCanonicalization(machineObj.at("canonicalization").asString());
-			assets.canonicalization = assets.manifest.canonicalization;
-			parseMachineSpecs(machineObj, assets.manifest);
-			if (machineObj.count("viewport") && machineObj.at("viewport").isObject()) {
-				const auto& vpObj = machineObj.at("viewport").asObject();
-				if (vpObj.count("width")) assets.manifest.viewportWidth = vpObj.at("width").toI32();
-				if (vpObj.count("height")) assets.manifest.viewportHeight = vpObj.at("height").toI32();
-			}
-		}
-
-		if (manifestObj.count("lua") && manifestObj.at("lua").isObject()) {
-			const auto& luaObj = manifestObj.at("lua").asObject();
-			if (luaObj.count("entry_path")) assets.manifest.entryPoint = luaObj.at("entry_path").asString();
+	if (manifestObj.count("machine") && manifestObj.at("machine").isObject()) {
+		const auto& machineObj = manifestObj.at("machine").asObject();
+		if (machineObj.count("namespace")) assets.manifest.namespaceName = machineObj.at("namespace").asString();
+		assets.manifest.canonicalization = parseCanonicalization(machineObj.at("canonicalization").asString());
+		assets.canonicalization = assets.manifest.canonicalization;
+		parseMachineSpecs(machineObj, assets.manifest);
+		if (machineObj.count("viewport") && machineObj.at("viewport").isObject()) {
+			const auto& vpObj = machineObj.at("viewport").asObject();
+			if (vpObj.count("width")) assets.manifest.viewportWidth = vpObj.at("width").toI32();
+			if (vpObj.count("height")) assets.manifest.viewportHeight = vpObj.at("height").toI32();
 		}
 	}
 
-	// Step 4: Load assets
-	if (!payload.count("assets") || !payload.at("assets").isArray()) {
-		return true;  // No assets, but valid ROM
+	if (manifestObj.count("lua") && manifestObj.at("lua").isObject()) {
+		const auto& luaObj = manifestObj.at("lua").asObject();
+		if (luaObj.count("entry_path")) assets.manifest.entryPoint = luaObj.at("entry_path").asString();
 	}
 
-	const auto& assetArray = payload.at("assets").asArray();
+	// Step 4: Parse runtime TOC
+	const u8* tocData = romData + header.tocOffset;
+	const size_t tocSize = header.tocLength;
+	if (tocSize < ROM_TOC_HEADER_SIZE) {
+		throw BMSX_RUNTIME_ERROR("ROM TOC is too small.");
+	}
+	const u32 tocMagic = readLE32(tocData + 0);
+	if (tocMagic != ROM_TOC_MAGIC) {
+		throw BMSX_RUNTIME_ERROR("Invalid ROM TOC magic.");
+	}
+	const u32 tocVersion = readLE32(tocData + 4);
+	if (tocVersion != ROM_TOC_VERSION) {
+		throw BMSX_RUNTIME_ERROR("Unsupported ROM TOC version.");
+	}
+	const u32 entryCount = readLE32(tocData + 8);
+	const u32 entrySize = readLE32(tocData + 12);
+	if (entrySize != ROM_TOC_ENTRY_SIZE) {
+		throw BMSX_RUNTIME_ERROR("Unexpected ROM TOC entry size.");
+	}
+	const u32 stringTableOffset = readLE32(tocData + 16);
+	const u32 stringTableLength = readLE32(tocData + 20);
+	const u32 projectRootOffset = readLE32(tocData + 32);
+	const u32 projectRootLength = readLE32(tocData + 36);
+	const u32 tocHeaderSize = readLE32(tocData + 40);
+	const u32 entryOffset = readLE32(tocData + 44);
+	if (tocHeaderSize != ROM_TOC_HEADER_SIZE) {
+		throw BMSX_RUNTIME_ERROR("Unexpected ROM TOC header size.");
+	}
+	if (entryOffset != ROM_TOC_HEADER_SIZE) {
+		throw BMSX_RUNTIME_ERROR("Unexpected ROM TOC entry offset.");
+	}
+	const size_t entriesBytes = static_cast<size_t>(entryCount) * static_cast<size_t>(entrySize);
+	const size_t expectedStringOffset = static_cast<size_t>(entryOffset) + entriesBytes;
+	if (static_cast<size_t>(stringTableOffset) != expectedStringOffset) {
+		throw BMSX_RUNTIME_ERROR("Unexpected ROM TOC string table offset.");
+	}
+
+	assertSectionRange(static_cast<size_t>(entryOffset), entriesBytes, tocSize, "toc entries");
+	assertSectionRange(static_cast<size_t>(stringTableOffset), static_cast<size_t>(stringTableLength), tocSize, "toc string table");
+
+	const u8* stringTable = tocData + stringTableOffset;
+	const size_t stringTableSize = stringTableLength;
+	const std::string projectRootPath = readStringFromTable(stringTable, stringTableSize, projectRootOffset, projectRootLength);
+	if (!projectRootPath.empty()) {
+		assets.projectRootPath = projectRootPath;
+	}
+
+	// Step 5: Load assets
+	if (entryCount == 0) {
+		return true;
+	}
+
 	logMemSnapshot("assets:begin");
-	std::cerr << "[BMSX] Loading " << assetArray.size() << " assets from ROM" << std::endl;
+	std::cerr << "[BMSX] Loading " << entryCount << " assets from ROM" << std::endl;
 
-	for (const auto& assetValue : assetArray) {
-		if (!assetValue.isObject()) continue;
+	for (u32 index = 0; index < entryCount; index += 1) {
+		const u8* entry = tocData + entryOffset + (index * entrySize);
+		const u32 typeId = readLE32(entry + 0);
+		const u32 opId = readLE32(entry + 4);
+		const u32 residOffset = readLE32(entry + 8);
+		const u32 residLength = readLE32(entry + 12);
+		const u32 sourceOffset = readLE32(entry + 16);
+		const u32 sourceLength = readLE32(entry + 20);
+		const u32 normalizedOffset = readLE32(entry + 24);
+		const u32 normalizedLength = readLE32(entry + 28);
+		const u32 bufStartRaw = readLE32(entry + 32);
+		const u32 bufEndRaw = readLE32(entry + 36);
+		const u32 compiledStartRaw = readLE32(entry + 40);
+		const u32 compiledEndRaw = readLE32(entry + 44);
+		const u32 metaBufStartRaw = readLE32(entry + 48);
+		const u32 metaBufEndRaw = readLE32(entry + 52);
+		const u32 textureBufStartRaw = readLE32(entry + 56);
+		const u32 textureBufEndRaw = readLE32(entry + 60);
+		const u32 updateLo = readLE32(entry + 64);
+		const u32 updateHi = readLE32(entry + 68);
 
-		const auto& asset = assetValue.asObject();
-
-		// ROM format uses 'resid' for asset ID, not 'id'
-		std::string assetId = asset.count("resid") ? asset.at("resid").asString() : "";
-		std::string assetType = asset.count("type") ? asset.at("type").asString() : "";
-
-		const std::optional<i32> bufStartOpt = readOptionalI32(asset, assetId, "start");
-		const std::optional<i32> bufEndOpt = readOptionalI32(asset, assetId, "end");
-		const std::optional<i32> metaBufStartOpt = readOptionalI32(asset, assetId, "metabuffer_start");
-		const std::optional<i32> metaBufEndOpt = readOptionalI32(asset, assetId, "metabuffer_end");
-		const std::optional<i32> textureBufStartOpt = readOptionalI32(asset, assetId, "texture_start");
-		const std::optional<i32> textureBufEndOpt = readOptionalI32(asset, assetId, "texture_end");
-		const std::optional<i32> compiledStartOpt = readOptionalI32(asset, assetId, "compiled_start");
-		const std::optional<i32> compiledEndOpt = readOptionalI32(asset, assetId, "compiled_end");
-		const std::optional<i64> updateTimestampOpt = readOptionalI64(asset, assetId, "update_timestamp");
-		const std::optional<std::string> opOpt = readOptionalString(asset, assetId, "op");
-		const std::optional<std::string> sourcePathOpt = readOptionalString(asset, assetId, "source_path");
-		const std::optional<std::string> normalizedSourcePathOpt = readOptionalString(asset, assetId, "normalized_source_path");
-		const std::optional<std::string> payloadIdOpt = readOptionalString(asset, assetId, "payload_id");
+		const std::string assetId = readStringFromTable(stringTable, stringTableSize, residOffset, residLength);
+		if (assetId.empty()) {
+			throw BMSX_RUNTIME_ERROR("ROM TOC entry missing asset id.");
+		}
+		const std::string assetType = assetTypeFromId(typeId);
 
 		RomAssetInfo romInfo;
 		romInfo.type = assetType;
-		romInfo.op = opOpt;
-		romInfo.start = bufStartOpt;
-		romInfo.end = bufEndOpt;
-		romInfo.compiledStart = compiledStartOpt;
-		romInfo.compiledEnd = compiledEndOpt;
-		romInfo.metabufferStart = metaBufStartOpt;
-		romInfo.metabufferEnd = metaBufEndOpt;
-		romInfo.textureStart = textureBufStartOpt;
-		romInfo.textureEnd = textureBufEndOpt;
-		romInfo.sourcePath = sourcePathOpt;
-		romInfo.normalizedSourcePath = normalizedSourcePathOpt;
-		romInfo.updateTimestamp = updateTimestampOpt;
+		if (opId == 1) {
+			romInfo.op = std::string("delete");
+		}
+		romInfo.start = optionalI32FromU32(bufStartRaw);
+		romInfo.end = optionalI32FromU32(bufEndRaw);
+		romInfo.compiledStart = optionalI32FromU32(compiledStartRaw);
+		romInfo.compiledEnd = optionalI32FromU32(compiledEndRaw);
+		romInfo.metabufferStart = optionalI32FromU32(metaBufStartRaw);
+		romInfo.metabufferEnd = optionalI32FromU32(metaBufEndRaw);
+		romInfo.textureStart = optionalI32FromU32(textureBufStartRaw);
+		romInfo.textureEnd = optionalI32FromU32(textureBufEndRaw);
+		const std::string sourcePath = readStringFromTable(stringTable, stringTableSize, sourceOffset, sourceLength);
+		if (!sourcePath.empty()) {
+			romInfo.sourcePath = sourcePath;
+		}
+		const std::string normalizedSourcePath = readStringFromTable(stringTable, stringTableSize, normalizedOffset, normalizedLength);
+		if (!normalizedSourcePath.empty()) {
+			romInfo.normalizedSourcePath = normalizedSourcePath;
+		}
+		const u64 updateTimestampRaw = (static_cast<u64>(updateHi) << 32) | updateLo;
+		romInfo.updateTimestamp = optionalI64FromU64(updateTimestampRaw);
 		if (payloadId && payloadId[0] != '\0') {
 			romInfo.payloadId = std::string(payloadId);
-		} else if (payloadIdOpt) {
-			romInfo.payloadId = *payloadIdOpt;
 		}
 
-		const i32 bufStart = bufStartOpt ? *bufStartOpt : -1;
-		const i32 bufEnd = bufEndOpt ? *bufEndOpt : -1;
-		const i32 metaBufStart = metaBufStartOpt ? *metaBufStartOpt : -1;
-		const i32 metaBufEnd = metaBufEndOpt ? *metaBufEndOpt : -1;
-		const i32 textureBufStart = textureBufStartOpt ? *textureBufStartOpt : -1;
-		const i32 textureBufEnd = textureBufEndOpt ? *textureBufEndOpt : -1;
+		const i32 bufStart = romInfo.start ? *romInfo.start : -1;
+		const i32 bufEnd = romInfo.end ? *romInfo.end : -1;
+		const i32 metaBufStart = romInfo.metabufferStart ? *romInfo.metabufferStart : -1;
+		const i32 metaBufEnd = romInfo.metabufferEnd ? *romInfo.metabufferEnd : -1;
+		const i32 textureBufStart = romInfo.textureStart ? *romInfo.textureStart : -1;
+		const i32 textureBufEnd = romInfo.textureEnd ? *romInfo.textureEnd : -1;
 
 		if (assetType == "image" || assetType == "atlas") {
 			ImgAsset imgAsset;

@@ -1,8 +1,9 @@
 import { glsl } from "esbuild-plugin-glsl";
 // @ts-ignore
 import type { Stats } from 'fs';
-import { CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES, getMachinePerfSpecs } from '../../src/bmsx/rompack/rompack';
-import type { asset_type, AudioMeta, CanonicalizationType, GLTFMesh, ImgMeta, Polygon, RomAsset, RomAssetListPayload, RomManifest } from '../../src/bmsx/rompack/rompack';
+import { CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES } from '../../src/bmsx/rompack/rompack';
+import type { asset_type, AudioMeta, CanonicalizationType, GLTFMesh, ImgMeta, Polygon, RomAsset, RomManifest } from '../../src/bmsx/rompack/rompack';
+import { encodeRomToc } from '../../src/bmsx/rompack/rom_toc';
 import type { LuaChunk } from '../../src/bmsx/lua/lua_ast';
 import type { Value } from '../../src/bmsx/emulator/cpu';
 import type { StringPool } from '../../src/bmsx/emulator/string_pool';
@@ -1750,58 +1751,8 @@ export async function createAtlasses(resources: Resource[], reportProgress?: Pro
 	}
 }
 
-function encodeZeroTerminated(text: string): Buffer {
-	const payload = Buffer.from(text, 'utf8');
-	const out = Buffer.alloc(payload.length + 1);
-	payload.copy(out, 0);
-	out[out.length - 1] = 0;
-	return out;
-}
-
-function buildInputLabel(manifest: RomManifest): string {
-	const input = manifest.input;
-	if (!input) {
-		return 'DEFAULT (1P)';
-	}
-	const count = Math.max(1, Object.keys(input).length);
-	return `CUSTOM (${count}P)`;
-}
-
-function encodeBiosManifest(manifest: RomManifest, projectRootPath?: string): Buffer {
-	if (!manifest.lua || !manifest.lua.entry_path) {
-		throw new Error('[RomPacker] Manifest is missing lua.entry_path; cannot encode BIOS manifest.');
-	}
-	const entryKind = 0;
-	const title = manifest.title ?? '';
-	const shortName = manifest.short_name ?? '';
-	const romName = manifest.rom_name ?? '';
-	const entryPath = manifest.lua.entry_path;
-	const namespace = manifest.machine.namespace ?? '';
-	const viewport = `${manifest.machine.viewport.width}x${manifest.machine.viewport.height}`;
-	const canonicalization = manifest.machine.canonicalization ?? '';
-	const inputLabel = buildInputLabel(manifest);
-	const rootPath = projectRootPath ?? '';
-	const perfSpecs = getMachinePerfSpecs(manifest.machine);
-	const cpuHz = String(perfSpecs.cpu_freq_hz);
-	const ufps = String(perfSpecs.ufps);
-
-	const header = Buffer.alloc(4);
-	header.writeUInt32LE(entryKind, 0);
-	const chunks = [
-		header,
-		encodeZeroTerminated(title),
-		encodeZeroTerminated(shortName),
-		encodeZeroTerminated(romName),
-		encodeZeroTerminated(entryPath),
-		encodeZeroTerminated(namespace),
-		encodeZeroTerminated(viewport),
-		encodeZeroTerminated(canonicalization),
-		encodeZeroTerminated(inputLabel),
-		encodeZeroTerminated(rootPath),
-		encodeZeroTerminated(cpuHz),
-		encodeZeroTerminated(ufps),
-	];
-	return Buffer.concat(chunks);
+function encodeBiosManifest(manifest: RomManifest): Buffer {
+	return Buffer.from(encodeBinary(manifest));
 }
 
 /**
@@ -1895,18 +1846,16 @@ export async function finalizeRompack(
 			throw new Error('[RomPacker] Missing manifest for ROM; cannot build header.');
 		}
 		status?.('encode bios manifest');
-		const biosManifestBuffer = encodeBiosManifest(options.manifest, options.projectRootPath);
+		const biosManifestBuffer = encodeBiosManifest(options.manifest);
 		const manifestOffset = offset;
 		const manifestLength = biosManifestBuffer.length;
 		await writeBuffer(biosManifestBuffer);
 
 		status?.('encode toc');
-		const metadataPayload: RomAssetListPayload = {
+		const tocBuffer = Buffer.from(encodeRomToc({
 			assets: assetList,
 			projectRootPath: options.projectRootPath,
-			manifest: options.manifest,
-		};
-		const tocBuffer = Buffer.from(encodeBinary(metadataPayload));
+		}));
 		const tocOffset = offset;
 		const tocLength = tocBuffer.length;
 		await writeBuffer(tocBuffer);

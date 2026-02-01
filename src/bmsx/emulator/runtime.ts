@@ -36,7 +36,7 @@ import {
 } from '../rompack/rompack';
 import { AssetSourceStack, type RawAssetSource } from '../rompack/asset_source';
 import { applyRuntimeAssetLayer, buildRuntimeAssetLayer, type RuntimeAssetLayer } from '../rompack/romloader';
-import { decodeuint8arr } from '../serializer/binencoder';
+import { decodeBinary, decodeuint8arr } from '../serializer/binencoder';
 import { createIdentifierCanonicalizer } from '../utils/identifier_canonicalizer';
 import { parseWavInfo } from '../utils/wav';
 import { clamp01, clamp_fallback } from '../utils/clamp';
@@ -2018,29 +2018,27 @@ export class Runtime {
 		if (!source) {
 			throw new Error('[Runtime] Asset source not configured.');
 		}
-		const audioKeys = Object.keys($.assets.audio);
-		for (let index = 0; index < audioKeys.length; index += 1) {
-			const id = audioKeys[index]!;
-			const entry = source.getEntry(id);
-			if (!entry) {
-				throw new Error(`[Runtime] Audio asset '${id}' not found in asset source.`);
-			}
-			if (entry.type !== 'audio') {
-				throw new Error(`[Runtime] Asset '${id}' is not audio.`);
-			}
+		const entries = source.list('audio');
+		for (let index = 0; index < entries.length; index += 1) {
+			const entry = entries[index];
 			if (typeof entry.start !== 'number' || typeof entry.end !== 'number') {
-				throw new Error(`[Runtime] Audio asset '${id}' missing ROM buffer offsets.`);
+				throw new Error(`[Runtime] Audio asset '${entry.resid}' missing ROM buffer offsets.`);
 			}
-			const audioAsset = $.assets.audio[id];
-			if (!audioAsset || !audioAsset.audiometa) {
-				throw new Error(`[Runtime] Audio asset '${id}' missing metadata.`);
+			if (typeof entry.metabuffer_start !== 'number' || typeof entry.metabuffer_end !== 'number') {
+				throw new Error(`[Runtime] Audio asset '${entry.resid}' missing metadata offsets.`);
 			}
-			resources[id] = {
-				resid: id,
+			const metaBytes = source.getBytes({
+				...entry,
+				start: entry.metabuffer_start,
+				end: entry.metabuffer_end,
+			});
+			const audiometa = decodeBinary(metaBytes) as AudioMeta;
+			resources[entry.resid] = {
+				resid: entry.resid,
 				type: 'audio',
 				start: entry.start,
 				end: entry.end,
-				audiometa: audioAsset.audiometa,
+				audiometa,
 				payload_id: entry.payload_id ?? 'cart',
 			};
 		}
@@ -2126,19 +2124,6 @@ export class Runtime {
 		this.setCartBootReadyFlag(this.editor.exists);
 	}
 
-	public loadCartAssets(): void {
-		if (!this.cartAssetLayer || !this.cartAssetSource || !this.cartLuaSources) {
-			throw new Error('[Runtime] Cart assets not configured.');
-		}
-		this.applyCartAssetLayers();
-		const token = runGate.begin({ blocking: true, tag: 'cart-assets' });
-		void (async () => {
-			await this.buildAssetMemory({ mode: 'cart' });
-			await this.vdp.uploadAtlasTextures();
-			await $.refresh_audio_assets();
-		})().finally(() => runGate.end(token));
-	}
-
 	private async buildAssetMemory(params?: { source?: RawAssetSource; assets?: RuntimeAssets; mode?: 'full' | 'cart' }): Promise<void> {
 		const token = this.assetMemoryGate.begin({ blocking: true, category: 'asset', tag: 'asset_memory' });
 		try {
@@ -2172,13 +2157,6 @@ export class Runtime {
 			}
 			if (typeof entry.start !== 'number' || typeof entry.end !== 'number') {
 				throw new Error(`[Runtime] Audio asset '${entry.resid}' missing ROM buffer offsets.`);
-			}
-			const audioAsset = assets.audio[entry.resid];
-			if (!audioAsset) {
-				throw new Error(`[Runtime] Audio asset '${entry.resid}' not found.`);
-			}
-			if (!audioAsset.audiometa) {
-				throw new Error(`[Runtime] Audio asset '${entry.resid}' missing metadata.`);
 			}
 			const buffer = source.getBytesView(entry);
 			const info = parseWavInfo(buffer);

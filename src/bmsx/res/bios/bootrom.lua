@@ -29,31 +29,6 @@ local error_page = 1
 local last_error_count = 0
 local view_mode = 'overview'
 
-local function read_zstr(addr)
-	local t = {}
-	while true do
-		local b = peek(addr) % 256 -- read u8
-		addr = addr + 1
-		if b == 0 then break end
-		t[#t + 1] = string.char(b)
-	end
-	return table.concat(t), addr
-end
-
-local function read_zstr_optional(addr, limit)
-	if addr >= limit then
-		return nil, addr
-	end
-	local t = {}
-	while addr < limit do
-		local b = peek(addr) % 256 -- read u8
-		addr = addr + 1
-		if b == 0 then break end
-		t[#t + 1] = string.char(b)
-	end
-	return table.concat(t), addr
-end
-
 local function read_cart_header(base)
 	if peek(base) ~= CART_ROM_MAGIC then
 		return nil
@@ -69,35 +44,37 @@ local function read_cart_header(base)
 	}
 end
 
-local function read_bios_manifest(base, header)
-	local p = base + header.manifest_off
-	local manifest_end = p + header.manifest_len
-	local entry_kind = peek(p)
-	p = p + 4
-	local title; title, p = read_zstr(p)
-	local short_name; short_name, p = read_zstr(p)
-	local rom_name; rom_name, p = read_zstr(p)
-	local entry_path; entry_path, p = read_zstr(p)
-	local namespace; namespace, p = read_zstr(p)
-	local viewport; viewport, p = read_zstr(p)
-	local canonicalization; canonicalization, p = read_zstr(p)
-	local input; input, p = read_zstr(p)
-	local root; root, p = read_zstr(p)
-	local cpu_freq_hz; cpu_freq_hz, p = read_zstr_optional(p, manifest_end)
-	local ufps; ufps, p = read_zstr_optional(p, manifest_end)
+local function format_viewport_label(viewport)
+	if not viewport then
+		return nil
+	end
+	local w = viewport.width or viewport.x
+	local h = viewport.height or viewport.y
+	if not w or not h then
+		return nil
+	end
+	return tostring(w) .. 'x' .. tostring(h)
+end
+
+local function flatten_manifest(manifest, root_path)
+	if not manifest then
+		return nil
+	end
+	local machine = manifest.machine or {}
+	local specs = machine.specs or {}
+	local cpu = specs.cpu or {}
 	return {
-		entry_kind = entry_kind,
-		title = title,
-		short_name = short_name,
-		rom_name = rom_name,
-		entry_path = entry_path,
-		namespace = namespace,
-		viewport = viewport,
-		canonicalization = canonicalization,
-		input = input,
-		root = root,
-		cpu_freq_hz = cpu_freq_hz,
-		ufps = ufps,
+		title = manifest.title,
+		short_name = manifest.short_name,
+		rom_name = manifest.rom_name,
+		entry_path = manifest.lua and manifest.lua.entry_path or nil,
+		namespace = machine.namespace,
+		viewport = format_viewport_label(machine.viewport),
+		canonicalization = machine.canonicalization,
+		input = manifest.input,
+		root = root_path,
+		cpu_freq_hz = cpu.cpu_freq_hz,
+		ufps = machine.ufps,
 	}
 end
 
@@ -244,9 +221,12 @@ end
 
 local function build_info()
 	local cart_header = read_cart_header(CART_ROM_BASE)
-	local cart_manifest = cart_header and read_bios_manifest(CART_ROM_BASE, cart_header) or nil
+	local cart_manifest_raw = cart_manifest
+	local cart_root_path = assets and assets.project_root_path or nil
+	local cart_manifest = cart_header and flatten_manifest(cart_manifest_raw, cart_root_path) or nil
 	local engine_header = read_cart_header(ENGINE_ROM_BASE)
-	local engine_manifest = engine_header and read_bios_manifest(ENGINE_ROM_BASE, engine_header) or nil
+	local engine_manifest_raw = engine_manifest
+	local engine_manifest = engine_header and flatten_manifest(engine_manifest_raw, nil) or nil
 
 	local cart_title = cart_manifest and display_text(cart_manifest.title) or '--'
 	-- local cart_short = cart_manifest and display_text(cart_manifest.short_name) or '--'
