@@ -144,7 +144,7 @@ local function register_director()
 end
 
 function init()
-	poke(SYS_VDP_DITHER, 1)
+	poke(sys_vdp_dither, 1)
 	on_vdp_load(on_vdp_load_example) -- Example registration; remove if not needed.
 	vdp_load_slot(0, 0)
 	vdp_map_slot(0, 0)

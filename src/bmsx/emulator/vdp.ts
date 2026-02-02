@@ -800,13 +800,16 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		}
 	}
 
-	public async uploadAtlasTextures(): Promise<void> {
+	public async uploadAtlasTextures(options?: { includeSystemAtlas?: boolean }): Promise<void> {
 		if (!$.asset_source) {
 			throw new Error('[BmsxVDP] Asset source not configured.');
 		}
-		const engineEntry = this.memory.getAssetEntry(generateAtlasName(ENGINE_ATLAS_INDEX));
-		await this.ensureAtlasSlotTexture(engineEntry, ENGINE_ATLAS_TEXTURE_KEY);
-		$.view.loadEngineAtlasTexture();
+		const includeSystemAtlas = options?.includeSystemAtlas !== false;
+		if (includeSystemAtlas) {
+			const engineEntry = this.memory.getAssetEntry(generateAtlasName(ENGINE_ATLAS_INDEX));
+			await this.ensureAtlasSlotTexture(engineEntry, ENGINE_ATLAS_TEXTURE_KEY);
+			$.view.loadEngineAtlasTexture();
+		}
 
 		const primaryEntry = this.memory.getAssetEntry(ATLAS_PRIMARY_SLOT_ID);
 		await this.ensureAtlasSlotTexture(primaryEntry, ATLAS_PRIMARY_SLOT_ID);

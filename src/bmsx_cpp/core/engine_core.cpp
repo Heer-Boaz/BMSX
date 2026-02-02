@@ -993,16 +993,19 @@ bool EngineCore::resetLoadedRom() {
 	if (m_sound_master) {
 		m_sound_master->resetPlaybackState();
 	}
-	if (m_texture_manager) {
-		m_texture_manager->clear();
-	}
-	if (m_view) {
-		m_view->reset();
-		m_view->initializeDefaultTextures();
-	}
 
 	i64 cpuHz = 0;
 	const bool cartCpuValid = tryResolveCpuHz(m_assets.manifest, cpuHz);
+	const bool bootCartProgram = cartCpuValid && m_assets.programAsset && m_assets.programAsset->program;
+	if (!bootCartProgram) {
+		if (m_texture_manager) {
+			m_texture_manager->clear();
+		}
+		if (m_view) {
+			m_view->reset();
+			m_view->initializeDefaultTextures();
+		}
+	}
 	if (!cartCpuValid) {
 		i64 engineUfpsScaled = 0;
 		if (!m_engine_assets_loaded || !tryResolveCpuHz(m_engine_assets.manifest, cpuHz)) {
@@ -1024,14 +1027,13 @@ bool EngineCore::resetLoadedRom() {
 	const i64 dmaBytesPerSecIso = resolveDmaBytesPerSecIso(transferManifest);
 	const i64 dmaBytesPerSecBulk = resolveDmaBytesPerSecBulk(transferManifest);
 
-	if (cartCpuValid && m_assets.programAsset && m_assets.programAsset->program) {
+	if (bootCartProgram) {
 		Runtime& runtime = Runtime::instance();
 		runtime.setCpuHz(cpuHz);
 		runtime.setCycleBudgetPerFrame(cycleBudget);
 		runtime.setTransferRates(imgDecBytesPerSec, dmaBytesPerSecIso, dmaBytesPerSecBulk);
 		runtime.refreshMemoryMap();
 		runtime.buildAssetMemory(m_assets, false, Runtime::AssetBuildMode::Cart);
-		uploadTexturesToBackend(true);
 		refreshAudioAssets();
 		bootRuntimeFromProgram();
 		return true;

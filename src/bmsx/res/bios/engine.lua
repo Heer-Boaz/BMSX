@@ -88,19 +88,19 @@ end
 
 local function vdp_start_job(job)
 	vdp_active_job = job
-	poke(SYS_IMG_SRC, job.src)
-	poke(SYS_IMG_LEN, job.len)
-	poke(SYS_IMG_DST, job.dst)
-	poke(SYS_IMG_CAP, job.cap)
-	poke(SYS_IMG_CTRL, IMG_CTRL_START)
+	poke(sys_img_src, job.src)
+	poke(sys_img_len, job.len)
+	poke(sys_img_dst, job.dst)
+	poke(sys_img_cap, job.cap)
+	poke(sys_img_ctrl, img_ctrl_start)
 end
 
 local function vdp_try_start_next_job()
 	if vdp_active_job ~= nil then
 		return
 	end
-	local status = peek(SYS_IMG_STATUS)
-	if (status & IMG_STATUS_BUSY) ~= 0 then
+	local status = peek(sys_img_status)
+	if (status & img_status_busy) ~= 0 then
 		return
 	end
 	local job = vdp_dequeue_job()
@@ -235,14 +235,14 @@ end
 
 function engine.vdp_map_slot(slot, atlas_id)
 	if atlas_id == nil then
-		atlas_id = SYS_VDP_ATLAS_NONE
+		atlas_id = sys_vdp_atlas_none
 	end
 	if slot == 0 then
-		poke(SYS_VDP_PRIMARY_ATLAS_ID, atlas_id)
+		poke(sys_vdp_primary_atlas_id, atlas_id)
 		return
 	end
 	if slot == 1 then
-		poke(SYS_VDP_SECONDARY_ATLAS_ID, atlas_id)
+		poke(sys_vdp_secondary_atlas_id, atlas_id)
 		return
 	end
 	error("vdp_map_slot: invalid slot " .. tostring(slot))
@@ -268,11 +268,11 @@ function engine.vdp_load_slot(slot, atlas_id)
 	local dst
 	local cap
 	if slot == 0 then
-		dst = SYS_VRAM_PRIMARY_ATLAS_BASE
-		cap = SYS_VRAM_PRIMARY_ATLAS_SIZE
+		dst = sys_vram_primary_atlas_base
+		cap = sys_vram_primary_atlas_size
 	elseif slot == 1 then
-		dst = SYS_VRAM_SECONDARY_ATLAS_BASE
-		cap = SYS_VRAM_SECONDARY_ATLAS_SIZE
+		dst = sys_vram_secondary_atlas_base
+		cap = sys_vram_secondary_atlas_size
 	else
 		error("vdp_load_slot: invalid slot " .. tostring(slot))
 	end
@@ -403,10 +403,10 @@ function engine.update(dt)
 end
 
 function engine.irq(flags)
-	if (flags & IRQ_IMG_DONE) ~= 0 then
-		poke(SYS_IRQ_ACK, IRQ_IMG_DONE)
+	if (flags & irq_img_done) ~= 0 then
+		poke(sys_irq_ack, irq_img_done)
 		if vdp_active_job == nil then
-			error("irq: IMG_DONE without pending atlas load")
+			error("irq: img_DONE without pending atlas load")
 		end
 		local skip_map = false
 		if vdp_active_job.allow_handler ~= false and vdp_load_handler ~= nil then
@@ -421,10 +421,10 @@ function engine.irq(flags)
 		vdp_active_job = nil
 		vdp_try_start_next_job()
 	end
-	if (flags & IRQ_IMG_ERROR) ~= 0 then
-		poke(SYS_IRQ_ACK, IRQ_IMG_ERROR)
+	if (flags & irq_img_error) ~= 0 then
+		poke(sys_irq_ack, irq_img_error)
 		if vdp_active_job == nil then
-			error("irq: IMG_ERROR without pending atlas load")
+			error("irq: img_ERROR without pending atlas load")
 		end
 		if vdp_active_job.allow_handler ~= false and vdp_load_handler ~= nil then
 			vdp_load_handler(vdp_active_job.job_id, vdp_active_job.slot, vdp_active_job.atlas_id, "error")

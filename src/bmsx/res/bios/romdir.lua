@@ -9,6 +9,7 @@ local BTOC_INVALID_U32 = 0xffffffff
 local FNV_OFFSET_BASIS_LO = 0x84222325
 local FNV_OFFSET_BASIS_HI = 0xcbf29ce4
 local FNV_PRIME = 0x1b3
+local U32_MOD = 0x100000000
 
 local function read_u32(addr)
 	return peek(addr)
@@ -116,16 +117,22 @@ local function hash_id(id)
 	local hi = FNV_OFFSET_BASIS_HI
 	for i = 1, #canonical do
 		local byte = string.byte(canonical, i)
-		lo = (lo ~ byte) & 0xffffffff
+		lo = lo ~ byte
+		if lo < 0 then lo = lo + U32_MOD end
 		local lo_mul = lo * FNV_PRIME
-		local lo_low = lo_mul & 0xffffffff
-		local carry = (lo_mul >> 32) & 0xffffffff
-		local hi_mul = (hi * FNV_PRIME + carry) & 0xffffffff
-		hi_mul = (hi_mul + ((lo << 8) & 0xffffffff)) & 0xffffffff
+		local carry = math.floor(lo_mul / U32_MOD)
+		local lo_low = lo_mul - (carry * U32_MOD)
+		local hi_mul = hi * FNV_PRIME + carry
+		local hi_low = hi_mul % U32_MOD
+		local lo_shift = (lo * 0x100) % U32_MOD
+		hi = (hi_low + lo_shift) % U32_MOD
 		lo = lo_low
-		hi = hi_mul
 	end
 	return lo, hi
+end
+
+local function token_key(lo, hi)
+	return string.format("%08x%08x", hi, lo)
 end
 
 local function normalize_u32(value)
@@ -191,12 +198,14 @@ local function find_in_rom(rom_base, token_lo, token_hi)
 end
 
 local function find_overlay_or_cart(token_lo, token_hi)
-	local overlay_entry = find_in_rom(sys_rom_overlay_base, token_lo, token_hi)
-	if overlay_entry ~= nil then
-		if overlay_entry.op_id == 1 then
-			return nil
+	if sys_rom_overlay_size > 0 then
+		local overlay_entry = find_in_rom(sys_rom_overlay_base, token_lo, token_hi)
+		if overlay_entry ~= nil then
+			if overlay_entry.op_id == 1 then
+				return nil
+			end
+			return overlay_entry
 		end
-		return overlay_entry
 	end
 	return find_in_rom(sys_rom_cart_base, token_lo, token_hi)
 end
@@ -223,6 +232,11 @@ end
 function romdir.sys(id)
 	local lo, hi = hash_id(id)
 	return resolve_sys(lo, hi)
+end
+
+function romdir.token(id)
+	local lo, hi = hash_id(id)
+	return token_key(lo, hi)
 end
 
 return romdir

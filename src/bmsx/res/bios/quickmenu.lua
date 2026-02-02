@@ -91,7 +91,7 @@ local entries = {
 	make_toggle("GLOW", "enable_glow"),
 	make_toggle("FRINGING", "enable_fringing"),
 	make_toggle("APERTURE", "enable_aperture"),
-	make_vdp_enum("DITHER", SYS_VDP_DITHER, {
+	make_vdp_enum("DITHER", sys_vdp_dither, {
 		{ value = 0, label = "OFF" },
 		{ value = 1, label = "PSX" },
 		{ value = 2, label = "RGB565" },

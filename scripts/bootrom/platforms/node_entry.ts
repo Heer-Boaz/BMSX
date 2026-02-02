@@ -461,6 +461,51 @@ async function fileExists(filePath: string): Promise<boolean> {
 	}
 }
 
+async function getMtimeMs(filePath: string): Promise<number> {
+	const stats = await fs.stat(filePath);
+	return stats.mtimeMs;
+}
+
+async function newestSource(paths: string[]): Promise<{ path: string; mtimeMs: number } | null> {
+	let newest: { path: string; mtimeMs: number } | null = null;
+	for (const candidate of paths) {
+		if (!await fileExists(candidate)) {
+			continue;
+		}
+		const mtimeMs = await getMtimeMs(candidate);
+		if (!newest || mtimeMs > newest.mtimeMs) {
+			newest = { path: candidate, mtimeMs };
+		}
+	}
+	return newest;
+}
+
+async function assertFreshOutput(label: string, outputPath: string, sources: string[], rebuildHint: string): Promise<void> {
+	if (!await fileExists(outputPath)) {
+		throw new Error(`[bootrom:${__BOOTROM_TARGET__}] ${label} not found at ${outputPath}. Rebuild with: ${rebuildHint}`);
+	}
+	const newest = await newestSource(sources);
+	if (!newest) {
+		return;
+	}
+	const outputMtime = await getMtimeMs(outputPath);
+	if (newest.mtimeMs > outputMtime) {
+		throw new Error(
+			`[bootrom:${__BOOTROM_TARGET__}] ${label} is stale (newer source: ${newest.path}). Rebuild with: ${rebuildHint}`
+		);
+	}
+}
+
+function assertDebugArtifacts(label: string, debugFlag: boolean, filePath: string): void {
+	const hasDebug = filePath.includes('.debug.');
+	if (debugFlag && !hasDebug) {
+		throw new Error(`[bootrom:${__BOOTROM_TARGET__}] ${label} must be a debug artifact (${filePath}).`);
+	}
+	if (!debugFlag && hasDebug) {
+		throw new Error(`[bootrom:${__BOOTROM_TARGET__}] ${label} must be a non-debug artifact (${filePath}).`);
+	}
+}
+
 async function readRomFile(filePath: string): Promise<Uint8Array> {
 	try {
 		const buffer = await fs.readFile(filePath);
@@ -634,11 +679,39 @@ async function main(): Promise<void> {
 	const engineAssetsPath = cliOptions.engineAssetsPath
 		? path.resolve(cliOptions.engineAssetsPath)
 		: path.join(romDirectory, debugFlag ? 'bmsx-bios.debug.rom' : 'bmsx-bios.rom');
+	assertDebugArtifacts('Engine runtime', debugFlag, cliOptions.engineRuntimePath ?? path.join(romDirectory, debugFlag ? 'engine.debug.js' : 'engine.js'));
+	assertDebugArtifacts('Engine assets', debugFlag, engineAssetsPath);
+	const workspaceRoot = path.resolve(romDirectory, '..');
+	if (__BOOTROM_TARGET__ === 'headless') {
+		const engineAssetsHint = debugFlag
+			? 'npm run build:engine -- --debug'
+			: 'npm run build:engine';
+		const engineRuntimeHint = debugFlag
+			? 'npm run build:browser -- --debug'
+			: 'npm run build:browser';
+		const biosSources = [
+			path.join(workspaceRoot, 'src', 'bmsx', 'res', 'bios', 'bootrom.lua'),
+			path.join(workspaceRoot, 'src', 'bmsx', 'res', 'bios', 'engine.lua'),
+			path.join(workspaceRoot, 'src', 'bmsx', 'res', 'bios', 'romdir.lua'),
+		];
+		const runtimeSources = [
+			path.join(workspaceRoot, 'src', 'bmsx', 'emulator', 'runtime.ts'),
+			path.join(workspaceRoot, 'src', 'bmsx', 'emulator', 'memory.ts'),
+			path.join(workspaceRoot, 'src', 'bmsx', 'emulator', 'memory_map.ts'),
+			path.join(workspaceRoot, 'src', 'bmsx', 'emulator', 'vdp.ts'),
+			path.join(workspaceRoot, 'src', 'bmsx', 'rompack', 'rom_toc.ts'),
+			path.join(workspaceRoot, 'src', 'bmsx', 'util', 'asset_tokens.ts'),
+		];
+		const engineRuntimePath = cliOptions.engineRuntimePath
+			? path.resolve(cliOptions.engineRuntimePath)
+			: path.join(romDirectory, debugFlag ? 'engine.debug.js' : 'engine.js');
+		await assertFreshOutput('Engine assets', engineAssetsPath, biosSources, engineAssetsHint);
+		await assertFreshOutput('Engine runtime', engineRuntimePath, runtimeSources, engineRuntimeHint);
+	}
 	console.log(`[bootrom:${__BOOTROM_TARGET__}] Loading engine assets: ${engineAssetsPath}`);
 	const engineAssetsBuffer = await readRomFile(engineAssetsPath);
 
 	const buffer = await readRomFile(romPath);
-	const workspaceRoot = path.resolve(path.dirname(romPath), '..');
 	installWorkspaceFetchBridge(workspaceRoot);
 
 	const platform = createPlatform(frameInterval);

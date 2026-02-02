@@ -147,6 +147,10 @@ export class Memory {
 		this.vdpIoHandler = handler;
 	}
 
+	public getOverlayRomSize(): number {
+		return this.overlayRom ? this.overlayRom.byteLength : 0;
+	}
+
 	public getIoSlotCount(): number {
 		return this.ioSlots.length;
 	}

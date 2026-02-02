@@ -618,10 +618,11 @@ export class EngineCore {
 		this.rebuildPipeline();
 	}
 
-	public async reset_to_fresh_world(): Promise<void> {
+	public async reset_to_fresh_world(options?: { preserve_textures?: boolean }): Promise<void> {
 		if (!this.initialized) {
 			throw new Error('[Game] Cannot reset world before initialization.');
 		}
+		const preserveTextures = options?.preserve_textures === true;
 		const gateToken = renderGate.begin({ blocking: true, tag: 'world-reset' });
 		const runToken = runGate.begin({ blocking: true, tag: 'world-reset' });
 		try {
@@ -638,8 +639,10 @@ export class EngineCore {
 			this.ae_registry.clear();
 			this.event_emitter.clear();
 			this.registry.clear();
-			this.texmanager.clear();
-			this.view.reset();
+			if (!preserveTextures) {
+				this.texmanager.clear();
+				this.view.reset();
+			}
 
 			const world = new World(this.initialWorldConfigSnapshot);
 			await world.init_on_boot();
@@ -655,7 +658,9 @@ export class EngineCore {
 			}
 
 			PhysicsWorld.rebuild();
-			await this.view.initializeDefaultTextures();
+			if (!preserveTextures) {
+				await this.view.initializeDefaultTextures();
+			}
 		}
 		finally {
 			this.wasupdated = true;

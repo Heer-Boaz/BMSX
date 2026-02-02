@@ -247,7 +247,7 @@ local function build_info()
 	local sys_view_label = sys_manifest and display_text(sys_manifest.viewport) or '--'
 	-- local sys_canon = sys_manifest and display_text(sys_manifest.canonicalization) or '--'
 	-- local sys_entry = sys_manifest and display_text(sys_manifest.entry_path) or '--'
-	local vram_total = sys_vram_system_atlas_size + SYS_VRAM_PRIMARY_ATLAS_SIZE + SYS_VRAM_SECONDARY_ATLAS_SIZE + SYS_VRAM_STAGING_SIZE
+	local vram_total = sys_vram_system_atlas_size + sys_vram_primary_atlas_size + sys_vram_secondary_atlas_size + sys_vram_staging_size
 
 	return {
 		sys_title = sys_title,
@@ -268,12 +268,12 @@ local function build_info()
 		cart_errors = cart_errors,
 		cart_has_errors = cart_has_errors,
 		root = cart_manifest and display_text(cart_manifest.root) or '--',
-		hw_cart_max = format_bytes(SYS_CART_ROM_SIZE),
-		hw_ram_total = format_bytes(SYS_RAM_SIZE),
+		hw_cart_max = format_bytes(sys_cart_rom_size),
+		hw_ram_total = format_bytes(sys_ram_size),
 		hw_vram_total = format_bytes(vram_total),
-		hw_max_assets = format_bignumbers(SYS_MAX_ASSETS),
-		hw_max_strings = format_bignumbers(SYS_STRING_HANDLE_COUNT),
-		hw_max_cycles = format_bignumbers(SYS_MAX_CYCLES_PER_FRAME),
+		hw_max_assets = format_bignumbers(sys_max_assets),
+		hw_max_strings = format_bignumbers(sys_string_handle_count),
+		hw_max_cycles = format_bignumbers(sys_max_cycles_per_frame),
 	}
 end
 
@@ -345,10 +345,10 @@ function init()
 	sys_atlas_ready = false
 	sys_atlas_failed = false
 	on_irq(function(flags)
-		if (flags & IRQ_IMG_DONE) ~= 0 then
+		if (flags & irq_img_done) ~= 0 then
 			sys_atlas_ready = true
 		end
-		if (flags & IRQ_IMG_ERROR) ~= 0 then
+		if (flags & irq_img_error) ~= 0 then
 			sys_atlas_failed = true
 		end
 	end)
@@ -360,9 +360,12 @@ end
 
 function update(_dt)
 	local cart_header = read_cart_header(CART_ROM_BASE)
-	local cart_manifest = cart_header and read_bios_manifest(CART_ROM_BASE, cart_header) or nil
-	local cart_errors = cart_header and collect_cart_manifest_errors(cart_manifest) or {}
+	local cart_manifest_raw = cart_manifest
+	local cart_root_path = assets and assets.project_root_path or nil
+	local cart_manifest_value = cart_header and flatten_manifest(cart_manifest_raw, cart_root_path) or nil
+	local cart_errors = cart_header and collect_cart_manifest_errors(cart_manifest_value) or {}
 	local cart_has_errors = cart_header and #cart_errors > 0
+
 	if cart_has_errors then
 		if action_triggered('a[jp]', 1) then
 			view_mode = (view_mode == 'errors') and 'overview' or 'errors'
@@ -384,7 +387,7 @@ function update(_dt)
 	local cart_valid = cart_header and #cart_errors == 0
 	local cart_present_and_ready = peek(CART_ROM_BASE) == CART_ROM_MAGIC and peek(sys_cart_bootready) == 1 and cart_valid
 
-	if cart_present_and_ready and not boot_requested and elapsed_seconds() >= boot_delay and sys_atlas_ready and not sys_atlas_failed then
+	if cart_present_and_ready and not boot_requested and elapsed_seconds() >= boot_delay and not sys_atlas_failed then
 		boot_requested = true
 		poke(sys_boot_cart, 1)
 	end

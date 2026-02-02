@@ -1410,7 +1410,7 @@ void Runtime::setCycleBudgetPerFrame(int budget) {
 		return;
 	}
 	m_cycleBudgetPerFrame = budget;
-	setGlobal("SYS_MAX_CYCLES_PER_FRAME", valueNumber(static_cast<double>(budget)));
+	setGlobal("sys_max_cycles_per_frame", valueNumber(static_cast<double>(budget)));
 	resetTransferCarry();
 }
 
@@ -1478,13 +1478,13 @@ void Runtime::refreshMemoryMap() {
 
 void Runtime::refreshMemoryMapGlobals() {
 	setGlobal("sys_vram_system_atlas_base", valueNumber(static_cast<double>(VRAM_SYSTEM_ATLAS_BASE)));
-	setGlobal("SYS_VRAM_PRIMARY_ATLAS_BASE", valueNumber(static_cast<double>(VRAM_PRIMARY_ATLAS_BASE)));
-	setGlobal("SYS_VRAM_SECONDARY_ATLAS_BASE", valueNumber(static_cast<double>(VRAM_SECONDARY_ATLAS_BASE)));
-	setGlobal("SYS_VRAM_STAGING_BASE", valueNumber(static_cast<double>(VRAM_STAGING_BASE)));
+	setGlobal("sys_vram_primary_atlas_base", valueNumber(static_cast<double>(VRAM_PRIMARY_ATLAS_BASE)));
+	setGlobal("sys_vram_secondary_atlas_base", valueNumber(static_cast<double>(VRAM_SECONDARY_ATLAS_BASE)));
+	setGlobal("sys_vram_staging_base", valueNumber(static_cast<double>(VRAM_STAGING_BASE)));
 	setGlobal("sys_vram_system_atlas_size", valueNumber(static_cast<double>(VRAM_SYSTEM_ATLAS_SIZE)));
-	setGlobal("SYS_VRAM_PRIMARY_ATLAS_SIZE", valueNumber(static_cast<double>(VRAM_PRIMARY_ATLAS_SIZE)));
-	setGlobal("SYS_VRAM_SECONDARY_ATLAS_SIZE", valueNumber(static_cast<double>(VRAM_SECONDARY_ATLAS_SIZE)));
-	setGlobal("SYS_VRAM_STAGING_SIZE", valueNumber(static_cast<double>(VRAM_STAGING_SIZE)));
+	setGlobal("sys_vram_primary_atlas_size", valueNumber(static_cast<double>(VRAM_PRIMARY_ATLAS_SIZE)));
+	setGlobal("sys_vram_secondary_atlas_size", valueNumber(static_cast<double>(VRAM_SECONDARY_ATLAS_SIZE)));
+	setGlobal("sys_vram_staging_size", valueNumber(static_cast<double>(VRAM_STAGING_SIZE)));
 }
 
 void Runtime::buildAssetMemory(RuntimeAssets& assets, bool keepDecodedData, AssetBuildMode mode) {
@@ -2478,63 +2478,64 @@ void Runtime::setupBuiltins() {
 
 	setGlobal("math", valueTable(mathTable));
 	setGlobal("easing", valueTable(easingTable));
-	setGlobal("SYS_BOOT_CART", valueNumber(static_cast<double>(IO_SYS_BOOT_CART)));
-	setGlobal("SYS_CART_BOOTREADY", valueNumber(static_cast<double>(IO_SYS_CART_BOOTREADY)));
-	setGlobal("SYS_CART_MAGIC_ADDR", valueNumber(static_cast<double>(CART_ROM_MAGIC_ADDR)));
-	setGlobal("SYS_CART_MAGIC", valueNumber(static_cast<double>(CART_ROM_MAGIC)));
+	setGlobal("sys_boot_cart", valueNumber(static_cast<double>(IO_SYS_BOOT_CART)));
+	setGlobal("sys_cart_bootready", valueNumber(static_cast<double>(IO_SYS_CART_BOOTREADY)));
+	setGlobal("sys_cart_magic_addr", valueNumber(static_cast<double>(CART_ROM_MAGIC_ADDR)));
+	setGlobal("sys_cart_magic", valueNumber(static_cast<double>(CART_ROM_MAGIC)));
 	const uint32_t maxAssets = (ASSET_TABLE_SIZE - ASSET_TABLE_HEADER_SIZE) / ASSET_TABLE_ENTRY_SIZE;
-	setGlobal("SYS_CART_ROM_SIZE", valueNumber(static_cast<double>(CART_ROM_SIZE)));
-	setGlobal("SYS_RAM_SIZE", valueNumber(static_cast<double>(RAM_SIZE)));
-	setGlobal("SYS_MAX_ASSETS", valueNumber(static_cast<double>(maxAssets)));
-	setGlobal("SYS_STRING_HANDLE_COUNT", valueNumber(static_cast<double>(STRING_HANDLE_COUNT)));
-	setGlobal("SYS_MAX_CYCLES_PER_FRAME", valueNumber(static_cast<double>(m_cycleBudgetPerFrame)));
-	setGlobal("SYS_VDP_DITHER", valueNumber(static_cast<double>(IO_VDP_DITHER)));
-	setGlobal("SYS_VDP_PRIMARY_ATLAS_ID", valueNumber(static_cast<double>(IO_VDP_PRIMARY_ATLAS_ID)));
-	setGlobal("SYS_VDP_SECONDARY_ATLAS_ID", valueNumber(static_cast<double>(IO_VDP_SECONDARY_ATLAS_ID)));
-	setGlobal("SYS_VDP_ATLAS_NONE", valueNumber(static_cast<double>(VDP_ATLAS_ID_NONE)));
-	setGlobal("SYS_VDP_RD_SURFACE", valueNumber(static_cast<double>(IO_VDP_RD_SURFACE)));
-	setGlobal("SYS_VDP_RD_X", valueNumber(static_cast<double>(IO_VDP_RD_X)));
-	setGlobal("SYS_VDP_RD_Y", valueNumber(static_cast<double>(IO_VDP_RD_Y)));
-	setGlobal("SYS_VDP_RD_MODE", valueNumber(static_cast<double>(IO_VDP_RD_MODE)));
-	setGlobal("SYS_VDP_RD_STATUS", valueNumber(static_cast<double>(IO_VDP_RD_STATUS)));
-	setGlobal("SYS_VDP_RD_DATA", valueNumber(static_cast<double>(IO_VDP_RD_DATA)));
-	setGlobal("SYS_VDP_RD_MODE_RGBA8888", valueNumber(static_cast<double>(VDP_RD_MODE_RGBA8888)));
-	setGlobal("SYS_VDP_RD_STATUS_READY", valueNumber(static_cast<double>(VDP_RD_STATUS_READY)));
-	setGlobal("SYS_VDP_RD_STATUS_OVERFLOW", valueNumber(static_cast<double>(VDP_RD_STATUS_OVERFLOW)));
-	setGlobal("SYS_IRQ_FLAGS", valueNumber(static_cast<double>(IO_IRQ_FLAGS)));
-	setGlobal("SYS_IRQ_ACK", valueNumber(static_cast<double>(IO_IRQ_ACK)));
-	setGlobal("SYS_DMA_SRC", valueNumber(static_cast<double>(IO_DMA_SRC)));
-	setGlobal("SYS_DMA_DST", valueNumber(static_cast<double>(IO_DMA_DST)));
-	setGlobal("SYS_DMA_LEN", valueNumber(static_cast<double>(IO_DMA_LEN)));
-	setGlobal("SYS_DMA_CTRL", valueNumber(static_cast<double>(IO_DMA_CTRL)));
-	setGlobal("SYS_DMA_STATUS", valueNumber(static_cast<double>(IO_DMA_STATUS)));
-	setGlobal("SYS_DMA_WRITTEN", valueNumber(static_cast<double>(IO_DMA_WRITTEN)));
-	setGlobal("SYS_IMG_SRC", valueNumber(static_cast<double>(IO_IMG_SRC)));
-	setGlobal("SYS_IMG_LEN", valueNumber(static_cast<double>(IO_IMG_LEN)));
-	setGlobal("SYS_IMG_DST", valueNumber(static_cast<double>(IO_IMG_DST)));
-	setGlobal("SYS_IMG_CAP", valueNumber(static_cast<double>(IO_IMG_CAP)));
-	setGlobal("SYS_IMG_CTRL", valueNumber(static_cast<double>(IO_IMG_CTRL)));
-	setGlobal("SYS_IMG_STATUS", valueNumber(static_cast<double>(IO_IMG_STATUS)));
-	setGlobal("SYS_IMG_WRITTEN", valueNumber(static_cast<double>(IO_IMG_WRITTEN)));
+	setGlobal("sys_cart_rom_size", valueNumber(static_cast<double>(CART_ROM_SIZE)));
+	setGlobal("sys_ram_size", valueNumber(static_cast<double>(RAM_SIZE)));
+	setGlobal("sys_max_assets", valueNumber(static_cast<double>(maxAssets)));
+	setGlobal("sys_string_handle_count", valueNumber(static_cast<double>(STRING_HANDLE_COUNT)));
+	setGlobal("sys_max_cycles_per_frame", valueNumber(static_cast<double>(m_cycleBudgetPerFrame)));
+	setGlobal("sys_vdp_dither", valueNumber(static_cast<double>(IO_VDP_DITHER)));
+	setGlobal("sys_vdp_primary_atlas_id", valueNumber(static_cast<double>(IO_VDP_PRIMARY_ATLAS_ID)));
+	setGlobal("sys_vdp_secondary_atlas_id", valueNumber(static_cast<double>(IO_VDP_SECONDARY_ATLAS_ID)));
+	setGlobal("sys_vdp_atlas_none", valueNumber(static_cast<double>(VDP_ATLAS_ID_NONE)));
+	setGlobal("sys_vdp_rd_surface", valueNumber(static_cast<double>(IO_VDP_RD_SURFACE)));
+	setGlobal("sys_vdp_rd_x", valueNumber(static_cast<double>(IO_VDP_RD_X)));
+	setGlobal("sys_vdp_rd_y", valueNumber(static_cast<double>(IO_VDP_RD_Y)));
+	setGlobal("sys_vdp_rd_mode", valueNumber(static_cast<double>(IO_VDP_RD_MODE)));
+	setGlobal("sys_vdp_rd_status", valueNumber(static_cast<double>(IO_VDP_RD_STATUS)));
+	setGlobal("sys_vdp_rd_data", valueNumber(static_cast<double>(IO_VDP_RD_DATA)));
+	setGlobal("sys_vdp_rd_mode_rgba8888", valueNumber(static_cast<double>(VDP_RD_MODE_RGBA8888)));
+	setGlobal("sys_vdp_rd_status_ready", valueNumber(static_cast<double>(VDP_RD_STATUS_READY)));
+	setGlobal("sys_vdp_rd_status_overflow", valueNumber(static_cast<double>(VDP_RD_STATUS_OVERFLOW)));
+	setGlobal("sys_irq_flags", valueNumber(static_cast<double>(IO_IRQ_FLAGS)));
+	setGlobal("sys_irq_ack", valueNumber(static_cast<double>(IO_IRQ_ACK)));
+	setGlobal("sys_dma_src", valueNumber(static_cast<double>(IO_DMA_SRC)));
+	setGlobal("sys_dma_dst", valueNumber(static_cast<double>(IO_DMA_DST)));
+	setGlobal("sys_dma_len", valueNumber(static_cast<double>(IO_DMA_LEN)));
+	setGlobal("sys_dma_ctrl", valueNumber(static_cast<double>(IO_DMA_CTRL)));
+	setGlobal("sys_dma_status", valueNumber(static_cast<double>(IO_DMA_STATUS)));
+	setGlobal("sys_dma_written", valueNumber(static_cast<double>(IO_DMA_WRITTEN)));
+	setGlobal("sys_img_src", valueNumber(static_cast<double>(IO_IMG_SRC)));
+	setGlobal("sys_img_len", valueNumber(static_cast<double>(IO_IMG_LEN)));
+	setGlobal("sys_img_dst", valueNumber(static_cast<double>(IO_IMG_DST)));
+	setGlobal("sys_img_cap", valueNumber(static_cast<double>(IO_IMG_CAP)));
+	setGlobal("sys_img_ctrl", valueNumber(static_cast<double>(IO_IMG_CTRL)));
+	setGlobal("sys_img_status", valueNumber(static_cast<double>(IO_IMG_STATUS)));
+	setGlobal("sys_img_written", valueNumber(static_cast<double>(IO_IMG_WRITTEN)));
 	setGlobal("sys_rom_system_base", valueNumber(static_cast<double>(SYSTEM_ROM_BASE)));
 	setGlobal("sys_rom_cart_base", valueNumber(static_cast<double>(CART_ROM_BASE)));
 	setGlobal("sys_rom_overlay_base", valueNumber(static_cast<double>(OVERLAY_ROM_BASE)));
+	setGlobal("sys_rom_overlay_size", valueNumber(static_cast<double>(m_memory.overlayRomSize())));
 	refreshMemoryMapGlobals();
-	setGlobal("IRQ_DMA_DONE", valueNumber(static_cast<double>(IRQ_DMA_DONE)));
-	setGlobal("IRQ_DMA_ERROR", valueNumber(static_cast<double>(IRQ_DMA_ERROR)));
-	setGlobal("IRQ_IMG_DONE", valueNumber(static_cast<double>(IRQ_IMG_DONE)));
-	setGlobal("IRQ_IMG_ERROR", valueNumber(static_cast<double>(IRQ_IMG_ERROR)));
-	setGlobal("DMA_CTRL_START", valueNumber(static_cast<double>(DMA_CTRL_START)));
-	setGlobal("DMA_CTRL_STRICT", valueNumber(static_cast<double>(DMA_CTRL_STRICT)));
-	setGlobal("DMA_STATUS_BUSY", valueNumber(static_cast<double>(DMA_STATUS_BUSY)));
-	setGlobal("DMA_STATUS_DONE", valueNumber(static_cast<double>(DMA_STATUS_DONE)));
-	setGlobal("DMA_STATUS_ERROR", valueNumber(static_cast<double>(DMA_STATUS_ERROR)));
-	setGlobal("DMA_STATUS_CLIPPED", valueNumber(static_cast<double>(DMA_STATUS_CLIPPED)));
-	setGlobal("IMG_CTRL_START", valueNumber(static_cast<double>(IMG_CTRL_START)));
-	setGlobal("IMG_STATUS_BUSY", valueNumber(static_cast<double>(IMG_STATUS_BUSY)));
-	setGlobal("IMG_STATUS_DONE", valueNumber(static_cast<double>(IMG_STATUS_DONE)));
-	setGlobal("IMG_STATUS_ERROR", valueNumber(static_cast<double>(IMG_STATUS_ERROR)));
-	setGlobal("IMG_STATUS_CLIPPED", valueNumber(static_cast<double>(IMG_STATUS_CLIPPED)));
+	setGlobal("irq_dma_done", valueNumber(static_cast<double>(IRQ_DMA_DONE)));
+	setGlobal("irq_dma_error", valueNumber(static_cast<double>(IRQ_DMA_ERROR)));
+	setGlobal("irq_img_done", valueNumber(static_cast<double>(IRQ_IMG_DONE)));
+	setGlobal("irq_img_error", valueNumber(static_cast<double>(IRQ_IMG_ERROR)));
+	setGlobal("dma_ctrl_start", valueNumber(static_cast<double>(DMA_CTRL_START)));
+	setGlobal("dma_ctrl_strict", valueNumber(static_cast<double>(DMA_CTRL_STRICT)));
+	setGlobal("dma_status_busy", valueNumber(static_cast<double>(DMA_STATUS_BUSY)));
+	setGlobal("dma_status_done", valueNumber(static_cast<double>(DMA_STATUS_DONE)));
+	setGlobal("dma_status_error", valueNumber(static_cast<double>(DMA_STATUS_ERROR)));
+	setGlobal("dma_status_clipped", valueNumber(static_cast<double>(DMA_STATUS_CLIPPED)));
+	setGlobal("img_ctrl_start", valueNumber(static_cast<double>(IMG_CTRL_START)));
+	setGlobal("img_status_busy", valueNumber(static_cast<double>(IMG_STATUS_BUSY)));
+	setGlobal("img_status_done", valueNumber(static_cast<double>(IMG_STATUS_DONE)));
+	setGlobal("img_status_error", valueNumber(static_cast<double>(IMG_STATUS_ERROR)));
+	setGlobal("img_status_clipped", valueNumber(static_cast<double>(IMG_STATUS_CLIPPED)));
 
 	registerNativeFunction("peek", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 		uint32_t address = static_cast<uint32_t>(asNumber(args.at(0)));
@@ -4073,6 +4074,15 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 		oss << std::fixed << std::setprecision(0) << value;
 		return oss.str();
 	};
+	auto formatAssetTokenKey = [](AssetToken token) -> std::string {
+		const uint32_t hi = static_cast<uint32_t>((token >> 32) & 0xffffffffu);
+		const uint32_t lo = static_cast<uint32_t>(token & 0xffffffffu);
+		std::ostringstream oss;
+		oss << std::hex << std::nouppercase << std::setfill('0')
+			<< std::setw(8) << hi
+			<< std::setw(8) << lo;
+		return oss.str();
+	};
 	auto makeAssetMapNativeObject = [this, formatAssetKeyNumber](Table* mapTable) -> Value {
 		return m_cpu.createNativeObject(
 			mapTable,
@@ -4171,91 +4181,152 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 			table->set(key("payload_id"), str(*info.payloadId));
 		}
 	};
-	std::unordered_set<AssetId> imgIds;
+	std::unordered_set<AssetToken> imgTokens;
 	if (assets.fallback) {
 		for (const auto& entry : assets.fallback->img) {
-			imgIds.insert(entry.second.id);
+			imgTokens.insert(entry.first);
 		}
 	}
 	for (const auto& entry : assets.img) {
-		imgIds.insert(entry.second.id);
+		imgTokens.insert(entry.first);
 	}
-	auto* imgTable = m_cpu.createTable(0, static_cast<int>(imgIds.size()));
-	for (const auto& id : imgIds) {
-		const ImgAsset* imgAsset = assets.getImg(id);
+	auto* imgTable = m_cpu.createTable(0, static_cast<int>(imgTokens.size() * 2));
+	for (const auto& token : imgTokens) {
+		const ImgAsset* imgAsset = nullptr;
+		auto imgIt = assets.img.find(token);
+		if (imgIt != assets.img.end()) {
+			imgAsset = &imgIt->second;
+		} else if (assets.fallback) {
+			auto fallbackIt = assets.fallback->img.find(token);
+			if (fallbackIt != assets.fallback->img.end()) {
+				imgAsset = &fallbackIt->second;
+			}
+		}
 		if (!imgAsset) continue;
 		auto* imgEntry = m_cpu.createTable(0, 8);
-		appendRomAssetFields(imgEntry, imgAsset->rom, id);
+		appendRomAssetFields(imgEntry, imgAsset->rom, imgAsset->id);
 		imgEntry->set(key("imgmeta"), valueTable(buildImgMetaTable(m_cpu, imgAsset->meta, key)));
-		imgTable->set(str(id), valueTable(imgEntry));
+		const Value entryValue = valueTable(imgEntry);
+		imgTable->set(str(imgAsset->id), entryValue);
+		imgTable->set(str(formatAssetTokenKey(token)), entryValue);
 	}
 	assetsTable->set(key("img"), makeAssetMapNativeObject(imgTable));
 
-	std::unordered_set<AssetId> dataIds;
+	std::unordered_set<AssetToken> dataTokens;
 	if (assets.fallback) {
 		for (const auto& entry : assets.fallback->data) {
-			dataIds.insert(entry.second.id);
+			dataTokens.insert(entry.first);
 		}
 	}
 	for (const auto& entry : assets.data) {
-		dataIds.insert(entry.second.id);
+		dataTokens.insert(entry.first);
 	}
-	auto* dataTable = m_cpu.createTable(0, static_cast<int>(dataIds.size()));
-	for (const auto& id : dataIds) {
-		const BinValue* value = assets.getData(id);
+	auto* dataTable = m_cpu.createTable(0, static_cast<int>(dataTokens.size() * 2));
+	for (const auto& token : dataTokens) {
+		const BinValue* value = nullptr;
+		std::string id;
+		auto dataIt = assets.data.find(token);
+		if (dataIt != assets.data.end()) {
+			id = dataIt->second.id;
+			value = &dataIt->second.value;
+		} else if (assets.fallback) {
+			auto fallbackIt = assets.fallback->data.find(token);
+			if (fallbackIt != assets.fallback->data.end()) {
+				id = fallbackIt->second.id;
+				value = &fallbackIt->second.value;
+			}
+		}
 		if (!value) continue;
-		dataTable->set(str(id), binValueToRuntimeValue(m_cpu, *value));
+		const Value entryValue = binValueToRuntimeValue(m_cpu, *value);
+		dataTable->set(str(id), entryValue);
+		dataTable->set(str(formatAssetTokenKey(token)), entryValue);
 	}
 	assetsTable->set(key("data"), makeAssetMapNativeObject(dataTable));
-	std::unordered_set<AssetId> audioIds;
+	std::unordered_set<AssetToken> audioTokens;
 	if (assets.fallback) {
 		for (const auto& entry : assets.fallback->audio) {
-			audioIds.insert(entry.second.id);
+			audioTokens.insert(entry.first);
 		}
 	}
 	for (const auto& entry : assets.audio) {
-		audioIds.insert(entry.second.id);
+		audioTokens.insert(entry.first);
 	}
-	auto* audioTable = m_cpu.createTable(0, static_cast<int>(audioIds.size()));
-	for (const auto& id : audioIds) {
-		const AudioAsset* audioAsset = assets.getAudio(id);
+	auto* audioTable = m_cpu.createTable(0, static_cast<int>(audioTokens.size() * 2));
+	for (const auto& token : audioTokens) {
+		const AudioAsset* audioAsset = nullptr;
+		auto audioIt = assets.audio.find(token);
+		if (audioIt != assets.audio.end()) {
+			audioAsset = &audioIt->second;
+		} else if (assets.fallback) {
+			auto fallbackIt = assets.fallback->audio.find(token);
+			if (fallbackIt != assets.fallback->audio.end()) {
+				audioAsset = &fallbackIt->second;
+			}
+		}
 		if (!audioAsset) continue;
 		auto* audioEntry = m_cpu.createTable(0, 6);
-		appendRomAssetFields(audioEntry, audioAsset->rom, id);
+		appendRomAssetFields(audioEntry, audioAsset->rom, audioAsset->id);
 		audioEntry->set(key("audiometa"), valueTable(buildAudioMetaTable(m_cpu, audioAsset->meta, key)));
-		audioTable->set(str(id), valueTable(audioEntry));
+		const Value entryValue = valueTable(audioEntry);
+		audioTable->set(str(audioAsset->id), entryValue);
+		audioTable->set(str(formatAssetTokenKey(token)), entryValue);
 	}
 	assetsTable->set(key("audio"), makeAssetMapNativeObject(audioTable));
-	std::unordered_set<AssetId> audioEventIds;
+	std::unordered_set<AssetToken> audioEventTokens;
 	if (assets.fallback) {
 		for (const auto& entry : assets.fallback->audioevents) {
-			audioEventIds.insert(entry.second.id);
+			audioEventTokens.insert(entry.first);
 		}
 	}
 	for (const auto& entry : assets.audioevents) {
-		audioEventIds.insert(entry.second.id);
+		audioEventTokens.insert(entry.first);
 	}
-	auto* audioEventsTable = m_cpu.createTable(0, static_cast<int>(audioEventIds.size()));
-	for (const auto& id : audioEventIds) {
-		const BinValue* value = assets.getAudioEvent(id);
+	auto* audioEventsTable = m_cpu.createTable(0, static_cast<int>(audioEventTokens.size() * 2));
+	for (const auto& token : audioEventTokens) {
+		const BinValue* value = nullptr;
+		std::string id;
+		auto eventIt = assets.audioevents.find(token);
+		if (eventIt != assets.audioevents.end()) {
+			id = eventIt->second.id;
+			value = &eventIt->second.value;
+		} else if (assets.fallback) {
+			auto fallbackIt = assets.fallback->audioevents.find(token);
+			if (fallbackIt != assets.fallback->audioevents.end()) {
+				id = fallbackIt->second.id;
+				value = &fallbackIt->second.value;
+			}
+		}
 		if (!value) continue;
-		audioEventsTable->set(str(id), binValueToRuntimeValue(m_cpu, *value));
+		const Value entryValue = binValueToRuntimeValue(m_cpu, *value);
+		audioEventsTable->set(str(id), entryValue);
+		audioEventsTable->set(str(formatAssetTokenKey(token)), entryValue);
 	}
 	assetsTable->set(key("audioevents"), makeAssetMapNativeObject(audioEventsTable));
-	std::unordered_set<AssetId> modelIds;
+	std::unordered_set<AssetToken> modelTokens;
 	if (assets.fallback) {
 		for (const auto& entry : assets.fallback->model) {
-			modelIds.insert(entry.second.id);
+			modelTokens.insert(entry.first);
 		}
 	}
 	for (const auto& entry : assets.model) {
-		modelIds.insert(entry.second.id);
+		modelTokens.insert(entry.first);
 	}
-	auto* modelTable = m_cpu.createTable(0, static_cast<int>(modelIds.size()));
-	for (const auto& id : modelIds) {
-		const ModelAsset* modelAsset = assets.getModel(id);
+	auto* modelTable = m_cpu.createTable(0, static_cast<int>(modelTokens.size() * 2));
+	for (const auto& token : modelTokens) {
+		const ModelAsset* modelAsset = nullptr;
+		auto modelIt = assets.model.find(token);
+		if (modelIt != assets.model.end()) {
+			modelAsset = &modelIt->second;
+		} else if (assets.fallback) {
+			auto fallbackIt = assets.fallback->model.find(token);
+			if (fallbackIt != assets.fallback->model.end()) {
+				modelAsset = &fallbackIt->second;
+			}
+		}
 		if (!modelAsset) continue;
-		modelTable->set(str(id), valueTable(buildModelAssetTable(m_cpu, *modelAsset, key)));
+		const Value entryValue = valueTable(buildModelAssetTable(m_cpu, *modelAsset, key));
+		modelTable->set(str(modelAsset->id), entryValue);
+		modelTable->set(str(formatAssetTokenKey(token)), entryValue);
 	}
 	assetsTable->set(key("model"), makeAssetMapNativeObject(modelTable));
 	assetsTable->set(key("project_root_path"), str(assets.projectRootPath));

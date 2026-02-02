@@ -9,7 +9,7 @@ TS:
 
 Remove auto cart asset loading in Runtime.prepareCartBoot():
 currently does applyCartAssetLayers() + buildAssetMemory({mode:'cart'}) + vdp.uploadAtlasTextures() + refresh_audio_assets().
-Instead just set SYS_CART_BOOTREADY true (keep boot ready signal) and do not build assets here.
+Instead just set sys_cart_bootready true (keep boot ready signal) and do not build assets here.
 Expose a Lua builtin (e.g. load_cart_assets()) that:
 calls applyCartAssetLayers()
 buildAssetMemory({ mode: 'cart' })

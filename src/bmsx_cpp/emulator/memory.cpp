@@ -119,6 +119,10 @@ void Memory::setOverlayRom(u8* data, size_t size) {
 	m_overlayRom = { data, size };
 }
 
+size_t Memory::overlayRomSize() const {
+	return m_overlayRom.size;
+}
+
 void Memory::setVdpIoHandler(VdpIoHandler* handler) {
 	m_vdpIoHandler = handler;
 }

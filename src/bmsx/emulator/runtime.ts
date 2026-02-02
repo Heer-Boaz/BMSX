@@ -1,4 +1,4 @@
-import { $, calcCyclesPerFrameScaled, runGate } from '../core/engine_core';
+import { $, calcCyclesPerFrameScaled } from '../core/engine_core';
 import { taskGate } from '../core/taskgate';
 import { Input } from '../input/input';
 import { KeyModifier } from '../input/playerinput';
@@ -270,7 +270,94 @@ class RateBudget {
 export class Runtime {
 	private static _instance: Runtime = null;
 	private static readonly ENGINE_BUILTIN_PRELUDE_PATH = '__engine_builtin_prelude__';
-	private static readonly LUA_SNAPSHOT_EXCLUDED_GLOBALS = new Set<string>(['print', 'type', 'tostring', 'tonumber', 'setmetatable', 'getmetatable', 'require', 'pairs', 'ipairs', 'serialize', 'deserialize', 'math', 'easing', 'string', 'os', 'table', 'coroutine', 'debug', 'package', 'api', 'peek', 'poke', 'SYS_BOOT_CART', 'SYS_CART_MAGIC_ADDR', 'SYS_CART_MAGIC', 'SYS_CART_ROM_SIZE', 'SYS_RAM_SIZE', 'SYS_MAX_ASSETS', 'SYS_STRING_HANDLE_COUNT', 'SYS_MAX_CYCLES_PER_FRAME', 'SYS_VDP_DITHER', 'SYS_VDP_PRIMARY_ATLAS_ID', 'SYS_VDP_SECONDARY_ATLAS_ID', 'SYS_VDP_ATLAS_NONE', 'SYS_VDP_RD_SURFACE', 'SYS_VDP_RD_X', 'SYS_VDP_RD_Y', 'SYS_VDP_RD_MODE', 'SYS_VDP_RD_STATUS', 'SYS_VDP_RD_DATA', 'SYS_VDP_RD_MODE_RGBA8888', 'SYS_VDP_RD_STATUS_READY', 'SYS_VDP_RD_STATUS_OVERFLOW', 'SYS_IRQ_FLAGS', 'SYS_IRQ_ACK', 'SYS_DMA_SRC', 'SYS_DMA_DST', 'SYS_DMA_LEN', 'SYS_DMA_CTRL', 'SYS_DMA_STATUS', 'SYS_DMA_WRITTEN', 'SYS_IMG_SRC', 'SYS_IMG_LEN', 'SYS_IMG_DST', 'SYS_IMG_CAP', 'SYS_IMG_CTRL', 'SYS_IMG_STATUS', 'SYS_IMG_WRITTEN', 'sys_rom_system_base', 'sys_rom_cart_base', 'sys_rom_overlay_base', 'sys_vram_system_atlas_base', 'SYS_VRAM_PRIMARY_ATLAS_BASE', 'SYS_VRAM_SECONDARY_ATLAS_BASE', 'SYS_VRAM_STAGING_BASE', 'sys_vram_system_atlas_size', 'SYS_VRAM_PRIMARY_ATLAS_SIZE', 'SYS_VRAM_SECONDARY_ATLAS_SIZE', 'SYS_VRAM_STAGING_SIZE', 'IRQ_DMA_DONE', 'IRQ_DMA_ERROR', 'IRQ_IMG_DONE', 'IRQ_IMG_ERROR', 'DMA_CTRL_START', 'DMA_CTRL_STRICT', 'DMA_STATUS_BUSY', 'DMA_STATUS_DONE', 'DMA_STATUS_ERROR', 'DMA_STATUS_CLIPPED', 'IMG_CTRL_START', 'IMG_STATUS_BUSY', 'IMG_STATUS_DONE', 'IMG_STATUS_ERROR', 'IMG_STATUS_CLIPPED']);
+	private static readonly LUA_SNAPSHOT_EXCLUDED_GLOBALS = new Set<string>([
+		'print',
+		'type',
+		'tostring',
+		'tonumber',
+		'setmetatable',
+		'getmetatable',
+		'require',
+		'pairs',
+		'ipairs',
+		'serialize',
+		'deserialize',
+		'math',
+		'easing',
+		'string',
+		'os',
+		'table',
+		'coroutine',
+		'debug',
+		'package',
+		'api',
+		'peek',
+		'poke',
+		'sys_boot_cart',
+		'sys_cart_bootready',
+		'sys_cart_magic_addr',
+		'sys_cart_magic',
+		'sys_cart_rom_size',
+		'sys_ram_size',
+		'sys_max_assets',
+		'sys_string_handle_count',
+		'sys_max_cycles_per_frame',
+		'sys_vdp_dither',
+		'sys_vdp_primary_atlas_id',
+		'sys_vdp_secondary_atlas_id',
+		'sys_vdp_atlas_none',
+		'sys_vdp_rd_surface',
+		'sys_vdp_rd_x',
+		'sys_vdp_rd_y',
+		'sys_vdp_rd_mode',
+		'sys_vdp_rd_status',
+		'sys_vdp_rd_data',
+		'sys_vdp_rd_mode_rgba8888',
+		'sys_vdp_rd_status_ready',
+		'sys_vdp_rd_status_overflow',
+		'sys_irq_flags',
+		'sys_irq_ack',
+		'sys_dma_src',
+		'sys_dma_dst',
+		'sys_dma_len',
+		'sys_dma_ctrl',
+		'sys_dma_status',
+		'sys_dma_written',
+		'sys_img_src',
+		'sys_img_len',
+		'sys_img_dst',
+		'sys_img_cap',
+		'sys_img_ctrl',
+		'sys_img_status',
+		'sys_img_written',
+		'sys_rom_system_base',
+		'sys_rom_cart_base',
+		'sys_rom_overlay_base',
+		'sys_rom_overlay_size',
+		'sys_vram_system_atlas_base',
+		'sys_vram_primary_atlas_base',
+		'sys_vram_secondary_atlas_base',
+		'sys_vram_staging_base',
+		'sys_vram_system_atlas_size',
+		'sys_vram_primary_atlas_size',
+		'sys_vram_secondary_atlas_size',
+		'sys_vram_staging_size',
+		'irq_dma_done',
+		'irq_dma_error',
+		'irq_img_done',
+		'irq_img_error',
+		'dma_ctrl_start',
+		'dma_ctrl_strict',
+		'dma_status_busy',
+		'dma_status_done',
+		'dma_status_error',
+		'dma_status_clipped',
+		'img_ctrl_start',
+		'img_status_busy',
+		'img_status_done',
+		'img_status_error',
+		'img_status_clipped',
+	]);
 	/**
 	 * Preserved render queue when a fault occurs
 	 * This is used to restore the render queue to its previous state
@@ -319,7 +406,7 @@ export class Runtime {
 			return;
 		}
 		this.cycleBudgetPerFrame = value;
-		this.registerGlobal('SYS_MAX_CYCLES_PER_FRAME', value);
+		this.registerGlobal('sys_max_cycles_per_frame', value);
 		this.resetTransferCarry();
 	}
 
@@ -356,7 +443,7 @@ export class Runtime {
 	public grantCycleBudget(baseBudget: number, carryBudget: number): void {
 		if (baseBudget !== this.cycleBudgetPerFrame) {
 			this.cycleBudgetPerFrame = baseBudget;
-			this.registerGlobal('SYS_MAX_CYCLES_PER_FRAME', baseBudget);
+			this.registerGlobal('sys_max_cycles_per_frame', baseBudget);
 		}
 		const totalBudget = baseBudget + carryBudget;
 		this.advanceHardware(totalBudget);
@@ -2109,6 +2196,9 @@ export class Runtime {
 
 	private setCartBootReadyFlag(value: boolean): void {
 		this.memory.writeValue(IO_SYS_CART_BOOTREADY, value ? 1 : 0);
+		if ($.view.backendType === 'headless') {
+			console.log(`[Runtime] cart_bootready=${value ? 1 : 0}`);
+		}
 	}
 
 	private async prepareCartBoot(): Promise<void> {
@@ -2117,12 +2207,13 @@ export class Runtime {
 		if (!this.cartAssetLayer || !this.cartAssetSource || !this.cartLuaSources) {
 			return;
 		}
-		if (this.shouldBootLuaProgramFromSources()) {
+		if (this.cartAssetSource.list('lua').length > 0) {
 			this.preparedCartProgram = this.compileCartLuaProgramForBoot();
-			this.setCartBootReadyFlag(this.editor.exists);
+			this.setCartBootReadyFlag(true);
 			return;
 		}
-		this.setCartBootReadyFlag(this.editor.exists);
+		const programEntry = this.cartAssetSource.getEntry(PROGRAM_ASSET_ID);
+		this.setCartBootReadyFlag(!!programEntry);
 	}
 
 	private async buildAssetMemory(params?: { source?: RawAssetSource; assets?: RuntimeAssets; mode?: 'full' | 'cart' }): Promise<void> {
@@ -2140,7 +2231,7 @@ export class Runtime {
 				this.memory.resetAssetMemory();
 			}
 			await this.vdp.registerImageAssets(assetSource, assets);
-			this.registerAudioAssets(assetSource, assets);
+			this.registerAudioAssets(assetSource);
 			this.rebuildAssetMetaCaches(assets);
 			this.memory.finalizeAssetTable();
 			this.memory.markAllAssetsDirty();
@@ -2149,7 +2240,7 @@ export class Runtime {
 		}
 	}
 
-	private registerAudioAssets(source: RawAssetSource, assets: RuntimeAssets): void {
+	private registerAudioAssets(source: RawAssetSource): void {
 		const entries = source.list('audio');
 		for (let index = 0; index < entries.length; index += 1) {
 			const entry = entries[index];
@@ -2221,6 +2312,9 @@ export class Runtime {
 		}
 		if (!this.memory.readValue(IO_SYS_BOOT_CART)) {
 			return;
+		}
+		if ($.view.backendType === 'headless') {
+			console.log('[Runtime] boot request received');
 		}
 		this.memory.writeValue(IO_SYS_BOOT_CART, 0);
 		this.requestCartBoot();
@@ -2313,11 +2407,12 @@ export class Runtime {
 		this._luaPath = asset.source_path;
 		this.luaInitialized = false;
 		const mode = this.cartAssetLayer ? 'cart' : 'full';
+		const preserveTextures = mode === 'cart';
 		await this.buildAssetMemory({ mode });
 		if (mode === 'full') {
 			this.memory.sealEngineAssets();
 		}
-		await this.vdp.uploadAtlasTextures();
+		await this.vdp.uploadAtlasTextures({ includeSystemAtlas: !preserveTextures });
 		await $.refresh_audio_assets();
 		await this.boot();
 	}
@@ -3174,70 +3269,71 @@ export class Runtime {
 
 		this.registerGlobal('math', mathTable);
 		this.registerGlobal('easing', easingTable);
-		this.registerGlobal('SYS_BOOT_CART', IO_SYS_BOOT_CART);
-		this.registerGlobal('SYS_CART_BOOTREADY', IO_SYS_CART_BOOTREADY);
-		this.registerGlobal('SYS_CART_MAGIC_ADDR', CART_ROM_MAGIC_ADDR);
-		this.registerGlobal('SYS_CART_MAGIC', CART_ROM_MAGIC);
-		this.registerGlobal('SYS_CART_ROM_SIZE', CART_ROM_SIZE);
-		this.registerGlobal('SYS_RAM_SIZE', RAM_SIZE);
+		this.registerGlobal('sys_boot_cart', IO_SYS_BOOT_CART);
+		this.registerGlobal('sys_cart_bootready', IO_SYS_CART_BOOTREADY);
+		this.registerGlobal('sys_cart_magic_addr', CART_ROM_MAGIC_ADDR);
+		this.registerGlobal('sys_cart_magic', CART_ROM_MAGIC);
+		this.registerGlobal('sys_cart_rom_size', CART_ROM_SIZE);
+		this.registerGlobal('sys_ram_size', RAM_SIZE);
 		const maxAssets = Math.floor((ASSET_TABLE_SIZE - ASSET_TABLE_HEADER_SIZE) / ASSET_TABLE_ENTRY_SIZE);
-		this.registerGlobal('SYS_MAX_ASSETS', maxAssets);
-		this.registerGlobal('SYS_STRING_HANDLE_COUNT', STRING_HANDLE_COUNT);
-		this.registerGlobal('SYS_MAX_CYCLES_PER_FRAME', this.cycleBudgetPerFrame);
-		this.registerGlobal('SYS_VDP_DITHER', IO_VDP_DITHER);
-		this.registerGlobal('SYS_VDP_PRIMARY_ATLAS_ID', IO_VDP_PRIMARY_ATLAS_ID);
-		this.registerGlobal('SYS_VDP_SECONDARY_ATLAS_ID', IO_VDP_SECONDARY_ATLAS_ID);
-		this.registerGlobal('SYS_VDP_ATLAS_NONE', VDP_ATLAS_ID_NONE);
-		this.registerGlobal('SYS_VDP_RD_SURFACE', IO_VDP_RD_SURFACE);
-		this.registerGlobal('SYS_VDP_RD_X', IO_VDP_RD_X);
-		this.registerGlobal('SYS_VDP_RD_Y', IO_VDP_RD_Y);
-		this.registerGlobal('SYS_VDP_RD_MODE', IO_VDP_RD_MODE);
-		this.registerGlobal('SYS_VDP_RD_STATUS', IO_VDP_RD_STATUS);
-		this.registerGlobal('SYS_VDP_RD_DATA', IO_VDP_RD_DATA);
-		this.registerGlobal('SYS_VDP_RD_MODE_RGBA8888', VDP_RD_MODE_RGBA8888);
-		this.registerGlobal('SYS_VDP_RD_STATUS_READY', VDP_RD_STATUS_READY);
-		this.registerGlobal('SYS_VDP_RD_STATUS_OVERFLOW', VDP_RD_STATUS_OVERFLOW);
-		this.registerGlobal('SYS_IRQ_FLAGS', IO_IRQ_FLAGS);
-		this.registerGlobal('SYS_IRQ_ACK', IO_IRQ_ACK);
-		this.registerGlobal('SYS_DMA_SRC', IO_DMA_SRC);
-		this.registerGlobal('SYS_DMA_DST', IO_DMA_DST);
-		this.registerGlobal('SYS_DMA_LEN', IO_DMA_LEN);
-		this.registerGlobal('SYS_DMA_CTRL', IO_DMA_CTRL);
-		this.registerGlobal('SYS_DMA_STATUS', IO_DMA_STATUS);
-		this.registerGlobal('SYS_DMA_WRITTEN', IO_DMA_WRITTEN);
-		this.registerGlobal('SYS_IMG_SRC', IO_IMG_SRC);
-		this.registerGlobal('SYS_IMG_LEN', IO_IMG_LEN);
-		this.registerGlobal('SYS_IMG_DST', IO_IMG_DST);
-		this.registerGlobal('SYS_IMG_CAP', IO_IMG_CAP);
-		this.registerGlobal('SYS_IMG_CTRL', IO_IMG_CTRL);
-		this.registerGlobal('SYS_IMG_STATUS', IO_IMG_STATUS);
-		this.registerGlobal('SYS_IMG_WRITTEN', IO_IMG_WRITTEN);
+		this.registerGlobal('sys_max_assets', maxAssets);
+		this.registerGlobal('sys_string_handle_count', STRING_HANDLE_COUNT);
+		this.registerGlobal('sys_max_cycles_per_frame', this.cycleBudgetPerFrame);
+		this.registerGlobal('sys_vdp_dither', IO_VDP_DITHER);
+		this.registerGlobal('sys_vdp_primary_atlas_id', IO_VDP_PRIMARY_ATLAS_ID);
+		this.registerGlobal('sys_vdp_secondary_atlas_id', IO_VDP_SECONDARY_ATLAS_ID);
+		this.registerGlobal('sys_vdp_atlas_none', VDP_ATLAS_ID_NONE);
+		this.registerGlobal('sys_vdp_rd_surface', IO_VDP_RD_SURFACE);
+		this.registerGlobal('sys_vdp_rd_x', IO_VDP_RD_X);
+		this.registerGlobal('sys_vdp_rd_y', IO_VDP_RD_Y);
+		this.registerGlobal('sys_vdp_rd_mode', IO_VDP_RD_MODE);
+		this.registerGlobal('sys_vdp_rd_status', IO_VDP_RD_STATUS);
+		this.registerGlobal('sys_vdp_rd_data', IO_VDP_RD_DATA);
+		this.registerGlobal('sys_vdp_rd_mode_rgba8888', VDP_RD_MODE_RGBA8888);
+		this.registerGlobal('sys_vdp_rd_status_ready', VDP_RD_STATUS_READY);
+		this.registerGlobal('sys_vdp_rd_status_overflow', VDP_RD_STATUS_OVERFLOW);
+		this.registerGlobal('sys_irq_flags', IO_IRQ_FLAGS);
+		this.registerGlobal('sys_irq_ack', IO_IRQ_ACK);
+		this.registerGlobal('sys_dma_src', IO_DMA_SRC);
+		this.registerGlobal('sys_dma_dst', IO_DMA_DST);
+		this.registerGlobal('sys_dma_len', IO_DMA_LEN);
+		this.registerGlobal('sys_dma_ctrl', IO_DMA_CTRL);
+		this.registerGlobal('sys_dma_status', IO_DMA_STATUS);
+		this.registerGlobal('sys_dma_written', IO_DMA_WRITTEN);
+		this.registerGlobal('sys_img_src', IO_IMG_SRC);
+		this.registerGlobal('sys_img_len', IO_IMG_LEN);
+		this.registerGlobal('sys_img_dst', IO_IMG_DST);
+		this.registerGlobal('sys_img_cap', IO_IMG_CAP);
+		this.registerGlobal('sys_img_ctrl', IO_IMG_CTRL);
+		this.registerGlobal('sys_img_status', IO_IMG_STATUS);
+		this.registerGlobal('sys_img_written', IO_IMG_WRITTEN);
 		this.registerGlobal('sys_rom_system_base', SYSTEM_ROM_BASE);
 		this.registerGlobal('sys_rom_cart_base', CART_ROM_BASE);
 		this.registerGlobal('sys_rom_overlay_base', OVERLAY_ROM_BASE);
+		this.registerGlobal('sys_rom_overlay_size', this.memory.getOverlayRomSize());
 		this.registerGlobal('sys_vram_system_atlas_base', VRAM_SYSTEM_ATLAS_BASE);
-		this.registerGlobal('SYS_VRAM_PRIMARY_ATLAS_BASE', VRAM_PRIMARY_ATLAS_BASE);
-		this.registerGlobal('SYS_VRAM_SECONDARY_ATLAS_BASE', VRAM_SECONDARY_ATLAS_BASE);
-		this.registerGlobal('SYS_VRAM_STAGING_BASE', VRAM_STAGING_BASE);
+		this.registerGlobal('sys_vram_primary_atlas_base', VRAM_PRIMARY_ATLAS_BASE);
+		this.registerGlobal('sys_vram_secondary_atlas_base', VRAM_SECONDARY_ATLAS_BASE);
+		this.registerGlobal('sys_vram_staging_base', VRAM_STAGING_BASE);
 		this.registerGlobal('sys_vram_system_atlas_size', VRAM_SYSTEM_ATLAS_SIZE);
-		this.registerGlobal('SYS_VRAM_PRIMARY_ATLAS_SIZE', VRAM_PRIMARY_ATLAS_SIZE);
-		this.registerGlobal('SYS_VRAM_SECONDARY_ATLAS_SIZE', VRAM_SECONDARY_ATLAS_SIZE);
-		this.registerGlobal('SYS_VRAM_STAGING_SIZE', VRAM_STAGING_SIZE);
-		this.registerGlobal('IRQ_DMA_DONE', IRQ_DMA_DONE);
-		this.registerGlobal('IRQ_DMA_ERROR', IRQ_DMA_ERROR);
-		this.registerGlobal('IRQ_IMG_DONE', IRQ_IMG_DONE);
-		this.registerGlobal('IRQ_IMG_ERROR', IRQ_IMG_ERROR);
-		this.registerGlobal('DMA_CTRL_START', DMA_CTRL_START);
-		this.registerGlobal('DMA_CTRL_STRICT', DMA_CTRL_STRICT);
-		this.registerGlobal('DMA_STATUS_BUSY', DMA_STATUS_BUSY);
-		this.registerGlobal('DMA_STATUS_DONE', DMA_STATUS_DONE);
-		this.registerGlobal('DMA_STATUS_ERROR', DMA_STATUS_ERROR);
-		this.registerGlobal('DMA_STATUS_CLIPPED', DMA_STATUS_CLIPPED);
-		this.registerGlobal('IMG_CTRL_START', IMG_CTRL_START);
-		this.registerGlobal('IMG_STATUS_BUSY', IMG_STATUS_BUSY);
-		this.registerGlobal('IMG_STATUS_DONE', IMG_STATUS_DONE);
-		this.registerGlobal('IMG_STATUS_ERROR', IMG_STATUS_ERROR);
-		this.registerGlobal('IMG_STATUS_CLIPPED', IMG_STATUS_CLIPPED);
+		this.registerGlobal('sys_vram_primary_atlas_size', VRAM_PRIMARY_ATLAS_SIZE);
+		this.registerGlobal('sys_vram_secondary_atlas_size', VRAM_SECONDARY_ATLAS_SIZE);
+		this.registerGlobal('sys_vram_staging_size', VRAM_STAGING_SIZE);
+		this.registerGlobal('irq_dma_done', IRQ_DMA_DONE);
+		this.registerGlobal('irq_dma_error', IRQ_DMA_ERROR);
+		this.registerGlobal('irq_img_done', IRQ_IMG_DONE);
+		this.registerGlobal('irq_img_error', IRQ_IMG_ERROR);
+		this.registerGlobal('dma_ctrl_start', DMA_CTRL_START);
+		this.registerGlobal('dma_ctrl_strict', DMA_CTRL_STRICT);
+		this.registerGlobal('dma_status_busy', DMA_STATUS_BUSY);
+		this.registerGlobal('dma_status_done', DMA_STATUS_DONE);
+		this.registerGlobal('dma_status_error', DMA_STATUS_ERROR);
+		this.registerGlobal('dma_status_clipped', DMA_STATUS_CLIPPED);
+		this.registerGlobal('img_ctrl_start', IMG_CTRL_START);
+		this.registerGlobal('img_status_busy', IMG_STATUS_BUSY);
+		this.registerGlobal('img_status_done', IMG_STATUS_DONE);
+		this.registerGlobal('img_status_error', IMG_STATUS_ERROR);
+		this.registerGlobal('img_status_clipped', IMG_STATUS_CLIPPED);
 		this.registerGlobal('peek', createNativeFunction('peek', (args, out) => {
 			const address = args[0] as number;
 			out.push(this.memory.readValue(address));
@@ -5186,8 +5282,9 @@ export class Runtime {
 			if (mode === 'full') {
 				this.memory.sealEngineAssets();
 			}
-			await $.reset_to_fresh_world();
-			await this.vdp.uploadAtlasTextures();
+			const preserveTextures = mode === 'cart';
+			await $.reset_to_fresh_world({ preserve_textures: preserveTextures });
+			await this.vdp.uploadAtlasTextures({ includeSystemAtlas: !preserveTextures });
 			await $.refresh_audio_assets();
 			try {
 				this.resetRuntimeState();

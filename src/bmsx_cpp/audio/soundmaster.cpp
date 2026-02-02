@@ -724,14 +724,13 @@ ModulationParams SoundMaster::resolvePlayParams(const ModulationInput& input) {
 }
 
 std::optional<ModulationInput> SoundMaster::resolveModulationPreset(const AssetId& key) const {
-	const auto& dataAssets = m_assets->data;
 	if (key.empty()) return std::nullopt;
 	size_t pos = key.find('.');
 	const std::string root = pos == std::string::npos ? key : key.substr(0, pos);
-	auto it = dataAssets.find(root);
-	if (it == dataAssets.end()) return std::nullopt;
+	const BinValue* dataValue = m_assets->getData(root);
+	if (!dataValue) return std::nullopt;
 
-	const BinValue* cursor = &it->second;
+	const BinValue* cursor = dataValue;
 	while (pos != std::string::npos) {
 		const size_t next = key.find('.', pos + 1);
 		const std::string segment = key.substr(pos + 1, next - (pos + 1));

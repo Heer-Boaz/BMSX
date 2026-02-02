@@ -35,6 +35,7 @@ public:
 	void setEngineRom(const u8* data, size_t size);
 	void setCartRom(const u8* data, size_t size);
 	void setOverlayRom(u8* data, size_t size);
+	size_t overlayRomSize() const;
 	void setVramWriter(VramWriter* writer);
 	void setVdpIoHandler(VdpIoHandler* handler);
 

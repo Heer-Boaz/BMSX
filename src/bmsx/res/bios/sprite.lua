@@ -3,6 +3,7 @@
 
 local worldobject = require("worldobject")
 local components = require("components")
+local romdir = require("romdir")
 
 local spriteobject = {}
 spriteobject.__index = spriteobject
@@ -12,7 +13,7 @@ local base_sprite_id = "base_sprite"
 local primary_collider_id = "primary"
 
 local function apply_image_metadata(self, id)
-	local meta = assets.img[id].imgmeta
+	local meta = assets.img[romdir.token(id)].imgmeta
 	self.sx = meta.width
 	self.sy = meta.height
 end

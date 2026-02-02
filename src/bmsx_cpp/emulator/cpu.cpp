@@ -26,6 +26,17 @@ static inline int signExtend(uint32_t value, int bits) {
 	return static_cast<int>(value << shift) >> shift;
 }
 
+static inline uint32_t toU32(double value) {
+	const double truncated = std::trunc(value);
+	const double mod = std::fmod(truncated, 4294967296.0);
+	const double normalized = mod < 0.0 ? (mod + 4294967296.0) : mod;
+	return static_cast<uint32_t>(normalized);
+}
+
+static inline int32_t toI32(double value) {
+	return static_cast<int32_t>(toU32(value));
+}
+
 static inline size_t nextPowerOfTwo(size_t value) {
 	if (value == 0) {
 		return 0;
@@ -1103,36 +1114,40 @@ void CPU::executeInstruction(
 		}
 
 		case OpCode::BAND: {
-			int left = static_cast<int>(asNumber(readRK(frame, rkRawB, rkBitsB)));
-			int right = static_cast<int>(asNumber(readRK(frame, rkRawC, rkBitsC)));
-			setRegister(frame, a, valueNumber(static_cast<double>(left & right)));
+			const uint32_t left = toU32(asNumber(readRK(frame, rkRawB, rkBitsB)));
+			const uint32_t right = toU32(asNumber(readRK(frame, rkRawC, rkBitsC)));
+			const int32_t result = static_cast<int32_t>(left & right);
+			setRegister(frame, a, valueNumber(static_cast<double>(result)));
 			return;
 		}
 
 		case OpCode::BOR: {
-			int left = static_cast<int>(asNumber(readRK(frame, rkRawB, rkBitsB)));
-			int right = static_cast<int>(asNumber(readRK(frame, rkRawC, rkBitsC)));
-			setRegister(frame, a, valueNumber(static_cast<double>(left | right)));
+			const uint32_t left = toU32(asNumber(readRK(frame, rkRawB, rkBitsB)));
+			const uint32_t right = toU32(asNumber(readRK(frame, rkRawC, rkBitsC)));
+			const int32_t result = static_cast<int32_t>(left | right);
+			setRegister(frame, a, valueNumber(static_cast<double>(result)));
 			return;
 		}
 
 		case OpCode::BXOR: {
-			int left = static_cast<int>(asNumber(readRK(frame, rkRawB, rkBitsB)));
-			int right = static_cast<int>(asNumber(readRK(frame, rkRawC, rkBitsC)));
-			setRegister(frame, a, valueNumber(static_cast<double>(left ^ right)));
+			const uint32_t left = toU32(asNumber(readRK(frame, rkRawB, rkBitsB)));
+			const uint32_t right = toU32(asNumber(readRK(frame, rkRawC, rkBitsC)));
+			const int32_t result = static_cast<int32_t>(left ^ right);
+			setRegister(frame, a, valueNumber(static_cast<double>(result)));
 			return;
 		}
 
 		case OpCode::SHL: {
-			int left = static_cast<int>(asNumber(readRK(frame, rkRawB, rkBitsB)));
-			int right = static_cast<int>(asNumber(readRK(frame, rkRawC, rkBitsC))) & 31;
-			setRegister(frame, a, valueNumber(static_cast<double>(left << right)));
+			const uint32_t left = toU32(asNumber(readRK(frame, rkRawB, rkBitsB)));
+			const uint32_t right = toU32(asNumber(readRK(frame, rkRawC, rkBitsC))) & 31u;
+			const uint32_t result = left << right;
+			setRegister(frame, a, valueNumber(static_cast<double>(static_cast<int32_t>(result))));
 			return;
 		}
 
 		case OpCode::SHR: {
-			int left = static_cast<int>(asNumber(readRK(frame, rkRawB, rkBitsB)));
-			int right = static_cast<int>(asNumber(readRK(frame, rkRawC, rkBitsC))) & 31;
+			const int32_t left = toI32(asNumber(readRK(frame, rkRawB, rkBitsB)));
+			const uint32_t right = toU32(asNumber(readRK(frame, rkRawC, rkBitsC))) & 31u;
 			setRegister(frame, a, valueNumber(static_cast<double>(left >> right)));
 			return;
 		}
@@ -1223,8 +1238,9 @@ void CPU::executeInstruction(
 		}
 
 		case OpCode::BNOT: {
-			int val = static_cast<int>(asNumber(frame.registers[b]));
-			setRegister(frame, a, valueNumber(static_cast<double>(~val)));
+			const uint32_t val = toU32(asNumber(frame.registers[b]));
+			const int32_t result = static_cast<int32_t>(~val);
+			setRegister(frame, a, valueNumber(static_cast<double>(result)));
 			return;
 		}
 
