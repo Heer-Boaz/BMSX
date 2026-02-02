@@ -890,8 +890,8 @@ async function runPlatformBuild(options: ParsedOptions): Promise<void> {
 		return;
 	}
 
-	// Browser platform needs the engine runtime bundle (`dist/engine(.debug).js`).
-	if (platform === 'browser') {
+	// Browser and headless platforms need the engine runtime bundle (`dist/engine(.debug).js`).
+	if (platform === 'browser' || platform === 'headless') {
 		const engineRuntimeOut = debug ? './dist/engine.debug.js' : './dist/engine.js';
 		const runtimeNeedsRebuild = force || await isEngineRuntimeRebuildRequired(engineRuntimeOut);
 		if (runtimeNeedsRebuild) {

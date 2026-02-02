@@ -4181,152 +4181,78 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 			table->set(key("payload_id"), str(*info.payloadId));
 		}
 	};
-	std::unordered_set<AssetToken> imgTokens;
+	auto appendBinEntry = [this, str, formatAssetTokenKey](Table* table, AssetToken token, const BinValue& value) {
+		table->set(str(formatAssetTokenKey(token)), binValueToRuntimeValue(m_cpu, value));
+	};
+	const int imgCapacity = static_cast<int>(assets.img.size() + (assets.fallback ? assets.fallback->img.size() : 0));
+	auto* imgTable = m_cpu.createTable(0, imgCapacity);
+	auto appendImgEntry = [this, imgTable, key, str, appendRomAssetFields, formatAssetTokenKey](AssetToken token, const ImgAsset& imgAsset) {
+		auto* imgEntry = m_cpu.createTable(0, 8);
+		appendRomAssetFields(imgEntry, imgAsset.rom, imgAsset.id);
+		imgEntry->set(key("imgmeta"), valueTable(buildImgMetaTable(m_cpu, imgAsset.meta, key)));
+		imgTable->set(str(formatAssetTokenKey(token)), valueTable(imgEntry));
+	};
 	if (assets.fallback) {
 		for (const auto& entry : assets.fallback->img) {
-			imgTokens.insert(entry.first);
+			appendImgEntry(entry.first, entry.second);
 		}
 	}
 	for (const auto& entry : assets.img) {
-		imgTokens.insert(entry.first);
-	}
-	auto* imgTable = m_cpu.createTable(0, static_cast<int>(imgTokens.size() * 2));
-	for (const auto& token : imgTokens) {
-		const ImgAsset* imgAsset = nullptr;
-		auto imgIt = assets.img.find(token);
-		if (imgIt != assets.img.end()) {
-			imgAsset = &imgIt->second;
-		} else if (assets.fallback) {
-			auto fallbackIt = assets.fallback->img.find(token);
-			if (fallbackIt != assets.fallback->img.end()) {
-				imgAsset = &fallbackIt->second;
-			}
-		}
-		if (!imgAsset) continue;
-		auto* imgEntry = m_cpu.createTable(0, 8);
-		appendRomAssetFields(imgEntry, imgAsset->rom, imgAsset->id);
-		imgEntry->set(key("imgmeta"), valueTable(buildImgMetaTable(m_cpu, imgAsset->meta, key)));
-		const Value entryValue = valueTable(imgEntry);
-		imgTable->set(str(imgAsset->id), entryValue);
-		imgTable->set(str(formatAssetTokenKey(token)), entryValue);
+		appendImgEntry(entry.first, entry.second);
 	}
 	assetsTable->set(key("img"), makeAssetMapNativeObject(imgTable));
 
-	std::unordered_set<AssetToken> dataTokens;
+	const int dataCapacity = static_cast<int>(assets.data.size() + (assets.fallback ? assets.fallback->data.size() : 0));
+	auto* dataTable = m_cpu.createTable(0, dataCapacity);
 	if (assets.fallback) {
 		for (const auto& entry : assets.fallback->data) {
-			dataTokens.insert(entry.first);
+			appendBinEntry(dataTable, entry.first, entry.second.value);
 		}
 	}
 	for (const auto& entry : assets.data) {
-		dataTokens.insert(entry.first);
-	}
-	auto* dataTable = m_cpu.createTable(0, static_cast<int>(dataTokens.size() * 2));
-	for (const auto& token : dataTokens) {
-		const BinValue* value = nullptr;
-		std::string id;
-		auto dataIt = assets.data.find(token);
-		if (dataIt != assets.data.end()) {
-			id = dataIt->second.id;
-			value = &dataIt->second.value;
-		} else if (assets.fallback) {
-			auto fallbackIt = assets.fallback->data.find(token);
-			if (fallbackIt != assets.fallback->data.end()) {
-				id = fallbackIt->second.id;
-				value = &fallbackIt->second.value;
-			}
-		}
-		if (!value) continue;
-		const Value entryValue = binValueToRuntimeValue(m_cpu, *value);
-		dataTable->set(str(id), entryValue);
-		dataTable->set(str(formatAssetTokenKey(token)), entryValue);
+		appendBinEntry(dataTable, entry.first, entry.second.value);
 	}
 	assetsTable->set(key("data"), makeAssetMapNativeObject(dataTable));
-	std::unordered_set<AssetToken> audioTokens;
+	const int audioCapacity = static_cast<int>(assets.audio.size() + (assets.fallback ? assets.fallback->audio.size() : 0));
+	auto* audioTable = m_cpu.createTable(0, audioCapacity);
+	auto appendAudioEntry = [this, audioTable, key, str, appendRomAssetFields, formatAssetTokenKey](AssetToken token, const AudioAsset& audioAsset) {
+		auto* audioEntry = m_cpu.createTable(0, 6);
+		appendRomAssetFields(audioEntry, audioAsset.rom, audioAsset.id);
+		audioEntry->set(key("audiometa"), valueTable(buildAudioMetaTable(m_cpu, audioAsset.meta, key)));
+		audioTable->set(str(formatAssetTokenKey(token)), valueTable(audioEntry));
+	};
 	if (assets.fallback) {
 		for (const auto& entry : assets.fallback->audio) {
-			audioTokens.insert(entry.first);
+			appendAudioEntry(entry.first, entry.second);
 		}
 	}
 	for (const auto& entry : assets.audio) {
-		audioTokens.insert(entry.first);
-	}
-	auto* audioTable = m_cpu.createTable(0, static_cast<int>(audioTokens.size() * 2));
-	for (const auto& token : audioTokens) {
-		const AudioAsset* audioAsset = nullptr;
-		auto audioIt = assets.audio.find(token);
-		if (audioIt != assets.audio.end()) {
-			audioAsset = &audioIt->second;
-		} else if (assets.fallback) {
-			auto fallbackIt = assets.fallback->audio.find(token);
-			if (fallbackIt != assets.fallback->audio.end()) {
-				audioAsset = &fallbackIt->second;
-			}
-		}
-		if (!audioAsset) continue;
-		auto* audioEntry = m_cpu.createTable(0, 6);
-		appendRomAssetFields(audioEntry, audioAsset->rom, audioAsset->id);
-		audioEntry->set(key("audiometa"), valueTable(buildAudioMetaTable(m_cpu, audioAsset->meta, key)));
-		const Value entryValue = valueTable(audioEntry);
-		audioTable->set(str(audioAsset->id), entryValue);
-		audioTable->set(str(formatAssetTokenKey(token)), entryValue);
+		appendAudioEntry(entry.first, entry.second);
 	}
 	assetsTable->set(key("audio"), makeAssetMapNativeObject(audioTable));
-	std::unordered_set<AssetToken> audioEventTokens;
+	const int audioEventCapacity = static_cast<int>(assets.audioevents.size() + (assets.fallback ? assets.fallback->audioevents.size() : 0));
+	auto* audioEventsTable = m_cpu.createTable(0, audioEventCapacity);
 	if (assets.fallback) {
 		for (const auto& entry : assets.fallback->audioevents) {
-			audioEventTokens.insert(entry.first);
+			appendBinEntry(audioEventsTable, entry.first, entry.second.value);
 		}
 	}
 	for (const auto& entry : assets.audioevents) {
-		audioEventTokens.insert(entry.first);
-	}
-	auto* audioEventsTable = m_cpu.createTable(0, static_cast<int>(audioEventTokens.size() * 2));
-	for (const auto& token : audioEventTokens) {
-		const BinValue* value = nullptr;
-		std::string id;
-		auto eventIt = assets.audioevents.find(token);
-		if (eventIt != assets.audioevents.end()) {
-			id = eventIt->second.id;
-			value = &eventIt->second.value;
-		} else if (assets.fallback) {
-			auto fallbackIt = assets.fallback->audioevents.find(token);
-			if (fallbackIt != assets.fallback->audioevents.end()) {
-				id = fallbackIt->second.id;
-				value = &fallbackIt->second.value;
-			}
-		}
-		if (!value) continue;
-		const Value entryValue = binValueToRuntimeValue(m_cpu, *value);
-		audioEventsTable->set(str(id), entryValue);
-		audioEventsTable->set(str(formatAssetTokenKey(token)), entryValue);
+		appendBinEntry(audioEventsTable, entry.first, entry.second.value);
 	}
 	assetsTable->set(key("audioevents"), makeAssetMapNativeObject(audioEventsTable));
-	std::unordered_set<AssetToken> modelTokens;
+	const int modelCapacity = static_cast<int>(assets.model.size() + (assets.fallback ? assets.fallback->model.size() : 0));
+	auto* modelTable = m_cpu.createTable(0, modelCapacity);
+	auto appendModelEntry = [this, modelTable, key, str, formatAssetTokenKey](AssetToken token, const ModelAsset& modelAsset) {
+		modelTable->set(str(formatAssetTokenKey(token)), valueTable(buildModelAssetTable(m_cpu, modelAsset, key)));
+	};
 	if (assets.fallback) {
 		for (const auto& entry : assets.fallback->model) {
-			modelTokens.insert(entry.first);
+			appendModelEntry(entry.first, entry.second);
 		}
 	}
 	for (const auto& entry : assets.model) {
-		modelTokens.insert(entry.first);
-	}
-	auto* modelTable = m_cpu.createTable(0, static_cast<int>(modelTokens.size() * 2));
-	for (const auto& token : modelTokens) {
-		const ModelAsset* modelAsset = nullptr;
-		auto modelIt = assets.model.find(token);
-		if (modelIt != assets.model.end()) {
-			modelAsset = &modelIt->second;
-		} else if (assets.fallback) {
-			auto fallbackIt = assets.fallback->model.find(token);
-			if (fallbackIt != assets.fallback->model.end()) {
-				modelAsset = &fallbackIt->second;
-			}
-		}
-		if (!modelAsset) continue;
-		const Value entryValue = valueTable(buildModelAssetTable(m_cpu, *modelAsset, key));
-		modelTable->set(str(modelAsset->id), entryValue);
-		modelTable->set(str(formatAssetTokenKey(token)), entryValue);
+		appendModelEntry(entry.first, entry.second);
 	}
 	assetsTable->set(key("model"), makeAssetMapNativeObject(modelTable));
 	assetsTable->set(key("project_root_path"), str(assets.projectRootPath));

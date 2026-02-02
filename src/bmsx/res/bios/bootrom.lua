@@ -387,7 +387,7 @@ function update(_dt)
 	local cart_valid = cart_header and #cart_errors == 0
 	local cart_present_and_ready = peek(CART_ROM_BASE) == CART_ROM_MAGIC and peek(sys_cart_bootready) == 1 and cart_valid
 
-	if cart_present_and_ready and not boot_requested and elapsed_seconds() >= boot_delay and not sys_atlas_failed then
+	if cart_present_and_ready and not boot_requested and elapsed_seconds() >= boot_delay and sys_atlas_ready and not sys_atlas_failed then
 		boot_requested = true
 		poke(sys_boot_cart, 1)
 	end

@@ -2196,9 +2196,6 @@ export class Runtime {
 
 	private setCartBootReadyFlag(value: boolean): void {
 		this.memory.writeValue(IO_SYS_CART_BOOTREADY, value ? 1 : 0);
-		if ($.view.backendType === 'headless') {
-			console.log(`[Runtime] cart_bootready=${value ? 1 : 0}`);
-		}
 	}
 
 	private async prepareCartBoot(): Promise<void> {
@@ -2312,9 +2309,6 @@ export class Runtime {
 		}
 		if (!this.memory.readValue(IO_SYS_BOOT_CART)) {
 			return;
-		}
-		if ($.view.backendType === 'headless') {
-			console.log('[Runtime] boot request received');
 		}
 		this.memory.writeValue(IO_SYS_BOOT_CART, 0);
 		this.requestCartBoot();
@@ -4870,10 +4864,6 @@ export class Runtime {
 					const arg = memory.readValue(cmdBase + IO_ARG0_OFFSET);
 					const text = this.formatValue(arg);
 					this.terminal.appendStdout(text);
-					if ($.view.backendType === 'headless') {
-						// eslint-disable-next-line no-console
-						console.log(text);
-					}
 					break;
 				}
 				default:
