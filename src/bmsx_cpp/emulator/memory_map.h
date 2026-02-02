@@ -6,8 +6,8 @@ namespace bmsx {
 
 constexpr uint32_t ADDRESS_BITS = 32;
 
-constexpr uint32_t ENGINE_ROM_BASE = 0x00000000u;
-constexpr uint32_t ENGINE_ROM_SIZE = 0x01000000u; // 16 MB
+constexpr uint32_t SYSTEM_ROM_BASE = 0x00000000u;
+constexpr uint32_t SYSTEM_ROM_SIZE = 0x01000000u; // 16 MB
 
 constexpr uint32_t CART_ROM_BASE = 0x01000000u;
 constexpr uint32_t CART_ROM_SIZE = 0x05000000u; // 80 MB
@@ -48,7 +48,7 @@ extern uint32_t VRAM_ATLAS_SLOT_SIZE;
 extern uint32_t VRAM_STAGING_SIZE;
 extern uint32_t VRAM_SECONDARY_ATLAS_BASE;
 extern uint32_t VRAM_PRIMARY_ATLAS_BASE;
-extern uint32_t VRAM_ENGINE_ATLAS_BASE;
+extern uint32_t VRAM_SYSTEM_ATLAS_BASE;
 extern uint32_t VRAM_STAGING_BASE;
 extern uint32_t VRAM_SKYBOX_BASE;
 extern uint32_t VRAM_SKYBOX_FACE_BYTES;
@@ -59,7 +59,7 @@ extern uint32_t VRAM_SKYBOX_POSY_BASE;
 extern uint32_t VRAM_SKYBOX_NEGY_BASE;
 extern uint32_t VRAM_SKYBOX_POSZ_BASE;
 extern uint32_t VRAM_SKYBOX_NEGZ_BASE;
-extern uint32_t VRAM_ENGINE_ATLAS_SIZE;
+extern uint32_t VRAM_SYSTEM_ATLAS_SIZE;
 extern uint32_t VRAM_PRIMARY_ATLAS_SIZE;
 extern uint32_t VRAM_SECONDARY_ATLAS_SIZE;
 extern uint32_t ASSET_DATA_ALLOC_END;

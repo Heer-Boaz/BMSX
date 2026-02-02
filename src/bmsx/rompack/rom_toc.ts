@@ -2,7 +2,6 @@ import type { asset_type, RomAsset } from './rompack';
 import { hashAssetId } from '../util/asset_tokens';
 
 export const ROM_TOC_MAGIC = 0x434f5442; // 'BTOC' little-endian
-export const ROM_TOC_VERSION = 2;
 export const ROM_TOC_HEADER_SIZE = 48;
 export const ROM_TOC_ENTRY_SIZE = 80;
 export const ROM_TOC_INVALID_U32 = 0xffffffff;
@@ -80,6 +79,14 @@ export function encodeRomToc(params: { assets: RomAsset[]; projectRootPath?: str
 	const stringChunks: Uint8Array[] = [];
 	const stringIndex = new Map<string, StringRef>();
 	let stringTableLength = 0;
+	const assets = params.assets
+		.map((asset) => {
+			const token = (typeof asset.id_token_lo === 'number' && typeof asset.id_token_hi === 'number')
+				? { lo: asset.id_token_lo, hi: asset.id_token_hi }
+				: hashAssetId(asset.resid);
+			return { asset, token };
+		})
+		.sort((a, b) => (a.token.hi - b.token.hi) || (a.token.lo - b.token.lo));
 
 	const intern = (value: string | null | undefined): StringRef => {
 		if (!value || value.length === 0) {
@@ -98,18 +105,14 @@ export function encodeRomToc(params: { assets: RomAsset[]; projectRootPath?: str
 	};
 
 	const projectRootRef = intern(params.projectRootPath ?? '');
-	const assets = params.assets;
 	const entryBuffer = new Uint8Array(assets.length * ROM_TOC_ENTRY_SIZE);
 	const entryView = new DataView(entryBuffer.buffer, entryBuffer.byteOffset, entryBuffer.byteLength);
 
 	for (let i = 0; i < assets.length; i += 1) {
-		const asset = assets[i];
+		const { asset, token } = assets[i];
 		const base = i * ROM_TOC_ENTRY_SIZE;
 		const typeId = assetTypeToId(asset.type);
 		const opId = asset.op === 'delete' ? 1 : 0;
-		const token = (typeof asset.id_token_lo === 'number' && typeof asset.id_token_hi === 'number')
-			? { lo: asset.id_token_lo, hi: asset.id_token_hi }
-			: hashAssetId(asset.resid);
 		const residRef = intern(asset.resid);
 		const sourceRef = intern(asset.source_path);
 		const normalizedRef = intern(asset.normalized_source_path);
@@ -147,17 +150,17 @@ export function encodeRomToc(params: { assets: RomAsset[]; projectRootPath?: str
 	const stringTableOffset = ROM_TOC_HEADER_SIZE + entryTableSize;
 
 	writeU32(headerView, 0, ROM_TOC_MAGIC);
-	writeU32(headerView, 4, ROM_TOC_VERSION);
-	writeU32(headerView, 8, assets.length);
-	writeU32(headerView, 12, ROM_TOC_ENTRY_SIZE);
-	writeU32(headerView, 16, stringTableOffset);
-	writeU32(headerView, 20, stringTable.byteLength);
-	writeU32(headerView, 24, 0);
-	writeU32(headerView, 28, 0);
-	writeU32(headerView, 32, projectRootRef.offset);
-	writeU32(headerView, 36, projectRootRef.length);
-	writeU32(headerView, 40, ROM_TOC_HEADER_SIZE);
-	writeU32(headerView, 44, ROM_TOC_HEADER_SIZE);
+	writeU32(headerView, 4, ROM_TOC_HEADER_SIZE);
+	writeU32(headerView, 8, ROM_TOC_ENTRY_SIZE);
+	writeU32(headerView, 12, assets.length);
+	writeU32(headerView, 16, ROM_TOC_HEADER_SIZE);
+	writeU32(headerView, 20, stringTableOffset);
+	writeU32(headerView, 24, stringTable.byteLength);
+	writeU32(headerView, 28, projectRootRef.offset);
+	writeU32(headerView, 32, projectRootRef.length);
+	writeU32(headerView, 36, 0);
+	writeU32(headerView, 40, 0);
+	writeU32(headerView, 44, 0);
 
 	return concatArrays([headerBuffer, entryBuffer, stringTable], stringTableOffset + stringTable.byteLength);
 }
@@ -171,24 +174,20 @@ export function decodeRomToc(buffer: Uint8Array): RomTocPayload {
 	if (magic !== ROM_TOC_MAGIC) {
 		throw new Error('Invalid ROM TOC magic.');
 	}
-	const version = view.getUint32(4, true);
-	if (version !== ROM_TOC_VERSION) {
-		throw new Error(`Unsupported ROM TOC version ${version}.`);
-	}
-	const entryCount = view.getUint32(8, true);
-	const entrySize = view.getUint32(12, true);
-	if (entrySize !== ROM_TOC_ENTRY_SIZE) {
-		throw new Error(`Unexpected ROM TOC entry size ${entrySize}.`);
-	}
-	const stringTableOffset = view.getUint32(16, true);
-	const stringTableLength = view.getUint32(20, true);
-	const projectRootOffset = view.getUint32(32, true);
-	const projectRootLength = view.getUint32(36, true);
-	const headerSize = view.getUint32(40, true);
-	const entryOffset = view.getUint32(44, true);
+	const headerSize = view.getUint32(4, true);
 	if (headerSize !== ROM_TOC_HEADER_SIZE) {
 		throw new Error(`Unexpected ROM TOC header size ${headerSize}.`);
 	}
+	const entrySize = view.getUint32(8, true);
+	if (entrySize !== ROM_TOC_ENTRY_SIZE) {
+		throw new Error(`Unexpected ROM TOC entry size ${entrySize}.`);
+	}
+	const entryCount = view.getUint32(12, true);
+	const entryOffset = view.getUint32(16, true);
+	const stringTableOffset = view.getUint32(20, true);
+	const stringTableLength = view.getUint32(24, true);
+	const projectRootOffset = view.getUint32(28, true);
+	const projectRootLength = view.getUint32(32, true);
 	if (entryOffset !== ROM_TOC_HEADER_SIZE) {
 		throw new Error(`Unexpected ROM TOC entry offset ${entryOffset}.`);
 	}

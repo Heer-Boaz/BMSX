@@ -17,14 +17,14 @@ local color_warn = 9
 local color_ok = 15
 local color_info_total = 15
 
-local ENGINE_ROM_BASE = 0x00000000
+local SYSTEM_ROM_BASE = 0x00000000
 local CART_ROM_BASE = 0x01000000
 local CART_ROM_MAGIC = 0x58534D42
 
 local boot_start = os.clock()
 local boot_requested = false
-local engine_atlas_ready = false
-local engine_atlas_failed = false
+local sys_atlas_ready = false
+local sys_atlas_failed = false
 local error_page = 1
 local last_error_count = 0
 local view_mode = 'overview'
@@ -224,9 +224,9 @@ local function build_info()
 	local cart_manifest_raw = cart_manifest
 	local cart_root_path = assets and assets.project_root_path or nil
 	local cart_manifest = cart_header and flatten_manifest(cart_manifest_raw, cart_root_path) or nil
-	local engine_header = read_cart_header(ENGINE_ROM_BASE)
-	local engine_manifest_raw = engine_manifest
-	local engine_manifest = engine_header and flatten_manifest(engine_manifest_raw, nil) or nil
+	local sys_header = read_cart_header(SYSTEM_ROM_BASE)
+	local sys_manifest_raw = sys_manifest
+	local sys_manifest = sys_header and flatten_manifest(sys_manifest_raw, nil) or nil
 
 	local cart_title = cart_manifest and display_text(cart_manifest.title) or '--'
 	-- local cart_short = cart_manifest and display_text(cart_manifest.short_name) or '--'
@@ -241,21 +241,21 @@ local function build_info()
 	local cart_errors = cart_header and collect_cart_manifest_errors(cart_manifest) or {}
 	local cart_has_errors = #cart_errors > 0
 
-	local engine_title = engine_manifest and display_text(engine_manifest.title) or '--'
-	local engine_rom = engine_manifest and display_text(engine_manifest.rom_name) or '--'
-	-- local engine_ns = engine_manifest and display_text(engine_manifest.namespace) or '--'
-	local engine_view_label = engine_manifest and display_text(engine_manifest.viewport) or '--'
-	-- local engine_canon = engine_manifest and display_text(engine_manifest.canonicalization) or '--'
-	-- local engine_entry = engine_manifest and display_text(engine_manifest.entry_path) or '--'
-	local vram_total = SYS_VRAM_ENGINE_ATLAS_SIZE + SYS_VRAM_PRIMARY_ATLAS_SIZE + SYS_VRAM_SECONDARY_ATLAS_SIZE + SYS_VRAM_STAGING_SIZE
+	local sys_title = sys_manifest and display_text(sys_manifest.title) or '--'
+	local sys_rom = sys_manifest and display_text(sys_manifest.rom_name) or '--'
+	-- local sys_ns = sys_manifest and display_text(sys_manifest.namespace) or '--'
+	local sys_view_label = sys_manifest and display_text(sys_manifest.viewport) or '--'
+	-- local sys_canon = sys_manifest and display_text(sys_manifest.canonicalization) or '--'
+	-- local sys_entry = sys_manifest and display_text(sys_manifest.entry_path) or '--'
+	local vram_total = sys_vram_system_atlas_size + SYS_VRAM_PRIMARY_ATLAS_SIZE + SYS_VRAM_SECONDARY_ATLAS_SIZE + SYS_VRAM_STAGING_SIZE
 
 	return {
-		engine_title = engine_title,
-		engine_rom = engine_rom,
-		-- engine_ns = engine_ns,
-		engine_view = engine_view_label,
-		-- engine_canon = engine_canon,
-		-- engine_entry = engine_entry,
+		sys_title = sys_title,
+		sys_rom = sys_rom,
+		-- sys_ns = sys_ns,
+		sys_view = sys_view_label,
+		-- sys_canon = sys_canon,
+		-- sys_entry = sys_entry,
 		cart_title = cart_title,
 		-- cart_short = cart_short,
 		cart_rom = cart_rom,
@@ -342,17 +342,17 @@ end
 function init()
 	boot_start = os.clock()
 	boot_requested = false
-	engine_atlas_ready = false
-	engine_atlas_failed = false
+	sys_atlas_ready = false
+	sys_atlas_failed = false
 	on_irq(function(flags)
 		if (flags & IRQ_IMG_DONE) ~= 0 then
-			engine_atlas_ready = true
+			sys_atlas_ready = true
 		end
 		if (flags & IRQ_IMG_ERROR) ~= 0 then
-			engine_atlas_failed = true
+			sys_atlas_failed = true
 		end
 	end)
-	vdp_load_engine_atlas()
+	vdp_load_sys_atlas()
 end
 
 function new_game()
@@ -384,7 +384,7 @@ function update(_dt)
 	local cart_valid = cart_header and #cart_errors == 0
 	local cart_present_and_ready = peek(CART_ROM_BASE) == CART_ROM_MAGIC and peek(sys_cart_bootready) == 1 and cart_valid
 
-	if cart_present_and_ready and not boot_requested and elapsed_seconds() >= boot_delay and engine_atlas_ready and not engine_atlas_failed then
+	if cart_present_and_ready and not boot_requested and elapsed_seconds() >= boot_delay and sys_atlas_ready and not sys_atlas_failed then
 		boot_requested = true
 		poke(sys_boot_cart, 1)
 	end

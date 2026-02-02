@@ -8,14 +8,14 @@ import {
 	ASSET_TABLE_BASE,
 	ASSET_TABLE_SIZE,
 	CART_ROM_BASE,
-	ENGINE_ROM_BASE,
+	SYSTEM_ROM_BASE,
 	IO_BASE,
 	IO_WORD_SIZE,
 	OVERLAY_ROM_BASE,
 	RAM_BASE,
 	RAM_USED_END,
-	VRAM_ENGINE_ATLAS_BASE,
-	VRAM_ENGINE_ATLAS_SIZE,
+	VRAM_SYSTEM_ATLAS_BASE,
+	VRAM_SYSTEM_ATLAS_SIZE,
 	VRAM_PRIMARY_ATLAS_BASE,
 	VRAM_PRIMARY_ATLAS_SIZE,
 	VRAM_SKYBOX_BASE,
@@ -995,8 +995,8 @@ export class Memory {
 
 	private resolveReadRegion(addr: number, length: number): { data: Uint8Array; offset: number } {
 		this.assertReadableRange(addr, length);
-		if (addr >= ENGINE_ROM_BASE && addr + length <= ENGINE_ROM_BASE + this.engineRom.byteLength) {
-			return { data: this.engineRom, offset: addr - ENGINE_ROM_BASE };
+		if (addr >= SYSTEM_ROM_BASE && addr + length <= SYSTEM_ROM_BASE + this.engineRom.byteLength) {
+			return { data: this.engineRom, offset: addr - SYSTEM_ROM_BASE };
 		}
 		if (this.cartRom && addr >= CART_ROM_BASE && addr + length <= CART_ROM_BASE + this.cartRom.byteLength) {
 			return { data: this.cartRom, offset: addr - CART_ROM_BASE };
@@ -1041,7 +1041,7 @@ export class Memory {
 		const overlaps = (base: number, size: number): boolean => addr < base + size && end > base;
 		return overlaps(VRAM_STAGING_BASE, VRAM_STAGING_SIZE)
 			|| overlaps(VRAM_SKYBOX_BASE, VRAM_SKYBOX_SIZE)
-			|| overlaps(VRAM_ENGINE_ATLAS_BASE, VRAM_ENGINE_ATLAS_SIZE)
+			|| overlaps(VRAM_SYSTEM_ATLAS_BASE, VRAM_SYSTEM_ATLAS_SIZE)
 			|| overlaps(VRAM_PRIMARY_ATLAS_BASE, VRAM_PRIMARY_ATLAS_SIZE)
 			|| overlaps(VRAM_SECONDARY_ATLAS_BASE, VRAM_SECONDARY_ATLAS_SIZE);
 	}

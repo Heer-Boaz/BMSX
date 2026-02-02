@@ -1477,11 +1477,11 @@ void Runtime::refreshMemoryMap() {
 }
 
 void Runtime::refreshMemoryMapGlobals() {
-	setGlobal("SYS_VRAM_ENGINE_ATLAS_BASE", valueNumber(static_cast<double>(VRAM_ENGINE_ATLAS_BASE)));
+	setGlobal("sys_vram_system_atlas_base", valueNumber(static_cast<double>(VRAM_SYSTEM_ATLAS_BASE)));
 	setGlobal("SYS_VRAM_PRIMARY_ATLAS_BASE", valueNumber(static_cast<double>(VRAM_PRIMARY_ATLAS_BASE)));
 	setGlobal("SYS_VRAM_SECONDARY_ATLAS_BASE", valueNumber(static_cast<double>(VRAM_SECONDARY_ATLAS_BASE)));
 	setGlobal("SYS_VRAM_STAGING_BASE", valueNumber(static_cast<double>(VRAM_STAGING_BASE)));
-	setGlobal("SYS_VRAM_ENGINE_ATLAS_SIZE", valueNumber(static_cast<double>(VRAM_ENGINE_ATLAS_SIZE)));
+	setGlobal("sys_vram_system_atlas_size", valueNumber(static_cast<double>(VRAM_SYSTEM_ATLAS_SIZE)));
 	setGlobal("SYS_VRAM_PRIMARY_ATLAS_SIZE", valueNumber(static_cast<double>(VRAM_PRIMARY_ATLAS_SIZE)));
 	setGlobal("SYS_VRAM_SECONDARY_ATLAS_SIZE", valueNumber(static_cast<double>(VRAM_SECONDARY_ATLAS_SIZE)));
 	setGlobal("SYS_VRAM_STAGING_SIZE", valueNumber(static_cast<double>(VRAM_STAGING_SIZE)));
@@ -1672,7 +1672,7 @@ void Runtime::runEngineBuiltinPrelude() {
 		"trigger_effect",
 		"vdp_map_slot",
 		"vdp_load_slot",
-		"vdp_load_engine_atlas",
+		"vdp_load_sys_atlas",
 		"irq",
 		"on_irq",
 		"on_vdp_load",
@@ -2516,9 +2516,9 @@ void Runtime::setupBuiltins() {
 	setGlobal("SYS_IMG_CTRL", valueNumber(static_cast<double>(IO_IMG_CTRL)));
 	setGlobal("SYS_IMG_STATUS", valueNumber(static_cast<double>(IO_IMG_STATUS)));
 	setGlobal("SYS_IMG_WRITTEN", valueNumber(static_cast<double>(IO_IMG_WRITTEN)));
-	setGlobal("SYS_ENGINE_ROM_BASE", valueNumber(static_cast<double>(ENGINE_ROM_BASE)));
-	setGlobal("SYS_CART_ROM_BASE", valueNumber(static_cast<double>(CART_ROM_BASE)));
-	setGlobal("SYS_OVERLAY_ROM_BASE", valueNumber(static_cast<double>(OVERLAY_ROM_BASE)));
+	setGlobal("sys_rom_system_base", valueNumber(static_cast<double>(SYSTEM_ROM_BASE)));
+	setGlobal("sys_rom_cart_base", valueNumber(static_cast<double>(CART_ROM_BASE)));
+	setGlobal("sys_rom_overlay_base", valueNumber(static_cast<double>(OVERLAY_ROM_BASE)));
 	refreshMemoryMapGlobals();
 	setGlobal("IRQ_DMA_DONE", valueNumber(static_cast<double>(IRQ_DMA_DONE)));
 	setGlobal("IRQ_DMA_ERROR", valueNumber(static_cast<double>(IRQ_DMA_ERROR)));
@@ -4433,7 +4433,7 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 	assetsTable->set(key("manifest"), valueTable(buildManifestTable(assets)));
 	assetsTable->set(key("canonicalization"), str(canonicalizationLabel(assets.canonicalization)));
 	setGlobal("cart_manifest", valueTable(buildManifestTable(assets)));
-	setGlobal("engine_manifest", valueTable(buildManifestTable(*engineAssets)));
+	setGlobal("sys_manifest", valueTable(buildManifestTable(*engineAssets)));
 
 	auto viewSize = EngineCore::instance().view()->viewportSize;
 	auto* viewportTable = m_cpu.createTable(0, 2);

@@ -141,7 +141,7 @@ import {
 	CART_ROM_BASE,
 	CART_ROM_MAGIC_ADDR,
 	CART_ROM_SIZE,
-	ENGINE_ROM_BASE,
+	SYSTEM_ROM_BASE,
 	DEFAULT_RAM_SIZE,
 	DEFAULT_STRING_HANDLE_COUNT,
 	DEFAULT_STRING_HEAP_SIZE,
@@ -153,8 +153,8 @@ import {
 	STRING_HANDLE_COUNT,
 	STRING_HANDLE_ENTRY_SIZE,
 	configureMemoryMap,
-	VRAM_ENGINE_ATLAS_BASE,
-	VRAM_ENGINE_ATLAS_SIZE,
+	VRAM_SYSTEM_ATLAS_BASE,
+	VRAM_SYSTEM_ATLAS_SIZE,
 	VRAM_PRIMARY_ATLAS_BASE,
 	VRAM_PRIMARY_ATLAS_SIZE,
 	VRAM_SECONDARY_ATLAS_BASE,
@@ -270,7 +270,7 @@ class RateBudget {
 export class Runtime {
 	private static _instance: Runtime = null;
 	private static readonly ENGINE_BUILTIN_PRELUDE_PATH = '__engine_builtin_prelude__';
-	private static readonly LUA_SNAPSHOT_EXCLUDED_GLOBALS = new Set<string>(['print', 'type', 'tostring', 'tonumber', 'setmetatable', 'getmetatable', 'require', 'pairs', 'ipairs', 'serialize', 'deserialize', 'math', 'easing', 'string', 'os', 'table', 'coroutine', 'debug', 'package', 'api', 'peek', 'poke', 'SYS_BOOT_CART', 'SYS_CART_MAGIC_ADDR', 'SYS_CART_MAGIC', 'SYS_CART_ROM_SIZE', 'SYS_RAM_SIZE', 'SYS_MAX_ASSETS', 'SYS_STRING_HANDLE_COUNT', 'SYS_MAX_CYCLES_PER_FRAME', 'SYS_VDP_DITHER', 'SYS_VDP_PRIMARY_ATLAS_ID', 'SYS_VDP_SECONDARY_ATLAS_ID', 'SYS_VDP_ATLAS_NONE', 'SYS_VDP_RD_SURFACE', 'SYS_VDP_RD_X', 'SYS_VDP_RD_Y', 'SYS_VDP_RD_MODE', 'SYS_VDP_RD_STATUS', 'SYS_VDP_RD_DATA', 'SYS_VDP_RD_MODE_RGBA8888', 'SYS_VDP_RD_STATUS_READY', 'SYS_VDP_RD_STATUS_OVERFLOW', 'SYS_IRQ_FLAGS', 'SYS_IRQ_ACK', 'SYS_DMA_SRC', 'SYS_DMA_DST', 'SYS_DMA_LEN', 'SYS_DMA_CTRL', 'SYS_DMA_STATUS', 'SYS_DMA_WRITTEN', 'SYS_IMG_SRC', 'SYS_IMG_LEN', 'SYS_IMG_DST', 'SYS_IMG_CAP', 'SYS_IMG_CTRL', 'SYS_IMG_STATUS', 'SYS_IMG_WRITTEN', 'SYS_ENGINE_ROM_BASE', 'SYS_CART_ROM_BASE', 'SYS_OVERLAY_ROM_BASE', 'SYS_VRAM_ENGINE_ATLAS_BASE', 'SYS_VRAM_PRIMARY_ATLAS_BASE', 'SYS_VRAM_SECONDARY_ATLAS_BASE', 'SYS_VRAM_STAGING_BASE', 'SYS_VRAM_ENGINE_ATLAS_SIZE', 'SYS_VRAM_PRIMARY_ATLAS_SIZE', 'SYS_VRAM_SECONDARY_ATLAS_SIZE', 'SYS_VRAM_STAGING_SIZE', 'IRQ_DMA_DONE', 'IRQ_DMA_ERROR', 'IRQ_IMG_DONE', 'IRQ_IMG_ERROR', 'DMA_CTRL_START', 'DMA_CTRL_STRICT', 'DMA_STATUS_BUSY', 'DMA_STATUS_DONE', 'DMA_STATUS_ERROR', 'DMA_STATUS_CLIPPED', 'IMG_CTRL_START', 'IMG_STATUS_BUSY', 'IMG_STATUS_DONE', 'IMG_STATUS_ERROR', 'IMG_STATUS_CLIPPED']);
+	private static readonly LUA_SNAPSHOT_EXCLUDED_GLOBALS = new Set<string>(['print', 'type', 'tostring', 'tonumber', 'setmetatable', 'getmetatable', 'require', 'pairs', 'ipairs', 'serialize', 'deserialize', 'math', 'easing', 'string', 'os', 'table', 'coroutine', 'debug', 'package', 'api', 'peek', 'poke', 'SYS_BOOT_CART', 'SYS_CART_MAGIC_ADDR', 'SYS_CART_MAGIC', 'SYS_CART_ROM_SIZE', 'SYS_RAM_SIZE', 'SYS_MAX_ASSETS', 'SYS_STRING_HANDLE_COUNT', 'SYS_MAX_CYCLES_PER_FRAME', 'SYS_VDP_DITHER', 'SYS_VDP_PRIMARY_ATLAS_ID', 'SYS_VDP_SECONDARY_ATLAS_ID', 'SYS_VDP_ATLAS_NONE', 'SYS_VDP_RD_SURFACE', 'SYS_VDP_RD_X', 'SYS_VDP_RD_Y', 'SYS_VDP_RD_MODE', 'SYS_VDP_RD_STATUS', 'SYS_VDP_RD_DATA', 'SYS_VDP_RD_MODE_RGBA8888', 'SYS_VDP_RD_STATUS_READY', 'SYS_VDP_RD_STATUS_OVERFLOW', 'SYS_IRQ_FLAGS', 'SYS_IRQ_ACK', 'SYS_DMA_SRC', 'SYS_DMA_DST', 'SYS_DMA_LEN', 'SYS_DMA_CTRL', 'SYS_DMA_STATUS', 'SYS_DMA_WRITTEN', 'SYS_IMG_SRC', 'SYS_IMG_LEN', 'SYS_IMG_DST', 'SYS_IMG_CAP', 'SYS_IMG_CTRL', 'SYS_IMG_STATUS', 'SYS_IMG_WRITTEN', 'sys_rom_system_base', 'sys_rom_cart_base', 'sys_rom_overlay_base', 'sys_vram_system_atlas_base', 'SYS_VRAM_PRIMARY_ATLAS_BASE', 'SYS_VRAM_SECONDARY_ATLAS_BASE', 'SYS_VRAM_STAGING_BASE', 'sys_vram_system_atlas_size', 'SYS_VRAM_PRIMARY_ATLAS_SIZE', 'SYS_VRAM_SECONDARY_ATLAS_SIZE', 'SYS_VRAM_STAGING_SIZE', 'IRQ_DMA_DONE', 'IRQ_DMA_ERROR', 'IRQ_IMG_DONE', 'IRQ_IMG_ERROR', 'DMA_CTRL_START', 'DMA_CTRL_STRICT', 'DMA_STATUS_BUSY', 'DMA_STATUS_DONE', 'DMA_STATUS_ERROR', 'DMA_STATUS_CLIPPED', 'IMG_CTRL_START', 'IMG_STATUS_BUSY', 'IMG_STATUS_DONE', 'IMG_STATUS_ERROR', 'IMG_STATUS_CLIPPED']);
 	/**
 	 * Preserved render queue when a fault occurs
 	 * This is used to restore the render queue to its previous state
@@ -3212,14 +3212,14 @@ export class Runtime {
 		this.registerGlobal('SYS_IMG_CTRL', IO_IMG_CTRL);
 		this.registerGlobal('SYS_IMG_STATUS', IO_IMG_STATUS);
 		this.registerGlobal('SYS_IMG_WRITTEN', IO_IMG_WRITTEN);
-		this.registerGlobal('SYS_ENGINE_ROM_BASE', ENGINE_ROM_BASE);
-		this.registerGlobal('SYS_CART_ROM_BASE', CART_ROM_BASE);
-		this.registerGlobal('SYS_OVERLAY_ROM_BASE', OVERLAY_ROM_BASE);
-		this.registerGlobal('SYS_VRAM_ENGINE_ATLAS_BASE', VRAM_ENGINE_ATLAS_BASE);
+		this.registerGlobal('sys_rom_system_base', SYSTEM_ROM_BASE);
+		this.registerGlobal('sys_rom_cart_base', CART_ROM_BASE);
+		this.registerGlobal('sys_rom_overlay_base', OVERLAY_ROM_BASE);
+		this.registerGlobal('sys_vram_system_atlas_base', VRAM_SYSTEM_ATLAS_BASE);
 		this.registerGlobal('SYS_VRAM_PRIMARY_ATLAS_BASE', VRAM_PRIMARY_ATLAS_BASE);
 		this.registerGlobal('SYS_VRAM_SECONDARY_ATLAS_BASE', VRAM_SECONDARY_ATLAS_BASE);
 		this.registerGlobal('SYS_VRAM_STAGING_BASE', VRAM_STAGING_BASE);
-		this.registerGlobal('SYS_VRAM_ENGINE_ATLAS_SIZE', VRAM_ENGINE_ATLAS_SIZE);
+		this.registerGlobal('sys_vram_system_atlas_size', VRAM_SYSTEM_ATLAS_SIZE);
 		this.registerGlobal('SYS_VRAM_PRIMARY_ATLAS_SIZE', VRAM_PRIMARY_ATLAS_SIZE);
 		this.registerGlobal('SYS_VRAM_SECONDARY_ATLAS_SIZE', VRAM_SECONDARY_ATLAS_SIZE);
 		this.registerGlobal('SYS_VRAM_STAGING_SIZE', VRAM_STAGING_SIZE);
@@ -4355,7 +4355,7 @@ export class Runtime {
 		}
 		this.registerGlobal('assets', this.getOrCreateAssetsNativeObject());
 		this.registerGlobal('cart_manifest', this.toRuntimeValue($.assets.manifest));
-		this.registerGlobal('engine_manifest', this.toRuntimeValue($.engine_layer.index.manifest));
+		this.registerGlobal('sys_manifest', this.toRuntimeValue($.engine_layer.index.manifest));
 	}
 
 	private valueToString(value: Value): string {

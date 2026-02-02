@@ -252,7 +252,7 @@ ImgDecController::ImgDecEntry ImgDecController::resolveSlotEntry(uint32_t dst) {
 		entry.asset = &m_memory.getAssetEntry(ATLAS_SECONDARY_SLOT_ID);
 		return entry;
 	}
-	if (dst == VRAM_ENGINE_ATLAS_BASE) {
+	if (dst == VRAM_SYSTEM_ATLAS_BASE) {
 		ImgDecEntry entry;
 		entry.isAsset = true;
 		entry.asset = &m_memory.getAssetEntry(generateAtlasName(ENGINE_ATLAS_INDEX));

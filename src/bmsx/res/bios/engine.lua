@@ -12,6 +12,7 @@ local service = require("service")
 local registry = require("registry")
 local eventemitter = require("eventemitter").eventemitter
 local quickmenu = require("quickmenu")
+local romdir = require("romdir")
 
 local world = world_module.instance
 
@@ -25,7 +26,7 @@ local vdp_load_queue_tail = 0
 local vdp_active_job = nil
 local vdp_load_handler = nil
 local cart_irq_handler = nil
-local ENGINE_ATLAS_ID = 254
+local sys_atlas_id = 254
 
 local excluded_class_keys = {
 	def_id = true,
@@ -253,22 +254,16 @@ function engine.vdp_load_slot(slot, atlas_id)
 	end
 	local atlas_id_int = math.floor(atlas_id)
 	local atlas_name = string.format("_atlas_%02d", atlas_id_int)
-	local asset = assets.img[atlas_name]
-	local start = asset.start
-	local finish = asset["end"]
+	local entry = romdir.cart(atlas_name)
+	if entry == nil then
+		error("vdp_load_slot: atlas asset missing")
+	end
+	local start = entry.start
+	local finish = entry["end"]
 	if start == nil or finish == nil then
 		error("vdp_load_slot: atlas asset missing ROM range")
 	end
-	local payload_id = asset.payload_id
-	local base = SYS_CART_ROM_BASE
-	if payload_id == "system" then
-		base = SYS_ENGINE_ROM_BASE
-	elseif payload_id == "overlay" then
-		base = SYS_OVERLAY_ROM_BASE
-	elseif payload_id ~= nil and payload_id ~= "cart" then
-		error("vdp_load_slot: unsupported payload_id " .. tostring(payload_id))
-	end
-	local src = base + start
+	local src = entry.rom_base + start
 	local len = finish - start
 	local dst
 	local cap
@@ -297,39 +292,30 @@ function engine.vdp_load_slot(slot, atlas_id)
 	return vdp_load_job_seq
 end
 
-function engine.vdp_load_engine_atlas()
-	local atlas_name = string.format("_atlas_%02d", ENGINE_ATLAS_ID)
-	local asset = assets.img[atlas_name]
-	if asset == nil then
-		error("vdp_load_engine_atlas: engine atlas asset missing")
+function engine.vdp_load_sys_atlas()
+	local atlas_name = string.format("_atlas_%02d", sys_atlas_id)
+	local entry = romdir.sys(atlas_name)
+	if entry == nil then
+		error("vdp_load_sys_atlas: system atlas asset missing")
 	end
-	local start = asset.start
-	local finish = asset["end"]
+	local start = entry.start
+	local finish = entry["end"]
 	if start == nil or finish == nil then
-		error("vdp_load_engine_atlas: engine atlas missing ROM range")
+		error("vdp_load_sys_atlas: system atlas missing ROM range")
 	end
-	local payload_id = asset.payload_id
-	local base = SYS_ENGINE_ROM_BASE
-	if payload_id == "overlay" then
-		base = SYS_OVERLAY_ROM_BASE
-	elseif payload_id == "cart" then
-		base = SYS_CART_ROM_BASE
-	elseif payload_id ~= nil and payload_id ~= "system" then
-		error("vdp_load_engine_atlas: unsupported payload_id " .. tostring(payload_id))
-	end
-	local src = base + start
+	local src = entry.rom_base + start
 	local len = finish - start
 	vdp_load_job_seq = vdp_load_job_seq + 1
 	vdp_load_queue_tail = vdp_load_queue_tail + 1
 	vdp_load_queue[vdp_load_queue_tail] = {
 		job_id = vdp_load_job_seq,
 		slot = nil,
-		atlas_id = ENGINE_ATLAS_ID,
+		atlas_id = sys_atlas_id,
 		allow_handler = false,
 		src = src,
 		len = len,
-		dst = SYS_VRAM_ENGINE_ATLAS_BASE,
-		cap = SYS_VRAM_ENGINE_ATLAS_SIZE,
+		dst = sys_vram_system_atlas_base,
+		cap = sys_vram_system_atlas_size,
 	}
 	vdp_try_start_next_job()
 	return vdp_load_job_seq

@@ -385,8 +385,8 @@ void VDP::registerImageAssets(RuntimeAssets& assets, bool keepDecodedData) {
 	if (!m_memory.hasAsset(engineAtlasName)) {
 		m_memory.registerImageSlotAt(
 			engineAtlasName,
-			VRAM_ENGINE_ATLAS_BASE,
-			VRAM_ENGINE_ATLAS_SIZE,
+			VRAM_SYSTEM_ATLAS_BASE,
+			VRAM_SYSTEM_ATLAS_SIZE,
 			0,
 			false
 		);
@@ -648,7 +648,7 @@ void VDP::setSkyboxImages(const SkyboxImageIds& ids) {
 		if (asset->rom.payloadId.has_value()) {
 			const auto& payload = *asset->rom.payloadId;
 			if (payload == "system") {
-				base = ENGINE_ROM_BASE;
+				base = SYSTEM_ROM_BASE;
 			} else if (payload == "overlay") {
 				base = OVERLAY_ROM_BASE;
 			} else if (payload == "cart") {

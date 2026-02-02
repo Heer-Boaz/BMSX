@@ -121,7 +121,6 @@ static void parseMachineSpecs(const BinObject& machineObj, RomManifest& manifest
 }
 
 static constexpr u32 ROM_TOC_MAGIC = 0x434f5442; // 'BTOC' little-endian
-static constexpr u32 ROM_TOC_VERSION = 2;
 static constexpr u32 ROM_TOC_HEADER_SIZE = 48;
 static constexpr u32 ROM_TOC_ENTRY_SIZE = 80;
 static constexpr u32 ROM_TOC_INVALID_U32 = 0xffffffff;
@@ -1305,27 +1304,23 @@ bool loadAssetsFromRom(const u8* buffer,
 	if (tocMagic != ROM_TOC_MAGIC) {
 		throw BMSX_RUNTIME_ERROR("Invalid ROM TOC magic.");
 	}
-	const u32 tocVersion = readLE32(tocData + 4);
-	if (tocVersion != ROM_TOC_VERSION) {
-		throw BMSX_RUNTIME_ERROR("Unsupported ROM TOC version.");
-	}
-	const u32 entryCount = readLE32(tocData + 8);
-	const u32 entrySize = readLE32(tocData + 12);
-	if (entrySize != ROM_TOC_ENTRY_SIZE) {
-		throw BMSX_RUNTIME_ERROR("Unexpected ROM TOC entry size.");
-	}
-	const u32 stringTableOffset = readLE32(tocData + 16);
-	const u32 stringTableLength = readLE32(tocData + 20);
-	const u32 projectRootOffset = readLE32(tocData + 32);
-	const u32 projectRootLength = readLE32(tocData + 36);
-	const u32 tocHeaderSize = readLE32(tocData + 40);
-	const u32 entryOffset = readLE32(tocData + 44);
+	const u32 tocHeaderSize = readLE32(tocData + 4);
 	if (tocHeaderSize != ROM_TOC_HEADER_SIZE) {
 		throw BMSX_RUNTIME_ERROR("Unexpected ROM TOC header size.");
 	}
+	const u32 entrySize = readLE32(tocData + 8);
+	if (entrySize != ROM_TOC_ENTRY_SIZE) {
+		throw BMSX_RUNTIME_ERROR("Unexpected ROM TOC entry size.");
+	}
+	const u32 entryCount = readLE32(tocData + 12);
+	const u32 entryOffset = readLE32(tocData + 16);
 	if (entryOffset != ROM_TOC_HEADER_SIZE) {
 		throw BMSX_RUNTIME_ERROR("Unexpected ROM TOC entry offset.");
 	}
+	const u32 stringTableOffset = readLE32(tocData + 20);
+	const u32 stringTableLength = readLE32(tocData + 24);
+	const u32 projectRootOffset = readLE32(tocData + 28);
+	const u32 projectRootLength = readLE32(tocData + 32);
 	const size_t entriesBytes = static_cast<size_t>(entryCount) * static_cast<size_t>(entrySize);
 	const size_t expectedStringOffset = static_cast<size_t>(entryOffset) + entriesBytes;
 	if (static_cast<size_t>(stringTableOffset) != expectedStringOffset) {

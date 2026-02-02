@@ -265,8 +265,8 @@ void DmaController::finishIoError(bool clipped) {
 }
 
 uint32_t DmaController::resolveMaxWritable(uint32_t dst) const {
-	if (dst >= VRAM_ENGINE_ATLAS_BASE && dst < VRAM_ENGINE_ATLAS_BASE + VRAM_ENGINE_ATLAS_SIZE) {
-		return (VRAM_ENGINE_ATLAS_BASE + VRAM_ENGINE_ATLAS_SIZE) - dst;
+	if (dst >= VRAM_SYSTEM_ATLAS_BASE && dst < VRAM_SYSTEM_ATLAS_BASE + VRAM_SYSTEM_ATLAS_SIZE) {
+		return (VRAM_SYSTEM_ATLAS_BASE + VRAM_SYSTEM_ATLAS_SIZE) - dst;
 	}
 	if (dst >= VRAM_SKYBOX_BASE && dst < VRAM_SKYBOX_BASE + VRAM_SKYBOX_SIZE) {
 		return (VRAM_SKYBOX_BASE + VRAM_SKYBOX_SIZE) - dst;

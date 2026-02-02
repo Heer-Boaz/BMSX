@@ -41,7 +41,7 @@ bool rangeOverlaps(uint32_t addr, size_t length, uint32_t base, uint32_t size) {
 bool isVramRangeLocal(uint32_t addr, size_t length) {
 	return rangeOverlaps(addr, length, VRAM_STAGING_BASE, VRAM_STAGING_SIZE)
 		|| rangeOverlaps(addr, length, VRAM_SKYBOX_BASE, VRAM_SKYBOX_SIZE)
-		|| rangeOverlaps(addr, length, VRAM_ENGINE_ATLAS_BASE, VRAM_ENGINE_ATLAS_SIZE)
+		|| rangeOverlaps(addr, length, VRAM_SYSTEM_ATLAS_BASE, VRAM_SYSTEM_ATLAS_SIZE)
 		|| rangeOverlaps(addr, length, VRAM_PRIMARY_ATLAS_BASE, VRAM_PRIMARY_ATLAS_SIZE)
 		|| rangeOverlaps(addr, length, VRAM_SECONDARY_ATLAS_BASE, VRAM_SECONDARY_ATLAS_SIZE);
 }
@@ -759,8 +759,8 @@ const u8* Memory::readRegion(uint32_t addr, size_t length, size_t& outOffset) co
 	if (isVramRange(addr, length)) {
 		throw std::runtime_error("[Memory] VRAM is write-only.");
 	}
-	if (m_engineRom.size > 0 && addr >= ENGINE_ROM_BASE && addr + length <= ENGINE_ROM_BASE + m_engineRom.size) {
-		outOffset = static_cast<size_t>(addr - ENGINE_ROM_BASE);
+	if (m_engineRom.size > 0 && addr >= SYSTEM_ROM_BASE && addr + length <= SYSTEM_ROM_BASE + m_engineRom.size) {
+		outOffset = static_cast<size_t>(addr - SYSTEM_ROM_BASE);
 		return m_engineRom.data;
 	}
 	if (m_cartRom.size > 0 && addr >= CART_ROM_BASE && addr + length <= CART_ROM_BASE + m_cartRom.size) {

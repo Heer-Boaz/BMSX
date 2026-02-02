@@ -29,8 +29,8 @@ import type { AssetEntry, ImageWriteEntry, VdpIoHandler, VramWriteSink } from '.
 import { Memory } from './memory';
 import { ImgDecController } from './devices/imgdec_controller';
 import {
-	VRAM_ENGINE_ATLAS_BASE,
-	VRAM_ENGINE_ATLAS_SIZE,
+	VRAM_SYSTEM_ATLAS_BASE,
+	VRAM_SYSTEM_ATLAS_SIZE,
 	VRAM_PRIMARY_ATLAS_BASE,
 	VRAM_PRIMARY_ATLAS_SIZE,
 	VRAM_SECONDARY_ATLAS_BASE,
@@ -649,8 +649,8 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		if (!engineEntryRecord) {
 			engineEntryRecord = this.memory.registerImageSlotAt({
 				id: engineAtlasName,
-				baseAddr: VRAM_ENGINE_ATLAS_BASE,
-				capacityBytes: VRAM_ENGINE_ATLAS_SIZE,
+				baseAddr: VRAM_SYSTEM_ATLAS_BASE,
+				capacityBytes: VRAM_SYSTEM_ATLAS_SIZE,
 				clear: false,
 			});
 			engineEntryCreated = true;
