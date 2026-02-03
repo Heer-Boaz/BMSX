@@ -25,6 +25,7 @@ import { point_in_rect } from '../../utils/rect_operations';
 import { applyInlineFieldEditing, getFieldText } from './inline_text_field';
 import { setEditorCaseInsensitivity } from './text_renderer';
 import { Runtime } from '../runtime';
+import * as runtimeIde from '../runtime_ide';
 import { computeRuntimeErrorOverlayGeometry, resolveRuntimeErrorOverlayAnchor, computeRuntimeErrorOverlayLayout, findRuntimeErrorOverlayLineAtPosition, RuntimeErrorOverlayClickResult } from './render/render_error_overlay';
 import { rebuildRuntimeErrorOverlayView, buildRuntimeErrorOverlayCopyText } from './runtime_error_overlay';
 import * as constants from './constants';
@@ -684,7 +685,7 @@ export function handleTopBarButtonPress(button: TopBarButtonId): void {
 			toggleWordWrap();
 			return;
 		case 'resolution':
-			Runtime.instance.toggleOverlayResolutionMode();
+			runtimeIde.toggleOverlayResolutionMode(Runtime.instance);
 			return;
 		case 'resources':
 			ide_state.resourcePanel.togglePanel();

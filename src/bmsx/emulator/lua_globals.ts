@@ -1,6 +1,5 @@
 import { $ } from '../core/engine_core';
-import type { StackTraceFrame } from '../lua/luavalue';
-import { extractErrorMessage } from '../lua/luavalue';
+import { extractErrorMessage, type StackTraceFrame } from '../lua/luavalue';
 import { clamp01 } from '../utils/clamp';
 import {
 	createNativeFunction,
@@ -8,16 +7,14 @@ import {
 	isNativeObject,
 	Table,
 	type Closure,
-	type NativeObject,
 	type Value,
-	type CPU,
 } from './cpu';
-import { ASSET_TABLE_ENTRY_SIZE, ASSET_TABLE_HEADER_SIZE, type Memory } from './memory';
+import { formatNumber } from './number_format';
+import { ASSET_TABLE_ENTRY_SIZE, ASSET_TABLE_HEADER_SIZE } from './memory';
 import {
 	ASSET_TABLE_SIZE,
 	CART_ROM_BASE,
 	CART_ROM_MAGIC_ADDR,
-	CART_ROM_MAGIC,
 	CART_ROM_SIZE,
 	OVERLAY_ROM_BASE,
 	RAM_SIZE,
@@ -32,6 +29,7 @@ import {
 	VRAM_SYSTEM_ATLAS_BASE,
 	VRAM_SYSTEM_ATLAS_SIZE,
 } from './memory_map';
+import { CART_ROM_MAGIC } from '../rompack/rompack';
 import {
 	DMA_CTRL_START,
 	DMA_CTRL_STRICT,
@@ -79,61 +77,435 @@ import {
 	VDP_RD_STATUS_OVERFLOW,
 	VDP_RD_STATUS_READY,
 } from './io';
+import {
+	buildMarshalContext,
+	describeMarshalSegment,
+	extendMarshalContext,
+	getOrAssignTableId,
+	getOrCreateAssetsNativeObject,
+	getOrCreateNativeObject,
+	nextNativeEntry,
+	toNativeValue,
+	toRuntimeValue,
+	wrapNativeResult,
+} from './lua_js_bridge';
+import { buildLuaFrameRawLabel } from './runtime_error_util';
 import { isStringValue, stringValueToString } from './string_pool';
 import type { StringValue } from './string_pool';
-import type { TerminalMode } from './terminal_mode';
 import type { LuaMarshalContext } from './types';
+import type { Runtime } from './runtime';
+import * as runtimeLuaPipeline from './runtime_lua_pipeline';
 
-export type LuaGlobalsContext = {
-	api: object;
-	registerGlobal: (name: string, value: Value) => void;
-	internString: (value: string) => StringValue;
-	requireString: (value: Value) => string;
-	valueToString: (value: Value) => string;
-	valueToStringValue: (value: Value) => StringValue;
-	formatValue: (value: Value) => string;
-	formatLuaString: (template: string, args: Value[], startIndex: number) => string;
-	createApiRuntimeError: (message: string) => Error;
-	buildLuaStackFrames: () => StackTraceFrame[];
-	callClosure: (callee: Closure, args: Value[]) => Value[];
-	nextRandom: () => number;
-	setRandomSeed: (seed: number) => void;
-	cpu: CPU;
-	memory: Memory;
-	terminal: TerminalMode;
-	cycleBudgetPerFrame: number;
-	luaPatternRegexCache: Map<string, RegExp>;
-	acquireValueScratch: () => Value[];
-	releaseValueScratch: (values: Value[]) => void;
-	acquireStringScratch: () => string[];
-	releaseStringScratch: (values: string[]) => void;
-	buildMarshalContext: () => LuaMarshalContext;
-	extendMarshalContext: (ctx: LuaMarshalContext, segment: string) => LuaMarshalContext;
-	describeMarshalSegment: (key: Value) => string | null;
-	getOrAssignTableId: (table: Table) => number;
-	toNativeValue: (value: Value, ctx: LuaMarshalContext, visited: WeakMap<Table, unknown>) => unknown;
-	toRuntimeValue: (value: unknown) => Value;
-	getOrCreateNativeObject: (value: object) => NativeObject;
-	getOrCreateAssetsNativeObject: () => NativeObject;
-	nextNativeEntry: (target: NativeObject, key: Value) => [Value, Value] | null;
-	requireModule: (name: string) => Value;
-	wrapNativeResult: (result: unknown, out: Value[]) => void;
-};
+export function valueToString(value: Value): string {
+	if (value === null) {
+		return 'nil';
+	}
+	if (typeof value === 'boolean') {
+		return value ? 'true' : 'false';
+	}
+	if (typeof value === 'number') {
+		if (!Number.isFinite(value)) {
+			return Number.isNaN(value) ? 'nan' : (value < 0 ? '-inf' : 'inf');
+		}
+		// Parity with C++ runtime string output (Lua tostring semantics).
+		// Slower than V8's native formatting; avoid tight-loop conversions.
+		return formatNumber(value);
+	}
+	if (isStringValue(value)) {
+		return stringValueToString(value);
+	}
+	if (value instanceof Table) {
+		return 'table';
+	}
+	if (isNativeFunction(value)) {
+		return 'function';
+	}
+	if (isNativeObject(value)) {
+		return 'native';
+	}
+	return 'function';
+}
 
-export function seedLuaGlobals(ctx: LuaGlobalsContext): void {
+export function valueToStringValue(runtime: Runtime, value: Value): StringValue {
+	return runtime.internString(valueToString(value));
+}
+
+export function formatLuaString(runtime: Runtime, template: string, args: ReadonlyArray<Value>, argStart: number): string {
+	let argumentIndex = argStart;
+	let output = '';
+
+	const takeArgument = (): Value => {
+		const value = argumentIndex < args.length ? args[argumentIndex] : null;
+		argumentIndex += 1;
+		return value;
+	};
+
+	const readInteger = (startIndex: number): { found: boolean; value: number; nextIndex: number } => {
+		let cursor = startIndex;
+		while (cursor < template.length) {
+			const code = template.charCodeAt(cursor);
+			if (code < 48 || code > 57) {
+				break;
+			}
+			cursor += 1;
+		}
+		if (cursor === startIndex) {
+			return { found: false, value: 0, nextIndex: startIndex };
+		}
+		return { found: true, value: parseInt(template.slice(startIndex, cursor), 10), nextIndex: cursor };
+	};
+
+	for (let index = 0; index < template.length; index += 1) {
+		const current = template.charAt(index);
+		if (current !== '%') {
+			output += current;
+			continue;
+		}
+		if (index === template.length - 1) {
+			throw runtime.createApiRuntimeError('string.format incomplete format specifier.');
+		}
+		if (template.charAt(index + 1) === '%') {
+			output += '%';
+			index += 1;
+			continue;
+		}
+
+		let cursor = index + 1;
+		const flags = { leftAlign: false, plus: false, space: false, zeroPad: false, alternate: false };
+		while (true) {
+			const flag = template.charAt(cursor);
+			if (flag === '-') {
+				flags.leftAlign = true;
+				cursor += 1;
+				continue;
+			}
+			if (flag === '+') {
+				flags.plus = true;
+				cursor += 1;
+				continue;
+			}
+			if (flag === ' ') {
+				flags.space = true;
+				cursor += 1;
+				continue;
+			}
+			if (flag === '0') {
+				flags.zeroPad = true;
+				cursor += 1;
+				continue;
+			}
+			if (flag === '#') {
+				flags.alternate = true;
+				cursor += 1;
+				continue;
+			}
+			break;
+		}
+
+		let width: number = null;
+		if (template.charAt(cursor) === '*') {
+			const widthArg = Math.trunc(takeArgument() as number);
+			if (widthArg < 0) {
+				flags.leftAlign = true;
+				width = -widthArg;
+			} else {
+				width = widthArg;
+			}
+			cursor += 1;
+		} else {
+			const parsedWidth = readInteger(cursor);
+			if (parsedWidth.found) {
+				width = parsedWidth.value;
+				cursor = parsedWidth.nextIndex;
+			}
+		}
+
+		let precision: number = null;
+		if (template.charAt(cursor) === '.') {
+			cursor += 1;
+			if (template.charAt(cursor) === '*') {
+				const precisionArg = Math.trunc(takeArgument() as number);
+				precision = precisionArg >= 0 ? precisionArg : null;
+				cursor += 1;
+			} else {
+				const parsedPrecision = readInteger(cursor);
+				precision = parsedPrecision.found ? parsedPrecision.value : 0;
+				cursor = parsedPrecision.nextIndex;
+			}
+		}
+
+		while (template.charAt(cursor) === 'l' || template.charAt(cursor) === 'L' || template.charAt(cursor) === 'h') {
+			cursor += 1;
+		}
+
+		const specifier = template.charAt(cursor);
+		if (specifier.length === 0) {
+			throw runtime.createApiRuntimeError('string.format incomplete format specifier.');
+		}
+
+		const signPrefix = (value: number): string => {
+			if (value < 0) {
+				return '-';
+			}
+			if (flags.plus) {
+				return '+';
+			}
+			if (flags.space) {
+				return ' ';
+			}
+			return '';
+		};
+
+		const applyPadding = (content: string, sign: string, prefix: string, allowZeroPadding: boolean): string => {
+			const totalLength = sign.length + prefix.length + content.length;
+			if (width !== null && totalLength < width) {
+				const paddingLength = width - totalLength;
+				if (flags.leftAlign) {
+					return `${sign}${prefix}${content}${' '.repeat(paddingLength)}`;
+				}
+				const padChar = allowZeroPadding ? '0' : ' ';
+				if (padChar === '0') {
+					return `${sign}${prefix}${'0'.repeat(paddingLength)}${content}`;
+				}
+				return `${' '.repeat(paddingLength)}${sign}${prefix}${content}`;
+			}
+			return `${sign}${prefix}${content}`;
+		};
+
+		switch (specifier) {
+			case 's': {
+				const value = takeArgument();
+				let text = value === null ? 'nil' : valueToString(value);
+				if (precision !== null) {
+					text = text.substring(0, precision);
+				}
+				output += applyPadding(text, '', '', false);
+				break;
+			}
+			case 'c': {
+				const value = takeArgument() as number;
+				const character = String.fromCharCode(Math.trunc(value));
+				output += applyPadding(character, '', '', false);
+				break;
+			}
+			case 'd':
+			case 'i':
+			case 'u':
+			case 'o':
+			case 'x':
+			case 'X': {
+				let number = takeArgument() as number;
+				let integerValue = Math.trunc(number);
+				const unsigned = specifier === 'u' || specifier === 'o' || specifier === 'x' || specifier === 'X';
+				if (unsigned) {
+					integerValue = integerValue >>> 0;
+				}
+				const negative = !unsigned && integerValue < 0;
+				const sign = negative ? '-' : (specifier === 'd' || specifier === 'i') ? signPrefix(integerValue) : '';
+				const magnitude = negative ? -integerValue : integerValue;
+				let base = 10;
+				if (specifier === 'o') {
+					base = 8;
+				}
+				if (specifier === 'x' || specifier === 'X') {
+					base = 16;
+				}
+				let digits = Math.trunc(magnitude).toString(base);
+				if (specifier === 'X') {
+					digits = digits.toUpperCase();
+				}
+				if (precision !== null) {
+					const required = Math.max(precision, 0);
+					if (digits.length < required) {
+						digits = '0'.repeat(required - digits.length) + digits;
+					}
+					if (precision === 0 && magnitude === 0) {
+						digits = '';
+					}
+				}
+				let prefix = '';
+				if (flags.alternate) {
+					if ((specifier === 'x' || specifier === 'X') && magnitude !== 0) {
+						prefix = specifier === 'x' ? '0x' : '0X';
+					}
+					if (specifier === 'o') {
+						if (digits.length === 0) {
+							digits = '0';
+						} else if (digits.charAt(0) !== '0') {
+							digits = `0${digits}`;
+						}
+					}
+				}
+				const allowZeroPad = flags.zeroPad && !flags.leftAlign && precision === null;
+				output += applyPadding(digits, sign, prefix, allowZeroPad);
+				break;
+			}
+			case 'f':
+			case 'F': {
+				const number = takeArgument() as number;
+				const sign = signPrefix(number);
+				const fractionDigits = precision !== null ? Math.max(0, precision) : 6;
+				const text = Math.abs(number).toFixed(fractionDigits);
+				const formatted = flags.alternate && fractionDigits === 0 && text.indexOf('.') === -1 ? `${text}.` : text;
+				const allowZeroPad = flags.zeroPad && !flags.leftAlign;
+				output += applyPadding(formatted, sign, '', allowZeroPad);
+				break;
+			}
+			case 'e':
+			case 'E': {
+				const number = takeArgument() as number;
+				const sign = signPrefix(number);
+				const fractionDigits = precision !== null ? Math.max(0, precision) : 6;
+				let text = Math.abs(number).toExponential(fractionDigits);
+				if (specifier === 'E') {
+					text = text.toUpperCase();
+				}
+				const allowZeroPad = flags.zeroPad && !flags.leftAlign;
+				output += applyPadding(text, sign, '', allowZeroPad);
+				break;
+			}
+			case 'g':
+			case 'G': {
+				const number = takeArgument() as number;
+				const sign = signPrefix(number);
+				const significant = precision === null ? 6 : precision === 0 ? 1 : precision;
+				let text = Math.abs(number).toPrecision(significant);
+				if (!flags.alternate) {
+					if (text.indexOf('e') !== -1 || text.indexOf('E') !== -1) {
+						const parts = text.split(/e/i);
+						let mantissa = parts[0];
+						const exponent = parts[1];
+						if (mantissa.indexOf('.') !== -1) {
+							while (mantissa.endsWith('0')) {
+								mantissa = mantissa.slice(0, -1);
+							}
+							if (mantissa.endsWith('.')) {
+								mantissa = mantissa.slice(0, -1);
+							}
+						}
+						text = `${mantissa}e${exponent}`;
+					} else if (text.indexOf('.') !== -1) {
+						while (text.endsWith('0')) {
+							text = text.slice(0, -1);
+						}
+						if (text.endsWith('.')) {
+							text = text.slice(0, -1);
+						}
+					}
+				}
+				if (specifier === 'G') {
+					text = text.toUpperCase();
+				}
+				const allowZeroPad = flags.zeroPad && !flags.leftAlign;
+				output += applyPadding(text, sign, '', allowZeroPad);
+				break;
+			}
+			case 'q': {
+				const value = takeArgument();
+				const raw = value === null ? 'nil' : valueToString(value);
+				let escaped = '"';
+				for (let charIndex = 0; charIndex < raw.length; charIndex += 1) {
+					const code = raw.charCodeAt(charIndex);
+					switch (code) {
+						case 10:
+							escaped += '\\n';
+							break;
+						case 13:
+							escaped += '\\r';
+							break;
+						case 9:
+							escaped += '\\t';
+							break;
+						case 92:
+							escaped += '\\\\';
+							break;
+						case 34:
+							escaped += '\\"';
+							break;
+						default:
+							if (code < 32 || code === 127) {
+								const decimal = code.toString(10);
+								escaped += `\\${decimal.padStart(3, '0')}`;
+							} else {
+								escaped += raw.charAt(charIndex);
+							}
+							break;
+					}
+				}
+				escaped += '"';
+				output += applyPadding(escaped, '', '', false);
+				break;
+			}
+			default:
+				throw runtime.createApiRuntimeError(`string.format unsupported format specifier '%${specifier}'.`);
+		}
+
+		index = cursor;
+	}
+
+	return output;
+}
+
+function resolveLuaFunctionName(runtime: Runtime, protoIndex: number): string {
+	if (!runtime.programMetadata) {
+		return `proto:${protoIndex}`;
+	}
+	const protoId = runtime.programMetadata.protoIds[protoIndex];
+	const slashIndex = protoId.lastIndexOf('/');
+	const hint = slashIndex >= 0 ? protoId.slice(slashIndex + 1) : protoId;
+	if (hint.startsWith('decl:')) {
+		return hint.slice(5);
+	}
+	if (hint.startsWith('assign:')) {
+		return hint.slice(7);
+	}
+	if (hint.startsWith('local:')) {
+		const rawName = hint.slice(6);
+		const hashIndex = rawName.indexOf('#');
+		return hashIndex >= 0 ? rawName.slice(0, hashIndex) : rawName;
+	}
+	if (hint.startsWith('anon:')) {
+		return 'anonymous';
+	}
+	return hint;
+}
+
+export function buildLuaStackFrames(runtime: Runtime): StackTraceFrame[] {
+	const callStack = runtime.cpu.getCallStack();
+	const frames: StackTraceFrame[] = [];
+	for (let index = callStack.length - 1; index >= 0; index -= 1) {
+		const entry = callStack[index];
+		const range = runtime.cpu.getDebugRange(entry.pc);
+		const source = range ? range.path : runtime.currentPath;
+		const line = range ? range.start.line : null;
+		const column = range ? range.start.column : null;
+		const functionName = resolveLuaFunctionName(runtime, entry.protoIndex);
+		frames.push({
+			origin: 'lua',
+			functionName,
+			source,
+			line,
+			column,
+			raw: buildLuaFrameRawLabel(functionName, source),
+		});
+	}
+	return frames;
+}
+
+export function seedLuaGlobals(runtime: Runtime): void {
 	const isTruthy = (value: Value): boolean => value !== null && value !== false;
 	const callClosureValue = (callee: Value, args: Value[], out: Value[]): void => {
 		if (isNativeFunction(callee)) {
 			callee.invoke(args, out);
 			return;
 		}
-		const results = ctx.callClosure(callee as Closure, args);
+		const results = runtime.callClosure(callee as Closure, args);
 		out.length = 0;
 		for (let index = 0; index < results.length; index += 1) {
 			out.push(results[index]);
 		}
 	};
-	const key = (name: string): StringValue => ctx.internString(name);
+	const key = (name: string): StringValue => runtime.internString(name);
 	const setKey = (table: Table, name: string, value: Value): void => {
 		table.set(key(name), value);
 	};
@@ -151,27 +523,27 @@ export function seedLuaGlobals(ctx: LuaGlobalsContext): void {
 
 	const typeOfValue = (value: Value): StringValue => {
 		if (value === null) {
-			return ctx.internString('nil');
+			return runtime.internString('nil');
 		}
 		if (typeof value === 'boolean') {
-			return ctx.internString('boolean');
+			return runtime.internString('boolean');
 		}
 		if (typeof value === 'number') {
-			return ctx.internString('number');
+			return runtime.internString('number');
 		}
 		if (isStringValue(value)) {
-			return ctx.internString('string');
+			return runtime.internString('string');
 		}
 		if (value instanceof Table) {
-			return ctx.internString('table');
+			return runtime.internString('table');
 		}
 		if (isNativeFunction(value)) {
-			return ctx.internString('function');
+			return runtime.internString('function');
 		}
 		if (isNativeObject(value)) {
-			return ctx.internString('native');
+			return runtime.internString('native');
 		}
-		return ctx.internString('function');
+		return runtime.internString('function');
 	};
 
 	const translateLuaPatternEscape = (token: string, inClass: boolean): string => {
@@ -222,7 +594,7 @@ export function seedLuaGlobals(ctx: LuaGlobalsContext): void {
 				if (ch === '%') {
 					index += 1;
 					if (index >= pattern.length) {
-						throw ctx.createApiRuntimeError('string.gmatch invalid pattern.');
+						throw runtime.createApiRuntimeError('string.gmatch invalid pattern.');
 					}
 					output += translateLuaPatternEscape(pattern.charAt(index), true);
 					continue;
@@ -242,7 +614,7 @@ export function seedLuaGlobals(ctx: LuaGlobalsContext): void {
 			if (ch === '%') {
 				index += 1;
 				if (index >= pattern.length) {
-					throw ctx.createApiRuntimeError('string.gmatch invalid pattern.');
+					throw runtime.createApiRuntimeError('string.gmatch invalid pattern.');
 				}
 				output += translateLuaPatternEscape(pattern.charAt(index), false);
 				continue;
@@ -270,43 +642,43 @@ export function seedLuaGlobals(ctx: LuaGlobalsContext): void {
 			output += ch;
 		}
 		if (inClass) {
-			throw ctx.createApiRuntimeError('string.gmatch invalid pattern.');
+			throw runtime.createApiRuntimeError('string.gmatch invalid pattern.');
 		}
 		return output;
 	};
 
 	const getLuaPatternRegex = (pattern: string): RegExp => {
-		const cached = ctx.luaPatternRegexCache.get(pattern);
+		const cached = runtime.luaPatternRegexCache.get(pattern);
 		if (cached) {
 			return cached;
 		}
 		const source = buildLuaPatternRegexSource(pattern);
 		const regex = new RegExp(source);
-		ctx.luaPatternRegexCache.set(pattern, regex);
+		runtime.luaPatternRegexCache.set(pattern, regex);
 		return regex;
 	};
 
 	const createNativeArrayFromTable = (table: Table, context: LuaMarshalContext): unknown[] => {
-		const tableId = ctx.getOrAssignTableId(table);
-		const tableContext = ctx.extendMarshalContext(context, `table${tableId}`);
+		const tableId = getOrAssignTableId(runtime, table);
+		const tableContext = extendMarshalContext(context, `table${tableId}`);
 		const entries = table.entriesArray();
 		const output: unknown[] = [];
 		for (let index = 0; index < entries.length; index += 1) {
 			const [keyValue, value] = entries[index];
 			if (typeof keyValue === 'number' && Number.isInteger(keyValue) && keyValue >= 1) {
-				output[keyValue - 1] = ctx.toNativeValue(value, ctx.extendMarshalContext(tableContext, String(keyValue)), new WeakMap());
+				output[keyValue - 1] = toNativeValue(runtime, value, extendMarshalContext(tableContext, String(keyValue)), new WeakMap());
 				continue;
 			}
-			const segment = ctx.describeMarshalSegment(keyValue);
-			const nextContext = segment ? ctx.extendMarshalContext(tableContext, segment) : tableContext;
-			output.push(ctx.toNativeValue(value, nextContext, new WeakMap()));
+			const segment = describeMarshalSegment(keyValue);
+			const nextContext = segment ? extendMarshalContext(tableContext, segment) : tableContext;
+			output.push(toNativeValue(runtime, value, nextContext, new WeakMap()));
 		}
 		return output;
 	};
 
 	const collectApiMembers = (): Array<{ name: string; kind: 'method' | 'getter'; descriptor: PropertyDescriptor }> => {
 		const map = new Map<string, { kind: 'method' | 'getter'; descriptor: PropertyDescriptor }>();
-		let prototype: object = Object.getPrototypeOf(ctx.api);
+		let prototype: object = Object.getPrototypeOf(runtime.api);
 		while (prototype && prototype !== Object.prototype) {
 			for (const name of Object.getOwnPropertyNames(prototype)) {
 				if (name === 'constructor') continue;
@@ -331,11 +703,11 @@ export function seedLuaGlobals(ctx: LuaGlobalsContext): void {
 			['registry', $.registry],
 		];
 		for (const [name, object] of entries) {
-			ctx.registerGlobal(name, ctx.getOrCreateNativeObject(object));
+			runtimeLuaPipeline.registerGlobal(runtime, name, getOrCreateNativeObject(runtime, object));
 		}
-		ctx.registerGlobal('assets', ctx.getOrCreateAssetsNativeObject());
-		ctx.registerGlobal('cart_manifest', ctx.toRuntimeValue($.assets.manifest));
-		ctx.registerGlobal('sys_manifest', ctx.toRuntimeValue($.engine_layer.index.manifest));
+		runtimeLuaPipeline.registerGlobal(runtime, 'assets', getOrCreateAssetsNativeObject(runtime));
+		runtimeLuaPipeline.registerGlobal(runtime, 'cart_manifest', toRuntimeValue(runtime, $.assets.manifest));
+		runtimeLuaPipeline.registerGlobal(runtime, 'sys_manifest', toRuntimeValue(runtime, $.engine_layer.index.manifest));
 	};
 
 	const mathTable = new Table(0, 0);
@@ -439,10 +811,10 @@ export function seedLuaGlobals(ctx: LuaGlobalsContext): void {
 			return;
 		}
 		if (Number.isInteger(value)) {
-			out.push(ctx.internString('integer'));
+			out.push(runtime.internString('integer'));
 			return;
 		}
-		out.push(ctx.internString('float'));
+		out.push(runtime.internString('float'));
 	}));
 	setKey(mathTable, 'ult', createNativeFunction('math.ult', (args, out) => {
 		const left = (args[0] as number) >>> 0;
@@ -450,7 +822,7 @@ export function seedLuaGlobals(ctx: LuaGlobalsContext): void {
 		out.push(left < right);
 	}));
 	setKey(mathTable, 'random', createNativeFunction('math.random', (args, out) => {
-		const randomValue = ctx.nextRandom();
+		const randomValue = runtimeLuaPipeline.nextRandom(runtime);
 		if (args.length === 0) {
 			out.push(randomValue);
 			return;
@@ -458,7 +830,7 @@ export function seedLuaGlobals(ctx: LuaGlobalsContext): void {
 		if (args.length === 1) {
 			const upper = Math.floor(args[0] as number);
 			if (upper < 1) {
-				throw ctx.createApiRuntimeError('math.random upper bound must be positive.');
+				throw runtime.createApiRuntimeError('math.random upper bound must be positive.');
 			}
 			out.push(Math.floor(randomValue * upper) + 1);
 			return;
@@ -466,14 +838,14 @@ export function seedLuaGlobals(ctx: LuaGlobalsContext): void {
 		const lower = Math.floor(args[0] as number);
 		const upper = Math.floor(args[1] as number);
 		if (upper < lower) {
-			throw ctx.createApiRuntimeError('math.random upper bound must be greater than or equal to lower bound.');
+			throw runtime.createApiRuntimeError('math.random upper bound must be greater than or equal to lower bound.');
 		}
 		const span = upper - lower + 1;
 		out.push(lower + Math.floor(randomValue * span));
 	}));
 	setKey(mathTable, 'randomseed', createNativeFunction('math.randomseed', (args, out) => {
 		const seedValue = args.length > 0 ? (args[0] as number) : $.platform.clock.now();
-		ctx.setRandomSeed(Math.floor(seedValue) >>> 0);
+		runtimeLuaPipeline.setRandomSeed(runtime, Math.floor(seedValue) >>> 0);
 		out.length = 0;
 	}));
 	setKey(mathTable, 'huge', Number.POSITIVE_INFINITY);
@@ -523,91 +895,91 @@ export function seedLuaGlobals(ctx: LuaGlobalsContext): void {
 		out.push(smoothstep01((1 - value) * 2));
 	}));
 
-	ctx.registerGlobal('math', mathTable);
-	ctx.registerGlobal('easing', easingTable);
-	ctx.registerGlobal('sys_boot_cart', IO_SYS_BOOT_CART);
-	ctx.registerGlobal('sys_cart_bootready', IO_SYS_CART_BOOTREADY);
-	ctx.registerGlobal('sys_cart_magic_addr', CART_ROM_MAGIC_ADDR);
-	ctx.registerGlobal('sys_cart_magic', CART_ROM_MAGIC);
-	ctx.registerGlobal('sys_cart_rom_size', CART_ROM_SIZE);
-	ctx.registerGlobal('sys_ram_size', RAM_SIZE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'math', mathTable);
+	runtimeLuaPipeline.registerGlobal(runtime, 'easing', easingTable);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_boot_cart', IO_SYS_BOOT_CART);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_cart_bootready', IO_SYS_CART_BOOTREADY);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_cart_magic_addr', CART_ROM_MAGIC_ADDR);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_cart_magic', CART_ROM_MAGIC);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_cart_rom_size', CART_ROM_SIZE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_ram_size', RAM_SIZE);
 	const maxAssets = Math.floor((ASSET_TABLE_SIZE - ASSET_TABLE_HEADER_SIZE) / ASSET_TABLE_ENTRY_SIZE);
-	ctx.registerGlobal('sys_max_assets', maxAssets);
-	ctx.registerGlobal('sys_string_handle_count', STRING_HANDLE_COUNT);
-	ctx.registerGlobal('sys_max_cycles_per_frame', ctx.cycleBudgetPerFrame);
-	ctx.registerGlobal('sys_vdp_dither', IO_VDP_DITHER);
-	ctx.registerGlobal('sys_vdp_primary_atlas_id', IO_VDP_PRIMARY_ATLAS_ID);
-	ctx.registerGlobal('sys_vdp_secondary_atlas_id', IO_VDP_SECONDARY_ATLAS_ID);
-	ctx.registerGlobal('sys_vdp_atlas_none', VDP_ATLAS_ID_NONE);
-	ctx.registerGlobal('sys_vdp_rd_surface', IO_VDP_RD_SURFACE);
-	ctx.registerGlobal('sys_vdp_rd_x', IO_VDP_RD_X);
-	ctx.registerGlobal('sys_vdp_rd_y', IO_VDP_RD_Y);
-	ctx.registerGlobal('sys_vdp_rd_mode', IO_VDP_RD_MODE);
-	ctx.registerGlobal('sys_vdp_rd_status', IO_VDP_RD_STATUS);
-	ctx.registerGlobal('sys_vdp_rd_data', IO_VDP_RD_DATA);
-	ctx.registerGlobal('sys_vdp_rd_mode_rgba8888', VDP_RD_MODE_RGBA8888);
-	ctx.registerGlobal('sys_vdp_rd_status_ready', VDP_RD_STATUS_READY);
-	ctx.registerGlobal('sys_vdp_rd_status_overflow', VDP_RD_STATUS_OVERFLOW);
-	ctx.registerGlobal('sys_irq_flags', IO_IRQ_FLAGS);
-	ctx.registerGlobal('sys_irq_ack', IO_IRQ_ACK);
-	ctx.registerGlobal('sys_dma_src', IO_DMA_SRC);
-	ctx.registerGlobal('sys_dma_dst', IO_DMA_DST);
-	ctx.registerGlobal('sys_dma_len', IO_DMA_LEN);
-	ctx.registerGlobal('sys_dma_ctrl', IO_DMA_CTRL);
-	ctx.registerGlobal('sys_dma_status', IO_DMA_STATUS);
-	ctx.registerGlobal('sys_dma_written', IO_DMA_WRITTEN);
-	ctx.registerGlobal('sys_img_src', IO_IMG_SRC);
-	ctx.registerGlobal('sys_img_len', IO_IMG_LEN);
-	ctx.registerGlobal('sys_img_dst', IO_IMG_DST);
-	ctx.registerGlobal('sys_img_cap', IO_IMG_CAP);
-	ctx.registerGlobal('sys_img_ctrl', IO_IMG_CTRL);
-	ctx.registerGlobal('sys_img_status', IO_IMG_STATUS);
-	ctx.registerGlobal('sys_img_written', IO_IMG_WRITTEN);
-	ctx.registerGlobal('sys_rom_system_base', SYSTEM_ROM_BASE);
-	ctx.registerGlobal('sys_rom_cart_base', CART_ROM_BASE);
-	ctx.registerGlobal('sys_rom_overlay_base', OVERLAY_ROM_BASE);
-	ctx.registerGlobal('sys_rom_overlay_size', ctx.memory.getOverlayRomSize());
-	ctx.registerGlobal('sys_vram_system_atlas_base', VRAM_SYSTEM_ATLAS_BASE);
-	ctx.registerGlobal('sys_vram_primary_atlas_base', VRAM_PRIMARY_ATLAS_BASE);
-	ctx.registerGlobal('sys_vram_secondary_atlas_base', VRAM_SECONDARY_ATLAS_BASE);
-	ctx.registerGlobal('sys_vram_staging_base', VRAM_STAGING_BASE);
-	ctx.registerGlobal('sys_vram_system_atlas_size', VRAM_SYSTEM_ATLAS_SIZE);
-	ctx.registerGlobal('sys_vram_primary_atlas_size', VRAM_PRIMARY_ATLAS_SIZE);
-	ctx.registerGlobal('sys_vram_secondary_atlas_size', VRAM_SECONDARY_ATLAS_SIZE);
-	ctx.registerGlobal('sys_vram_staging_size', VRAM_STAGING_SIZE);
-	ctx.registerGlobal('irq_dma_done', IRQ_DMA_DONE);
-	ctx.registerGlobal('irq_dma_error', IRQ_DMA_ERROR);
-	ctx.registerGlobal('irq_img_done', IRQ_IMG_DONE);
-	ctx.registerGlobal('irq_img_error', IRQ_IMG_ERROR);
-	ctx.registerGlobal('dma_ctrl_start', DMA_CTRL_START);
-	ctx.registerGlobal('dma_ctrl_strict', DMA_CTRL_STRICT);
-	ctx.registerGlobal('dma_status_busy', DMA_STATUS_BUSY);
-	ctx.registerGlobal('dma_status_done', DMA_STATUS_DONE);
-	ctx.registerGlobal('dma_status_error', DMA_STATUS_ERROR);
-	ctx.registerGlobal('dma_status_clipped', DMA_STATUS_CLIPPED);
-	ctx.registerGlobal('img_ctrl_start', IMG_CTRL_START);
-	ctx.registerGlobal('img_status_busy', IMG_STATUS_BUSY);
-	ctx.registerGlobal('img_status_done', IMG_STATUS_DONE);
-	ctx.registerGlobal('img_status_error', IMG_STATUS_ERROR);
-	ctx.registerGlobal('img_status_clipped', IMG_STATUS_CLIPPED);
-	ctx.registerGlobal('peek', createNativeFunction('peek', (args, out) => {
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_max_assets', maxAssets);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_string_handle_count', STRING_HANDLE_COUNT);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_max_cycles_per_frame', runtime.cycleBudgetPerFrame);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_dither', IO_VDP_DITHER);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_primary_atlas_id', IO_VDP_PRIMARY_ATLAS_ID);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_secondary_atlas_id', IO_VDP_SECONDARY_ATLAS_ID);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_atlas_none', VDP_ATLAS_ID_NONE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_rd_surface', IO_VDP_RD_SURFACE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_rd_x', IO_VDP_RD_X);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_rd_y', IO_VDP_RD_Y);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_rd_mode', IO_VDP_RD_MODE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_rd_status', IO_VDP_RD_STATUS);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_rd_data', IO_VDP_RD_DATA);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_rd_mode_rgba8888', VDP_RD_MODE_RGBA8888);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_rd_status_ready', VDP_RD_STATUS_READY);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_rd_status_overflow', VDP_RD_STATUS_OVERFLOW);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_irq_flags', IO_IRQ_FLAGS);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_irq_ack', IO_IRQ_ACK);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_dma_src', IO_DMA_SRC);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_dma_dst', IO_DMA_DST);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_dma_len', IO_DMA_LEN);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_dma_ctrl', IO_DMA_CTRL);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_dma_status', IO_DMA_STATUS);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_dma_written', IO_DMA_WRITTEN);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_img_src', IO_IMG_SRC);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_img_len', IO_IMG_LEN);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_img_dst', IO_IMG_DST);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_img_cap', IO_IMG_CAP);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_img_ctrl', IO_IMG_CTRL);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_img_status', IO_IMG_STATUS);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_img_written', IO_IMG_WRITTEN);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_rom_system_base', SYSTEM_ROM_BASE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_rom_cart_base', CART_ROM_BASE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_rom_overlay_base', OVERLAY_ROM_BASE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_rom_overlay_size', runtime.memory.getOverlayRomSize());
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vram_system_atlas_base', VRAM_SYSTEM_ATLAS_BASE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vram_primary_atlas_base', VRAM_PRIMARY_ATLAS_BASE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vram_secondary_atlas_base', VRAM_SECONDARY_ATLAS_BASE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vram_staging_base', VRAM_STAGING_BASE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vram_system_atlas_size', VRAM_SYSTEM_ATLAS_SIZE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vram_primary_atlas_size', VRAM_PRIMARY_ATLAS_SIZE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vram_secondary_atlas_size', VRAM_SECONDARY_ATLAS_SIZE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vram_staging_size', VRAM_STAGING_SIZE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'irq_dma_done', IRQ_DMA_DONE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'irq_dma_error', IRQ_DMA_ERROR);
+	runtimeLuaPipeline.registerGlobal(runtime, 'irq_img_done', IRQ_IMG_DONE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'irq_img_error', IRQ_IMG_ERROR);
+	runtimeLuaPipeline.registerGlobal(runtime, 'dma_ctrl_start', DMA_CTRL_START);
+	runtimeLuaPipeline.registerGlobal(runtime, 'dma_ctrl_strict', DMA_CTRL_STRICT);
+	runtimeLuaPipeline.registerGlobal(runtime, 'dma_status_busy', DMA_STATUS_BUSY);
+	runtimeLuaPipeline.registerGlobal(runtime, 'dma_status_done', DMA_STATUS_DONE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'dma_status_error', DMA_STATUS_ERROR);
+	runtimeLuaPipeline.registerGlobal(runtime, 'dma_status_clipped', DMA_STATUS_CLIPPED);
+	runtimeLuaPipeline.registerGlobal(runtime, 'img_ctrl_start', IMG_CTRL_START);
+	runtimeLuaPipeline.registerGlobal(runtime, 'img_status_busy', IMG_STATUS_BUSY);
+	runtimeLuaPipeline.registerGlobal(runtime, 'img_status_done', IMG_STATUS_DONE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'img_status_error', IMG_STATUS_ERROR);
+	runtimeLuaPipeline.registerGlobal(runtime, 'img_status_clipped', IMG_STATUS_CLIPPED);
+	runtimeLuaPipeline.registerGlobal(runtime, 'peek', createNativeFunction('peek', (args, out) => {
 		const address = args[0] as number;
-		out.push(ctx.memory.readValue(address));
+		out.push(runtime.memory.readValue(address));
 	}));
-	ctx.registerGlobal('poke', createNativeFunction('poke', (args, out) => {
+	runtimeLuaPipeline.registerGlobal(runtime, 'poke', createNativeFunction('poke', (args, out) => {
 		const address = args[0] as number;
-		ctx.memory.writeValue(address, args[1]);
+		runtime.memory.writeValue(address, args[1]);
 		out.length = 0;
 	}));
-	ctx.registerGlobal('type', createNativeFunction('type', (args, out) => {
+	runtimeLuaPipeline.registerGlobal(runtime, 'type', createNativeFunction('type', (args, out) => {
 		const value = args.length > 0 ? args[0] : null;
 		out.push(typeOfValue(value));
 	}));
-	ctx.registerGlobal('tostring', createNativeFunction('tostring', (args, out) => {
+	runtimeLuaPipeline.registerGlobal(runtime, 'tostring', createNativeFunction('tostring', (args, out) => {
 		const value = args.length > 0 ? args[0] : null;
-		out.push(ctx.valueToStringValue(value));
+		out.push(valueToStringValue(runtime, value));
 	}));
-	ctx.registerGlobal('tonumber', createNativeFunction('tonumber', (args, out) => {
+	runtimeLuaPipeline.registerGlobal(runtime, 'tonumber', createNativeFunction('tonumber', (args, out) => {
 		if (args.length === 0) {
 			out.push(null);
 			return;
@@ -633,47 +1005,47 @@ export function seedLuaGlobals(ctx: LuaGlobalsContext): void {
 		}
 		out.push(null);
 	}));
-	ctx.registerGlobal('assert', createNativeFunction('assert', (args, out) => {
+	runtimeLuaPipeline.registerGlobal(runtime, 'assert', createNativeFunction('assert', (args, out) => {
 		const condition = args.length > 0 ? args[0] : null;
 		if (!isTruthy(condition)) {
-			const message = args.length > 1 ? ctx.valueToString(args[1]) : 'assertion failed!';
-			throw ctx.createApiRuntimeError(message);
+			const message = args.length > 1 ? valueToString(args[1]) : 'assertion failed!';
+			throw runtime.createApiRuntimeError(message);
 		}
 		for (let index = 0; index < args.length; index += 1) {
 			out.push(args[index]);
 		}
 	}));
-	ctx.registerGlobal('error', createNativeFunction('error', (args, out) => {
+	runtimeLuaPipeline.registerGlobal(runtime, 'error', createNativeFunction('error', (args, out) => {
 		void out;
-		const message = args.length > 0 ? ctx.valueToString(args[0]) : 'error';
-		throw ctx.createApiRuntimeError(message);
+		const message = args.length > 0 ? valueToString(args[0]) : 'error';
+		throw runtime.createApiRuntimeError(message);
 	}));
-	ctx.registerGlobal('setmetatable', createNativeFunction('setmetatable', (args, out) => {
+	runtimeLuaPipeline.registerGlobal(runtime, 'setmetatable', createNativeFunction('setmetatable', (args, out) => {
 		const target = args[0] as Table;
 		const metatable = args.length > 1 ? (args[1] as Table) : null;
 		target.setMetatable(metatable);
 		out.push(target);
 	}));
-	ctx.registerGlobal('getmetatable', createNativeFunction('getmetatable', (args, out) => {
+	runtimeLuaPipeline.registerGlobal(runtime, 'getmetatable', createNativeFunction('getmetatable', (args, out) => {
 		const target = args[0] as Table;
 		out.push(target.getMetatable());
 	}));
-	ctx.registerGlobal('rawequal', createNativeFunction('rawequal', (args, out) => {
+	runtimeLuaPipeline.registerGlobal(runtime, 'rawequal', createNativeFunction('rawequal', (args, out) => {
 		out.push(args[0] === args[1]);
 	}));
-	ctx.registerGlobal('rawget', createNativeFunction('rawget', (args, out) => {
+	runtimeLuaPipeline.registerGlobal(runtime, 'rawget', createNativeFunction('rawget', (args, out) => {
 		const target = args[0] as Table;
 		const keyValue = args.length > 1 ? args[1] : null;
 		out.push(target.get(keyValue));
 	}));
-	ctx.registerGlobal('rawset', createNativeFunction('rawset', (args, out) => {
+	runtimeLuaPipeline.registerGlobal(runtime, 'rawset', createNativeFunction('rawset', (args, out) => {
 		const target = args[0] as Table;
 		const keyValue = args[1];
 		const value = args.length > 2 ? args[2] : null;
 		target.set(keyValue, value);
 		out.push(target);
 	}));
-	ctx.registerGlobal('select', createNativeFunction('select', (args, out) => {
+	runtimeLuaPipeline.registerGlobal(runtime, 'select', createNativeFunction('select', (args, out) => {
 		const index = args[0];
 		const count = args.length - 1;
 		if (isStringValue(index) && stringValueToString(index) === '#') {
@@ -687,7 +1059,7 @@ export function seedLuaGlobals(ctx: LuaGlobalsContext): void {
 			out.push(args[i]);
 		}
 	}));
-	ctx.registerGlobal('pcall', createNativeFunction('pcall', (args, out) => {
+	runtimeLuaPipeline.registerGlobal(runtime, 'pcall', createNativeFunction('pcall', (args, out) => {
 		const fn = args[0];
 		const callArgs: Value[] = [];
 		for (let index = 1; index < args.length; index += 1) {
@@ -698,10 +1070,10 @@ export function seedLuaGlobals(ctx: LuaGlobalsContext): void {
 			out.unshift(true);
 		} catch (error) {
 			out.length = 0;
-			out.push(false, ctx.internString(extractErrorMessage(error)));
+			out.push(false, runtime.internString(extractErrorMessage(error)));
 		}
 	}));
-	ctx.registerGlobal('xpcall', createNativeFunction('xpcall', (args, out) => {
+	runtimeLuaPipeline.registerGlobal(runtime, 'xpcall', createNativeFunction('xpcall', (args, out) => {
 		const fn = args[0];
 		const handler = args[1];
 		const callArgs: Value[] = [];
@@ -712,35 +1084,35 @@ export function seedLuaGlobals(ctx: LuaGlobalsContext): void {
 			callClosureValue(fn, callArgs, out);
 			out.unshift(true);
 		} catch (error) {
-			const handlerArgs: Value[] = [ctx.internString(extractErrorMessage(error))];
+			const handlerArgs: Value[] = [runtime.internString(extractErrorMessage(error))];
 			callClosureValue(handler, handlerArgs, out);
 			out.unshift(false);
 		}
 	}));
-	ctx.registerGlobal('require', createNativeFunction('require', (args, out) => {
-		const moduleName = ctx.requireString(args[0]).trim();
-		out.push(ctx.requireModule(moduleName));
+	runtimeLuaPipeline.registerGlobal(runtime, 'require', createNativeFunction('require', (args, out) => {
+		const moduleName = runtimeLuaPipeline.requireString(args[0]).trim();
+		out.push(runtimeLuaPipeline.requireModule(runtime, moduleName));
 	}));
-	ctx.registerGlobal('array', createNativeFunction('array', (args, out) => {
-		const ctxBase = ctx.buildMarshalContext();
+	runtimeLuaPipeline.registerGlobal(runtime, 'array', createNativeFunction('array', (args, out) => {
+		const ctxBase = buildMarshalContext(runtime);
 		let result: unknown[] = [];
 		if (args.length === 1 && args[0] instanceof Table) {
 			result = createNativeArrayFromTable(args[0], ctxBase);
 		} else {
 			result = new Array(args.length);
 			for (let index = 0; index < args.length; index += 1) {
-				result[index] = ctx.toNativeValue(args[index], ctxBase, new WeakMap());
+				result[index] = toNativeValue(runtime, args[index], ctxBase, new WeakMap());
 			}
 		}
-		out.push(ctx.getOrCreateNativeObject(result));
+		out.push(getOrCreateNativeObject(runtime, result));
 	}));
-	ctx.registerGlobal('print', createNativeFunction('print', (args, out) => {
+	runtimeLuaPipeline.registerGlobal(runtime, 'print', createNativeFunction('print', (args, out) => {
 		const parts: string[] = [];
 		for (let index = 0; index < args.length; index += 1) {
-			parts.push(ctx.formatValue(args[index]));
+			parts.push(valueToString(args[index]));
 		}
 		const text = parts.length === 0 ? '' : parts.join('\t');
-		ctx.terminal.appendStdout(text);
+		runtime.terminal.appendStdout(text);
 		// eslint-disable-next-line no-console
 		console.log(text);
 		out.length = 0;
@@ -773,25 +1145,25 @@ export function seedLuaGlobals(ctx: LuaGlobalsContext): void {
 	const stringTable = new Table(0, 0);
 	setKey(stringTable, 'len', createNativeFunction('string.len', (args, out) => {
 		const value = args[0] as StringValue;
-		out.push(ctx.cpu.getStringPool().codepointCount(value));
+		out.push(runtime.cpu.getStringPool().codepointCount(value));
 	}));
 	setKey(stringTable, 'upper', createNativeFunction('string.upper', (args, out) => {
-		const text = ctx.requireString(args[0]);
-		out.push(ctx.internString(text.toUpperCase()));
+		const text = runtimeLuaPipeline.requireString(args[0]);
+		out.push(runtime.internString(text.toUpperCase()));
 	}));
 	setKey(stringTable, 'lower', createNativeFunction('string.lower', (args, out) => {
-		const text = ctx.requireString(args[0]);
-		out.push(ctx.internString(text.toLowerCase()));
+		const text = runtimeLuaPipeline.requireString(args[0]);
+		out.push(runtime.internString(text.toLowerCase()));
 	}));
 	setKey(stringTable, 'rep', createNativeFunction('string.rep', (args, out) => {
-		const text = ctx.requireString(args[0]);
+		const text = runtimeLuaPipeline.requireString(args[0]);
 		const count = Math.floor(args.length > 1 ? (args[1] as number) : 1);
 		if (count <= 0) {
-			out.push(ctx.internString(''));
+			out.push(runtime.internString(''));
 			return;
 		}
 		const hasSeparator = args.length > 2 && args[2] !== null;
-		const separator = hasSeparator ? ctx.requireString(args[2]) : '';
+		const separator = hasSeparator ? runtimeLuaPipeline.requireString(args[2]) : '';
 		let output = '';
 		if (hasSeparator) {
 			for (let index = 0; index < count; index += 1) {
@@ -805,12 +1177,12 @@ export function seedLuaGlobals(ctx: LuaGlobalsContext): void {
 				output += text;
 			}
 		}
-		out.push(ctx.internString(output));
+		out.push(runtime.internString(output));
 	}));
 	setKey(stringTable, 'sub', createNativeFunction('string.sub', (args, out) => {
 		const value = args[0] as StringValue;
 		const text = stringValueToString(value);
-		const length = ctx.cpu.getStringPool().codepointCount(value);
+		const length = runtime.cpu.getStringPool().codepointCount(value);
 		const normalizeIndex = (valueNumber: number): number => {
 			const integer = Math.floor(valueNumber);
 			if (integer > 0) {
@@ -832,18 +1204,18 @@ export function seedLuaGlobals(ctx: LuaGlobalsContext): void {
 			endIndex = length;
 		}
 		if (endIndex < startIndex) {
-			out.push(ctx.internString(''));
+			out.push(runtime.internString(''));
 			return;
 		}
 		const startUnit = utf8CodepointIndexToUnitIndex(text, startIndex);
 		const endUnit = utf8CodepointIndexToUnitIndex(text, endIndex + 1);
-		out.push(ctx.internString(text.slice(startUnit, endUnit)));
+		out.push(runtime.internString(text.slice(startUnit, endUnit)));
 	}));
 	setKey(stringTable, 'find', createNativeFunction('string.find', (args, out) => {
 		const sourceValue = args[0] as StringValue;
 		const source = stringValueToString(sourceValue);
 		const pattern = args.length > 1 ? stringValueToString(args[1] as StringValue) : '';
-		const length = ctx.cpu.getStringPool().codepointCount(sourceValue);
+		const length = runtime.cpu.getStringPool().codepointCount(sourceValue);
 		const normalizeIndex = (valueNumber: number): number => {
 			const integer = Math.floor(valueNumber);
 			if (integer > 0) {
@@ -887,7 +1259,7 @@ export function seedLuaGlobals(ctx: LuaGlobalsContext): void {
 			out.push(first, last);
 			for (let index = 1; index < match.length; index += 1) {
 				const value = match[index];
-				out.push(value === undefined ? null : ctx.internString(value));
+				out.push(value === undefined ? null : runtime.internString(value));
 			}
 			return;
 		}
@@ -897,7 +1269,7 @@ export function seedLuaGlobals(ctx: LuaGlobalsContext): void {
 		const sourceValue = args[0] as StringValue;
 		const source = stringValueToString(sourceValue);
 		const pattern = args.length > 1 ? stringValueToString(args[1] as StringValue) : '';
-		const length = ctx.cpu.getStringPool().codepointCount(sourceValue);
+		const length = runtime.cpu.getStringPool().codepointCount(sourceValue);
 		const normalizeIndex = (valueNumber: number): number => {
 			const integer = Math.floor(valueNumber);
 			if (integer > 0) {
@@ -924,16 +1296,16 @@ export function seedLuaGlobals(ctx: LuaGlobalsContext): void {
 		if (match.length > 1) {
 			for (let index = 1; index < match.length; index += 1) {
 				const value = match[index];
-				out.push(value === undefined ? null : ctx.internString(value));
+				out.push(value === undefined ? null : runtime.internString(value));
 			}
 			return;
 		}
-		out.push(ctx.internString(match[0]));
+		out.push(runtime.internString(match[0]));
 	}));
 	setKey(stringTable, 'gsub', createNativeFunction('string.gsub', (args, out) => {
-		const source = ctx.requireString(args[0]);
-		const pattern = args.length > 1 ? ctx.requireString(args[1]) : '';
-		const replacement = args.length > 2 ? args[2] : ctx.internString('');
+		const source = runtimeLuaPipeline.requireString(args[0]);
+		const pattern = args.length > 1 ? runtimeLuaPipeline.requireString(args[1]) : '';
+		const replacement = args.length > 2 ? args[2] : runtime.internString('');
 		const maxReplacements = args.length > 3 && args[3] !== null
 			? Math.max(0, Math.floor(args[3] as number))
 			: Number.POSITIVE_INFINITY;
@@ -944,8 +1316,8 @@ export function seedLuaGlobals(ctx: LuaGlobalsContext): void {
 		let result = '';
 		let searchIndex = 0;
 		let lastIndex = 0;
-		const fnArgs = ctx.acquireValueScratch();
-		const fnResults = ctx.acquireValueScratch();
+		const fnArgs = runtime.acquireValueScratch();
+		const fnResults = runtime.acquireValueScratch();
 		try {
 			const renderReplacement = (match: RegExpExecArray): string => {
 				if (isStringValue(replacement) || typeof replacement === 'number') {
@@ -970,10 +1342,10 @@ export function seedLuaGlobals(ctx: LuaGlobalsContext): void {
 						return match[0];
 					}
 					const keyValue = match.length > 1
-						? ctx.internString(match[1])
-						: ctx.internString(match[0]);
+						? runtime.internString(match[1])
+						: runtime.internString(match[0]);
 					const mapped = replacement.get(keyValue);
-					return mapped === null ? match[0] : ctx.valueToString(mapped);
+					return mapped === null ? match[0] : valueToString(mapped);
 				}
 				if (isNativeFunction(replacement) || (replacement !== null && typeof replacement === 'object' && 'protoIndex' in replacement)) {
 					fnArgs.length = 0;
@@ -981,22 +1353,22 @@ export function seedLuaGlobals(ctx: LuaGlobalsContext): void {
 					if (match.length > 1) {
 						for (let index = 1; index < match.length; index += 1) {
 							const value = match[index];
-							fnArgs.push(value === undefined ? null : ctx.internString(value));
+							fnArgs.push(value === undefined ? null : runtime.internString(value));
 						}
 						if (fnArgs.length === 0) {
-							fnArgs.push(ctx.internString(match[0]));
+							fnArgs.push(runtime.internString(match[0]));
 						}
 					} else {
-						fnArgs.push(ctx.internString(match[0]));
+						fnArgs.push(runtime.internString(match[0]));
 					}
 					callClosureValue(replacement, fnArgs, fnResults);
 					const value = fnResults.length > 0 ? fnResults[0] : null;
 					if (value === null || value === false) {
 						return match[0];
 					}
-					return ctx.valueToString(value);
+					return valueToString(value);
 				}
-				throw ctx.createApiRuntimeError('string.gsub replacement must be a string, number, function, or table.');
+				throw runtime.createApiRuntimeError('string.gsub replacement must be a string, number, function, or table.');
 			};
 
 			while (count < maxReplacements) {
@@ -1021,15 +1393,15 @@ export function seedLuaGlobals(ctx: LuaGlobalsContext): void {
 			}
 
 			result += source.slice(lastIndex);
-			out.push(ctx.internString(result), count);
+			out.push(runtime.internString(result), count);
 		} finally {
-			ctx.releaseValueScratch(fnResults);
-			ctx.releaseValueScratch(fnArgs);
+			runtime.releaseValueScratch(fnResults);
+			runtime.releaseValueScratch(fnArgs);
 		}
 	}));
 	setKey(stringTable, 'gmatch', createNativeFunction('string.gmatch', (args, out) => {
-		const source = ctx.requireString(args[0]);
-		const pattern = args.length > 1 ? ctx.requireString(args[1]) : '';
+		const source = runtimeLuaPipeline.requireString(args[0]);
+		const pattern = args.length > 1 ? runtimeLuaPipeline.requireString(args[1]) : '';
 		const regex = getLuaPatternRegex(pattern);
 		const state = { index: 0 };
 		const iterator = createNativeFunction('string.gmatch.iterator', (_args, iterOut) => {
@@ -1052,16 +1424,16 @@ export function seedLuaGlobals(ctx: LuaGlobalsContext): void {
 			if (match.length > 1) {
 				for (let index = 1; index < match.length; index += 1) {
 					const value = match[index];
-					iterOut.push(value === undefined ? null : ctx.internString(value));
+					iterOut.push(value === undefined ? null : runtime.internString(value));
 				}
 				return;
 			}
-			iterOut.push(ctx.internString(match[0]));
+			iterOut.push(runtime.internString(match[0]));
 		});
 		out.push(iterator);
 	}));
 	setKey(stringTable, 'byte', createNativeFunction('string.byte', (args, out) => {
-		const source = ctx.requireString(args[0]);
+		const source = runtimeLuaPipeline.requireString(args[0]);
 		const positionArg = args.length > 1 ? (args[1] as number) : 1;
 		const position = Math.floor(positionArg);
 		if (position < 1) {
@@ -1080,7 +1452,7 @@ export function seedLuaGlobals(ctx: LuaGlobalsContext): void {
 	}));
 	setKey(stringTable, 'char', createNativeFunction('string.char', (args, out) => {
 		if (args.length === 0) {
-			out.push(ctx.internString(''));
+			out.push(runtime.internString(''));
 			return;
 		}
 		let result = '';
@@ -1088,14 +1460,14 @@ export function seedLuaGlobals(ctx: LuaGlobalsContext): void {
 			const code = args[index] as number;
 			result += String.fromCodePoint(Math.floor(code));
 		}
-		out.push(ctx.internString(result));
+		out.push(runtime.internString(result));
 	}));
 	setKey(stringTable, 'format', createNativeFunction('string.format', (args, out) => {
-		const template = ctx.requireString(args[0]);
-		const formatted = ctx.formatLuaString(template, args, 1);
-		out.push(ctx.internString(formatted));
+		const template = runtimeLuaPipeline.requireString(args[0]);
+		const formatted = formatLuaString(runtime, template, args, 1);
+		out.push(runtime.internString(formatted));
 	}));
-	ctx.registerGlobal('string', stringTable);
+	runtimeLuaPipeline.registerGlobal(runtime, 'string', stringTable);
 
 	const tableLibrary = new Table(0, 0);
 	setKey(tableLibrary, 'insert', createNativeFunction('table.insert', (args, out) => {
@@ -1131,7 +1503,7 @@ export function seedLuaGlobals(ctx: LuaGlobalsContext): void {
 	}));
 	setKey(tableLibrary, 'concat', createNativeFunction('table.concat', (args, out) => {
 		const target = args[0] as Table;
-		const separator = args.length > 1 ? ctx.requireString(args[1]) : '';
+		const separator = args.length > 1 ? runtimeLuaPipeline.requireString(args[1]) : '';
 		const length = target.length();
 		const normalizeIndex = (valueNumber: number, fallback: number): number => {
 			const integer = Math.floor(valueNumber);
@@ -1146,18 +1518,18 @@ export function seedLuaGlobals(ctx: LuaGlobalsContext): void {
 		const startIndex = args.length > 2 ? normalizeIndex(args[2] as number, 1) : 1;
 		const endIndex = args.length > 3 ? normalizeIndex(args[3] as number, length) : length;
 		if (endIndex < startIndex) {
-			out.push(ctx.internString(''));
+			out.push(runtime.internString(''));
 			return;
 		}
-		const parts = ctx.acquireStringScratch();
+		const parts = runtime.acquireStringScratch();
 		try {
 			for (let index = startIndex; index <= endIndex; index += 1) {
 				const value = target.get(index);
-				parts.push(value === null ? '' : ctx.valueToString(value));
+				parts.push(value === null ? '' : valueToString(value));
 			}
-			out.push(ctx.internString(parts.join(separator)));
+			out.push(runtime.internString(parts.join(separator)));
 		} finally {
-			ctx.releaseStringScratch(parts);
+			runtime.releaseStringScratch(parts);
 		}
 	}));
 	setKey(tableLibrary, 'pack', createNativeFunction('table.pack', (args, out) => {
@@ -1194,9 +1566,9 @@ export function seedLuaGlobals(ctx: LuaGlobalsContext): void {
 		const target = args[0] as Table;
 		const comparator = args.length > 1 ? args[1] : null;
 		const length = target.length();
-		const values = ctx.acquireValueScratch();
-		const comparatorArgs = ctx.acquireValueScratch();
-		const comparatorResults = ctx.acquireValueScratch();
+		const values = runtime.acquireValueScratch();
+		const comparatorArgs = runtime.acquireValueScratch();
+		const comparatorResults = runtime.acquireValueScratch();
 		try {
 			values.length = length;
 			for (let index = 1; index <= length; index += 1) {
@@ -1222,19 +1594,19 @@ export function seedLuaGlobals(ctx: LuaGlobalsContext): void {
 					}
 					return stringValueToString(left) < stringValueToString(right) ? -1 : 1;
 				}
-				throw ctx.createApiRuntimeError('table.sort comparison expects numbers or strings.');
+				throw runtime.createApiRuntimeError('table.sort comparison expects numbers or strings.');
 			});
 			for (let index = 1; index <= length; index += 1) {
 				target.set(index, values[index - 1]);
 			}
 			out.push(target);
 		} finally {
-			ctx.releaseValueScratch(comparatorResults);
-			ctx.releaseValueScratch(comparatorArgs);
-			ctx.releaseValueScratch(values);
+			runtime.releaseValueScratch(comparatorResults);
+			runtime.releaseValueScratch(comparatorArgs);
+			runtime.releaseValueScratch(values);
 		}
 	}));
-	ctx.registerGlobal('table', tableLibrary);
+	runtimeLuaPipeline.registerGlobal(runtime, 'table', tableLibrary);
 
 	const osTable = new Table(0, 0);
 	const formatOsDate = (format: string, date: Date): string => {
@@ -1388,16 +1760,16 @@ export function seedLuaGlobals(ctx: LuaGlobalsContext): void {
 		out.push(t2 - t1);
 	}));
 	setKey(osTable, 'date', createNativeFunction('os.date', (args, out) => {
-		const format = args.length > 0 && args[0] !== null ? ctx.requireString(args[0]) : '%c';
+		const format = args.length > 0 && args[0] !== null ? runtimeLuaPipeline.requireString(args[0]) : '%c';
 		const timeValue = args.length > 1 && args[1] !== null ? (args[1] as number) * 1000 : Date.now();
 		const date = new Date(timeValue);
 		if (format === '*t') {
 			out.push(buildOsDateTable(date));
 			return;
 		}
-		out.push(ctx.internString(formatOsDate(format, date)));
+		out.push(runtime.internString(formatOsDate(format, date)));
 	}));
-	ctx.registerGlobal('os', osTable);
+	runtimeLuaPipeline.registerGlobal(runtime, 'os', osTable);
 
 	const nextFn = createNativeFunction('next', (args, out) => {
 		const target = args[0];
@@ -1412,7 +1784,7 @@ export function seedLuaGlobals(ctx: LuaGlobalsContext): void {
 			return;
 		}
 		if (isNativeObject(target)) {
-			const entry = ctx.nextNativeEntry(target, keyValue);
+			const entry = nextNativeEntry(runtime, target, keyValue);
 			if (entry === null) {
 				out.push(null);
 				return;
@@ -1420,7 +1792,7 @@ export function seedLuaGlobals(ctx: LuaGlobalsContext): void {
 			out.push(entry[0], entry[1]);
 			return;
 		}
-		throw ctx.createApiRuntimeError('next expects a table or native object.');
+		throw runtime.createApiRuntimeError('next expects a table or native object.');
 	});
 	const ipairsIterator = createNativeFunction('ipairs.iterator', (args, out) => {
 		const target = args[0];
@@ -1443,7 +1815,7 @@ export function seedLuaGlobals(ctx: LuaGlobalsContext): void {
 					out.push(null);
 					return;
 				}
-				out.push(nextIndex, ctx.toRuntimeValue(value));
+				out.push(nextIndex, toRuntimeValue(runtime, value));
 				return;
 			}
 			const value = (raw as Record<string, unknown>)[String(nextIndex)];
@@ -1451,26 +1823,26 @@ export function seedLuaGlobals(ctx: LuaGlobalsContext): void {
 				out.push(null);
 				return;
 			}
-			out.push(nextIndex, ctx.toRuntimeValue(value));
+			out.push(nextIndex, toRuntimeValue(runtime, value));
 			return;
 		}
-		throw ctx.createApiRuntimeError('ipairs expects a table or native object.');
+		throw runtime.createApiRuntimeError('ipairs expects a table or native object.');
 	});
-	ctx.registerGlobal('next', nextFn);
-	ctx.registerGlobal('pairs', createNativeFunction('pairs', (args, out) => {
+	runtimeLuaPipeline.registerGlobal(runtime, 'next', nextFn);
+	runtimeLuaPipeline.registerGlobal(runtime, 'pairs', createNativeFunction('pairs', (args, out) => {
 		const target = args[0];
 		if (!(target instanceof Table) && !isNativeObject(target)) {
-			const stack = ctx.buildLuaStackFrames()
+			const stack = buildLuaStackFrames(runtime)
 				.map(frame => `${frame.source ?? '<unknown>'}:${frame.line ?? '?'}:${frame.column ?? '?'}`)
 				.join(' <- ');
-			throw ctx.createApiRuntimeError(`pairs expects a table or native object (got ${ctx.formatValue(target)}). stack=${stack}`);
+			throw runtime.createApiRuntimeError(`pairs expects a table or native object (got ${valueToString(target)}). stack=${stack}`);
 		}
 		out.push(nextFn, target, null);
 	}));
-	ctx.registerGlobal('ipairs', createNativeFunction('ipairs', (args, out) => {
+	runtimeLuaPipeline.registerGlobal(runtime, 'ipairs', createNativeFunction('ipairs', (args, out) => {
 		const target = args[0];
 		if (!(target instanceof Table) && !isNativeObject(target)) {
-			throw ctx.createApiRuntimeError('ipairs expects a table or native object.');
+			throw runtime.createApiRuntimeError('ipairs expects a table or native object.');
 		}
 		out.push(ipairsIterator, target, 0);
 	}));
@@ -1480,36 +1852,36 @@ export function seedLuaGlobals(ctx: LuaGlobalsContext): void {
 		if (kind === 'method') {
 			const callable = descriptor.value as (...args: unknown[]) => unknown;
 			const native = createNativeFunction(`api.${name}`, (args, out) => {
-				const ctxBase = ctx.buildMarshalContext();
+				const ctxBase = buildMarshalContext(runtime);
 				const visited = new WeakMap<Table, unknown>();
 				const jsArgs: unknown[] = [];
 				for (let index = 0; index < args.length; index += 1) {
-					const nextCtx = ctx.extendMarshalContext(ctxBase, `arg${index}`);
-					jsArgs.push(ctx.toNativeValue(args[index], nextCtx, visited));
+					const nextCtx = extendMarshalContext(ctxBase, `arg${index}`);
+					jsArgs.push(toNativeValue(runtime, args[index], nextCtx, visited));
 				}
 				try {
-					const result = callable.apply(ctx.api, jsArgs);
-					ctx.wrapNativeResult(result, out);
+					const result = callable.apply(runtime.api, jsArgs);
+					wrapNativeResult(runtime, result, out);
 				} catch (error) {
 					const message = extractErrorMessage(error);
-					throw ctx.createApiRuntimeError(`[api.${name}] ${message}`);
+					throw runtime.createApiRuntimeError(`[api.${name}] ${message}`);
 				}
 			});
-			ctx.registerGlobal(name, native);
+			runtimeLuaPipeline.registerGlobal(runtime, name, native);
 			continue;
 		}
 		if (descriptor.get) {
 			const getter = descriptor.get;
 			const native = createNativeFunction(`api.${name}`, (_args, out) => {
 				try {
-					const result = getter.call(ctx.api);
-					ctx.wrapNativeResult(result, out);
+					const result = getter.call(runtime.api);
+					wrapNativeResult(runtime, result, out);
 				} catch (error) {
 					const message = extractErrorMessage(error);
-					throw ctx.createApiRuntimeError(`[api.${name}] ${message}`);
+					throw runtime.createApiRuntimeError(`[api.${name}] ${message}`);
 				}
 			});
-			ctx.registerGlobal(name, native);
+			runtimeLuaPipeline.registerGlobal(runtime, name, native);
 		}
 	}
 

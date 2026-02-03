@@ -4,6 +4,7 @@ import type { CodeTabContext, SearchMatch, SymbolSearchResult } from './types';
 import type { LuaSourceRange } from '../../lua/lua_ast';
 import { listResources } from '../workspace';
 import { Runtime } from '../runtime';
+import * as runtimeLuaPipeline from '../runtime_lua_pipeline';
 import { CodeLayout } from './code_layout';
 import { LuaSemanticWorkspace, Decl } from './semantic_model';
 import type { TextBuffer } from './text_buffer';
@@ -298,7 +299,7 @@ function collectFileMetadata(options: CollectMetadataOptions): Map<string, FileM
 		if (metadata.has(path)) {
 			continue;
 		}
-		const source = Runtime.instance.resourceSourceForChunk(path);
+		const source = runtimeLuaPipeline.resourceSourceForChunk(Runtime.instance, path);
 		const lines = splitText(source);
 		if (!lines || lines.length === 0) {
 			continue;

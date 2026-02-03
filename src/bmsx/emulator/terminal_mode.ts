@@ -32,8 +32,10 @@ import { collectLuaModuleAliases, listLuaObjectMembers } from './ide/intellisens
 import { consumeIdeKey, shouldRepeatKeyFromPlayer } from './ide/ide_input';
 import type { Viewport } from '../rompack/rompack';
 import { Runtime } from './runtime';
+import * as runtimeLuaPipeline from './runtime_lua_pipeline';
 import { TerminalCommandDispatcher as TerminalCommandDispatcher } from './terminal_commands';
 import { extractErrorMessage } from '../lua/luavalue';
+import { valueToString } from './lua_globals';
 import type { Value } from './cpu';
 import { LuaMemberCompletionRequest, SymbolEntry } from './types';
 import type { MutableTextPosition, TextBuffer } from './ide/text_buffer';
@@ -503,9 +505,9 @@ export class TerminalMode {
 		}
 
 		try {
-			const results: Value[] = this.runtime.runConsoleChunk(source);
+			const results: Value[] = runtimeLuaPipeline.runConsoleChunk(this.runtime, source);
 			if (results.length > 0) {
-				const summary = results.map(value => this.runtime.formatValue(value)).join('\t');
+				const summary = results.map(value => valueToString(value)).join('\t');
 				this.appendStdout(summary);
 			}
 		}
@@ -940,7 +942,7 @@ export class TerminalMode {
 	}
 
 	private buildSymbolCatalog(): SymbolEntry[] {
-		const entries = this.runtime.listSymbols();
+		const entries = runtimeLuaPipeline.listSymbols(this.runtime);
 		return this.sortSymbolEntries(entries);
 	}
 

@@ -8,6 +8,8 @@ import { restoreBreakpointsFromPayload, serializeBreakpoints, type SerializedBre
 import { scheduleIdeOnce } from './background_tasks';
 import { taskGate } from '../../core/taskgate';
 import { Runtime } from '../runtime';
+import * as runtimeLuaPipeline from '../runtime_lua_pipeline';
+import * as runtimeIde from '../runtime_ide';
 import {
 	WORKSPACE_FILE_ENDPOINT,
 	WORKSPACE_MARKER_FILE,
@@ -347,7 +349,7 @@ export async function applyWorkspaceAutosavePayload(payload: WorkspaceAutosavePa
 	const runtime = Runtime.instance;
 	if (payload.fontVariant) {
 		if (runtime) {
-			runtime.activeIdeFontVariant = payload.fontVariant;
+			runtimeIde.setActiveIdeFontVariant(runtime, payload.fontVariant);
 		} else {
 			setFontVariant(payload.fontVariant);
 		}
@@ -701,7 +703,7 @@ export async function persistDirtyContextEntries(entries: Map<string, DirtyConte
 }
 
 export function loadCleanSrc(path: string) {
-	return Runtime.instance.resourceSourceForChunk(path);
+	return runtimeLuaPipeline.resourceSourceForChunk(Runtime.instance, path);
 }
 
 export function clearWorkspaceDirtyBuffers(): void {

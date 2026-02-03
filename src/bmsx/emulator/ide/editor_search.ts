@@ -5,6 +5,7 @@ import { getSelectionRange, getSelectionText } from './text_editing_and_selectio
 import type { GlobalSearchJob, GlobalSearchMatch, SearchComputationJob, SearchMatch } from './types';
 import type { ResourceDescriptor } from '../types';
 import { Runtime } from '../runtime';
+import * as runtimeLuaPipeline from '../runtime_lua_pipeline';
 import { enqueueBackgroundTask } from './background_tasks';
 import {
 	applySearchFieldText,
@@ -311,7 +312,7 @@ function runGlobalSearchSlice(job: GlobalSearchJob): boolean {
 	while (job.descriptorIndex < job.descriptors.length && processed < GLOBAL_ROWS_PER_SLICE && !job.limitHit) {
 		if (job.currentLines === null) {
 			const descriptor = job.descriptors[job.descriptorIndex];
-			const source = Runtime.instance.resourceSourceForChunk(descriptor.path);
+			const source = runtimeLuaPipeline.resourceSourceForChunk(Runtime.instance, descriptor.path);
 			job.currentLines = source.split(/\r?\n/);
 			job.nextRow = 0;
 		}

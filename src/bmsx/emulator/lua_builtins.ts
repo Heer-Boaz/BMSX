@@ -7,6 +7,7 @@ import { extractErrorMessage, LuaFunctionValue, LuaNativeValue } from '../lua/lu
 import { isLuaTable, LuaTable, LuaValue } from '../lua/luavalue';
 import { arrayify } from '../utils/arrayify';
 import { API_METHOD_METADATA } from './api_metadata';
+import { extendMarshalContext } from './lua_js_bridge';
 import { api, Runtime } from './runtime';
 import type { LuaBuiltinDescriptor } from './types';
 
@@ -361,7 +362,7 @@ export function registerApiBuiltins(interpreter: LuaInterpreter): void {
 			const native = new LuaNativeFunction(`api.${name}`, (args) => {
 				const moduleId = $.lua_sources.path2lua[runtime.currentPath].source_path;
 				const baseCtx = { moduleId, path: [] };
-				const jsArgs = Array.from(args, (arg, index) => runtime.luaJsBridge.convertFromLua(arg, runtime.extendMarshalContext(baseCtx, `arg${index}`)));
+				const jsArgs = Array.from(args, (arg, index) => runtime.luaJsBridge.convertFromLua(arg, extendMarshalContext(baseCtx, `arg${index}`)));
 				try {
 					const target = api;
 					const method = target[name];

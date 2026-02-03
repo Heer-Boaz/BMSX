@@ -2,6 +2,8 @@ import { extractErrorMessage } from '../lua/luavalue';
 import type { HttpResponse, StorageService } from '../platform';
 import type { LuaSourceRecord, LuaSourceRegistry } from './lua_sources';
 import { Runtime } from './runtime';
+import * as runtimeLuaPipeline from './runtime_lua_pipeline';
+import * as runtimeIde from './runtime_ide';
 import { $ } from '../core/engine_core';
 import { LuaResourceCreationRequest, ResourceDescriptor } from './types';
 
@@ -25,7 +27,7 @@ export async function saveLuaResourceSource(path: string, source: string): Promi
 	asset.update_timestamp = $.platform.clock.dateNow();
 	cart.path2lua![path] = asset;
 	cart.path2lua![absPath] = asset;
-	Runtime.instance.markSourceChunkAsDirty(path);
+	runtimeLuaPipeline.markSourceChunkAsDirty(Runtime.instance, path);
 }
 
 export async function createLuaResource(request: LuaResourceCreationRequest): Promise<ResourceDescriptor> {
@@ -49,10 +51,10 @@ export async function createLuaResource(request: LuaResourceCreationRequest): Pr
 		cart.path2lua![asset.normalized_source_path] = asset;
 	};
 	registerAsset($.lua_sources);
-	Runtime.instance.invalidateModuleAliases();
+	runtimeLuaPipeline.invalidateModuleAliases(Runtime.instance);
 	const filesystemPath = asset.source_path;
 	await persistLuaSourceToFilesystem(filesystemPath, contents);
-	Runtime.instance.markSourceChunkAsDirty(asset.source_path);
+	runtimeLuaPipeline.markSourceChunkAsDirty(Runtime.instance, asset.source_path);
 	const descriptor: ResourceDescriptor = { path: asset.source_path, type: 'lua' };
 	return descriptor;
 }
@@ -316,7 +318,7 @@ function handleLuaPersistenceFailure(
 ): void {
 	const runtime = Runtime.instance;
 	if (typeof options === 'string') {
-		runtime.recordLuaWarning(options);
+	runtimeIde.recordLuaWarning(runtime, options);
 		return;
 	}
 	const parts: string[] = [context];
@@ -330,7 +332,7 @@ function handleLuaPersistenceFailure(
 		}
 	}
 	const message = parts.join(': ');
-	runtime.recordLuaWarning(message);
+	runtimeIde.recordLuaWarning(runtime, message);
 }
 
 // StorageService is injected because the workspace merge runs during boot before $.platform is fully wired;
@@ -756,7 +758,7 @@ export async function nukeWorkspaceState(): Promise<void> {
 
 export function listResources(): ResourceDescriptor[] {
 	const descriptorsByPath = new Map<string, ResourceDescriptor>();
-	const registries = Runtime.instance.listLuaSourceRegistries();
+	const registries = runtimeLuaPipeline.listLuaSourceRegistries(Runtime.instance);
 	for (const entry of registries) {
 		const registry = entry.registry;
 		const readOnly = entry.readOnly;

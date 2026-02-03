@@ -25,6 +25,7 @@ import { requestSemanticRefresh } from './intellisense';
 import { resetBlink } from './render/render_caret';
 import { listResources } from '../workspace';
 import { Runtime } from '../runtime';
+import * as runtimeLuaPipeline from '../runtime_lua_pipeline';
 import { PieceTreeBuffer } from './piece_tree_buffer';
 
 function resolvePath(descriptor: ResourceDescriptor): string {
@@ -34,13 +35,13 @@ function resolvePath(descriptor: ResourceDescriptor): string {
 function resolveSource(descriptor: ResourceDescriptor): string {
 	const runtime = Runtime.instance;
 	const path = resolvePath(descriptor);
-	return runtime.resourceSourceForChunk(path);
+	return runtimeLuaPipeline.resourceSourceForChunk(runtime, path);
 }
 
 export function createEntryTabContext(): CodeTabContext {
 	const runtime = Runtime.instance;
 	const luaDescriptors = listResources().filter(r => r.type === 'lua');
-	const preferredRegistry = runtime.listLuaSourceRegistries()[0].registry;
+	const preferredRegistry = runtimeLuaPipeline.listLuaSourceRegistries(runtime)[0].registry;
 	const descriptor = luaDescriptors.find(r => r.path === preferredRegistry.entry_path)!;
 	return createLuaCodeTabContext(descriptor);
 }

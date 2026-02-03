@@ -37,6 +37,8 @@ import type { NodeSpec } from "../ecs/pipeline";
 import { collectEcsPipelineExtensionsFromWorldModules, } from "../ecs/extensions";
 import { gameplaySpec } from './pipelines/gameplay_pipeline';
 import { Runtime } from '../emulator/runtime';
+import * as runtimeIde from '../emulator/runtime_ide';
+import * as runtimeLuaPipeline from '../emulator/runtime_lua_pipeline';
 import { createEmulatorModule } from '../emulator/module';
 import type { GPUBackend } from '../render/backend/pipeline_interfaces';
 import { ActionEffectRegistry } from '../action_effects/effect_registry';
@@ -711,7 +713,7 @@ export class EngineCore {
 			const runtime = Runtime.instance;
 			if (runtime) {
 				try {
-					runtime.handleLuaError(error);
+					runtimeIde.handleLuaError(runtime, error);
 					runtime.abandonFrameState(); // ensure we abandon the frame state to prevent freezing
 				} catch (error) { /* ignore secondary failures, but log them */
 					console.error(`Error while handling surfaced game error in runtime: ${error?.message ?? '<unknown error>'}`);
@@ -882,7 +884,7 @@ export class EngineCore {
 			const runtime = Runtime.instance;
 			if (runtime) {
 				try {
-					runtime.handleLuaError(error);
+					runtimeIde.handleLuaError(runtime, error);
 					runtime.abandonFrameState();
 				} catch { /* ignore secondary failures, but log them */
 					console.error(`Error while handling surfaced game error in runtime: ${error}`);
@@ -933,7 +935,7 @@ export class EngineCore {
 		sg.modelprops = data;
 		sg.spaces = this.world.spaces; // Spaces and their contained objects are serialized directly via references.
 
-		sg.machineState = Runtime.instance?.captureCurrentState();
+		sg.machineState = Runtime.instance ? runtimeLuaPipeline.captureCurrentState(Runtime.instance) : null;
 		const serialized = Serializer.serialize(sg) as Uint8Array;
 		return compress ? BinaryCompressor.compressBinary(serialized) : serialized;
 	}
@@ -970,7 +972,7 @@ export class EngineCore {
 
 			// Restore service state (opt-in)
 			if (sg.machineState) {
-				Runtime.instance.applyState(sg.machineState).then(() => {
+				runtimeLuaPipeline.applyState(Runtime.instance, sg.machineState).then(() => {
 					this.wasupdated = true;
 					renderGate.end(gateToken);
 					runGate.end(runToken);

@@ -1,0 +1,694 @@
+import { $ } from '../core/engine_core';
+import { Input } from '../input/input';
+import { KeyModifier } from '../input/playerinput';
+import { LuaError, LuaRuntimeError, LuaSyntaxError } from '../lua/luaerrors';
+import type { ExecutionSignal, LuaCallFrame } from '../lua/luaruntime';
+import {
+	convertToError,
+	extractErrorMessage,
+	isLuaDebuggerPauseSignal,
+	type LuaDebuggerPauseSignal,
+	type StackTraceFrame,
+} from '../lua/luavalue';
+import { publishOverlayFrame } from '../render/editor/editor_overlay_queue';
+import { clamp_fallback } from '../utils/clamp';
+import { TERMINAL_TOGGLE_KEY, EDITOR_TOGGLE_GAMEPAD_BUTTONS, EDITOR_TOGGLE_KEY, GAME_PAUSE_KEY } from './ide/constants';
+import { createCartEditor, setExecutionStopHighlight, clearExecutionStopHighlights } from './ide/cart_editor';
+import { ide_state } from './ide/ide_state';
+import type { RuntimeErrorDetails } from './ide/types';
+import { setEditorCaseInsensitivity } from './ide/text_renderer';
+import { buildLuaStackFrames } from './lua_globals';
+import { seedDefaultLuaBuiltins } from './lua_builtins';
+import {
+	buildErrorStackString,
+	buildLuaFrameRawLabel,
+	convertLuaCallFrames,
+	parseJsStackFrames,
+	sanitizeLuaErrorMessage,
+} from './runtime_error_util';
+import * as runtimeLuaPipeline from './runtime_lua_pipeline';
+import { getBasePipelineSpecOverrideForIdeOrTerminal, ideExtSpec, terminalExtSpec, runtimeExtSpec } from './systems';
+import { TerminalMode } from './terminal_mode';
+import type { Runtime } from './runtime';
+import type { RuntimeOptions } from './types';
+
+class DebugPauseCoordinator {
+	private suspension: LuaDebuggerPauseSignal = null;
+	private pendingException: LuaRuntimeError | LuaError = null;
+
+	public capture(suspension: LuaDebuggerPauseSignal, pendingException: LuaRuntimeError | LuaError): void {
+		this.suspension = suspension;
+		this.pendingException = pendingException;
+	}
+
+	public hasSuspension(): boolean {
+		return this.suspension !== null;
+	}
+
+	public getSuspension(): LuaDebuggerPauseSignal {
+		return this.suspension;
+	}
+
+	public getPendingException(): LuaRuntimeError | LuaError {
+		return this.pendingException;
+	}
+
+	public clearSuspension(): void {
+		this.suspension = null;
+		this.pendingException = null;
+	}
+}
+
+type DebuggerStepOrigin = { path: string; line: number; depth: number };
+
+export function createPauseCoordinator(): DebugPauseCoordinator {
+	return new DebugPauseCoordinator();
+}
+
+export function initializeIdeFeatures(runtime: Runtime, options: RuntimeOptions): void {
+	runtime.terminal = new TerminalMode(runtime);
+	runtime.editor = createCartEditor(options.viewport);
+	runtime.overlayResolutionMode = 'viewport';
+	seedDefaultLuaBuiltins();
+	flushLuaWarnings(runtime);
+	registerRuntimeShortcuts(runtime);
+	setDebuggerBreakpoints(runtime, ide_state.breakpoints);
+	$.pipeline_ext = runtimeExtSpec;
+}
+
+export function applyCanonicalization(canonicalization: boolean): void {
+	setEditorCaseInsensitivity(canonicalization);
+}
+
+export function setActiveIdeFontVariant(runtime: Runtime, variant: Runtime['activeIdeFontVariant']): void {
+	runtime._activeIdeFontVariant = variant;
+	runtime.terminal.setFontVariant(variant);
+	runtime.editor.setFontVariant(variant);
+}
+
+export function updateGamePipelineExts(runtime: Runtime): void {
+	if (runtime.terminal.isActive) {
+		$.pipeline_spec_override = getBasePipelineSpecOverrideForIdeOrTerminal();
+		$.pipeline_ext = terminalExtSpec;
+	} else if (runtime.editor.isActive) {
+		$.pipeline_spec_override = getBasePipelineSpecOverrideForIdeOrTerminal();
+		$.pipeline_ext = ideExtSpec;
+	} else {
+		$.pipeline_spec_override = null;
+		$.pipeline_ext = runtimeExtSpec;
+	}
+	updateOverlayAudioSuspension(runtime);
+}
+
+export function updateOverlayAudioSuspension(runtime: Runtime): void {
+	if (isOverlayActive(runtime)) {
+		$.sndmaster.suspendAll('overlay');
+	} else {
+		$.sndmaster.resumeAll('overlay');
+	}
+}
+
+export function toggleTerminalMode(runtime: Runtime): void {
+	if (runtime.terminal.isActive) {
+		deactivateTerminalMode(runtime);
+		return;
+	}
+	activateTerminalMode(runtime);
+}
+
+export function activateTerminalMode(runtime: Runtime): void {
+	if (runtime.terminal.isActive) {
+		return;
+	}
+	deactivateEditor(runtime);
+	runtime.terminal.activate();
+	updateGamePipelineExts(runtime);
+}
+
+export function deactivateTerminalMode(runtime: Runtime): void {
+	if (!runtime.terminal.isActive) {
+		return;
+	}
+	runtime.terminal.deactivate();
+	updateGamePipelineExts(runtime);
+}
+
+export function isOverlayActive(runtime: Runtime): boolean {
+	return runtime.editor.isActive || runtime.terminal.isActive;
+}
+
+export function toggleEditor(runtime: Runtime): void {
+	if (runtime.editor.isActive) {
+		deactivateEditor(runtime);
+		return;
+	}
+	activateEditor(runtime);
+}
+
+export function activateEditor(runtime: Runtime): void {
+	if (runtime.terminal.isActive) {
+		runtime.terminal.deactivate();
+	}
+	if (!runtime.editor.isActive) {
+		runtime.editor.activate();
+	}
+	updateGamePipelineExts(runtime);
+}
+
+export function deactivateEditor(runtime: Runtime): void {
+	if (runtime.editor.isActive === true) {
+		runtime.editor.deactivate();
+	}
+	updateGamePipelineExts(runtime);
+}
+
+export function registerRuntimeShortcuts(runtime: Runtime): void {
+	disposeShortcutHandlers(runtime);
+	const registry = Input.instance.getGlobalShortcutRegistry();
+	const disposers: Array<() => void> = [];
+	disposers.push(registry.registerKeyboardShortcut(runtime.playerIndex, EDITOR_TOGGLE_KEY, () => toggleEditor(runtime)));
+	disposers.push(registry.registerKeyboardShortcut(runtime.playerIndex, TERMINAL_TOGGLE_KEY, () => toggleTerminalMode(runtime)));
+	disposers.push(registry.registerGamepadChord(runtime.playerIndex, EDITOR_TOGGLE_GAMEPAD_BUTTONS, () => toggleEditor(runtime)));
+	disposers.push(registry.registerKeyboardShortcut(runtime.playerIndex, GAME_PAUSE_KEY, () => $.toggleDebuggerControls()));
+	disposers.push(registry.registerKeyboardShortcut(runtime.playerIndex, 'KeyT', () => {
+		$.consume_button(runtime.playerIndex, 'KeyT', 'keyboard');
+		const next = runtime._activeIdeFontVariant === 'tiny' ? 'msx' : 'tiny';
+		setActiveIdeFontVariant(runtime, next);
+	}, KeyModifier.ctrl | KeyModifier.shift));
+	disposers.push(registry.registerKeyboardShortcut(runtime.playerIndex, 'KeyM', () => {
+		if (!isOverlayActive(runtime)) {
+			return;
+		}
+		$.consume_button(runtime.playerIndex, 'KeyM', 'keyboard');
+		toggleOverlayResolutionMode(runtime);
+	}, KeyModifier.ctrl | KeyModifier.alt));
+	disposers.push(registry.registerKeyboardShortcut(runtime.playerIndex, 'F8', () => {
+		const modifiers = $.input.getPlayerInput(runtime.playerIndex).getModifiersState();
+		if (modifiers.ctrl) {
+			return;
+		}
+		if (runtime.debuggerSuspendSignal) {
+			stepOverLuaDebugger(runtime);
+		} else {
+			runtime.debuggerController.requestStepInto();
+		}
+	}));
+	runtime.shortcutDisposers = disposers;
+}
+
+export function disposeShortcutHandlers(runtime: Runtime): void {
+	if (runtime.shortcutDisposers.length === 0) {
+		return;
+	}
+	for (let i = 0; i < runtime.shortcutDisposers.length; i++) {
+		runtime.shortcutDisposers[i]();
+	}
+	runtime.shortcutDisposers = [];
+}
+
+export function toggleOverlayResolutionMode(runtime: Runtime): 'offscreen' | 'viewport' {
+	const next = runtime.overlayResolutionMode === 'offscreen' ? 'viewport' : 'offscreen';
+	runtime.overlayResolutionMode = next;
+	return next;
+}
+
+export function tickIdeInput(runtime: Runtime): void {
+	const pollFrame = $.input.getPlayerInput(runtime.playerIndex).pollFrame;
+	if (pollFrame === runtime.lastIdeInputFrame) {
+		return;
+	}
+	runtime.lastIdeInputFrame = pollFrame;
+	runtime.editor.tickInput();
+}
+
+export function tickTerminalInput(runtime: Runtime): void {
+	const pollFrame = $.input.getPlayerInput(runtime.playerIndex).pollFrame;
+	if (pollFrame === runtime.lastTerminalInputFrame) {
+		return;
+	}
+	runtime.lastTerminalInputFrame = pollFrame;
+	void runtime.terminal.handleInput();
+}
+
+export function recordLuaWarning(runtime: Runtime, message: string): void {
+	runtime.pendingLuaWarnings.push(message);
+	console.warn(message);
+	flushLuaWarnings(runtime);
+}
+
+export function flushLuaWarnings(runtime: Runtime): void {
+	if (runtime.pendingLuaWarnings.length === 0) {
+		return;
+	}
+	const messages = runtime.pendingLuaWarnings;
+	runtime.pendingLuaWarnings = [];
+	for (const warning of messages) {
+		ide_state.showWarningBanner(warning, 6.0);
+	}
+}
+
+export function setDebuggerBreakpoints(runtime: Runtime, breakpoints: Map<string, Set<number>>): void {
+	runtime.debuggerController.setBreakpoints(breakpoints);
+}
+
+export function setDebuggerPaused(runtime: Runtime, paused: boolean): void {
+	runtime.debuggerPaused = paused;
+	ide_state.debuggerControls.executionState = paused ? 'paused' : 'inactive';
+	ide_state.debuggerControls.sessionMetrics = runtime.debuggerMetrics;
+	if (!paused) {
+		clearExecutionStopHighlights();
+	}
+}
+
+export function applyDebuggerStopLocation(signal: LuaDebuggerPauseSignal): void {
+	const normalizedLine = clamp_fallback(signal.location.line, 1, Number.MAX_SAFE_INTEGER, 1);
+	setExecutionStopHighlight(normalizedLine - 1);
+}
+
+export function onLuaDebuggerPause(runtime: Runtime, signal: LuaDebuggerPauseSignal): void {
+	if (signal.reason === 'exception' && !runtime.editor.isActive) {
+		runtime.interpreter.markFaultEnvironment();
+		handleLuaError(runtime, signal.exception);
+		return;
+	}
+	runtime.debuggerController.handlePause(signal);
+	const pendingException = runtime.interpreter.pendingDebuggerException;
+	runtime.pauseCoordinator.capture(signal, pendingException);
+	runtime.debuggerSuspendSignal = signal;
+	runtime.debuggerMetrics = runtime.debuggerController.getSessionMetrics();
+	setDebuggerPaused(runtime, true);
+	applyDebuggerStopLocation(signal);
+	if (signal.reason === 'exception') {
+		recordDebuggerExceptionFault(runtime, signal);
+		if (runtime.programMetadata && runtime.editor.isActive) {
+			const message = runtime.faultSnapshot.message;
+			runtime.editor.showRuntimeErrorInChunk(runtime.faultSnapshot.path, runtime.faultSnapshot.line, runtime.faultSnapshot.column, message);
+		}
+	}
+}
+
+export function clearActiveDebuggerPause(runtime: Runtime): void {
+	runtime.pauseCoordinator.clearSuspension();
+	runtime.debuggerSuspendSignal = null;
+	setDebuggerPaused(runtime, false);
+	clearRuntimeFault(runtime);
+	runtime.debuggerController.clearPauseContext();
+	runtime.editor.clearRuntimeErrorOverlay();
+}
+
+export function handleDebuggerResumeResult(runtime: Runtime, result: ExecutionSignal): void {
+	if (result && result.kind === 'pause') {
+		onLuaDebuggerPause(runtime, result as LuaDebuggerPauseSignal);
+		return;
+	}
+	clearActiveDebuggerPause(runtime);
+}
+
+function buildDebuggerStepOrigin(suspension: LuaDebuggerPauseSignal): DebuggerStepOrigin {
+	return {
+		path: suspension.location.path,
+		line: suspension.location.line,
+		depth: suspension.callStack.length,
+	};
+}
+
+function resolveResumeStrategy(suspension: LuaDebuggerPauseSignal): 'propagate' | 'skip_statement' {
+	return suspension.reason === 'exception' ? 'skip_statement' : 'propagate';
+}
+
+function resumeDebugger(runtime: Runtime, options: { mode: 'continue' | 'step_into' | 'step_out'; strategy: 'propagate' | 'skip_statement' }): void {
+	const suspension = runtime.pauseCoordinator.getSuspension();
+	const stepOrigin = buildDebuggerStepOrigin(suspension);
+	if (options.mode === 'step_into') {
+		runtime.debuggerController.requestStepInto(stepOrigin);
+	}
+	if (options.mode === 'step_out') {
+		runtime.debuggerController.requestStepOut(suspension.callStack.length, stepOrigin);
+	}
+	if (options.strategy === 'skip_statement' && suspension.reason === 'exception') {
+		runtime.debuggerController.markSkippedException();
+	}
+	runtime.interpreter.debuggerResumeStrategy = options.strategy;
+	const result = suspension.resume();
+	handleDebuggerResumeResult(runtime, result);
+}
+
+export function continueLuaDebugger(runtime: Runtime): void {
+	resumeDebugger(runtime, { mode: 'continue', strategy: 'propagate' });
+}
+
+export function stepOverLuaDebugger(runtime: Runtime): void {
+	stepIntoLuaDebugger(runtime);
+}
+
+export function stepIntoLuaDebugger(runtime: Runtime): void {
+	const suspension = runtime.pauseCoordinator.getSuspension();
+	resumeDebugger(runtime, { mode: 'step_into', strategy: resolveResumeStrategy(suspension) });
+}
+
+export function stepOutLuaDebugger(runtime: Runtime): void {
+	const suspension = runtime.pauseCoordinator.getSuspension();
+	resumeDebugger(runtime, { mode: 'step_out', strategy: resolveResumeStrategy(suspension) });
+}
+
+export function ignoreLuaException(runtime: Runtime): void {
+	resumeDebugger(runtime, { mode: 'continue', strategy: 'skip_statement' });
+}
+
+export function clearEditorErrorOverlaysIfNoFault(runtime: Runtime): void {
+	if (runtime.luaRuntimeFailed) return;
+	runtime.editor.clearRuntimeErrorOverlay();
+	publishOverlayFrame(null);
+}
+
+export function clearFaultSnapshot(runtime: Runtime): void {
+	runtime.faultSnapshot = null;
+	runtime.faultOverlayNeedsFlush = false;
+}
+
+export function clearRuntimeFault(runtime: Runtime): void {
+	runtime.luaRuntimeFailed = false;
+	clearFaultSnapshot(runtime);
+}
+
+export function setRuntimeFault(runtime: Runtime, payload: {
+	message: string;
+	path: string;
+	line: number;
+	column: number;
+	details: RuntimeErrorDetails;
+	fromDebugger: boolean;
+}): void {
+	runtime.luaRuntimeFailed = true;
+	runtime.faultSnapshot = payload;
+	runtime.faultSnapshot.timestampMs = $.platform.clock.dateNow();
+	runtime.faultOverlayNeedsFlush = true;
+}
+
+export function clearFaultState(runtime: Runtime): { cleared: boolean; resumedDebugger: boolean } {
+	const hadFault = runtime.luaRuntimeFailed || runtime.faultSnapshot !== null || runtime.debuggerSuspendSignal !== null;
+	const wasPaused = runtime.debuggerSuspendSignal !== null || runtime.debuggerPaused;
+	clearRuntimeFault(runtime);
+	if (wasPaused) {
+		clearActiveDebuggerPause(runtime);
+	}
+	return { cleared: hadFault, resumedDebugger: wasPaused };
+}
+
+export function recordDebuggerExceptionFault(runtime: Runtime, signal: LuaDebuggerPauseSignal): void {
+	const exception = runtime.pauseCoordinator.getPendingException();
+	if (runtime.faultSnapshot && runtime.luaRuntimeFailed) {
+		runtime.faultOverlayNeedsFlush = true;
+		return;
+	}
+	const signalLine = clamp_fallback(signal.location.line, 1, Number.MAX_SAFE_INTEGER, null);
+	const signalColumn = clamp_fallback(signal.location.column, 1, Number.MAX_SAFE_INTEGER, null);
+	if (!exception) {
+		setRuntimeFault(runtime, {
+			message: 'Runtime error',
+			path: signal.location.path,
+			line: signalLine,
+			column: signalColumn,
+			details: buildRuntimeErrorDetailsForEditor(runtime, null, 'Runtime error', signal.callStack),
+			fromDebugger: true,
+		});
+		return;
+	}
+	const message = sanitizeLuaErrorMessage(extractErrorMessage(exception));
+	let path: string = exception.path;
+	if (!path || path.length === 0) {
+		path = signal.location.path;
+	}
+	const normalizedLine = clamp_fallback(exception.line, 1, Number.MAX_SAFE_INTEGER, null);
+	const normalizedColumn = clamp_fallback(exception.column, 1, Number.MAX_SAFE_INTEGER, null);
+	setRuntimeFault(runtime, {
+		message,
+		path,
+		line: normalizedLine ?? signalLine,
+		column: normalizedColumn ?? signalColumn,
+		details: buildRuntimeErrorDetailsForEditor(runtime, exception, message, signal.callStack),
+		fromDebugger: true,
+	});
+}
+
+function extractErrorLocation(runtime: Runtime, error: unknown): { line: number; column: number; path: string } {
+	if (error instanceof LuaError) {
+		const rawChunk = typeof error.path === 'string' && error.path.length > 0 ? error.path : null;
+		const path = rawChunk && rawChunk.startsWith('@') ? rawChunk.slice(1) : rawChunk;
+		return {
+			line: Number.isFinite(error.line) && error.line > 0 ? Math.floor(error.line) : null,
+			column: Number.isFinite(error.column) && error.column > 0 ? Math.floor(error.column) : null,
+			path: path,
+		};
+	}
+	if (runtime.lastLuaCallStack.length > 0) {
+		const frame = runtime.lastLuaCallStack[0];
+		return {
+			line: frame.line,
+			column: frame.column,
+			path: frame.source,
+		};
+	}
+	return { line: null, column: null, path: null };
+}
+
+export function handleLuaError(runtime: Runtime, whatever: unknown): void {
+	const error = convertToError(whatever);
+	if (isLuaDebuggerPauseSignal(error)) {
+		console.info('[Runtime] Lua debugger pause signal received: ', error);
+		onLuaDebuggerPause(runtime, error);
+		return;
+	}
+	if (runtime.handledLuaErrors.has(error)) {
+		return;
+	}
+	runtimeLuaPipeline.logDebugState(runtime);
+	runtime.lastLuaCallStack = buildLuaStackFrames(runtime);
+	const message = sanitizeLuaErrorMessage(extractErrorMessage(error));
+	const { line, column, path } = extractErrorLocation(runtime, error);
+	const innermostFrame = runtime.lastLuaCallStack.length > 0 ? runtime.lastLuaCallStack[0] : null;
+	const resolvedPath = innermostFrame ? innermostFrame.source : (path ?? runtime.currentPath);
+	const resolvedLine = innermostFrame ? innermostFrame.line : line;
+	const resolvedColumn = innermostFrame ? innermostFrame.column : column;
+	const runtimeDetails = buildRuntimeErrorDetailsForEditor(runtime, error, message);
+	const stackText = buildErrorStackString(
+		error instanceof Error && error.name ? error.name : 'Error',
+		message,
+		runtimeDetails,
+		runtime.jsStackEnabled,
+	);
+	setRuntimeFault(runtime, {
+		message,
+		path: resolvedPath,
+		line: resolvedLine,
+		column: resolvedColumn,
+		details: runtimeDetails,
+		fromDebugger: false,
+	});
+	if (error instanceof Error) {
+		error.message = message;
+		error.stack = stackText;
+	}
+	console.error(stackText);
+	runtime.terminal.appendError(error);
+	activateTerminalMode(runtime);
+	runtime.handledLuaErrors.add(error);
+}
+
+export function buildRuntimeErrorDetailsForEditor(runtime: Runtime, error: unknown, message: string, callStack?: ReadonlyArray<LuaCallFrame>): RuntimeErrorDetails {
+	if (error instanceof LuaSyntaxError) {
+		return null;
+	}
+	const useInterpreterStack = callStack !== undefined;
+	const callFrames = useInterpreterStack ? callStack : null;
+	let luaFrames: StackTraceFrame[] = [];
+	if (useInterpreterStack) {
+		luaFrames = callFrames.length > 0 ? convertLuaCallFrames(callFrames) : [];
+	} else if (runtime.lastLuaCallStack.length > 0) {
+		luaFrames = runtime.lastLuaCallStack.slice();
+	}
+	if (error instanceof LuaError) {
+		const src = typeof error.path === 'string' && error.path.length > 0 ? error.path : null;
+		const line = Number.isFinite(error.line) && error.line > 0 ? Math.floor(error.line) : null;
+		const col = Number.isFinite(error.column) && error.column > 0 ? Math.floor(error.column) : null;
+		const innermostCall = callFrames && callFrames.length > 0 ? callFrames[callFrames.length - 1] : null;
+		const innermostFrame = luaFrames.length > 0 ? luaFrames[0] : null;
+		const effectiveSource = src !== null ? src : innermostFrame ? innermostFrame.source : null;
+		const resolvedLine = line !== null ? line : (innermostFrame ? innermostFrame.line : null);
+		const resolvedColumn = col !== null ? col : (innermostFrame ? innermostFrame.column : null);
+		const alreadyCaptured =
+			!!innermostFrame &&
+			innermostFrame.source === (effectiveSource ?? '') &&
+			innermostFrame.line === (resolvedLine ?? 0) &&
+			innermostFrame.column === (resolvedColumn ?? 0);
+		if (!alreadyCaptured) {
+			const fnName =
+				innermostCall && innermostCall.functionName && innermostCall.functionName.length > 0
+					? innermostCall.functionName
+					: innermostFrame && innermostFrame.functionName && innermostFrame.functionName.length > 0
+						? innermostFrame.functionName
+						: null;
+			if (innermostFrame && effectiveSource && innermostFrame.source === effectiveSource) {
+				const hint = effectiveSource;
+				const updated: StackTraceFrame = {
+					origin: innermostFrame.origin,
+					functionName: fnName,
+					source: effectiveSource,
+					line: resolvedLine,
+					column: resolvedColumn,
+					raw: buildLuaFrameRawLabel(fnName, effectiveSource),
+					pathPath: innermostFrame.pathPath,
+				};
+				updated.pathPath = hint;
+				luaFrames[0] = updated;
+			} else {
+				const frameSource = src !== null ? src : effectiveSource;
+				const top: StackTraceFrame = {
+					origin: 'lua',
+					functionName: fnName,
+					source: frameSource,
+					line: resolvedLine,
+					column: resolvedColumn,
+					raw: buildLuaFrameRawLabel(fnName, frameSource),
+				};
+				if (frameSource && frameSource.length > 0) {
+					const hint = frameSource;
+					if (hint) {
+						top.pathPath = hint;
+					}
+				}
+				luaFrames.unshift(top);
+			}
+		}
+	}
+	const projectRootPath = runtime.isEngineProgramActive()
+		? $.engine_layer.index.projectRootPath
+		: $.assets.project_root_path;
+	const normalizedRoot = projectRootPath && projectRootPath.length > 0
+		? projectRootPath.replace(/^\.?\//, '')
+		: '';
+	if (luaFrames.length > 0) {
+		for (const frame of luaFrames) {
+			const source = frame.source;
+			if (!source || source.length === 0) {
+				continue;
+			}
+			const normalizedSource = source.replace(/^\.?\//, '');
+			const workspaceRelative = normalizedSource.startsWith('src/')
+				? normalizedSource
+				: (normalizedRoot.length > 0 && normalizedSource.startsWith(`${normalizedRoot}/`))
+					? normalizedSource
+					: (normalizedRoot.length > 0 ? `${normalizedRoot}/${normalizedSource}` : normalizedSource);
+			frame.pathPath = workspaceRelative;
+		}
+	}
+	let stackText: string = null;
+	if (runtime.jsStackEnabled && error instanceof Error && typeof error.stack === 'string') {
+		stackText = error.stack;
+	}
+	const jsFrames = runtime.jsStackEnabled ? parseJsStackFrames(stackText) : [];
+	if (luaFrames.length === 0 && jsFrames.length === 0) {
+		return null;
+	}
+	return {
+		message,
+		luaStack: luaFrames,
+		jsStack: jsFrames,
+	};
+}
+
+export function tickTerminalMode(runtime: Runtime): void {
+	if (!runtime.tickEnabled) {
+		return;
+	}
+	runtime.processPendingProgramReload();
+	if (runtime.currentFrameState !== null || runtime.drawFrameState !== null) {
+		return;
+	}
+	const state = runtime.beginFrameState();
+	runtime.terminal.update(state.deltaSeconds);
+	runtime.vdp.flushAssetEdits();
+	runtime.drawFrameState = state;
+	runtime.abandonFrameState();
+}
+
+export function tickTerminalModeDraw(runtime: Runtime): void {
+	if (!runtime.tickEnabled) {
+		return;
+	}
+	if (!runtime.drawFrameState) {
+		return;
+	}
+	runtime.currentFrameState = runtime.drawFrameState;
+	try {
+		drawTerminal(runtime);
+	} finally {
+		runtime.drawFrameState = null;
+		runtime.abandonFrameState();
+	}
+}
+
+export function tickIDE(runtime: Runtime): void {
+	if (!runtime.tickEnabled) {
+		return;
+	}
+	runtime.processPendingProgramReload();
+	if (runtime.currentFrameState !== null || runtime.drawFrameState !== null) {
+		return;
+	}
+	const state = runtime.beginFrameState();
+	runtime.editor.update(state.deltaSeconds);
+	runtime.vdp.flushAssetEdits();
+	runtime.drawFrameState = state;
+	runtime.abandonFrameState();
+}
+
+export function tickIDEDraw(runtime: Runtime): void {
+	if (!runtime.tickEnabled) {
+		return;
+	}
+	if (!runtime.drawFrameState) {
+		return;
+	}
+	runtime.currentFrameState = runtime.drawFrameState;
+	try {
+		drawIde(runtime);
+	} finally {
+		runtime.drawFrameState = null;
+		runtime.abandonFrameState();
+	}
+}
+
+export function drawIde(runtime: Runtime): void {
+	try {
+		runtime.overlayRenderBackend.beginFrame();
+		runtime.overlayRenderBackend.setDefaultLayer('ide');
+		runtime.editor.draw();
+	} catch (error) {
+		if (isLuaDebuggerPauseSignal(error)) {
+			onLuaDebuggerPause(runtime, error);
+		} else {
+			handleLuaError(runtime, error);
+		}
+	} finally {
+		runtime.overlayRenderBackend.endFrame();
+	}
+}
+
+export function drawTerminal(runtime: Runtime): void {
+	try {
+		runtime.overlayRenderBackend.beginFrame();
+		runtime.overlayRenderBackend.setDefaultLayer('ide');
+		runtime.terminal.draw(runtime.overlayRenderBackend, runtime.overlayRenderBackend.viewportSize);
+		runtime.overlayRenderBackend.setDefaultLayer('world');
+		runtime.overlayRenderBackend.playbackRenderQueue(runtime.preservedRenderQueue);
+	} catch (error) {
+		if (isLuaDebuggerPauseSignal(error)) {
+			onLuaDebuggerPause(runtime, error);
+		} else {
+			handleLuaError(runtime, error);
+		}
+	} finally {
+		runtime.overlayRenderBackend.endFrame();
+	}
+}

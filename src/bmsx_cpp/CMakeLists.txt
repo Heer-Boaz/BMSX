@@ -129,6 +129,8 @@ add_library(bmsx_core STATIC
 	emulator/devices/dma_controller.cpp
 	emulator/devices/imgdec_controller.cpp
 	emulator/api.cpp
+	emulator/lua_globals.cpp
+	emulator/lua_runtime.cpp
 	emulator/runtime.cpp
 	emulator/memory.cpp
 	emulator/memory_map.cpp

@@ -109,6 +109,8 @@ import { applyWorkspaceOverridesToCart, createLuaResource, listResources, saveLu
 import * as TextEditing from './text_editing_and_selection';
 import { resetBlink } from './render/render_caret';
 import { api, Runtime } from '../runtime';
+import * as runtimeLuaPipeline from '../runtime_lua_pipeline';
+import * as runtimeIde from '../runtime_ide';
 import { drawResourcePanel, drawResourceViewer } from './render/render_resource_panel';
 import { drawCreateResourceBar } from './render/render_input_bars';
 import { drawActionPromptOverlay } from './render/render_prompt';
@@ -241,7 +243,7 @@ export function initializeCartEditor(viewport: Viewport): void {
 }
 
 export function getSourceForChunk(path: string): string {
-	const asset = Runtime.instance.resolveLuaSourceRecord(path);
+	const asset = runtimeLuaPipeline.resolveLuaSourceRecord(Runtime.instance, path);
 	const context = findCodeTabContext(path);
 	if (context) {
 		if (context.id === ide_state.activeCodeTabContextId) {
@@ -1927,7 +1929,7 @@ export function commitRename(payload: RenameCommitPayload): RenameCommitResult {
 
 export function findResourceDescriptorForChunk(path: string): ResourceDescriptor | null {
 	const runtime = Runtime.instance;
-	const registries = runtime.listLuaSourceRegistries();
+	const registries = runtimeLuaPipeline.listLuaSourceRegistries(runtime);
 	for (const entry of registries) {
 		const asset = entry.registry.path2lua[path];
 		if (asset) {
@@ -2687,7 +2689,7 @@ export function performAction(action: PendingActionPrompt['action']): boolean {
 		case 'reboot':
 			return performReboot();
 		case 'close':
-			Runtime.instance.deactivateEditor();
+			runtimeIde.deactivateEditor(Runtime.instance);
 			return true;
 		case 'theme-toggle':
 			toggleThemeMode();
@@ -2702,17 +2704,17 @@ export function performHotReloadAndResume(): boolean {
 	const targetGeneration = ide_state.saveGeneration;
 	const shouldUpdateGeneration = hasPendingRuntimeReload();
 	clearExecutionStopHighlights();
-	Runtime.instance.deactivateEditor();
+	runtimeIde.deactivateEditor(Runtime.instance);
 	console.log('[IDE] Performing hot-reload and resume');
 	scheduleRuntimeTask(async () => {
 		console.log('[IDE] Applying workspace overrides to cart before resume');
 		await applyWorkspaceOverridesToCart({ cart: $.lua_sources, storage: $.platform.storage, includeServer: true });
 		console.log('[IDE] Capturing runtime snapshot for resume');
-		const snapshot = runtime.captureCurrentState();
+		const snapshot = runtimeLuaPipeline.captureCurrentState(runtime);
 		console.log('[IDE] Clear execution stop highlights before resume');
-		runtime.clearFaultState();
+		runtimeIde.clearFaultState(runtime);
 		console.log('[IDE] Resuming from snapshot after hot reload');
-		await runtime.resumeFromSnapshot(snapshot);
+		await runtimeLuaPipeline.resumeFromSnapshot(runtime, snapshot);
 		if (shouldUpdateGeneration) {
 			console.log('[IDE] Updating applied generation after resume');
 			ide_state.appliedGeneration = targetGeneration;
@@ -2730,15 +2732,15 @@ export function performReboot(): boolean {
 	const requiresReload = hasPendingRuntimeReload();
 	const targetGeneration = ide_state.saveGeneration;
 	clearExecutionStopHighlights();
-	Runtime.instance.deactivateEditor();
+	runtimeIde.deactivateEditor(Runtime.instance);
 	scheduleRuntimeTask(async () => {
 		if (requiresReload) {
 			console.info('[IDE] Performing full program reload for reboot');
-			await runtime.reloadProgramAndResetWorld({ runInit: true }); // Was false, but it makes no sense to skip init on reboot
+			await runtimeLuaPipeline.reloadProgramAndResetWorld(runtime, { runInit: true }); // Was false, but it makes no sense to skip init on reboot
 		}
 		else {
 			console.info('[IDE] Performing standard reboot');
-			await runtime.reloadProgramAndResetWorld({ runInit: true });
+			await runtimeLuaPipeline.reloadProgramAndResetWorld(runtime, { runInit: true });
 		}
 		ide_state.appliedGeneration = targetGeneration;
 		$.paused = false;
@@ -3713,7 +3715,7 @@ export function buildResourceViewerState(descriptor: ResourceDescriptor): Resour
 	switch (descriptor.type) {
 		case 'lua': {
 			const path = descriptor.path ?? descriptor.asset_id;
-			const source = Runtime.instance.resourceSourceForChunk(path);
+			const source = runtimeLuaPipeline.resourceSourceForChunk(Runtime.instance, path);
 			if (typeof source === 'string') {
 				appendResourceViewerLines(lines, ['-- Lua Source --', '']);
 				appendResourceViewerLines(lines, source.split(/\r?\n/));

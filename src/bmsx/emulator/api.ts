@@ -20,6 +20,7 @@ import type { Polygon, vec3arr, asset_id, AudioType } from '../rompack/rompack';
 import { taskGate, GateGroup } from '../core/taskgate';
 import { RenderFacade } from './render_facade';
 import { Runtime } from './runtime';
+import * as runtimeLuaPipeline from './runtime_lua_pipeline';
 import { listResources } from './workspace';
 import { getWorkspaceCachedSource } from './workspace_cache';
 import { buildDirtyFilePath } from './ide/workspace_storage';
@@ -675,11 +676,11 @@ export class Api {
 	}
 
 	public get_lua_entry_path(): string {
-		return this._runtime.listLuaSourceRegistries()[0].registry.entry_path;
+		return runtimeLuaPipeline.listLuaSourceRegistries(this._runtime)[0].registry.entry_path;
 	}
 
 	public get_lua_resource_source(path: string): string {
-		const record = this._runtime.resolveLuaSourceRecord(path);
+		const record = runtimeLuaPipeline.resolveLuaSourceRecord(this._runtime, path);
 		const canonical = record.normalized_source_path;
 		const dirtyPath = buildDirtyFilePath(canonical);
 		const cached = getWorkspaceCachedSource(canonical) ?? getWorkspaceCachedSource(dirtyPath);
@@ -773,7 +774,7 @@ export class Api {
 
 	public reboot(): void {
 		console.log('[Runtime API] Reboot requested.');
-		this.runtime.reloadProgramAndResetWorld(); // Reboot to initial state
+		runtimeLuaPipeline.reloadProgramAndResetWorld(this.runtime); // Reboot to initial state
 		console.log('[Runtime API] Reboot completed.');
 	}
 

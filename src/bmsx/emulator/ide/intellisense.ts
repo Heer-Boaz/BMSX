@@ -11,6 +11,7 @@ import { extractErrorMessage, isLuaFunctionValue, isLuaTable, LuaFunctionValue, 
 import { Api } from '../api';
 import { API_METHOD_METADATA } from '../api_metadata';
 import { Runtime } from '../runtime';
+import * as runtimeLuaPipeline from '../runtime_lua_pipeline';
 import type { LuaBuiltinDescriptor, LuaDefinitionLocation, LuaDefinitionRange, LuaHoverRequest, LuaHoverResult, LuaHoverScope, LuaMemberCompletion, LuaMemberCompletionRequest, LuaSymbolEntry, LuaSymbolKind } from '../types';
 import { ScratchBatchPooled } from '../../utils/scratchbatch';
 import { resolveDefinitionLocationForExpression, type ProjectReferenceEnvironment } from './code_reference';
@@ -1717,7 +1718,7 @@ function primeWorkspaceGlobalIndex(workspace: LuaSemanticWorkspace): void {
 			continue;
 		}
 		const cacheEntry = runtime.pathSemanticCache.get(path);
-		const source = cacheEntry ? cacheEntry.source : runtime.resourceSourceForChunk(path);
+		const source = cacheEntry ? cacheEntry.source : runtimeLuaPipeline.resourceSourceForChunk(runtime, path);
 		const lines = cacheEntry?.lines ?? splitText(source);
 		const parsed = cacheEntry ? cacheEntry.parsed : undefined;
 		workspace.updateFile(path, source, lines, parsed, null);
@@ -1799,7 +1800,7 @@ export function findStaticDefinitionLocation(chain: ReadonlyArray<string>, usage
 			const path = paths[index];
 			let model = models.get(path.path);
 			if (!model) {
-				const source = Runtime.instance.resourceSourceForChunk(path.path);
+				const source = runtimeLuaPipeline.resourceSourceForChunk(Runtime.instance, path.path);
 				if (!source) {
 					continue;
 				}
@@ -1931,7 +1932,7 @@ export function getStaticDefinitions(preferredChunk: string): { definitions: Rea
 
 export function buildSemanticModelForChunk(path: string): LuaSemanticModel {
 	const runtime = Runtime.instance;
-	const source = runtime.resourceSourceForChunk(path);
+	const source = runtimeLuaPipeline.resourceSourceForChunk(runtime, path);
 	const cached = runtime.pathSemanticCache.get(path);
 	const cachedMatch = cached && cached.source === source ? cached : null;
 	if (cachedMatch) {

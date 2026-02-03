@@ -2,6 +2,7 @@ import { $ } from '../core/engine_core';
 import { ECSystem, TickGroup } from './ecsystem';
 import { ActionEffectComponent } from '../component/actioneffectcomponent';
 import { Runtime } from '../emulator/runtime';
+import * as runtimeIde from '../emulator/runtime_ide';
 import { extractErrorMessage } from '../lua/luavalue';
 
 export class ActionEffectRuntimeSystem extends ECSystem {
@@ -19,7 +20,7 @@ export class ActionEffectRuntimeSystem extends ECSystem {
 				const ownerId = component.parent.id ? component.parent.id : '<unknown>';
 				const runtime = Runtime.instance;
 				if (runtime) {
-					runtime.handleLuaError(error);
+					runtimeIde.handleLuaError(runtime, error);
 				}
 				throw new Error(`[ActionEffectRuntimeSystem] Tick failed for ActionEffectComponent '${ownerId}': ${message}`);
 			}

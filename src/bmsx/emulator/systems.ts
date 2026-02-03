@@ -3,6 +3,7 @@ import type { World } from '../core/world';
 import { ECSystem, TickGroup } from '../ecs/ecsystem';
 import type { NodeSpec } from '../ecs/pipeline';
 import { Runtime } from './runtime';
+import * as runtimeIde from './runtime_ide';
 
 export const BMSX_CART_UPDATE_SYSTEM_ID = 'bmsx:cart_update_system';
 export const BMSX_CART_DRAW_SYSTEM_ID = 'bmsx:cart_draw_system';
@@ -44,7 +45,7 @@ export class BmsxIDEInputSystem extends ECSystem {
 	}
 
 	public update(_world: World): void {
-		Runtime.instance.tickIdeInput();
+		runtimeIde.tickIdeInput(Runtime.instance);
 	}
 }
 
@@ -56,7 +57,7 @@ export class BmsxIDEUpdateSystem extends ECSystem {
 	}
 
 	public update(_world: World): void {
-		Runtime.instance.tickIDE();
+		runtimeIde.tickIDE(Runtime.instance);
 	}
 }
 
@@ -68,7 +69,7 @@ export class BmsxIDEDrawSystem extends ECSystem {
 	}
 
 	public update(_world: World): void {
-		Runtime.instance.tickIDEDraw();
+		runtimeIde.tickIDEDraw(Runtime.instance);
 	}
 }
 export class BmsxTerminalInputSystem extends ECSystem {
@@ -79,7 +80,7 @@ export class BmsxTerminalInputSystem extends ECSystem {
 	}
 
 	public update(_world: World): void {
-		Runtime.instance.tickTerminalInput();
+		runtimeIde.tickTerminalInput(Runtime.instance);
 	}
 }
 
@@ -91,7 +92,7 @@ export class BmsxTerminalUpdateSystem extends ECSystem {
 	}
 
 	public update(_world: World): void {
-		Runtime.instance.tickTerminalMode();
+		runtimeIde.tickTerminalMode(Runtime.instance);
 	}
 }
 
@@ -103,7 +104,7 @@ export class BmsxTerminalDrawSystem extends ECSystem {
 	}
 
 	public update(_world: World): void {
-		Runtime.instance.tickTerminalModeDraw();
+		runtimeIde.tickTerminalModeDraw(Runtime.instance);
 	}
 }
 

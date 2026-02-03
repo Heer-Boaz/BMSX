@@ -1,6 +1,7 @@
 import { RegisterablePersistent } from '../../rompack/rompack';
 import { Registry } from '../../core/registry';
 import { Runtime } from '../runtime';
+import * as runtimeIde from '../runtime_ide';
 import { type LuaDebuggerSessionMetrics } from '../../lua/luadebugger';
 import { ide_state } from './ide_state';
 import { getActiveCodeTabContext } from './editor_tabs';
@@ -88,23 +89,23 @@ export class RuntimeDebuggerCommandExecutor implements RegisterablePersistent {
 		try {
 			switch (command) {
 				case 'continue':
-					runtime.continueLuaDebugger();
+					runtimeIde.continueLuaDebugger(runtime);
 					return true;
 				case 'step_over':
-					runtime.stepOverLuaDebugger();
+					runtimeIde.stepOverLuaDebugger(runtime);
 					return true;
 				case 'step_into':
-					runtime.stepIntoLuaDebugger();
+					runtimeIde.stepIntoLuaDebugger(runtime);
 					return true;
 				case 'step_out':
-					runtime.stepOutLuaDebugger();
+					runtimeIde.stepOutLuaDebugger(runtime);
 					return true;
 				case 'ignore_exception':
-					runtime.ignoreLuaException();
+					runtimeIde.ignoreLuaException(runtime);
 					return true;
 				case 'step_out_exception':
-					runtime.stepOutLuaDebugger();
-					runtime.ignoreLuaException();
+					runtimeIde.stepOutLuaDebugger(runtime);
+					runtimeIde.ignoreLuaException(runtime);
 					return true;
 				default:
 					return false;
@@ -241,7 +242,7 @@ export function syncRuntimeBreakpoints(): void {
 		}
 		serialized.set(path, new Set(lines));
 	}
-	Runtime.instance.setDebuggerBreakpoints(serialized);
+	runtimeIde.setDebuggerBreakpoints(Runtime.instance, serialized);
 }
 
 export function getActiveBreakpointPath(): string {

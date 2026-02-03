@@ -1,5 +1,7 @@
 import { $ } from '../core/engine_core';
 import { Runtime } from './runtime';
+import * as runtimeIde from './runtime_ide';
+import * as runtimeLuaPipeline from './runtime_lua_pipeline';
 import { clearWorkspaceSessionState } from './ide/workspace_storage';
 import { ide_state } from './ide/ide_state';
 import { buildWorkspaceDirtyEntryPath, buildWorkspaceStorageKey, nukeWorkspaceState, resetWorkspaceDirtyBuffersAndStorage } from './workspace';
@@ -80,11 +82,11 @@ export class TerminalCommandDispatcher {
 			return true;
 		}
 		if (upper === 'CONT') {
-			this.runtime.deactivateTerminalMode();
+			runtimeIde.deactivateTerminalMode(this.runtime);
 			return true;
 		}
 		if (upper === 'REBOOT') {
-			await this.runtime.reloadProgramAndResetWorld();
+			await runtimeLuaPipeline.reloadProgramAndResetWorld(this.runtime);
 			return true;
 		}
 		if (upper === 'EXIT' || upper === 'QUIT') {
@@ -92,7 +94,7 @@ export class TerminalCommandDispatcher {
 			return true;
 		}
 		if (upper === 'IDE' || upper === 'WSE') {
-			this.runtime.activateEditor();
+			runtimeIde.activateEditor(this.runtime);
 			return true;
 		}
 		if (upper === 'SYMBOLS') {
@@ -129,7 +131,7 @@ export class TerminalCommandDispatcher {
 			const sub = tokens[1].toUpperCase();
 			if (sub === 'RESET') { await this.runWorkspaceReset(); return true; }
 			if (sub === 'NUKE') { await this.runWorkspaceNuke(); return true; }
-			if (sub === 'EDIT') { this.runtime.activateEditor(); return true; }
+			if (sub === 'EDIT') { runtimeIde.activateEditor(this.runtime); return true; }
 			this.runtime.terminal.appendStderr(ERROR_SYNTAX_ERROR);
 			return true;
 		}
@@ -205,7 +207,7 @@ export class TerminalCommandDispatcher {
 	}
 
 	private clearFaultState(): void {
-		const result = this.runtime.clearFaultState();
+		const result = runtimeIde.clearFaultState(this.runtime);
 		if (!result.cleared) {
 			this.runtime.terminal.appendStderr('No fault to clear');
 			return;
