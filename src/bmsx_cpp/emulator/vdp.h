@@ -109,7 +109,6 @@ private:
 	const VramSlot& findVramSlot(uint32_t addr, size_t length) const;
 	void ensureVramSlotTextureSize(VramSlot& slot);
 	VramSlot& getVramSlotByTextureKey(const std::string& textureKey);
-	uint32_t vramSlotSalt(const VramSlot& slot) const;
 	uint32_t nextVramMachineSeed() const;
 	uint32_t nextVramBootSeed() const;
 	void fillVramGarbageScratch(u8* data, size_t length, VramGarbageStream& stream) const;

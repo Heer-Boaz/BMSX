@@ -21,6 +21,25 @@ constexpr uint32_t VDP_RD_SURFACE_COUNT = 3u;
 constexpr uint32_t VDP_RD_BUDGET_BYTES = 4096u;
 constexpr uint32_t VDP_RD_MAX_CHUNK_PIXELS = 256u;
 constexpr size_t VRAM_GARBAGE_CHUNK_BYTES = 64u * 1024u;
+constexpr uint32_t VRAM_GARBAGE_SPACE_SALT = 0x5652414dU;
+constexpr int VRAM_GARBAGE_WEIGHT_BLOCK = 1;
+constexpr int VRAM_GARBAGE_WEIGHT_ROW = 2;
+constexpr int VRAM_GARBAGE_WEIGHT_PAGE = 4;
+
+struct OctaveSpec {
+	uint32_t shift;
+	int weight;
+	uint32_t mul;
+	uint32_t mix;
+};
+
+constexpr OctaveSpec VRAM_GARBAGE_OCTAVES[] = {
+	{11u, 6, 0x165667b1U, 0xd3a2646cU},
+	{15u, 8, 0x27d4eb2fU, 0x6c8e9cf5U},
+	{17u, 10, 0x7f4a7c15U, 0x31415926U},
+	{19u, 12, 0xa24baed5U, 0x9e3779b9U},
+	{21u, 14, 0x6a09e667U, 0xbb67ae85U},
+};
 uint32_t skyboxFaceBaseByIndex(size_t index) {
 	switch (index) {
 		case 0: return VRAM_SKYBOX_POSX_BASE;
@@ -72,7 +91,35 @@ struct BlockGen {
 	uint32_t genWordPos = 0;
 };
 
-BlockGen initBlockGen(uint32_t biasSeed, uint32_t bootSeedMix, uint32_t blockIndex) {
+struct BiasConfig {
+	uint32_t activeOctaves = 0;
+	int threshold0 = 0;
+	int threshold1 = 0;
+	int threshold2 = 0;
+};
+
+BiasConfig makeBiasConfig(uint32_t vramBytes) {
+	const uint32_t maxOctaveBytes = vramBytes >> 1u;
+	int weightSum = VRAM_GARBAGE_WEIGHT_BLOCK + VRAM_GARBAGE_WEIGHT_ROW + VRAM_GARBAGE_WEIGHT_PAGE;
+	uint32_t activeOctaves = 0;
+	for (uint32_t i = 0; i < (sizeof(VRAM_GARBAGE_OCTAVES) / sizeof(VRAM_GARBAGE_OCTAVES[0])); ++i) {
+		const uint32_t octaveBytes = 1u << (VRAM_GARBAGE_OCTAVES[i].shift + 5u);
+		if (octaveBytes > maxOctaveBytes) {
+			break;
+		}
+		weightSum += VRAM_GARBAGE_OCTAVES[i].weight;
+		activeOctaves = i + 1u;
+	}
+	const int maxBias = weightSum * 127;
+	BiasConfig config;
+	config.activeOctaves = activeOctaves;
+	config.threshold0 = (maxBias * 168) / 1000;
+	config.threshold1 = (maxBias * 378) / 1000;
+	config.threshold2 = (maxBias * 630) / 1000;
+	return config;
+}
+
+BlockGen initBlockGen(uint32_t biasSeed, uint32_t bootSeedMix, uint32_t blockIndex, const BiasConfig& biasConfig) {
 	const uint32_t pageIndex = blockIndex >> 7u;
 	const uint32_t rowIndex = blockIndex >> 3u;
 
@@ -80,17 +127,24 @@ BlockGen initBlockGen(uint32_t biasSeed, uint32_t bootSeedMix, uint32_t blockInd
 	const uint32_t rowH = fmix32((biasSeed ^ (rowIndex * 0x85ebca6bU) ^ 0x1b873593U));
 	const uint32_t blkH = fmix32((biasSeed ^ (blockIndex * 0x9e3779b9U) ^ 0x85ebca77U));
 
-	const int bias =
-		signed8FromHash(pageH) * 4 +
-		signed8FromHash(rowH) * 2 +
-		signed8FromHash(blkH) * 1;
+	int bias =
+		signed8FromHash(pageH) * VRAM_GARBAGE_WEIGHT_PAGE +
+		signed8FromHash(rowH) * VRAM_GARBAGE_WEIGHT_ROW +
+		signed8FromHash(blkH) * VRAM_GARBAGE_WEIGHT_BLOCK;
+
+	for (uint32_t i = 0; i < biasConfig.activeOctaves; ++i) {
+		const OctaveSpec& octave = VRAM_GARBAGE_OCTAVES[i];
+		const uint32_t octaveIndex = blockIndex >> octave.shift;
+		const uint32_t octaveH = fmix32((biasSeed ^ (octaveIndex * octave.mul) ^ octave.mix));
+		bias += signed8FromHash(octaveH) * octave.weight;
+	}
 
 	const int absBias = bias < 0 ? -bias : bias;
 
 	const int forceLevel =
-		(absBias < 160) ? 0 :
-		(absBias < 360) ? 1 :
-		(absBias < 600) ? 2 : 3;
+		(absBias < biasConfig.threshold0) ? 0 :
+		(absBias < biasConfig.threshold1) ? 1 :
+		(absBias < biasConfig.threshold2) ? 2 : 3;
 
 	const int jitterLevel = 3 - forceLevel;
 
@@ -761,10 +815,6 @@ VDP::VramSlot& VDP::getVramSlotByTextureKey(const std::string& textureKey) {
 	throw BMSX_RUNTIME_ERROR("[VDP] VRAM slot not registered for texture '" + textureKey + "'.");
 }
 
-uint32_t VDP::vramSlotSalt(const VramSlot& slot) const {
-	return slot.baseAddr;
-}
-
 uint32_t VDP::nextVramMachineSeed() const {
 	const auto now = std::chrono::high_resolution_clock::now().time_since_epoch().count();
 	const uint64_t mixed = static_cast<uint64_t>(now) ^ static_cast<uint64_t>(reinterpret_cast<uintptr_t>(this));
@@ -787,6 +837,8 @@ void VDP::fillVramGarbageScratch(u8* buffer, size_t length, VramGarbageStream& s
 
 	const uint32_t biasSeed = s.machineSeed ^ s.slotSalt;
 	const uint32_t bootSeedMix = s.bootSeed ^ s.slotSalt;
+	const uint32_t vramBytes = (VRAM_SECONDARY_ATLAS_BASE + VRAM_SECONDARY_ATLAS_SIZE) - VRAM_STAGING_BASE;
+	const BiasConfig biasConfig = makeBiasConfig(vramBytes);
 
 	const size_t BLOCK_BYTES = 32u;
 	const uint32_t BLOCK_SHIFT = 5u;
@@ -802,7 +854,7 @@ void VDP::fillVramGarbageScratch(u8* buffer, size_t length, VramGarbageStream& s
 		const uint32_t startOff = addr - blockBase;
 		const size_t maxBytesThisBlock = std::min<size_t>(BLOCK_BYTES - startOff, total - out);
 
-		BlockGen gen = initBlockGen(biasSeed, bootSeedMix, blockIndex);
+		BlockGen gen = initBlockGen(biasSeed, bootSeedMix, blockIndex, biasConfig);
 
 		if (aligned4 && startOff == 0u && maxBytesThisBlock == BLOCK_BYTES) {
 			for (uint32_t w = 0; w < 8u; ++w) {
@@ -841,7 +893,7 @@ void VDP::fillVramGarbageScratch(u8* buffer, size_t length, VramGarbageStream& s
 }
 
 void VDP::seedVramStaging() {
-	VramGarbageStream stream{m_vramMachineSeed, m_vramBootSeed, VRAM_STAGING_BASE, 0u};
+	VramGarbageStream stream{m_vramMachineSeed, m_vramBootSeed, VRAM_GARBAGE_SPACE_SALT, VRAM_STAGING_BASE};
 	fillVramGarbageScratch(m_vramStaging.data(), m_vramStaging.size(), stream);
 }
 
@@ -859,7 +911,7 @@ void VDP::seedVramSlotTexture(VramSlot& slot) {
 	if (maxPixels == 0u) {
 		throw BMSX_RUNTIME_ERROR("[VDP] VRAM garbage scratch buffer is empty.");
 	}
-	VramGarbageStream stream{m_vramMachineSeed, m_vramBootSeed, vramSlotSalt(slot), 0u};
+	VramGarbageStream stream{m_vramMachineSeed, m_vramBootSeed, VRAM_GARBAGE_SPACE_SALT, entry.baseAddr};
 	const size_t rowBytes = rowPixels * 4u;
 	const uint32_t height = entry.regionH;
 	if (rowBytes <= m_vramGarbageScratch.size()) {
@@ -912,7 +964,7 @@ void VDP::ensureAtlasSlotTexture(const Memory::AssetEntry& entry, const std::str
 		throw BMSX_RUNTIME_ERROR("[VDP] GameView not configured.");
 	}
 	auto& slot = getVramSlotByTextureKey(textureKey);
-	VramGarbageStream stream{m_vramMachineSeed, m_vramBootSeed, vramSlotSalt(slot), 0u};
+	VramGarbageStream stream{m_vramMachineSeed, m_vramBootSeed, VRAM_GARBAGE_SPACE_SALT, entry.baseAddr};
 	fillVramGarbageScratch(m_vramSeedPixel.data(), m_vramSeedPixel.size(), stream);
 	TextureParams params;
 	const TextureKey key = texmanager->makeKey(textureKey, params);
