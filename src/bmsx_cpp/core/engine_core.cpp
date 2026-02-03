@@ -287,6 +287,20 @@ i64 resolveUfpsScaled(const RomManifest& manifest) {
 	return ufpsScaled;
 }
 
+i64 resolveVblankCycles(const RomManifest& manifest, int cyclesPerFrame) {
+	if (!manifest.vblankCycles) {
+		throw std::runtime_error("[EngineCore] machine.specs.vdp.vblank_cycles is required.");
+	}
+	const i64 cycles = *manifest.vblankCycles;
+	if (cycles <= 0) {
+		throw std::runtime_error("[EngineCore] machine.specs.vdp.vblank_cycles must be a positive integer.");
+	}
+	if (cycles > cyclesPerFrame) {
+		throw std::runtime_error("[EngineCore] machine.specs.vdp.vblank_cycles must be less than or equal to cycles_per_frame.");
+	}
+	return cycles;
+}
+
 using i128 = __int128_t;
 
 i64 hzToScaledHz(f64 hz) {
@@ -441,10 +455,6 @@ void EngineCore::setUfpsScaled(i64 ufpsScaled) {
 	}
 	m_ufps_scaled = ufpsScaled;
 	m_update_interval_ms = (1000.0 * static_cast<f64>(HZ_SCALE)) / static_cast<f64>(m_ufps_scaled);
-	if (Runtime::hasInstance()) {
-		Runtime& runtime = Runtime::instance();
-		applyRuntimeCycleBudget(runtime);
-	}
 }
 
 void EngineCore::applyRuntimeCycleBudget(Runtime& runtime) {
@@ -773,6 +783,7 @@ bool EngineCore::bootWithoutCart() {
 		const i64 dmaBytesPerSecIso = resolveDmaBytesPerSecIso(m_engine_assets.manifest);
 		const i64 dmaBytesPerSecBulk = resolveDmaBytesPerSecBulk(m_engine_assets.manifest);
 		const int cycleBudget = calcCyclesPerFrame(cpuHz, m_ufps_scaled);
+		const i64 vblankCycles = resolveVblankCycles(m_engine_assets.manifest, cycleBudget);
 		// Create Runtime instance if it doesn't exist
 		if (!Runtime::hasInstance()) {
 			RuntimeOptions options;
@@ -782,12 +793,14 @@ bool EngineCore::bootWithoutCart() {
 			options.canonicalization = m_engine_assets.manifest.canonicalization;
 			options.cpuHz = cpuHz;
 			options.cycleBudgetPerFrame = cycleBudget;
+			options.vblankCycles = static_cast<int>(vblankCycles);
 			Runtime::createInstance(options);
 		}
 
 		Runtime& runtime = Runtime::instance();
 		runtime.setCpuHz(cpuHz);
 		runtime.setCycleBudgetPerFrame(cycleBudget);
+		runtime.setVblankCycles(static_cast<int>(vblankCycles));
 		runtime.setTransferRates(imgDecBytesPerSec, dmaBytesPerSecIso, dmaBytesPerSecBulk);
 		runtime.refreshMemoryMap();
 		runtime.setProgramSource(Runtime::ProgramSource::Engine);
@@ -885,6 +898,7 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 	}
 	const int cycleBudget = calcCyclesPerFrame(cpuHz, m_ufps_scaled);
 	const RomManifest& transferManifest = cartCpuValid ? m_assets.manifest : m_engine_assets.manifest;
+	const i64 vblankCycles = resolveVblankCycles(transferManifest, cycleBudget);
 	const i64 imgDecBytesPerSec = resolveImgDecBytesPerSec(transferManifest);
 	const i64 dmaBytesPerSecIso = resolveDmaBytesPerSecIso(transferManifest);
 	const i64 dmaBytesPerSecBulk = resolveDmaBytesPerSecBulk(transferManifest);
@@ -911,11 +925,13 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 			options.canonicalization = m_engine_assets.manifest.canonicalization;
 			options.cpuHz = cpuHz;
 			options.cycleBudgetPerFrame = cycleBudget;
+			options.vblankCycles = static_cast<int>(vblankCycles);
 			Runtime::createInstance(options);
 		}
 		Runtime& runtime = Runtime::instance();
 		runtime.setCpuHz(cpuHz);
 		runtime.setCycleBudgetPerFrame(cycleBudget);
+		runtime.setVblankCycles(static_cast<int>(vblankCycles));
 		runtime.setTransferRates(imgDecBytesPerSec, dmaBytesPerSecIso, dmaBytesPerSecBulk);
 		runtime.refreshMemoryMap();
 		runtime.setProgramSource(Runtime::ProgramSource::Engine);
@@ -941,11 +957,13 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 				options.canonicalization = m_assets.manifest.canonicalization;
 				options.cpuHz = cpuHz;
 				options.cycleBudgetPerFrame = cycleBudget;
+				options.vblankCycles = static_cast<int>(vblankCycles);
 				Runtime::createInstance(options);
 			}
 			Runtime& runtime = Runtime::instance();
 			runtime.setCpuHz(cpuHz);
 			runtime.setCycleBudgetPerFrame(cycleBudget);
+			runtime.setVblankCycles(static_cast<int>(vblankCycles));
 			runtime.setTransferRates(imgDecBytesPerSec, dmaBytesPerSecIso, dmaBytesPerSecBulk);
 			runtime.refreshMemoryMap();
 			runtime.buildAssetMemory(m_assets, false);
@@ -961,11 +979,13 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 				options.canonicalization = m_assets.manifest.canonicalization;
 				options.cpuHz = cpuHz;
 				options.cycleBudgetPerFrame = cycleBudget;
+				options.vblankCycles = static_cast<int>(vblankCycles);
 				Runtime::createInstance(options);
 			}
 			Runtime& runtime = Runtime::instance();
 			runtime.setCpuHz(cpuHz);
 			runtime.setCycleBudgetPerFrame(cycleBudget);
+			runtime.setVblankCycles(static_cast<int>(vblankCycles));
 			runtime.setTransferRates(imgDecBytesPerSec, dmaBytesPerSecIso, dmaBytesPerSecBulk);
 			runtime.refreshMemoryMap();
 			runtime.buildAssetMemory(m_assets, false);
@@ -1023,6 +1043,7 @@ bool EngineCore::resetLoadedRom() {
 	}
 	const int cycleBudget = calcCyclesPerFrame(cpuHz, m_ufps_scaled);
 	const RomManifest& transferManifest = cartCpuValid ? m_assets.manifest : m_engine_assets.manifest;
+	const i64 vblankCycles = resolveVblankCycles(transferManifest, cycleBudget);
 	const i64 imgDecBytesPerSec = resolveImgDecBytesPerSec(transferManifest);
 	const i64 dmaBytesPerSecIso = resolveDmaBytesPerSecIso(transferManifest);
 	const i64 dmaBytesPerSecBulk = resolveDmaBytesPerSecBulk(transferManifest);
@@ -1031,6 +1052,7 @@ bool EngineCore::resetLoadedRom() {
 		Runtime& runtime = Runtime::instance();
 		runtime.setCpuHz(cpuHz);
 		runtime.setCycleBudgetPerFrame(cycleBudget);
+		runtime.setVblankCycles(static_cast<int>(vblankCycles));
 		runtime.setTransferRates(imgDecBytesPerSec, dmaBytesPerSecIso, dmaBytesPerSecBulk);
 		runtime.refreshMemoryMap();
 		runtime.buildAssetMemory(m_assets, false, Runtime::AssetBuildMode::Cart);
@@ -1048,11 +1070,13 @@ bool EngineCore::resetLoadedRom() {
 			options.canonicalization = m_engine_assets.manifest.canonicalization;
 			options.cpuHz = cpuHz;
 			options.cycleBudgetPerFrame = cycleBudget;
+			options.vblankCycles = static_cast<int>(vblankCycles);
 			Runtime::createInstance(options);
 		}
 		Runtime& runtime = Runtime::instance();
 		runtime.setCpuHz(cpuHz);
 		runtime.setCycleBudgetPerFrame(cycleBudget);
+		runtime.setVblankCycles(static_cast<int>(vblankCycles));
 		runtime.setTransferRates(imgDecBytesPerSec, dmaBytesPerSecIso, dmaBytesPerSecBulk);
 		runtime.refreshMemoryMap();
 		runtime.setProgramSource(Runtime::ProgramSource::Engine);
@@ -1223,6 +1247,7 @@ void EngineCore::bootRuntimeFromProgram() {
 	const i64 ufpsScaled = resolveUfpsScaled(m_assets.manifest);
 	setUfpsScaled(ufpsScaled);
 	const int cycleBudget = calcCyclesPerFrame(cpuHz, m_ufps_scaled);
+	const i64 vblankCycles = resolveVblankCycles(m_assets.manifest, cycleBudget);
 
 	// Create Runtime instance if it doesn't exist
 	if (!Runtime::hasInstance()) {
@@ -1233,6 +1258,7 @@ void EngineCore::bootRuntimeFromProgram() {
 		options.canonicalization = m_assets.manifest.canonicalization;
 		options.cpuHz = cpuHz;
 		options.cycleBudgetPerFrame = cycleBudget;
+		options.vblankCycles = static_cast<int>(vblankCycles);
 		Runtime::createInstance(options);
 	}
 
@@ -1240,6 +1266,7 @@ void EngineCore::bootRuntimeFromProgram() {
 	Runtime& runtime = Runtime::instance();
 	runtime.setCpuHz(cpuHz);
 	runtime.setCycleBudgetPerFrame(cycleBudget);
+	runtime.setVblankCycles(static_cast<int>(vblankCycles));
 	runtime.setTransferRates(imgDecBytesPerSec, dmaBytesPerSecIso, dmaBytesPerSecBulk);
 	runtime.refreshMemoryMap();
 	runtime.setProgramSource(Runtime::ProgramSource::Cart);

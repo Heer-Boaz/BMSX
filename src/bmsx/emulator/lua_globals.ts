@@ -68,14 +68,17 @@ import {
 	IO_VDP_RD_X,
 	IO_VDP_RD_Y,
 	IO_VDP_SECONDARY_ATLAS_ID,
+	IO_VDP_STATUS,
 	IRQ_DMA_DONE,
 	IRQ_DMA_ERROR,
 	IRQ_IMG_DONE,
 	IRQ_IMG_ERROR,
+	IRQ_VBLANK,
 	VDP_ATLAS_ID_NONE,
 	VDP_RD_MODE_RGBA8888,
 	VDP_RD_STATUS_OVERFLOW,
 	VDP_RD_STATUS_READY,
+	VDP_STATUS_VBLANK,
 } from './io';
 import {
 	buildMarshalContext,
@@ -917,9 +920,11 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_rd_mode', IO_VDP_RD_MODE);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_rd_status', IO_VDP_RD_STATUS);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_rd_data', IO_VDP_RD_DATA);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_status', IO_VDP_STATUS);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_rd_mode_rgba8888', VDP_RD_MODE_RGBA8888);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_rd_status_ready', VDP_RD_STATUS_READY);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_rd_status_overflow', VDP_RD_STATUS_OVERFLOW);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_status_vblank', VDP_STATUS_VBLANK);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_irq_flags', IO_IRQ_FLAGS);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_irq_ack', IO_IRQ_ACK);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_dma_src', IO_DMA_SRC);
@@ -951,6 +956,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtimeLuaPipeline.registerGlobal(runtime, 'irq_dma_error', IRQ_DMA_ERROR);
 	runtimeLuaPipeline.registerGlobal(runtime, 'irq_img_done', IRQ_IMG_DONE);
 	runtimeLuaPipeline.registerGlobal(runtime, 'irq_img_error', IRQ_IMG_ERROR);
+	runtimeLuaPipeline.registerGlobal(runtime, 'irq_vblank', IRQ_VBLANK);
 	runtimeLuaPipeline.registerGlobal(runtime, 'dma_ctrl_start', DMA_CTRL_START);
 	runtimeLuaPipeline.registerGlobal(runtime, 'dma_ctrl_strict', DMA_CTRL_STRICT);
 	runtimeLuaPipeline.registerGlobal(runtime, 'dma_status_busy', DMA_STATUS_BUSY);

@@ -443,6 +443,9 @@ export type MachineVramSpecs = {
 	skybox_face_size?: number;
 	skybox_face_bytes?: number;
 };
+export type MachineVdpSpecs = {
+	vblank_cycles: number;
+};
 export type MachineAudioSpecs = {
 	max_voices?: MachineVoiceSpecs;
 };
@@ -452,6 +455,7 @@ export type MachineSpecs = {
 	audio?: MachineAudioSpecs;
 	ram?: MachineRamSpecs;
 	vram?: MachineVramSpecs;
+	vdp: MachineVdpSpecs;
 };
 
 export type CartManifest = {
@@ -482,6 +486,7 @@ export type MachinePerfSpecs = {
 	dma_bytes_per_sec_iso: number;
 	dma_bytes_per_sec_bulk: number;
 	ufps: number;
+	vblank_cycles: number;
 	skybox_face_size?: number;
 };
 
@@ -502,12 +507,14 @@ export function getMachinePerfSpecs(machine: CartManifest['machine']): MachinePe
 	const cpu = machine.specs.cpu;
 	const dma = machine.specs.dma;
 	const vram = machine.specs.vram;
+	const vdp = machine.specs.vdp;
 	return {
 		cpu_freq_hz: cpu.cpu_freq_hz,
 		imgdec_bytes_per_sec: cpu.imgdec_bytes_per_sec,
 		dma_bytes_per_sec_iso: dma.dma_bytes_per_sec_iso,
 		dma_bytes_per_sec_bulk: dma.dma_bytes_per_sec_bulk,
 		ufps: machine.ufps,
+		vblank_cycles: vdp.vblank_cycles,
 		skybox_face_size: vram?.skybox_face_size,
 	};
 }

@@ -109,6 +109,7 @@ export type RuntimeOptions = {
 	memory: Memory;
 	cpuHz: number;
 	cycleBudgetPerFrame: number;
+	vblankCycles: number;
 };
 
 export type RuntimeState = {
@@ -123,6 +124,9 @@ export type RuntimeState = {
 	atlasSlots?: { primary: number | null; secondary: number | null };
 	skyboxFaceIds?: SkyboxImageIds | null;
 	vdpDitherType?: number;
+	cyclesIntoFrame: number;
+	vblankPendingClear: boolean;
+	vblankClearOnIrqEnd: boolean;
 };
 
 export type LuaMarshalContext = {

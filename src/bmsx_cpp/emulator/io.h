@@ -75,7 +75,10 @@ constexpr int IO_IMG_STATUS_INDEX = IO_IMG_BASE_INDEX + 5;
 constexpr int IO_IMG_WRITTEN_INDEX = IO_IMG_BASE_INDEX + 6;
 constexpr int IO_IMG_SIZE = 7;
 
-constexpr int IO_SLOT_COUNT = IO_IMG_BASE_INDEX + IO_IMG_SIZE;
+constexpr int IO_VDP_STATUS_INDEX = IO_IMG_BASE_INDEX + IO_IMG_SIZE;
+constexpr int IO_VDP_STATUS_SIZE = 1;
+
+constexpr int IO_SLOT_COUNT = IO_VDP_STATUS_INDEX + IO_VDP_STATUS_SIZE;
 
 constexpr uint32_t IO_WRITE_PTR_ADDR = IO_BASE + IO_WRITE_PTR_INDEX * IO_WORD_SIZE;
 constexpr uint32_t IO_BUFFER_BASE = IO_BASE + IO_BUFFER_BASE_INDEX * IO_WORD_SIZE;
@@ -96,6 +99,7 @@ constexpr uint32_t IO_VDP_RD_Y = IO_BASE + IO_VDP_RD_Y_INDEX * IO_WORD_SIZE;
 constexpr uint32_t IO_VDP_RD_MODE = IO_BASE + IO_VDP_RD_MODE_INDEX * IO_WORD_SIZE;
 constexpr uint32_t IO_VDP_RD_STATUS = IO_BASE + IO_VDP_RD_STATUS_INDEX * IO_WORD_SIZE;
 constexpr uint32_t IO_VDP_RD_DATA = IO_BASE + IO_VDP_RD_DATA_INDEX * IO_WORD_SIZE;
+constexpr uint32_t IO_VDP_STATUS = IO_BASE + IO_VDP_STATUS_INDEX * IO_WORD_SIZE;
 
 constexpr uint32_t IO_IRQ_BASE = IO_BASE + IO_IRQ_BASE_INDEX * IO_WORD_SIZE;
 constexpr uint32_t IO_IRQ_FLAGS = IO_BASE + IO_IRQ_FLAGS_INDEX * IO_WORD_SIZE;
@@ -122,6 +126,9 @@ constexpr uint32_t IRQ_DMA_DONE = 1 << 0;
 constexpr uint32_t IRQ_DMA_ERROR = 1 << 1;
 constexpr uint32_t IRQ_IMG_DONE = 1 << 2;
 constexpr uint32_t IRQ_IMG_ERROR = 1 << 3;
+constexpr uint32_t IRQ_VBLANK = 1 << 4;
+
+constexpr uint32_t VDP_STATUS_VBLANK = 1u << 0u;
 
 constexpr uint32_t DMA_CTRL_START = 1 << 0;
 constexpr uint32_t DMA_CTRL_STRICT = 1 << 1;

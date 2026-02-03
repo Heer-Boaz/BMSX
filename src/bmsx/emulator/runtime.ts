@@ -82,9 +82,12 @@ import {
 	IO_VDP_RD_X,
 	IO_VDP_RD_Y,
 	IO_VDP_SECONDARY_ATLAS_ID,
+	IO_VDP_STATUS,
 	IO_WRITE_PTR_ADDR,
+	IRQ_VBLANK,
 	VDP_ATLAS_ID_NONE,
 	VDP_RD_MODE_RGBA8888,
+	VDP_STATUS_VBLANK,
 } from './io';
 import { HandlerCache } from './handler_cache';
 import { Memory, ASSET_TABLE_ENTRY_SIZE, ASSET_TABLE_HEADER_SIZE, type AssetEntry } from './memory';
@@ -204,6 +207,14 @@ export class Runtime {
 		return Runtime.resolvePositiveSafeInteger(value, 'machine.ufps');
 	}
 
+	private static resolveVblankCycles(value: number | undefined, cyclesPerFrame: number): number {
+		const cycles = Runtime.resolvePositiveSafeInteger(value, 'machine.specs.vdp.vblank_cycles');
+		if (cycles > cyclesPerFrame) {
+			throw new Error('[Runtime] machine.specs.vdp.vblank_cycles must be less than or equal to cycles_per_frame.');
+		}
+		return cycles;
+	}
+
 	private static applyUfpsScaled(ufps: number): number {
 		const ufpsScaled = Runtime.resolveUfpsScaled(ufps);
 		$.setUfpsScaled(ufpsScaled);
@@ -217,6 +228,13 @@ export class Runtime {
 		this.cycleBudgetPerFrame = value;
 		runtimeLuaPipeline.registerGlobal(this, 'sys_max_cycles_per_frame', value);
 		this.resetTransferCarry();
+		if (this.vblankCycles > 0) {
+			if (this.vblankCycles > this.cycleBudgetPerFrame) {
+				throw new Error('[Runtime] vblank_cycles must be less than or equal to cycles_per_frame.');
+			}
+			this.vblankStartCycle = this.cycleBudgetPerFrame - this.vblankCycles;
+			this.resetVblankState();
+		}
 	}
 
 	public getLastTickSequence(): number {
@@ -250,12 +268,8 @@ export class Runtime {
 	}
 
 	public grantCycleBudget(baseBudget: number, carryBudget: number): void {
-		if (baseBudget !== this.cycleBudgetPerFrame) {
-			this.cycleBudgetPerFrame = baseBudget;
-			runtimeLuaPipeline.registerGlobal(this, 'sys_max_cycles_per_frame', baseBudget);
-		}
+		this.setCycleBudgetPerFrame(baseBudget);
 		const totalBudget = baseBudget + carryBudget;
-		this.advanceHardware(totalBudget);
 		if (this.currentFrameState !== null) {
 			this.currentFrameState.cycleBudgetRemaining += totalBudget;
 			this.currentFrameState.cycleBudgetGranted += totalBudget;
@@ -280,9 +294,14 @@ export class Runtime {
 			this.debugCycleRuns += 1;
 			this.debugCycleRunsTotal += 1;
 		}
-		const result = this.cpu.run(state.cycleBudgetRemaining);
+		const budgetBefore = state.cycleBudgetRemaining;
+		const result = this.cpu.run(budgetBefore);
 		const remaining = this.cpu.instructionBudgetRemaining;
 		state.cycleBudgetRemaining = remaining;
+		const consumed = budgetBefore - remaining;
+		if (consumed > 0) {
+			this.advanceHardware(consumed);
+		}
 		if (debugCycle) {
 			if (result === RunResult.Yielded) {
 				this.debugCycleYields += 1;
@@ -421,6 +440,7 @@ export class Runtime {
 		if (cycles <= 0) {
 			return;
 		}
+		// Hardware advances in discrete steps; interrupt sources raised in the same step are observed together.
 		const imgBudget = this.imgRate.calcBytesForCycles(this._cpuHz, cycles);
 		const isoBudget = this.dmaIsoRate.calcBytesForCycles(this._cpuHz, cycles);
 		const bulkBudget = this.dmaBulkRate.calcBytesForCycles(this._cpuHz, cycles);
@@ -431,6 +451,91 @@ export class Runtime {
 		});
 		this.dmaController.tick();
 		this.imgDecController.tick();
+		this.advanceVblank(cycles);
+	}
+
+	private advanceVblank(cycles: number): void {
+		let remaining = cycles;
+		while (remaining > 0) {
+			const frameRemaining = this.cycleBudgetPerFrame - this.cyclesIntoFrame;
+			const step = remaining < frameRemaining ? remaining : frameRemaining;
+			const previous = this.cyclesIntoFrame;
+			this.cyclesIntoFrame += step;
+			if (!this.vblankActive && previous < this.vblankStartCycle && this.cyclesIntoFrame >= this.vblankStartCycle) {
+				this.enterVblank();
+			}
+			remaining -= step;
+			if (this.cyclesIntoFrame >= this.cycleBudgetPerFrame) {
+				this.cyclesIntoFrame = 0;
+				if (this.vblankStartCycle === 0) {
+					this.raiseIrqFlags(IRQ_VBLANK);
+				} else if (this.vblankActive) {
+					// Defer clear until the VBLANK IRQ handler has a chance to observe the status.
+					this.vblankPendingClear = true;
+				}
+			}
+		}
+	}
+
+	public setVblankCycles(cycles: number): void {
+		if (cycles <= 0) {
+			throw new Error('[Runtime] vblank_cycles must be greater than 0.');
+		}
+		if (cycles > this.cycleBudgetPerFrame) {
+			throw new Error('[Runtime] vblank_cycles must be less than or equal to cycles_per_frame.');
+		}
+		this.vblankCycles = cycles;
+		this.vblankStartCycle = this.cycleBudgetPerFrame - this.vblankCycles;
+		this.resetVblankState();
+	}
+
+	public resetVblankState(): void {
+		this.cyclesIntoFrame = 0;
+		this.vblankActive = false;
+		this.vblankPendingClear = false;
+		this.vblankClearOnIrqEnd = false;
+		this.vdpStatus = 0;
+		this.memory.writeValue(IO_VDP_STATUS, this.vdpStatus);
+		if (this.vblankStartCycle === 0) {
+			this.setVblankStatus(true);
+		}
+	}
+
+	private setVblankStatus(active: boolean): void {
+		if (this.vblankActive === active) {
+			return;
+		}
+		this.vblankActive = active;
+		if (active) {
+			this.vdpStatus |= VDP_STATUS_VBLANK;
+		} else {
+			this.vdpStatus &= ~VDP_STATUS_VBLANK;
+		}
+		this.memory.writeValue(IO_VDP_STATUS, this.vdpStatus);
+	}
+
+	private enterVblank(): void {
+		// IRQ flags are level/pending; multiple VBLANK edges while pending coalesce.
+		this.setVblankStatus(true);
+		this.raiseIrqFlags(IRQ_VBLANK);
+	}
+
+	public captureVblankState(): { cyclesIntoFrame: number; vblankPendingClear: boolean; vblankClearOnIrqEnd: boolean } {
+		return {
+			cyclesIntoFrame: this.cyclesIntoFrame,
+			vblankPendingClear: this.vblankPendingClear,
+			vblankClearOnIrqEnd: this.vblankClearOnIrqEnd,
+		};
+	}
+
+	public restoreVblankState(state: { cyclesIntoFrame: number; vblankPendingClear: boolean; vblankClearOnIrqEnd: boolean }): void {
+		this.cyclesIntoFrame = state.cyclesIntoFrame;
+		this.vblankPendingClear = state.vblankPendingClear;
+		this.vblankClearOnIrqEnd = state.vblankClearOnIrqEnd;
+		const vblankActive = (this.vblankStartCycle === 0)
+			|| this.vblankPendingClear
+			|| (this.cyclesIntoFrame >= this.vblankStartCycle);
+		this.setVblankStatus(vblankActive);
 	}
 	private resetTransferCarry(): void {
 		this.imgRate.resetCarry();
@@ -441,6 +546,13 @@ export class Runtime {
 	public currentFrameState: FrameState = null;
 	public drawFrameState: FrameState = null;
 	public cycleBudgetPerFrame: number;
+	private vblankCycles = 0;
+	private vblankStartCycle = 0;
+	private cyclesIntoFrame = 0;
+	private vblankActive = false;
+	private vblankPendingClear = false;
+	private vblankClearOnIrqEnd = false;
+	private vdpStatus = 0;
 	private _cpuHz: number;
 	private imgDecBytesPerSec = 0;
 	private dmaBytesPerSecIso = 0;
@@ -572,6 +684,7 @@ export class Runtime {
 			Runtime.applyUfpsScaled(enginePerfSpecs.ufps);
 			const cpuHz = Runtime.resolveCpuHz(enginePerfSpecs.cpu_freq_hz);
 			const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuHz, $.ufps_scaled);
+			const vblankCycles = Runtime.resolveVblankCycles(engineLayer.index.manifest.machine.specs.vdp.vblank_cycles, cycleBudgetPerFrame);
 			const memory = new Memory({
 				engineRom: new Uint8Array(engineLayer.payload),
 				cartRom: new Uint8Array(CART_ROM_HEADER_SIZE),
@@ -583,6 +696,7 @@ export class Runtime {
 				memory,
 				cpuHz,
 				cycleBudgetPerFrame,
+				vblankCycles,
 			});
 			runtime.setTransferRatesFromManifest(enginePerfSpecs);
 			runtime.configureProgramSources({
@@ -650,6 +764,7 @@ export class Runtime {
 		Runtime.applyUfpsScaled(cartPerfSpecs.ufps);
 		const cpuHz = Runtime.resolveCpuHz(cartPerfSpecs.cpu_freq_hz);
 		const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuHz, $.ufps_scaled);
+		const vblankCycles = Runtime.resolveVblankCycles(cartLayer.index.manifest.machine.specs.vdp.vblank_cycles, cycleBudgetPerFrame);
 		const memory = new Memory({
 			engineRom: new Uint8Array(engineLayer.payload),
 			cartRom: new Uint8Array(cartLayer.payload),
@@ -662,6 +777,7 @@ export class Runtime {
 			memory,
 			cpuHz,
 			cycleBudgetPerFrame,
+			vblankCycles,
 		});
 		runtime.setTransferRatesFromManifest(cartPerfSpecs);
 		runtime.cartAssetLayer = cartLayer;
@@ -915,7 +1031,9 @@ export class Runtime {
 		this.memory.writeValue(IO_VDP_RD_X, 0);
 		this.memory.writeValue(IO_VDP_RD_Y, 0);
 		this.memory.writeValue(IO_VDP_RD_MODE, VDP_RD_MODE_RGBA8888);
+		this.memory.writeValue(IO_VDP_STATUS, 0);
 		this.vdp.initializeRegisters();
+		this.setVblankCycles(options.vblankCycles);
 		this.dmaController = new DmaController(this.memory, (mask) => this.raiseIrqFlags(mask));
 		this.imgDecController = new ImgDecController(this.memory, this.dmaController, (mask) => this.raiseIrqFlags(mask));
 		this.vdp.attachImgDecController(this.imgDecController);
@@ -1174,9 +1292,17 @@ export class Runtime {
 			flags &= ~ack;
 			this.memory.writeValue(IO_IRQ_FLAGS, flags);
 			this.memory.writeValue(IO_IRQ_ACK, 0);
+			if ((ack & IRQ_VBLANK) !== 0 && this.vblankPendingClear) {
+				this.setVblankStatus(false);
+				this.vblankPendingClear = false;
+				this.vblankClearOnIrqEnd = false;
+			}
 		}
 		if (flags === 0) {
 			return false;
+		}
+		if ((flags & IRQ_VBLANK) !== 0 && this.vblankPendingClear) {
+			this.vblankClearOnIrqEnd = true;
 		}
 		this.cpu.call(this.programIrqClosure, [flags], 0);
 		this.pendingCall = 'irq';
@@ -1184,6 +1310,11 @@ export class Runtime {
 		runtimeLuaPipeline.processIo(this);
 		if (result === RunResult.Halted) {
 			this.pendingCall = null;
+			if (this.vblankClearOnIrqEnd) {
+				this.setVblankStatus(false);
+				this.vblankPendingClear = false;
+				this.vblankClearOnIrqEnd = false;
+			}
 		}
 		return this.pendingCall === 'irq';
 	}
@@ -1230,6 +1361,11 @@ export class Runtime {
 				runtimeLuaPipeline.processIo(this);
 				if (result === RunResult.Halted) {
 					this.pendingCall = null;
+					if (this.vblankClearOnIrqEnd) {
+						this.setVblankStatus(false);
+						this.vblankPendingClear = false;
+						this.vblankClearOnIrqEnd = false;
+					}
 				}
 				state.updateExecuted = true;
 				return;

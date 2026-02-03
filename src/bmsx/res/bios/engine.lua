@@ -403,37 +403,48 @@ function engine.update(dt)
 end
 
 function engine.irq(flags)
+	local ack = 0
+	local fatal = nil
 	if (flags & irq_img_done) ~= 0 then
-		poke(sys_irq_ack, irq_img_done)
+		ack = ack | irq_img_done
 		if vdp_active_job == nil then
-			error("irq: img_DONE without pending atlas load")
-		end
-		local skip_map = false
-		if vdp_active_job.allow_handler ~= false and vdp_load_handler ~= nil then
-			local should_skip = vdp_load_handler(vdp_active_job.job_id, vdp_active_job.slot, vdp_active_job.atlas_id, "done")
-			if should_skip == true then
-				skip_map = true
+			fatal = "irq: img_DONE without pending atlas load"
+		else
+			local skip_map = false
+			if vdp_active_job.allow_handler ~= false and vdp_load_handler ~= nil then
+				local should_skip = vdp_load_handler(vdp_active_job.job_id, vdp_active_job.slot, vdp_active_job.atlas_id, "done")
+				if should_skip == true then
+					skip_map = true
+				end
 			end
+			if vdp_active_job.slot ~= nil and not skip_map then
+				vdp_map_slot(vdp_active_job.slot, vdp_active_job.atlas_id)
+			end
+			vdp_active_job = nil
+			vdp_try_start_next_job()
 		end
-		if vdp_active_job.slot ~= nil and not skip_map then
-			vdp_map_slot(vdp_active_job.slot, vdp_active_job.atlas_id)
-		end
-		vdp_active_job = nil
-		vdp_try_start_next_job()
 	end
 	if (flags & irq_img_error) ~= 0 then
-		poke(sys_irq_ack, irq_img_error)
+		ack = ack | irq_img_error
 		if vdp_active_job == nil then
-			error("irq: img_ERROR without pending atlas load")
+			fatal = "irq: img_ERROR without pending atlas load"
+		else
+			if vdp_active_job.allow_handler ~= false and vdp_load_handler ~= nil then
+				vdp_load_handler(vdp_active_job.job_id, vdp_active_job.slot, vdp_active_job.atlas_id, "error")
+			end
+			vdp_active_job = nil
+			fatal = "irq: IMGDEC failed while loading atlas"
 		end
-		if vdp_active_job.allow_handler ~= false and vdp_load_handler ~= nil then
-			vdp_load_handler(vdp_active_job.job_id, vdp_active_job.slot, vdp_active_job.atlas_id, "error")
-		end
-		vdp_active_job = nil
-		error("irq: IMGDEC failed while loading atlas")
 	end
-	if cart_irq_handler ~= nil then
+	ack = ack | (flags & ~(irq_img_done | irq_img_error))
+	if fatal == nil and cart_irq_handler ~= nil then
 		cart_irq_handler(flags)
+	end
+	if ack ~= 0 then
+		poke(sys_irq_ack, ack)
+	end
+	if fatal ~= nil then
+		error(fatal)
 	end
 end
 

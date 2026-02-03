@@ -106,13 +106,32 @@
 				"ram": {
 					"$ref": "#/definitions/machineRamSpecs"
 				},
+				"vdp": {
+					"$ref": "#/definitions/machineVdpSpecs"
+				},
 				"vram": {
 					"$ref": "#/definitions/machineVramSpecs"
 				}
 			},
 			"required": [
 				"cpu",
-				"dma"
+				"dma",
+				"vdp"
+			],
+			"additionalProperties": false
+		},
+		"machineVdpSpecs": {
+			"type": "object",
+			"description": "Video timing specs.",
+			"properties": {
+				"vblank_cycles": {
+					"type": "integer",
+					"minimum": 1,
+					"description": "Number of cycles in the VBLANK window at the end of each frame."
+				}
+			},
+			"required": [
+				"vblank_cycles"
 			],
 			"additionalProperties": false
 		},

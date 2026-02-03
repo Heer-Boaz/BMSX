@@ -48,7 +48,10 @@ export const IO_IMG_STATUS_INDEX = IO_IMG_BASE_INDEX + 5;
 export const IO_IMG_WRITTEN_INDEX = IO_IMG_BASE_INDEX + 6;
 export const IO_IMG_SIZE = 7;
 
-export const IO_SLOT_COUNT = IO_IMG_BASE_INDEX + IO_IMG_SIZE;
+export const IO_VDP_STATUS_INDEX = IO_IMG_BASE_INDEX + IO_IMG_SIZE;
+export const IO_VDP_STATUS_SIZE = 1;
+
+export const IO_SLOT_COUNT = IO_VDP_STATUS_INDEX + IO_VDP_STATUS_SIZE;
 
 export const IO_WRITE_PTR_ADDR = IO_BASE + IO_WRITE_PTR_INDEX * IO_WORD_SIZE;
 export const IO_BUFFER_BASE = IO_BASE + IO_BUFFER_BASE_INDEX * IO_WORD_SIZE;
@@ -90,11 +93,13 @@ export const IO_IMG_CAP = IO_BASE + IO_IMG_CAP_INDEX * IO_WORD_SIZE;
 export const IO_IMG_CTRL = IO_BASE + IO_IMG_CTRL_INDEX * IO_WORD_SIZE;
 export const IO_IMG_STATUS = IO_BASE + IO_IMG_STATUS_INDEX * IO_WORD_SIZE;
 export const IO_IMG_WRITTEN = IO_BASE + IO_IMG_WRITTEN_INDEX * IO_WORD_SIZE;
+export const IO_VDP_STATUS = IO_BASE + IO_VDP_STATUS_INDEX * IO_WORD_SIZE;
 
 export const IRQ_DMA_DONE = 1 << 0;
 export const IRQ_DMA_ERROR = 1 << 1;
 export const IRQ_IMG_DONE = 1 << 2;
 export const IRQ_IMG_ERROR = 1 << 3;
+export const IRQ_VBLANK = 1 << 4;
 
 export const DMA_CTRL_START = 1 << 0;
 export const DMA_CTRL_STRICT = 1 << 1;
@@ -113,3 +118,4 @@ export const VDP_ATLAS_ID_NONE = 0xffffffff >>> 0;
 export const VDP_RD_MODE_RGBA8888 = 0;
 export const VDP_RD_STATUS_READY = 1 << 0;
 export const VDP_RD_STATUS_OVERFLOW = 1 << 1;
+export const VDP_STATUS_VBLANK = 1 << 0;

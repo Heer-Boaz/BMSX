@@ -63,6 +63,7 @@ struct RuntimeOptions {
 	CanonicalizationType canonicalization = CanonicalizationType::None;
 	i64 cpuHz = 0;
 	int cycleBudgetPerFrame = DEFAULT_CYCLE_BUDGET;
+	int vblankCycles = 0;
 };
 
 /**
@@ -74,6 +75,9 @@ struct RuntimeState {
 	std::vector<u8> assetMemory;
 	std::array<i32, 2> atlasSlots{{-1, -1}};
 	std::optional<SkyboxImageIds> skyboxFaceIds;
+	int cyclesIntoFrame = 0;
+	bool vblankPendingClear = false;
+	bool vblankClearOnIrqEnd = false;
 };
 
 /**
@@ -260,6 +264,7 @@ public:
 	void setCpuHz(i64 hz);
 	void setTransferRates(i64 imgDecBytesPerSec, i64 dmaBytesPerSecIso, i64 dmaBytesPerSecBulk);
 	i64 cpuHz() const { return m_cpuHz; }
+	void setVblankCycles(int cycles);
 	void resetHardwareState();
 	i64 updateCountTotal() const { return m_debugUpdateCountTotal; }
 	void setCycleBudgetPerFrame(int budget);
@@ -311,6 +316,10 @@ private:
 	void executeUpdateCallback(double deltaSeconds);
 	void executeDrawCallback();
 	void advanceHardware(int cycles);
+	void advanceVblank(int cycles);
+	void resetVblankState();
+	void setVblankStatus(bool active);
+	void enterVblank();
 	void resetTransferCarry();
 	void raiseIrqFlags(uint32_t mask);
 	bool dispatchIrqFlags();
@@ -422,6 +431,13 @@ private:
 		RateBudget m_dmaIsoRate;
 		RateBudget m_dmaBulkRate;
 		int m_cycleBudgetPerFrame = DEFAULT_CYCLE_BUDGET;
+		int m_vblankCycles = 0;
+		int m_vblankStartCycle = 0;
+		int m_cyclesIntoFrame = 0;
+		bool m_vblankActive = false;
+		bool m_vblankPendingClear = false;
+		bool m_vblankClearOnIrqEnd = false;
+		u32 m_vdpStatus = 0;
 };
 
 } // namespace bmsx

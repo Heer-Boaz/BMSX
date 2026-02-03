@@ -1381,9 +1381,11 @@ void Runtime::setupBuiltins() {
 	setGlobal("sys_vdp_rd_mode", valueNumber(static_cast<double>(IO_VDP_RD_MODE)));
 	setGlobal("sys_vdp_rd_status", valueNumber(static_cast<double>(IO_VDP_RD_STATUS)));
 	setGlobal("sys_vdp_rd_data", valueNumber(static_cast<double>(IO_VDP_RD_DATA)));
+	setGlobal("sys_vdp_status", valueNumber(static_cast<double>(IO_VDP_STATUS)));
 	setGlobal("sys_vdp_rd_mode_rgba8888", valueNumber(static_cast<double>(VDP_RD_MODE_RGBA8888)));
 	setGlobal("sys_vdp_rd_status_ready", valueNumber(static_cast<double>(VDP_RD_STATUS_READY)));
 	setGlobal("sys_vdp_rd_status_overflow", valueNumber(static_cast<double>(VDP_RD_STATUS_OVERFLOW)));
+	setGlobal("sys_vdp_status_vblank", valueNumber(static_cast<double>(VDP_STATUS_VBLANK)));
 	setGlobal("sys_irq_flags", valueNumber(static_cast<double>(IO_IRQ_FLAGS)));
 	setGlobal("sys_irq_ack", valueNumber(static_cast<double>(IO_IRQ_ACK)));
 	setGlobal("sys_dma_src", valueNumber(static_cast<double>(IO_DMA_SRC)));
@@ -1408,6 +1410,7 @@ void Runtime::setupBuiltins() {
 	setGlobal("irq_dma_error", valueNumber(static_cast<double>(IRQ_DMA_ERROR)));
 	setGlobal("irq_img_done", valueNumber(static_cast<double>(IRQ_IMG_DONE)));
 	setGlobal("irq_img_error", valueNumber(static_cast<double>(IRQ_IMG_ERROR)));
+	setGlobal("irq_vblank", valueNumber(static_cast<double>(IRQ_VBLANK)));
 	setGlobal("dma_ctrl_start", valueNumber(static_cast<double>(DMA_CTRL_START)));
 	setGlobal("dma_ctrl_strict", valueNumber(static_cast<double>(DMA_CTRL_STRICT)));
 	setGlobal("dma_status_busy", valueNumber(static_cast<double>(DMA_STATUS_BUSY)));
@@ -3286,6 +3289,11 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 				vramTable->set(key("skybox_face_bytes"), valueNumber(static_cast<double>(*manifest.skyboxFaceBytes)));
 			}
 			specsTable->set(key("vram"), valueTable(vramTable));
+		}
+		if (manifest.vblankCycles) {
+			auto* vdpTable = m_cpu.createTable(0, 1);
+			vdpTable->set(key("vblank_cycles"), valueNumber(static_cast<double>(*manifest.vblankCycles)));
+			specsTable->set(key("vdp"), valueTable(vdpTable));
 		}
 		if (manifest.maxVoicesSfx || manifest.maxVoicesMusic || manifest.maxVoicesUi) {
 			auto* audioTable = m_cpu.createTable(0, 1);

@@ -2,14 +2,11 @@
 	"version": "2.0.0",
 	"tasks": [
 		{
-			"label": "BUILD BROWSER + LIBRETRO WSL + BIOS (debug+release)",
+			"label": "BUILD BROWSER + LIBRETRO WSL + BIOS",
 				"dependsOn": [
 					"PLATFORM BUILD: browser",
-					"PLATFORM BUILD: browser (debug)",
 					"BIOS: build",
-					"BIOS: build (debug)",
 					"LIBRETRO BUILD: WSL",
-					"LIBRETRO BUILD: WSL (debug)"
 				],
 			"type": "shell",
 			"problemMatcher": [],
@@ -32,6 +29,7 @@
 					"group": "FULL BUILD"
 				}
 			},
+		},
 		{
 			"label": "PLATFORM BUILD: browser",
 			"type": "shell",

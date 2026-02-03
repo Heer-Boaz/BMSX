@@ -107,6 +107,19 @@ static void parseMachineSpecs(const BinObject& machineObj, RomManifest& manifest
 			manifest.stagingBytes = vramObj.at("staging_bytes").toI32();
 		}
 	}
+	const BinValue* vdpValue = findObjectField(specsObj, "vdp");
+	if (vdpValue && vdpValue->isObject()) {
+		const auto& vdpObj = vdpValue->asObject();
+		auto it = vdpObj.find("vblank_cycles");
+		if (it != vdpObj.end()) {
+			const double number = it->second.toNumber();
+			const i64 value = static_cast<i64>(number);
+			if (number != static_cast<double>(value) || value <= 0) {
+				throw std::runtime_error("[RuntimeAssets] machine.specs.vdp.vblank_cycles must be a positive integer.");
+			}
+			manifest.vblankCycles = value;
+		}
+	}
 	const BinValue* audioValue = findObjectField(specsObj, "audio");
 	if (audioValue && audioValue->isObject()) {
 		const auto& audioObj = audioValue->asObject();

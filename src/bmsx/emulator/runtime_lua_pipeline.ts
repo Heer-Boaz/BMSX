@@ -97,12 +97,21 @@ function applyUfpsScaled(ufps: number): number {
 	return ufpsScaled;
 }
 
+function resolveVblankCycles(value: number | undefined, cyclesPerFrame: number): number {
+	const cycles = resolvePositiveSafeInteger(value, 'machine.specs.vdp.vblank_cycles');
+	if (cycles > cyclesPerFrame) {
+		throw new Error('[Runtime] machine.specs.vdp.vblank_cycles must be less than or equal to cycles_per_frame.');
+	}
+	return cycles;
+}
+
 export function captureCurrentState(runtime: Runtime): RuntimeState {
 	const storage = runtime.storage.dump();
 	const stateSnapshot = captureRuntimeState(runtime);
 	const atlasSlots = runtime.vdp.getAtlasSlotMapping();
 	const skyboxFaceIds = runtime.vdp.getSkyboxFaceIds();
 	const vdpDitherType = runtime.vdp.getDitherType();
+	const vblankState = runtime.captureVblankState();
 	const state: RuntimeState = {
 		luaRuntimeFailed: runtime.luaRuntimeFailed,
 		luaPath: runtime.currentPath,
@@ -110,6 +119,9 @@ export function captureCurrentState(runtime: Runtime): RuntimeState {
 		atlasSlots,
 		skyboxFaceIds,
 		vdpDitherType,
+		cyclesIntoFrame: vblankState.cyclesIntoFrame,
+		vblankPendingClear: vblankState.vblankPendingClear,
+		vblankClearOnIrqEnd: vblankState.vblankClearOnIrqEnd,
 	};
 	if (stateSnapshot) {
 		if (stateSnapshot.globals) {
@@ -161,6 +173,7 @@ export function restoreFromStateSnapshot(runtime: Runtime, snapshot: RuntimeStat
 	runtime.luaRuntimeFailed = false;
 	applyAssetMemorySnapshot(runtime, snapshot);
 	reinitializeLuaProgramFromSnapshot(runtime, snapshot, { runInit: false, hotReload: false });
+	runtime.restoreVblankState(snapshot);
 
 	if (savedRuntimeFailed) {
 		runtime.luaRuntimeFailed = true;
@@ -204,6 +217,7 @@ export async function resumeFromSnapshot(runtime: Runtime, state: RuntimeState):
 	publishOverlayFrame(null);
 	applyAssetMemorySnapshot(runtime, snapshot);
 	resumeLuaProgramState(runtime, snapshot);
+	runtime.restoreVblankState(snapshot);
 	runtime.luaInitialized = true;
 }
 
@@ -639,6 +653,7 @@ export function resetHardwareState(runtime: Runtime): void {
 	runtime.memory.writeValue(IO_IRQ_ACK, 0);
 	runtime.dmaController.reset();
 	runtime.imgDecController.reset();
+	runtime.resetVblankState();
 }
 
 export function registerGlobal(runtime: Runtime, name: string, value: Value): void {
@@ -1146,7 +1161,9 @@ export async function reloadProgramAndResetWorld(runtime: Runtime, options?: { r
 		applyUfpsScaled(perfSpecs.ufps);
 		const cpuHz = resolveCpuHz(perfSpecs.cpu_freq_hz);
 		runtime.setCpuHz(cpuHz);
-		runtime.setCycleBudgetPerFrame(calcCyclesPerFrameScaled(cpuHz, $.ufps_scaled));
+		const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuHz, $.ufps_scaled);
+		runtime.setCycleBudgetPerFrame(cycleBudgetPerFrame);
+		runtime.setVblankCycles(resolveVblankCycles(manifest.machine.specs.vdp.vblank_cycles, cycleBudgetPerFrame));
 		runtime.setTransferRatesFromManifest(perfSpecs);
 	}
 	finally {

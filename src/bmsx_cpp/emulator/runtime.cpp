@@ -154,7 +154,9 @@ Runtime::Runtime(const RuntimeOptions& options)
 	m_memory.writeValue(IO_VDP_RD_X, valueNumber(0.0));
 	m_memory.writeValue(IO_VDP_RD_Y, valueNumber(0.0));
 	m_memory.writeValue(IO_VDP_RD_MODE, valueNumber(static_cast<double>(VDP_RD_MODE_RGBA8888)));
+	m_memory.writeValue(IO_VDP_STATUS, valueNumber(0.0));
 	m_vdp.initializeRegisters();
+	setVblankCycles(options.vblankCycles);
 	m_randomSeedValue = static_cast<uint32_t>(EngineCore::instance().clock()->now());
 	refreshMemoryMap();
 	m_cpu.setExternalRootMarker([this](GcHeap& heap) {
@@ -242,6 +244,8 @@ void Runtime::boot(Program* program, ProgramMetadata* metadata, int entryProtoIn
 	m_memory.writeValue(IO_VDP_PRIMARY_ATLAS_ID, valueNumber(static_cast<double>(VDP_ATLAS_ID_NONE)));
 	m_memory.writeValue(IO_VDP_SECONDARY_ATLAS_ID, valueNumber(static_cast<double>(VDP_ATLAS_ID_NONE)));
 	m_vdp.initializeRegisters();
+	m_memory.writeValue(IO_VDP_STATUS, valueNumber(0.0));
+	resetVblankState();
 	m_randomSeedValue = static_cast<uint32_t>(EngineCore::instance().clock()->now());
 	setupBuiltins();
 	m_api->registerAllFunctions();
@@ -297,6 +301,7 @@ void Runtime::advanceHardware(int cycles) {
 	if (cycles <= 0) {
 		return;
 	}
+	// Hardware advances in discrete steps; interrupt sources raised in the same step are observed together.
 	const i64 cycleCount = static_cast<i64>(cycles);
 	const uint32_t imgBudget = m_imgRate.calcBytesForCycles(m_cpuHz, cycleCount);
 	const uint32_t isoBudget = m_dmaIsoRate.calcBytesForCycles(m_cpuHz, cycleCount);
@@ -305,6 +310,61 @@ void Runtime::advanceHardware(int cycles) {
 	m_dmaController.setChannelBudgets(isoBudget, bulkBudget);
 	m_dmaController.tick();
 	m_imgDecController.tick();
+	advanceVblank(cycles);
+}
+
+void Runtime::advanceVblank(int cycles) {
+	int remaining = cycles;
+	while (remaining > 0) {
+		const int frameRemaining = m_cycleBudgetPerFrame - m_cyclesIntoFrame;
+		const int step = remaining < frameRemaining ? remaining : frameRemaining;
+		const int previous = m_cyclesIntoFrame;
+		m_cyclesIntoFrame += step;
+		if (!m_vblankActive && previous < m_vblankStartCycle && m_cyclesIntoFrame >= m_vblankStartCycle) {
+			enterVblank();
+		}
+		remaining -= step;
+		if (m_cyclesIntoFrame >= m_cycleBudgetPerFrame) {
+			m_cyclesIntoFrame = 0;
+			if (m_vblankStartCycle == 0) {
+				raiseIrqFlags(IRQ_VBLANK);
+			} else if (m_vblankActive) {
+				// Defer clear until the VBLANK IRQ handler has a chance to observe the status.
+				m_vblankPendingClear = true;
+			}
+		}
+	}
+}
+
+void Runtime::resetVblankState() {
+	m_cyclesIntoFrame = 0;
+	m_vblankActive = false;
+	m_vblankPendingClear = false;
+	m_vblankClearOnIrqEnd = false;
+	m_vdpStatus = 0;
+	m_memory.writeValue(IO_VDP_STATUS, valueNumber(static_cast<double>(m_vdpStatus)));
+	if (m_vblankStartCycle == 0) {
+		setVblankStatus(true);
+	}
+}
+
+void Runtime::setVblankStatus(bool active) {
+	if (m_vblankActive == active) {
+		return;
+	}
+	m_vblankActive = active;
+	if (active) {
+		m_vdpStatus |= VDP_STATUS_VBLANK;
+	} else {
+		m_vdpStatus &= ~VDP_STATUS_VBLANK;
+	}
+	m_memory.writeValue(IO_VDP_STATUS, valueNumber(static_cast<double>(m_vdpStatus)));
+}
+
+void Runtime::enterVblank() {
+	// IRQ flags are level/pending; multiple VBLANK edges while pending coalesce.
+	setVblankStatus(true);
+	raiseIrqFlags(IRQ_VBLANK);
 }
 
 void Runtime::resetTransferCarry() {
@@ -325,9 +385,17 @@ bool Runtime::dispatchIrqFlags() {
 		flags &= ~ack;
 		m_memory.writeValue(IO_IRQ_FLAGS, valueNumber(static_cast<double>(flags)));
 		m_memory.writeValue(IO_IRQ_ACK, valueNumber(0.0));
+		if ((ack & IRQ_VBLANK) != 0 && m_vblankPendingClear) {
+			setVblankStatus(false);
+			m_vblankPendingClear = false;
+			m_vblankClearOnIrqEnd = false;
+		}
 	}
 	if (flags == 0) {
 		return false;
+	}
+	if ((flags & IRQ_VBLANK) != 0 && m_vblankPendingClear) {
+		m_vblankClearOnIrqEnd = true;
 	}
 	m_cpu.call(m_irqFn, { valueNumber(static_cast<double>(flags)) }, 0);
 	m_pendingCall = PendingCall::Irq;
@@ -335,14 +403,24 @@ bool Runtime::dispatchIrqFlags() {
 	processIOCommands();
 	if (result == RunResult::Halted) {
 		m_pendingCall = PendingCall::None;
+		if (m_vblankClearOnIrqEnd) {
+			setVblankStatus(false);
+			m_vblankPendingClear = false;
+			m_vblankClearOnIrqEnd = false;
+		}
 	}
 	return m_pendingCall == PendingCall::Irq;
 }
 
 RunResult Runtime::runWithBudget() {
-	RunResult result = m_cpu.run(m_frameState.cycleBudgetRemaining);
+	const int budgetBefore = m_frameState.cycleBudgetRemaining;
+	RunResult result = m_cpu.run(budgetBefore);
 	const int remaining = m_cpu.instructionBudgetRemaining;
+	const int consumed = budgetBefore - remaining;
 	m_frameState.cycleBudgetRemaining = remaining;
+	if (consumed > 0) {
+		advanceHardware(consumed);
+	}
 	return result;
 }
 
@@ -662,6 +740,7 @@ void Runtime::resetFrameState() {
 	m_lastTickBudgetRemaining = 0;
 	m_lastTickSequence = 0;
 	m_lastTickConsumedSequence = 0;
+	resetVblankState();
 }
 
 void Runtime::resetCartBootState() {
@@ -676,6 +755,9 @@ RuntimeState Runtime::captureCurrentState() const {
 	state.assetMemory = m_memory.dumpAssetMemory();
 	state.atlasSlots = m_vdp.atlasSlots();
 	state.skyboxFaceIds = m_vdp.skyboxFaceIds();
+	state.cyclesIntoFrame = m_cyclesIntoFrame;
+	state.vblankPendingClear = m_vblankPendingClear;
+	state.vblankClearOnIrqEnd = m_vblankClearOnIrqEnd;
 	return state;
 }
 
@@ -683,6 +765,13 @@ void Runtime::applyState(const RuntimeState& state) {
 	// Restore memory
 	m_memory.loadIoSlots(state.ioMemory);
 	m_vdp.syncRegisters();
+	m_cyclesIntoFrame = state.cyclesIntoFrame;
+	m_vblankPendingClear = state.vblankPendingClear;
+	m_vblankClearOnIrqEnd = state.vblankClearOnIrqEnd;
+	const bool vblankActive = (m_vblankStartCycle == 0)
+		|| m_vblankPendingClear
+		|| (m_cyclesIntoFrame >= m_vblankStartCycle);
+	setVblankStatus(vblankActive);
 	if (!state.assetMemory.empty()) {
 		m_memory.restoreAssetMemory(state.assetMemory.data(), state.assetMemory.size());
 	}
@@ -735,11 +824,24 @@ void Runtime::setCpuHz(i64 hz) {
 	resetTransferCarry();
 }
 
+void Runtime::setVblankCycles(int cycles) {
+	if (cycles <= 0) {
+		throw BMSX_RUNTIME_ERROR("[Runtime] vblank_cycles must be greater than 0.");
+	}
+	if (cycles > m_cycleBudgetPerFrame) {
+		throw BMSX_RUNTIME_ERROR("[Runtime] vblank_cycles must be less than or equal to cycles_per_frame.");
+	}
+	m_vblankCycles = cycles;
+	m_vblankStartCycle = m_cycleBudgetPerFrame - m_vblankCycles;
+	resetVblankState();
+}
+
 void Runtime::resetHardwareState() {
 	m_memory.writeValue(IO_IRQ_FLAGS, valueNumber(0.0));
 	m_memory.writeValue(IO_IRQ_ACK, valueNumber(0.0));
 	m_dmaController.reset();
 	m_imgDecController.reset();
+	resetVblankState();
 }
 
 void Runtime::setTransferRates(i64 imgDecBytesPerSec, i64 dmaBytesPerSecIso, i64 dmaBytesPerSecBulk) {
@@ -759,12 +861,18 @@ void Runtime::setCycleBudgetPerFrame(int budget) {
 	m_cycleBudgetPerFrame = budget;
 	setGlobal("sys_max_cycles_per_frame", valueNumber(static_cast<double>(budget)));
 	resetTransferCarry();
+	if (m_vblankCycles > 0) {
+		if (m_vblankCycles > m_cycleBudgetPerFrame) {
+			throw BMSX_RUNTIME_ERROR("[Runtime] vblank_cycles must be less than or equal to cycles_per_frame.");
+		}
+		m_vblankStartCycle = m_cycleBudgetPerFrame - m_vblankCycles;
+		resetVblankState();
+	}
 }
 
 void Runtime::grantCycleBudget(int baseBudget, int carryBudget) {
 	setCycleBudgetPerFrame(baseBudget);
 	const int totalBudget = baseBudget + carryBudget;
-	advanceHardware(totalBudget);
 	if (hasActiveTick()) {
 		m_frameState.cycleBudgetRemaining += totalBudget;
 		m_frameState.cycleBudgetGranted += totalBudget;
@@ -1004,6 +1112,11 @@ void Runtime::executeUpdateCallback(double deltaSeconds) {
 		processIOCommands();
 		if (result == RunResult::Halted) {
 			m_pendingCall = PendingCall::None;
+			if (m_vblankClearOnIrqEnd) {
+				setVblankStatus(false);
+				m_vblankPendingClear = false;
+				m_vblankClearOnIrqEnd = false;
+			}
 		}
 		return;
 	}

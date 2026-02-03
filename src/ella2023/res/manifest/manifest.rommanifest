@@ -15,6 +15,9 @@
 			"dma": {
 				"dma_bytes_per_sec_iso": 8388608,
 				"dma_bytes_per_sec_bulk": 26214400
+			},
+			"vdp": {
+				"vblank_cycles": 16000
 			}
 		}
 	},
