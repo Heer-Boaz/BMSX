@@ -25,6 +25,10 @@ constexpr uint32_t VRAM_GARBAGE_SPACE_SALT = 0x5652414dU;
 constexpr int VRAM_GARBAGE_WEIGHT_BLOCK = 1;
 constexpr int VRAM_GARBAGE_WEIGHT_ROW = 2;
 constexpr int VRAM_GARBAGE_WEIGHT_PAGE = 4;
+constexpr int VRAM_GARBAGE_FORCE_T0 = 120;
+constexpr int VRAM_GARBAGE_FORCE_T1 = 280;
+constexpr int VRAM_GARBAGE_FORCE_T2 = 480;
+constexpr int VRAM_GARBAGE_FORCE_T_DEN = 1000;
 
 struct OctaveSpec {
 	uint32_t shift;
@@ -34,11 +38,11 @@ struct OctaveSpec {
 };
 
 constexpr OctaveSpec VRAM_GARBAGE_OCTAVES[] = {
-	{11u, 6, 0x165667b1U, 0xd3a2646cU},
-	{15u, 8, 0x27d4eb2fU, 0x6c8e9cf5U},
-	{17u, 10, 0x7f4a7c15U, 0x31415926U},
-	{19u, 12, 0xa24baed5U, 0x9e3779b9U},
-	{21u, 14, 0x6a09e667U, 0xbb67ae85U},
+	{11u, 8, 0x165667b1U, 0xd3a2646cU},
+	{15u, 12, 0x27d4eb2fU, 0x6c8e9cf5U},
+	{17u, 16, 0x7f4a7c15U, 0x31415926U},
+	{19u, 20, 0xa24baed5U, 0x9e3779b9U},
+	{21u, 24, 0x6a09e667U, 0xbb67ae85U},
 };
 uint32_t skyboxFaceBaseByIndex(size_t index) {
 	switch (index) {
@@ -113,9 +117,9 @@ BiasConfig makeBiasConfig(uint32_t vramBytes) {
 	const int maxBias = weightSum * 127;
 	BiasConfig config;
 	config.activeOctaves = activeOctaves;
-	config.threshold0 = (maxBias * 168) / 1000;
-	config.threshold1 = (maxBias * 378) / 1000;
-	config.threshold2 = (maxBias * 630) / 1000;
+	config.threshold0 = (maxBias * VRAM_GARBAGE_FORCE_T0) / VRAM_GARBAGE_FORCE_T_DEN;
+	config.threshold1 = (maxBias * VRAM_GARBAGE_FORCE_T1) / VRAM_GARBAGE_FORCE_T_DEN;
+	config.threshold2 = (maxBias * VRAM_GARBAGE_FORCE_T2) / VRAM_GARBAGE_FORCE_T_DEN;
 	return config;
 }
 
@@ -132,11 +136,13 @@ BlockGen initBlockGen(uint32_t biasSeed, uint32_t bootSeedMix, uint32_t blockInd
 		signed8FromHash(rowH) * VRAM_GARBAGE_WEIGHT_ROW +
 		signed8FromHash(blkH) * VRAM_GARBAGE_WEIGHT_BLOCK;
 
+	uint32_t macroH = pageH;
 	for (uint32_t i = 0; i < biasConfig.activeOctaves; ++i) {
 		const OctaveSpec& octave = VRAM_GARBAGE_OCTAVES[i];
 		const uint32_t octaveIndex = blockIndex >> octave.shift;
 		const uint32_t octaveH = fmix32((biasSeed ^ (octaveIndex * octave.mul) ^ octave.mix));
 		bias += signed8FromHash(octaveH) * octave.weight;
+		macroH = octaveH;
 	}
 
 	const int absBias = bias < 0 ? -bias : bias;
@@ -151,7 +157,8 @@ BlockGen initBlockGen(uint32_t biasSeed, uint32_t bootSeedMix, uint32_t blockInd
 	uint32_t ps = (blkH ^ rowH ^ 0xdeadbeefU) | 1u;
 	ps = xorshift32(ps); const uint32_t m1 = scramble32(ps);
 	ps = xorshift32(ps); const uint32_t m2 = scramble32(ps);
-	ps = xorshift32(ps); const uint32_t prefWord = scramble32(ps);
+	ps = xorshift32(ps);
+	const uint32_t prefWord = scramble32(macroH);
 	ps = xorshift32(ps); const uint32_t w1 = scramble32(ps);
 	ps = xorshift32(ps); const uint32_t w2 = scramble32(ps);
 	ps = xorshift32(ps); const uint32_t w3 = scramble32(ps);

@@ -72,12 +72,16 @@ const VRAM_GARBAGE_WEIGHT_BLOCK = 1;
 const VRAM_GARBAGE_WEIGHT_ROW = 2;
 const VRAM_GARBAGE_WEIGHT_PAGE = 4;
 const VRAM_GARBAGE_OCTAVES = [
-	{ shift: 11, weight: 6, mul: 0x165667b1, mix: 0xd3a2646c },
-	{ shift: 15, weight: 8, mul: 0x27d4eb2f, mix: 0x6c8e9cf5 },
-	{ shift: 17, weight: 10, mul: 0x7f4a7c15, mix: 0x31415926 },
-	{ shift: 19, weight: 12, mul: 0xa24baed5, mix: 0x9e3779b9 },
-	{ shift: 21, weight: 14, mul: 0x6a09e667, mix: 0xbb67ae85 },
+	{ shift: 11, weight: 8, mul: 0x165667b1, mix: 0xd3a2646c },
+	{ shift: 15, weight: 12, mul: 0x27d4eb2f, mix: 0x6c8e9cf5 },
+	{ shift: 17, weight: 16, mul: 0x7f4a7c15, mix: 0x31415926 },
+	{ shift: 19, weight: 20, mul: 0xa24baed5, mix: 0x9e3779b9 },
+	{ shift: 21, weight: 24, mul: 0x6a09e667, mix: 0xbb67ae85 },
 ] as const;
+const VRAM_GARBAGE_FORCE_T0 = 120;
+const VRAM_GARBAGE_FORCE_T1 = 280;
+const VRAM_GARBAGE_FORCE_T2 = 480;
+const VRAM_GARBAGE_FORCE_T_DEN = 1000;
 
 type VramGarbageStream = {
 	machineSeed: number;
@@ -142,9 +146,9 @@ function makeBiasConfig(vramBytes: number): BiasConfig {
 		activeOctaves = i + 1;
 	}
 	const maxBias = weightSum * 127;
-	const threshold0 = Math.floor((maxBias * 168) / 1000);
-	const threshold1 = Math.floor((maxBias * 378) / 1000);
-	const threshold2 = Math.floor((maxBias * 630) / 1000);
+	const threshold0 = Math.floor((maxBias * VRAM_GARBAGE_FORCE_T0) / VRAM_GARBAGE_FORCE_T_DEN);
+	const threshold1 = Math.floor((maxBias * VRAM_GARBAGE_FORCE_T1) / VRAM_GARBAGE_FORCE_T_DEN);
+	const threshold2 = Math.floor((maxBias * VRAM_GARBAGE_FORCE_T2) / VRAM_GARBAGE_FORCE_T_DEN);
 	return {
 		activeOctaves,
 		threshold0,
@@ -166,11 +170,13 @@ function initBlockGen(biasSeed: number, bootSeedMix: number, blockIndex: number,
 		signed8FromHash(rowH) * VRAM_GARBAGE_WEIGHT_ROW +
 		signed8FromHash(blkH) * VRAM_GARBAGE_WEIGHT_BLOCK;
 
+	let macroH = pageH;
 	for (let i = 0; i < biasConfig.activeOctaves; i += 1) {
 		const octave = VRAM_GARBAGE_OCTAVES[i];
 		const octaveIndex = blockIndex >>> octave.shift;
 		const octaveH = fmix32((biasSeed ^ Math.imul(octaveIndex, octave.mul) ^ octave.mix) >>> 0);
 		bias += signed8FromHash(octaveH) * octave.weight;
+		macroH = octaveH;
 	}
 
 	const absBias = bias < 0 ? -bias : bias;
@@ -187,7 +193,8 @@ function initBlockGen(biasSeed: number, bootSeedMix: number, blockIndex: number,
 
 	ps = xorshift32(ps); const m1 = scramble32(ps);
 	ps = xorshift32(ps); const m2 = scramble32(ps);
-	ps = xorshift32(ps); const prefWord = scramble32(ps);
+	ps = xorshift32(ps);
+	const prefWord = scramble32(macroH);
 	ps = xorshift32(ps); const w1 = scramble32(ps);
 	ps = xorshift32(ps); const w2 = scramble32(ps);
 	ps = xorshift32(ps); const w3 = scramble32(ps);
