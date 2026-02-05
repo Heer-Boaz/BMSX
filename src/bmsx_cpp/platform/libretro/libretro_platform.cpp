@@ -309,19 +309,10 @@ void LibretroPlatform::setFrameSkipNext(bool skip) {
 
 void LibretroPlatform::setFrameTimeUsec(retro_usec_t usec) {
 	if (usec == 0) {
-		throw std::runtime_error("[LibretroPlatform] Frame time override must be greater than zero.");
+		return;
 	}
 	const double nextFrameTimeSec = static_cast<double>(usec) / 1000000.0;
-	static double lastLoggedFrameTimeSec = -1.0;
 	m_frame_time_sec = nextFrameTimeSec;
-	if (nextFrameTimeSec != lastLoggedFrameTimeSec) {
-		log(RETRO_LOG_INFO, "[BMSX] Frame time override: %llu usec -> %.3fms (fps %.2f)\n",
-			static_cast<unsigned long long>(usec),
-			nextFrameTimeSec * 1000.0,
-			1.0 / nextFrameTimeSec
-		);
-		lastLoggedFrameTimeSec = nextFrameTimeSec;
-	}
 	if (auto* audioService = dynamic_cast<LibretroAudioService*>(m_audio_service.get())) {
 		audioService->setFrameTimeSec(m_frame_time_sec);
 	}

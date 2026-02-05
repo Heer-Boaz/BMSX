@@ -147,6 +147,7 @@ public:
 	// Capabilities
 	// ─────────────────────────────────────────────────────────────────────────
 	virtual BackendCaps getCaps() const = 0;
+	virtual bool readyForTextureUpload() const { return true; }
 };
 
 /* ============================================================================

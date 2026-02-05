@@ -78,6 +78,9 @@ OpenGLES2Backend::~OpenGLES2Backend() = default;
 TextureHandle OpenGLES2Backend::createTexture(const u8* data, i32 width,
 												i32 height,
 												const TextureParams& params) {
+	if (!m_context_ready) {
+		throw std::runtime_error("[GLES2] createTexture called before context reset.");
+	}
 	auto* tex = new GLES2Texture{};
 	tex->width = width;
 	tex->height = height;
@@ -113,6 +116,9 @@ TextureHandle OpenGLES2Backend::createTexture(const u8* data, i32 width,
 void OpenGLES2Backend::updateTexture(TextureHandle handle, const u8* data, i32 width,
 										i32 height,
 										const TextureParams& params) {
+	if (!m_context_ready) {
+		throw std::runtime_error("[GLES2] updateTexture called before context reset.");
+	}
 	auto* tex = static_cast<GLES2Texture*>(handle);
 	const bool needsResize = tex->width != width || tex->height != height;
 
@@ -142,6 +148,10 @@ void OpenGLES2Backend::updateTexture(TextureHandle handle, const u8* data, i32 w
 }
 
 TextureHandle OpenGLES2Backend::resizeTexture(TextureHandle handle, i32 width, i32 height, const TextureParams& params) {
+	(void)params;
+	if (!m_context_ready) {
+		throw std::runtime_error("[GLES2] resizeTexture called before context reset.");
+	}
 	auto* tex = static_cast<GLES2Texture*>(handle);
 	glBindTexture(GL_TEXTURE_2D, tex->id);
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
@@ -157,6 +167,9 @@ TextureHandle OpenGLES2Backend::resizeTexture(TextureHandle handle, i32 width, i
 }
 
 void OpenGLES2Backend::updateTextureRegion(TextureHandle handle, const u8* data, i32 width, i32 height, i32 x, i32 y, const TextureParams& params) {
+	if (!m_context_ready) {
+		throw std::runtime_error("[GLES2] updateTextureRegion called before context reset.");
+	}
 	auto* tex = static_cast<GLES2Texture*>(handle);
 	const u8* uploadData = data;
 	std::vector<u8> linearized;
@@ -361,11 +374,13 @@ void OpenGLES2Backend::setFramebufferGetter(FramebufferGetter getter) {
 }
 
 void OpenGLES2Backend::onContextReset() {
+	m_context_ready = true;
 	m_active_texture_unit = -1;
 	m_bound_texture_2d_by_unit.fill(0);
 }
 
 void OpenGLES2Backend::onContextDestroy() {
+	m_context_ready = false;
 	m_active_texture_unit = -1;
 	m_bound_texture_2d_by_unit.fill(0);
 	if (m_readback_fbo != 0) {

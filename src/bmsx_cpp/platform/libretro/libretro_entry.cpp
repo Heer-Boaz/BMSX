@@ -40,6 +40,9 @@ static bool g_has_pending_frame_time = false;
 extern "C" void bmsx_set_frame_time_usec(retro_usec_t usec);
 
 static void frame_time_cb(retro_usec_t usec) {
+	if (usec == 0) {
+		return;
+	}
 	bmsx_set_frame_time_usec(usec);
 }
 static retro_hw_render_callback g_hw_render;
@@ -1088,7 +1091,8 @@ void retro_set_environment(retro_environment_t cb) {
 	frame_time.callback = frame_time_cb;
 	frame_time.reference = 0;
 	if (!cb(RETRO_ENVIRONMENT_SET_FRAME_TIME_CALLBACK, &frame_time)) {
-		throw std::runtime_error("[BMSX] RETRO_ENVIRONMENT_SET_FRAME_TIME_CALLBACK rejected by frontend.");
+		logging.log(RETRO_LOG_WARN,
+					"[BMSX] RETRO_ENVIRONMENT_SET_FRAME_TIME_CALLBACK rejected by frontend; using AV timing only.\n");
 	}
 
 	set_core_options(BMSX_ENABLE_GLES2);
@@ -1274,6 +1278,9 @@ void retro_get_system_av_info(struct retro_system_av_info* info) {
 }
 
 extern "C" void bmsx_set_frame_time_usec(retro_usec_t usec) {
+	if (usec == 0) {
+		return;
+	}
 	g_pending_frame_time_usec = usec;
 	g_has_pending_frame_time = true;
 	g_platform->setFrameTimeUsec(usec);

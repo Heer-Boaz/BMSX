@@ -377,7 +377,9 @@ bool EngineCore::initialize(Platform* platform) {
 
 	m_texture_manager = std::make_unique<TextureManager>(m_view->backend());
 	m_texture_manager->bind();
-	m_view->initializeDefaultTextures();
+	if (m_view->backend()->readyForTextureUpload()) {
+		m_view->initializeDefaultTextures();
+	}
 
 	Input::instance().initialize();
 	m_sound_master = std::make_unique<SoundMaster>();
@@ -1022,7 +1024,9 @@ bool EngineCore::resetLoadedRom() {
 		}
 		if (m_view) {
 			m_view->reset();
-			m_view->initializeDefaultTextures();
+			if (m_view->backend()->readyForTextureUpload()) {
+				m_view->initializeDefaultTextures();
+			}
 		}
 	}
 	if (!cartCpuValid) {
@@ -1095,6 +1099,10 @@ void EngineCore::uploadTexturesToBackend(bool includeCartAssets) {
 	if (!m_view || !m_view->backend() || !m_texture_manager) {
 		return;
 	}
+	auto* backend = m_view->backend();
+	if (!backend->readyForTextureUpload()) {
+		return;
+	}
 
 	// Context reset can happen before any ROM/system program is booted.
 	// In that phase there is no Runtime instance yet, so there is no asset
@@ -1106,7 +1114,7 @@ void EngineCore::uploadTexturesToBackend(bool includeCartAssets) {
 	if (!includeCartAssets && !m_engine_assets_loaded) {
 		return;
 	}
-	m_texture_manager->setBackend(m_view->backend());
+	m_texture_manager->setBackend(backend);
 
 	Runtime& runtime = Runtime::instance();
 	auto& memory = runtime.memory();

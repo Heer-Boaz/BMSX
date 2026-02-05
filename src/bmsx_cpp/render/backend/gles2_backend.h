@@ -48,6 +48,7 @@ public:
 	FrameStats getFrameStats() const override { return m_stats; }
 
 	BackendCaps getCaps() const override;
+	bool readyForTextureUpload() const override { return m_context_ready; }
 
 	void setViewportSize(i32 width, i32 height);
 	void setFramebufferGetter(FramebufferGetter getter);
@@ -72,6 +73,7 @@ private:
 	i32 m_active_texture_unit = -1;
 	std::array<GLuint, kTrackedTextureUnits> m_bound_texture_2d_by_unit{};
 	GLuint m_readback_fbo = 0;
+	bool m_context_ready = false;
 };
 
 } // namespace bmsx
