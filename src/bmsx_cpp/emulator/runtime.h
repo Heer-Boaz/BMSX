@@ -280,6 +280,7 @@ public:
 	void refreshMemoryMap();
 	void buildAssetMemory(RuntimeAssets& assets, bool keepDecodedData, AssetBuildMode mode = AssetBuildMode::Full);
 	void uploadAtlasTextures();
+	void captureVramTextureSnapshots();
 
 private:
 	struct RateBudget {

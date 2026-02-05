@@ -592,6 +592,41 @@ void VDP::uploadAtlasTextures() {
 	m_dirtyAtlasBindings = true;
 }
 
+void VDP::captureVramTextureSnapshots() {
+	auto* texmanager = EngineCore::instance().texmanager();
+	if (!texmanager) {
+		throw BMSX_RUNTIME_ERROR("[VDP] TextureManager not configured.");
+	}
+	auto* backend = texmanager->backend();
+	if (!backend) {
+		throw BMSX_RUNTIME_ERROR("[VDP] Backend not configured.");
+	}
+	for (auto& slot : m_vramSlots) {
+		if (slot.kind != VramSlotKind::Asset) {
+			continue;
+		}
+		auto& entry = m_memory.getAssetEntry(slot.assetId);
+		if (entry.regionW == 0 || entry.regionH == 0) {
+			throw BMSX_RUNTIME_ERROR("[VDP] Snapshot capture slot missing dimensions for '" + slot.textureKey + "'.");
+		}
+		const size_t bytes = static_cast<size_t>(entry.regionW) * static_cast<size_t>(entry.regionH) * 4u;
+		slot.contextSnapshot.resize(bytes);
+		TextureHandle handle = texmanager->getTextureByUri(slot.textureKey);
+		if (!handle) {
+			throw BMSX_RUNTIME_ERROR("[VDP] Snapshot capture texture missing for '" + slot.textureKey + "'.");
+		}
+		backend->readTextureRegion(
+			handle,
+			slot.contextSnapshot.data(),
+			static_cast<i32>(entry.regionW),
+			static_cast<i32>(entry.regionH),
+			0,
+			0,
+			{}
+		);
+	}
+}
+
 void VDP::flushAssetEdits() {
 	auto dirty = m_memory.consumeDirtyAssets();
 	if (dirty.empty()) {
@@ -971,6 +1006,8 @@ void VDP::ensureAtlasSlotTexture(const Memory::AssetEntry& entry, const std::str
 		throw BMSX_RUNTIME_ERROR("[VDP] GameView not configured.");
 	}
 	auto& slot = getVramSlotByTextureKey(textureKey);
+	const size_t snapshotBytes = static_cast<size_t>(entry.regionW) * static_cast<size_t>(entry.regionH) * 4u;
+	const bool restoreSnapshot = slot.contextSnapshot.size() == snapshotBytes;
 	VramGarbageStream stream{m_vramMachineSeed, m_vramBootSeed, VRAM_GARBAGE_SPACE_SALT, entry.baseAddr};
 	fillVramGarbageScratch(m_vramSeedPixel.data(), m_vramSeedPixel.size(), stream);
 	TextureParams params;
@@ -989,6 +1026,18 @@ void VDP::ensureAtlasSlotTexture(const Memory::AssetEntry& entry, const std::str
 	);
 	view->textures[textureKey] = handle;
 	setSlotTextureSize(textureKey, entry.regionW, entry.regionH);
+	if (restoreSnapshot) {
+		texmanager->updateTexture(
+			handle,
+			slot.contextSnapshot.data(),
+			static_cast<i32>(entry.regionW),
+			static_cast<i32>(entry.regionH),
+			params
+		);
+		slot.contextSnapshot.clear();
+		invalidateReadCache(slot.surfaceId);
+		return;
+	}
 	seedVramSlotTexture(slot);
 }
 

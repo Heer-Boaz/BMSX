@@ -156,6 +156,8 @@ static void* g_egl_lib = NULL;
 static void* g_gles_lib = NULL;
 static unsigned g_geom_base_w = 0;
 static unsigned g_geom_base_h = 0;
+static unsigned g_render_target_w = 0;
+static unsigned g_render_target_h = 0;
 static float g_geom_aspect = 0.0f;
 static bool g_geom_dirty = false;
 static uint64_t g_frame_usec = 20000;
@@ -510,8 +512,10 @@ static void poll_input_devices_sdl(void);
 #endif
 
 static uintptr_t RETRO_CALLCONV hw_get_current_framebuffer(void) {
-	unsigned target_w = g_geom_base_w ? g_geom_base_w : g_last_video_w;
-	unsigned target_h = g_geom_base_h ? g_geom_base_h : g_last_video_h;
+	unsigned target_w = g_render_target_w ? g_render_target_w : g_geom_base_w;
+	unsigned target_h = g_render_target_h ? g_render_target_h : g_geom_base_h;
+	if (target_w == 0) target_w = g_last_video_w;
+	if (target_h == 0) target_h = g_last_video_h;
 	if (target_w == 0) target_w = 256;
 	if (target_h == 0) target_h = 240;
 	if (g_geom_dirty || g_hw_tex == 0 || g_hw_tex_w != target_w || g_hw_tex_h != target_h) {
@@ -548,6 +552,8 @@ static void update_geometry(const struct retro_game_geometry* geom) {
 	if (geom->base_width > 0 && geom->base_height > 0) {
 		g_geom_base_w = geom->base_width;
 		g_geom_base_h = geom->base_height;
+		g_render_target_w = geom->base_width;
+		g_render_target_h = geom->base_height;
 	}
 	if (geom->aspect_ratio > 0.0f) {
 		g_geom_aspect = geom->aspect_ratio;
@@ -755,6 +761,7 @@ static bool hw_ensure_fbo(unsigned width, unsigned height) {
 	glBindFramebuffer_ptr(GL_FRAMEBUFFER, 0);
 	g_hw_tex_w = width;
 	g_hw_tex_h = height;
+	fprintf(stderr, "[libretro-host] hw render target %ux%u\n", width, height);
 	return true;
 }
 
@@ -2145,10 +2152,13 @@ static bool hw_present_frame(unsigned src_w, unsigned src_h) {
 	if (!g_hw_tex) {
 		return false;
 	}
-	if (src_w == 0) src_w = g_hw_tex_w;
-	if (src_h == 0) src_h = g_hw_tex_h;
+	const unsigned present_w = g_hw_tex_w ? g_hw_tex_w : src_w;
+	const unsigned present_h = g_hw_tex_h ? g_hw_tex_h : src_h;
+	if (present_w == 0 || present_h == 0) {
+		return false;
+	}
 	int dst_x = 0, dst_y = 0, dst_w = 0, dst_h = 0;
-	compute_dst_rect(g_fb.width, g_fb.height, src_w, src_h, &dst_x, &dst_y, &dst_w, &dst_h);
+	compute_dst_rect(g_fb.width, g_fb.height, present_w, present_h, &dst_x, &dst_y, &dst_w, &dst_h);
 	if (dst_w <= 0 || dst_h <= 0) {
 		return false;
 	}
@@ -2668,6 +2678,15 @@ static void video_cb(const void* data, unsigned width, unsigned height, size_t p
 		if (width > 0 && height > 0) {
 			g_last_video_w = width;
 			g_last_video_h = height;
+			if ((g_geom_base_w == 0 || g_geom_base_h == 0) &&
+					(g_render_target_w != width || g_render_target_h != height)) {
+				g_render_target_w = width;
+				g_render_target_h = height;
+				if (g_geom_aspect <= 0.0f) {
+					g_geom_aspect = (float)width / (float)height;
+				}
+				g_geom_dirty = true;
+			}
 		}
 		if (!g_menu_active) {
 			fps_update();

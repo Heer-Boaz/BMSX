@@ -33,6 +33,7 @@ public:
 
 	void registerImageAssets(RuntimeAssets& assets, bool keepDecodedData);
 	void uploadAtlasTextures();
+	void captureVramTextureSnapshots();
 	void flushAssetEdits();
 	void applyAtlasSlotMapping(const std::array<i32, 2>& slots);
 	void attachImgDecController(ImgDecController& controller);
@@ -67,6 +68,7 @@ private:
 		uint32_t surfaceId = 0;
 		uint32_t textureWidth = 0;
 		uint32_t textureHeight = 0;
+		std::vector<u8> contextSnapshot;
 	};
 	struct VramGarbageStream {
 		uint32_t machineSeed = 0;

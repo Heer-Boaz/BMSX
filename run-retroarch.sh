@@ -39,4 +39,4 @@ cp "$CORE_SRC" "$CORE_DST"
 
 export LIBRETRO_SYSTEM_DIRECTORY="${LIBRETRO_SYSTEM_DIRECTORY:-$ROOT_DIR/dist}"
 
-gdb --batch -ex "set debuginfod enabled off" -ex "set pagination off" -ex "run" -ex "bt" --args "$RETROARCH_BIN" --appendconfig="$LOCAL_CFG" -L "$CORE_DST" ${ROM_PATH:+"$ROM_PATH"}
+gdb --batch --return-child-result -ex "set debuginfod enabled off" -ex "set pagination off" -ex "run" --args "$RETROARCH_BIN" --appendconfig="$LOCAL_CFG" -L "$CORE_DST" ${ROM_PATH:+"$ROM_PATH"}

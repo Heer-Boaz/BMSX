@@ -253,6 +253,7 @@ private:
 	GameView::DitherType m_dither_type = GameView::DitherType::RGB565;
 	bool m_frameskip_enabled = false;
 	bool m_frameskip_next = false;
+	bool m_render_assets_need_refresh = true;
 
 	// Controller configuration
 	std::array<unsigned, 4> m_controller_devices{};

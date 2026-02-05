@@ -8,6 +8,7 @@
 #include "../../input/gamepadinput.h"
 #include "../../input/keyboardinput.h"
 #include "../../render/backend/renderpasslib.h"
+#include "../../render/texturemanager.h"
 #include "../../utils/mem_snapshot.h"
 #include "../../emulator/runtime.h"
 #if BMSX_ENABLE_GLES2
@@ -175,8 +176,11 @@ void LibretroPlatform::onContextReset() {
 	registry->registerBuiltin();
 	view->setPipelineRegistry(std::move(registry));
 	view->rebuildGraph();
-	log(RETRO_LOG_INFO, "[BMSX] onContextReset: refresh assets\n");
-	m_engine->refreshRenderAssets();
+	if (m_render_assets_need_refresh) {
+		log(RETRO_LOG_INFO, "[BMSX] onContextReset: refresh assets\n");
+		m_engine->refreshRenderAssets();
+		m_render_assets_need_refresh = false;
+	}
 	log(RETRO_LOG_INFO, "[BMSX] onContextReset: done\n");
 #else
 	throw BMSX_RUNTIME_ERROR("[LibretroPlatform] OpenGLES2 backend disabled at compile time.");
@@ -187,6 +191,11 @@ void LibretroPlatform::onContextDestroy() {
 #if BMSX_ENABLE_GLES2
 	auto* view = m_engine->view();
 	auto* backend = static_cast<OpenGLES2Backend*>(view->backend());
+	if (!m_render_assets_need_refresh && Runtime::hasInstance()) {
+		Runtime::instance().captureVramTextureSnapshots();
+	}
+	m_engine->texmanager()->clear();
+	m_render_assets_need_refresh = true;
 	SpritesPipeline::shutdownGLES2(backend);
 	CRTPipeline::shutdownGLES2(backend);
 	backend->onContextDestroy();

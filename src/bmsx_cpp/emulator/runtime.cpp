@@ -1040,6 +1040,10 @@ void Runtime::uploadAtlasTextures() {
 	m_vdp.uploadAtlasTextures();
 }
 
+void Runtime::captureVramTextureSnapshots() {
+	m_vdp.captureVramTextureSnapshots();
+}
+
 void Runtime::flushAssetEdits() {
 	m_vdp.flushAssetEdits();
 }
