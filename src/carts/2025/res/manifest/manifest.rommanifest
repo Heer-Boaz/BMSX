@@ -10,7 +10,7 @@ machine:
     ufps: 50000000 # 50 FPS
     specs:
         cpu:
-            cpu_freq_hz: 500000 # 500 kHz
+            cpu_freq_hz: 10000000 # 10 MHz
             imgdec_bytes_per_sec: 26214400 # 25 MB/s
         dma:
             dma_bytes_per_sec_iso: 8388608 # 8 MB/s

@@ -515,12 +515,12 @@
 			}
 		},
 		{
-			"label": "LIBRETRO BUILD: SNES Mini (debug)",
+			"label": "LIBRETRO BUILD: SNES Mini (release)",
 			"type": "shell",
 			"command": "npm",
 			"args": [
 				"run",
-				"build:libretro-snesmini:debug"
+				"build:libretro-snesmini"
 			],
 			"problemMatcher": [],
 			"group": "build",
@@ -540,12 +540,12 @@
 			}
 		},
 		{
-			"label": "LIBRETRO BUILD: HOST SNES Mini (debug)",
+			"label": "LIBRETRO BUILD: HOST SNES Mini (release)",
 			"type": "shell",
 			"command": "npm",
 			"args": [
 				"run",
-				"build:libretro-host-snesmini:debug"
+				"build:libretro-host-snesmini"
 			],
 			"problemMatcher": [],
 			"group": "build",

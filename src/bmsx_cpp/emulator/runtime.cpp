@@ -32,29 +32,17 @@ inline double to_ms(std::chrono::steady_clock::duration duration) {
 	return std::chrono::duration<double, std::milli>(duration).count();
 }
 
-#if defined(__clang__)
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wpedantic"
-#elif defined(__GNUC__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wpedantic"
-#endif
-using i128 = __int128_t;
-#if defined(__clang__)
-#pragma clang diagnostic pop
-#elif defined(__GNUC__)
-#pragma GCC diagnostic pop
-#endif
-
 constexpr size_t CART_ROM_HEADER_SIZE = 32;
 constexpr std::array<u8, CART_ROM_HEADER_SIZE> CART_ROM_EMPTY_HEADER = {};
 }
 
 uint32_t Runtime::RateBudget::calcBytesForCycles(i64 cpuHz, i64 cycles) {
-	const i128 numerator = static_cast<i128>(bytesPerSec) * static_cast<i128>(cycles)
-		+ static_cast<i128>(carry);
-	const i64 out = static_cast<i64>(numerator / cpuHz);
-	carry = static_cast<i64>(numerator % cpuHz);
+	const i64 wholeBytesPerCycle = bytesPerSec / cpuHz;
+	const i64 remainderBytesPerCycle = bytesPerSec % cpuHz;
+	const i64 baseOut = wholeBytesPerCycle * cycles;
+	const i64 remainderNumerator = remainderBytesPerCycle * cycles + carry;
+	const i64 out = baseOut + (remainderNumerator / cpuHz);
+	carry = remainderNumerator % cpuHz;
 	const i64 maxValue = static_cast<i64>(std::numeric_limits<uint32_t>::max());
 	const i64 clamped = out > maxValue ? maxValue : out;
 	return static_cast<uint32_t>(clamped);

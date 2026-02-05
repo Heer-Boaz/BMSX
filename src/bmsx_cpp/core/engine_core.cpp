@@ -301,15 +301,14 @@ i64 resolveVblankCycles(const RomManifest& manifest, int cyclesPerFrame) {
 	return cycles;
 }
 
-using i128 = __int128_t;
-
 i64 hzToScaledHz(f64 hz) {
 	return static_cast<i64>(std::llround(hz * static_cast<f64>(HZ_SCALE)));
 }
 
 int calcCyclesPerFrame(i64 cpuHz, i64 refreshHzScaled) {
-	const i128 numerator = static_cast<i128>(cpuHz) * static_cast<i128>(HZ_SCALE);
-	const i64 cyclesPerFrame = static_cast<i64>(numerator / static_cast<i128>(refreshHzScaled));
+	const i64 wholeCycles = (cpuHz / refreshHzScaled) * HZ_SCALE;
+	const i64 remainderCycles = ((cpuHz % refreshHzScaled) * HZ_SCALE) / refreshHzScaled;
+	const i64 cyclesPerFrame = wholeCycles + remainderCycles;
 	return static_cast<int>(cyclesPerFrame);
 }
 
@@ -1094,6 +1093,13 @@ bool EngineCore::resetLoadedRom() {
 
 void EngineCore::uploadTexturesToBackend(bool includeCartAssets) {
 	if (!m_view || !m_view->backend() || !m_texture_manager) {
+		return;
+	}
+
+	// Context reset can happen before any ROM/system program is booted.
+	// In that phase there is no Runtime instance yet, so there is no asset
+	// memory to upload from.
+	if (!Runtime::hasInstance()) {
 		return;
 	}
 

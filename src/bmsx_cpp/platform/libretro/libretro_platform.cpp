@@ -158,18 +158,26 @@ void LibretroPlatform::setHwRenderCallbacks(retro_hw_get_current_framebuffer_t g
 
 void LibretroPlatform::onContextReset() {
 #if BMSX_ENABLE_GLES2
+	log(RETRO_LOG_INFO, "[BMSX] onContextReset: begin\n");
 	auto* view = m_engine->view();
 	auto* backend = static_cast<OpenGLES2Backend*>(view->backend());
+	log(RETRO_LOG_INFO, "[BMSX] onContextReset: set framebuffer getter\n");
 	backend->setFramebufferGetter(m_hw_get_current_framebuffer);
+	log(RETRO_LOG_INFO, "[BMSX] onContextReset: backend reset\n");
 	backend->onContextReset();
+	log(RETRO_LOG_INFO, "[BMSX] onContextReset: set dither\n");
 	setDitherType(m_dither_type);
+	log(RETRO_LOG_INFO, "[BMSX] onContextReset: update backend host\n");
 	static_cast<LibretroGameViewHost*>(m_gameview_host.get())->updateBackend(backend);
 
+	log(RETRO_LOG_INFO, "[BMSX] onContextReset: rebuild render graph\n");
 	auto registry = std::make_unique<RenderPassLibrary>(backend);
 	registry->registerBuiltin();
 	view->setPipelineRegistry(std::move(registry));
 	view->rebuildGraph();
+	log(RETRO_LOG_INFO, "[BMSX] onContextReset: refresh assets\n");
 	m_engine->refreshRenderAssets();
+	log(RETRO_LOG_INFO, "[BMSX] onContextReset: done\n");
 #else
 	throw BMSX_RUNTIME_ERROR("[LibretroPlatform] OpenGLES2 backend disabled at compile time.");
 #endif

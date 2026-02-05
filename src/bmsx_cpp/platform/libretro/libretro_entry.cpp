@@ -1043,6 +1043,8 @@ static void request_hw_context_for_backend(bmsx::BackendType backend) {
 		return;
 	}
 	g_hw_render_supported = true;
+	g_hw_context_pending = true;
+	g_hw_context_ready = false;
 	g_hw_render_failure_reason.clear();
 }
 
@@ -1218,24 +1220,9 @@ void retro_init(void) {
 	g_has_pending_frame_time = false;
 	}
 	
-	if (isHardwareBackendActive() && g_hw_context_pending) {
-	try {
-		g_platform->onContextReset();
-		g_hw_context_ready = true;
-		g_hw_render_failure_reason.clear();
-	} catch (const std::exception& err) {
-		logging.log(RETRO_LOG_ERROR,
-					"[BMSX] %s context reset exception: %s\n",
-					backend_label(g_active_backend),
-					err.what());
-		g_hw_render_failure_reason = err.what();
-		const std::string reason =
-			std::string("[BMSX] ") + backend_label(g_active_backend) +
-			" context reset failed: " + err.what();
-		handle_backend_fallback(g_active_backend, reason.c_str());
-	}
-	g_hw_context_pending = false;
-	}
+	// Defer actual context reset to retro_run. Some frontends/devices (notably
+	// older embedded hosts) are not stable when heavy GL init work is done
+	// directly in the context_reset callback/init path.
 }
 
 void retro_deinit(void) {
@@ -1378,6 +1365,24 @@ void retro_reset(void) {
 
 void retro_run(void) {
 	try_update_backend_option();
+	if (isHardwareBackendActive() && g_hw_context_pending && g_platform) {
+	try {
+		g_platform->onContextReset();
+		g_hw_context_ready = true;
+		g_hw_context_pending = false;
+		g_hw_render_failure_reason.clear();
+	} catch (const std::exception& err) {
+		logging.log(RETRO_LOG_ERROR,
+					"[BMSX] %s context reset exception: %s\n",
+					backend_label(g_active_backend),
+					err.what());
+		g_hw_render_failure_reason = err.what();
+		const std::string reason =
+			std::string("[BMSX] ") + backend_label(g_active_backend) +
+			" context reset failed: " + err.what();
+		handle_backend_fallback(g_active_backend, reason.c_str());
+	}
+	}
 	if (isHardwareBackendActive() && !g_hw_context_ready) {
 	logging.log(RETRO_LOG_WARN, "[BMSX] retro_run: HW backend active but context not ready. g_hw_context_pending=%d\n", g_hw_context_pending);
 	const std::string reason =
@@ -1695,27 +1700,6 @@ static void hw_context_reset() {
 	if (!g_hw_render_requested) {
 	logging.log(RETRO_LOG_INFO, "[BMSX] hw_context_reset ignored (not requested)\n");
 	return;
-	}
-	if (g_platform) {
-	try {
-		g_platform->onContextReset();
-		g_hw_context_ready = true;
-		g_hw_context_pending = false;
-		g_hw_render_failure_reason.clear();
-		logging.log(RETRO_LOG_INFO, "[BMSX] hw_context_reset success. g_hw_context_ready=true\n");
-		return;
-	} catch (const std::exception& err) {
-		logging.log(RETRO_LOG_ERROR,
-					"[BMSX] %s context reset exception: %s\n",
-					backend_label(g_active_backend),
-					err.what());
-		g_hw_render_failure_reason = err.what();
-		const std::string reason =
-			std::string("[BMSX] ") + backend_label(g_active_backend) +
-			" context reset failed: " + err.what();
-		handle_backend_fallback(g_active_backend, reason.c_str());
-		return;
-	}
 	}
 	g_hw_context_pending = true;
 	g_hw_context_ready = false;
