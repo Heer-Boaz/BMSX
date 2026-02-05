@@ -123,7 +123,7 @@ static const unsigned kAudioPeriodFrames = 1024;
 static const unsigned kAudioPeriodCount = 4;
 static const unsigned kAudioPrimePeriods = 4;
 static const int kAudioThreadPriority = 20;
-static const unsigned kMaxCatchUpFrames = 4;
+static const uint64_t kFrameScheduleResyncNs = 100000000ull;
 static const int64_t kHzScale = 1000000ll;
 
 static char g_system_dir[1024] = "";
@@ -662,7 +662,11 @@ static bool hw_init_blitter(void) {
 		"  v_uv = a_uv;\n"
 		"}\n";
 	static const char* k_fs =
+		"#ifdef GL_FRAGMENT_PRECISION_HIGH\n"
+		"precision highp float;\n"
+		"#else\n"
 		"precision mediump float;\n"
+		"#endif\n"
 		"varying vec2 v_uv;\n"
 		"uniform sampler2D u_tex;\n"
 		"uniform float u_flip_y;\n"
@@ -772,6 +776,21 @@ static void compute_dst_rect(int fb_w, int fb_h, unsigned src_w, unsigned src_h,
 	if (dst_h > fb_h) {
 		dst_h = fb_h;
 		dst_w = (int)(fb_h * aspect + 0.5);
+	}
+	const double src_aspect = (double)src_w / (double)src_h;
+	if (fabs(aspect - src_aspect) <= 0.01) {
+		const double scale_x = (double)dst_w / (double)src_w;
+		const double scale_y = (double)dst_h / (double)src_h;
+		const double min_scale = scale_x < scale_y ? scale_x : scale_y;
+		const int integer_scale = (int)min_scale;
+		if (integer_scale >= 1) {
+			const int snapped_w = (int)src_w * integer_scale;
+			const int snapped_h = (int)src_h * integer_scale;
+			if (snapped_w <= fb_w && snapped_h <= fb_h) {
+				dst_w = snapped_w;
+				dst_h = snapped_h;
+			}
+		}
 	}
 	if (dst_w < 1) dst_w = 1;
 	if (dst_h < 1) dst_h = 1;
@@ -4084,39 +4103,33 @@ int main(int argc, char** argv) {
 
 	while (!g_should_quit) {
 		uint64_t now_ns = monotonic_ns();
-		unsigned frames_to_run = 1;
 		if (!g_menu_active && now_ns > next_frame_ns) {
-			uint64_t lag_ns = now_ns - next_frame_ns;
-			unsigned catch_up = (unsigned)(lag_ns / g_frame_ns) + 1;
-			if (catch_up > kMaxCatchUpFrames) {
-				catch_up = kMaxCatchUpFrames;
+			const uint64_t lag_ns = now_ns - next_frame_ns;
+			if (lag_ns > kFrameScheduleResyncNs) {
+				next_frame_ns = now_ns;
 			}
-			frames_to_run = catch_up;
 		}
-		for (unsigned i = 0; i < frames_to_run && !g_should_quit; ++i) {
-			g_drop_video = (frames_to_run > 1) && (i + 1 < frames_to_run);
-			if (g_has_frame_time_cb) {
-				g_frame_time_cb.callback((retro_usec_t)g_frame_usec);
-			}
-			if (g_menu_active) {
-				input_poll_cb();
-				if (g_use_hw_render) {
-					menu_render_hw();
-					eglSwapBuffers_ptr(g_egl_display, g_egl_surface);
-				} else {
-					menu_render_software();
-#ifdef BMSX_LIBRETRO_HOST_SDL
-					if (g_use_sdl) {
-						sdl_present();
-					}
-#endif
-				}
+		if (g_has_frame_time_cb) {
+			g_frame_time_cb.callback((retro_usec_t)g_frame_usec);
+		}
+		if (g_menu_active) {
+			input_poll_cb();
+			if (g_use_hw_render) {
+				menu_render_hw();
+				eglSwapBuffers_ptr(g_egl_display, g_egl_surface);
 			} else {
-				core.retro_run();
+				menu_render_software();
+#ifdef BMSX_LIBRETRO_HOST_SDL
+				if (g_use_sdl) {
+					sdl_present();
+				}
+#endif
 			}
+		} else {
+			core.retro_run();
 		}
 		g_drop_video = false;
-		next_frame_ns += g_frame_ns * (uint64_t)frames_to_run;
+		next_frame_ns += g_frame_ns;
 		now_ns = monotonic_ns();
 		if (now_ns < next_frame_ns) {
 			uint64_t sleep_ns = next_frame_ns - now_ns;
