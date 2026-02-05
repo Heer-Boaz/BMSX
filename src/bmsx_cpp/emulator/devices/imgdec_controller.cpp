@@ -74,6 +74,7 @@ void ImgDecController::reset() {
 	m_decodeQueued = false;
 	m_decodeWidth = 0;
 	m_decodeHeight = 0;
+	m_signalIrq = false;
 	m_queuedJobs.clear();
 	m_activeJob.reset();
 	m_memory.writeValue(IO_IMG_SRC, valueNumber(0.0));
@@ -130,7 +131,7 @@ void ImgDecController::tryStart() {
 			finishError(std::current_exception());
 			return;
 		}
-		startJob(std::move(buffer), dst, cap, src, len, std::nullopt);
+		startJob(std::move(buffer), dst, cap, src, len, std::nullopt, true);
 		return;
 	}
 	if (m_active) {
@@ -142,13 +143,14 @@ void ImgDecController::tryStart() {
 	ImgDecJob job = std::move(m_queuedJobs.front());
 	m_queuedJobs.pop_front();
 	const uint32_t len = static_cast<uint32_t>(job.buffer.size());
-	startJob(std::move(job.buffer), job.dst, job.cap, 0u, len, std::move(job));
+	startJob(std::move(job.buffer), job.dst, job.cap, 0u, len, std::move(job), false);
 }
 
-void ImgDecController::startJob(std::vector<uint8_t>&& buffer, uint32_t dst, uint32_t cap, uint32_t src, uint32_t len, std::optional<ImgDecJob> job) {
+void ImgDecController::startJob(std::vector<uint8_t>&& buffer, uint32_t dst, uint32_t cap, uint32_t src, uint32_t len, std::optional<ImgDecJob> job, bool signalIrq) {
 	m_pendingResult.reset();
 	m_pendingError = nullptr;
 	m_pendingEntry.reset();
+	m_signalIrq = signalIrq;
 	m_status = IMG_STATUS_BUSY;
 	m_memory.writeValue(IO_IMG_STATUS, valueNumber(static_cast<double>(m_status)));
 	m_memory.writeValue(IO_IMG_WRITTEN, valueNumber(0.0));
@@ -319,7 +321,10 @@ void ImgDecController::finishSuccess(bool clipped) {
 		m_status |= IMG_STATUS_CLIPPED;
 	}
 	m_memory.writeValue(IO_IMG_STATUS, valueNumber(static_cast<double>(m_status)));
-	m_raiseIrq(IRQ_IMG_DONE);
+	if (m_signalIrq) {
+		m_raiseIrq(IRQ_IMG_DONE);
+	}
+	m_signalIrq = false;
 	if (activeJob && activeJob->resolve) {
 		activeJob->resolve(m_decodeWidth, m_decodeHeight, clipped);
 	}
@@ -337,7 +342,10 @@ void ImgDecController::finishError(std::exception_ptr error) {
 	m_decodePixels.clear();
 	m_status = (m_status & ~IMG_STATUS_BUSY) | IMG_STATUS_DONE | IMG_STATUS_ERROR;
 	m_memory.writeValue(IO_IMG_STATUS, valueNumber(static_cast<double>(m_status)));
-	m_raiseIrq(IRQ_IMG_ERROR);
+	if (m_signalIrq) {
+		m_raiseIrq(IRQ_IMG_ERROR);
+	}
+	m_signalIrq = false;
 	if (!error) {
 		error = std::make_exception_ptr(std::runtime_error("[ImgDec] Decode failed."));
 	}

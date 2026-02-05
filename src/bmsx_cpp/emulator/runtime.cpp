@@ -788,6 +788,7 @@ void Runtime::applyState(const RuntimeState& state) {
 		m_cpu.globals->set(key, value);
 	}
 	flushAssetEdits();
+	resetRenderBuffers();
 }
 
 void Runtime::applyAtlasSlotMapping(const std::array<i32, 2>& slots) {
@@ -842,6 +843,14 @@ void Runtime::resetHardwareState() {
 	m_dmaController.reset();
 	m_imgDecController.reset();
 	resetVblankState();
+	resetRenderBuffers();
+}
+
+void Runtime::resetRenderBuffers() {
+	RenderQueues::clearBackQueues();
+	RenderQueues::beginSpriteQueue();
+	RenderQueues::beginMeshQueue();
+	RenderQueues::beginParticleQueue();
 }
 
 void Runtime::setTransferRates(i64 imgDecBytesPerSec, i64 dmaBytesPerSecIso, i64 dmaBytesPerSecBulk) {

@@ -266,6 +266,7 @@ public:
 	i64 cpuHz() const { return m_cpuHz; }
 	void setVblankCycles(int cycles);
 	void resetHardwareState();
+	void resetRenderBuffers();
 	i64 updateCountTotal() const { return m_debugUpdateCountTotal; }
 	void setCycleBudgetPerFrame(int budget);
 	void grantCycleBudget(int baseBudget, int carryBudget);

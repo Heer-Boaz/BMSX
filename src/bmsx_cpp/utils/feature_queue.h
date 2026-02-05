@@ -52,6 +52,8 @@ public:
 		m_back.clear(); // reset active window for next frame submissions
 	}
 
+	void clearBack() { m_back.clear(); }
+
 	void forEachFront(const std::function<void(T&, size_t)>& fn) { m_front.forEach(fn); }
 	void forEachFront(const std::function<void(const T&, size_t)>& fn) const { m_front.forEach(fn); }
 	void forEachBack(const std::function<void(T&, size_t)>& fn) { m_back.forEach(fn); }

@@ -49,7 +49,7 @@ private:
 	};
 
 	void tryStart();
-	void startJob(std::vector<uint8_t>&& buffer, uint32_t dst, uint32_t cap, uint32_t src, uint32_t len, std::optional<ImgDecJob> job);
+	void startJob(std::vector<uint8_t>&& buffer, uint32_t dst, uint32_t cap, uint32_t src, uint32_t len, std::optional<ImgDecJob> job, bool signalIrq);
 	ImgDecEntry resolveSlotEntry(uint32_t dst);
 	void beginDecode(DecodedImage&& result, const ImgDecEntry& entry);
 	void advanceDecode();
@@ -75,6 +75,7 @@ private:
 	uint64_t m_decodeToken = 0;
 	std::deque<ImgDecJob> m_queuedJobs;
 	std::optional<ImgDecJob> m_activeJob;
+	bool m_signalIrq = false;
 	std::unordered_map<uint32_t, Memory::ImageWriteEntry*> m_externalSlots;
 	Memory& m_memory;
 	DmaController& m_dma;

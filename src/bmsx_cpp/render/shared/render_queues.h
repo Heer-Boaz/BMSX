@@ -97,6 +97,11 @@ void forEachSprite(const std::function<void(const SpriteQueueItem&, size_t)>& fn
 void sortSpriteQueue(const std::function<bool(const SpriteQueueItem&, const SpriteQueueItem&)>& compare);
 
 /**
+ * Clear all back queues and reset submission counters.
+ */
+void clearBackQueues();
+
+/**
  * Get sprite queue sizes for debugging.
  */
 size_t spriteQueueBackSize();

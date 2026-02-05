@@ -142,6 +142,14 @@ i32 beginSpriteQueue() {
 	return static_cast<i32>(s_spriteQueue.sizeFront());
 }
 
+void clearBackQueues() {
+	s_spriteSubmissionCounter = 0;
+	s_spriteItemPoolIndex = 0;
+	s_spriteQueue.clearBack();
+	s_meshQueue.clearBack();
+	s_particleQueue.clearBack();
+}
+
 void forEachSprite(const std::function<void(const SpriteQueueItem&, size_t)>& fn) {
 	s_spriteQueue.forEachFront([&fn](const SpriteQueueItem& item, size_t index) {
 		fn(item, index);
