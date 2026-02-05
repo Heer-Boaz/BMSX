@@ -2,10 +2,10 @@ import { $ } from '../../core/engine_core';
 
 import particleFS from '../3d/shaders/particle.frag.glsl';
 import particleVS from '../3d/shaders/particle.vert.glsl';
-import type { PassEncoder, RenderContext, RenderPassStateRegistry, TextureHandle } from '../backend/pipeline_interfaces';
+import type { PassEncoder, RenderContext, RenderPassStateRegistry } from '../backend/pipeline_interfaces';
 import { RenderPassLibrary } from '../backend/renderpasslib';
 import { ParticlePipelineState } from '../backend/pipeline_interfaces';
-import { TEXTURE_UNIT_PARTICLE } from '../backend/webgl/webgl.constants';
+import { TEXTURE_UNIT_ATLAS_ENGINE, TEXTURE_UNIT_ATLAS_PRIMARY, TEXTURE_UNIT_ATLAS_SECONDARY } from '../backend/webgl/webgl.constants';
 import { WebGLBackend } from '../backend/webgl/webgl_backend';
 import type { Camera } from './camera3d';
 import { M4 } from './math3d';
@@ -18,14 +18,16 @@ import {
 } from '../shared/render_queues';
 import type { ParticleRenderSubmission } from '../shared/render_types';
 import { updateFallbackCamera, FALLBACK_CAMERA } from '../shared/fallback_camera';
+import { ENGINE_ATLAS_INDEX, ENGINE_ATLAS_TEXTURE_KEY } from '../../rompack/rompack';
+import { resolveActiveCamera3D } from '../shared/hardware_camera';
 
 const camRight = new Float32Array(3);
 const camUp = new Float32Array(3);
 const MAX_PARTICLES = 1000;
-const INSTANCE_FLOATS = 8; // vec4(position+size) + vec4(color)
+const INSTANCE_FLOATS = 13; // vec4(position+size) + vec4(color) + vec4(uvrect) + atlasId
 const BYTES_PER_FLOAT = 4;
 const INSTANCE_BYTES = INSTANCE_FLOATS * BYTES_PER_FLOAT;
-let particleProgram: WebGLProgram; let vao: WebGLVertexArrayObject; let quadBuffer: WebGLBuffer; let instanceBuffers: WebGLBuffer[] = []; let viewProjLocation: WebGLUniformLocation; let cameraRightLocation: WebGLUniformLocation; let cameraUpLocation: WebGLUniformLocation; let textureLocation: WebGLUniformLocation; let ambientModeLocation: WebGLUniformLocation; let ambientFactorLocation: WebGLUniformLocation; let defaultTexture: TextureHandle; const instanceData = new Float32Array(MAX_PARTICLES * INSTANCE_FLOATS);
+let particleProgram: WebGLProgram; let vao: WebGLVertexArrayObject; let quadBuffer: WebGLBuffer; let instanceBuffers: WebGLBuffer[] = []; let viewProjLocation: WebGLUniformLocation; let cameraRightLocation: WebGLUniformLocation; let cameraUpLocation: WebGLUniformLocation; let texture0Location: WebGLUniformLocation; let texture1Location: WebGLUniformLocation; let texture2Location: WebGLUniformLocation; let ambientModeLocation: WebGLUniformLocation; let ambientFactorLocation: WebGLUniformLocation; const instanceData = new Float32Array(MAX_PARTICLES * INSTANCE_FLOATS);
 let framePage = 0;
 
 const fallbackParticleState: ParticlePipelineState = {
@@ -78,16 +80,6 @@ export function init(backend: WebGLBackend): void {
 	const quad = new Float32Array([-0.5, 0.5, 0.5, -0.5, 0.5, 0.5, -0.5, 0.5, -0.5, -0.5, 0.5, -0.5]);
 	quadBuffer = backend.createVertexBuffer(quad, 'static') as WebGLBuffer;
 	instanceBuffers = [0, 1, 2].map(() => backend.createVertexBuffer(new Float32Array(MAX_PARTICLES * INSTANCE_FLOATS), 'dynamic') as WebGLBuffer);
-	const whitePixel = new Uint8Array([255, 255, 255, 255]);
-	const tex = gl.createTexture()!;
-	gl.bindTexture(gl.TEXTURE_2D, tex);
-	gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, whitePixel);
-	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-	gl.bindTexture(gl.TEXTURE_2D, null);
-	defaultTexture = tex;
 }
 
 export function setupParticleUniforms(backend: WebGLBackend): void {
@@ -101,9 +93,14 @@ export function setupParticleUniforms(backend: WebGLBackend): void {
 	viewProjLocation = gl.getUniformLocation(particleProgram, 'u_viewProjection')!;
 	cameraRightLocation = gl.getUniformLocation(particleProgram, 'u_cameraRight')!;
 	cameraUpLocation = gl.getUniformLocation(particleProgram, 'u_cameraUp')!;
-	textureLocation = gl.getUniformLocation(particleProgram, 'u_texture')!;
+	texture0Location = gl.getUniformLocation(particleProgram, 'u_texture0')!;
+	texture1Location = gl.getUniformLocation(particleProgram, 'u_texture1')!;
+	texture2Location = gl.getUniformLocation(particleProgram, 'u_texture2')!;
 	ambientModeLocation = gl.getUniformLocation(particleProgram, 'u_particleAmbientMode')!;
 	ambientFactorLocation = gl.getUniformLocation(particleProgram, 'u_particleAmbientFactor')!;
+	gl.uniform1i(texture0Location, TEXTURE_UNIT_ATLAS_PRIMARY);
+	gl.uniform1i(texture1Location, TEXTURE_UNIT_ATLAS_SECONDARY);
+	gl.uniform1i(texture2Location, TEXTURE_UNIT_ATLAS_ENGINE);
 }
 
 export function setupParticleLocations(backend: WebGLBackend): void {
@@ -130,18 +127,23 @@ export function renderParticleBatch(runtime: ParticleRuntime, framebuffer: WebGL
 	const resolvedState = resolveParticleState(state, context);
 	camRight.set(resolvedState.camRight);
 	camUp.set(resolvedState.camUp);
-	const batches = new Map<TextureHandle, Map<string, ParticleRenderSubmission[]>>();
+	const batches = new Map<string, ParticleRenderSubmission[]>();
+	let needsEngineAtlas = false;
+	let needsSecondaryAtlas = false;
 	forEachParticleQueue((p) => {
 		if (!p) return;
-		const tex = (p.texture as TextureHandle) ?? defaultTexture;
-		let byAmbient = batches.get(tex);
-		if (!byAmbient) { byAmbient = new Map(); batches.set(tex, byAmbient); }
+		const atlasId = p.atlasBinding ?? 0;
+		if (atlasId === ENGINE_ATLAS_INDEX) {
+			needsEngineAtlas = true;
+		} else if (atlasId !== 0) {
+			needsSecondaryAtlas = true;
+		}
 		const mode = (p.ambient_mode ?? particleAmbientModeDefault) | 0;
 		const factor = Math.max(0, Math.min(1, p.ambient_factor ?? particleAmbientFactorDefault));
 		const key = mode + ':' + factor.toFixed(2);
-		let arr = byAmbient.get(key);
-		if (!arr) { arr = []; byAmbient.set(key, arr); }
-		arr.push({ ...p, ambient_mode: mode as 0 | 1, ambient_factor: factor, texture: tex });
+		let arr = batches.get(key);
+		if (!arr) { arr = []; batches.set(key, arr); }
+		arr.push(p);
 	});
 	if (!Number.isFinite(resolvedState.width) || !Number.isFinite(resolvedState.height)) {
 		throw new Error(`[ParticlesPipeline] Invalid viewport dimensions (${resolvedState.width}x${resolvedState.height}).`);
@@ -153,43 +155,72 @@ export function renderParticleBatch(runtime: ParticleRuntime, framebuffer: WebGL
 	gl.uniformMatrix4fv(viewProjLocation, false, resolvedState.viewProj);
 	gl.uniform3fv(cameraRightLocation, camRight);
 	gl.uniform3fv(cameraUpLocation, camUp);
-	gl.uniform1i(textureLocation, TEXTURE_UNIT_PARTICLE);
 	gl.uniform1i(ambientModeLocation, 0);
 	gl.uniform1f(ambientFactorLocation, 1.0);
+	const atlasPrimaryTex = resolvedState.atlasPrimaryTex;
+	if (!atlasPrimaryTex) {
+		throw new Error("[ParticlesPipeline] Texture '_atlas_primary' missing from view textures.");
+	}
+	const atlasSecondaryTex = resolvedState.atlasSecondaryTex;
+	const atlasEngineTex = resolvedState.atlasEngineTex;
+	if (needsSecondaryAtlas && !atlasSecondaryTex) {
+		throw new Error("[ParticlesPipeline] Texture '_atlas_secondary' missing from view textures.");
+	}
+	if (needsEngineAtlas && !atlasEngineTex) {
+		throw new Error(`[ParticlesPipeline] Texture '${ENGINE_ATLAS_TEXTURE_KEY}' missing from view textures.`);
+	}
+	context.activeTexUnit = TEXTURE_UNIT_ATLAS_PRIMARY;
+	context.bind2DTex(atlasPrimaryTex);
+	if (atlasSecondaryTex) {
+		context.activeTexUnit = TEXTURE_UNIT_ATLAS_SECONDARY;
+		context.bind2DTex(atlasSecondaryTex);
+	}
+	if (atlasEngineTex) {
+		context.activeTexUnit = TEXTURE_UNIT_ATLAS_ENGINE;
+		context.bind2DTex(atlasEngineTex);
+	}
 	backend.bindVertexArray(vao);
 	framePage = (framePage + 1) % 3;
 	const instBuf = instanceBuffers[framePage];
 	backend.bindArrayBuffer(instBuf);
-	backend.enableVertexAttrib(1); backend.enableVertexAttrib(2);
+	backend.enableVertexAttrib(1); backend.enableVertexAttrib(2); backend.enableVertexAttrib(3); backend.enableVertexAttrib(4);
 	backend.vertexAttribPointer(1, 4, gl.FLOAT, false, INSTANCE_BYTES, 0);
 	backend.vertexAttribDivisor(1, 1);
 	backend.vertexAttribPointer(2, 4, gl.FLOAT, false, INSTANCE_BYTES, 4 * BYTES_PER_FLOAT);
 	backend.vertexAttribDivisor(2, 1);
-	for (const [tex, byAmbient] of batches) {
-		for (const [ambKey, arr] of byAmbient) {
-			const batchCount = Math.min(arr.length, MAX_PARTICLES);
-			const [modeStr, factorStr] = ambKey.split(':');
-			gl.uniform1i(ambientModeLocation, parseInt(modeStr, 10) | 0);
-			gl.uniform1f(ambientFactorLocation, parseFloat(factorStr));
-			for (let i = 0; i < batchCount; i++) {
-				const p = arr[i]; if (!p) continue;
-				const base = i * INSTANCE_FLOATS;
-				instanceData[base] = p.position[0];
-				instanceData[base + 1] = p.position[1];
-				instanceData[base + 2] = p.position[2];
-				instanceData[base + 3] = p.size;
-				instanceData[base + 4] = p.color.r;
-				instanceData[base + 5] = p.color.g;
-				instanceData[base + 6] = p.color.b;
-				instanceData[base + 7] = p.color.a;
+	backend.vertexAttribPointer(3, 4, gl.FLOAT, false, INSTANCE_BYTES, 8 * BYTES_PER_FLOAT);
+	backend.vertexAttribDivisor(3, 1);
+	backend.vertexAttribPointer(4, 1, gl.FLOAT, false, INSTANCE_BYTES, 12 * BYTES_PER_FLOAT);
+	backend.vertexAttribDivisor(4, 1);
+	for (const [ambKey, arr] of batches) {
+		const batchCount = Math.min(arr.length, MAX_PARTICLES);
+		const [modeStr, factorStr] = ambKey.split(':');
+		gl.uniform1i(ambientModeLocation, parseInt(modeStr, 10) | 0);
+		gl.uniform1f(ambientFactorLocation, parseFloat(factorStr));
+		for (let i = 0; i < batchCount; i++) {
+			const p = arr[i]; if (!p) continue;
+			if (!p.uv0 || !p.uv1 || p.atlasBinding === undefined || p.atlasBinding === null) {
+				throw new Error('[ParticlesPipeline] Particle missing atlas UV data.');
 			}
-			backend.bindArrayBuffer(instBuf);
-			backend.updateVertexBuffer(instBuf, instanceData.subarray(0, batchCount * INSTANCE_FLOATS), 0);
-			context.activeTexUnit = TEXTURE_UNIT_PARTICLE;
-			context.bind2DTex(tex);
-			const passStub: PassEncoder = { fbo: framebuffer, desc: { label: 'particles' } };
-			backend.drawInstanced(passStub, 6, batchCount, 0, 0);
+			const base = i * INSTANCE_FLOATS;
+			instanceData[base] = p.position[0];
+			instanceData[base + 1] = p.position[1];
+			instanceData[base + 2] = p.position[2];
+			instanceData[base + 3] = p.size;
+			instanceData[base + 4] = p.color.r;
+			instanceData[base + 5] = p.color.g;
+			instanceData[base + 6] = p.color.b;
+			instanceData[base + 7] = p.color.a;
+			instanceData[base + 8] = p.uv0[0];
+			instanceData[base + 9] = p.uv0[1];
+			instanceData[base + 10] = p.uv1[0];
+			instanceData[base + 11] = p.uv1[1];
+			instanceData[base + 12] = p.atlasBinding;
 		}
+		backend.bindArrayBuffer(instBuf);
+		backend.updateVertexBuffer(instBuf, instanceData.subarray(0, batchCount * INSTANCE_FLOATS), 0);
+		const passStub: PassEncoder = { fbo: framebuffer, desc: { label: 'particles' } };
+		backend.drawInstanced(passStub, 6, batchCount, 0, 0);
 	}
 	backend.bindVertexArray(null);
 	gl.depthMask(true);
@@ -201,7 +232,11 @@ export function registerParticlesPass_WebGL(registry: RenderPassLibrary): void {
 		name: 'Particles',
 		vsCode: particleVS,
 		fsCode: particleFS,
-		bindingLayout: { uniforms: ['FrameUniforms'] },
+		bindingLayout: {
+			uniforms: ['FrameUniforms'],
+			textures: [{ name: 'u_texture0' }, { name: 'u_texture1' }, { name: 'u_texture2' }],
+			samplers: [{ name: 's_texture0' }, { name: 's_texture1' }, { name: 's_texture2' }],
+		},
 		bootstrap: (backend) => {
 			const webglBackend = backend as WebGLBackend;
 			init(webglBackend);
@@ -218,11 +253,25 @@ export function registerParticlesPass_WebGL(registry: RenderPassLibrary): void {
 		prepare: (_backend, _state) => {
 			const gv = $.view;
 			const width = gv.offscreenCanvasSize.x; const height = gv.offscreenCanvasSize.y;
-			const cam = $.world.activeCamera3D;
+			const cam = resolveActiveCamera3D();
+			const atlasPrimaryTex = gv.textures['_atlas_primary'];
+			if (!atlasPrimaryTex) {
+				throw new Error("[ParticlesPipeline] Texture '_atlas_primary' missing from view textures.");
+			}
+			const atlasSecondaryTex = gv.textures['_atlas_secondary'];
+			const atlasEngineTex = gv.textures[ENGINE_ATLAS_TEXTURE_KEY];
 			if (!cam) {
-				registry.setState('particles', updateOrthographicParticleState(width, height));
+				const state = updateOrthographicParticleState(width, height);
+				state.atlasPrimaryTex = atlasPrimaryTex;
+				state.atlasSecondaryTex = atlasSecondaryTex;
+				state.atlasEngineTex = atlasEngineTex;
+				registry.setState('particles', state);
 			} else {
-				registry.setState('particles', updateCameraParticleState(width, height, cam));
+				const state = updateCameraParticleState(width, height, cam);
+				state.atlasPrimaryTex = atlasPrimaryTex;
+				state.atlasSecondaryTex = atlasSecondaryTex;
+				state.atlasEngineTex = atlasEngineTex;
+				registry.setState('particles', state);
 			}
 		},
 	});

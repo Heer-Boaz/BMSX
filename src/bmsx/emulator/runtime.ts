@@ -41,6 +41,8 @@ import { StringHandleTable } from './string_memory';
 import type { TerminalMode } from './terminal_mode';
 import { RenderFacade } from './render_facade';
 import { Font, type FontVariant } from './font';
+import { beginMeshQueue, beginParticleQueue, beginSpriteQueue, clearBackQueues } from '../render/shared/render_queues';
+import { clearHardwareCamera } from '../render/shared/hardware_camera';
 import type { CartEditor } from './ide/cart_editor';
 import { type FaultSnapshot } from './ide/render/render_error_overlay';
 import { type LuaSemanticModel, type FileSemanticData } from './ide/semantic_model';
@@ -499,6 +501,14 @@ export class Runtime {
 		if (this.vblankStartCycle === 0) {
 			this.setVblankStatus(true);
 		}
+	}
+
+	public resetRenderBuffers(): void {
+		clearHardwareCamera();
+		clearBackQueues();
+		beginSpriteQueue();
+		beginMeshQueue();
+		beginParticleQueue();
 	}
 
 	private setVblankStatus(active: boolean): void {

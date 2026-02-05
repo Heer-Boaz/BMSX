@@ -84,6 +84,18 @@ export class Camera implements Oriented {
 		this._dirty = true;
 	}
 
+	public setExternalMatrices(view: Mat4Float32, proj: Mat4Float32, eyeX: number, eyeY: number, eyeZ: number): void {
+		this.position = V3.of(eyeX, eyeY, eyeZ);
+		this._view.set(view);
+		this._proj.set(proj);
+		M4.mulInto(this._vp, this._proj, this._view);
+		M4.invertRigidInto(this._invView, this._view);
+		M4.invertInto(this._invProj, this._proj);
+		M4.mulInto(this._invVP, this._invProj, this._invView);
+		extractFrustumPlanesInto(this._planesPacked, this._vp);
+		this._dirty = false;
+	}
+
 	@onload
 	private onLoad(): void {
 		// yaw/pitch/roll consistent afleiden uit _q voor UI

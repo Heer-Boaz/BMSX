@@ -21,6 +21,7 @@ import { taskGate, GateGroup } from '../core/taskgate';
 import { RenderFacade } from './render_facade';
 import { Runtime } from './runtime';
 import * as runtimeLuaPipeline from './runtime_lua_pipeline';
+import { setHardwareCamera } from '../render/shared/hardware_camera';
 import { listResources } from './workspace';
 import { getWorkspaceCachedSource } from './workspace_cache';
 import { buildDirtyFilePath } from './ide/workspace_storage';
@@ -305,6 +306,9 @@ export class Api {
 	private textCursorHomeX = 0;
 	private textCursorColorIndex = 0;
 	private renderBackend: RenderFacade = new RenderFacade();
+	private readonly cameraViewScratch = new Float32Array(16);
+	private readonly cameraProjScratch = new Float32Array(16);
+	private readonly cameraEyeScratch: vec3arr = [0, 0, 0];
 	private _runtime: Runtime;
 
 	constructor(options: ApiOptions) {
@@ -534,15 +538,27 @@ export class Api {
 	}
 
 	public put_particle(position: vec3arr, size: number, colorvalue: number | color, options?: Omit<ParticleRenderSubmission, 'position' | 'size' | 'color'>): void {
+		const texture = options?.texture ?? 'whitepixel';
 		const submission: ParticleRenderSubmission = {
 			position,
 			size,
 			color: this.resolve_color(colorvalue),
-			texture: options?.texture,
+			texture,
 			ambient_mode: options?.ambient_mode,
 			ambient_factor: options?.ambient_factor,
 		};
 		this.renderBackend.particle(submission);
+	}
+
+	public set_camera(view: Float32Array | number[], proj: Float32Array | number[], eye: vec3arr | number[]): void {
+		const viewMat = this.coerceMat4(view, this.cameraViewScratch, 'view');
+		const projMat = this.coerceMat4(proj, this.cameraProjScratch, 'proj');
+		const eyeVec = this.coerceVec3(eye, this.cameraEyeScratch, 'eye');
+		setHardwareCamera(viewMat, projMat, eyeVec[0], eyeVec[1], eyeVec[2]);
+	}
+
+	public skybox(posx: string, negx: string, posy: string, negy: string, posz: string, negz: string): void {
+		this.runtime.setSkyboxImages({ posx, negx, posy, negy, posz, negz });
 	}
 
 	public write(
@@ -808,6 +824,57 @@ export class Api {
 
 	private resolve_color(value: number | color): color {
 		return typeof value === 'number' ? this.palette_color(value) : value;
+	}
+
+	private coerceMat4(value: Float32Array | number[], out: Float32Array, label: string): Float32Array {
+		if (ArrayBuffer.isView(value)) {
+			const arr = value as ArrayLike<number>;
+			if (arr.length < 16) {
+				throw new Error(`set_camera ${label} matrix must have 16 elements.`);
+			}
+			for (let i = 0; i < 16; i += 1) {
+				const n = arr[i];
+				if (!Number.isFinite(n)) {
+					throw new Error(`set_camera ${label} matrix contains non-finite values.`);
+				}
+				out[i] = n;
+			}
+			return out;
+		}
+		if (Array.isArray(value)) {
+			if (value.length < 16) {
+				throw new Error(`set_camera ${label} matrix must have 16 elements.`);
+			}
+			for (let i = 0; i < 16; i += 1) {
+				const n = value[i];
+				if (!Number.isFinite(n)) {
+					throw new Error(`set_camera ${label} matrix contains non-finite values.`);
+				}
+				out[i] = n;
+			}
+			return out;
+		}
+		throw new Error(`set_camera ${label} matrix must be a Float32Array or number[] with 16 elements.`);
+	}
+
+	private coerceVec3(value: vec3arr | number[], out: vec3arr, label: string): vec3arr {
+		if (!Array.isArray(value) && !ArrayBuffer.isView(value)) {
+			throw new Error(`set_camera ${label} must be a vec3 array.`);
+		}
+		const arr = value as ArrayLike<number>;
+		if (arr.length < 3) {
+			throw new Error(`set_camera ${label} must have 3 elements.`);
+		}
+		const x = arr[0];
+		const y = arr[1];
+		const z = arr[2];
+		if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
+			throw new Error(`set_camera ${label} must contain finite numbers.`);
+		}
+		out[0] = x;
+		out[1] = y;
+		out[2] = z;
+		return out;
 	}
 
 	private resolve_write_context(font: Font, x: number, y: number, z: number, colorindex: number) {

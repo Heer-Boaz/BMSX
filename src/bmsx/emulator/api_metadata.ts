@@ -186,6 +186,27 @@ export const API_METHOD_METADATA = {
 		],
 		returnType: 'void',
 	},
+	set_camera: {
+		description: 'Sets the active 3D camera matrices for rendering.',
+		parameters: [
+			{ name: 'view', description: 'View matrix (16 numbers).' },
+			{ name: 'proj', description: 'Projection matrix (16 numbers).' },
+			{ name: 'eye', description: 'Camera position as a vec3 array.' },
+		],
+		returnType: 'void',
+	},
+	skybox: {
+		description: 'Sets the skybox cubemap image ids (posx, negx, posy, negy, posz, negz).',
+		parameters: [
+			{ name: 'posx', description: 'Positive X face image id.' },
+			{ name: 'negx', description: 'Negative X face image id.' },
+			{ name: 'posy', description: 'Positive Y face image id.' },
+			{ name: 'negy', description: 'Negative Y face image id.' },
+			{ name: 'posz', description: 'Positive Z face image id.' },
+			{ name: 'negz', description: 'Negative Z face image id.' },
+		],
+		returnType: 'void',
+	},
 	write: {
 		description: 'Writes text to the screen. If x/y are omitted, uses the current text cursor and auto-advances.',
 		parameters: [

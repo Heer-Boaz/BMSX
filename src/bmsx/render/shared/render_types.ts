@@ -1,7 +1,6 @@
 import type { BFont } from '../../core/font';
 import type { Mesh } from '../3d/mesh';
-import type { RectBounds, Polygon, vec2, vec3arr } from '../../rompack/rompack';
-import type { TextureHandle } from '../backend/pipeline_interfaces';
+import type { RectBounds, Polygon, vec2, vec2arr, vec3arr, asset_id } from '../../rompack/rompack';
 
 export type color = {
 	r: number;
@@ -69,7 +68,10 @@ export type ParticleRenderSubmission = {
 	position: vec3arr;
 	size: number;
 	color: color;
-	texture?: TextureHandle | WebGLTexture;
+	texture?: asset_id;
+	uv0?: vec2arr;
+	uv1?: vec2arr;
+	atlasBinding?: number;
 	ambient_mode?: 0 | 1;
 	ambient_factor?: number;
 	layer?: RenderLayer; // Currently unused

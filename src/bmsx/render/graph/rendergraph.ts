@@ -9,12 +9,12 @@
 import { $ } from '../../core/engine_core';
 import { taskGate } from '../../core/taskgate';
 import { color_arr } from '../../rompack/rompack';
-import { Camera } from '../3d/camera3d';
 import { GPUBackend, TextureHandle } from '../backend/pipeline_interfaces';
 import { RenderPassBuilder } from '../backend/renderpass_builder';
 import { checkWebGLError } from '../backend/webgl/webgl.helpers';
 import { WebGPUBackend, WebGPUPassEncoder } from '../backend/webgpu/webgpu_backend';
 import { GameView } from '../gameview';
+import { resolveActiveCamera3D } from '../shared/hardware_camera';
 
 // Internal graph texture handle. Named distinctly to avoid collision with existing TextureManager TextureHandle.
 export type RGTexHandle = number;
@@ -72,7 +72,7 @@ export function updateExternalFrameTiming(frameIndex: number, timeSeconds: numbe
 }
 
 export function buildFrameData(view: GameView): FrameData {
-	const mainCam = $.world.activeCamera3D as Camera;
+	const mainCam = resolveActiveCamera3D();
 	const views: View[] = [];
 	if (mainCam) {
 		const invView = mainCam.inverseView;

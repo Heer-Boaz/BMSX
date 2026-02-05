@@ -13,6 +13,7 @@ import { TextureKey } from '../texturemanager';
 import type { TextureSource } from '../../rompack/rompack';
 import { SkyboxImageIds } from '../shared/render_types';
 import { _skyTint, _skyExposure } from '../shared/render_queues';
+import { resolveActiveCamera3D } from '../shared/hardware_camera';
 
 let vaoSkybox: WebGLVertexArrayObject = null;
 let skyboxProgram: WebGLProgram;
@@ -171,7 +172,7 @@ export function registerSkyboxPass_WebGL(registry: RenderPassLibrary) {
 			init(backend as WebGLBackend);
 		},
 		writesDepth: false,
-		shouldExecute: () => !!$.world.activeCamera3D && !!$.view.skyboxFaceIds && !!skyboxKey,
+		shouldExecute: () => !!resolveActiveCamera3D() && !!$.view.skyboxFaceIds && !!skyboxKey,
 		exec: (backend, fbo, s) => {
 			const webglBackend = backend as WebGLBackend;
 			const runtime: SkyboxRuntime = { backend: webglBackend, gl: webglBackend.gl as WebGL2RenderingContext, context: $.view };
@@ -181,7 +182,7 @@ export function registerSkyboxPass_WebGL(registry: RenderPassLibrary) {
 			const gv = $.view;
 			if (!gv.skyboxFaceIds || !skyboxKey) return;
 			const width = gv.offscreenCanvasSize.x; const height = gv.offscreenCanvasSize.y;
-			const cam = $.world.activeCamera3D;
+			const cam = resolveActiveCamera3D();
 			if (!cam) return;
 			const tex = $.texmanager.getTexture(skyboxKey) as TextureHandle;
 			if (!tex) return;

@@ -22,6 +22,7 @@ interface GPUCacheEntry {
 	handle?: TextureHandle;
 	refCount: number;
 	ownedFallback?: boolean; // true only if this manager created it
+	barrier?: AssetBarrier<TextureHandle>;
 }
 
 export class TextureManager implements RegisterablePersistent {
@@ -72,7 +73,7 @@ export class TextureManager implements RegisterablePersistent {
 		// Fast path or reserve to avoid race
 		let gpu = this.gpuCache.get(key);
 		if (gpu) { gpu.refCount++; return key; }
-		this.gpuCache.set(key, { handle: undefined, refCount: 1 }); // reserve entry before awaiting
+		this.gpuCache.set(key, { handle: undefined, refCount: 1, barrier: this.textureBarrier }); // reserve entry before awaiting
 
 		const handle = await this.textureBarrier.acquire(
 			key,
@@ -111,7 +112,7 @@ export class TextureManager implements RegisterablePersistent {
 		if (gpu) { gpu.refCount++; return key; }
 
 		// Put fallback or empty entry
-		this.gpuCache.set(key, { handle: fallbackHandle, refCount: 1, ownedFallback: false });
+		this.gpuCache.set(key, { handle: fallbackHandle, refCount: 1, ownedFallback: false, barrier: this.textureBarrier });
 
 		void this.textureBarrier.acquire(
 			key,
@@ -198,6 +199,10 @@ export class TextureManager implements RegisterablePersistent {
 		if (gpu) { gpu.refCount++; return key; }
 
 		this.reserveFallbackCubemap(key, desc, fallbackColor);
+		const entry = this.gpuCache.get(key);
+		if (entry) {
+			entry.barrier = assetBarrier ?? this.textureBarrier;
+		}
 
 		const streamed = options.streamed ?? false;
 
@@ -504,7 +509,8 @@ export class TextureManager implements RegisterablePersistent {
 		e.refCount--;
 		if (e.refCount <= 0) {
 			// Let the barrier dispose the real handle
-			this.textureBarrier.release(key, (h) => { this.backend.destroyTexture(h); });
+			const barrier = e.barrier ?? this.textureBarrier;
+			barrier.release(key, (h) => { this.backend.destroyTexture(h); });
 			// Dispose manager-owned fallback if still present (barrier never saw it)
 			if (e.ownedFallback && e.handle) this.backend.destroyTexture(e.handle);
 			this.gpuCache.delete(key);

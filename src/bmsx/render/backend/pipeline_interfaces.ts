@@ -276,6 +276,9 @@ export interface ParticlePipelineState {
 	viewProj: Float32Array;
 	camRight: Float32Array;
 	camUp: Float32Array;
+	atlasPrimaryTex?: TextureHandle;
+	atlasSecondaryTex?: TextureHandle;
+	atlasEngineTex?: TextureHandle;
 }
 
 export type RenderingViewportType = 'viewport' | 'offscreen';

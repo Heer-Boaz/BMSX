@@ -23,6 +23,7 @@ import { checkWebGLError } from './webgl/webgl.helpers';
 import { WebGLBackend } from './webgl/webgl_backend';
 import { registerHeadlessPasses } from '../headless/headless_render_passes';
 import { ENGINE_ATLAS_TEXTURE_KEY } from 'bmsx/rompack/rompack';
+import { resolveCameraState } from '../shared/camera_state';
 
 // Type-safe pass state map used by this registry (compile-time only)
 type PassStateTypes = {
@@ -110,6 +111,13 @@ export class RenderPassLibrary {
 				updateAndBindFrameUniforms(backend, {
 					offscreen: { x: gv.offscreenCanvasSize.x, y: gv.offscreenCanvasSize.y },
 					logical: { x: gv.viewportSize.x, y: gv.viewportSize.y },
+				});
+				const ambientEntry = $.world.activeAmbientLight;
+				const amb = ambientEntry ? ambientEntry.light : null;
+				updateAndBindFrameUniforms(backend, {
+					offscreen: { x: 0, y: 0 },
+					logical: { x: 0, y: 0 },
+					ambient: amb ? { color: amb.color, intensity: amb.intensity } : undefined,
 				});
 			},
 		});
@@ -285,7 +293,7 @@ export class RenderPassLibrary {
 				const deviceColor = deviceColorEnabled
 					? io.createTex({ width: view.offscreenCanvasSize.x, height: view.offscreenCanvasSize.y, name: 'DeviceColor', transient: true })
 					: null;
-				const clearCol: color_arr = DEBUG_FORCE_VISIBLE_CLEAR ? [1, 0, 1, 1] : [0, 0, 0, 1];
+				const clearCol: color_arr = DEBUG_FORCE_VISIBLE_CLEAR ? [1, 0, 1, 1] : view.clearColor;
 				io.writeTex(color, { clearColor: clearCol });
 				io.writeTex(depth, { clearDepth: 1.0 });
 				io.exportToBackbuffer(color);
@@ -328,9 +336,8 @@ export class RenderPassLibrary {
 					time: frameTime,
 					delta: frameDelta,
 				});
-				const cam = $.world.activeCamera3D; if (!cam) return;
-				const mats = cam.getMatrices();
-				const viewState = { camPos: cam.position, viewProj: mats.vp, skyboxView: cam.skyboxView, proj: mats.proj };
+				const camState = resolveCameraState(); if (!camState) return;
+				const viewState = { camPos: camState.camPos, viewProj: camState.viewProj, skyboxView: camState.skyboxView, proj: camState.proj };
 				const activeAmbient = $.world.activeAmbientLight;
 				const ambientLight = activeAmbient ? (activeAmbient.light as AmbientLight) : null;
 				const lighting = lightingSystem.update(ambientLight);
@@ -352,9 +359,9 @@ export class RenderPassLibrary {
 					logical: { x: gv.viewportSize.x, y: gv.viewportSize.y },
 					time: frameTime,
 					delta: frameDelta,
-					view: mats.view,
-					proj: mats.proj,
-					cameraPos: cam.position,
+					view: camState.view,
+					proj: camState.proj,
+					cameraPos: camState.camPos,
 					ambient: ambientUniform,
 				});
 			}

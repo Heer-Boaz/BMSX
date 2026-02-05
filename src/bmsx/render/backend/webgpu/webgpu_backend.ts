@@ -42,7 +42,7 @@ export class WebGPUBackend implements GPUBackend {
 
 	createTexture(src: TextureSource | Promise<TextureSource>, _desc: TextureParams): TextureHandle {
 		const source = src as TextureSource;
-		const data = (source as { data?: Uint8Array }).data;
+		const data = source.data;
 		const texture = this.device.createTexture({
 			size: { width: source.width, height: source.height, depthOrArrayLayers: 1 },
 			format: 'rgba8unorm',
@@ -74,7 +74,7 @@ export class WebGPUBackend implements GPUBackend {
 	}
 
 	updateTexture(handle: TextureHandle, src: TextureSource): void {
-		const data = (src as { data?: Uint8Array }).data;
+		const data = src.data;
 		if (data) {
 			const upload = new Uint8Array(data.buffer as ArrayBuffer, data.byteOffset, data.byteLength);
 			this.device.queue.writeTexture(
@@ -106,7 +106,7 @@ export class WebGPUBackend implements GPUBackend {
 	}
 
 	updateTextureRegion(handle: TextureHandle, src: TextureSource, x: number, y: number): void {
-		const data = (src as { data?: Uint8Array }).data;
+		const data = src.data;
 		if (data) {
 			const upload = new Uint8Array(data.buffer as ArrayBuffer, data.byteOffset, data.byteLength);
 			this.device.queue.writeTexture(
@@ -156,7 +156,7 @@ export class WebGPUBackend implements GPUBackend {
 		return texture;
 	}
 
-	createCubemapFromSources(faces: readonly [ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap], _desc: TextureParams): TextureHandle {
+	createCubemapFromSources(faces: readonly [TextureSource, TextureSource, TextureSource, TextureSource, TextureSource, TextureSource], _desc: TextureParams): TextureHandle {
 		if (faces.length !== 6 || !faces.every(f => f.width === faces[0].width && f.height === faces[0].height)) {
 			throw new Error('All cubemap faces must be the same square size');
 		}
@@ -170,12 +170,23 @@ export class WebGPUBackend implements GPUBackend {
 			dimension: '2d',
 		});
 
-		faces.forEach((img, faceIndex) => {
-			this.device.queue.copyExternalImageToTexture(
-				{ source: img, flipY: false },
-				{ texture, origin: { x: 0, y: 0, z: faceIndex } },
-				{ width: size, height: size }
-			);
+		faces.forEach((src, faceIndex) => {
+			const data = src.data;
+			if (data) {
+				this.device.queue.writeTexture(
+					{ texture, origin: { x: 0, y: 0, z: faceIndex } },
+					data,
+					{ bytesPerRow: src.width * 4 },
+					{ width: src.width, height: src.height, depthOrArrayLayers: 1 },
+				);
+			} else {
+				const img = src as ImageBitmap;
+				this.device.queue.copyExternalImageToTexture(
+					{ source: img, flipY: false },
+					{ texture, origin: { x: 0, y: 0, z: faceIndex } },
+					{ width: size, height: size }
+				);
+			}
 		});
 
 		return texture;
@@ -236,8 +247,19 @@ export class WebGPUBackend implements GPUBackend {
 		});
 	}
 
-	uploadCubemapFace(cubemap: TextureHandle, face: number, img: ImageBitmap): void {
+	uploadCubemapFace(cubemap: TextureHandle, face: number, src: TextureSource): void {
 		if (face < 0 || face > 5) throw new Error('Invalid cubemap face index');
+		const data = src.data;
+		if (data) {
+			this.device.queue.writeTexture(
+				{ texture: cubemap as GPUTexture, origin: { x: 0, y: 0, z: face } },
+				data,
+				{ bytesPerRow: src.width * 4 },
+				{ width: src.width, height: src.height, depthOrArrayLayers: 1 },
+			);
+			return;
+		}
+		const img = src as ImageBitmap;
 		this.device.queue.copyExternalImageToTexture(
 			{ source: img },
 			{ texture: cubemap as GPUTexture, origin: { x: 0, y: 0, z: face } },

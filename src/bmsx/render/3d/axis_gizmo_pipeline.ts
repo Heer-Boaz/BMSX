@@ -6,6 +6,7 @@ import type { color } from '../shared/render_types';
 import { M4 } from './math3d';
 import { WebGLBackend } from '../backend/webgl/webgl_backend';
 import { clamp } from '../../utils/clamp';;
+import { resolveActiveCamera3D } from '../shared/hardware_camera';
 
 let vao: WebGLVertexArrayObject = null;
 let program: WebGLProgram = null;
@@ -74,11 +75,11 @@ export function registerAxisGizmoPass_WebGL(registry: RenderPassLibrary): void {
 			const gl = (backend as WebGLBackend).gl as WebGL2RenderingContext;
 			init(gl);
 		},
-		shouldExecute: () => enabled && !!$.world.activeCamera3D,
+		shouldExecute: () => enabled && !!resolveActiveCamera3D(),
 		exec: (backend, _fbo, _s) => {
 			const gl = (backend as WebGLBackend).gl as WebGL2RenderingContext;
 			if (!program || !vao) return;
-			const cam = $.world.activeCamera3D!;
+			const cam = resolveActiveCamera3D()!;
 			const view = cam.view; // full view; translation ignored via w=0
 			const gv = $.view;
 			const aspect = gv.offscreenCanvasSize.x / Math.max(1, gv.offscreenCanvasSize.y);

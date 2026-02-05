@@ -327,6 +327,46 @@ export function meshQueueFrontSize(): number {
 // --- Particle queue helpers -------------------------------------------------
 
 export function submit_particle(item: ParticleRenderSubmission): void {
+	const runtime = Runtime.instance;
+	const imgid = item.texture ?? 'whitepixel';
+	const handle = runtime.resolveAssetHandle(imgid);
+	const entry = runtime.getAssetEntryByHandle(handle);
+	if (entry.type !== 'image') {
+		throw new Error(`[Particles Pipeline] Asset '${imgid}' is not an image.`);
+	}
+	const meta = runtime.getImageMetaByHandle(handle);
+	if (!meta.atlassed) {
+		throw new Error(`[Particles Pipeline] Image '${imgid}' must be atlassed.`);
+	}
+	if (meta.atlasid === undefined || meta.atlasid === null) {
+		throw new Error(`[Particles Pipeline] Image '${imgid}' missing atlas id.`);
+	}
+	const baseEntry = (entry.flags & ASSET_FLAG_VIEW)
+		? runtime.getAssetEntryByHandle(entry.ownerIndex)
+		: entry;
+	if (baseEntry.regionW <= 0 || baseEntry.regionH <= 0) {
+		throw new Error(`[Particles Pipeline] Atlas backing entry for '${imgid}' missing dimensions.`);
+	}
+	const u0 = entry.regionX / baseEntry.regionW;
+	const v0 = entry.regionY / baseEntry.regionH;
+	const u1 = (entry.regionX + entry.regionW) / baseEntry.regionW;
+	const v1 = (entry.regionY + entry.regionH) / baseEntry.regionH;
+	let atlasBinding = ENGINE_ATLAS_INDEX;
+	if (meta.atlasid !== ENGINE_ATLAS_INDEX) {
+		const primaryAtlasIdInSlot = $.view.primaryAtlasIdInSlot;
+		const secondaryAtlasIdInSlot = $.view.secondaryAtlasIdInSlot;
+		if (meta.atlasid === primaryAtlasIdInSlot) {
+			atlasBinding = 0;
+		} else if (meta.atlasid === secondaryAtlasIdInSlot) {
+			atlasBinding = 1;
+		} else {
+			throw new Error(`[Particles Pipeline] Atlas ${meta.atlasid} not mapped to primary/secondary slots.`);
+		}
+	}
+	item.texture = imgid;
+	item.uv0 = [u0, v0];
+	item.uv1 = [u1, v1];
+	item.atlasBinding = atlasBinding;
 	particleQueue.submit(item);
 }
 

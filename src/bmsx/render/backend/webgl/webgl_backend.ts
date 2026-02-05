@@ -48,7 +48,7 @@ export class WebGLBackend implements GPUBackend {
 
 	createTexture(src: TextureSource | Promise<TextureSource>, desc: TextureParams): WebGLTexture {
 		const source = src as TextureSource;
-		const data = (source as { data?: Uint8Array }).data;
+		const data = source.data;
 		if (data) {
 			const gl = this.gl;
 			const tex = gl.createTexture()!;
@@ -76,7 +76,7 @@ export class WebGLBackend implements GPUBackend {
 
 	updateTexture(handle: WebGLTexture, src: TextureSource): void {
 		const gl = this.gl;
-		const data = (src as { data?: Uint8Array }).data;
+		const data = src.data;
 		gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_UPLOAD);
 		gl.bindTexture(gl.TEXTURE_2D, handle);
 		const size = this.texSizes.get(handle);
@@ -115,7 +115,7 @@ export class WebGLBackend implements GPUBackend {
 
 	updateTextureRegion(handle: WebGLTexture, src: TextureSource, x: number, y: number): void {
 		const gl = this.gl;
-		const data = (src as { data?: Uint8Array }).data;
+		const data = src.data;
 		gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_UPLOAD);
 		gl.bindTexture(gl.TEXTURE_2D, handle);
 		if (data) {
@@ -182,14 +182,23 @@ export class WebGLBackend implements GPUBackend {
 		this.texSizes.set(tex, { w: width, h: height });
 		return tex;
 	}
-	createCubemapFromSources(faces: readonly [ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap], desc: TextureParams): WebGLTexture {
+	createCubemapFromSources(faces: readonly [TextureSource, TextureSource, TextureSource, TextureSource, TextureSource, TextureSource], desc: TextureParams): WebGLTexture {
 		const gl = this.gl;
 		// Avoid global state; use local binding if possible, but for simplicity keep as is (refactor later if needed)
 		gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_SKYBOX);
 		const tex = gl.createTexture()!;
 		gl.bindTexture(gl.TEXTURE_CUBE_MAP, tex);
 		const targets = [gl.TEXTURE_CUBE_MAP_POSITIVE_X, gl.TEXTURE_CUBE_MAP_NEGATIVE_X, gl.TEXTURE_CUBE_MAP_POSITIVE_Y, gl.TEXTURE_CUBE_MAP_NEGATIVE_Y, gl.TEXTURE_CUBE_MAP_POSITIVE_Z, gl.TEXTURE_CUBE_MAP_NEGATIVE_Z] as const;
-		for (let i = 0; i < 6; i++) gl.texImage2D(targets[i], 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, faces[i]);
+		for (let i = 0; i < 6; i++) {
+			const src = faces[i];
+			const data = src.data;
+			if (data) {
+				gl.texImage2D(targets[i], 0, gl.RGBA, src.width, src.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
+			} else {
+				const img = src as ImageBitmap;
+				gl.texImage2D(targets[i], 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+			}
+		}
 		gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_BASE_LEVEL, 0); gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MAX_LEVEL, 0);
 		gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, desc.minFilter ?? gl.NEAREST); gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MAG_FILTER, desc.magFilter ?? gl.NEAREST);
 		gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_S, desc.wrapS ?? gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_T, desc.wrapT ?? gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE);
@@ -223,12 +232,18 @@ export class WebGLBackend implements GPUBackend {
 		gl.bindTexture(gl.TEXTURE_CUBE_MAP, null);
 		return tex;
 	}
-	uploadCubemapFace(cubemap: WebGLTexture, face: number, img: ImageBitmap): void {
+	uploadCubemapFace(cubemap: WebGLTexture, face: number, src: TextureSource): void {
 		const gl = this.gl;
 		const targets = [gl.TEXTURE_CUBE_MAP_POSITIVE_X, gl.TEXTURE_CUBE_MAP_NEGATIVE_X, gl.TEXTURE_CUBE_MAP_POSITIVE_Y, gl.TEXTURE_CUBE_MAP_NEGATIVE_Y, gl.TEXTURE_CUBE_MAP_POSITIVE_Z, gl.TEXTURE_CUBE_MAP_NEGATIVE_Z] as const;
 		gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_SKYBOX);
 		gl.bindTexture(gl.TEXTURE_CUBE_MAP, cubemap);
-		gl.texImage2D(targets[face], 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+		const data = src.data;
+		if (data) {
+			gl.texImage2D(targets[face], 0, gl.RGBA, src.width, src.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
+		} else {
+			const img = src as ImageBitmap;
+			gl.texImage2D(targets[face], 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+		}
 		gl.bindTexture(gl.TEXTURE_CUBE_MAP, null);
 	}
 	destroyTexture(handle: WebGLTexture): void { this.gl.deleteTexture(handle); }

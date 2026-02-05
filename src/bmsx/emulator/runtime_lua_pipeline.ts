@@ -174,6 +174,7 @@ export function restoreFromStateSnapshot(runtime: Runtime, snapshot: RuntimeStat
 	applyAssetMemorySnapshot(runtime, snapshot);
 	reinitializeLuaProgramFromSnapshot(runtime, snapshot, { runInit: false, hotReload: false });
 	runtime.restoreVblankState(snapshot);
+	runtime.resetRenderBuffers();
 
 	if (savedRuntimeFailed) {
 		runtime.luaRuntimeFailed = true;
@@ -218,6 +219,7 @@ export async function resumeFromSnapshot(runtime: Runtime, state: RuntimeState):
 	applyAssetMemorySnapshot(runtime, snapshot);
 	resumeLuaProgramState(runtime, snapshot);
 	runtime.restoreVblankState(snapshot);
+	runtime.resetRenderBuffers();
 	runtime.luaInitialized = true;
 }
 
@@ -654,6 +656,7 @@ export function resetHardwareState(runtime: Runtime): void {
 	runtime.dmaController.reset();
 	runtime.imgDecController.reset();
 	runtime.resetVblankState();
+	runtime.resetRenderBuffers();
 }
 
 export function registerGlobal(runtime: Runtime, name: string, value: Value): void {
@@ -1200,10 +1203,14 @@ export function resolveLuaSourceRecord(runtime: Runtime, path: string): LuaSourc
 }
 
 export function resolveModuleRegistries(runtime: Runtime): LuaSourceRegistry[] {
-	if (runtime.cartLuaSources && $.lua_sources === runtime.cartLuaSources) {
-		return [runtime.cartLuaSources, runtime.engineLuaSources];
+	const registries: LuaSourceRegistry[] = [];
+	if ($.lua_sources) {
+		registries.push($.lua_sources);
 	}
-	return [$.lua_sources];
+	if (runtime.engineLuaSources && runtime.engineLuaSources !== $.lua_sources) {
+		registries.push(runtime.engineLuaSources);
+	}
+	return registries;
 }
 
 export function refreshLuaHandlersForChunk(runtime: Runtime, path: string, sourceOverride?: string): void {

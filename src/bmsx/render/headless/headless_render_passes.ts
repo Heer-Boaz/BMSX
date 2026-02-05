@@ -15,9 +15,16 @@ import {
 } from '../shared/render_queues';
 import type { MeshRenderSubmission, ParticleRenderSubmission } from '../shared/render_types';
 import { updateFallbackCamera, FALLBACK_CAMERA } from '../shared/fallback_camera';
+import { resolveActiveCamera3D } from '../shared/hardware_camera';
+import { tokenKeyFromId } from '../../util/asset_tokens';
+import { ENGINE_ATLAS_INDEX } from '../../rompack/rompack';
+import { VRAM_ATLAS_SLOT_SIZE, VRAM_SKYBOX_FACE_BYTES, VRAM_SYSTEM_ATLAS_SLOT_SIZE } from '../../emulator/memory_map';
+import type { Mesh } from '../3d/mesh';
+import { consumeOverlayFrame, type EditorOverlayFrame } from '../editor/editor_overlay_queue';
 
 export function registerHeadlessPasses(registry: RenderPassLibrary): void {
 	registerFramePasses(registry);
+	registerSkyboxPass(registry);
 	registerSpritePass(registry);
 	registerMeshPass(registry);
 	registerParticlePass(registry);
@@ -33,6 +40,8 @@ type Snapshot = string[];
 let previousSpriteSnapshot: Snapshot = [];
 let previousMeshSnapshot: Snapshot = [];
 let previousParticleSnapshot: Snapshot = [];
+let previousSkyboxSnapshot: Snapshot = [];
+let previousOverlaySnapshot: Snapshot = [];
 
 let diffMatrix = new Uint32Array(0);
 
@@ -43,6 +52,182 @@ const headlessFallbackParticleState: ParticlePipelineState = {
 	camRight: FALLBACK_CAMERA.camRight,
 	camUp: FALLBACK_CAMERA.camUp,
 };
+
+const validatedAtlasByKey = new Set<string>();
+const spriteMetaCache = new Map<string, { atlasId: number; width: number; height: number }>();
+const validatedMesh = new WeakMap<Mesh, boolean>();
+const MAX_MORPH_TARGETS = 8;
+const MAX_JOINTS = 32;
+
+function drainOverlayFrameForHeadless(): EditorOverlayFrame {
+	const frame = consumeOverlayFrame();
+	if (!frame) {
+		return null;
+	}
+	const commands = frame.commands;
+	for (let i = 0; i < commands.length; i += 1) {
+		$.view.renderer.submit.typed(commands[i]);
+	}
+	return frame;
+}
+
+function ensureAtlasResource(atlasId: number, slotBytes: number, label: string): void {
+	const key = `${atlasId}:${slotBytes}`;
+	if (validatedAtlasByKey.has(key)) {
+		return;
+	}
+	let found = false;
+	for (const asset of Object.values($.assets.img)) {
+		if (asset.type !== 'atlas') continue;
+		const meta = asset.imgmeta;
+		if (!meta || meta.atlasid !== atlasId) continue;
+		if (meta.width <= 0 || meta.height <= 0) {
+			throw new Error(`[${label}] Atlas ${atlasId} has invalid dimensions (${meta.width}x${meta.height}).`);
+		}
+		const bytes = meta.width * meta.height * 4;
+		if (bytes > slotBytes) {
+			throw new Error(`[${label}] Atlas ${atlasId} size ${meta.width}x${meta.height} exceeds slot bytes (${slotBytes}).`);
+		}
+		found = true;
+		break;
+	}
+	if (!found) {
+		throw new Error(`[${label}] Atlas ${atlasId} not registered in assets.`);
+	}
+	validatedAtlasByKey.add(key);
+}
+
+function resolveSpriteMeta(imgid: string): { atlasId: number; width: number; height: number } {
+	const cached = spriteMetaCache.get(imgid);
+	if (cached) {
+		return cached;
+	}
+	const asset = $.assets.img[tokenKeyFromId(imgid)];
+	if (!asset) {
+		throw new Error(`[HeadlessSprites] Image '${imgid}' not found.`);
+	}
+	const meta = asset.imgmeta;
+	if (!meta) {
+		throw new Error(`[HeadlessSprites] Image '${imgid}' missing metadata.`);
+	}
+	if (!meta.atlassed) {
+		throw new Error(`[HeadlessSprites] Image '${imgid}' must be atlassed.`);
+	}
+	if (meta.atlasid === undefined || meta.atlasid === null) {
+		throw new Error(`[HeadlessSprites] Image '${imgid}' missing atlas id.`);
+	}
+	if (meta.width <= 0 || meta.height <= 0) {
+		throw new Error(`[HeadlessSprites] Image '${imgid}' has invalid dimensions (${meta.width}x${meta.height}).`);
+	}
+	const resolved = { atlasId: meta.atlasid, width: meta.width, height: meta.height };
+	spriteMetaCache.set(imgid, resolved);
+	return resolved;
+}
+
+function resolveExpectedSpriteAtlasBinding(atlasId: number, primaryAtlasId: number | null, secondaryAtlasId: number | null): number {
+	if (atlasId === ENGINE_ATLAS_INDEX) {
+		return ENGINE_ATLAS_INDEX;
+	}
+	if (primaryAtlasId !== null && atlasId === primaryAtlasId) {
+		return 0;
+	}
+	if (secondaryAtlasId !== null && atlasId === secondaryAtlasId) {
+		return 1;
+	}
+	throw new Error(`[HeadlessSprites] Atlas ${atlasId} not bound to primary/secondary slots.`);
+}
+
+function validateMeshAsset(mesh: Mesh): void {
+	if (validatedMesh.has(mesh)) {
+		return;
+	}
+	const positions = mesh.positions;
+	if (!positions || positions.length === 0 || positions.length % 3 !== 0) {
+		throw new Error(`[HeadlessMeshes] Mesh '${mesh.name}' has invalid positions buffer.`);
+	}
+	const vertexCount = mesh.vertexCount;
+	if (!Number.isFinite(vertexCount) || vertexCount <= 0) {
+		throw new Error(`[HeadlessMeshes] Mesh '${mesh.name}' has invalid vertex count (${vertexCount}).`);
+	}
+	if (mesh.indices && mesh.indices.length > 0) {
+		let maxIndex = 0;
+		for (let i = 0; i < mesh.indices.length; i += 1) {
+			const idx = mesh.indices[i] as number;
+			if (idx > maxIndex) maxIndex = idx;
+		}
+		if (maxIndex >= vertexCount) {
+			throw new Error(`[HeadlessMeshes] Mesh '${mesh.name}' index buffer out of range (max ${maxIndex}, verts ${vertexCount}).`);
+		}
+	}
+	if (mesh.texcoords && mesh.texcoords.length > 0 && mesh.texcoords.length < vertexCount * 2) {
+		throw new Error(`[HeadlessMeshes] Mesh '${mesh.name}' has invalid texcoord buffer length (${mesh.texcoords.length}).`);
+	}
+	if (mesh.normals && mesh.normals.length > 0 && mesh.normals.length < vertexCount * 3) {
+		throw new Error(`[HeadlessMeshes] Mesh '${mesh.name}' has invalid normals buffer length (${mesh.normals.length}).`);
+	}
+	if (mesh.tangents && mesh.tangents.length > 0) {
+		const len = mesh.tangents.length;
+		if (len !== vertexCount * 3 && len !== vertexCount * 4) {
+			throw new Error(`[HeadlessMeshes] Mesh '${mesh.name}' has invalid tangent buffer length (${len}).`);
+		}
+	}
+	if (mesh.hasSkinning) {
+		if (!mesh.jointIndices || !mesh.jointWeights) {
+			throw new Error(`[HeadlessMeshes] Mesh '${mesh.name}' skinning data is incomplete.`);
+		}
+		if (mesh.jointIndices.length < vertexCount * 4 || mesh.jointWeights.length < vertexCount * 4) {
+			throw new Error(`[HeadlessMeshes] Mesh '${mesh.name}' skinning buffers are too small.`);
+		}
+	}
+	if (mesh.morphPositions && mesh.morphPositions.length > 0) {
+		for (const morph of mesh.morphPositions) {
+			if (morph.length !== positions.length) {
+				throw new Error(`[HeadlessMeshes] Mesh '${mesh.name}' has morph position buffer mismatch.`);
+			}
+		}
+	}
+	if (mesh.morphNormals && mesh.morphNormals.length > 0 && mesh.normals) {
+		for (const morph of mesh.morphNormals) {
+			if (morph.length !== mesh.normals.length) {
+				throw new Error(`[HeadlessMeshes] Mesh '${mesh.name}' has morph normal buffer mismatch.`);
+			}
+		}
+	}
+	if (mesh.morphTangents && mesh.morphTangents.length > 0 && mesh.tangents) {
+		for (const morph of mesh.morphTangents) {
+			if (morph.length !== mesh.tangents.length) {
+				throw new Error(`[HeadlessMeshes] Mesh '${mesh.name}' has morph tangent buffer mismatch.`);
+			}
+		}
+	}
+	validatedMesh.set(mesh, true);
+}
+
+function requireMaterialTexture(mesh: Mesh, slot: 'albedo' | 'normal' | 'metallicRoughness' | 'occlusion' | 'emissive'): void {
+	const material = mesh.material;
+	if (!material) {
+		return;
+	}
+	const index = material.textures[slot];
+	if (index === undefined || index === null) {
+		return;
+	}
+	const model = (mesh as unknown as { _sourceModel?: { imageBuffers?: ArrayBuffer[]; imageURIs?: string[] } })._sourceModel;
+	if (model) {
+		const count = model.imageBuffers ? model.imageBuffers.length : (model.imageURIs ? model.imageURIs.length : 0);
+		if (index < 0 || index >= count) {
+			throw new Error(`[HeadlessMeshes] Mesh '${mesh.name}' material texture '${slot}' index ${index} out of range (images=${count}).`);
+		}
+	}
+	const key = material.gpuTextures[slot];
+	if (!key) {
+		throw new Error(`[HeadlessMeshes] Mesh '${mesh.name}' material texture '${slot}' missing GPU binding.`);
+	}
+	const handle = $.texmanager.getTexture(key);
+	if (!handle) {
+		throw new Error(`[HeadlessMeshes] Mesh '${mesh.name}' material texture '${slot}' not loaded (key='${key}').`);
+	}
+}
 
 function formatNumber(value: number): string {
 	return Number.isFinite(value) ? value.toFixed(2) : 'NaN';
@@ -162,33 +347,155 @@ function registerSpritePass(registry: RenderPassLibrary): void {
 		},
 		exec: (_backend, _fbo, state: unknown) => {
 			const spriteState = state as SpritesPipelineState;
+			const overlayFrame = drainOverlayFrameForHeadless();
+			if (overlayFrame) {
+				let glyphCount = 0;
+				const samples: string[] = [];
+				for (let i = 0; i < overlayFrame.commands.length; i += 1) {
+					const cmd = overlayFrame.commands[i];
+					if (cmd.type !== 'glyphs') {
+						continue;
+					}
+					glyphCount += 1;
+					if (samples.length < 6) {
+						const text = typeof cmd.glyphs === 'string' ? cmd.glyphs : cmd.glyphs.join('\n');
+						samples.push(text);
+					}
+				}
+				const overlaySnapshot: Snapshot = [
+					`commands=${overlayFrame.commands.length} glyphs=${glyphCount} size=${overlayFrame.width}x${overlayFrame.height}`,
+				];
+				for (let i = 0; i < samples.length; i += 1) {
+					overlaySnapshot.push(`[glyph] ${samples[i]}`);
+				}
+				previousOverlaySnapshot = emitDiff('overlay', previousOverlaySnapshot, overlaySnapshot);
+			}
 			const count = beginSpriteQueue();
 			const snapshot: Snapshot = [
 				`draws=${count} viewport=${spriteState.width}x${spriteState.height} base=${spriteState.baseWidth}x${spriteState.baseHeight}`,
 			];
+			const primaryAtlasId = $.view.primaryAtlasIdInSlot;
+			const secondaryAtlasId = $.view.secondaryAtlasIdInSlot;
+			let needsPrimaryAtlas = false;
+			let needsSecondaryAtlas = false;
+			let needsEngineAtlas = false;
 			if (count > 0) {
 				let index = 0;
 				forEachSprite((submission: SpriteQueueItem) => {
-					const { options, atlasId } = submission;
+					const { options, atlasId, entry, baseEntry } = submission;
+					if (options.imgid === 'none') {
+						throw new Error('[HeadlessSprites] Sprite submission has imgid="none".');
+					}
+					if (!Number.isFinite(options.scale.x) || !Number.isFinite(options.scale.y)) {
+						throw new Error(`[HeadlessSprites] Sprite '${options.imgid}' has invalid scale.`);
+					}
+					if (!Number.isFinite(options.pos.x) || !Number.isFinite(options.pos.y) || !Number.isFinite(options.pos.z ?? 0)) {
+						throw new Error(`[HeadlessSprites] Sprite '${options.imgid}' has invalid position.`);
+					}
+					const meta = resolveSpriteMeta(options.imgid);
+					if (entry.regionW !== meta.width || entry.regionH !== meta.height) {
+						throw new Error(`[HeadlessSprites] Sprite '${options.imgid}' size ${entry.regionW}x${entry.regionH} does not match metadata ${meta.width}x${meta.height}.`);
+					}
+					if (baseEntry.regionW <= 0 || baseEntry.regionH <= 0) {
+						throw new Error(`[HeadlessSprites] Sprite '${options.imgid}' base atlas dimensions are invalid.`);
+					}
+					const u0 = entry.regionX / baseEntry.regionW;
+					const v0 = entry.regionY / baseEntry.regionH;
+					const u1 = (entry.regionX + entry.regionW) / baseEntry.regionW;
+					const v1 = (entry.regionY + entry.regionH) / baseEntry.regionH;
+					if (u0 < 0 || v0 < 0 || u1 > 1 || v1 > 1 || u0 > u1 || v0 > v1) {
+						throw new Error(`[HeadlessSprites] Sprite '${options.imgid}' UVs out of range (${u0}, ${v0})..(${u1}, ${v1}).`);
+					}
+					const expectedBinding = resolveExpectedSpriteAtlasBinding(atlasId, primaryAtlasId, secondaryAtlasId);
+					if (expectedBinding === 0) needsPrimaryAtlas = true;
+					else if (expectedBinding === 1) needsSecondaryAtlas = true;
+					else needsEngineAtlas = true;
 					const layer = options.layer ?? 'world';
 					const pos = formatVec3({ x: options.pos.x, y: options.pos.y, z: options.pos.z ?? 0 });
 					const scale = formatScale(options.scale);
 					const flipH = options.flip?.flip_h ? 'H' : '-';
 					const flipV = options.flip?.flip_v ? 'V' : '-';
-					const atlas = atlasId;
+					const atlas = expectedBinding;
 					// Ambient sprites are disabled in the runtime; logging follows suit until a new approach is added.
 					snapshot.push(`[sprite#${index}] id=${options.imgid} layer=${layer} pos=${pos} scale=${scale} flip=${flipH}${flipV} atlas=${atlas}`);
 					index += 1;
 				});
+			}
+			if (needsPrimaryAtlas) {
+				if (primaryAtlasId === null || primaryAtlasId === undefined) {
+					throw new Error('[HeadlessSprites] Primary atlas slot is not set.');
+				}
+				ensureAtlasResource(primaryAtlasId, VRAM_ATLAS_SLOT_SIZE, 'HeadlessSprites');
+			}
+			if (needsSecondaryAtlas) {
+				if (secondaryAtlasId === null || secondaryAtlasId === undefined) {
+					throw new Error('[HeadlessSprites] Secondary atlas slot is not set.');
+				}
+				ensureAtlasResource(secondaryAtlasId, VRAM_ATLAS_SLOT_SIZE, 'HeadlessSprites');
+			}
+			if (needsEngineAtlas) {
+				ensureAtlasResource(ENGINE_ATLAS_INDEX, VRAM_SYSTEM_ATLAS_SLOT_SIZE, 'HeadlessSprites');
 			}
 			previousSpriteSnapshot = emitDiff('sprites', previousSpriteSnapshot, snapshot);
 		},
 	});
 }
 
+function registerSkyboxPass(registry: RenderPassLibrary): void {
+	registry.register({
+		id: 'skybox',
+		name: 'HeadlessSkybox',
+		stateOnly: true,
+		shouldExecute: () => !!$.view.skyboxFaceIds,
+		exec: () => {
+			const ids = $.view.skyboxFaceIds;
+			if (!ids) {
+				return;
+			}
+			if (VRAM_SKYBOX_FACE_BYTES <= 0) {
+				throw new Error('[HeadlessSkybox] VRAM_SKYBOX_FACE_BYTES is not configured.');
+			}
+			const faces: Array<[string, string]> = [
+				['posx', ids.posx],
+				['negx', ids.negx],
+				['posy', ids.posy],
+				['negy', ids.negy],
+				['posz', ids.posz],
+				['negz', ids.negz],
+			];
+			const snapshot: Snapshot = [`faces=${faces.map((face) => face[1]).join(',')}`];
+			for (const [face, id] of faces) {
+				const asset = $.assets.img[tokenKeyFromId(id)];
+				if (!asset) {
+					throw new Error(`[HeadlessSkybox] Skybox image '${id}' not found.`);
+				}
+				const meta = asset.imgmeta;
+				if (!meta) {
+					throw new Error(`[HeadlessSkybox] Skybox image '${id}' missing metadata.`);
+				}
+				if (meta.atlassed) {
+					throw new Error(`[HeadlessSkybox] Skybox image '${id}' must not be atlassed.`);
+				}
+				if (meta.width <= 0 || meta.height <= 0) {
+					throw new Error(`[HeadlessSkybox] Skybox image '${id}' has invalid dimensions (${meta.width}x${meta.height}).`);
+				}
+				const bytes = meta.width * meta.height * 4;
+				if (bytes > VRAM_SKYBOX_FACE_BYTES) {
+					throw new Error(`[HeadlessSkybox] Skybox image '${id}' size ${meta.width}x${meta.height} exceeds VRAM_SKYBOX_FACE_BYTES (${VRAM_SKYBOX_FACE_BYTES}).`);
+				}
+				snapshot.push(`[skybox:${face}] id=${id} size=${meta.width}x${meta.height}`);
+			}
+			previousSkyboxSnapshot = emitDiff('skybox', previousSkyboxSnapshot, snapshot);
+		},
+	});
+}
+
 function makeMeshState(registry: RenderPassLibrary): MeshBatchPipelineState {
 	const gv = $.view;
-	const cam = $.world.activeCamera3D;
+	const cam = resolveActiveCamera3D();
+	if (!cam) {
+		throw new Error('[HeadlessMeshes] No active 3D camera found.');
+	}
 	const mats = cam.getMatrices();
 	const frustum = cam.frustumPlanesPacked.slice();
 	const frameShared = registry.getState('frame_shared');
@@ -218,6 +525,46 @@ function registerMeshPass(registry: RenderPassLibrary): void {
 			if (count > 0) {
 				let index = 0;
 				forEachMeshQueue((submission: MeshRenderSubmission) => {
+					const mesh = submission.mesh;
+					validateMeshAsset(mesh);
+					requireMaterialTexture(mesh, 'albedo');
+					requireMaterialTexture(mesh, 'normal');
+					requireMaterialTexture(mesh, 'metallicRoughness');
+					requireMaterialTexture(mesh, 'occlusion');
+					requireMaterialTexture(mesh, 'emissive');
+					const matrix = submission.matrix;
+					if (!matrix || matrix.length !== 16) {
+						throw new Error(`[HeadlessMeshes] Mesh '${mesh.name}' has invalid matrix.`);
+					}
+					for (let i = 0; i < 16; i += 1) {
+						if (!Number.isFinite(matrix[i])) {
+							throw new Error(`[HeadlessMeshes] Mesh '${mesh.name}' matrix contains non-finite values.`);
+						}
+					}
+					const jointMatrices = submission.joint_matrices;
+					if (jointMatrices && jointMatrices.length > 0) {
+						if (!mesh.hasSkinning) {
+							throw new Error(`[HeadlessMeshes] Mesh '${mesh.name}' has joint_matrices but no skinning data.`);
+						}
+						if (jointMatrices.length > MAX_JOINTS) {
+							throw new Error(`[HeadlessMeshes] Mesh '${mesh.name}' joint count ${jointMatrices.length} exceeds MAX_JOINTS (${MAX_JOINTS}).`);
+						}
+						for (let j = 0; j < jointMatrices.length; j += 1) {
+							const jointMatrix = jointMatrices[j];
+							if (!jointMatrix || jointMatrix.length !== 16) {
+								throw new Error(`[HeadlessMeshes] Mesh '${mesh.name}' joint matrix ${j} is invalid.`);
+							}
+						}
+					}
+					const morphWeights = submission.morph_weights;
+					if (morphWeights && morphWeights.length > 0) {
+						if (!mesh.hasMorphTargets) {
+							throw new Error(`[HeadlessMeshes] Mesh '${mesh.name}' has morph_weights but no morph targets.`);
+						}
+						if (morphWeights.length > MAX_MORPH_TARGETS) {
+							throw new Error(`[HeadlessMeshes] Mesh '${mesh.name}' morph count ${morphWeights.length} exceeds MAX_MORPH_TARGETS (${MAX_MORPH_TARGETS}).`);
+						}
+					}
 					const translation = translationFromMatrix(submission.matrix);
 					const shadow = submission.receive_shadow === undefined ? 'default' : submission.receive_shadow ? 'yes' : 'no';
 					const morphCount = submission.morph_weights ? submission.morph_weights.length : 0;
@@ -234,7 +581,7 @@ function makeParticleState(): ParticlePipelineState {
 	const gv = $.view;
 	const width = gv.offscreenCanvasSize.x;
 	const height = gv.offscreenCanvasSize.y;
-	const cam = $.world.activeCamera3D;
+	const cam = resolveActiveCamera3D();
 	if (!cam) {
 		const fallback = updateFallbackCamera(width, height);
 		headlessFallbackParticleState.width = fallback.width;
@@ -265,14 +612,57 @@ function registerParticlePass(registry: RenderPassLibrary): void {
 		exec: (_backend, _fbo, state: unknown) => {
 			const particleState = state as ParticlePipelineState;
 			const count = beginParticleQueue();
+			if (count <= 0) {
+				return;
+			}
+			const primaryAtlasId = $.view.primaryAtlasIdInSlot;
+			const secondaryAtlasId = $.view.secondaryAtlasIdInSlot;
 			const snapshot: Snapshot = [`draws=${count} viewport=${particleState.width}x${particleState.height}`];
+			let needsPrimaryAtlas = false;
+			let needsSecondaryAtlas = false;
+			let needsEngineAtlas = false;
 			if (count > 0) {
 				let index = 0;
 				forEachParticleQueue((submission: ParticleRenderSubmission) => {
-					const textureTag = submission.texture ? 'custom' : 'default';
-					snapshot.push(`[particle#${index}] pos=${formatVec3(submission.position)} size=${formatNumber(submission.size)} texture=${textureTag}`);
+					const uv0 = submission.uv0;
+					const uv1 = submission.uv1;
+					if (!uv0 || !uv1) {
+						throw new Error('[HeadlessParticles] Particle missing atlas UVs.');
+					}
+					const atlas = submission.atlasBinding;
+					if (atlas === undefined || atlas === null) {
+						throw new Error('[HeadlessParticles] Particle missing atlas binding.');
+					}
+					if (atlas !== 0 && atlas !== 1 && atlas !== ENGINE_ATLAS_INDEX) {
+						throw new Error(`[HeadlessParticles] Particle has invalid atlas binding (${atlas}).`);
+					}
+					if (atlas === 0) needsPrimaryAtlas = true;
+					if (atlas === 1) needsSecondaryAtlas = true;
+					if (atlas === ENGINE_ATLAS_INDEX) needsEngineAtlas = true;
+					if (!Number.isFinite(uv0[0]) || !Number.isFinite(uv0[1]) || !Number.isFinite(uv1[0]) || !Number.isFinite(uv1[1])) {
+						throw new Error('[HeadlessParticles] Particle UVs must be finite numbers.');
+					}
+					if (uv0[0] < 0 || uv0[1] < 0 || uv1[0] > 1 || uv1[1] > 1 || uv0[0] > uv1[0] || uv0[1] > uv1[1]) {
+						throw new Error(`[HeadlessParticles] Particle UVs out of range (${uv0[0]}, ${uv0[1]})..(${uv1[0]}, ${uv1[1]}).`);
+					}
+					snapshot.push(`[particle#${index}] pos=${formatVec3(submission.position)} size=${formatNumber(submission.size)} atlas=${atlas}`);
 					index += 1;
 				});
+			}
+			if (needsPrimaryAtlas) {
+				if (primaryAtlasId === null || primaryAtlasId === undefined) {
+					throw new Error('[HeadlessParticles] Primary atlas slot is not set.');
+				}
+				ensureAtlasResource(primaryAtlasId, VRAM_ATLAS_SLOT_SIZE, 'HeadlessParticles');
+			}
+			if (needsSecondaryAtlas) {
+				if (secondaryAtlasId === null || secondaryAtlasId === undefined) {
+					throw new Error('[HeadlessParticles] Secondary atlas slot is not set.');
+				}
+				ensureAtlasResource(secondaryAtlasId, VRAM_ATLAS_SLOT_SIZE, 'HeadlessParticles');
+			}
+			if (needsEngineAtlas) {
+				ensureAtlasResource(ENGINE_ATLAS_INDEX, VRAM_SYSTEM_ATLAS_SLOT_SIZE, 'HeadlessParticles');
 			}
 			previousParticleSnapshot = emitDiff('particles', previousParticleSnapshot, snapshot);
 		},

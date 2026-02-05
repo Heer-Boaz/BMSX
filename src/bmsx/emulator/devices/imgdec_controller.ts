@@ -57,6 +57,7 @@ export class ImgDecController {
 	private decodeToken = 0;
 	private readonly queuedJobs: ImgDecJob[] = [];
 	private activeJob: ImgDecJob | null = null;
+	private signalIrq = false;
 	private readonly externalSlots = new Map<number, ImageWriteEntry>();
 
 	public constructor(
@@ -98,6 +99,7 @@ export class ImgDecController {
 		this.decodePixels = null;
 		this.decodeResult = null;
 		this.decodeQueued = false;
+		this.signalIrq = false;
 		this.queuedJobs.length = 0;
 		this.activeJob = null;
 		this.memory.writeValue(IO_IMG_SRC, 0);
@@ -155,7 +157,7 @@ export class ImgDecController {
 				this.finishError(error);
 				return;
 			}
-			this.startJob({ buffer, dst, cap, src, len, job: null });
+			this.startJob({ buffer, dst, cap, src, len, job: null, signalIrq: true });
 			return;
 		}
 		if (this.active) {
@@ -165,7 +167,7 @@ export class ImgDecController {
 			return;
 		}
 		const job = this.queuedJobs.shift()!;
-		this.startJob({ buffer: job.buffer, dst: job.dst, cap: job.cap, src: 0, len: job.buffer.byteLength, job });
+		this.startJob({ buffer: job.buffer, dst: job.dst, cap: job.cap, src: 0, len: job.buffer.byteLength, job, signalIrq: false });
 	}
 
 	private resolveSlotEntry(dst: number): ImgDecEntry {
@@ -185,10 +187,11 @@ export class ImgDecController {
 		throw new Error(`[ImgDec] Unsupported destination address ${dst}.`);
 	}
 
-	private startJob(params: { buffer: Uint8Array; dst: number; cap: number; src: number; len: number; job: ImgDecJob | null }): void {
+	private startJob(params: { buffer: Uint8Array; dst: number; cap: number; src: number; len: number; job: ImgDecJob | null; signalIrq: boolean }): void {
 		this.pendingResult = null;
 		this.pendingError = null;
 		this.pendingEntry = null;
+		this.signalIrq = params.signalIrq;
 		this.status = IMG_STATUS_BUSY;
 		this.memory.writeValue(IO_IMG_STATUS, this.status);
 		this.memory.writeValue(IO_IMG_WRITTEN, 0);
@@ -288,7 +291,10 @@ export class ImgDecController {
 		this.decodeQueued = false;
 		this.status = (this.status & ~IMG_STATUS_BUSY) | IMG_STATUS_DONE | (clipped ? IMG_STATUS_CLIPPED : 0);
 		this.memory.writeValue(IO_IMG_STATUS, this.status);
-		this.raiseIrq(IRQ_IMG_DONE);
+		if (this.signalIrq) {
+			this.raiseIrq(IRQ_IMG_DONE);
+		}
+		this.signalIrq = false;
 		if (job && decoded) {
 			job.resolve({ pixels: decoded.pixels, width: decoded.width, height: decoded.height, clipped });
 		}
@@ -306,7 +312,10 @@ export class ImgDecController {
 		this.decodeQueued = false;
 		this.status = (this.status & ~IMG_STATUS_BUSY) | IMG_STATUS_DONE | IMG_STATUS_ERROR;
 		this.memory.writeValue(IO_IMG_STATUS, this.status);
-		this.raiseIrq(IRQ_IMG_ERROR);
+		if (this.signalIrq) {
+			this.raiseIrq(IRQ_IMG_ERROR);
+		}
+		this.signalIrq = false;
 		if (job) {
 			job.reject(error ?? new Error('[ImgDec] Decode failed.'));
 		}
