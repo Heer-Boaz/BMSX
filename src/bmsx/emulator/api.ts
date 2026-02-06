@@ -322,6 +322,7 @@ export class Api {
 		}
 		this.storage = options.storage;
 		this._runtime = options.runtime;
+		this.playerindex = 1;
 		this.font = new Font();
 		this.reset_print_cursor();
 	}
@@ -335,7 +336,7 @@ export class Api {
 	}
 
 	public get keyboard() {
-		return $.input.getPlayerInput(1).inputHandlers.keyboard;
+		return $.input.getPlayerInput(this.playerindex).inputHandlers.keyboard;
 	}
 
 	public get_player_input(playerindex?: number): PlayerInput {
