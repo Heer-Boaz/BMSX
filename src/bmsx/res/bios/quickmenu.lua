@@ -94,7 +94,7 @@ local entries = {
 	make_vdp_enum("DITHER", sys_vdp_dither, {
 		{ value = 0, label = "OFF" },
 		{ value = 1, label = "PSX" },
-		{ value = 2, label = "RGB565" },
+		{ value = 2, label = "RGB888 OUT" },
 		{ value = 3, label = "MSX10" },
 	}),
 	make_action("REBOOT", reboot),

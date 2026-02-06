@@ -132,7 +132,7 @@ export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> 
 	{ name: 'sys_max_assets', params: [], signature: 'sys_max_assets', description: 'Maximum number of asset entries.' },
 	{ name: 'sys_string_handle_count', params: [], signature: 'sys_string_handle_count', description: 'Maximum number of string handles.' },
 	{ name: 'sys_max_cycles_per_frame', params: [], signature: 'sys_max_cycles_per_frame', description: 'Maximum cycles per frame.' },
-	{ name: 'sys_vdp_dither', params: [], signature: 'sys_vdp_dither', description: 'VDP dither register; write to this register to control dithering. Values 0=off, 1=PSX, 2=RGB565, 3=MSX10' },
+	{ name: 'sys_vdp_dither', params: [], signature: 'sys_vdp_dither', description: 'VDP dither register; write to this register to control dithering. Values 0=off, 1=PSX, 2=RGB888 output, 3=MSX10' },
 	{ name: 'sys_vdp_primary_atlas_id', params: [], signature: 'sys_vdp_primary_atlas_id', description: 'VDP primary atlas id register address; write atlas id or sys_vdp_atlas_none.' },
 	{ name: 'sys_vdp_secondary_atlas_id', params: [], signature: 'sys_vdp_secondary_atlas_id', description: 'VDP secondary atlas id register address; write atlas id or sys_vdp_atlas_none.' },
 	{ name: 'sys_vdp_atlas_none', params: [], signature: 'sys_vdp_atlas_none', description: 'Sentinel atlas id meaning no mapping.' },

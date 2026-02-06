@@ -301,7 +301,7 @@ export interface SpritesPipelineState {
 export const enum CRTDitherType {
 	None = 0,
 	PSX = 1,
-	RGB565 = 2,
+	RGB888Output = 2,
 	MSX10 = 3,
 }
 

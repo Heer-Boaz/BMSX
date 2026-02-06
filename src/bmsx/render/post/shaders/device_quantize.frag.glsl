@@ -6,7 +6,7 @@ precision highp float;
 uniform sampler2D u_texture;  // offscreen scene (linear)
 uniform vec2 u_srcResolution; // base "logical" resolution (e.g., 256x212)
 uniform float u_fragscale;    // integer upscale (e.g., 2.0)
-uniform uint u_dither_type;   // 1=rgb555_psx, 2=rgb565, 3=msx10_343
+uniform uint u_dither_type;   // 1=rgb555_psx, 2=rgb888_output, 3=msx10_343
 
 in vec2 v_texcoord;
 out vec4 outputColor;
@@ -28,7 +28,7 @@ vec3 srgb_to_linear(vec3 c) {
 	return mix(hi, lo, vec3(cutoff));
 }
 
-// --- RGB565 ordered dither (4x4 Bayer matrix) ---
+// 4x4 ordered threshold matrix.
 const float B4[16] = float[16](
 	0.0,  8.0,  2.0, 10.0,
 	12.0, 4.0, 14.0, 6.0,
@@ -105,29 +105,21 @@ int psxIdx(ivec2 p){
 	return w.x + (w.y << 2);
 }
 
-int offGFromOffRB(int offRB){
-	return (offRB >= 0) ? (offRB / 2) : -(((-offRB) + 1) / 2);
-}
+vec3 quantize_rgb888_output(vec3 sRGB, ivec2 pix){
+	float thr = bayer4x4_0_1(pix);
+	float t = thr - 0.5;
+	vec3 v = clamp(sRGB, 0.0, 1.0) * 255.0;
+	vec3 q = floor(v);
+	vec3 f = fract(v);
+	q += step(vec3(thr), f);
 
-vec3 quantize_rgb565_hw(vec3 sRGB, ivec2 pix){
-	int offRB = PSX_DITHER[psxIdx(pix)];
-	int offG = offGFromOffRB(offRB);
+	const float MICRO = 0.25;
+	q += vec3(t * MICRO);
 
-	ivec3 v8 = ivec3(floor(clamp(sRGB, 0.0, 1.0) * 255.0 + 0.5));
-
-	int r8 = clamp(v8.r + offRB, 0, 255);
-	int g8 = clamp(v8.g + offG, 0, 255);
-	int b8 = clamp(v8.b + offRB, 0, 255);
-
-	int r5 = r8 >> 3;
-	int g6 = g8 >> 2;
-	int b5 = b8 >> 3;
-
-	int R = (r5 << 3) | (r5 >> 2);
-	int G = (g6 << 2) | (g6 >> 4);
-	int B = (b5 << 3) | (b5 >> 2);
-
-	return vec3(float(R), float(G), float(B)) * (1.0 / 255.0);
+	float lum = dot(sRGB, vec3(0.299, 0.587, 0.114));
+	float g = smoothstep(2.0 / 255.0, 20.0 / 255.0, lum);
+	vec3 out8 = mix(floor(v + 0.5), q, vec3(g));
+	return clamp(out8, 0.0, 255.0) * (1.0 / 255.0);
 }
 
 // sRGB (0..1) -> PSX dithered RGB555 in sRGB (0..1), emulator-style
@@ -160,7 +152,7 @@ void main(){
 	if (u_dither_type == 1u) {
 	sigS = quantize_rgb555_psx(sigS, sPix);
 	} else if (u_dither_type == 2u) {
-	sigS = quantize_rgb565_hw(sigS, sPix);
+	sigS = quantize_rgb888_output(sigS, sPix);
 	} else if (u_dither_type == 3u) {
 	sigS = quantize_msx10_343(sigS, sPix);
 	}

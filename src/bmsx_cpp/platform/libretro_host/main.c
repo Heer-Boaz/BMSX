@@ -138,9 +138,11 @@ static LibretroCore* g_core = NULL;
 
 #ifdef BMSX_LIBRETRO_HOST_SDL
 static bool g_use_sdl = false;
+static bool g_sdl_use_gl = false;
 static SDL_Window* g_sdl_window = NULL;
 static SDL_Renderer* g_sdl_renderer = NULL;
 static SDL_Texture* g_sdl_texture = NULL;
+static SDL_GLContext g_sdl_gl_context = NULL;
 static SDL_GameController* g_sdl_gamepad = NULL;
 static SDL_JoystickID g_sdl_gamepad_id = -1;
 static uint16_t g_sdl_pad_state = 0;
@@ -511,6 +513,7 @@ static void sdl_init(void);
 static void sdl_shutdown(void);
 static void sdl_prepare_frame(unsigned frame_w, unsigned frame_h);
 static void sdl_present(void);
+static void sdl_sync_gl_drawable_size(void);
 static void poll_input_devices_sdl(void);
 #endif
 
@@ -532,6 +535,17 @@ static uintptr_t RETRO_CALLCONV hw_get_current_framebuffer(void) {
 }
 
 static retro_proc_address_t RETRO_CALLCONV hw_get_proc_address(const char* sym) {
+#ifdef BMSX_LIBRETRO_HOST_SDL
+	if (g_use_sdl && g_sdl_use_gl) {
+		void* proc = SDL_GL_GetProcAddress(sym);
+		if (!proc) {
+			return NULL;
+		}
+		retro_proc_address_t fn = NULL;
+		PTR_TO_RETRO_PROC(fn, proc);
+		return fn;
+	}
+#endif
 	if (sym && g_gles_lib) {
 		void* proc = dlsym(g_gles_lib, sym);
 		if (proc) {
@@ -568,6 +582,11 @@ static void update_geometry(const struct retro_game_geometry* geom) {
 
 static void* get_gl_proc(const char* name) {
 	void* proc = NULL;
+#ifdef BMSX_LIBRETRO_HOST_SDL
+	if (g_use_sdl && g_sdl_use_gl) {
+		proc = SDL_GL_GetProcAddress(name);
+	}
+#endif
 	if (g_gles_lib) {
 		proc = dlsym(g_gles_lib, name);
 	}
@@ -2152,6 +2171,11 @@ static bool hw_present_frame(unsigned src_w, unsigned src_h) {
 	if (!hw_init_blitter()) {
 		return false;
 	}
+#ifdef BMSX_LIBRETRO_HOST_SDL
+	if (g_use_sdl) {
+		sdl_sync_gl_drawable_size();
+	}
+#endif
 	if (!g_hw_tex) {
 		return false;
 	}
@@ -2374,6 +2398,28 @@ static void sdl_open_first_controller(void) {
 	}
 }
 
+static void sdl_sync_gl_drawable_size(void) {
+	if (!g_sdl_use_gl || !g_sdl_window) {
+		return;
+	}
+	int drawable_w = 0;
+	int drawable_h = 0;
+	SDL_GL_GetDrawableSize(g_sdl_window, &drawable_w, &drawable_h);
+	if (drawable_w <= 0 || drawable_h <= 0) {
+		return;
+	}
+	if (g_fb.width == drawable_w && g_fb.height == drawable_h) {
+		return;
+	}
+	g_fb.width = drawable_w;
+	g_fb.height = drawable_h;
+	g_fb.bpp = 32;
+	g_fb.stride = drawable_w * 4;
+	fps_mark_dirty();
+	msg_mark_dirty();
+	menu_mark_dirty();
+}
+
 static void sdl_resize(unsigned width, unsigned height) {
 	if (width == 0 || height == 0) {
 		return;
@@ -2382,6 +2428,12 @@ static void sdl_resize(unsigned width, unsigned height) {
 	g_fb.height = (int)height;
 	g_fb.bpp = 32;
 	g_fb.stride = (int)(width * 4u);
+	if (g_sdl_use_gl) {
+		fps_mark_dirty();
+		msg_mark_dirty();
+		menu_mark_dirty();
+		return;
+	}
 	g_fb.map_size = (size_t)g_fb.stride * (size_t)g_fb.height;
 	uint8_t* map = (uint8_t*)realloc(g_fb.map, g_fb.map_size);
 	if (!map) {
@@ -2414,16 +2466,35 @@ static void sdl_init(void) {
 	unsigned window_h = base_h * 3u;
 	if (window_w < 640) window_w = 640;
 	if (window_h < 480) window_h = 480;
+	uint32_t window_flags = SDL_WINDOW_RESIZABLE;
+	if (g_sdl_use_gl) {
+		SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
+		SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
+		SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+		SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+		window_flags |= SDL_WINDOW_OPENGL;
+	}
 	g_sdl_window = SDL_CreateWindow("bmsx_libretro_host",
 		SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
 		(int)window_w, (int)window_h,
-		SDL_WINDOW_RESIZABLE);
+		(int)window_flags);
 	if (!g_sdl_window) {
 		die("SDL_CreateWindow failed: %s", SDL_GetError());
 	}
-	g_sdl_renderer = SDL_CreateRenderer(g_sdl_window, -1, SDL_RENDERER_PRESENTVSYNC);
-	if (!g_sdl_renderer) {
-		die("SDL_CreateRenderer failed: %s", SDL_GetError());
+	if (g_sdl_use_gl) {
+		g_sdl_gl_context = SDL_GL_CreateContext(g_sdl_window);
+		if (!g_sdl_gl_context) {
+			die("SDL_GL_CreateContext failed: %s", SDL_GetError());
+		}
+		if (SDL_GL_MakeCurrent(g_sdl_window, g_sdl_gl_context) != 0) {
+			die("SDL_GL_MakeCurrent failed: %s", SDL_GetError());
+		}
+		SDL_GL_SetSwapInterval(1);
+	} else {
+		g_sdl_renderer = SDL_CreateRenderer(g_sdl_window, -1, SDL_RENDERER_PRESENTVSYNC);
+		if (!g_sdl_renderer) {
+			die("SDL_CreateRenderer failed: %s", SDL_GetError());
+		}
 	}
 	sdl_resize(base_w, base_h);
 	SDL_ShowCursor(SDL_DISABLE);
@@ -2439,6 +2510,10 @@ static void sdl_shutdown(void) {
 	if (g_sdl_texture) {
 		SDL_DestroyTexture(g_sdl_texture);
 		g_sdl_texture = NULL;
+	}
+	if (g_sdl_gl_context) {
+		SDL_GL_DeleteContext(g_sdl_gl_context);
+		g_sdl_gl_context = NULL;
 	}
 	if (g_sdl_renderer) {
 		SDL_DestroyRenderer(g_sdl_renderer);
@@ -2467,6 +2542,9 @@ static void sdl_prepare_frame(unsigned frame_w, unsigned frame_h) {
 }
 
 static void sdl_present(void) {
+	if (g_sdl_use_gl) {
+		return;
+	}
 	SDL_UpdateTexture(g_sdl_texture, NULL, g_fb.map, g_fb.stride);
 	SDL_RenderClear(g_sdl_renderer);
 	SDL_RenderCopy(g_sdl_renderer, g_sdl_texture, NULL, NULL);
@@ -2584,8 +2662,14 @@ static bool environ_cb(unsigned cmd, void* data) {
 			struct retro_hw_render_callback* cb = (struct retro_hw_render_callback*)data;
 #ifdef BMSX_LIBRETRO_HOST_SDL
 			if (g_use_sdl) {
-				fprintf(stderr, "[libretro-host] SDL video backend does not support HW render\n");
-				return false;
+				if (!g_sdl_use_gl) {
+					fprintf(stderr, "[libretro-host] SDL video backend does not support HW render in software mode\n");
+					return false;
+				}
+				if (!g_sdl_gl_context) {
+					fprintf(stderr, "[libretro-host] SDL GL context is not initialized\n");
+					return false;
+				}
 			}
 #endif
 			if (cb->context_type != RETRO_HW_CONTEXT_OPENGLES2) {
@@ -2594,8 +2678,17 @@ static bool environ_cb(unsigned cmd, void* data) {
 			cb->get_current_framebuffer = hw_get_current_framebuffer;
 			cb->get_proc_address = hw_get_proc_address;
 			g_hw_render = *cb;
-			if (!egl_init()) {
-				return false;
+#ifdef BMSX_LIBRETRO_HOST_SDL
+			if (g_use_sdl) {
+				if (!gl_load()) {
+					return false;
+				}
+			} else
+#endif
+			{
+				if (!egl_init()) {
+					return false;
+				}
 			}
 			g_use_hw_render = true;
 			g_hw_context_pending_reset = (g_hw_render.context_reset != NULL);
@@ -2691,13 +2784,20 @@ static void video_cb(const void* data, unsigned width, unsigned height, size_t p
 				g_geom_dirty = true;
 			}
 		}
-		if (!g_menu_active) {
-			fps_update();
+			if (!g_menu_active) {
+				fps_update();
+			}
+			hw_present_frame(width, height);
+#ifdef BMSX_LIBRETRO_HOST_SDL
+			if (g_use_sdl) {
+				SDL_GL_SwapWindow(g_sdl_window);
+			} else
+#endif
+			{
+				eglSwapBuffers_ptr(g_egl_display, g_egl_surface);
+			}
+			return;
 		}
-		hw_present_frame(width, height);
-		eglSwapBuffers_ptr(g_egl_display, g_egl_surface);
-		return;
-	}
 	if (!data || width == 0 || height == 0) {
 		return;
 	}
@@ -4062,10 +4162,8 @@ int main(int argc, char** argv) {
 	}
 #ifdef BMSX_LIBRETRO_HOST_SDL
 	if (strcmp(video_backend, "sdl") == 0) {
-		if (strcmp(backend, "gles2") == 0) {
-			die("SDL video backend only supports --backend software");
-		}
 		g_use_sdl = true;
+		g_sdl_use_gl = (strcmp(backend, "gles2") == 0);
 	}
 #else
 	if (strcmp(video_backend, "sdl") == 0) {
@@ -4182,13 +4280,25 @@ int main(int argc, char** argv) {
 		if (g_has_frame_time_cb) {
 			g_frame_time_cb.callback((retro_usec_t)g_frame_usec);
 		}
-		if (g_menu_active) {
-			input_poll_cb();
-			if (g_use_hw_render) {
-				menu_render_hw();
-				eglSwapBuffers_ptr(g_egl_display, g_egl_surface);
-			} else {
-				menu_render_software();
+			if (g_menu_active) {
+				input_poll_cb();
+				if (g_use_hw_render) {
+#ifdef BMSX_LIBRETRO_HOST_SDL
+					if (g_use_sdl) {
+						sdl_sync_gl_drawable_size();
+					}
+#endif
+					menu_render_hw();
+#ifdef BMSX_LIBRETRO_HOST_SDL
+					if (g_use_sdl) {
+						SDL_GL_SwapWindow(g_sdl_window);
+					} else
+#endif
+					{
+						eglSwapBuffers_ptr(g_egl_display, g_egl_surface);
+					}
+				} else {
+					menu_render_software();
 #ifdef BMSX_LIBRETRO_HOST_SDL
 				if (g_use_sdl) {
 					sdl_present();

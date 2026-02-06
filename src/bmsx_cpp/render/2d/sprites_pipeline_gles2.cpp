@@ -18,6 +18,16 @@
 #include "../../utils/clamp.h"
 #include "../shared/render_queues.h"
 
+#if defined(__GNUC__)
+extern "C" __attribute__((weak)) void glGenVertexArraysOES(GLsizei n, GLuint* arrays);
+extern "C" __attribute__((weak)) void glBindVertexArrayOES(GLuint array);
+extern "C" __attribute__((weak)) void glDeleteVertexArraysOES(GLsizei n, const GLuint* arrays);
+#else
+extern "C" void glGenVertexArraysOES(GLsizei n, GLuint* arrays);
+extern "C" void glBindVertexArrayOES(GLuint array);
+extern "C" void glDeleteVertexArraysOES(GLsizei n, const GLuint* arrays);
+#endif
+
 namespace bmsx {
 namespace SpritesPipeline {
 namespace {
@@ -75,6 +85,8 @@ struct SpriteGLES2State {
 	GLint uniform_tex3 = -1;
 	GLint uniform_time = -1;
 	GLuint vbo = 0;
+	GLuint vao = 0;
+	bool use_vao = false;
 	std::vector<uint8_t> vertex_data;
 };
 
@@ -272,7 +284,32 @@ void setupAttributes() {
 	glEnableVertexAttribArray(static_cast<GLuint>(g_sprite.attrib_center));
 	glVertexAttribPointer(static_cast<GLuint>(g_sprite.attrib_center),
 						kCenterComponents, GL_SHORT, GL_FALSE, kVertexStride,
-						reinterpret_cast<void*>(static_cast<intptr_t>(kCenterOffset)));
+							reinterpret_cast<void*>(static_cast<intptr_t>(kCenterOffset)));
+}
+
+void setupVertexLayout() {
+	if (g_sprite.use_vao) {
+		glBindVertexArrayOES(g_sprite.vao);
+		setupAttributes();
+		glBindVertexArrayOES(0);
+		return;
+	}
+	setupAttributes();
+}
+
+void bindVertexLayout() {
+	if (g_sprite.use_vao) {
+		glBindVertexArrayOES(g_sprite.vao);
+		return;
+	}
+	setupAttributes();
+}
+
+void unbindVertexLayout() {
+	if (!g_sprite.use_vao) {
+		return;
+	}
+	glBindVertexArrayOES(0);
 }
 
 uint16_t packUnorm16(float value) {
@@ -354,6 +391,20 @@ void initGLES2(OpenGLES2Backend* backend, GameView* context) {
 	g_sprite.uniform_time = glGetUniformLocation(g_sprite.program, "u_time");
 
 	setupBuffers();
+	const char* extensions =
+		reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS));
+	const bool hasVaoExtension = (extensions != nullptr) &&
+		(std::strstr(extensions, "GL_OES_vertex_array_object") != nullptr);
+	const bool hasVaoFunctions =
+		(glGenVertexArraysOES != nullptr) &&
+		(glBindVertexArrayOES != nullptr) &&
+		(glDeleteVertexArraysOES != nullptr);
+	g_sprite.use_vao = hasVaoExtension && hasVaoFunctions;
+	if (g_sprite.use_vao) {
+		glGenVertexArraysOES(1, &g_sprite.vao);
+		g_sprite.use_vao = (g_sprite.vao != 0);
+	}
+	setupVertexLayout();
 
 	glUseProgram(g_sprite.program);
 	// Re-apply sampler bindings every draw; shared contexts can clobber uniform
@@ -382,6 +433,7 @@ void shutdownGLES2(OpenGLES2Backend* backend) {
 	glDeleteProgram(g_sprite.program);
 	}
 	if (g_sprite.vbo != 0) glDeleteBuffers(1, &g_sprite.vbo);
+	if (g_sprite.vao != 0) glDeleteVertexArraysOES(1, &g_sprite.vao);
 	g_sprite = SpriteGLES2State{};
 }
 
@@ -423,7 +475,7 @@ void renderSpriteBatchGLES2(OpenGLES2Backend* backend, GameView* context,
 	glUniform1i(g_sprite.uniform_tex1, kTexUnitAtlasSecondary);
 	glUniform1i(g_sprite.uniform_tex2, kTexUnitAtlasEngine);
 	glUniform1i(g_sprite.uniform_tex3, kTexUnitAtlasFallback);
-	setupAttributes();
+	bindVertexLayout();
 
 	glDisable(GL_CULL_FACE);
 	glDisable(GL_DEPTH_TEST);
@@ -460,9 +512,8 @@ void renderSpriteBatchGLES2(OpenGLES2Backend* backend, GameView* context,
 	backend->setActiveTextureUnit(kTexUnitAtlasEngine);
 	backend->bindTexture2D(state.atlasEngineTex);
 	}
-	TextureHandle fallbackTex = context->textures.at("_atlas_fallback");
-	backend->setActiveTextureUnit(kTexUnitAtlasFallback);
-	backend->bindTexture2D(fallbackTex);
+	TextureHandle fallbackTex = nullptr;
+	bool fallbackTextureBound = false;
 
 	size_t batchCount = 0;
 	auto flush = [&]() {
@@ -534,10 +585,16 @@ void renderSpriteBatchGLES2(OpenGLES2Backend* backend, GameView* context,
 	const uint16_t zPacked = packUnorm16(zNorm);
 	const i32 atlasId = imgmeta->atlasid;
 	// Sprite binding selector uses ENGINE_ATLAS_INDEX for engine atlas in the shader.
-	uint8_t atlasPacked = static_cast<uint8_t>(ENGINE_ATLAS_INDEX);
-	if (item.useFallbackTexture) {
-		atlasPacked = kAtlasFallbackSelector;
-	} else if (atlasId != ENGINE_ATLAS_INDEX) {
+		uint8_t atlasPacked = static_cast<uint8_t>(ENGINE_ATLAS_INDEX);
+		if (item.useFallbackTexture) {
+			if (!fallbackTextureBound) {
+				fallbackTex = context->textures.at("_atlas_fallback");
+				backend->setActiveTextureUnit(kTexUnitAtlasFallback);
+				backend->bindTexture2D(fallbackTex);
+				fallbackTextureBound = true;
+			}
+			atlasPacked = kAtlasFallbackSelector;
+		} else if (atlasId != ENGINE_ATLAS_INDEX) {
 		if (atlasId == context->primaryAtlasIdInSlot) {
 			atlasPacked = 0;
 		} else if (atlasId == context->secondaryAtlasIdInSlot) {
@@ -577,6 +634,7 @@ void renderSpriteBatchGLES2(OpenGLES2Backend* backend, GameView* context,
 	flush();
 	}
 
+	unbindVertexLayout();
 	glDepthMask(GL_TRUE);
 }
 

@@ -296,9 +296,6 @@ void LibretroPlatform::setCrtEffectOptions(bool applyNoise,
 }
 
 void LibretroPlatform::setDitherType(GameView::DitherType type) {
-#if defined(BMSX_SNESMINI_LEGACY)
-	type = GameView::DitherType::None;
-#endif
 	m_dither_type = type;
 	m_engine->view()->dither_type = type;
 	if (!Runtime::hasInstance()) {

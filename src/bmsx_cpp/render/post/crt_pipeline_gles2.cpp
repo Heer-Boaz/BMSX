@@ -17,6 +17,29 @@ constexpr bool kCRTVerboseLog = false;
 
 constexpr int kTexUnitPostProcess = 3;
 
+void logFramebufferDitherStateOnce() {
+	static bool logged = false;
+	if (logged) return;
+	logged = true;
+
+	GLint red_bits = 0;
+	GLint green_bits = 0;
+	GLint blue_bits = 0;
+	GLint alpha_bits = 0;
+	glGetIntegerv(GL_RED_BITS, &red_bits);
+	glGetIntegerv(GL_GREEN_BITS, &green_bits);
+	glGetIntegerv(GL_BLUE_BITS, &blue_bits);
+	glGetIntegerv(GL_ALPHA_BITS, &alpha_bits);
+	const int dither_enabled = glIsEnabled(GL_DITHER) ? 1 : 0;
+
+	EngineCore::instance().log(LogLevel::Warn,
+								"[BMSX][GLES2] FB bits RGBA=%d/%d/%d/%d GL_DITHER=%d\n",
+								static_cast<int>(red_bits),
+								static_cast<int>(green_bits),
+								static_cast<int>(blue_bits),
+								static_cast<int>(alpha_bits), dither_enabled);
+}
+
 struct CRTGLES2State {
 	GLuint program = 0;
 	GLint attrib_pos = -1;
@@ -494,25 +517,21 @@ int psxDitherOffset4x4(vec2 pix){
 	return -2;
 }
 
-vec3 quantize_rgb565_hw(vec3 sRGB, vec2 pix){
-	float off = float(psxDitherOffset4x4(pix));
-	float offG = floor(off * 0.5);
+vec3 quantize_rgb888_output(vec3 sRGB, vec2 pix){
+	float thr = bayer4x4_0_1(pix);
+	float t = thr - 0.5;
+	vec3 v = clamp(sRGB, 0.0, 1.0) * 255.0;
+	vec3 q = floor(v);
+	vec3 f = fract(v);
+	q += step(vec3(thr), f);
 
-	vec3 v8 = floor(clamp(sRGB, 0.0, 1.0) * 255.0 + 0.5);
+	const float MICRO = 0.25;
+	q += vec3(t * MICRO);
 
-	float r8 = clamp(v8.r + off, 0.0, 255.0);
-	float g8 = clamp(v8.g + offG, 0.0, 255.0);
-	float b8 = clamp(v8.b + off, 0.0, 255.0);
-
-	float r5 = floor(r8 / 8.0);
-	float g6 = floor(g8 / 4.0);
-	float b5 = floor(b8 / 8.0);
-
-	float R = r5 * 8.0 + floor(r5 / 4.0);
-	float G = g6 * 4.0 + floor(g6 / 16.0);
-	float B = b5 * 8.0 + floor(b5 / 4.0);
-
-	return vec3(R, G, B) * (1.0 / 255.0);
+	float lum = dot(sRGB, vec3(0.299, 0.587, 0.114));
+	float g = smoothstep(2.0 / 255.0, 20.0 / 255.0, lum);
+	vec3 out8 = mix(floor(v + 0.5), q, vec3(g));
+	return clamp(out8, 0.0, 255.0) * (1.0 / 255.0);
 }
 
 vec3 quantize_rgb555_psx(vec3 sRGB, vec2 pix){
@@ -535,7 +554,7 @@ void main(){
 	if (u_dither_type == 1) {
 		sigS = quantize_rgb555_psx(sigS, sPix);
 	} else if (u_dither_type == 2) {
-		sigS = quantize_rgb565_hw(sigS, sPix);
+		sigS = quantize_rgb888_output(sigS, sPix);
 	} else if (u_dither_type == 3) {
 		sigS = quantize_msx10_343(sigS, sPix);
 	}
@@ -670,6 +689,7 @@ void updateDeviceQuad(i32 width, i32 height) {
 
 void initPresentGLES2(OpenGLES2Backend* backend) {
 	(void)backend;
+	logFramebufferDitherStateOnce();
 
 	GLuint vs = compileShader(GL_VERTEX_SHADER, kCRTVertexShader);
 	GLuint fs = compileShader(GL_FRAGMENT_SHADER, kPresentFragmentShader);
@@ -691,6 +711,7 @@ void initPresentGLES2(OpenGLES2Backend* backend) {
 
 void initDeviceQuantizeGLES2(OpenGLES2Backend* backend) {
 	(void)backend;
+	logFramebufferDitherStateOnce();
 
 	GLuint vs = compileShader(GL_VERTEX_SHADER, kCRTVertexShader);
 	GLuint fs = compileShader(GL_FRAGMENT_SHADER, kDeviceQuantizeFragmentShader);
@@ -715,6 +736,7 @@ void initDeviceQuantizeGLES2(OpenGLES2Backend* backend) {
 
 void initGLES2(OpenGLES2Backend* backend) {
 	(void)backend;
+	logFramebufferDitherStateOnce();
 
 	GLuint vs = compileShader(GL_VERTEX_SHADER, kCRTVertexShader);
 	GLuint fs = compileShader(GL_FRAGMENT_SHADER, kCRTFragmentShader);
