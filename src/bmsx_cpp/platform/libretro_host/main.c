@@ -123,6 +123,8 @@ static const unsigned kAudioPeriodFrames = 1024;
 static const unsigned kAudioPeriodCount = 4;
 static const unsigned kAudioPrimePeriods = 4;
 static const int kAudioThreadPriority = 20;
+static const unsigned kAudioRecoverMaxAttempts = 8;
+static const uint64_t kAudioRecoverSleepNs = 1000000ull;
 static const uint64_t kFrameScheduleResyncNs = 100000000ull;
 static const int64_t kHzScale = 1000000ll;
 
@@ -400,6 +402,7 @@ static unsigned g_audio_buffer_frames = 0;
 static bool g_audio_prepared = false;
 static bool g_audio_running = false;
 static unsigned g_audio_underruns = 0;
+static unsigned g_audio_overruns = 0;
 static AudioQueue g_audio_queue;
 static pthread_t g_audio_thread;
 static bool g_audio_thread_started = false;
@@ -2843,6 +2846,7 @@ static void audio_write_frames(const int16_t* data, size_t frames) {
 	}
 	size_t remaining = frames;
 	const int16_t* src = data;
+	unsigned recover_attempts = 0;
 	while (remaining > 0) {
 		struct snd_xferi xfer;
 		xfer.buf = (void*)src;
@@ -2850,6 +2854,17 @@ static void audio_write_frames(const int16_t* data, size_t frames) {
 		xfer.result = 0;
 		if (!g_audio_prepared) {
 			if (ioctl(g_audio_fd, SNDRV_PCM_IOCTL_PREPARE) != 0) {
+				if (errno == EINTR || errno == EPIPE || errno == ESTRPIPE) {
+					if (recover_attempts < kAudioRecoverMaxAttempts) {
+						++recover_attempts;
+						struct timespec ts;
+						ts.tv_sec = 0;
+						ts.tv_nsec = (long)kAudioRecoverSleepNs;
+						nanosleep(&ts, NULL);
+						continue;
+					}
+					return;
+				}
 				die("SNDRV_PCM_IOCTL_PREPARE failed: %s", strerror(errno));
 			}
 			g_audio_prepared = true;
@@ -2858,20 +2873,37 @@ static void audio_write_frames(const int16_t* data, size_t frames) {
 			if (errno == EINTR) {
 				continue;
 			}
-			if (errno == EPIPE) {
+			if (errno == EPIPE || errno == ESTRPIPE) {
 				g_audio_prepared = false;
 				g_audio_running = false;
 				++g_audio_underruns;
-				continue;
+				if (recover_attempts < kAudioRecoverMaxAttempts) {
+					++recover_attempts;
+					struct timespec ts;
+					ts.tv_sec = 0;
+					ts.tv_nsec = (long)kAudioRecoverSleepNs;
+					nanosleep(&ts, NULL);
+					continue;
+				}
+				return;
 			}
 			die("SNDRV_PCM_IOCTL_WRITEI_FRAMES failed: %s", strerror(errno));
 		}
 		if (xfer.result <= 0) {
-			die("Audio write returned %ld frames", (long)xfer.result);
+			if (recover_attempts < kAudioRecoverMaxAttempts) {
+				++recover_attempts;
+				struct timespec ts;
+				ts.tv_sec = 0;
+				ts.tv_nsec = (long)kAudioRecoverSleepNs;
+				nanosleep(&ts, NULL);
+				continue;
+			}
+			return;
 		}
 		g_audio_running = true;
 		remaining -= (size_t)xfer.result;
 		src += (size_t)xfer.result * g_audio_channels;
+		recover_attempts = 0;
 	}
 }
 
@@ -2960,42 +2992,46 @@ static void audio_queue_push_frames(const int16_t* data, size_t frames) {
 		return;
 	}
 	if (frames > g_audio_queue.capacity_frames) {
-		die("Audio queue overflow: frames=%zu capacity=%zu", frames, g_audio_queue.capacity_frames);
+		const size_t skip = frames - g_audio_queue.capacity_frames;
+		data += skip * g_audio_channels;
+		frames = g_audio_queue.capacity_frames;
 	}
-	size_t remaining = frames;
-	while (remaining > 0) {
-		int err = pthread_mutex_lock(&g_audio_queue.mutex);
-		if (err != 0) {
-			die("pthread_mutex_lock failed: %s", strerror(err));
-		}
-		while (g_audio_queue.used_frames == g_audio_queue.capacity_frames) {
-			err = pthread_cond_wait(&g_audio_queue.can_write, &g_audio_queue.mutex);
-			if (err != 0) {
-				die("pthread_cond_wait(can_write) failed: %s", strerror(err));
-			}
-		}
-		size_t space = g_audio_queue.capacity_frames - g_audio_queue.used_frames;
-		size_t to_write = remaining < space ? remaining : space;
-		size_t tail = g_audio_queue.capacity_frames - g_audio_queue.write_frame;
-		size_t first = to_write < tail ? to_write : tail;
-		memcpy(g_audio_queue.data + g_audio_queue.write_frame * g_audio_channels,
-				data, first * g_audio_channels * sizeof(int16_t));
-		if (to_write > first) {
-			memcpy(g_audio_queue.data, data + first * g_audio_channels,
-					(to_write - first) * g_audio_channels * sizeof(int16_t));
-		}
-		g_audio_queue.write_frame = (g_audio_queue.write_frame + to_write) % g_audio_queue.capacity_frames;
-		g_audio_queue.used_frames += to_write;
-		err = pthread_cond_signal(&g_audio_queue.can_read);
-		if (err != 0) {
-			die("pthread_cond_signal(can_read) failed: %s", strerror(err));
-		}
+	int err = pthread_mutex_lock(&g_audio_queue.mutex);
+	if (err != 0) {
+		die("pthread_mutex_lock failed: %s", strerror(err));
+	}
+	if (!g_audio_queue.running) {
 		err = pthread_mutex_unlock(&g_audio_queue.mutex);
 		if (err != 0) {
 			die("pthread_mutex_unlock failed: %s", strerror(err));
 		}
-		data += to_write * g_audio_channels;
-		remaining -= to_write;
+		return;
+	}
+	const size_t capacity = g_audio_queue.capacity_frames;
+	const size_t space = capacity - g_audio_queue.used_frames;
+	if (frames > space) {
+		const size_t drop = frames - space;
+		g_audio_queue.read_frame = (g_audio_queue.read_frame + drop) % capacity;
+		g_audio_queue.used_frames -= drop;
+		g_audio_overruns += (unsigned)drop;
+	}
+	const size_t tail = capacity - g_audio_queue.write_frame;
+	const size_t first = frames < tail ? frames : tail;
+	memcpy(g_audio_queue.data + g_audio_queue.write_frame * g_audio_channels,
+			data, first * g_audio_channels * sizeof(int16_t));
+	if (frames > first) {
+		memcpy(g_audio_queue.data, data + first * g_audio_channels,
+				(frames - first) * g_audio_channels * sizeof(int16_t));
+	}
+	g_audio_queue.write_frame = (g_audio_queue.write_frame + frames) % capacity;
+	g_audio_queue.used_frames += frames;
+	err = pthread_cond_signal(&g_audio_queue.can_read);
+	if (err != 0) {
+		die("pthread_cond_signal(can_read) failed: %s", strerror(err));
+	}
+	err = pthread_mutex_unlock(&g_audio_queue.mutex);
+	if (err != 0) {
+		die("pthread_mutex_unlock failed: %s", strerror(err));
 	}
 }
 
@@ -3189,6 +3225,7 @@ static void audio_shutdown_sdl(void) {
 	g_audio_sample_rate = 0;
 	g_audio_sample_buf_frames = 0;
 	g_audio_underruns = 0;
+	g_audio_overruns = 0;
 }
 #endif
 
@@ -3245,6 +3282,7 @@ static void audio_init(int sample_rate) {
 	g_audio_prepared = true;
 	g_audio_running = false;
 	g_audio_underruns = 0;
+	g_audio_overruns = 0;
 	g_audio_thread_buf_frames = g_audio_period_frames;
 	g_audio_thread_buf = (int16_t*)malloc(g_audio_thread_buf_frames * g_audio_channels * sizeof(int16_t));
 	if (!g_audio_thread_buf) {
@@ -3296,7 +3334,12 @@ static void audio_shutdown(void) {
 	g_audio_sample_buf_frames = 0;
 	g_audio_prepared = false;
 	g_audio_running = false;
+	if (g_audio_underruns > 0 || g_audio_overruns > 0) {
+		fprintf(stderr, "[libretro-host] audio stats: underruns=%u overruns=%u\n",
+				g_audio_underruns, g_audio_overruns);
+	}
 	g_audio_underruns = 0;
+	g_audio_overruns = 0;
 }
 
 static void audio_sample_cb(int16_t left, int16_t right) {
@@ -4118,10 +4161,18 @@ int main(int argc, char** argv) {
 	g_frame_usec = frame_time_usec_from_scaled(ufps_scaled);
 	core.bmsx_set_frame_time_usec((retro_usec_t)g_frame_usec);
 	g_frame_ns = frame_time_ns_from_scaled(ufps_scaled);
-	uint64_t next_frame_ns = monotonic_ns() + g_frame_ns;
+	uint64_t next_frame_ns = monotonic_ns();
 
 	while (!g_should_quit) {
 		uint64_t now_ns = monotonic_ns();
+		if (now_ns < next_frame_ns) {
+			const uint64_t sleep_ns = next_frame_ns - now_ns;
+			struct timespec ts;
+			ts.tv_sec = (time_t)(sleep_ns / 1000000000ull);
+			ts.tv_nsec = (long)(sleep_ns % 1000000000ull);
+			nanosleep(&ts, NULL);
+		}
+		now_ns = monotonic_ns();
 		if (!g_menu_active && now_ns > next_frame_ns) {
 			const uint64_t lag_ns = now_ns - next_frame_ns;
 			if (lag_ns > kFrameScheduleResyncNs) {
@@ -4148,15 +4199,9 @@ int main(int argc, char** argv) {
 			core.retro_run();
 		}
 		g_drop_video = false;
-		next_frame_ns += g_frame_ns;
 		now_ns = monotonic_ns();
-		if (now_ns < next_frame_ns) {
-			uint64_t sleep_ns = next_frame_ns - now_ns;
-			struct timespec ts;
-			ts.tv_sec = (time_t)(sleep_ns / 1000000000ull);
-			ts.tv_nsec = (long)(sleep_ns % 1000000000ull);
-			nanosleep(&ts, NULL);
-		}
+		const uint64_t scheduled_next_ns = next_frame_ns + g_frame_ns;
+		next_frame_ns = now_ns > scheduled_next_ns ? now_ns : scheduled_next_ns;
 	}
 
 	core.retro_unload_game();

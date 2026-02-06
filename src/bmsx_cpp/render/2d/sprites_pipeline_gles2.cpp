@@ -314,8 +314,8 @@ void updateBuffers(size_t spriteCount) {
 	const size_t vertexCount = spriteCount * kVerticesPerSprite;
 	const size_t byteCount = vertexCount * kVertexStride;
 	glBindBuffer(GL_ARRAY_BUFFER, g_sprite.vbo);
-	glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(byteCount),
-				g_sprite.vertex_data.data(), GL_DYNAMIC_DRAW);
+	glBufferSubData(GL_ARRAY_BUFFER, 0, static_cast<GLsizeiptr>(byteCount),
+					g_sprite.vertex_data.data());
 }
 
 }  // namespace
