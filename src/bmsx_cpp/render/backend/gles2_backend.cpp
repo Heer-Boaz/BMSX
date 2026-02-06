@@ -49,6 +49,30 @@ const std::array<uint8_t, 256>& linearToSrgbLut() {
 	return lut;
 }
 
+bool hasExtensionToken(const char* extensions, const char* needle) {
+	if (extensions == nullptr || needle == nullptr || *needle == '\0') {
+		return false;
+	}
+	const size_t needleLen = std::strlen(needle);
+	if (needleLen == 0 || std::strchr(needle, ' ') != nullptr) {
+		return false;
+	}
+	const char* cursor = extensions;
+	while (true) {
+		const char* match = std::strstr(cursor, needle);
+		if (match == nullptr) {
+			return false;
+		}
+		const char* matchEnd = match + needleLen;
+		const bool leftBoundary = (match == extensions) || (match[-1] == ' ');
+		const bool rightBoundary = (*matchEnd == '\0') || (*matchEnd == ' ');
+		if (leftBoundary && rightBoundary) {
+			return true;
+		}
+		cursor = matchEnd;
+	}
+}
+
 void convertSrgbToLinear(const bmsx::u8* src, size_t pixels, std::vector<bmsx::u8>& out) {
 	out.resize(pixels * 4);
 	const auto& lut = srgbToLinearLut();
@@ -381,7 +405,7 @@ void OpenGLES2Backend::onContextReset() {
 	m_active_texture_unit = -1;
 	m_bound_texture_2d_by_unit.fill(0);
 	const char* extensions = reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS));
-	m_supports_srgb_textures = (extensions != nullptr) && (std::strstr(extensions, "GL_EXT_sRGB") != nullptr);
+	m_supports_srgb_textures = hasExtensionToken(extensions, "GL_EXT_sRGB");
 	if (kGLES2VerboseLog) {
 		std::fprintf(stderr, "[BMSX][GLES2] EXT_sRGB=%d\n", m_supports_srgb_textures ? 1 : 0);
 	}

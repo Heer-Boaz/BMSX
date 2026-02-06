@@ -523,7 +523,9 @@ void RenderGraphRuntime::realizeAll() {
 									i, static_cast<unsigned>(depth->id), depth->width, depth->height);
 				}
 			} else {
-				res.tex = gles->createTexture(nullptr, res.desc.width, res.desc.height, TextureParams{});
+				TextureParams params;
+				params.srgb = false;
+				res.tex = gles->createTexture(nullptr, res.desc.width, res.desc.height, params);
 				auto* glTex = OpenGLES2Backend::asTexture(res.tex);
 				GLuint fbo = 0;
 				glGenFramebuffers(1, &fbo);
