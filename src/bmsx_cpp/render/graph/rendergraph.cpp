@@ -510,7 +510,7 @@ void RenderGraphRuntime::realizeAll() {
 			auto& res = m_texResources[i];
 
 			if (res.desc.depth) {
-				auto* depth = new GLES2DepthTarget{};
+				auto* depth = new GLES2DepthTarget{}; 
 				depth->width = res.desc.width;
 				depth->height = res.desc.height;
 				glGenRenderbuffers(1, &depth->id);

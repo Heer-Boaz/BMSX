@@ -58,6 +58,17 @@ constexpr int kInstanceAtlasOffset = 34;
 constexpr int kInstanceFxOffset = 35;
 constexpr int kInstanceColorOffset = 36;
 
+constexpr int kExpandedVertexStride = 48;
+constexpr int kExpandedCornerOffset = 0;
+constexpr int kExpandedPosOffset = 8;
+constexpr int kExpandedSizeOffset = 16;
+constexpr int kExpandedUv0Offset = 24;
+constexpr int kExpandedUv1Offset = 32;
+constexpr int kExpandedZOffset = 40;
+constexpr int kExpandedAtlasOffset = 42;
+constexpr int kExpandedFxOffset = 43;
+constexpr int kExpandedColorOffset = 44;
+
 constexpr float kZCoordMax = 10000.0f;
 constexpr float kDefaultZ = 0.0f;
 
@@ -107,14 +118,17 @@ struct SpriteGLES2State {
 
 	GLuint corner_vbo = 0;
 	GLuint instance_vbo = 0;
+	GLuint expanded_vbo = 0;
 	GLuint vao = 0;
 
 	bool use_vao = false;
+	bool use_instancing = false;
 
 	VertexAttribDivisorFn vertexAttribDivisor = nullptr;
 	DrawArraysInstancedFn drawArraysInstanced = nullptr;
 
 	std::vector<uint8_t> instance_data;
+	std::vector<uint8_t> expanded_data;
 };
 
 SpriteGLES2State g_sprite;
@@ -269,6 +283,7 @@ GLuint linkProgram(GLuint vs, GLuint fs) {
 
 void setupBuffers() {
 	g_sprite.instance_data.resize(static_cast<size_t>(kMaxSprites * kInstanceStride));
+	g_sprite.expanded_data.resize(static_cast<size_t>(kMaxSprites * kVerticesPerSprite * kExpandedVertexStride));
 
 	glGenBuffers(1, &g_sprite.corner_vbo);
 	glBindBuffer(GL_ARRAY_BUFFER, g_sprite.corner_vbo);
@@ -277,55 +292,109 @@ void setupBuffers() {
 	glGenBuffers(1, &g_sprite.instance_vbo);
 	glBindBuffer(GL_ARRAY_BUFFER, g_sprite.instance_vbo);
 	glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(g_sprite.instance_data.size()), nullptr, GL_DYNAMIC_DRAW);
+
+	glGenBuffers(1, &g_sprite.expanded_vbo);
+	glBindBuffer(GL_ARRAY_BUFFER, g_sprite.expanded_vbo);
+	glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(g_sprite.expanded_data.size()), nullptr, GL_DYNAMIC_DRAW);
 }
 
 void configureVertexLayout() {
-	glBindBuffer(GL_ARRAY_BUFFER, g_sprite.corner_vbo);
-	glEnableVertexAttribArray(static_cast<GLuint>(g_sprite.attrib_corner));
-	glVertexAttribPointer(static_cast<GLuint>(g_sprite.attrib_corner), 2, GL_FLOAT, GL_FALSE, 0, nullptr);
-	g_sprite.vertexAttribDivisor(static_cast<GLuint>(g_sprite.attrib_corner), 0u);
+	if (g_sprite.use_instancing) {
+		glBindBuffer(GL_ARRAY_BUFFER, g_sprite.corner_vbo);
+		glEnableVertexAttribArray(static_cast<GLuint>(g_sprite.attrib_corner));
+		glVertexAttribPointer(static_cast<GLuint>(g_sprite.attrib_corner), 2, GL_FLOAT, GL_FALSE, 0, nullptr);
+		g_sprite.vertexAttribDivisor(static_cast<GLuint>(g_sprite.attrib_corner), 0u);
 
-	glBindBuffer(GL_ARRAY_BUFFER, g_sprite.instance_vbo);
+		glBindBuffer(GL_ARRAY_BUFFER, g_sprite.instance_vbo);
+
+		glEnableVertexAttribArray(static_cast<GLuint>(g_sprite.attrib_pos));
+		glVertexAttribPointer(static_cast<GLuint>(g_sprite.attrib_pos), 2, GL_FLOAT, GL_FALSE, kInstanceStride,
+						reinterpret_cast<void*>(static_cast<intptr_t>(kInstancePosOffset)));
+		g_sprite.vertexAttribDivisor(static_cast<GLuint>(g_sprite.attrib_pos), 1u);
+
+		glEnableVertexAttribArray(static_cast<GLuint>(g_sprite.attrib_size));
+		glVertexAttribPointer(static_cast<GLuint>(g_sprite.attrib_size), 2, GL_FLOAT, GL_FALSE, kInstanceStride,
+						reinterpret_cast<void*>(static_cast<intptr_t>(kInstanceSizeOffset)));
+		g_sprite.vertexAttribDivisor(static_cast<GLuint>(g_sprite.attrib_size), 1u);
+
+		glEnableVertexAttribArray(static_cast<GLuint>(g_sprite.attrib_uv0));
+		glVertexAttribPointer(static_cast<GLuint>(g_sprite.attrib_uv0), 2, GL_FLOAT, GL_FALSE, kInstanceStride,
+						reinterpret_cast<void*>(static_cast<intptr_t>(kInstanceUv0Offset)));
+		g_sprite.vertexAttribDivisor(static_cast<GLuint>(g_sprite.attrib_uv0), 1u);
+
+		glEnableVertexAttribArray(static_cast<GLuint>(g_sprite.attrib_uv1));
+		glVertexAttribPointer(static_cast<GLuint>(g_sprite.attrib_uv1), 2, GL_FLOAT, GL_FALSE, kInstanceStride,
+						reinterpret_cast<void*>(static_cast<intptr_t>(kInstanceUv1Offset)));
+		g_sprite.vertexAttribDivisor(static_cast<GLuint>(g_sprite.attrib_uv1), 1u);
+
+		glEnableVertexAttribArray(static_cast<GLuint>(g_sprite.attrib_z));
+		glVertexAttribPointer(static_cast<GLuint>(g_sprite.attrib_z), 1, GL_UNSIGNED_SHORT, GL_TRUE, kInstanceStride,
+						reinterpret_cast<void*>(static_cast<intptr_t>(kInstanceZOffset)));
+		g_sprite.vertexAttribDivisor(static_cast<GLuint>(g_sprite.attrib_z), 1u);
+
+		glEnableVertexAttribArray(static_cast<GLuint>(g_sprite.attrib_atlas));
+		glVertexAttribPointer(static_cast<GLuint>(g_sprite.attrib_atlas), 1, GL_UNSIGNED_BYTE, GL_FALSE, kInstanceStride,
+						reinterpret_cast<void*>(static_cast<intptr_t>(kInstanceAtlasOffset)));
+		g_sprite.vertexAttribDivisor(static_cast<GLuint>(g_sprite.attrib_atlas), 1u);
+
+		glEnableVertexAttribArray(static_cast<GLuint>(g_sprite.attrib_fx));
+		glVertexAttribPointer(static_cast<GLuint>(g_sprite.attrib_fx), 1, GL_BYTE, GL_TRUE, kInstanceStride,
+						reinterpret_cast<void*>(static_cast<intptr_t>(kInstanceFxOffset)));
+		g_sprite.vertexAttribDivisor(static_cast<GLuint>(g_sprite.attrib_fx), 1u);
+
+		glEnableVertexAttribArray(static_cast<GLuint>(g_sprite.attrib_color));
+		glVertexAttribPointer(static_cast<GLuint>(g_sprite.attrib_color), 4, GL_UNSIGNED_BYTE, GL_TRUE, kInstanceStride,
+						reinterpret_cast<void*>(static_cast<intptr_t>(kInstanceColorOffset)));
+		g_sprite.vertexAttribDivisor(static_cast<GLuint>(g_sprite.attrib_color), 1u);
+		return;
+	}
+
+	glBindBuffer(GL_ARRAY_BUFFER, g_sprite.expanded_vbo);
+
+	glEnableVertexAttribArray(static_cast<GLuint>(g_sprite.attrib_corner));
+	glVertexAttribPointer(static_cast<GLuint>(g_sprite.attrib_corner), 2, GL_FLOAT, GL_FALSE,
+						kExpandedVertexStride,
+						reinterpret_cast<void*>(static_cast<intptr_t>(kExpandedCornerOffset)));
 
 	glEnableVertexAttribArray(static_cast<GLuint>(g_sprite.attrib_pos));
-	glVertexAttribPointer(static_cast<GLuint>(g_sprite.attrib_pos), 2, GL_FLOAT, GL_FALSE, kInstanceStride,
-						reinterpret_cast<void*>(static_cast<intptr_t>(kInstancePosOffset)));
-	g_sprite.vertexAttribDivisor(static_cast<GLuint>(g_sprite.attrib_pos), 1u);
+	glVertexAttribPointer(static_cast<GLuint>(g_sprite.attrib_pos), 2, GL_FLOAT, GL_FALSE,
+						kExpandedVertexStride,
+						reinterpret_cast<void*>(static_cast<intptr_t>(kExpandedPosOffset)));
 
 	glEnableVertexAttribArray(static_cast<GLuint>(g_sprite.attrib_size));
-	glVertexAttribPointer(static_cast<GLuint>(g_sprite.attrib_size), 2, GL_FLOAT, GL_FALSE, kInstanceStride,
-						reinterpret_cast<void*>(static_cast<intptr_t>(kInstanceSizeOffset)));
-	g_sprite.vertexAttribDivisor(static_cast<GLuint>(g_sprite.attrib_size), 1u);
+	glVertexAttribPointer(static_cast<GLuint>(g_sprite.attrib_size), 2, GL_FLOAT, GL_FALSE,
+						kExpandedVertexStride,
+						reinterpret_cast<void*>(static_cast<intptr_t>(kExpandedSizeOffset)));
 
 	glEnableVertexAttribArray(static_cast<GLuint>(g_sprite.attrib_uv0));
-	glVertexAttribPointer(static_cast<GLuint>(g_sprite.attrib_uv0), 2, GL_FLOAT, GL_FALSE, kInstanceStride,
-						reinterpret_cast<void*>(static_cast<intptr_t>(kInstanceUv0Offset)));
-	g_sprite.vertexAttribDivisor(static_cast<GLuint>(g_sprite.attrib_uv0), 1u);
+	glVertexAttribPointer(static_cast<GLuint>(g_sprite.attrib_uv0), 2, GL_FLOAT, GL_FALSE,
+						kExpandedVertexStride,
+						reinterpret_cast<void*>(static_cast<intptr_t>(kExpandedUv0Offset)));
 
 	glEnableVertexAttribArray(static_cast<GLuint>(g_sprite.attrib_uv1));
-	glVertexAttribPointer(static_cast<GLuint>(g_sprite.attrib_uv1), 2, GL_FLOAT, GL_FALSE, kInstanceStride,
-						reinterpret_cast<void*>(static_cast<intptr_t>(kInstanceUv1Offset)));
-	g_sprite.vertexAttribDivisor(static_cast<GLuint>(g_sprite.attrib_uv1), 1u);
+	glVertexAttribPointer(static_cast<GLuint>(g_sprite.attrib_uv1), 2, GL_FLOAT, GL_FALSE,
+						kExpandedVertexStride,
+						reinterpret_cast<void*>(static_cast<intptr_t>(kExpandedUv1Offset)));
 
 	glEnableVertexAttribArray(static_cast<GLuint>(g_sprite.attrib_z));
-	glVertexAttribPointer(static_cast<GLuint>(g_sprite.attrib_z), 1, GL_UNSIGNED_SHORT, GL_TRUE, kInstanceStride,
-						reinterpret_cast<void*>(static_cast<intptr_t>(kInstanceZOffset)));
-	g_sprite.vertexAttribDivisor(static_cast<GLuint>(g_sprite.attrib_z), 1u);
+	glVertexAttribPointer(static_cast<GLuint>(g_sprite.attrib_z), 1, GL_UNSIGNED_SHORT, GL_TRUE,
+						kExpandedVertexStride,
+						reinterpret_cast<void*>(static_cast<intptr_t>(kExpandedZOffset)));
 
 	glEnableVertexAttribArray(static_cast<GLuint>(g_sprite.attrib_atlas));
-	glVertexAttribPointer(static_cast<GLuint>(g_sprite.attrib_atlas), 1, GL_UNSIGNED_BYTE, GL_FALSE, kInstanceStride,
-						reinterpret_cast<void*>(static_cast<intptr_t>(kInstanceAtlasOffset)));
-	g_sprite.vertexAttribDivisor(static_cast<GLuint>(g_sprite.attrib_atlas), 1u);
+	glVertexAttribPointer(static_cast<GLuint>(g_sprite.attrib_atlas), 1, GL_UNSIGNED_BYTE, GL_FALSE,
+						kExpandedVertexStride,
+						reinterpret_cast<void*>(static_cast<intptr_t>(kExpandedAtlasOffset)));
 
 	glEnableVertexAttribArray(static_cast<GLuint>(g_sprite.attrib_fx));
-	glVertexAttribPointer(static_cast<GLuint>(g_sprite.attrib_fx), 1, GL_BYTE, GL_TRUE, kInstanceStride,
-						reinterpret_cast<void*>(static_cast<intptr_t>(kInstanceFxOffset)));
-	g_sprite.vertexAttribDivisor(static_cast<GLuint>(g_sprite.attrib_fx), 1u);
+	glVertexAttribPointer(static_cast<GLuint>(g_sprite.attrib_fx), 1, GL_BYTE, GL_TRUE,
+						kExpandedVertexStride,
+						reinterpret_cast<void*>(static_cast<intptr_t>(kExpandedFxOffset)));
 
 	glEnableVertexAttribArray(static_cast<GLuint>(g_sprite.attrib_color));
-	glVertexAttribPointer(static_cast<GLuint>(g_sprite.attrib_color), 4, GL_UNSIGNED_BYTE, GL_TRUE, kInstanceStride,
-						reinterpret_cast<void*>(static_cast<intptr_t>(kInstanceColorOffset)));
-	g_sprite.vertexAttribDivisor(static_cast<GLuint>(g_sprite.attrib_color), 1u);
+	glVertexAttribPointer(static_cast<GLuint>(g_sprite.attrib_color), 4, GL_UNSIGNED_BYTE, GL_TRUE,
+						kExpandedVertexStride,
+						reinterpret_cast<void*>(static_cast<intptr_t>(kExpandedColorOffset)));
 }
 
 void setupVertexLayout() {
@@ -397,10 +466,53 @@ void writeInstance(uint8_t* dst, float posX, float posY, float sizeX, float size
 	dst[kInstanceColorOffset + 3] = a;
 }
 
+void writeExpandedVertex(uint8_t* dst, float cornerX, float cornerY, float posX,
+						float posY, float sizeX, float sizeY, float uv0x,
+						float uv0y, float uv1x, float uv1y, uint16_t z,
+						uint8_t atlas, int8_t fx, uint8_t r, uint8_t g, uint8_t b,
+						uint8_t a) {
+	writeF32(dst, kExpandedCornerOffset + 0, cornerX);
+	writeF32(dst, kExpandedCornerOffset + 4, cornerY);
+	writeF32(dst, kExpandedPosOffset + 0, posX);
+	writeF32(dst, kExpandedPosOffset + 4, posY);
+	writeF32(dst, kExpandedSizeOffset + 0, sizeX);
+	writeF32(dst, kExpandedSizeOffset + 4, sizeY);
+	writeF32(dst, kExpandedUv0Offset + 0, uv0x);
+	writeF32(dst, kExpandedUv0Offset + 4, uv0y);
+	writeF32(dst, kExpandedUv1Offset + 0, uv1x);
+	writeF32(dst, kExpandedUv1Offset + 4, uv1y);
+	writeU16(dst, kExpandedZOffset, z);
+	dst[kExpandedAtlasOffset] = atlas;
+	dst[kExpandedFxOffset] = static_cast<uint8_t>(fx);
+	dst[kExpandedColorOffset + 0] = r;
+	dst[kExpandedColorOffset + 1] = g;
+	dst[kExpandedColorOffset + 2] = b;
+	dst[kExpandedColorOffset + 3] = a;
+}
+
+void writeExpandedSprite(uint8_t* dst, float posX, float posY, float sizeX,
+						float sizeY, float uv0x, float uv0y, float uv1x,
+						float uv1y, uint16_t z, uint8_t atlas, int8_t fx,
+						uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+	for (int v = 0; v < kVerticesPerSprite; ++v) {
+		uint8_t* vertexDst = dst + static_cast<size_t>(v) * kExpandedVertexStride;
+		writeExpandedVertex(vertexDst, kCornerData[v * 2], kCornerData[v * 2 + 1],
+						posX, posY, sizeX, sizeY, uv0x, uv0y, uv1x, uv1y, z,
+						atlas, fx, r, g, b, a);
+	}
+}
+
 void updateInstanceBuffer(size_t spriteCount) {
 	const size_t byteCount = spriteCount * static_cast<size_t>(kInstanceStride);
 	glBindBuffer(GL_ARRAY_BUFFER, g_sprite.instance_vbo);
 	glBufferSubData(GL_ARRAY_BUFFER, 0, static_cast<GLsizeiptr>(byteCount), g_sprite.instance_data.data());
+}
+
+void updateExpandedBuffer(size_t spriteCount) {
+	const size_t byteCount = spriteCount * static_cast<size_t>(kVerticesPerSprite) *
+						static_cast<size_t>(kExpandedVertexStride);
+	glBindBuffer(GL_ARRAY_BUFFER, g_sprite.expanded_vbo);
+	glBufferSubData(GL_ARRAY_BUFFER, 0, static_cast<GLsizeiptr>(byteCount), g_sprite.expanded_data.data());
 }
 
 }  // namespace
@@ -451,8 +563,11 @@ void initGLES2(OpenGLES2Backend* backend, GameView* context) {
 		g_sprite.drawArraysInstanced = glDrawArraysInstancedANGLE;
 	}
 
-	if (g_sprite.vertexAttribDivisor == nullptr || g_sprite.drawArraysInstanced == nullptr) {
-		throw BMSX_RUNTIME_ERROR("[BMSX] GLES2 requires instanced arrays support for sprites.");
+	g_sprite.use_instancing = (g_sprite.vertexAttribDivisor != nullptr) && (g_sprite.drawArraysInstanced != nullptr);
+	if (!g_sprite.use_instancing) {
+		EngineCore::instance().log(
+			LogLevel::Warn,
+			"[BMSX][GLES2][Sprites] Instanced arrays unavailable; using expanded-vertex fallback.\n");
 	}
 
 	setupBuffers();
@@ -495,6 +610,9 @@ void shutdownGLES2(OpenGLES2Backend* backend) {
 	}
 	if (g_sprite.instance_vbo != 0) {
 		glDeleteBuffers(1, &g_sprite.instance_vbo);
+	}
+	if (g_sprite.expanded_vbo != 0) {
+		glDeleteBuffers(1, &g_sprite.expanded_vbo);
 	}
 	if (g_sprite.vao != 0) {
 		glDeleteVertexArraysOES(1, &g_sprite.vao);
@@ -558,8 +676,13 @@ void renderSpriteBatchGLES2(OpenGLES2Backend* backend, GameView* context,
 		if (batchCount == 0) {
 			return;
 		}
-		updateInstanceBuffer(batchCount);
-		g_sprite.drawArraysInstanced(GL_TRIANGLES, 0, kVerticesPerSprite, static_cast<GLsizei>(batchCount));
+		if (g_sprite.use_instancing) {
+			updateInstanceBuffer(batchCount);
+			g_sprite.drawArraysInstanced(GL_TRIANGLES, 0, kVerticesPerSprite, static_cast<GLsizei>(batchCount));
+		} else {
+			updateExpandedBuffer(batchCount);
+			glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(batchCount * static_cast<size_t>(kVerticesPerSprite)));
+		}
 		batchCount = 0;
 	};
 
@@ -624,10 +747,18 @@ void renderSpriteBatchGLES2(OpenGLES2Backend* backend, GameView* context,
 		const uint8_t colorB = packUnorm8(colorize.b);
 		const uint8_t colorA = packUnorm8(colorize.a);
 
-		const size_t base = batchCount * static_cast<size_t>(kInstanceStride);
-		uint8_t* dst = g_sprite.instance_data.data() + base;
-		writeInstance(dst, pos.x, pos.y, sizeX, sizeY, uv0x, uv0y, uv1x, uv1y,
-					zPacked, atlasPacked, weightPacked, colorR, colorG, colorB, colorA);
+		if (g_sprite.use_instancing) {
+			const size_t base = batchCount * static_cast<size_t>(kInstanceStride);
+			uint8_t* dst = g_sprite.instance_data.data() + base;
+			writeInstance(dst, pos.x, pos.y, sizeX, sizeY, uv0x, uv0y, uv1x, uv1y,
+						zPacked, atlasPacked, weightPacked, colorR, colorG, colorB, colorA);
+		} else {
+			const size_t base = batchCount * static_cast<size_t>(kVerticesPerSprite) *
+							static_cast<size_t>(kExpandedVertexStride);
+			uint8_t* dst = g_sprite.expanded_data.data() + base;
+			writeExpandedSprite(dst, pos.x, pos.y, sizeX, sizeY, uv0x, uv0y, uv1x, uv1y,
+							zPacked, atlasPacked, weightPacked, colorR, colorG, colorB, colorA);
+		}
 
 		batchCount++;
 		if (batchCount >= static_cast<size_t>(kMaxSprites)) {
