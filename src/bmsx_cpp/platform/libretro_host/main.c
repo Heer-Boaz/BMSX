@@ -136,6 +136,20 @@ static char g_opt_postprocess_detail[8] = "off";
 static bool g_vars_updated = false;
 static LibretroCore* g_core = NULL;
 
+static const char* kMenuKeyRenderBackend = "bmsx_render_backend";
+static const char* kMenuKeyCrtPostprocessing = "bmsx_crt_postprocessing";
+static const char* kMenuKeyPostprocessDetail = "bmsx_postprocess_detail";
+static const char* kMenuKeyCrtNoise = "bmsx_crt_noise";
+static const char* kMenuKeyCrtColorBleed = "bmsx_crt_color_bleed";
+static const char* kMenuKeyCrtScanlines = "bmsx_crt_scanlines";
+static const char* kMenuKeyCrtBlur = "bmsx_crt_blur";
+static const char* kMenuKeyCrtGlow = "bmsx_crt_glow";
+static const char* kMenuKeyCrtFringing = "bmsx_crt_fringing";
+static const char* kMenuKeyCrtAperture = "bmsx_crt_aperture";
+static const char* kMenuKeyDither = "bmsx_dither";
+static const char* kMenuKeyFrameSkip = "bmsx_frameskip";
+static const char* kMenuKeyHostShowFps = "bmsx_host_show_fps";
+
 #ifdef BMSX_LIBRETRO_HOST_SDL
 static bool g_use_sdl = false;
 static bool g_sdl_use_gl = false;
@@ -928,24 +942,106 @@ static void menu_trim(char* s) {
 	s[len] = '\0';
 }
 
+static bool menu_is_crt_detail_key(const char* key) {
+	if (!key) {
+		return false;
+	}
+	return strcmp(key, kMenuKeyPostprocessDetail) == 0 ||
+			strcmp(key, kMenuKeyCrtNoise) == 0 ||
+			strcmp(key, kMenuKeyCrtColorBleed) == 0 ||
+			strcmp(key, kMenuKeyCrtScanlines) == 0 ||
+			strcmp(key, kMenuKeyCrtBlur) == 0 ||
+			strcmp(key, kMenuKeyCrtGlow) == 0 ||
+			strcmp(key, kMenuKeyCrtFringing) == 0 ||
+			strcmp(key, kMenuKeyCrtAperture) == 0;
+}
+
+static const char* menu_known_label(const char* key) {
+	if (!key) return NULL;
+	if (strcmp(key, kMenuKeyRenderBackend) == 0) return "Render Backend";
+	if (strcmp(key, kMenuKeyCrtPostprocessing) == 0) return "CRT Post-processing";
+	if (strcmp(key, kMenuKeyPostprocessDetail) == 0) return "Post-processing Detail";
+	if (strcmp(key, kMenuKeyCrtNoise) == 0) return "CRT Noise";
+	if (strcmp(key, kMenuKeyCrtColorBleed) == 0) return "CRT Color Bleed";
+	if (strcmp(key, kMenuKeyCrtScanlines) == 0) return "CRT Scanlines";
+	if (strcmp(key, kMenuKeyCrtBlur) == 0) return "CRT Blur";
+	if (strcmp(key, kMenuKeyCrtGlow) == 0) return "CRT Glow";
+	if (strcmp(key, kMenuKeyCrtFringing) == 0) return "CRT Fringing";
+	if (strcmp(key, kMenuKeyCrtAperture) == 0) return "CRT Aperture";
+	if (strcmp(key, kMenuKeyDither) == 0) return "Dither";
+	if (strcmp(key, kMenuKeyFrameSkip) == 0) return "Frame Skip";
+	if (strcmp(key, kMenuKeyHostShowFps) == 0) return "Show FPS";
+	return NULL;
+}
+
+static const char* menu_known_info(const char* key) {
+	if (!key) return NULL;
+	if (strcmp(key, kMenuKeyRenderBackend) == 0) return "Switch renderer backend (restart required).";
+	if (strcmp(key, kMenuKeyCrtPostprocessing) == 0) return "Enable CRT post-processing.";
+	if (strcmp(key, kMenuKeyPostprocessDetail) == 0) return "Increase post-processing detail (higher offscreen scale).";
+	if (strcmp(key, kMenuKeyCrtNoise) == 0) return "Toggle CRT noise/grain.";
+	if (strcmp(key, kMenuKeyCrtColorBleed) == 0) return "Toggle CRT color bleed.";
+	if (strcmp(key, kMenuKeyCrtScanlines) == 0) return "Toggle CRT scanlines.";
+	if (strcmp(key, kMenuKeyCrtBlur) == 0) return "Toggle CRT blur.";
+	if (strcmp(key, kMenuKeyCrtGlow) == 0) return "Toggle CRT glow.";
+	if (strcmp(key, kMenuKeyCrtFringing) == 0) return "Toggle CRT fringing.";
+	if (strcmp(key, kMenuKeyCrtAperture) == 0) return "Toggle CRT aperture grille.";
+	if (strcmp(key, kMenuKeyDither) == 0) return "Select dithering mode.";
+	if (strcmp(key, kMenuKeyFrameSkip) == 0) return "Skip frames when rendering exceeds frame budget.";
+	if (strcmp(key, kMenuKeyHostShowFps) == 0) return "Toggle FPS overlay.";
+	return NULL;
+}
+
+static const char* menu_resolve_label(const char* key, const char* preferred) {
+	if (preferred && preferred[0]) {
+		return preferred;
+	}
+	const char* known = menu_known_label(key);
+	if (known && known[0]) {
+		return known;
+	}
+	return key ? key : "";
+}
+
+static const char* menu_resolve_info(const char* key, const char* preferred) {
+	if (preferred && preferred[0]) {
+		return preferred;
+	}
+	return menu_known_info(key);
+}
+
+static const struct retro_core_option_v2_category* menu_find_v2_category(
+		const struct retro_core_options_v2* opts,
+		const char* category_key) {
+	if (!opts || !opts->categories || !category_key || !category_key[0]) {
+		return NULL;
+	}
+	for (const struct retro_core_option_v2_category* cat = opts->categories; cat->key; ++cat) {
+		if (strcmp(cat->key, category_key) == 0) {
+			return cat;
+		}
+	}
+	return NULL;
+}
+
 static const char* menu_builtin_value(const char* key) {
 	if (!key) return NULL;
-	if (strcmp(key, "bmsx_render_backend") == 0) return g_opt_render_backend;
-	if (strcmp(key, "bmsx_crt_postprocessing") == 0) return g_opt_crt_postprocessing;
-	if (strcmp(key, "bmsx_postprocess_detail") == 0) return g_opt_postprocess_detail;
-	if (strcmp(key, "bmsx_host_show_fps") == 0) return g_show_fps ? "on" : "off";
+	if (strcmp(key, kMenuKeyRenderBackend) == 0) return g_opt_render_backend;
+	if (strcmp(key, kMenuKeyCrtPostprocessing) == 0) return g_opt_crt_postprocessing;
+	if (strcmp(key, kMenuKeyPostprocessDetail) == 0) return g_opt_postprocess_detail;
+	if (strcmp(key, kMenuKeyHostShowFps) == 0) return g_show_fps ? "on" : "off";
 	return NULL;
 }
 
 static void menu_sync_builtin(const char* key, const char* value) {
 	if (!key || !value) return;
-	if (strcmp(key, "bmsx_render_backend") == 0) {
+	if (strcmp(key, kMenuKeyRenderBackend) == 0) {
 		snprintf(g_opt_render_backend, sizeof(g_opt_render_backend), "%s", value);
-	} else if (strcmp(key, "bmsx_crt_postprocessing") == 0) {
+	} else if (strcmp(key, kMenuKeyCrtPostprocessing) == 0) {
 		snprintf(g_opt_crt_postprocessing, sizeof(g_opt_crt_postprocessing), "%s", value);
-	} else if (strcmp(key, "bmsx_postprocess_detail") == 0) {
+	} else if (strcmp(key, kMenuKeyPostprocessDetail) == 0) {
 		snprintf(g_opt_postprocess_detail, sizeof(g_opt_postprocess_detail), "%s", value);
-	} else if (strcmp(key, "bmsx_host_show_fps") == 0) {
+	} else if (strcmp(key, kMenuKeyHostShowFps) == 0) {
 		bool enable = strcmp(value, "on") == 0;
 		if (g_show_fps != enable) {
 			g_show_fps = enable;
@@ -975,7 +1071,11 @@ static MenuOption* menu_get_option(const char* key) {
 	opt = &g_menu_options[g_menu_option_count++];
 	memset(opt, 0, sizeof(*opt));
 	menu_copy_str(opt->key, sizeof(opt->key), key);
-	menu_copy_str(opt->label, sizeof(opt->label), key);
+	menu_copy_str(opt->label, sizeof(opt->label), menu_resolve_label(key, NULL));
+	const char* known_info = menu_known_info(key);
+	if (known_info && known_info[0]) {
+		menu_copy_str(opt->info, sizeof(opt->info), known_info);
+	}
 	return opt;
 }
 
@@ -990,15 +1090,7 @@ static bool menu_option_is_disabled(const MenuOption* opt) {
 	if (strcmp(g_opt_crt_postprocessing, "on") == 0) {
 		return false;
 	}
-	const char* key = opt->key;
-	return strcmp(key, "bmsx_postprocess_detail") == 0 ||
-			strcmp(key, "bmsx_crt_noise") == 0 ||
-			strcmp(key, "bmsx_crt_color_bleed") == 0 ||
-			strcmp(key, "bmsx_crt_scanlines") == 0 ||
-			strcmp(key, "bmsx_crt_blur") == 0 ||
-			strcmp(key, "bmsx_crt_glow") == 0 ||
-			strcmp(key, "bmsx_crt_fringing") == 0 ||
-			strcmp(key, "bmsx_crt_aperture") == 0;
+	return menu_is_crt_detail_key(opt->key);
 }
 
 static size_t menu_next_selectable(size_t index, int dir) {
@@ -1055,14 +1147,14 @@ static void menu_set_option_values(MenuOption* opt, const char* label, const cha
 		const MenuOptionValue* values, size_t count, const char* default_value);
 
 static void menu_append_host_options(void) {
-	MenuOption* opt = menu_get_option("bmsx_host_show_fps");
+	MenuOption* opt = menu_get_option(kMenuKeyHostShowFps);
 	if (!opt) return;
 	MenuOptionValue values[2];
 	menu_copy_str(values[0].value, sizeof(values[0].value), "off");
 	menu_copy_str(values[0].label, sizeof(values[0].label), "OFF");
 	menu_copy_str(values[1].value, sizeof(values[1].value), "on");
 	menu_copy_str(values[1].label, sizeof(values[1].label), "ON");
-	menu_set_option_values(opt, "SHOW FPS", "Toggle FPS overlay", values, 2,
+	menu_set_option_values(opt, "HOST: SHOW FPS", "Toggle FPS overlay", values, 2,
 		g_show_fps ? "on" : "off");
 }
 
@@ -1150,15 +1242,30 @@ static void menu_ingest_options_v2(const struct retro_core_options_v2* opts) {
 	for (const struct retro_core_option_v2_definition* def = opts->definitions; def->key; ++def) {
 		MenuOption* opt = menu_get_option(def->key);
 		if (!opt) continue;
+		const struct retro_core_option_v2_category* category = menu_find_v2_category(opts, def->category_key);
+		const char* label = def->desc_categorized && def->desc_categorized[0]
+				? def->desc_categorized
+				: def->desc;
+		const char* info = def->info_categorized && def->info_categorized[0]
+				? def->info_categorized
+				: def->info;
+		if ((!label || !label[0]) && category && category->desc && category->desc[0]) {
+			label = category->desc;
+		}
+		if ((!info || !info[0]) && category && category->info && category->info[0]) {
+			info = category->info;
+		}
+		label = menu_resolve_label(def->key, label);
+		info = menu_resolve_info(def->key, info);
 		MenuOptionValue values[MENU_MAX_VALUES];
 		size_t count = 0;
 		for (size_t i = 0; def->values[i].value && count < MENU_MAX_VALUES; ++i) {
 			menu_copy_str(values[count].value, sizeof(values[count].value), def->values[i].value);
 			menu_copy_str(values[count].label, sizeof(values[count].label),
-				def->values[i].label ? def->values[i].label : def->values[i].value);
+					def->values[i].label ? def->values[i].label : def->values[i].value);
 			++count;
 		}
-		menu_set_option_values(opt, def->desc, def->info, values, count, def->default_value);
+		menu_set_option_values(opt, label, info, values, count, def->default_value);
 	}
 	menu_append_host_options();
 	menu_append_actions();
@@ -1169,15 +1276,17 @@ static void menu_ingest_options_v1(const struct retro_core_option_definition* de
 	for (const struct retro_core_option_definition* def = defs; def->key; ++def) {
 		MenuOption* opt = menu_get_option(def->key);
 		if (!opt) continue;
+		const char* label = menu_resolve_label(def->key, def->desc);
+		const char* info = menu_resolve_info(def->key, def->info);
 		MenuOptionValue values[MENU_MAX_VALUES];
 		size_t count = 0;
 		for (size_t i = 0; def->values[i].value && count < MENU_MAX_VALUES; ++i) {
 			menu_copy_str(values[count].value, sizeof(values[count].value), def->values[i].value);
 			menu_copy_str(values[count].label, sizeof(values[count].label),
-				def->values[i].label ? def->values[i].label : def->values[i].value);
+					def->values[i].label ? def->values[i].label : def->values[i].value);
 			++count;
 		}
-		menu_set_option_values(opt, def->desc, def->info, values, count, def->default_value);
+		menu_set_option_values(opt, label, info, values, count, def->default_value);
 	}
 	menu_append_host_options();
 	menu_append_actions();
@@ -1199,7 +1308,8 @@ static void menu_ingest_variables(const struct retro_variable* vars) {
 			menu_copy_str(label_buf, sizeof(label_buf), buf);
 			values_str = semicolon + 1;
 		} else {
-			menu_copy_str(label_buf, sizeof(label_buf), opt->label[0] ? opt->label : var->key);
+			menu_copy_str(label_buf, sizeof(label_buf),
+				menu_resolve_label(var->key, opt->label[0] ? opt->label : NULL));
 			values_str = buf;
 		}
 		menu_trim(label_buf);
@@ -1216,7 +1326,8 @@ static void menu_ingest_variables(const struct retro_variable* vars) {
 			++count;
 		}
 		const char* default_value = count > 0 ? values[0].value : NULL;
-		menu_set_option_values(opt, label_buf, opt->info, values, count, default_value);
+		const char* info = menu_resolve_info(var->key, opt->info[0] ? opt->info : NULL);
+		menu_set_option_values(opt, label_buf, info, values, count, default_value);
 	}
 	menu_append_host_options();
 	menu_append_actions();
@@ -1926,8 +2037,24 @@ static void menu_rebuild_surface(void) {
 	if (!g_menu_active || g_fb.width <= 0 || g_fb.height <= 0) {
 		return;
 	}
+	if (g_menu_option_count > 0 && g_menu_selected >= g_menu_option_count) {
+		g_menu_selected = menu_next_selectable(0, 1);
+	}
 	const char* title = "CORE OPTIONS";
-	const char* footer = "START+SELECT+L+R: CLOSE";
+	char footer_buf[MENU_MAX_INFO];
+	if (g_menu_option_count == 0) {
+		menu_copy_str(footer_buf, sizeof(footer_buf), "B: CLOSE");
+	} else {
+		const MenuOption* selected = &g_menu_options[g_menu_selected];
+		if (menu_option_is_action(selected)) {
+			menu_copy_str(footer_buf, sizeof(footer_buf), "A/START: EXECUTE  B: CLOSE");
+		} else if (menu_option_is_disabled(selected)) {
+			menu_copy_str(footer_buf, sizeof(footer_buf), "LOCKED: ENABLE CRT POST-PROCESSING  B: CLOSE");
+		} else {
+			menu_copy_str(footer_buf, sizeof(footer_buf), "D-PAD: NAV  L/R: CHANGE  B: CLOSE");
+		}
+	}
+	const char* footer = footer_buf;
 	size_t max_chars = strlen(title);
 	if (strlen(footer) > max_chars) {
 		max_chars = strlen(footer);
