@@ -101,7 +101,6 @@ TextureHandle OpenGLES2Backend::createTexture(const u8* data, i32 width,
 	}
 
 	const GLint internalFormat = tex->srgb ? static_cast<GLint>(GL_SRGB_ALPHA_EXT) : static_cast<GLint>(GL_RGBA);
-	const GLenum uploadFormat = tex->srgb ? GL_SRGB_ALPHA_EXT : GL_RGBA;
 	glGenTextures(1, &tex->id);
 	glBindTexture(GL_TEXTURE_2D, tex->id);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -109,7 +108,7 @@ TextureHandle OpenGLES2Backend::createTexture(const u8* data, i32 width,
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-	glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, width, height, 0, uploadFormat,
+	glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, width, height, 0, GL_RGBA,
 					GL_UNSIGNED_BYTE, uploadData);
 	if (kGLES2VerboseLog) {
 	std::fprintf(stderr,
@@ -144,11 +143,9 @@ void OpenGLES2Backend::updateTexture(TextureHandle handle, const u8* data, i32 w
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 	if (needsRecreate) {
 		const GLint internalFormat = useSrgbTexture ? static_cast<GLint>(GL_SRGB_ALPHA_EXT) : static_cast<GLint>(GL_RGBA);
-		const GLenum uploadFormat = useSrgbTexture ? GL_SRGB_ALPHA_EXT : GL_RGBA;
-		glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, width, height, 0, uploadFormat, GL_UNSIGNED_BYTE, uploadData);
+		glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, uploadData);
 	} else {
-		const GLenum uploadFormat = tex->srgb ? GL_SRGB_ALPHA_EXT : GL_RGBA;
-		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, uploadFormat, GL_UNSIGNED_BYTE, uploadData);
+		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, uploadData);
 	}
 	tex->width = width;
 	tex->height = height;
@@ -170,8 +167,7 @@ TextureHandle OpenGLES2Backend::resizeTexture(TextureHandle handle, i32 width, i
 	glBindTexture(GL_TEXTURE_2D, tex->id);
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 	const GLint internalFormat = tex->srgb ? static_cast<GLint>(GL_SRGB_ALPHA_EXT) : static_cast<GLint>(GL_RGBA);
-	const GLenum uploadFormat = tex->srgb ? GL_SRGB_ALPHA_EXT : GL_RGBA;
-	glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, width, height, 0, uploadFormat, GL_UNSIGNED_BYTE, nullptr);
+	glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 	tex->width = width;
 	tex->height = height;
 	if (kGLES2VerboseLog) {
@@ -196,8 +192,7 @@ void OpenGLES2Backend::updateTextureRegion(TextureHandle handle, const u8* data,
 	}
 	glBindTexture(GL_TEXTURE_2D, tex->id);
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-	const GLenum uploadFormat = tex->srgb ? GL_SRGB_ALPHA_EXT : GL_RGBA;
-	glTexSubImage2D(GL_TEXTURE_2D, 0, x, y, width, height, uploadFormat, GL_UNSIGNED_BYTE, uploadData);
+	glTexSubImage2D(GL_TEXTURE_2D, 0, x, y, width, height, GL_RGBA, GL_UNSIGNED_BYTE, uploadData);
 	if (kGLES2VerboseLog) {
 	std::fprintf(stderr,
 					"[BMSX][GLES2] updateTextureRegion id=%u size=%dx%d offset=%d,%d data=%p\n",
