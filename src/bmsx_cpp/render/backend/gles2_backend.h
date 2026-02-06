@@ -17,6 +17,7 @@ struct GLES2Texture {
 	GLuint id = 0;
 	i32 width = 0;
 	i32 height = 0;
+	bool srgb = false;
 };
 
 class OpenGLES2Backend : public GPUBackend {
@@ -74,6 +75,7 @@ private:
 	std::array<GLuint, kTrackedTextureUnits> m_bound_texture_2d_by_unit{};
 	GLuint m_readback_fbo = 0;
 	bool m_context_ready = false;
+	bool m_supports_srgb_textures = false;
 };
 
 } // namespace bmsx

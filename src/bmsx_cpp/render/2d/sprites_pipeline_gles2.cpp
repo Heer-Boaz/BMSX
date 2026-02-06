@@ -6,23 +6,34 @@
 
 #include <cmath>
 #include <cstdio>
-#include <cstring>
 #include <cstdint>
+#include <cstring>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
-#include "../../rompack/runtime_assets.h"
 #include "../../core/engine_core.h"
 #include "../../rompack/rompack.h"
-#include "../../emulator/runtime.h"
 #include "../../utils/clamp.h"
 #include "../shared/render_queues.h"
 
 #if defined(__GNUC__)
+extern "C" __attribute__((weak)) void glVertexAttribDivisor(GLuint index, GLuint divisor);
+extern "C" __attribute__((weak)) void glDrawArraysInstanced(GLenum mode, GLint first, GLsizei count, GLsizei instancecount);
+extern "C" __attribute__((weak)) void glVertexAttribDivisorEXT(GLuint index, GLuint divisor);
+extern "C" __attribute__((weak)) void glDrawArraysInstancedEXT(GLenum mode, GLint first, GLsizei count, GLsizei instancecount);
+extern "C" __attribute__((weak)) void glVertexAttribDivisorANGLE(GLuint index, GLuint divisor);
+extern "C" __attribute__((weak)) void glDrawArraysInstancedANGLE(GLenum mode, GLint first, GLsizei count, GLsizei instancecount);
 extern "C" __attribute__((weak)) void glGenVertexArraysOES(GLsizei n, GLuint* arrays);
 extern "C" __attribute__((weak)) void glBindVertexArrayOES(GLuint array);
 extern "C" __attribute__((weak)) void glDeleteVertexArraysOES(GLsizei n, const GLuint* arrays);
 #else
+extern "C" void glVertexAttribDivisor(GLuint index, GLuint divisor);
+extern "C" void glDrawArraysInstanced(GLenum mode, GLint first, GLsizei count, GLsizei instancecount);
+extern "C" void glVertexAttribDivisorEXT(GLuint index, GLuint divisor);
+extern "C" void glDrawArraysInstancedEXT(GLenum mode, GLint first, GLsizei count, GLsizei instancecount);
+extern "C" void glVertexAttribDivisorANGLE(GLuint index, GLuint divisor);
+extern "C" void glDrawArraysInstancedANGLE(GLenum mode, GLint first, GLsizei count, GLsizei instancecount);
 extern "C" void glGenVertexArraysOES(GLsizei n, GLuint* arrays);
 extern "C" void glBindVertexArrayOES(GLuint array);
 extern "C" void glDeleteVertexArraysOES(GLsizei n, const GLuint* arrays);
@@ -36,23 +47,16 @@ constexpr bool kSpritesVerboseLog = false;
 
 constexpr int kMaxSprites = 256;
 constexpr int kVerticesPerSprite = 6;
-constexpr int kPositionComponents = 2;
-constexpr int kTexcoordComponents = 2;
-constexpr int kZComponents = 1;
-constexpr int kColorComponents = 4;
-constexpr int kAtlasComponents = 1;
-constexpr int kCenterComponents = 2;
-constexpr int kParallaxWeightComponents = 1;
-constexpr int kVertexStride = 24;
-constexpr int kPositionOffset = 0;
-constexpr int kTexcoordOffset = 8;
-constexpr int kZOffset = 12;
-constexpr int kAtlasOffset = 14;
-constexpr int kParallaxWeightOffset = 15;
-constexpr int kColorOffset = 16;
-constexpr int kCenterOffset = 20;
-constexpr float kCornerX[6] = {0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 1.0f};
-constexpr float kCornerY[6] = {0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f};
+
+constexpr int kInstanceStride = 40;
+constexpr int kInstancePosOffset = 0;
+constexpr int kInstanceSizeOffset = 8;
+constexpr int kInstanceUv0Offset = 16;
+constexpr int kInstanceUv1Offset = 24;
+constexpr int kInstanceZOffset = 32;
+constexpr int kInstanceAtlasOffset = 34;
+constexpr int kInstanceFxOffset = 35;
+constexpr int kInstanceColorOffset = 36;
 
 constexpr float kZCoordMax = 10000.0f;
 constexpr float kDefaultZ = 0.0f;
@@ -63,17 +67,33 @@ constexpr int kTexUnitAtlasEngine = 2;
 constexpr int kTexUnitAtlasFallback = 3;
 constexpr uint8_t kAtlasFallbackSelector = 255u;
 
+constexpr float kCornerData[12] = {
+	0.0f, 0.0f,
+	0.0f, 1.0f,
+	1.0f, 0.0f,
+	1.0f, 0.0f,
+	0.0f, 1.0f,
+	1.0f, 1.0f
+};
+
+using VertexAttribDivisorFn = void (*)(GLuint, GLuint);
+using DrawArraysInstancedFn = void (*)(GLenum, GLint, GLsizei, GLsizei);
+
 static_assert(ENGINE_ATLAS_INDEX <= 255, "ENGINE_ATLAS_INDEX must fit in uint8_t sprite atlas selector.");
 
 struct SpriteGLES2State {
 	GLuint program = 0;
+
+	GLint attrib_corner = -1;
 	GLint attrib_pos = -1;
-	GLint attrib_uv = -1;
+	GLint attrib_size = -1;
+	GLint attrib_uv0 = -1;
+	GLint attrib_uv1 = -1;
 	GLint attrib_z = -1;
-	GLint attrib_center = -1;
-	GLint attrib_parallax_weight = -1;
-	GLint attrib_color = -1;
 	GLint attrib_atlas = -1;
+	GLint attrib_fx = -1;
+	GLint attrib_color = -1;
+
 	GLint uniform_resolution = -1;
 	GLint uniform_scale = -1;
 	GLint uniform_parallax_rig = -1;
@@ -84,10 +104,17 @@ struct SpriteGLES2State {
 	GLint uniform_tex2 = -1;
 	GLint uniform_tex3 = -1;
 	GLint uniform_time = -1;
-	GLuint vbo = 0;
+
+	GLuint corner_vbo = 0;
+	GLuint instance_vbo = 0;
 	GLuint vao = 0;
+
 	bool use_vao = false;
-	std::vector<uint8_t> vertex_data;
+
+	VertexAttribDivisorFn vertexAttribDivisor = nullptr;
+	DrawArraysInstancedFn drawArraysInstanced = nullptr;
+
+	std::vector<uint8_t> instance_data;
 };
 
 SpriteGLES2State g_sprite;
@@ -95,13 +122,15 @@ SpriteGLES2State g_sprite;
 const char* kSpriteVertexShader = R"(
 precision mediump float;
 
-attribute vec2 a_position;
-attribute vec2 a_texcoord;
-attribute float a_pos_z;
-attribute vec2 a_center;
-attribute float a_parallax_weight;
-attribute vec4 a_color_override;
-attribute float a_atlas_id;
+attribute vec2 a_corner;
+attribute vec2 i_pos;
+attribute vec2 i_size;
+attribute vec2 i_uv0;
+attribute vec2 i_uv1;
+attribute float i_z;
+attribute float i_atlas_id;
+attribute float i_fx;
+attribute vec4 i_color_override;
 
 uniform vec2 u_resolution;
 uniform float u_scale;
@@ -119,9 +148,9 @@ float wobble(float t) {
 }
 
 void main() {
-	float depth = smoothstep(0.0, 1.0, a_pos_z);
-	float dir = sign(a_parallax_weight);
-	float weight = abs(a_parallax_weight) * depth;
+	float depth = smoothstep(0.0, 1.0, i_z);
+	float dir = sign(i_fx);
+	float weight = abs(i_fx) * depth;
 	float wob = wobble(u_time);
 	float dy_px = (u_parallax_rig2.x + wob * u_parallax_rig.x) * weight * u_parallax_rig2.y * dir;
 	float flipWindowSeconds = max(u_parallax_flip_window, 0.0001);
@@ -135,13 +164,17 @@ void main() {
 	float impactMask = max(0.0, dir * impactSign);
 	float pulse = exp(-8.0 * u_parallax_rig.w) * abs(u_parallax_rig.z) * weight * impactMask;
 	float parallaxScale = baseScale + pulse;
-	vec2 parallaxPos = (a_position - a_center) * parallaxScale + a_center + vec2(0.0, dy_px);
+
+	vec2 center = i_pos + i_size * 0.5;
+	vec2 pos = i_pos + a_corner * i_size;
+	vec2 parallaxPos = (pos - center) * parallaxScale + center + vec2(0.0, dy_px);
 	vec2 scaledPosition = parallaxPos * u_scale;
 	vec2 clipSpace = ((scaledPosition / u_resolution) * 2.0 - 1.0) * vec2(1.0, -1.0);
-	gl_Position = vec4(clipSpace, a_pos_z, 1.0);
-	v_texcoord = a_texcoord;
-	v_color_override = a_color_override;
-	v_atlas_id = a_atlas_id;
+
+	gl_Position = vec4(clipSpace, i_z, 1.0);
+	v_texcoord = mix(i_uv0, i_uv1, a_corner);
+	v_color_override = i_color_override;
+	v_atlas_id = i_atlas_id;
 }
 )";
 
@@ -184,21 +217,21 @@ GLuint compileShader(GLenum type, const char* src) {
 	GLint status = 0;
 	glGetShaderiv(shader, GL_COMPILE_STATUS, &status);
 	if (status == GL_FALSE) {
-	GLint log_length = 0;
-	glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &log_length);
-	std::string log;
-	if (log_length > 1) {
-		std::string log_buffer;
-		log_buffer.resize(static_cast<size_t>(log_length));
-		GLsizei written = 0;
-		glGetShaderInfoLog(shader, log_length, &written, log_buffer.data());
-		log.assign(log_buffer.data(), static_cast<size_t>(written));
-	}
-	EngineCore::instance().log(LogLevel::Error,
+		GLint log_length = 0;
+		glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &log_length);
+		std::string log;
+		if (log_length > 1) {
+			std::string log_buffer;
+			log_buffer.resize(static_cast<size_t>(log_length));
+			GLsizei written = 0;
+			glGetShaderInfoLog(shader, log_length, &written, log_buffer.data());
+			log.assign(log_buffer.data(), static_cast<size_t>(written));
+		}
+		EngineCore::instance().log(LogLevel::Error,
 								"[BMSX] GLES2 shader compile failed: %s\n",
 								log.c_str());
-	glDeleteShader(shader);
-	throw BMSX_RUNTIME_ERROR(std::string("[BMSX] GLES2 shader compile failed: ") + log);
+		glDeleteShader(shader);
+		throw BMSX_RUNTIME_ERROR(std::string("[BMSX] GLES2 shader compile failed: ") + log);
 	}
 	return shader;
 }
@@ -211,23 +244,23 @@ GLuint linkProgram(GLuint vs, GLuint fs) {
 	GLint status = 0;
 	glGetProgramiv(program, GL_LINK_STATUS, &status);
 	if (status == GL_FALSE) {
-	GLint log_length = 0;
-	glGetProgramiv(program, GL_INFO_LOG_LENGTH, &log_length);
-	std::string log;
-	if (log_length > 1) {
-		std::string log_buffer;
-		log_buffer.resize(static_cast<size_t>(log_length));
-		GLsizei written = 0;
-		glGetProgramInfoLog(program, log_length, &written, log_buffer.data());
-		log.assign(log_buffer.data(), static_cast<size_t>(written));
-	}
-	EngineCore::instance().log(LogLevel::Error,
+		GLint log_length = 0;
+		glGetProgramiv(program, GL_INFO_LOG_LENGTH, &log_length);
+		std::string log;
+		if (log_length > 1) {
+			std::string log_buffer;
+			log_buffer.resize(static_cast<size_t>(log_length));
+			GLsizei written = 0;
+			glGetProgramInfoLog(program, log_length, &written, log_buffer.data());
+			log.assign(log_buffer.data(), static_cast<size_t>(written));
+		}
+		EngineCore::instance().log(LogLevel::Error,
 								"[BMSX] GLES2 program link failed: %s\n",
 								log.c_str());
-	glDeleteProgram(program);
-	glDeleteShader(vs);
-	glDeleteShader(fs);
-	throw BMSX_RUNTIME_ERROR(std::string("[BMSX] GLES2 program link failed: ") + log);
+		glDeleteProgram(program);
+		glDeleteShader(vs);
+		glDeleteShader(fs);
+		throw BMSX_RUNTIME_ERROR(std::string("[BMSX] GLES2 program link failed: ") + log);
 	}
 	glDeleteShader(vs);
 	glDeleteShader(fs);
@@ -235,66 +268,74 @@ GLuint linkProgram(GLuint vs, GLuint fs) {
 }
 
 void setupBuffers() {
-	g_sprite.vertex_data.resize(
-		static_cast<size_t>(kMaxSprites * kVerticesPerSprite * kVertexStride));
+	g_sprite.instance_data.resize(static_cast<size_t>(kMaxSprites * kInstanceStride));
 
-	glGenBuffers(1, &g_sprite.vbo);
-	glBindBuffer(GL_ARRAY_BUFFER, g_sprite.vbo);
-	glBufferData(GL_ARRAY_BUFFER,
-				static_cast<GLsizeiptr>(g_sprite.vertex_data.size()),
-				nullptr, GL_DYNAMIC_DRAW);
+	glGenBuffers(1, &g_sprite.corner_vbo);
+	glBindBuffer(GL_ARRAY_BUFFER, g_sprite.corner_vbo);
+	glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(sizeof(kCornerData)), kCornerData, GL_STATIC_DRAW);
+
+	glGenBuffers(1, &g_sprite.instance_vbo);
+	glBindBuffer(GL_ARRAY_BUFFER, g_sprite.instance_vbo);
+	glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(g_sprite.instance_data.size()), nullptr, GL_DYNAMIC_DRAW);
 }
 
-void setupAttributes() {
-	glBindBuffer(GL_ARRAY_BUFFER, g_sprite.vbo);
+void configureVertexLayout() {
+	glBindBuffer(GL_ARRAY_BUFFER, g_sprite.corner_vbo);
+	glEnableVertexAttribArray(static_cast<GLuint>(g_sprite.attrib_corner));
+	glVertexAttribPointer(static_cast<GLuint>(g_sprite.attrib_corner), 2, GL_FLOAT, GL_FALSE, 0, nullptr);
+	g_sprite.vertexAttribDivisor(static_cast<GLuint>(g_sprite.attrib_corner), 0u);
+
+	glBindBuffer(GL_ARRAY_BUFFER, g_sprite.instance_vbo);
 
 	glEnableVertexAttribArray(static_cast<GLuint>(g_sprite.attrib_pos));
-	glVertexAttribPointer(static_cast<GLuint>(g_sprite.attrib_pos),
-						kPositionComponents, GL_FLOAT, GL_FALSE, kVertexStride,
-						reinterpret_cast<void*>(static_cast<intptr_t>(kPositionOffset)));
+	glVertexAttribPointer(static_cast<GLuint>(g_sprite.attrib_pos), 2, GL_FLOAT, GL_FALSE, kInstanceStride,
+						reinterpret_cast<void*>(static_cast<intptr_t>(kInstancePosOffset)));
+	g_sprite.vertexAttribDivisor(static_cast<GLuint>(g_sprite.attrib_pos), 1u);
 
-	glEnableVertexAttribArray(static_cast<GLuint>(g_sprite.attrib_uv));
-	glVertexAttribPointer(static_cast<GLuint>(g_sprite.attrib_uv),
-						kTexcoordComponents, GL_UNSIGNED_SHORT, GL_TRUE,
-						kVertexStride,
-						reinterpret_cast<void*>(static_cast<intptr_t>(kTexcoordOffset)));
+	glEnableVertexAttribArray(static_cast<GLuint>(g_sprite.attrib_size));
+	glVertexAttribPointer(static_cast<GLuint>(g_sprite.attrib_size), 2, GL_FLOAT, GL_FALSE, kInstanceStride,
+						reinterpret_cast<void*>(static_cast<intptr_t>(kInstanceSizeOffset)));
+	g_sprite.vertexAttribDivisor(static_cast<GLuint>(g_sprite.attrib_size), 1u);
+
+	glEnableVertexAttribArray(static_cast<GLuint>(g_sprite.attrib_uv0));
+	glVertexAttribPointer(static_cast<GLuint>(g_sprite.attrib_uv0), 2, GL_FLOAT, GL_FALSE, kInstanceStride,
+						reinterpret_cast<void*>(static_cast<intptr_t>(kInstanceUv0Offset)));
+	g_sprite.vertexAttribDivisor(static_cast<GLuint>(g_sprite.attrib_uv0), 1u);
+
+	glEnableVertexAttribArray(static_cast<GLuint>(g_sprite.attrib_uv1));
+	glVertexAttribPointer(static_cast<GLuint>(g_sprite.attrib_uv1), 2, GL_FLOAT, GL_FALSE, kInstanceStride,
+						reinterpret_cast<void*>(static_cast<intptr_t>(kInstanceUv1Offset)));
+	g_sprite.vertexAttribDivisor(static_cast<GLuint>(g_sprite.attrib_uv1), 1u);
 
 	glEnableVertexAttribArray(static_cast<GLuint>(g_sprite.attrib_z));
-	glVertexAttribPointer(static_cast<GLuint>(g_sprite.attrib_z), kZComponents,
-						GL_UNSIGNED_SHORT, GL_TRUE, kVertexStride,
-						reinterpret_cast<void*>(static_cast<intptr_t>(kZOffset)));
+	glVertexAttribPointer(static_cast<GLuint>(g_sprite.attrib_z), 1, GL_UNSIGNED_SHORT, GL_TRUE, kInstanceStride,
+						reinterpret_cast<void*>(static_cast<intptr_t>(kInstanceZOffset)));
+	g_sprite.vertexAttribDivisor(static_cast<GLuint>(g_sprite.attrib_z), 1u);
 
 	glEnableVertexAttribArray(static_cast<GLuint>(g_sprite.attrib_atlas));
-	glVertexAttribPointer(static_cast<GLuint>(g_sprite.attrib_atlas),
-						kAtlasComponents, GL_UNSIGNED_BYTE, GL_FALSE, kVertexStride,
-						reinterpret_cast<void*>(static_cast<intptr_t>(kAtlasOffset)));
+	glVertexAttribPointer(static_cast<GLuint>(g_sprite.attrib_atlas), 1, GL_UNSIGNED_BYTE, GL_FALSE, kInstanceStride,
+						reinterpret_cast<void*>(static_cast<intptr_t>(kInstanceAtlasOffset)));
+	g_sprite.vertexAttribDivisor(static_cast<GLuint>(g_sprite.attrib_atlas), 1u);
 
-	glEnableVertexAttribArray(
-		static_cast<GLuint>(g_sprite.attrib_parallax_weight));
-	glVertexAttribPointer(
-		static_cast<GLuint>(g_sprite.attrib_parallax_weight),
-		kParallaxWeightComponents, GL_BYTE, GL_TRUE, kVertexStride,
-		reinterpret_cast<void*>(static_cast<intptr_t>(kParallaxWeightOffset)));
+	glEnableVertexAttribArray(static_cast<GLuint>(g_sprite.attrib_fx));
+	glVertexAttribPointer(static_cast<GLuint>(g_sprite.attrib_fx), 1, GL_BYTE, GL_TRUE, kInstanceStride,
+						reinterpret_cast<void*>(static_cast<intptr_t>(kInstanceFxOffset)));
+	g_sprite.vertexAttribDivisor(static_cast<GLuint>(g_sprite.attrib_fx), 1u);
 
 	glEnableVertexAttribArray(static_cast<GLuint>(g_sprite.attrib_color));
-	glVertexAttribPointer(static_cast<GLuint>(g_sprite.attrib_color),
-						kColorComponents, GL_UNSIGNED_BYTE, GL_TRUE, kVertexStride,
-						reinterpret_cast<void*>(static_cast<intptr_t>(kColorOffset)));
-
-	glEnableVertexAttribArray(static_cast<GLuint>(g_sprite.attrib_center));
-	glVertexAttribPointer(static_cast<GLuint>(g_sprite.attrib_center),
-						kCenterComponents, GL_SHORT, GL_FALSE, kVertexStride,
-							reinterpret_cast<void*>(static_cast<intptr_t>(kCenterOffset)));
+	glVertexAttribPointer(static_cast<GLuint>(g_sprite.attrib_color), 4, GL_UNSIGNED_BYTE, GL_TRUE, kInstanceStride,
+						reinterpret_cast<void*>(static_cast<intptr_t>(kInstanceColorOffset)));
+	g_sprite.vertexAttribDivisor(static_cast<GLuint>(g_sprite.attrib_color), 1u);
 }
 
 void setupVertexLayout() {
 	if (g_sprite.use_vao) {
 		glBindVertexArrayOES(g_sprite.vao);
-		setupAttributes();
+		configureVertexLayout();
 		glBindVertexArrayOES(0);
 		return;
 	}
-	setupAttributes();
+	configureVertexLayout();
 }
 
 void bindVertexLayout() {
@@ -302,7 +343,7 @@ void bindVertexLayout() {
 		glBindVertexArrayOES(g_sprite.vao);
 		return;
 	}
-	setupAttributes();
+	configureVertexLayout();
 }
 
 void unbindVertexLayout() {
@@ -327,32 +368,39 @@ int8_t packSnorm8(float value) {
 	return static_cast<int8_t>(std::lround(clamped * 127.0f));
 }
 
-void writeVertex(uint8_t* dst, float x, float y, uint16_t u, uint16_t v,
-					uint16_t z, uint8_t atlas, int8_t weight, uint8_t r,
-					uint8_t g, uint8_t b, uint8_t a, int16_t cx,
-					int16_t cy) {
-	std::memcpy(dst + kPositionOffset, &x, sizeof(float));
-	std::memcpy(dst + kPositionOffset + sizeof(float), &y, sizeof(float));
-	std::memcpy(dst + kTexcoordOffset, &u, sizeof(uint16_t));
-	std::memcpy(dst + kTexcoordOffset + sizeof(uint16_t), &v,
-				sizeof(uint16_t));
-	std::memcpy(dst + kZOffset, &z, sizeof(uint16_t));
-	dst[kAtlasOffset] = atlas;
-	dst[kParallaxWeightOffset] = static_cast<uint8_t>(weight);
-	dst[kColorOffset + 0] = r;
-	dst[kColorOffset + 1] = g;
-	dst[kColorOffset + 2] = b;
-	dst[kColorOffset + 3] = a;
-	std::memcpy(dst + kCenterOffset, &cx, sizeof(int16_t));
-	std::memcpy(dst + kCenterOffset + sizeof(int16_t), &cy, sizeof(int16_t));
+inline void writeF32(uint8_t* dst, int offset, float value) {
+	std::memcpy(dst + offset, &value, sizeof(float));
 }
 
-void updateBuffers(size_t spriteCount) {
-	const size_t vertexCount = spriteCount * kVerticesPerSprite;
-	const size_t byteCount = vertexCount * kVertexStride;
-	glBindBuffer(GL_ARRAY_BUFFER, g_sprite.vbo);
-	glBufferSubData(GL_ARRAY_BUFFER, 0, static_cast<GLsizeiptr>(byteCount),
-					g_sprite.vertex_data.data());
+inline void writeU16(uint8_t* dst, int offset, uint16_t value) {
+	std::memcpy(dst + offset, &value, sizeof(uint16_t));
+}
+
+void writeInstance(uint8_t* dst, float posX, float posY, float sizeX, float sizeY,
+					float uv0x, float uv0y, float uv1x, float uv1y, uint16_t z,
+					uint8_t atlas, int8_t fx, uint8_t r, uint8_t g, uint8_t b,
+					uint8_t a) {
+	writeF32(dst, kInstancePosOffset + 0, posX);
+	writeF32(dst, kInstancePosOffset + 4, posY);
+	writeF32(dst, kInstanceSizeOffset + 0, sizeX);
+	writeF32(dst, kInstanceSizeOffset + 4, sizeY);
+	writeF32(dst, kInstanceUv0Offset + 0, uv0x);
+	writeF32(dst, kInstanceUv0Offset + 4, uv0y);
+	writeF32(dst, kInstanceUv1Offset + 0, uv1x);
+	writeF32(dst, kInstanceUv1Offset + 4, uv1y);
+	writeU16(dst, kInstanceZOffset, z);
+	dst[kInstanceAtlasOffset] = atlas;
+	dst[kInstanceFxOffset] = static_cast<uint8_t>(fx);
+	dst[kInstanceColorOffset + 0] = r;
+	dst[kInstanceColorOffset + 1] = g;
+	dst[kInstanceColorOffset + 2] = b;
+	dst[kInstanceColorOffset + 3] = a;
+}
+
+void updateInstanceBuffer(size_t spriteCount) {
+	const size_t byteCount = spriteCount * static_cast<size_t>(kInstanceStride);
+	glBindBuffer(GL_ARRAY_BUFFER, g_sprite.instance_vbo);
+	glBufferSubData(GL_ARRAY_BUFFER, 0, static_cast<GLsizeiptr>(byteCount), g_sprite.instance_data.data());
 }
 
 }  // namespace
@@ -365,34 +413,50 @@ void initGLES2(OpenGLES2Backend* backend, GameView* context) {
 	GLuint fs = compileShader(GL_FRAGMENT_SHADER, kSpriteFragmentShader);
 	g_sprite.program = linkProgram(vs, fs);
 
-	g_sprite.attrib_pos = glGetAttribLocation(g_sprite.program, "a_position");
-	g_sprite.attrib_uv = glGetAttribLocation(g_sprite.program, "a_texcoord");
-	g_sprite.attrib_z = glGetAttribLocation(g_sprite.program, "a_pos_z");
-	g_sprite.attrib_center = glGetAttribLocation(g_sprite.program, "a_center");
-	g_sprite.attrib_parallax_weight =
-		glGetAttribLocation(g_sprite.program, "a_parallax_weight");
-	g_sprite.attrib_color =
-		glGetAttribLocation(g_sprite.program, "a_color_override");
-	g_sprite.attrib_atlas = glGetAttribLocation(g_sprite.program, "a_atlas_id");
+	g_sprite.attrib_corner = glGetAttribLocation(g_sprite.program, "a_corner");
+	g_sprite.attrib_pos = glGetAttribLocation(g_sprite.program, "i_pos");
+	g_sprite.attrib_size = glGetAttribLocation(g_sprite.program, "i_size");
+	g_sprite.attrib_uv0 = glGetAttribLocation(g_sprite.program, "i_uv0");
+	g_sprite.attrib_uv1 = glGetAttribLocation(g_sprite.program, "i_uv1");
+	g_sprite.attrib_z = glGetAttribLocation(g_sprite.program, "i_z");
+	g_sprite.attrib_atlas = glGetAttribLocation(g_sprite.program, "i_atlas_id");
+	g_sprite.attrib_fx = glGetAttribLocation(g_sprite.program, "i_fx");
+	g_sprite.attrib_color = glGetAttribLocation(g_sprite.program, "i_color_override");
 
-	g_sprite.uniform_resolution =
-		glGetUniformLocation(g_sprite.program, "u_resolution");
+	g_sprite.uniform_resolution = glGetUniformLocation(g_sprite.program, "u_resolution");
 	g_sprite.uniform_scale = glGetUniformLocation(g_sprite.program, "u_scale");
-	g_sprite.uniform_parallax_rig =
-		glGetUniformLocation(g_sprite.program, "u_parallax_rig");
-	g_sprite.uniform_parallax_rig2 =
-		glGetUniformLocation(g_sprite.program, "u_parallax_rig2");
-	g_sprite.uniform_parallax_flip_window =
-		glGetUniformLocation(g_sprite.program, "u_parallax_flip_window");
+	g_sprite.uniform_parallax_rig = glGetUniformLocation(g_sprite.program, "u_parallax_rig");
+	g_sprite.uniform_parallax_rig2 = glGetUniformLocation(g_sprite.program, "u_parallax_rig2");
+	g_sprite.uniform_parallax_flip_window = glGetUniformLocation(g_sprite.program, "u_parallax_flip_window");
 	g_sprite.uniform_tex0 = glGetUniformLocation(g_sprite.program, "u_texture0");
 	g_sprite.uniform_tex1 = glGetUniformLocation(g_sprite.program, "u_texture1");
 	g_sprite.uniform_tex2 = glGetUniformLocation(g_sprite.program, "u_texture2");
 	g_sprite.uniform_tex3 = glGetUniformLocation(g_sprite.program, "u_texture3");
 	g_sprite.uniform_time = glGetUniformLocation(g_sprite.program, "u_time");
 
+	const char* extensions = reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS));
+	const bool hasExtInstancing = (extensions != nullptr) &&
+		(std::strstr(extensions, "GL_EXT_instanced_arrays") != nullptr);
+	const bool hasAngleInstancing = (extensions != nullptr) &&
+		(std::strstr(extensions, "GL_ANGLE_instanced_arrays") != nullptr);
+
+	if (glVertexAttribDivisor != nullptr && glDrawArraysInstanced != nullptr) {
+		g_sprite.vertexAttribDivisor = glVertexAttribDivisor;
+		g_sprite.drawArraysInstanced = glDrawArraysInstanced;
+	} else if (hasExtInstancing && glVertexAttribDivisorEXT != nullptr && glDrawArraysInstancedEXT != nullptr) {
+		g_sprite.vertexAttribDivisor = glVertexAttribDivisorEXT;
+		g_sprite.drawArraysInstanced = glDrawArraysInstancedEXT;
+	} else if (hasAngleInstancing && glVertexAttribDivisorANGLE != nullptr && glDrawArraysInstancedANGLE != nullptr) {
+		g_sprite.vertexAttribDivisor = glVertexAttribDivisorANGLE;
+		g_sprite.drawArraysInstanced = glDrawArraysInstancedANGLE;
+	}
+
+	if (g_sprite.vertexAttribDivisor == nullptr || g_sprite.drawArraysInstanced == nullptr) {
+		throw BMSX_RUNTIME_ERROR("[BMSX] GLES2 requires instanced arrays support for sprites.");
+	}
+
 	setupBuffers();
-	const char* extensions =
-		reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS));
+
 	const bool hasVaoExtension = (extensions != nullptr) &&
 		(std::strstr(extensions, "GL_OES_vertex_array_object") != nullptr);
 	const bool hasVaoFunctions =
@@ -407,67 +471,42 @@ void initGLES2(OpenGLES2Backend* backend, GameView* context) {
 	setupVertexLayout();
 
 	glUseProgram(g_sprite.program);
-	// Re-apply sampler bindings every draw; shared contexts can clobber uniform
-	// state. This avoids stale sampler slots after the frontend renders.
 	glUniform1i(g_sprite.uniform_tex0, kTexUnitAtlasPrimary);
 	glUniform1i(g_sprite.uniform_tex1, kTexUnitAtlasSecondary);
 	glUniform1i(g_sprite.uniform_tex2, kTexUnitAtlasEngine);
 	glUniform1i(g_sprite.uniform_tex3, kTexUnitAtlasFallback);
+
 	if (kSpritesVerboseLog) {
-	std::fprintf(stderr,
-					"[BMSX][GLES2][Sprites] init program=%u attribs(pos=%d uv=%d "
-					"z=%d color=%d atlas=%d) uniforms(res=%d scale=%d tex0=%d "
-					"tex1=%d tex2=%d tex3=%d)\n",
-					static_cast<unsigned>(g_sprite.program), g_sprite.attrib_pos,
-					g_sprite.attrib_uv, g_sprite.attrib_z, g_sprite.attrib_color,
-					g_sprite.attrib_atlas, g_sprite.uniform_resolution,
-					g_sprite.uniform_scale, g_sprite.uniform_tex0,
-					g_sprite.uniform_tex1, g_sprite.uniform_tex2,
-					g_sprite.uniform_tex3);
+		std::fprintf(stderr,
+					"[BMSX][GLES2][Sprites] init program=%u vao=%u use_vao=%d\n",
+					static_cast<unsigned>(g_sprite.program),
+					static_cast<unsigned>(g_sprite.vao),
+					g_sprite.use_vao ? 1 : 0);
 	}
 }
 
 void shutdownGLES2(OpenGLES2Backend* backend) {
 	(void)backend;
 	if (g_sprite.program != 0) {
-	glDeleteProgram(g_sprite.program);
+		glDeleteProgram(g_sprite.program);
 	}
-	if (g_sprite.vbo != 0) glDeleteBuffers(1, &g_sprite.vbo);
-	if (g_sprite.vao != 0) glDeleteVertexArraysOES(1, &g_sprite.vao);
+	if (g_sprite.corner_vbo != 0) {
+		glDeleteBuffers(1, &g_sprite.corner_vbo);
+	}
+	if (g_sprite.instance_vbo != 0) {
+		glDeleteBuffers(1, &g_sprite.instance_vbo);
+	}
+	if (g_sprite.vao != 0) {
+		glDeleteVertexArraysOES(1, &g_sprite.vao);
+	}
 	g_sprite = SpriteGLES2State{};
 }
 
 void renderSpriteBatchGLES2(OpenGLES2Backend* backend, GameView* context,
 							const SpritesPipelineState& state) {
-	(void)context;
-	const bool logFrame = []() {
-	if constexpr (kSpritesVerboseLog) {
-		static u32 s_frameIndex = 0;
-		s_frameIndex++;
-		return s_frameIndex <= 3;
-	}
-	return false;
-	}();
 	const i32 spriteCount = RenderQueues::beginSpriteQueue();
 	if (spriteCount == 0) {
-	return;
-	}
-	// auto& runtime = Runtime::instance();
-	// auto& memory = runtime.memory();
-	if (kSpritesVerboseLog) {
-	auto* primary = OpenGLES2Backend::asTexture(state.atlasPrimaryTex);
-	auto* secondary = state.atlasSecondaryTex
-							? OpenGLES2Backend::asTexture(state.atlasSecondaryTex)
-							: nullptr;
-	auto* engine = state.atlasEngineTex
-						? OpenGLES2Backend::asTexture(state.atlasEngineTex)
-						: nullptr;
-	std::fprintf(stderr,
-					"[BMSX][GLES2][Sprites] spriteCount=%d atlasPrimary=%u "
-					"atlasSecondary=%u atlasEngine=%u\n",
-					spriteCount, static_cast<unsigned>(primary->id),
-					static_cast<unsigned>(secondary ? secondary->id : 0),
-					static_cast<unsigned>(engine ? engine->id : 0));
+		return;
 	}
 
 	glUseProgram(g_sprite.program);
@@ -475,6 +514,7 @@ void renderSpriteBatchGLES2(OpenGLES2Backend* backend, GameView* context,
 	glUniform1i(g_sprite.uniform_tex1, kTexUnitAtlasSecondary);
 	glUniform1i(g_sprite.uniform_tex2, kTexUnitAtlasEngine);
 	glUniform1i(g_sprite.uniform_tex3, kTexUnitAtlasFallback);
+
 	bindVertexLayout();
 
 	glDisable(GL_CULL_FACE);
@@ -486,8 +526,7 @@ void renderSpriteBatchGLES2(OpenGLES2Backend* backend, GameView* context,
 	const float baseWidth = static_cast<float>(state.baseWidth);
 	const float baseHeight = static_cast<float>(state.baseHeight);
 	glUniform2f(g_sprite.uniform_resolution, baseWidth, baseHeight);
-	glUniform1f(g_sprite.uniform_time,
-				static_cast<float>(EngineCore::instance().totalTime()));
+	glUniform1f(g_sprite.uniform_time, static_cast<float>(EngineCore::instance().totalTime()));
 	const SpriteParallaxRig& parallaxRig = RenderQueues::spriteParallaxRig;
 	glUniform4f(g_sprite.uniform_parallax_rig, parallaxRig.vy, parallaxRig.scale,
 				parallaxRig.impact, parallaxRig.impact_t);
@@ -497,141 +536,107 @@ void renderSpriteBatchGLES2(OpenGLES2Backend* backend, GameView* context,
 	glUniform1f(g_sprite.uniform_parallax_flip_window, parallaxRig.flip_window);
 
 	const bool ideIsViewport = (state.viewportTypeIde == "viewport");
-	const float ideScale =
-		ideIsViewport ? 1.0f : (baseWidth / static_cast<float>(state.width));
+	const float ideScale = ideIsViewport ? 1.0f : (baseWidth / static_cast<float>(state.width));
 	float currentScale = 1.0f;
 	glUniform1f(g_sprite.uniform_scale, currentScale);
 
 	backend->setActiveTextureUnit(kTexUnitAtlasPrimary);
 	backend->bindTexture2D(state.atlasPrimaryTex);
 	if (state.atlasSecondaryTex) {
-	backend->setActiveTextureUnit(kTexUnitAtlasSecondary);
-	backend->bindTexture2D(state.atlasSecondaryTex);
+		backend->setActiveTextureUnit(kTexUnitAtlasSecondary);
+		backend->bindTexture2D(state.atlasSecondaryTex);
 	}
 	if (state.atlasEngineTex) {
-	backend->setActiveTextureUnit(kTexUnitAtlasEngine);
-	backend->bindTexture2D(state.atlasEngineTex);
+		backend->setActiveTextureUnit(kTexUnitAtlasEngine);
+		backend->bindTexture2D(state.atlasEngineTex);
 	}
-	TextureHandle fallbackTex = nullptr;
+
 	bool fallbackTextureBound = false;
 
 	size_t batchCount = 0;
 	auto flush = [&]() {
-	if (batchCount == 0) {
-		return;
-	}
-	updateBuffers(batchCount);
-	PassEncoder pass;
-	backend->draw(pass, 0, static_cast<i32>(batchCount * kVerticesPerSprite));
-	batchCount = 0;
+		if (batchCount == 0) {
+			return;
+		}
+		updateInstanceBuffer(batchCount);
+		g_sprite.drawArraysInstanced(GL_TRIANGLES, 0, kVerticesPerSprite, static_cast<GLsizei>(batchCount));
+		batchCount = 0;
 	};
 
 	RenderQueues::forEachSprite([&](const SpriteQueueItem& item, size_t index) {
-	const auto& options = item.options;
-	const ImgMeta* imgmeta = item.imgmeta;
-	if (logFrame && index < 4) {
-		const auto& tc = imgmeta->texcoords;
-		std::fprintf(
-			stderr,
-			"[BMSX][GLES2][Sprites] item=%zu imgid=%s atlasid=%d size=%dx%d "
-			"pos=%.1f,%.1f scale=%.1f,%.1f texcoords={%.3f,%.3f %.3f,%.3f "
-			"%.3f,%.3f %.3f,%.3f %.3f,%.3f %.3f,%.3f}\n",
-			index, options.imgid.c_str(), imgmeta->atlasid, imgmeta->width,
-			imgmeta->height, options.pos.x, options.pos.y, options.scale->x,
-			options.scale->y, tc[0], tc[1], tc[2], tc[3], tc[4], tc[5], tc[6],
-			tc[7], tc[8], tc[9], tc[10], tc[11]);
-	}
+		(void)index;
+		const auto& options = item.options;
+		const ImgMeta* imgmeta = item.imgmeta;
 
-	const RenderLayer layer = options.layer.value_or(RenderLayer::World);
-	const float desiredScale = (layer == RenderLayer::IDE) ? ideScale : 1.0f;
-	if (desiredScale != currentScale) {
-		flush();
-		currentScale = desiredScale;
-		glUniform1f(g_sprite.uniform_scale, currentScale);
-	}
+		const RenderLayer layer = options.layer.value_or(RenderLayer::World);
+		const float desiredScale = (layer == RenderLayer::IDE) ? ideScale : 1.0f;
+		if (desiredScale != currentScale) {
+			flush();
+			currentScale = desiredScale;
+			glUniform1f(g_sprite.uniform_scale, currentScale);
+		}
 
-	const Vec3& pos = options.pos;
-	const Vec2& scale = options.scale.value();
-	const Color& colorize = options.colorize.value();
-	const FlipOptions& flip = options.flip.value();
-	const float zValue = (pos.z == 0.0f) ? kDefaultZ : pos.z;
-	const float zNorm = 1.0f - (zValue / kZCoordMax);
-	float parallaxWeight = options.parallax_weight.value_or(0.0f);
-	if (layer != RenderLayer::World) {
-		parallaxWeight = 0.0f;
-	}
+		const Vec3& pos = options.pos;
+		const Vec2& scale = options.scale.value();
+		const Color& colorize = options.colorize.value();
+		const FlipOptions& flip = options.flip.value();
+		const float zValue = (pos.z == 0.0f) ? kDefaultZ : pos.z;
+		const float zNorm = 1.0f - (zValue / kZCoordMax);
+		float parallaxWeight = options.parallax_weight.value_or(0.0f);
+		if (layer != RenderLayer::World) {
+			parallaxWeight = 0.0f;
+		}
 
-	const float baseW = static_cast<float>(imgmeta->width);
-	const float baseH = static_cast<float>(imgmeta->height);
-	const float scaledX0 = pos.x * desiredScale;
-	const float scaledY0 = pos.y * desiredScale;
-	const float scaledX1 = scaledX0 + baseW * scale.x * desiredScale;
-	const float scaledY1 = scaledY0 + baseH * scale.y * desiredScale;
-	const float snapX0 = static_cast<float>(static_cast<i32>(scaledX0));
-	const float snapY0 = static_cast<float>(static_cast<i32>(scaledY0));
-	const float snapX1 = static_cast<float>(static_cast<i32>(scaledX1));
-	const float snapY1 = static_cast<float>(static_cast<i32>(scaledY1));
-	const float snappedX = snapX0 / desiredScale;
-	const float snappedY = snapY0 / desiredScale;
-	const float snappedW = (snapX1 - snapX0) / desiredScale;
-	const float snappedH = (snapY1 - snapY0) / desiredScale;
-	const float centerX = snappedX + (snappedW * 0.5f);
-	const float centerY = snappedY + (snappedH * 0.5f);
-	const auto& texcoords =
-		flip.flip_h
-			? (flip.flip_v ? imgmeta->texcoords_fliphv
-							: imgmeta->texcoords_fliph)
+		const float sizeX = static_cast<float>(imgmeta->width) * scale.x;
+		const float sizeY = static_cast<float>(imgmeta->height) * scale.y;
+		const auto& texcoords = flip.flip_h
+			? (flip.flip_v ? imgmeta->texcoords_fliphv : imgmeta->texcoords_fliph)
 			: (flip.flip_v ? imgmeta->texcoords_flipv : imgmeta->texcoords);
-	const uint16_t zPacked = packUnorm16(zNorm);
-	const i32 atlasId = imgmeta->atlasid;
-	// Sprite binding selector uses ENGINE_ATLAS_INDEX for engine atlas in the shader.
+		const float uv0x = texcoords[0];
+		const float uv0y = texcoords[1];
+		const float uv1x = texcoords[10];
+		const float uv1y = texcoords[11];
+
+		const uint16_t zPacked = packUnorm16(zNorm);
+		const i32 atlasId = imgmeta->atlasid;
 		uint8_t atlasPacked = static_cast<uint8_t>(ENGINE_ATLAS_INDEX);
 		if (item.useFallbackTexture) {
 			if (!fallbackTextureBound) {
-				fallbackTex = context->textures.at("_atlas_fallback");
+				TextureHandle fallbackTex = context->textures.at("_atlas_fallback");
 				backend->setActiveTextureUnit(kTexUnitAtlasFallback);
 				backend->bindTexture2D(fallbackTex);
 				fallbackTextureBound = true;
 			}
 			atlasPacked = kAtlasFallbackSelector;
 		} else if (atlasId != ENGINE_ATLAS_INDEX) {
-		if (atlasId == context->primaryAtlasIdInSlot) {
-			atlasPacked = 0;
-		} else if (atlasId == context->secondaryAtlasIdInSlot) {
-			atlasPacked = 1;
-		} else {
-			atlasPacked = 0;
+			if (atlasId == context->primaryAtlasIdInSlot) {
+				atlasPacked = 0;
+			} else if (atlasId == context->secondaryAtlasIdInSlot) {
+				atlasPacked = 1;
+			} else {
+				atlasPacked = 0;
+			}
 		}
-	}
-	const int8_t weightPacked = packSnorm8(parallaxWeight);
-	const uint8_t colorR = packUnorm8(colorize.r);
-	const uint8_t colorG = packUnorm8(colorize.g);
-	const uint8_t colorB = packUnorm8(colorize.b);
-	const uint8_t colorA = packUnorm8(colorize.a);
-	const int16_t centerXi = static_cast<int16_t>(std::lround(centerX));
-	const int16_t centerYi = static_cast<int16_t>(std::lround(centerY));
 
-	const size_t baseVertex = batchCount * kVerticesPerSprite;
-	for (int v = 0; v < kVerticesPerSprite; ++v) {
-		const float x = snappedX + kCornerX[v] * snappedW;
-		const float y = snappedY + kCornerY[v] * snappedH;
-		const float u = texcoords[static_cast<size_t>(v) * 2];
-		const float vcoord = texcoords[static_cast<size_t>(v) * 2 + 1];
-		uint8_t* dst =
-			g_sprite.vertex_data.data() + (baseVertex + static_cast<size_t>(v)) * kVertexStride;
-		writeVertex(dst, x, y, packUnorm16(u), packUnorm16(vcoord), zPacked,
-					atlasPacked, weightPacked, colorR, colorG, colorB,
-					colorA, centerXi, centerYi);
-	}
+		const int8_t weightPacked = packSnorm8(parallaxWeight);
+		const uint8_t colorR = packUnorm8(colorize.r);
+		const uint8_t colorG = packUnorm8(colorize.g);
+		const uint8_t colorB = packUnorm8(colorize.b);
+		const uint8_t colorA = packUnorm8(colorize.a);
 
-	batchCount++;
-	if (batchCount >= static_cast<size_t>(kMaxSprites)) {
-		flush();
-	}
+		const size_t base = batchCount * static_cast<size_t>(kInstanceStride);
+		uint8_t* dst = g_sprite.instance_data.data() + base;
+		writeInstance(dst, pos.x, pos.y, sizeX, sizeY, uv0x, uv0y, uv1x, uv1y,
+					zPacked, atlasPacked, weightPacked, colorR, colorG, colorB, colorA);
+
+		batchCount++;
+		if (batchCount >= static_cast<size_t>(kMaxSprites)) {
+			flush();
+		}
 	});
 
 	if (batchCount > 0) {
-	flush();
+		flush();
 	}
 
 	unbindVertexLayout();

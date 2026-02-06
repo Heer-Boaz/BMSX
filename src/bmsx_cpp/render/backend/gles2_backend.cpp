@@ -7,12 +7,17 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <vector>
 
 namespace {
 constexpr bool kGLES2VerboseLog = false;
 // Use glFinish only when debugging strict GPU completion; glFlush avoids a stall.
 constexpr bool kGLES2FinishFrame = false;
+
+#ifndef GL_SRGB_ALPHA_EXT
+#define GL_SRGB_ALPHA_EXT 0x8C42
+#endif
 
 std::array<uint8_t, 256> buildSrgbToLinearLut() {
 	std::array<uint8_t, 256> lut{};
@@ -67,8 +72,8 @@ namespace bmsx {
 	state and sample the wrong texture.
 	- Fix: reset the bindings we touch at the end of the frame so the frontend starts
 	from a clean baseline. This is intentionally minimal to limit overhead.
-	- Performance: default to glFlush to avoid a full GPU stall; enable glFinish only
-	when debugging strict GPU completion.
+	- Performance: keep end-of-frame reset minimal and only call glFinish in strict
+	debug mode.
 */
 OpenGLES2Backend::OpenGLES2Backend(i32 width, i32 height)
 	: m_width(width), m_height(height) {}
@@ -84,16 +89,19 @@ TextureHandle OpenGLES2Backend::createTexture(const u8* data, i32 width,
 	auto* tex = new GLES2Texture{};
 	tex->width = width;
 	tex->height = height;
+	tex->srgb = params.srgb && m_supports_srgb_textures;
 
 	const u8* uploadData = data;
 	std::vector<u8> linearized;
-	// GLES2 lacks sRGB texture decode; pre-linearize to match WebGL sampling.
-	if (data && params.srgb) {
+	// GLES2 without EXT_sRGB decode needs CPU pre-linearization to match TS/WebGL behavior.
+	if (data && params.srgb && !tex->srgb) {
 	const size_t pixels = static_cast<size_t>(width) * static_cast<size_t>(height);
 	convertSrgbToLinear(data, pixels, linearized);
 	uploadData = linearized.data();
 	}
 
+	const GLint internalFormat = tex->srgb ? static_cast<GLint>(GL_SRGB_ALPHA_EXT) : static_cast<GLint>(GL_RGBA);
+	const GLenum uploadFormat = tex->srgb ? GL_SRGB_ALPHA_EXT : GL_RGBA;
 	glGenTextures(1, &tex->id);
 	glBindTexture(GL_TEXTURE_2D, tex->id);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -101,8 +109,8 @@ TextureHandle OpenGLES2Backend::createTexture(const u8* data, i32 width,
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA,
-				GL_UNSIGNED_BYTE, uploadData);
+	glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, width, height, 0, uploadFormat,
+					GL_UNSIGNED_BYTE, uploadData);
 	if (kGLES2VerboseLog) {
 	std::fprintf(stderr,
 					"[BMSX][GLES2] createTexture id=%u size=%dx%d data=%p\n",
@@ -121,10 +129,12 @@ void OpenGLES2Backend::updateTexture(TextureHandle handle, const u8* data, i32 w
 	}
 	auto* tex = static_cast<GLES2Texture*>(handle);
 	const bool needsResize = tex->width != width || tex->height != height;
+	const bool useSrgbTexture = params.srgb && m_supports_srgb_textures;
+	const bool needsRecreate = needsResize || (tex->srgb != useSrgbTexture);
 
 	const u8* uploadData = data;
 	std::vector<u8> linearized;
-	if (data && params.srgb) {
+	if (data && params.srgb && !useSrgbTexture) {
 	const size_t pixels = static_cast<size_t>(width) * static_cast<size_t>(height);
 	convertSrgbToLinear(data, pixels, linearized);
 	uploadData = linearized.data();
@@ -132,13 +142,17 @@ void OpenGLES2Backend::updateTexture(TextureHandle handle, const u8* data, i32 w
 
 	glBindTexture(GL_TEXTURE_2D, tex->id);
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-	if (needsResize) {
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, uploadData);
+	if (needsRecreate) {
+		const GLint internalFormat = useSrgbTexture ? static_cast<GLint>(GL_SRGB_ALPHA_EXT) : static_cast<GLint>(GL_RGBA);
+		const GLenum uploadFormat = useSrgbTexture ? GL_SRGB_ALPHA_EXT : GL_RGBA;
+		glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, width, height, 0, uploadFormat, GL_UNSIGNED_BYTE, uploadData);
 	} else {
-		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, uploadData);
+		const GLenum uploadFormat = tex->srgb ? GL_SRGB_ALPHA_EXT : GL_RGBA;
+		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, uploadFormat, GL_UNSIGNED_BYTE, uploadData);
 	}
 	tex->width = width;
 	tex->height = height;
+	tex->srgb = useSrgbTexture;
 	if (kGLES2VerboseLog) {
 	std::fprintf(stderr,
 					"[BMSX][GLES2] updateTexture id=%u size=%dx%d data=%p\n",
@@ -155,7 +169,9 @@ TextureHandle OpenGLES2Backend::resizeTexture(TextureHandle handle, i32 width, i
 	auto* tex = static_cast<GLES2Texture*>(handle);
 	glBindTexture(GL_TEXTURE_2D, tex->id);
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+	const GLint internalFormat = tex->srgb ? static_cast<GLint>(GL_SRGB_ALPHA_EXT) : static_cast<GLint>(GL_RGBA);
+	const GLenum uploadFormat = tex->srgb ? GL_SRGB_ALPHA_EXT : GL_RGBA;
+	glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, width, height, 0, uploadFormat, GL_UNSIGNED_BYTE, nullptr);
 	tex->width = width;
 	tex->height = height;
 	if (kGLES2VerboseLog) {
@@ -173,14 +189,15 @@ void OpenGLES2Backend::updateTextureRegion(TextureHandle handle, const u8* data,
 	auto* tex = static_cast<GLES2Texture*>(handle);
 	const u8* uploadData = data;
 	std::vector<u8> linearized;
-	if (data && params.srgb) {
+	if (data && params.srgb && !tex->srgb) {
 		const size_t pixels = static_cast<size_t>(width) * static_cast<size_t>(height);
 		convertSrgbToLinear(data, pixels, linearized);
 		uploadData = linearized.data();
 	}
 	glBindTexture(GL_TEXTURE_2D, tex->id);
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-	glTexSubImage2D(GL_TEXTURE_2D, 0, x, y, width, height, GL_RGBA, GL_UNSIGNED_BYTE, uploadData);
+	const GLenum uploadFormat = tex->srgb ? GL_SRGB_ALPHA_EXT : GL_RGBA;
+	glTexSubImage2D(GL_TEXTURE_2D, 0, x, y, width, height, uploadFormat, GL_UNSIGNED_BYTE, uploadData);
 	if (kGLES2VerboseLog) {
 	std::fprintf(stderr,
 					"[BMSX][GLES2] updateTextureRegion id=%u size=%dx%d offset=%d,%d data=%p\n",
@@ -210,7 +227,7 @@ void OpenGLES2Backend::readTextureRegion(TextureHandle handle, u8* out, i32 widt
 	glPixelStorei(GL_PACK_ALIGNMENT, 1);
 	glReadPixels(x, glY, width, height, GL_RGBA, GL_UNSIGNED_BYTE, out);
 	glBindFramebuffer(GL_FRAMEBUFFER, prevFbo);
-	if (params.srgb) {
+	if (params.srgb && !tex->srgb) {
 		const auto& lut = linearToSrgbLut();
 		const size_t pixels = static_cast<size_t>(width) * static_cast<size_t>(height);
 		for (size_t i = 0; i < pixels; ++i) {
@@ -267,8 +284,6 @@ void OpenGLES2Backend::clear(const Color* color, const f32* depth) {
 }
 
 PassEncoder OpenGLES2Backend::beginRenderPass(const RenderPassDesc& desc) {
-	glBindFramebuffer(GL_FRAMEBUFFER, m_current_fbo);
-	glViewport(0, 0, m_width, m_height);
 	const ColorAttachmentSpec* colorSpec = nullptr;
 	if (desc.color) {
 	colorSpec = &*desc.color;
@@ -340,21 +355,14 @@ void OpenGLES2Backend::endFrame() {
 	if (kGLES2VerboseLog) {
 	std::fprintf(stderr, "[BMSX][GLES2] endFrame\n");
 	}
-	// Reset the GL state we touched so the frontend's present path doesn't inherit it.
+	// Reset the core state we touched so frontend present paths don't inherit it.
 	glUseProgram(0);
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, 0);
-	glDisableVertexAttribArray(0);
-	glDisableVertexAttribArray(1);
-	glDisableVertexAttribArray(2);
-	glDisableVertexAttribArray(3);
-	glDisableVertexAttribArray(4);
 	if constexpr (kGLES2FinishFrame) {
 	glFinish();
-	} else {
-	glFlush();
 	}
 }
 
@@ -377,12 +385,18 @@ void OpenGLES2Backend::onContextReset() {
 	m_context_ready = true;
 	m_active_texture_unit = -1;
 	m_bound_texture_2d_by_unit.fill(0);
+	const char* extensions = reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS));
+	m_supports_srgb_textures = (extensions != nullptr) && (std::strstr(extensions, "GL_EXT_sRGB") != nullptr);
+	if (kGLES2VerboseLog) {
+		std::fprintf(stderr, "[BMSX][GLES2] EXT_sRGB=%d\n", m_supports_srgb_textures ? 1 : 0);
+	}
 }
 
 void OpenGLES2Backend::onContextDestroy() {
 	m_context_ready = false;
 	m_active_texture_unit = -1;
 	m_bound_texture_2d_by_unit.fill(0);
+	m_supports_srgb_textures = false;
 	if (m_readback_fbo != 0) {
 		glDeleteFramebuffers(1, &m_readback_fbo);
 		m_readback_fbo = 0;
@@ -413,11 +427,17 @@ void OpenGLES2Backend::bindTexture2D(TextureHandle tex) {
 }
 
 void OpenGLES2Backend::setRenderTarget(GLuint fbo, i32 width, i32 height) {
+	const bool fboChanged = (m_current_fbo != fbo);
+	const bool sizeChanged = (m_width != width) || (m_height != height);
 	m_current_fbo = fbo;
 	m_width = width;
 	m_height = height;
-	glBindFramebuffer(GL_FRAMEBUFFER, m_current_fbo);
-	glViewport(0, 0, m_width, m_height);
+	if (fboChanged) {
+		glBindFramebuffer(GL_FRAMEBUFFER, m_current_fbo);
+	}
+	if (sizeChanged) {
+		glViewport(0, 0, m_width, m_height);
+	}
 	if (kGLES2VerboseLog) {
 	std::fprintf(stderr, "[BMSX][GLES2] setRenderTarget fbo=%u size=%dx%d\n",
 					static_cast<unsigned>(fbo), width, height);

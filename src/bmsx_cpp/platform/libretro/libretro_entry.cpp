@@ -126,7 +126,7 @@ static bool g_crt_blur_enabled = false;
 static bool g_crt_glow_enabled = false;
 static bool g_crt_fringing_enabled = false;
 static bool g_crt_aperture_enabled = false;
-static int g_dither_type = 2;
+static int g_dither_type = 0;
 static bool g_frameskip_enabled = false;
 static bool g_frameskip_next = false;
 
@@ -290,7 +290,7 @@ static retro_core_option_v2_definition g_option_defs_us[] = {
 			{kDitherMSX10, "MSX10 3:4:3"},
 			{nullptr, nullptr},
 		},
-		kDitherRGB888Output
+		kDitherOff
 	},
 	{
 		kOptionFrameSkip,
@@ -436,7 +436,7 @@ static retro_core_option_definition g_option_defs_v1_us[] = {
 			{kDitherMSX10, "MSX10 3:4:3"},
 			{nullptr, nullptr},
 		},
-		kDitherRGB888Output
+		kDitherOff
 	},
 	{
 		kOptionFrameSkip,
@@ -671,8 +671,8 @@ static void set_core_options(bool default_gles2) {
 	const bool crt_readonly = false;
 	set_crt_option_values(true);
 
-	g_option_defs_us[10].default_value = kDitherRGB888Output;
-	g_option_defs_v1_us[10].default_value = kDitherRGB888Output;
+	g_option_defs_us[10].default_value = kDitherOff;
+	g_option_defs_v1_us[10].default_value = kDitherOff;
 	g_option_defs_us[10].values[0] = {kDitherOff, "Off"};
 	g_option_defs_us[10].values[1] = {kDitherPSX, "PSX RGB555"};
 	g_option_defs_us[10].values[2] = {kDitherRGB888Output, "RGB888 Output"};
@@ -890,7 +890,7 @@ static bool read_crt_aperture_enabled() {
 static int read_dither_type() {
 	retro_variable var;
 	var.key = kOptionDither;
-	var.value = kDitherRGB888Output;
+	var.value = kDitherOff;
 	if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
 		if (std::strcmp(var.value, kDitherOff) == 0) return 0;
 		if (std::strcmp(var.value, kDitherPSX) == 0) return 1;
@@ -899,7 +899,7 @@ static int read_dither_type() {
 		if (std::strcmp(var.value, kToggleOn) == 0) return 2;
 		if (std::strcmp(var.value, kToggleOff) == 0) return 0;
 	}
-	return 2;
+	return 0;
 }
 
 static void apply_backend_preference(RenderBackendPreference preference) {

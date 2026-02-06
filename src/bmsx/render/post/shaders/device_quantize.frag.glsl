@@ -107,18 +107,13 @@ int psxIdx(ivec2 p){
 
 vec3 quantize_rgb888_output(vec3 sRGB, ivec2 pix){
 	float thr = bayer4x4_0_1(pix);
-	float t = thr - 0.5;
 	vec3 v = clamp(sRGB, 0.0, 1.0) * 255.0;
-	vec3 q = floor(v);
-	vec3 f = fract(v);
-	q += step(vec3(thr), f);
-
-	const float MICRO = 0.25;
-	q += vec3(t * MICRO);
-
+	vec3 rounded = floor(v + 0.5);
+	float grain = step(0.5625, thr) - step(thr, 0.4375);
 	float lum = dot(sRGB, vec3(0.299, 0.587, 0.114));
-	float g = smoothstep(2.0 / 255.0, 20.0 / 255.0, lum);
-	vec3 out8 = mix(floor(v + 0.5), q, vec3(g));
+	float gate = smoothstep(4.0 / 255.0, 20.0 / 255.0, lum);
+	float delta = 2.0 * sign(grain) * step(0.5, abs(grain) * gate);
+	vec3 out8 = rounded + vec3(delta);
 	return clamp(out8, 0.0, 255.0) * (1.0 / 255.0);
 }
 

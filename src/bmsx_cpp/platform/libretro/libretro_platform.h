@@ -250,7 +250,7 @@ private:
 	retro_hw_get_current_framebuffer_t m_hw_get_current_framebuffer = nullptr;
 	bool m_crt_postprocessing_enabled = false;
 	i32 m_postprocess_scale = 1;
-	GameView::DitherType m_dither_type = GameView::DitherType::RGB888Output;
+	GameView::DitherType m_dither_type = GameView::DitherType::None;
 	bool m_frameskip_enabled = false;
 	bool m_frameskip_next = false;
 	bool m_render_assets_need_refresh = true;
