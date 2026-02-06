@@ -173,9 +173,10 @@ export class WebGPUBackend implements GPUBackend {
 		faces.forEach((src, faceIndex) => {
 			const data = src.data;
 			if (data) {
+				const upload = new Uint8Array(data.buffer as ArrayBuffer, data.byteOffset, data.byteLength);
 				this.device.queue.writeTexture(
 					{ texture, origin: { x: 0, y: 0, z: faceIndex } },
-					data,
+					upload,
 					{ bytesPerRow: src.width * 4 },
 					{ width: src.width, height: src.height, depthOrArrayLayers: 1 },
 				);
@@ -251,9 +252,10 @@ export class WebGPUBackend implements GPUBackend {
 		if (face < 0 || face > 5) throw new Error('Invalid cubemap face index');
 		const data = src.data;
 		if (data) {
+			const upload = new Uint8Array(data.buffer as ArrayBuffer, data.byteOffset, data.byteLength);
 			this.device.queue.writeTexture(
 				{ texture: cubemap as GPUTexture, origin: { x: 0, y: 0, z: face } },
-				data,
+				upload,
 				{ bytesPerRow: src.width * 4 },
 				{ width: src.width, height: src.height, depthOrArrayLayers: 1 },
 			);

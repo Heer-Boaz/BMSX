@@ -473,9 +473,40 @@ inline f32 bayer4x4_0_1(i32 x, i32 y) {
 	return (B4[ix + (iy << 2)] + 0.5f) * (1.0f / 16.0f);
 }
 
-inline f32 quantizeRgb565Bias(f32 c, f32 levels, f32 thr0_1) {
-	const f32 x = clamp01(c);
-	return std::floor(x * levels + thr0_1) / levels;
+inline f32 quantizeOrderedConditional(f32 c, f32 levels, f32 thr0_1) {
+	const f32 x = clamp01(c) * levels;
+	const f32 q = std::floor(x);
+	const f32 f = fract(x);
+	const f32 up = (f >= thr0_1) ? 1.0f : 0.0f;
+	return (q + up) / levels;
+}
+
+inline void quantize565ErrorGated(f32 sR,
+									 f32 sG,
+									 f32 sB,
+									 f32 thr0_1,
+									 f32* outR,
+									 f32* outG,
+									 f32* outB) {
+	const f32 r = clamp01(sR);
+	const f32 g = clamp01(sG);
+	const f32 b = clamp01(sB);
+	const f32 vR = r * 31.0f;
+	const f32 vG = g * 63.0f;
+	const f32 vB = b * 31.0f;
+	const f32 qRoundR = std::floor(vR + 0.5f) * (1.0f / 31.0f);
+	const f32 qRoundG = std::floor(vG + 0.5f) * (1.0f / 63.0f);
+	const f32 qRoundB = std::floor(vB + 0.5f) * (1.0f / 31.0f);
+	const f32 err = std::abs(r - qRoundR) * 0.299f +
+					std::abs(g - qRoundG) * 0.587f +
+					std::abs(b - qRoundB) * 0.114f;
+	const f32 gate = smoothstep(0.003f, 0.012f, err);
+	const f32 qOrderedR = (std::floor(vR) + ((fract(vR) >= thr0_1) ? 1.0f : 0.0f)) * (1.0f / 31.0f);
+	const f32 qOrderedG = (std::floor(vG) + ((fract(vG) >= thr0_1) ? 1.0f : 0.0f)) * (1.0f / 63.0f);
+	const f32 qOrderedB = (std::floor(vB) + ((fract(vB) >= thr0_1) ? 1.0f : 0.0f)) * (1.0f / 31.0f);
+	*outR = qRoundR + (qOrderedR - qRoundR) * gate;
+	*outG = qRoundG + (qOrderedG - qRoundG) * gate;
+	*outB = qRoundB + (qOrderedB - qRoundB) * gate;
 }
 
 inline i32 psxDitherOffset4x4(i32 x, i32 y) {
@@ -573,14 +604,12 @@ void GameView::applyCRTPostProcessing(const u32* src,
 					qB = quantizeRgb555PSX(sigB, off);
 				} else if (ditherType == 2) {
 					const f32 thr = bayer4x4_0_1(sx, sy);
-					qR = quantizeRgb565Bias(sigR, 31.0f, thr);
-					qG = quantizeRgb565Bias(sigG, 63.0f, thr);
-					qB = quantizeRgb565Bias(sigB, 31.0f, thr);
+					quantize565ErrorGated(sigR, sigG, sigB, thr, &qR, &qG, &qB);
 				} else if (ditherType == 3) {
 					const f32 thr = bayer4x4_0_1(sx, sy);
-					qR = quantizeRgb565Bias(sigR, 7.0f, thr);
-					qG = quantizeRgb565Bias(sigG, 15.0f, thr);
-					qB = quantizeRgb565Bias(sigB, 7.0f, thr);
+					qR = quantizeOrderedConditional(sigR, 7.0f, thr);
+					qG = quantizeOrderedConditional(sigG, 15.0f, thr);
+					qB = quantizeOrderedConditional(sigB, 7.0f, thr);
 				}
 				color.r = srgbToLinearExact(qR);
 				color.g = srgbToLinearExact(qG);

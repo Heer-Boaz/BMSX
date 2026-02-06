@@ -397,8 +397,15 @@ vec3 srgb_to_linear(vec3 c) {
 	return mix(hi, lo, vec3(cutoff));
 }
 
-vec3 quantize_rgb565_dither(vec3 sRGB, vec2 pix){
-	vec3 levels = vec3(31.0, 63.0, 31.0);
+vec3 quantize_ordered_conditional(vec3 sRGB, vec3 levels, float thr){
+	vec3 v = clamp(sRGB, 0.0, 1.0) * levels;
+	vec3 q = floor(v);
+	vec3 f = fract(v);
+	q += step(vec3(thr), f);
+	return q / levels;
+}
+
+float bayer4x4_0_1(vec2 pix){
 	float fx = mod(pix.x, 4.0);
 	float fy = mod(pix.y, 4.0);
 	int ix = int(fx < 0.0 ? fx + 4.0 : fx);
@@ -425,9 +432,22 @@ vec3 quantize_rgb565_dither(vec3 sRGB, vec2 pix){
 		else if (ix == 2) thr = 13.0;
 		else thr = 5.0;
 	}
-	float thrNorm = (thr + 0.5) / 16.0;
-	vec3 x = clamp(sRGB, 0.0, 1.0);
-	return floor(x * levels + thrNorm) / levels;
+	return (thr + 0.5) / 16.0;
+}
+
+vec3 quant565_error_gated(vec3 sRGB, vec2 pix){
+	vec3 lv = vec3(31.0, 63.0, 31.0);
+	vec3 s = clamp(sRGB, 0.0, 1.0);
+	vec3 v = s * lv;
+	vec3 qRound = floor(v + 0.5) / lv;
+
+	vec3 e = abs(s - qRound);
+	float err = dot(e, vec3(0.299, 0.587, 0.114));
+	float gate = smoothstep(0.003, 0.012, err);
+
+	float thrNorm = bayer4x4_0_1(pix);
+	vec3 qOrdered = (floor(v) + step(vec3(thrNorm), fract(v))) / lv;
+	return mix(qRound, qOrdered, vec3(gate));
 }
 
 vec3 quantize_msx10_343(vec3 sRGB, vec2 pix){
@@ -459,8 +479,7 @@ vec3 quantize_msx10_343(vec3 sRGB, vec2 pix){
 		else thr = 5.0;
 	}
 	float thrNorm = (thr + 0.5) / 16.0;
-	vec3 x = clamp(sRGB, 0.0, 1.0);
-	return floor(x * levels + thrNorm) / levels;
+	return quantize_ordered_conditional(sRGB, levels, thrNorm);
 }
 
 int psxDitherOffset4x4(vec2 pix){
@@ -510,7 +529,7 @@ void main(){
 	if (u_dither_type == 1) {
 		sigS = quantize_rgb555_psx(sigS, sPix);
 	} else if (u_dither_type == 2) {
-		sigS = quantize_rgb565_dither(sigS, sPix);
+		sigS = quant565_error_gated(sigS, sPix);
 	} else if (u_dither_type == 3) {
 		sigS = quantize_msx10_343(sigS, sPix);
 	}

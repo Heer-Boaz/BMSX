@@ -36,11 +36,6 @@ const float B4[16] = float[16](
 	15.0, 7.0, 13.0, 5.0
 );
 
-vec3 quantize_levels(vec3 s, vec3 levels) {
-	return floor(clamp(s, 0.0, 1.0) * levels) / levels;
-}
-const vec3 LUMA = vec3(0.299, 0.587, 0.114);
-
 float bayer4x4_0_1(ivec2 p){
 	ivec2 w = p & ivec2(3);
 	int idx = w.x + (w.y << 2);
@@ -70,20 +65,34 @@ float bayer4x4_0_1(ivec2 p){
 //   return quantize_levels(sRGB, levels);
 // }
 
-// Quantize to RGB565 using 4x4 threshold-bias (no per-channel offsets)
-vec3 quantize_rgb565_dither(vec3 sRGB, ivec2 pix){
-	vec3 levels = vec3(31.0, 63.0, 31.0);
-	float thr = bayer4x4_0_1(pix);
-	vec3 x = clamp(sRGB, 0.0, 1.0);
-	return floor(x * levels + thr) / levels;
+vec3 quantize_ordered_conditional(vec3 sRGB, vec3 levels, float thr){
+	vec3 v = clamp(sRGB, 0.0, 1.0) * levels;
+	vec3 q = floor(v);
+	vec3 f = fract(v);
+	q += step(vec3(thr), f);
+	return q / levels;
 }
 
-// MSX 10-bit 3:4:3 quantize with ordered dither
+vec3 quant565_error_gated(vec3 sRGB, ivec2 p){
+	vec3 lv = vec3(31.0, 63.0, 31.0);
+	vec3 s = clamp(sRGB, 0.0, 1.0);
+	vec3 v = s * lv;
+	vec3 qRound = floor(v + 0.5) / lv;
+
+	vec3 e = abs(s - qRound);
+	float err = dot(e, vec3(0.299, 0.587, 0.114));
+	float gate = smoothstep(0.003, 0.012, err);
+
+	float thr = bayer4x4_0_1(p);
+	vec3 qOrdered = (floor(v) + step(vec3(thr), fract(v))) / lv;
+	return mix(qRound, qOrdered, vec3(gate));
+}
+
+// MSX 10-bit 3:4:3 quantize with conditional ordered rounding.
 vec3 quantize_msx10_343(vec3 sRGB, ivec2 pix){
 	vec3 levels = vec3(7.0, 15.0, 7.0);
 	float thr = bayer4x4_0_1(pix);
-	vec3 x = clamp(sRGB, 0.0, 1.0);
-	return floor(x * levels + thr) / levels;
+	return quantize_ordered_conditional(sRGB, levels, thr);
 }
 
 // vec3 quantize_msx10_343(vec3 sRGB, ivec2 pix){
@@ -141,7 +150,7 @@ void main(){
 	if (u_dither_type == 1u) {
 	sigS = quantize_rgb555_psx(sigS, sPix);
 	} else if (u_dither_type == 2u) {
-	sigS = quantize_rgb565_dither(sigS, sPix);
+	sigS = quant565_error_gated(sigS, sPix);
 	} else if (u_dither_type == 3u) {
 	sigS = quantize_msx10_343(sigS, sPix);
 	}

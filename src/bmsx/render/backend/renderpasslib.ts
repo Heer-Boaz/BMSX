@@ -293,7 +293,7 @@ export class RenderPassLibrary {
 				const deviceColor = deviceColorEnabled
 					? io.createTex({ width: view.offscreenCanvasSize.x, height: view.offscreenCanvasSize.y, name: 'DeviceColor', transient: true })
 					: null;
-				const clearCol: color_arr = DEBUG_FORCE_VISIBLE_CLEAR ? [1, 0, 1, 1] : view.clearColor;
+				const clearCol: color_arr = DEBUG_FORCE_VISIBLE_CLEAR ? [1, 0, 1, 1] : [0, 0, 0, 1];
 				io.writeTex(color, { clearColor: clearCol });
 				io.writeTex(depth, { clearDepth: 1.0 });
 				io.exportToBackbuffer(color);
