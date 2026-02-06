@@ -968,9 +968,41 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtimeLuaPipeline.registerGlobal(runtime, 'img_status_done', IMG_STATUS_DONE);
 	runtimeLuaPipeline.registerGlobal(runtime, 'img_status_error', IMG_STATUS_ERROR);
 	runtimeLuaPipeline.registerGlobal(runtime, 'img_status_clipped', IMG_STATUS_CLIPPED);
+	const bitcastBuffer = new ArrayBuffer(8);
+	const bitcastView = new DataView(bitcastBuffer);
 	runtimeLuaPipeline.registerGlobal(runtime, 'peek', createNativeFunction('peek', (args, out) => {
 		const address = args[0] as number;
 		out.push(runtime.memory.readValue(address));
+	}));
+	runtimeLuaPipeline.registerGlobal(runtime, 'peek8', createNativeFunction('peek8', (args, out) => {
+		const address = args[0] as number;
+		out.push(runtime.memory.readU8(address));
+	}));
+	runtimeLuaPipeline.registerGlobal(runtime, 'peek16le', createNativeFunction('peek16le', (args, out) => {
+		const address = args[0] as number;
+		const b0 = runtime.memory.readU8(address);
+		const b1 = runtime.memory.readU8(address + 1);
+		out.push((b0 | (b1 << 8)) >>> 0);
+	}));
+	runtimeLuaPipeline.registerGlobal(runtime, 'peek32le', createNativeFunction('peek32le', (args, out) => {
+		const address = args[0] as number;
+		const b0 = runtime.memory.readU8(address);
+		const b1 = runtime.memory.readU8(address + 1);
+		const b2 = runtime.memory.readU8(address + 2);
+		const b3 = runtime.memory.readU8(address + 3);
+		out.push((b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)) >>> 0);
+	}));
+	runtimeLuaPipeline.registerGlobal(runtime, 'u32_to_f32', createNativeFunction('u32_to_f32', (args, out) => {
+		const bits = (args[0] as number) >>> 0;
+		bitcastView.setUint32(0, bits, true);
+		out.push(bitcastView.getFloat32(0, true));
+	}));
+	runtimeLuaPipeline.registerGlobal(runtime, 'u64_to_f64', createNativeFunction('u64_to_f64', (args, out) => {
+		const hi = (args[0] as number) >>> 0;
+		const lo = (args[1] as number) >>> 0;
+		bitcastView.setUint32(0, lo, true);
+		bitcastView.setUint32(4, hi, true);
+		out.push(bitcastView.getFloat64(0, true));
 	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'poke', createNativeFunction('poke', (args, out) => {
 		const address = args[0] as number;

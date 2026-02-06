@@ -12,6 +12,7 @@
 #include <chrono>
 #include <cmath>
 #include <cctype>
+#include <cstring>
 #include <ctime>
 #include <iomanip>
 #include <iostream>
@@ -1426,6 +1427,45 @@ void Runtime::setupBuiltins() {
 	registerNativeFunction("peek", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 		uint32_t address = static_cast<uint32_t>(asNumber(args.at(0)));
 		out.push_back(m_memory.readValue(address));
+	});
+
+	registerNativeFunction("peek8", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+		const uint32_t address = static_cast<uint32_t>(asNumber(args.at(0)));
+		out.push_back(valueNumber(static_cast<double>(m_memory.readU8(address))));
+	});
+
+	registerNativeFunction("peek16le", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+		const uint32_t address = static_cast<uint32_t>(asNumber(args.at(0)));
+		const uint32_t b0 = static_cast<uint32_t>(m_memory.readU8(address));
+		const uint32_t b1 = static_cast<uint32_t>(m_memory.readU8(address + 1));
+		const uint32_t value = b0 | (b1 << 8);
+		out.push_back(valueNumber(static_cast<double>(value)));
+	});
+
+	registerNativeFunction("peek32le", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+		const uint32_t address = static_cast<uint32_t>(asNumber(args.at(0)));
+		const uint32_t b0 = static_cast<uint32_t>(m_memory.readU8(address));
+		const uint32_t b1 = static_cast<uint32_t>(m_memory.readU8(address + 1));
+		const uint32_t b2 = static_cast<uint32_t>(m_memory.readU8(address + 2));
+		const uint32_t b3 = static_cast<uint32_t>(m_memory.readU8(address + 3));
+		const uint32_t value = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
+		out.push_back(valueNumber(static_cast<double>(value)));
+	});
+
+	registerNativeFunction("u32_to_f32", [](const std::vector<Value>& args, std::vector<Value>& out) {
+		const uint32_t bits = static_cast<uint32_t>(asNumber(args.at(0)));
+		float value = 0.0f;
+		std::memcpy(&value, &bits, sizeof(value));
+		out.push_back(valueNumber(static_cast<double>(value)));
+	});
+
+	registerNativeFunction("u64_to_f64", [](const std::vector<Value>& args, std::vector<Value>& out) {
+		const uint64_t hi = static_cast<uint64_t>(static_cast<uint32_t>(asNumber(args.at(0))));
+		const uint64_t lo = static_cast<uint64_t>(static_cast<uint32_t>(asNumber(args.at(1))));
+		const uint64_t bits = (hi << 32) | lo;
+		double value = 0.0;
+		std::memcpy(&value, &bits, sizeof(value));
+		out.push_back(valueNumber(value));
 	});
 
 	registerNativeFunction("poke", [this](const std::vector<Value>& args, std::vector<Value>& out) {
@@ -3277,7 +3317,7 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 				vramTable->set(key("atlas_slot_bytes"), valueNumber(static_cast<double>(*manifest.atlasSlotBytes)));
 			}
 			if (manifest.engineAtlasSlotBytes) {
-				vramTable->set(key("engine_atlas_slot_bytes"), valueNumber(static_cast<double>(*manifest.engineAtlasSlotBytes)));
+				vramTable->set(key("system_atlas_slot_bytes"), valueNumber(static_cast<double>(*manifest.engineAtlasSlotBytes)));
 			}
 			if (manifest.stagingBytes) {
 				vramTable->set(key("staging_bytes"), valueNumber(static_cast<double>(*manifest.stagingBytes)));

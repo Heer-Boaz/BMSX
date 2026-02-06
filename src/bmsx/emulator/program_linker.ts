@@ -11,13 +11,13 @@ type LinkedProgramAsset = {
 const assertConstPoolPrefix = (engine: EncodedProgram, cart: EncodedProgram): number => {
 	const engineCount = engine.constPool.length;
 	if (cart.constPool.length < engineCount) {
-		throw new Error('[ProgramLinker] Cart const pool does not include engine prefix.');
+		throw new Error('[ProgramLinker] Cart const pool does not include system prefix.');
 	}
 	for (let index = 0; index < engineCount; index += 1) {
 		const baseValue = engine.constPool[index];
 		const cartValue = cart.constPool[index];
 		if (!Object.is(baseValue, cartValue)) {
-			throw new Error(`[ProgramLinker] Cart const pool differs at index ${index}.`);
+			throw new Error(`[ProgramLinker] Cart const pool differs from system at index ${index}.`);
 		}
 	}
 	return engineCount;

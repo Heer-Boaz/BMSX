@@ -125,12 +125,12 @@ function stripLuaAssets(assets: RomAsset[], debug: boolean): void {
 function applyEngineAtlasLimit(manifest: RomManifest, resources: Resource[]): void {
 	const atlas = resources.find((res): res is AtlasResource => res.type === 'atlas' && res.atlasid === ENGINE_ATLAS_INDEX);
 	if (!atlas || !atlas.img) {
-		throw new Error('[RomPacker] Engine atlas missing; cannot compute engine_atlas_slot_bytes.');
+		throw new Error('[RomPacker] Engine atlas missing; cannot compute system_atlas_slot_bytes.');
 	}
 	const width = atlas.img.width;
 	const height = atlas.img.height;
 	if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
-		throw new Error('[RomPacker] Engine atlas dimensions are invalid; cannot compute engine_atlas_slot_bytes.');
+		throw new Error('[RomPacker] Engine atlas dimensions are invalid; cannot compute system_atlas_slot_bytes.');
 	}
 	const bytes = Math.floor(width) * Math.floor(height) * 4;
 	let vramSpecs = manifest.machine.specs.vram;
@@ -138,7 +138,7 @@ function applyEngineAtlasLimit(manifest: RomManifest, resources: Resource[]): vo
 		vramSpecs = {};
 		manifest.machine.specs.vram = vramSpecs;
 	}
-	vramSpecs.engine_atlas_slot_bytes = bytes;
+	vramSpecs.system_atlas_slot_bytes = bytes;
 }
 
 // --- Individual lists that allow us to easily remove tasks from the main task list (visualisation only!) ---
@@ -1185,13 +1185,13 @@ async function main() {
 
 			const includeCode = shouldBundleCartCode;
 			let engineConstPoolSeed: { constPool: ReadonlyArray<Value>; stringPool: StringPool } | null = null;
-			if (!isEngineMode && mode === 'rompack') {
-				const engineResPath = commonResPath;
-				const engineManifest = await getRomManifest(engineResPath);
-				if (!engineManifest) {
-					throw new Error(`Engine manifest not found at "${engineResPath}".`);
-				}
-				const engineRomName = engineManifest.rom_name ?? 'bmsx-bios';
+				if (!isEngineMode && mode === 'rompack') {
+					const engineResPath = commonResPath;
+					const engineManifest = await getRomManifest(engineResPath);
+					if (!engineManifest) {
+						throw new Error(`Engine manifest not found at "${engineResPath}".`);
+					}
+					const engineRomName = engineManifest.rom_name ?? 'bmsx-bios';
 				const engineRomPath = join(process.cwd(), 'dist', `${engineRomName}${romPackDebug ? '.debug' : ''}.rom`);
 				if (!existsSync(engineRomPath)) {
 					throw new Error(`Engine ROM not found at "${engineRomPath}". Build the engine ROM first.`);

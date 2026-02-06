@@ -268,7 +268,6 @@ void Runtime::prepareCartBootIfNeeded() {
 	if (m_cartBootPrepared) {
 		return;
 	}
-	setCartBootReadyFlag(false);
 	m_cartBootPrepared = true;
 	setCartBootReadyFlag(true);
 }
@@ -281,7 +280,18 @@ bool Runtime::pollSystemBootRequest() {
 		return false;
 	}
 	m_memory.writeValue(IO_SYS_BOOT_CART, valueNumber(0.0));
-	EngineCore::instance().resetLoadedRom();
+	try {
+		if (!EngineCore::instance().resetLoadedRom()) {
+			setCartBootReadyFlag(false);
+			EngineCore::instance().log(LogLevel::Error,
+				"[Runtime] Cart boot request failed while leaving system boot screen active.\n");
+		}
+	} catch (const std::exception& error) {
+		setCartBootReadyFlag(false);
+		EngineCore::instance().log(LogLevel::Error,
+			"[Runtime] Cart boot request failed while leaving system boot screen active: %s\n",
+			error.what());
+	}
 	return true;
 }
 

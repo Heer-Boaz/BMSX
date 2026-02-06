@@ -44,6 +44,10 @@ local function read_cart_header(base)
 	}
 end
 
+local function cart_boot_ready()
+	return peek(sys_cart_bootready) ~= 0
+end
+
 local function format_viewport_label(viewport)
 	if not viewport then
 		return nil
@@ -132,6 +136,530 @@ local function collect_cart_manifest_errors(cart_manifest)
 	end
 	for i = 1, #CART_MANIFEST_VALIDATORS do
 		CART_MANIFEST_VALIDATORS[i](cart_manifest, errors)
+	end
+	return errors
+end
+
+local ROM_TOC_MAGIC = 0x434f5442
+local ROM_TOC_HEADER_SIZE = 48
+local ROM_TOC_ENTRY_SIZE = 80
+local ROM_TOC_INVALID_U32 = 0xffffffff
+local ROM_ASSET_TYPE_DATA = 3
+local PROGRAM_ASSET_ID = '__program__'
+
+local BIN_VERSION = 0xA1
+local BIN_TAG_NULL = 0
+local BIN_TAG_TRUE = 1
+local BIN_TAG_FALSE = 2
+local BIN_TAG_F64 = 3
+local BIN_TAG_STR = 4
+local BIN_TAG_ARR = 5
+local BIN_TAG_REF = 6
+local BIN_TAG_OBJ = 7
+local BIN_TAG_BIN = 8
+local BIN_TAG_INT = 9
+local BIN_TAG_F32 = 10
+local BIN_TAG_SET = 11
+
+local precheck_cache_key = nil
+local precheck_errors = {}
+local precheck_stderr_message = nil
+local precheck_stderr_reported = false
+local bitcast_selftest_ok = false
+local bitcast_selftest_status = 'NOT RUN'
+local bitcast_selftest_error = nil
+local bitcast_selftest_logged = false
+
+local function clear_precheck_cache()
+	precheck_cache_key = nil
+	precheck_errors = {}
+	precheck_stderr_message = nil
+	precheck_stderr_reported = false
+end
+
+local function build_precheck_key(header)
+	return tostring(header.header_size)
+		.. ':' .. tostring(header.manifest_off)
+		.. ':' .. tostring(header.manifest_len)
+		.. ':' .. tostring(header.toc_off)
+		.. ':' .. tostring(header.toc_len)
+		.. ':' .. tostring(header.data_off)
+		.. ':' .. tostring(header.data_len)
+end
+
+local function assert_range(offset, length, total, label)
+	if offset < 0 or length < 0 or (offset + length) > total then
+		error('Invalid ROM ' .. label .. ' range.')
+	end
+end
+
+local function new_reader(base, size, label)
+	return {
+		base = base,
+		size = size,
+		pos = 0,
+		label = label,
+	}
+end
+
+local function reader_require(reader, length, label)
+	if reader.pos + length > reader.size then
+		error((label or reader.label) .. ' out of bounds.')
+	end
+end
+
+local function reader_read_u8(reader, label)
+	reader_require(reader, 1, label)
+	local addr = reader.base + reader.pos
+	local out = peek8(addr)
+	reader.pos = reader.pos + 1
+	return out
+end
+
+local function reader_skip_bytes(reader, length, label)
+	reader_require(reader, length, label)
+	reader.pos = reader.pos + length
+end
+
+local function reader_read_varuint(reader, label)
+	local result = 0
+	local shift = 0
+	while true do
+		local byte = reader_read_u8(reader, label)
+		result = result | ((byte & 0x7f) << shift)
+		if (byte & 0x80) == 0 then
+			return result
+		end
+		shift = shift + 7
+		if shift > 63 then
+			error((label or reader.label) .. ' varuint is too large.')
+		end
+	end
+end
+
+local function reader_read_varint(reader, label)
+	local raw = reader_read_varuint(reader, label)
+	local value = raw >> 1
+	if (raw & 1) ~= 0 then
+		return -value - 1
+	end
+	return value
+end
+
+local function reader_read_raw_string(reader, length, label)
+	if length == 0 then
+		return ''
+	end
+	reader_require(reader, length, label)
+	local parts = {}
+	local remaining = length
+	while remaining > 0 do
+		local chunk_len = math.min(120, remaining)
+		local chunk = ''
+		for i = 1, chunk_len do
+			chunk = chunk .. string.char(reader_read_u8(reader, label))
+		end
+		parts[#parts + 1] = chunk
+		remaining = remaining - chunk_len
+	end
+	return table.concat(parts)
+end
+
+local function reader_read_string(reader, label)
+	local length = reader_read_varuint(reader, label)
+	return reader_read_raw_string(reader, length, label)
+end
+
+local function reader_read_u32le(reader, label)
+	reader_require(reader, 4, label)
+	local addr = reader.base + reader.pos
+	local out = peek32le(addr)
+	reader.pos = reader.pos + 4
+	return out
+end
+
+local function reader_read_f32(reader, label)
+	return u32_to_f32(reader_read_u32le(reader, label))
+end
+
+local function reader_read_f64(reader, label)
+	local lo = reader_read_u32le(reader, label)
+	local hi = reader_read_u32le(reader, label)
+	return u64_to_f64(hi, lo)
+end
+
+local function selftest_bitcast_builtins()
+	local ok, err = pcall(function()
+		if type(u64_to_f64) ~= 'function' then
+			error('u64_to_f64 missing')
+		end
+		if type(u32_to_f32) ~= 'function' then
+			error('u32_to_f32 missing')
+		end
+		-- f64 1.0 = 0x3ff0000000000000 (hi, lo)
+		assert(u64_to_f64(0x3ff00000, 0x00000000) == 1.0)
+		-- f32 1.0 = 0x3f800000
+		assert(u32_to_f32(0x3f800000) == 1.0)
+		-- -0.0 keeps sign bit in IEEE754
+		local neg_zero = u64_to_f64(0x80000000, 0x00000000)
+		assert(neg_zero == 0.0 and (1.0 / neg_zero) == -math.huge)
+		-- +inf
+		assert(u64_to_f64(0x7ff00000, 0x00000000) == math.huge)
+		-- qNaN: NaN is the only value not equal to itself
+		local nan = u64_to_f64(0x7ff80000, 0x00000000)
+		assert(nan ~= nan)
+	end)
+	bitcast_selftest_ok = ok
+	if ok then
+		bitcast_selftest_status = 'OK'
+		bitcast_selftest_error = nil
+		return
+	end
+	bitcast_selftest_status = 'FAILED'
+	bitcast_selftest_error = tostring(err)
+	if not bitcast_selftest_logged then
+		bitcast_selftest_logged = true
+		pcall(function()
+			error('[BootRom] Bitcast selftest failed: ' .. bitcast_selftest_error)
+		end)
+	end
+end
+
+local function reader_read_prop_key(reader, prop_names, label)
+	local prop_id = reader_read_varuint(reader, label)
+	local index = prop_id + 1
+	local key = prop_names[index]
+	if key == nil then
+		error((label or reader.label) .. ' invalid property id ' .. tostring(prop_id) .. '.')
+	end
+	return key
+end
+
+local function reader_skip_value_from_tag(reader, prop_names, tag)
+	if tag == BIN_TAG_NULL or tag == BIN_TAG_TRUE or tag == BIN_TAG_FALSE then
+		return
+	end
+	if tag == BIN_TAG_F64 then
+		reader_skip_bytes(reader, 8, 'f64')
+		return
+	end
+	if tag == BIN_TAG_F32 then
+		reader_skip_bytes(reader, 4, 'f32')
+		return
+	end
+	if tag == BIN_TAG_INT then
+		reader_read_varint(reader, 'int')
+		return
+	end
+	if tag == BIN_TAG_STR then
+		local length = reader_read_varuint(reader, 'string length')
+		reader_skip_bytes(reader, length, 'string')
+		return
+	end
+	if tag == BIN_TAG_ARR or tag == BIN_TAG_SET then
+		local count = reader_read_varuint(reader, 'array length')
+		for i = 1, count do
+			local value_tag = reader_read_u8(reader, 'array tag')
+			reader_skip_value_from_tag(reader, prop_names, value_tag)
+		end
+		return
+	end
+	if tag == BIN_TAG_REF then
+		reader_read_varuint(reader, 'ref id')
+		return
+	end
+	if tag == BIN_TAG_OBJ then
+		local count = reader_read_varuint(reader, 'object property count')
+		for i = 1, count do
+			reader_read_prop_key(reader, prop_names, 'object property id')
+			local value_tag = reader_read_u8(reader, 'object value tag')
+			reader_skip_value_from_tag(reader, prop_names, value_tag)
+		end
+		return
+	end
+	if tag == BIN_TAG_BIN then
+		local length = reader_read_varuint(reader, 'binary length')
+		reader_skip_bytes(reader, length, 'binary payload')
+		return
+	end
+	error('Unsupported bin tag ' .. tostring(tag) .. '.')
+end
+
+local function reader_read_const_value(reader, prop_names)
+	local tag = reader_read_u8(reader, 'const value tag')
+	if tag == BIN_TAG_NULL then
+		return { kind = 'nil' }
+	end
+	if tag == BIN_TAG_TRUE then
+		return { kind = 'bool', value = true }
+	end
+	if tag == BIN_TAG_FALSE then
+		return { kind = 'bool', value = false }
+	end
+	if tag == BIN_TAG_INT then
+		return { kind = 'num', value = reader_read_varint(reader, 'const int') }
+	end
+	if tag == BIN_TAG_F32 then
+		return { kind = 'num', value = reader_read_f32(reader, 'const f32') }
+	end
+	if tag == BIN_TAG_F64 then
+		return { kind = 'num', value = reader_read_f64(reader, 'const f64') }
+	end
+	if tag == BIN_TAG_STR then
+		return { kind = 'str', value = reader_read_string(reader, 'const string') }
+	end
+	reader_skip_value_from_tag(reader, prop_names, tag)
+	return { kind = 'unsupported' }
+end
+
+local function reader_read_const_pool(reader, prop_names)
+	local tag = reader_read_u8(reader, 'constPool tag')
+	if tag ~= BIN_TAG_ARR then
+		error('Program constPool must be an array.')
+	end
+	local count = reader_read_varuint(reader, 'constPool count')
+	local out = {}
+	for i = 1, count do
+		out[i] = reader_read_const_value(reader, prop_names)
+	end
+	return out
+end
+
+local function reader_read_program_const_pool(reader, prop_names)
+	local tag = reader_read_u8(reader, 'program tag')
+	if tag ~= BIN_TAG_OBJ then
+		error('Program payload must be an object.')
+	end
+	local prop_count = reader_read_varuint(reader, 'program property count')
+	local const_pool = nil
+	for i = 1, prop_count do
+		local key = reader_read_prop_key(reader, prop_names, 'program property id')
+		if key == 'constPool' then
+			const_pool = reader_read_const_pool(reader, prop_names)
+		else
+			local value_tag = reader_read_u8(reader, 'program value tag')
+			reader_skip_value_from_tag(reader, prop_names, value_tag)
+		end
+	end
+	if const_pool == nil then
+		error('Program payload is missing constPool.')
+	end
+	return const_pool
+end
+
+local function read_program_const_pool_payload(base, size)
+	local reader = new_reader(base, size, 'program payload')
+	local version = reader_read_u8(reader, 'bin version')
+	if version ~= BIN_VERSION then
+		error('Unsupported binary payload version.')
+	end
+	local prop_count = reader_read_varuint(reader, 'property count')
+	local prop_names = {}
+	for i = 1, prop_count do
+		prop_names[i] = reader_read_string(reader, 'property name')
+	end
+	local root_tag = reader_read_u8(reader, 'root tag')
+	if root_tag ~= BIN_TAG_OBJ then
+		error('Program root must be an object.')
+	end
+	local root_prop_count = reader_read_varuint(reader, 'root property count')
+	local const_pool = nil
+	for i = 1, root_prop_count do
+		local key = reader_read_prop_key(reader, prop_names, 'root property id')
+		if key == 'program' then
+			const_pool = reader_read_program_const_pool(reader, prop_names)
+		else
+			local value_tag = reader_read_u8(reader, 'root value tag')
+			reader_skip_value_from_tag(reader, prop_names, value_tag)
+		end
+	end
+	if const_pool == nil then
+		error('Program root is missing program.constPool.')
+	end
+	return const_pool
+end
+
+local function read_toc_string(string_table_base, string_table_size, offset, length)
+	if offset == ROM_TOC_INVALID_U32 or length == 0 then
+		return ''
+	end
+	assert_range(offset, length, string_table_size, 'toc string table')
+	local reader = new_reader(string_table_base + offset, length, 'toc string')
+	return reader_read_raw_string(reader, length, 'toc string')
+end
+
+local function find_program_payload_range(rom_base, header)
+	if header.toc_len < ROM_TOC_HEADER_SIZE then
+		error('ROM TOC is too small.')
+	end
+	local toc_base = rom_base + header.toc_off
+	local toc_magic = peek(toc_base + 0)
+	if toc_magic ~= ROM_TOC_MAGIC then
+		error('Invalid ROM TOC magic.')
+	end
+	local toc_header_size = peek(toc_base + 4)
+	if toc_header_size ~= ROM_TOC_HEADER_SIZE then
+		error('Unexpected ROM TOC header size.')
+	end
+	local entry_size = peek(toc_base + 8)
+	if entry_size ~= ROM_TOC_ENTRY_SIZE then
+		error('Unexpected ROM TOC entry size.')
+	end
+	local entry_count = peek(toc_base + 12)
+	local entry_offset = peek(toc_base + 16)
+	if entry_offset ~= ROM_TOC_HEADER_SIZE then
+		error('Unexpected ROM TOC entry offset.')
+	end
+	local string_table_offset = peek(toc_base + 20)
+	local string_table_length = peek(toc_base + 24)
+	local entries_bytes = entry_count * entry_size
+	local expected_string_offset = entry_offset + entries_bytes
+	if string_table_offset ~= expected_string_offset then
+		error('Unexpected ROM TOC string table offset.')
+	end
+	assert_range(entry_offset, entries_bytes, header.toc_len, 'toc entries')
+	assert_range(string_table_offset, string_table_length, header.toc_len, 'toc string table')
+	local string_table_base = toc_base + string_table_offset
+	for index = 0, entry_count - 1 do
+		local entry = toc_base + entry_offset + (index * entry_size)
+		local type_id = peek(entry + 8)
+		if type_id == ROM_ASSET_TYPE_DATA then
+			local resid_offset = peek(entry + 16)
+			local resid_length = peek(entry + 20)
+			local asset_id = read_toc_string(string_table_base, string_table_length, resid_offset, resid_length)
+			if asset_id == PROGRAM_ASSET_ID then
+				local payload_start = peek(entry + 40)
+				local payload_end = peek(entry + 44)
+				if payload_start == ROM_TOC_INVALID_U32 or payload_end == ROM_TOC_INVALID_U32 or payload_end <= payload_start then
+					error('Program asset is missing payload range.')
+				end
+				assert_range(payload_start, payload_end - payload_start, header.data_off + header.data_len, 'program payload')
+				return {
+					start = payload_start,
+					['end'] = payload_end,
+				}
+			end
+		end
+	end
+	error('Program asset "__program__" was not found in ROM TOC.')
+end
+
+local function read_rom_program_const_pool(rom_base, header)
+	local payload = find_program_payload_range(rom_base, header)
+	local payload_size = payload['end'] - payload.start
+	return read_program_const_pool_payload(rom_base + payload.start, payload_size)
+end
+
+local function const_value_equal(system_value, cart_value)
+	if system_value.kind ~= cart_value.kind then
+		return false
+	end
+	if system_value.kind == 'nil' then
+		return true
+	end
+	if system_value.kind == 'bool' or system_value.kind == 'num' or system_value.kind == 'str' then
+		return system_value.value == cart_value.value
+	end
+	return false
+end
+
+local function format_const_value(value)
+	if value.kind == 'nil' then
+		return 'nil'
+	end
+	if value.kind == 'bool' then
+		return value.value and 'true' or 'false'
+	end
+	if value.kind == 'num' then
+		return tostring(value.value)
+	end
+	if value.kind == 'str' then
+		return string.format('%q', value.value)
+	end
+	return '<unsupported>'
+end
+
+local function compute_program_link_errors(cart_header)
+	local errors = {}
+	local sys_header = read_cart_header(SYSTEM_ROM_BASE)
+	if not sys_header then
+		errors[#errors + 1] = 'SYSTEM ROM HEADER IS INVALID'
+		return errors, '[ProgramLinker] Missing system ROM header.'
+	end
+	local system_const_pool = read_rom_program_const_pool(SYSTEM_ROM_BASE, sys_header)
+	local cart_const_pool = read_rom_program_const_pool(CART_ROM_BASE, cart_header)
+	local system_count = #system_const_pool
+	if #cart_const_pool < system_count then
+		errors[#errors + 1] = 'PROGRAM CONST POOL DOES NOT INCLUDE SYSTEM PREFIX'
+		return errors, '[ProgramLinker] Cart const pool does not include system prefix.'
+	end
+	for i = 1, system_count do
+		local system_value = system_const_pool[i]
+		local cart_value = cart_const_pool[i]
+		if not const_value_equal(system_value, cart_value) then
+			local index = i - 1
+			local system_text = format_const_value(system_value)
+			local cart_text = format_const_value(cart_value)
+			errors[#errors + 1] = 'PROGRAM CONST POOL MISMATCH'
+			errors[#errors + 1] = 'CONST POOL DIFF @' .. tostring(index) .. ' (SYSTEM=' .. system_text .. ', CART=' .. cart_text .. ')'
+			return errors, '[ProgramLinker] Cart const pool differs from system at index '
+				.. tostring(index)
+				.. ' (system=' .. system_text
+				.. ', cart=' .. cart_text
+				.. ').'
+		end
+	end
+	return errors, nil
+end
+
+local function ensure_program_link_precheck(cart_header)
+	if not cart_header then
+		clear_precheck_cache()
+		return {}
+	end
+	if not bitcast_selftest_ok then
+		return {
+			'BITCAST BUILTIN SELFTEST FAILED',
+			bitcast_selftest_error or 'BITCAST BUILTIN CONTRACT FAILURE',
+		}
+	end
+	local key = build_precheck_key(cart_header)
+	if precheck_cache_key ~= key then
+		precheck_cache_key = key
+		precheck_errors = {}
+		precheck_stderr_message = nil
+		precheck_stderr_reported = false
+		local ok, errors_or_message, stderr_message = pcall(compute_program_link_errors, cart_header)
+		if ok then
+			precheck_errors = errors_or_message
+			precheck_stderr_message = stderr_message
+		else
+			local message = tostring(errors_or_message)
+			precheck_errors = {
+				'PROGRAM PRECHECK FAILED',
+				message,
+			}
+			precheck_stderr_message = '[ProgramLinker] Cart precheck failed: ' .. message
+		end
+	end
+	if precheck_stderr_message and not precheck_stderr_reported then
+		precheck_stderr_reported = true
+		pcall(function()
+			error(precheck_stderr_message)
+		end)
+	end
+	return precheck_errors
+end
+
+local function collect_cart_precheck_errors(cart_header, cart_manifest)
+	if not cart_header then
+		clear_precheck_cache()
+		return {}
+	end
+	local errors = collect_cart_manifest_errors(cart_manifest)
+	local link_errors = ensure_program_link_precheck(cart_header)
+	for i = 1, #link_errors do
+		errors[#errors + 1] = link_errors[i]
 	end
 	return errors
 end
@@ -238,7 +766,7 @@ local function build_info()
 	-- local cart_input = cart_manifest and display_text(cart_manifest.input) or '--'
 	local cart_cpu_raw = cart_manifest and cart_manifest.cpu_freq_hz or nil
 	local cart_cpu_label = format_cpu_mhz_from_hz(cart_cpu_raw)
-	local cart_errors = cart_header and collect_cart_manifest_errors(cart_manifest) or {}
+	local cart_errors = collect_cart_precheck_errors(cart_header, cart_manifest)
 	local cart_has_errors = #cart_errors > 0
 
 	local sys_title = sys_manifest and display_text(sys_manifest.title) or '--'
@@ -274,6 +802,9 @@ local function build_info()
 		hw_max_assets = format_bignumbers(sys_max_assets),
 		hw_max_strings = format_bignumbers(sys_string_handle_count),
 		hw_max_cycles = format_bignumbers(sys_max_cycles_per_frame),
+		bitcast_selftest_ok = bitcast_selftest_ok,
+		bitcast_selftest_status = bitcast_selftest_status,
+		bitcast_selftest_error = bitcast_selftest_error,
 	}
 end
 
@@ -283,12 +814,7 @@ local function divider(width, left)
 	if slots < 8 then
 		slots = 8
 	end
-	-- option 1
-	-- return string.rep(string.char(0x2014), slots)
-	-- option 2
-	-- return (utf8 and utf8.char) and utf8.char(0x2014) or '-'
 	return string.rep('—', slots)
-	-- return string.rep(string.char(0xE2, 0x80, 0x94), slots)
 end
 
 local function build_progress_bar(progress, width)
@@ -305,14 +831,14 @@ local function write_kv(label, value, x, y, color, label_width)
 	write(string.format("%-" .. label_width .. "s : %s", label, value), x, y, 0, color)
 end
 
-local function draw_cart_manifest_errors(info, left, top, width, cursor)
+local function draw_cart_precheck_errors(info, left, top, width, cursor)
 	local y = top
 	local page_size = calc_error_page_size(top)
 	local error_count = #info.cart_errors
 	local page_count = calc_page_count(error_count, page_size)
 	if error_page > page_count then error_page = page_count end
 
-	write('CART MANIFEST INVALID', left, y, 0, color_warn)
+	write('CART PRECHECK FAILED', left, y, 0, color_warn)
 	y = y + line_height
 	write('ROM: ' .. info.cart_rom, left, y, 0, color_accent)
 	y = y + line_height
@@ -344,6 +870,12 @@ function init()
 	boot_requested = false
 	sys_atlas_ready = false
 	sys_atlas_failed = false
+	clear_precheck_cache()
+	bitcast_selftest_ok = false
+	bitcast_selftest_status = 'NOT RUN'
+	bitcast_selftest_error = nil
+	bitcast_selftest_logged = false
+	selftest_bitcast_builtins()
 	on_irq(function(flags)
 		if (flags & irq_img_done) ~= 0 then
 			sys_atlas_ready = true
@@ -363,7 +895,7 @@ function update(_dt)
 	local cart_manifest_raw = cart_manifest
 	local cart_root_path = assets and assets.project_root_path or nil
 	local cart_manifest_value = cart_header and flatten_manifest(cart_manifest_raw, cart_root_path) or nil
-	local cart_errors = cart_header and collect_cart_manifest_errors(cart_manifest_value) or {}
+	local cart_errors = collect_cart_precheck_errors(cart_header, cart_manifest_value)
 	local cart_has_errors = cart_header and #cart_errors > 0
 
 	if cart_has_errors then
@@ -385,7 +917,9 @@ function update(_dt)
 	error_page = 1
 	last_error_count = 0
 	local cart_valid = cart_header and #cart_errors == 0
-	local cart_present_and_ready = peek(CART_ROM_BASE) == CART_ROM_MAGIC and peek(sys_cart_bootready) == 1 and cart_valid
+	local cart_present_and_ready = peek(CART_ROM_BASE) == CART_ROM_MAGIC
+		and cart_boot_ready()
+		and cart_valid
 
 	if cart_present_and_ready and not boot_requested and elapsed_seconds() >= boot_delay and sys_atlas_ready and not sys_atlas_failed then
 		boot_requested = true
@@ -409,7 +943,7 @@ function draw()
 	local cursor = (math.floor(elapsed * 2) % 2 == 0) and '█' or ' '
 	local cart_has_errors = cart_present and info.cart_has_errors
 	if cart_has_errors and view_mode == 'errors' then
-		draw_cart_manifest_errors(info, left, top, width, cursor)
+		draw_cart_precheck_errors(info, left, top, width, cursor)
 		return
 	end
 	local y = top
@@ -442,7 +976,7 @@ function draw()
 		local len = #cart_specs[i].label
 		if len > label_width then label_width = len end
 	end
-	local status_labels = { 'STATUS', 'BOOT STATUS' }
+	local status_labels = { 'STATUS', 'BOOT STATUS', 'BITCAST SELFTEST' }
 	for i = 1, #status_labels do
 		local len = #status_labels[i]
 		if len > label_width then label_width = len end
@@ -462,7 +996,7 @@ function draw()
 	write(divider(width, left), left, y, 0, color_section)
 	y = y + line_height
 	if cart_has_errors then
-		write('CART MANIFEST INVALID', left, y, 0, color_warn)
+		write('CART PRECHECK FAILED', left, y, 0, color_warn)
 		y = y + line_height
 	end
 	for i = 1, #cart_specs do
@@ -475,10 +1009,17 @@ function draw()
 	y = y + line_height
 	write(divider(width, left), left, y, 0, color_section)
 	y = y + line_height
+	local bitcast_color = info.bitcast_selftest_ok and color_ok or color_warn
+	write_kv('BITCAST SELFTEST', info.bitcast_selftest_status, left, y, bitcast_color, label_width)
+	y = y + line_height
+	if not info.bitcast_selftest_ok and info.bitcast_selftest_error then
+		write('DETAIL: ' .. info.bitcast_selftest_error, left, y, 0, color_muted)
+		y = y + line_height
+	end
 
 	if cart_present then
 		if cart_has_errors then
-			write('BOOT BLOCKED: CART MANIFEST INVALID', left, y, 0, color_warn)
+			write('BOOT BLOCKED: CART PRECHECK FAILED', left, y, 0, color_warn)
 			y = y + line_height
 			write('PRESS A FOR DETAILS ' .. cursor, left, y, 0, color_muted)
 			return
@@ -486,7 +1027,13 @@ function draw()
 		local remaining = boot_delay - elapsed
 		if remaining < 0 then remaining = 0 end
 		-- local status = 'AUTOBOOT IN ' .. string.format('%.1f', remaining) .. 'S'
-		local cart_ready = peek(sys_cart_bootready) ~= 0
+		local cart_ready = cart_boot_ready()
+		if not cart_ready and elapsed >= boot_delay and sys_atlas_ready and not sys_atlas_failed then
+			write('BOOT BLOCKED: CART START FAILED', left, y, 0, color_warn)
+			y = y + line_height
+			write('CHECK HOST LOG / REBUILD BIOS + CART TOGETHER', left, y, 0, color_muted)
+			return
+		end
 		local status = cart_ready and 'CART LOADED' or 'LOADING CART'
 		local status_color = cart_ready and color_ok or color_accent
 		write(status, left, y, 0, status_color)

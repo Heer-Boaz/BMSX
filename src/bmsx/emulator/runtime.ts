@@ -931,12 +931,12 @@ export class Runtime {
 		const stringHandleCount = memorySpecs.string_handle_count ?? DEFAULT_STRING_HANDLE_COUNT;
 		const stringHeapBytes = memorySpecs.string_heap_bytes ?? DEFAULT_STRING_HEAP_SIZE;
 		const atlasSlotBytes = memorySpecs.atlas_slot_bytes ?? DEFAULT_VRAM_ATLAS_SLOT_SIZE;
-		const engineAtlasSlotBytes = engineMemorySpecs.engine_atlas_slot_bytes;
+		const engineAtlasSlotBytes = engineMemorySpecs.system_atlas_slot_bytes;
 		if (engineAtlasSlotBytes === undefined) {
-			throw new Error('[Runtime] machine.specs.vram.engine_atlas_slot_bytes is required in the engine manifest.');
+			throw new Error('[Runtime] machine.specs.vram.system_atlas_slot_bytes is required in the engine manifest.');
 		}
 		if (!Number.isSafeInteger(engineAtlasSlotBytes) || engineAtlasSlotBytes <= 0) {
-			throw new Error('[Runtime] machine.specs.vram.engine_atlas_slot_bytes must be a positive integer.');
+			throw new Error('[Runtime] machine.specs.vram.system_atlas_slot_bytes must be a positive integer.');
 		}
 		const stagingBytes = memorySpecs.staging_bytes ?? DEFAULT_VRAM_STAGING_SIZE;
 		const assetTableInfo = this.computeAssetTableBytes(params.engineSource, params.assetSource, params.assets);
@@ -987,7 +987,7 @@ export class Runtime {
 			asset_table_bytes: assetTableBytes,
 			asset_data_bytes: assetDataBytes,
 			atlas_slot_bytes: atlasSlotBytes,
-			engine_atlas_slot_bytes: engineAtlasSlotBytes,
+			system_atlas_slot_bytes: engineAtlasSlotBytes,
 			staging_bytes: stagingBytes,
 			skybox_face_size: skyboxFaceBytes === undefined ? skyboxFaceSize : memorySpecs.skybox_face_size,
 			skybox_face_bytes: skyboxFaceBytes,

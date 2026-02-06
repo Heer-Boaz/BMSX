@@ -69,7 +69,7 @@ export type MemoryMapSpecs = {
 	asset_table_bytes?: number;
 	asset_data_bytes?: number;
 	atlas_slot_bytes?: number;
-	engine_atlas_slot_bytes?: number;
+	system_atlas_slot_bytes?: number;
 	staging_bytes?: number;
 	skybox_face_size?: number;
 	skybox_face_bytes?: number;
@@ -151,7 +151,7 @@ export function configureMemoryMap(specs?: MemoryMapSpecs): void {
 	const stringHeapBytes = resolvePositiveInteger(specs?.string_heap_bytes ?? DEFAULT_STRING_HEAP_SIZE, 'string_heap_bytes');
 	const assetTableBytes = resolvePositiveInteger(specs?.asset_table_bytes ?? DEFAULT_ASSET_TABLE_SIZE, 'asset_table_bytes');
 	const atlasSlotBytes = resolvePositiveInteger(specs?.atlas_slot_bytes ?? DEFAULT_VRAM_ATLAS_SLOT_SIZE, 'atlas_slot_bytes');
-	const engineAtlasSlotBytes = resolvePositiveInteger(specs?.engine_atlas_slot_bytes ?? atlasSlotBytes, 'engine_atlas_slot_bytes');
+	const engineAtlasSlotBytes = resolvePositiveInteger(specs?.system_atlas_slot_bytes ?? atlasSlotBytes, 'system_atlas_slot_bytes');
 	const stagingBytes = resolvePositiveInteger(specs?.staging_bytes ?? DEFAULT_VRAM_STAGING_SIZE, 'staging_bytes');
 	const skyboxFaceBytes = specs?.skybox_face_bytes !== undefined
 		? resolvePositiveInteger(specs.skybox_face_bytes, 'skybox_face_bytes')

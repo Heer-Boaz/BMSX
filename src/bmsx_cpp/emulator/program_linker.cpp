@@ -212,16 +212,12 @@ std::unique_ptr<ProgramMetadata> mergeMetadata(
 
 } // namespace
 
-LinkedProgramAsset linkProgramAssets(
+ProgramLinkCompatibility validateProgramLinkCompatibility(
 	const ProgramAsset& engineAsset,
-	const ProgramMetadata* engineSymbols,
-	const ProgramAsset& cartAsset,
-	const ProgramMetadata* cartSymbols,
-	int engineBasePc,
-	int cartBasePc
+	const ProgramAsset& cartAsset
 ) {
 	if (!engineAsset.program || !cartAsset.program) {
-		throw std::runtime_error("[ProgramLinker] Missing program asset.");
+		return {false, "[ProgramLinker] Missing program asset."};
 	}
 	const Program& engineProgram = *engineAsset.program;
 	const Program& cartProgram = *cartAsset.program;
@@ -230,17 +226,37 @@ LinkedProgramAsset linkProgramAssets(
 
 	const size_t engineConstCount = engineProgram.constPool.size();
 	if (cartProgram.constPool.size() < engineConstCount) {
-		throw std::runtime_error("[ProgramLinker] Cart const pool does not include engine prefix.");
+		return {false, "[ProgramLinker] Cart const pool does not include system prefix."};
 	}
 	for (size_t i = 0; i < engineConstCount; ++i) {
 		if (!constValuesEqual(engineStrings, cartStrings, engineProgram.constPool[i], cartProgram.constPool[i])) {
 			std::ostringstream message;
-			message << "[ProgramLinker] Cart const pool differs at index " << i
-				<< " (engine=" << formatConstValue(engineStrings, engineProgram.constPool[i])
+			message << "[ProgramLinker] Cart const pool differs from system at index " << i
+				<< " (system=" << formatConstValue(engineStrings, engineProgram.constPool[i])
 				<< ", cart=" << formatConstValue(cartStrings, cartProgram.constPool[i]) << ").";
-			throw std::runtime_error(message.str());
+			return {false, message.str()};
 		}
 	}
+	return {true, ""};
+}
+
+LinkedProgramAsset linkProgramAssets(
+	const ProgramAsset& engineAsset,
+	const ProgramMetadata* engineSymbols,
+	const ProgramAsset& cartAsset,
+	const ProgramMetadata* cartSymbols,
+	int engineBasePc,
+	int cartBasePc
+) {
+	ProgramLinkCompatibility compatibility = validateProgramLinkCompatibility(engineAsset, cartAsset);
+	if (!compatibility.compatible) {
+		throw std::runtime_error(compatibility.message);
+	}
+	const Program& engineProgram = *engineAsset.program;
+	const Program& cartProgram = *cartAsset.program;
+	const StringPool& engineStrings = *engineProgram.constPoolStringPool;
+	const StringPool& cartStrings = *cartProgram.constPoolStringPool;
+	const size_t engineConstCount = engineProgram.constPool.size();
 
 	const int engineCodeBytes = static_cast<int>(engineProgram.code.size());
 	const int cartCodeBytes = static_cast<int>(cartProgram.code.size());

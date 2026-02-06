@@ -157,11 +157,11 @@ MemoryMapConfig resolveMemoryMapConfig(const RomManifest& manifest, const RomMan
 	if (engineManifest.engineAtlasSlotBytes) {
 		const i32 value = *engineManifest.engineAtlasSlotBytes;
 		if (value <= 0) {
-			throw std::runtime_error("[EngineCore] engine_atlas_slot_bytes must be greater than 0.");
+			throw std::runtime_error("[EngineCore] system_atlas_slot_bytes must be greater than 0.");
 		}
 		config.engineAtlasSlotBytes = static_cast<uint32_t>(value);
 	} else {
-		throw std::runtime_error("[EngineCore] engine_atlas_slot_bytes is required in the engine manifest.");
+		throw std::runtime_error("[EngineCore] system_atlas_slot_bytes is required in the engine manifest.");
 	}
 	if (manifest.stagingBytes) {
 		const i32 value = *manifest.stagingBytes;

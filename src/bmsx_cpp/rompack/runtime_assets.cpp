@@ -97,8 +97,8 @@ static void parseMachineSpecs(const BinObject& machineObj, RomManifest& manifest
 		if (vramObj.count("atlas_slot_bytes")) {
 			manifest.atlasSlotBytes = vramObj.at("atlas_slot_bytes").toI32();
 		}
-		if (vramObj.count("engine_atlas_slot_bytes")) {
-			manifest.engineAtlasSlotBytes = vramObj.at("engine_atlas_slot_bytes").toI32();
+		if (vramObj.count("system_atlas_slot_bytes")) {
+			manifest.engineAtlasSlotBytes = vramObj.at("system_atlas_slot_bytes").toI32();
 		}
 		if (vramObj.count("staging_bytes")) {
 			manifest.stagingBytes = vramObj.at("staging_bytes").toI32();

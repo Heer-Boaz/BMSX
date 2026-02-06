@@ -92,7 +92,7 @@ void configureMemoryMap(const MemoryMapConfig& config) {
 		throw std::runtime_error("[MemoryMap] atlas_slot_bytes must be greater than 0.");
 	}
 	if (config.engineAtlasSlotBytes == 0) {
-		throw std::runtime_error("[MemoryMap] engine_atlas_slot_bytes must be greater than 0.");
+		throw std::runtime_error("[MemoryMap] system_atlas_slot_bytes must be greater than 0.");
 	}
 	if (config.stagingBytes == 0) {
 		throw std::runtime_error("[MemoryMap] staging_bytes must be greater than 0.");
