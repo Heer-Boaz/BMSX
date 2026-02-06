@@ -75,7 +75,6 @@ function resolveParticleState(state: ParticlePipelineState, context: RenderConte
 }
 
 export function init(backend: WebGLBackend): void {
-	const gl = backend.gl;
 	vao = backend.createVertexArray() as WebGLVertexArrayObject;
 	const quad = new Float32Array([-0.5, 0.5, 0.5, -0.5, 0.5, 0.5, -0.5, 0.5, -0.5, -0.5, 0.5, -0.5]);
 	quadBuffer = backend.createVertexBuffer(quad, 'static') as WebGLBuffer;

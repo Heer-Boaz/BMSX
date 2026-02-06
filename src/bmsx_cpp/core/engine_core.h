@@ -166,7 +166,6 @@ public:
 private:
 	void applyRuntimeCycleBudget(Runtime& runtime);
 	void renderTestPattern();  // Visual test when no ROM loaded
-	void uploadTexturesToBackend(bool includeCartAssets);  // Upload asset textures to GPU backend
 	void bootRuntimeFromProgram();  // Boot runtime with pre-compiled program from ROM
 	void refreshAudioAssets();
 	void refreshAudioAssets(const RuntimeAssets& assets);

@@ -389,7 +389,7 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 			throw new Error('[BmsxVDP] VRAM slot is not initialized.');
 		}
 		if (slot.kind === 'asset') {
-			this.ensureVramSlotTextureSize(slot);
+			this.syncVramSlotTextureSize(slot);
 		}
 		const offset = addr - slot.baseAddr;
 		const stride = entry.baseStride;
@@ -859,38 +859,6 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		}
 	}
 
-	public async uploadAtlasTextures(options?: { includeSystemAtlas?: boolean }): Promise<void> {
-		if (!$.asset_source) {
-			throw new Error('[BmsxVDP] Asset source not configured.');
-		}
-		const includeSystemAtlas = options?.includeSystemAtlas !== false;
-		if (includeSystemAtlas) {
-			const engineEntry = this.memory.getAssetEntry(generateAtlasName(ENGINE_ATLAS_INDEX));
-			await this.ensureAtlasSlotTexture(engineEntry, ENGINE_ATLAS_TEXTURE_KEY);
-			$.view.loadEngineAtlasTexture();
-		}
-
-		const primaryEntry = this.memory.getAssetEntry(ATLAS_PRIMARY_SLOT_ID);
-		await this.ensureAtlasSlotTexture(primaryEntry, ATLAS_PRIMARY_SLOT_ID);
-		const secondaryEntry = this.memory.getAssetEntry(ATLAS_SECONDARY_SLOT_ID);
-		await this.ensureAtlasSlotTexture(secondaryEntry, ATLAS_SECONDARY_SLOT_ID);
-		this.dirtyAtlasBindings = true;
-	}
-
-	private async ensureAtlasSlotTexture(entry: AssetEntry, textureKey: string): Promise<void> {
-		if (entry.regionW === 0 || entry.regionH === 0) {
-			throw new Error(`[BmsxVDP] VRAM slot '${entry.id}' missing dimensions.`);
-		}
-		const slot = this.getVramSlotByTextureKey(textureKey);
-		const stream = this.makeVramGarbageStream(slot.baseAddr >>> 0);
-		fillVramGarbageScratch(this.vramSeedPixel, stream);
-		await $.texmanager.loadTextureFromPixels(textureKey, this.vramSeedPixel, 1, 1);
-		const handle = $.texmanager.resizeTextureForKey(textureKey, entry.regionW, entry.regionH);
-		$.view.textures[textureKey] = handle;
-		this.setSlotTextureSize(textureKey, entry.regionW, entry.regionH);
-		this.seedVramSlotTexture(slot);
-	}
-
 	private updateTextureRegion(textureKey: string, pixels: Uint8Array, width: number, height: number, x: number, y: number): void {
 		$.texmanager.updateTextureRegionForKey(textureKey, pixels, width, height, x, y);
 	}
@@ -1015,6 +983,17 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 	}
 
 	private registerVramSlot(entry: AssetEntry, textureKey: string, surfaceId: number): void {
+		let handle = $.texmanager.getTextureByUri(textureKey);
+		let textureWidth = entry.regionW;
+		let textureHeight = entry.regionH;
+		if (!handle) {
+			const stream = this.makeVramGarbageStream(entry.baseAddr >>> 0);
+			fillVramGarbageScratch(this.vramSeedPixel, stream);
+			handle = $.texmanager.createTextureFromPixelsSync(textureKey, this.vramSeedPixel, 1, 1);
+			textureWidth = 1;
+			textureHeight = 1;
+		}
+		$.view.textures[textureKey] = handle;
 		this.vramSlots.push({
 			kind: 'asset',
 			baseAddr: entry.baseAddr,
@@ -1022,13 +1001,13 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 			entry,
 			textureKey,
 			surfaceId,
-			textureWidth: entry.regionW,
-			textureHeight: entry.regionH,
+			textureWidth,
+			textureHeight,
 		});
 		this.registerReadSurface(surfaceId, entry, textureKey);
 	}
 
-	private ensureVramSlotTextureSize(slot: AssetVramSlot): void {
+	private syncVramSlotTextureSize(slot: AssetVramSlot): void {
 		const width = slot.entry.regionW;
 		const height = slot.entry.regionH;
 		if (slot.textureWidth === width && slot.textureHeight === height) {
@@ -1040,16 +1019,6 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		slot.textureHeight = height;
 		this.invalidateReadCache(slot.surfaceId);
 		this.seedVramSlotTexture(slot);
-	}
-
-	private getVramSlotByTextureKey(textureKey: string): AssetVramSlot {
-		for (let index = 0; index < this.vramSlots.length; index += 1) {
-			const slot = this.vramSlots[index];
-			if (slot.kind === 'asset' && slot.textureKey === textureKey) {
-				return slot;
-			}
-		}
-		throw new Error(`[BmsxVDP] VRAM slot '${textureKey}' not registered.`);
 	}
 
 	private makeVramGarbageStream(addr: number): VramGarbageStream {
@@ -1124,17 +1093,6 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 			}
 		}
 		this.invalidateReadCache(slot.surfaceId);
-	}
-
-	private setSlotTextureSize(textureKey: string, width: number, height: number): void {
-		for (let index = 0; index < this.vramSlots.length; index += 1) {
-			const slot = this.vramSlots[index];
-			if (slot.kind === 'asset' && slot.textureKey === textureKey) {
-				slot.textureWidth = width;
-				slot.textureHeight = height;
-				return;
-			}
-		}
 	}
 
 	private findVramSlot(addr: number, length: number): VramSlot {

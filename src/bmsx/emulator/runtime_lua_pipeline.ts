@@ -105,6 +105,40 @@ function resolveVblankCycles(value: number | undefined, cyclesPerFrame: number):
 	return cycles;
 }
 
+type RuntimeAssetReloadMode = 'full' | 'cart';
+type RuntimeManifestSource = 'system' | 'cart';
+
+interface RuntimeAssetReloadPlan {
+	mode: RuntimeAssetReloadMode;
+	manifestSource: RuntimeManifestSource;
+	sealSystemAssets: boolean;
+	resetFreshWorldOptions: { preserve_textures: boolean };
+}
+
+function buildRuntimeAssetReloadPlan(runtime: Runtime): RuntimeAssetReloadPlan {
+	if (runtime.cartAssetLayer) {
+		return {
+			mode: 'cart',
+			manifestSource: 'cart',
+			sealSystemAssets: false,
+			resetFreshWorldOptions: { preserve_textures: true },
+		};
+	}
+	return {
+		mode: 'full',
+		manifestSource: 'system',
+		sealSystemAssets: true,
+		resetFreshWorldOptions: { preserve_textures: false },
+	};
+}
+
+function resolveRuntimeManifestForPlan(runtime: Runtime, plan: RuntimeAssetReloadPlan) {
+	if (plan.manifestSource === 'cart') {
+		return runtime.cartAssetLayer.index.manifest;
+	}
+	return $.engine_layer.index.manifest;
+}
+
 export function captureCurrentState(runtime: Runtime): RuntimeState {
 	const storage = runtime.storage.dump();
 	const stateSnapshot = captureRuntimeState(runtime);
@@ -149,13 +183,11 @@ export async function resetRuntimeToFreshState(runtime: Runtime) {
 	const asset = $.lua_sources.path2lua[$.lua_sources.entry_path];
 	runtime._luaPath = asset.source_path;
 	runtime.luaInitialized = false;
-	const mode = runtime.cartAssetLayer ? 'cart' : 'full';
-	const preserveTextures = mode === 'cart';
-	await runtime.buildAssetMemory({ mode });
-	if (mode === 'full') {
+	const reloadPlan = buildRuntimeAssetReloadPlan(runtime);
+	await runtime.buildAssetMemory({ mode: reloadPlan.mode });
+	if (reloadPlan.sealSystemAssets) {
 		runtime.memory.sealEngineAssets();
 	}
-	await runtime.vdp.uploadAtlasTextures({ includeSystemAtlas: !preserveTextures });
 	await $.refresh_audio_assets();
 	await runtime.boot();
 }
@@ -1130,14 +1162,12 @@ export async function reloadProgramAndResetWorld(runtime: Runtime, options?: { r
 		runtime.luaGenericChunksExecuted.clear();
 
 		runtime.applyCartAssetLayers();
-		const mode = runtime.cartAssetLayer ? 'cart' : 'full';
-		await runtime.buildAssetMemory({ mode });
-		if (mode === 'full') {
+		const reloadPlan = buildRuntimeAssetReloadPlan(runtime);
+		await runtime.buildAssetMemory({ mode: reloadPlan.mode });
+		if (reloadPlan.sealSystemAssets) {
 			runtime.memory.sealEngineAssets();
 		}
-		const preserveTextures = mode === 'cart';
-		await $.reset_to_fresh_world({ preserve_textures: preserveTextures });
-		await runtime.vdp.uploadAtlasTextures({ includeSystemAtlas: !preserveTextures });
+		await $.reset_to_fresh_world(reloadPlan.resetFreshWorldOptions);
 		await $.refresh_audio_assets();
 		try {
 			resetRuntimeState(runtime);
@@ -1157,9 +1187,7 @@ export async function reloadProgramAndResetWorld(runtime: Runtime, options?: { r
 		} catch (error) {
 			runtimeIde.handleLuaError(runtime, error);
 		}
-		const manifest = runtime.cartAssetLayer
-			? runtime.cartAssetLayer.index.manifest
-			: $.engine_layer.index.manifest;
+		const manifest = resolveRuntimeManifestForPlan(runtime, reloadPlan);
 		const perfSpecs = getMachinePerfSpecs(manifest.machine);
 		applyUfpsScaled(perfSpecs.ufps);
 		const cpuHz = resolveCpuHz(perfSpecs.cpu_freq_hz);

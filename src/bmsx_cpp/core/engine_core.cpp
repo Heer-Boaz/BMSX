@@ -647,7 +647,17 @@ void EngineCore::refreshRenderAssets() {
 	if (m_texture_manager) {
 		m_texture_manager->setBackend(m_view ? m_view->backend() : nullptr);
 	}
-	uploadTexturesToBackend(true);
+	if (!m_view || !m_view->backend() || !m_texture_manager) {
+		return;
+	}
+	auto* backend = m_view->backend();
+	if (!backend->readyForTextureUpload()) {
+		return;
+	}
+	m_view->initializeDefaultTextures();
+	if (Runtime::hasInstance()) {
+		Runtime::instance().restoreVramSlotTextures();
+	}
 }
 
 	void EngineCore::log(LogLevel level, const char* fmt, ...) {
@@ -809,8 +819,7 @@ bool EngineCore::bootWithoutCart() {
 		runtime.buildAssetMemory(m_engine_assets, true);
 		runtime.memory().sealEngineAssets();
 
-		// Upload textures/audio after asset memory is ready.
-		uploadTexturesToBackend(false);
+		// Refresh audio after asset memory is ready.
 		refreshAudioAssets(m_engine_assets);
 
 		// Boot the runtime with the pre-compiled program from engine assets
@@ -939,7 +948,6 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 		runtime.setCanonicalization(m_engine_assets.manifest.canonicalization);
 		runtime.buildAssetMemory(m_engine_assets, true);
 		runtime.memory().sealEngineAssets();
-		uploadTexturesToBackend(false);
 		refreshAudioAssets(m_engine_assets);
 		runtime.boot(*m_engine_assets.programAsset, m_engine_assets.programSymbols.get());
 		runtime.resetCartBootState();
@@ -968,7 +976,6 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 			runtime.setTransferRates(imgDecBytesPerSec, dmaBytesPerSecIso, dmaBytesPerSecBulk);
 			runtime.refreshMemoryMap();
 			runtime.buildAssetMemory(m_assets, false);
-			uploadTexturesToBackend(true);
 			refreshAudioAssets();
 			bootRuntimeFromProgram();
 		} else {
@@ -990,7 +997,6 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 			runtime.setTransferRates(imgDecBytesPerSec, dmaBytesPerSecIso, dmaBytesPerSecBulk);
 			runtime.refreshMemoryMap();
 			runtime.buildAssetMemory(m_assets, false);
-			uploadTexturesToBackend(true);
 			refreshAudioAssets();
 		}
 	}
@@ -1002,7 +1008,6 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 void EngineCore::prepareLoadedRomAssets() {
 	Runtime& runtime = Runtime::instance();
 	runtime.buildAssetMemory(m_assets, false, Runtime::AssetBuildMode::Cart);
-	uploadTexturesToBackend(true);
 	refreshAudioAssets();
 }
 
@@ -1086,69 +1091,12 @@ bool EngineCore::resetLoadedRom() {
 		runtime.setCanonicalization(m_engine_assets.manifest.canonicalization);
 		runtime.buildAssetMemory(m_engine_assets, true);
 		runtime.memory().sealEngineAssets();
-		uploadTexturesToBackend(false);
 		refreshAudioAssets(m_engine_assets);
 		runtime.boot(*m_engine_assets.programAsset, m_engine_assets.programSymbols.get());
 		return true;
 	}
 
 	return false;
-}
-
-void EngineCore::uploadTexturesToBackend(bool includeCartAssets) {
-	if (!m_view || !m_view->backend() || !m_texture_manager) {
-		return;
-	}
-	auto* backend = m_view->backend();
-	if (!backend->readyForTextureUpload()) {
-		return;
-	}
-
-	// Context reset can happen before any ROM/system program is booted.
-	// In that phase there is no Runtime instance yet, so there is no asset
-	// memory to upload from.
-	if (!Runtime::hasInstance()) {
-		return;
-	}
-
-	if (!includeCartAssets && !m_engine_assets_loaded) {
-		return;
-	}
-	m_texture_manager->setBackend(backend);
-
-	Runtime& runtime = Runtime::instance();
-	auto& memory = runtime.memory();
-
-	m_view->initializeDefaultTextures();
-	runtime.uploadAtlasTextures();
-
-	const bool replaceExisting = includeCartAssets;
-	auto uploadSlot = [&](const std::string& slotId, const Memory::AssetEntry& assetEntry) {
-		if (assetEntry.regionW == 0 || assetEntry.regionH == 0) {
-			return;
-		}
-		const uint32_t span = assetEntry.capacity > 0 ? assetEntry.capacity : 1u;
-		if (memory.isVramRange(assetEntry.baseAddr, span)) {
-			return;
-		}
-		const u8* pixels = memory.getImagePixels(assetEntry);
-		const i32 width = static_cast<i32>(assetEntry.regionW);
-		const i32 height = static_cast<i32>(assetEntry.regionH);
-		TextureParams params;
-		const TextureKey key = m_texture_manager->makeKey(slotId, params);
-		TextureHandle handle = m_texture_manager->getTexture(key);
-		if (handle) {
-			if (replaceExisting) {
-				handle = m_texture_manager->replaceTexture(key, pixels, width, height, params);
-			}
-		} else {
-			handle = m_texture_manager->getOrCreateTexture(key, pixels, width, height, params);
-		}
-		m_view->textures[slotId] = handle;
-	};
-
-	uploadSlot(ATLAS_PRIMARY_SLOT_ID, memory.getAssetEntry(ATLAS_PRIMARY_SLOT_ID));
-	uploadSlot(ATLAS_SECONDARY_SLOT_ID, memory.getAssetEntry(ATLAS_SECONDARY_SLOT_ID));
 }
 
 void EngineCore::unloadRom() {

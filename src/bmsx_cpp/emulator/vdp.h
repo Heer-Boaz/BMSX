@@ -32,7 +32,7 @@ public:
 	uint32_t readVdpData() override;
 
 	void registerImageAssets(RuntimeAssets& assets, bool keepDecodedData);
-	void uploadAtlasTextures();
+	void restoreVramSlotTextures();
 	void captureVramTextureSnapshots();
 	void flushAssetEdits();
 	void applyAtlasSlotMapping(const std::array<i32, 2>& slots);
@@ -109,7 +109,7 @@ private:
 	std::vector<u8> readSurfacePixels(const ReadSurface& surface, uint32_t x, uint32_t y, uint32_t width, uint32_t height);
 	VramSlot& findVramSlot(uint32_t addr, size_t length);
 	const VramSlot& findVramSlot(uint32_t addr, size_t length) const;
-	void ensureVramSlotTextureSize(VramSlot& slot);
+	void syncVramSlotTextureSize(VramSlot& slot);
 	VramSlot& getVramSlotByTextureKey(const std::string& textureKey);
 	uint32_t nextVramMachineSeed() const;
 	uint32_t nextVramBootSeed() const;
@@ -117,7 +117,7 @@ private:
 	void seedVramStaging();
 	void seedVramSlotTexture(VramSlot& slot);
 	void setSlotTextureSize(const std::string& textureKey, uint32_t width, uint32_t height);
-	void ensureAtlasSlotTexture(const Memory::AssetEntry& entry, const std::string& textureKey);
+	void restoreVramSlotTexture(const Memory::AssetEntry& entry, const std::string& textureKey);
 };
 
 } // namespace bmsx

@@ -717,7 +717,6 @@ export class Runtime {
 			await runtime.buildAssetMemory({ source: engineSource, assets: $.assets });
 			runtime.memory.sealEngineAssets();
 			$.view.default_font = new Font();
-			await runtime.vdp.uploadAtlasTextures();
 			await $.refresh_audio_assets();
 			await runtime.boot();
 			$.start();
@@ -803,7 +802,6 @@ export class Runtime {
 		await runtime.buildAssetMemory({ source: engineSource, assets: $.assets });
 		runtime.memory.sealEngineAssets();
 		$.view.default_font = new Font();
-		await runtime.vdp.uploadAtlasTextures();
 		await $.refresh_audio_assets();
 		await runtime.boot();
 		void runtime.prepareCartBoot();
@@ -1130,7 +1128,6 @@ export class Runtime {
 			this.editor.clearRuntimeErrorOverlay();
 			if (this.hasCompletedInitialBoot) { // Subsequent boot: reset to fresh world
 				await $.reset_to_fresh_world();
-				await this.vdp.uploadAtlasTextures();
 				await $.refresh_audio_assets();
 			}
 			api.cartdata($.lua_sources.namespace);

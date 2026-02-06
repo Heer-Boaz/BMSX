@@ -26,8 +26,11 @@ struct ImgMeta;
 struct SpriteQueueItem {
 	ImgRenderSubmission options;
 	const ImgMeta* imgmeta = nullptr;
+	bool useFallbackTexture = false;
 	i32 submissionIndex = 0;
 };
+
+constexpr const char* PRIMITIVE_SOLID_IMGID = "__bmsx_primitive_solid";
 
 /* ============================================================================
  * Mesh Queue Item (for 3D meshes)
@@ -58,12 +61,12 @@ namespace RenderQueues {
 void submitSprite(const ImgRenderSubmission& options);
 
 /**
- * Submit a rectangle (filled or outline) using the whitepixel sprite.
+ * Submit a rectangle (filled or outline) using the primitive solid sprite.
  */
 void submitRectangle(const RectRenderSubmission& options);
 
 /**
- * Submit a polygon outline using the whitepixel sprite.
+ * Submit a polygon outline using the primitive solid sprite.
  */
 void submitDrawPolygon(const PolyRenderSubmission& options);
 

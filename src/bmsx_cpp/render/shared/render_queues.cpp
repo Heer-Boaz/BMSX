@@ -7,6 +7,7 @@
 #include "render_queues.h"
 #include "glyphs.h"
 #include "../../rompack/runtime_assets.h"
+#include "../../rompack/rompack.h"
 #include "../../core/engine_core.h"
 #include "../../core/font.h"
 #include "../../emulator/runtime.h"
@@ -43,6 +44,22 @@ static std::vector<SpriteQueueItem>* s_spriteItemPool = &s_spriteItemPoolA;
 static std::vector<SpriteQueueItem>* s_spriteItemPoolAlt = &s_spriteItemPoolB;
 static size_t s_spriteItemPoolIndex = 0;
 static std::vector<RenderSubmission> s_renderQueuePlaybackBuffer;
+
+static const ImgMeta& primitiveSolidImgMeta() {
+	static const ImgMeta meta = [] {
+		ImgMeta out;
+		out.width = 1;
+		out.height = 1;
+		out.atlassed = true;
+		out.atlasid = ENGINE_ATLAS_INDEX;
+		out.texcoords = {0, 0, 0, 1, 1, 0, 1, 0, 0, 1, 1, 1};
+		out.texcoords_fliph = {1, 0, 1, 1, 0, 0, 0, 0, 1, 1, 0, 1};
+		out.texcoords_flipv = {0, 1, 0, 0, 1, 1, 1, 1, 0, 0, 1, 0};
+		out.texcoords_fliphv = {1, 1, 1, 0, 0, 1, 0, 1, 1, 0, 0, 0};
+		return out;
+	}();
+	return meta;
+}
 
 static SpriteQueueItem& acquireSpriteQueueItem() {
 	size_t index = s_spriteItemPoolIndex++;
@@ -88,15 +105,18 @@ static void sortSpriteQueueForRendering() {
 void submitSprite(const ImgRenderSubmission& options) {
 	if (options.imgid == "none") return;
 
-	auto& engine = EngineCore::instance();
-	const auto* imgAsset = engine.assets().getImg(options.imgid);
-	if (!imgAsset) {
-		throw BMSX_RUNTIME_ERROR("[Sprite Queue] submitSprite called with unknown image id '" + options.imgid + "'.");
-	}
-
-	const ImgMeta* imgmeta = &imgAsset->meta;
-	if (!imgmeta) {
-		throw BMSX_RUNTIME_ERROR("[Sprite Queue] Image metadata missing for imgid '" + options.imgid + "'.");
+	const ImgMeta* imgmeta = nullptr;
+	bool useFallbackTexture = false;
+	if (options.imgid == PRIMITIVE_SOLID_IMGID) {
+		imgmeta = &primitiveSolidImgMeta();
+		useFallbackTexture = true;
+	} else {
+		auto& engine = EngineCore::instance();
+		const auto* imgAsset = engine.assets().getImg(options.imgid);
+		if (!imgAsset) {
+			throw BMSX_RUNTIME_ERROR("[Sprite Queue] submitSprite called with unknown image id '" + options.imgid + "'.");
+		}
+		imgmeta = &imgAsset->meta;
 	}
 
 	i32 submissionIndex = s_spriteSubmissionCounter++;
@@ -104,6 +124,7 @@ void submitSprite(const ImgRenderSubmission& options) {
 
 	pooled.submissionIndex = submissionIndex;
 	pooled.imgmeta = imgmeta;
+	pooled.useFallbackTexture = useFallbackTexture;
 
 	// Copy options (integer truncation for positions like TS)
 	pooled.options.imgid = options.imgid;
@@ -232,7 +253,7 @@ void submitRectangle(const RectRenderSubmission& options) {
 	correctAreaStartEnd(x, y, ex, ey);
 
 	ImgRenderSubmission sprite;
-	sprite.imgid = "whitepixel";
+	sprite.imgid = PRIMITIVE_SOLID_IMGID;
 	sprite.pos = {x, y, z};
 	sprite.colorize = c;
 	sprite.layer = options.layer;
@@ -272,7 +293,7 @@ void submitDrawPolygon(const PolyRenderSubmission& options) {
 	const Color& color = options.color;
 	const f32 thickness = options.thickness.value_or(1.0f);
 	const std::optional<RenderLayer>& layer = options.layer;
-	const std::string imgid = "whitepixel";
+	const std::string imgid = PRIMITIVE_SOLID_IMGID;
 
 	for (size_t i = 0; i < coords.size(); i += 2) {
 		size_t next = (i + 2) % coords.size();

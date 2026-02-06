@@ -1036,8 +1036,8 @@ void Runtime::buildAssetMemory(RuntimeAssets& assets, bool keepDecodedData, Asse
 	m_memory.markAllAssetsDirty();
 }
 
-void Runtime::uploadAtlasTextures() {
-	m_vdp.uploadAtlasTextures();
+void Runtime::restoreVramSlotTextures() {
+	m_vdp.restoreVramSlotTextures();
 }
 
 void Runtime::captureVramTextureSnapshots() {

@@ -279,7 +279,7 @@ public:
 	Value canonicalizeIdentifier(std::string_view value);
 	void refreshMemoryMap();
 	void buildAssetMemory(RuntimeAssets& assets, bool keepDecodedData, AssetBuildMode mode = AssetBuildMode::Full);
-	void uploadAtlasTextures();
+	void restoreVramSlotTextures();
 	void captureVramTextureSnapshots();
 
 private:

@@ -50,6 +50,8 @@ constexpr float kDefaultZ = 0.0f;
 constexpr int kTexUnitAtlasPrimary = 0;
 constexpr int kTexUnitAtlasSecondary = 1;
 constexpr int kTexUnitAtlasEngine = 2;
+constexpr int kTexUnitAtlasFallback = 3;
+constexpr uint8_t kAtlasFallbackSelector = 255u;
 
 static_assert(ENGINE_ATLAS_INDEX <= 255, "ENGINE_ATLAS_INDEX must fit in uint8_t sprite atlas selector.");
 
@@ -70,6 +72,7 @@ struct SpriteGLES2State {
 	GLint uniform_tex0 = -1;
 	GLint uniform_tex1 = -1;
 	GLint uniform_tex2 = -1;
+	GLint uniform_tex3 = -1;
 	GLint uniform_time = -1;
 	GLuint vbo = 0;
 	std::vector<uint8_t> vertex_data;
@@ -136,16 +139,20 @@ precision mediump float;
 uniform sampler2D u_texture0;
 uniform sampler2D u_texture1;
 uniform sampler2D u_texture2;
+uniform sampler2D u_texture3;
 
 varying vec2 v_texcoord;
 varying vec4 v_color_override;
 varying float v_atlas_id;
 
 const float ENGINE_ATLAS_ID = 254.0;
+const float FALLBACK_ATLAS_ID = 255.0;
 
 void main() {
 	vec4 texColor;
-	if (v_atlas_id < 0.5) {
+	if (abs(v_atlas_id - FALLBACK_ATLAS_ID) < 0.5) {
+		texColor = texture2D(u_texture3, v_texcoord);
+	} else if (v_atlas_id < 0.5) {
 		texColor = texture2D(u_texture0, v_texcoord);
 	} else if (abs(v_atlas_id - ENGINE_ATLAS_ID) < 0.5) {
 		texColor = texture2D(u_texture2, v_texcoord);
@@ -343,6 +350,7 @@ void initGLES2(OpenGLES2Backend* backend, GameView* context) {
 	g_sprite.uniform_tex0 = glGetUniformLocation(g_sprite.program, "u_texture0");
 	g_sprite.uniform_tex1 = glGetUniformLocation(g_sprite.program, "u_texture1");
 	g_sprite.uniform_tex2 = glGetUniformLocation(g_sprite.program, "u_texture2");
+	g_sprite.uniform_tex3 = glGetUniformLocation(g_sprite.program, "u_texture3");
 	g_sprite.uniform_time = glGetUniformLocation(g_sprite.program, "u_time");
 
 	setupBuffers();
@@ -353,16 +361,18 @@ void initGLES2(OpenGLES2Backend* backend, GameView* context) {
 	glUniform1i(g_sprite.uniform_tex0, kTexUnitAtlasPrimary);
 	glUniform1i(g_sprite.uniform_tex1, kTexUnitAtlasSecondary);
 	glUniform1i(g_sprite.uniform_tex2, kTexUnitAtlasEngine);
+	glUniform1i(g_sprite.uniform_tex3, kTexUnitAtlasFallback);
 	if (kSpritesVerboseLog) {
 	std::fprintf(stderr,
 					"[BMSX][GLES2][Sprites] init program=%u attribs(pos=%d uv=%d "
 					"z=%d color=%d atlas=%d) uniforms(res=%d scale=%d tex0=%d "
-					"tex1=%d tex2=%d)\n",
+					"tex1=%d tex2=%d tex3=%d)\n",
 					static_cast<unsigned>(g_sprite.program), g_sprite.attrib_pos,
 					g_sprite.attrib_uv, g_sprite.attrib_z, g_sprite.attrib_color,
 					g_sprite.attrib_atlas, g_sprite.uniform_resolution,
 					g_sprite.uniform_scale, g_sprite.uniform_tex0,
-					g_sprite.uniform_tex1, g_sprite.uniform_tex2);
+					g_sprite.uniform_tex1, g_sprite.uniform_tex2,
+					g_sprite.uniform_tex3);
 	}
 }
 
@@ -412,6 +422,7 @@ void renderSpriteBatchGLES2(OpenGLES2Backend* backend, GameView* context,
 	glUniform1i(g_sprite.uniform_tex0, kTexUnitAtlasPrimary);
 	glUniform1i(g_sprite.uniform_tex1, kTexUnitAtlasSecondary);
 	glUniform1i(g_sprite.uniform_tex2, kTexUnitAtlasEngine);
+	glUniform1i(g_sprite.uniform_tex3, kTexUnitAtlasFallback);
 	setupAttributes();
 
 	glDisable(GL_CULL_FACE);
@@ -449,6 +460,9 @@ void renderSpriteBatchGLES2(OpenGLES2Backend* backend, GameView* context,
 	backend->setActiveTextureUnit(kTexUnitAtlasEngine);
 	backend->bindTexture2D(state.atlasEngineTex);
 	}
+	TextureHandle fallbackTex = context->textures.at("_atlas_fallback");
+	backend->setActiveTextureUnit(kTexUnitAtlasFallback);
+	backend->bindTexture2D(fallbackTex);
 
 	size_t batchCount = 0;
 	auto flush = [&]() {
@@ -521,7 +535,9 @@ void renderSpriteBatchGLES2(OpenGLES2Backend* backend, GameView* context,
 	const i32 atlasId = imgmeta->atlasid;
 	// Sprite binding selector uses ENGINE_ATLAS_INDEX for engine atlas in the shader.
 	uint8_t atlasPacked = static_cast<uint8_t>(ENGINE_ATLAS_INDEX);
-	if (atlasId != ENGINE_ATLAS_INDEX) {
+	if (item.useFallbackTexture) {
+		atlasPacked = kAtlasFallbackSelector;
+	} else if (atlasId != ENGINE_ATLAS_INDEX) {
 		if (atlasId == context->primaryAtlasIdInSlot) {
 			atlasPacked = 0;
 		} else if (atlasId == context->secondaryAtlasIdInSlot) {

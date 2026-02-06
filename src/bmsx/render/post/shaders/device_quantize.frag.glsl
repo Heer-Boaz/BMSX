@@ -73,21 +73,6 @@ vec3 quantize_ordered_conditional(vec3 sRGB, vec3 levels, float thr){
 	return q / levels;
 }
 
-vec3 quant565_error_gated(vec3 sRGB, ivec2 p){
-	vec3 lv = vec3(31.0, 63.0, 31.0);
-	vec3 s = clamp(sRGB, 0.0, 1.0);
-	vec3 v = s * lv;
-	vec3 qRound = floor(v + 0.5) / lv;
-
-	vec3 e = abs(s - qRound);
-	float err = dot(e, vec3(0.299, 0.587, 0.114));
-	float gate = smoothstep(0.003, 0.012, err);
-
-	float thr = bayer4x4_0_1(p);
-	vec3 qOrdered = (floor(v) + step(vec3(thr), fract(v))) / lv;
-	return mix(qRound, qOrdered, vec3(gate));
-}
-
 // MSX 10-bit 3:4:3 quantize with conditional ordered rounding.
 vec3 quantize_msx10_343(vec3 sRGB, ivec2 pix){
 	vec3 levels = vec3(7.0, 15.0, 7.0);
@@ -120,6 +105,31 @@ int psxIdx(ivec2 p){
 	return w.x + (w.y << 2);
 }
 
+int offGFromOffRB(int offRB){
+	return (offRB >= 0) ? (offRB / 2) : -(((-offRB) + 1) / 2);
+}
+
+vec3 quantize_rgb565_hw(vec3 sRGB, ivec2 pix){
+	int offRB = PSX_DITHER[psxIdx(pix)];
+	int offG = offGFromOffRB(offRB);
+
+	ivec3 v8 = ivec3(floor(clamp(sRGB, 0.0, 1.0) * 255.0 + 0.5));
+
+	int r8 = clamp(v8.r + offRB, 0, 255);
+	int g8 = clamp(v8.g + offG, 0, 255);
+	int b8 = clamp(v8.b + offRB, 0, 255);
+
+	int r5 = r8 >> 3;
+	int g6 = g8 >> 2;
+	int b5 = b8 >> 3;
+
+	int R = (r5 << 3) | (r5 >> 2);
+	int G = (g6 << 2) | (g6 >> 4);
+	int B = (b5 << 3) | (b5 >> 2);
+
+	return vec3(float(R), float(G), float(B)) * (1.0 / 255.0);
+}
+
 // sRGB (0..1) -> PSX dithered RGB555 in sRGB (0..1), emulator-style
 vec3 quantize_rgb555_psx(vec3 sRGB, ivec2 pix){
 	int off = PSX_DITHER[psxIdx(pix)];
@@ -150,7 +160,7 @@ void main(){
 	if (u_dither_type == 1u) {
 	sigS = quantize_rgb555_psx(sigS, sPix);
 	} else if (u_dither_type == 2u) {
-	sigS = quant565_error_gated(sigS, sPix);
+	sigS = quantize_rgb565_hw(sigS, sPix);
 	} else if (u_dither_type == 3u) {
 	sigS = quantize_msx10_343(sigS, sPix);
 	}

@@ -34,19 +34,19 @@ namespace SpritesPipeline {
 void drawImg(const ImgRenderSubmission& options);
 
 /**
- * Draw a filled rectangle using the whitepixel sprite.
+ * Draw a filled rectangle using the primitive solid sprite.
  * Mirrors TypeScript render_queues.submitRectangle().
  */
 void fillRectangle(const RectRenderSubmission& options);
 
 /**
- * Draw a rectangle outline using the whitepixel sprite.
+ * Draw a rectangle outline using the primitive solid sprite.
  * Mirrors TypeScript render_queues.submitRectangle().
  */
 void drawRectangle(const RectRenderSubmission& options);
 
 /**
- * Draw a polygon outline using the whitepixel sprite (Bresenham line).
+ * Draw a polygon outline using the primitive solid sprite (Bresenham line).
  * Mirrors TypeScript render_queues.submitDrawPolygon().
  */
 void drawPolygon(const std::vector<f32>& coords, f32 z, const Color& color, f32 thickness = 1.0f, std::optional<RenderLayer> layer = std::nullopt);

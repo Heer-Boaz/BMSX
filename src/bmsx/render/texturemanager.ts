@@ -344,6 +344,28 @@ export class TextureManager implements RegisterablePersistent {
 		return this.getTexture(key);
 	}
 
+	public createTextureFromPixelsSync(keyBase: string, pixels: Uint8Array, width: number, height: number, desc: TextureParams = {}): TextureHandle {
+		const key = this.makeKey(keyBase, desc);
+		const existing = this.gpuCache.get(key);
+		if (existing) {
+			return existing.handle;
+		}
+		const source: TextureSource = { width, height, data: pixels };
+		const handle = this.backend.createTexture(source, desc);
+		this.gpuCache.set(key, { handle, refCount: 1, ownedFallback: false, barrier: this.textureBarrier });
+		void this.textureBarrier.acquire(
+			key,
+			async () => handle,
+			{
+				category: 'texture',
+				block_render: false,
+				tag: `tex:${key}`,
+				disposer: (h) => this.backend.destroyTexture(h),
+			}
+		);
+		return handle;
+	}
+
 	public async updateTexturesForAsset(asset: RomImgAsset, pixels: Uint8Array, width: number, height: number): Promise<void> {
 		await this.updateTexturesForKey(asset.resid, pixels, width, height);
 	}

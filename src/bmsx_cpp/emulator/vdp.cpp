@@ -235,7 +235,7 @@ void VDP::writeVram(uint32_t addr, const u8* data, size_t length) {
 	if (entry.baseStride == 0 || entry.regionW == 0 || entry.regionH == 0) {
 		throw BMSX_RUNTIME_ERROR("[VDP] VRAM slot not initialized for writes.");
 	}
-	ensureVramSlotTextureSize(slot);
+	syncVramSlotTextureSize(slot);
 	const uint32_t stride = entry.baseStride;
 	const uint32_t totalBytes = entry.regionH * stride;
 	if (offset + length > totalBytes) {
@@ -577,9 +577,9 @@ void VDP::registerImageAssets(RuntimeAssets& assets, bool keepDecodedData) {
 	}
 }
 
-void VDP::uploadAtlasTextures() {
+void VDP::restoreVramSlotTextures() {
 	const auto& engineEntry = m_memory.getAssetEntry(generateAtlasName(ENGINE_ATLAS_INDEX));
-	ensureAtlasSlotTexture(engineEntry, ENGINE_ATLAS_TEXTURE_KEY);
+	restoreVramSlotTexture(engineEntry, ENGINE_ATLAS_TEXTURE_KEY);
 	auto* view = EngineCore::instance().view();
 	if (!view) {
 		throw BMSX_RUNTIME_ERROR("[VDP] GameView not configured.");
@@ -587,8 +587,8 @@ void VDP::uploadAtlasTextures() {
 	view->loadEngineAtlasTexture();
 	const auto& primaryEntry = m_memory.getAssetEntry(ATLAS_PRIMARY_SLOT_ID);
 	const auto& secondaryEntry = m_memory.getAssetEntry(ATLAS_SECONDARY_SLOT_ID);
-	ensureAtlasSlotTexture(primaryEntry, ATLAS_PRIMARY_SLOT_ID);
-	ensureAtlasSlotTexture(secondaryEntry, ATLAS_SECONDARY_SLOT_ID);
+	restoreVramSlotTexture(primaryEntry, ATLAS_PRIMARY_SLOT_ID);
+	restoreVramSlotTexture(secondaryEntry, ATLAS_SECONDARY_SLOT_ID);
 	m_dirtyAtlasBindings = true;
 }
 
@@ -790,6 +790,26 @@ std::optional<SkyboxImageIds> VDP::skyboxFaceIds() const {
 }
 
 void VDP::registerVramSlot(const Memory::AssetEntry& entry, const std::string& textureKey, uint32_t surfaceId) {
+	auto* texmanager = EngineCore::instance().texmanager();
+	TextureHandle handle = texmanager->getTextureByUri(textureKey);
+	uint32_t textureWidth = entry.regionW;
+	uint32_t textureHeight = entry.regionH;
+	if (!handle) {
+		VramGarbageStream stream{m_vramMachineSeed, m_vramBootSeed, VRAM_GARBAGE_SPACE_SALT, entry.baseAddr};
+		fillVramGarbageScratch(m_vramSeedPixel.data(), m_vramSeedPixel.size(), stream);
+		TextureParams params;
+		const TextureKey key = texmanager->makeKey(textureKey, params);
+		handle = texmanager->getOrCreateTexture(
+			key,
+			m_vramSeedPixel.data(),
+			1,
+			1,
+			params
+		);
+		textureWidth = 1;
+		textureHeight = 1;
+	}
+	EngineCore::instance().view()->textures[textureKey] = handle;
 	VramSlot slot;
 	slot.kind = VramSlotKind::Asset;
 	slot.baseAddr = entry.baseAddr;
@@ -797,8 +817,8 @@ void VDP::registerVramSlot(const Memory::AssetEntry& entry, const std::string& t
 	slot.assetId = entry.id;
 	slot.textureKey = textureKey;
 	slot.surfaceId = surfaceId;
-	slot.textureWidth = entry.regionW;
-	slot.textureHeight = entry.regionH;
+	slot.textureWidth = textureWidth;
+	slot.textureHeight = textureHeight;
 	m_vramSlots.push_back(std::move(slot));
 	registerReadSurface(surfaceId, entry.id, textureKey);
 }
@@ -823,7 +843,7 @@ const VDP::VramSlot& VDP::findVramSlot(uint32_t addr, size_t length) const {
 	throw BMSX_RUNTIME_ERROR("[VDP] VRAM write has no mapped slot.");
 }
 
-void VDP::ensureVramSlotTextureSize(VramSlot& slot) {
+void VDP::syncVramSlotTextureSize(VramSlot& slot) {
 	auto& entry = m_memory.getAssetEntry(slot.assetId);
 	const uint32_t width = entry.regionW;
 	const uint32_t height = entry.regionH;
@@ -831,17 +851,10 @@ void VDP::ensureVramSlotTextureSize(VramSlot& slot) {
 		return;
 	}
 	auto* texmanager = EngineCore::instance().texmanager();
-	if (!texmanager) {
-		throw BMSX_RUNTIME_ERROR("[VDP] TextureManager not configured.");
-	}
 	TextureHandle handle = texmanager->resizeTextureForKey(slot.textureKey,
 		static_cast<i32>(width),
 		static_cast<i32>(height));
-	auto* view = EngineCore::instance().view();
-	if (!view) {
-		throw BMSX_RUNTIME_ERROR("[VDP] GameView not configured.");
-	}
-	view->textures[slot.textureKey] = handle;
+	EngineCore::instance().view()->textures[slot.textureKey] = handle;
 	slot.textureWidth = width;
 	slot.textureHeight = height;
 	invalidateReadCache(slot.surfaceId);
@@ -993,7 +1006,7 @@ void VDP::seedVramSlotTexture(VramSlot& slot) {
 	invalidateReadCache(slot.surfaceId);
 }
 
-void VDP::ensureAtlasSlotTexture(const Memory::AssetEntry& entry, const std::string& textureKey) {
+void VDP::restoreVramSlotTexture(const Memory::AssetEntry& entry, const std::string& textureKey) {
 	if (entry.regionW == 0 || entry.regionH == 0) {
 		throw BMSX_RUNTIME_ERROR("[VDP] VRAM slot missing dimensions for seeding.");
 	}

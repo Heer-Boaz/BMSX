@@ -481,32 +481,41 @@ inline f32 quantizeOrderedConditional(f32 c, f32 levels, f32 thr0_1) {
 	return (q + up) / levels;
 }
 
-inline void quantize565ErrorGated(f32 sR,
-									 f32 sG,
-									 f32 sB,
-									 f32 thr0_1,
-									 f32* outR,
-									 f32* outG,
-									 f32* outB) {
+inline i32 offGFromOffRB(i32 offRB) {
+	return (offRB >= 0) ? (offRB / 2) : -(((-offRB) + 1) / 2);
+}
+
+inline void quantizeRgb565HardwareStyle(f32 sR,
+										 f32 sG,
+										 f32 sB,
+										 i32 offRB,
+										 f32* outR,
+										 f32* outG,
+										 f32* outB) {
+	const i32 offG = offGFromOffRB(offRB);
 	const f32 r = clamp01(sR);
 	const f32 g = clamp01(sG);
 	const f32 b = clamp01(sB);
-	const f32 vR = r * 31.0f;
-	const f32 vG = g * 63.0f;
-	const f32 vB = b * 31.0f;
-	const f32 qRoundR = std::floor(vR + 0.5f) * (1.0f / 31.0f);
-	const f32 qRoundG = std::floor(vG + 0.5f) * (1.0f / 63.0f);
-	const f32 qRoundB = std::floor(vB + 0.5f) * (1.0f / 31.0f);
-	const f32 err = std::abs(r - qRoundR) * 0.299f +
-					std::abs(g - qRoundG) * 0.587f +
-					std::abs(b - qRoundB) * 0.114f;
-	const f32 gate = smoothstep(0.003f, 0.012f, err);
-	const f32 qOrderedR = (std::floor(vR) + ((fract(vR) >= thr0_1) ? 1.0f : 0.0f)) * (1.0f / 31.0f);
-	const f32 qOrderedG = (std::floor(vG) + ((fract(vG) >= thr0_1) ? 1.0f : 0.0f)) * (1.0f / 63.0f);
-	const f32 qOrderedB = (std::floor(vB) + ((fract(vB) >= thr0_1) ? 1.0f : 0.0f)) * (1.0f / 31.0f);
-	*outR = qRoundR + (qOrderedR - qRoundR) * gate;
-	*outG = qRoundG + (qOrderedG - qRoundG) * gate;
-	*outB = qRoundB + (qOrderedB - qRoundB) * gate;
+
+	const i32 v8R = static_cast<i32>(std::floor(r * 255.0f + 0.5f));
+	const i32 v8G = static_cast<i32>(std::floor(g * 255.0f + 0.5f));
+	const i32 v8B = static_cast<i32>(std::floor(b * 255.0f + 0.5f));
+
+	const i32 r8 = std::min(255, std::max(0, v8R + offRB));
+	const i32 g8 = std::min(255, std::max(0, v8G + offG));
+	const i32 b8 = std::min(255, std::max(0, v8B + offRB));
+
+	const i32 r5 = r8 >> 3;
+	const i32 g6 = g8 >> 2;
+	const i32 b5 = b8 >> 3;
+
+	const i32 R = (r5 << 3) | (r5 >> 2);
+	const i32 G = (g6 << 2) | (g6 >> 4);
+	const i32 B = (b5 << 3) | (b5 >> 2);
+
+	*outR = static_cast<f32>(R) * (1.0f / 255.0f);
+	*outG = static_cast<f32>(G) * (1.0f / 255.0f);
+	*outB = static_cast<f32>(B) * (1.0f / 255.0f);
 }
 
 inline i32 psxDitherOffset4x4(i32 x, i32 y) {
@@ -603,8 +612,8 @@ void GameView::applyCRTPostProcessing(const u32* src,
 					qG = quantizeRgb555PSX(sigG, off);
 					qB = quantizeRgb555PSX(sigB, off);
 				} else if (ditherType == 2) {
-					const f32 thr = bayer4x4_0_1(sx, sy);
-					quantize565ErrorGated(sigR, sigG, sigB, thr, &qR, &qG, &qB);
+					const i32 off = psxDitherOffset4x4(sx, sy);
+					quantizeRgb565HardwareStyle(sigR, sigG, sigB, off, &qR, &qG, &qB);
 				} else if (ditherType == 3) {
 					const f32 thr = bayer4x4_0_1(sx, sy);
 					qR = quantizeOrderedConditional(sigR, 7.0f, thr);
