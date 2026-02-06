@@ -132,6 +132,13 @@ void Memory::setVramWriter(VramWriter* writer) {
 }
 
 void Memory::resetAssetMemory() {
+	const uint32_t previousDataCursor = m_assetDataCursor;
+	if (previousDataCursor > ASSET_TABLE_BASE) {
+		const uint32_t clearEnd = std::min(previousDataCursor, ASSET_DATA_ALLOC_END);
+		const size_t clearOffset = static_cast<size_t>(ASSET_TABLE_BASE - RAM_BASE);
+		const size_t clearSize = static_cast<size_t>(clearEnd - ASSET_TABLE_BASE);
+		std::memset(m_ram.data() + clearOffset, 0, clearSize);
+	}
 	m_assetEntries.clear();
 	m_assetIndexById.clear();
 	m_assetIndexByToken.clear();
@@ -143,8 +150,6 @@ void Memory::resetAssetMemory() {
 	m_cartAssetDataBase = ASSET_DATA_BASE;
 	std::fill(m_assetOwnerPages.begin(), m_assetOwnerPages.end(), -1);
 	m_assetDataCursor = ASSET_DATA_BASE;
-	const size_t offset = static_cast<size_t>(ASSET_RAM_BASE - RAM_BASE);
-	std::fill(m_ram.begin() + offset, m_ram.begin() + offset + ASSET_RAM_SIZE, 0);
 }
 
 bool Memory::hasAsset(const std::string& id) const {
@@ -167,6 +172,7 @@ void Memory::sealEngineAssets() {
 }
 
 void Memory::resetCartAssets() {
+	const uint32_t previousDataCursor = m_assetDataCursor;
 	m_assetEntries.resize(m_engineAssetEntryCount);
 	m_assetIndexById.clear();
 	m_assetIndexByToken.clear();
@@ -191,9 +197,12 @@ void Memory::resetCartAssets() {
 		mapAssetPages(index, entry.baseAddr, entry.capacity);
 	}
 	m_assetDataCursor = m_cartAssetDataBase;
-	const size_t cartOffset = static_cast<size_t>(m_cartAssetDataBase - RAM_BASE);
-	const size_t cartEnd = static_cast<size_t>(ASSET_DATA_ALLOC_END - RAM_BASE);
-	std::fill(m_ram.begin() + cartOffset, m_ram.begin() + cartEnd, 0);
+	if (previousDataCursor > m_cartAssetDataBase) {
+		const uint32_t clearEnd = std::min(previousDataCursor, ASSET_DATA_ALLOC_END);
+		const size_t cartOffset = static_cast<size_t>(m_cartAssetDataBase - RAM_BASE);
+		const size_t clearSize = static_cast<size_t>(clearEnd - m_cartAssetDataBase);
+		std::memset(m_ram.data() + cartOffset, 0, clearSize);
+	}
 }
 
 Memory::AssetEntry& Memory::registerImageBuffer(const std::string& id, const u8* rgba, uint32_t width, uint32_t height, uint32_t flags) {

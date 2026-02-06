@@ -96,7 +96,6 @@ import { Memory, ASSET_TABLE_ENTRY_SIZE, ASSET_TABLE_HEADER_SIZE, type AssetEntr
 import { DmaController } from './devices/dma_controller';
 import { ImgDecController } from './devices/imgdec_controller';
 import {
-	DEFAULT_RAM_SIZE,
 	DEFAULT_STRING_HANDLE_COUNT,
 	DEFAULT_STRING_HEAP_SIZE,
 	DEFAULT_VRAM_ATLAS_SLOT_SIZE,
@@ -131,6 +130,8 @@ export const BUTTON_ACTIONS: ReadonlyArray<string> = [
 export const EDITOR_FONT_VARIANT: FontVariant = 'tiny';
 
 const MAX_POOLED_RUNTIME_SCRATCH_ARRAYS = 32;
+const ASSET_DATA_ALIGNMENT_BYTES = 0x1000;
+const DEFAULT_ASSET_DATA_HEADROOM_BYTES = 1 << 20; // 1 MiB
 
 type FrameState = {
 	haltGame: boolean;
@@ -886,6 +887,36 @@ export class Runtime {
 		return { bytes, entryCount, stringBytes };
 	}
 
+	private static alignUp(value: number, alignment: number): number {
+		const mask = alignment - 1;
+		return (value + mask) & ~mask;
+	}
+
+	private static computeRequiredAssetDataBytes(assets: RuntimeAssets): number {
+		let requiredBytes = 0;
+		const imageAssets = Object.values(assets.img);
+		for (let index = 0; index < imageAssets.length; index += 1) {
+			const image = imageAssets[index];
+			if (image.type === 'atlas' || image.imgmeta?.atlassed) {
+				continue;
+			}
+			if (!image.buffer || image.buffer.byteLength === 0) {
+				continue;
+			}
+			requiredBytes += this.alignUp(image.buffer.byteLength, 4);
+		}
+		const audioAssets = Object.values(assets.audio);
+		for (let index = 0; index < audioAssets.length; index += 1) {
+			const audio = audioAssets[index];
+			if (!audio.buffer || audio.buffer.byteLength === 0) {
+				continue;
+			}
+			requiredBytes += this.alignUp(audio.buffer.byteLength, 2);
+		}
+		requiredBytes += DEFAULT_ASSET_DATA_HEADROOM_BYTES;
+		return this.alignUp(requiredBytes, ASSET_DATA_ALIGNMENT_BYTES);
+	}
+
 	private static resolveMemoryMapSpecs(params: {
 		manifest: CartridgeIndex['manifest'];
 		engineManifest: CartridgeIndex['manifest'];
@@ -924,11 +955,13 @@ export class Runtime {
 		if (skyboxFaceBytes === undefined && skyboxFaceSize <= 0) {
 			throw new Error(`[Runtime] Invalid skybox_face_size: ${skyboxFaceSize}.`);
 		}
-		const defaultAssetDataBytes = DEFAULT_RAM_SIZE
-			- (IO_REGION_SIZE + (stringHandleCount * STRING_HANDLE_ENTRY_SIZE) + stringHeapBytes + assetTableBytes);
-		const assetDataBytes = memorySpecs.asset_data_bytes ?? defaultAssetDataBytes;
+		const requiredAssetDataBytes = this.computeRequiredAssetDataBytes(params.assets);
+		const assetDataBytes = memorySpecs.asset_data_bytes ?? requiredAssetDataBytes;
 		if (!Number.isSafeInteger(assetDataBytes) || assetDataBytes < 0) {
 			throw new Error(`[Runtime] machine.specs.ram.asset_data_bytes must be a non-negative integer (got ${assetDataBytes}).`);
+		}
+		if (assetDataBytes < requiredAssetDataBytes) {
+			throw new Error(`[Runtime] machine.specs.ram.asset_data_bytes (${assetDataBytes}) must be at least required size ${requiredAssetDataBytes}.`);
 		}
 		const computedRamBytes = IO_REGION_SIZE
 			+ (stringHandleCount * STRING_HANDLE_ENTRY_SIZE)

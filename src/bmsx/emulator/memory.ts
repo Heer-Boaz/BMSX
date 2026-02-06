@@ -156,6 +156,13 @@ export class Memory {
 	}
 
 	public resetAssetMemory(): void {
+		const previousDataCursor = this.assetDataCursor;
+		if (previousDataCursor > ASSET_TABLE_BASE) {
+			const clearEnd = Math.min(previousDataCursor, ASSET_DATA_ALLOC_END);
+			const clearStartOffset = ASSET_TABLE_BASE - RAM_BASE;
+			const clearEndOffset = clearEnd - RAM_BASE;
+			this.ram.fill(0, clearStartOffset, clearEndOffset);
+		}
 		this.assetEntries = [];
 		this.assetIndexById.clear();
 		this.assetIndexByToken.clear();
@@ -166,8 +173,6 @@ export class Memory {
 		this.cartAssetDataBase = ASSET_DATA_BASE;
 		this.assetOwnerPages.fill(-1);
 		this.assetDataCursor = ASSET_DATA_BASE;
-		const assetOffset = ASSET_RAM_BASE - RAM_BASE;
-		this.ram.fill(0, assetOffset, assetOffset + ASSET_RAM_SIZE);
 	}
 
 	public hasAsset(id: string): boolean {
@@ -190,6 +195,7 @@ export class Memory {
 	}
 
 	public resetCartAssets(): void {
+		const previousDataCursor = this.assetDataCursor;
 		this.assetEntries.length = this.engineAssetEntryCount;
 		this.assetIndexById.clear();
 		this.assetIndexByToken.clear();
@@ -212,9 +218,12 @@ export class Memory {
 			this.mapAssetPages(index, entry.baseAddr, entry.capacity);
 		}
 		this.assetDataCursor = this.cartAssetDataBase;
-		const cartOffset = this.cartAssetDataBase - RAM_BASE;
-		const cartEnd = ASSET_DATA_ALLOC_END - RAM_BASE;
-		this.ram.fill(0, cartOffset, cartEnd);
+		if (previousDataCursor > this.cartAssetDataBase) {
+			const clearEnd = Math.min(previousDataCursor, ASSET_DATA_ALLOC_END);
+			const clearStartOffset = this.cartAssetDataBase - RAM_BASE;
+			const clearEndOffset = clearEnd - RAM_BASE;
+			this.ram.fill(0, clearStartOffset, clearEndOffset);
+		}
 	}
 
 	public registerImageSlot(params: {

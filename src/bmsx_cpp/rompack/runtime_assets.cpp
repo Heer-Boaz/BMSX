@@ -13,9 +13,6 @@
 #endif
 #include <iostream>
 
-// stb_image for PNG decoding
-#include "../vendor/stb_image.h"
-
 namespace bmsx {
 
 static void updateFlippedTexcoords(ImgMeta& meta) {
@@ -413,17 +410,6 @@ static std::optional<i32> readOptionalI32(const BinObject& obj, const std::strin
 		throw BMSX_RUNTIME_ERROR("Asset '" + assetId + "' field '" + std::string(field) + "' expected number.");
 	}
 	return value->toI32();
-}
-
-static std::optional<i64> readOptionalI64(const BinObject& obj, const std::string& assetId, const char* field) {
-	const BinValue* value = findObjectField(obj, field);
-	if (!value) {
-		return std::nullopt;
-	}
-	if (!value->isNumber()) {
-		throw BMSX_RUNTIME_ERROR("Asset '" + assetId + "' field '" + std::string(field) + "' expected number.");
-	}
-	return static_cast<i64>(value->toNumber());
 }
 
 static std::optional<bool> readOptionalBool(const BinObject& obj, const std::string& assetId, const char* field) {
@@ -1234,7 +1220,7 @@ static std::vector<u8> zlibDecompress(const u8* data, size_t size) {
 bool loadAssetsFromRom(const u8* buffer,
 						size_t size,
 						RuntimeAssets& assets,
-						const AssetLoadCallbacks* callbacks,
+						const AssetLoadCallbacks*,
 						const char* payloadId) {
 	assets.clear();
 
@@ -1491,34 +1477,6 @@ bool loadAssetsFromRom(const u8* buffer,
 						hitpolygons.fliphv = readF32ArrayList(hpObj.at("fliphv"), assetId, "hitpolygons.fliphv");
 						imgAsset.meta.hitpolygons = std::move(hitpolygons);
 					}
-				}
-			}
-
-			// Load image pixel data
-			if (bufStart >= 0 && bufEnd > bufStart &&
-				(assetType == "atlas" || !imgAsset.meta.atlassed)) {
-				const u8* imgData = romData + bufStart;
-				size_t imgSize = bufEnd - bufStart;
-
-				int width, height, channels;
-				u8* pixels = stbi_load_from_memory(imgData, static_cast<int>(imgSize),
-													&width, &height, &channels, 4);  // Force RGBA
-
-				if (pixels) {
-					if (imgAsset.meta.width <= 0) {
-						imgAsset.meta.width = width;
-					}
-					if (imgAsset.meta.height <= 0) {
-						imgAsset.meta.height = height;
-					}
-					bool keepPixels = true;
-					if (callbacks && callbacks->onImageDecoded) {
-						keepPixels = callbacks->onImageDecoded(assetId, imgAsset, pixels, width, height);
-					}
-					if (keepPixels) {
-						imgAsset.pixels.assign(pixels, pixels + width * height * 4);
-					}
-					stbi_image_free(pixels);
 				}
 			}
 

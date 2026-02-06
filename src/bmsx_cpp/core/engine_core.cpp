@@ -19,6 +19,7 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 #include <limits>
@@ -33,6 +34,7 @@ inline f64 to_ms(std::chrono::steady_clock::duration duration) {
 }
 
 constexpr uint32_t ASSET_PAGE_SIZE = 1u << 12;
+constexpr uint32_t DEFAULT_ASSET_DATA_HEADROOM_BYTES = 1u << 20; // 1 MiB
 
 void collectAssetIds(const RuntimeAssets& engineAssets, const RuntimeAssets& assets, std::unordered_set<std::string>& ids) {
 	const std::string engineAtlasId = generateAtlasName(ENGINE_ATLAS_INDEX);
@@ -80,6 +82,53 @@ uint32_t computeAssetTableBytes(const RuntimeAssets& engineAssets, const Runtime
 		throw std::runtime_error("[EngineCore] Asset table size exceeds addressable range.");
 	}
 	return static_cast<uint32_t>(bytes);
+}
+
+uint64_t alignUpU64(uint64_t value, uint64_t alignment) {
+	const uint64_t mask = alignment - 1u;
+	return (value + mask) & ~mask;
+}
+
+uint32_t computeRequiredAssetDataBytes(const RuntimeAssets& engineAssets, const RuntimeAssets& assets) {
+	std::unordered_map<std::string, const ImgAsset*> imagesById;
+	imagesById.reserve(engineAssets.img.size() + assets.img.size());
+	for (const auto& entry : engineAssets.img) {
+		imagesById[entry.second.id] = &entry.second;
+	}
+	for (const auto& entry : assets.img) {
+		imagesById[entry.second.id] = &entry.second;
+	}
+
+	std::unordered_map<std::string, const AudioAsset*> audioById;
+	audioById.reserve(engineAssets.audio.size() + assets.audio.size());
+	for (const auto& entry : engineAssets.audio) {
+		audioById[entry.second.id] = &entry.second;
+	}
+	for (const auto& entry : assets.audio) {
+		audioById[entry.second.id] = &entry.second;
+	}
+
+	uint64_t requiredBytes = 0;
+	for (const auto& entry : imagesById) {
+		const ImgAsset& image = *entry.second;
+		if (image.rom.type == "atlas" || image.meta.atlassed || image.pixels.empty()) {
+			continue;
+		}
+		requiredBytes += alignUpU64(static_cast<uint64_t>(image.pixels.size()), 4u);
+	}
+	for (const auto& entry : audioById) {
+		const AudioAsset& audio = *entry.second;
+		if (audio.bytes.empty()) {
+			continue;
+		}
+		requiredBytes += alignUpU64(static_cast<uint64_t>(audio.bytes.size()), 2u);
+	}
+	requiredBytes += static_cast<uint64_t>(DEFAULT_ASSET_DATA_HEADROOM_BYTES);
+	requiredBytes = alignUpU64(requiredBytes, static_cast<uint64_t>(ASSET_PAGE_SIZE));
+	if (requiredBytes > std::numeric_limits<uint32_t>::max()) {
+		throw std::runtime_error("[EngineCore] required asset data size exceeds addressable range.");
+	}
+	return static_cast<uint32_t>(requiredBytes);
 }
 
 MemoryMapConfig resolveMemoryMapConfig(const RomManifest& manifest, const RomManifest& engineManifest, const RuntimeAssets& assets, const RuntimeAssets& engineAssets) {
@@ -153,16 +202,19 @@ MemoryMapConfig resolveMemoryMapConfig(const RomManifest& manifest, const RomMan
 	}
 
 	const uint32_t stringHandleTableBytes = config.stringHandleCount * STRING_HANDLE_ENTRY_SIZE;
+	const uint32_t requiredAssetDataBytes = computeRequiredAssetDataBytes(engineAssets, assets);
 	if (manifest.assetDataBytes) {
 		const i32 value = *manifest.assetDataBytes;
 		if (value < 0) {
 			throw std::runtime_error("[EngineCore] asset_data_bytes must be greater than or equal to 0.");
 		}
-		config.assetDataBytes = static_cast<uint32_t>(value);
+		const uint32_t resolved = static_cast<uint32_t>(value);
+		if (resolved < requiredAssetDataBytes) {
+			throw std::runtime_error("[EngineCore] asset_data_bytes must be at least required size.");
+		}
+		config.assetDataBytes = resolved;
 	} else {
-		const uint32_t defaultAssetDataBytes = DEFAULT_RAM_SIZE
-			- (IO_REGION_SIZE + stringHandleTableBytes + config.stringHeapBytes + config.assetTableBytes);
-		config.assetDataBytes = defaultAssetDataBytes;
+		config.assetDataBytes = requiredAssetDataBytes;
 	}
 
 	const uint64_t computedRamBytes = static_cast<uint64_t>(IO_REGION_SIZE)

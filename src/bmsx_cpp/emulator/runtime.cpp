@@ -964,22 +964,8 @@ void Runtime::buildAssetMemory(RuntimeAssets& assets, bool keepDecodedData, Asse
 		if (m_memory.hasAsset(id)) {
 			continue;
 		}
-		if (audioAsset->bytes.empty()) {
-			m_memory.registerAudioMeta(
-				id,
-				static_cast<uint32_t>(audioAsset->sampleRate),
-				static_cast<uint32_t>(audioAsset->channels),
-				static_cast<uint32_t>(audioAsset->bitsPerSample),
-				static_cast<uint32_t>(audioAsset->frames),
-				static_cast<uint32_t>(audioAsset->dataOffset),
-				static_cast<uint32_t>(audioAsset->dataSize)
-			);
-			continue;
-		}
-		m_memory.registerAudioBuffer(
+		m_memory.registerAudioMeta(
 			id,
-			audioAsset->bytes.data(),
-			audioAsset->bytes.size(),
 			static_cast<uint32_t>(audioAsset->sampleRate),
 			static_cast<uint32_t>(audioAsset->channels),
 			static_cast<uint32_t>(audioAsset->bitsPerSample),
@@ -1006,22 +992,8 @@ void Runtime::buildAssetMemory(RuntimeAssets& assets, bool keepDecodedData, Asse
 			if (m_memory.hasAsset(id)) {
 				continue;
 			}
-			if (audioAsset->bytes.empty()) {
-				m_memory.registerAudioMeta(
-					id,
-					static_cast<uint32_t>(audioAsset->sampleRate),
-					static_cast<uint32_t>(audioAsset->channels),
-					static_cast<uint32_t>(audioAsset->bitsPerSample),
-					static_cast<uint32_t>(audioAsset->frames),
-					static_cast<uint32_t>(audioAsset->dataOffset),
-					static_cast<uint32_t>(audioAsset->dataSize)
-				);
-				continue;
-			}
-			m_memory.registerAudioBuffer(
+			m_memory.registerAudioMeta(
 				id,
-				audioAsset->bytes.data(),
-				audioAsset->bytes.size(),
 				static_cast<uint32_t>(audioAsset->sampleRate),
 				static_cast<uint32_t>(audioAsset->channels),
 				static_cast<uint32_t>(audioAsset->bitsPerSample),
