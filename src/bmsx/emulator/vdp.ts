@@ -984,14 +984,12 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 
 	private registerVramSlot(entry: AssetEntry, textureKey: string, surfaceId: number): void {
 		let handle = $.texmanager.getTextureByUri(textureKey);
-		let textureWidth = entry.regionW;
-		let textureHeight = entry.regionH;
+		let textureWidth = 1;
+		let textureHeight = 1;
 		if (!handle) {
 			const stream = this.makeVramGarbageStream(entry.baseAddr >>> 0);
 			fillVramGarbageScratch(this.vramSeedPixel, stream);
 			handle = $.texmanager.createTextureFromPixelsSync(textureKey, this.vramSeedPixel, 1, 1);
-			textureWidth = 1;
-			textureHeight = 1;
 		}
 		$.view.textures[textureKey] = handle;
 		this.vramSlots.push({

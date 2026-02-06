@@ -792,24 +792,29 @@ std::optional<SkyboxImageIds> VDP::skyboxFaceIds() const {
 void VDP::registerVramSlot(const Memory::AssetEntry& entry, const std::string& textureKey, uint32_t surfaceId) {
 	auto* texmanager = EngineCore::instance().texmanager();
 	TextureHandle handle = texmanager->getTextureByUri(textureKey);
-	uint32_t textureWidth = entry.regionW;
-	uint32_t textureHeight = entry.regionH;
+	uint32_t textureWidth = handle ? 1 : entry.regionW;
+	uint32_t textureHeight = handle ? 1 : entry.regionH;
 	if (!handle) {
-		VramGarbageStream stream{m_vramMachineSeed, m_vramBootSeed, VRAM_GARBAGE_SPACE_SALT, entry.baseAddr};
-		fillVramGarbageScratch(m_vramSeedPixel.data(), m_vramSeedPixel.size(), stream);
-		TextureParams params;
-		const TextureKey key = texmanager->makeKey(textureKey, params);
-		handle = texmanager->getOrCreateTexture(
-			key,
-			m_vramSeedPixel.data(),
-			1,
-			1,
-			params
-		);
-		textureWidth = 1;
-		textureHeight = 1;
+		auto* backend = texmanager->backend();
+		if (backend && backend->readyForTextureUpload()) {
+			VramGarbageStream stream{m_vramMachineSeed, m_vramBootSeed, VRAM_GARBAGE_SPACE_SALT, entry.baseAddr};
+			fillVramGarbageScratch(m_vramSeedPixel.data(), m_vramSeedPixel.size(), stream);
+			TextureParams params;
+			const TextureKey key = texmanager->makeKey(textureKey, params);
+			handle = texmanager->getOrCreateTexture(
+				key,
+				m_vramSeedPixel.data(),
+				1,
+				1,
+				params
+			);
+			textureWidth = 1;
+			textureHeight = 1;
+		}
 	}
-	EngineCore::instance().view()->textures[textureKey] = handle;
+	if (handle) {
+		EngineCore::instance().view()->textures[textureKey] = handle;
+	}
 	VramSlot slot;
 	slot.kind = VramSlotKind::Asset;
 	slot.baseAddr = entry.baseAddr;

@@ -1248,33 +1248,34 @@ void retro_get_system_info(struct retro_system_info* info) {
 }
 
 void retro_get_system_av_info(struct retro_system_av_info* info) {
-	// Default resolution - this should match your game's base resolution
-	constexpr unsigned BASE_WIDTH = 100;
-	constexpr unsigned BASE_HEIGHT = 100;
-	constexpr unsigned MAX_WIDTH = 512;
-	constexpr unsigned MAX_HEIGHT = 448;
-	constexpr double FPS = 50.0;
-	constexpr double SAMPLE_RATE = 48000.0;
-	
-	info->geometry.base_width = BASE_WIDTH;
-	info->geometry.base_height = BASE_HEIGHT;
-	info->geometry.max_width = MAX_WIDTH;
-	info->geometry.max_height = MAX_HEIGHT;
-	info->geometry.aspect_ratio =
-		static_cast<float>(BASE_WIDTH) / static_cast<float>(BASE_HEIGHT);
+	if (g_cached_av_info_valid) {
+		*info = g_cached_av_info;
+	} else {
+		// Default resolution before content is loaded.
+		constexpr unsigned BASE_WIDTH = 100;
+		constexpr unsigned BASE_HEIGHT = 100;
+		constexpr unsigned MAX_WIDTH = 512;
+		constexpr unsigned MAX_HEIGHT = 448;
+		constexpr double FPS = 50.0;
+		constexpr double SAMPLE_RATE = 48000.0;
 
-	info->timing.fps = FPS;
-	info->timing.sample_rate = SAMPLE_RATE;
+		info->geometry.base_width = BASE_WIDTH;
+		info->geometry.base_height = BASE_HEIGHT;
+		info->geometry.max_width = MAX_WIDTH;
+		info->geometry.max_height = MAX_HEIGHT;
+		info->geometry.aspect_ratio =
+			static_cast<float>(BASE_WIDTH) / static_cast<float>(BASE_HEIGHT);
+		info->timing.fps = FPS;
+		info->timing.sample_rate = SAMPLE_RATE;
+		g_cached_av_info = *info;
+		g_cached_av_info_valid = true;
+	}
 
 	logging.log(
 		RETRO_LOG_INFO,
 		"[BMSX] System AV Info requested: %ux%u @ %.2fHz, Sample Rate: %.2fHz\n",
 		info->geometry.base_width, info->geometry.base_height, info->timing.fps,
 		info->timing.sample_rate);
-	g_cached_av_info = *info;
-	g_cached_av_info_valid = true;
-	g_platform->setAVInfo(*info);
-	g_platform->applyManifestViewport();
 }
 
 extern "C" void bmsx_set_frame_time_usec(retro_usec_t usec) {
@@ -1335,12 +1336,22 @@ bool retro_load_game(const struct retro_game_info* game) {
 		memset(&av, 0, sizeof(av));
 		retro_get_system_av_info(&av);
 	}
+	const auto& manifest = g_platform->engine()->assets().manifest;
+	av.geometry.base_width = static_cast<unsigned>(manifest.viewportWidth);
+	av.geometry.base_height = static_cast<unsigned>(manifest.viewportHeight);
+	if (av.geometry.max_width < av.geometry.base_width) {
+		av.geometry.max_width = av.geometry.base_width;
+	}
+	if (av.geometry.max_height < av.geometry.base_height) {
+		av.geometry.max_height = av.geometry.base_height;
+	}
+	av.geometry.aspect_ratio = static_cast<float>(av.geometry.base_width)
+		/ static_cast<float>(av.geometry.base_height);
 	av.timing.fps = (double)ufps_scaled / (double)bmsx::HZ_SCALE;
 	environ_cb(RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO, &av);
 	g_cached_av_info = av;
 	g_cached_av_info_valid = true;
 	g_platform->setAVInfo(av);
-	g_platform->applyManifestViewport();
 
 	return true;
 }

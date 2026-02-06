@@ -129,10 +129,11 @@ end
 
 local function entry_cycle(entry, dir)
 	if entry.kind == "action" then
-		if dir ~= 0 then
-			entry.action()
-		end
 		return
+		-- if dir ~= 0 then
+		-- 	entry.action()
+		-- end
+		-- return
 	end
 	if entry.kind == "toggle" then
 		entry.set(not entry.get())
@@ -146,7 +147,7 @@ local function entry_cycle(entry, dir)
 end
 
 function menu.update(_dt)
-	if action_triggered('&wp{5}(select, start)', 1) then
+	if action_triggered('&wp{5}(select, start)') then
 		consume_action('select')
 		consume_action('start')
 		toggle_menu()
@@ -155,32 +156,36 @@ function menu.update(_dt)
 		return
 	end
 
-	if action_triggered('b[jp]', 1) then
-		toggle_menu()
+	if action_triggered('b[jp]') then
 		consume_action('b')
+		toggle_menu()
 	end
 
-	if action_triggered('up[jp]', 1) then
-		state.selected = state.selected - 1
-		if state.selected < 1 then state.selected = #entries end
+	if action_triggered('up[jp]') then
 		consume_action('up')
+		state.selected = state.selected - 1
+		-- if state.selected < 1 then state.selected = #entries end
+		if state.selected < 1 then state.selected = 1 end
 	end
-	if action_triggered('down[jp]', 1) then
-		state.selected = state.selected + 1
-		if state.selected > #entries then state.selected = 1 end
+	if action_triggered('down[jp]') then
 		consume_action('down')
+		state.selected = state.selected + 1
+		-- if state.selected > #entries then state.selected = 1 end
+		if state.selected > #entries then state.selected = #entries end
 	end
-	if action_triggered('left[jp]', 1) then
-		entry_cycle(entries[state.selected], -1)
+	if action_triggered('left[jp]') then
 		consume_action('left')
+		entry_cycle(entries[state.selected], -1)
 	end
-	if action_triggered('right[jp]', 1) then
-		entry_cycle(entries[state.selected], 1)
+	if action_triggered('right[jp]') then
 		consume_action('right')
-	end
-	if action_triggered('a[jp]', 1) then
 		entry_cycle(entries[state.selected], 1)
+	end
+	if action_triggered('a[jp]') then
 		consume_action('a')
+		if entries[state.selected].kind == "action" then
+			entries[state.selected].action()
+		end	
 	end
 end
 

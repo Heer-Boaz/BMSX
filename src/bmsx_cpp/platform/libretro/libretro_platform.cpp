@@ -385,7 +385,6 @@ bool LibretroPlatform::loadRomOwned(std::vector<uint8_t>&& data) {
 		}
 	}
 
-	applyManifestViewport();
 	m_rom_loaded = true;
 	log(RETRO_LOG_INFO, "[BMSX] ROM loaded (%zu bytes)\n", size);
 	return true;
