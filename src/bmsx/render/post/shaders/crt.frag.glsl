@@ -80,7 +80,9 @@ vec3 linear_to_srgb(vec3 c) {
 
 // --- Noise ---
 float hashNoise(vec2 uv, float t){
-	vec3 p = vec3(uv * 0.1, t * 0.1);
+	vec2 wrappedUV = mod(uv, vec2(1024.0));
+	float wrappedT = mod(t, 4096.0);
+	vec3 p = vec3(wrappedUV * 0.1, wrappedT * 0.0001);
 	p = fract(p * vec3(12.9898, 78.233, 43758.5453));
 	p += dot(p, p.yzx + 19.19);
 	return fract((p.x + p.y) * p.z);

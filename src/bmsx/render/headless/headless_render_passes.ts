@@ -37,6 +37,16 @@ function registerFramePasses(registry: RenderPassLibrary): void {
 
 type Snapshot = string[];
 
+type ResolvedSpriteMeta = {
+	atlasId: number;
+	width: number;
+	height: number;
+	texcoords: number[];
+	texcoords_fliph: number[];
+	texcoords_flipv: number[];
+	texcoords_fliphv: number[];
+};
+
 let previousSpriteSnapshot: Snapshot = [];
 let previousMeshSnapshot: Snapshot = [];
 let previousParticleSnapshot: Snapshot = [];
@@ -54,10 +64,11 @@ const headlessFallbackParticleState: ParticlePipelineState = {
 };
 
 const validatedAtlasByKey = new Set<string>();
-const spriteMetaCache = new Map<string, { atlasId: number; width: number; height: number }>();
+const spriteMetaCache = new Map<string, ResolvedSpriteMeta>();
 const validatedMesh = new WeakMap<Mesh, boolean>();
 const MAX_MORPH_TARGETS = 8;
 const MAX_JOINTS = 32;
+const HEADLESS_VERBOSE_DIFF = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.BMSX_HEADLESS_VERBOSE === '1';
 
 function drainOverlayFrameForHeadless(): EditorOverlayFrame {
 	const frame = consumeOverlayFrame();
@@ -97,7 +108,7 @@ function ensureAtlasResource(atlasId: number, slotBytes: number, label: string):
 	validatedAtlasByKey.add(key);
 }
 
-function resolveSpriteMeta(imgid: string): { atlasId: number; width: number; height: number } {
+function resolveSpriteMeta(imgid: string): ResolvedSpriteMeta {
 	const cached = spriteMetaCache.get(imgid);
 	if (cached) {
 		return cached;
@@ -119,7 +130,21 @@ function resolveSpriteMeta(imgid: string): { atlasId: number; width: number; hei
 	if (meta.width <= 0 || meta.height <= 0) {
 		throw new Error(`[HeadlessSprites] Image '${imgid}' has invalid dimensions (${meta.width}x${meta.height}).`);
 	}
-	const resolved = { atlasId: meta.atlasid, width: meta.width, height: meta.height };
+	if (!meta.texcoords || !meta.texcoords_fliph || !meta.texcoords_flipv || !meta.texcoords_fliphv) {
+		throw new Error(`[HeadlessSprites] Image '${imgid}' missing UV metadata.`);
+	}
+	if (meta.texcoords.length < 12 || meta.texcoords_fliph.length < 12 || meta.texcoords_flipv.length < 12 || meta.texcoords_fliphv.length < 12) {
+		throw new Error(`[HeadlessSprites] Image '${imgid}' has incomplete UV metadata.`);
+	}
+	const resolved: ResolvedSpriteMeta = {
+		atlasId: meta.atlasid,
+		width: meta.width,
+		height: meta.height,
+		texcoords: meta.texcoords,
+		texcoords_fliph: meta.texcoords_fliph,
+		texcoords_flipv: meta.texcoords_flipv,
+		texcoords_fliphv: meta.texcoords_fliphv,
+	};
 	spriteMetaCache.set(imgid, resolved);
 	return resolved;
 }
@@ -311,10 +336,23 @@ function computeDiff(previous: Snapshot, current: Snapshot): Snapshot {
 function emitDiff(label: string, previous: Snapshot, current: Snapshot): Snapshot {
 	const diff = computeDiff(previous, current);
 	if (diff.length !== 0) {
-		// Headless output is a state diff between frames (first frame is effectively full listing).
-		// Kept verbose for regression hunting; can be gated later with a verbosity flag if needed.
-		console.log(`[headless:${label}] diff`);
-		for (const line of diff) console.log(`  ${line}`);
+		if (!HEADLESS_VERBOSE_DIFF && label === 'overlay') {
+			return current;
+		}
+		if (!HEADLESS_VERBOSE_DIFF && label === 'sprites' && diff.length <= 2) {
+			return current;
+		}
+		if (HEADLESS_VERBOSE_DIFF) {
+			console.log(`[headless:${label}] diff`);
+			for (const line of diff) console.log(`  ${line}`);
+		} else {
+			const prevHeadline = previous[0] ?? '';
+			const headline = current[0] ?? 'changed';
+			if (headline === prevHeadline) {
+				return current;
+			}
+			console.log(`[headless:${label}] ${headline} (${diff.length} changes)`);
+		}
 	}
 	return current;
 }
@@ -376,51 +414,56 @@ function registerSpritePass(registry: RenderPassLibrary): void {
 			];
 			const primaryAtlasId = $.view.primaryAtlasIdInSlot;
 			const secondaryAtlasId = $.view.secondaryAtlasIdInSlot;
-			let needsPrimaryAtlas = false;
-			let needsSecondaryAtlas = false;
-			let needsEngineAtlas = false;
-			if (count > 0) {
-				let index = 0;
-				forEachSprite((submission: SpriteQueueItem) => {
-					const { options, atlasId, entry, baseEntry } = submission;
-					if (options.imgid === 'none') {
-						throw new Error('[HeadlessSprites] Sprite submission has imgid="none".');
-					}
+				let needsPrimaryAtlas = false;
+				let needsSecondaryAtlas = false;
+				let needsEngineAtlas = false;
+				if (count > 0) {
+					let index = 0;
+					forEachSprite((submission: SpriteQueueItem) => {
+						const { options, atlasId, entry } = submission;
+						if (options.imgid === 'none') {
+							throw new Error('[HeadlessSprites] Sprite submission has imgid="none".');
+						}
 					if (!Number.isFinite(options.scale.x) || !Number.isFinite(options.scale.y)) {
 						throw new Error(`[HeadlessSprites] Sprite '${options.imgid}' has invalid scale.`);
 					}
 					if (!Number.isFinite(options.pos.x) || !Number.isFinite(options.pos.y) || !Number.isFinite(options.pos.z ?? 0)) {
 						throw new Error(`[HeadlessSprites] Sprite '${options.imgid}' has invalid position.`);
 					}
-					const meta = resolveSpriteMeta(options.imgid);
-					if (entry.regionW !== meta.width || entry.regionH !== meta.height) {
-						throw new Error(`[HeadlessSprites] Sprite '${options.imgid}' size ${entry.regionW}x${entry.regionH} does not match metadata ${meta.width}x${meta.height}.`);
-					}
-					if (baseEntry.regionW <= 0 || baseEntry.regionH <= 0) {
-						throw new Error(`[HeadlessSprites] Sprite '${options.imgid}' base atlas dimensions are invalid.`);
-					}
-					const u0 = entry.regionX / baseEntry.regionW;
-					const v0 = entry.regionY / baseEntry.regionH;
-					const u1 = (entry.regionX + entry.regionW) / baseEntry.regionW;
-					const v1 = (entry.regionY + entry.regionH) / baseEntry.regionH;
-					if (u0 < 0 || v0 < 0 || u1 > 1 || v1 > 1 || u0 > u1 || v0 > v1) {
-						throw new Error(`[HeadlessSprites] Sprite '${options.imgid}' UVs out of range (${u0}, ${v0})..(${u1}, ${v1}).`);
-					}
+						const meta = resolveSpriteMeta(options.imgid);
+						if (entry.regionW !== meta.width || entry.regionH !== meta.height) {
+							throw new Error(`[HeadlessSprites] Sprite '${options.imgid}' size ${entry.regionW}x${entry.regionH} does not match metadata ${meta.width}x${meta.height}.`);
+						}
+						const flipH = !!options.flip?.flip_h;
+						const flipV = !!options.flip?.flip_v;
+						const texcoords = flipH
+							? (flipV ? meta.texcoords_fliphv : meta.texcoords_fliph)
+							: (flipV ? meta.texcoords_flipv : meta.texcoords);
+						const u0 = texcoords[0];
+						const v0 = texcoords[1];
+						const u1 = texcoords[10];
+						const v1 = texcoords[11];
+						if (!Number.isFinite(u0) || !Number.isFinite(v0) || !Number.isFinite(u1) || !Number.isFinite(v1)) {
+							throw new Error(`[HeadlessSprites] Sprite '${options.imgid}' has non-finite UVs.`);
+						}
+						if (u0 < 0 || v0 < 0 || u1 > 1 || v1 > 1 || u0 > u1 || v0 > v1) {
+							throw new Error(`[HeadlessSprites] Sprite '${options.imgid}' UVs out of range (${u0}, ${v0})..(${u1}, ${v1}).`);
+						}
 					const expectedBinding = resolveExpectedSpriteAtlasBinding(atlasId, primaryAtlasId, secondaryAtlasId);
 					if (expectedBinding === 0) needsPrimaryAtlas = true;
 					else if (expectedBinding === 1) needsSecondaryAtlas = true;
 					else needsEngineAtlas = true;
-					const layer = options.layer ?? 'world';
-					const pos = formatVec3({ x: options.pos.x, y: options.pos.y, z: options.pos.z ?? 0 });
-					const scale = formatScale(options.scale);
-					const flipH = options.flip?.flip_h ? 'H' : '-';
-					const flipV = options.flip?.flip_v ? 'V' : '-';
-					const atlas = expectedBinding;
-					// Ambient sprites are disabled in the runtime; logging follows suit until a new approach is added.
-					snapshot.push(`[sprite#${index}] id=${options.imgid} layer=${layer} pos=${pos} scale=${scale} flip=${flipH}${flipV} atlas=${atlas}`);
-					index += 1;
-				});
-			}
+						const layer = options.layer ?? 'world';
+						const pos = formatVec3({ x: options.pos.x, y: options.pos.y, z: options.pos.z ?? 0 });
+						const scale = formatScale(options.scale);
+						const flipHLabel = flipH ? 'H' : '-';
+						const flipVLabel = flipV ? 'V' : '-';
+						const atlas = expectedBinding;
+						// Ambient sprites are disabled in the runtime; logging follows suit until a new approach is added.
+						snapshot.push(`[sprite#${index}] id=${options.imgid} layer=${layer} pos=${pos} scale=${scale} flip=${flipHLabel}${flipVLabel} atlas=${atlas}`);
+						index += 1;
+					});
+				}
 			if (needsPrimaryAtlas) {
 				if (primaryAtlasId === null || primaryAtlasId === undefined) {
 					throw new Error('[HeadlessSprites] Primary atlas slot is not set.');
