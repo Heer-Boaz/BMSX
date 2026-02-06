@@ -107,7 +107,7 @@ static constexpr const char* kToggleOff = "off";
 static constexpr const char* kToggleOn = "on";
 static constexpr const char* kDitherOff = "off";
 static constexpr const char* kDitherPSX = "psx";
-static constexpr const char* kDitherRGB888Output = "rgb888_output";
+static constexpr const char* kDitherRGB777Output = "rgb777_output";
 static constexpr const char* kDitherMSX10 = "msx10";
 
 enum class RenderBackendPreference {
@@ -286,7 +286,7 @@ static retro_core_option_v2_definition g_option_defs_us[] = {
 		{
 			{kDitherOff, "Off"},
 			{kDitherPSX, "PSX RGB555"},
-			{kDitherRGB888Output, "RGB888 Output"},
+			{kDitherRGB777Output, "RGB777 Output"},
 			{kDitherMSX10, "MSX10 3:4:3"},
 			{nullptr, nullptr},
 		},
@@ -432,7 +432,7 @@ static retro_core_option_definition g_option_defs_v1_us[] = {
 		{
 			{kDitherOff, "Off"},
 			{kDitherPSX, "PSX RGB555"},
-			{kDitherRGB888Output, "RGB888 Output"},
+			{kDitherRGB777Output, "RGB777 Output"},
 			{kDitherMSX10, "MSX10 3:4:3"},
 			{nullptr, nullptr},
 		},
@@ -675,12 +675,12 @@ static void set_core_options(bool default_gles2) {
 	g_option_defs_v1_us[10].default_value = kDitherOff;
 	g_option_defs_us[10].values[0] = {kDitherOff, "Off"};
 	g_option_defs_us[10].values[1] = {kDitherPSX, "PSX RGB555"};
-	g_option_defs_us[10].values[2] = {kDitherRGB888Output, "RGB888 Output"};
+	g_option_defs_us[10].values[2] = {kDitherRGB777Output, "RGB777 Output"};
 	g_option_defs_us[10].values[3] = {kDitherMSX10, "MSX10 3:4:3"};
 	g_option_defs_us[10].values[4] = {nullptr, nullptr};
 	g_option_defs_v1_us[10].values[0] = {kDitherOff, "Off"};
 	g_option_defs_v1_us[10].values[1] = {kDitherPSX, "PSX RGB555"};
-	g_option_defs_v1_us[10].values[2] = {kDitherRGB888Output, "RGB888 Output"};
+	g_option_defs_v1_us[10].values[2] = {kDitherRGB777Output, "RGB777 Output"};
 	g_option_defs_v1_us[10].values[3] = {kDitherMSX10, "MSX10 3:4:3"};
 	g_option_defs_v1_us[10].values[4] = {nullptr, nullptr};
 
@@ -734,7 +734,7 @@ static void set_core_options(bool default_gles2) {
 					kToggleOff, kToggleOn);
 	g_option_vars[9].value = g_option_crt_aperture_var;
 	std::snprintf(g_option_dither_var, sizeof(g_option_dither_var),
-					"Dither; %s|%s|%s|%s", kDitherOff, kDitherPSX, kDitherRGB888Output, kDitherMSX10);
+					"Dither; %s|%s|%s|%s", kDitherOff, kDitherPSX, kDitherRGB777Output, kDitherMSX10);
 	g_option_vars[10].value = g_option_dither_var;
 	std::snprintf(g_option_frameskip_var, sizeof(g_option_frameskip_var),
 					"Frame Skip; %s|%s", kToggleOn, kToggleOff);
@@ -894,7 +894,7 @@ static int read_dither_type() {
 	if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
 		if (std::strcmp(var.value, kDitherOff) == 0) return 0;
 		if (std::strcmp(var.value, kDitherPSX) == 0) return 1;
-		if (std::strcmp(var.value, kDitherRGB888Output) == 0) return 2;
+		if (std::strcmp(var.value, kDitherRGB777Output) == 0) return 2;
 		if (std::strcmp(var.value, kDitherMSX10) == 0) return 3;
 		if (std::strcmp(var.value, kToggleOn) == 0) return 2;
 		if (std::strcmp(var.value, kToggleOff) == 0) return 0;

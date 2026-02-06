@@ -517,16 +517,18 @@ int psxDitherOffset4x4(vec2 pix){
 	return -2;
 }
 
-vec3 quantize_rgb888_output(vec3 sRGB, vec2 pix){
-	float thr = bayer4x4_0_1(pix);
-	vec3 v = clamp(sRGB, 0.0, 1.0) * 255.0;
-	vec3 rounded = floor(v + 0.5);
-	float grain = step(0.5625, thr) - step(thr, 0.4375);
-	float lum = dot(sRGB, vec3(0.299, 0.587, 0.114));
-	float gate = smoothstep(4.0 / 255.0, 20.0 / 255.0, lum);
-	float delta = 2.0 * sign(grain) * step(0.5, abs(grain) * gate);
-	vec3 out8 = rounded + vec3(delta);
-	return clamp(out8, 0.0, 255.0) * (1.0 / 255.0);
+vec3 quantize_rgb777_output(vec3 sRGB, vec2 pix){
+	vec3 levels = vec3(127.0);
+	vec3 v = clamp(sRGB, 0.0, 1.0) * levels;
+	vec3 q = floor(v);
+	vec3 f = fract(v);
+	vec3 thr = vec3(
+		bayer4x4_0_1(pix),
+		bayer4x4_0_1(pix + vec2(1.0, 2.0)),
+		bayer4x4_0_1(pix + vec2(2.0, 1.0))
+	);
+	q += step(thr, f);
+	return q / levels;
 }
 
 vec3 quantize_rgb555_psx(vec3 sRGB, vec2 pix){
@@ -549,7 +551,7 @@ void main(){
 	if (u_dither_type == 1) {
 		sigS = quantize_rgb555_psx(sigS, sPix);
 	} else if (u_dither_type == 2) {
-		sigS = quantize_rgb888_output(sigS, sPix);
+		sigS = quantize_rgb777_output(sigS, sPix);
 	} else if (u_dither_type == 3) {
 		sigS = quantize_msx10_343(sigS, sPix);
 	}

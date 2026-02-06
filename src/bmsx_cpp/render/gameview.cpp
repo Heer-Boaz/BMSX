@@ -481,14 +481,13 @@ inline f32 quantizeOrderedConditional(f32 c, f32 levels, f32 thr0_1) {
 	return (q + up) / levels;
 }
 
-inline f32 quantizeRgb888Output(f32 c, f32 thr0_1, f32 gate) {
-	const f32 v = clamp01(c) * 255.0f;
-	const f32 rounded = std::floor(v + 0.5f);
-	const f32 grain = (thr0_1 >= 0.5625f ? 1.0f : 0.0f) - (thr0_1 <= 0.4375f ? 1.0f : 0.0f);
-	const f32 delta = (std::abs(grain) * gate >= 0.5f) ? ((grain > 0.0f) ? 2.0f : -2.0f) : 0.0f;
-	const f32 out8 = rounded + delta;
-	const f32 clamped = std::min(255.0f, std::max(0.0f, out8));
-	return clamped * (1.0f / 255.0f);
+inline f32 quantizeRgb777Output(f32 c, f32 thr0_1) {
+	const f32 levels = 127.0f;
+	const f32 v = clamp01(c) * levels;
+	const f32 q = std::floor(v);
+	const f32 f = fract(v);
+	const f32 up = (f >= thr0_1) ? 1.0f : 0.0f;
+	return (q + up) / levels;
 }
 
 inline i32 psxDitherOffset4x4(i32 x, i32 y) {
@@ -585,12 +584,12 @@ void GameView::applyCRTPostProcessing(const u32* src,
 					qG = quantizeRgb555PSX(sigG, off);
 					qB = quantizeRgb555PSX(sigB, off);
 				} else if (ditherType == 2) {
-					const f32 thr = bayer4x4_0_1(sx, sy);
-					const f32 lum = (sigR * 0.299f) + (sigG * 0.587f) + (sigB * 0.114f);
-					const f32 gate = smoothstep(4.0f / 255.0f, 20.0f / 255.0f, lum);
-					qR = quantizeRgb888Output(sigR, thr, gate);
-					qG = quantizeRgb888Output(sigG, thr, gate);
-					qB = quantizeRgb888Output(sigB, thr, gate);
+					const f32 thrR = bayer4x4_0_1(sx, sy);
+					const f32 thrG = bayer4x4_0_1(sx + 1, sy + 2);
+					const f32 thrB = bayer4x4_0_1(sx + 2, sy + 1);
+					qR = quantizeRgb777Output(sigR, thrR);
+					qG = quantizeRgb777Output(sigG, thrG);
+					qB = quantizeRgb777Output(sigB, thrB);
 				} else if (ditherType == 3) {
 					const f32 thr = bayer4x4_0_1(sx, sy);
 					qR = quantizeOrderedConditional(sigR, 7.0f, thr);

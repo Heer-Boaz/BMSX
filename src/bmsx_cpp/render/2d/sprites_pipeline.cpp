@@ -80,9 +80,7 @@ void renderSpriteBatchSoftware(SoftwareBackend* softBackend,
 	}
 
 	TextureHandle tex = nullptr;
-	if (item.useFallbackTexture) {
-		tex = context->textures.at("_atlas_fallback");
-	} else if (meta.atlassed) {
+	if (meta.atlassed) {
 		if (meta.atlasid == ENGINE_ATLAS_INDEX) {
 		tex = context->textures.at(ENGINE_ATLAS_TEXTURE_KEY);
 		} else if (meta.atlasid == context->primaryAtlasIdInSlot) {

@@ -6,7 +6,7 @@ precision highp float;
 uniform sampler2D u_texture;  // offscreen scene (linear)
 uniform vec2 u_srcResolution; // base "logical" resolution (e.g., 256x212)
 uniform float u_fragscale;    // integer upscale (e.g., 2.0)
-uniform uint u_dither_type;   // 1=rgb555_psx, 2=rgb888_output, 3=msx10_343
+uniform uint u_dither_type;   // 1=rgb555_psx, 2=rgb777_output, 3=msx10_343
 
 in vec2 v_texcoord;
 out vec4 outputColor;
@@ -105,16 +105,18 @@ int psxIdx(ivec2 p){
 	return w.x + (w.y << 2);
 }
 
-vec3 quantize_rgb888_output(vec3 sRGB, ivec2 pix){
-	float thr = bayer4x4_0_1(pix);
-	vec3 v = clamp(sRGB, 0.0, 1.0) * 255.0;
-	vec3 rounded = floor(v + 0.5);
-	float grain = step(0.5625, thr) - step(thr, 0.4375);
-	float lum = dot(sRGB, vec3(0.299, 0.587, 0.114));
-	float gate = smoothstep(4.0 / 255.0, 20.0 / 255.0, lum);
-	float delta = 2.0 * sign(grain) * step(0.5, abs(grain) * gate);
-	vec3 out8 = rounded + vec3(delta);
-	return clamp(out8, 0.0, 255.0) * (1.0 / 255.0);
+vec3 quantize_rgb777_output(vec3 sRGB, ivec2 pix){
+	vec3 levels = vec3(127.0);
+	vec3 v = clamp(sRGB, 0.0, 1.0) * levels;
+	vec3 q = floor(v);
+	vec3 f = fract(v);
+	vec3 thr = vec3(
+		bayer4x4_0_1(pix),
+		bayer4x4_0_1(pix + ivec2(1, 2)),
+		bayer4x4_0_1(pix + ivec2(2, 1))
+	);
+	q += step(thr, f);
+	return q / levels;
 }
 
 // sRGB (0..1) -> PSX dithered RGB555 in sRGB (0..1), emulator-style
@@ -147,7 +149,7 @@ void main(){
 	if (u_dither_type == 1u) {
 	sigS = quantize_rgb555_psx(sigS, sPix);
 	} else if (u_dither_type == 2u) {
-	sigS = quantize_rgb888_output(sigS, sPix);
+	sigS = quantize_rgb777_output(sigS, sPix);
 	} else if (u_dither_type == 3u) {
 	sigS = quantize_msx10_343(sigS, sPix);
 	}
