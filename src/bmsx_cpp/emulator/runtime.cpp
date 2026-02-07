@@ -377,6 +377,12 @@ void Runtime::commitFrameOnVblankEdge() {
 	if (!m_frameActive) {
 		return;
 	}
+	if (!m_waitingForVblank) {
+		return;
+	}
+	if (m_waitForVblankTargetSequence != 0 && m_vblankSequence < m_waitForVblankTargetSequence) {
+		return;
+	}
 	m_lastTickBudgetRemaining = m_frameState.cycleBudgetRemaining;
 	m_lastTickCompleted = true;
 	m_lastTickSequence += 1;
@@ -384,11 +390,6 @@ void Runtime::commitFrameOnVblankEdge() {
 
 void Runtime::requestWaitForVblank() {
 	processIrqAck();
-	const uint32_t flags = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_IRQ_FLAGS)));
-	if ((flags & IRQ_VBLANK) != 0) {
-		RenderQueues::clearBackQueues();
-		return;
-	}
 	m_waitingForVblank = true;
 	m_waitForVblankTargetSequence = m_vblankSequence + 1;
 	throw WaitForVblankSignal{};
@@ -1088,15 +1089,17 @@ void Runtime::executeUpdateCallback(double deltaSeconds) {
 	try {
 		if (m_waitingForVblank) {
 			processIrqAck();
-			uint32_t flags = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_IRQ_FLAGS)));
-			if ((flags & IRQ_VBLANK) == 0) {
+			if (m_waitForVblankTargetSequence == 0) {
+				m_waitingForVblank = false;
+				return;
+			}
+			if (m_vblankSequence < m_waitForVblankTargetSequence) {
 				if (m_frameState.cycleBudgetRemaining > 0) {
 					const int idleCycles = m_frameState.cycleBudgetRemaining;
 					advanceHardware(idleCycles);
 					processIrqAck();
 				}
-				flags = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_IRQ_FLAGS)));
-				if ((flags & IRQ_VBLANK) == 0) {
+				if (m_vblankSequence < m_waitForVblankTargetSequence) {
 					return;
 				}
 			}

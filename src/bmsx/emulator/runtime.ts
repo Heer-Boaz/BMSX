@@ -529,17 +529,14 @@ export class Runtime {
 
 	public requestWaitForVblank(): void {
 		this.processIrqAck();
-		const irqFlags = (this.memory.readValue(IO_IRQ_FLAGS) as number) >>> 0;
-		if ((irqFlags & IRQ_VBLANK) !== 0) {
-			clearBackQueues();
-			return;
-		}
 		this.waitingForVblank = true;
+		this.waitForVblankTargetSequence = this.vblankSequence + 1;
 		throw this.waitForVblankSignal;
 	}
 
 	public clearWaitForVblank(): void {
 		this.waitingForVblank = false;
+		this.waitForVblankTargetSequence = 0;
 	}
 
 	private isWaitForVblankSignal(error: unknown): error is WaitForVblankSignal {
@@ -550,6 +547,12 @@ export class Runtime {
 		this.vdp.commitViewSnapshot();
 		const frameState = this.currentFrameState;
 		if (frameState === null) {
+			return;
+		}
+		if (!this.waitingForVblank) {
+			return;
+		}
+		if (this.waitForVblankTargetSequence !== 0 && this.vblankSequence < this.waitForVblankTargetSequence) {
 			return;
 		}
 		this.lastTickBudgetRemaining = frameState.cycleBudgetRemaining;
@@ -613,6 +616,7 @@ export class Runtime {
 	public currentFrameState: FrameState = null;
 	public drawFrameState: FrameState = null;
 	private waitingForVblank = false;
+	private waitForVblankTargetSequence = 0;
 	private readonly waitForVblankSignal: WaitForVblankSignal = { kind: 'wait_vblank' };
 	private vblankSequence = 0;
 	public cycleBudgetPerFrame: number;
@@ -1401,13 +1405,13 @@ export class Runtime {
 				state.updateExecuted = true;
 			} else if (isLuaDebuggerPauseSignal(error)) {
 				runtimeIde.onLuaDebuggerPause(this, error);
-			} else {
-				state.luaFaulted = true;
-				this.waitingForVblank = false;
-				this.pendingCall = null;
-				this.pendingLifecycleQueue.length = 0;
-				runtimeIde.handleLuaError(this, error);
-			}
+				} else {
+					state.luaFaulted = true;
+					this.clearWaitForVblank();
+					this.pendingCall = null;
+					this.pendingLifecycleQueue.length = 0;
+					runtimeIde.handleLuaError(this, error);
+				}
 		} finally {
 			state.updateExecuted = true;
 		}
@@ -1415,19 +1419,22 @@ export class Runtime {
 
 	private runWaitForVblank(state: FrameState): boolean {
 		this.processIrqAck();
-		let flags = (this.memory.readValue(IO_IRQ_FLAGS) as number) >>> 0;
-		if ((flags & IRQ_VBLANK) === 0) {
+		const targetSequence = this.waitForVblankTargetSequence;
+		if (targetSequence === 0) {
+			this.clearWaitForVblank();
+			return false;
+		}
+		if (this.vblankSequence < targetSequence) {
 			if (state.cycleBudgetRemaining > 0) {
 				const idleCycles = state.cycleBudgetRemaining;
 				this.advanceHardware(idleCycles);
 				this.processIrqAck();
 			}
-			flags = (this.memory.readValue(IO_IRQ_FLAGS) as number) >>> 0;
-			if ((flags & IRQ_VBLANK) === 0) {
+			if (this.vblankSequence < targetSequence) {
 				return true;
 			}
 		}
-		this.waitingForVblank = false;
+		this.clearWaitForVblank();
 		state.cycleBudgetRemaining = this.cycleBudgetPerFrame;
 		state.cycleBudgetGranted = this.cycleBudgetPerFrame;
 		state.cycleCarryGranted = 0;
