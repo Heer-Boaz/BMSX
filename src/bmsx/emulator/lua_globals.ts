@@ -992,6 +992,32 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		const b3 = runtime.memory.readU8(address + 3);
 		out.push((b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)) >>> 0);
 	}));
+	runtimeLuaPipeline.registerGlobal(runtime, 'reader_read_f32', createNativeFunction('reader_read_f32', (args, out) => {
+		const address = args[0] as number;
+		const b0 = runtime.memory.readU8(address);
+		const b1 = runtime.memory.readU8(address + 1);
+		const b2 = runtime.memory.readU8(address + 2);
+		const b3 = runtime.memory.readU8(address + 3);
+		const bits = (b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)) >>> 0;
+		bitcastView.setUint32(0, bits, true);
+		out.push(bitcastView.getFloat32(0, true));
+	}));
+	runtimeLuaPipeline.registerGlobal(runtime, 'reader_read_f64', createNativeFunction('reader_read_f64', (args, out) => {
+		const address = args[0] as number;
+		const lo0 = runtime.memory.readU8(address);
+		const lo1 = runtime.memory.readU8(address + 1);
+		const lo2 = runtime.memory.readU8(address + 2);
+		const lo3 = runtime.memory.readU8(address + 3);
+		const hi0 = runtime.memory.readU8(address + 4);
+		const hi1 = runtime.memory.readU8(address + 5);
+		const hi2 = runtime.memory.readU8(address + 6);
+		const hi3 = runtime.memory.readU8(address + 7);
+		const lo = (lo0 | (lo1 << 8) | (lo2 << 16) | (lo3 << 24)) >>> 0;
+		const hi = (hi0 | (hi1 << 8) | (hi2 << 16) | (hi3 << 24)) >>> 0;
+		bitcastView.setUint32(0, lo, true);
+		bitcastView.setUint32(4, hi, true);
+		out.push(bitcastView.getFloat64(0, true));
+	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'u32_to_f32', createNativeFunction('u32_to_f32', (args, out) => {
 		const bits = (args[0] as number) >>> 0;
 		bitcastView.setUint32(0, bits, true);

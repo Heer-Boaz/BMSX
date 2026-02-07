@@ -1452,6 +1452,36 @@ void Runtime::setupBuiltins() {
 		out.push_back(valueNumber(static_cast<double>(value)));
 	});
 
+	registerNativeFunction("reader_read_f32", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+		const uint32_t address = static_cast<uint32_t>(asNumber(args.at(0)));
+		const uint32_t b0 = static_cast<uint32_t>(m_memory.readU8(address));
+		const uint32_t b1 = static_cast<uint32_t>(m_memory.readU8(address + 1));
+		const uint32_t b2 = static_cast<uint32_t>(m_memory.readU8(address + 2));
+		const uint32_t b3 = static_cast<uint32_t>(m_memory.readU8(address + 3));
+		const uint32_t bits = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
+		float value = 0.0f;
+		std::memcpy(&value, &bits, sizeof(value));
+		out.push_back(valueNumber(static_cast<double>(value)));
+	});
+
+	registerNativeFunction("reader_read_f64", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+		const uint32_t address = static_cast<uint32_t>(asNumber(args.at(0)));
+		const uint32_t lo0 = static_cast<uint32_t>(m_memory.readU8(address));
+		const uint32_t lo1 = static_cast<uint32_t>(m_memory.readU8(address + 1));
+		const uint32_t lo2 = static_cast<uint32_t>(m_memory.readU8(address + 2));
+		const uint32_t lo3 = static_cast<uint32_t>(m_memory.readU8(address + 3));
+		const uint32_t hi0 = static_cast<uint32_t>(m_memory.readU8(address + 4));
+		const uint32_t hi1 = static_cast<uint32_t>(m_memory.readU8(address + 5));
+		const uint32_t hi2 = static_cast<uint32_t>(m_memory.readU8(address + 6));
+		const uint32_t hi3 = static_cast<uint32_t>(m_memory.readU8(address + 7));
+		const uint64_t lo = static_cast<uint64_t>(lo0 | (lo1 << 8) | (lo2 << 16) | (lo3 << 24));
+		const uint64_t hi = static_cast<uint64_t>(hi0 | (hi1 << 8) | (hi2 << 16) | (hi3 << 24));
+		const uint64_t bits = (hi << 32) | lo;
+		double value = 0.0;
+		std::memcpy(&value, &bits, sizeof(value));
+		out.push_back(valueNumber(value));
+	});
+
 	registerNativeFunction("u32_to_f32", [](const std::vector<Value>& args, std::vector<Value>& out) {
 		const uint32_t bits = static_cast<uint32_t>(asNumber(args.at(0)));
 		float value = 0.0f;

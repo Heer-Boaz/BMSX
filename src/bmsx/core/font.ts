@@ -111,6 +111,9 @@ const KonamiGlyphMap: GlyphMap = {
 	':': 'letter_colon',
 	'-': 'letter_streep',
 	'–': 'letter_streep',
+	'—': 'letter_streep',
+	'_': 'letter_line',
+	'█': 'letter_line',
 	'/': 'letter_slash',
 	'%': 'letter_percent',
 	'[': 'letter_speakstart', // opening square bracket

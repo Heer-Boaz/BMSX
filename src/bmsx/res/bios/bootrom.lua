@@ -1,6 +1,8 @@
 -- bootrom.lua
 -- bmsx system boot screen
 
+local textflow = require("textflow")
+
 local boot_delay = 2.0
 local font_width = 6
 local line_height = 8
@@ -25,9 +27,9 @@ local boot_start = os.clock()
 local boot_requested = false
 local sys_atlas_ready = false
 local sys_atlas_failed = false
-local error_page = 1
-local last_error_count = 0
-local view_mode = 'overview'
+local error_scroll_state = textflow.new_scroll_state()
+local error_scroll_window_size = 1
+local boot_screen_visible = false
 
 local function read_cart_header(base)
 	if peek(base) ~= CART_ROM_MAGIC then
@@ -165,16 +167,47 @@ local precheck_cache_key = nil
 local precheck_errors = {}
 local precheck_stderr_message = nil
 local precheck_stderr_reported = false
+local system_const_pool_cache_key = nil
+local system_const_pool_cache = nil
 local bitcast_selftest_ok = false
 local bitcast_selftest_status = 'NOT RUN'
 local bitcast_selftest_error = nil
 local bitcast_selftest_logged = false
+local builtin_reader_read_f32 = reader_read_f32
+local builtin_reader_read_f64 = reader_read_f64
 
 local function clear_precheck_cache()
 	precheck_cache_key = nil
 	precheck_errors = {}
 	precheck_stderr_message = nil
 	precheck_stderr_reported = false
+end
+
+local function get_cached_system_const_pool()
+	local sys_header = read_cart_header(SYSTEM_ROM_BASE)
+	if not sys_header then
+		return nil, nil
+	end
+	local key = build_precheck_key(sys_header)
+	if system_const_pool_cache_key ~= key then
+		system_const_pool_cache_key = key
+		system_const_pool_cache = read_rom_program_const_pool(SYSTEM_ROM_BASE, sys_header)
+	end
+	return sys_header, system_const_pool_cache
+end
+
+local function atlas_load_finished()
+	return sys_atlas_ready or sys_atlas_failed
+end
+
+local function refresh_atlas_load_state()
+	local status = peek(sys_img_status)
+	if (status & img_status_done) ~= 0 then
+		sys_atlas_ready = true
+	end
+	if (status & img_status_error) ~= 0 then
+		sys_atlas_failed = true
+	end
 end
 
 local function build_precheck_key(header)
@@ -279,17 +312,29 @@ local function reader_read_u32le(reader, label)
 end
 
 local function reader_read_f32(reader, label)
-	return u32_to_f32(reader_read_u32le(reader, label))
+	reader_require(reader, 4, label)
+	local addr = reader.base + reader.pos
+	local out = builtin_reader_read_f32(addr)
+	reader.pos = reader.pos + 4
+	return out
 end
 
 local function reader_read_f64(reader, label)
-	local lo = reader_read_u32le(reader, label)
-	local hi = reader_read_u32le(reader, label)
-	return u64_to_f64(hi, lo)
+	reader_require(reader, 8, label)
+	local addr = reader.base + reader.pos
+	local out = builtin_reader_read_f64(addr)
+	reader.pos = reader.pos + 8
+	return out
 end
 
 local function selftest_bitcast_builtins()
 	local ok, err = pcall(function()
+		if type(builtin_reader_read_f32) ~= 'function' then
+			error('reader_read_f32 missing')
+		end
+		if type(builtin_reader_read_f64) ~= 'function' then
+			error('reader_read_f64 missing')
+		end
 		if type(u64_to_f64) ~= 'function' then
 			error('u64_to_f64 missing')
 		end
@@ -581,12 +626,11 @@ end
 
 local function compute_program_link_errors(cart_header)
 	local errors = {}
-	local sys_header = read_cart_header(SYSTEM_ROM_BASE)
+	local sys_header, system_const_pool = get_cached_system_const_pool()
 	if not sys_header then
 		errors[#errors + 1] = 'SYSTEM ROM HEADER IS INVALID'
 		return errors, '[ProgramLinker] Missing system ROM header.'
 	end
-	local system_const_pool = read_rom_program_const_pool(SYSTEM_ROM_BASE, sys_header)
 	local cart_const_pool = read_rom_program_const_pool(CART_ROM_BASE, cart_header)
 	local system_count = #system_const_pool
 	if #cart_const_pool < system_count then
@@ -615,6 +659,9 @@ end
 local function ensure_program_link_precheck(cart_header)
 	if not cart_header then
 		clear_precheck_cache()
+		return {}
+	end
+	if not boot_screen_visible then
 		return {}
 	end
 	if not bitcast_selftest_ok then
@@ -651,53 +698,73 @@ local function ensure_program_link_precheck(cart_header)
 	return precheck_errors
 end
 
-local function collect_cart_precheck_errors(cart_header, cart_manifest)
+local function copy_errors(out, src)
+	for i = 1, #src do
+		out[#out + 1] = src[i]
+	end
+end
+
+local function collect_cached_program_link_errors(cart_header)
+	if not cart_header then
+		return {}
+	end
+	local key = build_precheck_key(cart_header)
+	if precheck_cache_key ~= key then
+		return {}
+	end
+	return precheck_errors
+end
+
+local function collect_cart_precheck_errors(cart_header, cart_manifest, run_program_precheck)
 	if not cart_header then
 		clear_precheck_cache()
 		return {}
 	end
 	local errors = collect_cart_manifest_errors(cart_manifest)
-	local link_errors = ensure_program_link_precheck(cart_header)
-	for i = 1, #link_errors do
-		errors[#errors + 1] = link_errors[i]
+	local link_errors = {}
+	if run_program_precheck then
+		link_errors = ensure_program_link_precheck(cart_header)
+	else
+		link_errors = collect_cached_program_link_errors(cart_header)
 	end
+	copy_errors(errors, link_errors)
 	return errors
 end
 
-local function calc_error_page_size(top)
-	local height = display_height()
-	local total_lines = math.floor((height - top) / line_height)
-	local reserved_lines = 7
-	local page_size = total_lines - reserved_lines
-	if page_size < 1 then page_size = 1 end
-	return page_size
+local function get_program_precheck_status(cart_header)
+	if not cart_header then
+		return 'NO CART', nil, true
+	end
+	if not bitcast_selftest_ok then
+		return 'FAILED', bitcast_selftest_error or 'BITCAST BUILTIN CONTRACT FAILURE', true
+	end
+	local key = build_precheck_key(cart_header)
+	if precheck_cache_key ~= key then
+		if not boot_screen_visible then
+			return 'PENDING', 'WAITING FOR BOOT SCREEN', false
+		end
+		if not atlas_load_finished() then
+			return 'PENDING', 'WAITING FOR SYSTEM ATLAS', false
+		end
+		return 'RUNNING', 'PROGRAM PRECHECK RUNNING', false
+	end
+	if #precheck_errors > 0 then
+		return 'FAILED', precheck_errors[1], true
+	end
+	return 'OK', nil, true
 end
 
-local function calc_page_count(count, page_size)
-	return math.max(1, math.floor((count + page_size - 1) / page_size))
-end
-
-local function update_error_page(error_count, page_size)
-	if error_count ~= last_error_count then
-		error_page = 1
-		last_error_count = error_count
-	end
-	local page_count = calc_page_count(error_count, page_size)
-	if error_page > page_count then error_page = page_count end
-	if page_count == 1 then
-		return page_count
-	end
+local function update_error_scroll(error_lines, window_size)
+	local delta = 0
 	if action_triggered('down[jp]', 1) then
-		error_page = error_page + 1
-		if error_page > page_count then error_page = 1 end
+		delta = delta + 1
 		consume_action('down')
 	end
 	if action_triggered('up[jp]', 1) then
-		error_page = error_page - 1
-		if error_page < 1 then error_page = page_count end
+		delta = delta - 1
 		consume_action('up')
 	end
-	return page_count
+	return textflow.update_scroll_state(error_scroll_state, #error_lines, window_size, delta)
 end
 
 local function elapsed_seconds()
@@ -766,8 +833,9 @@ local function build_info()
 	-- local cart_input = cart_manifest and display_text(cart_manifest.input) or '--'
 	local cart_cpu_raw = cart_manifest and cart_manifest.cpu_freq_hz or nil
 	local cart_cpu_label = format_cpu_mhz_from_hz(cart_cpu_raw)
-	local cart_errors = collect_cart_precheck_errors(cart_header, cart_manifest)
+	local cart_errors = collect_cart_precheck_errors(cart_header, cart_manifest, false)
 	local cart_has_errors = #cart_errors > 0
+	local precheck_status, precheck_detail, precheck_done = get_program_precheck_status(cart_header)
 
 	local sys_title = sys_manifest and display_text(sys_manifest.title) or '--'
 	local sys_rom = sys_manifest and display_text(sys_manifest.rom_name) or '--'
@@ -805,16 +873,14 @@ local function build_info()
 		bitcast_selftest_ok = bitcast_selftest_ok,
 		bitcast_selftest_status = bitcast_selftest_status,
 		bitcast_selftest_error = bitcast_selftest_error,
+		precheck_status = precheck_status,
+		precheck_detail = precheck_detail,
+		precheck_done = precheck_done,
 	}
 end
 
 local function divider(width, left)
-	local available = width - (left * 2)
-	local slots = math.floor(available / font_width)
-	if slots < 8 then
-		slots = 8
-	end
-	return string.rep('—', slots)
+	return string.rep('—', textflow.line_slots(width, left, font_width))
 end
 
 local function build_progress_bar(progress, width)
@@ -827,47 +893,64 @@ local function build_progress_bar(progress, width)
 	return '[' .. string.rep('#', filled) .. string.rep('-', width - filled) .. ']'
 end
 
+local function compute_boot_progress(info, cart_ready, elapsed)
+	local stage_count = 5
+	local stage_done = 0
+	if boot_screen_visible then
+		stage_done = stage_done + 1
+	end
+	if info.bitcast_selftest_ok then
+		stage_done = stage_done + 1
+	end
+	if sys_atlas_ready and not sys_atlas_failed then
+		stage_done = stage_done + 1
+	end
+	if info.precheck_done then
+		stage_done = stage_done + 1
+	end
+	if cart_ready then
+		stage_done = stage_done + 1
+	end
+	local stage_progress = stage_done / stage_count
+	local time_progress = elapsed / boot_delay
+	if time_progress < 0 then time_progress = 0 end
+	if time_progress > 1 then time_progress = 1 end
+	return (stage_progress * 0.8) + (time_progress * 0.2)
+end
+
 local function write_kv(label, value, x, y, color, label_width)
 	write(string.format("%-" .. label_width .. "s : %s", label, value), x, y, 0, color)
 end
 
 local function draw_cart_precheck_errors(info, left, top, width, cursor)
 	local y = top
-	local page_size = calc_error_page_size(top)
-	local error_count = #info.cart_errors
-	local page_count = calc_page_count(error_count, page_size)
-	if error_page > page_count then error_page = page_count end
+	local line_slots = textflow.line_slots(width, left, font_width)
+	local error_lines = textflow.wrap_entries(info.cart_errors, line_slots, '- ', '  ')
+	local visible_lines
+	local max_scroll
+	local scroll_top
+	local window_size = textflow.window_size(display_height(), y, line_height, 1, 1)
+	error_scroll_window_size = window_size
+	scroll_top, max_scroll, visible_lines = textflow.scroll_window_state(error_lines, error_scroll_state, window_size)
 
-	write('CART PRECHECK FAILED', left, y, 0, color_warn)
-	y = y + line_height
-	write('ROM: ' .. info.cart_rom, left, y, 0, color_accent)
-	y = y + line_height
-	write('TITLE: ' .. info.cart_title, left, y, 0, color_text)
-	y = y + line_height
-	write('CPU MHZ: ' .. info.cart_cpu_mhz, left, y, 0, color_text)
-	y = y + line_height
-	write(divider(width, left), left, y, 0, color_section)
-	y = y + line_height
-
-	local start_index = ((error_page - 1) * page_size) + 1
-	local end_index = math.min(start_index + page_size - 1, error_count)
-	for i = start_index, end_index do
-		write('- ' .. info.cart_errors[i], left, y, 0, color_warn)
+	for i = 1, #visible_lines do
+		write(visible_lines[i], left, y, 0, color_warn)
 		y = y + line_height
 	end
 
-	if page_count > 1 then
-		write('UP/DOWN: PAGE ' .. error_page .. '/' .. page_count, left, y, 0, color_muted)
+	if max_scroll > 0 then
+		local first_line = scroll_top + 1
+		local last_line = scroll_top + #visible_lines
+		write('UP/DOWN: SCROLL ' .. first_line .. '-' .. last_line .. '/' .. #error_lines, left, y, 0, color_muted)
 		y = y + line_height
 	end
-	write('A: OVERVIEW', left, y, 0, color_muted)
-	y = y + line_height
-	write(cursor, left, y, 0, color_warn)
+	write('BOOT BLOCKED ' .. cursor, left, y, 0, color_warn)
 end
 
 function init()
 	boot_start = os.clock()
 	boot_requested = false
+	boot_screen_visible = false
 	sys_atlas_ready = false
 	sys_atlas_failed = false
 	clear_precheck_cache()
@@ -875,7 +958,6 @@ function init()
 	bitcast_selftest_status = 'NOT RUN'
 	bitcast_selftest_error = nil
 	bitcast_selftest_logged = false
-	selftest_bitcast_builtins()
 	on_irq(function(flags)
 		if (flags & irq_img_done) ~= 0 then
 			sys_atlas_ready = true
@@ -885,38 +967,36 @@ function init()
 		end
 	end)
 	vdp_load_sys_atlas()
+	refresh_atlas_load_state()
+	selftest_bitcast_builtins()
 end
 
 function new_game()
 end
 
 function update(_dt)
+	refresh_atlas_load_state()
 	local cart_header = read_cart_header(CART_ROM_BASE)
 	local cart_manifest_raw = cart_manifest
 	local cart_root_path = assets and assets.project_root_path or nil
 	local cart_manifest_value = cart_header and flatten_manifest(cart_manifest_raw, cart_root_path) or nil
-	local cart_errors = collect_cart_precheck_errors(cart_header, cart_manifest_value)
+	local run_program_precheck = boot_screen_visible and atlas_load_finished()
+	local cart_errors = collect_cart_precheck_errors(cart_header, cart_manifest_value, run_program_precheck)
 	local cart_has_errors = cart_header and #cart_errors > 0
+	local _, _, precheck_done = get_program_precheck_status(cart_header)
 
 	if cart_has_errors then
-		if action_triggered('a[jp]', 1) then
-			view_mode = (view_mode == 'errors') and 'overview' or 'errors'
-			if view_mode == 'errors' then
-				error_page = 1
-				last_error_count = 0
-			end
-			consume_action('a')
-		end
-		local page_size = calc_error_page_size(content_top)
-		if view_mode == 'errors' then
-			update_error_page(#cart_errors, page_size)
-		end
+		local line_slots = textflow.line_slots(display_width(), 8, font_width)
+		local error_lines = textflow.wrap_entries(cart_errors, line_slots, '- ', '  ')
+		update_error_scroll(error_lines, error_scroll_window_size)
 		return
 	end
-	view_mode = 'overview'
-	error_page = 1
-	last_error_count = 0
-	local cart_valid = cart_header and #cart_errors == 0
+	textflow.reset_scroll_state(error_scroll_state)
+	error_scroll_window_size = 1
+	local cart_valid = cart_header
+		and #cart_errors == 0
+		and bitcast_selftest_ok
+		and precheck_done
 	local cart_present_and_ready = peek(CART_ROM_BASE) == CART_ROM_MAGIC
 		and cart_boot_ready()
 		and cart_valid
@@ -929,6 +1009,7 @@ end
 
 
 function draw()
+	refresh_atlas_load_state()
 	local width = display_width()
 	local left = 8
 	local top = content_top
@@ -936,16 +1017,13 @@ function draw()
 	cls(color_bg)
 	put_rectfill(0, 0, width, 24, 0, color_header_bg)
 	write('BMSX BIOS', center_x('BMSX BIOS', width), 8, 0, color_header_text)
+	boot_screen_visible = true
 
 	local info = build_info()
 	local cart_present = peek(CART_ROM_BASE) == CART_ROM_MAGIC
 	local elapsed = elapsed_seconds()
 	local cursor = (math.floor(elapsed * 2) % 2 == 0) and '█' or ' '
 	local cart_has_errors = cart_present and info.cart_has_errors
-	if cart_has_errors and view_mode == 'errors' then
-		draw_cart_precheck_errors(info, left, top, width, cursor)
-		return
-	end
 	local y = top
 	local hw_specs = {
 		{ label = 'MAX CART ROM', value = info.hw_cart_max, color = color_accent },
@@ -976,7 +1054,7 @@ function draw()
 		local len = #cart_specs[i].label
 		if len > label_width then label_width = len end
 	end
-	local status_labels = { 'STATUS', 'BOOT STATUS', 'BITCAST SELFTEST' }
+	local status_labels = { 'STATUS', 'BOOT STATUS', 'BITCAST SELFTEST', 'PROGRAM PRECHECK' }
 	for i = 1, #status_labels do
 		local len = #status_labels[i]
 		if len > label_width then label_width = len end
@@ -995,10 +1073,6 @@ function draw()
 	y = y + line_height
 	write(divider(width, left), left, y, 0, color_section)
 	y = y + line_height
-	if cart_has_errors then
-		write('CART PRECHECK FAILED', left, y, 0, color_warn)
-		y = y + line_height
-	end
 	for i = 1, #cart_specs do
 		local spec = cart_specs[i]
 		write_kv(spec.label, spec.value, left, y, spec.color or color_text, label_width)
@@ -1012,21 +1086,29 @@ function draw()
 	local bitcast_color = info.bitcast_selftest_ok and color_ok or color_warn
 	write_kv('BITCAST SELFTEST', info.bitcast_selftest_status, left, y, bitcast_color, label_width)
 	y = y + line_height
+	local precheck_color = color_accent
+	if info.precheck_status == 'OK' then
+		precheck_color = color_ok
+	elseif info.precheck_status == 'FAILED' then
+		precheck_color = color_warn
+	end
+	write_kv('PROGRAM PRECHECK', info.precheck_status, left, y, precheck_color, label_width)
+	y = y + line_height
+	if cart_has_errors then
+		draw_cart_precheck_errors(info, left, y, width, cursor)
+		return
+	end
 	if not info.bitcast_selftest_ok and info.bitcast_selftest_error then
-		write('DETAIL: ' .. info.bitcast_selftest_error, left, y, 0, color_muted)
-		y = y + line_height
+		local line_slots = textflow.line_slots(width, left, font_width)
+		local free_lines = math.max(1, math.floor((display_height() - y) / line_height) - 2)
+		y = textflow.draw_wrapped_tail('DETAIL: ' .. info.bitcast_selftest_error, left, y, color_muted, line_height, line_slots, free_lines, '', '')
+	elseif info.precheck_detail then
+		local line_slots = textflow.line_slots(width, left, font_width)
+		local free_lines = math.max(1, math.floor((display_height() - y) / line_height) - 2)
+		y = textflow.draw_wrapped_tail('DETAIL: ' .. info.precheck_detail, left, y, color_muted, line_height, line_slots, free_lines, '', '')
 	end
 
 	if cart_present then
-		if cart_has_errors then
-			write('BOOT BLOCKED: CART PRECHECK FAILED', left, y, 0, color_warn)
-			y = y + line_height
-			write('PRESS A FOR DETAILS ' .. cursor, left, y, 0, color_muted)
-			return
-		end
-		local remaining = boot_delay - elapsed
-		if remaining < 0 then remaining = 0 end
-		-- local status = 'AUTOBOOT IN ' .. string.format('%.1f', remaining) .. 'S'
 		local cart_ready = cart_boot_ready()
 		if not cart_ready and elapsed >= boot_delay and sys_atlas_ready and not sys_atlas_failed then
 			write('BOOT BLOCKED: CART START FAILED', left, y, 0, color_warn)
@@ -1038,7 +1120,7 @@ function draw()
 		local status_color = cart_ready and color_ok or color_accent
 		write(status, left, y, 0, status_color)
 		y = y + line_height
-		local bar = build_progress_bar(elapsed / boot_delay, 40)
+		local bar = build_progress_bar(compute_boot_progress(info, cart_ready, elapsed), 40)
 		write(bar .. cursor, left, y, 0, color_text)
 	else
 		write('NO CART DETECTED ' .. cursor, left, y, 0, color_warn)

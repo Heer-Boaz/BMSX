@@ -62,6 +62,9 @@ GlyphMap buildKonamiGlyphMap() {
 	map[static_cast<u32>(':')] = "letter_colon";
 	map[static_cast<u32>('-')] = "letter_streep";
 	map[0x2013] = "letter_streep";
+	map[0x2014] = "letter_streep";
+	map[static_cast<u32>('_')] = "letter_line";
+	map[0x2588] = "letter_line";
 	map[static_cast<u32>('/')] = "letter_slash";
 	map[static_cast<u32>('%')] = "letter_percent";
 	map[static_cast<u32>('[')] = "letter_speakstart";

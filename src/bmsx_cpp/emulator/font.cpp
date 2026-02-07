@@ -28,6 +28,7 @@ GlyphMap buildMsxCharMap() {
 	map[static_cast<u32>('+')] = withPrefix("code_0x2b");
 	map[static_cast<u32>(',')] = withPrefix("comma");
 	map[static_cast<u32>('-')] = withPrefix("streep");
+	map[0x2013] = withPrefix("streep");
 	map[static_cast<u32>('.')] = withPrefix("dot");
 	map[static_cast<u32>('/')] = withPrefix("slash");
 	map[static_cast<u32>(':')] = withPrefix("colon");
@@ -91,6 +92,8 @@ GlyphMap buildTinyCharMap() {
     map[static_cast<u32>('+')] = withPrefix("plus");
     map[static_cast<u32>(',')] = withPrefix("comma");
     map[static_cast<u32>('-')] = withPrefix("streep");
+    map[0x2013] = withPrefix("streep");
+    map[0x2014] = withPrefix("streep");
     map[static_cast<u32>('.')] = withPrefix("dot");
     map[static_cast<u32>('/')] = withPrefix("slash");
     map[static_cast<u32>(':')] = withPrefix("colon");
@@ -110,6 +113,7 @@ GlyphMap buildTinyCharMap() {
 	map[static_cast<u32>('|')] = withPrefix("pipe");
 	map[static_cast<u32>('}')] = withPrefix("braceclose");
 	map[0x2022] = withPrefix("bullet");
+	map[0x2588] = withPrefix("line");
 	map[0x00A1] = withPrefix("inverted_exclamation");
 	map[0x00A4] = withPrefix("flower");
 	map[0x00A6] = withPrefix("brokenbar");
