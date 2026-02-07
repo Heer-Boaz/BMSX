@@ -604,6 +604,9 @@ void Runtime::tickUpdate() {
 			|| lifecycleQueued;
 	};
 	const auto finalizeUpdateSlice = [this]() {
+		if (m_pendingCall != PendingCall::None) {
+			return;
+		}
 		m_frameActive = false;
 	};
 
