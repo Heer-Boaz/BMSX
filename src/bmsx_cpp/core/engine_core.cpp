@@ -564,11 +564,12 @@ void EngineCore::tick(f64 deltaTime) {
 
 		m_accumulated_time = clamp(m_accumulated_time + hostDeltaMs, 0.0, m_update_interval_ms * MAX_SUBSTEPS);
 		int slicesProcessed = 0;
+		bool presentQueued = false;
 		const double fixedDeltaSeconds = m_update_interval_ms / 1000.0;
 		auto updateStart = std::chrono::steady_clock::now();
 		const int baseBudget = calcCyclesPerFrame(runtime.cpuHz(), m_ufps_scaled);
 		const int slicesAvailable = std::min(static_cast<int>(m_accumulated_time / m_update_interval_ms), MAX_SUBSTEPS);
-		for (; slicesProcessed < slicesAvailable; slicesProcessed += 1) {
+		for (; slicesProcessed < slicesAvailable;) {
 			const bool tickActive = runtime.hasActiveTick();
 			const int carryBudget = tickActive ? 0 : (m_cycleCarry > 0 ? static_cast<int>(m_cycleCarry) : 0);
 			if (carryBudget != 0) {
@@ -581,13 +582,19 @@ void EngineCore::tick(f64 deltaTime) {
 			runtime.tickDraw();
 			i64 completionSequence = 0;
 			int remaining = 0;
+			slicesProcessed += 1;
 			if (runtime.consumeLastTickCompletion(completionSequence, remaining)) {
 				(void)completionSequence;
 				m_cycleCarry = remaining > baseBudget ? baseBudget : remaining;
+				presentQueued = true;
+				// Keep the completed frame stable for this host present; continue next frame on the next host tick.
+				break;
 			}
 		}
 		if (slicesProcessed > 0) {
 			m_accumulated_time = std::max(m_accumulated_time - static_cast<double>(slicesProcessed) * m_update_interval_ms, 0.0);
+		}
+		if (presentQueued) {
 			m_presentation_pending = true;
 		}
 		auto updateEnd = std::chrono::steady_clock::now();

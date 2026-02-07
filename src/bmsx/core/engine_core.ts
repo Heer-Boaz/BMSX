@@ -819,7 +819,7 @@ export class EngineCore {
 					this.accumulated_time = 0;
 				} else {
 					const slicesAvailable = Math.min(Math.floor(this.accumulated_time / this.timestep_ms), MAX_SUBSTEPS);
-					for (; slicesProcessed < slicesAvailable; slicesProcessed += 1) {
+					for (; slicesProcessed < slicesAvailable;) {
 						if (!runGate.ready || this.paused) {
 							this.accumulated_time = 0;
 							break;
@@ -841,9 +841,12 @@ export class EngineCore {
 							ticksStarted += 1;
 						}
 						const completion = runtime.consumeLastTickCompletion();
+						slicesProcessed += 1;
 						if (completion) {
 							this.cycleCarry = completion.remaining > baseBudget ? baseBudget : completion.remaining;
 							runTickPresentation();
+							// Keep the completed frame stable for this host present; continue next frame on the next host tick.
+							break;
 						}
 					}
 					if (slicesProcessed > 0) {

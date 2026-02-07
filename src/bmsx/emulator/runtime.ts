@@ -537,6 +537,7 @@ export class Runtime {
 	public clearWaitForVblank(): void {
 		this.waitingForVblank = false;
 		this.waitForVblankTargetSequence = 0;
+		this.clearBackQueuesAfterWaitResume = false;
 	}
 
 	private isWaitForVblankSignal(error: unknown): error is WaitForVblankSignal {
@@ -617,6 +618,7 @@ export class Runtime {
 	public drawFrameState: FrameState = null;
 	private waitingForVblank = false;
 	private waitForVblankTargetSequence = 0;
+	private clearBackQueuesAfterWaitResume = false;
 	private readonly waitForVblankSignal: WaitForVblankSignal = { kind: 'wait_vblank' };
 	private vblankSequence = 0;
 	public cycleBudgetPerFrame: number;
@@ -1389,6 +1391,10 @@ export class Runtime {
 				state.updateExecuted = true;
 				return;
 			}
+			if (this.clearBackQueuesAfterWaitResume) {
+				clearBackQueues();
+				this.clearBackQueuesAfterWaitResume = false;
+			}
 			this.processIrqAck();
 			if (this.pendingCall !== 'entry') {
 				state.updateExecuted = true;
@@ -1435,11 +1441,9 @@ export class Runtime {
 			}
 		}
 		this.clearWaitForVblank();
-		state.cycleBudgetRemaining = this.cycleBudgetPerFrame;
-		state.cycleBudgetGranted = this.cycleBudgetPerFrame;
-		state.cycleCarryGranted = 0;
-		clearBackQueues();
-		return false;
+		// Defer queue reset until the next slice so the completed frame can still be presented.
+		this.clearBackQueuesAfterWaitResume = true;
+		return true;
 	}
 
 	public drawIde(): void {

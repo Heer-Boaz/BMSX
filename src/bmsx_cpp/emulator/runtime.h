@@ -438,6 +438,7 @@ private:
 		bool m_waitingForVblank = false;
 		uint64_t m_vblankSequence = 0;
 		uint64_t m_waitForVblankTargetSequence = 0;
+		bool m_clearBackQueuesAfterWaitResume = false;
 		bool m_vblankActive = false;
 		bool m_vblankPendingClear = false;
 		bool m_vblankClearOnIrqEnd = false;

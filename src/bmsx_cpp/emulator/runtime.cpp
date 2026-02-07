@@ -756,6 +756,7 @@ void Runtime::resetFrameState() {
 	m_frameState = FrameState{};
 	m_waitingForVblank = false;
 	m_waitForVblankTargetSequence = 0;
+	m_clearBackQueuesAfterWaitResume = false;
 	m_pendingCarryBudget = 0;
 	m_lastTickCompleted = false;
 	m_lastTickBudgetRemaining = 0;
@@ -1094,6 +1095,7 @@ void Runtime::executeUpdateCallback(double deltaSeconds) {
 			processIrqAck();
 			if (m_waitForVblankTargetSequence == 0) {
 				m_waitingForVblank = false;
+				m_clearBackQueuesAfterWaitResume = false;
 				return;
 			}
 			if (m_vblankSequence < m_waitForVblankTargetSequence) {
@@ -1108,10 +1110,13 @@ void Runtime::executeUpdateCallback(double deltaSeconds) {
 			}
 			m_waitingForVblank = false;
 			m_waitForVblankTargetSequence = 0;
-			m_frameState.cycleBudgetRemaining = m_cycleBudgetPerFrame;
-			m_frameState.cycleBudgetGranted = m_cycleBudgetPerFrame;
-			m_frameState.cycleCarryGranted = 0;
+			// Defer queue reset until the next slice so the completed frame can still be presented.
+			m_clearBackQueuesAfterWaitResume = true;
+			return;
+		}
+		if (m_clearBackQueuesAfterWaitResume) {
 			RenderQueues::clearBackQueues();
+			m_clearBackQueuesAfterWaitResume = false;
 		}
 		processIrqAck();
 		if (m_pendingCall != PendingCall::Entry) {
@@ -1130,6 +1135,7 @@ void Runtime::executeUpdateCallback(double deltaSeconds) {
 		logLuaCallStack();
 		m_waitingForVblank = false;
 		m_waitForVblankTargetSequence = 0;
+		m_clearBackQueuesAfterWaitResume = false;
 		m_pendingCall = PendingCall::None;
 		m_pendingLifecycleQueue.clear();
 		m_pendingLifecycleIndex = 0;
