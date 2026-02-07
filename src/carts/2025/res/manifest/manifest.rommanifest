@@ -4,7 +4,7 @@ rom_name: '2025'
 machine:
     viewport: 
         width: 320
-        height: 100
+        height: 240
     canonicalization: lower
     namespace: 'pietsona2025'
     ufps: 50000000 # 50 FPS

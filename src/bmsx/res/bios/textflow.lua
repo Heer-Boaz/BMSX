@@ -48,13 +48,11 @@ function textflow.wrap_entries(entries, line_slots, first_prefix, next_prefix)
 	local lines = {}
 	local first = first_prefix or ''
 	local next = next_prefix or first
-	local prefix = first
 	for i = 1, #entries do
-		local wrapped = textflow.wrap_prefixed(entries[i], line_slots, prefix, next)
+		local wrapped = textflow.wrap_prefixed(entries[i], line_slots, first, next)
 		for j = 1, #wrapped do
 			lines[#lines + 1] = wrapped[j]
 		end
-		prefix = next
 	end
 	return lines
 end

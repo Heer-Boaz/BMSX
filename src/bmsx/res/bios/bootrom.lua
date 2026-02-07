@@ -30,6 +30,7 @@ local sys_atlas_failed = false
 local error_scroll_state = textflow.new_scroll_state()
 local error_scroll_window_size = 1
 local boot_screen_visible = false
+local render_boot_screen = nil
 
 local function read_cart_header(base)
 	if peek(base) ~= CART_ROM_MAGIC then
@@ -183,23 +184,6 @@ local function clear_precheck_cache()
 	precheck_stderr_reported = false
 end
 
-local function get_cached_system_const_pool()
-	local sys_header = read_cart_header(SYSTEM_ROM_BASE)
-	if not sys_header then
-		return nil, nil
-	end
-	local key = build_precheck_key(sys_header)
-	if system_const_pool_cache_key ~= key then
-		system_const_pool_cache_key = key
-		system_const_pool_cache = read_rom_program_const_pool(SYSTEM_ROM_BASE, sys_header)
-	end
-	return sys_header, system_const_pool_cache
-end
-
-local function atlas_load_finished()
-	return sys_atlas_ready or sys_atlas_failed
-end
-
 local function refresh_atlas_load_state()
 	local status = peek(sys_img_status)
 	if (status & img_status_done) ~= 0 then
@@ -218,6 +202,19 @@ local function build_precheck_key(header)
 		.. ':' .. tostring(header.toc_len)
 		.. ':' .. tostring(header.data_off)
 		.. ':' .. tostring(header.data_len)
+end
+
+local function get_cached_system_const_pool()
+	local sys_header = read_cart_header(SYSTEM_ROM_BASE)
+	if not sys_header then
+		return nil, nil
+	end
+	local key = build_precheck_key(sys_header)
+	if system_const_pool_cache_key ~= key then
+		system_const_pool_cache_key = key
+		system_const_pool_cache = read_rom_program_const_pool(SYSTEM_ROM_BASE, sys_header)
+	end
+	return sys_header, system_const_pool_cache
 end
 
 local function assert_range(offset, length, total, label)
@@ -631,7 +628,15 @@ local function compute_program_link_errors(cart_header)
 		errors[#errors + 1] = 'SYSTEM ROM HEADER IS INVALID'
 		return errors, '[ProgramLinker] Missing system ROM header.'
 	end
+	if type(system_const_pool) ~= 'table' then
+		errors[#errors + 1] = 'SYSTEM PROGRAM CONST POOL IS INVALID'
+		return errors, '[ProgramLinker] System const pool parse returned invalid type.'
+	end
 	local cart_const_pool = read_rom_program_const_pool(CART_ROM_BASE, cart_header)
+	if type(cart_const_pool) ~= 'table' then
+		errors[#errors + 1] = 'CART PROGRAM CONST POOL IS INVALID'
+		return errors, '[ProgramLinker] Cart const pool parse returned invalid type.'
+	end
 	local system_count = #system_const_pool
 	if #cart_const_pool < system_count then
 		errors[#errors + 1] = 'PROGRAM CONST POOL DOES NOT INCLUDE SYSTEM PREFIX'
@@ -654,6 +659,15 @@ local function compute_program_link_errors(cart_header)
 		end
 	end
 	return errors, nil
+end
+
+local function report_precheck_stderr_once()
+	if precheck_stderr_message and not precheck_stderr_reported then
+		precheck_stderr_reported = true
+		pcall(function()
+			error(precheck_stderr_message)
+		end)
+	end
 end
 
 local function ensure_program_link_precheck(cart_header)
@@ -689,12 +703,7 @@ local function ensure_program_link_precheck(cart_header)
 			precheck_stderr_message = '[ProgramLinker] Cart precheck failed: ' .. message
 		end
 	end
-	if precheck_stderr_message and not precheck_stderr_reported then
-		precheck_stderr_reported = true
-		pcall(function()
-			error(precheck_stderr_message)
-		end)
-	end
+	report_precheck_stderr_once()
 	return precheck_errors
 end
 
@@ -715,18 +724,18 @@ local function collect_cached_program_link_errors(cart_header)
 	return precheck_errors
 end
 
-local function collect_cart_precheck_errors(cart_header, cart_manifest, run_program_precheck)
+local function collect_cart_precheck_errors(cart_header, cart_manifest)
 	if not cart_header then
 		clear_precheck_cache()
 		return {}
 	end
 	local errors = collect_cart_manifest_errors(cart_manifest)
-	local link_errors = {}
-	if run_program_precheck then
-		link_errors = ensure_program_link_precheck(cart_header)
-	else
-		link_errors = collect_cached_program_link_errors(cart_header)
+	if not bitcast_selftest_ok then
+		errors[#errors + 1] = 'BITCAST BUILTIN SELFTEST FAILED'
+		errors[#errors + 1] = bitcast_selftest_error or 'BITCAST BUILTIN CONTRACT FAILURE'
+		return errors
 	end
+	local link_errors = collect_cached_program_link_errors(cart_header)
 	copy_errors(errors, link_errors)
 	return errors
 end
@@ -739,19 +748,16 @@ local function get_program_precheck_status(cart_header)
 		return 'FAILED', bitcast_selftest_error or 'BITCAST BUILTIN CONTRACT FAILURE', true
 	end
 	local key = build_precheck_key(cart_header)
-	if precheck_cache_key ~= key then
-		if not boot_screen_visible then
-			return 'PENDING', 'WAITING FOR BOOT SCREEN', false
+	if precheck_cache_key == key then
+		if #precheck_errors > 0 then
+			return 'FAILED', precheck_errors[1], true
 		end
-		if not atlas_load_finished() then
-			return 'PENDING', 'WAITING FOR SYSTEM ATLAS', false
-		end
-		return 'RUNNING', 'PROGRAM PRECHECK RUNNING', false
+		return 'OK', nil, true
 	end
-	if #precheck_errors > 0 then
-		return 'FAILED', precheck_errors[1], true
+	if not boot_screen_visible then
+		return 'PENDING', 'WAITING FOR BOOT SCREEN', false
 	end
-	return 'OK', nil, true
+	return 'PENDING', 'PROGRAM PRECHECK NOT RUN', false
 end
 
 local function update_error_scroll(error_lines, window_size)
@@ -833,7 +839,7 @@ local function build_info()
 	-- local cart_input = cart_manifest and display_text(cart_manifest.input) or '--'
 	local cart_cpu_raw = cart_manifest and cart_manifest.cpu_freq_hz or nil
 	local cart_cpu_label = format_cpu_mhz_from_hz(cart_cpu_raw)
-	local cart_errors = collect_cart_precheck_errors(cart_header, cart_manifest, false)
+	local cart_errors = collect_cart_precheck_errors(cart_header, cart_manifest)
 	local cart_has_errors = #cart_errors > 0
 	local precheck_status, precheck_detail, precheck_done = get_program_precheck_status(cart_header)
 
@@ -950,7 +956,7 @@ end
 function init()
 	boot_start = os.clock()
 	boot_requested = false
-	boot_screen_visible = false
+	boot_screen_visible = true
 	sys_atlas_ready = false
 	sys_atlas_failed = false
 	clear_precheck_cache()
@@ -976,12 +982,13 @@ end
 
 function update(_dt)
 	refresh_atlas_load_state()
+	boot_screen_visible = true
 	local cart_header = read_cart_header(CART_ROM_BASE)
 	local cart_manifest_raw = cart_manifest
 	local cart_root_path = assets and assets.project_root_path or nil
 	local cart_manifest_value = cart_header and flatten_manifest(cart_manifest_raw, cart_root_path) or nil
-	local run_program_precheck = boot_screen_visible and atlas_load_finished()
-	local cart_errors = collect_cart_precheck_errors(cart_header, cart_manifest_value, run_program_precheck)
+	ensure_program_link_precheck(cart_header)
+	local cart_errors = collect_cart_precheck_errors(cart_header, cart_manifest_value)
 	local cart_has_errors = cart_header and #cart_errors > 0
 	local _, _, precheck_done = get_program_precheck_status(cart_header)
 
@@ -989,26 +996,27 @@ function update(_dt)
 		local line_slots = textflow.line_slots(display_width(), 8, font_width)
 		local error_lines = textflow.wrap_entries(cart_errors, line_slots, '- ', '  ')
 		update_error_scroll(error_lines, error_scroll_window_size)
-		return
-	end
-	textflow.reset_scroll_state(error_scroll_state)
-	error_scroll_window_size = 1
-	local cart_valid = cart_header
-		and #cart_errors == 0
-		and bitcast_selftest_ok
-		and precheck_done
-	local cart_present_and_ready = peek(CART_ROM_BASE) == CART_ROM_MAGIC
-		and cart_boot_ready()
-		and cart_valid
+	else
+		textflow.reset_scroll_state(error_scroll_state)
+		error_scroll_window_size = 1
+		local cart_valid = cart_header
+			and #cart_errors == 0
+			and bitcast_selftest_ok
+			and precheck_done
+		local cart_present_and_ready = peek(CART_ROM_BASE) == CART_ROM_MAGIC
+			and cart_boot_ready()
+			and cart_valid
 
-	if cart_present_and_ready and not boot_requested and elapsed_seconds() >= boot_delay and sys_atlas_ready and not sys_atlas_failed then
-		boot_requested = true
-		poke(sys_boot_cart, 1)
+		if cart_present_and_ready and not boot_requested and elapsed_seconds() >= boot_delay and sys_atlas_ready and not sys_atlas_failed then
+			boot_requested = true
+			poke(sys_boot_cart, 1)
+		end
 	end
+
+	render_boot_screen()
 end
 
-
-function draw()
+render_boot_screen = function()
 	refresh_atlas_load_state()
 	local width = display_width()
 	local left = 8
@@ -1017,8 +1025,6 @@ function draw()
 	cls(color_bg)
 	put_rectfill(0, 0, width, 24, 0, color_header_bg)
 	write('BMSX BIOS', center_x('BMSX BIOS', width), 8, 0, color_header_text)
-	boot_screen_visible = true
-
 	local info = build_info()
 	local cart_present = peek(CART_ROM_BASE) == CART_ROM_MAGIC
 	local elapsed = elapsed_seconds()
