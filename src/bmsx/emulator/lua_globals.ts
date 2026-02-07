@@ -73,6 +73,8 @@ import {
 	IRQ_DMA_ERROR,
 	IRQ_IMG_DONE,
 	IRQ_IMG_ERROR,
+	IRQ_NEWGAME,
+	IRQ_REINIT,
 	IRQ_VBLANK,
 	VDP_ATLAS_ID_NONE,
 	VDP_RD_MODE_RGBA8888,
@@ -957,6 +959,8 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtimeLuaPipeline.registerGlobal(runtime, 'irq_img_done', IRQ_IMG_DONE);
 	runtimeLuaPipeline.registerGlobal(runtime, 'irq_img_error', IRQ_IMG_ERROR);
 	runtimeLuaPipeline.registerGlobal(runtime, 'irq_vblank', IRQ_VBLANK);
+	runtimeLuaPipeline.registerGlobal(runtime, 'irq_reinit', IRQ_REINIT);
+	runtimeLuaPipeline.registerGlobal(runtime, 'irq_newgame', IRQ_NEWGAME);
 	runtimeLuaPipeline.registerGlobal(runtime, 'dma_ctrl_start', DMA_CTRL_START);
 	runtimeLuaPipeline.registerGlobal(runtime, 'dma_ctrl_strict', DMA_CTRL_STRICT);
 	runtimeLuaPipeline.registerGlobal(runtime, 'dma_status_busy', DMA_STATUS_BUSY);
@@ -1029,6 +1033,9 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		bitcastView.setUint32(0, lo, true);
 		bitcastView.setUint32(4, hi, true);
 		out.push(bitcastView.getFloat64(0, true));
+	}));
+	runtimeLuaPipeline.registerGlobal(runtime, 'wait_vblank', createNativeFunction('wait_vblank', (_args, _out) => {
+		runtime.requestWaitForVblank();
 	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'poke', createNativeFunction('poke', (args, out) => {
 		const address = args[0] as number;

@@ -26,6 +26,7 @@ local vdp_load_queue_tail = 0
 local vdp_active_job = nil
 local vdp_load_handler = nil
 local cart_irq_handler = nil
+local cart_irq_handlers = {}
 local sys_atlas_id = 254
 
 local excluded_class_keys = {
@@ -396,15 +397,18 @@ end
 
 function engine.update(dt)
 	quickmenu.update(dt)
-	if quickmenu.is_open() then
-		return
+	if not quickmenu.is_open() then
+		world:update(dt)
 	end
-	world:update(dt)
+	world:draw()
+	quickmenu.draw()
 end
 
 function engine.irq(flags)
 	local ack = 0
 	local fatal = nil
+	local has_reinit_handler = cart_irq_handlers[irq_reinit] ~= nil
+	local has_newgame_handler = cart_irq_handlers[irq_newgame] ~= nil
 	if (flags & irq_img_done) ~= 0 then
 		ack = ack | irq_img_done
 		if vdp_active_job == nil then
@@ -437,8 +441,22 @@ function engine.irq(flags)
 		end
 	end
 	ack = ack | (flags & ~(irq_img_done | irq_img_error))
-	if fatal == nil and cart_irq_handler ~= nil then
-		cart_irq_handler(flags)
+	if fatal == nil then
+		if cart_irq_handler ~= nil then
+			cart_irq_handler(flags)
+		end
+		for mask, handler in pairs(cart_irq_handlers) do
+			if (flags & mask) ~= 0 then
+				handler(flags & mask, flags)
+			end
+		end
+		if (flags & irq_reinit) ~= 0 and not has_reinit_handler then
+			init()
+		end
+		if (flags & irq_newgame) ~= 0 and not has_newgame_handler then
+			engine.reset()
+			new_game()
+		end
 	end
 	if ack ~= 0 then
 		poke(sys_irq_ack, ack)
@@ -448,15 +466,27 @@ function engine.irq(flags)
 	end
 end
 
-function engine.on_irq(handler)
-	if handler == nil then
+function engine.on_irq(mask_or_handler, handler)
+	if type(mask_or_handler) == "number" then
+		local mask = mask_or_handler
+		if handler == nil then
+			cart_irq_handlers[mask] = nil
+			return
+		end
+		if type(handler) ~= "function" then
+			error("on_irq: handler must be a function")
+		end
+		cart_irq_handlers[mask] = handler
+		return
+	end
+	if mask_or_handler == nil then
 		cart_irq_handler = nil
 		return
 	end
-	if type(handler) ~= "function" then
+	if type(mask_or_handler) ~= "function" then
 		error("on_irq: handler must be a function")
 	end
-	cart_irq_handler = handler
+	cart_irq_handler = mask_or_handler
 end
 
 function engine.on_vdp_load(handler)
@@ -468,11 +498,6 @@ function engine.on_vdp_load(handler)
 		error("on_vdp_load: handler must be a function")
 	end
 	vdp_load_handler = handler
-end
-
-function engine.draw()
-	world:draw()
-	quickmenu.draw()
 end
 
 function engine.reset()

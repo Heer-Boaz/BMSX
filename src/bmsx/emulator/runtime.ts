@@ -58,8 +58,6 @@ import * as runtimeLuaPipeline from './runtime_lua_pipeline';
 import { LuaDebuggerController, type LuaDebuggerSessionMetrics } from '../lua/luadebugger';
 import type { ParsedLuaChunk } from './ide/lua_parse';
 import { RenderSubmission } from '../render/backend/pipeline_interfaces';
-import { Msx1Colors } from '../systems/msx';
-import type { RectRenderSubmission } from '../render/shared/render_types';
 import {
 	IO_DMA_CTRL,
 	IO_DMA_DST,
@@ -86,6 +84,8 @@ import {
 	IO_VDP_SECONDARY_ATLAS_ID,
 	IO_VDP_STATUS,
 	IO_WRITE_PTR_ADDR,
+	IRQ_NEWGAME,
+	IRQ_REINIT,
 	IRQ_VBLANK,
 	VDP_ATLAS_ID_NONE,
 	VDP_RD_MODE_RGBA8888,
@@ -144,6 +144,7 @@ type FrameState = {
 };
 
 type ProgramSource = 'engine' | 'cart';
+type WaitForVblankSignal = { readonly kind: 'wait_vblank' };
 
 export var api: Api; // Initialized in Runtime constructor
 
@@ -172,6 +173,7 @@ class RateBudget {
 }
 
 export class Runtime {
+	private static readonly ENGINE_IRQ_MASK = (IRQ_REINIT | IRQ_NEWGAME) >>> 0;
 	private static _instance: Runtime = null;
 	/**
 	 * Preserved render queue when a fault occurs
@@ -253,7 +255,7 @@ export class Runtime {
 	}
 
 	public hasActiveTick(): boolean {
-		return this.currentFrameState !== null || this.drawFrameState !== null;
+		return this.currentFrameState !== null;
 	}
 
 	public consumeLastTickCompletion(): { sequence: number; remaining: number } | null {
@@ -276,11 +278,6 @@ export class Runtime {
 		if (this.currentFrameState !== null) {
 			this.currentFrameState.cycleBudgetRemaining += totalBudget;
 			this.currentFrameState.cycleBudgetGranted += totalBudget;
-			return;
-		}
-		if (this.drawFrameState !== null) {
-			this.drawFrameState.cycleBudgetRemaining += totalBudget;
-			this.drawFrameState.cycleBudgetGranted += totalBudget;
 			return;
 		}
 		if (carryBudget !== 0) {
@@ -370,12 +367,10 @@ export class Runtime {
 	public programInitClosure: Closure = null;
 	public programNewGameClosure: Closure = null;
 	public programUpdateClosure: Closure = null;
-	public programDrawClosure: Closure = null;
 	public programIrqClosure: Closure = null;
 	public engineUpdateClosure: Closure = null;
-	public engineDrawClosure: Closure = null;
 	public engineResetClosure: Closure = null;
-	public pendingCall: 'entry' | 'update' | 'draw' | 'engine_update' | 'engine_draw' | 'init' | 'new_game_reset' | 'new_game' | 'irq' = null;
+	public pendingCall: 'entry' | 'update' | 'engine_update' | 'init' | 'new_game_reset' | 'new_game' | 'irq' = null;
 	public pendingEntryLifecycle: { runInit: boolean; runNewGame: boolean } = null;
 	public pendingLifecycleQueue: Array<'init' | 'new_game_reset' | 'new_game'> = [];
 	private pendingProgramReload: { runInit?: boolean } = null;
@@ -387,8 +382,6 @@ export class Runtime {
 			|| this.pendingCall === 'new_game_reset'
 			|| this.pendingCall === 'new_game'
 			|| this.pendingCall === 'irq'
-			|| this.pendingCall === 'draw'
-			|| this.pendingCall === 'engine_draw'
 			|| this.pendingLifecycleQueue.length > 0
 			|| this.debuggerPaused
 			|| this.luaRuntimeFailed
@@ -497,6 +490,7 @@ export class Runtime {
 		this.vblankActive = false;
 		this.vblankPendingClear = false;
 		this.vblankClearOnIrqEnd = false;
+		this.vblankSequence = 0;
 		this.vdpStatus = 0;
 		this.memory.writeValue(IO_VDP_STATUS, this.vdpStatus);
 		if (this.vblankStartCycle === 0) {
@@ -527,8 +521,70 @@ export class Runtime {
 
 	private enterVblank(): void {
 		// IRQ flags are level/pending; multiple VBLANK edges while pending coalesce.
+		this.vblankSequence += 1;
+		this.commitFrameOnVblankEdge();
 		this.setVblankStatus(true);
 		this.raiseIrqFlags(IRQ_VBLANK);
+	}
+
+	public requestWaitForVblank(): void {
+		this.processIrqAck();
+		const irqFlags = (this.memory.readValue(IO_IRQ_FLAGS) as number) >>> 0;
+		if ((irqFlags & IRQ_VBLANK) !== 0) {
+			clearBackQueues();
+			return;
+		}
+		this.waitingForVblank = true;
+		throw this.waitForVblankSignal;
+	}
+
+	public clearWaitForVblank(): void {
+		this.waitingForVblank = false;
+	}
+
+	private isWaitForVblankSignal(error: unknown): error is WaitForVblankSignal {
+		return error === this.waitForVblankSignal;
+	}
+
+	private commitFrameOnVblankEdge(): void {
+		this.vdp.commitViewSnapshot();
+		const frameState = this.currentFrameState;
+		if (frameState === null) {
+			return;
+		}
+		this.lastTickBudgetRemaining = frameState.cycleBudgetRemaining;
+		this.lastTickCompleted = true;
+		this.lastTickSequence += 1;
+		const debugTickRate = Boolean((globalThis as any).__bmsx_debug_tickrate);
+		if (debugTickRate) {
+			const cyclesUsed = frameState.cycleBudgetGranted - frameState.cycleBudgetRemaining;
+			const yieldsThisFrame = this.debugCycleYieldsTotal - this.debugTickYieldsBefore;
+			this.debugFrameCount += 1;
+			this.debugFrameCyclesUsedAcc += cyclesUsed;
+			this.debugFrameRemainingAcc += frameState.cycleBudgetRemaining;
+			this.debugFrameYieldsAcc += yieldsThisFrame;
+			this.debugFrameGrantedAcc += frameState.cycleBudgetGranted;
+			this.debugFrameCarryAcc += frameState.cycleCarryGranted;
+			const now = performance.now();
+			const elapsedMs = now - this.debugFrameReportAtMs;
+			if (elapsedMs >= 1000) {
+				const scale = 1000 / elapsedMs;
+				const cyclesPerSec = this.debugFrameCyclesUsedAcc * scale;
+				const cyclesPerFrame = this.debugFrameCyclesUsedAcc / this.debugFrameCount;
+				const remainingPerFrame = this.debugFrameRemainingAcc / this.debugFrameCount;
+				const yieldsPerFrame = this.debugFrameYieldsAcc / this.debugFrameCount;
+				const grantedPerFrame = this.debugFrameGrantedAcc / this.debugFrameCount;
+				const carryPerFrame = this.debugFrameCarryAcc / this.debugFrameCount;
+				console.info(`[BMSX][runtime-frame] cycles/sec=${cyclesPerSec.toFixed(1)} cycles/frame=${cyclesPerFrame.toFixed(1)} remaining/frame=${remainingPerFrame.toFixed(1)} yields/frame=${yieldsPerFrame.toFixed(2)} budget=${this.cycleBudgetPerFrame} granted=${grantedPerFrame.toFixed(1)} carry=${carryPerFrame.toFixed(1)}`);
+				this.debugFrameReportAtMs = now;
+				this.debugFrameCount = 0;
+				this.debugFrameCyclesUsedAcc = 0;
+				this.debugFrameRemainingAcc = 0;
+				this.debugFrameYieldsAcc = 0;
+				this.debugFrameGrantedAcc = 0;
+				this.debugFrameCarryAcc = 0;
+			}
+		}
 	}
 
 	public captureVblankState(): { cyclesIntoFrame: number; vblankPendingClear: boolean; vblankClearOnIrqEnd: boolean } {
@@ -556,6 +612,9 @@ export class Runtime {
 	private includeJsStackTraces = false;
 	public currentFrameState: FrameState = null;
 	public drawFrameState: FrameState = null;
+	private waitingForVblank = false;
+	private readonly waitForVblankSignal: WaitForVblankSignal = { kind: 'wait_vblank' };
+	private vblankSequence = 0;
 	public cycleBudgetPerFrame: number;
 	private vblankCycles = 0;
 	private vblankStartCycle = 0;
@@ -805,7 +864,10 @@ export class Runtime {
 		$.view.default_font = new Font();
 		await $.refresh_audio_assets();
 		await runtime.boot();
-		void runtime.prepareCartBoot();
+		void runtime.prepareCartBoot().catch((error: unknown) => {
+			console.error('[Runtime] Failed to prepare cart boot:', error);
+			runtime.setCartBootReadyFlag(false);
+		});
 		$.start();
 	}
 
@@ -1125,7 +1187,6 @@ export class Runtime {
 		this.programInitClosure = null;
 		this.programNewGameClosure = null;
 		this.programUpdateClosure = null;
-		this.programDrawClosure = null;
 		this.programIrqClosure = null;
 		this.engineResetClosure = null;
 		this.consoleMetadata = null;
@@ -1134,6 +1195,7 @@ export class Runtime {
 		this.pendingLifecycleQueue = [];
 		this.luaRuntimeFailed = false;
 		this.luaInitialized = false;
+		this.clearWaitForVblank();
 	}
 
 	public get activeIdeFontVariant(): FontVariant {
@@ -1178,7 +1240,7 @@ export class Runtime {
 	// Frame state is owned by the runtime: it is created per-frame, kept intact for debugger inspection on faults,
 	// and only cleared via finalize/abandon during explicit reboot/reset flows.
 	public beginFrameState(): FrameState {
-		if (this.currentFrameState || this.drawFrameState) {
+		if (this.currentFrameState) {
 			throw new Error('[Runtime] Attempted to begin a new frame while another frame is active.');
 		}
 		const deltaSeconds = $.deltatime_seconds; // Align with fixed-step update cadence to avoid over-counting when substepping
@@ -1209,86 +1271,18 @@ export class Runtime {
 			return;
 		}
 		if (this.currentFrameState !== null) {
-			return;
-		}
-		if (this.drawFrameState !== null) {
-			this.currentFrameState = this.drawFrameState;
-			try {
-				if (this.isUpdatePhasePending()) {
-					this.runUpdatePhase(this.currentFrameState);
-					this.vdp.flushAssetEdits();
-				}
-			} finally {
-				this.drawFrameState = this.currentFrameState;
-				this.abandonFrameState();
+			if (this.isUpdatePhasePending()) {
+				this.runUpdatePhase(this.currentFrameState);
+				this.vdp.flushAssetEdits();
 			}
+			this.finalizeUpdateSlice(this.currentFrameState);
 			return;
 		}
 		this.runCartUpdateTick();
 	}
 
 	public tickDraw(): void {
-		if (!this.tickEnabled) {
-			return;
-		}
-		if (runtimeIde.isOverlayActive(this)) {
-			return;
-		}
-		if (!this.drawFrameState) {
-			return;
-		}
-		this.currentFrameState = this.drawFrameState;
-		try {
-			this.vdp.commitViewSnapshot();
-			this.drawGameFrame();
-			const frameState = this.currentFrameState;
-			if (this.pendingCall === null) {
-				this.lastTickBudgetRemaining = frameState.cycleBudgetRemaining;
-				this.lastTickCompleted = true;
-				this.lastTickSequence += 1;
-				const debugTickRate = Boolean((globalThis as any).__bmsx_debug_tickrate);
-				if (debugTickRate) {
-					const cyclesUsed = frameState.cycleBudgetGranted - frameState.cycleBudgetRemaining;
-					const yieldsThisFrame = this.debugCycleYieldsTotal - this.debugTickYieldsBefore;
-					this.debugFrameCount += 1;
-					this.debugFrameCyclesUsedAcc += cyclesUsed;
-					this.debugFrameRemainingAcc += frameState.cycleBudgetRemaining;
-					this.debugFrameYieldsAcc += yieldsThisFrame;
-					this.debugFrameGrantedAcc += frameState.cycleBudgetGranted;
-					this.debugFrameCarryAcc += frameState.cycleCarryGranted;
-					const now = performance.now();
-					const elapsedMs = now - this.debugFrameReportAtMs;
-					if (elapsedMs >= 1000) {
-						const scale = 1000 / elapsedMs;
-						const cyclesPerSec = this.debugFrameCyclesUsedAcc * scale;
-						const cyclesPerFrame = this.debugFrameCyclesUsedAcc / this.debugFrameCount;
-						const remainingPerFrame = this.debugFrameRemainingAcc / this.debugFrameCount;
-						const yieldsPerFrame = this.debugFrameYieldsAcc / this.debugFrameCount;
-						const grantedPerFrame = this.debugFrameGrantedAcc / this.debugFrameCount;
-						const carryPerFrame = this.debugFrameCarryAcc / this.debugFrameCount;
-						console.info(`[BMSX][runtime-frame] cycles/sec=${cyclesPerSec.toFixed(1)} cycles/frame=${cyclesPerFrame.toFixed(1)} remaining/frame=${remainingPerFrame.toFixed(1)} yields/frame=${yieldsPerFrame.toFixed(2)} budget=${this.cycleBudgetPerFrame} granted=${grantedPerFrame.toFixed(1)} carry=${carryPerFrame.toFixed(1)}`);
-						this.debugFrameReportAtMs = now;
-						this.debugFrameCount = 0;
-						this.debugFrameCyclesUsedAcc = 0;
-						this.debugFrameRemainingAcc = 0;
-						this.debugFrameYieldsAcc = 0;
-						this.debugFrameGrantedAcc = 0;
-						this.debugFrameCarryAcc = 0;
-					}
-				}
-				this.drawFrameState = null;
-				this.abandonFrameState();
-				return;
-			}
-			this.drawFrameState = frameState;
-			this.abandonFrameState();
-		} catch (error) {
-			this.pendingCall = null;
-			this.pendingLifecycleQueue.length = 0;
-			this.pendingEntryLifecycle = null;
-			this.drawFrameState = null;
-			throw error;
-		}
+		// Runtime rendering is update-driven; draw phase is intentionally unused.
 	}
 
 	private runCartUpdateTick(): void {
@@ -1307,56 +1301,53 @@ export class Runtime {
 			this.lastTickBudgetRemaining = 0;
 			this.runUpdatePhase(state);
 			this.vdp.flushAssetEdits();
+			this.finalizeUpdateSlice(state);
 		} catch (error) {
 			fault = error;
 			runtimeIde.handleLuaError(this, error);
 		} finally {
-			if (fault === null) {
-				this.drawFrameState = state;
-			}
-			if (this.currentFrameState !== null) {
+			if (fault !== null && this.currentFrameState !== null) {
 				this.abandonFrameState();
 			}
+		}
+	}
+
+	private finalizeUpdateSlice(frameState: FrameState): void {
+		this.currentFrameState = frameState;
+		this.abandonFrameState();
+	}
+
+	public raiseEngineIrq(mask: number): void {
+		const normalized = mask >>> 0;
+		if (normalized === 0) {
+			throw new Error('[Runtime] Engine IRQ mask must be non-zero.');
+		}
+		const unsupported = normalized & ~Runtime.ENGINE_IRQ_MASK;
+		if (unsupported !== 0) {
+			throw new Error(`[Runtime] Unsupported engine IRQ mask: 0x${unsupported.toString(16)}.`);
+		}
+		this.raiseIrqFlags(normalized);
+	}
+
+	private processIrqAck(): void {
+		const ack = (this.memory.readValue(IO_IRQ_ACK) as number) >>> 0;
+		if (ack === 0) {
+			return;
+		}
+		let flags = (this.memory.readValue(IO_IRQ_FLAGS) as number) >>> 0;
+		flags &= ~ack;
+		this.memory.writeValue(IO_IRQ_FLAGS, flags >>> 0);
+		this.memory.writeValue(IO_IRQ_ACK, 0);
+		if ((ack & IRQ_VBLANK) !== 0 && this.vblankPendingClear) {
+			this.setVblankStatus(false);
+			this.vblankPendingClear = false;
+			this.vblankClearOnIrqEnd = false;
 		}
 	}
 
 	private raiseIrqFlags(mask: number): void {
 		const current = (this.memory.readValue(IO_IRQ_FLAGS) as number) >>> 0;
 		this.memory.writeValue(IO_IRQ_FLAGS, (current | mask) >>> 0);
-	}
-
-	private dispatchIrqFlags(state: FrameState): boolean {
-		const ack = (this.memory.readValue(IO_IRQ_ACK) as number) >>> 0;
-		let flags = (this.memory.readValue(IO_IRQ_FLAGS) as number) >>> 0;
-		if (ack !== 0) {
-			flags &= ~ack;
-			this.memory.writeValue(IO_IRQ_FLAGS, flags);
-			this.memory.writeValue(IO_IRQ_ACK, 0);
-			if ((ack & IRQ_VBLANK) !== 0 && this.vblankPendingClear) {
-				this.setVblankStatus(false);
-				this.vblankPendingClear = false;
-				this.vblankClearOnIrqEnd = false;
-			}
-		}
-		if (flags === 0) {
-			return false;
-		}
-		if ((flags & IRQ_VBLANK) !== 0 && this.vblankPendingClear) {
-			this.vblankClearOnIrqEnd = true;
-		}
-		this.cpu.call(this.programIrqClosure, [flags], 0);
-		this.pendingCall = 'irq';
-		const result = this.runWithBudget(state);
-		runtimeLuaPipeline.processIo(this);
-		if (result === RunResult.Halted) {
-			this.pendingCall = null;
-			if (this.vblankClearOnIrqEnd) {
-				this.setVblankStatus(false);
-				this.vblankPendingClear = false;
-				this.vblankClearOnIrqEnd = false;
-			}
-		}
-		return this.pendingCall === 'irq';
 	}
 
 	private runUpdatePhase(state: FrameState): void {
@@ -1381,93 +1372,58 @@ export class Runtime {
 			return;
 		}
 		try {
-			if (this.pendingCall === 'entry') {
-				const result = this.runWithBudget(state);
-				runtimeLuaPipeline.processIo(this);
-				if (result === RunResult.Halted) {
-					this.pendingCall = null;
-					runtimeLuaPipeline.bindLifecycleHandlers(this);
-					const lifecycle = this.pendingEntryLifecycle;
-					this.pendingEntryLifecycle = null;
-					if (lifecycle) {
-						runtimeLuaPipeline.queueLifecycleHandlers(this, lifecycle);
-					}
-				}
+			if (this.waitingForVblank && this.runWaitForVblank(state)) {
 				state.updateExecuted = true;
 				return;
 			}
-			if (this.pendingCall === 'irq') {
-				const result = this.runWithBudget(state);
-				runtimeLuaPipeline.processIo(this);
-				if (result === RunResult.Halted) {
-					this.pendingCall = null;
-					if (this.vblankClearOnIrqEnd) {
-						this.setVblankStatus(false);
-						this.vblankPendingClear = false;
-						this.vblankClearOnIrqEnd = false;
-					}
-				}
+			this.processIrqAck();
+			if (this.pendingCall !== 'entry') {
 				state.updateExecuted = true;
 				return;
 			}
-			if (runtimeLuaPipeline.runLifecyclePhase(this, state)) {
-				state.updateExecuted = true;
-				return;
-			}
-			if (!this.pendingCall) {
-				if (this.dispatchIrqFlags(state)) {
-					state.updateExecuted = true;
-					return;
-				}
-			}
-			let shouldRunEngineUpdate = this.programUpdateClosure === null;
-			if (this.pendingCall === 'engine_update') {
-				const result = this.runWithBudget(state);
-				runtimeLuaPipeline.processIo(this);
-				if (result === RunResult.Halted) {
-					this.pendingCall = null;
-				}
-				state.updateExecuted = true;
-				return;
-			}
-			if (this.pendingCall && this.pendingCall !== 'update') {
-				state.updateExecuted = true;
-				return;
-			}
-			if (this.programUpdateClosure !== null) {
-				if (!this.pendingCall) {
-					this.cpu.call(this.programUpdateClosure, [state.deltaSeconds], 0);
-					this.pendingCall = 'update';
-				}
-				const result = this.runWithBudget(state);
-				runtimeLuaPipeline.processIo(this);
-				if (result === RunResult.Halted) {
-					this.pendingCall = null;
-					shouldRunEngineUpdate = true;
-				}
-			}
-			if (shouldRunEngineUpdate) {
-				const deltaMs = state.deltaSeconds * 1000;
-				this.cpu.call(this.engineUpdateClosure, [deltaMs], 0);
-				this.pendingCall = 'engine_update';
-				const result = this.runWithBudget(state);
-				runtimeLuaPipeline.processIo(this);
-				if (result === RunResult.Halted) {
-					this.pendingCall = null;
-				}
+			const result = this.runWithBudget(state);
+			runtimeLuaPipeline.processIo(this);
+			this.processIrqAck();
+			if (result === RunResult.Halted) {
+				this.pendingCall = null;
 			}
 		} catch (error) {
-			if (isLuaDebuggerPauseSignal(error)) {
+			if (this.isWaitForVblankSignal(error)) {
+				state.updateExecuted = true;
+			} else if (isLuaDebuggerPauseSignal(error)) {
 				runtimeIde.onLuaDebuggerPause(this, error);
 			} else {
 				state.luaFaulted = true;
+				this.waitingForVblank = false;
 				this.pendingCall = null;
 				this.pendingLifecycleQueue.length = 0;
 				runtimeIde.handleLuaError(this, error);
 			}
 		} finally {
-			state.updateExecuted = !this.isUpdatePhasePending();
+			state.updateExecuted = true;
 		}
+	}
+
+	private runWaitForVblank(state: FrameState): boolean {
+		this.processIrqAck();
+		let flags = (this.memory.readValue(IO_IRQ_FLAGS) as number) >>> 0;
+		if ((flags & IRQ_VBLANK) === 0) {
+			if (state.cycleBudgetRemaining > 0) {
+				const idleCycles = state.cycleBudgetRemaining;
+				this.advanceHardware(idleCycles);
+				this.processIrqAck();
+			}
+			flags = (this.memory.readValue(IO_IRQ_FLAGS) as number) >>> 0;
+			if ((flags & IRQ_VBLANK) === 0) {
+				return true;
+			}
+		}
+		this.waitingForVblank = false;
+		state.cycleBudgetRemaining = this.cycleBudgetPerFrame;
+		state.cycleBudgetGranted = this.cycleBudgetPerFrame;
+		state.cycleCarryGranted = 0;
+		clearBackQueues();
+		return false;
 	}
 
 	public drawIde(): void {
@@ -1476,119 +1432,6 @@ export class Runtime {
 
 	public drawTerminal(): void {
 		runtimeIde.drawTerminal(this);
-	}
-
-	private drawBlueScreen(): void {
-		const viewport = $.view.viewportSize;
-		const rect: RectRenderSubmission = {
-			kind: 'fill',
-			area: {
-				left: 0,
-				top: 0,
-				right: viewport.x,
-				bottom: viewport.y,
-				z: 0,
-			},
-			color: Msx1Colors[4],
-		};
-		this.overlayRenderBackend.rect(rect);
-	}
-
-	private drawGameFrame(): void {
-		try {
-			this.overlayRenderBackend.beginFrame();
-			// No try catch here; caller handles faults
-			this.overlayRenderBackend.setDefaultLayer('world');
-			if (!this.cartEntryAvailable) {
-				api.abandonFrameCapture();
-				this.drawBlueScreen();
-				this.preservedRenderQueue = this.overlayRenderBackend.captureCurrentFrameRenderQueue();
-				return;
-			}
-			if (this.luaGate.ready) {
-				if (this.pendingCall === 'update'
-					|| this.pendingCall === 'engine_update'
-					|| this.pendingCall === 'entry'
-					|| this.pendingCall === 'init'
-					|| this.pendingCall === 'new_game_reset'
-					|| this.pendingCall === 'new_game'
-					|| this.pendingCall === 'irq'
-					|| this.pendingLifecycleQueue.length > 0
-					|| this.debuggerPaused
-					|| this.luaRuntimeFailed
-					|| this.faultSnapshot) {
-					this.overlayRenderBackend.playbackRenderQueue(this.preservedRenderQueue);
-				}
-				else {
-					try {
-						const frameState = this.currentFrameState;
-						if (!api.isFrameCaptureActive()) {
-							api.beginFrameCapture();
-						}
-						if (this.pendingCall === 'engine_draw') {
-							const result = this.runWithBudget(frameState);
-							runtimeLuaPipeline.processIo(this);
-							if (result === RunResult.Halted) {
-								this.pendingCall = null;
-							}
-							if (!this.pendingCall) {
-								api.commitFrameCapture();
-								this.preservedRenderQueue = this.overlayRenderBackend.captureCurrentFrameRenderQueue();
-							} else {
-								this.overlayRenderBackend.playbackRenderQueue(this.preservedRenderQueue);
-							}
-							return;
-						}
-						let shouldRunEngineDraw = this.programDrawClosure === null;
-						if (this.programDrawClosure !== null) {
-							if (!this.pendingCall) {
-								this.cpu.call(this.programDrawClosure, [], 0);
-								this.pendingCall = 'draw';
-							}
-							const result = this.runWithBudget(frameState);
-							runtimeLuaPipeline.processIo(this);
-							if (result === RunResult.Halted) {
-								this.pendingCall = null;
-								shouldRunEngineDraw = true;
-							}
-						}
-						if (shouldRunEngineDraw) {
-							this.cpu.call(this.engineDrawClosure, [], 0);
-							this.pendingCall = 'engine_draw';
-							const result = this.runWithBudget(frameState);
-							runtimeLuaPipeline.processIo(this);
-							if (result === RunResult.Halted) {
-								this.pendingCall = null;
-							}
-						}
-						if (!this.pendingCall) {
-							api.commitFrameCapture();
-							this.preservedRenderQueue = this.overlayRenderBackend.captureCurrentFrameRenderQueue();
-						} else {
-							this.overlayRenderBackend.playbackRenderQueue(this.preservedRenderQueue);
-						}
-					} catch (error) {
-						api.abandonFrameCapture();
-						this.preservedRenderQueue = this.overlayRenderBackend.captureCurrentFrameRenderQueue();
-
-						if (isLuaDebuggerPauseSignal(error)) {
-							runtimeIde.onLuaDebuggerPause(this, error);
-						} else {
-							runtimeIde.handleLuaError(this, error);
-						}
-					}
-				}
-			}
-		}
-		catch (error) {
-			if (isLuaDebuggerPauseSignal(error)) {
-				runtimeIde.onLuaDebuggerPause(this, error);
-			} else {
-				runtimeIde.handleLuaError(this, error);
-			}
-		} finally {
-			this.overlayRenderBackend.endFrame();
-		}
 	}
 
 	// Clear reference to allow next frame to begin
@@ -1736,13 +1579,21 @@ export class Runtime {
 		if (!this.cartAssetLayer || !this.cartAssetSource || !this.cartLuaSources) {
 			return;
 		}
-		if (this.cartAssetSource.list('lua').length > 0) {
-			this.preparedCartProgram = runtimeLuaPipeline.compileCartLuaProgramForBoot(this);
-			this.setCartBootReadyFlag(true);
-			return;
+		try {
+			if (this.cartAssetSource.list('lua').length > 0) {
+				this.preparedCartProgram = runtimeLuaPipeline.compileCartLuaProgramForBoot(this);
+				this.setCartBootReadyFlag(true);
+				console.info('[Runtime] Cart boot payload prepared from Lua sources.');
+				return;
+			}
+			const programEntry = this.cartAssetSource.getEntry(PROGRAM_ASSET_ID);
+			this.setCartBootReadyFlag(!!programEntry);
+		} catch (error) {
+			this.preparedCartProgram = null;
+			this.setCartBootReadyFlag(false);
+			console.error('[Runtime] Failed to prepare cart boot payload:', error);
+			throw error;
 		}
-		const programEntry = this.cartAssetSource.getEntry(PROGRAM_ASSET_ID);
-		this.setCartBootReadyFlag(!!programEntry);
 	}
 
 	public async buildAssetMemory(params?: { source?: RawAssetSource; assets?: RuntimeAssets; mode?: 'full' | 'cart' }): Promise<void> {
@@ -1854,10 +1705,15 @@ export class Runtime {
 		if (!this.luaGate.ready) {
 			return;
 		}
-		if (this.currentFrameState || this.drawFrameState || this.pendingCall || this.pendingLifecycleQueue.length > 0) {
-			return;
+		if (this.currentFrameState !== null || this.pendingCall !== null || this.pendingLifecycleQueue.length > 0) {
+			runtimeLuaPipeline.resetFrameState(this);
+			this.pendingCall = null;
+			this.pendingEntryLifecycle = null;
+			this.pendingLifecycleQueue = [];
+			this.clearWaitForVblank();
 		}
 		this.pendingCartBoot = false;
+		console.info('[Runtime] Switching to cart program after BIOS boot request.');
 		this.activateProgramSource('cart');
 		void runtimeLuaPipeline.reloadProgramAndResetWorld(this);
 	}
@@ -1870,7 +1726,7 @@ export class Runtime {
 			this.pendingProgramReload = null;
 			return;
 		}
-		if (this.currentFrameState || this.drawFrameState || this.pendingCall || this.pendingLifecycleQueue.length > 0) {
+		if (this.currentFrameState || this.pendingCall || this.pendingLifecycleQueue.length > 0) {
 			return;
 		}
 		const options = this.pendingProgramReload;

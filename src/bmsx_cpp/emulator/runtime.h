@@ -34,7 +34,7 @@ constexpr int DEFAULT_CYCLE_BUDGET = 1'000'000;
 extern const std::vector<std::string> BUTTON_ACTIONS;
 
 /**
- * Runtime frame state for coordinating update/draw phases.
+ * Runtime frame state for coordinating update execution.
  */
 struct FrameState {
 	bool haltGame = false;
@@ -181,6 +181,7 @@ public:
 	 * Request a program reload.
 	 */
 	void requestProgramReload();
+	void raiseEngineIrq(uint32_t mask);
 	void resetCartBootState();
 
 	/**
@@ -300,9 +301,7 @@ private:
 		NewGame,
 		Irq,
 		Update,
-		Draw,
 		EngineUpdate,
-		EngineDraw,
 	};
 	struct PendingEntryLifecycle {
 		bool runInit;
@@ -316,13 +315,15 @@ private:
 	void runEngineBuiltinPrelude();
 	void resetFrameState();
 	void executeUpdateCallback(double deltaSeconds);
-	void executeDrawCallback();
 	void advanceHardware(int cycles);
 	void advanceVblank(int cycles);
 	void resetVblankState();
 	void setVblankStatus(bool active);
 	void enterVblank();
+	void commitFrameOnVblankEdge();
+	void requestWaitForVblank();
 	void resetTransferCarry();
+	void processIrqAck();
 	void raiseIrqFlags(uint32_t mask);
 	bool dispatchIrqFlags();
 	RunResult runWithBudget();
@@ -383,12 +384,10 @@ private:
 
 	// Cached function references
 	Closure* m_updateFn = nullptr;
-	Closure* m_drawFn = nullptr;
 	Closure* m_initFn = nullptr;
 	Closure* m_newGameFn = nullptr;
 	Closure* m_irqFn = nullptr;
 	Closure* m_engineUpdateFn = nullptr;
-	Closure* m_engineDrawFn = nullptr;
 	Closure* m_engineResetFn = nullptr;
 	Value m_ipairsIterator = valueNil();
 	PendingCall m_pendingCall = PendingCall::None;
@@ -436,6 +435,9 @@ private:
 		int m_vblankCycles = 0;
 		int m_vblankStartCycle = 0;
 		int m_cyclesIntoFrame = 0;
+		bool m_waitingForVblank = false;
+		uint64_t m_vblankSequence = 0;
+		uint64_t m_waitForVblankTargetSequence = 0;
 		bool m_vblankActive = false;
 		bool m_vblankPendingClear = false;
 		bool m_vblankClearOnIrqEnd = false;

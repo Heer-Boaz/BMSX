@@ -127,6 +127,8 @@ constexpr uint32_t IRQ_DMA_ERROR = 1 << 1;
 constexpr uint32_t IRQ_IMG_DONE = 1 << 2;
 constexpr uint32_t IRQ_IMG_ERROR = 1 << 3;
 constexpr uint32_t IRQ_VBLANK = 1 << 4;
+constexpr uint32_t IRQ_REINIT = 1 << 5;
+constexpr uint32_t IRQ_NEWGAME = 1 << 6;
 
 constexpr uint32_t VDP_STATUS_VBLANK = 1u << 0u;
 

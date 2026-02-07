@@ -4,12 +4,17 @@
    npm install -D
    ```
 * Ensure that you have `typescript` installed locally, as it is required for the build process.
-* To validate the bmsx package (the game engine) and to verify the game roms running on the bmsx package, you can build the game engine, scripts, and game roms by running:
+* To force-rebuild the headless platform, BIOS, and a game rom before running, use:
    ```bash
-   npm run headless:game <gameromname> # WARNING: `<gameromname>` must be replaced with the folder name of the rompack (game) you want to test, e.g. `2025` (`2025` is a great test rom)! This is different from the rom name specified in the `rommanifest.json` file inside the `res` directory! The `rominspector` tool uses the rom name specified in the `rommanifest.json` file, so that is different from this!
+   npm run headless:forcebuildallrun -- <gameromname> # Example: npm run headless:forcebuildallrun -- 2025
+   ```
+   This command does a forced debug rebuild of the headless platform, engine BIOS assets, and the specified rompack, then runs it in headless mode.
+* To run an already-built rompack in headless mode (without forcing rebuild), use:
+   ```bash
+   npm run headless:game -- <gameromname> # WARNING: `<gameromname>` must be replaced with the folder name of the rompack (game) you want to test, e.g. `2025` (`2025` is a great test rom)! This is different from the rom name specified in the `rommanifest.json` file inside the `res` directory! The `rominspector` tool uses the rom name specified in the `rommanifest.json` file, so that is different from this!
        # N.B. `--debug` flag is implicit for headless mode and cli mode!
    ```
-   This command will pack the resources and build the specified rompack (game). The built rompack will be available in the `dist` directory. It will also run the rompack in a headless mode (without a graphical interface) to validate that it works correctly. If there are any errors during the build or runtime, they will be displayed in the console.
+   This command runs a prebuilt rompack in headless mode (without a graphical interface). If you need a guaranteed fresh build first, use `headless:forcebuildallrun`.
    > Important: The given <romname> must match the name of a directory under `./src/` that contains a `res` subdirectory with the resources for that rompack (game). For example, for the `testrom`, the resources should be located in `./src/testrom/res`. However, the result romfile will be named based on the rommanifest.json file inside the `res` directory!! For example, if the `rommanifest.json` file specifies the name as `yiear`, the resulting romfile will be named `yiear.rom` (or `yiear.debug.rom`) even if the directory is named `ella2023`!
    Also, you should build and test the libretro core by running:
    ```bash

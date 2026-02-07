@@ -32,6 +32,13 @@ inline double to_ms(std::chrono::steady_clock::duration duration) {
 	return std::chrono::duration<double, std::milli>(duration).count();
 }
 
+class WaitForVblankSignal : public std::exception {
+public:
+	const char* what() const noexcept override {
+		return "wait_vblank";
+	}
+};
+
 constexpr size_t CART_ROM_HEADER_SIZE = 32;
 constexpr std::array<u8, CART_ROM_HEADER_SIZE> CART_ROM_EMPTY_HEADER = {};
 }
@@ -152,7 +159,6 @@ Runtime::Runtime(const RuntimeOptions& options)
 			heap.markValue(entry.second);
 		}
 		heap.markObject(m_updateFn);
-		heap.markObject(m_drawFn);
 		heap.markObject(m_initFn);
 		heap.markObject(m_newGameFn);
 		heap.markObject(m_irqFn);
@@ -197,12 +203,10 @@ void Runtime::boot(Program* program, ProgramMetadata* metadata, int entryProtoIn
 	m_luaInitialized = false;
 	m_pendingCall = PendingCall::None;
 	m_updateFn = nullptr;
-	m_drawFn = nullptr;
 	m_initFn = nullptr;
 	m_newGameFn = nullptr;
 	m_irqFn = nullptr;
 	m_engineUpdateFn = nullptr;
-	m_engineDrawFn = nullptr;
 	m_engineResetFn = nullptr;
 	m_pendingLifecycleQueue.clear();
 	m_pendingLifecycleIndex = 0;
@@ -336,6 +340,7 @@ void Runtime::advanceVblank(int cycles) {
 
 void Runtime::resetVblankState() {
 	m_cyclesIntoFrame = 0;
+	m_vblankSequence = 0;
 	m_vblankActive = false;
 	m_vblankPendingClear = false;
 	m_vblankClearOnIrqEnd = false;
@@ -361,8 +366,32 @@ void Runtime::setVblankStatus(bool active) {
 
 void Runtime::enterVblank() {
 	// IRQ flags are level/pending; multiple VBLANK edges while pending coalesce.
+	m_vblankSequence += 1;
+	commitFrameOnVblankEdge();
 	setVblankStatus(true);
 	raiseIrqFlags(IRQ_VBLANK);
+}
+
+void Runtime::commitFrameOnVblankEdge() {
+	m_vdp.commitViewSnapshot(*EngineCore::instance().view());
+	if (!m_frameActive) {
+		return;
+	}
+	m_lastTickBudgetRemaining = m_frameState.cycleBudgetRemaining;
+	m_lastTickCompleted = true;
+	m_lastTickSequence += 1;
+}
+
+void Runtime::requestWaitForVblank() {
+	processIrqAck();
+	const uint32_t flags = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_IRQ_FLAGS)));
+	if ((flags & IRQ_VBLANK) != 0) {
+		RenderQueues::clearBackQueues();
+		return;
+	}
+	m_waitingForVblank = true;
+	m_waitForVblankTargetSequence = m_vblankSequence + 1;
+	throw WaitForVblankSignal{};
 }
 
 void Runtime::resetTransferCarry() {
@@ -374,6 +403,34 @@ void Runtime::resetTransferCarry() {
 void Runtime::raiseIrqFlags(uint32_t mask) {
 	const uint32_t current = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_IRQ_FLAGS)));
 	m_memory.writeValue(IO_IRQ_FLAGS, valueNumber(static_cast<double>(current | mask)));
+}
+
+void Runtime::processIrqAck() {
+	const uint32_t ack = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_IRQ_ACK)));
+	if (ack == 0) {
+		return;
+	}
+	uint32_t flags = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_IRQ_FLAGS)));
+	flags &= ~ack;
+	m_memory.writeValue(IO_IRQ_FLAGS, valueNumber(static_cast<double>(flags)));
+	m_memory.writeValue(IO_IRQ_ACK, valueNumber(0.0));
+	if ((ack & IRQ_VBLANK) != 0 && m_vblankPendingClear) {
+		setVblankStatus(false);
+		m_vblankPendingClear = false;
+		m_vblankClearOnIrqEnd = false;
+	}
+}
+
+void Runtime::raiseEngineIrq(uint32_t mask) {
+	constexpr uint32_t kAllowedMask = IRQ_REINIT | IRQ_NEWGAME;
+	if (mask == 0) {
+		throw BMSX_RUNTIME_ERROR("[Runtime] Engine IRQ mask must be non-zero.");
+	}
+	const uint32_t unsupported = mask & ~kAllowedMask;
+	if (unsupported != 0) {
+		throw BMSX_RUNTIME_ERROR("[Runtime] Unsupported engine IRQ mask: " + std::to_string(unsupported) + ".");
+	}
+	raiseIrqFlags(mask);
 }
 
 bool Runtime::dispatchIrqFlags() {
@@ -423,17 +480,11 @@ RunResult Runtime::runWithBudget() {
 }
 
 void Runtime::cacheLifecycleHandlers() {
-	// Cache callback functions (use Lua-style names: update, draw, init, new_game)
+	// Cache callback functions (use Lua-style names: update, init, new_game)
 	Value updateVal = m_cpu.globals->get(canonicalizeIdentifier("update"));
 	if (valueIsClosure(updateVal)) {
 		m_updateFn = asClosure(updateVal);
 		std::cout << "[Runtime] boot: found update" << std::endl;
-	}
-
-	Value drawVal = m_cpu.globals->get(canonicalizeIdentifier("draw"));
-	if (valueIsClosure(drawVal)) {
-		m_drawFn = asClosure(drawVal);
-		std::cout << "[Runtime] boot: found draw" << std::endl;
 	}
 
 	Value initVal = m_cpu.globals->get(canonicalizeIdentifier("init"));
@@ -457,10 +508,6 @@ void Runtime::cacheLifecycleHandlers() {
 	if (valueIsClosure(engineUpdateVal)) {
 		m_engineUpdateFn = asClosure(engineUpdateVal);
 	}
-	Value engineDrawVal = engineModule->get(canonicalizeIdentifier("draw"));
-	if (valueIsClosure(engineDrawVal)) {
-		m_engineDrawFn = asClosure(engineDrawVal);
-	}
 	Value engineResetVal = engineModule->get(canonicalizeIdentifier("reset"));
 	if (valueIsClosure(engineResetVal)) {
 		m_engineResetFn = asClosure(engineResetVal);
@@ -471,28 +518,15 @@ void Runtime::queueLifecycleHandlers(bool runInit, bool runNewGame) {
 	m_pendingLifecycleQueue.clear();
 	m_pendingLifecycleIndex = 0;
 	m_pendingEntryLifecycle.reset();
-	if (m_pendingCall == PendingCall::Entry) {
-		m_pendingEntryLifecycle = PendingEntryLifecycle{runInit, runNewGame};
-		return;
-	}
+	uint32_t mask = 0;
 	if (runInit) {
-		if (!m_initFn) {
-			throw BMSX_RUNTIME_ERROR("[Runtime] Runtime lifecycle handler 'init' is not defined.");
-		}
-		m_pendingLifecycleQueue.push_back(PendingCall::Init);
+		mask |= IRQ_REINIT;
 	}
 	if (runNewGame) {
-		if (!m_engineResetFn) {
-			throw BMSX_RUNTIME_ERROR("[Runtime] Runtime lifecycle handler 'engine.reset' is not defined.");
-		}
-		if (!m_newGameFn) {
-			throw BMSX_RUNTIME_ERROR("[Runtime] Runtime lifecycle handler 'new_game' is not defined.");
-		}
-		m_pendingLifecycleQueue.push_back(PendingCall::NewGameReset);
-		m_pendingLifecycleQueue.push_back(PendingCall::NewGame);
+		mask |= IRQ_NEWGAME;
 	}
-	if (m_pendingCall == PendingCall::None) {
-		startNextLifecycleCall();
+	if (mask != 0) {
+		raiseEngineIrq(mask);
 	}
 }
 
@@ -568,6 +602,9 @@ void Runtime::tickUpdate() {
 			|| m_pendingCall == PendingCall::Irq
 			|| lifecycleQueued;
 	};
+	const auto finalizeUpdateSlice = [this]() {
+		m_frameActive = false;
+	};
 
 	if (m_frameActive) {
 		if (isUpdatePhasePending()) {
@@ -575,6 +612,7 @@ void Runtime::tickUpdate() {
 			flushAssetEdits();
 			m_frameState.updateExecuted = !isUpdatePhasePending();
 		}
+		finalizeUpdateSlice();
 		return;
 	}
 
@@ -644,30 +682,11 @@ void Runtime::tickUpdate() {
 	m_debugUpdateCountTotal += 1;
 	m_frameState.updateExecuted = !isUpdatePhasePending();
 	flushAssetEdits();
+	finalizeUpdateSlice();
 }
 
 void Runtime::tickDraw() {
-	if (!m_luaInitialized || !m_tickEnabled || m_runtimeFailed) {
-		return;
-	}
-
-	if (!m_frameActive) {
-		api().playbackRenderQueue(m_preservedRenderQueue);
-		return;
-	}
-
-	// Call _draw if present
-	m_vdp.commitViewSnapshot(*EngineCore::instance().view());
-	executeDrawCallback();
-	if (m_pendingCall != PendingCall::None) {
-		return;
-	}
-
-	m_lastTickBudgetRemaining = m_frameState.cycleBudgetRemaining;
-	m_lastTickCompleted = true;
-	m_lastTickSequence += 1;
-
-	m_frameActive = false;
+	// Runtime rendering is update-driven; draw phase is intentionally unused.
 }
 
 void Runtime::tickIdeInput() {
@@ -709,12 +728,10 @@ void Runtime::processIOCommands() {
 		int cmdBase = IO_BUFFER_BASE + i * IO_COMMAND_STRIDE;
 		int cmd = static_cast<int>(asNumber(m_memory.readValue(cmdBase)));
 
-		switch (cmd) {
-			case IO_CMD_PRINT: {
-				Value arg = m_memory.readValue(cmdBase + IO_ARG0_OFFSET);
-				std::cout << valueToString(arg) << '\n';
-				break;
-			}
+			switch (cmd) {
+				case IO_CMD_PRINT: {
+					throw BMSX_RUNTIME_ERROR("[Runtime] IO_CMD_PRINT is deprecated. Rebuild program assets so print() uses the native builtin path.");
+				}
 			default:
 				throw BMSX_RUNTIME_ERROR("Unknown IO command: " + std::to_string(cmd) + ".");
 		}
@@ -733,6 +750,8 @@ void Runtime::requestProgramReload() {
 void Runtime::resetFrameState() {
 	m_frameActive = false;
 	m_frameState = FrameState{};
+	m_waitingForVblank = false;
+	m_waitForVblankTargetSequence = 0;
 	m_pendingCarryBudget = 0;
 	m_lastTickCompleted = false;
 	m_lastTickBudgetRemaining = 0;
@@ -916,8 +935,6 @@ bool Runtime::isDrawPending() const {
 		|| m_pendingCall == PendingCall::NewGameReset
 		|| m_pendingCall == PendingCall::NewGame
 		|| m_pendingCall == PendingCall::Irq
-		|| m_pendingCall == PendingCall::Draw
-		|| m_pendingCall == PendingCall::EngineDraw
 		|| lifecycleQueued
 		|| m_runtimeFailed;
 }
@@ -1067,198 +1084,46 @@ void Runtime::releaseValueScratch(std::vector<Value>&& values) {
 
 
 void Runtime::executeUpdateCallback(double deltaSeconds) {
-	bool shouldRunEngineUpdate = (m_updateFn == nullptr);
-	if (m_pendingCall == PendingCall::Entry) {
-		RunResult result = runWithBudget();
-		processIOCommands();
-		if (result == RunResult::Halted) {
-			m_pendingCall = PendingCall::None;
-			cacheLifecycleHandlers();
-			const auto pendingLifecycle = m_pendingEntryLifecycle;
-			m_pendingEntryLifecycle.reset();
-			if (pendingLifecycle.has_value()) {
-				queueLifecycleHandlers(pendingLifecycle->runInit, pendingLifecycle->runNewGame);
+	(void)deltaSeconds;
+	try {
+		if (m_waitingForVblank) {
+			processIrqAck();
+			uint32_t flags = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_IRQ_FLAGS)));
+			if ((flags & IRQ_VBLANK) == 0) {
+				if (m_frameState.cycleBudgetRemaining > 0) {
+					const int idleCycles = m_frameState.cycleBudgetRemaining;
+					advanceHardware(idleCycles);
+					processIrqAck();
+				}
+				flags = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_IRQ_FLAGS)));
+				if ((flags & IRQ_VBLANK) == 0) {
+					return;
+				}
 			}
+			m_waitingForVblank = false;
+			m_waitForVblankTargetSequence = 0;
+			m_frameState.cycleBudgetRemaining = m_cycleBudgetPerFrame;
+			m_frameState.cycleBudgetGranted = m_cycleBudgetPerFrame;
+			m_frameState.cycleCarryGranted = 0;
+			RenderQueues::clearBackQueues();
 		}
-		return;
-	}
-	if (m_pendingCall == PendingCall::EngineUpdate) {
-		RunResult result = runWithBudget();
-		processIOCommands();
-		if (result == RunResult::Halted) {
-			m_pendingCall = PendingCall::None;
-		}
-		return;
-	}
-	if (m_pendingCall == PendingCall::Irq) {
-		RunResult result = runWithBudget();
-		processIOCommands();
-		if (result == RunResult::Halted) {
-			m_pendingCall = PendingCall::None;
-			if (m_vblankClearOnIrqEnd) {
-				setVblankStatus(false);
-				m_vblankPendingClear = false;
-				m_vblankClearOnIrqEnd = false;
-			}
-		}
-		return;
-	}
-	const bool lifecycleQueued = m_pendingLifecycleIndex < m_pendingLifecycleQueue.size();
-	if (m_pendingCall == PendingCall::Init
-		|| m_pendingCall == PendingCall::NewGameReset
-		|| m_pendingCall == PendingCall::NewGame
-		|| (m_pendingCall == PendingCall::None && lifecycleQueued)) {
-		if (runLifecyclePhase()) {
+		processIrqAck();
+		if (m_pendingCall != PendingCall::Entry) {
 			return;
 		}
-	}
-	if (m_pendingCall != PendingCall::None && m_pendingCall != PendingCall::Update) {
+		RunResult result = runWithBudget();
+		processIOCommands();
+		processIrqAck();
+		if (result == RunResult::Halted) {
+			m_pendingCall = PendingCall::None;
+		}
+	} catch (const WaitForVblankSignal&) {
 		return;
-	}
-
-	double runMs = 0.0;
-	double engineMs = 0.0;
-	double ioMs = 0.0;
-
-	try {
-		if (m_pendingCall == PendingCall::None) {
-			if (dispatchIrqFlags()) {
-				return;
-			}
-		}
-		if (m_updateFn) {
-			if (m_pendingCall == PendingCall::None) {
-				m_cpu.call(m_updateFn, {valueNumber(deltaSeconds)}, 0);
-				m_pendingCall = PendingCall::Update;
-			}
-			const auto runStart = std::chrono::steady_clock::now();
-			RunResult result = runWithBudget();
-			const auto runEnd = std::chrono::steady_clock::now();
-			runMs += to_ms(runEnd - runStart);
-			const auto ioStart = std::chrono::steady_clock::now();
-			processIOCommands();
-			const auto ioEnd = std::chrono::steady_clock::now();
-			ioMs += to_ms(ioEnd - ioStart);
-			if (result == RunResult::Halted) {
-				m_pendingCall = PendingCall::None;
-				shouldRunEngineUpdate = true;
-			}
-		}
-		if (shouldRunEngineUpdate) {
-			const double deltaMs = deltaSeconds * 1000.0;
-			m_cpu.call(m_engineUpdateFn, {valueNumber(deltaMs)}, 0);
-			m_pendingCall = PendingCall::EngineUpdate;
-			const auto engineStart = std::chrono::steady_clock::now();
-			RunResult result = runWithBudget();
-			const auto engineEnd = std::chrono::steady_clock::now();
-			engineMs += to_ms(engineEnd - engineStart);
-			const auto ioStart = std::chrono::steady_clock::now();
-			processIOCommands();
-			const auto ioEnd = std::chrono::steady_clock::now();
-			ioMs += to_ms(ioEnd - ioStart);
-			if (result == RunResult::Halted) {
-				m_pendingCall = PendingCall::None;
-			}
-		}
 	} catch (const std::exception& e) {
 		std::cerr << "[Runtime] Error in update: " << e.what() << std::endl;
 		logLuaCallStack();
-		m_pendingCall = PendingCall::None;
-		m_pendingLifecycleQueue.clear();
-		m_pendingLifecycleIndex = 0;
-		m_pendingEntryLifecycle.reset();
-		m_frameActive = false;
-		m_runtimeFailed = true;
-	}
-}
-
-void Runtime::executeDrawCallback() {
-	bool shouldRunEngineDraw = (m_drawFn == nullptr);
-	const bool lifecycleQueued = m_pendingLifecycleIndex < m_pendingLifecycleQueue.size();
-	if (lifecycleQueued) {
-		api().playbackRenderQueue(m_preservedRenderQueue);
-		return;
-	}
-	if (m_pendingCall == PendingCall::Irq) {
-		api().playbackRenderQueue(m_preservedRenderQueue);
-		return;
-	}
-	if (m_pendingCall == PendingCall::EngineDraw) {
-		if (!api().isFrameCaptureActive()) {
-			api().beginFrameCapture();
-		}
-		RunResult result = runWithBudget();
-		processIOCommands();
-		if (result == RunResult::Halted) {
-			m_pendingCall = PendingCall::None;
-			api().commitFrameCapture();
-			const auto& captured = RenderQueues::copyRenderQueueForPlayback();
-			m_preservedRenderQueue.assign(captured.begin(), captured.end());
-		} else {
-			api().playbackRenderQueue(m_preservedRenderQueue);
-		}
-		return;
-	}
-	if (m_pendingCall != PendingCall::None && m_pendingCall != PendingCall::Draw) {
-		api().playbackRenderQueue(m_preservedRenderQueue);
-		return;
-	}
-
-	// const auto drawStart = std::chrono::steady_clock::now();
-	double runMs = 0.0;
-	double engineMs = 0.0;
-	double ioMs = 0.0;
-
-	try {
-		if (!api().isFrameCaptureActive()) {
-			api().beginFrameCapture();
-		}
-		if (m_drawFn) {
-			if (m_pendingCall == PendingCall::None) {
-				m_cpu.call(m_drawFn, {}, 0);
-				m_pendingCall = PendingCall::Draw;
-			}
-			const auto runStart = std::chrono::steady_clock::now();
-			RunResult result = m_cpu.run(m_frameState.cycleBudgetRemaining);
-			m_frameState.cycleBudgetRemaining = m_cpu.instructionBudgetRemaining;
-			const auto runEnd = std::chrono::steady_clock::now();
-			runMs += to_ms(runEnd - runStart);
-			const auto ioStart = std::chrono::steady_clock::now();
-			processIOCommands();
-			const auto ioEnd = std::chrono::steady_clock::now();
-			ioMs += to_ms(ioEnd - ioStart);
-			if (result == RunResult::Halted) {
-				m_pendingCall = PendingCall::None;
-				shouldRunEngineDraw = true;
-			}
-		}
-		if (shouldRunEngineDraw) {
-			m_cpu.call(m_engineDrawFn, {}, 0);
-			m_pendingCall = PendingCall::EngineDraw;
-			const auto engineStart = std::chrono::steady_clock::now();
-			RunResult result = runWithBudget();
-			const auto engineEnd = std::chrono::steady_clock::now();
-			engineMs += to_ms(engineEnd - engineStart);
-			const auto ioStart = std::chrono::steady_clock::now();
-			processIOCommands();
-			const auto ioEnd = std::chrono::steady_clock::now();
-			ioMs += to_ms(ioEnd - ioStart);
-			if (result == RunResult::Halted) {
-				m_pendingCall = PendingCall::None;
-			}
-		}
-		if (m_pendingCall == PendingCall::None) {
-			api().commitFrameCapture();
-			const auto& captured = RenderQueues::copyRenderQueueForPlayback();
-			m_preservedRenderQueue.assign(captured.begin(), captured.end());
-		} else {
-			api().playbackRenderQueue(m_preservedRenderQueue);
-		}
-	} catch (const std::exception& e) {
-		api().abandonFrameCapture();
-		api().playbackRenderQueue(m_preservedRenderQueue);
-		std::cerr << "[Runtime] Error in draw: " << e.what() << std::endl;
-		logLuaCallStack();
+		m_waitingForVblank = false;
+		m_waitForVblankTargetSequence = 0;
 		m_pendingCall = PendingCall::None;
 		m_pendingLifecycleQueue.clear();
 		m_pendingLifecycleIndex = 0;

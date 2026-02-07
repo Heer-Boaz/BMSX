@@ -28,7 +28,16 @@ import {
 	type ProgramSymbolsAsset,
 } from './program_asset';
 import { INSTRUCTION_BYTES, readInstructionWord } from './instruction_format';
-import { IO_ARG0_OFFSET, IO_BUFFER_BASE, IO_COMMAND_STRIDE, IO_CMD_PRINT, IO_IRQ_ACK, IO_IRQ_FLAGS, IO_WRITE_PTR_ADDR } from './io';
+import {
+	IO_BUFFER_BASE,
+	IO_COMMAND_STRIDE,
+	IO_CMD_PRINT,
+	IO_IRQ_ACK,
+	IO_IRQ_FLAGS,
+	IO_WRITE_PTR_ADDR,
+	IRQ_NEWGAME,
+	IRQ_REINIT,
+} from './io';
 import { CanonicalizationType, getMachinePerfSpecs } from '../rompack/rompack';
 import type { RawAssetSource } from '../rompack/asset_source';
 import { OpCode, RunResult, Table, type Closure, type Program, type ProgramMetadata, type Value, isNativeFunction, isNativeObject } from './cpu';
@@ -309,11 +318,9 @@ export function bindLifecycleHandlers(runtime: Runtime): void {
 	runtime.programNewGameClosure = globals.get(runtime.canonicalKey('new_game')) as Closure;
 	runtime.programInitClosure = globals.get(runtime.canonicalKey('init')) as Closure;
 	runtime.programUpdateClosure = globals.get(runtime.canonicalKey('update')) as Closure;
-	runtime.programDrawClosure = globals.get(runtime.canonicalKey('draw')) as Closure;
 	runtime.programIrqClosure = globals.get(runtime.canonicalKey('irq')) as Closure;
 	const engineModule = requireModule(runtime, 'engine') as Table;
 	runtime.engineUpdateClosure = engineModule.get(runtime.canonicalKey('update')) as Closure;
-	runtime.engineDrawClosure = engineModule.get(runtime.canonicalKey('draw')) as Closure;
 	runtime.engineResetClosure = engineModule.get(runtime.canonicalKey('reset')) as Closure;
 }
 
@@ -328,27 +335,15 @@ export function beginEntryExecution(runtime: Runtime, entryProtoIndex: number): 
 export function queueLifecycleHandlers(runtime: Runtime, options: { runInit: boolean; runNewGame: boolean }): void {
 	runtime.pendingLifecycleQueue = [];
 	runtime.pendingEntryLifecycle = null;
-	if (runtime.pendingCall === 'entry') {
-		runtime.pendingEntryLifecycle = options;
-		return;
-	}
+	let irqMask = 0;
 	if (options.runInit) {
-		if (!runtime.programInitClosure) {
-			throw new Error(`Runtime lifecycle handler 'init' is not defined.`);
-		}
-		runtime.pendingLifecycleQueue.push('init');
+		irqMask |= IRQ_REINIT;
 	}
 	if (options.runNewGame) {
-		if (!runtime.engineResetClosure) {
-			throw new Error(`Runtime lifecycle handler 'engine.reset' is not defined.`);
-		}
-		if (!runtime.programNewGameClosure) {
-			throw new Error(`Runtime lifecycle handler 'new_game' is not defined.`);
-		}
-		runtime.pendingLifecycleQueue.push('new_game_reset', 'new_game');
+		irqMask |= IRQ_NEWGAME;
 	}
-	if (!runtime.pendingCall) {
-		startNextLifecycleCall(runtime);
+	if (irqMask !== 0) {
+		runtime.raiseEngineIrq(irqMask);
 	}
 }
 
@@ -663,7 +658,6 @@ export function resetRuntimeState(runtime: Runtime): void {
 	runtime.programInitClosure = null;
 	runtime.programNewGameClosure = null;
 	runtime.programUpdateClosure = null;
-	runtime.programDrawClosure = null;
 	runtime.programIrqClosure = null;
 	runtime.engineResetClosure = null;
 	runtime.cpu.globals.clear();
@@ -675,6 +669,7 @@ export function resetRuntimeState(runtime: Runtime): void {
 export function resetFrameState(runtime: Runtime): void {
 	runtime.currentFrameState = null;
 	runtime.drawFrameState = null;
+	runtime.clearWaitForVblank();
 	runtime.pendingCarryBudget = 0;
 	runtime.lastTickCompleted = false;
 	runtime.lastTickBudgetRemaining = 0;
@@ -804,10 +799,7 @@ export function processIo(runtime: Runtime): void {
 		const cmd = memory.readValue(cmdBase) as number;
 		switch (cmd) {
 			case IO_CMD_PRINT: {
-				const arg = memory.readValue(cmdBase + IO_ARG0_OFFSET);
-				const text = valueToString(arg);
-				runtime.terminal.appendStdout(text);
-				break;
+				throw new Error('[Runtime] IO_CMD_PRINT is deprecated. Rebuild program assets so print() uses the native builtin path.');
 			}
 			default:
 				throw new Error(`Unknown IO command: ${cmd}.`);

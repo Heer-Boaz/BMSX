@@ -1,5 +1,6 @@
 require('globals.lua')
 require('story.lua')
+local engine = require('engine')
 
 local start_node = 'title'
 -- local start_node = 'combat_wekker'
@@ -145,6 +146,12 @@ end
 
 function init()
 	poke(sys_vdp_dither, 2)
+	on_irq(irq_reinit, function()
+		init()
+	end)
+	on_irq(irq_newgame, function()
+		new_game()
+	end)
 	on_vdp_load(on_vdp_load_example) -- Example registration; remove if not needed.
 	vdp_load_slot(0, 0)
 	vdp_map_slot(0, 0)
@@ -278,5 +285,17 @@ function update(_dt)
 	test()
 end
 
-function draw()
+local function service_irqs()
+	local flags = peek(sys_irq_flags)
+	if flags ~= 0 then
+		irq(flags)
+	end
+end
+
+while true do
+	wait_vblank()
+	service_irqs()
+	local dt = game and game.deltatime_seconds or 0
+	update(dt)
+	engine.update(dt)
 end

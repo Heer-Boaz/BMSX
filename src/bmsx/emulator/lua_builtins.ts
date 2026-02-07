@@ -37,7 +37,7 @@ export const ENGINE_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> =
 	{ name: 'vdp_load_slot', params: ['slot', 'atlas_id'], signature: 'vdp_load_slot(slot, atlas_id)', description: 'Starts an async atlas load into a VRAM slot; BIOS maps the slot on completion; returns a job id.' },
 	{ name: 'vdp_load_sys_atlas', params: [], signature: 'vdp_load_sys_atlas()', description: 'Starts an async load of the system atlas into the system VRAM slot; returns a job id.' },
 	{ name: 'irq', params: ['flags'], signature: 'irq(flags)' },
-	{ name: 'on_irq', params: ['handler?'], signature: 'on_irq(handler)', description: 'Registers a cart IRQ handler; pass nil to clear.' },
+	{ name: 'on_irq', params: ['mask_or_handler', 'handler?'], signature: 'on_irq(mask_or_handler [, handler])', description: 'Registers a per-bit IRQ handler with on_irq(mask, fn), or a legacy full-flags handler with on_irq(fn).' },
 	{ name: 'on_vdp_load', params: ['handler?'], signature: 'on_vdp_load(handler)', description: 'Registers a VDP load callback; return true to skip BIOS mapping.' },
 ];
 
@@ -53,6 +53,7 @@ export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> 
 	{ name: 'print', params: ['...'], signature: 'print(...)' },
 	{ name: 'peek', params: ['addr'], signature: 'peek(addr)' },
 	{ name: 'poke', params: ['addr', 'value'], signature: 'poke(addr, value)' },
+	{ name: 'wait_vblank', params: [], signature: 'wait_vblank()', description: 'Yields execution until the next VBLANK edge.' },
 	{ name: 'rawequal', params: ['v1', 'v2'], signature: 'rawequal(v1, v2)' },
 	{ name: 'rawget', params: ['table', 'index'], signature: 'rawget(table, index)' },
 	{ name: 'rawset', params: ['table', 'index', 'value'], signature: 'rawset(table, index, value)' },

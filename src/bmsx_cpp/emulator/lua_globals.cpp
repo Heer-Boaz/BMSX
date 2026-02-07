@@ -1412,6 +1412,8 @@ void Runtime::setupBuiltins() {
 	setGlobal("irq_img_done", valueNumber(static_cast<double>(IRQ_IMG_DONE)));
 	setGlobal("irq_img_error", valueNumber(static_cast<double>(IRQ_IMG_ERROR)));
 	setGlobal("irq_vblank", valueNumber(static_cast<double>(IRQ_VBLANK)));
+	setGlobal("irq_reinit", valueNumber(static_cast<double>(IRQ_REINIT)));
+	setGlobal("irq_newgame", valueNumber(static_cast<double>(IRQ_NEWGAME)));
 	setGlobal("dma_ctrl_start", valueNumber(static_cast<double>(DMA_CTRL_START)));
 	setGlobal("dma_ctrl_strict", valueNumber(static_cast<double>(DMA_CTRL_STRICT)));
 	setGlobal("dma_status_busy", valueNumber(static_cast<double>(DMA_STATUS_BUSY)));
@@ -1496,6 +1498,12 @@ void Runtime::setupBuiltins() {
 		double value = 0.0;
 		std::memcpy(&value, &bits, sizeof(value));
 		out.push_back(valueNumber(value));
+	});
+
+	registerNativeFunction("wait_vblank", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+		(void)args;
+		(void)out;
+		requestWaitForVblank();
 	});
 
 	registerNativeFunction("poke", [this](const std::vector<Value>& args, std::vector<Value>& out) {
@@ -1840,7 +1848,8 @@ registerNativeFunction("error", [this](const std::vector<Value>& args, std::vect
 			}
 			text += valueToString(args[i]);
 		}
-		std::cout << text << '\n';
+		std::cerr << text << std::endl;
+		EngineCore::instance().log(LogLevel::Info, "%s", text.c_str());
 		(void)out;
 	});
 

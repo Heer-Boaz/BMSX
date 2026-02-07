@@ -808,7 +808,6 @@ export class EngineCore {
 				if (profile) tUpdateStart = performance.now();
 				const baseBudget = this.computeCycleBudget(runtime);
 				const runTickPresentation = () => {
-					clearBackQueues();
 					// Presentation-facing delta time should reflect host timing.
 					this.deltatime = hostDeltaMs;
 					if (profile) t1 = performance.now();
@@ -841,10 +840,10 @@ export class EngineCore {
 							}
 							ticksStarted += 1;
 						}
-						runTickPresentation();
 						const completion = runtime.consumeLastTickCompletion();
 						if (completion) {
 							this.cycleCarry = completion.remaining > baseBudget ? baseBudget : completion.remaining;
+							runTickPresentation();
 						}
 					}
 					if (slicesProcessed > 0) {

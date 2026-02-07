@@ -174,8 +174,10 @@ local bitcast_selftest_ok = false
 local bitcast_selftest_status = 'NOT RUN'
 local bitcast_selftest_error = nil
 local bitcast_selftest_logged = false
+local cart_start_failed_logged = false
 local builtin_reader_read_f32 = reader_read_f32
 local builtin_reader_read_f64 = reader_read_f64
+local read_rom_program_const_pool
 
 local function clear_precheck_cache()
 	precheck_cache_key = nil
@@ -361,6 +363,7 @@ local function selftest_bitcast_builtins()
 	bitcast_selftest_error = tostring(err)
 	if not bitcast_selftest_logged then
 		bitcast_selftest_logged = true
+		print('[BootRom] Bitcast selftest failed: ' .. bitcast_selftest_error)
 		pcall(function()
 			error('[BootRom] Bitcast selftest failed: ' .. bitcast_selftest_error)
 		end)
@@ -586,7 +589,7 @@ local function find_program_payload_range(rom_base, header)
 	error('Program asset "__program__" was not found in ROM TOC.')
 end
 
-local function read_rom_program_const_pool(rom_base, header)
+read_rom_program_const_pool = function(rom_base, header)
 	local payload = find_program_payload_range(rom_base, header)
 	local payload_size = payload['end'] - payload.start
 	return read_program_const_pool_payload(rom_base + payload.start, payload_size)
@@ -664,6 +667,7 @@ end
 local function report_precheck_stderr_once()
 	if precheck_stderr_message and not precheck_stderr_reported then
 		precheck_stderr_reported = true
+		print(precheck_stderr_message)
 		pcall(function()
 			error(precheck_stderr_message)
 		end)
@@ -964,13 +968,18 @@ function init()
 	bitcast_selftest_status = 'NOT RUN'
 	bitcast_selftest_error = nil
 	bitcast_selftest_logged = false
-	on_irq(function(flags)
-		if (flags & irq_img_done) ~= 0 then
-			sys_atlas_ready = true
-		end
-		if (flags & irq_img_error) ~= 0 then
-			sys_atlas_failed = true
-		end
+	cart_start_failed_logged = false
+	on_irq(irq_img_done, function()
+		sys_atlas_ready = true
+	end)
+	on_irq(irq_img_error, function()
+		sys_atlas_failed = true
+	end)
+	on_irq(irq_reinit, function()
+		init()
+	end)
+	on_irq(irq_newgame, function()
+		new_game()
 	end)
 	vdp_load_sys_atlas()
 	refresh_atlas_load_state()
@@ -1007,11 +1016,12 @@ function update(_dt)
 			and cart_boot_ready()
 			and cart_valid
 
-		if cart_present_and_ready and not boot_requested and elapsed_seconds() >= boot_delay and sys_atlas_ready and not sys_atlas_failed then
-			boot_requested = true
-			poke(sys_boot_cart, 1)
+			if cart_present_and_ready and not boot_requested and elapsed_seconds() >= boot_delay and sys_atlas_ready and not sys_atlas_failed then
+				boot_requested = true
+				print('[BootRom] Requesting cart boot.')
+				poke(sys_boot_cart, 1)
+			end
 		end
-	end
 
 	render_boot_screen()
 end
@@ -1116,13 +1126,17 @@ render_boot_screen = function()
 
 	if cart_present then
 		local cart_ready = cart_boot_ready()
-		if not cart_ready and elapsed >= boot_delay and sys_atlas_ready and not sys_atlas_failed then
+		if not cart_ready and not boot_requested and elapsed >= boot_delay and sys_atlas_ready and not sys_atlas_failed then
+			if not cart_start_failed_logged then
+				cart_start_failed_logged = true
+				print('[BootRom] Cart start failed: cart_boot_ready=0 while BIOS remained active.')
+			end
 			write('BOOT BLOCKED: CART START FAILED', left, y, 0, color_warn)
 			y = y + line_height
 			write('CHECK HOST LOG / REBUILD BIOS + CART TOGETHER', left, y, 0, color_muted)
 			return
 		end
-		local status = cart_ready and 'CART LOADED' or 'LOADING CART'
+		local status = cart_ready and 'CART LOADED' or (boot_requested and 'STARTING CART' or 'LOADING CART')
 		local status_color = cart_ready and color_ok or color_accent
 		write(status, left, y, 0, status_color)
 		y = y + line_height
@@ -1131,4 +1145,18 @@ render_boot_screen = function()
 	else
 		write('NO CART DETECTED ' .. cursor, left, y, 0, color_warn)
 	end
+end
+
+local function service_irqs()
+	local flags = peek(sys_irq_flags)
+	if flags ~= 0 then
+		irq(flags)
+	end
+end
+
+while true do
+	wait_vblank()
+	service_irqs()
+	local dt = game and game.deltatime_seconds or 0
+	update(dt)
 end

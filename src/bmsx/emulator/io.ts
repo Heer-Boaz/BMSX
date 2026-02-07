@@ -100,6 +100,8 @@ export const IRQ_DMA_ERROR = 1 << 1;
 export const IRQ_IMG_DONE = 1 << 2;
 export const IRQ_IMG_ERROR = 1 << 3;
 export const IRQ_VBLANK = 1 << 4;
+export const IRQ_REINIT = 1 << 5;
+export const IRQ_NEWGAME = 1 << 6;
 
 export const DMA_CTRL_START = 1 << 0;
 export const DMA_CTRL_STRICT = 1 << 1;

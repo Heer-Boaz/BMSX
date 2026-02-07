@@ -56,6 +56,7 @@
 	},
 	"scripts": {
 	"headless:game": "node dist/headless_debug.js --engine-runtime dist/engine.debug.js --engine-assets dist/bmsx-bios.debug.rom",
+	"headless:forcebuildallrun": "sh -c 'rom=\"$1\"; if [ -z \"$rom\" ]; then echo \"Usage: npm run headless:forcebuildallrun -- <gameromname>\"; exit 1; fi; npm run build:platform:headless -- --debug --force && npm run build:engine -- --debug --force && npx tsx scripts/rompacker/rompacker.ts --mode rompack --usepkgtsconfig --skiptypecheck --debug --force -romname \"$rom\" && npm run headless:game -- \"$rom\"' --",
 	"test:lua": "npx tsx --test tests/lua/*.ts",
 	"compile:engine": "npx tsc --build ./src/bmsx",
 	"validate:engine": "npx tsx scripts/rompacker/rompacker.ts --mode engine --force -bootloaderpath ./src/bmsx/emulator/default_cart -respath ./src/bmsx/res",

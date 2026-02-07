@@ -30,7 +30,6 @@ import { createIdentifierCanonicalizer } from '../utils/identifier_canonicalizer
 import { OpCode, type Program, type ProgramMetadata, type Proto, type UpvalueDesc, type Value, type SourceRange } from './cpu';
 import { optimizeInstructions, type Instruction, type OptimizationLevel } from './program_optimizer';
 import { StringPool, StringValue, isStringValue } from './string_pool';
-import { IO_ARG0_OFFSET, IO_ARG_STRIDE, IO_BUFFER_BASE, IO_COMMAND_STRIDE, IO_CMD_PRINT, IO_WRITE_PTR_ADDR } from './io';
 import type { CanonicalizationType } from '../rompack/rompack';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_EXT_CONST, MAX_OPERAND_BITS, writeInstruction } from './instruction_format';
 
@@ -1598,9 +1597,6 @@ class FunctionBuilder {
 	}
 
 	private compileCallExpression(expression: LuaCallExpression, target: number, resultCount: number): void {
-		if (this.tryCompilePrintCall(expression, target)) {
-			return;
-		}
 		if (this.tryCompilePeekCall(expression, target)) {
 			return;
 		}
@@ -1655,28 +1651,6 @@ class FunctionBuilder {
 		}
 	}
 
-	private tryCompilePrintCall(expression: LuaCallExpression, target: number): boolean {
-		if (expression.methodName && expression.methodName.length > 0) {
-			return false;
-		}
-		if (expression.callee.kind !== LuaSyntaxKind.IdentifierExpression) {
-			return false;
-		}
-		const name = this.canonicalizeName((expression.callee as LuaIdentifierExpression).name);
-		if (name !== this.canonicalizeName('print')) {
-			return false;
-		}
-		const argReg = this.allocTemp();
-		if (expression.arguments.length > 0) {
-			this.compileExpressionInto(expression.arguments[0], argReg, 1);
-		} else {
-			this.emitLoadNil(argReg, 1);
-		}
-		this.emitIoCommand(IO_CMD_PRINT, [argReg]);
-		this.emitLoadNil(target, 1);
-		return true;
-	}
-
 	private tryCompilePeekCall(expression: LuaCallExpression, target: number): boolean {
 		if (expression.methodName && expression.methodName.length > 0) {
 			return false;
@@ -1712,35 +1686,6 @@ class FunctionBuilder {
 		this.emitABC(OpCode.STORE_MEM, valueReg, addrReg, 0);
 		this.emitLoadNil(target, 1);
 		return true;
-	}
-
-	private emitIoCommand(command: number, argRegs: ReadonlyArray<number>): void {
-		const base = this.allocTempBlock(6);
-		const writePtrAddrReg = base;
-		const writePtrReg = base + 1;
-		const bufferBaseReg = base + 2;
-		const strideReg = base + 3;
-		const commandBaseReg = base + 4;
-		const tempReg = base + 5;
-
-		this.emitLoadConst(writePtrAddrReg, IO_WRITE_PTR_ADDR);
-		this.emitABC(OpCode.LOAD_MEM, writePtrReg, writePtrAddrReg, 0);
-		this.emitLoadConst(bufferBaseReg, IO_BUFFER_BASE);
-		this.emitLoadConst(strideReg, IO_COMMAND_STRIDE);
-		this.emitABC(OpCode.MUL, commandBaseReg, writePtrReg, strideReg, RK_B | RK_C);
-		this.emitABC(OpCode.ADD, commandBaseReg, bufferBaseReg, commandBaseReg, RK_B | RK_C);
-		this.emitLoadConst(tempReg, command);
-		this.emitABC(OpCode.STORE_MEM, tempReg, commandBaseReg, 0);
-
-		for (let i = 0; i < argRegs.length; i += 1) {
-			this.emitLoadConst(tempReg, IO_ARG0_OFFSET + (i * IO_ARG_STRIDE));
-			this.emitABC(OpCode.ADD, tempReg, commandBaseReg, tempReg, RK_B | RK_C);
-			this.emitABC(OpCode.STORE_MEM, argRegs[i], tempReg, 0);
-		}
-
-		this.emitLoadConst(tempReg, 1);
-		this.emitABC(OpCode.ADD, writePtrReg, writePtrReg, tempReg, RK_B | RK_C);
-		this.emitABC(OpCode.STORE_MEM, writePtrReg, writePtrAddrReg, 0);
 	}
 
 	private encodeConstOperand(constIndex: number): number {
