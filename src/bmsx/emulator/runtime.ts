@@ -1256,9 +1256,16 @@ export class Runtime {
 			cycleBudgetGranted: budget,
 			cycleCarryGranted: carryBudget,
 		};
+		this.publishGameDeltaTime(state.deltaSeconds);
 		this.vdp.beginFrame();
 		this.currentFrameState = state;
 		return state;
+	}
+
+	private publishGameDeltaTime(deltaSeconds: number): void {
+		const gameTable = this.cpu.globals.get(this.canonicalKey('game')) as Table;
+		gameTable.set(this.canonicalKey('deltatime_seconds'), deltaSeconds);
+		gameTable.set(this.canonicalKey('deltatime'), deltaSeconds * 1000);
 	}
 
 	public tickUpdate(): void {
@@ -1272,6 +1279,8 @@ export class Runtime {
 		}
 		if (this.currentFrameState !== null) {
 			if (this.isUpdatePhasePending()) {
+				this.currentFrameState.deltaSeconds = $.deltatime_seconds;
+				this.publishGameDeltaTime(this.currentFrameState.deltaSeconds);
 				this.runUpdatePhase(this.currentFrameState);
 				this.vdp.flushAssetEdits();
 			}

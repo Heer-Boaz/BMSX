@@ -295,7 +295,8 @@ end
 while true do
 	wait_vblank()
 	service_irqs()
-	local dt = game and game.deltatime_seconds or 0
-	update(dt)
-	engine.update(dt)
+	local dt_seconds = game.deltatime_seconds
+	local dt_ms = game.deltatime
+	update(dt_seconds)
+	engine.update(dt_ms)
 end
