@@ -1,4 +1,5 @@
 local constants = require('constants.lua')
+local engine = require('engine')
 
 local player = {}
 player.__index = player
@@ -29,6 +30,57 @@ local state_labels = {
 	[state_hit_recovery] = 'hit_recovery',
 	[state_dying] = 'dying',
 }
+
+local player_dying_timeline_id = 'pietious.player.player_dying'
+local player_hit_fall_timeline_id = 'pietious.player.player_hit_fall'
+local player_hit_recovery_timeline_id = 'pietious.player.player_hit_recovery'
+
+local function append_sprite_frames(frames, sprite_id, frame_count)
+	for _ = 1, frame_count do
+		frames[#frames + 1] = { player_damage_imgid = sprite_id }
+	end
+end
+
+local function build_dying_sprite_frames()
+	local frames = {}
+	append_sprite_frames(frames, 'pietolon_dying_1', 8)
+	append_sprite_frames(frames, 'pietolon_dying_2', 8)
+	append_sprite_frames(frames, 'pietolon_dying_3', 8)
+	append_sprite_frames(frames, 'pietolon_dying_4', 8)
+	append_sprite_frames(frames, 'pietolon_dying_5', 8)
+	return frames
+end
+
+local function build_hit_fall_sprite_frames()
+	return {
+		{ player_damage_imgid = 'pietolon_hit_r' },
+	}
+end
+
+local function build_hit_recovery_sprite_frames()
+	local frames = {}
+	append_sprite_frames(frames, 'pietolon_recover_r', constants.damage.hit_recovery_frames)
+	return frames
+end
+
+local player_dying_frames = build_dying_sprite_frames()
+local player_hit_fall_frames = build_hit_fall_sprite_frames()
+local player_hit_recovery_frames = build_hit_recovery_sprite_frames()
+
+if #player_dying_frames ~= constants.damage.death_frames then
+	error(string.format(
+		"pietious dying timeline mismatch: %d frames vs death_frames=%d",
+		#player_dying_frames,
+		constants.damage.death_frames
+	))
+end
+if #player_hit_recovery_frames ~= constants.damage.hit_recovery_frames then
+	error(string.format(
+		"pietious hit_recovery timeline mismatch: %d frames vs hit_recovery_frames=%d",
+		#player_hit_recovery_frames,
+		constants.damage.hit_recovery_frames
+	))
+end
 
 local function abs(value)
 	if value < 0 then
@@ -158,6 +210,102 @@ function player:reset_runtime()
 	self.debug_jump_substate = -1
 	self.debug_fall_substate = -1
 	self.frame = 0
+end
+
+function player:bind_visual()
+	local rc = self:get_component('customvisualcomponent')
+	rc.producer = function(_ctx)
+		self:draw_visual()
+	end
+end
+
+function player:update_damage_state_imgid()
+	if self.state_name == 'dying' then
+		local dying_timeline = self:get_timeline(player_dying_timeline_id)
+		dying_timeline:force_seek(self.death_timer)
+		self.player_damage_imgid = dying_timeline:value().player_damage_imgid
+		return
+	end
+	if self.state_name == 'hit_fall' then
+		local hit_fall_timeline = self:get_timeline(player_hit_fall_timeline_id)
+		hit_fall_timeline:force_seek(self.hit_substate)
+		self.player_damage_imgid = hit_fall_timeline:value().player_damage_imgid
+		return
+	end
+	if self.state_name == 'hit_recovery' then
+		local hit_recovery_timeline = self:get_timeline(player_hit_recovery_timeline_id)
+		hit_recovery_timeline:force_seek(self.hit_recovery_timer)
+		self.player_damage_imgid = hit_recovery_timeline:value().player_damage_imgid
+		return
+	end
+	self.player_damage_imgid = ''
+end
+
+function player:draw_visual()
+	if self.hit_invulnerability_timer > 0 and self.hit_blink_on and self.state_name ~= 'dying' then
+		return
+	end
+
+	self:update_damage_state_imgid()
+
+	local imgid = 'pietolon_stand_r'
+	local sword_imgid = nil
+	local sword_offset_x = constants.player.width
+	local is_airborne = self.state_name == 'jumping' or self.state_name == 'stopped_jumping' or self.state_name == 'controlled_fall' or self.state_name == 'uncontrolled_fall'
+
+	if self.state_name == 'dying' or self.state_name == 'hit_fall' or self.state_name == 'hit_recovery' then
+		imgid = self.player_damage_imgid
+	elseif self.state_name == 'stairs' then
+		if self.stairs_direction < 0 then
+			if self.stairs_anim_frame == 0 then
+				imgid = 'pietolon_stairs_up_1'
+			else
+				imgid = 'pietolon_stairs_up_2'
+			end
+		elseif self.stairs_direction > 0 then
+			if self.stairs_anim_frame == 0 then
+				imgid = 'pietolon_stairs_down_1'
+			else
+				imgid = 'pietolon_stairs_down_2'
+			end
+		end
+	elseif self.state_name == 'walking_right' or self.state_name == 'walking_left' then
+		if self.walk_frame == 0 then
+			imgid = 'pietolon_stand_r'
+		else
+			imgid = 'pietolon_walk_r'
+		end
+	elseif self.state_name == 'jumping' or self.state_name == 'stopped_jumping' or self.state_name == 'controlled_fall' then
+		imgid = 'pietolon_jump_r'
+	elseif self.state_name == 'uncontrolled_fall' then
+		if self.walk_frame == 0 then
+			imgid = 'pietolon_stand_r'
+		else
+			imgid = 'pietolon_walk_r'
+		end
+	end
+
+	if self:is_slashing() then
+		if is_airborne then
+			imgid = 'pietolon_jumpslash_r'
+			sword_imgid = 'pietolon_jumpslash_sword_r'
+		else
+			imgid = 'pietolon_slash_r'
+			sword_imgid = 'pietolon_slash_sword_r'
+		end
+	end
+
+	if self.facing > 0 then
+		put_sprite(imgid, self.x, self.y, 110)
+		if sword_imgid ~= nil then
+			put_sprite(sword_imgid, self.x + sword_offset_x, self.y, 111)
+		end
+	else
+		put_sprite(imgid, self.x, self.y, 110, { flip_h = true })
+		if sword_imgid ~= nil then
+			put_sprite(sword_imgid, self.x - sword_offset_x, self.y, 111, { flip_h = true })
+		end
+	end
 end
 
 function player:respawn()
@@ -369,6 +517,56 @@ function player:check_room_enemy_contacts()
 				enemy.kind
 			)
 		end
+	end
+	return false
+end
+
+function player:try_switch_room(direction)
+	if self:is_in_damage_lock_state() then
+		return false
+	end
+
+	local castle_service = engine.service(self.game_service_id)
+	local switch = castle_service:switch_room(direction, self.y, self.y + self.height)
+	if switch == nil then
+		return false
+	end
+
+	self.room = castle_service:get_current_room()
+	if direction == 'left' then
+		self.x = self.room.world_width - self.width
+	elseif direction == 'right' then
+		self.x = 0
+	elseif direction == 'up' then
+		self.y = self.room.world_height - self.height
+	else
+		self.y = self.room.world_top
+	end
+
+	local min_y = self.room.world_top
+	local max_y = self.room.world_height - self.height
+	if self.y < min_y then
+		self.y = min_y
+	end
+	if self.y > max_y then
+		self.y = max_y
+	end
+
+	self.last_dx = 0
+	self.last_dy = 0
+	self.stairs_direction = 0
+	self.stairs_x = -1
+	self:emit_event('room_switch', string.format('from=%s|to=%s|dir=%s|x=%d|y=%d', switch.from_room_id, switch.to_room_id, direction, self.x, self.y))
+	return true
+end
+
+function player:try_side_room_switch_from_motion(dx)
+	local max_x = self.room.world_width - self.width
+	if dx < 0 and self.x <= 0 then
+		return self:try_switch_room('left')
+	end
+	if dx > 0 and self.x >= max_x then
+		return self:try_switch_room('right')
 	end
 	return false
 end
@@ -858,6 +1056,10 @@ function player:tick_walking_right()
 	end
 
 	if move_result.collided_x then
+		if self:try_side_room_switch_from_motion(constants.physics.walk_dx) then
+			self:transition_to(state_walking_right, 'room_switch_right')
+			return
+		end
 		self:transition_to(state_quiet, 'wall_block')
 	end
 end
@@ -919,6 +1121,10 @@ function player:tick_walking_left()
 	end
 
 	if move_result.collided_x then
+		if self:try_side_room_switch_from_motion(-constants.physics.walk_dx) then
+			self:transition_to(state_walking_left, 'room_switch_left')
+			return
+		end
 		self:transition_to(state_quiet, 'wall_block')
 	end
 end
@@ -941,6 +1147,9 @@ function player:tick_jumping()
 	local dx = self.jump_inertia * p.jump_dx
 	local move_result = self:apply_move(dx, dy)
 
+	if move_result.collided_x and self:try_side_room_switch_from_motion(dx) then
+		move_result.collided_x = false
+	end
 	if move_result.collided_x then
 		self.jump_inertia = 0
 	end
@@ -961,7 +1170,11 @@ function player:tick_stopped_jumping()
 	self.debug_fall_substate = -1
 
 	self:update_facing_from_horizontal_input()
-	local move_result = self:apply_move(self.jump_inertia * constants.physics.jump_dx, 0)
+	local dx = self.jump_inertia * constants.physics.jump_dx
+	local move_result = self:apply_move(dx, 0)
+	if move_result.collided_x and self:try_side_room_switch_from_motion(dx) then
+		move_result.collided_x = false
+	end
 	if move_result.collided_x then
 		self.jump_inertia = 0
 	end
@@ -981,6 +1194,9 @@ function player:tick_controlled_fall()
 	local dy = self:get_controlled_fall_dy()
 	local move_result = self:apply_move(dx, dy)
 
+	if move_result.collided_x and self:try_side_room_switch_from_motion(dx) then
+		move_result.collided_x = false
+	end
 	if move_result.collided_x then
 		self.jump_inertia = 0
 	end
@@ -1211,6 +1427,22 @@ local function define_player_fsm()
 			boot = {
 				entering_state = function(self)
 					self:reset_runtime()
+					self:bind_visual()
+					self:define_timeline(new_timeline({
+						id = player_dying_timeline_id,
+						frames = player_dying_frames,
+						playback_mode = 'once',
+					}))
+					self:define_timeline(new_timeline({
+						id = player_hit_fall_timeline_id,
+						frames = player_hit_fall_frames,
+						playback_mode = 'once',
+					}))
+					self:define_timeline(new_timeline({
+						id = player_hit_recovery_timeline_id,
+						frames = player_hit_recovery_frames,
+						playback_mode = 'once',
+					}))
 					return '/quiet'
 				end,
 			},
@@ -1280,8 +1512,10 @@ local function register_player_definition()
 		def_id = constants.ids.player_def,
 		class = player,
 		fsms = { player_fsm_id },
+		components = { 'customvisualcomponent' },
 		defaults = {
 			room = nil,
+			game_service_id = constants.ids.castle_service_instance,
 			player_index = 1,
 			width = constants.player.width,
 			height = constants.player.height,
@@ -1328,6 +1562,7 @@ local function register_player_definition()
 			hit_direction = 0,
 			hit_recovery_timer = 0,
 			death_timer = 0,
+			player_damage_imgid = player_dying_frames[1].player_damage_imgid,
 			debug_jump_substate = -1,
 			debug_fall_substate = -1,
 			frame = 0,

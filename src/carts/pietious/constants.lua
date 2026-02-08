@@ -7,6 +7,11 @@ constants.ids = {
 	director_def = 'pietious.director.def',
 	director_instance = 'pietious.director.instance',
 	director_fsm = 'pietious.director.fsm',
+	ui_def = 'pietious.ui.def',
+	ui_instance = 'pietious.ui.instance',
+	ui_fsm = 'pietious.ui.fsm',
+	castle_service_def = 'pietious.castle_service.def',
+	castle_service_instance = 'pietious.castle_service.instance',
 }
 
 constants.room = {
@@ -116,8 +121,6 @@ constants.palette = {
 	player_tunic = { r = 0.3, g = 0.4, b = 0.84, a = 1 },
 	player_air = { r = 0.88, g = 0.66, b = 0.36, a = 1 },
 	player_outline = { r = 0.08, g = 0.09, b = 0.13, a = 1 },
-	enemy_body = { r = 0.66, g = 0.2, b = 0.2, a = 1 },
-	enemy_eye = { r = 0.95, g = 0.89, b = 0.66, a = 1 },
 }
 
 constants.hud = {
