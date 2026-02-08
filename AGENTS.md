@@ -224,7 +224,7 @@
 * `clamp` is a utility function available that you can find in the folder `/src/bmsx/util/`; use it instead of writing your own!
 * Scratch buffers are available in `/src/bmsx/util/scratchbuffer.ts`; use them for temporary data storage instead of allocating new arrays or buffers.
 * Look at other utility functions available in `/src/bmsx/util/` before writing your own utility functions!
-* Don't use `require` in non-script code (e.g. `rompacker-core.ts` and `rominspector.ts` can have `require`, but core engine files or game source files cannot).
+* Don't use `require` in non-script code (e.g. `rombuilder.ts` and `rominspector.ts` can have `require`, but core engine files or game source files cannot).
 * Ensure that registry persistent objects are not serialized.
 * Use the annotations provided in the codebase to maintain consistency, these include:
     * `@attach_components`: Indicates that the decorated class should have `Component`s automatically attached.

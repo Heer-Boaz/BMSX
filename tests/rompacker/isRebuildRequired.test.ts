@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { isRebuildRequired } from '../../scripts/rompacker/rompacker-core';
+import { isRebuildRequired } from '../../scripts/rompacker/rombuilder';
 
 test('debug rebuild triggers when debug ROM is missing', async () => {
 	const romname = '__rompacker_test_debug_missing__';

@@ -1,8 +1,8 @@
 import type { Canvas, CanvasRenderingContext2D } from 'canvas';
 import type { AtlasTexcoords, ImageResource } from './rompacker.rompack';
 import { resolve as resolvePath, sep as pathSep } from 'path';
-import { commonResPath } from './rompacker-core';
-import { ENGINE_ATLAS_INDEX } from './rompacker-core';
+import { commonResPath } from './rombuilder';
+import { ENGINE_ATLAS_INDEX } from './rombuilder';
 import { generateAtlasName } from '../../src/bmsx/rompack/rompack';
 export { generateAtlasName };
 

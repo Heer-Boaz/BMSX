@@ -1,11 +1,12 @@
-// IMPORTANT: IMPORTS TO `bmsx/blabla` ARE NOT ALLOWED!!!!!! THIS WILL CAUSE PROBLEMS WITH .GLSL FILES BEING INCLUDED AND THE ROMPACKER CANNOT HANDLE THIS!!!!!
+// IMPORTANT: IMPORTS TO `bmsx/blabla` ARE NOT ALLOWED!!!!!! THIS WILL CAUSE PROBLEMS WITH .GLSL FILES BEING INCLUDED AND THE BUILDER CANNOT HANDLE THIS!!!!!
 
 import pc from 'picocolors';
 import { Presets, SingleBar } from 'cli-progress';
 
+import { createCliUi, findExistingDirectory, getParamOrEnv, isDirectoryPath, normalizePathKey, parseArgsVector } from './cli_shared';
 import { validateAudioEventReferences } from './audioeventvalidator';
-import { appendProgramAsset, buildBootromScriptIfNewer, buildEngineRuntime, buildGameHtmlAndManifest, buildResourceList, commonResPath, createAtlasses, deployToServer, ENGINE_ATLAS_INDEX, esbuild, finalizeRompack, GENERATE_AND_USE_TEXTURE_ATLAS, generateRomAssets, getNodeLauncherFilename, getResMetaList, getResourcesList, getRomManifest, isEngineRuntimeRebuildRequired, isRebuildRequired, LUA_CANONICALIZATION, setAtlasFlag, setLuaCanonicalization, typecheckBeforeBuild, typecheckGameWithDts } from './rompacker-core';
-import type { AtlasResource, Resource, RomPackerMode, RomPackerOptions, RomPackerTarget } from './rompacker.rompack';
+import { appendProgramAsset, buildResourceList, commonResPath, createAtlasses, ENGINE_ATLAS_INDEX, esbuild, finalizeRompack, GENERATE_AND_USE_TEXTURE_ATLAS, generateRomAssets, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired, LUA_CANONICALIZATION, setAtlasFlag, setLuaCanonicalization, typecheckBeforeBuild, typecheckGameWithDts } from './rombuilder';
+import type { AtlasResource, Resource, RomPackerOptions } from './rompacker.rompack';
 import type { CanonicalizationType, RomAsset, RomManifest } from '../../src/bmsx/rompack/rompack';
 import type { Value } from '../../src/bmsx/emulator/cpu';
 import { LuaError } from '../../src/bmsx/lua/luaerrors';
@@ -13,28 +14,22 @@ import { inflateProgram, decodeProgramAsset, PROGRAM_ASSET_ID } from '../../src/
 import { StringPool } from '../../src/bmsx/emulator/string_pool';
 import { loadAssetList, normalizeCartridgeBlob } from '../../src/bmsx/rompack/romloader';
 
-import { join, isAbsolute } from 'node:path';
-import { existsSync, readFileSync, statSync } from 'node:fs';
-import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
-import { spawnSync } from 'node:child_process';
+import { join } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 
 // CASE_INSENSITIVE_LUA and its setter are declared earlier in the file to avoid
 // temporal-dead-zone issues when they are used during module initialization.
 
-const glyph = {
-	info: pc.blue('ℹ'),
-	warn: pc.yellow('⚠'),
-	error: pc.red('✖'),
-	ok: pc.green('✔'),
-	arrow: pc.cyan('›'),
-	muted: pc.dim('•'),
-	title: pc.magenta('◆'),
-};
-const labelWidth = 14;
 type ParsedOptions = RomPackerOptions & { bootloaderFallbackPath?: string; };
-
-const LIBRETRO_CORE_BASENAME = 'bmsx_libretro';
-const LIBRETRO_ENTRY_PATH = join(process.cwd(), 'src', 'bmsx_cpp', 'platform', 'libretro', 'libretro_entry.cpp');
+const ui = createCliUi({ bannerTitle: 'BMSX BUILDER', labelWidth: 14 });
+const writeOut = ui.writeOut;
+const printBanner = ui.printBanner;
+const logInfo = ui.info;
+const logWarn = ui.warn;
+const logOk = ui.ok;
+const logBullet = ui.bullet;
+const logDivider = ui.divider;
 
 async function loadEngineConstPoolSeed(engineRomPath: string): Promise<{ constPool: ReadonlyArray<Value>; stringPool: StringPool }> {
 	const romData = await readFile(engineRomPath);
@@ -67,7 +62,6 @@ const KNOWN_FLAGS = new Set<string>([
 	'--skiptypecheck',
 	'--enginedts',
 	'--usepkgtsconfig',
-	'--platform',
 	'--mode',
 	'--preserve-lua-case',
 	'-h',
@@ -81,11 +75,9 @@ const FLAGS_WITH_VALUES = new Set<string>([
 	'-respath',
 	'--textureatlas',
 	'--enginedts',
-	'--platform',
 ]);
 const OPT_LEVEL_RE = /^-O([0-3])$/;
 
-type logentryType = undefined | 'error' | 'warning';
 type TaskName =
 	'Checken of rebuild nodig is' |
 	'Rom manifest zoekeren en parseren' |
@@ -153,8 +145,6 @@ const romBuildTasks: TaskName[] = [
 	'Rompakket finaliseren',
 ];
 
-// Deployment is handled via `--mode deploy`, not via a rompack pipeline step.
-
 // const bootromBuildTasks: TaskName[] = [
 // 	`bootrom compileren`,
 // ];
@@ -202,40 +192,8 @@ function collectExistingDirectories(candidates: Array<string>): string[] {
 }
 
 
-// `process` is provided by Node and declared in @types/node; no local ambient needed.
-function getParamOrEnv(args: string[], flag: string, envVar: string, fallback: string): string {
-	const idx = args.indexOf(flag);
-	if (idx !== -1) {
-		const valueIdx = idx + 1;
-		if (valueIdx >= args.length) {
-			throw new Error(`Flag "${flag}" expects a value.`);
-		}
-		const candidate = args[valueIdx];
-		if (KNOWN_FLAGS.has(candidate)) {
-			throw new Error(`Flag "${flag}" expects a value, but received another flag "${candidate}".`);
-		}
-		return candidate;
-	}
-	const envValue = process.env[envVar];
-	if (envValue && envValue.length > 0) return envValue;
-	return fallback;
-}
-
-function parseArgsVector(argv: string[]): Set<string> {
-	const seen = new Set<string>();
-	for (let i = 0; i < argv.length; i++) {
-		const token = argv[i];
-		if (!token.startsWith('-')) continue;
-		seen.add(token);
-		if (FLAGS_WITH_VALUES.has(token)) {
-			i += 1;
-		}
-	}
-	return seen;
-}
-
 function getOptionalParam(args: string[], flag: string, envVar: string): string {
-	const value = getParamOrEnv(args, flag, envVar, '');
+	const value = getParamOrEnv(args, flag, envVar, '', KNOWN_FLAGS);
 	return value.length > 0 ? value : undefined;
 }
 
@@ -247,39 +205,6 @@ function parseOptLevel(args: string[]): 0 | 1 | 2 | 3 {
 		optLevel = Number.parseInt(match[1], 10) as 0 | 1 | 2 | 3;
 	}
 	return optLevel;
-}
-
-function ensureRelativePath(candidate: string): string {
-	if (!candidate) return candidate;
-	if (isAbsolute(candidate)) return candidate;
-	if (candidate.startsWith('./') || candidate.startsWith('../')) return candidate;
-	return `./${candidate}`;
-}
-
-function normalizePathKey(candidate: string): string {
-	return ensureRelativePath(candidate).replace(/\\/g, '/');
-}
-
-function isDirectoryPath(candidate: string): boolean {
-	try {
-		return statSync(candidate).isDirectory();
-	} catch {
-		return false;
-	}
-}
-
-function findExistingDirectory(candidates: Array<string>): string {
-	const visited = new Set<string>();
-	for (const candidate of candidates) {
-		if (!candidate) continue;
-		const normalized = normalizePathKey(candidate);
-		if (visited.has(normalized)) continue;
-		visited.add(normalized);
-		if (existsSync(normalized) && isDirectoryPath(normalized)) {
-			return normalized;
-		}
-	}
-	return undefined;
 }
 
 function findBootloaderDirectory(candidates: Array<string>): string {
@@ -297,31 +222,30 @@ function findBootloaderDirectory(candidates: Array<string>): string {
 }
 
 function parseOptions(args: string[]): ParsedOptions {
-	const seenFlags = parseArgsVector(args);
+	const seenFlags = parseArgsVector(args, FLAGS_WITH_VALUES);
 	const unknownFlags = [...seenFlags].filter(flag => !KNOWN_FLAGS.has(flag) && !OPT_LEVEL_RE.test(flag));
 	if (unknownFlags.length > 0) {
 		throw new Error(`Unrecognized argument(s): ${unknownFlags.join(', ')}`);
 	}
 
-		if (seenFlags.has('-h') || seenFlags.has('--help')) {
-			writeOut(`Usage: <command> [options]`, 'warning');
-			writeOut(`Options:`, 'warning');
-			writeOut(`  -romname <name>        Name of the ROM`, 'warning');
-			writeOut(`  -title <title>         Title of the ROM`, 'warning');
-			writeOut(`  -bootloaderpath <path> Path to the bootloader`, 'warning');
-			writeOut(`  -respath <path>        Resource path`, 'warning');
-			writeOut(`  --debug                Show this help message`, 'warning');
-			writeOut(`  --force                Force the compilation and build of the rompack`, 'warning');
-			writeOut(`  --buildreslist         Build resource list`, 'warning');
-			writeOut(`  --textureatlas <yes|no>  Enable or disable texture atlas (default: yes)`, 'warning');
-			writeOut(`  --preserve-lua-case      Disable Lua case folding (default: enabled)`, 'warning');
-			writeOut(`  --enginedts <dir>        Use engine declarations from <dir> to type-check the game`, 'warning');
-			writeOut(`  --usepkgtsconfig         Use per-game tsconfig.pkg.json for bundling/type-checking`, 'warning');
-			writeOut(`  --platform <target>      Target platform: browser (default), cli, headless, libretro, or libretro-win`, 'warning');
-			writeOut(`  --mode <rompack|engine|platform|deploy>  What to build (default: rompack)`, 'warning');
-			writeOut(`  -O0|-O1|-O2|-O3         Bytecode optimizer level (default: -O3)`, 'warning');
-			process.exit(0);
-		}
+	if (seenFlags.has('-h') || seenFlags.has('--help')) {
+		writeOut(`Usage: <command> [options]\n`, 'warning');
+		writeOut(`Options:\n`, 'warning');
+		writeOut(`  -romname <name>        Name of the ROM\n`, 'warning');
+		writeOut(`  -title <title>         Title of the ROM\n`, 'warning');
+		writeOut(`  -bootloaderpath <path> Path to the bootloader\n`, 'warning');
+		writeOut(`  -respath <path>        Resource path\n`, 'warning');
+		writeOut(`  --debug                Build debug artifacts\n`, 'warning');
+		writeOut(`  --force                Force the compilation and build of the rompack\n`, 'warning');
+		writeOut(`  --buildreslist         Build resource list\n`, 'warning');
+		writeOut(`  --textureatlas <yes|no>  Enable or disable texture atlas (default: yes)\n`, 'warning');
+		writeOut(`  --preserve-lua-case      Disable Lua case folding (default: enabled)\n`, 'warning');
+		writeOut(`  --enginedts <dir>        Use engine declarations from <dir> to type-check the game\n`, 'warning');
+		writeOut(`  --usepkgtsconfig         Use per-game tsconfig.pkg.json for bundling/type-checking\n`, 'warning');
+		writeOut(`  --mode <rompack|engine>  What to build (default: rompack)\n`, 'warning');
+		writeOut(`  -O0|-O1|-O2|-O3         Bytecode optimizer level (default: -O3)\n`, 'warning');
+		process.exit(0);
+	}
 
 	const optLevel = parseOptLevel(args);
 
@@ -344,35 +268,28 @@ function parseOptions(args: string[]): ParsedOptions {
 	const skipTypecheck = seenFlags.has('--skiptypecheck');
 	const enginedts = getOptionalParam(args, '--enginedts', 'ROM_ENGINE_DTS');
 	const usePkgTsconfig = seenFlags.has('--usepkgtsconfig');
-	const platformRaw = getParamOrEnv(args, '--platform', 'ROM_PLATFORM', 'browser');
-	const platformKey = platformRaw.toLowerCase();
-	let platform: RomPackerTarget = platformKey as RomPackerTarget;
 
-	const modeRaw = getParamOrEnv(args, '--mode', 'ROM_MODE', 'rompack');
+	const modeRaw = getParamOrEnv(args, '--mode', 'ROM_MODE', 'rompack', KNOWN_FLAGS);
 	const modeStr = modeRaw.toLowerCase();
-	let mode: RomPackerMode;
+	let mode: 'rompack' | 'engine';
 	if (modeStr === 'rompack') {
 		mode = 'rompack';
 	} else if (modeStr === 'engine') {
 		mode = 'engine';
-	} else if (modeStr === 'platform') {
-		mode = 'platform';
-	} else if (modeStr === 'deploy') {
-		mode = 'deploy';
 	} else {
-		throw new Error(`Unsupported --mode "${modeRaw}". Expected one of: rompack, engine, platform, deploy.`);
+		throw new Error(`Unsupported --mode "${modeRaw}". Expected one of: rompack, engine.`);
 	}
 
-	const rom_name = getParamOrEnv(args, '-romname', 'ROM_NAME', '');
-	const title = getParamOrEnv(args, '-title', 'TITLE', rom_name);
+	const rom_name = getParamOrEnv(args, '-romname', 'ROM_NAME', '', KNOWN_FLAGS);
+	const title = getParamOrEnv(args, '-title', 'TITLE', rom_name, KNOWN_FLAGS);
 	const defaultBootloaderPath = mode === 'engine'
 		? './src/bmsx/emulator/default_cart'
 		: (rom_name ? `./src/${rom_name}` : '');
-	let bootloader_path = getParamOrEnv(args, '-bootloaderpath', 'BOOTLOADER_PATH', defaultBootloaderPath);
+	let bootloader_path = getParamOrEnv(args, '-bootloaderpath', 'BOOTLOADER_PATH', defaultBootloaderPath, KNOWN_FLAGS);
 	const defaultResPath = mode === 'engine'
 		? './src/bmsx/res'
 		: (rom_name ? `${defaultBootloaderPath}/res` : '');
-	let respath = getParamOrEnv(args, '-respath', 'RES_PATH', defaultResPath);
+	let respath = getParamOrEnv(args, '-respath', 'RES_PATH', defaultResPath, KNOWN_FLAGS);
 
 	const preserveLuaCase = seenFlags.has('--preserve-lua-case');
 	const canonicalizationEnv = process.env.ROM_LUA_CANONICALIZATION;
@@ -386,31 +303,6 @@ function parseOptions(args: string[]): ParsedOptions {
 	}
 	else if (preserveLuaCase) {
 		canonicalization = 'none';
-	}
-
-	if (mode === 'platform') {
-		if (buildreslist) {
-			throw new Error('--buildreslist is not compatible with --mode platform.');
-		}
-		return {
-			rom_name,
-			title,
-			bootloader_path: '',
-			respath: '',
-			force,
-			debug,
-			buildreslist: false,
-			useTextureAtlas,
-			enginedts,
-			usePkgTsconfig,
-			skipTypecheck,
-			platform,
-			canonicalization,
-			optLevel,
-			mode,
-			shouldBundleCartCode: false,
-			extraLuaRoots: [],
-		};
 	}
 
 	const normalizedRomName = rom_name.replace(/^[./\\]+/, '').replace(/\\/g, '/');
@@ -480,9 +372,9 @@ function parseOptions(args: string[]): ParsedOptions {
 			useTextureAtlas,
 			enginedts,
 			usePkgTsconfig,
-			skipTypecheck,
-			platform,
-			canonicalization,
+				skipTypecheck,
+				platform: 'browser',
+				canonicalization,
 			optLevel,
 			mode,
 			shouldBundleCartCode,
@@ -490,47 +382,6 @@ function parseOptions(args: string[]): ParsedOptions {
 			bootloaderFallbackPath,
 		};
 	}
-
-function writeOut(_tolog: string, type?: logentryType): void {
-	let tolog = _tolog;
-	if (type === 'error') tolog = pc.red(_tolog);
-	else if (type === 'warning') tolog = pc.yellow(_tolog);
-	process.stdout.write(tolog);
-}
-
-function clearScreen(): void {
-	if (process.stdout.isTTY) {
-		console.clear();
-	}
-}
-
-function printBanner(): void {
-	clearScreen();
-	writeOut(pc.bold(pc.green('╔════════════════════════════════════════════════════════════════════════════════╗\n')));
-	writeOut(pc.bold(pc.green(`║  ${' '.repeat(25)}${pc.white('BMSX ROMPACKER')} by Boaz©®℗™${' '.repeat(27)}║\n`)));
-	writeOut(pc.bold(pc.green('╚════════════════════════════════════════════════════════════════════════════════╝\n')));
-}
-
-function logInfo(message: string): void {
-	writeOut(`${glyph.info} ${message}\n`);
-}
-
-function logWarn(message: string): void {
-	writeOut(`${glyph.warn} ${message}\n`, 'warning');
-}
-
-function logOk(message: string): void {
-	writeOut(`${glyph.ok} ${message}\n`);
-}
-
-function logBullet(label: string, value: string): void {
-	const padded = label.padEnd(labelWidth, ' ');
-	writeOut(`${glyph.arrow} ${pc.bold(padded)} ${pc.dim('·')} ${value}\n`);
-}
-
-function logDivider(title: string): void {
-	writeOut(`\n${glyph.title} ${pc.bold(title)}\n`);
-}
 
 function timer(ms: number) {
 	return new Promise(res => setTimeout(res, ms));
@@ -594,120 +445,6 @@ function formatLuaBuildError(err: LuaError, virtualRoots: ReadonlyArray<string>)
 		lines.push(`(unable to read ${resolvedPath}: ${message})`);
 		return lines;
 	}
-}
-
-function runCommand(command: string, args: string[]): void {
-	const result = spawnSync(command, args, { stdio: 'inherit' });
-	if (result.status !== 0) {
-		throw new Error(`Command failed: ${command} ${args.join(' ')}`);
-	}
-}
-
-function getLibretroBuildDir(platform: RomPackerTarget, debug: boolean): string {
-	const base = platform === 'libretro-win' ? 'build-win' : 'build';
-	return debug ? `${base}-debug` : `${base}-release`;
-}
-
-function getLibretroBuildOutputPath(platform: RomPackerTarget, debug: boolean): string {
-	const buildDir = getLibretroBuildDir(platform, debug);
-	const coreFilename = getLibretroCoreFilename(platform);
-	if (platform === 'libretro-win') {
-		const configDir = debug ? 'Debug' : 'Release';
-		return join(process.cwd(), buildDir, configDir, coreFilename);
-	}
-	return join(process.cwd(), buildDir, coreFilename);
-}
-
-function findCMake(): string {
-	try {
-		const result = spawnSync('cmake', ['--version']);
-		if (result.status === 0) return 'cmake';
-	} catch { }
-
-	// Try to find via vswhere
-	try {
-		const vswhere = join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'Microsoft Visual Studio', 'Installer', 'vswhere.exe');
-		const args = ['-latest', '-products', '*', '-requires', 'Microsoft.VisualStudio.Component.VC.CMake.Project', '-property', 'installationPath'];
-		const result = spawnSync(vswhere, args, { encoding: 'utf8' });
-		if (result.status === 0 && result.stdout) {
-			const installPath = result.stdout.trim();
-			if (installPath) {
-				// Search for cmake.exe recursively in the installation path to avoid hardcoding internal paths
-				try {
-					const { execSync } = require('child_process');
-					// Use dir /S /B to find cmake.exe
-					const stdout = execSync(`dir /S /B cmake.exe`, { cwd: installPath, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
-					const lines = stdout.split(/\r?\n/);
-					// Prefer the one in a 'bin' directory
-					const found = lines.find(line => line.trim().toLowerCase().endsWith('bin\\cmake.exe'));
-					if (found) return found.trim();
-				} catch { }
-			}
-		}
-	} catch { }
-
-	return 'cmake'; // Fallback
-}
-
-function ensureLibretroCoreBuilt(debug: boolean, platform: RomPackerTarget): void {
-	const cmakeBin = findCMake();
-	const buildType = debug ? 'Debug' : 'Release';
-	const buildDir = getLibretroBuildDir(platform, debug);
-	logInfo(`Using build dir ${pc.white(buildDir)} (${buildType})`);
-	const cmakeArgs = ['-S', 'src/bmsx_cpp', '-B', buildDir, `-DCMAKE_BUILD_TYPE=${buildType}`, '-DBMSX_BUILD_LIBRETRO=ON', '-DBMSX_BUILD_LIBRETRO_HOST=OFF'];
-	if (platform === 'libretro-wsl') {
-		cmakeArgs.push('-DCMAKE_CXX_STANDARD=20');
-	}
-	if (platform === 'libretro-win') {
-		if (process.platform !== 'win32') {
-			throw new Error('libretro-win requires running on Windows with MSVC build tools.');
-		}
-		// Let CMake pick the latest Visual Studio version installed
-		// cmakeArgs.push('-G', 'Visual Studio 17 2022', '-A', 'x64');
-		cmakeArgs.push('-A', 'x64');
-	}
-	runCommand(cmakeBin, cmakeArgs);
-	const config = debug ? 'Debug' : 'Release';
-	runCommand(cmakeBin, ['--build', buildDir, '--config', config]);
-}
-
-function getLibretroCoreFilename(platform: RomPackerTarget): string {
-	const suffix = platform === 'libretro-win' ? '.dll' : '.so';
-	return `${LIBRETRO_CORE_BASENAME}${suffix}`;
-}
-
-function extractLibretroConstant(source: string, constantName: string): string {
-	const matcher = new RegExp(`\\b${constantName}\\b\\s*=\\s*"([^"]+)"`);
-	const match = source.match(matcher);
-	if (!match) {
-		throw new Error(`Libretro constant "${constantName}" was not found in ${LIBRETRO_ENTRY_PATH}.`);
-	}
-	return match[1];
-}
-
-async function stageLibretroArtifacts(platform: RomPackerTarget, debug: boolean): Promise<void> {
-	const libretroEntrySource = await readFile(LIBRETRO_ENTRY_PATH, 'utf8');
-	const coreName = extractLibretroConstant(libretroEntrySource, 'CORE_NAME');
-	const coreVersion = extractLibretroConstant(libretroEntrySource, 'CORE_VERSION');
-	const supportedExtensions = extractLibretroConstant(libretroEntrySource, 'VALID_EXTENSIONS');
-
-	const distDir = join(process.cwd(), 'dist');
-	const coreFilename = getLibretroCoreFilename(platform);
-	const coreSrc = getLibretroBuildOutputPath(platform, debug);
-	const coreDst = join(distDir, coreFilename);
-	const infoDst = join(distDir, `${LIBRETRO_CORE_BASENAME}.info`);
-
-	await mkdir(distDir, { recursive: true });
-	await copyFile(coreSrc, coreDst);
-
-	const infoContents = [
-		`display_name = "${coreName}"`,
-		`display_version = "${coreVersion}"`,
-		`corename = "${coreName}"`,
-		`supported_extensions = "${supportedExtensions}"`,
-		`supports_no_game = "true"`,
-	].join('\n') + '\n';
-	await writeFile(infoDst, infoContents, 'utf8');
 }
 
 class ProgressReporter {
@@ -873,93 +610,6 @@ class ProgressReporter {
 	}
 }
 
-async function runPlatformBuild(options: ParsedOptions): Promise<void> {
-	const { platform, canonicalization, debug, force } = options;
-
-	logDivider('Platform');
-	logBullet('Platform', pc.cyan(platform));
-	logBullet('Debug', debug ? pc.green('enabled') : pc.dim('disabled'));
-
-	if (platform.startsWith('libretro')) {
-		logInfo('Building libretro core');
-		ensureLibretroCoreBuilt(debug, platform);
-		logInfo('Staging libretro core');
-		await stageLibretroArtifacts(platform, debug);
-		const stagedName = getLibretroCoreFilename(platform);
-		logOk(`Libretro core staged → ${pc.white(`dist/${stagedName}`)}`);
-		return;
-	}
-
-	// Browser and headless platforms need the engine runtime bundle (`dist/engine(.debug).js`).
-	if (platform === 'browser' || platform === 'headless') {
-		const engineRuntimeOut = debug ? './dist/engine.debug.js' : './dist/engine.js';
-		const runtimeNeedsRebuild = force || await isEngineRuntimeRebuildRequired(engineRuntimeOut);
-		if (runtimeNeedsRebuild) {
-			logInfo('Build engine runtime');
-			await buildEngineRuntime({ debug });
-			logOk(`Engine runtime ready → ${pc.white(engineRuntimeOut.replace('./dist/', 'dist/'))}`);
-		}
-	}
-
-	logInfo('Building platform artifacts');
-	await buildBootromScriptIfNewer({ debug, forceBuild: force, platform, canonicalization });
-	logOk('Boot ROM ready');
-
-	if (platform === 'browser') {
-		await buildGameHtmlAndManifest('', 'BMSX', 'BMSX', debug, false);
-		logOk(`Browser loader → ${pc.white('dist/index.html')}`);
-		logOk(`Manifest → ${pc.white('dist/manifest.webmanifest')}`);
-	} else {
-		const launcherName = getNodeLauncherFilename(platform, debug);
-		logOk(`Node launcher → ${pc.white(`dist/${launcherName}`)}`);
-	}
-	logOk(`Platform build complete → ${pc.cyan(platform)}`);
-}
-
-async function runBrowserDeploy(options: ParsedOptions): Promise<void> {
-	const { platform, canonicalization, debug, force, respath, title: cliTitle, rom_name: cliRomName } = options;
-	if (platform !== 'browser') {
-		throw new Error('--mode deploy is only supported with --platform browser.');
-	}
-	if (!cliRomName || cliRomName.length === 0) {
-		throw new Error('--mode deploy requires -romname <cart-folder>.');
-	}
-	if (!respath || respath.length === 0) {
-		throw new Error('--mode deploy requires a resolved -respath (expected "./src/<cart>/res").');
-	}
-
-	const romManifest = await getRomManifest(respath);
-	if (!romManifest) throw new Error(`Rom manifest not found at "${respath}"!`);
-
-	const romName = romManifest.rom_name ?? cliRomName;
-	const resolvedTitle = romManifest.title ?? cliTitle ?? 'BMSX';
-	const short_name = romManifest.short_name ?? 'BMSX';
-
-	const expectedRomOutput = join(process.cwd(), 'dist', `${romName}${debug ? '.debug' : ''}.rom`);
-	if (!existsSync(expectedRomOutput)) {
-		throw new Error(`Deploy requires a built ROMPACK at "${expectedRomOutput}". Run the ROMPACK build first.`);
-	}
-
-	logDivider('Deploy (browser)');
-	logBullet('ROM', pc.bold(pc.white(romName)));
-	logBullet('Title', pc.white(resolvedTitle));
-	logBullet('Debug', debug ? pc.green('enabled') : pc.dim('disabled'));
-
-	const engineRuntimeOut = debug ? './dist/engine.debug.js' : './dist/engine.js';
-	const runtimeNeedsRebuild = force || await isEngineRuntimeRebuildRequired(engineRuntimeOut);
-	if (runtimeNeedsRebuild) {
-		logInfo('Build engine runtime');
-		await buildEngineRuntime({ debug });
-		logOk(`Engine runtime ready → ${pc.white(engineRuntimeOut.replace('./dist/', 'dist/'))}`);
-	}
-
-	await buildBootromScriptIfNewer({ debug, forceBuild: force, platform, canonicalization });
-	await buildGameHtmlAndManifest(romName, resolvedTitle, short_name, debug, true);
-	logOk(`Browser loader → ${pc.white('dist/index.html')}`);
-	logOk(`Manifest → ${pc.white('dist/manifest.webmanifest')}`);
-	logOk('Deploy build complete');
-}
-
 async function runEngineBuild(options: ParsedOptions): Promise<void> {
 	const { respath, bootloader_path, force, debug, optLevel, canonicalization, useTextureAtlas } = options;
 
@@ -1039,23 +689,13 @@ async function main() {
 		const args = process.argv.slice(2);
 		const options = parseOptions(args);
 
-		let { title, rom_name, bootloader_path, respath, force, debug, buildreslist, useTextureAtlas, enginedts, usePkgTsconfig, skipTypecheck, canonicalization, optLevel, mode, shouldBundleCartCode, extraLuaRoots, bootloaderFallbackPath, platform } = options;
+		let { title, rom_name, bootloader_path, respath, force, debug, buildreslist, useTextureAtlas, enginedts, usePkgTsconfig, skipTypecheck, canonicalization, optLevel, mode, shouldBundleCartCode, extraLuaRoots, bootloaderFallbackPath } = options;
 
-		if (mode === 'platform') {
-			await runPlatformBuild(options);
+		if (mode === 'engine' && !buildreslist) {
+			await runEngineBuild(options);
 			writeOut('\n');
 			return;
 		}
-			if (mode === 'deploy') {
-				await runBrowserDeploy(options);
-				writeOut('\n');
-				return;
-			}
-			if (mode === 'engine' && !buildreslist) {
-				await runEngineBuild(options);
-				writeOut('\n');
-				return;
-			}
 
 			progress = new ProgressReporter(taskList);
 		if (!shouldBundleCartCode && mode !== 'engine') {
@@ -1137,7 +777,6 @@ async function main() {
 		logBullet('ROM', pc.bold(pc.white(rom_name)));
 		logBullet('Title', pc.white(title));
 		logBullet('Mode', pc.magenta(mode));
-		logBullet('Platform', pc.cyan(platform));
 		logBullet('Bootloader', pc.white(normalizePathKey(bootloader_path)));
 		logBullet('Resources', resourceRoots.length === 1
 			? pc.white(resourceRoots[0])

@@ -216,8 +216,9 @@ The BMSX project is organized to support modular engine development, multiple ga
 - **`scripts/`**
   - **`rompacker/`**
     The main build and packaging scripts for the BMSX engine and games:
-    - **`rompacker-core.ts`**: Core utilities and shared logic used by `rompacker.ts`.
+    - **`rombuilder.ts`**: Core utilities and shared logic used by `rompacker.ts`.
     - **`rompacker.ts`**: The main build script that packages the engine, game code, and resources into a `.rom` file and generates HTML loaders.
+    - **`platformbuild.ts`**: Platform/deploy build routines invoked by `rompacker.ts`.
     - **`bootrom.ts`**: The bootloader that runs in the browser and loads the ROM.
     - **`atlasbuilder.ts`**: Builds texture atlases from individual images.
     - **`boundingbox_extractor.ts`**: Extracts hitboxes from sprite data.
