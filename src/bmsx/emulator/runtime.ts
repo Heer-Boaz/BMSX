@@ -365,7 +365,6 @@ export class Runtime {
 	public shortcutDisposers: Array<() => void> = [];
 	private luaInterpreter!: LuaInterpreter;
 	public pendingCall: 'entry' | null = null;
-	private pendingProgramReload: { runInit?: boolean } = null;
 	public get isDrawPending(): boolean {
 		return this.pendingCall === 'entry'
 			|| this.debuggerPaused
@@ -1252,7 +1251,6 @@ export class Runtime {
 			return;
 		}
 		this.processPendingCartBoot();
-		this.processPendingProgramReload();
 		if (runtimeIde.isOverlayActive(this)) {
 			return;
 		}
@@ -1706,22 +1704,6 @@ export class Runtime {
 		console.info('[Runtime] Switching to cart program after BIOS boot request.');
 		this.activateProgramSource('cart');
 		void runtimeLuaPipeline.reloadProgramAndResetWorld(this);
-	}
-
-	public processPendingProgramReload(): void {
-		if (!this.pendingProgramReload) {
-			return;
-		}
-		if (!runtimeLuaPipeline.hasLuaAssets(this)) {
-			this.pendingProgramReload = null;
-			return;
-		}
-		if (this.currentFrameState || this.pendingCall) {
-			return;
-		}
-		const options = this.pendingProgramReload;
-		this.pendingProgramReload = null;
-		runtimeLuaPipeline.reloadLuaProgramState(this, { runInit: options.runInit });
 	}
 
 	public dispose(): void {

@@ -357,16 +357,16 @@ function player:take_hit(amount, source_x, source_y, reason)
 	return true
 end
 
-function player:check_room_hazards()
-	local hazards = self.room.hazards
-	for i = 1, #hazards do
-		local hazard = hazards[i]
-		if self.x < (hazard.x + hazard.w) and (self.x + self.width) > hazard.x and self.y < (hazard.y + hazard.h) and (self.y + self.height) > hazard.y then
+function player:check_room_enemy_contacts()
+	local enemies = self.room.enemies
+	for i = 1, #enemies do
+		local enemy = enemies[i]
+		if self.x < (enemy.x + enemy.w) and (self.x + self.width) > enemy.x and self.y < (enemy.y + enemy.h) and (self.y + self.height) > enemy.y then
 			return self:take_hit(
-				hazard.damage,
-				hazard.x + math.floor(hazard.w / 2),
-				hazard.y + math.floor(hazard.h / 2),
-				hazard.kind
+				enemy.damage,
+				enemy.x + math.floor(enemy.w / 2),
+				enemy.y + math.floor(enemy.h / 2),
+				enemy.kind
 			)
 		end
 	end
@@ -1191,11 +1191,11 @@ function player:tick()
 		self:tick_quiet()
 	end
 
-	local took_hazard_hit = false
+	local took_enemy_hit = false
 	if not self:is_in_damage_lock_state() then
-		took_hazard_hit = self:check_room_hazards()
+		took_enemy_hit = self:check_room_enemy_contacts()
 	end
-	if not took_hazard_hit and not self:is_in_damage_lock_state() then
+	if not took_enemy_hit and not self:is_in_damage_lock_state() then
 		self:try_start_slash(self.state_name)
 	end
 	self.grounded = self:is_grounded()

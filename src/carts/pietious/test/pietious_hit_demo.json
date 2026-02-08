@@ -1,6 +1,6 @@
 [
 	{
-		"description": "walk_right_into_hazard_start",
+		"description": "walk_right_into_enemy_start",
 		"frame": 600,
 		"event": {
 			"type": "button",
@@ -14,15 +14,15 @@
 		}
 	},
 	{
-		"description": "walk_right_into_hazard_stop",
-		"frame": 760,
+		"description": "walk_right_into_enemy_stop",
+		"frame": 900,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
 			"code": "ArrowRight",
 			"down": false,
 			"value": 0,
-			"timestamp": 15200,
+			"timestamp": 18000,
 			"pressId": 1,
 			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
 		}

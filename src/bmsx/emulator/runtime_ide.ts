@@ -601,7 +601,6 @@ export function tickTerminalMode(runtime: Runtime): void {
 	if (!runtime.tickEnabled) {
 		return;
 	}
-	runtime.processPendingProgramReload();
 	if (runtime.currentFrameState !== null || runtime.drawFrameState !== null) {
 		return;
 	}
@@ -632,7 +631,6 @@ export function tickIDE(runtime: Runtime): void {
 	if (!runtime.tickEnabled) {
 		return;
 	}
-	runtime.processPendingProgramReload();
 	if (runtime.currentFrameState !== null || runtime.drawFrameState !== null) {
 		return;
 	}

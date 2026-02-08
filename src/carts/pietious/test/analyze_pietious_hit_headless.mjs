@@ -59,11 +59,11 @@ function expect(condition, message) {
 }
 
 const playerHitEvents = events.filter((e) => e.name === 'player_hit');
-expect(playerHitEvents.length > 0, 'Missing player_hit event (hazard contact did not trigger damage).');
+expect(playerHitEvents.length > 0, 'Missing player_hit event (enemy contact did not trigger damage).');
 
 const firstHit = playerHitEvents[0] ?? null;
 if (firstHit) {
-	expect(firstHit.reason === 'spike', `Expected spike hit reason, got '${firstHit.reason}'.`);
+	expect(firstHit.reason === 'enemy', `Expected enemy hit reason, got '${firstHit.reason}'.`);
 }
 
 const minHp = metrics.reduce((acc, m) => Math.min(acc, Number(m.hp)), Number.POSITIVE_INFINITY);
@@ -96,7 +96,7 @@ const recoveryMoved = first(metrics, (m) => m.st === 'hit_recovery' && (Number(m
 expect(recoveryMoved === null, 'Hit recovery should lock movement (dx/dy must remain 0).');
 
 const deathEvent = first(events, (e) => e.name === 'player_death');
-expect(deathEvent === null, 'Unexpected player_death event during basic hazard hit scenario.');
+expect(deathEvent === null, 'Unexpected player_death event during basic enemy-hit scenario.');
 
 console.log(`PIETIOUS_HIT_ANALYSIS log=${logPath}`);
 console.log(`samples metrics=${metrics.length} events=${events.length}`);

@@ -36,7 +36,7 @@ constants.sword = {
 
 constants.damage = {
 	max_health = 48,
-	hazard_damage = 4,
+	enemy_contact_damage = 4,
 	hit_invulnerability_frames = 32,
 	hit_blink_switch_frames = 5,
 	knockback_dx = 4,
@@ -116,6 +116,8 @@ constants.palette = {
 	player_tunic = { r = 0.3, g = 0.4, b = 0.84, a = 1 },
 	player_air = { r = 0.88, g = 0.66, b = 0.36, a = 1 },
 	player_outline = { r = 0.08, g = 0.09, b = 0.13, a = 1 },
+	enemy_body = { r = 0.66, g = 0.2, b = 0.2, a = 1 },
+	enemy_eye = { r = 0.95, g = 0.89, b = 0.66, a = 1 },
 }
 
 constants.hud = {
