@@ -1,0 +1,21 @@
+title: Esther - DK Prototype
+short_name: 'esther'
+rom_name: 'esther'
+machine:
+    viewport:
+        width: 320
+        height: 240
+    canonicalization: lower
+    namespace: 'esther'
+    ufps: 60000000
+    specs:
+        cpu:
+            cpu_freq_hz: 10000000
+            imgdec_bytes_per_sec: 26214400
+        dma:
+            dma_bytes_per_sec_iso: 8388608
+            dma_bytes_per_sec_bulk: 26214400
+        vdp:
+            vblank_cycles: 10000
+lua:
+    entry_path: cart.lua
