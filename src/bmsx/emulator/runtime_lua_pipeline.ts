@@ -40,7 +40,7 @@ import {
 } from './io';
 import { CanonicalizationType, getMachinePerfSpecs } from '../rompack/rompack';
 import type { RawAssetSource } from '../rompack/asset_source';
-import { OpCode, RunResult, Table, type Closure, type Program, type ProgramMetadata, type Value, isNativeFunction, isNativeObject } from './cpu';
+import { OpCode, Table, type Closure, type Program, type ProgramMetadata, type Value, isNativeFunction, isNativeObject } from './cpu';
 import { StringValue, isStringValue, stringValueToString } from './string_pool';
 import type { Runtime } from './runtime';
 
@@ -313,28 +313,13 @@ export function clearCartModuleCacheForHotReload(runtime: Runtime): void {
 	}
 }
 
-export function bindLifecycleHandlers(runtime: Runtime): void {
-	const globals = runtime.cpu.globals;
-	runtime.programNewGameClosure = globals.get(runtime.canonicalKey('new_game')) as Closure;
-	runtime.programInitClosure = globals.get(runtime.canonicalKey('init')) as Closure;
-	runtime.programUpdateClosure = globals.get(runtime.canonicalKey('update')) as Closure;
-	runtime.programIrqClosure = globals.get(runtime.canonicalKey('irq')) as Closure;
-	const engineModule = requireModule(runtime, 'engine') as Table;
-	runtime.engineUpdateClosure = engineModule.get(runtime.canonicalKey('update')) as Closure;
-	runtime.engineResetClosure = engineModule.get(runtime.canonicalKey('reset')) as Closure;
-}
-
 export function beginEntryExecution(runtime: Runtime, entryProtoIndex: number): void {
 	resetFrameState(runtime);
 	runtime.cpu.start(entryProtoIndex);
 	runtime.pendingCall = 'entry';
-	runtime.pendingLifecycleQueue = [];
-	runtime.pendingEntryLifecycle = null;
 }
 
 export function queueLifecycleHandlers(runtime: Runtime, options: { runInit: boolean; runNewGame: boolean }): void {
-	runtime.pendingLifecycleQueue = [];
-	runtime.pendingEntryLifecycle = null;
 	let irqMask = 0;
 	if (options.runInit) {
 		irqMask |= IRQ_REINIT;
@@ -345,57 +330,6 @@ export function queueLifecycleHandlers(runtime: Runtime, options: { runInit: boo
 	if (irqMask !== 0) {
 		runtime.raiseEngineIrq(irqMask);
 	}
-}
-
-export function startNextLifecycleCall(runtime: Runtime): void {
-	if (runtime.pendingCall) {
-		return;
-	}
-	const next = runtime.pendingLifecycleQueue.shift();
-	if (!next) {
-		return;
-	}
-	if (next === 'init') {
-		runtime.cpu.call(runtime.programInitClosure, [], 0);
-		runtime.pendingCall = 'init';
-		return;
-	}
-	if (next === 'new_game_reset') {
-		runtime.cpu.call(runtime.engineResetClosure, [], 0);
-		runtime.pendingCall = 'new_game_reset';
-		return;
-	}
-	runtime.cpu.call(runtime.programNewGameClosure, [], 0);
-	runtime.pendingCall = 'new_game';
-}
-
-export function runLifecyclePhase(runtime: Runtime, state: { updateExecuted: boolean }): boolean {
-	const lifecyclePending = runtime.pendingCall === 'init'
-		|| runtime.pendingCall === 'new_game_reset'
-		|| runtime.pendingCall === 'new_game';
-	if (!lifecyclePending && runtime.pendingLifecycleQueue.length === 0) {
-		return false;
-	}
-	if (!lifecyclePending && runtime.pendingCall) {
-		return false;
-	}
-	let ranLifecycle = false;
-	while (true) {
-		if (!runtime.pendingCall) {
-			startNextLifecycleCall(runtime);
-			if (!runtime.pendingCall) {
-				break;
-			}
-		}
-		ranLifecycle = true;
-		const result = runtime.runWithBudget(state as any);
-		processIo(runtime);
-		if (result !== RunResult.Halted) {
-			break;
-		}
-		runtime.pendingCall = null;
-	}
-	return ranLifecycle;
 }
 
 export function reloadLuaProgramState(runtime: Runtime, options: { runInit?: boolean; }): void {
@@ -651,15 +585,8 @@ export function resetLuaInteroperabilityState(runtime: Runtime): void {
 export function resetRuntimeState(runtime: Runtime): void {
 	resetFrameState(runtime);
 	runtime.pendingCall = null;
-	runtime.pendingEntryLifecycle = null;
-	runtime.pendingLifecycleQueue = [];
 	runtime.pendingCartBoot = false;
 	resetHardwareState(runtime);
-	runtime.programInitClosure = null;
-	runtime.programNewGameClosure = null;
-	runtime.programUpdateClosure = null;
-	runtime.programIrqClosure = null;
-	runtime.engineResetClosure = null;
 	runtime.cpu.globals.clear();
 	runtime.moduleCache.clear();
 	runtime.moduleProtos.clear();

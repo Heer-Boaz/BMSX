@@ -158,10 +158,6 @@ Runtime::Runtime(const RuntimeOptions& options)
 		for (const auto& entry : m_moduleCache) {
 			heap.markValue(entry.second);
 		}
-		heap.markObject(m_updateFn);
-		heap.markObject(m_initFn);
-		heap.markObject(m_newGameFn);
-		heap.markObject(m_irqFn);
 		heap.markValue(m_ipairsIterator);
 	});
 
@@ -202,15 +198,6 @@ void Runtime::boot(Program* program, ProgramMetadata* metadata, int entryProtoIn
 	m_runtimeFailed = false;
 	m_luaInitialized = false;
 	m_pendingCall = PendingCall::None;
-	m_updateFn = nullptr;
-	m_initFn = nullptr;
-	m_newGameFn = nullptr;
-	m_irqFn = nullptr;
-	m_engineUpdateFn = nullptr;
-	m_engineResetFn = nullptr;
-	m_pendingLifecycleQueue.clear();
-	m_pendingLifecycleIndex = 0;
-	m_pendingEntryLifecycle.reset();
 	m_cpu.globals->clear();
 	m_memory.clearIoSlots();
 	m_memory.writeValue(IO_WRITE_PTR_ADDR, valueNumber(0.0));
@@ -436,40 +423,6 @@ void Runtime::raiseEngineIrq(uint32_t mask) {
 	raiseIrqFlags(mask);
 }
 
-bool Runtime::dispatchIrqFlags() {
-	const uint32_t ack = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_IRQ_ACK)));
-	uint32_t flags = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_IRQ_FLAGS)));
-	if (ack != 0) {
-		flags &= ~ack;
-		m_memory.writeValue(IO_IRQ_FLAGS, valueNumber(static_cast<double>(flags)));
-		m_memory.writeValue(IO_IRQ_ACK, valueNumber(0.0));
-		if ((ack & IRQ_VBLANK) != 0 && m_vblankPendingClear) {
-			setVblankStatus(false);
-			m_vblankPendingClear = false;
-			m_vblankClearOnIrqEnd = false;
-		}
-	}
-	if (flags == 0) {
-		return false;
-	}
-	if ((flags & IRQ_VBLANK) != 0 && m_vblankPendingClear) {
-		m_vblankClearOnIrqEnd = true;
-	}
-	m_cpu.call(m_irqFn, { valueNumber(static_cast<double>(flags)) }, 0);
-	m_pendingCall = PendingCall::Irq;
-	RunResult result = runWithBudget();
-	processIOCommands();
-	if (result == RunResult::Halted) {
-		m_pendingCall = PendingCall::None;
-		if (m_vblankClearOnIrqEnd) {
-			setVblankStatus(false);
-			m_vblankPendingClear = false;
-			m_vblankClearOnIrqEnd = false;
-		}
-	}
-	return m_pendingCall == PendingCall::Irq;
-}
-
 RunResult Runtime::runWithBudget() {
 	const int budgetBefore = m_frameState.cycleBudgetRemaining;
 	RunResult result = m_cpu.run(budgetBefore);
@@ -482,45 +435,7 @@ RunResult Runtime::runWithBudget() {
 	return result;
 }
 
-void Runtime::cacheLifecycleHandlers() {
-	// Cache callback functions (use Lua-style names: update, init, new_game)
-	Value updateVal = m_cpu.globals->get(canonicalizeIdentifier("update"));
-	if (valueIsClosure(updateVal)) {
-		m_updateFn = asClosure(updateVal);
-		std::cout << "[Runtime] boot: found update" << std::endl;
-	}
-
-	Value initVal = m_cpu.globals->get(canonicalizeIdentifier("init"));
-	if (valueIsClosure(initVal)) {
-		m_initFn = asClosure(initVal);
-		std::cout << "[Runtime] boot: found init" << std::endl;
-	}
-
-	Value newGameVal = m_cpu.globals->get(canonicalizeIdentifier("new_game"));
-	if (valueIsClosure(newGameVal)) {
-		m_newGameFn = asClosure(newGameVal);
-		std::cout << "[Runtime] boot: found new_game" << std::endl;
-	}
-	Value irqVal = m_cpu.globals->get(canonicalizeIdentifier("irq"));
-	if (valueIsClosure(irqVal)) {
-		m_irqFn = asClosure(irqVal);
-		std::cout << "[Runtime] boot: found irq" << std::endl;
-	}
-	auto* engineModule = asTable(requireModule("engine"));
-	Value engineUpdateVal = engineModule->get(canonicalizeIdentifier("update"));
-	if (valueIsClosure(engineUpdateVal)) {
-		m_engineUpdateFn = asClosure(engineUpdateVal);
-	}
-	Value engineResetVal = engineModule->get(canonicalizeIdentifier("reset"));
-	if (valueIsClosure(engineResetVal)) {
-		m_engineResetFn = asClosure(engineResetVal);
-	}
-}
-
 void Runtime::queueLifecycleHandlers(bool runInit, bool runNewGame) {
-	m_pendingLifecycleQueue.clear();
-	m_pendingLifecycleIndex = 0;
-	m_pendingEntryLifecycle.reset();
 	uint32_t mask = 0;
 	if (runInit) {
 		mask |= IRQ_REINIT;
@@ -531,57 +446,6 @@ void Runtime::queueLifecycleHandlers(bool runInit, bool runNewGame) {
 	if (mask != 0) {
 		raiseEngineIrq(mask);
 	}
-}
-
-void Runtime::startNextLifecycleCall() {
-	if (m_pendingCall != PendingCall::None) {
-		return;
-	}
-	if (m_pendingLifecycleIndex >= m_pendingLifecycleQueue.size()) {
-		return;
-	}
-	const PendingCall next = m_pendingLifecycleQueue[m_pendingLifecycleIndex++];
-	if (next == PendingCall::Init) {
-		m_cpu.call(m_initFn, {}, 0);
-		m_pendingCall = PendingCall::Init;
-		return;
-	}
-	if (next == PendingCall::NewGameReset) {
-		m_cpu.call(m_engineResetFn, {}, 0);
-		m_pendingCall = PendingCall::NewGameReset;
-		return;
-	}
-	m_cpu.call(m_newGameFn, {}, 0);
-	m_pendingCall = PendingCall::NewGame;
-}
-
-bool Runtime::runLifecyclePhase() {
-	const bool lifecyclePending = (m_pendingCall == PendingCall::Init)
-		|| (m_pendingCall == PendingCall::NewGameReset)
-		|| (m_pendingCall == PendingCall::NewGame);
-	if (!lifecyclePending && m_pendingLifecycleIndex >= m_pendingLifecycleQueue.size()) {
-		return false;
-	}
-	if (!lifecyclePending && m_pendingCall != PendingCall::None) {
-		return false;
-	}
-	bool ranLifecycle = false;
-	while (true) {
-		if (m_pendingCall == PendingCall::None) {
-			startNextLifecycleCall();
-			if (m_pendingCall == PendingCall::None) {
-				break;
-			}
-		}
-		ranLifecycle = true;
-		RunResult result = runWithBudget();
-		processIOCommands();
-		if (result != RunResult::Halted) {
-			break;
-		}
-		m_pendingCall = PendingCall::None;
-	}
-	return ranLifecycle;
 }
 
 void Runtime::tickUpdate() {
@@ -595,15 +459,7 @@ void Runtime::tickUpdate() {
 	}
 
 	const auto isUpdatePhasePending = [this]() {
-		const bool lifecycleQueued = m_pendingLifecycleIndex < m_pendingLifecycleQueue.size();
-		return m_pendingCall == PendingCall::Entry
-			|| m_pendingCall == PendingCall::Update
-			|| m_pendingCall == PendingCall::EngineUpdate
-			|| m_pendingCall == PendingCall::Init
-			|| m_pendingCall == PendingCall::NewGameReset
-			|| m_pendingCall == PendingCall::NewGame
-			|| m_pendingCall == PendingCall::Irq
-			|| lifecycleQueued;
+		return m_pendingCall == PendingCall::Entry;
 	};
 	const auto finalizeUpdateSlice = [this]() {
 		if (m_pendingCall != PendingCall::None) {
@@ -934,15 +790,7 @@ bool Runtime::consumeLastTickCompletion(i64& outSequence, int& outRemaining) {
 }
 
 bool Runtime::isDrawPending() const {
-	const bool lifecycleQueued = m_pendingLifecycleIndex < m_pendingLifecycleQueue.size();
 	return m_pendingCall == PendingCall::Entry
-		|| m_pendingCall == PendingCall::Update
-		|| m_pendingCall == PendingCall::EngineUpdate
-		|| m_pendingCall == PendingCall::Init
-		|| m_pendingCall == PendingCall::NewGameReset
-		|| m_pendingCall == PendingCall::NewGame
-		|| m_pendingCall == PendingCall::Irq
-		|| lifecycleQueued
 		|| m_runtimeFailed;
 }
 
@@ -1139,9 +987,6 @@ void Runtime::executeUpdateCallback(double deltaSeconds) {
 		m_waitForVblankTargetSequence = 0;
 		m_clearBackQueuesAfterWaitResume = false;
 		m_pendingCall = PendingCall::None;
-		m_pendingLifecycleQueue.clear();
-		m_pendingLifecycleIndex = 0;
-		m_pendingEntryLifecycle.reset();
 		m_frameActive = false;
 		m_runtimeFailed = true;
 	}

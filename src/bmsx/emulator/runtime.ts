@@ -364,39 +364,17 @@ export class Runtime {
 
 	public shortcutDisposers: Array<() => void> = [];
 	private luaInterpreter!: LuaInterpreter;
-	public programInitClosure: Closure = null;
-	public programNewGameClosure: Closure = null;
-	public programUpdateClosure: Closure = null;
-	public programIrqClosure: Closure = null;
-	public engineUpdateClosure: Closure = null;
-	public engineResetClosure: Closure = null;
-	public pendingCall: 'entry' | 'update' | 'engine_update' | 'init' | 'new_game_reset' | 'new_game' | 'irq' = null;
-	public pendingEntryLifecycle: { runInit: boolean; runNewGame: boolean } = null;
-	public pendingLifecycleQueue: Array<'init' | 'new_game_reset' | 'new_game'> = [];
+	public pendingCall: 'entry' | null = null;
 	private pendingProgramReload: { runInit?: boolean } = null;
 	public get isDrawPending(): boolean {
 		return this.pendingCall === 'entry'
-			|| this.pendingCall === 'update'
-			|| this.pendingCall === 'engine_update'
-			|| this.pendingCall === 'init'
-			|| this.pendingCall === 'new_game_reset'
-			|| this.pendingCall === 'new_game'
-			|| this.pendingCall === 'irq'
-			|| this.pendingLifecycleQueue.length > 0
 			|| this.debuggerPaused
 			|| this.luaRuntimeFailed
 			|| this.faultSnapshot !== null;
 	}
 
 	private isUpdatePhasePending(): boolean {
-		return this.pendingCall === 'entry'
-			|| this.pendingCall === 'update'
-			|| this.pendingCall === 'engine_update'
-			|| this.pendingCall === 'init'
-			|| this.pendingCall === 'new_game_reset'
-			|| this.pendingCall === 'new_game'
-			|| this.pendingCall === 'irq'
-			|| this.pendingLifecycleQueue.length > 0;
+		return this.pendingCall === 'entry';
 	}
 	public readonly memory: Memory;
 	public readonly cpu: CPU;
@@ -1192,15 +1170,8 @@ export class Runtime {
 
 	public assignInterpreter(interpreter: LuaInterpreter): void {
 		this.luaInterpreter = interpreter;
-		this.programInitClosure = null;
-		this.programNewGameClosure = null;
-		this.programUpdateClosure = null;
-		this.programIrqClosure = null;
-		this.engineResetClosure = null;
 		this.consoleMetadata = null;
 		this.pendingCall = null;
-		this.pendingEntryLifecycle = null;
-		this.pendingLifecycleQueue = [];
 		this.luaRuntimeFailed = false;
 		this.luaInitialized = false;
 		this.clearWaitForVblank();
@@ -1413,13 +1384,12 @@ export class Runtime {
 				state.updateExecuted = true;
 			} else if (isLuaDebuggerPauseSignal(error)) {
 				runtimeIde.onLuaDebuggerPause(this, error);
-				} else {
-					state.luaFaulted = true;
-					this.clearWaitForVblank();
-					this.pendingCall = null;
-					this.pendingLifecycleQueue.length = 0;
-					runtimeIde.handleLuaError(this, error);
-				}
+			} else {
+				state.luaFaulted = true;
+				this.clearWaitForVblank();
+				this.pendingCall = null;
+				runtimeIde.handleLuaError(this, error);
+			}
 		} finally {
 			state.updateExecuted = true;
 		}
@@ -1727,11 +1697,9 @@ export class Runtime {
 		if (!this.luaGate.ready) {
 			return;
 		}
-		if (this.currentFrameState !== null || this.pendingCall !== null || this.pendingLifecycleQueue.length > 0) {
+		if (this.currentFrameState !== null || this.pendingCall !== null) {
 			runtimeLuaPipeline.resetFrameState(this);
 			this.pendingCall = null;
-			this.pendingEntryLifecycle = null;
-			this.pendingLifecycleQueue = [];
 			this.clearWaitForVblank();
 		}
 		this.pendingCartBoot = false;
@@ -1748,7 +1716,7 @@ export class Runtime {
 			this.pendingProgramReload = null;
 			return;
 		}
-		if (this.currentFrameState || this.pendingCall || this.pendingLifecycleQueue.length > 0) {
+		if (this.currentFrameState || this.pendingCall) {
 			return;
 		}
 		const options = this.pendingProgramReload;

@@ -296,16 +296,6 @@ private:
 	enum class PendingCall {
 		None,
 		Entry,
-		Init,
-		NewGameReset,
-		NewGame,
-		Irq,
-		Update,
-		EngineUpdate,
-	};
-	struct PendingEntryLifecycle {
-		bool runInit;
-		bool runNewGame;
 	};
 
 	explicit Runtime(const RuntimeOptions& options);
@@ -325,12 +315,8 @@ private:
 	void resetTransferCarry();
 	void processIrqAck();
 	void raiseIrqFlags(uint32_t mask);
-	bool dispatchIrqFlags();
 	RunResult runWithBudget();
-	void cacheLifecycleHandlers();
 	void queueLifecycleHandlers(bool runInit, bool runNewGame);
-	void startNextLifecycleCall();
-	bool runLifecyclePhase();
 	Value requireModule(const std::string& moduleName);
 	std::vector<Value> callEngineModuleMember(const std::string& name, const std::vector<Value>& args);
 	const std::regex& buildLuaPatternRegex(const std::string& pattern);
@@ -383,17 +369,8 @@ private:
 	bool m_frameActive = false;
 
 	// Cached function references
-	Closure* m_updateFn = nullptr;
-	Closure* m_initFn = nullptr;
-	Closure* m_newGameFn = nullptr;
-	Closure* m_irqFn = nullptr;
-	Closure* m_engineUpdateFn = nullptr;
-	Closure* m_engineResetFn = nullptr;
 	Value m_ipairsIterator = valueNil();
 	PendingCall m_pendingCall = PendingCall::None;
-	std::optional<PendingEntryLifecycle> m_pendingEntryLifecycle;
-	std::vector<PendingCall> m_pendingLifecycleQueue;
-	size_t m_pendingLifecycleIndex = 0;
 	uint32_t m_randomSeedValue = 0;
 	std::vector<RenderSubmission> m_preservedRenderQueue;
 
