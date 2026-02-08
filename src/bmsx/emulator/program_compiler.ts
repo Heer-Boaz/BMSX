@@ -29,6 +29,7 @@ import {
 import { createIdentifierCanonicalizer } from '../utils/identifier_canonicalizer';
 import { OpCode, type Program, type ProgramMetadata, type Proto, type UpvalueDesc, type Value, type SourceRange } from './cpu';
 import { optimizeInstructions, type Instruction, type OptimizationLevel } from './program_optimizer';
+import type { ProgramConstReloc } from './program_asset';
 import { StringPool, StringValue, isStringValue } from './string_pool';
 import type { CanonicalizationType } from '../rompack/rompack';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_EXT_CONST, MAX_OPERAND_BITS, writeInstruction } from './instruction_format';
@@ -38,6 +39,7 @@ export type CompiledProgram = {
 	metadata: ProgramMetadata;
 	entryProtoIndex: number;
 	moduleProtoMap: Map<string, number>;
+	constRelocs: ProgramConstReloc[];
 };
 
 export type ProgramModule = {
@@ -48,9 +50,7 @@ export type ProgramModule = {
 type CompileOptions = {
 	baseProgram?: Program;
 	baseMetadata?: ProgramMetadata;
-	baseConstPool?: ReadonlyArray<Value>;
 	canonicalization?: CanonicalizationType;
-	stringPool?: StringPool;
 	optLevel?: OptimizationLevel;
 };
 
@@ -61,6 +61,11 @@ type LoopContext = {
 const RK_B = 1;
 const RK_C = 2;
 
+const isConstBxOp = (op: OpCode): boolean =>
+	op === OpCode.LOADK
+	|| op === OpCode.GETG
+	|| op === OpCode.SETG;
+
 class ProgramBuilder {
 	public readonly constPool: Value[];
 	public readonly stringPool: StringPool;
@@ -70,6 +75,7 @@ class ProgramBuilder {
 	public readonly protos: Proto[] = [];
 	public readonly protoCode: Uint8Array[] = [];
 	public readonly protoRanges: ReadonlyArray<SourceRange | null>[] = [];
+	public readonly protoConstRelocs: ReadonlyArray<ProgramConstReloc>[] = [];
 	public readonly protoIds: string[] = [];
 	private readonly protoIdMap: Map<string, number> = new Map();
 	private readonly assignedProtoIds: Set<string> = new Set();
@@ -111,7 +117,13 @@ class ProgramBuilder {
 		return index;
 	}
 
-	public addProto(proto: Proto, code: Uint8Array, ranges: ReadonlyArray<SourceRange | null>, protoId: string): number {
+	public addProto(
+		proto: Proto,
+		code: Uint8Array,
+		ranges: ReadonlyArray<SourceRange | null>,
+		constRelocs: ReadonlyArray<ProgramConstReloc>,
+		protoId: string,
+	): number {
 		if (this.assignedProtoIds.has(protoId)) {
 			throw new Error(`[ProgramBuilder] Duplicate proto id '${protoId}'.`);
 		}
@@ -121,6 +133,7 @@ class ProgramBuilder {
 			this.protos[existing] = proto;
 			this.protoCode[existing] = code;
 			this.protoRanges[existing] = ranges;
+			this.protoConstRelocs[existing] = constRelocs;
 			this.protoIds[existing] = protoId;
 			return existing;
 		}
@@ -128,21 +141,29 @@ class ProgramBuilder {
 		this.protos.push(proto);
 		this.protoCode.push(code);
 		this.protoRanges.push(ranges);
+		this.protoConstRelocs.push(constRelocs);
 		this.protoIds.push(protoId);
 		this.protoIdMap.set(protoId, index);
 		return index;
 	}
 
-	public seedProto(proto: Proto, code: Uint8Array, ranges: ReadonlyArray<SourceRange | null>, protoId: string): void {
+	public seedProto(
+		proto: Proto,
+		code: Uint8Array,
+		ranges: ReadonlyArray<SourceRange | null>,
+		constRelocs: ReadonlyArray<ProgramConstReloc>,
+		protoId: string,
+	): void {
 		const index = this.protos.length;
 		this.protos.push(proto);
 		this.protoCode.push(code);
 		this.protoRanges.push(ranges);
+		this.protoConstRelocs.push(constRelocs);
 		this.protoIds.push(protoId);
 		this.protoIdMap.set(protoId, index);
 	}
 
-	public buildProgram(): { program: Program; metadata: ProgramMetadata } {
+	public buildProgram(): { program: Program; metadata: ProgramMetadata; constRelocs: ProgramConstReloc[] } {
 		let totalBytes = 0;
 		let totalWords = 0;
 		for (let i = 0; i < this.protoCode.length; i += 1) {
@@ -151,6 +172,7 @@ class ProgramBuilder {
 		}
 		const fullCode = new Uint8Array(totalBytes);
 		const fullRanges: Array<SourceRange | null> = new Array(totalWords);
+		const fullConstRelocs: ProgramConstReloc[] = [];
 		let offsetBytes = 0;
 		let offsetWords = 0;
 		for (let i = 0; i < this.protoCode.length; i += 1) {
@@ -163,6 +185,15 @@ class ProgramBuilder {
 			fullCode.set(chunk, offsetBytes);
 			for (let j = 0; j < ranges.length; j += 1) {
 				fullRanges[offsetWords + j] = ranges[j];
+			}
+			const relocs = this.protoConstRelocs[i];
+			for (let j = 0; j < relocs.length; j += 1) {
+				const reloc = relocs[j];
+				fullConstRelocs.push({
+					wordIndex: offsetWords + reloc.wordIndex,
+					kind: reloc.kind,
+					constIndex: reloc.constIndex,
+				});
 			}
 			offsetBytes += chunk.length;
 			offsetWords += ranges.length;
@@ -180,8 +211,9 @@ class ProgramBuilder {
 				constPoolStringPool: this.stringPool,
 			},
 			metadata,
+			constRelocs: fullConstRelocs,
 		};
-	}
+		}
 
 	private makeConstKey(value: Value): string {
 		if (value === null) return 'nil';
@@ -273,6 +305,7 @@ class FunctionBuilder {
 	private readonly ranges: Array<SourceRange | null> = [];
 	private finalizedCode: Uint8Array | null = null;
 	private finalizedRanges: Array<SourceRange | null> | null = null;
+	private finalizedConstRelocs: ProgramConstReloc[] | null = null;
 	private readonly localStacks = new Map<string, number[]>();
 	private readonly scopeStack: string[][] = [];
 	private readonly upvalueDescs: UpvalueDesc[] = [];
@@ -332,6 +365,11 @@ class FunctionBuilder {
 		return this.finalizedRanges!;
 	}
 
+	public getConstRelocs(): ReadonlyArray<ProgramConstReloc> {
+		this.finalizeCode();
+		return this.finalizedConstRelocs!;
+	}
+
 	private finalizeCode(): void {
 		if (this.finalizedCode) {
 			return;
@@ -368,25 +406,31 @@ class FunctionBuilder {
 		const sbxWideMin = -(1 << (sbxWideBits - 1));
 		const sbxWideMax = (1 << (sbxWideBits - 1)) - 1;
 
-		for (let index = 0; index < instructions.length; index += 1) {
-			const instr = instructions[index];
-			if (instr.format === 'ABC') {
-				const aWide = needsWideUnsigned(instr.a, MAX_OPERAND_BITS, EXT_A_BITS);
-				const bWide = (instr.rkMask & RK_B) !== 0
-					? needsWideSigned(instr.b, MAX_OPERAND_BITS, EXT_B_BITS)
-					: needsWideUnsigned(instr.b, MAX_OPERAND_BITS, EXT_B_BITS);
-				const cWide = (instr.rkMask & RK_C) !== 0
-					? needsWideSigned(instr.c, MAX_OPERAND_BITS, EXT_C_BITS)
-					: needsWideUnsigned(instr.c, MAX_OPERAND_BITS, EXT_C_BITS);
-				wideFlags[index] = aWide || bWide || cWide;
-				continue;
-			}
-			if (instr.format === 'ABx') {
-				const aWide = needsWideUnsigned(instr.a, MAX_OPERAND_BITS, 0);
-				const bxWide = needsWideUnsigned(instr.b, MAX_BX_BITS, EXT_BX_BITS);
-				wideFlags[index] = aWide || bxWide;
-				continue;
-			}
+			for (let index = 0; index < instructions.length; index += 1) {
+				const instr = instructions[index];
+				if (instr.format === 'ABC') {
+					const bWidthValue = instr.b;
+					const cWidthValue = instr.c;
+					const forceWide = ((instr.rkMask & RK_B) !== 0 && instr.b < 0)
+						|| ((instr.rkMask & RK_C) !== 0 && instr.c < 0);
+					const aWide = needsWideUnsigned(instr.a, MAX_OPERAND_BITS, EXT_A_BITS);
+					const bWide = (instr.rkMask & RK_B) !== 0
+						? needsWideSigned(bWidthValue, MAX_OPERAND_BITS, EXT_B_BITS)
+						: needsWideUnsigned(bWidthValue, MAX_OPERAND_BITS, EXT_B_BITS);
+					const cWide = (instr.rkMask & RK_C) !== 0
+						? needsWideSigned(cWidthValue, MAX_OPERAND_BITS, EXT_C_BITS)
+						: needsWideUnsigned(cWidthValue, MAX_OPERAND_BITS, EXT_C_BITS);
+					wideFlags[index] = forceWide || aWide || bWide || cWide;
+					continue;
+				}
+				if (instr.format === 'ABx') {
+					const bxWidthValue = instr.b;
+					const forceWide = isConstBxOp(instr.op);
+					const aWide = needsWideUnsigned(instr.a, MAX_OPERAND_BITS, 0);
+					const bxWide = needsWideUnsigned(bxWidthValue, MAX_BX_BITS, EXT_BX_BITS);
+					wideFlags[index] = forceWide || aWide || bxWide;
+					continue;
+				}
 			wideFlags[index] = needsWideUnsigned(instr.a, MAX_OPERAND_BITS, 0);
 		}
 
@@ -437,11 +481,12 @@ class FunctionBuilder {
 			}
 		}
 
-		const code = new Uint8Array(totalInstr * INSTRUCTION_BYTES);
-		const finalRanges: Array<SourceRange | null> = new Array(totalInstr);
-		let cursor = 0;
-		for (let index = 0; index < instructions.length; index += 1) {
-			const instr = instructions[index];
+			const code = new Uint8Array(totalInstr * INSTRUCTION_BYTES);
+			const finalRanges: Array<SourceRange | null> = new Array(totalInstr);
+			const constRelocs: ProgramConstReloc[] = [];
+			let cursor = 0;
+			for (let index = 0; index < instructions.length; index += 1) {
+				const instr = instructions[index];
 			const hasWide = wideFlags[index];
 			const range = ranges[index];
 			if (instr.format === 'ABC') {
@@ -458,12 +503,19 @@ class FunctionBuilder {
 					finalRanges[cursor] = range;
 					cursor += 1;
 				}
-				writeInstruction(code, cursor, instr.op, aSplit.low, bSplit.low, cSplit.low, ext);
-				finalRanges[cursor] = range;
-				cursor += 1;
-				continue;
-			}
-			if (instr.format === 'ABx') {
+					writeInstruction(code, cursor, instr.op, aSplit.low, bSplit.low, cSplit.low, ext);
+					finalRanges[cursor] = range;
+					cursor += 1;
+					const wordIndex = instrWordIndex[index];
+					if ((instr.rkMask & RK_B) !== 0 && instr.b < 0) {
+						constRelocs.push({ wordIndex, kind: 'rk_b', constIndex: -instr.b - 1 });
+					}
+					if ((instr.rkMask & RK_C) !== 0 && instr.c < 0) {
+						constRelocs.push({ wordIndex, kind: 'rk_c', constIndex: -instr.c - 1 });
+					}
+					continue;
+				}
+				if (instr.format === 'ABx') {
 				const aSplit = splitUnsignedOperand(instr.a, 'A', MAX_OPERAND_BITS, 0, hasWide);
 				const bxSplit = splitUnsignedOperand(instr.b, 'Bx', MAX_BX_BITS, EXT_BX_BITS, hasWide);
 				if (hasWide) {
@@ -471,11 +523,14 @@ class FunctionBuilder {
 					finalRanges[cursor] = range;
 					cursor += 1;
 				}
-				writeInstruction(code, cursor, instr.op, aSplit.low, (bxSplit.low >>> 6) & 0x3f, bxSplit.low & 0x3f, bxSplit.ext);
-				finalRanges[cursor] = range;
-				cursor += 1;
-				continue;
-			}
+					writeInstruction(code, cursor, instr.op, aSplit.low, (bxSplit.low >>> 6) & 0x3f, bxSplit.low & 0x3f, bxSplit.ext);
+					finalRanges[cursor] = range;
+					cursor += 1;
+					if (isConstBxOp(instr.op)) {
+						constRelocs.push({ wordIndex: instrWordIndex[index], kind: 'bx', constIndex: instr.b });
+					}
+					continue;
+				}
 
 			const aSplit = splitUnsignedOperand(instr.a, 'A', MAX_OPERAND_BITS, 0, hasWide);
 			const sbx = sbxValues[index];
@@ -490,9 +545,10 @@ class FunctionBuilder {
 			cursor += 1;
 		}
 
-		this.finalizedCode = code;
-		this.finalizedRanges = finalRanges;
-	}
+			this.finalizedCode = code;
+			this.finalizedRanges = finalRanges;
+			this.finalizedConstRelocs = constRelocs;
+		}
 
 	public getUpvalueDescs(): UpvalueDesc[] {
 		return this.upvalueDescs;
@@ -1804,6 +1860,7 @@ function compileFunctionExpression(program: ProgramBuilder, expression: LuaFunct
 	builder.compileFunctionExpression(expression, implicitSelf);
 	const code = builder.getCode();
 	const ranges = builder.getRanges();
+	const constRelocs = builder.getConstRelocs();
 	const protoIndex = program.addProto({
 		entryPC: 0,
 		codeLen: ranges.length * INSTRUCTION_BYTES,
@@ -1811,7 +1868,7 @@ function compileFunctionExpression(program: ProgramBuilder, expression: LuaFunct
 		isVararg: expression.hasVararg,
 		maxStack: builder.getMaxStack(),
 		upvalueDescs: builder.getUpvalueDescs(),
-	}, code, ranges, protoId);
+	}, code, ranges, constRelocs, protoId);
 	return protoIndex;
 }
 
@@ -1850,7 +1907,7 @@ function createProgramBuilderFromProgram(
 		const startWord = Math.floor(start / INSTRUCTION_BYTES);
 		const endWord = Math.floor(end / INSTRUCTION_BYTES);
 		const ranges = metadata.debugRanges.slice(startWord, endWord);
-		builder.seedProto(cloneProto(proto), code, ranges, protoIds[index]);
+		builder.seedProto(cloneProto(proto), code, ranges, [], protoIds[index]);
 	}
 	return builder;
 }
@@ -1864,10 +1921,8 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 			throw new Error('[ProgramBuilder] Base program metadata is required.');
 		}
 		programBuilder = createProgramBuilderFromProgram(options.baseProgram, options.baseMetadata, canonicalization, optLevel);
-	} else if (options.baseConstPool) {
-		programBuilder = new ProgramBuilder(options.baseConstPool, canonicalization, options.stringPool ?? null, optLevel);
 	} else {
-		programBuilder = new ProgramBuilder(null, canonicalization, options.stringPool ?? null, optLevel);
+		programBuilder = new ProgramBuilder(null, canonicalization, null, optLevel);
 	}
 	const moduleId = chunk.range.path;
 	const entryProtoId = buildEntryProtoId(moduleId);
@@ -1875,6 +1930,7 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 	entryBuilder.compileChunk(chunk);
 	const entryCode = entryBuilder.getCode();
 	const entryRanges = entryBuilder.getRanges();
+	const entryConstRelocs = entryBuilder.getConstRelocs();
 	const entryProtoIndex = programBuilder.addProto({
 		entryPC: 0,
 		codeLen: entryRanges.length * INSTRUCTION_BYTES,
@@ -1882,7 +1938,7 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 		isVararg: false,
 		maxStack: entryBuilder.getMaxStack(),
 		upvalueDescs: entryBuilder.getUpvalueDescs(),
-	}, entryCode, entryRanges, entryProtoId);
+	}, entryCode, entryRanges, entryConstRelocs, entryProtoId);
 	const moduleProtoMap = new Map<string, number>();
 	for (const module of modules) {
 		const moduleProtoId = buildModuleProtoId(module.path);
@@ -1890,6 +1946,7 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 		builder.compileChunk(module.chunk);
 		const code = builder.getCode();
 		const ranges = builder.getRanges();
+		const constRelocs = builder.getConstRelocs();
 		const protoIndex = programBuilder.addProto({
 			entryPC: 0,
 			codeLen: ranges.length * INSTRUCTION_BYTES,
@@ -1897,11 +1954,11 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 			isVararg: false,
 			maxStack: builder.getMaxStack(),
 			upvalueDescs: builder.getUpvalueDescs(),
-		}, code, ranges, moduleProtoId);
+		}, code, ranges, constRelocs, moduleProtoId);
 		moduleProtoMap.set(module.path, protoIndex);
 	}
-	const { program, metadata } = programBuilder.buildProgram();
-	return { program, metadata, entryProtoIndex, moduleProtoMap };
+	const { program, metadata, constRelocs } = programBuilder.buildProgram();
+	return { program, metadata, entryProtoIndex, moduleProtoMap, constRelocs };
 }
 
 export function appendLuaChunkToProgram(base: Program, metadata: ProgramMetadata, chunk: LuaChunk, options: CompileOptions = {}): { program: Program; metadata: ProgramMetadata; entryProtoIndex: number } {
@@ -1914,6 +1971,7 @@ export function appendLuaChunkToProgram(base: Program, metadata: ProgramMetadata
 	entryBuilder.compileChunk(chunk);
 	const entryCode = entryBuilder.getCode();
 	const entryRanges = entryBuilder.getRanges();
+	const entryConstRelocs = entryBuilder.getConstRelocs();
 	const entryProtoIndex = programBuilder.addProto({
 		entryPC: 0,
 		codeLen: entryRanges.length * INSTRUCTION_BYTES,
@@ -1921,7 +1979,7 @@ export function appendLuaChunkToProgram(base: Program, metadata: ProgramMetadata
 		isVararg: false,
 		maxStack: entryBuilder.getMaxStack(),
 		upvalueDescs: entryBuilder.getUpvalueDescs(),
-	}, entryCode, entryRanges, entryProtoId);
+	}, entryCode, entryRanges, entryConstRelocs, entryProtoId);
 	const { program, metadata: nextMetadata } = programBuilder.buildProgram();
 	return { program, metadata: nextMetadata, entryProtoIndex };
 }

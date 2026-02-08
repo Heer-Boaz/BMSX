@@ -454,3 +454,18 @@ export function decodeBinary(buf: Uint8Array, opts: DecodeOptions = {}) {
 	}
 	return value;
 }
+
+export function requireObject(value: unknown, label: string): Record<string, unknown> {
+	if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+		throw new Error(`${label} must be an object.`);
+	}
+	return value as Record<string, unknown>;
+}
+
+export function requireObjectKey(value: unknown, key: string, label: string): unknown {
+	const obj = requireObject(value, label);
+	if (!(key in obj)) {
+		throw new Error(`${label}.${key} is required.`);
+	}
+	return obj[key];
+}

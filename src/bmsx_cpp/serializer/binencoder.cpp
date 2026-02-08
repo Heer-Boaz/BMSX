@@ -47,6 +47,18 @@ bool BinValue::has(const std::string& key) const {
 	return obj.find(key) != obj.end();
 }
 
+const BinValue& BinValue::require(const std::string& key) const {
+	if (!isObject()) {
+		throw BMSX_RUNTIME_ERROR("BinDecoder: required object field '" + key + "' on non-object value.");
+	}
+	const auto& obj = asObject();
+	auto it = obj.find(key);
+	if (it == obj.end()) {
+		throw BMSX_RUNTIME_ERROR("BinDecoder: required field missing: '" + key + "'.");
+	}
+	return it->second;
+}
+
 /* ============================================================================
  * BinDecoder implementation
  * ============================================================================ */

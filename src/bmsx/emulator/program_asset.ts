@@ -1,4 +1,4 @@
-import { decodeBinary, encodeBinary } from '../serializer/binencoder';
+import { decodeBinary, encodeBinary, requireObject, requireObjectKey } from '../serializer/binencoder';
 import type { Program, ProgramMetadata, Proto, Value } from './cpu';
 import { StringPool, isStringValue, stringValueToString } from './string_pool';
 
@@ -15,11 +15,24 @@ export type EncodedProgram = {
 
 export type EncodedProgramMetadata = ProgramMetadata;
 
+export type ProgramConstRelocKind = 'bx' | 'rk_b' | 'rk_c';
+
+export type ProgramConstReloc = {
+	wordIndex: number;
+	kind: ProgramConstRelocKind;
+	constIndex: number;
+};
+
+export type ProgramLink = {
+	constRelocs: ProgramConstReloc[];
+};
+
 export type ProgramAsset = {
 	entryProtoIndex: number;
 	program: EncodedProgram;
 	moduleProtos: Array<{ path: string; protoIndex: number }>;
 	moduleAliases: Array<{ alias: string; path: string }>;
+	link: ProgramLink;
 };
 
 export type ProgramSymbolsAsset = {
@@ -52,7 +65,19 @@ export function encodeProgramAsset(asset: ProgramAsset): Uint8Array {
 }
 
 export function decodeProgramAsset(bytes: Uint8Array): ProgramAsset {
-	return decodeBinary(bytes) as ProgramAsset;
+	const root = requireObject(decodeBinary(bytes), 'ProgramAsset');
+	const entryProtoIndex = requireNumber(requireObjectKey(root, 'entryProtoIndex', 'ProgramAsset'), 'ProgramAsset.entryProtoIndex');
+	const program = decodeEncodedProgram(requireObjectKey(root, 'program', 'ProgramAsset'));
+	const moduleProtos = decodeModuleProtos(requireObjectKey(root, 'moduleProtos', 'ProgramAsset'));
+	const moduleAliases = decodeModuleAliases(requireObjectKey(root, 'moduleAliases', 'ProgramAsset'));
+	const link = decodeProgramLink(requireObjectKey(root, 'link', 'ProgramAsset'));
+	return {
+		entryProtoIndex,
+		program,
+		moduleProtos,
+		moduleAliases,
+		link,
+	};
 }
 
 export function encodeProgramSymbolsAsset(asset: ProgramSymbolsAsset): Uint8Array {
@@ -61,6 +86,88 @@ export function encodeProgramSymbolsAsset(asset: ProgramSymbolsAsset): Uint8Arra
 
 export function decodeProgramSymbolsAsset(bytes: Uint8Array): ProgramSymbolsAsset {
 	return decodeBinary(bytes) as ProgramSymbolsAsset;
+}
+
+function requireNumber(value: unknown, label: string): number {
+	if (typeof value !== 'number' || !Number.isFinite(value)) {
+		throw new Error(`${label} must be a finite number.`);
+	}
+	return value;
+}
+
+function requireString(value: unknown, label: string): string {
+	if (typeof value !== 'string') {
+		throw new Error(`${label} must be a string.`);
+	}
+	return value;
+}
+
+function requireArray(value: unknown, label: string): unknown[] {
+	if (!Array.isArray(value)) {
+		throw new Error(`${label} must be an array.`);
+	}
+	return value;
+}
+
+function requireUint8Array(value: unknown, label: string): Uint8Array {
+	if (!(value instanceof Uint8Array)) {
+		throw new Error(`${label} must be Uint8Array.`);
+	}
+	return value;
+}
+
+function decodeEncodedProgram(value: unknown): EncodedProgram {
+	const obj = requireObject(value, 'ProgramAsset.program');
+	return {
+		code: requireUint8Array(requireObjectKey(obj, 'code', 'ProgramAsset.program'), 'ProgramAsset.program.code'),
+		constPool: requireArray(requireObjectKey(obj, 'constPool', 'ProgramAsset.program'), 'ProgramAsset.program.constPool') as EncodedValue[],
+		protos: requireArray(requireObjectKey(obj, 'protos', 'ProgramAsset.program'), 'ProgramAsset.program.protos') as Proto[],
+	};
+}
+
+function decodeModuleProtos(value: unknown): Array<{ path: string; protoIndex: number }> {
+	const array = requireArray(value, 'ProgramAsset.moduleProtos');
+	const out: Array<{ path: string; protoIndex: number }> = new Array(array.length);
+	for (let index = 0; index < array.length; index += 1) {
+		const entry = requireObject(array[index], `ProgramAsset.moduleProtos[${index}]`);
+		out[index] = {
+			path: requireString(requireObjectKey(entry, 'path', `ProgramAsset.moduleProtos[${index}]`), `ProgramAsset.moduleProtos[${index}].path`),
+			protoIndex: requireNumber(requireObjectKey(entry, 'protoIndex', `ProgramAsset.moduleProtos[${index}]`), `ProgramAsset.moduleProtos[${index}].protoIndex`),
+		};
+	}
+	return out;
+}
+
+function decodeModuleAliases(value: unknown): Array<{ alias: string; path: string }> {
+	const array = requireArray(value, 'ProgramAsset.moduleAliases');
+	const out: Array<{ alias: string; path: string }> = new Array(array.length);
+	for (let index = 0; index < array.length; index += 1) {
+		const entry = requireObject(array[index], `ProgramAsset.moduleAliases[${index}]`);
+		out[index] = {
+			alias: requireString(requireObjectKey(entry, 'alias', `ProgramAsset.moduleAliases[${index}]`), `ProgramAsset.moduleAliases[${index}].alias`),
+			path: requireString(requireObjectKey(entry, 'path', `ProgramAsset.moduleAliases[${index}]`), `ProgramAsset.moduleAliases[${index}].path`),
+		};
+	}
+	return out;
+}
+
+function decodeProgramLink(value: unknown): ProgramLink {
+	const link = requireObject(value, 'ProgramAsset.link');
+	const relocValues = requireArray(requireObjectKey(link, 'constRelocs', 'ProgramAsset.link'), 'ProgramAsset.link.constRelocs');
+	const constRelocs: ProgramConstReloc[] = new Array(relocValues.length);
+	for (let index = 0; index < relocValues.length; index += 1) {
+		const entry = requireObject(relocValues[index], `ProgramAsset.link.constRelocs[${index}]`);
+		const kind = requireString(requireObjectKey(entry, 'kind', `ProgramAsset.link.constRelocs[${index}]`), `ProgramAsset.link.constRelocs[${index}].kind`);
+		if (kind !== 'bx' && kind !== 'rk_b' && kind !== 'rk_c') {
+			throw new Error(`ProgramAsset.link.constRelocs[${index}].kind must be 'bx', 'rk_b', or 'rk_c'.`);
+		}
+		constRelocs[index] = {
+			wordIndex: requireNumber(requireObjectKey(entry, 'wordIndex', `ProgramAsset.link.constRelocs[${index}]`), `ProgramAsset.link.constRelocs[${index}].wordIndex`),
+			kind,
+			constIndex: requireNumber(requireObjectKey(entry, 'constIndex', `ProgramAsset.link.constRelocs[${index}]`), `ProgramAsset.link.constRelocs[${index}].constIndex`),
+		};
+	}
+	return { constRelocs };
 }
 
 export function inflateProgram(encoded: EncodedProgram): Program {

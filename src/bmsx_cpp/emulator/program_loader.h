@@ -14,10 +14,27 @@ namespace bmsx {
  * This mirrors the TypeScript ProgramAsset structure.
  */
 struct ProgramAsset {
+	enum class ConstRelocKind {
+		Bx,
+		RkB,
+		RkC,
+	};
+
+	struct ConstReloc {
+		int wordIndex = 0;
+		ConstRelocKind kind = ConstRelocKind::Bx;
+		int constIndex = 0;
+	};
+
+	struct LinkInfo {
+		std::vector<ConstReloc> constRelocs;
+	};
+
 	int entryProtoIndex = 0;
 	std::unique_ptr<Program> program;
 	std::vector<std::pair<std::string, int>> moduleProtos;  // path -> protoIndex
 	std::vector<std::pair<std::string, std::string>> moduleAliases;  // alias -> path
+	LinkInfo link;
 };
 
 /**

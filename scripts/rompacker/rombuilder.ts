@@ -6,8 +6,6 @@ import type { asset_type, AudioMeta, CanonicalizationType, GLTFMesh, ImgMeta, Po
 import { encodeRomToc } from '../../src/bmsx/rompack/rom_toc';
 import { hashAssetId } from '../../src/bmsx/util/asset_tokens';
 import type { LuaChunk } from '../../src/bmsx/lua/lua_ast';
-import type { Value } from '../../src/bmsx/emulator/cpu';
-import type { StringPool } from '../../src/bmsx/emulator/string_pool';
 import { atlasIndexResolver, createOptimizedAtlas, generateAtlasName } from './atlasbuilder';
 import { BoundingBoxExtractor } from './boundingbox_extractor';
 import { loadGLTFModel } from './gltfloader';
@@ -1549,7 +1547,6 @@ export function appendProgramAsset(
 	options: {
 		extraLuaAssets?: RomAsset[];
 		includeSymbols?: boolean;
-		constPoolSeed?: { constPool: ReadonlyArray<Value>; stringPool: StringPool };
 		optLevel?: 0 | 1 | 2 | 3;
 	} = {},
 ): void {
@@ -1634,8 +1631,6 @@ export function appendProgramAsset(
 	const compiled = compileLuaChunkToProgram(entryChunk, modules, {
 		canonicalization: LUA_CANONICALIZATION,
 		optLevel,
-		baseConstPool: options.constPoolSeed ? options.constPoolSeed.constPool : undefined,
-		stringPool: options.constPoolSeed ? options.constPoolSeed.stringPool : undefined,
 	});
 	const program = compiled.program;
 	const programAsset = {
@@ -1643,6 +1638,9 @@ export function appendProgramAsset(
 		program: encodeProgram(program),
 		moduleProtos: Array.from(compiled.moduleProtoMap.entries(), ([path, protoIndex]) => ({ path, protoIndex })),
 		moduleAliases: buildModuleAliasesFromPaths(modulePaths),
+		link: {
+			constRelocs: compiled.constRelocs,
+		},
 	};
 
 	const buffer = Buffer.from(encodeProgramAsset(programAsset));

@@ -114,6 +114,7 @@ struct BinValue {
 
 	// Check if object has key
 	bool has(const std::string& key) const;
+	const BinValue& require(const std::string& key) const;
 };
 
 /* ============================================================================

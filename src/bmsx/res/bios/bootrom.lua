@@ -595,73 +595,8 @@ read_rom_program_const_pool = function(rom_base, header)
 	return read_program_const_pool_payload(rom_base + payload.start, payload_size)
 end
 
-local function const_value_equal(system_value, cart_value)
-	if system_value.kind ~= cart_value.kind then
-		return false
-	end
-	if system_value.kind == 'nil' then
-		return true
-	end
-	if system_value.kind == 'bool' or system_value.kind == 'num' or system_value.kind == 'str' then
-		return system_value.value == cart_value.value
-	end
-	return false
-end
-
-local function format_const_value(value)
-	if value.kind == 'nil' then
-		return 'nil'
-	end
-	if value.kind == 'bool' then
-		return value.value and 'true' or 'false'
-	end
-	if value.kind == 'num' then
-		return tostring(value.value)
-	end
-	if value.kind == 'str' then
-		return string.format('%q', value.value)
-	end
-	return '<unsupported>'
-end
-
 local function compute_program_link_errors(cart_header)
-	local errors = {}
-	local sys_header, system_const_pool = get_cached_system_const_pool()
-	if not sys_header then
-		errors[#errors + 1] = 'SYSTEM ROM HEADER IS INVALID'
-		return errors, '[ProgramLinker] Missing system ROM header.'
-	end
-	if type(system_const_pool) ~= 'table' then
-		errors[#errors + 1] = 'SYSTEM PROGRAM CONST POOL IS INVALID'
-		return errors, '[ProgramLinker] System const pool parse returned invalid type.'
-	end
-	local cart_const_pool = read_rom_program_const_pool(CART_ROM_BASE, cart_header)
-	if type(cart_const_pool) ~= 'table' then
-		errors[#errors + 1] = 'CART PROGRAM CONST POOL IS INVALID'
-		return errors, '[ProgramLinker] Cart const pool parse returned invalid type.'
-	end
-	local system_count = #system_const_pool
-	if #cart_const_pool < system_count then
-		errors[#errors + 1] = 'PROGRAM CONST POOL DOES NOT INCLUDE SYSTEM PREFIX'
-		return errors, '[ProgramLinker] Cart const pool does not include system prefix.'
-	end
-	for i = 1, system_count do
-		local system_value = system_const_pool[i]
-		local cart_value = cart_const_pool[i]
-		if not const_value_equal(system_value, cart_value) then
-			local index = i - 1
-			local system_text = format_const_value(system_value)
-			local cart_text = format_const_value(cart_value)
-			errors[#errors + 1] = 'PROGRAM CONST POOL MISMATCH'
-			errors[#errors + 1] = 'CONST POOL DIFF @' .. tostring(index) .. ' (SYSTEM=' .. system_text .. ', CART=' .. cart_text .. ')'
-			return errors, '[ProgramLinker] Cart const pool differs from system at index '
-				.. tostring(index)
-				.. ' (system=' .. system_text
-				.. ', cart=' .. cart_text
-				.. ').'
-		end
-	end
-	return errors, nil
+	return {}, nil
 end
 
 local function report_precheck_stderr_once()

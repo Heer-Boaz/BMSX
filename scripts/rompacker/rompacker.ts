@@ -8,15 +8,10 @@ import { validateAudioEventReferences } from './audioeventvalidator';
 import { appendProgramAsset, buildResourceList, commonResPath, createAtlasses, ENGINE_ATLAS_INDEX, esbuild, finalizeRompack, GENERATE_AND_USE_TEXTURE_ATLAS, generateRomAssets, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired, LUA_CANONICALIZATION, setAtlasFlag, setLuaCanonicalization, typecheckBeforeBuild, typecheckGameWithDts } from './rombuilder';
 import type { AtlasResource, Resource, RomPackerOptions } from './rompacker.rompack';
 import type { CanonicalizationType, RomAsset, RomManifest } from '../../src/bmsx/rompack/rompack';
-import type { Value } from '../../src/bmsx/emulator/cpu';
 import { LuaError } from '../../src/bmsx/lua/luaerrors';
-import { inflateProgram, decodeProgramAsset, PROGRAM_ASSET_ID } from '../../src/bmsx/emulator/program_asset';
-import { StringPool } from '../../src/bmsx/emulator/string_pool';
-import { loadAssetList, normalizeCartridgeBlob } from '../../src/bmsx/rompack/romloader';
 
 import { join } from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
 
 // CASE_INSENSITIVE_LUA and its setter are declared earlier in the file to avoid
 // temporal-dead-zone issues when they are used during module initialization.
@@ -30,25 +25,6 @@ const logWarn = ui.warn;
 const logOk = ui.ok;
 const logBullet = ui.bullet;
 const logDivider = ui.divider;
-
-async function loadEngineConstPoolSeed(engineRomPath: string): Promise<{ constPool: ReadonlyArray<Value>; stringPool: StringPool }> {
-	const romData = await readFile(engineRomPath);
-	const { payload } = normalizeCartridgeBlob(romData);
-	const { assets } = await loadAssetList(payload);
-	const programAsset = assets.find(asset => asset.resid === PROGRAM_ASSET_ID);
-	if (!programAsset) {
-		throw new Error(`[RomPacker] Engine program asset not found in "${engineRomPath}".`);
-	}
-	const start = programAsset.start;
-	const end = programAsset.end;
-	if (start === undefined || end === undefined) {
-		throw new Error(`[RomPacker] Engine program asset is missing buffer range in "${engineRomPath}".`);
-	}
-	const programBytes = new Uint8Array(payload.slice(start, end));
-	const decoded = decodeProgramAsset(programBytes);
-	const program = inflateProgram(decoded.program);
-	return { constPool: program.constPool, stringPool: program.stringPool };
-}
 
 const KNOWN_FLAGS = new Set<string>([
 	'-romname',
@@ -823,19 +799,17 @@ async function main() {
 			logBullet('Opt level', pc.white(`-O${optLevel}`));
 
 			const includeCode = shouldBundleCartCode;
-			let engineConstPoolSeed: { constPool: ReadonlyArray<Value>; stringPool: StringPool } | null = null;
-				if (!isEngineMode && mode === 'rompack') {
-					const engineResPath = commonResPath;
-					const engineManifest = await getRomManifest(engineResPath);
-					if (!engineManifest) {
-						throw new Error(`Engine manifest not found at "${engineResPath}".`);
-					}
-					const engineRomName = engineManifest.rom_name ?? 'bmsx-bios';
+			if (!isEngineMode && mode === 'rompack') {
+				const engineResPath = commonResPath;
+				const engineManifest = await getRomManifest(engineResPath);
+				if (!engineManifest) {
+					throw new Error(`Engine manifest not found at "${engineResPath}".`);
+				}
+				const engineRomName = engineManifest.rom_name ?? 'bmsx-bios';
 				const engineRomPath = join(process.cwd(), 'dist', `${engineRomName}${romPackDebug ? '.debug' : ''}.rom`);
 				if (!existsSync(engineRomPath)) {
 					throw new Error(`Engine ROM not found at "${engineRomPath}". Build the engine ROM first.`);
 				}
-				engineConstPoolSeed = await loadEngineConstPoolSeed(engineRomPath);
 			}
 
 		let rebuildRequired = true;
@@ -931,7 +905,7 @@ async function main() {
 			validateAudioEventReferences(resources);
 
 				const romAssets = await progress.runWithDetail('Generate ROM assets', () => generateRomAssets(resources, message => progress.setDetail(message)));
-				appendProgramAsset(romAssets, romManifest, { includeSymbols: romPackDebug, constPoolSeed: engineConstPoolSeed ?? undefined, optLevel });
+				appendProgramAsset(romAssets, romManifest, { includeSymbols: romPackDebug, optLevel });
 				stripLuaAssets(romAssets, romPackDebug);
 				await progress.taskCompleted();
 
