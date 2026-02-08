@@ -76,14 +76,6 @@ const std::vector<std::string> BUTTON_ACTIONS = {
 // Static instance pointer
 Runtime* Runtime::s_instance = nullptr;
 
-namespace {
-
-constexpr int kBootLogFrames = 8;
-int s_updateLogRemaining = 0;
-int s_drawLogRemaining = 0;
-
-} // namespace
-
 Runtime& Runtime::createInstance(const RuntimeOptions& options) {
 	if (s_instance) {
 		throw BMSX_RUNTIME_ERROR("[Runtime] Instance already exists.");
@@ -232,8 +224,6 @@ void Runtime::boot(Program* program, ProgramMetadata* metadata, int entryProtoIn
 	m_programMetadata = metadata;
 	m_cpu.setProgram(program, metadata);
 	runEngineBuiltinPrelude();
-	s_updateLogRemaining = kBootLogFrames;
-	s_drawLogRemaining = kBootLogFrames;
 
 	// Start execution at entry point
 	std::cout << "[Runtime] boot: starting CPU at entry point..." << std::endl;

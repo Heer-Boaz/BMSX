@@ -12,6 +12,9 @@ local state_stopped_jumping = player_fsm_id .. ':/stopped_jumping'
 local state_controlled_fall = player_fsm_id .. ':/controlled_fall'
 local state_uncontrolled_fall = player_fsm_id .. ':/uncontrolled_fall'
 local state_stairs = player_fsm_id .. ':/stairs'
+local state_hit_fall = player_fsm_id .. ':/hit_fall'
+local state_hit_recovery = player_fsm_id .. ':/hit_recovery'
+local state_dying = player_fsm_id .. ':/dying'
 
 local state_labels = {
 	[state_quiet] = 'quiet',
@@ -22,6 +25,9 @@ local state_labels = {
 	[state_controlled_fall] = 'controlled_fall',
 	[state_uncontrolled_fall] = 'uncontrolled_fall',
 	[state_stairs] = 'stairs',
+	[state_hit_fall] = 'hit_fall',
+	[state_hit_recovery] = 'hit_recovery',
+	[state_dying] = 'dying',
 }
 
 local function abs(value)
@@ -74,7 +80,7 @@ function player:emit_metric()
 		return
 	end
 	print(string.format(
-		'%s|f=%d|x=%d|y=%d|dx=%d|dy=%d|st=%s|jsub=%d|fsub=%d|inertia=%d|face=%d|g=%d|left=%d|right=%d|up_hold=%d|up_press=%d|up_release=%d|down=%d|atk=%d|atk_press=%d|slash=%d|slash_phase=%d|stairs_dir=%d|stairs_x=%d',
+		'%s|f=%d|x=%d|y=%d|dx=%d|dy=%d|st=%s|jsub=%d|fsub=%d|inertia=%d|face=%d|g=%d|left=%d|right=%d|up_hold=%d|up_press=%d|up_release=%d|down=%d|atk=%d|atk_press=%d|slash=%d|slash_phase=%d|stairs_dir=%d|stairs_x=%d|hp=%d|hit_ifr=%d|hit_sub=%d|blink=%d|death_t=%d',
 		telemetry.metric_prefix,
 		self.frame,
 		self.x,
@@ -98,7 +104,12 @@ function player:emit_metric()
 		self.slash_timer,
 		self.sword_phase,
 		self.stairs_direction,
-		self.stairs_x
+		self.stairs_x,
+		self.health,
+		self.hit_invulnerability_timer,
+		self.hit_substate,
+		bool01(self.hit_blink_on),
+		self.death_timer
 	))
 end
 
@@ -135,6 +146,15 @@ function player:reset_runtime()
 	self.stairs_bottom_y = self.spawn_y
 	self.stairs_anim_frame = 0
 	self.stairs_anim_distance = 0
+	self.health = constants.damage.max_health
+	self.max_health = constants.damage.max_health
+	self.hit_invulnerability_timer = 0
+	self.hit_blink_timer = 0
+	self.hit_blink_on = false
+	self.hit_substate = 0
+	self.hit_direction = 0
+	self.hit_recovery_timer = 0
+	self.death_timer = 0
 	self.debug_jump_substate = -1
 	self.debug_fall_substate = -1
 	self.frame = 0
@@ -222,6 +242,135 @@ function player:clear_slash(reason)
 	if reason ~= nil then
 		self:emit_event('slash_reset', string.format('reason=%s', reason))
 	end
+end
+
+function player:is_in_damage_lock_state()
+	return self.sc:matches_state_path(state_hit_fall) or self.sc:matches_state_path(state_hit_recovery) or self.sc:matches_state_path(state_dying)
+end
+
+function player:is_hittable()
+	if self.hit_invulnerability_timer > 0 then
+		return false
+	end
+	return not self:is_in_damage_lock_state()
+end
+
+function player:update_hit_invulnerability()
+	if self.hit_invulnerability_timer <= 0 then
+		self.hit_invulnerability_timer = 0
+		self.hit_blink_on = false
+		return
+	end
+
+	self.hit_invulnerability_timer = self.hit_invulnerability_timer - 1
+	if self.hit_blink_timer > 0 then
+		self.hit_blink_timer = self.hit_blink_timer - 1
+	end
+	if self.hit_blink_timer == 0 then
+		self.hit_blink_on = not self.hit_blink_on
+		self.hit_blink_timer = constants.damage.hit_blink_switch_frames
+	end
+	if self.hit_invulnerability_timer == 0 then
+		self.hit_blink_on = false
+	end
+end
+
+function player:get_hit_direction_from_source(source_x)
+	local center_x = self.x + math.floor(self.width / 2)
+	if source_x < center_x then
+		return 1
+	end
+	if source_x > center_x then
+		return -1
+	end
+	if self.facing > 0 then
+		return -1
+	end
+	return 1
+end
+
+function player:start_dying()
+	if self.sc:matches_state_path(state_dying) then
+		return
+	end
+	self:clear_slash('death')
+	self.hit_direction = 0
+	self.hit_substate = 0
+	self.hit_recovery_timer = 0
+	self.death_timer = 0
+	self.hit_invulnerability_timer = 0
+	self.hit_blink_timer = 0
+	self.hit_blink_on = false
+	self.last_dx = 0
+	self.last_dy = 0
+	self:emit_event('player_death', string.format('x=%d|y=%d', self.x, self.y))
+	self:transition_to(state_dying, 'hp_zero')
+end
+
+function player:take_hit(amount, source_x, source_y, reason)
+	if not self:is_hittable() then
+		return false
+	end
+
+	self.health = self.health - amount
+	if self.health < 0 then
+		self.health = 0
+	end
+
+	local hit_direction = self:get_hit_direction_from_source(source_x)
+	if self.sc:matches_state_path(state_stairs) then
+		hit_direction = 0
+	end
+
+	self:clear_slash('hit')
+	self.hit_direction = hit_direction
+	self.hit_substate = 0
+	self.hit_recovery_timer = 0
+	self.hit_invulnerability_timer = constants.damage.hit_invulnerability_frames
+	self.hit_blink_timer = constants.damage.hit_blink_switch_frames
+	self.hit_blink_on = true
+
+	if hit_direction ~= 0 then
+		self.facing = -hit_direction
+	end
+
+	local knockup_px = constants.damage.knockup_px
+	if knockup_px > 0 then
+		self:apply_move(0, -knockup_px)
+	end
+
+	self:emit_event(
+		'player_hit',
+		string.format(
+			'reason=%s|x=%d|y=%d|src_x=%d|src_y=%d|dir=%d|dmg=%d|hp=%d',
+			reason,
+			self.x,
+			self.y,
+			source_x,
+			source_y,
+			hit_direction,
+			amount,
+			self.health
+		)
+	)
+	self:transition_to(state_hit_fall, 'damage_' .. reason)
+	return true
+end
+
+function player:check_room_hazards()
+	local hazards = self.room.hazards
+	for i = 1, #hazards do
+		local hazard = hazards[i]
+		if self.x < (hazard.x + hazard.w) and (self.x + self.width) > hazard.x and self.y < (hazard.y + hazard.h) and (self.y + self.height) > hazard.y then
+			return self:take_hit(
+				hazard.damage,
+				hazard.x + math.floor(hazard.w / 2),
+				hazard.y + math.floor(hazard.h / 2),
+				hazard.kind
+			)
+		end
+	end
+	return false
 end
 
 function player:get_jump_inertia(default_inertia)
@@ -865,6 +1014,75 @@ function player:tick_uncontrolled_fall()
 	self.fall_substate = self.fall_substate + 1
 end
 
+function player:tick_hit_fall()
+	self.debug_jump_substate = -1
+	self.debug_fall_substate = -1
+	self:clear_slash('hit_fall')
+
+	local dx = self.hit_direction * constants.damage.knockback_dx
+	local dy = 0
+	if self.hit_substate >= 4 then
+		dy = self.hit_substate - 4
+		if dy > 6 then
+			dy = 6
+		end
+	end
+
+	local move_result = self:apply_move(dx, dy)
+	if move_result.collided_x then
+		self.hit_direction = 0
+	end
+
+	if self.hit_substate >= 4 then
+		if self.health <= 0 then
+			self:start_dying()
+			return
+		end
+		if move_result.landed or (dy == 0 and self:is_grounded()) then
+			self.hit_substate = 0
+			self.hit_recovery_timer = 0
+			self.last_dx = 0
+			self.last_dy = 0
+			self:emit_event('hit_ground', string.format('x=%d|y=%d|hp=%d', self.x, self.y, self.health))
+			self:transition_to(state_hit_recovery, 'hit_ground')
+			return
+		end
+	end
+
+	self.hit_substate = self.hit_substate + 1
+end
+
+function player:tick_hit_recovery()
+	self.debug_jump_substate = -1
+	self.debug_fall_substate = -1
+	self:clear_slash('hit_recovery')
+	self.last_dx = 0
+	self.last_dy = 0
+	self.hit_recovery_timer = self.hit_recovery_timer + 1
+
+	if self.hit_recovery_timer < constants.damage.hit_recovery_frames then
+		return
+	end
+
+	self.hit_recovery_timer = 0
+	self.hit_substate = 0
+	self:emit_event('hit_recovered', string.format('x=%d|y=%d|hp=%d', self.x, self.y, self.health))
+	self:transition_to(state_quiet, 'hit_recovered')
+end
+
+function player:tick_dying()
+	self.debug_jump_substate = -1
+	self.debug_fall_substate = -1
+	self.last_dx = 0
+	self.last_dy = 0
+	self.death_timer = self.death_timer + 1
+	if self.death_timer < constants.damage.death_frames then
+		return
+	end
+	self:emit_event('respawn', string.format('x=%d|y=%d', self.x, self.y))
+	self:respawn()
+end
+
 function player:tick_stairs()
 	self.debug_jump_substate = -1
 	self.debug_fall_substate = -1
@@ -961,16 +1179,29 @@ function player:tick()
 		self:tick_controlled_fall()
 	elseif self.sc:matches_state_path(state_uncontrolled_fall) then
 		self:tick_uncontrolled_fall()
+	elseif self.sc:matches_state_path(state_hit_fall) then
+		self:tick_hit_fall()
+	elseif self.sc:matches_state_path(state_hit_recovery) then
+		self:tick_hit_recovery()
+	elseif self.sc:matches_state_path(state_dying) then
+		self:tick_dying()
 	elseif self.sc:matches_state_path(state_stairs) then
 		self:tick_stairs()
 	else
 		self:tick_quiet()
 	end
 
-	self:try_start_slash(self.state_name)
+	local took_hazard_hit = false
+	if not self:is_in_damage_lock_state() then
+		took_hazard_hit = self:check_room_hazards()
+	end
+	if not took_hazard_hit and not self:is_in_damage_lock_state() then
+		self:try_start_slash(self.state_name)
+	end
 	self.grounded = self:is_grounded()
 	self:emit_metric()
 	self:update_slash_state()
+	self:update_hit_invulnerability()
 end
 
 local function define_player_fsm()
@@ -1018,6 +1249,21 @@ local function define_player_fsm()
 			uncontrolled_fall = {
 				entering_state = function(self)
 					self.state_name = 'uncontrolled_fall'
+				end,
+			},
+			hit_fall = {
+				entering_state = function(self)
+					self.state_name = 'hit_fall'
+				end,
+			},
+			hit_recovery = {
+				entering_state = function(self)
+					self.state_name = 'hit_recovery'
+				end,
+			},
+			dying = {
+				entering_state = function(self)
+					self.state_name = 'dying'
 				end,
 			},
 			stairs = {
@@ -1073,6 +1319,15 @@ local function register_player_definition()
 			stairs_bottom_y = constants.player.start_y,
 			stairs_anim_frame = 0,
 			stairs_anim_distance = 0,
+			health = constants.damage.max_health,
+			max_health = constants.damage.max_health,
+			hit_invulnerability_timer = 0,
+			hit_blink_timer = 0,
+			hit_blink_on = false,
+			hit_substate = 0,
+			hit_direction = 0,
+			hit_recovery_timer = 0,
+			death_timer = 0,
 			debug_jump_substate = -1,
 			debug_fall_substate = -1,
 			frame = 0,

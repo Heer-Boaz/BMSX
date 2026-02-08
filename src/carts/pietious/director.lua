@@ -14,6 +14,13 @@ end
 
 function director:tick(_dt)
 	self.player_ref = object(self.player_id)
+	self.hud_health_level = math.floor(self.player_ref.health)
+	if self.hud_health_level < 0 then
+		self.hud_health_level = 0
+	end
+	if self.hud_health_level > constants.damage.max_health then
+		self.hud_health_level = constants.damage.max_health
+	end
 end
 
 function director:draw_frame_background()
@@ -41,11 +48,31 @@ function director:draw_room_tiles()
 end
 
 function director:draw_player(player)
+	if player.hit_invulnerability_timer > 0 and player.hit_blink_on and player.state_name ~= 'dying' then
+		return
+	end
+
 	local imgid = 'pietolon_stand_r'
 	local sword_imgid = nil
 	local sword_offset_x = constants.player.width
 	local is_airborne = player.state_name == 'jumping' or player.state_name == 'stopped_jumping' or player.state_name == 'controlled_fall' or player.state_name == 'uncontrolled_fall'
-	if player.state_name == 'stairs' then
+	if player.state_name == 'dying' then
+		if player.death_timer < 8 then
+			imgid = 'pietolon_dying_1'
+		elseif player.death_timer < 16 then
+			imgid = 'pietolon_dying_2'
+		elseif player.death_timer < 24 then
+			imgid = 'pietolon_dying_3'
+		elseif player.death_timer < 32 then
+			imgid = 'pietolon_dying_4'
+		else
+			imgid = 'pietolon_dying_5'
+		end
+	elseif player.state_name == 'hit_fall' then
+		imgid = 'pietolon_hit_r'
+	elseif player.state_name == 'hit_recovery' then
+		imgid = 'pietolon_recover_r'
+	elseif player.state_name == 'stairs' then
 		if player.stairs_direction < 0 then
 			if player.stairs_anim_frame == 0 then
 				imgid = 'pietolon_stairs_up_1'

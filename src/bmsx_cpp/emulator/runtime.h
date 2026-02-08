@@ -318,7 +318,6 @@ private:
 	RunResult runWithBudget();
 	void queueLifecycleHandlers(bool runInit, bool runNewGame);
 	Value requireModule(const std::string& moduleName);
-	std::vector<Value> callEngineModuleMember(const std::string& name, const std::vector<Value>& args);
 	const std::regex& buildLuaPatternRegex(const std::string& pattern);
 	std::string translateLuaPatternEscape(char token, bool inClass) const;
 	std::string valueToString(const Value& value) const;
@@ -360,8 +359,6 @@ private:
 	bool m_luaInitialized = false;
 	bool m_runtimeFailed = false;
 	bool m_tickEnabled = true;
-	bool m_editorActive = false;
-	bool m_terminalActive = false;
 	bool m_cartBootPrepared = false;
 
 	// Frame state
@@ -372,7 +369,6 @@ private:
 	Value m_ipairsIterator = valueNil();
 	PendingCall m_pendingCall = PendingCall::None;
 	uint32_t m_randomSeedValue = 0;
-	std::vector<RenderSubmission> m_preservedRenderQueue;
 
 	std::unordered_map<std::string, int> m_moduleProtos;
 	std::unordered_map<std::string, std::string> m_moduleAliases;

@@ -34,6 +34,17 @@ constants.sword = {
 	recover_frames = 4,
 }
 
+constants.damage = {
+	max_health = 48,
+	hazard_damage = 4,
+	hit_invulnerability_frames = 32,
+	hit_blink_switch_frames = 5,
+	knockback_dx = 4,
+	knockup_px = 2,
+	hit_recovery_frames = 8,
+	death_frames = 40,
+}
+
 constants.stairs = {
 	speed_px = 1,
 	anim_step_px = 4,

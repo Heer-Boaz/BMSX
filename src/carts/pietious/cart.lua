@@ -18,7 +18,7 @@ function init()
 	on_irq(irq_newgame, function()
 		new_game()
 	end)
-
+ 
 	player_module.define_player_fsm()
 	director_module.define_director_fsm()
 	player_module.register_player_definition()

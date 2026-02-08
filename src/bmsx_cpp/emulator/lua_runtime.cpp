@@ -45,13 +45,6 @@ Value Runtime::requireModule(const std::string& moduleName) {
 	return cachedValue;
 }
 
-std::vector<Value> Runtime::callEngineModuleMember(const std::string& name, const std::vector<Value>& args) {
-	auto* engineModule = asTable(requireModule("engine"));
-	Value key = canonicalizeIdentifier(name);
-	auto* member = asClosure(engineModule->get(key));
-	return callLuaFunction(member, args);
-}
-
 void Runtime::logLuaCallStack() const {
 	const ProgramMetadata* metadata = m_programMetadata;
 	if (!metadata) {

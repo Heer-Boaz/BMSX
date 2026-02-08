@@ -20,7 +20,7 @@ local room_map_castle_stone_3 = {
 	'................................',
 	'######..........................',
 	'####-=............##............',
-	'####-=..........................',
+	'####-=..............!!..........',
 	'####-=..........................',
 	'####-=..........................',
 	'####-=..................##......',
@@ -62,9 +62,34 @@ local function build_collision_map(map_rows)
 	return collision
 end
 
+local function build_hazards(map_rows, tile_size, origin_x, origin_y)
+	local hazards = {}
+	for y = 1, #map_rows do
+		local row = map_rows[y]
+		local width = #row
+		for x = 1, width do
+			local ch = row:sub(x, x)
+			if ch == '!' then
+				hazards[#hazards + 1] = {
+					x = origin_x + ((x - 1) * tile_size),
+					y = origin_y + ((y - 1) * tile_size),
+					w = tile_size,
+					h = tile_size,
+					damage = constants.damage.hazard_damage,
+					kind = 'spike',
+				}
+			end
+		end
+	end
+	return hazards
+end
+
 local function create_tile_id(ch, x, y, collision_map)
 	if ch == '#' then
 		return 'castle_front_blue_1'
+	end
+	if ch == '!' then
+		return 'castle_block_stone'
 	end
 	if ch == '-' then
 		return 'castle_stairs_l'
@@ -151,6 +176,7 @@ function room.create_room()
 		tile_columns = #map_rows[1],
 		map_rows = map_rows,
 		collision_map = collision_map,
+		hazards = build_hazards(map_rows, tile_size, tile_origin_x, tile_origin_y),
 		tiles = tiles,
 		solids = build_solids(collision_map, tile_size, tile_origin_x, tile_origin_y),
 	}

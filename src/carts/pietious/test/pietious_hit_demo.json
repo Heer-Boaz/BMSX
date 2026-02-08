@@ -1,0 +1,30 @@
+[
+	{
+		"description": "walk_right_into_hazard_start",
+		"frame": 600,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": true,
+			"value": 1,
+			"timestamp": 12000,
+			"pressId": 1,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "walk_right_into_hazard_stop",
+		"frame": 760,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": false,
+			"value": 0,
+			"timestamp": 15200,
+			"pressId": 1,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	}
+]
