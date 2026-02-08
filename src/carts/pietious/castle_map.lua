@@ -1,54 +1,9 @@
 local constants = require('constants.lua')
+local romdir = require('romdir')
 
 local castle_map = {}
 
--- Castle room #3 map from XNA RoomData (castle stone).
-local room_map_castle_stone_3 = {
-	'..............................##',
-	'..............................##',
-	'..............................##',
-	'........######..........########',
-	'........######....##............',
-	'........######..................',
-	'................................',
-	'................................',
-	'........................##......',
-	'................................',
-	'................................',
-	'######..........................',
-	'####-=............##............',
-	'####-=..........................',
-	'####-=..........................',
-	'####-=..........................',
-	'####-=..................##......',
-	'####-=..........................',
-	'####-=..........................',
-	'################################',
-}
-
--- Castle room #4 map from XNA RoomData (castle garden).
-local room_map_castle_garden_4 = {
-	'######....................-=..##',
-	'######....................-=..##',
-	'######....................-=..##',
-	'######....................-=..##',
-	'........................########',
-	'..............................##',
-	'..............................##',
-	'...............######.........##',
-	'.................pi...........##',
-	'.................ll...........##',
-	'.................ar...........##',
-	'.............######...........##',
-	'..............................##',
-	'..............................##',
-	'....................############',
-	'....######..........-=##########',
-	'......pi............-=##########',
-	'......ll............-=##########',
-	'......ar............-=##########',
-	'################################',
-}
+local castle_map_asset_id = 'pietious_castle_map'
 
 local function build_castle_links(world_grid)
 	local room_positions = {}
@@ -93,62 +48,77 @@ local function build_castle_links(world_grid)
 	return links_by_room
 end
 
--- Partial castle world-map for current pietious scope.
--- This keeps room connectivity data-driven instead of hardcoding per-room exits.
-local castle_world_grid = {
-	{ 4, 3 },
-}
+local function load_castle_map_data()
+	local token = romdir.token(castle_map_asset_id)
+	local data = assets.data[token]
+	if data == nil then
+		error("pietious castle_map missing data asset '" .. castle_map_asset_id .. "'")
+	end
+	return data
+end
 
-local room_templates = {
-	[3] = {
-		room_number = 3,
-		room_id = 'castle_stone_03',
-		map_rows = room_map_castle_stone_3,
-		spawn = {
-			x = constants.player.start_x,
-			y = constants.player.start_y,
-		},
-		edge_gates = {},
-		enemies = {
-			{
-				id = 'meijter_03',
-				x = 160,
-				y = 168,
-				w = 16,
-				h = 16,
-				facing = 1,
-				damage = constants.damage.enemy_contact_damage,
-				kind = 'enemy',
-			},
-		},
-	},
-	[4] = {
-		room_number = 4,
-		room_id = 'castle_stone_04',
-		map_rows = room_map_castle_garden_4,
-		spawn = {
-			x = constants.room.width - constants.player.width,
-			y = constants.player.start_y,
-		},
-		edge_gates = {},
-		enemies = {
-			{
-				id = 'meijter_04',
-				x = 88,
-				y = 168,
-				w = 16,
-				h = 16,
-				facing = -1,
-				damage = constants.damage.enemy_contact_damage,
-				kind = 'enemy',
-			},
-		},
-	},
-}
+local function normalize_room_templates(room_entries)
+	local templates = {}
+	for i = 1, #room_entries do
+		local entry = room_entries[i]
+		local enemies = {}
+		for j = 1, #entry.enemies do
+			local enemy_def = entry.enemies[j]
+			local damage = enemy_def.damage
+			if enemy_def.damage_key ~= nil then
+				damage = constants.damage[enemy_def.damage_key]
+			end
+			enemies[j] = {
+				id = enemy_def.id,
+				x = enemy_def.x,
+				y = enemy_def.y,
+				w = enemy_def.w,
+				h = enemy_def.h,
+				facing = enemy_def.facing,
+				damage = damage,
+				kind = enemy_def.kind,
+			}
+		end
 
-local room_links = build_castle_links(castle_world_grid)
-for room_number, links in pairs(room_links) do
-	room_templates[room_number].links = links
+		local links = entry.links
+
+		templates[entry.room_number] = {
+			room_number = entry.room_number,
+			room_id = entry.room_id,
+			room_subtype = string.lower(entry.room_subtype),
+			map_rows = entry.map_rows,
+			spawn = {
+				x = entry.spawn.x,
+				y = entry.spawn.y,
+			},
+			links = links,
+			edge_gates = entry.edge_gates,
+			enemies = enemies,
+		}
+	end
+	return templates
+end
+
+local loaded_data = load_castle_map_data()
+local room_templates = normalize_room_templates(loaded_data.rooms)
+if loaded_data.world_grid ~= nil then
+	local room_links = build_castle_links(loaded_data.world_grid)
+	for room_number, links in pairs(room_links) do
+		local template = room_templates[room_number]
+		if template == nil then
+			error('pietious castle_map missing room template for room_number=' .. tostring(room_number))
+		end
+		template.links = links
+	end
+end
+
+for room_number, template in pairs(room_templates) do
+	if template.links == nil then
+		error('pietious castle_map missing links for room_number=' .. tostring(room_number))
+	end
+	if template.room_subtype == nil then
+		error('pietious castle_map missing room_subtype for room_number=' .. tostring(room_number))
+	end
 end
 
 local room_number_by_id = {}
@@ -172,6 +142,6 @@ function castle_map.room_template(room_number)
 	return template
 end
 
-castle_map.start_room_number = 3
+castle_map.start_room_number = loaded_data.start_room_number
 
 return castle_map

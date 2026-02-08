@@ -45,7 +45,7 @@ const secondSwitch = roomSwitches[1] ?? null;
 
 if (firstSwitch) {
 	expect(
-		firstSwitch.from === 'castle_stone_03' && firstSwitch.to === 'castle_stone_04' && firstSwitch.dir === 'left',
+		firstSwitch.from === 'castle_stone_03' && firstSwitch.to === 'castle_blue_02' && firstSwitch.dir === 'left',
 		`First switch mismatch. got from=${firstSwitch.from} to=${firstSwitch.to} dir=${firstSwitch.dir}.`,
 	);
 	expect(Number(firstSwitch.x) === 240, `Left switch entry x mismatch. got x=${firstSwitch.x}, expected 240.`);
@@ -53,7 +53,7 @@ if (firstSwitch) {
 
 if (secondSwitch) {
 	expect(
-		secondSwitch.from === 'castle_stone_04' && secondSwitch.to === 'castle_stone_03' && secondSwitch.dir === 'right',
+		secondSwitch.from === 'castle_blue_02' && secondSwitch.to === 'castle_stone_03' && secondSwitch.dir === 'right',
 		`Second switch mismatch. got from=${secondSwitch.from} to=${secondSwitch.to} dir=${secondSwitch.dir}.`,
 	);
 	expect(Number(secondSwitch.x) === 0, `Right switch entry x mismatch. got x=${secondSwitch.x}, expected 0.`);

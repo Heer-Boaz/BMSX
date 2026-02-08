@@ -3,19 +3,131 @@ local castle_map = require('castle_map.lua')
 
 local room = {}
 
-local castle_tiles = {
-	{ 'castle_tile_stone_1_1', 'castle_tile_stone_2_1', 'castle_tile_stone_3_1', 'castle_tile_stone_4_1' },
-	{ 'castle_tile_stone_1_2', 'castle_tile_stone_2_2', 'castle_tile_stone_3_2', 'castle_tile_stone_4_2' },
-	{ 'castle_tile_stone_1_3', 'castle_tile_stone_2_3', 'castle_tile_stone_3_3', 'castle_tile_stone_4_3' },
-	{ 'castle_tile_stone_1_4', 'castle_tile_stone_2_4', 'castle_tile_stone_3_4', 'castle_tile_stone_4_4' },
+local background_themes = {
+	CastleBlue = {
+		mode = 'checker2',
+		front = 'castle_front_blue_1',
+		light_l = 'castle_tile_blue_l',
+		light_r = 'castle_tile_blue_r',
+		dark_l = 'castle_tile_blue_l_dark',
+		dark_r = 'castle_tile_blue_r_dark',
+	},
+	CastleGarden = {
+		mode = 'grid4',
+		front = 'castle_front_blue_1',
+		tiles = {
+			{ 'castle_tile_garden_1_1', 'castle_tile_garden_2_1', 'castle_tile_garden_3_1', 'castle_tile_garden_4_1' },
+			{ 'castle_tile_garden_1_2', 'castle_tile_garden_2_2', 'castle_tile_garden_3_2', 'castle_tile_garden_4_2' },
+			{ 'castle_tile_garden_1_3', 'castle_tile_garden_2_3', 'castle_tile_garden_3_3', 'castle_tile_garden_4_3' },
+			{ 'castle_tile_garden_1_4', 'castle_tile_garden_2_4', 'castle_tile_garden_3_4', 'castle_tile_garden_4_4' },
+		},
+		dark_tiles = {
+			'castle_tile_garden_dark_1',
+			'castle_tile_garden_dark_2',
+			'castle_tile_garden_dark_3',
+			'castle_tile_garden_dark_4',
+		},
+	},
+	CastleGold = {
+		mode = 'checker2',
+		front = 'castle_front_gold_1',
+		light_l = 'castle_tile_gold_l',
+		light_r = 'castle_tile_gold_r',
+		dark_l = 'castle_tile_gold_l_dark',
+		dark_r = 'castle_tile_gold_r_dark',
+	},
+	CastleRed = {
+		mode = 'grid4',
+		front = 'castle_front_blue_1',
+		tiles = {
+			{ 'castle_tile_red_1_1', 'castle_tile_red_2_1', 'castle_tile_red_3_1', 'castle_tile_red_4_1' },
+			{ 'castle_tile_red_1_2', 'castle_tile_red_2_2', 'castle_tile_red_3_2', 'castle_tile_red_4_2' },
+			{ 'castle_tile_red_1_3', 'castle_tile_red_2_3', 'castle_tile_red_3_3', 'castle_tile_red_4_3' },
+			{ 'castle_tile_red_1_4', 'castle_tile_red_2_4', 'castle_tile_red_3_4', 'castle_tile_red_4_4' },
+		},
+		dark_tiles = {
+			'castle_tile_red_dark_1',
+			'castle_tile_red_dark_2',
+			'castle_tile_red_dark_3',
+			'castle_tile_red_dark_4',
+		},
+	},
+	CastleStone = {
+		mode = 'grid4',
+		front = 'castle_front_blue_1',
+		tiles = {
+			{ 'castle_tile_stone_1_1', 'castle_tile_stone_2_1', 'castle_tile_stone_3_1', 'castle_tile_stone_4_1' },
+			{ 'castle_tile_stone_1_2', 'castle_tile_stone_2_2', 'castle_tile_stone_3_2', 'castle_tile_stone_4_2' },
+			{ 'castle_tile_stone_1_3', 'castle_tile_stone_2_3', 'castle_tile_stone_3_3', 'castle_tile_stone_4_3' },
+			{ 'castle_tile_stone_1_4', 'castle_tile_stone_2_4', 'castle_tile_stone_3_4', 'castle_tile_stone_4_4' },
+		},
+		dark_tiles = {
+			'castle_tile_stone_dark_1',
+			'castle_tile_stone_dark_2',
+			'castle_tile_stone_dark_3',
+			'castle_tile_stone_dark_4',
+		},
+	},
 }
 
-local castle_dark_tiles = {
-	'castle_tile_stone_dark_1',
-	'castle_tile_stone_dark_2',
-	'castle_tile_stone_dark_3',
-	'castle_tile_stone_dark_4',
+local pillar_themes = {
+	CastleBlue = {
+		l1 = 'castle_pillar_blue_l1',
+		r1 = 'castle_pillar_blue_r1',
+		l2 = 'castle_pillar_blue_l2',
+		r2 = 'castle_pillar_blue_r2',
+		l3 = 'castle_pillar_blue_l3',
+		r3 = 'castle_pillar_blue_r3',
+	},
+	CastleGarden = {
+		l1 = 'castle_pillar_garden_l1',
+		r1 = 'castle_pillar_garden_r1',
+		l2 = 'castle_pillar_garden_l2',
+		r2 = 'castle_pillar_garden_r2',
+		l3 = 'castle_pillar_garden_l3',
+		r3 = 'castle_pillar_garden_r3',
+	},
+	CastleGold = {
+		l1 = 'castle_pillar_red_l1',
+		r1 = 'castle_pillar_red_r1',
+		l2 = 'castle_pillar_red_l2',
+		r2 = 'castle_pillar_red_r2',
+		l3 = 'castle_pillar_red_l3',
+		r3 = 'castle_pillar_red_r3',
+	},
+	CastleRed = {
+		l1 = 'castle_pillar_red_l1',
+		r1 = 'castle_pillar_red_r1',
+		l2 = 'castle_pillar_red_l2',
+		r2 = 'castle_pillar_red_r2',
+		l3 = 'castle_pillar_red_l3',
+		r3 = 'castle_pillar_red_r3',
+	},
+	CastleStone = {
+		l1 = 'castle_pillar_stone_l1',
+		r1 = 'castle_pillar_stone_r1',
+		l2 = 'castle_pillar_stone_l2',
+		r2 = 'castle_pillar_stone_r2',
+		l3 = 'castle_pillar_stone_l3',
+		r3 = 'castle_pillar_stone_r3',
+	},
 }
+
+local function get_background_theme(room_subtype)
+	local theme = background_themes[room_subtype]
+	if theme == nil then
+		error('pietious room unknown room_subtype=' .. tostring(room_subtype))
+	end
+	return theme
+end
+
+local function get_pillar_theme(room_subtype)
+	local theme = pillar_themes[room_subtype]
+	if theme == nil then
+		error('pietious room unknown pillar room_subtype=' .. tostring(room_subtype))
+	end
+	return theme
+end
 
 local function build_collision_map(map_rows)
 	local collision = {}
@@ -36,9 +148,12 @@ local function build_collision_map(map_rows)
 	return collision
 end
 
-local function create_tile_id(ch, x, y, collision_map)
+local function create_tile_id(ch, x, y, map_rows, collision_map, room_subtype)
+	local background = get_background_theme(room_subtype)
+	local pillars = get_pillar_theme(room_subtype)
+
 	if ch == '#' then
-		return 'castle_front_blue_1'
+		return background.front
 	end
 	if ch == '-' or ch == '_' then
 		return 'castle_stairs_l'
@@ -46,19 +161,73 @@ local function create_tile_id(ch, x, y, collision_map)
 	if ch == '=' or ch == '+' then
 		return 'castle_stairs_r'
 	end
-
-	local wall_up = y > 1 and collision_map[y - 1][x] ~= 0
-	if wall_up then
-		local dark_index = ((x - 1) % 4) + 1
-		return castle_dark_tiles[dark_index]
+	if ch == 'p' then
+		return pillars.l1
+	end
+	if ch == 'i' then
+		return pillars.r1
+	end
+	if ch == 'l' then
+		if y > 1 and y < #map_rows then
+			local ch_up = map_rows[y - 1]:sub(x, x)
+			local ch_down = map_rows[y + 1]:sub(x, x)
+			if ch_up == 'p' and ch_down == 'a' then
+				return pillars.l2
+			end
+			if ch_up == 'i' and ch_down == 'r' then
+				return pillars.r2
+			end
+		end
+	end
+	if ch == 'a' then
+		return pillars.l3
+	end
+	if ch == 'r' then
+		return pillars.r3
 	end
 
-	local tx = ((x - 1) % 4) + 1
-	local ty = ((y - 1) % 4) + 1
-	return castle_tiles[ty][tx]
+	if background.mode == 'grid4' then
+		local wall_up = y > 1 and collision_map[y - 1][x] ~= 0
+		if wall_up then
+			local dark_index = ((x - 1) % 4) + 1
+			return background.dark_tiles[dark_index]
+		end
+
+		local tx = ((x - 1) % 4) + 1
+		local ty = ((y - 1) % 4) + 1
+		return background.tiles[ty][tx]
+	end
+
+	local is_left_column = ((x - 1) % 2) == 0
+	local is_top_row = ((y - 1) % 2) == 0
+	if is_top_row then
+		local dark = y > 1 and collision_map[y - 1][x] ~= 0
+		if is_left_column then
+			if dark then
+				return background.dark_l
+			end
+			return background.light_l
+		end
+		if dark then
+			return background.dark_r
+		end
+		return background.light_r
+	end
+
+	local dark = collision_map[y - 1][x] ~= 0
+	if is_left_column then
+		if dark then
+			return background.dark_r
+		end
+		return background.light_r
+	end
+	if dark then
+		return background.dark_l
+	end
+	return background.light_l
 end
 
-local function build_tile_grid(map_rows, collision_map)
+local function build_tile_grid(map_rows, collision_map, room_subtype)
 	local tiles = {}
 	for y = 1, #map_rows do
 		local row = map_rows[y]
@@ -66,7 +235,7 @@ local function build_tile_grid(map_rows, collision_map)
 		local tile_row = {}
 		for x = 1, width do
 			local ch = row:sub(x, x)
-			tile_row[x] = create_tile_id(ch, x, y, collision_map)
+			tile_row[x] = create_tile_id(ch, x, y, map_rows, collision_map, room_subtype)
 		end
 		tiles[y] = tile_row
 	end
@@ -139,13 +308,14 @@ end
 local function apply_room_template(room_state, template)
 	local map_rows = template.map_rows
 	local collision_map = build_collision_map(map_rows)
-	local tiles = build_tile_grid(map_rows, collision_map)
+	local tiles = build_tile_grid(map_rows, collision_map, template.room_subtype)
 	local tile_size = constants.room.tile_size
 	local tile_origin_x = constants.room.tile_origin_x
 	local tile_origin_y = constants.room.tile_origin_y
 
 	room_state.room_number = template.room_number
 	room_state.room_id = template.room_id
+	room_state.room_subtype = template.room_subtype
 	room_state.world_width = constants.room.width
 	room_state.world_height = constants.room.height
 	room_state.world_top = constants.room.hud_height

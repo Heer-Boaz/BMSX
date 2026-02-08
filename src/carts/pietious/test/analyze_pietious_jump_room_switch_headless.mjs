@@ -41,8 +41,8 @@ function expect(condition, message) {
 	}
 }
 
-const firstJumpSwitch = events.find((e) => e.name === 'room_switch' && e.from === 'castle_stone_03' && e.to === 'castle_stone_04' && e.dir === 'left');
-expect(firstJumpSwitch !== undefined, 'Missing left room_switch from castle_stone_03 to castle_stone_04 during jump test.');
+const firstJumpSwitch = events.find((e) => e.name === 'room_switch' && e.from === 'castle_stone_03' && e.to === 'castle_blue_02' && e.dir === 'left');
+expect(firstJumpSwitch !== undefined, 'Missing left room_switch from castle_stone_03 to castle_blue_02 during jump test.');
 
 if (firstJumpSwitch !== undefined) {
 	const metricAtSwitch = metrics.find((m) => Number(m.f) === Number(firstJumpSwitch.f));

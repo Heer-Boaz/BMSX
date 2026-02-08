@@ -1,0 +1,142 @@
+[
+	{
+		"description": "align_stairs_room3_start",
+		"frame": 600,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": true,
+			"value": 1,
+			"timestamp": 12000,
+			"pressId": 1,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "align_stairs_room3_stop",
+		"frame": 630,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": false,
+			"value": 0,
+			"timestamp": 12400,
+			"pressId": 1,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "stairs_down_room3_start",
+		"frame": 650,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowDown",
+			"down": true,
+			"value": 1,
+			"timestamp": 12800,
+			"pressId": 2,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "stairs_down_room3_stop",
+		"frame": 780,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowDown",
+			"down": false,
+			"value": 0,
+			"timestamp": 15600,
+			"pressId": 2,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "align_stairs_room1_start",
+		"frame": 820,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": true,
+			"value": 1,
+			"timestamp": 16400,
+			"pressId": 3,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "align_stairs_room1_stop",
+		"frame": 908,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": false,
+			"value": 0,
+			"timestamp": 18000,
+			"pressId": 3,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "stairs_up_chain_start",
+		"frame": 940,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowUp",
+			"down": true,
+			"value": 1,
+			"timestamp": 18800,
+			"pressId": 4,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "stairs_up_chain_stop",
+		"frame": 1160,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowUp",
+			"down": false,
+			"value": 0,
+			"timestamp": 30000,
+			"pressId": 4,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "stairs_up_room6_start",
+		"frame": 1180,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowUp",
+			"down": true,
+			"value": 1,
+			"timestamp": 20800,
+			"pressId": 5,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "stairs_up_room6_stop",
+		"frame": 1500,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowUp",
+			"down": false,
+			"value": 0,
+			"timestamp": 30000,
+			"pressId": 5,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	}
+]

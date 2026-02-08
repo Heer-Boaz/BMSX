@@ -36,7 +36,7 @@ function new_game()
 	local castle_service = engine.create_service(castle_service_module.castle_service_def_id, {
 		id = castle_service_module.castle_service_instance_id,
 	})
-	local room = castle_service:initialize('castle_stone_03')
+	local room = castle_service:initialize()
 	local spawn = room.spawn
 
 	spawn_object(player_module.player_def_id, {

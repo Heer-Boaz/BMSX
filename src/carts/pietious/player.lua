@@ -571,6 +571,36 @@ function player:try_side_room_switch_from_motion(dx)
 	return false
 end
 
+function player:nearing_room_exit()
+	local max_x = self.room.world_width - self.width
+	if self.x < 0 then
+		return 'left'
+	end
+	local up_exit_threshold = self.room.world_top - math.floor(self.height / 2)
+	if self.y < up_exit_threshold and self.state_name == 'stairs' then
+		return 'up'
+	end
+	if self.x > max_x then
+		return 'right'
+	end
+	local down_exit_threshold = self.room.world_height - self.height
+	if self.y > down_exit_threshold then
+		return 'down'
+	end
+	return nil
+end
+
+function player:try_vertical_room_switch_from_position()
+	if self.state_name == 'stairs' then
+		return false
+	end
+	local direction = self:nearing_room_exit()
+	if direction == 'up' or direction == 'down' then
+		return self:try_switch_room(direction)
+	end
+	return false
+end
+
 function player:get_jump_inertia(default_inertia)
 	if self.left_held and not self.right_held then
 		return -1
@@ -653,9 +683,6 @@ function player:get_stairs_bounds(stairs_x)
 	end
 
 	local top_y = room.tile_origin_y + ((min_row - 2) * tile_size) - self.height
-	if top_y < room.world_top then
-		top_y = room.world_top
-	end
 	local bottom_y = room.tile_origin_y + (max_row * tile_size) - self.height
 	return top_y, bottom_y
 end
@@ -763,6 +790,33 @@ function player:start_stairs(direction, stairs_x, reason)
 	self:transition_to(state_stairs, reason)
 end
 
+function player:sync_stairs_after_room_switch(reason_if_not_found)
+	local stairs_x = self:find_stairs_x_on_floor()
+	if stairs_x == nil then
+		stairs_x = self:find_stairs_x_below()
+	end
+	if stairs_x == nil then
+		self.stairs_direction = 0
+		self.stairs_x = -1
+		self:transition_to(state_quiet, reason_if_not_found)
+		return
+	end
+	local top_y, bottom_y = self:get_stairs_bounds(stairs_x)
+	self.stairs_x = stairs_x
+	self.stairs_top_y = top_y
+	self.stairs_bottom_y = bottom_y
+	self.x = stairs_x
+	if self.y < self.stairs_top_y then
+		self.y = self.stairs_top_y
+	end
+	if self.y > self.stairs_bottom_y then
+		self.y = self.stairs_bottom_y
+	end
+	self.last_dx = 0
+	self.last_dy = 0
+	self.stairs_direction = 0
+end
+
 function player:collides_at(x, y)
 	local solids = self.room.solids
 	for i = 1, #solids do
@@ -775,9 +829,6 @@ function player:collides_at(x, y)
 end
 
 function player:is_grounded()
-	if self.y >= (self.room.world_height - self.height) then
-		return true
-	end
 	return self:collides_at(self.x, self.y + 1)
 end
 
@@ -840,7 +891,7 @@ function player:apply_move(dx, dy)
 		hit_ceiling = true
 		collided_y = true
 	end
-	if self.y > max_y then
+	if self.y > max_y and self.room.links.down <= 0 then
 		moved_y = moved_y - (self.y - max_y)
 		self.y = max_y
 		landed = true
@@ -1353,12 +1404,20 @@ function player:tick_stairs()
 
 	if dy < 0 and self.y <= self.stairs_top_y then
 		self.stairs_direction = 0
+		if self:try_switch_room('up') then
+			self:sync_stairs_after_room_switch('stairs_room_switch_up_no_stairs')
+			return
+		end
 		self:emit_event('stairs_end', string.format('mode=top|x=%d|y=%d', self.x, self.y))
 		self:transition_to(state_quiet, 'stairs_end_top')
 		return
 	end
 	if dy > 0 and self.y >= self.stairs_bottom_y then
 		self.stairs_direction = 0
+		if self:try_switch_room('down') then
+			self:sync_stairs_after_room_switch('stairs_room_switch_down_no_stairs')
+			return
+		end
 		self:emit_event('stairs_end', string.format('mode=bottom|x=%d|y=%d', self.x, self.y))
 		self:transition_to(state_quiet, 'stairs_end_bottom')
 		return
@@ -1406,6 +1465,8 @@ function player:tick()
 	else
 		self:tick_quiet()
 	end
+
+	self:try_vertical_room_switch_from_position()
 
 	local took_enemy_hit = false
 	if not self:is_in_damage_lock_state() then
