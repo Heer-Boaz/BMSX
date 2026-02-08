@@ -12,12 +12,14 @@ constants.ids = {
 constants.room = {
 	width = 256,
 	height = 192,
+	hud_height = 32,
 	tile_size = 8,
 	tile_columns = 32,
 	tile_rows = 20,
 	tile_origin_x = 0,
 	tile_origin_y = 32,
 }
+constants.room.tile_origin_y = constants.room.hud_height
 
 constants.player = {
 	width = 16,

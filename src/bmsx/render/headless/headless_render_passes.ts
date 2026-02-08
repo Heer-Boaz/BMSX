@@ -446,7 +446,11 @@ function registerSpritePass(registry: RenderPassLibrary): void {
 						if (!Number.isFinite(u0) || !Number.isFinite(v0) || !Number.isFinite(u1) || !Number.isFinite(v1)) {
 							throw new Error(`[HeadlessSprites] Sprite '${options.imgid}' has non-finite UVs.`);
 						}
-						if (u0 < 0 || v0 < 0 || u1 > 1 || v1 > 1 || u0 > u1 || v0 > v1) {
+						const uMin = u0 < u1 ? u0 : u1;
+						const uMax = u0 > u1 ? u0 : u1;
+						const vMin = v0 < v1 ? v0 : v1;
+						const vMax = v0 > v1 ? v0 : v1;
+						if (uMin < 0 || vMin < 0 || uMax > 1 || vMax > 1) {
 							throw new Error(`[HeadlessSprites] Sprite '${options.imgid}' UVs out of range (${u0}, ${v0})..(${u1}, ${v1}).`);
 						}
 					const expectedBinding = resolveExpectedSpriteAtlasBinding(atlasId, primaryAtlasId, secondaryAtlasId);

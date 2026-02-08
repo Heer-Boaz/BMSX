@@ -43,12 +43,8 @@ function new_game()
 	})
 end
 
-function update(_dt_seconds)
-end
-
 while true do
 	wait_vblank()
 	service_irqs()
-	update(game.deltatime_seconds)
 	engine.update(game.deltatime)
 end

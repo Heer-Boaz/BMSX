@@ -8,28 +8,9 @@ local player_state_grounded = player_fsm_id .. ':/grounded'
 local player_state_airborne = player_fsm_id .. ':/airborne'
 local player_state_roll = player_fsm_id .. ':/roll'
 
-local jump_timeline_id = 'dk.player.jump_squash'
-local landing_timeline_id = 'dk.player.landing_squash'
-local roll_wobble_timeline_id = 'dk.player.roll_wobble'
-
-local function approach(value, target, delta)
-	if value < target then
-		value = value + delta
-		if value > target then
-			return target
-		end
-		return value
-	end
-	value = value - delta
-	if value < target then
-		return target
-	end
-	return value
-end
-
-local function overlaps(ax, ay, aw, ah, box)
-	return ax < (box.x + box.w) and (ax + aw) > box.x and ay < (box.y + box.h) and (ay + ah) > box.y
-end
+local jump_timeline_id = 'dkc.player.jump_squash'
+local landing_timeline_id = 'dkc.player.landing_squash'
+local roll_wobble_timeline_id = 'dkc.player.roll_wobble'
 
 local function abs(value)
 	if value < 0 then
@@ -45,26 +26,83 @@ local function bool01(value)
 	return 0
 end
 
+local function overlaps(ax, ay, aw, ah, box)
+	return ax < (box.x + box.w) and (ax + aw) > box.x and ay < (box.y + box.h) and (ay + ah) > box.y
+end
+
+local function profile_step(abs_diff, profile_id)
+	if profile_id == 0 then
+		return math.floor(abs_diff / 8)
+	end
+	if profile_id == 1 then
+		return math.floor(abs_diff / 16)
+	end
+	if profile_id == 2 then
+		return math.floor(abs_diff / 32)
+	end
+	if profile_id == 3 then
+		return math.floor(abs_diff / 64)
+	end
+	if profile_id == 4 then
+		return math.floor(abs_diff / 128)
+	end
+	if profile_id == 5 then
+		return math.floor(abs_diff / 256)
+	end
+	if profile_id == 6 then
+		return math.floor(abs_diff / 4)
+	end
+	if profile_id == 7 then
+		return math.floor(abs_diff / 2)
+	end
+	if profile_id == 8 then
+		return math.floor(abs_diff / 32) + math.floor(abs_diff / 64)
+	end
+	return 0
+end
+
+local function approach_subpx(current, target, profile_id)
+	if current == target then
+		return target
+	end
+	local delta = target - current
+	local abs_delta = abs(delta)
+	local step = profile_step(abs_delta, profile_id)
+	if step == 0 then
+		return target
+	end
+	if delta < 0 then
+		step = -step
+	end
+	local value = current + step
+	if delta > 0 and value > target then
+		return target
+	end
+	if delta < 0 and value < target then
+		return target
+	end
+	return value
+end
+
 function player:define_motion_timelines()
 	self:define_timeline(new_timeline({
 		id = jump_timeline_id,
 		frames = {
-			{ visual_scale_x = 0.9, visual_scale_y = 1.12 },
-			{ visual_scale_x = 1.0, visual_scale_y = 1.0 },
+			{ draw_scale_x = 0.92, draw_scale_y = 1.12 },
+			{ draw_scale_x = 1.0, draw_scale_y = 1.0 },
 		},
-		ticks_per_frame = 10,
+		ticks_per_frame = 8,
 		playback_mode = 'once',
 		apply = true,
 	}))
 	self:define_timeline(new_timeline({
 		id = landing_timeline_id,
 		frames = {
-			{ visual_scale_x = 1.16, visual_scale_y = 0.78 },
-			{ visual_scale_x = 0.92, visual_scale_y = 1.1 },
-			{ visual_scale_x = 1.03, visual_scale_y = 0.97 },
-			{ visual_scale_x = 1.0, visual_scale_y = 1.0 },
+			{ draw_scale_x = 1.14, draw_scale_y = 0.8 },
+			{ draw_scale_x = 0.94, draw_scale_y = 1.08 },
+			{ draw_scale_x = 1.0, draw_scale_y = 1.0 },
 		},
-		ticks_per_frame = 14,
+		ticks_per_frame = 12,
 		playback_mode = 'once',
 		apply = true,
 	}))
@@ -74,10 +112,10 @@ function player:define_motion_timelines()
 		tracks = {
 			{
 				kind = 'wave',
-				path = { 'roll_wobble' },
+				path = { 'roll_visual' },
 				base = 0,
-				amp = 0.14,
-				period = 0.11,
+				amp = 0.16,
+				period = 0.1,
 				phase = 0,
 				wave = 'sin',
 			},
@@ -103,80 +141,83 @@ function player:emit_metric(dt)
 	if not telemetry.enabled then
 		return
 	end
-	local subpixels_per_pixel = constants.dkc_reference.subpixels_per_pixel
-	local spx = self.vx * dt * subpixels_per_pixel
-	local spy = self.vy * dt * subpixels_per_pixel
 	print(string.format(
-		'%s|f=%d|t=%.3f|dt=%.3f|x=%.3f|y=%.3f|vx=%.6f|vy=%.6f|spx=%.2f|spy=%.2f|g=%d|st=%s|ax=%d|run=%d|runp=%d|jp=%d|jr=%d|rp=%d|ah=%d|bh=%d|ajp=%d|bjp=%d|ajr=%d|bjr=%d|coyote=%.3f|jbuf=%.3f|rollt=%.3f',
+		'%s|f=%d|t=%.3f|dt=%.3f|x=%.3f|y=%.3f|sx=%d|sy=%d|tgt=%d|prof=%d|grav=%d|g=%d|st=%s|ax=%d|run=%d|runp=%d|jp=%d|jh=%d|jr=%d|rp=%d|xh=%d|yh=%d|ah=%d|bh=%d|rollt=%d|chain=%d',
 		telemetry.metric_prefix,
 		self.debug_frame,
 		self.debug_time_ms,
 		dt,
 		self.x,
 		self.y,
-		self.vx,
-		self.vy,
-		spx,
-		spy,
+		self.x_speed_subpx,
+		self.y_speed_subpx,
+		self.target_x_speed_subpx,
+		self.active_profile_id,
+		self.active_gravity_subpx,
 		bool01(self.grounded),
 		self.pose_name,
 		self.move_axis,
-			bool01(self.run_held),
-			bool01(self.run_pressed),
-			bool01(self.jump_pressed),
-			bool01(self.jump_released),
-			bool01(self.roll_pressed),
-			bool01(self.a_held),
-			bool01(self.b_held),
-			bool01(self.a_pressed),
-			bool01(self.b_pressed),
-			bool01(self.a_released),
-			bool01(self.b_released),
-			self.coyote_timer_ms,
-			self.jump_buffer_timer_ms,
-			self.roll_timer_ms
-		))
+		bool01(self.run_held),
+		bool01(self.run_pressed),
+		bool01(self.jump_pressed),
+		bool01(self.jump_held),
+		bool01(self.jump_released),
+		bool01(self.roll_pressed),
+		bool01(self.x_held),
+		bool01(self.y_held),
+		bool01(self.a_held),
+		bool01(self.b_held),
+		self.roll_timer_frames,
+		self.roll_chain_window_frames
+	))
 end
 
 function player:reset_runtime()
+	local sp = constants.dkc_reference.subpixels_per_pixel
 	self.x = self.spawn_x
 	self.y = self.spawn_y
-	self.vx = 0
-	self.vy = 0
+	self.pos_subx = math.floor(self.x * sp)
+	self.pos_suby = math.floor(self.y * sp)
+	self.x_speed_subpx = 0
+	self.y_speed_subpx = 0
+	self.target_x_speed_subpx = 0
+	self.active_profile_id = 0
+	self.active_gravity_subpx = 0
+
 	self.facing = 1
 	self.move_axis = 0
 	self.run_held = false
 	self.run_pressed = false
+	self.x_held = false
+	self.y_held = false
+	self.a_held = false
+	self.b_held = false
+	self.jump_held = false
 	self.jump_pressed = false
 	self.jump_released = false
 	self.roll_pressed = false
-	self.a_held = false
-	self.b_held = false
-	self.a_pressed = false
-	self.b_pressed = false
-	self.a_released = false
-	self.b_released = false
-	self.down_held = false
-	self.grounded = false
-	self.coyote_timer_ms = 0
-	self.jump_buffer_timer_ms = 0
-	self.roll_timer_ms = 0
+
+	self.grounded = true
 	self.roll_dir = 1
-	self.roll_exit_cooldown_ms = 0
-	self.visual_scale_x = 1
-	self.visual_scale_y = 1
-	self.roll_wobble = 0
+	self.roll_timer_frames = 0
+	self.roll_chain_window_frames = 0
+
+	self.draw_scale_x = 1
+	self.draw_scale_y = 1
+	self.roll_visual = 0
 	self.pose_name = 'grounded'
+
 	self.camera_anchor_x = self.x + (self.width * 0.5)
 	self.camera_anchor_y = self.y + (self.height * 0.5)
+
 	self.debug_frame = 0
 	self.debug_time_ms = 0
-	self.debug_was_grounded = false
-	self.debug_last_pose_name = self.pose_name
+	self.debug_last_pose = self.pose_name
+	self.debug_last_grounded = self.grounded
 	self.debug_roll_started = false
 	self.debug_jump_started = false
 	self.debug_jump_from_roll = false
-	self.debug_last_roll_speed_subpx = 0
+	self.debug_roll_speed_subpx = 0
 end
 
 function player:respawn()
@@ -184,11 +225,26 @@ function player:respawn()
 	self.sc:transition_to(player_state_grounded)
 end
 
+function player:get_overlapping_solid(x, y)
+	local solids = self.level.solids
+	for i = 1, #solids do
+		local solid = solids[i]
+		if overlaps(x, y, self.width, self.height, solid) then
+			return solid
+		end
+	end
+	return nil
+end
+
+function player:is_grounded_probe()
+	return self:get_overlapping_solid(self.x, self.y + 1) ~= nil
+end
+
 function player:sample_input()
 	local player_index = self.player_index
-	local was_a_held = self.a_held
-	local was_b_held = self.b_held
-	local was_run_held = self.run_held
+	local previous_run_held = self.run_held
+	local previous_jump_held = self.jump_held
+
 	local left = action_triggered('left[p]', player_index)
 	local right = action_triggered('right[p]', player_index)
 	self.move_axis = 0
@@ -201,264 +257,240 @@ function player:sample_input()
 	if self.move_axis ~= 0 then
 		self.facing = self.move_axis
 	end
+
+	self.x_held = action_triggered('x[p]', player_index)
+	self.y_held = action_triggered('y[p]', player_index)
 	self.a_held = action_triggered('a[p]', player_index)
 	self.b_held = action_triggered('b[p]', player_index)
-	self.run_held = action_triggered('x[p]', player_index) or action_triggered('y[p]', player_index)
-	self.a_pressed = self.a_held and (not was_a_held)
-	self.b_pressed = self.b_held and (not was_b_held)
-	self.a_released = (not self.a_held) and was_a_held
-	self.b_released = (not self.b_held) and was_b_held
-	self.run_pressed = self.run_held and (not was_run_held)
-	self.jump_pressed = self.a_pressed or self.b_pressed
-	self.jump_released = self.a_released or self.b_released
+
+	-- DKC-style controls: Y is run/roll, B is jump.
+	self.run_held = self.y_held
+	self.jump_held = self.b_held
+
+	self.run_pressed = self.run_held and (not previous_run_held)
+	self.jump_pressed = self.jump_held and (not previous_jump_held)
+	self.jump_released = (not self.jump_held) and previous_jump_held
 	self.roll_pressed = self.run_pressed
-	self.down_held = action_triggered('down[p]', player_index)
 end
 
-function player:update_timers(dt)
-	local p = constants.player
-	if self.jump_buffer_timer_ms > 0 then
-		self.jump_buffer_timer_ms = self.jump_buffer_timer_ms - dt
-		if self.jump_buffer_timer_ms < 0 then
-			self.jump_buffer_timer_ms = 0
+function player:update_roll_chain_timer()
+	if self.roll_chain_window_frames > 0 and (not self.sc:matches_state_path(player_state_roll)) then
+		self.roll_chain_window_frames = self.roll_chain_window_frames - 1
+	end
+end
+
+function player:apply_horizontal_control(airborne)
+	local ref = constants.dkc_reference
+	local p = constants.physics
+	local target = 0
+	if self.move_axis ~= 0 then
+		if self.run_held and (not airborne) then
+			target = self.move_axis * ref.run_target_subpx
+		else
+			target = self.move_axis * ref.walk_target_subpx
 		end
 	end
-	if self.jump_pressed then
-		self.jump_buffer_timer_ms = p.jump_buffer_ms
+
+	local profile = p.profile_ground_release
+	if airborne then
+		profile = p.profile_air
+	elseif self.move_axis == 0 then
+		profile = p.profile_ground_release
+	elseif self.move_axis * self.x_speed_subpx < 0 then
+		profile = p.profile_ground_turn
+	elseif self.run_held then
+		profile = p.profile_ground_run
+	else
+		profile = p.profile_ground_walk
 	end
-	if self.grounded then
-		self.coyote_timer_ms = p.coyote_ms
-	elseif self.coyote_timer_ms > 0 then
-		self.coyote_timer_ms = self.coyote_timer_ms - dt
-		if self.coyote_timer_ms < 0 then
-			self.coyote_timer_ms = 0
-		end
+
+	self.target_x_speed_subpx = target
+	self.active_profile_id = profile
+	self.x_speed_subpx = approach_subpx(self.x_speed_subpx, target, profile)
+end
+
+function player:apply_air_gravity()
+	local ref = constants.dkc_reference
+	local gravity_subpx = ref.jump_gravity_release_subpx
+	if self.jump_held and self.y_speed_subpx > 0 then
+		gravity_subpx = ref.jump_gravity_hold_subpx
 	end
-	if self.roll_exit_cooldown_ms > 0 then
-		self.roll_exit_cooldown_ms = self.roll_exit_cooldown_ms - dt
-		if self.roll_exit_cooldown_ms < 0 then
-			self.roll_exit_cooldown_ms = 0
-		end
+	self.active_gravity_subpx = gravity_subpx
+	self.y_speed_subpx = self.y_speed_subpx + gravity_subpx
+	if self.y_speed_subpx < ref.max_fall_subpx then
+		self.y_speed_subpx = ref.max_fall_subpx
 	end
 end
 
-function player:can_start_jump()
-	return self.jump_buffer_timer_ms > 0 and self.coyote_timer_ms > 0
-end
+function player:integrate_and_collide()
+	local sp = constants.dkc_reference.subpixels_per_pixel
+	local dx = self.x_speed_subpx / sp
+	local dy = -(self.y_speed_subpx / sp)
 
-function player:can_start_roll()
-	local p = constants.player
-	return self.roll_pressed
-		and self.grounded
-		and self.move_axis ~= 0
-		and self.roll_exit_cooldown_ms <= 0
-		and (abs(self.vx) >= p.roll_min_entry_speed or self.run_held)
-end
-
-function player:start_jump(from_roll)
-	local p = constants.player
-	if from_roll and abs(self.vx) < p.roll_jump_speed then
-		self.vx = self.roll_dir * p.roll_jump_speed
-	end
-	self.vy = p.jump_velocity
-	self.grounded = false
-	self.jump_buffer_timer_ms = 0
-	self.coyote_timer_ms = 0
-	self.debug_jump_started = true
-	self.debug_jump_from_roll = from_roll
-	self:play_timeline(jump_timeline_id, { rewind = true, snap_to_start = true })
-end
-
-function player:start_roll()
-	local p = constants.player
-	local speed = p.roll_standing_speed
-	if abs(self.vx) >= p.roll_run_entry_speed_threshold then
-		speed = p.roll_running_speed
-	end
-	self.roll_dir = self.move_axis
-	self.roll_timer_ms = p.roll_duration_ms
-	self.vx = self.roll_dir * speed
-	self.vy = 0
-	self.debug_roll_started = true
-	self.debug_last_roll_speed_subpx = self.vx * constants.dkc_reference.frame_ms * constants.dkc_reference.subpixels_per_pixel
-	self:play_timeline(roll_wobble_timeline_id, { rewind = true, snap_to_start = true })
-end
-
-function player:apply_ground_horizontal(dt)
-	local p = constants.player
-	if self.move_axis == 0 then
-		self.vx = approach(self.vx, 0, p.ground_decel * dt)
-		return
-	end
-
-	if self.vx ~= 0 and (self.vx * self.move_axis) < 0 then
-		self.vx = approach(self.vx, 0, p.turnaround_decel * dt)
-		return
-	end
-
-	local top_speed = self.run_held and p.run_speed or p.walk_speed
-	local target_speed = self.move_axis * top_speed
-	local accel = p.ground_accel * dt
-	if (not self.run_held) and abs(self.vx) > p.walk_speed and (self.vx * self.move_axis) > 0 then
-		accel = p.run_release_ground_decel * dt
-	end
-	self.vx = approach(self.vx, target_speed, accel)
-end
-
-function player:apply_air_horizontal(dt)
-	local p = constants.player
-	if self.move_axis == 0 then
-		self.vx = approach(self.vx, 0, p.air_drag * dt)
-		return
-	end
-
-	if self.vx ~= 0 and (self.vx * self.move_axis) < 0 then
-		self.vx = approach(self.vx, 0, p.air_turnaround_decel * dt)
-	end
-
-	local top_speed = self.run_held and p.run_speed or p.walk_speed
-	local target_speed = self.move_axis * top_speed
-	local accel = p.air_accel * dt
-	if (not self.run_held) and abs(self.vx) > p.walk_speed and (self.vx * self.move_axis) > 0 then
-		accel = p.run_release_air_decel * dt
-	end
-	self.vx = approach(self.vx, target_speed, accel)
-end
-
-function player:apply_gravity(dt)
-	local p = constants.player
-	self.vy = self.vy + (p.gravity * dt)
-	if self.vy > p.max_fall_speed then
-		self.vy = p.max_fall_speed
-	end
-end
-
-function player:move_and_collide(dt)
-	local solids = self.level.solids
-	local dx = self.vx * dt
 	if dx ~= 0 then
 		self.x = self.x + dx
-		for i = 1, #solids do
-			local solid = solids[i]
-			if overlaps(self.x, self.y, self.width, self.height, solid) then
-				if dx > 0 then
-					self.x = solid.x - self.width
-				else
-					self.x = solid.x + solid.w
-				end
-				self.vx = 0
+		local solid_x = self:get_overlapping_solid(self.x, self.y)
+		if solid_x ~= nil then
+			if dx > 0 then
+				self.x = solid_x.x - self.width
+			else
+				self.x = solid_x.x + solid_x.w
 			end
+			self.x_speed_subpx = 0
+			self.target_x_speed_subpx = 0
 		end
 	end
 
-	local dy = self.vy * dt
 	local was_grounded = self.grounded
 	self.grounded = false
+
 	if dy ~= 0 then
 		self.y = self.y + dy
-		for i = 1, #solids do
-			local solid = solids[i]
-			if overlaps(self.x, self.y, self.width, self.height, solid) then
-				if dy > 0 then
-					self.y = solid.y - self.height
-					self.vy = 0
-					self.grounded = true
-				else
-					self.y = solid.y + solid.h
-					self.vy = 0
-				end
+		local solid_y = self:get_overlapping_solid(self.x, self.y)
+		if solid_y ~= nil then
+			if dy > 0 then
+				self.y = solid_y.y - self.height
+				self.grounded = true
+			else
+				self.y = solid_y.y + solid_y.h
 			end
+			self.y_speed_subpx = 0
 		end
 	end
 
-	if dy == 0 then
-		for i = 1, #solids do
-			local solid = solids[i]
-			if overlaps(self.x, self.y + 1, self.width, self.height, solid) then
-				self.grounded = true
-				break
-			end
-		end
+	if not self.grounded and self:is_grounded_probe() then
+		self.grounded = true
+		self.y_speed_subpx = 0
 	end
 
 	local max_x = self.level.world_width - self.width
 	if self.x < 0 then
 		self.x = 0
-		self.vx = 0
-	end
-	if self.x > max_x then
+		self.x_speed_subpx = 0
+	elseif self.x > max_x then
 		self.x = max_x
-		self.vx = 0
+		self.x_speed_subpx = 0
 	end
 
-	local floor_y = self.level.world_height - self.height
-	if self.y > floor_y then
-		self.y = floor_y
-		self.vy = 0
+	local max_y = self.level.world_height - self.height
+	if self.y > max_y then
+		self.y = max_y
+		self.y_speed_subpx = 0
 		self.grounded = true
 	end
+
+	self.pos_subx = math.floor(self.x * sp)
+	self.pos_suby = math.floor(self.y * sp)
 
 	if self.grounded and not was_grounded then
 		self:play_timeline(landing_timeline_id, { rewind = true, snap_to_start = true })
 	end
 end
 
-function player:tick_grounded(dt)
-	self.vy = 0
-	self:apply_ground_horizontal(dt)
-	if self:can_start_roll() then
+function player:start_jump(from_roll)
+	self.y_speed_subpx = constants.dkc_reference.jump_initial_subpx
+	self.grounded = false
+	self.debug_jump_started = true
+	self.debug_jump_from_roll = from_roll
+	self:play_timeline(jump_timeline_id, { rewind = true, snap_to_start = true })
+end
+
+function player:start_roll()
+	local ref = constants.dkc_reference
+	local speed = abs(self.x_speed_subpx)
+	if speed < ref.roll_entry_min_subpx then
+		speed = ref.roll_entry_min_subpx
+	end
+	speed = speed + ref.roll_entry_bonus_subpx
+	if speed > ref.roll_entry_cap_subpx then
+		speed = ref.roll_entry_cap_subpx
+	end
+	if self.roll_chain_window_frames > 0 then
+		speed = speed + ref.roll_chain_step_subpx
+		if speed > ref.roll_chain_cap_subpx then
+			speed = ref.roll_chain_cap_subpx
+		end
+	end
+
+	if self.move_axis ~= 0 then
+		self.roll_dir = self.move_axis
+	else
+		self.roll_dir = self.facing
+	end
+	self.facing = self.roll_dir
+	self.x_speed_subpx = self.roll_dir * speed
+	self.target_x_speed_subpx = self.x_speed_subpx
+	self.roll_timer_frames = constants.physics.roll_timer_frames
+	self.roll_chain_window_frames = constants.physics.roll_chain_window_frames
+
+	self.debug_roll_started = true
+	self.debug_roll_speed_subpx = speed
+	self:play_timeline(roll_wobble_timeline_id, { rewind = true, snap_to_start = true })
+end
+
+function player:tick_grounded()
+	self.active_gravity_subpx = 0
+	self.y_speed_subpx = 0
+
+	if self.roll_pressed and self.move_axis ~= 0 then
 		self:start_roll()
 		self.sc:transition_to(player_state_roll)
 		return
 	end
-	if self:can_start_jump() then
+
+	if self.jump_pressed then
 		self:start_jump(false)
 		self.sc:transition_to(player_state_airborne)
 		return
 	end
-	self:move_and_collide(dt)
+
+	self:apply_horizontal_control(false)
+	self:integrate_and_collide()
+
 	if not self.grounded then
 		self.sc:transition_to(player_state_airborne)
 	end
 end
 
-function player:tick_airborne(dt)
-	local p = constants.player
-	self:apply_air_horizontal(dt)
-	if self.jump_released and self.vy < p.jump_cut_velocity then
-		self.vy = self.vy * p.jump_cut_multiplier
-	end
-	self:apply_gravity(dt)
-	self:move_and_collide(dt)
+function player:tick_airborne()
+	self:apply_horizontal_control(true)
+	self:apply_air_gravity()
+	self:integrate_and_collide()
 	if self.grounded then
 		self.sc:transition_to(player_state_grounded)
 	end
 end
 
-function player:tick_roll(dt)
-	local p = constants.player
-	if self:can_start_jump() then
+function player:tick_roll()
+	if self.jump_pressed then
 		self:start_jump(true)
 		self.sc:transition_to(player_state_airborne)
 		return
 	end
-	self.roll_timer_ms = self.roll_timer_ms - dt
-	local speed = abs(self.vx) - (p.roll_decel * dt)
-	if speed < p.roll_min_maintained_speed then
-		speed = p.roll_min_maintained_speed
-	end
-	self.vx = self.roll_dir * speed
+
+	self.roll_timer_frames = self.roll_timer_frames - 1
+	self.active_gravity_subpx = 0
+
+	local p = constants.physics
+	local roll_target = self.roll_dir * p.roll_floor_subpx
+	self.target_x_speed_subpx = roll_target
+	self.active_profile_id = p.profile_roll_release
+	self.x_speed_subpx = approach_subpx(self.x_speed_subpx, roll_target, p.profile_roll_release)
+
 	if not self.grounded then
-		self:apply_gravity(dt)
+		self:apply_air_gravity()
 	else
-		self.vy = 0
+		self.y_speed_subpx = 0
 	end
-	self:move_and_collide(dt)
+
+	self:integrate_and_collide()
+
 	if not self.grounded then
 		self.sc:transition_to(player_state_airborne)
 		return
 	end
-	if self.roll_timer_ms <= 0 or self.vx == 0 then
+
+	if self.roll_timer_frames <= 0 then
 		self.sc:transition_to(player_state_grounded)
 	end
 end
@@ -469,43 +501,45 @@ function player:tick(dt)
 	self.debug_roll_started = false
 	self.debug_jump_started = false
 	self.debug_jump_from_roll = false
+
 	local was_grounded = self.grounded
-	local was_pose_name = self.pose_name
+	local was_pose = self.pose_name
 
 	self:sample_input()
-	self:update_timers(dt)
+	self:update_roll_chain_timer()
+
 	if self.sc:matches_state_path(player_state_roll) then
-		self:tick_roll(dt)
+		self:tick_roll()
 	elseif self.sc:matches_state_path(player_state_airborne) then
-		self:tick_airborne(dt)
+		self:tick_airborne()
 	else
-		self:tick_grounded(dt)
+		self:tick_grounded()
 	end
-	self.camera_anchor_x = self.x + (self.width * 0.5) + (self.facing * constants.camera.forward_look * 0.3)
+
+	self.camera_anchor_x = self.x + (self.width * 0.5) + (self.facing * constants.camera.forward_look_px)
 	self.camera_anchor_y = self.y + (self.height * 0.5)
 
 	if self.debug_roll_started then
-		self:emit_event('roll_start', string.format('subpx=%.2f|dir=%d', self.debug_last_roll_speed_subpx, self.roll_dir))
+		self:emit_event('roll_start', string.format('subpx=%d|dir=%d', self.debug_roll_speed_subpx, self.roll_dir))
 	end
 	if self.debug_jump_started then
-		local jump_speed_subpx = self.vx * constants.dkc_reference.frame_ms * constants.dkc_reference.subpixels_per_pixel
-		self:emit_event('jump_start', string.format('from_roll=%d|subpx=%.2f', bool01(self.debug_jump_from_roll), jump_speed_subpx))
+		self:emit_event('jump_start', string.format('from_roll=%d|sx=%d|sy=%d', bool01(self.debug_jump_from_roll), self.x_speed_subpx, self.y_speed_subpx))
 	end
 	if self.grounded and not was_grounded then
 		self:emit_event('land', string.format('x=%.3f|y=%.3f', self.x, self.y))
 	elseif (not self.grounded) and was_grounded then
 		self:emit_event('leave_ground', string.format('x=%.3f|y=%.3f', self.x, self.y))
 	end
-	if self.pose_name ~= was_pose_name then
-		self:emit_event('pose', string.format('from=%s|to=%s', was_pose_name, self.pose_name))
-		if was_pose_name == 'roll' then
-			local roll_exit_subpx = self.vx * constants.dkc_reference.frame_ms * constants.dkc_reference.subpixels_per_pixel
-			self:emit_event('roll_end', string.format('subpx=%.2f', roll_exit_subpx))
+	if self.pose_name ~= was_pose then
+		self:emit_event('pose', string.format('from=%s|to=%s', was_pose, self.pose_name))
+		if was_pose == 'roll' then
+			self:emit_event('roll_end', string.format('sx=%d', self.x_speed_subpx))
 		end
 	end
+
 	self:emit_metric(dt)
-	self.debug_was_grounded = self.grounded
-	self.debug_last_pose_name = self.pose_name
+	self.debug_last_pose = self.pose_name
+	self.debug_last_grounded = self.grounded
 end
 
 local function define_player_fsm()
@@ -522,7 +556,7 @@ local function define_player_fsm()
 			grounded = {
 				entering_state = function(self)
 					self.pose_name = 'grounded'
-					self.roll_wobble = 0
+					self.roll_visual = 0
 				end,
 			},
 			airborne = {
@@ -536,8 +570,7 @@ local function define_player_fsm()
 				end,
 				exiting_state = function(self)
 					self:stop_timeline(roll_wobble_timeline_id)
-					self.roll_wobble = 0
-					self.roll_exit_cooldown_ms = constants.player.roll_exit_cooldown_ms
+					self.roll_visual = 0
 				end,
 			},
 		},
@@ -554,44 +587,51 @@ local function register_player_definition()
 			height = constants.player.height,
 			spawn_x = constants.player.start_x,
 			spawn_y = constants.player.start_y,
+
 			x = constants.player.start_x,
 			y = constants.player.start_y,
-			vx = 0,
-			vy = 0,
+			pos_subx = constants.player.start_x * constants.dkc_reference.subpixels_per_pixel,
+			pos_suby = constants.player.start_y * constants.dkc_reference.subpixels_per_pixel,
+			x_speed_subpx = 0,
+			y_speed_subpx = 0,
+			target_x_speed_subpx = 0,
+			active_profile_id = 0,
+			active_gravity_subpx = 0,
+
 			facing = 1,
 			move_axis = 0,
 			run_held = false,
 			run_pressed = false,
+			x_held = false,
+			y_held = false,
+			a_held = false,
+			b_held = false,
+			jump_held = false,
 			jump_pressed = false,
 			jump_released = false,
 			roll_pressed = false,
-			a_held = false,
-			b_held = false,
-			a_pressed = false,
-			b_pressed = false,
-			a_released = false,
-			b_released = false,
-			down_held = false,
-			grounded = false,
-			coyote_timer_ms = 0,
-			jump_buffer_timer_ms = 0,
-			roll_timer_ms = 0,
+			grounded = true,
+
 			roll_dir = 1,
-			roll_exit_cooldown_ms = 0,
-			visual_scale_x = 1,
-			visual_scale_y = 1,
-			roll_wobble = 0,
+			roll_timer_frames = 0,
+			roll_chain_window_frames = 0,
+
+			draw_scale_x = 1,
+			draw_scale_y = 1,
+			roll_visual = 0,
 			pose_name = 'grounded',
+
 			camera_anchor_x = 0,
 			camera_anchor_y = 0,
+
 			debug_frame = 0,
 			debug_time_ms = 0,
-			debug_was_grounded = false,
-			debug_last_pose_name = 'grounded',
+			debug_last_pose = 'grounded',
+			debug_last_grounded = true,
 			debug_roll_started = false,
 			debug_jump_started = false,
 			debug_jump_from_roll = false,
-			debug_last_roll_speed_subpx = 0,
+			debug_roll_speed_subpx = 0,
 		},
 	})
 end

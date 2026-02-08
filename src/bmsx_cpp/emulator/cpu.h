@@ -657,6 +657,7 @@ public:
 	const StringPool& stringPool() const { return m_stringPool; }
 	void reserveStringHandles(StringId minHandle);
 	void setExternalRootMarker(std::function<void(GcHeap&)> marker) { m_externalRootMarker = std::move(marker); }
+	void setStringIndexTable(Table* table) { m_stringIndexTable = table; }
 
 	Value createNativeFunction(std::string_view name, NativeFunctionInvoke fn);
 	Value createNativeObject(
@@ -750,6 +751,7 @@ private:
 
 	std::vector<DecodedInstruction> m_decoded;
 	Value m_indexKey = valueNil();
+	Table* m_stringIndexTable = nullptr;
 };
 
 std::string valueToString(const Value& v, const StringPool& stringPool);

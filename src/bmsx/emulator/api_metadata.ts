@@ -507,6 +507,32 @@ export const API_METHOD_METADATA = {
 		returnType: 'Timeline',
 		returnDescription: 'New Timeline instance.',
 	},
+	timeline_expand: {
+		description: 'Repeats a frame array N times and returns a copied frame table.',
+		parameters: [
+			{ name: 'frames', description: 'Base frame array.' },
+			{ name: 'repetitions', optional: true, description: 'Number of repetitions. Defaults to 1.' },
+		],
+		returnType: 'any[]',
+		returnDescription: 'Expanded frame array.',
+	},
+	timeline_sequence: {
+		description: 'Builds a frame array from sequence entries { value = frame, hold = frame_count }.',
+		parameters: [
+			{ name: 'sequence', description: 'Sequence array with value/hold entries.' },
+		],
+		returnType: 'any[]',
+		returnDescription: 'Expanded frame array with hold durations applied.',
+	},
+	timeline_pingpong: {
+		description: 'Builds a ping-pong frame array from a forward frame array.',
+		parameters: [
+			{ name: 'frames', description: 'Forward frame array.' },
+			{ name: 'include_endpoints', optional: true, description: 'When true, mirror includes first/last endpoints.' },
+		],
+		returnType: 'any[]',
+		returnDescription: 'Ping-pong frame array.',
+	},
 	timeline_range: {
 		description: 'Builds a frame index array from 0 to frame_count - 1.',
 		parameters: [

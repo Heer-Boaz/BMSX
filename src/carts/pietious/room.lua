@@ -2,6 +2,10 @@ local constants = require('constants.lua')
 
 local room = {}
 
+-- Castle room 0x03 map from the original MoG ROM/disassembly data:
+-- - room tile streams: WA(28) @ 0x6AC0 (page 7)
+-- - 4x4 tile definitions: A(10) @ 0x6000 (page 7)
+-- Verified against the RoomData room #3 map in Maze-of-Nicolaas-XNA.
 local room_map_castle_stone_3 = {
 	'..............................##',
 	'..............................##',
@@ -46,7 +50,7 @@ local function build_collision_map(map_rows)
 		local width = #row
 		local collision_row = {}
 		for x = 1, width do
-			local ch = string.sub(row, x, x)
+			local ch = row:sub(x, x)
 			if ch == '#' then
 				collision_row[x] = 1
 			else
@@ -87,7 +91,7 @@ local function build_tile_grid(map_rows, collision_map)
 		local width = #row
 		local tile_row = {}
 		for x = 1, width do
-			local ch = string.sub(row, x, x)
+			local ch = row:sub(x, x)
 			tile_row[x] = create_tile_id(ch, x, y, collision_map)
 		end
 		tiles[y] = tile_row
@@ -131,6 +135,8 @@ function room.create_room()
 	return {
 		world_width = constants.room.width,
 		world_height = constants.room.height,
+		-- e505 docs in disassembly/memory map place the top playable wall at Y=0x20.
+		world_top = constants.room.hud_height,
 		spawn = { x = constants.player.start_x, y = constants.player.start_y },
 		tile_size = tile_size,
 		tile_origin_x = tile_origin_x,

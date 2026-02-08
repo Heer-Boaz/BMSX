@@ -67,7 +67,7 @@ end
 
 function director:draw_ui()
 	local view_w = display_width()
-	put_rectfillcolor(0, 0, view_w, 30, 200, constants.palette.ui_banner)
+	put_rectfillcolor(0, 0, view_w, self.room.tile_origin_y, 200, constants.palette.ui_banner)
 	put_glyphs(constants.ui.help_line, 8, 10, 201, self.ui_glyph_opts)
 end
 

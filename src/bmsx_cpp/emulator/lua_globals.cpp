@@ -2758,6 +2758,7 @@ stringTable->set(key("unpack"), m_cpu.createNativeFunction("string.unpack", [str
 	out.push_back(valueNumber(static_cast<double>(offset + 1)));
 }));
 
+	m_cpu.setStringIndexTable(stringTable);
 	setGlobal("string", valueTable(stringTable));
 
 	auto* tableLib = m_cpu.createTable();

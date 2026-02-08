@@ -1538,6 +1538,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		const formatted = formatLuaString(runtime, template, args, 1);
 		out.push(runtime.internString(formatted));
 	}));
+	runtime.cpu.setStringIndexTable(stringTable);
 	runtimeLuaPipeline.registerGlobal(runtime, 'string', stringTable);
 
 	const tableLibrary = new Table(0, 0);

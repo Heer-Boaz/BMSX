@@ -964,6 +964,7 @@ export class CPU {
 	private decodedC: Uint8Array | null = null;
 	private decodedExt: Uint8Array | null = null;
 	private decodedWords: Uint32Array | null = null;
+	private stringIndexTable: Table | null = null;
 
 	// Frame pooling: avoid allocating new CallFrame objects per call
 	private readonly framePool: CallFrame[] = [];
@@ -1126,6 +1127,10 @@ export class CPU {
 
 	public getStringPool(): StringPool {
 		return this.stringPool;
+	}
+
+	public setStringIndexTable(table: Table | null): void {
+		this.stringIndexTable = table;
 	}
 
 	public getProgram(): Program {
@@ -1351,6 +1356,15 @@ export class CPU {
 				const key = this.readRK(frame, rkRawC, rkBitsC);
 				if (table instanceof Table) {
 					this.setRegister(frame, a, this.resolveTableIndex(table, key));
+					return;
+				}
+				if (isStringValue(table)) {
+					const indexTable = this.stringIndexTable;
+					if (indexTable !== null) {
+						this.setRegister(frame, a, this.resolveTableIndex(indexTable, key));
+					} else {
+						this.setRegisterNil(frame, a);
+					}
 					return;
 				}
 				if (isNativeObject(table)) {

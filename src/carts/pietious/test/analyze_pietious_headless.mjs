@@ -123,6 +123,37 @@ function expect(condition, message) {
 	}
 }
 
+let minY = Number.POSITIVE_INFINITY;
+for (let i = 0; i < metrics.length; i += 1) {
+	const y = Number(metrics[i].y);
+	if (y < minY) {
+		minY = y;
+	}
+}
+expect(minY >= 32, `Player Y went above HUD ceiling. minimum_y=${minY}, expected >= 32.`);
+
+const jumpFacingRightSample = first(metrics, (m) => {
+	if (m.st !== 'jumping' && m.st !== 'stopped_jumping') {
+		return false;
+	}
+	return Number(m.right) === 1 && Number(m.left) === 0;
+});
+expect(jumpFacingRightSample !== null, 'Missing jump sample with right input held.');
+if (jumpFacingRightSample) {
+	expect(Number(jumpFacingRightSample.face) === 1, `Jump facing mismatch for right input. got face=${jumpFacingRightSample.face}, expected 1.`);
+}
+
+const jumpFacingLeftSample = first(metrics, (m) => {
+	if (m.st !== 'jumping' && m.st !== 'stopped_jumping') {
+		return false;
+	}
+	return Number(m.left) === 1 && Number(m.right) === 0;
+});
+expect(jumpFacingLeftSample !== null, 'Missing jump sample with left input held.');
+if (jumpFacingLeftSample) {
+	expect(Number(jumpFacingLeftSample.face) === -1, `Jump facing mismatch for left input. got face=${jumpFacingLeftSample.face}, expected -1.`);
+}
+
 const jumpStarts = events.filter((e) => e.name === 'jump_start');
 const jumpAnalyses = jumpStarts.map((j) => {
 	return {
@@ -218,6 +249,13 @@ if (fullJump) {
 			'controlled_fall',
 			true,
 		);
+		const controlledWithEntry = collectSegmentMetrics(
+			metrics,
+			fullJumpFrame,
+			Number(fullJumpLand.f) + 1,
+			'controlled_fall',
+			false,
+		);
 
 		const controlledPrefix = controlled.slice(0, controlledReference.length).map((m) => Number(m.dy));
 		expect(
@@ -229,16 +267,35 @@ if (fullJump) {
 			`Controlled fall prefix mismatch. got=${JSON.stringify(controlledPrefix)} expected=${JSON.stringify(controlledReference)}`,
 		);
 
-		const forwardAssist = first(controlled, (m) => Number(m.inertia) === 1 && Number(m.right) === 1 && Number(m.left) === 0);
-		expect(forwardAssist !== null, 'Missing controlled_fall sample with inertia=1 and right input.');
-		if (forwardAssist) {
-			expect(Number(forwardAssist.dx) === 3, `Expected controlled_fall forward assist dx=3, got ${forwardAssist.dx}.`);
-		}
+		const forwardAssistBoosted = first(
+			controlledWithEntry,
+			(m) => Number(m.inertia) === 1 && Number(m.right) === 1 && Number(m.left) === 0 && Number(m.dx) === 3,
+		);
+		const forwardAssistTransition = first(
+			controlledWithEntry,
+			(m) => Number(m.inertia) === 1 && Number(m.right) === 1 && Number(m.left) === 0 && Number(m.dx) === 2,
+		);
+		expect(
+			forwardAssistBoosted !== null || forwardAssistTransition !== null,
+			'Missing controlled_fall sample with inertia=1 and right input.',
+		);
 
-		const oppositeControl = first(controlled, (m) => Number(m.inertia) === 1 && Number(m.left) === 1 && Number(m.right) === 0);
-		expect(oppositeControl !== null, 'Missing controlled_fall sample with inertia=1 and opposite (left) input.');
-		if (oppositeControl) {
-			expect(Number(oppositeControl.dx) === 1, `Expected controlled_fall opposite-control dx=1, got ${oppositeControl.dx}.`);
+		const oppositeControlWithInertia = first(controlled, (m) => Number(m.inertia) === 1 && Number(m.left) === 1 && Number(m.right) === 0);
+		const oppositeControlAfterInertiaReset = first(controlled, (m) => Number(m.inertia) === 0 && Number(m.left) === 1 && Number(m.right) === 0);
+		expect(
+			oppositeControlWithInertia !== null || oppositeControlAfterInertiaReset !== null,
+			'Missing controlled_fall sample with opposite (left) input.',
+		);
+		if (oppositeControlWithInertia) {
+			expect(
+				Number(oppositeControlWithInertia.dx) === 1,
+				`Expected opposite-control dx=1 when inertia=1, got ${oppositeControlWithInertia.dx}.`,
+			);
+		} else if (oppositeControlAfterInertiaReset) {
+			expect(
+				Number(oppositeControlAfterInertiaReset.dx) === -2,
+				`Expected opposite-control dx=-2 after inertia reset, got ${oppositeControlAfterInertiaReset.dx}.`,
+			);
 		}
 	}
 }

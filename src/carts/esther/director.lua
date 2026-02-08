@@ -4,16 +4,10 @@ local director = {}
 director.__index = director
 
 local director_fsm_id = constants.ids.director_fsm
-local goal_pulse_timeline_id = 'dk.director.goal_pulse'
+local goal_pulse_timeline_id = 'dkc.director.goal_pulse'
 
-local function clamp(value, min_value, max_value)
-	if value < min_value then
-		return min_value
-	end
-	if value > max_value then
-		return max_value
-	end
-	return value
+local function overlaps(ax, ay, aw, ah, box)
+	return ax < (box.x + box.w) and (ax + aw) > box.x and ay < (box.y + box.h) and (ay + ah) > box.y
 end
 
 local function abs(value)
@@ -21,10 +15,6 @@ local function abs(value)
 		return -value
 	end
 	return value
-end
-
-local function overlaps(ax, ay, aw, ah, box)
-	return ax < (box.x + box.w) and (ax + aw) > box.x and ay < (box.y + box.h) and (ay + ah) > box.y
 end
 
 function director:bind_visual()
@@ -45,43 +35,53 @@ function director:is_player_in_goal(player)
 	return overlaps(player.x, player.y, player.width, player.height, self.level.goal)
 end
 
-function director:update_camera(player, dt)
+function director:update_camera(player)
 	local camera = constants.camera
 	local view_w = display_width()
 	local target_x = player.camera_anchor_x - (view_w * 0.5)
-	if target_x < (self.camera_x - camera.deadzone) then
-		target_x = target_x + camera.deadzone
-	elseif target_x > (self.camera_x + camera.deadzone) then
-		target_x = target_x - camera.deadzone
+
+	if target_x < (self.camera_x - camera.deadzone_px) then
+		target_x = target_x + camera.deadzone_px
+	elseif target_x > (self.camera_x + camera.deadzone_px) then
+		target_x = target_x - camera.deadzone_px
 	else
 		target_x = self.camera_x
 	end
+
 	local max_x = self.level.world_width - view_w
-	target_x = clamp(target_x, 0, max_x)
-	local blend = dt * camera.follow_lerp
-	if blend > 1 then
-		blend = 1
+	if max_x < 0 then
+		max_x = 0
 	end
-	self.camera_x = self.camera_x + ((target_x - self.camera_x) * blend)
+	if target_x < 0 then
+		target_x = 0
+	elseif target_x > max_x then
+		target_x = max_x
+	end
+
+	self.camera_x = self.camera_x + ((target_x - self.camera_x) * camera.follow_lerp)
 end
 
 function director:tick(dt)
 	local player = object(self.player_id)
 	self.player_ref = player
+
 	if player.y > (self.level.world_height + 110) then
 		self:reset_level(player)
 	end
+
 	if not self.level_complete and self:is_player_in_goal(player) then
 		self.level_complete = true
 		self.level_clear_timer_ms = 0
 	end
+
 	if self.level_complete then
 		self.level_clear_timer_ms = self.level_clear_timer_ms + dt
 		if self.level_clear_timer_ms >= 1500 then
 			self:reset_level(player)
 		end
 	end
-	self:update_camera(player, dt)
+
+	self:update_camera(player)
 end
 
 function director:draw_parallax_layer(blocks, factor, color, z)
@@ -93,6 +93,18 @@ function director:draw_parallax_layer(blocks, factor, color, z)
 		local right = left + block.w
 		if right > 0 and left < view_w then
 			put_rectfillcolor(left, block.y, right, block.y + block.h, z, color)
+		end
+	end
+end
+
+function director:draw_trunks()
+	local view_w = display_width()
+	for i = 1, #self.level.trunks do
+		local trunk = self.level.trunks[i]
+		local left = math.floor(trunk.x - (self.camera_x * 0.62))
+		local right = left + trunk.w
+		if right > 0 and left < view_w then
+			put_rectfillcolor(left, trunk.y, right, trunk.y + trunk.h, 56, constants.palette.trunk)
 		end
 	end
 end
@@ -120,13 +132,14 @@ function director:draw_goal()
 	if right <= 0 or left >= view_w then
 		return
 	end
-	self.goal_glow_color.a = 0.12 + (self.goal_pulse * 0.28)
+	self.goal_glow_color.a = 0.1 + (self.goal_pulse * 0.24)
 	put_rectfillcolor(left - 8, goal.y - 8, right + 8, goal.y + goal.h + 8, 110, self.goal_glow_color)
-	put_rectfillcolor(left, goal.y, right, goal.y + goal.h, 111, constants.palette.goal)
-	local pole_x = left + math.floor(goal.w * 0.5) - 2
-	put_rectfillcolor(pole_x, goal.y - 24, pole_x + 4, goal.y + goal.h, 112, constants.palette.goal_pole)
-	local flag_w = 18 + math.floor(self.goal_pulse * 8)
-	put_rectfillcolor(pole_x + 4, goal.y - 24, pole_x + 4 + flag_w, goal.y - 10, 113, constants.palette.goal)
+	put_rectfillcolor(left, goal.y, right, goal.y + goal.h, 111, constants.palette.exit_cave)
+	put_rectfillcolor(left + 10, goal.y + 12, right - 10, goal.y + goal.h - 6, 112, constants.palette.exit_cave_inner)
+	local barrel_left = left + 16
+	local barrel_top = goal.y + goal.h - 22
+	put_rectfillcolor(barrel_left, barrel_top, barrel_left + 26, barrel_top + 16, 113, constants.palette.exit_barrel)
+	put_rectfillcolor(barrel_left + 5, barrel_top + 4, barrel_left + 21, barrel_top + 12, 114, constants.palette.goal)
 end
 
 function director:draw_player(player)
@@ -136,65 +149,58 @@ function director:draw_player(player)
 	if (px + player.width) < -12 or px > (view_w + 12) then
 		return
 	end
-	local wobble = abs(player.roll_wobble)
-	local body_w = player.width * player.visual_scale_x
-	local body_h = player.height * player.visual_scale_y
+
+	local body_w = player.width * player.draw_scale_x
+	local body_h = player.height * player.draw_scale_y
 	if player.pose_name == 'roll' then
-		body_w = body_w * (1.18 + (wobble * 0.12))
-		body_h = body_h * (0.64 - (wobble * 0.06))
-	else
-		body_w = body_w * (1 + (wobble * 0.08))
-		body_h = body_h * (1 - (wobble * 0.04))
+		local wobble = abs(player.roll_visual)
+		body_w = body_w * (1.24 + (wobble * 0.12))
+		body_h = body_h * (0.6 - (wobble * 0.08))
 	end
+
 	local draw_x = math.floor(px + ((player.width - body_w) * 0.5))
 	local draw_y = math.floor(py + (player.height - body_h))
 	local draw_w = math.floor(body_w)
 	local draw_h = math.floor(body_h)
 
 	if player.grounded then
-		local shadow_w = math.floor(draw_w * 0.92)
+		local shadow_w = math.floor(draw_w * 0.88)
 		local shadow_x = math.floor(px + ((player.width - shadow_w) * 0.5))
 		local shadow_y = player.y + player.height + 2
 		put_rectfillcolor(shadow_x, shadow_y, shadow_x + shadow_w, shadow_y + 4, 119, constants.palette.player_shadow)
 	end
 
 	put_rectfillcolor(draw_x, draw_y, draw_x + draw_w, draw_y + draw_h, 120, constants.palette.player_body)
-	local face_w = math.floor(draw_w * 0.34)
-	local face_h = math.floor(draw_h * 0.28)
+	local face_w = math.floor(draw_w * 0.32)
+	local face_h = math.floor(draw_h * 0.24)
 	local face_x = draw_x + 3
 	if player.facing < 0 then
 		face_x = draw_x + draw_w - face_w - 3
 	end
 	local face_y = draw_y + 4
 	put_rectfillcolor(face_x, face_y, face_x + face_w, face_y + face_h, 121, constants.palette.player_face)
-	local hand_w = math.floor(draw_w * 0.22)
-	local hand_h = math.floor(draw_h * 0.24)
-	local hand_x = draw_x + draw_w - hand_w - 2
-	if player.facing < 0 then
-		hand_x = draw_x + 2
-	end
-	local hand_y = draw_y + draw_h - hand_h - 2
-	put_rectfillcolor(hand_x, hand_y, hand_x + hand_w, hand_y + hand_h, 122, constants.palette.player_face)
 end
 
 function director:draw_ui()
 	local view_w = display_width()
-	put_rectfillcolor(4, 4, view_w - 4, 22, 390, constants.palette.ui_banner)
-	put_glyphs(constants.ui.help_line, 10, 10, 391, self.ui_glyph_opts)
+	put_rectfillcolor(4, 4, view_w - 4, 22, 390, constants.palette.ui_bg)
+	put_glyphs(constants.ui.help, 10, 10, 391, self.ui_glyph_opts)
 	if self.level_complete then
-		local left = math.floor((view_w - 120) * 0.5)
-		local right = left + 120
-		put_rectfillcolor(left, 92, right, 120, 392, constants.palette.ui_banner)
-		put_glyphs(constants.ui.clear_line, left + 18, 102, 393, self.ui_glyph_opts)
+		local left = math.floor((view_w - 128) * 0.5)
+		local right = left + 128
+		put_rectfillcolor(left, 92, right, 120, 392, constants.palette.ui_bg)
+		put_glyphs(constants.ui.clear, left + 22, 102, 393, self.ui_glyph_opts)
 	end
 end
 
 function director:render_frame()
 	local view_w = display_width()
 	local view_h = display_height()
-	put_rectfillcolor(0, 0, view_w, view_h, 0, constants.palette.sky)
-	self:draw_parallax_layer(self.level.decor_far, 0.2, constants.palette.far, 20)
-	self:draw_parallax_layer(self.level.decor_mid, 0.45, constants.palette.mid, 40)
+	put_rectfillcolor(0, 0, view_w, math.floor(view_h * 0.48), 0, constants.palette.sky_1)
+	put_rectfillcolor(0, math.floor(view_h * 0.48), view_w, view_h, 1, constants.palette.sky_2)
+	self:draw_parallax_layer(self.level.decor_far, 0.22, constants.palette.canopy_far, 20)
+	self:draw_parallax_layer(self.level.decor_mid, 0.48, constants.palette.canopy_mid, 40)
+	self:draw_trunks()
 	self:draw_level_solids()
 	self:draw_goal()
 	self:draw_player(self.player_ref)
@@ -216,7 +222,7 @@ local function define_director_fsm()
 							{
 								kind = 'wave',
 								path = { 'goal_pulse' },
-								base = 0.5,
+								base = 0.45,
 								amp = 0.35,
 								period = 0.9,
 								phase = 0.1,
@@ -245,9 +251,14 @@ local function register_director_definition()
 			camera_x = 0,
 			level_complete = false,
 			level_clear_timer_ms = 0,
-			goal_pulse = 0.5,
-			goal_glow_color = { r = constants.palette.goal.r, g = constants.palette.goal.g, b = constants.palette.goal.b, a = 0.2 },
-			ui_glyph_opts = { layer = 'ui', color = constants.palette.ui_text },
+			goal_pulse = 0.4,
+			goal_glow_color = {
+				r = constants.palette.goal.r,
+				g = constants.palette.goal.g,
+				b = constants.palette.goal.b,
+				a = 0.2,
+			},
+			ui_glyph_opts = { layer = 'ui', color = constants.palette.ui_fg },
 		},
 	})
 end

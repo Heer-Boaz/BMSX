@@ -104,8 +104,8 @@ actioneffects.register_effect(actioneffects.effecttype.move, {
 
 actioneffects.register_effect(actioneffects.effecttype.play_animation, {
 	id = actioneffects.effecttype.play_animation,
-	handler = function(context, anim_id)
-		context.target:play_ani(anim_id)
+	handler = function(context, anim_id, opts)
+		context.target:play_ani(anim_id, opts)
 	end,
 })
 

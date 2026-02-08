@@ -220,6 +220,21 @@ function engine.new_timeline(def)
 	return timeline.timeline.new(def)
 end
 
+function engine.timeline_expand(frames, repetitions)
+	local timeline = require("timeline")
+	return timeline.expand_frames(frames, repetitions or 1)
+end
+
+function engine.timeline_sequence(sequence)
+	local timeline = require("timeline")
+	return timeline.build_frame_sequence(sequence)
+end
+
+function engine.timeline_pingpong(frames, include_endpoints)
+	local timeline = require("timeline")
+	return timeline.build_pingpong_frames(frames, include_endpoints)
+end
+
 function engine.timeline_range(frame_count)
 	local frames = {}
 	for i = 0, frame_count - 1 do

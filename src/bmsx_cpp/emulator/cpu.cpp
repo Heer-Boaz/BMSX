@@ -1020,6 +1020,14 @@ void CPU::executeInstruction(
 				setRegister(frame, a, resolveTableIndex(asTable(tableValue), key));
 				return;
 			}
+			if (valueIsString(tableValue)) {
+				if (m_stringIndexTable) {
+					setRegister(frame, a, resolveTableIndex(m_stringIndexTable, key));
+				} else {
+					setRegister(frame, a, valueNil());
+				}
+				return;
+			}
 			if (valueIsNativeObject(tableValue)) {
 				setRegister(frame, a, asNativeObject(tableValue)->get(key));
 				return;
@@ -1707,6 +1715,9 @@ void CPU::releaseArgScratch(std::vector<Value>&& args) {
 void CPU::markRoots(GcHeap& heap) {
 	if (globals) {
 		heap.markObject(globals);
+	}
+	if (m_stringIndexTable) {
+		heap.markObject(m_stringIndexTable);
 	}
 	for (const auto& value : m_memory.ioSlots()) {
 		heap.markValue(value);

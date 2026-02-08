@@ -7,6 +7,17 @@ local timeline = {}
 timeline.__index = timeline
 timeline.__is_timeline = true
 
+local function copy_value(value)
+	if type(value) ~= "table" then
+		return value
+	end
+	local out = {}
+	for k, v in pairs(value) do
+		out[k] = v
+	end
+	return out
+end
+
 local function copy_marker_at(at)
 	local out = {}
 	for k, v in pairs(at) do
@@ -95,15 +106,50 @@ local function expand_frames(frames, repetitions)
 	if repetitions <= 1 then
 		local out = {}
 		for i = 1, #frames do
-			out[i] = frames[i]
+			out[i] = copy_value(frames[i])
 		end
 		return out
 	end
 	local out = {}
 	for r = 1, repetitions do
 		for i = 1, #frames do
-			out[#out + 1] = frames[i]
+			out[#out + 1] = copy_value(frames[i])
 		end
+	end
+	return out
+end
+
+local function build_frame_sequence(sequence)
+	local out = {}
+	for i = 1, #sequence do
+		local entry = sequence[i]
+		local hold = entry.hold or 1
+		for h = 1, hold do
+			out[#out + 1] = copy_value(entry.value)
+		end
+	end
+	return out
+end
+
+local function build_pingpong_frames(frames, include_endpoints)
+	local out = {}
+	for i = 1, #frames do
+		out[#out + 1] = copy_value(frames[i])
+	end
+	if #frames <= 1 then
+		return out
+	end
+	local from_index
+	local to_index
+	if include_endpoints then
+		from_index = #frames
+		to_index = 1
+	else
+		from_index = #frames - 1
+		to_index = 2
+	end
+	for i = from_index, to_index, -1 do
+		out[#out + 1] = copy_value(frames[i])
 	end
 	return out
 end
@@ -336,4 +382,7 @@ return {
 	timeline = timeline,
 	expand_timeline_windows = expand_timeline_windows,
 	compile_timeline_markers = compile_timeline_markers,
+	expand_frames = expand_frames,
+	build_frame_sequence = build_frame_sequence,
+	build_pingpong_frames = build_pingpong_frames,
 }

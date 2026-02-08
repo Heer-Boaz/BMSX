@@ -64,7 +64,7 @@ function player:emit_metric()
 		return
 	end
 	print(string.format(
-		'%s|f=%d|x=%d|y=%d|dx=%d|dy=%d|st=%s|jsub=%d|fsub=%d|inertia=%d|g=%d|left=%d|right=%d|up_hold=%d|up_press=%d|up_release=%d',
+		'%s|f=%d|x=%d|y=%d|dx=%d|dy=%d|st=%s|jsub=%d|fsub=%d|inertia=%d|face=%d|g=%d|left=%d|right=%d|up_hold=%d|up_press=%d|up_release=%d',
 		telemetry.metric_prefix,
 		self.frame,
 		self.x,
@@ -75,6 +75,7 @@ function player:emit_metric()
 		self.debug_jump_substate,
 		self.debug_fall_substate,
 		self.jump_inertia,
+		self.facing,
 		bool01(self.grounded),
 		bool01(self.left_held),
 		bool01(self.right_held),
@@ -120,6 +121,16 @@ function player:sample_input()
 	self.up_held = action_triggered('up[p]', player_index)
 	self.up_pressed = self.up_held and (not was_up_held)
 	self.up_released = (not self.up_held) and was_up_held
+end
+
+function player:update_facing_from_horizontal_input()
+	if self.left_held and not self.right_held then
+		self.facing = -1
+		return
+	end
+	if self.right_held and not self.left_held then
+		self.facing = 1
+	end
 end
 
 function player:collides_at(x, y)
@@ -192,9 +203,10 @@ function player:apply_move(dx, dy)
 	end
 
 	local max_y = self.room.world_height - self.height
-	if self.y < 0 then
-		moved_y = moved_y - self.y
-		self.y = 0
+	local min_y = self.room.world_top
+	if self.y < min_y then
+		moved_y = moved_y - (self.y - min_y)
+		self.y = min_y
 		hit_ceiling = true
 		collided_y = true
 	end
@@ -229,6 +241,11 @@ function player:start_jump(inertia)
 	self.jump_substate = 0
 	self.fall_substate = 0
 	self.jump_inertia = inertia
+	if inertia < 0 then
+		self.facing = -1
+	elseif inertia > 0 then
+		self.facing = 1
+	end
 	self:emit_event('jump_start', string.format('inertia=%d|x=%d|y=%d', inertia, self.x, self.y))
 end
 
@@ -425,6 +442,7 @@ function player:tick_jumping()
 	self.debug_fall_substate = -1
 
 	local p = constants.physics
+	self:update_facing_from_horizontal_input()
 	if not self.up_held and self.jump_substate < p.jump_release_cut_substate then
 		self.jump_substate = p.jump_release_cut_substate
 		self.debug_jump_substate = self.jump_substate
@@ -456,6 +474,7 @@ function player:tick_stopped_jumping()
 	self.debug_jump_substate = self.jump_substate
 	self.debug_fall_substate = -1
 
+	self:update_facing_from_horizontal_input()
 	local move_result = self:apply_move(self.jump_inertia * constants.physics.jump_dx, 0)
 	if move_result.collided_x then
 		self.jump_inertia = 0
