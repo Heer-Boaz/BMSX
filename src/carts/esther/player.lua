@@ -107,7 +107,7 @@ function player:emit_metric(dt)
 	local spx = self.vx * dt * subpixels_per_pixel
 	local spy = self.vy * dt * subpixels_per_pixel
 	print(string.format(
-		'%s|f=%d|t=%.3f|dt=%.3f|x=%.3f|y=%.3f|vx=%.6f|vy=%.6f|spx=%.2f|spy=%.2f|g=%d|st=%s|ax=%d|run=%d|jp=%d|jr=%d|rp=%d|ah=%d|bh=%d|ajp=%d|bjp=%d|ajr=%d|bjr=%d|coyote=%.3f|jbuf=%.3f|rollt=%.3f',
+		'%s|f=%d|t=%.3f|dt=%.3f|x=%.3f|y=%.3f|vx=%.6f|vy=%.6f|spx=%.2f|spy=%.2f|g=%d|st=%s|ax=%d|run=%d|runp=%d|jp=%d|jr=%d|rp=%d|ah=%d|bh=%d|ajp=%d|bjp=%d|ajr=%d|bjr=%d|coyote=%.3f|jbuf=%.3f|rollt=%.3f',
 		telemetry.metric_prefix,
 		self.debug_frame,
 		self.debug_time_ms,
@@ -122,6 +122,7 @@ function player:emit_metric(dt)
 		self.pose_name,
 		self.move_axis,
 			bool01(self.run_held),
+			bool01(self.run_pressed),
 			bool01(self.jump_pressed),
 			bool01(self.jump_released),
 			bool01(self.roll_pressed),
@@ -145,6 +146,7 @@ function player:reset_runtime()
 	self.facing = 1
 	self.move_axis = 0
 	self.run_held = false
+	self.run_pressed = false
 	self.jump_pressed = false
 	self.jump_released = false
 	self.roll_pressed = false
@@ -184,6 +186,9 @@ end
 
 function player:sample_input()
 	local player_index = self.player_index
+	local was_a_held = self.a_held
+	local was_b_held = self.b_held
+	local was_run_held = self.run_held
 	local left = action_triggered('left[p]', player_index)
 	local right = action_triggered('right[p]', player_index)
 	self.move_axis = 0
@@ -198,14 +203,15 @@ function player:sample_input()
 	end
 	self.a_held = action_triggered('a[p]', player_index)
 	self.b_held = action_triggered('b[p]', player_index)
-	self.a_pressed = action_triggered('a[jp]', player_index)
-	self.b_pressed = action_triggered('b[jp]', player_index)
-	self.a_released = action_triggered('a[jr]', player_index)
-	self.b_released = action_triggered('b[jr]', player_index)
 	self.run_held = action_triggered('x[p]', player_index) or action_triggered('y[p]', player_index)
+	self.a_pressed = self.a_held and (not was_a_held)
+	self.b_pressed = self.b_held and (not was_b_held)
+	self.a_released = (not self.a_held) and was_a_held
+	self.b_released = (not self.b_held) and was_b_held
+	self.run_pressed = self.run_held and (not was_run_held)
 	self.jump_pressed = self.a_pressed or self.b_pressed
 	self.jump_released = self.a_released or self.b_released
-	self.roll_pressed = action_triggered('?jp(x,y)', player_index)
+	self.roll_pressed = self.run_pressed
 	self.down_held = action_triggered('down[p]', player_index)
 end
 
@@ -280,23 +286,43 @@ end
 
 function player:apply_ground_horizontal(dt)
 	local p = constants.player
+	if self.move_axis == 0 then
+		self.vx = approach(self.vx, 0, p.ground_decel * dt)
+		return
+	end
+
+	if self.vx ~= 0 and (self.vx * self.move_axis) < 0 then
+		self.vx = approach(self.vx, 0, p.turnaround_decel * dt)
+		return
+	end
+
 	local top_speed = self.run_held and p.run_speed or p.walk_speed
 	local target_speed = self.move_axis * top_speed
 	local accel = p.ground_accel * dt
-	if self.move_axis == 0 then
-		accel = p.ground_decel * dt
+	if (not self.run_held) and abs(self.vx) > p.walk_speed and (self.vx * self.move_axis) > 0 then
+		accel = p.run_release_ground_decel * dt
 	end
 	self.vx = approach(self.vx, target_speed, accel)
 end
 
 function player:apply_air_horizontal(dt)
 	local p = constants.player
-	local top_speed = self.run_held and p.run_speed or p.walk_speed
-	local target_speed = self.move_axis * top_speed
-	self.vx = approach(self.vx, target_speed, p.air_accel * dt)
 	if self.move_axis == 0 then
 		self.vx = approach(self.vx, 0, p.air_drag * dt)
+		return
 	end
+
+	if self.vx ~= 0 and (self.vx * self.move_axis) < 0 then
+		self.vx = approach(self.vx, 0, p.air_turnaround_decel * dt)
+	end
+
+	local top_speed = self.run_held and p.run_speed or p.walk_speed
+	local target_speed = self.move_axis * top_speed
+	local accel = p.air_accel * dt
+	if (not self.run_held) and abs(self.vx) > p.walk_speed and (self.vx * self.move_axis) > 0 then
+		accel = p.run_release_air_decel * dt
+	end
+	self.vx = approach(self.vx, target_speed, accel)
 end
 
 function player:apply_gravity(dt)
@@ -535,6 +561,7 @@ local function register_player_definition()
 			facing = 1,
 			move_axis = 0,
 			run_held = false,
+			run_pressed = false,
 			jump_pressed = false,
 			jump_released = false,
 			roll_pressed = false,

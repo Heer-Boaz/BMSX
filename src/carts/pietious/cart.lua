@@ -1,5 +1,5 @@
 local engine = require('engine')
-local level_module = require('level.lua')
+local room_module = require('room.lua')
 local player_module = require('player.lua')
 local director_module = require('director.lua')
 
@@ -18,6 +18,7 @@ function init()
 	on_irq(irq_newgame, function()
 		new_game()
 	end)
+
 	player_module.define_player_fsm()
 	director_module.define_director_fsm()
 	player_module.register_player_definition()
@@ -26,18 +27,20 @@ end
 
 function new_game()
 	engine.reset()
-	local level = level_module.create_level()
-	local spawn = level.spawn
+	local room = room_module.create_room()
+	local spawn = room.spawn
+
 	spawn_object(player_module.player_def_id, {
 		id = player_module.player_instance_id,
-		level = level,
+		room = room,
 		spawn_x = spawn.x,
 		spawn_y = spawn.y,
-		pos = { x = spawn.x, y = spawn.y, z = 300 },
+		pos = { x = spawn.x, y = spawn.y, z = 140 },
 	})
+
 	spawn_object(director_module.director_def_id, {
 		id = director_module.director_instance_id,
-		level = level,
+		room = room,
 		player_id = player_module.player_instance_id,
 		pos = { x = 0, y = 0, z = 0 },
 	})

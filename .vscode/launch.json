@@ -199,6 +199,8 @@
 			"id": "romtobuild",
 			"description": "Choose ROM to build",
 			"options": [
+				"esther",
+				"pietious",
 				"2025",
 				"emptycart",
 				"sint2024",
