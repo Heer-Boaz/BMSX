@@ -250,5 +250,145 @@
 			"pressId": 8,
 			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
 		}
+	},
+	{
+		"description": "segment_06_turn_probe_right_down",
+		"timeMs": 30400,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": true,
+			"value": 1,
+			"timestamp": 30400,
+			"pressId": 10,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "segment_06_turn_probe_run_down",
+		"timeMs": 31200,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyS",
+			"down": true,
+			"value": 1,
+			"timestamp": 31200,
+			"pressId": 11,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "segment_06_turn_probe_right_up",
+		"timeMs": 32200,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": false,
+			"value": 0,
+			"timestamp": 32200,
+			"pressId": 10,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "segment_06_turn_probe_left_down",
+		"timeMs": 32200,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowLeft",
+			"down": true,
+			"value": 1,
+			"timestamp": 32200,
+			"pressId": 12,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "segment_06_turn_probe_run_up",
+		"timeMs": 33400,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyS",
+			"down": false,
+			"value": 0,
+			"timestamp": 33400,
+			"pressId": 11,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "segment_07_left_jump_down",
+		"timeMs": 33800,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyX",
+			"down": true,
+			"value": 1,
+			"timestamp": 33800,
+			"pressId": 13,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "segment_07_left_jump_up",
+		"timeMs": 34100,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyX",
+			"down": false,
+			"value": 0,
+			"timestamp": 34100,
+			"pressId": 13,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "segment_07_left_roll_down",
+		"timeMs": 34400,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyS",
+			"down": true,
+			"value": 1,
+			"timestamp": 34400,
+			"pressId": 14,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "segment_07_left_roll_up",
+		"timeMs": 34440,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyS",
+			"down": false,
+			"value": 0,
+			"timestamp": 34440,
+			"pressId": 14,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "segment_99_turn_probe_left_up",
+		"timeMs": 34800,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowLeft",
+			"down": false,
+			"value": 0,
+			"timestamp": 34800,
+			"pressId": 12,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
 	}
 ]

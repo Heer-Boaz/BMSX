@@ -1,4 +1,5 @@
 local constants = require('constants.lua')
+local romdir = require('romdir')
 
 local director = {}
 director.__index = director
@@ -17,6 +18,16 @@ local function abs(value)
 	return value
 end
 
+local function clamp(value, min_value, max_value)
+	if value < min_value then
+		return min_value
+	end
+	if value > max_value then
+		return max_value
+	end
+	return value
+end
+
 function director:bind_visual()
 	local rc = self:get_component('customvisualcomponent')
 	rc.producer = function(_ctx)
@@ -29,6 +40,8 @@ function director:reset_level(player)
 	self.level_complete = false
 	self.level_clear_timer_ms = 0
 	self.camera_x = 0
+	self.camera_target_x = 0
+	self.camera_delta_x = 0
 end
 
 function director:is_player_in_goal(player)
@@ -52,13 +65,37 @@ function director:update_camera(player)
 	if max_x < 0 then
 		max_x = 0
 	end
-	if target_x < 0 then
-		target_x = 0
-	elseif target_x > max_x then
-		target_x = max_x
+	target_x = clamp(target_x, 0, max_x)
+
+	local delta = target_x - self.camera_x
+	if abs(delta) <= camera.snap_px then
+		self.camera_x = target_x
+	else
+		self.camera_x = self.camera_x + clamp(delta, -camera.follow_step_px, camera.follow_step_px)
 	end
 
-	self.camera_x = self.camera_x + ((target_x - self.camera_x) * camera.follow_lerp)
+	self.camera_x = math.floor(self.camera_x)
+	self.camera_target_x = target_x
+	self.camera_delta_x = target_x - self.camera_x
+end
+
+function director:emit_camera_metric(player)
+	local telemetry = constants.telemetry
+	if not telemetry.enabled then
+		return
+	end
+	print(string.format(
+		'%s|f=%d|cam=%.3f|target=%.3f|delta=%.3f|anchor=%.3f|px=%.3f|sx=%d|st=%s',
+		telemetry.camera_prefix,
+		player.debug_frame,
+		self.camera_x,
+		self.camera_target_x,
+		self.camera_delta_x,
+		player.camera_anchor_x,
+		player.x,
+		player.x_speed_subpx,
+		player.pose_name
+	))
 end
 
 function director:tick(dt)
@@ -82,6 +119,7 @@ function director:tick(dt)
 	end
 
 	self:update_camera(player)
+	self:emit_camera_metric(player)
 end
 
 function director:draw_parallax_layer(blocks, factor, color, z)
@@ -145,40 +183,40 @@ end
 function director:draw_player(player)
 	local view_w = display_width()
 	local px = player.x - self.camera_x
-	local py = player.y
 	if (px + player.width) < -12 or px > (view_w + 12) then
 		return
 	end
 
-	local body_w = player.width * player.draw_scale_x
-	local body_h = player.height * player.draw_scale_y
+	local frame_id = player.visual_frame_id
+	local frame_meta = assets.img[romdir.token(frame_id)].imgmeta
+
+	local draw_scale_x = player.draw_scale_x
+	local draw_scale_y = player.draw_scale_y
 	if player.pose_name == 'roll' then
 		local wobble = abs(player.roll_visual)
-		body_w = body_w * (1.24 + (wobble * 0.12))
-		body_h = body_h * (0.6 - (wobble * 0.08))
+		draw_scale_x = draw_scale_x * (1.0 + (wobble * 0.26))
+		draw_scale_y = draw_scale_y * (1.0 - (wobble * 0.14))
 	end
 
-	local draw_x = math.floor(px + ((player.width - body_w) * 0.5))
-	local draw_y = math.floor(py + (player.height - body_h))
-	local draw_w = math.floor(body_w)
-	local draw_h = math.floor(body_h)
+	local frame_w = frame_meta.width * draw_scale_x
+	local frame_h = frame_meta.height * draw_scale_y
+	local draw_x = math.floor(px + ((player.width - frame_w) * 0.5))
+	local draw_y = math.floor(player.y + player.height - frame_h)
 
 	if player.grounded then
-		local shadow_w = math.floor(draw_w * 0.88)
+		local shadow_w = math.floor(frame_w * 0.82)
 		local shadow_x = math.floor(px + ((player.width - shadow_w) * 0.5))
 		local shadow_y = player.y + player.height + 2
 		put_rectfillcolor(shadow_x, shadow_y, shadow_x + shadow_w, shadow_y + 4, 119, constants.palette.player_shadow)
 	end
 
-	put_rectfillcolor(draw_x, draw_y, draw_x + draw_w, draw_y + draw_h, 120, constants.palette.player_body)
-	local face_w = math.floor(draw_w * 0.32)
-	local face_h = math.floor(draw_h * 0.24)
-	local face_x = draw_x + 3
-	if player.facing < 0 then
-		face_x = draw_x + draw_w - face_w - 3
-	end
-	local face_y = draw_y + 4
-	put_rectfillcolor(face_x, face_y, face_x + face_w, face_y + face_h, 121, constants.palette.player_face)
+	put_sprite(frame_id, draw_x, draw_y, 120, {
+		flip_h = player.facing < 0,
+		scale = {
+			x = draw_scale_x,
+			y = draw_scale_y,
+		},
+	})
 end
 
 function director:draw_ui()
@@ -249,6 +287,8 @@ local function register_director_definition()
 		defaults = {
 			player_id = constants.ids.player_instance,
 			camera_x = 0,
+			camera_target_x = 0,
+			camera_delta_x = 0,
 			level_complete = false,
 			level_clear_timer_ms = 0,
 			goal_pulse = 0.4,

@@ -159,10 +159,33 @@ function firstPressedFrame(metrics, key) {
 	return hit ? Number(hit.f) : null;
 }
 
+function findTurnProbe(metrics, walkSpeedSubpx) {
+	let start = null;
+	for (let i = 1; i < metrics.length; i += 1) {
+		const prev = metrics[i - 1];
+		const curr = metrics[i];
+		if (Number(prev.ax) === 1 && Number(curr.ax) === -1) {
+			start = Number(curr.f);
+			break;
+		}
+	}
+	if (start === null) {
+		return null;
+	}
+	const crossZero = first(metrics, (m) => Number(m.f) >= start && Number(m.sx) <= 0);
+	const reachLeftWalk = first(metrics, (m) => Number(m.f) >= start && Number(m.sx) <= -walkSpeedSubpx);
+	return {
+		startFrame: start,
+		crossZeroFrame: crossZero ? Number(crossZero.f) : null,
+		reachLeftWalkFrame: reachLeftWalk ? Number(reachLeftWalk.f) : null,
+	};
+}
+
 const content = fs.readFileSync(logPath, 'utf8');
 const lines = content.split(/\r?\n/);
 const metrics = [];
 const events = [];
+const cameraMetrics = [];
 
 for (let i = 0; i < lines.length; i += 1) {
 	const line = lines[i];
@@ -172,6 +195,10 @@ for (let i = 0; i < lines.length; i += 1) {
 	}
 	if (line.startsWith('ESTHER_EVENT|')) {
 		events.push(parseTelemetryLine(line));
+		continue;
+	}
+	if (line.startsWith('ESTHER_CAMERA|')) {
+		cameraMetrics.push(parseTelemetryLine(line));
 	}
 }
 
@@ -181,6 +208,7 @@ if (metrics.length === 0) {
 
 metrics.sort((a, b) => Number(a.f) - Number(b.f));
 events.sort((a, b) => Number(a.f) - Number(b.f));
+cameraMetrics.sort((a, b) => Number(a.f) - Number(b.f));
 
 const dtAvg = avg(metrics.map((m) => Number(m.dt)));
 const ref = {
@@ -275,9 +303,47 @@ const firstXHeldFrame = firstPressedFrame(metrics, 'xh');
 const firstYHeldFrame = firstPressedFrame(metrics, 'yh');
 const firstAHeldFrame = firstPressedFrame(metrics, 'ah');
 const firstBHeldFrame = firstPressedFrame(metrics, 'bh');
+const turnProbe = findTurnProbe(metrics, ref.walkSubpx);
+
+const fractionalXSamples = metrics.filter((m) => Math.abs(Number(m.x) - Math.round(Number(m.x))) > 0.0001).length;
+const fractionalYSamples = metrics.filter((m) => Math.abs(Number(m.y) - Math.round(Number(m.y))) > 0.0001).length;
+const hitXFrames = metrics.filter((m) => Number(m.hx) === 1).length;
+const hitYFrames = metrics.filter((m) => Number(m.hy) === 1).length;
+const movedXAvg = avg(metrics.map((m) => Math.abs(Number(m.mx) || 0)));
+const movedYAvg = avg(metrics.map((m) => Math.abs(Number(m.my) || 0)));
+const subpxRemainderXMax = max(metrics.map((m) => Math.abs(Number(m.psx) % 256)));
+const subpxRemainderYMax = max(metrics.map((m) => Math.abs(Number(m.psy) % 256)));
+
+const cameraLagSamples = cameraMetrics.map((m) => Math.abs(Number(m.delta)));
+const cameraLagMean = avg(cameraLagSamples);
+const cameraLagMax = max(cameraLagSamples);
+const metricsByFrame = new Map(metrics.map((m) => [Number(m.f), m]));
+const runCameraLagSamples = [];
+for (let i = 0; i < cameraMetrics.length; i += 1) {
+	const camSample = cameraMetrics[i];
+	const motionSample = metricsByFrame.get(Number(camSample.f));
+	if (!motionSample) {
+		continue;
+	}
+	if (Number(motionSample.run) === 1 && Number(motionSample.ax) === 1) {
+		runCameraLagSamples.push(Math.abs(Number(camSample.delta)));
+	}
+}
+const runCameraLagMean = avg(runCameraLagSamples);
+const runCameraLagMax = max(runCameraLagSamples);
+
+const imagesByState = new Map();
+for (let i = 0; i < metrics.length; i += 1) {
+	const sample = metrics[i];
+	const stateName = String(sample.st ?? 'missing');
+	if (!imagesByState.has(stateName)) {
+		imagesByState.set(stateName, new Set());
+	}
+	imagesByState.get(stateName).add(String(sample.img ?? 'missing'));
+}
 
 console.log(`ESTHER_ANALYSIS log=${logPath}`);
-console.log(`samples metrics=${metrics.length} events=${events.length} dt_avg_ms=${dtAvg.toFixed(4)}`);
+console.log(`samples metrics=${metrics.length} events=${events.length} camera=${cameraMetrics.length} dt_avg_ms=${dtAvg.toFixed(4)}`);
 console.log('');
 console.log('Input detection probe:');
 console.log(`first_xh_frame=${firstXHeldFrame ?? 'missing'} first_yh_frame=${firstYHeldFrame ?? 'missing'} first_ah_frame=${firstAHeldFrame ?? 'missing'} first_bh_frame=${firstBHeldFrame ?? 'missing'}`);
@@ -334,3 +400,30 @@ console.log('Gravity profile:');
 console.log(`hold_samples=${gravityHoldSamples.length} hold_mean=${gravityHoldMean.toFixed(2)} hold_error=${(gravityHoldMean - ref.gravityHoldSubpx).toFixed(2)}`);
 console.log(`release_samples=${gravityReleaseSamples.length} release_mean=${gravityReleaseMean.toFixed(2)} release_error=${(gravityReleaseMean - ref.gravityReleaseSubpx).toFixed(2)}`);
 console.log(`min_sy_observed=${minSyObserved.toFixed(2)} max_fall_error=${(minSyObserved - ref.maxFallSubpx).toFixed(2)}`);
+console.log('');
+console.log('Subpixel/collision probe:');
+console.log(`fractional_x_samples=${fractionalXSamples} fractional_y_samples=${fractionalYSamples}`);
+console.log(`avg_abs_moved_px_per_frame_x=${movedXAvg.toFixed(3)} y=${movedYAvg.toFixed(3)}`);
+console.log(`collision_frames_x=${hitXFrames} collision_frames_y=${hitYFrames}`);
+console.log(`subpx_remainder_max_x=${subpxRemainderXMax.toFixed(2)} subpx_remainder_max_y=${subpxRemainderYMax.toFixed(2)}`);
+console.log('');
+console.log('Turn probe (right -> left):');
+if (turnProbe) {
+	const crossZeroLatency = turnProbe.crossZeroFrame === null ? 'missing' : String(turnProbe.crossZeroFrame - turnProbe.startFrame);
+	const walkLeftLatency = turnProbe.reachLeftWalkFrame === null ? 'missing' : String(turnProbe.reachLeftWalkFrame - turnProbe.startFrame);
+	console.log(`turn_start_frame=${turnProbe.startFrame} cross_zero_latency_frames=${crossZeroLatency} reach_left_walk_latency_frames=${walkLeftLatency}`);
+} else {
+	console.log('turn_probe=missing');
+}
+console.log('');
+console.log('Camera follow probe:');
+console.log(`camera_lag_mean=${cameraLagMean.toFixed(3)} camera_lag_max=${cameraLagMax.toFixed(3)}`);
+console.log(`run_camera_lag_mean=${runCameraLagMean.toFixed(3)} run_camera_lag_max=${runCameraLagMax.toFixed(3)}`);
+console.log('');
+console.log('Animation coverage:');
+const stateNames = Array.from(imagesByState.keys()).sort();
+for (let i = 0; i < stateNames.length; i += 1) {
+	const stateName = stateNames[i];
+	const images = Array.from(imagesByState.get(stateName)).sort();
+	console.log(`state=${stateName} unique_images=${images.length} images=${images.join(',')}`);
+}

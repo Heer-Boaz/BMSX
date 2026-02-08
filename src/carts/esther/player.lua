@@ -19,6 +19,16 @@ local function abs(value)
 	return value
 end
 
+local function sign(value)
+	if value < 0 then
+		return -1
+	end
+	if value > 0 then
+		return 1
+	end
+	return 0
+end
+
 local function bool01(value)
 	if value then
 		return 1
@@ -84,6 +94,14 @@ local function approach_subpx(current, target, profile_id)
 	return value
 end
 
+local function next_index(current, count)
+	local index = current + 1
+	if index > count then
+		return 1
+	end
+	return index
+end
+
 function player:define_motion_timelines()
 	self:define_timeline(new_timeline({
 		id = jump_timeline_id,
@@ -123,6 +141,76 @@ function player:define_motion_timelines()
 	}))
 end
 
+function player:set_visual_cycle(cycle_id)
+	if self.visual_cycle_id == cycle_id then
+		return
+	end
+	self.visual_cycle_id = cycle_id
+	self.visual_cycle_index = 1
+	self.visual_cycle_elapsed_ms = 0
+	self.visual_distance_accum_subpx = 0
+end
+
+function player:advance_visual_by_time(dt, frame_ms, frame_count)
+	self.visual_cycle_elapsed_ms = self.visual_cycle_elapsed_ms + dt
+	while self.visual_cycle_elapsed_ms >= frame_ms do
+		self.visual_cycle_elapsed_ms = self.visual_cycle_elapsed_ms - frame_ms
+		self.visual_cycle_index = next_index(self.visual_cycle_index, frame_count)
+	end
+end
+
+function player:advance_visual_by_distance(step_subpx, frame_count)
+	self.visual_distance_accum_subpx = self.visual_distance_accum_subpx + abs(self.x_speed_subpx)
+	while self.visual_distance_accum_subpx >= step_subpx do
+		self.visual_distance_accum_subpx = self.visual_distance_accum_subpx - step_subpx
+		self.visual_cycle_index = next_index(self.visual_cycle_index, frame_count)
+	end
+end
+
+function player:update_visual_frame(dt)
+	local anim = constants.animation
+	local speed = abs(self.x_speed_subpx)
+
+	if self.pose_name == 'roll' then
+		local frames = anim.roll.frames
+		self:set_visual_cycle('roll')
+		self:advance_visual_by_distance(anim.roll.distance_step_subpx, #frames)
+		self.visual_frame_id = frames[self.visual_cycle_index]
+		return
+	end
+
+	if self.pose_name == 'airborne' then
+		self:set_visual_cycle('air')
+		if self.y_speed_subpx > 0 then
+			self.visual_frame_id = anim.air.rise_frame
+		else
+			self.visual_frame_id = anim.air.fall_frame
+		end
+		return
+	end
+
+	if speed <= anim.movement_epsilon_subpx then
+		local frames = anim.idle.frames
+		self:set_visual_cycle('idle')
+		self:advance_visual_by_time(dt, anim.idle.frame_ms, #frames)
+		self.visual_frame_id = frames[self.visual_cycle_index]
+		return
+	end
+
+	if speed >= anim.run_threshold_subpx then
+		local frames = anim.run.frames
+		self:set_visual_cycle('run')
+		self:advance_visual_by_distance(anim.run.distance_step_subpx, #frames)
+		self.visual_frame_id = frames[self.visual_cycle_index]
+		return
+	end
+
+	local frames = anim.walk.frames
+	self:set_visual_cycle('walk')
+	self:advance_visual_by_distance(anim.walk.distance_step_subpx, #frames)
+	self.visual_frame_id = frames[self.visual_cycle_index]
+end
+
 function player:emit_event(name, extra)
 	local telemetry = constants.telemetry
 	if not telemetry.enabled then
@@ -142,7 +230,7 @@ function player:emit_metric(dt)
 		return
 	end
 	print(string.format(
-		'%s|f=%d|t=%.3f|dt=%.3f|x=%.3f|y=%.3f|sx=%d|sy=%d|tgt=%d|prof=%d|grav=%d|g=%d|st=%s|ax=%d|run=%d|runp=%d|jp=%d|jh=%d|jr=%d|rp=%d|xh=%d|yh=%d|ah=%d|bh=%d|rollt=%d|chain=%d',
+		'%s|f=%d|t=%.3f|dt=%.3f|x=%.3f|y=%.3f|sx=%d|sy=%d|tgt=%d|prof=%d|grav=%d|g=%d|st=%s|ax=%d|run=%d|runp=%d|jp=%d|jh=%d|jr=%d|rp=%d|xh=%d|yh=%d|ah=%d|bh=%d|rollt=%d|chain=%d|psx=%d|psy=%d|dxp=%d|dyp=%d|mx=%d|my=%d|hx=%d|hy=%d|ani=%s|aidx=%d|img=%s',
 		telemetry.metric_prefix,
 		self.debug_frame,
 		self.debug_time_ms,
@@ -168,7 +256,18 @@ function player:emit_metric(dt)
 		bool01(self.a_held),
 		bool01(self.b_held),
 		self.roll_timer_frames,
-		self.roll_chain_window_frames
+		self.roll_chain_window_frames,
+		self.pos_subx,
+		self.pos_suby,
+		self.debug_step_pixels_x,
+		self.debug_step_pixels_y,
+		self.debug_moved_pixels_x,
+		self.debug_moved_pixels_y,
+		bool01(self.debug_collided_x),
+		bool01(self.debug_collided_y),
+		self.visual_cycle_id,
+		self.visual_cycle_index,
+		self.visual_frame_id
 	))
 end
 
@@ -206,6 +305,11 @@ function player:reset_runtime()
 	self.draw_scale_y = 1
 	self.roll_visual = 0
 	self.pose_name = 'grounded'
+	self.visual_cycle_id = 'idle'
+	self.visual_cycle_index = 1
+	self.visual_cycle_elapsed_ms = 0
+	self.visual_distance_accum_subpx = 0
+	self.visual_frame_id = constants.animation.idle.frames[1]
 
 	self.camera_anchor_x = self.x + (self.width * 0.5)
 	self.camera_anchor_y = self.y + (self.height * 0.5)
@@ -218,6 +322,12 @@ function player:reset_runtime()
 	self.debug_jump_started = false
 	self.debug_jump_from_roll = false
 	self.debug_roll_speed_subpx = 0
+	self.debug_step_pixels_x = 0
+	self.debug_step_pixels_y = 0
+	self.debug_moved_pixels_x = 0
+	self.debug_moved_pixels_y = 0
+	self.debug_collided_x = false
+	self.debug_collided_y = false
 end
 
 function player:respawn()
@@ -322,65 +432,118 @@ function player:apply_air_gravity()
 	end
 end
 
-function player:integrate_and_collide()
+function player:move_horizontal_pixels(step_pixels)
+	if step_pixels == 0 then
+		return false
+	end
+	local direction = sign(step_pixels)
+	local remaining = abs(step_pixels)
 	local sp = constants.dkc_reference.subpixels_per_pixel
-	local dx = self.x_speed_subpx / sp
-	local dy = -(self.y_speed_subpx / sp)
 
-	if dx ~= 0 then
-		self.x = self.x + dx
-		local solid_x = self:get_overlapping_solid(self.x, self.y)
-		if solid_x ~= nil then
-			if dx > 0 then
-				self.x = solid_x.x - self.width
+	while remaining > 0 do
+		local next_x = self.x + direction
+		local solid = self:get_overlapping_solid(next_x, self.y)
+		if solid ~= nil then
+			if direction > 0 then
+				self.x = solid.x - self.width
 			else
-				self.x = solid_x.x + solid_x.w
+				self.x = solid.x + solid.w
 			end
+			self.pos_subx = self.x * sp
 			self.x_speed_subpx = 0
 			self.target_x_speed_subpx = 0
+			return true
 		end
+		self.x = next_x
+		remaining = remaining - 1
 	end
+	return false
+end
 
-	local was_grounded = self.grounded
-	self.grounded = false
+function player:move_vertical_pixels(step_pixels)
+	if step_pixels == 0 then
+		return false, false
+	end
+	local direction = sign(step_pixels)
+	local remaining = abs(step_pixels)
+	local sp = constants.dkc_reference.subpixels_per_pixel
 
-	if dy ~= 0 then
-		self.y = self.y + dy
-		local solid_y = self:get_overlapping_solid(self.x, self.y)
-		if solid_y ~= nil then
-			if dy > 0 then
-				self.y = solid_y.y - self.height
-				self.grounded = true
-			else
-				self.y = solid_y.y + solid_y.h
+	while remaining > 0 do
+		local next_y = self.y + direction
+		local solid = self:get_overlapping_solid(self.x, next_y)
+		if solid ~= nil then
+			if direction > 0 then
+				self.y = solid.y - self.height
+				self.pos_suby = self.y * sp
+				self.y_speed_subpx = 0
+				return true, true
 			end
+			self.y = solid.y + solid.h
+			self.pos_suby = self.y * sp
 			self.y_speed_subpx = 0
+			return true, false
 		end
+		self.y = next_y
+		remaining = remaining - 1
+	end
+	return false, false
+end
+
+function player:integrate_and_collide()
+	local sp = constants.dkc_reference.subpixels_per_pixel
+	local was_grounded = self.grounded
+	local start_x = self.x
+	local start_y = self.y
+
+	local desired_subx = self.pos_subx + self.x_speed_subpx
+	local desired_x = math.floor(desired_subx / sp)
+	self.debug_step_pixels_x = desired_x - self.x
+	self.debug_collided_x = self:move_horizontal_pixels(self.debug_step_pixels_x)
+	if not self.debug_collided_x then
+		self.pos_subx = desired_subx
 	end
 
-	if not self.grounded and self:is_grounded_probe() then
+	self.grounded = false
+	local desired_suby = self.pos_suby - self.y_speed_subpx
+	local desired_y = math.floor(desired_suby / sp)
+	self.debug_step_pixels_y = desired_y - self.y
+	self.debug_collided_y, self.grounded = self:move_vertical_pixels(self.debug_step_pixels_y)
+	if not self.debug_collided_y then
+		self.pos_suby = desired_suby
+	end
+
+	if (not self.grounded) and self:is_grounded_probe() then
 		self.grounded = true
 		self.y_speed_subpx = 0
+		self.pos_suby = self.y * sp
 	end
 
 	local max_x = self.level.world_width - self.width
 	if self.x < 0 then
 		self.x = 0
 		self.x_speed_subpx = 0
+		self.target_x_speed_subpx = 0
+		self.pos_subx = 0
+		self.debug_collided_x = true
 	elseif self.x > max_x then
 		self.x = max_x
 		self.x_speed_subpx = 0
+		self.target_x_speed_subpx = 0
+		self.pos_subx = self.x * sp
+		self.debug_collided_x = true
 	end
 
 	local max_y = self.level.world_height - self.height
 	if self.y > max_y then
 		self.y = max_y
 		self.y_speed_subpx = 0
+		self.pos_suby = self.y * sp
 		self.grounded = true
+		self.debug_collided_y = true
 	end
 
-	self.pos_subx = math.floor(self.x * sp)
-	self.pos_suby = math.floor(self.y * sp)
+	self.debug_moved_pixels_x = self.x - start_x
+	self.debug_moved_pixels_y = self.y - start_y
 
 	if self.grounded and not was_grounded then
 		self:play_timeline(landing_timeline_id, { rewind = true, snap_to_start = true })
@@ -518,6 +681,7 @@ function player:tick(dt)
 
 	self.camera_anchor_x = self.x + (self.width * 0.5) + (self.facing * constants.camera.forward_look_px)
 	self.camera_anchor_y = self.y + (self.height * 0.5)
+	self:update_visual_frame(dt)
 
 	if self.debug_roll_started then
 		self:emit_event('roll_start', string.format('subpx=%d|dir=%d', self.debug_roll_speed_subpx, self.roll_dir))
@@ -620,6 +784,11 @@ local function register_player_definition()
 			draw_scale_y = 1,
 			roll_visual = 0,
 			pose_name = 'grounded',
+			visual_cycle_id = 'idle',
+			visual_cycle_index = 1,
+			visual_cycle_elapsed_ms = 0,
+			visual_distance_accum_subpx = 0,
+			visual_frame_id = constants.animation.idle.frames[1],
 
 			camera_anchor_x = 0,
 			camera_anchor_y = 0,
@@ -632,6 +801,12 @@ local function register_player_definition()
 			debug_jump_started = false,
 			debug_jump_from_roll = false,
 			debug_roll_speed_subpx = 0,
+			debug_step_pixels_x = 0,
+			debug_step_pixels_y = 0,
+			debug_moved_pixels_x = 0,
+			debug_moved_pixels_y = 0,
+			debug_collided_x = false,
+			debug_collided_y = false,
 		},
 	})
 end

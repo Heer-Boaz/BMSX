@@ -22,6 +22,9 @@ function init()
 	director_module.define_director_fsm()
 	player_module.register_player_definition()
 	director_module.register_director_definition()
+	vdp_load_slot(0, 0)
+	-- Mirror pietious flow: map cart atlas into slot 0 immediately.
+	vdp_map_slot(0, 0)
 end
 
 function new_game()

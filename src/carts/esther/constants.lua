@@ -109,9 +109,10 @@ constants.animation = {
 }
 
 constants.camera = {
-	follow_lerp = 0.16,
 	forward_look_px = 44,
 	deadzone_px = 18,
+	follow_step_px = 7,
+	snap_px = 2,
 }
 
 constants.palette = {
@@ -135,7 +136,7 @@ constants.palette = {
 }
 
 constants.ui = {
-	help = 'DKC BASELINE | ARROWS MOVE | S RUN/ROLL | X JUMP',
+	help = 'DKC BASELINE | ARROWS MOVE | Y(S) RUN/ROLL | B(X) JUMP',
 	clear = 'EXIT BARREL REACHED',
 }
 
@@ -143,6 +144,7 @@ constants.telemetry = {
 	enabled = true,
 	metric_prefix = 'ESTHER_METRIC',
 	event_prefix = 'ESTHER_EVENT',
+	camera_prefix = 'ESTHER_CAMERA',
 }
 
 return constants
