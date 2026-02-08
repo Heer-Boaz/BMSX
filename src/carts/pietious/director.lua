@@ -16,72 +16,64 @@ function director:tick(_dt)
 	self.player_ref = object(self.player_id)
 end
 
-function director:draw_background()
+function director:draw_frame_background()
 	local view_w = display_width()
 	local view_h = display_height()
 
-	put_rectfillcolor(0, 0, view_w, 38, 0, constants.palette.sky_top)
-	put_rectfillcolor(0, 38, view_w, view_h, 1, constants.palette.sky_bottom)
-	put_rectfillcolor(0, 56, view_w, view_h, 2, constants.palette.castle_wall)
-
-	for x = 0, view_w, 20 do
-		put_rectfillcolor(x + 2, 46, x + 14, 56, 3, constants.palette.castle_wall_dark)
-	end
-
-	for y = 66, 206, 20 do
-		put_rectfillcolor(0, y, view_w, y + 2, 4, constants.palette.castle_wall_dark)
-	end
-
-	local windows = self.room.windows
-	for i = 1, #windows do
-		local w = windows[i]
-		put_rectfillcolor(w.x, w.y, w.x + w.w, w.y + w.h, 5, constants.palette.window)
-		put_rectfillcolor(w.x + 2, w.y + 2, w.x + w.w - 2, w.y + w.h - 2, 6, constants.palette.sky_bottom)
-	end
+	put_rectfillcolor(0, 0, view_w, view_h, 0, constants.palette.sky_bottom)
+	put_rectfillcolor(0, 0, view_w, self.room.tile_origin_y, 1, constants.palette.sky_top)
 end
 
-function director:draw_solids()
-	local solids = self.room.solids
-	for i = 1, #solids do
-		local s = solids[i]
-		put_rectfillcolor(s.x, s.y, s.x + s.w, s.y + s.h, 20, constants.palette.stone)
-		put_rectfillcolor(s.x, s.y, s.x + s.w, s.y + 3, 21, constants.palette.stone_top)
+function director:draw_room_tiles()
+	local room = self.room
+	local tile_size = room.tile_size
+	local origin_x = room.tile_origin_x
+	local origin_y = room.tile_origin_y
+
+	for y = 1, room.tile_rows do
+		local draw_y = origin_y + ((y - 1) * tile_size)
+		local row = room.tiles[y]
+		for x = 1, room.tile_columns do
+			local draw_x = origin_x + ((x - 1) * tile_size)
+			put_sprite(row[x], draw_x, draw_y, 20)
+		end
 	end
 end
 
 function director:draw_player(player)
-	local body_color = constants.palette.player_tunic
-	if player.state_name == 'jumping' or player.state_name == 'stopped_jumping' then
-		body_color = constants.palette.player_air
-	end
-	if player.state_name == 'controlled_fall' or player.state_name == 'uncontrolled_fall' then
-		body_color = constants.palette.player_air
+	local imgid = 'pietolon_stand_r'
+	if player.state_name == 'walking_right' or player.state_name == 'walking_left' then
+		if player.walk_frame == 0 then
+			imgid = 'pietolon_stand_r'
+		else
+			imgid = 'pietolon_walk_r'
+		end
+	elseif player.state_name == 'jumping' or player.state_name == 'stopped_jumping' or player.state_name == 'controlled_fall' then
+		imgid = 'pietolon_jump_r'
+	elseif player.state_name == 'uncontrolled_fall' then
+		if player.walk_frame == 0 then
+			imgid = 'pietolon_stand_r'
+		else
+			imgid = 'pietolon_walk_r'
+		end
 	end
 
-	local x = player.x
-	local y = player.y
-	local w = player.width
-	local h = player.height
-
-	put_rectfillcolor(x, y, x + w, y + h, 110, constants.palette.player_outline)
-	put_rectfillcolor(x + 1, y + 1, x + w - 1, y + h - 1, 111, constants.palette.player_body)
-	put_rectfillcolor(x + 2, y + 7, x + w - 2, y + h - 2, 112, body_color)
 	if player.facing > 0 then
-		put_rectfillcolor(x + 10, y + 4, x + 13, y + 7, 113, constants.palette.player_outline)
+		put_sprite(imgid, player.x, player.y, 110)
 	else
-		put_rectfillcolor(x + 3, y + 4, x + 6, y + 7, 113, constants.palette.player_outline)
+		put_sprite(imgid, player.x, player.y, 110, { flip_h = true })
 	end
 end
 
 function director:draw_ui()
 	local view_w = display_width()
-	put_rectfillcolor(4, 4, view_w - 4, 22, 200, constants.palette.ui_banner)
+	put_rectfillcolor(0, 0, view_w, 30, 200, constants.palette.ui_banner)
 	put_glyphs(constants.ui.help_line, 8, 10, 201, self.ui_glyph_opts)
 end
 
 function director:render_frame()
-	self:draw_background()
-	self:draw_solids()
+	self:draw_frame_background()
+	self:draw_room_tiles()
 	self:draw_player(self.player_ref)
 	self:draw_ui()
 end

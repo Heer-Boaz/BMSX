@@ -10,15 +10,21 @@ constants.ids = {
 }
 
 constants.room = {
-	width = 320,
-	height = 240,
+	width = 256,
+	height = 192,
+	tile_size = 8,
+	tile_columns = 32,
+	tile_rows = 20,
+	tile_origin_x = 0,
+	tile_origin_y = 32,
 }
 
 constants.player = {
 	width = 16,
 	height = 16,
-	start_x = 52,
-	start_y = 150,
+	start_x = 0,
+	start_y = 104,
+	walk_anim_cycle_px = 8,
 }
 
 constants.physics = {

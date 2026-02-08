@@ -23,6 +23,8 @@ function init()
 	director_module.define_director_fsm()
 	player_module.register_player_definition()
 	director_module.register_director_definition()
+	vdp_load_slot(0, 0)
+	vdp_map_slot(0, 0)
 end
 
 function new_game()
@@ -46,12 +48,8 @@ function new_game()
 	})
 end
 
-function update(_dt_seconds)
-end
-
 while true do
 	wait_vblank()
 	service_irqs()
-	update(game.deltatime_seconds)
 	engine.update(game.deltatime)
 end

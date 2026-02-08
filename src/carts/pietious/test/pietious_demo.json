@@ -43,42 +43,42 @@
 	},
 	{
 		"description": "segment_02_full_jump_press",
-		"frame": 680,
+		"frame": 679,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
 			"code": "ArrowUp",
 			"down": true,
 			"value": 1,
-			"timestamp": 13600,
+			"timestamp": 13580,
 			"pressId": 3,
 			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
 		}
 	},
 	{
 		"description": "segment_02_air_control_release_right",
-		"frame": 712,
+		"frame": 710,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
 			"code": "ArrowRight",
 			"down": false,
 			"value": 0,
-			"timestamp": 14240,
+			"timestamp": 14200,
 			"pressId": 2,
 			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
 		}
 	},
 	{
 		"description": "segment_02_air_control_press_left",
-		"frame": 712,
+		"frame": 710,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
 			"code": "ArrowLeft",
 			"down": true,
 			"value": 1,
-			"timestamp": 14240,
+			"timestamp": 14200,
 			"pressId": 4,
 			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
 		}

@@ -100,6 +100,8 @@ function player:reset_runtime()
 	self.up_released = false
 	self.last_dx = 0
 	self.last_dy = 0
+	self.walk_frame = 0
+	self.walk_distance_accum = 0
 	self.debug_jump_substate = -1
 	self.debug_fall_substate = -1
 	self.frame = 0
@@ -275,6 +277,24 @@ function player:get_controlled_fall_dx()
 	return inertia * p.fall_dx_neutral
 end
 
+function player:reset_walk_animation()
+	self.walk_frame = 0
+	self.walk_distance_accum = 0
+end
+
+function player:advance_walk_animation(distance_px)
+	self.walk_distance_accum = self.walk_distance_accum + distance_px
+	local cycle_px = constants.player.walk_anim_cycle_px
+	while self.walk_distance_accum >= cycle_px do
+		self.walk_distance_accum = self.walk_distance_accum - cycle_px
+		if self.walk_frame == 0 then
+			self.walk_frame = 1
+		else
+			self.walk_frame = 0
+		end
+	end
+end
+
 function player:tick_quiet()
 	self.debug_jump_substate = -1
 	self.debug_fall_substate = -1
@@ -327,6 +347,9 @@ function player:tick_walking_right()
 	end
 
 	local move_result = self:apply_move(constants.physics.walk_dx, 0)
+	if self.last_dx ~= 0 then
+		self:advance_walk_animation(abs(self.last_dx))
+	end
 
 	if self.up_pressed then
 		self:start_jump(1)
@@ -368,6 +391,9 @@ function player:tick_walking_left()
 	end
 
 	local move_result = self:apply_move(-constants.physics.walk_dx, 0)
+	if self.last_dx ~= 0 then
+		self:advance_walk_animation(abs(self.last_dx))
+	end
 
 	if self.up_pressed then
 		self:start_jump(-1)
@@ -523,11 +549,13 @@ local function define_player_fsm()
 			walking_right = {
 				entering_state = function(self)
 					self.state_name = 'walking_right'
+					self:reset_walk_animation()
 				end,
 			},
 			walking_left = {
 				entering_state = function(self)
 					self.state_name = 'walking_left'
+					self:reset_walk_animation()
 				end,
 			},
 			jumping = {
@@ -581,6 +609,8 @@ local function register_player_definition()
 			up_released = false,
 			last_dx = 0,
 			last_dy = 0,
+			walk_frame = 0,
+			walk_distance_accum = 0,
 			debug_jump_substate = -1,
 			debug_fall_substate = -1,
 			frame = 0,
