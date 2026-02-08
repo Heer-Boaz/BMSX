@@ -545,6 +545,8 @@ export class Runtime {
 	}
 
 	private commitFrameOnVblankEdge(): void {
+		// Flush latest VDP register writes before snapshotting atlas/skybox bindings.
+		this.vdp.syncRegisters();
 		this.vdp.commitViewSnapshot();
 		const frameState = this.currentFrameState;
 		if (frameState === null) {

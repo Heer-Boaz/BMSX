@@ -373,6 +373,8 @@ void Runtime::enterVblank() {
 }
 
 void Runtime::commitFrameOnVblankEdge() {
+	// Flush latest VDP register writes before snapshotting atlas/skybox bindings.
+	m_vdp.syncRegisters();
 	m_vdp.commitViewSnapshot(*EngineCore::instance().view());
 	if (!m_frameActive) {
 		return;

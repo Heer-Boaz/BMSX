@@ -1149,11 +1149,9 @@ std::vector<u8> VDP::readSurfacePixels(const ReadSurface& surface, uint32_t x, u
 }
 
 void VDP::commitViewSnapshot(GameView& view) {
-	if (m_dirtyAtlasBindings) {
-		view.primaryAtlasIdInSlot = m_slotAtlasIds[0];
-		view.secondaryAtlasIdInSlot = m_slotAtlasIds[1];
-		m_dirtyAtlasBindings = false;
-	}
+	view.primaryAtlasIdInSlot = m_slotAtlasIds[0];
+	view.secondaryAtlasIdInSlot = m_slotAtlasIds[1];
+	m_dirtyAtlasBindings = false;
 	if (m_dirtySkybox) {
 		view.skyboxFaceIds = m_skyboxFaceIds;
 		m_dirtySkybox = false;

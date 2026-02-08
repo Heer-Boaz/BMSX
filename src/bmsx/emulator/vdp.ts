@@ -513,11 +513,9 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 
 	public commitViewSnapshot(): void {
 		const view = $.view;
-		if (this.dirtyAtlasBindings) {
-			view.primaryAtlasIdInSlot = this.slotAtlasIds[0];
-			view.secondaryAtlasIdInSlot = this.slotAtlasIds[1];
-			this.dirtyAtlasBindings = false;
-		}
+		view.primaryAtlasIdInSlot = this.slotAtlasIds[0];
+		view.secondaryAtlasIdInSlot = this.slotAtlasIds[1];
+		this.dirtyAtlasBindings = false;
 		if (this.dirtySkybox) {
 			view.skyboxFaceIds = this.skyboxFaceIds;
 			this.dirtySkybox = false;
