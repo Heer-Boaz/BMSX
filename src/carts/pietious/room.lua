@@ -69,7 +69,13 @@ local function create_tile_id(ch, x, y, collision_map)
 	if ch == '-' then
 		return 'castle_stairs_l'
 	end
+	if ch == '_' then
+		return 'castle_stairs_l'
+	end
 	if ch == '=' then
+		return 'castle_stairs_r'
+	end
+	if ch == '+' then
 		return 'castle_stairs_r'
 	end
 

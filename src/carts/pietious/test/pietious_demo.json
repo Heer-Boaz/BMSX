@@ -194,5 +194,425 @@
 			"pressId": 6,
 			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
 		}
+	},
+	{
+		"description": "segment_05_stairs_up_start",
+		"frame": 1040,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowUp",
+			"down": true,
+			"value": 1,
+			"timestamp": 20800,
+			"pressId": 8,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "segment_05_stairs_up_slash_press",
+		"frame": 1100,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyZ",
+			"down": true,
+			"value": 1,
+			"timestamp": 22000,
+			"pressId": 9,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "segment_05_stairs_up_slash_release",
+		"frame": 1110,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyZ",
+			"down": false,
+			"value": 0,
+			"timestamp": 22200,
+			"pressId": 9,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "segment_05_stairs_up_end",
+		"frame": 1200,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowUp",
+			"down": false,
+			"value": 0,
+			"timestamp": 24000,
+			"pressId": 8,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "segment_06_stairs_down_start",
+		"frame": 1240,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowDown",
+			"down": true,
+			"value": 1,
+			"timestamp": 24800,
+			"pressId": 10,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "segment_06_stairs_down_end",
+		"frame": 1420,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowDown",
+			"down": false,
+			"value": 0,
+			"timestamp": 28400,
+			"pressId": 10,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "segment_07_ground_slash_press",
+		"frame": 1470,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyZ",
+			"down": true,
+			"value": 1,
+			"timestamp": 29400,
+			"pressId": 11,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "segment_07_ground_slash_release",
+		"frame": 1480,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyZ",
+			"down": false,
+			"value": 0,
+			"timestamp": 29600,
+			"pressId": 11,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "segment_08_walk_right_slash_start",
+		"frame": 1520,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": true,
+			"value": 1,
+			"timestamp": 30400,
+			"pressId": 12,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "segment_08_walk_right_slash_press",
+		"frame": 1540,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyZ",
+			"down": true,
+			"value": 1,
+			"timestamp": 30800,
+			"pressId": 13,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "segment_08_walk_right_slash_release",
+		"frame": 1550,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyZ",
+			"down": false,
+			"value": 0,
+			"timestamp": 31000,
+			"pressId": 13,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "segment_08_walk_right_stop",
+		"frame": 1600,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": false,
+			"value": 0,
+			"timestamp": 32000,
+			"pressId": 12,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "segment_09_jump_for_landing_slash_reset_press_up",
+		"frame": 1660,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowUp",
+			"down": true,
+			"value": 1,
+			"timestamp": 33200,
+			"pressId": 14,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "segment_09_jump_for_landing_slash_reset_release_up",
+		"frame": 1672,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowUp",
+			"down": false,
+			"value": 0,
+			"timestamp": 33440,
+			"pressId": 14,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "segment_09_air_slash_press",
+		"frame": 1692,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyZ",
+			"down": true,
+			"value": 1,
+			"timestamp": 33840,
+			"pressId": 15,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "segment_09_air_slash_release",
+		"frame": 1694,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyZ",
+			"down": false,
+			"value": 0,
+			"timestamp": 33880,
+			"pressId": 15,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "segment_09_post_land_slash_probe_1_press",
+		"frame": 1698,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyZ",
+			"down": true,
+			"value": 1,
+			"timestamp": 33960,
+			"pressId": 16,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "segment_09_post_land_slash_probe_1_release",
+		"frame": 1700,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyZ",
+			"down": false,
+			"value": 0,
+			"timestamp": 34000,
+			"pressId": 16,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "segment_09_post_land_slash_probe_2_press",
+		"frame": 1704,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyZ",
+			"down": true,
+			"value": 1,
+			"timestamp": 34080,
+			"pressId": 17,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "segment_09_post_land_slash_probe_2_release",
+		"frame": 1706,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyZ",
+			"down": false,
+			"value": 0,
+			"timestamp": 34120,
+			"pressId": 17,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "segment_09_post_land_slash_probe_3_press",
+		"frame": 1710,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyZ",
+			"down": true,
+			"value": 1,
+			"timestamp": 34200,
+			"pressId": 18,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "segment_09_post_land_slash_probe_3_release",
+		"frame": 1712,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyZ",
+			"down": false,
+			"value": 0,
+			"timestamp": 34240,
+			"pressId": 18,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "segment_10_return_to_stairs_walk_left_start",
+		"frame": 1740,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowLeft",
+			"down": true,
+			"value": 1,
+			"timestamp": 34800,
+			"pressId": 19,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "segment_10_return_to_stairs_walk_left_stop",
+		"frame": 1814,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowLeft",
+			"down": false,
+			"value": 0,
+			"timestamp": 36280,
+			"pressId": 19,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "segment_10_climb_up_for_step_off_press_up",
+		"frame": 1818,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowUp",
+			"down": true,
+			"value": 1,
+			"timestamp": 36360,
+			"pressId": 20,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "segment_10_climb_up_for_step_off_release_up",
+		"frame": 1974,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowUp",
+			"down": false,
+			"value": 0,
+			"timestamp": 39480,
+			"pressId": 20,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "segment_10_descend_for_step_off_press_down",
+		"frame": 1988,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowDown",
+			"down": true,
+			"value": 1,
+			"timestamp": 39760,
+			"pressId": 21,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "segment_10_descend_for_step_off_release_down",
+		"frame": 2108,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowDown",
+			"down": false,
+			"value": 0,
+			"timestamp": 42160,
+			"pressId": 21,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "segment_10_step_off_press_right",
+		"frame": 2108,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": true,
+			"value": 1,
+			"timestamp": 42160,
+			"pressId": 22,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "segment_10_step_off_release_right",
+		"frame": 2130,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": false,
+			"value": 0,
+			"timestamp": 42600,
+			"pressId": 22,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
 	}
 ]

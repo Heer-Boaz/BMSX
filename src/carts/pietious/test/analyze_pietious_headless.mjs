@@ -300,6 +300,129 @@ if (fullJump) {
 	}
 }
 
+const slashStarts = events.filter((e) => e.name === 'slash_start');
+expect(slashStarts.length >= 1, `Expected at least 1 slash_start event, got ${slashStarts.length}.`);
+
+const slashActiveSamples = metrics.filter((m) => Number(m.slash) > 0);
+expect(slashActiveSamples.length > 0, 'Missing slash-active metric samples (slash>0).');
+
+const stairsSlashStart = first(slashStarts, (e) => e.reason === 'stairs');
+expect(stairsSlashStart !== null, 'Missing slash_start while on stairs.');
+
+const quietSlashStart = first(slashStarts, (e) => e.reason === 'quiet');
+expect(quietSlashStart !== null, 'Missing quiet slash sample for grounded lock verification.');
+if (quietSlashStart) {
+	const quietLocked = metrics.filter((m) => Number(m.f) > Number(quietSlashStart.f) && Number(m.slash) > 0 && m.st === 'quiet');
+	const quietMovedWhileSlashing = first(quietLocked, (m) => Number(m.dx) !== 0);
+	expect(quietMovedWhileSlashing === null, 'Ground slash must lock horizontal movement (quiet state).');
+}
+
+const walkSlashStart = first(slashStarts, (e) => e.reason === 'walking_right' || e.reason === 'walking_left');
+expect(walkSlashStart !== null, 'Missing running slash sample for walk-lock verification.');
+if (walkSlashStart) {
+	const walkSlashStartSample = first(
+		metrics,
+		(m) =>
+			Number(m.f) === Number(walkSlashStart.f) &&
+			Number(m.slash) > 0 &&
+			(m.st === 'walking_right' || m.st === 'walking_left'),
+	);
+	expect(walkSlashStartSample !== null, 'Missing metric sample at running slash start frame.');
+	if (walkSlashStartSample) {
+		const expectedStartDx = walkSlashStart.reason === 'walking_left' ? -2 : 2;
+		expect(
+			Number(walkSlashStartSample.dx) === expectedStartDx,
+			`Running slash start frame should keep pre-slash movement. got dx=${walkSlashStartSample.dx}, expected ${expectedStartDx}.`,
+		);
+	}
+
+	const walkSlashLocked = metrics.filter(
+		(m) =>
+			Number(m.f) > Number(walkSlashStart.f) &&
+			Number(m.slash) > 0 &&
+			(m.st === 'walking_right' || m.st === 'walking_left'),
+	);
+	expect(walkSlashLocked.length > 0, 'Missing post-start running slash lock samples.');
+	const walkMovedWhileSlashing = first(walkSlashLocked, (m) => Number(m.dx) !== 0);
+	expect(walkMovedWhileSlashing === null, 'Running slash must lock walk movement after the start frame.');
+}
+
+const airSlashStart = first(
+	slashStarts,
+	(e) => e.reason === 'jumping' || e.reason === 'stopped_jumping' || e.reason === 'controlled_fall' || e.reason === 'uncontrolled_fall',
+);
+expect(airSlashStart !== null, 'Missing airborne slash sample for landing-reset verification.');
+if (airSlashStart) {
+	const landAfterAirSlash = firstLandAfter(events, Number(airSlashStart.f));
+	expect(landAfterAirSlash !== null, 'Missing landing after airborne slash sample.');
+	if (landAfterAirSlash) {
+		const slashResetEvent = first(
+			events,
+			(e) => e.name === 'slash_reset' && e.reason === 'land' && Number(e.f) === Number(landAfterAirSlash.f),
+		);
+		expect(slashResetEvent !== null, 'Expected slash_reset reason=land on the landing frame.');
+
+		const postLandSlashStart = first(
+			slashStarts,
+			(e) => Number(e.f) > Number(landAfterAirSlash.f) && Number(e.f) <= Number(landAfterAirSlash.f) + 20,
+		);
+		expect(postLandSlashStart !== null, 'Missing rapid post-landing slash restart sample.');
+	}
+}
+
+const stairsStarts = events.filter((e) => e.name === 'stairs_start');
+expect(stairsStarts.length >= 1, `Expected at least 1 stairs_start event, got ${stairsStarts.length}.`);
+const stairsEnds = events.filter((e) => e.name === 'stairs_end');
+expect(stairsEnds.length >= 2, `Expected at least 2 stairs_end events, got ${stairsEnds.length}.`);
+
+const stairsUpStart = first(stairsStarts, (e) => Number(e.dir) < 0);
+const stairsDownStart = first(stairsStarts, (e) => Number(e.dir) > 0);
+expect(stairsUpStart !== null, 'Missing stairs_start with dir=-1 (stairs up).');
+expect(stairsDownStart !== null, 'Missing stairs_start with dir=1 (stairs down).');
+
+const stairsTopEnd = first(stairsEnds, (e) => e.mode === 'top');
+const stairsBottomEnd = first(stairsEnds, (e) => e.mode === 'bottom');
+expect(stairsTopEnd !== null, 'Missing stairs_end mode=top.');
+expect(stairsBottomEnd !== null, 'Missing stairs_end mode=bottom.');
+const stairsStepOff = first(events, (e) => e.name === 'stairs_step_off');
+expect(stairsStepOff !== null, 'Missing stairs_step_off event (early step-off before ground).');
+if (stairsStepOff && stairsBottomEnd) {
+	expect(
+		Number(stairsStepOff.y) < Number(stairsBottomEnd.y),
+		`stairs_step_off should happen before bottom y. got y=${stairsStepOff.y}, bottom_y=${stairsBottomEnd.y}.`,
+	);
+}
+const stairsStepOffTransition = first(
+	events,
+	(e) =>
+		e.name === 'state' &&
+		e.from === 'stairs' &&
+		(e.reason === 'stairs_step_off_right' || e.reason === 'stairs_step_off_left') &&
+		(stairsStepOff === null || Number(e.f) === Number(stairsStepOff.f)),
+);
+expect(stairsStepOffTransition !== null, 'Missing stairs->walk transition for stairs_step_off.');
+
+const stairsMetrics = metrics.filter((m) => m.st === 'stairs');
+expect(stairsMetrics.length > 0, 'Missing stairs state metric samples.');
+
+const stairsUpMovement = first(stairsMetrics, (m) => Number(m.dy) < 0);
+const stairsDownMovement = first(stairsMetrics, (m) => Number(m.dy) > 0);
+expect(stairsUpMovement !== null, 'Missing stairs sample with upward movement (dy<0).');
+expect(stairsDownMovement !== null, 'Missing stairs sample with downward movement (dy>0).');
+
+const stairsMisalignedX = first(
+	stairsMetrics,
+	(m) => Number(m.stairs_x) >= 0 && Number(m.x) !== Number(m.stairs_x),
+);
+expect(stairsMisalignedX === null, 'Stairs traversal must keep player x locked to stairs_x.');
+
+const stairsSlashSample = first(stairsMetrics, (m) => Number(m.slash) > 0);
+expect(stairsSlashSample !== null, 'Missing slash-active sample while in stairs state.');
+if (stairsSlashSample) {
+	const stairsSlashMoving = first(stairsMetrics, (m) => Number(m.slash) > 0 && (Number(m.dy) !== 0 || Number(m.dx) !== 0));
+	expect(stairsSlashMoving === null, 'Stairs slash must lock stairs movement for the slash duration.');
+}
+
 console.log(`PIETIOUS_ANALYSIS log=${logPath}`);
 console.log(`samples metrics=${metrics.length} events=${events.length}`);
 console.log(`jump_profiles=${JSON.stringify(jumpAnalyses.map((j) => ({ f: Number(j.event.f), inertia: Number(j.event.inertia), rise: j.rise })))}`);

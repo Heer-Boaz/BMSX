@@ -42,7 +42,24 @@ end
 
 function director:draw_player(player)
 	local imgid = 'pietolon_stand_r'
-	if player.state_name == 'walking_right' or player.state_name == 'walking_left' then
+	local sword_imgid = nil
+	local sword_offset_x = constants.player.width
+	local is_airborne = player.state_name == 'jumping' or player.state_name == 'stopped_jumping' or player.state_name == 'controlled_fall' or player.state_name == 'uncontrolled_fall'
+	if player.state_name == 'stairs' then
+		if player.stairs_direction < 0 then
+			if player.stairs_anim_frame == 0 then
+				imgid = 'pietolon_stairs_up_1'
+			else
+				imgid = 'pietolon_stairs_up_2'
+			end
+		elseif player.stairs_direction > 0 then
+			if player.stairs_anim_frame == 0 then
+				imgid = 'pietolon_stairs_down_1'
+			else
+				imgid = 'pietolon_stairs_down_2'
+			end
+		end
+	elseif player.state_name == 'walking_right' or player.state_name == 'walking_left' then
 		if player.walk_frame == 0 then
 			imgid = 'pietolon_stand_r'
 		else
@@ -57,18 +74,44 @@ function director:draw_player(player)
 			imgid = 'pietolon_walk_r'
 		end
 	end
+	if player:is_slashing() then
+		if is_airborne then
+			imgid = 'pietolon_jumpslash_r'
+			sword_imgid = 'pietolon_jumpslash_sword_r'
+		else
+			imgid = 'pietolon_slash_r'
+			sword_imgid = 'pietolon_slash_sword_r'
+		end
+	end
 
 	if player.facing > 0 then
 		put_sprite(imgid, player.x, player.y, 110)
+		if sword_imgid ~= nil then
+			put_sprite(sword_imgid, player.x + sword_offset_x, player.y, 111)
+		end
 	else
 		put_sprite(imgid, player.x, player.y, 110, { flip_h = true })
+		if sword_imgid ~= nil then
+			put_sprite(sword_imgid, player.x - sword_offset_x, player.y, 111, { flip_h = true })
+		end
 	end
 end
 
 function director:draw_ui()
-	local view_w = display_width()
-	put_rectfillcolor(0, 0, view_w, self.room.tile_origin_y, 200, constants.palette.ui_banner)
-	put_glyphs(constants.ui.help_line, 8, 10, 201, self.ui_glyph_opts)
+	local hud = constants.hud
+	put_sprite('game_header', 0, 0, 200)
+
+	local health_x = hud.health_bar_x
+	local health_y = hud.health_bar_y
+	for i = 0, (self.hud_health_level - 1) do
+		put_sprite('energybar_stripe_blue', health_x + i, health_y, 201)
+	end
+
+	local weapon_x = hud.weapon_bar_x
+	local weapon_y = hud.weapon_bar_y
+	for i = 0, (self.hud_weapon_level - 1) do
+		put_sprite('energybar_stripe_red', weapon_x + i, weapon_y, 201)
+	end
 end
 
 function director:render_frame()
@@ -103,7 +146,8 @@ local function register_director_definition()
 		defaults = {
 			room = nil,
 			player_id = constants.ids.player_instance,
-			ui_glyph_opts = { layer = 'ui', color = constants.palette.ui_text },
+			hud_health_level = constants.hud.health_level,
+			hud_weapon_level = constants.hud.weapon_level,
 		},
 	})
 end

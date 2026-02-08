@@ -11,6 +11,7 @@ local state_jumping = player_fsm_id .. ':/jumping'
 local state_stopped_jumping = player_fsm_id .. ':/stopped_jumping'
 local state_controlled_fall = player_fsm_id .. ':/controlled_fall'
 local state_uncontrolled_fall = player_fsm_id .. ':/uncontrolled_fall'
+local state_stairs = player_fsm_id .. ':/stairs'
 
 local state_labels = {
 	[state_quiet] = 'quiet',
@@ -20,6 +21,7 @@ local state_labels = {
 	[state_stopped_jumping] = 'stopped_jumping',
 	[state_controlled_fall] = 'controlled_fall',
 	[state_uncontrolled_fall] = 'uncontrolled_fall',
+	[state_stairs] = 'stairs',
 }
 
 local function abs(value)
@@ -46,6 +48,14 @@ local function bool01(value)
 	return 0
 end
 
+local function is_stair_left(ch)
+	return ch == '-' or ch == '_'
+end
+
+local function is_stair_right(ch)
+	return ch == '=' or ch == '+'
+end
+
 function player:emit_event(name, extra)
 	local telemetry = constants.telemetry
 	if not telemetry.enabled then
@@ -64,7 +74,7 @@ function player:emit_metric()
 		return
 	end
 	print(string.format(
-		'%s|f=%d|x=%d|y=%d|dx=%d|dy=%d|st=%s|jsub=%d|fsub=%d|inertia=%d|face=%d|g=%d|left=%d|right=%d|up_hold=%d|up_press=%d|up_release=%d',
+		'%s|f=%d|x=%d|y=%d|dx=%d|dy=%d|st=%s|jsub=%d|fsub=%d|inertia=%d|face=%d|g=%d|left=%d|right=%d|up_hold=%d|up_press=%d|up_release=%d|down=%d|atk=%d|atk_press=%d|slash=%d|slash_phase=%d|stairs_dir=%d|stairs_x=%d',
 		telemetry.metric_prefix,
 		self.frame,
 		self.x,
@@ -81,7 +91,14 @@ function player:emit_metric()
 		bool01(self.right_held),
 		bool01(self.up_held),
 		bool01(self.up_pressed),
-		bool01(self.up_released)
+		bool01(self.up_released),
+		bool01(self.down_held),
+		bool01(self.attack_held),
+		bool01(self.attack_pressed),
+		self.slash_timer,
+		self.sword_phase,
+		self.stairs_direction,
+		self.stairs_x
 	))
 end
 
@@ -97,12 +114,27 @@ function player:reset_runtime()
 	self.left_held = false
 	self.right_held = false
 	self.up_held = false
+	self.down_held = false
 	self.up_pressed = false
 	self.up_released = false
+	self.down_pressed = false
+	self.down_released = false
+	self.attack_held = false
+	self.attack_pressed = false
+	self.attack_released = false
 	self.last_dx = 0
 	self.last_dy = 0
 	self.walk_frame = 0
 	self.walk_distance_accum = 0
+	self.slash_timer = 0
+	self.sword_phase = 0
+	self.sword_recover_timer = 0
+	self.stairs_direction = 0
+	self.stairs_x = -1
+	self.stairs_top_y = self.spawn_y
+	self.stairs_bottom_y = self.spawn_y
+	self.stairs_anim_frame = 0
+	self.stairs_anim_distance = 0
 	self.debug_jump_substate = -1
 	self.debug_fall_substate = -1
 	self.frame = 0
@@ -116,11 +148,19 @@ end
 function player:sample_input()
 	local player_index = self.player_index
 	local was_up_held = self.up_held
+	local was_down_held = self.down_held
+	local was_attack_held = self.attack_held
 	self.left_held = action_triggered('left[p]', player_index)
 	self.right_held = action_triggered('right[p]', player_index)
 	self.up_held = action_triggered('up[p]', player_index)
+	self.down_held = action_triggered('down[p]', player_index)
+	self.attack_held = action_triggered('x[p]', player_index) or action_triggered('b[p]', player_index) or action_triggered('a[p]', player_index)
 	self.up_pressed = self.up_held and (not was_up_held)
 	self.up_released = (not self.up_held) and was_up_held
+	self.down_pressed = self.down_held and (not was_down_held)
+	self.down_released = (not self.down_held) and was_down_held
+	self.attack_pressed = self.attack_held and (not was_attack_held)
+	self.attack_released = (not self.attack_held) and was_attack_held
 end
 
 function player:update_facing_from_horizontal_input()
@@ -131,6 +171,249 @@ function player:update_facing_from_horizontal_input()
 	if self.right_held and not self.left_held then
 		self.facing = 1
 	end
+end
+
+function player:update_slash_state()
+	if self.sword_phase == 0 then
+		self.slash_timer = 0
+		return
+	end
+
+	if self.sword_phase == 1 then
+		self.sword_phase = 2
+		self.sword_recover_timer = constants.sword.recover_frames
+		self.slash_timer = self.sword_recover_timer
+		return
+	end
+
+	if self.sword_recover_timer > 0 then
+		self.sword_recover_timer = self.sword_recover_timer - 1
+	end
+	if self.sword_recover_timer == 0 then
+		self.sword_phase = 0
+	end
+	self.slash_timer = self.sword_recover_timer
+end
+
+function player:is_slashing()
+	return self.sword_phase ~= 0
+end
+
+function player:try_start_slash(reason)
+	if not self.attack_pressed then
+		return
+	end
+	if self.sword_phase ~= 0 then
+		return
+	end
+	self.sword_phase = 1
+	self.sword_recover_timer = 0
+	self.slash_timer = constants.sword.start_frames
+	self:emit_event('slash_start', string.format('reason=%s|x=%d|y=%d', reason, self.x, self.y))
+end
+
+function player:clear_slash(reason)
+	if self.sword_phase == 0 then
+		return
+	end
+	self.sword_phase = 0
+	self.sword_recover_timer = 0
+	self.slash_timer = 0
+	if reason ~= nil then
+		self:emit_event('slash_reset', string.format('reason=%s', reason))
+	end
+end
+
+function player:get_jump_inertia(default_inertia)
+	if self.left_held and not self.right_held then
+		return -1
+	end
+	if self.right_held and not self.left_held then
+		return 1
+	end
+	return default_inertia
+end
+
+function player:handle_grounded_slash_lock(default_inertia)
+	self.last_dx = 0
+	self.last_dy = 0
+	if not self.up_pressed then
+		return
+	end
+	self:start_jump(self:get_jump_inertia(default_inertia))
+	self:transition_to(state_jumping, 'jump_during_slash')
+end
+
+function player:get_stairs_x_at(probe_x, probe_y)
+	local room = self.room
+	local tile_size = room.tile_size
+	local tx = math.floor((probe_x - room.tile_origin_x) / tile_size) + 1
+	local ty = math.floor((probe_y - room.tile_origin_y) / tile_size) + 1
+	if ty < 1 or ty > room.tile_rows then
+		return nil
+	end
+	if tx < 1 then
+		tx = 1
+	end
+	if tx >= room.tile_columns then
+		tx = room.tile_columns - 1
+	end
+
+	local row = room.map_rows[ty]
+	local left = row:sub(tx, tx)
+	local right = row:sub(tx + 1, tx + 1)
+	if is_stair_left(left) and is_stair_right(right) then
+		return room.tile_origin_x + ((tx - 1) * tile_size)
+	end
+	return nil
+end
+
+function player:find_stairs_x_on_floor()
+	local stairs = constants.stairs
+	local probe_x = self.x + stairs.foot_probe_offset_x
+	local probe_y = self.y + stairs.foot_probe_offset_y
+	return self:get_stairs_x_at(probe_x, probe_y)
+end
+
+function player:find_stairs_x_below()
+	local stairs = constants.stairs
+	local probe_x = self.x + stairs.foot_probe_offset_x
+	local probe_y = self.y + stairs.foot_probe_offset_y + stairs.below_probe_extra_y
+	return self:get_stairs_x_at(probe_x, probe_y)
+end
+
+function player:get_stairs_bounds(stairs_x)
+	local room = self.room
+	local tile_size = room.tile_size
+	local tx = math.floor((stairs_x - room.tile_origin_x) / tile_size) + 1
+	local min_row = -1
+	local max_row = -1
+
+	for y = 1, room.tile_rows do
+		local row = room.map_rows[y]
+		local left = row:sub(tx, tx)
+		local right = row:sub(tx + 1, tx + 1)
+		if is_stair_left(left) and is_stair_right(right) then
+			if min_row < 0 then
+				min_row = y
+			end
+			max_row = y
+		end
+	end
+
+	if min_row < 0 then
+		return nil, nil
+	end
+
+	local top_y = room.tile_origin_y + ((min_row - 2) * tile_size) - self.height
+	if top_y < room.world_top then
+		top_y = room.world_top
+	end
+	local bottom_y = room.tile_origin_y + (max_row * tile_size) - self.height
+	return top_y, bottom_y
+end
+
+function player:get_map_char_at(probe_x, probe_y)
+	local room = self.room
+	local tile_size = room.tile_size
+	local tx = math.floor((probe_x - room.tile_origin_x) / tile_size) + 1
+	local ty = math.floor((probe_y - room.tile_origin_y) / tile_size) + 1
+	if ty < 1 or ty > room.tile_rows then
+		return nil
+	end
+	if tx < 1 or tx > room.tile_columns then
+		return nil
+	end
+	local row = room.map_rows[ty]
+	return row:sub(tx, tx)
+end
+
+function player:is_solid_map_at(probe_x, probe_y)
+	local ch = self:get_map_char_at(probe_x, probe_y)
+	return ch == '#'
+end
+
+function player:try_step_off_stairs()
+	if self.up_held or self.down_held then
+		return false
+	end
+
+	local dir = 0
+	local probe_x = 0
+	local x_step = 0
+	local to_state = state_quiet
+	local reason = ''
+	local stairs = constants.stairs
+	if self.right_held and not self.left_held then
+		dir = 1
+		probe_x = self.x + stairs.step_off_right_probe_offset_x
+		x_step = stairs.step_off_right_x
+		to_state = state_walking_right
+		reason = 'stairs_step_off_right'
+	elseif self.left_held and not self.right_held then
+		dir = -1
+		probe_x = self.x + stairs.step_off_left_probe_offset_x
+		x_step = stairs.step_off_left_x
+		to_state = state_walking_left
+		reason = 'stairs_step_off_left'
+	else
+		return false
+	end
+
+	local probe_y = self.y + self.height + stairs.step_off_probe_extra_y
+	if not self:is_solid_map_at(probe_x, probe_y) then
+		return false
+	end
+
+	self.facing = dir
+	local before_x = self.x
+	self.x = self.x + x_step
+	if self.x < 0 then
+		self.x = 0
+	end
+	local max_x = self.room.world_width - self.width
+	if self.x > max_x then
+		self.x = max_x
+	end
+	self.last_dx = self.x - before_x
+	self.last_dy = 0
+	self.stairs_direction = 0
+	self:emit_event('stairs_step_off', string.format('dir=%d|x=%d|y=%d|probe_y=%d', dir, self.x, self.y, probe_y))
+	self:transition_to(to_state, reason)
+	return true
+end
+
+function player:update_stairs_animation(distance_px)
+	self.stairs_anim_distance = self.stairs_anim_distance + distance_px
+	local step_px = constants.stairs.anim_step_px
+	while self.stairs_anim_distance >= step_px do
+		self.stairs_anim_distance = self.stairs_anim_distance - step_px
+		if self.stairs_anim_frame == 0 then
+			self.stairs_anim_frame = 1
+		else
+			self.stairs_anim_frame = 0
+		end
+	end
+end
+
+function player:start_stairs(direction, stairs_x, reason)
+	local top_y, bottom_y = self:get_stairs_bounds(stairs_x)
+	self.stairs_top_y = top_y
+	self.stairs_bottom_y = bottom_y
+	self.stairs_x = stairs_x
+	self.stairs_direction = direction
+	self.stairs_anim_distance = 0
+	self.x = stairs_x
+	if self.y < self.stairs_top_y then
+		self.y = self.stairs_top_y
+	end
+	if self.y > self.stairs_bottom_y then
+		self.y = self.stairs_bottom_y
+	end
+	self.last_dx = 0
+	self.last_dy = 0
+	self:emit_event('stairs_start', string.format('reason=%s|x=%d|y=%d|dir=%d', reason, self.x, self.y, direction))
+	self:transition_to(state_stairs, reason)
 end
 
 function player:collides_at(x, y)
@@ -325,6 +608,26 @@ function player:tick_quiet()
 		return
 	end
 
+	if self:is_slashing() then
+		self:handle_grounded_slash_lock(0)
+		return
+	end
+
+	if self.up_pressed then
+		local stairs_x = self:find_stairs_x_on_floor()
+		if stairs_x ~= nil then
+			self:start_stairs(-1, stairs_x, 'stairs_up')
+			return
+		end
+	end
+	if self.down_pressed then
+		local stairs_x = self:find_stairs_x_below()
+		if stairs_x ~= nil then
+			self:start_stairs(1, stairs_x, 'stairs_down')
+			return
+		end
+	end
+
 	if self.up_pressed then
 		local inertia = 0
 		if self.left_held and not self.right_held then
@@ -363,15 +666,32 @@ function player:tick_walking_right()
 		return
 	end
 
+	if self:is_slashing() then
+		self:handle_grounded_slash_lock(1)
+		return
+	end
+
 	local move_result = self:apply_move(constants.physics.walk_dx, 0)
 	if self.last_dx ~= 0 then
 		self:advance_walk_animation(abs(self.last_dx))
 	end
 
 	if self.up_pressed then
+		local stairs_x = self:find_stairs_x_on_floor()
+		if stairs_x ~= nil then
+			self:start_stairs(-1, stairs_x, 'stairs_up')
+			return
+		end
 		self:start_jump(1)
 		self:transition_to(state_jumping, 'jump_input')
 		return
+	end
+	if self.down_pressed then
+		local stairs_x = self:find_stairs_x_below()
+		if stairs_x ~= nil then
+			self:start_stairs(1, stairs_x, 'stairs_down')
+			return
+		end
 	end
 
 	if self.left_held and not self.right_held then
@@ -407,15 +727,32 @@ function player:tick_walking_left()
 		return
 	end
 
+	if self:is_slashing() then
+		self:handle_grounded_slash_lock(-1)
+		return
+	end
+
 	local move_result = self:apply_move(-constants.physics.walk_dx, 0)
 	if self.last_dx ~= 0 then
 		self:advance_walk_animation(abs(self.last_dx))
 	end
 
 	if self.up_pressed then
+		local stairs_x = self:find_stairs_x_on_floor()
+		if stairs_x ~= nil then
+			self:start_stairs(-1, stairs_x, 'stairs_up')
+			return
+		end
 		self:start_jump(-1)
 		self:transition_to(state_jumping, 'jump_input')
 		return
+	end
+	if self.down_pressed then
+		local stairs_x = self:find_stairs_x_below()
+		if stairs_x ~= nil then
+			self:start_stairs(1, stairs_x, 'stairs_down')
+			return
+		end
 	end
 
 	if self.right_held and not self.left_held then
@@ -501,6 +838,7 @@ function player:tick_controlled_fall()
 
 	if move_result.landed or (dy == 0 and self:is_grounded()) then
 		self.fall_substate = 0
+		self:clear_slash('land')
 		self:emit_event('land', string.format('x=%d|y=%d', self.x, self.y))
 		self:transition_to(state_quiet, 'landed')
 		return
@@ -518,12 +856,93 @@ function player:tick_uncontrolled_fall()
 
 	if move_result.landed then
 		self.fall_substate = 0
+		self:clear_slash('land')
 		self:emit_event('land', string.format('x=%d|y=%d', self.x, self.y))
 		self:transition_to(state_quiet, 'landed')
 		return
 	end
 
 	self.fall_substate = self.fall_substate + 1
+end
+
+function player:tick_stairs()
+	self.debug_jump_substate = -1
+	self.debug_fall_substate = -1
+
+	self:try_start_slash('stairs')
+	if self:is_slashing() then
+		self.last_dx = 0
+		self.last_dy = 0
+		self.stairs_direction = 0
+		return
+	end
+
+	self:update_facing_from_horizontal_input()
+
+	local dy = 0
+	local speed = constants.stairs.speed_px
+	if self.up_held and not self.down_held then
+		dy = -speed
+		self.stairs_direction = -1
+	elseif self.down_held and not self.up_held then
+		dy = speed
+		self.stairs_direction = 1
+	else
+		if self:try_step_off_stairs() then
+			return
+		end
+		self.stairs_direction = 0
+	end
+
+	local next_y = self.y + dy
+	if next_y < self.stairs_top_y then
+		next_y = self.stairs_top_y
+	elseif next_y > self.stairs_bottom_y then
+		next_y = self.stairs_bottom_y
+	end
+	self.last_dy = next_y - self.y
+	self.y = next_y
+	local before_align_x = self.x
+	self.x = self.stairs_x
+	self.last_dx = self.x - before_align_x
+	if self.last_dy ~= 0 then
+		self:update_stairs_animation(abs(self.last_dy))
+	end
+
+	local stairs_x = self:find_stairs_x_on_floor()
+	if stairs_x == nil then
+		stairs_x = self:find_stairs_x_below()
+	end
+	if stairs_x ~= nil then
+		self.stairs_x = stairs_x
+	end
+
+	if dy < 0 and self.y <= self.stairs_top_y then
+		self.stairs_direction = 0
+		self:emit_event('stairs_end', string.format('mode=top|x=%d|y=%d', self.x, self.y))
+		self:transition_to(state_quiet, 'stairs_end_top')
+		return
+	end
+	if dy > 0 and self.y >= self.stairs_bottom_y then
+		self.stairs_direction = 0
+		self:emit_event('stairs_end', string.format('mode=bottom|x=%d|y=%d', self.x, self.y))
+		self:transition_to(state_quiet, 'stairs_end_bottom')
+		return
+	end
+
+	if stairs_x ~= nil then
+		return
+	end
+
+	self.stairs_direction = 0
+	if self:is_grounded() then
+		self:emit_event('stairs_end', string.format('mode=ground|x=%d|y=%d', self.x, self.y))
+		self:transition_to(state_quiet, 'stairs_end_ground')
+		return
+	end
+	self.fall_substate = 0
+	self:emit_event('stairs_end', string.format('mode=air|x=%d|y=%d', self.x, self.y))
+	self:transition_to(state_uncontrolled_fall, 'stairs_end_air')
 end
 
 function player:tick()
@@ -542,12 +961,16 @@ function player:tick()
 		self:tick_controlled_fall()
 	elseif self.sc:matches_state_path(state_uncontrolled_fall) then
 		self:tick_uncontrolled_fall()
+	elseif self.sc:matches_state_path(state_stairs) then
+		self:tick_stairs()
 	else
 		self:tick_quiet()
 	end
 
+	self:try_start_slash(self.state_name)
 	self.grounded = self:is_grounded()
 	self:emit_metric()
+	self:update_slash_state()
 end
 
 local function define_player_fsm()
@@ -597,6 +1020,11 @@ local function define_player_fsm()
 					self.state_name = 'uncontrolled_fall'
 				end,
 			},
+			stairs = {
+				entering_state = function(self)
+					self.state_name = 'stairs'
+				end,
+			},
 		},
 	})
 end
@@ -624,12 +1052,27 @@ local function register_player_definition()
 			left_held = false,
 			right_held = false,
 			up_held = false,
+			down_held = false,
 			up_pressed = false,
 			up_released = false,
+			down_pressed = false,
+			down_released = false,
+			attack_held = false,
+			attack_pressed = false,
+			attack_released = false,
 			last_dx = 0,
 			last_dy = 0,
 			walk_frame = 0,
 			walk_distance_accum = 0,
+			slash_timer = 0,
+			sword_phase = 0,
+			sword_recover_timer = 0,
+			stairs_direction = 0,
+			stairs_x = -1,
+			stairs_top_y = constants.player.start_y,
+			stairs_bottom_y = constants.player.start_y,
+			stairs_anim_frame = 0,
+			stairs_anim_distance = 0,
 			debug_jump_substate = -1,
 			debug_fall_substate = -1,
 			frame = 0,

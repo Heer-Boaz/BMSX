@@ -29,6 +29,24 @@ constants.player = {
 	walk_anim_cycle_px = 8,
 }
 
+constants.sword = {
+	start_frames = 1,
+	recover_frames = 4,
+}
+
+constants.stairs = {
+	speed_px = 1,
+	anim_step_px = 4,
+	foot_probe_offset_x = 4,
+	foot_probe_offset_y = 14,
+	below_probe_extra_y = 16,
+	step_off_probe_extra_y = 5,
+	step_off_right_probe_offset_x = 16,
+	step_off_left_probe_offset_x = -1,
+	step_off_right_x = 8,
+	step_off_left_x = -9,
+}
+
 constants.physics = {
 	walk_dx = 2,
 	jump_dx = 2,
@@ -87,12 +105,15 @@ constants.palette = {
 	player_tunic = { r = 0.3, g = 0.4, b = 0.84, a = 1 },
 	player_air = { r = 0.88, g = 0.66, b = 0.36, a = 1 },
 	player_outline = { r = 0.08, g = 0.09, b = 0.13, a = 1 },
-	ui_banner = { r = 0.92, g = 0.92, b = 0.87, a = 0.92 },
-	ui_text = { r = 0.05, g = 0.06, b = 0.08, a = 1 },
 }
 
-constants.ui = {
-	help_line = 'ARROWS: MOVE | UP: JUMP | POPOLON CASTLE PHYSICS DEMO',
+constants.hud = {
+	health_level = 48,
+	weapon_level = 24,
+	health_bar_x = 24,
+	health_bar_y = 10,
+	weapon_bar_x = 24,
+	weapon_bar_y = 18,
 }
 
 constants.telemetry = {

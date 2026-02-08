@@ -21,6 +21,8 @@ import { ENGINE_ATLAS_INDEX } from '../../rompack/rompack';
 import { VRAM_ATLAS_SLOT_SIZE, VRAM_SKYBOX_FACE_BYTES, VRAM_SYSTEM_ATLAS_SLOT_SIZE } from '../../emulator/memory_map';
 import type { Mesh } from '../3d/mesh';
 import { consumeOverlayFrame, type EditorOverlayFrame } from '../editor/editor_overlay_queue';
+import { Runtime } from '../../emulator/runtime';
+import { IO_VDP_PRIMARY_ATLAS_ID, IO_VDP_SECONDARY_ATLAS_ID, VDP_ATLAS_ID_NONE } from '../../emulator/io';
 
 export function registerHeadlessPasses(registry: RenderPassLibrary): void {
 	registerFramePasses(registry);
@@ -160,6 +162,21 @@ function resolveExpectedSpriteAtlasBinding(atlasId: number, primaryAtlasId: numb
 		return 1;
 	}
 	throw new Error(`[HeadlessSprites] Atlas ${atlasId} not bound to primary/secondary slots.`);
+}
+
+function resolveHeadlessAtlasSlots(): { primary: number | null; secondary: number | null } {
+	const primaryFromView = $.view.primaryAtlasIdInSlot;
+	const secondaryFromView = $.view.secondaryAtlasIdInSlot;
+	if (primaryFromView !== null || secondaryFromView !== null) {
+		return { primary: primaryFromView, secondary: secondaryFromView };
+	}
+	const runtime = Runtime.instance;
+	const primaryRaw = (runtime.memory.readValue(IO_VDP_PRIMARY_ATLAS_ID) as number) >>> 0;
+	const secondaryRaw = (runtime.memory.readValue(IO_VDP_SECONDARY_ATLAS_ID) as number) >>> 0;
+	return {
+		primary: primaryRaw === VDP_ATLAS_ID_NONE ? null : primaryRaw,
+		secondary: secondaryRaw === VDP_ATLAS_ID_NONE ? null : secondaryRaw,
+	};
 }
 
 function validateMeshAsset(mesh: Mesh): void {
@@ -412,8 +429,9 @@ function registerSpritePass(registry: RenderPassLibrary): void {
 			const snapshot: Snapshot = [
 				`draws=${count} viewport=${spriteState.width}x${spriteState.height} base=${spriteState.baseWidth}x${spriteState.baseHeight}`,
 			];
-			const primaryAtlasId = $.view.primaryAtlasIdInSlot;
-			const secondaryAtlasId = $.view.secondaryAtlasIdInSlot;
+			const slots = resolveHeadlessAtlasSlots();
+			const primaryAtlasId = slots.primary;
+			const secondaryAtlasId = slots.secondary;
 				let needsPrimaryAtlas = false;
 				let needsSecondaryAtlas = false;
 				let needsEngineAtlas = false;
@@ -662,8 +680,9 @@ function registerParticlePass(registry: RenderPassLibrary): void {
 			if (count <= 0) {
 				return;
 			}
-			const primaryAtlasId = $.view.primaryAtlasIdInSlot;
-			const secondaryAtlasId = $.view.secondaryAtlasIdInSlot;
+			const slots = resolveHeadlessAtlasSlots();
+			const primaryAtlasId = slots.primary;
+			const secondaryAtlasId = slots.secondary;
 			const snapshot: Snapshot = [`draws=${count} viewport=${particleState.width}x${particleState.height}`];
 			let needsPrimaryAtlas = false;
 			let needsSecondaryAtlas = false;
