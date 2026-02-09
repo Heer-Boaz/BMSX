@@ -396,6 +396,18 @@ function engine.object(id)
 	return world:get(id)
 end
 
+function engine.add_space(space_id)
+	return world:add_space(space_id)
+end
+
+function engine.set_space(space_id)
+	return world:set_space(space_id)
+end
+
+function engine.get_space()
+	return world:get_space()
+end
+
 function engine.attach_component(object_or_id, component_or_type)
 	local obj = type(object_or_id) == "string" and world:get(object_or_id) or object_or_id
 	if type(component_or_type) == "table" and component_or_type.type_name then

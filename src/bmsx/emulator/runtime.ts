@@ -507,7 +507,12 @@ export class Runtime {
 	public requestWaitForVblank(): void {
 		this.processIrqAck();
 		this.waitingForVblank = true;
-		this.waitForVblankTargetSequence = this.vblankSequence + 1;
+		const nextVblankSequence = this.vblankSequence + 1;
+		// If the call arrives while VBLANK is already active, resume on the current
+		// edge instead of waiting for a new edge that may be blocked by deferred clear.
+		this.waitForVblankTargetSequence = (this.vblankActive && this.vblankSequence > 0)
+			? this.vblankSequence
+			: nextVblankSequence;
 		throw this.waitForVblankSignal;
 	}
 
@@ -1399,6 +1404,11 @@ export class Runtime {
 		if (targetSequence === 0) {
 			this.clearWaitForVblank();
 			return false;
+		}
+		if (this.vblankPendingClear && this.vblankActive && this.vblankSequence < targetSequence) {
+			this.setVblankStatus(false);
+			this.vblankPendingClear = false;
+			this.vblankClearOnIrqEnd = false;
 		}
 		if (this.vblankSequence < targetSequence) {
 			if (state.cycleBudgetRemaining > 0) {

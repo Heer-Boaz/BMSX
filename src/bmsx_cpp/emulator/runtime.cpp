@@ -370,7 +370,12 @@ void Runtime::commitFrameOnVblankEdge() {
 void Runtime::requestWaitForVblank() {
 	processIrqAck();
 	m_waitingForVblank = true;
-	m_waitForVblankTargetSequence = m_vblankSequence + 1;
+	const uint64_t nextVblankSequence = m_vblankSequence + 1;
+	// If wait starts while VBLANK is already active, resume on the current edge so
+	// we don't stall behind a deferred-clear phase.
+	m_waitForVblankTargetSequence = (m_vblankActive && m_vblankSequence > 0)
+		? m_vblankSequence
+		: nextVblankSequence;
 	throw WaitForVblankSignal{};
 }
 
@@ -937,6 +942,11 @@ void Runtime::executeUpdateCallback(double deltaSeconds) {
 				m_waitingForVblank = false;
 				m_clearBackQueuesAfterWaitResume = false;
 				return;
+			}
+			if (m_vblankPendingClear && m_vblankActive && m_vblankSequence < m_waitForVblankTargetSequence) {
+				setVblankStatus(false);
+				m_vblankPendingClear = false;
+				m_vblankClearOnIrqEnd = false;
 			}
 			if (m_vblankSequence < m_waitForVblankTargetSequence) {
 				if (m_frameState.cycleBudgetRemaining > 0) {

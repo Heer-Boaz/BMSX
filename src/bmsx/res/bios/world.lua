@@ -131,6 +131,7 @@ local function emit_perf_log(p)
 end
 
 local function iter_objects(state, _)
+	local world = state.world
 	local list = state.list
 	local scope = state.scope
 	local index = state.index + state.step
@@ -139,12 +140,7 @@ local function iter_objects(state, _)
 		if not obj then
 			return nil
 		end
-		if scope == "active" then
-			if obj.active then
-				state.index = index
-				return obj
-			end
-		else
+		if world:_object_in_scope(obj, scope) then
 			state.index = index
 			return obj
 		end
@@ -153,6 +149,7 @@ local function iter_objects(state, _)
 end
 
 local function iter_objects_with_components(state, _)
+	local world = state.world
 	local objects = state.list
 	while true do
 		local comp_list = state.comp_list
@@ -174,7 +171,7 @@ local function iter_objects_with_components(state, _)
 			return nil
 		end
 		state.obj_index = obj_index
-		if state.scope ~= "active" or obj.active then
+		if world:_object_in_scope(obj, state.scope) then
 			local list = obj:get_components(state.type_name)
 			if #list > 0 then
 				state.current_obj = obj
@@ -189,12 +186,64 @@ function world.new()
 	local self = setmetatable({}, world)
 	self._objects = {}
 	self._by_id = {}
+	self._spaces = { default = true }
+	self._space_order = { "default" }
+	self.active_space_id = "default"
+	self.ui_space_id = "ui"
 	self.systems = ecs.ecsystemmanager.new()
 	self.current_phase = nil
 	self.paused = false
 	self.gamewidth = display_width()
 	self.gameheight = display_height()
 	return self
+end
+
+function world:add_space(space_id)
+	if type(space_id) ~= "string" or space_id == "" then
+		error("world.add_space expects a non-empty space id")
+	end
+	if self._spaces[space_id] then
+		return false
+	end
+	self._spaces[space_id] = true
+	self._space_order[#self._space_order + 1] = space_id
+	return true
+end
+
+function world:set_space(space_id)
+	self:add_space(space_id)
+	self.active_space_id = space_id
+	return self.active_space_id
+end
+
+function world:get_space()
+	return self.active_space_id
+end
+
+function world:list_spaces()
+	return self._space_order
+end
+
+function world:_object_space_id(obj)
+	local space_id = obj.space_id
+	if space_id == nil or space_id == "" then
+		return "default"
+	end
+	return space_id
+end
+
+function world:_object_in_scope(obj, scope)
+	if scope == "active" then
+		if not obj.active then
+			return false
+		end
+		local space_id = self:_object_space_id(obj)
+		if space_id == self.active_space_id then
+			return true
+		end
+		return space_id == self.ui_space_id
+	end
+	return true
 end
 
 function world:configure_pipeline(nodes)
@@ -208,6 +257,9 @@ function world:apply_default_pipeline()
 end
 
 function world:spawn(obj, pos)
+	local space_id = self:_object_space_id(obj)
+	self:add_space(space_id)
+	obj.space_id = space_id
 	self._by_id[obj.id] = obj
 	self._objects[#self._objects + 1] = obj
 	obj:onspawn(pos)
@@ -239,13 +291,13 @@ function world:objects(opts)
 	local reverse = opts and opts.reverse or false
 	local step = reverse and -1 or 1
 	local start = reverse and (#self._objects + 1) or 0
-	return iter_objects, { list = self._objects, scope = scope, step = step, index = start }, nil
+	return iter_objects, { world = self, list = self._objects, scope = scope, step = step, index = start }, nil
 end
 
 function world:objects_with_components(type_name, opts)
 	local scope = opts and opts.scope or "all"
 	return iter_objects_with_components,
-		{ list = self._objects, type_name = type_name, scope = scope, obj_index = 0, comp_index = 0, comp_list = nil, current_obj = nil },
+		{ world = self, list = self._objects, type_name = type_name, scope = scope, obj_index = 0, comp_index = 0, comp_list = nil, current_obj = nil },
 		nil
 end
 
@@ -305,6 +357,9 @@ function world:clear()
 	end
 	self._objects = {}
 	self._by_id = {}
+	self._spaces = { default = true }
+	self._space_order = { "default" }
+	self.active_space_id = "default"
 end
 
 return {
