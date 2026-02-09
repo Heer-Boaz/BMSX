@@ -24,7 +24,7 @@ Generated frame-by-frame output:
 Case summaries:
 - `ground_walk_accel` profile=3, start=0, target=512, frames_to_target=166, final_speed=512 (2.000000 px/f), first_delta1=8, first_delta2=58, first_delta3=null, first_negative_delta=null, delta_counts={0:21, 1:89, 2:56}
 - `ground_run_accel` profile=8, start=0, target=768, frames_to_target=91, final_speed=768 (3.000000 px/f), first_delta1=4, first_delta2=12, first_delta3=29, first_negative_delta=null, delta_counts={0:4, 1:11, 2:33, 3:43}
-- `ground_release_decel` profile=2, start=768, target=0, frames_to_target=119, final_speed=0 (0.000000 px/f), first_delta1=18, first_delta2=1, first_delta3=2, first_negative_delta=null, delta_counts={0:51, 1:45, 2:18, 3:5}
-- `ground_turn_right_to_left` profile=1, start=768, target=-512, frames_to_target=79, final_speed=-512 (-2.000000 px/f), first_delta1=5, first_delta2=1, first_delta3=2, first_negative_delta=18, delta_counts={-2:38, -1:22, 0:9, 1:5, 2:4, 3:1}
-- `air_control_accel` profile=4, start=0, target=512, frames_to_target=235, final_speed=512 (2.000000 px/f), first_delta1=13, first_delta2=107, first_delta3=null, first_negative_delta=null, delta_counts={0:48, 1:153, 2:34}
-- `roll_decay_4px_to_2px` profile=1, start=1024, target=512, frames_to_target=64, final_speed=512 (2.000000 px/f), first_delta1=null, first_delta2=14, first_delta3=1, first_negative_delta=null, delta_counts={2:38, 3:22, 4:4}
+- `ground_release_decel` profile=3, start=768, target=0, frames_to_target=193, final_speed=0 (0.000000 px/f), first_delta1=29, first_delta2=1, first_delta3=2, first_negative_delta=null, delta_counts={0:56, 1:90, 2:35, 3:12}
+- `ground_turn_right_to_left` profile=3, start=768, target=-512, frames_to_target=227, final_speed=-512 (-2.000000 px/f), first_delta1=19, first_delta2=1, first_delta3=2, first_negative_delta=65, delta_counts={-2:56, -1:90, 0:35, 1:23, 2:17, 3:6}
+- `air_control_accel` profile=5, start=0, target=512, frames_to_target=257, final_speed=512 (2.000000 px/f), first_delta1=22, first_delta2=257, first_delta3=null, first_negative_delta=null, delta_counts={0:127, 1:129, 2:1}
+- `roll_decay_4px_to_2px` profile=0, start=1024, target=512, frames_to_target=37, final_speed=512 (2.000000 px/f), first_delta1=null, first_delta2=9, first_delta3=1, first_negative_delta=null, delta_counts={2:24, 3:12, 4:1}

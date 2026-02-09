@@ -33,7 +33,18 @@ function level.create_level()
 			},
 		},
 		solids = {
-			{ x = 0, y = ground_y, w = world_width, h = world_height - ground_y },
+			-- Main ground
+			{ x = 0, y = ground_y, w = 600, h = world_height - ground_y },
+			-- Lower pit floor (under gap 600–720)
+			{ x = 600, y = ground_y + 32, w = 120, h = world_height - ground_y - 32 },
+			-- Elevated platforms
+			{ x = 720, y = ground_y - 32, w = 200, h = world_height - ground_y + 32 },
+			{ x = 1000, y = ground_y - 64, w = 180, h = world_height - ground_y + 64 },
+			{ x = 1260, y = ground_y - 32, w = 200, h = world_height - ground_y + 32 },
+			-- Floating platform (tests landing & edge-jump)
+			{ x = 1560, y = ground_y - 80, w = 120, h = 16 },
+			-- Resume ground
+			{ x = 1760, y = ground_y, w = world_width - 1760, h = world_height - ground_y },
 		},
 		decor_far = {
 			{ x = -160, y = 118, w = 420, h = 122 },

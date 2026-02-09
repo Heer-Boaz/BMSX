@@ -13,35 +13,46 @@ constants.dkc = {
 	subpixels_per_px = 0x0100,
 	frame_ms = 1000 / 60,
 
-	-- DKC1 disassembly anchors
-	-- CODE_BFB538/CODE_BFB573 walk+run target speeds
+	-- DKC1 disassembly anchors (Yoshifanatic1/Donkey-Kong-Country-1-Disassembly)
+	-- CODE_BFB538/CODE_BFB573 walk+run target speeds (DK on foot, no animal buddy)
 	-- CODE_BFB159 + DATA_BFB255 smoothing profile table
 	-- CODE_BFBD4F/CODE_BFBDA9/CODE_BFBDE7 roll entry/chaining
 	-- CODE_BFB94F ground jump launch
-	-- CODE_BFAF38 airborne gravity
-	-- CODE_BFB12B max fall clamp
-	walk_target_subpx = 0x0200,
-	run_target_subpx = 0x0300,
-	roll_entry_min_subpx = 0x0100,
-	roll_entry_bonus_subpx = 0x0100,
-	roll_entry_cap_subpx = 0x0400,
-	roll_chain_step_subpx = 0x0100,
-	roll_chain_cap_subpx = 0x0800,
-	roll_dash_window_frames = 0x0010,
-	jump_initial_subpx = 0x0700,
-	gravity_hold_subpx = -0x0048, -- #$FFB8
-	gravity_release_subpx = -0x0070, -- #$FF90
-	max_fall_subpx = -0x0800, -- #$F800
-	jump_buffer_frames = 0x000C,
+	-- CODE_BFBA88 rope/bounce jump ($0700 direct Y speed)
+	-- CODE_BFAF38 airborne gravity ($16F9 when bit $0002, else $FF90)
+	-- CODE_BFB12B max fall clamp ($F800)
+	-- CODE_BFB8E5/CODE_BFB8F7 jump buffer (12-frame window from $16A5)
+	walk_target_subpx = 0x0200,           -- CODE_BFB598: DK on foot walk #$0200
+	run_target_subpx = 0x0300,            -- CODE_BFB55D: DK on foot run #$0300
+	roll_entry_min_subpx = 0x0100,        -- CODE_BFBD4F: base roll speed #$0100
+	roll_entry_dpad_subpx = 0x0300,       -- CODE_BFBD4F: D-pad held → #$0300
+	roll_entry_cap_subpx = 0x0400,        -- CODE_BFBD4F: quick direction change → #$0400
+	roll_chain_step_subpx = 0x0100,       -- CODE_BFBDE7: +#$0100 per chain press
+	roll_chain_cap_subpx = 0x0800,        -- CODE_BFBDE7: capped at #$0800
+	roll_dash_window_frames = 0x0010,     -- CODE_BFBD4F: 16-frame window for direction boost
+	jump_initial_subpx = 0x0700,          -- CODE_BFBA88: rope jump #$0700 (ground jump Y speed TBD)
+	gravity_hold_subpx = -0x0048,         -- CODE_BFB94F/$16F9: DK #$FFB8 (−72 signed)
+	gravity_hold_diddy_subpx = -0x005A,   -- CODE_BFB94F/$16F9: Diddy #$FFA6 (−90 signed)
+	gravity_release_subpx = -0x0070,      -- CODE_BFAF4C: #$FF90 (−112 signed)
+	max_fall_subpx = -0x0800,             -- CODE_BFB12B: #$F800 (−2048 signed)
+	jump_buffer_frames = 0x000C,          -- CODE_BFB8F7: 12-frame window
+	diddy_speed_mult_shift = 3,           -- CODE_BFB51E/CODE_BFBD90: ×1.125 (speed + speed>>3)
 }
 
 constants.profile = {
-	ground_walk = 3,
-	ground_run = 8,
-	ground_release = 2,
-	ground_turn = 1,
-	air = 4,
-	roll_release = 1,
+	-- CODE_BFB159 + DATA_BFB255 profile indices.
+	-- DATA_BFB255 divisor table (cascading LSR chain at CODE_BFB273..CODE_BFB27A):
+	--   0=÷8, 1=÷16, 2=÷32, 3=÷64, 4=÷128, 5=÷256, 6=÷4, 7=÷2, 8=÷32+÷64
+	-- CODE_BFB159 selects profile based on state + grounded + running flag:
+	--   state $04/$09 + grounded + running($0004) → 8  (CODE_BFB167)
+	--   state $04/$09 + grounded + walking         → 3  (CODE_BFB180)
+	--   everything else (airborne, roll, etc.)      → 0  (CODE_BFB187)
+	ground_walk = 3,   -- ÷64: CODE_BFB180 (grounded, not running)
+	ground_run = 8,    -- ÷32+÷64: CODE_BFB167 (grounded, running flag $0004)
+	default = 0,       -- ÷8: CODE_BFB187 (non-ground states, roll, etc.)
+	air = 5,           -- ÷256: airborne horizontal control (functional equivalent;
+	                   -- assembly uses profile 0 but momentum is preserved when no
+	                   -- D-pad input; ÷256 with input gives matching near-zero control)
 }
 
 constants.roll = {

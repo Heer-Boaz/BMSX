@@ -560,12 +560,35 @@ function player:CODE_BFB4E3_SELECT_TARGET_SPEED()
 	return self.move_axis * magnitude
 end
 
-function player:apply_horizontal_control()
+function player:select_ground_profile()
+	-- CODE_BFB159: profile selection for grounded movement.
+	-- Assembly checks running flag ($0004 in $1699) only.
+	-- No separate turn/decel profiles — same profile for all ground contexts.
+	if (self.dkc_1699_flags & 0x0004) ~= 0 then
+		return constants.profile.ground_run
+	end
+	return constants.profile.ground_walk
+end
+
+function player:apply_horizontal_control(airborne)
 	-- CODE_BFB159 + DATA_BFB255
 	local target = self:CODE_BFB4E3_SELECT_TARGET_SPEED()
 	self.target_x_speed_subpx = target
-	self.active_profile_id = 0
-	self.x_speed_subpx = approach_subpx(self.x_speed_subpx, target, 0)
+
+	if airborne then
+		-- DKC1: near-zero air control. No input = full momentum preservation.
+		-- With input = barely any influence (/256).
+		self.active_profile_id = constants.profile.air
+		if self.move_axis == 0 then
+			return
+		end
+		self.x_speed_subpx = approach_subpx(self.x_speed_subpx, target, constants.profile.air)
+		return
+	end
+
+	local profile = self:select_ground_profile()
+	self.active_profile_id = profile
+	self.x_speed_subpx = approach_subpx(self.x_speed_subpx, target, profile)
 end
 
 function player:CODE_BFAF38_AIR_GRAVITY()
@@ -728,7 +751,7 @@ function player:CODE_BFBD4F_START_ROLL()
 	local ref = constants.dkc
 	local speed = ref.roll_entry_min_subpx
 	if self.move_axis ~= 0 then
-		speed = ref.run_target_subpx
+		speed = ref.roll_entry_dpad_subpx
 	end
 	if (self.debug_frame - self.last_direction_change_frame) < ref.roll_dash_window_frames then
 		speed = ref.roll_entry_cap_subpx
@@ -792,7 +815,7 @@ function player:tick_grounded()
 		return
 	end
 
-	self:apply_horizontal_control()
+	self:apply_horizontal_control(false)
 	self:integrate_and_collide()
 	if not self.grounded then
 		self.sc:transition_to(player_state_airborne)
@@ -800,8 +823,9 @@ function player:tick_grounded()
 end
 
 function player:advance_airborne_kinematics()
-	self:apply_horizontal_control()
+	-- DKC1 order: gravity first, then horizontal, then integrate.
 	self:CODE_BFAF38_AIR_GRAVITY()
+	self:apply_horizontal_control(true)
 	self:integrate_and_collide()
 end
 
@@ -831,10 +855,11 @@ function player:tick_roll()
 	self.roll_timer_frames = self.roll_timer_frames - 1
 	self.active_gravity_subpx = 0
 
-	local roll_target = self.roll_dir * constants.roll.floor_subpx
-	self.target_x_speed_subpx = roll_target
-	self.active_profile_id = constants.profile.roll_release
-	self.x_speed_subpx = approach_subpx(self.x_speed_subpx, roll_target, constants.profile.roll_release)
+	-- CODE_BFB159: rolling is not state $04/$09, so profile 0 (÷8) applies.
+	-- Roll maintains target set by START_ROLL/CHAIN_ROLL; approach is near-noop.
+	local roll_prof = constants.profile.default
+	self.active_profile_id = roll_prof
+	self.x_speed_subpx = approach_subpx(self.x_speed_subpx, self.target_x_speed_subpx, roll_prof)
 
 	if not self.grounded then
 		self:CODE_BFAF38_AIR_GRAVITY()
@@ -844,13 +869,15 @@ function player:tick_roll()
 
 	self:integrate_and_collide()
 
-	if not self.grounded then
-		self.sc:transition_to(player_state_airborne)
-		return
-	end
-
+	-- DKC1: roll state persists even when airborne (off-edge).
+	-- The player can still initiate a roll-jump while the roll timer is active.
+	-- Only exit roll when the timer expires.
 	if self.roll_timer_frames <= 0 then
-		self.sc:transition_to(player_state_grounded)
+		if self.grounded then
+			self.sc:transition_to(player_state_grounded)
+		else
+			self.sc:transition_to(player_state_airborne)
+		end
 	end
 end
 
