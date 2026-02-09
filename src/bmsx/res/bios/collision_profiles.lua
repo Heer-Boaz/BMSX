@@ -5,11 +5,22 @@ local collision_profiles = {}
 
 local profiles = {}
 
-function collision_profiles.define(name, profile)
-	profiles[name] = {
-		layer = profile.layer,
-		mask = profile.mask,
-	}
+function collision_profiles.define(name, profile_or_layer, mask)
+	if type(profile_or_layer) == "table" then
+		profiles[name] = {
+			layer = profile_or_layer.layer,
+			mask = profile_or_layer.mask,
+		}
+		return
+	end
+	if type(profile_or_layer) == "number" and type(mask) == "number" then
+		profiles[name] = {
+			layer = profile_or_layer,
+			mask = mask,
+		}
+		return
+	end
+	error("[collision_profiles] define expects (name, {layer,mask}) or (name, layer, mask)")
 end
 
 function collision_profiles.get(name)
@@ -28,8 +39,5 @@ end
 
 collision_profiles.define("default", { layer = (1 << 0), mask = 0xFFFFFFFF })
 collision_profiles.define("ui", { layer = (1 << 1), mask = (1 << 1) })
-collision_profiles.define("player", { layer = (1 << 2), mask = (1 << 0) | (1 << 3) | (1 << 4) })
-collision_profiles.define("enemy", { layer = (1 << 3), mask = (1 << 0) | (1 << 2) | (1 << 4) })
-collision_profiles.define("projectile", { layer = (1 << 4), mask = (1 << 3) | (1 << 2) })
 
 return collision_profiles
