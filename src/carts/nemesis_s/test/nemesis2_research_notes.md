@@ -94,3 +94,36 @@
   - `stage.lua` reads `assets.data[romdir.token('nemesis_s_stage')]`
   - map symbols are converted to tile/collision tapes during cart boot/reset
 - Scroll gate and tape-head progression stay tied to disassembly-derived behavior (`E202` rotate gate + `E203` increment), while stage layout source is externalized as data.
+
+## Weapon-routine mapping used for current implementation
+
+- Main loop call order (from `0x4245..0x425A`) confirms a dedicated weapon/collision pass block:
+  - `CALL 0x90C6`
+  - `CALL 0x9167`
+  - `CALL 0x88A2`
+  - `CALL 0x8A43`
+  - `CALL 0x8DF9`
+  - `CALL 0x8DB4`
+  - `CALL 0x8E43`
+  - `CALL 0x8D5E`
+- Segment observations used directly:
+  - `0x90C6`/`0x9167`: repeated overlap checks against active object tables (`E470` stride `0x10`) with per-hit side effects, consistent with weapon-hit/collision dispatch loops.
+  - `0x88A2`: iterates `E600` entries (stride `0x40`) with `BIT 1,(IX+0x10)` gate and hitbox compare helper (`0x88CE`), matching conditional projectile-vs-target processing.
+  - `0x8A43`: iterates `E500` entries (stride `0x10`) with target-table overlap checks (`IY=E470`), consistent with another weapon class collision pass.
+  - `0x8DF9`/`0x8DB4`/`0x8E43`/`0x8D5E`: player-position-relative collision windows (`E404`/`E406`), entity scan over `E900` (10 entries), and state transitions via `E400`/`E401`, used to keep player-weapon/stage-collision handling segmented per routine.
+- Weapon-flag dispatch split (important for `double` vs `uplaser`):
+  - `0xAC30..0xAC6D` routes per-equipped weapon flag:
+    - `E431 -> 0xACF6` (double-family spawn path)
+    - `E434 -> 0xADBA` (up-laser-family spawn path)
+    - `E435 -> 0xADEF` (down-laser-family spawn path)
+  - `double` evidence:
+    - spawn at `0xACF6` writes object type `0x03`
+    - update at `0xAD1F` is the diagonal step routine (`-6/+6` axis pair per tick)
+  - `uplaser` evidence:
+    - spawn at `0xADBA` selects object type `0x0A` (level 1) or `0x0C` (level 2)
+    - update routines are **not** `0xAD1F`; they are in the `0xAE..` family (`0xAEB7` / `0xAEDB` path for up-laser variants)
+- Gameplay constants still anchored to controlled reference implementation (`nemesis-s-bdx`) where disassembly does not expose symbolic names:
+  - movement speed base/increment,
+  - laser speed/length model,
+  - missile gravity/floor-crawl model,
+  - option follow-delay queue.

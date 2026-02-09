@@ -25,6 +25,7 @@ constants.player = {
 	base_movement_speed = 1,
 	movement_speed_increase = 0.5,
 	speed_powerups = 0,
+	option_follow_delay = 10,
 	max_projectiles = 2,
 	fire_spawn_offset_x = 16,
 	fire_spawn_offset_y = 5,
@@ -32,10 +33,44 @@ constants.player = {
 	hitcheck_y = { 4, 4, 5, 7, 5, 7 },
 }
 
+constants.loadout = {
+	speed_powerups = 1,
+	option_count = 2,
+	laser_level = 2,
+	missile_level = 2,
+	uplaser_level = 2,
+}
+
 constants.projectile = {
 	width = 6,
 	height = 2,
 	movement_speed = 6,
+}
+
+constants.weapons = {
+	laser = {
+		tile_width = 8,
+		tile_height = 2,
+		movement_speed = 18,
+		max_length_px = 240,
+		spawn_offset_x = 16,
+		spawn_offset_y = 5,
+	},
+	missile = {
+		width = 8,
+		height_fall = 8,
+		height_floor = 4,
+		movement_speed = 4,
+		spawn_offset_x = 4,
+		spawn_offset_y = 0,
+	},
+	uplaser = {
+		width = 16,
+		height = 2,
+		movement_speed = 6,
+		spawn_offset_x = 8,
+		spawn_offset_y = 0,
+	},
 }
 
 constants.stage = {
@@ -47,7 +82,15 @@ constants.assets = {
 	player_n = 'metallion_n',
 	player_u = 'metallion_u',
 	player_d = 'metallion_d',
+	option1 = 'option1',
+	option2 = 'option2',
+	option3 = 'option3',
+	option4 = 'option4',
 	projectile = 'kogeltje',
+	laser = 'laser',
+	uplaser = 'uplaser',
+	missile1 = 'missile1',
+	missile2 = 'missile2',
 	star_blue = 'star_blue',
 	star_yellow = 'star_yellow',
 	house_tile_1 = 'house_tile_1',
