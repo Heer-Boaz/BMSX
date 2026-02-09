@@ -75,6 +75,8 @@ local function normalize_room_templates(room_entries)
 				w = enemy_def.w,
 				h = enemy_def.h,
 				facing = enemy_def.facing,
+				direction = enemy_def.direction,
+				health = enemy_def.health,
 				damage = damage,
 				kind = enemy_def.kind,
 			}

@@ -54,6 +54,8 @@ local player_hit_fall_timeline_id = 'pietious.player.player_hit_fall'
 local player_hit_recovery_timeline_id = 'pietious.player.player_hit_recovery'
 local body_sprite_component_id = 'body'
 local sword_sprite_component_id = 'sword'
+local body_collider_component_id = constants.ids.player_body_collider_local
+local sword_collider_component_id = constants.ids.player_sword_collider_local
 local sword_sprite_imgid = 'sword_r'
 
 local function append_sprite_frames(frames, sprite_id, frame_count)
@@ -231,6 +233,7 @@ function player:reset_runtime()
 	self.slash_timer = 0
 	self.sword_phase = 0
 	self.sword_time = 0
+	self.sword_id = 0
 	self.sword_ground_origin = 'quiet'
 	self.stairs_direction = 0
 	self.stairs_x = -1
@@ -254,25 +257,55 @@ function player:reset_runtime()
 end
 
 function player:ensure_visual_components()
-	local body_sprite = self:get_component_by_local_id('spritecomponent', body_sprite_component_id)
-	if body_sprite ~= nil then
-		return
+	local body_collider = self:get_component_by_local_id('collider2dcomponent', body_collider_component_id)
+	if body_collider == nil then
+		body_collider = components.collider2dcomponent.new({
+			parent = self,
+			id_local = body_collider_component_id,
+			generateoverlapevents = false,
+			spaceevents = 'current',
+		})
+		body_collider:apply_collision_profile('player')
+		self:add_component(body_collider)
 	end
-	body_sprite = components.spritecomponent.new({
-		parent = self,
-		id_local = body_sprite_component_id,
-		imgid = 'pietolon_stand_r',
-		offset = { x = 0, y = 0, z = 110 },
-	})
-	local sword_sprite = components.spritecomponent.new({
-		parent = self,
-		id_local = sword_sprite_component_id,
-		imgid = sword_sprite_imgid,
-		offset = { x = 0, y = 0, z = 111 },
-	})
-	sword_sprite.enabled = false
-	self:add_component(body_sprite)
-	self:add_component(sword_sprite)
+
+	local sword_collider = self:get_component_by_local_id('collider2dcomponent', sword_collider_component_id)
+	if sword_collider == nil then
+		sword_collider = components.collider2dcomponent.new({
+			parent = self,
+			id_local = sword_collider_component_id,
+			generateoverlapevents = false,
+			spaceevents = 'current',
+		})
+		sword_collider:apply_collision_profile('projectile')
+		sword_collider.enabled = false
+		self:add_component(sword_collider)
+	end
+
+	local body_sprite = self:get_component_by_local_id('spritecomponent', body_sprite_component_id)
+	if body_sprite == nil then
+		body_sprite = components.spritecomponent.new({
+			parent = self,
+			id_local = body_sprite_component_id,
+			imgid = 'pietolon_stand_r',
+			offset = { x = 0, y = 0, z = 110 },
+			collider_local_id = body_collider_component_id,
+		})
+		self:add_component(body_sprite)
+	end
+
+	local sword_sprite = self:get_component_by_local_id('spritecomponent', sword_sprite_component_id)
+	if sword_sprite == nil then
+		sword_sprite = components.spritecomponent.new({
+			parent = self,
+			id_local = sword_sprite_component_id,
+			imgid = sword_sprite_imgid,
+			offset = { x = 0, y = 0, z = 111 },
+			collider_local_id = sword_collider_component_id,
+		})
+		sword_sprite.enabled = false
+		self:add_component(sword_sprite)
+	end
 end
 
 function player:update_damage_state_imgid()
@@ -301,13 +334,17 @@ function player:update_visual_components()
 	self:ensure_visual_components()
 	local body_sprite = self:get_component_by_local_id('spritecomponent', body_sprite_component_id)
 	local sword_sprite = self:get_component_by_local_id('spritecomponent', sword_sprite_component_id)
+	local body_collider = self:get_component_by_local_id('collider2dcomponent', body_collider_component_id)
+	local sword_collider = self:get_component_by_local_id('collider2dcomponent', sword_collider_component_id)
 
 	if self.hit_invulnerability_timer > 0 and self.hit_blink_on and self.state_variant ~= 'dying' then
 		body_sprite.enabled = false
 		sword_sprite.enabled = false
+		sword_collider.enabled = false
 		return
 	end
 	body_sprite.enabled = true
+	body_collider.enabled = true
 
 	self:update_damage_state_imgid()
 
@@ -397,8 +434,10 @@ function player:update_visual_components()
 			sword_sprite.offset.x = sword_offset_x_right
 			sword_sprite.offset.y = sword_offset_y
 			sword_sprite.offset.z = 111
+			sword_collider.enabled = true
 		else
 			sword_sprite.enabled = false
+			sword_collider.enabled = false
 		end
 	else
 		body_sprite.imgid = imgid
@@ -413,8 +452,10 @@ function player:update_visual_components()
 			sword_sprite.offset.x = sword_offset_x_left
 			sword_sprite.offset.y = sword_offset_y
 			sword_sprite.offset.z = 111
+			sword_collider.enabled = true
 		else
 			sword_sprite.enabled = false
+			sword_collider.enabled = false
 		end
 	end
 end
@@ -512,6 +553,7 @@ function player:try_start_sword_state()
 		self.sword_ground_origin = reason
 	end
 	self.sword_time = 0
+	self.sword_id = self.sword_id + 1
 	self:emit_event('slash_start', string.format('reason=%s|x=%d|y=%d', reason, self.x, self.y))
 	self:transition_to(to_state, 'sword_start_' .. reason)
 end
@@ -641,20 +683,23 @@ function player:take_hit(amount, source_x, source_y, reason)
 	return true
 end
 
-function player:check_room_enemy_contacts()
-	local enemies = self.room.enemies
-	for i = 1, #enemies do
-		local enemy = enemies[i]
-		if self.x < (enemy.x + enemy.w) and (self.x + self.width) > enemy.x and self.y < (enemy.y + enemy.h) and (self.y + self.height) > enemy.y then
-			return self:take_hit(
-				enemy.damage,
-				enemy.x + math.floor(enemy.w / 2),
-				enemy.y + math.floor(enemy.h / 2),
-				enemy.kind
-			)
-		end
+function player:collect_loot(loot_type, loot_value)
+	if self.sc:matches_state_path(state_dying) then
+		return false
 	end
-	return false
+	if loot_type == 'life' then
+		self.health = self.health + loot_value
+		if self.health > self.max_health then
+			self.health = self.max_health
+		end
+		self:emit_event('loot_pickup', string.format('type=%s|value=%d|hp=%d', loot_type, loot_value, self.health))
+		return true
+	end
+	if loot_type == 'ammo' then
+		self:emit_event('loot_pickup', string.format('type=%s|value=%d|hp=%d', loot_type, loot_value, self.health))
+		return true
+	end
+	error('pietious player invalid loot_type=' .. tostring(loot_type))
 end
 
 function player:try_switch_room(direction, keep_stairs_lock)
@@ -1750,6 +1795,7 @@ function player:tick_quiet_stairs()
 
 	if self.attack_pressed then
 		self.sword_time = 0
+		self.sword_id = self.sword_id + 1
 		self:emit_event('slash_start', string.format('reason=stairs|x=%d|y=%d', self.x, self.y))
 		self:transition_to(state_sword_stairs, 'sword_start_stairs')
 		return
@@ -1892,9 +1938,6 @@ function player:tick()
 	end
 
 	self:try_vertical_room_switch_from_position()
-	if not self:is_in_damage_lock_state() then
-		self:check_room_enemy_contacts()
-	end
 
 	self.grounded = self:is_grounded()
 	self:update_slash_debug_fields()
@@ -2097,6 +2140,7 @@ local function register_player_definition()
 				slash_timer = 0,
 				sword_phase = 0,
 				sword_time = 0,
+				sword_id = 0,
 				sword_ground_origin = 'quiet',
 				stairs_direction = 0,
 				stairs_x = -1,

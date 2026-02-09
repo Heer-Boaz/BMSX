@@ -333,6 +333,8 @@ local function build_enemies(enemy_defs)
 			w = def.w,
 			h = def.h,
 			facing = def.facing,
+			direction = def.direction,
+			health = def.health,
 			damage = def.damage,
 			kind = def.kind,
 		}

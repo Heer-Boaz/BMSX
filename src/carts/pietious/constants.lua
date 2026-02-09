@@ -25,6 +25,17 @@ constants.ids = {
 	flow_service_def = 'pietious.flow_service.def',
 	flow_service_instance = 'pietious.flow_service.instance',
 	flow_service_fsm = 'pietious.flow_service.fsm',
+	enemy_def = 'pietious.enemy.def',
+	enemy_fsm = 'pietious.enemy.fsm',
+	enemy_service_def = 'pietious.enemy_service.def',
+	enemy_service_instance = 'pietious.enemy_service.instance',
+	enemy_service_fsm = 'pietious.enemy_service.fsm',
+	enemy_explosion_def = 'pietious.enemy_explosion.def',
+	enemy_explosion_fsm = 'pietious.enemy_explosion.fsm',
+	loot_drop_def = 'pietious.loot_drop.def',
+	loot_drop_fsm = 'pietious.loot_drop.fsm',
+	player_body_collider_local = 'body',
+	player_sword_collider_local = 'sword',
 }
 
 constants.spaces = {
@@ -91,6 +102,32 @@ constants.damage = {
 	knockup_px = 2,
 	hit_recovery_frames = 8,
 	death_frames = 40,
+}
+
+constants.enemy = {
+	mijter_wait_takeoff_min_ms = 2000,
+	mijter_wait_takeoff_max_ms = 4000,
+	mijter_turn_min_ms = 400,
+	mijter_turn_max_ms = 800,
+	mijter_speed_px = 1.5,
+	default_health = 1,
+	mijter_drop_health_chance_pct = 50,
+	mijter_drop_ammo_chance_pct = 50,
+	explosion_frame_ms = 100,
+	loot_life_regen = 12,
+	loot_ammo_regen = 10,
+}
+
+constants.collision = {
+	world_layer = 1,
+	player_layer = 4,
+	enemy_layer = 8,
+	projectile_layer = 16,
+	pickup_layer = 32,
+	player_mask = 57,
+	enemy_mask = 21,
+	projectile_mask = 12,
+	pickup_mask = 4,
 }
 
 constants.stairs = {
