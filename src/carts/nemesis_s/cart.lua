@@ -22,8 +22,8 @@ function init()
 	player_module.define_player_fsm()
 	director_module.register_director_definition()
 	player_module.register_player_definition()
-	engine.vdp_load_slot(0, 0)
-	engine.vdp_map_slot(0, 0)
+	vdp_load_slot(0, 0)
+	vdp_map_slot(0, 0)
 end
 
 function new_game()

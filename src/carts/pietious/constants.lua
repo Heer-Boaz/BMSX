@@ -93,7 +93,8 @@ constants.damage = {
 }
 
 constants.stairs = {
-	speed_px = 2,
+	speed_px = 1,
+	down_start_push_px = 2,
 	anim_step_px = 8,
 	foot_probe_offset_x = 4,
 	foot_probe_offset_y = 14,

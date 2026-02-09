@@ -302,10 +302,12 @@ local function build_stairs(map_rows, tile_size, origin_x, origin_y, player_heig
 				end
 
 				local x = origin_x + ((tx - 1) * tile_size)
+				local anchor_y = origin_y + ((min_row - 1) * tile_size)
 				local top_y = origin_y + ((min_row - 2) * tile_size) - player_height
 				local bottom_y = origin_y + (max_row * tile_size) - player_height
 				stairs[#stairs + 1] = {
 					x = x,
+					anchor_y = anchor_y,
 					top_y = top_y,
 					bottom_y = bottom_y,
 					min_row = min_row,

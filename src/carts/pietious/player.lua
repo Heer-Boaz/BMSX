@@ -236,6 +236,7 @@ function player:reset_runtime()
 	self.stairs_x = -1
 	self.stairs_top_y = self.spawn_y
 	self.stairs_bottom_y = self.spawn_y
+	self.down_stairs_start_pending = false
 	self.stairs_anim_frame = 0
 	self.stairs_anim_distance = 0
 	self.health = constants.damage.max_health
@@ -676,9 +677,9 @@ function player:try_switch_room(direction, keep_stairs_lock)
 	elseif direction == 'right' then
 		self.x = self.room.tile_size
 	elseif direction == 'up' then
-		self.y = self.room.world_height - self.height - (self.room.tile_size * 2)
+		self.y = self.room.world_height - self.height - self.room.tile_size
 	else
-		self.y = self.room.world_top
+		self.y = self.room.world_top - self.room.tile_size
 	end
 
 	local max_x = self.room.world_width - self.width
@@ -775,7 +776,7 @@ function player:try_vertical_room_switch_from_position()
 			end
 			return false
 		end
-		if keep_stairs_lock and (not self:sync_stairs_after_vertical_room_switch()) then
+		if keep_stairs_lock and (not self:sync_stairs_after_vertical_room_switch(direction)) then
 			self.stairs_direction = 0
 			self.stairs_x = -1
 			self:transition_to(state_quiet, 'stairs_lock_lost_after_room_switch')
@@ -833,23 +834,12 @@ function player:find_stairs_down_entry()
 	return self:pick_entry_stairs(1)
 end
 
-function player:search_stairs_at_locked_x(x, y)
+function player:search_stairs_at_locked_x(x, y_probe)
 	local stairs = self.room.stairs
 	local ladder_probe = self.room.tile_size * 3
 	for i = 1, #stairs do
 		local stair = stairs[i]
-		if stair.x == x and stair.top_y <= (y + ladder_probe) and stair.bottom_y >= y then
-			return stair
-		end
-	end
-	return nil
-end
-
-function player:search_stairs_by_x(x)
-	local stairs = self.room.stairs
-	for i = 1, #stairs do
-		local stair = stairs[i]
-		if stair.x == x then
+		if stair.x == x and stair.anchor_y <= (y_probe + ladder_probe) and stair.bottom_y >= y_probe then
 			return stair
 		end
 	end
@@ -862,26 +852,18 @@ function player:apply_stairs_lock(stair)
 	self.stairs_bottom_y = stair.bottom_y
 end
 
-function player:sync_stairs_after_vertical_room_switch()
-	local stair = self:search_stairs_by_x(self.stairs_x)
-	if stair == nil then
-		local probe_y = self.y
-		if self.sc:matches_state_path(state_up_stairs) then
-			probe_y = probe_y + self.room.tile_size
-		end
-		stair = self:search_stairs_at_locked_x(self.stairs_x, probe_y)
+function player:sync_stairs_after_vertical_room_switch(direction)
+	local probe_y = self.y
+	if direction == 'up' then
+		probe_y = probe_y + self.room.tile_size
 	end
+	local stair = self:search_stairs_at_locked_x(self.stairs_x, probe_y)
 	if stair == nil then
 		return false
 	end
 
 	self:apply_stairs_lock(stair)
 	self.x = stair.x
-	if self.y < stair.top_y then
-		self.y = stair.top_y
-	elseif self.y > stair.bottom_y then
-		self.y = stair.bottom_y
-	end
 	self.last_dx = 0
 	self.last_dy = 0
 	return true
@@ -907,6 +889,7 @@ function player:leave_stairs(reason)
 	end
 	self.stairs_direction = 0
 	self.stairs_x = -1
+	self.down_stairs_start_pending = false
 	self:transition_to(state_quiet, reason)
 end
 
@@ -1010,10 +993,23 @@ end
 function player:start_stairs(direction, stair, reason)
 	self:apply_stairs_lock(stair)
 	self.stairs_direction = direction
+	self.down_stairs_start_pending = false
 	self.stairs_anim_distance = 0
+	self.stairs_anim_frame = 0
 	self.x = stair.x
 	self.last_dx = 0
 	self.last_dy = 0
+	if direction > 0 then
+		local next_y = self.y + constants.stairs.down_start_push_px
+		if next_y > self.stairs_bottom_y then
+			next_y = self.stairs_bottom_y
+		end
+		self.last_dy = next_y - self.y
+		self.y = next_y
+		if self.last_dy ~= 0 then
+			self:update_stairs_animation(abs(self.last_dy))
+		end
+	end
 	self:emit_event('stairs_start', string.format('reason=%s|x=%d|y=%d|dir=%d', reason, self.x, self.y, direction))
 	if direction < 0 then
 		self:transition_to(state_up_stairs, reason)
@@ -1601,8 +1597,9 @@ function player:tick_up_stairs()
 	elseif self.down_held then
 		self.stairs_direction = 1
 		self:transition_to(state_down_stairs, 'stairs_reverse_down')
+		self.down_stairs_start_pending = false
 		if self.y < self.stairs_bottom_y then
-			next_y = self.y + speed
+			next_y = self.y + constants.stairs.down_start_push_px
 			moved = true
 		else
 			self:leave_stairs('stairs_end_bottom')
@@ -1658,6 +1655,7 @@ function player:tick_down_stairs()
 		end
 	elseif self.up_held then
 		self.stairs_direction = -1
+		self.down_stairs_start_pending = false
 		self:transition_to(state_up_stairs, 'stairs_reverse_up')
 		if self.y > self.stairs_top_y then
 			next_y = self.y - speed
@@ -1678,6 +1676,7 @@ function player:tick_down_stairs()
 		return
 	else
 		self.stairs_direction = 0
+		self.down_stairs_start_pending = false
 	end
 
 	if moved then
@@ -1717,9 +1716,11 @@ function player:tick_quiet_stairs()
 	if self.down_held then
 		local was_at_or_below_bottom = self.y >= self.stairs_bottom_y
 		local down_exit_threshold = self.room.world_height - self.height
+		local quiet_down_start_step = constants.stairs.down_start_push_px
 		self.stairs_direction = 1
+		self.down_stairs_start_pending = false
 		self:transition_to(state_down_stairs, 'stairs_down_hold')
-		local next_y = self.y + constants.stairs.speed_px
+		local next_y = self.y + quiet_down_start_step
 		self.last_dy = next_y - self.y
 		self.y = next_y
 		if self.last_dy ~= 0 then
@@ -2099,10 +2100,11 @@ local function register_player_definition()
 				sword_ground_origin = 'quiet',
 				stairs_direction = 0,
 				stairs_x = -1,
-			stairs_top_y = constants.player.start_y,
-			stairs_bottom_y = constants.player.start_y,
-			stairs_anim_frame = 0,
-			stairs_anim_distance = 0,
+				stairs_top_y = constants.player.start_y,
+				stairs_bottom_y = constants.player.start_y,
+				down_stairs_start_pending = false,
+				stairs_anim_frame = 0,
+				stairs_anim_distance = 0,
 			health = constants.damage.max_health,
 			max_health = constants.damage.max_health,
 			hit_invulnerability_timer = 0,

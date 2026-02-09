@@ -144,7 +144,7 @@ function director:tick(dt_ms)
 	local width = constants.machine.game_width
 
 	self.scroll_x = self.scroll_x + scroll_step
-	while self.scroll_x >= width do
+	if self.scroll_x >= width then
 		self.scroll_x = self.scroll_x - width
 	end
 

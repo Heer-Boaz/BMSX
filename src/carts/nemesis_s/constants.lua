@@ -40,15 +40,7 @@ constants.projectile = {
 
 constants.stage = {
 	asset_id = 'nemesis_s_stage',
-	tile_size = 8,
-	tile_columns = 32,
-	draw_z = 16,
 	star_blink_interval_ms = 50,
-	scroll_mode_pause = 1,
-	scroll_mode_forced = 2,
-	scroll_mode_gated = 3,
-	scroll_mode_default = 3,
-	scroll_rotator_initial = 1,
 }
 
 constants.assets = {
@@ -58,6 +50,25 @@ constants.assets = {
 	projectile = 'kogeltje',
 	star_blue = 'star_blue',
 	star_yellow = 'star_yellow',
+	house_tile_1 = 'house_tile_1',
+	house_tile_2 = 'house_tile_2',
+	house_tile_3 = 'house_tile_3',
+	house_tile_4 = 'house_tile_4',
+	house_tile_5 = 'house_tile_5',
+	house_tile_6 = 'house_tile_6',
+	house_tile_7 = 'house_tile_7',
+	house_tile_8 = 'house_tile_8',
+	house_tile_9 = 'house_tile_9',
+	house_tile_10 = 'house_tile_10',
+	house_tile_11 = 'house_tile_11',
+	house_tile_12 = 'house_tile_12',
+	house_tile_13 = 'house_tile_13',
+	house_tile_door = 'house_tile_door',
+	house_tile_window = 'house_tile_window',
+	house_tile_window2 = 'house_tile_window2',
+	lantaarn_tile_1 = 'lantaarn_tile_1',
+	lantaarn_tile_2 = 'lantaarn_tile_2',
+	lantaarn_tile_3 = 'lantaarn_tile_3',
 	ground = 'ground',
 	ground2 = 'ground2',
 	ground_v = 'ground_v',
@@ -69,6 +80,30 @@ constants.assets = {
 	ground_start_v = 'ground_start_v',
 	ground_end_v = 'ground_end_v',
 	snow = 'snow',
+	schoorsteen1 = 'schoorsteen1',
+	schoorsteen2 = 'schoorsteen2',
+	schoorsteen3 = 'schoorsteen3',
+	snowtree1 = 'snowtree1',
+	snowtree2 = 'snowtree2',
+	snowtree3 = 'snowtree3',
+	snowtree4 = 'snowtree4',
+	snowtree5 = 'snowtree5',
+	snowtree6 = 'snowtree6',
+	snowtree7 = 'snowtree7',
+	snowtree8 = 'snowtree8',
+	snowtree9 = 'snowtree9',
+	snowtree10 = 'snowtree10',
+	snowtree11 = 'snowtree11',
+	snowtree12 = 'snowtree12',
+	snowtree13 = 'snowtree13',
+	snowtree14 = 'snowtree14',
+	snowtree15 = 'snowtree15',
+	snowtree16 = 'snowtree16',
+	snowtree17 = 'snowtree17',
+	snowtree18 = 'snowtree18',
+	snowtree19 = 'snowtree19',
+	snowtree20 = 'snowtree20',
+	snowtree21 = 'snowtree21',
 }
 
 constants.stars = {
@@ -112,7 +147,7 @@ constants.stars = {
 }
 
 constants.telemetry = {
-	enabled = true,
+	enabled = false,
 	metric_prefix = 'NEMESIS_S_METRIC',
 	event_prefix = 'NEMESIS_S_EVENT',
 }

@@ -6,16 +6,24 @@ local stage = {}
 local state = {
 	tile_tape = {},
 	solid_tape = {},
+	tile_size = 0,
+	tile_columns = 0,
+	draw_z = 0,
+	scroll_mode_pause = 0,
+	scroll_mode_forced = 0,
+	scroll_mode_gated = 0,
+	scroll_mode_default = 0,
+	scroll_rotator_initial = 0,
 	left_tile = 1,
-	tape_head = constants.stage.tile_columns,
+	tape_head = 0,
 	tile_rows = 0,
 	tape_length_tiles = 0,
 	stop_tape_head = 0,
 	tile_steps = 0,
 	total_scroll_px = 0,
 	scrolling = true,
-	scroll_mode = constants.stage.scroll_mode_default,
-	scroll_rotator = constants.stage.scroll_rotator_initial,
+	scroll_mode = 0,
+	scroll_rotator = 0,
 	scroll_gate_bit = 0,
 	scroll_advanced = false,
 }
@@ -36,6 +44,64 @@ local non_collision_tile_keys = {
 }
 
 local loaded_stage_data = nil
+
+local tile_asset_by_key = {
+	collision = constants.assets.house_tile_1,
+	house_1 = constants.assets.house_tile_1,
+	house_2 = constants.assets.house_tile_2,
+	house_3 = constants.assets.house_tile_3,
+	house_4 = constants.assets.house_tile_4,
+	house_5 = constants.assets.house_tile_5,
+	house_6 = constants.assets.house_tile_6,
+	house_7 = constants.assets.house_tile_7,
+	house_8 = constants.assets.house_tile_8,
+	house_9 = constants.assets.house_tile_9,
+	house_10 = constants.assets.house_tile_10,
+	house_11 = constants.assets.house_tile_11,
+	house_12 = constants.assets.house_tile_12,
+	house_13 = constants.assets.house_tile_13,
+	house_door = constants.assets.house_tile_door,
+	house_window = constants.assets.house_tile_window,
+	house_window2 = constants.assets.house_tile_window2,
+	lantaarn1 = constants.assets.lantaarn_tile_1,
+	lantaarn2 = constants.assets.lantaarn_tile_2,
+	lantaarn3 = constants.assets.lantaarn_tile_3,
+	ground = constants.assets.ground,
+	ground2 = constants.assets.ground2,
+	ground_v = constants.assets.ground_v,
+	ground2_v = constants.assets.ground2_v,
+	ground3 = constants.assets.ground3,
+	ground4 = constants.assets.ground4,
+	ground_start = constants.assets.ground_start,
+	ground_end = constants.assets.ground_end,
+	ground_start_v = constants.assets.ground_start_v,
+	ground_end_v = constants.assets.ground_end_v,
+	snow = constants.assets.snow,
+	schoorsteen1 = constants.assets.schoorsteen1,
+	schoorsteen2 = constants.assets.schoorsteen2,
+	schoorsteen3 = constants.assets.schoorsteen3,
+	snowtree1 = constants.assets.snowtree1,
+	snowtree2 = constants.assets.snowtree2,
+	snowtree3 = constants.assets.snowtree3,
+	snowtree4 = constants.assets.snowtree4,
+	snowtree5 = constants.assets.snowtree5,
+	snowtree6 = constants.assets.snowtree6,
+	snowtree7 = constants.assets.snowtree7,
+	snowtree8 = constants.assets.snowtree8,
+	snowtree9 = constants.assets.snowtree9,
+	snowtree10 = constants.assets.snowtree10,
+	snowtree11 = constants.assets.snowtree11,
+	snowtree12 = constants.assets.snowtree12,
+	snowtree13 = constants.assets.snowtree13,
+	snowtree14 = constants.assets.snowtree14,
+	snowtree15 = constants.assets.snowtree15,
+	snowtree16 = constants.assets.snowtree16,
+	snowtree17 = constants.assets.snowtree17,
+	snowtree18 = constants.assets.snowtree18,
+	snowtree19 = constants.assets.snowtree19,
+	snowtree20 = constants.assets.snowtree20,
+	snowtree21 = constants.assets.snowtree21,
+}
 
 local function clamp_int(value, min_value, max_value)
 	local clamped = value
@@ -82,6 +148,17 @@ local function get_stage_data()
 		loaded_stage_data = load_stage_data()
 	end
 	return loaded_stage_data
+end
+
+local function apply_stage_config(stage_data)
+	state.tile_size = stage_data.tile_size
+	state.tile_columns = stage_data.tile_columns
+	state.draw_z = stage_data.draw_z
+	state.scroll_mode_pause = stage_data.scroll_mode_pause
+	state.scroll_mode_forced = stage_data.scroll_mode_forced
+	state.scroll_mode_gated = stage_data.scroll_mode_gated
+	state.scroll_mode_default = stage_data.scroll_mode_default
+	state.scroll_rotator_initial = stage_data.scroll_rotator_initial
 end
 
 local function char_at(map_rows, x, y)
@@ -331,54 +408,25 @@ local function decode_stage_tile(map_rows, x, y)
 	error('nemesis_s unsupported stage symbol "' .. ch .. '" at x=' .. tostring(x) .. ', y=' .. tostring(y))
 end
 
-local function resolve_tile_material(tile_key, stage_x, stage_y)
+local function resolve_tile_material(tile_key)
 	if tile_key == 'none' then
 		return nil, 0
 	end
-	if tile_key == 'ground' then
-		return constants.assets.ground, 1
+
+	local tile_id = tile_asset_by_key[tile_key]
+	if tile_id == nil then
+		error("nemesis_s unsupported stage tile key '" .. tile_key .. "'")
 	end
-	if tile_key == 'ground2' then
-		return constants.assets.ground2, 1
-	end
-	if tile_key == 'ground_v' then
-		return constants.assets.ground_v, 1
-	end
-	if tile_key == 'ground2_v' then
-		return constants.assets.ground2_v, 1
-	end
-	if tile_key == 'ground3' then
-		return constants.assets.ground3, 1
-	end
-	if tile_key == 'ground4' then
-		return constants.assets.ground4, 1
-	end
-	if tile_key == 'ground_start' then
-		return constants.assets.ground_start, 1
-	end
-	if tile_key == 'ground_end' then
-		return constants.assets.ground_end, 1
-	end
-	if tile_key == 'ground_start_v' then
-		return constants.assets.ground_start_v, 1
-	end
-	if tile_key == 'ground_end_v' then
-		return constants.assets.ground_end_v, 1
-	end
-	if tile_key == 'snow' then
-		return constants.assets.snow, 0
-	end
+
 	if non_collision_tile_keys[tile_key] then
-		return nil, 0
+		return tile_id, 0
 	end
-	if ((stage_x + stage_y) % 2) == 0 then
-		return constants.assets.ground3, 1
-	end
-	return constants.assets.ground4, 1
+	return tile_id, 1
 end
 
 local function build_tape()
 	local stage_data = get_stage_data()
+	apply_stage_config(stage_data)
 	local map_rows = stage_data.map_rows
 	if #map_rows == 0 then
 		error('nemesis_s stage data has no map_rows')
@@ -424,7 +472,7 @@ local function build_tape()
 		end
 		for stage_x = 1, width do
 			local tile_key = decode_stage_tile(map_rows, stage_x, stage_y)
-			local tile_id, solid = resolve_tile_material(tile_key, stage_x, stage_y)
+			local tile_id, solid = resolve_tile_material(tile_key)
 			state.tile_tape[stage_y][stage_x] = tile_id
 			state.solid_tape[stage_y][stage_x] = solid
 		end
@@ -436,28 +484,28 @@ function stage.reset_runtime()
 		build_tape()
 	end
 	state.left_tile = 1
-	state.tape_head = constants.stage.tile_columns
+	state.tape_head = state.tile_columns
 	state.tile_steps = 0
 	state.total_scroll_px = 0
 	state.scrolling = true
-	state.scroll_mode = constants.stage.scroll_mode_default
-	state.scroll_rotator = constants.stage.scroll_rotator_initial
+	state.scroll_mode = state.scroll_mode_default
+	state.scroll_rotator = state.scroll_rotator_initial
 	state.scroll_gate_bit = 0
 	state.scroll_advanced = false
 end
 
 function stage.tick(on_event)
 	local delta_scroll_px = 0
-	local max_left_tile = state.tape_length_tiles - constants.stage.tile_columns + 1
+	local max_left_tile = state.tape_length_tiles - state.tile_columns + 1
 	local should_advance = false
 
 	state.scroll_advanced = false
 	state.scroll_gate_bit = 0
 
 	if state.scrolling then
-		if state.scroll_mode == constants.stage.scroll_mode_forced then
+		if state.scroll_mode == state.scroll_mode_forced then
 			should_advance = true
-		elseif state.scroll_mode == constants.stage.scroll_mode_gated then
+		elseif state.scroll_mode == state.scroll_mode_gated then
 			state.scroll_rotator = rol8(state.scroll_rotator)
 			state.scroll_gate_bit = state.scroll_rotator % 2
 			should_advance = state.scroll_gate_bit == 1
@@ -471,9 +519,9 @@ function stage.tick(on_event)
 				end
 			else
 				state.left_tile = state.left_tile + 1
-				state.tape_head = state.left_tile + constants.stage.tile_columns - 1
+				state.tape_head = state.left_tile + state.tile_columns - 1
 				state.tile_steps = state.tile_steps + 1
-				delta_scroll_px = constants.stage.tile_size
+				delta_scroll_px = state.tile_size
 				state.scroll_advanced = true
 				if on_event ~= nil then
 					on_event('stage_scroll_tile', string.format('left=%d|head=%d', state.left_tile, state.tape_head))
@@ -497,15 +545,15 @@ function stage.tick(on_event)
 		end
 	end
 
-	state.total_scroll_px = state.tile_steps * constants.stage.tile_size
+	state.total_scroll_px = state.tile_steps * state.tile_size
 	return delta_scroll_px
 end
 
 function stage.draw()
-	local draw_columns = constants.stage.tile_columns + 1
-	local tile_size = constants.stage.tile_size
+	local draw_columns = state.tile_columns + 1
+	local tile_size = state.tile_size
 	local start_tile = state.left_tile
-	local z = constants.stage.draw_z
+	local z = state.draw_z
 
 	for screen_column = 0, draw_columns do
 		local stage_column = start_tile + screen_column
@@ -524,7 +572,7 @@ function stage.draw()
 end
 
 function stage.is_solid_pixel(screen_x, screen_y)
-	local tile_size = constants.stage.tile_size
+	local tile_size = state.tile_size
 	local map_x = math.floor((screen_x + state.total_scroll_px) / tile_size) + 1
 	local map_y = math.floor(screen_y / tile_size) + 1
 

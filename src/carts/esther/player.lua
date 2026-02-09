@@ -512,7 +512,7 @@ function player:sample_input()
 	self.run_released = (not self.run_held) and old_run
 	self.jump_pressed = self.jump_held and (not old_jump)
 	self.jump_released = (not self.jump_held) and old_jump
-	self.jump_buffer_active = false
+	self.jump_buffer_active = self.jump_held
 
 	if self.move_axis ~= self.last_move_axis and self.move_axis ~= 0 then
 		self.last_direction_change_frame = self.debug_frame
@@ -522,8 +522,8 @@ function player:sample_input()
 	if self.run_pressed then
 		self.last_run_press_frame = self.debug_frame
 	end
-	if self.jump_released then
-		self.dkc_1699_flags = self.dkc_1699_flags & 0xFFFD
+	if not self.jump_held then
+		self.dkc_1699_flags = self.dkc_1699_flags & 0xFFFC
 	end
 end
 
@@ -778,6 +778,10 @@ function player:tick_grounded()
 	if self.jump_pressed then
 		self:CODE_BFBA88_START_JUMP(false)
 		self.sc:transition_to(player_state_airborne)
+		self:advance_airborne_kinematics()
+		if self.grounded then
+			self.sc:transition_to(player_state_grounded)
+		end
 		return
 	end
 
@@ -788,14 +792,15 @@ function player:tick_grounded()
 	end
 end
 
-function player:tick_airborne()
-	self:update_barrel_interaction()
+function player:advance_airborne_kinematics()
 	self:apply_horizontal_control(true)
-	if self.jump_released then
-		self.dkc_1699_flags = self.dkc_1699_flags & 0xFFFD
-	end
 	self:CODE_BFAF38_AIR_GRAVITY()
 	self:integrate_and_collide()
+end
+
+function player:tick_airborne()
+	self:update_barrel_interaction()
+	self:advance_airborne_kinematics()
 	if self.grounded then
 		self.sc:transition_to(player_state_grounded)
 	end
@@ -805,6 +810,10 @@ function player:tick_roll()
 	if self.jump_pressed then
 		self:CODE_BFBA88_START_JUMP(true)
 		self.sc:transition_to(player_state_airborne)
+		self:advance_airborne_kinematics()
+		if self.grounded then
+			self.sc:transition_to(player_state_grounded)
+		end
 		return
 	end
 
