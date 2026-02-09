@@ -10,7 +10,7 @@ machine:
     ufps: 60000000
     specs:
         cpu:
-            cpu_freq_hz: 10000000
+            cpu_freq_hz: 10000000 # 10 MHz
             imgdec_bytes_per_sec: 26214400
         dma:
             dma_bytes_per_sec_iso: 8388608

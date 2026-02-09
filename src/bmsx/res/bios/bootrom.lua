@@ -27,8 +27,7 @@ local boot_start = os.clock()
 local boot_requested = false
 local sys_atlas_ready = false
 local sys_atlas_failed = false
-local error_scroll_state = textflow.new_scroll_state()
-local error_scroll_window_size = 1
+local boot_scroll_state = textflow.new_scroll_state()
 local boot_screen_visible = false
 local render_boot_screen = nil
 
@@ -699,7 +698,7 @@ local function get_program_precheck_status(cart_header)
 	return 'PENDING', 'PROGRAM PRECHECK NOT RUN', false
 end
 
-local function update_error_scroll(error_lines, window_size)
+local function consume_boot_scroll_delta()
 	local delta = 0
 	if action_triggered('down[jp]', 1) then
 		delta = delta + 1
@@ -709,7 +708,19 @@ local function update_error_scroll(error_lines, window_size)
 		delta = delta - 1
 		consume_action('up')
 	end
-	return textflow.update_scroll_state(error_scroll_state, #error_lines, window_size, delta)
+	return delta
+end
+
+local function scroll_boot_lines(lines, window_size, delta)
+	local line_count = #lines
+	if line_count ~= boot_scroll_state.last_line_count then
+		boot_scroll_state.last_line_count = line_count
+		boot_scroll_state.top = textflow.clamp_scroll(boot_scroll_state.top, line_count, window_size)
+	end
+	boot_scroll_state.top = textflow.clamp_scroll(boot_scroll_state.top + delta, line_count, window_size)
+	local scroll_top, max_scroll, visible_lines = textflow.scroll_window(lines, boot_scroll_state.top, window_size)
+	boot_scroll_state.top = scroll_top
+	return scroll_top, max_scroll, visible_lines
 end
 
 local function elapsed_seconds()
@@ -824,8 +835,8 @@ local function build_info()
 	}
 end
 
-local function divider(width, left)
-	return string.rep('—', textflow.line_slots(width, left, font_width))
+local function divider(line_slots)
+	return string.rep('—', line_slots)
 end
 
 local function build_progress_bar(progress, width)
@@ -863,33 +874,126 @@ local function compute_boot_progress(info, cart_ready, elapsed)
 	return (stage_progress * 0.8) + (time_progress * 0.2)
 end
 
-local function write_kv(label, value, x, y, color, label_width)
-	write(string.format("%-" .. label_width .. "s : %s", label, value), x, y, 0, color)
+local function append_wrapped_line(lines, value, color, line_slots, first_prefix, next_prefix)
+	local wrapped = textflow.wrap_prefixed(value, line_slots, first_prefix or '', next_prefix or first_prefix or '')
+	for i = 1, #wrapped do
+		lines[#lines + 1] = { text = wrapped[i], color = color }
+	end
 end
 
-local function draw_cart_precheck_errors(info, left, top, width, cursor)
-	local y = top
-	local line_slots = textflow.line_slots(width, left, font_width)
-	local error_lines = textflow.wrap_entries(info.cart_errors, line_slots, '- ', '  ')
-	local visible_lines
-	local max_scroll
-	local scroll_top
-	local window_size = textflow.window_size(display_height(), y, line_height, 1, 1)
-	error_scroll_window_size = window_size
-	scroll_top, max_scroll, visible_lines = textflow.scroll_window_state(error_lines, error_scroll_state, window_size)
+local function append_kv_wrapped(lines, label, value, color, label_width, line_slots)
+	local first_prefix = string.format("%-" .. label_width .. "s : ", label)
+	local next_prefix = string.rep(' ', label_width) .. '   '
+	local wrapped = textflow.wrap_prefixed(value, line_slots, first_prefix, next_prefix)
+	for i = 1, #wrapped do
+		lines[#lines + 1] = { text = wrapped[i], color = color }
+	end
+end
 
-	for i = 1, #visible_lines do
-		write(visible_lines[i], left, y, 0, color_warn)
-		y = y + line_height
+local function append_blank_line(lines)
+	lines[#lines + 1] = { text = '', color = color_text }
+end
+
+local function append_section(lines, title, line_slots)
+	append_wrapped_line(lines, title, color_section, line_slots, '', '')
+	append_wrapped_line(lines, divider(line_slots), color_section, line_slots, '', '')
+end
+
+local function build_boot_content_lines(info, cart_present, cursor, elapsed, line_slots)
+	local lines = {}
+	local cart_has_errors = cart_present and info.cart_has_errors
+	local hw_specs = {
+		{ label = 'MAX CART ROM', value = info.hw_cart_max, color = color_accent },
+		{ label = 'TOTAL RAM', value = info.hw_ram_total, color = color_info_total },
+		{ label = 'TOTAL VRAM', value = info.hw_vram_total, color = color_info_total },
+		{ label = 'MAX ASSETS', value = info.hw_max_assets, color = color_accent },
+		{ label = 'MAX STRING ENTRIES', value = info.hw_max_strings, color = color_accent },
+		{ label = 'MAX CYCLES/FRAME', value = info.hw_max_cycles, color = color_accent },
+	}
+	local cart_specs = {
+		{ label = 'CART ROM', value = info.cart_rom, color = color_accent },
+		{ label = 'CART NAME', value = info.cart_title, color = color_ok },
+		{ label = 'VIEWPORT', value = info.cart_view, color = color_info_total },
+		{ label = 'CPU MHZ', value = info.cart_cpu_mhz, color = color_accent },
+	}
+	local label_width = 0
+	for i = 1, #hw_specs do
+		local len = #hw_specs[i].label
+		if len > label_width then label_width = len end
+	end
+	for i = 1, #cart_specs do
+		local len = #cart_specs[i].label
+		if len > label_width then label_width = len end
+	end
+	local status_labels = { 'STATUS', 'BOOT STATUS', 'BITCAST SELFTEST', 'PROGRAM PRECHECK' }
+	for i = 1, #status_labels do
+		local len = #status_labels[i]
+		if len > label_width then label_width = len end
 	end
 
-	if max_scroll > 0 then
-		local first_line = scroll_top + 1
-		local last_line = scroll_top + #visible_lines
-		write('UP/DOWN: SCROLL ' .. first_line .. '-' .. last_line .. '/' .. #error_lines, left, y, 0, color_muted)
-		y = y + line_height
+	append_section(lines, 'SYSTEM SPECS', line_slots)
+	for i = 1, #hw_specs do
+		local spec = hw_specs[i]
+		append_kv_wrapped(lines, spec.label, spec.value, spec.color or color_text, label_width, line_slots)
 	end
-	write('BOOT BLOCKED ' .. cursor, left, y, 0, color_warn)
+
+	append_blank_line(lines)
+	append_section(lines, 'CARTRIDGE', line_slots)
+	for i = 1, #cart_specs do
+		local spec = cart_specs[i]
+		append_kv_wrapped(lines, spec.label, spec.value, spec.color or color_text, label_width, line_slots)
+	end
+
+	append_blank_line(lines)
+	append_section(lines, 'BOOT STATUS', line_slots)
+	local bitcast_color = info.bitcast_selftest_ok and color_ok or color_warn
+	append_kv_wrapped(lines, 'BITCAST SELFTEST', info.bitcast_selftest_status, bitcast_color, label_width, line_slots)
+	local precheck_color = color_accent
+	if info.precheck_status == 'OK' then
+		precheck_color = color_ok
+	elseif info.precheck_status == 'FAILED' then
+		precheck_color = color_warn
+	end
+	append_kv_wrapped(lines, 'PROGRAM PRECHECK', info.precheck_status, precheck_color, label_width, line_slots)
+
+	if cart_has_errors then
+		local error_lines = textflow.wrap_entries(info.cart_errors, line_slots, '- ', '  ')
+		append_blank_line(lines)
+		for i = 1, #error_lines do
+			lines[#lines + 1] = { text = error_lines[i], color = color_warn }
+		end
+		append_wrapped_line(lines, 'BOOT BLOCKED ' .. cursor, color_warn, line_slots, '', '')
+		return lines
+	end
+
+	if not info.bitcast_selftest_ok and info.bitcast_selftest_error then
+		append_wrapped_line(lines, 'DETAIL: ' .. info.bitcast_selftest_error, color_muted, line_slots, '', '')
+	elseif info.precheck_detail then
+		append_wrapped_line(lines, 'DETAIL: ' .. info.precheck_detail, color_muted, line_slots, '', '')
+	end
+
+	if cart_present then
+		local cart_ready = cart_boot_ready()
+		if not cart_ready and not boot_requested and elapsed >= boot_delay and sys_atlas_ready and not sys_atlas_failed then
+			if not cart_start_failed_logged then
+				cart_start_failed_logged = true
+				print('[BootRom] Cart start failed: cart_boot_ready=0 while BIOS remained active.')
+			end
+			append_wrapped_line(lines, 'BOOT BLOCKED: CART START FAILED', color_warn, line_slots, '', '')
+			append_wrapped_line(lines, 'CHECK HOST LOG / REBUILD BIOS + CART TOGETHER', color_muted, line_slots, '', '')
+			return lines
+		end
+		local status = cart_ready and 'CART LOADED' or (boot_requested and 'STARTING CART' or 'LOADING CART')
+		local status_color = cart_ready and color_ok or color_accent
+		append_wrapped_line(lines, status, status_color, line_slots, '', '')
+		local bar_width = line_slots - 3
+		if bar_width < 1 then bar_width = 1 end
+		local bar = build_progress_bar(compute_boot_progress(info, cart_ready, elapsed), bar_width)
+		append_wrapped_line(lines, bar .. cursor, color_text, line_slots, '', '')
+	else
+		append_wrapped_line(lines, 'NO CART DETECTED ' .. cursor, color_warn, line_slots, '', '')
+	end
+	return lines
 end
 
 function init()
@@ -904,6 +1008,7 @@ function init()
 	bitcast_selftest_error = nil
 	bitcast_selftest_logged = false
 	cart_start_failed_logged = false
+	textflow.reset_scroll_state(boot_scroll_state)
 	on_irq(irq_img_done, function()
 		sys_atlas_ready = true
 	end)
@@ -928,6 +1033,7 @@ function update(_dt)
 	print "NIEUWE BIOS"
 	refresh_atlas_load_state()
 	boot_screen_visible = true
+	local scroll_delta = consume_boot_scroll_delta()
 	local cart_header = read_cart_header(CART_ROM_BASE)
 	local cart_manifest_raw = cart_manifest
 	local cart_root_path = assets and assets.project_root_path or nil
@@ -937,13 +1043,7 @@ function update(_dt)
 	local cart_has_errors = cart_header and #cart_errors > 0
 	local _, _, precheck_done = get_program_precheck_status(cart_header)
 
-	if cart_has_errors then
-		local line_slots = textflow.line_slots(display_width(), 8, font_width)
-		local error_lines = textflow.wrap_entries(cart_errors, line_slots, '- ', '  ')
-		update_error_scroll(error_lines, error_scroll_window_size)
-	else
-		textflow.reset_scroll_state(error_scroll_state)
-		error_scroll_window_size = 1
+	if not cart_has_errors then
 		local cart_valid = cart_header
 			and #cart_errors == 0
 			and bitcast_selftest_ok
@@ -952,17 +1052,17 @@ function update(_dt)
 			and cart_boot_ready()
 			and cart_valid
 
-			if cart_present_and_ready and not boot_requested and elapsed_seconds() >= boot_delay and sys_atlas_ready and not sys_atlas_failed then
-				boot_requested = true
-				print('[BootRom] Requesting cart boot.')
-				poke(sys_boot_cart, 1)
-			end
+		if cart_present_and_ready and not boot_requested and elapsed_seconds() >= boot_delay and sys_atlas_ready and not sys_atlas_failed then
+			boot_requested = true
+			print('[BootRom] Requesting cart boot.')
+			poke(sys_boot_cart, 1)
 		end
+	end
 
-	render_boot_screen()
+	render_boot_screen(scroll_delta)
 end
 
-render_boot_screen = function()
+render_boot_screen = function(scroll_delta)
 	refresh_atlas_load_state()
 	local width = display_width()
 	local left = 8
@@ -975,111 +1075,22 @@ render_boot_screen = function()
 	local cart_present = peek(CART_ROM_BASE) == CART_ROM_MAGIC
 	local elapsed = elapsed_seconds()
 	local cursor = (math.floor(elapsed * 2) % 2 == 0) and '█' or ' '
-	local cart_has_errors = cart_present and info.cart_has_errors
+	local line_slots = textflow.line_slots(width, left, font_width)
+	local content_lines = build_boot_content_lines(info, cart_present, cursor, elapsed, line_slots)
+	local window_size = textflow.window_size(display_height(), top, line_height, 1, 1)
+	local scroll_top, max_scroll, visible_lines = scroll_boot_lines(content_lines, window_size, scroll_delta)
 	local y = top
-	local hw_specs = {
-		{ label = 'MAX CART ROM', value = info.hw_cart_max, color = color_accent },
-		{ label = 'TOTAL RAM', value = info.hw_ram_total, color = color_info_total },
-		{ label = 'TOTAL VRAM', value = info.hw_vram_total, color = color_info_total },
-		{ label = 'MAX ASSETS', value = info.hw_max_assets, color = color_accent },
-		{ label = 'MAX STRING ENTRIES', value = info.hw_max_strings, color = color_accent },
-		{ label = 'MAX CYCLES/FRAME', value = info.hw_max_cycles, color = color_accent },
-	}
-	local cart_specs = {
-		{ label = 'CART ROM', value = info.cart_rom, color = color_accent },
-		{ label = 'CART NAME', value = info.cart_title, color = color_ok },
-		-- { label = 'SHORT NAME', value = info.cart_short, color = color_text },
-		-- { label = 'NAMESPACE', value = info.cart_ns, color = color_muted },
-		{ label = 'VIEWPORT', value = info.cart_view, color = color_info_total },
-		{ label = 'CPU MHZ', value = info.cart_cpu_mhz, color = color_accent },
-		-- { label = 'CANON', value = info.cart_canon, color = color_muted },
-		-- { label = 'CART LUA', value = info.cart_entry, color = color_text },
-		-- { label = 'INPUT MAP', value = info.cart_input, color = color_accent },
-		-- { label = 'ROOT', value = info.root, color = color_muted },
-	}
-	local label_width = 0
-	for i = 1, #hw_specs do
-		local len = #hw_specs[i].label
-		if len > label_width then label_width = len end
-	end
-	for i = 1, #cart_specs do
-		local len = #cart_specs[i].label
-		if len > label_width then label_width = len end
-	end
-	local status_labels = { 'STATUS', 'BOOT STATUS', 'BITCAST SELFTEST', 'PROGRAM PRECHECK' }
-	for i = 1, #status_labels do
-		local len = #status_labels[i]
-		if len > label_width then label_width = len end
-	end
-	write('SYSTEM SPECS', left, y, 0, color_section)
-	y = y + line_height
-	write(divider(width, left), left, y, color_section)
-	y = y + line_height
-	for i = 1, #hw_specs do
-		local spec = hw_specs[i]
-		write_kv(spec.label, spec.value, left, y, spec.color or color_text, label_width)
+
+	for i = 1, #visible_lines do
+		local line = visible_lines[i]
+		write(line.text, left, y, 0, line.color)
 		y = y + line_height
-	end
-	y = y + line_height
-	write('CARTRIDGE', left, y, 0, color_section)
-	y = y + line_height
-	write(divider(width, left), left, y, 0, color_section)
-	y = y + line_height
-	for i = 1, #cart_specs do
-		local spec = cart_specs[i]
-		write_kv(spec.label, spec.value, left, y, spec.color or color_text, label_width)
-		y = y + line_height
-	end
-	y = y + line_height
-	write('BOOT STATUS', left, y, 0, color_section)
-	y = y + line_height
-	write(divider(width, left), left, y, 0, color_section)
-	y = y + line_height
-	local bitcast_color = info.bitcast_selftest_ok and color_ok or color_warn
-	write_kv('BITCAST SELFTEST', info.bitcast_selftest_status, left, y, bitcast_color, label_width)
-	y = y + line_height
-	local precheck_color = color_accent
-	if info.precheck_status == 'OK' then
-		precheck_color = color_ok
-	elseif info.precheck_status == 'FAILED' then
-		precheck_color = color_warn
-	end
-	write_kv('PROGRAM PRECHECK', info.precheck_status, left, y, precheck_color, label_width)
-	y = y + line_height
-	if cart_has_errors then
-		draw_cart_precheck_errors(info, left, y, width, cursor)
-		return
-	end
-	if not info.bitcast_selftest_ok and info.bitcast_selftest_error then
-		local line_slots = textflow.line_slots(width, left, font_width)
-		local free_lines = math.max(1, math.floor((display_height() - y) / line_height) - 2)
-		y = textflow.draw_wrapped_tail('DETAIL: ' .. info.bitcast_selftest_error, left, y, color_muted, line_height, line_slots, free_lines, '', '')
-	elseif info.precheck_detail then
-		local line_slots = textflow.line_slots(width, left, font_width)
-		local free_lines = math.max(1, math.floor((display_height() - y) / line_height) - 2)
-		y = textflow.draw_wrapped_tail('DETAIL: ' .. info.precheck_detail, left, y, color_muted, line_height, line_slots, free_lines, '', '')
 	end
 
-	if cart_present then
-		local cart_ready = cart_boot_ready()
-		if not cart_ready and not boot_requested and elapsed >= boot_delay and sys_atlas_ready and not sys_atlas_failed then
-			if not cart_start_failed_logged then
-				cart_start_failed_logged = true
-				print('[BootRom] Cart start failed: cart_boot_ready=0 while BIOS remained active.')
-			end
-			write('BOOT BLOCKED: CART START FAILED', left, y, 0, color_warn)
-			y = y + line_height
-			write('CHECK HOST LOG / REBUILD BIOS + CART TOGETHER', left, y, 0, color_muted)
-			return
-		end
-		local status = cart_ready and 'CART LOADED' or (boot_requested and 'STARTING CART' or 'LOADING CART')
-		local status_color = cart_ready and color_ok or color_accent
-		write(status, left, y, 0, status_color)
-		y = y + line_height
-		local bar = build_progress_bar(compute_boot_progress(info, cart_ready, elapsed), 40)
-		write(bar .. cursor, left, y, 0, color_text)
-	else
-		write('NO CART DETECTED ' .. cursor, left, y, 0, color_warn)
+	if max_scroll > 0 then
+		local first_line = scroll_top + 1
+		local last_line = scroll_top + #visible_lines
+		write('UP/DOWN: SCROLL ' .. first_line .. '-' .. last_line .. '/' .. #content_lines, left, display_height() - line_height, 0, color_muted)
 	end
 end
 

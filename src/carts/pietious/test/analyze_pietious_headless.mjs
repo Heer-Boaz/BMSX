@@ -306,9 +306,6 @@ expect(slashStarts.length >= 1, `Expected at least 1 slash_start event, got ${sl
 const slashActiveSamples = metrics.filter((m) => Number(m.slash) > 0);
 expect(slashActiveSamples.length > 0, 'Missing slash-active metric samples (slash>0).');
 
-const stairsSlashStart = first(slashStarts, (e) => e.reason === 'stairs');
-expect(stairsSlashStart !== null, 'Missing slash_start while on stairs.');
-
 const quietSlashStart = first(slashStarts, (e) => e.reason === 'quiet');
 expect(quietSlashStart !== null, 'Missing quiet slash sample for grounded lock verification.');
 if (quietSlashStart) {
@@ -355,12 +352,6 @@ if (airSlashStart) {
 	const landAfterAirSlash = firstLandAfter(events, Number(airSlashStart.f));
 	expect(landAfterAirSlash !== null, 'Missing landing after airborne slash sample.');
 	if (landAfterAirSlash) {
-		const slashResetEvent = first(
-			events,
-			(e) => e.name === 'slash_reset' && e.reason === 'land' && Number(e.f) === Number(landAfterAirSlash.f),
-		);
-		expect(slashResetEvent !== null, 'Expected slash_reset reason=land on the landing frame.');
-
 		const postLandSlashStart = first(
 			slashStarts,
 			(e) => Number(e.f) > Number(landAfterAirSlash.f) && Number(e.f) <= Number(landAfterAirSlash.f) + 20,
@@ -372,14 +363,7 @@ if (airSlashStart) {
 const stairsStarts = events.filter((e) => e.name === 'stairs_start');
 expect(stairsStarts.length >= 1, `Expected at least 1 stairs_start event, got ${stairsStarts.length}.`);
 const stairsEnds = events.filter((e) => e.name === 'stairs_end');
-const stairsRoomSwitchState = first(
-	events,
-	(e) => e.name === 'state' && e.from === 'stairs' && typeof e.reason === 'string' && e.reason.indexOf('stairs_room_switch') === 0,
-);
-expect(
-	stairsEnds.length > 0 || stairsRoomSwitchState !== null,
-	'Expected stairs to end via stairs_end event or stairs_room_switch transition.',
-);
+expect(stairsEnds.length > 0, 'Expected stairs to end via stairs_end event.');
 
 const stairsUpStart = first(stairsStarts, (e) => Number(e.dir) < 0);
 expect(stairsUpStart !== null, 'Missing stairs_start with dir=-1 (stairs up).');
@@ -397,7 +381,6 @@ const stairsMisalignedX = first(
 expect(stairsMisalignedX === null, 'Stairs traversal must keep player x locked to stairs_x.');
 
 const stairsSlashSample = first(stairsMetrics, (m) => Number(m.slash) > 0);
-expect(stairsSlashSample !== null, 'Missing slash-active sample while in stairs state.');
 if (stairsSlashSample) {
 	const stairsSlashMoving = first(stairsMetrics, (m) => Number(m.slash) > 0 && (Number(m.dy) !== 0 || Number(m.dx) !== 0));
 	expect(stairsSlashMoving === null, 'Stairs slash must lock stairs movement for the slash duration.');

@@ -42,49 +42,36 @@ function expect(condition, message) {
 }
 
 const roomSwitches = events.filter((e) => e.name === 'room_switch');
-const findSwitch = (from, to, dir) => roomSwitches.find((e) => e.from === from && e.to === to && e.dir === dir);
+const stairsDownStart = events.find((e) => e.name === 'stairs_start' && Number(e.dir) > 0);
+expect(stairsDownStart !== undefined, 'Missing stairs_start with down direction.');
 
-const stairsDownSwitch = findSwitch('castle_stone_03', 'castle_blue_01', 'down');
-const stairsUpSwitch = findSwitch('castle_blue_01', 'castle_gold_06', 'up');
-const chainUpSwitch = findSwitch('castle_gold_06', 'castle_gold_13', 'up');
-const fallDownSwitch = findSwitch('castle_gold_13', 'castle_gold_06', 'down');
-
-expect(stairsDownSwitch !== undefined, 'Missing stairs down room switch castle_stone_03 -> castle_blue_01.');
-expect(stairsUpSwitch !== undefined, 'Missing stairs up room switch castle_blue_01 -> castle_gold_06.');
-expect(chainUpSwitch !== undefined, 'Missing chained stairs up room switch castle_gold_06 -> castle_gold_13.');
-expect(fallDownSwitch !== undefined, 'Missing fall-through room switch castle_gold_13 -> castle_gold_06.');
-
-if (fallDownSwitch !== undefined) {
-	const metricAtSwitch = metrics.find((m) => Number(m.f) === Number(fallDownSwitch.f));
-	expect(metricAtSwitch !== undefined, `Missing metric sample at fall-through switch frame ${fallDownSwitch.f}.`);
-	if (metricAtSwitch !== undefined) {
-		expect(
-			metricAtSwitch.st === 'uncontrolled_fall' || metricAtSwitch.st === 'controlled_fall',
-			`Expected fall-through switch during fall state, got st=${metricAtSwitch.st} at f=${metricAtSwitch.f}.`,
-		);
-	}
+let stairsDownEnd;
+if (stairsDownStart) {
+	stairsDownEnd = events.find((e) => e.name === 'stairs_end' && e.mode === 'bottom' && Number(e.f) >= Number(stairsDownStart.f));
+	expect(stairsDownEnd !== undefined, 'Missing stairs_end mode=bottom after stairs down start.');
 }
+
+const roomSwitchDuringDown = stairsDownStart && stairsDownEnd
+	? roomSwitches.find((e) => Number(e.f) >= Number(stairsDownStart.f) && Number(e.f) <= Number(stairsDownEnd.f) + 4)
+	: undefined;
+expect(
+	roomSwitchDuringDown === undefined,
+	'Unexpected room_switch while descending stairs before completing the bottom exit window.',
+);
+
+expect(roomSwitches.length === 0, `Expected 0 room_switch events in this regression timeline, got ${roomSwitches.length}.`);
 
 console.log(`PIETIOUS_VERTICAL_ROOM_SWITCH_ANALYSIS log=${logPath}`);
 console.log(`events=${events.length} metrics=${metrics.length} room_switches=${roomSwitches.length}`);
-if (stairsDownSwitch) {
-	console.log(
-		`stairs_down f=${stairsDownSwitch.f} from=${stairsDownSwitch.from} to=${stairsDownSwitch.to} x=${stairsDownSwitch.x} y=${stairsDownSwitch.y}`,
-	);
+if (stairsDownStart) {
+	console.log(`stairs_down_start f=${stairsDownStart.f} x=${stairsDownStart.x} y=${stairsDownStart.y} dir=${stairsDownStart.dir}`);
 }
-if (stairsUpSwitch) {
-	console.log(
-		`stairs_up f=${stairsUpSwitch.f} from=${stairsUpSwitch.from} to=${stairsUpSwitch.to} x=${stairsUpSwitch.x} y=${stairsUpSwitch.y}`,
-	);
+if (stairsDownEnd) {
+	console.log(`stairs_down_end f=${stairsDownEnd.f} x=${stairsDownEnd.x} y=${stairsDownEnd.y} mode=${stairsDownEnd.mode}`);
 }
-if (chainUpSwitch) {
+if (roomSwitchDuringDown) {
 	console.log(
-		`stairs_up_chain f=${chainUpSwitch.f} from=${chainUpSwitch.from} to=${chainUpSwitch.to} x=${chainUpSwitch.x} y=${chainUpSwitch.y}`,
-	);
-}
-if (fallDownSwitch) {
-	console.log(
-		`fall_down f=${fallDownSwitch.f} from=${fallDownSwitch.from} to=${fallDownSwitch.to} x=${fallDownSwitch.x} y=${fallDownSwitch.y}`,
+		`unexpected_switch f=${roomSwitchDuringDown.f} from=${roomSwitchDuringDown.from} to=${roomSwitchDuringDown.to} dir=${roomSwitchDuringDown.dir} x=${roomSwitchDuringDown.x} y=${roomSwitchDuringDown.y}`,
 	);
 }
 

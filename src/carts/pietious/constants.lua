@@ -35,8 +35,15 @@ constants.player = {
 }
 
 constants.sword = {
-	start_frames = 1,
-	recover_frames = 4,
+	duration_frames = 4,
+	ground_body_offset_right = 4,
+	ground_body_offset_left = -4,
+	ground_offset_right = 20,
+	ground_offset_left = -20,
+	jump_body_offset_right = 0,
+	jump_body_offset_left = 0,
+	jump_offset_right = 16,
+	jump_offset_left = -16,
 }
 
 constants.damage = {

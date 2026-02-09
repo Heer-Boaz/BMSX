@@ -390,5 +390,145 @@
 			"pressId": 12,
 			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
 		}
+	},
+	{
+		"description": "segment_08_run_jump_right_down",
+		"timeMs": 34920,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": true,
+			"value": 1,
+			"timestamp": 34920,
+			"pressId": 15,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "segment_08_run_jump_run_down",
+		"timeMs": 35120,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyS",
+			"down": true,
+			"value": 1,
+			"timestamp": 35120,
+			"pressId": 16,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "segment_08_run_jump_down",
+		"timeMs": 35620,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyX",
+			"down": true,
+			"value": 1,
+			"timestamp": 35620,
+			"pressId": 17,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "segment_08_run_jump_up",
+		"timeMs": 35920,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyX",
+			"down": false,
+			"value": 0,
+			"timestamp": 35920,
+			"pressId": 17,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "segment_08_run_jump_run_up",
+		"timeMs": 36200,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyS",
+			"down": false,
+			"value": 0,
+			"timestamp": 36200,
+			"pressId": 16,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "segment_08_run_jump_right_up",
+		"timeMs": 36200,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": false,
+			"value": 0,
+			"timestamp": 36200,
+			"pressId": 15,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "segment_09_barrel_move_right_down",
+		"timeMs": 20200,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": true,
+			"value": 1,
+			"timestamp": 20200,
+			"pressId": 18,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "segment_09_barrel_run_hold_down",
+		"timeMs": 20240,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyS",
+			"down": true,
+			"value": 1,
+			"timestamp": 20240,
+			"pressId": 19,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "segment_09_barrel_throw_run_release_up",
+		"timeMs": 20560,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyS",
+			"down": false,
+			"value": 0,
+			"timestamp": 20560,
+			"pressId": 19,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "segment_09_barrel_move_right_up",
+		"timeMs": 20800,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": false,
+			"value": 0,
+			"timestamp": 20800,
+			"pressId": 18,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
 	}
 ]

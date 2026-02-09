@@ -738,8 +738,8 @@
 			"id": "romtobuild",
 			"description": "Choose ROM to build",
 			"options": [
-				"esther",
 				"pietious",
+				"esther",
 				"2025",
 				"emptycart",
 				"sint2024",
@@ -750,7 +750,7 @@
 				"marlies2020",
 				"sintervania"
 			],
-			"default": "2025"
+			"default": "pietious"
 		}
 	]
 }

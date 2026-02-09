@@ -23,7 +23,6 @@ function init()
 	player_module.register_player_definition()
 	director_module.register_director_definition()
 	vdp_load_slot(0, 0)
-	-- Mirror pietious flow: map cart atlas into slot 0 immediately.
 	vdp_map_slot(0, 0)
 end
 
@@ -31,6 +30,7 @@ function new_game()
 	engine.reset()
 	local level = level_module.create_level()
 	local spawn = level.spawn
+
 	spawn_object(player_module.player_def_id, {
 		id = player_module.player_instance_id,
 		level = level,
@@ -38,6 +38,7 @@ function new_game()
 		spawn_y = spawn.y,
 		pos = { x = spawn.x, y = spawn.y, z = 300 },
 	})
+
 	spawn_object(director_module.director_def_id, {
 		id = director_module.director_instance_id,
 		level = level,

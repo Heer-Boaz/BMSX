@@ -56,6 +56,14 @@ function min(values) {
 	return best;
 }
 
+function uniqueSorted(values) {
+	const dedupe = new Set();
+	for (let i = 0; i < values.length; i += 1) {
+		dedupe.add(values[i]);
+	}
+	return Array.from(dedupe).sort((a, b) => a - b);
+}
+
 function first(items, predicate) {
 	for (let i = 0; i < items.length; i += 1) {
 		if (predicate(items[i])) {
@@ -259,6 +267,13 @@ const rollPeak = max(rollStartSpeeds);
 const jumpStarts = events.filter((e) => e.name === 'jump_start');
 const rollJumpEvent = first(jumpStarts, (e) => Number(e.from_roll) === 1);
 const groundedJumpEvents = jumpStarts.filter((e) => Number(e.from_roll) === 0);
+const barrelPickups = events.filter((e) => e.name === 'barrel_pickup');
+const barrelThrows = events.filter((e) => e.name === 'barrel_throw');
+const barrelLands = events.filter((e) => e.name === 'barrel_land');
+const barrelBreaks = events.filter((e) => e.name === 'barrel_break');
+const barrelSteps = events.filter((e) => e.name === 'barrel_step');
+const carrySamples = metrics.filter((m) => Number(m.carry) === 1);
+const carryFrames = carrySamples.length;
 
 const groundedSummaries = [];
 for (let i = 0; i < groundedJumpEvents.length; i += 1) {
@@ -394,6 +409,42 @@ if (fullHop) {
 if (shortHop && fullHop) {
 	console.log(`full_vs_short_airtime_ratio=${(fullHop.airtimeFrames / shortHop.airtimeFrames).toFixed(3)}`);
 	console.log(`full_vs_short_apex_ratio=${(fullHop.apexPixels / shortHop.apexPixels).toFixed(3)}`);
+}
+console.log('');
+console.log('Barrel probes:');
+console.log(
+	`carry_frames=${carryFrames} barrel_pickups=${barrelPickups.length} barrel_throws=${barrelThrows.length} barrel_lands=${barrelLands.length} barrel_breaks=${barrelBreaks.length} barrel_steps=${barrelSteps.length}`
+);
+for (let i = 0; i < barrelThrows.length; i += 1) {
+	const throwEvent = barrelThrows[i];
+	const throwFrame = Number(throwEvent.f);
+	const throwIdx = Number(throwEvent.idx);
+	const nextLand = first(barrelLands, (e) => Number(e.f) > throwFrame && Number(e.idx) === throwIdx);
+	const nextBreak = first(barrelBreaks, (e) => Number(e.f) > throwFrame && Number(e.idx) === throwIdx);
+	const nextTerminalFrame = nextLand
+		? Number(nextLand.f)
+		: nextBreak
+			? Number(nextBreak.f)
+			: Number.POSITIVE_INFINITY;
+	const throwSteps = barrelSteps
+		.filter((e) => Number(e.idx) === throwIdx && Number(e.f) >= throwFrame && Number(e.f) <= nextTerminalFrame)
+		.sort((a, b) => Number(a.f) - Number(b.f));
+	const stepDeltas = [];
+	for (let s = 1; s < throwSteps.length; s += 1) {
+		const prev = throwSteps[s - 1];
+		const curr = throwSteps[s];
+		if (Number(prev.g) === 0 && Number(curr.g) === 0) {
+			stepDeltas.push(Number(curr.sy) - Number(prev.sy));
+		}
+	}
+	const uniqueDeltas = uniqueSorted(stepDeltas);
+	const firstStep = throwSteps.length > 0 ? throwSteps[0] : null;
+	const minStepSy = throwSteps.length > 0 ? min(throwSteps.map((e) => Number(e.sy))) : null;
+	const landLag = nextLand ? Number(nextLand.f) - Number(throwEvent.f) : null;
+	const breakLag = nextBreak ? Number(nextBreak.f) - Number(throwEvent.f) : null;
+	console.log(
+		`barrel_throw_${i + 1}: frame=${throwFrame} idx=${throwIdx} mode=${String(throwEvent.mode ?? 'missing')} face=${Number(throwEvent.face)} bsx=${Number(throwEvent.bsx)} bsy=${Number(throwEvent.bsy)} psx=${Number(throwEvent.psx)} sx=${Number(throwEvent.sx)} sy=${Number(throwEvent.sy)} steps=${throwSteps.length} first_step_sy=${firstStep ? Number(firstStep.sy) : 'missing'} min_step_sy=${minStepSy ?? 'missing'} sy_delta_set=${uniqueDeltas.length > 0 ? uniqueDeltas.join(',') : 'missing'} land_lag_frames=${landLag ?? 'missing'} break_lag_frames=${breakLag ?? 'missing'}`
+	);
 }
 console.log('');
 console.log('Gravity profile:');
