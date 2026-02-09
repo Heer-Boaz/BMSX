@@ -403,6 +403,7 @@ function player:reset_runtime()
 	self.last_move_axis = 0
 	self.last_direction_change_frame = -0x7FFFFFFF
 	self.last_run_press_frame = -0x7FFFFFFF
+	self.dkc_16a5_last_b_press_frame = -0x7FFFFFFF
 	self.run_held = false
 	self.run_pressed = false
 	self.run_released = false
@@ -489,6 +490,9 @@ function player:sample_input()
 	local old_run = self.run_held
 	local old_jump = self.jump_held
 
+	-- CODE_BFB2C7 clears run-active bit before each sample.
+	self.dkc_1699_flags = self.dkc_1699_flags & 0xFFFB
+
 	local left = action_triggered('left[p]', player_index)
 	local right = action_triggered('right[p]', player_index)
 	self.move_axis = 0
@@ -512,7 +516,15 @@ function player:sample_input()
 	self.run_released = (not self.run_held) and old_run
 	self.jump_pressed = self.jump_held and (not old_jump)
 	self.jump_released = (not self.jump_held) and old_jump
-	self.jump_buffer_active = self.jump_held
+
+	-- CODE_BFB8E5/CODE_BFB919 stores last B-press frame in $16A5.
+	if self.jump_pressed then
+		self.dkc_16a5_last_b_press_frame = self.debug_frame
+	end
+
+	-- CODE_BFB8F7 allows jump if (frame - $16A5) < #$000C while B is held.
+	local buf = constants.dkc.jump_buffer_frames
+	self.jump_buffer_active = self.jump_held and ((self.debug_frame - self.dkc_16a5_last_b_press_frame) < buf)
 
 	if self.move_axis ~= self.last_move_axis and self.move_axis ~= 0 then
 		self.last_direction_change_frame = self.debug_frame
@@ -538,44 +550,27 @@ function player:CODE_BFB4E3_SELECT_TARGET_SPEED()
 	if self.move_axis == 0 then
 		return 0
 	end
-	local magnitude = constants.dkc.walk_target_subpx
-	if self.run_held or (self.dkc_1699_flags & 0x0200) ~= 0 then
-		magnitude = constants.dkc.run_target_subpx
+	local ref = constants.dkc
+	local force_run = (self.dkc_1699_flags & 0x0200) ~= 0
+	local magnitude = ref.walk_target_subpx
+	if self.run_held or force_run then
+		self.dkc_1699_flags = self.dkc_1699_flags | 0x0004
+		magnitude = ref.run_target_subpx
 	end
 	return self.move_axis * magnitude
 end
 
-function player:select_profile_id(airborne)
-	if airborne then
-		return constants.profile.air
-	end
-	if self.move_axis == 0 then
-		return constants.profile.ground_release
-	end
-	if self.move_axis * self.x_speed_subpx < 0 then
-		return constants.profile.ground_turn
-	end
-	if self.run_held then
-		return constants.profile.ground_run
-	end
-	return constants.profile.ground_walk
-end
-
-function player:apply_horizontal_control(airborne)
+function player:apply_horizontal_control()
 	-- CODE_BFB159 + DATA_BFB255
 	local target = self:CODE_BFB4E3_SELECT_TARGET_SPEED()
-	local profile = self:select_profile_id(airborne)
 	self.target_x_speed_subpx = target
-	self.active_profile_id = profile
-	self.x_speed_subpx = approach_subpx(self.x_speed_subpx, target, profile)
+	self.active_profile_id = 0
+	self.x_speed_subpx = approach_subpx(self.x_speed_subpx, target, 0)
 end
 
 function player:CODE_BFAF38_AIR_GRAVITY()
 	-- CODE_BFAF38
 	local ref = constants.dkc
-	if self.y_speed_subpx <= 0 then
-		self.dkc_1699_flags = self.dkc_1699_flags & 0xFFFD
-	end
 	local gravity = ref.gravity_release_subpx
 	if (self.dkc_1699_flags & 0x0002) ~= 0 then
 		gravity = self.dkc_16f9_jump_gravity_subpx
@@ -705,9 +700,21 @@ function player:integrate_and_collide()
 end
 
 function player:CODE_BFBA88_START_JUMP(from_roll)
-	-- CODE_BFBA88
+	-- CODE_BFBA88 rope jump.
 	self.y_speed_subpx = constants.dkc.jump_initial_subpx
 	self.dkc_1699_flags = self.dkc_1699_flags | 0x0203
+	self.dkc_16f9_jump_gravity_subpx = constants.dkc.gravity_hold_subpx
+	self.grounded = false
+	self.debug_jump_started = true
+	self.debug_jump_from_roll = from_roll
+	self.debug_jump_launch_sy = self.y_speed_subpx
+	self:play_timeline(jump_timeline_id, { rewind = true, snap_to_start = true })
+end
+
+function player:CODE_BFB94F_START_JUMP(from_roll)
+	-- CODE_BFB94F ground jump.
+	self.y_speed_subpx = constants.dkc.jump_initial_subpx
+	self.dkc_1699_flags = self.dkc_1699_flags | 0x0003
 	self.dkc_16f9_jump_gravity_subpx = constants.dkc.gravity_hold_subpx
 	self.grounded = false
 	self.debug_jump_started = true
@@ -775,8 +782,8 @@ function player:tick_grounded()
 		return
 	end
 
-	if self.jump_pressed then
-		self:CODE_BFBA88_START_JUMP(false)
+	if self.jump_buffer_active then
+		self:CODE_BFB94F_START_JUMP(false)
 		self.sc:transition_to(player_state_airborne)
 		self:advance_airborne_kinematics()
 		if self.grounded then
@@ -785,7 +792,7 @@ function player:tick_grounded()
 		return
 	end
 
-	self:apply_horizontal_control(false)
+	self:apply_horizontal_control()
 	self:integrate_and_collide()
 	if not self.grounded then
 		self.sc:transition_to(player_state_airborne)
@@ -793,7 +800,7 @@ function player:tick_grounded()
 end
 
 function player:advance_airborne_kinematics()
-	self:apply_horizontal_control(true)
+	self:apply_horizontal_control()
 	self:CODE_BFAF38_AIR_GRAVITY()
 	self:integrate_and_collide()
 end
@@ -807,8 +814,8 @@ function player:tick_airborne()
 end
 
 function player:tick_roll()
-	if self.jump_pressed then
-		self:CODE_BFBA88_START_JUMP(true)
+	if self.jump_buffer_active then
+		self:CODE_BFB94F_START_JUMP(true)
 		self.sc:transition_to(player_state_airborne)
 		self:advance_airborne_kinematics()
 		if self.grounded then
@@ -993,6 +1000,7 @@ local function register_player_definition()
 			last_move_axis = 0,
 			last_direction_change_frame = -0x7FFFFFFF,
 			last_run_press_frame = -0x7FFFFFFF,
+			dkc_16a5_last_b_press_frame = -0x7FFFFFFF,
 			run_held = false,
 			run_pressed = false,
 			run_released = false,

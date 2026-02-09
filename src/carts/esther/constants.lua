@@ -17,7 +17,7 @@ constants.dkc = {
 	-- CODE_BFB538/CODE_BFB573 walk+run target speeds
 	-- CODE_BFB159 + DATA_BFB255 smoothing profile table
 	-- CODE_BFBD4F/CODE_BFBDA9/CODE_BFBDE7 roll entry/chaining
-	-- CODE_BFBA88 jump launch
+	-- CODE_BFB94F ground jump launch
 	-- CODE_BFAF38 airborne gravity
 	-- CODE_BFB12B max fall clamp
 	walk_target_subpx = 0x0200,
@@ -29,9 +29,9 @@ constants.dkc = {
 	roll_chain_cap_subpx = 0x0800,
 	roll_dash_window_frames = 0x0010,
 	jump_initial_subpx = 0x0700,
-	gravity_hold_subpx = -0x0048,
-	gravity_release_subpx = -0x0070,
-	max_fall_subpx = -0x0800,
+	gravity_hold_subpx = -0x0048, -- #$FFB8
+	gravity_release_subpx = -0x0070, -- #$FF90
+	max_fall_subpx = -0x0800, -- #$F800
 	jump_buffer_frames = 0x000C,
 }
 
