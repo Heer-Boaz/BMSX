@@ -3,6 +3,7 @@
 
 local eventemitter = require("eventemitter")
 local timeline_module = require("timeline")
+local romdir = require("romdir")
 local eventemitter = eventemitter.eventemitter
 local timeline = timeline_module.timeline
 
@@ -22,6 +23,38 @@ local function set_path(target, path, value)
 		node = node[path[i]]
 	end
 	node[path[#path]] = value
+end
+
+local function select_bounding_box(flip_h, flip_v, box)
+	if box == nil then
+		return nil
+	end
+	if flip_h and flip_v then
+		return box.fliphv
+	end
+	if flip_h then
+		return box.fliph
+	end
+	if flip_v then
+		return box.flipv
+	end
+	return box.original
+end
+
+local function select_hit_polygons(flip_h, flip_v, polys)
+	if polys == nil then
+		return nil
+	end
+	if flip_h and flip_v then
+		return polys.fliphv
+	end
+	if flip_h then
+		return polys.fliph
+	end
+	if flip_v then
+		return polys.flipv
+	end
+	return polys.original
 end
 
 local function eval_wave(track, time_seconds)
@@ -166,7 +199,68 @@ function spritecomponent.new(opts)
 	self.scale = opts and opts.scale or { x = 1, y = 1 }
 	self.offset = opts and opts.offset or { x = 0, y = 0, z = 0 }
 	self.parallax_weight = opts and opts.parallax_weight or 0
+	self.collider_local_id = opts and opts.collider_local_id or nil
+	self.collider_sync_token = ""
 	return self
+end
+
+function spritecomponent:resolve_collider()
+	local owner = self.parent
+	local explicit_local_id = self.collider_local_id
+	if explicit_local_id ~= nil then
+		return owner:get_component_by_local_id("collider2dcomponent", explicit_local_id)
+	end
+	local primary_sprite = owner:get_component("spritecomponent")
+	if primary_sprite == self then
+		if owner.collider ~= nil then
+			return owner.collider
+		end
+		return owner:get_component("collider2dcomponent")
+	end
+	return nil
+end
+
+function spritecomponent:sync_collider()
+	local owner = self.parent
+	local collider = self:resolve_collider()
+	if collider == nil then
+		self.collider_sync_token = ""
+		return
+	end
+
+	local id = self.imgid
+	local flip_h = self.flip.flip_h == true
+	local flip_v = self.flip.flip_v == true
+	local token = string.format("%s|%d|%d", tostring(id), flip_h and 1 or 0, flip_v and 1 or 0)
+	if self.collider_sync_token == token then
+		return
+	end
+
+	if id == "none" then
+		collider:set_local_area(nil)
+		collider:set_local_poly(nil)
+		collider:set_local_circle(nil)
+		collider.sync_token = token
+		self.collider_sync_token = token
+		return
+	end
+
+	local image_asset = assets.img[romdir.token(id)]
+	if image_asset == nil or image_asset.imgmeta == nil then
+		error("[spritecomponent] image metadata missing for '" .. tostring(id) .. "'")
+	end
+	local imgmeta = image_asset.imgmeta
+	local box = select_bounding_box(flip_h, flip_v, imgmeta.boundingbox)
+	local polys = select_hit_polygons(flip_h, flip_v, imgmeta.hitpolygons)
+	collider:set_local_area(box)
+	collider:set_local_poly(polys)
+	collider:set_local_circle(nil)
+	collider.sync_token = token
+	self.collider_sync_token = token
+end
+
+function spritecomponent:tick(_dt)
+	self:sync_collider()
 end
 
 -- collider2dcomponent: holds hit areas / polys
@@ -178,17 +272,104 @@ function collider2dcomponent.new(opts)
 	opts = opts or {}
 	opts.type_name = "collider2dcomponent"
 	local self = setmetatable(component.new(opts), collider2dcomponent)
+	self.hittable = opts.hittable ~= false
+	self.layer = opts.layer or 1
+	self.mask = opts.mask or 0xFFFFFFFF
+	self.istrigger = opts.istrigger ~= false
+	self.generateoverlapevents = opts.generateoverlapevents == true
+	self.spaceevents = opts.spaceevents or "current"
+	self._local_area = nil
+	self._local_polys = nil
+	self._local_circle = nil
+	self.sync_token = opts.sync_token
 	self.local_area = nil
 	self.local_poly = nil
 	return self
 end
 
 function collider2dcomponent:set_local_area(area)
+	self._local_area = area
 	self.local_area = area
 end
 
 function collider2dcomponent:set_local_poly(poly)
+	self._local_polys = poly
 	self.local_poly = poly
+end
+
+function collider2dcomponent:set_local_circle(circle)
+	self._local_circle = circle
+end
+
+function collider2dcomponent:get_local_area()
+	return self._local_area
+end
+
+function collider2dcomponent:get_local_polys()
+	return self._local_polys
+end
+
+function collider2dcomponent:get_local_circle()
+	return self._local_circle
+end
+
+function collider2dcomponent:get_world_area()
+	local parent = self.parent
+	local local_area = self._local_area
+	if local_area == nil then
+		local sx = parent.sx or 0
+		local sy = parent.sy or 0
+		return {
+			left = parent.x,
+			top = parent.y,
+			right = parent.x + sx,
+			bottom = parent.y + sy,
+		}
+	end
+	return {
+		left = parent.x + local_area.left,
+		top = parent.y + local_area.top,
+		right = parent.x + local_area.right,
+		bottom = parent.y + local_area.bottom,
+	}
+end
+
+function collider2dcomponent:get_world_polys()
+	local local_polys = self._local_polys
+	if local_polys == nil or #local_polys == 0 then
+		return nil
+	end
+	local px = self.parent.x
+	local py = self.parent.y
+	local out = {}
+	for i = 1, #local_polys do
+		local poly = local_polys[i]
+		local out_poly = {}
+		for j = 1, #poly, 2 do
+			out_poly[#out_poly + 1] = poly[j] + px
+			out_poly[#out_poly + 1] = poly[j + 1] + py
+		end
+		out[#out + 1] = out_poly
+	end
+	return out
+end
+
+function collider2dcomponent:get_world_circle()
+	local circle = self._local_circle
+	if circle == nil then
+		return nil
+	end
+	return {
+		x = self.parent.x + circle.x,
+		y = self.parent.y + circle.y,
+		r = circle.r,
+	}
+end
+
+function collider2dcomponent:apply_collision_profile(profile_name)
+	local profiles = require("collision_profiles")
+	profiles.apply(self, profile_name)
+	return self
 end
 
 -- timelinecomponent: lightweight placeholder
