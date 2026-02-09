@@ -27,6 +27,7 @@ constants.dkc = {
 	roll_entry_cap_subpx = 0x0400,
 	roll_chain_step_subpx = 0x0100,
 	roll_chain_cap_subpx = 0x0800,
+	roll_dash_window_frames = 0x0010,
 	jump_initial_subpx = 0x0700,
 	gravity_hold_subpx = -0x0048,
 	gravity_release_subpx = -0x0070,

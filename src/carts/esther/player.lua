@@ -6,9 +6,18 @@ player.__index = player
 local player_fsm_id = constants.ids.player_fsm
 local player_state_grounded = player_fsm_id .. ':/grounded'
 local player_state_airborne = player_fsm_id .. ':/airborne'
+local player_state_roll = player_fsm_id .. ':/roll'
 
 local jump_timeline_id = 'dkc.player.jump_squash'
 local landing_timeline_id = 'dkc.player.landing_squash'
+local roll_wobble_timeline_id = 'dkc.player.roll_wobble'
+
+local function abs(value)
+	if value < 0 then
+		return -value
+	end
+	return value
+end
 
 local function sign(value)
 	if value < 0 then
@@ -29,6 +38,68 @@ end
 
 local function overlaps(ax, ay, aw, ah, box)
 	return ax < (box.x + box.w) and (ax + aw) > box.x and ay < (box.y + box.h) and (ay + ah) > box.y
+end
+
+local function profile_step(abs_diff, profile_id)
+	if profile_id == 0 then
+		return math.floor(abs_diff / 8)
+	end
+	if profile_id == 1 then
+		return math.floor(abs_diff / 16)
+	end
+	if profile_id == 2 then
+		return math.floor(abs_diff / 32)
+	end
+	if profile_id == 3 then
+		return math.floor(abs_diff / 64)
+	end
+	if profile_id == 4 then
+		return math.floor(abs_diff / 128)
+	end
+	if profile_id == 5 then
+		return math.floor(abs_diff / 256)
+	end
+	if profile_id == 6 then
+		return math.floor(abs_diff / 4)
+	end
+	if profile_id == 7 then
+		return math.floor(abs_diff / 2)
+	end
+	if profile_id == 8 then
+		return math.floor(abs_diff / 32) + math.floor(abs_diff / 64)
+	end
+	return 0
+end
+
+local function approach_subpx(current, target, profile_id)
+	if current == target then
+		return target
+	end
+	local delta = target - current
+	local abs_delta = abs(delta)
+	local step = profile_step(abs_delta, profile_id)
+	if step == 0 then
+		return target
+	end
+	if delta < 0 then
+		step = -step
+	end
+	local value = current + step
+	if delta > 0 and value > target then
+		return target
+	end
+	if delta < 0 and value < target then
+		return target
+	end
+	return value
+end
+
+local function next_index(current, count)
+	local index = current + 1
+	if index > count then
+		return 1
+	end
+	return index
 end
 
 function player:get_pickup_barrel()
@@ -141,18 +212,11 @@ function player:update_barrel_interaction()
 	end
 end
 
-local function next_index(current, count)
-	local index = current + 1
-	if index > count then
-		return 1
-	end
-	return index
-end
-
 function player:define_motion_timelines()
 	self:define_timeline(new_timeline({
 		id = jump_timeline_id,
 		frames = {
+			{ draw_scale_x = 0.92, draw_scale_y = 1.12 },
 			{ draw_scale_x = 1.0, draw_scale_y = 1.0 },
 		},
 		ticks_per_frame = 8,
@@ -162,11 +226,28 @@ function player:define_motion_timelines()
 	self:define_timeline(new_timeline({
 		id = landing_timeline_id,
 		frames = {
+			{ draw_scale_x = 1.14, draw_scale_y = 0.8 },
+			{ draw_scale_x = 0.94, draw_scale_y = 1.08 },
 			{ draw_scale_x = 1.0, draw_scale_y = 1.0 },
 		},
 		ticks_per_frame = 12,
 		playback_mode = 'once',
 		apply = true,
+	}))
+	self:define_timeline(new_timeline({
+		id = roll_wobble_timeline_id,
+		playback_mode = 'loop',
+		tracks = {
+			{
+				kind = 'wave',
+				path = { 'roll_visual' },
+				base = 0,
+				amp = 0.16,
+				period = 0.1,
+				phase = 0,
+				wave = 'sin',
+			},
+		},
 	}))
 end
 
@@ -188,8 +269,25 @@ function player:advance_visual_by_time(dt, frame_ms, frame_count)
 	end
 end
 
+function player:advance_visual_by_distance(step_subpx, frame_count)
+	self.visual_distance_accum_subpx = self.visual_distance_accum_subpx + abs(self.x_speed_subpx)
+	while self.visual_distance_accum_subpx >= step_subpx do
+		self.visual_distance_accum_subpx = self.visual_distance_accum_subpx - step_subpx
+		self.visual_cycle_index = next_index(self.visual_cycle_index, frame_count)
+	end
+end
+
 function player:update_visual_frame(dt)
 	local anim = constants.animation
+	local speed = abs(self.x_speed_subpx)
+
+	if self.pose_name == 'roll' then
+		local frames = anim.roll.frames
+		self:set_visual_cycle('roll')
+		self:advance_visual_by_distance(anim.roll.distance_step_subpx, #frames)
+		self.visual_frame_id = frames[self.visual_cycle_index]
+		return
+	end
 
 	if self.pose_name == 'airborne' then
 		self:set_visual_cycle('air')
@@ -201,9 +299,25 @@ function player:update_visual_frame(dt)
 		return
 	end
 
-	local frames = anim.idle.frames
-	self:set_visual_cycle('idle')
-	self:advance_visual_by_time(dt, anim.idle.frame_ms, #frames)
+	if speed <= anim.move_epsilon_subpx then
+		local frames = anim.idle.frames
+		self:set_visual_cycle('idle')
+		self:advance_visual_by_time(dt, anim.idle.frame_ms, #frames)
+		self.visual_frame_id = frames[self.visual_cycle_index]
+		return
+	end
+
+	if speed >= anim.run_threshold_subpx then
+		local frames = anim.run.frames
+		self:set_visual_cycle('run')
+		self:advance_visual_by_distance(anim.run.distance_step_subpx, #frames)
+		self.visual_frame_id = frames[self.visual_cycle_index]
+		return
+	end
+
+	local frames = anim.walk.frames
+	self:set_visual_cycle('walk')
+	self:advance_visual_by_distance(anim.walk.distance_step_subpx, #frames)
 	self.visual_frame_id = frames[self.visual_cycle_index]
 end
 
@@ -225,7 +339,7 @@ function player:emit_metric(dt)
 		return
 	end
 	print(string.format(
-		'%s|f=%d|t=%.3f|dt=%.3f|x=%.3f|y=%.3f|sx=%d|sy=%d|tgt=%d|prof=%d|grav=%d|g=%d|st=%s|ax=%d|run=%d|runp=%d|runr=%d|jp=%d|jh=%d|jr=%d|jbuf=%d|carry=%d|cidx=%d|xh=%d|yh=%d|ah=%d|bh=%d|psx=%d|psy=%d|dxp=%d|dyp=%d|mx=%d|my=%d|hx=%d|hy=%d|f1699=%d|f16f9=%d|ani=%s|aidx=%d|img=%s',
+		'%s|f=%d|t=%.3f|dt=%.3f|x=%.3f|y=%.3f|sx=%d|sy=%d|tgt=%d|prof=%d|grav=%d|g=%d|st=%s|ax=%d|run=%d|runp=%d|runr=%d|jp=%d|jh=%d|jr=%d|jbuf=%d|carry=%d|cidx=%d|roll=%d|rollt=%d|chain=%d|xh=%d|yh=%d|ah=%d|bh=%d|psx=%d|psy=%d|dxp=%d|dyp=%d|mx=%d|my=%d|hx=%d|hy=%d|f1699=%d|f16f9=%d|ani=%s|aidx=%d|img=%s',
 		telemetry.metric_prefix,
 		self.debug_frame,
 		self.debug_time_ms,
@@ -249,6 +363,9 @@ function player:emit_metric(dt)
 		bool01(self.jump_buffer_active),
 		bool01(self.carried_barrel_index ~= 0),
 		self.carried_barrel_index,
+		bool01(self.sc:matches_state_path(player_state_roll)),
+		self.roll_timer_frames,
+		self.roll_chain_window_frames,
 		bool01(self.x_held),
 		bool01(self.y_held),
 		bool01(self.a_held),
@@ -283,6 +400,9 @@ function player:reset_runtime()
 
 	self.facing = 1
 	self.move_axis = 0
+	self.last_move_axis = 0
+	self.last_direction_change_frame = -0x7FFFFFFF
+	self.last_run_press_frame = -0x7FFFFFFF
 	self.run_held = false
 	self.run_pressed = false
 	self.run_released = false
@@ -294,15 +414,18 @@ function player:reset_runtime()
 	self.jump_pressed = false
 	self.jump_released = false
 	self.jump_buffer_active = false
-	self.jump_press_frame = -0x7FFFFFFF
 	self.dkc_1699_flags = 0
 	self.dkc_16f9_jump_gravity_subpx = constants.dkc.gravity_hold_subpx
 	self.carried_barrel_index = 0
 
 	self.grounded = true
+	self.roll_dir = 1
+	self.roll_timer_frames = 0
+	self.roll_chain_window_frames = 0
 
 	self.draw_scale_x = 1
 	self.draw_scale_y = 1
+	self.roll_visual = 0
 	self.pose_name = 'grounded'
 	self.visual_cycle_id = 'idle'
 	self.visual_cycle_index = 1
@@ -315,14 +438,20 @@ function player:reset_runtime()
 
 	self.debug_frame = 0
 	self.debug_time_ms = 0
+	self.debug_last_pose = self.pose_name
+	self.debug_last_grounded = self.grounded
+	self.debug_roll_started = false
+	self.debug_roll_chained = false
+	self.debug_roll_speed_subpx = 0
+	self.debug_jump_started = false
+	self.debug_jump_from_roll = false
+	self.debug_jump_launch_sy = 0
 	self.debug_step_pixels_x = 0
 	self.debug_step_pixels_y = 0
 	self.debug_moved_pixels_x = 0
 	self.debug_moved_pixels_y = 0
 	self.debug_collided_x = false
 	self.debug_collided_y = false
-	self.debug_jump_started = false
-	self.debug_jump_launch_sy = 0
 	self.debug_barrel_pickup = false
 	self.debug_barrel_pickup_index = 0
 	self.debug_barrel_throw = false
@@ -362,14 +491,14 @@ function player:sample_input()
 
 	local left = action_triggered('left[p]', player_index)
 	local right = action_triggered('right[p]', player_index)
+	self.move_axis = 0
 	if left and (not right) then
-		self.facing = -1
 		self.move_axis = -1
 	elseif right and (not left) then
-		self.facing = 1
 		self.move_axis = 1
-	else
-		self.move_axis = 0
+	end
+	if self.move_axis ~= 0 then
+		self.facing = self.move_axis
 	end
 
 	self.x_held = action_triggered('x[p]', player_index)
@@ -383,20 +512,70 @@ function player:sample_input()
 	self.run_released = (not self.run_held) and old_run
 	self.jump_pressed = self.jump_held and (not old_jump)
 	self.jump_released = (not self.jump_held) and old_jump
-	if self.jump_pressed then
-		self.jump_press_frame = self.debug_frame
+	self.jump_buffer_active = false
+
+	if self.move_axis ~= self.last_move_axis and self.move_axis ~= 0 then
+		self.last_direction_change_frame = self.debug_frame
 	end
-	self.jump_buffer_active = self.jump_held and (self.debug_frame - self.jump_press_frame) < constants.dkc.jump_buffer_frames
-	if self.jump_held then
-		self.dkc_1699_flags = self.dkc_1699_flags | 0x0001
+	self.last_move_axis = self.move_axis
+
+	if self.run_pressed then
+		self.last_run_press_frame = self.debug_frame
 	end
-	if not self.jump_held then
-		self.dkc_1699_flags = self.dkc_1699_flags & 0xFFFC
+	if self.jump_released then
+		self.dkc_1699_flags = self.dkc_1699_flags & 0xFFFD
 	end
 end
 
+function player:update_roll_chain_timer()
+	if self.roll_chain_window_frames > 0 and (not self.sc:matches_state_path(player_state_roll)) then
+		self.roll_chain_window_frames = self.roll_chain_window_frames - 1
+	end
+end
+
+function player:CODE_BFB4E3_SELECT_TARGET_SPEED()
+	-- CODE_BFB4E3 + CODE_BFB538/CODE_BFB573
+	if self.move_axis == 0 then
+		return 0
+	end
+	local magnitude = constants.dkc.walk_target_subpx
+	if self.run_held or (self.dkc_1699_flags & 0x0200) ~= 0 then
+		magnitude = constants.dkc.run_target_subpx
+	end
+	return self.move_axis * magnitude
+end
+
+function player:select_profile_id(airborne)
+	if airborne then
+		return constants.profile.air
+	end
+	if self.move_axis == 0 then
+		return constants.profile.ground_release
+	end
+	if self.move_axis * self.x_speed_subpx < 0 then
+		return constants.profile.ground_turn
+	end
+	if self.run_held then
+		return constants.profile.ground_run
+	end
+	return constants.profile.ground_walk
+end
+
+function player:apply_horizontal_control(airborne)
+	-- CODE_BFB159 + DATA_BFB255
+	local target = self:CODE_BFB4E3_SELECT_TARGET_SPEED()
+	local profile = self:select_profile_id(airborne)
+	self.target_x_speed_subpx = target
+	self.active_profile_id = profile
+	self.x_speed_subpx = approach_subpx(self.x_speed_subpx, target, profile)
+end
+
 function player:CODE_BFAF38_AIR_GRAVITY()
+	-- CODE_BFAF38
 	local ref = constants.dkc
+	if self.y_speed_subpx <= 0 then
+		self.dkc_1699_flags = self.dkc_1699_flags & 0xFFFD
+	end
 	local gravity = ref.gravity_release_subpx
 	if (self.dkc_1699_flags & 0x0002) ~= 0 then
 		gravity = self.dkc_16f9_jump_gravity_subpx
@@ -408,18 +587,46 @@ function player:CODE_BFAF38_AIR_GRAVITY()
 	end
 end
 
+function player:move_horizontal_pixels(step_pixels)
+	if step_pixels == 0 then
+		return false
+	end
+	local direction = sign(step_pixels)
+	local remaining = abs(step_pixels)
+	local sp = constants.dkc.subpixels_per_px
+
+	while remaining > 0 do
+		local next_x = self.x + direction
+		local solid = self:get_overlapping_solid(next_x, self.y)
+		if solid ~= nil then
+			if direction > 0 then
+				self.x = solid.x - self.width
+			else
+				self.x = solid.x + solid.w
+			end
+			self.pos_subx = self.x * sp
+			self.x_speed_subpx = 0
+			self.target_x_speed_subpx = 0
+			return true
+		end
+		self.x = next_x
+		remaining = remaining - 1
+	end
+	return false
+end
+
 function player:move_vertical_pixels(step_pixels)
 	if step_pixels == 0 then
 		return false, false
 	end
-	local dir = sign(step_pixels)
-	local remain = math.abs(step_pixels)
+	local direction = sign(step_pixels)
+	local remaining = abs(step_pixels)
 	local sp = constants.dkc.subpixels_per_px
-	while remain > 0 do
-		local next_y = self.y + dir
+	while remaining > 0 do
+		local next_y = self.y + direction
 		local solid = self:get_overlapping_solid(self.x, next_y)
 		if solid ~= nil then
-			if dir > 0 then
+			if direction > 0 then
 				self.y = solid.y - self.height
 				self.pos_suby = self.y * sp
 				self.y_speed_subpx = 0
@@ -431,7 +638,7 @@ function player:move_vertical_pixels(step_pixels)
 			return true, false
 		end
 		self.y = next_y
-		remain = remain - 1
+		remaining = remaining - 1
 	end
 	return false, false
 end
@@ -442,11 +649,13 @@ function player:integrate_and_collide()
 	local start_x = self.x
 	local start_y = self.y
 
-	self.debug_step_pixels_x = 0
-	self.debug_collided_x = false
-	self.x_speed_subpx = 0
-	self.target_x_speed_subpx = 0
-	self.pos_subx = self.x * sp
+	local want_subx = self.pos_subx + self.x_speed_subpx
+	local want_x = math.floor(want_subx / sp)
+	self.debug_step_pixels_x = want_x - self.x
+	self.debug_collided_x = self:move_horizontal_pixels(self.debug_step_pixels_x)
+	if not self.debug_collided_x then
+		self.pos_subx = want_subx
+	end
 
 	self.grounded = false
 	local want_suby = self.pos_suby - self.y_speed_subpx
@@ -466,23 +675,23 @@ function player:integrate_and_collide()
 	local max_x = self.level.world_width - self.width
 	if self.x < 0 then
 		self.x = 0
-		self.pos_subx = 0
 		self.x_speed_subpx = 0
 		self.target_x_speed_subpx = 0
+		self.pos_subx = 0
 		self.debug_collided_x = true
 	elseif self.x > max_x then
 		self.x = max_x
-		self.pos_subx = self.x * sp
 		self.x_speed_subpx = 0
 		self.target_x_speed_subpx = 0
+		self.pos_subx = self.x * sp
 		self.debug_collided_x = true
 	end
 
 	local max_y = self.level.world_height - self.height
 	if self.y > max_y then
 		self.y = max_y
-		self.pos_suby = self.y * sp
 		self.y_speed_subpx = 0
+		self.pos_suby = self.y * sp
 		self.grounded = true
 		self.debug_collided_y = true
 	end
@@ -495,34 +704,84 @@ function player:integrate_and_collide()
 	end
 end
 
-function player:CODE_BFBA88_START_JUMP()
+function player:CODE_BFBA88_START_JUMP(from_roll)
+	-- CODE_BFBA88
 	self.y_speed_subpx = constants.dkc.jump_initial_subpx
 	self.dkc_1699_flags = self.dkc_1699_flags | 0x0203
 	self.dkc_16f9_jump_gravity_subpx = constants.dkc.gravity_hold_subpx
 	self.grounded = false
 	self.debug_jump_started = true
+	self.debug_jump_from_roll = from_roll
 	self.debug_jump_launch_sy = self.y_speed_subpx
 	self:play_timeline(jump_timeline_id, { rewind = true, snap_to_start = true })
+end
+
+function player:CODE_BFBD4F_START_ROLL()
+	-- CODE_BFBD4F + CODE_BFBDA9
+	local ref = constants.dkc
+	local speed = ref.roll_entry_min_subpx
+	if self.move_axis ~= 0 then
+		speed = ref.run_target_subpx
+	end
+	if (self.debug_frame - self.last_direction_change_frame) < ref.roll_dash_window_frames then
+		speed = ref.roll_entry_cap_subpx
+	end
+	if self.roll_chain_window_frames > 0 then
+		speed = speed + ref.roll_chain_step_subpx
+		if speed > ref.roll_chain_cap_subpx then
+			speed = ref.roll_chain_cap_subpx
+		end
+	end
+
+	if self.move_axis ~= 0 then
+		self.roll_dir = self.move_axis
+	else
+		self.roll_dir = self.facing
+	end
+	self.facing = self.roll_dir
+	self.x_speed_subpx = self.roll_dir * speed
+	self.target_x_speed_subpx = self.x_speed_subpx
+	self.roll_timer_frames = constants.roll.timer_frames
+	self.roll_chain_window_frames = constants.roll.chain_window_frames
+	self.debug_roll_started = true
+	self.debug_roll_speed_subpx = speed
+	self:play_timeline(roll_wobble_timeline_id, { rewind = true, snap_to_start = true })
+end
+
+function player:CODE_BFBDE7_CHAIN_ROLL()
+	-- CODE_BFBDE7
+	local speed = abs(self.x_speed_subpx) + constants.dkc.roll_chain_step_subpx
+	if speed > constants.dkc.roll_chain_cap_subpx then
+		speed = constants.dkc.roll_chain_cap_subpx
+	end
+	self.x_speed_subpx = self.roll_dir * speed
+	self.target_x_speed_subpx = self.x_speed_subpx
+	self.roll_timer_frames = constants.roll.timer_frames
+	self.roll_chain_window_frames = constants.roll.chain_window_frames
+	self.debug_roll_chained = true
+	self.debug_roll_speed_subpx = speed
 end
 
 function player:tick_grounded()
 	self.active_gravity_subpx = 0
 	self.y_speed_subpx = 0
-	self.dkc_1699_flags = self.dkc_1699_flags & 0xFFFD
+	self.dkc_1699_flags = self.dkc_1699_flags & 0xFDFD
+
 	self:update_barrel_interaction()
-	if self.jump_buffer_active then
-		self:CODE_BFBA88_START_JUMP()
-		self:CODE_BFAF38_AIR_GRAVITY()
-		self.target_x_speed_subpx = 0
-		self.active_profile_id = 0
-		self.x_speed_subpx = 0
-		self:integrate_and_collide()
+
+	if self.carried_barrel_index == 0 and self.run_pressed and self.move_axis ~= 0 then
+		self:CODE_BFBD4F_START_ROLL()
+		self.sc:transition_to(player_state_roll)
+		return
+	end
+
+	if self.jump_pressed then
+		self:CODE_BFBA88_START_JUMP(false)
 		self.sc:transition_to(player_state_airborne)
 		return
 	end
-	self.target_x_speed_subpx = 0
-	self.active_profile_id = 0
-	self.x_speed_subpx = 0
+
+	self:apply_horizontal_control(false)
 	self:integrate_and_collide()
 	if not self.grounded then
 		self.sc:transition_to(player_state_airborne)
@@ -531,9 +790,10 @@ end
 
 function player:tick_airborne()
 	self:update_barrel_interaction()
-	self.target_x_speed_subpx = 0
-	self.active_profile_id = 0
-	self.x_speed_subpx = 0
+	self:apply_horizontal_control(true)
+	if self.jump_released then
+		self.dkc_1699_flags = self.dkc_1699_flags & 0xFFFD
+	end
 	self:CODE_BFAF38_AIR_GRAVITY()
 	self:integrate_and_collide()
 	if self.grounded then
@@ -541,10 +801,51 @@ function player:tick_airborne()
 	end
 end
 
+function player:tick_roll()
+	if self.jump_pressed then
+		self:CODE_BFBA88_START_JUMP(true)
+		self.sc:transition_to(player_state_airborne)
+		return
+	end
+
+	if self.run_pressed and self.roll_chain_window_frames > 0 then
+		self:CODE_BFBDE7_CHAIN_ROLL()
+	end
+
+	self.roll_timer_frames = self.roll_timer_frames - 1
+	self.active_gravity_subpx = 0
+
+	local roll_target = self.roll_dir * constants.roll.floor_subpx
+	self.target_x_speed_subpx = roll_target
+	self.active_profile_id = constants.profile.roll_release
+	self.x_speed_subpx = approach_subpx(self.x_speed_subpx, roll_target, constants.profile.roll_release)
+
+	if not self.grounded then
+		self:CODE_BFAF38_AIR_GRAVITY()
+	else
+		self.y_speed_subpx = 0
+	end
+
+	self:integrate_and_collide()
+
+	if not self.grounded then
+		self.sc:transition_to(player_state_airborne)
+		return
+	end
+
+	if self.roll_timer_frames <= 0 then
+		self.sc:transition_to(player_state_grounded)
+	end
+end
+
 function player:tick(dt)
 	self.debug_frame = self.debug_frame + 1
 	self.debug_time_ms = self.debug_time_ms + dt
+	self.debug_roll_started = false
+	self.debug_roll_chained = false
+	self.debug_roll_speed_subpx = 0
 	self.debug_jump_started = false
+	self.debug_jump_from_roll = false
 	self.debug_jump_launch_sy = 0
 	self.debug_barrel_pickup = false
 	self.debug_barrel_pickup_index = 0
@@ -567,7 +868,11 @@ function player:tick(dt)
 	local old_pose = self.pose_name
 
 	self:sample_input()
-	if self.sc:matches_state_path(player_state_airborne) then
+	self:update_roll_chain_timer()
+
+	if self.sc:matches_state_path(player_state_roll) then
+		self:tick_roll()
+	elseif self.sc:matches_state_path(player_state_airborne) then
 		self:tick_airborne()
 	else
 		self:tick_grounded()
@@ -578,8 +883,14 @@ function player:tick(dt)
 	self.camera_anchor_y = self.y + (self.height * 0.5)
 	self:update_visual_frame(dt)
 
+	if self.debug_roll_started then
+		self:emit_event('roll_start', string.format('subpx=%d|dir=%d', self.debug_roll_speed_subpx, self.roll_dir))
+	end
+	if self.debug_roll_chained then
+		self:emit_event('roll_chain', string.format('subpx=%d|dir=%d', self.debug_roll_speed_subpx, self.roll_dir))
+	end
 	if self.debug_jump_started then
-		self:emit_event('jump_start', string.format('sx=%d|sy=%d', self.x_speed_subpx, self.debug_jump_launch_sy))
+		self:emit_event('jump_start', string.format('from_roll=%d|sx=%d|sy=%d', bool01(self.debug_jump_from_roll), self.x_speed_subpx, self.debug_jump_launch_sy))
 	end
 	if self.debug_barrel_pickup then
 		self:emit_event('barrel_pickup', string.format('idx=%d|x=%.3f|y=%.3f', self.debug_barrel_pickup_index, self.x, self.y))
@@ -606,6 +917,9 @@ function player:tick(dt)
 	end
 	if self.pose_name ~= old_pose then
 		self:emit_event('pose', string.format('from=%s|to=%s', old_pose, self.pose_name))
+		if old_pose == 'roll' then
+			self:emit_event('roll_end', string.format('sx=%d', self.x_speed_subpx))
+		end
 	end
 	self:emit_metric(dt)
 end
@@ -624,11 +938,21 @@ local function define_player_fsm()
 			grounded = {
 				entering_state = function(self)
 					self.pose_name = 'grounded'
+					self.roll_visual = 0
 				end,
 			},
 			airborne = {
 				entering_state = function(self)
 					self.pose_name = 'airborne'
+				end,
+			},
+			roll = {
+				entering_state = function(self)
+					self.pose_name = 'roll'
+				end,
+				exiting_state = function(self)
+					self:stop_timeline(roll_wobble_timeline_id)
+					self.roll_visual = 0
 				end,
 			},
 		},
@@ -655,26 +979,32 @@ local function register_player_definition()
 			target_x_speed_subpx = 0,
 			active_profile_id = 0,
 			active_gravity_subpx = 0,
-				facing = 1,
-				move_axis = 0,
-				run_held = false,
-				run_pressed = false,
-				run_released = false,
-				x_held = false,
-				y_held = false,
-				a_held = false,
-				b_held = false,
-				jump_held = false,
-				jump_pressed = false,
-				jump_released = false,
-				jump_buffer_active = false,
-				jump_press_frame = -0x7FFFFFFF,
-				dkc_1699_flags = 0,
-				dkc_16f9_jump_gravity_subpx = constants.dkc.gravity_hold_subpx,
-				carried_barrel_index = 0,
+			facing = 1,
+			move_axis = 0,
+			last_move_axis = 0,
+			last_direction_change_frame = -0x7FFFFFFF,
+			last_run_press_frame = -0x7FFFFFFF,
+			run_held = false,
+			run_pressed = false,
+			run_released = false,
+			x_held = false,
+			y_held = false,
+			a_held = false,
+			b_held = false,
+			jump_held = false,
+			jump_pressed = false,
+			jump_released = false,
+			jump_buffer_active = false,
+			dkc_1699_flags = 0,
+			dkc_16f9_jump_gravity_subpx = constants.dkc.gravity_hold_subpx,
+			carried_barrel_index = 0,
 			grounded = true,
+			roll_dir = 1,
+			roll_timer_frames = 0,
+			roll_chain_window_frames = 0,
 			draw_scale_x = 1,
 			draw_scale_y = 1,
+			roll_visual = 0,
 			pose_name = 'grounded',
 			visual_cycle_id = 'idle',
 			visual_cycle_index = 1,
@@ -685,26 +1015,32 @@ local function register_player_definition()
 			camera_anchor_y = 0,
 			debug_frame = 0,
 			debug_time_ms = 0,
-				debug_step_pixels_x = 0,
-				debug_step_pixels_y = 0,
-				debug_moved_pixels_x = 0,
-				debug_moved_pixels_y = 0,
-				debug_collided_x = false,
-				debug_collided_y = false,
-				debug_jump_started = false,
-				debug_jump_launch_sy = 0,
-				debug_barrel_pickup = false,
-				debug_barrel_pickup_index = 0,
-				debug_barrel_throw = false,
-				debug_barrel_throw_index = 0,
-				debug_barrel_throw_mode = 'ground',
-				debug_barrel_throw_base_sx = 0,
-				debug_barrel_throw_base_sy = 0,
-				debug_barrel_throw_player_sx = 0,
-				debug_barrel_throw_sx = 0,
-				debug_barrel_throw_sy = 0,
-			},
-		})
+			debug_last_pose = 'grounded',
+			debug_last_grounded = true,
+			debug_roll_started = false,
+			debug_roll_chained = false,
+			debug_roll_speed_subpx = 0,
+			debug_jump_started = false,
+			debug_jump_from_roll = false,
+			debug_jump_launch_sy = 0,
+			debug_step_pixels_x = 0,
+			debug_step_pixels_y = 0,
+			debug_moved_pixels_x = 0,
+			debug_moved_pixels_y = 0,
+			debug_collided_x = false,
+			debug_collided_y = false,
+			debug_barrel_pickup = false,
+			debug_barrel_pickup_index = 0,
+			debug_barrel_throw = false,
+			debug_barrel_throw_index = 0,
+			debug_barrel_throw_mode = 'ground',
+			debug_barrel_throw_base_sx = 0,
+			debug_barrel_throw_base_sy = 0,
+			debug_barrel_throw_player_sx = 0,
+			debug_barrel_throw_sx = 0,
+			debug_barrel_throw_sy = 0,
+		},
+	})
 end
 
 return {

@@ -612,6 +612,9 @@ function player:try_switch_room(direction, keep_stairs_lock)
 	if self:is_in_damage_lock_state() then
 		return false
 	end
+	if keep_stairs_lock then
+		self.x = self.stairs_x
+	end
 
 	local castle_service = engine.service(self.game_service_id)
 	local switch = castle_service:switch_room(direction, self.y, self.y + self.height)
@@ -781,13 +784,19 @@ end
 
 function player:search_stairs_at_locked_x(x, y)
 	local stairs = self.room.stairs
+	local best = nil
+	local best_dy = 0
 	for i = 1, #stairs do
 		local stair = stairs[i]
-		if x >= (stair.x - 4) and x <= (stair.x + 8) and y >= stair.top_y and y <= stair.bottom_y then
-			return stair
+		if stair.x == x and y >= stair.top_y and y <= stair.bottom_y then
+			local dy = abs(y - stair.top_y)
+			if best == nil or dy < best_dy then
+				best = stair
+				best_dy = dy
+			end
 		end
 	end
-	return nil
+	return best
 end
 
 function player:apply_stairs_lock(stair)

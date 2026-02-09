@@ -200,6 +200,7 @@
 			"description": "Choose ROM to build",
 			"options": [
 				"pietious",
+				"nemesis_s",
 				"esther",
 				"2025",
 				"emptycart",

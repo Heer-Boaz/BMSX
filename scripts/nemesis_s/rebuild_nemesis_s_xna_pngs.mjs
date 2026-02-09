@@ -161,10 +161,6 @@ function getMappings() {
 			colorKey: { r: 0, g: 0, b: 0 },
 		},
 		{
-			source: 'Story/Sterrenachtergrond.bmp',
-			target: 'sterrenachtergrond.png',
-		},
-		{
 			source: 'Misc/Star_Blue.bmp',
 			target: 'star_blue.png',
 		},

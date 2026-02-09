@@ -79,13 +79,6 @@ function director:bind_visual()
 	end
 end
 
-function director:draw_background()
-	local width = constants.machine.game_width
-	local scroll = self.scroll_x
-	put_sprite(constants.assets.background, -scroll, 0, 5)
-	put_sprite(constants.assets.background, width - scroll, 0, 5)
-end
-
 function director:draw_star_set(stars, imgid, hidden)
 	if hidden then
 		return
@@ -97,7 +90,6 @@ function director:draw_star_set(stars, imgid, hidden)
 end
 
 function director:render_frame()
-	self:draw_background()
 	self:draw_star_set(self.yellow_stars, constants.assets.star_yellow, self.yellow_blink)
 	self:draw_star_set(self.blue_stars, constants.assets.star_blue, self.blue_blink)
 	stage.draw()

@@ -1,0 +1,755 @@
+case,condition,frame,profile_id,start_speed_subpx,target_speed_subpx,speed_subpx,speed_px_per_frame,delta_px_this_frame,accum_subpx,accum_px
+ground_walk_accel,"grounded, dpad held, run not held",1,3,0,512,8,0.031250,0,8,0
+ground_walk_accel,"grounded, dpad held, run not held",2,3,0,512,15,0.058594,0,23,0
+ground_walk_accel,"grounded, dpad held, run not held",3,3,0,512,22,0.085938,0,45,0
+ground_walk_accel,"grounded, dpad held, run not held",4,3,0,512,29,0.113281,0,74,0
+ground_walk_accel,"grounded, dpad held, run not held",5,3,0,512,36,0.140625,0,110,0
+ground_walk_accel,"grounded, dpad held, run not held",6,3,0,512,43,0.167969,0,153,0
+ground_walk_accel,"grounded, dpad held, run not held",7,3,0,512,50,0.195313,0,203,0
+ground_walk_accel,"grounded, dpad held, run not held",8,3,0,512,57,0.222656,1,260,1
+ground_walk_accel,"grounded, dpad held, run not held",9,3,0,512,64,0.250000,0,324,1
+ground_walk_accel,"grounded, dpad held, run not held",10,3,0,512,71,0.277344,0,395,1
+ground_walk_accel,"grounded, dpad held, run not held",11,3,0,512,77,0.300781,0,472,1
+ground_walk_accel,"grounded, dpad held, run not held",12,3,0,512,83,0.324219,1,555,2
+ground_walk_accel,"grounded, dpad held, run not held",13,3,0,512,89,0.347656,0,644,2
+ground_walk_accel,"grounded, dpad held, run not held",14,3,0,512,95,0.371094,0,739,2
+ground_walk_accel,"grounded, dpad held, run not held",15,3,0,512,101,0.394531,1,840,3
+ground_walk_accel,"grounded, dpad held, run not held",16,3,0,512,107,0.417969,0,947,3
+ground_walk_accel,"grounded, dpad held, run not held",17,3,0,512,113,0.441406,1,1060,4
+ground_walk_accel,"grounded, dpad held, run not held",18,3,0,512,119,0.464844,0,1179,4
+ground_walk_accel,"grounded, dpad held, run not held",19,3,0,512,125,0.488281,1,1304,5
+ground_walk_accel,"grounded, dpad held, run not held",20,3,0,512,131,0.511719,0,1435,5
+ground_walk_accel,"grounded, dpad held, run not held",21,3,0,512,136,0.531250,1,1571,6
+ground_walk_accel,"grounded, dpad held, run not held",22,3,0,512,141,0.550781,0,1712,6
+ground_walk_accel,"grounded, dpad held, run not held",23,3,0,512,146,0.570313,1,1858,7
+ground_walk_accel,"grounded, dpad held, run not held",24,3,0,512,151,0.589844,0,2009,7
+ground_walk_accel,"grounded, dpad held, run not held",25,3,0,512,156,0.609375,1,2165,8
+ground_walk_accel,"grounded, dpad held, run not held",26,3,0,512,161,0.628906,1,2326,9
+ground_walk_accel,"grounded, dpad held, run not held",27,3,0,512,166,0.648438,0,2492,9
+ground_walk_accel,"grounded, dpad held, run not held",28,3,0,512,171,0.667969,1,2663,10
+ground_walk_accel,"grounded, dpad held, run not held",29,3,0,512,176,0.687500,1,2839,11
+ground_walk_accel,"grounded, dpad held, run not held",30,3,0,512,181,0.707031,0,3020,11
+ground_walk_accel,"grounded, dpad held, run not held",31,3,0,512,186,0.726563,1,3206,12
+ground_walk_accel,"grounded, dpad held, run not held",32,3,0,512,191,0.746094,1,3397,13
+ground_walk_accel,"grounded, dpad held, run not held",33,3,0,512,196,0.765625,1,3593,14
+ground_walk_accel,"grounded, dpad held, run not held",34,3,0,512,200,0.781250,0,3793,14
+ground_walk_accel,"grounded, dpad held, run not held",35,3,0,512,204,0.796875,1,3997,15
+ground_walk_accel,"grounded, dpad held, run not held",36,3,0,512,208,0.812500,1,4205,16
+ground_walk_accel,"grounded, dpad held, run not held",37,3,0,512,212,0.828125,1,4417,17
+ground_walk_accel,"grounded, dpad held, run not held",38,3,0,512,216,0.843750,1,4633,18
+ground_walk_accel,"grounded, dpad held, run not held",39,3,0,512,220,0.859375,0,4853,18
+ground_walk_accel,"grounded, dpad held, run not held",40,3,0,512,224,0.875000,1,5077,19
+ground_walk_accel,"grounded, dpad held, run not held",41,3,0,512,228,0.890625,1,5305,20
+ground_walk_accel,"grounded, dpad held, run not held",42,3,0,512,232,0.906250,1,5537,21
+ground_walk_accel,"grounded, dpad held, run not held",43,3,0,512,236,0.921875,1,5773,22
+ground_walk_accel,"grounded, dpad held, run not held",44,3,0,512,240,0.937500,1,6013,23
+ground_walk_accel,"grounded, dpad held, run not held",45,3,0,512,244,0.953125,1,6257,24
+ground_walk_accel,"grounded, dpad held, run not held",46,3,0,512,248,0.968750,1,6505,25
+ground_walk_accel,"grounded, dpad held, run not held",47,3,0,512,252,0.984375,1,6757,26
+ground_walk_accel,"grounded, dpad held, run not held",48,3,0,512,256,1.000000,1,7013,27
+ground_walk_accel,"grounded, dpad held, run not held",49,3,0,512,260,1.015625,1,7273,28
+ground_walk_accel,"grounded, dpad held, run not held",50,3,0,512,263,1.027344,1,7536,29
+ground_walk_accel,"grounded, dpad held, run not held",51,3,0,512,266,1.039063,1,7802,30
+ground_walk_accel,"grounded, dpad held, run not held",52,3,0,512,269,1.050781,1,8071,31
+ground_walk_accel,"grounded, dpad held, run not held",53,3,0,512,272,1.062500,1,8343,32
+ground_walk_accel,"grounded, dpad held, run not held",54,3,0,512,275,1.074219,1,8618,33
+ground_walk_accel,"grounded, dpad held, run not held",55,3,0,512,278,1.085938,1,8896,34
+ground_walk_accel,"grounded, dpad held, run not held",56,3,0,512,281,1.097656,1,9177,35
+ground_walk_accel,"grounded, dpad held, run not held",57,3,0,512,284,1.109375,1,9461,36
+ground_walk_accel,"grounded, dpad held, run not held",58,3,0,512,287,1.121094,2,9748,38
+ground_walk_accel,"grounded, dpad held, run not held",59,3,0,512,290,1.132813,1,10038,39
+ground_walk_accel,"grounded, dpad held, run not held",60,3,0,512,293,1.144531,1,10331,40
+ground_walk_accel,"grounded, dpad held, run not held",61,3,0,512,296,1.156250,1,10627,41
+ground_walk_accel,"grounded, dpad held, run not held",62,3,0,512,299,1.167969,1,10926,42
+ground_walk_accel,"grounded, dpad held, run not held",63,3,0,512,302,1.179688,1,11228,43
+ground_walk_accel,"grounded, dpad held, run not held",64,3,0,512,305,1.191406,2,11533,45
+ground_walk_accel,"grounded, dpad held, run not held",65,3,0,512,308,1.203125,1,11841,46
+ground_walk_accel,"grounded, dpad held, run not held",66,3,0,512,311,1.214844,1,12152,47
+ground_walk_accel,"grounded, dpad held, run not held",67,3,0,512,314,1.226563,1,12466,48
+ground_walk_accel,"grounded, dpad held, run not held",68,3,0,512,317,1.238281,1,12783,49
+ground_walk_accel,"grounded, dpad held, run not held",69,3,0,512,320,1.250000,2,13103,51
+ground_walk_accel,"grounded, dpad held, run not held",70,3,0,512,323,1.261719,1,13426,52
+ground_walk_accel,"grounded, dpad held, run not held",71,3,0,512,325,1.269531,1,13751,53
+ground_walk_accel,"grounded, dpad held, run not held",72,3,0,512,327,1.277344,1,14078,54
+ground_walk_accel,"grounded, dpad held, run not held",73,3,0,512,329,1.285156,2,14407,56
+ground_walk_accel,"grounded, dpad held, run not held",74,3,0,512,331,1.292969,1,14738,57
+ground_walk_accel,"grounded, dpad held, run not held",75,3,0,512,333,1.300781,1,15071,58
+ground_walk_accel,"grounded, dpad held, run not held",76,3,0,512,335,1.308594,2,15406,60
+ground_walk_accel,"grounded, dpad held, run not held",77,3,0,512,337,1.316406,1,15743,61
+ground_walk_accel,"grounded, dpad held, run not held",78,3,0,512,339,1.324219,1,16082,62
+ground_walk_accel,"grounded, dpad held, run not held",79,3,0,512,341,1.332031,2,16423,64
+ground_walk_accel,"grounded, dpad held, run not held",80,3,0,512,343,1.339844,1,16766,65
+ground_walk_accel,"grounded, dpad held, run not held",81,3,0,512,345,1.347656,1,17111,66
+ground_walk_accel,"grounded, dpad held, run not held",82,3,0,512,347,1.355469,2,17458,68
+ground_walk_accel,"grounded, dpad held, run not held",83,3,0,512,349,1.363281,1,17807,69
+ground_walk_accel,"grounded, dpad held, run not held",84,3,0,512,351,1.371094,1,18158,70
+ground_walk_accel,"grounded, dpad held, run not held",85,3,0,512,353,1.378906,2,18511,72
+ground_walk_accel,"grounded, dpad held, run not held",86,3,0,512,355,1.386719,1,18866,73
+ground_walk_accel,"grounded, dpad held, run not held",87,3,0,512,357,1.394531,2,19223,75
+ground_walk_accel,"grounded, dpad held, run not held",88,3,0,512,359,1.402344,1,19582,76
+ground_walk_accel,"grounded, dpad held, run not held",89,3,0,512,361,1.410156,1,19943,77
+ground_walk_accel,"grounded, dpad held, run not held",90,3,0,512,363,1.417969,2,20306,79
+ground_walk_accel,"grounded, dpad held, run not held",91,3,0,512,365,1.425781,1,20671,80
+ground_walk_accel,"grounded, dpad held, run not held",92,3,0,512,367,1.433594,2,21038,82
+ground_walk_accel,"grounded, dpad held, run not held",93,3,0,512,369,1.441406,1,21407,83
+ground_walk_accel,"grounded, dpad held, run not held",94,3,0,512,371,1.449219,2,21778,85
+ground_walk_accel,"grounded, dpad held, run not held",95,3,0,512,373,1.457031,1,22151,86
+ground_walk_accel,"grounded, dpad held, run not held",96,3,0,512,375,1.464844,1,22526,87
+ground_walk_accel,"grounded, dpad held, run not held",97,3,0,512,377,1.472656,2,22903,89
+ground_walk_accel,"grounded, dpad held, run not held",98,3,0,512,379,1.480469,1,23282,90
+ground_walk_accel,"grounded, dpad held, run not held",99,3,0,512,381,1.488281,2,23663,92
+ground_walk_accel,"grounded, dpad held, run not held",100,3,0,512,383,1.496094,1,24046,93
+ground_walk_accel,"grounded, dpad held, run not held",101,3,0,512,385,1.503906,2,24431,95
+ground_walk_accel,"grounded, dpad held, run not held",102,3,0,512,386,1.507813,1,24817,96
+ground_walk_accel,"grounded, dpad held, run not held",103,3,0,512,387,1.511719,2,25204,98
+ground_walk_accel,"grounded, dpad held, run not held",104,3,0,512,388,1.515625,1,25592,99
+ground_walk_accel,"grounded, dpad held, run not held",105,3,0,512,389,1.519531,2,25981,101
+ground_walk_accel,"grounded, dpad held, run not held",106,3,0,512,390,1.523438,2,26371,103
+ground_walk_accel,"grounded, dpad held, run not held",107,3,0,512,391,1.527344,1,26762,104
+ground_walk_accel,"grounded, dpad held, run not held",108,3,0,512,392,1.531250,2,27154,106
+ground_walk_accel,"grounded, dpad held, run not held",109,3,0,512,393,1.535156,1,27547,107
+ground_walk_accel,"grounded, dpad held, run not held",110,3,0,512,394,1.539063,2,27941,109
+ground_walk_accel,"grounded, dpad held, run not held",111,3,0,512,395,1.542969,1,28336,110
+ground_walk_accel,"grounded, dpad held, run not held",112,3,0,512,396,1.546875,2,28732,112
+ground_walk_accel,"grounded, dpad held, run not held",113,3,0,512,397,1.550781,1,29129,113
+ground_walk_accel,"grounded, dpad held, run not held",114,3,0,512,398,1.554688,2,29527,115
+ground_walk_accel,"grounded, dpad held, run not held",115,3,0,512,399,1.558594,1,29926,116
+ground_walk_accel,"grounded, dpad held, run not held",116,3,0,512,400,1.562500,2,30326,118
+ground_walk_accel,"grounded, dpad held, run not held",117,3,0,512,401,1.566406,2,30727,120
+ground_walk_accel,"grounded, dpad held, run not held",118,3,0,512,402,1.570313,1,31129,121
+ground_walk_accel,"grounded, dpad held, run not held",119,3,0,512,403,1.574219,2,31532,123
+ground_walk_accel,"grounded, dpad held, run not held",120,3,0,512,404,1.578125,1,31936,124
+ground_walk_accel,"grounded, dpad held, run not held",121,3,0,512,405,1.582031,2,32341,126
+ground_walk_accel,"grounded, dpad held, run not held",122,3,0,512,406,1.585938,1,32747,127
+ground_walk_accel,"grounded, dpad held, run not held",123,3,0,512,407,1.589844,2,33154,129
+ground_walk_accel,"grounded, dpad held, run not held",124,3,0,512,408,1.593750,2,33562,131
+ground_walk_accel,"grounded, dpad held, run not held",125,3,0,512,409,1.597656,1,33971,132
+ground_walk_accel,"grounded, dpad held, run not held",126,3,0,512,410,1.601563,2,34381,134
+ground_walk_accel,"grounded, dpad held, run not held",127,3,0,512,411,1.605469,1,34792,135
+ground_walk_accel,"grounded, dpad held, run not held",128,3,0,512,412,1.609375,2,35204,137
+ground_walk_accel,"grounded, dpad held, run not held",129,3,0,512,413,1.613281,2,35617,139
+ground_walk_accel,"grounded, dpad held, run not held",130,3,0,512,414,1.617188,1,36031,140
+ground_walk_accel,"grounded, dpad held, run not held",131,3,0,512,415,1.621094,2,36446,142
+ground_walk_accel,"grounded, dpad held, run not held",132,3,0,512,416,1.625000,1,36862,143
+ground_walk_accel,"grounded, dpad held, run not held",133,3,0,512,417,1.628906,2,37279,145
+ground_walk_accel,"grounded, dpad held, run not held",134,3,0,512,418,1.632813,2,37697,147
+ground_walk_accel,"grounded, dpad held, run not held",135,3,0,512,419,1.636719,1,38116,148
+ground_walk_accel,"grounded, dpad held, run not held",136,3,0,512,420,1.640625,2,38536,150
+ground_walk_accel,"grounded, dpad held, run not held",137,3,0,512,421,1.644531,2,38957,152
+ground_walk_accel,"grounded, dpad held, run not held",138,3,0,512,422,1.648438,1,39379,153
+ground_walk_accel,"grounded, dpad held, run not held",139,3,0,512,423,1.652344,2,39802,155
+ground_walk_accel,"grounded, dpad held, run not held",140,3,0,512,424,1.656250,2,40226,157
+ground_walk_accel,"grounded, dpad held, run not held",141,3,0,512,425,1.660156,1,40651,158
+ground_walk_accel,"grounded, dpad held, run not held",142,3,0,512,426,1.664063,2,41077,160
+ground_walk_accel,"grounded, dpad held, run not held",143,3,0,512,427,1.667969,2,41504,162
+ground_walk_accel,"grounded, dpad held, run not held",144,3,0,512,428,1.671875,1,41932,163
+ground_walk_accel,"grounded, dpad held, run not held",145,3,0,512,429,1.675781,2,42361,165
+ground_walk_accel,"grounded, dpad held, run not held",146,3,0,512,430,1.679688,2,42791,167
+ground_walk_accel,"grounded, dpad held, run not held",147,3,0,512,431,1.683594,1,43222,168
+ground_walk_accel,"grounded, dpad held, run not held",148,3,0,512,432,1.687500,2,43654,170
+ground_walk_accel,"grounded, dpad held, run not held",149,3,0,512,433,1.691406,2,44087,172
+ground_walk_accel,"grounded, dpad held, run not held",150,3,0,512,434,1.695313,1,44521,173
+ground_walk_accel,"grounded, dpad held, run not held",151,3,0,512,435,1.699219,2,44956,175
+ground_walk_accel,"grounded, dpad held, run not held",152,3,0,512,436,1.703125,2,45392,177
+ground_walk_accel,"grounded, dpad held, run not held",153,3,0,512,437,1.707031,2,45829,179
+ground_walk_accel,"grounded, dpad held, run not held",154,3,0,512,438,1.710938,1,46267,180
+ground_walk_accel,"grounded, dpad held, run not held",155,3,0,512,439,1.714844,2,46706,182
+ground_walk_accel,"grounded, dpad held, run not held",156,3,0,512,440,1.718750,2,47146,184
+ground_walk_accel,"grounded, dpad held, run not held",157,3,0,512,441,1.722656,1,47587,185
+ground_walk_accel,"grounded, dpad held, run not held",158,3,0,512,442,1.726563,2,48029,187
+ground_walk_accel,"grounded, dpad held, run not held",159,3,0,512,443,1.730469,2,48472,189
+ground_walk_accel,"grounded, dpad held, run not held",160,3,0,512,444,1.734375,2,48916,191
+ground_walk_accel,"grounded, dpad held, run not held",161,3,0,512,445,1.738281,1,49361,192
+ground_walk_accel,"grounded, dpad held, run not held",162,3,0,512,446,1.742188,2,49807,194
+ground_walk_accel,"grounded, dpad held, run not held",163,3,0,512,447,1.746094,2,50254,196
+ground_walk_accel,"grounded, dpad held, run not held",164,3,0,512,448,1.750000,2,50702,198
+ground_walk_accel,"grounded, dpad held, run not held",165,3,0,512,449,1.753906,1,51151,199
+ground_walk_accel,"grounded, dpad held, run not held",166,3,0,512,512,2.000000,2,51663,201
+ground_run_accel,"grounded, dpad held, run held",1,8,0,768,36,0.140625,0,36,0
+ground_run_accel,"grounded, dpad held, run held",2,8,0,768,69,0.269531,0,105,0
+ground_run_accel,"grounded, dpad held, run held",3,8,0,768,100,0.390625,0,205,0
+ground_run_accel,"grounded, dpad held, run held",4,8,0,768,130,0.507813,1,335,1
+ground_run_accel,"grounded, dpad held, run held",5,8,0,768,158,0.617188,0,493,1
+ground_run_accel,"grounded, dpad held, run held",6,8,0,768,186,0.726563,1,679,2
+ground_run_accel,"grounded, dpad held, run held",7,8,0,768,213,0.832031,1,892,3
+ground_run_accel,"grounded, dpad held, run held",8,8,0,768,238,0.929688,1,1130,4
+ground_run_accel,"grounded, dpad held, run held",9,8,0,768,262,1.023438,1,1392,5
+ground_run_accel,"grounded, dpad held, run held",10,8,0,768,284,1.109375,1,1676,6
+ground_run_accel,"grounded, dpad held, run held",11,8,0,768,306,1.195313,1,1982,7
+ground_run_accel,"grounded, dpad held, run held",12,8,0,768,327,1.277344,2,2309,9
+ground_run_accel,"grounded, dpad held, run held",13,8,0,768,346,1.351563,1,2655,10
+ground_run_accel,"grounded, dpad held, run held",14,8,0,768,365,1.425781,1,3020,11
+ground_run_accel,"grounded, dpad held, run held",15,8,0,768,383,1.496094,2,3403,13
+ground_run_accel,"grounded, dpad held, run held",16,8,0,768,401,1.566406,1,3804,14
+ground_run_accel,"grounded, dpad held, run held",17,8,0,768,417,1.628906,2,4221,16
+ground_run_accel,"grounded, dpad held, run held",18,8,0,768,432,1.687500,2,4653,18
+ground_run_accel,"grounded, dpad held, run held",19,8,0,768,447,1.746094,1,5100,19
+ground_run_accel,"grounded, dpad held, run held",20,8,0,768,462,1.804688,2,5562,21
+ground_run_accel,"grounded, dpad held, run held",21,8,0,768,475,1.855469,2,6037,23
+ground_run_accel,"grounded, dpad held, run held",22,8,0,768,488,1.906250,2,6525,25
+ground_run_accel,"grounded, dpad held, run held",23,8,0,768,500,1.953125,2,7025,27
+ground_run_accel,"grounded, dpad held, run held",24,8,0,768,512,2.000000,2,7537,29
+ground_run_accel,"grounded, dpad held, run held",25,8,0,768,524,2.046875,2,8061,31
+ground_run_accel,"grounded, dpad held, run held",26,8,0,768,534,2.085938,2,8595,33
+ground_run_accel,"grounded, dpad held, run held",27,8,0,768,544,2.125000,2,9139,35
+ground_run_accel,"grounded, dpad held, run held",28,8,0,768,554,2.164063,2,9693,37
+ground_run_accel,"grounded, dpad held, run held",29,8,0,768,563,2.199219,3,10256,40
+ground_run_accel,"grounded, dpad held, run held",30,8,0,768,572,2.234375,2,10828,42
+ground_run_accel,"grounded, dpad held, run held",31,8,0,768,581,2.269531,2,11409,44
+ground_run_accel,"grounded, dpad held, run held",32,8,0,768,588,2.296875,2,11997,46
+ground_run_accel,"grounded, dpad held, run held",33,8,0,768,595,2.324219,3,12592,49
+ground_run_accel,"grounded, dpad held, run held",34,8,0,768,602,2.351563,2,13194,51
+ground_run_accel,"grounded, dpad held, run held",35,8,0,768,609,2.378906,2,13803,53
+ground_run_accel,"grounded, dpad held, run held",36,8,0,768,615,2.402344,3,14418,56
+ground_run_accel,"grounded, dpad held, run held",37,8,0,768,621,2.425781,2,15039,58
+ground_run_accel,"grounded, dpad held, run held",38,8,0,768,627,2.449219,3,15666,61
+ground_run_accel,"grounded, dpad held, run held",39,8,0,768,633,2.472656,2,16299,63
+ground_run_accel,"grounded, dpad held, run held",40,8,0,768,639,2.496094,3,16938,66
+ground_run_accel,"grounded, dpad held, run held",41,8,0,768,645,2.519531,2,17583,68
+ground_run_accel,"grounded, dpad held, run held",42,8,0,768,649,2.535156,3,18232,71
+ground_run_accel,"grounded, dpad held, run held",43,8,0,768,653,2.550781,2,18885,73
+ground_run_accel,"grounded, dpad held, run held",44,8,0,768,657,2.566406,3,19542,76
+ground_run_accel,"grounded, dpad held, run held",45,8,0,768,661,2.582031,2,20203,78
+ground_run_accel,"grounded, dpad held, run held",46,8,0,768,665,2.597656,3,20868,81
+ground_run_accel,"grounded, dpad held, run held",47,8,0,768,669,2.613281,3,21537,84
+ground_run_accel,"grounded, dpad held, run held",48,8,0,768,673,2.628906,2,22210,86
+ground_run_accel,"grounded, dpad held, run held",49,8,0,768,676,2.640625,3,22886,89
+ground_run_accel,"grounded, dpad held, run held",50,8,0,768,679,2.652344,3,23565,92
+ground_run_accel,"grounded, dpad held, run held",51,8,0,768,682,2.664063,2,24247,94
+ground_run_accel,"grounded, dpad held, run held",52,8,0,768,685,2.675781,3,24932,97
+ground_run_accel,"grounded, dpad held, run held",53,8,0,768,688,2.687500,3,25620,100
+ground_run_accel,"grounded, dpad held, run held",54,8,0,768,691,2.699219,2,26311,102
+ground_run_accel,"grounded, dpad held, run held",55,8,0,768,694,2.710938,3,27005,105
+ground_run_accel,"grounded, dpad held, run held",56,8,0,768,697,2.722656,3,27702,108
+ground_run_accel,"grounded, dpad held, run held",57,8,0,768,700,2.734375,2,28402,110
+ground_run_accel,"grounded, dpad held, run held",58,8,0,768,703,2.746094,3,29105,113
+ground_run_accel,"grounded, dpad held, run held",59,8,0,768,706,2.757813,3,29811,116
+ground_run_accel,"grounded, dpad held, run held",60,8,0,768,707,2.761719,3,30518,119
+ground_run_accel,"grounded, dpad held, run held",61,8,0,768,708,2.765625,2,31226,121
+ground_run_accel,"grounded, dpad held, run held",62,8,0,768,709,2.769531,3,31935,124
+ground_run_accel,"grounded, dpad held, run held",63,8,0,768,710,2.773438,3,32645,127
+ground_run_accel,"grounded, dpad held, run held",64,8,0,768,711,2.777344,3,33356,130
+ground_run_accel,"grounded, dpad held, run held",65,8,0,768,712,2.781250,3,34068,133
+ground_run_accel,"grounded, dpad held, run held",66,8,0,768,713,2.785156,2,34781,135
+ground_run_accel,"grounded, dpad held, run held",67,8,0,768,714,2.789063,3,35495,138
+ground_run_accel,"grounded, dpad held, run held",68,8,0,768,715,2.792969,3,36210,141
+ground_run_accel,"grounded, dpad held, run held",69,8,0,768,716,2.796875,3,36926,144
+ground_run_accel,"grounded, dpad held, run held",70,8,0,768,717,2.800781,3,37643,147
+ground_run_accel,"grounded, dpad held, run held",71,8,0,768,718,2.804688,2,38361,149
+ground_run_accel,"grounded, dpad held, run held",72,8,0,768,719,2.808594,3,39080,152
+ground_run_accel,"grounded, dpad held, run held",73,8,0,768,720,2.812500,3,39800,155
+ground_run_accel,"grounded, dpad held, run held",74,8,0,768,721,2.816406,3,40521,158
+ground_run_accel,"grounded, dpad held, run held",75,8,0,768,722,2.820313,3,41243,161
+ground_run_accel,"grounded, dpad held, run held",76,8,0,768,723,2.824219,2,41966,163
+ground_run_accel,"grounded, dpad held, run held",77,8,0,768,724,2.828125,3,42690,166
+ground_run_accel,"grounded, dpad held, run held",78,8,0,768,725,2.832031,3,43415,169
+ground_run_accel,"grounded, dpad held, run held",79,8,0,768,726,2.835938,3,44141,172
+ground_run_accel,"grounded, dpad held, run held",80,8,0,768,727,2.839844,3,44868,175
+ground_run_accel,"grounded, dpad held, run held",81,8,0,768,728,2.843750,3,45596,178
+ground_run_accel,"grounded, dpad held, run held",82,8,0,768,729,2.847656,2,46325,180
+ground_run_accel,"grounded, dpad held, run held",83,8,0,768,730,2.851563,3,47055,183
+ground_run_accel,"grounded, dpad held, run held",84,8,0,768,731,2.855469,3,47786,186
+ground_run_accel,"grounded, dpad held, run held",85,8,0,768,732,2.859375,3,48518,189
+ground_run_accel,"grounded, dpad held, run held",86,8,0,768,733,2.863281,3,49251,192
+ground_run_accel,"grounded, dpad held, run held",87,8,0,768,734,2.867188,3,49985,195
+ground_run_accel,"grounded, dpad held, run held",88,8,0,768,735,2.871094,3,50720,198
+ground_run_accel,"grounded, dpad held, run held",89,8,0,768,736,2.875000,3,51456,201
+ground_run_accel,"grounded, dpad held, run held",90,8,0,768,737,2.878906,2,52193,203
+ground_run_accel,"grounded, dpad held, run held",91,8,0,768,768,3.000000,3,52961,206
+ground_release_decel,"grounded, dpad released from run speed",1,2,768,0,744,2.906250,2,744,2
+ground_release_decel,"grounded, dpad released from run speed",2,2,768,0,721,2.816406,3,1465,5
+ground_release_decel,"grounded, dpad released from run speed",3,2,768,0,699,2.730469,3,2164,8
+ground_release_decel,"grounded, dpad released from run speed",4,2,768,0,678,2.648438,3,2842,11
+ground_release_decel,"grounded, dpad released from run speed",5,2,768,0,657,2.566406,2,3499,13
+ground_release_decel,"grounded, dpad released from run speed",6,2,768,0,637,2.488281,3,4136,16
+ground_release_decel,"grounded, dpad released from run speed",7,2,768,0,618,2.414063,2,4754,18
+ground_release_decel,"grounded, dpad released from run speed",8,2,768,0,599,2.339844,2,5353,20
+ground_release_decel,"grounded, dpad released from run speed",9,2,768,0,581,2.269531,3,5934,23
+ground_release_decel,"grounded, dpad released from run speed",10,2,768,0,563,2.199219,2,6497,25
+ground_release_decel,"grounded, dpad released from run speed",11,2,768,0,546,2.132813,2,7043,27
+ground_release_decel,"grounded, dpad released from run speed",12,2,768,0,529,2.066406,2,7572,29
+ground_release_decel,"grounded, dpad released from run speed",13,2,768,0,513,2.003906,2,8085,31
+ground_release_decel,"grounded, dpad released from run speed",14,2,768,0,497,1.941406,2,8582,33
+ground_release_decel,"grounded, dpad released from run speed",15,2,768,0,482,1.882813,2,9064,35
+ground_release_decel,"grounded, dpad released from run speed",16,2,768,0,467,1.824219,2,9531,37
+ground_release_decel,"grounded, dpad released from run speed",17,2,768,0,453,1.769531,2,9984,39
+ground_release_decel,"grounded, dpad released from run speed",18,2,768,0,439,1.714844,1,10423,40
+ground_release_decel,"grounded, dpad released from run speed",19,2,768,0,426,1.664063,2,10849,42
+ground_release_decel,"grounded, dpad released from run speed",20,2,768,0,413,1.613281,1,11262,43
+ground_release_decel,"grounded, dpad released from run speed",21,2,768,0,401,1.566406,2,11663,45
+ground_release_decel,"grounded, dpad released from run speed",22,2,768,0,389,1.519531,2,12052,47
+ground_release_decel,"grounded, dpad released from run speed",23,2,768,0,377,1.472656,1,12429,48
+ground_release_decel,"grounded, dpad released from run speed",24,2,768,0,366,1.429688,1,12795,49
+ground_release_decel,"grounded, dpad released from run speed",25,2,768,0,355,1.386719,2,13150,51
+ground_release_decel,"grounded, dpad released from run speed",26,2,768,0,344,1.343750,1,13494,52
+ground_release_decel,"grounded, dpad released from run speed",27,2,768,0,334,1.304688,2,13828,54
+ground_release_decel,"grounded, dpad released from run speed",28,2,768,0,324,1.265625,1,14152,55
+ground_release_decel,"grounded, dpad released from run speed",29,2,768,0,314,1.226563,1,14466,56
+ground_release_decel,"grounded, dpad released from run speed",30,2,768,0,305,1.191406,1,14771,57
+ground_release_decel,"grounded, dpad released from run speed",31,2,768,0,296,1.156250,1,15067,58
+ground_release_decel,"grounded, dpad released from run speed",32,2,768,0,287,1.121094,1,15354,59
+ground_release_decel,"grounded, dpad released from run speed",33,2,768,0,279,1.089844,2,15633,61
+ground_release_decel,"grounded, dpad released from run speed",34,2,768,0,271,1.058594,1,15904,62
+ground_release_decel,"grounded, dpad released from run speed",35,2,768,0,263,1.027344,1,16167,63
+ground_release_decel,"grounded, dpad released from run speed",36,2,768,0,255,0.996094,1,16422,64
+ground_release_decel,"grounded, dpad released from run speed",37,2,768,0,248,0.968750,1,16670,65
+ground_release_decel,"grounded, dpad released from run speed",38,2,768,0,241,0.941406,1,16911,66
+ground_release_decel,"grounded, dpad released from run speed",39,2,768,0,234,0.914063,0,17145,66
+ground_release_decel,"grounded, dpad released from run speed",40,2,768,0,227,0.886719,1,17372,67
+ground_release_decel,"grounded, dpad released from run speed",41,2,768,0,220,0.859375,1,17592,68
+ground_release_decel,"grounded, dpad released from run speed",42,2,768,0,214,0.835938,1,17806,69
+ground_release_decel,"grounded, dpad released from run speed",43,2,768,0,208,0.812500,1,18014,70
+ground_release_decel,"grounded, dpad released from run speed",44,2,768,0,202,0.789063,1,18216,71
+ground_release_decel,"grounded, dpad released from run speed",45,2,768,0,196,0.765625,0,18412,71
+ground_release_decel,"grounded, dpad released from run speed",46,2,768,0,190,0.742188,1,18602,72
+ground_release_decel,"grounded, dpad released from run speed",47,2,768,0,185,0.722656,1,18787,73
+ground_release_decel,"grounded, dpad released from run speed",48,2,768,0,180,0.703125,1,18967,74
+ground_release_decel,"grounded, dpad released from run speed",49,2,768,0,175,0.683594,0,19142,74
+ground_release_decel,"grounded, dpad released from run speed",50,2,768,0,170,0.664063,1,19312,75
+ground_release_decel,"grounded, dpad released from run speed",51,2,768,0,165,0.644531,1,19477,76
+ground_release_decel,"grounded, dpad released from run speed",52,2,768,0,160,0.625000,0,19637,76
+ground_release_decel,"grounded, dpad released from run speed",53,2,768,0,155,0.605469,1,19792,77
+ground_release_decel,"grounded, dpad released from run speed",54,2,768,0,151,0.589844,0,19943,77
+ground_release_decel,"grounded, dpad released from run speed",55,2,768,0,147,0.574219,1,20090,78
+ground_release_decel,"grounded, dpad released from run speed",56,2,768,0,143,0.558594,1,20233,79
+ground_release_decel,"grounded, dpad released from run speed",57,2,768,0,139,0.542969,0,20372,79
+ground_release_decel,"grounded, dpad released from run speed",58,2,768,0,135,0.527344,1,20507,80
+ground_release_decel,"grounded, dpad released from run speed",59,2,768,0,131,0.511719,0,20638,80
+ground_release_decel,"grounded, dpad released from run speed",60,2,768,0,127,0.496094,1,20765,81
+ground_release_decel,"grounded, dpad released from run speed",61,2,768,0,124,0.484375,0,20889,81
+ground_release_decel,"grounded, dpad released from run speed",62,2,768,0,121,0.472656,1,21010,82
+ground_release_decel,"grounded, dpad released from run speed",63,2,768,0,118,0.460938,0,21128,82
+ground_release_decel,"grounded, dpad released from run speed",64,2,768,0,115,0.449219,0,21243,82
+ground_release_decel,"grounded, dpad released from run speed",65,2,768,0,112,0.437500,1,21355,83
+ground_release_decel,"grounded, dpad released from run speed",66,2,768,0,109,0.425781,0,21464,83
+ground_release_decel,"grounded, dpad released from run speed",67,2,768,0,106,0.414063,1,21570,84
+ground_release_decel,"grounded, dpad released from run speed",68,2,768,0,103,0.402344,0,21673,84
+ground_release_decel,"grounded, dpad released from run speed",69,2,768,0,100,0.390625,1,21773,85
+ground_release_decel,"grounded, dpad released from run speed",70,2,768,0,97,0.378906,0,21870,85
+ground_release_decel,"grounded, dpad released from run speed",71,2,768,0,94,0.367188,0,21964,85
+ground_release_decel,"grounded, dpad released from run speed",72,2,768,0,92,0.359375,1,22056,86
+ground_release_decel,"grounded, dpad released from run speed",73,2,768,0,90,0.351563,0,22146,86
+ground_release_decel,"grounded, dpad released from run speed",74,2,768,0,88,0.343750,0,22234,86
+ground_release_decel,"grounded, dpad released from run speed",75,2,768,0,86,0.335938,1,22320,87
+ground_release_decel,"grounded, dpad released from run speed",76,2,768,0,84,0.328125,0,22404,87
+ground_release_decel,"grounded, dpad released from run speed",77,2,768,0,82,0.320313,0,22486,87
+ground_release_decel,"grounded, dpad released from run speed",78,2,768,0,80,0.312500,1,22566,88
+ground_release_decel,"grounded, dpad released from run speed",79,2,768,0,78,0.304688,0,22644,88
+ground_release_decel,"grounded, dpad released from run speed",80,2,768,0,76,0.296875,0,22720,88
+ground_release_decel,"grounded, dpad released from run speed",81,2,768,0,74,0.289063,1,22794,89
+ground_release_decel,"grounded, dpad released from run speed",82,2,768,0,72,0.281250,0,22866,89
+ground_release_decel,"grounded, dpad released from run speed",83,2,768,0,70,0.273438,0,22936,89
+ground_release_decel,"grounded, dpad released from run speed",84,2,768,0,68,0.265625,0,23004,89
+ground_release_decel,"grounded, dpad released from run speed",85,2,768,0,66,0.257813,1,23070,90
+ground_release_decel,"grounded, dpad released from run speed",86,2,768,0,64,0.250000,0,23134,90
+ground_release_decel,"grounded, dpad released from run speed",87,2,768,0,62,0.242188,0,23196,90
+ground_release_decel,"grounded, dpad released from run speed",88,2,768,0,61,0.238281,0,23257,90
+ground_release_decel,"grounded, dpad released from run speed",89,2,768,0,60,0.234375,1,23317,91
+ground_release_decel,"grounded, dpad released from run speed",90,2,768,0,59,0.230469,0,23376,91
+ground_release_decel,"grounded, dpad released from run speed",91,2,768,0,58,0.226563,0,23434,91
+ground_release_decel,"grounded, dpad released from run speed",92,2,768,0,57,0.222656,0,23491,91
+ground_release_decel,"grounded, dpad released from run speed",93,2,768,0,56,0.218750,0,23547,91
+ground_release_decel,"grounded, dpad released from run speed",94,2,768,0,55,0.214844,1,23602,92
+ground_release_decel,"grounded, dpad released from run speed",95,2,768,0,54,0.210938,0,23656,92
+ground_release_decel,"grounded, dpad released from run speed",96,2,768,0,53,0.207031,0,23709,92
+ground_release_decel,"grounded, dpad released from run speed",97,2,768,0,52,0.203125,0,23761,92
+ground_release_decel,"grounded, dpad released from run speed",98,2,768,0,51,0.199219,1,23812,93
+ground_release_decel,"grounded, dpad released from run speed",99,2,768,0,50,0.195313,0,23862,93
+ground_release_decel,"grounded, dpad released from run speed",100,2,768,0,49,0.191406,0,23911,93
+ground_release_decel,"grounded, dpad released from run speed",101,2,768,0,48,0.187500,0,23959,93
+ground_release_decel,"grounded, dpad released from run speed",102,2,768,0,47,0.183594,0,24006,93
+ground_release_decel,"grounded, dpad released from run speed",103,2,768,0,46,0.179688,0,24052,93
+ground_release_decel,"grounded, dpad released from run speed",104,2,768,0,45,0.175781,1,24097,94
+ground_release_decel,"grounded, dpad released from run speed",105,2,768,0,44,0.171875,0,24141,94
+ground_release_decel,"grounded, dpad released from run speed",106,2,768,0,43,0.167969,0,24184,94
+ground_release_decel,"grounded, dpad released from run speed",107,2,768,0,42,0.164063,0,24226,94
+ground_release_decel,"grounded, dpad released from run speed",108,2,768,0,41,0.160156,0,24267,94
+ground_release_decel,"grounded, dpad released from run speed",109,2,768,0,40,0.156250,0,24307,94
+ground_release_decel,"grounded, dpad released from run speed",110,2,768,0,39,0.152344,1,24346,95
+ground_release_decel,"grounded, dpad released from run speed",111,2,768,0,38,0.148438,0,24384,95
+ground_release_decel,"grounded, dpad released from run speed",112,2,768,0,37,0.144531,0,24421,95
+ground_release_decel,"grounded, dpad released from run speed",113,2,768,0,36,0.140625,0,24457,95
+ground_release_decel,"grounded, dpad released from run speed",114,2,768,0,35,0.136719,0,24492,95
+ground_release_decel,"grounded, dpad released from run speed",115,2,768,0,34,0.132813,0,24526,95
+ground_release_decel,"grounded, dpad released from run speed",116,2,768,0,33,0.128906,0,24559,95
+ground_release_decel,"grounded, dpad released from run speed",117,2,768,0,32,0.125000,1,24591,96
+ground_release_decel,"grounded, dpad released from run speed",118,2,768,0,31,0.121094,0,24622,96
+ground_release_decel,"grounded, dpad released from run speed",119,2,768,0,0,0.000000,0,24622,96
+ground_turn_right_to_left,"grounded, direction opposite current speed",1,1,768,-512,688,2.687500,2,688,2
+ground_turn_right_to_left,"grounded, direction opposite current speed",2,1,768,-512,613,2.394531,3,1301,5
+ground_turn_right_to_left,"grounded, direction opposite current speed",3,1,768,-512,543,2.121094,2,1844,7
+ground_turn_right_to_left,"grounded, direction opposite current speed",4,1,768,-512,478,1.867188,2,2322,9
+ground_turn_right_to_left,"grounded, direction opposite current speed",5,1,768,-512,417,1.628906,1,2739,10
+ground_turn_right_to_left,"grounded, direction opposite current speed",6,1,768,-512,359,1.402344,2,3098,12
+ground_turn_right_to_left,"grounded, direction opposite current speed",7,1,768,-512,305,1.191406,1,3403,13
+ground_turn_right_to_left,"grounded, direction opposite current speed",8,1,768,-512,254,0.992188,1,3657,14
+ground_turn_right_to_left,"grounded, direction opposite current speed",9,1,768,-512,207,0.808594,1,3864,15
+ground_turn_right_to_left,"grounded, direction opposite current speed",10,1,768,-512,163,0.636719,0,4027,15
+ground_turn_right_to_left,"grounded, direction opposite current speed",11,1,768,-512,121,0.472656,1,4148,16
+ground_turn_right_to_left,"grounded, direction opposite current speed",12,1,768,-512,82,0.320313,0,4230,16
+ground_turn_right_to_left,"grounded, direction opposite current speed",13,1,768,-512,45,0.175781,0,4275,16
+ground_turn_right_to_left,"grounded, direction opposite current speed",14,1,768,-512,11,0.042969,0,4286,16
+ground_turn_right_to_left,"grounded, direction opposite current speed",15,1,768,-512,-21,-0.082031,0,4265,16
+ground_turn_right_to_left,"grounded, direction opposite current speed",16,1,768,-512,-51,-0.199219,0,4214,16
+ground_turn_right_to_left,"grounded, direction opposite current speed",17,1,768,-512,-79,-0.308594,0,4135,16
+ground_turn_right_to_left,"grounded, direction opposite current speed",18,1,768,-512,-106,-0.414063,-1,4029,15
+ground_turn_right_to_left,"grounded, direction opposite current speed",19,1,768,-512,-131,-0.511719,0,3898,15
+ground_turn_right_to_left,"grounded, direction opposite current speed",20,1,768,-512,-154,-0.601563,-1,3744,14
+ground_turn_right_to_left,"grounded, direction opposite current speed",21,1,768,-512,-176,-0.687500,-1,3568,13
+ground_turn_right_to_left,"grounded, direction opposite current speed",22,1,768,-512,-197,-0.769531,0,3371,13
+ground_turn_right_to_left,"grounded, direction opposite current speed",23,1,768,-512,-216,-0.843750,-1,3155,12
+ground_turn_right_to_left,"grounded, direction opposite current speed",24,1,768,-512,-234,-0.914063,-1,2921,11
+ground_turn_right_to_left,"grounded, direction opposite current speed",25,1,768,-512,-251,-0.980469,-1,2670,10
+ground_turn_right_to_left,"grounded, direction opposite current speed",26,1,768,-512,-267,-1.042969,-1,2403,9
+ground_turn_right_to_left,"grounded, direction opposite current speed",27,1,768,-512,-282,-1.101563,-1,2121,8
+ground_turn_right_to_left,"grounded, direction opposite current speed",28,1,768,-512,-296,-1.156250,-1,1825,7
+ground_turn_right_to_left,"grounded, direction opposite current speed",29,1,768,-512,-309,-1.207031,-2,1516,5
+ground_turn_right_to_left,"grounded, direction opposite current speed",30,1,768,-512,-321,-1.253906,-1,1195,4
+ground_turn_right_to_left,"grounded, direction opposite current speed",31,1,768,-512,-332,-1.296875,-1,863,3
+ground_turn_right_to_left,"grounded, direction opposite current speed",32,1,768,-512,-343,-1.339844,-1,520,2
+ground_turn_right_to_left,"grounded, direction opposite current speed",33,1,768,-512,-353,-1.378906,-2,167,0
+ground_turn_right_to_left,"grounded, direction opposite current speed",34,1,768,-512,-362,-1.414063,-1,-195,-1
+ground_turn_right_to_left,"grounded, direction opposite current speed",35,1,768,-512,-371,-1.449219,-2,-566,-3
+ground_turn_right_to_left,"grounded, direction opposite current speed",36,1,768,-512,-379,-1.480469,-1,-945,-4
+ground_turn_right_to_left,"grounded, direction opposite current speed",37,1,768,-512,-387,-1.511719,-2,-1332,-6
+ground_turn_right_to_left,"grounded, direction opposite current speed",38,1,768,-512,-394,-1.539063,-1,-1726,-7
+ground_turn_right_to_left,"grounded, direction opposite current speed",39,1,768,-512,-401,-1.566406,-2,-2127,-9
+ground_turn_right_to_left,"grounded, direction opposite current speed",40,1,768,-512,-407,-1.589844,-1,-2534,-10
+ground_turn_right_to_left,"grounded, direction opposite current speed",41,1,768,-512,-413,-1.613281,-2,-2947,-12
+ground_turn_right_to_left,"grounded, direction opposite current speed",42,1,768,-512,-419,-1.636719,-2,-3366,-14
+ground_turn_right_to_left,"grounded, direction opposite current speed",43,1,768,-512,-424,-1.656250,-1,-3790,-15
+ground_turn_right_to_left,"grounded, direction opposite current speed",44,1,768,-512,-429,-1.675781,-2,-4219,-17
+ground_turn_right_to_left,"grounded, direction opposite current speed",45,1,768,-512,-434,-1.695313,-2,-4653,-19
+ground_turn_right_to_left,"grounded, direction opposite current speed",46,1,768,-512,-438,-1.710938,-1,-5091,-20
+ground_turn_right_to_left,"grounded, direction opposite current speed",47,1,768,-512,-442,-1.726563,-2,-5533,-22
+ground_turn_right_to_left,"grounded, direction opposite current speed",48,1,768,-512,-446,-1.742188,-2,-5979,-24
+ground_turn_right_to_left,"grounded, direction opposite current speed",49,1,768,-512,-450,-1.757813,-2,-6429,-26
+ground_turn_right_to_left,"grounded, direction opposite current speed",50,1,768,-512,-453,-1.769531,-1,-6882,-27
+ground_turn_right_to_left,"grounded, direction opposite current speed",51,1,768,-512,-456,-1.781250,-2,-7338,-29
+ground_turn_right_to_left,"grounded, direction opposite current speed",52,1,768,-512,-459,-1.792969,-2,-7797,-31
+ground_turn_right_to_left,"grounded, direction opposite current speed",53,1,768,-512,-462,-1.804688,-2,-8259,-33
+ground_turn_right_to_left,"grounded, direction opposite current speed",54,1,768,-512,-465,-1.816406,-2,-8724,-35
+ground_turn_right_to_left,"grounded, direction opposite current speed",55,1,768,-512,-467,-1.824219,-1,-9191,-36
+ground_turn_right_to_left,"grounded, direction opposite current speed",56,1,768,-512,-469,-1.832031,-2,-9660,-38
+ground_turn_right_to_left,"grounded, direction opposite current speed",57,1,768,-512,-471,-1.839844,-2,-10131,-40
+ground_turn_right_to_left,"grounded, direction opposite current speed",58,1,768,-512,-473,-1.847656,-2,-10604,-42
+ground_turn_right_to_left,"grounded, direction opposite current speed",59,1,768,-512,-475,-1.855469,-2,-11079,-44
+ground_turn_right_to_left,"grounded, direction opposite current speed",60,1,768,-512,-477,-1.863281,-2,-11556,-46
+ground_turn_right_to_left,"grounded, direction opposite current speed",61,1,768,-512,-479,-1.871094,-2,-12035,-48
+ground_turn_right_to_left,"grounded, direction opposite current speed",62,1,768,-512,-481,-1.878906,-1,-12516,-49
+ground_turn_right_to_left,"grounded, direction opposite current speed",63,1,768,-512,-482,-1.882813,-2,-12998,-51
+ground_turn_right_to_left,"grounded, direction opposite current speed",64,1,768,-512,-483,-1.886719,-2,-13481,-53
+ground_turn_right_to_left,"grounded, direction opposite current speed",65,1,768,-512,-484,-1.890625,-2,-13965,-55
+ground_turn_right_to_left,"grounded, direction opposite current speed",66,1,768,-512,-485,-1.894531,-2,-14450,-57
+ground_turn_right_to_left,"grounded, direction opposite current speed",67,1,768,-512,-486,-1.898438,-2,-14936,-59
+ground_turn_right_to_left,"grounded, direction opposite current speed",68,1,768,-512,-487,-1.902344,-2,-15423,-61
+ground_turn_right_to_left,"grounded, direction opposite current speed",69,1,768,-512,-488,-1.906250,-2,-15911,-63
+ground_turn_right_to_left,"grounded, direction opposite current speed",70,1,768,-512,-489,-1.910156,-2,-16400,-65
+ground_turn_right_to_left,"grounded, direction opposite current speed",71,1,768,-512,-490,-1.914063,-1,-16890,-66
+ground_turn_right_to_left,"grounded, direction opposite current speed",72,1,768,-512,-491,-1.917969,-2,-17381,-68
+ground_turn_right_to_left,"grounded, direction opposite current speed",73,1,768,-512,-492,-1.921875,-2,-17873,-70
+ground_turn_right_to_left,"grounded, direction opposite current speed",74,1,768,-512,-493,-1.925781,-2,-18366,-72
+ground_turn_right_to_left,"grounded, direction opposite current speed",75,1,768,-512,-494,-1.929688,-2,-18860,-74
+ground_turn_right_to_left,"grounded, direction opposite current speed",76,1,768,-512,-495,-1.933594,-2,-19355,-76
+ground_turn_right_to_left,"grounded, direction opposite current speed",77,1,768,-512,-496,-1.937500,-2,-19851,-78
+ground_turn_right_to_left,"grounded, direction opposite current speed",78,1,768,-512,-497,-1.941406,-2,-20348,-80
+ground_turn_right_to_left,"grounded, direction opposite current speed",79,1,768,-512,-512,-2.000000,-2,-20860,-82
+air_control_accel,"airborne, dpad held, run ignored",1,4,0,512,4,0.015625,0,4,0
+air_control_accel,"airborne, dpad held, run ignored",2,4,0,512,7,0.027344,0,11,0
+air_control_accel,"airborne, dpad held, run ignored",3,4,0,512,10,0.039063,0,21,0
+air_control_accel,"airborne, dpad held, run ignored",4,4,0,512,13,0.050781,0,34,0
+air_control_accel,"airborne, dpad held, run ignored",5,4,0,512,16,0.062500,0,50,0
+air_control_accel,"airborne, dpad held, run ignored",6,4,0,512,19,0.074219,0,69,0
+air_control_accel,"airborne, dpad held, run ignored",7,4,0,512,22,0.085938,0,91,0
+air_control_accel,"airborne, dpad held, run ignored",8,4,0,512,25,0.097656,0,116,0
+air_control_accel,"airborne, dpad held, run ignored",9,4,0,512,28,0.109375,0,144,0
+air_control_accel,"airborne, dpad held, run ignored",10,4,0,512,31,0.121094,0,175,0
+air_control_accel,"airborne, dpad held, run ignored",11,4,0,512,34,0.132813,0,209,0
+air_control_accel,"airborne, dpad held, run ignored",12,4,0,512,37,0.144531,0,246,0
+air_control_accel,"airborne, dpad held, run ignored",13,4,0,512,40,0.156250,1,286,1
+air_control_accel,"airborne, dpad held, run ignored",14,4,0,512,43,0.167969,0,329,1
+air_control_accel,"airborne, dpad held, run ignored",15,4,0,512,46,0.179688,0,375,1
+air_control_accel,"airborne, dpad held, run ignored",16,4,0,512,49,0.191406,0,424,1
+air_control_accel,"airborne, dpad held, run ignored",17,4,0,512,52,0.203125,0,476,1
+air_control_accel,"airborne, dpad held, run ignored",18,4,0,512,55,0.214844,1,531,2
+air_control_accel,"airborne, dpad held, run ignored",19,4,0,512,58,0.226563,0,589,2
+air_control_accel,"airborne, dpad held, run ignored",20,4,0,512,61,0.238281,0,650,2
+air_control_accel,"airborne, dpad held, run ignored",21,4,0,512,64,0.250000,0,714,2
+air_control_accel,"airborne, dpad held, run ignored",22,4,0,512,67,0.261719,1,781,3
+air_control_accel,"airborne, dpad held, run ignored",23,4,0,512,70,0.273438,0,851,3
+air_control_accel,"airborne, dpad held, run ignored",24,4,0,512,73,0.285156,0,924,3
+air_control_accel,"airborne, dpad held, run ignored",25,4,0,512,76,0.296875,0,1000,3
+air_control_accel,"airborne, dpad held, run ignored",26,4,0,512,79,0.308594,1,1079,4
+air_control_accel,"airborne, dpad held, run ignored",27,4,0,512,82,0.320313,0,1161,4
+air_control_accel,"airborne, dpad held, run ignored",28,4,0,512,85,0.332031,0,1246,4
+air_control_accel,"airborne, dpad held, run ignored",29,4,0,512,88,0.343750,1,1334,5
+air_control_accel,"airborne, dpad held, run ignored",30,4,0,512,91,0.355469,0,1425,5
+air_control_accel,"airborne, dpad held, run ignored",31,4,0,512,94,0.367188,0,1519,5
+air_control_accel,"airborne, dpad held, run ignored",32,4,0,512,97,0.378906,1,1616,6
+air_control_accel,"airborne, dpad held, run ignored",33,4,0,512,100,0.390625,0,1716,6
+air_control_accel,"airborne, dpad held, run ignored",34,4,0,512,103,0.402344,1,1819,7
+air_control_accel,"airborne, dpad held, run ignored",35,4,0,512,106,0.414063,0,1925,7
+air_control_accel,"airborne, dpad held, run ignored",36,4,0,512,109,0.425781,0,2034,7
+air_control_accel,"airborne, dpad held, run ignored",37,4,0,512,112,0.437500,1,2146,8
+air_control_accel,"airborne, dpad held, run ignored",38,4,0,512,115,0.449219,0,2261,8
+air_control_accel,"airborne, dpad held, run ignored",39,4,0,512,118,0.460938,1,2379,9
+air_control_accel,"airborne, dpad held, run ignored",40,4,0,512,121,0.472656,0,2500,9
+air_control_accel,"airborne, dpad held, run ignored",41,4,0,512,124,0.484375,1,2624,10
+air_control_accel,"airborne, dpad held, run ignored",42,4,0,512,127,0.496094,0,2751,10
+air_control_accel,"airborne, dpad held, run ignored",43,4,0,512,130,0.507813,1,2881,11
+air_control_accel,"airborne, dpad held, run ignored",44,4,0,512,132,0.515625,0,3013,11
+air_control_accel,"airborne, dpad held, run ignored",45,4,0,512,134,0.523438,1,3147,12
+air_control_accel,"airborne, dpad held, run ignored",46,4,0,512,136,0.531250,0,3283,12
+air_control_accel,"airborne, dpad held, run ignored",47,4,0,512,138,0.539063,1,3421,13
+air_control_accel,"airborne, dpad held, run ignored",48,4,0,512,140,0.546875,0,3561,13
+air_control_accel,"airborne, dpad held, run ignored",49,4,0,512,142,0.554688,1,3703,14
+air_control_accel,"airborne, dpad held, run ignored",50,4,0,512,144,0.562500,1,3847,15
+air_control_accel,"airborne, dpad held, run ignored",51,4,0,512,146,0.570313,0,3993,15
+air_control_accel,"airborne, dpad held, run ignored",52,4,0,512,148,0.578125,1,4141,16
+air_control_accel,"airborne, dpad held, run ignored",53,4,0,512,150,0.585938,0,4291,16
+air_control_accel,"airborne, dpad held, run ignored",54,4,0,512,152,0.593750,1,4443,17
+air_control_accel,"airborne, dpad held, run ignored",55,4,0,512,154,0.601563,0,4597,17
+air_control_accel,"airborne, dpad held, run ignored",56,4,0,512,156,0.609375,1,4753,18
+air_control_accel,"airborne, dpad held, run ignored",57,4,0,512,158,0.617188,1,4911,19
+air_control_accel,"airborne, dpad held, run ignored",58,4,0,512,160,0.625000,0,5071,19
+air_control_accel,"airborne, dpad held, run ignored",59,4,0,512,162,0.632813,1,5233,20
+air_control_accel,"airborne, dpad held, run ignored",60,4,0,512,164,0.640625,1,5397,21
+air_control_accel,"airborne, dpad held, run ignored",61,4,0,512,166,0.648438,0,5563,21
+air_control_accel,"airborne, dpad held, run ignored",62,4,0,512,168,0.656250,1,5731,22
+air_control_accel,"airborne, dpad held, run ignored",63,4,0,512,170,0.664063,1,5901,23
+air_control_accel,"airborne, dpad held, run ignored",64,4,0,512,172,0.671875,0,6073,23
+air_control_accel,"airborne, dpad held, run ignored",65,4,0,512,174,0.679688,1,6247,24
+air_control_accel,"airborne, dpad held, run ignored",66,4,0,512,176,0.687500,1,6423,25
+air_control_accel,"airborne, dpad held, run ignored",67,4,0,512,178,0.695313,0,6601,25
+air_control_accel,"airborne, dpad held, run ignored",68,4,0,512,180,0.703125,1,6781,26
+air_control_accel,"airborne, dpad held, run ignored",69,4,0,512,182,0.710938,1,6963,27
+air_control_accel,"airborne, dpad held, run ignored",70,4,0,512,184,0.718750,0,7147,27
+air_control_accel,"airborne, dpad held, run ignored",71,4,0,512,186,0.726563,1,7333,28
+air_control_accel,"airborne, dpad held, run ignored",72,4,0,512,188,0.734375,1,7521,29
+air_control_accel,"airborne, dpad held, run ignored",73,4,0,512,190,0.742188,1,7711,30
+air_control_accel,"airborne, dpad held, run ignored",74,4,0,512,192,0.750000,0,7903,30
+air_control_accel,"airborne, dpad held, run ignored",75,4,0,512,194,0.757813,1,8097,31
+air_control_accel,"airborne, dpad held, run ignored",76,4,0,512,196,0.765625,1,8293,32
+air_control_accel,"airborne, dpad held, run ignored",77,4,0,512,198,0.773438,1,8491,33
+air_control_accel,"airborne, dpad held, run ignored",78,4,0,512,200,0.781250,0,8691,33
+air_control_accel,"airborne, dpad held, run ignored",79,4,0,512,202,0.789063,1,8893,34
+air_control_accel,"airborne, dpad held, run ignored",80,4,0,512,204,0.796875,1,9097,35
+air_control_accel,"airborne, dpad held, run ignored",81,4,0,512,206,0.804688,1,9303,36
+air_control_accel,"airborne, dpad held, run ignored",82,4,0,512,208,0.812500,1,9511,37
+air_control_accel,"airborne, dpad held, run ignored",83,4,0,512,210,0.820313,0,9721,37
+air_control_accel,"airborne, dpad held, run ignored",84,4,0,512,212,0.828125,1,9933,38
+air_control_accel,"airborne, dpad held, run ignored",85,4,0,512,214,0.835938,1,10147,39
+air_control_accel,"airborne, dpad held, run ignored",86,4,0,512,216,0.843750,1,10363,40
+air_control_accel,"airborne, dpad held, run ignored",87,4,0,512,218,0.851563,1,10581,41
+air_control_accel,"airborne, dpad held, run ignored",88,4,0,512,220,0.859375,1,10801,42
+air_control_accel,"airborne, dpad held, run ignored",89,4,0,512,222,0.867188,1,11023,43
+air_control_accel,"airborne, dpad held, run ignored",90,4,0,512,224,0.875000,0,11247,43
+air_control_accel,"airborne, dpad held, run ignored",91,4,0,512,226,0.882813,1,11473,44
+air_control_accel,"airborne, dpad held, run ignored",92,4,0,512,228,0.890625,1,11701,45
+air_control_accel,"airborne, dpad held, run ignored",93,4,0,512,230,0.898438,1,11931,46
+air_control_accel,"airborne, dpad held, run ignored",94,4,0,512,232,0.906250,1,12163,47
+air_control_accel,"airborne, dpad held, run ignored",95,4,0,512,234,0.914063,1,12397,48
+air_control_accel,"airborne, dpad held, run ignored",96,4,0,512,236,0.921875,1,12633,49
+air_control_accel,"airborne, dpad held, run ignored",97,4,0,512,238,0.929688,1,12871,50
+air_control_accel,"airborne, dpad held, run ignored",98,4,0,512,240,0.937500,1,13111,51
+air_control_accel,"airborne, dpad held, run ignored",99,4,0,512,242,0.945313,1,13353,52
+air_control_accel,"airborne, dpad held, run ignored",100,4,0,512,244,0.953125,1,13597,53
+air_control_accel,"airborne, dpad held, run ignored",101,4,0,512,246,0.960938,1,13843,54
+air_control_accel,"airborne, dpad held, run ignored",102,4,0,512,248,0.968750,1,14091,55
+air_control_accel,"airborne, dpad held, run ignored",103,4,0,512,250,0.976563,1,14341,56
+air_control_accel,"airborne, dpad held, run ignored",104,4,0,512,252,0.984375,1,14593,57
+air_control_accel,"airborne, dpad held, run ignored",105,4,0,512,254,0.992188,0,14847,57
+air_control_accel,"airborne, dpad held, run ignored",106,4,0,512,256,1.000000,1,15103,58
+air_control_accel,"airborne, dpad held, run ignored",107,4,0,512,258,1.007813,2,15361,60
+air_control_accel,"airborne, dpad held, run ignored",108,4,0,512,259,1.011719,1,15620,61
+air_control_accel,"airborne, dpad held, run ignored",109,4,0,512,260,1.015625,1,15880,62
+air_control_accel,"airborne, dpad held, run ignored",110,4,0,512,261,1.019531,1,16141,63
+air_control_accel,"airborne, dpad held, run ignored",111,4,0,512,262,1.023438,1,16403,64
+air_control_accel,"airborne, dpad held, run ignored",112,4,0,512,263,1.027344,1,16666,65
+air_control_accel,"airborne, dpad held, run ignored",113,4,0,512,264,1.031250,1,16930,66
+air_control_accel,"airborne, dpad held, run ignored",114,4,0,512,265,1.035156,1,17195,67
+air_control_accel,"airborne, dpad held, run ignored",115,4,0,512,266,1.039063,1,17461,68
+air_control_accel,"airborne, dpad held, run ignored",116,4,0,512,267,1.042969,1,17728,69
+air_control_accel,"airborne, dpad held, run ignored",117,4,0,512,268,1.046875,1,17996,70
+air_control_accel,"airborne, dpad held, run ignored",118,4,0,512,269,1.050781,1,18265,71
+air_control_accel,"airborne, dpad held, run ignored",119,4,0,512,270,1.054688,1,18535,72
+air_control_accel,"airborne, dpad held, run ignored",120,4,0,512,271,1.058594,1,18806,73
+air_control_accel,"airborne, dpad held, run ignored",121,4,0,512,272,1.062500,1,19078,74
+air_control_accel,"airborne, dpad held, run ignored",122,4,0,512,273,1.066406,1,19351,75
+air_control_accel,"airborne, dpad held, run ignored",123,4,0,512,274,1.070313,1,19625,76
+air_control_accel,"airborne, dpad held, run ignored",124,4,0,512,275,1.074219,1,19900,77
+air_control_accel,"airborne, dpad held, run ignored",125,4,0,512,276,1.078125,1,20176,78
+air_control_accel,"airborne, dpad held, run ignored",126,4,0,512,277,1.082031,1,20453,79
+air_control_accel,"airborne, dpad held, run ignored",127,4,0,512,278,1.085938,1,20731,80
+air_control_accel,"airborne, dpad held, run ignored",128,4,0,512,279,1.089844,2,21010,82
+air_control_accel,"airborne, dpad held, run ignored",129,4,0,512,280,1.093750,1,21290,83
+air_control_accel,"airborne, dpad held, run ignored",130,4,0,512,281,1.097656,1,21571,84
+air_control_accel,"airborne, dpad held, run ignored",131,4,0,512,282,1.101563,1,21853,85
+air_control_accel,"airborne, dpad held, run ignored",132,4,0,512,283,1.105469,1,22136,86
+air_control_accel,"airborne, dpad held, run ignored",133,4,0,512,284,1.109375,1,22420,87
+air_control_accel,"airborne, dpad held, run ignored",134,4,0,512,285,1.113281,1,22705,88
+air_control_accel,"airborne, dpad held, run ignored",135,4,0,512,286,1.117188,1,22991,89
+air_control_accel,"airborne, dpad held, run ignored",136,4,0,512,287,1.121094,1,23278,90
+air_control_accel,"airborne, dpad held, run ignored",137,4,0,512,288,1.125000,2,23566,92
+air_control_accel,"airborne, dpad held, run ignored",138,4,0,512,289,1.128906,1,23855,93
+air_control_accel,"airborne, dpad held, run ignored",139,4,0,512,290,1.132813,1,24145,94
+air_control_accel,"airborne, dpad held, run ignored",140,4,0,512,291,1.136719,1,24436,95
+air_control_accel,"airborne, dpad held, run ignored",141,4,0,512,292,1.140625,1,24728,96
+air_control_accel,"airborne, dpad held, run ignored",142,4,0,512,293,1.144531,1,25021,97
+air_control_accel,"airborne, dpad held, run ignored",143,4,0,512,294,1.148438,1,25315,98
+air_control_accel,"airborne, dpad held, run ignored",144,4,0,512,295,1.152344,2,25610,100
+air_control_accel,"airborne, dpad held, run ignored",145,4,0,512,296,1.156250,1,25906,101
+air_control_accel,"airborne, dpad held, run ignored",146,4,0,512,297,1.160156,1,26203,102
+air_control_accel,"airborne, dpad held, run ignored",147,4,0,512,298,1.164063,1,26501,103
+air_control_accel,"airborne, dpad held, run ignored",148,4,0,512,299,1.167969,1,26800,104
+air_control_accel,"airborne, dpad held, run ignored",149,4,0,512,300,1.171875,1,27100,105
+air_control_accel,"airborne, dpad held, run ignored",150,4,0,512,301,1.175781,2,27401,107
+air_control_accel,"airborne, dpad held, run ignored",151,4,0,512,302,1.179688,1,27703,108
+air_control_accel,"airborne, dpad held, run ignored",152,4,0,512,303,1.183594,1,28006,109
+air_control_accel,"airborne, dpad held, run ignored",153,4,0,512,304,1.187500,1,28310,110
+air_control_accel,"airborne, dpad held, run ignored",154,4,0,512,305,1.191406,1,28615,111
+air_control_accel,"airborne, dpad held, run ignored",155,4,0,512,306,1.195313,1,28921,112
+air_control_accel,"airborne, dpad held, run ignored",156,4,0,512,307,1.199219,2,29228,114
+air_control_accel,"airborne, dpad held, run ignored",157,4,0,512,308,1.203125,1,29536,115
+air_control_accel,"airborne, dpad held, run ignored",158,4,0,512,309,1.207031,1,29845,116
+air_control_accel,"airborne, dpad held, run ignored",159,4,0,512,310,1.210938,1,30155,117
+air_control_accel,"airborne, dpad held, run ignored",160,4,0,512,311,1.214844,2,30466,119
+air_control_accel,"airborne, dpad held, run ignored",161,4,0,512,312,1.218750,1,30778,120
+air_control_accel,"airborne, dpad held, run ignored",162,4,0,512,313,1.222656,1,31091,121
+air_control_accel,"airborne, dpad held, run ignored",163,4,0,512,314,1.226563,1,31405,122
+air_control_accel,"airborne, dpad held, run ignored",164,4,0,512,315,1.230469,1,31720,123
+air_control_accel,"airborne, dpad held, run ignored",165,4,0,512,316,1.234375,2,32036,125
+air_control_accel,"airborne, dpad held, run ignored",166,4,0,512,317,1.238281,1,32353,126
+air_control_accel,"airborne, dpad held, run ignored",167,4,0,512,318,1.242188,1,32671,127
+air_control_accel,"airborne, dpad held, run ignored",168,4,0,512,319,1.246094,1,32990,128
+air_control_accel,"airborne, dpad held, run ignored",169,4,0,512,320,1.250000,2,33310,130
+air_control_accel,"airborne, dpad held, run ignored",170,4,0,512,321,1.253906,1,33631,131
+air_control_accel,"airborne, dpad held, run ignored",171,4,0,512,322,1.257813,1,33953,132
+air_control_accel,"airborne, dpad held, run ignored",172,4,0,512,323,1.261719,1,34276,133
+air_control_accel,"airborne, dpad held, run ignored",173,4,0,512,324,1.265625,2,34600,135
+air_control_accel,"airborne, dpad held, run ignored",174,4,0,512,325,1.269531,1,34925,136
+air_control_accel,"airborne, dpad held, run ignored",175,4,0,512,326,1.273438,1,35251,137
+air_control_accel,"airborne, dpad held, run ignored",176,4,0,512,327,1.277344,1,35578,138
+air_control_accel,"airborne, dpad held, run ignored",177,4,0,512,328,1.281250,2,35906,140
+air_control_accel,"airborne, dpad held, run ignored",178,4,0,512,329,1.285156,1,36235,141
+air_control_accel,"airborne, dpad held, run ignored",179,4,0,512,330,1.289063,1,36565,142
+air_control_accel,"airborne, dpad held, run ignored",180,4,0,512,331,1.292969,2,36896,144
+air_control_accel,"airborne, dpad held, run ignored",181,4,0,512,332,1.296875,1,37228,145
+air_control_accel,"airborne, dpad held, run ignored",182,4,0,512,333,1.300781,1,37561,146
+air_control_accel,"airborne, dpad held, run ignored",183,4,0,512,334,1.304688,2,37895,148
+air_control_accel,"airborne, dpad held, run ignored",184,4,0,512,335,1.308594,1,38230,149
+air_control_accel,"airborne, dpad held, run ignored",185,4,0,512,336,1.312500,1,38566,150
+air_control_accel,"airborne, dpad held, run ignored",186,4,0,512,337,1.316406,1,38903,151
+air_control_accel,"airborne, dpad held, run ignored",187,4,0,512,338,1.320313,2,39241,153
+air_control_accel,"airborne, dpad held, run ignored",188,4,0,512,339,1.324219,1,39580,154
+air_control_accel,"airborne, dpad held, run ignored",189,4,0,512,340,1.328125,1,39920,155
+air_control_accel,"airborne, dpad held, run ignored",190,4,0,512,341,1.332031,2,40261,157
+air_control_accel,"airborne, dpad held, run ignored",191,4,0,512,342,1.335938,1,40603,158
+air_control_accel,"airborne, dpad held, run ignored",192,4,0,512,343,1.339844,1,40946,159
+air_control_accel,"airborne, dpad held, run ignored",193,4,0,512,344,1.343750,2,41290,161
+air_control_accel,"airborne, dpad held, run ignored",194,4,0,512,345,1.347656,1,41635,162
+air_control_accel,"airborne, dpad held, run ignored",195,4,0,512,346,1.351563,1,41981,163
+air_control_accel,"airborne, dpad held, run ignored",196,4,0,512,347,1.355469,2,42328,165
+air_control_accel,"airborne, dpad held, run ignored",197,4,0,512,348,1.359375,1,42676,166
+air_control_accel,"airborne, dpad held, run ignored",198,4,0,512,349,1.363281,2,43025,168
+air_control_accel,"airborne, dpad held, run ignored",199,4,0,512,350,1.367188,1,43375,169
+air_control_accel,"airborne, dpad held, run ignored",200,4,0,512,351,1.371094,1,43726,170
+air_control_accel,"airborne, dpad held, run ignored",201,4,0,512,352,1.375000,2,44078,172
+air_control_accel,"airborne, dpad held, run ignored",202,4,0,512,353,1.378906,1,44431,173
+air_control_accel,"airborne, dpad held, run ignored",203,4,0,512,354,1.382813,1,44785,174
+air_control_accel,"airborne, dpad held, run ignored",204,4,0,512,355,1.386719,2,45140,176
+air_control_accel,"airborne, dpad held, run ignored",205,4,0,512,356,1.390625,1,45496,177
+air_control_accel,"airborne, dpad held, run ignored",206,4,0,512,357,1.394531,2,45853,179
+air_control_accel,"airborne, dpad held, run ignored",207,4,0,512,358,1.398438,1,46211,180
+air_control_accel,"airborne, dpad held, run ignored",208,4,0,512,359,1.402344,1,46570,181
+air_control_accel,"airborne, dpad held, run ignored",209,4,0,512,360,1.406250,2,46930,183
+air_control_accel,"airborne, dpad held, run ignored",210,4,0,512,361,1.410156,1,47291,184
+air_control_accel,"airborne, dpad held, run ignored",211,4,0,512,362,1.414063,2,47653,186
+air_control_accel,"airborne, dpad held, run ignored",212,4,0,512,363,1.417969,1,48016,187
+air_control_accel,"airborne, dpad held, run ignored",213,4,0,512,364,1.421875,1,48380,188
+air_control_accel,"airborne, dpad held, run ignored",214,4,0,512,365,1.425781,2,48745,190
+air_control_accel,"airborne, dpad held, run ignored",215,4,0,512,366,1.429688,1,49111,191
+air_control_accel,"airborne, dpad held, run ignored",216,4,0,512,367,1.433594,2,49478,193
+air_control_accel,"airborne, dpad held, run ignored",217,4,0,512,368,1.437500,1,49846,194
+air_control_accel,"airborne, dpad held, run ignored",218,4,0,512,369,1.441406,2,50215,196
+air_control_accel,"airborne, dpad held, run ignored",219,4,0,512,370,1.445313,1,50585,197
+air_control_accel,"airborne, dpad held, run ignored",220,4,0,512,371,1.449219,2,50956,199
+air_control_accel,"airborne, dpad held, run ignored",221,4,0,512,372,1.453125,1,51328,200
+air_control_accel,"airborne, dpad held, run ignored",222,4,0,512,373,1.457031,1,51701,201
+air_control_accel,"airborne, dpad held, run ignored",223,4,0,512,374,1.460938,2,52075,203
+air_control_accel,"airborne, dpad held, run ignored",224,4,0,512,375,1.464844,1,52450,204
+air_control_accel,"airborne, dpad held, run ignored",225,4,0,512,376,1.468750,2,52826,206
+air_control_accel,"airborne, dpad held, run ignored",226,4,0,512,377,1.472656,1,53203,207
+air_control_accel,"airborne, dpad held, run ignored",227,4,0,512,378,1.476563,2,53581,209
+air_control_accel,"airborne, dpad held, run ignored",228,4,0,512,379,1.480469,1,53960,210
+air_control_accel,"airborne, dpad held, run ignored",229,4,0,512,380,1.484375,2,54340,212
+air_control_accel,"airborne, dpad held, run ignored",230,4,0,512,381,1.488281,1,54721,213
+air_control_accel,"airborne, dpad held, run ignored",231,4,0,512,382,1.492188,2,55103,215
+air_control_accel,"airborne, dpad held, run ignored",232,4,0,512,383,1.496094,1,55486,216
+air_control_accel,"airborne, dpad held, run ignored",233,4,0,512,384,1.500000,2,55870,218
+air_control_accel,"airborne, dpad held, run ignored",234,4,0,512,385,1.503906,1,56255,219
+air_control_accel,"airborne, dpad held, run ignored",235,4,0,512,512,2.000000,2,56767,221
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,1,1,1024,512,992,3.875000,3,992,3
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,2,1,1024,512,962,3.757813,4,1954,7
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,3,1,1024,512,934,3.648438,4,2888,11
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,4,1,1024,512,908,3.546875,3,3796,14
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,5,1,1024,512,884,3.453125,4,4680,18
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,6,1,1024,512,861,3.363281,3,5541,21
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,7,1,1024,512,840,3.281250,3,6381,24
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,8,1,1024,512,820,3.203125,4,7201,28
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,9,1,1024,512,801,3.128906,3,8002,31
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,10,1,1024,512,783,3.058594,3,8785,34
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,11,1,1024,512,767,2.996094,3,9552,37
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,12,1,1024,512,752,2.937500,3,10304,40
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,13,1,1024,512,737,2.878906,3,11041,43
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,14,1,1024,512,723,2.824219,2,11764,45
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,15,1,1024,512,710,2.773438,3,12474,48
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,16,1,1024,512,698,2.726563,3,13172,51
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,17,1,1024,512,687,2.683594,3,13859,54
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,18,1,1024,512,677,2.644531,2,14536,56
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,19,1,1024,512,667,2.605469,3,15203,59
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,20,1,1024,512,658,2.570313,2,15861,61
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,21,1,1024,512,649,2.535156,3,16510,64
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,22,1,1024,512,641,2.503906,2,17151,66
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,23,1,1024,512,633,2.472656,3,17784,69
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,24,1,1024,512,626,2.445313,2,18410,71
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,25,1,1024,512,619,2.417969,3,19029,74
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,26,1,1024,512,613,2.394531,2,19642,76
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,27,1,1024,512,607,2.371094,3,20249,79
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,28,1,1024,512,602,2.351563,2,20851,81
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,29,1,1024,512,597,2.332031,2,21448,83
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,30,1,1024,512,592,2.312500,3,22040,86
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,31,1,1024,512,587,2.292969,2,22627,88
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,32,1,1024,512,583,2.277344,2,23210,90
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,33,1,1024,512,579,2.261719,2,23789,92
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,34,1,1024,512,575,2.246094,3,24364,95
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,35,1,1024,512,572,2.234375,2,24936,97
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,36,1,1024,512,569,2.222656,2,25505,99
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,37,1,1024,512,566,2.210938,2,26071,101
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,38,1,1024,512,563,2.199219,3,26634,104
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,39,1,1024,512,560,2.187500,2,27194,106
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,40,1,1024,512,557,2.175781,2,27751,108
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,41,1,1024,512,555,2.167969,2,28306,110
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,42,1,1024,512,553,2.160156,2,28859,112
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,43,1,1024,512,551,2.152344,2,29410,114
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,44,1,1024,512,549,2.144531,3,29959,117
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,45,1,1024,512,547,2.136719,2,30506,119
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,46,1,1024,512,545,2.128906,2,31051,121
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,47,1,1024,512,543,2.121094,2,31594,123
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,48,1,1024,512,542,2.117188,2,32136,125
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,49,1,1024,512,541,2.113281,2,32677,127
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,50,1,1024,512,540,2.109375,2,33217,129
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,51,1,1024,512,539,2.105469,2,33756,131
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,52,1,1024,512,538,2.101563,2,34294,133
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,53,1,1024,512,537,2.097656,3,34831,136
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,54,1,1024,512,536,2.093750,2,35367,138
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,55,1,1024,512,535,2.089844,2,35902,140
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,56,1,1024,512,534,2.085938,2,36436,142
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,57,1,1024,512,533,2.082031,2,36969,144
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,58,1,1024,512,532,2.078125,2,37501,146
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,59,1,1024,512,531,2.074219,2,38032,148
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,60,1,1024,512,530,2.070313,2,38562,150
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,61,1,1024,512,529,2.066406,2,39091,152
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,62,1,1024,512,528,2.062500,2,39619,154
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,63,1,1024,512,527,2.058594,2,40146,156
+roll_decay_4px_to_2px,roll state speed decays toward floor speed,64,1,1024,512,512,2.000000,2,40658,158

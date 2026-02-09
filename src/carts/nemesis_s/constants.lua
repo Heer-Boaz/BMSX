@@ -39,11 +39,9 @@ constants.projectile = {
 }
 
 constants.stage = {
+	asset_id = 'nemesis_s_stage',
 	tile_size = 8,
 	tile_columns = 32,
-	tile_rows = 22,
-	tape_length_tiles = 560,
-	stop_tape_head = 492,
 	draw_z = 16,
 	star_blink_interval_ms = 50,
 	scroll_mode_pause = 1,
@@ -54,7 +52,6 @@ constants.stage = {
 }
 
 constants.assets = {
-	background = 'sterrenachtergrond',
 	player_n = 'metallion_n',
 	player_u = 'metallion_u',
 	player_d = 'metallion_d',

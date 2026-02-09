@@ -84,3 +84,13 @@
   - stage collision map and enemy logic,
   - title/map/powerup screens,
   - full Nemesis 2 event scripting.
+
+## Stage data loading model
+
+- `nemesis_s` now loads stage geometry from a ROM data asset instead of hardcoded Lua math:
+  - asset file: `src/carts/nemesis_s/res/data/nemesis_s_stage.yaml`
+  - source of map rows: `nemesis-s-bdx` `StageFactory.Stage0Map` (22 rows, 554 columns)
+- Runtime loader:
+  - `stage.lua` reads `assets.data[romdir.token('nemesis_s_stage')]`
+  - map symbols are converted to tile/collision tapes during cart boot/reset
+- Scroll gate and tape-head progression stay tied to disassembly-derived behavior (`E202` rotate gate + `E203` increment), while stage layout source is externalized as data.
