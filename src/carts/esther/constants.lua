@@ -49,10 +49,7 @@ constants.profile = {
 	--   everything else (airborne, roll, etc.)      → 0  (CODE_BFB187)
 	ground_walk = 3,   -- ÷64: CODE_BFB180 (grounded, not running)
 	ground_run = 8,    -- ÷32+÷64: CODE_BFB167 (grounded, running flag $0004)
-	default = 0,       -- ÷8: CODE_BFB187 (non-ground states, roll, etc.)
-	air = 5,           -- ÷256: airborne horizontal control (functional equivalent;
-	                   -- assembly uses profile 0 but momentum is preserved when no
-	                   -- D-pad input; ÷256 with input gives matching near-zero control)
+	default = 0,       -- ÷8: CODE_BFB187 (airborne, roll, and all non-ground states)
 }
 
 constants.roll = {

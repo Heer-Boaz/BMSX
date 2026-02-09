@@ -571,24 +571,36 @@ function player:select_ground_profile()
 end
 
 function player:apply_horizontal_control(airborne)
-	-- CODE_BFB159 + DATA_BFB255
-	local target = self:CODE_BFB4E3_SELECT_TARGET_SPEED()
-	self.target_x_speed_subpx = target
+	-- CODE_BFB27C dispatches left/right/neutral handlers.
+	-- CODE_BFB159 then approaches current speed toward target.
+	local prev_target = self.target_x_speed_subpx
 
-	if airborne then
-		-- DKC1: near-zero air control. No input = full momentum preservation.
-		-- With input = barely any influence (/256).
-		self.active_profile_id = constants.profile.air
-		if self.move_axis == 0 then
-			return
+	if self.move_axis ~= 0 then
+		-- CODE_BFB5AE/BFB6C5: D-pad pressed → set target via BFB4E3.
+		local target = self:CODE_BFB4E3_SELECT_TARGET_SPEED()
+		self.target_x_speed_subpx = target
+		-- CODE_BFB61D/BFB734: grounded idle → instant start.
+		-- Assembly sets XSpeed = target directly on first direction press.
+		if not airborne and prev_target == 0 then
+			self.x_speed_subpx = target
 		end
-		self.x_speed_subpx = approach_subpx(self.x_speed_subpx, target, constants.profile.air)
-		return
+	elseif not airborne then
+		-- CODE_BFC18A (grounded neutral): decelerate to stop.
+		self.target_x_speed_subpx = 0
 	end
+	-- Airborne no-input: CODE_BFC18A leaves $0F25 unchanged → momentum preserved.
 
-	local profile = self:select_ground_profile()
+	-- CODE_BFB159: profile selection.
+	-- State $04/$09 + grounded → ground_walk(3) or ground_run(8).
+	-- Everything else (airborne, roll) → default(0) = ÷8.
+	local profile
+	if airborne then
+		profile = constants.profile.default
+	else
+		profile = self:select_ground_profile()
+	end
 	self.active_profile_id = profile
-	self.x_speed_subpx = approach_subpx(self.x_speed_subpx, target, profile)
+	self.x_speed_subpx = approach_subpx(self.x_speed_subpx, self.target_x_speed_subpx, profile)
 end
 
 function player:CODE_BFAF38_AIR_GRAVITY()

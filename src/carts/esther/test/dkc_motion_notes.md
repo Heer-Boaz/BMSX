@@ -26,5 +26,5 @@ Case summaries:
 - `ground_run_accel` profile=8, start=0, target=768, frames_to_target=91, final_speed=768 (3.000000 px/f), first_delta1=4, first_delta2=12, first_delta3=29, first_negative_delta=null, delta_counts={0:4, 1:11, 2:33, 3:43}
 - `ground_release_decel` profile=3, start=768, target=0, frames_to_target=193, final_speed=0 (0.000000 px/f), first_delta1=29, first_delta2=1, first_delta3=2, first_negative_delta=null, delta_counts={0:56, 1:90, 2:35, 3:12}
 - `ground_turn_right_to_left` profile=3, start=768, target=-512, frames_to_target=227, final_speed=-512 (-2.000000 px/f), first_delta1=19, first_delta2=1, first_delta3=2, first_negative_delta=65, delta_counts={-2:56, -1:90, 0:35, 1:23, 2:17, 3:6}
-- `air_control_accel` profile=5, start=0, target=512, frames_to_target=257, final_speed=512 (2.000000 px/f), first_delta1=22, first_delta2=257, first_delta3=null, first_negative_delta=null, delta_counts={0:127, 1:129, 2:1}
+- `air_control_accel` profile=0, start=0, target=512, frames_to_target=37, final_speed=512 (2.000000 px/f), first_delta1=3, first_delta2=9, first_delta3=null, first_negative_delta=null, delta_counts={0:2, 1:11, 2:24}
 - `roll_decay_4px_to_2px` profile=0, start=1024, target=512, frames_to_target=37, final_speed=512 (2.000000 px/f), first_delta1=null, first_delta2=9, first_delta3=1, first_negative_delta=null, delta_counts={2:24, 3:12, 4:1}

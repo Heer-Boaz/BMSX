@@ -159,7 +159,7 @@ const scenarios = [
 	{
 		caseId: 'air_control_accel',
 		condition: 'airborne, dpad held, run ignored',
-		profileId: 5,
+		profileId: 0,
 		startSpeedSubpx: 0x0000,
 		targetSpeedSubpx: 0x0200,
 	},
