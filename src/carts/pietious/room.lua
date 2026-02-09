@@ -267,6 +267,59 @@ local function build_solids(collision_map, tile_size, origin_x, origin_y)
 	return solids
 end
 
+local function is_stair_left(ch)
+	return ch == '-' or ch == '_'
+end
+
+local function is_stair_right(ch)
+	return ch == '=' or ch == '+'
+end
+
+local function build_stairs(map_rows, tile_size, origin_x, origin_y, player_height)
+	local stairs = {}
+	local row_count = #map_rows
+	local column_count = #map_rows[1]
+
+	for tx = 1, column_count - 1 do
+		local ty = 1
+		while ty <= row_count do
+			local row = map_rows[ty]
+			local left = row:sub(tx, tx)
+			local right = row:sub(tx + 1, tx + 1)
+			if is_stair_left(left) and is_stair_right(right) then
+				local min_row = ty
+				local max_row = ty
+				ty = ty + 1
+				while ty <= row_count do
+					local next_row = map_rows[ty]
+					local next_left = next_row:sub(tx, tx)
+					local next_right = next_row:sub(tx + 1, tx + 1)
+					if not (is_stair_left(next_left) and is_stair_right(next_right)) then
+						break
+					end
+					max_row = ty
+					ty = ty + 1
+				end
+
+				local x = origin_x + ((tx - 1) * tile_size)
+				local top_y = origin_y + ((min_row - 2) * tile_size) - player_height
+				local bottom_y = origin_y + (max_row * tile_size) - player_height
+				stairs[#stairs + 1] = {
+					x = x,
+					top_y = top_y,
+					bottom_y = bottom_y,
+					min_row = min_row,
+					max_row = max_row,
+				}
+			else
+				ty = ty + 1
+			end
+		end
+	end
+
+	return stairs
+end
+
 local function build_enemies(enemy_defs)
 	local enemies = {}
 	for i = 1, #enemy_defs do
@@ -332,6 +385,7 @@ local function apply_room_template(room_state, template)
 	room_state.collision_map = collision_map
 	room_state.tiles = tiles
 	room_state.solids = build_solids(collision_map, tile_size, tile_origin_x, tile_origin_y)
+	room_state.stairs = build_stairs(map_rows, tile_size, tile_origin_x, tile_origin_y, constants.player.height)
 	room_state.enemies = build_enemies(template.enemies)
 	room_state.links = copy_links(template.links)
 	room_state.edge_gates = copy_edge_gates(template.edge_gates)

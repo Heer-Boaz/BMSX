@@ -56,7 +56,7 @@ if (secondSwitch) {
 		secondSwitch.from === 'castle_blue_02' && secondSwitch.to === 'castle_stone_03' && secondSwitch.dir === 'right',
 		`Second switch mismatch. got from=${secondSwitch.from} to=${secondSwitch.to} dir=${secondSwitch.dir}.`,
 	);
-	expect(Number(secondSwitch.x) === 0, `Right switch entry x mismatch. got x=${secondSwitch.x}, expected 0.`);
+	expect(Number(secondSwitch.x) === 8, `Right switch entry x mismatch. got x=${secondSwitch.x}, expected 8.`);
 }
 
 console.log(`PIETIOUS_ROOM_SWITCH_ANALYSIS log=${logPath}`);

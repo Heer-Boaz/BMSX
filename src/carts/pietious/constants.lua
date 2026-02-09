@@ -7,11 +7,39 @@ constants.ids = {
 	director_def = 'pietious.director.def',
 	director_instance = 'pietious.director.instance',
 	director_fsm = 'pietious.director.fsm',
+	room_view_def = 'pietious.room_view.def',
+	room_view_instance = 'pietious.room_view.instance',
+	room_view_fsm = 'pietious.room_view.fsm',
+	transition_view_def = 'pietious.transition_view.def',
+	transition_view_instance = 'pietious.transition_view.instance',
+	transition_view_fsm = 'pietious.transition_view.fsm',
+	item_screen_def = 'pietious.item_screen.def',
+	item_screen_instance = 'pietious.item_screen.instance',
+	item_screen_fsm = 'pietious.item_screen.fsm',
 	ui_def = 'pietious.ui.def',
 	ui_instance = 'pietious.ui.instance',
 	ui_fsm = 'pietious.ui.fsm',
 	castle_service_def = 'pietious.castle_service.def',
 	castle_service_instance = 'pietious.castle_service.instance',
+	flow_service_def = 'pietious.flow_service.def',
+	flow_service_instance = 'pietious.flow_service.instance',
+	flow_service_fsm = 'pietious.flow_service.fsm',
+}
+
+constants.spaces = {
+	castle = 'castle',
+	transition = 'transition',
+	item = 'item',
+	ui = 'ui',
+}
+
+constants.flow = {
+	room_transition_frames = 8,
+}
+
+constants.events = {
+	room_switched = 'pietious.room.switched',
+	flow_state_changed = 'pietious.flow.state_changed',
 }
 
 constants.room = {
@@ -36,14 +64,21 @@ constants.player = {
 
 constants.sword = {
 	duration_frames = 4,
-	ground_body_offset_right = 4,
-	ground_body_offset_left = -4,
-	ground_offset_right = 20,
-	ground_offset_left = -20,
+	ground_body_offset_right = 0,
+	ground_body_offset_left = 0,
+	ground_offset_right = 19,
+	ground_offset_left = -18,
+	ground_offset_y = 0,
 	jump_body_offset_right = 0,
 	jump_body_offset_left = 0,
 	jump_offset_right = 16,
-	jump_offset_left = -16,
+	jump_offset_left = -18,
+	jump_offset_y = 1,
+	stairs_body_offset_right = 0,
+	stairs_body_offset_left = 0,
+	stairs_offset_right = 19,
+	stairs_offset_left = -18,
+	stairs_offset_y = 0,
 }
 
 constants.damage = {
@@ -58,8 +93,8 @@ constants.damage = {
 }
 
 constants.stairs = {
-	speed_px = 1,
-	anim_step_px = 4,
+	speed_px = 2,
+	anim_step_px = 8,
 	foot_probe_offset_x = 4,
 	foot_probe_offset_y = 14,
 	below_probe_extra_y = 16,

@@ -1,0 +1,73 @@
+local constants = require('constants.lua')
+local engine = require('engine')
+
+local transition_view = {}
+transition_view.__index = transition_view
+
+local transition_view_fsm_id = constants.ids.transition_view_fsm
+
+function transition_view:bind_visual()
+	local rc = self:get_component('customvisualcomponent')
+	rc.producer = function(_ctx)
+		self:render_transition()
+	end
+end
+
+function transition_view:tick(_dt)
+	if engine.get_space() ~= constants.spaces.transition then
+		self.frames_in_transition = 0
+		return
+	end
+	self.frames_in_transition = self.frames_in_transition + 1
+end
+
+function transition_view:render_transition()
+	if engine.get_space() ~= constants.spaces.transition then
+		return
+	end
+	local width = display_width()
+	local height = display_height()
+	for y = 0, height - 1, 8 do
+		for x = 0, width - 1, 8 do
+			put_sprite('castle_tile_stone_dark_1', x, y, 300)
+		end
+	end
+	put_sprite('game_header', 0, 0, 301)
+end
+
+local function define_transition_view_fsm()
+	define_fsm(transition_view_fsm_id, {
+		initial = 'boot',
+		states = {
+			boot = {
+				entering_state = function(self)
+					self:bind_visual()
+					return '/active'
+				end,
+			},
+			active = {},
+		},
+	})
+end
+
+local function register_transition_view_definition()
+	define_world_object({
+		def_id = constants.ids.transition_view_def,
+		class = transition_view,
+		fsms = { transition_view_fsm_id },
+		components = { 'customvisualcomponent' },
+		defaults = {
+			space_id = constants.spaces.ui,
+			frames_in_transition = 0,
+		},
+	})
+end
+
+return {
+	transition_view = transition_view,
+	define_transition_view_fsm = define_transition_view_fsm,
+	register_transition_view_definition = register_transition_view_definition,
+	transition_view_def_id = constants.ids.transition_view_def,
+	transition_view_instance_id = constants.ids.transition_view_instance,
+	transition_view_fsm_id = transition_view_fsm_id,
+}
