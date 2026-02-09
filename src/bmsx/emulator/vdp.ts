@@ -356,7 +356,6 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 	private readOverflow = false;
 	private cpuReadbackByKey = new Map<string, Uint8Array>();
 	private skyboxSlots: SkyboxSlot[] = [];
-	private dirtyAtlasBindings = false;
 	private dirtySkybox = false;
 	private skyboxFaceIds: SkyboxImageIds | null = null;
 	private lastDitherType = 0;
@@ -515,7 +514,6 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		const view = $.view;
 		view.primaryAtlasIdInSlot = this.slotAtlasIds[0];
 		view.secondaryAtlasIdInSlot = this.slotAtlasIds[1];
-		this.dirtyAtlasBindings = false;
 		if (this.dirtySkybox) {
 			view.skyboxFaceIds = this.skyboxFaceIds;
 			this.dirtySkybox = false;
@@ -544,7 +542,6 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		if (secondary !== null) {
 			this.atlasSlotById.set(secondary, 1);
 		}
-		this.dirtyAtlasBindings = true;
 		if (primary !== null) {
 			const viewEntries = this.atlasViewsById.get(primary);
 			if (viewEntries) {
@@ -648,7 +645,6 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		this.atlasSlotById.clear();
 		this.slotAtlasIds[0] = null;
 		this.slotAtlasIds[1] = null;
-		this.dirtyAtlasBindings = true;
 		this.vramSlots = [];
 		this.readSurfaces = [null, null, null];
 		this.clearReadCaches();

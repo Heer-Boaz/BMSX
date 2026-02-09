@@ -739,7 +739,7 @@ export class BoundingBoxExtractor {
 	private static triangulateWithHoles(g: { outer: Polygon; holes: Polygon[] }): Polygon[] {
 		const verts: number[] = [];
 		const holesIdx: number[] = [];
-		const pushRing = (r: Polygon) => { for (let i = 0; i < r.length; i++) verts.push(r[i]); };
+		const pushRing = (r: Polygon)  => { for (let i = 0; i < r.length; i++) verts.push(r[i]); };
 		pushRing(g.outer);
 		let idx = g.outer.length / 2;
 		for (const h of g.holes) { holesIdx.push(idx); pushRing(h); idx += h.length / 2; }

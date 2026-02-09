@@ -311,6 +311,8 @@ private:
 	void setVblankStatus(bool active);
 	void enterVblank();
 	void commitFrameOnVblankEdge();
+	void completeTickIfPending(const FrameState& frameState, uint64_t vblankSequence);
+	void reconcileCycleBudgetAfterSignal(FrameState& frameState);
 	void requestWaitForVblank();
 	void resetTransferCarry();
 	void processIrqAck();
@@ -408,10 +410,11 @@ private:
 		int m_vblankCycles = 0;
 		int m_vblankStartCycle = 0;
 		int m_cyclesIntoFrame = 0;
-		bool m_waitingForVblank = false;
-		uint64_t m_vblankSequence = 0;
-		uint64_t m_waitForVblankTargetSequence = 0;
-		bool m_clearBackQueuesAfterWaitResume = false;
+			bool m_waitingForVblank = false;
+			uint64_t m_vblankSequence = 0;
+			uint64_t m_lastCompletedVblankSequence = 0;
+			uint64_t m_waitForVblankTargetSequence = 0;
+			bool m_clearBackQueuesAfterWaitResume = false;
 		bool m_vblankActive = false;
 		bool m_vblankPendingClear = false;
 		bool m_vblankClearOnIrqEnd = false;

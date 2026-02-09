@@ -468,6 +468,7 @@ export class Runtime {
 		this.vblankPendingClear = false;
 		this.vblankClearOnIrqEnd = false;
 		this.vblankSequence = 0;
+		this.lastCompletedVblankSequence = 0;
 		this.vdpStatus = 0;
 		this.memory.writeValue(IO_VDP_STATUS, this.vdpStatus);
 		if (this.vblankStartCycle === 0) {
@@ -507,12 +508,21 @@ export class Runtime {
 	public requestWaitForVblank(): void {
 		this.processIrqAck();
 		this.waitingForVblank = true;
+		const resumeOnCurrentEdge = this.vblankActive && !this.vblankPendingClear && this.vblankSequence > 0;
 		const nextVblankSequence = this.vblankSequence + 1;
 		// If the call arrives while VBLANK is already active, resume on the current
 		// edge instead of waiting for a new edge that may be blocked by deferred clear.
-		this.waitForVblankTargetSequence = (this.vblankActive && this.vblankSequence > 0)
+		this.waitForVblankTargetSequence = resumeOnCurrentEdge
 			? this.vblankSequence
 			: nextVblankSequence;
+		if (resumeOnCurrentEdge) {
+			const frameState = this.currentFrameState;
+			if (frameState === null) {
+				throw new Error('[Runtime] wait_vblank resumed without an active frame state.');
+			}
+			this.reconcileCycleBudgetAfterSignal(frameState);
+			this.completeTickIfPending(frameState, this.vblankSequence);
+		}
 		throw this.waitForVblankSignal;
 	}
 
@@ -540,9 +550,17 @@ export class Runtime {
 		if (this.waitForVblankTargetSequence !== 0 && this.vblankSequence < this.waitForVblankTargetSequence) {
 			return;
 		}
+		this.completeTickIfPending(frameState, this.vblankSequence);
+	}
+
+	private completeTickIfPending(frameState: FrameState, vblankSequence: number): void {
+		if (this.lastCompletedVblankSequence === vblankSequence) {
+			return;
+		}
 		this.lastTickBudgetRemaining = frameState.cycleBudgetRemaining;
 		this.lastTickCompleted = true;
 		this.lastTickSequence += 1;
+		this.lastCompletedVblankSequence = vblankSequence;
 		const debugTickRate = Boolean((globalThis as any).__bmsx_debug_tickrate);
 		if (debugTickRate) {
 			const cyclesUsed = frameState.cycleBudgetGranted - frameState.cycleBudgetRemaining;
@@ -605,6 +623,7 @@ export class Runtime {
 	private clearBackQueuesAfterWaitResume = false;
 	private readonly waitForVblankSignal: WaitForVblankSignal = { kind: 'wait_vblank' };
 	private vblankSequence = 0;
+	private lastCompletedVblankSequence = 0;
 	public cycleBudgetPerFrame: number;
 	private vblankCycles = 0;
 	private vblankStartCycle = 0;
@@ -1265,6 +1284,7 @@ export class Runtime {
 				this.publishGameDeltaTime(this.currentFrameState.deltaSeconds);
 				this.runUpdatePhase(this.currentFrameState);
 				this.vdp.flushAssetEdits();
+				this.currentFrameState.updateExecuted = !this.isUpdatePhasePending();
 			}
 			this.finalizeUpdateSlice(this.currentFrameState);
 			return;
@@ -1292,6 +1312,7 @@ export class Runtime {
 			this.lastTickBudgetRemaining = 0;
 			this.runUpdatePhase(state);
 			this.vdp.flushAssetEdits();
+			state.updateExecuted = !this.isUpdatePhasePending();
 			this.finalizeUpdateSlice(state);
 		} catch (error) {
 			fault = error;
@@ -1305,7 +1326,9 @@ export class Runtime {
 
 	private finalizeUpdateSlice(frameState: FrameState): void {
 		this.currentFrameState = frameState;
-		this.abandonFrameState();
+		if (!this.isUpdatePhasePending()) {
+			this.abandonFrameState();
+		}
 	}
 
 	public raiseEngineIrq(mask: number): void {
@@ -1342,29 +1365,21 @@ export class Runtime {
 	}
 
 	private runUpdatePhase(state: FrameState): void {
-		if (state.updateExecuted) {
-			return;
-		}
 		if (!this.cartEntryAvailable) {
-			state.updateExecuted = true;
 			return;
 		}
 		if (!this.luaGate.ready) {
-			state.updateExecuted = true;
 			return;
 		}
 		if (state.luaFaulted || this.luaRuntimeFailed) {
 			state.luaFaulted = true;
-			state.updateExecuted = true;
 			return;
 		}
 		if (state.haltGame) {
-			state.updateExecuted = true;
 			return;
 		}
 		try {
 			if (this.waitingForVblank && this.runWaitForVblank(state)) {
-				state.updateExecuted = true;
 				return;
 			}
 			if (this.clearBackQueuesAfterWaitResume) {
@@ -1373,7 +1388,6 @@ export class Runtime {
 			}
 			this.processIrqAck();
 			if (this.pendingCall !== 'entry') {
-				state.updateExecuted = true;
 				return;
 			}
 			const result = this.runWithBudget(state);
@@ -1384,7 +1398,8 @@ export class Runtime {
 			}
 		} catch (error) {
 			if (this.isWaitForVblankSignal(error)) {
-				state.updateExecuted = true;
+				this.reconcileCycleBudgetAfterSignal(state);
+				this.processIrqAck();
 			} else if (isLuaDebuggerPauseSignal(error)) {
 				runtimeIde.onLuaDebuggerPause(this, error);
 			} else {
@@ -1393,8 +1408,18 @@ export class Runtime {
 				this.pendingCall = null;
 				runtimeIde.handleLuaError(this, error);
 			}
-		} finally {
-			state.updateExecuted = true;
+		}
+	}
+
+	private reconcileCycleBudgetAfterSignal(state: FrameState): void {
+		const remaining = this.cpu.instructionBudgetRemaining;
+		const consumed = state.cycleBudgetRemaining - remaining;
+		if (consumed < 0) {
+			throw new Error(`[Runtime] Negative cycle reconciliation (${consumed}).`);
+		}
+		state.cycleBudgetRemaining = remaining;
+		if (consumed > 0) {
+			this.advanceHardware(consumed);
 		}
 	}
 

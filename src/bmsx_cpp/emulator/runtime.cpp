@@ -318,6 +318,7 @@ void Runtime::advanceVblank(int cycles) {
 void Runtime::resetVblankState() {
 	m_cyclesIntoFrame = 0;
 	m_vblankSequence = 0;
+	m_lastCompletedVblankSequence = 0;
 	m_vblankActive = false;
 	m_vblankPendingClear = false;
 	m_vblankClearOnIrqEnd = false;
@@ -362,20 +363,48 @@ void Runtime::commitFrameOnVblankEdge() {
 	if (m_waitForVblankTargetSequence != 0 && m_vblankSequence < m_waitForVblankTargetSequence) {
 		return;
 	}
-	m_lastTickBudgetRemaining = m_frameState.cycleBudgetRemaining;
+	completeTickIfPending(m_frameState, m_vblankSequence);
+}
+
+void Runtime::completeTickIfPending(const FrameState& frameState, uint64_t vblankSequence) {
+	if (m_lastCompletedVblankSequence == vblankSequence) {
+		return;
+	}
+	m_lastCompletedVblankSequence = vblankSequence;
+	m_lastTickBudgetRemaining = frameState.cycleBudgetRemaining;
 	m_lastTickCompleted = true;
 	m_lastTickSequence += 1;
 }
 
+void Runtime::reconcileCycleBudgetAfterSignal(FrameState& frameState) {
+	const int remaining = m_cpu.instructionBudgetRemaining;
+	const int consumed = frameState.cycleBudgetRemaining - remaining;
+	if (consumed < 0) {
+		throw BMSX_RUNTIME_ERROR("[Runtime] Negative cycle reconciliation.");
+	}
+	frameState.cycleBudgetRemaining = remaining;
+	if (consumed > 0) {
+		advanceHardware(consumed);
+	}
+}
+
 void Runtime::requestWaitForVblank() {
 	processIrqAck();
+	const bool resumeOnCurrentEdge = m_vblankActive && !m_vblankPendingClear && m_vblankSequence > 0;
 	m_waitingForVblank = true;
 	const uint64_t nextVblankSequence = m_vblankSequence + 1;
 	// If wait starts while VBLANK is already active, resume on the current edge so
 	// we don't stall behind a deferred-clear phase.
-	m_waitForVblankTargetSequence = (m_vblankActive && m_vblankSequence > 0)
+	m_waitForVblankTargetSequence = resumeOnCurrentEdge
 		? m_vblankSequence
 		: nextVblankSequence;
+	if (resumeOnCurrentEdge) {
+		if (!m_frameActive) {
+			throw BMSX_RUNTIME_ERROR("[Runtime] wait_vblank resumed without an active frame state.");
+		}
+		reconcileCycleBudgetAfterSignal(m_frameState);
+		completeTickIfPending(m_frameState, m_vblankSequence);
+	}
 	throw WaitForVblankSignal{};
 }
 
@@ -979,6 +1008,8 @@ void Runtime::executeUpdateCallback(double deltaSeconds) {
 			m_pendingCall = PendingCall::None;
 		}
 	} catch (const WaitForVblankSignal&) {
+		reconcileCycleBudgetAfterSignal(m_frameState);
+		processIrqAck();
 		return;
 	} catch (const std::exception& e) {
 		std::cerr << "[Runtime] Error in update: " << e.what() << std::endl;
