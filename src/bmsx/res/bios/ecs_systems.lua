@@ -19,6 +19,10 @@ local positionupdateaxiscomponent = "positionupdateaxiscomponent"
 local screenboundarycomponent = "screenboundarycomponent"
 local actioneffectcomponent = "actioneffectcomponent"
 
+local function is_in_active_space(world, obj, active_space)
+	return world:_object_space_id(obj) == active_space
+end
+
 local behaviortreesystem = {}
 behaviortreesystem.__index = behaviortreesystem
 setmetatable(behaviortreesystem, { __index = ecsystem })
@@ -335,8 +339,9 @@ function textrendersystem.new(priority)
 end
 
 function textrendersystem:update(world)
+	local active_space = world:get_space()
 	for obj, tc in world:objects_with_components(textcomponent, { scope = "active" }) do
-		if not tc.enabled then
+		if not tc.enabled or not is_in_active_space(world, obj, active_space) then
 			goto continue
 		end
 		local offset = tc.offset
@@ -373,8 +378,9 @@ function spriterendersystem.new(priority)
 end
 
 function spriterendersystem:update(world)
+	local active_space = world:get_space()
 	for obj, sc in world:objects_with_components(spritecomponent, { scope = "active" }) do
-		if obj.visible == false or not sc.enabled then
+		if obj.visible == false or not sc.enabled or not is_in_active_space(world, obj, active_space) then
 			goto continue
 		end
 		local offset = sc.offset
@@ -408,8 +414,9 @@ function meshrendersystem.new(priority)
 end
 
 function meshrendersystem:update(world)
+	local active_space = world:get_space()
 	for obj, mc in world:objects_with_components(meshcomponent, { scope = "active" }) do
-		if obj.visible == false or not mc.enabled then
+		if obj.visible == false or not mc.enabled or not is_in_active_space(world, obj, active_space) then
 			goto continue
 		end
 		put_mesh(mc.mesh, mc.matrix, {
@@ -431,8 +438,9 @@ function rendersubmitsystem.new(priority)
 end
 
 function rendersubmitsystem:update(world)
+	local active_space = world:get_space()
 	for obj, rc in world:objects_with_components(customvisualcomponent, { scope = "active" }) do
-		if obj.visible == false or not rc.enabled then
+		if obj.visible == false or not rc.enabled or not is_in_active_space(world, obj, active_space) then
 			goto continue
 		end
 		rc:flush()
