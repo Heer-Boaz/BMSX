@@ -10,7 +10,6 @@ constants.ids = {
 }
 
 constants.machine = {
-	frame_interval_ms = 20,
 	screen_width = 256,
 	screen_height = 192,
 	game_width = 256,
@@ -23,7 +22,7 @@ constants.player = {
 	start_x = 80,
 	start_y = 60,
 	base_movement_speed = 1,
-	movement_speed_increase = 0.5,
+	movement_speed_increase = 1,
 	speed_powerups = 0,
 	option_follow_delay = 10,
 	max_projectiles = 2,
@@ -70,7 +69,6 @@ constants.weapons = {
 		tile_height = 2,
 		length_unit_px = 8,
 		movement_speed = 6,
-		level2_movement_speed = 1,
 		max_active = 1,
 		level1_length_units = 2,
 		level2_initial_length_units = 2,
@@ -83,7 +81,6 @@ constants.weapons = {
 
 constants.stage = {
 	asset_id = 'nemesis_s_stage',
-	star_blink_interval_ms = 50,
 }
 
 constants.assets = {

@@ -238,14 +238,11 @@ function player:sample_input()
 	self.fire_pressed = self.fire_held and (not previous_fire)
 end
 
-function player:get_movement_speed(dt_ms)
-	local factor = dt_ms / constants.machine.frame_interval_ms
-	local base_speed = constants.player.base_movement_speed
-	local speed_boost = constants.player.movement_speed_increase * self.speed_powerups
-	return factor * (base_speed + speed_boost)
+function player:get_movement_speed()
+	return constants.player.base_movement_speed + constants.player.movement_speed_increase * self.speed_powerups
 end
 
-function player:update_position(move_speed)
+function player:update_position()
 	local max_x = constants.machine.game_width - constants.player.width
 	local max_y = constants.machine.game_height - constants.player.height
 
@@ -292,17 +289,17 @@ function player:update_position(move_speed)
 	end
 
 	if self.left_held then
-		try_move_x(-move_speed)
+		try_move_x(-self:get_movement_speed())
 	end
 	if self.right_held then
-		try_move_x(move_speed)
+		try_move_x(self:get_movement_speed())
 	end
 
 	if self.up_held then
-		try_move_y(-move_speed)
+		try_move_y(-self:get_movement_speed())
 		self.sprite_imgid = constants.assets.player_u
 	elseif self.down_held then
-		try_move_y(move_speed)
+		try_move_y(self:get_movement_speed())
 		self.sprite_imgid = constants.assets.player_d
 	else
 		self.sprite_imgid = constants.assets.player_n
@@ -529,10 +526,9 @@ function player:despawn_uplaser(index, reason)
 	)
 end
 
-function player:update_lasers(dt_ms)
-	local factor = dt_ms / constants.machine.frame_interval_ms
+function player:update_lasers()
 	local weapon = constants.weapons.laser
-	local step = weapon.movement_speed * factor
+	local step = weapon.movement_speed
 	local max_x = constants.machine.game_width
 	local index = #self.lasers
 	while index >= 1 do
@@ -576,10 +572,9 @@ function player:update_lasers(dt_ms)
 	end
 end
 
-function player:update_missiles(dt_ms)
-	local factor = dt_ms / constants.machine.frame_interval_ms
+function player:update_missiles()
 	local weapon = constants.weapons.missile
-	local step = weapon.movement_speed * factor
+	local step = weapon.movement_speed
 	local max_x = constants.machine.game_width
 	local max_y = constants.machine.game_height
 	local index = #self.missiles
@@ -610,16 +605,13 @@ function player:update_missiles(dt_ms)
 	end
 end
 
-function player:update_uplasers(dt_ms)
+function player:update_uplasers()
 	local weapon = constants.weapons.uplaser
 	local index = #self.uplasers
 	while index >= 1 do
 		local uplaser = self.uplasers[index]
 		local despawn_reason = nil
 		local step = weapon.movement_speed
-		if uplaser.level >= 2 then
-			step = weapon.level2_movement_speed
-		end
 
 		uplaser.y = uplaser.y - step
 		if uplaser.y < 0 then
@@ -652,17 +644,15 @@ function player:update_uplasers(dt_ms)
 	end
 end
 
-function player:update_weapons(dt_ms)
-	self:update_lasers(dt_ms)
-	self:update_missiles(dt_ms)
-	self:update_uplasers(dt_ms)
+function player:update_weapons()
+	self:update_lasers()
+	self:update_missiles()
+	self:update_uplasers()
 end
 
-function player:tick(dt_ms)
+function player:tick()
 	self:sample_input()
-	local move_speed = self:get_movement_speed(dt_ms)
-	self.last_speed = move_speed
-	self:update_position(move_speed)
+	self:update_position()
 	self:update_options()
 	self:tick_option_animation()
 
@@ -670,7 +660,7 @@ function player:tick(dt_ms)
 		self:fire_weapons()
 	end
 
-	self:update_weapons(dt_ms)
+	self:update_weapons()
 	self:emit_metric()
 	self.frame = self.frame + 1
 end
