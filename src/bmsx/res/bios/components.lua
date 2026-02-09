@@ -200,7 +200,8 @@ function spritecomponent.new(opts)
 	self.offset = opts and opts.offset or { x = 0, y = 0, z = 0 }
 	self.parallax_weight = opts and opts.parallax_weight or 0
 	self.collider_local_id = opts and opts.collider_local_id or nil
-	self.collider_sync_token = ""
+	self.collider_geometry_token = ""
+	self.collider_offset_token = ""
 	return self
 end
 
@@ -221,42 +222,55 @@ function spritecomponent:resolve_collider()
 end
 
 function spritecomponent:sync_collider()
-	local owner = self.parent
 	local collider = self:resolve_collider()
 	if collider == nil then
-		self.collider_sync_token = ""
+		self.collider_geometry_token = ""
+		self.collider_offset_token = ""
 		return
 	end
 
 	local id = self.imgid
 	local flip_h = self.flip.flip_h == true
 	local flip_v = self.flip.flip_v == true
-	local token = string.format("%s|%d|%d", tostring(id), flip_h and 1 or 0, flip_v and 1 or 0)
-	if self.collider_sync_token == token then
-		return
-	end
+	local offset = self.offset or { x = 0, y = 0 }
+	local offset_x = offset.x or 0
+	local offset_y = offset.y or 0
+	local geometry_token = string.format("%s|%d|%d", tostring(id), flip_h and 1 or 0, flip_v and 1 or 0)
+	local offset_token = string.format("%s|%s", tostring(offset_x), tostring(offset_y))
 
 	if id == "none" then
-		collider:set_local_area(nil)
-		collider:set_local_poly(nil)
-		collider:set_local_circle(nil)
-		collider.sync_token = token
-		self.collider_sync_token = token
+		if self.collider_geometry_token ~= geometry_token then
+			collider:set_local_area(nil)
+			collider:set_local_poly(nil)
+			collider:set_local_circle(nil)
+			collider.sync_token = geometry_token
+			self.collider_geometry_token = geometry_token
+		end
+		if self.collider_offset_token ~= offset_token then
+			collider:set_shape_offset(offset_x, offset_y)
+			self.collider_offset_token = offset_token
+		end
 		return
 	end
 
-	local image_asset = assets.img[romdir.token(id)]
-	if image_asset == nil or image_asset.imgmeta == nil then
-		error("[spritecomponent] image metadata missing for '" .. tostring(id) .. "'")
+	if self.collider_geometry_token ~= geometry_token then
+		local image_asset = assets.img[romdir.token(id)]
+		if image_asset == nil or image_asset.imgmeta == nil then
+			error("[spritecomponent] image metadata missing for '" .. tostring(id) .. "'")
+		end
+		local imgmeta = image_asset.imgmeta
+		local box = select_bounding_box(flip_h, flip_v, imgmeta.boundingbox)
+		local polys = select_hit_polygons(flip_h, flip_v, imgmeta.hitpolygons)
+		collider:set_local_area(box)
+		collider:set_local_poly(polys)
+		collider:set_local_circle(nil)
+		collider.sync_token = geometry_token
+		self.collider_geometry_token = geometry_token
 	end
-	local imgmeta = image_asset.imgmeta
-	local box = select_bounding_box(flip_h, flip_v, imgmeta.boundingbox)
-	local polys = select_hit_polygons(flip_h, flip_v, imgmeta.hitpolygons)
-	collider:set_local_area(box)
-	collider:set_local_poly(polys)
-	collider:set_local_circle(nil)
-	collider.sync_token = token
-	self.collider_sync_token = token
+	if self.collider_offset_token ~= offset_token then
+		collider:set_shape_offset(offset_x, offset_y)
+		self.collider_offset_token = offset_token
+	end
 end
 
 function spritecomponent:tick(_dt)
@@ -281,6 +295,8 @@ function collider2dcomponent.new(opts)
 	self._local_area = nil
 	self._local_polys = nil
 	self._local_circle = nil
+	self._shape_offset_x = opts.shape_offset_x or 0
+	self._shape_offset_y = opts.shape_offset_y or 0
 	self.sync_token = opts.sync_token
 	self.local_area = nil
 	self.local_poly = nil
@@ -301,6 +317,11 @@ function collider2dcomponent:set_local_circle(circle)
 	self._local_circle = circle
 end
 
+function collider2dcomponent:set_shape_offset(offset_x, offset_y)
+	self._shape_offset_x = offset_x or 0
+	self._shape_offset_y = offset_y or 0
+end
+
 function collider2dcomponent:get_local_area()
 	return self._local_area
 end
@@ -315,22 +336,24 @@ end
 
 function collider2dcomponent:get_world_area()
 	local parent = self.parent
+	local shape_offset_x = self._shape_offset_x
+	local shape_offset_y = self._shape_offset_y
 	local local_area = self._local_area
 	if local_area == nil then
 		local sx = parent.sx or 0
 		local sy = parent.sy or 0
 		return {
-			left = parent.x,
-			top = parent.y,
-			right = parent.x + sx,
-			bottom = parent.y + sy,
+			left = parent.x + shape_offset_x,
+			top = parent.y + shape_offset_y,
+			right = parent.x + shape_offset_x + sx,
+			bottom = parent.y + shape_offset_y + sy,
 		}
 	end
 	return {
-		left = parent.x + local_area.left,
-		top = parent.y + local_area.top,
-		right = parent.x + local_area.right,
-		bottom = parent.y + local_area.bottom,
+		left = parent.x + shape_offset_x + local_area.left,
+		top = parent.y + shape_offset_y + local_area.top,
+		right = parent.x + shape_offset_x + local_area.right,
+		bottom = parent.y + shape_offset_y + local_area.bottom,
 	}
 end
 
@@ -339,8 +362,8 @@ function collider2dcomponent:get_world_polys()
 	if local_polys == nil or #local_polys == 0 then
 		return nil
 	end
-	local px = self.parent.x
-	local py = self.parent.y
+	local px = self.parent.x + self._shape_offset_x
+	local py = self.parent.y + self._shape_offset_y
 	local out = {}
 	for i = 1, #local_polys do
 		local poly = local_polys[i]
@@ -360,8 +383,8 @@ function collider2dcomponent:get_world_circle()
 		return nil
 	end
 	return {
-		x = self.parent.x + circle.x,
-		y = self.parent.y + circle.y,
+		x = self.parent.x + self._shape_offset_x + circle.x,
+		y = self.parent.y + self._shape_offset_y + circle.y,
 		r = circle.r,
 	}
 end
