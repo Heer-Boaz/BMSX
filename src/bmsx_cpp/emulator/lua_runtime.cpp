@@ -1,9 +1,28 @@
 #include "runtime.h"
 #include <array>
+#include <cctype>
 #include <iostream>
 #include <limits>
 
 namespace bmsx {
+
+namespace {
+
+std::string canonicalizeModuleAlias(std::string moduleName, CanonicalizationType canonicalization) {
+	if (canonicalization == CanonicalizationType::None) {
+		return moduleName;
+	}
+	const bool toUpper = canonicalization == CanonicalizationType::Upper;
+	for (char& ch : moduleName) {
+		const unsigned char value = static_cast<unsigned char>(ch);
+		ch = toUpper
+			? static_cast<char>(std::toupper(value))
+			: static_cast<char>(std::tolower(value));
+	}
+	return moduleName;
+}
+
+} // namespace
 
 std::vector<Value> Runtime::callLuaFunction(Closure* fn, const std::vector<Value>& args) {
 	int depthBefore = m_cpu.getFrameDepth();
@@ -23,7 +42,11 @@ std::vector<Value> Runtime::callLuaFunction(Closure* fn, const std::vector<Value
 }
 
 Value Runtime::requireModule(const std::string& moduleName) {
-	const auto aliasIt = m_moduleAliases.find(moduleName);
+	auto aliasIt = m_moduleAliases.find(moduleName);
+	if (aliasIt == m_moduleAliases.end()) {
+		const std::string canonicalName = canonicalizeModuleAlias(moduleName, m_canonicalization);
+		aliasIt = m_moduleAliases.find(canonicalName);
+	}
 	if (aliasIt == m_moduleAliases.end()) {
 		throw BMSX_RUNTIME_ERROR("require('" + moduleName + "') failed: module not found.");
 	}
@@ -55,29 +78,32 @@ void Runtime::logLuaCallStack() const {
 		const std::string& protoId = metadata->protoIds[protoIndex];
 		auto range = m_cpu.getDebugRange(pc);
 		if (range.has_value()) {
-			std::cerr << "  at " << protoId << " (" << range->path << ":" << range->startLine << ":" << range->startColumn << ")"
+			std::cout << "  at " << protoId << " (" << range->path << ":" << range->startLine << ":" << range->startColumn << ")"
 						<< std::endl;
 		} else {
-			std::cerr << "  at " << protoId << " (pc=" << pc << ")" << std::endl;
+			std::cout << "  at " << protoId << " (pc=" << pc << ")" << std::endl;
 		}
 	}
 }
 
 void Runtime::handleLuaError(const std::string& message) {
-	std::cerr << "[Runtime] Error: " << message << std::endl;
+	std::cout << "[Runtime] Error: " << message << std::endl;
 	logLuaCallStack();
 	m_runtimeFailed = true;
 }
 
 void Runtime::runEngineBuiltinPrelude() {
-	std::cerr << "[Runtime] prelude: binding engine builtins" << std::endl;
-	static const std::array<const char*, 27> engineBuiltins = {
+	std::cout << "[Runtime] prelude: binding engine builtins" << std::endl;
+	static const std::array<const char*, 34> engineBuiltins = {
 		"define_fsm",
 		"define_world_object",
 		"define_service",
 		"define_component",
 		"define_effect",
 		"new_timeline",
+		"timeline_expand",
+		"timeline_sequence",
+		"timeline_pingpong",
 		"timeline_range",
 		"new_timeline_range",
 		"spawn_object",
@@ -99,6 +125,10 @@ void Runtime::runEngineBuiltinPrelude() {
 		"irq",
 		"on_irq",
 		"on_vdp_load",
+		"bool01",
+		"clamp_int",
+		"rol8",
+		"swap_remove",
 	};
 	auto* engineModule = asTable(requireModule("engine"));
 	for (const char* name : engineBuiltins) {
@@ -106,7 +136,7 @@ void Runtime::runEngineBuiltinPrelude() {
 		m_cpu.globals->set(key, engineModule->get(key));
 	}
 	processIOCommands();
-	std::cerr << "[Runtime] prelude: engine builtins bound" << std::endl;
+	std::cout << "[Runtime] prelude: engine builtins bound" << std::endl;
 }
 
 } // namespace bmsx

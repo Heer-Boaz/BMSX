@@ -13,6 +13,10 @@ local registry = require("registry")
 local eventemitter = require("eventemitter").eventemitter
 local quickmenu = require("quickmenu")
 local romdir = require("romdir")
+local bool01 = require("bool01")
+local clamp_int = require("clamp_int")
+local rol8 = require("rol8")
+local swap_remove = require("swap_remove")
 
 local world = world_module.instance
 
@@ -193,6 +197,10 @@ local function apply_definition(instance, def, addons, skip_key)
 end
 
 local engine = {}
+engine.bool01 = bool01
+engine.clamp_int = clamp_int
+engine.rol8 = rol8
+engine.swap_remove = swap_remove
 
 function engine.define_fsm(id, blueprint)
 	fsmlibrary.register(id, blueprint)

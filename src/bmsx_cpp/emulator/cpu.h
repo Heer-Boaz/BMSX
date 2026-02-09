@@ -416,6 +416,7 @@ struct NativeObject : GCObject {
 	std::function<int()> len;
 	std::function<std::optional<std::pair<Value, Value>>(const Value&)> nextEntry;
 	std::function<void(GcHeap&)> mark;
+	Table* metatable = nullptr;
 };
 
 /**

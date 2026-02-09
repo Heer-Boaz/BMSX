@@ -122,13 +122,6 @@ local function sign(value)
 	return 0
 end
 
-local function bool01(value)
-	if value then
-		return 1
-	end
-	return 0
-end
-
 local function is_stair_left(ch)
 	return ch == '-' or ch == '_'
 end

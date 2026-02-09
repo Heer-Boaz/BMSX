@@ -1092,14 +1092,35 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		throw runtime.createApiRuntimeError(message);
 	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'setmetatable', createNativeFunction('setmetatable', (args, out) => {
-		const target = args[0] as Table;
-		const metatable = args.length > 1 ? (args[1] as Table) : null;
-		target.setMetatable(metatable);
+		if (args.length === 0 || (!(args[0] instanceof Table) && !isNativeObject(args[0]))) {
+			throw runtime.createApiRuntimeError('setmetatable expects a table or native value as the first argument.');
+		}
+		let metatable: Table | null = null;
+		if (args.length > 1 && args[1] !== null) {
+			if (!(args[1] instanceof Table)) {
+				throw runtime.createApiRuntimeError('setmetatable expects a table or nil as the second argument.');
+			}
+			metatable = args[1] as Table;
+		}
+		const target = args[0];
+		if (target instanceof Table) {
+			target.setMetatable(metatable);
+			out.push(target);
+			return;
+		}
+		target.metatable = metatable;
 		out.push(target);
 	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'getmetatable', createNativeFunction('getmetatable', (args, out) => {
-		const target = args[0] as Table;
-		out.push(target.getMetatable());
+		if (args.length === 0 || (!(args[0] instanceof Table) && !isNativeObject(args[0]))) {
+			throw runtime.createApiRuntimeError('getmetatable expects a table or native value as the first argument.');
+		}
+		const target = args[0];
+		if (target instanceof Table) {
+			out.push(target.getMetatable());
+			return;
+		}
+		out.push(target.metatable ?? null);
 	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'rawequal', createNativeFunction('rawequal', (args, out) => {
 		out.push(args[0] === args[1]);

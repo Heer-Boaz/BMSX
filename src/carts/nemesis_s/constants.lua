@@ -1,6 +1,10 @@
 local constants = {}
 
 constants.ids = {
+	stage_def = 'nemesis_s.stage.def',
+	stage_instance = 'nemesis_s.stage.instance',
+	stage_fsm = 'nemesis_s.stage.fsm',
+	stage_star_blink_timeline = 'nemesis_s.stage.timeline.star_blink',
 	player_def = 'nemesis_s.player.def',
 	player_instance = 'nemesis_s.player.instance',
 	player_fsm = 'nemesis_s.player.fsm',
@@ -81,6 +85,8 @@ constants.weapons = {
 
 constants.stage = {
 	asset_id = 'nemesis_s_stage',
+	star_blink_gate_frames = 15,
+	star_particle_z = 8,
 }
 
 constants.assets = {

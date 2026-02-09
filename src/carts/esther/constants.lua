@@ -46,10 +46,10 @@ constants.profile = {
 	-- CODE_BFB159 selects profile based on state + grounded + running flag:
 	--   state $04/$09 + grounded + running($0004) → 8  (CODE_BFB167)
 	--   state $04/$09 + grounded + walking         → 3  (CODE_BFB180)
-	--   everything else (airborne, roll, etc.)      → 0  (CODE_BFB187)
-	ground_walk = 3,   -- ÷64: CODE_BFB180 (grounded, not running)
-	ground_run = 8,    -- ÷32+÷64: CODE_BFB167 (grounded, running flag $0004)
-	default = 0,       -- ÷8: CODE_BFB187 (airborne, roll, and all non-ground states)
+	--   everything else (airborne, roll, etc.)      → 0 (Fast/Sharp)
+	ground_walk = 3,   -- ÷64: Heavy inertia (modified to ÷8 in player logic for responsiveness)
+	ground_run = 8,    -- ÷21: Medium inertia (modified to ÷8 in player logic for responsiveness)
+	default = 0,       -- ÷8:  Air control
 }
 
 constants.roll = {

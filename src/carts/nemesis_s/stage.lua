@@ -2,6 +2,10 @@ local constants = require('constants.lua')
 local romdir = require('romdir')
 
 local stage = {}
+local stage_object = {}
+stage_object.__index = stage_object
+
+local stage_fsm_id = constants.ids.stage_fsm
 
 local state = {
 	tile_tape = {},
@@ -27,6 +31,13 @@ local state = {
 	scroll_rotator = 0,
 	scroll_gate_bit = 0,
 	scroll_advanced = false,
+	frame = 0,
+	yellow_stars = {},
+	blue_stars = {},
+	yellow_blink = false,
+	blue_blink = false,
+	blink_turn = 'yellow',
+	event_sink = nil,
 }
 
 local non_collision_tile_keys = {
@@ -104,25 +115,6 @@ local tile_asset_by_key = {
 	snowtree21 = constants.assets.snowtree21,
 }
 
-local function clamp_int(value, min_value, max_value)
-	local clamped = value
-	if clamped < min_value then
-		clamped = min_value
-	end
-	if clamped > max_value then
-		clamped = max_value
-	end
-	return clamped
-end
-
-local function rol8(value)
-	local rotated = value + value
-	if rotated >= 256 then
-		rotated = rotated - 255
-	end
-	return rotated
-end
-
 local function new_rows(width, height, default_value)
 	local out = {}
 	for y = 1, height do
@@ -133,6 +125,59 @@ local function new_rows(width, height, default_value)
 		out[y] = row
 	end
 	return out
+end
+
+local function copy_star_positions(source)
+	local out = {}
+	for i = 1, #source do
+		local src = source[i]
+		out[i] = { x = src.x, y = src.y }
+	end
+	return out
+end
+
+local function emit_event(name, extra)
+	local sink = state.event_sink
+	if sink == nil then
+		return
+	end
+	sink(name, extra)
+end
+
+local function apply_star_scroll(stars, step)
+	local width = constants.machine.game_width
+	for i = 1, #stars do
+		local star = stars[i]
+		star.x = star.x - step
+		if star.x < 0 then
+			star.x = width
+		end
+	end
+end
+
+local function apply_blink_state(turn, yellow_blink, blue_blink)
+	state.blink_turn = turn
+	state.yellow_blink = yellow_blink
+	state.blue_blink = blue_blink
+	emit_event(
+		'star_blink_toggle',
+		string.format(
+			'turn=%s|yellow_blink=%d|blue_blink=%d',
+			state.blink_turn,
+			bool01(state.yellow_blink),
+			bool01(state.blue_blink)
+		)
+	)
+end
+
+local function draw_star_particles(stars, imgid, hidden)
+	if hidden then
+		return
+	end
+	for i = 1, #stars do
+		local star = stars[i]
+		put_sprite(imgid, star.x, star.y, constants.stage.star_particle_z)
+	end
 end
 
 local function load_stage_data()
@@ -496,6 +541,12 @@ function stage.reset_runtime()
 	state.scroll_rotator = state.scroll_rotator_initial
 	state.scroll_gate_bit = 0
 	state.scroll_advanced = false
+	state.frame = 0
+	state.yellow_stars = copy_star_positions(constants.stars.yellow)
+	state.blue_stars = copy_star_positions(constants.stars.blue)
+	state.yellow_blink = false
+	state.blue_blink = false
+	state.blink_turn = 'yellow'
 end
 
 function stage.tick(on_event)
@@ -555,10 +606,18 @@ function stage.tick(on_event)
 
 	state.total_scroll_px = state.tile_steps * state.tile_size
 	state.total_smooth_scroll_px = state.total_smooth_scroll_px + smooth_scroll_px
+	if smooth_scroll_px ~= 0 then
+		apply_star_scroll(state.yellow_stars, smooth_scroll_px)
+		apply_star_scroll(state.blue_stars, smooth_scroll_px)
+	end
+	state.frame = state.frame + 1
 	return delta_scroll_px, smooth_scroll_px
 end
 
 function stage.draw()
+	draw_star_particles(state.yellow_stars, constants.assets.star_yellow, state.yellow_blink)
+	draw_star_particles(state.blue_stars, constants.assets.star_blue, state.blue_blink)
+
 	local draw_columns = state.tile_columns + 1
 	local tile_size = state.tile_size
 	local start_tile = state.left_tile
@@ -595,4 +654,81 @@ function stage.get_state()
 	return state
 end
 
-return stage
+function stage.set_event_sink(on_event)
+	state.event_sink = on_event
+end
+
+function stage_object:bind_visual()
+	local rc = self:get_component('customvisualcomponent')
+	rc.producer = function(_ctx)
+		stage.draw()
+	end
+end
+
+function stage_object:define_star_blink_timeline()
+	local timeline_id = constants.ids.stage_star_blink_timeline
+	self:define_timeline(new_timeline({
+		id = timeline_id,
+		frames = {
+			{ turn = 'yellow', yellow_blink = true, blue_blink = false },
+			{ turn = 'blue', yellow_blink = false, blue_blink = false },
+			{ turn = 'blue', yellow_blink = false, blue_blink = true },
+			{ turn = 'yellow', yellow_blink = false, blue_blink = false },
+		},
+		ticks_per_frame = constants.stage.star_blink_gate_frames,
+		playback_mode = 'loop',
+		apply = function(_target, frame_value)
+			apply_blink_state(frame_value.turn, frame_value.yellow_blink, frame_value.blue_blink)
+		end,
+	}))
+	self:play_timeline(timeline_id, { rewind = true, snap_to_start = true })
+end
+
+function stage_object:reset_runtime()
+	stage.reset_runtime()
+end
+
+function stage_object:tick()
+	stage.tick(emit_event)
+end
+
+local function define_stage_fsm()
+	define_fsm(stage_fsm_id, {
+		initial = 'boot',
+		states = {
+			boot = {
+				entering_state = function(self)
+					self:reset_runtime()
+					self:bind_visual()
+					self:define_star_blink_timeline()
+					return '/running'
+				end,
+			},
+			running = {},
+		},
+	})
+end
+
+local function register_stage_definition()
+	define_world_object({
+		def_id = constants.ids.stage_def,
+		class = stage_object,
+		fsms = { stage_fsm_id },
+		components = { 'customvisualcomponent' },
+		defaults = {},
+	})
+end
+
+return {
+	reset_runtime = stage.reset_runtime,
+	tick = stage.tick,
+	draw = stage.draw,
+	is_solid_pixel = stage.is_solid_pixel,
+	get_state = stage.get_state,
+	set_event_sink = stage.set_event_sink,
+	define_stage_fsm = define_stage_fsm,
+	register_stage_definition = register_stage_definition,
+	stage_def_id = constants.ids.stage_def,
+	stage_instance_id = constants.ids.stage_instance,
+	stage_fsm_id = stage_fsm_id,
+}

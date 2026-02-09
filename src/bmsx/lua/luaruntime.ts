@@ -3074,7 +3074,7 @@ public fallbackSourceRange(): LuaSourceRange {
 			const targetValue = args[0];
 			let metatable: LuaTable = null;
 			if (isLuaTable(targetValue)) {
-				metatable = targetValue.metatable as LuaTable;
+				metatable = targetValue.getMetatable();
 			} else {
 				metatable = (targetValue as LuaNativeValue).metatable as LuaTable;
 			}

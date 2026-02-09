@@ -619,7 +619,9 @@ export function registerGlobal(runtime: Runtime, name: string, value: Value): vo
 }
 
 export function buildEngineBuiltinPreludeSource(): string {
-	const lines: string[] = ['local engine = require("engine")'];
+	const lines: string[] = [
+		'local engine = require("engine")',
+	];
 	for (let index = 0; index < ENGINE_LUA_BUILTIN_FUNCTIONS.length; index += 1) {
 		const name = ENGINE_LUA_BUILTIN_FUNCTIONS[index].name;
 		lines.push(`${name} = engine.${name}`);
@@ -1197,7 +1199,8 @@ export function requireLuaModule(runtime: Runtime, interpreter: LuaInterpreter, 
 }
 
 export function requireModule(runtime: Runtime, moduleName: string): Value {
-	const path = runtime.moduleAliases.get(moduleName);
+	const canonicalName = runtime.canonicalizeIdentifier(moduleName);
+	const path = runtime.moduleAliases.get(moduleName) ?? runtime.moduleAliases.get(canonicalName);
 	if (!path) {
 		throw runtime.createApiRuntimeError(`require('${moduleName}') failed: module not found.`);
 	}

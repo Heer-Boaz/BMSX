@@ -6,28 +6,23 @@ director.__index = director
 
 local director_fsm_id = constants.ids.director_fsm
 
-local function bool01(value)
-	if value then
-		return 1
-	end
-	return 0
-end
-
 function director:emit_metric()
 	local telemetry = constants.telemetry
 	if not telemetry.enabled then
 		return
 	end
 	local stage_state = stage.get_state()
+	local width = constants.machine.game_width
+	local scroll_x = stage_state.total_smooth_scroll_px % width
 	print(string.format(
 		'%s|kind=director|f=%d|scroll=%.3f|yellow_blink=%d|blue_blink=%d|yellow_count=%d|blue_count=%d|stage_left=%d|stage_head=%d|stage_px=%.3f|stage_scrolling=%d|stage_mode=%d|stage_rot=%d|stage_gate=%d|stage_adv=%d',
 		telemetry.metric_prefix,
 		self.frame,
-		self.scroll_x,
-		bool01(self.yellow_blink),
-		bool01(self.blue_blink),
-		#self.yellow_stars,
-		#self.blue_stars,
+		scroll_x,
+		bool01(stage_state.yellow_blink),
+		bool01(stage_state.blue_blink),
+		#stage_state.yellow_stars,
+		#stage_state.blue_stars,
 		stage_state.left_tile,
 		stage_state.tape_head,
 		stage_state.total_scroll_px,
@@ -51,106 +46,14 @@ function director:emit_event(name, extra)
 	print(string.format('%s|kind=director|f=%d|name=%s', telemetry.event_prefix, self.frame, name))
 end
 
-function director:copy_star_positions(source)
-	local out = {}
-	for i = 1, #source do
-		local src = source[i]
-		out[i] = { x = src.x, y = src.y }
-	end
-	return out
-end
-
 function director:reset_runtime()
-	stage.reset_runtime()
 	self.frame = 0
-	self.scroll_x = 0
-	self.blink_elapsed_ms = 0
-	self.blink_turn = 'yellow'
-	self.yellow_blink = false
-	self.blue_blink = false
-	self.yellow_stars = self:copy_star_positions(constants.stars.yellow)
-	self.blue_stars = self:copy_star_positions(constants.stars.blue)
-end
-
-function director:bind_visual()
-	local rc = self:get_component('customvisualcomponent')
-	rc.producer = function(_ctx)
-		self:render_frame()
-	end
-end
-
-function director:draw_star_set(stars, imgid, hidden)
-	if hidden then
-		return
-	end
-	for i = 1, #stars do
-		local star = stars[i]
-		put_sprite(imgid, star.x, star.y, 8)
-	end
-end
-
-function director:render_frame()
-	self:draw_star_set(self.yellow_stars, constants.assets.star_yellow, self.yellow_blink)
-	self:draw_star_set(self.blue_stars, constants.assets.star_blue, self.blue_blink)
-	stage.draw()
-end
-
-function director:apply_star_scroll(stars, step)
-	local width = constants.machine.game_width
-	for i = 1, #stars do
-		local star = stars[i]
-		star.x = star.x - step
-		if star.x < 0 then
-			star.x = width
-		end
-	end
-end
-
-function director:tick_blink(dt_ms)
-	local duration = constants.stage.star_blink_interval_ms
-	if self.blink_elapsed_ms < duration then
-		self.blink_elapsed_ms = self.blink_elapsed_ms + dt_ms
-		return
-	end
-
-	self.blink_elapsed_ms = duration - self.blink_elapsed_ms
-	if self.blink_turn == 'blue' then
-		self.blue_blink = not self.blue_blink
-		if not self.blue_blink then
-			self.blink_turn = 'yellow'
-		end
-	else
-		self.yellow_blink = not self.yellow_blink
-		if not self.yellow_blink then
-			self.blink_turn = 'blue'
-		end
-	end
-
-	self:emit_event(
-		'star_blink_toggle',
-		string.format(
-			'turn=%s|yellow_blink=%d|blue_blink=%d',
-			self.blink_turn,
-			bool01(self.yellow_blink),
-			bool01(self.blue_blink)
-		)
-	)
-end
-
-function director:tick(dt_ms)
-	local _, star_scroll_step = stage.tick(function(name, extra)
+	stage.set_event_sink(function(name, extra)
 		self:emit_event(name, extra)
 	end)
-	local width = constants.machine.game_width
+end
 
-	self.scroll_x = self.scroll_x + star_scroll_step
-	if self.scroll_x >= width then
-		self.scroll_x = self.scroll_x - width
-	end
-
-	self:apply_star_scroll(self.yellow_stars, star_scroll_step)
-	self:apply_star_scroll(self.blue_stars, star_scroll_step)
-	self:tick_blink(dt_ms)
+function director:tick()
 	self:emit_metric()
 	self.frame = self.frame + 1
 end
@@ -162,7 +65,6 @@ local function define_director_fsm()
 			boot = {
 				entering_state = function(self)
 					self:reset_runtime()
-					self:bind_visual()
 					self:emit_event('director_boot')
 					return '/running'
 				end,
@@ -177,16 +79,9 @@ local function register_director_definition()
 		def_id = constants.ids.director_def,
 		class = director,
 		fsms = { director_fsm_id },
-		components = { 'customvisualcomponent' },
+		components = {},
 		defaults = {
 			frame = 0,
-			scroll_x = 0,
-			blink_elapsed_ms = 0,
-			blink_turn = 'yellow',
-			yellow_blink = false,
-			blue_blink = false,
-			yellow_stars = {},
-			blue_stars = {},
 		},
 	})
 end

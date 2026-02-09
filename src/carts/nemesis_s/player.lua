@@ -8,19 +8,6 @@ local player_fsm_id = constants.ids.player_fsm
 local missile_state_fall_from_vessel = 'fall_from_vessel'
 local missile_state_fall_from_floor = 'fall_from_floor'
 
-local function bool01(value)
-	if value then
-		return 1
-	end
-	return 0
-end
-
-local function swap_remove(array, index)
-	local last_index = #array
-	array[index] = array[last_index]
-	array[last_index] = nil
-end
-
 function player:emit_event(name, extra)
 	local telemetry = constants.telemetry
 	if not telemetry.enabled then

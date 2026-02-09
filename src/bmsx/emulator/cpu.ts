@@ -38,6 +38,7 @@ export type NativeObject = {
 	get(key: Value): Value;
 	set(key: Value, value: Value): void;
 	len?: () => number;
+	metatable?: Table | null;
 };
 
 function valueTypeName(value: Value): string {
@@ -79,7 +80,7 @@ export function createNativeFunction(
 }
 
 export function createNativeObject(raw: object, handlers: { get: (key: Value) => Value; set: (key: Value, value: Value) => void; len?: () => number }): NativeObject {
-	return { kind: NATIVE_OBJECT_KIND, raw, get: handlers.get, set: handlers.set, len: handlers.len };
+	return { kind: NATIVE_OBJECT_KIND, raw, get: handlers.get, set: handlers.set, len: handlers.len, metatable: null };
 }
 
 export function isNativeFunction(value: Value): value is NativeFunction {
@@ -399,6 +400,9 @@ export class Table {
 	}
 
 	public setMetatable(metatable: Table | null): void {
+		if (metatable !== null && !(metatable instanceof Table)) {
+			throw new Error('setmetatable expects a table or nil as the second argument.');
+		}
 		this.metatable = metatable;
 	}
 
@@ -1026,6 +1030,9 @@ export class CPU {
 			if (metatable === null) {
 				return null;
 			}
+			if (!(metatable instanceof Table)) {
+				throw new Error('Metatable must be a table value.');
+			}
 			const indexer = metatable.get(this.indexKey);
 			if (!(indexer instanceof Table)) {
 				return null;
@@ -1368,7 +1375,20 @@ export class CPU {
 					return;
 				}
 				if (isNativeObject(table)) {
-					this.setRegister(frame, a, table.get(key));
+					const directValue = table.get(key);
+					if (directValue !== null) {
+						this.setRegister(frame, a, directValue);
+						return;
+					}
+					const metatable = table.metatable ?? null;
+					if (metatable !== null) {
+						const indexer = metatable.get(this.indexKey);
+						if (indexer instanceof Table) {
+							this.setRegister(frame, a, this.resolveTableIndex(indexer, key));
+							return;
+						}
+					}
+					this.setRegisterNil(frame, a);
 					return;
 				}
 				throw new Error('Attempted to index field on a non-table value.');

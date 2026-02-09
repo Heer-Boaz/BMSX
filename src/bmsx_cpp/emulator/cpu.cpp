@@ -653,6 +653,9 @@ void GcHeap::trace() {
 				break;
 			case ObjType::NativeObject: {
 				auto* native = static_cast<NativeObject*>(obj);
+				if (native->metatable) {
+					markObject(native->metatable);
+				}
 				if (native->mark) {
 					native->mark(*this);
 				}
@@ -1029,7 +1032,21 @@ void CPU::executeInstruction(
 				return;
 			}
 			if (valueIsNativeObject(tableValue)) {
-				setRegister(frame, a, asNativeObject(tableValue)->get(key));
+				auto* native = asNativeObject(tableValue);
+				Value nativeResult = native->get ? native->get(key) : valueNil();
+				if (!isNil(nativeResult)) {
+					setRegister(frame, a, nativeResult);
+					return;
+				}
+				Table* metatable = native->metatable;
+				if (metatable) {
+					Value indexerValue = metatable->get(m_indexKey);
+					if (valueIsTable(indexerValue)) {
+						setRegister(frame, a, resolveTableIndex(asTable(indexerValue), key));
+						return;
+					}
+				}
+				setRegister(frame, a, nativeResult);
 				return;
 			}
 			std::string message = "Attempted to index field on a non-table value.";

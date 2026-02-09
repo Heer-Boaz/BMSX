@@ -107,9 +107,9 @@ rooms:
         y: 168
         w: 16
         h: 16
-        facing: 1
+        direction: down
         damage_key: enemy_contact_damage
-        kind: enemy
+        kind: mijter
   - room_number: 4
     room_id: castle_garden_04
     room_subtype: CastleGarden
@@ -149,9 +149,9 @@ rooms:
         y: 168
         w: 16
         h: 16
-        facing: -1
+        direction: down
         damage_key: enemy_contact_damage
-        kind: enemy
+        kind: mijter
   - room_number: 5
     room_id: castle_red_05
     room_subtype: CastleRed
@@ -355,7 +355,16 @@ rooms:
       down: 0
       left: 10
     edge_gates: {}
-    enemies: []
+    enemies:
+      - id: zakfoe_10_a
+        x: 56
+        y: 168
+        w: 16
+        h: 16
+        direction: right
+        health: 2
+        damage_key: enemy_contact_damage
+        kind: zakfoe
   - room_number: 11
     room_id: castle_stone_11
     room_subtype: CastleStone
@@ -389,7 +398,25 @@ rooms:
       down: 0
       left: 9
     edge_gates: {}
-    enemies: []
+    enemies:
+      - id: crossfoe_11_a
+        x: 88
+        y: 96
+        w: 16
+        h: 24
+        direction: down
+        health: 3
+        damage_key: enemy_contact_damage
+        kind: crossfoe
+      - id: zakfoe_11_a
+        x: 168
+        y: 168
+        w: 16
+        h: 16
+        direction: left
+        health: 2
+        damage_key: enemy_contact_damage
+        kind: zakfoe
   - room_number: 12
     room_id: castle_red_12
     room_subtype: CastleRed

@@ -1,5 +1,6 @@
 local engine = require('engine')
 local constants = require('constants.lua')
+local stage_module = require('stage.lua')
 local player_module = require('player.lua')
 local director_module = require('director.lua')
 
@@ -18,8 +19,10 @@ function init()
 	on_irq(irq_newgame, function()
 		new_game()
 	end)
+	stage_module.define_stage_fsm()
 	director_module.define_director_fsm()
 	player_module.define_player_fsm()
+	stage_module.register_stage_definition()
 	director_module.register_director_definition()
 	player_module.register_player_definition()
 	vdp_load_slot(0, 0)
@@ -28,6 +31,10 @@ end
 
 function new_game()
 	engine.reset()
+	spawn_object(stage_module.stage_def_id, {
+		id = stage_module.stage_instance_id,
+		pos = { x = 0, y = 0, z = 0 },
+	})
 	spawn_object(director_module.director_def_id, {
 		id = director_module.director_instance_id,
 		pos = { x = 0, y = 0, z = 0 },

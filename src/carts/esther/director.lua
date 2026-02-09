@@ -28,13 +28,6 @@ local function sign(value)
 	return 0
 end
 
-local function bool01(value)
-	if value then
-		return 1
-	end
-	return 0
-end
-
 local function clamp(value, min_value, max_value)
 	if value < min_value then
 		return min_value

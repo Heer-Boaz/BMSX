@@ -1593,18 +1593,40 @@ registerNativeFunction("error", [this](const std::vector<Value>& args, std::vect
 });
 
 	registerNativeFunction("setmetatable", [](const std::vector<Value>& args, std::vector<Value>& out) {
-		auto* tbl = asTable(args.at(0));
-		if (isNil(args.at(1))) {
-			tbl->setMetatable(nullptr);
-		} else {
-			tbl->setMetatable(asTable(args.at(1)));
+		if (args.empty() || (!valueIsTable(args.at(0)) && !valueIsNativeObject(args.at(0)))) {
+			throw BMSX_RUNTIME_ERROR("setmetatable expects a table or native value as the first argument.");
 		}
-		out.push_back(valueTable(tbl));
+		Table* metatable = nullptr;
+		if (args.size() >= 2 && !isNil(args.at(1))) {
+			if (!valueIsTable(args.at(1))) {
+				throw BMSX_RUNTIME_ERROR("setmetatable expects a table or nil as the second argument.");
+			}
+			metatable = asTable(args.at(1));
+		}
+
+		const Value target = args.at(0);
+		if (valueIsTable(target)) {
+			asTable(target)->setMetatable(metatable);
+			out.push_back(target);
+			return;
+		}
+
+		auto* native = asNativeObject(target);
+		native->metatable = metatable;
+		out.push_back(target);
 	});
 
 	registerNativeFunction("getmetatable", [](const std::vector<Value>& args, std::vector<Value>& out) {
-		auto* tbl = asTable(args.at(0));
-		auto* mt = tbl->getMetatable();
+		if (args.empty() || (!valueIsTable(args.at(0)) && !valueIsNativeObject(args.at(0)))) {
+			throw BMSX_RUNTIME_ERROR("getmetatable expects a table or native value as the first argument.");
+		}
+		const Value target = args.at(0);
+		if (valueIsTable(target)) {
+			auto* mt = asTable(target)->getMetatable();
+			out.push_back(mt ? valueTable(mt) : valueNil());
+			return;
+		}
+		auto* mt = asNativeObject(target)->metatable;
 		out.push_back(mt ? valueTable(mt) : valueNil());
 	});
 

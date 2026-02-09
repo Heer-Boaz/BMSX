@@ -91,11 +91,12 @@ function enemy_explosion:spawn_loot()
 	})
 end
 
-function enemy_explosion:tick_animating(dt)
-	self.elapsed_ms = self.elapsed_ms + dt
-	local frame_duration = constants.enemy.explosion_frame_ms
-	while self.elapsed_ms >= frame_duration do
-		self.elapsed_ms = self.elapsed_ms - frame_duration
+function enemy_explosion:tick_animating(delta)
+	local step_delta = delta / 20
+	self.elapsed_steps = self.elapsed_steps + step_delta
+	local frame_duration = constants.enemy.explosion_frame_steps
+	while self.elapsed_steps >= frame_duration do
+		self.elapsed_steps = self.elapsed_steps - frame_duration
 		self.frame_index = self.frame_index + 1
 		if self.frame_index > #explosion_frames then
 			self:spawn_loot()
@@ -106,9 +107,9 @@ function enemy_explosion:tick_animating(dt)
 	end
 end
 
-function enemy_explosion:tick(dt)
+function enemy_explosion:tick(delta)
 	if self.sc:matches_state_path(state_animating) then
-		self:tick_animating(dt)
+		self:tick_animating(delta)
 	end
 end
 
@@ -121,7 +122,7 @@ local function define_enemy_explosion_fsm()
 					self.state_name = 'boot'
 					self.state_variant = 'boot'
 					self.frame_index = 1
-					self.elapsed_ms = 0
+					self.elapsed_steps = 0
 					self:ensure_components()
 					self:bind_events()
 					self:update_visual()
@@ -150,7 +151,7 @@ local function register_enemy_explosion_definition()
 			player_id = constants.ids.player_instance,
 			loot_type = 'none',
 			frame_index = 1,
-			elapsed_ms = 0,
+			elapsed_steps = 0,
 			state_name = 'boot',
 			state_variant = 'boot',
 			events_bound = false,
