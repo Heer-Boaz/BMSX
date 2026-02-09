@@ -205,10 +205,13 @@ function player:draw_missiles()
 end
 
 function player:draw_uplasers()
+	local weapon = constants.weapons.uplaser
+	local tile_width = weapon.tile_width
 	for i = 1, #self.uplasers do
 		local uplaser = self.uplasers[i]
-		put_sprite(constants.assets.laser, uplaser.x, uplaser.y, 122)
-		put_sprite(constants.assets.laser, uplaser.x + 8, uplaser.y, 122)
+		for tile_index = 0, uplaser.tile_count - 1 do
+			put_sprite(constants.assets.laser, uplaser.x + (tile_index * tile_width), uplaser.y, 122)
+		end
 	end
 end
 
@@ -341,6 +344,13 @@ function player:tick_option_animation()
 	end
 end
 
+function player:refresh_uplaser_dimensions(uplaser)
+	local weapon = constants.weapons.uplaser
+	uplaser.width = uplaser.length_units * weapon.length_unit_px
+	uplaser.height = weapon.tile_height
+	uplaser.tile_count = uplaser.width / weapon.tile_width
+end
+
 function player:spawn_laser(vessel_id)
 	local weapon = constants.weapons.laser
 	local vessel_x, vessel_y = self:get_vessel_snapshot(vessel_id)
@@ -395,21 +405,40 @@ end
 function player:spawn_uplaser(vessel_id)
 	local weapon = constants.weapons.uplaser
 	local vessel_x, vessel_y = self:get_vessel_snapshot(vessel_id)
+	local level = constants.loadout.uplaser_level
+	local length_units = weapon.level1_length_units
+	if level >= 2 then
+		length_units = weapon.level2_initial_length_units
+	end
+	local aligned_x = math.floor((vessel_x + weapon.spawn_offset_x) / weapon.tile_width) * weapon.tile_width
+	local initial_width = length_units * weapon.length_unit_px
 	local uplaser = {
 		vessel_id = vessel_id,
-		x = vessel_x + weapon.spawn_offset_x,
+		x = aligned_x,
+		center_x = aligned_x + (initial_width * 0.5),
 		y = vessel_y + weapon.spawn_offset_y,
+		level = level,
+		gate_counter = weapon.level2_gate_frames,
+		length_units = length_units,
+		tile_count = 0,
+		width = 0,
+		height = 0,
 	}
+	self:refresh_uplaser_dimensions(uplaser)
 	self.uplasers[#self.uplasers + 1] = uplaser
 	self.weapon_slots.uplaser[vessel_id] = self.weapon_slots.uplaser[vessel_id] + 1
 	self:emit_event(
 		'weapon_spawn',
 		string.format(
-			'weapon=uplaser|vessel=%d|active=%d|x=%.3f|y=%.3f',
+			'weapon=uplaser|vessel=%d|active=%d|x=%.3f|y=%.3f|level=%d|len=%d|tiles=%d|width=%d',
 			vessel_id,
 			self.weapon_slots.uplaser[vessel_id],
 			uplaser.x,
-			uplaser.y
+			uplaser.y,
+			uplaser.level,
+			uplaser.length_units,
+			uplaser.tile_count,
+			uplaser.width
 		)
 	)
 end
@@ -424,11 +453,12 @@ end
 function player:fire_weapons()
 	local vessel_count = self:get_vessel_count()
 	for vessel_id = 1, vessel_count do
+		local laser_max_active = constants.weapons.laser.max_active
 		local laser_slots = self.weapon_slots.laser[vessel_id]
-		if laser_slots < constants.loadout.laser_level then
+		if laser_slots < laser_max_active then
 			self:spawn_laser(vessel_id)
 		else
-			self:emit_weapon_blocked('laser', vessel_id, laser_slots, constants.loadout.laser_level)
+			self:emit_weapon_blocked('laser', vessel_id, laser_slots, laser_max_active)
 		end
 
 		local missile_slots = self.weapon_slots.missile[vessel_id]
@@ -438,11 +468,12 @@ function player:fire_weapons()
 			self:emit_weapon_blocked('missile', vessel_id, missile_slots, constants.loadout.missile_level)
 		end
 
+		local uplaser_max_active = constants.weapons.uplaser.max_active
 		local uplaser_slots = self.weapon_slots.uplaser[vessel_id]
-		if uplaser_slots < constants.loadout.uplaser_level then
+		if uplaser_slots < uplaser_max_active then
 			self:spawn_uplaser(vessel_id)
 		else
-			self:emit_weapon_blocked('uplaser', vessel_id, uplaser_slots, constants.loadout.uplaser_level)
+			self:emit_weapon_blocked('uplaser', vessel_id, uplaser_slots, uplaser_max_active)
 		end
 	end
 end
@@ -580,21 +611,42 @@ function player:update_missiles(dt_ms)
 end
 
 function player:update_uplasers(dt_ms)
-	local factor = dt_ms / constants.machine.frame_interval_ms
 	local weapon = constants.weapons.uplaser
-	local step = weapon.movement_speed * factor
 	local index = #self.uplasers
 	while index >= 1 do
 		local uplaser = self.uplasers[index]
-		uplaser.y = uplaser.y - step
+		local despawn_reason = nil
+		local step = weapon.movement_speed
+		if uplaser.level >= 2 then
+			step = weapon.level2_movement_speed
+		end
 
-		local impact_y = uplaser.y - 1
-		local impact_x_left = uplaser.x
-		local impact_x_right = uplaser.x + weapon.width - 1
-		if stage.is_solid_pixel(impact_x_left, impact_y) or stage.is_solid_pixel(impact_x_right, impact_y) then
-			self:despawn_uplaser(index, 'stage_collision')
-		elseif uplaser.y <= -weapon.height then
-			self:despawn_uplaser(index, 'screen_edge')
+		uplaser.y = uplaser.y - step
+		if uplaser.y < 0 then
+			despawn_reason = 'screen_edge'
+		end
+
+		if despawn_reason == nil and uplaser.level >= 2 then
+			uplaser.gate_counter = uplaser.gate_counter - 1
+			if uplaser.gate_counter == 0 then
+				uplaser.gate_counter = weapon.level2_gate_frames
+				uplaser.length_units = uplaser.length_units + weapon.level2_growth_units_per_gate
+				self:refresh_uplaser_dimensions(uplaser)
+				uplaser.x = math.floor((uplaser.center_x - (uplaser.width * 0.5)) / weapon.tile_width) * weapon.tile_width
+			end
+		end
+
+		if despawn_reason == nil then
+			local impact_y = uplaser.y - 1
+			local impact_x_left = uplaser.x
+			local impact_x_right = uplaser.x + uplaser.width - 1
+			if stage.is_solid_pixel(impact_x_left, impact_y) or stage.is_solid_pixel(impact_x_right, impact_y) then
+				despawn_reason = 'stage_collision'
+			end
+		end
+
+		if despawn_reason ~= nil then
+			self:despawn_uplaser(index, despawn_reason)
 		end
 		index = index - 1
 	end

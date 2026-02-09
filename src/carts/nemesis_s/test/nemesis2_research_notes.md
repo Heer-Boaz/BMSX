@@ -116,12 +116,17 @@
     - `E431 -> 0xACF6` (double-family spawn path)
     - `E434 -> 0xADBA` (up-laser-family spawn path)
     - `E435 -> 0xADEF` (down-laser-family spawn path)
+  - Dispatcher table bytes at `0xABC2` decode to update-routine pointers (type id -> routine):
+    - `0x0A -> 0xAEB7`
+    - `0x0C -> 0xAEDB`
+    - (table sequence around `0xABC2`: `D4 AC E0 AC 1F AD FB B0 FB B0 AF B1 07 AE 85 AE 37 AF B7 AE CB AE DB AE FE AE ...`)
   - `double` evidence:
     - spawn at `0xACF6` writes object type `0x03`
     - update at `0xAD1F` is the diagonal step routine (`-6/+6` axis pair per tick)
   - `uplaser` evidence:
     - spawn at `0xADBA` selects object type `0x0A` (level 1) or `0x0C` (level 2)
-    - update routines are **not** `0xAD1F`; they are in the `0xAE..` family (`0xAEB7` / `0xAEDB` path for up-laser variants)
+    - level 1 update (`0xAEB7`) is a simpler upward step path
+    - level 2 update (`0xAEDB`) wraps the level 1 step and adds extra size/phase handling each few ticks (`DEC (IY+1)` gate plus adjustments via `0xAE40`)
 - Gameplay constants still anchored to controlled reference implementation (`nemesis-s-bdx`) where disassembly does not expose symbolic names:
   - movement speed base/increment,
   - laser speed/length model,
