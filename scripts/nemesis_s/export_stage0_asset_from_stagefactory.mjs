@@ -44,9 +44,17 @@ function toYaml(rows) {
 
 	out.push('source: nemesis-s-bdx StageFactory.Stage0Map');
 	out.push('stage_number: 0');
+	out.push('tile_size: 8');
+	out.push('tile_columns: 32');
+	out.push('draw_z: 16');
 	out.push(`tile_rows: ${rows.length}`);
 	out.push(`tape_length_tiles: ${width}`);
 	out.push('stop_tape_head: 492');
+	out.push('scroll_mode_pause: 1');
+	out.push('scroll_mode_forced: 2');
+	out.push('scroll_mode_gated: 3');
+	out.push('scroll_mode_default: 3');
+	out.push('scroll_rotator_initial: 1');
 	out.push('map_rows:');
 
 	for (let i = 0; i < rows.length; i += 1) {

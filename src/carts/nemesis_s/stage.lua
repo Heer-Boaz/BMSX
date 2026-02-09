@@ -21,6 +21,7 @@ local state = {
 	stop_tape_head = 0,
 	tile_steps = 0,
 	total_scroll_px = 0,
+	total_smooth_scroll_px = 0,
 	scrolling = true,
 	scroll_mode = 0,
 	scroll_rotator = 0,
@@ -271,19 +272,21 @@ local function decode_stage_tile(map_rows, x, y)
 		return 'ground_end'
 	end
 	if ch == '_' then
+		local parity_even = ((x - 1) % 2) == 0
 		if left == ' ' then
 			return 'ground_start_v'
 		end
 		if right == ' ' then
 			return 'ground_end_v'
 		end
-		if (x % 2) == 0 then
+		if parity_even then
 			return 'ground_v'
 		end
 		return 'ground2_v'
 	end
 	if ch == '%' then
-		if (x % 2) == 0 then
+		local parity_even = ((x - 1) % 2) == 0
+		if parity_even then
 			return 'ground3'
 		end
 		return 'ground4'
@@ -487,6 +490,7 @@ function stage.reset_runtime()
 	state.tape_head = state.tile_columns
 	state.tile_steps = 0
 	state.total_scroll_px = 0
+	state.total_smooth_scroll_px = 0
 	state.scrolling = true
 	state.scroll_mode = state.scroll_mode_default
 	state.scroll_rotator = state.scroll_rotator_initial
@@ -496,6 +500,7 @@ end
 
 function stage.tick(on_event)
 	local delta_scroll_px = 0
+	local smooth_scroll_px = 0
 	local max_left_tile = state.tape_length_tiles - state.tile_columns + 1
 	local should_advance = false
 
@@ -505,15 +510,18 @@ function stage.tick(on_event)
 	if state.scrolling then
 		if state.scroll_mode == state.scroll_mode_forced then
 			should_advance = true
+			smooth_scroll_px = state.tile_size
 		elseif state.scroll_mode == state.scroll_mode_gated then
 			state.scroll_rotator = rol8(state.scroll_rotator)
 			state.scroll_gate_bit = state.scroll_rotator % 2
 			should_advance = state.scroll_gate_bit == 1
+			smooth_scroll_px = state.tile_size / 8
 		end
 
 		if should_advance then
 			if state.tape_head >= state.stop_tape_head or state.left_tile >= max_left_tile then
 				state.scrolling = false
+				smooth_scroll_px = 0
 				if on_event ~= nil then
 					on_event('stage_scroll_stop', string.format('left=%d|head=%d', state.left_tile, state.tape_head))
 				end
@@ -546,7 +554,8 @@ function stage.tick(on_event)
 	end
 
 	state.total_scroll_px = state.tile_steps * state.tile_size
-	return delta_scroll_px
+	state.total_smooth_scroll_px = state.total_smooth_scroll_px + smooth_scroll_px
+	return delta_scroll_px, smooth_scroll_px
 end
 
 function stage.draw()

@@ -139,7 +139,7 @@ function writePng(filePath, image) {
 }
 
 function getMappings() {
-	return [
+	const mappings = [
 		{
 			source: 'Player/Metallion_n.bmp',
 			target: 'metallion_n.png',
@@ -213,6 +213,49 @@ function getMappings() {
 			target: 'snow.png',
 		},
 	];
+
+	for (let i = 1; i <= 13; i += 1) {
+		mappings.push({
+			source: `Stage/house_tile_${i}.bmp`,
+			target: `house_tile_${i}.png`,
+		});
+	}
+
+	mappings.push({
+		source: 'Stage/house_tile_door.bmp',
+		target: 'house_tile_door.png',
+	});
+	mappings.push({
+		source: 'Stage/house_tile_window.bmp',
+		target: 'house_tile_window.png',
+	});
+	mappings.push({
+		source: 'Stage/house_tile_window2.bmp',
+		target: 'house_tile_window2.png',
+	});
+
+	for (let i = 1; i <= 3; i += 1) {
+		mappings.push({
+			source: `Stage/lantaarn_tile_${i}.bmp`,
+			target: `lantaarn_tile_${i}.png`,
+		});
+	}
+
+	for (let i = 1; i <= 3; i += 1) {
+		mappings.push({
+			source: `Stage/Schoorsteen${i}.bmp`,
+			target: `schoorsteen${i}.png`,
+		});
+	}
+
+	for (let i = 1; i <= 21; i += 1) {
+		mappings.push({
+			source: `Stage/SnowTree${i}.bmp`,
+			target: `snowtree${i}.png`,
+		});
+	}
+
+	return mappings;
 }
 
 function main() {

@@ -138,18 +138,18 @@ function director:tick_blink(dt_ms)
 end
 
 function director:tick(dt_ms)
-	local scroll_step = stage.tick(function(name, extra)
+	local _, star_scroll_step = stage.tick(function(name, extra)
 		self:emit_event(name, extra)
 	end)
 	local width = constants.machine.game_width
 
-	self.scroll_x = self.scroll_x + scroll_step
+	self.scroll_x = self.scroll_x + star_scroll_step
 	if self.scroll_x >= width then
 		self.scroll_x = self.scroll_x - width
 	end
 
-	self:apply_star_scroll(self.yellow_stars, scroll_step)
-	self:apply_star_scroll(self.blue_stars, scroll_step)
+	self:apply_star_scroll(self.yellow_stars, star_scroll_step)
+	self:apply_star_scroll(self.blue_stars, star_scroll_step)
 	self:tick_blink(dt_ms)
 	self:emit_metric()
 	self.frame = self.frame + 1
