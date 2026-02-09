@@ -32,19 +32,9 @@ function approxEqual(a, b, epsilon = 1e-3) {
 	return Math.abs(a - b) <= epsilon;
 }
 
-function filterRange(metrics, startFrame, endFrame, predicate) {
-	const out = [];
-	for (let i = 0; i < metrics.length; i += 1) {
-		const m = metrics[i];
-		const f = Number(m.f);
-		if (f <= startFrame || f >= endFrame) {
-			continue;
-		}
-		if (predicate(m)) {
-			out.push(m);
-		}
-	}
-	return out;
+function rol8(value) {
+	const doubled = value * 2;
+	return doubled >= 256 ? doubled - 255 : doubled;
 }
 
 const content = fs.readFileSync(logPath, 'utf8');
@@ -233,23 +223,83 @@ expect(
 );
 
 if (directorMetrics.length > 1) {
-	let stableScrollSamples = 0;
+	let quantizedScrollDeltas = 0;
+	let tileStepScrollDeltas = 0;
 	for (let i = 0; i < directorMetrics.length - 1; i += 1) {
 		const current = Number(directorMetrics[i].scroll);
 		const nextRaw = Number(directorMetrics[i + 1].scroll);
+		const nextAdvance = Number(directorMetrics[i + 1].stage_adv);
 		let delta = nextRaw - current;
 		if (delta < 0) {
 			delta += 256;
 		}
-		if (approxEqual(delta, 0.625, 0.05)) {
-			stableScrollSamples += 1;
+		if (approxEqual(delta, 0, 0.01) || approxEqual(delta, 8, 0.01)) {
+			quantizedScrollDeltas += 1;
 		}
+		if (approxEqual(delta, 8, 0.01)) {
+			tileStepScrollDeltas += 1;
+		}
+		const expectedDelta = nextAdvance === 1 ? 8 : 0;
+		expect(
+			approxEqual(delta, expectedDelta, 0.01),
+			`Scroll delta mismatch at frame ${directorMetrics[i + 1].f}: delta=${delta} expected ${expectedDelta} from stage_adv=${nextAdvance}.`,
+		);
 	}
-	expect(stableScrollSamples >= 40, `Expected >=40 director scroll deltas near 0.625, got ${stableScrollSamples}.`);
+	expect(
+		quantizedScrollDeltas === directorMetrics.length - 1,
+		`Expected fully quantized director scroll deltas (0 or 8). Got ${quantizedScrollDeltas}/${directorMetrics.length - 1}.`,
+	);
+	expect(tileStepScrollDeltas >= 10, `Expected >=10 tile-step scroll deltas of 8px, got ${tileStepScrollDeltas}.`);
+
+	const firstDirector = directorMetrics[0];
+	const lastDirector = directorMetrics[directorMetrics.length - 1];
+	expect(
+		Number(lastDirector.stage_head) > Number(firstDirector.stage_head),
+		`Expected stage_head to increase during run; got start=${firstDirector.stage_head}, end=${lastDirector.stage_head}.`,
+	);
+	expect(Number(lastDirector.stage_px) > 0, `Expected stage_px to advance; got ${lastDirector.stage_px}.`);
+	expect(
+		Number(lastDirector.stage_px) % 8 === 0,
+		`Expected stage_px to remain tile-quantized (multiple of 8), got ${lastDirector.stage_px}.`,
+	);
+
+	const gatedMetrics = directorMetrics.filter((m) => Number(m.stage_scrolling) === 1 && Number(m.stage_mode) === 3);
+	expect(gatedMetrics.length >= 16, `Expected >=16 gated stage metrics, got ${gatedMetrics.length}.`);
+	for (let i = 0; i < gatedMetrics.length - 1; i += 1) {
+		const current = Number(gatedMetrics[i].stage_rot);
+		const next = Number(gatedMetrics[i + 1].stage_rot);
+		const expected = rol8(current);
+		expect(
+			next === expected,
+			`Stage rotator mismatch between frames ${gatedMetrics[i].f}->${gatedMetrics[i + 1].f}: next=${next}, expected=${expected}.`,
+		);
+		const nextGate = Number(gatedMetrics[i + 1].stage_gate);
+		const nextAdv = Number(gatedMetrics[i + 1].stage_adv);
+		const expectedGate = next % 2;
+		expect(
+			nextGate === expectedGate,
+			`Stage gate-bit mismatch at frame ${gatedMetrics[i + 1].f}: gate=${nextGate}, expected=${expectedGate}.`,
+		);
+		expect(
+			nextAdv === expectedGate,
+			`Stage advance mismatch at frame ${gatedMetrics[i + 1].f}: adv=${nextAdv}, expected=${expectedGate}.`,
+		);
+	}
 }
 
 const blinkEvents = directorEvents.filter((e) => e.name === 'star_blink_toggle');
 expect(blinkEvents.length > 0, 'Missing star_blink_toggle events.');
+const stageTileEvents = directorEvents.filter((e) => e.name === 'stage_scroll_tile');
+expect(stageTileEvents.length > 0, 'Missing stage_scroll_tile events.');
+for (let i = 0; i < stageTileEvents.length - 1; i += 1) {
+	const frameDelta = Number(stageTileEvents[i + 1].f) - Number(stageTileEvents[i].f);
+	expect(
+		frameDelta === 8,
+		`Expected 8-frame stage tile cadence, got delta=${frameDelta} between frames ${stageTileEvents[i].f} and ${stageTileEvents[i + 1].f}.`,
+	);
+}
+const stageGateEvents = directorEvents.filter((e) => e.name === 'stage_scroll_gate');
+expect(stageGateEvents.length > 0, 'Missing stage_scroll_gate events.');
 
 if (failures.length > 0) {
 	console.error('nemesis_s headless analysis failed:');

@@ -28,6 +28,8 @@ constants.player = {
 	max_projectiles = 2,
 	fire_spawn_offset_x = 16,
 	fire_spawn_offset_y = 5,
+	hitcheck_x = { 4, 8, 14, 4, 8, 8 },
+	hitcheck_y = { 4, 4, 5, 7, 5, 7 },
 }
 
 constants.projectile = {
@@ -37,8 +39,18 @@ constants.projectile = {
 }
 
 constants.stage = {
-	scroll_step_px = 0.625,
+	tile_size = 8,
+	tile_columns = 32,
+	tile_rows = 22,
+	tape_length_tiles = 560,
+	stop_tape_head = 492,
+	draw_z = 16,
 	star_blink_interval_ms = 50,
+	scroll_mode_pause = 1,
+	scroll_mode_forced = 2,
+	scroll_mode_gated = 3,
+	scroll_mode_default = 3,
+	scroll_rotator_initial = 1,
 }
 
 constants.assets = {
@@ -49,6 +61,17 @@ constants.assets = {
 	projectile = 'kogeltje',
 	star_blue = 'star_blue',
 	star_yellow = 'star_yellow',
+	ground = 'ground',
+	ground2 = 'ground2',
+	ground_v = 'ground_v',
+	ground2_v = 'ground2_v',
+	ground3 = 'ground3',
+	ground4 = 'ground4',
+	ground_start = 'ground_start',
+	ground_end = 'ground_end',
+	ground_start_v = 'ground_start_v',
+	ground_end_v = 'ground_end_v',
+	snow = 'snow',
 }
 
 constants.stars = {

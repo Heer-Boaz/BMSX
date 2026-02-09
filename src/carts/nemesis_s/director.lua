@@ -1,4 +1,5 @@
 local constants = require('constants.lua')
+local stage = require('stage.lua')
 
 local director = {}
 director.__index = director
@@ -17,15 +18,24 @@ function director:emit_metric()
 	if not telemetry.enabled then
 		return
 	end
+	local stage_state = stage.get_state()
 	print(string.format(
-		'%s|kind=director|f=%d|scroll=%.3f|yellow_blink=%d|blue_blink=%d|yellow_count=%d|blue_count=%d',
+		'%s|kind=director|f=%d|scroll=%.3f|yellow_blink=%d|blue_blink=%d|yellow_count=%d|blue_count=%d|stage_left=%d|stage_head=%d|stage_px=%.3f|stage_scrolling=%d|stage_mode=%d|stage_rot=%d|stage_gate=%d|stage_adv=%d',
 		telemetry.metric_prefix,
 		self.frame,
 		self.scroll_x,
 		bool01(self.yellow_blink),
 		bool01(self.blue_blink),
 		#self.yellow_stars,
-		#self.blue_stars
+		#self.blue_stars,
+		stage_state.left_tile,
+		stage_state.tape_head,
+		stage_state.total_scroll_px,
+		bool01(stage_state.scrolling),
+		stage_state.scroll_mode,
+		stage_state.scroll_rotator,
+		stage_state.scroll_gate_bit,
+		bool01(stage_state.scroll_advanced)
 	))
 end
 
@@ -51,6 +61,7 @@ function director:copy_star_positions(source)
 end
 
 function director:reset_runtime()
+	stage.reset_runtime()
 	self.frame = 0
 	self.scroll_x = 0
 	self.blink_elapsed_ms = 0
@@ -89,6 +100,7 @@ function director:render_frame()
 	self:draw_background()
 	self:draw_star_set(self.yellow_stars, constants.assets.star_yellow, self.yellow_blink)
 	self:draw_star_set(self.blue_stars, constants.assets.star_blue, self.blue_blink)
+	stage.draw()
 end
 
 function director:apply_star_scroll(stars, step)
@@ -134,8 +146,9 @@ function director:tick_blink(dt_ms)
 end
 
 function director:tick(dt_ms)
-	local factor = dt_ms / constants.machine.frame_interval_ms
-	local scroll_step = constants.stage.scroll_step_px * factor
+	local scroll_step = stage.tick(function(name, extra)
+		self:emit_event(name, extra)
+	end)
 	local width = constants.machine.game_width
 
 	self.scroll_x = self.scroll_x + scroll_step

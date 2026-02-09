@@ -1,19 +1,10 @@
 local constants = require('constants.lua')
+local stage = require('stage.lua')
 
 local player = {}
 player.__index = player
 
 local player_fsm_id = constants.ids.player_fsm
-
-local function clamp(value, min_value, max_value)
-	if value < min_value then
-		return min_value
-	end
-	if value > max_value then
-		return max_value
-	end
-	return value
-end
 
 local function bool01(value)
 	if value then
@@ -132,22 +123,57 @@ function player:update_position(move_speed)
 	local previous_x = self.x
 	local previous_y = self.y
 
+	local function clamp_axis(value, min_value, max_value)
+		return math.min(math.max(value, min_value), max_value)
+	end
+
+	local function collides_at(x, y)
+		local hitcheck_x = constants.player.hitcheck_x
+		local hitcheck_y = constants.player.hitcheck_y
+		for i = 1, #hitcheck_x do
+			if stage.is_solid_pixel(x + hitcheck_x[i], y + hitcheck_y[i]) then
+				return true
+			end
+		end
+		return false
+	end
+
+	local function try_move_x(dx)
+		if dx == 0 then
+			return
+		end
+		local target_x = clamp_axis(self.x + dx, 0, max_x)
+		if collides_at(target_x, self.y) then
+			self:emit_event('collision_block_x', string.format('x=%.3f|y=%.3f|dx=%.3f', target_x, self.y, dx))
+			return
+		end
+		self.x = target_x
+	end
+
+	local function try_move_y(dy)
+		if dy == 0 then
+			return
+		end
+		local target_y = clamp_axis(self.y + dy, 0, max_y)
+		if collides_at(self.x, target_y) then
+			self:emit_event('collision_block_y', string.format('x=%.3f|y=%.3f|dy=%.3f', self.x, target_y, dy))
+			return
+		end
+		self.y = target_y
+	end
+
 	if self.left_held then
-		self.x = self.x - move_speed
-		self.x = clamp(self.x, 0, max_x)
+		try_move_x(-move_speed)
 	end
 	if self.right_held then
-		self.x = self.x + move_speed
-		self.x = clamp(self.x, 0, max_x)
+		try_move_x(move_speed)
 	end
 
 	if self.up_held then
-		self.y = self.y - move_speed
-		self.y = clamp(self.y, 0, max_y)
+		try_move_y(-move_speed)
 		self.sprite_imgid = constants.assets.player_u
 	elseif self.down_held then
-		self.y = self.y + move_speed
-		self.y = clamp(self.y, 0, max_y)
+		try_move_y(move_speed)
 		self.sprite_imgid = constants.assets.player_d
 	else
 		self.sprite_imgid = constants.assets.player_n
@@ -179,14 +205,14 @@ function player:fire_projectile()
 	)
 end
 
-function player:despawn_projectile(index)
+function player:despawn_projectile(index, reason)
 	local projectile = self.projectiles[index]
 	local last_index = #self.projectiles
 	self.projectiles[index] = self.projectiles[last_index]
 	self.projectiles[last_index] = nil
 	self:emit_event(
 		'fire_despawn',
-		string.format('pc=%d|x=%.3f|y=%.3f|reason=screen_edge', #self.projectiles, projectile.x, projectile.y)
+		string.format('pc=%d|x=%.3f|y=%.3f|reason=%s', #self.projectiles, projectile.x, projectile.y, reason)
 	)
 end
 
@@ -198,8 +224,12 @@ function player:update_projectiles(dt_ms)
 	while index >= 1 do
 		local projectile = self.projectiles[index]
 		projectile.x = projectile.x + step
-		if projectile.x >= max_x then
-			self:despawn_projectile(index)
+		local impact_x = projectile.x + constants.projectile.width
+		local impact_y = projectile.y + (constants.projectile.height * 0.5)
+		if stage.is_solid_pixel(impact_x, impact_y) then
+			self:despawn_projectile(index, 'stage_collision')
+		elseif projectile.x >= max_x then
+			self:despawn_projectile(index, 'screen_edge')
 		end
 		index = index - 1
 	end

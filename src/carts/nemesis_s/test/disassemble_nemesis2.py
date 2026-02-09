@@ -39,10 +39,15 @@ def write_entry_dump(rom: bytes) -> None:
 
 def write_segment_dump(rom: bytes) -> None:
 	segments = [
+		0x47E0,
+		0x4845,
+		0x4889,
 		0x5928,
 		0x5A22,
 		0x5D30,
 		0x6790,
+		0x68E4,
+		0x6900,
 		0x67B9,
 		0x6826,
 		0x6A27,

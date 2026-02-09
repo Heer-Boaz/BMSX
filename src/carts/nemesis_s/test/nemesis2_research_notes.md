@@ -54,6 +54,18 @@
 - Around `0xBECA`:
   - debug/diagnostic input routine scans rows `0..7`, then maps first active bit to a character table (`"0123456789-^...A..Z"`), consistent with keyboard diagnostics.
 
+## Scroll model constraint (important correction)
+
+- MSX stage scrolling in this scope is treated as **tile-quantized**:
+  - no per-frame fractional horizontal map shift,
+  - foreground stage advances by 1 tile (`8px`) when the stage gate opens.
+- Concrete ROM evidence:
+  - `0x6941`: `LD (0xE202),A` with `A=1` initializes a rotating gate byte.
+  - `0x485E..0x4866`: `RLCA` on `E202`, then `AND 1`; return when zero.
+  - `0x4867..0x4868`: only when gate bit is `1`, `E203` is incremented by `1`.
+  - Since `E202` starts at `1`, the `RLCA` sequence is `2,4,8,16,32,64,128,1`, so gate-open occurs every 8 updates in gated mode.
+- Therefore, scroll cadence should be modeled as **frame/tick-gated**, not as a fixed millisecond timer constant.
+
 ## Interpretation limits
 
 - These observations are from linear-bank static disassembly of one ROM dump variant.
