@@ -55,7 +55,7 @@ function item_screen:draw_slots()
 			put_sprite('castle_block_stone', x, y, 322)
 		end
 	end
-	put_sprite('pietolon_slash_sword_r', base_x + 4, base_y + 2, 323)
+	put_sprite('sword_r', base_x + 4, base_y + 2, 323)
 	put_sprite('pietolon_stand_r', base_x + step_x + 4, base_y + 2, 323)
 end
 
