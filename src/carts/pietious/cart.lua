@@ -52,9 +52,6 @@ function new_game()
 	local castle_service = engine.create_service(castle_service_module.castle_service_def_id, {
 		id = castle_service_module.castle_service_instance_id,
 	})
-	engine.create_service(flow_service_module.flow_service_def_id, {
-		id = flow_service_module.flow_service_instance_id,
-	})
 	local room = castle_service:initialize()
 	local spawn = room.spawn
 
@@ -88,7 +85,19 @@ function new_game()
 	spawn_object(ui_module.ui_def_id, {
 		id = ui_module.ui_instance_id,
 		player_id = player_module.player_instance_id,
+		space_id = constants.spaces.castle,
 		pos = { x = 0, y = 0, z = 0 },
+	})
+
+	spawn_object(ui_module.ui_def_id, {
+		id = constants.ids.ui_transition_instance,
+		player_id = player_module.player_instance_id,
+		space_id = constants.spaces.transition,
+		pos = { x = 0, y = 0, z = 0 },
+	})
+
+	engine.create_service(flow_service_module.flow_service_def_id, {
+		id = flow_service_module.flow_service_instance_id,
 	})
 end
 

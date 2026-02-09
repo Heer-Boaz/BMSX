@@ -56,13 +56,13 @@ local function register_room_view_definition()
 	define_world_object({
 		def_id = constants.ids.room_view_def,
 		class = room_view,
-		fsms = { room_view_fsm_id },
-		components = { 'customvisualcomponent' },
-		defaults = {
-			game_service_id = constants.ids.castle_service_instance,
-			space_id = constants.spaces.castle,
-		},
-	})
+			fsms = { room_view_fsm_id },
+			components = { 'customvisualcomponent' },
+			defaults = {
+				game_service_id = constants.ids.castle_service_instance,
+				space_id = constants.spaces.castle,
+			},
+		})
 end
 
 return {

@@ -5,6 +5,7 @@ local transition_view = {}
 transition_view.__index = transition_view
 
 local transition_view_fsm_id = constants.ids.transition_view_fsm
+local room_mask_color = { r = 0, g = 0, b = 0, a = 1 }
 
 function transition_view:bind_visual()
 	local rc = self:get_component('customvisualcomponent')
@@ -25,14 +26,8 @@ function transition_view:render_transition()
 	if engine.get_space() ~= constants.spaces.transition then
 		return
 	end
-	local width = display_width()
-	local height = display_height()
-	for y = 0, height - 1, 8 do
-		for x = 0, width - 1, 8 do
-			put_sprite('castle_tile_stone_dark_1', x, y, 300)
-		end
-	end
-	put_sprite('game_header', 0, 0, 301)
+	local hud_height = constants.room.hud_height
+	put_rectfillcolor(0, hud_height, display_width(), display_height(), 300, room_mask_color)
 end
 
 local function define_transition_view_fsm()
@@ -55,12 +50,12 @@ local function register_transition_view_definition()
 		def_id = constants.ids.transition_view_def,
 		class = transition_view,
 		fsms = { transition_view_fsm_id },
-		components = { 'customvisualcomponent' },
-		defaults = {
-			space_id = constants.spaces.ui,
-			frames_in_transition = 0,
-		},
-	})
+			components = { 'customvisualcomponent' },
+			defaults = {
+				space_id = constants.spaces.transition,
+				frames_in_transition = 0,
+			},
+		})
 end
 
 return {

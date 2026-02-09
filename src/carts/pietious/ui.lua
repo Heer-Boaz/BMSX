@@ -1,5 +1,4 @@
 local constants = require('constants.lua')
-local engine = require('engine')
 
 local ui = {}
 ui.__index = ui
@@ -28,10 +27,6 @@ function ui:tick(_dt)
 end
 
 function ui:draw_ui()
-	if engine.get_space() ~= constants.spaces.castle then
-		return
-	end
-
 	local hud = constants.hud
 	put_sprite('game_header', 0, 0, 200)
 
@@ -64,18 +59,18 @@ local function define_ui_fsm()
 end
 
 local function register_ui_definition()
-	define_world_object({
-		def_id = constants.ids.ui_def,
-		class = ui,
-		fsms = { ui_fsm_id },
-		components = { 'customvisualcomponent' },
-		defaults = {
-			player_id = constants.ids.player_instance,
-			hud_health_level = constants.hud.health_level,
-			hud_weapon_level = constants.hud.weapon_level,
-			space_id = constants.spaces.ui,
-		},
-	})
+		define_world_object({
+			def_id = constants.ids.ui_def,
+			class = ui,
+			fsms = { ui_fsm_id },
+			components = { 'customvisualcomponent' },
+			defaults = {
+				player_id = constants.ids.player_instance,
+				hud_health_level = constants.hud.health_level,
+				hud_weapon_level = constants.hud.weapon_level,
+				space_id = constants.spaces.castle,
+			},
+		})
 end
 
 return {

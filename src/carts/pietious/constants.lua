@@ -18,6 +18,7 @@ constants.ids = {
 	item_screen_fsm = 'pietious.item_screen.fsm',
 	ui_def = 'pietious.ui.def',
 	ui_instance = 'pietious.ui.instance',
+	ui_transition_instance = 'pietious.ui.transition.instance',
 	ui_fsm = 'pietious.ui.fsm',
 	castle_service_def = 'pietious.castle_service.def',
 	castle_service_instance = 'pietious.castle_service.instance',
