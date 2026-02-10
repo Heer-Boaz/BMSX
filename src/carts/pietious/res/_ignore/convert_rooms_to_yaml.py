@@ -1,14 +1,18 @@
 import sys
 import re
 
-# Try to import ruamel.yaml for better formatting, fall back to pyyaml
-try:
-    from ruamel.yaml import YAML
-    yaml = YAML()
-    yaml.preserve_quotes = True
-    yaml.indent(mapping=2, sequence=4, offset=2)
-except ImportError:
-    import yaml
+import yaml
+
+# Configure PyYAML to use block style ('|') for multiline strings
+def str_presenter(dumper, data):
+    if len(data.splitlines()) > 1:  # check for multiline string
+        return dumper.represent_scalar('tag:yaml.org,2002:str', data, style='|')
+    return dumper.represent_scalar('tag:yaml.org,2002:str', data)
+
+yaml.add_representer(str, str_presenter)
+
+# Minimal dummy since we are not using ruamel anymore, but we handle the formatting in the presenter
+def PreservedScalarString(s): return s
 
 # --- Helper Functions ---
 
@@ -26,6 +30,17 @@ def parse_string_array(map_block):
     for m in matches:
         lines.append(m.group(1))
     return lines
+
+def extract_constants(content):
+    constants = {}
+    # Look for: public static string[] Name = { ... };
+    # DotAll mode needed for multiline matching
+    matches = re.finditer(r'public\s+static\s+string\[\]\s+(\w+)\s*=\s*\{([^}]+)\};', content, re.DOTALL)
+    for m in matches:
+        name = m.group(1)
+        body = m.group(2)
+        constants["Constants." + name] = parse_string_array(body)
+    return constants
 
 def parse_csharp_args(args_str):
     # Splits arguments handling parentheses nesting
@@ -49,9 +64,41 @@ def parse_csharp_args(args_str):
     return args
 
 def parse_enum(val):
+    if 'Trigger.' in val:
+        val = val.replace('Trigger.', '')
     if '.' in val:
         val = val.split('.')[-1]
     return val.lower()
+
+def simplify_condition(cond_str):
+    # Remove Trigger. prefix specifically first
+    cond_str = cond_str.replace('Trigger.', '')
+    
+    # Regex replacements for accuracy
+    # Triggers
+    cond_str = re.sub(r'GameModel\.Triggers\[(\w+)\]', r'\1', cond_str)
+    
+    # Inventory Items
+    cond_str = re.sub(r'!GameModel\.InventoryItems\[ItemType\.(\w+)\]', r'!has_\1', cond_str)
+    cond_str = re.sub(r'GameModel\.InventoryItems\[ItemType\.(\w+)\]', r'has_\1', cond_str)
+
+    # Specific hacks
+    cond_str = cond_str.replace('!GameModel.TheWorld.DestroyedFoeIdentifiers.Contains("cloud_1")', '!cloud_1_destroyed')
+    cond_str = cond_str.replace('!GameModel.BossDefeated[result.WorldNumber]', '!boss_defeated')
+    
+    if 'GameModel.Foes.Count' in cond_str:
+        cond_str = re.sub(r'GameModel\.Foes\.Count\(.+?\) <= 0', 'no_clouds', cond_str)
+        cond_str = re.sub(r'GameModel\.Foes\.Count\(.+?\) > 0', 'has_clouds', cond_str)
+    
+    # Cleanup operators
+    cond_str = cond_str.replace('&&', ' AND ').replace('||', ' OR ')
+    
+    # Remove extra parens/spaces
+    cond_str = re.sub(r'\s+', ' ', cond_str).strip()
+    while cond_str.startswith('(') and cond_str.endswith(')'):
+        cond_str = cond_str[1:-1].strip()
+        
+    return cond_str.lower()
 
 def extract_vector2(v_str):
     # Matches "new Vector2(x, y)" with optional logical suffixes or math inside
@@ -64,6 +111,8 @@ def extract_vector2(v_str):
             if '*' in s: s = s.split('*')[0]
             s = s.replace('f', '').strip()
             try:
+                # Handle cases like (14 * ...) where parens might remain
+                s = s.replace('(','').replace(')','')
                 return int(float(s))
             except ValueError:
                 return 0
@@ -175,139 +224,226 @@ def process_base_data(content, rooms):
         
     return count
 
-def process_object_data(content, rooms):
+def process_object_data(content, rooms, constants):
     lines = content.split('\n')
     current_room = None
     count = 0
     
+    # Context State
+    brace_depth = 0
+    condition_stack = [] # List of (brace_depth, condition_string)
+    next_statement_condition = None # For one-liner ifs
+    
     for line in lines:
-        line = line.strip()
+        raw_line = line.strip()
+        if not raw_line: continue
+        if raw_line.startswith('//'): continue
+
+        # Update brace depth
+        open_braces = raw_line.count('{')
+        close_braces = raw_line.count('}')
         
-        # Identify room context (Case N used in LoadRoom)
-        m_case = re.search(r'case\s+(-?\d+):', line)
+        # Check for case/break context
+        m_case = re.search(r'case\s+(-?\d+):', raw_line)
         if m_case:
             current_room = int(m_case.group(1))
+            # Reset state for new room
+            condition_stack = []
+            next_statement_condition = None
+            brace_depth += (open_braces - close_braces)
             continue
 
-        if line.startswith('break;') or line.startswith('return;') or (line.startswith('default:') and current_room):
+        if raw_line.startswith('break;') or raw_line.startswith('return;') or (raw_line.startswith('default:') and current_room):
             current_room = None
+            condition_stack = []
+            next_statement_condition = None
+            brace_depth += (open_braces - close_braces)
             continue
 
-        if current_room is not None:
-            m_new = re.search(r'new\s+(\w+)\s*\((.*)\)', line)
+        if current_room is None:
+            brace_depth += (open_braces - close_braces)
+            continue
+
+        # Check for IF statement
+        # Matches: if (condition) ...
+        m_if = re.search(r'^\s*(?:else\s+)?if\s*\((.+)\)', raw_line)
+        if m_if:
+            # find start of condition inside parens
+            if_idx = raw_line.find('if')
+            start_idx = raw_line.find('(', if_idx) + 1
             
-            if m_new:
-                cls_name = m_new.group(1)
-                args_raw = m_new.group(2)
+            if start_idx > 0:
+                p_depth = 0
+                cond_end = -1
+                for i in range(start_idx, len(raw_line)):
+                    if raw_line[i] == '(': p_depth += 1
+                    elif raw_line[i] == ')':
+                        if p_depth == 0:
+                            cond_end = i
+                            break
+                        p_depth -= 1
                 
-                if args_raw.endswith(');'): args_raw = args_raw[:-2]
-                elif args_raw.endswith(')'): args_raw = args_raw[:-1]
-                
-                if current_room not in rooms: rooms[current_room] = {}
-                if 'objects' not in rooms[current_room]: rooms[current_room]['objects'] = []
-
-                args = parse_csharp_args(args_raw)
-                obj = {'type': cls_name.lower()}
-                
-                vec = extract_vector2(args[0]) if len(args) > 0 else None
-                if vec:
-                    obj['x'] = vec[0]
-                    obj['y'] = vec[1]
-
-                if cls_name == 'MijterFoe':
-                    if vec: obj['direction'] = parse_enum(args[1])
-                    elif len(args) >= 3:
-                        obj['x'] = int(args[0]); obj['y'] = int(args[1]); obj['direction'] = parse_enum(args[2])
-
-                elif cls_name == 'BoekFoe':
-                    if vec: obj['direction'] = parse_enum(args[1])
-                    elif len(args) >= 3:
-                        obj['x'] = int(args[0]); obj['y'] = int(args[1]); obj['direction'] = parse_enum(args[2])
-
-                elif cls_name == 'Rock':
-                    if vec:
-                         obj['item'] = parse_enum(args[1]) if len(args) > 1 else 'none'
-                    else:
-                        obj['x'] = int(args[0]); obj['y'] = int(args[1]); 
-                        obj['item'] = parse_enum(args[2]) if len(args) > 2 else 'none'
-
-                elif cls_name == 'Shrine':
-                    if vec: obj['text'] = args[1].strip('"')
-                    elif len(args) >= 3:
-                        obj['x'] = int(args[0]); obj['y'] = int(args[1]); obj['text'] = args[2].strip('"')
-
-                elif cls_name == 'MarspeinenAardappel':
-                    if vec:
-                        obj['speedx'] = int(float(args[1].replace('f','')))
-                        obj['speedy'] = int(float(args[2].replace('f','')))
-                    else:
-                        obj['x'] = int(args[0]); obj['y'] = int(args[1]);
-                        obj['speedx'] = int(args[2]); obj['speedy'] = int(args[3])
-                
-                elif cls_name == 'VlokSpawner': pass
-                
-                elif cls_name == 'CrossFoe':
-                    if vec: pass
-                    else: obj['x'] = int(args[0]); obj['y'] = int(args[1])
-                
-                elif cls_name == 'BreakableWall':
-                     rect = extract_rect_or_area(args[0])
-                     if rect:
-                         obj['area'] = rect
-                         obj['hp'] = int(args[1])
-                         obj['trigger'] = args[2].strip('"')
-                         obj['tiletype'] = parse_enum(args[3])
-
-                elif cls_name == 'WorldEntrance':
-                    target_arg = args[1] if vec else args[2]
+                if cond_end != -1:
+                    raw_cond = raw_line[start_idx:cond_end]
+                    simp_cond = simplify_condition(raw_cond)
                     
-                    if 'GameModel.Worlds' in target_arg:
-                        w_idx = re.search(r'\[(\d+)\]', target_arg)
-                        if w_idx: obj['target'] = f"world_{w_idx.group(1)}"
+                    if '{' in raw_line[cond_end:]:
+                        # It is a block
+                        condition_stack.append((brace_depth + 1, simp_cond)) # Depth +1 because the { is in this line
                     else:
-                        obj['target'] = target_arg.strip('"')
+                        # One-liner
+                        next_statement_condition = simp_cond
+                        # Consume it immediately if this line also has a semicolon (e.g. if (...) stmt;)
+                        # BUT we need to check if stmt is on this line.
+                        # If characters exist after ')' (and maybe whitespace), and it ends with ';'
+                        # Check remaining content
+                        remaining = raw_line[cond_end+1:].strip()
+                        if remaining and remaining.endswith(';'):
+                            # It's an inline if. 
+                            # But wait! If we parse an object ON THIS LINE, we need next_statement_condition to be active!
+                            # The object parsing comes LATER in the loop.
+                            # So we keep it. The consuming logic at end of loop will handle it.
+                            pass
+        
+        # Handle end of blocks for stack
+        while condition_stack and brace_depth + open_braces - close_braces < condition_stack[-1][0]:
+             condition_stack.pop()
 
-                    if not vec:
-                        obj['x'] = int(args[0]); obj['y'] = int(args[1])
+        brace_depth += (open_braces - close_braces)
 
-                elif cls_name == 'Seal':
-                    if vec: obj['text'] = args[1].strip('"')
-                    else: obj['x'] = int(args[0]); obj['y'] = int(args[1]); obj['text'] = args[2].strip('"')
+        # Check for Objects
+        m_new = re.search(r'new\s+(\w+)\s*\((.*)\)', raw_line)
+        if m_new:
+            cls_name = m_new.group(1)
+            args_raw = m_new.group(2)
+            
+            if args_raw.endswith(');'): args_raw = args_raw[:-2]
+            elif args_raw.endswith(')'): args_raw = args_raw[:-1]
+            
+            if current_room not in rooms: rooms[current_room] = {}
+            if 'objects' not in rooms[current_room]: rooms[current_room]['objects'] = []
+
+            args = parse_csharp_args(args_raw)
+            obj = {'type': cls_name.lower()}
+            
+            # --- Condition Logic ---
+            conditions = [c[1] for c in condition_stack]
+            if next_statement_condition:
+                conditions.append(next_statement_condition)
+                next_statement_condition = None # Consumed
+            
+            if 'AddFoeIfNotDestroyed' in raw_line:
+                conditions.append('not_destroyed')
                 
-                elif cls_name == 'Item':
-                    if vec: obj['itemtype'] = parse_enum(args[1])
-                    else: obj['x'] = int(args[0]); obj['y'] = int(args[1]); obj['itemtype'] = parse_enum(args[2])
+            if conditions:
+                final_conds = []
+                for c in conditions:
+                     # Split on ' and ' resulting from .lower()
+                     # We use regex to be safer about spaces
+                     parts = re.split(r'\s+and\s+', c)
+                     for p in parts:
+                         final_conds.append(p.strip())
+                obj['condition'] = final_conds
 
-                elif cls_name == 'Lithograph':
-                    if vec: obj['text'] = args[1].strip('"') if len(args) > 1 else ""
-                    else: obj['x'] = int(args[0]); obj['y'] = int(args[1]); obj['text'] = args[2].strip('"') if len(args) > 2 else ""
+            # --- Attribute Extraction ---
+            vec = extract_vector2(args[0]) if len(args) > 0 else None
+            if vec:
+                obj['x'] = vec[0]
+                obj['y'] = vec[1]
 
-                elif cls_name == 'ZakFoe':
-                    if vec: obj['direction'] = parse_enum(args[1])
-                    else: obj['x'] = int(args[0]); obj['y'] = int(args[1]); obj['direction'] = parse_enum(args[2])
+            # Mappings
+            if cls_name == 'MijterFoe' or cls_name == 'BoekFoe' or cls_name == 'ZakFoe' or cls_name == 'MuziekFoe':
+                if vec and len(args) > 1: obj['direction'] = parse_enum(args[1])
+                elif len(args) >= 3:
+                     if not vec: obj['x'] = int(args[0]); obj['y'] = int(args[1])
+                     obj['direction'] = parse_enum(args[2] if not vec else args[1])
 
-                elif cls_name == 'MuziekFoe':
-                    if vec: obj['direction'] = parse_enum(args[1])
-                    else: obj['x'] = int(args[0]); obj['y'] = int(args[1]); obj['direction'] = parse_enum(args[2])
+            elif cls_name == 'Rock':
+                if vec:
+                     obj['item'] = parse_enum(args[1]) if len(args) > 1 else 'none'
+                else:
+                    obj['x'] = int(args[0]); obj['y'] = int(args[1]); 
+                    obj['item'] = parse_enum(args[2]) if len(args) > 2 else 'none'
 
-                elif cls_name == 'StaffFoe':
-                    if vec: obj['trigger'] = args[1].strip('"')
-                    else: obj['x'] = int(args[0]); obj['y'] = int(args[1]); obj['trigger'] = args[2].strip('"')
+            elif cls_name == 'Shrine' or cls_name == 'Seal' or cls_name == 'Lithograph':
+                txt_idx = 1 if vec else 2
+                if len(args) > txt_idx:
+                    raw_text = args[txt_idx].strip('"')
+                    # Check constants
+                    if raw_text in constants:
+                        # Join with newlines or keep as list? 
+                        # Usually shrines display text line by line.
+                        # YAML supports multiline strings nicely with literal block scalar |
+                        # But here we probably want a single string with \n or just give the list.
+                        # Agent instructions said: "Gebruik meerdere regels (dus niet de []-notatie)." 
+                        # Which likely means a multiline string in YAML.
+                        val = constants[raw_text]
+                        if isinstance(val, list):
+                            obj['text'] = PreservedScalarString("\n".join(val))
+                        else:
+                            obj['text'] = val
+                    else:
+                        obj['text'] = raw_text
                 
-                elif cls_name == 'Cloud':
-                     if vec: obj['direction'] = parse_enum(args[1])
-                     else: obj['x'] = int(args[0]); obj['y'] = int(args[1]); obj['direction'] = parse_enum(args[2])
-                
-                elif cls_name == 'DisappearingWall':
-                     rect = extract_rect_or_area(args[0])
-                     if rect:
-                         obj['area'] = rect
-                         obj['trigger'] = args[1].strip('"')
-                         obj['tiletype'] = parse_enum(args[2])
-                
-                if 'x' in obj or cls_name == 'VlokSpawner' or 'area' in obj:
-                     rooms[current_room]['objects'].append(obj)
-                     count += 1
+                if not vec: obj['x'] = int(args[0]); obj['y'] = int(args[1])
+
+            elif cls_name == 'MarspeinenAardappel':
+                if vec and len(args) >= 3:
+                    obj['speedx'] = int(float(args[1].replace('f','')))
+                    obj['speedy'] = int(float(args[2].replace('f','')))
+                elif not vec and len(args) >= 4:
+                    obj['x'] = int(args[0]); obj['y'] = int(args[1]);
+                    obj['speedx'] = int(args[2]); obj['speedy'] = int(args[3])
+            
+            elif cls_name == 'VlokSpawner': 
+                pass 
+            
+            elif cls_name == 'CrossFoe':
+                if not vec: obj['x'] = int(args[0]); obj['y'] = int(args[1])
+            
+            elif cls_name == 'BreakableWall':
+                 rect = extract_rect_or_area(args[0])
+                 if rect:
+                     obj['area'] = rect
+                     obj['hp'] = int(args[1])
+                     obj['trigger'] = args[2].strip('"').replace('Trigger.', '').lower()
+                     obj['tiletype'] = parse_enum(args[3])
+            
+            elif cls_name == 'DisappearingWall':
+                 rect = extract_rect_or_area(args[0])
+                 if rect:
+                     obj['area'] = rect
+                     obj['trigger'] = args[1].strip('"').replace('Trigger.', '').lower()
+                     obj['tiletype'] = parse_enum(args[2])
+
+            elif cls_name == 'WorldEntrance':
+                target_arg = args[1] if vec else args[2]
+                if 'GameModel.Worlds' in target_arg:
+                    w_idx = re.search(r'\[(\d+)\]', target_arg)
+                    if w_idx: obj['target'] = f"world_{w_idx.group(1)}"
+                else:
+                    obj['target'] = target_arg.strip('"')
+                if not vec: obj['x'] = int(args[0]); obj['y'] = int(args[1])
+            
+            elif cls_name == 'Item':
+                if vec: obj['itemtype'] = parse_enum(args[1])
+                else: obj['x'] = int(args[0]); obj['y'] = int(args[1]); obj['itemtype'] = parse_enum(args[2])
+
+            elif cls_name == 'StaffFoe':
+                if vec: obj['trigger'] = args[1].strip('"').replace('Trigger.', '').lower()
+                else: obj['x'] = int(args[0]); obj['y'] = int(args[1]); obj['trigger'] = args[2].strip('"').replace('Trigger.', '').lower()
+            
+            elif cls_name == 'Cloud':
+                 if vec: obj['direction'] = parse_enum(args[1])
+                 else: obj['x'] = int(args[0]); obj['y'] = int(args[1]); obj['direction'] = parse_enum(args[2])
+            
+            rooms[current_room]['objects'].append(obj)
+            count += 1
+        
+        # Consume next_statement_condition if we just passed a statement ending in ;
+        if next_statement_condition and raw_line.rstrip().endswith(';'):
+            next_statement_condition = None
+
     return count
 
 def main():
@@ -329,8 +465,12 @@ def main():
         base_count = process_base_data(content, rooms)
         print(f"    Found {base_count} room definitions (cases/blocks).")
         
+        print("  Extracting constants...")
+        constants = extract_constants(content)
+        print(f"    Found {len(constants)} constants.")
+
         print("  Processing object definitions...")
-        obj_count = process_object_data(content, rooms)
+        obj_count = process_object_data(content, rooms, constants)
         print(f"    Found {obj_count} objects.")
         
     except Exception as e:
@@ -340,7 +480,7 @@ def main():
 
     print(f"Writing to {output_file}...")
     with open(output_file, 'w') as f:
-        yaml.dump(rooms, f)
+        yaml.dump(rooms, f, default_flow_style=False, sort_keys=False)
     print("Done.")
 
 if __name__ == "__main__":

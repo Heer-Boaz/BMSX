@@ -1135,4 +1135,31 @@ namespace Maze_of_Nicolaas_XNA {
 			return result;
 		}
 
+		public static string[] Shrine1text = {
+			"VIND DE PEPERNOTEN",
+			"IN DIT KASTEEL...",
+			"EEN PIET KAN NIET",
+			"ZONDER ZIJN OF HAAR",
+			"PEPERNOTEN!"
+		};
+
+		public static string[] Shrine2text = {
+			"ZONDER VERGROOTGLAS",
+			"KAN JE DE HEILIGE",
+			"ZAK NIET VINDEN...",
+			"DOORZOEK HET KASTEEL!",
+		};
+
+		public static string[] Shrine3text = {
+			"VERNEDER DE DRIE",
+			"STAFFEN VAN",
+			"SINTERKLAAS OM BIJ",
+			"DE ZAK TE KOMEN.",
+		};
+
+		public static string[] Shrine4text = {
+			"VERNIETIG ALLE",
+			"MARSPEINEN",
+			"AARDAPPELTJES.",
+		};
 }
