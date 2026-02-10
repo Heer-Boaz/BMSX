@@ -26,6 +26,46 @@ local function collect_event_list(def, list, seen)
 	end
 end
 
+local function normalize_state_tags(raw, def_id)
+	if raw == nil then
+		return nil
+	end
+	local kind = type(raw)
+	if kind == "string" then
+		return { raw }
+	end
+	if kind ~= "table" then
+		error("state '" .. tostring(def_id) .. "' defines invalid tags type '" .. kind .. "'.")
+	end
+	local out = {}
+	local seen = {}
+	if raw[1] ~= nil then
+		for i = 1, #raw do
+			local tag = raw[i]
+			if type(tag) ~= "string" then
+				error("state '" .. tostring(def_id) .. "' has non-string tag at index " .. tostring(i) .. ".")
+			end
+			if not seen[tag] then
+				out[#out + 1] = tag
+				seen[tag] = true
+			end
+		end
+		return out
+	end
+	for tag, enabled in pairs(raw) do
+		if enabled then
+			if type(tag) ~= "string" then
+				error("state '" .. tostring(def_id) .. "' has non-string tag key.")
+			end
+			if not seen[tag] then
+				out[#out + 1] = tag
+				seen[tag] = true
+			end
+		end
+	end
+	return out
+end
+
 function statedefinition.new(id, def, root, parent)
 	local self = setmetatable({}, statedefinition)
 	self.__is_state_definition = true
@@ -48,6 +88,7 @@ function statedefinition.new(id, def, root, parent)
 	self.event_list = def and def.event_list or nil
 	self.timelines = def and def.timelines or nil
 	self.transition_guards = def and def.transition_guards or nil
+	self.tags = normalize_state_tags(def and def.tags or nil, self.def_id)
 
 	if def and def.states then
 		for state_id, state_def in pairs(def.states) do
@@ -1388,6 +1429,35 @@ function state:matches_state_path(path)
 		ctx = ctx.parent
 	end
 	return match_segments(ctx, spec.segs)
+end
+
+function state:matches_state_tag(tag)
+	local tags = self.definition.tags
+	if tags then
+		for i = 1, #tags do
+			if tags[i] == tag then
+				return true
+			end
+		end
+	end
+
+	if self.states and next(self.states) ~= nil and self.current_id then
+		local child = self.states[self.current_id]
+		if not child then
+			error("current child '" .. tostring(self.current_id) .. "' not found in '" .. tostring(self.id) .. "'.")
+		end
+		if child:matches_state_tag(tag) then
+			return true
+		end
+		for id, concurrent in pairs(self.states) do
+			if concurrent.definition.is_concurrent and id ~= self.current_id then
+				if concurrent:matches_state_tag(tag) then
+					return true
+				end
+			end
+		end
+	end
+	return false
 end
 
 function state:handle_event(event_name, emitter_id, detail, event)
