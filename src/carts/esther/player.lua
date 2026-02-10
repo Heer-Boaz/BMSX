@@ -576,58 +576,50 @@ end
 
 function player:apply_horizontal_control(airborne)
 	-- CODE_BFB27C: Horizontal Logic (Input -> Target Speed)
-	-- Identical for Ground (Context 0) and Air (Context 1) in basic movement.
+	-- Ground: Input -> Target, Neutral -> 0.
+	-- Air: Input -> Target, Neutral -> Keep Target (CODE_BFBA39).
 	
 	local prev_target = self.target_x_speed_subpx
 	local new_target = 0
 	
-	-- 1. Determine Target Speed (0F25)
-	if self.move_axis == -1 then
-		-- Left: Negate Speed Value from CODE_BFB4E3
-		new_target = -self:CODE_BFB4E3_GET_TARGET_SPEED()
-	elseif self.move_axis == 1 then
-		-- Right: Speed Value from CODE_BFB4E3
-		new_target = self:CODE_BFB4E3_GET_TARGET_SPEED()
+	if airborne then
+		if self.move_axis == -1 then
+			new_target = -self:CODE_BFB4E3_GET_TARGET_SPEED()
+		elseif self.move_axis == 1 then
+			new_target = self:CODE_BFB4E3_GET_TARGET_SPEED()
+		else
+			-- CODE_BFBA39_AIR_NEUTRAL: Retain previous target (Momentum/Arc commitment)
+			new_target = prev_target
+		end
 	else
-		-- Neutral: CODE_BFC192 -> Target = 0
-		-- This applies in AIR too, providing the "Drag to 0" control feel.
-		new_target = 0
+		if self.move_axis == -1 then
+			new_target = -self:CODE_BFB4E3_GET_TARGET_SPEED()
+		elseif self.move_axis == 1 then
+			new_target = self:CODE_BFB4E3_GET_TARGET_SPEED()
+		else
+			-- CODE_BFC18A_GROUND_NEUTRAL: Decelerate to 0
+			new_target = 0
+		end
 	end
 	
 	self.target_x_speed_subpx = new_target
 	
 	-- 2. Determine Profile (Smoothing Divisor)
-	-- Default is Profile 0 (/8).
-	-- Ground may start run/walk specific profiles (Div 21/64), but strictly adhering to default 0 
-	-- ensures the snappy feedback unless specific states override.
 	local profile_id = constants.profile.default -- 0
 	
 	if not airborne then
-		-- Grounded override logic (CODE_BFB159 / CODE_BFB167)
-		-- "state $04/$09 + grounded + running($0004) → 8"
-		-- "state $04/$09 + grounded + walking → 3"
-		-- "everything else → 0" (including Neutral/Stopping)
-		
+		-- Grounded override logic
 		if new_target ~= 0 then
-			-- We are "Walking/Running" (Active Input)
 			profile_id = self:select_ground_profile()
 		else
-			-- We are "Stopping/Neutral" -> Use Default Profile 0 (/8)
-			-- This ensures the "Instant Stop" feel.
 			profile_id = constants.profile.default
-		end
-		
-		-- Instant Start Rule (CODE_BFB61D)
-		-- If transitioning from Neutral to Moving, Snap immediately.
-		if prev_target == 0 and new_target ~= 0 then
-			self.x_speed_subpx = new_target
 		end
 	end
 	
 	self.active_profile_id = profile_id
 
-	-- 3. Update XSpeed (CODE_BFB159 Approach)
-	self.x_speed_subpx = approach_subpx(self.x_speed_subpx, self.target_x_speed_subpx, self.active_profile_id)
+	-- 3. Update XSpeed (Authentic Inertia)
+	self.x_speed_subpx = approach_subpx(self.x_speed_subpx, self.target_x_speed_subpx, profile_id)
 end
 
 function player:CODE_BFAF38_AIR_GRAVITY()
@@ -779,7 +771,7 @@ end
 
 function player:CODE_BFB94F_START_JUMP(from_roll)
 	-- CODE_BFB94F ground jump.
-	self.y_speed_subpx = constants.dkc.jump_initial_subpx
+	self.y_speed_subpx = constants.dkc.jump_ground_subpx
 	self.dkc_1699_flags = self.dkc_1699_flags | 0x0003
 	self.dkc_16f9_jump_gravity_subpx = constants.dkc.gravity_hold_subpx
 	self.grounded = false
@@ -902,7 +894,7 @@ function player:tick_roll()
 	-- Roll maintains target set by START_ROLL/CHAIN_ROLL; approach is near-noop.
 	local roll_prof = constants.profile.default
 	self.active_profile_id = roll_prof
-	self.x_speed_subpx = approach_subpx(self.x_speed_subpx, self.target_x_speed_subpx, roll_prof)
+	self.x_speed_subpx = self.target_x_speed_subpx
 
 	if not self.grounded then
 		self:CODE_BFAF38_AIR_GRAVITY()
