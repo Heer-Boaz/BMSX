@@ -144,7 +144,7 @@ local function load_room_templates()
 		local room_def = data[tostring(room_number)]
 		local links = build_links(room_def.exits)
 		local map_rows = room_def.map
-		local object_defs = room_def.objects
+		local object_defs = room_def.objects or {}
 		templates[room_number] = {
 			room_number = room_number,
 			room_id = room_id_from_number(room_number, room_def.type),
