@@ -130,6 +130,81 @@ local function build_enemies(room_number, object_defs)
 	return enemies
 end
 
+local function copy_conditions(object_def)
+	local source_conditions = object_def.condition
+	if source_conditions == nil then
+		return {}
+	end
+	local conditions = {}
+	for i = 1, #source_conditions do
+		conditions[i] = source_conditions[i]
+	end
+	return conditions
+end
+
+local function build_rocks(room_number, object_defs)
+	local rocks = {}
+	local rock_index = 0
+
+	for i = 1, #object_defs do
+		local object_def = object_defs[i]
+		if object_def.type == 'rock' then
+			rock_index = rock_index + 1
+			rocks[#rocks + 1] = {
+				id = string.format('rock_%03d_%02d', room_number, rock_index),
+				x = tile_x_to_world(object_def.x),
+				y = tile_y_to_world(object_def.y),
+				item_type = object_def.item,
+				conditions = copy_conditions(object_def),
+			}
+		end
+	end
+
+	return rocks
+end
+
+local function build_items(room_number, object_defs)
+	local items = {}
+	local item_index = 0
+
+	for i = 1, #object_defs do
+		local object_def = object_defs[i]
+		if object_def.type == 'item' then
+			item_index = item_index + 1
+			items[#items + 1] = {
+				id = string.format('item_%03d_%02d', room_number, item_index),
+				x = tile_x_to_world(object_def.x),
+				y = tile_y_to_world(object_def.y),
+				item_type = object_def.itemtype,
+				source_kind = 'map',
+				conditions = copy_conditions(object_def),
+			}
+		end
+	end
+
+	return items
+end
+
+local function build_lithographs(room_number, object_defs)
+	local lithographs = {}
+	local lithograph_index = 0
+
+	for i = 1, #object_defs do
+		local object_def = object_defs[i]
+		if object_def.type == 'lithograph' then
+			lithograph_index = lithograph_index + 1
+			lithographs[#lithographs + 1] = {
+				id = string.format('lithograph_%03d_%02d', room_number, lithograph_index),
+				x = tile_x_to_world(object_def.x),
+				y = tile_y_to_world(object_def.y),
+				text = object_def.text or '',
+			}
+		end
+	end
+
+	return lithographs
+end
+
 local function room_id_from_number(room_number, room_type)
 	return string.format('%s_room_%03d', room_type, room_number)
 end
@@ -142,6 +217,13 @@ local function load_room_templates()
 	for i = 1, #room_numbers do
 		local room_number = room_numbers[i]
 		local room_def = data[tostring(room_number)]
+		local world_number = 0
+		if room_def.type == constants.spaces.world then
+			if room_def.worldnumber == nil then
+				error('pietious castle_map missing worldnumber for world room=' .. tostring(room_number))
+			end
+			world_number = room_def.worldnumber
+		end
 		local links = build_links(room_def.exits)
 		local map_rows = room_def.map
 		local object_defs = room_def.objects or {}
@@ -149,12 +231,16 @@ local function load_room_templates()
 			room_number = room_number,
 			room_id = room_id_from_number(room_number, room_def.type),
 			space_id = room_def.type,
+			world_number = world_number,
 			room_subtype = room_def.subtype,
 			map_rows = map_rows,
 			spawn = build_spawn(map_rows),
 			links = links,
 			edge_gates = build_edge_gates(map_rows, links),
 			enemies = build_enemies(room_number, object_defs),
+			rocks = build_rocks(room_number, object_defs),
+			items = build_items(room_number, object_defs),
+			lithographs = build_lithographs(room_number, object_defs),
 		}
 	end
 

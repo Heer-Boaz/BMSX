@@ -6,6 +6,11 @@ local transition_view_module = require('transition_view.lua')
 local item_screen_module = require('item_screen.lua')
 local ui_module = require('ui.lua')
 local loot_drop_module = require('loot_drop.lua')
+local world_item_module = require('world_item.lua')
+local item_service_module = require('item_service.lua')
+local rock_module = require('rock.lua')
+local rock_service_module = require('rock_service.lua')
+local pepernoot_projectile_module = require('pepernoot_projectile.lua')
 local enemy_explosion_module = require('enemy_explosion.lua')
 local enemy_module = require('enemy.lua')
 local enemy_service_module = require('enemy_service.lua')
@@ -54,6 +59,11 @@ function init()
 	item_screen_module.define_item_screen_fsm()
 	ui_module.define_ui_fsm()
 	loot_drop_module.define_loot_drop_fsm()
+	world_item_module.define_world_item_fsm()
+	item_service_module.define_item_service_fsm()
+	rock_module.define_rock_fsm()
+	rock_service_module.define_rock_service_fsm()
+	pepernoot_projectile_module.define_pepernoot_projectile_fsm()
 	enemy_explosion_module.define_enemy_explosion_fsm()
 	enemy_module.define_enemy_fsm()
 	enemy_module.define_enemy_behaviour_tree()
@@ -65,6 +75,11 @@ function init()
 	item_screen_module.register_item_screen_definition()
 	ui_module.register_ui_definition()
 	loot_drop_module.register_loot_drop_definition()
+	world_item_module.register_world_item_definition()
+	item_service_module.register_item_service_definition()
+	rock_module.register_rock_definition()
+	rock_service_module.register_rock_service_definition()
+	pepernoot_projectile_module.register_pepernoot_projectile_definition()
 	enemy_explosion_module.register_enemy_explosion_definition()
 	enemy_module.register_enemy_definition()
 	enemy_service_module.register_enemy_service_definition()
@@ -113,13 +128,11 @@ function new_game()
 
 	spawn_object(item_screen_module.item_screen_def_id, {
 		id = item_screen_module.item_screen_instance_id,
-		player_id = player_module.player_instance_id,
 		pos = { x = 0, y = 0, z = 0 },
 	})
 
 	spawn_object(ui_module.ui_def_id, {
 		id = ui_module.ui_instance_id,
-		player_id = player_module.player_instance_id,
 		space_id = constants.spaces.castle,
 		pos = { x = 0, y = 0, z = 0 },
 	})
@@ -128,10 +141,20 @@ function new_game()
 		id = flow_service_module.flow_service_instance_id,
 	})
 
+	engine.create_service(item_service_module.item_service_def_id, {
+		id = item_service_module.item_service_instance_id,
+		game_service_id = castle_service_module.castle_service_instance_id,
+	})
+
 	engine.create_service(enemy_service_module.enemy_service_def_id, {
 		id = enemy_service_module.enemy_service_instance_id,
 		game_service_id = castle_service_module.castle_service_instance_id,
-		player_id = player_module.player_instance_id,
+	})
+
+	engine.create_service(rock_service_module.rock_service_def_id, {
+		id = rock_service_module.rock_service_instance_id,
+		game_service_id = castle_service_module.castle_service_instance_id,
+		item_service_id = item_service_module.item_service_instance_id,
 	})
 end
 

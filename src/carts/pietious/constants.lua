@@ -30,6 +30,18 @@ constants.ids = {
 	enemy_service_def = 'pietious.enemy_service.def',
 	enemy_service_instance = 'pietious.enemy_service.instance',
 	enemy_service_fsm = 'pietious.enemy_service.fsm',
+	rock_def = 'pietious.rock.def',
+	rock_fsm = 'pietious.rock.fsm',
+	rock_service_def = 'pietious.rock_service.def',
+	rock_service_instance = 'pietious.rock_service.instance',
+	rock_service_fsm = 'pietious.rock_service.fsm',
+	world_item_def = 'pietious.world_item.def',
+	world_item_fsm = 'pietious.world_item.fsm',
+	item_service_def = 'pietious.item_service.def',
+	item_service_instance = 'pietious.item_service.instance',
+	item_service_fsm = 'pietious.item_service.fsm',
+	pepernoot_projectile_def = 'pietious.pepernoot_projectile.def',
+	pepernoot_projectile_fsm = 'pietious.pepernoot_projectile.fsm',
 	enemy_explosion_def = 'pietious.enemy_explosion.def',
 	enemy_explosion_fsm = 'pietious.enemy_explosion.fsm',
 	loot_drop_def = 'pietious.loot_drop.def',
@@ -53,6 +65,8 @@ constants.flow = {
 constants.events = {
 	room_switched = 'pietious.room.switched',
 	flow_state_changed = 'pietious.flow.state_changed',
+	enemy_defeated = 'pietious.enemy.defeated',
+	room_condition_set = 'pietious.room.condition_set',
 }
 
 constants.room = {
@@ -133,6 +147,18 @@ constants.enemy = {
 	loot_ammo_regen = 10,
 }
 
+constants.rock = {
+	width = 16,
+	height = 16,
+	max_health = 3,
+	break_steps = 20,
+}
+
+constants.pickup_item = {
+	life_regen = 12,
+	ammo_regen = 10,
+}
+
 constants.collision = {
 	world_layer = 1,
 	player_layer = 4,
@@ -161,6 +187,7 @@ constants.stairs = {
 
 constants.physics = {
 	walk_dx = 2,
+	walk_dx_schoentjes = 3,
 	jump_dx = 2,
 	fall_dx_neutral = 2,
 	fall_dx_with_inertia = 3,
@@ -205,6 +232,21 @@ constants.physics = {
 	},
 }
 
+constants.secondary_weapon = {
+	pepernoot_speed_px = 4,
+	pepernoot_weapon_level_cost = 2,
+	pepernoot_max_active = 3,
+	pepernoot_spawn_offset_x = 8,
+	pepernoot_spawn_offset_y = 8,
+}
+
+constants.lithograph = {
+	hit_left_px = 6,
+	hit_top_px = 8,
+	hit_right_px = 10,
+	hit_bottom_px = 16,
+}
+
 constants.palette = {
 	sky_top = { r = 0.08, g = 0.12, b = 0.2, a = 1 },
 	sky_bottom = { r = 0.04, g = 0.06, b = 0.11, a = 1 },
@@ -228,6 +270,8 @@ constants.hud = {
 	health_bar_y = 10,
 	weapon_bar_x = 24,
 	weapon_bar_y = 18,
+	equipped_item_x = 28,
+	equipped_item_y = 1,
 }
 
 constants.telemetry = {

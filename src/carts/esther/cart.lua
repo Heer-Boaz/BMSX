@@ -1,7 +1,7 @@
 local engine = require('engine')
-local level_module = require('level.lua')
-local player_module = require('player.lua')
-local director_module = require('director.lua')
+local level_module = require('level')
+local player_module = require('player_asm')
+local director_module = require('director')
 
 local function service_irqs()
 	local flags = peek(sys_irq_flags)

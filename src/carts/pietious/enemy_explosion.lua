@@ -103,7 +103,6 @@ function enemy_explosion:spawn_loot()
 		id = loot_id,
 		space_id = self.space_id,
 		room_id = self.room_id,
-		player_id = self.player_id,
 		loot_type = self.loot_type,
 		loot_value = loot_value_for_type(self.loot_type),
 		pos = { x = self.x, y = self.y, z = 113 },
@@ -146,11 +145,10 @@ local function register_enemy_explosion_definition()
 		def_id = constants.ids.enemy_explosion_def,
 		class = enemy_explosion,
 		fsms = { enemy_explosion_fsm_id },
-		defaults = {
-			space_id = constants.spaces.castle,
-			room_id = '',
-			player_id = constants.ids.player_instance,
-			loot_type = 'none',
+			defaults = {
+				space_id = constants.spaces.castle,
+				room_id = '',
+				loot_type = 'none',
 			state_name = 'boot',
 			state_variant = 'boot',
 			events_bound = false,

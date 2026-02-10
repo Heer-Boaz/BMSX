@@ -342,6 +342,59 @@ local function build_enemies(enemy_defs)
 	return enemies
 end
 
+local function copy_conditions(conditions_def)
+	local conditions = {}
+	for i = 1, #conditions_def do
+		conditions[i] = conditions_def[i]
+	end
+	return conditions
+end
+
+local function build_rocks(rock_defs)
+	local rocks = {}
+	for i = 1, #rock_defs do
+		local def = rock_defs[i]
+		rocks[i] = {
+			id = def.id,
+			x = def.x,
+			y = def.y,
+			item_type = def.item_type,
+			conditions = copy_conditions(def.conditions),
+		}
+	end
+	return rocks
+end
+
+local function build_items(item_defs)
+	local items = {}
+	for i = 1, #item_defs do
+		local def = item_defs[i]
+		items[i] = {
+			id = def.id,
+			x = def.x,
+			y = def.y,
+			item_type = def.item_type,
+			source_kind = def.source_kind,
+			conditions = copy_conditions(def.conditions),
+		}
+	end
+	return items
+end
+
+local function build_lithographs(lithograph_defs)
+	local lithographs = {}
+	for i = 1, #lithograph_defs do
+		local def = lithograph_defs[i]
+		lithographs[i] = {
+			id = def.id,
+			x = def.x,
+			y = def.y,
+			text = def.text,
+		}
+	end
+	return lithographs
+end
+
 local function copy_links(links_def)
 	return {
 		left = links_def.left,
@@ -373,6 +426,7 @@ local function apply_room_template(room_state, template)
 	room_state.room_number = template.room_number
 	room_state.room_id = template.room_id
 	room_state.space_id = template.space_id
+	room_state.world_number = template.world_number
 	room_state.room_subtype = template.room_subtype
 	room_state.world_width = constants.room.width
 	room_state.world_height = constants.room.height
@@ -392,6 +446,9 @@ local function apply_room_template(room_state, template)
 	room_state.solids = build_solids(collision_map, tile_size, tile_origin_x, tile_origin_y)
 	room_state.stairs = build_stairs(map_rows, tile_size, tile_origin_x, tile_origin_y, constants.player.height)
 	room_state.enemies = build_enemies(template.enemies)
+	room_state.rocks = build_rocks(template.rocks)
+	room_state.items = build_items(template.items)
+	room_state.lithographs = build_lithographs(template.lithographs)
 	room_state.links = copy_links(template.links)
 	room_state.edge_gates = copy_edge_gates(template.edge_gates)
 end

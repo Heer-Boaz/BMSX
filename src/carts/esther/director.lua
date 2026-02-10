@@ -1,4 +1,4 @@
-local constants = require('constants.lua')
+local constants = require('constants')
 local romdir = require('romdir')
 
 local director = {}

@@ -240,6 +240,12 @@ function createMappings() {
 	add('game_header', 'GameHeader', { useSourceColorKey: false });
 	add('energybar_stripe_blue', 'Energybar_stripe_blue');
 	add('energybar_stripe_red', 'Energybar_stripe_red');
+	add('f1_screen', 'F1Screen', { useSourceColorKey: false });
+	add('f1_selector_white', 'F1_selector_white');
+	add('f1_map_title', 'F1Screen_MapTitle');
+	add('room_proxy', 'RoomProxy');
+	add('room_proxy_blue', 'RoomProxy_Blue');
+	add('room_proxy_red', 'RoomProxy_Red');
 
 	add('meijter_r', 'MeiterRight');
 	add('meijter_dr', 'MeiterDownRight');

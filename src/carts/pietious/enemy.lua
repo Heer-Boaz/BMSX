@@ -1,6 +1,7 @@
 local constants = require('constants.lua')
 local components = require('components')
 local engine = require('engine')
+local eventemitter = require('eventemitter')
 local behaviourtree = require('behaviourtree')
 local enemy_explosion_module = require('enemy_explosion.lua')
 
@@ -12,6 +13,7 @@ local enemy_bt_id = constants.ids.enemy_bt
 
 local state_waiting = enemy_fsm_id .. ':/waiting'
 local state_flying = enemy_fsm_id .. ':/flying'
+local PLAYER_ID = constants.ids.player_instance
 
 local body_sprite_component_id = 'body'
 local body_collider_component_id = 'body'
@@ -30,14 +32,6 @@ local function cross_hit_area_for_spin(spin_direction)
 		return { left = 2, top = 4, right = 22, bottom = 12 }
 	end
 	return { left = 4, top = 2, right = 12, bottom = 22 }
-end
-
-function enemy:get_player_object()
-	local player = engine.object(self.player_id)
-	if player == nil then
-		error('pietious enemy missing player object id=' .. tostring(self.player_id))
-	end
-	return player
 end
 
 function enemy:is_collision_tile(world_x, world_y)
@@ -247,7 +241,7 @@ function enemy:bt_tick_mijter_waiting(blackboard)
 	end
 	blackboard.nodedata.mijter_entry_lock_ticks = 0
 
-	local player = self:get_player_object()
+	local player = engine.object(PLAYER_ID)
 	if self:mijter_player_triggered_takeoff(player) then
 		return self:start_mijter_flying(blackboard)
 	end
@@ -369,7 +363,7 @@ function enemy:bt_tick_zakfoe(blackboard)
 end
 
 function enemy:bt_tick_crossfoe_waiting(blackboard)
-	local player = self:get_player_object()
+	local player = engine.object(PLAYER_ID)
 	local node = blackboard.nodedata
 	local hit = cross_hit_area_for_spin(self.cross_spin_direction)
 	local player_top = player.y
@@ -406,7 +400,7 @@ function enemy:bt_tick_crossfoe_waiting(blackboard)
 end
 
 function enemy:bt_tick_crossfoe_flying(blackboard)
-	local player = self:get_player_object()
+	local player = engine.object(PLAYER_ID)
 	local node = blackboard.nodedata
 	local direction_mod = self.cross_state == 'flying_left' and -1 or 1
 	local hit = cross_hit_area_for_spin(self.cross_spin_direction)
@@ -454,12 +448,11 @@ function enemy:bt_tick_crossfoe_flying(blackboard)
 	return behaviourtree.running
 end
 
-function enemy:configure_from_room_def(def, room, player_id)
+function enemy:configure_from_room_def(def, room)
 	self.enemy_id = def.id
 	self.room_id = room.room_id
 	self.room = room
 	self.space_id = room.space_id
-	self.player_id = player_id
 	self.kind = def.kind
 	self.spawn_x = def.x
 	self.spawn_y = def.y
@@ -471,6 +464,7 @@ function enemy:configure_from_room_def(def, room, player_id)
 	self.max_health = def.health or constants.enemy.default_health
 	self.health = self.max_health
 	self.last_sword_hit_id = -1
+	self.last_pepernoot_hit_id = -1
 	self.dangerous = true
 	self.direction = def.direction
 	self.horizontal_dir_mod = 0
@@ -528,7 +522,6 @@ function enemy:spawn_death_effect()
 		id = effect_id,
 		space_id = self.space_id,
 		room_id = self.room_id,
-		player_id = self.player_id,
 		loot_type = self:choose_drop_type(),
 		pos = { x = self.x, y = self.y, z = 114 },
 	})
@@ -547,16 +540,44 @@ function enemy:take_sword_hit(sword_id)
 		self.health = 0
 		self.dangerous = false
 		self:spawn_death_effect()
+		eventemitter.eventemitter.instance:emit(constants.events.enemy_defeated, self.id, {
+			room_id = self.room_id,
+			enemy_id = self.enemy_id,
+			kind = self.kind,
+		})
+		self:mark_for_disposal()
+	end
+	return true
+end
+
+function enemy:take_pepernoot_hit(pepernoot_id)
+	if pepernoot_id <= 0 then
+		return false
+	end
+	if self.last_pepernoot_hit_id == pepernoot_id then
+		return false
+	end
+	self.last_pepernoot_hit_id = pepernoot_id
+	self.health = self.health - 1
+	if self.health <= 0 then
+		self.health = 0
+		self.dangerous = false
+		self:spawn_death_effect()
+		eventemitter.eventemitter.instance:emit(constants.events.enemy_defeated, self.id, {
+			room_id = self.room_id,
+			enemy_id = self.enemy_id,
+			kind = self.kind,
+		})
 		self:mark_for_disposal()
 	end
 	return true
 end
 
 function enemy:on_overlap_stay(event)
-	if event.other_id ~= self.player_id then
+	if event.other_id ~= PLAYER_ID then
 		return
 	end
-	local player = self:get_player_object()
+	local player = engine.object(PLAYER_ID)
 	local other_collider = player:get_component_by_id(event.other_collider_id)
 	if other_collider == nil then
 		error('pietious enemy missing collider on overlap event')
@@ -741,18 +762,18 @@ local function register_enemy_definition()
 		fsms = { enemy_fsm_id },
 		bts = { enemy_bt_id },
 		defaults = {
-			space_id = constants.spaces.castle,
-			enemy_id = '',
-			room_id = '',
-			room = nil,
-			player_id = constants.ids.player_instance,
-			kind = 'mijterfoe',
+				space_id = constants.spaces.castle,
+				enemy_id = '',
+				room_id = '',
+				room = nil,
+				kind = 'mijterfoe',
 			width = 16,
 			height = 16,
 			damage = constants.damage.enemy_contact_damage,
 			max_health = constants.enemy.default_health,
 			health = constants.enemy.default_health,
 			last_sword_hit_id = -1,
+			last_pepernoot_hit_id = -1,
 			dangerous = true,
 			horizontal_dir_mod = 0,
 			vertical_dir_mod = 0,

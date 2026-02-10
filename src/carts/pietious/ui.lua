@@ -4,6 +4,7 @@ local ui = {}
 ui.__index = ui
 
 local ui_fsm_id = constants.ids.ui_fsm
+local PLAYER_ID = constants.ids.player_instance
 
 local function animate_level(current, target)
 	if current < target then
@@ -15,12 +16,17 @@ local function animate_level(current, target)
 	return current
 end
 
-function ui:get_player()
-	local player = object(self.player_id)
-	if player == nil then
-		error('pietious ui player object missing')
+local function secondary_weapon_sprite_id(item_type)
+	if item_type == 'none' then
+		return nil
 	end
-	return player
+	if item_type == 'pepernoot' then
+		return 'pepernoot_16'
+	end
+	if item_type == 'spyglass' then
+		return 'spyglass'
+	end
+	error('pietious ui invalid secondary_weapon=' .. tostring(item_type))
 end
 
 function ui:bind_visual()
@@ -32,18 +38,21 @@ end
 
 function ui:ctor()
 	self:bind_visual()
-	local player = self:get_player()
+	local player = object(PLAYER_ID)
 	local health = clamp_int(math.floor(player.health), 0, constants.damage.max_health)
+	local weapon = clamp_int(math.floor(player.weapon_level), 0, constants.hud.weapon_level)
 	self.hud_health_level = health
 	self.hud_health_target = health
 	self.hud_health_anim_ticks = 0
-	self.hud_weapon_target = self.hud_weapon_level
+	self.hud_weapon_level = weapon
+	self.hud_weapon_target = weapon
 	self.hud_weapon_anim_ticks = 0
 end
 
 function ui:tick()
-	local player = self:get_player()
+	local player = object(PLAYER_ID)
 	self.hud_health_target = clamp_int(math.floor(player.health), 0, constants.damage.max_health)
+	self.hud_weapon_target = clamp_int(math.floor(player.weapon_level), 0, constants.hud.weapon_level)
 
 	if self.hud_health_level ~= self.hud_health_target then
 		self.hud_health_anim_ticks = self.hud_health_anim_ticks + 1
@@ -68,7 +77,12 @@ end
 
 function ui:draw_ui()
 	local hud = constants.hud
+	local player = object(PLAYER_ID)
 	put_sprite('game_header', 0, 0, 200)
+	local equipped_sprite_id = secondary_weapon_sprite_id(player.secondary_weapon)
+	if equipped_sprite_id ~= nil then
+		put_sprite(equipped_sprite_id, hud.equipped_item_x, hud.equipped_item_y, 202)
+	end
 
 	local health_x = hud.health_bar_x
 	local health_y = hud.health_bar_y
@@ -102,11 +116,10 @@ local function register_ui_definition()
 		def_id = constants.ids.ui_def,
 		class = ui,
 		fsms = { ui_fsm_id },
-		components = { 'customvisualcomponent' },
-		defaults = {
-			player_id = constants.ids.player_instance,
-			hud_health_level = constants.hud.health_level,
-			hud_health_target = constants.hud.health_level,
+			components = { 'customvisualcomponent' },
+			defaults = {
+				hud_health_level = constants.hud.health_level,
+				hud_health_target = constants.hud.health_level,
 			hud_health_anim_ticks = 0,
 			hud_weapon_level = constants.hud.weapon_level,
 			hud_weapon_target = constants.hud.weapon_level,

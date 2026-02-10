@@ -2,6 +2,7 @@ local constants = require('constants.lua')
 local engine = require('engine')
 local eventemitter = require('eventemitter')
 local components = require('components')
+local pepernoot_projectile_module = require('pepernoot_projectile.lua')
 
 local player = {}
 player.__index = player
@@ -57,6 +58,9 @@ local sword_sprite_component_id = 'sword'
 local body_collider_component_id = constants.ids.player_body_collider_local
 local sword_collider_component_id = constants.ids.player_sword_collider_local
 local sword_sprite_imgid = 'sword_r'
+local rock_service_id = constants.ids.rock_service_instance
+local rock_width = constants.rock.width
+local rock_height = constants.rock.height
 
 local function append_sprite_frames(frames, sprite_id, frame_count)
 	for _ = 1, frame_count do
@@ -219,6 +223,7 @@ function player:reset_runtime()
 	self.attack_held = false
 	self.attack_pressed = false
 	self.attack_released = false
+	self.secondary_pressed = false
 	self.last_dx = 0
 	self.last_dy = 0
 	self.walk_frame = 0
@@ -246,6 +251,8 @@ function player:reset_runtime()
 	self.death_timer = 0
 	self.debug_jump_substate = -1
 	self.debug_fall_substate = -1
+	self.pepernoot_projectile_sequence = 0
+	self.pepernoot_projectile_ids = {}
 	self.frame = 0
 end
 
@@ -474,6 +481,7 @@ function player:sample_input()
 	self.down_released = (not self.down_held) and was_down_held
 	self.attack_pressed = self.attack_held and (not was_attack_held)
 	self.attack_released = (not self.attack_held) and was_attack_held
+	self.secondary_pressed = action_triggered('y[jp]', player_index)
 end
 
 function player:update_facing_from_horizontal_input()
@@ -689,14 +697,220 @@ function player:collect_loot(loot_type, loot_value)
 		return true
 	end
 	if loot_type == 'ammo' then
+		self.weapon_level = self.weapon_level + loot_value
+		if self.weapon_level > constants.hud.weapon_level then
+			self.weapon_level = constants.hud.weapon_level
+		end
 		self:emit_event('loot_pickup', string.format('type=%s|value=%d|hp=%d', loot_type, loot_value, self.health))
 		return true
 	end
 	error('pietious player invalid loot_type=' .. tostring(loot_type))
 end
 
+function player:has_inventory_item(item_type)
+	return self.inventory_items[item_type] == true
+end
+
+function player:add_inventory_item(item_type)
+	self.inventory_items[item_type] = true
+end
+
+function player:equip_secondary_weapon(item_type)
+	if self.secondary_weapon == item_type then
+		return
+	end
+	self.secondary_weapon = item_type
+	self:emit_event('secondary_weapon_equipped', string.format('weapon=%s', item_type))
+end
+
+function player:get_walk_dx()
+	if self:has_inventory_item('schoentjes') then
+		return constants.physics.walk_dx_schoentjes
+	end
+	return constants.physics.walk_dx
+end
+
+function player:refresh_active_pepernoot_projectiles()
+	local ids = self.pepernoot_projectile_ids
+	local write_index = 1
+	for i = 1, #ids do
+		local id = ids[i]
+		if engine.object(id) ~= nil then
+			ids[write_index] = id
+			write_index = write_index + 1
+		end
+	end
+	for i = write_index, #ids do
+		ids[i] = nil
+	end
+end
+
+function player:is_secondary_weapon_state_allowed()
+	if self.sc:matches_state_path(state_dying) then
+		return false
+	end
+	if self.sc:matches_state_path(state_hit_fall) then
+		return false
+	end
+	if self.sc:matches_state_path(state_hit_recovery) then
+		return false
+	end
+	return true
+end
+
+function player:is_spyglass_state_allowed()
+	return self.sc:matches_state_path(state_quiet)
+		or self.sc:matches_state_path(state_walking_left)
+		or self.sc:matches_state_path(state_walking_right)
+		or self.sc:matches_state_path(state_quiet_sword)
+end
+
+function player:find_near_lithograph()
+	local lithographs = self.room.lithographs
+	local player_left = self.x
+	local player_top = self.y
+	local player_right = self.x + self.width
+	local player_bottom = self.y + self.height
+	local hit = constants.lithograph
+
+	for i = 1, #lithographs do
+		local lithograph = lithographs[i]
+		local area_left = lithograph.x + hit.hit_left_px
+		local area_top = lithograph.y + hit.hit_top_px
+		local area_right = lithograph.x + hit.hit_right_px
+		local area_bottom = lithograph.y + hit.hit_bottom_px
+		if player_right >= area_left and player_left <= area_right and player_bottom >= area_top and player_top <= area_bottom then
+			return lithograph
+		end
+	end
+
+	return nil
+end
+
+function player:try_fire_pepernoot()
+	if self.state_name == 'stairs' then
+		self:emit_event('secondary_weapon_blocked', string.format('weapon=pepernoot|reason=direction|state=%s', self.state_name))
+		return
+	end
+
+	self:refresh_active_pepernoot_projectiles()
+	local sw = constants.secondary_weapon
+	if #self.pepernoot_projectile_ids >= sw.pepernoot_max_active then
+		self:emit_event('secondary_weapon_blocked', string.format('weapon=pepernoot|reason=max_active|active=%d|max=%d', #self.pepernoot_projectile_ids, sw.pepernoot_max_active))
+		return
+	end
+	if self.weapon_level < sw.pepernoot_weapon_level_cost then
+		self:emit_event('secondary_weapon_blocked', string.format('weapon=pepernoot|reason=weapon_level|wp=%d|cost=%d', self.weapon_level, sw.pepernoot_weapon_level_cost))
+		return
+	end
+
+	self.pepernoot_projectile_sequence = self.pepernoot_projectile_sequence + 1
+	local projectile_id = string.format('pepernoot_%d_%d', self.player_index, self.pepernoot_projectile_sequence)
+	local tile_size = self.room.tile_size
+	local spawn_x = self.x + (self.facing < 0 and -sw.pepernoot_spawn_offset_x or sw.pepernoot_spawn_offset_x)
+	local spawn_y = self.y + sw.pepernoot_spawn_offset_y
+	spawn_x = math.floor(spawn_x / tile_size) * tile_size
+	spawn_y = math.floor(spawn_y / tile_size) * tile_size
+
+	engine.spawn_object(pepernoot_projectile_module.pepernoot_projectile_def_id, {
+		id = projectile_id,
+		space_id = self.room.space_id,
+		room = self.room,
+		room_id = self.room.room_id,
+		owner_id = self.id,
+		projectile_id = self.pepernoot_projectile_sequence,
+		direction = self.facing,
+		pos = { x = spawn_x, y = spawn_y, z = 113 },
+	})
+
+	self.pepernoot_projectile_ids[#self.pepernoot_projectile_ids + 1] = projectile_id
+	self.weapon_level = self.weapon_level - sw.pepernoot_weapon_level_cost
+	self:emit_event('secondary_weapon_used', string.format('weapon=pepernoot|id=%s|active=%d|wp=%d|x=%d|y=%d|dir=%d', projectile_id, #self.pepernoot_projectile_ids, self.weapon_level, spawn_x, spawn_y, self.facing))
+end
+
+function player:try_use_secondary_weapon()
+	if not self.secondary_pressed then
+		return
+	end
+	if not self:is_secondary_weapon_state_allowed() then
+		self:emit_event('secondary_weapon_blocked', string.format('weapon=%s|reason=state|state=%s', self.secondary_weapon, self.state_name))
+		return
+	end
+
+	local weapon = self.secondary_weapon
+	if weapon == 'none' then
+		self:emit_event('secondary_weapon_blocked', 'weapon=none|reason=not_equipped')
+		return
+	end
+	if weapon == 'pepernoot' then
+		self:try_fire_pepernoot()
+		return
+	end
+	if weapon == 'spyglass' then
+		if not self:is_spyglass_state_allowed() then
+			self:emit_event('secondary_weapon_blocked', string.format('weapon=spyglass|reason=state|state=%s', self.state_name))
+			return
+		end
+		local lithograph = self:find_near_lithograph()
+		if lithograph == nil then
+			self:emit_event('secondary_weapon_blocked', 'weapon=spyglass|reason=no_lithograph')
+			return
+		end
+		self:emit_event('secondary_weapon_used', string.format('weapon=spyglass|result=lithograph|id=%s|text=%s', lithograph.id, lithograph.text))
+		return
+	end
+	error('pietious player invalid secondary_weapon=' .. tostring(weapon))
+end
+
+function player:collect_world_item(item_type)
+	if self.sc:matches_state_path(state_dying) then
+		return false
+	end
+	if item_type == 'ammofromrock' then
+		self.weapon_level = self.weapon_level + constants.pickup_item.ammo_regen
+		if self.weapon_level > constants.hud.weapon_level then
+			self.weapon_level = constants.hud.weapon_level
+		end
+		self:emit_event('item_pickup', string.format('type=%s|hp=%d|wp=%d', item_type, self.health, self.weapon_level))
+		return true
+	end
+	if item_type == 'lifefromrock' then
+		self.health = self.health + constants.pickup_item.life_regen
+		if self.health > self.max_health then
+			self.health = self.max_health
+		end
+		self:emit_event('item_pickup', string.format('type=%s|hp=%d|wp=%d', item_type, self.health, self.weapon_level))
+		return true
+	end
+	if item_type == 'keyworld1' then
+		if self:has_inventory_item(item_type) then
+			return false
+		end
+		self:add_inventory_item(item_type)
+		self.health = self.max_health
+		self:emit_event('item_pickup', string.format('type=%s|hp=%d|wp=%d', item_type, self.health, self.weapon_level))
+		return true
+	end
+	if item_type == 'schoentjes'
+		or item_type == 'halo'
+		or item_type == 'lamp'
+		or item_type == 'spyglass'
+		or item_type == 'pepernoot'
+		or item_type == 'greenvase'
+		or item_type == 'map_world1'
+	then
+		if self:has_inventory_item(item_type) then
+			return false
+		end
+		self:add_inventory_item(item_type)
+		self:emit_event('item_pickup', string.format('type=%s|hp=%d|wp=%d', item_type, self.health, self.weapon_level))
+		return true
+	end
+	error('pietious player invalid world item_type=' .. tostring(item_type))
+end
+
 function player:try_switch_room(direction, keep_stairs_lock)
-	if self:is_in_damage_lock_state() then
+	if self.sc:matches_state_path(state_dying) then
 		return false
 	end
 	if keep_stairs_lock then
@@ -1066,6 +1280,22 @@ function player:collides_at(x, y)
 			return true
 		end
 	end
+
+	local rocks = self.room.rocks
+	if #rocks > 0 then
+		local destroyed_rock_ids = engine.service(rock_service_id).destroyed_rock_ids
+		local right = x + self.width
+		local bottom = y + self.height
+		for i = 1, #rocks do
+			local rock = rocks[i]
+			if destroyed_rock_ids[rock.id] ~= true then
+				if x < (rock.x + rock_width) and right > rock.x and y < (rock.y + rock_height) and bottom > rock.y then
+					return true
+				end
+			end
+		end
+	end
+
 	return false
 end
 
@@ -1290,6 +1520,7 @@ function player:tick_walking_right()
 	self.debug_jump_substate = -1
 	self.debug_fall_substate = -1
 	self.facing = 1
+	local walk_dx = self:get_walk_dx()
 
 	if not self:is_grounded() then
 		self.last_dx = 0
@@ -1300,7 +1531,7 @@ function player:tick_walking_right()
 		return
 	end
 
-	local move_result = self:apply_move(constants.physics.walk_dx, 0)
+	local move_result = self:apply_move(walk_dx, 0)
 	if self.last_dx ~= 0 then
 		self:advance_walk_animation(abs(self.last_dx))
 	end
@@ -1338,7 +1569,7 @@ function player:tick_walking_right()
 	end
 
 	if move_result.collided_x then
-		if self:try_side_room_switch_from_motion(constants.physics.walk_dx) then
+		if self:try_side_room_switch_from_motion(walk_dx) then
 			self:transition_to(state_walking_right, 'room_switch_right')
 			return
 		end
@@ -1350,6 +1581,7 @@ function player:tick_walking_left()
 	self.debug_jump_substate = -1
 	self.debug_fall_substate = -1
 	self.facing = -1
+	local walk_dx = self:get_walk_dx()
 
 	if not self:is_grounded() then
 		self.last_dx = 0
@@ -1360,7 +1592,7 @@ function player:tick_walking_left()
 		return
 	end
 
-	local move_result = self:apply_move(-constants.physics.walk_dx, 0)
+	local move_result = self:apply_move(-walk_dx, 0)
 	if self.last_dx ~= 0 then
 		self:advance_walk_animation(abs(self.last_dx))
 	end
@@ -1398,7 +1630,7 @@ function player:tick_walking_left()
 	end
 
 	if move_result.collided_x then
-		if self:try_side_room_switch_from_motion(-constants.physics.walk_dx) then
+		if self:try_side_room_switch_from_motion(-walk_dx) then
 			self:transition_to(state_walking_left, 'room_switch_left')
 			return
 		end
@@ -1829,7 +2061,11 @@ function player:tick_hit_fall()
 
 	local move_result = self:apply_move(dx, dy)
 	if move_result.collided_x then
-		self.hit_direction = 0
+		if self:try_side_room_switch_from_motion(dx) then
+			move_result.collided_x = false
+		else
+			self.hit_direction = 0
+		end
 	end
 
 	if self.hit_substate >= 4 then
@@ -1928,6 +2164,10 @@ function player:tick()
 		self:tick_quiet()
 	end
 
+	if not self:is_in_damage_lock_state() then
+		self:try_use_secondary_weapon()
+	end
+
 	if not self:is_in_damage_lock_state() and (not started_tick_in_sword_state) then
 		self:try_start_sword_state()
 	end
@@ -1945,9 +2185,12 @@ local function define_player_fsm()
 	define_fsm(player_fsm_id, {
 		initial = 'boot',
 		states = {
-			boot = {
-				entering_state = function(self)
-					self:reset_runtime()
+				boot = {
+					entering_state = function(self)
+						self.inventory_items = {}
+						self.secondary_weapon = 'none'
+						self.weapon_level = constants.hud.weapon_level
+						self:reset_runtime()
 					self:ensure_visual_components()
 					self:update_visual_components()
 					self:define_timeline(new_timeline({
@@ -2128,6 +2371,7 @@ local function register_player_definition()
 			attack_held = false,
 			attack_pressed = false,
 			attack_released = false,
+			secondary_pressed = false,
 			last_dx = 0,
 			last_dy = 0,
 			walk_frame = 0,
@@ -2153,9 +2397,14 @@ local function register_player_definition()
 			hit_direction = 0,
 			hit_recovery_timer = 0,
 			death_timer = 0,
-			player_damage_imgid = player_dying_frames[1].player_damage_imgid,
+				player_damage_imgid = player_dying_frames[1].player_damage_imgid,
+				inventory_items = nil,
+				secondary_weapon = 'none',
+				weapon_level = constants.hud.weapon_level,
 			debug_jump_substate = -1,
 			debug_fall_substate = -1,
+			pepernoot_projectile_sequence = 0,
+			pepernoot_projectile_ids = {},
 			frame = 0,
 		},
 	})

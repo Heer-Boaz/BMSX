@@ -8,14 +8,6 @@ enemy_service.__index = enemy_service
 
 local enemy_service_fsm_id = constants.ids.enemy_service_fsm
 
-function enemy_service:get_castle_service()
-	local service = engine.service(self.game_service_id)
-	if service == nil then
-		error('pietious enemy_service missing castle service id=' .. tostring(self.game_service_id))
-	end
-	return service
-end
-
 function enemy_service:ensure_enemy_instance(enemy_def, room)
 	local id = enemy_def.id
 	local instance = engine.object(id)
@@ -32,7 +24,7 @@ function enemy_service:ensure_enemy_instance(enemy_def, room)
 	end
 	instance.space_id = room.space_id
 	instance.visible = true
-	instance:configure_from_room_def(enemy_def, room, self.player_id)
+	instance:configure_from_room_def(enemy_def, room)
 	return instance
 end
 
@@ -56,8 +48,7 @@ function enemy_service:deactivate_unused_enemies(active_ids)
 end
 
 function enemy_service:sync_room_enemies()
-	local castle_service = self:get_castle_service()
-	local room = castle_service:get_current_room()
+	local room = engine.service(self.game_service_id):get_current_room()
 	if self.synced_room_id == room.room_id then
 		return
 	end
@@ -117,12 +108,11 @@ local function register_enemy_service_definition()
 		class = enemy_service,
 		fsms = { enemy_service_fsm_id },
 		auto_activate = true,
-		defaults = {
-			id = constants.ids.enemy_service_instance,
-			game_service_id = constants.ids.castle_service_instance,
-			player_id = constants.ids.player_instance,
-			enemy_def_id = enemy_module.enemy_def_id,
-				enemies_by_id = {},
+			defaults = {
+				id = constants.ids.enemy_service_instance,
+				game_service_id = constants.ids.castle_service_instance,
+				enemy_def_id = enemy_module.enemy_def_id,
+					enemies_by_id = {},
 				synced_room_id = '',
 				events_bound = false,
 			registrypersistent = false,

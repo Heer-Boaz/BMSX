@@ -1,10 +1,101 @@
 local constants = require('constants.lua')
 local engine = require('engine')
+local eventemitter = require('eventemitter')
 
 local item_screen = {}
 item_screen.__index = item_screen
 
 local item_screen_fsm_id = constants.ids.item_screen_fsm
+local PLAYER_ID = constants.ids.player_instance
+local PLAYER_INDEX = 1
+local TILE_SIZE = constants.room.tile_size
+local GAME_SCREEN_TILE_OFFSET = constants.room.hud_height / TILE_SIZE
+local ITEM_OFFSET_X = 11
+local ITEM_OFFSET_Y = 6
+local SELECTOR_BLINK_FRAMES = 5
+local MAP_TITLE_X = 49
+local MAP_TITLE_Y = 103 + constants.room.hud_height
+local MAP_PROXY_ORIGIN_X = 5 * TILE_SIZE
+local MAP_PROXY_ORIGIN_Y = constants.room.hud_height + math.floor(14.5 * TILE_SIZE)
+local MAP_PROXY_STEP_X = TILE_SIZE
+local MAP_PROXY_STEP_Y = math.floor(TILE_SIZE / 2)
+
+local map_world_proxies = {
+	[1] = {
+		{ x = 3, y = 2, room_number = 101, is_boss_room = false },
+		{ x = 2, y = 2, room_number = 102, is_boss_room = false },
+		{ x = 2, y = 1, room_number = 103, is_boss_room = false },
+		{ x = 2, y = 0, room_number = 104, is_boss_room = false },
+		{ x = 1, y = 2, room_number = 105, is_boss_room = false },
+		{ x = 1, y = 3, room_number = 106, is_boss_room = false },
+		{ x = 0, y = 3, room_number = 107, is_boss_room = false },
+		{ x = 1, y = 4, room_number = 108, is_boss_room = false },
+		{ x = 2, y = 4, room_number = 109, is_boss_room = false },
+		{ x = 3, y = 4, room_number = 110, is_boss_room = false },
+		{ x = 2, y = 5, room_number = 100, is_boss_room = true },
+	},
+}
+
+local secondary_weapon_order = {
+	'pepernoot',
+	'spyglass',
+}
+
+local inventory_item_order = {
+	'keyworld1',
+	'spyglass',
+	'halo',
+	'lamp',
+	'schoentjes',
+	'greenvase',
+	'map_world1',
+	'pepernoot',
+}
+
+local item_position_offsets = {
+	halo = { x = 5, y = 0 },
+	keyworld1 = { x = 14, y = 8 },
+	map_world1 = { x = 8, y = 8 },
+	lamp = { x = 5, y = 2 },
+	pepernoot = { x = 3, y = 11 },
+	spyglass = { x = 6, y = 11 },
+	schoentjes = { x = 3, y = 0 },
+	greenvase = { x = 3, y = 2 },
+}
+
+local function sprite_for_item_type(item_type)
+	if item_type == 'ammofromrock' then
+		return 'ammo'
+	end
+	if item_type == 'lifefromrock' then
+		return 'item_health'
+	end
+	if item_type == 'keyworld1' then
+		return 'world_key'
+	end
+	if item_type == 'map_world1' then
+		return 'map'
+	end
+	if item_type == 'halo' then
+		return 'halo'
+	end
+	if item_type == 'pepernoot' then
+		return 'pepernoot_16'
+	end
+	if item_type == 'spyglass' then
+		return 'spyglass'
+	end
+	if item_type == 'lamp' then
+		return 'item_lamp'
+	end
+	if item_type == 'schoentjes' then
+		return 'schoentjes'
+	end
+	if item_type == 'greenvase' then
+		return 'item_greenvase'
+	end
+	error('pietious item_screen invalid item_type=' .. tostring(item_type))
+end
 
 function item_screen:bind_visual()
 	local rc = self:get_component('customvisualcomponent')
@@ -13,67 +104,156 @@ function item_screen:bind_visual()
 	end
 end
 
+function item_screen:bind_events()
+	eventemitter.eventemitter.instance:on({
+		event = constants.events.flow_state_changed,
+		subscriber = self,
+		handler = function(event)
+			if event.state ~= 'item' then
+				return
+			end
+			self:reset_for_open()
+		end,
+	})
+end
+
+function item_screen:ctor()
+	self:bind_visual()
+	self:bind_events()
+	self.secondary_weapon_selection_index = 0
+	self.selector_hidden = false
+	self.selector_blink_counter = 0
+	self.map_highlight = true
+end
+
 function item_screen:get_player()
-	return engine.object(self.player_id)
+	return engine.object(PLAYER_ID)
 end
 
-function item_screen:get_health_level()
+function item_screen:get_room_space()
+	return engine.service(constants.ids.castle_service_instance):get_current_room().space_id
+end
+
+function item_screen:get_current_room()
+	return engine.service(constants.ids.castle_service_instance):get_current_room()
+end
+
+function item_screen:reset_for_open()
+	self.selector_hidden = false
+	self.selector_blink_counter = 0
+	self.map_highlight = true
+end
+
+function item_screen:item_position_px(item_type)
+	local offset = item_position_offsets[item_type]
+	local tx = ITEM_OFFSET_X + offset.x
+	local ty = ITEM_OFFSET_Y + offset.y + GAME_SCREEN_TILE_OFFSET
+	return tx * TILE_SIZE, ty * TILE_SIZE
+end
+
+function item_screen:draw_inventory_items()
 	local player = self:get_player()
-	if player == nil then
-		return constants.damage.max_health
-	end
-	local value = math.floor(player.health)
-	if value < 0 then
-		value = 0
-	end
-	if value > constants.damage.max_health then
-		value = constants.damage.max_health
-	end
-	return value
-end
-
-function item_screen:draw_background()
-	local width = display_width()
-	local height = display_height()
-	for y = 0, height - 1, 8 do
-		for x = 0, width - 1, 8 do
-			put_sprite('castle_tile_stone_dark_2', x, y, 320)
+	local room_space = self:get_room_space()
+	for i = 1, #inventory_item_order do
+		local item_type = inventory_item_order[i]
+		if player:has_inventory_item(item_type) then
+			if item_type ~= 'map_world1' or room_space == constants.spaces.world then
+				local x, y = self:item_position_px(item_type)
+				put_sprite(sprite_for_item_type(item_type), x, y, 321)
+			end
 		end
 	end
-	put_sprite('game_header', 0, 0, 321)
 end
 
-function item_screen:draw_slots()
-	local base_x = 24
-	local base_y = 44
-	local step_x = 26
-	local step_y = 26
-	for row = 0, 3 do
-		for col = 0, 7 do
-			local x = base_x + (col * step_x)
-			local y = base_y + (row * step_y)
-			put_sprite('castle_block_stone', x, y, 322)
+function item_screen:draw_secondary_weapon_selector()
+	if self.selector_hidden then
+		return
+	end
+	local x = (14 * TILE_SIZE) + (self.secondary_weapon_selection_index * (3 * TILE_SIZE))
+	local y = constants.room.hud_height + math.floor(16.5 * TILE_SIZE) - 1
+	put_sprite('f1_selector_white', x, y, 322)
+end
+
+function item_screen:draw_map()
+	local player = self:get_player()
+	local room = self:get_current_room()
+	local world_number = room.world_number
+	if world_number <= 0 then
+		return
+	end
+	if world_number == 1 and not player:has_inventory_item('map_world1') then
+		return
+	end
+
+	local map_proxies = map_world_proxies[world_number]
+	if map_proxies == nil then
+		error('pietious item_screen missing map proxy data for world=' .. tostring(world_number))
+	end
+
+	put_sprite('f1_map_title', MAP_TITLE_X, MAP_TITLE_Y, 323)
+
+	for i = 1, #map_proxies do
+		local proxy = map_proxies[i]
+		local sprite_id = 'room_proxy'
+		if self.map_highlight then
+			if proxy.room_number == room.room_number then
+				sprite_id = 'room_proxy_red'
+			elseif proxy.is_boss_room and player:has_inventory_item('lamp') then
+				sprite_id = 'room_proxy_blue'
+			end
+		end
+		local proxy_x = MAP_PROXY_ORIGIN_X + (proxy.x * MAP_PROXY_STEP_X)
+		local proxy_y = MAP_PROXY_ORIGIN_Y + (proxy.y * MAP_PROXY_STEP_Y)
+		put_sprite(sprite_id, proxy_x, proxy_y, 323)
+	end
+end
+
+function item_screen:tick_selector_blink()
+	self.selector_blink_counter = self.selector_blink_counter + 1
+	if self.selector_blink_counter >= SELECTOR_BLINK_FRAMES then
+		self.selector_blink_counter = 0
+		self.selector_hidden = not self.selector_hidden
+		self.map_highlight = not self.map_highlight
+	end
+end
+
+function item_screen:tick_secondary_weapon_selection()
+	local player = self:get_player()
+	if action_triggered('right[jp]', PLAYER_INDEX) then
+		for i = self.secondary_weapon_selection_index + 2, #secondary_weapon_order do
+			if player:has_inventory_item(secondary_weapon_order[i]) then
+				self.secondary_weapon_selection_index = i - 1
+				break
+			end
+		end
+	elseif action_triggered('left[jp]', PLAYER_INDEX) then
+		for i = self.secondary_weapon_selection_index, 1, -1 do
+			if player:has_inventory_item(secondary_weapon_order[i]) then
+				self.secondary_weapon_selection_index = i - 1
+				break
+			end
 		end
 	end
-	put_sprite('sword_r', base_x + 4, base_y + 2, 323)
-	put_sprite('pietolon_stand_r', base_x + step_x + 4, base_y + 2, 323)
+
+	local selected_weapon = secondary_weapon_order[self.secondary_weapon_selection_index + 1]
+	if selected_weapon ~= nil and player:has_inventory_item(selected_weapon) then
+		player:equip_secondary_weapon(selected_weapon)
+	end
 end
 
-function item_screen:draw_bars()
-	local hud = constants.hud
-	local health = self:get_health_level()
-	for i = 0, health - 1 do
-		put_sprite('energybar_stripe_blue', hud.health_bar_x + i, hud.health_bar_y, 324)
+function item_screen:tick()
+	if engine.get_space() ~= constants.spaces.item then
+		return
 	end
-	for i = 0, hud.weapon_level - 1 do
-		put_sprite('energybar_stripe_red', hud.weapon_bar_x + i, hud.weapon_bar_y, 324)
-	end
+	self:tick_selector_blink()
+	self:tick_secondary_weapon_selection()
 end
 
 function item_screen:draw_screen()
-	self:draw_background()
-	self:draw_slots()
-	self:draw_bars()
+	put_sprite('f1_screen', 0, constants.room.hud_height, 320)
+	self:draw_inventory_items()
+	self:draw_secondary_weapon_selector()
+	self:draw_map()
 end
 
 local function define_item_screen_fsm()
@@ -82,7 +262,6 @@ local function define_item_screen_fsm()
 		states = {
 			boot = {
 				entering_state = function(self)
-					self:bind_visual()
 					return '/active'
 				end,
 			},
@@ -92,16 +271,20 @@ local function define_item_screen_fsm()
 end
 
 local function register_item_screen_definition()
-	define_world_object({
-		def_id = constants.ids.item_screen_def,
-		class = item_screen,
-		fsms = { item_screen_fsm_id },
-		components = { 'customvisualcomponent' },
-		defaults = {
-			player_id = constants.ids.player_instance,
-			space_id = constants.spaces.item,
-		},
-	})
+		define_world_object({
+			def_id = constants.ids.item_screen_def,
+			class = item_screen,
+			fsms = { item_screen_fsm_id },
+			components = { 'customvisualcomponent' },
+			defaults = {
+				space_id = constants.spaces.item,
+				secondary_weapon_selection_index = 0,
+				selector_hidden = false,
+				selector_blink_counter = 0,
+				map_highlight = true,
+				tick_enabled = true,
+			},
+		})
 end
 
 return {

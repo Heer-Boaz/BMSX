@@ -1029,8 +1029,7 @@ end
 function new_game()
 end
 
-function update(_dt)
-	print "NIEUWE BIOS"
+function update()
 	refresh_atlas_load_state()
 	boot_screen_visible = true
 	local scroll_delta = consume_boot_scroll_delta()
