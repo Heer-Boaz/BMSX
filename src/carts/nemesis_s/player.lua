@@ -172,24 +172,12 @@ end
 
 function player:get_laser_visual_x(x, weapon)
 	local tile_width = weapon.tile_width
-	local half_step = tile_width * 0.5
-	local coarse_x = math.floor(x / tile_width) * tile_width
-	local phase = math.floor(x) - coarse_x
-	if phase >= half_step then
-		return coarse_x + half_step
-	end
-	return coarse_x
+	return math.floor(x / tile_width) * tile_width
 end
 
-function player:get_laser_visual_y(y, anchor_y, weapon)
-	local tile_width = weapon.tile_width
-	local visual_step = tile_width * 0.5
-	if y >= anchor_y then
-		local downward_delta = y - anchor_y
-		return anchor_y + (math.floor(downward_delta / visual_step) * visual_step)
-	end
-	local upward_delta = anchor_y - y
-	return anchor_y - (math.floor(upward_delta / visual_step) * visual_step)
+function player:get_laser_visual_y(y, weapon)
+	local visual_step = weapon.tile_width * 0.5
+	return math.floor(y / visual_step) * visual_step
 end
 
 function player:draw_lasers()
@@ -199,7 +187,7 @@ function player:draw_lasers()
 		local laser = self.lasers[i]
 		local start_x = self:get_laser_visual_x(laser.left_x, weapon)
 		local end_x = self:get_laser_visual_x(laser.right_x, weapon)
-		local visual_y = self:get_laser_visual_y(laser.y, laser.visual_anchor_y, weapon)
+		local visual_y = self:get_laser_visual_y(laser.y, weapon)
 		if end_x <= start_x then
 			end_x = start_x + tile_width
 		end
@@ -224,7 +212,7 @@ function player:draw_uplasers()
 	for i = 1, #self.uplasers do
 		local uplaser = self.uplasers[i]
 		local base_x = self:get_laser_visual_x(uplaser.x, weapon)
-		local visual_y = self:get_laser_visual_y(uplaser.y, uplaser.visual_anchor_y, weapon)
+		local visual_y = self:get_laser_visual_y(uplaser.y, weapon)
 		for tile_index = 0, uplaser.tile_count - 1 do
 			put_sprite(constants.assets.laser, base_x + (tile_index * tile_width), visual_y, 122)
 		end
@@ -371,7 +359,6 @@ function player:spawn_laser(vessel_id)
 		vessel_id = vessel_id,
 		x = vessel_x + weapon.spawn_offset_x,
 		y = vessel_y + weapon.spawn_offset_y,
-		visual_anchor_y = vessel_y + weapon.spawn_offset_y,
 		left_x = vessel_x + weapon.spawn_offset_x,
 		right_x = vessel_x + weapon.spawn_offset_x,
 		length_expanded = 0,
@@ -431,7 +418,6 @@ function player:spawn_uplaser(vessel_id)
 		x = aligned_x,
 		center_x = aligned_x + (initial_width * 0.5),
 		y = vessel_y + weapon.spawn_offset_y,
-		visual_anchor_y = vessel_y + weapon.spawn_offset_y,
 		level = level,
 		gate_counter = weapon.level2_gate_frames,
 		length_units = length_units,

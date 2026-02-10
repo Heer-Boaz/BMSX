@@ -18,15 +18,15 @@ end
 
 function enemy_service:ensure_enemy_instance(enemy_def, room)
 	local id = enemy_def.id
-	local instance = self.enemies_by_id[id]
+	local instance = engine.object(id)
 	if instance == nil then
 		instance = engine.spawn_object(self.enemy_def_id, {
 			id = id,
 			space_id = room.space_id,
 			pos = { x = enemy_def.x, y = enemy_def.y, z = 140 },
 		})
-		self.enemies_by_id[id] = instance
 	end
+	self.enemies_by_id[id] = instance
 	if not instance.active then
 		instance:activate()
 	end
@@ -38,12 +38,20 @@ end
 
 function enemy_service:deactivate_unused_enemies(active_ids)
 	for id, instance in pairs(self.enemies_by_id) do
+		local live_instance = engine.object(id)
+		if live_instance == nil then
+			self.enemies_by_id[id] = nil
+			goto continue
+		end
+		instance = live_instance
+		self.enemies_by_id[id] = instance
 		if active_ids[id] ~= true then
 			instance.visible = false
 			if instance.active then
 				instance:deactivate()
 			end
 		end
+		::continue::
 	end
 end
 

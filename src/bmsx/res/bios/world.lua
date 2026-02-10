@@ -233,6 +233,9 @@ function world:_object_space_id(obj)
 end
 
 function world:_object_in_scope(obj, scope)
+	if obj._dispose_flag or obj._disposed then
+		return false
+	end
 	if scope == "active" then
 		if not obj.active then
 			return false
@@ -283,7 +286,14 @@ function world:despawn(id_or_obj)
 end
 
 function world:get(id)
-	return self._by_id[id]
+	local obj = self._by_id[id]
+	if obj == nil then
+		return nil
+	end
+	if obj._dispose_flag or obj._disposed then
+		return nil
+	end
+	return obj
 end
 
 function world:objects(opts)

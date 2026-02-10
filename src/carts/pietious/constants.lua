@@ -128,7 +128,7 @@ constants.enemy = {
 	zak_drop_ammo_chance_pct = 20,
 	cross_drop_health_chance_pct = 35,
 	cross_drop_ammo_chance_pct = 25,
-	explosion_frame_steps = 5,
+	explosion_frame_steps = 4,
 	loot_life_regen = 12,
 	loot_ammo_regen = 10,
 }
