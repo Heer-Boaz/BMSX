@@ -15,6 +15,8 @@ local quickmenu = require("quickmenu")
 local romdir = require("romdir")
 local bool01 = require("bool01")
 local clamp_int = require("clamp_int")
+local div_toward_zero = require("div_toward_zero")
+local round_to_nearest = require("round_to_nearest")
 local rol8 = require("rol8")
 local swap_remove = require("swap_remove")
 
@@ -215,6 +217,8 @@ end
 local engine = {}
 engine.bool01 = bool01
 engine.clamp_int = clamp_int
+engine.div_toward_zero = div_toward_zero
+engine.round_to_nearest = round_to_nearest
 engine.rol8 = rol8
 engine.swap_remove = swap_remove
 

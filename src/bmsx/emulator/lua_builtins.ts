@@ -44,6 +44,8 @@ export const ENGINE_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> =
 	{ name: 'on_vdp_load', params: ['handler?'], signature: 'on_vdp_load(handler)', description: 'Registers a VDP load callback; return true to skip BIOS mapping.' },
 	{ name: 'bool01', params: ['value'], signature: 'bool01(value)' },
 	{ name: 'clamp_int', params: ['value', 'min_value', 'max_value'], signature: 'clamp_int(value, min_value, max_value)' },
+	{ name: 'div_toward_zero', params: ['value', 'divisor'], signature: 'div_toward_zero(value, divisor)' },
+	{ name: 'round_to_nearest', params: ['value'], signature: 'round_to_nearest(value)' },
 	{ name: 'rol8', params: ['value'], signature: 'rol8(value)' },
 	{ name: 'swap_remove', params: ['array', 'index'], signature: 'swap_remove(array, index)' },
 ];
