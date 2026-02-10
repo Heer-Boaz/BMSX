@@ -91,55 +91,6 @@ local BST_MAX_HISTORY = 10
 local MAX_TRANSITIONS_PER_TICK = 1000
 local EMPTY_GAME_EVENT = { type = "__fsm.synthetic__", emitter = nil, timestamp = 0 }
 local target_state_tag_refs = setmetatable({}, { __mode = "k" })
-local fsm_tag_trace_enabled = true
-
-local function should_trace_target_tags(target)
-	if not fsm_tag_trace_enabled then
-		return false
-	end
-	if target == nil then
-		return false
-	end
-	return target.id == "pietious.player.instance"
-end
-
-local function is_pietious_sword_related_tag(tag)
-	if type(tag) ~= "string" then
-		return false
-	end
-	if string.sub(tag, 1, 15) ~= "pietious.player" then
-		return false
-	end
-	if string.find(tag, ".group.sword", 1, true) then
-		return true
-	end
-	if string.find(tag, ".visual.", 1, true) then
-		return true
-	end
-	return false
-end
-
-local function join_sorted_tags(tags)
-	local list = {}
-	for tag in pairs(tags) do
-		if is_pietious_sword_related_tag(tag) then
-			list[#list + 1] = tag
-		end
-	end
-	table.sort(list)
-	return table.concat(list, ",")
-end
-
-local function join_sorted_tag_counts(counts)
-	local list = {}
-	for tag, count in pairs(counts) do
-		if is_pietious_sword_related_tag(tag) then
-			list[#list + 1] = tag .. "=" .. tostring(count)
-		end
-	end
-	table.sort(list)
-	return table.concat(list, ",")
-end
 
 local function clear_map(map)
 	while true do
@@ -1596,21 +1547,6 @@ function state:sync_target_state_tags()
 			increment_target_state_tag_ref(target, tag)
 			prev_tags[tag] = true
 		end
-	end
-	if should_trace_target_tags(target) then
-		local refs = target_state_tag_refs[target] or {}
-		print(string.format(
-			"FSM_TAG_TRACE|machine=%s|current=%s|prev=%s|next=%s|refs=%s|target_group_sword=%s|target_visual_ground=%s|target_visual_jump=%s|target_visual_stairs=%s",
-			tostring(root.id),
-			tostring(root.current_id),
-			join_sorted_tags(prev_tags),
-			join_sorted_tags(next_tags),
-			join_sorted_tag_counts(refs),
-			tostring(target:has_tag("pietious.player.group.sword")),
-			tostring(target:has_tag("pietious.player.visual.ground_sword")),
-			tostring(target:has_tag("pietious.player.visual.jump_sword")),
-			tostring(target:has_tag("pietious.player.visual.stairs_sword"))
-		))
 	end
 end
 

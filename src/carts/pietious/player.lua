@@ -79,7 +79,6 @@ local rock_height = constants.rock.height
 local player_effect_try_start_sword_id = 'pietious.player.effect.try_start_sword'
 local player_effect_try_use_secondary_id = 'pietious.player.effect.try_use_secondary'
 local player_event_respawn = 'respawn'
-local sword_trace_enabled = true
 
 local player_input_action_effect_program = {
 	eval = 'all',
@@ -114,33 +113,6 @@ local player_input_action_effect_program = {
 		},
 	},
 }
-
-local function current_player_state_path(self)
-	local machine = self.sc.statemachines[player_fsm_id]
-	if machine == nil then
-		return 'n/a'
-	end
-	return machine:path()
-end
-
-local function trace_sword(self, marker, reason)
-	if not sword_trace_enabled then
-		return
-	end
-	print(string.format(
-		'PIETIOUS_SWORD_TRACE|marker=%s|reason=%s|path=%s|sword_time=%d|group_sword=%s|visual_ground=%s|visual_jump=%s|visual_stairs=%s|x=%d|y=%d',
-		tostring(marker),
-		tostring(reason),
-		current_player_state_path(self),
-		self.sword_time,
-		tostring(self:has_tag(state_tags.group.sword)),
-		tostring(self:has_tag(state_tags.visual.ground_sword)),
-		tostring(self:has_tag(state_tags.visual.jump_sword)),
-		tostring(self:has_tag(state_tags.visual.stairs_sword)),
-		self.x,
-		self.y
-	))
-end
 
 local function append_sprite_frames(frames, sprite_id, frame_count)
 	for _ = 1, frame_count do
@@ -491,13 +463,10 @@ function player:is_slashing()
 end
 
 function player:try_start_sword_state()
-	trace_sword(self, 'try_start_sword', 'enter')
 	if self:is_in_damage_lock_state() then
-		trace_sword(self, 'try_start_sword', 'blocked_damage_lock')
 		return
 	end
 	if self:has_tag(state_tags.group.sword) then
-		trace_sword(self, 'try_start_sword', 'blocked_already_sword')
 		return
 	end
 
@@ -530,7 +499,6 @@ function player:try_start_sword_state()
 	end
 
 	if to_state == nil then
-		trace_sword(self, 'try_start_sword', 'blocked_no_target_state')
 		return
 	end
 
@@ -539,7 +507,6 @@ function player:try_start_sword_state()
 	end
 	self.sword_time = 0
 	self.sword_id = self.sword_id + 1
-	trace_sword(self, 'try_start_sword', 'transition_' .. tostring(to_state))
 	self:transition_to(to_state, 'sword_start_' .. reason)
 end
 
@@ -547,7 +514,6 @@ function player:reset_sword(reason)
 	if not self:has_tag(state_tags.group.sword) and self.sword_time == 0 then
 		return
 	end
-	trace_sword(self, 'reset_sword', reason)
 	self.sword_time = 0
 end
 
@@ -1304,9 +1270,7 @@ function player:apply_move(dx, dy)
 end
 
 function player:transition_to(path, reason)
-	trace_sword(self, 'transition_before', tostring(reason) .. '->' .. tostring(path))
 	self.sc:transition_to(path)
-	trace_sword(self, 'transition_after', tostring(reason) .. '->' .. tostring(path))
 end
 
 function player:start_jump(inertia)
@@ -1733,13 +1697,11 @@ function player:tick_uncontrolled_fall()
 end
 
 function player:tick_quiet_sword()
-	trace_sword(self, 'tick_quiet_sword', self.sword_time)
 	self.last_dx = 0
 	self.last_dy = 0
 
 	local duration = constants.sword.duration_frames
 	if self.sword_time >= duration then
-		trace_sword(self, 'tick_quiet_sword', 'duration_end')
 		self:transition_to(state_quiet, 'quiet_sword_end')
 		self.sword_time = self.sword_time + 1
 		return
@@ -1747,7 +1709,6 @@ function player:tick_quiet_sword()
 
 	if not self:is_grounded() then
 		self.fall_substate = 0
-		trace_sword(self, 'tick_quiet_sword', 'no_ground')
 		self:transition_to(state_uc_fall_sword, 'no_ground')
 	end
 
@@ -1755,12 +1716,9 @@ function player:tick_quiet_sword()
 end
 
 function player:tick_uc_fall_sword()
-	trace_sword(self, 'tick_uc_fall_sword', self.sword_time)
-
 	local duration = constants.sword.duration_frames
 	local landed_state = state_quiet_sword
 	if self.sword_time >= duration then
-		trace_sword(self, 'tick_uc_fall_sword', 'duration_end')
 		self:transition_to(state_uncontrolled_fall, 'uc_fall_sword_end')
 		landed_state = state_quiet
 	end
@@ -1770,12 +1728,9 @@ function player:tick_uc_fall_sword()
 end
 
 function player:tick_c_fall_sword()
-	trace_sword(self, 'tick_c_fall_sword', self.sword_time)
-
 	local duration = constants.sword.duration_frames
 	local landed_state = state_quiet_sword
 	if self.sword_time >= duration then
-		trace_sword(self, 'tick_c_fall_sword', 'duration_end')
 		if self.facing > 0 then
 			self.x = self.x - 2
 		else
@@ -1790,13 +1745,10 @@ function player:tick_c_fall_sword()
 end
 
 function player:tick_jumping_sword()
-	trace_sword(self, 'tick_jumping_sword', self.sword_time)
-
 	local duration = constants.sword.duration_frames
 	local stop_state = state_sj_sword
 	local fall_state = state_c_fall_sword
 	if self.sword_time >= duration then
-		trace_sword(self, 'tick_jumping_sword', 'duration_end')
 		self:transition_to(state_jumping, 'jumping_sword_end')
 		stop_state = state_stopped_jumping
 		fall_state = state_controlled_fall
@@ -1807,12 +1759,9 @@ function player:tick_jumping_sword()
 end
 
 function player:tick_sj_sword()
-	trace_sword(self, 'tick_sj_sword', self.sword_time)
-
 	local duration = constants.sword.duration_frames
 	local fall_state = state_c_fall_sword
 	if self.sword_time >= duration then
-		trace_sword(self, 'tick_sj_sword', 'duration_end')
 		self:transition_to(state_stopped_jumping, 'sj_sword_end')
 		fall_state = state_controlled_fall
 	end
@@ -1940,7 +1889,6 @@ function player:tick_quiet_stairs()
 end
 
 function player:tick_sword_stairs()
-	trace_sword(self, 'tick_sword_stairs', self.sword_time)
 	self.last_dx = 0
 	self.last_dy = 0
 	self.x = self.stairs_x
@@ -1948,7 +1896,6 @@ function player:tick_sword_stairs()
 
 	local duration = constants.sword.duration_frames
 	if self.sword_time >= duration then
-		trace_sword(self, 'tick_sword_stairs', 'duration_end')
 		self:transition_to(state_quiet_stairs, 'sword_stairs_end')
 	end
 
