@@ -87,5 +87,10 @@ src/bmsx_cpp/build/
 # System roots for cross-compilation
 .snesmini
 tools/retroarch-gles2
+
+# Ignore all files in the .external folder
 .external/**
-#!ROM_Map_DKC1_U1.asm
+
+# Don't ignore special files that are needed for development
+!src/carts/esther/res/_ignore/dkc1_physics_reference.asm
+!src/carts/esther/res/_ignore/Routine_Macros_DKC1.asm

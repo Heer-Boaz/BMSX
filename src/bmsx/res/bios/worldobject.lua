@@ -229,6 +229,22 @@ function worldobject:toggle_tag(tag)
 	self.tags[tag] = not self.tags[tag]
 end
 
+function worldobject:matches_state_path(path)
+	return self.sc:matches_state_path(path)
+end
+
+function worldobject:matches_state_tag(tag)
+	return self:has_tag(tag)
+end
+
+function worldobject:transition_to(path)
+	self.sc:transition_to(path)
+end
+
+function worldobject:dispatch_state_event(event_or_name, payload)
+	return self.sc:dispatch(event_or_name, payload)
+end
+
 function worldobject:activate()
 	self.active = true
 	self.tick_enabled = true

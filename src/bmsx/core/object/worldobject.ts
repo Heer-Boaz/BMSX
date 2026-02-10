@@ -275,6 +275,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful, Native {
 	public active: boolean = false;
 	/** If false, systems should not advance time-based logic for this object. */
 	public tick_enabled: boolean = false;
+	public tags: Record<string, boolean> = {};
 
 	public _dispose_flag: boolean = false;
 	@excludepropfromsavegame
@@ -794,9 +795,10 @@ export class WorldObject implements vec3, ComponentContainer, Stateful, Native {
 	 * @param fsm_id The id of the state machine that will be created for this object.
 	 * If there is no state machine for this object, don't pass any value!! The state machine factory will ensure that an "empty" state machine is created. @see {@link statecontext.create}.
 	 */
-	constructor(opts?: RevivableObjectArgs & { id?: string, fsm_id?: string }) {
+	constructor(opts?: RevivableObjectArgs & { id?: string, fsm_id?: string, tags?: Record<string, boolean> }) {
 		this.id = opts?.id ?? this.id ?? this.generateId();
 		this.events = eventsOf(this);
+		this.tags = opts?.tags ?? this.tags;
 
 		// Check if the FSM ID refers to a valid state machine in the library, but only if it was explicitly passed as an argument
 		if (opts?.fsm_id && !StateDefinitions[opts.fsm_id]) throw new Error(`[StateMachineController] Invalid FSM ID: '${opts.fsm_id}'`);
@@ -821,6 +823,30 @@ export class WorldObject implements vec3, ComponentContainer, Stateful, Native {
 		}
 		this.sc = new StateMachineController({ constructReason: undefined, fsm_id: initialMachineId, id: this.id });
 		this.add_component(new TimelineComponent({ parent_or_id: this }));
+	}
+
+	public has_tag(tag: string): boolean {
+		return this.tags[tag] === true;
+	}
+
+	public add_tag(tag: string): void {
+		this.tags[tag] = true;
+	}
+
+	public remove_tag(tag: string): void {
+		delete this.tags[tag];
+	}
+
+	public toggle_tag(tag: string): void {
+		this.tags[tag] = !this.tags[tag];
+	}
+
+	public matches_state_path(path: string): boolean {
+		return this.sc.matches_state_path(path);
+	}
+
+	public matches_state_tag(tag: string): boolean {
+		return this.has_tag(tag);
 	}
 
 	removeComponentsWithTag(tag: ComponentTag): void {

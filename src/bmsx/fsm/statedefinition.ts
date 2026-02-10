@@ -58,6 +58,8 @@ export class StateDefinition {
 
 	public timelines?: StateTimelineMap;
 
+	public tags?: string[];
+
 
 	private get is_root(): boolean { return this.root === this; }
 

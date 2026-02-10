@@ -43,7 +43,6 @@ local cloud_timeline_frames = {
 	'cloud_1',
 	'cloud_2',
 }
-local full_circle_milliradians = 6283
 
 local noot_colors = {
 	{ r = 1, g = 1, b = 1, a = 1 },
@@ -419,7 +418,7 @@ function enemy:bt_tick_staffspawn(_blackboard)
 end
 
 function enemy:bt_tick_cloud(blackboard)
-	return enemy_kind_modules.cloud.bt_tick(self, blackboard, random_between, consume_axis_accum, round_to_nearest, full_circle_milliradians)
+	return enemy_kind_modules.cloud.bt_tick(self, blackboard)
 end
 
 function enemy:bt_tick_vlokspawner(blackboard)

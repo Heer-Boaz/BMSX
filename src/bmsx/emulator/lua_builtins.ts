@@ -94,6 +94,7 @@ export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> 
 	{ name: 'math.min', params: ['x', '...'], signature: 'math.min(x, ...)' },
 	{ name: 'math.modf', params: ['x'], signature: 'math.modf(x)' },
 	{ name: 'math.sin', params: ['x'], signature: 'math.sin(x)' },
+	{ name: 'math.sign', params: ['x'], signature: 'math.sign(x)' },
 	{ name: 'math.random', params: ['m?', 'n?'], signature: 'math.random([m [, n]])' },
 	{ name: 'math.randomseed', params: ['seed?'], signature: 'math.randomseed([seed])' },
 	{ name: 'math.sqrt', params: ['x'], signature: 'math.sqrt(x)' },

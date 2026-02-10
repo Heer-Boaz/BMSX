@@ -11,7 +11,7 @@ import { EventPayload, GameEvent } from '../core/game_event';
 import type { Timeline, TimelineDefinition } from '../timeline/timeline';
 import type { TimelinePlayOptions } from '../component/timeline_component';
 
-type TransitionExecutionMode = 'immediate' | 'queued' | 'deferred';
+type TransitionExecutionMode = 'manual' | 'queued' | 'deferred';
 
 type TransitionTrigger = 'manual' | 'event' | 'input' | 'run-check' | 'process-input' | 'tick' | 'enter' | 'queue-drain';
 
@@ -130,7 +130,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		 * E.g. "StateMachine1: idle -> running (event: start)".
 		 * It includes:
 		 * - Whether guards passed or failed. These include guard functions and action definition evaluations.
-		 * - Transition type (immediate, queued, deferred).
+		 * - Transition type (manual, queued, deferred).
 		 * - Transition trigger (e.g. event, input, direct (transition)).
 		 */
 		traceTransitions: true,
@@ -147,7 +147,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		 * - The event parameters.
 		 * - The event timestamp.
 		 * - The event handler function name, if any.
-		 * - The transition type (immediate, queued, deferred).
+		 * - The transition type (manual, queued, deferred).
 		 * - Whether the event bubbled up.
 		 */
 		traceDispatch: true,
@@ -157,6 +157,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 
 	/** Simple path parse cache. */
 	private static _pathCache = new Map<string, { abs: boolean, up: number, segs: readonly string[] }>();
+	private static _targetStateTagRefs = new WeakMap<Stateful, Record<string, number>>();
 	private static _dumpHookRegistered = false;
 
 	private static shouldTraceTransitions(): boolean {
@@ -612,6 +613,9 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	public data: { [key: string]: any; } = {};
 
 	private timelineBindings?: StateTimelineBinding[];
+	private _stateTagLookup?: Record<string, true>;
+	private _appliedStateTags?: Record<string, boolean>;
+	private _tagSyncScratch?: Record<string, boolean>;
 
 	/**
 	 * Returns the world object or model that this state machine is associated with.
@@ -846,28 +850,28 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 * Processes the transition queue by transitioning to the next state in the queue.
 	 * This method dequeues each state transition from the transition queue and transitions to the corresponding state.
 	 */
-	private process_transition_queue(): void {
-		if (this.is_processing_queue) return;
-		this.is_processing_queue = true;
-		try {
-			for (let i = 0; i < this.transition_queue.length; i++) {
-				const t = this.transition_queue[i];
-				if (State.shouldTraceTransitions()) {
-					this.runWithTransitionContext(
-						() => this.hydrateContext(t.diag, 'queue-drain', 'queued-execution'),
-						() => {
-							this.transitionToState(t.path, 'deferred');
-						},
-					);
-				} else {
-					this.transitionToState(t.path, 'deferred');
+		private process_transition_queue(): void {
+			if (this.is_processing_queue) return;
+			this.is_processing_queue = true;
+			try {
+				for (let i = 0; i < this.transition_queue.length; i++) {
+					const t = this.transition_queue[i];
+					if (State.shouldTraceTransitions()) {
+						this.runWithTransitionContext(
+							() => this.hydrateContext(t.diag, 'queue-drain', 'queued-execution'),
+							() => {
+								this.transition_to(t.path);
+							},
+						);
+					} else {
+						this.transition_to(t.path);
+					}
 				}
+				this.transition_queue.length = 0;
+			} finally {
+				this.is_processing_queue = false;
 			}
-			this.transition_queue.length = 0;
-		} finally {
-			this.is_processing_queue = false;
 		}
-	}
 
 	/**
 	 * Gets the definition of the current state of the FSM.
@@ -989,6 +993,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 
 		// Start the state machine for the current active state recursively
 		startInstance.start();
+		this.root.syncTargetStateTags();
 	}
 
 	/**
@@ -1189,6 +1194,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 
 	public transition_to(state_id: Identifier): void {
 		this.transition_to_path(state_id);
+		this.root.syncTargetStateTags();
 	}
 
 	public get path(): string {
@@ -1232,6 +1238,116 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 			ctx = ctx.parent;
 		}
 		return matchSegments(ctx, spec.segs);
+	}
+
+	public matches_state_tag(tag: string): boolean {
+		const stateTags = this.stateTagLookup();
+		if (stateTags && stateTags[tag]) return true;
+		if (!this.currentid) return false;
+		const cur = this.states[this.currentid];
+		if (!cur) {
+			throw new Error(`[State] Current child '${this.currentid}' not found in '${this.id}' while matching tag '${tag}'.`);
+		}
+		if (cur.matches_state_tag(tag)) return true;
+
+		for (const [id, s] of Object.entries(this.states)) {
+			if (id !== this.currentid && s.is_concurrent && s.matches_state_tag(tag)) return true;
+		}
+		return false;
+	}
+
+	private stateTagLookup(): Record<string, true> | undefined {
+		const existing = this._stateTagLookup;
+		if (existing) return existing;
+		const tags = this.definition.tags;
+		if (!tags) return undefined;
+		const lookup: Record<string, true> = {};
+		for (let i = 0; i < tags.length; i++) {
+			lookup[tags[i]!] = true;
+		}
+		this._stateTagLookup = lookup;
+		return lookup;
+	}
+
+	private collectActiveStateTags(out: Record<string, boolean>): void {
+		const stateTags = this.stateTagLookup();
+		if (stateTags) {
+			for (const tag in stateTags) {
+				out[tag] = true;
+			}
+		}
+		if (!this.currentid) return;
+		const cur = this.states[this.currentid];
+		if (!cur) {
+			throw new Error(`[State] Current child '${this.currentid}' not found in '${this.id}' while collecting state tags.`);
+		}
+		cur.collectActiveStateTags(out);
+		for (const [id, s] of Object.entries(this.states)) {
+			if (id !== this.currentid && s.is_concurrent) s.collectActiveStateTags(out);
+		}
+	}
+
+	private static getTargetStateTagRefs(target: Stateful): Record<string, number> {
+		const existing = State._targetStateTagRefs.get(target);
+		if (existing) return existing;
+		const created: Record<string, number> = {};
+		State._targetStateTagRefs.set(target, created);
+		return created;
+	}
+
+	private static incrementTargetStateTagRef(target: Stateful, tag: string): void {
+		const refs = State.getTargetStateTagRefs(target);
+		const count = refs[tag];
+		if (count) {
+			refs[tag] = count + 1;
+			return;
+		}
+		refs[tag] = 1;
+		target.add_tag(tag);
+	}
+
+	private static decrementTargetStateTagRef(target: Stateful, tag: string): void {
+		const refs = State._targetStateTagRefs.get(target);
+		if (!refs) {
+			throw new Error(`[State] Missing state-tag reference map for '${tag}'.`);
+		}
+		const count = refs[tag];
+		if (!count) {
+			throw new Error(`[State] Missing state-tag reference for '${tag}'.`);
+		}
+		if (count === 1) {
+			delete refs[tag];
+			target.remove_tag(tag);
+			if (Object.keys(refs).length === 0) {
+				State._targetStateTagRefs.delete(target);
+			}
+			return;
+		}
+		refs[tag] = count - 1;
+	}
+
+	private syncTargetStateTags(): void {
+		const root = this.is_root ? this : this.root;
+		const target = Registry.instance.get<Stateful>(root.target_id);
+		if (!target) return;
+
+		const nextTags = root._tagSyncScratch ?? (root._tagSyncScratch = {});
+		for (const tag in nextTags) {
+			delete nextTags[tag];
+		}
+		root.collectActiveStateTags(nextTags);
+
+		const prevTags = root._appliedStateTags ?? (root._appliedStateTags = {});
+		for (const tag in prevTags) {
+			if (nextTags[tag]) continue;
+			State.decrementTargetStateTagRef(target, tag);
+			delete prevTags[tag];
+		}
+		for (const tag in nextTags) {
+			if (prevTags[tag]) continue;
+			State.incrementTargetStateTagRef(target, tag);
+			prevTags[tag] = true;
+		}
 	}
 
 	/**
@@ -1341,7 +1457,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	private in_tick = false;
 	private static readonly MAX_TRANSITIONS_PER_TICK = 1000;
 
-	private transitionToState(state_id: Identifier, execMode: TransitionExecutionMode = 'immediate'): void {
+	private transitionToState(state_id: Identifier): void {
 		if (this.in_tick) {
 			if (++this._transitionsThisTick > State.MAX_TRANSITIONS_PER_TICK) {
 				throw new Error(`Transition limit exceeded in one tick for '${this.id}'.`);
@@ -1349,8 +1465,9 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		}
 
 		const diagEnabled = State.shouldTraceTransitions();
+		const execution: TransitionExecutionMode = this.is_processing_queue ? 'deferred' : 'manual';
 
-		if (this.critical_section_counter > 0 && execMode === 'immediate') {
+		if (this.critical_section_counter > 0) {
 			if (diagEnabled) {
 				const context = this.resolveContextSnapshot(undefined) ?? this.createFallbackSnapshot('manual', 'queued-transition');
 				const outcome: TransitionOutcomeSnapshot = { from: this.currentid, to: state_id, execution: 'queued', status: 'queued', reason: 'critical-section' };
@@ -1365,9 +1482,9 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 
 		if (this.currentid === state_id) {
 			if (diagEnabled) {
-				const context = this.resolveContextSnapshot(undefined) ?? this.createFallbackSnapshot(execMode === 'deferred' ? 'queue-drain' : 'manual', 'noop-transition');
-				this.recordTransitionOutcomeOnContext({ from: this.currentid, to: state_id, execution: execMode, status: 'noop', reason: 'already-current' });
-				this.emitTransitionTrace({ outcome: 'noop', execution: execMode, from: this.currentid, to: state_id, context, reason: 'already-current' });
+				const context = this.resolveContextSnapshot(undefined) ?? this.createFallbackSnapshot(execution === 'deferred' ? 'queue-drain' : 'manual', 'noop-transition');
+				this.recordTransitionOutcomeOnContext({ from: this.currentid, to: state_id, execution, status: 'noop', reason: 'already-current' });
+				this.emitTransitionTrace({ outcome: 'noop', execution, from: this.currentid, to: state_id, context, reason: 'already-current' });
 			}
 			return;
 		}
@@ -1375,56 +1492,56 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		const guardDiagnostics = this.checkStateGuardConditions(state_id);
 		if (!guardDiagnostics.allowed) {
 			if (diagEnabled) {
-				const context = this.resolveContextSnapshot(undefined) ?? this.createFallbackSnapshot(execMode === 'deferred' ? 'queue-drain' : 'manual', 'guard-blocked');
-				const outcome: TransitionOutcomeSnapshot = { from: this.currentid, to: state_id, execution: execMode, status: 'blocked', guardSummary: this.formatGuardDiagnostics(guardDiagnostics) };
+				const context = this.resolveContextSnapshot(undefined) ?? this.createFallbackSnapshot(execution === 'deferred' ? 'queue-drain' : 'manual', 'guard-blocked');
+				const outcome: TransitionOutcomeSnapshot = { from: this.currentid, to: state_id, execution, status: 'blocked', guardSummary: this.formatGuardDiagnostics(guardDiagnostics) };
 				this.recordTransitionOutcomeOnContext(outcome);
-				this.emitTransitionTrace({ outcome: 'blocked', execution: execMode, from: this.currentid, to: state_id, context, guard: guardDiagnostics, reason: 'guard' });
+				this.emitTransitionTrace({ outcome: 'blocked', execution, from: this.currentid, to: state_id, context, guard: guardDiagnostics, reason: 'guard' });
 			}
 			return;
 		}
 
-		this.withCriticalSection(() => {
-			const prevId = this.currentid;
-			const prevDef = this.current_state_definition;
-			const prevStates = this.statesOrThrow();
-			const prevInstance = prevStates[prevId];
-			if (!prevInstance) {
-				throw new Error(`[State] Previous state '${prevId}' not found in '${this.id}'.`);
-			}
+			this.withCriticalSection(() => {
+				const prevId = this.currentid;
+				const prevDef = this.current_state_definition;
+				const prevStates = this.statesOrThrow();
+				const prevInstance = prevStates[prevId];
+				if (!prevInstance) {
+					throw new Error(`[State] Previous state '${prevId}' not found in '${this.id}'.`);
+				}
 
-		const exitHandler = prevDef.exiting_state;
-		if (typeof exitHandler === 'function') {
-			exitHandler.call(this.target, prevInstance);
-		}
-		prevInstance.deactivateStateTimelines();
-		this.pushHistory(prevId);
+				const exitHandler = prevDef.exiting_state;
+				if (typeof exitHandler === 'function') {
+					exitHandler.call(this.target, prevInstance);
+				}
+				prevInstance.deactivateStateTimelines();
+				this.pushHistory(prevId);
 
-		this.currentid = state_id;
-		const cur = this.current;
-			if (!cur) {
-				throw new Error(`[State] State '${this.id}' transitioned to '${state_id}' but the instance was not created.`);
-			}
-			const curDef = this.current_state_definition;
-			if (curDef.is_concurrent) throw new Error(`Cannot transition to parallel state '${state_id}'!`);
+				this.currentid = state_id;
+				const cur = this.current;
+				if (!cur) {
+					throw new Error(`[State] State '${this.id}' transitioned to '${state_id}' but the instance was not created.`);
+				}
+				const curDef = this.current_state_definition;
+				if (curDef.is_concurrent) throw new Error(`Cannot transition to parallel state '${state_id}'!`);
 
-		cur.activateStateTimelines();
-		const enterHandler = curDef.entering_state;
-			const next = typeof enterHandler === 'function'
-				? this.runWithTransitionContext(
-					() => {
-						const ctx = this.createEnterContext(state_id);
-						ctx.handlerName = enterHandler.name || '<anonymous>';
+				cur.activateStateTimelines();
+				const enterHandler = curDef.entering_state;
+				const next = typeof enterHandler === 'function'
+					? this.runWithTransitionContext(
+						() => {
+							const ctx = this.createEnterContext(state_id);
+							ctx.handlerName = enterHandler.name || '<anonymous>';
 						return ctx;
 					},
-					() => enterHandler.call(this.target, cur),
-				)
-				: undefined;
-			cur.transitionToNextStateIfProvided(next);
+						() => enterHandler.call(this.target, cur),
+					)
+					: undefined;
+				cur.transitionToNextStateIfProvided(next);
 
-			if (diagEnabled) {
-				const outcome: TransitionOutcomeSnapshot = { from: prevId, to: state_id, execution: execMode, status: 'success', guardSummary: this.formatGuardDiagnostics(guardDiagnostics) };
+				if (diagEnabled) {
+					const outcome: TransitionOutcomeSnapshot = { from: prevId, to: state_id, execution, status: 'success', guardSummary: this.formatGuardDiagnostics(guardDiagnostics) };
 				this.recordTransitionOutcomeOnContext(outcome);
-				this.emitTransitionTrace({ outcome: 'success', execution: execMode, from: prevId, to: state_id, guard: guardDiagnostics });
+				this.emitTransitionTrace({ outcome: 'success', execution, from: prevId, to: state_id, guard: guardDiagnostics });
 			}
 		});
 	}
@@ -1649,6 +1766,19 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 */
 	public dispose(): void {
 		this.deactivateStateTimelines();
+		if (this.is_root) {
+			const applied = this._appliedStateTags;
+			if (applied) {
+				const target = Registry.instance.get<Stateful>(this.target_id);
+				if (target) {
+					for (const tag of Object.keys(applied)) {
+						State.decrementTargetStateTagRef(target, tag);
+					}
+				}
+			}
+			this._appliedStateTags = undefined;
+			this._tagSyncScratch = undefined;
+		}
 		// Also deregister all states
 		if (!this.states) return;
 		for (let state in this.states) {
@@ -1704,6 +1834,9 @@ public get ticks(): number {
 			for (let state of Object.values(this.states)) {
 				state.reset(reset_tree);
 			}
+		}
+		if (this.is_root) {
+			this.syncTargetStateTags();
 		}
 	}
 }

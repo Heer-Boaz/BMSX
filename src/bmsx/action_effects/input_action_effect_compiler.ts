@@ -133,8 +133,8 @@ function compilePredicate(binding: Binding): (env: BindingExecutionEnv) => boole
 	if (modeItems) {
 		for (let i = 0; i < modeItems.length; i++) {
 			const item = modeItems[i]!;
-			if (!item.path) {
-				throw new Error(`[InputActionEffectCompiler] 'mode' clause missing 'path' in binding '${binding.name ?? '(unnamed)'}'.`);
+			if (!item.path && !item.tag) {
+				throw new Error(`[InputActionEffectCompiler] 'mode' clause missing both 'path' and 'tag' in binding '${binding.name ?? '(unnamed)'}'.`);
 			}
 		}
 	}
@@ -144,8 +144,13 @@ function compilePredicate(binding: Binding): (env: BindingExecutionEnv) => boole
 	return (env: BindingExecutionEnv) => {
 		for (let i = 0; i < modeItems.length; i++) {
 			const entry = modeItems[i]!;
-			const entryPath = entry.path!;
-			const matches = env.owner.sc.matches_state_path(entryPath);
+			let matches = true;
+			if (entry.path) {
+				matches = env.owner.matches_state_path(entry.path);
+			}
+			if (matches && entry.tag) {
+				matches = env.owner.matches_state_tag(entry.tag);
+			}
 			if (entry.not) {
 				if (matches) return false;
 			} else if (!matches) {

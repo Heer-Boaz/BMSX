@@ -254,6 +254,12 @@ export interface Stateful extends Registerable {
 	 */
 	sc: StateMachineController;
 
+	has_tag(tag: string): boolean;
+	add_tag(tag: string): void;
+	remove_tag(tag: string): void;
+	matches_state_path(path: string): boolean;
+	matches_state_tag(tag: string): boolean;
+
 	/**
 	 * Event channel for object-local events.
 	 */

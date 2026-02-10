@@ -26,46 +26,6 @@ local function collect_event_list(def, list, seen)
 	end
 end
 
-local function normalize_state_tags(raw, def_id)
-	if raw == nil then
-		return nil
-	end
-	local kind = type(raw)
-	if kind == "string" then
-		return { raw }
-	end
-	if kind ~= "table" then
-		error("state '" .. tostring(def_id) .. "' defines invalid tags type '" .. kind .. "'.")
-	end
-	local out = {}
-	local seen = {}
-	if raw[1] ~= nil then
-		for i = 1, #raw do
-			local tag = raw[i]
-			if type(tag) ~= "string" then
-				error("state '" .. tostring(def_id) .. "' has non-string tag at index " .. tostring(i) .. ".")
-			end
-			if not seen[tag] then
-				out[#out + 1] = tag
-				seen[tag] = true
-			end
-		end
-		return out
-	end
-	for tag, enabled in pairs(raw) do
-		if enabled then
-			if type(tag) ~= "string" then
-				error("state '" .. tostring(def_id) .. "' has non-string tag key.")
-			end
-			if not seen[tag] then
-				out[#out + 1] = tag
-				seen[tag] = true
-			end
-		end
-	end
-	return out
-end
-
 function statedefinition.new(id, def, root, parent)
 	local self = setmetatable({}, statedefinition)
 	self.__is_state_definition = true
@@ -88,7 +48,7 @@ function statedefinition.new(id, def, root, parent)
 	self.event_list = def and def.event_list or nil
 	self.timelines = def and def.timelines or nil
 	self.transition_guards = def and def.transition_guards or nil
-	self.tags = normalize_state_tags(def and def.tags or nil, self.def_id)
+	self.tags = def and def.tags or nil
 
 	if def and def.states then
 		for state_id, state_def in pairs(def.states) do
@@ -130,6 +90,107 @@ state.diagnostics = {
 local BST_MAX_HISTORY = 10
 local MAX_TRANSITIONS_PER_TICK = 1000
 local EMPTY_GAME_EVENT = { type = "__fsm.synthetic__", emitter = nil, timestamp = 0 }
+local target_state_tag_refs = setmetatable({}, { __mode = "k" })
+local fsm_tag_trace_enabled = true
+
+local function should_trace_target_tags(target)
+	if not fsm_tag_trace_enabled then
+		return false
+	end
+	if target == nil then
+		return false
+	end
+	return target.id == "pietious.player.instance"
+end
+
+local function is_pietious_sword_related_tag(tag)
+	if type(tag) ~= "string" then
+		return false
+	end
+	if string.sub(tag, 1, 15) ~= "pietious.player" then
+		return false
+	end
+	if string.find(tag, ".group.sword", 1, true) then
+		return true
+	end
+	if string.find(tag, ".visual.", 1, true) then
+		return true
+	end
+	return false
+end
+
+local function join_sorted_tags(tags)
+	local list = {}
+	for tag in pairs(tags) do
+		if is_pietious_sword_related_tag(tag) then
+			list[#list + 1] = tag
+		end
+	end
+	table.sort(list)
+	return table.concat(list, ",")
+end
+
+local function join_sorted_tag_counts(counts)
+	local list = {}
+	for tag, count in pairs(counts) do
+		if is_pietious_sword_related_tag(tag) then
+			list[#list + 1] = tag .. "=" .. tostring(count)
+		end
+	end
+	table.sort(list)
+	return table.concat(list, ",")
+end
+
+local function clear_map(map)
+	while true do
+		local key = next(map)
+		if key == nil then
+			break
+		end
+		map[key] = nil
+	end
+end
+
+local function get_target_state_tag_refs(target)
+	local refs = target_state_tag_refs[target]
+	if refs then
+		return refs
+	end
+	refs = {}
+	target_state_tag_refs[target] = refs
+	return refs
+end
+
+local function increment_target_state_tag_ref(target, tag)
+	local refs = get_target_state_tag_refs(target)
+	local count = refs[tag]
+	if count then
+		refs[tag] = count + 1
+		return
+	end
+	refs[tag] = 1
+	target:add_tag(tag)
+end
+
+local function decrement_target_state_tag_ref(target, tag)
+	local refs = target_state_tag_refs[target]
+	if not refs then
+		error("missing state-tag reference map for target while removing '" .. tostring(tag) .. "'.")
+	end
+	local count = refs[tag]
+	if not count then
+		error("missing state-tag reference for '" .. tostring(tag) .. "'.")
+	end
+	if count == 1 then
+		refs[tag] = nil
+		target:remove_tag(tag)
+		if next(refs) == nil then
+			target_state_tag_refs[target] = nil
+		end
+		return
+	end
+	refs[tag] = count - 1
+end
 
 local function clone_defaults(source)
 	local out = {}
@@ -307,6 +368,17 @@ local function resolve_state_instance(parent, state_id)
 	return nil, nil
 end
 
+local function build_state_tag_lookup(tags)
+	if not tags then
+		return nil
+	end
+	local lookup = {}
+	for i = 1, #tags do
+		lookup[tags[i]] = true
+	end
+	return lookup
+end
+
 function state.new(definition, target, parent)
 	local self = setmetatable({}, state)
 	self.definition = definition
@@ -331,6 +403,10 @@ function state.new(definition, target, parent)
 	self.in_tick = false
 	self._transitions_this_tick = 0
 	self.paused = false
+	self.tag_lookup = build_state_tag_lookup(definition.tags)
+	self._applied_state_tags = nil
+	self._tag_sync_scratch = nil
+	self._tag_remove_scratch = nil
 	self:populate_states()
 	self:reset(true)
 	return self
@@ -510,6 +586,7 @@ function state:start()
 	end)
 
 	start_instance:start()
+	self.root:sync_target_state_tags()
 end
 
 function state:enter_critical_section()
@@ -552,11 +629,11 @@ end
 							return self:hydrate_context(t.diag, "queue-drain", "queued-execution")
 						end,
 						function()
-							self:transition_to_state(t.path, "deferred")
+							self:transition_to(t.path)
 						end
 					)
 				else
-					self:transition_to_state(t.path, "deferred")
+					self:transition_to(t.path)
 				end
 				i = i + 1
 			end
@@ -1051,7 +1128,7 @@ function state:check_state_guard_conditions(target_state_id)
 	return { allowed = allowed, evaluations = evaluations }
 end
 
-function state:transition_to_state(state_id, exec_mode)
+function state:transition_to_state(state_id)
 	if self.in_tick then
 		self._transitions_this_tick = self._transitions_this_tick + 1
 		if self._transitions_this_tick > MAX_TRANSITIONS_PER_TICK then
@@ -1060,9 +1137,9 @@ function state:transition_to_state(state_id, exec_mode)
 	end
 
 	local diag_enabled = should_trace_transitions()
-	local mode = exec_mode or "immediate"
+	local execution = self.is_processing_queue and "deferred" or "manual"
 
-	if self.critical_section_counter > 0 and mode == "immediate" then
+	if self.critical_section_counter > 0 then
 		if diag_enabled then
 			local context = self:resolve_context_snapshot(nil) or self:create_fallback_snapshot("manual", "queued-transition")
 			local outcome = { from = self.current_id, to = state_id, execution = "queued", status = "queued", reason = "critical-section" }
@@ -1085,17 +1162,17 @@ function state:transition_to_state(state_id, exec_mode)
 
 	if self.current_id == state_id then
 		if diag_enabled then
-			local context = self:resolve_context_snapshot(nil) or self:create_fallback_snapshot(mode == "deferred" and "queue-drain" or "manual", "noop-transition")
+			local context = self:resolve_context_snapshot(nil) or self:create_fallback_snapshot(execution == "deferred" and "queue-drain" or "manual", "noop-transition")
 			self:record_transition_outcome_on_context({
 				from = self.current_id,
 				to = state_id,
-				execution = mode,
+				execution = execution,
 				status = "noop",
 				reason = "already-current",
 			})
 			self:emit_transition_trace({
 				outcome = "noop",
-				execution = mode,
+				execution = execution,
 				from = self.current_id,
 				to = state_id,
 				context = context,
@@ -1108,18 +1185,18 @@ function state:transition_to_state(state_id, exec_mode)
 	local guard_diagnostics = self:check_state_guard_conditions(state_id)
 	if not guard_diagnostics.allowed then
 		if diag_enabled then
-			local context = self:resolve_context_snapshot(nil) or self:create_fallback_snapshot(mode == "deferred" and "queue-drain" or "manual", "guard-blocked")
+			local context = self:resolve_context_snapshot(nil) or self:create_fallback_snapshot(execution == "deferred" and "queue-drain" or "manual", "guard-blocked")
 			local outcome = {
 				from = self.current_id,
 				to = state_id,
-				execution = mode,
+				execution = execution,
 				status = "blocked",
 				guard_summary = self:format_guard_diagnostics(guard_diagnostics),
 			}
 			self:record_transition_outcome_on_context(outcome)
 			self:emit_transition_trace({
 				outcome = "blocked",
-				execution = mode,
+				execution = execution,
 				from = self.current_id,
 				to = state_id,
 				context = context,
@@ -1177,14 +1254,14 @@ function state:transition_to_state(state_id, exec_mode)
 			local outcome = {
 				from = prev_id,
 				to = state_id,
-				execution = mode,
+				execution = execution,
 				status = "success",
 				guard_summary = self:format_guard_diagnostics(guard_diagnostics),
 			}
 			self:record_transition_outcome_on_context(outcome)
 			self:emit_transition_trace({
 				outcome = "success",
-				execution = mode,
+				execution = execution,
 				from = prev_id,
 				to = state_id,
 				guard = guard_diagnostics,
@@ -1265,6 +1342,7 @@ end
 
 function state:transition_to(state_id)
 	self:transition_to_path(state_id)
+	self.root:sync_target_state_tags()
 end
 
 function state:path()
@@ -1432,16 +1510,12 @@ function state:matches_state_path(path)
 end
 
 function state:matches_state_tag(tag)
-	local tags = self.definition.tags
-	if tags then
-		for i = 1, #tags do
-			if tags[i] == tag then
-				return true
-			end
-		end
+	local tags = self.tag_lookup
+	if tags and tags[tag] then
+		return true
 	end
 
-	if self.states and next(self.states) ~= nil and self.current_id then
+	if self.current_id then
 		local child = self.states[self.current_id]
 		if not child then
 			error("current child '" .. tostring(self.current_id) .. "' not found in '" .. tostring(self.id) .. "'.")
@@ -1458,6 +1532,86 @@ function state:matches_state_tag(tag)
 		end
 	end
 	return false
+end
+
+function state:collect_active_state_tags(out)
+	local tags = self.tag_lookup
+	if tags then
+		for tag in pairs(tags) do
+			out[tag] = true
+		end
+	end
+	if self.current_id then
+		local child = self.states[self.current_id]
+		if not child then
+			error("current child '" .. tostring(self.current_id) .. "' not found in '" .. tostring(self.id) .. "'.")
+		end
+		child:collect_active_state_tags(out)
+		for id, concurrent in pairs(self.states) do
+			if concurrent.definition.is_concurrent and id ~= self.current_id then
+				concurrent:collect_active_state_tags(out)
+			end
+		end
+	end
+end
+
+function state:sync_target_state_tags()
+	local root = self:is_root() and self or self.root
+	local target = root.target
+	if target == nil then
+		return
+	end
+	local next_tags = root._tag_sync_scratch
+	if not next_tags then
+		next_tags = {}
+		root._tag_sync_scratch = next_tags
+	else
+		clear_map(next_tags)
+	end
+	root:collect_active_state_tags(next_tags)
+	local prev_tags = root._applied_state_tags
+	if not prev_tags then
+		prev_tags = {}
+		root._applied_state_tags = prev_tags
+	end
+	local remove_tags = root._tag_remove_scratch
+	if not remove_tags then
+		remove_tags = {}
+		root._tag_remove_scratch = remove_tags
+	else
+		clear_map(remove_tags)
+	end
+	for tag in pairs(prev_tags) do
+		if not next_tags[tag] then
+			remove_tags[tag] = true
+		end
+	end
+	for tag in pairs(remove_tags) do
+		decrement_target_state_tag_ref(target, tag)
+		prev_tags[tag] = nil
+	end
+
+	for tag in pairs(next_tags) do
+		if not prev_tags[tag] then
+			increment_target_state_tag_ref(target, tag)
+			prev_tags[tag] = true
+		end
+	end
+	if should_trace_target_tags(target) then
+		local refs = target_state_tag_refs[target] or {}
+		print(string.format(
+			"FSM_TAG_TRACE|machine=%s|current=%s|prev=%s|next=%s|refs=%s|target_group_sword=%s|target_visual_ground=%s|target_visual_jump=%s|target_visual_stairs=%s",
+			tostring(root.id),
+			tostring(root.current_id),
+			join_sorted_tags(prev_tags),
+			join_sorted_tags(next_tags),
+			join_sorted_tag_counts(refs),
+			tostring(target:has_tag("pietious.player.group.sword")),
+			tostring(target:has_tag("pietious.player.visual.ground_sword")),
+			tostring(target:has_tag("pietious.player.visual.jump_sword")),
+			tostring(target:has_tag("pietious.player.visual.stairs_sword"))
+		))
+	end
 end
 
 function state:handle_event(event_name, emitter_id, detail, event)
@@ -1776,10 +1930,24 @@ function state:reset_submachine(reset_tree)
 			child:reset(reset_tree)
 		end
 	end
+	if self:is_root() then
+		self:sync_target_state_tags()
+	end
 end
 
 function state:dispose()
 	self:deactivate_timelines()
+		if self:is_root() then
+			local applied = self._applied_state_tags
+			if applied then
+				for tag in pairs(applied) do
+					decrement_target_state_tag_ref(self.target, tag)
+				end
+			end
+			self._applied_state_tags = nil
+			self._tag_sync_scratch = nil
+			self._tag_remove_scratch = nil
+		end
 	if self.states then
 		for _, child in pairs(self.states) do
 			child:dispose()
@@ -1940,7 +2108,7 @@ function statemachinecontroller:transition_to(path)
 	if not machine then
 		error("no machine with id '" .. tostring(machine_id) .. "'")
 	end
-	machine:transition_to_path(state_path)
+	machine:transition_to(state_path)
 end
 
 function statemachinecontroller:matches_state_path(path)
@@ -1958,6 +2126,10 @@ function statemachinecontroller:matches_state_path(path)
 		end
 	end
 	return false
+end
+
+function statemachinecontroller:matches_state_tag(tag)
+	return self.target:has_tag(tag)
 end
 
 function statemachinecontroller:run_statemachine(id)

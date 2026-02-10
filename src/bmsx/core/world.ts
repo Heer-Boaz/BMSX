@@ -112,10 +112,31 @@ export class World implements Stateful, RegisterablePersistent {
 	 * The controller for the state machine.
 	 */
 	public sc: StateMachineController;
+	public tags: Record<string, boolean> = {};
 
 	@excludepropfromsavegame
 	private _currentPhase: TickGroup = null;
 	public get currentPhase(): TickGroup { return this._currentPhase; }
+
+	public has_tag(tag: string): boolean {
+		return this.tags[tag] === true;
+	}
+
+	public add_tag(tag: string): void {
+		this.tags[tag] = true;
+	}
+
+	public remove_tag(tag: string): void {
+		delete this.tags[tag];
+	}
+
+	public matches_state_path(path: string): boolean {
+		return this.sc.matches_state_path(path);
+	}
+
+	public matches_state_tag(tag: string): boolean {
+		return this.has_tag(tag);
+	}
 
 	/** ECS systems runner */
 	@excludepropfromsavegame

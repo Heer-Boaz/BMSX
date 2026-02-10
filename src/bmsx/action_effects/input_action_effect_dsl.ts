@@ -7,6 +7,7 @@ export type ProgramIdentifier = Identifier;
 
 export interface ModePredicate {
 	path?: string;
+	tag?: string;
 	not?: boolean;
 }
 

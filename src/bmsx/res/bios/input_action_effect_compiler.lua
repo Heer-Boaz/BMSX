@@ -122,10 +122,23 @@ local function compile_predicate(binding)
 			return true
 		end
 	end
+	local binding_name = binding.name or "(unnamed)"
+	for i = 1, #mode_items do
+		local entry = mode_items[i]
+		if entry.path == nil and entry.tag == nil then
+			error("[inputactioneffectcompiler] 'mode' clause in binding '" .. binding_name .. "' is missing both 'path' and 'tag'.")
+		end
+	end
 	return function(env)
 		for i = 1, #mode_items do
 			local entry = mode_items[i]
-			local matches = env.owner.sc:matches_state_path(entry.path)
+			local matches = true
+			if entry.path ~= nil then
+				matches = env.owner:matches_state_path(entry.path)
+			end
+			if matches and entry.tag ~= nil then
+				matches = env.owner:matches_state_tag(entry.tag)
+			end
 			if entry["not"] then
 				if matches then
 					return false

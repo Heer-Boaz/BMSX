@@ -794,6 +794,18 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	setKey(mathTable, 'sin', createNativeFunction('math.sin', (args, out) => {
 		out.push(Math.sin(args[0] as number));
 	}));
+	setKey(mathTable, 'sign', createNativeFunction('math.sign', (args, out) => {
+		const value = args[0] as number;
+		if (value < 0) {
+			out.push(-1);
+			return;
+		}
+		if (value > 0) {
+			out.push(1);
+			return;
+		}
+		out.push(0);
+	}));
 	setKey(mathTable, 'sqrt', createNativeFunction('math.sqrt', (args, out) => {
 		const value = args[0] as number;
 		out.push(Math.sqrt(value));

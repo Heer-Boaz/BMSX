@@ -3331,6 +3331,17 @@ public fallbackSourceRange(): LuaSourceRange {
 			const number = this.expectNumber(value, 'math.sin expects a number.', null);
 			return [Math.sin(number)];
 		}));
+		mathTable.set(this.canonicalize('sign'), new LuaNativeFunction(this.canonicalize('sign'), (args) => {
+			const value = args.length > 0 ? args[0] : null;
+			const number = this.expectNumber(value, 'math.sign expects a number.', null);
+			if (number < 0) {
+				return [-1];
+			}
+			if (number > 0) {
+				return [1];
+			}
+			return [0];
+		}));
 		mathTable.set(this.canonicalize('sqrt'), new LuaNativeFunction(this.canonicalize('sqrt'), (args) => {
 			const value = args.length > 0 ? args[0] : null;
 			const number = this.expectNumber(value, 'math.sqrt expects a number.', null);

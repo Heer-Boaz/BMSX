@@ -249,7 +249,7 @@ export class StateMachineController {
 		// if (!machine.is_concurrent) { // If the machine is not running in parallel, set it as the current machine
 		// this.current_machine_id = machineid;
 		// }
-		machine.transition_to_path(stateids);
+		machine.transition_to(stateids);
 	}
 
 	/**
@@ -270,7 +270,7 @@ export class StateMachineController {
 
 		// Only switch the state in the specified machine, without changing the current machine
 		const targetPath = statePath ?? machineid;
-		machine.transition_to_path(targetPath);
+		machine.transition_to(targetPath);
 	}
 
 	/**
@@ -348,6 +348,14 @@ export class StateMachineController {
 
 			return machine.matches_state_path(statePath);
 		}
+	}
+
+	matches_state_tag(tag: string): boolean {
+		for (const id in this.statemachines) {
+			const machine = this.statemachines[id];
+			if (machine.target.has_tag(tag)) return true;
+		}
+		return false;
 	}
 
 	/**

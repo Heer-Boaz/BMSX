@@ -28,6 +28,43 @@ local state_hit_fall = player_fsm_id .. ':/hit_fall'
 local state_hit_recovery = player_fsm_id .. ':/hit_recovery'
 local state_dying = player_fsm_id .. ':/dying'
 
+local state_tags = {
+	variant = {
+		quiet = 'pietious.player.variant.quiet',
+		walking_right = 'pietious.player.variant.walking_right',
+		walking_left = 'pietious.player.variant.walking_left',
+		jumping = 'pietious.player.variant.jumping',
+		stopped_jumping = 'pietious.player.variant.stopped_jumping',
+		controlled_fall = 'pietious.player.variant.controlled_fall',
+		uncontrolled_fall = 'pietious.player.variant.uncontrolled_fall',
+		quiet_sword = 'pietious.player.variant.quiet_sword',
+		uc_fall_sword = 'pietious.player.variant.uc_fall_sword',
+		c_fall_sword = 'pietious.player.variant.c_fall_sword',
+		jumping_sword = 'pietious.player.variant.jumping_sword',
+		sj_sword = 'pietious.player.variant.sj_sword',
+		up_stairs = 'pietious.player.variant.up_stairs',
+		down_stairs = 'pietious.player.variant.down_stairs',
+		quiet_stairs = 'pietious.player.variant.quiet_stairs',
+		sword_stairs = 'pietious.player.variant.sword_stairs',
+		hit_fall = 'pietious.player.variant.hit_fall',
+		hit_recovery = 'pietious.player.variant.hit_recovery',
+		dying = 'pietious.player.variant.dying',
+	},
+	group = {
+		stairs = 'pietious.player.group.stairs',
+		sword = 'pietious.player.group.sword',
+		damage_lock = 'pietious.player.group.damage_lock',
+	},
+	ability = {
+		spyglass = 'pietious.player.ability.spyglass',
+	},
+	visual = {
+		jump_sword = 'pietious.player.visual.jump_sword',
+		ground_sword = 'pietious.player.visual.ground_sword',
+		stairs_sword = 'pietious.player.visual.stairs_sword',
+	},
+}
+
 local player_dying_timeline_id = 'pietious.player.player_dying'
 local player_hit_fall_timeline_id = 'pietious.player.player_hit_fall'
 local player_hit_recovery_timeline_id = 'pietious.player.player_hit_recovery'
@@ -41,6 +78,8 @@ local rock_width = constants.rock.width
 local rock_height = constants.rock.height
 local player_effect_try_start_sword_id = 'pietious.player.effect.try_start_sword'
 local player_effect_try_use_secondary_id = 'pietious.player.effect.try_use_secondary'
+local player_event_respawn = 'respawn'
+local sword_trace_enabled = true
 
 local player_input_action_effect_program = {
 	eval = 'all',
@@ -76,14 +115,31 @@ local player_input_action_effect_program = {
 	},
 }
 
-local function state_process_player_input(self)
-	self:sample_input()
+local function current_player_state_path(self)
+	local machine = self.sc.statemachines[player_fsm_id]
+	if machine == nil then
+		return 'n/a'
+	end
+	return machine:path()
 end
 
-local function state_tick_player(method_name)
-	return function(self)
-		self[method_name](self)
+local function trace_sword(self, marker, reason)
+	if not sword_trace_enabled then
+		return
 	end
+	print(string.format(
+		'PIETIOUS_SWORD_TRACE|marker=%s|reason=%s|path=%s|sword_time=%d|group_sword=%s|visual_ground=%s|visual_jump=%s|visual_stairs=%s|x=%d|y=%d',
+		tostring(marker),
+		tostring(reason),
+		current_player_state_path(self),
+		self.sword_time,
+		tostring(self:has_tag(state_tags.group.sword)),
+		tostring(self:has_tag(state_tags.visual.ground_sword)),
+		tostring(self:has_tag(state_tags.visual.jump_sword)),
+		tostring(self:has_tag(state_tags.visual.stairs_sword)),
+		self.x,
+		self.y
+	))
 end
 
 local function append_sprite_frames(frames, sprite_id, frame_count)
@@ -133,53 +189,14 @@ if #player_hit_recovery_frames ~= constants.damage.hit_recovery_frames then
 	))
 end
 
-local function abs(value)
-	if value < 0 then
-		return -value
-	end
-	return value
-end
-
-local function sign(value)
-	if value < 0 then
-		return -1
-	end
-	if value > 0 then
-		return 1
-	end
-	return 0
-end
-
-local function is_stair_left(ch)
-	return ch == '-' or ch == '_'
-end
-
-local function is_stair_right(ch)
-	return ch == '=' or ch == '+'
-end
-
 function player:is_ladder_state()
-	return self.sc:matches_state_path(state_up_stairs)
-		or self.sc:matches_state_path(state_down_stairs)
-		or self.sc:matches_state_path(state_quiet_stairs)
-		or self.sc:matches_state_path(state_sword_stairs)
-end
-
-function player:is_sword_state()
-	return self.sc:matches_state_path(state_quiet_sword)
-		or self.sc:matches_state_path(state_uc_fall_sword)
-		or self.sc:matches_state_path(state_c_fall_sword)
-		or self.sc:matches_state_path(state_jumping_sword)
-		or self.sc:matches_state_path(state_sj_sword)
-		or self.sc:matches_state_path(state_sword_stairs)
+	return self:has_tag(state_tags.group.stairs)
 end
 
 function player:reset_runtime()
 	self.x = self.spawn_x
 	self.y = self.spawn_y
 	self.facing = 1
-	self.state_name = 'boot'
-	self.state_variant = 'boot'
 	self.jump_substate = 0
 	self.fall_substate = 0
 	self.jump_inertia = 0
@@ -283,19 +300,19 @@ function player:ensure_visual_components()
 end
 
 function player:update_damage_state_imgid()
-	if self.state_variant == 'dying' then
+	if self:has_tag(state_tags.variant.dying) then
 		local dying_timeline = self:get_timeline(player_dying_timeline_id)
 		dying_timeline:force_seek(self.death_timer)
 		self.player_damage_imgid = dying_timeline:value().player_damage_imgid
 		return
 	end
-	if self.state_variant == 'hit_fall' then
+	if self:has_tag(state_tags.variant.hit_fall) then
 		local hit_fall_timeline = self:get_timeline(player_hit_fall_timeline_id)
 		hit_fall_timeline:force_seek(self.hit_substate)
 		self.player_damage_imgid = hit_fall_timeline:value().player_damage_imgid
 		return
 	end
-	if self.state_variant == 'hit_recovery' then
+	if self:has_tag(state_tags.variant.hit_recovery) then
 		local hit_recovery_timeline = self:get_timeline(player_hit_recovery_timeline_id)
 		hit_recovery_timeline:force_seek(self.hit_recovery_timer)
 		self.player_damage_imgid = hit_recovery_timeline:value().player_damage_imgid
@@ -311,7 +328,7 @@ function player:update_visual_components()
 	local body_collider = self:get_component_by_local_id('collider2dcomponent', body_collider_component_id)
 	local sword_collider = self:get_component_by_local_id('collider2dcomponent', sword_collider_component_id)
 
-	if self.hit_invulnerability_timer > 0 and self.hit_blink_on and self.state_variant ~= 'dying' then
+	if self.hit_invulnerability_timer > 0 and self.hit_blink_on and not self:has_tag(state_tags.variant.dying) then
 		body_sprite.enabled = false
 		sword_sprite.enabled = false
 		sword_collider.enabled = false
@@ -322,7 +339,6 @@ function player:update_visual_components()
 
 	self:update_damage_state_imgid()
 
-	local variant = self.state_variant
 	local imgid = 'pietolon_stand_r'
 	local sword_imgid = nil
 	local body_offset_x_right = 0
@@ -331,29 +347,35 @@ function player:update_visual_components()
 	local sword_offset_x_left = 0
 	local sword_offset_y = 0
 
-	if variant == 'dying' or variant == 'hit_fall' or variant == 'hit_recovery' then
+	if self:has_tag(state_tags.variant.dying)
+		or self:has_tag(state_tags.variant.hit_fall)
+		or self:has_tag(state_tags.variant.hit_recovery)
+	then
 		imgid = self.player_damage_imgid
-	elseif variant == 'up_stairs' then
+	elseif self:has_tag(state_tags.variant.up_stairs) then
 		if self.stairs_anim_frame == 0 then
 			imgid = 'pietolon_stairs_up_1'
 		else
 			imgid = 'pietolon_stairs_up_2'
 		end
-	elseif variant == 'down_stairs' then
+	elseif self:has_tag(state_tags.variant.down_stairs) then
 		if self.stairs_anim_frame == 0 then
 			imgid = 'pietolon_stairs_down_1'
 		else
 			imgid = 'pietolon_stairs_down_2'
 		end
-	elseif variant == 'walking_right' or variant == 'walking_left' then
+	elseif self:has_tag(state_tags.variant.walking_right) or self:has_tag(state_tags.variant.walking_left) then
 		if self.walk_frame == 0 then
 			imgid = 'pietolon_stand_r'
 		else
 			imgid = 'pietolon_walk_r'
 		end
-	elseif variant == 'jumping' or variant == 'stopped_jumping' or variant == 'controlled_fall' then
+	elseif self:has_tag(state_tags.variant.jumping)
+		or self:has_tag(state_tags.variant.stopped_jumping)
+		or self:has_tag(state_tags.variant.controlled_fall)
+	then
 		imgid = 'pietolon_jump_r'
-	elseif variant == 'uncontrolled_fall' then
+	elseif self:has_tag(state_tags.variant.uncontrolled_fall) then
 		if self.walk_frame == 0 then
 			imgid = 'pietolon_stand_r'
 		else
@@ -361,10 +383,7 @@ function player:update_visual_components()
 		end
 	end
 
-	if self.sc:matches_state_path(state_jumping_sword)
-		or self.sc:matches_state_path(state_sj_sword)
-		or self.sc:matches_state_path(state_c_fall_sword)
-		or self.sc:matches_state_path(state_uc_fall_sword) then
+	if self:has_tag(state_tags.visual.jump_sword) then
 		imgid = 'pietolon_jumpslash_r'
 		sword_imgid = sword_sprite_imgid
 		body_offset_x_right = constants.sword.jump_body_offset_right
@@ -372,7 +391,7 @@ function player:update_visual_components()
 		sword_offset_x_right = constants.sword.jump_offset_right
 		sword_offset_x_left = constants.sword.jump_offset_left
 		sword_offset_y = constants.sword.jump_offset_y
-	elseif self.sc:matches_state_path(state_quiet_sword) then
+	elseif self:has_tag(state_tags.visual.ground_sword) then
 		imgid = 'pietolon_slash_r'
 		sword_imgid = sword_sprite_imgid
 		body_offset_x_right = constants.sword.ground_body_offset_right
@@ -380,7 +399,7 @@ function player:update_visual_components()
 		sword_offset_x_right = constants.sword.ground_offset_right
 		sword_offset_x_left = constants.sword.ground_offset_left
 		sword_offset_y = constants.sword.ground_offset_y
-	elseif self.sc:matches_state_path(state_sword_stairs) then
+	elseif self:has_tag(state_tags.visual.stairs_sword) then
 		imgid = 'pietolon_slash_r'
 		sword_imgid = sword_sprite_imgid
 		body_offset_x_right = constants.sword.stairs_body_offset_right
@@ -391,7 +410,7 @@ function player:update_visual_components()
 	end
 
 	local flip_h = self.facing < 0
-	if (variant == 'up_stairs' or variant == 'down_stairs') and sword_imgid == nil then
+	if (self:has_tag(state_tags.variant.up_stairs) or self:has_tag(state_tags.variant.down_stairs)) and sword_imgid == nil then
 		flip_h = false
 	end
 
@@ -436,7 +455,7 @@ end
 
 function player:respawn()
 	self:reset_runtime()
-	self:transition_to(state_quiet, 'respawn')
+	self:dispatch_state_event(player_event_respawn)
 end
 
 function player:sample_input()
@@ -468,46 +487,50 @@ function player:update_facing_from_horizontal_input()
 end
 
 function player:is_slashing()
-	return self:is_sword_state()
+	return self:has_tag(state_tags.group.sword)
 end
 
 function player:try_start_sword_state()
+	trace_sword(self, 'try_start_sword', 'enter')
 	if self:is_in_damage_lock_state() then
+		trace_sword(self, 'try_start_sword', 'blocked_damage_lock')
 		return
 	end
-	if self:is_sword_state() then
+	if self:has_tag(state_tags.group.sword) then
+		trace_sword(self, 'try_start_sword', 'blocked_already_sword')
 		return
 	end
 
 	local to_state = nil
 	local reason = nil
-	if self.sc:matches_state_path(state_quiet) then
+	if self:has_tag(state_tags.variant.quiet) then
 		to_state = state_quiet_sword
 		reason = 'quiet'
-	elseif self.sc:matches_state_path(state_walking_right) then
+	elseif self:has_tag(state_tags.variant.walking_right) then
 		to_state = state_quiet_sword
 		reason = 'walking_right'
-	elseif self.sc:matches_state_path(state_walking_left) then
+	elseif self:has_tag(state_tags.variant.walking_left) then
 		to_state = state_quiet_sword
 		reason = 'walking_left'
-	elseif self.sc:matches_state_path(state_jumping) then
+	elseif self:has_tag(state_tags.variant.jumping) then
 		to_state = state_jumping_sword
 		reason = 'jumping'
-	elseif self.sc:matches_state_path(state_stopped_jumping) then
+	elseif self:has_tag(state_tags.variant.stopped_jumping) then
 		to_state = state_sj_sword
 		reason = 'stopped_jumping'
-	elseif self.sc:matches_state_path(state_controlled_fall) then
+	elseif self:has_tag(state_tags.variant.controlled_fall) then
 		to_state = state_c_fall_sword
 		reason = 'controlled_fall'
-	elseif self.sc:matches_state_path(state_uncontrolled_fall) then
+	elseif self:has_tag(state_tags.variant.uncontrolled_fall) then
 		to_state = state_uc_fall_sword
 		reason = 'uncontrolled_fall'
-	elseif self.sc:matches_state_path(state_quiet_stairs) then
+	elseif self:has_tag(state_tags.variant.quiet_stairs) then
 		to_state = state_sword_stairs
 		reason = 'stairs'
 	end
 
 	if to_state == nil then
+		trace_sword(self, 'try_start_sword', 'blocked_no_target_state')
 		return
 	end
 
@@ -516,18 +539,20 @@ function player:try_start_sword_state()
 	end
 	self.sword_time = 0
 	self.sword_id = self.sword_id + 1
+	trace_sword(self, 'try_start_sword', 'transition_' .. tostring(to_state))
 	self:transition_to(to_state, 'sword_start_' .. reason)
 end
 
 function player:reset_sword(reason)
-	if not self:is_sword_state() and self.sword_time == 0 then
+	if not self:has_tag(state_tags.group.sword) and self.sword_time == 0 then
 		return
 	end
+	trace_sword(self, 'reset_sword', reason)
 	self.sword_time = 0
 end
 
 function player:is_in_damage_lock_state()
-	return self.sc:matches_state_path(state_hit_fall) or self.sc:matches_state_path(state_hit_recovery) or self.sc:matches_state_path(state_dying)
+	return self:has_tag(state_tags.group.damage_lock)
 end
 
 function player:is_hittable()
@@ -572,7 +597,7 @@ function player:get_hit_direction_from_source(source_x)
 end
 
 function player:start_dying()
-	if self.sc:matches_state_path(state_dying) then
+	if self:has_tag(state_tags.variant.dying) then
 		return
 	end
 	self:reset_sword('death')
@@ -625,7 +650,7 @@ function player:take_hit(amount, source_x, source_y, reason)
 end
 
 function player:collect_loot(loot_type, loot_value)
-	if self.sc:matches_state_path(state_dying) then
+	if self:has_tag(state_tags.variant.dying) then
 		return false
 	end
 	if loot_type == 'life' then
@@ -683,23 +708,11 @@ function player:refresh_active_pepernoot_projectiles()
 end
 
 function player:is_secondary_weapon_state_allowed()
-	if self.sc:matches_state_path(state_dying) then
-		return false
-	end
-	if self.sc:matches_state_path(state_hit_fall) then
-		return false
-	end
-	if self.sc:matches_state_path(state_hit_recovery) then
-		return false
-	end
-	return true
+	return not self:has_tag(state_tags.group.damage_lock)
 end
 
 function player:is_spyglass_state_allowed()
-	return self.sc:matches_state_path(state_quiet)
-		or self.sc:matches_state_path(state_walking_left)
-		or self.sc:matches_state_path(state_walking_right)
-		or self.sc:matches_state_path(state_quiet_sword)
+	return self:has_tag(state_tags.ability.spyglass)
 end
 
 function player:find_near_lithograph()
@@ -767,7 +780,7 @@ function player:try_use_secondary_weapon()
 		return
 	end
 	if weapon == 'pepernoot' then
-		if self:is_ladder_state() and not self.sc:matches_state_path(state_quiet_stairs) then
+		if self:is_ladder_state() and not self:has_tag(state_tags.variant.quiet_stairs) then
 			return
 		end
 		self:try_fire_pepernoot()
@@ -787,7 +800,7 @@ function player:try_use_secondary_weapon()
 end
 
 function player:collect_world_item(item_type)
-	if self.sc:matches_state_path(state_dying) then
+	if self:has_tag(state_tags.variant.dying) then
 		return false
 	end
 	if item_type == 'ammofromrock' then
@@ -830,7 +843,7 @@ function player:collect_world_item(item_type)
 end
 
 function player:try_switch_room(direction, keep_stairs_lock)
-	if self.sc:matches_state_path(state_dying) then
+	if self:has_tag(state_tags.variant.dying) then
 		return false
 	end
 	if keep_stairs_lock then
@@ -906,10 +919,10 @@ function player:try_side_room_switch_from_motion(dx)
 end
 
 function player:can_switch_up_from_state()
-	return self.sc:matches_state_path(state_up_stairs)
-		or self.sc:matches_state_path(state_quiet)
-		or self.sc:matches_state_path(state_walking_left)
-		or self.sc:matches_state_path(state_walking_right)
+	return self:matches_state_path(state_up_stairs)
+		or self:matches_state_path(state_quiet)
+		or self:matches_state_path(state_walking_left)
+		or self:matches_state_path(state_walking_right)
 end
 
 function player:nearing_room_exit()
@@ -987,7 +1000,7 @@ function player:pick_entry_stairs(direction)
 				y_ok = self.y >= stair.top_y and self.y <= max_y
 			end
 			if y_ok then
-				local dx = abs(self.x - stair.x)
+				local dx = math.abs(self.x - stair.x)
 				if best == nil or dx < best_dx or (dx == best_dx and stair.x > best.x) then
 					best = stair
 					best_dx = dx
@@ -1172,7 +1185,7 @@ function player:start_stairs(direction, stair, reason)
 		self.last_dy = next_y - self.y
 		self.y = next_y
 		if self.last_dy ~= 0 then
-			self:update_stairs_animation(abs(self.last_dy))
+			self:update_stairs_animation(math.abs(self.last_dy))
 		end
 	end
 	if direction < 0 then
@@ -1222,8 +1235,8 @@ function player:apply_move(dx, dy)
 	local hit_ceiling = false
 
 	if dx ~= 0 then
-		local step_x = sign(dx)
-		for _ = 1, abs(dx) do
+		local step_x = math.sign(dx)
+		for _ = 1, math.abs(dx) do
 			local next_x = self.x + step_x
 			if self:collides_at(next_x, self.y) then
 				collided_x = true
@@ -1235,8 +1248,8 @@ function player:apply_move(dx, dy)
 	end
 
 	if dy ~= 0 then
-		local step_y = sign(dy)
-		for _ = 1, abs(dy) do
+		local step_y = math.sign(dy)
+		for _ = 1, math.abs(dy) do
 			local next_y = self.y + step_y
 			if self:collides_at(self.x, next_y) then
 				collided_y = true
@@ -1291,7 +1304,9 @@ function player:apply_move(dx, dy)
 end
 
 function player:transition_to(path, reason)
+	trace_sword(self, 'transition_before', tostring(reason) .. '->' .. tostring(path))
 	self.sc:transition_to(path)
+	trace_sword(self, 'transition_after', tostring(reason) .. '->' .. tostring(path))
 end
 
 function player:start_jump(inertia)
@@ -1369,7 +1384,7 @@ function player:advance_walk_animation(distance_px)
 end
 
 function player:runcheck_quiet_controls()
-	if not self.sc:matches_state_path(state_quiet) then
+	if not self:matches_state_path(state_quiet) then
 		return
 	end
 
@@ -1413,7 +1428,7 @@ function player:runcheck_quiet_controls()
 end
 
 function player:runcheck_walking_right_controls()
-	if not self.sc:matches_state_path(state_walking_right) then
+	if not self:matches_state_path(state_walking_right) then
 		return
 	end
 
@@ -1458,7 +1473,7 @@ function player:runcheck_walking_right_controls()
 end
 
 function player:runcheck_walking_left_controls()
-	if not self.sc:matches_state_path(state_walking_left) then
+	if not self:matches_state_path(state_walking_left) then
 		return
 	end
 
@@ -1503,7 +1518,7 @@ function player:runcheck_walking_left_controls()
 end
 
 function player:runcheck_quiet_stairs_controls()
-	if not self.sc:matches_state_path(state_quiet_stairs) then
+	if not self:matches_state_path(state_quiet_stairs) then
 		return
 	end
 
@@ -1517,7 +1532,7 @@ function player:runcheck_quiet_stairs_controls()
 			self.y = next_y
 			self.stairs_direction = -1
 			if self.last_dy ~= 0 then
-				self:update_stairs_animation(abs(self.last_dy))
+				self:update_stairs_animation(math.abs(self.last_dy))
 			end
 			return
 		end
@@ -1536,7 +1551,7 @@ function player:runcheck_quiet_stairs_controls()
 		self.last_dy = next_y - self.y
 		self.y = next_y
 		if self.last_dy ~= 0 then
-			self:update_stairs_animation(abs(self.last_dy))
+			self:update_stairs_animation(math.abs(self.last_dy))
 		end
 		if was_at_or_below_bottom then
 			if self.y >= down_exit_threshold then
@@ -1589,7 +1604,7 @@ function player:tick_walking_right()
 	local move_result = self:apply_move(walk_dx, 0)
 	self.walk_move_collided_x = move_result.collided_x
 	if self.last_dx ~= 0 then
-		self:advance_walk_animation(abs(self.last_dx))
+		self:advance_walk_animation(math.abs(self.last_dx))
 	end
 end
 
@@ -1610,7 +1625,7 @@ function player:tick_walking_left()
 	local move_result = self:apply_move(-walk_dx, 0)
 	self.walk_move_collided_x = move_result.collided_x
 	if self.last_dx ~= 0 then
-		self:advance_walk_animation(abs(self.last_dx))
+		self:advance_walk_animation(math.abs(self.last_dx))
 	end
 end
 
@@ -1718,11 +1733,13 @@ function player:tick_uncontrolled_fall()
 end
 
 function player:tick_quiet_sword()
+	trace_sword(self, 'tick_quiet_sword', self.sword_time)
 	self.last_dx = 0
 	self.last_dy = 0
 
 	local duration = constants.sword.duration_frames
 	if self.sword_time >= duration then
+		trace_sword(self, 'tick_quiet_sword', 'duration_end')
 		self:transition_to(state_quiet, 'quiet_sword_end')
 		self.sword_time = self.sword_time + 1
 		return
@@ -1730,6 +1747,7 @@ function player:tick_quiet_sword()
 
 	if not self:is_grounded() then
 		self.fall_substate = 0
+		trace_sword(self, 'tick_quiet_sword', 'no_ground')
 		self:transition_to(state_uc_fall_sword, 'no_ground')
 	end
 
@@ -1737,10 +1755,12 @@ function player:tick_quiet_sword()
 end
 
 function player:tick_uc_fall_sword()
+	trace_sword(self, 'tick_uc_fall_sword', self.sword_time)
 
 	local duration = constants.sword.duration_frames
 	local landed_state = state_quiet_sword
 	if self.sword_time >= duration then
+		trace_sword(self, 'tick_uc_fall_sword', 'duration_end')
 		self:transition_to(state_uncontrolled_fall, 'uc_fall_sword_end')
 		landed_state = state_quiet
 	end
@@ -1750,10 +1770,12 @@ function player:tick_uc_fall_sword()
 end
 
 function player:tick_c_fall_sword()
+	trace_sword(self, 'tick_c_fall_sword', self.sword_time)
 
 	local duration = constants.sword.duration_frames
 	local landed_state = state_quiet_sword
 	if self.sword_time >= duration then
+		trace_sword(self, 'tick_c_fall_sword', 'duration_end')
 		if self.facing > 0 then
 			self.x = self.x - 2
 		else
@@ -1768,11 +1790,13 @@ function player:tick_c_fall_sword()
 end
 
 function player:tick_jumping_sword()
+	trace_sword(self, 'tick_jumping_sword', self.sword_time)
 
 	local duration = constants.sword.duration_frames
 	local stop_state = state_sj_sword
 	local fall_state = state_c_fall_sword
 	if self.sword_time >= duration then
+		trace_sword(self, 'tick_jumping_sword', 'duration_end')
 		self:transition_to(state_jumping, 'jumping_sword_end')
 		stop_state = state_stopped_jumping
 		fall_state = state_controlled_fall
@@ -1783,10 +1807,12 @@ function player:tick_jumping_sword()
 end
 
 function player:tick_sj_sword()
+	trace_sword(self, 'tick_sj_sword', self.sword_time)
 
 	local duration = constants.sword.duration_frames
 	local fall_state = state_c_fall_sword
 	if self.sword_time >= duration then
+		trace_sword(self, 'tick_sj_sword', 'duration_end')
 		self:transition_to(state_stopped_jumping, 'sj_sword_end')
 		fall_state = state_controlled_fall
 	end
@@ -1846,7 +1872,7 @@ function player:tick_up_stairs()
 	if moved then
 		self.last_dy = next_y - self.y
 		self.y = next_y
-		self:update_stairs_animation(abs(self.last_dy))
+		self:update_stairs_animation(math.abs(self.last_dy))
 	end
 end
 
@@ -1902,7 +1928,7 @@ function player:tick_down_stairs()
 	if moved then
 		self.last_dy = next_y - self.y
 		self.y = next_y
-		self:update_stairs_animation(abs(self.last_dy))
+		self:update_stairs_animation(math.abs(self.last_dy))
 	end
 end
 
@@ -1914,6 +1940,7 @@ function player:tick_quiet_stairs()
 end
 
 function player:tick_sword_stairs()
+	trace_sword(self, 'tick_sword_stairs', self.sword_time)
 	self.last_dx = 0
 	self.last_dy = 0
 	self.x = self.stairs_x
@@ -1921,6 +1948,7 @@ function player:tick_sword_stairs()
 
 	local duration = constants.sword.duration_frames
 	if self.sword_time >= duration then
+		trace_sword(self, 'tick_sword_stairs', 'duration_end')
 		self:transition_to(state_quiet_stairs, 'sword_stairs_end')
 	end
 
@@ -2029,12 +2057,9 @@ local function define_player_fsm()
 			end,
 		},
 		quiet = {
-			entering_state = function(self)
-				self.state_name = 'quiet'
-				self.state_variant = 'quiet'
-			end,
-			process_input = state_process_player_input,
-			tick = state_tick_player('tick_quiet'),
+			tags = { state_tags.variant.quiet, state_tags.ability.spyglass },
+			process_input = player.sample_input,
+			tick = player.tick_quiet,
 			run_checks = {
 				{
 					go = function(self)
@@ -2044,13 +2069,12 @@ local function define_player_fsm()
 			},
 		},
 		walking_right = {
+			tags = { state_tags.variant.walking_right, state_tags.ability.spyglass },
 			entering_state = function(self)
-				self.state_name = 'walking_right'
-				self.state_variant = 'walking_right'
 				self:reset_walk_animation()
 			end,
-			process_input = state_process_player_input,
-			tick = state_tick_player('tick_walking_right'),
+			process_input = player.sample_input,
+			tick = player.tick_walking_right,
 			run_checks = {
 				{
 					go = function(self)
@@ -2060,13 +2084,12 @@ local function define_player_fsm()
 			},
 		},
 		walking_left = {
+			tags = { state_tags.variant.walking_left, state_tags.ability.spyglass },
 			entering_state = function(self)
-				self.state_name = 'walking_left'
-				self.state_variant = 'walking_left'
 				self:reset_walk_animation()
 			end,
-			process_input = state_process_player_input,
-			tick = state_tick_player('tick_walking_left'),
+			process_input = player.sample_input,
+			tick = player.tick_walking_left,
 			run_checks = {
 				{
 					go = function(self)
@@ -2076,106 +2099,85 @@ local function define_player_fsm()
 			},
 		},
 		jumping = {
-			entering_state = function(self)
-				self.state_name = 'jumping'
-				self.state_variant = 'jumping'
-			end,
-			process_input = state_process_player_input,
-			tick = state_tick_player('tick_jumping'),
+			tags = { state_tags.variant.jumping },
+			process_input = player.sample_input,
+			tick = player.tick_jumping,
 		},
 		stopped_jumping = {
-			entering_state = function(self)
-				self.state_name = 'stopped_jumping'
-				self.state_variant = 'stopped_jumping'
-			end,
-			process_input = state_process_player_input,
-			tick = state_tick_player('tick_stopped_jumping'),
+			tags = { state_tags.variant.stopped_jumping },
+			process_input = player.sample_input,
+			tick = player.tick_stopped_jumping,
 		},
 		controlled_fall = {
-			entering_state = function(self)
-				self.state_name = 'controlled_fall'
-				self.state_variant = 'controlled_fall'
-			end,
-			process_input = state_process_player_input,
-			tick = state_tick_player('tick_controlled_fall'),
+			tags = { state_tags.variant.controlled_fall },
+			process_input = player.sample_input,
+			tick = player.tick_controlled_fall,
 		},
 		uncontrolled_fall = {
-			entering_state = function(self)
-				self.state_name = 'uncontrolled_fall'
-				self.state_variant = 'uncontrolled_fall'
-			end,
-			process_input = state_process_player_input,
-			tick = state_tick_player('tick_uncontrolled_fall'),
+			tags = { state_tags.variant.uncontrolled_fall },
+			process_input = player.sample_input,
+			tick = player.tick_uncontrolled_fall,
 		},
 		quiet_sword = {
-			entering_state = function(self)
-				if self.sword_ground_origin == 'walking_right' then
-					self.state_name = 'walking_right'
-				elseif self.sword_ground_origin == 'walking_left' then
-					self.state_name = 'walking_left'
-				else
-					self.state_name = 'quiet'
-				end
-				self.state_variant = 'quiet_sword'
-			end,
-			process_input = state_process_player_input,
-			tick = state_tick_player('tick_quiet_sword'),
+			tags = {
+				state_tags.variant.quiet_sword,
+				state_tags.group.sword,
+				state_tags.ability.spyglass,
+				state_tags.visual.ground_sword,
+			},
+			process_input = player.sample_input,
+			tick = player.tick_quiet_sword,
 		},
 		uc_fall_sword = {
-			entering_state = function(self)
-				self.state_name = 'uncontrolled_fall'
-				self.state_variant = 'uc_fall_sword'
-			end,
-			process_input = state_process_player_input,
-			tick = state_tick_player('tick_uc_fall_sword'),
+			tags = {
+				state_tags.variant.uc_fall_sword,
+				state_tags.group.sword,
+				state_tags.visual.jump_sword,
+			},
+			process_input = player.sample_input,
+			tick = player.tick_uc_fall_sword,
 		},
 		c_fall_sword = {
-			entering_state = function(self)
-				self.state_name = 'controlled_fall'
-				self.state_variant = 'c_fall_sword'
-			end,
-			process_input = state_process_player_input,
-			tick = state_tick_player('tick_c_fall_sword'),
+			tags = {
+				state_tags.variant.c_fall_sword,
+				state_tags.group.sword,
+				state_tags.visual.jump_sword,
+			},
+			process_input = player.sample_input,
+			tick = player.tick_c_fall_sword,
 		},
 		jumping_sword = {
-			entering_state = function(self)
-				self.state_name = 'jumping'
-				self.state_variant = 'jumping_sword'
-			end,
-			process_input = state_process_player_input,
-			tick = state_tick_player('tick_jumping_sword'),
+			tags = {
+				state_tags.variant.jumping_sword,
+				state_tags.group.sword,
+				state_tags.visual.jump_sword,
+			},
+			process_input = player.sample_input,
+			tick = player.tick_jumping_sword,
 		},
 		sj_sword = {
-			entering_state = function(self)
-				self.state_name = 'stopped_jumping'
-				self.state_variant = 'sj_sword'
-			end,
-			process_input = state_process_player_input,
-			tick = state_tick_player('tick_sj_sword'),
+			tags = {
+				state_tags.variant.sj_sword,
+				state_tags.group.sword,
+				state_tags.visual.jump_sword,
+			},
+			process_input = player.sample_input,
+			tick = player.tick_sj_sword,
 		},
 		up_stairs = {
-			entering_state = function(self)
-				self.state_name = 'stairs'
-				self.state_variant = 'up_stairs'
-			end,
-			process_input = state_process_player_input,
-			tick = state_tick_player('tick_up_stairs'),
+			tags = { state_tags.variant.up_stairs, state_tags.group.stairs },
+			process_input = player.sample_input,
+			tick = player.tick_up_stairs,
 		},
 		down_stairs = {
-			entering_state = function(self)
-				self.state_name = 'stairs'
-				self.state_variant = 'down_stairs'
-			end,
-			process_input = state_process_player_input,
-			tick = state_tick_player('tick_down_stairs'),
+			tags = { state_tags.variant.down_stairs, state_tags.group.stairs },
+			process_input = player.sample_input,
+			tick = player.tick_down_stairs,
 		},
 		quiet_stairs = {
-			entering_state = function(self)
-				self.state_name = 'stairs'
-				self.state_variant = 'quiet_stairs'
-			end,
-			process_input = state_process_player_input,
-			tick = state_tick_player('tick_quiet_stairs'),
+			tags = { state_tags.variant.quiet_stairs, state_tags.group.stairs },
+			process_input = player.sample_input,
+			tick = player.tick_quiet_stairs,
 			run_checks = {
 				{
 					go = function(self)
@@ -2185,36 +2187,32 @@ local function define_player_fsm()
 			},
 		},
 		sword_stairs = {
-			entering_state = function(self)
-				self.state_name = 'stairs'
-				self.state_variant = 'sword_stairs'
-			end,
-			process_input = state_process_player_input,
-			tick = state_tick_player('tick_sword_stairs'),
+			tags = {
+				state_tags.variant.sword_stairs,
+				state_tags.group.stairs,
+				state_tags.group.sword,
+				state_tags.visual.stairs_sword,
+			},
+			process_input = player.sample_input,
+			tick = player.tick_sword_stairs,
 		},
 		hit_fall = {
-			entering_state = function(self)
-				self.state_name = 'hit_fall'
-				self.state_variant = 'hit_fall'
-			end,
-			process_input = state_process_player_input,
-			tick = state_tick_player('tick_hit_fall'),
+			tags = { state_tags.variant.hit_fall, state_tags.group.damage_lock },
+			process_input = player.sample_input,
+			tick = player.tick_hit_fall,
 		},
 		hit_recovery = {
-			entering_state = function(self)
-				self.state_name = 'hit_recovery'
-				self.state_variant = 'hit_recovery'
-			end,
-			process_input = state_process_player_input,
-			tick = state_tick_player('tick_hit_recovery'),
+			tags = { state_tags.variant.hit_recovery, state_tags.group.damage_lock },
+			process_input = player.sample_input,
+			tick = player.tick_hit_recovery,
 		},
 		dying = {
-			entering_state = function(self)
-				self.state_name = 'dying'
-				self.state_variant = 'dying'
-			end,
-			process_input = state_process_player_input,
-			tick = state_tick_player('tick_dying'),
+			tags = { state_tags.variant.dying, state_tags.group.damage_lock },
+			on = {
+				[player_event_respawn] = '/quiet',
+			},
+			process_input = player.sample_input,
+			tick = player.tick_dying,
 		},
 	}
 
@@ -2261,8 +2259,6 @@ local function register_player_definition()
 			x = constants.player.start_x,
 			y = constants.player.start_y,
 			facing = 1,
-			state_name = 'boot',
-			state_variant = 'boot',
 			jump_substate = 0,
 			fall_substate = 0,
 			jump_inertia = 0,

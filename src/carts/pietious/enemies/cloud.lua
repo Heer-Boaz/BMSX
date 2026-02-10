@@ -2,6 +2,25 @@ local constants = require('constants.lua')
 local behaviourtree = require('behaviourtree')
 
 local cloud = {}
+local full_circle_milliradians = 6283
+
+local function random_between(min_value, max_value)
+	return math.random(min_value, max_value)
+end
+
+local function consume_axis_accum(accum, speed_num, speed_den)
+	accum = accum + speed_num
+	local delta = 0
+	while accum >= speed_den do
+		delta = delta + 1
+		accum = accum - speed_den
+	end
+	while accum <= -speed_den do
+		delta = delta - 1
+		accum = accum + speed_den
+	end
+	return delta, accum
+end
 
 function cloud.configure(self, def, _context)
 	self.width = def.w or 32
@@ -21,7 +40,7 @@ function cloud.update_visual(self, timeline_id)
 	return timeline:value(), false, false
 end
 
-function cloud.bt_tick(self, blackboard, random_between, consume_axis_accum, round_to_nearest, full_circle_milliradians)
+function cloud.bt_tick(self, blackboard)
 	local node = blackboard.nodedata
 	local dir_modifier = self.direction == 'left' and -1 or 1
 	local move_accum = node.cloud_move_accum

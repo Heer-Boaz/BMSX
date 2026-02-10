@@ -37,6 +37,7 @@ export class Service implements Stateful, Identifiable, RegisterablePersistent {
 	public active: boolean = false;
 	/** If false, systems should not advance time-based logic for this service. */
 	public tickEnabled: boolean = true;
+	public tags: Record<string, boolean> = {};
 
 	/**
 	 * If true, service survives Registry.clear() calls (e.g., during world reloads).
@@ -77,6 +78,26 @@ export class Service implements Stateful, Identifiable, RegisterablePersistent {
 	 * Convenience: disable event processing for this service.
 	 */
 	public disableEvents(): void { this.eventhandling_enabled = false; }
+
+	public has_tag(tag: string): boolean {
+		return this.tags[tag] === true;
+	}
+
+	public add_tag(tag: string): void {
+		this.tags[tag] = true;
+	}
+
+	public remove_tag(tag: string): void {
+		delete this.tags[tag];
+	}
+
+	public matches_state_path(path: string): boolean {
+		return this.sc.matches_state_path(path);
+	}
+
+	public matches_state_tag(tag: string): boolean {
+		return this.has_tag(tag);
+	}
 
 	/**
 	 * Dispose the service; unsubscribes from events and deregisters from the Registry.
