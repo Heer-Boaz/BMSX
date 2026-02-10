@@ -61,6 +61,42 @@ local sword_sprite_imgid = 'sword_r'
 local rock_service_id = constants.ids.rock_service_instance
 local rock_width = constants.rock.width
 local rock_height = constants.rock.height
+local player_effect_queue_sword_input_id = 'pietious.player.effect.queue_sword_input'
+local player_effect_queue_secondary_input_id = 'pietious.player.effect.queue_secondary_input'
+
+local player_input_action_effect_program = {
+	eval = 'all',
+	bindings = {
+		{
+			name = 'player.secondary.y',
+			on = { press = 'y[jp]' },
+			go = {
+				press = { ['effect.trigger'] = player_effect_queue_secondary_input_id },
+			},
+		},
+		{
+			name = 'player.sword.x',
+			on = { press = 'x[jp]' },
+			go = {
+				press = { ['effect.trigger'] = player_effect_queue_sword_input_id },
+			},
+		},
+		{
+			name = 'player.sword.b',
+			on = { press = 'b[jp]' },
+			go = {
+				press = { ['effect.trigger'] = player_effect_queue_sword_input_id },
+			},
+		},
+		{
+			name = 'player.sword.a',
+			on = { press = 'a[jp]' },
+			go = {
+				press = { ['effect.trigger'] = player_effect_queue_sword_input_id },
+			},
+		},
+	},
+}
 
 local function append_sprite_frames(frames, sprite_id, frame_count)
 	for _ = 1, frame_count do
@@ -224,6 +260,8 @@ function player:reset_runtime()
 	self.attack_pressed = false
 	self.attack_released = false
 	self.secondary_pressed = false
+	self.sword_input_queued = false
+	self.secondary_input_queued = false
 	self.last_dx = 0
 	self.last_dy = 0
 	self.walk_frame = 0
@@ -254,6 +292,13 @@ function player:reset_runtime()
 	self.pepernoot_projectile_sequence = 0
 	self.pepernoot_projectile_ids = {}
 	self.frame = 0
+end
+
+function player:ctor()
+	self:add_component(components.inputactioneffectcomponent.new({
+		parent = self,
+		program = player_input_action_effect_program,
+	}))
 end
 
 function player:ensure_visual_components()
@@ -513,8 +558,16 @@ function player:is_slashing()
 	return self:is_sword_state()
 end
 
+function player:queue_sword_input()
+	self.sword_input_queued = true
+end
+
+function player:queue_secondary_input()
+	self.secondary_input_queued = true
+end
+
 function player:try_start_sword_state()
-	if not self.attack_pressed then
+	if self:is_in_damage_lock_state() then
 		return
 	end
 	if self:is_sword_state() then
@@ -544,6 +597,9 @@ function player:try_start_sword_state()
 	elseif self.sc:matches_state_path(state_uncontrolled_fall) then
 		to_state = state_uc_fall_sword
 		reason = 'uncontrolled_fall'
+	elseif self.sc:matches_state_path(state_quiet_stairs) then
+		to_state = state_sword_stairs
+		reason = 'stairs'
 	end
 
 	if to_state == nil then
@@ -824,9 +880,6 @@ function player:try_fire_pepernoot()
 end
 
 function player:try_use_secondary_weapon()
-	if not self.secondary_pressed then
-		return
-	end
 	if not self:is_secondary_weapon_state_allowed() then
 		self:emit_event('secondary_weapon_blocked', string.format('weapon=%s|reason=state|state=%s', self.secondary_weapon, self.state_name))
 		return
@@ -838,6 +891,10 @@ function player:try_use_secondary_weapon()
 		return
 	end
 	if weapon == 'pepernoot' then
+		if self:is_ladder_state() and not self.sc:matches_state_path(state_quiet_stairs) then
+			self:emit_event('secondary_weapon_blocked', string.format('weapon=pepernoot|reason=state|state=%s', self.state_name))
+			return
+		end
 		self:try_fire_pepernoot()
 		return
 	end
@@ -2015,13 +2072,6 @@ function player:tick_quiet_stairs()
 		self.facing = 1
 	end
 
-	if self.attack_pressed then
-		self.sword_time = 0
-		self.sword_id = self.sword_id + 1
-		self:emit_event('slash_start', string.format('reason=stairs|x=%d|y=%d', self.x, self.y))
-		self:transition_to(state_sword_stairs, 'sword_start_stairs')
-		return
-	end
 end
 
 function player:tick_sword_stairs()
@@ -2159,12 +2209,18 @@ function player:tick()
 		self:tick_quiet()
 	end
 
-	if not self:is_in_damage_lock_state() then
-		self:try_use_secondary_weapon()
+	if self.secondary_input_queued then
+		self.secondary_input_queued = false
+		if not self:is_in_damage_lock_state() then
+			self:try_use_secondary_weapon()
+		end
 	end
 
-	if not self:is_in_damage_lock_state() and (not started_tick_in_sword_state) then
-		self:try_start_sword_state()
+	if self.sword_input_queued then
+		self.sword_input_queued = false
+		if not self:is_in_damage_lock_state() and (not started_tick_in_sword_state) then
+			self:try_start_sword_state()
+		end
 	end
 
 	self:try_vertical_room_switch_from_position()
@@ -2332,11 +2388,31 @@ local function define_player_fsm()
 	})
 end
 
+local function define_player_effects()
+	define_effect({
+		id = player_effect_queue_sword_input_id,
+		handler = function(context)
+			context.owner:queue_sword_input()
+		end,
+	})
+	define_effect({
+		id = player_effect_queue_secondary_input_id,
+		handler = function(context)
+			context.owner:queue_secondary_input()
+		end,
+	})
+end
+
 local function register_player_definition()
+	define_player_effects()
 	define_world_object({
 		def_id = constants.ids.player_def,
 		class = player,
 		fsms = { player_fsm_id },
+		effects = {
+			player_effect_queue_sword_input_id,
+			player_effect_queue_secondary_input_id,
+		},
 		defaults = {
 			room = nil,
 			game_service_id = constants.ids.castle_service_instance,
@@ -2363,11 +2439,13 @@ local function register_player_definition()
 			up_released = false,
 			down_pressed = false,
 			down_released = false,
-			attack_held = false,
-			attack_pressed = false,
-			attack_released = false,
-			secondary_pressed = false,
-			last_dx = 0,
+				attack_held = false,
+				attack_pressed = false,
+				attack_released = false,
+				secondary_pressed = false,
+				sword_input_queued = false,
+				secondary_input_queued = false,
+				last_dx = 0,
 			last_dy = 0,
 			walk_frame = 0,
 			walk_distance_accum = 0,
