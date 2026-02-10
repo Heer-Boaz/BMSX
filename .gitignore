@@ -1,6 +1,5 @@
 # Ignore all files under msedge
 **/.vscode/edge-profile
-**.cs
 **/node_modules
 **/output
 **.dll
@@ -89,4 +88,4 @@ src/bmsx_cpp/build/
 .snesmini
 tools/retroarch-gles2
 .external/**
-!ROM_Map_DKC1_U1.asm
+#!ROM_Map_DKC1_U1.asm
