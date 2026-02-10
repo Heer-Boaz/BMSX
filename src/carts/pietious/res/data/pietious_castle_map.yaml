@@ -67,7 +67,31 @@ rooms:
       down: 11
       left: 1
     edge_gates: {}
-    enemies: []
+    enemies:
+      - id: meijter_02_a
+        x: 112
+        y: 56
+        w: 16
+        h: 16
+        direction: down
+        damage_key: enemy_contact_damage
+        kind: mijter
+      - id: meijter_02_b
+        x: 160
+        y: 56
+        w: 16
+        h: 16
+        direction: down
+        damage_key: enemy_contact_damage
+        kind: mijter
+      - id: meijter_02_c
+        x: 128
+        y: 168
+        w: 16
+        h: 16
+        direction: up
+        damage_key: enemy_contact_damage
+        kind: mijter
   - room_number: 3
     room_id: castle_stone_03
     room_subtype: CastleStone
@@ -102,9 +126,17 @@ rooms:
       left: 2
     edge_gates: {}
     enemies:
-      - id: meijter_03
-        x: 160
-        y: 168
+      - id: meijter_03_a
+        x: 144
+        y: 136
+        w: 16
+        h: 16
+        direction: down
+        damage_key: enemy_contact_damage
+        kind: mijter
+      - id: meijter_03_b
+        x: 216
+        y: 64
         w: 16
         h: 16
         direction: down
@@ -144,9 +176,17 @@ rooms:
       left: 3
     edge_gates: {}
     enemies:
-      - id: meijter_04
-        x: 88
-        y: 168
+      - id: meijter_04_a
+        x: 48
+        y: 48
+        w: 16
+        h: 16
+        direction: right
+        damage_key: enemy_contact_damage
+        kind: mijter
+      - id: meijter_04_b
+        x: 152
+        y: 96
         w: 16
         h: 16
         direction: down
@@ -219,7 +259,25 @@ rooms:
       down: 1
       left: 7
     edge_gates: {}
-    enemies: []
+    enemies:
+      - id: crossfoe_06_a
+        x: 24
+        y: 104
+        w: 16
+        h: 24
+        direction: down
+        health: 3
+        damage_key: enemy_contact_damage
+        kind: crossfoe
+      - id: crossfoe_06_b
+        x: 216
+        y: 104
+        w: 16
+        h: 24
+        direction: down
+        health: 3
+        damage_key: enemy_contact_damage
+        kind: crossfoe
   - room_number: 7
     room_id: castle_red_07
     room_subtype: CastleRed
@@ -253,7 +311,34 @@ rooms:
       down: 1
       left: 0
     edge_gates: {}
-    enemies: []
+    enemies:
+      - id: crossfoe_07_a
+        x: 40
+        y: 72
+        w: 16
+        h: 24
+        direction: down
+        health: 3
+        damage_key: enemy_contact_damage
+        kind: crossfoe
+      - id: crossfoe_07_b
+        x: 40
+        y: 104
+        w: 16
+        h: 24
+        direction: down
+        health: 3
+        damage_key: enemy_contact_damage
+        kind: crossfoe
+      - id: crossfoe_07_c
+        x: 208
+        y: 104
+        w: 16
+        h: 24
+        direction: down
+        health: 3
+        damage_key: enemy_contact_damage
+        kind: crossfoe
   - room_number: 8
     room_id: castle_blue_08
     room_subtype: CastleBlue
@@ -287,7 +372,40 @@ rooms:
       down: 9
       left: 0
     edge_gates: {}
-    enemies: []
+    enemies:
+      - id: crossfoe_08_a
+        x: 40
+        y: 160
+        w: 16
+        h: 24
+        direction: down
+        health: 3
+        damage_key: enemy_contact_damage
+        kind: crossfoe
+      - id: meijter_08_a
+        x: 24
+        y: 72
+        w: 16
+        h: 16
+        direction: down
+        damage_key: enemy_contact_damage
+        kind: mijter
+      - id: meijter_08_b
+        x: 64
+        y: 40
+        w: 16
+        h: 16
+        direction: right
+        damage_key: enemy_contact_damage
+        kind: mijter
+      - id: meijter_08_c
+        x: 120
+        y: 128
+        w: 16
+        h: 16
+        direction: down
+        damage_key: enemy_contact_damage
+        kind: mijter
   - room_number: 9
     room_id: castle_blue_09
     room_subtype: CastleBlue
@@ -356,15 +474,15 @@ rooms:
       left: 10
     edge_gates: {}
     enemies:
-      - id: zakfoe_10_a
-        x: 56
-        y: 168
+      - id: crossfoe_10_a
+        x: 88
+        y: 32
         w: 16
-        h: 16
-        direction: right
-        health: 2
+        h: 24
+        direction: down
+        health: 3
         damage_key: enemy_contact_damage
-        kind: zakfoe
+        kind: crossfoe
   - room_number: 11
     room_id: castle_stone_11
     room_subtype: CastleStone
@@ -408,15 +526,31 @@ rooms:
         health: 3
         damage_key: enemy_contact_damage
         kind: crossfoe
-      - id: zakfoe_11_a
-        x: 168
-        y: 168
+      - id: crossfoe_11_b
+        x: 40
+        y: 128
+        w: 16
+        h: 24
+        direction: down
+        health: 3
+        damage_key: enemy_contact_damage
+        kind: crossfoe
+      - id: meijter_11_a
+        x: 24
+        y: 56
         w: 16
         h: 16
-        direction: left
-        health: 2
+        direction: down
         damage_key: enemy_contact_damage
-        kind: zakfoe
+        kind: mijter
+      - id: meijter_11_b
+        x: 64
+        y: 160
+        w: 16
+        h: 16
+        direction: down
+        damage_key: enemy_contact_damage
+        kind: mijter
   - room_number: 12
     room_id: castle_red_12
     room_subtype: CastleRed

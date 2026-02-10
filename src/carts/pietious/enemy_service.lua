@@ -58,13 +58,17 @@ end
 function enemy_service:sync_room_enemies()
 	local castle_service = self:get_castle_service()
 	local room = castle_service:get_current_room()
+	if self.synced_room_id == room.room_id then
+		return
+	end
+	self.synced_room_id = room.room_id
 	local enemy_defs = room.enemies
 	local active_ids = {}
 
 	for i = 1, #enemy_defs do
 		local def = enemy_defs[i]
-		local instance = self:ensure_enemy_instance(def, room)
-		active_ids[instance.id] = true
+		self:ensure_enemy_instance(def, room)
+		active_ids[def.id] = true
 	end
 
 	self:deactivate_unused_enemies(active_ids)
@@ -79,6 +83,7 @@ function enemy_service:bind_events()
 		event = constants.events.room_switched,
 		subscriber = self,
 		handler = function(_event)
+			self.synced_room_id = ''
 			self:sync_room_enemies()
 		end,
 	})
@@ -88,20 +93,22 @@ local function define_enemy_service_fsm()
 	define_fsm(enemy_service_fsm_id, {
 		initial = 'boot',
 		states = {
-			boot = {
-				entering_state = function(self)
-					self.enemies_by_id = {}
-					self:bind_events()
-					self:sync_room_enemies()
-					return '/active'
-				end,
+				boot = {
+					entering_state = function(self)
+						self.enemies_by_id = {}
+						self.synced_room_id = ''
+						self:bind_events()
+						self:sync_room_enemies()
+						return '/active'
+					end,
+				},
+				active = {
+					tick = function(self)
+						self:sync_room_enemies()
+					end,
+				},
 			},
-			active = {
-				tick = function(_self)
-				end,
-			},
-		},
-	})
+		})
 end
 
 local function register_enemy_service_definition()
@@ -115,8 +122,9 @@ local function register_enemy_service_definition()
 			game_service_id = constants.ids.castle_service_instance,
 			player_id = constants.ids.player_instance,
 			enemy_def_id = enemy_module.enemy_def_id,
-			enemies_by_id = {},
-			events_bound = false,
+				enemies_by_id = {},
+				synced_room_id = '',
+				events_bound = false,
 			registrypersistent = false,
 			tick_enabled = true,
 		},

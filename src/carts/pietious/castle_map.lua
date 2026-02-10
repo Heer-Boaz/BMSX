@@ -5,6 +5,71 @@ local castle_map = {}
 
 local castle_map_asset_id = 'pietious_castle_map'
 
+local tile_size = constants.room.tile_size
+local tile_origin_y = constants.room.tile_origin_y
+
+local function tile_x_to_world(tile_x)
+	return tile_x * tile_size
+end
+
+local function tile_y_to_world(tile_y)
+	return tile_origin_y + (tile_y * tile_size)
+end
+
+local function enemy_def(id, kind, tile_x, tile_y, direction, health)
+	return {
+		id = id,
+		kind = kind,
+		x = tile_x_to_world(tile_x),
+		y = tile_y_to_world(tile_y),
+		w = 16,
+		h = kind == 'crossfoe' and 24 or 16,
+		direction = direction,
+		damage_key = 'enemy_contact_damage',
+		health = health,
+	}
+end
+
+local xna_castle_enemy_defs = {
+	[2] = {
+		enemy_def('meijter_02_a', 'mijter', 14, 3, 'down'),
+		enemy_def('meijter_02_b', 'mijter', 20, 3, 'down'),
+		enemy_def('meijter_02_c', 'mijter', 16, 17, 'up'),
+	},
+	[3] = {
+		enemy_def('meijter_03_a', 'mijter', 18, 13, 'down'),
+		enemy_def('meijter_03_b', 'mijter', 27, 4, 'down'),
+	},
+	[4] = {
+		enemy_def('meijter_04_a', 'mijter', 6, 2, 'right'),
+		enemy_def('meijter_04_b', 'mijter', 19, 8, 'down'),
+	},
+	[6] = {
+		enemy_def('crossfoe_06_a', 'crossfoe', 3, 9, 'down', 3),
+		enemy_def('crossfoe_06_b', 'crossfoe', 27, 9, 'down', 3),
+	},
+	[7] = {
+		enemy_def('crossfoe_07_a', 'crossfoe', 5, 5, 'down', 3),
+		enemy_def('crossfoe_07_b', 'crossfoe', 5, 9, 'down', 3),
+		enemy_def('crossfoe_07_c', 'crossfoe', 26, 9, 'down', 3),
+	},
+	[8] = {
+		enemy_def('crossfoe_08_a', 'crossfoe', 5, 16, 'down', 3),
+		enemy_def('meijter_08_a', 'mijter', 3, 5, 'down'),
+		enemy_def('meijter_08_b', 'mijter', 8, 1, 'right'),
+		enemy_def('meijter_08_c', 'mijter', 15, 12, 'down'),
+	},
+	[10] = {
+		enemy_def('crossfoe_10_a', 'crossfoe', 11, 0, 'down', 3),
+	},
+	[11] = {
+		enemy_def('crossfoe_11_a', 'crossfoe', 11, 8, 'down', 3),
+		enemy_def('crossfoe_11_b', 'crossfoe', 5, 12, 'down', 3),
+		enemy_def('meijter_11_a', 'mijter', 3, 3, 'down'),
+		enemy_def('meijter_11_b', 'mijter', 8, 16, 'down'),
+	},
+}
+
 local function build_castle_links(world_grid)
 	local room_positions = {}
 	for y = 1, #world_grid do
@@ -61,24 +126,25 @@ local function normalize_room_templates(room_entries)
 	local templates = {}
 	for i = 1, #room_entries do
 		local entry = room_entries[i]
+		local source_enemy_defs = xna_castle_enemy_defs[entry.room_number] or entry.enemies
 		local enemies = {}
-		for j = 1, #entry.enemies do
-			local enemy_def = entry.enemies[j]
-			local damage = enemy_def.damage
-			if enemy_def.damage_key ~= nil then
-				damage = constants.damage[enemy_def.damage_key]
+		for j = 1, #source_enemy_defs do
+			local enemy_entry = source_enemy_defs[j]
+			local damage = enemy_entry.damage
+			if enemy_entry.damage_key ~= nil then
+				damage = constants.damage[enemy_entry.damage_key]
 			end
 			enemies[j] = {
-				id = enemy_def.id,
-				x = enemy_def.x,
-				y = enemy_def.y,
-				w = enemy_def.w,
-				h = enemy_def.h,
-				facing = enemy_def.facing,
-				direction = enemy_def.direction,
-				health = enemy_def.health,
+				id = enemy_entry.id,
+				x = enemy_entry.x,
+				y = enemy_entry.y,
+				w = enemy_entry.w,
+				h = enemy_entry.h,
+				facing = enemy_entry.facing,
+				direction = enemy_entry.direction,
+				health = enemy_entry.health,
 				damage = damage,
-				kind = enemy_def.kind,
+				kind = enemy_entry.kind,
 			}
 		end
 

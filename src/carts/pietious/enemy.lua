@@ -237,6 +237,16 @@ function enemy:start_mijter_flying(blackboard)
 end
 
 function enemy:bt_tick_mijter_waiting(blackboard)
+	local entry_lock = blackboard.nodedata.mijter_entry_lock_ticks
+	if entry_lock == nil then
+		entry_lock = self.mijter_entry_lock_ticks
+	end
+	if entry_lock > 0 then
+		blackboard.nodedata.mijter_entry_lock_ticks = entry_lock - 1
+		return behaviourtree.running
+	end
+	blackboard.nodedata.mijter_entry_lock_ticks = 0
+
 	local player = self:get_player_object()
 	if self:mijter_player_triggered_takeoff(player) then
 		return self:start_mijter_flying(blackboard)
@@ -481,6 +491,7 @@ function enemy:configure_from_room_def(def, room, player_id)
 	self.zak_ground_y = self.spawn_y
 	self.cross_state = 'waiting'
 	self.cross_spin_direction = 'down'
+	self.mijter_entry_lock_ticks = constants.enemy.mijter_room_entry_lock_steps
 
 	if self.kind == 'crossfoe' then
 		self.width = def.w or 16
@@ -762,12 +773,13 @@ local function register_enemy_definition()
 			current_vertical_speed = 0,
 			zak_state = 'prepare',
 			zak_ground_y = 0,
-			cross_state = 'waiting',
-			cross_spin_direction = 'down',
-			state_name = 'boot',
-			state_variant = 'boot',
-		},
-	})
+				cross_state = 'waiting',
+				cross_spin_direction = 'down',
+				mijter_entry_lock_ticks = constants.enemy.mijter_room_entry_lock_steps,
+				state_name = 'boot',
+				state_variant = 'boot',
+			},
+		})
 end
 
 return {

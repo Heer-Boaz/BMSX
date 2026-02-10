@@ -18,7 +18,6 @@ constants.ids = {
 	item_screen_fsm = 'pietious.item_screen.fsm',
 	ui_def = 'pietious.ui.def',
 	ui_instance = 'pietious.ui.instance',
-	ui_transition_instance = 'pietious.ui.transition.instance',
 	ui_fsm = 'pietious.ui.fsm',
 	castle_service_def = 'pietious.castle_service.def',
 	castle_service_instance = 'pietious.castle_service.instance',
@@ -111,6 +110,7 @@ constants.enemy = {
 	mijter_wait_takeoff_max_steps = 200,
 	mijter_turn_min_steps = 20,
 	mijter_turn_max_steps = 40,
+	mijter_room_entry_lock_steps = 2,
 	mijter_speed_px = 2,
 	zak_prepare_jump_steps = 13,
 	zak_jump_steps = 10,
@@ -128,13 +128,9 @@ constants.enemy = {
 	zak_drop_ammo_chance_pct = 20,
 	cross_drop_health_chance_pct = 35,
 	cross_drop_ammo_chance_pct = 25,
-	explosion_frame_steps = 4,
+	explosion_frame_steps = 3 * 20,
 	loot_life_regen = 12,
 	loot_ammo_regen = 10,
-}
-
-constants.timing = {
-	frame_step = 20,
 }
 
 constants.collision = {

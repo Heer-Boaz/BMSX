@@ -122,7 +122,7 @@ local function define_enemy_explosion_fsm()
 					self:define_timeline(engine.new_timeline({
 						id = enemy_explosion_timeline_id,
 						frames = explosion_frames,
-						ticks_per_frame = constants.enemy.explosion_frame_steps * constants.timing.frame_step,
+						ticks_per_frame = constants.enemy.explosion_frame_steps,
 						playback_mode = 'once',
 					}))
 					self:bind_events()
