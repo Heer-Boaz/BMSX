@@ -968,6 +968,30 @@ Update X Speed
 
 **Key Difference:** Neutral input in air does **not** change target speed, preserving momentum!
 
+### Critical Implementation Updates (2026-02-10)
+
+1.  **Fundamental Input Bug Fixed**
+    *   **Problem**: Joypad bit masks were incorrectly defined (left/right shared bits with X/A).
+    *   **Fix**: Corrected masks to standard SNES bits: `joypad_dpadl = 0x0200` (bit 9), `joypad_dpadr = 0x0100` (bit 8).
+    *   **Impact**: D-pad input now registers correctly; `code_bfb27c` directional branches finally execute.
+
+2.  **Native Action Mapping**
+    *   To ensure responsiveness in the BMSX engine, assembly routines now call `action_triggered()` directly instead of relying on manually synced memory flags.
+    *   `code_bfb27c` (Ground/Air Control) now uses `action_triggered('left[p]')` and `right[p]`.
+    *   `code_bfb4e3` (Target Speed) uses `action_triggered('y[p]')` to switch between walk and run targets.
+
+3.  **Profile 3 Deceleration (The "Sliding" Factor)**
+    *   **Observation**: From full walk speed (0x0200), Profile 3 (÷64) takes **166 frames** (~2.8 seconds) to reach 0.
+    *   **Assembly Match**: This "heavy" feel is authentic to DKC1 ground movement.
+    *   **Trigger**: Profile 3 is only used if `ram_ramtable12a5lo` (grounded flag) is set. Otherwise, it defaults to Profile 0 (÷8), which stops in ~20 frames.
+
+4.  **Air Neutral Persistence**
+    *   **Verified**: `CODE_BFBA39` (Air Neutral) is a literal `RTS`.
+    *   **Behavior**: Releasing the D-pad in mid-air *must not* reset the target speed. The target speed from the last directional press is preserved, maintaining momentum until landing.
+
+5.  **BEQ Instant-Snap Logic**
+    *   Successfully implemented the assembly optimization where `step == 0` triggers an instant snap to the target speed. This prevents infinite asymptotic approaches and ensures the player actually reaches 0 when decelerating.
+
 ---
 
 ## Implementation Notes
