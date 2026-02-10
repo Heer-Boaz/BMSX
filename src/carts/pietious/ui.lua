@@ -5,6 +5,7 @@ ui.__index = ui
 
 local ui_fsm_id = constants.ids.ui_fsm
 local PLAYER_ID = constants.ids.player_instance
+local TILE_SIZE = constants.room.tile_size
 
 local function animate_level(current, target)
 	if current < target then
@@ -81,7 +82,7 @@ function ui:draw_ui()
 	put_sprite('game_header', 0, 0, 200)
 	local equipped_sprite_id = secondary_weapon_sprite_id(player.secondary_weapon)
 	if equipped_sprite_id ~= nil then
-		put_sprite(equipped_sprite_id, hud.equipped_item_x, hud.equipped_item_y, 202)
+		put_sprite(equipped_sprite_id, hud.equipped_item_x * TILE_SIZE, hud.equipped_item_y * TILE_SIZE, 202)
 	end
 
 	local health_x = hud.health_bar_x
