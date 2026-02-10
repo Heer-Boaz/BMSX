@@ -734,6 +734,7 @@
     x: 23
     y: 3
     itemtype: greenvase
+  custom: clouddestroyed
 101:
   type: world
   subtype: world
@@ -1217,6 +1218,7 @@
     x: 22
     y: 13
     direction: down
+  custom: world1stairsappear
 110:
   type: world
   subtype: world
@@ -1380,3 +1382,4 @@
     x: 12
     y: 6
     text: eyndbaes
+  custom: removetilesbehindseal

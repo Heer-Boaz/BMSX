@@ -311,6 +311,15 @@ def process_object_data(content, rooms, constants):
 
         brace_depth += (open_braces - close_braces)
 
+        # Custom Logic / Scripting hooks (Heuristics)
+        if current_room is not None:
+             if 'Trigger.World1StairsAppear' in raw_line and 'if' in raw_line:
+                 rooms[current_room]['custom'] = 'world1stairsappear'
+             elif 'Trigger.CloudDestroyed' in raw_line and 'false' in raw_line and '=' in raw_line:
+                 rooms[current_room]['custom'] = 'clouddestroyed'
+             elif 'RemoveTilesBehindSeal' in raw_line:
+                 rooms[current_room]['custom'] = 'removetilesbehindseal'
+
         # Check for Objects
         m_new = re.search(r'new\s+(\w+)\s*\((.*)\)', raw_line)
         if m_new:
