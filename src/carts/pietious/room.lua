@@ -322,6 +322,14 @@ local function build_stairs(map_rows, tile_size, origin_x, origin_y, player_heig
 	return stairs
 end
 
+local function copy_conditions(conditions_def)
+	local conditions = {}
+	for i = 1, #conditions_def do
+		conditions[i] = conditions_def[i]
+	end
+	return conditions
+end
+
 local function build_enemies(enemy_defs)
 	local enemies = {}
 	for i = 1, #enemy_defs do
@@ -336,18 +344,14 @@ local function build_enemies(enemy_defs)
 			direction = def.direction,
 			health = def.health,
 			damage = def.damage,
+			speedx = def.speedx,
+			speedy = def.speedy,
+			trigger = def.trigger,
+			conditions = copy_conditions(def.conditions or {}),
 			kind = def.kind,
 		}
 	end
 	return enemies
-end
-
-local function copy_conditions(conditions_def)
-	local conditions = {}
-	for i = 1, #conditions_def do
-		conditions[i] = conditions_def[i]
-	end
-	return conditions
 end
 
 local function build_rocks(rock_defs)

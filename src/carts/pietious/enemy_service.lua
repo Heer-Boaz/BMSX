@@ -8,6 +8,66 @@ enemy_service.__index = enemy_service
 
 local enemy_service_fsm_id = constants.ids.enemy_service_fsm
 
+local function ensure_room_conditions(self, room_id)
+	local room_conditions = self.room_conditions_by_id[room_id]
+	if room_conditions == nil then
+		room_conditions = {}
+		self.room_conditions_by_id[room_id] = room_conditions
+	end
+	return room_conditions
+end
+
+local function enemy_condition_matches(self, condition, enemy_def, room_id)
+	if condition == 'not_destroyed' then
+		return self.destroyed_enemy_ids[enemy_def.id] ~= true
+	end
+
+	local inverted = condition:sub(1, 1) == '!'
+	local token = condition
+	if inverted then
+		token = condition:sub(2)
+	end
+
+	local room_conditions = ensure_room_conditions(self, room_id)
+	local condition_is_set = room_conditions[token] == true
+	if inverted then
+		return not condition_is_set
+	end
+	return condition_is_set
+end
+
+function enemy_service:get_current_room()
+	return engine.service(self.game_service_id):get_current_room()
+end
+
+function enemy_service:require_current_room_event(event_room_id, event_name)
+	local current_room_id = self:get_current_room().room_id
+	if event_room_id ~= current_room_id then
+		error('pietious enemy_service received ' .. event_name .. ' for room ' .. tostring(event_room_id) .. ' while current room is ' .. tostring(current_room_id))
+	end
+end
+
+function enemy_service:is_enemy_active_in_room(enemy_def, room_id)
+	local conditions = enemy_def.conditions or {}
+	for i = 1, #conditions do
+		if not enemy_condition_matches(self, conditions[i], enemy_def, room_id) then
+			return false
+		end
+	end
+	return true
+end
+
+function enemy_service:mark_room_condition(room_id, condition)
+	ensure_room_conditions(self, room_id)[condition] = true
+end
+
+function enemy_service:emit_room_condition_set(room_id, condition)
+	eventemitter.eventemitter.instance:emit(constants.events.room_condition_set, self.id, {
+		room_id = room_id,
+		condition = condition,
+	})
+end
+
 function enemy_service:ensure_enemy_instance(enemy_def, room)
 	local id = enemy_def.id
 	local instance = engine.object(id)
@@ -28,41 +88,54 @@ function enemy_service:ensure_enemy_instance(enemy_def, room)
 	return instance
 end
 
-function enemy_service:deactivate_unused_enemies(active_ids)
+function enemy_service:deactivate_all_enemies()
 	for id, instance in pairs(self.enemies_by_id) do
 		local live_instance = engine.object(id)
 		if live_instance == nil then
 			self.enemies_by_id[id] = nil
-			goto continue
-		end
-		instance = live_instance
-		self.enemies_by_id[id] = instance
-		if active_ids[id] ~= true then
-			instance.visible = false
-			if instance.active then
-				instance:deactivate()
+		else
+			self.enemies_by_id[id] = live_instance
+			live_instance.visible = false
+			if live_instance.active then
+				live_instance:deactivate()
 			end
 		end
-		::continue::
 	end
 end
 
-function enemy_service:sync_room_enemies()
-	local room = engine.service(self.game_service_id):get_current_room()
-	if self.synced_room_id == room.room_id then
-		return
-	end
-	self.synced_room_id = room.room_id
+function enemy_service:enter_current_room()
+	local room = self:get_current_room()
 	local enemy_defs = room.enemies
-	local active_ids = {}
+
+	self:deactivate_all_enemies()
 
 	for i = 1, #enemy_defs do
-		local def = enemy_defs[i]
-		self:ensure_enemy_instance(def, room)
-		active_ids[def.id] = true
+		local enemy_def = enemy_defs[i]
+		if self:is_enemy_active_in_room(enemy_def, room.room_id) then
+			self:ensure_enemy_instance(enemy_def, room)
+		end
 	end
+end
 
-	self:deactivate_unused_enemies(active_ids)
+function enemy_service:on_room_switched(_event)
+	self:enter_current_room()
+end
+
+function enemy_service:on_enemy_defeated(event)
+	self:require_current_room_event(event.room_id, 'enemy_defeated')
+	self.destroyed_enemy_ids[event.enemy_id] = true
+	self.enemies_by_id[event.enemy_id] = nil
+	if event.kind == 'cloud' then
+		self:emit_room_condition_set(event.room_id, 'cloud_1_destroyed')
+	end
+	if event.trigger ~= '' then
+		self:emit_room_condition_set(event.room_id, event.trigger)
+	end
+end
+
+function enemy_service:on_room_condition_set(event)
+	self:require_current_room_event(event.room_id, 'room_condition_set')
+	self:mark_room_condition(event.room_id, event.condition)
 end
 
 function enemy_service:bind_events()
@@ -70,12 +143,28 @@ function enemy_service:bind_events()
 		return
 	end
 	self.events_bound = true
+
 	eventemitter.eventemitter.instance:on({
 		event = constants.events.room_switched,
 		subscriber = self,
-		handler = function(_event)
-			self.synced_room_id = ''
-			self:sync_room_enemies()
+		handler = function(event)
+			self:on_room_switched(event)
+		end,
+	})
+
+	eventemitter.eventemitter.instance:on({
+		event = constants.events.enemy_defeated,
+		subscriber = self,
+		handler = function(event)
+			self:on_enemy_defeated(event)
+		end,
+	})
+
+	eventemitter.eventemitter.instance:on({
+		event = constants.events.room_condition_set,
+		subscriber = self,
+		handler = function(event)
+			self:on_room_condition_set(event)
 		end,
 	})
 end
@@ -84,22 +173,19 @@ local function define_enemy_service_fsm()
 	define_fsm(enemy_service_fsm_id, {
 		initial = 'boot',
 		states = {
-				boot = {
-					entering_state = function(self)
-						self.enemies_by_id = {}
-						self.synced_room_id = ''
-						self:bind_events()
-						self:sync_room_enemies()
-						return '/active'
-					end,
-				},
-				active = {
-					tick = function(self)
-						self:sync_room_enemies()
-					end,
-				},
+			boot = {
+				entering_state = function(self)
+					self.enemies_by_id = {}
+					self.destroyed_enemy_ids = {}
+					self.room_conditions_by_id = {}
+					self:bind_events()
+					self:enter_current_room()
+					return '/active'
+				end,
 			},
-		})
+			active = {},
+		},
+	})
 end
 
 local function register_enemy_service_definition()
@@ -108,15 +194,16 @@ local function register_enemy_service_definition()
 		class = enemy_service,
 		fsms = { enemy_service_fsm_id },
 		auto_activate = true,
-			defaults = {
-				id = constants.ids.enemy_service_instance,
-				game_service_id = constants.ids.castle_service_instance,
-				enemy_def_id = enemy_module.enemy_def_id,
-					enemies_by_id = {},
-				synced_room_id = '',
-				events_bound = false,
+		defaults = {
+			id = constants.ids.enemy_service_instance,
+			game_service_id = constants.ids.castle_service_instance,
+			enemy_def_id = enemy_module.enemy_def_id,
+			enemies_by_id = {},
+			destroyed_enemy_ids = {},
+			room_conditions_by_id = {},
+			events_bound = false,
 			registrypersistent = false,
-			tick_enabled = true,
+			tick_enabled = false,
 		},
 	})
 end

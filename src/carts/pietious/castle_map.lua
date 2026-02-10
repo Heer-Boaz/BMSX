@@ -106,30 +106,6 @@ local function build_spawn(map_rows)
 	error('pietious castle_map failed to find spawn tile')
 end
 
-local function build_enemies(room_number, object_defs)
-	local enemies = {}
-	local enemy_index = 0
-
-	for i = 1, #object_defs do
-		local object_def = object_defs[i]
-		local kind = object_def.type
-		if kind == 'mijterfoe' or kind == 'crossfoe' or kind == 'zakfoe' then
-			enemy_index = enemy_index + 1
-			enemies[#enemies + 1] = {
-				id = string.format('enemy_%03d_%02d', room_number, enemy_index),
-				kind = kind,
-				x = tile_x_to_world(object_def.x),
-				y = tile_y_to_world(object_def.y),
-				direction = object_def.direction,
-				damage = constants.damage.enemy_contact_damage,
-				health = object_def.health,
-			}
-		end
-	end
-
-	return enemies
-end
-
 local function copy_conditions(object_def)
 	local source_conditions = object_def.condition
 	if source_conditions == nil then
@@ -140,6 +116,50 @@ local function copy_conditions(object_def)
 		conditions[i] = source_conditions[i]
 	end
 	return conditions
+end
+
+local function build_enemies(room_number, object_defs)
+	local enemies = {}
+	local enemy_index = 0
+	local supported_kinds = {
+		mijterfoe = true,
+		crossfoe = true,
+		zakfoe = true,
+		boekfoe = true,
+		muziekfoe = true,
+		stafffoe = true,
+		cloud = true,
+		marspeinenaardappel = true,
+		vlokspawner = true,
+	}
+
+	for i = 1, #object_defs do
+		local object_def = object_defs[i]
+		local kind = object_def.type
+		if supported_kinds[kind] == true then
+			enemy_index = enemy_index + 1
+			local enemy_x = tile_x_to_world(object_def.x or 0)
+			local enemy_y = tile_y_to_world(object_def.y or 0)
+			if kind == 'stafffoe' then
+				enemy_y = enemy_y + 2
+			end
+			enemies[#enemies + 1] = {
+				id = string.format('enemy_%03d_%02d', room_number, enemy_index),
+				kind = kind,
+				x = enemy_x,
+				y = enemy_y,
+				direction = object_def.direction,
+				damage = constants.damage.enemy_contact_damage,
+				health = object_def.health,
+				speedx = object_def.speedx,
+				speedy = object_def.speedy,
+				trigger = object_def.trigger,
+				conditions = copy_conditions(object_def),
+			}
+		end
+	end
+
+	return enemies
 end
 
 local function build_rocks(room_number, object_defs)

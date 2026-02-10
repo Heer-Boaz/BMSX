@@ -4,6 +4,19 @@ local engine = require('engine')
 local eventemitter = require('eventemitter')
 local behaviourtree = require('behaviourtree')
 local enemy_explosion_module = require('enemy_explosion.lua')
+local mijterfoe_module = require('enemies/mijterfoe.lua')
+local zakfoe_module = require('enemies/zakfoe.lua')
+local crossfoe_module = require('enemies/crossfoe.lua')
+local boekfoe_module = require('enemies/boekfoe.lua')
+local paperfoe_module = require('enemies/paperfoe.lua')
+local muziekfoe_module = require('enemies/muziekfoe.lua')
+local nootfoe_module = require('enemies/nootfoe.lua')
+local stafffoe_module = require('enemies/stafffoe.lua')
+local staffspawn_module = require('enemies/staffspawn.lua')
+local cloud_module = require('enemies/cloud.lua')
+local vlokspawner_module = require('enemies/vlokspawner.lua')
+local vlokfoe_module = require('enemies/vlokfoe.lua')
+local marspeinenaardappel_module = require('enemies/marspeinenaardappel.lua')
 
 local enemy = {}
 enemy.__index = enemy
@@ -17,7 +30,57 @@ local PLAYER_ID = constants.ids.player_instance
 
 local body_sprite_component_id = 'body'
 local body_collider_component_id = 'body'
+
+local boekfoe_timeline_id = constants.ids.enemy_def .. '.timeline.boekfoe'
+local cloud_timeline_id = constants.ids.enemy_def .. '.timeline.cloud'
+
+local boekfoe_timeline_frames = {
+	'boekfoe_closed',
+	'boekfoe_open',
+}
+
+local cloud_timeline_frames = {
+	'cloud_1',
+	'cloud_2',
+}
+local full_circle_milliradians = 6283
+
+local noot_colors = {
+	{ r = 1, g = 1, b = 1, a = 1 },
+	{ r = 1, g = 0, b = 0, a = 1 },
+	{ r = 0, g = 1, b = 1, a = 1 },
+	{ r = 0, g = 1, b = 0, a = 1 },
+	{ r = 1, g = 0.75, b = 0.8, a = 1 },
+	{ r = 1, g = 1, b = 0, a = 1 },
+	{ r = 0.93, g = 0.51, b = 0.93, a = 1 },
+}
+
+local enemy_kind_modules = {
+	mijterfoe = mijterfoe_module,
+	zakfoe = zakfoe_module,
+	crossfoe = crossfoe_module,
+	boekfoe = boekfoe_module,
+	paperfoe = paperfoe_module,
+	muziekfoe = muziekfoe_module,
+	nootfoe = nootfoe_module,
+	stafffoe = stafffoe_module,
+	staffspawn = staffspawn_module,
+	cloud = cloud_module,
+	vlokspawner = vlokspawner_module,
+	vlokfoe = vlokfoe_module,
+	marspeinenaardappel = marspeinenaardappel_module,
+}
+
+local function get_kind_module(kind)
+	local kind_module = enemy_kind_modules[kind]
+	if kind_module == nil then
+		error('pietious enemy has no kind module: ' .. tostring(kind))
+	end
+	return kind_module
+end
+
 local death_effect_sequence = 0
+local spawned_enemy_sequence = 0
 
 local function random_between(min_value, max_value)
 	return math.random(min_value, max_value)
@@ -27,11 +90,47 @@ local function random_percent_hit(chance_pct)
 	return math.random(100) <= chance_pct
 end
 
-local function cross_hit_area_for_spin(spin_direction)
-	if spin_direction == 'left' or spin_direction == 'right' then
-		return { left = 2, top = 4, right = 22, bottom = 12 }
+local function get_delta_from_source_to_target_scaled(source_x, source_y, target_x, target_y, speed_scale)
+	local dx = target_x - source_x
+	local dy = target_y - source_y
+	if dx == 0 then
+		return 0, dy > 0 and speed_scale or -speed_scale
 	end
-	return { left = 4, top = 2, right = 12, bottom = 22 }
+	if dy == 0 then
+		return dx > 0 and speed_scale or -speed_scale, 0
+	end
+	local abs_dx = math.abs(dx)
+	local abs_dy = math.abs(dy)
+	if abs_dx > abs_dy then
+		return dx > 0 and speed_scale or -speed_scale, div_toward_zero(dy * speed_scale, abs_dx)
+	end
+	return div_toward_zero(dx * speed_scale, abs_dy), dy > 0 and speed_scale or -speed_scale
+end
+
+local function build_spawned_enemy_id(kind)
+	spawned_enemy_sequence = spawned_enemy_sequence + 1
+	return string.format('enemy_spawn_%s_%06d', kind, spawned_enemy_sequence)
+end
+
+local function consume_axis_accum(accum, speed_num, speed_den)
+	accum = accum + speed_num
+	local delta = 0
+	while accum >= speed_den do
+		delta = delta + 1
+		accum = accum - speed_den
+	end
+	while accum <= -speed_den do
+		delta = delta - 1
+		accum = accum + speed_den
+	end
+	return delta, accum
+end
+
+local function speed_components_from_angle(speed_num, angle_degrees)
+	local radians = math.rad(angle_degrees)
+	local speed_x_num = round_to_nearest(math.cos(radians) * speed_num)
+	local speed_y_num = round_to_nearest(math.sin(radians) * speed_num)
+	return speed_x_num, speed_y_num
 end
 
 function enemy:is_collision_tile(world_x, world_y)
@@ -70,6 +169,47 @@ function enemy:create_components()
 	self.body_sprite = body_sprite
 end
 
+function enemy:ensure_animation_timelines()
+	self:define_timeline(engine.new_timeline({
+		id = boekfoe_timeline_id,
+		frames = boekfoe_timeline_frames,
+		ticks_per_frame = 1,
+		playback_mode = 'loop',
+	}))
+	self:define_timeline(engine.new_timeline({
+		id = cloud_timeline_id,
+		frames = cloud_timeline_frames,
+		ticks_per_frame = constants.enemy.cloud_anim_switch_steps,
+		playback_mode = 'loop',
+	}))
+end
+
+function enemy:set_velocity(speed_x_num, speed_y_num, speed_den)
+	self.speed_x_num = speed_x_num
+	self.speed_y_num = speed_y_num
+	self.speed_den = speed_den
+	self.speed_accum_x = 0
+	self.speed_accum_y = 0
+end
+
+function enemy:move_with_velocity()
+	local dx, next_accum_x = consume_axis_accum(self.speed_accum_x, self.speed_x_num, self.speed_den)
+	local dy, next_accum_y = consume_axis_accum(self.speed_accum_y, self.speed_y_num, self.speed_den)
+	self.speed_accum_x = next_accum_x
+	self.speed_accum_y = next_accum_y
+	self.x = self.x + dx
+	self.y = self.y + dy
+end
+
+function enemy:set_body_hit_area(left, top, right, bottom)
+	self.body_collider:set_local_area({
+		left = left,
+		top = top,
+		right = right,
+		bottom = bottom,
+	})
+end
+
 function enemy:bind_overlap_events()
 	self.events:on({
 		event_name = 'overlap.stay',
@@ -78,374 +218,220 @@ function enemy:bind_overlap_events()
 			self:on_overlap_stay(event)
 		end,
 	})
+
+	eventemitter.eventemitter.instance:on({
+		event = constants.events.room_switched,
+		subscriber = self,
+		handler = function(event)
+			if self.despawn_on_room_switch and event.from == self.room_id then
+				self:mark_for_disposal()
+			end
+		end,
+	})
 end
 
 function enemy:update_mijter_visual()
-	local imgid = 'meijter_up'
-	local flip_h = false
-	local flip_v = false
-	if self.sc:matches_state_path(state_waiting) then
-		if self.direction == 'left' then
-			imgid = 'meijter_r'
-			flip_h = true
-		elseif self.direction == 'right' then
-			imgid = 'meijter_r'
-		elseif self.direction == 'down' then
-			imgid = 'meijter_up'
-			flip_v = true
-		end
-	else
-		local h = self.horizontal_dir_mod
-		local v = self.vertical_dir_mod
-		if v == -1 and h == 0 then
-			imgid = 'meijter_up'
-		elseif v == -1 and h == 1 then
-			imgid = 'meijter_dr'
-			flip_v = true
-		elseif v == 0 and h == 1 then
-			imgid = 'meijter_r'
-		elseif v == 1 and h == 1 then
-			imgid = 'meijter_dr'
-		elseif v == 1 and h == 0 then
-			imgid = 'meijter_up'
-			flip_v = true
-		elseif v == 1 and h == -1 then
-			imgid = 'meijter_dr'
-			flip_h = true
-		elseif v == 0 and h == -1 then
-			imgid = 'meijter_r'
-			flip_h = true
-		elseif v == -1 and h == -1 then
-			imgid = 'meijter_dr'
-			flip_h = true
-			flip_v = true
-		end
-	end
-	return imgid, flip_h, flip_v
+	return enemy_kind_modules.mijterfoe.update_visual(self, state_waiting)
 end
 
 function enemy:update_zakfoe_visual()
-	local imgid = 'zakfoe_stand'
-	if self.zak_state == 'jump' then
-		imgid = 'zakfoe_jump'
-	elseif self.zak_state == 'recovery' then
-		imgid = 'zakfoe_recover'
-	end
-	return imgid, self.direction == 'left', false
+	return enemy_kind_modules.zakfoe.update_visual(self)
 end
 
 function enemy:update_crossfoe_visual()
-	local imgid = 'crossfoe'
-	local flip_h = false
-	local flip_v = false
-	if self.cross_spin_direction == 'left' then
-		imgid = 'crossfoe_turned'
-	elseif self.cross_spin_direction == 'right' then
-		imgid = 'crossfoe_turned'
-		flip_h = true
-	elseif self.cross_spin_direction == 'up' then
-		imgid = 'crossfoe'
-		flip_v = true
-	end
-	return imgid, flip_h, flip_v
+	return enemy_kind_modules.crossfoe.update_visual(self)
 end
+
+function enemy:update_boekfoe_visual()
+	return enemy_kind_modules.boekfoe.update_visual(self, boekfoe_timeline_id)
+end
+
+function enemy:update_paperfoe_visual()
+	return enemy_kind_modules.paperfoe.update_visual(self)
+end
+
+function enemy:update_muziekfoe_visual()
+	return enemy_kind_modules.muziekfoe.update_visual(self)
+end
+
+function enemy:update_nootfoe_visual()
+	return enemy_kind_modules.nootfoe.update_visual(self)
+end
+
+function enemy:update_stafffoe_visual()
+	return enemy_kind_modules.stafffoe.update_visual(self)
+end
+
+function enemy:update_staffspawn_visual()
+	return enemy_kind_modules.staffspawn.update_visual(self)
+end
+
+function enemy:update_cloud_visual()
+	return enemy_kind_modules.cloud.update_visual(self, cloud_timeline_id)
+end
+
+function enemy:update_vlokfoe_visual()
+	return enemy_kind_modules.vlokfoe.update_visual(self)
+end
+
+function enemy:update_marspeinenaardappel_visual()
+	return enemy_kind_modules.marspeinenaardappel.update_visual(self)
+end
+
+local visual_methods_by_kind = {
+	mijterfoe = 'update_mijter_visual',
+	zakfoe = 'update_zakfoe_visual',
+	crossfoe = 'update_crossfoe_visual',
+	boekfoe = 'update_boekfoe_visual',
+	paperfoe = 'update_paperfoe_visual',
+	muziekfoe = 'update_muziekfoe_visual',
+	nootfoe = 'update_nootfoe_visual',
+	stafffoe = 'update_stafffoe_visual',
+	staffspawn = 'update_staffspawn_visual',
+	cloud = 'update_cloud_visual',
+	vlokfoe = 'update_vlokfoe_visual',
+	marspeinenaardappel = 'update_marspeinenaardappel_visual',
+}
 
 function enemy:update_visual_components()
 	local body_sprite = self.body_sprite
+	local body_collider = self.body_collider
+
+	if self.kind == 'vlokspawner' then
+		body_sprite.enabled = false
+		body_collider.enabled = false
+		return
+	end
+
 	body_sprite.enabled = true
+	body_collider.enabled = true
 
-	local imgid = 'meijter_up'
-	local flip_h = false
-	local flip_v = false
+	local visual_method = visual_methods_by_kind[self.kind]
+	if visual_method == nil then
+		error('pietious enemy has no visual method: ' .. tostring(self.kind))
+	end
 
-	if self.kind == 'mijterfoe' then
-		imgid, flip_h, flip_v = self:update_mijter_visual()
-	elseif self.kind == 'zakfoe' then
-		imgid, flip_h, flip_v = self:update_zakfoe_visual()
-	elseif self.kind == 'crossfoe' then
-		imgid, flip_h, flip_v = self:update_crossfoe_visual()
+	local imgid, flip_h, flip_v, color = self[visual_method](self)
+	if color == nil then
+		color = noot_colors[1]
 	end
 
 	body_sprite.imgid = imgid
 	body_sprite.flip.flip_h = flip_h
 	body_sprite.flip.flip_v = flip_v
+	body_sprite.colorize.r = color.r
+	body_sprite.colorize.g = color.g
+	body_sprite.colorize.b = color.b
+	body_sprite.colorize.a = color.a
 end
 
-function enemy:new_random_direction()
-	local horizontal = 0
-	local vertical = 0
-	while horizontal == 0 and vertical == 0 do
-		horizontal = math.random(-1, 1)
-		vertical = math.random(-1, 1)
-	end
-	self.horizontal_dir_mod = horizontal
-	self.vertical_dir_mod = vertical
+function enemy:spawn_child_enemy(kind, x, y, options)
+	local id = build_spawned_enemy_id(kind)
+	local child = engine.spawn_object(constants.ids.enemy_def, {
+		id = id,
+		space_id = self.space_id,
+		pos = { x = x, y = y, z = 140 },
+	})
+	child:configure_from_room_def({
+		id = id,
+		kind = kind,
+		x = x,
+		y = y,
+		direction = options.direction,
+		speedx = options.speedx,
+		speedy = options.speedy,
+		speedden = options.speedden,
+		health = options.health,
+		damage = options.damage,
+		dangerous = options.dangerous,
+		spawned = true,
+	}, self.room)
+	return child
 end
 
-function enemy:set_mijter_takeoff_heading()
-	if self.direction == 'up' then
-		self.horizontal_dir_mod = 0
-		self.vertical_dir_mod = -1
-	elseif self.direction == 'right' then
-		self.horizontal_dir_mod = 1
-		self.vertical_dir_mod = 0
-	elseif self.direction == 'down' then
-		self.horizontal_dir_mod = 0
-		self.vertical_dir_mod = 1
-	else
-		self.horizontal_dir_mod = -1
-		self.vertical_dir_mod = 0
+function enemy:projectile_is_out_of_bounds()
+	local bound_right = self.projectile_bound_right
+	if bound_right <= 0 then
+		bound_right = self.width
 	end
-end
+	local bound_bottom = self.projectile_bound_bottom
+	if bound_bottom <= 0 then
+		bound_bottom = self.height
+	end
 
-function enemy:mijter_player_triggered_takeoff(player)
-	local player_left = player.x
-	local player_top = player.y
-	local player_right = player.x + player.width
-	local player_bottom = player.y + player.height
-	local enemy_left = self.x + 2
-	local enemy_top = self.y + 2
-	local enemy_right = self.x + 14
-	local enemy_bottom = self.y + 14
-	local overlap_x = player_right >= enemy_left and player_left <= enemy_right
-	local overlap_y = player_bottom >= enemy_top and player_top <= enemy_bottom
-
-	if self.direction == 'up' then
-		return overlap_x and player_top < enemy_top
+	if self.x + bound_right < self.room_left then
+		return true
 	end
-	if self.direction == 'right' then
-		return overlap_y and player_left > enemy_right
+	if self.x > self.room_right then
+		return true
 	end
-	if self.direction == 'down' then
-		return overlap_x and player_top > enemy_bottom
+	if self.y + bound_bottom < self.room_top then
+		return true
 	end
-	return overlap_y and player_right < enemy_left
-end
-
-function enemy:start_mijter_flying(blackboard)
-	self:set_mijter_takeoff_heading()
-	blackboard.nodedata.mijter_takeoff_ticks = random_between(constants.enemy.mijter_wait_takeoff_min_steps, constants.enemy.mijter_wait_takeoff_max_steps)
-	blackboard.nodedata.mijter_turn_ticks = random_between(constants.enemy.mijter_turn_min_steps, constants.enemy.mijter_turn_max_steps)
-	self.sc:transition_to(state_flying)
-	return behaviourtree.running
+	if self.y > self.room_bottom then
+		return true
+	end
+	return false
 end
 
 function enemy:bt_tick_mijter_waiting(blackboard)
-	local entry_lock = blackboard.nodedata.mijter_entry_lock_ticks
-	if entry_lock == nil then
-		entry_lock = self.mijter_entry_lock_ticks
-	end
-	if entry_lock > 0 then
-		blackboard.nodedata.mijter_entry_lock_ticks = entry_lock - 1
-		return behaviourtree.running
-	end
-	blackboard.nodedata.mijter_entry_lock_ticks = 0
-
-	local player = engine.object(PLAYER_ID)
-	if self:mijter_player_triggered_takeoff(player) then
-		return self:start_mijter_flying(blackboard)
-	end
-
-	local takeoff_ticks = blackboard.nodedata.mijter_takeoff_ticks
-	if takeoff_ticks == nil then
-		takeoff_ticks = random_between(constants.enemy.mijter_wait_takeoff_min_steps, constants.enemy.mijter_wait_takeoff_max_steps)
-	end
-	takeoff_ticks = takeoff_ticks - 1
-	if takeoff_ticks > 0 then
-		blackboard.nodedata.mijter_takeoff_ticks = takeoff_ticks
-		return behaviourtree.running
-	end
-	return self:start_mijter_flying(blackboard)
+	return enemy_kind_modules.mijterfoe.bt_tick_waiting(self, blackboard, random_between, state_flying)
 end
 
 function enemy:bt_tick_mijter_flying(blackboard)
-	local turn_ticks = blackboard.nodedata.mijter_turn_ticks
-	if turn_ticks == nil then
-		turn_ticks = random_between(constants.enemy.mijter_turn_min_steps, constants.enemy.mijter_turn_max_steps)
-	end
-	turn_ticks = turn_ticks - 1
-	if turn_ticks <= 0 then
-		self:new_random_direction()
-		turn_ticks = random_between(constants.enemy.mijter_turn_min_steps, constants.enemy.mijter_turn_max_steps)
-	end
-	blackboard.nodedata.mijter_turn_ticks = turn_ticks
-
-	if self.x <= self.room_left then
-		self.horizontal_dir_mod = 1
-	elseif self.x + 14 >= self.room_right then
-		self.horizontal_dir_mod = -1
-	end
-	if self.y <= self.room_top then
-		self.vertical_dir_mod = 1
-	elseif self.y + 14 >= self.room_bottom then
-		self.vertical_dir_mod = -1
-	end
-
-	self.x = self.x + (constants.enemy.mijter_speed_px * self.horizontal_dir_mod)
-	self.y = self.y + (constants.enemy.mijter_speed_px * self.vertical_dir_mod)
-	return behaviourtree.running
+	return enemy_kind_modules.mijterfoe.bt_tick_flying(self, blackboard, random_between)
 end
 
 function enemy:bt_tick_zakfoe(blackboard)
-	local node = blackboard.nodedata
-	local tile_size = self.room.tile_size
-
-	if self.zak_state == 'prepare' then
-		local prepare_ticks = node.zak_prepare_ticks
-		if prepare_ticks == nil then
-			prepare_ticks = constants.enemy.zak_prepare_jump_steps
-		end
-		prepare_ticks = prepare_ticks - 1
-		if prepare_ticks > 0 then
-			node.zak_prepare_ticks = prepare_ticks
-			return behaviourtree.running
-		end
-		node.zak_prepare_ticks = nil
-		self.current_vertical_speed = constants.enemy.zak_vertical_speed_start
-		self.zak_ground_y = self.spawn_y
-		self.zak_state = 'jump'
-		node.zak_jump_ticks = constants.enemy.zak_jump_steps
-		return behaviourtree.running
-	end
-
-	if self.zak_state == 'jump' then
-		local jump_ticks = node.zak_jump_ticks
-		if jump_ticks == nil then
-			jump_ticks = constants.enemy.zak_jump_steps
-		end
-
-		local direction_mod = self.direction == 'right' and 1 or -1
-		self.x = self.x + (constants.enemy.zak_horizontal_speed_px * direction_mod)
-		self.y = self.y + self.current_vertical_speed
-		self.current_vertical_speed = self.current_vertical_speed + constants.enemy.zak_vertical_speed_step
-
-		if self.direction == 'left' then
-			if self.x < self.room_left
-				or self:is_collision_tile(self.x + 2, self.y + 2)
-				or not self:is_collision_tile(self.x + 2 - (tile_size / 2), self.y + 14 + tile_size)
-			then
-				self.direction = 'right'
-			end
-		else
-			if self.x + 14 >= self.room_right
-				or self:is_collision_tile(self.x + 14, self.y + 2)
-				or not self:is_collision_tile(self.x + 14 + (tile_size / 2), self.y + 14 + tile_size)
-			then
-				self.direction = 'left'
-			end
-		end
-
-		jump_ticks = jump_ticks - 1
-		if jump_ticks > 0 then
-			node.zak_jump_ticks = jump_ticks
-			return behaviourtree.running
-		end
-		node.zak_jump_ticks = nil
-		self.y = self.zak_ground_y
-		self.zak_state = 'recovery'
-		node.zak_recovery_ticks = constants.enemy.zak_recovery_steps
-		return behaviourtree.running
-	end
-
-	local recovery_ticks = node.zak_recovery_ticks
-	if recovery_ticks == nil then
-		recovery_ticks = constants.enemy.zak_recovery_steps
-	end
-	recovery_ticks = recovery_ticks - 1
-	if recovery_ticks > 0 then
-		node.zak_recovery_ticks = recovery_ticks
-		return behaviourtree.running
-	end
-	node.zak_recovery_ticks = nil
-	self.zak_state = 'prepare'
-	node.zak_prepare_ticks = constants.enemy.zak_prepare_jump_steps
-	return behaviourtree.running
+	return enemy_kind_modules.zakfoe.bt_tick(self, blackboard)
 end
 
 function enemy:bt_tick_crossfoe_waiting(blackboard)
-	local player = engine.object(PLAYER_ID)
-	local node = blackboard.nodedata
-	local hit = cross_hit_area_for_spin(self.cross_spin_direction)
-	local player_top = player.y
-	local player_bottom = player.y + player.height
-	local enemy_top = self.y + hit.top
-	local enemy_bottom = self.y + hit.bottom
-	local overlap_y = player_bottom >= enemy_top and player_top <= enemy_bottom
-
-	if not overlap_y then
-		node.cross_wait_ticks = constants.enemy.cross_wait_before_fly_steps
-		return behaviourtree.running
-	end
-
-	local wait_ticks = node.cross_wait_ticks
-	if wait_ticks == nil then
-		wait_ticks = constants.enemy.cross_wait_before_fly_steps
-	end
-	wait_ticks = wait_ticks - 1
-	if wait_ticks > 0 then
-		node.cross_wait_ticks = wait_ticks
-		return behaviourtree.running
-	end
-
-	node.cross_wait_ticks = constants.enemy.cross_wait_before_fly_steps
-	node.cross_turn_ticks = constants.enemy.cross_turn_steps
-	if player.x < self.x then
-		self.cross_state = 'flying_left'
-	else
-		self.cross_state = 'flying_right'
-	end
-	self.cross_spin_direction = 'left'
-	self.sc:transition_to(state_flying)
-	return behaviourtree.running
+	return enemy_kind_modules.crossfoe.bt_tick_waiting(self, blackboard, state_flying)
 end
 
 function enemy:bt_tick_crossfoe_flying(blackboard)
-	local player = engine.object(PLAYER_ID)
-	local node = blackboard.nodedata
-	local direction_mod = self.cross_state == 'flying_left' and -1 or 1
-	local hit = cross_hit_area_for_spin(self.cross_spin_direction)
+	return enemy_kind_modules.crossfoe.bt_tick_flying(self, blackboard, state_waiting)
+end
 
-	if (self.cross_state == 'flying_left' and self.x < (player.x - player.width))
-		or (self.cross_state == 'flying_right' and self.x > (player.x + (player.width * 2)))
-		or self:is_collision_tile(self.x + hit.left, self.y + hit.top)
-	then
-		self.cross_state = 'waiting'
-		self.cross_spin_direction = 'down'
-		self.x = self.x + (self.room.tile_size * -direction_mod)
-		node.cross_wait_ticks = constants.enemy.cross_wait_before_fly_steps
-		node.cross_turn_ticks = constants.enemy.cross_turn_steps
-		self.sc:transition_to(state_waiting)
-		return behaviourtree.running
-	end
+function enemy:bt_tick_boekfoe(blackboard)
+	return enemy_kind_modules.boekfoe.bt_tick(self, blackboard, random_between)
+end
 
-	self.x = self.x + (constants.enemy.cross_horizontal_speed_px * direction_mod)
+function enemy:bt_tick_paperfoe(_blackboard)
+	return enemy_kind_modules.paperfoe.bt_tick(self, _blackboard)
+end
 
-	local turn_ticks = node.cross_turn_ticks
-	if turn_ticks == nil then
-		turn_ticks = constants.enemy.cross_turn_steps
-	end
-	turn_ticks = turn_ticks - 1
-	if turn_ticks > 0 then
-		node.cross_turn_ticks = turn_ticks
-		return behaviourtree.running
-	end
+function enemy:bt_tick_muziekfoe(blackboard)
+	return enemy_kind_modules.muziekfoe.bt_tick(self, blackboard, get_delta_from_source_to_target_scaled, random_between)
+end
 
-	turn_ticks = constants.enemy.cross_turn_steps
-	if self.cross_spin_direction == 'down' then
-		self.cross_spin_direction = 'left'
-		self.x = self.x - 4
-	elseif self.cross_spin_direction == 'left' then
-		self.cross_spin_direction = 'up'
-		self.x = self.x + 4
-	elseif self.cross_spin_direction == 'up' then
-		self.cross_spin_direction = 'right'
-		self.x = self.x - 4
-	else
-		self.cross_spin_direction = 'down'
-		self.x = self.x + 4
-	end
-	node.cross_turn_ticks = turn_ticks
-	return behaviourtree.running
+function enemy:bt_tick_nootfoe(_blackboard)
+	return enemy_kind_modules.nootfoe.bt_tick(self, _blackboard)
+end
+
+function enemy:bt_tick_stafffoe(blackboard)
+	return enemy_kind_modules.stafffoe.bt_tick(self, blackboard, random_between, speed_components_from_angle)
+end
+
+function enemy:bt_tick_staffspawn(_blackboard)
+	return enemy_kind_modules.staffspawn.bt_tick(self, _blackboard)
+end
+
+function enemy:bt_tick_cloud(blackboard)
+	return enemy_kind_modules.cloud.bt_tick(self, blackboard, random_between, consume_axis_accum, round_to_nearest, full_circle_milliradians)
+end
+
+function enemy:bt_tick_vlokspawner(blackboard)
+	return enemy_kind_modules.vlokspawner.bt_tick(self, blackboard, random_between)
+end
+
+function enemy:bt_tick_vlokfoe(_blackboard)
+	return enemy_kind_modules.vlokfoe.bt_tick(self, _blackboard)
+end
+
+function enemy:bt_tick_marspeinenaardappel(_blackboard)
+	return enemy_kind_modules.marspeinenaardappel.bt_tick(self, _blackboard)
 end
 
 function enemy:configure_from_room_def(def, room)
@@ -454,6 +440,9 @@ function enemy:configure_from_room_def(def, room)
 	self.room = room
 	self.space_id = room.space_id
 	self.kind = def.kind
+	self.trigger = def.trigger or ''
+	self.conditions = def.conditions or {}
+	self.spawned = def.spawned == true
 	self.spawn_x = def.x
 	self.spawn_y = def.y
 	self.x = def.x
@@ -465,8 +454,9 @@ function enemy:configure_from_room_def(def, room)
 	self.health = self.max_health
 	self.last_sword_hit_id = -1
 	self.last_pepernoot_hit_id = -1
-	self.dangerous = true
-	self.direction = def.direction
+	self.dangerous = def.dangerous ~= false
+	self.can_be_hit = true
+	self.direction = def.direction or 'right'
 	self.horizontal_dir_mod = 0
 	self.vertical_dir_mod = 0
 	self.room_left = 0
@@ -479,14 +469,34 @@ function enemy:configure_from_room_def(def, room)
 	self.cross_state = 'waiting'
 	self.cross_spin_direction = 'down'
 	self.mijter_entry_lock_ticks = constants.enemy.mijter_room_entry_lock_steps
-
-	if self.kind == 'crossfoe' then
-		self.width = def.w or 16
-		self.height = def.h or 24
+	self.boek_state = 'closed'
+	self.staff_state = 'default'
+	self.staff_spawn_count = 0
+	local speed_den = def.speedden or 1
+	if speed_den <= 0 then
+		error('pietious enemy speedden must be > 0')
 	end
+	self:set_velocity(def.speedx or 0, def.speedy or 0, speed_den)
+	self.despawn_on_room_switch = false
+	self.projectile_bound_right = 0
+	self.projectile_bound_bottom = 0
+	self.noot_color = noot_colors[1]
+	self:set_body_hit_area(2, 2, 14, 14)
+	local kind_module = get_kind_module(self.kind)
+	kind_module.configure(self, def, {
+		noot_colors = noot_colors,
+		random_between = random_between,
+	})
 
 	if self.btreecontexts[enemy_bt_id] then
 		self:reset_tree(enemy_bt_id)
+	end
+
+	self:stop_timeline(cloud_timeline_id)
+	if kind_module.on_configured ~= nil then
+		kind_module.on_configured(self, {
+			cloud_timeline_id = cloud_timeline_id,
+		})
 	end
 
 	self.state_variant = 'waiting'
@@ -497,22 +507,8 @@ function enemy:configure_from_room_def(def, room)
 end
 
 function enemy:choose_drop_type()
-	local health_chance = constants.enemy.mijter_drop_health_chance_pct
-	local ammo_chance = constants.enemy.mijter_drop_ammo_chance_pct
-	if self.kind == 'zakfoe' then
-		health_chance = constants.enemy.zak_drop_health_chance_pct
-		ammo_chance = constants.enemy.zak_drop_ammo_chance_pct
-	elseif self.kind == 'crossfoe' then
-		health_chance = constants.enemy.cross_drop_health_chance_pct
-		ammo_chance = constants.enemy.cross_drop_ammo_chance_pct
-	end
-	if random_percent_hit(health_chance) then
-		return 'life'
-	end
-	if random_percent_hit(ammo_chance) then
-		return 'ammo'
-	end
-	return 'none'
+	local kind_module = get_kind_module(self.kind)
+	return kind_module.choose_drop_type(self, random_percent_hit)
 end
 
 function enemy:spawn_death_effect()
@@ -528,6 +524,9 @@ function enemy:spawn_death_effect()
 end
 
 function enemy:take_sword_hit(sword_id)
+	if not self.can_be_hit then
+		return false
+	end
 	if sword_id <= 0 then
 		return false
 	end
@@ -544,6 +543,7 @@ function enemy:take_sword_hit(sword_id)
 			room_id = self.room_id,
 			enemy_id = self.enemy_id,
 			kind = self.kind,
+			trigger = self.trigger,
 		})
 		self:mark_for_disposal()
 	end
@@ -551,6 +551,9 @@ function enemy:take_sword_hit(sword_id)
 end
 
 function enemy:take_pepernoot_hit(pepernoot_id)
+	if not self.can_be_hit then
+		return false
+	end
 	if pepernoot_id <= 0 then
 		return false
 	end
@@ -567,6 +570,7 @@ function enemy:take_pepernoot_hit(pepernoot_id)
 			room_id = self.room_id,
 			enemy_id = self.enemy_id,
 			kind = self.kind,
+			trigger = self.trigger,
 		})
 		self:mark_for_disposal()
 	end
@@ -588,7 +592,7 @@ function enemy:on_overlap_stay(event)
 		end
 		return
 	end
-	if other_collider.id_local == constants.ids.player_body_collider_local then
+	if other_collider.id_local == constants.ids.player_body_collider_local and self.dangerous then
 		player:take_hit(self.damage, self.x + math.floor(self.width / 2), self.y + math.floor(self.height / 2), self.kind)
 	end
 end
@@ -606,6 +610,7 @@ local function define_enemy_fsm()
 					self.state_name = 'boot'
 					self.state_variant = 'boot'
 					self:create_components()
+					self:ensure_animation_timelines()
 					self:bind_overlap_events()
 					return '/waiting'
 				end,
@@ -626,6 +631,26 @@ local function define_enemy_fsm()
 			},
 		},
 	})
+end
+
+local function bt_kind_action(kind, method)
+	return {
+		type = 'sequence',
+		children = {
+			{
+				type = 'condition',
+				condition = function(target)
+					return target.kind == kind
+				end,
+			},
+			{
+				type = 'action',
+				action = function(target, blackboard)
+					return target[method](target, blackboard)
+				end,
+			},
+		},
+	}
 end
 
 local function define_enemy_behaviour_tree()
@@ -683,23 +708,7 @@ local function define_enemy_behaviour_tree()
 						},
 					},
 				},
-				{
-					type = 'sequence',
-					children = {
-						{
-							type = 'condition',
-							condition = function(target)
-								return target.kind == 'zakfoe'
-							end,
-						},
-						{
-							type = 'action',
-							action = function(target, blackboard)
-								return target:bt_tick_zakfoe(blackboard)
-							end,
-						},
-					},
-				},
+				bt_kind_action('zakfoe', 'bt_tick_zakfoe'),
 				{
 					type = 'sequence',
 					children = {
@@ -750,6 +759,16 @@ local function define_enemy_behaviour_tree()
 						},
 					},
 				},
+				bt_kind_action('boekfoe', 'bt_tick_boekfoe'),
+				bt_kind_action('paperfoe', 'bt_tick_paperfoe'),
+				bt_kind_action('muziekfoe', 'bt_tick_muziekfoe'),
+				bt_kind_action('nootfoe', 'bt_tick_nootfoe'),
+				bt_kind_action('stafffoe', 'bt_tick_stafffoe'),
+				bt_kind_action('staffspawn', 'bt_tick_staffspawn'),
+				bt_kind_action('cloud', 'bt_tick_cloud'),
+				bt_kind_action('vlokspawner', 'bt_tick_vlokspawner'),
+				bt_kind_action('vlokfoe', 'bt_tick_vlokfoe'),
+				bt_kind_action('marspeinenaardappel', 'bt_tick_marspeinenaardappel'),
 			},
 		},
 	})
@@ -762,11 +781,14 @@ local function register_enemy_definition()
 		fsms = { enemy_fsm_id },
 		bts = { enemy_bt_id },
 		defaults = {
-				space_id = constants.spaces.castle,
-				enemy_id = '',
-				room_id = '',
-				room = nil,
-				kind = 'mijterfoe',
+			space_id = constants.spaces.castle,
+			enemy_id = '',
+			room_id = '',
+			room = nil,
+			kind = 'mijterfoe',
+			trigger = '',
+			conditions = {},
+			spawned = false,
 			width = 16,
 			height = 16,
 			damage = constants.damage.enemy_contact_damage,
@@ -775,6 +797,7 @@ local function register_enemy_definition()
 			last_sword_hit_id = -1,
 			last_pepernoot_hit_id = -1,
 			dangerous = true,
+			can_be_hit = true,
 			horizontal_dir_mod = 0,
 			vertical_dir_mod = 0,
 			room_left = 0,
@@ -786,13 +809,25 @@ local function register_enemy_definition()
 			current_vertical_speed = 0,
 			zak_state = 'prepare',
 			zak_ground_y = 0,
-				cross_state = 'waiting',
-				cross_spin_direction = 'down',
-				mijter_entry_lock_ticks = constants.enemy.mijter_room_entry_lock_steps,
-				state_name = 'boot',
-				state_variant = 'boot',
-			},
-		})
+			cross_state = 'waiting',
+			cross_spin_direction = 'down',
+			mijter_entry_lock_ticks = constants.enemy.mijter_room_entry_lock_steps,
+			boek_state = 'closed',
+			staff_state = 'default',
+			staff_spawn_count = 0,
+			speed_x_num = 0,
+			speed_y_num = 0,
+			speed_den = 1,
+			speed_accum_x = 0,
+			speed_accum_y = 0,
+			despawn_on_room_switch = false,
+			projectile_bound_right = 0,
+			projectile_bound_bottom = 0,
+			noot_color = { r = 1, g = 1, b = 1, a = 1 },
+			state_name = 'boot',
+			state_variant = 'boot',
+		},
+	})
 end
 
 return {
