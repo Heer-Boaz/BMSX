@@ -745,6 +745,10 @@ function resolveNativeKey(key: Value): string {
 	return null;
 }
 
+function isBlockedGameTimingProperty(target: object, key: string): boolean {
+	return target === $ && (key === 'deltatime' || key === 'deltatime_seconds');
+}
+
 function parseNativeKeyFromString(runtime: Runtime, key: string): Value {
 	const numeric = Number(key);
 	if (Number.isInteger(numeric) && String(numeric) === key) {
@@ -1105,6 +1109,9 @@ export function getOrCreateNativeObject(runtime: Runtime, value: object): Native
 			if (!prop) {
 				throw new Error('Attempted to index native object with unsupported key.');
 			}
+			if (isBlockedGameTimingProperty(value, prop)) {
+				return null;
+			}
 			const rawValue = (value as Record<string, unknown>)[prop];
 			if (rawValue === undefined) {
 				return null;
@@ -1124,6 +1131,9 @@ export function getOrCreateNativeObject(runtime: Runtime, value: object): Native
 			const prop = resolveNativeKey(key);
 			if (!prop) {
 				throw new Error('Attempted to assign native object with unsupported key.');
+			}
+			if (isBlockedGameTimingProperty(value, prop)) {
+				throw new Error(`Attempted to assign unsupported native object key '${prop}'.`);
 			}
 			if (entryValue === null) {
 				delete (value as Record<string, unknown>)[prop];

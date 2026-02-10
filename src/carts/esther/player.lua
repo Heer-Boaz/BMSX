@@ -34,23 +34,16 @@ local function overlaps(ax, ay, aw, ah, box)
 end
 
 local function profile_step(abs_diff, profile_id)
-	-- TUNED DIVISORS for "No Inertia" feel
-	-- Real DKC uses [3]=64 (Walk) and [8]=21 (Run).
-	-- We force everything to 8 (or lower) to satisfy responsiveness requirements.
-	
-	local fast_div = 8
-	
-	if profile_id == 0 then return math.floor(abs_diff / 8) end  -- Air (Std)
+	if profile_id == 0 then return math.floor(abs_diff / 8) end
 	if profile_id == 1 then return math.floor(abs_diff / 16) end
 	if profile_id == 2 then return math.floor(abs_diff / 32) end
-	if profile_id == 3 then return math.floor(abs_diff / fast_div) end -- Walk: Real 64, Tuned 8
+	if profile_id == 3 then return math.floor(abs_diff / 64) end
 	if profile_id == 4 then return math.floor(abs_diff / 128) end
 	if profile_id == 5 then return math.floor(abs_diff / 256) end
 	if profile_id == 6 then return math.floor(abs_diff / 4) end
 	if profile_id == 7 then return math.floor(abs_diff / 2) end
-	if profile_id == 8 then return math.floor(abs_diff / fast_div) end -- Run: Real ~21, Tuned 8
-	
-	return 0 -- Catch all
+	if profile_id == 8 then return math.floor(abs_diff / 32) + math.floor(abs_diff / 64) end
+	return 0
 end
 
 local function approach_subpx(current, target, profile_id)
@@ -582,46 +575,58 @@ function player:select_ground_profile()
 end
 
 function player:apply_horizontal_control(airborne)
-	-- Dispatcher mimicking CODE_BFB27C logic structure
+	-- CODE_BFB27C: Horizontal Logic (Input -> Target Speed)
+	-- Identical for Ground (Context 0) and Air (Context 1) in basic movement.
 	
 	local prev_target = self.target_x_speed_subpx
+	local new_target = 0
 	
-	if airborne then
-		-- AIRBORNE DISPATCH (CODE_BFB64B etc)
-		if self.move_axis == -1 then
-			self:CODE_BFB64B_AIR_LEFT()
-		elseif self.move_axis == 1 then
-			self:CODE_BFB75A_AIR_RIGHT()
-		else
-			self:CODE_BFBA39_AIR_NEUTRAL()
-		end
-		
-		self.active_profile_id = constants.profile.default -- 0
+	-- 1. Determine Target Speed (0F25)
+	if self.move_axis == -1 then
+		-- Left: Negate Speed Value from CODE_BFB4E3
+		new_target = -self:CODE_BFB4E3_GET_TARGET_SPEED()
+	elseif self.move_axis == 1 then
+		-- Right: Speed Value from CODE_BFB4E3
+		new_target = self:CODE_BFB4E3_GET_TARGET_SPEED()
 	else
-		-- GROUND DISPATCH
-		if self.move_axis == -1 then
-			local target = -self:CODE_BFB4E3_GET_TARGET_SPEED()
-			self.target_x_speed_subpx = target
-			-- Instant Start rule (CODE_BFB61D "Idle -> Instant")
-			-- (If we were stopped/neutral, jump to speed)
-			if prev_target == 0 then 
-				self.x_speed_subpx = target 
-			end
-		elseif self.move_axis == 1 then
-			local target = self:CODE_BFB4E3_GET_TARGET_SPEED()
-			self.target_x_speed_subpx = target
-			-- Instant Start rule
-			if prev_target == 0 then 
-				self.x_speed_subpx = target 
-			end
+		-- Neutral: CODE_BFC192 -> Target = 0
+		-- This applies in AIR too, providing the "Drag to 0" control feel.
+		new_target = 0
+	end
+	
+	self.target_x_speed_subpx = new_target
+	
+	-- 2. Determine Profile (Smoothing Divisor)
+	-- Default is Profile 0 (/8).
+	-- Ground may start run/walk specific profiles (Div 21/64), but strictly adhering to default 0 
+	-- ensures the snappy feedback unless specific states override.
+	local profile_id = constants.profile.default -- 0
+	
+	if not airborne then
+		-- Grounded override logic (CODE_BFB159 / CODE_BFB167)
+		-- "state $04/$09 + grounded + running($0004) → 8"
+		-- "state $04/$09 + grounded + walking → 3"
+		-- "everything else → 0" (including Neutral/Stopping)
+		
+		if new_target ~= 0 then
+			-- We are "Walking/Running" (Active Input)
+			profile_id = self:select_ground_profile()
 		else
-			self:CODE_BFC18A_GROUND_NEUTRAL() -- Target = 0
+			-- We are "Stopping/Neutral" -> Use Default Profile 0 (/8)
+			-- This ensures the "Instant Stop" feel.
+			profile_id = constants.profile.default
 		end
 		
-		self.active_profile_id = self:select_ground_profile()
+		-- Instant Start Rule (CODE_BFB61D)
+		-- If transitioning from Neutral to Moving, Snap immediately.
+		if prev_target == 0 and new_target ~= 0 then
+			self.x_speed_subpx = new_target
+		end
 	end
+	
+	self.active_profile_id = profile_id
 
-	-- CODE_BFB159: Approach Target
+	-- 3. Update XSpeed (CODE_BFB159 Approach)
 	self.x_speed_subpx = approach_subpx(self.x_speed_subpx, self.target_x_speed_subpx, self.active_profile_id)
 end
 
@@ -683,12 +688,8 @@ function player:move_vertical_pixels(step_pixels)
 				self.pos_suby = self.y * sp
 				self.y_speed_subpx = 0
 				
-				-- Landing snap logic (User "Stand still immediately" demand)
-				-- If landing with no directional input, kill lateral momentum.
-				if self.move_axis == 0 then
-					self.x_speed_subpx = 0
-					self.target_x_speed_subpx = 0
-				end
+				-- Landing snap logic removed. 
+				-- Movement logic (neutral target = 0) handles natural deceleration.
 				
 				return true, true
 			end

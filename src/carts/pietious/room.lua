@@ -372,6 +372,7 @@ local function apply_room_template(room_state, template)
 
 	room_state.room_number = template.room_number
 	room_state.room_id = template.room_id
+	room_state.space_id = template.space_id
 	room_state.room_subtype = template.room_subtype
 	room_state.world_width = constants.room.width
 	room_state.world_height = constants.room.height

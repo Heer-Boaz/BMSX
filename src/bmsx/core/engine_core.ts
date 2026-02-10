@@ -363,6 +363,10 @@ export class EngineCore {
 		this.input.getPlayerInput(playerIndex).consumeActions(...actionsToConsume);
 	}
 
+	public get_frame_delta_ms(): number {
+		return Runtime.instance.frameDeltaMs;
+	}
+
 	public consume_button(playerIndex: number, buttonCode: string, source: InputSource) {
 		this.input.getPlayerInput(playerIndex).consumeButton(buttonCode, source);
 	}

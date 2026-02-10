@@ -38,6 +38,7 @@ local excluded_class_keys = {
 	class = true,
 	defaults = true,
 	metatable = true,
+	ctor = true,
 	constructor = true,
 	prototype = true,
 	super = true,
@@ -74,6 +75,13 @@ local function apply_addons(instance, addons, skip_keys)
 		if not skip_keys[k] then
 			instance[k] = v
 		end
+	end
+end
+
+local function apply_ctor(instance, class_table, ctor_args, def_id)
+	local ctor = class_table.ctor or class_table.constructor
+	if ctor then
+		ctor(instance, ctor_args, def_id)
 	end
 end
 
@@ -126,7 +134,11 @@ local function ensure_component_type(def_id, def)
 		opts = opts or {}
 		opts.type_name = def_id
 		local self = setmetatable(components.component.new(opts), luacomponent)
-		apply_class_addons(self, def and def.class)
+		local class_table = def and def.class
+		apply_class_addons(self, class_table)
+		if class_table then
+			apply_ctor(self, class_table, opts, def_id)
+		end
 		return self
 	end
 	components.register_component(def_id, luacomponent)
@@ -181,9 +193,10 @@ local function attach_bts(instance, bts)
 end
 
 local function apply_definition(instance, def, addons, skip_key)
+	local class_table = def and def.class
 	if def then
 		apply_defaults(instance, def.defaults, skip_key)
-		apply_class_addons(instance, def.class)
+		apply_class_addons(instance, class_table)
 		attach_components(instance, def.components)
 		attach_fsms(instance, def.fsms)
 		attach_effects(instance, def.effects)
@@ -194,6 +207,9 @@ local function apply_definition(instance, def, addons, skip_key)
 		skip_keys[skip_key] = true
 	end
 	apply_addons(instance, addons, skip_keys)
+	if class_table then
+		apply_ctor(instance, class_table, addons, def and def.def_id)
+	end
 end
 
 local engine = {}
@@ -207,14 +223,23 @@ function engine.define_fsm(id, blueprint)
 end
 
 function engine.define_world_object(definition)
+	if type(definition.class) ~= "table" then
+		error("define_world_object: definition.class must be a table for '" .. tostring(definition.def_id) .. "'.")
+	end
 	definitions[definition.def_id] = definition
 end
 
 function engine.define_service(definition)
+	if type(definition.class) ~= "table" then
+		error("define_service: definition.class must be a table for '" .. tostring(definition.def_id) .. "'.")
+	end
 	service_definitions[definition.def_id] = definition
 end
 
 function engine.define_component(definition)
+	if type(definition.class) ~= "table" then
+		error("define_component: definition.class must be a table for '" .. tostring(definition.def_id) .. "'.")
+	end
 	component_definitions[definition.def_id] = definition
 	ensure_component_type(definition.def_id, definition)
 end
@@ -430,10 +455,10 @@ function engine.attach_component(object_or_id, component_or_type)
 	error("attach_component expects a component instance or type name")
 end
 
-function engine.update(dt)
-	quickmenu.update(dt)
+function engine.update()
+	quickmenu.update()
 	if not quickmenu.is_open() then
-		world:update(dt)
+		world:update()
 	end
 	world:draw()
 	quickmenu.draw()

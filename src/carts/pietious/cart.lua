@@ -12,6 +12,7 @@ local enemy_service_module = require('enemy_service.lua')
 local castle_service_module = require('castle_service.lua')
 local flow_service_module = require('flow_service.lua')
 local collision_profiles = require('collision_profiles')
+local frame_step = constants.timing.frame_step
 
 local function register_collision_profiles()
 	collision_profiles.define('player', {
@@ -93,6 +94,7 @@ function new_game()
 		id = player_module.player_instance_id,
 		room = room,
 		game_service_id = castle_service_module.castle_service_instance_id,
+		space_id = room.space_id,
 		spawn_x = spawn.x,
 		spawn_y = spawn.y,
 		pos = { x = spawn.x, y = spawn.y, z = 140 },
@@ -144,5 +146,5 @@ end
 while true do
 	wait_vblank()
 	service_irqs()
-	engine.update(game.deltatime)
+	engine.update(frame_step)
 end

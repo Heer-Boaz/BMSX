@@ -125,10 +125,23 @@
     - update at `0xAD1F` is the diagonal step routine (`-6/+6` axis pair per tick)
   - `uplaser` evidence:
     - spawn at `0xADBA` selects object type `0x0A` (level 1) or `0x0C` (level 2)
-    - level 1 update (`0xAEB7`) is a simpler upward step path
-    - level 2 update (`0xAEDB`) wraps the level 1 step and adds extra size/phase handling each few ticks (`DEC (IY+1)` gate plus adjustments via `0xAE40`)
+  - level 1 update (`0xAEB7`) is a simpler upward step path
+  - level 2 update (`0xAEDB`) wraps the level 1 step and adds extra size/phase handling each few ticks (`DEC (IY+1)` gate plus adjustments via `0xAE40`)
 - Gameplay constants still anchored to controlled reference implementation (`nemesis-s-bdx`) where disassembly does not expose symbolic names:
   - movement speed base/increment,
   - laser speed/length model,
   - missile gravity/floor-crawl model,
   - option follow-delay queue.
+
+## ASM -> Lua mapping now applied (`src/carts/nemesis_s/player.lua`)
+
+- `AEB7`:
+  - `SUB 6` on `(IY+5)` -> `uplaser.y = uplaser.y - 6` every update tick.
+- `AEDB..AEE2`:
+  - `DEC (IY+1)` gate and reset to `4` -> `gate_counter` countdown with 4-tick cadence.
+- `AEE6..AEF1`:
+  - when `(IY+5) != 0`, subtract `8` and use growth increment `2` -> extra rise + larger growth on gated ticks.
+- `AEEA..AEEC` + `AEF4..AEF8`:
+  - when `(IY+5) == 0`, growth increment is `1` -> reduced growth when near top.
+- `ADDx/AND` coarse alignment used in spawn/update paths (`ADDx` + `AND 0xF8`):
+  - Lua keeps tile-aligned beam placement by snapping draw/start coordinates to tile grid with half-tile render phase where needed.

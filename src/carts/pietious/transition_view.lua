@@ -1,10 +1,13 @@
 local constants = require('constants.lua')
 local engine = require('engine')
+local eventemitter = require('eventemitter')
 
 local transition_view = {}
 transition_view.__index = transition_view
 
 local transition_view_fsm_id = constants.ids.transition_view_fsm
+local transition_timeline_id = constants.ids.transition_view_def .. '.timeline.mask'
+local transition_timeline_frame_event = 'timeline.frame.' .. transition_timeline_id
 local room_mask_color = { r = 0, g = 0, b = 0, a = 1 }
 
 function transition_view:bind_visual()
@@ -14,12 +17,37 @@ function transition_view:bind_visual()
 	end
 end
 
-function transition_view:tick(_dt)
-	if engine.get_space() ~= constants.spaces.transition then
-		self.frames_in_transition = 0
-		return
-	end
-	self.frames_in_transition = self.frames_in_transition + 1
+function transition_view:bind_events()
+	self.events:on({
+		event_name = transition_timeline_frame_event,
+		subscriber = self,
+		handler = function(event)
+			self.frames_in_transition = event.frame_index + 1
+		end,
+	})
+
+	eventemitter.eventemitter.instance:on({
+		event = constants.events.flow_state_changed,
+		subscriber = self,
+		handler = function(event)
+			if event.state ~= 'transition' then
+				self.frames_in_transition = 0
+				return
+			end
+			self.frames_in_transition = 0
+			self:play_timeline(transition_timeline_id, { rewind = true, snap_to_start = true })
+		end,
+	})
+end
+
+function transition_view:ctor()
+	self:bind_visual()
+	self:define_timeline(engine.new_timeline({
+		id = transition_timeline_id,
+		frames = engine.timeline_range(constants.flow.room_transition_frames),
+		playback_mode = 'once',
+	}))
+	self:bind_events()
 end
 
 function transition_view:render_transition()
@@ -36,7 +64,6 @@ local function define_transition_view_fsm()
 		states = {
 			boot = {
 				entering_state = function(self)
-					self:bind_visual()
 					return '/active'
 				end,
 			},
@@ -50,12 +77,13 @@ local function register_transition_view_definition()
 		def_id = constants.ids.transition_view_def,
 		class = transition_view,
 		fsms = { transition_view_fsm_id },
-			components = { 'customvisualcomponent' },
-			defaults = {
-				space_id = constants.spaces.transition,
-				frames_in_transition = 0,
-			},
-		})
+		components = { 'customvisualcomponent' },
+		defaults = {
+			space_id = constants.spaces.transition,
+			frames_in_transition = 0,
+			tick_enabled = false,
+		},
+	})
 end
 
 return {

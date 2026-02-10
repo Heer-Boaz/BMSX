@@ -710,6 +710,7 @@ function player:try_switch_room(direction, keep_stairs_lock)
 	end
 
 	self.room = castle_service:get_current_room()
+	self.space_id = self.room.space_id
 	if direction == 'left' then
 		self.x = self.room.world_width - self.width
 	elseif direction == 'right' then
@@ -753,6 +754,7 @@ function player:try_switch_room(direction, keep_stairs_lock)
 		from = switch.from_room_id,
 		to = switch.to_room_id,
 		dir = direction,
+		space = self.room.space_id,
 		x = self.x,
 		y = self.y,
 	})

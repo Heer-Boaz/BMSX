@@ -3536,13 +3536,17 @@ auto emitFn = m_cpu.createNativeFunction("game.emit", [](const std::vector<Value
 	(void)out;
 });
 
-	auto* gameTable = m_cpu.createTable(0, 10);
+auto getFrameDeltaMsFn = m_cpu.createNativeFunction("game.get_frame_delta_ms", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+	(void)args;
+	out.push_back(valueNumber(frameDeltaMs()));
+});
+
+	auto* gameTable = m_cpu.createTable(0, 11);
 	gameTable->set(key("platform"), valueTable(platformTable));
 	gameTable->set(key("viewportsize"), valueTable(viewportTable));
 	gameTable->set(key("view"), valueTable(viewTable));
-	gameTable->set(key("deltatime"), valueNumber(0.0));
-	gameTable->set(key("deltatime_seconds"), valueNumber(0.0));
 	gameTable->set(key("emit"), emitFn);
+	gameTable->set(key("get_frame_delta_ms"), getFrameDeltaMsFn);
 	gameTable->set(key("get_action_state"), getActionStateFn);
 	gameTable->set(key("consume_action"), consumeActionFn);
 	setGlobal("game", valueTable(gameTable));

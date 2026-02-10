@@ -49,5 +49,5 @@ end
 while true do
 	wait_vblank()
 	service_irqs()
-	engine.update(game.deltatime)
+	engine.update()
 end

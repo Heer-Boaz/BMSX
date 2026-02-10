@@ -41,6 +41,7 @@ constants.ids = {
 
 constants.spaces = {
 	castle = 'castle',
+	world = 'world',
 	transition = 'transition',
 	item = 'item',
 	ui = 'ui',
@@ -110,13 +111,13 @@ constants.enemy = {
 	mijter_wait_takeoff_max_steps = 200,
 	mijter_turn_min_steps = 20,
 	mijter_turn_max_steps = 40,
-	mijter_speed_px = 1.5,
+	mijter_speed_px = 2,
 	zak_prepare_jump_steps = 13,
 	zak_jump_steps = 10,
 	zak_recovery_steps = 2,
 	zak_horizontal_speed_px = 1,
 	zak_vertical_speed_start = -1,
-	zak_vertical_speed_delta = 0.20,
+	zak_vertical_speed_step = 0.20,
 	cross_wait_before_fly_steps = 50,
 	cross_turn_steps = 5,
 	cross_horizontal_speed_px = 1,
@@ -130,6 +131,10 @@ constants.enemy = {
 	explosion_frame_steps = 5,
 	loot_life_regen = 12,
 	loot_ammo_regen = 10,
+}
+
+constants.timing = {
+	frame_step = 20,
 }
 
 constants.collision = {
@@ -221,6 +226,8 @@ constants.palette = {
 constants.hud = {
 	health_level = 48,
 	weapon_level = 24,
+	health_anim_step_frames = 2,
+	weapon_anim_step_frames = 2,
 	health_bar_x = 24,
 	health_bar_y = 10,
 	weapon_bar_x = 24,

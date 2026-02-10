@@ -1,6 +1,7 @@
 require('globals.lua')
 require('story.lua')
 local engine = require('engine')
+local frame_step = 20
 
 local start_node = 'title'
 -- local start_node = 'combat_wekker'
@@ -295,8 +296,6 @@ end
 while true do
 	wait_vblank()
 	service_irqs()
-	local dt_seconds = game.deltatime_seconds
-	local dt_ms = game.deltatime
-	update(dt_seconds)
-	engine.update(dt_ms)
+	update()
+	engine.update(frame_step)
 end

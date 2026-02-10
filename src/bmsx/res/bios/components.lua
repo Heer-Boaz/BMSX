@@ -492,20 +492,19 @@ function timelinecomponent:stop(id)
 	self.active[id] = nil
 end
 
-function timelinecomponent:tick_active(dt)
+function timelinecomponent:tick_active(dt_ms)
 	for id in pairs(self.active) do
 		local entry = self.registry[id]
-		local events = entry.instance:tick(dt)
+		local events = entry.instance:tick(dt_ms)
 		if #events > 0 then
-			self:process_events(entry, events, dt)
+			self:process_events(entry, events, dt_ms)
 		end
 	end
 end
 
-function timelinecomponent:process_events(entry, events, dt)
+function timelinecomponent:process_events(entry, events, dt_ms)
 	local owner = self.parent
 	local target = entry.target or owner
-	local dt_ms = dt
 	local dt_seconds = dt_ms / 1000
 	local time_ms = entry.instance.time_ms
 	local time_seconds = time_ms / 1000

@@ -87,6 +87,7 @@ local function normalize_room_templates(room_entries)
 		templates[entry.room_number] = {
 			room_number = entry.room_number,
 			room_id = entry.room_id,
+			space_id = entry.space_id or constants.spaces.castle,
 			room_subtype = string.lower(entry.room_subtype),
 			map_rows = entry.map_rows,
 			spawn = {

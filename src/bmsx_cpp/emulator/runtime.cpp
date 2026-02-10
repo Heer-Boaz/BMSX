@@ -494,7 +494,7 @@ void Runtime::tickUpdate() {
 
 	if (m_frameActive) {
 		if (isUpdatePhasePending()) {
-			executeUpdateCallback(m_frameState.deltaSeconds);
+			executeUpdateCallback();
 			flushAssetEdits();
 			m_frameState.updateExecuted = !isUpdatePhasePending();
 		}
@@ -519,11 +519,9 @@ void Runtime::tickUpdate() {
 	m_frameState.cycleBudgetRemaining = m_cycleBudgetPerFrame + carryBudget;
 	m_frameState.cycleBudgetGranted = m_cycleBudgetPerFrame + carryBudget;
 	m_frameState.cycleCarryGranted = carryBudget;
-	m_frameState.deltaSeconds = static_cast<float>(EngineCore::instance().deltaTime());
+	m_frameDeltaMs = static_cast<f64>(EngineCore::instance().deltaTime()) * 1000.0;
 	m_vdp.beginFrame();
 	auto* gameTable = asTable(m_cpu.globals->get(canonicalizeIdentifier("game")));
-	gameTable->set(canonicalizeIdentifier("deltatime_seconds"), valueNumber(static_cast<double>(m_frameState.deltaSeconds)));
-	gameTable->set(canonicalizeIdentifier("deltatime"), valueNumber(static_cast<double>(m_frameState.deltaSeconds) * 1000.0));
 	auto* viewportTable = asTable(gameTable->get(canonicalizeIdentifier("viewportsize")));
 	auto viewSize = EngineCore::instance().view()->viewportSize;
 	viewportTable->set(canonicalizeIdentifier("x"), valueNumber(static_cast<double>(viewSize.x)));
@@ -548,7 +546,7 @@ void Runtime::tickUpdate() {
 	viewTable->set(viewApertureKey, valueBool(view->applyAperture));
 
 	// Call _update if present
-	executeUpdateCallback(m_frameState.deltaSeconds);
+	executeUpdateCallback();
 
 	auto readViewBool = [](Value value, const char* field) -> bool {
 		if (!valueIsBool(value)) {
@@ -962,8 +960,7 @@ void Runtime::releaseValueScratch(std::vector<Value>&& values) {
 
 
 
-void Runtime::executeUpdateCallback(double deltaSeconds) {
-	(void)deltaSeconds;
+void Runtime::executeUpdateCallback() {
 	try {
 		if (m_waitingForVblank) {
 			processIrqAck();

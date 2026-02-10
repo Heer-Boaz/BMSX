@@ -70,10 +70,9 @@ function actioneffectruntimesystem.new(priority)
 	return self
 end
 
-function actioneffectruntimesystem:update(world)
-	local dt = world.deltatime or 0
+function actioneffectruntimesystem:update(world, dt_ms)
 	for _, component in world:objects_with_components(actioneffectcomponent, { scope = "active" }) do
-		component:advance_time(dt)
+		component:tick(dt_ms)
 	end
 end
 
@@ -86,17 +85,17 @@ function statemachinesystem.new(priority)
 	return self
 end
 
-function statemachinesystem:update(world)
+function statemachinesystem:update(world, dt_ms)
 	for obj in world:objects({ scope = "active" }) do
 		if obj.tick_enabled == false then
 			goto continue
 		end
-		obj.sc:tick(world.deltatime or 0)
+		obj.sc:tick(dt_ms)
 		::continue::
 	end
 	for _, entity in pairs(registry.instance:get_registered_entities()) do
 		if entity.type_name == "service" and entity.active and entity.tick_enabled then
-			entity.sc:tick(world.deltatime or 0)
+			entity.sc:tick(dt_ms)
 		end
 	end
 end
@@ -110,16 +109,15 @@ function objectticksystem.new(priority)
 	return self
 end
 
-function objectticksystem:update(world)
-	local dt = world.deltatime or 0
+function objectticksystem:update(world, dt_ms)
 	for obj in world:objects({ scope = "active" }) do
 		if obj.tick_enabled then
-			obj:tick(dt)
+			obj:tick(dt_ms)
 		end
 		for i = 1, #obj.components do
 			local comp = obj.components[i]
 			if comp.enabled then
-				comp:tick(dt)
+				comp:tick(dt_ms)
 			end
 		end
 	end
@@ -340,7 +338,7 @@ function overlap2dsystem:update(world)
 		local colliders = obj:get_components(collider2dcomponent)
 		for i = 1, #colliders do
 			local collider = colliders[i]
-			if collider.enabled then
+			if collider.enabled and not obj._dispose_flag then
 				broadphase:add_or_update(collider)
 				collider_lookup[collider.id] = collider
 				if collider.generateoverlapevents then
@@ -361,6 +359,9 @@ function overlap2dsystem:update(world)
 		if owner == nil then
 			error("[overlap2dsystem] collider '" .. tostring(collider.id) .. "' has no parent")
 		end
+		if owner._dispose_flag or not owner.active then
+			goto continue_event_collider
+		end
 		local owner_space = world:_object_space_id(owner)
 		local candidates = broadphase:query_aabb(collider:get_world_area())
 		for j = 1, #candidates do
@@ -369,6 +370,9 @@ function overlap2dsystem:update(world)
 				local other_owner = other.parent
 				if other_owner == nil then
 					error("[overlap2dsystem] collider '" .. tostring(other.id) .. "' has no parent")
+				end
+				if other_owner._dispose_flag or not other_owner.active then
+					goto continue_candidate
 				end
 				collider_lookup[other.id] = other
 				local a_hits_b = (collider.mask & other.layer) ~= 0
@@ -385,7 +389,9 @@ function overlap2dsystem:update(world)
 					end
 				end
 			end
+			::continue_candidate::
 		end
+		::continue_event_collider::
 	end
 
 	local begins = {}
@@ -418,6 +424,12 @@ function overlap2dsystem:update(world)
 		local owner_b = col_b.parent
 		if owner_a == nil or owner_b == nil then
 			error("[overlap2dsystem] attempted to emit overlap event without collider parents")
+		end
+		if owner_a._dispose_flag or owner_b._dispose_flag then
+			return
+		end
+		if not owner_a.active or not owner_b.active then
+			return
 		end
 		local emit_a = col_a.generateoverlapevents
 		local emit_b = col_b.generateoverlapevents
@@ -484,11 +496,10 @@ function timelinesystem.new(priority)
 	return self
 end
 
-function timelinesystem:update(world)
-	local dt = world.deltatime or 0
+function timelinesystem:update(world, dt_ms)
 	for _, component in world:objects_with_components(timelinecomponent, { scope = "active" }) do
 		if component.enabled then
-			component:tick_active(dt)
+			component:tick_active(dt_ms)
 		end
 	end
 end
@@ -502,11 +513,10 @@ function meshanimationsystem.new(priority)
 	return self
 end
 
-function meshanimationsystem:update(world)
-	local dt = world.deltatime or 0
+function meshanimationsystem:update(world, dt_ms)
 	for _, component in world:objects_with_components(meshcomponent, { scope = "active" }) do
 		if component.enabled then
-			component:update_animation(dt)
+			component:update_animation(dt_ms)
 		end
 	end
 end

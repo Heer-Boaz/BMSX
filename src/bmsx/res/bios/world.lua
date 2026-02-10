@@ -301,8 +301,7 @@ function world:objects_with_components(type_name, opts)
 		nil
 end
 
-function world:update(dt)
-	self.deltatime = dt
+function world:update()
 	self.systems:begin_frame()
 	perf.last_stat_index = 1
 	self.current_phase = tickgroup.input

@@ -23,7 +23,7 @@ function ecsystem.new(group, priority)
 	return self
 end
 
-function ecsystem:update(_world)
+function ecsystem:update(_world, _dt_ms)
 end
 
 local ecsystemmanager = {}
@@ -83,11 +83,12 @@ function ecsystemmanager:record_stat(sys, t0, t1)
 end
 
 function ecsystemmanager:update_until(world, max_group)
+	local dt_ms = $.get_frame_delta_ms()
 	for i = 1, #self.systems do
 		local s = self.systems[i]
 		if s.group <= max_group then
 			local t0 = $.platform.clock.perf_now()
-			s:update(world)
+			s:update(world, dt_ms)
 			local t1 = $.platform.clock.perf_now()
 			self:record_stat(s, t0, t1)
 		end
@@ -95,11 +96,12 @@ function ecsystemmanager:update_until(world, max_group)
 end
 
 function ecsystemmanager:update_from(world, min_group)
+	local dt_ms = $.get_frame_delta_ms()
 	for i = 1, #self.systems do
 		local s = self.systems[i]
 		if s.group >= min_group then
 			local t0 = $.platform.clock.perf_now()
-			s:update(world)
+			s:update(world, dt_ms)
 			local t1 = $.platform.clock.perf_now()
 			self:record_stat(s, t0, t1)
 		end
@@ -107,11 +109,12 @@ function ecsystemmanager:update_from(world, min_group)
 end
 
 function ecsystemmanager:update_phase(world, group)
+	local dt_ms = $.get_frame_delta_ms()
 	for i = 1, #self.systems do
 		local s = self.systems[i]
 		if s.group == group then
 			local t0 = $.platform.clock.perf_now()
-			s:update(world)
+			s:update(world, dt_ms)
 			local t1 = $.platform.clock.perf_now()
 			self:record_stat(s, t0, t1)
 		end
@@ -120,11 +123,12 @@ end
 
 function ecsystemmanager:run_paused(world)
 	self:begin_frame()
+	local dt_ms = $.get_frame_delta_ms()
 	for i = 1, #self.systems do
 		local s = self.systems[i]
 		if s.runs_while_paused then
 			local t0 = $.platform.clock.perf_now()
-			s:update(world)
+			s:update(world, dt_ms)
 			local t1 = $.platform.clock.perf_now()
 			self:record_stat(s, t0, t1)
 		end

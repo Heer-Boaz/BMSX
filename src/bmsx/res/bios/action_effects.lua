@@ -133,7 +133,8 @@ function actioneffectcomponent:advance_time(dt_ms)
 	end
 end
 
-function actioneffectcomponent:tick(dt)
+function actioneffectcomponent:tick(dt_ms)
+	self:advance_time(dt_ms)
 end
 
 function actioneffectcomponent:grant_effect(definition)

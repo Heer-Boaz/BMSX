@@ -146,7 +146,7 @@ local function entry_cycle(entry, dir)
 	entry.set(entry.values[idx].value)
 end
 
-function menu.update(_dt)
+function menu.update()
 	if action_triggered('&wp{5}(select, start)') then
 		consume_action('select')
 		consume_action('start')

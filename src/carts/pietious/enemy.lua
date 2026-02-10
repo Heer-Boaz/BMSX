@@ -12,7 +12,6 @@ local enemy_bt_id = constants.ids.enemy_bt
 
 local state_waiting = enemy_fsm_id .. ':/waiting'
 local state_flying = enemy_fsm_id .. ':/flying'
-local state_dead = enemy_fsm_id .. ':/dead'
 
 local body_sprite_component_id = 'body'
 local body_collider_component_id = 'body'
@@ -159,10 +158,6 @@ end
 
 function enemy:update_visual_components()
 	local body_sprite = self.body_sprite
-	if self.state_variant == 'dead' then
-		body_sprite.enabled = false
-		return
-	end
 	body_sprite.enabled = true
 
 	local imgid = 'meijter_up'
@@ -318,7 +313,7 @@ function enemy:bt_tick_zakfoe(blackboard)
 		local direction_mod = self.direction == 'right' and 1 or -1
 		self.x = self.x + (constants.enemy.zak_horizontal_speed_px * direction_mod)
 		self.y = self.y + self.current_vertical_speed
-		self.current_vertical_speed = self.current_vertical_speed + constants.enemy.zak_vertical_speed_delta
+		self.current_vertical_speed = self.current_vertical_speed + constants.enemy.zak_vertical_speed_step
 
 		if self.direction == 'left' then
 			if self.x < self.room_left
@@ -460,6 +455,7 @@ function enemy:configure_from_room_def(def, room, player_id)
 	self.enemy_id = def.id
 	self.room_id = room.room_id
 	self.room = room
+	self.space_id = room.space_id
 	self.player_id = player_id
 	self.kind = def.kind
 	self.spawn_x = def.x
@@ -526,7 +522,7 @@ function enemy:spawn_death_effect()
 	local effect_id = string.format('pietious.enemy_explosion.%s.%d', self.enemy_id, death_effect_sequence)
 	engine.spawn_object(enemy_explosion_module.enemy_explosion_def_id, {
 		id = effect_id,
-		space_id = constants.spaces.castle,
+		space_id = self.space_id,
 		room_id = self.room_id,
 		player_id = self.player_id,
 		loot_type = self:choose_drop_type(),
@@ -547,16 +543,12 @@ function enemy:take_sword_hit(sword_id)
 		self.health = 0
 		self.dangerous = false
 		self:spawn_death_effect()
-		self.sc:transition_to(state_dead)
-		self:update_visual_components()
+		self:mark_for_disposal()
 	end
 	return true
 end
 
 function enemy:on_overlap_stay(event)
-	if self.state_variant == 'dead' then
-		return
-	end
 	if event.other_id ~= self.player_id then
 		return
 	end
@@ -576,7 +568,7 @@ function enemy:on_overlap_stay(event)
 	end
 end
 
-function enemy:tick(_delta)
+function enemy:tick()
 	self:update_visual_components()
 end
 
@@ -607,15 +599,6 @@ local function define_enemy_fsm()
 					self:update_visual_components()
 				end,
 			},
-			dead = {
-				entering_state = function(self)
-					self.state_name = 'dead'
-					self.state_variant = 'dead'
-					self.dangerous = false
-					self.body_collider.enabled = false
-					self:update_visual_components()
-				end,
-			},
 		},
 	})
 end
@@ -625,23 +608,6 @@ local function define_enemy_behaviour_tree()
 		root = {
 			type = 'selector',
 			children = {
-				{
-					type = 'sequence',
-					children = {
-						{
-							type = 'condition',
-							condition = function(target)
-								return target.state_variant == 'dead'
-							end,
-						},
-						{
-							type = 'action',
-							action = function()
-								return behaviourtree.running
-							end,
-						},
-					},
-				},
 				{
 					type = 'sequence',
 					children = {

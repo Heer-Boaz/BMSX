@@ -173,10 +173,10 @@ local decorator = {}
 decorator.__index = decorator
 setmetatable(decorator, { __index = btnode })
 
-function decorator.new(id, child, decorator, priority)
+function decorator.new(id, child, decorator_fn, priority)
 	local self = setmetatable(btnode.new(id, priority), decorator)
 	self.child = child
-	self.decorator = decorator
+	self.decorator = decorator_fn
 	return self
 end
 
@@ -189,9 +189,9 @@ local condition = {}
 condition.__index = condition
 setmetatable(condition, { __index = parametrizednode })
 
-function condition.new(id, condition, modifier, priority, parameters)
+function condition.new(id, condition_fn, modifier, priority, parameters)
 	local self = setmetatable(parametrizednode.new(id, priority, parameters), condition)
-	self.condition = condition
+	self.condition = condition_fn
 	self.modifier = modifier
 	return self
 end
@@ -256,9 +256,9 @@ local limit = {}
 limit.__index = limit
 setmetatable(limit, { __index = btnode })
 
-function limit.new(id, limit, propname, child, priority)
+function limit.new(id, limit_count, propname, child, priority)
 	local self = setmetatable(btnode.new(id, priority), limit)
-	self.limit = limit
+	self.limit = limit_count
 	self.count_propname = propname
 	self.child = child
 	return self
@@ -324,9 +324,9 @@ local action = {}
 action.__index = action
 setmetatable(action, { __index = parametrizednode })
 
-function action.new(id, action, priority, parameters)
+function action.new(id, action_fn, priority, parameters)
 	local self = setmetatable(parametrizednode.new(id, priority, parameters), action)
-	self.action = action
+	self.action = action_fn
 	return self
 end
 

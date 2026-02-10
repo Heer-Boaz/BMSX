@@ -9,7 +9,9 @@ enemy_explosion.__index = enemy_explosion
 local loot_drop_module = require('loot_drop.lua')
 
 local enemy_explosion_fsm_id = constants.ids.enemy_explosion_fsm
-local state_animating = enemy_explosion_fsm_id .. ':/animating'
+local enemy_explosion_timeline_id = constants.ids.enemy_explosion_def .. '.timeline.explosion'
+local enemy_explosion_frame_event = 'timeline.frame.' .. enemy_explosion_timeline_id
+local enemy_explosion_end_event = 'timeline.end.' .. enemy_explosion_timeline_id
 
 local body_sprite_component_id = 'body'
 
@@ -56,6 +58,23 @@ function enemy_explosion:bind_events()
 	end
 	self.events_bound = true
 
+	self.events:on({
+		event_name = enemy_explosion_frame_event,
+		subscriber = self,
+		handler = function(event)
+			self:update_visual(event.frame_value)
+		end,
+	})
+
+	self.events:on({
+		event_name = enemy_explosion_end_event,
+		subscriber = self,
+		handler = function()
+			self:spawn_loot()
+			self:mark_for_disposal()
+		end,
+	})
+
 	eventemitter.eventemitter.instance:on({
 		event = constants.events.room_switched,
 		subscriber = self,
@@ -67,9 +86,9 @@ function enemy_explosion:bind_events()
 	})
 end
 
-function enemy_explosion:update_visual()
+function enemy_explosion:update_visual(imgid)
 	self:ensure_components()
-	self.body_sprite.imgid = explosion_frames[self.frame_index]
+	self.body_sprite.imgid = imgid or explosion_frames[1]
 	self.body_sprite.enabled = true
 end
 
@@ -82,35 +101,13 @@ function enemy_explosion:spawn_loot()
 	local loot_id = string.format('%s.loot.%d', self.id, loot_spawn_sequence)
 	engine.spawn_object(loot_drop_module.loot_drop_def_id, {
 		id = loot_id,
-		space_id = constants.spaces.castle,
+		space_id = self.space_id,
 		room_id = self.room_id,
 		player_id = self.player_id,
 		loot_type = self.loot_type,
 		loot_value = loot_value_for_type(self.loot_type),
 		pos = { x = self.x, y = self.y, z = 113 },
 	})
-end
-
-function enemy_explosion:tick_animating(delta)
-	local step_delta = delta / 20
-	self.elapsed_steps = self.elapsed_steps + step_delta
-	local frame_duration = constants.enemy.explosion_frame_steps
-	while self.elapsed_steps >= frame_duration do
-		self.elapsed_steps = self.elapsed_steps - frame_duration
-		self.frame_index = self.frame_index + 1
-		if self.frame_index > #explosion_frames then
-			self:spawn_loot()
-			self:mark_for_disposal()
-			return
-		end
-		self:update_visual()
-	end
-end
-
-function enemy_explosion:tick(delta)
-	if self.sc:matches_state_path(state_animating) then
-		self:tick_animating(delta)
-	end
 end
 
 local function define_enemy_explosion_fsm()
@@ -121,11 +118,15 @@ local function define_enemy_explosion_fsm()
 				entering_state = function(self)
 					self.state_name = 'boot'
 					self.state_variant = 'boot'
-					self.frame_index = 1
-					self.elapsed_steps = 0
 					self:ensure_components()
+					self:define_timeline(engine.new_timeline({
+						id = enemy_explosion_timeline_id,
+						frames = explosion_frames,
+						ticks_per_frame = constants.enemy.explosion_frame_steps * constants.timing.frame_step,
+						playback_mode = 'once',
+					}))
 					self:bind_events()
-					self:update_visual()
+					self:update_visual(explosion_frames[1])
 					return '/animating'
 				end,
 			},
@@ -133,7 +134,7 @@ local function define_enemy_explosion_fsm()
 				entering_state = function(self)
 					self.state_name = 'animating'
 					self.state_variant = 'animating'
-					self:update_visual()
+					self:play_timeline(enemy_explosion_timeline_id, { rewind = true, snap_to_start = true })
 				end,
 			},
 		},
@@ -150,13 +151,11 @@ local function register_enemy_explosion_definition()
 			room_id = '',
 			player_id = constants.ids.player_instance,
 			loot_type = 'none',
-			frame_index = 1,
-			elapsed_steps = 0,
 			state_name = 'boot',
 			state_variant = 'boot',
 			events_bound = false,
 			registrypersistent = false,
-			tick_enabled = true,
+			tick_enabled = false,
 		},
 	})
 end

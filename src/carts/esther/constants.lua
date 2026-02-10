@@ -47,9 +47,9 @@ constants.profile = {
 	--   state $04/$09 + grounded + running($0004) → 8  (CODE_BFB167)
 	--   state $04/$09 + grounded + walking         → 3  (CODE_BFB180)
 	--   everything else (airborne, roll, etc.)      → 0 (Fast/Sharp)
-	ground_walk = 3,   -- ÷64: Heavy inertia (modified to ÷8 in player logic for responsiveness)
-	ground_run = 8,    -- ÷21: Medium inertia (modified to ÷8 in player logic for responsiveness)
-	default = 0,       -- ÷8:  Air control
+	ground_walk = 3,   -- ÷64: Heavy inertia (Authentic)
+	ground_run = 8,    -- ÷21: Medium inertia (Authentic)
+	default = 0,       -- ÷8:  Air control (Authentic)
 }
 
 constants.roll = {

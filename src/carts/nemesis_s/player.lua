@@ -170,15 +170,42 @@ function player:get_option_imgid()
 	return constants.assets.option4
 end
 
+function player:get_laser_visual_x(x, weapon)
+	local tile_width = weapon.tile_width
+	local half_step = tile_width * 0.5
+	local coarse_x = math.floor(x / tile_width) * tile_width
+	local phase = math.floor(x) - coarse_x
+	if phase >= half_step then
+		return coarse_x + half_step
+	end
+	return coarse_x
+end
+
+function player:get_laser_visual_y(y, anchor_y, weapon)
+	local tile_width = weapon.tile_width
+	local visual_step = tile_width * 0.5
+	if y >= anchor_y then
+		local downward_delta = y - anchor_y
+		return anchor_y + (math.floor(downward_delta / visual_step) * visual_step)
+	end
+	local upward_delta = anchor_y - y
+	return anchor_y - (math.floor(upward_delta / visual_step) * visual_step)
+end
+
 function player:draw_lasers()
-	local tile_width = constants.weapons.laser.tile_width
+	local weapon = constants.weapons.laser
+	local tile_width = weapon.tile_width
 	for i = 1, #self.lasers do
 		local laser = self.lasers[i]
-		local start_x = math.floor(laser.left_x / tile_width) * tile_width
-		local end_x = math.ceil(laser.right_x / tile_width) * tile_width
+		local start_x = self:get_laser_visual_x(laser.left_x, weapon)
+		local end_x = self:get_laser_visual_x(laser.right_x, weapon)
+		local visual_y = self:get_laser_visual_y(laser.y, laser.visual_anchor_y, weapon)
+		if end_x <= start_x then
+			end_x = start_x + tile_width
+		end
 		local x = start_x
 		while x < end_x do
-			put_sprite(constants.assets.laser, x, laser.y, 122)
+			put_sprite(constants.assets.laser, x, visual_y, 122)
 			x = x + tile_width
 		end
 	end
@@ -196,8 +223,10 @@ function player:draw_uplasers()
 	local tile_width = weapon.tile_width
 	for i = 1, #self.uplasers do
 		local uplaser = self.uplasers[i]
+		local base_x = self:get_laser_visual_x(uplaser.x, weapon)
+		local visual_y = self:get_laser_visual_y(uplaser.y, uplaser.visual_anchor_y, weapon)
 		for tile_index = 0, uplaser.tile_count - 1 do
-			put_sprite(constants.assets.laser, uplaser.x + (tile_index * tile_width), uplaser.y, 122)
+			put_sprite(constants.assets.laser, base_x + (tile_index * tile_width), visual_y, 122)
 		end
 	end
 end
@@ -342,6 +371,7 @@ function player:spawn_laser(vessel_id)
 		vessel_id = vessel_id,
 		x = vessel_x + weapon.spawn_offset_x,
 		y = vessel_y + weapon.spawn_offset_y,
+		visual_anchor_y = vessel_y + weapon.spawn_offset_y,
 		left_x = vessel_x + weapon.spawn_offset_x,
 		right_x = vessel_x + weapon.spawn_offset_x,
 		length_expanded = 0,
@@ -401,6 +431,7 @@ function player:spawn_uplaser(vessel_id)
 		x = aligned_x,
 		center_x = aligned_x + (initial_width * 0.5),
 		y = vessel_y + weapon.spawn_offset_y,
+		visual_anchor_y = vessel_y + weapon.spawn_offset_y,
 		level = level,
 		gate_counter = weapon.level2_gate_frames,
 		length_units = length_units,
@@ -608,8 +639,17 @@ function player:update_uplasers()
 		if despawn_reason == nil and uplaser.level >= 2 then
 			uplaser.gate_counter = uplaser.gate_counter - 1
 			if uplaser.gate_counter == 0 then
+				-- Nemesis 2 level-2 uplaser cadence from AEB7/AEDB: every 4 ticks, extra rise and conditional growth.
 				uplaser.gate_counter = weapon.level2_gate_frames
-				uplaser.length_units = uplaser.length_units + weapon.level2_growth_units_per_gate
+				local growth_units = weapon.level2_growth_units_at_top
+				if uplaser.y ~= 0 then
+					growth_units = weapon.level2_growth_units_per_gate
+					uplaser.y = uplaser.y - weapon.level2_extra_rise_px
+					if uplaser.y < 0 then
+						despawn_reason = 'screen_edge'
+					end
+				end
+				uplaser.length_units = uplaser.length_units + growth_units
 				self:refresh_uplaser_dimensions(uplaser)
 				uplaser.x = math.floor((uplaser.center_x - (uplaser.width * 0.5)) / weapon.tile_width) * weapon.tile_width
 			end

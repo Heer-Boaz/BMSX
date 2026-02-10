@@ -1,5 +1,6 @@
 local constants = require('constants.lua')
 local engine = require('engine')
+local eventemitter = require('eventemitter')
 
 local room_view = {}
 room_view.__index = room_view
@@ -13,16 +14,34 @@ function room_view:bind_visual()
 	end
 end
 
+function room_view:bind_events()
+	eventemitter.eventemitter.instance:on({
+		event = constants.events.room_switched,
+		subscriber = self,
+		handler = function()
+			local room = self:get_room()
+			self.space_id = room.space_id
+		end,
+	})
+end
+
+function room_view:ctor()
+	self:bind_visual()
+	self:bind_events()
+	local room = self:get_room()
+	self.space_id = room.space_id
+end
+
 function room_view:get_room()
 	return engine.service(self.game_service_id):get_current_room()
 end
 
 function room_view:render_room()
-	if engine.get_space() ~= constants.spaces.castle then
+	local room = self:get_room()
+	if engine.get_space() ~= room.space_id then
 		return
 	end
 
-	local room = self:get_room()
 	local tile_size = room.tile_size
 	local origin_x = room.tile_origin_x
 	local origin_y = room.tile_origin_y
@@ -43,7 +62,6 @@ local function define_room_view_fsm()
 		states = {
 			boot = {
 				entering_state = function(self)
-					self:bind_visual()
 					return '/active'
 				end,
 			},
@@ -56,13 +74,14 @@ local function register_room_view_definition()
 	define_world_object({
 		def_id = constants.ids.room_view_def,
 		class = room_view,
-			fsms = { room_view_fsm_id },
-			components = { 'customvisualcomponent' },
-			defaults = {
-				game_service_id = constants.ids.castle_service_instance,
-				space_id = constants.spaces.castle,
-			},
-		})
+		fsms = { room_view_fsm_id },
+		components = { 'customvisualcomponent' },
+		defaults = {
+			game_service_id = constants.ids.castle_service_instance,
+			space_id = constants.spaces.castle,
+			tick_enabled = false,
+		},
+	})
 end
 
 return {

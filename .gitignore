@@ -89,3 +89,4 @@ src/bmsx_cpp/build/
 .snesmini
 tools/retroarch-gles2
 .external/**
+!ROM_Map_DKC1_U1.asm

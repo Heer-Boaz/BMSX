@@ -47,8 +47,15 @@ function flow_service:item_screen_toggle_pressed()
 	return action_triggered('lb[jp]', player_index) or action_triggered('rb[jp]', player_index)
 end
 
+function flow_service:resolve_room_space()
+	local castle_service = engine.service(constants.ids.castle_service_instance)
+	local room = castle_service:get_current_room()
+	return room.space_id
+end
+
 function flow_service:activate_spaces()
 	engine.add_space(constants.spaces.castle)
+	engine.add_space(constants.spaces.world)
 	engine.add_space(constants.spaces.transition)
 	engine.add_space(constants.spaces.item)
 	engine.add_space(constants.spaces.ui)
@@ -65,17 +72,17 @@ local function define_flow_service_fsm()
 							self.transition_frames_left = 0
 							self:activate_spaces()
 							self:bind_events()
-							engine.set_space(constants.spaces.castle)
+							engine.set_space(self:resolve_room_space())
 							self:emit_flow('enter_boot', string.format('space=%s', tostring(engine.get_space())))
-							self:emit_state_changed('castle')
+							self:emit_state_changed(engine.get_space())
 							return '/castle'
 						end,
 				},
 					castle = {
 						entering_state = function(self)
-							engine.set_space(constants.spaces.castle)
+							engine.set_space(self:resolve_room_space())
 							self:emit_flow('enter_castle', string.format('space=%s', tostring(engine.get_space())))
-							self:emit_state_changed('castle')
+							self:emit_state_changed(engine.get_space())
 						end,
 					tick = function(self)
 						self.debug_frame = self.debug_frame + 1

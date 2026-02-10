@@ -40,7 +40,6 @@ struct FrameState {
 	bool haltGame = false;
 	bool updateExecuted = false;
 	bool luaFaulted = false;
-	float deltaSeconds = 0.0f;
 	int cycleBudgetRemaining = 0;
 	int cycleBudgetGranted = 0;
 	int cycleCarryGranted = 0;
@@ -222,6 +221,7 @@ public:
 	 * Get the player index for this runtime.
 	 */
 	int playerIndex() const { return m_playerIndex; }
+	f64 frameDeltaMs() const { return m_frameDeltaMs; }
 
 	/**
 	 * Get the viewport size.
@@ -304,7 +304,7 @@ private:
 	void setupBuiltins();
 	void runEngineBuiltinPrelude();
 	void resetFrameState();
-	void executeUpdateCallback(double deltaSeconds);
+	void executeUpdateCallback();
 	void advanceHardware(int cycles);
 	void advanceVblank(int cycles);
 	void resetVblankState();
@@ -366,6 +366,7 @@ private:
 	// Frame state
 	FrameState m_frameState;
 	bool m_frameActive = false;
+	f64 m_frameDeltaMs = 0.0;
 
 	// Cached function references
 	Value m_ipairsIterator = valueNil();

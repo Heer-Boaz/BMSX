@@ -137,7 +137,6 @@ type FrameState = {
 	haltGame: boolean;
 	updateExecuted: boolean;
 	luaFaulted: boolean;
-	deltaSeconds: number;
 	cycleBudgetRemaining: number;
 	cycleBudgetGranted: number;
 	cycleCarryGranted: number;
@@ -616,6 +615,7 @@ export class Runtime {
 		this.dmaBulkRate.resetCarry();
 	}
 	private includeJsStackTraces = false;
+	public frameDeltaMs = 0;
 	public currentFrameState: FrameState = null;
 	public drawFrameState: FrameState = null;
 	private waitingForVblank = false;
@@ -1245,7 +1245,7 @@ export class Runtime {
 		if (this.currentFrameState) {
 			throw new Error('[Runtime] Attempted to begin a new frame while another frame is active.');
 		}
-		const deltaSeconds = $.deltatime_seconds; // Align with fixed-step update cadence to avoid over-counting when substepping
+		this.frameDeltaMs = $.deltatime;
 		const carryBudget = this.pendingCarryBudget;
 		this.pendingCarryBudget = 0;
 		const budget = this.cycleBudgetPerFrame + carryBudget;
@@ -1253,21 +1253,13 @@ export class Runtime {
 			haltGame: this.debuggerPaused,
 			updateExecuted: false,
 			luaFaulted: this.luaRuntimeFailed,
-			deltaSeconds,
 			cycleBudgetRemaining: budget,
 			cycleBudgetGranted: budget,
 			cycleCarryGranted: carryBudget,
 		};
-		this.publishGameDeltaTime(state.deltaSeconds);
 		this.vdp.beginFrame();
 		this.currentFrameState = state;
 		return state;
-	}
-
-	private publishGameDeltaTime(deltaSeconds: number): void {
-		const gameTable = this.cpu.globals.get(this.canonicalKey('game')) as Table;
-		gameTable.set(this.canonicalKey('deltatime_seconds'), deltaSeconds);
-		gameTable.set(this.canonicalKey('deltatime'), deltaSeconds * 1000);
 	}
 
 	public tickUpdate(): void {
@@ -1280,8 +1272,6 @@ export class Runtime {
 		}
 		if (this.currentFrameState !== null) {
 			if (this.isUpdatePhasePending()) {
-				this.currentFrameState.deltaSeconds = $.deltatime_seconds;
-				this.publishGameDeltaTime(this.currentFrameState.deltaSeconds);
 				this.runUpdatePhase(this.currentFrameState);
 				this.vdp.flushAssetEdits();
 				this.currentFrameState.updateExecuted = !this.isUpdatePhasePending();
