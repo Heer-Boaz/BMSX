@@ -72,9 +72,16 @@ function rock_service:sync_room_rocks()
 	self:deactivate_unused_rocks(active_ids)
 end
 
-function rock_service:on_rock_destroyed(rock_id, room_id, item_type, x, y)
+function rock_service:on_rock_break_started(rock_id, room_id, item_type, x, y)
+	if self.destroyed_rock_ids[rock_id] == true then
+		return
+	end
 	self.destroyed_rock_ids[rock_id] = true
 	engine.service(self.item_service_id):add_item_drop_from_rock(rock_id, room_id, item_type, x, y)
+end
+
+function rock_service:on_rock_destroyed(rock_id)
+	self.destroyed_rock_ids[rock_id] = true
 	self.rocks_by_id[rock_id] = nil
 
 	local instance = engine.object(rock_id)

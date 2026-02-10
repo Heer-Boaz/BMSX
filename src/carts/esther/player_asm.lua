@@ -846,25 +846,33 @@ function player:tick(dt)
 	local target_signed = to_signed_16(target)
 	local current_signed = to_signed_16(self.ram_xspeedlo)
 	
-	-- apply profile smoothing
+	-- apply profile smoothing (code_bfb191 logic)
 	local delta = target_signed - current_signed
 	local abs_delta = delta
 	if abs_delta < 0 then
 		abs_delta = -abs_delta
 	end
 	
+	-- jsr.w (data_bfb255,x)
 	local step = self:data_bfb255_profile(profile_id, abs_delta)
-	if delta < 0 then
-		step = -step
-	end
 	
-	current_signed = current_signed + step
-	
-	-- clamp to target
-	if delta > 0 and current_signed > target_signed then
+	-- beq.b code_bfb1b5 (if step == 0, instantly snap to target!)
+	if step == 0 then
+		-- code_bfb1b5: instant snap
 		current_signed = target_signed
-	elseif delta < 0 and current_signed < target_signed then
-		current_signed = target_signed
+	else
+		-- apply step
+		if delta < 0 then
+			step = -step
+		end
+		current_signed = current_signed + step
+		
+		-- clamp to target
+		if delta > 0 and current_signed > target_signed then
+			current_signed = target_signed
+		elseif delta < 0 and current_signed < target_signed then
+			current_signed = target_signed
+		end
 	end
 	
 	self.ram_xspeedlo = to_unsigned_16(current_signed)

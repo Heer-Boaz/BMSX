@@ -67,11 +67,12 @@ end
 function rock:update_visual()
 	if self.sc:matches_state_path(state_breaking) then
 		self.body_sprite.imgid = 'stone_broken'
+		self.body_collider.enabled = false
 	else
 		self.body_sprite.imgid = 'stone'
+		self.body_collider.enabled = true
 	end
 	self.body_sprite.enabled = true
-	self.body_collider.enabled = true
 end
 
 function rock:configure_from_room_def(def, room, rock_service_id)
@@ -85,6 +86,7 @@ function rock:configure_from_room_def(def, room, rock_service_id)
 	self.x = def.x
 	self.y = def.y
 	self.break_steps = 0
+	self.break_started = false
 	self.last_sword_hit_id = -1
 	self.last_pepernoot_hit_id = -1
 	self.sc:transition_to(state_idle)
@@ -101,6 +103,7 @@ function rock:take_sword_hit(sword_id)
 	self.health = self.health - 1
 	if self.health <= 0 then
 		self.health = 0
+		self:begin_break()
 		self.sc:transition_to(state_breaking)
 	end
 end
@@ -116,9 +119,19 @@ function rock:take_pepernoot_hit(pepernoot_id)
 	self.health = self.health - 1
 	if self.health <= 0 then
 		self.health = 0
+		self:begin_break()
 		self.sc:transition_to(state_breaking)
 	end
 	return true
+end
+
+function rock:begin_break()
+	if self.break_started then
+		return
+	end
+	self.break_started = true
+	local drop_y = self.y + drop_offset_y_for_item_type(self.item_type)
+	engine.service(self.rock_service_id):on_rock_break_started(self.rock_id, self.room_id, self.item_type, self.x, drop_y)
 end
 
 function rock:on_overlap_stay(event)
@@ -138,8 +151,7 @@ function rock:on_overlap_stay(event)
 end
 
 function rock:finish_break()
-	local drop_y = self.y + drop_offset_y_for_item_type(self.item_type)
-	engine.service(self.rock_service_id):on_rock_destroyed(self.rock_id, self.room_id, self.item_type, self.x, drop_y)
+	engine.service(self.rock_service_id):on_rock_destroyed(self.rock_id)
 	self.body_sprite.enabled = false
 	self.body_collider.enabled = false
 	self:mark_for_disposal()
@@ -176,15 +188,16 @@ local function define_rock_fsm()
 					self:update_visual()
 				end,
 			},
-			breaking = {
-				entering_state = function(self)
-					self.state_name = 'breaking'
-					self.state_variant = 'breaking'
-					self.break_steps = 0
-					self:update_visual()
-				end,
+				breaking = {
+					entering_state = function(self)
+						self.state_name = 'breaking'
+						self.state_variant = 'breaking'
+						self.break_steps = 0
+						self:begin_break()
+						self:update_visual()
+					end,
+				},
 			},
-		},
 	})
 end
 
@@ -206,6 +219,7 @@ local function register_rock_definition()
 			last_sword_hit_id = -1,
 			last_pepernoot_hit_id = -1,
 			break_steps = 0,
+			break_started = false,
 			events_bound = false,
 			state_name = 'boot',
 			state_variant = 'boot',
