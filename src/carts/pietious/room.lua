@@ -4,7 +4,7 @@ local castle_map = require('castle_map.lua')
 local room = {}
 
 local background_themes = {
-	CastleBlue = {
+	castleblue = {
 		mode = 'checker2',
 		front = 'castle_front_blue_1',
 		light_l = 'castle_tile_blue_l',
@@ -12,7 +12,7 @@ local background_themes = {
 		dark_l = 'castle_tile_blue_l_dark',
 		dark_r = 'castle_tile_blue_r_dark',
 	},
-	CastleGarden = {
+	castlegarden = {
 		mode = 'grid4',
 		front = 'castle_front_blue_1',
 		tiles = {
@@ -28,7 +28,7 @@ local background_themes = {
 			'castle_tile_garden_dark_4',
 		},
 	},
-	CastleGold = {
+	castlegold = {
 		mode = 'checker2',
 		front = 'castle_front_gold_1',
 		light_l = 'castle_tile_gold_l',
@@ -36,7 +36,7 @@ local background_themes = {
 		dark_l = 'castle_tile_gold_l_dark',
 		dark_r = 'castle_tile_gold_r_dark',
 	},
-	CastleRed = {
+	castlered = {
 		mode = 'grid4',
 		front = 'castle_front_blue_1',
 		tiles = {
@@ -52,7 +52,7 @@ local background_themes = {
 			'castle_tile_red_dark_4',
 		},
 	},
-	CastleStone = {
+	castlestone = {
 		mode = 'grid4',
 		front = 'castle_front_blue_1',
 		tiles = {
@@ -71,7 +71,7 @@ local background_themes = {
 }
 
 local pillar_themes = {
-	CastleBlue = {
+	castleblue = {
 		l1 = 'castle_pillar_blue_l1',
 		r1 = 'castle_pillar_blue_r1',
 		l2 = 'castle_pillar_blue_l2',
@@ -79,7 +79,7 @@ local pillar_themes = {
 		l3 = 'castle_pillar_blue_l3',
 		r3 = 'castle_pillar_blue_r3',
 	},
-	CastleGarden = {
+	castlegarden = {
 		l1 = 'castle_pillar_garden_l1',
 		r1 = 'castle_pillar_garden_r1',
 		l2 = 'castle_pillar_garden_l2',
@@ -87,7 +87,7 @@ local pillar_themes = {
 		l3 = 'castle_pillar_garden_l3',
 		r3 = 'castle_pillar_garden_r3',
 	},
-	CastleGold = {
+	castlegold = {
 		l1 = 'castle_pillar_red_l1',
 		r1 = 'castle_pillar_red_r1',
 		l2 = 'castle_pillar_red_l2',
@@ -95,7 +95,7 @@ local pillar_themes = {
 		l3 = 'castle_pillar_red_l3',
 		r3 = 'castle_pillar_red_r3',
 	},
-	CastleRed = {
+	castlered = {
 		l1 = 'castle_pillar_red_l1',
 		r1 = 'castle_pillar_red_r1',
 		l2 = 'castle_pillar_red_l2',
@@ -103,7 +103,7 @@ local pillar_themes = {
 		l3 = 'castle_pillar_red_l3',
 		r3 = 'castle_pillar_red_r3',
 	},
-	CastleStone = {
+	castlestone = {
 		l1 = 'castle_pillar_stone_l1',
 		r1 = 'castle_pillar_stone_r1',
 		l2 = 'castle_pillar_stone_l2',

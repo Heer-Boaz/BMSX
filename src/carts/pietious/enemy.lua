@@ -164,7 +164,7 @@ function enemy:update_visual_components()
 	local flip_h = false
 	local flip_v = false
 
-	if self.kind == 'mijter' then
+	if self.kind == 'mijterfoe' then
 		imgid, flip_h, flip_v = self:update_mijter_visual()
 	elseif self.kind == 'zakfoe' then
 		imgid, flip_h, flip_v = self:update_zakfoe_visual()
@@ -455,13 +455,6 @@ function enemy:bt_tick_crossfoe_flying(blackboard)
 end
 
 function enemy:configure_from_room_def(def, room, player_id)
-	if def.kind ~= 'mijter' and def.kind ~= 'zakfoe' and def.kind ~= 'crossfoe' then
-		error('pietious enemy invalid kind=' .. tostring(def.kind))
-	end
-	if def.direction ~= 'up' and def.direction ~= 'right' and def.direction ~= 'down' and def.direction ~= 'left' then
-		error('pietious enemy invalid direction=' .. tostring(def.direction))
-	end
-
 	self.enemy_id = def.id
 	self.room_id = room.room_id
 	self.room = room
@@ -625,7 +618,7 @@ local function define_enemy_behaviour_tree()
 						{
 							type = 'condition',
 							condition = function(target)
-								return target.kind == 'mijter'
+								return target.kind == 'mijterfoe'
 							end,
 						},
 						{
@@ -753,7 +746,7 @@ local function register_enemy_definition()
 			room_id = '',
 			room = nil,
 			player_id = constants.ids.player_instance,
-			kind = 'mijter',
+			kind = 'mijterfoe',
 			width = 16,
 			height = 16,
 			damage = constants.damage.enemy_contact_damage,
@@ -761,7 +754,6 @@ local function register_enemy_definition()
 			health = constants.enemy.default_health,
 			last_sword_hit_id = -1,
 			dangerous = true,
-			direction = 'down',
 			horizontal_dir_mod = 0,
 			vertical_dir_mod = 0,
 			room_left = 0,
