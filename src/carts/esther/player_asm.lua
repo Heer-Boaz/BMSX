@@ -17,9 +17,9 @@ local joypad_select = 0x2000  -- select
 local joypad_start  = 0x1000  -- start
 local joypad_dpadu  = 0x0800  -- d-pad up
 local joypad_dpadd  = 0x0400  -- d-pad down
-local joypad_dpadl  = 0x0040  -- d-pad left
-local joypad_dpadr  = 0x0080  -- d-pad right
-local joypad_a      = 0x0080  -- button a (also shares bit)
+local joypad_dpadl  = 0x0200  -- d-pad left
+local joypad_dpadr  = 0x0100  -- d-pad right
+local joypad_a      = 0x0080  -- button a
 local joypad_x      = 0x0040  -- button x
 
 -- ============================================================================
@@ -79,69 +79,70 @@ function player:new(config)
 	instance.height = config.height or 32
 	
 	-- initialize all ram variables as instance members
-	instance.ram_1699 = 0
-	instance.ram_16a1 = 0
-	instance.ram_16a5 = 0
-	instance.ram_16a9 = 0
-	instance.ram_16ad = define_dkc1_animationid_dk_idle
-	instance.ram_16cd = 0
-	instance.ram_16dd = 0
-	instance.ram_16e1 = 0
-	instance.ram_16e5 = 0
-	instance.ram_16ed = 0
-	instance.ram_16f1 = 0
-	instance.ram_16f5 = 0
-	instance.ram_16f9 = 0xffb8
-	instance.ram_180f = 0
-	
-	instance.ram_xspeedlo = 0
-	instance.ram_yspeedlo = 0
-	instance.ram_xposlo = config.spawn_x
-	instance.ram_yposlo = config.spawn_y
-	instance.ram_ramtable0f25lo = 0
-	instance.ram_ramtable1029lo = 0x0004
-	instance.ram_ramtable12a5lo = 0x0001
-	instance.ram_ramtable1209lo = 0
-	instance.ram_ramtable1631lo = 0
-	instance.ram_yxppccctlo = 0
-	
-	instance.zp_28 = 0
-	instance.zp_32 = 0x0004
-	instance.zp_44 = (config.player_index or 1) - 1
-	instance.zp_4c = 0
-	instance.zp_7e = 0
-	instance.zp_80 = 0
-	instance.zp_84 = 0
-	instance.zp_f3 = 0
-	
-	instance.ram_0512 = 0
-	instance.ram_1e15 = 0
-	instance.ram_1e17 = 0
-	instance.ram_1e19 = 0
-	
-	-- subpixel position
-	instance.pos_subx = instance.ram_xposlo * 0x0100
-	instance.pos_suby = instance.ram_yposlo * 0x0100
-	
-	-- visual/gameplay state
-	instance.facing = 1
-	instance.grounded = true
-	instance.visual_frame_id = 'esther_dk_idle_01'
-	instance.pose_name = 'grounded'
-	instance.draw_scale_x = 1.0
-	instance.draw_scale_y = 1.0
-	instance.roll_visual = 0
-	
-	-- debug counters
-	instance.debug_frame = 0
-	instance.debug_time_ms = 0
-	
-	-- previous frame button state for edge detection
-	instance.prev_7e = 0
-	
-	instance:reset_runtime()
+	player.ctor(instance, config)
 	
 	return instance
+end
+
+-- ctor is called by the engine's spawn_object → apply_definition → apply_ctor
+-- receives (self, addons, def_id) where addons = {id, level, spawn_x, spawn_y, pos}
+function player.ctor(self, addons)
+	-- initialize all ram variables
+	self.ram_1699 = self.ram_1699 or 0
+	self.ram_16a1 = 0
+	self.ram_16a5 = 0
+	self.ram_16a9 = 0
+	self.ram_16ad = define_dkc1_animationid_dk_idle
+	self.ram_16cd = 0
+	self.ram_16dd = 0
+	self.ram_16e1 = 0
+	self.ram_16e5 = 0
+	self.ram_16ed = 0
+	self.ram_16f1 = 0
+	self.ram_16f5 = 0
+	self.ram_16f9 = 0xffb8
+	self.ram_180f = 0
+	
+	self.ram_xspeedlo = 0
+	self.ram_yspeedlo = 0
+	self.ram_xposlo = self.spawn_x or 0
+	self.ram_yposlo = self.spawn_y or 0
+	self.ram_ramtable0f25lo = 0
+	self.ram_ramtable1029lo = 0x0004
+	self.ram_ramtable12a5lo = 0x0001
+	self.ram_ramtable1209lo = 0
+	self.ram_ramtable123dlo = 0
+	self.ram_ramtable1631lo = 0
+	self.ram_yxppccctlo = 0
+	
+	self.zp_28 = 0
+	self.zp_32 = 0x0004
+	self.zp_44 = (self.player_index or 1) - 1
+	self.zp_4c = 0
+	self.zp_7e = 0
+	self.zp_80 = 0
+	self.zp_84 = 0
+	self.zp_f3 = 7  -- TODO: find actual $F3 source in DKC1 assembly. Set to 7 (out of 0-6 range) to disable CODE_BFA60C until known.
+	
+	self.ram_0512 = 0
+	self.ram_1e15 = 0
+	self.ram_1e17 = 0
+	self.ram_1e19 = 0
+	
+	-- subpixel position
+	self.pos_subx = self.ram_xposlo * 0x0100
+	self.pos_suby = self.ram_yposlo * 0x0100
+	
+	-- visual/gameplay state
+	self.visual_frame_id = 'esther_dk_idle_01'
+	self.pose_name = 'grounded'
+	
+	-- debug counters
+	self.debug_frame = 0
+	self.debug_time_ms = 0
+	
+	-- previous frame button state for edge detection
+	self.prev_7e = 0
 end
 
 function player:reset_runtime()
@@ -208,65 +209,74 @@ end
 
 -- code_bfb159: profile selection logic (line 110537)
 function player:code_bfb159()
-	-- lda.b $32
+	-- lda.b $32                                    ; LINE 110537: LDA.b $32
 	local state = self.zp_32
 	
-	-- cmp.w #$0004 / cmp.w #$0009
+	-- cmp.w #$0004                                 ; LINE 110540: CMP.w #$0004
+	-- beq.b code_bfb167                            ; LINE 110542: BEQ.b CODE_BFB167
+	-- cmp.w #$0009                                 ; LINE 110544: CMP.w #$0009
 	if state == 0x0004 or state == 0x0009 then
 		-- code_bfb167: grounded state detected
-		-- lda.w !ram_dkc1_norspr_ramtable12a5lo,y
-		-- and.w #$0001
+		-- lda.w !ram_dkc1_norspr_ramtable12a5lo,y      ; LINE 110550: LDA.w !RAM_DKC1_NorSpr_RAMTable12A5Lo,y
+		-- and.w #$0001                                 ; LINE 110553: AND.w #$0001
+		-- beq.b code_bfb187                            ; LINE 110555: BEQ.b CODE_BFB187
 		if (self.ram_ramtable12a5lo & 0x0001) ~= 0 then
-			-- lda.w $1699,y
-			-- and.w #$0004
+			-- ldy.b $84                                ; LINE 110557: LDY.b $84
+			-- lda.w $1699,y                             ; LINE 110561: LDA.w $1699,y
+			-- and.w #$0004                              ; LINE 110564: AND.w #$0004
+			-- beq.b code_bfb180                         ; LINE 110566: BEQ.b CODE_BFB180
 			if (self.ram_1699 & 0x0004) ~= 0 then
 				-- code_bfb17e: running
+				-- lda.w #$0008                         ; LINE 110568: LDA.w #$0008
 				return 8  -- profile 8 (÷21.33)
 			else
 				-- code_bfb180: walking
+				-- lda.w #$0003                         ; LINE 110574: LDA.w #$0003
 				return 3  -- profile 3 (÷64)
 			end
 		end
 	end
 	
 	-- code_bfb187: default (airborne/roll)
+	-- lda.w #$0000                                 ; LINE 110582: LDA.w #$0000
 	return 0  -- profile 0 (÷8)
 end
 
 -- code_bfb538: get run speed (line 111078)
 function player:code_bfb538()
-	-- lda.w $0512,y
+	-- lda.w $0512,y                                ; LINE 111093: LDA.w $0512,y
 	if self.ram_0512 ~= 0 then
-		-- on animal buddy (simplified - would check sprite type)
-		-- for now just return normal
+		-- on animal buddy (simplified)
 	end
 	
-	-- code_bfb55d: normal player run speed
-	-- check if special state
-	-- lda.w !ram_dkc1_norspr_ramtable1029lo,x
-	-- cmp.w #$0027
+	-- code_bfb55d: normal player run speed            ; LINE 111116: CODE_BFB55D
+	-- lda.w !ram_dkc1_norspr_ramtable1029lo,x      ; LINE 111116: LDA.w !RAM_DKC1_NorSpr_RAMTable1029Lo,x
+	-- cmp.w #$0027                                 ; LINE 111119: CMP.w #$0027
 	if self.ram_ramtable1029lo == 0x0027 then
-		-- code_bfb5a8: crouching or special
+		-- lda.w #$0180                              ; LINE 111160: LDA.w #$0180
 		return 0x0180  -- slower
 	end
 	
-	-- normal run
+	-- lda.w #$0300                                 ; LINE 111116: LDA.w #$0300
 	return 0x0300
 end
 
 -- code_bfb573: get walk speed (line 111141)
 function player:code_bfb573()
-	-- lda.w $0512,y
+	-- lda.w $0512,y                                ; LINE 111141: LDA.w $0512,y
 	if self.ram_0512 ~= 0 then
 		-- on animal buddy
 	end
 	
-	-- code_bfb598: normal player walk speed
-	-- check state
+	-- code_bfb598: normal player walk speed           ; LINE 111164: CODE_BFB598
+	-- lda.w !ram_dkc1_norspr_ramtable1029lo,x      ; LINE 111164: LDA.w !RAM_DKC1_NorSpr_RAMTable1029Lo,x
+	-- cmp.w #$0027                                 ; LINE 111167: CMP.w #$0027
 	if self.ram_ramtable1029lo == 0x0027 then
+		-- lda.w #$0180                              ; LINE 111169: LDA.w #$0180
 		return 0x0180
 	end
 	
+	-- lda.w #$0200                                 ; LINE 111164: LDA.w #$0200
 	return 0x0200
 end
 
@@ -287,42 +297,56 @@ end
 
 -- code_bfb4e3: get target speed (line 111058)
 function player:code_bfb4e3()
-	-- ldy.b $84
-	-- lda.b $7e
-	local held = self.zp_7e
-	
-	-- and.w #$4000  (y-button check)
-	if (held & joypad_y) ~= 0 then
+	-- ldy.b $84                                    ; LINE 111058: LDY.b $84
+	-- lda.b $7e                                    ; LINE 111060: LDA.b $7E
+	-- and.w #$4000                                 ; LINE 111062: AND.w #$4000
+	-- beq.b code_bfb522                            ; LINE 111064: BEQ.b CODE_BFB522
+	if (self.zp_7e & joypad_y) ~= 0 then
 		-- code_bfb4ec: run path
-		-- lda.w $1699,y / ora.w #$0004
+		-- lda.w $1699,y                             ; LINE 111073: LDA.w $1699,y
+		-- ora.w #$0004                              ; LINE 111076: ORA.w #$0004
+		-- sta.w $1699,y                             ; LINE 111078: STA.w $1699,y
 		self.ram_1699 = self.ram_1699 | 0x0004
 		
 		-- store timestamps
-		-- lda.w $16dd,y / sta.w $16e1,y
+		-- lda.w $16dd,y                             ; LINE 111084: LDA.w $16DD,y
+		-- sta.w $16e1,y                             ; LINE 111087: STA.w $16E1,y
 		self.ram_16e1 = self.ram_16dd
-		-- lda.b $28 / sta.w $16dd,y
+		-- lda.b $28                                 ; LINE 111089: LDA.b $28
+		-- sta.w $16dd,y                             ; LINE 111091: STA.w $16DD,y
 		self.ram_16dd = self.zp_28
 		
-		-- jsr.w code_bfb538
+		-- jsr.w code_bfb538                         ; LINE 111093: JSR.w CODE_BFB538
 		local speed = self:code_bfb538()
+		-- jmp.w code_bfb503                         ; LINE 111095: JMP.w CODE_BFB503
 		return self:code_bfb503(speed)
 	end
 	
-	-- code_bfb522: walk path
-	-- lda.w $1699,y / and.w #$0200
+	-- code_bfb522: walk path                        ; LINE 111122: CODE_BFB522
+	-- lda.w $1699,y                                ; LINE 111122: LDA.w $1699,y
+	-- and.w #$0200                                 ; LINE 111125: AND.w #$0200
+	-- bne.b code_bfb52d                            ; LINE 111127: BNE.b CODE_BFB52D
 	if (self.ram_1699 & 0x0200) ~= 0 then
-		-- forced run flag still set
+		-- code_bfb52d: forced run flag still set
+		-- lda.w $1699,y                             ; LINE 111133: LDA.w $1699,y
+		-- ora.w #$0004                              ; LINE 111136: ORA.w #$0004
+		-- sta.w $1699,y                             ; LINE 111138: STA.w $1699,y
 		self.ram_1699 = self.ram_1699 | 0x0004
+		-- jsr.w code_bfb538                         ; LINE 111140: JSR.w CODE_BFB538
 		local speed = self:code_bfb538()
+		-- jmp.w code_bfb503                         ; LINE 111142: JMP.w CODE_BFB503
 		return self:code_bfb503(speed)
 	end
 	
 	-- clear run flag
-	-- lda.w $1699,y / and.w #$fffb
+	-- lda.w $1699,y                                ; LINE 111144: LDA.w $1699,y
+	-- and.w #$fffb                                 ; LINE 111147: AND.w #$FFFB
+	-- sta.w $1699,y                                ; LINE 111149: STA.w $1699,y
 	self.ram_1699 = self.ram_1699 & 0xfffb
 	
-	-- jsr.w code_bfb573
+	-- jsr.w code_bfb573                             ; LINE 111151: JSR.w CODE_BFB573
 	local speed = self:code_bfb573()
+	-- jmp.w code_bfb503                             ; LINE 111153: JMP.w CODE_BFB503
 	return self:code_bfb503(speed)
 end
 
@@ -392,69 +416,87 @@ end
 
 -- code_bfb27c: horizontal control main entry (line 110733)
 function player:code_bfb27c()
-	-- sta.w $180f  (context already set by caller)
-	-- stz.w $1e19
+	-- sta.w $180f                                  ; LINE 110733: STA.w $180F
+	-- (already set by caller)
+	-- stz.w $1e19                                  ; LINE 110735: STZ.w $1E19
 	self.ram_1e19 = 0
 	
 	-- code_bfb2c7: input sampling happens before this
 	-- clear run-active bit before sampling
+	-- lda.w $1699,y                                ; LINE 110750: LDA.w $1699,y
+	-- and.w #$fffb                                 ; LINE 110753: AND.w #$FFFB
+	-- sta.w $1699,y                                ; LINE 110755: STA.w $1699,y
 	self.ram_1699 = self.ram_1699 & 0xfffb
 	
 	-- left/right/neutral dispatch based on d-pad
 	-- code_bfb305: horizontal handling
-	-- lda.b $7e / and.w #!joypad_dpadl
+	-- lda.b $7e                                    ; LINE 110795: LDA.b $7E
+	-- and.w #!joypad_dpadl                         ; LINE 110797: AND.w #!Joypad_DPadL
+	-- beq.b code_bfb311                            ; LINE 110799: BEQ.b CODE_BFB311
 	if (self.zp_7e & joypad_dpadl) ~= 0 then
-		-- code_bfb311: jsr.w code_bfb5ae
+		-- code_bfb311: jsr.w code_bfb5ae             ; LINE 110803: JSR.w CODE_BFB5AE
+		-- code_bfb5ae: grounded check
+		-- lda.b $180f                                 ; LINE 111222: LDA.b $180F
 		if self.ram_180f == 0 then
-			self:code_bfb5b6()  -- ground left
+			self:code_bfb5b6()  -- ground left        ; LINE 111226: JSR.w CODE_BFB5B6
 		else
-			self:code_bfb64b()  -- air left
+			self:code_bfb64b()  -- air left           ; LINE 111228: JSR.w CODE_BFB64B
 		end
+	-- code_bfb311:                                 ; LINE 110811: CODE_BFB311
+	-- lda.b $7e                                    ; LINE 110811: LDA.b $7E
+	-- and.w #!joypad_dpadr                         ; LINE 110813: AND.w #!Joypad_DPadR
+	-- beq.b code_bfb31d                            ; LINE 110815: BEQ.b CODE_BFB31D
 	elseif (self.zp_7e & joypad_dpadr) ~= 0 then
-		-- code_bfb31d: jsr.w code_bfb6c5
+		-- code_bfb31d: jsr.w code_bfb6c5             ; LINE 110819: JSR.w CODE_BFB6C5
+		-- code_bfb6c5: grounded check
+		-- lda.b $180f                                 ; LINE 111373: LDA.b $180F
 		if self.ram_180f == 0 then
-			self:code_bfb6cd()  -- ground right
+			self:code_bfb6cd()  -- ground right       ; LINE 111377: JSR.w CODE_BFB6CD
 		else
-			self:code_bfb75a()  -- air right
+			self:code_bfb75a()  -- air right          ; LINE 111379: JSR.w CODE_BFB6EA
 		end
 	else
-		-- code_bfb31d: neutral
+		-- code_bfb31d: neutral                         ; LINE 110825: CODE_BFB31D
+		-- jsr.w code_bfc18a                           ; LINE 110825: JSR.w CODE_BFC18A
+		-- code_bfc18a: grounded check
+		-- lda.b $180f                                 ; LINE 113945: LDA.b $180F
 		if self.ram_180f == 0 then
-			self:code_bfc18a()  -- ground neutral
+			self:code_bfc18a()  -- ground neutral     ; LINE 113949: JSR.w CODE_BFC18A (sets speed=0)
 		else
-			self:code_bfba39()  -- air neutral (does nothing!)
+			self:code_bfba39()  -- air neutral        ; LINE 113951: JSR.w CODE_BFBA39 (rts)
 		end
 	end
 end
 
 -- code_bfb94f: ground jump (line 111659)
 function player:code_bfb94f()
-	-- ldy.b $84
-	-- lda.w $1699,y / ora.w #$0003
+	-- ldy.b $84                                    ; LINE 111659: LDY.b $84
+	-- lda.w $1699,y                                ; LINE 111661: LDA.w $1699,y
+	-- ora.w #$0003                                 ; LINE 111664: ORA.w #$0003
+	-- sta.w $1699,y                                ; LINE 111666: STA.w $1699,y
 	self.ram_1699 = self.ram_1699 | 0x0003
 	
-	-- lda.w $16cd,y / ora.w #$0001
+	-- lda.w $16cd,y                                ; LINE 111668: LDA.w $16CD,y
+	-- ora.w #$0001                                 ; LINE 111671: ORA.w #$0001
+	-- sta.w $16cd,y                                ; LINE 111673: STA.w $16CD,y
 	self.ram_16cd = self.ram_16cd | 0x0001
 	
-	-- lda.w #$ffb8  (gravity for dk holding jump)
-	-- cpy.w #$0000  (check if diddy)
-	self.ram_16f9 = 0xffb8  -- assume dk
+	-- lda.w #$ffb8                                 ; LINE 111675: LDA.w #$FFB8
+	-- sta.w $16f9,y                                ; LINE 111677: STA.w $16F9,y
+	self.ram_16f9 = 0xffb8  -- assume dk hold gravity
 	
-	-- lda.w #$0000 / sta.w $16e5,y
+	-- lda.w #$0000                                 ; LINE 111679: LDA.w #$0000
+	-- sta.w $16e5,y                                ; LINE 111681: STA.w $16E5,y
 	self.ram_16e5 = 0
 	
-	-- lda.w #$00c1 / sta.w !ram_dkc1_norspr_ramtable11a1lo,x
+	-- animation script id $c1                      ; LINE 111683: LDA.w #$00C1
+	-- sta.w !ram_dkc1_norspr_ramtable11a1lo,x      ; LINE 111686: STA.w !RAM_DKC1_NorSpr_RAMTable11A1Lo,x
 	self.ram_16ad = 0x00c1  -- jump animation
 	
-	-- stz.w $1e17
+	-- stz.w $1e17                                  ; LINE 111688: STZ.w $1E17
 	self.ram_1e17 = 0
 	
-	-- jsr.w code_bfbec5 (flag clear routine - omitted)
-	
-	-- lda.w $1699,y / and.w #$ff7f
-	self.ram_1699 = self.ram_1699 & 0xff7f
-	
-	-- note: y velocity set by animation event, approx $0600
+	-- note: y velocity set by animation event      ; (Empirical: ~0x0600)
 	self.ram_yspeedlo = 0x0600
 end
 
@@ -484,20 +526,37 @@ end
 
 -- code_bfaf38: air gravity (line 110236)
 function player:code_bfaf38()
-	-- lda.w $1699,y / and.w #$0002
+	-- ldx.b !ram_dkc1_norspr_currentindexlo      ; LINE 110236: LDX.b !RAM_DKC1_NorSpr_CurrentIndexLo
+	-- ldy.b $84                                    ; LINE 110237: LDY.b $84
+	-- lda.w $1699,y                                ; LINE 110238: LDA.w $1699,y
+	-- and.w #$0002                                 ; LINE 110241: AND.w #$0002 (check jump-hold)
 	local gravity
 	if (self.ram_1699 & 0x0002) ~= 0 then
 		-- holding jump
-		-- lda.w $16f9,y
+		-- lda.w $16f9,y                             ; LINE 110243: LDA.w $16F9,y
 		gravity = self.ram_16f9  -- $ffb8 or $ffa6
 	else
 		-- released jump
-		-- lda.w #$ff90
+		-- lda.w #$ff90                              ; LINE 110245: LDA.w #$FF90
 		gravity = 0xff90  -- -112 dec
 	end
 	
-	-- clc / adc.w !ram_dkc1_norspr_yspeedlo,x
-	local yspeed = self.ram_yspeedlo
+	-- clc                                          ; LINE 110256: CLC
+	-- adc.w !ram_dkc1_norspr_yspeedlo,x            ; LINE 110258: ADC.w !RAM_DKC1_NorSpr_YSpeedLo,x
+	local yspeed_signed = to_signed_16(self.ram_yspeedlo)
+	local gravity_signed = to_signed_16(gravity)
+	yspeed_signed = yspeed_signed + gravity_signed
+	
+	-- max fall speed check
+	-- bpl.b code_bfaf64                            ; LINE 110260: BPL.b CODE_BFAF64
+	-- cmp.w #$f800                                 ; LINE 110262: CMP.w #$F800 (-8.0 px)
+	if yspeed_signed < -0x0800 then
+		-- lda.w #$f800                              ; LINE 110266: LDA.w #$F800
+		yspeed_signed = -0x0800
+	end
+	
+	-- code_bfaf64: sta.w !ram_dkc1_norspr_yspeedlo,x ; LINE 110267: STA.w !RAM_DKC1_NorSpr_YSpeedLo,x
+	self.ram_yspeedlo = to_unsigned_16(yspeed_signed)
 	yspeed = (yspeed + gravity) & 0xffff
 	
 	-- bpl.b code_bfaf64 (check if positive/falling)
@@ -802,17 +861,133 @@ function player:tick(dt)
 	
 	-- determine control context
 	if self.grounded then
-		self.ram_180f = 0  -- ground
-		self.zp_32 = 0x0004  -- grounded state
+		-- lda.b #$00                                   ; LINE 110733: STA.w $180F (0 for ground)
+		self.ram_180f = 0
+		-- lda.b #$04                                   ; LINE 110540: CMP.w #$0004 (grounded state)
+		self.zp_32 = 0x0004
+		
+		-- Update animation frame counter (CODE_BFA5DE uses RAMTable1209Lo & 0x0007 as table index)
+		-- Simplified: increment lower 3 bits based on speed to simulate animation cycling
+		local speed_abs = math.abs(to_signed_16(self.ram_xspeedlo))
+		if speed_abs > 100 then
+			-- Moving: cycle animation frames 0-6
+			local anim_index = math.floor((self.zp_28 / 4) % 7)  -- Cycle every 4 frames
+			-- Keep upper bits but update lower 3 bits
+			self.ram_ramtable1209lo = (self.ram_ramtable1209lo & 0xFFF8) | anim_index
+		else
+			-- Stationary: clear lower 3 bits
+			self.ram_ramtable1209lo = (self.ram_ramtable1209lo & 0xFFF8)
+		end
+		
+		-- Set facing direction bit (bit 7 of low byte = 0x0080) based on input or current movement
+		-- BIT.w RAMTable1209Lo-$01,x / BMI reads high byte of misaligned word = low byte of 1209Lo
+		-- BMI checks bit 15 of operand = bit 7 of low byte = 0x0080
+		-- bit SET = facing right, bit CLEAR = facing left
+		if (self.zp_7e & joypad_dpadr) ~= 0 then
+			self.ram_ramtable1209lo = self.ram_ramtable1209lo | 0x0080
+		elseif (self.zp_7e & joypad_dpadl) ~= 0 then
+			self.ram_ramtable1209lo = self.ram_ramtable1209lo & 0xFF7F
+		else
+			local current_signed = to_signed_16(self.ram_xspeedlo)
+			if current_signed > 0 then
+				self.ram_ramtable1209lo = self.ram_ramtable1209lo | 0x0080
+			elseif current_signed < 0 then
+				self.ram_ramtable1209lo = self.ram_ramtable1209lo & 0xFF7F
+			end
+		end
+		
+		-- CODE_BFA5DE: Exact assembly translation
+		-- LDA.w !RAM_DKC1_NorSpr_RAMTable1209Lo,x
+		-- AND.w #$0007
+		local anim_idx = self.ram_ramtable1209lo & 0x0007
+		
+		-- CMP.b $F3
+		-- BEQ.b CODE_BFA60C
+		if anim_idx == self.zp_f3 then
+			-- CODE_BFA60C: direction-change boost when animation matches $F3
+			-- BIT.w !RAM_DKC1_NorSpr_RAMTable1209Lo-$01,x
+			-- BMI.b CODE_BFA625
+			-- (misaligned read: bit 15 of operand = bit 7 of low byte of 1209Lo = 0x0080)
+			local facing_right = (self.ram_ramtable1209lo & 0x0080) ~= 0
+			if facing_right then
+				-- CODE_BFA625: facing right path
+				-- LDA.w !RAM_DKC1_NorSpr_RAMTable0F25Lo,x
+				-- BMI.b CODE_BFA637
+				local target_signed = to_signed_16(self.ram_ramtable0f25lo)
+				if target_signed < 0 then
+					-- CODE_BFA637: CLC / RTS (no boost)
+					-- (accumulator unchanged)
+				else
+					-- LDA.w !RAM_DKC1_NorSpr_XSpeedLo,x
+					-- BMI.b CODE_BFA637
+					local speed_signed = to_signed_16(self.ram_xspeedlo)
+					if speed_signed < 0 then
+						-- CODE_BFA637: CLC / RTS (no boost)
+					else
+						-- LDA.w #$0500
+						-- STA.w !RAM_DKC1_NorSpr_RAMTable123DLo,x
+						-- SEC / RTS
+						self.ram_ramtable123dlo = 0x0500  -- +1280
+					end
+				end
+			else
+				-- CODE_BFA60C left path
+				-- LDA.w !RAM_DKC1_NorSpr_RAMTable0F25Lo,x
+				-- DEC
+				-- BPL.b CODE_BFA637
+				local target_dec = to_signed_16(self.ram_ramtable0f25lo) - 1
+				if target_dec >= 0 then
+					-- CODE_BFA637: CLC / RTS (no boost)
+				else
+					-- LDA.w !RAM_DKC1_NorSpr_XSpeedLo,x
+					-- DEC
+					-- BPL.b CODE_BFA637
+					local speed_dec = to_signed_16(self.ram_xspeedlo) - 1
+					if speed_dec >= 0 then
+						-- CODE_BFA637: CLC / RTS (no boost)
+					else
+						-- LDA.w #$FB00
+						-- STA.w !RAM_DKC1_NorSpr_RAMTable123DLo,x
+						-- SEC / RTS
+						self.ram_ramtable123dlo = 0xFB00  -- -1280
+					end
+				end
+			end
+		else
+			-- Normal animation boost path (anim_idx ~= $F3)
+			-- TXY / ASL / TAX
+			-- LDA.l DATA_BFA5FE,x
+			-- TYX
+			local boost_table = {0x0000, 0x0080, 0x0100, 0x0180, 0x01F0, 0x0280, 0x0400}
+			local boost = boost_table[anim_idx + 1]  -- Lua is 1-indexed
+			
+			-- BIT.w !RAM_DKC1_NorSpr_RAMTable1209Lo-$01,x
+			-- BMI.b CODE_BFA5F9
+			-- (misaligned read: bit 15 of operand = bit 7 of low byte of 1209Lo = 0x0080)
+			local facing_right_2 = (self.ram_ramtable1209lo & 0x0080) ~= 0
+			if not facing_right_2 then
+				-- EOR.w #$FFFF / INC (negate)
+				boost = ((-boost) & 0xFFFF)
+			end
+			
+			-- CODE_BFA5F9:
+			-- STA.w !RAM_DKC1_NorSpr_RAMTable123DLo,x
+			-- CLC / RTS
+			self.ram_ramtable123dlo = boost
+		end
 	else
-		self.ram_180f = 1  -- air
-		self.zp_32 = 0x0001  -- airborne state (guessed)
+		-- lda.b #$01                                   ; LINE 110733: STA.w $180F (1 for air)
+		self.ram_180f = 1
+		-- airborne state (used for profile selection)
+		self.zp_32 = 0x0001
 	end
 	
 	-- check for jump input (code_bfb8f7)
 	if self.grounded and self:code_bfb8f7() then
 		-- start jump
 		self:code_bfb94f()
+		-- set airborne immediately after jump start
+		self.grounded = false
 	end
 	
 	-- check for roll input (simplified)
@@ -839,26 +1014,56 @@ function player:tick(dt)
 	self:code_bfb27c()
 	
 	-- select profile and apply smoothing
+	-- jsr.w code_bfb159                            ; LINE 110605: JSR.w CODE_BFB159
 	local profile_id = self:code_bfb159()
+	-- CODE_BFB191: lda.w !ram_dkc1_norspr_ramtable0f25lo,y
 	local target = self.ram_ramtable0f25lo
+	-- clc : adc.w !ram_dkc1_norspr_ramtable123dlo,y  ; ADD ACCUMULATOR!
+	local target_with_acc = to_unsigned_16(target + self.ram_ramtable123dlo)
+	
+	-- DEBUG: Log physics state every 10 frames
+	if self.zp_28 % 10 == 0 then
+		local left = (self.zp_7e & joypad_dpadl) ~= 0
+		local right = (self.zp_7e & joypad_dpadr) ~= 0
+		local input_dir = left and 'L' or (right and 'R' or 'N')
+		local anim_idx = self.ram_ramtable1209lo & 0x0007
+		print(string.format('PHYSICS|f=%d|gr=%s|inp=%s|zp7e=%04x|zp32=%04x|180f=%d|cur=%d|tgt=%d|acc=%d|tgt+acc=%d|prof=%d|anim=%d',
+			self.zp_28,
+			self.grounded and 'T' or 'F',
+			input_dir,
+			self.zp_7e,
+			self.zp_32,
+			self.ram_180f,
+			to_signed_16(self.ram_xspeedlo),
+			to_signed_16(target),
+			to_signed_16(self.ram_ramtable123dlo),
+			to_signed_16(target_with_acc),
+			profile_id,
+			anim_idx))
+	end
 	
 	-- convert to signed 16-bit
-	local target_signed = to_signed_16(target)
+	local target_signed = to_signed_16(target_with_acc)
 	local current_signed = to_signed_16(self.ram_xspeedlo)
 	
 	-- apply profile smoothing (code_bfb191 logic)
+	-- sec                                          ; CODE_BFB191: SEC
+	-- sbc.w !ram_dkc1_norspr_xspeedlo,y            ; CODE_BFB191: SBC.w !RAM_DKC1_NorSpr_XSpeedLo,y
 	local delta = target_signed - current_signed
 	local abs_delta = delta
+	-- bpl.b code_bfb19e                            ; LINE 110599: BPL.b CODE_BFB19E
 	if abs_delta < 0 then
+		-- eor.w #$ffff                             ; LINE 110601: EOR.w #$FFFF
+		-- inc                                      ; LINE 110603: INC
 		abs_delta = -abs_delta
 	end
 	
-	-- jsr.w (data_bfb255,x)
+	-- jsr.w (data_bfb255,x)                        ; LINE 110607: JSR.w (DATA_BFB255,x)
 	local step = self:data_bfb255_profile(profile_id, abs_delta)
 	
-	-- beq.b code_bfb1b5 (if step == 0, instantly snap to target!)
+	-- beq.b code_bfb1b5                            ; CODE_BFB191: BEQ.b CODE_BFB1B5
 	if step == 0 then
-		-- code_bfb1b5: instant snap
+		-- code_bfb1b5: instant snap                ; CODE_BFB1B5: LDA target+acc, STA xspeed
 		current_signed = target_signed
 	else
 		-- apply step
@@ -867,7 +1072,7 @@ function player:tick(dt)
 		end
 		current_signed = current_signed + step
 		
-		-- clamp to target
+		-- clamp to target (approximate BCC/BCS branches)
 		if delta > 0 and current_signed > target_signed then
 			current_signed = target_signed
 		elseif delta < 0 and current_signed < target_signed then
@@ -875,6 +1080,8 @@ function player:tick(dt)
 		end
 	end
 	
+	-- updated x speed
+	-- sta.w !ram_dkc1_norspr_ramtable16f1lo,x      ; LINE 110623: STX.w !RAM_DKC1_NorSpr_YSpeedLo,x (yspeed logic elsewhere)
 	self.ram_xspeedlo = to_unsigned_16(current_signed)
 	
 	-- update ram_16f1 for roll speed tracking

@@ -61,8 +61,8 @@ local sword_sprite_imgid = 'sword_r'
 local rock_service_id = constants.ids.rock_service_instance
 local rock_width = constants.rock.width
 local rock_height = constants.rock.height
-local player_effect_queue_sword_input_id = 'pietious.player.effect.queue_sword_input'
-local player_effect_queue_secondary_input_id = 'pietious.player.effect.queue_secondary_input'
+local player_effect_try_start_sword_id = 'pietious.player.effect.try_start_sword'
+local player_effect_try_use_secondary_id = 'pietious.player.effect.try_use_secondary'
 
 local player_input_action_effect_program = {
 	eval = 'all',
@@ -71,28 +71,28 @@ local player_input_action_effect_program = {
 			name = 'player.secondary.y',
 			on = { press = 'y[jp]' },
 			go = {
-				press = { ['effect.trigger'] = player_effect_queue_secondary_input_id },
+				press = { ['effect.trigger'] = player_effect_try_use_secondary_id },
 			},
 		},
 		{
 			name = 'player.sword.x',
 			on = { press = 'x[jp]' },
 			go = {
-				press = { ['effect.trigger'] = player_effect_queue_sword_input_id },
+				press = { ['effect.trigger'] = player_effect_try_start_sword_id },
 			},
 		},
 		{
 			name = 'player.sword.b',
 			on = { press = 'b[jp]' },
 			go = {
-				press = { ['effect.trigger'] = player_effect_queue_sword_input_id },
+				press = { ['effect.trigger'] = player_effect_try_start_sword_id },
 			},
 		},
 		{
 			name = 'player.sword.a',
 			on = { press = 'a[jp]' },
 			go = {
-				press = { ['effect.trigger'] = player_effect_queue_sword_input_id },
+				press = { ['effect.trigger'] = player_effect_try_start_sword_id },
 			},
 		},
 	},
@@ -259,9 +259,6 @@ function player:reset_runtime()
 	self.attack_held = false
 	self.attack_pressed = false
 	self.attack_released = false
-	self.secondary_pressed = false
-	self.sword_input_queued = false
-	self.secondary_input_queued = false
 	self.last_dx = 0
 	self.last_dy = 0
 	self.walk_frame = 0
@@ -526,7 +523,6 @@ function player:sample_input()
 	self.down_released = (not self.down_held) and was_down_held
 	self.attack_pressed = self.attack_held and (not was_attack_held)
 	self.attack_released = (not self.attack_held) and was_attack_held
-	self.secondary_pressed = action_triggered('y[jp]', player_index)
 end
 
 function player:update_facing_from_horizontal_input()
@@ -556,14 +552,6 @@ end
 
 function player:is_slashing()
 	return self:is_sword_state()
-end
-
-function player:queue_sword_input()
-	self.sword_input_queued = true
-end
-
-function player:queue_secondary_input()
-	self.secondary_input_queued = true
 end
 
 function player:try_start_sword_state()
@@ -2167,7 +2155,6 @@ end
 function player:tick()
 	self.frame = self.frame + 1
 	self:sample_input()
-	local started_tick_in_sword_state = self:is_sword_state()
 
 	if self.sc:matches_state_path(state_walking_right) then
 		self:tick_walking_right()
@@ -2207,20 +2194,6 @@ function player:tick()
 		self:tick_dying()
 	else
 		self:tick_quiet()
-	end
-
-	if self.secondary_input_queued then
-		self.secondary_input_queued = false
-		if not self:is_in_damage_lock_state() then
-			self:try_use_secondary_weapon()
-		end
-	end
-
-	if self.sword_input_queued then
-		self.sword_input_queued = false
-		if not self:is_in_damage_lock_state() and (not started_tick_in_sword_state) then
-			self:try_start_sword_state()
-		end
 	end
 
 	self:try_vertical_room_switch_from_position()
@@ -2390,15 +2363,15 @@ end
 
 local function define_player_effects()
 	define_effect({
-		id = player_effect_queue_sword_input_id,
+		id = player_effect_try_start_sword_id,
 		handler = function(context)
-			context.owner:queue_sword_input()
+			context.owner:try_start_sword_state()
 		end,
 	})
 	define_effect({
-		id = player_effect_queue_secondary_input_id,
+		id = player_effect_try_use_secondary_id,
 		handler = function(context)
-			context.owner:queue_secondary_input()
+			context.owner:try_use_secondary_weapon()
 		end,
 	})
 end
@@ -2410,8 +2383,8 @@ local function register_player_definition()
 		class = player,
 		fsms = { player_fsm_id },
 		effects = {
-			player_effect_queue_sword_input_id,
-			player_effect_queue_secondary_input_id,
+			player_effect_try_start_sword_id,
+			player_effect_try_use_secondary_id,
 		},
 		defaults = {
 			room = nil,
@@ -2437,15 +2410,12 @@ local function register_player_definition()
 			down_held = false,
 			up_pressed = false,
 			up_released = false,
-			down_pressed = false,
-			down_released = false,
-				attack_held = false,
-				attack_pressed = false,
-				attack_released = false,
-				secondary_pressed = false,
-				sword_input_queued = false,
-				secondary_input_queued = false,
-				last_dx = 0,
+				down_pressed = false,
+				down_released = false,
+					attack_held = false,
+					attack_pressed = false,
+					attack_released = false,
+					last_dx = 0,
 			last_dy = 0,
 			walk_frame = 0,
 			walk_distance_accum = 0,
