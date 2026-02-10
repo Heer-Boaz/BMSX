@@ -233,7 +233,7 @@ constants.physics = {
 }
 
 constants.secondary_weapon = {
-	pepernoot_speed_px = 4,
+	pepernoot_speed_px = 8,
 	pepernoot_weapon_level_cost = 2,
 	pepernoot_max_active = 3,
 	pepernoot_spawn_offset_x = 8,
