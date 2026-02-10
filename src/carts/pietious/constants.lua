@@ -301,10 +301,4 @@ constants.hud = {
 	equipped_item_y = 1,
 }
 
-constants.telemetry = {
-	enabled = true,
-	metric_prefix = 'PIETIOUS_METRIC',
-	event_prefix = 'PIETIOUS_EVENT',
-}
-
 return constants

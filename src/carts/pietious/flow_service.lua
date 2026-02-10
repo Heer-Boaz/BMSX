@@ -7,21 +7,6 @@ flow_service.__index = flow_service
 
 local flow_service_fsm_id = constants.ids.flow_service_fsm
 
-function flow_service:emit_flow(name, extra)
-	if not constants.telemetry.enabled then
-		return
-	end
-	local frame = self.debug_frame
-	if frame == nil then
-		frame = -1
-	end
-	if extra ~= nil and extra ~= '' then
-		print(string.format('PIETIOUS_FLOW|f=%d|name=%s|%s', frame, name, extra))
-		return
-	end
-	print(string.format('PIETIOUS_FLOW|f=%d|name=%s', frame, name))
-end
-
 function flow_service:emit_state_changed(state_name)
 	local space = engine.get_space()
 	eventemitter.eventemitter.instance:emit(constants.events.flow_state_changed, self.id, {
@@ -38,7 +23,6 @@ function flow_service:bind_events()
 			self.pending_room_transition = true
 			engine.set_space(constants.spaces.transition)
 			engine.object(constants.ids.ui_instance).space_id = constants.spaces.transition
-			self:emit_flow('room_switched_event', string.format('space=%s', tostring(engine.get_space())))
 		end,
 	})
 end
@@ -68,14 +52,12 @@ local function define_flow_service_fsm()
 		states = {
 					boot = {
 						entering_state = function(self)
-							self.debug_frame = 0
 							self.pending_room_transition = false
 							self.transition_frames_left = 0
 								self:activate_spaces()
 								self:bind_events()
 								engine.set_space(self:resolve_room_space())
 								engine.object(constants.ids.ui_instance).space_id = self:resolve_room_space()
-								self:emit_flow('enter_boot', string.format('space=%s', tostring(engine.get_space())))
 								self:emit_state_changed(engine.get_space())
 								return '/castle'
 							end,
@@ -85,18 +67,14 @@ local function define_flow_service_fsm()
 								local room_space = self:resolve_room_space()
 								engine.set_space(room_space)
 								engine.object(constants.ids.ui_instance).space_id = room_space
-								self:emit_flow('enter_castle', string.format('space=%s', tostring(engine.get_space())))
 								self:emit_state_changed(engine.get_space())
 							end,
 					tick = function(self)
-						self.debug_frame = self.debug_frame + 1
 						if self.pending_room_transition then
 							self.pending_room_transition = false
-							self:emit_flow('to_room_transition', string.format('space=%s', tostring(engine.get_space())))
 							return '/room_transition'
 						end
 						if self:item_screen_toggle_pressed() then
-							self:emit_flow('to_item_screen', string.format('space=%s', tostring(engine.get_space())))
 							return '/item_screen'
 						end
 					end,
@@ -106,15 +84,11 @@ local function define_flow_service_fsm()
 								self.transition_frames_left = constants.flow.room_transition_frames
 								engine.set_space(constants.spaces.transition)
 								engine.object(constants.ids.ui_instance).space_id = constants.spaces.transition
-								self:emit_flow('enter_room_transition', string.format('frames=%d|space=%s', self.transition_frames_left, tostring(engine.get_space())))
 								self:emit_state_changed('transition')
 							end,
 					tick = function(self)
-						self.debug_frame = self.debug_frame + 1
 						self.transition_frames_left = self.transition_frames_left - 1
-						self:emit_flow('tick_room_transition', string.format('frames=%d|space=%s', self.transition_frames_left, tostring(engine.get_space())))
 						if self.transition_frames_left <= 0 then
-							self:emit_flow('to_castle', string.format('space=%s', tostring(engine.get_space())))
 							return '/castle'
 						end
 					end,
@@ -123,18 +97,14 @@ local function define_flow_service_fsm()
 							entering_state = function(self)
 								engine.set_space(constants.spaces.item)
 								engine.object(constants.ids.ui_instance).space_id = constants.spaces.item
-								self:emit_flow('enter_item_screen', string.format('space=%s', tostring(engine.get_space())))
 								self:emit_state_changed('item')
 							end,
 					tick = function(self)
-						self.debug_frame = self.debug_frame + 1
 						if self.pending_room_transition then
 							self.pending_room_transition = false
-							self:emit_flow('item_to_room_transition', string.format('space=%s', tostring(engine.get_space())))
 							return '/room_transition'
 						end
 						if self:item_screen_toggle_pressed() then
-							self:emit_flow('item_to_castle', string.format('space=%s', tostring(engine.get_space())))
 							return '/castle'
 						end
 					end,
@@ -155,7 +125,6 @@ local function register_flow_service_definition()
 				player_index = 1,
 				pending_room_transition = false,
 				transition_frames_left = 0,
-				debug_frame = 0,
 				registrypersistent = false,
 				tick_enabled = true,
 			},
