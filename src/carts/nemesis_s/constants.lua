@@ -38,7 +38,7 @@ constants.player = {
 
 constants.loadout = {
 	speed_powerups = 1,
-	option_count = 2,
+	option_count = 4,
 	laser_level = 2,
 	missile_level = 2,
 	uplaser_level = 2,
@@ -65,6 +65,7 @@ constants.weapons = {
 		height_fall = 8,
 		height_floor = 4,
 		movement_speed = 4,
+		max_active = 1,
 		spawn_offset_x = 4,
 		spawn_offset_y = 0,
 	},

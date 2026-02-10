@@ -121,6 +121,8 @@ function player:reset_runtime()
 	self.y = constants.player.start_y
 	self.last_dx = 0
 	self.last_dy = 0
+	self.edge_push_dx = 0
+	self.edge_push_dy = 0
 	self.last_speed = 0
 	self.left_held = false
 	self.right_held = false
@@ -272,7 +274,11 @@ function player:update_position()
 		if dx == 0 then
 			return
 		end
-		local target_x = clamp_axis(self.x + dx, 0, max_x)
+		local raw_target_x = self.x + dx
+		local target_x = clamp_axis(raw_target_x, 0, max_x)
+		if target_x ~= raw_target_x then
+			self.edge_push_dx = dx
+		end
 		if collides_at(target_x, self.y) then
 			self:emit_event('collision_block_x', string.format('x=%.3f|y=%.3f|dx=%.3f', target_x, self.y, dx))
 			return
@@ -284,13 +290,20 @@ function player:update_position()
 		if dy == 0 then
 			return
 		end
-		local target_y = clamp_axis(self.y + dy, 0, max_y)
+		local raw_target_y = self.y + dy
+		local target_y = clamp_axis(raw_target_y, 0, max_y)
+		if target_y ~= raw_target_y then
+			self.edge_push_dy = dy
+		end
 		if collides_at(self.x, target_y) then
 			self:emit_event('collision_block_y', string.format('x=%.3f|y=%.3f|dy=%.3f', self.x, target_y, dy))
 			return
 		end
 		self.y = target_y
 	end
+
+	self.edge_push_dx = 0
+	self.edge_push_dy = 0
 
 	if self.left_held then
 		try_move_x(-self:get_movement_speed())
@@ -314,7 +327,7 @@ function player:update_position()
 end
 
 function player:update_options()
-	if self.last_dx == 0 and self.last_dy == 0 then
+	if self.last_dx == 0 and self.last_dy == 0 and self.edge_push_dx == 0 and self.edge_push_dy == 0 then
 		return
 	end
 
@@ -324,6 +337,14 @@ function player:update_options()
 		local target_x, target_y = self:get_vessel_snapshot(option.target_vessel_id)
 		local target_dx = target_x - option.target_prev_x
 		local target_dy = target_y - option.target_prev_y
+		if option.target_vessel_id == 1 then
+			if target_dx == 0 and self.edge_push_dx ~= 0 then
+				target_dx = self.edge_push_dx
+			end
+			if target_dy == 0 and self.edge_push_dy ~= 0 then
+				target_dy = self.edge_push_dy
+			end
+		end
 		option.x = option.x + option.follow_dx[1]
 		option.y = option.y + option.follow_dy[1]
 
@@ -463,10 +484,11 @@ function player:fire_weapons()
 		end
 
 		local missile_slots = self.weapon_slots.missile[vessel_id]
-		if missile_slots < constants.loadout.missile_level then
+		local missile_max_active = constants.weapons.missile.max_active
+		if missile_slots < missile_max_active then
 			self:spawn_missile(vessel_id)
 		else
-			self:emit_weapon_blocked('missile', vessel_id, missile_slots, constants.loadout.missile_level)
+			self:emit_weapon_blocked('missile', vessel_id, missile_slots, missile_max_active)
 		end
 
 		local uplaser_max_active = constants.weapons.uplaser.max_active
@@ -707,6 +729,8 @@ local function register_player_definition()
 			y = constants.player.start_y,
 			last_dx = 0,
 			last_dy = 0,
+			edge_push_dx = 0,
+			edge_push_dy = 0,
 			last_speed = 0,
 			left_held = false,
 			right_held = false,
