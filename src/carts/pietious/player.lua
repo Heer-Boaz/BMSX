@@ -788,11 +788,6 @@ function player:find_near_lithograph()
 end
 
 function player:try_fire_pepernoot()
-	if self.state_name == 'stairs' then
-		self:emit_event('secondary_weapon_blocked', string.format('weapon=pepernoot|reason=direction|state=%s', self.state_name))
-		return
-	end
-
 	self:refresh_active_pepernoot_projectiles()
 	local sw = constants.secondary_weapon
 	if #self.pepernoot_projectile_ids >= sw.pepernoot_max_active then
