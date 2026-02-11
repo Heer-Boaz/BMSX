@@ -282,8 +282,17 @@ ActionState PlayerInput::getActionState(const std::string& action, std::optional
 	result.pressed = anyPressed;
 	auto lastPressIt = m_actionPressRecords.find(action);
 	const i32 lastPressId = lastPressIt == m_actionPressRecords.end() ? -1 : lastPressIt->second;
+	auto bufferedPressFrameIt = m_actionBufferedPressFrameRecords.find(action);
+	if (!anyJustPressed &&
+		bufferedPressFrameIt != m_actionBufferedPressFrameRecords.end() &&
+		bufferedPressId.has_value() &&
+		bufferedPressFrameIt->second.frame == m_frameCounter &&
+		bufferedPressFrameIt->second.edgeId == bufferedPressId.value()) {
+		anyJustPressed = true;
+	}
 	if (!anyJustPressed && bufferedPressId.has_value() && bufferedPressId.value() != lastPressId) {
 		anyJustPressed = true;
+		m_actionBufferedPressFrameRecords[action] = { m_frameCounter, bufferedPressId.value() };
 	}
 	
 	// Parity with TS: Prefer bufferPressId over latestPressId (bufferPressId ?? latestPressId)
@@ -296,8 +305,17 @@ ActionState PlayerInput::getActionState(const std::string& action, std::optional
 
 	auto lastReleaseIt = m_actionReleaseRecords.find(action);
 	const i32 lastReleaseId = lastReleaseIt == m_actionReleaseRecords.end() ? -1 : lastReleaseIt->second;
+	auto bufferedReleaseFrameIt = m_actionBufferedReleaseFrameRecords.find(action);
+	if (!anyJustReleased &&
+		bufferedReleaseFrameIt != m_actionBufferedReleaseFrameRecords.end() &&
+		bufferedReleaseId.has_value() &&
+		bufferedReleaseFrameIt->second.frame == m_frameCounter &&
+		bufferedReleaseFrameIt->second.edgeId == bufferedReleaseId.value()) {
+		anyJustReleased = true;
+	}
 	if (!anyJustReleased && bufferedReleaseId.has_value() && bufferedReleaseId.value() != lastReleaseId) {
 		anyJustReleased = true;
+		m_actionBufferedReleaseFrameRecords[action] = { m_frameCounter, bufferedReleaseId.value() };
 	}
 	if (anyJustReleased && bufferedReleaseId.has_value() && bufferedReleaseId.value() != lastReleaseId) {
 		m_actionReleaseRecords[action] = bufferedReleaseId.value();
@@ -586,6 +604,8 @@ void PlayerInput::reset(const std::vector<std::string>* except) {
 	m_actionRepeatRecords.clear();
 	m_actionPressRecords.clear();
 	m_actionReleaseRecords.clear();
+	m_actionBufferedPressFrameRecords.clear();
+	m_actionBufferedReleaseFrameRecords.clear();
 	m_lastPollTimestampMs.reset();
 	m_guardWindowMs = ACTION_GUARD_MIN_MS;
 	m_frameCounter = 0;
@@ -593,6 +613,8 @@ void PlayerInput::reset(const std::vector<std::string>* except) {
 
 void PlayerInput::clearEdgeState() {
 	m_stateManager.resetEdgeState();
+	m_actionBufferedPressFrameRecords.clear();
+	m_actionBufferedReleaseFrameRecords.clear();
 }
 
 /* ============================================================================

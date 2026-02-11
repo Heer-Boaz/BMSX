@@ -206,6 +206,15 @@ private:
 	// Last press/release ids surfaced as justpressed/justreleased per action
 	std::unordered_map<std::string, i32> m_actionPressRecords;
 	std::unordered_map<std::string, i32> m_actionReleaseRecords;
+
+	// Per-frame buffered edge cache so repeated getActionState() calls in the same frame
+	// keep justpressed/justreleased stable for the same buffered edge id.
+	struct ActionBufferedEdgeFrameRecord {
+		i64 frame = -1;
+		i32 edgeId = -1;
+	};
+	std::unordered_map<std::string, ActionBufferedEdgeFrameRecord> m_actionBufferedPressFrameRecords;
+	std::unordered_map<std::string, ActionBufferedEdgeFrameRecord> m_actionBufferedReleaseFrameRecords;
 	
 	// Frame counter
 	i64 m_frameCounter = 0;

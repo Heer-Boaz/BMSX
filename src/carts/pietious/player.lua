@@ -375,6 +375,8 @@ function player:respawn()
 end
 
 function player:sample_input()
+	-- Keep edge detection derived from held-state here.
+	-- Using [jp]/[jr] directly was causing inconsistent jump edges when multiple systems queried input in the same tick.
 	local was_up_held = self.up_held
 	local was_down_held = self.down_held
 	local was_attack_held = self.attack_held

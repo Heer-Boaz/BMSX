@@ -7,6 +7,7 @@ item_service.__index = item_service
 
 local item_service_fsm_id = constants.ids.item_service_fsm
 local PLAYER_ID = constants.ids.player_instance
+local pickup_handlers
 
 local function pickup_inventory_item(player, item_type)
 	if player:has_inventory_item(item_type) then
@@ -32,30 +33,20 @@ local function pickup_ammo(player)
 	return player:collect_loot('ammo', constants.pickup_item.ammo_regen)
 end
 
-local pickup_handlers = {
+pickup_handlers = {
 	ammo = pickup_ammo,
 	ammofromrock = pickup_ammo,
 	life = pickup_life,
 	lifefromrock = pickup_life,
 	keyworld1 = pickup_keyworld1,
+	map_world1 = pickup_inventory_item,
+	halo = pickup_inventory_item,
+	pepernoot = pickup_inventory_item,
+	spyglass = pickup_inventory_item,
+	lamp = pickup_inventory_item,
+	schoentjes = pickup_inventory_item,
+	greenvase = pickup_inventory_item,
 }
-
-local inventory_pickup_item_types = {
-	'map_world1',
-	'halo',
-	'pepernoot',
-	'spyglass',
-	'lamp',
-	'schoentjes',
-	'greenvase',
-}
-
-for i = 1, #inventory_pickup_item_types do
-	local item_type = inventory_pickup_item_types[i]
-	pickup_handlers[item_type] = function(player)
-		return pickup_inventory_item(player, item_type)
-	end
-end
 
 local function ensure_room_flags(self, room_id)
 	local room_flags = self.condition_flags_by_room[room_id]
@@ -236,6 +227,9 @@ function item_service:apply_pickup_to_player(player, item_type)
 	local pickup_handler = pickup_handlers[item_type]
 	if pickup_handler == nil then
 		error('pietious item_service invalid item_type=' .. tostring(item_type))
+	end
+	if pickup_handler == pickup_inventory_item then
+		return pickup_handler(player, item_type)
 	end
 	return pickup_handler(player)
 end

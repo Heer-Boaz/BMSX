@@ -33,6 +33,11 @@ type ActionRepeatRecord = {
 	lastRepeatAtMs: number;
 };
 
+type ActionBufferedEdgeFrameRecord = {
+	frame: number;
+	edgeId: number;
+};
+
 export const INPUT_SOURCES = ['keyboard', 'gamepad', 'pointer'] as const;
 export type InputSource = typeof INPUT_SOURCES[number];
 
@@ -76,6 +81,8 @@ export class PlayerInput {
 	private readonly actionRepeatRecords: Map<string, ActionRepeatRecord> = new Map();
 	private readonly actionPressRecords: Map<string, number> = new Map();
 	private readonly actionReleaseRecords: Map<string, number> = new Map();
+	private readonly actionBufferedPressFrameRecords: Map<string, ActionBufferedEdgeFrameRecord> = new Map();
+	private readonly actionBufferedReleaseFrameRecords: Map<string, ActionBufferedEdgeFrameRecord> = new Map();
 	private lastPollTimestampMs: number = null;
 	private guardWindowMs: number = ACTION_GUARD_MIN_MS;
 	private frameCounter = 0;
@@ -395,8 +402,17 @@ export class PlayerInput {
 			}
 		}
 		const lastBufferedPressId = this.actionPressRecords.get(action) ?? null;
+		const bufferedPressFrameRecord = this.actionBufferedPressFrameRecords.get(action) ?? null;
+		if (!justpressed &&
+			bufferedPressFrameRecord != null &&
+			bufferedPressFrameRecord.frame === this.frameCounter &&
+			bufferedPressId != null &&
+			bufferedPressFrameRecord.edgeId === bufferedPressId) {
+			justpressed = true;
+		}
 		if (!justpressed && bufferedPressId != null && bufferedPressId !== lastBufferedPressId) {
 			justpressed = true;
+			this.actionBufferedPressFrameRecords.set(action, { frame: this.frameCounter, edgeId: bufferedPressId });
 		}
 		if (justpressed && bufferedPressId != null && (pressId == null || bufferedPressId > pressId)) {
 			pressId = bufferedPressId;
@@ -405,8 +421,17 @@ export class PlayerInput {
 			this.actionPressRecords.set(action, pressId);
 		}
 		const lastBufferedReleaseId = this.actionReleaseRecords.get(action) ?? null;
+		const bufferedReleaseFrameRecord = this.actionBufferedReleaseFrameRecords.get(action) ?? null;
+		if (!justreleased &&
+			bufferedReleaseFrameRecord != null &&
+			bufferedReleaseFrameRecord.frame === this.frameCounter &&
+			bufferedReleaseId != null &&
+			bufferedReleaseFrameRecord.edgeId === bufferedReleaseId) {
+			justreleased = true;
+		}
 		if (!justreleased && bufferedReleaseId != null && bufferedReleaseId !== lastBufferedReleaseId) {
 			justreleased = true;
+			this.actionBufferedReleaseFrameRecords.set(action, { frame: this.frameCounter, edgeId: bufferedReleaseId });
 		}
 		if (justreleased && bufferedReleaseId != null && bufferedReleaseId !== lastBufferedReleaseId) {
 			this.actionReleaseRecords.set(action, bufferedReleaseId);
@@ -880,6 +905,8 @@ export class PlayerInput {
 	/** Clears cached transition state so edge detectors don't fire spuriously. */
 	public clearEdgeState(): void {
 		this._stateManager.resetEdgeState();
+		this.actionBufferedPressFrameRecords.clear();
+		this.actionBufferedReleaseFrameRecords.clear();
 	}
 
 	/**
@@ -895,6 +922,8 @@ export class PlayerInput {
 		this.actionRepeatRecords.clear();
 		this.actionPressRecords.clear();
 		this.actionReleaseRecords.clear();
+		this.actionBufferedPressFrameRecords.clear();
+		this.actionBufferedReleaseFrameRecords.clear();
 		this.lastPollTimestampMs = null;
 		this.guardWindowMs = ACTION_GUARD_MIN_MS;
 		this.frameCounter = 0;
