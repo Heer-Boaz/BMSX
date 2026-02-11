@@ -192,6 +192,11 @@ constants.ui = {
 	clear = 'EXIT BARREL REACHED',
 }
 
+constants.render = {
+	player_only_mode = true,
+	player_only_draw_shadow = false,
+}
+
 constants.telemetry = {
 	enabled = true,
 	metric_prefix = 'ESTHER_METRIC',

@@ -2070,15 +2070,14 @@ function player:tick(dt)
 	
 	-- sample input
 	self:sample_input()
-
-	-- Run roll animation-script callbacks before control dispatch.
-	self:update_roll_animation_script()
-	self:update_jump_animation_script()
 	
 	-- determine control context
 	local state1029 = self.ram_ramtable1029lo
 	local grounded_context = self.grounded
-	if state1029 == 0x0012 or state1029 == 0x0013 then
+	if state1029 == 0x0001 then
+		-- CODE_BF87F2 drives CODE_BFB27C with A=#$0001 while in jump state $1029==1.
+		self.ram_180f = 0x0001
+	elseif state1029 == 0x0012 or state1029 == 0x0013 then
 		-- CODE_BF9006/CODE_BF903B call CODE_BFB27C with A=#$0006 while in roll states.
 		self.ram_180f = 0x0006
 	elseif grounded_context then
@@ -2149,6 +2148,12 @@ function player:tick(dt)
 	
 	-- CODE_BF8584/CODE_BF8587 paths apply CODE_BFAF38 before collision.
 	self:code_bfaf38()
+
+	-- Disassembly order parity:
+	-- CODE_BFB27C state/input dispatch runs first, then CODE_BE80E1 script callbacks.
+	-- Running callbacks here keeps jump/roll script timing on the same frame boundary.
+	self:update_roll_animation_script()
+	self:update_jump_animation_script()
 	
 	-- integrate position and collide
 	self:integrate_and_collide()

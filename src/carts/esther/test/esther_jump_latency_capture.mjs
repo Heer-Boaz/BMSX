@@ -1,45 +1,26 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const OUTPUT_PATH = process.env.BMSX_ESTHER_RENDER_CAPTURE_OUT ?? '/tmp/esther_render_capture.json';
+const OUTPUT_PATH = process.env.BMSX_ESTHER_JUMP_CAPTURE_OUT ?? '/tmp/esther_jump_latency_capture.json';
 const PLAYER_IMG_PREFIX = 'esther_dk_';
 
-function makeButtonEvent(timeMs, code, down, pressId) {
+function buttonEvent(code, down, pressId, timeMs) {
 	return {
-		description: `${code}_${down ? 'down' : 'up'}_${timeMs}`,
-		timeMs,
-		event: {
-			type: 'button',
-			deviceId: 'keyboard:0',
-			code,
-			down,
-			value: down ? 1 : 0,
-			timestamp: timeMs,
-			pressId,
-			modifiers: { ctrl: false, shift: false, alt: false, meta: false },
-		},
+		type: 'button',
+		deviceId: 'keyboard:0',
+		code,
+		down,
+		value: down ? 1 : 0,
+		timestamp: timeMs,
+		pressId,
+		modifiers: { ctrl: false, shift: false, alt: false, meta: false },
 	};
 }
 
 function buildTimeline() {
 	return [
-		makeButtonEvent(200, 'ArrowRight', true, 1),
-		makeButtonEvent(220, 'KeyS', true, 2),
-		makeButtonEvent(1800, 'ArrowRight', false, 1),
-		makeButtonEvent(1820, 'KeyS', false, 2),
-
-		makeButtonEvent(2300, 'KeyX', true, 3),
-		makeButtonEvent(2500, 'KeyX', false, 3),
-
-		makeButtonEvent(3300, 'ArrowLeft', true, 4),
-		makeButtonEvent(3320, 'KeyS', true, 5),
-		makeButtonEvent(4200, 'KeyX', true, 6),
-		makeButtonEvent(5000, 'ArrowLeft', false, 4),
-		makeButtonEvent(5020, 'KeyS', false, 5),
-		makeButtonEvent(5600, 'KeyX', false, 6),
-
-		makeButtonEvent(6200, 'KeyX', true, 7),
-		makeButtonEvent(8000, 'KeyX', false, 7),
+		{ description: 'jump_press', timeMs: 120, event: buttonEvent('KeyX', true, 1, 120) },
+		{ description: 'jump_release', timeMs: 620, event: buttonEvent('KeyX', false, 1, 620) },
 	];
 }
 
@@ -51,18 +32,12 @@ function toNumber(value, fallback) {
 function captureSprite(options) {
 	return {
 		imgid: String(options?.imgid ?? options?.id ?? ''),
-		layer: String(options?.layer ?? 'world'),
 		pos: {
 			x: toNumber(options?.pos?.x, 0),
 			y: toNumber(options?.pos?.y, 0),
 			z: toNumber(options?.pos?.z, 0),
 		},
-		scale: {
-			x: toNumber(options?.scale?.x, 1),
-			y: toNumber(options?.scale?.y, 1),
-		},
 		flip_h: Boolean(options?.flip?.flip_h),
-		flip_v: Boolean(options?.flip?.flip_v),
 	};
 }
 
@@ -76,15 +51,14 @@ function findPlayerSprite(frameSprites) {
 	return frameSprites.length > 0 ? frameSprites[0] : null;
 }
 
-export default function scheduleCapture({ logger, schedule, frameIntervalMs }) {
+export default function scheduleLatencyCapture(context) {
 	const outputDir = path.dirname(OUTPUT_PATH);
 	fs.mkdirSync(outputDir, { recursive: true });
 
-	const timeline = buildTimeline();
 	const capture = {
 		startedAtIso: new Date().toISOString(),
-		frameIntervalMs,
-		timeline,
+		frameIntervalMs: context.frameIntervalMs,
+		timeline: [],
 		frames: [],
 	};
 
@@ -97,8 +71,9 @@ export default function scheduleCapture({ logger, schedule, frameIntervalMs }) {
 	let installPolling = null;
 	let restored = false;
 	let flushed = false;
+	let jumpScheduled = false;
 
-	function installCaptureHooks() {
+	function installHooks() {
 		if (originalSpriteSubmit || originalDrawgame) {
 			return true;
 		}
@@ -106,7 +81,6 @@ export default function scheduleCapture({ logger, schedule, frameIntervalMs }) {
 		if (!view) {
 			return false;
 		}
-
 		rendererSubmit = view.renderer.submit;
 		originalSpriteSubmit = rendererSubmit.sprite.bind(rendererSubmit);
 		originalTypedSubmit = rendererSubmit.typed.bind(rendererSubmit);
@@ -126,22 +100,33 @@ export default function scheduleCapture({ logger, schedule, frameIntervalMs }) {
 		view.drawgame = function patchedDrawgame() {
 			frameSprites = [];
 			originalDrawgame();
-
 			const renderedFrame = toNumber(this.renderFrameIndex, 0) - 1;
-			const playerSprite = findPlayerSprite(frameSprites);
+			const player = findPlayerSprite(frameSprites);
+			if (!jumpScheduled && player) {
+				jumpScheduled = true;
+				const nowMs = Math.round(renderedFrame * context.frameIntervalMs);
+				const jumpPressMs = nowMs + 120;
+				const jumpReleaseMs = nowMs + 620;
+				const timeline = [
+					{ description: 'jump_press', timeMs: jumpPressMs, event: buttonEvent('KeyX', true, 1, jumpPressMs) },
+					{ description: 'jump_release', timeMs: jumpReleaseMs, event: buttonEvent('KeyX', false, 1, jumpReleaseMs) },
+				];
+				capture.timeline = timeline;
+				context.logger(`[jump-latency] scheduling jump at press=${jumpPressMs}ms release=${jumpReleaseMs}ms`);
+				context.schedule(timeline);
+			}
 			capture.frames.push({
 				frame: renderedFrame,
-				timeMs: Math.round(renderedFrame * frameIntervalMs),
-				spriteCount: frameSprites.length,
-				player: playerSprite,
+				timeMs: Math.round(renderedFrame * context.frameIntervalMs),
+				player,
 			});
 		};
 
-		logger('[capture] hooks installed');
+		context.logger('[jump-latency] hooks installed');
 		return true;
 	}
 
-	function restorePatches() {
+	function restoreHooks() {
 		if (restored) {
 			return;
 		}
@@ -161,33 +146,32 @@ export default function scheduleCapture({ logger, schedule, frameIntervalMs }) {
 		}
 	}
 
-	function flushCapture(reason) {
+	function flush(reason) {
 		if (flushed) {
 			return;
 		}
 		flushed = true;
-		restorePatches();
-
+		restoreHooks();
 		const payload = {
 			...capture,
 			reason,
 			frameCount: capture.frames.length,
 		};
 		fs.writeFileSync(OUTPUT_PATH, JSON.stringify(payload, null, 2));
-		logger(`[capture] wrote ${payload.frameCount} frames to ${OUTPUT_PATH} reason=${reason}`);
+		context.logger(`[jump-latency] wrote ${payload.frameCount} frames to ${OUTPUT_PATH} reason=${reason}`);
 	}
 
-	schedule(timeline);
-	if (!installCaptureHooks()) {
+	if (!installHooks()) {
 		installPolling = setInterval(() => {
-			installCaptureHooks();
-		}, 50);
+			installHooks();
+		}, 20);
 	}
+
 	setTimeout(() => {
-		flushCapture('timer');
-	}, 9500);
+		flush('timer');
+	}, 7000);
 
 	process.once('exit', () => {
-		flushCapture('process_exit');
+		flush('process_exit');
 	});
 }

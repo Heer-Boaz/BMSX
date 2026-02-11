@@ -393,7 +393,7 @@ function director:draw_barrels(player, draw_held)
 	end
 end
 
-function director:draw_player(player)
+function director:draw_player(player, draw_shadow)
 	local view_w = display_width()
 	local px = player.x - self.camera_x
 	if (px + player.width) < -12 or px > (view_w + 12) then
@@ -416,7 +416,7 @@ function director:draw_player(player)
 	local draw_x = math.floor(px + ((player.width - fw) * 0.5))
 	local draw_y = math.floor(player.y + player.height - fh)
 
-	if player.grounded then
+	if draw_shadow and player.grounded then
 		local shadow_w = math.floor(fw * 0.82)
 		local shadow_x = math.floor(px + ((player.width - shadow_w) * 0.5))
 		local shadow_y = player.y + player.height + 2
@@ -442,6 +442,12 @@ function director:draw_ui()
 end
 
 function director:render_frame()
+	local render_cfg = constants.render
+	if render_cfg.player_only_mode then
+		self:draw_player(self.player_ref, render_cfg.player_only_draw_shadow)
+		return
+	end
+
 	local view_w = display_width()
 	local view_h = display_height()
 	put_rectfillcolor(0, 0, view_w, math.floor(view_h * 0.48), 0, constants.palette.sky_1)
@@ -452,7 +458,7 @@ function director:render_frame()
 	self:draw_level_solids()
 	self:draw_goal()
 	self:draw_barrels(self.player_ref, false)
-	self:draw_player(self.player_ref)
+	self:draw_player(self.player_ref, true)
 	self:draw_barrels(self.player_ref, true)
 	self:draw_ui()
 end
