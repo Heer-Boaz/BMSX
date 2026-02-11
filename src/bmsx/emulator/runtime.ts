@@ -1277,6 +1277,9 @@ export class Runtime {
 		}
 		this.processPendingCartBoot();
 		if (runtimeIde.isOverlayActive(this)) {
+			if (this.currentFrameState !== null) {
+				this.abandonFrameState();
+			}
 			return;
 		}
 		if (this.currentFrameState !== null) {

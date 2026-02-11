@@ -616,15 +616,17 @@ export function tickTerminalModeDraw(runtime: Runtime): void {
 	if (!runtime.tickEnabled) {
 		return;
 	}
-	if (!runtime.drawFrameState) {
-		return;
+	const state = runtime.drawFrameState;
+	if (state !== null) {
+		runtime.currentFrameState = state;
 	}
-	runtime.currentFrameState = runtime.drawFrameState;
 	try {
 		drawTerminal(runtime);
 	} finally {
-		runtime.drawFrameState = null;
-		runtime.abandonFrameState();
+		if (state !== null) {
+			runtime.drawFrameState = null;
+			runtime.abandonFrameState();
+		}
 	}
 }
 
@@ -647,15 +649,17 @@ export function tickIDEDraw(runtime: Runtime): void {
 	if (!runtime.tickEnabled) {
 		return;
 	}
-	if (!runtime.drawFrameState) {
-		return;
+	const state = runtime.drawFrameState;
+	if (state !== null) {
+		runtime.currentFrameState = state;
 	}
-	runtime.currentFrameState = runtime.drawFrameState;
 	try {
 		drawIde(runtime);
 	} finally {
-		runtime.drawFrameState = null;
-		runtime.abandonFrameState();
+		if (state !== null) {
+			runtime.drawFrameState = null;
+			runtime.abandonFrameState();
+		}
 	}
 }
 
