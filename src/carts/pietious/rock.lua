@@ -12,10 +12,10 @@ end
 
 function rock:bind_events()
 	self.events:on({
-		event_name = 'overlap.stay',
+		event_name = 'overlap',
 		subscriber = self,
 		handler = function(event)
-			self:on_overlap_stay(event)
+			self:on_overlap(event)
 		end,
 	})
 end
@@ -55,7 +55,7 @@ function rock:begin_break()
 	service(self.rock_service_id):on_rock_break_started(self.rock_id, self.room_id, self.item_type, self.x, drop_y)
 end
 
-function rock:on_overlap_stay(event)
+function rock:on_overlap(event)
 	if event.other_id ~= constants.ids.player_instance then
 		return
 	end

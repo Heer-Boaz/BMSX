@@ -211,10 +211,10 @@ end
 
 function enemy:bind_overlap_events()
 	self.events:on({
-		event_name = 'overlap.stay',
+		event_name = 'overlap',
 		subscriber = self,
 		handler = function(event)
-			self:on_overlap_stay(event)
+			self:on_overlap(event)
 		end,
 	})
 
@@ -501,7 +501,7 @@ function enemy:take_weapon_hit(weapon_kind, hit_id)
 	return true
 end
 
-function enemy:on_overlap_stay(event)
+function enemy:on_overlap(event)
 	if event.other_id ~= PLAYER_ID then
 		return
 	end
