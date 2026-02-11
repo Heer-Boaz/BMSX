@@ -327,8 +327,8 @@ export class World implements Stateful, RegisterablePersistent {
 		origin_space.despawn(obj, true);
 		target_space.spawn(obj, null, { skipOnSpawn: true, reason: 'transfer' });
 		const transition: WorldObjectEventPayloads['space.enter'] = { from: origin_space.id, to: target_space.id };
-		obj.events.emit(WorldObjectEvents.SpaceLeave, transition);
-		obj.events.emit(WorldObjectEvents.SpaceEnter, transition);
+		obj.events.emit(WorldObjectEvents.spaceleave, transition);
+		obj.events.emit(WorldObjectEvents.spaceenter, transition);
 	}
 
 	/**
@@ -348,8 +348,8 @@ export class World implements Stateful, RegisterablePersistent {
 		from.despawn(o, suppress);
 		toSpace.spawn(o, undefined, { skipOnSpawn: suppress, reason: 'transfer' });
 		const transition: WorldObjectEventPayloads['space.enter'] = { from: from.id, to: toSpace.id };
-		o.events.emit(WorldObjectEvents.SpaceLeave, transition);
-		o.events.emit(WorldObjectEvents.SpaceEnter, transition);
+		o.events.emit(WorldObjectEvents.spaceleave, transition);
+		o.events.emit(WorldObjectEvents.spaceenter, transition);
 	}
 
 	/**

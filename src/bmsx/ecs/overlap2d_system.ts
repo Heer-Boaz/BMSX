@@ -689,22 +689,30 @@ class Collision2DBroadphaseIndex {
 	}
 }
 
-type OverlapEvent = 'overlap.begin' | 'overlap.stay' | 'overlap.end';
+type OverlapEvent = 'overlap' | 'overlap.begin' | 'overlap.stay' | 'overlap.end';
+type OverlapPhase = 'begin' | 'stay' | 'end';
 type Contact2D = { point?: { x: number; y: number }; normal?: { x: number; y: number }; depth?: number };
 
 type PairKey = string;
 function makePairKey(a: string, b: string): PairKey { return a < b ? `${a}|${b}` : `${b}|${a}`; }
 type IdentifiedOwner = { id: string };
-function buildOverlapPayload(selfCol: Collider2DComponent, otherCol: Collider2DComponent, otherOwner: IdentifiedOwner, contact?: Contact2D) {
+function buildOverlapPayload(
+	selfCol: Collider2DComponent,
+	otherCol: Collider2DComponent,
+	otherOwner: IdentifiedOwner,
+	contact: Contact2D | undefined,
+	phase: OverlapPhase,
+) {
 	return {
 		other_id: otherOwner.id,
 		other_collider_id: otherCol.id,
 		collider_id: selfCol.id,
 		contact,
+		phase,
 	};
 }
 
-/** Emits overlapBegin/overlapStay/overlapEnd events for ColliderComponents. */
+/** Emits overlap/overlap.begin/overlap.stay/overlap.end events for ColliderComponents. */
 export class Overlap2DSystem extends ECSystem {
 	private prevPairs: Set<PairKey> = new Set();
 	constructor(priority: number = 42) { super(TickGroup.Physics, priority); }
@@ -772,7 +780,13 @@ export class Overlap2DSystem extends ECSystem {
 		for (const k of this.prevPairs) { if (!newPairs.has(k)) ends.push(k); }
 
 		// Emit events with basic contact info
-		const emitPair = (eventName: OverlapEvent, colA: Collider2DComponent, colB: Collider2DComponent) => {
+		const emitPair = (
+			eventName: OverlapEvent,
+			colA: Collider2DComponent,
+			colB: Collider2DComponent,
+			contact: Contact2D | undefined,
+			phase: OverlapPhase,
+		) => {
 			const ownerA = colA.parent;
 			const ownerB = colB.parent;
 			if (!ownerA || !ownerB) {
@@ -781,15 +795,16 @@ export class Overlap2DSystem extends ECSystem {
 			const emitA = colA.generateoverlapevents;
 			const emitB = colB.generateoverlapevents;
 			if (!emitA && !emitB) return;
-			let contact: Contact2D;
-			if (eventName !== 'overlap.end') {
-				const c = Collision2DSystem.getContact2D(colA, colB) as Contact2D;
-				contact = c;
+			let resolvedContact = contact;
+			if (resolvedContact === undefined && eventName !== 'overlap.end') {
+				resolvedContact = Collision2DSystem.getContact2D(colA, colB) as Contact2D;
 			}
-			if (emitA) ownerA.events.emit(eventName, buildOverlapPayload(colA, colB, ownerB, contact));
+			if (emitA) ownerA.events.emit(eventName, buildOverlapPayload(colA, colB, ownerB, resolvedContact, phase));
 			if (emitB) {
-				const flipped: Contact2D = contact?.normal ? { ...contact, normal: { x: -contact.normal.x, y: -contact.normal.y } } : contact;
-				ownerB.events.emit(eventName, buildOverlapPayload(colB, colA, ownerA, flipped));
+				const flipped: Contact2D = resolvedContact?.normal
+					? { ...resolvedContact, normal: { x: -resolvedContact.normal.x, y: -resolvedContact.normal.y } }
+					: resolvedContact;
+				ownerB.events.emit(eventName, buildOverlapPayload(colB, colA, ownerA, flipped, phase));
 			}
 		};
 		const id2col = (id: string): Collider2DComponent => {
@@ -803,17 +818,21 @@ export class Overlap2DSystem extends ECSystem {
 		for (const k of begins) {
 			const [aId, bId] = k.split('|');
 			const a = id2col(aId); const b = id2col(bId);
-			emitPair('overlap.begin', a, b);
+			const contact = Collision2DSystem.getContact2D(a, b) as Contact2D;
+			emitPair('overlap.begin', a, b, contact, 'begin');
+			emitPair('overlap', a, b, contact, 'begin');
 		}
 		for (const k of stays) {
 			const [aId, bId] = k.split('|');
 			const a = id2col(aId); const b = id2col(bId);
-			emitPair('overlap.stay', a, b);
+			const contact = Collision2DSystem.getContact2D(a, b) as Contact2D;
+			emitPair('overlap.stay', a, b, contact, 'stay');
+			emitPair('overlap', a, b, contact, 'stay');
 		}
 		for (const k of ends) {
 			const [aId, bId] = k.split('|');
 			const a = id2col(aId); const b = id2col(bId);
-			emitPair('overlap.end', a, b);
+			emitPair('overlap.end', a, b, undefined, 'end');
 		}
 
 		this.prevPairs = newPairs;

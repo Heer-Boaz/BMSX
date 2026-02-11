@@ -851,11 +851,18 @@ export class EngineCore {
 							// Keep the completed frame stable for this host present; continue next frame on the next host tick.
 							break;
 						}
+						if (runtimeIde.isOverlayActive(runtime)) {
+							runTickPresentation();
+							break;
+						}
 					}
 					if (slicesProcessed > 0) {
 						const consumed = slicesProcessed * this.timestep_ms;
 						this.accumulated_time = clamp(this.accumulated_time - consumed, 0, maxAccumulated);
 					}
+				}
+				if (!presentQueued && runtimeIde.isOverlayActive(runtime)) {
+					runTickPresentation();
 				}
 				if (presentQueued) {
 					this.wasupdated = true;

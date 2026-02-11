@@ -35,19 +35,20 @@ export type WorldObjectEventPayloads = {
 };
 
 export const WorldObjectEvents = {
-	Spawn: 'spawn',
-	Despawn: 'despawn',
-	LeaveScreen: 'screen.leave',
-	LeavingScreen: 'screen.leaving',
-	WallCollide: 'wallcollide',
-	PhysicsCollisionEnter: 'physics.collision.enter',
-	PhysicsCollisionStay: 'physics.collision.stay',
-	PhysicsCollisionExit: 'physics.collision.exit',
-	OverlapBegin: 'overlap.begin',
-	OverlapStay: 'overlap.stay',
-	OverlapEnd: 'overlap.end',
-	SpaceEnter: 'space.enter',
-	SpaceLeave: 'space.leave',
+	spawn: 'spawn',
+	despawn: 'despawn',
+	leavescreen: 'screen.leave',
+	leavingscreen: 'screen.leaving',
+	wallcollide: 'wallcollide',
+	physicscollisionenter: 'physics.collision.enter',
+	physicscollisionstay: 'physics.collision.stay',
+	physicscollisionexit: 'physics.collision.exit',
+	overlap: 'overlap',
+	overlapbegin: 'overlap.begin',
+	overlapstay: 'overlap.stay',
+	overlapend: 'overlap.end',
+	spaceenter: 'space.enter',
+	spaceleave: 'space.leave',
 } as const;
 
 @insavegame
@@ -625,7 +626,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful, Native {
 		// and transfers should not trigger BeginPlay again.
 
 		// Emit spawn event for scripts/Lua to hook into
-		this.events.emit(WorldObjectEvents.Spawn, { pos: spawningPos, reason });
+		this.events.emit(WorldObjectEvents.spawn, { pos: spawningPos, reason });
 	}
 
 	/** BeginPlay-style activation entry; mirrors onspawn behavior. */
@@ -666,7 +667,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful, Native {
 		this.active = false;
 		this.eventhandling_enabled = false;
 		// Emit despawn event for scripts/Lua to hook into
-		this.events.emit(WorldObjectEvents.Despawn);
+		this.events.emit(WorldObjectEvents.despawn);
 	}
 
 	/**
