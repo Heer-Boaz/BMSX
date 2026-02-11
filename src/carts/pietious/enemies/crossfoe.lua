@@ -1,5 +1,6 @@
 local constants = require('constants.lua')
 local behaviourtree = require('behaviourtree')
+local room_module = require('room.lua')
 
 local player_id = constants.ids.player_instance
 
@@ -84,7 +85,7 @@ function crossfoe.bt_tick_flying(self, blackboard, state_waiting)
 
 	if (self.cross_state == 'flying_left' and self.x < (player.x - player.width))
 		or (self.cross_state == 'flying_right' and self.x > (player.x + (player.width * 2)))
-		or self:is_collision_tile(self.x + hit.left, self.y + hit.top)
+		or room_module.is_solid_at_world(self.room, self.x + hit.left, self.y + hit.top)
 	then
 		self.cross_state = 'waiting'
 		self.cross_spin_direction = 'down'

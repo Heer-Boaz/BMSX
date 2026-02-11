@@ -1,5 +1,6 @@
 local constants = require('constants.lua')
 local behaviourtree = require('behaviourtree')
+local room_module = require('room.lua')
 
 local zakfoe = {}
 
@@ -51,15 +52,15 @@ function zakfoe.bt_tick(self, blackboard)
 
 		if self.direction == 'left' then
 			if self.x < self.room_left
-				or self:is_collision_tile(self.x + 2, self.y + 2)
-				or not self:is_collision_tile(self.x + 2 - (tile_size / 2), self.y + 14 + tile_size)
+				or room_module.is_solid_at_world(self.room, self.x + 2, self.y + 2)
+				or not room_module.is_solid_at_world(self.room, self.x + 2 - (tile_size / 2), self.y + 14 + tile_size)
 			then
 				self.direction = 'right'
 			end
 		else
 			if self.x + 14 >= self.room_right
-				or self:is_collision_tile(self.x + 14, self.y + 2)
-				or not self:is_collision_tile(self.x + 14 + (tile_size / 2), self.y + 14 + tile_size)
+				or room_module.is_solid_at_world(self.room, self.x + 14, self.y + 2)
+				or not room_module.is_solid_at_world(self.room, self.x + 14 + (tile_size / 2), self.y + 14 + tile_size)
 			then
 				self.direction = 'left'
 			end

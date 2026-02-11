@@ -480,6 +480,48 @@ function room.create_room(context_or_room_id, maybe_room_id)
 	return room_state
 end
 
+function room.world_to_tile(room_state, world_x, world_y)
+	local tx = math.floor((world_x - room_state.tile_origin_x) / room_state.tile_size) + 1
+	local ty = math.floor((world_y - room_state.tile_origin_y) / room_state.tile_size) + 1
+	return tx, ty
+end
+
+function room.tile_to_world(room_state, tx, ty)
+	local world_x = room_state.tile_origin_x + ((tx - 1) * room_state.tile_size)
+	local world_y = room_state.tile_origin_y + ((ty - 1) * room_state.tile_size)
+	return world_x, world_y
+end
+
+function room.snap_world_to_tile(room_state, world_x, world_y)
+	local tx, ty = room.world_to_tile(room_state, world_x, world_y)
+	return room.tile_to_world(room_state, tx, ty)
+end
+
+function room.is_wall_at_tile(room_state, tx, ty)
+	if ty < 1 or ty > room_state.tile_rows then
+		return false
+	end
+	if tx < 1 or tx > room_state.tile_columns then
+		return false
+	end
+	return room_state.collision_map[ty][tx] ~= 0
+end
+
+function room.is_solid_at_tile(room_state, tx, ty)
+	if ty < 1 or ty > room_state.tile_rows then
+		return true
+	end
+	if tx < 1 or tx > room_state.tile_columns then
+		return true
+	end
+	return room_state.collision_map[ty][tx] ~= 0
+end
+
+function room.is_solid_at_world(room_state, world_x, world_y)
+	local tx, ty = room.world_to_tile(room_state, world_x, world_y)
+	return room.is_solid_at_tile(room_state, tx, ty)
+end
+
 function room.switch_room(room_state, direction)
 	local target_room_number = room_state.links[direction]
 	if target_room_number == nil or target_room_number <= 0 then

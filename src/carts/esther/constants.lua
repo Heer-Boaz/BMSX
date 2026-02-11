@@ -38,6 +38,28 @@ constants.dkc = {
 	max_fall_subpx = -0x0800,             -- CODE_BFB12B: #$F800 (−2048 signed)
 	jump_buffer_frames = 0x000C,          -- CODE_BFB8F7: 12-frame window
 	diddy_speed_mult_shift = 3,           -- CODE_BFB51E/CODE_BFBD90: ×1.125 (speed + speed>>3)
+
+	-- $32 level-context states from DKC1 level init routines:
+	--   CODE_B9859E(STZ), CODE_B98725, CODE_B9890F, CODE_B98A37, CODE_B98A8B,
+	--   CODE_B98B7C, CODE_B98BC8, CODE_B98C71/B98CA9, CODE_B98CEF, CODE_B98D66,
+	--   CODE_B98DEC, CODE_B98E22, CODE_B98E68, CODE_B98EEC/B98FBB.
+	level_state32_by_context = {
+		jungle = 0x0000,
+		cave = 0x0001,
+		mine = 0x0002,
+		underwater = 0x0003,
+		snow = 0x0004,
+		walkway = 0x0005,
+		walkway_minecart = 0x0006,
+		factory = 0x0007,
+		temple = 0x0008,
+		crystal_cave = 0x0009,
+		treehouse = 0x000A,
+		forest = 0x000B,
+		banana_hoard = 0x000C,
+		dks_house = 0x000D,
+	},
+	default_level_context = 'jungle',
 }
 
 constants.profile = {

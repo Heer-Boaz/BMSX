@@ -1,5 +1,6 @@
 local constants = require('constants.lua')
 local behaviourtree = require('behaviourtree')
+local room_module = require('room.lua')
 
 local player_id = constants.ids.player_instance
 
@@ -33,11 +34,11 @@ function muziekfoe.bt_tick(self, blackboard, get_delta_from_source_to_target_sca
 	node.muziek_move_accum = move_accum
 
 	if self.direction == 'left' then
-		if self.x < self.room_left or self:is_collision_tile(self.x, self.y) then
+		if self.x < self.room_left or room_module.is_solid_at_world(self.room, self.x, self.y) then
 			self.direction = 'right'
 		end
 	else
-		if self.x + 24 >= self.room_right or self:is_collision_tile(self.x + 24, self.y + 16) then
+		if self.x + 24 >= self.room_right or room_module.is_solid_at_world(self.room, self.x + 24, self.y + 16) then
 			self.direction = 'left'
 		end
 	end

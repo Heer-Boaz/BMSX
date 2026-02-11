@@ -63,37 +63,11 @@ local item_position_offsets = {
 }
 
 local function sprite_for_item_type(item_type)
-	if item_type == 'ammofromrock' then
-		return 'ammo'
+	local sprite_id = constants.world_item.sprite[item_type]
+	if sprite_id == nil then
+		error('pietious item_screen invalid item_type=' .. tostring(item_type))
 	end
-	if item_type == 'lifefromrock' then
-		return 'item_health'
-	end
-	if item_type == 'keyworld1' then
-		return 'world_key'
-	end
-	if item_type == 'map_world1' then
-		return 'map'
-	end
-	if item_type == 'halo' then
-		return 'halo'
-	end
-	if item_type == 'pepernoot' then
-		return 'pepernoot_16'
-	end
-	if item_type == 'spyglass' then
-		return 'spyglass'
-	end
-	if item_type == 'lamp' then
-		return 'item_lamp'
-	end
-	if item_type == 'schoentjes' then
-		return 'schoentjes'
-	end
-	if item_type == 'greenvase' then
-		return 'item_greenvase'
-	end
-	error('pietious item_screen invalid item_type=' .. tostring(item_type))
+	return sprite_id
 end
 
 function item_screen:bind_visual()

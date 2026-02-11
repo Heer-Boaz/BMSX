@@ -1,6 +1,7 @@
 local constants = require('constants.lua')
 local components = require('components')
 local eventemitter = require('eventemitter')
+local room_module = require('room.lua')
 
 local pepernoot_projectile = {}
 pepernoot_projectile.__index = pepernoot_projectile
@@ -48,9 +49,7 @@ function pepernoot_projectile:ensure_components()
 end
 
 function pepernoot_projectile:update_visual_snap()
-	local tile_size = self.room.tile_size
-	local snapped_x = math.floor(self.x / tile_size) * tile_size
-	local snapped_y = math.floor(self.y / tile_size) * tile_size
+	local snapped_x, snapped_y = room_module.snap_world_to_tile(self.room, self.x, self.y)
 	self.body_sprite.offset.x = snapped_x - self.x
 	self.body_sprite.offset.y = snapped_y - self.y
 end
@@ -78,19 +77,6 @@ function pepernoot_projectile:bind_events()
 			end
 		end,
 	})
-end
-
-function pepernoot_projectile:is_collision_tile(world_x, world_y)
-	local room = self.room
-	local tx = math.floor((world_x - room.tile_origin_x) / room.tile_size) + 1
-	local ty = math.floor((world_y - room.tile_origin_y) / room.tile_size) + 1
-	if tx < 1 or tx > room.tile_columns then
-		return true
-	end
-	if ty < 1 or ty > room.tile_rows then
-		return true
-	end
-	return room.collision_map[ty][tx] ~= 0
 end
 
 function pepernoot_projectile:dispose(reason)
@@ -151,7 +137,7 @@ function pepernoot_projectile:tick()
 		self:dispose('out_of_bounds')
 		return
 	end
-	if self:is_collision_tile(self.x, self.y) then
+	if room_module.is_solid_at_world(self.room, self.x, self.y) then
 		self:dispose('wall')
 	end
 end

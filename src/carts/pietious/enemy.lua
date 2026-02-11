@@ -131,19 +131,6 @@ local function speed_components_from_angle(speed_num, angle_degrees)
 	return speed_x_num, speed_y_num
 end
 
-function enemy:is_collision_tile(world_x, world_y)
-	local room = self.room
-	local tx = math.floor((world_x - room.tile_origin_x) / room.tile_size) + 1
-	local ty = math.floor((world_y - room.tile_origin_y) / room.tile_size) + 1
-	if tx < 1 or tx > room.tile_columns then
-		return true
-	end
-	if ty < 1 or ty > room.tile_rows then
-		return true
-	end
-	return room.collision_map[ty][tx] ~= 0
-end
-
 function enemy:create_components()
 	local body_collider = components.collider2dcomponent.new({
 		parent = self,

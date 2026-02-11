@@ -1,12 +1,23 @@
+local constants = require('constants')
 local level_module = require('level')
 local player_module = require('player_asm')
 local director_module = require('director')
+
+local active_level_context = constants.dkc.default_level_context
 
 local function service_irqs()
 	local flags = peek(sys_irq_flags)
 	if flags ~= 0 then
 		irq(flags)
 	end
+end
+
+function set_level_context(context_key)
+	active_level_context = context_key
+end
+
+function get_level_context()
+	return active_level_context
 end
 
 function init()
@@ -27,7 +38,7 @@ end
 
 function new_game()
 	reset()
-	local level = level_module.create_level()
+	local level = level_module.create_level(active_level_context)
 	local spawn = level.spawn
 
 	spawn_object(player_module.player_def_id, {

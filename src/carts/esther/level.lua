@@ -2,17 +2,26 @@ local constants = require('constants')
 
 local level = {}
 
-function level.create_level()
+local function resolve_level_context_state32(context_key)
+	local key = context_key or constants.dkc.default_level_context
+	local value = constants.dkc.level_state32_by_context[key]
+	if value == nil then
+		error(string.format("Unknown DKC level context '%s'", tostring(key)))
+	end
+	return key, value
+end
+
+function level.create_level(context_key)
 	local world_width = constants.world.width
 	local world_height = constants.world.height
 	local ground_y = 192
+	local selected_context_key, selected_state32 = resolve_level_context_state32(context_key)
 
 	return {
 		world_width = world_width,
 		world_height = world_height,
-		-- CODE_B9859E (Jungle level init): STZ.b $32
-		-- Keep this explicit so player $32 is sourced from level-state flow, not a local baseline.
-		dkc1_state32 = 0x0000,
+		dkc1_level_context = selected_context_key,
+		dkc1_state32 = selected_state32,
 		spawn = { x = constants.player.start_x, y = constants.player.start_y },
 		goal = { x = world_width - 236, y = 120, w = 78, h = 72 },
 		barrels = {

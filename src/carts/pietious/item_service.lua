@@ -8,6 +8,55 @@ item_service.__index = item_service
 local item_service_fsm_id = constants.ids.item_service_fsm
 local PLAYER_ID = constants.ids.player_instance
 
+local function pickup_inventory_item(player, item_type)
+	if player:has_inventory_item(item_type) then
+		return false
+	end
+	player:add_inventory_item(item_type)
+	return true
+end
+
+local function pickup_keyworld1(player)
+	if not pickup_inventory_item(player, 'keyworld1') then
+		return false
+	end
+	player.health = player.max_health
+	return true
+end
+
+local function pickup_life(player)
+	return player:collect_loot('life', constants.pickup_item.life_regen)
+end
+
+local function pickup_ammo(player)
+	return player:collect_loot('ammo', constants.pickup_item.ammo_regen)
+end
+
+local pickup_handlers = {
+	ammo = pickup_ammo,
+	ammofromrock = pickup_ammo,
+	life = pickup_life,
+	lifefromrock = pickup_life,
+	keyworld1 = pickup_keyworld1,
+}
+
+local inventory_pickup_item_types = {
+	'map_world1',
+	'halo',
+	'pepernoot',
+	'spyglass',
+	'lamp',
+	'schoentjes',
+	'greenvase',
+}
+
+for i = 1, #inventory_pickup_item_types do
+	local item_type = inventory_pickup_item_types[i]
+	pickup_handlers[item_type] = function(player)
+		return pickup_inventory_item(player, item_type)
+	end
+end
+
 local function ensure_room_flags(self, room_id)
 	local room_flags = self.condition_flags_by_room[room_id]
 	if room_flags == nil then
@@ -181,6 +230,26 @@ function item_service:add_item_drop_from_rock(rock_id, room_id, item_type, x, y)
 	if self.synced_room_id == room_id then
 		self:refresh_current_room_items()
 	end
+end
+
+function item_service:apply_pickup_to_player(player, item_type)
+	local pickup_handler = pickup_handlers[item_type]
+	if pickup_handler == nil then
+		error('pietious item_service invalid item_type=' .. tostring(item_type))
+	end
+	return pickup_handler(player)
+end
+
+function item_service:try_pick_item(item_id, room_id, item_type, source_kind)
+	local player = object(PLAYER_ID)
+	if player.health <= 0 then
+		return false
+	end
+	if not self:apply_pickup_to_player(player, item_type) then
+		return false
+	end
+	self:on_item_picked(item_id, room_id, item_type, source_kind)
+	return true
 end
 
 function item_service:on_item_picked(item_id, room_id, _item_type, _source_kind)

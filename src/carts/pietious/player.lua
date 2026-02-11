@@ -1,6 +1,7 @@
 local constants = require('constants.lua')
 local eventemitter = require('eventemitter')
 local components = require('components')
+local room_module = require('room.lua')
 local player_action_effects_module = require('player_action_effects.lua')
 
 local player = {}
@@ -79,37 +80,19 @@ local player_input_action_effect_program = {
 	},
 }
 
-local function append_sprite_frames(frames, sprite_id, frame_count)
-	for _ = 1, frame_count do
-		frames[#frames + 1] = { player_damage_imgid = sprite_id }
-	end
-end
-
-local function build_dying_sprite_frames()
-	local frames = {}
-	append_sprite_frames(frames, 'pietolon_dying_1', 8)
-	append_sprite_frames(frames, 'pietolon_dying_2', 8)
-	append_sprite_frames(frames, 'pietolon_dying_3', 8)
-	append_sprite_frames(frames, 'pietolon_dying_4', 8)
-	append_sprite_frames(frames, 'pietolon_dying_5', 8)
-	return frames
-end
-
-local function build_hit_fall_sprite_frames()
-	return {
-		{ player_damage_imgid = 'pietolon_hit_r' },
-	}
-end
-
-local function build_hit_recovery_sprite_frames()
-	local frames = {}
-	append_sprite_frames(frames, 'pietolon_recover_r', constants.damage.hit_recovery_frames)
-	return frames
-end
-
-local player_dying_frames = build_dying_sprite_frames()
-local player_hit_fall_frames = build_hit_fall_sprite_frames()
-local player_hit_recovery_frames = build_hit_recovery_sprite_frames()
+local player_dying_frames = timeline_sequence({
+	{ value = { player_damage_imgid = 'pietolon_dying_1' }, hold = 8 },
+	{ value = { player_damage_imgid = 'pietolon_dying_2' }, hold = 8 },
+	{ value = { player_damage_imgid = 'pietolon_dying_3' }, hold = 8 },
+	{ value = { player_damage_imgid = 'pietolon_dying_4' }, hold = 8 },
+	{ value = { player_damage_imgid = 'pietolon_dying_5' }, hold = 8 },
+})
+local player_hit_fall_frames = {
+	{ player_damage_imgid = 'pietolon_hit_r' },
+}
+local player_hit_recovery_frames = timeline_sequence({
+	{ value = { player_damage_imgid = 'pietolon_recover_r' }, hold = constants.damage.hit_recovery_frames },
+})
 
 if #player_dying_frames ~= constants.damage.death_frames then
 	error(string.format(
@@ -124,10 +107,6 @@ if #player_hit_recovery_frames ~= constants.damage.hit_recovery_frames then
 		#player_hit_recovery_frames,
 		constants.damage.hit_recovery_frames
 	))
-end
-
-function player:is_ladder_state()
-	return self:has_tag(state_tags.group.stairs)
 end
 
 function player:reset_runtime()
@@ -461,7 +440,7 @@ function player:try_start_sword_state()
 	self:dispatch_state_event(event_name)
 end
 
-function player:reset_sword(reason)
+function player:reset_sword()
 	if not self:has_tag(state_tags.group.sword) and self.sword_time == 0 then
 		return
 	end
@@ -513,7 +492,7 @@ function player:start_dying()
 	if self:has_tag(state_tags.variant.dying) then
 		return
 	end
-	self:reset_sword('death')
+	self:reset_sword()
 	self.hit_direction = 0
 	self.hit_substate = 0
 	self.hit_recovery_timer = 0
@@ -537,11 +516,11 @@ function player:take_hit(amount, source_x, source_y, reason)
 	end
 
 	local hit_direction = self:get_hit_direction_from_source(source_x)
-	if self:is_ladder_state() then
+	if self:has_tag(state_tags.group.stairs) then
 		hit_direction = 0
 	end
 
-	self:reset_sword('hit')
+	self:reset_sword()
 	self.hit_direction = hit_direction
 	self.hit_substate = 0
 	self.hit_recovery_timer = 0
@@ -603,49 +582,6 @@ function player:get_walk_dx()
 		return constants.physics.walk_dx_schoentjes
 	end
 	return constants.physics.walk_dx
-end
-
-function player:collect_world_item(item_type)
-	if self:has_tag(state_tags.variant.dying) then
-		return false
-	end
-	if item_type == 'ammofromrock' then
-		self.weapon_level = self.weapon_level + constants.pickup_item.ammo_regen
-		if self.weapon_level > constants.hud.weapon_level then
-			self.weapon_level = constants.hud.weapon_level
-		end
-		return true
-	end
-	if item_type == 'lifefromrock' then
-		self.health = self.health + constants.pickup_item.life_regen
-		if self.health > self.max_health then
-			self.health = self.max_health
-		end
-		return true
-	end
-	if item_type == 'keyworld1' then
-		if self:has_inventory_item(item_type) then
-			return false
-		end
-		self:add_inventory_item(item_type)
-		self.health = self.max_health
-		return true
-	end
-	if item_type == 'schoentjes'
-		or item_type == 'halo'
-		or item_type == 'lamp'
-		or item_type == 'spyglass'
-		or item_type == 'pepernoot'
-		or item_type == 'greenvase'
-		or item_type == 'map_world1'
-	then
-		if self:has_inventory_item(item_type) then
-			return false
-		end
-		self:add_inventory_item(item_type)
-		return true
-	end
-	error('pietious player invalid world item_type=' .. tostring(item_type))
 end
 
 function player:try_switch_room(direction, keep_stairs_lock)
@@ -753,7 +689,7 @@ end
 function player:try_vertical_room_switch_from_position()
 	local direction = self:nearing_room_exit()
 	if direction == 'up' or direction == 'down' then
-		local keep_stairs_lock = self:is_ladder_state()
+		local keep_stairs_lock = self:has_tag(state_tags.group.stairs)
 		if not self:try_switch_room(direction, keep_stairs_lock) then
 			if direction == 'up' then
 				local up_limit = self.room.world_top - self.room.tile_size
@@ -818,14 +754,6 @@ function player:pick_entry_stairs(direction)
 	return best
 end
 
-function player:find_stairs_up_entry()
-	return self:pick_entry_stairs(-1)
-end
-
-function player:find_stairs_down_entry()
-	return self:pick_entry_stairs(1)
-end
-
 function player:search_stairs_at_locked_x(x, y_probe)
 	local stairs = self.room.stairs
 	local ladder_probe = self.room.tile_size * 3
@@ -861,18 +789,6 @@ function player:sync_stairs_after_vertical_room_switch(direction)
 	return true
 end
 
-function player:get_map_char_at_tile(tx, ty)
-	local room = self.room
-	if ty < 1 or ty > room.tile_rows then
-		return nil
-	end
-	if tx < 1 or tx > room.tile_columns then
-		return nil
-	end
-	local row = room.map_rows[ty]
-	return row:sub(tx, tx)
-end
-
 function player:leave_stairs(event_name)
 	self.stairs_direction = 0
 	self.stairs_x = -1
@@ -900,9 +816,9 @@ function player:try_step_off_stairs()
 	local tile_size = room.tile_size
 	local tile_unit = math.floor(tile_size / 4)
 	local half_tile = math.floor(tile_size / 2)
-	local tx = math.floor((self.x - room.tile_origin_x) / tile_size) + 1
-	local ty = math.floor((self.y - room.tile_origin_y) / tile_size) + 1
-	local dty = (self.y - room.tile_origin_y) - ((ty - 1) * tile_size)
+	local tx, ty = room_module.world_to_tile(room, self.x, self.y)
+	local _, tile_world_y = room_module.tile_to_world(room, tx, ty)
+	local dty = self.y - tile_world_y
 
 	local wall_tx = tx - 1
 	local wall_ty = ty + 3
@@ -915,7 +831,7 @@ function player:try_step_off_stairs()
 	end
 
 	local can_bottom_step = false
-	if dty > half_tile and self:get_map_char_at_tile(wall_tx, wall_ty) == '#' and not self:collides_at(self.x + probe_dx, self.y) then
+	if dty > half_tile and room_module.is_wall_at_tile(room, wall_tx, wall_ty) and not self:collides_at(self.x + probe_dx, self.y) then
 		can_bottom_step = true
 	end
 
@@ -929,7 +845,7 @@ function player:try_step_off_stairs()
 		local top_step_threshold = self.stairs_top_y + half_tile
 		if self.y < top_step_threshold then
 			target_x = self.x + (dir * (4 * tile_unit))
-			target_y = room.tile_origin_y + (math.floor((self.y - room.tile_origin_y) / tile_size) * tile_size)
+			_, target_y = room_module.snap_world_to_tile(room, self.x, self.y)
 			step_mode = 'top'
 		else
 			self.facing = dir
@@ -1022,10 +938,6 @@ function player:collides_at(x, y)
 	end
 
 	return false
-end
-
-function player:is_grounded()
-	return self:collides_at(self.x, self.y + 1)
 end
 
 function player:apply_move(dx, dy)
@@ -1185,14 +1097,14 @@ function player:runcheck_quiet_controls()
 	end
 
 	if self.up_pressed then
-		local stair = self:find_stairs_up_entry()
+		local stair = self:pick_entry_stairs(-1)
 		if stair ~= nil then
 			self:start_stairs(-1, stair, 'stairs_up')
 			return
 		end
 	end
 	if self.down_pressed then
-		local stair = self:find_stairs_down_entry()
+		local stair = self:pick_entry_stairs(1)
 		if stair ~= nil then
 			self:start_stairs(1, stair, 'stairs_down')
 			return
@@ -1229,7 +1141,7 @@ function player:runcheck_walking_right_controls()
 	end
 
 	if self.up_pressed then
-		local stair = self:find_stairs_up_entry()
+		local stair = self:pick_entry_stairs(-1)
 		if stair ~= nil then
 			self:start_stairs(-1, stair, 'stairs_up')
 			return
@@ -1239,7 +1151,7 @@ function player:runcheck_walking_right_controls()
 		return
 	end
 	if self.down_pressed then
-		local stair = self:find_stairs_down_entry()
+		local stair = self:pick_entry_stairs(1)
 		if stair ~= nil then
 			self:start_stairs(1, stair, 'stairs_down')
 			return
@@ -1274,7 +1186,7 @@ function player:runcheck_walking_left_controls()
 	end
 
 	if self.up_pressed then
-		local stair = self:find_stairs_up_entry()
+		local stair = self:pick_entry_stairs(-1)
 		if stair ~= nil then
 			self:start_stairs(-1, stair, 'stairs_up')
 			return
@@ -1284,7 +1196,7 @@ function player:runcheck_walking_left_controls()
 		return
 	end
 	if self.down_pressed then
-		local stair = self:find_stairs_down_entry()
+		local stair = self:pick_entry_stairs(1)
 		if stair ~= nil then
 			self:start_stairs(1, stair, 'stairs_down')
 			return
@@ -1376,7 +1288,7 @@ function player:tick_quiet()
 	self.last_dx = 0
 	self.last_dy = 0
 
-	if not self:is_grounded() then
+	if not self:collides_at(self.x, self.y + 1) then
 		self.fall_substate = 0
 		self:dispatch_state_event('no_ground')
 		return
@@ -1389,7 +1301,7 @@ function player:tick_walking_right()
 	self.walk_move_dx = walk_dx
 	self.walk_move_collided_x = false
 
-	if not self:is_grounded() then
+	if not self:collides_at(self.x, self.y + 1) then
 		self.last_dx = 0
 		self.last_dy = 0
 		self.fall_substate = 0
@@ -1410,7 +1322,7 @@ function player:tick_walking_left()
 	self.walk_move_dx = -walk_dx
 	self.walk_move_collided_x = false
 
-	if not self:is_grounded() then
+	if not self:collides_at(self.x, self.y + 1) then
 		self.last_dx = 0
 		self.last_dy = 0
 		self.fall_substate = 0
@@ -1492,7 +1404,7 @@ function player:tick_controlled_fall_motion()
 		self.jump_inertia = 0
 	end
 
-	if move_result.landed or (dy == 0 and self:is_grounded()) then
+	if move_result.landed or (dy == 0 and self:collides_at(self.x, self.y + 1)) then
 		self.fall_substate = 0
 		return true
 	end
@@ -1553,7 +1465,7 @@ function player:tick_quiet_sword()
 		return
 	end
 
-	if not self:is_grounded() then
+	if not self:collides_at(self.x, self.y + 1) then
 		self.fall_substate = 0
 		self:dispatch_state_event('no_ground')
 	end
@@ -1775,7 +1687,7 @@ function player:tick_sword_stairs()
 end
 
 function player:tick_hit_fall()
-	self:reset_sword('hit_fall')
+	self:reset_sword()
 
 	local dx = self.hit_direction * constants.damage.knockback_dx
 	local dy = 0
@@ -1800,7 +1712,7 @@ function player:tick_hit_fall()
 			self:start_dying()
 			return
 		end
-		if move_result.landed or (dy == 0 and self:is_grounded()) then
+		if move_result.landed or (dy == 0 and self:collides_at(self.x, self.y + 1)) then
 			self.hit_substate = 0
 			self.hit_recovery_timer = 0
 			self.last_dx = 0
@@ -1814,7 +1726,7 @@ function player:tick_hit_fall()
 end
 
 function player:tick_hit_recovery()
-	self:reset_sword('hit_recovery')
+	self:reset_sword()
 	self.last_dx = 0
 	self.last_dy = 0
 	self.hit_recovery_timer = self.hit_recovery_timer + 1
@@ -1831,7 +1743,7 @@ end
 function player:tick_dying()
 	self.last_dx = 0
 	self.last_dy = 0
-	self:reset_sword('dying')
+	self:reset_sword()
 	self.death_timer = self.death_timer + 1
 	if self.death_timer < constants.damage.death_frames then
 		return
@@ -1842,7 +1754,7 @@ end
 function player:tick()
 	self:try_vertical_room_switch_from_position()
 
-	self.grounded = self:is_grounded()
+	self.grounded = self:collides_at(self.x, self.y + 1)
 	self:update_visual_components()
 	self:update_hit_invulnerability()
 end

@@ -186,6 +186,23 @@ constants.pickup_item = {
 	ammo_regen = 10,
 }
 
+constants.world_item = {
+	sprite = {
+		ammo = 'ammo',
+		ammofromrock = 'ammo',
+		life = 'item_health',
+		lifefromrock = 'item_health',
+		keyworld1 = 'world_key',
+		map_world1 = 'map',
+		halo = 'halo',
+		pepernoot = 'pepernoot_16',
+		spyglass = 'spyglass',
+		lamp = 'item_lamp',
+		schoentjes = 'schoentjes',
+		greenvase = 'item_greenvase',
+	},
+}
+
 constants.collision = {
 	world_layer = 1,
 	player_layer = 4,

@@ -1,4 +1,5 @@
 local constants = require('constants.lua')
+local room_module = require('room.lua')
 local pepernoot_projectile_module = require('pepernoot_projectile.lua')
 
 local player_action_effects = {}
@@ -62,11 +63,9 @@ local function try_fire_pepernoot_effect(context)
 
 	owner.pepernoot_projectile_sequence = owner.pepernoot_projectile_sequence + 1
 	local projectile_id = string.format('pepernoot_%d_%d', owner.player_index, owner.pepernoot_projectile_sequence)
-	local tile_size = owner.room.tile_size
 	local spawn_x = owner.x + (owner.facing < 0 and -sw.pepernoot_spawn_offset_x or sw.pepernoot_spawn_offset_x)
 	local spawn_y = owner.y + sw.pepernoot_spawn_offset_y
-	spawn_x = math.floor(spawn_x / tile_size) * tile_size
-	spawn_y = math.floor(spawn_y / tile_size) * tile_size
+	spawn_x, spawn_y = room_module.snap_world_to_tile(owner.room, spawn_x, spawn_y)
 
 	spawn_object(pepernoot_projectile_module.pepernoot_projectile_def_id, {
 		id = projectile_id,
@@ -116,7 +115,7 @@ function player_action_effects.define_player_effects(state_tags)
 		id = effect_ids.try_use_pepernoot,
 		can_trigger = function(context)
 			local owner = context.owner
-			if owner:is_ladder_state() then
+			if owner:has_tag(state_tags.group.stairs) then
 				return owner:has_tag(state_tags.variant.quiet_stairs)
 			end
 			return true

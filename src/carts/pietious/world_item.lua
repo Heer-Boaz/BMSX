@@ -12,37 +12,11 @@ local body_sprite_component_id = 'body'
 local body_collider_component_id = 'body'
 
 local function sprite_for_item_type(item_type)
-	if item_type == 'ammofromrock' then
-		return 'ammo'
+	local sprite_id = constants.world_item.sprite[item_type]
+	if sprite_id == nil then
+		error('pietious world_item invalid item_type=' .. tostring(item_type))
 	end
-	if item_type == 'lifefromrock' then
-		return 'item_health'
-	end
-	if item_type == 'keyworld1' then
-		return 'world_key'
-	end
-	if item_type == 'map_world1' then
-		return 'map'
-	end
-	if item_type == 'halo' then
-		return 'halo'
-	end
-	if item_type == 'pepernoot' then
-		return 'pepernoot_16'
-	end
-	if item_type == 'spyglass' then
-		return 'spyglass'
-	end
-	if item_type == 'lamp' then
-		return 'item_lamp'
-	end
-	if item_type == 'schoentjes' then
-		return 'schoentjes'
-	end
-	if item_type == 'greenvase' then
-		return 'item_greenvase'
-	end
-	error('pietious world_item invalid item_type=' .. tostring(item_type))
+	return sprite_id
 end
 
 function world_item:ensure_components()
@@ -120,8 +94,7 @@ function world_item:on_overlap_stay(event)
 		return
 	end
 
-	if player:collect_world_item(self.item_type) then
-		service(self.item_service_id):on_item_picked(self.item_id, self.room_id, self.item_type, self.source_kind)
+	if service(self.item_service_id):try_pick_item(self.item_id, self.room_id, self.item_type, self.source_kind) then
 		self.sc:transition_to(state_picked)
 	end
 end
