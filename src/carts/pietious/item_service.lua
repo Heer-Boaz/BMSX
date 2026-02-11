@@ -5,8 +5,6 @@ local world_item_module = require('world_item.lua')
 local item_service = {}
 item_service.__index = item_service
 
-local item_service_fsm_id = constants.ids.item_service_fsm
-local PLAYER_ID = constants.ids.player_instance
 local pickup_handlers
 
 local function pickup_inventory_item(player, item_type)
@@ -48,7 +46,7 @@ pickup_handlers = {
 	greenvase = pickup_inventory_item,
 }
 
-local function ensure_room_flags(self, room_id)
+local function room_flags_for(self, room_id)
 	local room_flags = self.condition_flags_by_room[room_id]
 	if room_flags == nil then
 		room_flags = {}
@@ -57,7 +55,7 @@ local function ensure_room_flags(self, room_id)
 	return room_flags
 end
 
-local function ensure_event_item_defs(self, room_id)
+local function event_item_defs_for(self, room_id)
 	local defs = self.event_item_defs_by_room[room_id]
 	if defs == nil then
 		defs = {}
@@ -100,7 +98,7 @@ function item_service:item_should_spawn(item_def, room_id, player)
 		return false
 	end
 
-	local room_flags = ensure_room_flags(self, room_id)
+	local room_flags = room_flags_for(self, room_id)
 	local conditions = item_def.conditions
 	for i = 1, #conditions do
 		if not condition_matches(conditions[i], player, room_flags) then
@@ -110,7 +108,7 @@ function item_service:item_should_spawn(item_def, room_id, player)
 	return true
 end
 
-function item_service:ensure_item_instance(item_def, room)
+function item_service:sync_item_instance(item_def, room)
 	local id = item_def.id
 	local instance = object(id)
 	if instance == nil then
@@ -159,18 +157,18 @@ function item_service:deactivate_unused_items(active_ids)
 end
 
 function item_service:refresh_current_room_items()
-	local room = service(self.game_service_id):get_current_room()
+	local room = service(self.game_service_id).current_room
 	local room_id = room.room_id
 	self.synced_room_id = room_id
 
-	local player = object(PLAYER_ID)
+	local player = object(constants.ids.player_instance)
 	local active_ids = {}
 
 	local room_item_defs = room.items
 	for i = 1, #room_item_defs do
 		local item_def = room_item_defs[i]
 		if self:item_should_spawn(item_def, room_id, player) then
-			self:ensure_item_instance(item_def, room)
+			self:sync_item_instance(item_def, room)
 			active_ids[item_def.id] = true
 		end
 	end
@@ -179,7 +177,7 @@ function item_service:refresh_current_room_items()
 	if event_defs ~= nil then
 		for item_id, item_def in pairs(event_defs) do
 			if self:item_should_spawn(item_def, room_id, player) then
-				self:ensure_item_instance(item_def, room)
+				self:sync_item_instance(item_def, room)
 				active_ids[item_id] = true
 			end
 		end
@@ -189,7 +187,7 @@ function item_service:refresh_current_room_items()
 end
 
 function item_service:set_room_condition(room_id, condition)
-	ensure_room_flags(self, room_id)[condition] = true
+	room_flags_for(self, room_id)[condition] = true
 end
 
 function item_service:add_item_drop_from_rock(rock_id, room_id, item_type, x, y)
@@ -202,13 +200,13 @@ function item_service:add_item_drop_from_rock(rock_id, room_id, item_type, x, y)
 		return
 	end
 
-	local player = object(PLAYER_ID)
+	local player = object(constants.ids.player_instance)
 	if player:has_inventory_item(item_type) then
 		self.picked_item_ids[drop_id] = true
 		return
 	end
 
-	ensure_event_item_defs(self, room_id)[drop_id] = {
+	event_item_defs_for(self, room_id)[drop_id] = {
 		id = drop_id,
 		room_id = room_id,
 		x = x,
@@ -235,7 +233,7 @@ function item_service:apply_pickup_to_player(player, item_type)
 end
 
 function item_service:try_pick_item(item_id, room_id, item_type, source_kind)
-	local player = object(PLAYER_ID)
+	local player = object(constants.ids.player_instance)
 	if player.health <= 0 then
 		return false
 	end
@@ -258,11 +256,6 @@ function item_service:on_item_picked(item_id, room_id, _item_type, _source_kind)
 end
 
 function item_service:bind_events()
-	if self.events_bound then
-		return
-	end
-	self.events_bound = true
-
 	eventemitter.eventemitter.instance:on({
 		event = constants.events.room_switched,
 		subscriber = self,
@@ -299,7 +292,7 @@ function item_service:bind_events()
 end
 
 local function define_item_service_fsm()
-	define_fsm(item_service_fsm_id, {
+	define_fsm(constants.ids.item_service_fsm, {
 		initial = 'boot',
 		states = {
 			boot = {
@@ -323,7 +316,7 @@ local function register_item_service_definition()
 	define_service({
 		def_id = constants.ids.item_service_def,
 		class = item_service,
-		fsms = { item_service_fsm_id },
+		fsms = { constants.ids.item_service_fsm },
 		auto_activate = true,
 			defaults = {
 				id = constants.ids.item_service_instance,
@@ -334,7 +327,6 @@ local function register_item_service_definition()
 			picked_item_ids = {},
 			condition_flags_by_room = {},
 			synced_room_id = '',
-			events_bound = false,
 			registrypersistent = false,
 			tick_enabled = false,
 		},
@@ -347,5 +339,5 @@ return {
 	register_item_service_definition = register_item_service_definition,
 	item_service_def_id = constants.ids.item_service_def,
 	item_service_instance_id = constants.ids.item_service_instance,
-	item_service_fsm_id = item_service_fsm_id,
+	item_service_fsm_id = constants.ids.item_service_fsm,
 }

@@ -16,6 +16,43 @@ local function tile_y_to_world(tile_y)
 	return tile_origin_y + (tile_y * tile_size)
 end
 
+local elevator_route_specs = {
+	{
+		points = {
+			{ room_number = 13, tile_x = 14, tile_y = 5 },
+			{ room_number = 6, tile_x = 14, tile_y = 8 },
+		},
+		vertical_to_point = { 'up', 'down' },
+		going_to = 2,
+	},
+}
+
+local function build_elevator_routes()
+	local routes = {}
+	for i = 1, #elevator_route_specs do
+		local spec = elevator_route_specs[i]
+		local point1 = spec.points[1]
+		local point2 = spec.points[2]
+		routes[i] = {
+			path = {
+				{
+					room_number = point1.room_number,
+					x = tile_x_to_world(point1.tile_x),
+					y = tile_y_to_world(point1.tile_y),
+				},
+				{
+					room_number = point2.room_number,
+					x = tile_x_to_world(point2.tile_x),
+					y = tile_y_to_world(point2.tile_y),
+				},
+			},
+			vertical_to_point = spec.vertical_to_point,
+			going_to = spec.going_to,
+		}
+	end
+	return routes
+end
+
 local function sort_room_numbers(room_table)
 	local room_numbers = {}
 	for room_number, _ in pairs(room_table) do
@@ -280,6 +317,10 @@ end
 
 function castle_map.room_template(room_number)
 	return room_templates[room_number]
+end
+
+function castle_map.elevator_routes()
+	return build_elevator_routes()
 end
 
 castle_map.start_room_number = start_room_number

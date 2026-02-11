@@ -4,8 +4,6 @@ local eventemitter = require('eventemitter')
 local flow_service = {}
 flow_service.__index = flow_service
 
-local flow_service_fsm_id = constants.ids.flow_service_fsm
-
 function flow_service:emit_state_changed(state_name)
 	local space = get_space()
 	eventemitter.eventemitter.instance:emit(constants.events.flow_state_changed, self.id, {
@@ -33,7 +31,7 @@ end
 
 function flow_service:resolve_room_space()
 	local castle_service = service(constants.ids.castle_service_instance)
-	local room = castle_service:get_current_room()
+	local room = castle_service.current_room
 	return room.space_id
 end
 
@@ -46,7 +44,7 @@ function flow_service:activate_spaces()
 end
 
 local function define_flow_service_fsm()
-	define_fsm(flow_service_fsm_id, {
+	define_fsm(constants.ids.flow_service_fsm, {
 		initial = 'boot',
 		states = {
 					boot = {
@@ -116,7 +114,7 @@ local function register_flow_service_definition()
 	define_service({
 		def_id = constants.ids.flow_service_def,
 		class = flow_service,
-		fsms = { flow_service_fsm_id },
+		fsms = { constants.ids.flow_service_fsm },
 		auto_activate = true,
 		defaults = {
 			id = constants.ids.flow_service_instance,
@@ -136,5 +134,5 @@ return {
 	register_flow_service_definition = register_flow_service_definition,
 	flow_service_def_id = constants.ids.flow_service_def,
 	flow_service_instance_id = constants.ids.flow_service_instance,
-	flow_service_fsm_id = flow_service_fsm_id,
+	flow_service_fsm_id = constants.ids.flow_service_fsm,
 }

@@ -32,14 +32,23 @@ local define_dkc1_animationid_dk_run = 0x0002
 local define_dkc1_animationid_dk_walk = 0x0003
 local define_dkc1_animationid_dk_jump = 0x0005
 local define_dkc1_animationid_dk_getoffanimalbuddy = 0x0008
+local define_dkc1_animationid_rambiriddenbydk_jumpontire = 0x0036
 local define_dkc1_animationid_dk_holdjump = 0x004D
+local define_dkc1_animationid_dk_hurt = 0x000C
+local define_dkc1_animationid_dk_hurtunderwater = 0x000D
+local define_dkc1_animationid_dk_dead = 0x0010
 local define_dkc1_animationid_dk_fall = 0x0015
+local define_dkc1_animationid_dk_unknowngroundstomp = 0x0016
 local define_dkc1_animationid_dk_bounce = 0x0017
 local define_dkc1_animationid_dk_roll = 0x0018
 local define_dkc1_animationid_dk_endroll = 0x0019
 local define_dkc1_animationid_dk_cancelroll = 0x001a
 local define_dkc1_animationid_dk_jumpoffverticalrope = 0x0052
+local define_dkc1_animationid_dk_bouncewhileholding = 0x0053
+local define_dkc1_animationid_dk_ridesteelkeg = 0x004E
+local define_dkc1_animationid_dk_getknockedoffunderwateranimalbuddy = 0x0066
 local define_dkc1_norspr06_klump = 0x0006
+local define_dkc1_norspr0c_enguarde = 0x000C
 local define_dkc1_norspr2f_army = 0x002F
 local define_dkc1_norspr46_bluekrusha = 0x0046
 
@@ -193,6 +202,61 @@ local data_bba428 = {
 	{ 0x0000, 0xFFCC, 0x0035, 0x003C },
 }
 
+-- DATA_BB8000 subset (index 0x00..0x3F) and pointed hitboxes from DKC1.
+local data_bb9800 = { 0x0000, 0x0000, 0x0000, 0x0000 }
+local data_bb980e = { 0xFFF9, 0xFFDD, 0x0018, 0x0022 }
+local data_bb9816 = { 0xFFF4, 0xFFE3, 0x0013, 0x0022 }
+local data_bb981e = { 0xFFE7, 0xFFF9, 0x0030, 0x000C }
+local data_bb9826 = { 0xFFE7, 0x0003, 0x0030, 0x000C }
+local data_bb982e = { 0xFFF4, 0xFFE3, 0x0013, 0x0022 }
+local data_bb9836 = { 0xFFF9, 0xFFDD, 0x0018, 0x0022 }
+local data_bb983e = { 0xFFF9, 0xFFDD, 0x0018, 0x0022 }
+local data_bb9846 = { 0xFFF1, 0xFFDD, 0x0018, 0x0022 }
+local data_bb984e = { 0xFFF1, 0xFFDD, 0x0018, 0x0022 }
+
+local data_bb8000 = {
+	data_bb9800, data_bb980e, data_bb980e, data_bb980e, data_bb980e, data_bb980e, data_bb980e, data_bb980e,
+	data_bb9816, data_bb9816, data_bb9816, data_bb9816, data_bb9816, data_bb9816, data_bb9816, data_bb9816,
+	data_bb981e, data_bb9826, data_bb9826, data_bb982e, data_bb982e, data_bb982e, data_bb982e, data_bb982e,
+	data_bb982e, data_bb982e, data_bb9836, data_bb9836, data_bb9836, data_bb9836, data_bb9836, data_bb9836,
+	data_bb9836, data_bb9836, data_bb983e, data_bb9846, data_bb9846, data_bb9846, data_bb9846, data_bb9846,
+	data_bb9846, data_bb9846, data_bb9846, data_bb9846, data_bb9846, data_bb9846, data_bb9846, data_bb9846,
+	data_bb9846, data_bb9846, data_bb9846, data_bb9846, data_bb9846, data_bb9846, data_bb9846, data_bb9846,
+	data_bb984e, data_bb984e, data_bb984e, data_bb984e, data_bb984e, data_bb984e, data_bb984e, data_bb984e,
+}
+
+-- DATA_BE984F: DK death animation script (gameplay-affecting steps only).
+local data_be984f = {
+	{ op = 'wait', frames = 8 },
+	{ op = 'call', fn = 'code_be9835' },
+	{ op = 'call', fn = 'code_be9cea' },
+	{ op = 'wait', frames = 2 },
+	{ op = 'call', fn = 'code_be9956' },
+	{ op = 'call', fn = 'code_be9937' },
+	{ op = 'call', fn = 'code_b6a856' },
+	{ op = 'wait', frames = 5 },
+	{ op = 'wait', frames = 5 },
+	{ op = 'wait', frames = 5 },
+	{ op = 'wait', frames = 5 },
+	{ op = 'wait', frames = 5 },
+	{ op = 'wait_grounded' }, -- Op83(CODE_BE84DA)
+	{ op = 'call', fn = 'code_be9945' },
+	{ op = 'wait', frames = 5 },
+	{ op = 'wait', frames = 5 },
+	{ op = 'wait', frames = 5 },
+	{ op = 'wait_grounded' }, -- Op83(CODE_BE84DA)
+	{ op = 'call', fn = 'code_be993e' },
+	{ op = 'wait', frames = 6 },
+	{ op = 'wait_grounded' }, -- Op83(CODE_BE84DA)
+	{ op = 'call', fn = 'code_be994c' },
+	{ op = 'wait', frames = 28 },
+	{ op = 'call', fn = 'code_b6a868' },
+	{ op = 'wait', frames = 6 },
+	{ op = 'wait', frames = 6 },
+	{ op = 'wait', frames = 6 },
+	{ op = 'loop' }, -- DATA_BE98B1 scratch loop (no additional gameplay-side state writes needed)
+}
+
 -- ============================================================================
 -- helper functions
 -- ============================================================================
@@ -214,6 +278,10 @@ local function abs_16(value)
 		return -signed
 	end
 	return signed
+end
+
+local function cmp_bpl_16(a, imm)
+	return (((a - imm) & 0x8000) == 0)
 end
 
 -- $32 is level-context state in DKC1 and is initialized by level setup routines
@@ -254,6 +322,10 @@ function player.ctor(self, addons)
 	self.ram_16a9 = 0
 	self.ram_16ad = define_dkc1_animationid_dk_idle
 	self.ram_16cd = 0
+	self.ram_16c1 = 0
+	self.ram_16c5 = 0
+	self.ram_16d1 = 0
+	self.ram_16d9 = 0
 	self.ram_16dd = 0
 	self.ram_16e9 = 0
 	self.ram_16ed = 0
@@ -277,9 +349,11 @@ function player.ctor(self, addons)
 	self.ram_ramtable1271lo = 0
 	self.ram_ramtable1631lo = 0
 	self.ram_ramtable11a1lo = 0
+	self.ram_ramtable1595lo = 0
 	self.ram_ramtable0f8dlo = 0
 	self.ram_ramtable14c5lo = 0
 	self.ram_yxppccctlo = 0
+	self.ram_oamzposlo = 0x00E4
 	
 	self.zp_28 = 0
 	self.zp_32 = read_level_state32(self.level)
@@ -289,18 +363,29 @@ function player.ctor(self, addons)
 	self.zp_80 = 0
 	self.ram_16e9 = 0
 	self.ram_16ed = 0
-	self.zp_84 = 0
+	self.zp_84 = 0x0002
 	-- set by startup init in DKC1 (CODE_8083FD: STX.b $F3, X=0006 in normal gameplay path)
 	self.zp_f3 = 0x0006
 	self.zp_9c = 0
 	self.zp_9e = 0
 	
 	self.ram_0512 = 0
+	self.ram_0516 = 0
+	self.ram_0518 = 0
 	self.ram_1e15 = 0
 	self.ram_1e17 = 0
 	self.ram_1e19 = 0
 	self.ram_0579 = 0
 	self.ram_1929 = 0
+	self.ram_ramtable1375lo = 0
+	self.ram_ramtable13e9lo = 0
+	self.ram_ramtable0c35lo = 0
+	self.ram_global_screendisplayregister = 0
+	self.ram_player_currentlifecountlo = self.ram_player_currentlifecountlo or 0x0005
+	self.ram_player_displayedlifecountlo = self.ram_player_currentlifecountlo
+	self.ram_layer1yposlo = 0
+	self.zp_4a = 0x0200
+	self.reset_requested = false
 	
 	-- subpixel position
 	self.pos_subx = self.ram_xposlo * 0x0100
@@ -319,6 +404,9 @@ function player.ctor(self, addons)
 	self.roll_script_frame = 0
 	self.jump_script_kind = nil
 	self.jump_script_frame = 0
+	self.death_script_kind = nil
+	self.death_script_pc = 1
+	self.death_script_wait = 0
 	
 	-- previous frame button state for edge detection
 	self.prev_7e = 0
@@ -330,6 +418,10 @@ function player:reset_runtime()
 	self.ram_16a5 = -0x7fffffff
 	self.ram_16f9 = 0xffb8
 	self.ram_16d5 = 0
+	self.ram_16c1 = 0
+	self.ram_16c5 = 0
+	self.ram_16d1 = 0
+	self.ram_16d9 = 0
 	self.ram_180f = 0
 	
 	self.ram_xspeedlo = 0
@@ -340,8 +432,16 @@ function player:reset_runtime()
 	self.ram_ramtable0f8dlo = 0
 	self.ram_ramtable14c5lo = 0
 	self.ram_ramtable11a1lo = 0
+	self.ram_ramtable1595lo = 0
 	self.ram_0579 = 0
 	self.ram_1929 = 0
+	self.ram_oamzposlo = 0x00E4
+	self.ram_ramtable1375lo = 0
+	self.ram_ramtable13e9lo = 0
+	self.ram_global_screendisplayregister = 0
+	self.ram_layer1yposlo = 0
+	self.zp_4a = 0x0200
+	self.reset_requested = false
 	
 	self.ram_xposlo = self.spawn_x
 	self.ram_yposlo = self.spawn_y
@@ -352,6 +452,7 @@ function player:reset_runtime()
 	self.zp_32 = read_level_state32(self.level)
 	self.zp_7e = 0
 	self.zp_80 = 0
+	self.zp_84 = 0x0002
 	self.zp_9c = 0
 	self.zp_9e = 0
 	
@@ -370,6 +471,9 @@ function player:reset_runtime()
 	self.roll_script_frame = 0
 	self.jump_script_kind = nil
 	self.jump_script_frame = 0
+	self.death_script_kind = nil
+	self.death_script_pc = 1
+	self.death_script_wait = 0
 	self.prev_7e = 0
 end
 
@@ -432,6 +536,44 @@ function player:code_bfb159()
 	-- code_bfb187: default (airborne/roll)
 	-- lda.w #$0000                                 ; LINE 110582: LDA.w #$0000
 	return 0  -- profile 0 (÷8)
+end
+
+-- CODE_BFB1A8 + DATA_BFB255: target-speed smoothing step.
+function player:code_bfb1a8()
+	-- jsr.w code_bfb159
+	local profile_id = self:code_bfb159()
+
+	-- lda.w !ram_dkc1_norspr_ramtable0f25lo,y / clc / adc.w !ram_dkc1_norspr_ramtable123dlo,y
+	local target = self.ram_ramtable0f25lo
+	local target_with_acc = to_unsigned_16(target + self.ram_ramtable123dlo)
+
+	-- sec / sbc.w !ram_dkc1_norspr_xspeedlo,y
+	local target_signed = to_signed_16(target_with_acc)
+	local current_signed = to_signed_16(self.ram_xspeedlo)
+	local delta = target_signed - current_signed
+	local abs_delta = delta
+	if abs_delta < 0 then
+		abs_delta = -abs_delta
+	end
+
+	-- jsr.w (data_bfb255,x)
+	local step = self:data_bfb255_profile(profile_id, abs_delta)
+	if step == 0 then
+		-- code_bfb1b5 snap path
+		current_signed = target_signed
+	else
+		if delta < 0 then
+			step = -step
+		end
+		current_signed = current_signed + step
+	end
+
+	self.ram_xspeedlo = to_unsigned_16(current_signed)
+
+	-- update $16F1 speed cache outside active roll state.
+	if self.ram_ramtable1029lo ~= 0x0012 then
+		self.ram_16f1 = abs_16(self.ram_xspeedlo)
+	end
 end
 
 -- code_bfa555: accumulator post-step hook (line 108861)
@@ -1341,6 +1483,91 @@ function player:code_bea02e()
 	self.ram_16ad = define_dkc1_animationid_dk_idle
 end
 
+-- CODE_BE9835: death-music path in original game (non-physics side effects).
+function player:code_be9835()
+end
+
+-- CODE_BE9CEA callback from DATA_BE984F.
+function player:code_be9cea()
+	if (self.ram_1e15 & 0x0020) == 0 then
+		return
+	end
+	self.ram_ramtable1029lo = 0x0050
+	self.ram_1929 = 0x0003
+	self.ram_global_screendisplayregister = 0x820F
+end
+
+-- CODE_BE9956 callback from DATA_BE984F.
+function player:code_be9956()
+	self.ram_1929 = 0x0000
+end
+
+-- CODE_BE9937 callback from DATA_BE984F.
+function player:code_be9937()
+	self.ram_ramtable1029lo = 0x000B
+end
+
+-- CODE_BE993E callback from DATA_BE984F.
+function player:code_be993e()
+	self.ram_yspeedlo = 0x0200
+end
+
+-- CODE_BE9945 callback from DATA_BE984F.
+function player:code_be9945()
+	self.ram_yspeedlo = 0x0500
+end
+
+-- CODE_BE994C callback from DATA_BE984F.
+function player:code_be994c()
+	self.ram_ramtable0f25lo = 0x0000
+	self.ram_xspeedlo = 0x0000
+	self.ram_ramtable123dlo = 0x0000
+end
+
+function player:start_data_be984f()
+	self.death_script_kind = 'data_be984f'
+	self.death_script_pc = 1
+	self.death_script_wait = 0
+end
+
+function player:update_death_animation_script()
+	if self.death_script_kind ~= 'data_be984f' then
+		return
+	end
+
+	if self.death_script_wait > 0 then
+		self.death_script_wait = self.death_script_wait - 1
+		return
+	end
+
+	while true do
+		local step = data_be984f[self.death_script_pc]
+		if step == nil then
+			self.death_script_kind = 'done'
+			return
+		end
+
+		if step.op == 'wait' then
+			self.death_script_wait = step.frames
+			self.death_script_pc = self.death_script_pc + 1
+			if self.death_script_wait > 0 then
+				self.death_script_wait = self.death_script_wait - 1
+				return
+			end
+		elseif step.op == 'wait_grounded' then
+			if (self.ram_ramtable12a5lo & 0x0001) == 0 then
+				return
+			end
+			self.death_script_pc = self.death_script_pc + 1
+		elseif step.op == 'call' then
+			self[step.fn](self)
+			self.death_script_pc = self.death_script_pc + 1
+		elseif step.op == 'loop' then
+			return
+		end
+	end
+end
+
 function player:update_roll_animation_script()
 	if self.roll_script_kind == nil then
 		return
@@ -1746,6 +1973,298 @@ function player:code_bfaf38()
 	self.ram_yspeedlo = to_unsigned_16(yspeed_signed)
 end
 
+function player:code_bfa441()
+	self.ram_oamzposlo = 0x00E4
+end
+
+function player:code_bfa49a()
+	self.ram_ramtable11a1lo = 0x00C0
+	self.ram_16d9 = 0
+	self.ram_16d1 = 0x0060
+	self.ram_16d5 = 0x0070
+end
+
+function player:code_bfc0d0()
+	-- partner sync path in DKC1; this cart runs single-player only.
+end
+
+-- CODE_BFA260: release held object ($16F5 path).
+function player:code_bfa260()
+	if self.ram_16f5 == 0 then
+		return false
+	end
+	local carried_slot = self.ram_16f5
+	self.ram_16f5 = 0
+	local carried = self:dkc1_get_any_sprite_by_slot(carried_slot)
+	if carried == nil then
+		return false
+	end
+	carried.dkc1_ramtable1595lo = 0x0080
+	local throw_x = 0x0100
+	if (carried.dkc1_yxppccctlo & 0x4000) ~= 0 then
+		throw_x = to_unsigned_16(-to_signed_16(throw_x))
+	end
+	carried.x_speed_subpx = throw_x
+	carried.dkc1_ramtable0f25lo = throw_x
+	carried.y_speed_subpx = 0x0400
+	if self.zp_32 ~= 0x0007 then
+		carried.dkc1_yxppccctlo = carried.dkc1_yxppccctlo | 0x3000
+	end
+	return false
+end
+
+-- CODE_BFA2A0: dismount animal buddy ($0512 path).
+function player:code_bfa2a0()
+	if self.ram_0512 == 0 then
+		return false
+	end
+	local buddy_slot = self.ram_0512
+	self.ram_0512 = 0
+	self.ram_0516 = 0
+	self.ram_0518 = 0
+	local buddy = self:dkc1_get_any_sprite_by_slot(buddy_slot)
+	if buddy == nil then
+		return false
+	end
+	buddy.dkc1_ramtable1595lo = 0x0010
+	self.ram_1929 = 0xFFF1
+	if buddy.dkc1_sprite_id ~= define_dkc1_norspr0c_enguarde then
+		self.ram_yspeedlo = 0x0600
+		self.ram_ramtable1029lo = 0x000D
+		self.ram_16ad = define_dkc1_animationid_dk_getoffanimalbuddy
+		self:code_bfa49a()
+		return true
+	end
+	self.ram_yspeedlo = 0x0200
+	self.ram_ramtable0f8dlo = 0x0000
+	self.ram_ramtable1029lo = 0x004A
+	self.ram_16ad = define_dkc1_animationid_dk_getknockedoffunderwateranimalbuddy
+	self:code_bfa49a()
+	return true
+end
+
+-- CODE_BFA13B: handling for $1595 == #$0080.
+function player:code_bfa13b()
+	self.ram_16e5 = 0x0000
+	if self.ram_0512 ~= 0 then
+		self.ram_16ad = define_dkc1_animationid_rambiriddenbydk_jumpontire
+		self.ram_ramtable1029lo = 0x0015
+		return true
+	end
+	if self.ram_16f5 ~= 0 then
+		self.ram_16ad = define_dkc1_animationid_dk_bouncewhileholding
+		self.ram_ramtable1029lo = 0x001A
+		return true
+	end
+	self.ram_ramtable1029lo = 0x0001
+	self.ram_16ad = define_dkc1_animationid_dk_jumpoffverticalrope
+	return true
+end
+
+-- CODE_BFA17E: hurt/death dispatch.
+function player:code_bfa17e()
+	if self:code_bfa2a0() then
+		return
+	end
+	self:code_bfa260()
+	if (self.ram_0579 & 0x0001) ~= 0 then
+		self.ram_16c1 = self.ram_xspeedlo
+		self.ram_16c5 = self.ram_yspeedlo
+		self.ram_ramtable1029lo = 0x000D
+		self.ram_xspeedlo = 0x0000
+		self.ram_ramtable0f25lo = 0x0000
+		self.ram_yspeedlo = 0x0800
+		self.ram_yxppccctlo = self.ram_yxppccctlo & 0xBFFF
+		self.ram_1929 = 0x0003
+		self.ram_ramtable11a1lo = 0x0000
+		self.ram_16ad = define_dkc1_animationid_dk_hurt
+		self.death_script_kind = nil
+		if (self.ram_0579 & 0x0800) == 0 then
+			self:code_bfc0d0()
+		end
+		return
+	end
+	if (self.ram_0579 & 0x0400) ~= 0 then
+		self.ram_0579 = self.ram_0579 | 0x0800
+		self.ram_16c1 = self.ram_xspeedlo
+		self.ram_16c5 = self.ram_yspeedlo
+		self.ram_ramtable1029lo = 0x000D
+		self.ram_xspeedlo = 0x0000
+		self.ram_ramtable0f25lo = 0x0000
+		self.ram_yspeedlo = 0x0800
+		self.ram_yxppccctlo = self.ram_yxppccctlo & 0xBFFF
+		self.ram_1929 = 0x0003
+		self.ram_ramtable11a1lo = 0x0000
+		self.ram_16ad = define_dkc1_animationid_dk_hurt
+		self.death_script_kind = nil
+		if (self.ram_0579 & 0x0800) == 0 then
+			self:code_bfc0d0()
+		end
+		return
+	end
+	self.ram_ramtable1029lo = 0x0011
+	self.ram_yspeedlo = 0x0800
+	local launch_x = 0x00C8
+	if (self.ram_yxppccctlo & 0x4000) == 0 then
+		launch_x = to_unsigned_16(-to_signed_16(launch_x))
+	end
+	self.ram_xspeedlo = launch_x
+	self.ram_ramtable0f25lo = launch_x
+	self.ram_ramtable11a1lo = 0x0000
+	self.ram_16d5 = 0x0000
+	self:code_bfa441()
+	self.ram_16ad = define_dkc1_animationid_dk_dead
+	self:start_data_be984f()
+	self.ram_1929 = 0x0003
+end
+
+-- CODE_BFA0F7: process pending hit flags in $1595.
+function player:code_bfa0f7()
+	local hit_flags = self.ram_ramtable1595lo & 0x7FFF
+	if hit_flags == 0x0001 or hit_flags == 0x0020 then
+		self.ram_ramtable1595lo = 0x0000
+		self:code_bfa17e()
+		return true
+	end
+	if hit_flags == 0x0040 then
+		self.ram_ramtable1595lo = 0x0000
+		self.ram_ramtable11a1lo = 0x00C0
+		self.ram_ramtable1029lo = 0x0019
+		self.ram_16ad = define_dkc1_animationid_dk_ridesteelkeg
+		self:code_bfa260()
+		return true
+	end
+	if hit_flags == 0x0080 then
+		self.ram_ramtable1595lo = 0x0000
+		self:code_bfa13b()
+		return true
+	end
+	return false
+end
+
+function player:code_bfc745()
+	self.ram_ramtable1595lo = 0x0001
+	return true
+end
+
+function player:code_bfc75a()
+	local delta_y = to_signed_16(to_unsigned_16(self.zp_a8 - self.zp_b4))
+	if delta_y >= 0x000A then
+		return self:code_bfc745()
+	end
+	return false
+end
+
+function player:code_bfc713()
+	if not self:code_bba58d(0x0001) then
+		return false
+	end
+	local hit_sprite = self:dkc1_get_any_sprite_by_slot(self.zp_88)
+	if (hit_sprite.dkc1_ramtable1699lo & 0x0080) ~= 0 then
+		return false
+	end
+	if hit_sprite.dkc1_animationid == define_dkc1_animationid_dk_bounce then
+		return false
+	end
+	if hit_sprite.dkc1_animationid == define_dkc1_animationid_dk_unknowngroundstomp then
+		return self:code_bfc75a()
+	end
+	if (hit_sprite.dkc1_ramtable12a5lo & 0x0101) ~= 0x0101 then
+		return self:code_bfc75a()
+	end
+	return self:code_bfc745()
+end
+
+function player:code_bfc70f()
+	self:code_bba4d5()
+	return self:code_bfc713()
+end
+
+-- CODE_BFC70F feed wrapper: enemy/projectile overlap writes player $1595.
+function player:code_bfc70f_feed_hit_event()
+	if self.ram_ramtable1595lo ~= 0 then
+		return
+	end
+	self:code_bfc70f()
+end
+
+function player:dkc1_world_to_virtual_ypos(world_y)
+	return to_unsigned_16(self.zp_4a - world_y - self.ram_layer1yposlo)
+end
+
+function player:dkc1_virtual_to_world_ypos(virtual_ypos)
+	local signed_virtual = to_signed_16(virtual_ypos)
+	return self.zp_4a - signed_virtual - self.ram_layer1yposlo
+end
+
+-- CODE_B6A856: life decrement entry used by death transitions.
+function player:code_b6a856()
+	self.ram_player_displayedlifecountlo = self.ram_player_currentlifecountlo
+	if self.ram_ramtable13e9lo ~= 0 then
+		return
+	end
+	self.ram_player_currentlifecountlo = to_unsigned_16(self.ram_player_currentlifecountlo - 1)
+	self.ram_ramtable13e9lo = to_unsigned_16(self.ram_ramtable13e9lo + 1)
+end
+
+-- CODE_B6A868 side effects are HUD/sfx in original; gameplay-critical behavior is in CODE_B6A856.
+function player:code_b6a868()
+end
+
+function player:code_bfa6e4()
+	self.ram_ramtable1029lo = 0x003B
+	self.ram_ramtable1375lo = 0x0060
+	self.ram_1929 = 0x0001
+	self:code_b6a856()
+end
+
+function player:code_bfa6fd()
+	self.ram_ramtable1029lo = 0x003F
+	self.ram_1929 = 0x0001
+	self.ram_global_screendisplayregister = 0x820F
+end
+
+-- CODE_BFA697: out-of-bounds/death gate.
+function player:code_bfa697()
+	local death_gate = false
+	if (self.ram_1e15 & 0x0200) ~= 0 then
+		local cmp_value = to_unsigned_16(self.zp_4a - self.ram_yposlo - self.ram_layer1yposlo)
+		if cmp_bpl_16(cmp_value, 0x0120) then
+			death_gate = true
+		end
+	end
+
+	if not death_gate then
+		local signed_ypos = to_signed_16(self.ram_yposlo)
+		if signed_ypos >= 0 then
+			local masked_flags = self.ram_ramtable12a5lo & 0x1111
+			if masked_flags == 0x0101 then
+				self.ram_a = self.ram_ramtable0c35lo
+			else
+				self.ram_a = masked_flags
+			end
+			return
+		end
+		if signed_ypos >= -0x0030 then
+			return
+		end
+		death_gate = true
+	end
+
+	if (self.ram_1e15 & 0x0020) ~= 0 then
+		self:code_bfa6fd()
+		return
+	end
+	if self.ram_0512 == 0 then
+		self:code_bfa6e4()
+		return
+	end
+	self.ram_0512 = 0
+	self.ram_0516 = 0
+	self.ram_0518 = 0
+	self:code_bfa6e4()
+end
+
 -- code_bfa712: collision/bounce gate (line 109102)
 function player:code_bfa712()
 	-- stz.w !ram_dkc1_norspr_ramtable1271lo
@@ -1846,11 +2365,53 @@ function player:code_bfa712()
 	self.ram_16ad = define_dkc1_animationid_dk_getoffanimalbuddy
 end
 
--- CODE_BBA4C8 equivalent (player hitbox setup used by CODE_BFA752).
-function player:code_bba4c8(hitbox_index)
-	self.zp_b6 = self.zp_84
+-- CODE_BF8F97: death-launch airborne state ($1029 == #$000B).
+function player:code_bf8f97(dt)
+	self.ram_0579 = self.ram_0579 | 0x0002
 
-	local hitbox = data_bba428[hitbox_index + 1]
+	local next_ys = to_signed_16(self.ram_yspeedlo) + to_signed_16(0xFF90)
+	if next_ys < 0 and next_ys < to_signed_16(0xFA00) then
+		next_ys = to_signed_16(0xFA00)
+	end
+	self.ram_yspeedlo = to_unsigned_16(next_ys)
+
+	-- CODE_BF8587 path (without CODE_BFAF38 and without button dispatch).
+	self:code_bfb1a8()
+	self:integrate_and_collide()
+	self:update_death_animation_script() -- CODE_BE80E1 call inside CODE_BF858B
+	self:code_bfa697()
+	self:finish_tick_visual(dt)
+end
+
+-- CODE_BF9001: script-only state ($1029 == #$0011).
+function player:code_bf9001(dt)
+	self:update_death_animation_script() -- JSL CODE_BE80E1
+	self:finish_tick_visual(dt)
+end
+
+-- CODE_BF9B72: death-state update for $1029 == #$003B.
+function player:code_bf9b72()
+	self.ram_ramtable1375lo = to_unsigned_16(self.ram_ramtable1375lo - 1)
+	if to_signed_16(self.ram_ramtable1375lo) < 0 then
+		self.reset_requested = true
+		return
+	end
+	if self.ram_ramtable1375lo == 0x0040 then
+		self:code_b6a868()
+	end
+	self.ram_xposlo = self.ram_xposlo ~ 0x0004
+	self.ram_yposlo = 0xFE00
+end
+
+-- CODE_BF9C10: death-state update for $1029 == #$003F.
+function player:code_bf9c10()
+	self.ram_yspeedlo = 0
+	self.ram_xposlo = self.ram_xposlo ~ 0x0004
+	self.ram_yposlo = 0xFE00
+	self.reset_requested = true
+end
+
+function player:code_bba4e5(hitbox)
 	local x_off = to_signed_16(hitbox[1])
 	local y_off = to_signed_16(hitbox[2])
 	local w = to_signed_16(hitbox[3])
@@ -1871,6 +2432,21 @@ function player:code_bba4c8(hitbox_index)
 		self.zp_ac = self.ram_yposlo + y_off
 		self.zp_a8 = self.zp_ac + h
 	end
+end
+
+-- CODE_BBA4C8 equivalent (player hitbox setup used by CODE_BFA752).
+function player:code_bba4c8(hitbox_index)
+	self.zp_b6 = self.zp_84
+	local hitbox = data_bba428[hitbox_index + 1]
+	self:code_bba4e5(hitbox)
+end
+
+-- CODE_BBA4D5: pose-derived hitbox setup (used by CODE_BFC70F path).
+function player:code_bba4d5()
+	self.zp_b6 = self.zp_84
+	local pose_index = (self.ram_16ad & 0xFFFF) >> 1
+	local hitbox = data_bb8000[pose_index + 1]
+	self:code_bba4e5(hitbox)
 end
 
 function player:dkc1_get_any_sprite_by_slot(slot)
@@ -2006,6 +2582,15 @@ function player:code_bfa86a()
 	carried.dkc1_ramtable0f25lo = xs
 	carried.y_speed_subpx = 0xFF00
 	return false
+end
+
+-- CODE_BFA89A: rotate collision-state flags in RAMTable12A5Lo.
+-- Moves low-byte state into high-byte history before fresh collision writes.
+function player:code_bfa89a()
+	local flags = self.ram_ramtable12a5lo & 0xFFFF
+	local prev_low_to_high = ((flags & 0x00FF) << 8) & 0xFFFF
+	local low_nibble_history = (flags >> 4) & 0x000F
+	self.ram_ramtable12a5lo = (prev_low_to_high | low_nibble_history) & 0xFFFF
 end
 
 -- CODE_BFFA6C side effects are audio/flash; not required for physics parity here.
@@ -2179,6 +2764,9 @@ function player:commit_collision_9c_to_1209()
 end
 
 function player:integrate_and_collide()
+	-- CODE_BFFB78/BFFB46 paths begin by rotating RAMTable12A5Lo via CODE_BFA89A.
+	self:code_bfa89a()
+
 	local sp = 0x0100
 	
 	-- x integration
@@ -2335,10 +2923,35 @@ function player:tick(dt)
 	
 	-- determine control context
 	local state1029 = self.ram_ramtable1029lo
+	if state1029 == 0x003B then
+		self:code_bf9b72()
+		self:finish_tick_visual(dt)
+		return
+	end
+	if state1029 == 0x003F then
+		self:code_bf9c10()
+		self:finish_tick_visual(dt)
+		return
+	end
+	if state1029 == 0x0011 then
+		self:code_bf9001(dt)
+		return
+	end
+	if state1029 == 0x000B then
+		self:code_bf8f97(dt)
+		return
+	end
+
+	-- CODE_BFC70F feed path applies only while in interactive player states.
+	self:code_bfc70f_feed_hit_event()
+
 	local grounded_context = self.grounded
 	if state1029 == 0x0001 then
 		-- CODE_BF87F2 drives CODE_BFB27C with A=#$0001 while in jump state $1029==1.
 		self.ram_180f = 0x0001
+	elseif state1029 == 0x000F then
+		-- CODE_BF8FEF: LDA #$0004 / JSR CODE_BFB27C.
+		self.ram_180f = 0x0004
 	elseif state1029 == 0x0012 or state1029 == 0x0013 then
 		-- CODE_BF9006/CODE_BF903B call CODE_BFB27C with A=#$0006 while in roll states.
 		self.ram_180f = 0x0006
@@ -2346,6 +2959,11 @@ function player:tick(dt)
 		self.ram_180f = 0
 	else
 		self.ram_180f = 1
+	end
+
+	if self:code_bfa0f7() then
+		self:finish_tick_visual(dt)
+		return
 	end
 
 	-- run button handler (CODE_BFB27C handles ALL buttons: direction, jump, roll, etc.)
@@ -2356,57 +2974,7 @@ function player:tick(dt)
 		self.ram_yspeedlo = 0xFFFF
 	end
 	
-	-- select profile and apply smoothing
-	-- jsr.w code_bfb159                            ; LINE 110605: JSR.w CODE_BFB159
-	local profile_id = self:code_bfb159()
-	-- CODE_BFB191: lda.w !ram_dkc1_norspr_ramtable0f25lo,y
-	local target = self.ram_ramtable0f25lo
-	-- clc : adc.w !ram_dkc1_norspr_ramtable123dlo,y  ; ADD ACCUMULATOR!
-	local target_with_acc = to_unsigned_16(target + self.ram_ramtable123dlo)
-	
-	-- convert to signed 16-bit
-	local target_signed = to_signed_16(target_with_acc)
-	local current_signed = to_signed_16(self.ram_xspeedlo)
-	
-	-- apply profile smoothing (code_bfb191 logic)
-	-- sec                                          ; CODE_BFB191: SEC
-	-- sbc.w !ram_dkc1_norspr_xspeedlo,y            ; CODE_BFB191: SBC.w !RAM_DKC1_NorSpr_XSpeedLo,y
-	local delta = target_signed - current_signed
-	local abs_delta = delta
-	-- bpl.b code_bfb19e                            ; LINE 110599: BPL.b CODE_BFB19E
-	if abs_delta < 0 then
-		-- eor.w #$ffff                             ; LINE 110601: EOR.w #$FFFF
-		-- inc                                      ; LINE 110603: INC
-		abs_delta = -abs_delta
-	end
-	
-	-- jsr.w (data_bfb255,x)                        ; LINE 110607: JSR.w (DATA_BFB255,x)
-	local step = self:data_bfb255_profile(profile_id, abs_delta)
-	
-	-- beq.b code_bfb1b5                            ; CODE_BFB191: BEQ.b CODE_BFB1B5
-	if step == 0 then
-		-- code_bfb1b5: instant snap                ; CODE_BFB1B5: LDA target+acc, STA xspeed
-		current_signed = target_signed
-	else
-		-- apply step
-		if delta < 0 then
-			step = -step
-		end
-		current_signed = current_signed + step
-	end
-	
-	-- updated x speed
-	-- sta.w !ram_dkc1_norspr_ramtable16f1lo,x      ; LINE 110623: STX.w !RAM_DKC1_NorSpr_YSpeedLo,x (yspeed logic elsewhere)
-	self.ram_xspeedlo = to_unsigned_16(current_signed)
-	
-	-- update ram_16f1 for roll speed tracking
-	if self.ram_ramtable1029lo == 0x0012 then
-		-- rolling - ram_16f1 is the roll speed
-		-- don't update from smoothing
-	else
-		-- not rolling - track actual speed
-		self.ram_16f1 = abs_16(self.ram_xspeedlo)
-	end
+	self:code_bfb1a8()
 	
 	-- CODE_BF8584/CODE_BF8587 paths apply CODE_BFAF38 before collision.
 	self:code_bfaf38()
@@ -2420,6 +2988,13 @@ function player:tick(dt)
 	-- integrate position and collide
 	self:integrate_and_collide()
 
+	-- CODE_BF8584: ... JSR CODE_BFA44A / JSR CODE_BFA697
+	self:code_bfa697()
+	if self.ram_ramtable1029lo == 0x003B or self.ram_ramtable1029lo == 0x003F then
+		self:finish_tick_visual(dt)
+		return
+	end
+
 	-- DATA_BEA724 / DATA_BEB224 clear state $1029 after jump script settles on ground.
 	if self.ram_ramtable1029lo == 0x0001 and self.grounded and self.jump_script_kind == nil then
 		self.ram_ramtable1029lo = 0x0000
@@ -2431,15 +3006,14 @@ function player:tick(dt)
 		self:code_bfa555()
 	end
 	
-	-- update public position
+	self:finish_tick_visual(dt)
+end
+
+function player:finish_tick_visual(dt)
 	self.x = self.ram_xposlo
 	self.y = self.ram_yposlo
-	
-	-- update camera anchor
 	self.camera_anchor_x = self.x + (self.width * 0.5)
 	self.camera_anchor_y = self.y + (self.height * 0.5)
-	
-	-- update visual state
 	self:update_visual_frame(dt)
 end
 
@@ -2475,6 +3049,12 @@ end
 
 function player:respawn()
 	self:reset_runtime()
+end
+
+function player:consume_reset_request()
+	local requested = self.reset_requested
+	self.reset_requested = false
+	return requested
 end
 
 -- ============================================================================

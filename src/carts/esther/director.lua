@@ -21,6 +21,22 @@ local function clamp(value, min_value, max_value)
 	return value
 end
 
+local function rotate_collision_flags_12a5(flags)
+	local state = flags & 0xFFFF
+	local prev_low_to_high = ((state & 0x00FF) << 8) & 0xFFFF
+	local low_nibble_history = (state >> 4) & 0x000F
+	return (prev_low_to_high | low_nibble_history) & 0xFFFF
+end
+
+local function update_collision_flags_12a5(sprite)
+	sprite.dkc1_ramtable12a5lo = rotate_collision_flags_12a5(sprite.dkc1_ramtable12a5lo)
+	if sprite.grounded then
+		sprite.dkc1_ramtable12a5lo = sprite.dkc1_ramtable12a5lo | 0x0001
+	else
+		sprite.dkc1_ramtable12a5lo = sprite.dkc1_ramtable12a5lo & 0xFFFE
+	end
+end
+
 function director:bind_visual()
 	local rc = self:get_component('customvisualcomponent')
 	rc.producer = function(_ctx)
@@ -50,6 +66,9 @@ function director:reset_barrels()
 		barrel.dkc1_ramtable1595lo = 0x0000
 		barrel.dkc1_ramtable15c9lo = 0x0000
 		barrel.dkc1_ramtable0f25lo = 0x0000
+		barrel.dkc1_ramtable12a5lo = 0x0101
+		barrel.dkc1_ramtable1699lo = 0x0000
+		barrel.dkc1_animationid = 0x0000
 		barrel.dkc1_yxppccctlo = 0x0000
 		barrel.dkc1_collision_role = barrel.dkc1_collision_role_base
 	end
@@ -68,6 +87,9 @@ function director:reset_stomp_targets()
 		target.dkc1_ramtable1595lo = 0x0000
 		target.dkc1_ramtable15c9lo = 0x0000
 		target.dkc1_ramtable0f25lo = 0x0000
+		target.dkc1_ramtable12a5lo = 0x0101
+		target.dkc1_ramtable1699lo = 0x0000
+		target.dkc1_animationid = 0x0000
 		target.dkc1_collision_role = target.dkc1_collision_role_base
 		if target.dkc1_sprite_id_base ~= nil then
 			target.dkc1_sprite_id = target.dkc1_sprite_id_base
@@ -231,6 +253,7 @@ function director:update_barrels(player)
 	for i = 1, #barrels do
 		local barrel = barrels[i]
 		if player.debug_frame >= barrel.spawn_frame or barrel.state ~= 'idle' then
+			update_collision_flags_12a5(barrel)
 			if barrel.state == 'thrown' then
 				barrel.dkc1_collision_role = 'projectile'
 				if barrel.dkc1_sprite_id == 0 then
@@ -328,6 +351,9 @@ function director:update_stomp_targets(player)
 	local targets = self.level.stomp_targets
 	for i = 1, #targets do
 		local target = targets[i]
+		if target.state ~= 'broken' then
+			update_collision_flags_12a5(target)
+		end
 		if target.state ~= 'broken' and target.dkc1_ramtable1595lo ~= 0 then
 			target.state = 'broken'
 			target.dkc1_collision_role = 'none'
@@ -341,6 +367,10 @@ end
 function director:tick(dt)
 	local player = object(self.player_id)
 	self.player_ref = player
+
+	if player:consume_reset_request() then
+		self:reset_level(player)
+	end
 
 	if player.y > (self.level.world_height + 110) then
 		self:reset_level(player)

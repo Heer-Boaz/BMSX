@@ -4,7 +4,14 @@ local eventemitter = require('eventemitter')
 local room_view = {}
 room_view.__index = room_view
 
-local room_view_fsm_id = constants.ids.room_view_fsm
+local function render_elevators(room_number, elevator_routes)
+	for i = 1, #elevator_routes do
+		local elevator = elevator_routes[i]
+		if elevator.current_room_number == room_number then
+			put_sprite('elevator_platform', elevator.x, elevator.y, 21)
+		end
+	end
+end
 
 function room_view:bind_visual()
 	local rc = self:get_component('customvisualcomponent')
@@ -18,7 +25,7 @@ function room_view:bind_events()
 		event = constants.events.room_switched,
 		subscriber = self,
 		handler = function()
-			local room = service(self.game_service_id):get_current_room()
+			local room = service(self.game_service_id).current_room
 			self.space_id = room.space_id
 		end,
 	})
@@ -27,12 +34,13 @@ end
 function room_view:ctor()
 	self:bind_visual()
 	self:bind_events()
-	local room = service(self.game_service_id):get_current_room()
+	local room = service(self.game_service_id).current_room
 	self.space_id = room.space_id
 end
 
 function room_view:render_room()
-	local room = service(self.game_service_id):get_current_room()
+	local castle_service = service(self.game_service_id)
+	local room = castle_service.current_room
 	if get_space() ~= room.space_id then
 		return
 	end
@@ -49,10 +57,13 @@ function room_view:render_room()
 			put_sprite(row[x], draw_x, draw_y, 20)
 		end
 	end
+
+	local elevator_service = service(constants.ids.elevator_service_instance)
+	render_elevators(castle_service.current_room_number, elevator_service.elevator_routes)
 end
 
 local function define_room_view_fsm()
-	define_fsm(room_view_fsm_id, {
+	define_fsm(constants.ids.room_view_fsm, {
 		initial = 'boot',
 		states = {
 			boot = {
@@ -69,7 +80,7 @@ local function register_room_view_definition()
 	define_world_object({
 		def_id = constants.ids.room_view_def,
 		class = room_view,
-		fsms = { room_view_fsm_id },
+		fsms = { constants.ids.room_view_fsm },
 		components = { 'customvisualcomponent' },
 		defaults = {
 			game_service_id = constants.ids.castle_service_instance,
@@ -85,5 +96,5 @@ return {
 	register_room_view_definition = register_room_view_definition,
 	room_view_def_id = constants.ids.room_view_def,
 	room_view_instance_id = constants.ids.room_view_instance,
-	room_view_fsm_id = room_view_fsm_id,
+	room_view_fsm_id = constants.ids.room_view_fsm,
 }

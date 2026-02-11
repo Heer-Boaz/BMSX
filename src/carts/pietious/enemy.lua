@@ -21,7 +21,21 @@ local enemy = {}
 enemy.__index = enemy
 
 local enemy_fsm_id = constants.ids.enemy_fsm
-local enemy_bt_id = constants.ids.enemy_bt
+local enemy_bt_ids = {
+	mijterfoe = constants.ids.enemy_bt .. '.m',
+	zakfoe = constants.ids.enemy_bt .. '.z',
+	crossfoe = constants.ids.enemy_bt .. '.c',
+	boekfoe = constants.ids.enemy_bt .. '.b',
+	paperfoe = constants.ids.enemy_bt .. '.p',
+	muziekfoe = constants.ids.enemy_bt .. '.mu',
+	nootfoe = constants.ids.enemy_bt .. '.n',
+	stafffoe = constants.ids.enemy_bt .. '.sf',
+	staffspawn = constants.ids.enemy_bt .. '.ss',
+	cloud = constants.ids.enemy_bt .. '.cl',
+	vlokspawner = constants.ids.enemy_bt .. '.vs',
+	vlokfoe = constants.ids.enemy_bt .. '.vf',
+	marspeinenaardappel = constants.ids.enemy_bt .. '.ma',
+}
 
 local state_waiting = enemy_fsm_id .. ':/waiting'
 local state_flying = enemy_fsm_id .. ':/flying'
@@ -359,64 +373,20 @@ function enemy:projectile_is_out_of_bounds()
 	return false
 end
 
-function enemy:bt_tick_mijter_waiting(blackboard)
-	return enemy_kind_modules.mijterfoe.bt_tick_waiting(self, blackboard, random_between, state_flying)
-end
+function enemy:set_active_behaviour_tree(kind)
+	local bt_id = enemy_bt_ids[kind]
+	if bt_id == nil then
+		error('pietious enemy missing behaviour tree id for kind=' .. tostring(kind))
+	end
 
-function enemy:bt_tick_mijter_flying(blackboard)
-	return enemy_kind_modules.mijterfoe.bt_tick_flying(self, blackboard, random_between)
-end
-
-function enemy:bt_tick_zakfoe(blackboard)
-	return enemy_kind_modules.zakfoe.bt_tick(self, blackboard)
-end
-
-function enemy:bt_tick_crossfoe_waiting(blackboard)
-	return enemy_kind_modules.crossfoe.bt_tick_waiting(self, blackboard, state_flying)
-end
-
-function enemy:bt_tick_crossfoe_flying(blackboard)
-	return enemy_kind_modules.crossfoe.bt_tick_flying(self, blackboard, state_waiting)
-end
-
-function enemy:bt_tick_boekfoe(blackboard)
-	return enemy_kind_modules.boekfoe.bt_tick(self, blackboard, random_between)
-end
-
-function enemy:bt_tick_paperfoe(_blackboard)
-	return enemy_kind_modules.paperfoe.bt_tick(self, _blackboard)
-end
-
-function enemy:bt_tick_muziekfoe(blackboard)
-	return enemy_kind_modules.muziekfoe.bt_tick(self, blackboard, get_delta_from_source_to_target_scaled, random_between)
-end
-
-function enemy:bt_tick_nootfoe(_blackboard)
-	return enemy_kind_modules.nootfoe.bt_tick(self, _blackboard)
-end
-
-function enemy:bt_tick_stafffoe(blackboard)
-	return enemy_kind_modules.stafffoe.bt_tick(self, blackboard, random_between, speed_components_from_angle)
-end
-
-function enemy:bt_tick_staffspawn(_blackboard)
-	return enemy_kind_modules.staffspawn.bt_tick(self, _blackboard)
-end
-
-function enemy:bt_tick_cloud(blackboard)
-	return enemy_kind_modules.cloud.bt_tick(self, blackboard)
-end
-
-function enemy:bt_tick_vlokspawner(blackboard)
-	return enemy_kind_modules.vlokspawner.bt_tick(self, blackboard, random_between)
-end
-
-function enemy:bt_tick_vlokfoe(_blackboard)
-	return enemy_kind_modules.vlokfoe.bt_tick(self, _blackboard)
-end
-
-function enemy:bt_tick_marspeinenaardappel(_blackboard)
-	return enemy_kind_modules.marspeinenaardappel.bt_tick(self, _blackboard)
+	if self.btreecontexts[bt_id] == nil then
+		self:add_btree(bt_id)
+	end
+	for id, context in pairs(self.btreecontexts) do
+		context.running = id == bt_id
+	end
+	self:reset_tree(bt_id)
+	self.active_bt_id = bt_id
 end
 
 function enemy:configure_from_room_def(def, room)
@@ -437,8 +407,8 @@ function enemy:configure_from_room_def(def, room)
 	self.damage = def.damage or constants.damage.enemy_contact_damage
 	self.max_health = def.health or constants.enemy.default_health
 	self.health = self.max_health
-	self.last_sword_hit_id = -1
-	self.last_pepernoot_hit_id = -1
+	self.last_weapon_kind = ''
+	self.last_weapon_hit_id = -1
 	self.dangerous = def.dangerous ~= false
 	self.can_be_hit = true
 	self.direction = def.direction or 'right'
@@ -473,9 +443,7 @@ function enemy:configure_from_room_def(def, room)
 		random_between = random_between,
 	})
 
-	if self.btreecontexts[enemy_bt_id] then
-		self:reset_tree(enemy_bt_id)
-	end
+	self:set_active_behaviour_tree(self.kind)
 
 	self:stop_timeline(cloud_timeline_id)
 	if kind_module.on_configured ~= nil then
@@ -508,44 +476,15 @@ function enemy:spawn_death_effect()
 	})
 end
 
-function enemy:take_sword_hit(sword_id)
+function enemy:take_weapon_hit(weapon_kind, hit_id)
 	if not self.can_be_hit then
 		return false
 	end
-	if sword_id <= 0 then
+	if self.last_weapon_kind == weapon_kind and self.last_weapon_hit_id == hit_id then
 		return false
 	end
-	if self.last_sword_hit_id == sword_id then
-		return false
-	end
-	self.last_sword_hit_id = sword_id
-	self.health = self.health - 1
-	if self.health <= 0 then
-		self.health = 0
-		self.dangerous = false
-		self:spawn_death_effect()
-		eventemitter.eventemitter.instance:emit(constants.events.enemy_defeated, self.id, {
-			room_id = self.room_id,
-			enemy_id = self.enemy_id,
-			kind = self.kind,
-			trigger = self.trigger,
-		})
-		self:mark_for_disposal()
-	end
-	return true
-end
-
-function enemy:take_pepernoot_hit(pepernoot_id)
-	if not self.can_be_hit then
-		return false
-	end
-	if pepernoot_id <= 0 then
-		return false
-	end
-	if self.last_pepernoot_hit_id == pepernoot_id then
-		return false
-	end
-	self.last_pepernoot_hit_id = pepernoot_id
+	self.last_weapon_kind = weapon_kind
+	self.last_weapon_hit_id = hit_id
 	self.health = self.health - 1
 	if self.health <= 0 then
 		self.health = 0
@@ -573,7 +512,7 @@ function enemy:on_overlap_stay(event)
 	end
 	if other_collider.id_local == constants.ids.player_sword_collider_local then
 		if player:has_tag('g.sw') then
-			self:take_sword_hit(player.sword_id)
+			self:take_weapon_hit('sword', player.sword_id)
 		end
 		return
 	end
@@ -618,28 +557,8 @@ local function define_enemy_fsm()
 	})
 end
 
-local function bt_kind_action(kind, method)
-	return {
-		type = 'sequence',
-		children = {
-			{
-				type = 'condition',
-				condition = function(target)
-					return target.kind == kind
-				end,
-			},
-			{
-				type = 'action',
-				action = function(target, blackboard)
-					return target[method](target, blackboard)
-				end,
-			},
-		},
-	}
-end
-
 local function define_enemy_behaviour_tree()
-	behaviourtree.register_definition(enemy_bt_id, {
+	behaviourtree.register_definition(enemy_bt_ids.mijterfoe, {
 		root = {
 			type = 'selector',
 			children = {
@@ -649,112 +568,176 @@ local function define_enemy_behaviour_tree()
 						{
 							type = 'condition',
 							condition = function(target)
-								return target.kind == 'mijterfoe'
+								return target.state_variant == 'waiting'
 							end,
 						},
 						{
-							type = 'selector',
-							children = {
-								{
-									type = 'sequence',
-									children = {
-										{
-											type = 'condition',
-											condition = function(target)
-												return target.sc:matches_state_path(state_waiting)
-											end,
-										},
-										{
-											type = 'action',
-											action = function(target, blackboard)
-												return target:bt_tick_mijter_waiting(blackboard)
-											end,
-										},
-									},
-								},
-								{
-									type = 'sequence',
-									children = {
-										{
-											type = 'condition',
-											condition = function(target)
-												return target.sc:matches_state_path(state_flying)
-											end,
-										},
-										{
-											type = 'action',
-											action = function(target, blackboard)
-												return target:bt_tick_mijter_flying(blackboard)
-											end,
-										},
-									},
-								},
-							},
+							type = 'action',
+							action = function(target, blackboard)
+								return enemy_kind_modules.mijterfoe.bt_tick_waiting(target, blackboard, random_between, state_flying)
+							end,
 						},
 					},
 				},
-				bt_kind_action('zakfoe', 'bt_tick_zakfoe'),
 				{
 					type = 'sequence',
 					children = {
 						{
 							type = 'condition',
 							condition = function(target)
-								return target.kind == 'crossfoe'
+								return target.state_variant == 'flying'
 							end,
 						},
 						{
-							type = 'selector',
-							children = {
-								{
-									type = 'sequence',
-									children = {
-										{
-											type = 'condition',
-											condition = function(target)
-												return target.sc:matches_state_path(state_waiting)
-											end,
-										},
-										{
-											type = 'action',
-											action = function(target, blackboard)
-												return target:bt_tick_crossfoe_waiting(blackboard)
-											end,
-										},
-									},
-								},
-								{
-									type = 'sequence',
-									children = {
-										{
-											type = 'condition',
-											condition = function(target)
-												return target.sc:matches_state_path(state_flying)
-											end,
-										},
-										{
-											type = 'action',
-											action = function(target, blackboard)
-												return target:bt_tick_crossfoe_flying(blackboard)
-											end,
-										},
-									},
-								},
-							},
+							type = 'action',
+							action = function(target, blackboard)
+								return enemy_kind_modules.mijterfoe.bt_tick_flying(target, blackboard, random_between)
+							end,
 						},
 					},
 				},
-				bt_kind_action('boekfoe', 'bt_tick_boekfoe'),
-				bt_kind_action('paperfoe', 'bt_tick_paperfoe'),
-				bt_kind_action('muziekfoe', 'bt_tick_muziekfoe'),
-				bt_kind_action('nootfoe', 'bt_tick_nootfoe'),
-				bt_kind_action('stafffoe', 'bt_tick_stafffoe'),
-				bt_kind_action('staffspawn', 'bt_tick_staffspawn'),
-				bt_kind_action('cloud', 'bt_tick_cloud'),
-				bt_kind_action('vlokspawner', 'bt_tick_vlokspawner'),
-				bt_kind_action('vlokfoe', 'bt_tick_vlokfoe'),
-				bt_kind_action('marspeinenaardappel', 'bt_tick_marspeinenaardappel'),
 			},
+		},
+	})
+
+	behaviourtree.register_definition(enemy_bt_ids.crossfoe, {
+		root = {
+			type = 'selector',
+			children = {
+				{
+					type = 'sequence',
+					children = {
+						{
+							type = 'condition',
+							condition = function(target)
+								return target.state_variant == 'waiting'
+							end,
+						},
+						{
+							type = 'action',
+							action = function(target, blackboard)
+								return enemy_kind_modules.crossfoe.bt_tick_waiting(target, blackboard, state_flying)
+							end,
+						},
+					},
+				},
+				{
+					type = 'sequence',
+					children = {
+						{
+							type = 'condition',
+							condition = function(target)
+								return target.state_variant == 'flying'
+							end,
+						},
+						{
+							type = 'action',
+							action = function(target, blackboard)
+								return enemy_kind_modules.crossfoe.bt_tick_flying(target, blackboard, state_waiting)
+							end,
+						},
+					},
+				},
+			},
+		},
+	})
+
+	behaviourtree.register_definition(enemy_bt_ids.zakfoe, {
+		root = {
+			type = 'action',
+			action = function(target, blackboard)
+				return enemy_kind_modules.zakfoe.bt_tick(target, blackboard)
+			end,
+		},
+	})
+
+	behaviourtree.register_definition(enemy_bt_ids.boekfoe, {
+		root = {
+			type = 'action',
+			action = function(target, blackboard)
+				return enemy_kind_modules.boekfoe.bt_tick(target, blackboard, random_between)
+			end,
+		},
+	})
+
+	behaviourtree.register_definition(enemy_bt_ids.paperfoe, {
+		root = {
+			type = 'action',
+			action = function(target, blackboard)
+				return enemy_kind_modules.paperfoe.bt_tick(target, blackboard)
+			end,
+		},
+	})
+
+	behaviourtree.register_definition(enemy_bt_ids.muziekfoe, {
+		root = {
+			type = 'action',
+			action = function(target, blackboard)
+				return enemy_kind_modules.muziekfoe.bt_tick(target, blackboard, get_delta_from_source_to_target_scaled, random_between)
+			end,
+		},
+	})
+
+	behaviourtree.register_definition(enemy_bt_ids.nootfoe, {
+		root = {
+			type = 'action',
+			action = function(target, blackboard)
+				return enemy_kind_modules.nootfoe.bt_tick(target, blackboard)
+			end,
+		},
+	})
+
+	behaviourtree.register_definition(enemy_bt_ids.stafffoe, {
+		root = {
+			type = 'action',
+			action = function(target, blackboard)
+				return enemy_kind_modules.stafffoe.bt_tick(target, blackboard, random_between, speed_components_from_angle)
+			end,
+		},
+	})
+
+	behaviourtree.register_definition(enemy_bt_ids.staffspawn, {
+		root = {
+			type = 'action',
+			action = function(target, blackboard)
+				return enemy_kind_modules.staffspawn.bt_tick(target, blackboard)
+			end,
+		},
+	})
+
+	behaviourtree.register_definition(enemy_bt_ids.cloud, {
+		root = {
+			type = 'action',
+			action = function(target, blackboard)
+				return enemy_kind_modules.cloud.bt_tick(target, blackboard)
+			end,
+		},
+	})
+
+	behaviourtree.register_definition(enemy_bt_ids.vlokspawner, {
+		root = {
+			type = 'action',
+			action = function(target, blackboard)
+				return enemy_kind_modules.vlokspawner.bt_tick(target, blackboard, random_between)
+			end,
+		},
+	})
+
+	behaviourtree.register_definition(enemy_bt_ids.vlokfoe, {
+		root = {
+			type = 'action',
+			action = function(target, blackboard)
+				return enemy_kind_modules.vlokfoe.bt_tick(target, blackboard)
+			end,
+		},
+	})
+
+	behaviourtree.register_definition(enemy_bt_ids.marspeinenaardappel, {
+		root = {
+			type = 'action',
+			action = function(target, blackboard)
+				return enemy_kind_modules.marspeinenaardappel.bt_tick(target, blackboard)
+			end,
 		},
 	})
 end
@@ -764,7 +747,6 @@ local function register_enemy_definition()
 		def_id = constants.ids.enemy_def,
 		class = enemy,
 		fsms = { enemy_fsm_id },
-		bts = { enemy_bt_id },
 		defaults = {
 			space_id = constants.spaces.castle,
 			enemy_id = '',
@@ -779,8 +761,8 @@ local function register_enemy_definition()
 			damage = constants.damage.enemy_contact_damage,
 			max_health = constants.enemy.default_health,
 			health = constants.enemy.default_health,
-			last_sword_hit_id = -1,
-			last_pepernoot_hit_id = -1,
+			last_weapon_kind = '',
+			last_weapon_hit_id = -1,
 			dangerous = true,
 			can_be_hit = true,
 			horizontal_dir_mod = 0,
@@ -808,6 +790,7 @@ local function register_enemy_definition()
 			despawn_on_room_switch = false,
 			projectile_bound_right = 0,
 			projectile_bound_bottom = 0,
+			active_bt_id = '',
 			noot_color = { r = 1, g = 1, b = 1, a = 1 },
 			state_name = 'boot',
 			state_variant = 'boot',
@@ -822,5 +805,5 @@ return {
 	register_enemy_definition = register_enemy_definition,
 	enemy_def_id = constants.ids.enemy_def,
 	enemy_fsm_id = enemy_fsm_id,
-	enemy_bt_id = enemy_bt_id,
+	enemy_bt_ids = enemy_bt_ids,
 }

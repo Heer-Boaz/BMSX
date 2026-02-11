@@ -7,11 +7,10 @@ function castle_service:initialize(initial_room_id_or_number)
 	self.current_room = room_module.create_room(initial_room_id_or_number)
 	self.current_room_id = self.current_room.room_id
 	self.current_room_number = self.current_room.room_number
+	self.map_id = self.current_room.world_number
+	self.map_x = 5
+	self.map_y = 12
 	self.last_room_switch = nil
-	return self.current_room
-end
-
-function castle_service:get_current_room()
 	return self.current_room
 end
 
@@ -38,6 +37,16 @@ function castle_service:switch_room(direction, player_top, player_bottom)
 
 	self.current_room_id = self.current_room.room_id
 	self.current_room_number = self.current_room.room_number
+	self.map_id = self.current_room.world_number
+	if direction == 'left' then
+		self.map_x = self.map_x - 1
+	elseif direction == 'right' then
+		self.map_x = self.map_x + 1
+	elseif direction == 'up' then
+		self.map_y = self.map_y - 1
+	else
+		self.map_y = self.map_y + 1
+	end
 	self.last_room_switch = switch
 	return switch
 end
@@ -51,6 +60,9 @@ local function register_castle_service_definition()
 			current_room = nil,
 			current_room_id = '',
 			current_room_number = 0,
+			map_id = 0,
+			map_x = 5,
+			map_y = 12,
 			last_room_switch = nil,
 			registrypersistent = false,
 			tick_enabled = false,

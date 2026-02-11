@@ -6,47 +6,8 @@ local room_module = require('room.lua')
 local pepernoot_projectile = {}
 pepernoot_projectile.__index = pepernoot_projectile
 
-local pepernoot_projectile_fsm_id = constants.ids.pepernoot_projectile_fsm
-local state_active = pepernoot_projectile_fsm_id .. ':/active'
-
-local body_sprite_component_id = 'body'
-local body_collider_component_id = 'body'
 local projectile_hit_width = constants.room.tile_size * 2
 local projectile_hit_height = constants.room.tile_size - 1
-
-function pepernoot_projectile:ensure_components()
-	local body_collider = self:get_component_by_local_id('collider2dcomponent', body_collider_component_id)
-	if body_collider == nil then
-		body_collider = components.collider2dcomponent.new({
-			parent = self,
-			id_local = body_collider_component_id,
-			generateoverlapevents = true,
-			spaceevents = 'current',
-		})
-		body_collider:apply_collision_profile('projectile')
-		body_collider:set_local_area({
-			left = 0,
-			top = 0,
-			right = projectile_hit_width,
-			bottom = projectile_hit_height,
-		})
-		self:add_component(body_collider)
-	end
-
-	local body_sprite = self:get_component_by_local_id('spritecomponent', body_sprite_component_id)
-	if body_sprite == nil then
-		body_sprite = components.spritecomponent.new({
-			parent = self,
-			id_local = body_sprite_component_id,
-			imgid = 'pepernoot_16',
-			offset = { x = 0, y = 0, z = 113 },
-		})
-		self:add_component(body_sprite)
-	end
-
-	self.body_collider = body_collider
-	self.body_sprite = body_sprite
-end
 
 function pepernoot_projectile:update_visual_snap()
 	local snapped_x, snapped_y = room_module.snap_world_to_tile(self.room, self.x, self.y)
@@ -55,11 +16,6 @@ function pepernoot_projectile:update_visual_snap()
 end
 
 function pepernoot_projectile:bind_events()
-	if self.events_bound then
-		return
-	end
-	self.events_bound = true
-
 	self.events:on({
 		event_name = 'overlap.stay',
 		subscriber = self,
@@ -103,7 +59,7 @@ function pepernoot_projectile:on_overlap_stay(event)
 		if enemy == nil then
 			return
 		end
-		if enemy:take_pepernoot_hit(self.projectile_id) then
+		if enemy:take_weapon_hit('pepernoot', self.projectile_id) then
 			self:dispose('hit_enemy')
 		end
 		return
@@ -114,7 +70,7 @@ function pepernoot_projectile:on_overlap_stay(event)
 		if rock == nil then
 			return
 		end
-		if rock:take_pepernoot_hit(self.projectile_id) then
+		if rock:take_weapon_hit('pepernoot', self.projectile_id) then
 			self:dispose('hit_rock')
 		end
 	end
@@ -143,14 +99,34 @@ function pepernoot_projectile:tick()
 end
 
 local function define_pepernoot_projectile_fsm()
-	define_fsm(pepernoot_projectile_fsm_id, {
+	define_fsm(constants.ids.pepernoot_projectile_fsm, {
 		initial = 'boot',
 		states = {
 			boot = {
 				entering_state = function(self)
 					self.state_name = 'boot'
 					self.state_variant = 'boot'
-					self:ensure_components()
+					self.body_collider = components.collider2dcomponent.new({
+						parent = self,
+						id_local = 'body',
+						generateoverlapevents = true,
+						spaceevents = 'current',
+					})
+					self.body_collider:apply_collision_profile('projectile')
+					self.body_collider:set_local_area({
+						left = 0,
+						top = 0,
+						right = projectile_hit_width,
+						bottom = projectile_hit_height,
+					})
+					self:add_component(self.body_collider)
+					self.body_sprite = components.spritecomponent.new({
+						parent = self,
+						id_local = 'body',
+						imgid = 'pepernoot_16',
+						offset = { x = 0, y = 0, z = 113 },
+					})
+					self:add_component(self.body_sprite)
 					self:bind_events()
 					return '/active'
 				end,
@@ -174,7 +150,7 @@ local function register_pepernoot_projectile_definition()
 	define_world_object({
 		def_id = constants.ids.pepernoot_projectile_def,
 		class = pepernoot_projectile,
-		fsms = { pepernoot_projectile_fsm_id },
+		fsms = { constants.ids.pepernoot_projectile_fsm },
 		defaults = {
 			space_id = constants.spaces.castle,
 			room = nil,
@@ -182,7 +158,6 @@ local function register_pepernoot_projectile_definition()
 			owner_id = constants.ids.player_instance,
 			projectile_id = 0,
 			direction = 1,
-			events_bound = false,
 			disposed = false,
 			state_name = 'boot',
 			state_variant = 'boot',
@@ -197,5 +172,5 @@ return {
 	define_pepernoot_projectile_fsm = define_pepernoot_projectile_fsm,
 	register_pepernoot_projectile_definition = register_pepernoot_projectile_definition,
 	pepernoot_projectile_def_id = constants.ids.pepernoot_projectile_def,
-	pepernoot_projectile_fsm_id = pepernoot_projectile_fsm_id,
+	pepernoot_projectile_fsm_id = constants.ids.pepernoot_projectile_fsm,
 }

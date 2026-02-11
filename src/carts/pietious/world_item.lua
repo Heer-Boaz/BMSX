@@ -3,14 +3,6 @@ local components = require('components')
 local world_item = {}
 world_item.__index = world_item
 
-local world_item_fsm_id = constants.ids.world_item_fsm
-local state_active = world_item_fsm_id .. ':/active'
-local state_picked = world_item_fsm_id .. ':/picked'
-local PLAYER_ID = constants.ids.player_instance
-
-local body_sprite_component_id = 'body'
-local body_collider_component_id = 'body'
-
 local function sprite_for_item_type(item_type)
 	local sprite_id = constants.world_item.sprite[item_type]
 	if sprite_id == nil then
@@ -19,41 +11,7 @@ local function sprite_for_item_type(item_type)
 	return sprite_id
 end
 
-function world_item:ensure_components()
-	local body_collider = self:get_component_by_local_id('collider2dcomponent', body_collider_component_id)
-	if body_collider == nil then
-		body_collider = components.collider2dcomponent.new({
-			parent = self,
-			id_local = body_collider_component_id,
-			generateoverlapevents = true,
-			spaceevents = 'current',
-		})
-		body_collider:apply_collision_profile('pickup')
-		self:add_component(body_collider)
-	end
-
-	local body_sprite = self:get_component_by_local_id('spritecomponent', body_sprite_component_id)
-	if body_sprite == nil then
-		body_sprite = components.spritecomponent.new({
-			parent = self,
-			id_local = body_sprite_component_id,
-			imgid = 'item_health',
-			offset = { x = 0, y = 0, z = 112 },
-			collider_local_id = body_collider_component_id,
-		})
-		self:add_component(body_sprite)
-	end
-
-	self.body_collider = body_collider
-	self.body_sprite = body_sprite
-end
-
 function world_item:bind_events()
-	if self.events_bound then
-		return
-	end
-	self.events_bound = true
-
 	self.events:on({
 		event_name = 'overlap.stay',
 		subscriber = self,
@@ -78,36 +36,51 @@ function world_item:configure_from_room_def(def, room, item_service_id)
 	self.item_type = def.item_type
 	self.x = def.x
 	self.y = def.y
-	if self.sc:matches_state_path(state_active) then
+	if self.state_variant == 'active' then
 		self:update_visual()
 	end
 end
 
 function world_item:on_overlap_stay(event)
-	if event.other_id ~= PLAYER_ID then
+	if event.other_id ~= constants.ids.player_instance then
 		return
 	end
 
-	local player = object(PLAYER_ID)
+	local player = object(constants.ids.player_instance)
 	local other_collider = player:get_component_by_id(event.other_collider_id)
 	if other_collider.id_local ~= constants.ids.player_body_collider_local then
 		return
 	end
 
 	if service(self.item_service_id):try_pick_item(self.item_id, self.room_id, self.item_type, self.source_kind) then
-		self.sc:transition_to(state_picked)
+		self.sc:transition_to(constants.ids.world_item_fsm .. ':/picked')
 	end
 end
 
 local function define_world_item_fsm()
-	define_fsm(world_item_fsm_id, {
+	define_fsm(constants.ids.world_item_fsm, {
 		initial = 'boot',
 		states = {
 			boot = {
 				entering_state = function(self)
 					self.state_name = 'boot'
 					self.state_variant = 'boot'
-					self:ensure_components()
+					self.body_collider = components.collider2dcomponent.new({
+						parent = self,
+						id_local = 'body',
+						generateoverlapevents = true,
+						spaceevents = 'current',
+					})
+					self.body_collider:apply_collision_profile('pickup')
+					self:add_component(self.body_collider)
+					self.body_sprite = components.spritecomponent.new({
+						parent = self,
+						id_local = 'body',
+						imgid = 'item_health',
+						offset = { x = 0, y = 0, z = 112 },
+						collider_local_id = 'body',
+					})
+					self:add_component(self.body_sprite)
 					self:bind_events()
 					return '/active'
 				end,
@@ -136,15 +109,14 @@ local function register_world_item_definition()
 	define_world_object({
 		def_id = constants.ids.world_item_def,
 		class = world_item,
-		fsms = { world_item_fsm_id },
+		fsms = { constants.ids.world_item_fsm },
 		defaults = {
 			space_id = constants.spaces.castle,
 			room_id = '',
 			item_id = '',
-				item_type = 'ammofromrock',
-				source_kind = 'map',
-				item_service_id = constants.ids.item_service_instance,
-				events_bound = false,
+			item_type = 'ammofromrock',
+			source_kind = 'map',
+			item_service_id = constants.ids.item_service_instance,
 			state_name = 'boot',
 			state_variant = 'boot',
 			registrypersistent = false,
@@ -158,5 +130,5 @@ return {
 	define_world_item_fsm = define_world_item_fsm,
 	register_world_item_definition = register_world_item_definition,
 	world_item_def_id = constants.ids.world_item_def,
-	world_item_fsm_id = world_item_fsm_id,
+	world_item_fsm_id = constants.ids.world_item_fsm,
 }

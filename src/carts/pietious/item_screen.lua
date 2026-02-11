@@ -4,20 +4,15 @@ local eventemitter = require('eventemitter')
 local item_screen = {}
 item_screen.__index = item_screen
 
-local item_screen_fsm_id = constants.ids.item_screen_fsm
-local PLAYER_ID = constants.ids.player_instance
-local PLAYER_INDEX = 1
-local TILE_SIZE = constants.room.tile_size
-local GAME_SCREEN_TILE_OFFSET = constants.room.hud_height / TILE_SIZE
 local ITEM_OFFSET_X = 11
 local ITEM_OFFSET_Y = 6
 local SELECTOR_BLINK_FRAMES = 5
 local MAP_TITLE_X = 49
 local MAP_TITLE_Y = 103 + constants.room.hud_height
-local MAP_PROXY_ORIGIN_X = 5 * TILE_SIZE
-local MAP_PROXY_ORIGIN_Y = constants.room.hud_height + math.floor(14.5 * TILE_SIZE)
-local MAP_PROXY_STEP_X = TILE_SIZE
-local MAP_PROXY_STEP_Y = math.floor(TILE_SIZE / 2)
+local MAP_PROXY_ORIGIN_X = 5 * constants.room.tile_size
+local MAP_PROXY_ORIGIN_Y = constants.room.hud_height + math.floor(14.5 * constants.room.tile_size)
+local MAP_PROXY_STEP_X = constants.room.tile_size
+local MAP_PROXY_STEP_Y = math.floor(constants.room.tile_size / 2)
 
 local map_world_proxies = {
 	[1] = {
@@ -99,18 +94,6 @@ function item_screen:ctor()
 	self.map_highlight = true
 end
 
-function item_screen:get_player()
-	return object(PLAYER_ID)
-end
-
-function item_screen:get_room_space()
-	return service(constants.ids.castle_service_instance):get_current_room().space_id
-end
-
-function item_screen:get_current_room()
-	return service(constants.ids.castle_service_instance):get_current_room()
-end
-
 function item_screen:reset_for_open()
 	self.selector_hidden = false
 	self.selector_blink_counter = 0
@@ -120,13 +103,13 @@ end
 function item_screen:item_position_px(item_type)
 	local offset = item_position_offsets[item_type]
 	local tx = ITEM_OFFSET_X + offset.x
-	local ty = ITEM_OFFSET_Y + offset.y + GAME_SCREEN_TILE_OFFSET
-	return tx * TILE_SIZE, ty * TILE_SIZE
+	local ty = ITEM_OFFSET_Y + offset.y + (constants.room.hud_height / constants.room.tile_size)
+	return tx * constants.room.tile_size, ty * constants.room.tile_size
 end
 
 function item_screen:draw_inventory_items()
-	local player = self:get_player()
-	local room_space = self:get_room_space()
+	local player = object(constants.ids.player_instance)
+	local room_space = service(constants.ids.castle_service_instance).current_room.space_id
 	for i = 1, #inventory_item_order do
 		local item_type = inventory_item_order[i]
 		if player:has_inventory_item(item_type) then
@@ -142,14 +125,14 @@ function item_screen:draw_secondary_weapon_selector()
 	if self.selector_hidden then
 		return
 	end
-	local x = (14 * TILE_SIZE) + (self.secondary_weapon_selection_index * (3 * TILE_SIZE))
-	local y = constants.room.hud_height + math.floor(16.5 * TILE_SIZE) - 1
+	local x = (14 * constants.room.tile_size) + (self.secondary_weapon_selection_index * (3 * constants.room.tile_size))
+	local y = constants.room.hud_height + math.floor(16.5 * constants.room.tile_size) - 1
 	put_sprite('f1_selector_white', x, y, 322)
 end
 
 function item_screen:draw_map()
-	local player = self:get_player()
-	local room = self:get_current_room()
+	local player = object(constants.ids.player_instance)
+	local room = service(constants.ids.castle_service_instance).current_room
 	local world_number = room.world_number
 	if world_number <= 0 then
 		return
@@ -191,15 +174,15 @@ function item_screen:tick_selector_blink()
 end
 
 function item_screen:tick_secondary_weapon_selection()
-	local player = self:get_player()
-	if action_triggered('right[jp]', PLAYER_INDEX) then
+	local player = object(constants.ids.player_instance)
+	if action_triggered('right[jp]') then
 		for i = self.secondary_weapon_selection_index + 2, #secondary_weapon_order do
 			if player:has_inventory_item(secondary_weapon_order[i]) then
 				self.secondary_weapon_selection_index = i - 1
 				break
 			end
 		end
-	elseif action_triggered('left[jp]', PLAYER_INDEX) then
+	elseif action_triggered('left[jp]') then
 		for i = self.secondary_weapon_selection_index, 1, -1 do
 			if player:has_inventory_item(secondary_weapon_order[i]) then
 				self.secondary_weapon_selection_index = i - 1
@@ -230,7 +213,7 @@ function item_screen:draw_screen()
 end
 
 local function define_item_screen_fsm()
-	define_fsm(item_screen_fsm_id, {
+	define_fsm(constants.ids.item_screen_fsm, {
 		initial = 'boot',
 		states = {
 			boot = {
@@ -247,7 +230,7 @@ local function register_item_screen_definition()
 		define_world_object({
 			def_id = constants.ids.item_screen_def,
 			class = item_screen,
-			fsms = { item_screen_fsm_id },
+			fsms = { constants.ids.item_screen_fsm },
 			components = { 'customvisualcomponent' },
 			defaults = {
 				space_id = constants.spaces.item,
@@ -266,5 +249,5 @@ return {
 	register_item_screen_definition = register_item_screen_definition,
 	item_screen_def_id = constants.ids.item_screen_def,
 	item_screen_instance_id = constants.ids.item_screen_instance,
-	item_screen_fsm_id = item_screen_fsm_id,
+	item_screen_fsm_id = constants.ids.item_screen_fsm,
 }

@@ -7,13 +7,6 @@ enemy_explosion.__index = enemy_explosion
 
 local loot_drop_module = require('loot_drop.lua')
 
-local enemy_explosion_fsm_id = constants.ids.enemy_explosion_fsm
-local enemy_explosion_timeline_id = constants.ids.enemy_explosion_def .. '.timeline.explosion'
-local enemy_explosion_frame_event = 'timeline.frame.' .. enemy_explosion_timeline_id
-local enemy_explosion_end_event = 'timeline.end.' .. enemy_explosion_timeline_id
-
-local body_sprite_component_id = 'body'
-
 local explosion_frames = {
 	'explosion_2',
 	'explosion_3',
@@ -37,28 +30,9 @@ local function loot_value_for_type(loot_type)
 	error('pietious enemy_explosion invalid loot_type=' .. tostring(loot_type))
 end
 
-function enemy_explosion:ensure_components()
-	local body_sprite = self:get_component_by_local_id('spritecomponent', body_sprite_component_id)
-	if body_sprite == nil then
-		body_sprite = components.spritecomponent.new({
-			parent = self,
-			id_local = body_sprite_component_id,
-			imgid = explosion_frames[1],
-			offset = { x = 0, y = 0, z = 114 },
-		})
-		self:add_component(body_sprite)
-	end
-	self.body_sprite = body_sprite
-end
-
 function enemy_explosion:bind_events()
-	if self.events_bound then
-		return
-	end
-	self.events_bound = true
-
 	self.events:on({
-		event_name = enemy_explosion_frame_event,
+		event_name = 'timeline.frame.' .. constants.ids.enemy_explosion_def .. '.timeline.explosion',
 		subscriber = self,
 		handler = function(event)
 			self:update_visual(event.frame_value)
@@ -66,7 +40,7 @@ function enemy_explosion:bind_events()
 	})
 
 	self.events:on({
-		event_name = enemy_explosion_end_event,
+		event_name = 'timeline.end.' .. constants.ids.enemy_explosion_def .. '.timeline.explosion',
 		subscriber = self,
 		handler = function()
 			self:spawn_loot()
@@ -86,8 +60,7 @@ function enemy_explosion:bind_events()
 end
 
 function enemy_explosion:update_visual(imgid)
-	self:ensure_components()
-	self.body_sprite.imgid = imgid or explosion_frames[1]
+	self.body_sprite.imgid = imgid
 	self.body_sprite.enabled = true
 end
 
@@ -109,16 +82,22 @@ function enemy_explosion:spawn_loot()
 end
 
 local function define_enemy_explosion_fsm()
-	define_fsm(enemy_explosion_fsm_id, {
+	define_fsm(constants.ids.enemy_explosion_fsm, {
 		initial = 'boot',
 		states = {
 			boot = {
 				entering_state = function(self)
 					self.state_name = 'boot'
 					self.state_variant = 'boot'
-					self:ensure_components()
+					self.body_sprite = components.spritecomponent.new({
+						parent = self,
+						id_local = 'body',
+						imgid = explosion_frames[1],
+						offset = { x = 0, y = 0, z = 114 },
+					})
+					self:add_component(self.body_sprite)
 					self:define_timeline(new_timeline({
-						id = enemy_explosion_timeline_id,
+						id = constants.ids.enemy_explosion_def .. '.timeline.explosion',
 						frames = explosion_frames,
 						ticks_per_frame = constants.enemy.explosion_frame_steps,
 						playback_mode = 'once',
@@ -132,7 +111,7 @@ local function define_enemy_explosion_fsm()
 				entering_state = function(self)
 					self.state_name = 'animating'
 					self.state_variant = 'animating'
-					self:play_timeline(enemy_explosion_timeline_id, { rewind = true, snap_to_start = true })
+					self:play_timeline(constants.ids.enemy_explosion_def .. '.timeline.explosion', { rewind = true, snap_to_start = true })
 				end,
 			},
 		},
@@ -143,14 +122,13 @@ local function register_enemy_explosion_definition()
 	define_world_object({
 		def_id = constants.ids.enemy_explosion_def,
 		class = enemy_explosion,
-		fsms = { enemy_explosion_fsm_id },
+		fsms = { constants.ids.enemy_explosion_fsm },
 			defaults = {
 				space_id = constants.spaces.castle,
 				room_id = '',
 				loot_type = 'none',
 			state_name = 'boot',
 			state_variant = 'boot',
-			events_bound = false,
 			registrypersistent = false,
 			tick_enabled = false,
 		},
@@ -162,5 +140,5 @@ return {
 	define_enemy_explosion_fsm = define_enemy_explosion_fsm,
 	register_enemy_explosion_definition = register_enemy_explosion_definition,
 	enemy_explosion_def_id = constants.ids.enemy_explosion_def,
-	enemy_explosion_fsm_id = enemy_explosion_fsm_id,
+	enemy_explosion_fsm_id = constants.ids.enemy_explosion_fsm,
 }

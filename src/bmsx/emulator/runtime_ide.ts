@@ -605,7 +605,8 @@ export function tickTerminalMode(runtime: Runtime): void {
 		return;
 	}
 	const state = runtime.beginFrameState();
-	runtime.terminal.update(state.deltaSeconds);
+	const deltaSeconds = runtime.frameDeltaMs / 1000;
+	runtime.terminal.update(deltaSeconds);
 	runtime.vdp.flushAssetEdits();
 	runtime.drawFrameState = state;
 	runtime.abandonFrameState();
@@ -635,7 +636,8 @@ export function tickIDE(runtime: Runtime): void {
 		return;
 	}
 	const state = runtime.beginFrameState();
-	runtime.editor.update(state.deltaSeconds);
+	const deltaSeconds = runtime.frameDeltaMs / 1000;
+	runtime.editor.update(deltaSeconds);
 	runtime.vdp.flushAssetEdits();
 	runtime.drawFrameState = state;
 	runtime.abandonFrameState();

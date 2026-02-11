@@ -5,9 +5,7 @@ local rock_module = require('rock.lua')
 local rock_service = {}
 rock_service.__index = rock_service
 
-local rock_service_fsm_id = constants.ids.rock_service_fsm
-
-function rock_service:ensure_rock_instance(rock_def, room)
+function rock_service:sync_rock_instance(rock_def, room)
 	local id = rock_def.id
 	local instance = object(id)
 	if instance == nil then
@@ -49,7 +47,7 @@ function rock_service:deactivate_unused_rocks(active_ids)
 end
 
 function rock_service:sync_room_rocks()
-	local room = service(self.game_service_id):get_current_room()
+	local room = service(self.game_service_id).current_room
 	if self.synced_room_id == room.room_id and not self.sync_dirty then
 		return
 	end
@@ -63,7 +61,7 @@ function rock_service:sync_room_rocks()
 	for i = 1, #rock_defs do
 		local def = rock_defs[i]
 		if self.destroyed_rock_ids[def.id] ~= true then
-			self:ensure_rock_instance(def, room)
+			self:sync_rock_instance(def, room)
 			active_ids[def.id] = true
 		end
 	end
@@ -93,11 +91,6 @@ function rock_service:on_rock_destroyed(rock_id)
 end
 
 function rock_service:bind_events()
-	if self.events_bound then
-		return
-	end
-	self.events_bound = true
-
 	eventemitter.eventemitter.instance:on({
 		event = constants.events.room_switched,
 		subscriber = self,
@@ -110,7 +103,7 @@ function rock_service:bind_events()
 end
 
 local function define_rock_service_fsm()
-	define_fsm(rock_service_fsm_id, {
+	define_fsm(constants.ids.rock_service_fsm, {
 		initial = 'boot',
 		states = {
 			boot = {
@@ -137,7 +130,7 @@ local function register_rock_service_definition()
 	define_service({
 		def_id = constants.ids.rock_service_def,
 		class = rock_service,
-		fsms = { rock_service_fsm_id },
+		fsms = { constants.ids.rock_service_fsm },
 		auto_activate = true,
 			defaults = {
 				id = constants.ids.rock_service_instance,
@@ -148,7 +141,6 @@ local function register_rock_service_definition()
 			destroyed_rock_ids = {},
 			synced_room_id = '',
 			sync_dirty = true,
-			events_bound = false,
 			registrypersistent = false,
 			tick_enabled = true,
 		},
@@ -161,5 +153,5 @@ return {
 	register_rock_service_definition = register_rock_service_definition,
 	rock_service_def_id = constants.ids.rock_service_def,
 	rock_service_instance_id = constants.ids.rock_service_instance,
-	rock_service_fsm_id = rock_service_fsm_id,
+	rock_service_fsm_id = constants.ids.rock_service_fsm,
 }

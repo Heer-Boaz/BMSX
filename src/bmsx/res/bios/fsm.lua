@@ -26,6 +26,72 @@ local function collect_event_list(def, list, seen)
 	end
 end
 
+local function copy_tag_list(values, owner_tag, field_name)
+	if type(values) ~= "table" then
+		error("tag derivation '" .. tostring(owner_tag) .. "' field '" .. tostring(field_name) .. "' must be an array of tags.")
+	end
+	local out = {}
+	for i = 1, #values do
+		local source_tag = values[i]
+		if type(source_tag) ~= "string" then
+			error("tag derivation '" .. tostring(owner_tag) .. "' field '" .. tostring(field_name) .. "' contains non-string value at index " .. tostring(i) .. ".")
+		end
+		out[#out + 1] = source_tag
+	end
+	if #out == 0 then
+		error("tag derivation '" .. tostring(owner_tag) .. "' field '" .. tostring(field_name) .. "' cannot be empty.")
+	end
+	return out
+end
+
+local function compile_tag_derivations(raw)
+	if raw == nil then
+		return nil
+	end
+	if type(raw) ~= "table" then
+		error("fsm.tag_derivations must be a table.")
+	end
+	local derived_tags = {}
+	for derived_tag in pairs(raw) do
+		derived_tags[#derived_tags + 1] = derived_tag
+	end
+	if #derived_tags == 0 then
+		return nil
+	end
+	table.sort(derived_tags)
+	local compiled = {}
+	for i = 1, #derived_tags do
+		local derived_tag = derived_tags[i]
+		if type(derived_tag) ~= "string" then
+			error("fsm.tag_derivations contains non-string derived tag key.")
+		end
+		local spec = raw[derived_tag]
+		local rule = {
+			derived_tag = derived_tag,
+			any = nil,
+			all = nil,
+		}
+		if type(spec) ~= "table" then
+			error("tag derivation '" .. tostring(derived_tag) .. "' must be an array or table.")
+		end
+		if spec[1] ~= nil then
+			rule.any = copy_tag_list(spec, derived_tag, "any")
+		else
+			if spec.any ~= nil then
+				rule.any = copy_tag_list(spec.any, derived_tag, "any")
+			end
+			if spec.all ~= nil then
+				rule.all = copy_tag_list(spec.all, derived_tag, "all")
+			end
+		end
+		if rule.any == nil and rule.all == nil then
+			error("tag derivation '" .. tostring(derived_tag) .. "' must define an array, or an 'any'/'all' array.")
+		end
+		compiled[#compiled + 1] = rule
+	end
+	return compiled
+end
+
 function statedefinition.new(id, def, root, parent)
 	local self = setmetatable({}, statedefinition)
 	self.__is_state_definition = true
@@ -49,6 +115,14 @@ function statedefinition.new(id, def, root, parent)
 	self.timelines = def and def.timelines or nil
 	self.transition_guards = def and def.transition_guards or nil
 	self.tags = def and def.tags or nil
+	self.tag_derivations = nil
+	if self.root == self then
+		local raw_tag_derivations = nil
+		if def then
+			raw_tag_derivations = def.tag_derivations or def.derived_tags or def.tag_groups
+		end
+		self.tag_derivations = compile_tag_derivations(raw_tag_derivations)
+	end
 
 	if def and def.states then
 		for state_id, state_def in pairs(def.states) do
@@ -1506,6 +1580,51 @@ function state:collect_active_state_tags(out)
 	end
 end
 
+local function matches_tag_derivation_rule(rule, tags)
+	local all = rule.all
+	if all then
+		for i = 1, #all do
+			if not tags[all[i]] then
+				return false
+			end
+		end
+	end
+	local any = rule.any
+	if any then
+		for i = 1, #any do
+			if tags[any[i]] then
+				return true
+			end
+		end
+		return false
+	end
+	return true
+end
+
+function state:collect_derived_state_tags(out)
+	local root = self:is_root() and self or self.root
+	local derivations = root.definition.tag_derivations
+	if derivations == nil then
+		return
+	end
+	local unresolved = #derivations
+	while unresolved > 0 do
+		local changed = false
+		for i = 1, #derivations do
+			local rule = derivations[i]
+			local derived_tag = rule.derived_tag
+			if not out[derived_tag] and matches_tag_derivation_rule(rule, out) then
+				out[derived_tag] = true
+				unresolved = unresolved - 1
+				changed = true
+			end
+		end
+		if not changed then
+			break
+		end
+	end
+end
+
 function state:sync_target_state_tags()
 	local root = self:is_root() and self or self.root
 	local target = root.target
@@ -1520,6 +1639,7 @@ function state:sync_target_state_tags()
 		clear_map(next_tags)
 	end
 	root:collect_active_state_tags(next_tags)
+	root:collect_derived_state_tags(next_tags)
 	local prev_tags = root._applied_state_tags
 	if not prev_tags then
 		prev_tags = {}

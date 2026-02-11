@@ -14,6 +14,7 @@ local enemy_explosion_module = require('enemy_explosion.lua')
 local enemy_module = require('enemy.lua')
 local enemy_service_module = require('enemy_service.lua')
 local castle_service_module = require('castle_service.lua')
+local elevator_service_module = require('elevator_service.lua')
 local flow_service_module = require('flow_service.lua')
 local collision_profiles = require('collision_profiles')
 
@@ -83,6 +84,7 @@ function init()
 	enemy_module.register_enemy_definition()
 	enemy_service_module.register_enemy_service_definition()
 	castle_service_module.register_castle_service_definition()
+	elevator_service_module.register_elevator_service_definition()
 	flow_service_module.register_flow_service_definition()
 	register_collision_profiles()
 	vdp_load_slot(0, 0)
@@ -148,6 +150,11 @@ function new_game()
 	create_service(enemy_service_module.enemy_service_def_id, {
 		id = enemy_service_module.enemy_service_instance_id,
 		game_service_id = castle_service_module.castle_service_instance_id,
+	})
+
+	create_service(elevator_service_module.elevator_service_def_id, {
+		id = elevator_service_module.elevator_service_instance_id,
+		castle_service_id = castle_service_module.castle_service_instance_id,
 	})
 
 	create_service(rock_service_module.rock_service_def_id, {

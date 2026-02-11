@@ -33,6 +33,7 @@ local state_tags = {
 		stairs = 'g.st',
 		sword = 'g.sw',
 		damage_lock = 'g.dl',
+		elevator_transport = 'g.et',
 	},
 	ability = {
 		spyglass = 'a.spy',
@@ -166,10 +167,6 @@ function player:reset_runtime()
 	self.death_timer = 0
 	self.pepernoot_projectile_sequence = 0
 	self.pepernoot_projectile_ids = {}
-end
-
-function player:set_vertical_elevator_contact(active)
-	self.on_vertical_elevator = active
 end
 
 function player:ctor()
@@ -604,6 +601,10 @@ function player:collect_loot(loot_type, loot_value)
 	error('pietious player invalid loot_type=' .. tostring(loot_type))
 end
 
+function player:is_elevator_transport_state()
+	return self:has_tag(state_tags.group.elevator_transport)
+end
+
 function player:has_inventory_item(item_type)
 	return self.inventory_items[item_type] == true
 end
@@ -644,7 +645,7 @@ function player:try_switch_room(direction, keep_stairs_lock)
 		return false
 	end
 
-	self.room = castle_service:get_current_room()
+	self.room = castle_service.current_room
 	self.space_id = self.room.space_id
 	if direction == 'left' then
 		self.x = self.room.world_width - self.width
@@ -2183,6 +2184,17 @@ local function define_player_fsm()
 
 	define_fsm(constants.ids.player_fsm, {
 		initial = 'boot',
+		tag_derivations = {
+			[state_tags.group.elevator_transport] = {
+				state_tags.variant.quiet,
+				state_tags.variant.walking_right,
+				state_tags.variant.walking_left,
+				state_tags.variant.quiet_sword,
+				state_tags.variant.hit_recovery,
+				state_tags.variant.controlled_fall,
+				state_tags.variant.uncontrolled_fall,
+			},
+		},
 		on = {
 			['hp_zero'] = '/dying',
 			['damage'] = '/hit_fall',
