@@ -6,6 +6,11 @@
 -- Carts must use cart-facing globals/helpers (`object`, `service`, `spawn_object`,
 -- `update`, `reset`, `add_space`, `set_space`, `get_space`, `define_fsm`, `define_effect`,
 -- etc.) that are injected by the runtime.
+-- Keep cart identifier strings compact. Redundant long prefixes in tags/events/effects/
+-- timeline IDs are forbidden when short local IDs are sufficient (string memory + compare
+-- cost is part of the console budget).
+-- Do not create local aliases/copies of global constants in cart code (for example
+-- `local p = constants.physics`): read constants directly from their source table/global.
 -- This module is BIOS/runtime plumbing.
 
 local world_module = require("world")
