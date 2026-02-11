@@ -559,6 +559,9 @@ function player:collect_loot(loot_type, loot_value)
 		if self.weapon_level > constants.hud.weapon_level then
 			self.weapon_level = constants.hud.weapon_level
 		end
+		if self.secondary_weapon == 'none' and self:has_inventory_item('pepernoot') then
+			self.secondary_weapon = 'pepernoot'
+		end
 		return true
 	end
 	error('pietious player invalid loot_type=' .. tostring(loot_type))
@@ -570,6 +573,9 @@ end
 
 function player:add_inventory_item(item_type)
 	self.inventory_items[item_type] = true
+	if item_type == 'pepernoot' and self.secondary_weapon == 'none' then
+		self.secondary_weapon = 'pepernoot'
+	end
 end
 
 function player:equip_secondary_weapon(item_type)
