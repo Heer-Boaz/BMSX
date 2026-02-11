@@ -1767,7 +1767,7 @@ local function define_player_fsm()
 			entering_state = function(self)
 				self.inventory_items = {}
 				self.secondary_weapon = 'none'
-				self.weapon_level = constants.hud.weapon_level
+				self.weapon_level = 0
 				self:reset_runtime()
 				self:ensure_visual_components()
 				self:update_visual_components()
@@ -2139,7 +2139,7 @@ local function register_player_definition()
 				player_damage_imgid = player_dying_frames[1].player_damage_imgid,
 				inventory_items = nil,
 				secondary_weapon = 'none',
-				weapon_level = constants.hud.weapon_level,
+				weapon_level = 0,
 			pepernoot_projectile_sequence = 0,
 			pepernoot_projectile_ids = {},
 		},
