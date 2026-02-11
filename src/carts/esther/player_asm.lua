@@ -2821,14 +2821,6 @@ function player:integrate_and_collide()
 		self.pos_subx = max_x * sp
 	end
 	
-	local max_y = self.level.world_height - self.height
-	if self.ram_yposlo > max_y then
-		self.ram_yposlo = max_y
-		self.ram_yspeedlo = 0xFFFF
-		self.pos_suby = max_y * sp
-		self.grounded = true
-	end
-	
 	-- update grounded flags
 	if self.grounded then
 		self.ram_ramtable12a5lo = self.ram_ramtable12a5lo | 0x0001
