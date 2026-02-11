@@ -16,6 +16,11 @@ type PathEntry = {
 	// label: string;
 };
 
+type WorkspaceStoredEntry = {
+	contents: string;
+	updatedAt: number;
+};
+
 const HELP_TEXT = [
 	'----------------------------------------',
 	' BMSX COMMANDS',
@@ -434,15 +439,50 @@ export class TerminalCommandDispatcher {
 			const dirtyPath = buildWorkspaceDirtyEntryPath(root, cartPath);
 			const dirtyKey = buildWorkspaceStorageKey(root, dirtyPath);
 			const dirtyRaw = storage.getItem(dirtyKey);
-			const hasDirty = dirtyRaw !== null && dirtyRaw !== undefined;
+			const dirtyEntry = this.parseWorkspaceStoredEntry(dirtyRaw);
 
 			const canonicalKey = buildWorkspaceStorageKey(root, cartPath);
 			const savedRaw = storage.getItem(canonicalKey);
-			const hasSaved = savedRaw !== null && savedRaw !== undefined;
+			const savedEntry = this.parseWorkspaceStoredEntry(savedRaw);
+			const cartSource = asset.src;
+			const baseSource = asset.base_src;
+			const cartUpdatedAt = asset.update_timestamp ?? 0;
+			const savedMatchesCart = savedEntry !== null && savedEntry.contents === cartSource;
+			const savedNewerThanCart = savedEntry !== null && savedEntry.updatedAt > cartUpdatedAt;
+			const hasSaved = (savedMatchesCart || savedNewerThanCart) && savedEntry !== null && savedEntry.contents !== baseSource;
+			const dirtyMatchesCart = dirtyEntry !== null && dirtyEntry.contents === cartSource;
+			const dirtyNewerThanCart = dirtyEntry !== null && dirtyEntry.updatedAt > cartUpdatedAt;
+			let hasDirty = false;
+			if (dirtyEntry !== null) {
+				const dirtyDiffersFromSaved = savedEntry === null || dirtyEntry.contents !== savedEntry.contents;
+				const dirtyDiffersFromBase = dirtyEntry.contents !== baseSource;
+				hasDirty = (dirtyMatchesCart || dirtyNewerThanCart) && dirtyDiffersFromSaved && dirtyDiffersFromBase;
+			}
 			const hasUnsaved = unsavedPaths.has(normalizedPath);
 			flags.set(normalizedPath, { hasSaved, hasDirty, hasUnsaved });
 		}
 		return flags;
+	}
+
+	private parseWorkspaceStoredEntry(raw: string): WorkspaceStoredEntry | null {
+		if (raw === null || raw === undefined) {
+			return null;
+		}
+		let parsed: unknown;
+		try {
+			parsed = JSON.parse(raw);
+		} catch {
+			return { contents: raw, updatedAt: Number.MIN_SAFE_INTEGER };
+		}
+		if (!parsed || typeof parsed !== 'object') {
+			return { contents: raw, updatedAt: Number.MIN_SAFE_INTEGER };
+		}
+		const payload = parsed as { contents?: unknown; updatedAt?: unknown };
+		if (typeof payload.contents !== 'string') {
+			return { contents: raw, updatedAt: Number.MIN_SAFE_INTEGER };
+		}
+		const updatedAt = typeof payload.updatedAt === 'number' ? payload.updatedAt : Number.MIN_SAFE_INTEGER;
+		return { contents: payload.contents, updatedAt };
 	}
 
 	private collectPaths(mode: string): PathEntry[] {

@@ -120,6 +120,10 @@ export function activateTerminalMode(runtime: Runtime): void {
 	if (runtime.terminal.isActive) {
 		return;
 	}
+	const overlayWasActive = isOverlayActive(runtime);
+	if (!overlayWasActive) {
+		runtime.preservedRenderQueue = runtime.overlayRenderBackend.captureCurrentFrameRenderQueue();
+	}
 	deactivateEditor(runtime);
 	runtime.terminal.activate();
 	updateGamePipelineExts(runtime);
@@ -146,6 +150,10 @@ export function toggleEditor(runtime: Runtime): void {
 }
 
 export function activateEditor(runtime: Runtime): void {
+	const overlayWasActive = isOverlayActive(runtime);
+	if (!overlayWasActive) {
+		runtime.preservedRenderQueue = runtime.overlayRenderBackend.captureCurrentFrameRenderQueue();
+	}
 	if (runtime.terminal.isActive) {
 		runtime.terminal.deactivate();
 	}

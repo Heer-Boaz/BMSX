@@ -685,12 +685,14 @@ export async function applyWorkspaceOverridesToCart(params: { cart: LuaSourceReg
 		}
 		asset.src = nextSource;
 		pathBinding.src = nextSource;
+		const updatedAt = winner.updatedAt >= 0 ? winner.updatedAt : $.platform.clock.dateNow();
+		asset.update_timestamp = updatedAt;
+		pathBinding.update_timestamp = updatedAt;
 
 		if (!root) {
 			continue;
 		}
 
-		const updatedAt = winner.updatedAt >= 0 ? winner.updatedAt : $.platform.clock.dateNow();
 		const canonicalRecord: WorkspaceOverrideRecord = { ...winner.record, path: filePath, cartPath: filePath, updatedAt };
 		persistWorkspaceOverridesToLocalStorage(storage, root, new Map([[filePath, canonicalRecord]]));
 
