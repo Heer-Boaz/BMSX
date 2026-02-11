@@ -31,6 +31,7 @@ local define_dkc1_animationid_dk_idle = 0x0001
 local define_dkc1_animationid_dk_run = 0x0002
 local define_dkc1_animationid_dk_walk = 0x0003
 local define_dkc1_animationid_dk_jump = 0x0005
+local define_dkc1_animationid_dk_getoffanimalbuddy = 0x0008
 local define_dkc1_animationid_dk_holdjump = 0x004D
 local define_dkc1_animationid_dk_fall = 0x0015
 local define_dkc1_animationid_dk_bounce = 0x0017
@@ -38,6 +39,9 @@ local define_dkc1_animationid_dk_roll = 0x0018
 local define_dkc1_animationid_dk_endroll = 0x0019
 local define_dkc1_animationid_dk_cancelroll = 0x001a
 local define_dkc1_animationid_dk_jumpoffverticalrope = 0x0052
+local define_dkc1_norspr06_klump = 0x0006
+local define_dkc1_norspr2f_army = 0x002F
+local define_dkc1_norspr46_bluekrusha = 0x0046
 
 -- ============================================================================
 -- jump tables used by code_bfb27c dispatch
@@ -165,6 +169,30 @@ local data_818409 = {
 	0x06, 0x06, 0x06, 0x06, 0x86, 0x80, 0x00,
 }
 
+-- DATA_BBA428 from DKC1 (used by CODE_BBA4C8 when A is loaded by caller).
+local data_bba428 = {
+	{ 0xFFF8, 0xFFD0, 0x0018, 0x0020 },
+	{ 0xFFF6, 0xFFE2, 0x0015, 0x001E },
+	{ 0x0000, 0xFFEF, 0x001A, 0x0014 },
+	{ 0xFFEE, 0xFFE7, 0x001F, 0x0020 },
+	{ 0xFFF2, 0xFFD6, 0x0019, 0x0023 },
+	{ 0xFFF2, 0xFFD5, 0x003C, 0x002E },
+	{ 0xFFFA, 0xFFFC, 0x000A, 0x0006 },
+	{ 0xFFEC, 0xFFD8, 0x002A, 0x0028 },
+	{ 0xFFF9, 0xFFF7, 0x000C, 0x000E },
+	{ 0xFFE7, 0xFFD7, 0x0024, 0x002B },
+	{ 0xFFEA, 0xFFE0, 0x0027, 0x002A },
+	{ 0xFFE8, 0xFFE5, 0x002D, 0x002D },
+	{ 0xFFF1, 0xFFDD, 0x001B, 0x0020 },
+	{ 0xFFED, 0xFFCF, 0x0039, 0x0059 },
+	{ 0xFFEE, 0xFFBE, 0x0028, 0x0047 },
+	{ 0x0000, 0xFFED, 0x0022, 0x0014 },
+	{ 0xFFF4, 0xFFE8, 0x002E, 0x001A },
+	{ 0xFFD9, 0xFFC8, 0x0051, 0x0060 },
+	{ 0xFFF5, 0xFFDD, 0x0020, 0x002C },
+	{ 0x0000, 0xFFCC, 0x0035, 0x003C },
+}
+
 -- ============================================================================
 -- helper functions
 -- ============================================================================
@@ -231,6 +259,7 @@ function player.ctor(self, addons)
 	self.ram_16ed = 0
 	self.ram_16e1 = 0
 	self.ram_16e5 = 0
+	self.ram_16d5 = 0
 	self.ram_16f1 = 0
 	self.ram_16f5 = 0
 	self.ram_16f9 = 0xffb8
@@ -300,6 +329,7 @@ function player:reset_runtime()
 	self.ram_169d = 0
 	self.ram_16a5 = -0x7fffffff
 	self.ram_16f9 = 0xffb8
+	self.ram_16d5 = 0
 	self.ram_180f = 0
 	
 	self.ram_xspeedlo = 0
@@ -1746,8 +1776,240 @@ function player:code_bfa712()
 		return
 	end
 
-	-- CODE_BFA752+ depends on enemy-sprite overlap routines (CODE_BBA4C8/CODE_BBA58D).
-	-- Those paths are not wired in this cart runtime.
+	-- code_bfa752
+	local hitbox_index = 0x0009
+	if self.zp_84 == 0x0004 then
+		hitbox_index = 0x0012
+	end
+	self:code_bba4c8(hitbox_index)
+
+	local scan_mask = 0x0003
+	if self.ram_ramtable1029lo == 0x0028 then
+		scan_mask = 0x0103
+	end
+	if not self:code_bba58d(scan_mask) then
+		return
+	end
+	if self.zp_88 < 0x0006 then
+		return
+	end
+	if self.ram_ramtable1271lo ~= 0 then
+		local delta_y = self.zp_b0 - self.zp_ac
+		if delta_y >= 0x0030 then
+			return
+		end
+	end
+
+	self:code_bfa86a()
+
+	local target = self:dkc1_get_stomp_sprite_by_slot(self.zp_88)
+	if target == nil then
+		return
+	end
+
+	if (target.dkc1_ramtable109dlo & 0x0001) == 0 then
+		self:code_bfa79c(target)
+		return
+	end
+
+	if self.zp_84 == 0x0002 then
+		local sid = target.dkc1_sprite_id
+		if sid == define_dkc1_norspr06_klump
+			or sid == define_dkc1_norspr2f_army
+			or sid == define_dkc1_norspr46_bluekrusha
+		then
+			self:code_bfa79c(target)
+			return
+		end
+	end
+
+	self.ram_yspeedlo = 0x0300
+	local launch_x = 0x0200
+	if ((self.ram_xspeedlo ~ target.x_speed_subpx) & 0x8000) ~= 0 then
+		launch_x = 0x0280
+	end
+	if (self.ram_yxppccctlo & 0x4000) == 0 then
+		launch_x = to_unsigned_16(-to_signed_16(launch_x))
+	end
+	self.ram_xspeedlo = launch_x
+	self.ram_ramtable0f25lo = launch_x
+	self.ram_ramtable11a1lo = 0x0000
+	self.ram_ramtable1029lo = 0x000F
+	if (target.dkc1_ramtable11a1lo & 0x0004) ~= 0 then
+		target.dkc1_ramtable1595lo = 0x0004
+		target.dkc1_ramtable15c9lo = self.zp_84
+		self:code_bffa6c()
+		if self.ram_16d5 < 0x0010 then
+			self.ram_16d5 = 0x0010
+		end
+	end
+	self.ram_16ad = define_dkc1_animationid_dk_getoffanimalbuddy
+end
+
+-- CODE_BBA4C8 equivalent (player hitbox setup used by CODE_BFA752).
+function player:code_bba4c8(hitbox_index)
+	self.zp_b6 = self.zp_84
+
+	local hitbox = data_bba428[hitbox_index + 1]
+	local x_off = to_signed_16(hitbox[1])
+	local y_off = to_signed_16(hitbox[2])
+	local w = to_signed_16(hitbox[3])
+	local h = to_signed_16(hitbox[4])
+
+	if (self.ram_yxppccctlo & 0x4000) == 0 then
+		self.zp_a6 = self.ram_xposlo + x_off
+		self.zp_aa = self.zp_a6 + w
+	else
+		self.zp_aa = self.ram_xposlo - x_off
+		self.zp_a6 = self.zp_aa - w
+	end
+
+	if (self.ram_yxppccctlo & 0x8000) == 0 then
+		self.zp_a8 = self.ram_yposlo - y_off
+		self.zp_ac = self.zp_a8 - h
+	else
+		self.zp_ac = self.ram_yposlo + y_off
+		self.zp_a8 = self.zp_ac + h
+	end
+end
+
+function player:dkc1_get_any_sprite_by_slot(slot)
+	local stomp_targets = self.level.stomp_targets
+	for i = 1, #stomp_targets do
+		local target = stomp_targets[i]
+		if target.dkc1_slot == slot then
+			return target
+		end
+	end
+
+	local barrels = self.level.barrels
+	for i = 1, #barrels do
+		local barrel = barrels[i]
+		if barrel.dkc1_slot == slot then
+			return barrel
+		end
+	end
+	return nil
+end
+
+function player:dkc1_get_stomp_sprite_by_slot(slot)
+	local sprite = self:dkc1_get_any_sprite_by_slot(slot)
+	if sprite == nil then
+		return nil
+	end
+	local role = sprite.dkc1_collision_role
+	if role ~= 'enemy' and role ~= 'projectile' then
+		return nil
+	end
+	return sprite
+end
+
+function player:dkc1_stomp_sprite_active(sprite)
+	if sprite.state == 'broken' then
+		return false
+	end
+	local role = sprite.dkc1_collision_role
+	if role ~= 'enemy' and role ~= 'projectile' then
+		return false
+	end
+	local visible = self.debug_frame >= sprite.spawn_frame or sprite.state ~= 'idle'
+	if not visible then
+		return false
+	end
+	return sprite.dkc1_sprite_id ~= 0
+end
+
+function player:dkc1_build_sprite_bbox(sprite)
+	local hitbox = sprite.dkc1_hitbox
+	local x_off = to_signed_16(hitbox[1])
+	local y_off = to_signed_16(hitbox[2])
+	local w = to_signed_16(hitbox[3])
+	local h = to_signed_16(hitbox[4])
+
+	if (sprite.dkc1_yxppccctlo & 0x4000) == 0 then
+		self.zp_ae = sprite.x + x_off
+		self.zp_b2 = self.zp_ae + w
+	else
+		self.zp_b2 = sprite.x - x_off
+		self.zp_ae = self.zp_b2 - w
+	end
+
+	if (sprite.dkc1_yxppccctlo & 0x8000) == 0 then
+		self.zp_b0 = sprite.y - y_off
+		self.zp_b4 = self.zp_b0 - h
+	else
+		self.zp_b4 = sprite.y + y_off
+		self.zp_b0 = self.zp_b4 + h
+	end
+end
+
+-- CODE_BBA58D equivalent (masked sprite overlap scan).
+function player:code_bba58d(mask)
+	self.zp_b8 = mask
+	self.zp_88 = 0x001E
+	while true do
+		self.zp_88 = self.zp_88 - 2
+		if self.zp_88 == 0 then
+			return false
+		end
+		local sprite = self:dkc1_get_stomp_sprite_by_slot(self.zp_88)
+		if sprite ~= nil and self:dkc1_stomp_sprite_active(sprite) then
+			if self.zp_88 ~= self.zp_b6 and (self.zp_b8 & sprite.dkc1_ramtable11a1lo) ~= 0 then
+				self:dkc1_build_sprite_bbox(sprite)
+				if self.zp_b2 >= self.zp_a6
+					and self.zp_aa >= self.zp_ae
+					and self.zp_b0 >= self.zp_ac
+					and self.zp_a8 >= self.zp_b4
+				then
+					return true
+				end
+			end
+		end
+	end
+end
+
+-- CODE_BFA79C branch (main bounce launch + target handoff flags).
+function player:code_bfa79c(target)
+	if self.zp_84 == 0x0002 then
+		self.ram_yspeedlo = 0x0720
+	else
+		self.ram_yspeedlo = 0x0880
+	end
+	target.dkc1_ramtable1595lo = 0x0001
+	target.dkc1_ramtable15c9lo = self.zp_84
+	if self.ram_16d5 < 0x0004 then
+		self.ram_16d5 = 0x0004
+	end
+	self.ram_1699 = self.ram_1699 | 0x0003
+	self.ram_1929 = 0xFFFE
+	self.ram_16ad = define_dkc1_animationid_dk_bounce
+	self:code_bffa6c()
+end
+
+-- CODE_BFA86A: release carried sprite before bounce branch.
+function player:code_bfa86a()
+	if self.ram_16f5 == 0 then
+		return false
+	end
+	local carried_slot = self.ram_16f5
+	self.ram_16f5 = 0
+	local carried = self:dkc1_get_any_sprite_by_slot(carried_slot)
+	if carried == nil then
+		return false
+	end
+	carried.dkc1_ramtable1595lo = 0x0008
+	local xs = 0x0500
+	if (carried.dkc1_yxppccctlo & 0x4000) ~= 0 then
+		xs = to_unsigned_16(-to_signed_16(xs))
+	end
+	carried.x_speed_subpx = xs
+	carried.dkc1_ramtable0f25lo = xs
+	carried.y_speed_subpx = 0xFF00
+	return false
+end
+
+-- CODE_BFFA6C side effects are audio/flash; not required for physics parity here.
+function player:code_bffa6c()
 end
 
 -- code_bfbda9: roll initiation (line 112223)

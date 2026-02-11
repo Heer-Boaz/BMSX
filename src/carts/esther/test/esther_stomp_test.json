@@ -1,0 +1,118 @@
+[
+	{
+		"description": "stomp_test_move_right_down",
+		"timeMs": 8200,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": true,
+			"value": 1,
+			"timestamp": 8200,
+			"pressId": 1001,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "stomp_test_run_down",
+		"timeMs": 8220,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyS",
+			"down": true,
+			"value": 1,
+			"timestamp": 8220,
+			"pressId": 1002,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "stomp_test_jump_down_repeating",
+		"timeMs": 8800,
+		"repeat": 16,
+		"repeatEveryMs": 320,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyX",
+			"down": true,
+			"value": 1,
+			"timestamp": 8800,
+			"pressId": 1101,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "stomp_test_jump_up_repeating",
+		"timeMs": 8920,
+		"repeat": 16,
+		"repeatEveryMs": 320,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyX",
+			"down": false,
+			"value": 0,
+			"timestamp": 8920,
+			"pressId": 1101,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "stomp_test_idx5_jump_down",
+		"timeMs": 14340,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyX",
+			"down": true,
+			"value": 1,
+			"timestamp": 14340,
+			"pressId": 1201,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "stomp_test_idx5_jump_up",
+		"timeMs": 14460,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyX",
+			"down": false,
+			"value": 0,
+			"timestamp": 14460,
+			"pressId": 1201,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "stomp_test_run_up",
+		"timeMs": 15600,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyS",
+			"down": false,
+			"value": 0,
+			"timestamp": 15600,
+			"pressId": 1002,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "stomp_test_move_right_up",
+		"timeMs": 15620,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "ArrowRight",
+			"down": false,
+			"value": 0,
+			"timestamp": 15620,
+			"pressId": 1001,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	}
+]

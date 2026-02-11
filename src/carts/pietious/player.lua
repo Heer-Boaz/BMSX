@@ -139,6 +139,10 @@ function player:reset_runtime()
 	self.attack_released = false
 	self.last_dx = 0
 	self.last_dy = 0
+	self.previous_x_collision = false
+	self.previous_y_collision = false
+	self.on_vertical_elevator = false
+	self.jumping_from_elevator = false
 	self.walk_frame = 0
 	self.walk_distance_accum = 0
 	self.walk_speed_accum = 0
@@ -162,6 +166,10 @@ function player:reset_runtime()
 	self.death_timer = 0
 	self.pepernoot_projectile_sequence = 0
 	self.pepernoot_projectile_ids = {}
+end
+
+function player:set_vertical_elevator_contact(active)
+	self.on_vertical_elevator = active
 end
 
 function player:ctor()
@@ -703,6 +711,7 @@ function player:can_switch_up_from_state()
 		or self:has_tag(state_tags.variant.quiet)
 		or self:has_tag(state_tags.variant.walking_left)
 		or self:has_tag(state_tags.variant.walking_right)
+		or (self:has_tag(state_tags.variant.jumping) and self.jumping_from_elevator)
 end
 
 function player:nearing_room_exit()
@@ -710,15 +719,15 @@ function player:nearing_room_exit()
 	if self.x < 0 then
 		return 'left'
 	end
-	local up_exit_threshold = self.room.world_top - self.room.tile_size
-	if self.y <= up_exit_threshold and self:can_switch_up_from_state() then
-		return 'up'
-	end
 	if self.x > max_x then
 		return 'right'
 	end
+	local up_exit_threshold = self.room.world_top - self.room.tile_size
+	if self.y < up_exit_threshold then
+		return 'up'
+	end
 	local down_exit_threshold = self.room.world_height - self.height
-	if self.y >= down_exit_threshold then
+	if self.y > down_exit_threshold then
 		return 'down'
 	end
 	return nil
@@ -727,6 +736,14 @@ end
 function player:try_vertical_room_switch_from_position()
 	local direction = self:nearing_room_exit()
 	if direction == 'up' or direction == 'down' then
+		if direction == 'up' and (not self:can_switch_up_from_state()) then
+			local up_limit = self.room.world_top - self.room.tile_size
+			if self.y < up_limit then
+				self.y = up_limit
+			end
+			self.previous_y_collision = true
+			return false
+		end
 		local keep_stairs_lock = self:has_tag(state_tags.group.stairs)
 		if not self:try_switch_room(direction, keep_stairs_lock) then
 			if direction == 'up' then
@@ -734,6 +751,7 @@ function player:try_vertical_room_switch_from_position()
 				if self.y < up_limit then
 					self.y = up_limit
 				end
+				self.previous_y_collision = true
 			else
 				local down_limit = self.room.world_height - self.height
 				if self.y > down_limit then
@@ -978,74 +996,153 @@ function player:collides_at(x, y)
 	return false
 end
 
+function player:collides_at_jump_ceiling_profile(x, y)
+	for x_offset = -(constants.room.tile_size / 2), constants.room.tile_size / 2 do
+		if not self:collides_at(x + x_offset, y) then
+			return false
+		end
+	end
+	return true
+end
+
+function player:collides_at_jump_sword_ceiling_profile(x, y)
+	local half = constants.room.tile_size / 2
+	if not self:collides_at(x, y) then
+		return false
+	end
+	if not self:collides_at(x + half, y) then
+		return false
+	end
+	if not self:collides_at(x - half, y) then
+		return false
+	end
+	return true
+end
+
+function player:find_clear_x_with_probe(next_x, y)
+	for x_offset = 0, constants.room.tile_size / 2 do
+		local right_x = next_x + x_offset
+		if not self:collides_at(right_x, y) then
+			return right_x
+		end
+		if x_offset > 0 then
+			local left_x = next_x - x_offset
+			if not self:collides_at(left_x, y) then
+				return left_x
+			end
+		end
+	end
+	return nil
+end
+
 function player:apply_move(dx, dy)
-	local moved_x = 0
-	local moved_y = 0
+	local old_x = self.x
+	local old_y = self.y
 	local collided_x = false
 	local collided_y = false
 	local landed = false
 	local hit_ceiling = false
+	local upward_block = false
 
-	if dx ~= 0 then
-		local step_x = math.sign(dx)
-		for _ = 1, math.abs(dx) do
-			local next_x = self.x + step_x
-			if self:collides_at(next_x, self.y) then
-				collided_x = true
-				break
-			end
-			self.x = next_x
-			moved_x = moved_x + step_x
+	local next_x = old_x + dx
+	local next_y = old_y + dy
+	local test_x_col = false
+	local found = false
+
+	if self:collides_at(next_x, next_y) then
+		collided_y = true
+		local inc = 1
+		if next_y > old_y then
+			inc = -1
 		end
+		if next_y > old_y then
+			if self:collides_at(old_x, old_y) then
+				local resolved_x = self:find_clear_x_with_probe(next_x, next_y)
+				if resolved_x ~= nil then
+					self.x = resolved_x
+					self.y = next_y
+					found = true
+				end
+			end
+			local y_probe = next_y + inc
+			while (not found) and y_probe ~= old_y do
+				if not self:collides_at(old_x, y_probe) then
+					self.y = y_probe
+					test_x_col = true
+					found = true
+				else
+					y_probe = y_probe + inc
+				end
+			end
+			if not found then
+				landed = true
+			end
+		else
+			if next_y < old_y then
+				local y_probe = next_y
+				while (not found) and y_probe ~= old_y do
+					if not self:collides_at(next_x, y_probe) then
+						self.x = next_x
+						self.y = y_probe
+						found = true
+					else
+						local resolved_x = self:find_clear_x_with_probe(next_x, y_probe)
+						if resolved_x ~= nil then
+							self.x = resolved_x
+							self.y = y_probe
+							found = true
+						else
+							y_probe = y_probe + inc
+						end
+					end
+				end
+				if not found then
+					hit_ceiling = true
+					upward_block = true
+				end
+			end
+		end
+	else
+		self.y = next_y
+		test_x_col = true
+		found = true
 	end
 
-	if dy ~= 0 then
-		local step_y = math.sign(dy)
-		for _ = 1, math.abs(dy) do
-			local next_y = self.y + step_y
-			if self:collides_at(self.x, next_y) then
-				collided_y = true
-				if step_y > 0 then
-					landed = true
-				else
-					hit_ceiling = true
-				end
-				break
+	if test_x_col or (not found) then
+		if self:collides_at(next_x, self.y) then
+			collided_x = true
+			local resolved_x = self:find_clear_x_with_probe(next_x, self.y)
+			if resolved_x ~= nil then
+				self.x = resolved_x
 			end
-			self.y = next_y
-			moved_y = moved_y + step_y
+		else
+			self.x = next_x
 		end
 	end
 
 	local max_x = self.room.world_width - self.width
 	if self.x < 0 then
-		moved_x = moved_x - self.x
 		self.x = 0
 		collided_x = true
 	end
 	if self.x > max_x then
-		moved_x = moved_x - (self.x - max_x)
 		self.x = max_x
 		collided_x = true
 	end
 
 	local max_y = self.room.world_height - self.height
-	local min_y = self.room.world_top
-	if self.y < min_y then
-		moved_y = moved_y - (self.y - min_y)
-		self.y = min_y
-		hit_ceiling = true
-		collided_y = true
-	end
 	if self.y > max_y and self.room.links.down <= 0 then
-		moved_y = moved_y - (self.y - max_y)
 		self.y = max_y
 		landed = true
 		collided_y = true
 	end
 
+	local moved_x = self.x - old_x
+	local moved_y = self.y - old_y
 	self.last_dx = moved_x
 	self.last_dy = moved_y
+	self.previous_x_collision = collided_x
+	self.previous_y_collision = upward_block
 
 	return {
 		collided_x = collided_x,
@@ -1059,6 +1156,7 @@ function player:start_jump(inertia)
 	self.jump_substate = 0
 	self:reset_fall_substate_sequence()
 	self.jump_inertia = inertia
+	self.jumping_from_elevator = self.on_vertical_elevator
 	if inertia < 0 then
 		self.facing = -1
 	elseif inertia > 0 then
@@ -1334,6 +1432,8 @@ function player:runcheck_quiet_stairs_controls()
 end
 
 function player:tick_quiet()
+	self.previous_x_collision = false
+	self.previous_y_collision = false
 	self.last_dx = 0
 	self.last_dy = 0
 
@@ -1351,6 +1451,8 @@ function player:tick_walking_right()
 	self.walk_move_collided_x = false
 
 	if not self:collides_at(self.x, self.y + 1) then
+		self.previous_x_collision = false
+		self.previous_y_collision = false
 		self.last_dx = 0
 		self.last_dy = 0
 		self:reset_fall_substate_sequence()
@@ -1372,6 +1474,8 @@ function player:tick_walking_left()
 	self.walk_move_collided_x = false
 
 	if not self:collides_at(self.x, self.y + 1) then
+		self.previous_x_collision = false
+		self.previous_y_collision = false
 		self.last_dx = 0
 		self.last_dy = 0
 		self:reset_fall_substate_sequence()
@@ -1392,6 +1496,10 @@ function player:tick_jump_motion()
 	end
 	self:update_facing_from_horizontal_input()
 	local p = constants.physics
+	local sword_jump = self:has_tag(state_tags.variant.jumping_sword)
+	if (not sword_jump) and self.previous_x_collision then
+		self.jump_inertia = 0
+	end
 	if not self.up_held and self.jump_substate < p.jump_release_cut_substate then
 		self.jump_substate = p.jump_release_cut_substate
 	end
@@ -1400,20 +1508,29 @@ function player:tick_jump_motion()
 	if dy == nil then
 		dy = 0
 	end
+	if (not sword_jump) and self.previous_y_collision then
+		dy = 0
+	end
+	local hit_ceiling = (not sword_jump) and self.previous_y_collision
+	if (not hit_ceiling) and dy < 0 then
+		if sword_jump then
+			hit_ceiling = self:collides_at_jump_sword_ceiling_profile(self.x, self.y + dy)
+		else
+			hit_ceiling = self:collides_at_jump_ceiling_profile(self.x, self.y + dy)
+		end
+	end
 	local dx = self.jump_inertia * p.jump_dx
 	local move_result = self:apply_move(dx, dy)
 
 	if move_result.collided_x and self:try_side_room_switch_from_motion(dx) then
 		move_result.collided_x = false
 	end
-	if move_result.collided_x then
-		self.jump_inertia = 0
+	if move_result.hit_ceiling then
+		hit_ceiling = true
 	end
 
-	local hit_ceiling = false
-	if move_result.hit_ceiling and self.jump_substate < p.jump_release_cut_substate then
+	if hit_ceiling and self.jump_substate < p.jump_release_cut_substate then
 		self.jump_substate = p.jump_release_cut_substate
-		hit_ceiling = true
 	end
 
 	self.jump_substate = self.jump_substate + 1
@@ -1444,13 +1561,13 @@ function player:tick_stopped_jump_motion()
 		self:advance_sword_sequence()
 	end
 	self:update_facing_from_horizontal_input()
+	if (not self:has_tag(state_tags.group.sword)) and self.previous_x_collision then
+		self.jump_inertia = 0
+	end
 	local dx = self.jump_inertia * constants.physics.jump_dx
 	local move_result = self:apply_move(dx, 0)
 	if move_result.collided_x and self:try_side_room_switch_from_motion(dx) then
 		move_result.collided_x = false
-	end
-	if move_result.collided_x then
-		self.jump_inertia = 0
 	end
 
 	self.jump_substate = self.jump_substate + 1
@@ -1468,18 +1585,19 @@ function player:tick_controlled_fall_motion()
 	if self:has_tag(state_tags.group.sword) then
 		self:advance_sword_sequence()
 	end
+	if (not self:has_tag(state_tags.group.sword)) and self.previous_x_collision then
+		self.jump_inertia = 0
+	end
 	local dx = self:get_controlled_fall_dx()
 	local dy = self:get_controlled_fall_dy()
+	local should_land = (not self:collides_at(self.x, self.y)) and self:collides_at(self.x, self.y + dy)
 	local move_result = self:apply_move(dx, dy)
 
 	if move_result.collided_x and self:try_side_room_switch_from_motion(dx) then
 		move_result.collided_x = false
 	end
-	if move_result.collided_x then
-		self.jump_inertia = 0
-	end
 
-	if move_result.landed or (dy == 0 and self:collides_at(self.x, self.y + 1)) then
+	if should_land then
 		self:reset_fall_substate_sequence()
 		if self:has_tag(state_tags.group.sword) then
 			self:dispatch_state_event('landed_to_quiet_sword')
@@ -1497,9 +1615,10 @@ function player:tick_uncontrolled_fall_motion()
 		self:advance_sword_sequence()
 	end
 	local dy = self:get_uncontrolled_fall_dy()
+	local should_land = self:collides_at(self.x, self.y + dy)
 	local move_result = self:apply_move(0, dy)
 
-	if move_result.landed then
+	if should_land then
 		self:reset_fall_substate_sequence()
 		if self:has_tag(state_tags.group.sword) then
 			self:dispatch_state_event('landed_to_quiet_sword')
@@ -1514,6 +1633,8 @@ end
 
 function player:tick_quiet_sword()
 	self:advance_sword_sequence()
+	self.previous_x_collision = false
+	self.previous_y_collision = false
 	self.last_dx = 0
 	self.last_dy = 0
 
@@ -1524,6 +1645,8 @@ function player:tick_quiet_sword()
 end
 
 function player:tick_up_stairs()
+	self.previous_x_collision = false
+	self.previous_y_collision = false
 	self.last_dx = 0
 	self.last_dy = 0
 	self.x = self.stairs_x
@@ -1579,6 +1702,8 @@ function player:tick_up_stairs()
 end
 
 function player:tick_down_stairs()
+	self.previous_x_collision = false
+	self.previous_y_collision = false
 	self.last_dx = 0
 	self.last_dy = 0
 	self.x = self.stairs_x
@@ -1635,6 +1760,8 @@ function player:tick_down_stairs()
 end
 
 function player:tick_quiet_stairs()
+	self.previous_x_collision = false
+	self.previous_y_collision = false
 	self.last_dx = 0
 	self.last_dy = 0
 	self.x = self.stairs_x
@@ -1643,6 +1770,8 @@ end
 
 function player:tick_sword_stairs()
 	self:advance_sword_sequence()
+	self.previous_x_collision = false
+	self.previous_y_collision = false
 	self.last_dx = 0
 	self.last_dy = 0
 	self.x = self.stairs_x
@@ -1661,6 +1790,11 @@ function player:tick_hit_fall()
 		end
 	end
 
+	local hit_ground = false
+	if self.hit_substate >= 4 then
+		hit_ground = (not self:collides_at(self.x, self.y)) and self:collides_at(self.x, self.y + dy)
+	end
+
 	local move_result = self:apply_move(dx, dy)
 	if move_result.collided_x then
 		if self:try_side_room_switch_from_motion(dx) then
@@ -1675,7 +1809,7 @@ function player:tick_hit_fall()
 			self:start_dying()
 			return
 		end
-		if move_result.landed or (dy == 0 and self:collides_at(self.x, self.y + 1)) then
+		if hit_ground then
 			self.hit_substate = 0
 			self.hit_recovery_timer = 0
 			self.last_dx = 0
@@ -1690,6 +1824,8 @@ end
 
 function player:tick_hit_recovery()
 	self:reset_sword()
+	self.previous_x_collision = false
+	self.previous_y_collision = false
 	self.last_dx = 0
 	self.last_dy = 0
 	self.hit_recovery_timer = self.hit_recovery_timer + 1
@@ -1704,6 +1840,8 @@ function player:tick_hit_recovery()
 end
 
 function player:tick_dying()
+	self.previous_x_collision = false
+	self.previous_y_collision = false
 	self.last_dx = 0
 	self.last_dy = 0
 	self:reset_sword()
@@ -1715,6 +1853,9 @@ function player:tick_dying()
 end
 
 function player:tick()
+	if not self:has_tag(state_tags.variant.jumping) then
+		self.jumping_from_elevator = false
+	end
 	self:try_vertical_room_switch_from_position()
 
 	self.grounded = self:collides_at(self.x, self.y + 1)
@@ -2095,8 +2236,12 @@ local function register_player_definition()
 					attack_pressed = false,
 					attack_released = false,
 					last_dx = 0,
-				last_dy = 0,
-				walk_frame = 0,
+					last_dy = 0,
+					previous_x_collision = false,
+					previous_y_collision = false,
+					on_vertical_elevator = false,
+					jumping_from_elevator = false,
+					walk_frame = 0,
 				walk_distance_accum = 0,
 				walk_speed_accum = 0,
 				walk_move_dx = 0,

@@ -187,14 +187,8 @@ constants.palette = {
 	ui_fg = { r = 0.12, g = 0.11, b = 0.08, a = 1 },
 }
 
-constants.ui = {
-	help = 'DKC BASELINE | ARROWS MOVE | Y(S) RUN/ROLL/HOLD CARRY | Y RELEASE THROW | B(X) JUMP',
-	clear = 'EXIT BARREL REACHED',
-}
-
 constants.render = {
-	player_only_mode = true,
-	player_only_draw_shadow = false,
+	objects_only_mode = false,
 }
 
 constants.telemetry = {

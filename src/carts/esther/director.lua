@@ -43,11 +43,47 @@ function director:reset_barrels()
 		barrel.state = 'idle'
 		barrel.throw_lock_frames = 0
 		barrel.trace_frames_left = 0
+		barrel.dkc1_slot = 0x001E - (i * 2)
+		barrel.dkc1_sprite_id = 0x0040
+		barrel.dkc1_ramtable11a1lo = 0x0027
+		barrel.dkc1_ramtable109dlo = 0x0000
+		barrel.dkc1_ramtable1595lo = 0x0000
+		barrel.dkc1_ramtable15c9lo = 0x0000
+		barrel.dkc1_ramtable0f25lo = 0x0000
+		barrel.dkc1_yxppccctlo = 0x0000
+		barrel.dkc1_collision_role = barrel.dkc1_collision_role_base
+	end
+end
+
+function director:reset_stomp_targets()
+	local targets = self.level.stomp_targets
+	for i = 1, #targets do
+		local target = targets[i]
+		target.x = target.spawn_x
+		target.y = target.spawn_y
+		target.x_speed_subpx = 0
+		target.y_speed_subpx = 0
+		target.grounded = true
+		target.state = 'active'
+		target.dkc1_ramtable1595lo = 0x0000
+		target.dkc1_ramtable15c9lo = 0x0000
+		target.dkc1_ramtable0f25lo = 0x0000
+		target.dkc1_collision_role = target.dkc1_collision_role_base
+		if target.dkc1_sprite_id_base ~= nil then
+			target.dkc1_sprite_id = target.dkc1_sprite_id_base
+		end
+		if target.dkc1_ramtable11a1lo_base ~= nil then
+			target.dkc1_ramtable11a1lo = target.dkc1_ramtable11a1lo_base
+		end
+		if target.dkc1_ramtable109dlo_base ~= nil then
+			target.dkc1_ramtable109dlo = target.dkc1_ramtable109dlo_base
+		end
 	end
 end
 
 function director:reset_level(player)
 	self:reset_barrels()
+	self:reset_stomp_targets()
 	player:respawn()
 	self.level_complete = false
 	self.level_clear_timer_ms = 0
@@ -195,6 +231,15 @@ function director:update_barrels(player)
 	for i = 1, #barrels do
 		local barrel = barrels[i]
 		if player.debug_frame >= barrel.spawn_frame or barrel.state ~= 'idle' then
+			if barrel.state == 'thrown' then
+				barrel.dkc1_collision_role = 'projectile'
+				if barrel.dkc1_sprite_id == 0 then
+					barrel.dkc1_sprite_id = 0x0040
+				end
+				barrel.dkc1_ramtable11a1lo = 0x0027
+			elseif barrel.state ~= 'broken' then
+				barrel.dkc1_collision_role = 'carryable'
+			end
 			if barrel.throw_lock_frames > 0 then
 				barrel.throw_lock_frames = barrel.throw_lock_frames - 1
 			end
@@ -269,9 +314,26 @@ function director:update_barrels(player)
 					barrel.state = 'broken'
 					barrel.x_speed_subpx = 0
 					barrel.y_speed_subpx = 0
+					barrel.dkc1_sprite_id = 0x0000
+					barrel.dkc1_ramtable11a1lo = 0x0000
+					barrel.dkc1_collision_role = 'none'
 					self:emit_event(player.debug_frame, 'barrel_break', string.format('idx=%d|x=%d|y=%d', i, barrel.x, barrel.y))
 				end
 			end
+		end
+	end
+end
+
+function director:update_stomp_targets(player)
+	local targets = self.level.stomp_targets
+	for i = 1, #targets do
+		local target = targets[i]
+		if target.state ~= 'broken' and target.dkc1_ramtable1595lo ~= 0 then
+			target.state = 'broken'
+			target.dkc1_collision_role = 'none'
+			target.dkc1_sprite_id = 0x0000
+			target.dkc1_ramtable11a1lo = 0x0000
+			self:emit_event(player.debug_frame, 'stomp_target_break', string.format('idx=%d|slot=%d', i, target.dkc1_slot))
 		end
 	end
 end
@@ -297,6 +359,7 @@ function director:tick(dt)
 	end
 
 	self:update_barrels(player)
+	self:update_stomp_targets(player)
 	self:update_camera(player)
 	self:emit_camera_metric(player)
 end
@@ -393,6 +456,45 @@ function director:draw_barrels(player, draw_held)
 	end
 end
 
+function director:draw_stomp_target(target, z_base)
+	if target.state == 'broken' then
+		return
+	end
+	if target.dkc1_sprite_id == 0 then
+		return
+	end
+	local view_w = display_width()
+	local left = math.floor(target.x - self.camera_x)
+	local right = left + target.w
+	if right <= 0 or left >= view_w then
+		return
+	end
+	local top = target.y
+	local bottom = top + target.h
+	local palette = constants.palette
+	local body = palette.barrel_inner
+	local border = palette.barrel_band
+	if target.dkc1_collision_role == 'projectile' then
+		body = palette.goal
+		border = palette.exit_barrel
+	elseif target.dkc1_collision_role == 'enemy' then
+		body = palette.exit_barrel
+		border = palette.exit_cave
+	end
+	put_rectfillcolor(left, top, right, bottom, z_base, body)
+	put_rectfillcolor(left, top, right, top + 1, z_base + 1, border)
+	put_rectfillcolor(left, bottom - 1, right, bottom, z_base + 1, border)
+	put_rectfillcolor(left, top, left + 1, bottom, z_base + 1, border)
+	put_rectfillcolor(right - 1, top, right, bottom, z_base + 1, border)
+end
+
+function director:draw_stomp_targets()
+	local targets = self.level.stomp_targets
+	for i = 1, #targets do
+		self:draw_stomp_target(targets[i], 118)
+	end
+end
+
 function director:draw_player(player, draw_shadow)
 	local view_w = display_width()
 	local px = player.x - self.camera_x
@@ -429,22 +531,16 @@ function director:draw_player(player, draw_shadow)
 	})
 end
 
-function director:draw_ui()
-	local view_w = display_width()
-	put_rectfillcolor(4, 4, view_w - 4, 22, 390, constants.palette.ui_bg)
-	put_glyphs(constants.ui.help, 10, 10, 391, self.ui_glyph_opts)
-	if self.level_complete then
-		local left = math.floor((view_w - 128) * 0.5)
-		local right = left + 128
-		put_rectfillcolor(left, 92, right, 120, 392, constants.palette.ui_bg)
-		put_glyphs(constants.ui.clear, left + 22, 102, 393, self.ui_glyph_opts)
-	end
-end
-
 function director:render_frame()
 	local render_cfg = constants.render
-	if render_cfg.player_only_mode then
-		self:draw_player(self.player_ref, render_cfg.player_only_draw_shadow)
+	if render_cfg.objects_only_mode then
+		local view_w = display_width()
+		local view_h = display_height()
+		put_rectfillcolor(0, 0, view_w, view_h, 0, { r = 0, g = 0, b = 0, a = 1 })
+		self:draw_stomp_targets()
+		self:draw_barrels(self.player_ref, false)
+		self:draw_player(self.player_ref, false)
+		self:draw_barrels(self.player_ref, true)
 		return
 	end
 
@@ -457,10 +553,10 @@ function director:render_frame()
 	self:draw_trunks()
 	self:draw_level_solids()
 	self:draw_goal()
+	self:draw_stomp_targets()
 	self:draw_barrels(self.player_ref, false)
-	self:draw_player(self.player_ref, true)
+	self:draw_player(self.player_ref, false)
 	self:draw_barrels(self.player_ref, true)
-	self:draw_ui()
 end
 
 local function define_director_fsm()
@@ -517,7 +613,6 @@ local function register_director_definition()
 				b = constants.palette.goal.b,
 				a = 0.2,
 			},
-			ui_glyph_opts = { layer = 'ui', color = constants.palette.ui_fg },
 		},
 	})
 end
