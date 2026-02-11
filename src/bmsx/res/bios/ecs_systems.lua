@@ -275,12 +275,13 @@ local function make_pair_key(a, b)
 	return b .. "|" .. a
 end
 
-local function build_overlap_payload(self_col, other_col, other_owner, contact)
+local function build_overlap_payload(self_col, other_col, other_owner, contact, phase)
 	return {
 		other_id = other_owner.id,
 		other_collider_id = other_col.id,
 		collider_id = self_col.id,
 		contact = contact,
+		phase = phase,
 	}
 end
 
@@ -419,7 +420,7 @@ function overlap2dsystem:update(world)
 		return a, b
 	end
 
-	local function emit_pair(event_name, col_a, col_b)
+	local function emit_pair(event_name, col_a, col_b, contact, phase)
 		local owner_a = col_a.parent
 		local owner_b = col_b.parent
 		if owner_a == nil or owner_b == nil then
@@ -436,34 +437,38 @@ function overlap2dsystem:update(world)
 		if not emit_a and not emit_b then
 			return
 		end
-		local contact = nil
-		if event_name ~= "overlap.end" then
-			contact = collision2d.get_contact2d(col_a, col_b)
+		local resolved_contact = contact
+		if resolved_contact == nil and event_name ~= "overlap.end" then
+			resolved_contact = collision2d.get_contact2d(col_a, col_b)
 		end
 		if emit_a then
-			owner_a.events:emit(event_name, build_overlap_payload(col_a, col_b, owner_b, contact))
+			owner_a.events:emit(event_name, build_overlap_payload(col_a, col_b, owner_b, resolved_contact, phase))
 		end
 		if emit_b then
-			owner_b.events:emit(event_name, build_overlap_payload(col_b, col_a, owner_a, clone_contact_with_flipped_normal(contact)))
+			owner_b.events:emit(event_name, build_overlap_payload(col_b, col_a, owner_a, clone_contact_with_flipped_normal(resolved_contact), phase))
 		end
 	end
 
 	for i = 1, #begins do
 		local a, b = resolve_pair(begins[i])
 		if a ~= nil and b ~= nil then
-			emit_pair("overlap.begin", a, b)
+			local contact = collision2d.get_contact2d(a, b)
+			emit_pair("overlap.begin", a, b, contact, "begin")
+			emit_pair("overlap", a, b, contact, "begin")
 		end
 	end
 	for i = 1, #stays do
 		local a, b = resolve_pair(stays[i])
 		if a ~= nil and b ~= nil then
-			emit_pair("overlap.stay", a, b)
+			local contact = collision2d.get_contact2d(a, b)
+			emit_pair("overlap.stay", a, b, contact, "stay")
+			emit_pair("overlap", a, b, contact, "stay")
 		end
 	end
 	for i = 1, #ends do
 		local a, b = resolve_pair(ends[i])
 		if a ~= nil and b ~= nil then
-			emit_pair("overlap.end", a, b)
+			emit_pair("overlap.end", a, b, nil, "end")
 		end
 	end
 
