@@ -1,8 +1,7 @@
 local constants = require('constants.lua')
-local engine = require('engine')
 local eventemitter = require('eventemitter')
 local components = require('components')
-local pepernoot_projectile_module = require('pepernoot_projectile.lua')
+local player_action_effects_module = require('player_action_effects.lua')
 
 local player = {}
 player.__index = player
@@ -65,6 +64,8 @@ local state_tags = {
 	},
 }
 
+player_action_effects_module.attach_player_methods(player)
+
 local player_dying_timeline_id = 'pietious.player.player_dying'
 local player_hit_fall_timeline_id = 'pietious.player.player_hit_fall'
 local player_hit_recovery_timeline_id = 'pietious.player.player_hit_recovery'
@@ -76,10 +77,10 @@ local sword_sprite_imgid = 'sword_r'
 local rock_service_id = constants.ids.rock_service_instance
 local rock_width = constants.rock.width
 local rock_height = constants.rock.height
-local player_effect_try_start_sword_id = 'pietious.player.effect.try_start_sword'
-local player_effect_try_use_secondary_id = 'pietious.player.effect.try_use_secondary'
-local player_effect_try_use_pepernoot_id = 'pietious.player.effect.try_use_pepernoot'
-local player_effect_try_use_spyglass_id = 'pietious.player.effect.try_use_spyglass'
+local player_effect_try_start_sword_id = player_action_effects_module.effect_ids.try_start_sword
+local player_effect_try_use_secondary_id = player_action_effects_module.effect_ids.try_use_secondary
+local player_effect_try_use_pepernoot_id = player_action_effects_module.effect_ids.try_use_pepernoot
+local player_effect_try_use_spyglass_id = player_action_effects_module.effect_ids.try_use_spyglass
 local player_event_respawn = 'respawn'
 local player_event_hp_zero = 'hp_zero'
 local player_event_damage = 'damage'
@@ -695,43 +696,6 @@ function player:get_walk_dx()
 	return constants.physics.walk_dx
 end
 
-function player:refresh_active_pepernoot_projectiles()
-	local ids = self.pepernoot_projectile_ids
-	local write_index = 1
-	for i = 1, #ids do
-		local id = ids[i]
-		if engine.object(id) ~= nil then
-			ids[write_index] = id
-			write_index = write_index + 1
-		end
-	end
-	for i = write_index, #ids do
-		ids[i] = nil
-	end
-end
-
-function player:find_near_lithograph()
-	local lithographs = self.room.lithographs
-	local player_left = self.x
-	local player_top = self.y
-	local player_right = self.x + self.width
-	local player_bottom = self.y + self.height
-	local hit = constants.lithograph
-
-	for i = 1, #lithographs do
-		local lithograph = lithographs[i]
-		local area_left = lithograph.x + hit.hit_left_px
-		local area_top = lithograph.y + hit.hit_top_px
-		local area_right = lithograph.x + hit.hit_right_px
-		local area_bottom = lithograph.y + hit.hit_bottom_px
-		if player_right >= area_left and player_left <= area_right and player_bottom >= area_top and player_top <= area_bottom then
-			return lithograph
-		end
-	end
-
-	return nil
-end
-
 function player:collect_world_item(item_type)
 	if self:has_tag(state_tags.variant.dying) then
 		return false
@@ -783,7 +747,7 @@ function player:try_switch_room(direction, keep_stairs_lock)
 		self.x = self.stairs_x
 	end
 
-	local castle_service = engine.service(self.game_service_id)
+	local castle_service = service(self.game_service_id)
 	local switch = castle_service:switch_room(direction, self.y, self.y + self.height)
 	if switch == nil then
 		return false
@@ -1135,7 +1099,7 @@ function player:collides_at(x, y)
 
 	local rocks = self.room.rocks
 	if #rocks > 0 then
-		local destroyed_rock_ids = engine.service(rock_service_id).destroyed_rock_ids
+		local destroyed_rock_ids = service(rock_service_id).destroyed_rock_ids
 		local right = x + self.width
 		local bottom = y + self.height
 		for i = 1, #rocks do
@@ -2241,91 +2205,8 @@ local function define_player_fsm()
 	})
 end
 
-local function try_fire_pepernoot_effect(context)
-	local owner = context.owner
-	owner:refresh_active_pepernoot_projectiles()
-	local sw = constants.secondary_weapon
-	if #owner.pepernoot_projectile_ids >= sw.pepernoot_max_active then
-		return
-	end
-	if owner.weapon_level < sw.pepernoot_weapon_level_cost then
-		return
-	end
-
-	owner.pepernoot_projectile_sequence = owner.pepernoot_projectile_sequence + 1
-	local projectile_id = string.format('pepernoot_%d_%d', owner.player_index, owner.pepernoot_projectile_sequence)
-	local tile_size = owner.room.tile_size
-	local spawn_x = owner.x + (owner.facing < 0 and -sw.pepernoot_spawn_offset_x or sw.pepernoot_spawn_offset_x)
-	local spawn_y = owner.y + sw.pepernoot_spawn_offset_y
-	spawn_x = math.floor(spawn_x / tile_size) * tile_size
-	spawn_y = math.floor(spawn_y / tile_size) * tile_size
-
-	engine.spawn_object(pepernoot_projectile_module.pepernoot_projectile_def_id, {
-		id = projectile_id,
-		space_id = owner.room.space_id,
-		room = owner.room,
-		room_id = owner.room.room_id,
-		owner_id = owner.id,
-		projectile_id = owner.pepernoot_projectile_sequence,
-		direction = owner.facing,
-		pos = { x = spawn_x, y = spawn_y, z = 113 },
-	})
-
-	owner.pepernoot_projectile_ids[#owner.pepernoot_projectile_ids + 1] = projectile_id
-	owner.weapon_level = owner.weapon_level - sw.pepernoot_weapon_level_cost
-end
-
-local function try_use_secondary_effect(context)
-	local owner = context.owner
-	local weapon = owner.secondary_weapon
-	if weapon == 'none' then
-		return
-	end
-	if weapon == 'pepernoot' then
-		owner.actioneffects:trigger(player_effect_try_use_pepernoot_id)
-		return
-	end
-	if weapon == 'spyglass' then
-		owner.actioneffects:trigger(player_effect_try_use_spyglass_id)
-		return
-	end
-	error('pietious player invalid secondary_weapon=' .. tostring(weapon))
-end
-
 local function define_player_effects()
-	define_effect({
-		id = player_effect_try_start_sword_id,
-		handler = function(context)
-			context.owner:try_start_sword_state()
-		end,
-	})
-	define_effect({
-		id = player_effect_try_use_secondary_id,
-		blocked_tags = { state_tags.group.damage_lock },
-		handler = try_use_secondary_effect,
-	})
-	define_effect({
-		id = player_effect_try_use_pepernoot_id,
-		can_trigger = function(context)
-			local owner = context.owner
-			if owner:is_ladder_state() then
-				return owner:has_tag(state_tags.variant.quiet_stairs)
-			end
-			return true
-		end,
-		handler = try_fire_pepernoot_effect,
-	})
-	define_effect({
-		id = player_effect_try_use_spyglass_id,
-		required_tags = { state_tags.ability.spyglass },
-		handler = function(context)
-			local owner = context.owner
-			local lithograph = owner:find_near_lithograph()
-			if lithograph == nil then
-				return
-			end
-		end,
-	})
+	player_action_effects_module.define_player_effects(state_tags)
 end
 
 local function register_player_definition()

@@ -634,7 +634,7 @@ export function runEngineBuiltinPrelude(runtime: Runtime, program: Program, meta
 	const interpreter = runtime.interpreter;
 	interpreter.setReservedIdentifiers([]);
 	const chunk = interpreter.compileChunk(source, ENGINE_BUILTIN_PRELUDE_PATH);
-	interpreter.setReservedIdentifiers(runtime.apiFunctionNames);
+	interpreter.setReservedIdentifiers(runtime.getReservedLuaIdentifiers());
 	const compiled = appendLuaChunkToProgram(program, metadata, chunk, { canonicalization: runtime.canonicalization });
 	runtime.cpu.setProgram(compiled.program, compiled.metadata);
 	runtime.programMetadata = compiled.metadata;

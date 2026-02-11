@@ -1,6 +1,5 @@
 local constants = require('constants.lua')
 local components = require('components')
-local engine = require('engine')
 local eventemitter = require('eventemitter')
 
 local enemy_explosion = {}
@@ -99,7 +98,7 @@ function enemy_explosion:spawn_loot()
 
 	loot_spawn_sequence = loot_spawn_sequence + 1
 	local loot_id = string.format('%s.loot.%d', self.id, loot_spawn_sequence)
-	engine.spawn_object(loot_drop_module.loot_drop_def_id, {
+	spawn_object(loot_drop_module.loot_drop_def_id, {
 		id = loot_id,
 		space_id = self.space_id,
 		room_id = self.room_id,
@@ -118,7 +117,7 @@ local function define_enemy_explosion_fsm()
 					self.state_name = 'boot'
 					self.state_variant = 'boot'
 					self:ensure_components()
-					self:define_timeline(engine.new_timeline({
+					self:define_timeline(new_timeline({
 						id = enemy_explosion_timeline_id,
 						frames = explosion_frames,
 						ticks_per_frame = constants.enemy.explosion_frame_steps,

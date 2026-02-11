@@ -1,5 +1,4 @@
 local constants = require('constants.lua')
-local engine = require('engine')
 local eventemitter = require('eventemitter')
 
 local item_screen = {}
@@ -127,15 +126,15 @@ function item_screen:ctor()
 end
 
 function item_screen:get_player()
-	return engine.object(PLAYER_ID)
+	return object(PLAYER_ID)
 end
 
 function item_screen:get_room_space()
-	return engine.service(constants.ids.castle_service_instance):get_current_room().space_id
+	return service(constants.ids.castle_service_instance):get_current_room().space_id
 end
 
 function item_screen:get_current_room()
-	return engine.service(constants.ids.castle_service_instance):get_current_room()
+	return service(constants.ids.castle_service_instance):get_current_room()
 end
 
 function item_screen:reset_for_open()
@@ -242,7 +241,7 @@ function item_screen:tick_secondary_weapon_selection()
 end
 
 function item_screen:tick()
-	if engine.get_space() ~= constants.spaces.item then
+	if get_space() ~= constants.spaces.item then
 		return
 	end
 	self:tick_selector_blink()

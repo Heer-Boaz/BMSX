@@ -1,6 +1,5 @@
 local constants = require('constants.lua')
 local components = require('components')
-local engine = require('engine')
 local eventemitter = require('eventemitter')
 
 local loot_drop = {}
@@ -90,7 +89,7 @@ function loot_drop:on_overlap_stay(event)
 		return
 	end
 
-	local player = engine.object(PLAYER_ID)
+	local player = object(PLAYER_ID)
 
 	local other_collider = player:get_component_by_id(event.other_collider_id)
 	if other_collider.id_local ~= constants.ids.player_body_collider_local then

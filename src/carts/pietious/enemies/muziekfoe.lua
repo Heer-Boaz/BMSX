@@ -1,5 +1,4 @@
 local constants = require('constants.lua')
-local engine = require('engine')
 local behaviourtree = require('behaviourtree')
 
 local player_id = constants.ids.player_instance
@@ -49,7 +48,7 @@ function muziekfoe.bt_tick(self, blackboard, get_delta_from_source_to_target_sca
 	end
 	noot_ticks = noot_ticks - 1
 	if noot_ticks <= 0 then
-		local player = engine.object(player_id)
+		local player = object(player_id)
 		local source_x = self.x + 12
 		local source_y = self.y + 8
 		local target_x = player.x

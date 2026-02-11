@@ -1,7 +1,5 @@
 require('globals.lua')
 require('story.lua')
-local engine = require('engine')
-
 local start_node = 'title'
 -- local start_node = 'combat_wekker'
 
@@ -279,7 +277,7 @@ local function test()
 	-- assert(false)
 end
 
-function update(_dt)
+local function cart_update(_dt)
 	-- assert(false)
 	-- print(_dt)
 	test()
@@ -295,6 +293,6 @@ end
 while true do
 	wait_vblank()
 	service_irqs()
+	cart_update()
 	update()
-	engine.update()
 end

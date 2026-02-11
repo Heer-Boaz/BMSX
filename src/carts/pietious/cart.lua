@@ -1,4 +1,3 @@
-local engine = require('engine')
 local constants = require('constants.lua')
 local player_module = require('player.lua')
 local room_view_module = require('room_view.lua')
@@ -91,14 +90,14 @@ function init()
 end
 
 function new_game()
-	engine.reset()
-	engine.add_space(constants.spaces.castle)
-	engine.add_space(constants.spaces.transition)
-	engine.add_space(constants.spaces.item)
-	engine.add_space(constants.spaces.ui)
-	engine.set_space(constants.spaces.castle)
+	reset()
+	add_space(constants.spaces.castle)
+	add_space(constants.spaces.transition)
+	add_space(constants.spaces.item)
+	add_space(constants.spaces.ui)
+	set_space(constants.spaces.castle)
 
-	local castle_service = engine.create_service(castle_service_module.castle_service_def_id, {
+	local castle_service = create_service(castle_service_module.castle_service_def_id, {
 		id = castle_service_module.castle_service_instance_id,
 	})
 	local room = castle_service:initialize()
@@ -137,21 +136,21 @@ function new_game()
 		pos = { x = 0, y = 0, z = 0 },
 	})
 
-	engine.create_service(flow_service_module.flow_service_def_id, {
+	create_service(flow_service_module.flow_service_def_id, {
 		id = flow_service_module.flow_service_instance_id,
 	})
 
-	engine.create_service(item_service_module.item_service_def_id, {
+	create_service(item_service_module.item_service_def_id, {
 		id = item_service_module.item_service_instance_id,
 		game_service_id = castle_service_module.castle_service_instance_id,
 	})
 
-	engine.create_service(enemy_service_module.enemy_service_def_id, {
+	create_service(enemy_service_module.enemy_service_def_id, {
 		id = enemy_service_module.enemy_service_instance_id,
 		game_service_id = castle_service_module.castle_service_instance_id,
 	})
 
-	engine.create_service(rock_service_module.rock_service_def_id, {
+	create_service(rock_service_module.rock_service_def_id, {
 		id = rock_service_module.rock_service_instance_id,
 		game_service_id = castle_service_module.castle_service_instance_id,
 		item_service_id = item_service_module.item_service_instance_id,
@@ -161,5 +160,5 @@ end
 while true do
 	wait_vblank()
 	service_irqs()
-	engine.update()
+	update()
 end

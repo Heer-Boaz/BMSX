@@ -1,7 +1,5 @@
 local constants = require('constants.lua')
 local components = require('components')
-local engine = require('engine')
-
 local world_item = {}
 world_item.__index = world_item
 
@@ -116,14 +114,14 @@ function world_item:on_overlap_stay(event)
 		return
 	end
 
-	local player = engine.object(PLAYER_ID)
+	local player = object(PLAYER_ID)
 	local other_collider = player:get_component_by_id(event.other_collider_id)
 	if other_collider.id_local ~= constants.ids.player_body_collider_local then
 		return
 	end
 
 	if player:collect_world_item(self.item_type) then
-		engine.service(self.item_service_id):on_item_picked(self.item_id, self.room_id, self.item_type, self.source_kind)
+		service(self.item_service_id):on_item_picked(self.item_id, self.room_id, self.item_type, self.source_kind)
 		self.sc:transition_to(state_picked)
 	end
 end

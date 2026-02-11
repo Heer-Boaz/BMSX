@@ -1,5 +1,4 @@
 local constants = require('constants.lua')
-local engine = require('engine')
 local behaviourtree = require('behaviourtree')
 
 local player_id = constants.ids.player_instance
@@ -123,7 +122,7 @@ function mijterfoe.bt_tick_waiting(self, blackboard, random_between, state_flyin
 	end
 	blackboard.nodedata.mijter_entry_lock_ticks = 0
 
-	local player = engine.object(player_id)
+	local player = object(player_id)
 	if player_triggered_takeoff(self, player) then
 		return start_flying(self, blackboard, random_between, state_flying)
 	end

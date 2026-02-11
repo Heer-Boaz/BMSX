@@ -1,5 +1,4 @@
 local constants = require('constants.lua')
-local engine = require('engine')
 local behaviourtree = require('behaviourtree')
 
 local player_id = constants.ids.player_instance
@@ -41,7 +40,7 @@ function crossfoe.update_visual(self)
 end
 
 function crossfoe.bt_tick_waiting(self, blackboard, state_flying)
-	local player = engine.object(player_id)
+	local player = object(player_id)
 	local node = blackboard.nodedata
 	local hit = cross_hit_area_for_spin(self.cross_spin_direction)
 	local player_top = player.y
@@ -78,7 +77,7 @@ function crossfoe.bt_tick_waiting(self, blackboard, state_flying)
 end
 
 function crossfoe.bt_tick_flying(self, blackboard, state_waiting)
-	local player = engine.object(player_id)
+	local player = object(player_id)
 	local node = blackboard.nodedata
 	local direction_mod = self.cross_state == 'flying_left' and -1 or 1
 	local hit = cross_hit_area_for_spin(self.cross_spin_direction)

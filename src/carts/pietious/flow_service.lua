@@ -1,5 +1,4 @@
 local constants = require('constants.lua')
-local engine = require('engine')
 local eventemitter = require('eventemitter')
 
 local flow_service = {}
@@ -8,7 +7,7 @@ flow_service.__index = flow_service
 local flow_service_fsm_id = constants.ids.flow_service_fsm
 
 function flow_service:emit_state_changed(state_name)
-	local space = engine.get_space()
+	local space = get_space()
 	eventemitter.eventemitter.instance:emit(constants.events.flow_state_changed, self.id, {
 		state = state_name,
 		space = space,
@@ -21,8 +20,8 @@ function flow_service:bind_events()
 		subscriber = self,
 		handler = function(_event)
 			self.pending_room_transition = true
-			engine.set_space(constants.spaces.transition)
-			engine.object(constants.ids.ui_instance).space_id = constants.spaces.transition
+			set_space(constants.spaces.transition)
+			object(constants.ids.ui_instance).space_id = constants.spaces.transition
 		end,
 	})
 end
@@ -33,17 +32,17 @@ function flow_service:item_screen_toggle_pressed()
 end
 
 function flow_service:resolve_room_space()
-	local castle_service = engine.service(constants.ids.castle_service_instance)
+	local castle_service = service(constants.ids.castle_service_instance)
 	local room = castle_service:get_current_room()
 	return room.space_id
 end
 
 function flow_service:activate_spaces()
-	engine.add_space(constants.spaces.castle)
-	engine.add_space(constants.spaces.world)
-	engine.add_space(constants.spaces.transition)
-	engine.add_space(constants.spaces.item)
-	engine.add_space(constants.spaces.ui)
+	add_space(constants.spaces.castle)
+	add_space(constants.spaces.world)
+	add_space(constants.spaces.transition)
+	add_space(constants.spaces.item)
+	add_space(constants.spaces.ui)
 end
 
 local function define_flow_service_fsm()
@@ -56,18 +55,18 @@ local function define_flow_service_fsm()
 							self.transition_frames_left = 0
 								self:activate_spaces()
 								self:bind_events()
-								engine.set_space(self:resolve_room_space())
-								engine.object(constants.ids.ui_instance).space_id = self:resolve_room_space()
-								self:emit_state_changed(engine.get_space())
+								set_space(self:resolve_room_space())
+								object(constants.ids.ui_instance).space_id = self:resolve_room_space()
+								self:emit_state_changed(get_space())
 								return '/castle'
 							end,
 					},
 						castle = {
 							entering_state = function(self)
 								local room_space = self:resolve_room_space()
-								engine.set_space(room_space)
-								engine.object(constants.ids.ui_instance).space_id = room_space
-								self:emit_state_changed(engine.get_space())
+								set_space(room_space)
+								object(constants.ids.ui_instance).space_id = room_space
+								self:emit_state_changed(get_space())
 							end,
 					tick = function(self)
 						if self.pending_room_transition then
@@ -82,8 +81,8 @@ local function define_flow_service_fsm()
 						room_transition = {
 							entering_state = function(self)
 								self.transition_frames_left = constants.flow.room_transition_frames
-								engine.set_space(constants.spaces.transition)
-								engine.object(constants.ids.ui_instance).space_id = constants.spaces.transition
+								set_space(constants.spaces.transition)
+								object(constants.ids.ui_instance).space_id = constants.spaces.transition
 								self:emit_state_changed('transition')
 							end,
 					tick = function(self)
@@ -95,8 +94,8 @@ local function define_flow_service_fsm()
 				},
 						item_screen = {
 							entering_state = function(self)
-								engine.set_space(constants.spaces.item)
-								engine.object(constants.ids.ui_instance).space_id = constants.spaces.item
+								set_space(constants.spaces.item)
+								object(constants.ids.ui_instance).space_id = constants.spaces.item
 								self:emit_state_changed('item')
 							end,
 					tick = function(self)

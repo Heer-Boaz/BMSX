@@ -1,5 +1,4 @@
 local constants = require('constants.lua')
-local engine = require('engine')
 local eventemitter = require('eventemitter')
 local world_item_module = require('world_item.lua')
 
@@ -73,9 +72,9 @@ end
 
 function item_service:ensure_item_instance(item_def, room)
 	local id = item_def.id
-	local instance = engine.object(id)
+	local instance = object(id)
 	if instance == nil then
-			instance = engine.spawn_object(self.world_item_def_id, {
+			instance = spawn_object(self.world_item_def_id, {
 				id = id,
 				space_id = room.space_id,
 				pos = { x = item_def.x, y = item_def.y, z = 140 },
@@ -101,7 +100,7 @@ end
 
 function item_service:deactivate_unused_items(active_ids)
 	for id, instance in pairs(self.items_by_id) do
-		local live_instance = engine.object(id)
+		local live_instance = object(id)
 		if live_instance == nil then
 			self.items_by_id[id] = nil
 			goto continue
@@ -120,11 +119,11 @@ function item_service:deactivate_unused_items(active_ids)
 end
 
 function item_service:refresh_current_room_items()
-	local room = engine.service(self.game_service_id):get_current_room()
+	local room = service(self.game_service_id):get_current_room()
 	local room_id = room.room_id
 	self.synced_room_id = room_id
 
-	local player = engine.object(PLAYER_ID)
+	local player = object(PLAYER_ID)
 	local active_ids = {}
 
 	local room_item_defs = room.items
@@ -163,7 +162,7 @@ function item_service:add_item_drop_from_rock(rock_id, room_id, item_type, x, y)
 		return
 	end
 
-	local player = engine.object(PLAYER_ID)
+	local player = object(PLAYER_ID)
 	if player:has_inventory_item(item_type) then
 		self.picked_item_ids[drop_id] = true
 		return

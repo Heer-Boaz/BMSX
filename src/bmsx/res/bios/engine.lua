@@ -1,5 +1,12 @@
 -- engine.lua
 -- lua engine facade for system rom
+--
+-- NOTE FOR CART AUTHORS:
+-- Do not `require("engine")` from cart code and do not call `engine.*`.
+-- Carts must use cart-facing globals/helpers (`object`, `service`, `spawn_object`,
+-- `update`, `reset`, `add_space`, `set_space`, `get_space`, `define_fsm`, `define_effect`,
+-- etc.) that are injected by the runtime.
+-- This module is BIOS/runtime plumbing.
 
 local world_module = require("world")
 local worldobject = require("worldobject")
@@ -429,6 +436,7 @@ function engine.service(id)
 	return registry.instance:get(id)
 end
 
+-- BIOS/runtime-only indirection. Cart code must use global `object(id)`.
 function engine.object(id)
 	return world:get(id)
 end

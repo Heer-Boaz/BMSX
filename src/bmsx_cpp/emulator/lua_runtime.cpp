@@ -94,7 +94,7 @@ void Runtime::handleLuaError(const std::string& message) {
 
 void Runtime::runEngineBuiltinPrelude() {
 	std::cout << "[Runtime] prelude: binding engine builtins" << std::endl;
-	static const std::array<const char*, 36> engineBuiltins = {
+	static const std::array<const char*, 41> engineBuiltins = {
 		"define_fsm",
 		"define_world_object",
 		"define_service",
@@ -112,7 +112,12 @@ void Runtime::runEngineBuiltinPrelude() {
 		"create_service",
 		"service",
 		"object",
+		"add_space",
+		"set_space",
+		"get_space",
 		"attach_component",
+		"update",
+		"reset",
 		"configure_ecs",
 		"apply_default_pipeline",
 		"enlist",
@@ -132,9 +137,24 @@ void Runtime::runEngineBuiltinPrelude() {
 		"rol8",
 		"swap_remove",
 	};
+	// Keep this in sync with TS Runtime.LUA_OVERRIDEABLE_GLOBALS.
+	static const std::array<const char*, 1> overrideableEngineBuiltins = {
+		"update",
+	};
+	const auto isOverrideableBuiltin = [](const char* builtinName) {
+		for (const char* overrideableName : overrideableEngineBuiltins) {
+			if (std::string_view(overrideableName) == builtinName) {
+				return true;
+			}
+		}
+		return false;
+	};
 	auto* engineModule = asTable(requireModule("engine"));
 	for (const char* name : engineBuiltins) {
 		Value key = canonicalizeIdentifier(name);
+		if (isOverrideableBuiltin(name) && !isNil(m_cpu.globals->get(key))) {
+			continue;
+		}
 		m_cpu.globals->set(key, engineModule->get(key));
 	}
 	processIOCommands();

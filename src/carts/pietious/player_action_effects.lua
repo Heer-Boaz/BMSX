@@ -1,0 +1,141 @@
+local constants = require('constants.lua')
+local pepernoot_projectile_module = require('pepernoot_projectile.lua')
+
+local player_action_effects = {}
+
+local effect_ids = {
+	try_start_sword = 'pietious.player.effect.try_start_sword',
+	try_use_secondary = 'pietious.player.effect.try_use_secondary',
+	try_use_pepernoot = 'pietious.player.effect.try_use_pepernoot',
+	try_use_spyglass = 'pietious.player.effect.try_use_spyglass',
+}
+
+function player_action_effects.attach_player_methods(player)
+	function player:refresh_active_pepernoot_projectiles()
+		local ids = self.pepernoot_projectile_ids
+		local write_index = 1
+		for i = 1, #ids do
+			local id = ids[i]
+			if object(id) ~= nil then
+				ids[write_index] = id
+				write_index = write_index + 1
+			end
+		end
+		for i = write_index, #ids do
+			ids[i] = nil
+		end
+	end
+
+	function player:find_near_lithograph()
+		local lithographs = self.room.lithographs
+		local player_left = self.x
+		local player_top = self.y
+		local player_right = self.x + self.width
+		local player_bottom = self.y + self.height
+		local hit = constants.lithograph
+
+		for i = 1, #lithographs do
+			local lithograph = lithographs[i]
+			local area_left = lithograph.x + hit.hit_left_px
+			local area_top = lithograph.y + hit.hit_top_px
+			local area_right = lithograph.x + hit.hit_right_px
+			local area_bottom = lithograph.y + hit.hit_bottom_px
+			if player_right >= area_left and player_left <= area_right and player_bottom >= area_top and player_top <= area_bottom then
+				return lithograph
+			end
+		end
+
+		return nil
+	end
+end
+
+local function try_fire_pepernoot_effect(context)
+	local owner = context.owner
+	owner:refresh_active_pepernoot_projectiles()
+	local sw = constants.secondary_weapon
+	if #owner.pepernoot_projectile_ids >= sw.pepernoot_max_active then
+		return
+	end
+	if owner.weapon_level < sw.pepernoot_weapon_level_cost then
+		return
+	end
+
+	owner.pepernoot_projectile_sequence = owner.pepernoot_projectile_sequence + 1
+	local projectile_id = string.format('pepernoot_%d_%d', owner.player_index, owner.pepernoot_projectile_sequence)
+	local tile_size = owner.room.tile_size
+	local spawn_x = owner.x + (owner.facing < 0 and -sw.pepernoot_spawn_offset_x or sw.pepernoot_spawn_offset_x)
+	local spawn_y = owner.y + sw.pepernoot_spawn_offset_y
+	spawn_x = math.floor(spawn_x / tile_size) * tile_size
+	spawn_y = math.floor(spawn_y / tile_size) * tile_size
+
+	spawn_object(pepernoot_projectile_module.pepernoot_projectile_def_id, {
+		id = projectile_id,
+		space_id = owner.room.space_id,
+		room = owner.room,
+		room_id = owner.room.room_id,
+		owner_id = owner.id,
+		projectile_id = owner.pepernoot_projectile_sequence,
+		direction = owner.facing,
+		pos = { x = spawn_x, y = spawn_y, z = 113 },
+	})
+
+	owner.pepernoot_projectile_ids[#owner.pepernoot_projectile_ids + 1] = projectile_id
+	owner.weapon_level = owner.weapon_level - sw.pepernoot_weapon_level_cost
+end
+
+local function try_use_secondary_effect(context)
+	local owner = context.owner
+	local weapon = owner.secondary_weapon
+	if weapon == 'none' then
+		return
+	end
+	if weapon == 'pepernoot' then
+		owner.actioneffects:trigger(effect_ids.try_use_pepernoot)
+		return
+	end
+	if weapon == 'spyglass' then
+		owner.actioneffects:trigger(effect_ids.try_use_spyglass)
+		return
+	end
+	error('pietious player invalid secondary_weapon=' .. tostring(weapon))
+end
+
+function player_action_effects.define_player_effects(state_tags)
+	define_effect({
+		id = effect_ids.try_start_sword,
+		handler = function(context)
+			context.owner:try_start_sword_state()
+		end,
+	})
+	define_effect({
+		id = effect_ids.try_use_secondary,
+		blocked_tags = { state_tags.group.damage_lock },
+		handler = try_use_secondary_effect,
+	})
+	define_effect({
+		id = effect_ids.try_use_pepernoot,
+		can_trigger = function(context)
+			local owner = context.owner
+			if owner:is_ladder_state() then
+				return owner:has_tag(state_tags.variant.quiet_stairs)
+			end
+			return true
+		end,
+		handler = try_fire_pepernoot_effect,
+	})
+	define_effect({
+		id = effect_ids.try_use_spyglass,
+		required_tags = { state_tags.ability.spyglass },
+		handler = function(context)
+			local owner = context.owner
+			local lithograph = owner:find_near_lithograph()
+			if lithograph == nil then
+				return
+			end
+		end,
+	})
+end
+
+player_action_effects.effect_ids = effect_ids
+
+return player_action_effects

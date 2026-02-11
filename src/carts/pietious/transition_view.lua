@@ -1,5 +1,4 @@
 local constants = require('constants.lua')
-local engine = require('engine')
 local eventemitter = require('eventemitter')
 
 local transition_view = {}
@@ -42,16 +41,16 @@ end
 
 function transition_view:ctor()
 	self:bind_visual()
-	self:define_timeline(engine.new_timeline({
+	self:define_timeline(new_timeline({
 		id = transition_timeline_id,
-		frames = engine.timeline_range(constants.flow.room_transition_frames),
+		frames = timeline_range(constants.flow.room_transition_frames),
 		playback_mode = 'once',
 	}))
 	self:bind_events()
 end
 
 function transition_view:render_transition()
-	if engine.get_space() ~= constants.spaces.transition then
+	if get_space() ~= constants.spaces.transition then
 		return
 	end
 	local hud_height = constants.room.hud_height

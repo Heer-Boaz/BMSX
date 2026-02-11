@@ -225,6 +225,7 @@
 * Scratch buffers are available in `/src/bmsx/util/scratchbuffer.ts`; use them for temporary data storage instead of allocating new arrays or buffers.
 * Look at other utility functions available in `/src/bmsx/util/` before writing your own utility functions!
 * Don't use `require` in non-script code (e.g. `rombuilder.ts` and `rominspector.ts` can have `require`, but core engine files or game source files cannot).
+* In cart code, `engine` is forbidden. Do not call `engine.*` (for example: `engine.object(id)`). Use the cart-facing globals/helpers instead (such as `object(...)`, `service(...)`, `spawn_object(...)`, `update(...)`, `reset(...)`, `add_space(...)`, `set_space(...)`, `get_space(...)`, etc.).
 * Ensure that registry persistent objects are not serialized.
 * Use the annotations provided in the codebase to maintain consistency, these include:
     * `@attach_components`: Indicates that the decorated class should have `Component`s automatically attached.

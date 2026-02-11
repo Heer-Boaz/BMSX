@@ -1,7 +1,5 @@
 local constants = require('constants.lua')
 local components = require('components')
-local engine = require('engine')
-
 local rock = {}
 rock.__index = rock
 
@@ -132,7 +130,7 @@ function rock:begin_break()
 	end
 	self.break_started = true
 	local drop_y = self.y + drop_offset_y_for_item_type(self.item_type)
-	engine.service(self.rock_service_id):on_rock_break_started(self.rock_id, self.room_id, self.item_type, self.x, drop_y)
+	service(self.rock_service_id):on_rock_break_started(self.rock_id, self.room_id, self.item_type, self.x, drop_y)
 end
 
 function rock:on_overlap_stay(event)
@@ -140,7 +138,7 @@ function rock:on_overlap_stay(event)
 		return
 	end
 
-	local player = engine.object(PLAYER_ID)
+	local player = object(PLAYER_ID)
 	local other_collider = player:get_component_by_id(event.other_collider_id)
 	if other_collider.id_local ~= constants.ids.player_sword_collider_local then
 		return
@@ -152,7 +150,7 @@ function rock:on_overlap_stay(event)
 end
 
 function rock:finish_break()
-	engine.service(self.rock_service_id):on_rock_destroyed(self.rock_id)
+	service(self.rock_service_id):on_rock_destroyed(self.rock_id)
 	self.body_sprite.enabled = false
 	self.body_collider.enabled = false
 	self:mark_for_disposal()

@@ -1,4 +1,3 @@
-local engine = require('engine')
 local constants = require('constants.lua')
 local stage_module = require('stage.lua')
 local player_module = require('player.lua')
@@ -30,7 +29,7 @@ function init()
 end
 
 function new_game()
-	engine.reset()
+	reset()
 	spawn_object(stage_module.stage_def_id, {
 		id = stage_module.stage_instance_id,
 		pos = { x = 0, y = 0, z = 0 },
@@ -49,5 +48,5 @@ end
 while true do
 	wait_vblank()
 	service_irqs()
-	engine.update()
+	update()
 end

@@ -1,5 +1,4 @@
 local constants = require('constants.lua')
-local engine = require('engine')
 local eventemitter = require('eventemitter')
 
 local room_view = {}
@@ -19,7 +18,7 @@ function room_view:bind_events()
 		event = constants.events.room_switched,
 		subscriber = self,
 		handler = function()
-			local room = engine.service(self.game_service_id):get_current_room()
+			local room = service(self.game_service_id):get_current_room()
 			self.space_id = room.space_id
 		end,
 	})
@@ -28,13 +27,13 @@ end
 function room_view:ctor()
 	self:bind_visual()
 	self:bind_events()
-	local room = engine.service(self.game_service_id):get_current_room()
+	local room = service(self.game_service_id):get_current_room()
 	self.space_id = room.space_id
 end
 
 function room_view:render_room()
-	local room = engine.service(self.game_service_id):get_current_room()
-	if engine.get_space() ~= room.space_id then
+	local room = service(self.game_service_id):get_current_room()
+	if get_space() ~= room.space_id then
 		return
 	end
 

@@ -1,5 +1,4 @@
 local constants = require('constants.lua')
-local engine = require('engine')
 local eventemitter = require('eventemitter')
 local rock_module = require('rock.lua')
 
@@ -10,9 +9,9 @@ local rock_service_fsm_id = constants.ids.rock_service_fsm
 
 function rock_service:ensure_rock_instance(rock_def, room)
 	local id = rock_def.id
-	local instance = engine.object(id)
+	local instance = object(id)
 	if instance == nil then
-		instance = engine.spawn_object(self.rock_def_id, {
+		instance = spawn_object(self.rock_def_id, {
 			id = id,
 			space_id = room.space_id,
 			pos = { x = rock_def.x, y = rock_def.y, z = 140 },
@@ -31,7 +30,7 @@ end
 
 function rock_service:deactivate_unused_rocks(active_ids)
 	for id, instance in pairs(self.rocks_by_id) do
-		local live_instance = engine.object(id)
+		local live_instance = object(id)
 		if live_instance == nil then
 			self.rocks_by_id[id] = nil
 			goto continue
@@ -50,7 +49,7 @@ function rock_service:deactivate_unused_rocks(active_ids)
 end
 
 function rock_service:sync_room_rocks()
-	local room = engine.service(self.game_service_id):get_current_room()
+	local room = service(self.game_service_id):get_current_room()
 	if self.synced_room_id == room.room_id and not self.sync_dirty then
 		return
 	end
@@ -77,14 +76,14 @@ function rock_service:on_rock_break_started(rock_id, room_id, item_type, x, y)
 		return
 	end
 	self.destroyed_rock_ids[rock_id] = true
-	engine.service(self.item_service_id):add_item_drop_from_rock(rock_id, room_id, item_type, x, y)
+	service(self.item_service_id):add_item_drop_from_rock(rock_id, room_id, item_type, x, y)
 end
 
 function rock_service:on_rock_destroyed(rock_id)
 	self.destroyed_rock_ids[rock_id] = true
 	self.rocks_by_id[rock_id] = nil
 
-	local instance = engine.object(rock_id)
+	local instance = object(rock_id)
 	if instance ~= nil then
 		instance.visible = false
 		if instance.active then

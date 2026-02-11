@@ -173,6 +173,7 @@ class RateBudget {
 
 export class Runtime {
 	private static readonly ENGINE_IRQ_MASK = (IRQ_REINIT | IRQ_NEWGAME) >>> 0;
+	private static readonly LUA_OVERRIDEABLE_GLOBALS: ReadonlyArray<string> = ['update'];
 	private static _instance: Runtime = null;
 	/**
 	 * Preserved render queue when a fault occurs
@@ -1177,7 +1178,7 @@ export class Runtime {
 		interpreter.attachDebugger(this.debuggerController);
 		interpreter.clearLastFaultEnvironment();
 		registerApiBuiltins(interpreter);
-		interpreter.setReservedIdentifiers(this.apiFunctionNames);
+		interpreter.setReservedIdentifiers(this.getReservedLuaIdentifiers());
 		return interpreter;
 	}
 
@@ -1187,8 +1188,16 @@ export class Runtime {
 		interpreter.attachDebugger(this.debuggerController);
 		interpreter.clearLastFaultEnvironment();
 		registerApiBuiltins(interpreter);
-		interpreter.setReservedIdentifiers(this.apiFunctionNames);
+		interpreter.setReservedIdentifiers(this.getReservedLuaIdentifiers());
 		return interpreter;
+	}
+
+	public getReservedLuaIdentifiers(): ReadonlySet<string> {
+		const reserved = new Set<string>(this.apiFunctionNames);
+		for (let index = 0; index < Runtime.LUA_OVERRIDEABLE_GLOBALS.length; index += 1) {
+			reserved.delete(this.canonicalizeIdentifier(Runtime.LUA_OVERRIDEABLE_GLOBALS[index]));
+		}
+		return reserved;
 	}
 
 	public assignInterpreter(interpreter: LuaInterpreter): void {

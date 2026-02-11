@@ -1,5 +1,4 @@
 local constants = require('constants.lua')
-local engine = require('engine')
 local eventemitter = require('eventemitter')
 local enemy_module = require('enemy.lua')
 
@@ -37,7 +36,7 @@ local function enemy_condition_matches(self, condition, enemy_def, room_id)
 end
 
 function enemy_service:get_current_room()
-	return engine.service(self.game_service_id):get_current_room()
+	return service(self.game_service_id):get_current_room()
 end
 
 function enemy_service:require_current_room_event(event_room_id, event_name)
@@ -70,9 +69,9 @@ end
 
 function enemy_service:ensure_enemy_instance(enemy_def, room)
 	local id = enemy_def.id
-	local instance = engine.object(id)
+	local instance = object(id)
 	if instance == nil then
-		instance = engine.spawn_object(self.enemy_def_id, {
+		instance = spawn_object(self.enemy_def_id, {
 			id = id,
 			space_id = room.space_id,
 			pos = { x = enemy_def.x, y = enemy_def.y, z = 140 },
@@ -90,7 +89,7 @@ end
 
 function enemy_service:deactivate_all_enemies()
 	for id, instance in pairs(self.enemies_by_id) do
-		local live_instance = engine.object(id)
+		local live_instance = object(id)
 		if live_instance == nil then
 			self.enemies_by_id[id] = nil
 		else

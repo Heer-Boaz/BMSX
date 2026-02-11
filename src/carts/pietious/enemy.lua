@@ -1,6 +1,5 @@
 local constants = require('constants.lua')
 local components = require('components')
-local engine = require('engine')
 local eventemitter = require('eventemitter')
 local behaviourtree = require('behaviourtree')
 local enemy_explosion_module = require('enemy_explosion.lua')
@@ -170,13 +169,13 @@ function enemy:create_components()
 end
 
 function enemy:ensure_animation_timelines()
-	self:define_timeline(engine.new_timeline({
+	self:define_timeline(new_timeline({
 		id = boekfoe_timeline_id,
 		frames = boekfoe_timeline_frames,
 		ticks_per_frame = 1,
 		playback_mode = 'loop',
 	}))
-	self:define_timeline(engine.new_timeline({
+	self:define_timeline(new_timeline({
 		id = cloud_timeline_id,
 		frames = cloud_timeline_frames,
 		ticks_per_frame = constants.enemy.cloud_anim_switch_steps,
@@ -327,7 +326,7 @@ end
 
 function enemy:spawn_child_enemy(kind, x, y, options)
 	local id = build_spawned_enemy_id(kind)
-	local child = engine.spawn_object(constants.ids.enemy_def, {
+	local child = spawn_object(constants.ids.enemy_def, {
 		id = id,
 		space_id = self.space_id,
 		pos = { x = x, y = y, z = 140 },
@@ -514,7 +513,7 @@ end
 function enemy:spawn_death_effect()
 	death_effect_sequence = death_effect_sequence + 1
 	local effect_id = string.format('pietious.enemy_explosion.%s.%d', self.enemy_id, death_effect_sequence)
-	engine.spawn_object(enemy_explosion_module.enemy_explosion_def_id, {
+	spawn_object(enemy_explosion_module.enemy_explosion_def_id, {
 		id = effect_id,
 		space_id = self.space_id,
 		room_id = self.room_id,
@@ -581,7 +580,7 @@ function enemy:on_overlap_stay(event)
 	if event.other_id ~= PLAYER_ID then
 		return
 	end
-	local player = engine.object(PLAYER_ID)
+	local player = object(PLAYER_ID)
 	local other_collider = player:get_component_by_id(event.other_collider_id)
 	if other_collider == nil then
 		error('pietious enemy missing collider on overlap event')

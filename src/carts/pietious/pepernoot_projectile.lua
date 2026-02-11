@@ -1,6 +1,5 @@
 local constants = require('constants.lua')
 local components = require('components')
-local engine = require('engine')
 local eventemitter = require('eventemitter')
 
 local pepernoot_projectile = {}
@@ -114,7 +113,7 @@ function pepernoot_projectile:on_overlap_stay(event)
 
 	local other_id = event.other_id
 	if string.sub(other_id, 1, 6) == 'enemy_' then
-		local enemy = engine.object(other_id)
+		local enemy = object(other_id)
 		if enemy == nil then
 			return
 		end
@@ -125,7 +124,7 @@ function pepernoot_projectile:on_overlap_stay(event)
 	end
 
 	if string.sub(other_id, 1, 5) == 'rock_' then
-		local rock = engine.object(other_id)
+		local rock = object(other_id)
 		if rock == nil then
 			return
 		end
