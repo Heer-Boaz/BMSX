@@ -26,7 +26,6 @@ local enemy_bt_id = constants.ids.enemy_bt
 local state_waiting = enemy_fsm_id .. ':/waiting'
 local state_flying = enemy_fsm_id .. ':/flying'
 local PLAYER_ID = constants.ids.player_instance
-local PLAYER_SWORD_TAG = 'pietious.player.group.sword'
 
 local body_sprite_component_id = 'body'
 local body_collider_component_id = 'body'
@@ -586,7 +585,7 @@ function enemy:on_overlap_stay(event)
 		error('pietious enemy missing collider on overlap event')
 	end
 	if other_collider.id_local == constants.ids.player_sword_collider_local then
-		if player:has_tag(PLAYER_SWORD_TAG) then
+		if player:has_tag('g.sw') then
 			self:take_sword_hit(player.sword_id)
 		end
 		return

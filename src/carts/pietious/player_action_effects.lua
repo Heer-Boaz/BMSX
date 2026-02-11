@@ -4,10 +4,10 @@ local pepernoot_projectile_module = require('pepernoot_projectile.lua')
 local player_action_effects = {}
 
 local effect_ids = {
-	try_start_sword = 'pietious.player.effect.try_start_sword',
-	try_use_secondary = 'pietious.player.effect.try_use_secondary',
-	try_use_pepernoot = 'pietious.player.effect.try_use_pepernoot',
-	try_use_spyglass = 'pietious.player.effect.try_use_spyglass',
+	try_start_sword = 'p.e.try_sword',
+	try_use_secondary = 'p.e.try_secondary',
+	try_use_pepernoot = 'p.e.try_pepernoot',
+	try_use_spyglass = 'p.e.try_spyglass',
 }
 
 function player_action_effects.attach_player_methods(player)
