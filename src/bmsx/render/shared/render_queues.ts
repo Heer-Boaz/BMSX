@@ -284,16 +284,16 @@ export function spriteQueueFrontSize(): number {
 
 export function copyRenderQueueForPlayback(): RenderSubmission[] {
 	let count = 0;
-	spriteQueue.forEachBack((item) => {
+	spriteQueue.forEachFront((item) => {
 		const src = item.options;
 		setPlaybackSpriteSubmission(count, src);
 		count += 1;
 	});
-	meshQueue.forEachBack((item) => {
+	meshQueue.forEachFront((item) => {
 		setPlaybackMeshSubmission(count, item);
 		count += 1;
 	});
-	particleQueue.forEachBack((item) => {
+	particleQueue.forEachFront((item) => {
 		setPlaybackParticleSubmission(count, item);
 		count += 1;
 	});

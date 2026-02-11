@@ -1,8 +1,6 @@
 local constants = require('constants.lua')
 local behaviourtree = require('behaviourtree')
 
-local player_id = constants.ids.player_instance
-
 local mijterfoe = {}
 
 local function new_random_direction(self)
@@ -56,22 +54,22 @@ local function player_triggered_takeoff(self, player)
 	return overlap_y and player_right < enemy_left
 end
 
-local function start_flying(self, blackboard, random_between, state_flying)
+local function start_flying(self, blackboard, random_between)
 	set_takeoff_heading(self)
 	blackboard.nodedata.mijter_takeoff_ticks = random_between(constants.enemy.mijter_wait_takeoff_min_steps, constants.enemy.mijter_wait_takeoff_max_steps)
 	blackboard.nodedata.mijter_turn_ticks = random_between(constants.enemy.mijter_turn_min_steps, constants.enemy.mijter_turn_max_steps)
-	self.sc:transition_to(state_flying)
+	self:dispatch_state_event('takeoff')
 	return behaviourtree.running
 end
 
 function mijterfoe.configure(_self, _def, _context)
 end
 
-function mijterfoe.update_visual(self, state_waiting)
+function mijterfoe.update_visual(self)
 	local imgid = 'meijter_up'
 	local flip_h = false
 	local flip_v = false
-	if self.sc:matches_state_path(state_waiting) then
+	if self:has_tag('e.w') then
 		if self.direction == 'left' then
 			imgid = 'meijter_r'
 			flip_h = true
@@ -111,7 +109,7 @@ function mijterfoe.update_visual(self, state_waiting)
 	return imgid, flip_h, flip_v
 end
 
-function mijterfoe.bt_tick_waiting(self, blackboard, random_between, state_flying)
+function mijterfoe.bt_tick_waiting(self, blackboard, random_between)
 	local entry_lock = blackboard.nodedata.mijter_entry_lock_ticks
 	if entry_lock == nil then
 		entry_lock = self.mijter_entry_lock_ticks
@@ -122,9 +120,9 @@ function mijterfoe.bt_tick_waiting(self, blackboard, random_between, state_flyin
 	end
 	blackboard.nodedata.mijter_entry_lock_ticks = 0
 
-	local player = object(player_id)
+	local player = object(constants.ids.player_instance)
 	if player_triggered_takeoff(self, player) then
-		return start_flying(self, blackboard, random_between, state_flying)
+		return start_flying(self, blackboard, random_between)
 	end
 
 	local takeoff_ticks = blackboard.nodedata.mijter_takeoff_ticks
@@ -136,7 +134,7 @@ function mijterfoe.bt_tick_waiting(self, blackboard, random_between, state_flyin
 		blackboard.nodedata.mijter_takeoff_ticks = takeoff_ticks
 		return behaviourtree.running
 	end
-	return start_flying(self, blackboard, random_between, state_flying)
+	return start_flying(self, blackboard, random_between)
 end
 
 function mijterfoe.bt_tick_flying(self, blackboard, random_between)

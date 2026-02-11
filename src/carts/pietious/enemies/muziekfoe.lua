@@ -2,8 +2,6 @@ local constants = require('constants.lua')
 local behaviourtree = require('behaviourtree')
 local room_module = require('room.lua')
 
-local player_id = constants.ids.player_instance
-
 local muziekfoe = {}
 
 function muziekfoe.configure(self, def, _context)
@@ -49,7 +47,7 @@ function muziekfoe.bt_tick(self, blackboard, get_delta_from_source_to_target_sca
 	end
 	noot_ticks = noot_ticks - 1
 	if noot_ticks <= 0 then
-		local player = object(player_id)
+		local player = object(constants.ids.player_instance)
 		local source_x = self.x + 12
 		local source_y = self.y + 8
 		local target_x = player.x

@@ -6,9 +6,6 @@ local room_module = require('room.lua')
 local pepernoot_projectile = {}
 pepernoot_projectile.__index = pepernoot_projectile
 
-local projectile_hit_width = constants.room.tile_size * 2
-local projectile_hit_height = constants.room.tile_size - 1
-
 function pepernoot_projectile:update_visual_snap()
 	local snapped_x, snapped_y = room_module.snap_world_to_tile(self.room, self.x, self.y)
 	self.body_sprite.offset.x = snapped_x - self.x
@@ -105,7 +102,6 @@ local function define_pepernoot_projectile_fsm()
 			boot = {
 				entering_state = function(self)
 					self.state_name = 'boot'
-					self.state_variant = 'boot'
 					self.body_collider = components.collider2dcomponent.new({
 						parent = self,
 						id_local = 'body',
@@ -116,8 +112,8 @@ local function define_pepernoot_projectile_fsm()
 					self.body_collider:set_local_area({
 						left = 0,
 						top = 0,
-						right = projectile_hit_width,
-						bottom = projectile_hit_height,
+						right = constants.room.tile_size2,
+						bottom = constants.room.tile_size - 1,
 					})
 					self:add_component(self.body_collider)
 					self.body_sprite = components.spritecomponent.new({
@@ -134,7 +130,6 @@ local function define_pepernoot_projectile_fsm()
 			active = {
 				entering_state = function(self)
 					self.state_name = 'active'
-					self.state_variant = 'active'
 					self.disposed = false
 					self.body_sprite.enabled = true
 					self.body_collider.enabled = true
@@ -160,7 +155,6 @@ local function register_pepernoot_projectile_definition()
 			direction = 1,
 			disposed = false,
 			state_name = 'boot',
-			state_variant = 'boot',
 			registrypersistent = false,
 			tick_enabled = true,
 		},

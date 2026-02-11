@@ -33,7 +33,7 @@ function rock:configure_from_room_def(def, room, rock_service_id)
 	self.break_steps = 0
 	self.last_weapon_kind = ''
 	self.last_weapon_hit_id = -1
-	self.sc:transition_to(constants.ids.rock_fsm .. ':/idle')
+	self:dispatch_state_event('reset')
 end
 
 function rock:take_weapon_hit(weapon_kind, hit_id)
@@ -45,7 +45,7 @@ function rock:take_weapon_hit(weapon_kind, hit_id)
 	self.health = self.health - 1
 	if self.health <= 0 then
 		self.health = 0
-		self.sc:transition_to(constants.ids.rock_fsm .. ':/breaking')
+		self:dispatch_state_event('break')
 	end
 	return true
 end
@@ -85,7 +85,6 @@ local function define_rock_fsm()
 			boot = {
 				entering_state = function(self)
 					self.state_name = 'boot'
-					self.state_variant = 'boot'
 					self.body_collider = components.collider2dcomponent.new({
 						parent = self,
 						id_local = 'body',
@@ -107,18 +106,23 @@ local function define_rock_fsm()
 				end,
 			},
 			idle = {
+				on = {
+					['break'] = '/breaking',
+					['reset'] = '/idle',
+				},
 				entering_state = function(self)
 					self.state_name = 'idle'
-					self.state_variant = 'idle'
 					self.body_sprite.imgid = 'stone'
 					self.body_collider.enabled = true
 					self.body_sprite.enabled = true
 				end,
 			},
 				breaking = {
+					on = {
+						['reset'] = '/idle',
+					},
 					entering_state = function(self)
 						self.state_name = 'breaking'
-						self.state_variant = 'breaking'
 						self.break_steps = 0
 						self:begin_break()
 						self.body_sprite.imgid = 'stone_broken'
@@ -155,7 +159,6 @@ local function register_rock_definition()
 			last_weapon_hit_id = -1,
 			break_steps = 0,
 			state_name = 'boot',
-			state_variant = 'boot',
 			registrypersistent = false,
 			tick_enabled = true,
 		},

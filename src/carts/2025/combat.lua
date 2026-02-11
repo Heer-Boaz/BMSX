@@ -98,11 +98,7 @@ function combat_director:start_combat(node_id, opts)
 	self.combat_rewards = {}
 	self.skip_transition_fade = false
 	self.skip_combat_fade_in = opts.skip_fade_in
-	if self.skip_combat_fade_in then
-		self.sc:transition_to(combat_director_fsm_id .. ':/combat_init')
-		return
-	end
-	self.sc:transition_to(combat_director_fsm_id .. ':/combat_fade_in')
+	self:dispatch_state_event('combat.start')
 end
 
 function combat_director:apply_combat_round(node)
@@ -325,6 +321,16 @@ function combat.define_fsm()
 	}
 
 	states.idle = {
+		on = {
+			['combat.start'] = {
+				go = function(self)
+					if self.skip_combat_fade_in then
+						return '/combat_init'
+					end
+					return '/combat_fade_in'
+				end,
+			},
+		},
 		entering_state = function()
 			hide_combat_sprites()
 		end,

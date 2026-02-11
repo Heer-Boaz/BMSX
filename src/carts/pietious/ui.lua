@@ -3,10 +3,6 @@ local constants = require('constants.lua')
 local ui = {}
 ui.__index = ui
 
-local ui_fsm_id = constants.ids.ui_fsm
-local PLAYER_ID = constants.ids.player_instance
-local TILE_SIZE = constants.room.tile_size
-
 local function animate_level(current, target)
 	if current < target then
 		return current + 1
@@ -39,9 +35,9 @@ end
 
 function ui:ctor()
 	self:bind_visual()
-	local player = object(PLAYER_ID)
-	local health = clamp_int(math.floor(player.health), 0, constants.damage.max_health)
-	local weapon = clamp_int(math.floor(player.weapon_level), 0, constants.hud.weapon_level)
+	local player = object(constants.ids.player_instance)
+	local health = clamp_int(math.modf(player.health), 0, constants.damage.max_health)
+	local weapon = clamp_int(math.modf(player.weapon_level), 0, constants.hud.weapon_level)
 	self.hud_health_level = health
 	self.hud_health_target = health
 	self.hud_health_anim_ticks = 0
@@ -51,9 +47,9 @@ function ui:ctor()
 end
 
 function ui:tick()
-	local player = object(PLAYER_ID)
-	self.hud_health_target = clamp_int(math.floor(player.health), 0, constants.damage.max_health)
-	self.hud_weapon_target = clamp_int(math.floor(player.weapon_level), 0, constants.hud.weapon_level)
+	local player = object(constants.ids.player_instance)
+	self.hud_health_target = clamp_int(math.modf(player.health), 0, constants.damage.max_health)
+	self.hud_weapon_target = clamp_int(math.modf(player.weapon_level), 0, constants.hud.weapon_level)
 
 	if self.hud_health_level ~= self.hud_health_target then
 		self.hud_health_anim_ticks = self.hud_health_anim_ticks + 1
@@ -78,11 +74,11 @@ end
 
 function ui:draw_ui()
 	local hud = constants.hud
-	local player = object(PLAYER_ID)
+	local player = object(constants.ids.player_instance)
 	put_sprite('game_header', 0, 0, 200)
 	local equipped_sprite_id = secondary_weapon_sprite_id(player.secondary_weapon)
 	if equipped_sprite_id ~= nil then
-		put_sprite(equipped_sprite_id, hud.equipped_item_x * TILE_SIZE, hud.equipped_item_y * TILE_SIZE, 202)
+		put_sprite(equipped_sprite_id, hud.equipped_item_x * constants.room.tile_size, hud.equipped_item_y * constants.room.tile_size, 202)
 	end
 
 	local health_x = hud.health_bar_x
@@ -99,7 +95,7 @@ function ui:draw_ui()
 end
 
 local function define_ui_fsm()
-	define_fsm(ui_fsm_id, {
+	define_fsm(constants.ids.ui_fsm, {
 		initial = 'boot',
 		states = {
 			boot = {
@@ -116,7 +112,7 @@ local function register_ui_definition()
 	define_world_object({
 		def_id = constants.ids.ui_def,
 		class = ui,
-		fsms = { ui_fsm_id },
+		fsms = { constants.ids.ui_fsm },
 			components = { 'customvisualcomponent' },
 			defaults = {
 				hud_health_level = constants.hud.health_level,

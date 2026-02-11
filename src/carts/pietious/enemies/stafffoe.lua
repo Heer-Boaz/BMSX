@@ -1,8 +1,6 @@
 local constants = require('constants.lua')
 local behaviourtree = require('behaviourtree')
 
-local player_id = constants.ids.player_instance
-
 local stafffoe = {}
 
 function stafffoe.configure(self, def, _context)
@@ -52,7 +50,7 @@ function stafffoe.bt_tick(self, blackboard, random_between, speed_components_fro
 		return behaviourtree.running
 	end
 
-	local player = object(player_id)
+	local player = object(constants.ids.player_instance)
 	local bullets_dangerous = not player:has_inventory_item('greenvase')
 	local base_angle = random_between(0, 359)
 	for i = 0, 3 do

@@ -26,6 +26,7 @@ local state_tags = {
 		quiet_stairs = 'v.qst',
 		sword_stairs = 'v.ss',
 		hit_fall = 'v.hf',
+		hit_collision = 'v.hc',
 		hit_recovery = 'v.hr',
 		dying = 'v.d',
 	},
@@ -95,14 +96,10 @@ local player_hit_recovery_frames = timeline_sequence({
 	{ value = { player_damage_imgid = 'pietolon_recover_r' }, hold = constants.damage.hit_recovery_frames },
 })
 local player_sword_sequence_frames = timeline_range(constants.sword.duration_frames + 1)
-local player_sword_sequence_id = 'p.seq.s'
 local player_sword_end_event = 'sword.end'
 local player_hit_invulnerability_sequence_frames = timeline_range(constants.damage.hit_invulnerability_frames)
 local player_hit_blink_sequence_frames = timeline_range(constants.damage.hit_blink_switch_frames)
 local player_fall_substate_sequence_frames = timeline_range(12)
-local player_hit_invulnerability_sequence_id = 'p.seq.hi'
-local player_hit_blink_sequence_id = 'p.seq.hb'
-local player_fall_substate_sequence_id = 'p.seq.f'
 
 if #player_dying_frames ~= constants.damage.death_frames then
 	error(string.format(
@@ -235,7 +232,7 @@ function player:update_damage_state_imgid()
 		self.player_damage_imgid = dying_timeline:value().player_damage_imgid
 		return
 	end
-	if self:has_tag(state_tags.variant.hit_fall) then
+	if self:has_tag(state_tags.variant.hit_fall) or self:has_tag(state_tags.variant.hit_collision) then
 		local hit_fall_timeline = self:get_timeline('p.tl.hf')
 		hit_fall_timeline:force_seek(self.hit_substate)
 		self.player_damage_imgid = hit_fall_timeline:value().player_damage_imgid
@@ -278,6 +275,7 @@ function player:update_visual_components()
 
 	if self:has_tag(state_tags.variant.dying)
 		or self:has_tag(state_tags.variant.hit_fall)
+		or self:has_tag(state_tags.variant.hit_collision)
 		or self:has_tag(state_tags.variant.hit_recovery)
 	then
 		imgid = self.player_damage_imgid
@@ -463,12 +461,19 @@ function player:reset_sword()
 end
 
 function player:reset_sword_sequence()
-	self:get_timeline(player_sword_sequence_id):force_seek(0)
+	self:get_timeline('p.seq.s'):force_seek(0)
 end
 
 function player:advance_sword_sequence()
-	local sword_sequence = self:get_timeline(player_sword_sequence_id)
+	local sword_sequence = self:get_timeline('p.seq.s')
 	if sword_sequence:value() >= constants.sword.duration_frames then
+		if self:has_tag(state_tags.variant.c_fall_sword) then
+			if self.facing > 0 then
+				self.x = self.x - 2
+			else
+				self.x = self.x + 2
+			end
+		end
 		self:dispatch_state_event(player_sword_end_event)
 		return
 	end
@@ -487,11 +492,11 @@ function player:update_hit_invulnerability()
 		return
 	end
 
-	local hit_invulnerability_sequence = self:get_timeline(player_hit_invulnerability_sequence_id)
+	local hit_invulnerability_sequence = self:get_timeline('p.seq.hi')
 	hit_invulnerability_sequence:advance()
 	self.hit_invulnerability_timer = constants.damage.hit_invulnerability_frames - (hit_invulnerability_sequence:value() + 1)
 
-	local hit_blink_sequence = self:get_timeline(player_hit_blink_sequence_id)
+	local hit_blink_sequence = self:get_timeline('p.seq.hb')
 	local hit_blink_events = hit_blink_sequence:advance()
 	for i = 1, #hit_blink_events do
 		if hit_blink_events[i].kind == 'end' then
@@ -506,19 +511,19 @@ end
 function player:reset_hit_invulnerability_sequence()
 	self.hit_invulnerability_timer = 0
 	self.hit_blink_on = false
-	self:get_timeline(player_hit_invulnerability_sequence_id):rewind()
-	self:get_timeline(player_hit_blink_sequence_id):rewind()
+	self:get_timeline('p.seq.hi'):rewind()
+	self:get_timeline('p.seq.hb'):rewind()
 end
 
 function player:start_hit_invulnerability_sequence()
 	self.hit_invulnerability_timer = constants.damage.hit_invulnerability_frames
 	self.hit_blink_on = true
-	self:get_timeline(player_hit_invulnerability_sequence_id):rewind()
-	self:get_timeline(player_hit_blink_sequence_id):force_seek(0)
+	self:get_timeline('p.seq.hi'):rewind()
+	self:get_timeline('p.seq.hb'):force_seek(0)
 end
 
 function player:get_hit_direction_from_source(source_x)
-	local center_x = self.x + math.floor(self.width / 2)
+	local center_x = self.x + math.modf(self.width / 2)
 	if source_x < center_x then
 		return 1
 	end
@@ -557,8 +562,10 @@ function player:take_hit(amount, source_x, source_y, reason)
 	end
 
 	local hit_direction = self:get_hit_direction_from_source(source_x)
+	local damage_event = 'damage'
 	if self:has_tag(state_tags.group.stairs) then
 		hit_direction = 0
+		damage_event = 'damage_on_stairs'
 	end
 
 	self:reset_sword()
@@ -576,7 +583,7 @@ function player:take_hit(amount, source_x, source_y, reason)
 		self:apply_move(0, -knockup_px)
 	end
 
-	self:dispatch_state_event('damage', { reason = reason })
+	self:dispatch_state_event(damage_event, { reason = reason })
 	return true
 end
 
@@ -619,7 +626,7 @@ end
 function player:get_walk_dx()
 	if self:has_inventory_item('schoentjes') then
 		self.walk_speed_accum = self.walk_speed_accum + constants.physics.walk_dx_schoentjes_num
-		local walk_dx = math.floor(self.walk_speed_accum / constants.physics.walk_dx_schoentjes_den)
+		local walk_dx = math.modf(self.walk_speed_accum / constants.physics.walk_dx_schoentjes_den)
 		self.walk_speed_accum = self.walk_speed_accum - (walk_dx * constants.physics.walk_dx_schoentjes_den)
 		return walk_dx
 	end
@@ -781,17 +788,16 @@ function player:pick_entry_stairs(direction)
 	local stairs = self.room.stairs
 	local best = nil
 	local best_dx = 0
-	local tile_size = self.room.tile_size
 
 	for i = 1, #stairs do
 		local stair = stairs[i]
 		if self.x >= (stair.x - 4) and self.x <= (stair.x + 8) then
 			local y_ok = false
 			if direction < 0 then
-				local min_y = stair.top_y + (tile_size * 2)
+				local min_y = stair.top_y + constants.room.tile_size2
 				y_ok = self.y >= min_y and self.y <= stair.bottom_y
 			else
-				local max_y = stair.top_y + tile_size
+				local max_y = stair.top_y + constants.room.tile_size
 				y_ok = self.y >= stair.top_y and self.y <= max_y
 			end
 			if y_ok then
@@ -809,7 +815,7 @@ end
 
 function player:search_stairs_at_locked_x(x, y_probe)
 	local stairs = self.room.stairs
-	local ladder_probe = self.room.tile_size * 3
+	local ladder_probe = constants.room.tile_size3
 	for i = 1, #stairs do
 		local stair = stairs[i]
 		if stair.x == x and stair.anchor_y <= (y_probe + ladder_probe) and stair.bottom_y >= y_probe then
@@ -866,40 +872,38 @@ function player:try_step_off_stairs()
 	end
 
 	local room = self.room
-	local tile_size = room.tile_size
-	local tile_unit = math.floor(tile_size / 4)
-	local half_tile = math.floor(tile_size / 2)
-	local tx, ty = room_module.world_to_tile(room, self.x, self.y)
-	local _, tile_world_y = room_module.tile_to_world(room, tx, ty)
-	local dty = self.y - tile_world_y
+	local tx = math.modf((self.x - room.tile_origin_x) / constants.room.tile_size)
+	local ty = math.modf((self.y - room.tile_origin_y) / constants.room.tile_size)
+	local dty = (self.y - room.tile_origin_y) - (ty * constants.room.tile_size)
 
-	local wall_tx = tx - 1
-	local wall_ty = ty + 3
-	local probe_dx = -8 * tile_unit
-	local step_dx = -6 * tile_unit
+	local wall_tx = tx
+	local wall_ty = ty + 4
+	local probe_dx = -constants.room.tile_unit8
+	local step_dx = -constants.room.tile_unit6
 	if dir > 0 then
-		wall_tx = tx + 2
-		probe_dx = 8 * tile_unit
-		step_dx = 6 * tile_unit
+		wall_tx = tx + 3
+		probe_dx = constants.room.tile_unit8
+		step_dx = constants.room.tile_unit6
 	end
 
 	local can_bottom_step = false
-	if dty > half_tile and room_module.is_wall_at_tile(room, wall_tx, wall_ty) and not self:collides_at(self.x + probe_dx, self.y) then
+	if dty > constants.room.tile_half and room_module.is_wall_at_tile(room, wall_tx, wall_ty) and not self:collides_at(self.x + probe_dx, self.y) then
 		can_bottom_step = true
 	end
 
 	local target_x = self.x
 	local target_y = self.y
-	local step_mode = ''
 	if can_bottom_step then
 		target_x = self.x + step_dx
-		step_mode = 'bottom'
 	else
-		local top_step_threshold = self.stairs_top_y + half_tile
+		local top_step_threshold = self.stairs_top_y + constants.room.tile_half
 		if self.y < top_step_threshold then
-			target_x = self.x + (dir * (4 * tile_unit))
-			_, target_y = room_module.snap_world_to_tile(room, self.x, self.y)
-			step_mode = 'top'
+			if dir > 0 then
+				target_x = self.x + constants.room.tile_unit4
+			else
+				target_x = self.x - constants.room.tile_unit4
+			end
+			target_y = room.tile_origin_y + (ty * constants.room.tile_size)
 		else
 			self.facing = dir
 			return false
@@ -949,20 +953,8 @@ function player:start_stairs(direction, stair, event_name)
 	self.stairs_direction = direction
 	self.stairs_anim_distance = 0
 	self.stairs_anim_frame = 0
-	self.x = stair.x
 	self.last_dx = 0
 	self.last_dy = 0
-	if direction > 0 then
-		local next_y = self.y + constants.stairs.down_start_push_px
-		if next_y > self.stairs_bottom_y then
-			next_y = self.stairs_bottom_y
-		end
-		self.last_dy = next_y - self.y
-		self.y = next_y
-		if self.last_dy ~= 0 then
-			self:update_stairs_animation(math.abs(self.last_dy))
-		end
-	end
 	self:dispatch_state_event(event_name)
 end
 
@@ -975,9 +967,9 @@ function player:collides_with_elevator_at(x, y)
 	for i = 1, #elevator_routes do
 		local elevator = elevator_routes[i]
 		if elevator.current_room_number == current_room_number then
-			if x < (elevator.x + (constants.room.tile_size * 4))
+			if x < (elevator.x + constants.room.tile_size4)
 				and right > elevator.x
-				and y < (elevator.y + (constants.room.tile_size * 2))
+				and y < (elevator.y + constants.room.tile_size2)
 				and bottom > elevator.y
 			then
 				return true
@@ -995,10 +987,10 @@ function player:try_snap_to_elevator_platform(next_x)
 	for i = 1, #elevator_routes do
 		local elevator = elevator_routes[i]
 		if elevator.current_room_number == current_room_number
-			and self.y >= (elevator.y - (constants.room.tile_size * 2))
+			and self.y >= (elevator.y - constants.room.tile_size2)
 			and self.y < elevator.y
-			and self.x > (elevator.x - ((constants.room.tile_size * 2) - ((constants.room.tile_size / 4) * 4)))
-			and self.x < ((elevator.x + (constants.room.tile_size * 4)) - ((constants.room.tile_size / 4) * 3))
+			and self.x > (elevator.x - (constants.room.tile_size2 - constants.room.tile_unit4))
+			and self.x < ((elevator.x + constants.room.tile_size4) - constants.room.tile_unit3)
 		then
 			self.y = elevator.y - self.height
 			self.x = next_x
@@ -1018,19 +1010,8 @@ function player:collides_at(x, y)
 		end
 	end
 
-	local rocks = self.room.rocks
-	if #rocks > 0 then
-		local destroyed_rock_ids = service(constants.ids.rock_service_instance).destroyed_rock_ids
-		local right = x + self.width
-		local bottom = y + self.height
-		for i = 1, #rocks do
-			local rock = rocks[i]
-			if destroyed_rock_ids[rock.id] ~= true then
-				if x < (rock.x + constants.rock.width) and right > rock.x and y < (rock.y + constants.rock.height) and bottom > rock.y then
-					return true
-				end
-			end
-		end
+	if room_module.overlaps_active_rock(self.room, x, y, self.width, self.height) then
+		return true
 	end
 
 	if self:collides_with_elevator_at(x, y) then
@@ -1041,7 +1022,7 @@ function player:collides_at(x, y)
 end
 
 function player:collides_at_jump_ceiling_profile(x, y)
-	for x_offset = -(constants.room.tile_size / 2), constants.room.tile_size / 2 do
+	for x_offset = -constants.room.tile_unit4, constants.room.tile_unit4, constants.room.tile_unit do
 		if not self:collides_at(x + x_offset, y) then
 			return false
 		end
@@ -1050,21 +1031,20 @@ function player:collides_at_jump_ceiling_profile(x, y)
 end
 
 function player:collides_at_jump_sword_ceiling_profile(x, y)
-	local half = constants.room.tile_size / 2
 	if not self:collides_at(x, y) then
 		return false
 	end
-	if not self:collides_at(x + half, y) then
+	if not self:collides_at(x + constants.room.tile_half, y) then
 		return false
 	end
-	if not self:collides_at(x - half, y) then
+	if not self:collides_at(x - constants.room.tile_half, y) then
 		return false
 	end
 	return true
 end
 
 function player:find_clear_x_with_probe(next_x, y)
-	for x_offset = 0, constants.room.tile_size / 2 do
+	for x_offset = 0, constants.room.tile_half do
 		local right_x = next_x + x_offset
 		if not self:collides_at(right_x, y) then
 			return right_x
@@ -1220,11 +1200,11 @@ end
 
 function player:reset_fall_substate_sequence()
 	self.fall_substate = 0
-	self:get_timeline(player_fall_substate_sequence_id):force_seek(0)
+	self:get_timeline('p.seq.f'):force_seek(0)
 end
 
 function player:advance_fall_substate_sequence()
-	local fall_substate_sequence = self:get_timeline(player_fall_substate_sequence_id)
+	local fall_substate_sequence = self:get_timeline('p.seq.f')
 	fall_substate_sequence:advance()
 	self.fall_substate = fall_substate_sequence:value()
 end
@@ -1579,9 +1559,6 @@ function player:tick_jump_motion()
 	if move_result.collided_x and self:try_side_room_switch_from_motion(dx) then
 		move_result.collided_x = false
 	end
-	if move_result.hit_ceiling then
-		hit_ceiling = true
-	end
 
 	if hit_ceiling and self.jump_substate < p.jump_release_cut_substate then
 		self.jump_substate = p.jump_release_cut_substate
@@ -1876,6 +1853,42 @@ function player:tick_hit_fall()
 	self.hit_substate = self.hit_substate + 1
 end
 
+function player:tick_hit_collision()
+	self:reset_sword()
+
+	local dy = 0
+	if self.hit_substate >= 4 then
+		dy = self.hit_substate - 4
+		if dy > 6 then
+			dy = 6
+		end
+	end
+
+	local hit_ground = false
+	if self.hit_substate >= 4 then
+		hit_ground = (not self:collides_at(self.x, self.y)) and self:collides_at(self.x, self.y + dy)
+	end
+
+	self:apply_move(0, dy)
+
+	if self.hit_substate >= 4 then
+		if self.health <= 0 then
+			self:start_dying()
+			return
+		end
+		if hit_ground then
+			self.hit_substate = 0
+			self.hit_recovery_timer = 0
+			self.last_dx = 0
+			self.last_dy = 0
+			self:dispatch_state_event('hit_ground')
+			return
+		end
+	end
+
+	self.hit_substate = self.hit_substate + 1
+end
+
 function player:tick_hit_recovery()
 	self:reset_sword()
 	self.previous_x_collision = false
@@ -1943,25 +1956,25 @@ local function define_player_fsm()
 					playback_mode = 'once',
 				}))
 					self:define_timeline(new_timeline({
-						id = player_sword_sequence_id,
+						id = 'p.seq.s',
 						frames = player_sword_sequence_frames,
 						playback_mode = 'once',
 						autotick = false,
 					}))
 					self:define_timeline(new_timeline({
-						id = player_hit_invulnerability_sequence_id,
+						id = 'p.seq.hi',
 						frames = player_hit_invulnerability_sequence_frames,
 						playback_mode = 'once',
 						autotick = false,
 					}))
 					self:define_timeline(new_timeline({
-						id = player_hit_blink_sequence_id,
+						id = 'p.seq.hb',
 						frames = player_hit_blink_sequence_frames,
 						playback_mode = 'loop',
 						autotick = false,
 					}))
 					self:define_timeline(new_timeline({
-						id = player_fall_substate_sequence_id,
+						id = 'p.seq.f',
 						frames = player_fall_substate_sequence_frames,
 						playback_mode = 'once',
 						autotick = false,
@@ -2217,6 +2230,14 @@ local function define_player_fsm()
 			process_input = player.sample_input,
 			tick = player.tick_hit_fall,
 		},
+		hit_collision = {
+			tags = { state_tags.variant.hit_collision, state_tags.group.damage_lock },
+			on = {
+				['hit_ground'] = '/hit_recovery',
+			},
+			process_input = player.sample_input,
+			tick = player.tick_hit_collision,
+		},
 		hit_recovery = {
 			tags = { state_tags.variant.hit_recovery, state_tags.group.damage_lock },
 			on = {
@@ -2251,6 +2272,7 @@ local function define_player_fsm()
 		on = {
 			['hp_zero'] = '/dying',
 			['damage'] = '/hit_fall',
+			['damage_on_stairs'] = '/hit_collision',
 			['stairs_lock_lost_after_room_switch'] = '/quiet',
 		},
 		states = states,

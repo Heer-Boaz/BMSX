@@ -36,9 +36,7 @@ function world_item:configure_from_room_def(def, room, item_service_id)
 	self.item_type = def.item_type
 	self.x = def.x
 	self.y = def.y
-	if self.state_variant == 'active' then
-		self:update_visual()
-	end
+	self:update_visual()
 end
 
 function world_item:on_overlap_stay(event)
@@ -53,7 +51,7 @@ function world_item:on_overlap_stay(event)
 	end
 
 	if service(self.item_service_id):try_pick_item(self.item_id, self.room_id, self.item_type, self.source_kind) then
-		self.sc:transition_to(constants.ids.world_item_fsm .. ':/picked')
+		self:dispatch_state_event('picked')
 	end
 end
 
@@ -64,7 +62,6 @@ local function define_world_item_fsm()
 			boot = {
 				entering_state = function(self)
 					self.state_name = 'boot'
-					self.state_variant = 'boot'
 					self.body_collider = components.collider2dcomponent.new({
 						parent = self,
 						id_local = 'body',
@@ -86,16 +83,17 @@ local function define_world_item_fsm()
 				end,
 			},
 			active = {
+				on = {
+					['picked'] = '/picked',
+				},
 				entering_state = function(self)
 					self.state_name = 'active'
-					self.state_variant = 'active'
 					self:update_visual()
 				end,
 			},
 			picked = {
 				entering_state = function(self)
 					self.state_name = 'picked'
-					self.state_variant = 'picked'
 					self.body_sprite.enabled = false
 					self.body_collider.enabled = false
 					self:mark_for_disposal()
@@ -118,7 +116,6 @@ local function register_world_item_definition()
 			source_kind = 'map',
 			item_service_id = constants.ids.item_service_instance,
 			state_name = 'boot',
-			state_variant = 'boot',
 			registrypersistent = false,
 			tick_enabled = false,
 		},

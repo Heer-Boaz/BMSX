@@ -3,17 +3,14 @@ local romdir = require('romdir')
 
 local castle_map = {}
 
-local castle_map_asset_id = 'castle_map'
-local tile_size = constants.room.tile_size
-local tile_origin_y = constants.room.tile_origin_y
 local start_room_number = 1
 
 local function tile_x_to_world(tile_x)
-	return tile_x * tile_size
+	return tile_x * constants.room.tile_size
 end
 
 local function tile_y_to_world(tile_y)
-	return tile_origin_y + (tile_y * tile_size)
+	return constants.room.tile_origin_y + (tile_y * constants.room.tile_size)
 end
 
 local elevator_route_specs = {
@@ -84,8 +81,8 @@ local function build_edge_gate(map_rows, border_x)
 		end
 	end
 	return {
-		y_min = tile_origin_y + ((first_open_row - 1) * tile_size),
-		y_max = tile_origin_y + (last_open_row * tile_size) - 1,
+		y_min = constants.room.tile_origin_y + ((first_open_row - 1) * constants.room.tile_size),
+		y_max = constants.room.tile_origin_y + (last_open_row * constants.room.tile_size) - 1,
 	}
 end
 
@@ -133,8 +130,8 @@ local function build_spawn(map_rows)
 		for tx = 1, col_count - 1 do
 			if can_spawn_at(map_rows, tx, ty) then
 				return {
-					x = (tx - 1) * tile_size,
-					y = tile_origin_y + ((ty - 1) * tile_size),
+					x = (tx - 1) * constants.room.tile_size,
+					y = constants.room.tile_origin_y + ((ty - 1) * constants.room.tile_size),
 				}
 			end
 		end
@@ -267,7 +264,7 @@ local function room_id_from_number(room_number, room_type)
 end
 
 local function load_room_templates()
-	local data = assets.data[romdir.token(castle_map_asset_id)]
+	local data = assets.data[romdir.token('castle_map')]
 	local room_numbers = sort_room_numbers(data)
 	local templates = {}
 

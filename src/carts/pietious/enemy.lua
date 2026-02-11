@@ -20,7 +20,6 @@ local marspeinenaardappel_module = require('enemies/marspeinenaardappel.lua')
 local enemy = {}
 enemy.__index = enemy
 
-local enemy_fsm_id = constants.ids.enemy_fsm
 local enemy_bt_ids = {
 	mijterfoe = constants.ids.enemy_bt .. '.m',
 	zakfoe = constants.ids.enemy_bt .. '.z',
@@ -36,16 +35,6 @@ local enemy_bt_ids = {
 	vlokfoe = constants.ids.enemy_bt .. '.vf',
 	marspeinenaardappel = constants.ids.enemy_bt .. '.ma',
 }
-
-local state_waiting = enemy_fsm_id .. ':/waiting'
-local state_flying = enemy_fsm_id .. ':/flying'
-local PLAYER_ID = constants.ids.player_instance
-
-local body_sprite_component_id = 'body'
-local body_collider_component_id = 'body'
-
-local boekfoe_timeline_id = constants.ids.enemy_def .. '.timeline.boekfoe'
-local cloud_timeline_id = constants.ids.enemy_def .. '.timeline.cloud'
 
 local boekfoe_timeline_frames = {
 	'boekfoe_closed',
@@ -148,7 +137,7 @@ end
 function enemy:create_components()
 	local body_collider = components.collider2dcomponent.new({
 		parent = self,
-		id_local = body_collider_component_id,
+		id_local = 'body',
 		generateoverlapevents = true,
 		spaceevents = 'current',
 	})
@@ -157,10 +146,10 @@ function enemy:create_components()
 
 	local body_sprite = components.spritecomponent.new({
 		parent = self,
-		id_local = body_sprite_component_id,
+		id_local = 'body',
 		imgid = 'meijter_up',
 		offset = { x = 0, y = 0, z = 110 },
-		collider_local_id = body_collider_component_id,
+		collider_local_id = 'body',
 	})
 	self:add_component(body_sprite)
 
@@ -170,13 +159,13 @@ end
 
 function enemy:ensure_animation_timelines()
 	self:define_timeline(new_timeline({
-		id = boekfoe_timeline_id,
+		id = constants.ids.enemy_def .. '.timeline.boekfoe',
 		frames = boekfoe_timeline_frames,
 		ticks_per_frame = 1,
 		playback_mode = 'loop',
 	}))
 	self:define_timeline(new_timeline({
-		id = cloud_timeline_id,
+		id = constants.ids.enemy_def .. '.timeline.cloud',
 		frames = cloud_timeline_frames,
 		ticks_per_frame = constants.enemy.cloud_anim_switch_steps,
 		playback_mode = 'loop',
@@ -230,7 +219,7 @@ function enemy:bind_overlap_events()
 end
 
 function enemy:update_mijter_visual()
-	return enemy_kind_modules.mijterfoe.update_visual(self, state_waiting)
+	return enemy_kind_modules.mijterfoe.update_visual(self)
 end
 
 function enemy:update_zakfoe_visual()
@@ -242,7 +231,7 @@ function enemy:update_crossfoe_visual()
 end
 
 function enemy:update_boekfoe_visual()
-	return enemy_kind_modules.boekfoe.update_visual(self, boekfoe_timeline_id)
+	return enemy_kind_modules.boekfoe.update_visual(self, constants.ids.enemy_def .. '.timeline.boekfoe')
 end
 
 function enemy:update_paperfoe_visual()
@@ -266,7 +255,7 @@ function enemy:update_staffspawn_visual()
 end
 
 function enemy:update_cloud_visual()
-	return enemy_kind_modules.cloud.update_visual(self, cloud_timeline_id)
+	return enemy_kind_modules.cloud.update_visual(self, constants.ids.enemy_def .. '.timeline.cloud')
 end
 
 function enemy:update_vlokfoe_visual()
@@ -445,17 +434,16 @@ function enemy:configure_from_room_def(def, room)
 
 	self:set_active_behaviour_tree(self.kind)
 
-	self:stop_timeline(cloud_timeline_id)
+	self:stop_timeline(constants.ids.enemy_def .. '.timeline.cloud')
 	if kind_module.on_configured ~= nil then
 		kind_module.on_configured(self, {
-			cloud_timeline_id = cloud_timeline_id,
+			cloud_timeline_id = constants.ids.enemy_def .. '.timeline.cloud',
 		})
 	end
 
-	self.state_variant = 'waiting'
 	self.body_collider.enabled = true
 	self.visible = true
-	self.sc:transition_to(state_waiting)
+	self:dispatch_state_event('reset_to_waiting')
 	self:update_visual_components()
 end
 
@@ -502,10 +490,10 @@ function enemy:take_weapon_hit(weapon_kind, hit_id)
 end
 
 function enemy:on_overlap(event)
-	if event.other_id ~= PLAYER_ID then
+	if event.other_id ~= constants.ids.player_instance then
 		return
 	end
-	local player = object(PLAYER_ID)
+	local player = object(constants.ids.player_instance)
 	local other_collider = player:get_component_by_id(event.other_collider_id)
 	if other_collider == nil then
 		error('pietious enemy missing collider on overlap event')
@@ -517,7 +505,7 @@ function enemy:on_overlap(event)
 		return
 	end
 	if other_collider.id_local == constants.ids.player_body_collider_local and self.dangerous then
-		player:take_hit(self.damage, self.x + math.floor(self.width / 2), self.y + math.floor(self.height / 2), self.kind)
+		player:take_hit(self.damage, self.x + math.modf(self.width / 2), self.y + math.modf(self.height / 2), self.kind)
 	end
 end
 
@@ -526,13 +514,12 @@ function enemy:tick()
 end
 
 local function define_enemy_fsm()
-	define_fsm(enemy_fsm_id, {
+	define_fsm(constants.ids.enemy_fsm, {
 		initial = 'boot',
 		states = {
 			boot = {
 				entering_state = function(self)
 					self.state_name = 'boot'
-					self.state_variant = 'boot'
 					self:create_components()
 					self:ensure_animation_timelines()
 					self:bind_overlap_events()
@@ -540,16 +527,24 @@ local function define_enemy_fsm()
 				end,
 			},
 			waiting = {
+				tags = { 'e.w' },
+				on = {
+					['takeoff'] = '/flying',
+					['reset_to_waiting'] = '/waiting',
+				},
 				entering_state = function(self)
 					self.state_name = 'waiting'
-					self.state_variant = 'waiting'
 					self:update_visual_components()
 				end,
 			},
 			flying = {
+				tags = { 'e.f' },
+				on = {
+					['land'] = '/waiting',
+					['reset_to_waiting'] = '/waiting',
+				},
 				entering_state = function(self)
 					self.state_name = 'flying'
-					self.state_variant = 'flying'
 					self:update_visual_components()
 				end,
 			},
@@ -568,13 +563,13 @@ local function define_enemy_behaviour_tree()
 						{
 							type = 'condition',
 							condition = function(target)
-								return target.state_variant == 'waiting'
+								return target:has_tag('e.w')
 							end,
 						},
 						{
 							type = 'action',
 							action = function(target, blackboard)
-								return enemy_kind_modules.mijterfoe.bt_tick_waiting(target, blackboard, random_between, state_flying)
+								return enemy_kind_modules.mijterfoe.bt_tick_waiting(target, blackboard, random_between)
 							end,
 						},
 					},
@@ -585,7 +580,7 @@ local function define_enemy_behaviour_tree()
 						{
 							type = 'condition',
 							condition = function(target)
-								return target.state_variant == 'flying'
+								return target:has_tag('e.f')
 							end,
 						},
 						{
@@ -610,13 +605,13 @@ local function define_enemy_behaviour_tree()
 						{
 							type = 'condition',
 							condition = function(target)
-								return target.state_variant == 'waiting'
+								return target:has_tag('e.w')
 							end,
 						},
 						{
 							type = 'action',
 							action = function(target, blackboard)
-								return enemy_kind_modules.crossfoe.bt_tick_waiting(target, blackboard, state_flying)
+								return enemy_kind_modules.crossfoe.bt_tick_waiting(target, blackboard)
 							end,
 						},
 					},
@@ -627,13 +622,13 @@ local function define_enemy_behaviour_tree()
 						{
 							type = 'condition',
 							condition = function(target)
-								return target.state_variant == 'flying'
+								return target:has_tag('e.f')
 							end,
 						},
 						{
 							type = 'action',
 							action = function(target, blackboard)
-								return enemy_kind_modules.crossfoe.bt_tick_flying(target, blackboard, state_waiting)
+								return enemy_kind_modules.crossfoe.bt_tick_flying(target, blackboard)
 							end,
 						},
 					},
@@ -746,7 +741,7 @@ local function register_enemy_definition()
 	define_world_object({
 		def_id = constants.ids.enemy_def,
 		class = enemy,
-		fsms = { enemy_fsm_id },
+		fsms = { constants.ids.enemy_fsm },
 		defaults = {
 			space_id = constants.spaces.castle,
 			enemy_id = '',
@@ -793,7 +788,6 @@ local function register_enemy_definition()
 			active_bt_id = '',
 			noot_color = { r = 1, g = 1, b = 1, a = 1 },
 			state_name = 'boot',
-			state_variant = 'boot',
 		},
 	})
 end
@@ -804,6 +798,6 @@ return {
 	define_enemy_behaviour_tree = define_enemy_behaviour_tree,
 	register_enemy_definition = register_enemy_definition,
 	enemy_def_id = constants.ids.enemy_def,
-	enemy_fsm_id = enemy_fsm_id,
+	enemy_fsm_id = constants.ids.enemy_fsm,
 	enemy_bt_ids = enemy_bt_ids,
 }

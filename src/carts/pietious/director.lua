@@ -3,8 +3,6 @@ local constants = require('constants.lua')
 local director = {}
 director.__index = director
 
-local director_fsm_id = constants.ids.director_fsm
-
 function director:bind_visual()
 	local rc = self:get_component('customvisualcomponent')
 	rc.producer = function(_ctx)
@@ -33,7 +31,7 @@ function director:render_frame()
 end
 
 local function define_director_fsm()
-	define_fsm(director_fsm_id, {
+	define_fsm(constants.ids.director_fsm, {
 		initial = 'boot',
 		states = {
 			boot = {
@@ -51,7 +49,7 @@ local function register_director_definition()
 	define_world_object({
 		def_id = constants.ids.director_def,
 		class = director,
-		fsms = { director_fsm_id },
+		fsms = { constants.ids.director_fsm },
 		components = { 'customvisualcomponent' },
 		defaults = {
 			room = nil,

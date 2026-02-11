@@ -19,7 +19,6 @@ end
 
 function zakfoe.bt_tick(self, blackboard)
 	local node = blackboard.nodedata
-	local tile_size = self.room.tile_size
 
 	if self.zak_state == 'prepare' then
 		local prepare_ticks = node.zak_prepare_ticks
@@ -53,14 +52,14 @@ function zakfoe.bt_tick(self, blackboard)
 		if self.direction == 'left' then
 			if self.x < self.room_left
 				or room_module.is_solid_at_world(self.room, self.x + 2, self.y + 2)
-				or not room_module.is_solid_at_world(self.room, self.x + 2 - (tile_size / 2), self.y + 14 + tile_size)
+				or not room_module.is_solid_at_world(self.room, self.x + 2 - constants.room.tile_half, self.y + 14 + constants.room.tile_size)
 			then
 				self.direction = 'right'
 			end
 		else
 			if self.x + 14 >= self.room_right
 				or room_module.is_solid_at_world(self.room, self.x + 14, self.y + 2)
-				or not room_module.is_solid_at_world(self.room, self.x + 14 + (tile_size / 2), self.y + 14 + tile_size)
+				or not room_module.is_solid_at_world(self.room, self.x + 14 + constants.room.tile_half, self.y + 14 + constants.room.tile_size)
 			then
 				self.direction = 'left'
 			end

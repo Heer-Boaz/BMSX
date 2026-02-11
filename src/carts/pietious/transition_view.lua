@@ -4,9 +4,6 @@ local eventemitter = require('eventemitter')
 local transition_view = {}
 transition_view.__index = transition_view
 
-local transition_view_fsm_id = constants.ids.transition_view_fsm
-local transition_timeline_id = constants.ids.transition_view_def .. '.timeline.mask'
-local transition_timeline_frame_event = 'timeline.frame.' .. transition_timeline_id
 local room_mask_color = { r = 0, g = 0, b = 0, a = 1 }
 
 function transition_view:bind_visual()
@@ -18,7 +15,7 @@ end
 
 function transition_view:bind_events()
 	self.events:on({
-		event_name = transition_timeline_frame_event,
+		event_name = 'timeline.frame.' .. constants.ids.transition_view_def .. '.timeline.mask',
 		subscriber = self,
 		handler = function(event)
 			self.frames_in_transition = event.frame_index + 1
@@ -34,7 +31,7 @@ function transition_view:bind_events()
 				return
 			end
 			self.frames_in_transition = 0
-			self:play_timeline(transition_timeline_id, { rewind = true, snap_to_start = true })
+			self:play_timeline(constants.ids.transition_view_def .. '.timeline.mask', { rewind = true, snap_to_start = true })
 		end,
 	})
 end
@@ -42,7 +39,7 @@ end
 function transition_view:ctor()
 	self:bind_visual()
 	self:define_timeline(new_timeline({
-		id = transition_timeline_id,
+		id = constants.ids.transition_view_def .. '.timeline.mask',
 		frames = timeline_range(constants.flow.room_transition_frames),
 		playback_mode = 'once',
 	}))
@@ -58,7 +55,7 @@ function transition_view:render_transition()
 end
 
 local function define_transition_view_fsm()
-	define_fsm(transition_view_fsm_id, {
+	define_fsm(constants.ids.transition_view_fsm, {
 		initial = 'boot',
 		states = {
 			boot = {
@@ -75,7 +72,7 @@ local function register_transition_view_definition()
 	define_world_object({
 		def_id = constants.ids.transition_view_def,
 		class = transition_view,
-		fsms = { transition_view_fsm_id },
+		fsms = { constants.ids.transition_view_fsm },
 		components = { 'customvisualcomponent' },
 		defaults = {
 			space_id = constants.spaces.transition,
@@ -91,5 +88,5 @@ return {
 	register_transition_view_definition = register_transition_view_definition,
 	transition_view_def_id = constants.ids.transition_view_def,
 	transition_view_instance_id = constants.ids.transition_view_instance,
-	transition_view_fsm_id = transition_view_fsm_id,
+	transition_view_fsm_id = constants.ids.transition_view_fsm,
 }

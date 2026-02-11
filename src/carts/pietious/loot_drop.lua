@@ -54,7 +54,7 @@ function loot_drop:on_overlap_stay(event)
 	end
 
 	if player:collect_loot(self.loot_type, self.loot_value) then
-		self.sc:transition_to(constants.ids.loot_drop_fsm .. ':/picked')
+		self:dispatch_state_event('picked')
 	end
 end
 
@@ -65,7 +65,6 @@ local function define_loot_drop_fsm()
 			boot = {
 				entering_state = function(self)
 					self.state_name = 'boot'
-					self.state_variant = 'boot'
 					self.body_collider = components.collider2dcomponent.new({
 						parent = self,
 						id_local = 'body',
@@ -88,16 +87,17 @@ local function define_loot_drop_fsm()
 				end,
 			},
 			active = {
+				on = {
+					['picked'] = '/picked',
+				},
 				entering_state = function(self)
 					self.state_name = 'active'
-					self.state_variant = 'active'
 					self:update_visual()
 				end,
 			},
 			picked = {
 				entering_state = function(self)
 					self.state_name = 'picked'
-					self.state_variant = 'picked'
 					self.body_sprite.enabled = false
 					self.body_collider.enabled = false
 					self:mark_for_disposal()
@@ -118,7 +118,6 @@ local function register_loot_drop_definition()
 			loot_type = 'life',
 			loot_value = constants.enemy.loot_life_regen,
 			state_name = 'boot',
-			state_variant = 'boot',
 			registrypersistent = false,
 			tick_enabled = false,
 		},

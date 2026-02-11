@@ -31,15 +31,14 @@ local function build_elevator_routes()
 end
 
 local function move_elevator_vertical(elevator, target, vertical, character_over, player)
-	local step = constants.room.tile_size / 4
 	local top_boundary = constants.room.hud_height + constants.room.tile_size
 	local top = elevator.y - constants.player.height
 
 	if vertical == 'down' then
 		if character_over and player.y == top then
-			player.y = player.y + step
+			player.y = player.y + constants.room.tile_unit
 		end
-		elevator.y = elevator.y + step
+		elevator.y = elevator.y + constants.room.tile_unit
 		if elevator.y > constants.room.height then
 			elevator.y = top_boundary
 			elevator.current_room_number = target.room_number
@@ -51,9 +50,9 @@ local function move_elevator_vertical(elevator, target, vertical, character_over
 	end
 
 	if character_over and player.y == top then
-		player.y = player.y - step
+		player.y = player.y - constants.room.tile_unit
 	end
-	elevator.y = elevator.y - step
+	elevator.y = elevator.y - constants.room.tile_unit
 	if elevator.y < top_boundary then
 		elevator.y = constants.room.height - constants.room.tile_size
 		elevator.current_room_number = target.room_number
@@ -77,17 +76,17 @@ function elevator_service:tick()
 
 		if map_id == 0
 			and current_room_number == elevator.current_room_number
-			and player.y >= (elevator.y - (constants.room.tile_size * 2))
-			and player.y < (elevator.y + (constants.room.tile_size * 2))
+			and player.y >= (elevator.y - constants.room.tile_size2)
+			and player.y < (elevator.y + constants.room.tile_size2)
 		then
-			if player.x > (elevator.x - (constants.room.tile_size * 2))
-				and player.x < (elevator.x + (constants.room.tile_size * 4))
+			if player.x > (elevator.x - constants.room.tile_size2)
+				and player.x < (elevator.x + constants.room.tile_size4)
 				and player:has_tag('g.et')
 			then
 				character_over = true
 			end
-			if player.x > (elevator.x - ((constants.room.tile_size * 2) - 5))
-				and player.x < ((elevator.x + (constants.room.tile_size * 4)) - (constants.room.tile_size / 2))
+			if player.x > (elevator.x - (constants.room.tile_size2 - 5))
+				and player.x < ((elevator.x + constants.room.tile_size4) - constants.room.tile_half)
 			then
 				character_over = true
 			end
@@ -95,18 +94,17 @@ function elevator_service:tick()
 
 		local target = elevator.path[elevator.going_to]
 		local vertical = elevator.vertical_to_point[elevator.going_to]
-		local step = constants.room.tile_size / 4
 
 		if elevator.x < target.x then
-			elevator.x = elevator.x + step
+			elevator.x = elevator.x + constants.room.tile_unit
 			if character_over then
-				player.x = player.x + step
+				player.x = player.x + constants.room.tile_unit
 			end
 		end
 		if elevator.x > target.x then
-			elevator.x = elevator.x - step
+			elevator.x = elevator.x - constants.room.tile_unit
 			if character_over then
-				player.x = player.x - step
+				player.x = player.x - constants.room.tile_unit
 			end
 		end
 

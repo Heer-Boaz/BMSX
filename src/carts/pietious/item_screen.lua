@@ -8,11 +8,6 @@ local ITEM_OFFSET_X = 11
 local ITEM_OFFSET_Y = 6
 local SELECTOR_BLINK_FRAMES = 5
 local MAP_TITLE_X = 49
-local MAP_TITLE_Y = 103 + constants.room.hud_height
-local MAP_PROXY_ORIGIN_X = 5 * constants.room.tile_size
-local MAP_PROXY_ORIGIN_Y = constants.room.hud_height + math.floor(14.5 * constants.room.tile_size)
-local MAP_PROXY_STEP_X = constants.room.tile_size
-local MAP_PROXY_STEP_Y = math.floor(constants.room.tile_size / 2)
 
 local map_world_proxies = {
 	[1] = {
@@ -126,7 +121,7 @@ function item_screen:draw_secondary_weapon_selector()
 		return
 	end
 	local x = (14 * constants.room.tile_size) + (self.secondary_weapon_selection_index * (3 * constants.room.tile_size))
-	local y = constants.room.hud_height + math.floor(16.5 * constants.room.tile_size) - 1
+	local y = constants.room.hud_height + (16 * constants.room.tile_size) + constants.room.tile_half - 1
 	put_sprite('f1_selector_white', x, y, 322)
 end
 
@@ -146,7 +141,7 @@ function item_screen:draw_map()
 		error('pietious item_screen missing map proxy data for world=' .. tostring(world_number))
 	end
 
-	put_sprite('f1_map_title', MAP_TITLE_X, MAP_TITLE_Y, 323)
+	put_sprite('f1_map_title', MAP_TITLE_X, 103 + constants.room.hud_height, 323)
 
 	for i = 1, #map_proxies do
 		local proxy = map_proxies[i]
@@ -158,8 +153,8 @@ function item_screen:draw_map()
 				sprite_id = 'room_proxy_blue'
 			end
 		end
-		local proxy_x = MAP_PROXY_ORIGIN_X + (proxy.x * MAP_PROXY_STEP_X)
-		local proxy_y = MAP_PROXY_ORIGIN_Y + (proxy.y * MAP_PROXY_STEP_Y)
+		local proxy_x = (5 * constants.room.tile_size) + (proxy.x * constants.room.tile_size)
+		local proxy_y = constants.room.hud_height + (14 * constants.room.tile_size) + constants.room.tile_half + (proxy.y * constants.room.tile_half)
 		put_sprite(sprite_id, proxy_x, proxy_y, 323)
 	end
 end

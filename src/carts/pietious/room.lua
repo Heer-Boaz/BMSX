@@ -481,8 +481,8 @@ function room.create_room(context_or_room_id, maybe_room_id)
 end
 
 function room.world_to_tile(room_state, world_x, world_y)
-	local tx = math.floor((world_x - room_state.tile_origin_x) / room_state.tile_size) + 1
-	local ty = math.floor((world_y - room_state.tile_origin_y) / room_state.tile_size) + 1
+	local tx = math.modf((world_x - room_state.tile_origin_x) / room_state.tile_size) + 1
+	local ty = math.modf((world_y - room_state.tile_origin_y) / room_state.tile_size) + 1
 	return tx, ty
 end
 
@@ -504,7 +504,10 @@ function room.is_wall_at_tile(room_state, tx, ty)
 	if tx < 1 or tx > room_state.tile_columns then
 		return false
 	end
-	return room_state.collision_map[ty][tx] ~= 0
+	if room_state.collision_map[ty][tx] ~= 0 then
+		return true
+	end
+	return room.is_active_rock_at_tile(room_state, tx, ty)
 end
 
 function room.is_solid_at_tile(room_state, tx, ty)
@@ -514,7 +517,37 @@ function room.is_solid_at_tile(room_state, tx, ty)
 	if tx < 1 or tx > room_state.tile_columns then
 		return true
 	end
-	return room_state.collision_map[ty][tx] ~= 0
+	if room_state.collision_map[ty][tx] ~= 0 then
+		return true
+	end
+	return room.is_active_rock_at_tile(room_state, tx, ty)
+end
+
+local function rect_overlaps(ax, ay, aw, ah, bx, by, bw, bh)
+	return ax < (bx + bw) and (ax + aw) > bx and ay < (by + bh) and (ay + ah) > by
+end
+
+function room.overlaps_active_rock(room_state, x, y, w, h)
+	local rocks = room_state.rocks
+	if #rocks == 0 then
+		return false
+	end
+
+	local destroyed_rock_ids = service(constants.ids.rock_service_instance).destroyed_rock_ids
+	for i = 1, #rocks do
+		local rock = rocks[i]
+		if destroyed_rock_ids[rock.id] ~= true then
+			if rect_overlaps(x, y, w, h, rock.x, rock.y, constants.rock.width, constants.rock.height) then
+				return true
+			end
+		end
+	end
+	return false
+end
+
+function room.is_active_rock_at_tile(room_state, tx, ty)
+	local world_x, world_y = room.tile_to_world(room_state, tx, ty)
+	return room.overlaps_active_rock(room_state, world_x, world_y, room_state.tile_size, room_state.tile_size)
 end
 
 function room.is_solid_at_world(room_state, world_x, world_y)
