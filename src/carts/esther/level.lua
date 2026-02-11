@@ -10,6 +10,9 @@ function level.create_level()
 	return {
 		world_width = world_width,
 		world_height = world_height,
+		-- CODE_B9859E (Jungle level init): STZ.b $32
+		-- Keep this explicit so player $32 is sourced from level-state flow, not a local baseline.
+		dkc1_state32 = 0x0000,
 		spawn = { x = constants.player.start_x, y = constants.player.start_y },
 		goal = { x = world_width - 236, y = 120, w = 78, h = 72 },
 		barrels = {

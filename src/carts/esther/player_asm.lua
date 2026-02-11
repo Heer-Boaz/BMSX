@@ -188,6 +188,12 @@ local function abs_16(value)
 	return signed
 end
 
+-- $32 is level-context state in DKC1 and is initialized by level setup routines
+-- (e.g. CODE_B9859E: STZ.b $32 for jungle). Keep player-side reads synced from level data.
+local function read_level_state32(level)
+	return level.dkc1_state32 & 0xFFFF
+end
+
 -- ============================================================================
 -- player object
 -- ============================================================================
@@ -247,7 +253,7 @@ function player.ctor(self, addons)
 	self.ram_yxppccctlo = 0
 	
 	self.zp_28 = 0
-	self.zp_32 = 0x0000
+	self.zp_32 = read_level_state32(self.level)
 	self.zp_44 = (self.player_index or 1) - 1
 	self.zp_4c = 0
 	self.zp_7e = 0
@@ -313,7 +319,7 @@ function player:reset_runtime()
 	self.pos_suby = self.ram_yposlo * 0x0100
 	
 	self.zp_28 = 0
-	self.zp_32 = 0x0000
+	self.zp_32 = read_level_state32(self.level)
 	self.zp_7e = 0
 	self.zp_80 = 0
 	self.zp_9c = 0
@@ -2058,6 +2064,9 @@ function player:tick(dt)
 	self.zp_28 = self.zp_28 + 1
 	self.debug_frame = self.zp_28
 	self.debug_time_ms = self.debug_time_ms + (dt * 1000)
+
+	-- keep $32 sourced from level-context flow (disassembly level init state).
+	self.zp_32 = read_level_state32(self.level)
 	
 	-- sample input
 	self:sample_input()
@@ -2196,18 +2205,6 @@ end
 -- ============================================================================
 -- timeline system (stub)
 -- ============================================================================
-
-function player:define_timeline(config)
-	-- stub for squash/stretch animations
-end
-
-function player:play_timeline(id, config)
-	-- stub
-end
-
-function player:define_motion_timelines()
-	-- stub
-end
 
 function player:respawn()
 	self:reset_runtime()
