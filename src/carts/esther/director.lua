@@ -11,23 +11,6 @@ local function overlaps(ax, ay, aw, ah, box)
 	return ax < (box.x + box.w) and (ax + aw) > box.x and ay < (box.y + box.h) and (ay + ah) > box.y
 end
 
-local function abs(value)
-	if value < 0 then
-		return -value
-	end
-	return value
-end
-
-local function sign(value)
-	if value < 0 then
-		return -1
-	end
-	if value > 0 then
-		return 1
-	end
-	return 0
-end
-
 local function clamp(value, min_value, max_value)
 	if value < min_value then
 		return min_value
@@ -98,7 +81,7 @@ function director:update_camera(player)
 	target_x = clamp(target_x, 0, clamped_max_x)
 
 	local delta = target_x - self.camera_x
-	if abs(delta) <= cam.snap_px then
+	if math.abs(delta) <= cam.snap_px then
 		self.camera_x = target_x
 	else
 		self.camera_x = self.camera_x + clamp(delta, -cam.follow_step_px, cam.follow_step_px)
@@ -155,8 +138,8 @@ function director:move_barrel_horizontal_pixels(barrel, step_pixels)
 	if step_pixels == 0 then
 		return false
 	end
-	local dir = sign(step_pixels)
-	local remain = abs(step_pixels)
+	local dir = math.sign(step_pixels)
+	local remain = math.abs(step_pixels)
 	local sp = constants.dkc.subpixels_per_px
 	while remain > 0 do
 		local next_x = barrel.x + dir
@@ -181,8 +164,8 @@ function director:move_barrel_vertical_pixels(barrel, step_pixels)
 	if step_pixels == 0 then
 		return false, false
 	end
-	local dir = sign(step_pixels)
-	local remain = abs(step_pixels)
+	local dir = math.sign(step_pixels)
+	local remain = math.abs(step_pixels)
 	local sp = constants.dkc.subpixels_per_px
 	while remain > 0 do
 		local next_y = barrel.y + dir
@@ -265,7 +248,7 @@ function director:update_barrels(player)
 				end
 
 					if barrel.grounded then
-						local dir = sign(barrel.x_speed_subpx)
+						local dir = math.sign(barrel.x_speed_subpx)
 						if dir == 0 then
 							dir = 1
 						end
@@ -423,7 +406,7 @@ function director:draw_player(player)
 	local sy = player.draw_scale_y
 
 	if player.pose_name == 'roll' then
-		local wobble = abs(player.roll_visual)
+		local wobble = math.abs(player.roll_visual)
 		sx = sx * (1.0 + (wobble * 0.26))
 		sy = sy * (1.0 - (wobble * 0.14))
 	end

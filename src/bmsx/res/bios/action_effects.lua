@@ -71,11 +71,64 @@ function actioneffects.execute(id, context, ...)
 	return def.handler(context, ...)
 end
 
-local function invoke_handler(definition, owner, payload, args)
+local function create_context(owner, payload, args)
+	return { owner = owner, target = owner, payload = payload, args = args }
+end
+
+local function matches_tag_requirements(owner, required_tags, blocked_tags)
+	if required_tags then
+		for i = 1, #required_tags do
+			if not owner:has_tag(required_tags[i]) then
+				return false
+			end
+		end
+	end
+	if blocked_tags then
+		for i = 1, #blocked_tags do
+			if owner:has_tag(blocked_tags[i]) then
+				return false
+			end
+		end
+	end
+	return true
+end
+
+local function matches_state_path_requirements(owner, required_paths, blocked_paths)
+	if required_paths then
+		for i = 1, #required_paths do
+			if not owner:matches_state_path(required_paths[i]) then
+				return false
+			end
+		end
+	end
+	if blocked_paths then
+		for i = 1, #blocked_paths do
+			if owner:matches_state_path(blocked_paths[i]) then
+				return false
+			end
+		end
+	end
+	return true
+end
+
+local function can_trigger(definition, context, args)
+	if not matches_tag_requirements(context.owner, definition.required_tags, definition.blocked_tags) then
+		return false
+	end
+	if not matches_state_path_requirements(context.owner, definition.required_state_paths, definition.blocked_state_paths) then
+		return false
+	end
+	local trigger_gate = definition.can_trigger
+	if trigger_gate then
+		return trigger_gate(context, table.unpack(args or {})) == true
+	end
+	return true
+end
+
+local function invoke_handler(definition, context, args)
 	if not definition.handler then
 		return nil
 	end
-	local context = { owner = owner, target = owner, payload = payload, args = args }
 	return definition.handler(context, table.unpack(args or {}))
 end
 
@@ -171,7 +224,12 @@ function actioneffectcomponent:trigger(id, opts)
 	end
 
 	local owner = self.parent
-	local outcome = invoke_handler(definition, owner, payload, args)
+	local context = create_context(owner, payload, args)
+	if not can_trigger(definition, context, args) then
+		return "blocked"
+	end
+
+	local outcome = invoke_handler(definition, context, args)
 	local event_type = (outcome and outcome.event) or definition.event or definition.id
 	local event_payload = (outcome and outcome.payload ~= nil) and outcome.payload or payload
 	local event = create_owner_event(owner, event_type, event_payload)

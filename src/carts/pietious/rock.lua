@@ -9,6 +9,7 @@ local rock_fsm_id = constants.ids.rock_fsm
 local state_idle = rock_fsm_id .. ':/idle'
 local state_breaking = rock_fsm_id .. ':/breaking'
 local PLAYER_ID = constants.ids.player_instance
+local PLAYER_SWORD_TAG = 'pietious.player.group.sword'
 
 local body_sprite_component_id = 'body'
 local body_collider_component_id = 'body'
@@ -145,7 +146,7 @@ function rock:on_overlap_stay(event)
 		return
 	end
 
-	if player:is_slashing() then
+	if player:has_tag(PLAYER_SWORD_TAG) then
 		self:take_sword_hit(player.sword_id)
 	end
 end
