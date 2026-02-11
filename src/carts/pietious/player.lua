@@ -93,6 +93,15 @@ local player_hit_fall_frames = {
 local player_hit_recovery_frames = timeline_sequence({
 	{ value = { player_damage_imgid = 'pietolon_recover_r' }, hold = constants.damage.hit_recovery_frames },
 })
+local player_sword_sequence_frames = timeline_range(constants.sword.duration_frames + 1)
+local player_sword_sequence_id = 'p.seq.s'
+local player_sword_end_event = 'sword.end'
+local player_hit_invulnerability_sequence_frames = timeline_range(constants.damage.hit_invulnerability_frames)
+local player_hit_blink_sequence_frames = timeline_range(constants.damage.hit_blink_switch_frames)
+local player_fall_substate_sequence_frames = timeline_range(12)
+local player_hit_invulnerability_sequence_id = 'p.seq.hi'
+local player_hit_blink_sequence_id = 'p.seq.hb'
+local player_fall_substate_sequence_id = 'p.seq.f'
 
 if #player_dying_frames ~= constants.damage.death_frames then
 	error(string.format(
@@ -135,7 +144,6 @@ function player:reset_runtime()
 	self.walk_speed_accum = 0
 	self.walk_move_dx = 0
 	self.walk_move_collided_x = false
-	self.sword_time = 0
 	self.sword_id = 0
 	self.sword_ground_origin = 'quiet'
 	self.stairs_direction = 0
@@ -147,7 +155,6 @@ function player:reset_runtime()
 	self.health = constants.damage.max_health
 	self.max_health = constants.damage.max_health
 	self.hit_invulnerability_timer = 0
-	self.hit_blink_timer = 0
 	self.hit_blink_on = false
 	self.hit_substate = 0
 	self.hit_direction = 0
@@ -372,6 +379,9 @@ end
 
 function player:respawn()
 	self:reset_runtime()
+	self:reset_sword_sequence()
+	self:reset_hit_invulnerability_sequence()
+	self:reset_fall_substate_sequence()
 	self:dispatch_state_event('respawn')
 end
 
@@ -438,16 +448,26 @@ function player:try_start_sword_state()
 		return
 	end
 
-	self.sword_time = 0
 	self.sword_id = self.sword_id + 1
+	self:reset_sword_sequence()
 	self:dispatch_state_event(event_name)
 end
 
 function player:reset_sword()
-	if not self:has_tag(state_tags.group.sword) and self.sword_time == 0 then
+	self:reset_sword_sequence()
+end
+
+function player:reset_sword_sequence()
+	self:get_timeline(player_sword_sequence_id):force_seek(0)
+end
+
+function player:advance_sword_sequence()
+	local sword_sequence = self:get_timeline(player_sword_sequence_id)
+	if sword_sequence:value() >= constants.sword.duration_frames then
+		self:dispatch_state_event(player_sword_end_event)
 		return
 	end
-	self.sword_time = 0
+	sword_sequence:advance()
 end
 
 function player:is_hittable()
@@ -458,23 +478,38 @@ function player:is_hittable()
 end
 
 function player:update_hit_invulnerability()
-	if self.hit_invulnerability_timer <= 0 then
-		self.hit_invulnerability_timer = 0
-		self.hit_blink_on = false
+	if self.hit_invulnerability_timer == 0 then
 		return
 	end
 
-	self.hit_invulnerability_timer = self.hit_invulnerability_timer - 1
-	if self.hit_blink_timer > 0 then
-		self.hit_blink_timer = self.hit_blink_timer - 1
-	end
-	if self.hit_blink_timer == 0 then
-		self.hit_blink_on = not self.hit_blink_on
-		self.hit_blink_timer = constants.damage.hit_blink_switch_frames
+	local hit_invulnerability_sequence = self:get_timeline(player_hit_invulnerability_sequence_id)
+	hit_invulnerability_sequence:advance()
+	self.hit_invulnerability_timer = constants.damage.hit_invulnerability_frames - (hit_invulnerability_sequence:value() + 1)
+
+	local hit_blink_sequence = self:get_timeline(player_hit_blink_sequence_id)
+	local hit_blink_events = hit_blink_sequence:advance()
+	for i = 1, #hit_blink_events do
+		if hit_blink_events[i].kind == 'end' then
+			self.hit_blink_on = not self.hit_blink_on
+		end
 	end
 	if self.hit_invulnerability_timer == 0 then
 		self.hit_blink_on = false
 	end
+end
+
+function player:reset_hit_invulnerability_sequence()
+	self.hit_invulnerability_timer = 0
+	self.hit_blink_on = false
+	self:get_timeline(player_hit_invulnerability_sequence_id):rewind()
+	self:get_timeline(player_hit_blink_sequence_id):rewind()
+end
+
+function player:start_hit_invulnerability_sequence()
+	self.hit_invulnerability_timer = constants.damage.hit_invulnerability_frames
+	self.hit_blink_on = true
+	self:get_timeline(player_hit_invulnerability_sequence_id):rewind()
+	self:get_timeline(player_hit_blink_sequence_id):force_seek(0)
 end
 
 function player:get_hit_direction_from_source(source_x)
@@ -500,9 +535,7 @@ function player:start_dying()
 	self.hit_substate = 0
 	self.hit_recovery_timer = 0
 	self.death_timer = 0
-	self.hit_invulnerability_timer = 0
-	self.hit_blink_timer = 0
-	self.hit_blink_on = false
+	self:reset_hit_invulnerability_sequence()
 	self.last_dx = 0
 	self.last_dy = 0
 	self:dispatch_state_event('hp_zero')
@@ -527,9 +560,7 @@ function player:take_hit(amount, source_x, source_y, reason)
 	self.hit_direction = hit_direction
 	self.hit_substate = 0
 	self.hit_recovery_timer = 0
-	self.hit_invulnerability_timer = constants.damage.hit_invulnerability_frames
-	self.hit_blink_timer = constants.damage.hit_blink_switch_frames
-	self.hit_blink_on = true
+	self:start_hit_invulnerability_sequence()
 
 	if hit_direction ~= 0 then
 		self.facing = -hit_direction
@@ -1026,13 +1057,24 @@ end
 
 function player:start_jump(inertia)
 	self.jump_substate = 0
-	self.fall_substate = 0
+	self:reset_fall_substate_sequence()
 	self.jump_inertia = inertia
 	if inertia < 0 then
 		self.facing = -1
 	elseif inertia > 0 then
 		self.facing = 1
 	end
+end
+
+function player:reset_fall_substate_sequence()
+	self.fall_substate = 0
+	self:get_timeline(player_fall_substate_sequence_id):force_seek(0)
+end
+
+function player:advance_fall_substate_sequence()
+	local fall_substate_sequence = self:get_timeline(player_fall_substate_sequence_id)
+	fall_substate_sequence:advance()
+	self.fall_substate = fall_substate_sequence:value()
 end
 
 function player:get_controlled_fall_dy()
@@ -1296,7 +1338,7 @@ function player:tick_quiet()
 	self.last_dy = 0
 
 	if not self:collides_at(self.x, self.y + 1) then
-		self.fall_substate = 0
+		self:reset_fall_substate_sequence()
 		self:dispatch_state_event('no_ground')
 		return
 	end
@@ -1311,7 +1353,7 @@ function player:tick_walking_right()
 	if not self:collides_at(self.x, self.y + 1) then
 		self.last_dx = 0
 		self.last_dy = 0
-		self.fall_substate = 0
+		self:reset_fall_substate_sequence()
 		self:dispatch_state_event('no_ground')
 		return
 	end
@@ -1332,7 +1374,7 @@ function player:tick_walking_left()
 	if not self:collides_at(self.x, self.y + 1) then
 		self.last_dx = 0
 		self.last_dy = 0
-		self.fall_substate = 0
+		self:reset_fall_substate_sequence()
 		self:dispatch_state_event('no_ground')
 		return
 	end
@@ -1345,6 +1387,9 @@ function player:tick_walking_left()
 end
 
 function player:tick_jump_motion()
+	if self:has_tag(state_tags.group.sword) then
+		self:advance_sword_sequence()
+	end
 	self:update_facing_from_horizontal_input()
 	local p = constants.physics
 	if not self.up_held and self.jump_substate < p.jump_release_cut_substate then
@@ -1374,13 +1419,30 @@ function player:tick_jump_motion()
 	self.jump_substate = self.jump_substate + 1
 	local reached_fall = false
 	if self.jump_substate >= p.jump_to_fall_substate then
-		self.fall_substate = 0
+		self:reset_fall_substate_sequence()
 		reached_fall = true
 	end
-	return hit_ceiling, reached_fall
+	local sword_state = self:has_tag(state_tags.group.sword)
+	if hit_ceiling then
+		if sword_state then
+			self:dispatch_state_event('ceiling_to_sj_sword')
+		else
+			self:dispatch_state_event('ceiling_to_stopped_jumping')
+		end
+	end
+	if reached_fall then
+		if sword_state then
+			self:dispatch_state_event('jump_apex_to_c_fall_sword')
+		else
+			self:dispatch_state_event('jump_apex_to_controlled_fall')
+		end
+	end
 end
 
 function player:tick_stopped_jump_motion()
+	if self:has_tag(state_tags.group.sword) then
+		self:advance_sword_sequence()
+	end
 	self:update_facing_from_horizontal_input()
 	local dx = self.jump_inertia * constants.physics.jump_dx
 	local move_result = self:apply_move(dx, 0)
@@ -1393,13 +1455,19 @@ function player:tick_stopped_jump_motion()
 
 	self.jump_substate = self.jump_substate + 1
 	if self.jump_substate >= constants.physics.jump_to_fall_substate then
-		self.fall_substate = 0
-		return true
+		self:reset_fall_substate_sequence()
+		if self:has_tag(state_tags.group.sword) then
+			self:dispatch_state_event('stopped_to_fall_to_c_fall_sword')
+		else
+			self:dispatch_state_event('stopped_to_fall_to_controlled_fall')
+		end
 	end
-	return false
 end
 
 function player:tick_controlled_fall_motion()
+	if self:has_tag(state_tags.group.sword) then
+		self:advance_sword_sequence()
+	end
 	local dx = self:get_controlled_fall_dx()
 	local dy = self:get_controlled_fall_dy()
 	local move_result = self:apply_move(dx, dy)
@@ -1412,148 +1480,47 @@ function player:tick_controlled_fall_motion()
 	end
 
 	if move_result.landed or (dy == 0 and self:collides_at(self.x, self.y + 1)) then
-		self.fall_substate = 0
-		return true
+		self:reset_fall_substate_sequence()
+		if self:has_tag(state_tags.group.sword) then
+			self:dispatch_state_event('landed_to_quiet_sword')
+		else
+			self:dispatch_state_event('landed_to_quiet')
+		end
+		return
 	end
 
-	self.fall_substate = self.fall_substate + 1
-	return false
+	self:advance_fall_substate_sequence()
 end
 
 function player:tick_uncontrolled_fall_motion()
+	if self:has_tag(state_tags.group.sword) then
+		self:advance_sword_sequence()
+	end
 	local dy = self:get_uncontrolled_fall_dy()
 	local move_result = self:apply_move(0, dy)
 
 	if move_result.landed then
-		self.fall_substate = 0
-		return true
-	end
-
-	self.fall_substate = self.fall_substate + 1
-	return false
-end
-
-function player:tick_jumping()
-	local hit_ceiling, reached_fall = self:tick_jump_motion()
-	if hit_ceiling then
-		self:dispatch_state_event('ceiling_to_stopped_jumping')
-	end
-	if reached_fall then
-		self:dispatch_state_event('jump_apex_to_controlled_fall')
-	end
-end
-
-function player:tick_stopped_jumping()
-	if self:tick_stopped_jump_motion() then
-		self:dispatch_state_event('stopped_to_fall_to_controlled_fall')
-	end
-end
-
-function player:tick_controlled_fall()
-	if self:tick_controlled_fall_motion() then
-		self:dispatch_state_event('landed_to_quiet')
-	end
-end
-
-function player:tick_uncontrolled_fall()
-	if self:tick_uncontrolled_fall_motion() then
-		self:dispatch_state_event('landed_to_quiet')
-	end
-end
-
-function player:tick_quiet_sword()
-	self.last_dx = 0
-	self.last_dy = 0
-
-	local duration = constants.sword.duration_frames
-	if self.sword_time >= duration then
-		self:dispatch_state_event('quiet_sword_end')
-		self.sword_time = self.sword_time + 1
+		self:reset_fall_substate_sequence()
+		if self:has_tag(state_tags.group.sword) then
+			self:dispatch_state_event('landed_to_quiet_sword')
+		else
+			self:dispatch_state_event('landed_to_quiet')
+		end
 		return
 	end
 
+	self:advance_fall_substate_sequence()
+end
+
+function player:tick_quiet_sword()
+	self:advance_sword_sequence()
+	self.last_dx = 0
+	self.last_dy = 0
+
 	if not self:collides_at(self.x, self.y + 1) then
-		self.fall_substate = 0
+		self:reset_fall_substate_sequence()
 		self:dispatch_state_event('no_ground')
 	end
-
-	self.sword_time = self.sword_time + 1
-end
-
-function player:tick_uc_fall_sword()
-	local duration = constants.sword.duration_frames
-	local sword_expired = self.sword_time >= duration
-	if sword_expired then
-		self:dispatch_state_event('uc_fall_sword_end')
-	end
-
-	if self:tick_uncontrolled_fall_motion() then
-		if sword_expired then
-			self:dispatch_state_event('landed_to_quiet')
-		else
-			self:dispatch_state_event('landed_to_quiet_sword')
-		end
-	end
-	self.sword_time = self.sword_time + 1
-end
-
-function player:tick_c_fall_sword()
-	local duration = constants.sword.duration_frames
-	local sword_expired = self.sword_time >= duration
-	if sword_expired then
-		self:dispatch_state_event('c_fall_sword_end')
-	end
-
-	if self:tick_controlled_fall_motion() then
-		if sword_expired then
-			self:dispatch_state_event('landed_to_quiet')
-		else
-			self:dispatch_state_event('landed_to_quiet_sword')
-		end
-	end
-	self.sword_time = self.sword_time + 1
-end
-
-function player:tick_jumping_sword()
-	local duration = constants.sword.duration_frames
-	local sword_expired = self.sword_time >= duration
-	if sword_expired then
-		self:dispatch_state_event('jumping_sword_end')
-	end
-
-	local hit_ceiling, reached_fall = self:tick_jump_motion()
-	if hit_ceiling then
-		if sword_expired then
-			self:dispatch_state_event('ceiling_to_stopped_jumping')
-		else
-			self:dispatch_state_event('ceiling_to_sj_sword')
-		end
-	end
-	if reached_fall then
-		if sword_expired then
-			self:dispatch_state_event('jump_apex_to_controlled_fall')
-		else
-			self:dispatch_state_event('jump_apex_to_c_fall_sword')
-		end
-	end
-	self.sword_time = self.sword_time + 1
-end
-
-function player:tick_sj_sword()
-	local duration = constants.sword.duration_frames
-	local sword_expired = self.sword_time >= duration
-	if sword_expired then
-		self:dispatch_state_event('sj_sword_end')
-	end
-
-	if self:tick_stopped_jump_motion() then
-		if sword_expired then
-			self:dispatch_state_event('stopped_to_fall_to_controlled_fall')
-		else
-			self:dispatch_state_event('stopped_to_fall_to_c_fall_sword')
-		end
-	end
-	self.sword_time = self.sword_time + 1
 end
 
 function player:tick_up_stairs()
@@ -1675,17 +1642,11 @@ function player:tick_quiet_stairs()
 end
 
 function player:tick_sword_stairs()
+	self:advance_sword_sequence()
 	self.last_dx = 0
 	self.last_dy = 0
 	self.x = self.stairs_x
 	self.stairs_direction = 0
-
-	local duration = constants.sword.duration_frames
-	if self.sword_time >= duration then
-		self:dispatch_state_event('sword_stairs_end')
-	end
-
-	self.sword_time = self.sword_time + 1
 end
 
 function player:tick_hit_fall()
@@ -1786,9 +1747,36 @@ local function define_player_fsm()
 					frames = player_hit_recovery_frames,
 					playback_mode = 'once',
 				}))
-				return '/quiet'
-			end,
-		},
+					self:define_timeline(new_timeline({
+						id = player_sword_sequence_id,
+						frames = player_sword_sequence_frames,
+						playback_mode = 'once',
+						autotick = false,
+					}))
+					self:define_timeline(new_timeline({
+						id = player_hit_invulnerability_sequence_id,
+						frames = player_hit_invulnerability_sequence_frames,
+						playback_mode = 'once',
+						autotick = false,
+					}))
+					self:define_timeline(new_timeline({
+						id = player_hit_blink_sequence_id,
+						frames = player_hit_blink_sequence_frames,
+						playback_mode = 'loop',
+						autotick = false,
+					}))
+					self:define_timeline(new_timeline({
+						id = player_fall_substate_sequence_id,
+						frames = player_fall_substate_sequence_frames,
+						playback_mode = 'once',
+						autotick = false,
+					}))
+					self:reset_sword_sequence()
+					self:reset_hit_invulnerability_sequence()
+					self:reset_fall_substate_sequence()
+					return '/quiet'
+				end,
+			},
 		quiet = {
 			tags = { state_tags.variant.quiet, state_tags.ability.spyglass },
 			on = {
@@ -1872,7 +1860,7 @@ local function define_player_fsm()
 				['sword_start_jumping'] = '/jumping_sword',
 			},
 			process_input = player.sample_input,
-			tick = player.tick_jumping,
+			tick = player.tick_jump_motion,
 		},
 		stopped_jumping = {
 			tags = { state_tags.variant.stopped_jumping },
@@ -1881,7 +1869,7 @@ local function define_player_fsm()
 				['sword_start_stopped_jumping'] = '/sj_sword',
 			},
 			process_input = player.sample_input,
-			tick = player.tick_stopped_jumping,
+			tick = player.tick_stopped_jump_motion,
 		},
 		controlled_fall = {
 			tags = { state_tags.variant.controlled_fall },
@@ -1890,7 +1878,7 @@ local function define_player_fsm()
 				['sword_start_controlled_fall'] = '/c_fall_sword',
 			},
 			process_input = player.sample_input,
-			tick = player.tick_controlled_fall,
+			tick = player.tick_controlled_fall_motion,
 		},
 		uncontrolled_fall = {
 			tags = { state_tags.variant.uncontrolled_fall },
@@ -1899,7 +1887,7 @@ local function define_player_fsm()
 				['sword_start_uncontrolled_fall'] = '/uc_fall_sword',
 			},
 			process_input = player.sample_input,
-			tick = player.tick_uncontrolled_fall,
+			tick = player.tick_uncontrolled_fall_motion,
 		},
 		quiet_sword = {
 			tags = {
@@ -1909,7 +1897,7 @@ local function define_player_fsm()
 				state_tags.visual.ground_sword,
 			},
 			on = {
-				['quiet_sword_end'] = '/quiet',
+				[player_sword_end_event] = '/quiet',
 				['no_ground'] = '/uc_fall_sword',
 			},
 			process_input = player.sample_input,
@@ -1922,12 +1910,11 @@ local function define_player_fsm()
 				state_tags.visual.jump_sword,
 			},
 			on = {
-				['uc_fall_sword_end'] = '/uncontrolled_fall',
+				[player_sword_end_event] = '/uncontrolled_fall',
 				['landed_to_quiet_sword'] = '/quiet_sword',
-				['landed_to_quiet'] = '/quiet',
 			},
 			process_input = player.sample_input,
-			tick = player.tick_uc_fall_sword,
+			tick = player.tick_uncontrolled_fall_motion,
 		},
 		c_fall_sword = {
 			tags = {
@@ -1936,12 +1923,11 @@ local function define_player_fsm()
 				state_tags.visual.jump_sword,
 			},
 			on = {
-				['c_fall_sword_end'] = '/controlled_fall',
+				[player_sword_end_event] = '/controlled_fall',
 				['landed_to_quiet_sword'] = '/quiet_sword',
-				['landed_to_quiet'] = '/quiet',
 			},
 			process_input = player.sample_input,
-			tick = player.tick_c_fall_sword,
+			tick = player.tick_controlled_fall_motion,
 		},
 		jumping_sword = {
 			tags = {
@@ -1950,14 +1936,12 @@ local function define_player_fsm()
 				state_tags.visual.jump_sword,
 			},
 			on = {
-				['jumping_sword_end'] = '/jumping',
+				[player_sword_end_event] = '/jumping',
 				['ceiling_to_sj_sword'] = '/sj_sword',
-				['ceiling_to_stopped_jumping'] = '/stopped_jumping',
 				['jump_apex_to_c_fall_sword'] = '/c_fall_sword',
-				['jump_apex_to_controlled_fall'] = '/controlled_fall',
 			},
 			process_input = player.sample_input,
-			tick = player.tick_jumping_sword,
+			tick = player.tick_jump_motion,
 		},
 		sj_sword = {
 			tags = {
@@ -1966,12 +1950,11 @@ local function define_player_fsm()
 				state_tags.visual.jump_sword,
 			},
 			on = {
-				['sj_sword_end'] = '/stopped_jumping',
+				[player_sword_end_event] = '/stopped_jumping',
 				['stopped_to_fall_to_c_fall_sword'] = '/c_fall_sword',
-				['stopped_to_fall_to_controlled_fall'] = '/controlled_fall',
 			},
 			process_input = player.sample_input,
-			tick = player.tick_sj_sword,
+			tick = player.tick_stopped_jump_motion,
 		},
 		up_stairs = {
 			tags = { state_tags.variant.up_stairs, state_tags.group.stairs },
@@ -2026,7 +2009,7 @@ local function define_player_fsm()
 				state_tags.visual.stairs_sword,
 			},
 			on = {
-				['sword_stairs_end'] = '/quiet_stairs',
+				[player_sword_end_event] = '/quiet_stairs',
 			},
 			process_input = player.sample_input,
 			tick = player.tick_sword_stairs,
@@ -2118,7 +2101,6 @@ local function register_player_definition()
 				walk_speed_accum = 0,
 				walk_move_dx = 0,
 				walk_move_collided_x = false,
-				sword_time = 0,
 				sword_id = 0,
 				sword_ground_origin = 'quiet',
 					stairs_direction = 0,
@@ -2127,11 +2109,10 @@ local function register_player_definition()
 					stairs_bottom_y = constants.player.start_y,
 					stairs_anim_frame = 0,
 					stairs_anim_distance = 0,
-			health = constants.damage.max_health,
-			max_health = constants.damage.max_health,
-			hit_invulnerability_timer = 0,
-			hit_blink_timer = 0,
-			hit_blink_on = false,
+				health = constants.damage.max_health,
+				max_health = constants.damage.max_health,
+				hit_invulnerability_timer = 0,
+				hit_blink_on = false,
 			hit_substate = 0,
 			hit_direction = 0,
 			hit_recovery_timer = 0,
