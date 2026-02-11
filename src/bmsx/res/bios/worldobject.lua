@@ -233,10 +233,6 @@ function worldobject:matches_state_path(path)
 	return self.sc:matches_state_path(path)
 end
 
-function worldobject:matches_state_tag(tag)
-	return self:has_tag(tag)
-end
-
 function worldobject:transition_to(path)
 	self.sc:transition_to(path)
 end
