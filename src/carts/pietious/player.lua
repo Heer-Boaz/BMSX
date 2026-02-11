@@ -132,6 +132,7 @@ function player:reset_runtime()
 	self.last_dy = 0
 	self.walk_frame = 0
 	self.walk_distance_accum = 0
+	self.walk_speed_accum = 0
 	self.walk_move_dx = 0
 	self.walk_move_collided_x = false
 	self.sword_time = 0
@@ -559,9 +560,6 @@ function player:collect_loot(loot_type, loot_value)
 		if self.weapon_level > constants.hud.weapon_level then
 			self.weapon_level = constants.hud.weapon_level
 		end
-		if self.secondary_weapon == 'none' and self:has_inventory_item('pepernoot') then
-			self.secondary_weapon = 'pepernoot'
-		end
 		return true
 	end
 	error('pietious player invalid loot_type=' .. tostring(loot_type))
@@ -573,9 +571,6 @@ end
 
 function player:add_inventory_item(item_type)
 	self.inventory_items[item_type] = true
-	if item_type == 'pepernoot' and self.secondary_weapon == 'none' then
-		self.secondary_weapon = 'pepernoot'
-	end
 end
 
 function player:equip_secondary_weapon(item_type)
@@ -587,8 +582,12 @@ end
 
 function player:get_walk_dx()
 	if self:has_inventory_item('schoentjes') then
-		return constants.physics.walk_dx_schoentjes
+		self.walk_speed_accum = self.walk_speed_accum + constants.physics.walk_dx_schoentjes_num
+		local walk_dx = math.floor(self.walk_speed_accum / constants.physics.walk_dx_schoentjes_den)
+		self.walk_speed_accum = self.walk_speed_accum - (walk_dx * constants.physics.walk_dx_schoentjes_den)
+		return walk_dx
 	end
+	self.walk_speed_accum = 0
 	return constants.physics.walk_dx
 end
 
@@ -2121,6 +2120,7 @@ local function register_player_definition()
 				last_dy = 0,
 				walk_frame = 0,
 				walk_distance_accum = 0,
+				walk_speed_accum = 0,
 				walk_move_dx = 0,
 				walk_move_collided_x = false,
 				sword_time = 0,

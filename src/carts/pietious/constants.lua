@@ -231,7 +231,8 @@ constants.stairs = {
 
 constants.physics = {
 	walk_dx = 2,
-	walk_dx_schoentjes = 3,
+	walk_dx_schoentjes_num = 5,
+	walk_dx_schoentjes_den = 2,
 	jump_dx = 2,
 	fall_dx_neutral = 2,
 	fall_dx_with_inertia = 3,
