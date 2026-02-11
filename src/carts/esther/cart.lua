@@ -1,4 +1,3 @@
-local engine = require('engine')
 local level_module = require('level')
 local player_module = require('player_asm')
 local director_module = require('director')
@@ -27,7 +26,7 @@ function init()
 end
 
 function new_game()
-	engine.reset()
+	reset()
 	local level = level_module.create_level()
 	local spawn = level.spawn
 
@@ -50,5 +49,5 @@ end
 while true do
 	wait_vblank()
 	service_irqs()
-	engine.update(2)
+	update(2)
 end

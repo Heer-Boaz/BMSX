@@ -33,6 +33,7 @@ local define_dkc1_animationid_dk_walk = 0x0003
 local define_dkc1_animationid_dk_jump = 0x0005
 local define_dkc1_animationid_dk_holdjump = 0x004D
 local define_dkc1_animationid_dk_fall = 0x0015
+local define_dkc1_animationid_dk_bounce = 0x0017
 local define_dkc1_animationid_dk_roll = 0x0018
 local define_dkc1_animationid_dk_endroll = 0x0019
 local define_dkc1_animationid_dk_cancelroll = 0x001a
@@ -152,6 +153,18 @@ local data_bfc2a9 = {
 	'code_bfbf5b',
 }
 
+-- DATA_818409: collision low-bit remap table (line 14703)
+local data_818409 = {
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	0x00, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+	0x01, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02,
+	0x02, 0x02, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03,
+	0x03, 0x03, 0x03, 0x03, 0x04, 0x04, 0x04, 0x04,
+	0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x05,
+	0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x06, 0x06,
+	0x06, 0x06, 0x06, 0x06, 0x86, 0x80, 0x00,
+}
+
 -- ============================================================================
 -- helper functions
 -- ============================================================================
@@ -234,7 +247,7 @@ function player.ctor(self, addons)
 	self.ram_yxppccctlo = 0
 	
 	self.zp_28 = 0
-	self.zp_32 = 0x0004
+	self.zp_32 = 0x0000
 	self.zp_44 = (self.player_index or 1) - 1
 	self.zp_4c = 0
 	self.zp_7e = 0
@@ -244,6 +257,8 @@ function player.ctor(self, addons)
 	self.zp_84 = 0
 	-- set by startup init in DKC1 (CODE_8083FD: STX.b $F3, X=0006 in normal gameplay path)
 	self.zp_f3 = 0x0006
+	self.zp_9c = 0
+	self.zp_9e = 0
 	
 	self.ram_0512 = 0
 	self.ram_1e15 = 0
@@ -298,9 +313,11 @@ function player:reset_runtime()
 	self.pos_suby = self.ram_yposlo * 0x0100
 	
 	self.zp_28 = 0
-	self.zp_32 = 0x0004
+	self.zp_32 = 0x0000
 	self.zp_7e = 0
 	self.zp_80 = 0
+	self.zp_9c = 0
+	self.zp_9e = 0
 	
 	self.facing = 1
 	self.grounded = true
@@ -1693,6 +1710,40 @@ function player:code_bfaf38()
 	self.ram_yspeedlo = to_unsigned_16(yspeed_signed)
 end
 
+-- code_bfa712: collision/bounce gate (line 109102)
+function player:code_bfa712()
+	-- stz.w !ram_dkc1_norspr_ramtable1271lo
+	self.ram_ramtable1271lo = 0
+
+	-- ldy.b $84 / lda.w $16ad,y / cmp.w #!Define_DKC1_AnimationID_DK_Bounce
+	if self.ram_16ad ~= define_dkc1_animationid_dk_bounce then
+		-- code_bfa72c:
+		-- lda.w #$0001 / sta.w !ram_dkc1_norspr_ramtable1271lo
+		self.ram_ramtable1271lo = 0x0001
+		-- lda.w !ram_dkc1_norspr_yspeedlo,x / bmi.b code_bfa73e
+		if to_signed_16(self.ram_yspeedlo) >= 0 then
+			-- cmp.w #$0140 / bpl.b code_bfa72b
+			if self.ram_yspeedlo < 0x0140 then
+				return
+			end
+		end
+	end
+
+	-- code_bfa73e:
+	-- lda.w !ram_dkc1_norspr_ramtable1271lo,x / bmi.b code_bfa72b
+	if to_signed_16(self.ram_ramtable1271lo) < 0 then
+		return
+	end
+
+	-- lda.w !ram_dkc1_norspr_ramtable12a5lo,x / and.w #$0001 / beq.b code_bfa752
+	if (self.ram_ramtable12a5lo & 0x0001) == 0x0001 then
+		return
+	end
+
+	-- CODE_BFA752+ depends on enemy-sprite overlap routines (CODE_BBA4C8/CODE_BBA58D).
+	-- Those paths are not wired in this cart runtime.
+end
+
 -- code_bfbda9: roll initiation (line 112223)
 function player:code_bfbda9()
 	-- lda.w #$0012
@@ -1774,7 +1825,7 @@ end
 
 function player:move_horizontal_pixels(step_pixels)
 	if step_pixels == 0 then
-		return false
+		return false, nil
 	end
 	local direction = 1
 	if step_pixels < 0 then
@@ -1782,23 +1833,24 @@ function player:move_horizontal_pixels(step_pixels)
 	end
 	local remaining = abs_16(step_pixels)
 	
-	while remaining > 0 do
-		local next_x = self.ram_xposlo + direction
-		if self:get_overlapping_solid(next_x, self.ram_yposlo) ~= nil then
-			-- collision
-			self.ram_xspeedlo = 0
-			self.pos_subx = self.ram_xposlo * 0x0100
-			return true
+		while remaining > 0 do
+			local next_x = self.ram_xposlo + direction
+			local solid = self:get_overlapping_solid(next_x, self.ram_yposlo)
+			if solid ~= nil then
+				-- collision
+				self.ram_xspeedlo = 0
+				self.pos_subx = self.ram_xposlo * 0x0100
+				return true, solid
+			end
+			self.ram_xposlo = next_x
+			remaining = remaining - 1
 		end
-		self.ram_xposlo = next_x
-		remaining = remaining - 1
-	end
-	return false
+	return false, nil
 end
 
 function player:move_vertical_pixels(step_pixels)
 	if step_pixels == 0 then
-		return false, false
+		return false, false, nil
 	end
 	local direction = 1
 	if step_pixels < 0 then
@@ -1810,9 +1862,9 @@ function player:move_vertical_pixels(step_pixels)
 	while remaining > 0 do
 		local next_y = self.ram_yposlo + direction
 		local solid = self:get_overlapping_solid(self.ram_xposlo, next_y)
-		if solid ~= nil then
-			-- collision
-			if direction > 0 then
+			if solid ~= nil then
+				-- collision
+				if direction > 0 then
 				-- hit ground
 				grounded = true
 				self.ram_yspeedlo = 0xFFFF
@@ -1820,14 +1872,42 @@ function player:move_vertical_pixels(step_pixels)
 			else
 				self.ram_yspeedlo = 0
 				self.ram_ramtable1631lo = 0xFFFF
+				end
+				self.pos_suby = self.ram_yposlo * 0x0100
+				return true, grounded, solid
 			end
-			self.pos_suby = self.ram_yposlo * 0x0100
-			return true, grounded
+			self.ram_yposlo = next_y
+			remaining = remaining - 1
 		end
-		self.ram_yposlo = next_y
-		remaining = remaining - 1
+	return false, grounded, nil
+end
+
+function player:resolve_collision_raw_9c(solid)
+	return solid.dkc1_collision9c & 0xFFFF
+end
+
+-- CODE_818087/CODE_81820F/CODE_81839B post-probe collision-flag remap (line 14191+)
+function player:code_818087_remap_9c(collision_y)
+	self.zp_9e = self.zp_9c
+	local map_index = self.zp_9c & 0x003F
+	self.zp_9c = self.zp_9c & (~map_index & 0xFFFF)
+	local lo = data_818409[map_index + 1] or 0x00
+	local hi = data_818409[map_index + 2] or 0x00
+	local mapped = ((hi << 8) | lo) & 0x801F
+	if (mapped & 0x8000) ~= 0 and collision_y ~= 0x000F then
+		mapped = mapped & 0x001F
 	end
-	return false, grounded
+	self.zp_9c = (self.zp_9c | mapped) & 0xFFFF
+	local kind = self.zp_9e & 0x007F
+	if kind == 0x0045 or kind == 0x0041 then
+		self.zp_9c = self.zp_9c | 0x0020
+	end
+end
+
+-- CODE_BFAD92/CODE_BFAE6B/CODE_BFAF09/CODE_BFFC72:
+-- LDA.b $9C / STA.w !RAM_DKC1_NorSpr_RAMTable1209Lo,x
+function player:commit_collision_9c_to_1209()
+	self.ram_ramtable1209lo = self.zp_9c & 0xFFFF
 end
 
 function player:integrate_and_collide()
@@ -1837,7 +1917,7 @@ function player:integrate_and_collide()
 	local want_subx = self.pos_subx + to_signed_16(self.ram_xspeedlo)
 	local want_x = math.floor(want_subx / sp)
 	local step_x = want_x - self.ram_xposlo
-	local collided_x = self:move_horizontal_pixels(step_x)
+	local collided_x, collided_x_solid = self:move_horizontal_pixels(step_x)
 	if not collided_x then
 		self.pos_subx = want_subx
 	end
@@ -1847,7 +1927,7 @@ function player:integrate_and_collide()
 	local want_suby = self.pos_suby - to_signed_16(self.ram_yspeedlo)
 	local want_y = math.floor(want_suby / sp)
 	local step_y = want_y - self.ram_yposlo
-	local collided_y, grounded = self:move_vertical_pixels(step_y)
+	local collided_y, grounded, collided_y_solid = self:move_vertical_pixels(step_y)
 	if not collided_y then
 		self.pos_suby = want_suby
 	end
@@ -1862,7 +1942,9 @@ function player:integrate_and_collide()
 	end
 	
 	-- ground probe
+	local probe_solid = nil
 	if not grounded and self:is_grounded_probe() then
+		probe_solid = self:get_overlapping_solid(self.ram_xposlo, self.ram_yposlo + 1)
 		grounded = true
 		self.ram_yspeedlo = 0xFFFF
 		self.pos_suby = self.ram_yposlo * sp
@@ -1897,6 +1979,22 @@ function player:integrate_and_collide()
 	else
 		self.ram_ramtable12a5lo = self.ram_ramtable12a5lo & 0xfffe
 	end
+
+	-- collision source mirrors CODE_818000 probe output ($9C), then stores into 1209.
+	local collision_solid = collided_y_solid
+	if collision_solid == nil then
+		collision_solid = probe_solid
+	end
+	if collision_solid == nil then
+		collision_solid = collided_x_solid
+	end
+	if collision_solid ~= nil then
+		self.zp_9c = self:resolve_collision_raw_9c(collision_solid)
+	else
+		self.zp_9c = 0x0000
+	end
+	self:code_818087_remap_9c(0)
+	self:commit_collision_9c_to_1209()
 end
 
 -- ============================================================================
@@ -1951,17 +2049,6 @@ function player:sample_input()
 	end
 end
 
--- RAMTable1209Lo source bridge:
--- The original game writes this from collision/terrain paths. In this cart runtime
--- the low bits stay clear (flat box-collision simplification) and bit7 mirrors facing.
-function player:update_ramtable1209_bridge()
-	local low = 0x0000
-	if (self.ram_yxppccctlo & 0x4000) == 0 then
-		low = 0x0080
-	end
-	self.ram_ramtable1209lo = (self.ram_ramtable1209lo & 0xFF00) | low
-end
-
 -- ============================================================================
 -- main tick loop
 -- ============================================================================
@@ -1991,12 +2078,6 @@ function player:tick(dt)
 		self.ram_180f = 1
 	end
 
-	if self.grounded then
-		self.zp_32 = 0x0004
-	else
-		self.zp_32 = 0x0001
-	end
-	
 	-- run button handler (CODE_BFB27C handles ALL buttons: direction, jump, roll, etc.)
 	self:code_bfb27c()
 
@@ -2063,12 +2144,11 @@ function player:tick(dt)
 	-- integrate position and collide
 	self:integrate_and_collide()
 
-	-- refresh RAMTable1209Lo source bits and update accumulator for next frame.
-	self:update_ramtable1209_bridge()
 	-- DATA_BEA724 / DATA_BEB224 clear state $1029 after jump script settles on ground.
 	if self.ram_ramtable1029lo == 0x0001 and self.grounded and self.jump_script_kind == nil then
 		self.ram_ramtable1029lo = 0x0000
 	end
+	self:code_bfa712()
 	if self.ram_ramtable1029lo == 0x0012 or self.ram_ramtable1029lo == 0x0013 then
 		self:code_bfa575()
 	else
