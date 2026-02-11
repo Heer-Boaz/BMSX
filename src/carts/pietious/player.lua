@@ -1501,11 +1501,6 @@ function player:tick_c_fall_sword()
 	local duration = constants.sword.duration_frames
 	local sword_expired = self.sword_time >= duration
 	if sword_expired then
-		if self.facing > 0 then
-			self.x = self.x - 2
-		else
-			self.x = self.x + 2
-		end
 		self:dispatch_state_event('c_fall_sword_end')
 	end
 
