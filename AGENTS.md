@@ -226,6 +226,8 @@
 * Look at other utility functions available in `/src/bmsx/util/` before writing your own utility functions!
 * Don't use `require` in non-script code (e.g. `rombuilder.ts` and `rominspector.ts` can have `require`, but core engine files or game source files cannot).
 * In cart code, `engine` is forbidden. Do not call `engine.*` (for example: `engine.object(id)`). Use the cart-facing globals/helpers instead (such as `object(...)`, `service(...)`, `spawn_object(...)`, `update(...)`, `reset(...)`, `add_space(...)`, `set_space(...)`, `get_space(...)`, etc.).
+* In cart code, avoid wasteful long identifier strings. Redundant prefixes in tags/events/effect IDs/timeline IDs (for example full cart/object namespaces repeated on every value) are forbidden when shorter local identifiers work. Treat string memory and string-compare CPU cost as a hard budget.
+* In cart code, creating local copies/aliases of global constants is forbidden (for example `local p = constants.physics` or `local foo = SOME_GLOBAL_CONST`). Read constants directly from their source table/global.
 * Ensure that registry persistent objects are not serialized.
 * Use the annotations provided in the codebase to maintain consistency, these include:
     * `@attach_components`: Indicates that the decorated class should have `Component`s automatically attached.
