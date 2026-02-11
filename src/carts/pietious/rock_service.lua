@@ -47,7 +47,7 @@ function rock_service:deactivate_unused_rocks(active_ids)
 end
 
 function rock_service:sync_room_rocks()
-	local room = service(self.game_service_id).current_room
+	local room = service(constants.ids.castle_service_instance).current_room
 	if self.synced_room_id == room.room_id and not self.sync_dirty then
 		return
 	end
@@ -134,7 +134,6 @@ local function register_rock_service_definition()
 		auto_activate = true,
 			defaults = {
 				id = constants.ids.rock_service_instance,
-				game_service_id = constants.ids.castle_service_instance,
 				item_service_id = constants.ids.item_service_instance,
 				rock_def_id = rock_module.rock_def_id,
 			rocks_by_id = {},

@@ -34,7 +34,7 @@ local function enemy_condition_matches(self, condition, enemy_def, room_id)
 end
 
 function enemy_service:require_current_room_event(event_room_id, event_name)
-	local current_room_id = service(self.game_service_id).current_room.room_id
+	local current_room_id = service(constants.ids.castle_service_instance).current_room.room_id
 	if event_room_id ~= current_room_id then
 		error('pietious enemy_service received ' .. event_name .. ' for room ' .. tostring(event_room_id) .. ' while current room is ' .. tostring(current_room_id))
 	end
@@ -97,7 +97,7 @@ function enemy_service:deactivate_all_enemies()
 end
 
 function enemy_service:enter_current_room()
-	local room = service(self.game_service_id).current_room
+	local room = service(constants.ids.castle_service_instance).current_room
 	local enemy_defs = room.enemies
 
 	self:deactivate_all_enemies()
@@ -184,7 +184,6 @@ local function register_enemy_service_definition()
 		auto_activate = true,
 		defaults = {
 			id = constants.ids.enemy_service_instance,
-			game_service_id = constants.ids.castle_service_instance,
 			enemy_def_id = enemy_module.enemy_def_id,
 			enemies_by_id = {},
 			destroyed_enemy_ids = {},

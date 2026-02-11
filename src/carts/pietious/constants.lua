@@ -23,6 +23,7 @@ constants.ids = {
 	castle_service_instance = 'pietious.castle_service.instance',
 	elevator_service_def = 'pietious.elevator_service.def',
 	elevator_service_instance = 'pietious.elevator_service.instance',
+	elevator_service_fsm = 'pietious.elevator_service.fsm',
 	flow_service_def = 'pietious.flow_service.def',
 	flow_service_instance = 'pietious.flow_service.instance',
 	flow_service_fsm = 'pietious.flow_service.fsm',
@@ -86,8 +87,8 @@ constants.room.tile_origin_y = constants.room.hud_height
 constants.player = {
 	width = 16,
 	height = 16,
-	start_x = 0,
-	start_y = 104,
+	start_x = constants.room.tile_size * 20,
+	start_y = constants.room.tile_origin_y + (constants.room.tile_size * 9),
 	walk_anim_cycle_px = 8,
 }
 

@@ -68,6 +68,7 @@ function init()
 	enemy_module.define_enemy_fsm()
 	enemy_module.define_enemy_behaviour_tree()
 	enemy_service_module.define_enemy_service_fsm()
+	elevator_service_module.define_elevator_service_fsm()
 	flow_service_module.define_flow_service_fsm()
 	player_module.register_player_definition()
 	room_view_module.register_room_view_definition()
@@ -102,23 +103,22 @@ function new_game()
 	local castle_service = create_service(castle_service_module.castle_service_def_id, {
 		id = castle_service_module.castle_service_instance_id,
 	})
-	local room = castle_service:initialize()
-	local spawn = room.spawn
+	local room = castle_service:initialize(1)
+	local spawn_x = constants.player.start_x
+	local spawn_y = constants.player.start_y
 
 	spawn_object(player_module.player_def_id, {
 		id = player_module.player_instance_id,
 		room = room,
-		game_service_id = castle_service_module.castle_service_instance_id,
 		space_id = room.space_id,
-		spawn_x = spawn.x,
-		spawn_y = spawn.y,
-		pos = { x = spawn.x, y = spawn.y, z = 140 },
+		spawn_x = spawn_x,
+		spawn_y = spawn_y,
+		pos = { x = spawn_x, y = spawn_y, z = 140 },
 	})
 
 	spawn_object(room_view_module.room_view_def_id, {
 		id = room_view_module.room_view_instance_id,
 		room = room,
-		game_service_id = castle_service_module.castle_service_instance_id,
 		pos = { x = 0, y = 0, z = 0 },
 	})
 
@@ -144,22 +144,20 @@ function new_game()
 
 	create_service(item_service_module.item_service_def_id, {
 		id = item_service_module.item_service_instance_id,
-		game_service_id = castle_service_module.castle_service_instance_id,
 	})
 
 	create_service(enemy_service_module.enemy_service_def_id, {
 		id = enemy_service_module.enemy_service_instance_id,
-		game_service_id = castle_service_module.castle_service_instance_id,
 	})
 
-	create_service(elevator_service_module.elevator_service_def_id, {
+	local elevator_service = create_service(elevator_service_module.elevator_service_def_id, {
 		id = elevator_service_module.elevator_service_instance_id,
 		castle_service_id = castle_service_module.castle_service_instance_id,
 	})
+	elevator_service:activate()
 
 	create_service(rock_service_module.rock_service_def_id, {
 		id = rock_service_module.rock_service_instance_id,
-		game_service_id = castle_service_module.castle_service_instance_id,
 		item_service_id = item_service_module.item_service_instance_id,
 	})
 end

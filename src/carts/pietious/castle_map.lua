@@ -6,7 +6,7 @@ local castle_map = {}
 local castle_map_asset_id = 'castle_map'
 local tile_size = constants.room.tile_size
 local tile_origin_y = constants.room.tile_origin_y
-local start_room_number = 3
+local start_room_number = 1
 
 local function tile_x_to_world(tile_x)
 	return tile_x * tile_size

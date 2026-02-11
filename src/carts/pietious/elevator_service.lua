@@ -33,9 +33,10 @@ end
 local function move_elevator_vertical(elevator, target, vertical, character_over, player)
 	local step = constants.room.tile_size / 4
 	local top_boundary = constants.room.hud_height + constants.room.tile_size
+	local top = elevator.y - constants.player.height
 
 	if vertical == 'down' then
-		if character_over and player.y == (elevator.y - constants.player.height) then
+		if character_over and player.y == top then
 			player.y = player.y + step
 		end
 		elevator.y = elevator.y + step
@@ -49,7 +50,7 @@ local function move_elevator_vertical(elevator, target, vertical, character_over
 		return
 	end
 
-	if character_over and player.y == (elevator.y - constants.player.height) then
+	if character_over and player.y == top then
 		player.y = player.y - step
 	end
 	elevator.y = elevator.y - step
@@ -81,7 +82,7 @@ function elevator_service:tick()
 		then
 			if player.x > (elevator.x - (constants.room.tile_size * 2))
 				and player.x < (elevator.x + (constants.room.tile_size * 4))
-				and player:is_elevator_transport_state()
+				and player:has_tag('g.et')
 			then
 				character_over = true
 			end
@@ -124,11 +125,28 @@ function elevator_service:tick()
 	end
 end
 
+local function define_elevator_service_fsm()
+	define_fsm(constants.ids.elevator_service_fsm, {
+		initial = 'boot',
+		states = {
+			boot = {
+				entering_state = function()
+					return '/active'
+				end,
+			},
+			active = {
+				tick = elevator_service.tick,
+			},
+		},
+	})
+end
+
 local function register_elevator_service_definition()
 	local elevator_routes = build_elevator_routes()
 	define_service({
 		def_id = constants.ids.elevator_service_def,
 		class = elevator_service,
+		fsms = { constants.ids.elevator_service_fsm },
 		defaults = {
 			id = constants.ids.elevator_service_instance,
 			castle_service_id = constants.ids.castle_service_instance,
@@ -140,7 +158,9 @@ local function register_elevator_service_definition()
 end
 
 return {
+	define_elevator_service_fsm = define_elevator_service_fsm,
 	register_elevator_service_definition = register_elevator_service_definition,
 	elevator_service_def_id = constants.ids.elevator_service_def,
 	elevator_service_instance_id = constants.ids.elevator_service_instance,
+	elevator_service_fsm_id = constants.ids.elevator_service_fsm,
 }

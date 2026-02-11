@@ -601,10 +601,6 @@ function player:collect_loot(loot_type, loot_value)
 	error('pietious player invalid loot_type=' .. tostring(loot_type))
 end
 
-function player:is_elevator_transport_state()
-	return self:has_tag(state_tags.group.elevator_transport)
-end
-
 function player:has_inventory_item(item_type)
 	return self.inventory_items[item_type] == true
 end
@@ -639,7 +635,7 @@ function player:try_switch_room(direction, keep_stairs_lock)
 		self.x = self.stairs_x
 	end
 
-	local castle_service = service(self.game_service_id)
+	local castle_service = service(constants.ids.castle_service_instance)
 	local switch = castle_service:switch_room(direction, self.y, self.y + self.height)
 	if switch == nil then
 		return false
@@ -970,6 +966,49 @@ function player:start_stairs(direction, stair, event_name)
 	self:dispatch_state_event(event_name)
 end
 
+function player:collides_with_elevator_at(x, y)
+	local castle_service = service(constants.ids.castle_service_instance)
+	local current_room_number = castle_service.current_room_number
+	local elevator_routes = service(constants.ids.elevator_service_instance).elevator_routes
+	local right = x + self.width
+	local bottom = y + self.height
+	for i = 1, #elevator_routes do
+		local elevator = elevator_routes[i]
+		if elevator.current_room_number == current_room_number then
+			if x < (elevator.x + (constants.room.tile_size * 4))
+				and right > elevator.x
+				and y < (elevator.y + (constants.room.tile_size * 2))
+				and bottom > elevator.y
+			then
+				return true
+			end
+		end
+	end
+
+	return false
+end
+
+function player:try_snap_to_elevator_platform(next_x)
+	local castle_service = service(constants.ids.castle_service_instance)
+	local current_room_number = castle_service.current_room_number
+	local elevator_routes = service(constants.ids.elevator_service_instance).elevator_routes
+	for i = 1, #elevator_routes do
+		local elevator = elevator_routes[i]
+		if elevator.current_room_number == current_room_number
+			and self.y >= (elevator.y - (constants.room.tile_size * 2))
+			and self.y < elevator.y
+			and self.x > (elevator.x - ((constants.room.tile_size * 2) - ((constants.room.tile_size / 4) * 4)))
+			and self.x < ((elevator.x + (constants.room.tile_size * 4)) - ((constants.room.tile_size / 4) * 3))
+		then
+			self.y = elevator.y - self.height
+			self.x = next_x
+			return true
+		end
+	end
+
+	return false
+end
+
 function player:collides_at(x, y)
 	local solids = self.room.solids
 	for i = 1, #solids do
@@ -992,6 +1031,10 @@ function player:collides_at(x, y)
 				end
 			end
 		end
+	end
+
+	if self:collides_with_elevator_at(x, y) then
+		return true
 	end
 
 	return false
@@ -1104,9 +1147,19 @@ function player:apply_move(dx, dy)
 			end
 		end
 	else
-		self.y = next_y
-		test_x_col = true
-		found = true
+		if next_y >= old_y then
+			if self:try_snap_to_elevator_platform(next_x) then
+				found = true
+			else
+				self.y = next_y
+				test_x_col = true
+				found = true
+			end
+		else
+			self.y = next_y
+			test_x_col = true
+			found = true
+		end
 	end
 
 	if test_x_col or (not found) then
@@ -2222,7 +2275,6 @@ local function register_player_definition()
 		},
 		defaults = {
 			room = nil,
-			game_service_id = constants.ids.castle_service_instance,
 			space_id = constants.spaces.castle,
 			player_index = 1,
 			width = constants.player.width,

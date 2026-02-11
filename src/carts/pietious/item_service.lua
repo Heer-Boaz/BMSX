@@ -157,7 +157,7 @@ function item_service:deactivate_unused_items(active_ids)
 end
 
 function item_service:refresh_current_room_items()
-	local room = service(self.game_service_id).current_room
+	local room = service(constants.ids.castle_service_instance).current_room
 	local room_id = room.room_id
 	self.synced_room_id = room_id
 
@@ -320,7 +320,6 @@ local function register_item_service_definition()
 		auto_activate = true,
 			defaults = {
 				id = constants.ids.item_service_instance,
-				game_service_id = constants.ids.castle_service_instance,
 				world_item_def_id = world_item_module.world_item_def_id,
 			items_by_id = {},
 			event_item_defs_by_room = {},
