@@ -484,6 +484,43 @@ local data_be984f = {
 	{ op = 'loop' }, -- DATA_BE98B1 scratch loop (no additional gameplay-side state writes needed)
 }
 
+-- DATA_BEA6A9: DK jump script (direct OpXX/Op81/Op83/Op84/Op80 flow).
+local data_bea6a9 = {
+	{ op = 'call', fn = 'code_beb233' },
+	{ op = 'wait', frames = 2 },
+	{ op = 'call', fn = 'code_bea7d6' },
+	{ op = 'wait', frames = 2 },
+	{ op = 'wait', frames = 2 },
+	{ op = 'wait', frames = 2 },
+	{ op = 'wait', frames = 2 },
+	{ op = 'wait', frames = 2 },
+	{ op = 'wait', frames = 2 },
+	{ op = 'wait', frames = 2 },
+	{ op = 'wait', frames = 2 },
+	{ op = 'wait', frames = 2 },
+	{ op = 'wait', frames = 2 },
+	{ op = 'call', fn = 'code_beb23c' },
+	{ op = 'gate', fn = 'code_be851b_gate' },
+	{ op = 'call', fn = 'code_bea765' },
+	{ op = 'hook', fn = 'code_bea755' },
+	{ op = 'wait', frames = 2 },
+	{ op = 'wait', frames = 2 },
+	{ op = 'wait', frames = 2 },
+	{ op = 'wait', frames = 2 },
+	{ op = 'wait', frames = 3 },
+	{ op = 'wait', frames = 4 },
+	{ op = 'gate', fn = 'code_be84da_gate' },
+	{ op = 'call', fn = 'code_bea737' },
+	{ op = 'hook', fn = nil },
+	{ op = 'call', fn = 'code_bea715' },
+	{ op = 'call', fn = 'code_bea724' },
+	{ op = 'wait', frames = 4 },
+	{ op = 'wait', frames = 3 },
+	{ op = 'wait', frames = 3 },
+	{ op = 'call', fn = 'code_bea778' },
+	{ op = 'loop' },
+}
+
 -- ============================================================================
 -- helper functions
 -- ============================================================================
@@ -986,6 +1023,9 @@ function player.ctor(self, addons)
 	self.roll_script_frame = 0
 	self.jump_script_kind = nil
 	self.jump_script_frame = 0
+	self.jump_script_pc = 1
+	self.jump_script_wait = 0
+	self.jump_script_hook = nil
 	self.death_script_kind = nil
 	self.death_script_pc = 1
 	self.death_script_wait = 0
@@ -1305,6 +1345,9 @@ function player:reset_runtime()
 	self.roll_script_frame = 0
 	self.jump_script_kind = nil
 	self.jump_script_frame = 0
+	self.jump_script_pc = 1
+	self.jump_script_wait = 0
+	self.jump_script_hook = nil
 	self.death_script_kind = nil
 	self.death_script_pc = 1
 	self.death_script_wait = 0
@@ -2171,6 +2214,17 @@ end
 -- Called from inside code_bfb27c when B is HELD ($7E & Joypad_B)
 -- This is the FULL translation including jump initiation (CODE_BFB94F)
 function player:code_bfb8f7_full()
+	print(string.format(
+		'DBG_B|f=%d|180f=%04X|st=%04X|ys=%04X|1631=%04X|1209=%04X|7e=%04X|80=%04X',
+		self.zp_28 & 0xFFFF,
+		self.ram_180f & 0xFFFF,
+		self.ram_ramtable1029lo & 0xFFFF,
+		self.ram_yspeedlo & 0xFFFF,
+		self.ram_ramtable1631lo & 0xFFFF,
+		self.ram_ramtable1209lo & 0xFFFF,
+		self.zp_7e & 0xFFFF,
+		self.zp_80 & 0xFFFF
+	))
 	-- LDA.b $80 / AND.w #$8000                     ; LINE 111607: B pressed THIS frame?
 	if (self.zp_80 & joypad_b) ~= 0 then
 		-- CODE_BFB919: first press - record timestamp
@@ -2282,6 +2336,15 @@ function player:code_bfb8f7_full()
 	-- CODE_BFB9A2: normal jump
 	self.ram_ramtable1029lo = 0x0001
 	self.ram_16ad = define_dkc1_animationid_dk_jump
+	print(string.format(
+		'DBG_B_JUMPSTART|f=%d|180f=%04X|st=%04X|ys=%04X|1631=%04X|1209=%04X',
+		self.zp_28 & 0xFFFF,
+		self.ram_180f & 0xFFFF,
+		self.ram_ramtable1029lo & 0xFFFF,
+		self.ram_yspeedlo & 0xFFFF,
+		self.ram_ramtable1631lo & 0xFFFF,
+		self.ram_ramtable1209lo & 0xFFFF
+	))
 	self:code_beb233()
 	self.jump_script_kind = 'data_bea6a9'
 	self.jump_script_frame = 0
