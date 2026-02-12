@@ -811,6 +811,7 @@ function player.ctor(self, addons)
 	self.ram_norspr_yspeedlo = {}
 	self.ram_norspr_ramtable0f25lo = {}
 	self.ram_norspr_ramtable1595lo = {}
+	self.ram_norspr_ramtable15c9lo = {}
 	self.ram_norspr_ramtable1029lo = {}
 	self.ram_norspr_ramtable1271lo = {}
 	self.ram_norspr_ramtable1631lo = {}
@@ -844,6 +845,7 @@ function player.ctor(self, addons)
 		self.ram_norspr_yspeedlo[i] = 0
 		self.ram_norspr_ramtable0f25lo[i] = 0
 		self.ram_norspr_ramtable1595lo[i] = 0
+		self.ram_norspr_ramtable15c9lo[i] = 0
 		self.ram_norspr_ramtable1029lo[i] = 0
 		self.ram_norspr_ramtable1271lo[i] = 0
 		self.ram_norspr_ramtable1631lo[i] = 0
@@ -1090,6 +1092,7 @@ function player:reset_runtime()
 	self.ram_norspr_yspeedlo = {}
 	self.ram_norspr_ramtable0f25lo = {}
 	self.ram_norspr_ramtable1595lo = {}
+	self.ram_norspr_ramtable15c9lo = {}
 	self.ram_norspr_ramtable1029lo = {}
 	self.ram_norspr_ramtable1271lo = {}
 	self.ram_norspr_ramtable1631lo = {}
@@ -1123,6 +1126,7 @@ function player:reset_runtime()
 		self.ram_norspr_yspeedlo[i] = 0
 		self.ram_norspr_ramtable0f25lo[i] = 0
 		self.ram_norspr_ramtable1595lo[i] = 0
+		self.ram_norspr_ramtable15c9lo[i] = 0
 		self.ram_norspr_ramtable1029lo[i] = 0
 		self.ram_norspr_ramtable1271lo[i] = 0
 		self.ram_norspr_ramtable1631lo[i] = 0
@@ -4514,9 +4518,9 @@ function player:code_bf996b()
 end
 
 function player:code_bf9973()
-	self.ram_ramtable1271lo = self.ram_ramtable1271lo | 0x8000
 	local other_slot = (self.zp_84 ~ 0x0006) & 0xFFFF
 	local oi = (other_slot >> 1) + 1
+	self.ram_norspr_ramtable1271lo[oi] = (self.ram_norspr_ramtable1271lo[oi] | 0x8000) & 0xFFFF
 	if self.ram_norspr_ramtable1029lo[oi] == 0x0026 then
 		local v = (self.ram_norspr_yxppccctlo[oi] ~ self.ram_yxppccctlo) & 0x4000
 		self.ram_yxppccctlo = self.ram_yxppccctlo ~ v
@@ -4528,9 +4532,9 @@ function player:code_bf9973()
 end
 
 function player:code_bf99ac()
-	self.ram_ramtable1271lo = self.ram_ramtable1271lo | 0x8000
 	local other_slot = (self.zp_84 ~ 0x0006) & 0xFFFF
 	local oi = (other_slot >> 1) + 1
+	self.ram_norspr_ramtable1271lo[oi] = (self.ram_norspr_ramtable1271lo[oi] | 0x8000) & 0xFFFF
 	if self.ram_norspr_ramtable1029lo[oi] ~= 0x0025 then
 		self.ram_ramtable1029lo = 0x0002
 		self:code_be80a4(define_dkc1_animationid_dk_inactivejump)
@@ -4565,9 +4569,9 @@ function player:code_bf99ac()
 end
 
 function player:code_bf9a3c()
-	self.ram_ramtable1271lo = self.ram_ramtable1271lo | 0x8000
 	local other_slot = (self.zp_84 ~ 0x0006) & 0xFFFF
 	local oi = (other_slot >> 1) + 1
+	self.ram_norspr_ramtable1271lo[oi] = (self.ram_norspr_ramtable1271lo[oi] | 0x8000) & 0xFFFF
 	if self.ram_norspr_ramtable1029lo[oi] == 0x0029 then
 		self.ram_currentposelo = 0
 		return
@@ -4582,7 +4586,9 @@ function player:code_bf9a3c()
 end
 
 function player:code_bf9a7d()
-	self.ram_ramtable1271lo = self.ram_ramtable1271lo | 0x8000
+	local other_slot = (self.zp_84 ~ 0x0006) & 0xFFFF
+	local oi = (other_slot >> 1) + 1
+	self.ram_norspr_ramtable1271lo[oi] = (self.ram_norspr_ramtable1271lo[oi] | 0x8000) & 0xFFFF
 	self:code_bfc501()
 	self:code_bf8cb0()
 	self:code_be80e1()
@@ -4719,6 +4725,7 @@ end
 function player:code_bf9c86(state_id)
 	self.ram_ramtable1029lo = state_id & 0xFFFF
 	local keep = self.zp_84
+	self.zp_84 = (self.zp_84 - 2) & 0xFFFF
 	self:code_be80a4(define_dkc1_animationid_dk_lookup)
 	self.zp_84 = keep
 end
@@ -4745,7 +4752,9 @@ function player:code_bf9ca2()
 end
 
 function player:code_bf9ca7()
-	self.ram_ramtable1271lo = self.ram_ramtable1271lo | 0x8000
+	local other_slot = (self.zp_84 ~ 0x0006) & 0xFFFF
+	local oi = (other_slot >> 1) + 1
+	self.ram_norspr_ramtable1271lo[oi] = (self.ram_norspr_ramtable1271lo[oi] | 0x8000) & 0xFFFF
 	self:code_be80e1()
 end
 
@@ -4757,7 +4766,7 @@ end
 function player:code_bf9cbd()
 	self.ram_ramtable1375lo = to_unsigned_16(self.ram_ramtable1375lo - 1)
 	if to_signed_16(self.ram_ramtable1375lo) < 0 then
-		self.reset_requested = true
+		self:code_808131()
 		return
 	end
 	if self.ram_ramtable1375lo == 0x0040 then
@@ -4929,6 +4938,7 @@ function player:code_bf9eac()
 		return
 	end
 	self:code_bf9ef8()
+	self:code_809b9c()
 	self.ram_0561 = self.ram_0516
 	self.ram_055f = self.ram_0512
 	self.ram_0559 = self.ram_player_currentbananacountlo
@@ -5148,13 +5158,12 @@ function player:code_bf905b()
 	local profile_id = 0x0002
 	local buddy_slot = self.ram_0512
 	if buddy_slot ~= 0 then
-		local buddy = self:dkc1_get_any_sprite_by_slot(buddy_slot)
-		if buddy ~= nil then
-			if buddy.dkc1_sprite_id == define_dkc1_norspr0a_expresso then
-				profile_id = 0x0006
-			elseif buddy.dkc1_sprite_id == define_dkc1_norspr0b_winky then
-				profile_id = 0x0000
-			end
+		local bi = ((buddy_slot & 0xFFFF) >> 1) + 1
+		local sid = self.ram_norspr_spriteidlo[bi] & 0xFFFF
+		if sid == define_dkc1_norspr0a_expresso then
+			profile_id = 0x0006
+		elseif sid == define_dkc1_norspr0b_winky then
+			profile_id = 0x0000
 		end
 	end
 
@@ -5172,12 +5181,10 @@ function player:code_bf90b3()
 	if buddy_slot == 0 then
 		return
 	end
-	local buddy = self:dkc1_get_any_sprite_by_slot(buddy_slot)
-	if buddy == nil then
-		return
-	end
+	local bi = ((buddy_slot & 0xFFFF) >> 1) + 1
+	local buddy_id = self.ram_norspr_spriteidlo[bi] & 0xFFFF
 
-	if buddy.dkc1_sprite_id == define_dkc1_norspr09_rambi then
+	if buddy_id == define_dkc1_norspr09_rambi then
 		self:code_bba4c8(0x0005)
 		if not self:code_bba58d(0x0023) then
 			return
@@ -5186,21 +5193,18 @@ function player:code_bf90b3()
 		if hit_slot < 0x0006 or hit_slot == buddy_slot then
 			return
 		end
-		local hit = self:dkc1_get_any_sprite_by_slot(hit_slot)
-		if hit == nil then
-			return
-		end
-		if hit.dkc1_sprite_id == define_dkc1_norspr2c_itemcache then
-			self:code_bf9122(hit)
+		local hi = ((hit_slot & 0xFFFF) >> 1) + 1
+		if (self.ram_norspr_spriteidlo[hi] & 0xFFFF) == define_dkc1_norspr2c_itemcache then
+			self:code_bf9122()
 			return
 		end
 		if self.ram_16ad ~= define_dkc1_animationid_rambiriddenbydk_stab then
-			self.ram_16ad = define_dkc1_animationid_rambiriddenbydk_stab
+			self:code_be8092(define_dkc1_animationid_rambiriddenbydk_stab)
 		end
 		return
 	end
 
-	if buddy.dkc1_sprite_id ~= define_dkc1_norspr0b_winky then
+	if buddy_id ~= define_dkc1_norspr0b_winky then
 		return
 	end
 	self:code_bba4d5()
@@ -5212,20 +5216,18 @@ function player:code_bf90b3()
 	if hit_slot < 0x0006 or hit_slot == buddy_slot then
 		return
 	end
-	local hit = self:dkc1_get_any_sprite_by_slot(hit_slot)
-	if hit == nil then
-		return
-	end
-	self:code_bf9122(hit)
+	self:code_bf9122()
 end
 
-function player:code_bf9122(hit)
-	hit.dkc1_ramtable1595lo = 0x0001
-	hit.dkc1_ramtable15c9lo = self.zp_84
-	local launch = to_unsigned_16((to_signed_16(self.ram_xspeedlo) << 1))
-	hit.x_speed_subpx = launch
-	hit.dkc1_ramtable0f25lo = launch
+function player:code_bf9122()
+	local yi = ((self.zp_88 & 0xFFFF) >> 1) + 1
+	self.ram_norspr_ramtable1595lo[yi] = 0x0001
+	self.ram_norspr_ramtable15c9lo[yi] = self.zp_84 & 0xFFFF
+	local launch = to_unsigned_16((self.ram_xspeedlo << 1) & 0xFFFF)
+	self.ram_norspr_xspeedlo[yi] = launch
+	self.ram_norspr_ramtable0f25lo[yi] = launch
 	self:code_bffb2b(define_dkc1_soundid_getonanimalbuddy)
+	self:code_b5802f()
 	self.ram_yspeedlo = 0x0A00
 end
 
@@ -5317,7 +5319,7 @@ end
 function player:code_bf9b72()
 	self.ram_ramtable1375lo = to_unsigned_16(self.ram_ramtable1375lo - 1)
 	if to_signed_16(self.ram_ramtable1375lo) < 0 then
-		self.reset_requested = true
+		self:code_808131()
 		return
 	end
 	if self.ram_ramtable1375lo == 0x0040 then
@@ -5332,7 +5334,7 @@ function player:code_bf9c10()
 	self.ram_yspeedlo = 0
 	self.ram_xposlo = self.ram_xposlo ~ 0x0004
 	self.ram_yposlo = 0xFE00
-	self.reset_requested = true
+	self:code_808131()
 end
 
 -- Main player entry dispatch (DKC1_NorSpr01_DonkeyKong_Main -> DATA_BF84C5).
@@ -6768,6 +6770,24 @@ end
 function player:code_8081d4()
 	local x = ((self.ram_050c & 0xFFFF) << 1) + 1
 	self.ram_0508 = self.ram_050a[x]
+end
+
+function player:code_80812b()
+	self.ram_global_entranceidlo = 0
+	self.reset_requested = true
+end
+
+function player:code_808131()
+	if to_signed_16(self.ram_player_currentlifecountlo) < 0 then
+		self:code_80812b()
+		return
+	end
+	self.ram_global_entranceidlo = self:code_bcbaad(self.ram_global_entranceidlo) & 0xFFFF
+	if self.zp_42 == 0x0001 and self.ram_player_currentkonglo ~= 0 then
+		self.ram_player_currentkonglo = (self.ram_player_currentkonglo ~ 0x0003) & 0xFFFF
+	end
+	self.ram_057d = (self.ram_057d | 0x0008) & 0xFFFF
+	self:code_808159()
 end
 
 function player:code_808159()
