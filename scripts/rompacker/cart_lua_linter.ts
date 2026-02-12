@@ -705,7 +705,7 @@ function lintFunctionBody(
 			issues,
 			'pure_copy_function_pattern',
 			functionExpression,
-			`Defensive pure-copy function is forbidden ("${functionName}").`,
+			`Defensive pure-copy function is forbidden ("${functionName}"). Do not replace it with workaround wrappers/helpers; use original source values directly.`,
 		);
 	}
 	if (isNamedFunction && options.isMethodDeclaration && !isGetterOrSetter && !isVisualUpdateLike && matchesMeaninglessSingleLineMethodPattern(functionExpression)) {
