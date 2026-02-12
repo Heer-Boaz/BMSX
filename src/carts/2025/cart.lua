@@ -102,7 +102,7 @@ local function build_director_fsm()
 	})
 end
 local function register_director()
-	define_world_object({
+	define_prefab({
 		def_id = director_def_id,
 		class = director,
 		fsms = { director_fsm_id },

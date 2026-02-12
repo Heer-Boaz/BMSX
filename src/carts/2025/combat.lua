@@ -1441,7 +1441,7 @@ function combat.define_fsm()
 end
 
 function combat.register_director()
-	define_world_object({
+	define_prefab({
 		def_id = combat_director_def_id,
 		class = combat_director,
 		fsms = { combat_director_fsm_id },

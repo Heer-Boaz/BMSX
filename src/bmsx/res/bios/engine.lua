@@ -238,9 +238,9 @@ function engine.define_fsm(id, blueprint)
 	fsmlibrary.register(id, blueprint)
 end
 
-function engine.define_world_object(definition)
+function engine.define_prefab(definition)
 	if type(definition.class) ~= "table" then
-		error("define_world_object: definition.class must be a table for '" .. tostring(definition.def_id) .. "'.")
+		error("define_prefab: definition.class must be a table for '" .. tostring(definition.def_id) .. "'.")
 	end
 	definitions[definition.def_id] = definition
 end

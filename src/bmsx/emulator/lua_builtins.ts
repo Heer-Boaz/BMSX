@@ -13,7 +13,7 @@ import type { LuaBuiltinDescriptor } from './types';
 
 export const ENGINE_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> = [
 	{ name: 'define_fsm', params: ['id', 'blueprint'], signature: 'define_fsm(id, blueprint)' },
-	{ name: 'define_world_object', params: ['definition'], signature: 'define_world_object(definition)' },
+	{ name: 'define_prefab', params: ['definition'], signature: 'define_prefab(definition)' },
 	{ name: 'define_service', params: ['definition'], signature: 'define_service(definition)' },
 	{ name: 'define_component', params: ['definition'], signature: 'define_component(definition)' },
 	{ name: 'define_effect', params: ['definition', 'opts?'], signature: 'define_effect(definition [, opts])' },

@@ -89,7 +89,7 @@ function shrine_world_view:render()
 end
 
 local function register_shrine_world_view_definition()
-	define_world_object({
+	define_prefab({
 		def_id = constants.ids.shrine_world_view_def,
 		class = shrine_world_view,
 		components = { 'customvisualcomponent' },

@@ -223,6 +223,94 @@ local data_bfc1eb = {
 	'code_bfba39',
 }
 
+local data_bfc211 = {
+	'code_bfba39',
+	'code_bfb3e5',
+	'code_bfba39',
+	'code_bfba39',
+	'code_bfba39',
+	'code_bfba39',
+	'code_bfba39',
+	'code_bfba39',
+	'code_bfba39',
+	'code_bfb3c4',
+	'code_bfba39',
+	'code_bfba39',
+	'code_bfba39',
+	'code_bfba39',
+	'code_bfba39',
+	'code_bfb6e8',
+	'code_bfba39',
+	'code_bfb3a0',
+	'code_bfba39',
+}
+
+local data_bfc237 = {
+	'code_bfb456',
+	'code_bfb456',
+	'code_bfba39',
+	'code_bfba39',
+	'code_bfba39',
+	'code_bfba39',
+	'code_bfba39',
+	'code_bfba39',
+	'code_bfb456',
+	'code_bfb437',
+	'code_bfba39',
+	'code_bfba39',
+	'code_bfb456',
+	'code_bfba39',
+	'code_bfba39',
+	'code_bfb42e',
+	'code_bfba39',
+	'code_bfb413',
+	'code_bfba39',
+}
+
+local data_bfc25d = {
+	'code_bfb838',
+	'code_bfb838',
+	'code_bfba39',
+	'code_bfba39',
+	'code_bfba39',
+	'code_bfba39',
+	'code_bfba39',
+	'code_bfba39',
+	'code_bfba39',
+	'code_bfba39',
+	'code_bfba39',
+	'code_bfba39',
+	'code_bfb838',
+	'code_bfba39',
+	'code_bfba39',
+	'code_bfb838',
+	'code_bfba39',
+	'code_bfb838',
+	'code_bfba39',
+}
+
+local data_bfc2cf = {
+	'code_bfbf8e',
+	'code_bfbf8e',
+	'code_bfba39',
+	'code_bfba39',
+	'code_bfba39',
+	'code_bfba39',
+	'code_bfba39',
+	'code_bfba39',
+	'code_bfba39',
+	'code_bfba39',
+	'code_bfba39',
+	'code_bfba39',
+	'code_bfbf8e',
+	'code_bfba39',
+	'code_bfba39',
+	'code_bfbf8e',
+	'code_bfba39',
+	'code_bfbf8e',
+	'code_bfba39',
+}
+
 local data_bfc2f5 = {
 	'code_bfc192',
 	'code_bfc192',
@@ -287,6 +375,28 @@ local data_bfc2a9 = {
 	'code_bfba39',
 	'code_bfbc53',
 	'code_bfbf5b',
+}
+
+local data_bfc31b = {
+	'code_bfba39',
+	'code_bfba39',
+	'code_bfba39',
+	'code_bfba39',
+	'code_bfba39',
+	'code_bfba39',
+	'code_bfba39',
+	'code_bfba39',
+	'code_bfba39',
+	'code_bfc1b3',
+	'code_bfba39',
+	'code_bfba39',
+	'code_bfba39',
+	'code_bfba39',
+	'code_bfba39',
+	'code_bfc1b3',
+	'code_bfba39',
+	'code_bfc1b3',
+	'code_bfba39',
 }
 
 -- DATA_BF84C5: main player-state dispatch table (RAMTable1029).
@@ -540,6 +650,10 @@ end
 
 local function to_unsigned_16(value)
 	return value & 0xffff
+end
+
+local function eor_16(a, b)
+	return to_unsigned_16(a ~ b)
 end
 
 local function abs_16(value)
@@ -2050,6 +2164,88 @@ function player:code_bfba39()
 	return
 end
 
+-- code_bfb38a: up handler via DATA_BFC211 dispatch.
+function player:code_bfb38a()
+	if self.ram_0533 == 0 then
+		self.ram_yspeedlo = 0x0200
+	end
+	self[data_bfc211[self.ram_180f + 1]](self)
+end
+
+-- code_bfb3a0: first up action: set 0F8D speed (0x0300), honor running boost.
+function player:code_bfb3a0()
+	self.ram_ramtable0f8dlo = 0x0300
+	if (self.ram_1e15 & 0x0400) ~= 0 then
+		local speed = to_signed_16(self.ram_ramtable0f8dlo)
+		self.ram_ramtable0f8dlo = to_unsigned_16(speed + 0x0100)
+	end
+end
+
+-- code_bfb3bb: set 0F8D to 0x0200.
+function player:code_bfb3bb()
+	self.ram_ramtable0f8dlo = 0x0200
+end
+
+-- code_bfb3c4: up neutral helper for vertical-rope path (line 110961)
+function player:code_bfb3c4()
+	if (self.ram_1b01 & 0xFFFF) == 0 then
+		return
+	end
+
+	-- ldy $1B01 / lda $14C5 / bpl.b CODE_BFB3E5
+	self.ram_1a01 = self.ram_1b01
+	if self.ram_1a01 >= 0x8000 then
+		-- mimic the signed-branch behavior on this slot path
+		self:code_bfb3e5()
+		return
+	end
+	if (self.zp_7e & 0x4000) == 0 then
+		self.ram_ramtable0f8dlo = 0x0180
+		return
+	end
+	self.ram_ramtable0f8dlo = 0x0280
+end
+
+-- code_bfb3fe: down handler via DATA_BFC237 dispatch.
+function player:code_bfb3fe()
+	if self.ram_0533 == 0 then
+		self.ram_yspeedlo = 0xFE00
+	end
+	self[data_bfc237[self.ram_180f + 1]](self)
+end
+
+-- code_bfb413: first down action: set 0F8D speed and optional adjustment.
+function player:code_bfb413()
+	self.ram_ramtable0f8dlo = 0xFD00
+	if (self.ram_1e15 & 0x0400) ~= 0 then
+		local speed = to_signed_16(self.ram_ramtable0f8dlo)
+		self.ram_ramtable0f8dlo = to_unsigned_16(speed - 0x0100)
+	end
+end
+
+-- code_bfb42e: set 0F8D to 0xFE00.
+function player:code_bfb42e()
+	self.ram_ramtable0f8dlo = 0xFE00
+end
+
+-- code_bfb437: down rope/edge helper via ramtable14C5 and held flags.
+function player:code_bfb437()
+	if (self.ram_ramtable14c5lo & 0x8000) == 0 then
+		self:code_bfb3c4()
+		return
+	end
+
+	if self.ram_7c5c == nil then
+		return
+	end
+
+	if (self.zp_7e & 0x4000) == 0 then
+		self.ram_ramtable0f8dlo = 0xFD80
+	else
+		self.ram_ramtable0f8dlo = 0xFC80
+	end
+end
+
 -- code_bfc192: neutral target clear (line 112759)
 function player:code_bfc192()
 	self.ram_ramtable0f25lo = 0
@@ -3017,18 +3213,16 @@ function player:code_bfb27c(state_180f)
 	-- LDA.b $7E / AND.w #Joypad_DPadU              ; LINE 110786
 	if (self.zp_7e & joypad_dpadu) ~= 0 then
 		-- JSR CODE_BFB38A (up handler - jump table via DATA_BFC211)
-		-- For $180F=0: DATA_BFC211[0] = CODE_BFBA39 (RTS/noop)
-		-- skip for now
+		self:code_bfb38a()
 	-- LDA.b $7E / AND.w #Joypad_DPadD              ; LINE 110793
 	elseif (self.zp_7e & joypad_dpadd) ~= 0 then
 		-- JSR CODE_BFB3FE (down handler - jump table via DATA_BFC237)
-		-- For $180F=0: similar
-		-- skip for now
+		self:code_bfb3fe()
 	else
 		-- JSR CODE_BFC1A1 (vertical neutral)        ; LINE 110802
 		-- CODE_BFC1A1: LDA $180F / ASL / TAX / JMP (DATA_BFC31B,x)
 		-- DATA_BFC31B[0] = CODE_BFBA39 (RTS/noop for $180F=0)
-		-- skip for now
+		self:code_bfc1a1()
 	end
 	
 	-- ================================================================
@@ -3056,7 +3250,9 @@ function player:code_bfb27c(state_180f)
 	-- ================================================================
 	-- LDA.b $7E / AND.w #Joypad_A                  ; LINE 110820
 	-- For $180F=0: DATA_BFC25D[0] = CODE_BFB838 (tag action)
-	-- Not essential for basic physics, skip for now
+	if (self.zp_7e & joypad_a) ~= 0 then
+		self[data_bfc25d[self.ram_180f + 1]](self)
+	end
 	
 	-- ================================================================
 	-- B BUTTON / JUMP (LINE 110824-110835)
@@ -3075,7 +3271,9 @@ function player:code_bfb27c(state_180f)
 	-- ================================================================
 	-- X BUTTON (LINE 110837)
 	-- ================================================================
-	-- Skip for now
+	if (self.zp_7e & joypad_x) ~= 0 then
+		self:code_bfbf4()
+	end
 	
 	-- ================================================================
 	-- Y BUTTON / RUN-ROLL (LINE 110841-110851)
@@ -3882,9 +4080,10 @@ end
 
 -- CODE_BF8584 / CODE_BF8587 / CODE_BF8576 state-core movement runners.
 function player:code_bf8576()
-	self:code_bfb1a8()
+	self:code_bfb159()
 	self:code_bfa89a()
-	self:integrate_and_collide()
+	self:code_bfaf9b()
+	self:code_bfafc9()
 end
 
 function player:code_bf8587()
@@ -3895,12 +4094,31 @@ end
 function player:code_bf858b()
 	self:code_bf86de()
 	self:code_bfa89a()
-	self:integrate_and_collide()
+	if self.zp_32 == 0x0005 and self:code_b6bb49() then
+		self:code_bfb075()
+	else
+		self:code_bffb7f()
+	end
 	self:code_bf870d()
 	self:code_bfaa82()
 	self:code_be80e1()
 	self:code_bfa44a()
 	self:code_bfa697()
+end
+
+-- CODE_BF85FC: post-movement horizontal speed envelope for camera/scroll sync.
+function player:code_bf85fc()
+	local a = self.ram_xspeedlo & 0xFFFF
+	if (a & 0x8000) ~= 0 then
+		a = to_unsigned_16(-to_signed_16(a))
+	end
+	a = (a >> 6) & 0xFFFF
+	local c = ((a >> 1) + a) & 0xFFFF
+	if (self.ram_yxppccctlo & 0x4000) == 0 then
+		self.ram_1a69 = to_unsigned_16(c + 0x0038)
+		return
+	end
+	self.ram_1a69 = to_unsigned_16(-to_signed_16(c))
 end
 
 function player:code_bf8584()
@@ -8207,7 +8425,7 @@ function player:code_8180ff(y)
 		return 0xFFFF
 	end
 	if (self.zp_9a & 0x4000) ~= 0 then
-		self.zp_94 = (self.zp_98 ~ 0x001F) & 0xFFFF
+		self.zp_94 = eor_16(self.zp_98, 0x001F)
 	end
 	a = self.zp_9a & 0x3FFF
 	if a >= self.ram_db then
@@ -8219,12 +8437,12 @@ function player:code_8180ff(y)
 	end
 	a = self:code_818003_read_d7_byte(y)
 	if (a & 0x0080) ~= 0 then
-		self.zp_94 = (self.zp_94 ~ 0x000F) & 0xFFFF
+		self.zp_94 = eor_16(self.zp_94, 0x000F)
 		a = self:code_818003_read_d7_byte(y)
 	end
 	y = x
 	if (self.zp_9a & 0x4000) ~= 0 then
-		a = (a ~ 0x0080) & 0x00FF
+		a = eor_16(a, 0x0080) & 0x00FF
 	end
 	self.zp_9c = a & 0xFFFF
 	a = a & 0x003F
@@ -8252,7 +8470,7 @@ function player:code_81800d()
 	end
 	self.zp_96 = a & 0x01E0
 	self.zp_4c = self.zp_4c & 0xFFE0
-	a = ((self.zp_96 ~ 0x01E0) >> 4) & 0xFFFF
+	a = (eor_16(self.zp_96, 0x01E0) >> 4) & 0xFFFF
 	local y = (a + self.zp_4c) & 0xFFFF
 	a = self:code_8180ff(y)
 	self.zp_9e = self.zp_9c
@@ -8685,7 +8903,7 @@ local function define_player_fsm()
 end
 
 local function register_player_definition()
-	define_world_object({
+	define_prefab({
 		def_id = player_def_id,
 		class = player,
 		fsms = { player_fsm_id },

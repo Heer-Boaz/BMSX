@@ -2441,7 +2441,7 @@ public fallbackSourceRange(): LuaSourceRange {
 				: typeof key === 'string' || typeof key === 'number'
 					? String(key)
 					: '<unknown>';
-			return `Attempted to index missing native member '${keyName}' on ${this.nativeTypeName(target)}. Did you forget to define it as a 'default' or 'override' member (e.g. via 'define_world_object')?`;
+			return `Attempted to index missing native member '${keyName}' on ${this.nativeTypeName(target)}. Did you forget to define it as a 'default' or 'override' member (e.g. via 'define_prefab')?`;
 		}
 		if (visited.has(target)) {
 			const loopMessage = 'Metatable __index loop detected.';

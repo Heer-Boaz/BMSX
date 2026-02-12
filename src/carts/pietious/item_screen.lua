@@ -196,7 +196,7 @@ local function define_item_screen_fsm()
 end
 
 local function register_item_screen_definition()
-		define_world_object({
+		define_prefab({
 			def_id = constants.ids.item_screen_def,
 			class = item_screen,
 			fsms = { constants.ids.item_screen_fsm },

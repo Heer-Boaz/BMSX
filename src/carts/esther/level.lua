@@ -12,6 +12,10 @@ local function resolve_level_context_state32(context_key)
 	return key, value
 end
 
+local function eor_16(a, b)
+	return (a ~ b) & 0xFFFF
+end
+
 local function find_top_solid_y(solids, sample_x)
 	local top = nil
 	for i = 1, #solids do
@@ -46,7 +50,7 @@ local function build_dummy_asm_collision(level_data)
 				probe_y = 0x01FF
 			end
 			local y_base = probe_y & 0x01E0
-			local y_component = ((y_base ~ 0x01E0) >> 4) & 0xFFFF
+			local y_component = (eor_16(y_base, 0x01E0) >> 4) & 0xFFFF
 			local d3_offset = ((col << 5) + y_component) & 0xFFFF
 			local d3_index = (d3_offset >> 1) + 1
 			d3_words[d3_index] = 0x0001
@@ -279,18 +283,16 @@ function level.create_level(context_key)
 			},
 		},
 			solids = {
-				-- Main ground
-				{ x = 0, y = ground_y, w = 600, h = world_height - ground_y, dkc1_collision9c = 0x0032 },
-				-- Lower pit floor (under gap 600–720)
-				{ x = 600, y = ground_y + 32, w = 120, h = world_height - ground_y - 32, dkc1_collision9c = 0x0032 },
-				-- Elevated platforms
-				{ x = 720, y = ground_y - 32, w = 200, h = world_height - ground_y + 32, dkc1_collision9c = 0x0032 },
-				{ x = 1000, y = ground_y - 64, w = 180, h = world_height - ground_y + 64, dkc1_collision9c = 0x0032 },
-				{ x = 1260, y = ground_y - 32, w = 200, h = world_height - ground_y + 32, dkc1_collision9c = 0x0032 },
-				-- Floating platform (tests landing & edge-jump)
-				{ x = 1560, y = ground_y - 80, w = 120, h = 16, dkc1_collision9c = 0x0032 },
-				-- Resume ground
-				{ x = 1760, y = ground_y, w = world_width - 1760, h = world_height - ground_y, dkc1_collision9c = 0x0032 },
+				-- Flat opening run-in area.
+				{ x = 0, y = ground_y, w = 640, h = world_height - ground_y, dkc1_collision9c = 0x0032 },
+				-- Small dip for fall-state transition checks.
+				{ x = 640, y = ground_y + 24, w = 100, h = world_height - ground_y - 24, dkc1_collision9c = 0x0032 },
+				-- Resume baseline and continue flat run.
+				{ x = 740, y = ground_y, w = 760, h = world_height - ground_y, dkc1_collision9c = 0x0032 },
+				-- Later raised test pad (not blocking first wall area).
+				{ x = 1500, y = ground_y - 32, w = 140, h = world_height - (ground_y - 32), dkc1_collision9c = 0x0032 },
+				-- Back to baseline after the state-test section.
+				{ x = 1640, y = ground_y, w = world_width - 1640, h = world_height - ground_y, dkc1_collision9c = 0x0032 },
 			},
 		decor_far = {
 			{ x = -160, y = 118, w = 420, h = 122 },

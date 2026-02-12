@@ -2898,7 +2898,7 @@ end
 
 local function register_player_definition()
 	define_player_effects()
-	define_world_object({
+	define_prefab({
 		def_id = constants.ids.player_def,
 		class = player,
 		fsms = { constants.ids.player_fsm },

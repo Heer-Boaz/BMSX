@@ -42,7 +42,7 @@ local function define_director_fsm()
 end
 
 local function register_director_definition()
-	define_world_object({
+	define_prefab({
 		def_id = constants.ids.director_def,
 		class = director,
 		fsms = { constants.ids.director_fsm },

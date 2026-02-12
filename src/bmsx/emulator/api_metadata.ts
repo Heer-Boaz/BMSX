@@ -415,10 +415,10 @@ export const API_METHOD_METADATA = {
 		],
 		returnType: 'void',
 	},
-	define_world_object: {
-		description: 'Registers a world object descriptor that can be spawned later.',
+	define_prefab: {
+		description: 'Registers a prefab descriptor that can be spawned later.',
 		parameters: [
-			{ name: 'descriptor', description: 'World object descriptor (def_id, class/defaults, optional fsms/components/effects/bts).' },
+			{ name: 'descriptor', description: 'Prefab descriptor (def_id, class/defaults, optional fsms/components/effects/bts).' },
 		],
 		returnType: 'void',
 	},
@@ -457,7 +457,7 @@ export const API_METHOD_METADATA = {
 	spawn_object: {
 		description: 'Spawns a WorldObject instance from a previously defined descriptor.',
 		parameters: [
-			{ name: 'definition_id', description: 'Id of the world object definition registered via define_world_object.' },
+			{ name: 'definition_id', description: 'Id of the world object definition registered via define_prefab.' },
 			{ name: 'overrides', optional: true, description: 'Optional overrides applied after the descriptor defaults/overrides.' },
 		],
 		returnType: 'WorldObject',
@@ -466,7 +466,7 @@ export const API_METHOD_METADATA = {
 	spawn_sprite: {
 		description: 'Spawns a SpriteObject instance from a previously defined descriptor.',
 		parameters: [
-			{ name: 'definition_id', description: 'Id of the sprite definition registered via define_world_object.' },
+			{ name: 'definition_id', description: 'Id of the sprite definition registered via define_prefab.' },
 			{ name: 'overrides', optional: true, description: 'Optional overrides applied after the descriptor defaults/overrides.' },
 		],
 		returnType: 'SpriteObject',
@@ -475,7 +475,7 @@ export const API_METHOD_METADATA = {
 	spawn_textobject: {
 		description: 'Spawns a TextObject instance from a previously defined descriptor.',
 		parameters: [
-			{ name: 'definition_id', description: 'Id of the text object definition registered via define_world_object.' },
+			{ name: 'definition_id', description: 'Id of the text object definition registered via define_prefab.' },
 			{ name: 'overrides', optional: true, description: 'Optional overrides applied after the descriptor defaults/overrides.' },
 		],
 		returnType: 'TextObject',

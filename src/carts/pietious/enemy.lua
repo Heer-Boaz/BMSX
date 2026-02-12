@@ -1,26 +1,9 @@
 local constants = require('constants')
-local components = require('components')
 local eventemitter = require('eventemitter')
 local enemy_explosion_module = require('enemy_explosion')
-local enemy_registry = require('enemies/registry')
 
 local enemy = {}
 enemy.__index = enemy
-
-local default_enemy_color = {
-	r = 1,
-	g = 1,
-	b = 1,
-	a = 1,
-}
-
-local death_effect_sequence = 0
-local spawned_enemy_sequence = 0
-
-local function get_kind_module(kind)
-	local kind_module = enemy_registry.modules_by_kind[kind]
-	return kind_module
-end
 
 local function random_percent_hit(chance_pct)
 	return math.random(100) <= chance_pct
@@ -45,77 +28,140 @@ local function consume_axis_accum(accum, speed_num, speed_den)
 	return delta, accum
 end
 
+local function set_sprite_state(self, definition)
+	local sprite = self.sprite_component
+	if sprite == nil then
+		return
+	end
+	sprite.imgid = definition.imgid
+	sprite.flip.flip_h = definition.flip_h
+	sprite.flip.flip_v = definition.flip_v
+	sprite.colorize = definition.colorize
+end
+
+local function copy_colorize(value)
+	if value == nil then
+		return { r = 1, g = 1, b = 1, a = 1 }
+	end
+	return { r = value.r, g = value.g, b = value.b, a = value.a }
+end
+
+local function apply_body_config(self)
+	local collider = self.collider
+	if collider ~= nil then
+		collider.generateoverlapevents = true
+		collider.spaceevents = 'current'
+		collider:apply_collision_profile('enemy')
+		collider:set_shape_offset(0, 0)
+		local hit_area = self._pending_body_hit_area
+		if hit_area ~= nil then
+			collider:set_local_area(hit_area)
+		end
+	end
+
+	local sprite = self.sprite_component
+	if sprite ~= nil then
+		sprite.offset.z = 110
+		if self._pending_body_sprite ~= nil then
+			set_sprite_state(self, self._pending_body_sprite)
+		end
+	end
+end
+
+local function get_kind_module(kind)
+	if kind == 'boekfoe' then
+		return require('enemies/boekfoe')
+	end
+	if kind == 'cloud' then
+		return require('enemies/cloud')
+	end
+	if kind == 'crossfoe' then
+		return require('enemies/crossfoe')
+	end
+	if kind == 'marspeinenaardappel' then
+		return require('enemies/marspeinenaardappel')
+	end
+	if kind == 'mijterfoe' then
+		return require('enemies/mijterfoe')
+	end
+	if kind == 'muziekfoe' then
+		return require('enemies/muziekfoe')
+	end
+	if kind == 'nootfoe' then
+		return require('enemies/nootfoe')
+	end
+	if kind == 'paperfoe' then
+		return require('enemies/paperfoe')
+	end
+	if kind == 'stafffoe' then
+		return require('enemies/stafffoe')
+	end
+	if kind == 'staffspawn' then
+		return require('enemies/staffspawn')
+	end
+	if kind == 'vlokfoe' then
+		return require('enemies/vlokfoe')
+	end
+	if kind == 'vlokspawner' then
+		return require('enemies/vlokspawner')
+	end
+	if kind == 'zakfoe' then
+		return require('enemies/zakfoe')
+	end
+	error('pietious enemy invalid kind=' .. tostring(kind))
+end
+
+local enemy_bt_ids = {}
+
+local death_effect_sequence = 0
+local spawned_enemy_sequence = 0
+
 function enemy:create_components()
-	local body_collider = components.collider2dcomponent.new({
-		parent = self,
-		id_local = 'body',
-		generateoverlapevents = true,
-		spaceevents = 'current',
-	})
-	body_collider:apply_collision_profile('enemy')
-	self:add_component(body_collider)
-
-	local body_sprite = components.spritecomponent.new({
-		parent = self,
-		id_local = 'body',
-		imgid = 'meijter_up',
-		offset = { x = 0, y = 0, z = 110 },
-		collider_local_id = 'body',
-	})
-	self:add_component(body_sprite)
-
-	self.body_collider = body_collider
-	self.body_sprite = body_sprite
-end
-
-function enemy:set_velocity(speed_x_num, speed_y_num, speed_den)
-	self.speed_x_num = speed_x_num
-	self.speed_y_num = speed_y_num
-	self.speed_den = speed_den
-	self.speed_accum_x = 0
-	self.speed_accum_y = 0
-end
-
-function enemy:move_with_velocity()
-	local dx, next_accum_x = consume_axis_accum(self.speed_accum_x, self.speed_x_num, self.speed_den)
-	local dy, next_accum_y = consume_axis_accum(self.speed_accum_y, self.speed_y_num, self.speed_den)
-	self.speed_accum_x = next_accum_x
-	self.speed_accum_y = next_accum_y
-	self.x = self.x + dx
-	self.y = self.y + dy
+	apply_body_config(self)
 end
 
 function enemy:set_body_hit_area(left, top, right, bottom)
-	self.body_collider:set_local_area({
+	self._pending_body_hit_area = {
 		left = left,
 		top = top,
 		right = right,
 		bottom = bottom,
-	})
+	}
+	local collider = self.collider
+	if collider == nil then
+		return
+	end
+	collider:set_local_area(self._pending_body_hit_area)
 end
 
-function enemy:set_body_sprite(imgid, flip_h, flip_v, color)
-	local body_sprite = self.body_sprite
-	local body_collider = self.body_collider
-	local colorize = color
-	if colorize == nil then
-		colorize = default_enemy_color
+function enemy:set_body_sprite(imgid, flip_h, flip_v, colorize)
+	local definition = {
+		imgid = imgid,
+		flip_h = flip_h == true,
+		flip_v = flip_v == true,
+		colorize = copy_colorize(colorize),
+	}
+	self._pending_body_sprite = definition
+	local sprite = self.sprite_component
+	if sprite == nil then
+		return
 	end
+	set_sprite_state(self, definition)
+end
 
-	body_sprite.enabled = true
-	body_collider.enabled = true
-	body_sprite.imgid = imgid
-	body_sprite.flip.flip_h = flip_h == true
-	body_sprite.flip.flip_v = flip_v == true
-	body_sprite.colorize.r = colorize.r
-	body_sprite.colorize.g = colorize.g
-	body_sprite.colorize.b = colorize.b
-	body_sprite.colorize.a = colorize.a
+function enemy:set_body_enabled(enabled)
+	local sprite = self.sprite_component
+	if sprite ~= nil then
+		sprite.enabled = enabled
+	end
+	local collider = self.collider
+	if collider ~= nil then
+		collider.enabled = enabled
+	end
 end
 
 function enemy:hide_body_components()
-	self.body_sprite.enabled = false
-	self.body_collider.enabled = false
+	self:set_body_enabled(false)
 end
 
 function enemy:bind_overlap_events()
@@ -140,7 +186,7 @@ end
 
 function enemy:spawn_child_enemy(kind, x, y, options)
 	local id = build_spawned_enemy_id(kind)
-	local child = spawn_object(constants.ids.enemy_def, {
+	local child = spawn_sprite(constants.ids.enemy_def, {
 		id = id,
 		space_id = self.space_id,
 		pos = { x = x, y = y, z = 140 },
@@ -188,7 +234,7 @@ function enemy:projectile_is_out_of_bounds()
 end
 
 function enemy:set_active_behaviour_tree(kind)
-	local bt_id = enemy_registry.behaviour_tree_ids[kind]
+	local bt_id = enemy_bt_ids[kind]
 	if self.btreecontexts[bt_id] == nil then
 		self:add_btree(bt_id)
 	end
@@ -200,6 +246,8 @@ function enemy:set_active_behaviour_tree(kind)
 end
 
 function enemy:configure_from_room_def(def, room)
+	self._pending_body_hit_area = nil
+	self._pending_body_sprite = nil
 	self.enemy_id = def.id
 	self.room_number = room.room_number
 	self.room = room
@@ -231,7 +279,6 @@ function enemy:configure_from_room_def(def, room)
 	self.projectile_bound_bottom = 0
 
 	self:set_velocity(def.speedx or 0, def.speedy or 0, def.speedden or 1)
-	self:set_body_hit_area(2, 2, 14, 14)
 
 	local kind_module = get_kind_module(self.kind)
 	kind_module.configure(self, def)
@@ -239,10 +286,8 @@ function enemy:configure_from_room_def(def, room)
 	if kind_module.on_configured ~= nil then
 		kind_module.on_configured(self)
 	end
-
-	self.body_collider.enabled = true
-	self.visible = true
 	self:dispatch_state_event('reset_to_waiting')
+	apply_body_config(self)
 end
 
 function enemy:choose_drop_type()
@@ -304,12 +349,6 @@ function enemy:on_overlap(event)
 	end
 end
 
-function enemy:tick()
-	if self.active_bt_id == '' then
-		return
-	end
-end
-
 local function define_enemy_fsm()
 	define_fsm(constants.ids.enemy_fsm, {
 		initial = 'boot',
@@ -341,17 +380,39 @@ local function define_enemy_fsm()
 				entering_state = function(self)
 					self.state_name = 'flying'
 				end,
-			},
+					},
 		},
 	})
 end
 
 local function define_enemy_behaviour_tree()
-	enemy_registry.register_behaviour_trees()
+	local list = {
+		'boekfoe',
+		'cloud',
+		'crossfoe',
+		'marspeinenaardappel',
+		'mijterfoe',
+		'muziekfoe',
+		'nootfoe',
+		'paperfoe',
+		'stafffoe',
+		'staffspawn',
+		'vlokfoe',
+		'vlokspawner',
+		'zakfoe',
+	}
+
+	for i = 1, #list do
+		local kind = list[i]
+		local module = get_kind_module(kind)
+		local bt_id = string.format('%s.%s', constants.ids.enemy_bt, kind)
+		module.register_behaviour_tree(bt_id)
+		enemy_bt_ids[kind] = bt_id
+	end
 end
 
 local function register_enemy_definition()
-	define_world_object({
+	define_prefab({
 		def_id = constants.ids.enemy_def,
 		class = enemy,
 		fsms = { constants.ids.enemy_fsm },
@@ -394,6 +455,23 @@ local function register_enemy_definition()
 	})
 end
 
+function enemy:set_velocity(speed_x_num, speed_y_num, speed_den)
+	self.speed_x_num = speed_x_num
+	self.speed_y_num = speed_y_num
+	self.speed_den = speed_den
+	self.speed_accum_x = 0
+	self.speed_accum_y = 0
+end
+
+function enemy:move_with_velocity()
+	local dx, next_accum_x = consume_axis_accum(self.speed_accum_x, self.speed_x_num, self.speed_den)
+	local dy, next_accum_y = consume_axis_accum(self.speed_accum_y, self.speed_y_num, self.speed_den)
+	self.speed_accum_x = next_accum_x
+	self.speed_accum_y = next_accum_y
+	self.x = self.x + dx
+	self.y = self.y + dy
+end
+
 return {
 	enemy = enemy,
 	define_enemy_fsm = define_enemy_fsm,
@@ -401,5 +479,5 @@ return {
 	register_enemy_definition = register_enemy_definition,
 	enemy_def_id = constants.ids.enemy_def,
 	enemy_fsm_id = constants.ids.enemy_fsm,
-	enemy_bt_ids = enemy_registry.behaviour_tree_ids,
+	enemy_bt_ids = enemy_bt_ids,
 }

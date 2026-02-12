@@ -117,7 +117,7 @@ local function define_enemy_explosion_fsm()
 end
 
 local function register_enemy_explosion_definition()
-	define_world_object({
+	define_prefab({
 		def_id = constants.ids.enemy_explosion_def,
 		class = enemy_explosion,
 		fsms = { constants.ids.enemy_explosion_fsm },

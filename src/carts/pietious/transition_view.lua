@@ -68,7 +68,7 @@ local function define_transition_view_fsm()
 end
 
 local function register_transition_view_definition()
-	define_world_object({
+	define_prefab({
 		def_id = constants.ids.transition_view_def,
 		class = transition_view,
 		fsms = { constants.ids.transition_view_fsm },

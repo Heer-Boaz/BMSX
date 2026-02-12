@@ -106,7 +106,7 @@ local function define_loot_drop_fsm()
 end
 
 local function register_loot_drop_definition()
-	define_world_object({
+	define_prefab({
 		def_id = constants.ids.loot_drop_def,
 		class = loot_drop,
 		fsms = { constants.ids.loot_drop_fsm },

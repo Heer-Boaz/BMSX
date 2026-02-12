@@ -15,8 +15,7 @@ function vlokspawner.configure(self, _def)
 end
 
 function vlokspawner.sync_components(self)
-	self.body_sprite.enabled = false
-	self.body_collider.enabled = false
+	self:set_body_enabled(false)
 end
 
 function vlokspawner.bt_tick(self, blackboard)

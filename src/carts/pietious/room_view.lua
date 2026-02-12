@@ -77,7 +77,7 @@ local function define_room_view_fsm()
 end
 
 local function register_room_view_definition()
-	define_world_object({
+	define_prefab({
 		def_id = constants.ids.room_view_def,
 		class = room_view,
 		fsms = { constants.ids.room_view_fsm },

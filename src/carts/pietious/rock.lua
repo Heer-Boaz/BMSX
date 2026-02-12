@@ -141,7 +141,7 @@ local function define_rock_fsm()
 end
 
 local function register_rock_definition()
-	define_world_object({
+	define_prefab({
 		def_id = constants.ids.rock_def,
 		class = rock,
 		fsms = { constants.ids.rock_fsm },

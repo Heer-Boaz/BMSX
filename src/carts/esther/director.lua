@@ -434,6 +434,8 @@ function director:draw_level_solids()
 		if right > 0 and left < view_w then
 			put_rectfillcolor(left, solid.y, right, solid.y + solid.h, 80, constants.palette.ground)
 			put_rectfillcolor(left, solid.y, right, solid.y + 6, 81, constants.palette.ground_top)
+			put_rectfillcolor(left, solid.y, right, solid.y + 1, 90, { r = 1, g = 1, b = 1, a = 0.55 })
+			put_rectfillcolor(left, solid.y + solid.h - 1, right, solid.y + solid.h, 90, { r = 1, g = 1, b = 1, a = 0.35 })
 		end
 	end
 end
@@ -572,7 +574,9 @@ function director:render_frame()
 		local view_w = display_width()
 		local view_h = display_height()
 		put_rectfillcolor(0, 0, view_w, view_h, 0, { r = 0, g = 0, b = 0, a = 1 })
+		self:draw_level_solids()
 		self:draw_stomp_targets()
+		self:draw_goal()
 		self:draw_barrels(self.player_ref, false)
 		self:draw_player(self.player_ref, false)
 		self:draw_barrels(self.player_ref, true)
@@ -581,13 +585,8 @@ function director:render_frame()
 
 	local view_w = display_width()
 	local view_h = display_height()
-	put_rectfillcolor(0, 0, view_w, math.floor(view_h * 0.48), 0, constants.palette.sky_1)
-	put_rectfillcolor(0, math.floor(view_h * 0.48), view_w, view_h, 1, constants.palette.sky_2)
-	self:draw_parallax_layer(self.level.decor_far, 0.22, constants.palette.canopy_far, 20)
-	self:draw_parallax_layer(self.level.decor_mid, 0.48, constants.palette.canopy_mid, 40)
-	self:draw_trunks()
+	put_rectfillcolor(0, 0, view_w, view_h, 0, { r = 0, g = 0, b = 0, a = 1 })
 	self:draw_level_solids()
-	self:draw_goal()
 	self:draw_stomp_targets()
 	self:draw_barrels(self.player_ref, false)
 	self:draw_player(self.player_ref, false)
@@ -629,7 +628,7 @@ local function define_director_fsm()
 end
 
 local function register_director_definition()
-	define_world_object({
+	define_prefab({
 		def_id = constants.ids.director_def,
 		class = director,
 		fsms = { director_fsm_id },

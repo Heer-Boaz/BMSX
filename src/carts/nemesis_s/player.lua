@@ -717,7 +717,7 @@ local function define_player_fsm()
 end
 
 local function register_player_definition()
-	define_world_object({
+	define_prefab({
 		def_id = constants.ids.player_def,
 		class = player,
 		fsms = { player_fsm_id },

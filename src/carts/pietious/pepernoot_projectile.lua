@@ -102,25 +102,20 @@ local function define_pepernoot_projectile_fsm()
 						id_local = 'body',
 						generateoverlapevents = true,
 						spaceevents = 'current',
-					})
-					self.body_collider:apply_collision_profile('projectile')
-					self.body_collider:set_local_area({
-						left = 0,
-						top = 0,
-						right = constants.room.tile_size2,
-						bottom = constants.room.tile_size - 1,
-					})
-					self:add_component(self.body_collider)
-					self.body_sprite = components.spritecomponent.new({
-						parent = self,
-						id_local = 'body',
-						imgid = 'pepernoot_16',
-						offset = { x = 0, y = 0, z = 113 },
-					})
-					self:add_component(self.body_sprite)
-					self:bind_events()
-					return '/active'
-				end,
+						})
+						self.body_collider:apply_collision_profile('projectile')
+						self:add_component(self.body_collider)
+						self.body_sprite = components.spritecomponent.new({
+							parent = self,
+							id_local = 'body',
+							imgid = 'pepernoot_16',
+							offset = { x = 0, y = 0, z = 113 },
+							collider_local_id = 'body',
+						})
+						self:add_component(self.body_sprite)
+						self:bind_events()
+						return '/active'
+					end,
 			},
 			active = {
 				entering_state = function(self)
@@ -139,7 +134,7 @@ local function define_pepernoot_projectile_fsm()
 end
 
 local function register_pepernoot_projectile_definition()
-	define_world_object({
+	define_prefab({
 		def_id = constants.ids.pepernoot_projectile_def,
 		class = pepernoot_projectile,
 		fsms = { constants.ids.pepernoot_projectile_fsm },

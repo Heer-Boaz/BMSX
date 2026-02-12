@@ -96,7 +96,7 @@ void Runtime::runEngineBuiltinPrelude() {
 	std::cout << "[Runtime] prelude: binding engine builtins" << std::endl;
 	static const std::array<const char*, 41> engineBuiltins = {
 		"define_fsm",
-		"define_world_object",
+		"define_prefab",
 		"define_service",
 		"define_component",
 		"define_effect",

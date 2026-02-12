@@ -104,7 +104,7 @@ local function define_ui_fsm()
 end
 
 local function register_ui_definition()
-	define_world_object({
+	define_prefab({
 		def_id = constants.ids.ui_def,
 		class = ui,
 		fsms = { constants.ids.ui_fsm },

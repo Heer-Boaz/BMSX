@@ -94,7 +94,7 @@ local function define_world_item_fsm()
 end
 
 local function register_world_item_definition()
-	define_world_object({
+	define_prefab({
 		def_id = constants.ids.world_item_def,
 		class = world_item,
 		fsms = { constants.ids.world_item_fsm },

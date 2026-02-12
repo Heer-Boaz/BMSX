@@ -68,21 +68,10 @@ function mijterfoe.configure(self, _def)
 	self.mijter_entry_lock_ticks = constants.enemy.mijter_room_entry_lock_steps
 end
 
-function mijterfoe.sync_components(self)
-	local imgid = 'meijter_up'
-	local flip_h = false
-	local flip_v = false
-	if self:has_tag('e.w') then
-		if self.direction == 'left' then
-			imgid = 'meijter_r'
-			flip_h = true
-		elseif self.direction == 'right' then
-			imgid = 'meijter_r'
-		elseif self.direction == 'down' then
-			imgid = 'meijter_up'
-			flip_v = true
-		end
-	else
+function mijterfoe.change_sprite_on_direction(self)
+		local imgid = 'meijter_up'
+		local flip_h = false
+		local flip_v = false
 		local h = self.horizontal_dir_mod
 		local v = self.vertical_dir_mod
 		if v == -1 and h == 0 then
@@ -108,7 +97,6 @@ function mijterfoe.sync_components(self)
 			flip_h = true
 			flip_v = true
 		end
-	end
 	self:set_body_sprite(imgid, flip_h, flip_v)
 end
 

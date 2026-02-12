@@ -710,7 +710,7 @@ local function define_stage_fsm()
 end
 
 local function register_stage_definition()
-	define_world_object({
+	define_prefab({
 		def_id = constants.ids.stage_def,
 		class = stage_object,
 		fsms = { stage_fsm_id },
