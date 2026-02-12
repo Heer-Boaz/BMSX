@@ -383,12 +383,55 @@ function matchesMeaninglessSingleLineMethodPattern(functionExpression: LuaFuncti
 	}
 	const statement = body[0];
 	if (statement.kind === LuaSyntaxKind.CallStatement) {
-		return true;
+		return isDelegationCallCandidate(statement.expression);
 	}
 	if (statement.kind !== LuaSyntaxKind.ReturnStatement || statement.expressions.length !== 1) {
 		return false;
 	}
-	return statement.expressions[0].kind === LuaSyntaxKind.CallExpression;
+	const returnExpression = statement.expressions[0];
+	return returnExpression.kind === LuaSyntaxKind.CallExpression && isDelegationCallCandidate(returnExpression);
+}
+
+function expressionContainsInlineTableOrFunction(expression: LuaExpression): boolean {
+	switch (expression.kind) {
+		case LuaSyntaxKind.TableConstructorExpression:
+		case LuaSyntaxKind.FunctionExpression:
+			return true;
+		case LuaSyntaxKind.MemberExpression:
+			return expressionContainsInlineTableOrFunction(expression.base);
+		case LuaSyntaxKind.IndexExpression:
+			return expressionContainsInlineTableOrFunction(expression.base)
+				|| expressionContainsInlineTableOrFunction(expression.index);
+		case LuaSyntaxKind.BinaryExpression:
+			return expressionContainsInlineTableOrFunction(expression.left)
+				|| expressionContainsInlineTableOrFunction(expression.right);
+		case LuaSyntaxKind.UnaryExpression:
+			return expressionContainsInlineTableOrFunction(expression.operand);
+		case LuaSyntaxKind.CallExpression:
+			if (expressionContainsInlineTableOrFunction(expression.callee)) {
+				return true;
+			}
+			for (const argument of expression.arguments) {
+				if (expressionContainsInlineTableOrFunction(argument)) {
+					return true;
+				}
+			}
+			return false;
+		default:
+			return false;
+	}
+}
+
+function isDelegationCallCandidate(expression: LuaCallExpression): boolean {
+	if (expressionContainsInlineTableOrFunction(expression.callee)) {
+		return false;
+	}
+	for (const argument of expression.arguments) {
+		if (expressionContainsInlineTableOrFunction(argument)) {
+			return false;
+		}
+	}
+	return true;
 }
 
 function matchesBuiltinRecreationPattern(functionExpression: LuaFunctionExpression): boolean {
@@ -507,7 +550,8 @@ function lintFunctionBody(
 	issues: LuaLintIssue[],
 	options: { readonly isMethodDeclaration: boolean; },
 ): void {
-	const isGetterOrSetter = matchesGetterPattern(functionExpression) || matchesSetterPattern(functionExpression);
+	const isNamedFunction = functionName !== '<anonymous>';
+	const isGetterOrSetter = isNamedFunction && (matchesGetterPattern(functionExpression) || matchesSetterPattern(functionExpression));
 	if (isGetterOrSetter) {
 		pushIssue(
 			issues,
@@ -516,7 +560,7 @@ function lintFunctionBody(
 			`Getter/setter wrapper pattern is forbidden ("${functionName}").`,
 		);
 	}
-	const isBuiltinRecreation = matchesBuiltinRecreationPattern(functionExpression);
+	const isBuiltinRecreation = isNamedFunction && matchesBuiltinRecreationPattern(functionExpression);
 	if (isBuiltinRecreation) {
 		pushIssue(
 			issues,
@@ -525,7 +569,7 @@ function lintFunctionBody(
 			`Recreating existing built-in behavior is forbidden ("${functionName}").`,
 		);
 	}
-	if (options.isMethodDeclaration && !isGetterOrSetter && matchesMeaninglessSingleLineMethodPattern(functionExpression)) {
+	if (isNamedFunction && options.isMethodDeclaration && !isGetterOrSetter && matchesMeaninglessSingleLineMethodPattern(functionExpression)) {
 		pushIssue(
 			issues,
 			'single_line_method_pattern',
