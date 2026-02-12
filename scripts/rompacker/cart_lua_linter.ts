@@ -3,6 +3,8 @@ import { extname, join, relative, resolve, sep } from 'node:path';
 
 import { LuaLexer } from '../../src/bmsx/lua/lualexer';
 import { LuaParser } from '../../src/bmsx/lua/luaparser';
+import type { LuaToken } from '../../src/bmsx/lua/luatoken';
+import { LuaTokenType } from '../../src/bmsx/lua/luatoken';
 import {
 	LuaAssignmentOperator,
 	LuaBinaryOperator,
@@ -23,6 +25,7 @@ import type {
 } from '../../src/bmsx/lua/lua_ast';
 
 type LuaLintIssueRule =
+	'uppercase_code_pattern' |
 	'getter_setter_pattern' |
 	'single_line_method_pattern' |
 	'builtin_recreation_pattern' |
@@ -180,6 +183,46 @@ function pushIssue(issues: LuaLintIssue[], rule: LuaLintIssueRule, node: { reado
 		column: node.range.start.column,
 		message,
 	});
+}
+
+function pushIssueAt(issues: LuaLintIssue[], rule: LuaLintIssueRule, path: string, line: number, column: number, message: string): void {
+	issues.push({
+		rule,
+		path,
+		line,
+		column,
+		message,
+	});
+}
+
+function findFirstUppercaseIndex(text: string): number {
+	for (let index = 0; index < text.length; index += 1) {
+		const code = text.charCodeAt(index);
+		if (code >= 65 && code <= 90) {
+			return index;
+		}
+	}
+	return -1;
+}
+
+function lintUppercaseCode(path: string, tokens: ReadonlyArray<LuaToken>, issues: LuaLintIssue[]): void {
+	for (const token of tokens) {
+		if (token.type === LuaTokenType.String || token.type === LuaTokenType.Eof) {
+			continue;
+		}
+		const uppercaseIndex = findFirstUppercaseIndex(token.lexeme);
+		if (uppercaseIndex === -1) {
+			continue;
+		}
+		pushIssueAt(
+			issues,
+			'uppercase_code_pattern',
+			path,
+			token.line,
+			token.column + uppercaseIndex,
+			'Upper-case code is forbidden outside strings/comments.',
+		);
+	}
 }
 
 function isIdentifier(expression: LuaExpression, name: string): boolean {
@@ -470,7 +513,7 @@ function lintFunctionBody(
 			issues,
 			'getter_setter_pattern',
 			functionExpression,
-			`Getter/setter wrapper pattern is forbidden (${functionName}).`,
+			`Getter/setter wrapper pattern is forbidden ("${functionName}").`,
 		);
 	}
 	const isBuiltinRecreation = matchesBuiltinRecreationPattern(functionExpression);
@@ -479,7 +522,7 @@ function lintFunctionBody(
 			issues,
 			'builtin_recreation_pattern',
 			functionExpression,
-			`Recreating existing built-in behavior is forbidden (${functionName}).`,
+			`Recreating existing built-in behavior is forbidden ("${functionName}").`,
 		);
 	}
 	if (options.isMethodDeclaration && !isGetterOrSetter && matchesMeaninglessSingleLineMethodPattern(functionExpression)) {
@@ -487,7 +530,7 @@ function lintFunctionBody(
 			issues,
 			'single_line_method_pattern',
 			functionExpression,
-			`Meaningless single-line method is forbidden (${functionName}).`,
+			`Meaningless single-line method is forbidden ("${functionName}").`,
 		);
 	}
 	if (matchesEnsurePattern(functionExpression)) {
@@ -495,7 +538,7 @@ function lintFunctionBody(
 			issues,
 			'ensure_pattern',
 			functionExpression,
-			`Ensure-style lazy initialization pattern is forbidden (${functionName}).`,
+			`Ensure-style lazy initialization pattern is forbidden ("${functionName}").`,
 		);
 	}
 }
@@ -702,6 +745,7 @@ export async function lintCartLuaSources(options: LuaCartLintOptions): Promise<v
 		const workspacePath = toWorkspaceRelativePath(absolutePath);
 		const lexer = new LuaLexer(source, workspacePath, { canonicalizeIdentifiers: 'none' });
 		const tokens = lexer.scanTokens();
+		lintUppercaseCode(workspacePath, tokens, issues);
 		const parser = new LuaParser(tokens, workspacePath, source);
 		const chunk = parser.parseChunk();
 		lintStatements(chunk.body, issues);

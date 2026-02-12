@@ -55,29 +55,34 @@ const FLAGS_WITH_VALUES = new Set<string>([
 ]);
 const OPT_LEVEL_RE = /^-O([0-3])$/;
 
-type TaskName =
-	'Checken of rebuild nodig is' |
-	'Rom manifest zoekeren en parseren' |
-	'Game type-checkeren' |
-	'Game compileren+bundleren' |
-	'Resource lijst bouwen' |
-	'Resources laden en metadata genereren' |
-	'Atlassen puzellen (indien nodig)' |
-	'Rom-assets genereren' |
-	'Rompakket finaliseren' |
-	'ROM PACKING GE-DONUT!! :-)';
+const TASK = {
+	REBUILD_CHECK: 'Checken of rebuild nodig is',
+	MANIFEST_SCAN: 'Rom manifest zoekeren en parseren',
+	GAME_TYPECHECK: 'Game type-checkeren',
+	CART_LUA_LINT: 'Cart Lua linten',
+	GAME_BUNDLE: 'Game compileren+bundleren',
+	RESOURCE_LIST: 'Resource lijst bouwen',
+	RESOURCE_LOAD: 'Resources laden en metadata genereren',
+	ATLAS_BUILD: 'Atlassen puzellen (indien nodig)',
+	ROM_ASSETS: 'Rom-assets genereren',
+	ROM_FINALIZE: 'Rompakket finaliseren',
+	DONE: 'ROM PACKING GE-DONUT!! :-)',
+} as const;
+
+type TaskName = typeof TASK[keyof typeof TASK];
 
 const taskList: TaskName[] = [
-	'Checken of rebuild nodig is',
-	'Rom manifest zoekeren en parseren',
-	'Game type-checkeren',
-	'Game compileren+bundleren',
-	'Resource lijst bouwen',
-	'Resources laden en metadata genereren',
-	'Atlassen puzellen (indien nodig)',
-	'Rom-assets genereren',
-	'Rompakket finaliseren',
-	'ROM PACKING GE-DONUT!! :-)',
+	TASK.REBUILD_CHECK,
+	TASK.MANIFEST_SCAN,
+	TASK.GAME_TYPECHECK,
+	TASK.CART_LUA_LINT,
+	TASK.GAME_BUNDLE,
+	TASK.RESOURCE_LIST,
+	TASK.RESOURCE_LOAD,
+	TASK.ATLAS_BUILD,
+	TASK.ROM_ASSETS,
+	TASK.ROM_FINALIZE,
+	TASK.DONE,
 ];
 
 function stripLuaAssets(assets: RomAsset[], debug: boolean): void {
@@ -111,16 +116,7 @@ function applyEngineAtlasLimit(manifest: RomManifest, resources: Resource[]): vo
 }
 
 // --- Individual lists that allow us to easily remove tasks from the main task list (visualisation only!) ---
-const romBuildTasks: TaskName[] = [
-	'Rom manifest zoekeren en parseren',
-	'Game type-checkeren',
-	'Game compileren+bundleren',
-	'Resource lijst bouwen',
-	'Resources laden en metadata genereren',
-	'Atlassen puzellen (indien nodig)',
-	'Rom-assets genereren',
-	'Rompakket finaliseren',
-];
+const romBuildTasks: TaskName[] = taskList.slice(1, -1);
 
 // const bootromBuildTasks: TaskName[] = [
 // 	`bootrom compileren`,
@@ -130,17 +126,11 @@ const romBuildTasks: TaskName[] = [
 // 	'Platform-artifacts bouwen',
 // ];
 
-const rebuildCheckTasks: TaskName[] = [
-	'Checken of rebuild nodig is',
-];
+const rebuildCheckTasks: TaskName[] = [TASK.REBUILD_CHECK];
 
-const typecheckTasks: TaskName[] = [
-	'Game type-checkeren',
-];
+const typecheckTasks: TaskName[] = [TASK.GAME_TYPECHECK];
 
-const bundlerTasks: TaskName[] = [
-	'Game compileren+bundleren',
-];
+const bundlerTasks: TaskName[] = [TASK.GAME_BUNDLE];
 
 // engine split task removed
 
@@ -877,6 +867,7 @@ async function main() {
 			const tsProject = pkgTsconfigPath;
 			if (!isEngineMode) {
 				await progress.runWithDetail('Lint cart Lua', () => lintCartLuaSources({ roots: Array.from(extraLuaPathSet) }));
+				await progress.taskCompleted();
 			}
 			if (shouldBundleCartCode) {
 				const stepLogs: string[] = [];
@@ -887,8 +878,8 @@ async function main() {
 					stepLogs.forEach(captureLog);
 					throw err;
 				}
+				await progress.taskCompleted();
 			}
-			await progress.taskCompleted();
 			const romResMetaList = await progress.runWithDetail('Scan resources', () => getResMetaList(resourceRoots, rom_name, {
 				includeCode,
 				extraLuaPaths: Array.from(extraLuaPathSet),
