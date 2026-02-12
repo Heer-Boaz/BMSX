@@ -930,8 +930,8 @@ function player:try_switch_room(direction, keep_stairs_lock)
 		self.enter_leave_wait_started = false
 		self:dispatch_state_event('leave_world_start')
 		self:emit_room_switched_event({
-			from = leave_switch.from_room_id,
-			to = leave_switch.to_room_id,
+			from = leave_switch.from_room_number,
+			to = leave_switch.to_room_number,
 			dir = 'right',
 			space = self.room.space_id,
 			x = self.x,
@@ -966,8 +966,8 @@ function player:try_switch_room(direction, keep_stairs_lock)
 		self.hit_stairs_lock = false
 	end
 	self:emit_room_switched_event({
-		from = switch.from_room_id,
-		to = switch.to_room_id,
+		from = switch.from_room_number,
+		to = switch.to_room_number,
 		dir = direction,
 		space = self.room.space_id,
 		x = self.x,
@@ -1788,8 +1788,8 @@ function player:tick_entering_world()
 			self.enter_leave_shrine_text_lines = {}
 			self.enter_leave_wait_started = false
 			self:emit_room_switched_event({
-				from = switch.from_room_id,
-				to = switch.to_room_id,
+				from = switch.from_room_number,
+				to = switch.to_room_number,
 				dir = switch.direction,
 				space = self.room.space_id,
 				x = self.x,

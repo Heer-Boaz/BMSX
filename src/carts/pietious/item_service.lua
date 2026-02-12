@@ -46,20 +46,20 @@ pickup_handlers = {
 	greenvase = pickup_inventory_item,
 }
 
-local function room_flags_for(self, room_id)
-	local room_flags = self.condition_flags_by_room[room_id]
+local function room_flags_for(self, room_number)
+	local room_flags = self.condition_flags_by_room[room_number]
 	if room_flags == nil then
 		room_flags = {}
-		self.condition_flags_by_room[room_id] = room_flags
+		self.condition_flags_by_room[room_number] = room_flags
 	end
 	return room_flags
 end
 
-local function event_item_defs_for(self, room_id)
-	local defs = self.event_item_defs_by_room[room_id]
+local function event_item_defs_for(self, room_number)
+	local defs = self.event_item_defs_by_room[room_number]
 	if defs == nil then
 		defs = {}
-		self.event_item_defs_by_room[room_id] = defs
+		self.event_item_defs_by_room[room_number] = defs
 	end
 	return defs
 end
@@ -90,7 +90,7 @@ local function condition_matches(condition, player, room_flags)
 	return flag_is_set
 end
 
-function item_service:item_should_spawn(item_def, room_id, player)
+function item_service:item_should_spawn(item_def, room_number, player)
 	if self.picked_item_ids[item_def.id] == true then
 		return false
 	end
@@ -98,7 +98,7 @@ function item_service:item_should_spawn(item_def, room_id, player)
 		return false
 	end
 
-	local room_flags = room_flags_for(self, room_id)
+	local room_flags = room_flags_for(self, room_number)
 	local conditions = item_def.conditions
 	for i = 1, #conditions do
 		if not condition_matches(conditions[i], player, room_flags) then
@@ -112,16 +112,16 @@ function item_service:sync_item_instance(item_def, room)
 	local id = item_def.id
 	local instance = object(id)
 	if instance == nil then
-			instance = spawn_object(self.world_item_def_id, {
-				id = id,
-				space_id = room.space_id,
-				pos = { x = item_def.x, y = item_def.y, z = 140 },
-				item_id = item_def.id,
-				room_id = room.room_id,
-				item_service_id = self.id,
-				source_kind = item_def.source_kind,
-				item_type = item_def.item_type,
-			})
+		instance = spawn_object(self.world_item_def_id, {
+			id = id,
+			space_id = room.space_id,
+			pos = { x = item_def.x, y = item_def.y, z = 140 },
+			item_id = item_def.id,
+			room_number = room.room_number,
+			item_service_id = self.id,
+			source_kind = item_def.source_kind,
+			item_type = item_def.item_type,
+		})
 		self.items_by_id[id] = instance
 		return instance
 	end
@@ -158,8 +158,8 @@ end
 
 function item_service:refresh_current_room_items()
 	local room = service(constants.ids.castle_service_instance).current_room
-	local room_id = room.room_id
-	self.synced_room_id = room_id
+	local room_number = room.room_number
+	self.synced_room_number = room_number
 
 	local player = object(constants.ids.player_instance)
 	local active_ids = {}
@@ -167,16 +167,16 @@ function item_service:refresh_current_room_items()
 	local room_item_defs = room.items
 	for i = 1, #room_item_defs do
 		local item_def = room_item_defs[i]
-		if self:item_should_spawn(item_def, room_id, player) then
+		if self:item_should_spawn(item_def, room_number, player) then
 			self:sync_item_instance(item_def, room)
 			active_ids[item_def.id] = true
 		end
 	end
 
-	local event_defs = self.event_item_defs_by_room[room_id]
+	local event_defs = self.event_item_defs_by_room[room_number]
 	if event_defs ~= nil then
 		for item_id, item_def in pairs(event_defs) do
-			if self:item_should_spawn(item_def, room_id, player) then
+			if self:item_should_spawn(item_def, room_number, player) then
 				self:sync_item_instance(item_def, room)
 				active_ids[item_id] = true
 			end
@@ -186,11 +186,11 @@ function item_service:refresh_current_room_items()
 	self:deactivate_unused_items(active_ids)
 end
 
-function item_service:set_room_condition(room_id, condition)
-	room_flags_for(self, room_id)[condition] = true
+function item_service:set_room_condition(room_number, condition)
+	room_flags_for(self, room_number)[condition] = true
 end
 
-function item_service:add_item_drop_from_rock(rock_id, room_id, item_type, x, y)
+function item_service:add_item_drop_from_rock(rock_id, room_number, item_type, x, y)
 	if item_type == 'none' then
 		return
 	end
@@ -206,9 +206,9 @@ function item_service:add_item_drop_from_rock(rock_id, room_id, item_type, x, y)
 		return
 	end
 
-	event_item_defs_for(self, room_id)[drop_id] = {
+	event_item_defs_for(self, room_number)[drop_id] = {
 		id = drop_id,
-		room_id = room_id,
+		room_number = room_number,
 		x = x,
 		y = y,
 		item_type = item_type,
@@ -216,7 +216,7 @@ function item_service:add_item_drop_from_rock(rock_id, room_id, item_type, x, y)
 		conditions = {},
 	}
 
-	if self.synced_room_id == room_id then
+	if self.synced_room_number == room_number then
 		self:refresh_current_room_items()
 	end
 end
@@ -232,7 +232,7 @@ function item_service:apply_pickup_to_player(player, item_type)
 	return pickup_handler(player)
 end
 
-function item_service:try_pick_item(item_id, room_id, item_type, source_kind)
+function item_service:try_pick_item(item_id, room_number, item_type, source_kind)
 	local player = object(constants.ids.player_instance)
 	if player.health <= 0 then
 		return false
@@ -240,17 +240,17 @@ function item_service:try_pick_item(item_id, room_id, item_type, source_kind)
 	if not self:apply_pickup_to_player(player, item_type) then
 		return false
 	end
-	self:on_item_picked(item_id, room_id, item_type, source_kind)
+	self:on_item_picked(item_id, room_number, item_type, source_kind)
 	return true
 end
 
-function item_service:on_item_picked(item_id, room_id, _item_type, _source_kind)
+function item_service:on_item_picked(item_id, room_number, _item_type, _source_kind)
 	self.picked_item_ids[item_id] = true
-	local event_defs = self.event_item_defs_by_room[room_id]
+	local event_defs = self.event_item_defs_by_room[room_number]
 	if event_defs ~= nil then
 		event_defs[item_id] = nil
 	end
-	if self.synced_room_id == room_id then
+	if self.synced_room_number == room_number then
 		self:refresh_current_room_items()
 	end
 end
@@ -268,12 +268,12 @@ function item_service:bind_events()
 		event = constants.events.enemy_defeated,
 		subscriber = self,
 		handler = function(event)
-			self:set_room_condition(event.room_id, 'defeated_' .. event.kind)
+			self:set_room_condition(event.room_number, 'defeated_' .. event.kind)
 			if event.kind == 'cloud' then
-				self:set_room_condition(event.room_id, 'clouddestroyed')
-				self:set_room_condition(event.room_id, 'no_clouds')
+				self:set_room_condition(event.room_number, 'clouddestroyed')
+				self:set_room_condition(event.room_number, 'no_clouds')
 			end
-			if self.synced_room_id == event.room_id then
+			if self.synced_room_number == event.room_number then
 				self:refresh_current_room_items()
 			end
 		end,
@@ -283,8 +283,8 @@ function item_service:bind_events()
 		event = constants.events.room_condition_set,
 		subscriber = self,
 		handler = function(event)
-			self:set_room_condition(event.room_id, event.condition)
-			if self.synced_room_id == event.room_id then
+			self:set_room_condition(event.room_number, event.condition)
+			if self.synced_room_number == event.room_number then
 				self:refresh_current_room_items()
 			end
 		end,
@@ -301,7 +301,7 @@ local function define_item_service_fsm()
 					self.event_item_defs_by_room = {}
 					self.picked_item_ids = {}
 					self.condition_flags_by_room = {}
-					self.synced_room_id = ''
+					self.synced_room_number = 0
 					self:bind_events()
 					self:refresh_current_room_items()
 					return '/active'
@@ -318,14 +318,14 @@ local function register_item_service_definition()
 		class = item_service,
 		fsms = { constants.ids.item_service_fsm },
 		auto_activate = true,
-			defaults = {
-				id = constants.ids.item_service_instance,
-				world_item_def_id = world_item_module.world_item_def_id,
+		defaults = {
+			id = constants.ids.item_service_instance,
+			world_item_def_id = world_item_module.world_item_def_id,
 			items_by_id = {},
 			event_item_defs_by_room = {},
 			picked_item_ids = {},
 			condition_flags_by_room = {},
-			synced_room_id = '',
+			synced_room_number = 0,
 			registrypersistent = false,
 			tick_enabled = false,
 		},

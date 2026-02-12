@@ -28,7 +28,7 @@ function loot_drop:bind_events()
 		event = constants.events.room_switched,
 		subscriber = self,
 		handler = function(event)
-			if event.to ~= self.room_id then
+			if event.to ~= self.room_number then
 				self:mark_for_disposal()
 			end
 		end,
@@ -112,10 +112,10 @@ local function register_loot_drop_definition()
 		def_id = constants.ids.loot_drop_def,
 		class = loot_drop,
 		fsms = { constants.ids.loot_drop_fsm },
-		defaults = {
-			space_id = constants.spaces.castle,
-			room_id = '',
-			loot_type = 'life',
+			defaults = {
+				space_id = constants.spaces.castle,
+				room_number = 0,
+				loot_type = 'life',
 			loot_value = constants.enemy.loot_life_regen,
 			state_name = 'boot',
 			registrypersistent = false,

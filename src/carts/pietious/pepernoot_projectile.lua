@@ -25,7 +25,7 @@ function pepernoot_projectile:bind_events()
 		event = constants.events.room_switched,
 		subscriber = self,
 		handler = function(event)
-			if event.from == self.room_id then
+			if event.from == self.room_number then
 				self:dispose('room_switch')
 			end
 		end,
@@ -77,7 +77,7 @@ function pepernoot_projectile:tick()
 	if self.disposed then
 		return
 	end
-	if self.room.room_id ~= self.room_id then
+	if self.room.room_number ~= self.room_number then
 		self:dispose('room_mismatch')
 		return
 	end
@@ -146,11 +146,11 @@ local function register_pepernoot_projectile_definition()
 		def_id = constants.ids.pepernoot_projectile_def,
 		class = pepernoot_projectile,
 		fsms = { constants.ids.pepernoot_projectile_fsm },
-		defaults = {
-			space_id = constants.spaces.castle,
-			room = nil,
-			room_id = '',
-			owner_id = constants.ids.player_instance,
+			defaults = {
+				space_id = constants.spaces.castle,
+				room = nil,
+				room_number = 0,
+				owner_id = constants.ids.player_instance,
 			projectile_id = 0,
 			direction = 1,
 			disposed = false,

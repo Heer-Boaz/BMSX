@@ -26,9 +26,8 @@ function castle_service:sync_world_entrance_states_for_room(room_state)
 	end
 end
 
-function castle_service:initialize(initial_room_id_or_number)
-	self.current_room = room_module.create_room(initial_room_id_or_number)
-	self.current_room_id = self.current_room.room_id
+function castle_service:initialize(initial_room_number)
+	self.current_room = room_module.create_room(initial_room_number)
 	self.current_room_number = self.current_room.room_number
 	self.map_id = self.current_room.world_number
 	self.map_x = 5
@@ -92,7 +91,6 @@ function castle_service:switch_room(direction, player_top, player_bottom)
 		return clone_switch(switch)
 	end
 
-	self.current_room_id = self.current_room.room_id
 	self.current_room_number = self.current_room.room_number
 	self.map_id = self.current_room.world_number
 	if direction == 'left' then
@@ -116,19 +114,15 @@ function castle_service:enter_world(target)
 	end
 
 	local from_room_number = self.current_room_number
-	local from_room_id = self.current_room_id
 
 	self.current_room = room_module.create_room(transition.world_room_number)
-	self.current_room_id = self.current_room.room_id
 	self.current_room_number = self.current_room.room_number
 	self.map_id = transition.world_number
 	self.map_x = transition.world_map_x
 	self.map_y = transition.world_map_y
 	self.last_room_switch = {
 		from_room_number = from_room_number,
-		from_room_id = from_room_id,
 		to_room_number = self.current_room_number,
-		to_room_id = self.current_room_id,
 		direction = 'down',
 		transition_kind = 'world_banner',
 	}
@@ -136,9 +130,7 @@ function castle_service:enter_world(target)
 
 	return {
 		from_room_number = from_room_number,
-		from_room_id = from_room_id,
 		to_room_number = self.current_room_number,
-		to_room_id = self.current_room_id,
 		direction = 'down',
 		transition_kind = 'world_banner',
 		world_number = transition.world_number,
@@ -160,19 +152,15 @@ function castle_service:leave_world_to_castle()
 	end
 
 	local from_room_number = self.current_room_number
-	local from_room_id = self.current_room_id
 
 	self.current_room = room_module.create_room(transition.castle_room_number)
-	self.current_room_id = self.current_room.room_id
 	self.current_room_number = self.current_room.room_number
 	self.map_id = 0
 	self.map_x = transition.castle_map_x
 	self.map_y = transition.castle_map_y
 	self.last_room_switch = {
 		from_room_number = from_room_number,
-		from_room_id = from_room_id,
 		to_room_number = self.current_room_number,
-		to_room_id = self.current_room_id,
 		direction = 'right',
 		transition_kind = 'castle_banner',
 	}
@@ -180,9 +168,7 @@ function castle_service:leave_world_to_castle()
 
 	return {
 		from_room_number = from_room_number,
-		from_room_id = from_room_id,
 		to_room_number = self.current_room_number,
-		to_room_id = self.current_room_id,
 		direction = 'right',
 		transition_kind = 'castle_banner',
 		spawn_x = transition.castle_spawn_x,
@@ -198,7 +184,6 @@ local function register_castle_service_definition()
 		defaults = {
 			id = constants.ids.castle_service_instance,
 			current_room = nil,
-			current_room_id = '',
 			current_room_number = 0,
 			map_id = 0,
 			map_x = 5,

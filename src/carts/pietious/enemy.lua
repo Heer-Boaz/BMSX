@@ -211,7 +211,7 @@ function enemy:bind_overlap_events()
 		event = constants.events.room_switched,
 		subscriber = self,
 		handler = function(event)
-			if self.despawn_on_room_switch and event.from == self.room_id then
+			if self.despawn_on_room_switch and event.from == self.room_number then
 				self:mark_for_disposal()
 			end
 		end,
@@ -380,7 +380,7 @@ end
 
 function enemy:configure_from_room_def(def, room)
 	self.enemy_id = def.id
-	self.room_id = room.room_id
+	self.room_number = room.room_number
 	self.room = room
 	self.space_id = room.space_id
 	self.kind = def.kind
@@ -458,7 +458,7 @@ function enemy:spawn_death_effect()
 	spawn_object(enemy_explosion_module.enemy_explosion_def_id, {
 		id = effect_id,
 		space_id = self.space_id,
-		room_id = self.room_id,
+		room_number = self.room_number,
 		loot_type = self:choose_drop_type(),
 		pos = { x = self.x, y = self.y, z = 114 },
 	})
@@ -479,7 +479,7 @@ function enemy:take_weapon_hit(weapon_kind, hit_id)
 		self.dangerous = false
 		self:spawn_death_effect()
 		eventemitter.eventemitter.instance:emit(constants.events.enemy_defeated, self.id, {
-			room_id = self.room_id,
+			room_number = self.room_number,
 			enemy_id = self.enemy_id,
 			kind = self.kind,
 			trigger = self.trigger,
@@ -745,7 +745,7 @@ local function register_enemy_definition()
 		defaults = {
 			space_id = constants.spaces.castle,
 			enemy_id = '',
-			room_id = '',
+			room_number = 0,
 			room = nil,
 			kind = 'mijterfoe',
 			trigger = '',

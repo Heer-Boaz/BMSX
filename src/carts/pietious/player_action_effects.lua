@@ -71,7 +71,7 @@ local function try_fire_pepernoot_effect(context)
 		id = projectile_id,
 		space_id = owner.room.space_id,
 		room = owner.room,
-		room_id = owner.room.room_id,
+		room_number = owner.room.room_number,
 		owner_id = owner.id,
 		projectile_id = owner.pepernoot_projectile_sequence,
 		direction = owner.facing,

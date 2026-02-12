@@ -333,10 +333,6 @@ local function build_world_entrances(room_number, object_defs)
 	return world_entrances
 end
 
-local function room_id_from_number(room_number, room_type)
-	return string.format('%s_room_%03d', room_type, room_number)
-end
-
 local function load_room_templates()
 	local data = assets.data[romdir.token('castle_map')]
 	local room_numbers = sort_room_numbers(data)
@@ -357,7 +353,6 @@ local function load_room_templates()
 		local object_defs = room_def.objects or {}
 		templates[room_number] = {
 			room_number = room_number,
-			room_id = room_id_from_number(room_number, room_def.type),
 			space_id = room_def.type,
 			world_number = world_number,
 			room_subtype = room_def.subtype,
@@ -413,19 +408,10 @@ end
 local room_templates = load_room_templates()
 attach_world_transition_metadata(room_templates)
 
-local room_number_by_id = {}
 local world_transition_by_number = {}
-
-for room_number, template in pairs(room_templates) do
-	room_number_by_id[template.room_id] = room_number
-end
 
 for _, spec in pairs(world_transition_specs) do
 	world_transition_by_number[spec.world_number] = spec
-end
-
-function castle_map.room_number_from_id(room_id)
-	return room_number_by_id[room_id]
 end
 
 function castle_map.room_template(room_number)

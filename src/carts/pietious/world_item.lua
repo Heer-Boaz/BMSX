@@ -29,7 +29,7 @@ end
 
 function world_item:configure_from_room_def(def, room, item_service_id)
 	self.item_id = def.id
-	self.room_id = room.room_id
+	self.room_number = room.room_number
 	self.space_id = room.space_id
 	self.item_service_id = item_service_id
 	self.source_kind = def.source_kind
@@ -50,7 +50,7 @@ function world_item:on_overlap_stay(event)
 		return
 	end
 
-	if service(self.item_service_id):try_pick_item(self.item_id, self.room_id, self.item_type, self.source_kind) then
+	if service(self.item_service_id):try_pick_item(self.item_id, self.room_number, self.item_type, self.source_kind) then
 		self:dispatch_state_event('picked')
 	end
 end
@@ -108,10 +108,10 @@ local function register_world_item_definition()
 		def_id = constants.ids.world_item_def,
 		class = world_item,
 		fsms = { constants.ids.world_item_fsm },
-		defaults = {
-			space_id = constants.spaces.castle,
-			room_id = '',
-			item_id = '',
+			defaults = {
+				space_id = constants.spaces.castle,
+				room_number = 0,
+				item_id = '',
 			item_type = 'ammofromrock',
 			source_kind = 'map',
 			item_service_id = constants.ids.item_service_instance,

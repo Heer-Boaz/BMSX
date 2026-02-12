@@ -184,28 +184,28 @@ def process_base_data(content, rooms):
         # Room Number
         m_num = re.search(r'\.Number\s*=\s*(\d+);', section)
         if not m_num: continue # Should be there
-        room_id = int(m_num.group(1))
-        
-        if room_id not in rooms: rooms[room_id] = {}
+        room_number = int(m_num.group(1))
+
+        if room_number not in rooms: rooms[room_number] = {}
         
         # Type
         m_type = re.search(r'\.Type\s*=\s*RoomType\.(\w+);', section)
-        if m_type: rooms[room_id]['type'] = m_type.group(1).lower()
+        if m_type: rooms[room_number]['type'] = m_type.group(1).lower()
 
         # SubType
         m_subtype = re.search(r'\.Subtype\s*=\s*RoomSubType\.(\w+);', section) # Note case sensitivity in regex?
         if not m_subtype:
              m_subtype = re.search(r'\.SubType\s*=\s*RoomSubType\.(\w+);', section)
 
-        if m_subtype: rooms[room_id]['subtype'] = m_subtype.group(1).lower()
+        if m_subtype: rooms[room_number]['subtype'] = m_subtype.group(1).lower()
 
         # WorldNumber
         m_world = re.search(r'\.WorldNumber\s*=\s*(\d+);', section)
-        if m_world: rooms[room_id]['worldnumber'] = int(m_world.group(1))
+        if m_world: rooms[room_number]['worldnumber'] = int(m_world.group(1))
 
         # Exits
         m_exits = re.search(r'\.Exits\s*=\s*(new\s*int\[\]\s*\{[^}]+\});', section)
-        if m_exits: rooms[room_id]['exits'] = parse_csharp_array(m_exits.group(1))
+        if m_exits: rooms[room_number]['exits'] = parse_csharp_array(m_exits.group(1))
         
         # Map
         m_map_start = re.search(r'\.Map\s*=\s*new\s*string\[\]\s*\{', section)
@@ -218,7 +218,7 @@ def process_base_data(content, rooms):
                 elif section[end_idx] == '}': brace_count -= 1
                 end_idx += 1
             map_block = section[start_idx : end_idx-1]
-            rooms[room_id]['map'] = parse_string_array(map_block)
+            rooms[room_number]['map'] = parse_string_array(map_block)
             
         count += 1
         

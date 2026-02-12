@@ -52,7 +52,7 @@ function enemy_explosion:bind_events()
 		event = constants.events.room_switched,
 		subscriber = self,
 		handler = function(event)
-			if event.to ~= self.room_id then
+			if event.to ~= self.room_number then
 				self:mark_for_disposal()
 			end
 		end,
@@ -74,7 +74,7 @@ function enemy_explosion:spawn_loot()
 	spawn_object(loot_drop_module.loot_drop_def_id, {
 		id = loot_id,
 		space_id = self.space_id,
-		room_id = self.room_id,
+		room_number = self.room_number,
 		loot_type = self.loot_type,
 		loot_value = loot_value_for_type(self.loot_type),
 		pos = { x = self.x, y = self.y, z = 113 },
@@ -121,10 +121,10 @@ local function register_enemy_explosion_definition()
 		def_id = constants.ids.enemy_explosion_def,
 		class = enemy_explosion,
 		fsms = { constants.ids.enemy_explosion_fsm },
-			defaults = {
-				space_id = constants.spaces.castle,
-				room_id = '',
-				loot_type = 'none',
+		defaults = {
+			space_id = constants.spaces.castle,
+			room_number = 0,
+			loot_type = 'none',
 			state_name = 'boot',
 			registrypersistent = false,
 			tick_enabled = false,

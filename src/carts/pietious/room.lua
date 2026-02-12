@@ -462,7 +462,6 @@ local function apply_room_template(room_state, template)
 	local tile_origin_y = constants.room.tile_origin_y
 
 	room_state.room_number = template.room_number
-	room_state.room_id = template.room_id
 	room_state.space_id = template.space_id
 	room_state.world_number = template.world_number
 	room_state.room_subtype = template.room_subtype
@@ -493,26 +492,10 @@ local function apply_room_template(room_state, template)
 	room_state.edge_gates = copy_edge_gates(template.edge_gates)
 end
 
-local function resolve_room_number(context_or_room_id, maybe_room_id)
-	if maybe_room_id ~= nil then
-		if type(maybe_room_id) == 'number' then
-			return maybe_room_id
-		end
-		return castle_map.room_number_from_id(maybe_room_id)
-	end
-	if context_or_room_id == nil then
-		return castle_map.start_room_number
-	end
-	if type(context_or_room_id) == 'number' then
-		return context_or_room_id
-	end
-	return castle_map.room_number_from_id(context_or_room_id)
-end
-
-function room.create_room(context_or_room_id, maybe_room_id)
-	local room_number = resolve_room_number(context_or_room_id, maybe_room_id)
+function room.create_room(room_number)
+	local target_room_number = room_number or castle_map.start_room_number
 	local room_state = {}
-	apply_room_template(room_state, castle_map.room_template(room_number))
+	apply_room_template(room_state, castle_map.room_template(target_room_number))
 	return room_state
 end
 
@@ -598,14 +581,11 @@ function room.switch_room(room_state, direction)
 	end
 
 	local from_room_number = room_state.room_number
-	local from_room_id = room_state.room_id
 
 	if target_room_number < 0 then
 		return {
 			from_room_number = from_room_number,
-			from_room_id = from_room_id,
 			to_room_number = target_room_number,
-			to_room_id = '',
 			direction = direction,
 			outside = true,
 		}
@@ -614,9 +594,7 @@ function room.switch_room(room_state, direction)
 	apply_room_template(room_state, castle_map.room_template(target_room_number))
 	return {
 		from_room_number = from_room_number,
-		from_room_id = from_room_id,
 		to_room_number = room_state.room_number,
-		to_room_id = room_state.room_id,
 		direction = direction,
 	}
 end

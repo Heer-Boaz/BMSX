@@ -48,11 +48,11 @@ end
 
 function rock_service:sync_room_rocks()
 	local room = service(constants.ids.castle_service_instance).current_room
-	if self.synced_room_id == room.room_id and not self.sync_dirty then
+	if self.synced_room_number == room.room_number and not self.sync_dirty then
 		return
 	end
 
-	self.synced_room_id = room.room_id
+	self.synced_room_number = room.room_number
 	self.sync_dirty = false
 
 	local rock_defs = room.rocks
@@ -69,12 +69,12 @@ function rock_service:sync_room_rocks()
 	self:deactivate_unused_rocks(active_ids)
 end
 
-function rock_service:on_rock_break_started(rock_id, room_id, item_type, x, y)
+function rock_service:on_rock_break_started(rock_id, room_number, item_type, x, y)
 	if self.destroyed_rock_ids[rock_id] == true then
 		return
 	end
 	self.destroyed_rock_ids[rock_id] = true
-	service(self.item_service_id):add_item_drop_from_rock(rock_id, room_id, item_type, x, y)
+	service(self.item_service_id):add_item_drop_from_rock(rock_id, room_number, item_type, x, y)
 end
 
 function rock_service:on_rock_destroyed(rock_id)
@@ -95,7 +95,7 @@ function rock_service:bind_events()
 		event = constants.events.room_switched,
 		subscriber = self,
 		handler = function(_event)
-			self.synced_room_id = ''
+			self.synced_room_number = 0
 			self.sync_dirty = true
 			self:sync_room_rocks()
 		end,
@@ -107,13 +107,13 @@ local function define_rock_service_fsm()
 		initial = 'boot',
 		states = {
 			boot = {
-				entering_state = function(self)
-					self.rocks_by_id = {}
-					self.destroyed_rock_ids = {}
-					self.synced_room_id = ''
-					self.sync_dirty = true
-					self:bind_events()
-					self:sync_room_rocks()
+					entering_state = function(self)
+						self.rocks_by_id = {}
+						self.destroyed_rock_ids = {}
+						self.synced_room_number = 0
+						self.sync_dirty = true
+						self:bind_events()
+						self:sync_room_rocks()
 					return '/active'
 				end,
 			},
@@ -132,13 +132,13 @@ local function register_rock_service_definition()
 		class = rock_service,
 		fsms = { constants.ids.rock_service_fsm },
 		auto_activate = true,
-			defaults = {
-				id = constants.ids.rock_service_instance,
-				item_service_id = constants.ids.item_service_instance,
-				rock_def_id = rock_module.rock_def_id,
+		defaults = {
+			id = constants.ids.rock_service_instance,
+			item_service_id = constants.ids.item_service_instance,
+			rock_def_id = rock_module.rock_def_id,
 			rocks_by_id = {},
 			destroyed_rock_ids = {},
-			synced_room_id = '',
+			synced_room_number = 0,
 			sync_dirty = true,
 			registrypersistent = false,
 			tick_enabled = true,
