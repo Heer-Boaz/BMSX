@@ -27,6 +27,8 @@ constants.ids = {
 	flow_service_def = 'pietious.flow_service.def',
 	flow_service_instance = 'pietious.flow_service.instance',
 	flow_service_fsm = 'pietious.flow_service.fsm',
+	shrine_world_view_def = 'pietious.shrine_world_view.def',
+	shrine_world_view_instance = 'pietious.shrine_world_view.instance',
 	enemy_def = 'pietious.enemy.def',
 	enemy_fsm = 'pietious.enemy.fsm',
 	enemy_bt = 'pietious.enemy.bt',
@@ -63,6 +65,8 @@ constants.spaces = {
 
 constants.flow = {
 	room_transition_frames = 8,
+	world_banner_frames = 30,
+	castle_banner_frames = 30,
 }
 
 constants.events = {
@@ -305,6 +309,25 @@ constants.lithograph = {
 	hit_top_px = 8,
 	hit_right_px = 10,
 	hit_bottom_px = 16,
+}
+
+constants.world_entrance = {
+	open_step_ms = 200,
+	trigger_x_offset = constants.room.tile_size,
+	trigger_half_width = constants.room.tile_unit4,
+	trigger_y_offset = constants.room.tile_size,
+	enter_leave_step_ms = 80,
+	enter_leave_frames = 32,
+	enter_anim_frame_distance = 2,
+}
+
+constants.shrine = {
+	hit_left_px = constants.room.tile_size,
+	hit_top_px = constants.room.tile_size,
+	hit_right_px = constants.room.tile_size2,
+	hit_bottom_px = constants.room.tile_size2,
+	text_x = constants.room.tile_size * 6,
+	text_y = constants.room.hud_height + (constants.room.tile_size * 5),
 }
 
 constants.palette = {

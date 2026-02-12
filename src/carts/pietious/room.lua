@@ -399,6 +399,40 @@ local function build_lithographs(lithograph_defs)
 	return lithographs
 end
 
+local function build_shrines(shrine_defs)
+	local shrines = {}
+	for i = 1, #shrine_defs do
+		local def = shrine_defs[i]
+		local text_lines = {}
+		for j = 1, #def.text_lines do
+			text_lines[j] = def.text_lines[j]
+		end
+		shrines[i] = {
+			id = def.id,
+			x = def.x,
+			y = def.y,
+			text_lines = text_lines,
+		}
+	end
+	return shrines
+end
+
+local function build_world_entrances(world_entrance_defs)
+	local world_entrances = {}
+	for i = 1, #world_entrance_defs do
+		local def = world_entrance_defs[i]
+		world_entrances[i] = {
+			id = def.id,
+			x = def.x,
+			y = def.y,
+			target = def.target,
+			stair_x = def.stair_x,
+			stair_y = def.stair_y,
+		}
+	end
+	return world_entrances
+end
+
 local function copy_links(links_def)
 	return {
 		left = links_def.left,
@@ -453,6 +487,8 @@ local function apply_room_template(room_state, template)
 	room_state.rocks = build_rocks(template.rocks)
 	room_state.items = build_items(template.items)
 	room_state.lithographs = build_lithographs(template.lithographs)
+	room_state.shrines = build_shrines(template.shrines)
+	room_state.world_entrances = build_world_entrances(template.world_entrances)
 	room_state.links = copy_links(template.links)
 	room_state.edge_gates = copy_edge_gates(template.edge_gates)
 end
@@ -557,12 +593,24 @@ end
 
 function room.switch_room(room_state, direction)
 	local target_room_number = room_state.links[direction]
-	if target_room_number == nil or target_room_number <= 0 then
+	if target_room_number == nil or target_room_number == 0 then
 		return nil
 	end
 
 	local from_room_number = room_state.room_number
 	local from_room_id = room_state.room_id
+
+	if target_room_number < 0 then
+		return {
+			from_room_number = from_room_number,
+			from_room_id = from_room_id,
+			to_room_number = target_room_number,
+			to_room_id = '',
+			direction = direction,
+			outside = true,
+		}
+	end
+
 	apply_room_template(room_state, castle_map.room_template(target_room_number))
 	return {
 		from_room_number = from_room_number,

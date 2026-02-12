@@ -5,6 +5,25 @@ local castle_map = {}
 
 local start_room_number = 1
 
+local world_transition_specs = {
+	world_1 = {
+		target = 'world_1',
+		world_number = 1,
+		world_room_number = 101,
+		world_map_x = 2,
+		world_map_y = 0,
+		world_spawn_x = 28 * constants.room.tile_size,
+		world_spawn_y = constants.room.tile_origin_y + (15 * constants.room.tile_size),
+		world_spawn_facing = -1,
+		castle_map_x = 3,
+		castle_map_y = 12,
+		castle_room_number = 0,
+		castle_spawn_x = 0,
+		castle_spawn_y = 0,
+		castle_spawn_facing = 1,
+	},
+}
+
 local function tile_x_to_world(tile_x)
 	return tile_x * constants.room.tile_size
 end
@@ -152,6 +171,14 @@ local function copy_conditions(object_def)
 	return conditions
 end
 
+local function split_text_lines(text)
+	local lines = {}
+	for line in text:gmatch('[^\r\n]+') do
+		lines[#lines + 1] = line
+	end
+	return lines
+end
+
 local function build_enemies(room_number, object_defs)
 	local enemies = {}
 	local enemy_index = 0
@@ -259,6 +286,53 @@ local function build_lithographs(room_number, object_defs)
 	return lithographs
 end
 
+local function build_shrines(room_number, object_defs)
+	local shrines = {}
+	local shrine_index = 0
+
+	for i = 1, #object_defs do
+		local object_def = object_defs[i]
+		if object_def.type == 'shrine' then
+			shrine_index = shrine_index + 1
+			shrines[#shrines + 1] = {
+				id = string.format('shrine_%03d_%02d', room_number, shrine_index),
+				x = tile_x_to_world(object_def.x),
+				y = tile_y_to_world(object_def.y),
+				text_lines = split_text_lines(object_def.text),
+			}
+		end
+	end
+
+	return shrines
+end
+
+local function build_world_entrances(room_number, object_defs)
+	local world_entrances = {}
+	local entrance_index = 0
+
+	for i = 1, #object_defs do
+		local object_def = object_defs[i]
+		if object_def.type == 'worldentrance' then
+			if world_transition_specs[object_def.target] == nil then
+				error('pietious castle_map unknown world entrance target=' .. tostring(object_def.target))
+			end
+			entrance_index = entrance_index + 1
+			local x = tile_x_to_world(object_def.x)
+			local y = tile_y_to_world(object_def.y)
+			world_entrances[#world_entrances + 1] = {
+				id = string.format('world_entrance_%03d_%02d', room_number, entrance_index),
+				x = x,
+				y = y,
+				target = object_def.target,
+				stair_x = x + constants.world_entrance.trigger_x_offset,
+				stair_y = y + constants.world_entrance.trigger_y_offset,
+			}
+		end
+	end
+
+	return world_entrances
+end
+
 local function room_id_from_number(room_number, room_type)
 	return string.format('%s_room_%03d', room_type, room_number)
 end
@@ -295,17 +369,59 @@ local function load_room_templates()
 			rocks = build_rocks(room_number, object_defs),
 			items = build_items(room_number, object_defs),
 			lithographs = build_lithographs(room_number, object_defs),
+			shrines = build_shrines(room_number, object_defs),
+			world_entrances = build_world_entrances(room_number, object_defs),
 		}
 	end
 
 	return templates
 end
 
+local function attach_world_transition_metadata(room_templates)
+	for _, template in pairs(room_templates) do
+		local world_entrances = template.world_entrances
+		for i = 1, #world_entrances do
+			local world_entrance = world_entrances[i]
+			local spec = world_transition_specs[world_entrance.target]
+			if spec.castle_room_number > 0 then
+				error('pietious castle_map duplicate world entrance target=' .. tostring(world_entrance.target))
+			end
+			spec.castle_room_number = template.room_number
+			spec.castle_spawn_x = world_entrance.stair_x
+			spec.castle_spawn_y = world_entrance.stair_y
+		end
+	end
+
+	for target, spec in pairs(world_transition_specs) do
+		if spec.castle_room_number <= 0 then
+			error('pietious castle_map missing castle entrance for target=' .. tostring(target))
+		end
+		if room_templates[spec.world_room_number] == nil then
+			error('pietious castle_map missing world room for target=' .. tostring(target))
+		end
+	end
+end
+
+local function copy_world_transition(spec)
+	local copied = {}
+	for key, value in pairs(spec) do
+		copied[key] = value
+	end
+	return copied
+end
+
 local room_templates = load_room_templates()
+attach_world_transition_metadata(room_templates)
+
 local room_number_by_id = {}
+local world_transition_by_number = {}
 
 for room_number, template in pairs(room_templates) do
 	room_number_by_id[template.room_id] = room_number
+end
+
+for _, spec in pairs(world_transition_specs) do
+	world_transition_by_number[spec.world_number] = spec
 end
 
 function castle_map.room_number_from_id(room_id)
@@ -314,6 +430,22 @@ end
 
 function castle_map.room_template(room_number)
 	return room_templates[room_number]
+end
+
+function castle_map.world_transition(target)
+	local spec = world_transition_specs[target]
+	if spec == nil then
+		return nil
+	end
+	return copy_world_transition(spec)
+end
+
+function castle_map.world_transition_from_world_number(world_number)
+	local spec = world_transition_by_number[world_number]
+	if spec == nil then
+		return nil
+	end
+	return copy_world_transition(spec)
 end
 
 function castle_map.elevator_routes()
