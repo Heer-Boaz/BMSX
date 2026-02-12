@@ -737,7 +737,6 @@ async function main() {
 		if (!romManifest) throw new Error(`Rom manifest not found at "${respath}"!`);
 		rom_name = romManifest.rom_name ?? rom_name;
 		title = romManifest.title ?? title;
-		let short_name: string = romManifest.short_name ?? 'BMSX';
 		romOutputPath = `dist/${rom_name}${romPackDebug ? '.debug' : ''}.rom`;
 
 		logDivider('Run setup');
