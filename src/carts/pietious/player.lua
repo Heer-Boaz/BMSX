@@ -154,6 +154,7 @@ function player:reset_runtime()
 	self.stairs_bottom_y = self.spawn_y
 	self.stairs_anim_frame = 0
 	self.stairs_anim_distance = 0
+	self.hit_stairs_lock = false
 	self.health = constants.damage.max_health
 	self.max_health = constants.damage.max_health
 	self.hit_invulnerability_timer = 0
@@ -545,6 +546,7 @@ function player:start_dying()
 	self.hit_substate = 0
 	self.hit_recovery_timer = 0
 	self.death_timer = 0
+	self.hit_stairs_lock = false
 	self:reset_hit_invulnerability_sequence()
 	self.last_dx = 0
 	self.last_dy = 0
@@ -563,12 +565,14 @@ function player:take_hit(amount, source_x, source_y, reason)
 
 	local hit_direction = self:get_hit_direction_from_source(source_x)
 	local damage_event = 'damage'
-	if self:has_tag(state_tags.group.stairs) then
+	local hit_on_stairs = self:has_tag(state_tags.group.stairs)
+	if hit_on_stairs then
 		hit_direction = 0
 		damage_event = 'damage_on_stairs'
 	end
 
 	self:reset_sword()
+	self.hit_stairs_lock = hit_on_stairs
 	self.hit_direction = hit_direction
 	self.hit_substate = 0
 	self.hit_recovery_timer = 0
@@ -662,26 +666,8 @@ function player:try_switch_room(direction, keep_stairs_lock)
 		self.y = self.room.world_top - self.room.tile_size
 	end
 
-	local max_x = self.room.world_width - self.width
-	if self.x < 0 then
-		self.x = 0
-	end
-	if self.x > max_x then
-		self.x = max_x
-	end
 	if keep_stairs_lock then
 		self.x = self.stairs_x
-	end
-
-	if direction == 'left' or direction == 'right' then
-		local min_y = self.room.world_top
-		local max_y = self.room.world_height - self.height
-		if self.y < min_y then
-			self.y = min_y
-		end
-		if self.y > max_y then
-			self.y = max_y
-		end
 	end
 
 	self.last_dx = 0
@@ -689,6 +675,7 @@ function player:try_switch_room(direction, keep_stairs_lock)
 	if not keep_stairs_lock then
 		self.stairs_direction = 0
 		self.stairs_x = -1
+		self.hit_stairs_lock = false
 	end
 	eventemitter.eventemitter.instance:emit(constants.events.room_switched, self.id, {
 		from = switch.from_room_id,
@@ -750,7 +737,7 @@ function player:try_vertical_room_switch_from_position()
 			self.previous_y_collision = true
 			return false
 		end
-		local keep_stairs_lock = self:has_tag(state_tags.group.stairs)
+		local keep_stairs_lock = self:has_tag(state_tags.group.stairs) or self.hit_stairs_lock
 		if not self:try_switch_room(direction, keep_stairs_lock) then
 			if direction == 'up' then
 				local up_limit = self.room.world_top - self.room.tile_size
@@ -769,7 +756,10 @@ function player:try_vertical_room_switch_from_position()
 		if keep_stairs_lock and (not self:sync_stairs_after_vertical_room_switch(direction)) then
 			self.stairs_direction = 0
 			self.stairs_x = -1
-			self:dispatch_state_event('stairs_lock_lost_after_room_switch')
+			self.hit_stairs_lock = false
+			if self:has_tag(state_tags.group.stairs) then
+				self:dispatch_state_event('stairs_lock_lost_after_room_switch')
+			end
 		end
 		return true
 	end
@@ -848,6 +838,15 @@ function player:sync_stairs_after_vertical_room_switch(direction)
 	self.last_dx = 0
 	self.last_dy = 0
 	return true
+end
+
+function player:update_hit_stairs_lock()
+	if not self.hit_stairs_lock then
+		return
+	end
+	if (not self:has_tag(state_tags.variant.hit_fall)) and (not self:has_tag(state_tags.variant.hit_collision)) then
+		self.hit_stairs_lock = false
+	end
 end
 
 function player:leave_stairs(event_name)
@@ -1825,6 +1824,30 @@ function player:resolve_hit_overlap_if_needed()
 	end
 end
 
+function player:is_ground_below_for_hit_on_stairs()
+	local foot_y = self.y + self.height
+	local left_x = self.x + constants.room.tile_unit
+	local right_x = self.x + self.width - constants.room.tile_unit
+	return room_module.is_solid_at_world(self.room, left_x, foot_y)
+		or room_module.is_solid_at_world(self.room, right_x, foot_y)
+end
+
+function player:advance_hit_stairs_fall(dy)
+	local moved_y = 0
+	for i = 1, dy do
+		if self:is_ground_below_for_hit_on_stairs() then
+			break
+		end
+		self.y = self.y + 1
+		moved_y = moved_y + 1
+	end
+	self.previous_x_collision = false
+	self.previous_y_collision = false
+	self.last_dx = 0
+	self.last_dy = moved_y
+	return self:is_ground_below_for_hit_on_stairs()
+end
+
 function player:tick_hit_fall()
 	self:reset_sword()
 
@@ -1880,6 +1903,36 @@ function player:tick_hit_collision()
 		end
 	end
 
+	if self.hit_stairs_lock then
+		local hit_ground = false
+		if self.hit_substate >= 4 then
+			hit_ground = self:advance_hit_stairs_fall(dy)
+		else
+			self.previous_x_collision = false
+			self.previous_y_collision = false
+			self.last_dx = 0
+			self.last_dy = 0
+		end
+
+		if self.hit_substate >= 4 then
+			if self.health <= 0 then
+				self:start_dying()
+				return
+			end
+			if hit_ground then
+				self.hit_substate = 0
+				self.hit_recovery_timer = 0
+				self.last_dx = 0
+				self.last_dy = 0
+				self:dispatch_state_event('hit_ground')
+				return
+			end
+		end
+
+		self.hit_substate = self.hit_substate + 1
+		return
+	end
+
 	local hit_ground = false
 	if self.hit_substate >= 4 then
 		hit_ground = (not self:collides_at(self.x, self.y)) and self:collides_at(self.x, self.y + dy)
@@ -1919,6 +1972,7 @@ function player:tick_hit_recovery()
 
 	self.hit_recovery_timer = 0
 	self.hit_substate = 0
+	self.hit_stairs_lock = false
 	self:dispatch_state_event('hit_recovered')
 end
 
@@ -1939,12 +1993,16 @@ function player:tick()
 	if not self:has_tag(state_tags.variant.jumping) then
 		self.jumping_from_elevator = false
 	end
+	self:update_hit_stairs_lock()
 	self:try_vertical_room_switch_from_position()
 
-	if self:has_tag(state_tags.variant.quiet)
+	local skip_hit_overlap = self.hit_stairs_lock
+		and (self:has_tag(state_tags.variant.hit_fall) or self:has_tag(state_tags.variant.hit_collision))
+	if (not skip_hit_overlap)
+		and (self:has_tag(state_tags.variant.quiet)
 		or self:has_tag(state_tags.variant.hit_fall)
 		or self:has_tag(state_tags.variant.hit_collision)
-		or self:has_tag(state_tags.variant.hit_recovery) then
+		or self:has_tag(state_tags.variant.hit_recovery)) then
 		self:resolve_hit_overlap_if_needed()
 	end
 
@@ -2363,6 +2421,7 @@ local function register_player_definition()
 					stairs_bottom_y = constants.player.start_y,
 					stairs_anim_frame = 0,
 					stairs_anim_distance = 0,
+					hit_stairs_lock = false,
 				health = constants.damage.max_health,
 				max_health = constants.damage.max_health,
 				hit_invulnerability_timer = 0,

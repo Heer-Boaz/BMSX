@@ -665,8 +665,8 @@ function player:new(config)
 	instance.player_index = config.player_index or 1
 	instance.spawn_x = config.spawn_x
 	instance.spawn_y = config.spawn_y
-	instance.width = config.width or 16
-	instance.height = config.height or 32
+	instance.width = config.width or constants.player.width
+	instance.height = config.height or constants.player.height
 	
 	-- initialize all ram variables as instance members
 	player.ctor(instance, config)
@@ -2208,18 +2208,18 @@ function player:code_bfb8f7_full()
 	local state1029 = self.ram_ramtable1029lo
 	if state1029 == 0x0012 or state1029 == 0x0013 or state1029 == 0x0019 then
 		-- rolling states - always allow jump (skip checks below)
-	else
-			-- LDA.w RAMTable1631Lo,x / BNE RTS           ; LINE 111640
-			if self.ram_ramtable1631lo ~= 0 then
+		else
+				-- LDA.w RAMTable1631Lo,x / BNE RTS           ; LINE 111640
+				if self.ram_ramtable1631lo ~= 0 then
+					return  -- CODE_BFB9B1: RTS
+				end
+			-- LDA.w RAMTable1209Lo,x / AND.w #$0007      ; LINE 111643
+			-- CMP.b $F3 / BPL RTS                        ; LINE 111646
+			local anim_idx = self.ram_ramtable1209lo & 0x0007
+			if anim_idx >= self.zp_f3 then
 				return  -- CODE_BFB9B1: RTS
 			end
-		-- LDA.w RAMTable1209Lo,x / AND.w #$0007      ; LINE 111643
-		-- CMP.b $F3 / BPL RTS                        ; LINE 111646
-		local anim_idx = self.ram_ramtable1209lo & 0x0007
-		if anim_idx >= self.zp_f3 then
-			return  -- CODE_BFB9B1: RTS
 		end
-	end
 	
 	-- CODE_BFB94F: INITIATE JUMP
 	-- LDA.w $1699,y / ORA.w #$0003 / STA.w $1699,y ; LINE 111652
@@ -2265,6 +2265,7 @@ function player:code_bfb8f7_full()
 		self.ram_ramtable1029lo = 0x0015
 		self.ram_16f9 = 0xFFB8
 		self.ram_16ad = define_dkc1_animationid_rambiriddenbydk_jumpontire
+		self.ram_1e19 = self.ram_1e19 | 0x0001
 		return
 	end
 
@@ -2274,6 +2275,7 @@ function player:code_bfb8f7_full()
 		self.ram_ramtable1029lo = 0x001A
 		self.ram_16f9 = 0xFFB8
 		self.ram_16ad = define_dkc1_animationid_dk_holdjump
+		self.ram_1e19 = self.ram_1e19 | 0x0001
 		return
 	end
 
@@ -2283,6 +2285,7 @@ function player:code_bfb8f7_full()
 	self:code_beb233()
 	self.jump_script_kind = 'data_bea6a9'
 	self.jump_script_frame = 0
+	self.ram_1e19 = self.ram_1e19 | 0x0001
 end
 
 -- code_bfbd4f: roll setup (line 112176)
@@ -2865,6 +2868,7 @@ function player:code_bfba88()
 
 	-- lda.w #$0001 / sta.w !RAM_DKC1_NorSpr_RAMTable1029Lo,x
 	self.ram_ramtable1029lo = 0x0001
+	self.ram_1e19 = self.ram_1e19 | 0x0001
 	-- lda.w #!Define_DKC1_AnimationID_DK_JumpOffVerticalRope
 	self.ram_16ad = define_dkc1_animationid_dk_jumpoffverticalrope
 
@@ -3164,15 +3168,18 @@ function player:code_bfa13b()
 	if self.ram_0512 ~= 0 then
 		self.ram_16ad = define_dkc1_animationid_rambiriddenbydk_jumpontire
 		self.ram_ramtable1029lo = 0x0015
+		self.ram_1e19 = self.ram_1e19 | 0x0001
 		return true
 	end
 	if self.ram_16f5 ~= 0 then
 		self.ram_16ad = define_dkc1_animationid_dk_bouncewhileholding
 		self.ram_ramtable1029lo = 0x001A
+		self.ram_1e19 = self.ram_1e19 | 0x0001
 		return true
 	end
 	self.ram_ramtable1029lo = 0x0001
 	self.ram_16ad = define_dkc1_animationid_dk_jumpoffverticalrope
+	self.ram_1e19 = self.ram_1e19 | 0x0001
 	return true
 end
 
@@ -7787,6 +7794,7 @@ function player:code_bfbda9()
 
 	-- jsr.w code_bf902b
 	self:code_bf902b()
+	self.ram_1e19 = self.ram_1e19 | 0x0001
 end
 
 -- code_bfbde7: roll chain (line 112246)
@@ -8261,12 +8269,14 @@ function player:fill_dkc1_input_ram_from_actions()
 	end
 	if action_triggered('b[p]', player_index) then
 		held = held | joypad_b
+		print(string.format('DBG_INPUT|f=%d|btn=b|held=1', self.zp_28))
 	end
 	if action_triggered('a[p]', player_index) then
 		held = held | joypad_a
 	end
 	if action_triggered('y[p]', player_index) then
 		held = held | joypad_y
+		print(string.format('DBG_INPUT|f=%d|btn=y|held=1', self.zp_28))
 	end
 	if action_triggered('x[p]', player_index) then
 		held = held | joypad_x
@@ -8409,13 +8419,13 @@ local function register_player_definition()
 		class = player,
 		fsms = { player_fsm_id },
 		components = {},
-		defaults = {
-			player_index = 1,
-			width = 16,
-			height = 32,
-			facing = 1,
-			grounded = true,
-			draw_scale_x = 1.0,
+			defaults = {
+				player_index = 1,
+				width = constants.player.width,
+				height = constants.player.height,
+				facing = 1,
+				grounded = true,
+				draw_scale_x = 1.0,
 			draw_scale_y = 1.0,
 			roll_visual = 0,
 		},
