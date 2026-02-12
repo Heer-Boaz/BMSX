@@ -1,4 +1,4 @@
-local constants = require('constants.lua')
+local constants = require('constants')
 
 local ui = {}
 ui.__index = ui
@@ -73,24 +73,19 @@ function ui:tick()
 end
 
 function ui:draw_ui()
-	local hud = constants.hud
 	local player = object(constants.ids.player_instance)
 	put_sprite('game_header', 0, 0, 200)
 	local equipped_sprite_id = secondary_weapon_sprite_id(player.secondary_weapon)
 	if equipped_sprite_id ~= nil then
-		put_sprite(equipped_sprite_id, hud.equipped_item_x * constants.room.tile_size, hud.equipped_item_y * constants.room.tile_size, 202)
+		put_sprite(equipped_sprite_id, constants.hud.equipped_item_x * constants.room.tile_size, constants.hud.equipped_item_y * constants.room.tile_size, 202)
 	end
 
-	local health_x = hud.health_bar_x
-	local health_y = hud.health_bar_y
 	for i = 0, (self.hud_health_level - 1) do
-		put_sprite('energybar_stripe_blue', health_x + i, health_y, 201)
+		put_sprite('energybar_stripe_blue', constants.hud.health_bar_x + i, constants.hud.health_bar_y, 201)
 	end
 
-	local weapon_x = hud.weapon_bar_x
-	local weapon_y = hud.weapon_bar_y
 	for i = 0, (self.hud_weapon_level - 1) do
-		put_sprite('energybar_stripe_red', weapon_x + i, weapon_y, 201)
+		put_sprite('energybar_stripe_red', constants.hud.weapon_bar_x + i, constants.hud.weapon_bar_y, 201)
 	end
 end
 

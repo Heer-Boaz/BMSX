@@ -1,11 +1,11 @@
-local constants = require('constants.lua')
+local constants = require('constants')
 local components = require('components')
 local eventemitter = require('eventemitter')
 
 local enemy_explosion = {}
 enemy_explosion.__index = enemy_explosion
 
-local loot_drop_module = require('loot_drop.lua')
+local loot_drop_module = require('loot_drop')
 
 local explosion_frames = {
 	'explosion_2',

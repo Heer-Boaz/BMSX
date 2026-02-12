@@ -1,4 +1,4 @@
-local constants = require('constants.lua')
+local constants = require('constants')
 local romdir = require('romdir')
 
 local castle_map = {}
@@ -21,6 +21,22 @@ local world_transition_specs = {
 		castle_spawn_x = 0,
 		castle_spawn_y = 0,
 		castle_spawn_facing = 1,
+	},
+}
+
+local map_world_proxies = {
+	[1] = {
+		{ x = 3, y = 2, room_number = 101, is_boss_room = false },
+		{ x = 2, y = 2, room_number = 102, is_boss_room = false },
+		{ x = 2, y = 1, room_number = 103, is_boss_room = false },
+		{ x = 2, y = 0, room_number = 104, is_boss_room = false },
+		{ x = 1, y = 2, room_number = 105, is_boss_room = false },
+		{ x = 1, y = 3, room_number = 106, is_boss_room = false },
+		{ x = 0, y = 3, room_number = 107, is_boss_room = false },
+		{ x = 1, y = 4, room_number = 108, is_boss_room = false },
+		{ x = 2, y = 4, room_number = 109, is_boss_room = false },
+		{ x = 3, y = 4, room_number = 110, is_boss_room = false },
+		{ x = 2, y = 5, room_number = 100, is_boss_room = true },
 	},
 }
 
@@ -407,15 +423,12 @@ end
 
 local room_templates = load_room_templates()
 attach_world_transition_metadata(room_templates)
+local elevator_routes = build_elevator_routes()
 
 local world_transition_by_number = {}
 
 for _, spec in pairs(world_transition_specs) do
 	world_transition_by_number[spec.world_number] = spec
-end
-
-function castle_map.room_template(room_number)
-	return room_templates[room_number]
 end
 
 function castle_map.world_transition(target)
@@ -428,10 +441,9 @@ function castle_map.world_transition_from_world_number(world_number)
 	return copy_world_transition(spec)
 end
 
-function castle_map.elevator_routes()
-	return build_elevator_routes()
-end
-
 castle_map.start_room_number = start_room_number
+castle_map.room_templates = room_templates
+castle_map.elevator_routes = elevator_routes
+castle_map.map_world_proxies = map_world_proxies
 
 return castle_map

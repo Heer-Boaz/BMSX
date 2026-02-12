@@ -1,15 +1,7 @@
-local constants = require('constants.lua')
+local constants = require('constants')
 local components = require('components')
 local world_item = {}
 world_item.__index = world_item
-
-local function sprite_for_item_type(item_type)
-	local sprite_id = constants.world_item.sprite[item_type]
-	if sprite_id == nil then
-		error('pietious world_item invalid item_type=' .. tostring(item_type))
-	end
-	return sprite_id
-end
 
 function world_item:bind_events()
 	self.events:on({
@@ -22,7 +14,7 @@ function world_item:bind_events()
 end
 
 function world_item:update_visual()
-	self.body_sprite.imgid = sprite_for_item_type(self.item_type)
+	self.body_sprite.imgid = constants.world_item.sprite[self.item_type]
 	self.body_sprite.enabled = true
 	self.body_collider.enabled = true
 end

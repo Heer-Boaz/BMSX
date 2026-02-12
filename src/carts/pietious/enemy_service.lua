@@ -1,6 +1,6 @@
-local constants = require('constants.lua')
+local constants = require('constants')
 local eventemitter = require('eventemitter')
-local enemy_module = require('enemy.lua')
+local enemy_module = require('enemy')
 
 local enemy_service = {}
 enemy_service.__index = enemy_service
@@ -110,10 +110,6 @@ function enemy_service:enter_current_room()
 	end
 end
 
-function enemy_service:on_room_switched(_event)
-	self:enter_current_room()
-end
-
 function enemy_service:on_enemy_defeated(event)
 	self:require_current_room_event(event.room_number, 'enemy_defeated')
 	self.destroyed_enemy_ids[event.enemy_id] = true
@@ -135,8 +131,8 @@ function enemy_service:bind_events()
 	eventemitter.eventemitter.instance:on({
 		event = constants.events.room_switched,
 		subscriber = self,
-		handler = function(event)
-			self:on_room_switched(event)
+		handler = function(_event)
+			self:enter_current_room()
 		end,
 	})
 

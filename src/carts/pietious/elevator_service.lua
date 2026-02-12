@@ -1,10 +1,10 @@
-local constants = require('constants.lua')
-local castle_map = require('castle_map.lua')
+local constants = require('constants')
+local castle_map = require('castle_map')
 
 local elevator_service = {}
 
 local function build_elevator_routes()
-	local route_specs = castle_map.elevator_routes()
+	local route_specs = castle_map.elevator_routes
 	local routes = {}
 	for i = 1, #route_specs do
 		local spec = route_specs[i]

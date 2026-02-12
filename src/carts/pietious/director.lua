@@ -1,4 +1,4 @@
-local constants = require('constants.lua')
+local constants = require('constants')
 
 local director = {}
 director.__index = director
@@ -6,7 +6,7 @@ director.__index = director
 function director:bind_visual()
 	local rc = self:get_component('customvisualcomponent')
 	rc.producer = function(_ctx)
-		self:render_frame()
+		self:draw_room_tiles()
 	end
 end
 
@@ -24,10 +24,6 @@ function director:draw_room_tiles()
 			put_sprite(row[x], draw_x, draw_y, 20)
 		end
 	end
-end
-
-function director:render_frame()
-	self:draw_room_tiles()
 end
 
 local function define_director_fsm()

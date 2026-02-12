@@ -1,6 +1,6 @@
-local constants = require('constants.lua')
-local room_module = require('room.lua')
-local pepernoot_projectile_module = require('pepernoot_projectile.lua')
+local constants = require('constants')
+local room_module = require('room')
+local pepernoot_projectile_module = require('pepernoot_projectile')
 
 local player_action_effects = {}
 
@@ -29,18 +29,17 @@ function player_action_effects.attach_player_methods(player)
 
 	function player:find_near_lithograph()
 		local lithographs = self.room.lithographs
-		local player_left = self.x
-		local player_top = self.y
-		local player_right = self.x + self.width
-		local player_bottom = self.y + self.height
-		local hit = constants.lithograph
+			local player_left = self.x
+			local player_top = self.y
+			local player_right = self.x + self.width
+			local player_bottom = self.y + self.height
 
-		for i = 1, #lithographs do
-			local lithograph = lithographs[i]
-			local area_left = lithograph.x + hit.hit_left_px
-			local area_top = lithograph.y + hit.hit_top_px
-			local area_right = lithograph.x + hit.hit_right_px
-			local area_bottom = lithograph.y + hit.hit_bottom_px
+			for i = 1, #lithographs do
+				local lithograph = lithographs[i]
+				local area_left = lithograph.x + constants.lithograph.hit_left_px
+				local area_top = lithograph.y + constants.lithograph.hit_top_px
+				local area_right = lithograph.x + constants.lithograph.hit_right_px
+				local area_bottom = lithograph.y + constants.lithograph.hit_bottom_px
 			if player_right >= area_left and player_left <= area_right and player_bottom >= area_top and player_top <= area_bottom then
 				return lithograph
 			end
@@ -53,18 +52,17 @@ end
 local function try_fire_pepernoot_effect(context)
 	local owner = context.owner
 	owner:refresh_active_pepernoot_projectiles()
-	local sw = constants.secondary_weapon
-	if #owner.pepernoot_projectile_ids >= sw.pepernoot_max_active then
+	if #owner.pepernoot_projectile_ids >= constants.secondary_weapon.pepernoot_max_active then
 		return
 	end
-	if owner.weapon_level < sw.pepernoot_weapon_level_cost then
+	if owner.weapon_level < constants.secondary_weapon.pepernoot_weapon_level_cost then
 		return
 	end
 
 	owner.pepernoot_projectile_sequence = owner.pepernoot_projectile_sequence + 1
 	local projectile_id = string.format('pepernoot_%d_%d', owner.player_index, owner.pepernoot_projectile_sequence)
-	local spawn_x = owner.x + (owner.facing < 0 and -sw.pepernoot_spawn_offset_x or sw.pepernoot_spawn_offset_x)
-	local spawn_y = owner.y + sw.pepernoot_spawn_offset_y
+	local spawn_x = owner.x + (owner.facing < 0 and -constants.secondary_weapon.pepernoot_spawn_offset_x or constants.secondary_weapon.pepernoot_spawn_offset_x)
+	local spawn_y = owner.y + constants.secondary_weapon.pepernoot_spawn_offset_y
 	spawn_x, spawn_y = room_module.snap_world_to_tile(owner.room, spawn_x, spawn_y)
 
 	spawn_object(pepernoot_projectile_module.pepernoot_projectile_def_id, {
@@ -79,7 +77,7 @@ local function try_fire_pepernoot_effect(context)
 	})
 
 	owner.pepernoot_projectile_ids[#owner.pepernoot_projectile_ids + 1] = projectile_id
-	owner.weapon_level = owner.weapon_level - sw.pepernoot_weapon_level_cost
+	owner.weapon_level = owner.weapon_level - constants.secondary_weapon.pepernoot_weapon_level_cost
 end
 
 local function try_use_secondary_effect(context)

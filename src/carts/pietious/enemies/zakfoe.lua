@@ -1,6 +1,6 @@
-local constants = require('constants.lua')
+local constants = require('constants')
 local behaviourtree = require('behaviourtree')
-local room_module = require('room.lua')
+local room_module = require('room')
 
 local zakfoe = {}
 

@@ -1,4 +1,4 @@
-local constants = require('constants.lua')
+local constants = require('constants')
 
 local shrine_world_view = {}
 shrine_world_view.__index = shrine_world_view

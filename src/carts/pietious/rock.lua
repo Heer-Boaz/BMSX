@@ -1,4 +1,4 @@
-local constants = require('constants.lua')
+local constants = require('constants')
 local components = require('components')
 local rock = {}
 rock.__index = rock

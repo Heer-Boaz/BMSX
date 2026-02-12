@@ -1,12 +1,8 @@
-local constants = require('constants.lua')
+local constants = require('constants')
 local behaviourtree = require('behaviourtree')
 
 local cloud = {}
 local full_circle_milliradians = 6283
-
-local function random_between(min_value, max_value)
-	return math.random(min_value, max_value)
-end
 
 local function consume_axis_accum(accum, speed_num, speed_den)
 	accum = accum + speed_num
@@ -89,12 +85,12 @@ function cloud.bt_tick(self, blackboard)
 	vlok_ticks = vlok_ticks - 1
 	if vlok_ticks <= 0 then
 		for i = 1, 3 do
-			local random_x = 0
-			local random_y = 0
-			while math.abs(random_x + random_y) < 2 do
-				random_x = random_between(-5, 4)
-				random_y = random_between(-5, 4)
-			end
+				local random_x = 0
+				local random_y = 0
+				while math.abs(random_x + random_y) < 2 do
+					random_x = math.random(-5, 4)
+					random_y = math.random(-5, 4)
+				end
 			self:spawn_child_enemy('vlokfoe', self.x + 16, self.y + 12, {
 				direction = random_x < 0 and 'left' or 'right',
 				speedx = random_x,

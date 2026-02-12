@@ -1,21 +1,21 @@
-local constants = require('constants.lua')
+local constants = require('constants')
 local components = require('components')
 local eventemitter = require('eventemitter')
 local behaviourtree = require('behaviourtree')
-local enemy_explosion_module = require('enemy_explosion.lua')
-local mijterfoe_module = require('enemies/mijterfoe.lua')
-local zakfoe_module = require('enemies/zakfoe.lua')
-local crossfoe_module = require('enemies/crossfoe.lua')
-local boekfoe_module = require('enemies/boekfoe.lua')
-local paperfoe_module = require('enemies/paperfoe.lua')
-local muziekfoe_module = require('enemies/muziekfoe.lua')
-local nootfoe_module = require('enemies/nootfoe.lua')
-local stafffoe_module = require('enemies/stafffoe.lua')
-local staffspawn_module = require('enemies/staffspawn.lua')
-local cloud_module = require('enemies/cloud.lua')
-local vlokspawner_module = require('enemies/vlokspawner.lua')
-local vlokfoe_module = require('enemies/vlokfoe.lua')
-local marspeinenaardappel_module = require('enemies/marspeinenaardappel.lua')
+local enemy_explosion_module = require('enemy_explosion')
+local mijterfoe_module = require('enemies/mijterfoe')
+local zakfoe_module = require('enemies/zakfoe')
+local crossfoe_module = require('enemies/crossfoe')
+local boekfoe_module = require('enemies/boekfoe')
+local paperfoe_module = require('enemies/paperfoe')
+local muziekfoe_module = require('enemies/muziekfoe')
+local nootfoe_module = require('enemies/nootfoe')
+local stafffoe_module = require('enemies/stafffoe')
+local staffspawn_module = require('enemies/staffspawn')
+local cloud_module = require('enemies/cloud')
+local vlokspawner_module = require('enemies/vlokspawner')
+local vlokfoe_module = require('enemies/vlokfoe')
+local marspeinenaardappel_module = require('enemies/marspeinenaardappel')
 
 local enemy = {}
 enemy.__index = enemy
@@ -82,10 +82,6 @@ end
 
 local death_effect_sequence = 0
 local spawned_enemy_sequence = 0
-
-local function random_between(min_value, max_value)
-	return math.random(min_value, max_value)
-end
 
 local function random_percent_hit(chance_pct)
 	return math.random(100) <= chance_pct
@@ -218,67 +214,23 @@ function enemy:bind_overlap_events()
 	})
 end
 
-function enemy:update_mijter_visual()
-	return enemy_kind_modules.mijterfoe.update_visual(self)
-end
-
-function enemy:update_zakfoe_visual()
-	return enemy_kind_modules.zakfoe.update_visual(self)
-end
-
-function enemy:update_crossfoe_visual()
-	return enemy_kind_modules.crossfoe.update_visual(self)
-end
-
-function enemy:update_boekfoe_visual()
-	return enemy_kind_modules.boekfoe.update_visual(self, constants.ids.enemy_def .. '.timeline.boekfoe')
-end
-
-function enemy:update_paperfoe_visual()
-	return enemy_kind_modules.paperfoe.update_visual(self)
-end
-
-function enemy:update_muziekfoe_visual()
-	return enemy_kind_modules.muziekfoe.update_visual(self)
-end
-
-function enemy:update_nootfoe_visual()
-	return enemy_kind_modules.nootfoe.update_visual(self)
-end
-
-function enemy:update_stafffoe_visual()
-	return enemy_kind_modules.stafffoe.update_visual(self)
-end
-
-function enemy:update_staffspawn_visual()
-	return enemy_kind_modules.staffspawn.update_visual(self)
-end
-
-function enemy:update_cloud_visual()
-	return enemy_kind_modules.cloud.update_visual(self, constants.ids.enemy_def .. '.timeline.cloud')
-end
-
-function enemy:update_vlokfoe_visual()
-	return enemy_kind_modules.vlokfoe.update_visual(self)
-end
-
-function enemy:update_marspeinenaardappel_visual()
-	return enemy_kind_modules.marspeinenaardappel.update_visual(self)
-end
-
-local visual_methods_by_kind = {
-	mijterfoe = 'update_mijter_visual',
-	zakfoe = 'update_zakfoe_visual',
-	crossfoe = 'update_crossfoe_visual',
-	boekfoe = 'update_boekfoe_visual',
-	paperfoe = 'update_paperfoe_visual',
-	muziekfoe = 'update_muziekfoe_visual',
-	nootfoe = 'update_nootfoe_visual',
-	stafffoe = 'update_stafffoe_visual',
-	staffspawn = 'update_staffspawn_visual',
-	cloud = 'update_cloud_visual',
-	vlokfoe = 'update_vlokfoe_visual',
-	marspeinenaardappel = 'update_marspeinenaardappel_visual',
+local visual_functions_by_kind = {
+	mijterfoe = enemy_kind_modules.mijterfoe.update_visual,
+	zakfoe = enemy_kind_modules.zakfoe.update_visual,
+	crossfoe = enemy_kind_modules.crossfoe.update_visual,
+	boekfoe = function(target)
+		return enemy_kind_modules.boekfoe.update_visual(target, constants.ids.enemy_def .. '.timeline.boekfoe')
+	end,
+	paperfoe = enemy_kind_modules.paperfoe.update_visual,
+	muziekfoe = enemy_kind_modules.muziekfoe.update_visual,
+	nootfoe = enemy_kind_modules.nootfoe.update_visual,
+	stafffoe = enemy_kind_modules.stafffoe.update_visual,
+	staffspawn = enemy_kind_modules.staffspawn.update_visual,
+	cloud = function(target)
+		return enemy_kind_modules.cloud.update_visual(target, constants.ids.enemy_def .. '.timeline.cloud')
+	end,
+	vlokfoe = enemy_kind_modules.vlokfoe.update_visual,
+	marspeinenaardappel = enemy_kind_modules.marspeinenaardappel.update_visual,
 }
 
 function enemy:update_visual_components()
@@ -294,12 +246,12 @@ function enemy:update_visual_components()
 	body_sprite.enabled = true
 	body_collider.enabled = true
 
-	local visual_method = visual_methods_by_kind[self.kind]
-	if visual_method == nil then
+	local visual_function = visual_functions_by_kind[self.kind]
+	if visual_function == nil then
 		error('pietious enemy has no visual method: ' .. tostring(self.kind))
 	end
 
-	local imgid, flip_h, flip_v, color = self[visual_method](self)
+	local imgid, flip_h, flip_v, color = visual_function(self)
 	if color == nil then
 		color = noot_colors[1]
 	end
@@ -427,10 +379,10 @@ function enemy:configure_from_room_def(def, room)
 	self.noot_color = noot_colors[1]
 	self:set_body_hit_area(2, 2, 14, 14)
 	local kind_module = get_kind_module(self.kind)
-	kind_module.configure(self, def, {
-		noot_colors = noot_colors,
-		random_between = random_between,
-	})
+		kind_module.configure(self, def, {
+			noot_colors = noot_colors,
+			random_between = math.random,
+		})
 
 	self:set_active_behaviour_tree(self.kind)
 
@@ -510,6 +462,9 @@ function enemy:on_overlap(event)
 end
 
 function enemy:tick()
+	if self.active_bt_id == '' then
+		return
+	end
 	self:update_visual_components()
 end
 
@@ -566,12 +521,12 @@ local function define_enemy_behaviour_tree()
 								return target:has_tag('e.w')
 							end,
 						},
-						{
-							type = 'action',
-							action = function(target, blackboard)
-								return enemy_kind_modules.mijterfoe.bt_tick_waiting(target, blackboard, random_between)
-							end,
-						},
+							{
+								type = 'action',
+								action = function(target, blackboard)
+									return enemy_kind_modules.mijterfoe.bt_tick_waiting(target, blackboard, math.random)
+								end,
+							},
 					},
 				},
 				{
@@ -583,12 +538,12 @@ local function define_enemy_behaviour_tree()
 								return target:has_tag('e.f')
 							end,
 						},
-						{
-							type = 'action',
-							action = function(target, blackboard)
-								return enemy_kind_modules.mijterfoe.bt_tick_flying(target, blackboard, random_between)
-							end,
-						},
+							{
+								type = 'action',
+								action = function(target, blackboard)
+									return enemy_kind_modules.mijterfoe.bt_tick_flying(target, blackboard, math.random)
+								end,
+							},
 					},
 				},
 			},
@@ -646,14 +601,14 @@ local function define_enemy_behaviour_tree()
 		},
 	})
 
-	behaviourtree.register_definition(enemy_bt_ids.boekfoe, {
-		root = {
-			type = 'action',
-			action = function(target, blackboard)
-				return enemy_kind_modules.boekfoe.bt_tick(target, blackboard, random_between)
-			end,
-		},
-	})
+		behaviourtree.register_definition(enemy_bt_ids.boekfoe, {
+			root = {
+				type = 'action',
+				action = function(target, blackboard)
+					return enemy_kind_modules.boekfoe.bt_tick(target, blackboard, math.random)
+				end,
+			},
+		})
 
 	behaviourtree.register_definition(enemy_bt_ids.paperfoe, {
 		root = {
@@ -664,14 +619,14 @@ local function define_enemy_behaviour_tree()
 		},
 	})
 
-	behaviourtree.register_definition(enemy_bt_ids.muziekfoe, {
-		root = {
-			type = 'action',
-			action = function(target, blackboard)
-				return enemy_kind_modules.muziekfoe.bt_tick(target, blackboard, get_delta_from_source_to_target_scaled, random_between)
-			end,
-		},
-	})
+		behaviourtree.register_definition(enemy_bt_ids.muziekfoe, {
+			root = {
+				type = 'action',
+				action = function(target, blackboard)
+					return enemy_kind_modules.muziekfoe.bt_tick(target, blackboard, get_delta_from_source_to_target_scaled, math.random)
+				end,
+			},
+		})
 
 	behaviourtree.register_definition(enemy_bt_ids.nootfoe, {
 		root = {
@@ -682,14 +637,14 @@ local function define_enemy_behaviour_tree()
 		},
 	})
 
-	behaviourtree.register_definition(enemy_bt_ids.stafffoe, {
-		root = {
-			type = 'action',
-			action = function(target, blackboard)
-				return enemy_kind_modules.stafffoe.bt_tick(target, blackboard, random_between, speed_components_from_angle)
-			end,
-		},
-	})
+		behaviourtree.register_definition(enemy_bt_ids.stafffoe, {
+			root = {
+				type = 'action',
+				action = function(target, blackboard)
+					return enemy_kind_modules.stafffoe.bt_tick(target, blackboard, math.random, speed_components_from_angle)
+				end,
+			},
+		})
 
 	behaviourtree.register_definition(enemy_bt_ids.staffspawn, {
 		root = {
@@ -709,14 +664,14 @@ local function define_enemy_behaviour_tree()
 		},
 	})
 
-	behaviourtree.register_definition(enemy_bt_ids.vlokspawner, {
-		root = {
-			type = 'action',
-			action = function(target, blackboard)
-				return enemy_kind_modules.vlokspawner.bt_tick(target, blackboard, random_between)
-			end,
-		},
-	})
+		behaviourtree.register_definition(enemy_bt_ids.vlokspawner, {
+			root = {
+				type = 'action',
+				action = function(target, blackboard)
+					return enemy_kind_modules.vlokspawner.bt_tick(target, blackboard, math.random)
+				end,
+			},
+		})
 
 	behaviourtree.register_definition(enemy_bt_ids.vlokfoe, {
 		root = {

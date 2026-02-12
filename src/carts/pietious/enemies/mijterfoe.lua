@@ -1,4 +1,4 @@
-local constants = require('constants.lua')
+local constants = require('constants')
 local behaviourtree = require('behaviourtree')
 
 local mijterfoe = {}

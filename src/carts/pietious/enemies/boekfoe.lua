@@ -1,4 +1,4 @@
-local constants = require('constants.lua')
+local constants = require('constants')
 local behaviourtree = require('behaviourtree')
 
 local boekfoe = {}
@@ -54,14 +54,10 @@ function boekfoe.bt_tick(self, blackboard, random_between)
 	spawn_ticks = spawn_ticks - 1
 
 	if spawn_ticks <= 0 then
-		local x_speed = constants.enemy.paper_speed_x
-		if self.direction == 'left' then
-			x_speed = -x_speed
-		end
 		local y_speed_num = random_between(-5, 4)
 		self:spawn_child_enemy('paperfoe', self.x, self.y, {
-			direction = x_speed < 0 and 'left' or 'right',
-			speedx = x_speed * 5,
+			direction = self.direction == 'left' and 'left' or 'right',
+			speedx = (self.direction == 'left' and -constants.enemy.paper_speed_x or constants.enemy.paper_speed_x) * 5,
 			speedy = y_speed_num,
 			speedden = 5,
 		})

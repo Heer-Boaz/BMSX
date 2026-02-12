@@ -1,6 +1,6 @@
-local constants = require('constants.lua')
+local constants = require('constants')
 local eventemitter = require('eventemitter')
-local world_item_module = require('world_item.lua')
+local world_item_module = require('world_item')
 
 local item_service = {}
 item_service.__index = item_service

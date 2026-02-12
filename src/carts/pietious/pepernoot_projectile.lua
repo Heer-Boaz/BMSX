@@ -1,7 +1,7 @@
-local constants = require('constants.lua')
+local constants = require('constants')
 local components = require('components')
 local eventemitter = require('eventemitter')
-local room_module = require('room.lua')
+local room_module = require('room')
 
 local pepernoot_projectile = {}
 pepernoot_projectile.__index = pepernoot_projectile
@@ -82,8 +82,7 @@ function pepernoot_projectile:tick()
 		return
 	end
 
-	local speed = constants.secondary_weapon.pepernoot_speed_px
-	self.x = self.x + (self.direction * speed)
+	self.x = self.x + (self.direction * constants.secondary_weapon.pepernoot_speed_px)
 	self:update_visual_snap()
 
 	if self.x <= 0 or self.x >= self.room.world_width then

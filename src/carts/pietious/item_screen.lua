@@ -1,29 +1,14 @@
-local constants = require('constants.lua')
+local constants = require('constants')
 local eventemitter = require('eventemitter')
+local castle_map = require('castle_map')
 
 local item_screen = {}
 item_screen.__index = item_screen
 
-local ITEM_OFFSET_X = 11
-local ITEM_OFFSET_Y = 6
-local SELECTOR_BLINK_FRAMES = 5
-local MAP_TITLE_X = 49
-
-local map_world_proxies = {
-	[1] = {
-		{ x = 3, y = 2, room_number = 101, is_boss_room = false },
-		{ x = 2, y = 2, room_number = 102, is_boss_room = false },
-		{ x = 2, y = 1, room_number = 103, is_boss_room = false },
-		{ x = 2, y = 0, room_number = 104, is_boss_room = false },
-		{ x = 1, y = 2, room_number = 105, is_boss_room = false },
-		{ x = 1, y = 3, room_number = 106, is_boss_room = false },
-		{ x = 0, y = 3, room_number = 107, is_boss_room = false },
-		{ x = 1, y = 4, room_number = 108, is_boss_room = false },
-		{ x = 2, y = 4, room_number = 109, is_boss_room = false },
-		{ x = 3, y = 4, room_number = 110, is_boss_room = false },
-		{ x = 2, y = 5, room_number = 100, is_boss_room = true },
-	},
-}
+local item_offset_x = 11
+local item_offset_y = 6
+local selector_blink_frames = 5
+local map_title_x = 49
 
 local secondary_weapon_order = {
 	'pepernoot',
@@ -51,14 +36,6 @@ local item_position_offsets = {
 	schoentjes = { x = 3, y = 0 },
 	greenvase = { x = 3, y = 2 },
 }
-
-local function sprite_for_item_type(item_type)
-	local sprite_id = constants.world_item.sprite[item_type]
-	if sprite_id == nil then
-		error('pietious item_screen invalid item_type=' .. tostring(item_type))
-	end
-	return sprite_id
-end
 
 function item_screen:bind_visual()
 	local rc = self:get_component('customvisualcomponent')
@@ -97,8 +74,8 @@ end
 
 function item_screen:item_position_px(item_type)
 	local offset = item_position_offsets[item_type]
-	local tx = ITEM_OFFSET_X + offset.x
-	local ty = ITEM_OFFSET_Y + offset.y + (constants.room.hud_height / constants.room.tile_size)
+	local tx = item_offset_x + offset.x
+	local ty = item_offset_y + offset.y + (constants.room.hud_height / constants.room.tile_size)
 	return tx * constants.room.tile_size, ty * constants.room.tile_size
 end
 
@@ -110,7 +87,7 @@ function item_screen:draw_inventory_items()
 		if player:has_inventory_item(item_type) then
 			if item_type ~= 'map_world1' or room_space == constants.spaces.world then
 				local x, y = self:item_position_px(item_type)
-				put_sprite(sprite_for_item_type(item_type), x, y, 321)
+				put_sprite(constants.world_item.sprite[item_type], x, y, 321)
 			end
 		end
 	end
@@ -136,12 +113,12 @@ function item_screen:draw_map()
 		return
 	end
 
-	local map_proxies = map_world_proxies[world_number]
+	local map_proxies = castle_map.map_world_proxies[world_number]
 	if map_proxies == nil then
 		error('pietious item_screen missing map proxy data for world=' .. tostring(world_number))
 	end
 
-	put_sprite('f1_map_title', MAP_TITLE_X, 103 + constants.room.hud_height, 323)
+	put_sprite('f1_map_title', map_title_x, 103 + constants.room.hud_height, 323)
 
 	for i = 1, #map_proxies do
 		local proxy = map_proxies[i]
@@ -161,7 +138,7 @@ end
 
 function item_screen:tick_selector_blink()
 	self.selector_blink_counter = self.selector_blink_counter + 1
-	if self.selector_blink_counter >= SELECTOR_BLINK_FRAMES then
+	if self.selector_blink_counter >= selector_blink_frames then
 		self.selector_blink_counter = 0
 		self.selector_hidden = not self.selector_hidden
 		self.map_highlight = not self.map_highlight

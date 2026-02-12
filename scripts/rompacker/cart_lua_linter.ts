@@ -26,6 +26,9 @@ import type {
 
 type LuaLintIssueRule =
 	'uppercase_code_pattern' |
+	'visual_update_pattern' |
+	'pure_copy_function_pattern' |
+	'useless_assert_pattern' |
 	'getter_setter_pattern' |
 	'single_line_method_pattern' |
 	'builtin_recreation_pattern' |
@@ -262,6 +265,24 @@ function getFunctionParameterNames(functionExpression: LuaFunctionExpression): R
 	return functionExpression.parameters.map(parameter => parameter.name);
 }
 
+function getFunctionLeafName(functionName: string): string {
+	const dotIndex = functionName.lastIndexOf('.');
+	const colonIndex = functionName.lastIndexOf(':');
+	const separatorIndex = Math.max(dotIndex, colonIndex);
+	if (separatorIndex === -1) {
+		return functionName;
+	}
+	return functionName.slice(separatorIndex + 1);
+}
+
+function isVisualUpdateLikeFunctionName(functionName: string): boolean {
+	if (!functionName || functionName === '<anonymous>') {
+		return false;
+	}
+	const leaf = getFunctionLeafName(functionName).toLowerCase();
+	return /^update(?:_[a-z0-9]+)*_visual(?:_[a-z0-9]+)*$/.test(leaf);
+}
+
 function isMethodLikeFunctionDeclaration(statement: LuaFunctionDeclarationStatement): boolean {
 	return statement.name.identifiers.length > 1 || !!statement.name.methodName;
 }
@@ -312,6 +333,74 @@ function isBuiltinCallExpression(expression: LuaCallExpression): boolean {
 		return false;
 	}
 	return BUILTIN_TABLE_NAMES.has(expression.callee.base.name);
+}
+
+function getTableFieldKey(field: LuaTableField): string {
+	if (field.kind === LuaTableFieldKind.IdentifierKey) {
+		return field.name;
+	}
+	if (field.kind !== LuaTableFieldKind.ExpressionKey) {
+		return undefined;
+	}
+	if (field.key.kind === LuaSyntaxKind.StringLiteralExpression) {
+		return field.key.value;
+	}
+	if (field.key.kind === LuaSyntaxKind.IdentifierExpression) {
+		return field.key.name;
+	}
+	return undefined;
+}
+
+function getCopiedSourceKey(expression: LuaExpression, sourceIdentifier: string): string {
+	if (expression.kind === LuaSyntaxKind.MemberExpression) {
+		if (expression.base.kind !== LuaSyntaxKind.IdentifierExpression || expression.base.name !== sourceIdentifier) {
+			return undefined;
+		}
+		return expression.identifier;
+	}
+	if (expression.kind !== LuaSyntaxKind.IndexExpression) {
+		return undefined;
+	}
+	if (expression.base.kind !== LuaSyntaxKind.IdentifierExpression || expression.base.name !== sourceIdentifier) {
+		return undefined;
+	}
+	if (expression.index.kind === LuaSyntaxKind.StringLiteralExpression) {
+		return expression.index.value;
+	}
+	if (expression.index.kind === LuaSyntaxKind.IdentifierExpression) {
+		return expression.index.name;
+	}
+	return undefined;
+}
+
+function matchesPureCopyFunctionPattern(functionExpression: LuaFunctionExpression): boolean {
+	if (functionExpression.parameters.length !== 1) {
+		return false;
+	}
+	const body = functionExpression.body.body;
+	if (body.length !== 1) {
+		return false;
+	}
+	const onlyStatement = body[0];
+	if (onlyStatement.kind !== LuaSyntaxKind.ReturnStatement || onlyStatement.expressions.length !== 1) {
+		return false;
+	}
+	const onlyExpression = onlyStatement.expressions[0];
+	if (onlyExpression.kind !== LuaSyntaxKind.TableConstructorExpression || onlyExpression.fields.length === 0) {
+		return false;
+	}
+	const sourceIdentifier = functionExpression.parameters[0].name;
+	for (const field of onlyExpression.fields) {
+		const fieldKey = getTableFieldKey(field);
+		if (!fieldKey) {
+			return false;
+		}
+		const copiedKey = getCopiedSourceKey(field.value, sourceIdentifier);
+		if (!copiedKey || copiedKey !== fieldKey) {
+			return false;
+		}
+	}
+	return true;
 }
 
 function matchesCallDelegationGetter(expression: LuaExpression, parameterNames: ReadonlyArray<string>): boolean {
@@ -473,6 +562,38 @@ function getCallMethodName(expression: LuaCallExpression): string {
 	return undefined;
 }
 
+function isErrorCallExpression(expression: LuaExpression): boolean {
+	if (expression.kind !== LuaSyntaxKind.CallExpression) {
+		return false;
+	}
+	const callExpression = expression as LuaCallExpression;
+	return callExpression.callee.kind === LuaSyntaxKind.IdentifierExpression && callExpression.callee.name === 'error';
+}
+
+function isErrorTerminatingStatement(statement: LuaStatement): boolean {
+	if (statement.kind === LuaSyntaxKind.CallStatement) {
+		return isErrorCallExpression(statement.expression);
+	}
+	if (statement.kind === LuaSyntaxKind.ReturnStatement && statement.expressions.length === 1) {
+		return isErrorCallExpression(statement.expressions[0]);
+	}
+	return false;
+}
+
+function matchesUselessAssertPattern(statement: LuaIfStatement): boolean {
+	for (const clause of statement.clauses) {
+		if (!clause.condition) {
+			continue;
+		}
+		for (const clauseStatement of clause.block.body) {
+			if (isErrorTerminatingStatement(clauseStatement)) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
 function lintForbiddenStateCalls(expression: LuaCallExpression, issues: LuaLintIssue[]): void {
 	const receiverName = getCallReceiverName(expression);
 	if (!receiverName || !FORBIDDEN_STATE_CALL_RECEIVERS.has(receiverName)) {
@@ -551,6 +672,15 @@ function lintFunctionBody(
 	options: { readonly isMethodDeclaration: boolean; },
 ): void {
 	const isNamedFunction = functionName !== '<anonymous>';
+	const isVisualUpdateLike = isNamedFunction && isVisualUpdateLikeFunctionName(functionName);
+	if (isVisualUpdateLike) {
+		pushIssue(
+			issues,
+			'visual_update_pattern',
+			functionExpression,
+			`update_visual-style code is forbidden ("${functionName}"). Use deterministic initialization and on-change updates.`,
+		);
+	}
 	const isGetterOrSetter = isNamedFunction && (matchesGetterPattern(functionExpression) || matchesSetterPattern(functionExpression));
 	if (isGetterOrSetter) {
 		pushIssue(
@@ -569,7 +699,16 @@ function lintFunctionBody(
 			`Recreating existing built-in behavior is forbidden ("${functionName}").`,
 		);
 	}
-	if (isNamedFunction && options.isMethodDeclaration && !isGetterOrSetter && matchesMeaninglessSingleLineMethodPattern(functionExpression)) {
+	const isPureCopyFunction = isNamedFunction && matchesPureCopyFunctionPattern(functionExpression);
+	if (isPureCopyFunction) {
+		pushIssue(
+			issues,
+			'pure_copy_function_pattern',
+			functionExpression,
+			`Defensive pure-copy function is forbidden ("${functionName}").`,
+		);
+	}
+	if (isNamedFunction && options.isMethodDeclaration && !isGetterOrSetter && !isVisualUpdateLike && matchesMeaninglessSingleLineMethodPattern(functionExpression)) {
 		pushIssue(
 			issues,
 			'single_line_method_pattern',
@@ -723,6 +862,14 @@ function lintStatements(statements: ReadonlyArray<LuaStatement>, issues: LuaLint
 				}
 				break;
 			case LuaSyntaxKind.IfStatement:
+				if (matchesUselessAssertPattern(statement)) {
+					pushIssue(
+						issues,
+						'useless_assert_pattern',
+						statement,
+						'Useless assert-pattern is forbidden (if ... then error(...) end).',
+					);
+				}
 				for (const clause of statement.clauses) {
 					if (clause.condition) {
 						lintExpression(clause.condition, issues);

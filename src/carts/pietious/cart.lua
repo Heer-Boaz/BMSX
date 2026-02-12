@@ -1,21 +1,21 @@
-local constants = require('constants.lua')
-local player_module = require('player.lua')
-local room_view_module = require('room_view.lua')
-local transition_view_module = require('transition_view.lua')
-local item_screen_module = require('item_screen.lua')
-local ui_module = require('ui.lua')
-local loot_drop_module = require('loot_drop.lua')
-local world_item_module = require('world_item.lua')
-local item_service_module = require('item_service.lua')
-local rock_module = require('rock.lua')
-local rock_service_module = require('rock_service.lua')
-local pepernoot_projectile_module = require('pepernoot_projectile.lua')
-local enemy_explosion_module = require('enemy_explosion.lua')
-local enemy_module = require('enemy.lua')
-local enemy_service_module = require('enemy_service.lua')
-local castle_service_module = require('castle_service.lua')
-local elevator_service_module = require('elevator_service.lua')
-local flow_service_module = require('flow_service.lua')
+local constants = require('constants')
+local player_module = require('player')
+local room_view_module = require('room_view')
+local transition_view_module = require('transition_view')
+local item_screen_module = require('item_screen')
+local ui_module = require('ui')
+local loot_drop_module = require('loot_drop')
+local world_item_module = require('world_item')
+local item_service_module = require('item_service')
+local rock_module = require('rock')
+local rock_service_module = require('rock_service')
+local pepernoot_projectile_module = require('pepernoot_projectile')
+local enemy_explosion_module = require('enemy_explosion')
+local enemy_module = require('enemy')
+local enemy_service_module = require('enemy_service')
+local castle_service_module = require('castle_service')
+local elevator_service_module = require('elevator_service')
+local flow_service_module = require('flow_service')
 local collision_profiles = require('collision_profiles')
 
 local function register_collision_profiles()
@@ -104,16 +104,14 @@ function new_game()
 		id = castle_service_module.castle_service_instance_id,
 	})
 	local room = castle_service:initialize(1)
-	local spawn_x = constants.player.start_x
-	local spawn_y = constants.player.start_y
 
 	spawn_object(player_module.player_def_id, {
 		id = player_module.player_instance_id,
 		room = room,
 		space_id = room.space_id,
-		spawn_x = spawn_x,
-		spawn_y = spawn_y,
-		pos = { x = spawn_x, y = spawn_y, z = 140 },
+		spawn_x = constants.player.start_x,
+		spawn_y = constants.player.start_y,
+		pos = { x = constants.player.start_x, y = constants.player.start_y, z = 140 },
 	})
 
 	spawn_object(room_view_module.room_view_def_id, {

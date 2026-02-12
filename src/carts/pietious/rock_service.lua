@@ -1,6 +1,6 @@
-local constants = require('constants.lua')
+local constants = require('constants')
 local eventemitter = require('eventemitter')
-local rock_module = require('rock.lua')
+local rock_module = require('rock')
 
 local rock_service = {}
 rock_service.__index = rock_service

@@ -1,6 +1,6 @@
-local constants = require('constants.lua')
+local constants = require('constants')
 local eventemitter = require('eventemitter')
-local shrine_world_view_module = require('shrine_world_view.lua')
+local shrine_world_view_module = require('shrine_world_view')
 
 local flow_service = {}
 flow_service.__index = flow_service

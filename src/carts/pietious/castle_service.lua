@@ -1,6 +1,6 @@
-local constants = require('constants.lua')
-local room_module = require('room.lua')
-local castle_map = require('castle_map.lua')
+local constants = require('constants')
+local room_module = require('room')
+local castle_map = require('castle_map')
 
 local castle_service = {}
 

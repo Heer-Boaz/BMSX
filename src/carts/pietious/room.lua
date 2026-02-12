@@ -1,5 +1,5 @@
-local constants = require('constants.lua')
-local castle_map = require('castle_map.lua')
+local constants = require('constants')
+local castle_map = require('castle_map')
 
 local room = {}
 
@@ -457,9 +457,6 @@ local function apply_room_template(room_state, template)
 	local map_rows = template.map_rows
 	local collision_map = build_collision_map(map_rows)
 	local tiles = build_tile_grid(map_rows, collision_map, template.room_subtype)
-	local tile_size = constants.room.tile_size
-	local tile_origin_x = constants.room.tile_origin_x
-	local tile_origin_y = constants.room.tile_origin_y
 
 	room_state.room_number = template.room_number
 	room_state.space_id = template.space_id
@@ -472,16 +469,16 @@ local function apply_room_template(room_state, template)
 		x = template.spawn.x,
 		y = template.spawn.y,
 	}
-	room_state.tile_size = tile_size
-	room_state.tile_origin_x = tile_origin_x
-	room_state.tile_origin_y = tile_origin_y
+	room_state.tile_size = constants.room.tile_size
+	room_state.tile_origin_x = constants.room.tile_origin_x
+	room_state.tile_origin_y = constants.room.tile_origin_y
 	room_state.tile_rows = #map_rows
 	room_state.tile_columns = #map_rows[1]
 	room_state.map_rows = map_rows
 	room_state.collision_map = collision_map
 	room_state.tiles = tiles
-	room_state.solids = build_solids(collision_map, tile_size, tile_origin_x, tile_origin_y)
-	room_state.stairs = build_stairs(map_rows, tile_size, tile_origin_x, tile_origin_y, constants.player.height)
+	room_state.solids = build_solids(collision_map, constants.room.tile_size, constants.room.tile_origin_x, constants.room.tile_origin_y)
+	room_state.stairs = build_stairs(map_rows, constants.room.tile_size, constants.room.tile_origin_x, constants.room.tile_origin_y, constants.player.height)
 	room_state.enemies = build_enemies(template.enemies)
 	room_state.rocks = build_rocks(template.rocks)
 	room_state.items = build_items(template.items)
@@ -495,7 +492,7 @@ end
 function room.create_room(room_number)
 	local target_room_number = room_number or castle_map.start_room_number
 	local room_state = {}
-	apply_room_template(room_state, castle_map.room_template(target_room_number))
+	apply_room_template(room_state, castle_map.room_templates[target_room_number])
 	return room_state
 end
 
@@ -591,7 +588,7 @@ function room.switch_room(room_state, direction)
 		}
 	end
 
-	apply_room_template(room_state, castle_map.room_template(target_room_number))
+	apply_room_template(room_state, castle_map.room_templates[target_room_number])
 	return {
 		from_room_number = from_room_number,
 		to_room_number = room_state.room_number,

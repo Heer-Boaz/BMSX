@@ -1,4 +1,4 @@
-local constants = require('constants.lua')
+local constants = require('constants')
 local eventemitter = require('eventemitter')
 
 local transition_view = {}
@@ -50,8 +50,7 @@ function transition_view:render_transition()
 	if get_space() ~= constants.spaces.transition then
 		return
 	end
-	local hud_height = constants.room.hud_height
-	put_rectfillcolor(0, hud_height, display_width(), display_height(), 300, room_mask_color)
+	put_rectfillcolor(0, constants.room.hud_height, display_width(), display_height(), 300, room_mask_color)
 end
 
 local function define_transition_view_fsm()
