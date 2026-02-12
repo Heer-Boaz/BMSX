@@ -2214,140 +2214,108 @@ end
 -- Called from inside code_bfb27c when B is HELD ($7E & Joypad_B)
 -- This is the FULL translation including jump initiation (CODE_BFB94F)
 function player:code_bfb8f7_full()
-	print(string.format(
-		'DBG_B|f=%d|180f=%04X|st=%04X|ys=%04X|1631=%04X|1209=%04X|7e=%04X|80=%04X',
-		self.zp_28 & 0xFFFF,
-		self.ram_180f & 0xFFFF,
-		self.ram_ramtable1029lo & 0xFFFF,
-		self.ram_yspeedlo & 0xFFFF,
-		self.ram_ramtable1631lo & 0xFFFF,
-		self.ram_ramtable1209lo & 0xFFFF,
-		self.zp_7e & 0xFFFF,
-		self.zp_80 & 0xFFFF
-	))
-	-- LDA.b $80 / AND.w #$8000                     ; LINE 111607: B pressed THIS frame?
+	-- LDA.b $80 / AND.w #$8000
 	if (self.zp_80 & joypad_b) ~= 0 then
-		-- CODE_BFB919: first press - record timestamp
-		-- LDA.b $28 / STA.w $16A5,y                 ; LINE 111621
+		-- CODE_BFB919
 		self.ram_16a5 = self.zp_28
-		-- fall through to CODE_BFB91E below
 	else
-		-- B held but not freshly pressed
-		-- LDA.w $1699,y / ORA.w #$0001 / STA.w $1699,y ; LINE 111611
+		-- LDA.w $1699,y / ORA.w #$0001 / STA.w $1699,y
 		self.ram_1699 = self.ram_1699 | 0x0001
-		-- LDA.b $28 / SEC / SBC.w $16A5,y           ; LINE 111614
+		-- LDA.b $28 / SEC / SBC.w $16A5,y
 		local frame_delta = self.zp_28 - self.ram_16a5
-		-- BMI.b CODE_BFB918                          ; LINE 111617
 		if frame_delta < 0 then
-			return  -- CODE_BFB918: RTS
+			return
 		end
-		-- CMP.w #$000C                               ; LINE 111619
-		if frame_delta >= 0x000c then
-			return  -- CODE_BFB918: outside buffer window
+		-- CMP.w #$000C / BMI.b CODE_BFB91E
+		if frame_delta >= 0x000C then
+			return
 		end
-		-- fall through to CODE_BFB91E
 	end
-	
-	-- CODE_BFB91E:
-	-- LDA.w $180F / CMP.w #$0001                   ; LINE 111624
-	if self.ram_180f == 1 then
-		return  -- can't jump in air (CODE_BFB918: RTS)
+
+	-- LDA.w $180F / CMP.w #$0001 / BEQ.b CODE_BFB918
+	if self.ram_180f == 0x0001 then
+		return
 	end
-	-- CMP.w #$000C                                  ; LINE 111628
-	-- BNE.b CODE_BFB92E                             ; LINE 111630
-	-- (skip rope jump for $180F=0x0C)
-	
-	-- CODE_BFB92E:
-	-- LDA.w RAMTable1029Lo,x / CMP.w #$0012        ; LINE 111632
+
+	-- CMP.w #$000C / BNE.b CODE_BFB92E / JMP.w CODE_BFB9B2
+	if self.ram_180f == 0x000C then
+		return
+	end
+
+	-- CODE_BFB92E
 	local state1029 = self.ram_ramtable1029lo
 	if state1029 == 0x0012 or state1029 == 0x0013 or state1029 == 0x0019 then
-		-- rolling states - always allow jump (skip checks below)
-		else
-				-- LDA.w RAMTable1631Lo,x / BNE RTS           ; LINE 111640
-				if self.ram_ramtable1631lo ~= 0 then
-					return  -- CODE_BFB9B1: RTS
-				end
-			-- LDA.w RAMTable1209Lo,x / AND.w #$0007      ; LINE 111643
-			-- CMP.b $F3 / BPL RTS                        ; LINE 111646
-			local anim_idx = self.ram_ramtable1209lo & 0x0007
-			if anim_idx >= self.zp_f3 then
-				return  -- CODE_BFB9B1: RTS
-			end
-		end
-	
-	-- CODE_BFB94F: INITIATE JUMP
-	-- LDA.w $1699,y / ORA.w #$0003 / STA.w $1699,y ; LINE 111652
-	self.ram_1699 = self.ram_1699 | 0x0003
-	-- LDA.w $16CD,y / ORA.w #$0001 / STA.w $16CD,y ; LINE 111658
-	self.ram_16cd = self.ram_16cd | 0x0001
-	-- LDA.w #$FFB8                                  ; LINE 111664
-	-- CPY.w #$0000 / BEQ CODE_BFB96E               ; LINE 111666 (player 1 check)
-	-- LDA.w #$FFA6 (player 2 = Diddy, heavier gravity)
-	local jump_gravity
-	if self.zp_44 == 0 then
-		jump_gravity = 0xffb8  -- DK
+		-- branch target CODE_BFB94F
 	else
-		jump_gravity = 0xffa6  -- Diddy
-	end
-	-- STA.w $16F9,y                                 ; LINE 111670
-	self.ram_16f9 = jump_gravity
-	-- LDA.w #$0000 / STA.w $16E5,y                 ; LINE 111672
-	self.ram_16e5 = 0
-	-- LDA.w #$00C1 / STA.w RAMTable11A1Lo,x        ; LINE 111676
-	self.ram_ramtable11a1lo = 0x00C1
-	-- STZ.w $1E17                                   ; LINE 111680
-	self.ram_1e17 = 0
-	-- JSR.w CODE_BFBEC5                             ; LINE 111678
-	self:code_bfbec5()
-	-- LDA.w $1699,y / AND.w #$FF7F / STA.w $1699,y ; LINE 111686
-	self.ram_1699 = self.ram_1699 & 0xff7f
+		-- LDA.w !RAM_DKC1_NorSpr_RAMTable1631Lo,x / BNE.b CODE_BFB9B1
+		if self.ram_ramtable1631lo ~= 0 then
+			return
+		end
 
-	-- LDA.b $BA / AND.w #$0001 / BNE CODE_BFB9DB
+		-- LDA.w !RAM_DKC1_NorSpr_RAMTable1209Lo,x / AND.w #$0007 / CMP.b $F3 / BPL.b CODE_BFB9B1
+		local anim_idx = self.ram_ramtable1209lo & 0x0007
+		if anim_idx >= self.zp_f3 then
+			return
+		end
+	end
+
+	-- CODE_BFB94F
+	self.ram_1699 = self.ram_1699 | 0x0003
+	self.ram_16cd = self.ram_16cd | 0x0001
+
+	if self.zp_44 == 0 then
+		self.ram_16f9 = 0xFFB8
+	else
+		self.ram_16f9 = 0xFFA6
+	end
+	self.ram_16e5 = 0
+	self.ram_ramtable11a1lo = 0x00C1
+	self.ram_1e17 = 0
+	self:code_bfbec5()
+	self.ram_1699 = self.ram_1699 & 0xFF7F
+
+	-- LDA.b $BA / AND.w #$0001 / BNE.b CODE_BFB9DB
 	if (self.zp_ba & 0x0001) ~= 0 then
-		-- CODE_BFB9DB
 		self.ram_yspeedlo = 0x0A00
 		self.ram_0579 = self.ram_0579 | 0x1000
 		self.ram_16f9 = 0xFFB0
 		self.ram_0579 = self.ram_0579 | 0x0008
 		self:code_bfa13b()
+		self.ram_1e19 = self.ram_1e19 | 0x0001
 		return
 	end
 
-	-- LDA.w $0512,y / BNE CODE_BFBA08
+	-- LDA.w $0512,y / BNE.b CODE_BFBA08
 	if self.ram_0512 ~= 0 then
-		-- CODE_BFBA08
 		self.ram_ramtable1029lo = 0x0015
 		self.ram_16f9 = 0xFFB8
-		self.ram_16ad = define_dkc1_animationid_rambiriddenbydk_jumpontire
+		self:code_be8092(define_dkc1_animationid_rambiriddenbydk_jumpontire)
 		self.ram_1e19 = self.ram_1e19 | 0x0001
 		return
 	end
 
-	-- LDA.w $16F5,y / BEQ CODE_BFB9A2 / JMP CODE_BFBA21
+	-- LDA.w $16F5,y / BEQ.b CODE_BFB9A2 / JMP.w CODE_BFBA21
 	if self.ram_16f5 ~= 0 then
-		-- CODE_BFBA21
 		self.ram_ramtable1029lo = 0x001A
 		self.ram_16f9 = 0xFFB8
-		self.ram_16ad = define_dkc1_animationid_dk_holdjump
+		self:code_be80a4(define_dkc1_animationid_dk_holdjump)
+		self.jump_script_kind = nil
+		self.jump_script_frame = 0
+		self.jump_script_pc = 1
+		self.jump_script_wait = 0
+		self.jump_script_hook = nil
 		self.ram_1e19 = self.ram_1e19 | 0x0001
 		return
 	end
 
-	-- CODE_BFB9A2: normal jump
+	-- CODE_BFB9A2
 	self.ram_ramtable1029lo = 0x0001
-	self.ram_16ad = define_dkc1_animationid_dk_jump
-	print(string.format(
-		'DBG_B_JUMPSTART|f=%d|180f=%04X|st=%04X|ys=%04X|1631=%04X|1209=%04X',
-		self.zp_28 & 0xFFFF,
-		self.ram_180f & 0xFFFF,
-		self.ram_ramtable1029lo & 0xFFFF,
-		self.ram_yspeedlo & 0xFFFF,
-		self.ram_ramtable1631lo & 0xFFFF,
-		self.ram_ramtable1209lo & 0xFFFF
-	))
-	self:code_beb233()
+	self:code_be80a4(define_dkc1_animationid_dk_jump)
 	self.jump_script_kind = 'data_bea6a9'
 	self.jump_script_frame = 0
+	self.jump_script_pc = 1
+	self.jump_script_wait = 0
+	self.jump_script_hook = nil
 	self.ram_1e19 = self.ram_1e19 | 0x0001
 end
 
@@ -2402,18 +2370,22 @@ function player:code_be9f2d()
 	self.ram_ramtable1029lo = 0x0000
 end
 
+function player:code_be9cb8()
+	self:code_be9f2d()
+	self:code_be80a4(define_dkc1_animationid_dk_run)
+	self.roll_script_kind = nil
+	self.roll_script_frame = 0
+end
+
 function player:code_be9c96()
-	if (self.ram_1699 & 0x0004) == 0 then
-		self.ram_1699 = self.ram_1699 & 0xFDFF
-		self:code_be9f2d()
-		self.ram_16ad = define_dkc1_animationid_dk_idle
-		self.roll_script_kind = nil
-		self.roll_script_frame = 0
+	if (self.ram_1699 & 0x0004) ~= 0 then
+		self:code_be9cb8()
 		return
 	end
 
+	self.ram_1699 = self.ram_1699 & 0xFDFF
 	self:code_be9f2d()
-	self.ram_16ad = define_dkc1_animationid_dk_run
+	self:code_be80a4(define_dkc1_animationid_dk_idle)
 	self.roll_script_kind = nil
 	self.roll_script_frame = 0
 end
@@ -2465,33 +2437,33 @@ function player:code_be92b4()
 		return
 	end
 	if self.ram_16e5 == 0x0002 or self.ram_16e5 == 0x0003 then
-		self.ram_16ad = define_dkc1_animationid_dk_cancelroll
+		self:code_be80a4(define_dkc1_animationid_dk_cancelroll)
 		self.roll_script_kind = 'cancelroll'
 		self.roll_script_frame = 0
 		return
 	end
 	if (self.ram_1699 & 0x0040) ~= 0 then
 		self.ram_ramtable0f25lo = 0
-		self.ram_16ad = define_dkc1_animationid_dk_endroll
+		self:code_be80a4(define_dkc1_animationid_dk_endroll)
 		self.roll_script_kind = 'endroll'
 		self.roll_script_frame = 0
 		return
 	end
 	if self.ram_16a1 ~= self.ram_16a9 then
 		self.ram_ramtable0f25lo = 0
-		self.ram_16ad = define_dkc1_animationid_dk_endroll
+		self:code_be80a4(define_dkc1_animationid_dk_endroll)
 		self.roll_script_kind = 'endroll'
 		self.roll_script_frame = 0
 		return
 	end
 	if (self.ram_16ed & joypad_y) ~= 0 then
-		self.ram_16ad = define_dkc1_animationid_dk_cancelroll
+		self:code_be80a4(define_dkc1_animationid_dk_cancelroll)
 		self.roll_script_kind = 'cancelroll'
 		self.roll_script_frame = 0
 		return
 	end
 	self.ram_ramtable0f25lo = 0
-	self.ram_16ad = define_dkc1_animationid_dk_endroll
+	self:code_be80a4(define_dkc1_animationid_dk_endroll)
 	self.roll_script_kind = 'endroll'
 	self.roll_script_frame = 0
 end
@@ -2502,6 +2474,68 @@ function player:code_bea7d6()
 	if (self.ram_ramtable1271lo & 0x8000) == 0 then
 		self.ram_0579 = self.ram_0579 | 0x1000
 	end
+end
+
+function player:code_be84da_gate()
+	return (self.ram_ramtable12a5lo & 0x0001) ~= 0
+end
+
+function player:code_be851b_gate()
+	local a = to_unsigned_16(self.ram_ramtable1631lo - 1)
+	if to_signed_16(a) >= 0 then
+		return false
+	end
+	if a < 0xFFB8 then
+		return false
+	end
+	return true
+end
+
+function player:code_bea715()
+	self.ram_animation_speed = 0x0100
+	if (self.ram_ramtable1271lo & 0x8000) ~= 0 then
+		return
+	end
+	self.ram_ramtable1029lo = 0x0000
+end
+
+function player:code_bea724()
+	if (self.ram_ramtable1271lo & 0x8000) ~= 0 then
+		return
+	end
+	if (self.ram_1699 & 0x0004) == 0 then
+		return
+	end
+	self:code_be9cb8()
+end
+
+function player:code_bea737()
+	if (self.ram_ramtable12a5lo & 0x1011) ~= 0x0001 then
+		return
+	end
+end
+
+function player:code_bea755()
+	if self.ram_ramtable1631lo ~= 0 then
+		return
+	end
+	self.ram_animation_speed = 0x0400
+	self.ram_displaycurrentposetimerlo = 0x0000
+end
+
+function player:code_bea765()
+	if (self.ram_ramtable1209lo & 0x0007) < self.zp_f3 then
+		return
+	end
+	self:code_be80a4(define_dkc1_animationid_dk_fall)
+end
+
+function player:code_bea778()
+	if (self.ram_ramtable1271lo & 0x8000) == 0 then
+		self:code_be9c96()
+		return
+	end
+	self:code_be80a4(define_dkc1_animationid_dk_idle)
 end
 
 -- CODE_BEB233 / CODE_BEB23C callbacks toggle $16E5 during jump script.
@@ -2536,7 +2570,7 @@ function player:code_bea02e()
 	end
 
 	self:code_be9f2d()
-	self.ram_16ad = define_dkc1_animationid_dk_idle
+	self:code_be80a4(define_dkc1_animationid_dk_idle)
 end
 
 -- CODE_BE9835: death-music path in original game (non-physics side effects).
@@ -2637,17 +2671,14 @@ function player:update_roll_animation_script()
 	self.roll_script_frame = self.roll_script_frame + 1
 
 	if self.roll_script_kind == 'roll' then
-		if self.roll_script_frame == 9 then
+		local frame = ((self.roll_script_frame - 1) % 33) + 1
+		if frame == 9 then
 			self:code_be92ad()
 			return
 		end
-		if self.roll_script_frame == 30 then
+		if frame == 30 then
 			self:code_be92b4()
 			return
-		end
-		if self.roll_script_frame >= 33 and self.roll_script_kind == 'roll' then
-			self.roll_script_kind = nil
-			self.roll_script_frame = 0
 		end
 		return
 	end
@@ -2684,35 +2715,62 @@ function player:update_roll_animation_script()
 	end
 end
 
--- DATA_BEA6A9 bridge for DK jump:
--- Op81(CODE_BEB233), OpXX($02,...), Op81(CODE_BEA7D6), ... Op81(CODE_BEB23C)
 function player:update_jump_animation_script()
-	if self.jump_script_kind == nil then
+	if self.jump_script_kind ~= 'data_bea6a9' then
 		return
 	end
 
-	if self.jump_script_kind == 'data_bea6a9'
-		and self.ram_16ad ~= define_dkc1_animationid_dk_jump
-	then
+	if self.ram_16ad ~= define_dkc1_animationid_dk_jump then
 		self.jump_script_kind = nil
 		self.jump_script_frame = 0
+		self.jump_script_pc = 1
+		self.jump_script_wait = 0
+		self.jump_script_hook = nil
 		return
 	end
 
 	self.jump_script_frame = self.jump_script_frame + 1
 
-	if self.jump_script_kind == 'data_bea6a9' then
-		if self.jump_script_frame == 2 then
-			self:code_bea7d6()
+	if self.jump_script_hook ~= nil then
+		self[self.jump_script_hook](self)
+	end
+
+	if self.jump_script_wait > 0 then
+		self.jump_script_wait = self.jump_script_wait - 1
+		return
+	end
+
+	while true do
+		local step = data_bea6a9[self.jump_script_pc]
+		if step == nil then
+			self.jump_script_pc = 1
 			return
 		end
-		if self.jump_script_frame == 22 then
-			self:code_beb23c()
+
+		if step.op == 'wait' then
+			self.jump_script_wait = step.frames
+			self.jump_script_pc = self.jump_script_pc + 1
+			if self.jump_script_wait > 0 then
+				self.jump_script_wait = self.jump_script_wait - 1
+			end
 			return
-		end
-		if self.jump_script_frame >= 23 then
-			self.jump_script_kind = nil
-			self.jump_script_frame = 0
+		elseif step.op == 'call' then
+			self[step.fn](self)
+			self.jump_script_pc = self.jump_script_pc + 1
+			if self.ram_16ad ~= define_dkc1_animationid_dk_jump then
+				return
+			end
+		elseif step.op == 'gate' then
+			if not self[step.fn](self) then
+				return
+			end
+			self.jump_script_pc = self.jump_script_pc + 1
+		elseif step.op == 'hook' then
+			self.jump_script_hook = step.fn
+			self.jump_script_pc = self.jump_script_pc + 1
+		elseif step.op == 'loop' then
+			self.jump_script_pc = 1
+			return
 		end
 	end
 end
@@ -2936,10 +2994,13 @@ function player:code_bfba88()
 	self.ram_ramtable1029lo = 0x0001
 	self.ram_1e19 = self.ram_1e19 | 0x0001
 	-- lda.w #!Define_DKC1_AnimationID_DK_JumpOffVerticalRope
-	self.ram_16ad = define_dkc1_animationid_dk_jumpoffverticalrope
+	self:code_be80a4(define_dkc1_animationid_dk_jumpoffverticalrope)
 
 	self.jump_script_kind = nil
 	self.jump_script_frame = 0
+	self.jump_script_pc = 1
+	self.jump_script_wait = 0
+	self.jump_script_hook = nil
 
 	-- lda.b $7E / and.w #$0300 / bne.b CODE_BFBADB
 	local dpad_lr = self.zp_7e & 0x0300
@@ -7864,7 +7925,7 @@ function player:code_bfbda9()
 	self.ram_1699 = self.ram_1699 | 0x0080
 	
 	-- lda.w #!define_dkc1_animationid_dk_roll
-	self.ram_16ad = define_dkc1_animationid_dk_roll
+	self:code_be80a4(define_dkc1_animationid_dk_roll)
 	self.roll_script_kind = 'roll'
 	self.roll_script_frame = 0
 
