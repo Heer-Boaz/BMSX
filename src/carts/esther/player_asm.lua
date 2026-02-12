@@ -2240,6 +2240,7 @@ function player:code_bfb8f7_full()
 
 	-- CMP.w #$000C / BNE.b CODE_BFB92E / JMP.w CODE_BFB9B2
 	if self.ram_180f == 0x000C then
+		self:code_bfb9b2()
 		return
 	end
 
@@ -2282,7 +2283,6 @@ function player:code_bfb8f7_full()
 		self.ram_16f9 = 0xFFB0
 		self.ram_0579 = self.ram_0579 | 0x0008
 		self:code_bfa13b()
-		self.ram_1e19 = self.ram_1e19 | 0x0001
 		return
 	end
 
@@ -2291,7 +2291,6 @@ function player:code_bfb8f7_full()
 		self.ram_ramtable1029lo = 0x0015
 		self.ram_16f9 = 0xFFB8
 		self:code_be8092(define_dkc1_animationid_rambiriddenbydk_jumpontire)
-		self.ram_1e19 = self.ram_1e19 | 0x0001
 		return
 	end
 
@@ -2305,7 +2304,6 @@ function player:code_bfb8f7_full()
 		self.jump_script_pc = 1
 		self.jump_script_wait = 0
 		self.jump_script_hook = nil
-		self.ram_1e19 = self.ram_1e19 | 0x0001
 		return
 	end
 
@@ -2317,7 +2315,39 @@ function player:code_bfb8f7_full()
 	self.jump_script_pc = 1
 	self.jump_script_wait = 0
 	self.jump_script_hook = nil
-	self.ram_1e19 = self.ram_1e19 | 0x0001
+end
+
+-- CODE_BFB9B2: Expresso flutter jump gate while in state $000C.
+function player:code_bfb9b2()
+	-- LDA.b $80 / AND.w #$8000 / BEQ.b CODE_BFB9DA
+	if (self.zp_80 & joypad_b) == 0 then
+		return
+	end
+
+	-- LDA.w !RAM_DKC1_NorSpr_RAMTable12A5Lo,x / LSR / BCS.b CODE_BFB9DA
+	if (self.ram_ramtable12a5lo & 0x0001) ~= 0 then
+		return
+	end
+
+	-- LDA.w $0512,y / TAX / LDA.w !RAM_DKC1_NorSpr_SpriteIDLo,x
+	local buddy = self:dkc1_get_any_sprite_by_slot(self.ram_0512)
+	if buddy == nil then
+		return
+	end
+
+	-- CMP.w #!Define_DKC1_NorSpr0A_Expresso / BNE.b CODE_BFB9DA
+	if buddy.dkc1_sprite_id ~= define_dkc1_norspr0a_expresso then
+		return
+	end
+
+	-- LDA.w !RAM_DKC1_NorSpr_YSpeedLo,x / BMI.b CODE_BFB9D7 / CMP.w #$0200 / BPL.b CODE_BFB9DA
+	local ys = self.ram_yspeedlo & 0xFFFF
+	if to_signed_16(ys) >= 0 and ys >= 0x0200 then
+		return
+	end
+
+	-- JMP.w CODE_BFBA3A
+	self:code_bfba3a()
 end
 
 -- code_bfbd4f: roll setup (line 112176)
@@ -2993,7 +3023,6 @@ function player:code_bfba88()
 
 	-- lda.w #$0001 / sta.w !RAM_DKC1_NorSpr_RAMTable1029Lo,x
 	self.ram_ramtable1029lo = 0x0001
-	self.ram_1e19 = self.ram_1e19 | 0x0001
 	-- lda.w #!Define_DKC1_AnimationID_DK_JumpOffVerticalRope
 	self:code_be80a4(define_dkc1_animationid_dk_jumpoffverticalrope)
 
@@ -3304,20 +3333,17 @@ end
 function player:code_bfa13b()
 	self.ram_16e5 = 0x0000
 	if self.ram_0512 ~= 0 then
-		self.ram_16ad = define_dkc1_animationid_rambiriddenbydk_jumpontire
+		self:code_be8092(define_dkc1_animationid_rambiriddenbydk_jumpontire)
 		self.ram_ramtable1029lo = 0x0015
-		self.ram_1e19 = self.ram_1e19 | 0x0001
 		return true
 	end
 	if self.ram_16f5 ~= 0 then
-		self.ram_16ad = define_dkc1_animationid_dk_bouncewhileholding
+		self:code_be80a4(define_dkc1_animationid_dk_bouncewhileholding)
 		self.ram_ramtable1029lo = 0x001A
-		self.ram_1e19 = self.ram_1e19 | 0x0001
 		return true
 	end
 	self.ram_ramtable1029lo = 0x0001
-	self.ram_16ad = define_dkc1_animationid_dk_jumpoffverticalrope
-	self.ram_1e19 = self.ram_1e19 | 0x0001
+	self:code_be80a4(define_dkc1_animationid_dk_jumpoffverticalrope)
 	return true
 end
 
@@ -7932,7 +7958,6 @@ function player:code_bfbda9()
 
 	-- jsr.w code_bf902b
 	self:code_bf902b()
-	self.ram_1e19 = self.ram_1e19 | 0x0001
 end
 
 -- code_bfbde7: roll chain (line 112246)
