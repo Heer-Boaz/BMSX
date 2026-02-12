@@ -5,6 +5,7 @@ import { Presets, SingleBar } from 'cli-progress';
 
 import { createCliUi, findExistingDirectory, getParamOrEnv, isDirectoryPath, normalizePathKey, parseArgsVector } from './cli_shared';
 import { validateAudioEventReferences } from './audioeventvalidator';
+import { lintCartLuaSources } from './cart_lua_linter';
 import { appendProgramAsset, buildResourceList, commonResPath, createAtlasses, ENGINE_ATLAS_INDEX, esbuild, finalizeRompack, GENERATE_AND_USE_TEXTURE_ATLAS, generateRomAssets, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired, LUA_CANONICALIZATION, setAtlasFlag, setLuaCanonicalization, typecheckBeforeBuild, typecheckGameWithDts } from './rombuilder';
 import type { AtlasResource, Resource, RomPackerOptions } from './rompacker.rompack';
 import type { CanonicalizationType, RomAsset, RomManifest } from '../../src/bmsx/rompack/rompack';
@@ -337,27 +338,27 @@ function parseOptions(args: string[]): ParsedOptions {
 	];
 	const extraLuaRoots = collectExistingDirectories(cartRootCandidates);
 
-		return {
-			rom_name,
-			title,
-			bootloader_path,
-			respath,
-			force,
-			debug,
-			buildreslist,
-			useTextureAtlas,
-			enginedts,
-			usePkgTsconfig,
-				skipTypecheck,
-				platform: 'browser',
-				canonicalization,
-			optLevel,
-			mode,
-			shouldBundleCartCode,
-			extraLuaRoots,
-			bootloaderFallbackPath,
-		};
-	}
+	return {
+		rom_name,
+		title,
+		bootloader_path,
+		respath,
+		force,
+		debug,
+		buildreslist,
+		useTextureAtlas,
+		enginedts,
+		usePkgTsconfig,
+		skipTypecheck,
+		platform: 'browser',
+		canonicalization,
+		optLevel,
+		mode,
+		shouldBundleCartCode,
+		extraLuaRoots,
+		bootloaderFallbackPath,
+	};
+}
 
 function timer(ms: number) {
 	return new Promise(res => setTimeout(res, ms));
@@ -673,7 +674,7 @@ async function main() {
 			return;
 		}
 
-			progress = new ProgressReporter(taskList);
+		progress = new ProgressReporter(taskList);
 		if (!shouldBundleCartCode && mode !== 'engine') {
 			progress.removeTasks(bundlerTasks);
 			removeTaskNamesFromList(romBuildTasks, bundlerTasks);
@@ -723,9 +724,9 @@ async function main() {
 			return;
 		} else {
 			// Check for required arguments
-				if (!rom_name && !isEngineMode) {
-					throw new Error('Missing required argument: --romname or ROM_NAME environment variable, or --buildreslist (to build resource list only).');
-				}
+			if (!rom_name && !isEngineMode) {
+				throw new Error('Missing required argument: --romname or ROM_NAME environment variable, or --buildreslist (to build resource list only).');
+			}
 
 			if (rom_name) {
 				if (rom_name.includes('.')) {
@@ -735,7 +736,7 @@ async function main() {
 			}
 		}
 
-			if (!title && !isEngineMode) throw new Error("Missing parameter for title ('title', e.g. 'Sintervania'.");
+		if (!title && !isEngineMode) throw new Error("Missing parameter for title ('title', e.g. 'Sintervania'.");
 		resourceRoots = isEngineMode
 			? [respath || commonResPath]
 			: [respath || commonResPath, commonResPath];
@@ -790,27 +791,27 @@ async function main() {
 			}
 		}
 
-			logDivider('Options');
-			logBullet('Rebuild', force ? pc.yellow('force') : pc.green('auto (mtime check)'));
-			logBullet('Atlas', useTextureAtlas ? pc.green('enabled') : pc.red('disabled'));
-			logBullet('Lua case', canonicalization !== 'none' ? pc.green(`fold ${canonicalization}`) : pc.yellow('preserve case'));
-			logBullet('Typecheck', skipTypecheck ? pc.red('skipped') : pc.green('enabled'));
-			logBullet('Build', debug ? pc.cyan('DEBUG') : pc.blue('NON-DEBUG'));
-			logBullet('Opt level', pc.white(`-O${optLevel}`));
+		logDivider('Options');
+		logBullet('Rebuild', force ? pc.yellow('force') : pc.green('auto (mtime check)'));
+		logBullet('Atlas', useTextureAtlas ? pc.green('enabled') : pc.red('disabled'));
+		logBullet('Lua case', canonicalization !== 'none' ? pc.green(`fold ${canonicalization}`) : pc.yellow('preserve case'));
+		logBullet('Typecheck', skipTypecheck ? pc.red('skipped') : pc.green('enabled'));
+		logBullet('Build', debug ? pc.cyan('DEBUG') : pc.blue('NON-DEBUG'));
+		logBullet('Opt level', pc.white(`-O${optLevel}`));
 
-			const includeCode = shouldBundleCartCode;
-			if (!isEngineMode && mode === 'rompack') {
-				const engineResPath = commonResPath;
-				const engineManifest = await getRomManifest(engineResPath);
-				if (!engineManifest) {
-					throw new Error(`Engine manifest not found at "${engineResPath}".`);
-				}
-				const engineRomName = engineManifest.rom_name ?? 'bmsx-bios';
-				const engineRomPath = join(process.cwd(), 'dist', `${engineRomName}${romPackDebug ? '.debug' : ''}.rom`);
-				if (!existsSync(engineRomPath)) {
-					throw new Error(`Engine ROM not found at "${engineRomPath}". Build the engine ROM first.`);
-				}
+		const includeCode = shouldBundleCartCode;
+		if (!isEngineMode && mode === 'rompack') {
+			const engineResPath = commonResPath;
+			const engineManifest = await getRomManifest(engineResPath);
+			if (!engineManifest) {
+				throw new Error(`Engine manifest not found at "${engineResPath}".`);
 			}
+			const engineRomName = engineManifest.rom_name ?? 'bmsx-bios';
+			const engineRomPath = join(process.cwd(), 'dist', `${engineRomName}${romPackDebug ? '.debug' : ''}.rom`);
+			if (!existsSync(engineRomPath)) {
+				throw new Error(`Engine ROM not found at "${engineRomPath}". Build the engine ROM first.`);
+			}
+		}
 
 		let rebuildRequired = true;
 		if (force) {
@@ -819,30 +820,30 @@ async function main() {
 		else {
 			logInfo('Rebuild only if inputs are newer than outputs');
 		}
-			if (skipTypecheck) {
-				progress.removeTasks(typecheckTasks);
-				removeTaskNamesFromList(romBuildTasks, typecheckTasks);
-			}
+		if (skipTypecheck) {
+			progress.removeTasks(typecheckTasks);
+			removeTaskNamesFromList(romBuildTasks, typecheckTasks);
+		}
 		// split-engine removed
 		logDivider('Pipeline');
 		let typeCheckError: Error = null;
 		logInfo(`Starting for ${pc.bold(pc.blue(`${rom_name}`))}`);
 
-			if (!force) {
-				rebuildRequired = await progress.runWithDetail('Check timestamps', () => isRebuildRequired(rom_name, bootloader_path, respath, { includeCode, extraLuaPaths: Array.from(extraLuaPathSet), resolveAtlasIndex: false, debug }));
-				if (!rebuildRequired && resourceRoots.length > 1) {
-					for (let i = 1; i < resourceRoots.length; i++) {
-						const candidate = resourceRoots[i];
-						if (!candidate || candidate === respath) continue;
-						const needs = await progress.runWithDetail('Check timestamps (shared)', () => isRebuildRequired(rom_name, bootloader_path, candidate, { includeCode, extraLuaPaths: Array.from(extraLuaPathSet), resolveAtlasIndex: true, debug }));
-						rebuildRequired = rebuildRequired || needs;
-						if (rebuildRequired) break;
-					}
+		if (!force) {
+			rebuildRequired = await progress.runWithDetail('Check timestamps', () => isRebuildRequired(rom_name, bootloader_path, respath, { includeCode, extraLuaPaths: Array.from(extraLuaPathSet), resolveAtlasIndex: false, debug }));
+			if (!rebuildRequired && resourceRoots.length > 1) {
+				for (let i = 1; i < resourceRoots.length; i++) {
+					const candidate = resourceRoots[i];
+					if (!candidate || candidate === respath) continue;
+					const needs = await progress.runWithDetail('Check timestamps (shared)', () => isRebuildRequired(rom_name, bootloader_path, candidate, { includeCode, extraLuaPaths: Array.from(extraLuaPathSet), resolveAtlasIndex: true, debug }));
+					rebuildRequired = rebuildRequired || needs;
+					if (rebuildRequired) break;
 				}
-				if (!rebuildRequired) {
-					logInfo('Rebuild skipped: game rom is newer than code/assets (use --force to override)');
-				}
-				progress.skipTasks(rebuildCheckTasks.length);
+			}
+			if (!rebuildRequired) {
+				logInfo('Rebuild skipped: game rom is newer than code/assets (use --force to override)');
+			}
+			progress.skipTasks(rebuildCheckTasks.length);
 		} else rebuildRequired = true;
 		if (!rebuildRequired) {
 			progress.removeTasks(romBuildTasks);
@@ -872,14 +873,17 @@ async function main() {
 
 				// Ensure tasks are removed
 				await progress.taskCompleted();
-				}
-				const tsProject = pkgTsconfigPath;
-				if (shouldBundleCartCode) {
-					const stepLogs: string[] = [];
-					try {
-						await progress.runWithOutput('Bundle cart code', () => esbuild(rom_name, bootloader_path, debug, tsProject));
-					} catch (err) {
-						stepLogs.push(...formatEsbuildErrors(err));
+			}
+			const tsProject = pkgTsconfigPath;
+			if (!isEngineMode) {
+				await progress.runWithDetail('Lint cart Lua', () => lintCartLuaSources({ roots: Array.from(extraLuaPathSet) }));
+			}
+			if (shouldBundleCartCode) {
+				const stepLogs: string[] = [];
+				try {
+					await progress.runWithOutput('Bundle cart code', () => esbuild(rom_name, bootloader_path, debug, tsProject));
+				} catch (err) {
+					stepLogs.push(...formatEsbuildErrors(err));
 					stepLogs.forEach(captureLog);
 					throw err;
 				}
@@ -904,16 +908,16 @@ async function main() {
 			// Validate AEM references against loaded resources
 			validateAudioEventReferences(resources);
 
-				const romAssets = await progress.runWithDetail('Generate ROM assets', () => generateRomAssets(resources, message => progress.setDetail(message)));
-				appendProgramAsset(romAssets, romManifest, { includeSymbols: romPackDebug, optLevel });
-				stripLuaAssets(romAssets, romPackDebug);
-				await progress.taskCompleted();
+			const romAssets = await progress.runWithDetail('Generate ROM assets', () => generateRomAssets(resources, message => progress.setDetail(message)));
+			appendProgramAsset(romAssets, romManifest, { includeSymbols: romPackDebug, optLevel });
+			stripLuaAssets(romAssets, romPackDebug);
+			await progress.taskCompleted();
 
 			await progress.runWithDetail('Finalize ROM pack', () => finalizeRompack(romAssets, rom_name, { projectRootPath, manifest: romManifest, status: message => progress.setDetail(message), debug: romPackDebug, zipRom: false }));
 			await progress.taskCompleted();
 		}
 
-			await progress.showDone();
+		await progress.showDone();
 		const romOutput = romOutputPath.length > 0 ? pc.white(romOutputPath) : pc.white('dist/<rom>.rom');
 		logOk(`ROM packing complete → ${romOutput}`);
 		writeOut(`\n`);
