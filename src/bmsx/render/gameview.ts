@@ -122,7 +122,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	public enable_blur = true;
 	public enable_glow = true;
 	public enable_fringing = true;
-	public enable_aperture = true;
+	public enable_aperture = false; // Whether to apply an aperture mask in the CRT shader; This is a stylistic choice that can be toggled independently of the other CRT effects
 	public dither_type: number = DitherType.None;
 	public noiseIntensity = 0.3;
 	public colorBleed: [number, number, number] = [0.02, 0.0, 0.0];

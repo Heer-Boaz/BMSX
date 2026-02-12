@@ -2737,7 +2737,10 @@ end
 
 -- code_bfb27c: FULL button handler entry (line 110730)
 -- REAL assembly: handles ALL buttons (up/down/left/right/A/B/X/Y/L/R/select/start)
-function player:code_bfb27c()
+function player:code_bfb27c(state_180f)
+	if state_180f ~= nil then
+		self.ram_180f = state_180f & 0xFFFF
+	end
 	-- STA.w $180F                                  ; LINE 110730
 	-- (already set by caller)
 	-- STZ.w $1E19                                  ; LINE 110735
@@ -3032,26 +3035,36 @@ end
 
 -- CODE_BFA51B: crawlspace headroom probe.
 function player:code_bfa51b()
+	-- LDA.w !RAM_DKC1_NorSpr_RAMTable12A5Lo,x / AND #$1001 / CMP #$0001 / BNE
 	if (self.ram_ramtable12a5lo & 0x1001) ~= 0x0001 then
 		return false
 	end
-	if (to_signed_16(self.ram_yspeedlo) - 1) >= 0 then
+
+	-- LDA.w !RAM_DKC1_NorSpr_YSpeedLo,x / DEC / BPL
+	if to_signed_16(self.ram_yspeedlo - 1) >= 0 then
 		return false
 	end
 
+	-- LDA.w YPos / PHA / CLC / ADC #$0020 / STA YPos
 	local old_y = self.ram_yposlo
 	self.ram_yposlo = to_unsigned_16(old_y + 0x0020)
-	local solid = self:get_overlapping_solid(self.ram_xposlo, self.ram_yposlo)
-	local collision9c = 0
-	if solid ~= nil then
-		collision9c = self:resolve_collision_raw_9c(solid)
-	end
-	self.ram_yposlo = old_y
 
-	if solid ~= nil and (collision9c & 0x0040) == 0 then
-		return true
+	-- JSL CODE_818000 / CMP YPos / BMI fail
+	local probe_y = self:code_818000()
+	if to_signed_16(probe_y - self.ram_yposlo) < 0 then
+		self.ram_yposlo = old_y
+		return false
 	end
-	return false
+
+	-- LDA $9C / AND #$0040 / BNE fail
+	if (self.zp_9c & 0x0040) ~= 0 then
+		self.ram_yposlo = old_y
+		return false
+	end
+
+	-- PLA / STA YPos / SEC / RTS
+	self.ram_yposlo = old_y
+	return true
 end
 
 -- CODE_BFA4E3: horizontal push-out used by crawl/roll transitions.
@@ -8269,14 +8282,12 @@ function player:fill_dkc1_input_ram_from_actions()
 	end
 	if action_triggered('b[p]', player_index) then
 		held = held | joypad_b
-		print(string.format('DBG_INPUT|f=%d|btn=b|held=1', self.zp_28))
 	end
 	if action_triggered('a[p]', player_index) then
 		held = held | joypad_a
 	end
 	if action_triggered('y[p]', player_index) then
 		held = held | joypad_y
-		print(string.format('DBG_INPUT|f=%d|btn=y|held=1', self.zp_28))
 	end
 	if action_triggered('x[p]', player_index) then
 		held = held | joypad_x
