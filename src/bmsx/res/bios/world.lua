@@ -41,6 +41,26 @@ for _, group in pairs(tickgroup) do
 	perf.phase_ms[group] = 0
 end
 
+-- returns next id number and increments the internal counter.
+-- accepts being called either as an instance method (world:getnextidnumber())
+-- or as a function on the module/instance (world.getnextidnumber()).
+function world.getnextidnumber(self)
+	local w = self
+	-- support being called without passing self (e.g. world.getnextidnumber())
+	if type(w) ~= "table" or rawget(w, "idcounter") == nil then
+		w = world.instance
+	end
+	if not w.idcounter then
+		w.idcounter = 1
+	end
+	if w.idcounter >= math.maxinteger then
+		error("id counter exhausted: max safe integer reached")
+	end
+	local nextnumber = w.idcounter
+	w.idcounter = nextnumber + 1
+	return nextnumber
+end
+
 local function reset_perf_accumulators(p)
 	p.acc_sim_ms = 0
 	p.acc_frames = 0
@@ -195,6 +215,8 @@ function world.new()
 	self.paused = false
 	self.gamewidth = display_width()
 	self.gameheight = display_height()
+	-- id counter for unique id generation
+	self.idcounter = 1
 	return self
 end
 

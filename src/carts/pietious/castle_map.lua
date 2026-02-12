@@ -434,17 +434,11 @@ end
 
 function castle_map.world_transition(target)
 	local spec = world_transition_specs[target]
-	if spec == nil then
-		return nil
-	end
 	return copy_world_transition(spec)
 end
 
 function castle_map.world_transition_from_world_number(world_number)
 	local spec = world_transition_by_number[world_number]
-	if spec == nil then
-		return nil
-	end
 	return copy_world_transition(spec)
 end
 

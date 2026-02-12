@@ -19,16 +19,19 @@ local function component_key(type_or_name)
 	end
 	if t == "table" then
 		local name = type_or_name.type_name or type_or_name.typename or type_or_name.name
-		return string.lower(name or "")
+		return string.lower(name or '')
 	end
 	return string.lower(tostring(type_or_name))
 end
 
+
+
 function worldobject.new(opts)
 	local self = setmetatable({}, worldobject)
+	-- Ensure id is generated if not provided
+	self.id = opts.id or self:generate_id()
 	opts = opts or {}
-	self.id = opts.id or "worldobject"
-	self.type_name = "worldobject"
+	self.type_name = 'worldobject'
 	self.x = opts.x or 0
 	self.y = opts.y or 0
 	self.z = opts.z or 0
@@ -36,17 +39,15 @@ function worldobject.new(opts)
 	self.sy = opts.sy or 0
 	self.sz = opts.sz or 0
 	self.visible = opts.visible ~= false
-	self.active = opts.active or false
-	self.tick_enabled = opts.tick_enabled or false
-	self.eventhandling_enabled = opts.eventhandling_enabled or false
-	self.player_index = opts.player_index or 1
+	self.active = false
+	self.tick_enabled = false
+	self.eventhandling_enabled = false
+	self.player_index = opts.player_index or nil
 	self.tags = opts.tags or {}
 	self.components = {}
 	self.component_map = {}
 	self.space_id = opts.space_id
-	self._dispose_flag = false
 	self.dispose_flag = false
-	self._disposed = false
 	self.events = eventemitter.events_of(self)
 	local definition = opts.definition or (opts.fsm_id and fsmlibrary.get(opts.fsm_id))
 	self.sc = opts.sc or fsm.statemachinecontroller.new({ target = self, definition = definition, fsm_id = opts.fsm_id })
@@ -55,6 +56,16 @@ function worldobject.new(opts)
 	self.timelines = components.timelinecomponent.new({ parent = self })
 	self:add_component(self.timelines)
 	return self
+end
+
+function worldobject:generate_id()
+	local result
+	repeat
+		local baseid = self.type_name or tostring(self)
+		local uniquenumber = world.getnextidnumber()
+		result = baseid .. "_" .. tostring(uniquenumber)
+	until not world.exists(result)
+	return result
 end
 
 function worldobject:set_pos(x, y, z)
@@ -273,13 +284,11 @@ function worldobject:ondespawn()
 end
 
 function worldobject:mark_for_disposal()
-	self._dispose_flag = true
 	self.dispose_flag = true
 	self:deactivate()
 end
 
 function worldobject:dispose()
-	self._disposed = true
 	self:deactivate()
 	self:remove_all_components()
 	self.sc:dispose()

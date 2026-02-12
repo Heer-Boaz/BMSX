@@ -773,7 +773,6 @@ export class WorldObject implements vec3, ComponentContainer, Stateful, Native {
 		this.prevFacing = this._facing;
 		this._facing = value;
 	}
-
 	/**
 	 * Generates a unique identifier for a world object.
 	 * The generated identifier is a combination of the class name and a unique number.
