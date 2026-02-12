@@ -867,7 +867,7 @@ function lintStatements(statements: ReadonlyArray<LuaStatement>, issues: LuaLint
 						issues,
 						'useless_assert_pattern',
 						statement,
-						'Useless assert-pattern is forbidden (if ... then error(...) end).',
+						'Useless assert-pattern is forbidden (if ... then error(...) end). Remove the check; do not replace it with another check/assert.',
 					);
 				}
 				for (const clause of statement.clauses) {
