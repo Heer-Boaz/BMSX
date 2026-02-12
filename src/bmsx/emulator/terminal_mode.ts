@@ -211,6 +211,8 @@ class InlineFieldTextBuffer implements TextBuffer {
 
 const MAX_OUTPUT_ENTRIES = 512;
 const MAX_HISTORY_ENTRIES = 256;
+const PAGER_FALLBACK_CONTENT_WIDTH = 320;
+const PAGER_FALLBACK_PAGE_LINES = 20;
 // const PROMPT_GAP = 4;
 const PADDING_X = 0;
 const PADDING_Y = 0;
@@ -255,6 +257,12 @@ export class TerminalMode {
 	private symbolPanelLayout: TerminalSymbolGridLayout = null;
 	private completionPanel: TerminalCompletionPanelState = null;
 	private completionPanelLayout: TerminalSymbolGridLayout = null;
+	private pagerSessionActive = false;
+	private pagerActive = false;
+	private pagerQueue: TerminalOutputEntry[] = [];
+	private pagerLinesRemaining = 0;
+	private lastSurfaceWidth = 0;
+	private lastSurfaceHeight = 0;
 
 	private fieldText(): string {
 		return getFieldText(this.field);
@@ -346,6 +354,7 @@ export class TerminalMode {
 		this.symbolPanelLayout = null;
 		this.completionPanel = null;
 		this.completionPanelLayout = null;
+		this.resetPagerState();
 		this.blinkTimer = 0;
 		this.caretVisible = true;
 	}
@@ -356,6 +365,7 @@ export class TerminalMode {
 		this.symbolPanelLayout = null;
 		this.completionPanel = null;
 		this.completionPanelLayout = null;
+		this.resetPagerState();
 	}
 
 	public setFontVariant(variant: FontVariant): void {
@@ -370,6 +380,7 @@ export class TerminalMode {
 
 	public clearOutput(): void {
 		this.output.length = 0;
+		this.resetPagerState();
 	}
 
 	public setPromptPrefix(prefix: string): void {
@@ -416,6 +427,12 @@ export class TerminalMode {
 
 	public async handleInput() {
 		if (!this.active) {
+			return null;
+		}
+		if (this.pagerActive) {
+			if (this.handlePagerInput()) {
+				this.resetBlink();
+			}
 			return null;
 		}
 		if (this.symbolPanel) {
@@ -487,6 +504,7 @@ export class TerminalMode {
 		if (trimmed.length === 0) {
 			return;
 		}
+		this.beginPagerSession();
 		try {
 			if (await this.terminalCommands.handle(trimmed)) {
 				return;
@@ -494,6 +512,8 @@ export class TerminalMode {
 		} catch (error) {
 			this.appendStderr(extractErrorMessage(error));
 			return;
+		} finally {
+			this.pagerSessionActive = false;
 		}
 		this.executeTerminalCommand(trimmed);
 	}
@@ -1432,6 +1452,8 @@ export class TerminalMode {
 
 	public draw(renderer: RenderFacade, surface: Viewport): void {
 		this.currentRenderer = renderer;
+		this.lastSurfaceWidth = surface.width;
+		this.lastSurfaceHeight = surface.height;
 		try {
 			const lineHeight = this.font.lineHeight;
 			const contentWidth = Math.max(0, surface.width - PADDING_X * 2);
@@ -1510,6 +1532,7 @@ export class TerminalMode {
 			// draw multi-line input (handles selection and caret)
 			this.drawMultilineInput(renderer, PADDING_X, inputStartY, promptWidth, inputWrap);
 			this.drawCompletionOverlays(surface, promptWidth);
+			this.drawPagerOverlay(renderer, surface, lineHeight, uppercaseDisplay);
 		} finally {
 			this.currentRenderer = null;
 		}
@@ -1528,9 +1551,15 @@ export class TerminalMode {
 	}
 
 	private appendEntry(entry: TerminalOutputEntry): void {
-		this.output.push(entry);
-		if (this.output.length > this.maxEntries) {
-			this.output.splice(0, this.output.length - this.maxEntries);
+		const pagedLines = this.expandEntryForPaging(entry);
+		if (this.pagerActive || this.pagerSessionActive) {
+			for (let index = 0; index < pagedLines.length; index += 1) {
+				this.appendWithPaging(pagedLines[index]);
+			}
+			return;
+		}
+		for (let index = 0; index < pagedLines.length; index += 1) {
+			this.pushOutputEntry(pagedLines[index]);
 		}
 	}
 
@@ -1631,6 +1660,129 @@ export class TerminalMode {
 
 	private shouldRepeatKey(code: string): boolean {
 		return shouldRepeatKeyFromPlayer(code);
+	}
+
+	private beginPagerSession(): void {
+		this.pagerSessionActive = true;
+		this.pagerLinesRemaining = this.computePageLineCapacity();
+	}
+
+	private resetPagerState(): void {
+		this.pagerSessionActive = false;
+		this.pagerActive = false;
+		this.pagerQueue.length = 0;
+		this.pagerLinesRemaining = 0;
+	}
+
+	private appendWithPaging(entry: TerminalOutputEntry): void {
+		if (this.pagerActive || this.pagerLinesRemaining <= 0) {
+			this.pagerQueue.push(entry);
+			this.pagerActive = true;
+			return;
+		}
+		this.pushOutputEntry(entry);
+		this.pagerLinesRemaining -= 1;
+	}
+
+	private pushOutputEntry(entry: TerminalOutputEntry): void {
+		this.output.push(entry);
+		if (this.output.length > this.maxEntries) {
+			this.output.splice(0, this.output.length - this.maxEntries);
+		}
+	}
+
+	private expandEntryForPaging(entry: TerminalOutputEntry): TerminalOutputEntry[] {
+		const width = this.getPagingContentWidth();
+		const segments = this.wrapText(entry.text, width);
+		const lines: TerminalOutputEntry[] = [];
+		for (let index = 0; index < segments.length; index += 1) {
+			lines.push({ color: entry.color, text: segments[index] });
+		}
+		return lines;
+	}
+
+	private getPagingContentWidth(): number {
+		const width = this.lastSurfaceWidth > 0
+			? Math.max(8, this.lastSurfaceWidth - PADDING_X * 2)
+			: PAGER_FALLBACK_CONTENT_WIDTH;
+		return width;
+	}
+
+	private computePageLineCapacity(): number {
+		const lineHeight = this.font.lineHeight;
+		const surfaceHeight = this.lastSurfaceHeight > 0
+			? this.lastSurfaceHeight
+			: lineHeight * (PAGER_FALLBACK_PAGE_LINES + 2);
+		const contentWidth = this.getPagingContentWidth();
+		const uppercaseDisplay = this.useUppercaseDisplay();
+		const promptWidth = this.measureDisplayText(this.promptPrefix, uppercaseDisplay);
+		const firstLineMax = Math.max(8, contentWidth - promptWidth);
+		const otherLineMax = Math.max(8, contentWidth);
+		const displayInput = this.toDisplayText(this.fieldText(), uppercaseDisplay);
+		const inputWrap = this.wrapDisplayWithFirstWidth(displayInput, firstLineMax, otherLineMax);
+		const availableHeight = surfaceHeight - PADDING_Y * 2 - (inputWrap.segments.length * lineHeight);
+		const baseMaxLines = Math.max(1, Math.floor(availableHeight / lineHeight));
+		return Math.max(1, baseMaxLines - 1);
+	}
+
+	private handlePagerInput(): boolean {
+		if (isKeyJustPressed('Escape') || isKeyJustPressed('KeyQ')) {
+			consumeIdeKey('Escape');
+			consumeIdeKey('KeyQ');
+			this.pagerQueue.length = 0;
+			this.pagerActive = false;
+			this.pagerLinesRemaining = 0;
+			return true;
+		}
+		if (isKeyJustPressed('Enter') || isKeyJustPressed('NumpadEnter') || isKeyJustPressed('ArrowDown')) {
+			consumeIdeKey('Enter');
+			consumeIdeKey('NumpadEnter');
+			consumeIdeKey('ArrowDown');
+			this.flushPagerQueue(1);
+			return true;
+		}
+		if (isKeyJustPressed('Space') || isKeyJustPressed('PageDown')) {
+			consumeIdeKey('Space');
+			consumeIdeKey('PageDown');
+			this.flushPagerQueue(this.computePageLineCapacity());
+			return true;
+		}
+		return false;
+	}
+
+	private flushPagerQueue(lines: number): void {
+		const count = Math.max(1, lines);
+		for (let index = 0; index < count && this.pagerQueue.length > 0; index += 1) {
+			const entry = this.pagerQueue.shift()!;
+			this.pushOutputEntry(entry);
+		}
+		if (this.pagerQueue.length === 0) {
+			this.pagerActive = false;
+			this.pagerLinesRemaining = 0;
+			return;
+		}
+		this.pagerActive = true;
+		this.pagerLinesRemaining = 0;
+	}
+
+	private drawPagerOverlay(renderer: RenderFacade, surface: Viewport, lineHeight: number, uppercaseDisplay: boolean): void {
+		if (!this.pagerActive) {
+			return;
+		}
+		const text = '-- MORE -- [ENTER: line] [SPACE: page] [Q: quit]';
+		const y = Math.max(PADDING_Y, surface.height - PADDING_Y - lineHeight);
+		renderer.rect({
+			kind: 'fill',
+			area: {
+				left: PADDING_X,
+				top: y,
+				right: Math.max(PADDING_X, surface.width - PADDING_X),
+				bottom: y + lineHeight,
+			},
+			color: this.characterBackgroundColor,
+		});
+		this.drawGlyphBackgrounds(renderer, text, PADDING_X, y, uppercaseDisplay);
+		this.drawGlyphRun(renderer, text, PADDING_X, y, Msx1Colors[OUTPUT_COLORS.system], uppercaseDisplay);
 	}
 
 	private getLinesSnapshot(): string[] {

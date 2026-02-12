@@ -4,6 +4,7 @@ import * as runtimeIde from './runtime_ide';
 import * as runtimeLuaPipeline from './runtime_lua_pipeline';
 import { clearWorkspaceSessionState } from './ide/workspace_storage';
 import { ide_state } from './ide/ide_state';
+import { focusChunkSource } from './ide/cart_editor';
 import { buildWorkspaceDirtyEntryPath, buildWorkspaceStorageKey, nukeWorkspaceState, resetWorkspaceDirtyBuffersAndStorage } from './workspace';
 import { collectRuntimeStackFrames, formatRuntimeErrorLocation, formatRuntimeStackFrame } from './runtime_error_util';
 import type { LuaSourceRecord } from './lua_sources';
@@ -18,7 +19,7 @@ type PathEntry = {
 
 type WorkspaceStoredEntry = {
 	contents: string;
-	updatedAt: number;
+	updatedAt: number | null;
 };
 
 const HELP_TEXT = [
@@ -41,13 +42,14 @@ const HELP_TEXT = [
 	' LS -DIRTY / -D   List dirty workspace files',
 	' LS -SAVED / -S   List saved workspace files',
 	' LS -ALL / -A     List all asset in ROM + WS',
+	' LS -L <file>     Show workspace state for one file',
 	' CD <directory>   Change asset directory',
 	' CD .. / CD..     Go up one directory level',
 	' CD /             Go to root directory',
 	' CD               List current directory',
+	' EDIT [file.lua]  Open editor, optionally at file',
 	'',
 	' WORKSPACE COMMANDS:',
-	' WS EDIT / WSE    Open workspace editor',
 	' WS RESET         Discard unsaved edits (dirty > saved)',
 	' WS NUKE          Erase workspace and return to ROM-only',
 	'',
@@ -77,6 +79,7 @@ export class TerminalCommandDispatcher {
 		if (trimmed.length === 0) {
 			return true;
 		}
+		const tokens = this.tokenize(trimmed);
 		const upper = trimmed.toUpperCase();
 		if (upper === 'HELP') {
 			this.printHelp();
@@ -98,8 +101,12 @@ export class TerminalCommandDispatcher {
 			$.request_shutdown();
 			return true;
 		}
-		if (upper === 'IDE' || upper === 'WSE') {
+		if (upper === 'IDE') {
 			runtimeIde.activateEditor(this.runtime);
+			return true;
+		}
+		if (tokens.length >= 1 && tokens[0].toUpperCase() === 'EDIT') {
+			this.handleEdit(tokens);
 			return true;
 		}
 		if (upper === 'SYMBOLS') {
@@ -107,7 +114,6 @@ export class TerminalCommandDispatcher {
 			return true;
 		}
 		// Support flexible spacing for WS subcommands, e.g. "WS   RESET", "WS\tEDIT", etc.
-		const tokens = this.tokenize(trimmed);
 		if (tokens.length >= 1 && tokens[0].toUpperCase() === 'HELP') {
 			if (tokens.length === 1) {
 				this.printHelp();
@@ -136,7 +142,6 @@ export class TerminalCommandDispatcher {
 			const sub = tokens[1].toUpperCase();
 			if (sub === 'RESET') { await this.runWorkspaceReset(); return true; }
 			if (sub === 'NUKE') { await this.runWorkspaceNuke(); return true; }
-			if (sub === 'EDIT') { runtimeIde.activateEditor(this.runtime); return true; }
 			this.runtime.terminal.appendStderr(ERROR_SYNTAX_ERROR);
 			return true;
 		}
@@ -149,6 +154,24 @@ export class TerminalCommandDispatcher {
 			return true;
 		}
 		return false;
+	}
+
+	private handleEdit(tokens: string[]): void {
+		if (tokens.length > 2) {
+			this.runtime.terminal.appendStderr(ERROR_SYNTAX_ERROR);
+			return;
+		}
+		runtimeIde.activateEditor(this.runtime);
+		if (tokens.length === 1) {
+			return;
+		}
+		const normalizedPath = this.resolvePathArg(tokens[1]);
+		const asset = this.getLuaAssetByPath(normalizedPath);
+		if (!asset) {
+			this.runtime.terminal.appendStderr(ERROR_FILE_NOT_FOUND);
+			return;
+		}
+		focusChunkSource(asset.normalized_source_path);
 	}
 
 	private printHelp(): void {
@@ -299,8 +322,20 @@ export class TerminalCommandDispatcher {
 
 	private async handleLs(command: string): Promise<void> {
 		const tokens = this.tokenize(command);
-		if (tokens.length > 2) {
+		if (tokens.length > 3) {
 			this.runtime.terminal.appendStderr(ERROR_SYNTAX_ERROR);
+			return;
+		}
+		if (tokens.length === 3 && tokens[1].toUpperCase() !== '-L') {
+			this.runtime.terminal.appendStderr(ERROR_SYNTAX_ERROR);
+			return;
+		}
+		if (tokens.length >= 2 && tokens[1].toUpperCase() === '-L') {
+			if (tokens.length !== 3) {
+				this.runtime.terminal.appendStderr(ERROR_SYNTAX_ERROR);
+				return;
+			}
+			this.handleLsDebug(tokens[2]);
 			return;
 		}
 		let mode = '';
@@ -346,6 +381,46 @@ export class TerminalCommandDispatcher {
 			}
 			this.runtime.terminal.appendStdout(entry.text.toUpperCase(), color);
 		}
+	}
+
+	private handleLsDebug(pathArg: string): void {
+		const root = $.assets.project_root_path;
+		const storage = $.platform.storage;
+		if (!root || !storage) {
+			this.runtime.terminal.appendStderr('Workspace unavailable');
+			return;
+		}
+		const normalizedPath = this.resolvePathArg(pathArg);
+		const asset = this.getLuaAssetByPath(normalizedPath);
+		if (!asset) {
+			this.runtime.terminal.appendStderr(ERROR_FILE_NOT_FOUND);
+			return;
+		}
+		const dirtyPath = buildWorkspaceDirtyEntryPath(root, asset.normalized_source_path);
+		const dirtyKey = buildWorkspaceStorageKey(root, dirtyPath);
+		const dirtyRaw = storage.getItem(dirtyKey);
+		const dirtyEntry = this.parseWorkspaceStoredEntry(dirtyRaw);
+		const savedKey = buildWorkspaceStorageKey(root, asset.normalized_source_path);
+		const savedRaw = storage.getItem(savedKey);
+		const savedEntry = this.parseWorkspaceStoredEntry(savedRaw);
+		const cartUpdatedAt = asset.update_timestamp ?? 0;
+		const savedMatchesCart = savedEntry !== null && savedEntry.contents === asset.src;
+		const savedIsCurrent = savedEntry !== null && savedEntry.updatedAt !== null && savedEntry.updatedAt > cartUpdatedAt;
+		const dirtyMatchesCart = dirtyEntry !== null && dirtyEntry.contents === asset.src;
+		const dirtyIsCurrent = dirtyEntry !== null && dirtyEntry.updatedAt !== null && dirtyEntry.updatedAt > cartUpdatedAt;
+		const dirtyDiffersFromSaved = dirtyEntry !== null && (savedEntry === null || dirtyEntry.contents !== savedEntry.contents);
+		const dirtyDiffersFromBase = dirtyEntry !== null && dirtyEntry.contents !== asset.base_src;
+		this.runtime.terminal.appendSystem(`LS -L ${normalizedPath}`);
+		this.runtime.terminal.appendStdout(`cart.updatedAt=${cartUpdatedAt}`);
+		this.runtime.terminal.appendStdout(`cart.src=${this.describeText(asset.src)}`);
+		this.runtime.terminal.appendStdout(`cart.base=${this.describeText(asset.base_src)}`);
+		this.runtime.terminal.appendStdout(`saved.exists=${savedEntry !== null} updatedAt=${savedEntry?.updatedAt ?? 'null'} current=${savedIsCurrent} matchCart=${savedMatchesCart}`);
+		this.runtime.terminal.appendStdout(`saved.value=${savedEntry ? this.describeText(savedEntry.contents) : '<none>'}`);
+		this.runtime.terminal.appendStdout(`dirty.exists=${dirtyEntry !== null} updatedAt=${dirtyEntry?.updatedAt ?? 'null'} current=${dirtyIsCurrent} matchCart=${dirtyMatchesCart}`);
+		this.runtime.terminal.appendStdout(`dirty.value=${dirtyEntry ? this.describeText(dirtyEntry.contents) : '<none>'}`);
+		this.runtime.terminal.appendStdout(`dirty.diffSaved=${dirtyDiffersFromSaved} dirty.diffBase=${dirtyDiffersFromBase}`);
+		const flags = this.collectWorkspaceEntryFlags([asset]).get(normalizedPath);
+		this.runtime.terminal.appendStdout(`flags: saved=${flags?.hasSaved ?? false} dirty=${flags?.hasDirty ?? false} unsaved=${flags?.hasUnsaved ?? false}`);
 	}
 
 	private handleJsStack(tokens: string[]): void {
@@ -447,21 +522,55 @@ export class TerminalCommandDispatcher {
 			const cartSource = asset.src;
 			const baseSource = asset.base_src;
 			const cartUpdatedAt = asset.update_timestamp ?? 0;
-			const savedMatchesCart = savedEntry !== null && savedEntry.contents === cartSource;
-			const savedNewerThanCart = savedEntry !== null && savedEntry.updatedAt > cartUpdatedAt;
-			const hasSaved = (savedMatchesCart || savedNewerThanCart) && savedEntry !== null && savedEntry.contents !== baseSource;
-			const dirtyMatchesCart = dirtyEntry !== null && dirtyEntry.contents === cartSource;
-			const dirtyNewerThanCart = dirtyEntry !== null && dirtyEntry.updatedAt > cartUpdatedAt;
+			const hasSaved = savedEntry !== null
+				&& savedEntry.updatedAt !== null
+				&& savedEntry.updatedAt > cartUpdatedAt
+				&& savedEntry.contents === cartSource
+				&& cartSource !== baseSource;
 			let hasDirty = false;
-			if (dirtyEntry !== null) {
+			if (dirtyEntry !== null
+				&& dirtyEntry.updatedAt !== null
+				&& dirtyEntry.updatedAt > cartUpdatedAt
+				&& dirtyEntry.contents === cartSource) {
 				const dirtyDiffersFromSaved = savedEntry === null || dirtyEntry.contents !== savedEntry.contents;
 				const dirtyDiffersFromBase = dirtyEntry.contents !== baseSource;
-				hasDirty = (dirtyMatchesCart || dirtyNewerThanCart) && dirtyDiffersFromSaved && dirtyDiffersFromBase;
+				hasDirty = dirtyDiffersFromSaved && dirtyDiffersFromBase;
 			}
 			const hasUnsaved = unsavedPaths.has(normalizedPath);
 			flags.set(normalizedPath, { hasSaved, hasDirty, hasUnsaved });
 		}
 		return flags;
+	}
+
+	private resolvePathArg(pathArg: string): string {
+		const next = pathArg.startsWith('/') ? pathArg : `${this.cwd}/${pathArg}`;
+		return next.replace(/\/+/g, '/');
+	}
+
+	private getLuaAssetByPath(path: string): LuaSourceRecord | null {
+		const byNormalized = $.lua_sources.path2lua[path];
+		if (byNormalized) {
+			return byNormalized;
+		}
+		const trimmed = path.startsWith('/') ? path.slice(1) : path;
+		const bySource = $.lua_sources.path2lua[trimmed];
+		if (bySource) {
+			return bySource;
+		}
+		return null;
+	}
+
+	private describeText(text: string): string {
+		return `len=${text.length} hash=${this.hashText(text)}`;
+	}
+
+	private hashText(text: string): number {
+		let hash = 2166136261;
+		for (let index = 0; index < text.length; index += 1) {
+			hash ^= text.charCodeAt(index);
+			hash = Math.imul(hash, 16777619);
+		}
+		return hash >>> 0;
 	}
 
 	private parseWorkspaceStoredEntry(raw: string): WorkspaceStoredEntry | null {
@@ -472,16 +581,16 @@ export class TerminalCommandDispatcher {
 		try {
 			parsed = JSON.parse(raw);
 		} catch {
-			return { contents: raw, updatedAt: Number.MIN_SAFE_INTEGER };
+			return { contents: raw, updatedAt: null };
 		}
 		if (!parsed || typeof parsed !== 'object') {
-			return { contents: raw, updatedAt: Number.MIN_SAFE_INTEGER };
+			return { contents: raw, updatedAt: null };
 		}
 		const payload = parsed as { contents?: unknown; updatedAt?: unknown };
 		if (typeof payload.contents !== 'string') {
-			return { contents: raw, updatedAt: Number.MIN_SAFE_INTEGER };
+			return { contents: raw, updatedAt: null };
 		}
-		const updatedAt = typeof payload.updatedAt === 'number' ? payload.updatedAt : Number.MIN_SAFE_INTEGER;
+		const updatedAt = typeof payload.updatedAt === 'number' ? payload.updatedAt : null;
 		return { contents: payload.contents, updatedAt };
 	}
 
@@ -541,18 +650,18 @@ export class TerminalCommandDispatcher {
 				continue;
 			}
 			const slashIndex = relative.indexOf('/');
-			if (slashIndex === -1) {
-				const existing = files.get(relative) ?? { labels: new Set<string>(), hasRom: false, hasSaved: false, hasDirty: false, hasUnsaved: false };
-				// existing.labels.add(entry.label);
-				if (entry.kind === 'rom') existing.hasRom = true;
-				if (entry.kind === 'saved') existing.hasSaved = true;
-				if (entry.kind === 'dirty') existing.hasDirty = true;
-				if (entry.kind === 'unsaved') existing.hasUnsaved = true;
-				files.set(relative, existing);
-				continue;
+			const fileKey = relative;
+			const existing = files.get(fileKey) ?? { labels: new Set<string>(), hasRom: false, hasSaved: false, hasDirty: false, hasUnsaved: false };
+			// existing.labels.add(entry.label);
+			if (entry.kind === 'rom') existing.hasRom = true;
+			if (entry.kind === 'saved') existing.hasSaved = true;
+			if (entry.kind === 'dirty') existing.hasDirty = true;
+			if (entry.kind === 'unsaved') existing.hasUnsaved = true;
+			files.set(fileKey, existing);
+			if (slashIndex !== -1) {
+				const dirName = relative.slice(0, slashIndex);
+				dirs.add(dirName);
 			}
-			const dirName = relative.slice(0, slashIndex);
-			dirs.add(dirName);
 		}
 		const lines: Array<{ text: string; kind: PathEntryKind; isDir: boolean }> = [];
 		const sortedDirs = Array.from(dirs).sort();

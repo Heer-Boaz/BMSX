@@ -88,7 +88,7 @@ constants.room.tile_size3 = constants.room.tile_size * 3
 constants.room.tile_size4 = constants.room.tile_size * 4
 constants.room.tile_size9 = constants.room.tile_size * 9
 constants.room.tile_size20 = constants.room.tile_size * 20
-constants.room.tile_unit = constants.room.tile_size / 4
+constants.room.tile_unit = 1
 constants.room.tile_half = constants.room.tile_size / 2
 constants.room.tile_unit2 = constants.room.tile_unit * 2
 constants.room.tile_unit3 = constants.room.tile_unit * 3
@@ -231,7 +231,7 @@ constants.collision = {
 }
 
 constants.stairs = {
-	speed_px = 2,
+	speed_px = 1,
 	down_start_push_px = 2,
 	anim_step_px = 8,
 	foot_probe_offset_x = 4,

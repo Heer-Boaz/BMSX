@@ -118,6 +118,57 @@ local define_dkc1_global_startinglives = 0x0005
 local define_dkc1_global_50livescheatstartinglives = 0x0032
 local define_dkc1_cheatflags_50lives = 0x0004
 
+-- Visual mode routing driven from DKC1 animation id ($16AD).
+local data_visual_mode_by_animation = {
+	[define_dkc1_animationid_dk_idle] = 'idle',
+	[define_dkc1_animationid_dk_lookup] = 'idle',
+	[define_dkc1_animationid_dk_pickup] = 'idle',
+	[define_dkc1_animationid_dk_throw] = 'idle',
+	[define_dkc1_animationid_dk_incrawlspace] = 'idle',
+
+	[define_dkc1_animationid_dk_walk] = 'walk',
+	[define_dkc1_animationid_dk_crawling] = 'walk',
+	[define_dkc1_animationid_dk_duckintocrawlspace] = 'walk',
+	[define_dkc1_animationid_dk_leavecrawlspace] = 'walk',
+	[define_dkc1_animationid_dk_climbupverticalrope] = 'walk',
+	[define_dkc1_animationid_dk_climbdownverticalrope] = 'walk',
+	[define_dkc1_animationid_enguarderiddenbydk_idle] = 'walk',
+
+	[define_dkc1_animationid_dk_run] = 'run',
+	[define_dkc1_animationid_dk_turn] = 'run',
+	[define_dkc1_animationid_dk_initrunaway] = 'run',
+	[define_dkc1_animationid_rambiriddenbydk_walk] = 'run',
+	[define_dkc1_animationid_enguarderiddenbydhk_swim] = 'run',
+	[define_dkc1_animationid_rambiriddenbydk_stab] = 'run',
+	[define_dkc1_animationid_enguarderiddenbydk_stab] = 'run',
+
+	[define_dkc1_animationid_dk_roll] = 'roll',
+	[define_dkc1_animationid_dk_endroll] = 'roll',
+	[define_dkc1_animationid_dk_cancelroll] = 'roll',
+	[define_dkc1_animationid_dk_ridesteelkeg] = 'roll',
+	[define_dkc1_animationid_dk_unknowngroundstomp] = 'roll',
+
+	[define_dkc1_animationid_dk_inactivejump] = 'air',
+	[define_dkc1_animationid_dk_jump] = 'air',
+	[define_dkc1_animationid_rambiriddenbydk_jumpontire] = 'air',
+	[define_dkc1_animationid_dk_holdjump] = 'air',
+	[define_dkc1_animationid_dk_getoffanimalbuddy] = 'air',
+	[define_dkc1_animationid_dk_hurt] = 'air',
+	[define_dkc1_animationid_dk_hurtunderwater] = 'air',
+	[define_dkc1_animationid_dk_dead] = 'air',
+	[define_dkc1_animationid_dk_swimaway] = 'air',
+	[define_dkc1_animationid_dk_fall] = 'air',
+	[define_dkc1_animationid_dk_bounce] = 'air',
+	[define_dkc1_animationid_dk_jumpoffverticalrope] = 'air',
+	[define_dkc1_animationid_dk_bouncewhileholding] = 'air',
+	[define_dkc1_animationid_dk_jumpaway] = 'air',
+	[define_dkc1_animationid_dk_unknownbonusroomexit] = 'air',
+	[define_dkc1_animationid_dk_hangontoverticalrope] = 'air',
+	[define_dkc1_animationid_dk_swimming] = 'air',
+	[define_dkc1_animationid_dk_getknockedoffunderwateranimalbuddy] = 'air',
+	[define_dkc1_animationid_dk_getoffunderwateranimalbuddy] = 'air',
+}
+
 -- ============================================================================
 -- jump tables used by code_bfb27c dispatch
 -- ============================================================================
@@ -335,6 +386,25 @@ local data_818409 = {
 	0x06, 0x06, 0x06, 0x06, 0x86, 0x80, 0x00,
 }
 
+-- DATA_8184C9: collision nibble-shape dispatch table (indices 1..63; 0 handled separately).
+local data_8184c9 = {
+	'code_818547', 'code_81854b', 'code_81854f', 'code_818553', 'code_818557', 'code_81855b', 'code_81855f', 'code_818563',
+	'code_818567', 'code_8186b0', 'code_8186a9', 'code_8186a2', 'code_81869b', 'code_818694', 'code_81868d', 'code_818686',
+	'code_81867f', 'code_8186b3', 'code_8186b9', 'code_8186bb', 'code_8186c1', 'code_8186c7', 'code_8186cd', 'code_8186d3',
+	'code_8186d9', 'code_8186df', 'code_818672', 'code_818665', 'code_81865c', 'code_81864f', 'code_818642', 'code_818635',
+	'code_818628', 'code_81861b', 'code_81860e', 'code_818601', 'code_8185ce', 'code_8185d3', 'code_8185d8', 'code_8185dd',
+	'code_8185de', 'code_8185e3', 'code_8185e8', 'code_8185ed', 'code_8185f2', 'code_8185f7', 'code_8185fc', 'code_8185c8',
+	'code_8185c2', 'code_8185bc', 'code_8185ba', 'code_8185b4', 'code_8185ae', 'code_8185a8', 'code_818583', 'code_81857c',
+	'code_818575', 'code_818572', 'code_81856b', 'code_81858a', 'code_818599', 'code_81854b', 'code_81855b',
+}
+
+local data_8186e5 = {
+	0x01, 0x02, 0x02, 0x03, 0x04, 0x04, 0x05, 0x06,
+	0x06, 0x07, 0x08, 0x08, 0x09, 0x0A, 0x0A, 0x0B,
+	0x0C, 0x0C, 0x0D, 0x0E, 0x0E, 0x0F, 0x10, 0x10,
+	0x11, 0x12, 0x12, 0x13, 0x14, 0x14, 0x15, 0x16,
+}
+
 -- DATA_BBA428 from DKC1 (used by CODE_BBA4C8 when A is loaded by caller).
 local data_bba428 = {
 	{ 0xFFF8, 0xFFD0, 0x0018, 0x0020 },
@@ -439,6 +509,12 @@ end
 
 local function cmp_bpl_16(a, imm)
 	return (((a - imm) & 0x8000) == 0)
+end
+
+local function visual_frame_cycle(frames, phase)
+	local count = #frames
+	local idx = (phase % count) + 1
+	return frames[idx]
 end
 
 -- $32 is level-context state in DKC1 and is initialized by level setup routines
@@ -663,6 +739,10 @@ function player.ctor(self, addons)
 	self.zp_9b = 0
 	self.zp_92 = 0
 	self.zp_76 = 0
+	self.zp_94 = 0
+	self.zp_96 = 0
+	self.zp_98 = 0
+	self.zp_9a_fn = 'code_818547'
 	
 	self.ram_0512 = 0
 	self.ram_0514 = 0
@@ -733,6 +813,11 @@ function player.ctor(self, addons)
 	self.ram_1b21 = 0
 	self.ram_1b23 = 0
 	self.ram_1b25 = 0
+	self.ram_1b0f = 'code_81800d'
+	self.ram_08ab = 0
+	self.ram_db = 0
+	self.ram_d3_words = {}
+	self.ram_d7_bytes = {}
 	self.ram_1e2b = 0
 	self.ram_1e25 = 0
 	self.ram_1e3d = 0
@@ -773,6 +858,8 @@ function player.ctor(self, addons)
 	self.ram_1855 = {}
 	self.ram_1895 = {}
 	self.ram_18d5 = {}
+	self.ram_16b9_slots = {}
+	self.ram_16bd_slots = {}
 	self.ram_1705 = {}
 	for i = 1, 256 do
 		self.ram_1705[i] = 0
@@ -815,6 +902,10 @@ function player.ctor(self, addons)
 	self.ram_norspr_ramtable1029lo = {}
 	self.ram_norspr_ramtable1271lo = {}
 	self.ram_norspr_ramtable1631lo = {}
+	self.ram_norspr_ramtable1375lo = {}
+	self.ram_norspr_ramtable13e9lo = {}
+	self.ram_norspr_ramtable145dlo = {}
+	self.ram_norspr_ramtable0e55lo = {}
 	self.ram_norspr_ramtable14c5lo = {}
 	self.ram_norspr_ramtable1491lo = {}
 	self.ram_norspr_ramtable152dlo = {}
@@ -849,6 +940,10 @@ function player.ctor(self, addons)
 		self.ram_norspr_ramtable1029lo[i] = 0
 		self.ram_norspr_ramtable1271lo[i] = 0
 		self.ram_norspr_ramtable1631lo[i] = 0
+		self.ram_norspr_ramtable1375lo[i] = 0
+		self.ram_norspr_ramtable13e9lo[i] = 0
+		self.ram_norspr_ramtable145dlo[i] = 0
+		self.ram_norspr_ramtable0e55lo[i] = 0
 		self.ram_norspr_ramtable14c5lo[i] = 0
 		self.ram_norspr_ramtable1491lo[i] = 0
 		self.ram_norspr_ramtable152dlo[i] = 0
@@ -955,6 +1050,7 @@ function player.ctor(self, addons)
 	for i = 1, 1024 do
 		self.ram_7efc00[i] = 0
 	end
+	self:code_818c66_dummy()
 end
 
 function player:reset_runtime()
@@ -994,6 +1090,11 @@ function player:reset_runtime()
 	self.ram_1b21 = 0
 	self.ram_1b23 = 0
 	self.ram_1b25 = 0
+	self.ram_1b0f = 'code_81800d'
+	self.ram_08ab = 0
+	self.ram_db = 0
+	self.ram_d3_words = {}
+	self.ram_d7_bytes = {}
 	self.ram_1e2b = 0
 	self.ram_1df5 = 0
 	self.ram_1df7 = 0
@@ -1071,6 +1172,8 @@ function player:reset_runtime()
 	self.ram_1855 = {}
 	self.ram_1895 = {}
 	self.ram_18d5 = {}
+	self.ram_16b9_slots = {}
+	self.ram_16bd_slots = {}
 	self.ram_1705 = {}
 	for i = 1, 256 do
 		self.ram_1705[i] = 0
@@ -1096,6 +1199,10 @@ function player:reset_runtime()
 	self.ram_norspr_ramtable1029lo = {}
 	self.ram_norspr_ramtable1271lo = {}
 	self.ram_norspr_ramtable1631lo = {}
+	self.ram_norspr_ramtable1375lo = {}
+	self.ram_norspr_ramtable13e9lo = {}
+	self.ram_norspr_ramtable145dlo = {}
+	self.ram_norspr_ramtable0e55lo = {}
 	self.ram_norspr_ramtable14c5lo = {}
 	self.ram_norspr_ramtable1491lo = {}
 	self.ram_norspr_ramtable152dlo = {}
@@ -1130,6 +1237,10 @@ function player:reset_runtime()
 		self.ram_norspr_ramtable1029lo[i] = 0
 		self.ram_norspr_ramtable1271lo[i] = 0
 		self.ram_norspr_ramtable1631lo[i] = 0
+		self.ram_norspr_ramtable1375lo[i] = 0
+		self.ram_norspr_ramtable13e9lo[i] = 0
+		self.ram_norspr_ramtable145dlo[i] = 0
+		self.ram_norspr_ramtable0e55lo[i] = 0
 		self.ram_norspr_ramtable14c5lo[i] = 0
 		self.ram_norspr_ramtable1491lo[i] = 0
 		self.ram_norspr_ramtable152dlo[i] = 0
@@ -1174,6 +1285,10 @@ function player:reset_runtime()
 	self.zp_9b = 0
 	self.zp_92 = 0
 	self.zp_76 = 0
+	self.zp_94 = 0
+	self.zp_96 = 0
+	self.zp_98 = 0
+	self.zp_9a_fn = 'code_818547'
 	
 	self.facing = 1
 	self.grounded = true
@@ -1240,6 +1355,15 @@ function player:reset_runtime()
 	for i = 1, 1024 do
 		self.ram_7efc00[i] = 0
 	end
+	self:code_818c66_dummy()
+end
+
+function player:code_818c66_dummy()
+	local ctx = self.level.dkc1_asm_collision
+	self.ram_d3_words = ctx.d3_words
+	self.ram_d7_bytes = ctx.d7_bytes
+	self.ram_db = ctx.db & 0xFFFF
+	self.ram_1b0f = ctx.dispatch_label
 end
 
 -- ============================================================================
@@ -2968,7 +3092,15 @@ function player:code_bfa4da()
 end
 
 function player:code_bfc0d0()
-	-- partner sync path in DKC1; this cart runs single-player only.
+	local xi = (0x0002 >> 1) + 1
+	local yi = (0x0002 >> 1) + 1
+	self.ram_16b9_slots[yi] = self.ram_norspr_xposlo[xi] & 0xFFFF
+	self.ram_16bd_slots[yi] = self.ram_norspr_yposlo[xi] & 0xFFFF
+
+	xi = (0x0004 >> 1) + 1
+	yi = (0x0000 >> 1) + 1
+	self.ram_16b9_slots[yi] = self.ram_norspr_xposlo[xi] & 0xFFFF
+	self.ram_16bd_slots[yi] = self.ram_norspr_yposlo[xi] & 0xFFFF
 end
 
 -- CODE_BFA260: release held object ($16F5 path).
@@ -3531,8 +3663,35 @@ function player:code_bf888e()
 	if self.zp_88 < 0x0006 then
 		return false
 	end
-	-- Remaining mount logic requires full buddy runtime tables not present in this cart.
-	return false
+
+	local yi = (self.zp_88 >> 1) + 1
+	self.ram_0512 = self.zp_88 & 0xFFFF
+	self.ram_0516 = self.ram_norspr_spriteidlo[yi] & 0xFFFF
+	if self.ram_0516 == define_dkc1_norspr51_minecart then
+		self:code_be80a4(0x0000)
+		return false
+	end
+
+	self.ram_norspr_ramtable1595lo[yi] = 0x0008
+	self.ram_norspr_ramtable1375lo[yi] = self.zp_84 & 0xFFFF
+	self.ram_ramtable1029lo = 0x0014
+	self.ram_yspeedlo = 0
+	self.ram_ramtable11a1lo = 0x00C3
+	self.ram_norspr_ramtable13e9lo[yi] = 0
+	self.ram_norspr_ramtable145dlo[yi] = 0
+	self.ram_oamzposlo = 0x00DC
+	self.ram_norspr_oamzposlo[yi] = 0x00E4
+	self.ram_xposlo = self.ram_norspr_xposlo[yi] & 0xFFFF
+	self.ram_yposlo = self.ram_norspr_yposlo[yi] & 0xFFFF
+
+	self.zp_76 = self.ram_norspr_yxppccctlo[yi] & 0xFFFF
+	local a = ((self.ram_yxppccctlo ~ self.ram_norspr_yxppccctlo[yi]) & 0x0E00) ~ self.ram_norspr_yxppccctlo[yi]
+	self.ram_norspr_ramtable0e55lo[yi] = a & 0xFFFF
+	self.ram_norspr_ramtable1271lo[yi] = (self.ram_norspr_ramtable1271lo[yi] | 0x4000) & 0xFFFF
+	a = ((self.zp_76 ~ self.ram_yxppccctlo) & 0x0E00) ~ self.ram_yxppccctlo
+	self.ram_yxppccctlo = a & 0xFFFF
+	self:code_be8092(0x0050)
+	return true
 end
 
 -- CODE_BF881C: vertical-rope transition checks.
@@ -5344,14 +5503,7 @@ function player:code_bf84a8()
 	self.ram_ramtable1271lo = self.ram_ramtable1271lo & 0x7FFF
 	local state = self.ram_ramtable1029lo & 0xFFFF
 	local label = data_bf84c5[state + 1]
-	if label == nil then
-		return
-	end
-	local fn = self[label]
-	if fn == nil then
-		return
-	end
-	fn(self)
+	self[label](self)
 end
 
 function player:code_bba4e5(hitbox)
@@ -7746,26 +7898,223 @@ function player:resolve_collision_raw_9c(solid)
 	return solid.dkc1_collision9c & 0xFFFF
 end
 
+function player:code_818003_read_d3_word(offset)
+	local idx = (offset >> 1) + 1
+	return self.ram_d3_words[idx] & 0xFFFF
+end
+
+function player:code_818003_read_d7_byte(offset)
+	return self.ram_d7_bytes[offset + 1] & 0x00FF
+end
+
 function player:code_818003(sample_x)
-	local x = sample_x & 0xFFFF
-	local solids = self.level.solids
-	local best = nil
-	for i = 1, #solids do
-		local s = solids[i]
-		if x >= s.x and x < (s.x + s.w) then
-			if best == nil or s.y < best.y then
-				best = s
+	self.zp_4c = sample_x & 0xFFFF
+	self.ram_08ab = self.zp_84 & 0xFFFF
+	return self[self.ram_1b0f](self)
+end
+
+function player:code_818448(a)
+	return self[self.zp_9a_fn](self, a & 0xFFFF)
+end
+
+function player:code_8180ff(y)
+	self.zp_94 = self.zp_98 & 0xFFFF
+	local a = self:code_818003_read_d3_word(y & 0xFFFF)
+	local x = y & 0xFFFF
+	self.zp_9a = a & 0xFFFF
+	if self.zp_9a == 0 then
+		return 0xFFFF
+	end
+	if (self.zp_9a & 0x4000) ~= 0 then
+		self.zp_94 = (self.zp_98 ~ 0x001F) & 0xFFFF
+	end
+	a = self.zp_9a & 0x3FFF
+	if a >= self.ram_db then
+		return 0xFFFF
+	end
+	y = (a << 1) & 0xFFFF
+	if (self.zp_94 & 0x0010) ~= 0 then
+		y = (y + 1) & 0xFFFF
+	end
+	a = self:code_818003_read_d7_byte(y)
+	if (a & 0x0080) ~= 0 then
+		self.zp_94 = (self.zp_94 ~ 0x000F) & 0xFFFF
+		a = self:code_818003_read_d7_byte(y)
+	end
+	y = x
+	if (self.zp_9a & 0x4000) ~= 0 then
+		a = (a ~ 0x0080) & 0x00FF
+	end
+	self.zp_9c = a & 0xFFFF
+	a = a & 0x003F
+	if a == 0 then
+		return 0xFFFF
+	end
+	self.zp_9a_fn = data_8184c9[a]
+	a = self.zp_94 & 0x000F
+	a = self:code_818448(a)
+	if to_signed_16(to_unsigned_16(a - 0x001F)) >= 0 then
+		a = 0x001F
+	end
+	return a & 0xFFFF
+end
+
+function player:code_81800d()
+	self.zp_98 = self.zp_4c & 0x001F
+	self.zp_9c = 0x0000
+	local a = self.ram_yposlo & 0xFFFF
+	if to_signed_16(a) < 0 then
+		a = 0x0000
+	end
+	if a >= 0x01FF then
+		a = 0x01FF
+	end
+	self.zp_96 = a & 0x01E0
+	self.zp_4c = self.zp_4c & 0xFFE0
+	a = ((self.zp_96 ~ 0x01E0) >> 4) & 0xFFFF
+	local y = (a + self.zp_4c) & 0xFFFF
+	a = self:code_8180ff(y)
+	self.zp_9e = self.zp_9c
+	if to_signed_16(a) < 0 then
+		y = (y + 2) & 0xFFFF
+		if (y & 0x001E) == 0 then
+			self.zp_9c = 0x0000
+			return 0xFFC0
+		end
+		self.zp_96 = (self.zp_96 - 0x0020) & 0xFFFF
+		a = self:code_8180ff(y)
+		if to_signed_16(a) < 0 then
+			y = (y + 2) & 0xFFFF
+			if (y & 0x001E) == 0 then
+				self.zp_9c = 0x0000
+				return 0xFFC0
+			end
+			self.zp_96 = (self.zp_96 - 0x0020) & 0xFFFF
+			a = self:code_8180ff(y)
+			if to_signed_16(a) < 0 then
+				self.zp_9c = 0x0000
+				return 0xFFC0
 			end
 		end
+		y = a & 0xFFFF
+		a = (y | self.zp_96) & 0xFFFF
+	else
+		if a == 0x001F then
+			if (y & 0x001E) ~= 0 then
+				y = (y - 2) & 0xFFFF
+				self.zp_4c = self.zp_9c
+				a = self:code_8180ff(y)
+				if to_signed_16(a) < 0 then
+					self.zp_9c = self.zp_4c
+					y = 0x001F
+					a = (0x001F | self.zp_96) & 0xFFFF
+				else
+					y = a & 0xFFFF
+					a = ((y | 0x0020) + self.zp_96) & 0xFFFF
+				end
+			else
+				y = 0x001F
+				a = 0x01FF
+			end
+		else
+			y = a & 0xFFFF
+			a = (y | self.zp_96) & 0xFFFF
+		end
 	end
-	if best ~= nil then
-		self.zp_9c = self:resolve_collision_raw_9c(best)
-		self:code_818087_remap_9c(0)
-		return best.y & 0xFFFF
+	local collision_y = a & 0xFFFF
+	self.zp_4c = self.zp_9c
+	local map_index = self.zp_9c & 0x003F
+	self.zp_9c = self.zp_9c & (~map_index & 0xFFFF)
+	local lo = data_818409[map_index + 1]
+	local hi = data_818409[map_index + 2]
+	local mapped = ((hi << 8) | lo) & 0x801F
+	if (mapped & 0x8000) ~= 0 and y ~= 0x000F then
+		mapped = mapped & 0x001F
 	end
-	self.zp_9c = 0
-	return self.ram_yposlo & 0xFFFF
+	self.zp_9c = (self.zp_9c | mapped) & 0xFFFF
+	local kind = self.zp_9e & 0x007F
+	if kind == 0x0045 or kind == 0x0041 then
+		self.zp_9c = self.zp_9c | 0x0020
+	end
+	if collision_y == 0x01FF then
+		collision_y = 0x0800
+	end
+	return collision_y & 0xFFFF
 end
+
+function player:code_818547(a) return 0xFFFF end
+function player:code_81854b(a) return 0x001F end
+function player:code_81854f(a) return 0x001B end
+function player:code_818553(a) return 0x0017 end
+function player:code_818557(a) return 0x0013 end
+function player:code_81855b(a) return 0x000F end
+function player:code_81855f(a) return 0x000B end
+function player:code_818563(a) return 0x0007 end
+function player:code_818567(a) return 0x0003 end
+function player:code_81856b(a) return to_unsigned_16((a << 2) + 0x0010) end
+function player:code_818572(a) return to_unsigned_16(a << 2) end
+function player:code_818575(a) return to_unsigned_16((a << 2) - 0x0010) end
+function player:code_81857c(a) return to_unsigned_16((a << 2) - 0x0020) end
+function player:code_818583(a) return to_unsigned_16((a << 2) - 0x0030) end
+function player:code_81858a(a)
+	a = to_unsigned_16((a << 2) - 0x0010)
+	if a >= 0x000F then
+		a = 0x000F
+	end
+	return a
+end
+function player:code_818599(a)
+	a = to_unsigned_16((a << 2) - 0x0010)
+	if a < 0x000F then
+		a = 0x000F
+	end
+	return a
+end
+function player:code_8185a8(a) return to_unsigned_16((a << 1) + 0x0018) end
+function player:code_8185ae(a) return to_unsigned_16((a << 1) + 0x0010) end
+function player:code_8185b4(a) return to_unsigned_16((a << 1) + 0x0008) end
+function player:code_8185ba(a) return to_unsigned_16(a << 1) end
+function player:code_8185bc(a) return to_unsigned_16((a << 1) - 0x0008) end
+function player:code_8185c2(a) return to_unsigned_16((a << 1) - 0x0010) end
+function player:code_8185c8(a) return to_unsigned_16((a << 1) - 0x0018) end
+function player:code_8185ce(a) return to_unsigned_16(a - 0x000C) end
+function player:code_8185d3(a) return to_unsigned_16(a - 0x0008) end
+function player:code_8185d8(a) return to_unsigned_16(a - 0x0004) end
+function player:code_8185dd(a) return a & 0xFFFF end
+function player:code_8185de(a) return to_unsigned_16(a + 0x0004) end
+function player:code_8185e3(a) return to_unsigned_16(a + 0x0008) end
+function player:code_8185e8(a) return to_unsigned_16(a + 0x000C) end
+function player:code_8185ed(a) return to_unsigned_16(a + 0x0010) end
+function player:code_8185f2(a) return to_unsigned_16(a + 0x0014) end
+function player:code_8185f7(a) return to_unsigned_16(a + 0x0018) end
+function player:code_8185fc(a) return to_unsigned_16(a + 0x001C) end
+function player:code_818601(a) return to_unsigned_16((data_8186e5[a + 1] & 0x00FF) + 0x001C) end
+function player:code_81860e(a) return to_unsigned_16((data_8186e5[a + 1] & 0x00FF) + 0x0018) end
+function player:code_81861b(a) return to_unsigned_16((data_8186e5[a + 1] & 0x00FF) + 0x0014) end
+function player:code_818628(a) return to_unsigned_16((data_8186e5[a + 1] & 0x00FF) + 0x0010) end
+function player:code_818635(a) return to_unsigned_16((data_8186e5[a + 1] & 0x00FF) + 0x000C) end
+function player:code_818642(a) return to_unsigned_16((data_8186e5[a + 1] & 0x00FF) + 0x0008) end
+function player:code_81864f(a) return to_unsigned_16((data_8186e5[a + 1] & 0x00FF) + 0x0004) end
+function player:code_81865c(a) return data_8186e5[a + 1] & 0x00FF end
+function player:code_818665(a) return to_unsigned_16((data_8186e5[a + 1] & 0x00FF) - 0x0004) end
+function player:code_818672(a) return to_unsigned_16((data_8186e5[a + 1] & 0x00FF) - 0x0008) end
+function player:code_81867f(a) return to_unsigned_16((a >> 2) + 0x001C) end
+function player:code_818686(a) return to_unsigned_16((a >> 2) + 0x0018) end
+function player:code_81868d(a) return to_unsigned_16((a >> 2) + 0x0014) end
+function player:code_818694(a) return to_unsigned_16((a >> 2) + 0x0010) end
+function player:code_81869b(a) return to_unsigned_16((a >> 2) + 0x000C) end
+function player:code_8186a2(a) return to_unsigned_16((a >> 2) + 0x0008) end
+function player:code_8186a9(a) return to_unsigned_16((a >> 2) + 0x0004) end
+function player:code_8186b0(a) return to_unsigned_16(a >> 2) end
+function player:code_8186b3(a) return to_unsigned_16((a >> 1) - 0x0004) end
+function player:code_8186b9(a) return to_unsigned_16(a >> 1) end
+function player:code_8186bb(a) return to_unsigned_16((a >> 1) + 0x0004) end
+function player:code_8186c1(a) return to_unsigned_16((a >> 1) + 0x0008) end
+function player:code_8186c7(a) return to_unsigned_16((a >> 1) + 0x000C) end
+function player:code_8186cd(a) return to_unsigned_16((a >> 1) + 0x0010) end
+function player:code_8186d3(a) return to_unsigned_16((a >> 1) + 0x0014) end
+function player:code_8186d9(a) return to_unsigned_16((a >> 1) + 0x0018) end
+function player:code_8186df(a) return to_unsigned_16((a >> 1) + 0x001C) end
 
 function player:code_818000()
 	return self:code_818003(self.ram_xposlo)
@@ -7981,29 +8330,46 @@ end
 -- ============================================================================
 
 function player:update_visual_frame(dt)
-	local speed_unsigned = abs_16(self.ram_xspeedlo)
-	
-	-- determine pose
-	if self.ram_ramtable1029lo == 0x0012 then
-		self.pose_name = 'roll'
-		self.visual_frame_id = 'esther_dk_roll_01'
-	elseif not self.grounded then
-		self.pose_name = 'airborne'
-		self.visual_frame_id = 'esther_dk_jump'
-	elseif speed_unsigned < 0x0080 then  -- ~0.5 px/frame
-		self.pose_name = 'idle'
-		self.visual_frame_id = 'esther_dk_idle_01'
-	elseif speed_unsigned < 0x0280 then  -- < ~2.5 px/frame
-		self.pose_name = 'walk'
-		self.visual_frame_id = 'esther_dk_walk_01'  -- would cycle here
-	else
-		self.pose_name = 'run'
-		self.visual_frame_id = 'esther_dk_run_01'  -- would cycle here
+	local _ = dt
+	local animation = self.ram_16ad & 0xFFFF
+	local mode = data_visual_mode_by_animation[animation]
+	if mode == nil then
+		mode = 'idle'
 	end
+
+	local phase = (0x00FF - ((self.ram_displaycurrentposetimerlo >> 8) & 0x00FF)) & 0x00FF
+
+	if mode == 'roll' then
+		self.pose_name = 'roll'
+		self.visual_frame_id = visual_frame_cycle(constants.animation.roll.frames, phase)
+	elseif mode == 'air' then
+		self.pose_name = 'airborne'
+		if to_signed_16(self.ram_yspeedlo) >= 0 then
+			self.visual_frame_id = constants.animation.air.rise_frame
+		else
+			self.visual_frame_id = constants.animation.air.fall_frame
+		end
+	elseif mode == 'run' then
+		self.pose_name = 'run'
+		self.visual_frame_id = visual_frame_cycle(constants.animation.run.frames, phase)
+	elseif mode == 'walk' then
+		self.pose_name = 'walk'
+		self.visual_frame_id = visual_frame_cycle(constants.animation.walk.frames, phase)
+	else
+		self.pose_name = 'idle'
+		self.visual_frame_id = visual_frame_cycle(constants.animation.idle.frames, phase)
+	end
+
+	if (self.ram_yxppccctlo & 0x4000) ~= 0 then
+		self.facing = -1
+	else
+		self.facing = 1
+	end
+	self.grounded = (self.ram_ramtable12a5lo & 0x0001) ~= 0
 end
 
 -- ============================================================================
--- timeline system (stub)
+-- timeline system
 -- ============================================================================
 
 function player:respawn()

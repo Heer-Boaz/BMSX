@@ -109,7 +109,7 @@ src/carts/pietious/res/_ignore/gamecycle.cpp
 src/carts/pietious/res/_ignore/gameinteractions.cpp
 src/carts/pietious/res/_ignore/gameobjects.cpp
 src/carts/pietious/res/_ignore/gametiles.cpp
-src/carts/pietious/res/_ignore/ingamecycle.cpp
+# src/carts/pietious/res/_ignore/ingamecycle.cpp
 src/carts/pietious/res/_ignore/keyboard.cpp
 src/carts/pietious/res/_ignore/line_clip.cpp
 src/carts/pietious/res/_ignore/line_clip.h

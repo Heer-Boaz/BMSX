@@ -578,9 +578,11 @@ function player:take_hit(amount, source_x, source_y, reason)
 		self.facing = -hit_direction
 	end
 
-	local knockup_px = constants.damage.knockup_px
-	if knockup_px > 0 then
-		self:apply_move(0, -knockup_px)
+	if damage_event == 'damage' then
+		local knockup_px = constants.damage.knockup_px
+		if knockup_px > 0 then
+			self:apply_move(0, -knockup_px)
+		end
 	end
 
 	self:dispatch_state_event(damage_event, { reason = reason })
@@ -950,6 +952,7 @@ end
 
 function player:start_stairs(direction, stair, event_name)
 	self:apply_stairs_lock(stair)
+	self.x = stair.x
 	self.stairs_direction = direction
 	self.stairs_anim_distance = 0
 	self.stairs_anim_frame = 0
@@ -1432,7 +1435,6 @@ function player:runcheck_quiet_stairs_controls()
 
 	if self.down_held then
 		local was_at_or_below_bottom = self.y >= self.stairs_bottom_y
-		local down_exit_threshold = self.room.world_height - self.height
 		local quiet_down_start_step = constants.stairs.down_start_push_px
 		self.stairs_direction = 1
 		self:dispatch_state_event('stairs_down_hold')
@@ -1443,9 +1445,6 @@ function player:runcheck_quiet_stairs_controls()
 			self:update_stairs_animation(math.abs(self.last_dy))
 		end
 		if was_at_or_below_bottom then
-			if self.y >= down_exit_threshold then
-				return
-			end
 			self:leave_stairs('stairs_end_bottom')
 		end
 		return
@@ -1647,7 +1646,7 @@ function player:tick_uncontrolled_fall_motion()
 	end
 	local dy = self:get_uncontrolled_fall_dy()
 	local should_land = self:collides_at(self.x, self.y + dy)
-	local move_result = self:apply_move(0, dy)
+	self:apply_move(0, dy)
 
 	if should_land then
 		self:reset_fall_substate_sequence()
@@ -1705,7 +1704,7 @@ function player:tick_up_stairs()
 		self.stairs_direction = 1
 		self:dispatch_state_event('stairs_reverse_down')
 		if self.y < self.stairs_bottom_y then
-			next_y = self.y + constants.stairs.down_start_push_px
+			next_y = self.y + speed
 			moved = true
 		else
 			self:leave_stairs('stairs_end_bottom')
@@ -1742,7 +1741,6 @@ function player:tick_down_stairs()
 	local speed = constants.stairs.speed_px
 	local moved = false
 	local next_y = self.y
-	local down_exit_threshold = self.room.world_height - self.height
 
 	if self.down_held and not self.up_held then
 		self.stairs_direction = 1
@@ -1753,9 +1751,6 @@ function player:tick_down_stairs()
 		if next_y >= self.stairs_bottom_y then
 			self.last_dy = next_y - self.y
 			self.y = next_y
-			if self.y >= down_exit_threshold then
-				return
-			end
 			self:leave_stairs('stairs_end_bottom')
 			return
 		end
@@ -1807,6 +1802,27 @@ function player:tick_sword_stairs()
 	self.last_dy = 0
 	self.x = self.stairs_x
 	self.stairs_direction = 0
+end
+
+function player:resolve_hit_overlap_if_needed()
+	if not self:collides_at(self.x, self.y) then
+		return
+	end
+	local unit = constants.room.tile_unit
+	local left_col = self:collides_at(self.x - unit, self.y)
+	local right_col = self:collides_at(self.x + unit, self.y)
+	local up_col = self:collides_at(self.x, self.y - unit)
+	local down_col = self:collides_at(self.x, self.y + unit)
+	if left_col and (not right_col) then
+		self.x = self.x + unit
+	elseif (not left_col) and right_col then
+		self.x = self.x - unit
+	end
+	if up_col and (not down_col) then
+		self.y = self.y + unit
+	elseif (not up_col) and down_col then
+		self.y = self.y - unit
+	end
 end
 
 function player:tick_hit_fall()
@@ -1924,6 +1940,13 @@ function player:tick()
 		self.jumping_from_elevator = false
 	end
 	self:try_vertical_room_switch_from_position()
+
+	if self:has_tag(state_tags.variant.quiet)
+		or self:has_tag(state_tags.variant.hit_fall)
+		or self:has_tag(state_tags.variant.hit_collision)
+		or self:has_tag(state_tags.variant.hit_recovery) then
+		self:resolve_hit_overlap_if_needed()
+	end
 
 	self.grounded = self:collides_at(self.x, self.y + 1)
 	self:update_visual_components()

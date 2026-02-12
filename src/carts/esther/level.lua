@@ -11,13 +11,62 @@ local function resolve_level_context_state32(context_key)
 	return key, value
 end
 
+local function find_top_solid_y(solids, sample_x)
+	local top = nil
+	for i = 1, #solids do
+		local solid = solids[i]
+		if sample_x >= solid.x and sample_x < (solid.x + solid.w) then
+			if top == nil or solid.y < top then
+				top = solid.y
+			end
+		end
+	end
+	return top
+end
+
+local function build_dummy_asm_collision(level_data)
+	local columns = math.floor((level_data.world_width + 31) / 32) + 1
+	local rows = 16
+	local d3_words = {}
+
+	for i = 1, columns * rows do
+		d3_words[i] = 0x0000
+	end
+
+	local player_height = constants.player.height
+	for col = 0, columns - 1 do
+		local sample_x = (col << 5) + 16
+		local top_solid_y = find_top_solid_y(level_data.solids, sample_x)
+		if top_solid_y ~= nil then
+			local probe_y = top_solid_y - player_height
+			if probe_y < 0 then
+				probe_y = 0
+			elseif probe_y > 0x01FF then
+				probe_y = 0x01FF
+			end
+			local y_base = probe_y & 0x01E0
+			local y_component = ((y_base ~ 0x01E0) >> 4) & 0xFFFF
+			local d3_offset = ((col << 5) + y_component) & 0xFFFF
+			local d3_index = (d3_offset >> 1) + 1
+			d3_words[d3_index] = 0x0001
+		end
+	end
+
+	level_data.dkc1_asm_collision = {
+		dispatch_label = 'code_81800d',
+		d3_words = d3_words,
+		d7_bytes = { 0x00, 0x00, 0x02, 0x02 },
+		db = 0x0002,
+	}
+end
+
 function level.create_level(context_key)
 	local world_width = constants.world.width
 	local world_height = constants.world.height
 	local ground_y = 192
 	local selected_context_key, selected_state32 = resolve_level_context_state32(context_key)
 
-	return {
+	local level_data = {
 		world_width = world_width,
 		world_height = world_height,
 		dkc1_level_context = selected_context_key,
@@ -279,6 +328,9 @@ function level.create_level(context_key)
 			{ x = 3450, y = 88, w = 32, h = 104 },
 		},
 	}
+
+	build_dummy_asm_collision(level_data)
+	return level_data
 end
 
 return level
