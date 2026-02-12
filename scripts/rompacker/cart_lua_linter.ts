@@ -678,7 +678,7 @@ function lintFunctionBody(
 			issues,
 			'visual_update_pattern',
 			functionExpression,
-			`update_visual-style code is forbidden ("${functionName}"). Use deterministic initialization and on-change updates.`,
+			`update_visual-style code is forbidden ("${functionName}"). Use deterministic initialization and on-change updates. Do not bypass this by mechanically renaming update_visual* symbols.`,
 		);
 	}
 	const isGetterOrSetter = isNamedFunction && (matchesGetterPattern(functionExpression) || matchesSetterPattern(functionExpression));
