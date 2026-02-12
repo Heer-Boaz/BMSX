@@ -329,9 +329,6 @@ local function build_world_entrances(room_number, object_defs)
 	for i = 1, #object_defs do
 		local object_def = object_defs[i]
 		if object_def.type == 'worldentrance' then
-			if world_transition_specs[object_def.target] == nil then
-				error('pietious castle_map unknown world entrance target=' .. tostring(object_def.target))
-			end
 			entrance_index = entrance_index + 1
 			local x = tile_x_to_world(object_def.x)
 			local y = tile_y_to_world(object_def.y)
@@ -359,9 +356,6 @@ local function load_room_templates()
 		local room_def = data[tostring(room_number)]
 		local world_number = 0
 		if room_def.type == constants.spaces.world then
-			if room_def.worldnumber == nil then
-				error('pietious castle_map missing worldnumber for world room=' .. tostring(room_number))
-			end
 			world_number = room_def.worldnumber
 		end
 		local links = build_links(room_def.exits)
@@ -394,21 +388,9 @@ local function attach_world_transition_metadata(room_templates)
 		for i = 1, #world_entrances do
 			local world_entrance = world_entrances[i]
 			local spec = world_transition_specs[world_entrance.target]
-			if spec.castle_room_number > 0 then
-				error('pietious castle_map duplicate world entrance target=' .. tostring(world_entrance.target))
-			end
 			spec.castle_room_number = template.room_number
 			spec.castle_spawn_x = world_entrance.stair_x
 			spec.castle_spawn_y = world_entrance.stair_y
-		end
-	end
-
-	for target, spec in pairs(world_transition_specs) do
-		if spec.castle_room_number <= 0 then
-			error('pietious castle_map missing castle entrance for target=' .. tostring(target))
-		end
-		if room_templates[spec.world_room_number] == nil then
-			error('pietious castle_map missing world room for target=' .. tostring(target))
 		end
 	end
 end

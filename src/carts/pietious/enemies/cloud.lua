@@ -2,6 +2,7 @@ local constants = require('constants')
 local behaviourtree = require('behaviourtree')
 
 local cloud = {}
+
 local full_circle_milliradians = 6283
 
 local function consume_axis_accum(accum, speed_num, speed_den)
@@ -18,26 +19,42 @@ local function consume_axis_accum(accum, speed_num, speed_den)
 	return delta, accum
 end
 
-function cloud.configure(self, def, _context)
+function cloud.configure(self, def)
 	self.width = def.w or 32
 	self.height = def.h or 24
 	self.max_health = def.health or 15
 	self.health = self.max_health
 	self.damage = def.damage or 2
+	self.cloud_anim_frame = 1
 	self:set_body_hit_area(0, 2, 22, 30)
 end
 
-function cloud.on_configured(self, context)
-	self:play_timeline(context.cloud_timeline_id, { rewind = true, snap_to_start = true })
-end
-
-function cloud.update_visual(self, timeline_id)
-	local timeline = self:get_timeline(timeline_id)
-	return timeline:value(), false, false
+function cloud.sync_components(self)
+	if self.cloud_anim_frame == 2 then
+		self:set_body_sprite('cloud_2', false, false)
+		return
+	end
+	self:set_body_sprite('cloud_1', false, false)
 end
 
 function cloud.bt_tick(self, blackboard)
 	local node = blackboard.nodedata
+
+	local anim_ticks = node.cloud_anim_ticks
+	if anim_ticks == nil then
+		anim_ticks = constants.enemy.cloud_anim_switch_steps
+	end
+	anim_ticks = anim_ticks - 1
+	if anim_ticks <= 0 then
+		if self.cloud_anim_frame == 1 then
+			self.cloud_anim_frame = 2
+		else
+			self.cloud_anim_frame = 1
+		end
+		anim_ticks = constants.enemy.cloud_anim_switch_steps
+	end
+	node.cloud_anim_ticks = anim_ticks
+
 	local dir_modifier = self.direction == 'left' and -1 or 1
 	local move_accum = node.cloud_move_accum
 	if move_accum == nil then
@@ -85,12 +102,12 @@ function cloud.bt_tick(self, blackboard)
 	vlok_ticks = vlok_ticks - 1
 	if vlok_ticks <= 0 then
 		for i = 1, 3 do
-				local random_x = 0
-				local random_y = 0
-				while math.abs(random_x + random_y) < 2 do
-					random_x = math.random(-5, 4)
-					random_y = math.random(-5, 4)
-				end
+			local random_x = 0
+			local random_y = 0
+			while math.abs(random_x + random_y) < 2 do
+				random_x = math.random(-5, 4)
+				random_y = math.random(-5, 4)
+			end
 			self:spawn_child_enemy('vlokfoe', self.x + 16, self.y + 12, {
 				direction = random_x < 0 and 'left' or 'right',
 				speedx = random_x,
@@ -102,6 +119,17 @@ function cloud.bt_tick(self, blackboard)
 	end
 	node.cloud_vlok_ticks = vlok_ticks
 	return behaviourtree.running
+end
+
+function cloud.register_behaviour_tree(bt_id)
+	behaviourtree.register_definition(bt_id, {
+		root = {
+			type = 'action',
+			action = function(target, blackboard)
+				return cloud.bt_tick(target, blackboard)
+			end,
+		},
+	})
 end
 
 function cloud.choose_drop_type(_self, _random_percent_hit)

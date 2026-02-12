@@ -3,26 +3,25 @@ local behaviourtree = require('behaviourtree')
 
 local boekfoe = {}
 
-function boekfoe.configure(self, def, _context)
+function boekfoe.configure(self, def)
 	self.width = def.w or 21
 	self.height = def.h or 24
 	self.max_health = def.health or 6
 	self.health = self.max_health
 	self.damage = def.damage or 4
+	self.boek_state = 'closed'
 	self:set_body_hit_area(0, 0, 21, 24)
 end
 
-function boekfoe.update_visual(self, timeline_id)
-	local timeline = self:get_timeline(timeline_id)
+function boekfoe.sync_components(self)
+	local imgid = 'boekfoe_closed'
 	if self.boek_state == 'open' then
-		timeline:force_seek(1)
-	else
-		timeline:force_seek(0)
+		imgid = 'boekfoe_open'
 	end
-	return timeline:value(), self.direction == 'left', false
+	self:set_body_sprite(imgid, self.direction == 'left', false)
 end
 
-function boekfoe.bt_tick(self, blackboard, random_between)
+function boekfoe.bt_tick(self, blackboard)
 	local node = blackboard.nodedata
 
 	if self.boek_state == 'closed' then
@@ -54,7 +53,7 @@ function boekfoe.bt_tick(self, blackboard, random_between)
 	spawn_ticks = spawn_ticks - 1
 
 	if spawn_ticks <= 0 then
-		local y_speed_num = random_between(-5, 4)
+		local y_speed_num = math.random(-5, 4)
 		self:spawn_child_enemy('paperfoe', self.x, self.y, {
 			direction = self.direction == 'left' and 'left' or 'right',
 			speedx = (self.direction == 'left' and -constants.enemy.paper_speed_x or constants.enemy.paper_speed_x) * 5,
@@ -74,6 +73,17 @@ function boekfoe.bt_tick(self, blackboard, random_between)
 	node.boek_state_ticks = open_ticks
 	node.boek_spawn_ticks = spawn_ticks
 	return behaviourtree.running
+end
+
+function boekfoe.register_behaviour_tree(bt_id)
+	behaviourtree.register_definition(bt_id, {
+		root = {
+			type = 'action',
+			action = function(target, blackboard)
+				return boekfoe.bt_tick(target, blackboard)
+			end,
+		},
+	})
 end
 
 function boekfoe.choose_drop_type(_self, random_percent_hit)

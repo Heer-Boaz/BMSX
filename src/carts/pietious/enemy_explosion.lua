@@ -35,7 +35,7 @@ function enemy_explosion:bind_events()
 		event_name = 'timeline.frame.' .. constants.ids.enemy_explosion_def .. '.timeline.explosion',
 		subscriber = self,
 		handler = function(event)
-			self:update_visual(event.frame_value)
+			self:sync_explosion_sprite(event.frame_value)
 		end,
 	})
 
@@ -59,7 +59,7 @@ function enemy_explosion:bind_events()
 	})
 end
 
-function enemy_explosion:update_visual(imgid)
+function enemy_explosion:sync_explosion_sprite(imgid)
 	self.body_sprite.imgid = imgid
 	self.body_sprite.enabled = true
 end
@@ -94,18 +94,18 @@ local function define_enemy_explosion_fsm()
 						imgid = explosion_frames[1],
 						offset = { x = 0, y = 0, z = 114 },
 					})
-					self:add_component(self.body_sprite)
-					self:define_timeline(new_timeline({
-						id = constants.ids.enemy_explosion_def .. '.timeline.explosion',
+						self:add_component(self.body_sprite)
+						self:define_timeline(new_timeline({
+							id = constants.ids.enemy_explosion_def .. '.timeline.explosion',
 						frames = explosion_frames,
 						ticks_per_frame = constants.enemy.explosion_frame_steps,
 						playback_mode = 'once',
-					}))
-					self:bind_events()
-					self:update_visual(explosion_frames[1])
-					return '/animating'
-				end,
-			},
+						}))
+						self:bind_events()
+						self:sync_explosion_sprite(explosion_frames[1])
+						return '/animating'
+					end,
+				},
 			animating = {
 				entering_state = function(self)
 					self.state_name = 'animating'

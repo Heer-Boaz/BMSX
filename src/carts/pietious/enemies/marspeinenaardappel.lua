@@ -4,7 +4,7 @@ local room_module = require('room')
 
 local marspeinenaardappel = {}
 
-function marspeinenaardappel.configure(self, def, _context)
+function marspeinenaardappel.configure(self, def)
 	self.width = def.w or 8
 	self.height = def.h or 8
 	self.max_health = def.health or 1
@@ -13,8 +13,11 @@ function marspeinenaardappel.configure(self, def, _context)
 	self:set_body_hit_area(0, 0, 8, 8)
 end
 
-function marspeinenaardappel.update_visual(_self)
-	return 'marspeinenaardappel', false, false
+function marspeinenaardappel.sync_components(self)
+	local imgid = 'marspeinenaardappel'
+	local flip_h = false
+	local flip_v = false
+	self:set_body_sprite(imgid, flip_h, flip_v)
 end
 
 function marspeinenaardappel.bt_tick(self, _blackboard)
@@ -53,6 +56,17 @@ function marspeinenaardappel.bt_tick(self, _blackboard)
 	end
 
 	return behaviourtree.running
+end
+
+function marspeinenaardappel.register_behaviour_tree(bt_id)
+	behaviourtree.register_definition(bt_id, {
+		root = {
+			type = 'action',
+			action = function(target, blackboard)
+				return marspeinenaardappel.bt_tick(target, blackboard)
+			end,
+		},
+	})
 end
 
 function marspeinenaardappel.choose_drop_type(_self, random_percent_hit)

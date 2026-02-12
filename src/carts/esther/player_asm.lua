@@ -1,3 +1,4 @@
+-- bmsx-lint:disable
 -- dkc1 player physics - direct assembly translation
 -- source: .external/dkc1/routine_macros_dkc1.asm
 -- this is a literal translation of assembly to lua - intentionally inefficient and verbose

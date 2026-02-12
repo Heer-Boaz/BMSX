@@ -11,13 +11,15 @@ local function cross_hit_area_for_spin(spin_direction)
 	return { left = 4, top = 2, right = 12, bottom = 22 }
 end
 
-function crossfoe.configure(self, def, _context)
+function crossfoe.configure(self, def)
 	self.width = def.w or 16
 	self.height = def.h or 24
+	self.cross_state = 'waiting'
+	self.cross_spin_direction = 'down'
 	self:set_body_hit_area(4, 2, 12, 22)
 end
 
-function crossfoe.update_visual(self)
+function crossfoe.sync_components(self)
 	local imgid = 'crossfoe'
 	local flip_h = false
 	local flip_v = false
@@ -35,7 +37,7 @@ function crossfoe.update_visual(self)
 	else
 		self:set_body_hit_area(4, 2, 12, 22)
 	end
-	return imgid, flip_h, flip_v
+	self:set_body_sprite(imgid, flip_h, flip_v)
 end
 
 function crossfoe.bt_tick_waiting(self, blackboard)
@@ -122,6 +124,50 @@ function crossfoe.bt_tick_flying(self, blackboard)
 	end
 	node.cross_turn_ticks = turn_ticks
 	return behaviourtree.running
+end
+
+function crossfoe.register_behaviour_tree(bt_id)
+	behaviourtree.register_definition(bt_id, {
+		root = {
+			type = 'selector',
+			children = {
+				{
+					type = 'sequence',
+					children = {
+						{
+							type = 'condition',
+							condition = function(target)
+								return target:has_tag('e.w')
+							end,
+						},
+						{
+							type = 'action',
+							action = function(target, blackboard)
+								return crossfoe.bt_tick_waiting(target, blackboard)
+							end,
+						},
+					},
+				},
+				{
+					type = 'sequence',
+					children = {
+						{
+							type = 'condition',
+							condition = function(target)
+								return target:has_tag('e.f')
+							end,
+						},
+						{
+							type = 'action',
+							action = function(target, blackboard)
+								return crossfoe.bt_tick_flying(target, blackboard)
+							end,
+						},
+					},
+				},
+			},
+		},
+	})
 end
 
 function crossfoe.choose_drop_type(_self, random_percent_hit)

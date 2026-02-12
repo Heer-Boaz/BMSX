@@ -46,6 +46,11 @@ type LuaLintIssue = {
 	readonly message: string;
 };
 
+type LuaLintSuppressionRange = {
+	readonly startLine: number;
+	readonly endLine: number;
+};
+
 type LuaCartLintOptions = {
 	readonly roots: ReadonlyArray<string>;
 };
@@ -95,6 +100,62 @@ const FORBIDDEN_STATE_CALL_RECEIVERS = new Set<string>([
 	'sc',
 	'worldobject',
 ]);
+const LINT_SUPPRESSION_OPEN_MARKER = '-- bmsx-lint:disable';
+const LINT_SUPPRESSION_CLOSE_MARKER = '-- bmsx-lint:enable';
+const suppressedLineRangesByPath = new Map<string, ReadonlyArray<LuaLintSuppressionRange>>();
+
+// STRICT FORBIDDEN: do not add lint suppression comments in cart code.
+function collectSuppressedLineRanges(source: string): LuaLintSuppressionRange[] {
+	const ranges: LuaLintSuppressionRange[] = [];
+	const lines = source.split(/\r?\n/);
+	let activeStartLine = 0;
+	for (let index = 0; index < lines.length; index += 1) {
+		const lineNumber = index + 1;
+		const commentStart = lines[index].indexOf('--');
+		if (commentStart < 0) {
+			continue;
+		}
+		const commentPart = lines[index].slice(commentStart);
+		const hasOpen = commentPart.includes(LINT_SUPPRESSION_OPEN_MARKER);
+		const hasClose = commentPart.includes(LINT_SUPPRESSION_CLOSE_MARKER);
+		if (activeStartLine === 0) {
+			if (!hasOpen) {
+				continue;
+			}
+			activeStartLine = lineNumber;
+			if (hasClose) {
+				ranges.push({ startLine: activeStartLine, endLine: lineNumber });
+				activeStartLine = 0;
+			}
+			continue;
+		}
+		if (!hasClose) {
+			continue;
+		}
+		ranges.push({ startLine: activeStartLine, endLine: lineNumber });
+		activeStartLine = 0;
+	}
+	if (activeStartLine !== 0) {
+		ranges.push({ startLine: activeStartLine, endLine: lines.length });
+	}
+	return ranges;
+}
+
+function isLineSuppressed(path: string, line: number): boolean {
+	const ranges = suppressedLineRangesByPath.get(path);
+	if (!ranges || ranges.length === 0) {
+		return false;
+	}
+	for (const range of ranges) {
+		if (line < range.startLine) {
+			return false;
+		}
+		if (line <= range.endLine) {
+			return true;
+		}
+	}
+	return false;
+}
 
 function normalizeWorkspacePath(input: string): string {
 	const normalized = input.replace(/\\/g, '/');
@@ -179,6 +240,9 @@ async function collectLuaFiles(roots: ReadonlyArray<string>): Promise<string[]> 
 }
 
 function pushIssue(issues: LuaLintIssue[], rule: LuaLintIssueRule, node: { readonly range: { readonly path: string; readonly start: { readonly line: number; readonly column: number; }; }; }, message: string): void {
+	if (isLineSuppressed(node.range.path, node.range.start.line)) {
+		return;
+	}
 	issues.push({
 		rule,
 		path: node.range.path,
@@ -189,6 +253,9 @@ function pushIssue(issues: LuaLintIssue[], rule: LuaLintIssueRule, node: { reado
 }
 
 function pushIssueAt(issues: LuaLintIssue[], rule: LuaLintIssueRule, path: string, line: number, column: number, message: string): void {
+	if (isLineSuppressed(path, line)) {
+		return;
+	}
 	issues.push({
 		rule,
 		path,
@@ -280,7 +347,8 @@ function isVisualUpdateLikeFunctionName(functionName: string): boolean {
 		return false;
 	}
 	const leaf = getFunctionLeafName(functionName).toLowerCase();
-	return /^update(?:_[a-z0-9]+)*_visual(?:_[a-z0-9]+)*$/.test(leaf);
+	return /^update(?:_[a-z0-9]+)*_visual(?:_[a-z0-9]+)*$/.test(leaf)
+		|| /^sync(?:_[a-z0-9]+)*_components(?:_[a-z0-9]+)*$/.test(leaf);
 }
 
 function isMethodLikeFunctionDeclaration(statement: LuaFunctionDeclarationStatement): boolean {
@@ -678,7 +746,7 @@ function lintFunctionBody(
 			issues,
 			'visual_update_pattern',
 			functionExpression,
-			`update_visual-style code is forbidden ("${functionName}"). Use deterministic initialization and on-change updates. Do not bypass this by mechanically renaming update_visual* symbols.`,
+			`update_visual/sync_*_components-style code is forbidden ("${functionName}"). This is an ugly workaround pattern (update_visual -> sync_*_components or vice-versa). Use deterministic initialization and on-change updates.`,
 		);
 	}
 	const isGetterOrSetter = isNamedFunction && (matchesGetterPattern(functionExpression) || matchesSetterPattern(functionExpression));
@@ -931,15 +999,21 @@ export async function lintCartLuaSources(options: LuaCartLintOptions): Promise<v
 	}
 
 	const issues: LuaLintIssue[] = [];
-	for (const absolutePath of files) {
-		const source = await readFile(absolutePath, 'utf8');
-		const workspacePath = toWorkspaceRelativePath(absolutePath);
-		const lexer = new LuaLexer(source, workspacePath, { canonicalizeIdentifiers: 'none' });
-		const tokens = lexer.scanTokens();
-		lintUppercaseCode(workspacePath, tokens, issues);
-		const parser = new LuaParser(tokens, workspacePath, source);
-		const chunk = parser.parseChunk();
-		lintStatements(chunk.body, issues);
+	suppressedLineRangesByPath.clear();
+	try {
+		for (const absolutePath of files) {
+			const source = await readFile(absolutePath, 'utf8');
+			const workspacePath = toWorkspaceRelativePath(absolutePath);
+			suppressedLineRangesByPath.set(workspacePath, collectSuppressedLineRanges(source));
+			const lexer = new LuaLexer(source, workspacePath, { canonicalizeIdentifiers: 'none' });
+			const tokens = lexer.scanTokens();
+			lintUppercaseCode(workspacePath, tokens, issues);
+			const parser = new LuaParser(tokens, workspacePath, source);
+			const chunk = parser.parseChunk();
+			lintStatements(chunk.body, issues);
+		}
+	} finally {
+		suppressedLineRangesByPath.clear();
 	}
 
 	if (issues.length > 0) {

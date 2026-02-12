@@ -4,17 +4,20 @@ local room_module = require('room')
 
 local zakfoe = {}
 
-function zakfoe.configure(_self, _def, _context)
+function zakfoe.configure(self, _def)
+	self.zak_state = 'prepare'
+	self.current_vertical_speed = 0
+	self.zak_ground_y = self.spawn_y
 end
 
-function zakfoe.update_visual(self)
+function zakfoe.sync_components(self)
 	local imgid = 'zakfoe_stand'
 	if self.zak_state == 'jump' then
 		imgid = 'zakfoe_jump'
 	elseif self.zak_state == 'recovery' then
 		imgid = 'zakfoe_recover'
 	end
-	return imgid, self.direction == 'left', false
+	self:set_body_sprite(imgid, self.direction == 'left', false)
 end
 
 function zakfoe.bt_tick(self, blackboard)
@@ -90,6 +93,17 @@ function zakfoe.bt_tick(self, blackboard)
 	self.zak_state = 'prepare'
 	node.zak_prepare_ticks = constants.enemy.zak_prepare_jump_steps
 	return behaviourtree.running
+end
+
+function zakfoe.register_behaviour_tree(bt_id)
+	behaviourtree.register_definition(bt_id, {
+		root = {
+			type = 'action',
+			action = function(target, blackboard)
+				return zakfoe.bt_tick(target, blackboard)
+			end,
+		},
+	})
 end
 
 function zakfoe.choose_drop_type(_self, random_percent_hit)

@@ -2,7 +2,7 @@ local behaviourtree = require('behaviourtree')
 
 local vlokfoe = {}
 
-function vlokfoe.configure(self, def, _context)
+function vlokfoe.configure(self, def)
 	self.width = def.w or 9
 	self.height = def.h or 9
 	self.max_health = def.health or 1
@@ -14,8 +14,11 @@ function vlokfoe.configure(self, def, _context)
 	self:set_body_hit_area(2, 0, 6, 8)
 end
 
-function vlokfoe.update_visual(_self)
-	return 'vlok', false, false
+function vlokfoe.sync_components(self)
+	local imgid = 'vlok'
+	local flip_h = false
+	local flip_v = false
+	self:set_body_sprite(imgid, flip_h, flip_v)
 end
 
 function vlokfoe.bt_tick(self, _blackboard)
@@ -24,6 +27,17 @@ function vlokfoe.bt_tick(self, _blackboard)
 		self:mark_for_disposal()
 	end
 	return behaviourtree.running
+end
+
+function vlokfoe.register_behaviour_tree(bt_id)
+	behaviourtree.register_definition(bt_id, {
+		root = {
+			type = 'action',
+			action = function(target, blackboard)
+				return vlokfoe.bt_tick(target, blackboard)
+			end,
+		},
+	})
 end
 
 function vlokfoe.choose_drop_type(_self, _random_percent_hit)

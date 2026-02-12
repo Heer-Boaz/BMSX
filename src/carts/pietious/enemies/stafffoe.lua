@@ -3,20 +3,32 @@ local behaviourtree = require('behaviourtree')
 
 local stafffoe = {}
 
-function stafffoe.configure(self, def, _context)
+local function speed_components_from_angle(speed_num, angle_degrees)
+	local radians = math.rad(angle_degrees)
+	local speed_x_num = round_to_nearest(math.cos(radians) * speed_num)
+	local speed_y_num = round_to_nearest(math.sin(radians) * speed_num)
+	return speed_x_num, speed_y_num
+end
+
+function stafffoe.configure(self, def)
 	self.width = def.w or 21
 	self.height = def.h or 30
 	self.max_health = def.health or 10
 	self.health = self.max_health
 	self.damage = def.damage or 4
+	self.staff_state = 'default'
+	self.staff_spawn_count = 0
 	self:set_body_hit_area(0, 0, 21, 30)
 end
 
-function stafffoe.update_visual(_self)
-	return 'stafffoe', false, false
+function stafffoe.sync_components(self)
+	local imgid = 'stafffoe'
+	local flip_h = false
+	local flip_v = false
+	self:set_body_sprite(imgid, flip_h, flip_v)
 end
 
-function stafffoe.bt_tick(self, blackboard, random_between, speed_components_from_angle)
+function stafffoe.bt_tick(self, blackboard)
 	local node = blackboard.nodedata
 	if self.staff_state == 'default' then
 		local wait_ticks = node.staff_wait_ticks
@@ -52,7 +64,7 @@ function stafffoe.bt_tick(self, blackboard, random_between, speed_components_fro
 
 	local player = object(constants.ids.player_instance)
 	local bullets_dangerous = not player:has_inventory_item('greenvase')
-	local base_angle = random_between(0, 359)
+	local base_angle = math.random(0, 359)
 	for i = 0, 3 do
 		local angle = (base_angle + (i * 90)) % 360
 		local speed_x_num, speed_y_num = speed_components_from_angle(constants.enemy.staff_bullet_speed_num, angle)
@@ -67,6 +79,17 @@ function stafffoe.bt_tick(self, blackboard, random_between, speed_components_fro
 	self.staff_spawn_count = self.staff_spawn_count + 1
 	node.staff_wait_ticks = constants.enemy.staff_wait_before_spawn_steps
 	return behaviourtree.running
+end
+
+function stafffoe.register_behaviour_tree(bt_id)
+	behaviourtree.register_definition(bt_id, {
+		root = {
+			type = 'action',
+			action = function(target, blackboard)
+				return stafffoe.bt_tick(target, blackboard)
+			end,
+		},
+	})
 end
 
 function stafffoe.choose_drop_type(_self, _random_percent_hit)

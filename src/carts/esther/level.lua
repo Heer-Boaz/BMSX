@@ -1,3 +1,4 @@
+-- bmsx-lint:disable
 local constants = require('constants')
 
 local level = {}

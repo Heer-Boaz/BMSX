@@ -54,18 +54,21 @@ local function player_triggered_takeoff(self, player)
 	return overlap_y and player_right < enemy_left
 end
 
-local function start_flying(self, blackboard, random_between)
+local function start_flying(self, blackboard)
 	set_takeoff_heading(self)
-	blackboard.nodedata.mijter_takeoff_ticks = random_between(constants.enemy.mijter_wait_takeoff_min_steps, constants.enemy.mijter_wait_takeoff_max_steps)
-	blackboard.nodedata.mijter_turn_ticks = random_between(constants.enemy.mijter_turn_min_steps, constants.enemy.mijter_turn_max_steps)
+	blackboard.nodedata.mijter_takeoff_ticks = math.random(constants.enemy.mijter_wait_takeoff_min_steps, constants.enemy.mijter_wait_takeoff_max_steps)
+	blackboard.nodedata.mijter_turn_ticks = math.random(constants.enemy.mijter_turn_min_steps, constants.enemy.mijter_turn_max_steps)
 	self:dispatch_state_event('takeoff')
 	return behaviourtree.running
 end
 
-function mijterfoe.configure(_self, _def, _context)
+function mijterfoe.configure(self, _def)
+	self.horizontal_dir_mod = 0
+	self.vertical_dir_mod = 0
+	self.mijter_entry_lock_ticks = constants.enemy.mijter_room_entry_lock_steps
 end
 
-function mijterfoe.update_visual(self)
+function mijterfoe.sync_components(self)
 	local imgid = 'meijter_up'
 	local flip_h = false
 	local flip_v = false
@@ -106,10 +109,10 @@ function mijterfoe.update_visual(self)
 			flip_v = true
 		end
 	end
-	return imgid, flip_h, flip_v
+	self:set_body_sprite(imgid, flip_h, flip_v)
 end
 
-function mijterfoe.bt_tick_waiting(self, blackboard, random_between)
+function mijterfoe.bt_tick_waiting(self, blackboard)
 	local entry_lock = blackboard.nodedata.mijter_entry_lock_ticks
 	if entry_lock == nil then
 		entry_lock = self.mijter_entry_lock_ticks
@@ -122,30 +125,30 @@ function mijterfoe.bt_tick_waiting(self, blackboard, random_between)
 
 	local player = object(constants.ids.player_instance)
 	if player_triggered_takeoff(self, player) then
-		return start_flying(self, blackboard, random_between)
+		return start_flying(self, blackboard)
 	end
 
 	local takeoff_ticks = blackboard.nodedata.mijter_takeoff_ticks
 	if takeoff_ticks == nil then
-		takeoff_ticks = random_between(constants.enemy.mijter_wait_takeoff_min_steps, constants.enemy.mijter_wait_takeoff_max_steps)
+		takeoff_ticks = math.random(constants.enemy.mijter_wait_takeoff_min_steps, constants.enemy.mijter_wait_takeoff_max_steps)
 	end
 	takeoff_ticks = takeoff_ticks - 1
 	if takeoff_ticks > 0 then
 		blackboard.nodedata.mijter_takeoff_ticks = takeoff_ticks
 		return behaviourtree.running
 	end
-	return start_flying(self, blackboard, random_between)
+	return start_flying(self, blackboard)
 end
 
-function mijterfoe.bt_tick_flying(self, blackboard, random_between)
+function mijterfoe.bt_tick_flying(self, blackboard)
 	local turn_ticks = blackboard.nodedata.mijter_turn_ticks
 	if turn_ticks == nil then
-		turn_ticks = random_between(constants.enemy.mijter_turn_min_steps, constants.enemy.mijter_turn_max_steps)
+		turn_ticks = math.random(constants.enemy.mijter_turn_min_steps, constants.enemy.mijter_turn_max_steps)
 	end
 	turn_ticks = turn_ticks - 1
 	if turn_ticks <= 0 then
 		new_random_direction(self)
-		turn_ticks = random_between(constants.enemy.mijter_turn_min_steps, constants.enemy.mijter_turn_max_steps)
+		turn_ticks = math.random(constants.enemy.mijter_turn_min_steps, constants.enemy.mijter_turn_max_steps)
 	end
 	blackboard.nodedata.mijter_turn_ticks = turn_ticks
 
@@ -163,6 +166,50 @@ function mijterfoe.bt_tick_flying(self, blackboard, random_between)
 	self.x = self.x + (constants.enemy.mijter_speed_px * self.horizontal_dir_mod)
 	self.y = self.y + (constants.enemy.mijter_speed_px * self.vertical_dir_mod)
 	return behaviourtree.running
+end
+
+function mijterfoe.register_behaviour_tree(bt_id)
+	behaviourtree.register_definition(bt_id, {
+		root = {
+			type = 'selector',
+			children = {
+				{
+					type = 'sequence',
+					children = {
+						{
+							type = 'condition',
+							condition = function(target)
+								return target:has_tag('e.w')
+							end,
+						},
+						{
+							type = 'action',
+							action = function(target, blackboard)
+								return mijterfoe.bt_tick_waiting(target, blackboard)
+							end,
+						},
+					},
+				},
+				{
+					type = 'sequence',
+					children = {
+						{
+							type = 'condition',
+							condition = function(target)
+								return target:has_tag('e.f')
+							end,
+						},
+						{
+							type = 'action',
+							action = function(target, blackboard)
+								return mijterfoe.bt_tick_flying(target, blackboard)
+							end,
+						},
+					},
+				},
+			},
+		},
+	})
 end
 
 function mijterfoe.choose_drop_type(_self, random_percent_hit)

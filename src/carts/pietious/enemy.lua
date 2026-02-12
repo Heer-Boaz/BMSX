@@ -1,107 +1,29 @@
 local constants = require('constants')
 local components = require('components')
 local eventemitter = require('eventemitter')
-local behaviourtree = require('behaviourtree')
 local enemy_explosion_module = require('enemy_explosion')
-local mijterfoe_module = require('enemies/mijterfoe')
-local zakfoe_module = require('enemies/zakfoe')
-local crossfoe_module = require('enemies/crossfoe')
-local boekfoe_module = require('enemies/boekfoe')
-local paperfoe_module = require('enemies/paperfoe')
-local muziekfoe_module = require('enemies/muziekfoe')
-local nootfoe_module = require('enemies/nootfoe')
-local stafffoe_module = require('enemies/stafffoe')
-local staffspawn_module = require('enemies/staffspawn')
-local cloud_module = require('enemies/cloud')
-local vlokspawner_module = require('enemies/vlokspawner')
-local vlokfoe_module = require('enemies/vlokfoe')
-local marspeinenaardappel_module = require('enemies/marspeinenaardappel')
+local enemy_registry = require('enemies/registry')
 
 local enemy = {}
 enemy.__index = enemy
 
-local enemy_bt_ids = {
-	mijterfoe = constants.ids.enemy_bt .. '.m',
-	zakfoe = constants.ids.enemy_bt .. '.z',
-	crossfoe = constants.ids.enemy_bt .. '.c',
-	boekfoe = constants.ids.enemy_bt .. '.b',
-	paperfoe = constants.ids.enemy_bt .. '.p',
-	muziekfoe = constants.ids.enemy_bt .. '.mu',
-	nootfoe = constants.ids.enemy_bt .. '.n',
-	stafffoe = constants.ids.enemy_bt .. '.sf',
-	staffspawn = constants.ids.enemy_bt .. '.ss',
-	cloud = constants.ids.enemy_bt .. '.cl',
-	vlokspawner = constants.ids.enemy_bt .. '.vs',
-	vlokfoe = constants.ids.enemy_bt .. '.vf',
-	marspeinenaardappel = constants.ids.enemy_bt .. '.ma',
+local default_enemy_color = {
+	r = 1,
+	g = 1,
+	b = 1,
+	a = 1,
 }
-
-local boekfoe_timeline_frames = {
-	'boekfoe_closed',
-	'boekfoe_open',
-}
-
-local cloud_timeline_frames = {
-	'cloud_1',
-	'cloud_2',
-}
-
-local noot_colors = {
-	{ r = 1, g = 1, b = 1, a = 1 },
-	{ r = 1, g = 0, b = 0, a = 1 },
-	{ r = 0, g = 1, b = 1, a = 1 },
-	{ r = 0, g = 1, b = 0, a = 1 },
-	{ r = 1, g = 0.75, b = 0.8, a = 1 },
-	{ r = 1, g = 1, b = 0, a = 1 },
-	{ r = 0.93, g = 0.51, b = 0.93, a = 1 },
-}
-
-local enemy_kind_modules = {
-	mijterfoe = mijterfoe_module,
-	zakfoe = zakfoe_module,
-	crossfoe = crossfoe_module,
-	boekfoe = boekfoe_module,
-	paperfoe = paperfoe_module,
-	muziekfoe = muziekfoe_module,
-	nootfoe = nootfoe_module,
-	stafffoe = stafffoe_module,
-	staffspawn = staffspawn_module,
-	cloud = cloud_module,
-	vlokspawner = vlokspawner_module,
-	vlokfoe = vlokfoe_module,
-	marspeinenaardappel = marspeinenaardappel_module,
-}
-
-local function get_kind_module(kind)
-	local kind_module = enemy_kind_modules[kind]
-	if kind_module == nil then
-		error('pietious enemy has no kind module: ' .. tostring(kind))
-	end
-	return kind_module
-end
 
 local death_effect_sequence = 0
 local spawned_enemy_sequence = 0
 
-local function random_percent_hit(chance_pct)
-	return math.random(100) <= chance_pct
+local function get_kind_module(kind)
+	local kind_module = enemy_registry.modules_by_kind[kind]
+	return kind_module
 end
 
-local function get_delta_from_source_to_target_scaled(source_x, source_y, target_x, target_y, speed_scale)
-	local dx = target_x - source_x
-	local dy = target_y - source_y
-	if dx == 0 then
-		return 0, dy > 0 and speed_scale or -speed_scale
-	end
-	if dy == 0 then
-		return dx > 0 and speed_scale or -speed_scale, 0
-	end
-	local abs_dx = math.abs(dx)
-	local abs_dy = math.abs(dy)
-	if abs_dx > abs_dy then
-		return dx > 0 and speed_scale or -speed_scale, div_toward_zero(dy * speed_scale, abs_dx)
-	end
-	return div_toward_zero(dx * speed_scale, abs_dy), dy > 0 and speed_scale or -speed_scale
+local function random_percent_hit(chance_pct)
+	return math.random(100) <= chance_pct
 end
 
 local function build_spawned_enemy_id(kind)
@@ -121,13 +43,6 @@ local function consume_axis_accum(accum, speed_num, speed_den)
 		accum = accum + speed_den
 	end
 	return delta, accum
-end
-
-local function speed_components_from_angle(speed_num, angle_degrees)
-	local radians = math.rad(angle_degrees)
-	local speed_x_num = round_to_nearest(math.cos(radians) * speed_num)
-	local speed_y_num = round_to_nearest(math.sin(radians) * speed_num)
-	return speed_x_num, speed_y_num
 end
 
 function enemy:create_components()
@@ -151,21 +66,6 @@ function enemy:create_components()
 
 	self.body_collider = body_collider
 	self.body_sprite = body_sprite
-end
-
-function enemy:ensure_animation_timelines()
-	self:define_timeline(new_timeline({
-		id = constants.ids.enemy_def .. '.timeline.boekfoe',
-		frames = boekfoe_timeline_frames,
-		ticks_per_frame = 1,
-		playback_mode = 'loop',
-	}))
-	self:define_timeline(new_timeline({
-		id = constants.ids.enemy_def .. '.timeline.cloud',
-		frames = cloud_timeline_frames,
-		ticks_per_frame = constants.enemy.cloud_anim_switch_steps,
-		playback_mode = 'loop',
-	}))
 end
 
 function enemy:set_velocity(speed_x_num, speed_y_num, speed_den)
@@ -194,6 +94,30 @@ function enemy:set_body_hit_area(left, top, right, bottom)
 	})
 end
 
+function enemy:set_body_sprite(imgid, flip_h, flip_v, color)
+	local body_sprite = self.body_sprite
+	local body_collider = self.body_collider
+	local colorize = color
+	if colorize == nil then
+		colorize = default_enemy_color
+	end
+
+	body_sprite.enabled = true
+	body_collider.enabled = true
+	body_sprite.imgid = imgid
+	body_sprite.flip.flip_h = flip_h == true
+	body_sprite.flip.flip_v = flip_v == true
+	body_sprite.colorize.r = colorize.r
+	body_sprite.colorize.g = colorize.g
+	body_sprite.colorize.b = colorize.b
+	body_sprite.colorize.a = colorize.a
+end
+
+function enemy:hide_body_components()
+	self.body_sprite.enabled = false
+	self.body_collider.enabled = false
+end
+
 function enemy:bind_overlap_events()
 	self.events:on({
 		event_name = 'overlap',
@@ -214,55 +138,9 @@ function enemy:bind_overlap_events()
 	})
 end
 
-local visual_functions_by_kind = {
-	mijterfoe = enemy_kind_modules.mijterfoe.update_visual,
-	zakfoe = enemy_kind_modules.zakfoe.update_visual,
-	crossfoe = enemy_kind_modules.crossfoe.update_visual,
-	boekfoe = function(target)
-		return enemy_kind_modules.boekfoe.update_visual(target, constants.ids.enemy_def .. '.timeline.boekfoe')
-	end,
-	paperfoe = enemy_kind_modules.paperfoe.update_visual,
-	muziekfoe = enemy_kind_modules.muziekfoe.update_visual,
-	nootfoe = enemy_kind_modules.nootfoe.update_visual,
-	stafffoe = enemy_kind_modules.stafffoe.update_visual,
-	staffspawn = enemy_kind_modules.staffspawn.update_visual,
-	cloud = function(target)
-		return enemy_kind_modules.cloud.update_visual(target, constants.ids.enemy_def .. '.timeline.cloud')
-	end,
-	vlokfoe = enemy_kind_modules.vlokfoe.update_visual,
-	marspeinenaardappel = enemy_kind_modules.marspeinenaardappel.update_visual,
-}
-
-function enemy:update_visual_components()
-	local body_sprite = self.body_sprite
-	local body_collider = self.body_collider
-
-	if self.kind == 'vlokspawner' then
-		body_sprite.enabled = false
-		body_collider.enabled = false
-		return
-	end
-
-	body_sprite.enabled = true
-	body_collider.enabled = true
-
-	local visual_function = visual_functions_by_kind[self.kind]
-	if visual_function == nil then
-		error('pietious enemy has no visual method: ' .. tostring(self.kind))
-	end
-
-	local imgid, flip_h, flip_v, color = visual_function(self)
-	if color == nil then
-		color = noot_colors[1]
-	end
-
-	body_sprite.imgid = imgid
-	body_sprite.flip.flip_h = flip_h
-	body_sprite.flip.flip_v = flip_v
-	body_sprite.colorize.r = color.r
-	body_sprite.colorize.g = color.g
-	body_sprite.colorize.b = color.b
-	body_sprite.colorize.a = color.a
+function enemy:sync_kind_components()
+	local kind_module = get_kind_module(self.kind)
+	kind_module.sync_components(self)
 end
 
 function enemy:spawn_child_enemy(kind, x, y, options)
@@ -315,11 +193,7 @@ function enemy:projectile_is_out_of_bounds()
 end
 
 function enemy:set_active_behaviour_tree(kind)
-	local bt_id = enemy_bt_ids[kind]
-	if bt_id == nil then
-		error('pietious enemy missing behaviour tree id for kind=' .. tostring(kind))
-	end
-
+	local bt_id = enemy_registry.behaviour_tree_ids[kind]
 	if self.btreecontexts[bt_id] == nil then
 		self:add_btree(bt_id)
 	end
@@ -353,50 +227,28 @@ function enemy:configure_from_room_def(def, room)
 	self.dangerous = def.dangerous ~= false
 	self.can_be_hit = true
 	self.direction = def.direction or 'right'
-	self.horizontal_dir_mod = 0
-	self.vertical_dir_mod = 0
 	self.room_left = 0
 	self.room_right = room.world_width
 	self.room_top = room.world_top
 	self.room_bottom = room.world_height
-	self.current_vertical_speed = 0
-	self.zak_state = 'prepare'
-	self.zak_ground_y = self.spawn_y
-	self.cross_state = 'waiting'
-	self.cross_spin_direction = 'down'
-	self.mijter_entry_lock_ticks = constants.enemy.mijter_room_entry_lock_steps
-	self.boek_state = 'closed'
-	self.staff_state = 'default'
-	self.staff_spawn_count = 0
-	local speed_den = def.speedden or 1
-	if speed_den <= 0 then
-		error('pietious enemy speedden must be > 0')
-	end
-	self:set_velocity(def.speedx or 0, def.speedy or 0, speed_den)
 	self.despawn_on_room_switch = false
 	self.projectile_bound_right = 0
 	self.projectile_bound_bottom = 0
-	self.noot_color = noot_colors[1]
+
+	self:set_velocity(def.speedx or 0, def.speedy or 0, def.speedden or 1)
 	self:set_body_hit_area(2, 2, 14, 14)
+
 	local kind_module = get_kind_module(self.kind)
-		kind_module.configure(self, def, {
-			noot_colors = noot_colors,
-			random_between = math.random,
-		})
-
+	kind_module.configure(self, def)
 	self:set_active_behaviour_tree(self.kind)
-
-	self:stop_timeline(constants.ids.enemy_def .. '.timeline.cloud')
 	if kind_module.on_configured ~= nil then
-		kind_module.on_configured(self, {
-			cloud_timeline_id = constants.ids.enemy_def .. '.timeline.cloud',
-		})
+		kind_module.on_configured(self)
 	end
 
 	self.body_collider.enabled = true
 	self.visible = true
 	self:dispatch_state_event('reset_to_waiting')
-	self:update_visual_components()
+	self:sync_kind_components()
 end
 
 function enemy:choose_drop_type()
@@ -447,9 +299,6 @@ function enemy:on_overlap(event)
 	end
 	local player = object(constants.ids.player_instance)
 	local other_collider = player:get_component_by_id(event.other_collider_id)
-	if other_collider == nil then
-		error('pietious enemy missing collider on overlap event')
-	end
 	if other_collider.id_local == constants.ids.player_sword_collider_local then
 		if player:has_tag('g.sw') then
 			self:take_weapon_hit('sword', player.sword_id)
@@ -465,7 +314,7 @@ function enemy:tick()
 	if self.active_bt_id == '' then
 		return
 	end
-	self:update_visual_components()
+	self:sync_kind_components()
 end
 
 local function define_enemy_fsm()
@@ -476,7 +325,6 @@ local function define_enemy_fsm()
 				entering_state = function(self)
 					self.state_name = 'boot'
 					self:create_components()
-					self:ensure_animation_timelines()
 					self:bind_overlap_events()
 					return '/waiting'
 				end,
@@ -489,7 +337,6 @@ local function define_enemy_fsm()
 				},
 				entering_state = function(self)
 					self.state_name = 'waiting'
-					self:update_visual_components()
 				end,
 			},
 			flying = {
@@ -500,7 +347,6 @@ local function define_enemy_fsm()
 				},
 				entering_state = function(self)
 					self.state_name = 'flying'
-					self:update_visual_components()
 				end,
 			},
 		},
@@ -508,188 +354,7 @@ local function define_enemy_fsm()
 end
 
 local function define_enemy_behaviour_tree()
-	behaviourtree.register_definition(enemy_bt_ids.mijterfoe, {
-		root = {
-			type = 'selector',
-			children = {
-				{
-					type = 'sequence',
-					children = {
-						{
-							type = 'condition',
-							condition = function(target)
-								return target:has_tag('e.w')
-							end,
-						},
-							{
-								type = 'action',
-								action = function(target, blackboard)
-									return enemy_kind_modules.mijterfoe.bt_tick_waiting(target, blackboard, math.random)
-								end,
-							},
-					},
-				},
-				{
-					type = 'sequence',
-					children = {
-						{
-							type = 'condition',
-							condition = function(target)
-								return target:has_tag('e.f')
-							end,
-						},
-							{
-								type = 'action',
-								action = function(target, blackboard)
-									return enemy_kind_modules.mijterfoe.bt_tick_flying(target, blackboard, math.random)
-								end,
-							},
-					},
-				},
-			},
-		},
-	})
-
-	behaviourtree.register_definition(enemy_bt_ids.crossfoe, {
-		root = {
-			type = 'selector',
-			children = {
-				{
-					type = 'sequence',
-					children = {
-						{
-							type = 'condition',
-							condition = function(target)
-								return target:has_tag('e.w')
-							end,
-						},
-						{
-							type = 'action',
-							action = function(target, blackboard)
-								return enemy_kind_modules.crossfoe.bt_tick_waiting(target, blackboard)
-							end,
-						},
-					},
-				},
-				{
-					type = 'sequence',
-					children = {
-						{
-							type = 'condition',
-							condition = function(target)
-								return target:has_tag('e.f')
-							end,
-						},
-						{
-							type = 'action',
-							action = function(target, blackboard)
-								return enemy_kind_modules.crossfoe.bt_tick_flying(target, blackboard)
-							end,
-						},
-					},
-				},
-			},
-		},
-	})
-
-	behaviourtree.register_definition(enemy_bt_ids.zakfoe, {
-		root = {
-			type = 'action',
-			action = function(target, blackboard)
-				return enemy_kind_modules.zakfoe.bt_tick(target, blackboard)
-			end,
-		},
-	})
-
-		behaviourtree.register_definition(enemy_bt_ids.boekfoe, {
-			root = {
-				type = 'action',
-				action = function(target, blackboard)
-					return enemy_kind_modules.boekfoe.bt_tick(target, blackboard, math.random)
-				end,
-			},
-		})
-
-	behaviourtree.register_definition(enemy_bt_ids.paperfoe, {
-		root = {
-			type = 'action',
-			action = function(target, blackboard)
-				return enemy_kind_modules.paperfoe.bt_tick(target, blackboard)
-			end,
-		},
-	})
-
-		behaviourtree.register_definition(enemy_bt_ids.muziekfoe, {
-			root = {
-				type = 'action',
-				action = function(target, blackboard)
-					return enemy_kind_modules.muziekfoe.bt_tick(target, blackboard, get_delta_from_source_to_target_scaled, math.random)
-				end,
-			},
-		})
-
-	behaviourtree.register_definition(enemy_bt_ids.nootfoe, {
-		root = {
-			type = 'action',
-			action = function(target, blackboard)
-				return enemy_kind_modules.nootfoe.bt_tick(target, blackboard)
-			end,
-		},
-	})
-
-		behaviourtree.register_definition(enemy_bt_ids.stafffoe, {
-			root = {
-				type = 'action',
-				action = function(target, blackboard)
-					return enemy_kind_modules.stafffoe.bt_tick(target, blackboard, math.random, speed_components_from_angle)
-				end,
-			},
-		})
-
-	behaviourtree.register_definition(enemy_bt_ids.staffspawn, {
-		root = {
-			type = 'action',
-			action = function(target, blackboard)
-				return enemy_kind_modules.staffspawn.bt_tick(target, blackboard)
-			end,
-		},
-	})
-
-	behaviourtree.register_definition(enemy_bt_ids.cloud, {
-		root = {
-			type = 'action',
-			action = function(target, blackboard)
-				return enemy_kind_modules.cloud.bt_tick(target, blackboard)
-			end,
-		},
-	})
-
-		behaviourtree.register_definition(enemy_bt_ids.vlokspawner, {
-			root = {
-				type = 'action',
-				action = function(target, blackboard)
-					return enemy_kind_modules.vlokspawner.bt_tick(target, blackboard, math.random)
-				end,
-			},
-		})
-
-	behaviourtree.register_definition(enemy_bt_ids.vlokfoe, {
-		root = {
-			type = 'action',
-			action = function(target, blackboard)
-				return enemy_kind_modules.vlokfoe.bt_tick(target, blackboard)
-			end,
-		},
-	})
-
-	behaviourtree.register_definition(enemy_bt_ids.marspeinenaardappel, {
-		root = {
-			type = 'action',
-			action = function(target, blackboard)
-				return enemy_kind_modules.marspeinenaardappel.bt_tick(target, blackboard)
-			end,
-		},
-	})
+	enemy_registry.register_behaviour_trees()
 end
 
 local function register_enemy_definition()
@@ -702,7 +367,7 @@ local function register_enemy_definition()
 			enemy_id = '',
 			room_number = 0,
 			room = nil,
-			kind = 'mijterfoe',
+			kind = '',
 			trigger = '',
 			conditions = {},
 			spawned = false,
@@ -715,33 +380,22 @@ local function register_enemy_definition()
 			last_weapon_hit_id = -1,
 			dangerous = true,
 			can_be_hit = true,
-			horizontal_dir_mod = 0,
-			vertical_dir_mod = 0,
+			speed_x_num = 0,
+			speed_y_num = 0,
+			speed_den = 1,
+			speed_accum_x = 0,
+			speed_accum_y = 0,
+			direction = 'right',
 			room_left = 0,
 			room_right = constants.room.width,
 			room_top = constants.room.hud_height,
 			room_bottom = constants.room.height,
 			spawn_x = 0,
 			spawn_y = 0,
-			current_vertical_speed = 0,
-			zak_state = 'prepare',
-			zak_ground_y = 0,
-			cross_state = 'waiting',
-			cross_spin_direction = 'down',
-			mijter_entry_lock_ticks = constants.enemy.mijter_room_entry_lock_steps,
-			boek_state = 'closed',
-			staff_state = 'default',
-			staff_spawn_count = 0,
-			speed_x_num = 0,
-			speed_y_num = 0,
-			speed_den = 1,
-			speed_accum_x = 0,
-			speed_accum_y = 0,
 			despawn_on_room_switch = false,
 			projectile_bound_right = 0,
 			projectile_bound_bottom = 0,
 			active_bt_id = '',
-			noot_color = { r = 1, g = 1, b = 1, a = 1 },
 			state_name = 'boot',
 		},
 	})
@@ -754,5 +408,5 @@ return {
 	register_enemy_definition = register_enemy_definition,
 	enemy_def_id = constants.ids.enemy_def,
 	enemy_fsm_id = constants.ids.enemy_fsm,
-	enemy_bt_ids = enemy_bt_ids,
+	enemy_bt_ids = enemy_registry.behaviour_tree_ids,
 }

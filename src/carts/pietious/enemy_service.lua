@@ -33,13 +33,6 @@ local function enemy_condition_matches(self, condition, enemy_def, room_number)
 	return condition_is_set
 end
 
-function enemy_service:require_current_room_event(event_room_number, event_name)
-	local current_room_number = service(constants.ids.castle_service_instance).current_room.room_number
-	if event_room_number ~= current_room_number then
-		error('pietious enemy_service received ' .. event_name .. ' for room ' .. tostring(event_room_number) .. ' while current room is ' .. tostring(current_room_number))
-	end
-end
-
 function enemy_service:is_enemy_active_in_room(enemy_def, room_number)
 	local conditions = enemy_def.conditions or {}
 	for i = 1, #conditions do
@@ -111,7 +104,6 @@ function enemy_service:enter_current_room()
 end
 
 function enemy_service:on_enemy_defeated(event)
-	self:require_current_room_event(event.room_number, 'enemy_defeated')
 	self.destroyed_enemy_ids[event.enemy_id] = true
 	self.enemies_by_id[event.enemy_id] = nil
 	if event.kind == 'cloud' then
@@ -120,11 +112,6 @@ function enemy_service:on_enemy_defeated(event)
 	if event.trigger ~= '' then
 		self:emit_room_condition_set(event.room_number, event.trigger)
 	end
-end
-
-function enemy_service:on_room_condition_set(event)
-	self:require_current_room_event(event.room_number, 'room_condition_set')
-	self:mark_room_condition(event.room_number, event.condition)
 end
 
 function enemy_service:bind_events()
@@ -148,7 +135,7 @@ function enemy_service:bind_events()
 		event = constants.events.room_condition_set,
 		subscriber = self,
 		handler = function(event)
-			self:on_room_condition_set(event)
+			self:mark_room_condition(event.room_number, event.condition)
 		end,
 	})
 end

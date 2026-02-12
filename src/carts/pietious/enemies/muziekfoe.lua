@@ -4,7 +4,24 @@ local room_module = require('room')
 
 local muziekfoe = {}
 
-function muziekfoe.configure(self, def, _context)
+local function get_delta_from_source_to_target_scaled(source_x, source_y, target_x, target_y, speed_scale)
+	local dx = target_x - source_x
+	local dy = target_y - source_y
+	if dx == 0 then
+		return 0, dy > 0 and speed_scale or -speed_scale
+	end
+	if dy == 0 then
+		return dx > 0 and speed_scale or -speed_scale, 0
+	end
+	local abs_dx = math.abs(dx)
+	local abs_dy = math.abs(dy)
+	if abs_dx > abs_dy then
+		return dx > 0 and speed_scale or -speed_scale, div_toward_zero(dy * speed_scale, abs_dx)
+	end
+	return div_toward_zero(dx * speed_scale, abs_dy), dy > 0 and speed_scale or -speed_scale
+end
+
+function muziekfoe.configure(self, def)
 	self.width = def.w or 24
 	self.height = def.h or 16
 	self.max_health = def.health or 3
@@ -13,11 +30,14 @@ function muziekfoe.configure(self, def, _context)
 	self:set_body_hit_area(0, 0, 24, 16)
 end
 
-function muziekfoe.update_visual(_self)
-	return 'muziekfoe', false, false
+function muziekfoe.sync_components(self)
+	local imgid = 'muziekfoe'
+	local flip_h = false
+	local flip_v = false
+	self:set_body_sprite(imgid, flip_h, flip_v)
 end
 
-function muziekfoe.bt_tick(self, blackboard, get_delta_from_source_to_target_scaled, random_between)
+function muziekfoe.bt_tick(self, blackboard)
 	local node = blackboard.nodedata
 	local dir_modifier = self.direction == 'left' and -1 or 1
 	local move_accum = node.muziek_move_accum
@@ -54,7 +74,7 @@ function muziekfoe.bt_tick(self, blackboard, get_delta_from_source_to_target_sca
 		local target_y = player.y + player.height
 		local delta_scale = 8
 		local delta_x, delta_y = get_delta_from_source_to_target_scaled(source_x, source_y, target_x, target_y, delta_scale)
-		local delta_divisor = random_between(1, 2)
+		local delta_divisor = math.random(1, 2)
 		self:spawn_child_enemy('nootfoe', self.x + 12, self.y, {
 			direction = delta_x < 0 and 'left' or 'right',
 			speedx = delta_x,
@@ -65,6 +85,17 @@ function muziekfoe.bt_tick(self, blackboard, get_delta_from_source_to_target_sca
 	end
 	node.muziek_noot_ticks = noot_ticks
 	return behaviourtree.running
+end
+
+function muziekfoe.register_behaviour_tree(bt_id)
+	behaviourtree.register_definition(bt_id, {
+		root = {
+			type = 'action',
+			action = function(target, blackboard)
+				return muziekfoe.bt_tick(target, blackboard)
+			end,
+		},
+	})
 end
 
 function muziekfoe.choose_drop_type(_self, random_percent_hit)
