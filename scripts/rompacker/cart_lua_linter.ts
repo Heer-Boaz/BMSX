@@ -10,6 +10,7 @@ import {
 	LuaBinaryOperator,
 	LuaSyntaxKind,
 	LuaTableFieldKind,
+	LuaUnaryOperator,
 } from '../../src/bmsx/lua/lua_ast';
 import type {
 	LuaAssignmentStatement,
@@ -17,6 +18,7 @@ import type {
 	LuaExpression,
 	LuaFunctionDeclarationStatement,
 	LuaFunctionExpression,
+	LuaIdentifierExpression,
 	LuaIfStatement,
 	LuaLocalAssignmentStatement,
 	LuaLocalFunctionStatement,
@@ -27,8 +29,10 @@ import type {
 type LuaLintIssueRule =
 	'uppercase_code_pattern' |
 	'visual_update_pattern' |
+	'bool01_duplicate_pattern' |
 	'pure_copy_function_pattern' |
 	'useless_assert_pattern' |
+	'unused_init_value_pattern' |
 	'getter_setter_pattern' |
 	'single_line_method_pattern' |
 	'builtin_recreation_pattern' |
@@ -49,6 +53,21 @@ type LuaLintIssue = {
 type LuaLintSuppressionRange = {
 	readonly startLine: number;
 	readonly endLine: number;
+};
+
+type UnusedInitValueBinding = {
+	readonly declaration: LuaIdentifierExpression;
+	pendingInitValue: boolean;
+};
+
+type UnusedInitValueScope = {
+	readonly names: string[];
+};
+
+type UnusedInitValueContext = {
+	readonly issues: LuaLintIssue[];
+	readonly bindingStacksByName: Map<string, UnusedInitValueBinding[]>;
+	readonly scopeStack: UnusedInitValueScope[];
 };
 
 type LuaCartLintOptions = {
@@ -348,7 +367,9 @@ function isVisualUpdateLikeFunctionName(functionName: string): boolean {
 	}
 	const leaf = getFunctionLeafName(functionName).toLowerCase();
 	return /^update(?:_[a-z0-9]+)*_visual(?:_[a-z0-9]+)*$/.test(leaf)
-		|| /^sync(?:_[a-z0-9]+)*_components(?:_[a-z0-9]+)*$/.test(leaf);
+		|| /^sync(?:_[a-z0-9]+)*_components(?:_[a-z0-9]+)*$/.test(leaf)
+		|| /^apply(?:_[a-z0-9]+)*_pose(?:_[a-z0-9]+)*$/.test(leaf)
+		|| /^refresh(?:_[a-z0-9]+)*_presentation(?:_[a-z0-9]+)*(?:_if_changed)?$/.test(leaf);
 }
 
 function isMethodLikeFunctionDeclaration(statement: LuaFunctionDeclarationStatement): boolean {
@@ -610,6 +631,85 @@ function matchesBuiltinRecreationPattern(functionExpression: LuaFunctionExpressi
 	return matchesForwardedArgumentList(expression.arguments, getFunctionParameterNames(functionExpression));
 }
 
+function getSingleReturnedStringValue(statement: LuaStatement): string {
+	if (statement.kind !== LuaSyntaxKind.ReturnStatement || statement.expressions.length !== 1) {
+		return undefined;
+	}
+	const returned = statement.expressions[0];
+	if (returned.kind !== LuaSyntaxKind.StringLiteralExpression) {
+		return undefined;
+	}
+	return returned.value;
+}
+
+function isTruthyParamCondition(expression: LuaExpression, parameterName: string): boolean {
+	return expression.kind === LuaSyntaxKind.IdentifierExpression && expression.name === parameterName;
+}
+
+function isFalsyParamCondition(expression: LuaExpression, parameterName: string): boolean {
+	return expression.kind === LuaSyntaxKind.UnaryExpression
+		&& expression.operator === LuaUnaryOperator.Not
+		&& expression.operand.kind === LuaSyntaxKind.IdentifierExpression
+		&& expression.operand.name === parameterName;
+}
+
+function returnsBool01Pair(whenTrue: string, whenFalse: string): boolean {
+	return whenTrue === '1' && whenFalse === '0';
+}
+
+function matchesBool01DuplicatePattern(functionExpression: LuaFunctionExpression): boolean {
+	if (functionExpression.parameters.length !== 1 || functionExpression.hasVararg) {
+		return false;
+	}
+	const parameterName = functionExpression.parameters[0].name;
+	const body = functionExpression.body.body;
+	if (body.length === 2) {
+		const maybeIf = body[0];
+		const fallback = getSingleReturnedStringValue(body[1]);
+		if (maybeIf.kind !== LuaSyntaxKind.IfStatement || !fallback || maybeIf.clauses.length !== 1) {
+			return false;
+		}
+		const onlyClause = maybeIf.clauses[0];
+		if (!onlyClause.condition || onlyClause.block.body.length !== 1) {
+			return false;
+		}
+		const clauseReturn = getSingleReturnedStringValue(onlyClause.block.body[0]);
+		if (!clauseReturn) {
+			return false;
+		}
+		if (isTruthyParamCondition(onlyClause.condition, parameterName)) {
+			return returnsBool01Pair(clauseReturn, fallback);
+		}
+		if (isFalsyParamCondition(onlyClause.condition, parameterName)) {
+			return returnsBool01Pair(fallback, clauseReturn);
+		}
+		return false;
+	}
+	if (body.length === 1) {
+		const onlyIf = body[0];
+		if (onlyIf.kind !== LuaSyntaxKind.IfStatement || onlyIf.clauses.length !== 2) {
+			return false;
+		}
+		const first = onlyIf.clauses[0];
+		const second = onlyIf.clauses[1];
+		if (!first.condition || second.condition || first.block.body.length !== 1 || second.block.body.length !== 1) {
+			return false;
+		}
+		const firstReturn = getSingleReturnedStringValue(first.block.body[0]);
+		const secondReturn = getSingleReturnedStringValue(second.block.body[0]);
+		if (!firstReturn || !secondReturn) {
+			return false;
+		}
+		if (isTruthyParamCondition(first.condition, parameterName)) {
+			return returnsBool01Pair(firstReturn, secondReturn);
+		}
+		if (isFalsyParamCondition(first.condition, parameterName)) {
+			return returnsBool01Pair(secondReturn, firstReturn);
+		}
+	}
+	return false;
+}
+
 function getCallReceiverName(expression: LuaCallExpression): string {
 	if (expression.methodName && expression.callee.kind === LuaSyntaxKind.IdentifierExpression) {
 		return expression.callee.name;
@@ -733,6 +833,269 @@ function matchesEnsurePattern(functionExpression: LuaFunctionExpression): boolea
 	return returnStatement.expressions.length === 1 && isIdentifier(returnStatement.expressions[0], variableName);
 }
 
+function enterUnusedInitValueScope(context: UnusedInitValueContext): void {
+	context.scopeStack.push({ names: [] });
+}
+
+function leaveUnusedInitValueScope(context: UnusedInitValueContext): void {
+	const scope = context.scopeStack.pop();
+	if (!scope) {
+		return;
+	}
+	for (let index = scope.names.length - 1; index >= 0; index -= 1) {
+		const name = scope.names[index];
+		const stack = context.bindingStacksByName.get(name);
+		if (!stack || stack.length === 0) {
+			continue;
+		}
+		stack.pop();
+		if (stack.length === 0) {
+			context.bindingStacksByName.delete(name);
+		}
+	}
+}
+
+function createUnusedInitValueContext(issues: LuaLintIssue[]): UnusedInitValueContext {
+	const context: UnusedInitValueContext = {
+		issues,
+		bindingStacksByName: new Map<string, UnusedInitValueBinding[]>(),
+		scopeStack: [],
+	};
+	enterUnusedInitValueScope(context);
+	return context;
+}
+
+function resolveUnusedInitValueBinding(context: UnusedInitValueContext, name: string): UnusedInitValueBinding {
+	const stack = context.bindingStacksByName.get(name);
+	if (!stack || stack.length === 0) {
+		return undefined;
+	}
+	return stack[stack.length - 1];
+}
+
+function declareUnusedInitValueBinding(context: UnusedInitValueContext, declaration: LuaIdentifierExpression, pendingInitValue: boolean): void {
+	const scope = context.scopeStack[context.scopeStack.length - 1];
+	scope.names.push(declaration.name);
+	let stack = context.bindingStacksByName.get(declaration.name);
+	if (!stack) {
+		stack = [];
+		context.bindingStacksByName.set(declaration.name, stack);
+	}
+	stack.push({
+		declaration,
+		pendingInitValue,
+	});
+}
+
+function markUnusedInitValueRead(context: UnusedInitValueContext, name: string): void {
+	const binding = resolveUnusedInitValueBinding(context, name);
+	if (!binding || !binding.pendingInitValue) {
+		return;
+	}
+	binding.pendingInitValue = false;
+}
+
+function markUnusedInitValueWrite(context: UnusedInitValueContext, identifier: LuaIdentifierExpression): void {
+	const binding = resolveUnusedInitValueBinding(context, identifier.name);
+	if (!binding || !binding.pendingInitValue) {
+		return;
+	}
+	pushIssue(
+		context.issues,
+		'unused_init_value_pattern',
+		binding.declaration,
+		`Unused initial value is forbidden ("${binding.declaration.name}"). Remove the initializer and assign only when the value is actually known.`,
+	);
+	binding.pendingInitValue = false;
+}
+
+function lintUnusedInitValuesInExpression(expression: LuaExpression | null, context: UnusedInitValueContext): void {
+	if (!expression) {
+		return;
+	}
+	switch (expression.kind) {
+		case LuaSyntaxKind.IdentifierExpression:
+			markUnusedInitValueRead(context, expression.name);
+			return;
+		case LuaSyntaxKind.MemberExpression:
+			lintUnusedInitValuesInExpression(expression.base, context);
+			return;
+		case LuaSyntaxKind.IndexExpression:
+			lintUnusedInitValuesInExpression(expression.base, context);
+			lintUnusedInitValuesInExpression(expression.index, context);
+			return;
+		case LuaSyntaxKind.BinaryExpression:
+			lintUnusedInitValuesInExpression(expression.left, context);
+			lintUnusedInitValuesInExpression(expression.right, context);
+			return;
+		case LuaSyntaxKind.UnaryExpression:
+			lintUnusedInitValuesInExpression(expression.operand, context);
+			return;
+		case LuaSyntaxKind.CallExpression:
+			lintUnusedInitValuesInExpression(expression.callee, context);
+			for (const argument of expression.arguments) {
+				lintUnusedInitValuesInExpression(argument, context);
+			}
+			return;
+		case LuaSyntaxKind.TableConstructorExpression:
+			for (const field of expression.fields) {
+				if (field.kind === LuaTableFieldKind.ExpressionKey) {
+					lintUnusedInitValuesInExpression(field.key, context);
+				}
+				lintUnusedInitValuesInExpression(field.value, context);
+			}
+			return;
+		case LuaSyntaxKind.FunctionExpression:
+			lintUnusedInitValuesInFunctionBody(expression.body.body, context.issues, expression.parameters);
+			return;
+		default:
+			return;
+	}
+}
+
+function lintUnusedInitValuesInAssignmentTarget(
+	target: LuaExpression,
+	operator: LuaAssignmentOperator,
+	context: UnusedInitValueContext,
+): void {
+	if (target.kind === LuaSyntaxKind.IdentifierExpression) {
+		if (operator !== LuaAssignmentOperator.Assign) {
+			markUnusedInitValueRead(context, target.name);
+		}
+		return;
+	}
+	if (target.kind === LuaSyntaxKind.MemberExpression) {
+		lintUnusedInitValuesInExpression(target.base, context);
+		return;
+	}
+	if (target.kind === LuaSyntaxKind.IndexExpression) {
+		lintUnusedInitValuesInExpression(target.base, context);
+		lintUnusedInitValuesInExpression(target.index, context);
+	}
+}
+
+function lintUnusedInitValuesInStatements(statements: ReadonlyArray<LuaStatement>, context: UnusedInitValueContext): void {
+	for (const statement of statements) {
+		switch (statement.kind) {
+			case LuaSyntaxKind.LocalAssignmentStatement:
+				for (const value of statement.values) {
+					lintUnusedInitValuesInExpression(value, context);
+				}
+				for (let index = 0; index < statement.names.length; index += 1) {
+					declareUnusedInitValueBinding(context, statement.names[index], index < statement.values.length);
+				}
+				break;
+			case LuaSyntaxKind.AssignmentStatement:
+				for (const right of statement.right) {
+					lintUnusedInitValuesInExpression(right, context);
+				}
+				for (const left of statement.left) {
+					lintUnusedInitValuesInAssignmentTarget(left, statement.operator, context);
+				}
+				for (const left of statement.left) {
+					if (left.kind === LuaSyntaxKind.IdentifierExpression) {
+						markUnusedInitValueWrite(context, left);
+					}
+				}
+				break;
+			case LuaSyntaxKind.LocalFunctionStatement: {
+				const localFunction = statement as LuaLocalFunctionStatement;
+				declareUnusedInitValueBinding(context, localFunction.name, false);
+				lintUnusedInitValuesInFunctionBody(
+					localFunction.functionExpression.body.body,
+					context.issues,
+					localFunction.functionExpression.parameters,
+				);
+				break;
+			}
+			case LuaSyntaxKind.FunctionDeclarationStatement:
+				lintUnusedInitValuesInFunctionBody(
+					statement.functionExpression.body.body,
+					context.issues,
+					statement.functionExpression.parameters,
+				);
+				break;
+			case LuaSyntaxKind.ReturnStatement:
+				for (const expression of statement.expressions) {
+					lintUnusedInitValuesInExpression(expression, context);
+				}
+				break;
+			case LuaSyntaxKind.IfStatement:
+				for (const clause of statement.clauses) {
+					if (clause.condition) {
+						lintUnusedInitValuesInExpression(clause.condition, context);
+					}
+					enterUnusedInitValueScope(context);
+					lintUnusedInitValuesInStatements(clause.block.body, context);
+					leaveUnusedInitValueScope(context);
+				}
+				break;
+			case LuaSyntaxKind.WhileStatement:
+				lintUnusedInitValuesInExpression(statement.condition, context);
+				enterUnusedInitValueScope(context);
+				lintUnusedInitValuesInStatements(statement.block.body, context);
+				leaveUnusedInitValueScope(context);
+				break;
+			case LuaSyntaxKind.RepeatStatement:
+				enterUnusedInitValueScope(context);
+				lintUnusedInitValuesInStatements(statement.block.body, context);
+				lintUnusedInitValuesInExpression(statement.condition, context);
+				leaveUnusedInitValueScope(context);
+				break;
+			case LuaSyntaxKind.ForNumericStatement:
+				lintUnusedInitValuesInExpression(statement.start, context);
+				lintUnusedInitValuesInExpression(statement.limit, context);
+				lintUnusedInitValuesInExpression(statement.step, context);
+				enterUnusedInitValueScope(context);
+				declareUnusedInitValueBinding(context, statement.variable, false);
+				lintUnusedInitValuesInStatements(statement.block.body, context);
+				leaveUnusedInitValueScope(context);
+				break;
+			case LuaSyntaxKind.ForGenericStatement:
+				for (const iterator of statement.iterators) {
+					lintUnusedInitValuesInExpression(iterator, context);
+				}
+				enterUnusedInitValueScope(context);
+				for (const variable of statement.variables) {
+					declareUnusedInitValueBinding(context, variable, false);
+				}
+				lintUnusedInitValuesInStatements(statement.block.body, context);
+				leaveUnusedInitValueScope(context);
+				break;
+			case LuaSyntaxKind.DoStatement:
+				enterUnusedInitValueScope(context);
+				lintUnusedInitValuesInStatements(statement.block.body, context);
+				leaveUnusedInitValueScope(context);
+				break;
+			case LuaSyntaxKind.CallStatement:
+				lintUnusedInitValuesInExpression(statement.expression, context);
+				break;
+			case LuaSyntaxKind.BreakStatement:
+			case LuaSyntaxKind.GotoStatement:
+			case LuaSyntaxKind.LabelStatement:
+				break;
+			default:
+				break;
+		}
+	}
+}
+
+function lintUnusedInitValuesInFunctionBody(
+	statements: ReadonlyArray<LuaStatement>,
+	issues: LuaLintIssue[],
+	parameters: ReadonlyArray<LuaIdentifierExpression>,
+): void {
+	const context = createUnusedInitValueContext(issues);
+	try {
+		for (const parameter of parameters) {
+			declareUnusedInitValueBinding(context, parameter, false);
+		}
+		lintUnusedInitValuesInStatements(statements, context);
+	} finally {
+		leaveUnusedInitValueScope(context);
+	}
+}
+
 function lintFunctionBody(
 	functionName: string,
 	functionExpression: LuaFunctionExpression,
@@ -746,7 +1109,7 @@ function lintFunctionBody(
 			issues,
 			'visual_update_pattern',
 			functionExpression,
-			`update_visual/sync_*_components-style code is forbidden ("${functionName}"). This is an ugly workaround pattern (update_visual -> sync_*_components or vice-versa). Use deterministic initialization and on-change updates.`,
+			`update_visual/sync_*_components/apply_pose/refresh_presentation_if_changed-style code is forbidden ("${functionName}"). This is an ugly workaround pattern (update_visual <-> sync_*_components <-> apply_pose <-> refresh_presentation_if_changed). Use deterministic initialization and on-change updates.`,
 		);
 	}
 	const isGetterOrSetter = isNamedFunction && (matchesGetterPattern(functionExpression) || matchesSetterPattern(functionExpression));
@@ -765,6 +1128,15 @@ function lintFunctionBody(
 			'builtin_recreation_pattern',
 			functionExpression,
 			`Recreating existing built-in behavior is forbidden ("${functionName}").`,
+		);
+	}
+	const isBool01Duplicate = isNamedFunction && matchesBool01DuplicatePattern(functionExpression);
+	if (isBool01Duplicate) {
+		pushIssue(
+			issues,
+			'bool01_duplicate_pattern',
+			functionExpression,
+			`Duplicate of global bool01 is forbidden ("${functionName}"). Use bool01(...) directly.`,
 		);
 	}
 	const isPureCopyFunction = isNamedFunction && matchesPureCopyFunctionPattern(functionExpression);
@@ -1010,6 +1382,7 @@ export async function lintCartLuaSources(options: LuaCartLintOptions): Promise<v
 			lintUppercaseCode(workspacePath, tokens, issues);
 			const parser = new LuaParser(tokens, workspacePath, source);
 			const chunk = parser.parseChunk();
+			lintUnusedInitValuesInFunctionBody(chunk.body, issues, []);
 			lintStatements(chunk.body, issues);
 		}
 	} finally {
