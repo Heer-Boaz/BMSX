@@ -223,9 +223,6 @@ end
 
 function item_service:apply_pickup_to_player(player, item_type)
 	local pickup_handler = pickup_handlers[item_type]
-	if pickup_handler == nil then
-		error('pietious item_service invalid item_type=' .. tostring(item_type))
-	end
 	if pickup_handler == pickup_inventory_item then
 		return pickup_handler(player, item_type)
 	end

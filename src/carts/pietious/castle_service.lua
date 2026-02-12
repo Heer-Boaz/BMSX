@@ -109,9 +109,6 @@ end
 
 function castle_service:enter_world(target)
 	local transition = castle_map.world_transition(target)
-	if transition == nil then
-		error('pietious castle_service missing world transition for target=' .. tostring(target))
-	end
 
 	local from_room_number = self.current_room_number
 
@@ -142,14 +139,8 @@ end
 
 function castle_service:leave_world_to_castle()
 	local world_number = self.current_room.world_number
-	if world_number <= 0 then
-		error('pietious castle_service leave_world_to_castle called outside world')
-	end
 
 	local transition = castle_map.world_transition_from_world_number(world_number)
-	if transition == nil then
-		error('pietious castle_service missing world transition for world=' .. tostring(world_number))
-	end
 
 	local from_room_number = self.current_room_number
 

@@ -114,9 +114,6 @@ function item_screen:draw_map()
 	end
 
 	local map_proxies = castle_map.map_world_proxies[world_number]
-	if map_proxies == nil then
-		error('pietious item_screen missing map proxy data for world=' .. tostring(world_number))
-	end
 
 	put_sprite('f1_map_title', map_title_x, 103 + constants.room.hud_height, 323)
 

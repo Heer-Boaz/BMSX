@@ -6,12 +6,6 @@ local room_module = require('room')
 local pepernoot_projectile = {}
 pepernoot_projectile.__index = pepernoot_projectile
 
-function pepernoot_projectile:update_visual_snap()
-	local snapped_x, snapped_y = room_module.snap_world_to_tile(self.room, self.x, self.y)
-	self.body_sprite.offset.x = snapped_x - self.x
-	self.body_sprite.offset.y = snapped_y - self.y
-end
-
 function pepernoot_projectile:bind_events()
 	self.events:on({
 		event_name = 'overlap.stay',
@@ -83,7 +77,9 @@ function pepernoot_projectile:tick()
 	end
 
 	self.x = self.x + (self.direction * constants.secondary_weapon.pepernoot_speed_px)
-	self:update_visual_snap()
+	local snapped_x, snapped_y = room_module.snap_world_to_tile(self.room, self.x, self.y)
+	self.body_sprite.offset.x = snapped_x - self.x
+	self.body_sprite.offset.y = snapped_y - self.y
 
 	if self.x <= 0 or self.x >= self.room.world_width then
 		self:dispose('out_of_bounds')
@@ -129,13 +125,15 @@ local function define_pepernoot_projectile_fsm()
 			active = {
 				entering_state = function(self)
 					self.state_name = 'active'
-					self.disposed = false
-					self.body_sprite.enabled = true
-					self.body_collider.enabled = true
-					self.body_sprite.flip.flip_h = self.direction < 0
-					self:update_visual_snap()
-				end,
-			},
+						self.disposed = false
+						self.body_sprite.enabled = true
+						self.body_collider.enabled = true
+						self.body_sprite.flip.flip_h = self.direction < 0
+						local snapped_x, snapped_y = room_module.snap_world_to_tile(self.room, self.x, self.y)
+						self.body_sprite.offset.x = snapped_x - self.x
+						self.body_sprite.offset.y = snapped_y - self.y
+					end,
+				},
 		},
 	})
 end

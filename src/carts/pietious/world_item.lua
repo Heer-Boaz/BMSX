@@ -13,12 +13,6 @@ function world_item:bind_events()
 	})
 end
 
-function world_item:update_visual()
-	self.body_sprite.imgid = constants.world_item.sprite[self.item_type]
-	self.body_sprite.enabled = true
-	self.body_collider.enabled = true
-end
-
 function world_item:configure_from_room_def(def, room, item_service_id)
 	self.item_id = def.id
 	self.room_number = room.room_number
@@ -28,7 +22,9 @@ function world_item:configure_from_room_def(def, room, item_service_id)
 	self.item_type = def.item_type
 	self.x = def.x
 	self.y = def.y
-	self:update_visual()
+	self.body_sprite.imgid = constants.world_item.sprite[self.item_type]
+	self.body_sprite.enabled = true
+	self.body_collider.enabled = true
 end
 
 function world_item:on_overlap_stay(event)
@@ -78,11 +74,13 @@ local function define_world_item_fsm()
 				on = {
 					['picked'] = '/picked',
 				},
-				entering_state = function(self)
-					self.state_name = 'active'
-					self:update_visual()
-				end,
-			},
+					entering_state = function(self)
+						self.state_name = 'active'
+						self.body_sprite.imgid = constants.world_item.sprite[self.item_type]
+						self.body_sprite.enabled = true
+						self.body_collider.enabled = true
+					end,
+				},
 			picked = {
 				entering_state = function(self)
 					self.state_name = 'picked'

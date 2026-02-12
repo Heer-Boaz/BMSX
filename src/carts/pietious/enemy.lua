@@ -138,11 +138,6 @@ function enemy:bind_overlap_events()
 	})
 end
 
-function enemy:sync_kind_components()
-	local kind_module = get_kind_module(self.kind)
-	kind_module.sync_components(self)
-end
-
 function enemy:spawn_child_enemy(kind, x, y, options)
 	local id = build_spawned_enemy_id(kind)
 	local child = spawn_object(constants.ids.enemy_def, {
@@ -248,7 +243,6 @@ function enemy:configure_from_room_def(def, room)
 	self.body_collider.enabled = true
 	self.visible = true
 	self:dispatch_state_event('reset_to_waiting')
-	self:sync_kind_components()
 end
 
 function enemy:choose_drop_type()
@@ -314,7 +308,6 @@ function enemy:tick()
 	if self.active_bt_id == '' then
 		return
 	end
-	self:sync_kind_components()
 end
 
 local function define_enemy_fsm()

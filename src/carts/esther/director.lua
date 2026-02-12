@@ -157,7 +157,7 @@ function director:emit_camera_metric(player)
 		return
 	end
 	print(string.format(
-		'%s|f=%d|cam=%.3f|target=%.3f|delta=%.3f|anchor=%.3f|px=%.3f|sx=%d|st=%s',
+		'%s|f=%d|cam=%.3f|target=%.3f|delta=%.3f|anchor=%.3f|px=%.3f|sx=%d|st=%s|s1029=%04X|c1209=%04X|h7e=%04X|p80=%04X',
 		telemetry.camera_prefix,
 		player.debug_frame,
 		self.camera_x,
@@ -166,7 +166,11 @@ function director:emit_camera_metric(player)
 		player.camera_anchor_x,
 		player.x,
 		player.x_speed_subpx,
-			player.pose_name
+			player.pose_name,
+			player.ram_ramtable1029lo,
+			player.ram_ramtable1209lo,
+			player.zp_7e,
+			player.zp_80
 		))
 end
 

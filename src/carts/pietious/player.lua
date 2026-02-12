@@ -109,21 +109,6 @@ local player_hit_invulnerability_sequence_frames = timeline_range(constants.dama
 local player_hit_blink_sequence_frames = timeline_range(constants.damage.hit_blink_switch_frames)
 local player_fall_substate_sequence_frames = timeline_range(12)
 
-if #player_dying_frames ~= constants.damage.death_frames then
-	error(string.format(
-		"pietious dying timeline mismatch: %d frames vs death_frames=%d",
-		#player_dying_frames,
-		constants.damage.death_frames
-	))
-end
-if #player_hit_recovery_frames ~= constants.damage.hit_recovery_frames then
-	error(string.format(
-		"pietious hit_recovery timeline mismatch: %d frames vs hit_recovery_frames=%d",
-		#player_hit_recovery_frames,
-		constants.damage.hit_recovery_frames
-	))
-end
-
 local function copy_text_lines(lines)
 	local copied = {}
 	for i = 1, #lines do
@@ -202,6 +187,7 @@ function player:reset_runtime()
 	self.enter_leave_shrine_text_lines = {}
 	self.pepernoot_projectile_sequence = 0
 	self.pepernoot_projectile_ids = {}
+	self.presentation_signature = ''
 end
 
 function player:ctor()
@@ -285,7 +271,49 @@ function player:update_damage_state_imgid()
 	self.player_damage_imgid = ''
 end
 
-function player:update_visual_components()
+local function bit_for(value)
+	if value then
+		return '1'
+	end
+	return '0'
+end
+
+local function build_presentation_signature(self)
+	return table.concat({
+		self.player_damage_imgid,
+		tostring(self.facing),
+		tostring(self.walk_frame),
+		tostring(self.stairs_anim_frame),
+		tostring(self.enter_leave_anim_frame),
+		tostring(self.enter_leave_size),
+		tostring(self.hit_invulnerability_timer),
+		bit_for(self.hit_blink_on),
+		bit_for(self:has_tag(state_tags.variant.waiting_world_banner)),
+		bit_for(self:has_tag(state_tags.variant.waiting_world_emerge)),
+		bit_for(self:has_tag(state_tags.variant.waiting_shrine)),
+		bit_for(self:has_tag(state_tags.variant.entering_world)),
+		bit_for(self:has_tag(state_tags.variant.emerging_world)),
+		bit_for(self:has_tag(state_tags.variant.entering_shrine)),
+		bit_for(self:has_tag(state_tags.variant.leaving_shrine)),
+		bit_for(self:has_tag(state_tags.variant.dying)),
+		bit_for(self:has_tag(state_tags.variant.hit_fall)),
+		bit_for(self:has_tag(state_tags.variant.hit_collision)),
+		bit_for(self:has_tag(state_tags.variant.hit_recovery)),
+		bit_for(self:has_tag(state_tags.variant.up_stairs)),
+		bit_for(self:has_tag(state_tags.variant.down_stairs)),
+		bit_for(self:has_tag(state_tags.variant.walking_right)),
+		bit_for(self:has_tag(state_tags.variant.walking_left)),
+		bit_for(self:has_tag(state_tags.variant.jumping)),
+		bit_for(self:has_tag(state_tags.variant.stopped_jumping)),
+		bit_for(self:has_tag(state_tags.variant.controlled_fall)),
+		bit_for(self:has_tag(state_tags.variant.uncontrolled_fall)),
+		bit_for(self:has_tag(state_tags.visual.jump_sword)),
+		bit_for(self:has_tag(state_tags.visual.ground_sword)),
+		bit_for(self:has_tag(state_tags.visual.stairs_sword)),
+	}, '|')
+end
+
+function player:apply_presentation_state()
 	self:ensure_visual_components()
 	local body_sprite = self:get_component_by_local_id('spritecomponent', 'body')
 	local sword_sprite = self:get_component_by_local_id('spritecomponent', 'sword')
@@ -473,6 +501,15 @@ function player:update_visual_components()
 			sword_collider.enabled = false
 		end
 	end
+end
+
+function player:refresh_presentation_if_changed()
+	local next_signature = build_presentation_signature(self)
+	if self.presentation_signature == next_signature then
+		return
+	end
+	self.presentation_signature = next_signature
+	self:apply_presentation_state()
 end
 
 function player:respawn()
@@ -2392,7 +2429,7 @@ function player:tick()
 	if self:has_tag(state_tags.group.transition_lock) then
 		self:reset_motion_for_transition_lock()
 		self.grounded = false
-		self:update_visual_components()
+			self:refresh_presentation_if_changed()
 		return
 	end
 
@@ -2415,7 +2452,7 @@ function player:tick()
 	end
 
 	self.grounded = self:collides_at(self.x, self.y + 1)
-	self:update_visual_components()
+	self:refresh_presentation_if_changed()
 	self:update_hit_invulnerability()
 end
 
@@ -2428,7 +2465,7 @@ local function define_player_fsm()
 				self.weapon_level = 0
 				self:reset_runtime()
 				self:ensure_visual_components()
-				self:update_visual_components()
+				self:refresh_presentation_if_changed()
 				self:define_timeline(new_timeline({
 					id = 'p.tl.d',
 					frames = player_dying_frames,

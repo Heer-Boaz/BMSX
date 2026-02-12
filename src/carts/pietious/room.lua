@@ -113,22 +113,6 @@ local pillar_themes = {
 	},
 }
 
-local function get_background_theme(room_subtype)
-	local theme = background_themes[room_subtype]
-	if theme == nil then
-		error('pietious room unknown room_subtype=' .. tostring(room_subtype))
-	end
-	return theme
-end
-
-local function get_pillar_theme(room_subtype)
-	local theme = pillar_themes[room_subtype]
-	if theme == nil then
-		error('pietious room unknown pillar room_subtype=' .. tostring(room_subtype))
-	end
-	return theme
-end
-
 local function build_collision_map(map_rows)
 	local collision = {}
 	for y = 1, #map_rows do
@@ -149,8 +133,8 @@ local function build_collision_map(map_rows)
 end
 
 local function create_tile_id(ch, x, y, map_rows, collision_map, room_subtype)
-	local background = get_background_theme(room_subtype)
-	local pillars = get_pillar_theme(room_subtype)
+	local background = background_themes[room_subtype]
+	local pillars = pillar_themes[room_subtype]
 
 	if ch == '#' then
 		return background.front
@@ -433,15 +417,6 @@ local function build_world_entrances(world_entrance_defs)
 	return world_entrances
 end
 
-local function copy_links(links_def)
-	return {
-		left = links_def.left,
-		right = links_def.right,
-		up = links_def.up,
-		down = links_def.down,
-	}
-end
-
 local function copy_edge_gates(gates_def)
 	local gates = {}
 	for direction, gate in pairs(gates_def) do
@@ -485,7 +460,7 @@ local function apply_room_template(room_state, template)
 	room_state.lithographs = build_lithographs(template.lithographs)
 	room_state.shrines = build_shrines(template.shrines)
 	room_state.world_entrances = build_world_entrances(template.world_entrances)
-	room_state.links = copy_links(template.links)
+	room_state.links = template.links
 	room_state.edge_gates = copy_edge_gates(template.edge_gates)
 end
 

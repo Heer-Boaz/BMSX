@@ -35,12 +35,6 @@ function loot_drop:bind_events()
 	})
 end
 
-function loot_drop:update_visual()
-	self.body_sprite.imgid = sprite_for_loot_type(self.loot_type)
-	self.body_sprite.enabled = true
-	self.body_collider.enabled = true
-end
-
 function loot_drop:on_overlap_stay(event)
 	if event.other_id ~= constants.ids.player_instance then
 		return
@@ -79,22 +73,26 @@ local function define_loot_drop_fsm()
 						imgid = 'item_health',
 						offset = { x = 0, y = 0, z = 112 },
 						collider_local_id = 'body',
-					})
-					self:add_component(self.body_sprite)
-					self:bind_events()
-					self:update_visual()
-					return '/active'
-				end,
-			},
+						})
+						self:add_component(self.body_sprite)
+						self:bind_events()
+						self.body_sprite.imgid = sprite_for_loot_type(self.loot_type)
+						self.body_sprite.enabled = true
+						self.body_collider.enabled = true
+						return '/active'
+					end,
+				},
 			active = {
 				on = {
 					['picked'] = '/picked',
 				},
-				entering_state = function(self)
-					self.state_name = 'active'
-					self:update_visual()
-				end,
-			},
+					entering_state = function(self)
+						self.state_name = 'active'
+						self.body_sprite.imgid = sprite_for_loot_type(self.loot_type)
+						self.body_sprite.enabled = true
+						self.body_collider.enabled = true
+					end,
+				},
 			picked = {
 				entering_state = function(self)
 					self.state_name = 'picked'
