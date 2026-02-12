@@ -37,6 +37,7 @@ local define_dkc1_animationid_dk_jump = 0x0005
 local define_dkc1_animationid_dk_getoffanimalbuddy = 0x0008
 local define_dkc1_animationid_rambiriddenbydk_jumpontire = 0x0036
 local define_dkc1_animationid_dk_holdjump = 0x004D
+local define_dkc1_animationid_dk_placedownheldobject = 0x004B
 local define_dkc1_animationid_dk_hurt = 0x000C
 local define_dkc1_animationid_dk_hurtunderwater = 0x000D
 local define_dkc1_animationid_dk_dead = 0x0010
@@ -49,12 +50,15 @@ local define_dkc1_animationid_dk_endroll = 0x0019
 local define_dkc1_animationid_dk_cancelroll = 0x001a
 local define_dkc1_animationid_dk_jumpoffverticalrope = 0x0052
 local define_dkc1_animationid_dk_bouncewhileholding = 0x0053
+local define_dkc1_animationid_dk_duck = 0x0054
 local define_dkc1_animationid_dk_jumpaway = 0x0054
+local define_dkc1_animationid_dk_turnwhilecrawling = 0x0058
 local define_dkc1_animationid_dk_duckintocrawlspace = 0x0056
 local define_dkc1_animationid_dk_crawling = 0x005A
 local define_dkc1_animationid_dk_incrawlspace = 0x0057
 local define_dkc1_animationid_dk_leavecrawlspace = 0x0059
 local define_dkc1_animationid_dk_unknownbonusroomexit = 0x0051
+local define_dkc1_animationid_dk_groundslap = 0x0067
 local define_dkc1_animationid_dk_hangontoverticalrope = 0x005E
 local define_dkc1_animationid_dk_swimming = 0x0060
 local define_dkc1_animationid_dk_lookup = 0x0061
@@ -109,6 +113,7 @@ local define_dkc1_entranceid_invalidmap = 0x00EB
 local define_dkc1_entranceid_junglehijinxs_enterfullkongsbananahoard = 0x004C
 local define_dkc1_entranceid_credits = 0x005E
 local define_dkc1_entranceid_junglehijinxs_main = 0x0016
+local define_dkc1_soundid_collectg = 0x52
 local define_dkc1_soundid_unpause = 0x002D
 local define_dkc1_soundid_getonanimalbuddy = 0x0058
 local define_dkc1_soundid_animalbuddyjump = 0x005F
@@ -241,21 +246,21 @@ local data_bfc2f5 = {
 }
 
 local data_bfc283 = {
-	'code_bfb8f7_full',
-	'code_bfb8f7_full',
+	'code_bfb8f7',
+	'code_bfb8f7',
 	'code_bfba39',
 	'code_bfba39',
-	'code_bfb8f7_full',
-	'code_bfb8f7_full',
-	'code_bfb8f7_full',
-	'code_bfb8f7_full',
-	'code_bfb8f7_full',
+	'code_bfb8f7',
+	'code_bfb8f7',
+	'code_bfb8f7',
+	'code_bfb8f7',
+	'code_bfb8f7',
 	'code_bfba6f',
 	'code_bfba6f',
 	'code_bfba39',
-	'code_bfb8f7_full',
+	'code_bfb8f7',
 	'code_bfba39',
-	'code_bfb8f7_full',
+	'code_bfb8f7',
 	'code_bfbbaf',
 	'code_bfb8e5',
 	'code_bfbc53',
@@ -786,6 +791,7 @@ function player.ctor(self, addons)
 	self.ram_0514 = 0
 	self.ram_0516 = 0
 	self.ram_0518 = 0
+	self.ram_0533 = 0
 	self.ram_1e15 = 0
 	self.ram_1e25 = 0
 	self.ram_1e3d = 0
@@ -1116,6 +1122,7 @@ function player:reset_runtime()
 	self.ram_ramtable14c5lo = 0
 	self.ram_ramtable11a1lo = 0
 	self.ram_ramtable1595lo = 0
+	self.ram_0533 = 0
 	self.ram_0579 = 0
 	self.ram_057d = 0
 	self.ram_0583 = {}
@@ -2165,9 +2172,110 @@ function player:code_bfbec5()
 	self.ram_1699 = self.ram_1699 & 0xFFEF
 end
 
+-- code_bfbc06: Y release handler (line 110849)
+function player:code_bfbc06()
+	-- LDA.w $16F5,y
+	if self.ram_16f5 == 0 then
+		return
+	end
+	-- LDA.w $16AD,y
+	if self.ram_16ad == define_dkc1_animationid_dk_throw then
+		return
+	end
+	if self.ram_16ad == define_dkc1_animationid_dk_placedownheldobject then
+		return
+	end
+
+	-- LDA.w !RAM_DKC1_NorSpr_RAMTable1631Lo,x
+	if self.ram_1631lo == 0 then
+		-- LDA.w $7E / AND.w #$0400
+		if (self.zp_7e & 0x0400) == 0 then
+			return
+		end
+		-- LDA.w $16AD,y
+		if self.ram_16ad == define_dkc1_animationid_dk_pickup then
+			return
+		end
+		-- LDA.w #!Define_DKC1_AnimationID_DK_PlaceDownHeldObject
+		-- JSL.l CODE_BE80A4
+		self.ram_ramtable0f25lo = 0
+		self:code_be80a4(define_dkc1_animationid_dk_placedownheldobject)
+		return
+	end
+
+	-- LDA.w #!Define_DKC1_AnimationID_DK_Throw
+	-- JSL.l CODE_BE80A4
+	self.ram_ramtable0f25lo = 0
+	self:code_be80a4(define_dkc1_animationid_dk_throw)
+end
+
+-- code_bfbeec: Start collect-g gate (line 112849)
+function player:code_bfbeec()
+	-- LDA.w $1029,y
+	if self.ram_1029 == 0x0053 then
+		return
+	end
+	-- LDA.b $80 / AND.w #$1000
+	if (self.zp_80 & 0x1000) == 0 then
+		return
+	end
+	-- LDA.w !RAM_DKC1_Global_ScreenDisplayRegister
+	if (self.ram_global_screendisplayregister & 0x000F) ~= 0x000F then
+		return
+	end
+	-- LDA.w $0579 / AND.w #$0040
+	if (self.ram_0579 & 0x0040) == 0 then
+		self.ram_0579 = self.ram_0579 | 0x0040
+		self.ram_1e33 = 0x0020
+		self:code_bffb2b(define_dkc1_soundid_collectg)
+	end
+end
+
 -- code_bfbc53: animal-buddy Y handler (line 112033)
 function player:code_bfbc53()
-	return
+	if (self.zp_80 & 0xC000) == 0 then
+		return
+	end
+	self.zp_80 = (self.zp_80 ~ 0xC000) & 0xFFFF
+	if self.ram_0512 == 0 then
+		return
+	end
+	self:code_bf98ac()
+end
+
+-- code_bfb456: down table gate (line 112456)
+function player:code_bfb456()
+	if self.ram_16ad == define_dkc1_animationid_dk_groundslap
+		or self.ram_16ad == define_dkc1_animationid_dk_bounce or self.ram_16ad == define_dkc1_animationid_dk_unknowngroundstomp then
+		return
+	end
+	if (self.ram_ramtable12a5lo & 0x0101) ~= 0x0101 then
+		return
+	end
+	if (self.zp_ba & 0x0001) ~= 0 then
+		return
+	end
+	if to_signed_16(self.ram_yspeedlo) >= 0 then
+		return
+	end
+	if self.ram_16f5 ~= 0 then
+		return
+	end
+	if self.ram_0512 ~= 0 then
+		return
+	end
+	if self.ram_16e5 == 0x0004 then
+		return
+	end
+	if self.ram_16ad == define_dkc1_animationid_dk_turnwhilecrawling
+		or self.ram_16ad == define_dkc1_animationid_dk_incrawlspace
+		or self.ram_16ad == define_dkc1_animationid_dk_duckintocrawlspace
+		or self.ram_16ad == define_dkc1_animationid_dk_duck then
+		return
+	end
+	self.ram_ramtable1029lo = 0x0022
+	self.ram_16e5 = 0
+	self:code_bfa9b3(define_dkc1_animationid_dk_duck)
 end
 
 -- code_bfbf5b: special state jump handler (line 113241)
@@ -2211,10 +2319,9 @@ function player:code_bfb8e5()
 	self.ram_16a5 = self.zp_28
 end
 
--- code_bfb8f7_full: B BUTTON handler (CODE_BFB8F7, line 111605)
+-- code_bfb8f7: B BUTTON handler (CODE_BFB8F7, line 111605)
 -- Called from inside code_bfb27c when B is HELD ($7E & Joypad_B)
--- This is the FULL translation including jump initiation (CODE_BFB94F)
-function player:code_bfb8f7_full()
+function player:code_bfb8f7()
 	-- LDA.b $80 / AND.w #$8000
 	if (self.zp_80 & joypad_b) ~= 0 then
 		-- CODE_BFB919
@@ -2981,14 +3088,17 @@ function player:code_bfb27c(state_180f)
 	else
 		-- JSR CODE_BFBC06 (Y release)                ; LINE 110849
 		-- CODE_BFBC06: checks $16F5 for carried object
-		-- For no carried object ($16F5=0): RTS
-		-- skip (no carry mechanic yet)
+		self:code_bfbc06()
 	end
-	
+
 	-- ================================================================
 	-- L/R/SELECT/START (LINE 110852+)
 	-- ================================================================
-	-- Skip for now
+	-- LDA.b $7E / AND.w #Joypad_Start ; LINE 110861-863
+	if (self.zp_7e & joypad_start) ~= 0 then
+		-- JSR CODE_BFBEEC
+		self:code_bfbeec()
+	end
 	
 	-- LDA.w $1E19 / LSR / RTS                      ; LINE 110883
 	-- return carry = bit 0 of $1E19
