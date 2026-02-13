@@ -262,7 +262,7 @@ function transition.register_states(states)
 				start_x = w,
 				end_x = -w,
 			})
-			self:define_timeline(new_timeline({
+			self:define_timeline(timeline.new({
 				id = overgang_timeline_id,
 				frames = frames,
 				ticks_per_frame = overgang_ticks_per_frame,
@@ -321,7 +321,7 @@ function transition.register_states(states)
 			overlay.sprite_component.colorize = { r = base.r, g = base.g, b = base.b, a = 1 }
 			local target = { overlay = overlay }
 			local frames = build_transition_fade_in_frames(self.transition_palette)
-			self:define_timeline(new_timeline({
+			self:define_timeline(timeline.new({
 				id = overgang_post_fade_in_timeline_id,
 				frames = frames,
 				ticks_per_frame = overgang_ticks_per_frame,
@@ -383,7 +383,7 @@ function transition.register_states(states)
 				palette = self.fade_palette,
 				hold_black = self.fade_hold_black,
 			})
-			self:define_timeline(new_timeline({
+			self:define_timeline(timeline.new({
 				id = fade_timeline_id,
 				frames = frames,
 				ticks_per_frame = fade_ticks_per_frame,

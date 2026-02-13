@@ -215,7 +215,7 @@ function combat_director:resolve_combat_rewards(node)
 end
 
 function combat.setup_timelines(self)
-	self:define_timeline(new_timeline({
+	self:define_timeline(timeline.new({
 		id = combat_hover_timeline_id,
 		playback_mode = 'loop',
 		tracks = {
@@ -231,7 +231,7 @@ function combat.setup_timelines(self)
 			},
 		},
 	}))
-	self:define_timeline(new_timeline({
+	self:define_timeline(timeline.new({
 		id = combat_parallax_timeline_id,
 		playback_mode = 'once',
 		duration_seconds = combat_parallax_impact_duration_seconds,
@@ -241,7 +241,7 @@ function combat.setup_timelines(self)
 			},
 		},
 	}))
-	self:define_timeline(new_timeline({
+	self:define_timeline(timeline.new({
 		id = combat_focus_timeline_id,
 		frames = timeline_builders.build_combat_focus_frames,
 		ticks_per_frame = combat_focus_ticks_per_frame,
@@ -252,35 +252,35 @@ function combat.setup_timelines(self)
 			{ u = 1, event = 'combat_focus.done' },
 		},
 	}))
-	self:define_timeline(new_timeline({
+	self:define_timeline(timeline.new({
 		id = combat_intro_timeline_id,
 		frames = timeline_builders.build_combat_intro_frames,
 		ticks_per_frame = combat_intro_ticks_per_frame,
 		playback_mode = 'once',
 		apply = true,
 	}))
-	self:define_timeline(new_timeline({
+	self:define_timeline(timeline.new({
 		id = combat_hit_timeline_id,
 		frames = timeline_builders.build_combat_hit_frames,
 		ticks_per_frame = combat_hit_ticks_per_frame,
 		playback_mode = 'once',
 		apply = true,
 	}))
-	self:define_timeline(new_timeline({
+	self:define_timeline(timeline.new({
 		id = combat_exchange_hit_timeline_id,
 		frames = timeline_builders.build_combat_exchange_frames,
 		ticks_per_frame = combat_exchange_hit_ticks_per_frame,
 		playback_mode = 'once',
 		apply = true,
 	}))
-	self:define_timeline(new_timeline({
+	self:define_timeline(timeline.new({
 		id = combat_exchange_miss_timeline_id,
 		frames = timeline_builders.build_combat_exchange_frames,
 		ticks_per_frame = combat_exchange_miss_ticks_per_frame,
 		playback_mode = 'once',
 		apply = true,
 	}))
-	self:define_timeline(new_timeline({
+	self:define_timeline(timeline.new({
 		id = combat_all_out_prompt_timeline_id,
 		frames = build_all_out_prompt_portrait_frames,
 		ticks_per_frame = 16,
@@ -442,7 +442,7 @@ function combat.define_fsm()
 		timelines = {
 			[combat_fade_timeline_id] = {
 				create = function()
-					return new_timeline({
+					return timeline.new({
 						id = combat_fade_timeline_id,
 						frames = combat_fade_frames,
 						ticks_per_frame = combat_fade_ticks_per_frame,
@@ -489,7 +489,7 @@ function combat.define_fsm()
 		timelines = {
 			[combat_fade_timeline_id] = {
 				create = function()
-					return new_timeline({
+					return timeline.new({
 						id = combat_fade_timeline_id,
 						frames = combat_fade_frames,
 						ticks_per_frame = combat_fade_ticks_per_frame,
@@ -792,7 +792,7 @@ function combat.define_fsm()
 		timelines = {
 			[combat_dodge_timeline_id] = {
 				create = function()
-					return new_timeline({
+					return timeline.new({
 						id = combat_dodge_timeline_id,
 						frames = timeline_builders.build_combat_dodge_frames,
 						ticks_per_frame = combat_dodge_ticks_per_frame,
@@ -1093,7 +1093,7 @@ function combat.define_fsm()
 		timelines = {
 			[combat_all_out_timeline_id] = {
 				create = function()
-					return new_timeline({
+					return timeline.new({
 						id = combat_all_out_timeline_id,
 						frames = build_all_out_screen_shake_frames,
 						ticks_per_frame = combat_all_out_ticks_per_frame,
@@ -1288,7 +1288,7 @@ function combat.define_fsm()
 		timelines = {
 			[combat_results_fade_in_timeline_id] = {
 				create = function()
-			return new_timeline({
+			return timeline.new({
 				id = combat_results_fade_in_timeline_id,
 				frames = timeline_builders.build_combat_results_fade_in_frames,
 				ticks_per_frame = combat_results_fade_in_ticks_per_frame,
@@ -1351,7 +1351,7 @@ function combat.define_fsm()
 		timelines = {
 			[combat_results_fade_out_timeline_id] = {
 				create = function()
-			return new_timeline({
+			return timeline.new({
 				id = combat_results_fade_out_timeline_id,
 				frames = combat_results_fade_out_frames_table,
 						ticks_per_frame = combat_results_fade_out_ticks_per_frame,
@@ -1393,7 +1393,7 @@ function combat.define_fsm()
 		timelines = {
 			[combat_exit_fade_in_timeline_id] = {
 				create = function()
-			return new_timeline({
+			return timeline.new({
 				id = combat_exit_fade_in_timeline_id,
 				frames = combat_exit_fade_in_frames_table,
 						ticks_per_frame = combat_exit_fade_in_ticks_per_frame,

@@ -154,6 +154,14 @@ local function build_pingpong_frames(frames, include_endpoints)
 	return out
 end
 
+local function range(frame_count)
+	local frames = {}
+	for i = 0, frame_count - 1 do
+		frames[#frames + 1] = i
+	end
+	return frames
+end
+
 function timeline.new(def)
 	local self = setmetatable({}, timeline)
 	self.def = def
@@ -380,6 +388,8 @@ end
 return {
 	timeline_start_index = timeline_start_index,
 	timeline = timeline,
+	new = timeline.new,
+	range = range,
 	expand_timeline_windows = expand_timeline_windows,
 	compile_timeline_markers = compile_timeline_markers,
 	expand_frames = expand_frames,

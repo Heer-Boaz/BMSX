@@ -101,7 +101,7 @@ local player_input_action_effect_program = {
 	},
 }
 
-local player_dying_frames = timeline_sequence({
+local player_dying_frames = timeline.build_frame_sequence({
 	{ value = { imgid = 'pietolon_dying_1' }, hold = 8 },
 	{ value = { imgid = 'pietolon_dying_2' }, hold = 8 },
 	{ value = { imgid = 'pietolon_dying_3' }, hold = 8 },
@@ -111,14 +111,14 @@ local player_dying_frames = timeline_sequence({
 local player_hit_fall_frames = {
 	{ imgid = 'pietolon_hit_r' },
 }
-local player_hit_recovery_frames = timeline_sequence({
+local player_hit_recovery_frames = timeline.build_frame_sequence({
 	{ value = { imgid = 'pietolon_recover_r' }, hold = constants.damage.hit_recovery_frames },
 })
-local player_sword_sequence_frames = timeline_range(constants.sword.duration_frames + 1)
+local player_sword_sequence_frames = timeline.range(constants.sword.duration_frames + 1)
 local player_sword_end_event = 'sword.end'
-local player_hit_invulnerability_sequence_frames = timeline_range(constants.damage.hit_invulnerability_frames)
-local player_hit_blink_sequence_frames = timeline_range(constants.damage.hit_blink_switch_frames)
-local player_fall_substate_sequence_frames = timeline_range(12)
+local player_hit_invulnerability_sequence_frames = timeline.range(constants.damage.hit_invulnerability_frames)
+local player_hit_blink_sequence_frames = timeline.range(constants.damage.hit_blink_switch_frames)
+local player_fall_substate_sequence_frames = timeline.range(12)
 
 local function copy_text_lines(lines)
 	local copied = {}
@@ -2353,40 +2353,40 @@ local function define_player_fsm()
 					self:reset_runtime()
 					self:apply_presentation_state()
 					self:update_collision_state()
-					self:define_timeline(new_timeline({
+					self:define_timeline(timeline.new({
 					id = 'p.tl.d',
 					frames = player_dying_frames,
 					playback_mode = 'once',
 				}))
-				self:define_timeline(new_timeline({
+				self:define_timeline(timeline.new({
 					id = 'p.tl.hf',
 					frames = player_hit_fall_frames,
 					playback_mode = 'once',
 				}))
-				self:define_timeline(new_timeline({
+				self:define_timeline(timeline.new({
 					id = 'p.tl.hr',
 					frames = player_hit_recovery_frames,
 					playback_mode = 'once',
 				}))
-					self:define_timeline(new_timeline({
+					self:define_timeline(timeline.new({
 						id = 'p.seq.s',
 						frames = player_sword_sequence_frames,
 						playback_mode = 'once',
 						autotick = false,
 					}))
-					self:define_timeline(new_timeline({
+					self:define_timeline(timeline.new({
 						id = 'p.seq.hi',
 						frames = player_hit_invulnerability_sequence_frames,
 						playback_mode = 'once',
 						autotick = false,
 					}))
-					self:define_timeline(new_timeline({
+					self:define_timeline(timeline.new({
 						id = 'p.seq.hb',
 						frames = player_hit_blink_sequence_frames,
 						playback_mode = 'loop',
 						autotick = false,
 					}))
-					self:define_timeline(new_timeline({
+					self:define_timeline(timeline.new({
 						id = 'p.seq.f',
 						frames = player_fall_substate_sequence_frames,
 						playback_mode = 'once',

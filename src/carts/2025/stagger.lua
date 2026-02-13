@@ -162,7 +162,7 @@ local function ensure_timeline(owner, preset_id, cfg)
 		return timeline_id
 	end
 	local total = cfg.text_start + cfg.text_duration
-	owner:define_timeline(new_timeline({
+	owner:define_timeline(timeline.new({
 		id = timeline_id,
 		continuous = true,
 		playback_mode = 'once',

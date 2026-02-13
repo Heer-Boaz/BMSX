@@ -602,7 +602,7 @@ local function define_director_fsm()
 						self:bind_visual()
 						self.player_ref = object(self.player_id)
 						self:reset_barrels()
-						self:define_timeline(new_timeline({
+						self:define_timeline(timeline.new({
 						id = goal_pulse_timeline_id,
 						playback_mode = 'loop',
 						tracks = {

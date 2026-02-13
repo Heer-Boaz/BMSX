@@ -31,6 +31,7 @@ local div_toward_zero = require("div_toward_zero")
 local round_to_nearest = require("round_to_nearest")
 local rol8 = require("rol8")
 local swap_remove = require("swap_remove")
+local timeline = require("timeline")
 
 local world_instance = world_module.instance
 
@@ -233,6 +234,7 @@ engine.div_toward_zero = div_toward_zero
 engine.round_to_nearest = round_to_nearest
 engine.rol8 = rol8
 engine.swap_remove = swap_remove
+engine.timeline = timeline
 
 function engine.define_fsm(id, blueprint)
 	fsmlibrary.register(id, blueprint)
@@ -264,40 +266,6 @@ function engine.define_effect(definition, opts)
 	action_effects.register_effect(definition, opts)
 end
 
-function engine.new_timeline(def)
-	local timeline = require("timeline")
-	return timeline.timeline.new(def)
-end
-
-function engine.timeline_expand(frames, repetitions)
-	local timeline = require("timeline")
-	return timeline.expand_frames(frames, repetitions or 1)
-end
-
-function engine.timeline_sequence(sequence)
-	local timeline = require("timeline")
-	return timeline.build_frame_sequence(sequence)
-end
-
-function engine.timeline_pingpong(frames, include_endpoints)
-	local timeline = require("timeline")
-	return timeline.build_pingpong_frames(frames, include_endpoints)
-end
-
-function engine.timeline_range(frame_count)
-	local frames = {}
-	for i = 0, frame_count - 1 do
-		frames[#frames + 1] = i
-	end
-	return frames
-end
-
-function engine.new_timeline_range(def)
-	local definition = def or {}
-	definition.frames = engine.timeline_range(definition.frame_count)
-	return engine.new_timeline(definition)
-end
-
 function engine.vdp_map_slot(slot, atlas_id)
 	if atlas_id == nil then
 		atlas_id = sys_vdp_atlas_none
@@ -314,11 +282,7 @@ function engine.vdp_map_slot(slot, atlas_id)
 end
 
 function engine.vdp_load_slot(slot, atlas_id)
-	if type(atlas_id) ~= "number" then
-		error("vdp_load_slot: atlas_id must be a number")
-	end
-	local atlas_id_int = math.floor(atlas_id)
-	local atlas_name = string.format("_atlas_%02d", atlas_id_int)
+	local atlas_name = string.format("_atlas_%02d", atlas_id)
 	local entry = romdir.cart(atlas_name)
 	if entry == nil then
 		error("vdp_load_slot: atlas asset missing")
@@ -438,7 +402,8 @@ function engine.service(id)
 	return registry.instance:get(id)
 end
 
--- BIOS/runtime-only indirection. Cart code must use global `object(id)`.
+-- Runtime binds global `object(id)` to this function.
+-- Cart code must call `object(id)` and must not call `engine.object(id)` directly.
 function engine.object(id)
 	return world_instance:get(id)
 end

@@ -38,9 +38,9 @@ end
 
 function transition_view:ctor()
 	self:bind_visual()
-	self:define_timeline(new_timeline({
+	self:define_timeline(timeline.new({
 		id = constants.ids.transition_view_def .. '.timeline.mask',
-		frames = timeline_range(constants.flow.room_transition_frames),
+		frames = timeline.range(constants.flow.room_transition_frames),
 		playback_mode = 'once',
 	}))
 	self:bind_events()

@@ -17,12 +17,6 @@ export const ENGINE_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> =
 	{ name: 'define_service', params: ['definition'], signature: 'define_service(definition)' },
 	{ name: 'define_component', params: ['definition'], signature: 'define_component(definition)' },
 	{ name: 'define_effect', params: ['definition', 'opts?'], signature: 'define_effect(definition [, opts])' },
-	{ name: 'new_timeline', params: ['def'], signature: 'new_timeline(def)' },
-	{ name: 'timeline_expand', params: ['frames', 'repetitions?'], signature: 'timeline_expand(frames [, repetitions])' },
-	{ name: 'timeline_sequence', params: ['sequence'], signature: 'timeline_sequence(sequence)' },
-	{ name: 'timeline_pingpong', params: ['frames', 'include_endpoints?'], signature: 'timeline_pingpong(frames [, include_endpoints])' },
-	{ name: 'timeline_range', params: ['frame_count'], signature: 'timeline_range(frame_count)' },
-	{ name: 'new_timeline_range', params: ['def'], signature: 'new_timeline_range(def)' },
 	{ name: 'inst', params: ['definition_id', 'addons?'], signature: 'inst(definition_id [, addons])' },
 	{ name: 'create_service', params: ['definition_id', 'addons?'], signature: 'create_service(definition_id [, addons])' },
 	{ name: 'service', params: ['id'], signature: 'service(id)' },
@@ -51,6 +45,10 @@ export const ENGINE_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> =
 	{ name: 'round_to_nearest', params: ['value'], signature: 'round_to_nearest(value)' },
 	{ name: 'rol8', params: ['value'], signature: 'rol8(value)' },
 	{ name: 'swap_remove', params: ['array', 'index'], signature: 'swap_remove(array, index)' },
+];
+
+export const ENGINE_LUA_BUILTIN_GLOBALS: ReadonlyArray<LuaBuiltinDescriptor> = [
+	{ name: 'timeline', params: [], signature: 'timeline', description: 'Timeline module table (timeline.new, timeline.range, timeline.expand_frames, timeline.build_frame_sequence, timeline.build_pingpong_frames).' },
 ];
 
 // Keep this list in sync with runtime builtins (TS/C++) so editor metadata matches actual runtime behavior.
@@ -137,6 +135,7 @@ export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> 
 	{ name: 'os.difftime', params: ['t2', 't1?'], signature: 'os.difftime(t2 [, t1])' },
 	{ name: 'os.time', params: ['table?'], signature: 'os.time([table])' },
 	...ENGINE_LUA_BUILTIN_FUNCTIONS,
+	...ENGINE_LUA_BUILTIN_GLOBALS,
 	{ name: 'sys_cart_bootready', params: [], signature: 'sys_cart_bootready', description: 'System register address; reads as 1 when the cart is ready to boot.' },
 	{ name: 'sys_boot_cart', params: [], signature: 'sys_boot_cart', description: 'System register address; write 1 to boot the cart.' },
 	{ name: 'sys_cart_magic_addr', params: [], signature: 'sys_cart_magic_addr', description: 'Cart ROM magic header address.' },
@@ -437,10 +436,10 @@ function registerEngineBuiltins(interpreter: LuaInterpreter): void {
 	const runtime = Runtime.instance;
 	const env = interpreter.globalEnvironment;
 	const requireName = runtime.canonicalizeIdentifier('require');
+	const requireFn = interpreter.getGlobal(requireName) as LuaFunctionValue;
+	const engineValue = requireFn.call(['engine']);
+	const engineTable = engineValue[0] as LuaTable;
 	const callEngineMember = (name: string, args: ReadonlyArray<LuaValue>): ReadonlyArray<LuaValue> => {
-		const requireFn = interpreter.getGlobal(requireName) as LuaFunctionValue;
-		const engineValue = requireFn.call(['engine']);
-		const engineTable = engineValue[0] as LuaTable;
 		const member = engineTable.get(runtime.canonicalizeIdentifier(name)) as LuaFunctionValue;
 		return member.call(args);
 	};
@@ -448,6 +447,10 @@ function registerEngineBuiltins(interpreter: LuaInterpreter): void {
 		const name = ENGINE_LUA_BUILTIN_FUNCTIONS[index].name;
 		const native = new LuaNativeFunction(name, (args) => callEngineMember(name, args));
 		registerLuaGlobal(env, name, native);
+	}
+	for (let index = 0; index < ENGINE_LUA_BUILTIN_GLOBALS.length; index += 1) {
+		const name = ENGINE_LUA_BUILTIN_GLOBALS[index].name;
+		registerLuaGlobal(env, name, engineTable.get(runtime.canonicalizeIdentifier(name)));
 	}
 }
 

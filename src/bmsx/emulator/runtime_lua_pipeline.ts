@@ -6,7 +6,7 @@ import { convertToError, isLuaFunctionValue, isLuaTable, setLuaTableCaseInsensit
 import { publishOverlayFrame } from '../render/editor/editor_overlay_queue';
 import { clearNativeMemberCompletionCache } from './ide/intellisense';
 import { getSourceForChunk } from './ide/cart_editor';
-import { ENGINE_LUA_BUILTIN_FUNCTIONS } from './lua_builtins';
+import { ENGINE_LUA_BUILTIN_FUNCTIONS, ENGINE_LUA_BUILTIN_GLOBALS } from './lua_builtins';
 import { seedLuaGlobals, valueToString } from './lua_globals';
 import { LuaEntrySnapshot } from './lua_js_bridge';
 import { compileLuaChunkToProgram, appendLuaChunkToProgram } from './program_compiler';
@@ -626,6 +626,10 @@ export function buildEngineBuiltinPreludeSource(): string {
 		const name = ENGINE_LUA_BUILTIN_FUNCTIONS[index].name;
 		lines.push(`${name} = engine.${name}`);
 	}
+	for (let index = 0; index < ENGINE_LUA_BUILTIN_GLOBALS.length; index += 1) {
+		const name = ENGINE_LUA_BUILTIN_GLOBALS[index].name;
+		lines.push(`${name} = engine.${name}`);
+	}
 	return lines.join('\n');
 }
 
@@ -649,6 +653,10 @@ export function applyEngineBuiltinGlobals(runtime: Runtime): void {
 		const name = ENGINE_LUA_BUILTIN_FUNCTIONS[index].name;
 		const member = engine.get(runtime.canonicalKey(name)) as Closure;
 		registerGlobal(runtime, name, member);
+	}
+	for (let index = 0; index < ENGINE_LUA_BUILTIN_GLOBALS.length; index += 1) {
+		const name = ENGINE_LUA_BUILTIN_GLOBALS[index].name;
+		registerGlobal(runtime, name, engine.get(runtime.canonicalKey(name)));
 	}
 }
 

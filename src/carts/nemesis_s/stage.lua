@@ -667,7 +667,7 @@ end
 
 function stage_object:define_star_blink_timeline()
 	local timeline_id = constants.ids.stage_star_blink_timeline
-	self:define_timeline(new_timeline({
+	self:define_timeline(timeline.new({
 		id = timeline_id,
 		frames = {
 			{ turn = 'yellow', yellow_blink = true, blue_blink = false },

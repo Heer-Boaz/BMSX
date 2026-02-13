@@ -481,55 +481,10 @@ export const API_METHOD_METADATA = {
 		returnType: 'ActionEffectTriggerResult',
 		returnDescription: 'One of "ok", "on_cooldown", or "failed".',
 	},
-	new_timeline: {
-		description: 'Creates a standalone Timeline instance from a definition.',
-		parameters: [
-			{ name: 'def', description: 'Timeline definition.' },
-		],
-		returnType: 'Timeline',
-		returnDescription: 'New Timeline instance.',
-	},
-	timeline_expand: {
-		description: 'Repeats a frame array N times and returns a copied frame table.',
-		parameters: [
-			{ name: 'frames', description: 'Base frame array.' },
-			{ name: 'repetitions', optional: true, description: 'Number of repetitions. Defaults to 1.' },
-		],
-		returnType: 'any[]',
-		returnDescription: 'Expanded frame array.',
-	},
-	timeline_sequence: {
-		description: 'Builds a frame array from sequence entries { value = frame, hold = frame_count }.',
-		parameters: [
-			{ name: 'sequence', description: 'Sequence array with value/hold entries.' },
-		],
-		returnType: 'any[]',
-		returnDescription: 'Expanded frame array with hold durations applied.',
-	},
-	timeline_pingpong: {
-		description: 'Builds a ping-pong frame array from a forward frame array.',
-		parameters: [
-			{ name: 'frames', description: 'Forward frame array.' },
-			{ name: 'include_endpoints', optional: true, description: 'When true, mirror includes first/last endpoints.' },
-		],
-		returnType: 'any[]',
-		returnDescription: 'Ping-pong frame array.',
-	},
-	timeline_range: {
-		description: 'Builds a frame index array from 0 to frame_count - 1.',
-		parameters: [
-			{ name: 'frame_count', description: 'Number of frames to include in the range.' },
-		],
-		returnType: 'number[]',
-		returnDescription: 'Array of frame indices.',
-	},
-	new_timeline_range: {
-		description: 'Creates a Timeline instance with a 0..frame_count-1 frame range.',
-		parameters: [
-			{ name: 'def', description: 'Timeline definition including frame_count.' },
-		],
-		returnType: 'Timeline',
-		returnDescription: 'New Timeline instance.',
+	timeline: {
+		description: 'Timeline module table with constructors/helpers: timeline.new(def), timeline.range(frame_count), timeline.expand_frames(frames [, repetitions]), timeline.build_frame_sequence(sequence), timeline.build_pingpong_frames(frames [, include_endpoints]).',
+		returnType: 'table',
+		returnDescription: 'Timeline module table.',
 	},
 	rget: {
 		description: 'Looks up a registered object by id in the global registry.',

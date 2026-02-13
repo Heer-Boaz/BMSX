@@ -141,14 +141,14 @@ function textobject.new(opts)
 		end,
 	})
 	self:add_component(self.custom_visual)
-	self:define_timeline(new_timeline({
+	self:define_timeline(timeline.new({
 		id = highlight_move_timeline_id,
 		frames = build_highlight_move_frames,
 		ticks_per_frame = highlight_move_ticks_per_frame,
 		playback_mode = 'once',
 		apply = true,
 	}))
-	self:define_timeline(new_timeline({
+	self:define_timeline(timeline.new({
 		id = highlight_vibe_timeline_id,
 		playback_mode = 'loop',
 		tracks = {
