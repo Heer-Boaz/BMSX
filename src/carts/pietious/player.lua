@@ -47,6 +47,13 @@ local state_tags = {
 		movement_walk = 'g.mw',
 		movement_jump = 'g.mj',
 		hit_blink = 'g.hb',
+		player_stairs = 'g.ps',
+		world_transition_waiting = 'g.wtw',
+		world_transition = 'g.wt',
+		world_transition_down = 'g.wtd',
+		can_switch_up = 'g.csu',
+		hit_lock_states = 'g.hls',
+		hit_overlap_states = 'g.hos',
 	},
 	ability = {
 		spyglass = 'a.spy',
@@ -248,21 +255,17 @@ function player:get_damage_state_imgid()
 end
 
 function player:apply_presentation_state()
-	local transition_hidden = self:has_tag(state_tags.variant.waiting_world_banner)
-		or self:has_tag(state_tags.variant.waiting_world_emerge)
-		or self:has_tag(state_tags.variant.waiting_shrine)
+	local transition_hidden = self:has_tag(state_tags.group.world_transition_waiting)
 	if transition_hidden then
 		self.visible = false
 		return
 	end
 
-	local transition_anim = self:has_tag(state_tags.variant.entering_world)
-		or self:has_tag(state_tags.variant.emerging_world)
-		or self:has_tag(state_tags.variant.entering_shrine)
-		or self:has_tag(state_tags.variant.leaving_shrine)
+	local transition_anim = self:has_tag(state_tags.group.world_transition)
+	local transitioning_down = self:has_tag(state_tags.group.world_transition_down)
 	if transition_anim then
 		local imgid
-		if self:has_tag(state_tags.variant.emerging_world) or self:has_tag(state_tags.variant.leaving_shrine) then
+		if transitioning_down then
 			if self.enter_leave_anim_frame == 0 then
 				imgid = 'pietolon_stairs_down_1'
 			else
@@ -279,7 +282,7 @@ function player:apply_presentation_state()
 			self.sword_sprite.enabled = false
 			self.sprite_component.imgid = imgid
 		self.sprite_component.flip.flip_h = self.facing > 0
-		if self:has_tag(state_tags.variant.emerging_world) or self:has_tag(state_tags.variant.leaving_shrine) then
+		if transitioning_down then
 			self.sprite_component.offset.x = 1
 		else
 			self.sprite_component.offset.x = -1
@@ -296,11 +299,12 @@ function player:apply_presentation_state()
 
 	local damage_sprite_id = self:get_damage_state_imgid()
 
-		local imgid = 'pietolon_stand_r'
-		local flip_h = self.facing < 0
+	local imgid
+	local flip_h = self.facing < 0
+	local player_stairs = self:has_tag(state_tags.group.player_stairs)
 
 	if self:has_tag(state_tags.group.damage_visual) then
-			imgid = damage_sprite_id
+		imgid = damage_sprite_id
 	elseif self:has_tag(state_tags.variant.up_stairs) then
 		if self.stairs_anim_frame == 0 then
 			imgid = 'pietolon_stairs_up_1'
@@ -358,13 +362,17 @@ function player:apply_presentation_state()
 			self.sword_sprite.offset.x = constants.sword.stairs_offset_right
 		end
 		self.sword_sprite.offset.y = constants.sword.stairs_offset_y
-	elseif self:has_tag(state_tags.variant.up_stairs) or self:has_tag(state_tags.variant.down_stairs) then
+	elseif player_stairs then
 		flip_h = false
 		self.sprite_component.offset.x = 0
 	else
 		self.sprite_component.offset.x = 0
+		imgid = 'pietolon_stand_r'
 	end
 
+	if imgid == nil then
+		imgid = 'pietolon_stand_r'
+	end
 	self.sprite_component.imgid = imgid
 	self.sprite_component.flip.flip_h = flip_h
 	self.sword_sprite.enabled = self:has_tag(state_tags.group.sword)
@@ -887,10 +895,11 @@ function player:try_side_room_switch_from_motion(dx)
 end
 
 function player:can_switch_up_from_state()
-	return self:has_tag(state_tags.variant.up_stairs)
-		or self:has_tag(state_tags.variant.quiet)
-		or self:has_tag(state_tags.group.movement_walk)
-		or (self:has_tag(state_tags.group.movement_jump) and self.jumping_from_elevator)
+	local can_switch_up = self:has_tag(state_tags.group.can_switch_up)
+	if not can_switch_up and self.jumping_from_elevator then
+		can_switch_up = self:has_tag(state_tags.group.movement_jump)
+	end
+	return can_switch_up
 end
 
 function player:nearing_room_exit()
@@ -1029,7 +1038,8 @@ function player:update_hit_stairs_lock()
 	if not self.hit_stairs_lock then
 		return
 	end
-	if (not self:has_tag(state_tags.variant.hit_fall)) and (not self:has_tag(state_tags.variant.hit_collision)) then
+	local is_hit_lock_state = self:has_tag(state_tags.group.hit_lock_states)
+	if not is_hit_lock_state then
 		self.hit_stairs_lock = false
 	end
 end
@@ -2316,13 +2326,9 @@ function player:tick()
 	self:update_hit_stairs_lock()
 	self:try_vertical_room_switch_from_position()
 
-	local skip_hit_overlap = self.hit_stairs_lock
-		and (self:has_tag(state_tags.variant.hit_fall) or self:has_tag(state_tags.variant.hit_collision))
-	if (not skip_hit_overlap)
-		and (self:has_tag(state_tags.variant.quiet)
-		or self:has_tag(state_tags.variant.hit_fall)
-		or self:has_tag(state_tags.variant.hit_collision)
-		or self:has_tag(state_tags.variant.hit_recovery)) then
+	local skip_hit_overlap = self.hit_stairs_lock and self:has_tag(state_tags.group.hit_lock_states)
+	local is_hit_overlap_state = self:has_tag(state_tags.group.hit_overlap_states)
+	if (not skip_hit_overlap) and is_hit_overlap_state then
 		self:resolve_hit_overlap_if_needed()
 	end
 
@@ -2744,20 +2750,54 @@ local function define_player_fsm()
 	define_fsm(constants.ids.player_fsm, {
 		initial = 'boot',
 		tag_derivations = {
+			[state_tags.group.world_transition_waiting] = {
+				state_tags.variant.waiting_world_banner,
+				state_tags.variant.waiting_world_emerge,
+				state_tags.variant.waiting_shrine,
+			},
+			[state_tags.group.world_transition] = {
+				state_tags.variant.entering_world,
+				state_tags.variant.emerging_world,
+				state_tags.variant.entering_shrine,
+				state_tags.variant.leaving_shrine,
+			},
+			[state_tags.group.world_transition_down] = {
+				state_tags.variant.emerging_world,
+				state_tags.variant.leaving_shrine,
+			},
 			[state_tags.group.damage_visual] = {
 				state_tags.variant.dying,
 				state_tags.variant.hit_fall,
 				state_tags.variant.hit_collision,
 				state_tags.variant.hit_recovery,
 			},
-			[state_tags.group.movement_walk] = {
-				state_tags.variant.walking_right,
-				state_tags.variant.walking_left,
+	[state_tags.group.movement_walk] = {
+		state_tags.variant.walking_right,
+		state_tags.variant.walking_left,
+	},
+	[state_tags.group.player_stairs] = {
+		state_tags.variant.up_stairs,
+		state_tags.variant.down_stairs,
+	},
+	[state_tags.group.movement_jump] = {
+		state_tags.variant.jumping,
+		state_tags.variant.stopped_jumping,
+		state_tags.variant.controlled_fall,
 			},
-			[state_tags.group.movement_jump] = {
-				state_tags.variant.jumping,
-				state_tags.variant.stopped_jumping,
-				state_tags.variant.controlled_fall,
+			[state_tags.group.can_switch_up] = {
+				state_tags.variant.up_stairs,
+				state_tags.variant.quiet,
+				state_tags.group.movement_walk,
+			},
+			[state_tags.group.hit_lock_states] = {
+				state_tags.variant.hit_fall,
+				state_tags.variant.hit_collision,
+			},
+			[state_tags.group.hit_overlap_states] = {
+				state_tags.variant.quiet,
+				state_tags.variant.hit_fall,
+				state_tags.variant.hit_collision,
+				state_tags.variant.hit_recovery,
 			},
 			[state_tags.group.hit_blink] = {
 				state_tags.variant.hit_fall,

@@ -300,9 +300,9 @@ function fighter:receive_hit(instigator)
 	if self.health == 0 then
 		return
 	end
+	self.hurt_timer = constants.attack.hurt_time
 
 	self.health = self.health - constants.attack.damage
-	self.hurt_timer = constants.attack.hurt_time
 	self.invuln_timer = constants.attack.hit_freeze + constants.attack.hurt_time
 	self.hit_freeze = constants.attack.hit_freeze
 	self.vx = constants.physics.pushback_speed * -sign(instigator.facing)
