@@ -36,6 +36,7 @@ type LuaLintIssueRule =
 	'getter_setter_pattern' |
 	'single_line_method_pattern' |
 	'builtin_recreation_pattern' |
+	'multi_has_tag_pattern' |
 	'forbidden_transition_to_pattern' |
 	'forbidden_matches_state_path_pattern' |
 	'constant_copy_pattern' |
@@ -370,6 +371,64 @@ function isVisualUpdateLikeFunctionName(functionName: string): boolean {
 		|| /^sync(?:_[a-z0-9]+)*_components(?:_[a-z0-9]+)*$/.test(leaf)
 		|| /^apply(?:_[a-z0-9]+)*_pose(?:_[a-z0-9]+)*$/.test(leaf)
 		|| /^refresh(?:_[a-z0-9]+)*_presentation(?:_[a-z0-9]+)*(?:_if_changed)?$/.test(leaf);
+}
+
+function isHasTagCall(expression: LuaExpression): boolean {
+	if (expression.kind !== LuaSyntaxKind.CallExpression) {
+		return false;
+	}
+	return getCallMethodName(expression) === 'has_tag';
+}
+
+function countHasTagCalls(expression: LuaExpression): number {
+	if (!expression) {
+		return 0;
+	}
+	switch (expression.kind) {
+		case LuaSyntaxKind.CallExpression: {
+			let count = isHasTagCall(expression) ? 1 : 0;
+			for (const argument of expression.arguments) {
+				count += countHasTagCalls(argument);
+			}
+			count += countHasTagCalls(expression.callee as LuaExpression);
+			return count;
+		}
+		case LuaSyntaxKind.MemberExpression:
+			return countHasTagCalls(expression.base);
+		case LuaSyntaxKind.IndexExpression:
+			return countHasTagCalls(expression.base) + countHasTagCalls(expression.index);
+		case LuaSyntaxKind.BinaryExpression:
+			return countHasTagCalls(expression.left) + countHasTagCalls(expression.right);
+		case LuaSyntaxKind.UnaryExpression:
+			return countHasTagCalls(expression.operand);
+		case LuaSyntaxKind.TableConstructorExpression: {
+			let count = 0;
+			for (const field of expression.fields) {
+				if (field.kind === LuaTableFieldKind.ExpressionKey) {
+					count += countHasTagCalls(field.key);
+				}
+				count += countHasTagCalls(field.value);
+			}
+			return count;
+		}
+		case LuaSyntaxKind.FunctionExpression:
+			return 0;
+		default:
+			return 0;
+	}
+}
+
+function lintMultiHasTagPattern(expression: LuaExpression, issues: LuaLintIssue[]): void {
+	const hasTagCheckCount = countHasTagCalls(expression);
+	if (hasTagCheckCount <= 1) {
+		return;
+	}
+	pushIssue(
+		issues,
+		'multi_has_tag_pattern',
+		expression,
+		`Statement contains ${hasTagCheckCount} has_tag checks. Use tag_groups, tag_derivations, or derived_tags instead.`,
+	);
 }
 
 function isMethodLikeFunctionDeclaration(statement: LuaFunctionDeclarationStatement): boolean {
@@ -1207,46 +1266,49 @@ function lintRequireCall(expression: LuaCallExpression, issues: LuaLintIssue[]):
 function lintTableField(field: LuaTableField, issues: LuaLintIssue[]): void {
 	switch (field.kind) {
 		case LuaTableFieldKind.Array:
-			lintExpression(field.value, issues);
+			lintExpression(field.value, issues, false);
 			return;
 		case LuaTableFieldKind.IdentifierKey:
-			lintExpression(field.value, issues);
+			lintExpression(field.value, issues, false);
 			return;
 		case LuaTableFieldKind.ExpressionKey:
-			lintExpression(field.key, issues);
-			lintExpression(field.value, issues);
+			lintExpression(field.key, issues, false);
+			lintExpression(field.value, issues, false);
 			return;
 		default:
 			return;
 	}
 }
 
-function lintExpression(expression: LuaExpression | null, issues: LuaLintIssue[]): void {
+function lintExpression(expression: LuaExpression | null, issues: LuaLintIssue[], topLevel = true): void {
 	if (!expression) {
 		return;
+	}
+	if (topLevel) {
+		lintMultiHasTagPattern(expression, issues);
 	}
 	switch (expression.kind) {
 		case LuaSyntaxKind.CallExpression:
 			lintRequireCall(expression, issues);
 			lintForbiddenStateCalls(expression, issues);
-			lintExpression(expression.callee, issues);
+			lintExpression(expression.callee, issues, false);
 			for (const arg of expression.arguments) {
-				lintExpression(arg, issues);
+				lintExpression(arg, issues, false);
 			}
 			return;
 		case LuaSyntaxKind.MemberExpression:
-			lintExpression(expression.base, issues);
+			lintExpression(expression.base, issues, false);
 			return;
 		case LuaSyntaxKind.IndexExpression:
-			lintExpression(expression.base, issues);
-			lintExpression(expression.index, issues);
+			lintExpression(expression.base, issues, false);
+			lintExpression(expression.index, issues, false);
 			return;
 		case LuaSyntaxKind.BinaryExpression:
-			lintExpression(expression.left, issues);
-			lintExpression(expression.right, issues);
+			lintExpression(expression.left, issues, false);
+			lintExpression(expression.right, issues, false);
 			return;
 		case LuaSyntaxKind.UnaryExpression:
-			lintExpression(expression.operand, issues);
+			lintExpression(expression.operand, issues, false);
 			return;
 		case LuaSyntaxKind.TableConstructorExpression:
 			for (const field of expression.fields) {
