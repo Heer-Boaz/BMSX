@@ -4,21 +4,14 @@ local behaviourtree = require('behaviourtree')
 local boekfoe = {}
 
 function boekfoe.configure(self, def)
-	self.width = def.w or 21
-	self.height = def.h or 24
-	self.max_health = def.health or 6
+	self.width = 21
+	self.height = 24
+	self.max_health = 6
 	self.health = self.max_health
-	self.damage = def.damage or 4
+	self.damage = 4
 	self.boek_state = 'closed'
-	self:set_body_hit_area(0, 0, 21, 24)
-end
-
-function boekfoe.sync_components(self)
-	local imgid = 'boekfoe_closed'
-	if self.boek_state == 'open' then
-		imgid = 'boekfoe_open'
-	end
-	self:set_body_sprite(imgid, self.direction == 'left', false)
+	self.sprite_component.imgid = 'boekfoe_closed'
+	self.sprite_component.flip.flip_h = self.direction == 'left'
 end
 
 function boekfoe.bt_tick(self, blackboard)
@@ -35,6 +28,8 @@ function boekfoe.bt_tick(self, blackboard)
 			return behaviourtree.running
 		end
 		self.boek_state = 'open'
+		self.sprite_component.imgid = 'boekfoe_open'
+		self.sprite_component.flip.flip_h = self.direction == 'left'
 		node.boek_state_ticks = constants.enemy.boek_wait_close_steps
 		node.boek_spawn_ticks = constants.enemy.boek_spawn_paper_steps
 		return behaviourtree.running
@@ -65,6 +60,8 @@ function boekfoe.bt_tick(self, blackboard)
 
 	if open_ticks <= 0 then
 		self.boek_state = 'closed'
+		self.sprite_component.imgid = 'boekfoe_closed'
+		self.sprite_component.flip.flip_h = self.direction == 'left'
 		node.boek_state_ticks = constants.enemy.boek_wait_open_steps
 		node.boek_spawn_ticks = nil
 		return behaviourtree.running

@@ -56,6 +56,7 @@ end
 
 local function start_flying(self, blackboard)
 	set_takeoff_heading(self)
+	self:change_sprite_on_direction()
 	blackboard.nodedata.mijter_takeoff_ticks = math.random(constants.enemy.mijter_wait_takeoff_min_steps, constants.enemy.mijter_wait_takeoff_max_steps)
 	blackboard.nodedata.mijter_turn_ticks = math.random(constants.enemy.mijter_turn_min_steps, constants.enemy.mijter_turn_max_steps)
 	self:dispatch_state_event('takeoff')
@@ -66,38 +67,51 @@ function mijterfoe.configure(self, _def)
 	self.horizontal_dir_mod = 0
 	self.vertical_dir_mod = 0
 	self.mijter_entry_lock_ticks = constants.enemy.mijter_room_entry_lock_steps
+	self:change_sprite_on_direction()
 end
 
 function mijterfoe.change_sprite_on_direction(self)
-		local imgid = 'meijter_up'
-		local flip_h = false
-		local flip_v = false
-		local h = self.horizontal_dir_mod
-		local v = self.vertical_dir_mod
-		if v == -1 and h == 0 then
-			imgid = 'meijter_up'
-		elseif v == -1 and h == 1 then
-			imgid = 'meijter_dr'
-			flip_v = true
-		elseif v == 0 and h == 1 then
-			imgid = 'meijter_r'
-		elseif v == 1 and h == 1 then
-			imgid = 'meijter_dr'
-		elseif v == 1 and h == 0 then
-			imgid = 'meijter_up'
-			flip_v = true
-		elseif v == 1 and h == -1 then
-			imgid = 'meijter_dr'
-			flip_h = true
-		elseif v == 0 and h == -1 then
-			imgid = 'meijter_r'
-			flip_h = true
-		elseif v == -1 and h == -1 then
-			imgid = 'meijter_dr'
-			flip_h = true
-			flip_v = true
-		end
-	self:set_body_sprite(imgid, flip_h, flip_v)
+	local imgid
+	local flip_h
+	local flip_v
+	local h = self.horizontal_dir_mod
+	local v = self.vertical_dir_mod
+	if v == -1 and h == 0 then
+		imgid = 'meijter_up'
+		flip_h = false
+		flip_v = false
+	elseif v == -1 and h == 1 then
+		imgid = 'meijter_dr'
+		flip_h = false
+		flip_v = true
+	elseif v == 0 and h == 1 then
+		imgid = 'meijter_r'
+		flip_h = false
+		flip_v = false
+	elseif v == 1 and h == 1 then
+		imgid = 'meijter_dr'
+		flip_h = false
+		flip_v = false
+	elseif v == 1 and h == 0 then
+		imgid = 'meijter_up'
+		flip_h = false
+		flip_v = true
+	elseif v == 1 and h == -1 then
+		imgid = 'meijter_dr'
+		flip_h = true
+		flip_v = false
+	elseif v == 0 and h == -1 then
+		imgid = 'meijter_r'
+		flip_h = true
+		flip_v = false
+	else
+		imgid = 'meijter_dr'
+		flip_h = true
+		flip_v = true
+	end
+	self.sprite_component.imgid = imgid
+	self.sprite_component.flip.flip_h = flip_h
+	self.sprite_component.flip.flip_v = flip_v
 end
 
 function mijterfoe.bt_tick_waiting(self, blackboard)
@@ -137,6 +151,7 @@ function mijterfoe.bt_tick_flying(self, blackboard)
 	if turn_ticks <= 0 then
 		new_random_direction(self)
 		turn_ticks = math.random(constants.enemy.mijter_turn_min_steps, constants.enemy.mijter_turn_max_steps)
+		self:change_sprite_on_direction()
 	end
 	blackboard.nodedata.mijter_turn_ticks = turn_ticks
 
@@ -151,6 +166,7 @@ function mijterfoe.bt_tick_flying(self, blackboard)
 		self.vertical_dir_mod = -1
 	end
 
+	self:change_sprite_on_direction()
 	self.x = self.x + (constants.enemy.mijter_speed_px * self.horizontal_dir_mod)
 	self.y = self.y + (constants.enemy.mijter_speed_px * self.vertical_dir_mod)
 	return behaviourtree.running

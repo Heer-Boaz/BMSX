@@ -20,25 +20,22 @@ local function consume_axis_accum(accum, speed_num, speed_den)
 end
 
 function cloud.configure(self, def)
-	self.width = def.w or 32
-	self.height = def.h or 24
-	self.max_health = def.health or 15
+	self.width = 32
+	self.height = 24
+	self.max_health = 15
 	self.health = self.max_health
-	self.damage = def.damage or 2
+	self.damage = 2
 	self.cloud_anim_frame = 1
-	self:set_body_hit_area(0, 2, 22, 30)
-end
-
-function cloud.sync_components(self)
-	if self.cloud_anim_frame == 2 then
-		self:set_body_sprite('cloud_2', false, false)
-		return
-	end
-	self:set_body_sprite('cloud_1', false, false)
+	self.sprite_component.imgid = 'cloud_1'
 end
 
 function cloud.bt_tick(self, blackboard)
 	local node = blackboard.nodedata
+	if self.cloud_anim_frame == 2 then
+		self.sprite_component.imgid = 'cloud_2'
+	else
+		self.sprite_component.imgid = 'cloud_1'
+	end
 
 	local anim_ticks = node.cloud_anim_ticks
 	if anim_ticks == nil then

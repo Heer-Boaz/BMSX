@@ -13,23 +13,15 @@ local noot_colors = {
 }
 
 function nootfoe.configure(self, def)
-	self.width = def.w or 8
-	self.height = def.h or 8
-	self.max_health = def.health or 1
+	self.width = 8
+	self.height = 8
+	self.max_health = 1
 	self.health = self.max_health
-	self.damage = def.damage or 2
+	self.damage = 2
 	self.despawn_on_room_switch = true
-	self.projectile_bound_right = 6
-	self.projectile_bound_bottom = 8
 	self.noot_color = noot_colors[math.random(1, #noot_colors)]
-	self:set_body_hit_area(2, 0, 6, 8)
-end
-
-function nootfoe.sync_components(self)
-	local imgid = 'muzieknootfoe'
-	local flip_h = false
-	local flip_v = false
-	self:set_body_sprite(imgid, flip_h, flip_v, self.noot_color)
+	self.sprite_component.imgid = 'muzieknootfoe'
+	self.sprite_component.colorize = self.noot_color
 end
 
 function nootfoe.bt_tick(self, _blackboard)

@@ -5,19 +5,12 @@ local room_module = require('room')
 local marspeinenaardappel = {}
 
 function marspeinenaardappel.configure(self, def)
-	self.width = def.w or 8
-	self.height = def.h or 8
-	self.max_health = def.health or 1
+	self.width = 8
+	self.height = 8
+	self.max_health = 1
 	self.health = self.max_health
-	self.damage = def.damage or 2
-	self:set_body_hit_area(0, 0, 8, 8)
-end
-
-function marspeinenaardappel.sync_components(self)
-	local imgid = 'marspeinenaardappel'
-	local flip_h = false
-	local flip_v = false
-	self:set_body_sprite(imgid, flip_h, flip_v)
+	self.damage = 2
+	self.sprite_component.imgid = 'marspeinenaardappel'
 end
 
 function marspeinenaardappel.bt_tick(self, _blackboard)

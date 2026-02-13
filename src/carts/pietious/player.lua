@@ -195,58 +195,32 @@ function player:ctor()
 		parent = self,
 		program = player_input_action_effect_program,
 	}))
-end
+	self:set_image('pietolon_stand_r')
+	self.sprite_component.offset = { x = 0, y = 0, z = 110 }
+	self.collider.id_local = constants.ids.player_body_collider_local
+	self.collider.generateoverlapevents = false
+	self.collider.spaceevents = 'current'
+	self.collider:apply_collision_profile('player')
 
-function player:ensure_visual_components()
-	local body_collider = self:get_component_by_local_id('collider2dcomponent', constants.ids.player_body_collider_local)
-	if body_collider == nil then
-		body_collider = components.collider2dcomponent.new({
-			parent = self,
-			id_local = constants.ids.player_body_collider_local,
-			generateoverlapevents = false,
-			spaceevents = 'current',
-		})
-		body_collider:apply_collision_profile('player')
-		self:add_component(body_collider)
-	end
+	self.sword_collider = components.collider2dcomponent.new({
+		parent = self,
+		id_local = constants.ids.player_sword_collider_local,
+		generateoverlapevents = false,
+		spaceevents = 'current',
+	})
+	self.sword_collider:apply_collision_profile('projectile')
+	self.sword_collider.enabled = false
+	self:add_component(self.sword_collider)
 
-	local sword_collider = self:get_component_by_local_id('collider2dcomponent', constants.ids.player_sword_collider_local)
-	if sword_collider == nil then
-		sword_collider = components.collider2dcomponent.new({
-			parent = self,
-			id_local = constants.ids.player_sword_collider_local,
-			generateoverlapevents = false,
-			spaceevents = 'current',
-		})
-		sword_collider:apply_collision_profile('projectile')
-		sword_collider.enabled = false
-		self:add_component(sword_collider)
-	end
-
-	local body_sprite = self:get_component_by_local_id('spritecomponent', 'body')
-	if body_sprite == nil then
-		body_sprite = components.spritecomponent.new({
-			parent = self,
-			id_local = 'body',
-			imgid = 'pietolon_stand_r',
-			offset = { x = 0, y = 0, z = 110 },
-			collider_local_id = constants.ids.player_body_collider_local,
-		})
-		self:add_component(body_sprite)
-	end
-
-	local sword_sprite = self:get_component_by_local_id('spritecomponent', 'sword')
-	if sword_sprite == nil then
-		sword_sprite = components.spritecomponent.new({
-			parent = self,
-			id_local = 'sword',
-			imgid = 'sword_r',
-			offset = { x = 0, y = 0, z = 111 },
-			collider_local_id = constants.ids.player_sword_collider_local,
-		})
-		sword_sprite.enabled = false
-		self:add_component(sword_sprite)
-	end
+	self.sword_sprite = components.spritecomponent.new({
+		parent = self,
+		id_local = 'sword',
+		imgid = 'sword_r',
+		offset = { x = 0, y = 0, z = 111 },
+		collider_local_id = constants.ids.player_sword_collider_local,
+	})
+	self.sword_sprite.enabled = false
+	self:add_component(self.sword_sprite)
 end
 
 function player:update_damage_state_imgid()
@@ -314,11 +288,10 @@ local function build_presentation_signature(self)
 end
 
 function player:apply_presentation_state()
-	self:ensure_visual_components()
-	local body_sprite = self:get_component_by_local_id('spritecomponent', 'body')
-	local sword_sprite = self:get_component_by_local_id('spritecomponent', 'sword')
-	local body_collider = self:get_component_by_local_id('collider2dcomponent', constants.ids.player_body_collider_local)
-	local sword_collider = self:get_component_by_local_id('collider2dcomponent', constants.ids.player_sword_collider_local)
+	local body_sprite = self.sprite_component
+	local sword_sprite = self.sword_sprite
+	local body_collider = self.collider
+	local sword_collider = self.sword_collider
 
 	local transition_hidden = self:has_tag(state_tags.variant.waiting_world_banner)
 		or self:has_tag(state_tags.variant.waiting_world_emerge)
@@ -363,7 +336,7 @@ function player:apply_presentation_state()
 		sword_sprite.enabled = false
 		sword_collider.enabled = false
 		body_sprite.imgid = imgid
-		body_sprite.flip.flip_h = false
+		body_sprite.flip.flip_h = not transition_anim
 		body_sprite.scale.x = 1
 		body_sprite.scale.y = visible_height / self.height
 		if self:has_tag(state_tags.variant.emerging_world) or self:has_tag(state_tags.variant.leaving_shrine) then
@@ -466,14 +439,14 @@ function player:apply_presentation_state()
 
 	if not flip_h then
 		body_sprite.imgid = imgid
-		body_sprite.flip.flip_h = false
+		body_sprite.flip.flip_h = flip_h
 		body_sprite.offset.x = body_offset_x_right
 		body_sprite.offset.y = 0
 		body_sprite.offset.z = 110
 		if sword_imgid ~= nil then
 			sword_sprite.enabled = true
 			sword_sprite.imgid = sword_imgid
-			sword_sprite.flip.flip_h = false
+			sword_sprite.flip.flip_h = flip_h
 			sword_sprite.offset.x = sword_offset_x_right
 			sword_sprite.offset.y = sword_offset_y
 			sword_sprite.offset.z = 111
@@ -2464,7 +2437,6 @@ local function define_player_fsm()
 				self.secondary_weapon = 'none'
 				self.weapon_level = 0
 				self:reset_runtime()
-				self:ensure_visual_components()
 				self:refresh_presentation_if_changed()
 				self:define_timeline(new_timeline({
 					id = 'p.tl.d',
@@ -2909,6 +2881,7 @@ local function register_player_definition()
 			player_action_effects_module.effect_ids.try_use_spyglass,
 		},
 		defaults = {
+			imgid = 'pietolon_stand_r',
 			room = nil,
 			space_id = constants.spaces.castle,
 			player_index = 1,

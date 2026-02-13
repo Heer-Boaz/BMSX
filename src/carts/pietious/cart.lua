@@ -105,7 +105,7 @@ function new_game()
 	})
 	local room = castle_service:initialize(1)
 
-	spawn_object(player_module.player_def_id, {
+	spawn_sprite(player_module.player_def_id, {
 		id = player_module.player_instance_id,
 		room = room,
 		space_id = room.space_id,

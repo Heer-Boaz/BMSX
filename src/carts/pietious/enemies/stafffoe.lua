@@ -11,21 +11,14 @@ local function speed_components_from_angle(speed_num, angle_degrees)
 end
 
 function stafffoe.configure(self, def)
-	self.width = def.w or 21
-	self.height = def.h or 30
-	self.max_health = def.health or 10
+	self.width = 21
+	self.height = 30
+	self.max_health = 10
 	self.health = self.max_health
-	self.damage = def.damage or 4
+	self.damage = 4
 	self.staff_state = 'default'
 	self.staff_spawn_count = 0
-	self:set_body_hit_area(0, 0, 21, 30)
-end
-
-function stafffoe.sync_components(self)
-	local imgid = 'stafffoe'
-	local flip_h = false
-	local flip_v = false
-	self:set_body_sprite(imgid, flip_h, flip_v)
+	self.sprite_component.imgid = 'stafffoe'
 end
 
 function stafffoe.bt_tick(self, blackboard)

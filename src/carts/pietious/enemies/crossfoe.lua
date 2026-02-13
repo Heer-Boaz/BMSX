@@ -1,60 +1,46 @@
 local constants = require('constants')
 local behaviourtree = require('behaviourtree')
-local room_module = require('room')
 
 local crossfoe = {}
 
-local function cross_hit_area_for_spin(spin_direction)
-	if spin_direction == 'left' or spin_direction == 'right' then
-		return { left = 2, top = 4, right = 22, bottom = 12 }
-	end
-	return { left = 4, top = 2, right = 12, bottom = 22 }
-end
-
-function crossfoe.configure(self, def)
-	self.width = def.w or 16
-	self.height = def.h or 24
-	self.cross_state = 'waiting'
-	self.cross_spin_direction = 'down'
-	self:set_body_hit_area(4, 2, 12, 22)
-end
-
-function crossfoe.sync_components(self)
-	local imgid = 'crossfoe'
-	local flip_h = false
-	local flip_v = false
+local function apply_spin_visual(self)
+	local imgid
+	local flip_h
+	local flip_v
 	if self.cross_spin_direction == 'left' then
 		imgid = 'crossfoe_turned'
-		self:set_body_hit_area(2, 4, 22, 12)
+		flip_h = false
+		flip_v = false
 	elseif self.cross_spin_direction == 'right' then
 		imgid = 'crossfoe_turned'
 		flip_h = true
-		self:set_body_hit_area(2, 4, 22, 12)
+		flip_v = false
 	elseif self.cross_spin_direction == 'up' then
 		imgid = 'crossfoe'
+		flip_h = false
 		flip_v = true
-		self:set_body_hit_area(4, 2, 12, 22)
 	else
-		self:set_body_hit_area(4, 2, 12, 22)
+		imgid = 'crossfoe'
+		flip_h = false
+		flip_v = false
 	end
-	self:set_body_sprite(imgid, flip_h, flip_v)
+	self.sprite_component.imgid = imgid
+	self.sprite_component.flip.flip_h = flip_h
+	self.sprite_component.flip.flip_v = flip_v
+end
+
+function crossfoe.configure(self, def)
+	self.width = 16
+	self.height = 24
+	self.cross_state = 'waiting'
+	self.cross_spin_direction = 'down'
+	apply_spin_visual(self)
 end
 
 function crossfoe.bt_tick_waiting(self, blackboard)
 	local player = object(constants.ids.player_instance)
 	local node = blackboard.nodedata
-	local hit = cross_hit_area_for_spin(self.cross_spin_direction)
-	local player_top = player.y
-	local player_bottom = player.y + player.height
-	local enemy_top = self.y + hit.top
-	local enemy_bottom = self.y + hit.bottom
-	local overlap_y = player_bottom >= enemy_top and player_top <= enemy_bottom
-
-	if not overlap_y then
-		node.cross_wait_ticks = constants.enemy.cross_wait_before_fly_steps
-		return behaviourtree.running
-	end
-
+	apply_spin_visual(self)
 	local wait_ticks = node.cross_wait_ticks
 	if wait_ticks == nil then
 		wait_ticks = constants.enemy.cross_wait_before_fly_steps
@@ -73,6 +59,7 @@ function crossfoe.bt_tick_waiting(self, blackboard)
 		self.cross_state = 'flying_right'
 	end
 	self.cross_spin_direction = 'left'
+	apply_spin_visual(self)
 	self:dispatch_state_event('takeoff')
 	return behaviourtree.running
 end
@@ -80,16 +67,20 @@ end
 function crossfoe.bt_tick_flying(self, blackboard)
 	local player = object(constants.ids.player_instance)
 	local node = blackboard.nodedata
+	apply_spin_visual(self)
 	local direction_mod = self.cross_state == 'flying_left' and -1 or 1
-	local hit = cross_hit_area_for_spin(self.cross_spin_direction)
+	local next_x = self.x + (constants.enemy.cross_horizontal_speed_px * direction_mod)
+	local next_left = next_x
+	local next_right = next_x + self.width
 
 	if (self.cross_state == 'flying_left' and self.x < (player.x - player.width))
 		or (self.cross_state == 'flying_right' and self.x > (player.x + (player.width * 2)))
-		or room_module.is_solid_at_world(self.room, self.x + hit.left, self.y + hit.top)
+		or next_left < self.room_left
+		or next_right > self.room_right
 	then
 		self.cross_state = 'waiting'
 		self.cross_spin_direction = 'down'
-		self.x = self.x + (self.room.tile_size * -direction_mod)
+		self.x = self.x - (constants.enemy.cross_horizontal_speed_px * direction_mod)
 		node.cross_wait_ticks = constants.enemy.cross_wait_before_fly_steps
 		node.cross_turn_ticks = constants.enemy.cross_turn_steps
 		self:dispatch_state_event('land')
@@ -122,6 +113,7 @@ function crossfoe.bt_tick_flying(self, blackboard)
 		self.cross_spin_direction = 'down'
 		self.x = self.x + 4
 	end
+	apply_spin_visual(self)
 	node.cross_turn_ticks = turn_ticks
 	return behaviourtree.running
 end

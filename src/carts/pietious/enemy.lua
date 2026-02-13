@@ -28,24 +28,6 @@ local function consume_axis_accum(accum, speed_num, speed_den)
 	return delta, accum
 end
 
-local function set_sprite_state(self, definition)
-	local sprite = self.sprite_component
-	if sprite == nil then
-		return
-	end
-	sprite.imgid = definition.imgid
-	sprite.flip.flip_h = definition.flip_h
-	sprite.flip.flip_v = definition.flip_v
-	sprite.colorize = definition.colorize
-end
-
-local function copy_colorize(value)
-	if value == nil then
-		return { r = 1, g = 1, b = 1, a = 1 }
-	end
-	return { r = value.r, g = value.g, b = value.b, a = value.a }
-end
-
 local function apply_body_config(self)
 	local collider = self.collider
 	if collider ~= nil then
@@ -53,18 +35,11 @@ local function apply_body_config(self)
 		collider.spaceevents = 'current'
 		collider:apply_collision_profile('enemy')
 		collider:set_shape_offset(0, 0)
-		local hit_area = self._pending_body_hit_area
-		if hit_area ~= nil then
-			collider:set_local_area(hit_area)
-		end
 	end
 
 	local sprite = self.sprite_component
 	if sprite ~= nil then
 		sprite.offset.z = 110
-		if self._pending_body_sprite ~= nil then
-			set_sprite_state(self, self._pending_body_sprite)
-		end
 	end
 end
 
@@ -118,35 +93,6 @@ local spawned_enemy_sequence = 0
 
 function enemy:create_components()
 	apply_body_config(self)
-end
-
-function enemy:set_body_hit_area(left, top, right, bottom)
-	self._pending_body_hit_area = {
-		left = left,
-		top = top,
-		right = right,
-		bottom = bottom,
-	}
-	local collider = self.collider
-	if collider == nil then
-		return
-	end
-	collider:set_local_area(self._pending_body_hit_area)
-end
-
-function enemy:set_body_sprite(imgid, flip_h, flip_v, colorize)
-	local definition = {
-		imgid = imgid,
-		flip_h = flip_h == true,
-		flip_v = flip_v == true,
-		colorize = copy_colorize(colorize),
-	}
-	self._pending_body_sprite = definition
-	local sprite = self.sprite_component
-	if sprite == nil then
-		return
-	end
-	set_sprite_state(self, definition)
 end
 
 function enemy:set_body_enabled(enabled)
@@ -203,7 +149,6 @@ function enemy:spawn_child_enemy(kind, x, y, options)
 		health = options.health,
 		damage = options.damage,
 		dangerous = options.dangerous,
-		spawned = true,
 	}, self.room)
 	return child
 end
@@ -246,8 +191,6 @@ function enemy:set_active_behaviour_tree(kind)
 end
 
 function enemy:configure_from_room_def(def, room)
-	self._pending_body_hit_area = nil
-	self._pending_body_sprite = nil
 	self.enemy_id = def.id
 	self.room_number = room.room_number
 	self.room = room
@@ -255,28 +198,24 @@ function enemy:configure_from_room_def(def, room)
 	self.kind = def.kind
 	self.trigger = def.trigger or ''
 	self.conditions = def.conditions or {}
-	self.spawned = def.spawned == true
 	self.spawn_x = def.x
 	self.spawn_y = def.y
 	self.x = def.x
 	self.y = def.y
-	self.width = def.w or 16
-	self.height = def.h or 16
-	self.damage = def.damage or constants.damage.enemy_contact_damage
-	self.max_health = def.health or constants.enemy.default_health
+	self.width = 16
+	self.height = 16
+	self.damage = constants.damage.enemy_contact_damage
+	self.max_health = constants.enemy.default_health
 	self.health = self.max_health
 	self.last_weapon_kind = ''
 	self.last_weapon_hit_id = -1
 	self.dangerous = def.dangerous ~= false
-	self.can_be_hit = true
 	self.direction = def.direction or 'right'
 	self.room_left = 0
 	self.room_right = room.world_width
 	self.room_top = room.world_top
 	self.room_bottom = room.world_height
 	self.despawn_on_room_switch = false
-	self.projectile_bound_right = 0
-	self.projectile_bound_bottom = 0
 
 	self:set_velocity(def.speedx or 0, def.speedy or 0, def.speedden or 1)
 
@@ -308,9 +247,6 @@ function enemy:spawn_death_effect()
 end
 
 function enemy:take_weapon_hit(weapon_kind, hit_id)
-	if not self.can_be_hit then
-		return false
-	end
 	if self.last_weapon_kind == weapon_kind and self.last_weapon_hit_id == hit_id then
 		return false
 	end
@@ -424,7 +360,6 @@ local function register_enemy_definition()
 			kind = '',
 			trigger = '',
 			conditions = {},
-			spawned = false,
 			width = 16,
 			height = 16,
 			damage = constants.damage.enemy_contact_damage,
@@ -433,7 +368,6 @@ local function register_enemy_definition()
 			last_weapon_kind = '',
 			last_weapon_hit_id = -1,
 			dangerous = true,
-			can_be_hit = true,
 			speed_x_num = 0,
 			speed_y_num = 0,
 			speed_den = 1,
@@ -447,8 +381,6 @@ local function register_enemy_definition()
 			spawn_x = 0,
 			spawn_y = 0,
 			despawn_on_room_switch = false,
-			projectile_bound_right = 0,
-			projectile_bound_bottom = 0,
 			active_bt_id = '',
 			state_name = 'boot',
 		},

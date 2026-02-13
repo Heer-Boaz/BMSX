@@ -27,9 +27,6 @@ function pepernoot_projectile:bind_events()
 end
 
 function pepernoot_projectile:dispose(reason)
-	if self.disposed then
-		return
-	end
 	self.disposed = true
 	self.body_sprite.enabled = false
 	self.body_collider.enabled = false
@@ -37,13 +34,6 @@ function pepernoot_projectile:dispose(reason)
 end
 
 function pepernoot_projectile:on_overlap_stay(event)
-	if self.disposed then
-		return
-	end
-	if event.other_id == self.owner_id then
-		return
-	end
-
 	local other_id = event.other_id
 	if string.sub(other_id, 1, 6) == 'enemy_' then
 		local enemy = object(other_id)
@@ -68,9 +58,6 @@ function pepernoot_projectile:on_overlap_stay(event)
 end
 
 function pepernoot_projectile:tick()
-	if self.disposed then
-		return
-	end
 	if self.room.room_number ~= self.room_number then
 		self:dispose('room_mismatch')
 		return

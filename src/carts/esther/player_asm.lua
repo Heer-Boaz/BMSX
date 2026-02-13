@@ -52,6 +52,8 @@ local define_dkc1_animationid_dk_jumpoffverticalrope = 0x0052
 local define_dkc1_animationid_dk_bouncewhileholding = 0x0053
 local define_dkc1_animationid_dk_duck = 0x0054
 local define_dkc1_animationid_dk_jumpaway = 0x0054
+local define_dkc1_animationid_dk_takeslead = 0x004F
+local define_dkc1_animationid_dk_gotoback = 0x0050
 local define_dkc1_animationid_dk_turnwhilecrawling = 0x0058
 local define_dkc1_animationid_dk_duckintocrawlspace = 0x0056
 local define_dkc1_animationid_dk_crawling = 0x005A
@@ -91,9 +93,25 @@ local define_dkc1_entranceid_minecartmadness_checkpointbarrel = 0x003B
 local define_dkc1_entranceid_minecartmadness_exitbonus1 = 0x008C
 local define_dkc1_entranceid_minecartmadness_exitbonus2 = 0x008D
 local define_dkc1_entranceid_minecartmadness_exitbonus3 = 0x008E
+local define_dkc1_entranceid_oildrumalley_main = 0x0040
+local define_dkc1_entranceid_oildrumalley_checkpointbarrel = 0x0044
+local define_dkc1_entranceid_oildrumalley_exitbonus1 = 0x008F
+local define_dkc1_entranceid_oildrumalley_exitbonus2 = 0x0090
+local define_dkc1_entranceid_oildrumalley_exitbonus4 = 0x0091
+local define_dkc1_entranceid_blackoutbasement_main = 0x0041
+local define_dkc1_entranceid_blackoutbasement_checkpointbarrel = 0x0045
+local define_dkc1_entranceid_blackoutbasement_exitbonus1 = 0x0092
+local define_dkc1_entranceid_blackoutbasement_exitbonus2 = 0x0093
 local define_dkc1_entranceid_minecartcarnage_main = 0x002E
 local define_dkc1_entranceid_minecartcarnage_checkpointbarrel = 0x0038
 local define_dkc1_entranceid_minecartcarnage_warp = 0x00CC
+local define_dkc1_entranceid_orangutangang_main = 0x000D
+local define_dkc1_entranceid_orangutangang_checkpointbarrel = 0x001D
+local define_dkc1_entranceid_orangutangang_exitbonus1 = 0x0071
+local define_dkc1_entranceid_orangutangang_exitbonus2 = 0x0072
+local define_dkc1_entranceid_orangutangang_exitbonus3 = 0x0073
+local define_dkc1_entranceid_orangutangang_exitbonus4 = 0x0074
+local define_dkc1_entranceid_orangutangang_exitbonus5 = 0x0075
 local define_dkc1_entranceid_oildrumalley_enterbonus2 = 0x0061
 local define_dkc1_entranceid_animaltokentest_main = 0x0034
 local define_dkc1_entranceid_gangplankgalleon_main = 0x0068
@@ -332,6 +350,71 @@ local data_bfc2f5 = {
 	'code_bfc192',
 	'code_bfba39',
 }
+
+-- CODE_BFB838: A-button / pickup logic gate
+function player:code_bfb838()
+	if (self.ram_1e15 & 0x0400) ~= 0 then
+		return
+	end
+	if (self.zp_80 & joypad_a) == 0 then
+		return
+	end
+
+	-- LDA.w $0512,y / BNE.b CODE_BFB853 / JMP.w CODE_BFBF8E
+	if self.ram_0512 == 0 then
+		self:code_bfbf8e()
+		return
+	end
+
+	-- CODE_BFB853:
+	local obj_slot = self.ram_0512
+	self.ram_0512 = 0
+	self.ram_0516 = 0
+	self.ram_0518 = 0
+	self.ram_nspr_ramtable1595lo[(obj_slot >> 1) + 1] = 0x0008
+
+	-- LDY.b !RAM_DKC1_NorSpr_CurrentIndexLo
+	-- LDA.w !RAM_DKC1_NorSpr_YXPPCCCTLo,y
+	-- STA.b $76
+	local self_yxppccct = self.ram_yxppccctlo
+	local obj_yxppccct = self.ram_nspr_yxppccctlo[(obj_slot >> 1) + 1]
+
+	-- LDA.w !RAM_DKC1_NorSpr_YXPPCCCTLo,x
+	-- EOR.w !RAM_DKC1_NorSpr_YXPPCCCTLo,y
+	-- AND.w #$0E00
+	-- EOR.w !RAM_DKC1_NorSpr_YXPPCCCTLo,y
+	-- STA.w !RAM_DKC1_NorSpr_YXPPCCCTLo,y
+	self.ram_yxppccctlo = (self.ram_yxppccctlo & 0xF1FF) + (obj_yxppccct & 0x0E00)
+
+	-- LDA.w !RAM_DKC1_NorSpr_XPosLo,y / STA.w !RAM_DKC1_NorSpr_XPosLo,x
+	-- LDA.w !RAM_DKC1_NorSpr_YPosLo,y / STA.w !RAM_DKC1_NorSpr_YPosLo,x
+	local xi = (obj_slot >> 1) + 1
+	self.ram_nspr_xposlo[xi] = self.ram_xposlo
+	self.ram_nspr_yposlo[xi] = self.ram_yposlo
+
+	-- LDA.b $76 / EOR.w !RAM_DKC1_NorSpr_YXPPCCCTLo,x / AND.w #$0E00 / EOR.w !... / STA.w !RAM_DKC1_NorSpr_YXPPCCCTLo,x
+	self.ram_nspr_yxppccctlo[xi] = (obj_yxppccct & 0xF1FF) + (self_yxppccct & 0x0E00)
+
+	-- LDA.w #$00E4 / STA.w !RAM_DKC1_NorSpr_OAMZPosLo,y
+	self.ram_oamzposlo = 0x00E4
+	-- LDA.w #$00D0 / STA.w !RAM_DKC1_NorSpr_OAMZPosLo,x
+	self.ram_nspr_oamzposlo[xi] = 0x00D0
+
+	-- LDA.b $32 / CMP.w #$0003 / BEQ.b CODE_BFB8BD
+	if self.zp_32 == 0x0003 then
+		self.ram_yspeedlo = 0x0400
+		self.ram_ramtable0f8dlo = 0
+		self.ram_ramtable11a1lo = 0x00C1
+		self.ram_ramtable1029lo = 0x002B
+		self:code_be80a4(define_dkc1_animationid_dk_getoffunderwateranimalbuddy)
+		return
+	end
+
+	-- CODE_BFB8BD:
+	self.ram_yspeedlo = 0x0600
+	self.ram_ramtable1029lo = 0
+	self:code_be80a4(define_dkc1_animationid_dk_getoffanimalbuddy)
+end
 
 local data_bfc283 = {
 	'code_bfb8f7',
@@ -635,6 +718,35 @@ local data_bea6a9 = {
 	{ op = 'wait', frames = 3 },
 	{ op = 'call', fn = 'code_bea778' },
 	{ op = 'loop' },
+}
+
+-- DATA_BE93AB: roll collision probes for Orangutan Gang edges.
+local data_be93ab = {
+	0x0130, 0x38D0, 0x39A0, 0x0130, 0x3A00, 0x3AD0, 0x0068, 0x3D30,
+	0x3E00, 0x0068, 0x3E60, 0x3F30, 0x0068, 0x4050, 0x4120, 0x0068,
+	0x4180, 0x4250, 0x0018, 0x42A0, 0x4370, 0x00F8, 0x4920, 0x49F0,
+	0x00E0, 0x4BC0, 0x4C90, 0x0118, 0x4DA0, 0x4E60, 0x00D8, 0x5160,
+	0x5230, 0x00D8, 0x5278, 0x5340, 0x00D8, 0x53A0, 0x5470, 0x00D0,
+	0x54B8, 0x5588, 0x0110, 0x5958, 0x5A28, 0x8000,
+}
+
+-- DATA_BE9407: roll collision probes for Oil Drum Alley edges.
+local data_be9407 = {
+	0x0100, 0x10A8, 0x10D8, 0x00C0, 0x1125, 0x11E0, 0x0080, 0x1A63,
+	0x1B20, 0x0060, 0x24A8, 0x24E0, 0x00A0, 0x2648, 0x2680, 0x00A0,
+	0x26C0, 0x2800, 0x8000,
+}
+
+-- DATA_BE942D: roll collision probes for Blackout Basement edges.
+local data_be942d = {
+	0x00A0, 0x3000, 0x3180, 0x00A0, 0x31B8, 0x31F8, 0x0080, 0x33A0,
+	0x3420, 0x0080, 0x3580, 0x3600, 0x0080, 0x3A00, 0x3A80, 0x0080,
+	0x3C00, 0x3C40, 0x0080, 0x3C88, 0x3CC0, 0x0080, 0x3D40, 0x3D80,
+	0x0080, 0x4180, 0x41C0, 0x0080, 0x4380, 0x43C8, 0x0080, 0x46A0,
+	0x4720, 0x0060, 0x4CA0, 0x4CE0, 0x0060, 0x4E48, 0x4E80, 0x0050,
+	0x4EE0, 0x4F20, 0x0030, 0x52A0, 0x52E0, 0x0030, 0x5320, 0x5360,
+	0x0030, 0x53C0, 0x5400, 0x0030, 0x5440, 0x5480, 0x0030, 0x54D8,
+	0x55A0, 0x0030, 0x5720, 0x5760, 0x8000,
 }
 
 -- ============================================================================
@@ -2186,25 +2298,30 @@ function player:code_bfb3bb()
 	self.ram_ramtable0f8dlo = 0x0200
 end
 
+
+-- code_bfb3e5: RTS
+function player:code_bfb3e5()
+	return
+end
+
 -- code_bfb3c4: up neutral helper for vertical-rope path (line 110961)
 function player:code_bfb3c4()
-	if (self.ram_1b01 & 0xFFFF) == 0 then
-		return
-	end
-
 	-- ldy $1B01 / lda $14C5 / bpl.b CODE_BFB3E5
 	self.ram_1a01 = self.ram_1b01
+	if self.ram_1a01 == 0 then
+		return
+	end
 	if self.ram_1a01 >= 0x8000 then
-		-- mimic the signed-branch behavior on this slot path
-		self:code_bfb3e5()
+		-- BPL was taken? branch to CODE_BFB3DD
 		return
 	end
 	if (self.zp_7e & 0x4000) == 0 then
 		self.ram_ramtable0f8dlo = 0x0180
-		return
+	else
+		self.ram_ramtable0f8dlo = 0x0280
 	end
-	self.ram_ramtable0f8dlo = 0x0280
 end
+
 
 -- code_bfb3fe: down handler via DATA_BFC237 dispatch.
 function player:code_bfb3fe()
@@ -2247,6 +2364,29 @@ function player:code_bfb437()
 end
 
 -- code_bfc192: neutral target clear (line 112759)
+function player:code_bfc1b3()
+	self.ram_ramtable0f8dlo = 0
+end
+
+function player:code_bfc03a()
+	local current_index = self.zp_84
+	local x = current_index ~ 0x0006
+	local xi = (x >> 1) + 1
+	self.ram_nspr_ramtable1375lo[xi] = 0x0020
+	for _, slot in ipairs({0x0002, 0x0004}) do
+		local si = (slot >> 1) + 1
+		self.ram_nspr_ramtable1375lo[si] = 0xFFFF
+		self.ram_nspr_xspeedlo[si] = 0
+		self.ram_nspr_ramtable0f25lo[si] = 0
+		self.ram_nspr_yspeedlo[si] = 0
+		local cur = self.zp_84
+		self.zp_84 = (slot - 0x0002) & 0xFFFF
+		self:code_bfc075(slot)
+		self.zp_84 = cur
+	end
+	self.zp_84 = current_index
+end
+
 function player:code_bfc192()
 	self.ram_ramtable0f25lo = 0
 	self.ram_ramtable1271lo = self.ram_ramtable1271lo & 0xFFFE
@@ -2406,6 +2546,13 @@ function player:code_bfbc06()
 end
 
 -- code_bfbeec: Start collect-g gate (line 112849)
+function player:code_bfc1a1()
+	if self.ram_0533 == 0 then
+		self.ram_yspeedlo = 0
+	end
+	self[data_bfc31b[self.ram_180f + 1]](self)
+end
+
 function player:code_bfbeec()
 	-- LDA.w $1029,y
 	if self.ram_1029 == 0x0053 then
@@ -2427,7 +2574,72 @@ function player:code_bfbeec()
 	end
 end
 
--- code_bfbc53: animal-buddy Y handler (line 112033)
+-- code_bfbf8e: animal-buddy Y handler (line 112495)
+function player:code_bfbf8e()
+	if self.ram_1029 == 0x0053 then
+		return
+	end
+	if (self.ram_0579 & 0x0001) == 0 then
+		return
+	end
+	if self.ram_1029 == 0x0019 then
+		return
+	end
+	if self.ram_0512 ~= 0 then
+		return
+	end
+	if self.ram_16f5 ~= 0 then
+		return
+	end
+	if (self.ram_1917 & 0x0040) ~= 0 then
+		return
+	end
+	if self.zp_32 == 0x0003 then
+		self:code_bfc102()
+		return
+	end
+	self.ram_1917 = self.ram_1917 | 0x0040
+	if (self.ram_ramtable12a5lo & 0x1101) ~= 0x0101 then
+		return
+	end
+	self.zp_7e = 0
+	self.zp_80 = 0
+	self.ram_1929 = 0x0003
+	self.ram_1e19 = 0x0001
+	if self.ram_player_currentkonglo == 0x0001 then
+		self.ram_player_currentkonglo = 0x0002
+		self.ram_nspr_ramtable1029lo[2] = 0x0011
+		self.ram_nspr_ramtable1029lo[3] = 0x0011
+		self:code_bfc03a()
+		return
+	end
+	if self.ram_player_currentkonglo == 0x0002 then
+		self.ram_player_currentkonglo = 0x0001
+		self.ram_nspr_ramtable1029lo[2] = 0x0011
+		self.ram_nspr_ramtable1029lo[3] = 0x0011
+		self:code_bfc03a()
+		return
+	end
+end
+
+function player:code_bfc075(slot)
+	if self.ram_player_currentkonglo == 0x0001 then
+		if (slot & 0xFFFF) == 0x0002 then
+			self:code_be80a4(define_dkc1_animationid_dk_takeslead)
+			return
+		end
+		self:code_be80a4(define_dkc1_animationid_dk_gotoback)
+		return
+	end
+	if self.ram_player_currentkonglo == 0x0002 then
+		if (slot & 0xFFFF) == 0x0002 then
+			self:code_be80a4(define_dkc1_animationid_dk_gotoback)
+			return
+		end
+		self:code_be80a4(define_dkc1_animationid_dk_takeslead)
+	end
+end
+
 function player:code_bfbc53()
 	if (self.zp_80 & 0xC000) == 0 then
 		return
@@ -2492,10 +2704,11 @@ end
 
 function player:code_bfbf54()
 	-- LDA.b $80 / AND.w #$8000 / BNE.b CODE_BFBF60
-	if (self.zp_80 & joypad_b) == 0 then
+	if (self.zp_80 & joypad_b) ~= 0 then
+		self:code_bfbf60()
 		return
 	end
-	self:code_bfbf60()
+	self:code_bfb5b()
 end
 
 function player:code_bfbf5b()
@@ -2653,6 +2866,16 @@ function player:code_bfb9b2()
 	self:code_bfba3a()
 end
 
+-- code_bfbbf4: X-button / level-debug jump assist path (line 111977)
+function player:code_bfbbf4()
+	if self.ram_0533 == 0 then
+		return
+	end
+
+	-- ASM reads !RAM_DKC1_Level_FreeMovementDebugFlagLo (unused result).
+	self.ram_yspeedlo = 0x0200
+end
+
 -- code_bfbd4f: roll setup (line 112176)
 function player:code_bfbd4f()
 	-- LDA.w #$0001 / STA.w $16E5,y
@@ -2758,9 +2981,73 @@ function player:code_be92ad()
 end
 
 function player:code_be92fd()
-	-- Stage-specific probes used by DKC1 roll edge logic.
-	-- In this cart the corresponding terrain tables are not present.
-	return false
+	-- CODE_BE92FD (exact control flow from ASM): select probe table by entrance and movement vector.
+	local probe_table
+	if self.zp_32 == 0x0000 then
+		if self.ram_global_entranceidlo ~= define_dkc1_entranceid_oildrumalley_main
+			and self.ram_global_entranceidlo ~= define_dkc1_entranceid_oildrumalley_checkpointbarrel
+			and self.ram_global_entranceidlo ~= define_dkc1_entranceid_oildrumalley_exitbonus1
+			and self.ram_global_entranceidlo ~= define_dkc1_entranceid_oildrumalley_exitbonus2
+			and self.ram_global_entranceidlo ~= define_dkc1_entranceid_oildrumalley_exitbonus4 then
+			if self.ram_global_entranceidlo ~= define_dkc1_entranceid_blackoutbasement_main
+				and self.ram_global_entranceidlo ~= define_dkc1_entranceid_blackoutbasement_checkpointbarrel
+				and self.ram_global_entranceidlo ~= define_dkc1_entranceid_blackoutbasement_exitbonus1
+				and self.ram_global_entranceidlo ~= define_dkc1_entranceid_blackoutbasement_exitbonus2 then
+				return false
+			end
+			-- CODE_BE9343 -> DATA_BE942D
+			probe_table = data_be942d
+		else
+			-- CODE_BE933E -> DATA_BE9407
+			probe_table = data_be9407
+		end
+	elseif self.zp_32 == 0x0007 then
+		if self.ram_global_entranceidlo ~= define_dkc1_entranceid_orangutangang_main
+			and self.ram_global_entranceidlo ~= define_dkc1_entranceid_orangutangang_checkpointbarrel
+			and self.ram_global_entranceidlo ~= define_dkc1_entranceid_orangutangang_exitbonus1
+			and self.ram_global_entranceidlo ~= define_dkc1_entranceid_orangutangang_exitbonus2
+			and self.ram_global_entranceidlo ~= define_dkc1_entranceid_orangutangang_exitbonus3
+			and self.ram_global_entranceidlo ~= define_dkc1_entranceid_orangutangang_exitbonus4
+			and self.ram_global_entranceidlo ~= define_dkc1_entranceid_orangutangang_exitbonus5 then
+			return false
+		end
+		-- CODE_BE936D -> DATA_BE93AB
+		probe_table = data_be93ab
+	else
+		return false
+	end
+
+	if self.ram_xspeedlo == 0 then
+		return false
+	end
+
+	local swap = (self.ram_ramtable1209lo >> 8) | ((self.ram_ramtable1209lo & 0x00FF) << 8)
+	if ((swap ~ self.ram_xspeedlo) & 0x8000) == 0 then
+		return false
+	end
+
+	-- NOTE: loop advances by 3 table words (6 bytes) per ASM stride.
+	local table_index = 1
+	while true do
+		local ymax = probe_table[table_index]
+		local xmin = probe_table[table_index + 1]
+		local xmax = probe_table[table_index + 2]
+	local xflag = probe_table[table_index + 3]
+
+	local xpos_minus_xmin = to_signed_16(self.ram_xposlo - xmin)
+	if xpos_minus_xmin < 0 then
+		if (xflag & 0x8000) ~= 0 then
+			return false
+		end
+		elseif to_signed_16(self.ram_xposlo - xmax) < 0 then
+			if to_signed_16(self.ram_yposlo - ymax) < 0 then
+				return false
+			end
+			return true
+		end
+
+		table_index = table_index + 3
+	end
 end
 
 function player:code_be92b4()
@@ -3272,7 +3559,7 @@ function player:code_bfb27c(state_180f)
 	-- X BUTTON (LINE 110837)
 	-- ================================================================
 	if (self.zp_7e & joypad_x) ~= 0 then
-		self:code_bfbf4()
+		self:code_bfbbf4()
 	end
 	
 	-- ================================================================
@@ -3357,17 +3644,6 @@ function player:code_bfba88()
 	self.ram_yxppccctlo = self.ram_yxppccctlo & 0xBFFF
 end
 
--- code_bfb3c4: vertical-rope neutral helper (line 110961)
-function player:code_bfb3c4()
-	-- Rope lookup table path is not wired in this cart runtime.
-	-- Keep the branch side-effect that sets $0F8D from left/right intent.
-	if (self.zp_7e & joypad_y) == 0 then
-		self.ram_ramtable0f8dlo = 0x0180
-		return
-	end
-	self.ram_ramtable0f8dlo = 0x0280
-end
-
 -- code_bfba6f: vertical-rope B handler (line 111783)
 function player:code_bfba6f()
 	if (self.zp_7e & 0x0300) ~= 0 then
@@ -3382,7 +3658,20 @@ function player:code_bfba6f()
 	self:code_bfb3c4()
 end
 
+
 -- code_bfbbdc helper (line 112093)
+function player:code_bfba3a()
+	self.ram_145d = self.ram_145d | 0x8000
+	if self.ram_1029 == 0x002c then
+		return
+	end
+	self.ram_1029 = 0x002c
+	self.ram_145d = 0x800c
+	self.ram_yspeedlo = 0x0400
+	self.ram_yposlo = to_unsigned_16(self.ram_yposlo + 0x0018)
+	self:code_be8092(define_dkc1_animationid_rambiriddenbydk_jumpontire - 1)
+end
+
 function player:code_bfbbdc()
 	local vertical = self.zp_7e & 0x0C00
 	if vertical == 0 then
@@ -3567,6 +3856,55 @@ end
 function player:code_bfa4da()
 	if self:code_bfa51b() then
 		self:code_bfa4e3()
+	end
+end
+
+function player:code_bfc102()
+	self.zp_7e = 0
+	self.zp_80 = 0
+	self:code_bfc0fb()
+	self.ram_1929 = 0x0003
+	self.ram_1e19 = 0x0001
+	local x = self.zp_84 & 0xFFFF
+	local y = (x ~ 0x0006) & 0xFFFF
+	local xi = (x >> 1) + 1
+	local yi = (y >> 1) + 1
+	self.ram_nspr_ramtable1029lo[xi] = 0x0038
+	self.ram_nspr_ramtable1029lo[yi] = 0x0037
+	self.ram_nspr_ramtable11a1lo[xi] = 0
+	self.ram_nspr_ramtable11a1lo[yi] = 0
+	self:code_bfc13f()
+	self:code_bfc16e()
+	self:code_bfc0d0()
+	self:code_b880ce()
+end
+
+function player:code_bfc0fb()
+	self:code_bffb27(0x0000)
+end
+
+function player:code_bfc13f()
+	local x = self.zp_84 & 0xFFFF
+	local y = (x ~ 0x0006) & 0xFFFF
+	local xi = (x >> 1) + 1
+	local yi = (y >> 1) + 1
+	self.ram_nspr_ramtable1375lo[yi] = 0x0020
+	local xspeed = to_signed_16(self.ram_nspr_xposlo[xi] - self.ram_nspr_xposlo[yi])
+	xspeed = to_unsigned_16(xspeed * 8)
+	self.ram_nspr_xspeedlo[yi] = xspeed
+	self.ram_nspr_xspeedlo[xi] = to_unsigned_16(-to_signed_16(xspeed))
+	local yspeed = to_signed_16(self.ram_nspr_yposlo[xi] - self.ram_nspr_yposlo[yi])
+	yspeed = to_unsigned_16(yspeed * 8)
+	self.ram_nspr_yspeedlo[yi] = yspeed
+	self.ram_nspr_yspeedlo[xi] = to_unsigned_16(-to_signed_16(yspeed))
+end
+
+function player:code_bfc16e()
+	-- parity: flip kong id and exit
+	if self.ram_player_currentkonglo == 0x0001 then
+		self.ram_player_currentkonglo = 0x0002
+	elseif self.ram_player_currentkonglo == 0x0002 then
+		self.ram_player_currentkonglo = 0x0001
 	end
 end
 

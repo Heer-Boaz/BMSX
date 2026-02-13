@@ -22,19 +22,12 @@ local function get_delta_from_source_to_target_scaled(source_x, source_y, target
 end
 
 function muziekfoe.configure(self, def)
-	self.width = def.w or 24
-	self.height = def.h or 16
-	self.max_health = def.health or 3
+	self.width = 24
+	self.height = 16
+	self.max_health = 3
 	self.health = self.max_health
-	self.damage = def.damage or 4
-	self:set_body_hit_area(0, 0, 24, 16)
-end
-
-function muziekfoe.sync_components(self)
-	local imgid = 'muziekfoe'
-	local flip_h = false
-	local flip_v = false
-	self:set_body_sprite(imgid, flip_h, flip_v)
+	self.damage = 4
+	self.sprite_component.imgid = 'muziekfoe'
 end
 
 function muziekfoe.bt_tick(self, blackboard)

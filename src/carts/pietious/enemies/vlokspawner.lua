@@ -8,13 +8,8 @@ function vlokspawner.configure(self, _def)
 	self.height = 0
 	self.damage = 0
 	self.dangerous = false
-	self.can_be_hit = false
 	self.max_health = 1
 	self.health = 1
-	self:set_body_hit_area(0, 0, 0, 0)
-end
-
-function vlokspawner.sync_components(self)
 	self:set_body_enabled(false)
 end
 
