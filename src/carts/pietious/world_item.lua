@@ -15,7 +15,6 @@ end
 
 function world_item:configure_from_room_def(def, room, item_service_id)
 	self.item_id = def.id
-	self.space_id = room.space_id
 	self.item_service_id = item_service_id
 	self.source_kind = def.source_kind
 	self.item_type = def.item_type
@@ -94,7 +93,6 @@ local function register_world_item_definition()
 		class = world_item,
 		fsms = { constants.ids.world_item_fsm },
 			defaults = {
-				space_id = constants.spaces.castle,
 				item_id = '',
 			item_type = 'ammofromrock',
 			source_kind = 'map',

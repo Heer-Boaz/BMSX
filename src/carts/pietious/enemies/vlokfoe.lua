@@ -58,7 +58,6 @@ end
 
 
 function vlokfoe:configure_from_room_def(def, room)
-		self.space_id = room.space_id
 		self.trigger = def.trigger or ''
 	self.conditions = def.conditions or {}
 		self.damage = constants.damage.enemy_contact_damage
@@ -145,7 +144,7 @@ end
 function vlokfoe:spawn_death_effect()
 	enemy_death_effect_sequence = enemy_death_effect_sequence + 1
 	spawn_object(enemy_explosion_module.enemy_explosion_def_id, {
-		space_id = self.space_id,
+		space_id = service(constants.ids.castle_service_instance).current_room.space_id,
 		room_number = service(constants.ids.castle_service_instance).current_room.room_number,
 		loot_type = self:choose_drop_type(),
 		pos = { x = self.x, y = self.y, z = 114 },
@@ -197,7 +196,6 @@ function vlokfoe.register_enemy_definition()
 		class = vlokfoe,
 		fsms = { constants.ids.enemy_fsm },
 		defaults = {
-			space_id = constants.spaces.castle,
 			trigger = '',
 			conditions = {},
 			damage = constants.damage.enemy_contact_damage,

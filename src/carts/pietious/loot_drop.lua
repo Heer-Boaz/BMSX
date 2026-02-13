@@ -97,7 +97,6 @@ local function register_loot_drop_definition()
 		class = loot_drop,
 		fsms = { constants.ids.loot_drop_fsm },
 			defaults = {
-				space_id = constants.spaces.castle,
 				loot_type = 'life',
 			loot_value = constants.enemy.loot_life_regen,
 			tick_enabled = false,

@@ -116,7 +116,6 @@ local function register_ui_definition()
 			hud_weapon_level = constants.hud.weapon_level,
 			hud_weapon_target = constants.hud.weapon_level,
 			hud_weapon_anim_ticks = 0,
-			space_id = constants.spaces.castle,
 			tick_enabled = true,
 		},
 	})

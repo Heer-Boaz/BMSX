@@ -833,7 +833,6 @@ function player:try_switch_room(direction, keep_stairs_lock)
 
 	if switch.outside == true then
 		local leave_switch = castle_service:leave_world_to_castle()
-		self.space_id = service(constants.ids.castle_service_instance).current_room.space_id
 		self.x = leave_switch.spawn_x
 		self.y = leave_switch.spawn_y
 		self.facing = leave_switch.spawn_facing
@@ -858,7 +857,6 @@ function player:try_switch_room(direction, keep_stairs_lock)
 		})
 		return true
 	end
-	self.space_id = service(constants.ids.castle_service_instance).current_room.space_id
 	if direction == 'left' then
 		self.x = service(constants.ids.castle_service_instance).current_room.world_width - self.width
 	elseif direction == 'right' then
@@ -1691,7 +1689,6 @@ function player:tick_entering_world()
 		if self.enter_leave_size < 0 then
 			local castle_service = service(constants.ids.castle_service_instance)
 			local switch = castle_service:enter_world(self.enter_leave_world_target)
-			self.space_id = service(constants.ids.castle_service_instance).current_room.space_id
 			self.x = switch.spawn_x
 			self.y = switch.spawn_y
 			self.facing = switch.spawn_facing
@@ -2823,7 +2820,6 @@ local function register_player_definition()
 		defaults = {
 			imgid = 'pietolon_stand_r',
 			room = nil,
-			space_id = constants.spaces.castle,
 			player_index = 1,
 			width = constants.player.width,
 			height = constants.player.height,

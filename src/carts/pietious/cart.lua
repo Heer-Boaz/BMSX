@@ -108,7 +108,6 @@ function new_game()
 	spawn_sprite(player_module.player_def_id, {
 		id = player_module.player_instance_id,
 		room = room,
-		space_id = room.space_id,
 		spawn_x = constants.player.start_x,
 		spawn_y = constants.player.start_y,
 		pos = { x = constants.player.start_x, y = constants.player.start_y, z = 140 },
@@ -132,7 +131,6 @@ function new_game()
 
 	spawn_object(ui_module.ui_def_id, {
 		id = ui_module.ui_instance_id,
-		space_id = constants.spaces.castle,
 		pos = { x = 0, y = 0, z = 0 },
 	})
 

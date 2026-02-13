@@ -1,5 +1,4 @@
 local constants = require('constants')
-local eventemitter = require('eventemitter')
 
 local room_view = {}
 room_view.__index = room_view
@@ -20,22 +19,8 @@ function room_view:bind_visual()
 	end
 end
 
-function room_view:bind_events()
-	eventemitter.eventemitter.instance:on({
-		event = constants.events.room_switched,
-		subscriber = self,
-		handler = function()
-			local room = service(constants.ids.castle_service_instance).current_room
-			self.space_id = room.space_id
-		end,
-	})
-end
-
 function room_view:ctor()
 	self:bind_visual()
-	self:bind_events()
-	local room = service(constants.ids.castle_service_instance).current_room
-	self.space_id = room.space_id
 end
 
 function room_view:render_room()
@@ -83,7 +68,6 @@ local function register_room_view_definition()
 		fsms = { constants.ids.room_view_fsm },
 		components = { 'customvisualcomponent' },
 		defaults = {
-			space_id = constants.spaces.castle,
 			tick_enabled = false,
 		},
 	})

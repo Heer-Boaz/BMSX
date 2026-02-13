@@ -108,7 +108,6 @@ local function register_pepernoot_projectile_definition()
 		class = pepernoot_projectile,
 		fsms = { constants.ids.pepernoot_projectile_fsm },
 			defaults = {
-				space_id = constants.spaces.castle,
 				owner_id = constants.ids.player_instance,
 			projectile_id = 0,
 			direction = 1,

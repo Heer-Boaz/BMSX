@@ -60,9 +60,10 @@ function enemy_explosion:spawn_loot()
 
 	loot_spawn_sequence = loot_spawn_sequence + 1
 	local loot_id = string.format('%s.loot.%d', self.id, loot_spawn_sequence)
+	local room = service(constants.ids.castle_service_instance).current_room
 	spawn_object(loot_drop_module.loot_drop_def_id, {
 		id = loot_id,
-		space_id = self.space_id,
+		space_id = room.space_id,
 		loot_type = self.loot_type,
 		loot_value = loot_value_for_type(self.loot_type),
 		pos = { x = self.x, y = self.y, z = 113 },
@@ -108,7 +109,6 @@ local function register_enemy_explosion_definition()
 		class = enemy_explosion,
 		fsms = { constants.ids.enemy_explosion_fsm },
 		defaults = {
-			space_id = constants.spaces.castle,
 			loot_type = 'none',
 			tick_enabled = false,
 		},
