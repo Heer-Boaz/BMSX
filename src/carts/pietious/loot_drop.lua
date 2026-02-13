@@ -1,5 +1,6 @@
 local constants = require('constants')
 local components = require('components')
+local eventemitter = require('eventemitter')
 
 local loot_drop = {}
 loot_drop.__index = loot_drop
@@ -20,6 +21,14 @@ function loot_drop:bind_events()
 		subscriber = self,
 		handler = function(event)
 			self:on_overlap_stay(event)
+		end,
+	})
+
+	eventemitter.eventemitter.instance:on({
+		event = constants.events.room_switched,
+		subscriber = self,
+		handler = function(_event)
+			self:mark_for_disposal()
 		end,
 	})
 end

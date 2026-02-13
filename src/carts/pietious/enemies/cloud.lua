@@ -107,13 +107,14 @@ function cloud.bt_tick(self, blackboard)
 				random_x = math.random(-5, 4)
 				random_y = math.random(-5, 4)
 			end
-			local spawned_vlok = inst('pietious.enemy.def.vlokfoe', {
-				space_id = room.space_id,
-				pos = {
-					x = self.x + 16,
-					y = self.y + 12,
-					z = 140,
-				},
+		local spawned_vlok = inst('pietious.enemy.def.vlokfoe', {
+			space_id = room.space_id,
+			despawn_on_room_switch = true,
+			pos = {
+				x = self.x + 16,
+				y = self.y + 12,
+				z = 140,
+			},
 			})
 			spawned_vlok:configure_from_room_def({
 				id = spawned_vlok.id,

@@ -51,13 +51,14 @@ function boekfoe.bt_tick(self, blackboard)
 
 	if spawn_ticks <= 0 then
 		local y_speed_num = math.random(-5, 4)
-		local spawned_paper = inst('pietious.enemy.def.paperfoe', {
-			space_id = room.space_id,
-			pos = {
-				x = self.x,
-				y = self.y,
-				z = 140,
-			},
+	local spawned_paper = inst('pietious.enemy.def.paperfoe', {
+		space_id = room.space_id,
+		despawn_on_room_switch = true,
+		pos = {
+			x = self.x,
+			y = self.y,
+			z = 140,
+		},
 		})
 		spawned_paper:configure_from_room_def({
 			id = spawned_paper.id,

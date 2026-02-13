@@ -32,6 +32,7 @@ function vlokspawner.bt_tick(self, blackboard)
 	local random_x = math.random(-5, 4)
 	local spawned_vlok = inst('pietious.enemy.def.vlokfoe', {
 		space_id = room.space_id,
+		despawn_on_room_switch = true,
 		pos = {
 			x = spawn_x,
 			y = spawn_y,

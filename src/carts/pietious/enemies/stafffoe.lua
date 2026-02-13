@@ -63,13 +63,14 @@ function stafffoe.bt_tick(self, blackboard)
 	for i = 0, 3 do
 		local angle = (base_angle + (i * 90)) % 360
 		local speed_x_num, speed_y_num = speed_components_from_angle(constants.enemy.staff_bullet_speed_num, angle)
-		local spawned_staff = inst('pietious.enemy.def.staffspawn', {
-			space_id = room.space_id,
-			pos = {
-				x = self.x,
-				y = self.y,
-				z = 140,
-			},
+	local spawned_staff = inst('pietious.enemy.def.staffspawn', {
+		space_id = room.space_id,
+		despawn_on_room_switch = true,
+		pos = {
+			x = self.x,
+			y = self.y,
+			z = 140,
+		},
 		})
 		spawned_staff:configure_from_room_def({
 			id = spawned_staff.id,

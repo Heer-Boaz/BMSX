@@ -70,13 +70,14 @@ function muziekfoe.bt_tick(self, blackboard)
 		local delta_scale = 8
 		local delta_x, delta_y = get_delta_from_source_to_target_scaled(source_x, source_y, target_x, target_y, delta_scale)
 		local delta_divisor = math.random(1, 2)
-		local spawned_noot = inst('pietious.enemy.def.nootfoe', {
-			space_id = room.space_id,
-			pos = {
-				x = self.x + 12,
-				y = self.y,
-				z = 140,
-			},
+	local spawned_noot = inst('pietious.enemy.def.nootfoe', {
+		space_id = room.space_id,
+		despawn_on_room_switch = true,
+		pos = {
+			x = self.x + 12,
+			y = self.y,
+			z = 140,
+		},
 		})
 		spawned_noot:configure_from_room_def({
 			id = spawned_noot.id,

@@ -1,4 +1,5 @@
 local constants = require('constants')
+local eventemitter = require('eventemitter')
 
 local enemy_explosion = {}
 enemy_explosion.__index = enemy_explosion
@@ -42,6 +43,14 @@ function enemy_explosion:bind_events()
 		subscriber = self,
 		handler = function()
 			self:spawn_loot()
+			self:mark_for_disposal()
+		end,
+	})
+
+	eventemitter.eventemitter.instance:on({
+		event = constants.events.room_switched,
+		subscriber = self,
+		handler = function(_event)
 			self:mark_for_disposal()
 		end,
 	})

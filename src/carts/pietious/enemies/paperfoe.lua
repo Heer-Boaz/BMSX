@@ -70,7 +70,7 @@ function paperfoe:configure_from_room_def(def, room)
 	self.last_weapon_hit_id = -1
 	self.dangerous = def.dangerous ~= false
 	self.direction = def.direction or 'right'
-	self.despawn_on_room_switch = false
+	self.despawn_on_room_switch = def.despawn_on_room_switch == true
 
 	self:set_velocity(def.speedx or 0, def.speedy or 0, def.speedden or 1)
 
