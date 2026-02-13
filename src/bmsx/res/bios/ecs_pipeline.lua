@@ -30,9 +30,8 @@ function ecspipelineregistry:get(id)
 	return self._descs[id]
 end
 
-function ecspipelineregistry:build(nodes)
-local t0 = $.platform.clock.perf_now()
-	local world_instance = require("world").instance
+function ecspipelineregistry:build(world_instance, nodes)
+	local t0 = $.platform.clock.perf_now()
 	local filtered = {}
 	for i = 1, #nodes do
 		local n = nodes[i]
@@ -87,7 +86,7 @@ local t0 = $.platform.clock.perf_now()
 		world_instance.systems:register(systems[i])
 	end
 
-local t1 = $.platform.clock.perf_now()
+	local t1 = $.platform.clock.perf_now()
 	local diag = {
 		final_order = (function()
 			local out = {}

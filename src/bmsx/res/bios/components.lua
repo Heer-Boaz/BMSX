@@ -4,6 +4,7 @@
 local eventemitter = require("eventemitter")
 local timeline_module = require("timeline")
 local romdir = require("romdir")
+local collision_profiles = require("collision_profiles")
 local eventemitter = eventemitter.eventemitter
 local timeline = timeline_module.timeline
 
@@ -390,8 +391,7 @@ function collider2dcomponent:get_world_circle()
 end
 
 function collider2dcomponent:apply_collision_profile(profile_name)
-	local profiles = require("collision_profiles")
-	profiles.apply(self, profile_name)
+	collision_profiles.apply(self, profile_name)
 	return self
 end
 

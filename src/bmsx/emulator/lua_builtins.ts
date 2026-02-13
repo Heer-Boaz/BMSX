@@ -436,10 +436,10 @@ function registerEngineBuiltins(interpreter: LuaInterpreter): void {
 	const runtime = Runtime.instance;
 	const env = interpreter.globalEnvironment;
 	const requireName = runtime.canonicalizeIdentifier('require');
-	const requireFn = interpreter.getGlobal(requireName) as LuaFunctionValue;
-	const engineValue = requireFn.call(['engine']);
-	const engineTable = engineValue[0] as LuaTable;
 	const callEngineMember = (name: string, args: ReadonlyArray<LuaValue>): ReadonlyArray<LuaValue> => {
+		const requireFn = interpreter.getGlobal(requireName) as LuaFunctionValue;
+		const engineValue = requireFn.call(['engine']);
+		const engineTable = engineValue[0] as LuaTable;
 		const member = engineTable.get(runtime.canonicalizeIdentifier(name)) as LuaFunctionValue;
 		return member.call(args);
 	};
@@ -447,10 +447,6 @@ function registerEngineBuiltins(interpreter: LuaInterpreter): void {
 		const name = ENGINE_LUA_BUILTIN_FUNCTIONS[index].name;
 		const native = new LuaNativeFunction(name, (args) => callEngineMember(name, args));
 		registerLuaGlobal(env, name, native);
-	}
-	for (let index = 0; index < ENGINE_LUA_BUILTIN_GLOBALS.length; index += 1) {
-		const name = ENGINE_LUA_BUILTIN_GLOBALS[index].name;
-		registerLuaGlobal(env, name, engineTable.get(runtime.canonicalizeIdentifier(name)));
 	}
 }
 

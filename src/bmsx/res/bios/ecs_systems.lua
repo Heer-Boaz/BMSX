@@ -265,11 +265,16 @@ local overlap2dsystem = {}
 overlap2dsystem.__index = overlap2dsystem
 setmetatable(overlap2dsystem, { __index = ecsystem })
 
-local function make_pair_key(a, b)
-	if a < b then
-		return a .. "|" .. b
+local function add_pair(set, a, b)
+	if b < a then
+		a, b = b, a
 	end
-	return b .. "|" .. a
+	local row = set[a]
+	if row == nil then
+		row = {}
+		set[a] = row
+	end
+	row[b] = true
 end
 
 local function build_overlap_payload(self_col, other_col, other_owner, contact, phase)
@@ -303,16 +308,15 @@ function overlap2dsystem:space_match(scope, owner_space, other_space)
 	if scope == "all" then
 		return true
 	end
-	local ui_id = world_instance.ui_space_id or "ui"
 	local current = world_instance.active_space_id
 	if scope == "current" or scope == nil then
 		return other_space == owner_space and other_space == current
 	end
 	if scope == "ui" then
-		return other_space == ui_id
+		return other_space == "ui"
 	end
 	if scope == "both" then
-		return (other_space == owner_space and other_space == current) or other_space == ui_id
+		return (other_space == owner_space and other_space == current) or other_space == "ui"
 	end
 	error("[overlap2dsystem] unknown spaceevents scope '" .. tostring(scope) .. "'")
 end
@@ -380,8 +384,7 @@ function overlap2dsystem:update()
 					if self:space_match(collider.spaceevents, owner_space, other_space) then
 						if not (other.generateoverlapevents and other.id < collider.id) then
 							if collision2d.collides(collider, other) then
-								local key = make_pair_key(collider.id, other.id)
-								new_pairs[key] = true
+								add_pair(new_pairs, collider.id, other.id)
 							end
 						end
 					end
@@ -395,23 +398,29 @@ function overlap2dsystem:update()
 	local begins = {}
 	local stays = {}
 	local ends = {}
-	for key in pairs(new_pairs) do
-		if self.prev_pairs[key] then
-			stays[#stays + 1] = key
-		else
-			begins[#begins + 1] = key
+	for a_id, row in pairs(new_pairs) do
+		local prev_row = self.prev_pairs[a_id]
+		for b_id in pairs(row) do
+			if prev_row ~= nil and prev_row[b_id] then
+				stays[#stays + 1] = a_id
+				stays[#stays + 1] = b_id
+			else
+				begins[#begins + 1] = a_id
+				begins[#begins + 1] = b_id
+			end
 		end
 	end
-	for key in pairs(self.prev_pairs) do
-		if not new_pairs[key] then
-			ends[#ends + 1] = key
+	for a_id, row in pairs(self.prev_pairs) do
+		local new_row = new_pairs[a_id]
+		for b_id in pairs(row) do
+			if not (new_row ~= nil and new_row[b_id]) then
+				ends[#ends + 1] = a_id
+				ends[#ends + 1] = b_id
+			end
 		end
 	end
 
-	local function resolve_pair(key)
-		local sep = string.find(key, "|", 1, true)
-		local a_id = string.sub(key, 1, sep - 1)
-		local b_id = string.sub(key, sep + 1)
+	local function resolve_pair(a_id, b_id)
 		local a = collider_lookup[a_id] or registry.instance:get(a_id)
 		local b = collider_lookup[b_id] or registry.instance:get(b_id)
 		return a, b
@@ -446,24 +455,24 @@ function overlap2dsystem:update()
 		end
 	end
 
-	for i = 1, #begins do
-		local a, b = resolve_pair(begins[i])
+	for i = 1, #begins, 2 do
+		local a, b = resolve_pair(begins[i], begins[i + 1])
 		if a ~= nil and b ~= nil then
 			local contact = collision2d.get_contact2d(a, b)
 			emit_pair("overlap.begin", a, b, contact, "begin")
 			emit_pair("overlap", a, b, contact, "begin")
 		end
 	end
-	for i = 1, #stays do
-		local a, b = resolve_pair(stays[i])
+	for i = 1, #stays, 2 do
+		local a, b = resolve_pair(stays[i], stays[i + 1])
 		if a ~= nil and b ~= nil then
 			local contact = collision2d.get_contact2d(a, b)
 			emit_pair("overlap.stay", a, b, contact, "stay")
 			emit_pair("overlap", a, b, contact, "stay")
 		end
 	end
-	for i = 1, #ends do
-		local a, b = resolve_pair(ends[i])
+	for i = 1, #ends, 2 do
+		local a, b = resolve_pair(ends[i], ends[i + 1])
 		if a ~= nil and b ~= nil then
 			emit_pair("overlap.end", a, b, nil, "end")
 		end

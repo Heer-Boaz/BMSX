@@ -14,6 +14,8 @@
 -- This module is BIOS/runtime plumbing.
 
 local world_module = require("world")
+local ecs_builtin = require("ecs_builtin")
+local ecs_pipeline = require("ecs_pipeline")
 local worldobject = require("worldobject")
 local spriteobject = require("sprite")
 local textobject = require("textobject")
@@ -32,6 +34,7 @@ local round_to_nearest = require("round_to_nearest")
 local rol8 = require("rol8")
 local swap_remove = require("swap_remove")
 local timeline = require("timeline")
+local audio_router = require("audio_router")
 
 local world_instance = world_module.instance
 
@@ -542,15 +545,17 @@ end
 function engine.reset()
 	world_instance:clear()
 	registry.instance:clear()
-	world_instance:apply_default_pipeline()
+	ecs_builtin.register_builtin_ecs()
+	ecs_pipeline.defaultecspipelineregistry:build(world_instance, ecs_builtin.default_pipeline_spec())
 end
 
 function engine.configure_ecs(nodes)
-	return world_instance:configure_pipeline(nodes)
+	return ecs_pipeline.defaultecspipelineregistry:build(world_instance, nodes)
 end
 
 function engine.apply_default_pipeline()
-	return world_instance:apply_default_pipeline()
+	ecs_builtin.register_builtin_ecs()
+	return ecs_pipeline.defaultecspipelineregistry:build(world_instance, ecs_builtin.default_pipeline_spec())
 end
 
 function engine.enlist(value)
@@ -611,11 +616,12 @@ function $.emit(name_or_event, emitter, payload, ...)
 	return eventemitter.instance:emit(name_or_event, emitter, payload)
 end
 
-require("audio_router").init()
+audio_router.init()
 
 if not world_instance._ecs_pipeline_built then
 	world_instance._ecs_pipeline_built = true
-	world_instance:apply_default_pipeline()
+	ecs_builtin.register_builtin_ecs()
+	ecs_pipeline.defaultecspipelineregistry:build(world_instance, ecs_builtin.default_pipeline_spec())
 end
 
 return engine

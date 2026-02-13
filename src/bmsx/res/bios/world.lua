@@ -1,7 +1,7 @@
 local ecs = require("ecs")
-local ecs_pipeline = require("ecs_pipeline")
 
 local tickgroup = ecs.tickgroup
+local world_instance = nil
 
 local world_class = {}
 world_class.__index = world_class
@@ -45,7 +45,7 @@ function world_class.getnextidnumber(self)
 	local w = self
 	-- support being called without passing self (e.g. world.getnextidnumber())
 	if type(w) ~= "table" or rawget(w, "idcounter") == nil then
-		w = require("world").instance
+		w = world_instance
 	end
 	if not w.idcounter then
 		w.idcounter = 1
@@ -204,14 +204,13 @@ function world_class.new()
 	self._spaces = { default = true }
 	self._space_order = { "default" }
 	self.active_space_id = "default"
-	self.ui_space_id = "ui"
 	self.systems = ecs.ecsystemmanager.new()
 	self.current_phase = nil
 	self.paused = false
 	self.gamewidth = display_width()
 	self.gameheight = display_height()
 	-- id counter for unique id generation
-	self.idcounter = 1
+	self.idcounter = 0
 	return self
 end
 
@@ -261,19 +260,9 @@ function world_class:_object_in_scope(obj, scope)
 		if space_id == self.active_space_id then
 			return true
 		end
-		return space_id == self.ui_space_id
+		return space_id == "ui"
 	end
 	return true
-end
-
-function world_class:configure_pipeline(nodes)
-	return ecs_pipeline.defaultecspipelineregistry:build(nodes)
-end
-
-function world_class:apply_default_pipeline()
-	local ecs_builtin = require("ecs_builtin")
-	ecs_builtin.register_builtin_ecs()
-	return self:configure_pipeline(ecs_builtin.default_pipeline_spec())
 end
 
 function world_class:spawn(obj, pos)
@@ -388,7 +377,9 @@ function world_class:clear()
 	self.active_space_id = "default"
 end
 
+world_instance = world_class.new()
+
 return {
 	world = world_class,
-	instance = world_class.new(),
+	instance = world_instance,
 }
