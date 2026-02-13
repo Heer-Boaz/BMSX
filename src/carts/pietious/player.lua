@@ -253,7 +253,6 @@ function player:apply_presentation_state()
 		or self:has_tag(state_tags.variant.waiting_shrine)
 	if transition_hidden then
 		self.visible = false
-		self.sword_sprite.enabled = false
 		return
 	end
 
@@ -291,7 +290,6 @@ function player:apply_presentation_state()
 	end
 	if self.hit_invulnerability_timer > 0 and self.hit_blink_on and not self:has_tag(state_tags.variant.dying) then
 		self.visible = false
-		self.sword_sprite.enabled = false
 		return
 	end
 	self.visible = true

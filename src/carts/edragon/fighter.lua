@@ -279,10 +279,6 @@ function fighter:resolve_hit_state_for(instigator)
 		return state.death_normal
 	end
 
-	if self.state >= state.knockback_a and self.state <= state.fall_from_gear then
-		return hit_state_chain[self.state] or (self.grounded and state.lie_on_ground or state.fall_from_gear)
-	end
-
 	if self.grounded == false then
 		if self.state >= state.hit_light and self.state <= state.hit_very_heavy then
 			return state.knockback_a
@@ -416,10 +412,6 @@ function fighter:handle_hit_chain_state()
 	end
 	local next_state = hit_state_chain[self.state]
 	if next_state then
-		if next_state == state.lie_on_ground and self.grounded == false then
-			self:set_state(state.fall_from_gear)
-			return
-		end
 		self:set_state(next_state)
 		return
 	end
