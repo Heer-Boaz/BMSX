@@ -109,7 +109,7 @@ function item_service:sync_item_instance(item_def, room)
 	local id = item_def.id
 	local instance = object(id)
 	if instance == nil then
-		instance = spawn_object(self.world_item_def_id, {
+		instance = inst(self.world_item_def_id, {
 			id = id,
 			space_id = room.space_id,
 			pos = { x = item_def.x, y = item_def.y, z = 140 },

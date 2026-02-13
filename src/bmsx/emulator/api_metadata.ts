@@ -454,7 +454,7 @@ export const API_METHOD_METADATA = {
 		],
 		returnType: 'void',
 	},
-	spawn_object: {
+	inst: {
 		description: 'Spawns a WorldObject instance from a previously defined descriptor.',
 		parameters: [
 			{ name: 'definition_id', description: 'Id of the world object definition registered via define_prefab.' },
@@ -462,24 +462,6 @@ export const API_METHOD_METADATA = {
 		],
 		returnType: 'WorldObject',
 		returnDescription: 'The spawned WorldObject instance.',
-	},
-	spawn_sprite: {
-		description: 'Spawns a SpriteObject instance from a previously defined descriptor.',
-		parameters: [
-			{ name: 'definition_id', description: 'Id of the sprite definition registered via define_prefab.' },
-			{ name: 'overrides', optional: true, description: 'Optional overrides applied after the descriptor defaults/overrides.' },
-		],
-		returnType: 'SpriteObject',
-		returnDescription: 'The spawned SpriteObject instance.',
-	},
-	spawn_textobject: {
-		description: 'Spawns a TextObject instance from a previously defined descriptor.',
-		parameters: [
-			{ name: 'definition_id', description: 'Id of the text object definition registered via define_prefab.' },
-			{ name: 'overrides', optional: true, description: 'Optional overrides applied after the descriptor defaults/overrides.' },
-		],
-		returnType: 'TextObject',
-		returnDescription: 'The spawned TextObject instance.',
 	},
 	grant_effect: {
 		description: 'Grants a registered effect definition to a world object with an ActionEffectComponent.',

@@ -2838,6 +2838,7 @@ local function register_player_definition()
 	define_prefab({
 		def_id = constants.ids.player_def,
 		class = player,
+		type = 'sprite',
 		fsms = { constants.ids.player_fsm },
 		effects = {
 			player_action_effects_module.effect_ids.try_start_sword,

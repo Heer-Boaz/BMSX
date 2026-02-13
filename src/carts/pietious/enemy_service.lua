@@ -99,7 +99,7 @@ function enemy_service:sync_enemy_instance(enemy_def, room)
 	local id = enemy_def.id
 	local instance = object(id)
 	if instance == nil then
-		instance = spawn_sprite('pietious.enemy.def.' .. enemy_def.kind, {
+		instance = inst('pietious.enemy.def.' .. enemy_def.kind, {
 			id = id,
 			space_id = room.space_id,
 			pos = { x = enemy_def.x, y = enemy_def.y, z = 140 },

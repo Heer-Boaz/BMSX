@@ -31,7 +31,7 @@ function new_game()
 	local level = level_module.create_level(constants.dkc.default_level_context)
 	local spawn = level.spawn
 
-	spawn_object(player_module.player_def_id, {
+	inst(player_module.player_def_id, {
 		id = player_module.player_instance_id,
 		level = level,
 		spawn_x = spawn.x,
@@ -39,7 +39,7 @@ function new_game()
 		pos = { x = spawn.x, y = spawn.y, z = 300 },
 	})
 
-	spawn_object(director_module.director_def_id, {
+	inst(director_module.director_def_id, {
 		id = director_module.director_instance_id,
 		level = level,
 		player_id = player_module.player_instance_id,

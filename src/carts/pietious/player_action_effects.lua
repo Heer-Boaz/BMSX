@@ -66,7 +66,7 @@ local function try_fire_pepernoot_effect(context)
 	local spawn_y = owner.y + constants.secondary_weapon.pepernoot_spawn_offset_y
 	spawn_x, spawn_y = room_module.snap_world_to_tile(room, spawn_x, spawn_y)
 
-	spawn_object(pepernoot_projectile_module.pepernoot_projectile_def_id, {
+	inst(pepernoot_projectile_module.pepernoot_projectile_def_id, {
 		id = projectile_id,
 		room = room,
 		space_id = room.space_id,

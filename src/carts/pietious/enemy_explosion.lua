@@ -60,7 +60,7 @@ function enemy_explosion:spawn_loot()
 	local room_space = service(constants.ids.castle_service_instance).current_room.space_id
 	loot_spawn_sequence = loot_spawn_sequence + 1
 	local loot_id = string.format('%s.loot.%d', self.id, loot_spawn_sequence)
-	spawn_object(loot_drop_module.loot_drop_def_id, {
+	inst(loot_drop_module.loot_drop_def_id, {
 		id = loot_id,
 		loot_type = self.loot_type,
 		space_id = room_space,
@@ -101,6 +101,7 @@ local function register_enemy_explosion_definition()
 	define_prefab({
 		def_id = constants.ids.enemy_explosion_def,
 		class = enemy_explosion,
+		type = 'sprite',
 		fsms = { constants.ids.enemy_explosion_fsm },
 		defaults = {
 			loot_type = 'none',

@@ -9,7 +9,7 @@ function rock_service:sync_rock_instance(rock_def, room)
 	local id = rock_def.id
 	local instance = object(id)
 	if instance == nil then
-		instance = spawn_object(self.rock_def_id, {
+		instance = inst(self.rock_def_id, {
 			id = id,
 			space_id = room.space_id,
 			pos = { x = rock_def.x, y = rock_def.y, z = 140 },

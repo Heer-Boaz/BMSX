@@ -130,6 +130,7 @@ local function register_rock_definition()
 	define_prefab({
 		def_id = constants.ids.rock_def,
 		class = rock,
+		type = 'sprite',
 		fsms = { constants.ids.rock_fsm },
 			defaults = {
 			rock_service_id = constants.ids.rock_service_instance,

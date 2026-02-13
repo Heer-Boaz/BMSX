@@ -51,7 +51,7 @@ TODO: REWRITE THIS SECTION BASED ON RECENT CHANGES
 
 ## World Objects & Services
 
-- `register_world_object({ id, class = 'WorldObject' | ClassTable, components?, fsms?, behavior_trees?, effects?, tags?, defaults?, asset_id? })` registers descriptors that `spawn_object` can clone. Use `ActionEffectComponent` in `components` when using `effects`.
+- `register_world_object({ id, class = 'WorldObject' | ClassTable, components?, fsms?, behavior_trees?, effects?, tags?, defaults?, asset_id? })` registers descriptors that `inst` can clone. Use `ActionEffectComponent` in `components` when using `effects`.
 - `register_service({ id, fsms?, behavior_trees?, effects?, tags?, auto_activate?, asset_id? })` registers services; `register_service` accepts a Lua table with hooks (`on_boot`, `on_activate`, `on_deactivate`, `on_tick`, `get_state`, `set_state`, `dispose`).
 
 ## Cartridge Skeleton
@@ -103,7 +103,7 @@ function init()
     defaults = { x = 48, y = 64 },
   })
 
-  spawn_object(HERO, { id = 'hero.instance' })
+  inst(HERO, { id = 'hero.instance' })
 end
 
 function update(dt)

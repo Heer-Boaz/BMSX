@@ -3,7 +3,7 @@
 --
 -- NOTE FOR CART AUTHORS:
 -- Do not `require("engine")` from cart code and do not call `engine.*`.
--- Carts must use cart-facing globals/helpers (`object`, `service`, `spawn_object`,
+-- Carts must use cart-facing globals/helpers (`object`, `service`, `inst`,
 -- `update`, `reset`, `add_space`, `set_space`, `get_space`, `define_fsm`, `define_effect`,
 -- etc.) that are injected by the runtime.
 -- Keep cart identifier strings compact. Redundant long prefixes in tags/events/effects/
@@ -386,40 +386,37 @@ function engine.vdp_load_sys_atlas()
 	return vdp_load_job_seq
 end
 
-function engine.spawn_object(definition_id, addons)
+function engine.inst(definition_id, addons)
 	local def = definitions[definition_id]
+	local object_type = def and def.type
+	if object_type == 'sprite' then
+		local class_table = def and def.class or nil
+		local instance_id = (addons and addons.id) or (class_table and class_table.id) or definition_id
+		local instance = spriteobject.new({ id = instance_id })
+		apply_definition(instance, def, addons, "imgid")
+		local imgid = (addons and addons.imgid) or (def and def.defaults and def.defaults.imgid)
+		if imgid then
+			instance:set_image(imgid)
+		end
+		world:spawn(instance, addons and addons.pos)
+		return instance
+	end
+	if object_type == 'textobject' then
+		local class_table = def and def.class or nil
+		local instance_id = (addons and addons.id) or (class_table and class_table.id) or definition_id
+		local instance = textobject.new({ id = instance_id })
+		apply_definition(instance, def, addons, "dimensions")
+		local dimensions = (addons and addons.dimensions) or (def and def.defaults and def.defaults.dimensions)
+		if dimensions then
+			instance:set_dimensions(dimensions)
+		end
+		world:spawn(instance, addons and addons.pos)
+		return instance
+	end
 	local class_table = def and def.class or nil
 	local instance_id = (addons and addons.id) or (class_table and class_table.id) or definition_id
 	local instance = worldobject.new({ id = instance_id })
 	apply_definition(instance, def, addons)
-	world:spawn(instance, addons and addons.pos)
-	return instance
-end
-
-function engine.spawn_sprite(definition_id, addons)
-	local def = definitions[definition_id]
-	local class_table = def and def.class or nil
-	local instance_id = (addons and addons.id) or (class_table and class_table.id) or definition_id
-	local instance = spriteobject.new({ id = instance_id })
-	apply_definition(instance, def, addons, "imgid")
-	local imgid = (addons and addons.imgid) or (def and def.defaults and def.defaults.imgid)
-	if imgid then
-		instance:set_image(imgid)
-	end
-	world:spawn(instance, addons and addons.pos)
-	return instance
-end
-
-function engine.spawn_textobject(definition_id, addons)
-	local def = definitions[definition_id]
-	local class_table = def and def.class or nil
-	local instance_id = (addons and addons.id) or (class_table and class_table.id) or definition_id
-	local instance = textobject.new({ id = instance_id })
-	apply_definition(instance, def, addons, "dimensions")
-	local dims = (addons and addons.dimensions) or (def and def.defaults and def.defaults.dimensions)
-	if dims then
-		instance:set_dimensions(dims)
-	end
 	world:spawn(instance, addons and addons.pos)
 	return instance
 end

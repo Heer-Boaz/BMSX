@@ -88,7 +88,7 @@ function flow_service:spawn_interaction_view_if_needed()
 	if object(constants.ids.shrine_world_view_instance) ~= nil then
 		return
 	end
-	spawn_object(shrine_world_view_module.shrine_world_view_def_id, {
+	inst(shrine_world_view_module.shrine_world_view_def_id, {
 		id = constants.ids.shrine_world_view_instance,
 		space_id = constants.spaces.ui,
 		pos = { x = 0, y = 0, z = 0 },

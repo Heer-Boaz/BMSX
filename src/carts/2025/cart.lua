@@ -104,6 +104,7 @@ local function register_director()
 	define_prefab({
 		def_id = director_def_id,
 		class = director,
+		type = 'object',
 		fsms = { director_fsm_id },
 		defaults = {
 			node_id = start_node,
@@ -139,6 +140,56 @@ local function register_director()
 			just_finished_combat = false,
 		},
 	})
+	define_prefab({
+		def_id = 'p3.bg.def',
+		class = {},
+		type = 'sprite',
+	})
+	define_prefab({
+		def_id = 'p3.text.main.def',
+		class = {},
+		type = 'textobject',
+	})
+	define_prefab({
+		def_id = 'p3.text.choice.def',
+		class = {},
+		type = 'textobject',
+	})
+	define_prefab({
+		def_id = 'p3.text.prompt.def',
+		class = {},
+		type = 'textobject',
+	})
+	define_prefab({
+		def_id = 'p3.text.transition.def',
+		class = {},
+		type = 'textobject',
+	})
+	define_prefab({
+		def_id = 'p3.text.results.def',
+		class = {},
+		type = 'textobject',
+	})
+	define_prefab({
+		def_id = 'p3.combat.monster.def',
+		class = {},
+		type = 'sprite',
+	})
+	define_prefab({
+		def_id = 'p3.combat.maya_a.def',
+		class = {},
+		type = 'sprite',
+	})
+	define_prefab({
+		def_id = 'p3.combat.maya_b.def',
+		class = {},
+		type = 'sprite',
+	})
+	define_prefab({
+		def_id = 'p3.combat.all_out.def',
+		class = {},
+		type = 'sprite',
+	})
 end
 
 function init()
@@ -169,37 +220,37 @@ function new_game()
 	local choice_top = h - (line_height * (prompt_lines + choice_lines))
 	local main_top = h - (line_height * (prompt_lines + choice_lines + main_lines))
 
-	spawn_sprite('p3.bg.def', {
+	inst('p3.bg.def', {
 		id = bg_id,
 		pos = { x = 0, y = 0, z = 0 },
 		imgid = 'none',
 		visible = false,
 	})
-	spawn_sprite('p3.bg.def', {
+	inst('p3.bg.def', {
 		id = transition_overlay_id,
 		pos = { x = 0, y = 0, z = 850 },
 		imgid = 'whitepixel',
 		visible = false,
 	})
-	spawn_sprite('p3.bg.def', {
+	inst('p3.bg.def', {
 		id = transition_panel_ids[1],
 		pos = { x = 0, y = 0, z = 860 },
 		imgid = 'whitepixel',
 		visible = false,
 	})
-	spawn_sprite('p3.bg.def', {
+	inst('p3.bg.def', {
 		id = transition_panel_ids[2],
 		pos = { x = 0, y = 0, z = 861 },
 		imgid = 'whitepixel',
 		visible = false,
 	})
-	spawn_sprite('p3.bg.def', {
+	inst('p3.bg.def', {
 		id = transition_panel_ids[3],
 		pos = { x = 0, y = 0, z = 862 },
 		imgid = 'whitepixel',
 		visible = false,
 	})
-	spawn_sprite('p3.bg.def', {
+	inst('p3.bg.def', {
 		id = transition_accent_id,
 		pos = { x = 0, y = 0, z = 870 },
 		imgid = 'whitepixel',
@@ -207,13 +258,13 @@ function new_game()
 	})
 
 	local horizontal_margin = w / 10
-	spawn_textobject('p3.text.main.def', {
+	inst('p3.text.main.def', {
 		id = text_main_id,
 		dimensions = { left = horizontal_margin, right = w - horizontal_margin, top = main_top, bottom = choice_top },
 		pos = { z = 1000 },
 		layer = 'ui',
 	})
-	spawn_textobject('p3.text.choice.def', {
+	inst('p3.text.choice.def', {
 		id = text_choice_id,
 		dimensions = { left = horizontal_margin, right = w - horizontal_margin, top = choice_top, bottom = prompt_top },
 		pos = { z = 1001 },
@@ -222,19 +273,19 @@ function new_game()
 		highlight_jitter_enabled = false,
 		layer = 'ui',
 	})
-	spawn_textobject('p3.text.prompt.def', {
+	inst('p3.text.prompt.def', {
 		id = text_prompt_id,
 		dimensions = { left = horizontal_margin, right = w - horizontal_margin, top = prompt_top, bottom = h },
 		pos = { z = 1002 },
 		layer = 'ui',
 	})
-	spawn_textobject('p3.text.transition.def', {
+	inst('p3.text.transition.def', {
 		id = text_transition_id,
 		dimensions = { left = 0, right = w, top = (h / 2) - (line_height * 2), bottom = (h / 2) + (line_height * 2) },
 		pos = { z = 900 },
 		layer = 'ui',
 	})
-	spawn_textobject('p3.text.results.def', {
+	inst('p3.text.results.def', {
 		id = text_results_id,
 		dimensions = { left = horizontal_margin, right = w - (w / 3), top = line_height * 2, bottom = h - (h / 3) },
 		pos = { z = 1003 },
@@ -243,33 +294,33 @@ function new_game()
 
 	clear_texts(text_ids_all)
 
-	spawn_sprite('p3.combat.monster.def', {
+	inst('p3.combat.monster.def', {
 		id = combat_monster_id,
 		pos = { x = 0, y = 0, z = 200 },
 		imgid = 'monster_snoozer',
 		visible = false,
 	})
-	spawn_sprite('p3.combat.maya_a.def', {
+	inst('p3.combat.maya_a.def', {
 		id = combat_maya_a_id,
 		pos = { x = 0, y = 0, z = 300 },
 		imgid = 'maya_a',
 		visible = false,
 	})
-	spawn_sprite('p3.combat.maya_b.def', {
+	inst('p3.combat.maya_b.def', {
 		id = combat_maya_b_id,
 		pos = { x = 0, y = 0, z = 300 },
 		imgid = 'maya_b',
 		visible = false,
 	})
-	spawn_sprite('p3.combat.all_out.def', {
+	inst('p3.combat.all_out.def', {
 		id = combat_all_out_id,
 		pos = { x = 0, y = 0, z = 800 },
 		imgid = 'all_out',
 		visible = false,
 	})
 
-	combat_director_instance = spawn_object(combat_director_def_id, { id = combat_director_instance_id })
-	spawn_object(director_def_id, { id = director_instance_id })
+	combat_director_instance = inst(combat_director_def_id, { id = combat_director_instance_id })
+	inst(director_def_id, { id = director_instance_id })
 end
 
 local function test()

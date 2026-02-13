@@ -87,6 +87,7 @@ local function register_loot_drop_definition()
 	define_prefab({
 		def_id = constants.ids.loot_drop_def,
 		class = loot_drop,
+		type = 'sprite',
 		fsms = { constants.ids.loot_drop_fsm },
 			defaults = {
 				loot_type = 'life',

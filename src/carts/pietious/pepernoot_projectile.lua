@@ -98,6 +98,7 @@ local function register_pepernoot_projectile_definition()
 	define_prefab({
 		def_id = constants.ids.pepernoot_projectile_def,
 		class = pepernoot_projectile,
+		type = 'sprite',
 		fsms = { constants.ids.pepernoot_projectile_fsm },
 			defaults = {
 				owner_id = constants.ids.player_instance,

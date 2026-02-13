@@ -943,7 +943,7 @@ function player:new(config)
 	return instance
 end
 
--- ctor is called by the engine's spawn_object → apply_definition → apply_ctor
+-- ctor is called by the engine's inst → apply_definition → apply_ctor
 -- receives (self, addons, def_id) where addons = {id, level, spawn_x, spawn_y, pos}
 function player.ctor(self, addons)
 	-- initialize all ram variables

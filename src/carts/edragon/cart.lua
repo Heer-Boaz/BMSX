@@ -28,12 +28,12 @@ end
 function new_game()
 	reset()
 
-	spawn_object(arena_module.arena_def_id, {
+	inst(arena_module.arena_def_id, {
 		id = arena_module.arena_instance_id,
 		pos = { x = 0, y = 0, z = constants.z.background },
 	})
 
-	spawn_object(fighter_module.fighter_def_id, {
+	inst(fighter_module.fighter_def_id, {
 		id = fighter_module.player_instance_id,
 		role = fighter_module.player_role,
 		spawn_x = constants.player.start_x,
@@ -42,7 +42,7 @@ function new_game()
 		target_id = fighter_module.enemy_instance_id,
 	})
 
-	spawn_object(fighter_module.fighter_def_id, {
+	inst(fighter_module.fighter_def_id, {
 		id = fighter_module.enemy_instance_id,
 		role = fighter_module.enemy_role,
 		spawn_x = constants.enemy.start_x,

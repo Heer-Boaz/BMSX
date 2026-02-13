@@ -83,6 +83,7 @@ local function register_world_item_definition()
 	define_prefab({
 		def_id = constants.ids.world_item_def,
 		class = world_item,
+		type = 'sprite',
 		fsms = { constants.ids.world_item_fsm },
 			defaults = {
 				item_id = '',

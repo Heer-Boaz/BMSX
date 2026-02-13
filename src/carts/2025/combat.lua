@@ -1444,6 +1444,7 @@ function combat.register_director()
 	define_prefab({
 		def_id = combat_director_def_id,
 		class = combat_director,
+		type = 'object',
 		fsms = { combat_director_fsm_id },
 		defaults = {
 			node_id = '',

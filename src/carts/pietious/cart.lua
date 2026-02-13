@@ -105,7 +105,7 @@ function new_game()
 	})
 	local room = castle_service:initialize(1)
 
-	spawn_sprite(player_module.player_def_id, {
+	inst(player_module.player_def_id, {
 		id = player_module.player_instance_id,
 		room = room,
 		space_id = room.space_id,
@@ -114,26 +114,26 @@ function new_game()
 		pos = { x = constants.player.start_x, y = constants.player.start_y, z = 140 },
 	})
 
-	spawn_object(room_view_module.room_view_def_id, {
+	inst(room_view_module.room_view_def_id, {
 		id = room_view_module.room_view_instance_id,
 		room = room,
 		space_id = room.space_id,
 		pos = { x = 0, y = 0, z = 0 },
 	})
 
-	spawn_object(transition_view_module.transition_view_def_id, {
+	inst(transition_view_module.transition_view_def_id, {
 		id = transition_view_module.transition_view_instance_id,
 		space_id = constants.spaces.transition,
 		pos = { x = 0, y = 0, z = 0 },
 	})
 
-	spawn_object(item_screen_module.item_screen_def_id, {
+	inst(item_screen_module.item_screen_def_id, {
 		id = item_screen_module.item_screen_instance_id,
 		space_id = constants.spaces.item,
 		pos = { x = 0, y = 0, z = 0 },
 	})
 
-	spawn_object(ui_module.ui_def_id, {
+	inst(ui_module.ui_def_id, {
 		id = ui_module.ui_instance_id,
 		space_id = room.space_id,
 		pos = { x = 0, y = 0, z = 0 },
