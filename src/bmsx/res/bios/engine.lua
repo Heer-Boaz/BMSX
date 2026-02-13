@@ -363,7 +363,7 @@ function engine.inst(definition_id, addons)
 		apply_definition(instance, def, addons, "imgid")
 		local imgid = (addons and addons.imgid) or (def and def.defaults and def.defaults.imgid)
 		if imgid then
-			instance:set_image(imgid)
+			instance:gfx(imgid)
 		end
 		world_instance:spawn(instance, addons and addons.pos)
 		return instance

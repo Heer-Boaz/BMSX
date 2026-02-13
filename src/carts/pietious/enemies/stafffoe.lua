@@ -19,7 +19,7 @@ function stafffoe.configure(self, def)
 	self.damage = 4
 	self.staff_state = 'default'
 	self.staff_spawn_count = 0
-	self:set_image('stafffoe')
+	self:gfx('stafffoe')
 end
 
 function stafffoe.bt_tick(self, blackboard)

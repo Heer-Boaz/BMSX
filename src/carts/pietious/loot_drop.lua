@@ -64,10 +64,10 @@ local function define_loot_drop_fsm()
 					})
 					self.body_collider:apply_collision_profile('pickup')
 					self:add_component(self.body_collider)
-					self.sprite_component.imgid = 'item_health'
+					self:gfx('item_health')
 					self.sprite_component.offset = { x = 0, y = 0, z = 112 }
 					self:bind_events()
-				self.sprite_component.imgid = sprite_for_loot_type(self.loot_type)
+				self:gfx(sprite_for_loot_type(self.loot_type))
 				self.visible = true
 				self.body_collider.enabled = true
 				return '/active'
@@ -78,7 +78,7 @@ local function define_loot_drop_fsm()
 				['picked'] = '/picked',
 			},
 				entering_state = function(self)
-					self.sprite_component.imgid = sprite_for_loot_type(self.loot_type)
+					self:gfx(sprite_for_loot_type(self.loot_type))
 					self.visible = true
 					self.body_collider.enabled = true
 				end,

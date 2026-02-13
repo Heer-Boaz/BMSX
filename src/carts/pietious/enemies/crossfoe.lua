@@ -27,7 +27,7 @@ local function apply_spin_visual(self)
 		flip_h = false
 		flip_v = false
 	end
-	self:set_image(imgid)
+	self:gfx(imgid)
 	self.sprite_component.flip.flip_h = flip_h
 	self.sprite_component.flip.flip_v = flip_v
 end

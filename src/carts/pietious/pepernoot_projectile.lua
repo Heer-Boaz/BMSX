@@ -82,7 +82,7 @@ local function define_pepernoot_projectile_fsm()
 						})
 						self.body_collider:apply_collision_profile('projectile')
 						self:add_component(self.body_collider)
-						self.sprite_component.imgid = 'pepernoot_16'
+						self:gfx('pepernoot_16')
 						self.sprite_component.offset = { x = 0, y = 0, z = 113 }
 						self:bind_events()
 						return '/active'

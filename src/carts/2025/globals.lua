@@ -256,7 +256,7 @@ function apply_background(id)
 		return
 	end
 	local bg = object(bg_id)
-	bg:set_image(id)
+	bg:gfx(id)
 end
 
 function reset_text_colors()

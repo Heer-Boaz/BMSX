@@ -28,7 +28,7 @@ function muziekfoe.configure(self, def)
 	self.max_health = 3
 	self.health = self.max_health
 	self.damage = 4
-	self:set_image('muziekfoe')
+	self:gfx('muziekfoe')
 end
 
 function muziekfoe.bt_tick(self, blackboard)

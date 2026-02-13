@@ -27,16 +27,16 @@ function cloud.configure(self, def)
 	self.health = self.max_health
 	self.damage = 2
 	self.cloud_anim_frame = 1
-	self:set_image('cloud_1')
+	self:gfx('cloud_1')
 end
 
 function cloud.bt_tick(self, blackboard)
 	local node = blackboard.nodedata
 	local room = service(constants.ids.castle_service_instance).current_room
 	if self.cloud_anim_frame == 2 then
-		self:set_image('cloud_2')
+		self:gfx('cloud_2')
 	else
-		self:set_image('cloud_1')
+		self:gfx('cloud_1')
 	end
 
 	local anim_ticks = node.cloud_anim_ticks

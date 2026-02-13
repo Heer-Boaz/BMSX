@@ -11,7 +11,7 @@ function vlokfoe.configure(self, def)
 	self.health = self.max_health
 	self.damage = 2
 	self.despawn_on_room_switch = true
-	self:set_image('vlok')
+	self:gfx('vlok')
 end
 
 function vlokfoe.bt_tick(self, _blackboard)

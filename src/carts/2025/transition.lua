@@ -38,7 +38,7 @@ function transition.register_states(states)
 		local function setup_overlay()
 			local overlay = object(transition_overlay_id)
 			overlay.visible = true
-			overlay:set_image('whitepixel')
+			overlay:gfx('whitepixel')
 			overlay.x = 0
 			overlay.y = 0
 			overlay.sprite_component.scale = { x = display_width(), y = display_height() }
@@ -123,7 +123,7 @@ function transition.register_states(states)
 		local function configure_panel(panel)
 			local sprite = object(panel.id)
 			sprite.visible = true
-			sprite:set_image('whitepixel')
+			sprite:gfx('whitepixel')
 			sprite.x = panel.x_in
 			sprite.y = panel.y
 			sprite.sprite_component.scale = { x = panel.width, y = panel.height }

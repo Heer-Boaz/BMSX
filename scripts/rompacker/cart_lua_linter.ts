@@ -38,6 +38,7 @@ type LuaLintIssueRule =
 	'builtin_recreation_pattern' |
 	'multi_has_tag_pattern' |
 	'single_use_has_tag_pattern' |
+	'imgid_assignment_pattern' |
 	'self_imgid_assignment_pattern' |
 	'imgid_fallback_pattern' |
 	'forbidden_transition_to_pattern' |
@@ -461,6 +462,75 @@ function isSelfImageIdAssignmentTarget(target: LuaExpression): boolean {
 		|| (target.index.kind === LuaSyntaxKind.IdentifierExpression && target.index.name === 'imgid');
 }
 
+function isImgIdIndex(index: LuaExpression): boolean {
+	return (index.kind === LuaSyntaxKind.StringLiteralExpression && index.value === 'imgid')
+		|| (index.kind === LuaSyntaxKind.IdentifierExpression && index.name === 'imgid');
+}
+
+function getRootIdentifier(expression: LuaExpression): string | undefined {
+	if (expression.kind === LuaSyntaxKind.IdentifierExpression) {
+		return expression.name;
+	}
+	if (expression.kind === LuaSyntaxKind.MemberExpression || expression.kind === LuaSyntaxKind.IndexExpression) {
+		return getRootIdentifier(expression.base);
+	}
+	return undefined;
+}
+
+function looksLikeSpriteLikeTarget(expression: LuaExpression): boolean {
+	const root = getRootIdentifier(expression);
+	if (!root) {
+		return false;
+	}
+	if (root === 'self') {
+		return true;
+	}
+	const loweredRoot = root.toLowerCase();
+	return loweredRoot.includes('sprite');
+}
+
+function isSpriteComponentImageIdAssignmentTarget(target: LuaExpression): boolean {
+	if (target.kind === LuaSyntaxKind.MemberExpression) {
+		if (target.identifier !== 'imgid') {
+			return false;
+		}
+		return looksLikeSpriteLikeTarget(target.base);
+	}
+	if (target.kind !== LuaSyntaxKind.IndexExpression) {
+		return false;
+	}
+	if (!isImgIdIndex(target.index)) {
+		return false;
+	}
+	return looksLikeSpriteLikeTarget(target.base);
+}
+
+function lintSpriteImgIdAssignmentPattern(target: LuaExpression, issues: LuaLintIssue[]): void {
+	if (!isSpriteComponentImageIdAssignmentTarget(target)) {
+		return;
+	}
+	let targetExpr = '';
+	let isSelfTarget = false;
+	if (target.kind === LuaSyntaxKind.MemberExpression) {
+		isSelfTarget = isSelfExpressionRoot(target.base);
+		targetExpr = `${isSelfTarget ? 'self' : getRootIdentifier(target.base)}`;
+	} else if (target.kind === LuaSyntaxKind.IndexExpression) {
+		const root = getRootIdentifier(target.base);
+		isSelfTarget = root === 'self';
+		targetExpr = isSelfTarget ? 'self' : root;
+	}
+	const replacementBase = targetExpr || 'sprite_component';
+	const message = isSelfTarget
+		? 'Direct imgid assignment on sprite component is forbidden. Use self.gfx(<img>) instead.'
+		: 'Direct imgid assignment on sprite component is forbidden. Use self.gfx(<img>) or <sprite_component>.gfx(<img>) instead.';
+	pushIssue(
+		issues,
+		'imgid_assignment_pattern',
+		target,
+		`${message.replace('<sprite_component>', replacementBase)}`,
+	);
+}
+
 function isSelfHasTagCall(expression: LuaExpression): boolean {
 	if (expression.kind !== LuaSyntaxKind.CallExpression) {
 		return false;
@@ -479,6 +549,9 @@ function isSelfHasTagCall(expression: LuaExpression): boolean {
 
 function lintSelfImgIdAssignmentPattern(target: LuaExpression, value: LuaExpression | undefined, issues: LuaLintIssue[]): void {
 	if (!isSelfImageIdAssignmentTarget(target) || !value) {
+		return;
+	}
+	if (isSpriteComponentImageIdAssignmentTarget(target)) {
 		return;
 	}
 	if (value.kind !== LuaSyntaxKind.StringLiteralExpression && value.kind !== LuaSyntaxKind.NilLiteralExpression) {
@@ -1688,6 +1761,7 @@ function lintStatements(statements: ReadonlyArray<LuaStatement>, issues: LuaLint
 				for (let index = 0; index < statement.left.length; index += 1) {
 					const left = statement.left[index];
 					const right = statement.right[index];
+					lintSpriteImgIdAssignmentPattern(left, issues);
 					lintSelfImgIdAssignmentPattern(left, right, issues);
 				}
 				for (const right of statement.right) {

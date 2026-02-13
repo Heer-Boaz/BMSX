@@ -415,7 +415,7 @@ function combat.define_fsm()
 		local bg = object(bg_id)
 		local bg_sprite = bg.sprite_component
 		bg.visible = false
-		bg:set_image(self.combat_results_prev_bg_imgid)
+		bg:gfx(self.combat_results_prev_bg_imgid)
 		bg_sprite.scale = { x = self.combat_results_prev_bg_scale_x, y = self.combat_results_prev_bg_scale_y }
 		bg.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
 		hide_combat_sprites()
@@ -538,7 +538,7 @@ function combat.define_fsm()
 			self.combat_max_points = #node.rounds
 
 			local monster = object(combat_monster_id)
-			monster:set_image(node.monster_imgid)
+			monster:gfx(node.monster_imgid)
 			monster.visible = false
 			monster.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
 			monster.z = 200
@@ -554,7 +554,7 @@ function combat.define_fsm()
 				self.combat_monster_start_scale = math.max(1, display_width() / monster.sx, display_height() / monster.sy)
 
 			local maya_a = object(combat_maya_a_id)
-			maya_a:set_image('maya_a')
+			maya_a:gfx('maya_a')
 			maya_a.visible = false
 			maya_a.x = 0
 			maya_a.y = display_height() - maya_a.sy
@@ -571,7 +571,7 @@ function combat.define_fsm()
 			all_out.z = 800
 
 			local maya_b = object(combat_maya_b_id)
-			maya_b:set_image('maya_b')
+			maya_b:gfx('maya_b')
 			maya_b.visible = true
 			maya_b.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
 			maya_b.x = display_width() - maya_b.sx
@@ -671,10 +671,10 @@ function combat.define_fsm()
 			local bg = object(bg_id)
 			bg.visible = false
 			local monster = object(combat_monster_id)
-			monster:set_image(node.monster_imgid)
+			monster:gfx(node.monster_imgid)
 			monster.visible = true
 			local maya_a = object(combat_maya_a_id)
-			maya_a:set_image('maya_a')
+			maya_a:gfx('maya_a')
 			maya_a.visible = true
 			object(combat_all_out_id).visible = false
 			object(combat_maya_b_id).visible = false
@@ -855,7 +855,7 @@ function combat.define_fsm()
 				monster.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
 				maya_a.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
 				overlay.visible = true
-				overlay:set_image('whitepixel')
+				overlay:gfx('whitepixel')
 				overlay.x = 0
 				overlay.y = 0
 					overlay.sprite_component.scale = { x = display_width(), y = display_height() }
@@ -946,7 +946,7 @@ function combat.define_fsm()
 				monster.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
 				maya_a.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
 				overlay.visible = true
-				overlay:set_image('whitepixel')
+				overlay:gfx('whitepixel')
 				overlay.x = 0
 				overlay.y = 0
 					overlay.sprite_component.scale = { x = display_width(), y = display_height() }
@@ -1028,7 +1028,7 @@ function combat.define_fsm()
 			self.choice_index = 1
 			object(text_choice_id).highlight_jitter_enabled = true
 			local portrait = object(combat_all_out_id)
-			portrait:set_image('maya_v_s')
+			portrait:gfx('maya_v_s')
 			portrait.visible = true
 			portrait.z = 750
 			portrait.sprite_component.scale = { x = 1, y = 1 }
@@ -1109,7 +1109,7 @@ function combat.define_fsm()
 			self:disable_combat_parallax() -- Disable parallax during "All Out" sequence.
 			clear_texts(text_ids_all)
 			local all_out = object(combat_all_out_id)
-			all_out:set_image('all_out')
+			all_out:gfx('all_out')
 			all_out.sprite_component.scale = { x = 1, y = 1 }
 			all_out.visible = true
 			all_out.x = 0
@@ -1253,14 +1253,14 @@ function combat.define_fsm()
 			self.combat_results_prev_bg_scale_x = bg_sprite.scale.x
 			self.combat_results_prev_bg_scale_y = bg_sprite.scale.y
 			bg.visible = true
-			bg:set_image('whitepixel')
+			bg:gfx('whitepixel')
 			bg.x = 0
 			bg.y = 0
 			bg_sprite.scale = { x = display_width(), y = display_height() }
 			bg.sprite_component.colorize = { r = combat_results_bg_r, g = combat_results_bg_g, b = combat_results_bg_b, a = 0 }
 
 			local maya_b = object(combat_maya_b_id)
-			maya_b:set_image('maya_b')
+			maya_b:gfx('maya_b')
 			maya_b.visible = true
 			self.combat_results_maya_target_x = display_width() - maya_b.sx
 			self.combat_results_maya_start_x = display_width()

@@ -11,7 +11,7 @@ function paperfoe.configure(self, def)
 	self.health = self.max_health
 	self.damage = 2
 	self.despawn_on_room_switch = true
-	self:set_image('boekfoe_paper')
+	self:gfx('boekfoe_paper')
 	self.sprite_component.flip.flip_h = self.speed_x_num < 0
 end
 

@@ -11,7 +11,7 @@ function marspeinenaardappel.configure(self, def)
 	self.max_health = 1
 	self.health = self.max_health
 	self.damage = 2
-	self:set_image('marspeinenaardappel')
+	self:gfx('marspeinenaardappel')
 end
 
 function marspeinenaardappel.bt_tick(self, _blackboard)

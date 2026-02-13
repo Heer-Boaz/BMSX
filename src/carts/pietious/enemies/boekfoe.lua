@@ -11,7 +11,7 @@ function boekfoe.configure(self, def)
 	self.health = self.max_health
 	self.damage = 4
 	self.boek_state = 'closed'
-	self:set_image('boekfoe_closed')
+	self:gfx('boekfoe_closed')
 	self.sprite_component.flip.flip_h = self.direction == 'left'
 end
 
@@ -30,7 +30,7 @@ function boekfoe.bt_tick(self, blackboard)
 			return behaviourtree.running
 		end
 		self.boek_state = 'open'
-		self:set_image('boekfoe_open')
+		self:gfx('boekfoe_open')
 		self.sprite_component.flip.flip_h = self.direction == 'left'
 		node.boek_state_ticks = constants.enemy.boek_wait_close_steps
 		node.boek_spawn_ticks = constants.enemy.boek_spawn_paper_steps
@@ -75,7 +75,7 @@ function boekfoe.bt_tick(self, blackboard)
 
 	if open_ticks <= 0 then
 		self.boek_state = 'closed'
-		self:set_image('boekfoe_closed')
+		self:gfx('boekfoe_closed')
 		self.sprite_component.flip.flip_h = self.direction == 'left'
 		node.boek_state_ticks = constants.enemy.boek_wait_open_steps
 		node.boek_spawn_ticks = nil

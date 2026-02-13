@@ -12,7 +12,7 @@ function staffspawn.configure(self, def)
 	self.damage = 2
 	self.dangerous = def.dangerous ~= false
 	self.despawn_on_room_switch = true
-	self:set_image('staffspawn')
+	self:gfx('staffspawn')
 	self.sprite_component.flip.flip_h = self.speed_x_num < 0
 end
 

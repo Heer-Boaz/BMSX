@@ -216,7 +216,7 @@ function player:ctor()
 		parent = self,
 		program = player_input_action_effect_program,
 	}))
-	self:set_image('pietolon_stand_r')
+	self:gfx('pietolon_stand_r')
 	self.sprite_component.offset = { x = 0, y = 0, z = 110 }
 	self.collider.id_local = constants.ids.player_body_collider_local
 	self.collider.generateoverlapevents = false
@@ -289,7 +289,7 @@ function player:apply_presentation_state()
 		end
 			self.visible = true
 			self.sword_sprite.enabled = false
-			self.sprite_component.imgid = imgid
+			self:gfx(imgid)
 		self.sprite_component.flip.flip_h = self.facing > 0
 		if transitioning_down then
 			self.sprite_component.offset.x = 1
@@ -379,7 +379,7 @@ function player:apply_presentation_state()
 		self.sprite_component.offset.x = 0
 	end
 
-	self.sprite_component.imgid = imgid
+	self:gfx(imgid)
 	self.sprite_component.flip.flip_h = flip_h
 	self.sword_sprite.enabled = self:has_tag(state_tags.group.sword)
 	self.sword_sprite.flip.flip_h = flip_h

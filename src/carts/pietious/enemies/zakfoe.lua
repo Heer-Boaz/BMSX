@@ -11,7 +11,7 @@ function zakfoe.configure(self, _def)
 	self.zak_state = 'prepare'
 	self.current_vertical_speed = 0
 	self.zak_ground_y = self.y
-	self:set_image('zakfoe_stand')
+	self:gfx('zakfoe_stand')
 	self.sprite_component.flip.flip_h = self.direction == 'left'
 end
 
@@ -33,7 +33,7 @@ function zakfoe.bt_tick(self, blackboard)
 		self.zak_ground_y = self.y
 		self.zak_state = 'jump'
 		node.zak_jump_ticks = constants.enemy.zak_jump_steps
-		self:set_image('zakfoe_jump')
+		self:gfx('zakfoe_jump')
 		self.sprite_component.flip.flip_h = self.direction == 'left'
 		return behaviourtree.running
 	end
@@ -73,7 +73,7 @@ function zakfoe.bt_tick(self, blackboard)
 		node.zak_jump_ticks = nil
 		self.y = self.zak_ground_y
 		self.zak_state = 'recovery'
-		self:set_image('zakfoe_recover')
+		self:gfx('zakfoe_recover')
 		self.sprite_component.flip.flip_h = self.direction == 'left'
 		node.zak_recovery_ticks = constants.enemy.zak_recovery_steps
 		return behaviourtree.running
@@ -90,7 +90,7 @@ function zakfoe.bt_tick(self, blackboard)
 	end
 	node.zak_recovery_ticks = nil
 	self.zak_state = 'prepare'
-	self:set_image('zakfoe_stand')
+	self:gfx('zakfoe_stand')
 	self.sprite_component.flip.flip_h = self.direction == 'left'
 	node.zak_prepare_ticks = constants.enemy.zak_prepare_jump_steps
 	return behaviourtree.running

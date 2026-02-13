@@ -86,7 +86,7 @@ local function define_rock_fsm()
 					})
 					self.body_collider:apply_collision_profile('enemy')
 					self:add_component(self.body_collider)
-					self.sprite_component.imgid = 'stone'
+					self:gfx('stone')
 					self.sprite_component.offset = { x = 0, y = 0, z = 113 }
 					self.visible = false
 					self:bind_events()
@@ -99,7 +99,7 @@ local function define_rock_fsm()
 					['reset'] = '/idle',
 				},
 				entering_state = function(self)
-					self.sprite_component.imgid = 'stone'
+					self:gfx('stone')
 					self.body_collider.enabled = true
 					self.visible = true
 				end,
@@ -111,7 +111,7 @@ local function define_rock_fsm()
 					entering_state = function(self)
 						self.break_steps = 0
 						self:begin_break()
-						self.sprite_component.imgid = 'stone_broken'
+						self:gfx('stone_broken')
 						self.body_collider.enabled = false
 						self.visible = true
 					end,

@@ -22,7 +22,7 @@ function nootfoe.configure(self, def)
 	self.damage = 2
 	self.despawn_on_room_switch = true
 	self.noot_color = noot_colors[math.random(1, #noot_colors)]
-	self:set_image('muzieknootfoe')
+	self:gfx('muzieknootfoe')
 	self.sprite_component.colorize = self.noot_color
 end
 

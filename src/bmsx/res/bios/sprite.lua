@@ -78,7 +78,7 @@ function spriteobject.new(opts)
 	return self
 end
 
-function spriteobject:set_image(id, meta)
+function spriteobject:gfx(id, meta)
 	self.imgid = id
 	self.sprite_component.imgid = id
 	if id == "none" then
@@ -117,11 +117,11 @@ end
 
 function spriteobject:apply_animation_frame(frame)
 	if type(frame) == "string" then
-		self:set_image(frame)
+		self:gfx(frame)
 		return
 	end
 	if frame.imgid then
-		self:set_image(frame.imgid, frame.meta)
+		self:gfx(frame.imgid, frame.meta)
 	end
 	local sc = self.sprite_component
 	if frame.scale ~= nil then

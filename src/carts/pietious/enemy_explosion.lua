@@ -57,7 +57,7 @@ function enemy_explosion:bind_events()
 end
 
 function enemy_explosion:sync_explosion_sprite(imgid)
-	self.sprite_component.imgid = imgid
+	self:gfx(imgid)
 	self.visible = true
 end
 
@@ -84,7 +84,7 @@ local function define_enemy_explosion_fsm()
 		states = {
 			boot = {
 				entering_state = function(self)
-					self.sprite_component.imgid = explosion_frames[1]
+					self:gfx(explosion_frames[1])
 					self.sprite_component.offset = { x = 0, y = 0, z = 114 }
 						self:define_timeline(timeline.new({
 							id = constants.ids.enemy_explosion_def .. '.timeline.explosion',
