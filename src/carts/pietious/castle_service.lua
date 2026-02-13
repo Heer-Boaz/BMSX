@@ -141,7 +141,6 @@ function castle_service:leave_world_to_castle()
 	local world_number = self.current_room.world_number
 
 	local transition = castle_map.world_transition_from_world_number(world_number)
-
 	local from_room_number = self.current_room_number
 
 	self.current_room = room_module.create_room(transition.castle_room_number)
@@ -157,15 +156,15 @@ function castle_service:leave_world_to_castle()
 	}
 	self:sync_world_entrance_states_for_room(self.current_room)
 
-	return {
-		from_room_number = from_room_number,
-		to_room_number = self.current_room_number,
-		direction = 'right',
-		transition_kind = 'castle_banner',
-		spawn_x = transition.castle_spawn_x,
-		spawn_y = transition.castle_spawn_y,
-		spawn_facing = transition.castle_spawn_facing,
-	}
+		return {
+			from_room_number = from_room_number,
+			to_room_number = self.current_room_number,
+			direction = 'right',
+			transition_kind = 'castle_banner',
+			spawn_x = transition.castle_spawn_x,
+			spawn_y = transition.castle_spawn_y,
+			spawn_facing = transition.castle_spawn_facing,
+		}
 end
 
 local function register_castle_service_definition()

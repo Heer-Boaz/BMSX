@@ -143,8 +143,8 @@ function enemy_service:enter_current_room()
 end
 
 function enemy_service:on_enemy_defeated(event)
-	self.destroyed_enemy_ids[event.enemy_id] = true
-	self.enemies_by_id[event.enemy_id] = nil
+	self.destroyed_enemy_ids[event.emitter] = true
+	self.enemies_by_id[event.emitter] = nil
 	if event.kind == 'cloud' then
 		self:emit_room_condition_set(event.room_number, 'cloud_1_destroyed')
 	end

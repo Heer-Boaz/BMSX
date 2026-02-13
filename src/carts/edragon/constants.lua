@@ -55,6 +55,10 @@ constants.state = {
 	knockback_d = 0x1D, -- con_state_1D
 	knockback_e = 0x1E, -- con_state_thrown_by_hair_throw
 	uppercut_air = 0x1F, -- con_state_1F
+	high_jump_kick_knockdown = 0x20, -- con_state_20
+	sudden_uppercut_knockdown = 0x21, -- con_state_21
+	cyclone_kick_knockdown = 0x22, -- con_state_22
+	fall_from_gear = 0x23, -- con_state_23
 	sudden_uppercut = 0x3B, -- con_state_uppercut_sudden
 
 	-- DD2 attacks
@@ -131,6 +135,11 @@ constants.state_timings = {
 	knockback_c = 10,
 	knockback_d = 10,
 	knockback_e = 10,
+	uppercut_air = 4,
+	high_jump_kick_knockdown = 4,
+	sudden_uppercut_knockdown = 8,
+	cyclone_kick_knockdown = 4,
+	fall_from_gear = 20,
 	punch_normal = 10,
 	ninja_knife = 10,
 	uppercut_normal = 12,
@@ -209,6 +218,11 @@ constants.hit_state_chain = {
 	[constants.state.knockback_c] = constants.state.knockback_d,
 	[constants.state.knockback_d] = constants.state.knockback_e,
 	[constants.state.knockback_e] = constants.state.lie_on_ground,
+	[constants.state.uppercut_air] = constants.state.lie_on_ground,
+	[constants.state.high_jump_kick_knockdown] = constants.state.lie_on_ground,
+	[constants.state.sudden_uppercut_knockdown] = constants.state.lie_on_ground,
+	[constants.state.cyclone_kick_knockdown] = constants.state.lie_on_ground,
+	[constants.state.fall_from_gear] = constants.state.lie_on_ground,
 }
 
 constants.palette = {

@@ -279,12 +279,13 @@ function fighter:resolve_hit_state_for(instigator)
 		return state.death_normal
 	end
 
+	if self.state >= state.knockback_a and self.state <= state.fall_from_gear then
+		return hit_state_chain[self.state] or (self.grounded and state.lie_on_ground or state.fall_from_gear)
+	end
+
 	if self.grounded == false then
 		if self.state >= state.hit_light and self.state <= state.hit_very_heavy then
 			return state.knockback_a
-		end
-		if self.state >= state.knockback_a and self.state <= state.knockback_e then
-			return state.knockback_b
 		end
 		return state.knockback_a
 	end
@@ -415,6 +416,10 @@ function fighter:handle_hit_chain_state()
 	end
 	local next_state = hit_state_chain[self.state]
 	if next_state then
+		if next_state == state.lie_on_ground and self.grounded == false then
+			self:set_state(state.fall_from_gear)
+			return
+		end
 		self:set_state(next_state)
 		return
 	end
@@ -552,6 +557,21 @@ end
 state_handlers[state.knockback_e] = function(self)
 	self:handle_hit_chain_state()
 end
+state_handlers[state.uppercut_air] = function(self)
+	self:handle_hit_chain_state()
+end
+state_handlers[state.high_jump_kick_knockdown] = function(self)
+	self:handle_hit_chain_state()
+end
+state_handlers[state.sudden_uppercut_knockdown] = function(self)
+	self:handle_hit_chain_state()
+end
+state_handlers[state.cyclone_kick_knockdown] = function(self)
+	self:handle_hit_chain_state()
+end
+state_handlers[state.fall_from_gear] = function(self)
+	self:handle_hit_chain_state()
+end
 state_handlers[state.lie_on_ground] = function(self)
 	if self.state_timer <= 0 then
 		self:set_state(self:get_ground_return_state())
@@ -615,7 +635,7 @@ function fighter:draw_fighter()
 	end
 
 	local color = self.role == role_player and constants.palette.player or constants.palette.enemy
-	if self.state == state.hit_light or self.state == state.hit_mid or self.state == state.hit_heavy or self.state == state.hit_very_heavy or self.state == state.collapsed or self.state == state.knockback_a or self.state == state.knockback_b or self.state == state.knockback_c or self.state == state.knockback_d then
+	if self.state == state.hit_light or self.state == state.hit_mid or self.state == state.hit_heavy or self.state == state.hit_very_heavy or self.state == state.collapsed or self.state == state.knockback_a or self.state == state.knockback_b or self.state == state.knockback_c or self.state == state.knockback_d or self.state == state.knockback_e or self.state == state.uppercut_air or self.state == state.high_jump_kick_knockdown or self.state == state.sudden_uppercut_knockdown or self.state == state.cyclone_kick_knockdown or self.state == state.fall_from_gear then
 		color = constants.palette.hurt
 	end
 

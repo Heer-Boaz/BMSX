@@ -297,12 +297,11 @@ function crossfoe:take_weapon_hit(weapon_kind, hit_id)
 		self.health = 0
 		self.dangerous = false
 		self:spawn_death_effect()
-		eventemitter.eventemitter.instance:emit(constants.events.enemy_defeated, self.id, {
-			room_number = service(constants.ids.castle_service_instance).current_room.room_number,
-			enemy_id = self.id,
-			kind = 'crossfoe',
-			trigger = self.trigger,
-		})
+			eventemitter.eventemitter.instance:emit(constants.events.enemy_defeated, self.id, {
+				room_number = service(constants.ids.castle_service_instance).current_room.room_number,
+				kind = 'crossfoe',
+				trigger = self.trigger,
+			})
 		self:mark_for_disposal()
 	end
 	return true

@@ -227,28 +227,24 @@ function player:ctor()
 end
 
 function player:get_damage_state_imgid()
-	local damage_imgid
 	if self:has_tag(state_tags.group.damage_visual) then
 		if self:has_tag(state_tags.variant.dying) then
 			local dying_timeline = self:get_timeline('p.tl.d')
 			dying_timeline:force_seek(self.death_timer)
-			damage_imgid = dying_timeline:value().imgid
-			return damage_imgid
+			return dying_timeline:value().imgid
 		end
 
 		if self:has_tag(state_tags.variant.hit_recovery) then
 			local hit_recovery_timeline = self:get_timeline('p.tl.hr')
 			hit_recovery_timeline:force_seek(self.hit_recovery_timer)
-			damage_imgid = hit_recovery_timeline:value().imgid
-			return damage_imgid
+			return hit_recovery_timeline:value().imgid
 		end
 
 		local hit_fall_timeline = self:get_timeline('p.tl.hf')
 		hit_fall_timeline:force_seek(self.hit_substate)
-		damage_imgid = hit_fall_timeline:value().imgid
-		return damage_imgid
+		return hit_fall_timeline:value().imgid
 	end
-	return damage_imgid
+	return nil
 end
 
 function player:apply_presentation_state()
@@ -300,13 +296,13 @@ function player:apply_presentation_state()
 	end
 	self.visible = true
 
-	local damage_imgid = self:get_damage_state_imgid()
+	local damage_sprite_id = self:get_damage_state_imgid()
 
 		local imgid = 'pietolon_stand_r'
 		local flip_h = self.facing < 0
 
 	if self:has_tag(state_tags.group.damage_visual) then
-		imgid = damage_imgid
+			imgid = damage_sprite_id
 	elseif self:has_tag(state_tags.variant.up_stairs) then
 		if self.stairs_anim_frame == 0 then
 			imgid = 'pietolon_stairs_up_1'
@@ -2793,12 +2789,8 @@ local function define_player_fsm()
 	})
 end
 
-local function define_player_effects()
-	player_action_effects_module.define_player_effects(state_tags)
-end
-
 local function register_player_definition()
-	define_player_effects()
+	player_action_effects_module.define_player_effects(state_tags)
 	define_prefab({
 		def_id = constants.ids.player_def,
 		class = player,
