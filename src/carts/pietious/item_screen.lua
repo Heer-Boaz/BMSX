@@ -119,13 +119,13 @@ function item_screen:draw_map()
 
 	for i = 1, #map_proxies do
 		local proxy = map_proxies[i]
-		local sprite_id = 'room_proxy'
-		if self.map_highlight then
-			if proxy.room_number == room.room_number then
-				sprite_id = 'room_proxy_red'
-			elseif proxy.is_boss_room and player:has_inventory_item('lamp') then
-				sprite_id = 'room_proxy_blue'
-			end
+		local sprite_id
+		if self.map_highlight and proxy.room_number == room.room_number then
+			sprite_id = 'room_proxy_red'
+		elseif self.map_highlight and proxy.is_boss_room and player:has_inventory_item('lamp') then
+			sprite_id = 'room_proxy_blue'
+		else
+			sprite_id = 'room_proxy'
 		end
 		local proxy_x = (5 * constants.room.tile_size) + (proxy.x * constants.room.tile_size)
 		local proxy_y = constants.room.hud_height + (14 * constants.room.tile_size) + constants.room.tile_half + (proxy.y * constants.room.tile_half)

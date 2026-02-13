@@ -70,10 +70,7 @@ local function condition_matches(condition, player, room_flags)
 	end
 
 	local inverted = condition:sub(1, 1) == '!'
-	local token = condition
-	if inverted then
-		token = condition:sub(2)
-	end
+	local token = inverted and condition:sub(2) or condition
 
 	if token:sub(1, 4) == 'has_' then
 		local has_item = player:has_inventory_item(token:sub(5))

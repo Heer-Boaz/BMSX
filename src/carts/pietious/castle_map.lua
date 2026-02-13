@@ -104,16 +104,20 @@ local function build_links(exits)
 end
 
 local function build_edge_gate(map_rows, border_x)
-	local first_open_row = -1
-	local last_open_row = -1
+	local first_open_row
+	local last_open_row
 	for y = 1, #map_rows do
 		local ch = map_rows[y]:sub(border_x, border_x)
 		if ch ~= '#' then
-			if first_open_row < 0 then
+			if first_open_row == nil then
 				first_open_row = y
 			end
 			last_open_row = y
 		end
+	end
+	if first_open_row == nil then
+		first_open_row = 1
+		last_open_row = 1
 	end
 	return {
 		y_min = constants.room.tile_origin_y + ((first_open_row - 1) * constants.room.tile_size),
@@ -354,7 +358,7 @@ local function load_room_templates()
 	for i = 1, #room_numbers do
 		local room_number = room_numbers[i]
 		local room_def = data[tostring(room_number)]
-		local world_number = 0
+		local world_number
 		if room_def.type == constants.spaces.world then
 			world_number = room_def.worldnumber
 		end
@@ -364,7 +368,7 @@ local function load_room_templates()
 		templates[room_number] = {
 			room_number = room_number,
 			space_id = room_def.type,
-			world_number = world_number,
+			world_number = world_number or 0,
 			room_subtype = room_def.subtype,
 			map_rows = map_rows,
 			spawn = build_spawn(map_rows),

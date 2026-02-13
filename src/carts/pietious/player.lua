@@ -43,6 +43,10 @@ local state_tags = {
 		damage_lock = 'g.dl',
 		elevator_transport = 'g.et',
 		transition_lock = 'g.tr',
+		damage_visual = 'g.dv',
+		movement_walk = 'g.mw',
+		movement_jump = 'g.mj',
+		hit_blink = 'g.hb',
 	},
 	ability = {
 		spyglass = 'a.spy',
@@ -187,7 +191,6 @@ function player:reset_runtime()
 	self.enter_leave_shrine_text_lines = {}
 	self.pepernoot_projectile_sequence = 0
 	self.pepernoot_projectile_ids = {}
-	self.presentation_signature = ''
 end
 
 function player:ctor()
@@ -224,83 +227,39 @@ function player:ctor()
 end
 
 function player:update_damage_state_imgid()
-	if self:has_tag(state_tags.variant.dying) then
-		local dying_timeline = self:get_timeline('p.tl.d')
-		dying_timeline:force_seek(self.death_timer)
-		self.player_damage_imgid = dying_timeline:value().player_damage_imgid
-		return
-	end
-	if self:has_tag(state_tags.variant.hit_fall) or self:has_tag(state_tags.variant.hit_collision) then
+	if self:has_tag(state_tags.group.damage_visual) then
+		if self:has_tag(state_tags.variant.dying) then
+			local dying_timeline = self:get_timeline('p.tl.d')
+			dying_timeline:force_seek(self.death_timer)
+			self.player_damage_imgid = dying_timeline:value().player_damage_imgid
+			return
+		end
+
+		if self:has_tag(state_tags.variant.hit_recovery) then
+			local hit_recovery_timeline = self:get_timeline('p.tl.hr')
+			hit_recovery_timeline:force_seek(self.hit_recovery_timer)
+			self.player_damage_imgid = hit_recovery_timeline:value().player_damage_imgid
+			return
+		end
+
 		local hit_fall_timeline = self:get_timeline('p.tl.hf')
 		hit_fall_timeline:force_seek(self.hit_substate)
 		self.player_damage_imgid = hit_fall_timeline:value().player_damage_imgid
 		return
 	end
-	if self:has_tag(state_tags.variant.hit_recovery) then
-		local hit_recovery_timeline = self:get_timeline('p.tl.hr')
-		hit_recovery_timeline:force_seek(self.hit_recovery_timer)
-		self.player_damage_imgid = hit_recovery_timeline:value().player_damage_imgid
-		return
-	end
 	self.player_damage_imgid = ''
-end
-
-local function bit_for(value)
-	if value then
-		return '1'
-	end
-	return '0'
-end
-
-local function build_presentation_signature(self)
-	return table.concat({
-		self.player_damage_imgid,
-		tostring(self.facing),
-		tostring(self.walk_frame),
-		tostring(self.stairs_anim_frame),
-		tostring(self.enter_leave_anim_frame),
-		tostring(self.enter_leave_size),
-		tostring(self.hit_invulnerability_timer),
-		bit_for(self.hit_blink_on),
-		bit_for(self:has_tag(state_tags.variant.waiting_world_banner)),
-		bit_for(self:has_tag(state_tags.variant.waiting_world_emerge)),
-		bit_for(self:has_tag(state_tags.variant.waiting_shrine)),
-		bit_for(self:has_tag(state_tags.variant.entering_world)),
-		bit_for(self:has_tag(state_tags.variant.emerging_world)),
-		bit_for(self:has_tag(state_tags.variant.entering_shrine)),
-		bit_for(self:has_tag(state_tags.variant.leaving_shrine)),
-		bit_for(self:has_tag(state_tags.variant.dying)),
-		bit_for(self:has_tag(state_tags.variant.hit_fall)),
-		bit_for(self:has_tag(state_tags.variant.hit_collision)),
-		bit_for(self:has_tag(state_tags.variant.hit_recovery)),
-		bit_for(self:has_tag(state_tags.variant.up_stairs)),
-		bit_for(self:has_tag(state_tags.variant.down_stairs)),
-		bit_for(self:has_tag(state_tags.variant.walking_right)),
-		bit_for(self:has_tag(state_tags.variant.walking_left)),
-		bit_for(self:has_tag(state_tags.variant.jumping)),
-		bit_for(self:has_tag(state_tags.variant.stopped_jumping)),
-		bit_for(self:has_tag(state_tags.variant.controlled_fall)),
-		bit_for(self:has_tag(state_tags.variant.uncontrolled_fall)),
-		bit_for(self:has_tag(state_tags.visual.jump_sword)),
-		bit_for(self:has_tag(state_tags.visual.ground_sword)),
-		bit_for(self:has_tag(state_tags.visual.stairs_sword)),
-	}, '|')
 end
 
 function player:apply_presentation_state()
 	local body_sprite = self.sprite_component
 	local sword_sprite = self.sword_sprite
-	local body_collider = self.collider
-	local sword_collider = self.sword_collider
 
 	local transition_hidden = self:has_tag(state_tags.variant.waiting_world_banner)
 		or self:has_tag(state_tags.variant.waiting_world_emerge)
 		or self:has_tag(state_tags.variant.waiting_shrine)
 	if transition_hidden then
 		body_sprite.enabled = false
-		body_collider.enabled = false
 		sword_sprite.enabled = false
-		sword_collider.enabled = false
 		return
 	end
 
@@ -309,7 +268,7 @@ function player:apply_presentation_state()
 		or self:has_tag(state_tags.variant.entering_shrine)
 		or self:has_tag(state_tags.variant.leaving_shrine)
 	if transition_anim then
-		local imgid = 'pietolon_stairs_up_1'
+		local imgid
 		if self:has_tag(state_tags.variant.emerging_world) or self:has_tag(state_tags.variant.leaving_shrine) then
 			if self.enter_leave_anim_frame == 0 then
 				imgid = 'pietolon_stairs_down_1'
@@ -323,57 +282,34 @@ function player:apply_presentation_state()
 				imgid = 'pietolon_stairs_up_2'
 			end
 		end
-
-		local visible_height = self.enter_leave_size
-		if visible_height < 0 then
-			visible_height = 0
-		elseif visible_height > self.height then
-			visible_height = self.height
-		end
+		imgid = imgid or 'pietolon_stairs_up_1'
 
 		body_sprite.enabled = true
-		body_collider.enabled = false
 		sword_sprite.enabled = false
-		sword_collider.enabled = false
 		body_sprite.imgid = imgid
-		body_sprite.flip.flip_h = not transition_anim
-		body_sprite.scale.x = 1
-		body_sprite.scale.y = visible_height / self.height
+		body_sprite.flip.flip_h = self.facing > 0
 		if self:has_tag(state_tags.variant.emerging_world) or self:has_tag(state_tags.variant.leaving_shrine) then
 			body_sprite.offset.x = 1
 		else
 			body_sprite.offset.x = -1
 		end
-		body_sprite.offset.y = self.height - visible_height
+		body_sprite.offset.y = 0
 		body_sprite.offset.z = 110
 		return
 	end
 	if self.hit_invulnerability_timer > 0 and self.hit_blink_on and not self:has_tag(state_tags.variant.dying) then
 		body_sprite.enabled = false
 		sword_sprite.enabled = false
-		sword_collider.enabled = false
 		return
 	end
 	body_sprite.enabled = true
-	body_collider.enabled = true
-	body_sprite.scale.x = 1
-	body_sprite.scale.y = 1
 
 	self:update_damage_state_imgid()
 
-	local imgid = 'pietolon_stand_r'
-	local sword_imgid = nil
-	local body_offset_x_right = 0
-	local body_offset_x_left = 0
-	local sword_offset_x_right = 0
-	local sword_offset_x_left = 0
-	local sword_offset_y = 0
+	local imgid
+	local flip_h = self.facing < 0
 
-	if self:has_tag(state_tags.variant.dying)
-		or self:has_tag(state_tags.variant.hit_fall)
-		or self:has_tag(state_tags.variant.hit_collision)
-		or self:has_tag(state_tags.variant.hit_recovery)
-	then
+	if self:has_tag(state_tags.group.damage_visual) then
 		imgid = self.player_damage_imgid
 	elseif self:has_tag(state_tags.variant.up_stairs) then
 		if self.stairs_anim_frame == 0 then
@@ -387,16 +323,13 @@ function player:apply_presentation_state()
 		else
 			imgid = 'pietolon_stairs_down_2'
 		end
-	elseif self:has_tag(state_tags.variant.walking_right) or self:has_tag(state_tags.variant.walking_left) then
+	elseif self:has_tag(state_tags.group.movement_walk) then
 		if self.walk_frame == 0 then
 			imgid = 'pietolon_stand_r'
 		else
 			imgid = 'pietolon_walk_r'
 		end
-	elseif self:has_tag(state_tags.variant.jumping)
-		or self:has_tag(state_tags.variant.stopped_jumping)
-		or self:has_tag(state_tags.variant.controlled_fall)
-	then
+	elseif self:has_tag(state_tags.group.movement_jump) then
 		imgid = 'pietolon_jump_r'
 	elseif self:has_tag(state_tags.variant.uncontrolled_fall) then
 		if self.walk_frame == 0 then
@@ -405,84 +338,61 @@ function player:apply_presentation_state()
 			imgid = 'pietolon_walk_r'
 		end
 	end
+	if imgid == nil then
+		imgid = 'pietolon_stand_r'
+	end
 
 	if self:has_tag(state_tags.visual.jump_sword) then
 		imgid = 'pietolon_jumpslash_r'
-		sword_imgid = 'sword_r'
-		body_offset_x_right = constants.sword.jump_body_offset_right
-		body_offset_x_left = constants.sword.jump_body_offset_left
-		sword_offset_x_right = constants.sword.jump_offset_right
-		sword_offset_x_left = constants.sword.jump_offset_left
-		sword_offset_y = constants.sword.jump_offset_y
+		if flip_h then
+			body_sprite.offset.x = constants.sword.jump_body_offset_left
+			sword_sprite.offset.x = constants.sword.jump_offset_left
+		else
+			body_sprite.offset.x = constants.sword.jump_body_offset_right
+			sword_sprite.offset.x = constants.sword.jump_offset_right
+		end
+		sword_sprite.offset.y = constants.sword.jump_offset_y
 	elseif self:has_tag(state_tags.visual.ground_sword) then
 		imgid = 'pietolon_slash_r'
-		sword_imgid = 'sword_r'
-		body_offset_x_right = constants.sword.ground_body_offset_right
-		body_offset_x_left = constants.sword.ground_body_offset_left
-		sword_offset_x_right = constants.sword.ground_offset_right
-		sword_offset_x_left = constants.sword.ground_offset_left
-		sword_offset_y = constants.sword.ground_offset_y
+		if flip_h then
+			body_sprite.offset.x = constants.sword.ground_body_offset_left
+			sword_sprite.offset.x = constants.sword.ground_offset_left
+		else
+			body_sprite.offset.x = constants.sword.ground_body_offset_right
+			sword_sprite.offset.x = constants.sword.ground_offset_right
+		end
+		sword_sprite.offset.y = constants.sword.ground_offset_y
 	elseif self:has_tag(state_tags.visual.stairs_sword) then
 		imgid = 'pietolon_slash_r'
-		sword_imgid = 'sword_r'
-		body_offset_x_right = constants.sword.stairs_body_offset_right
-		body_offset_x_left = constants.sword.stairs_body_offset_left
-		sword_offset_x_right = constants.sword.stairs_offset_right
-		sword_offset_x_left = constants.sword.stairs_offset_left
-		sword_offset_y = constants.sword.stairs_offset_y
-	end
-
-	local flip_h = self.facing < 0
-	if (self:has_tag(state_tags.variant.up_stairs) or self:has_tag(state_tags.variant.down_stairs)) and sword_imgid == nil then
+		if flip_h then
+			body_sprite.offset.x = constants.sword.stairs_body_offset_left
+			sword_sprite.offset.x = constants.sword.stairs_offset_left
+		else
+			body_sprite.offset.x = constants.sword.stairs_body_offset_right
+			sword_sprite.offset.x = constants.sword.stairs_offset_right
+		end
+		sword_sprite.offset.y = constants.sword.stairs_offset_y
+	elseif self:has_tag(state_tags.variant.up_stairs) or self:has_tag(state_tags.variant.down_stairs) then
 		flip_h = false
+		body_sprite.offset.x = 0
+	else
+		body_sprite.offset.x = 0
 	end
 
-	if not flip_h then
-		body_sprite.imgid = imgid
-		body_sprite.flip.flip_h = flip_h
-		body_sprite.offset.x = body_offset_x_right
-		body_sprite.offset.y = 0
-		body_sprite.offset.z = 110
-		if sword_imgid ~= nil then
-			sword_sprite.enabled = true
-			sword_sprite.imgid = sword_imgid
-			sword_sprite.flip.flip_h = flip_h
-			sword_sprite.offset.x = sword_offset_x_right
-			sword_sprite.offset.y = sword_offset_y
-			sword_sprite.offset.z = 111
-			sword_collider.enabled = true
-		else
-			sword_sprite.enabled = false
-			sword_collider.enabled = false
-		end
-	else
-		body_sprite.imgid = imgid
-		body_sprite.flip.flip_h = true
-		body_sprite.offset.x = body_offset_x_left
-		body_sprite.offset.y = 0
-		body_sprite.offset.z = 110
-		if sword_imgid ~= nil then
-			sword_sprite.enabled = true
-			sword_sprite.imgid = sword_imgid
-			sword_sprite.flip.flip_h = true
-			sword_sprite.offset.x = sword_offset_x_left
-			sword_sprite.offset.y = sword_offset_y
-			sword_sprite.offset.z = 111
-			sword_collider.enabled = true
-		else
-			sword_sprite.enabled = false
-			sword_collider.enabled = false
-		end
-	end
+	body_sprite.imgid = imgid
+	body_sprite.flip.flip_h = flip_h
+	sword_sprite.enabled = self:has_tag(state_tags.group.sword)
+	sword_sprite.flip.flip_h = flip_h
 end
 
-function player:refresh_presentation_if_changed()
-	local next_signature = build_presentation_signature(self)
-	if self.presentation_signature == next_signature then
-		return
-	end
-	self.presentation_signature = next_signature
-	self:apply_presentation_state()
+function player:update_collision_state()
+	local in_world_transition = self:has_tag(state_tags.group.transition_lock)
+	local is_hit_blink_hidden = self.hit_invulnerability_timer > 0
+		and self.hit_blink_on
+		and not self:has_tag(state_tags.group.hit_blink)
+
+	self.collider.enabled = not (in_world_transition or is_hit_blink_hidden)
+	self.sword_collider.enabled = self:has_tag(state_tags.group.sword) and not in_world_transition
 end
 
 function player:respawn()
@@ -535,22 +445,26 @@ function player:try_start_sword_state()
 		return
 	end
 
-	local event_name = nil
+	local event_name
 	if self:has_tag(state_tags.variant.quiet) then
 		event_name = 'sword_start_quiet'
 		self.sword_ground_origin = 'quiet'
-	elseif self:has_tag(state_tags.variant.walking_right) then
-		event_name = 'sword_start_walking_right'
-		self.sword_ground_origin = 'walking_right'
-	elseif self:has_tag(state_tags.variant.walking_left) then
-		event_name = 'sword_start_walking_left'
-		self.sword_ground_origin = 'walking_left'
-	elseif self:has_tag(state_tags.variant.jumping) then
-		event_name = 'sword_start_jumping'
-	elseif self:has_tag(state_tags.variant.stopped_jumping) then
-		event_name = 'sword_start_stopped_jumping'
-	elseif self:has_tag(state_tags.variant.controlled_fall) then
-		event_name = 'sword_start_controlled_fall'
+	elseif self:has_tag(state_tags.group.movement_walk) then
+		if self:has_tag(state_tags.variant.walking_left) then
+			self.sword_ground_origin = 'walking_left'
+			event_name = 'sword_start_walking_left'
+		else
+			self.sword_ground_origin = 'walking_right'
+			event_name = 'sword_start_walking_right'
+		end
+	elseif self:has_tag(state_tags.group.movement_jump) then
+		if self:has_tag(state_tags.variant.stopped_jumping) then
+			event_name = 'sword_start_stopped_jumping'
+		elseif self:has_tag(state_tags.variant.controlled_fall) then
+			event_name = 'sword_start_controlled_fall'
+		else
+			event_name = 'sword_start_jumping'
+		end
 	elseif self:has_tag(state_tags.variant.uncontrolled_fall) then
 		event_name = 'sword_start_uncontrolled_fall'
 	elseif self:has_tag(state_tags.variant.quiet_stairs) then
@@ -664,12 +578,15 @@ function player:take_hit(amount, source_x, source_y, reason)
 		self.health = 0
 	end
 
-	local hit_direction = self:get_hit_direction_from_source(source_x)
-	local damage_event = 'damage'
 	local hit_on_stairs = self:has_tag(state_tags.group.stairs)
+	local hit_direction
+	local damage_event
 	if hit_on_stairs then
 		hit_direction = 0
 		damage_event = 'damage_on_stairs'
+	else
+		hit_direction = self:get_hit_direction_from_source(source_x)
+		damage_event = 'damage'
 	end
 
 	self:get_timeline('p.seq.s'):force_seek(0)
@@ -991,9 +908,8 @@ end
 function player:can_switch_up_from_state()
 	return self:has_tag(state_tags.variant.up_stairs)
 		or self:has_tag(state_tags.variant.quiet)
-		or self:has_tag(state_tags.variant.walking_left)
-		or self:has_tag(state_tags.variant.walking_right)
-		or (self:has_tag(state_tags.variant.jumping) and self.jumping_from_elevator)
+		or self:has_tag(state_tags.group.movement_walk)
+		or (self:has_tag(state_tags.group.movement_jump) and self.jumping_from_elevator)
 end
 
 function player:nearing_room_exit()
@@ -1073,7 +989,7 @@ function player:pick_entry_stairs(direction)
 	for i = 1, #stairs do
 		local stair = stairs[i]
 		if self.x >= (stair.x - 4) and self.x <= (stair.x + 8) then
-			local y_ok = false
+			local y_ok
 			if direction < 0 then
 				local min_y = stair.top_y + constants.room.tile_size2
 				y_ok = self.y >= min_y and self.y <= stair.bottom_y
@@ -1148,8 +1064,8 @@ function player:try_step_off_stairs()
 		return false
 	end
 
-	local dir = 0
-	local event_name = nil
+	local dir
+	local event_name
 	if self.left_held and not self.right_held then
 		dir = -1
 		event_name = 'stairs_step_off_left'
@@ -1165,25 +1081,32 @@ function player:try_step_off_stairs()
 	local ty = math.modf((self.y - room.tile_origin_y) / constants.room.tile_size)
 	local dty = (self.y - room.tile_origin_y) - (ty * constants.room.tile_size)
 
-	local wall_tx = tx
+	local wall_tx
 	local wall_ty = ty + 4
-	local probe_dx = -constants.room.tile_unit8
-	local step_dx = -constants.room.tile_unit6
+	local probe_dx
+	local step_dx
 	if dir > 0 then
 		wall_tx = tx + 3
 		probe_dx = constants.room.tile_unit8
 		step_dx = constants.room.tile_unit6
+	else
+		wall_tx = tx
+		probe_dx = -constants.room.tile_unit8
+		step_dx = -constants.room.tile_unit6
 	end
 
-	local can_bottom_step = false
+	local can_bottom_step
 	if dty > constants.room.tile_half and room_module.is_wall_at_tile(room, wall_tx, wall_ty) and not self:collides_at(self.x + probe_dx, self.y) then
 		can_bottom_step = true
+	else
+		can_bottom_step = false
 	end
 
-	local target_x = self.x
-	local target_y = self.y
+	local target_x
+	local target_y
 	if can_bottom_step then
 		target_x = self.x + step_dx
+		target_y = self.y
 	else
 		local top_step_threshold = self.stairs_top_y + constants.room.tile_half
 		if self.y < top_step_threshold then
@@ -1351,23 +1274,20 @@ end
 function player:apply_move(dx, dy)
 	local old_x = self.x
 	local old_y = self.y
-	local collided_x = false
-	local collided_y = false
-	local landed = false
-	local hit_ceiling = false
-	local upward_block = false
+	local collided_x
+	local collided_y
+	local landed
+	local hit_ceiling
+	local upward_block
 
 	local next_x = old_x + dx
 	local next_y = old_y + dy
-	local test_x_col = false
-	local found = false
+	local test_x_col
+	local found
 
 	if self:collides_at(next_x, next_y) then
 		collided_y = true
-		local inc = 1
-		if next_y > old_y then
-			inc = -1
-		end
+		local inc = next_y > old_y and -1 or 1
 		if next_y > old_y then
 			if self:collides_at(old_x, old_y) then
 				local resolved_x = self:find_clear_x_with_probe(next_x, next_y)
@@ -1468,10 +1388,10 @@ function player:apply_move(dx, dy)
 	self.previous_y_collision = upward_block
 
 	return {
-		collided_x = collided_x,
-		collided_y = collided_y,
-		landed = landed,
-		hit_ceiling = hit_ceiling,
+		collided_x = collided_x == true,
+		collided_y = collided_y == true,
+		landed = landed == true,
+		hit_ceiling = hit_ceiling == true,
 	}
 end
 
@@ -1583,12 +1503,13 @@ function player:runcheck_quiet_controls()
 	end
 
 	if self.up_pressed then
-		local inertia = 0
+		local inertia
 		if self.left_held and not self.right_held then
 			inertia = -1
-		end
-		if self.right_held and not self.left_held then
+		elseif self.right_held and not self.left_held then
 			inertia = 1
+		else
+			inertia = 0
 		end
 		self:start_jump(inertia)
 		self:dispatch_state_event('jump_input')
@@ -1709,7 +1630,7 @@ function player:runcheck_quiet_stairs_controls()
 
 	if self.up_held then
 		self:dispatch_state_event('stairs_up_hold')
-		local next_y = self.y
+		local next_y
 		if self.y > self.stairs_top_y then
 			next_y = self.y - constants.stairs.speed_px
 			self.last_dy = next_y - self.y
@@ -1729,9 +1650,8 @@ function player:runcheck_quiet_stairs_controls()
 		local was_at_or_below_bottom = self.y >= self.stairs_bottom_y
 		self.stairs_direction = 1
 		self:dispatch_state_event('stairs_down_hold')
-		local next_y = self.y + constants.stairs.down_start_push_px
-		self.last_dy = next_y - self.y
-		self.y = next_y
+		self.last_dy = constants.stairs.down_start_push_px
+		self.y = self.y + self.last_dy
 		if self.last_dy ~= 0 then
 			self:update_stairs_animation(math.abs(self.last_dy))
 		end
@@ -1948,9 +1868,11 @@ function player:tick_jump_motion()
 		self.jump_substate = constants.physics.jump_release_cut_substate
 	end
 
-	local dy = 0
+	local dy
 	if constants.physics.popolon_jump_dy_by_substate[self.jump_substate] ~= nil then
 		dy = constants.physics.popolon_jump_dy_by_substate[self.jump_substate]
+	else
+		dy = 0
 	end
 	if (not sword_jump) and self.previous_y_collision then
 		dy = 0
@@ -1975,10 +1897,9 @@ function player:tick_jump_motion()
 	end
 
 	self.jump_substate = self.jump_substate + 1
-	local reached_fall = false
-	if self.jump_substate >= constants.physics.jump_to_fall_substate then
+	local reached_fall = self.jump_substate >= constants.physics.jump_to_fall_substate
+	if reached_fall then
 		self:reset_fall_substate_sequence()
-		reached_fall = true
 	end
 	local sword_state = self:has_tag(state_tags.group.sword)
 	if hit_ceiling then
@@ -2092,13 +2013,13 @@ function player:tick_up_stairs()
 	self.last_dy = 0
 	self.x = self.stairs_x
 
-	local moved = false
-	local next_y = self.y
+	local moved
+	local next_y
 
 	if self.up_held and not self.down_held then
 		self.stairs_direction = -1
 		if self.y > self.stairs_top_y then
-				next_y = self.y - constants.stairs.speed_px
+			next_y = self.y - constants.stairs.speed_px
 			moved = true
 		else
 			self:leave_stairs('stairs_end_top')
@@ -2114,7 +2035,7 @@ function player:tick_up_stairs()
 		self.stairs_direction = 1
 		self:dispatch_state_event('stairs_reverse_down')
 		if self.y < self.stairs_bottom_y then
-				next_y = self.y + constants.stairs.speed_px
+			next_y = self.y + constants.stairs.speed_px
 			moved = true
 		else
 			self:leave_stairs('stairs_end_bottom')
@@ -2148,8 +2069,8 @@ function player:tick_down_stairs()
 	self.last_dy = 0
 	self.x = self.stairs_x
 
-	local moved = false
-	local next_y = self.y
+	local moved
+	local next_y
 
 	if self.down_held and not self.up_held then
 		self.stairs_direction = 1
@@ -2261,15 +2182,17 @@ function player:tick_hit_fall()
 	self:get_timeline('p.seq.s'):force_seek(0)
 
 	local dx = self.hit_direction * constants.damage.knockback_dx
-	local dy = 0
+	local dy
 	if self.hit_substate >= 4 then
 		dy = self.hit_substate - 4
 		if dy > 6 then
 			dy = 6
 		end
+	else
+		dy = 0
 	end
 
-	local hit_ground = false
+	local hit_ground
 	if self.hit_substate >= 4 then
 		hit_ground = (not self:collides_at(self.x, self.y)) and self:collides_at(self.x, self.y + dy)
 	end
@@ -2304,26 +2227,19 @@ end
 function player:tick_hit_collision()
 	self:get_timeline('p.seq.s'):force_seek(0)
 
-	local dy = 0
+	local dy
 	if self.hit_substate >= 4 then
 		dy = self.hit_substate - 4
 		if dy > 6 then
 			dy = 6
 		end
+	else
+		dy = 0
 	end
 
 	if self.hit_stairs_lock then
-		local hit_ground = false
 		if self.hit_substate >= 4 then
-			hit_ground = self:advance_hit_stairs_fall(dy)
-		else
-			self.previous_x_collision = false
-			self.previous_y_collision = false
-			self.last_dx = 0
-			self.last_dy = 0
-		end
-
-		if self.hit_substate >= 4 then
+			local hit_ground = self:advance_hit_stairs_fall(dy)
 			if self.health <= 0 then
 				self:start_dying()
 				return
@@ -2336,13 +2252,18 @@ function player:tick_hit_collision()
 				self:dispatch_state_event('hit_ground')
 				return
 			end
+		else
+			self.previous_x_collision = false
+			self.previous_y_collision = false
+			self.last_dx = 0
+			self.last_dy = 0
 		end
 
 		self.hit_substate = self.hit_substate + 1
 		return
 	end
 
-	local hit_ground = false
+	local hit_ground
 	if self.hit_substate >= 4 then
 		hit_ground = (not self:collides_at(self.x, self.y)) and self:collides_at(self.x, self.y + dy)
 	end
@@ -2399,10 +2320,12 @@ function player:tick_dying()
 end
 
 function player:tick()
+	self:update_collision_state()
+
 	if self:has_tag(state_tags.group.transition_lock) then
 		self:reset_motion_for_transition_lock()
 		self.grounded = false
-			self:refresh_presentation_if_changed()
+		self:apply_presentation_state()
 		return
 	end
 
@@ -2425,7 +2348,7 @@ function player:tick()
 	end
 
 	self.grounded = self:collides_at(self.x, self.y + 1)
-	self:refresh_presentation_if_changed()
+	self:apply_presentation_state()
 	self:update_hit_invulnerability()
 end
 
@@ -2434,11 +2357,12 @@ local function define_player_fsm()
 		boot = {
 			entering_state = function(self)
 				self.inventory_items = {}
-				self.secondary_weapon = 'none'
-				self.weapon_level = 0
-				self:reset_runtime()
-				self:refresh_presentation_if_changed()
-				self:define_timeline(new_timeline({
+					self.secondary_weapon = 'none'
+					self.weapon_level = 0
+					self:reset_runtime()
+					self:apply_presentation_state()
+					self:update_collision_state()
+					self:define_timeline(new_timeline({
 					id = 'p.tl.d',
 					frames = player_dying_frames,
 					playback_mode = 'once',
@@ -2841,6 +2765,26 @@ local function define_player_fsm()
 	define_fsm(constants.ids.player_fsm, {
 		initial = 'boot',
 		tag_derivations = {
+			[state_tags.group.damage_visual] = {
+				state_tags.variant.dying,
+				state_tags.variant.hit_fall,
+				state_tags.variant.hit_collision,
+				state_tags.variant.hit_recovery,
+			},
+			[state_tags.group.movement_walk] = {
+				state_tags.variant.walking_right,
+				state_tags.variant.walking_left,
+			},
+			[state_tags.group.movement_jump] = {
+				state_tags.variant.jumping,
+				state_tags.variant.stopped_jumping,
+				state_tags.variant.controlled_fall,
+			},
+			[state_tags.group.hit_blink] = {
+				state_tags.variant.hit_fall,
+				state_tags.variant.hit_collision,
+				state_tags.variant.hit_recovery,
+			},
 			[state_tags.group.elevator_transport] = {
 				state_tags.variant.quiet,
 				state_tags.variant.walking_right,

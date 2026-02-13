@@ -272,7 +272,8 @@ local function build_stairs(map_rows, tile_size, origin_x, origin_y, player_heig
 			local right = row:sub(tx + 1, tx + 1)
 			if is_stair_left(left) and is_stair_right(right) then
 				local min_row = ty
-				local max_row = ty
+				local max_row
+				max_row = ty
 				ty = ty + 1
 				while ty <= row_count do
 					local next_row = map_rows[ty]

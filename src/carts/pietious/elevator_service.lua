@@ -72,7 +72,7 @@ function elevator_service:tick()
 
 	for i = 1, #self.elevator_routes do
 		local elevator = self.elevator_routes[i]
-		local character_over = false
+		local character_over
 
 		if map_id == 0
 			and current_room_number == elevator.current_room_number

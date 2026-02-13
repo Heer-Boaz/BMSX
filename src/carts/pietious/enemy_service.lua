@@ -1,6 +1,50 @@
 local constants = require('constants')
 local eventemitter = require('eventemitter')
-local enemy_module = require('enemy')
+local boekfoe_module = require('boekfoe')
+local cloud_module = require('cloud')
+local crossfoe_module = require('crossfoe')
+local marspeinenaardappel_module = require('marspeinenaardappel')
+local mijterfoe_module = require('mijterfoe')
+local muziekfoe_module = require('muziekfoe')
+local nootfoe_module = require('nootfoe')
+local paperfoe_module = require('paperfoe')
+local stafffoe_module = require('stafffoe')
+local staffspawn_module = require('staffspawn')
+local vlokfoe_module = require('vlokfoe')
+local vlokspawner_module = require('vlokspawner')
+local zakfoe_module = require('zakfoe')
+
+local enemy_modules = {
+	boekfoe = boekfoe_module,
+	cloud = cloud_module,
+	crossfoe = crossfoe_module,
+	marspeinenaardappel = marspeinenaardappel_module,
+	mijterfoe = mijterfoe_module,
+	muziekfoe = muziekfoe_module,
+	nootfoe = nootfoe_module,
+	paperfoe = paperfoe_module,
+	stafffoe = stafffoe_module,
+	staffspawn = staffspawn_module,
+	vlokfoe = vlokfoe_module,
+	vlokspawner = vlokspawner_module,
+	zakfoe = zakfoe_module,
+}
+
+local enemy_kinds = {
+	'boekfoe',
+	'cloud',
+	'crossfoe',
+	'marspeinenaardappel',
+	'mijterfoe',
+	'muziekfoe',
+	'nootfoe',
+	'paperfoe',
+	'stafffoe',
+	'staffspawn',
+	'vlokfoe',
+	'vlokspawner',
+	'zakfoe',
+}
 
 local enemy_service = {}
 enemy_service.__index = enemy_service
@@ -20,10 +64,7 @@ local function enemy_condition_matches(self, condition, enemy_def, room_number)
 	end
 
 	local inverted = condition:sub(1, 1) == '!'
-	local token = condition
-	if inverted then
-		token = condition:sub(2)
-	end
+	local token = inverted and condition:sub(2) or condition
 
 	local room_conditions = room_conditions_for(self, room_number)
 	local condition_is_set = room_conditions[token] == true
@@ -57,8 +98,9 @@ end
 function enemy_service:sync_enemy_instance(enemy_def, room)
 	local id = enemy_def.id
 	local instance = object(id)
+	local enemy_def_id = string.format('%s.%s', constants.ids.enemy_def, enemy_def.kind)
 	if instance == nil then
-		instance = spawn_sprite(self.enemy_def_id, {
+		instance = spawn_sprite(enemy_def_id, {
 			id = id,
 			space_id = room.space_id,
 			pos = { x = enemy_def.x, y = enemy_def.y, z = 140 },
@@ -159,6 +201,56 @@ local function define_enemy_service_fsm()
 	})
 end
 
+local function define_enemy_fsm()
+	define_fsm(constants.ids.enemy_fsm, {
+		initial = 'boot',
+		states = {
+			boot = {
+				entering_state = function(self)
+					self.state_name = 'boot'
+					self:bind_overlap_events()
+					return '/waiting'
+				end,
+			},
+			waiting = {
+				tags = { 'e.w' },
+				on = {
+					['takeoff'] = '/flying',
+					['reset_to_waiting'] = '/waiting',
+				},
+				entering_state = function(self)
+					self.state_name = 'waiting'
+				end,
+			},
+			flying = {
+				tags = { 'e.f' },
+				on = {
+					['land'] = '/waiting',
+					['reset_to_waiting'] = '/waiting',
+				},
+				entering_state = function(self)
+					self.state_name = 'flying'
+				end,
+			},
+		},
+	})
+end
+
+local function define_enemy_behaviour_trees()
+	for i = 1, #enemy_kinds do
+		local kind = enemy_kinds[i]
+		local enemy_module = enemy_modules[kind]
+		local bt_id = string.format('%s.%s', constants.ids.enemy_bt, kind)
+		enemy_module.register_behaviour_tree(bt_id)
+	end
+end
+
+local function register_enemy_definitions()
+	for i = 1, #enemy_kinds do
+		enemy_modules[enemy_kinds[i]].register_enemy_definition()
+	end
+end
+
 local function register_enemy_service_definition()
 	define_service({
 		def_id = constants.ids.enemy_service_def,
@@ -167,7 +259,6 @@ local function register_enemy_service_definition()
 		auto_activate = true,
 		defaults = {
 			id = constants.ids.enemy_service_instance,
-			enemy_def_id = enemy_module.enemy_def_id,
 			enemies_by_id = {},
 			destroyed_enemy_ids = {},
 			room_conditions_by_number = {},
@@ -179,6 +270,9 @@ end
 
 return {
 	enemy_service = enemy_service,
+	define_enemy_fsm = define_enemy_fsm,
+	define_enemy_behaviour_trees = define_enemy_behaviour_trees,
+	register_enemy_definitions = register_enemy_definitions,
 	define_enemy_service_fsm = define_enemy_service_fsm,
 	register_enemy_service_definition = register_enemy_service_definition,
 	enemy_service_def_id = constants.ids.enemy_service_def,
