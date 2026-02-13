@@ -37,7 +37,9 @@ type LuaLintIssueRule =
 	'single_line_method_pattern' |
 	'builtin_recreation_pattern' |
 	'multi_has_tag_pattern' |
+	'single_use_has_tag_pattern' |
 	'self_imgid_assignment_pattern' |
+	'imgid_fallback_pattern' |
 	'forbidden_transition_to_pattern' |
 	'forbidden_matches_state_path_pattern' |
 	'constant_copy_pattern' |
@@ -69,6 +71,17 @@ type UnusedInitValueScope = {
 type UnusedInitValueContext = {
 	readonly issues: LuaLintIssue[];
 	readonly bindingStacksByName: Map<string, UnusedInitValueBinding[]>;
+	readonly scopeStack: UnusedInitValueScope[];
+};
+
+type SingleUseHasTagBinding = {
+	readonly declaration: LuaIdentifierExpression;
+	pendingReadCount: number;
+};
+
+type SingleUseHasTagContext = {
+	readonly issues: LuaLintIssue[];
+	readonly bindingStacksByName: Map<string, SingleUseHasTagBinding[]>;
 	readonly scopeStack: UnusedInitValueScope[];
 };
 
@@ -446,6 +459,22 @@ function isSelfImageIdAssignmentTarget(target: LuaExpression): boolean {
 	}
 	return (target.index.kind === LuaSyntaxKind.StringLiteralExpression && target.index.value === 'imgid')
 		|| (target.index.kind === LuaSyntaxKind.IdentifierExpression && target.index.name === 'imgid');
+}
+
+function isSelfHasTagCall(expression: LuaExpression): boolean {
+	if (expression.kind !== LuaSyntaxKind.CallExpression) {
+		return false;
+	}
+	if (getCallMethodName(expression) !== 'has_tag') {
+		return false;
+	}
+	if (expression.callee.kind === LuaSyntaxKind.MemberExpression) {
+		return isSelfExpressionRoot(expression.callee.base);
+	}
+	if (expression.callee.kind === LuaSyntaxKind.IdentifierExpression) {
+		return expression.callee.name === 'self';
+	}
+	return false;
 }
 
 function lintSelfImgIdAssignmentPattern(target: LuaExpression, value: LuaExpression | undefined, issues: LuaLintIssue[]): void {
@@ -912,6 +941,40 @@ function getEnsureVariableName(statement: LuaIfStatement): string {
 	return undefined;
 }
 
+function matchesImgIdNilFallbackPattern(statement: LuaIfStatement): boolean {
+	if (statement.clauses.length !== 1) {
+		return false;
+	}
+	const clause = statement.clauses[0];
+	const condition = clause.condition;
+	if (!condition || condition.kind !== LuaSyntaxKind.BinaryExpression || condition.operator !== LuaBinaryOperator.Equal) {
+		return false;
+	}
+	let variableName: string | undefined;
+	if (isNilExpression(condition.left) && isIdentifier(condition.right, 'imgid')) {
+		variableName = 'imgid';
+	}
+	if (isNilExpression(condition.right) && isIdentifier(condition.left, 'imgid')) {
+		variableName = 'imgid';
+	}
+	if (variableName !== 'imgid') {
+		return false;
+	}
+	if (clause.block.body.length !== 1) {
+		return false;
+	}
+	const clauseStatement = clause.block.body[0];
+	if (clauseStatement.kind !== LuaSyntaxKind.AssignmentStatement) {
+		return false;
+	}
+	const assignment = clauseStatement as LuaAssignmentStatement;
+	if (assignment.operator !== LuaAssignmentOperator.Assign || assignment.left.length !== 1 || assignment.right.length !== 1) {
+		return false;
+	}
+	const target = assignment.left[0];
+	return isIdentifier(target, variableName);
+}
+
 function matchesEnsurePattern(functionExpression: LuaFunctionExpression): boolean {
 	const body = functionExpression.body.body;
 	if (body.length !== 2) {
@@ -959,6 +1022,243 @@ function leaveUnusedInitValueScope(context: UnusedInitValueContext): void {
 		if (stack.length === 0) {
 			context.bindingStacksByName.delete(name);
 		}
+	}
+}
+
+function createSingleUseHasTagContext(issues: LuaLintIssue[]): SingleUseHasTagContext {
+	return {
+		issues,
+		bindingStacksByName: new Map<string, SingleUseHasTagBinding[]>(),
+		scopeStack: [],
+	};
+}
+
+function enterSingleUseHasTagScope(context: SingleUseHasTagContext): void {
+	context.scopeStack.push({ names: [] });
+}
+
+function leaveSingleUseHasTagScope(context: SingleUseHasTagContext): void {
+	const scope = context.scopeStack.pop();
+	if (!scope) {
+		return;
+	}
+	for (let index = scope.names.length - 1; index >= 0; index -= 1) {
+		const name = scope.names[index];
+		const stack = context.bindingStacksByName.get(name);
+		if (!stack || stack.length === 0) {
+			continue;
+		}
+		const binding = stack.pop();
+		if (binding && binding.pendingReadCount === 1) {
+			pushIssue(
+				context.issues,
+				'single_use_has_tag_pattern',
+				binding.declaration,
+				`Local has_tag result "${binding.declaration.name}" is read exactly once; inline self:has_tag(...) instead of caching it.`,
+			);
+		}
+		if (stack.length === 0) {
+			context.bindingStacksByName.delete(name);
+		}
+	}
+}
+
+function declareSingleUseHasTagBinding(
+	context: SingleUseHasTagContext,
+	declaration: LuaIdentifierExpression,
+): void {
+	const scope = context.scopeStack[context.scopeStack.length - 1];
+	scope.names.push(declaration.name);
+	let stack = context.bindingStacksByName.get(declaration.name);
+	if (!stack) {
+		stack = [];
+		context.bindingStacksByName.set(declaration.name, stack);
+	}
+	stack.push({
+		declaration,
+		pendingReadCount: 0,
+	});
+}
+
+function markSingleUseHasTagRead(context: SingleUseHasTagContext, identifier: LuaIdentifierExpression): void {
+	const stack = context.bindingStacksByName.get(identifier.name);
+	if (!stack || stack.length === 0) {
+		return;
+	}
+	stack[stack.length - 1].pendingReadCount += 1;
+}
+
+function lintSingleUseHasTagInExpression(expression: LuaExpression, context: SingleUseHasTagContext): void {
+	if (!expression) {
+		return;
+	}
+	switch (expression.kind) {
+		case LuaSyntaxKind.IdentifierExpression:
+			markSingleUseHasTagRead(context, expression);
+			return;
+		case LuaSyntaxKind.MemberExpression:
+			lintSingleUseHasTagInExpression(expression.base, context);
+			return;
+		case LuaSyntaxKind.IndexExpression:
+			lintSingleUseHasTagInExpression(expression.base, context);
+			lintSingleUseHasTagInExpression(expression.index, context);
+			return;
+		case LuaSyntaxKind.BinaryExpression:
+			lintSingleUseHasTagInExpression(expression.left, context);
+			lintSingleUseHasTagInExpression(expression.right, context);
+			return;
+		case LuaSyntaxKind.UnaryExpression:
+			lintSingleUseHasTagInExpression(expression.operand, context);
+			return;
+		case LuaSyntaxKind.CallExpression:
+			lintSingleUseHasTagInExpression(expression.callee, context);
+			for (const argument of expression.arguments) {
+				lintSingleUseHasTagInExpression(argument, context);
+			}
+			return;
+		case LuaSyntaxKind.TableConstructorExpression:
+			for (const field of expression.fields) {
+				if (field.kind === LuaTableFieldKind.ExpressionKey) {
+					lintSingleUseHasTagInExpression(field.key, context);
+				}
+				lintSingleUseHasTagInExpression(field.value, context);
+			}
+			return;
+		case LuaSyntaxKind.FunctionExpression: {
+			enterSingleUseHasTagScope(context);
+			lintSingleUseHasTagInStatements(expression.body.body, context);
+			leaveSingleUseHasTagScope(context);
+			return;
+		}
+		default:
+			return;
+	}
+}
+
+function lintSingleUseHasTagInStatements(statements: ReadonlyArray<LuaStatement>, context: SingleUseHasTagContext): void {
+	for (const statement of statements) {
+		switch (statement.kind) {
+			case LuaSyntaxKind.LocalAssignmentStatement:
+				for (let index = 0; index < Math.min(statement.names.length, statement.values.length); index += 1) {
+					const name = statement.names[index];
+					const value = statement.values[index];
+					if (isSelfHasTagCall(value)) {
+						declareSingleUseHasTagBinding(context, name);
+					}
+					lintSingleUseHasTagInExpression(value, context);
+				}
+				break;
+			case LuaSyntaxKind.AssignmentStatement:
+				for (const right of statement.right) {
+					lintSingleUseHasTagInExpression(right, context);
+				}
+				break;
+			case LuaSyntaxKind.LocalFunctionStatement: {
+				const localFunction = statement as LuaLocalFunctionStatement;
+				enterSingleUseHasTagScope(context);
+				try {
+					lintSingleUseHasTagInStatements(localFunction.functionExpression.body.body, context);
+				} finally {
+					leaveSingleUseHasTagScope(context);
+				}
+				break;
+			}
+			case LuaSyntaxKind.FunctionDeclarationStatement: {
+				const declaration = statement as LuaFunctionDeclarationStatement;
+				enterSingleUseHasTagScope(context);
+				try {
+					lintSingleUseHasTagInStatements(declaration.functionExpression.body.body, context);
+				} finally {
+					leaveSingleUseHasTagScope(context);
+				}
+				break;
+			}
+			case LuaSyntaxKind.ReturnStatement:
+				for (const expression of statement.expressions) {
+					lintSingleUseHasTagInExpression(expression, context);
+				}
+				break;
+			case LuaSyntaxKind.IfStatement:
+				for (const clause of statement.clauses) {
+					if (clause.condition) {
+						lintSingleUseHasTagInExpression(clause.condition, context);
+					}
+					enterSingleUseHasTagScope(context);
+					try {
+						lintSingleUseHasTagInStatements(clause.block.body, context);
+					} finally {
+						leaveSingleUseHasTagScope(context);
+					}
+				}
+				break;
+			case LuaSyntaxKind.WhileStatement:
+				lintSingleUseHasTagInExpression(statement.condition, context);
+				enterSingleUseHasTagScope(context);
+				try {
+					lintSingleUseHasTagInStatements(statement.block.body, context);
+				} finally {
+					leaveSingleUseHasTagScope(context);
+				}
+				break;
+			case LuaSyntaxKind.RepeatStatement:
+				enterSingleUseHasTagScope(context);
+				try {
+					lintSingleUseHasTagInStatements(statement.block.body, context);
+				} finally {
+					leaveSingleUseHasTagScope(context);
+				}
+				lintSingleUseHasTagInExpression(statement.condition, context);
+				break;
+			case LuaSyntaxKind.ForNumericStatement:
+				lintSingleUseHasTagInExpression(statement.start, context);
+				lintSingleUseHasTagInExpression(statement.limit, context);
+				lintSingleUseHasTagInExpression(statement.step, context);
+				enterSingleUseHasTagScope(context);
+				try {
+					lintSingleUseHasTagInStatements(statement.block.body, context);
+				} finally {
+					leaveSingleUseHasTagScope(context);
+				}
+				break;
+			case LuaSyntaxKind.ForGenericStatement:
+				for (const iterator of statement.iterators) {
+					lintSingleUseHasTagInExpression(iterator, context);
+				}
+				enterSingleUseHasTagScope(context);
+				try {
+					lintSingleUseHasTagInStatements(statement.block.body, context);
+				} finally {
+					leaveSingleUseHasTagScope(context);
+				}
+				break;
+			case LuaSyntaxKind.DoStatement:
+				enterSingleUseHasTagScope(context);
+				try {
+					lintSingleUseHasTagInStatements(statement.block.body, context);
+				} finally {
+					leaveSingleUseHasTagScope(context);
+				}
+				break;
+			case LuaSyntaxKind.CallStatement:
+				lintSingleUseHasTagInExpression(statement.expression, context);
+				break;
+			case LuaSyntaxKind.BreakStatement:
+			case LuaSyntaxKind.GotoStatement:
+			case LuaSyntaxKind.LabelStatement:
+				break;
+			default:
+				break;
+		}
+	}
+}
+
+function lintSingleUseHasTagPattern(statements: ReadonlyArray<LuaStatement>, issues: LuaLintIssue[]): void {
+	const context = createSingleUseHasTagContext(issues);
+	enterSingleUseHasTagScope(context);
+	try {
+		lintSingleUseHasTagInStatements(statements, context);
+	} finally {
+		leaveSingleUseHasTagScope(context);
 	}
 }
 
@@ -1425,6 +1725,14 @@ function lintStatements(statements: ReadonlyArray<LuaStatement>, issues: LuaLint
 						'Useless assert-pattern is forbidden (if ... then error(...) end). Remove the check; do not replace it with another check/assert.',
 					);
 				}
+				if (matchesImgIdNilFallbackPattern(statement)) {
+					pushIssue(
+						issues,
+						'imgid_fallback_pattern',
+						statement,
+						'imgid fallback initialization is forbidden. Remove nil checks for imgid defaults; use deterministic setup.',
+					);
+				}
 				for (const clause of statement.clauses) {
 					if (clause.condition) {
 						lintExpression(clause.condition, issues);
@@ -1499,6 +1807,7 @@ export async function lintCartLuaSources(options: LuaCartLintOptions): Promise<v
 			const chunk = parser.parseChunk();
 			lintUnusedInitValuesInFunctionBody(chunk.body, issues, []);
 			lintStatements(chunk.body, issues);
+			lintSingleUseHasTagPattern(chunk.body, issues);
 		}
 	} finally {
 		suppressedLineRangesByPath.clear();
