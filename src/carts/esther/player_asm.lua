@@ -3026,19 +3026,19 @@ function player:code_be92fd()
 		return false
 	end
 
-	-- NOTE: loop advances by 3 table words (6 bytes) per ASM stride.
+	-- ASM stride is 4 words (8 bytes) per entry.
 	local table_index = 1
 	while true do
 		local ymax = probe_table[table_index]
 		local xmin = probe_table[table_index + 1]
 		local xmax = probe_table[table_index + 2]
-	local xflag = probe_table[table_index + 3]
+		local xflag = probe_table[table_index + 3]
 
-	local xpos_minus_xmin = to_signed_16(self.ram_xposlo - xmin)
-	if xpos_minus_xmin < 0 then
-		if (xflag & 0x8000) ~= 0 then
-			return false
-		end
+		local xpos_minus_xmin = to_signed_16(self.ram_xposlo - xmin)
+		if xpos_minus_xmin < 0 then
+			if (xflag & 0x8000) ~= 0 then
+				return false
+			end
 		elseif to_signed_16(self.ram_xposlo - xmax) < 0 then
 			if to_signed_16(self.ram_yposlo - ymax) < 0 then
 				return false
@@ -3046,7 +3046,7 @@ function player:code_be92fd()
 			return true
 		end
 
-		table_index = table_index + 3
+		table_index = table_index + 4
 	end
 end
 
@@ -9067,10 +9067,10 @@ end
 function player:fill_dkc1_input_ram_from_actions()
 	local player_index = self.player_index
 
-	local left_held = $.get_action_state(player_index, 'left').pressed
-	local right_held = $.get_action_state(player_index, 'right').pressed
-	local up_held = $.get_action_state(player_index, 'up').pressed
-	local down_held = $.get_action_state(player_index, 'down').pressed
+	local left_held = action_triggered('left[p]', player_index)
+	local right_held = action_triggered('right[p]', player_index)
+	local up_held = action_triggered('up[p]', player_index)
+	local down_held = action_triggered('down[p]', player_index)
 
 	-- Emulate physical D-pad constraints from SNES controllers:
 	-- opposite directions cannot be held at once.
@@ -9096,28 +9096,28 @@ function player:fill_dkc1_input_ram_from_actions()
 	if down_held then
 		held = held | joypad_dpadd
 	end
-	if $.get_action_state(player_index, 'b').pressed then
+	if action_triggered('b[p]', player_index) then
 		held = held | joypad_b
 	end
-	if $.get_action_state(player_index, 'a').pressed then
+	if action_triggered('a[p]', player_index) then
 		held = held | joypad_a
 	end
-	if $.get_action_state(player_index, 'y').pressed then
+	if action_triggered('y[p]', player_index) then
 		held = held | joypad_y
 	end
-	if $.get_action_state(player_index, 'x').pressed then
+	if action_triggered('x[p]', player_index) then
 		held = held | joypad_x
 	end
-	if $.get_action_state(player_index, 'start').pressed then
+	if action_triggered('start[p]', player_index) then
 		held = held | joypad_start
 	end
-	if $.get_action_state(player_index, 'select').pressed then
+	if action_triggered('select[p]', player_index) then
 		held = held | joypad_select
 	end
-	if $.get_action_state(player_index, 'lb').pressed then
+	if action_triggered('lb[p]', player_index) then
 		held = held | joypad_l
 	end
-	if $.get_action_state(player_index, 'rb').pressed then
+	if action_triggered('rb[p]', player_index) then
 		held = held | joypad_r
 	end
 
