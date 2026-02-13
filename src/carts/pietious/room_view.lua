@@ -1,4 +1,5 @@
 local constants = require('constants')
+local eventemitter = require('eventemitter')
 
 local room_view = {}
 room_view.__index = room_view
@@ -19,8 +20,19 @@ function room_view:bind_visual()
 	end
 end
 
+function room_view:bind_events()
+	eventemitter.eventemitter.instance:on({
+		event = constants.events.room_switched,
+		subscriber = self,
+		handler = function(event)
+			self.space_id = event.space
+		end,
+	})
+end
+
 function room_view:ctor()
 	self:bind_visual()
+	self:bind_events()
 end
 
 function room_view:render_room()

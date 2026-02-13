@@ -222,10 +222,12 @@ function zakfoe:move_with_velocity()
 end
 
 function zakfoe:spawn_death_effect()
+	local room = service(constants.ids.castle_service_instance).current_room
 	enemy_death_effect_sequence = enemy_death_effect_sequence + 1
 	spawn_object(enemy_explosion_module.enemy_explosion_def_id, {
-		room_number = service(constants.ids.castle_service_instance).current_room.room_number,
+		room_number = room.room_number,
 		loot_type = self:choose_drop_type(),
+		space_id = room.space_id,
 		pos = { x = self.x, y = self.y, z = 114 },
 	})
 end

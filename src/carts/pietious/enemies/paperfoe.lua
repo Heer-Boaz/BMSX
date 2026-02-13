@@ -146,9 +146,11 @@ end
 
 function paperfoe:spawn_death_effect()
 	enemy_death_effect_sequence = enemy_death_effect_sequence + 1
+	local room_space = service(constants.ids.castle_service_instance).current_room.space_id
 	spawn_object(enemy_explosion_module.enemy_explosion_def_id, {
 		room_number = service(constants.ids.castle_service_instance).current_room.room_number,
 		loot_type = self:choose_drop_type(function(chance) return math.random(100) <= chance end),
+		space_id = room_space,
 		pos = { x = self.x, y = self.y, z = 114 },
 	})
 end

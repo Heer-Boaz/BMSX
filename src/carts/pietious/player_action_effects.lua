@@ -58,17 +58,19 @@ local function try_fire_pepernoot_effect(context)
 	if owner.weapon_level < constants.secondary_weapon.pepernoot_weapon_level_cost then
 		return
 	end
+	local room = service(constants.ids.castle_service_instance).current_room
 
 	owner.pepernoot_projectile_sequence = owner.pepernoot_projectile_sequence + 1
 	local projectile_id = string.format('pepernoot_%d_%d', owner.player_index, owner.pepernoot_projectile_sequence)
 	local spawn_x = owner.x + (owner.facing < 0 and -constants.secondary_weapon.pepernoot_spawn_offset_x or constants.secondary_weapon.pepernoot_spawn_offset_x)
 	local spawn_y = owner.y + constants.secondary_weapon.pepernoot_spawn_offset_y
-	spawn_x, spawn_y = room_module.snap_world_to_tile(service(constants.ids.castle_service_instance).current_room, spawn_x, spawn_y)
+	spawn_x, spawn_y = room_module.snap_world_to_tile(room, spawn_x, spawn_y)
 
 	spawn_object(pepernoot_projectile_module.pepernoot_projectile_def_id, {
 		id = projectile_id,
-		room = service(constants.ids.castle_service_instance).current_room,
-		room_number = service(constants.ids.castle_service_instance).current_room.room_number,
+		room = room,
+		space_id = room.space_id,
+		room_number = room.room_number,
 		owner_id = owner.id,
 		projectile_id = owner.pepernoot_projectile_sequence,
 		direction = owner.facing,

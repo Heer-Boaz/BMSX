@@ -33,6 +33,7 @@ end
 
 function muziekfoe.bt_tick(self, blackboard)
 	local node = blackboard.nodedata
+	local room = service(constants.ids.castle_service_instance).current_room
 	local dir_modifier = self.direction == 'left' and -1 or 1
 	local move_accum = node.muziek_move_accum
 	if move_accum == nil then
@@ -70,6 +71,7 @@ function muziekfoe.bt_tick(self, blackboard)
 		local delta_x, delta_y = get_delta_from_source_to_target_scaled(source_x, source_y, target_x, target_y, delta_scale)
 		local delta_divisor = math.random(1, 2)
 		local spawned_noot = spawn_sprite('pietious.enemy.def.nootfoe', {
+			space_id = room.space_id,
 			pos = {
 				x = self.x + 12,
 				y = self.y,
@@ -85,7 +87,7 @@ function muziekfoe.bt_tick(self, blackboard)
 			speedx = delta_x,
 			speedy = delta_y,
 			speedden = delta_scale * delta_divisor,
-		}, service(constants.ids.castle_service_instance).current_room)
+		}, room)
 		noot_ticks = constants.enemy.muziek_spawn_noot_steps
 	end
 	node.muziek_noot_ticks = noot_ticks
@@ -219,9 +221,11 @@ end
 
 function muziekfoe:spawn_death_effect()
 	enemy_death_effect_sequence = enemy_death_effect_sequence + 1
+	local room_space = service(constants.ids.castle_service_instance).current_room.space_id
 	spawn_object(enemy_explosion_module.enemy_explosion_def_id, {
 		room_number = service(constants.ids.castle_service_instance).current_room.room_number,
 		loot_type = self:choose_drop_type(),
+		space_id = room_space,
 		pos = { x = self.x, y = self.y, z = 114 },
 	})
 end

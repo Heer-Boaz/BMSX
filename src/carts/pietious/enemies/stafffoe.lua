@@ -24,6 +24,7 @@ end
 
 function stafffoe.bt_tick(self, blackboard)
 	local node = blackboard.nodedata
+	local room = service(constants.ids.castle_service_instance).current_room
 	if self.staff_state == 'default' then
 		local wait_ticks = node.staff_wait_ticks
 		if wait_ticks == nil then
@@ -63,6 +64,7 @@ function stafffoe.bt_tick(self, blackboard)
 		local angle = (base_angle + (i * 90)) % 360
 		local speed_x_num, speed_y_num = speed_components_from_angle(constants.enemy.staff_bullet_speed_num, angle)
 		local spawned_staff = spawn_sprite('pietious.enemy.def.staffspawn', {
+			space_id = room.space_id,
 			pos = {
 				x = self.x,
 				y = self.y,
@@ -79,7 +81,7 @@ function stafffoe.bt_tick(self, blackboard)
 			speedy = speed_y_num,
 			speedden = constants.enemy.staff_bullet_speed_den,
 			dangerous = bullets_dangerous,
-		}, service(constants.ids.castle_service_instance).current_room)
+		}, room)
 	end
 	self.staff_spawn_count = self.staff_spawn_count + 1
 	node.staff_wait_ticks = constants.enemy.staff_wait_before_spawn_steps
@@ -207,9 +209,11 @@ end
 
 function stafffoe:spawn_death_effect()
 	enemy_death_effect_sequence = enemy_death_effect_sequence + 1
+	local room_space = service(constants.ids.castle_service_instance).current_room.space_id
 	spawn_object(enemy_explosion_module.enemy_explosion_def_id, {
 		room_number = service(constants.ids.castle_service_instance).current_room.room_number,
 		loot_type = self:choose_drop_type(),
+		space_id = room_space,
 		pos = { x = self.x, y = self.y, z = 114 },
 	})
 end

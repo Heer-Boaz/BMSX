@@ -128,6 +128,16 @@ local function copy_text_lines(lines)
 	return copied
 end
 
+function player:bind_events()
+	eventemitter.eventemitter.instance:on({
+		event = constants.events.room_switched,
+		subscriber = self,
+		handler = function(event)
+			self.space_id = event.space
+		end,
+	})
+end
+
 function player:clear_input_state()
 	self.left_held = false
 	self.right_held = false
@@ -201,6 +211,7 @@ function player:reset_runtime()
 end
 
 function player:ctor()
+	self:bind_events()
 	self:add_component(components.inputactioneffectcomponent.new({
 		parent = self,
 		program = player_input_action_effect_program,

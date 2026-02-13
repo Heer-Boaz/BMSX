@@ -108,6 +108,7 @@ function new_game()
 	spawn_sprite(player_module.player_def_id, {
 		id = player_module.player_instance_id,
 		room = room,
+		space_id = room.space_id,
 		spawn_x = constants.player.start_x,
 		spawn_y = constants.player.start_y,
 		pos = { x = constants.player.start_x, y = constants.player.start_y, z = 140 },
@@ -116,21 +117,25 @@ function new_game()
 	spawn_object(room_view_module.room_view_def_id, {
 		id = room_view_module.room_view_instance_id,
 		room = room,
+		space_id = room.space_id,
 		pos = { x = 0, y = 0, z = 0 },
 	})
 
 	spawn_object(transition_view_module.transition_view_def_id, {
 		id = transition_view_module.transition_view_instance_id,
+		space_id = constants.spaces.transition,
 		pos = { x = 0, y = 0, z = 0 },
 	})
 
 	spawn_object(item_screen_module.item_screen_def_id, {
 		id = item_screen_module.item_screen_instance_id,
+		space_id = constants.spaces.item,
 		pos = { x = 0, y = 0, z = 0 },
 	})
 
 	spawn_object(ui_module.ui_def_id, {
 		id = ui_module.ui_instance_id,
+		space_id = room.space_id,
 		pos = { x = 0, y = 0, z = 0 },
 	})
 

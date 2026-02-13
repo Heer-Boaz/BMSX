@@ -26,10 +26,12 @@ function vlokspawner.bt_tick(self, blackboard)
 		return behaviourtree.running
 	end
 
-	local spawn_x = math.random(2, 29) * service(constants.ids.castle_service_instance).current_room.tile_size
-	local spawn_y = service(constants.ids.castle_service_instance).current_room.world_top
+	local room = service(constants.ids.castle_service_instance).current_room
+	local spawn_x = math.random(2, 29) * room.tile_size
+	local spawn_y = room.world_top
 	local random_x = math.random(-5, 4)
 	local spawned_vlok = spawn_sprite('pietious.enemy.def.vlokfoe', {
+		space_id = room.space_id,
 		pos = {
 			x = spawn_x,
 			y = spawn_y,
@@ -45,7 +47,7 @@ function vlokspawner.bt_tick(self, blackboard)
 		speedx = random_x * 2,
 		speedy = 5,
 		speedden = 10,
-	}, service(constants.ids.castle_service_instance).current_room)
+	}, room)
 	blackboard.nodedata.vlok_spawn_ticks = constants.enemy.vlokspawner_spawn_steps
 	return behaviourtree.running
 end
@@ -171,9 +173,11 @@ end
 
 function vlokspawner:spawn_death_effect()
 	enemy_death_effect_sequence = enemy_death_effect_sequence + 1
+	local room_space = service(constants.ids.castle_service_instance).current_room.space_id
 	spawn_object(enemy_explosion_module.enemy_explosion_def_id, {
 		room_number = service(constants.ids.castle_service_instance).current_room.room_number,
 		loot_type = self:choose_drop_type(),
+		space_id = room_space,
 		pos = { x = self.x, y = self.y, z = 114 },
 	})
 end
