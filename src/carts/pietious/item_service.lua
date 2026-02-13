@@ -320,7 +320,6 @@ local function register_item_service_definition()
 			picked_item_ids = {},
 			condition_flags_by_room = {},
 			synced_room_number = 0,
-			registrypersistent = false,
 			tick_enabled = false,
 		},
 	})

@@ -181,7 +181,6 @@ local function register_castle_service_definition()
 			map_y = 12,
 			last_room_switch = nil,
 			world_entrance_states = {},
-			registrypersistent = false,
 			tick_enabled = true,
 		},
 	})

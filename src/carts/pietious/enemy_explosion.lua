@@ -87,7 +87,6 @@ local function define_enemy_explosion_fsm()
 		states = {
 			boot = {
 				entering_state = function(self)
-					self.state_name = 'boot'
 					self.body_sprite = components.spritecomponent.new({
 						parent = self,
 						id_local = 'body',
@@ -108,7 +107,6 @@ local function define_enemy_explosion_fsm()
 				},
 			animating = {
 				entering_state = function(self)
-					self.state_name = 'animating'
 					self:play_timeline(constants.ids.enemy_explosion_def .. '.timeline.explosion', { rewind = true, snap_to_start = true })
 				end,
 			},
@@ -125,8 +123,6 @@ local function register_enemy_explosion_definition()
 			space_id = constants.spaces.castle,
 			room_number = 0,
 			loot_type = 'none',
-			state_name = 'boot',
-			registrypersistent = false,
 			tick_enabled = false,
 		},
 	})

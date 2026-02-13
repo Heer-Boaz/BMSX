@@ -58,7 +58,6 @@ local function define_loot_drop_fsm()
 		states = {
 			boot = {
 				entering_state = function(self)
-					self.state_name = 'boot'
 					self.body_collider = components.collider2dcomponent.new({
 						parent = self,
 						id_local = 'body',
@@ -87,7 +86,6 @@ local function define_loot_drop_fsm()
 					['picked'] = '/picked',
 				},
 					entering_state = function(self)
-						self.state_name = 'active'
 						self.body_sprite.imgid = sprite_for_loot_type(self.loot_type)
 						self.body_sprite.enabled = true
 						self.body_collider.enabled = true
@@ -95,7 +93,6 @@ local function define_loot_drop_fsm()
 				},
 			picked = {
 				entering_state = function(self)
-					self.state_name = 'picked'
 					self.body_sprite.enabled = false
 					self.body_collider.enabled = false
 					self:mark_for_disposal()
@@ -115,8 +112,6 @@ local function register_loot_drop_definition()
 				room_number = 0,
 				loot_type = 'life',
 			loot_value = constants.enemy.loot_life_regen,
-			state_name = 'boot',
-			registrypersistent = false,
 			tick_enabled = false,
 		},
 	})

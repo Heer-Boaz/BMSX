@@ -84,7 +84,6 @@ local function define_rock_fsm()
 		states = {
 			boot = {
 				entering_state = function(self)
-					self.state_name = 'boot'
 					self.body_collider = components.collider2dcomponent.new({
 						parent = self,
 						id_local = 'body',
@@ -111,7 +110,6 @@ local function define_rock_fsm()
 					['reset'] = '/idle',
 				},
 				entering_state = function(self)
-					self.state_name = 'idle'
 					self.body_sprite.imgid = 'stone'
 					self.body_collider.enabled = true
 					self.body_sprite.enabled = true
@@ -122,7 +120,6 @@ local function define_rock_fsm()
 						['reset'] = '/idle',
 					},
 					entering_state = function(self)
-						self.state_name = 'breaking'
 						self.break_steps = 0
 						self:begin_break()
 						self.body_sprite.imgid = 'stone_broken'
@@ -158,8 +155,6 @@ local function register_rock_definition()
 			last_weapon_kind = '',
 			last_weapon_hit_id = -1,
 			break_steps = 0,
-			state_name = 'boot',
-			registrypersistent = false,
 			tick_enabled = true,
 		},
 	})

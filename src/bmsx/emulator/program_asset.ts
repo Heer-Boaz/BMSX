@@ -232,18 +232,27 @@ function registerAlias(aliases: Map<string, string>, alias: string, path: string
 }
 
 function registerModuleAliases(aliases: Map<string, string>, path: string): void {
+	const pathWithoutExt = stripLuaExtension(path);
+	const hasPathDirectory = pathWithoutExt.indexOf('/') !== -1;
+
 	registerAlias(aliases, path, path);
-	registerAlias(aliases, `${path}.lua`, path);
-	const dotted = path.replace(/\//g, '.');
+	if (pathWithoutExt !== path) {
+		registerAlias(aliases, pathWithoutExt, path);
+	}
+	const aliasWithLua = path.endsWith('.lua') ? `${pathWithoutExt}.lua` : `${path}.lua`;
+	registerAlias(aliases, aliasWithLua, path);
+	const dotted = pathWithoutExt.replace(/\//g, '.');
 	registerAlias(aliases, dotted, path);
 	registerAlias(aliases, `${dotted}.lua`, path);
 
-	const base = baseModuleName(path);
-	registerAlias(aliases, base, path);
-	registerAlias(aliases, `${base}.lua`, path);
-	const baseDots = base.replace(/\//g, '.');
-	registerAlias(aliases, baseDots, path);
-	registerAlias(aliases, `${baseDots}.lua`, path);
+	if (!hasPathDirectory) {
+		const base = baseModuleName(pathWithoutExt);
+		registerAlias(aliases, base, path);
+		registerAlias(aliases, `${base}.lua`, path);
+		const baseDots = base.replace(/\//g, '.');
+		registerAlias(aliases, baseDots, path);
+		registerAlias(aliases, `${baseDots}.lua`, path);
+	}
 }
 
 export function buildModuleAliasesFromPaths(paths: ReadonlyArray<string>): Array<{ alias: string; path: string }> {

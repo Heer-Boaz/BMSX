@@ -149,7 +149,6 @@ local function register_elevator_service_definition()
 			id = constants.ids.elevator_service_instance,
 			castle_service_id = constants.ids.castle_service_instance,
 			elevator_routes = elevator_routes,
-			registrypersistent = false,
 			tick_enabled = true,
 		},
 	})

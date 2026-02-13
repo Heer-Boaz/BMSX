@@ -83,7 +83,6 @@ local function define_pepernoot_projectile_fsm()
 		states = {
 			boot = {
 				entering_state = function(self)
-					self.state_name = 'boot'
 					self.body_collider = components.collider2dcomponent.new({
 						parent = self,
 						id_local = 'body',
@@ -106,7 +105,6 @@ local function define_pepernoot_projectile_fsm()
 			},
 			active = {
 				entering_state = function(self)
-					self.state_name = 'active'
 						self.disposed = false
 						self.body_sprite.enabled = true
 						self.body_collider.enabled = true
@@ -133,8 +131,6 @@ local function register_pepernoot_projectile_definition()
 			projectile_id = 0,
 			direction = 1,
 			disposed = false,
-			state_name = 'boot',
-			registrypersistent = false,
 			tick_enabled = true,
 		},
 	})

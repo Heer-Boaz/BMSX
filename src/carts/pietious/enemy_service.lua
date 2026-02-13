@@ -1,18 +1,18 @@
 local constants = require('constants')
 local eventemitter = require('eventemitter')
-local boekfoe_module = require('boekfoe')
-local cloud_module = require('cloud')
-local crossfoe_module = require('crossfoe')
-local marspeinenaardappel_module = require('marspeinenaardappel')
-local mijterfoe_module = require('mijterfoe')
-local muziekfoe_module = require('muziekfoe')
-local nootfoe_module = require('nootfoe')
-local paperfoe_module = require('paperfoe')
-local stafffoe_module = require('stafffoe')
-local staffspawn_module = require('staffspawn')
-local vlokfoe_module = require('vlokfoe')
-local vlokspawner_module = require('vlokspawner')
-local zakfoe_module = require('zakfoe')
+local boekfoe_module = require('enemies/boekfoe')
+local cloud_module = require('enemies/cloud')
+local crossfoe_module = require('enemies/crossfoe')
+local marspeinenaardappel_module = require('enemies/marspeinenaardappel')
+local mijterfoe_module = require('enemies/mijterfoe')
+local muziekfoe_module = require('enemies/muziekfoe')
+local nootfoe_module = require('enemies/nootfoe')
+local paperfoe_module = require('enemies/paperfoe')
+local stafffoe_module = require('enemies/stafffoe')
+local staffspawn_module = require('enemies/staffspawn')
+local vlokfoe_module = require('enemies/vlokfoe')
+local vlokspawner_module = require('enemies/vlokspawner')
+local zakfoe_module = require('enemies/zakfoe')
 
 local enemy_modules = {
 	boekfoe = boekfoe_module,
@@ -98,9 +98,8 @@ end
 function enemy_service:sync_enemy_instance(enemy_def, room)
 	local id = enemy_def.id
 	local instance = object(id)
-	local enemy_def_id = string.format('%s.%s', constants.ids.enemy_def, enemy_def.kind)
 	if instance == nil then
-		instance = spawn_sprite(enemy_def_id, {
+		instance = spawn_sprite('pietious.enemy.def.' .. enemy_def.kind, {
 			id = id,
 			space_id = room.space_id,
 			pos = { x = enemy_def.x, y = enemy_def.y, z = 140 },
@@ -207,7 +206,6 @@ local function define_enemy_fsm()
 		states = {
 			boot = {
 				entering_state = function(self)
-					self.state_name = 'boot'
 					self:bind_overlap_events()
 					return '/waiting'
 				end,
@@ -219,7 +217,6 @@ local function define_enemy_fsm()
 					['reset_to_waiting'] = '/waiting',
 				},
 				entering_state = function(self)
-					self.state_name = 'waiting'
 				end,
 			},
 			flying = {
@@ -229,7 +226,6 @@ local function define_enemy_fsm()
 					['reset_to_waiting'] = '/waiting',
 				},
 				entering_state = function(self)
-					self.state_name = 'flying'
 				end,
 			},
 		},
@@ -262,7 +258,6 @@ local function register_enemy_service_definition()
 			enemies_by_id = {},
 			destroyed_enemy_ids = {},
 			room_conditions_by_number = {},
-			registrypersistent = false,
 			tick_enabled = false,
 		},
 	})

@@ -274,7 +274,6 @@ local function register_flow_service_definition()
 			overlay_text_lines = {},
 			transition_frames_left = 0,
 			banner_post_action = '',
-			registrypersistent = false,
 			tick_enabled = true,
 		},
 	})

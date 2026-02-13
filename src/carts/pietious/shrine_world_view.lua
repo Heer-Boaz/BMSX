@@ -96,7 +96,6 @@ local function register_shrine_world_view_definition()
 		defaults = {
 			id = constants.ids.shrine_world_view_instance,
 			space_id = constants.spaces.ui,
-			registrypersistent = false,
 			tick_enabled = false,
 		},
 	})

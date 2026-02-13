@@ -79,7 +79,6 @@ local function enemy_consume_axis_accum(accum, speed_num, speed_den)
 	return delta, accum
 end
 
-local enemy_def_id = string.format('%s.%s', constants.ids.enemy_def, 'vlokspawner')
 
 function vlokspawner:configure_from_room_def(def, room)
 	self.enemy_id = def.id
@@ -142,7 +141,7 @@ end
 
 function vlokspawner:spawn_child_enemy(kind, x, y, options)
 	options = options or {}
-	local child = spawn_sprite(string.format('%s.%s', constants.ids.enemy_def, kind), {
+	local child = spawn_sprite('pietious.enemy.def.' .. kind, {
 		space_id = self.space_id,
 		pos = { x = x, y = y, z = 140 },
 	})
@@ -269,7 +268,7 @@ end
 
 function vlokspawner.register_enemy_definition()
 	define_prefab({
-		def_id = enemy_def_id,
+		def_id = 'pietious.enemy.def.vlokspawner',
 		class = vlokspawner,
 		fsms = { constants.ids.enemy_fsm },
 		defaults = {
@@ -302,13 +301,11 @@ function vlokspawner.register_enemy_definition()
 			spawn_y = 0,
 			despawn_on_room_switch = false,
 			active_bt_id = '',
-			state_name = 'boot',
-			registrypersistent = false,
 		},
 	})
 end
 
-vlokspawner.enemy_def_id = enemy_def_id
+vlokspawner.enemy_def_id = 'pietious.enemy.def.vlokspawner'
 
 
 return vlokspawner

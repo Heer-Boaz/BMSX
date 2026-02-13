@@ -140,7 +140,6 @@ local function register_rock_service_definition()
 			destroyed_rock_ids = {},
 			synced_room_number = 0,
 			sync_dirty = true,
-			registrypersistent = false,
 			tick_enabled = true,
 		},
 	})

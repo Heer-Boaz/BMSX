@@ -49,7 +49,6 @@ local function define_world_item_fsm()
 		states = {
 			boot = {
 				entering_state = function(self)
-					self.state_name = 'boot'
 					self.body_collider = components.collider2dcomponent.new({
 						parent = self,
 						id_local = 'body',
@@ -75,7 +74,6 @@ local function define_world_item_fsm()
 					['picked'] = '/picked',
 				},
 					entering_state = function(self)
-						self.state_name = 'active'
 						self.body_sprite.imgid = constants.world_item.sprite[self.item_type]
 						self.body_sprite.enabled = true
 						self.body_collider.enabled = true
@@ -83,7 +81,6 @@ local function define_world_item_fsm()
 				},
 			picked = {
 				entering_state = function(self)
-					self.state_name = 'picked'
 					self.body_sprite.enabled = false
 					self.body_collider.enabled = false
 					self:mark_for_disposal()
@@ -105,8 +102,6 @@ local function register_world_item_definition()
 			item_type = 'ammofromrock',
 			source_kind = 'map',
 			item_service_id = constants.ids.item_service_instance,
-			state_name = 'boot',
-			registrypersistent = false,
 			tick_enabled = false,
 		},
 	})
