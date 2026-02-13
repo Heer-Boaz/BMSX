@@ -1,6 +1,3 @@
--- world.lua
--- minimal lua world manager for system rom
-
 local ecs = require("ecs")
 local ecs_pipeline = require("ecs_pipeline")
 
@@ -253,7 +250,7 @@ function world_class:_object_space_id(obj)
 end
 
 function world_class:_object_in_scope(obj, scope)
-	if obj._dispose_flag or obj._disposed then
+	if obj.dispose_flag then
 		return false
 	end
 	if scope == "active" then
@@ -310,7 +307,7 @@ function world_class:get(id)
 	if obj == nil then
 		return nil
 	end
-	if obj._dispose_flag or obj._disposed then
+	if obj.dispose_flag then
 		return nil
 	end
 	return obj
@@ -354,7 +351,7 @@ function world_class:update()
 	-- local cleanup_start = $.platform.clock.perf_now()
 	for i = #self._objects, 1, -1 do
 		local obj = self._objects[i]
-		if obj._dispose_flag then
+		if obj.dispose_flag then
 			self._by_id[obj.id] = nil
 			obj:ondespawn()
 			obj:dispose()

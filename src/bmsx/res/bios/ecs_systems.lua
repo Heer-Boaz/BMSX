@@ -91,7 +91,7 @@ function statemachinesystem:update(dt_ms)
 		::continue::
 	end
 	for _, entity in pairs(registry.instance:get_registered_entities()) do
-		if entity.type_name == "service" and entity.active and entity.tick_enabled then
+		if entity.type_name == "service" and not entity.dispose_flag and entity.active and entity.tick_enabled then
 			entity.sc:tick(dt_ms)
 		end
 	end
@@ -336,7 +336,7 @@ function overlap2dsystem:update()
 		local colliders = obj:get_components(collider2dcomponent)
 		for i = 1, #colliders do
 			local collider = colliders[i]
-			if collider.enabled and not obj._dispose_flag then
+			if collider.enabled and not obj.dispose_flag then
 				broadphase:add_or_update(collider)
 				collider_lookup[collider.id] = collider
 				if collider.generateoverlapevents then
@@ -357,7 +357,7 @@ function overlap2dsystem:update()
 		-- if owner == nil then
 		-- 	error("[overlap2dsystem] collider '" .. tostring(collider.id) .. "' has no parent")
 		-- end
-		if owner._dispose_flag or not owner.active then
+		if owner.dispose_flag or not owner.active then
 			goto continue_event_collider
 		end
 		local owner_space = world_instance:_object_space_id(owner)
@@ -369,7 +369,7 @@ function overlap2dsystem:update()
 				-- if other_owner == nil then
 				-- 	error("[overlap2dsystem] collider '" .. tostring(other.id) .. "' has no parent")
 				-- end
-				if other_owner._dispose_flag or not other_owner.active then
+				if other_owner.dispose_flag or not other_owner.active then
 					goto continue_candidate
 				end
 				collider_lookup[other.id] = other
@@ -423,7 +423,7 @@ function overlap2dsystem:update()
 		if owner_a == nil or owner_b == nil then
 			error("[overlap2dsystem] attempted to emit overlap event without collider parents")
 		end
-		if owner_a._dispose_flag or owner_b._dispose_flag then
+		if owner_a.dispose_flag or owner_b.dispose_flag then
 			return
 		end
 		if not owner_a.active or not owner_b.active then

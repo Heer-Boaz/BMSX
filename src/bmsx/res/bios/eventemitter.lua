@@ -12,7 +12,16 @@ local payload_event_marker = setmetatable({}, { __mode = "k" })
 local payload_emitter_owned = setmetatable({}, { __mode = "k" })
 local payload_timestamp_owned = setmetatable({}, { __mode = "k" })
 
-local function create_gameevent(spec)
+function eventemitter.new()
+	return setmetatable({
+		listeners = {},
+		any_listeners = {},
+	}, eventemitter)
+end
+
+eventemitter.instance = eventemitter.new()
+
+function eventemitter:create_gameevent(spec)
 	local event = {
 		type = spec.type,
 		emitter = spec.emitter,
@@ -24,19 +33,6 @@ local function create_gameevent(spec)
 		end
 	end
 	return event
-end
-
-function eventemitter.new()
-	return setmetatable({
-		listeners = {},
-		any_listeners = {},
-	}, eventemitter)
-end
-
-eventemitter.instance = eventemitter.new()
-
-function eventemitter:create_gameevent(spec)
-	return create_gameevent(spec)
 end
 
 function eventemitter:events_of(emitter)
@@ -76,8 +72,8 @@ function eventemitter:off(event_name, handler, emitter)
 	end
 end
 
-function eventemitter:on_any(handler, persistent)
-	self.any_listeners[#self.any_listeners + 1] = { handler = handler, persistent = persistent }
+function eventemitter:on_any(handler, persistent, subscriber)
+	self.any_listeners[#self.any_listeners + 1] = { handler = handler, persistent = persistent, subscriber = subscriber }
 end
 
 function eventemitter:off_any(handler, force_persistent)
@@ -115,20 +111,30 @@ function eventemitter:emit(arg0, emitter, payload)
 			}
 		end
 	end
+	if event.emitter and event.emitter.dispose_flag then
+		return
+	end
 
 	local list = self.listeners[event.type]
 	if list then
 		for i = 1, #list do
 			local entry = list[i]
+			if entry.subscriber and entry.subscriber.dispose_flag then
+				goto continue_listener
+			end
 			local filter = entry.emitter
 			if filter == nil or filter == event.emitter or filter == (event.emitter and event.emitter.id) then
 				entry.handler(event)
 			end
+			::continue_listener::
 		end
 	end
 
 	for i = 1, #self.any_listeners do
-		self.any_listeners[i].handler(event)
+		local entry = self.any_listeners[i]
+		if not (entry.subscriber and entry.subscriber.dispose_flag) then
+			entry.handler(event)
+		end
 	end
 end
 
@@ -139,6 +145,12 @@ function eventemitter:remove_subscriber(subscriber, force_persistent)
 			if entry.subscriber == subscriber and (force_persistent or not entry.persistent) then
 				table.remove(list, i)
 			end
+		end
+	end
+	for i = #self.any_listeners, 1, -1 do
+		local entry = self.any_listeners[i]
+		if entry.subscriber == subscriber and (force_persistent or not entry.persistent) then
+			table.remove(self.any_listeners, i)
 		end
 	end
 end
