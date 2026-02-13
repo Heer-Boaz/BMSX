@@ -3577,8 +3577,29 @@ function player:code_bfb27c(state_180f)
 	end
 
 	-- ================================================================
-	-- L/R/SELECT/START (LINE 110852+)
+	-- L / R / SELECT / START (LINE 110852+)
 	-- ================================================================
+	-- LDA.b $7E / AND.w #Joypad_L                  ; LINE 110852
+	if (self.zp_7e & joypad_l) ~= 0 then
+		-- JSR.w CODE_BFBEE8
+		self:code_bfbee8()
+	end
+
+	-- LDA.b $7E / AND.w #Joypad_R                  ; LINE 110866
+	if (self.zp_7e & joypad_r) ~= 0 then
+		-- JSR.w CODE_BFBEEA
+		self:code_bfbeea()
+	end
+
+	-- LDA.b $7E / AND.w #Joypad_Select             ; LINE 110866
+	if (self.zp_7e & joypad_select) ~= 0 then
+		-- JSR.w CODE_BFBF86
+		self:code_bfbf86()
+	else
+		-- LDA.w $1917 / AND.w #$FFBF / STA.w $1917
+		self.ram_1917 = self.ram_1917 & 0xFFBF
+	end
+
 	-- LDA.b $7E / AND.w #Joypad_Start ; LINE 110861-863
 	if (self.zp_7e & joypad_start) ~= 0 then
 		-- JSR CODE_BFBEEC
@@ -3588,6 +3609,21 @@ function player:code_bfb27c(state_180f)
 	-- LDA.w $1E19 / LSR / RTS                      ; LINE 110883
 	-- return carry = bit 0 of $1E19
 	return (self.ram_1e19 & 0x0001) ~= 0
+end
+
+-- code_bfbee8: L-button handler (line 112390)
+-- RTS-only path in assembly.
+function player:code_bfbee8()
+end
+
+-- code_bfbeea: R-button handler (line 112392)
+-- RTS-only path in assembly.
+function player:code_bfbeea()
+end
+
+-- code_bfbf86: select-button jump dispatch (line 112493)
+function player:code_bfbf86()
+	self[data_bfc2cf[self.ram_180f + 1]](self)
 end
 
 -- code_bfba88: rope jump (line 111806)
@@ -9071,17 +9107,6 @@ function player:fill_dkc1_input_ram_from_actions()
 	local right_held = action_triggered('right[p]', player_index)
 	local up_held = action_triggered('up[p]', player_index)
 	local down_held = action_triggered('down[p]', player_index)
-
-	-- Emulate physical D-pad constraints from SNES controllers:
-	-- opposite directions cannot be held at once.
-	if left_held and right_held then
-		left_held = false
-		right_held = false
-	end
-	if up_held and down_held then
-		up_held = false
-		down_held = false
-	end
 
 	local held = 0
 	if left_held then
