@@ -6,6 +6,7 @@ local action_effects = require("action_effects")
 local audio_router = require("audio_router")
 local registry = require("registry")
 local collision2d = require("collision2d")
+local world_instance = require("world").instance
 
 local tickgroup = ecs.tickgroup
 local ecsystem = ecs.ecsystem
@@ -20,10 +21,6 @@ local collider2dcomponent = "collider2dcomponent"
 local positionupdateaxiscomponent = "positionupdateaxiscomponent"
 local screenboundarycomponent = "screenboundarycomponent"
 local actioneffectcomponent = "actioneffectcomponent"
-
-local function is_in_active_space(world, obj, active_space)
-	return world:_object_space_id(obj) == active_space
-end
 
 local behaviortreesystem = {}
 behaviortreesystem.__index = behaviortreesystem
@@ -44,12 +41,12 @@ function audioroutersystem.new(priority)
 	return self
 end
 
-function audioroutersystem:update(_world)
+function audioroutersystem:update()
 	audio_router.tick()
 end
 
-function behaviortreesystem:update(world)
-	for obj in world:objects({ scope = "active" }) do
+function behaviortreesystem:update()
+	for obj in world_instance:objects({ scope = "active" }) do
 		if obj.tick_enabled == false then
 			goto continue
 		end
@@ -70,8 +67,8 @@ function actioneffectruntimesystem.new(priority)
 	return self
 end
 
-function actioneffectruntimesystem:update(world, dt_ms)
-	for _, component in world:objects_with_components(actioneffectcomponent, { scope = "active" }) do
+function actioneffectruntimesystem:update(dt_ms)
+	for _, component in world_instance:objects_with_components(actioneffectcomponent, { scope = "active" }) do
 		component:tick(dt_ms)
 	end
 end
@@ -85,8 +82,8 @@ function statemachinesystem.new(priority)
 	return self
 end
 
-function statemachinesystem:update(world, dt_ms)
-	for obj in world:objects({ scope = "active" }) do
+function statemachinesystem:update(dt_ms)
+	for obj in world_instance:objects({ scope = "active" }) do
 		if obj.tick_enabled == false then
 			goto continue
 		end
@@ -109,8 +106,8 @@ function objectticksystem.new(priority)
 	return self
 end
 
-function objectticksystem:update(world, dt_ms)
-	for obj in world:objects({ scope = "active" }) do
+function objectticksystem:update(dt_ms)
+	for obj in world_instance:objects({ scope = "active" }) do
 		if obj.tick_enabled then
 			obj:tick(dt_ms)
 		end
@@ -132,8 +129,8 @@ function prepositionsystem.new(priority)
 	return self
 end
 
-function prepositionsystem:update(world)
-	for _, component in world:objects_with_components(positionupdateaxiscomponent, { scope = "active" }) do
+function prepositionsystem:update()
+	for _, component in world_instance:objects_with_components(positionupdateaxiscomponent, { scope = "active" }) do
 		if component.enabled then
 			component:preprocess_update()
 		end
@@ -149,10 +146,10 @@ function boundarysystem.new(priority)
 	return self
 end
 
-function boundarysystem:update(world)
-	local width = world.gamewidth
-	local height = world.gameheight
-	for obj, component in world:objects_with_components(screenboundarycomponent, { scope = "active" }) do
+function boundarysystem:update()
+	local width = world_instance.gamewidth
+	local height = world_instance.gameheight
+	for obj, component in world_instance:objects_with_components(screenboundarycomponent, { scope = "active" }) do
 		if not component.enabled then
 			goto continue
 		end
@@ -201,7 +198,7 @@ function tilecollisionsystem.new(priority)
 	return self
 end
 
-function tilecollisionsystem:update(_world)
+function tilecollisionsystem:update()
 end
 
 local physicssyncbeforestepsystem = {}
@@ -213,7 +210,7 @@ function physicssyncbeforestepsystem.new(priority)
 	return self
 end
 
-function physicssyncbeforestepsystem:update(_world)
+function physicssyncbeforestepsystem:update()
 end
 
 local physicsworldstepsystem = {}
@@ -225,7 +222,7 @@ function physicsworldstepsystem.new(priority)
 	return self
 end
 
-function physicsworldstepsystem:update(_world)
+function physicsworldstepsystem:update()
 end
 
 local physicspostsystem = {}
@@ -237,7 +234,7 @@ function physicspostsystem.new(priority)
 	return self
 end
 
-function physicspostsystem:update(_world)
+function physicspostsystem:update()
 end
 
 local physicscollisioneventsystem = {}
@@ -249,7 +246,7 @@ function physicscollisioneventsystem.new(priority)
 	return self
 end
 
-function physicscollisioneventsystem:update(_world)
+function physicscollisioneventsystem:update()
 end
 
 local physicssyncafterworldcollisionsystem = {}
@@ -261,7 +258,7 @@ function physicssyncafterworldcollisionsystem.new(priority)
 	return self
 end
 
-function physicssyncafterworldcollisionsystem:update(_world)
+function physicssyncafterworldcollisionsystem:update()
 end
 
 local overlap2dsystem = {}
@@ -302,12 +299,12 @@ local function clone_contact_with_flipped_normal(contact)
 	return flipped
 end
 
-function overlap2dsystem:space_match(scope, owner_space, other_space, world)
+function overlap2dsystem:space_match(scope, owner_space, other_space)
 	if scope == "all" then
 		return true
 	end
-	local ui_id = world.ui_space_id or "ui"
-	local current = world.active_space_id
+	local ui_id = world_instance.ui_space_id or "ui"
+	local current = world_instance.active_space_id
 	if scope == "current" or scope == nil then
 		return other_space == owner_space and other_space == current
 	end
@@ -327,15 +324,15 @@ function overlap2dsystem.new(priority)
 	return self
 end
 
-function overlap2dsystem:update(world)
+function overlap2dsystem:update()
 	local new_pairs = {}
 	local collider_lookup = {}
 
-	local broadphase = collision2d.ensure_index(world, self.grid_cell_size)
+	local broadphase = collision2d.ensure_index(self.grid_cell_size)
 	broadphase:clear()
 
 	local event_colliders = {}
-	for obj in world:objects({ scope = "active" }) do
+	for obj in world_instance:objects({ scope = "active" }) do
 		local colliders = obj:get_components(collider2dcomponent)
 		for i = 1, #colliders do
 			local collider = colliders[i]
@@ -357,21 +354,21 @@ function overlap2dsystem:update(world)
 	for i = 1, #event_colliders do
 		local collider = event_colliders[i]
 		local owner = collider.parent
-		if owner == nil then
-			error("[overlap2dsystem] collider '" .. tostring(collider.id) .. "' has no parent")
-		end
+		-- if owner == nil then
+		-- 	error("[overlap2dsystem] collider '" .. tostring(collider.id) .. "' has no parent")
+		-- end
 		if owner._dispose_flag or not owner.active then
 			goto continue_event_collider
 		end
-		local owner_space = world:_object_space_id(owner)
+		local owner_space = world_instance:_object_space_id(owner)
 		local candidates = broadphase:query_aabb(collider:get_world_area())
 		for j = 1, #candidates do
 			local other = candidates[j]
 			if other ~= collider then
 				local other_owner = other.parent
-				if other_owner == nil then
-					error("[overlap2dsystem] collider '" .. tostring(other.id) .. "' has no parent")
-				end
+				-- if other_owner == nil then
+				-- 	error("[overlap2dsystem] collider '" .. tostring(other.id) .. "' has no parent")
+				-- end
 				if other_owner._dispose_flag or not other_owner.active then
 					goto continue_candidate
 				end
@@ -379,8 +376,8 @@ function overlap2dsystem:update(world)
 				local a_hits_b = (collider.mask & other.layer) ~= 0
 				local b_hits_a = (other.mask & collider.layer) ~= 0
 				if a_hits_b and b_hits_a then
-					local other_space = world:_object_space_id(other_owner)
-					if self:space_match(collider.spaceevents, owner_space, other_space, world) then
+					local other_space = world_instance:_object_space_id(other_owner)
+					if self:space_match(collider.spaceevents, owner_space, other_space) then
 						if not (other.generateoverlapevents and other.id < collider.id) then
 							if collision2d.collides(collider, other) then
 								local key = make_pair_key(collider.id, other.id)
@@ -484,8 +481,8 @@ function transformsystem.new(priority)
 	return self
 end
 
-function transformsystem:update(world)
-	for _, component in world:objects_with_components(transformcomponent, { scope = "active" }) do
+function transformsystem:update()
+	for _, component in world_instance:objects_with_components(transformcomponent, { scope = "active" }) do
 		if component.enabled then
 			component:post_update()
 		end
@@ -501,8 +498,8 @@ function timelinesystem.new(priority)
 	return self
 end
 
-function timelinesystem:update(world, dt_ms)
-	for _, component in world:objects_with_components(timelinecomponent, { scope = "active" }) do
+function timelinesystem:update(dt_ms)
+	for _, component in world_instance:objects_with_components(timelinecomponent, { scope = "active" }) do
 		if component.enabled then
 			component:tick_active(dt_ms)
 		end
@@ -518,8 +515,8 @@ function meshanimationsystem.new(priority)
 	return self
 end
 
-function meshanimationsystem:update(world, dt_ms)
-	for _, component in world:objects_with_components(meshcomponent, { scope = "active" }) do
+function meshanimationsystem:update(dt_ms)
+	for _, component in world_instance:objects_with_components(meshcomponent, { scope = "active" }) do
 		if component.enabled then
 			component:update_animation(dt_ms)
 		end
@@ -535,10 +532,10 @@ function textrendersystem.new(priority)
 	return self
 end
 
-function textrendersystem:update(world)
-	local active_space = world:get_space()
-	for obj, tc in world:objects_with_components(textcomponent, { scope = "active" }) do
-		if not tc.enabled or not is_in_active_space(world, obj, active_space) then
+function textrendersystem:update()
+	local active_space = world_instance:get_space()
+	for obj, tc in world_instance:objects_with_components(textcomponent, { scope = "active" }) do
+		if not tc.enabled or world_instance:_object_space_id(obj) ~= active_space then
 			goto continue
 		end
 		local offset = tc.offset
@@ -574,10 +571,10 @@ function spriterendersystem.new(priority)
 	return self
 end
 
-function spriterendersystem:update(world)
-	local active_space = world:get_space()
-	for obj, sc in world:objects_with_components(spritecomponent, { scope = "active" }) do
-		if obj.visible == false or not sc.enabled or not is_in_active_space(world, obj, active_space) then
+function spriterendersystem:update()
+	local active_space = world_instance:get_space()
+	for obj, sc in world_instance:objects_with_components(spritecomponent, { scope = "active" }) do
+		if obj.visible == false or not sc.enabled or world_instance:_object_space_id(obj) ~= active_space then
 			goto continue
 		end
 		local offset = sc.offset
@@ -610,10 +607,10 @@ function meshrendersystem.new(priority)
 	return self
 end
 
-function meshrendersystem:update(world)
-	local active_space = world:get_space()
-	for obj, mc in world:objects_with_components(meshcomponent, { scope = "active" }) do
-		if obj.visible == false or not mc.enabled or not is_in_active_space(world, obj, active_space) then
+function meshrendersystem:update()
+	local active_space = world_instance:get_space()
+	for obj, mc in world_instance:objects_with_components(meshcomponent, { scope = "active" }) do
+		if obj.visible == false or not mc.enabled or world_instance:_object_space_id(obj) ~= active_space then
 			goto continue
 		end
 		put_mesh(mc.mesh, mc.matrix, {
@@ -634,10 +631,10 @@ function rendersubmitsystem.new(priority)
 	return self
 end
 
-function rendersubmitsystem:update(world)
-	local active_space = world:get_space()
-	for obj, rc in world:objects_with_components(customvisualcomponent, { scope = "active" }) do
-		if obj.visible == false or not rc.enabled or not is_in_active_space(world, obj, active_space) then
+function rendersubmitsystem:update()
+	local active_space = world_instance:get_space()
+	for obj, rc in world_instance:objects_with_components(customvisualcomponent, { scope = "active" }) do
+		if obj.visible == false or not rc.enabled or world_instance:_object_space_id(obj) ~= active_space then
 			goto continue
 		end
 		rc:flush()
@@ -654,7 +651,7 @@ function eventflushsystem.new(priority)
 	return self
 end
 
-function eventflushsystem:update(_world)
+function eventflushsystem:update()
 end
 
 return {

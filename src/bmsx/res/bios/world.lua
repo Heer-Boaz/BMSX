@@ -6,8 +6,8 @@ local ecs_pipeline = require("ecs_pipeline")
 
 local tickgroup = ecs.tickgroup
 
-local world = {}
-world.__index = world
+local world_class = {}
+world_class.__index = world_class
 
 local tickgroup_names = {}
 for name, value in pairs(tickgroup) do
@@ -44,11 +44,11 @@ end
 -- returns next id number and increments the internal counter.
 -- accepts being called either as an instance method (world:getnextidnumber())
 -- or as a function on the module/instance (world.getnextidnumber()).
-function world.getnextidnumber(self)
+function world_class.getnextidnumber(self)
 	local w = self
 	-- support being called without passing self (e.g. world.getnextidnumber())
 	if type(w) ~= "table" or rawget(w, "idcounter") == nil then
-		w = world.instance
+		w = require("world").instance
 	end
 	if not w.idcounter then
 		w.idcounter = 1
@@ -151,7 +151,6 @@ local function emit_perf_log(p)
 end
 
 local function iter_objects(state, _)
-	local world = state.world
 	local list = state.list
 	local scope = state.scope
 	local index = state.index + state.step
@@ -160,7 +159,7 @@ local function iter_objects(state, _)
 		if not obj then
 			return nil
 		end
-		if world:_object_in_scope(obj, scope) then
+		if state.world:_object_in_scope(obj, scope) then
 			state.index = index
 			return obj
 		end
@@ -169,7 +168,6 @@ local function iter_objects(state, _)
 end
 
 local function iter_objects_with_components(state, _)
-	local world = state.world
 	local objects = state.list
 	while true do
 		local comp_list = state.comp_list
@@ -191,7 +189,7 @@ local function iter_objects_with_components(state, _)
 			return nil
 		end
 		state.obj_index = obj_index
-		if world:_object_in_scope(obj, state.scope) then
+		if state.world:_object_in_scope(obj, state.scope) then
 			local list = obj:get_components(state.type_name)
 			if #list > 0 then
 				state.current_obj = obj
@@ -202,8 +200,8 @@ local function iter_objects_with_components(state, _)
 	end
 end
 
-function world.new()
-	local self = setmetatable({}, world)
+function world_class.new()
+	local self = setmetatable({}, world_class)
 	self._objects = {}
 	self._by_id = {}
 	self._spaces = { default = true }
@@ -220,7 +218,7 @@ function world.new()
 	return self
 end
 
-function world:add_space(space_id)
+function world_class:add_space(space_id)
 	if type(space_id) ~= "string" or space_id == "" then
 		error("world.add_space expects a non-empty space id")
 	end
@@ -232,21 +230,21 @@ function world:add_space(space_id)
 	return true
 end
 
-function world:set_space(space_id)
+function world_class:set_space(space_id)
 	self:add_space(space_id)
 	self.active_space_id = space_id
 	return self.active_space_id
 end
 
-function world:get_space()
+function world_class:get_space()
 	return self.active_space_id
 end
 
-function world:list_spaces()
+function world_class:list_spaces()
 	return self._space_order
 end
 
-function world:_object_space_id(obj)
+function world_class:_object_space_id(obj)
 	local space_id = obj.space_id
 	if space_id == nil or space_id == "" then
 		return "default"
@@ -254,7 +252,7 @@ function world:_object_space_id(obj)
 	return space_id
 end
 
-function world:_object_in_scope(obj, scope)
+function world_class:_object_in_scope(obj, scope)
 	if obj._dispose_flag or obj._disposed then
 		return false
 	end
@@ -271,17 +269,17 @@ function world:_object_in_scope(obj, scope)
 	return true
 end
 
-function world:configure_pipeline(nodes)
-	return ecs_pipeline.defaultecspipelineregistry:build(self, nodes)
+function world_class:configure_pipeline(nodes)
+	return ecs_pipeline.defaultecspipelineregistry:build(nodes)
 end
 
-function world:apply_default_pipeline()
+function world_class:apply_default_pipeline()
 	local ecs_builtin = require("ecs_builtin")
 	ecs_builtin.register_builtin_ecs()
 	return self:configure_pipeline(ecs_builtin.default_pipeline_spec())
 end
 
-function world:spawn(obj, pos)
+function world_class:spawn(obj, pos)
 	local space_id = self:_object_space_id(obj)
 	self:add_space(space_id)
 	obj.space_id = space_id
@@ -291,7 +289,7 @@ function world:spawn(obj, pos)
 	return obj
 end
 
-function world:despawn(id_or_obj)
+function world_class:despawn(id_or_obj)
 	local obj = id_or_obj
 	if type(id_or_obj) ~= "table" then
 		obj = self._by_id[id_or_obj]
@@ -307,7 +305,7 @@ function world:despawn(id_or_obj)
 	end
 end
 
-function world:get(id)
+function world_class:get(id)
 	local obj = self._by_id[id]
 	if obj == nil then
 		return nil
@@ -318,7 +316,7 @@ function world:get(id)
 	return obj
 end
 
-function world:objects(opts)
+function world_class:objects(opts)
 	local scope = opts and opts.scope or "all"
 	local reverse = opts and opts.reverse or false
 	local step = reverse and -1 or 1
@@ -326,30 +324,30 @@ function world:objects(opts)
 	return iter_objects, { world = self, list = self._objects, scope = scope, step = step, index = start }, nil
 end
 
-function world:objects_with_components(type_name, opts)
+function world_class:objects_with_components(type_name, opts)
 	local scope = opts and opts.scope or "all"
 	return iter_objects_with_components,
 		{ world = self, list = self._objects, type_name = type_name, scope = scope, obj_index = 0, comp_index = 0, comp_list = nil, current_obj = nil },
 		nil
 end
 
-function world:update()
+function world_class:update()
 	self.systems:begin_frame()
 	perf.last_stat_index = 1
 	self.current_phase = tickgroup.input
-	self.systems:update_phase(self, tickgroup.input)
+	self.systems:update_phase(tickgroup.input)
 	perf.acc_update_ms = perf.acc_update_ms + record_phase_stats(perf, self.systems, tickgroup.input)
 	self.current_phase = tickgroup.actioneffect
-	self.systems:update_phase(self, tickgroup.actioneffect)
+	self.systems:update_phase(tickgroup.actioneffect)
 	perf.acc_update_ms = perf.acc_update_ms + record_phase_stats(perf, self.systems, tickgroup.actioneffect)
 	self.current_phase = tickgroup.moderesolution
-	self.systems:update_phase(self, tickgroup.moderesolution)
+	self.systems:update_phase(tickgroup.moderesolution)
 	perf.acc_update_ms = perf.acc_update_ms + record_phase_stats(perf, self.systems, tickgroup.moderesolution)
 	self.current_phase = tickgroup.physics
-	self.systems:update_phase(self, tickgroup.physics)
+	self.systems:update_phase(tickgroup.physics)
 	perf.acc_update_ms = perf.acc_update_ms + record_phase_stats(perf, self.systems, tickgroup.physics)
 	self.current_phase = tickgroup.animation
-	self.systems:update_phase(self, tickgroup.animation)
+	self.systems:update_phase(tickgroup.animation)
 	perf.acc_update_ms = perf.acc_update_ms + record_phase_stats(perf, self.systems, tickgroup.animation)
 	self.current_phase = nil
 
@@ -369,12 +367,12 @@ function world:update()
 	perf.acc_frames = perf.acc_frames + 1
 end
 
-function world:draw()
+function world_class:draw()
 	self.current_phase = tickgroup.presentation
-	self.systems:update_phase(self, tickgroup.presentation)
+	self.systems:update_phase(tickgroup.presentation)
 	perf.acc_draw_ms = perf.acc_draw_ms + record_phase_stats(perf, self.systems, tickgroup.presentation)
 	self.current_phase = tickgroup.eventflush
-	self.systems:update_phase(self, tickgroup.eventflush)
+	self.systems:update_phase(tickgroup.eventflush)
 	perf.acc_draw_ms = perf.acc_draw_ms + record_phase_stats(perf, self.systems, tickgroup.eventflush)
 	self.current_phase = nil
 	if perf.acc_sim_ms >= 1000 then
@@ -382,7 +380,7 @@ function world:draw()
 	end
 end
 
-function world:clear()
+function world_class:clear()
 	for i = #self._objects, 1, -1 do
 		self._objects[i]:dispose()
 	end
@@ -394,6 +392,6 @@ function world:clear()
 end
 
 return {
-	world = world,
-	instance = world.new(),
+	world = world_class,
+	instance = world_class.new(),
 }

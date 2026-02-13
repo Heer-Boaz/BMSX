@@ -32,7 +32,7 @@ local round_to_nearest = require("round_to_nearest")
 local rol8 = require("rol8")
 local swap_remove = require("swap_remove")
 
-local world = world_module.instance
+local world_instance = world_module.instance
 
 local definitions = {}
 local service_definitions = {}
@@ -398,7 +398,7 @@ function engine.inst(definition_id, addons)
 		if imgid then
 			instance:set_image(imgid)
 		end
-		world:spawn(instance, addons and addons.pos)
+		world_instance:spawn(instance, addons and addons.pos)
 		return instance
 	end
 	if object_type == 'textobject' then
@@ -410,14 +410,14 @@ function engine.inst(definition_id, addons)
 		if dimensions then
 			instance:set_dimensions(dimensions)
 		end
-		world:spawn(instance, addons and addons.pos)
+		world_instance:spawn(instance, addons and addons.pos)
 		return instance
 	end
 	local class_table = def and def.class or nil
 	local instance_id = (addons and addons.id) or (class_table and class_table.id) or definition_id
 	local instance = worldobject.new({ id = instance_id })
 	apply_definition(instance, def, addons)
-	world:spawn(instance, addons and addons.pos)
+	world_instance:spawn(instance, addons and addons.pos)
 	return instance
 end
 
@@ -440,23 +440,23 @@ end
 
 -- BIOS/runtime-only indirection. Cart code must use global `object(id)`.
 function engine.object(id)
-	return world:get(id)
+	return world_instance:get(id)
 end
 
 function engine.add_space(space_id)
-	return world:add_space(space_id)
+	return world_instance:add_space(space_id)
 end
 
 function engine.set_space(space_id)
-	return world:set_space(space_id)
+	return world_instance:set_space(space_id)
 end
 
 function engine.get_space()
-	return world:get_space()
+	return world_instance:get_space()
 end
 
 function engine.attach_component(object_or_id, component_or_type)
-	local obj = type(object_or_id) == "string" and world:get(object_or_id) or object_or_id
+	local obj = type(object_or_id) == "string" and world_instance:get(object_or_id) or object_or_id
 	if type(component_or_type) == "table" and component_or_type.type_name then
 		obj:add_component(component_or_type)
 		return component_or_type
@@ -472,9 +472,9 @@ end
 function engine.update()
 	quickmenu.update()
 	if not quickmenu.is_open() then
-		world:update()
+		world_instance:update()
 	end
-	world:draw()
+	world_instance:draw()
 	quickmenu.draw()
 end
 
@@ -575,17 +575,17 @@ function engine.on_vdp_load(handler)
 end
 
 function engine.reset()
-	world:clear()
+	world_instance:clear()
 	registry.instance:clear()
-	world:apply_default_pipeline()
+	world_instance:apply_default_pipeline()
 end
 
 function engine.configure_ecs(nodes)
-	return world:configure_pipeline(nodes)
+	return world_instance:configure_pipeline(nodes)
 end
 
 function engine.apply_default_pipeline()
-	return world:apply_default_pipeline()
+	return world_instance:apply_default_pipeline()
 end
 
 function engine.enlist(value)
@@ -597,7 +597,7 @@ function engine.delist(id)
 end
 
 function engine.grant_effect(object_id, effect_id)
-	local obj = world:get(object_id)
+	local obj = world_instance:get(object_id)
 	local component = obj:get_component("actioneffectcomponent")
 	if not component then
 		error("world object '" .. object_id .. "' does not have an actioneffectcomponent.")
@@ -606,7 +606,7 @@ function engine.grant_effect(object_id, effect_id)
 end
 
 function engine.trigger_effect(object_id, effect_id, options)
-	local obj = world:get(object_id)
+	local obj = world_instance:get(object_id)
 	local component = obj:get_component("actioneffectcomponent")
 	if not component then
 		error("world object '" .. object_id .. "' does not have an actioneffectcomponent.")
@@ -648,9 +648,9 @@ end
 
 require("audio_router").init()
 
-if not world._ecs_pipeline_built then
-	world._ecs_pipeline_built = true
-	world:apply_default_pipeline()
+if not world_instance._ecs_pipeline_built then
+	world_instance._ecs_pipeline_built = true
+	world_instance:apply_default_pipeline()
 end
 
 return engine

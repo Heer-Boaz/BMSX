@@ -30,12 +30,13 @@ function ecspipelineregistry:get(id)
 	return self._descs[id]
 end
 
-function ecspipelineregistry:build(world, nodes)
+function ecspipelineregistry:build(nodes)
 local t0 = $.platform.clock.perf_now()
+	local world_instance = require("world").instance
 	local filtered = {}
 	for i = 1, #nodes do
 		local n = nodes[i]
-		if not n.when or n.when(world) then
+		if not n.when or n.when(world_instance) then
 			filtered[#filtered + 1] = n
 		end
 	end
@@ -81,9 +82,9 @@ local t0 = $.platform.clock.perf_now()
 		systems[#systems + 1] = sys
 	end
 
-	world.systems:clear()
+	world_instance.systems:clear()
 	for i = 1, #systems do
-		world.systems:register(systems[i])
+		world_instance.systems:register(systems[i])
 	end
 
 local t1 = $.platform.clock.perf_now()

@@ -2,6 +2,7 @@
 -- 2D collision helpers + broadphase index
 
 local collision2d = {}
+local world_instance = require("world").instance
 
 local EPS = 1e-8
 local EPS_PARALLEL = 1e-12
@@ -534,21 +535,19 @@ function broadphase_index:query_aabb(area)
 	return out
 end
 
-local indexes_per_world = setmetatable({}, { __mode = "k" })
+local world_index = nil
 
-function collision2d.ensure_index(world, cell_size)
-	local index = indexes_per_world[world]
-	if index == nil then
-		index = broadphase_index.new(cell_size or 64)
-		indexes_per_world[world] = index
+function collision2d.ensure_index(cell_size)
+	if world_index == nil then
+		world_index = broadphase_index.new(cell_size or 64)
 	end
-	return index
+	return world_index
 end
 
-function collision2d.rebuild_index(world, cell_size)
-	local index = collision2d.ensure_index(world, cell_size)
+function collision2d.rebuild_index(cell_size)
+	local index = collision2d.ensure_index(cell_size)
 	index:clear()
-	for obj in world:objects({ scope = "active" }) do
+	for obj in world_instance:objects({ scope = "active" }) do
 		local colliders = obj:get_components("collider2dcomponent")
 		for i = 1, #colliders do
 			local collider = colliders[i]
@@ -559,8 +558,8 @@ function collision2d.rebuild_index(world, cell_size)
 	end
 end
 
-function collision2d.query_aabb(world, area)
-	local index = collision2d.ensure_index(world)
+function collision2d.query_aabb(area)
+	local index = collision2d.ensure_index()
 	return index:query_aabb(area)
 end
 

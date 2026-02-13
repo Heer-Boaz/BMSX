@@ -6,6 +6,7 @@ local action_effects = require("action_effects")
 local compiler = require("input_action_effect_compiler")
 local dsl = require("input_action_effect_dsl")
 local romdir = require("romdir")
+local world_instance = require("world").instance
 local inputintentcomponent = "inputintentcomponent"
 local inputactioneffectcomponent = "inputactioneffectcomponent"
 local actioneffectcomponent = "actioneffectcomponent"
@@ -45,10 +46,10 @@ function inputactioneffectsystem.new(priority)
 	return self
 end
 
-function inputactioneffectsystem:update(world)
+function inputactioneffectsystem:update()
 	self.frame_latch_touched = {}
-	self:process_input_intents(world)
-	self:process_input_action_programs(world)
+	self:process_input_intents()
+	self:process_input_action_programs()
 	for key in pairs(self.binding_latch) do
 		if not self.frame_latch_touched[key] then
 			self.binding_latch[key] = nil
@@ -56,8 +57,8 @@ function inputactioneffectsystem:update(world)
 	end
 end
 
-function inputactioneffectsystem:process_input_intents(world)
-	for obj, component in world:objects_with_components(inputintentcomponent, { scope = "active" }) do
+function inputactioneffectsystem:process_input_intents()
+	for obj, component in world_instance:objects_with_components(inputintentcomponent, { scope = "active" }) do
 		if obj.tick_enabled == false then
 			goto continue
 		end
@@ -72,8 +73,8 @@ function inputactioneffectsystem:process_input_intents(world)
 	end
 end
 
-function inputactioneffectsystem:process_input_action_programs(world)
-	for obj, component in world:objects_with_components(inputactioneffectcomponent, { scope = "active" }) do
+function inputactioneffectsystem:process_input_action_programs()
+	for obj, component in world_instance:objects_with_components(inputactioneffectcomponent, { scope = "active" }) do
 		if obj.tick_enabled == false then
 			goto continue
 		end
