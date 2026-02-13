@@ -11,7 +11,6 @@ function rock_service:sync_rock_instance(rock_def, room)
 	if instance == nil then
 		instance = spawn_object(self.rock_def_id, {
 			id = id,
-			space_id = room.space_id,
 			pos = { x = rock_def.x, y = rock_def.y, z = 140 },
 		})
 	end
@@ -20,7 +19,6 @@ function rock_service:sync_rock_instance(rock_def, room)
 	if not instance.active then
 		instance:activate()
 	end
-	instance.space_id = room.space_id
 	instance.visible = true
 	instance:configure_from_room_def(rock_def, room, self.id)
 	return instance

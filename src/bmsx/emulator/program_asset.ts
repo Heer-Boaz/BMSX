@@ -231,9 +231,23 @@ function registerAlias(aliases: Map<string, string>, alias: string, path: string
 	}
 }
 
+const BIOS_RES_PREFIX = 'res/';
+const BIOS_ENGINE_RES_PREFIX = 'src/bmsx/res/';
+
+function makeEngineCompactPath(path: string): string | null {
+	if (path.startsWith(BIOS_ENGINE_RES_PREFIX)) {
+		return path.substring(BIOS_ENGINE_RES_PREFIX.length);
+	}
+	if (path.startsWith(BIOS_RES_PREFIX)) {
+		return path.substring(BIOS_RES_PREFIX.length);
+	}
+	return null;
+}
+
 function registerModuleAliases(aliases: Map<string, string>, path: string): void {
 	const pathWithoutExt = stripLuaExtension(path);
-	const hasPathDirectory = pathWithoutExt.indexOf('/') !== -1;
+	const compactPath = makeEngineCompactPath(pathWithoutExt);
+	const isEngineResource = compactPath !== null;
 
 	registerAlias(aliases, path, path);
 	if (pathWithoutExt !== path) {
@@ -241,11 +255,15 @@ function registerModuleAliases(aliases: Map<string, string>, path: string): void
 	}
 	const aliasWithLua = path.endsWith('.lua') ? `${pathWithoutExt}.lua` : `${path}.lua`;
 	registerAlias(aliases, aliasWithLua, path);
+	if (compactPath !== null) {
+		registerAlias(aliases, compactPath, path);
+		registerAlias(aliases, `${compactPath}.lua`, path);
+	}
 	const dotted = pathWithoutExt.replace(/\//g, '.');
 	registerAlias(aliases, dotted, path);
 	registerAlias(aliases, `${dotted}.lua`, path);
 
-	if (!hasPathDirectory) {
+	if (isEngineResource) {
 		const base = baseModuleName(pathWithoutExt);
 		registerAlias(aliases, base, path);
 		registerAlias(aliases, `${base}.lua`, path);

@@ -1,5 +1,4 @@
 local constants = require('constants')
-local components = require('components')
 
 local enemy_explosion = {}
 enemy_explosion.__index = enemy_explosion
@@ -49,8 +48,8 @@ function enemy_explosion:bind_events()
 end
 
 function enemy_explosion:sync_explosion_sprite(imgid)
-	self.body_sprite.imgid = imgid
-	self.body_sprite.enabled = true
+	self.sprite_component.imgid = imgid
+	self.visible = true
 end
 
 function enemy_explosion:spawn_loot()
@@ -60,10 +59,8 @@ function enemy_explosion:spawn_loot()
 
 	loot_spawn_sequence = loot_spawn_sequence + 1
 	local loot_id = string.format('%s.loot.%d', self.id, loot_spawn_sequence)
-	local room = service(constants.ids.castle_service_instance).current_room
 	spawn_object(loot_drop_module.loot_drop_def_id, {
 		id = loot_id,
-		space_id = room.space_id,
 		loot_type = self.loot_type,
 		loot_value = loot_value_for_type(self.loot_type),
 		pos = { x = self.x, y = self.y, z = 113 },
@@ -76,13 +73,8 @@ local function define_enemy_explosion_fsm()
 		states = {
 			boot = {
 				entering_state = function(self)
-					self.body_sprite = components.spritecomponent.new({
-						parent = self,
-						id_local = 'body',
-						imgid = explosion_frames[1],
-						offset = { x = 0, y = 0, z = 114 },
-					})
-						self:add_component(self.body_sprite)
+					self.sprite_component.imgid = explosion_frames[1]
+					self.sprite_component.offset = { x = 0, y = 0, z = 114 }
 						self:define_timeline(new_timeline({
 							id = constants.ids.enemy_explosion_def .. '.timeline.explosion',
 						frames = explosion_frames,

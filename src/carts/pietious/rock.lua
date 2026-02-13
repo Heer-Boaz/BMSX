@@ -69,8 +69,6 @@ end
 
 function rock:finish_break()
 	service(self.rock_service_id):on_rock_destroyed(self.id)
-	self.body_sprite.enabled = false
-	self.body_collider.enabled = false
 	self:mark_for_disposal()
 end
 
@@ -88,14 +86,9 @@ local function define_rock_fsm()
 					})
 					self.body_collider:apply_collision_profile('enemy')
 					self:add_component(self.body_collider)
-					self.body_sprite = components.spritecomponent.new({
-						parent = self,
-						id_local = 'body',
-						imgid = 'stone',
-						offset = { x = 0, y = 0, z = 113 },
-						collider_local_id = 'body',
-					})
-					self:add_component(self.body_sprite)
+					self.sprite_component.imgid = 'stone'
+					self.sprite_component.offset = { x = 0, y = 0, z = 113 }
+					self.visible = false
 					self:bind_events()
 					return '/idle'
 				end,
@@ -106,9 +99,9 @@ local function define_rock_fsm()
 					['reset'] = '/idle',
 				},
 				entering_state = function(self)
-					self.body_sprite.imgid = 'stone'
+					self.sprite_component.imgid = 'stone'
 					self.body_collider.enabled = true
-					self.body_sprite.enabled = true
+					self.visible = true
 				end,
 			},
 				breaking = {
@@ -118,9 +111,9 @@ local function define_rock_fsm()
 					entering_state = function(self)
 						self.break_steps = 0
 						self:begin_break()
-						self.body_sprite.imgid = 'stone_broken'
+						self.sprite_component.imgid = 'stone_broken'
 						self.body_collider.enabled = false
-						self.body_sprite.enabled = true
+						self.visible = true
 					end,
 					tick = function(self)
 						self.break_steps = self.break_steps + 1

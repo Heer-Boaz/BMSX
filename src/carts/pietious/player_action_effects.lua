@@ -67,7 +67,6 @@ local function try_fire_pepernoot_effect(context)
 
 	spawn_object(pepernoot_projectile_module.pepernoot_projectile_def_id, {
 		id = projectile_id,
-		space_id = service(constants.ids.castle_service_instance).current_room.space_id,
 		room = service(constants.ids.castle_service_instance).current_room,
 		room_number = service(constants.ids.castle_service_instance).current_room.room_number,
 		owner_id = owner.id,

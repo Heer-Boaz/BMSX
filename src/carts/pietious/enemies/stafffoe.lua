@@ -63,7 +63,6 @@ function stafffoe.bt_tick(self, blackboard)
 		local angle = (base_angle + (i * 90)) % 360
 		local speed_x_num, speed_y_num = speed_components_from_angle(constants.enemy.staff_bullet_speed_num, angle)
 		local spawned_staff = spawn_sprite('pietious.enemy.def.staffspawn', {
-			space_id = service(constants.ids.castle_service_instance).current_room.space_id,
 			pos = {
 				x = self.x,
 				y = self.y,
@@ -209,7 +208,6 @@ end
 function stafffoe:spawn_death_effect()
 	enemy_death_effect_sequence = enemy_death_effect_sequence + 1
 	spawn_object(enemy_explosion_module.enemy_explosion_def_id, {
-		space_id = service(constants.ids.castle_service_instance).current_room.space_id,
 		room_number = service(constants.ids.castle_service_instance).current_room.room_number,
 		loot_type = self:choose_drop_type(),
 		pos = { x = self.x, y = self.y, z = 114 },

@@ -37,6 +37,7 @@ type LuaLintIssueRule =
 	'single_line_method_pattern' |
 	'builtin_recreation_pattern' |
 	'multi_has_tag_pattern' |
+	'self_imgid_assignment_pattern' |
 	'forbidden_transition_to_pattern' |
 	'forbidden_matches_state_path_pattern' |
 	'constant_copy_pattern' |
@@ -373,6 +374,11 @@ function isVisualUpdateLikeFunctionName(functionName: string): boolean {
 		|| /^refresh(?:_[a-z0-9]+)*_presentation(?:_[a-z0-9]+)*(?:_if_changed)?$/.test(leaf);
 }
 
+function isAllowedSingleLineMethodName(functionName: string): boolean {
+	const leaf = getFunctionLeafName(functionName).toLowerCase();
+	return leaf === 'ctor';
+}
+
 function isHasTagCall(expression: LuaExpression): boolean {
 	if (expression.kind !== LuaSyntaxKind.CallExpression) {
 		return false;
@@ -416,6 +422,48 @@ function countHasTagCalls(expression: LuaExpression): number {
 		default:
 			return 0;
 	}
+}
+
+function isSelfExpressionRoot(expression: LuaExpression): boolean {
+	if (expression.kind === LuaSyntaxKind.IdentifierExpression) {
+		return expression.name === 'self';
+	}
+	if (expression.kind === LuaSyntaxKind.MemberExpression || expression.kind === LuaSyntaxKind.IndexExpression) {
+		return isSelfExpressionRoot(expression.base);
+	}
+	return false;
+}
+
+function isSelfImageIdAssignmentTarget(target: LuaExpression): boolean {
+	if (target.kind === LuaSyntaxKind.MemberExpression) {
+		return target.identifier === 'imgid' && isSelfExpressionRoot(target.base);
+	}
+	if (target.kind !== LuaSyntaxKind.IndexExpression) {
+		return false;
+	}
+	if (!isSelfExpressionRoot(target.base)) {
+		return false;
+	}
+	return (target.index.kind === LuaSyntaxKind.StringLiteralExpression && target.index.value === 'imgid')
+		|| (target.index.kind === LuaSyntaxKind.IdentifierExpression && target.index.name === 'imgid');
+}
+
+function lintSelfImgIdAssignmentPattern(target: LuaExpression, value: LuaExpression | undefined, issues: LuaLintIssue[]): void {
+	if (!isSelfImageIdAssignmentTarget(target) || !value) {
+		return;
+	}
+	if (value.kind !== LuaSyntaxKind.StringLiteralExpression && value.kind !== LuaSyntaxKind.NilLiteralExpression) {
+		return;
+	}
+	if (value.kind === LuaSyntaxKind.StringLiteralExpression && value.value !== '') {
+		return;
+	}
+	pushIssue(
+		issues,
+		'self_imgid_assignment_pattern',
+		target,
+		'Forbidden self.*imgid assignment variant. Use self.visible=false / self.<non_standard_sprite_component>.enabled=false instead of setting imgid to empty string or nil.',
+	);
 }
 
 function lintMultiHasTagPattern(expression: LuaExpression, issues: LuaLintIssue[]): void {
@@ -1207,7 +1255,7 @@ function lintFunctionBody(
 			`Defensive pure-copy function is forbidden ("${functionName}"). Do not replace it with workaround wrappers/helpers; use original source values directly.`,
 		);
 	}
-	if (isNamedFunction && options.isMethodDeclaration && !isGetterOrSetter && !isVisualUpdateLike && matchesMeaninglessSingleLineMethodPattern(functionExpression)) {
+	if (isNamedFunction && options.isMethodDeclaration && !isGetterOrSetter && !isVisualUpdateLike && !isAllowedSingleLineMethodName(functionName) && matchesMeaninglessSingleLineMethodPattern(functionExpression)) {
 		pushIssue(
 			issues,
 			'single_line_method_pattern',
@@ -1336,6 +1384,11 @@ function lintStatements(statements: ReadonlyArray<LuaStatement>, issues: LuaLint
 			case LuaSyntaxKind.AssignmentStatement:
 				for (const left of statement.left) {
 					lintExpression(left, issues);
+				}
+				for (let index = 0; index < statement.left.length; index += 1) {
+					const left = statement.left[index];
+					const right = statement.right[index];
+					lintSelfImgIdAssignmentPattern(left, right, issues);
 				}
 				for (const right of statement.right) {
 					lintExpression(right, issues);

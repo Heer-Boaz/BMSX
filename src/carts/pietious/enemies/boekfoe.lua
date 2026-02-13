@@ -51,7 +51,6 @@ function boekfoe.bt_tick(self, blackboard)
 	if spawn_ticks <= 0 then
 		local y_speed_num = math.random(-5, 4)
 		local spawned_paper = spawn_sprite('pietious.enemy.def.paperfoe', {
-			space_id = service(constants.ids.castle_service_instance).current_room.space_id,
 			pos = {
 				x = self.x,
 				y = self.y,
@@ -213,7 +212,6 @@ end
 function boekfoe:spawn_death_effect()
 	enemy_death_effect_sequence = enemy_death_effect_sequence + 1
 	spawn_object(enemy_explosion_module.enemy_explosion_def_id, {
-		space_id = service(constants.ids.castle_service_instance).current_room.space_id,
 		room_number = service(constants.ids.castle_service_instance).current_room.room_number,
 		loot_type = self:choose_drop_type(),
 		pos = { x = self.x, y = self.y, z = 114 },

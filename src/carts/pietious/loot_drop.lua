@@ -55,35 +55,27 @@ local function define_loot_drop_fsm()
 					})
 					self.body_collider:apply_collision_profile('pickup')
 					self:add_component(self.body_collider)
-					self.body_sprite = components.spritecomponent.new({
-						parent = self,
-						id_local = 'body',
-						imgid = 'item_health',
-						offset = { x = 0, y = 0, z = 112 },
-						collider_local_id = 'body',
-						})
-						self:add_component(self.body_sprite)
-						self:bind_events()
-						self.body_sprite.imgid = sprite_for_loot_type(self.loot_type)
-						self.body_sprite.enabled = true
-						self.body_collider.enabled = true
-						return '/active'
-					end,
-				},
-			active = {
-				on = {
-					['picked'] = '/picked',
-				},
-					entering_state = function(self)
-						self.body_sprite.imgid = sprite_for_loot_type(self.loot_type)
-						self.body_sprite.enabled = true
-						self.body_collider.enabled = true
-					end,
-				},
+					self.sprite_component.imgid = 'item_health'
+					self.sprite_component.offset = { x = 0, y = 0, z = 112 }
+					self:bind_events()
+				self.sprite_component.imgid = sprite_for_loot_type(self.loot_type)
+				self.visible = true
+				self.body_collider.enabled = true
+				return '/active'
+			end,
+		},
+		active = {
+			on = {
+				['picked'] = '/picked',
+			},
+				entering_state = function(self)
+					self.sprite_component.imgid = sprite_for_loot_type(self.loot_type)
+					self.visible = true
+					self.body_collider.enabled = true
+				end,
+			},
 			picked = {
 				entering_state = function(self)
-					self.body_sprite.enabled = false
-					self.body_collider.enabled = false
 					self:mark_for_disposal()
 				end,
 			},

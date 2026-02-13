@@ -11,7 +11,7 @@ function vlokspawner.configure(self, _def)
 	self.dangerous = false
 	self.max_health = 1
 	self.health = 1
-	self.sprite_component.enabled = false
+	self.visible = false
 	self.collider.enabled = false
 end
 
@@ -30,7 +30,6 @@ function vlokspawner.bt_tick(self, blackboard)
 	local spawn_y = service(constants.ids.castle_service_instance).current_room.world_top
 	local random_x = math.random(-5, 4)
 	local spawned_vlok = spawn_sprite('pietious.enemy.def.vlokfoe', {
-		space_id = service(constants.ids.castle_service_instance).current_room.space_id,
 		pos = {
 			x = spawn_x,
 			y = spawn_y,
@@ -173,7 +172,6 @@ end
 function vlokspawner:spawn_death_effect()
 	enemy_death_effect_sequence = enemy_death_effect_sequence + 1
 	spawn_object(enemy_explosion_module.enemy_explosion_def_id, {
-		space_id = service(constants.ids.castle_service_instance).current_room.space_id,
 		room_number = service(constants.ids.castle_service_instance).current_room.room_number,
 		loot_type = self:choose_drop_type(),
 		pos = { x = self.x, y = self.y, z = 114 },

@@ -1480,7 +1480,6 @@ function combat.register_director()
 			all_out_shake_bg_x = 0,
 			all_out_shake_bg_y = 0,
 			combat_exit_target_bg = '',
-			combat_results_prev_bg_imgid = '',
 			combat_results_prev_bg_scale_x = 1,
 			combat_results_prev_bg_scale_y = 1,
 			combat_results_maya_target_x = 0,
@@ -1493,7 +1492,6 @@ function combat.register_director()
 			skip_combat_fade_in = false,
 			skip_transition_fade = false,
 			combat_node_id = '',
-			combat_monster_imgid = '',
 			combat_rewards = {},
 		},
 	})

@@ -95,17 +95,17 @@ local player_input_action_effect_program = {
 }
 
 local player_dying_frames = timeline_sequence({
-	{ value = { player_damage_imgid = 'pietolon_dying_1' }, hold = 8 },
-	{ value = { player_damage_imgid = 'pietolon_dying_2' }, hold = 8 },
-	{ value = { player_damage_imgid = 'pietolon_dying_3' }, hold = 8 },
-	{ value = { player_damage_imgid = 'pietolon_dying_4' }, hold = 8 },
-	{ value = { player_damage_imgid = 'pietolon_dying_5' }, hold = 8 },
+	{ value = { imgid = 'pietolon_dying_1' }, hold = 8 },
+	{ value = { imgid = 'pietolon_dying_2' }, hold = 8 },
+	{ value = { imgid = 'pietolon_dying_3' }, hold = 8 },
+	{ value = { imgid = 'pietolon_dying_4' }, hold = 8 },
+	{ value = { imgid = 'pietolon_dying_5' }, hold = 8 },
 })
 local player_hit_fall_frames = {
-	{ player_damage_imgid = 'pietolon_hit_r' },
+	{ imgid = 'pietolon_hit_r' },
 }
 local player_hit_recovery_frames = timeline_sequence({
-	{ value = { player_damage_imgid = 'pietolon_recover_r' }, hold = constants.damage.hit_recovery_frames },
+	{ value = { imgid = 'pietolon_recover_r' }, hold = constants.damage.hit_recovery_frames },
 })
 local player_sword_sequence_frames = timeline_range(constants.sword.duration_frames + 1)
 local player_sword_end_event = 'sword.end'
@@ -226,40 +226,38 @@ function player:ctor()
 	self:add_component(self.sword_sprite)
 end
 
-function player:update_damage_state_imgid()
+function player:get_damage_state_imgid()
+	local damage_imgid
 	if self:has_tag(state_tags.group.damage_visual) then
 		if self:has_tag(state_tags.variant.dying) then
 			local dying_timeline = self:get_timeline('p.tl.d')
 			dying_timeline:force_seek(self.death_timer)
-			self.player_damage_imgid = dying_timeline:value().player_damage_imgid
-			return
+			damage_imgid = dying_timeline:value().imgid
+			return damage_imgid
 		end
 
 		if self:has_tag(state_tags.variant.hit_recovery) then
 			local hit_recovery_timeline = self:get_timeline('p.tl.hr')
 			hit_recovery_timeline:force_seek(self.hit_recovery_timer)
-			self.player_damage_imgid = hit_recovery_timeline:value().player_damage_imgid
-			return
+			damage_imgid = hit_recovery_timeline:value().imgid
+			return damage_imgid
 		end
 
 		local hit_fall_timeline = self:get_timeline('p.tl.hf')
 		hit_fall_timeline:force_seek(self.hit_substate)
-		self.player_damage_imgid = hit_fall_timeline:value().player_damage_imgid
-		return
+		damage_imgid = hit_fall_timeline:value().imgid
+		return damage_imgid
 	end
-	self.player_damage_imgid = ''
+	return damage_imgid
 end
 
 function player:apply_presentation_state()
-	local body_sprite = self.sprite_component
-	local sword_sprite = self.sword_sprite
-
 	local transition_hidden = self:has_tag(state_tags.variant.waiting_world_banner)
 		or self:has_tag(state_tags.variant.waiting_world_emerge)
 		or self:has_tag(state_tags.variant.waiting_shrine)
 	if transition_hidden then
-		body_sprite.enabled = false
-		sword_sprite.enabled = false
+		self.visible = false
+		self.sword_sprite.enabled = false
 		return
 	end
 
@@ -282,35 +280,33 @@ function player:apply_presentation_state()
 				imgid = 'pietolon_stairs_up_2'
 			end
 		end
-		imgid = imgid or 'pietolon_stairs_up_1'
-
-		body_sprite.enabled = true
-		sword_sprite.enabled = false
-		body_sprite.imgid = imgid
-		body_sprite.flip.flip_h = self.facing > 0
+			self.visible = true
+			self.sword_sprite.enabled = false
+			self.sprite_component.imgid = imgid
+		self.sprite_component.flip.flip_h = self.facing > 0
 		if self:has_tag(state_tags.variant.emerging_world) or self:has_tag(state_tags.variant.leaving_shrine) then
-			body_sprite.offset.x = 1
+			self.sprite_component.offset.x = 1
 		else
-			body_sprite.offset.x = -1
+			self.sprite_component.offset.x = -1
 		end
-		body_sprite.offset.y = 0
-		body_sprite.offset.z = 110
+		self.sprite_component.offset.y = 0
+		self.sprite_component.offset.z = 110
 		return
 	end
 	if self.hit_invulnerability_timer > 0 and self.hit_blink_on and not self:has_tag(state_tags.variant.dying) then
-		body_sprite.enabled = false
-		sword_sprite.enabled = false
+		self.visible = false
+		self.sword_sprite.enabled = false
 		return
 	end
-	body_sprite.enabled = true
+	self.visible = true
 
-	self:update_damage_state_imgid()
+	local damage_imgid = self:get_damage_state_imgid()
 
-	local imgid
-	local flip_h = self.facing < 0
+		local imgid = 'pietolon_stand_r'
+		local flip_h = self.facing < 0
 
 	if self:has_tag(state_tags.group.damage_visual) then
-		imgid = self.player_damage_imgid
+		imgid = damage_imgid
 	elseif self:has_tag(state_tags.variant.up_stairs) then
 		if self.stairs_anim_frame == 0 then
 			imgid = 'pietolon_stairs_up_1'
@@ -338,51 +334,47 @@ function player:apply_presentation_state()
 			imgid = 'pietolon_walk_r'
 		end
 	end
-	if imgid == nil then
-		imgid = 'pietolon_stand_r'
-	end
-
 	if self:has_tag(state_tags.visual.jump_sword) then
 		imgid = 'pietolon_jumpslash_r'
 		if flip_h then
-			body_sprite.offset.x = constants.sword.jump_body_offset_left
-			sword_sprite.offset.x = constants.sword.jump_offset_left
+			self.sprite_component.offset.x = constants.sword.jump_body_offset_left
+			self.sword_sprite.offset.x = constants.sword.jump_offset_left
 		else
-			body_sprite.offset.x = constants.sword.jump_body_offset_right
-			sword_sprite.offset.x = constants.sword.jump_offset_right
+			self.sprite_component.offset.x = constants.sword.jump_body_offset_right
+			self.sword_sprite.offset.x = constants.sword.jump_offset_right
 		end
-		sword_sprite.offset.y = constants.sword.jump_offset_y
+		self.sword_sprite.offset.y = constants.sword.jump_offset_y
 	elseif self:has_tag(state_tags.visual.ground_sword) then
 		imgid = 'pietolon_slash_r'
 		if flip_h then
-			body_sprite.offset.x = constants.sword.ground_body_offset_left
-			sword_sprite.offset.x = constants.sword.ground_offset_left
+			self.sprite_component.offset.x = constants.sword.ground_body_offset_left
+			self.sword_sprite.offset.x = constants.sword.ground_offset_left
 		else
-			body_sprite.offset.x = constants.sword.ground_body_offset_right
-			sword_sprite.offset.x = constants.sword.ground_offset_right
+			self.sprite_component.offset.x = constants.sword.ground_body_offset_right
+			self.sword_sprite.offset.x = constants.sword.ground_offset_right
 		end
-		sword_sprite.offset.y = constants.sword.ground_offset_y
+		self.sword_sprite.offset.y = constants.sword.ground_offset_y
 	elseif self:has_tag(state_tags.visual.stairs_sword) then
 		imgid = 'pietolon_slash_r'
 		if flip_h then
-			body_sprite.offset.x = constants.sword.stairs_body_offset_left
-			sword_sprite.offset.x = constants.sword.stairs_offset_left
+			self.sprite_component.offset.x = constants.sword.stairs_body_offset_left
+			self.sword_sprite.offset.x = constants.sword.stairs_offset_left
 		else
-			body_sprite.offset.x = constants.sword.stairs_body_offset_right
-			sword_sprite.offset.x = constants.sword.stairs_offset_right
+			self.sprite_component.offset.x = constants.sword.stairs_body_offset_right
+			self.sword_sprite.offset.x = constants.sword.stairs_offset_right
 		end
-		sword_sprite.offset.y = constants.sword.stairs_offset_y
+		self.sword_sprite.offset.y = constants.sword.stairs_offset_y
 	elseif self:has_tag(state_tags.variant.up_stairs) or self:has_tag(state_tags.variant.down_stairs) then
 		flip_h = false
-		body_sprite.offset.x = 0
+		self.sprite_component.offset.x = 0
 	else
-		body_sprite.offset.x = 0
+		self.sprite_component.offset.x = 0
 	end
 
-	body_sprite.imgid = imgid
-	body_sprite.flip.flip_h = flip_h
-	sword_sprite.enabled = self:has_tag(state_tags.group.sword)
-	sword_sprite.flip.flip_h = flip_h
+	self.sprite_component.imgid = imgid
+	self.sprite_component.flip.flip_h = flip_h
+	self.sword_sprite.enabled = self:has_tag(state_tags.group.sword)
+	self.sword_sprite.flip.flip_h = flip_h
 end
 
 function player:update_collision_state()
@@ -2819,7 +2811,6 @@ local function register_player_definition()
 		},
 		defaults = {
 			imgid = 'pietolon_stand_r',
-			room = nil,
 			player_index = 1,
 			width = constants.player.width,
 			height = constants.player.height,
@@ -2878,7 +2869,6 @@ local function register_player_definition()
 			enter_leave_wait_started = false,
 			enter_leave_world_target = '',
 			enter_leave_shrine_text_lines = {},
-				player_damage_imgid = player_dying_frames[1].player_damage_imgid,
 				inventory_items = nil,
 				secondary_weapon = 'none',
 				weapon_level = 0,

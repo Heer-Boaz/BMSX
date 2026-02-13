@@ -101,7 +101,6 @@ function enemy_service:sync_enemy_instance(enemy_def, room)
 	if instance == nil then
 		instance = spawn_sprite('pietious.enemy.def.' .. enemy_def.kind, {
 			id = id,
-			space_id = room.space_id,
 			pos = { x = enemy_def.x, y = enemy_def.y, z = 140 },
 		})
 	end
@@ -109,7 +108,6 @@ function enemy_service:sync_enemy_instance(enemy_def, room)
 	if not instance.active then
 		instance:activate()
 	end
-	instance.space_id = room.space_id
 	instance.visible = true
 	instance:configure_from_room_def(enemy_def, room)
 	return instance

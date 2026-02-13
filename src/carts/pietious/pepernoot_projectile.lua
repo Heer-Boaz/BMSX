@@ -17,8 +17,6 @@ end
 
 function pepernoot_projectile:dispose(reason)
 	self.disposed = true
-	self.body_sprite.enabled = false
-	self.body_collider.enabled = false
 	self:mark_for_disposal()
 end
 
@@ -49,8 +47,8 @@ end
 function pepernoot_projectile:tick()
 	self.x = self.x + (self.direction * constants.secondary_weapon.pepernoot_speed_px)
 	local snapped_x, snapped_y = room_module.snap_world_to_tile(service(constants.ids.castle_service_instance).current_room, self.x, self.y)
-	self.body_sprite.offset.x = snapped_x - self.x
-	self.body_sprite.offset.y = snapped_y - self.y
+	self.sprite_component.offset.x = snapped_x - self.x
+	self.sprite_component.offset.y = snapped_y - self.y
 
 	if self.x <= 0 or self.x >= service(constants.ids.castle_service_instance).current_room.world_width then
 		self:dispose('out_of_bounds')
@@ -75,27 +73,21 @@ local function define_pepernoot_projectile_fsm()
 						})
 						self.body_collider:apply_collision_profile('projectile')
 						self:add_component(self.body_collider)
-						self.body_sprite = components.spritecomponent.new({
-							parent = self,
-							id_local = 'body',
-							imgid = 'pepernoot_16',
-							offset = { x = 0, y = 0, z = 113 },
-							collider_local_id = 'body',
-						})
-						self:add_component(self.body_sprite)
+						self.sprite_component.imgid = 'pepernoot_16'
+						self.sprite_component.offset = { x = 0, y = 0, z = 113 }
 						self:bind_events()
 						return '/active'
 					end,
 			},
-			active = {
+				active = {
 				entering_state = function(self)
 						self.disposed = false
-						self.body_sprite.enabled = true
+						self.visible = true
 						self.body_collider.enabled = true
-						self.body_sprite.flip.flip_h = self.direction < 0
+						self.sprite_component.flip.flip_h = self.direction < 0
 						local snapped_x, snapped_y = room_module.snap_world_to_tile(service(constants.ids.castle_service_instance).current_room, self.x, self.y)
-						self.body_sprite.offset.x = snapped_x - self.x
-						self.body_sprite.offset.y = snapped_y - self.y
+						self.sprite_component.offset.x = snapped_x - self.x
+						self.sprite_component.offset.y = snapped_y - self.y
 					end,
 				},
 		},

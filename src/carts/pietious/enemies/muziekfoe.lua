@@ -70,7 +70,6 @@ function muziekfoe.bt_tick(self, blackboard)
 		local delta_x, delta_y = get_delta_from_source_to_target_scaled(source_x, source_y, target_x, target_y, delta_scale)
 		local delta_divisor = math.random(1, 2)
 		local spawned_noot = spawn_sprite('pietious.enemy.def.nootfoe', {
-			space_id = service(constants.ids.castle_service_instance).current_room.space_id,
 			pos = {
 				x = self.x + 12,
 				y = self.y,
@@ -221,7 +220,6 @@ end
 function muziekfoe:spawn_death_effect()
 	enemy_death_effect_sequence = enemy_death_effect_sequence + 1
 	spawn_object(enemy_explosion_module.enemy_explosion_def_id, {
-		space_id = service(constants.ids.castle_service_instance).current_room.space_id,
 		room_number = service(constants.ids.castle_service_instance).current_room.room_number,
 		loot_type = self:choose_drop_type(),
 		pos = { x = self.x, y = self.y, z = 114 },

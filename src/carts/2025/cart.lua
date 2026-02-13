@@ -36,7 +36,6 @@ local function build_director_fsm()
 				self.inline_pages = {}
 				self.inline_next = ''
 				self.just_finished_combat = false
-				self.last_combat_monster_imgid = nil
 				self.skip_combat_fade_in = false
 				self.skip_transition_fade = false
 				self.fade_hold_black = false

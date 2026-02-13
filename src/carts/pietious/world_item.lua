@@ -18,8 +18,8 @@ function world_item:configure_from_room_def(def, room, item_service_id)
 	self.item_service_id = item_service_id
 	self.source_kind = def.source_kind
 	self.item_type = def.item_type
-	self.body_sprite.imgid = constants.world_item.sprite[self.item_type]
-	self.body_sprite.enabled = true
+	self.sprite_component.imgid = constants.world_item.sprite[self.item_type]
+	self.visible = true
 	self.body_collider.enabled = true
 end
 
@@ -54,14 +54,8 @@ local function define_world_item_fsm()
 					})
 					self.body_collider:apply_collision_profile('pickup')
 					self:add_component(self.body_collider)
-					self.body_sprite = components.spritecomponent.new({
-						parent = self,
-						id_local = 'body',
-						imgid = 'item_health',
-						offset = { x = 0, y = 0, z = 112 },
-						collider_local_id = 'body',
-					})
-					self:add_component(self.body_sprite)
+					self.sprite_component.imgid = 'item_health'
+					self.sprite_component.offset = { x = 0, y = 0, z = 112 }
 					self:bind_events()
 					return '/active'
 				end,
@@ -71,15 +65,13 @@ local function define_world_item_fsm()
 					['picked'] = '/picked',
 				},
 					entering_state = function(self)
-						self.body_sprite.imgid = constants.world_item.sprite[self.item_type]
-						self.body_sprite.enabled = true
+						self.sprite_component.imgid = constants.world_item.sprite[self.item_type]
+						self.visible = true
 						self.body_collider.enabled = true
 					end,
 				},
 			picked = {
 				entering_state = function(self)
-					self.body_sprite.enabled = false
-					self.body_collider.enabled = false
 					self:mark_for_disposal()
 				end,
 			},
