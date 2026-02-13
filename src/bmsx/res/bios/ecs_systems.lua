@@ -281,7 +281,9 @@ local function build_overlap_payload(self_col, other_col, other_owner, contact, 
 	return {
 		other_id = other_owner.id,
 		other_collider_id = other_col.id,
+		other_collider_local_id = other_col.id_local,
 		collider_id = self_col.id,
+		collider_local_id = self_col.id_local,
 		contact = contact,
 		phase = phase,
 	}

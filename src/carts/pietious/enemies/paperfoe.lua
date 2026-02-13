@@ -181,14 +181,11 @@ function paperfoe:on_overlap(event)
 		return
 	end
 	local player = object(constants.ids.player_instance)
-	local other_collider = player:get_component_by_id(event.other_collider_id)
-	if other_collider.id_local == constants.ids.player_sword_collider_local then
-		if player:has_tag('g.sw') then
-			self:take_weapon_hit('sword', player.sword_id)
-		end
+	if player:has_tag('g.sw') then
+		self:take_weapon_hit('sword', player.sword_id)
 		return
 	end
-	if other_collider.id_local == constants.ids.player_body_collider_local and self.dangerous then
+	if self.dangerous then
 		player:take_hit(self.damage, self.x + math.modf(self.sx / 2), self.y + math.modf(self.sy / 2), 'paperfoe')
 	end
 end

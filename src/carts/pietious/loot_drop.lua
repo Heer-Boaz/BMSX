@@ -40,11 +40,6 @@ function loot_drop:on_overlap_stay(event)
 
 	local player = object(constants.ids.player_instance)
 
-	local other_collider = player:get_component_by_id(event.other_collider_id)
-	if other_collider.id_local ~= constants.ids.player_body_collider_local then
-		return
-	end
-
 	if player:collect_loot(self.loot_type, self.loot_value) then
 		self:dispatch_state_event('picked')
 	end

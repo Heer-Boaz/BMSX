@@ -57,11 +57,6 @@ function rock:on_overlap(event)
 	end
 
 	local player = object(constants.ids.player_instance)
-	local other_collider = player:get_component_by_id(event.other_collider_id)
-	if other_collider.id_local ~= constants.ids.player_sword_collider_local then
-		return
-	end
-
 	if player:has_tag('g.sw') then
 		self:take_weapon_hit('sword', player.sword_id)
 	end

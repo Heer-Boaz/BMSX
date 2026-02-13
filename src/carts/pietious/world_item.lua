@@ -5,10 +5,10 @@ world_item.__index = world_item
 
 function world_item:bind_events()
 	self.events:on({
-		event_name = 'overlap.stay',
+		event_name = 'overlap',
 		subscriber = self,
 		handler = function(event)
-			self:on_overlap_stay(event)
+			self:on_overlap(event)
 		end,
 	})
 end
@@ -23,14 +23,8 @@ function world_item:configure_from_room_def(def, room, item_service_id)
 	self.body_collider.enabled = true
 end
 
-function world_item:on_overlap_stay(event)
+function world_item:on_overlap(event)
 	if event.other_id ~= constants.ids.player_instance then
-		return
-	end
-
-	local player = object(constants.ids.player_instance)
-	local other_collider = player:get_component_by_id(event.other_collider_id)
-	if other_collider.id_local ~= constants.ids.player_body_collider_local then
 		return
 	end
 
