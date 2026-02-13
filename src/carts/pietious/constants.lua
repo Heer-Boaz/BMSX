@@ -316,7 +316,7 @@ constants.world_entrance = {
 	trigger_x_offset = constants.room.tile_size,
 	trigger_half_width = constants.room.tile_unit4,
 	trigger_y_offset = constants.room.tile_size,
-	enter_leave_step_ms = 80,
+	enter_leave_step_frames = 4,
 	enter_leave_frames = 32,
 	enter_anim_frame_distance = 2,
 }

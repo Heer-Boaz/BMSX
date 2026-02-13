@@ -189,7 +189,7 @@ function player:reset_runtime()
 	self.hit_direction = 0
 	self.hit_recovery_timer = 0
 	self.death_timer = 0
-	self.enter_leave_elapsed_ms = 0
+	self.enter_leave_step = 0
 	self.enter_leave_elapsed_distance = 0
 	self.enter_leave_size = self.height
 	self.enter_leave_anim_frame = 0
@@ -255,15 +255,13 @@ function player:get_damage_state_imgid()
 end
 
 function player:apply_presentation_state()
-	local transition_hidden = self:has_tag(state_tags.group.world_transition_waiting)
-	if transition_hidden then
+	if self:has_tag(state_tags.group.world_transition_waiting) then
 		self.visible = false
 		return
 	end
 
-	local transition_anim = self:has_tag(state_tags.group.world_transition)
 	local transitioning_down = self:has_tag(state_tags.group.world_transition_down)
-	if transition_anim then
+	if self:has_tag(state_tags.group.world_transition) then
 		local imgid
 		if transitioning_down then
 			if self.enter_leave_anim_frame == 0 then
@@ -301,7 +299,6 @@ function player:apply_presentation_state()
 
 	local imgid
 	local flip_h = self.facing < 0
-	local player_stairs = self:has_tag(state_tags.group.player_stairs)
 
 	if self:has_tag(state_tags.group.damage_visual) then
 		imgid = damage_sprite_id
@@ -331,6 +328,8 @@ function player:apply_presentation_state()
 		else
 			imgid = 'pietolon_walk_r'
 		end
+	else
+		imgid = 'pietolon_stand_r'
 	end
 	if self:has_tag(state_tags.visual.jump_sword) then
 		imgid = 'pietolon_jumpslash_r'
@@ -362,17 +361,13 @@ function player:apply_presentation_state()
 			self.sword_sprite.offset.x = constants.sword.stairs_offset_right
 		end
 		self.sword_sprite.offset.y = constants.sword.stairs_offset_y
-	elseif player_stairs then
+	elseif self:has_tag(state_tags.group.player_stairs) then
 		flip_h = false
 		self.sprite_component.offset.x = 0
 	else
 		self.sprite_component.offset.x = 0
-		imgid = 'pietolon_stand_r'
 	end
 
-	if imgid == nil then
-		imgid = 'pietolon_stand_r'
-	end
 	self.sprite_component.imgid = imgid
 	self.sprite_component.flip.flip_h = flip_h
 	self.sword_sprite.enabled = self:has_tag(state_tags.group.sword)
@@ -699,7 +694,7 @@ function player:find_near_open_world_entrance()
 end
 
 function player:reset_enter_leave_animation(visible_size)
-	self.enter_leave_elapsed_ms = 0
+	self.enter_leave_step = 0
 	self.enter_leave_elapsed_distance = 0
 	self.enter_leave_size = visible_size
 	self.enter_leave_anim_frame = 0
@@ -1038,8 +1033,7 @@ function player:update_hit_stairs_lock()
 	if not self.hit_stairs_lock then
 		return
 	end
-	local is_hit_lock_state = self:has_tag(state_tags.group.hit_lock_states)
-	if not is_hit_lock_state then
+	if not self:has_tag(state_tags.group.hit_lock_states) then
 		self.hit_stairs_lock = false
 	end
 end
@@ -1677,9 +1671,9 @@ end
 
 function player:tick_entering_world()
 	self:reset_motion_for_transition_lock()
-	self.enter_leave_elapsed_ms = self.enter_leave_elapsed_ms + 20
-	while self.enter_leave_elapsed_ms >= constants.world_entrance.enter_leave_step_ms do
-		self.enter_leave_elapsed_ms = self.enter_leave_elapsed_ms - constants.world_entrance.enter_leave_step_ms
+	self.enter_leave_step = self.enter_leave_step + 1
+	while self.enter_leave_step >= constants.world_entrance.enter_leave_step_frames do
+		self.enter_leave_step = self.enter_leave_step - constants.world_entrance.enter_leave_step_frames
 		self.enter_leave_size = self.enter_leave_size - 1
 		self:advance_enter_leave_animation(1)
 		if self.enter_leave_size < 0 then
@@ -1730,9 +1724,9 @@ end
 
 function player:tick_emerging_world()
 	self:reset_motion_for_transition_lock()
-	self.enter_leave_elapsed_ms = self.enter_leave_elapsed_ms + 20
-	while self.enter_leave_elapsed_ms >= constants.world_entrance.enter_leave_step_ms do
-		self.enter_leave_elapsed_ms = self.enter_leave_elapsed_ms - constants.world_entrance.enter_leave_step_ms
+	self.enter_leave_step = self.enter_leave_step + 1
+	while self.enter_leave_step >= constants.world_entrance.enter_leave_step_frames do
+		self.enter_leave_step = self.enter_leave_step - constants.world_entrance.enter_leave_step_frames
 		self.enter_leave_size = self.enter_leave_size + 1
 		if self.enter_leave_size > self.height then
 			self.enter_leave_size = self.height
@@ -1745,9 +1739,9 @@ end
 
 function player:tick_entering_shrine()
 	self:reset_motion_for_transition_lock()
-	self.enter_leave_elapsed_ms = self.enter_leave_elapsed_ms + 20
-	while self.enter_leave_elapsed_ms >= constants.world_entrance.enter_leave_step_ms do
-		self.enter_leave_elapsed_ms = self.enter_leave_elapsed_ms - constants.world_entrance.enter_leave_step_ms
+	self.enter_leave_step = self.enter_leave_step + 1
+	while self.enter_leave_step >= constants.world_entrance.enter_leave_step_frames do
+		self.enter_leave_step = self.enter_leave_step - constants.world_entrance.enter_leave_step_frames
 		self.enter_leave_size = self.enter_leave_size - 1
 		self:advance_enter_leave_animation(1)
 		if self.enter_leave_size < 0 then
@@ -1773,9 +1767,9 @@ end
 
 function player:tick_leaving_shrine()
 	self:reset_motion_for_transition_lock()
-	self.enter_leave_elapsed_ms = self.enter_leave_elapsed_ms + 20
-	while self.enter_leave_elapsed_ms >= constants.world_entrance.enter_leave_step_ms do
-		self.enter_leave_elapsed_ms = self.enter_leave_elapsed_ms - constants.world_entrance.enter_leave_step_ms
+	self.enter_leave_step = self.enter_leave_step + 1
+	while self.enter_leave_step >= constants.world_entrance.enter_leave_step_frames do
+		self.enter_leave_step = self.enter_leave_step - constants.world_entrance.enter_leave_step_frames
 		self.enter_leave_size = self.enter_leave_size + 1
 		if self.enter_leave_size > self.height then
 			self.enter_leave_size = self.height
@@ -2326,9 +2320,10 @@ function player:tick()
 	self:update_hit_stairs_lock()
 	self:try_vertical_room_switch_from_position()
 
-	local skip_hit_overlap = self.hit_stairs_lock and self:has_tag(state_tags.group.hit_lock_states)
-	local is_hit_overlap_state = self:has_tag(state_tags.group.hit_overlap_states)
-	if (not skip_hit_overlap) and is_hit_overlap_state then
+	if self.hit_stairs_lock and self:has_tag(state_tags.group.hit_lock_states) then
+		return
+	end
+	if self:has_tag(state_tags.group.hit_overlap_states) then
 		self:resolve_hit_overlap_if_needed()
 	end
 
@@ -2892,7 +2887,7 @@ local function register_player_definition()
 			hit_direction = 0,
 			hit_recovery_timer = 0,
 			death_timer = 0,
-			enter_leave_elapsed_ms = 0,
+			enter_leave_step = 0,
 			enter_leave_elapsed_distance = 0,
 			enter_leave_size = constants.player.height,
 			enter_leave_anim_frame = 0,
