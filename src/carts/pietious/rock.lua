@@ -22,14 +22,11 @@ end
 
 function rock:configure_from_room_def(def, room, rock_service_id)
 	self.rock_id = def.id
-	self.room_number = room.room_number
 	self.space_id = room.space_id
 	self.rock_service_id = rock_service_id
 	self.item_type = def.item_type
 	self.max_health = constants.rock.max_health
 	self.health = self.max_health
-	self.x = def.x
-	self.y = def.y
 	self.break_steps = 0
 	self.last_weapon_kind = ''
 	self.last_weapon_hit_id = -1
@@ -52,7 +49,8 @@ end
 
 function rock:begin_break()
 	local drop_y = self.y + drop_offset_y_for_item_type(self.item_type)
-	service(self.rock_service_id):on_rock_break_started(self.rock_id, self.room_number, self.item_type, self.x, drop_y)
+	local room = service(constants.ids.castle_service_instance).current_room
+	service(self.rock_service_id):on_rock_break_started(self.rock_id, room.room_number, self.item_type, self.x, drop_y)
 end
 
 function rock:on_overlap(event)
@@ -143,13 +141,10 @@ local function register_rock_definition()
 		class = rock,
 		fsms = { constants.ids.rock_fsm },
 			defaults = {
-				space_id = constants.spaces.castle,
-				room_number = 0,
-				rock_id = '',
+			space_id = constants.spaces.castle,
+			rock_id = '',
 			rock_service_id = constants.ids.rock_service_instance,
 			item_type = 'none',
-			width = constants.rock.width,
-			height = constants.rock.height,
 			max_health = constants.rock.max_health,
 			health = constants.rock.max_health,
 			last_weapon_kind = '',

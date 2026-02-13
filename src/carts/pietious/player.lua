@@ -404,7 +404,7 @@ function player:respawn()
 end
 
 function player:sample_input()
-	if get_space() ~= self.room.space_id then
+	if get_space() ~= service(constants.ids.castle_service_instance).current_room.space_id then
 		self:clear_input_state()
 		return
 	end
@@ -647,7 +647,7 @@ function player:equip_secondary_weapon(item_type)
 end
 
 function player:find_near_shrine()
-	local shrines = self.room.shrines
+	local shrines = service(constants.ids.castle_service_instance).current_room.shrines
 	local player_left = self.x
 	local player_top = self.y
 	local player_right = self.x + self.width
@@ -668,7 +668,7 @@ function player:find_near_shrine()
 end
 
 function player:find_world_entrance_for_unlock()
-	local world_entrances = self.room.world_entrances
+	local world_entrances = service(constants.ids.castle_service_instance).current_room.world_entrances
 	local castle_service = service(constants.ids.castle_service_instance)
 	for i = 1, #world_entrances do
 		local world_entrance = world_entrances[i]
@@ -686,7 +686,7 @@ function player:find_world_entrance_for_unlock()
 end
 
 function player:find_near_open_world_entrance()
-	local world_entrances = self.room.world_entrances
+	local world_entrances = service(constants.ids.castle_service_instance).current_room.world_entrances
 	local castle_service = service(constants.ids.castle_service_instance)
 	for i = 1, #world_entrances do
 		local world_entrance = world_entrances[i]
@@ -833,8 +833,7 @@ function player:try_switch_room(direction, keep_stairs_lock)
 
 	if switch.outside == true then
 		local leave_switch = castle_service:leave_world_to_castle()
-		self.room = castle_service.current_room
-		self.space_id = self.room.space_id
+		self.space_id = service(constants.ids.castle_service_instance).current_room.space_id
 		self.x = leave_switch.spawn_x
 		self.y = leave_switch.spawn_y
 		self.facing = leave_switch.spawn_facing
@@ -851,7 +850,7 @@ function player:try_switch_room(direction, keep_stairs_lock)
 			from = leave_switch.from_room_number,
 			to = leave_switch.to_room_number,
 			dir = 'right',
-			space = self.room.space_id,
+			space = service(constants.ids.castle_service_instance).current_room.space_id,
 			x = self.x,
 			y = self.y,
 			transition_kind = 'castle_banner',
@@ -859,17 +858,15 @@ function player:try_switch_room(direction, keep_stairs_lock)
 		})
 		return true
 	end
-
-	self.room = castle_service.current_room
-	self.space_id = self.room.space_id
+	self.space_id = service(constants.ids.castle_service_instance).current_room.space_id
 	if direction == 'left' then
-		self.x = self.room.world_width - self.width
+		self.x = service(constants.ids.castle_service_instance).current_room.world_width - self.width
 	elseif direction == 'right' then
-		self.x = self.room.tile_size
+		self.x = service(constants.ids.castle_service_instance).current_room.tile_size
 	elseif direction == 'up' then
-		self.y = self.room.world_height - self.height - self.room.tile_size
+		self.y = service(constants.ids.castle_service_instance).current_room.world_height - self.height - service(constants.ids.castle_service_instance).current_room.tile_size
 	else
-		self.y = self.room.world_top - self.room.tile_size
+		self.y = service(constants.ids.castle_service_instance).current_room.world_top - service(constants.ids.castle_service_instance).current_room.tile_size
 	end
 
 	if keep_stairs_lock then
@@ -887,7 +884,7 @@ function player:try_switch_room(direction, keep_stairs_lock)
 		from = switch.from_room_number,
 		to = switch.to_room_number,
 		dir = direction,
-		space = self.room.space_id,
+		space = service(constants.ids.castle_service_instance).current_room.space_id,
 		x = self.x,
 		y = self.y,
 	})
@@ -895,7 +892,7 @@ function player:try_switch_room(direction, keep_stairs_lock)
 end
 
 function player:try_side_room_switch_from_motion(dx)
-	local max_x = self.room.world_width - self.width
+	local max_x = service(constants.ids.castle_service_instance).current_room.world_width - self.width
 	if dx < 0 and self.x <= 0 then
 		return self:try_switch_room('left', false)
 	end
@@ -913,18 +910,18 @@ function player:can_switch_up_from_state()
 end
 
 function player:nearing_room_exit()
-	local max_x = self.room.world_width - self.width
+	local max_x = service(constants.ids.castle_service_instance).current_room.world_width - self.width
 	if self.x < 0 then
 		return 'left'
 	end
 	if self.x > max_x then
 		return 'right'
 	end
-	local up_exit_threshold = self.room.world_top - self.room.tile_size
+	local up_exit_threshold = service(constants.ids.castle_service_instance).current_room.world_top - service(constants.ids.castle_service_instance).current_room.tile_size
 	if self.y < up_exit_threshold then
 		return 'up'
 	end
-	local down_exit_threshold = self.room.world_height - self.height
+	local down_exit_threshold = service(constants.ids.castle_service_instance).current_room.world_height - self.height
 	if self.y > down_exit_threshold then
 		return 'down'
 	end
@@ -935,7 +932,7 @@ function player:try_vertical_room_switch_from_position()
 	local direction = self:nearing_room_exit()
 	if direction == 'up' or direction == 'down' then
 		if direction == 'up' and (not self:can_switch_up_from_state()) then
-			local up_limit = self.room.world_top - self.room.tile_size
+			local up_limit = service(constants.ids.castle_service_instance).current_room.world_top - service(constants.ids.castle_service_instance).current_room.tile_size
 			if self.y < up_limit then
 				self.y = up_limit
 			end
@@ -945,13 +942,13 @@ function player:try_vertical_room_switch_from_position()
 		local keep_stairs_lock = self:has_tag(state_tags.group.stairs) or self.hit_stairs_lock
 		if not self:try_switch_room(direction, keep_stairs_lock) then
 			if direction == 'up' then
-				local up_limit = self.room.world_top - self.room.tile_size
+				local up_limit = service(constants.ids.castle_service_instance).current_room.world_top - service(constants.ids.castle_service_instance).current_room.tile_size
 				if self.y < up_limit then
 					self.y = up_limit
 				end
 				self.previous_y_collision = true
 			else
-				local down_limit = self.room.world_height - self.height
+				local down_limit = service(constants.ids.castle_service_instance).current_room.world_height - self.height
 				if self.y > down_limit then
 					self.y = down_limit
 				end
@@ -982,7 +979,7 @@ function player:get_jump_inertia(default_inertia)
 end
 
 function player:pick_entry_stairs(direction)
-	local stairs = self.room.stairs
+	local stairs = service(constants.ids.castle_service_instance).current_room.stairs
 	local best = nil
 	local best_dx = 0
 
@@ -1011,7 +1008,7 @@ function player:pick_entry_stairs(direction)
 end
 
 function player:search_stairs_at_locked_x(x, y_probe)
-	local stairs = self.room.stairs
+	local stairs = service(constants.ids.castle_service_instance).current_room.stairs
 	for i = 1, #stairs do
 		local stair = stairs[i]
 		if stair.x == x and stair.anchor_y <= (y_probe + constants.room.tile_size3) and stair.bottom_y >= y_probe then
@@ -1030,7 +1027,7 @@ end
 function player:sync_stairs_after_vertical_room_switch(direction)
 	local probe_y = self.y
 	if direction == 'up' then
-		probe_y = probe_y + self.room.tile_size
+		probe_y = probe_y + service(constants.ids.castle_service_instance).current_room.tile_size
 	end
 	local stair = self:search_stairs_at_locked_x(self.stairs_x, probe_y)
 	if stair == nil then
@@ -1076,7 +1073,7 @@ function player:try_step_off_stairs()
 		return false
 	end
 
-	local room = self.room
+	local room = service(constants.ids.castle_service_instance).current_room
 	local tx = math.modf((self.x - room.tile_origin_x) / constants.room.tile_size)
 	local ty = math.modf((self.y - room.tile_origin_y) / constants.room.tile_size)
 	local dty = (self.y - room.tile_origin_y) - (ty * constants.room.tile_size)
@@ -1214,7 +1211,7 @@ function player:try_snap_to_elevator_platform(next_x)
 end
 
 function player:collides_at(x, y)
-	local solids = self.room.solids
+	local solids = service(constants.ids.castle_service_instance).current_room.solids
 	for i = 1, #solids do
 		local solid = solids[i]
 		if x < (solid.x + solid.w) and (x + self.width) > solid.x and y < (solid.y + solid.h) and (y + self.height) > solid.y then
@@ -1222,7 +1219,7 @@ function player:collides_at(x, y)
 		end
 	end
 
-	if room_module.overlaps_active_rock(self.room, x, y, self.width, self.height) then
+	if room_module.overlaps_active_rock(service(constants.ids.castle_service_instance).current_room, x, y, self.width, self.height) then
 		return true
 	end
 
@@ -1363,7 +1360,7 @@ function player:apply_move(dx, dy)
 		end
 	end
 
-	local max_x = self.room.world_width - self.width
+	local max_x = service(constants.ids.castle_service_instance).current_room.world_width - self.width
 	if self.x < 0 then
 		self.x = 0
 		collided_x = true
@@ -1373,8 +1370,8 @@ function player:apply_move(dx, dy)
 		collided_x = true
 	end
 
-	local max_y = self.room.world_height - self.height
-	if self.y > max_y and self.room.links.down <= 0 then
+	local max_y = service(constants.ids.castle_service_instance).current_room.world_height - self.height
+	if self.y > max_y and service(constants.ids.castle_service_instance).current_room.links.down <= 0 then
 		self.y = max_y
 		landed = true
 		collided_y = true
@@ -1694,8 +1691,7 @@ function player:tick_entering_world()
 		if self.enter_leave_size < 0 then
 			local castle_service = service(constants.ids.castle_service_instance)
 			local switch = castle_service:enter_world(self.enter_leave_world_target)
-			self.room = castle_service.current_room
-			self.space_id = self.room.space_id
+			self.space_id = service(constants.ids.castle_service_instance).current_room.space_id
 			self.x = switch.spawn_x
 			self.y = switch.spawn_y
 			self.facing = switch.spawn_facing
@@ -1706,7 +1702,7 @@ function player:tick_entering_world()
 				from = switch.from_room_number,
 				to = switch.to_room_number,
 				dir = switch.direction,
-				space = self.room.space_id,
+				space = service(constants.ids.castle_service_instance).current_room.space_id,
 				x = self.x,
 				y = self.y,
 				transition_kind = switch.transition_kind,
@@ -1721,7 +1717,7 @@ end
 function player:tick_waiting_world_banner()
 	self:reset_motion_for_transition_lock()
 	local flow = service(constants.ids.flow_service_instance)
-	if flow.pending_banner_mode ~= '' or flow:has_modal_overlay() or get_space() ~= self.room.space_id then
+	if flow.pending_banner_mode ~= '' or flow:has_modal_overlay() or get_space() ~= service(constants.ids.castle_service_instance).current_room.space_id then
 		self.enter_leave_wait_started = true
 		return
 	end
@@ -1773,7 +1769,7 @@ end
 function player:tick_waiting_shrine()
 	self:reset_motion_for_transition_lock()
 	local flow = service(constants.ids.flow_service_instance)
-	if flow.pending_shrine_open or flow.overlay_mode == 'shrine' or get_space() ~= self.room.space_id then
+	if flow.pending_shrine_open or flow.overlay_mode == 'shrine' or get_space() ~= service(constants.ids.castle_service_instance).current_room.space_id then
 		self.enter_leave_wait_started = true
 		return
 	end
@@ -2158,8 +2154,8 @@ function player:is_ground_below_for_hit_on_stairs()
 	local foot_y = self.y + self.height
 	local left_x = self.x + constants.room.tile_unit
 	local right_x = self.x + self.width - constants.room.tile_unit
-	return room_module.is_solid_at_world(self.room, left_x, foot_y)
-		or room_module.is_solid_at_world(self.room, right_x, foot_y)
+	return room_module.is_solid_at_world(service(constants.ids.castle_service_instance).current_room, left_x, foot_y)
+		or room_module.is_solid_at_world(service(constants.ids.castle_service_instance).current_room, right_x, foot_y)
 end
 
 function player:advance_hit_stairs_fall(dy)

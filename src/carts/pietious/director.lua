@@ -11,7 +11,7 @@ function director:bind_visual()
 end
 
 function director:draw_room_tiles()
-	local room = self.room
+	local room = service(constants.ids.castle_service_instance).current_room
 	local tile_size = room.tile_size
 	local origin_x = room.tile_origin_x
 	local origin_y = room.tile_origin_y
@@ -48,7 +48,6 @@ local function register_director_definition()
 		fsms = { constants.ids.director_fsm },
 		components = { 'customvisualcomponent' },
 		defaults = {
-			room = nil,
 		},
 	})
 end

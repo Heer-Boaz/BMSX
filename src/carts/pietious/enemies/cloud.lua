@@ -23,21 +23,19 @@ local function consume_axis_accum(accum, speed_num, speed_den)
 end
 
 function cloud.configure(self, def)
-	self.width = 32
-	self.height = 24
 	self.max_health = 15
 	self.health = self.max_health
 	self.damage = 2
 	self.cloud_anim_frame = 1
-	self.sprite_component.imgid = 'cloud_1'
+	self:set_image('cloud_1')
 end
 
 function cloud.bt_tick(self, blackboard)
 	local node = blackboard.nodedata
 	if self.cloud_anim_frame == 2 then
-		self.sprite_component.imgid = 'cloud_2'
+		self:set_image('cloud_2')
 	else
-		self.sprite_component.imgid = 'cloud_1'
+		self:set_image('cloud_1')
 	end
 
 	local anim_ticks = node.cloud_anim_ticks
@@ -86,11 +84,11 @@ function cloud.bt_tick(self, blackboard)
 	node.cloud_wave_phase_millirad = wave_phase
 
 	if self.direction == 'left' then
-		if self.x < self.room_left then
+		if self.x < 0 then
 			self.direction = 'right'
 		end
 	else
-		if self.x + 22 >= self.room_right then
+		if self.x + 22 >= service(constants.ids.castle_service_instance).current_room.world_width then
 			self.direction = 'left'
 		end
 	end
@@ -108,12 +106,24 @@ function cloud.bt_tick(self, blackboard)
 				random_x = math.random(-5, 4)
 				random_y = math.random(-5, 4)
 			end
-			self:spawn_child_enemy('vlokfoe', self.x + 16, self.y + 12, {
+			local spawned_vlok = spawn_sprite('pietious.enemy.def.vlokfoe', {
+				space_id = self.space_id,
+				pos = {
+					x = self.x + 16,
+					y = self.y + 12,
+					z = 140,
+				},
+			})
+			spawned_vlok:configure_from_room_def({
+				id = spawned_vlok.id,
+				kind = 'vlokfoe',
+				x = self.x + 16,
+				y = self.y + 12,
 				direction = random_x < 0 and 'left' or 'right',
 				speedx = random_x,
 				speedy = random_y,
 				speedden = 5,
-			})
+			}, service(constants.ids.castle_service_instance).current_room)
 		end
 		vlok_ticks = constants.enemy.cloud_spawn_vlok_steps
 	end
@@ -132,7 +142,7 @@ function cloud.register_behaviour_tree(bt_id)
 	})
 end
 
-function cloud.choose_drop_type(_self, _random_percent_hit)
+function cloud.choose_drop_type(_self)
 	return 'none'
 end
 
@@ -140,10 +150,6 @@ end
 
 
 local enemy_death_effect_sequence = 0
-
-local function enemy_random_percent_hit(chance_pct)
-	return math.random(100) <= chance_pct
-end
 
 local function enemy_consume_axis_accum(accum, speed_num, speed_den)
 	accum = accum + speed_num
@@ -161,36 +167,21 @@ end
 
 
 function cloud:configure_from_room_def(def, room)
-	self.enemy_id = def.id
-	self.room_number = room.room_number
-	self.room = room
-	self.space_id = room.space_id
-	self.kind = def.kind
-	self.trigger = def.trigger or ''
+		self.space_id = room.space_id
+		self.trigger = def.trigger or ''
 	self.conditions = def.conditions or {}
-	self.spawn_x = def.x
-	self.spawn_y = def.y
-	self.x = def.x
-	self.y = def.y
-	self.width = 16
-	self.height = 16
-	self.damage = constants.damage.enemy_contact_damage
+		self.damage = constants.damage.enemy_contact_damage
 	self.max_health = constants.enemy.default_health
 	self.health = self.max_health
 	self.last_weapon_kind = ''
 	self.last_weapon_hit_id = -1
 	self.dangerous = def.dangerous ~= false
 	self.direction = def.direction or 'right'
-	self.room_left = 0
-	self.room_right = room.world_width
-	self.room_top = room.world_top
-	self.room_bottom = room.world_height
 	self.despawn_on_room_switch = false
 
 	self:set_velocity(def.speedx or 0, def.speedy or 0, def.speedden or 1)
 
 	cloud.configure(self, def)
-	self:set_active_behaviour_tree(self.kind)
 	self:dispatch_state_event('reset_to_waiting')
 	self.collider.generateoverlapevents = true
 	self.collider.spaceevents = 'current'
@@ -212,70 +203,35 @@ function cloud:bind_overlap_events()
 		event = constants.events.room_switched,
 		subscriber = self,
 		handler = function(event)
-			if self.despawn_on_room_switch and event.from == self.room_number then
+			if self.despawn_on_room_switch then
 				self:mark_for_disposal()
 			end
 		end,
 	})
 end
-
-function cloud:spawn_child_enemy(kind, x, y, options)
-	options = options or {}
-	local child = spawn_sprite('pietious.enemy.def.' .. kind, {
-		space_id = self.space_id,
-		pos = { x = x, y = y, z = 140 },
-	})
-	child:configure_from_room_def({
-		id = child.id,
-		kind = kind,
-		x = x,
-		y = y,
-		direction = options.direction,
-		speedx = options.speedx,
-		speedy = options.speedy,
-		speedden = options.speedden,
-		health = options.health,
-		damage = options.damage,
-		dangerous = options.dangerous,
-	}, self.room)
-	return child
-end
-
 function cloud:projectile_is_out_of_bounds()
 	local bound_right = self.projectile_bound_right
 	if bound_right <= 0 then
-		bound_right = self.width
+		bound_right = self.sx
 	end
 	local bound_bottom = self.projectile_bound_bottom
 	if bound_bottom <= 0 then
-		bound_bottom = self.height
+		bound_bottom = self.sy
 	end
 
-	if self.x + bound_right < self.room_left then
+	if self.x + bound_right < 0 then
 		return true
 	end
-	if self.x > self.room_right then
+	if self.x > service(constants.ids.castle_service_instance).current_room.world_width then
 		return true
 	end
-	if self.y + bound_bottom < self.room_top then
+	if self.y + bound_bottom < service(constants.ids.castle_service_instance).current_room.world_top then
 		return true
 	end
-	if self.y > self.room_bottom then
+	if self.y > service(constants.ids.castle_service_instance).current_room.world_height then
 		return true
 	end
 	return false
-end
-
-function cloud:set_active_behaviour_tree(kind)
-	local bt_id = string.format('%s.%s', constants.ids.enemy_bt, kind)
-	if self.btreecontexts[bt_id] == nil then
-		self:add_btree(bt_id)
-	end
-	for id, context in pairs(self.btreecontexts) do
-		context.running = id == bt_id
-	end
-	self:reset_tree(bt_id)
-	self.active_bt_id = bt_id
 end
 
 function cloud:set_velocity(speed_x_num, speed_y_num, speed_den)
@@ -297,12 +253,10 @@ end
 
 function cloud:spawn_death_effect()
 	enemy_death_effect_sequence = enemy_death_effect_sequence + 1
-	local effect_id = string.format('pietious.enemy_explosion.%s.%d', self.enemy_id, enemy_death_effect_sequence)
 	spawn_object(enemy_explosion_module.enemy_explosion_def_id, {
-		id = effect_id,
 		space_id = self.space_id,
-		room_number = self.room_number,
-		loot_type = self:choose_drop_type(enemy_random_percent_hit),
+		room_number = service(constants.ids.castle_service_instance).current_room.room_number,
+		loot_type = self:choose_drop_type(),
 		pos = { x = self.x, y = self.y, z = 114 },
 	})
 end
@@ -319,9 +273,9 @@ function cloud:take_weapon_hit(weapon_kind, hit_id)
 		self.dangerous = false
 		self:spawn_death_effect()
 		eventemitter.eventemitter.instance:emit(constants.events.enemy_defeated, self.id, {
-			room_number = self.room_number,
-			enemy_id = self.enemy_id,
-			kind = self.kind,
+			room_number = service(constants.ids.castle_service_instance).current_room.room_number,
+			enemy_id = self.id,
+			kind = 'cloud',
 			trigger = self.trigger,
 		})
 		self:mark_for_disposal()
@@ -342,7 +296,7 @@ function cloud:on_overlap(event)
 		return
 	end
 	if other_collider.id_local == constants.ids.player_body_collider_local and self.dangerous then
-		player:take_hit(self.damage, self.x + math.modf(self.width / 2), self.y + math.modf(self.height / 2), self.kind)
+		player:take_hit(self.damage, self.x + math.modf(self.sx / 2), self.y + math.modf(self.sy / 2), 'cloud')
 	end
 end
 
@@ -353,14 +307,8 @@ function cloud.register_enemy_definition()
 		fsms = { constants.ids.enemy_fsm },
 		defaults = {
 			space_id = constants.spaces.castle,
-			enemy_id = '',
-			room_number = 0,
-			room = nil,
-			kind = '',
 			trigger = '',
 			conditions = {},
-			width = 16,
-			height = 16,
 			damage = constants.damage.enemy_contact_damage,
 			max_health = constants.enemy.default_health,
 			health = constants.enemy.default_health,
@@ -373,14 +321,7 @@ function cloud.register_enemy_definition()
 			speed_accum_x = 0,
 			speed_accum_y = 0,
 			direction = 'right',
-			room_left = 0,
-			room_right = constants.room.width,
-			room_top = constants.room.hud_height,
-			room_bottom = constants.room.height,
-			spawn_x = 0,
-			spawn_y = 0,
 			despawn_on_room_switch = false,
-			active_bt_id = '',
 		},
 	})
 end

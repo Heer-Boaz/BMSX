@@ -1,6 +1,5 @@
 local constants = require('constants')
 local components = require('components')
-local eventemitter = require('eventemitter')
 
 local enemy_explosion = {}
 enemy_explosion.__index = enemy_explosion
@@ -47,16 +46,6 @@ function enemy_explosion:bind_events()
 			self:mark_for_disposal()
 		end,
 	})
-
-	eventemitter.eventemitter.instance:on({
-		event = constants.events.room_switched,
-		subscriber = self,
-		handler = function(event)
-			if event.to ~= self.room_number then
-				self:mark_for_disposal()
-			end
-		end,
-	})
 end
 
 function enemy_explosion:sync_explosion_sprite(imgid)
@@ -74,7 +63,6 @@ function enemy_explosion:spawn_loot()
 	spawn_object(loot_drop_module.loot_drop_def_id, {
 		id = loot_id,
 		space_id = self.space_id,
-		room_number = self.room_number,
 		loot_type = self.loot_type,
 		loot_value = loot_value_for_type(self.loot_type),
 		pos = { x = self.x, y = self.y, z = 113 },
@@ -121,7 +109,6 @@ local function register_enemy_explosion_definition()
 		fsms = { constants.ids.enemy_explosion_fsm },
 		defaults = {
 			space_id = constants.spaces.castle,
-			room_number = 0,
 			loot_type = 'none',
 			tick_enabled = false,
 		},

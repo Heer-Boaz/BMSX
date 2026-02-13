@@ -15,13 +15,10 @@ end
 
 function world_item:configure_from_room_def(def, room, item_service_id)
 	self.item_id = def.id
-	self.room_number = room.room_number
 	self.space_id = room.space_id
 	self.item_service_id = item_service_id
 	self.source_kind = def.source_kind
 	self.item_type = def.item_type
-	self.x = def.x
-	self.y = def.y
 	self.body_sprite.imgid = constants.world_item.sprite[self.item_type]
 	self.body_sprite.enabled = true
 	self.body_collider.enabled = true
@@ -38,7 +35,8 @@ function world_item:on_overlap_stay(event)
 		return
 	end
 
-	if service(self.item_service_id):try_pick_item(self.item_id, self.room_number, self.item_type, self.source_kind) then
+	local room = service(constants.ids.castle_service_instance).current_room
+	if service(self.item_service_id):try_pick_item(self.item_id, room.room_number, self.item_type, self.source_kind) then
 		self:dispatch_state_event('picked')
 	end
 end
@@ -97,7 +95,6 @@ local function register_world_item_definition()
 		fsms = { constants.ids.world_item_fsm },
 			defaults = {
 				space_id = constants.spaces.castle,
-				room_number = 0,
 				item_id = '',
 			item_type = 'ammofromrock',
 			source_kind = 'map',

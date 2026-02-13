@@ -1,6 +1,5 @@
 local constants = require('constants')
 local components = require('components')
-local eventemitter = require('eventemitter')
 
 local loot_drop = {}
 loot_drop.__index = loot_drop
@@ -21,16 +20,6 @@ function loot_drop:bind_events()
 		subscriber = self,
 		handler = function(event)
 			self:on_overlap_stay(event)
-		end,
-	})
-
-	eventemitter.eventemitter.instance:on({
-		event = constants.events.room_switched,
-		subscriber = self,
-		handler = function(event)
-			if event.to ~= self.room_number then
-				self:mark_for_disposal()
-			end
 		end,
 	})
 end
@@ -109,7 +98,6 @@ local function register_loot_drop_definition()
 		fsms = { constants.ids.loot_drop_fsm },
 			defaults = {
 				space_id = constants.spaces.castle,
-				room_number = 0,
 				loot_type = 'life',
 			loot_value = constants.enemy.loot_life_regen,
 			tick_enabled = false,

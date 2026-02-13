@@ -28,7 +28,7 @@ function player_action_effects.attach_player_methods(player)
 	end
 
 	function player:find_near_lithograph()
-		local lithographs = self.room.lithographs
+		local lithographs = service(constants.ids.castle_service_instance).current_room.lithographs
 			local player_left = self.x
 			local player_top = self.y
 			local player_right = self.x + self.width
@@ -63,13 +63,13 @@ local function try_fire_pepernoot_effect(context)
 	local projectile_id = string.format('pepernoot_%d_%d', owner.player_index, owner.pepernoot_projectile_sequence)
 	local spawn_x = owner.x + (owner.facing < 0 and -constants.secondary_weapon.pepernoot_spawn_offset_x or constants.secondary_weapon.pepernoot_spawn_offset_x)
 	local spawn_y = owner.y + constants.secondary_weapon.pepernoot_spawn_offset_y
-	spawn_x, spawn_y = room_module.snap_world_to_tile(owner.room, spawn_x, spawn_y)
+	spawn_x, spawn_y = room_module.snap_world_to_tile(service(constants.ids.castle_service_instance).current_room, spawn_x, spawn_y)
 
 	spawn_object(pepernoot_projectile_module.pepernoot_projectile_def_id, {
 		id = projectile_id,
-		space_id = owner.room.space_id,
-		room = owner.room,
-		room_number = owner.room.room_number,
+		space_id = service(constants.ids.castle_service_instance).current_room.space_id,
+		room = service(constants.ids.castle_service_instance).current_room,
+		room_number = service(constants.ids.castle_service_instance).current_room.room_number,
 		owner_id = owner.id,
 		projectile_id = owner.pepernoot_projectile_sequence,
 		direction = owner.facing,

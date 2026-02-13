@@ -1,6 +1,5 @@
 local constants = require('constants')
 local components = require('components')
-local eventemitter = require('eventemitter')
 local room_module = require('room')
 
 local pepernoot_projectile = {}
@@ -12,16 +11,6 @@ function pepernoot_projectile:bind_events()
 		subscriber = self,
 		handler = function(event)
 			self:on_overlap_stay(event)
-		end,
-	})
-
-	eventemitter.eventemitter.instance:on({
-		event = constants.events.room_switched,
-		subscriber = self,
-		handler = function(event)
-			if event.from == self.room_number then
-				self:dispose('room_switch')
-			end
 		end,
 	})
 end
@@ -58,21 +47,16 @@ function pepernoot_projectile:on_overlap_stay(event)
 end
 
 function pepernoot_projectile:tick()
-	if self.room.room_number ~= self.room_number then
-		self:dispose('room_mismatch')
-		return
-	end
-
 	self.x = self.x + (self.direction * constants.secondary_weapon.pepernoot_speed_px)
-	local snapped_x, snapped_y = room_module.snap_world_to_tile(self.room, self.x, self.y)
+	local snapped_x, snapped_y = room_module.snap_world_to_tile(service(constants.ids.castle_service_instance).current_room, self.x, self.y)
 	self.body_sprite.offset.x = snapped_x - self.x
 	self.body_sprite.offset.y = snapped_y - self.y
 
-	if self.x <= 0 or self.x >= self.room.world_width then
+	if self.x <= 0 or self.x >= service(constants.ids.castle_service_instance).current_room.world_width then
 		self:dispose('out_of_bounds')
 		return
 	end
-	if room_module.is_solid_at_world(self.room, self.x, self.y) then
+	if room_module.is_solid_at_world(service(constants.ids.castle_service_instance).current_room, self.x, self.y) then
 		self:dispose('wall')
 	end
 end
@@ -109,7 +93,7 @@ local function define_pepernoot_projectile_fsm()
 						self.body_sprite.enabled = true
 						self.body_collider.enabled = true
 						self.body_sprite.flip.flip_h = self.direction < 0
-						local snapped_x, snapped_y = room_module.snap_world_to_tile(self.room, self.x, self.y)
+						local snapped_x, snapped_y = room_module.snap_world_to_tile(service(constants.ids.castle_service_instance).current_room, self.x, self.y)
 						self.body_sprite.offset.x = snapped_x - self.x
 						self.body_sprite.offset.y = snapped_y - self.y
 					end,
@@ -125,8 +109,6 @@ local function register_pepernoot_projectile_definition()
 		fsms = { constants.ids.pepernoot_projectile_fsm },
 			defaults = {
 				space_id = constants.spaces.castle,
-				room = nil,
-				room_number = 0,
 				owner_id = constants.ids.player_instance,
 			projectile_id = 0,
 			direction = 1,
