@@ -143,7 +143,7 @@ local function create_owner_event(owner, event_type, payload)
 			base.payload = payload
 		end
 	end
-	return eventemitter.create_gameevent(base)
+	return eventemitter.eventemitter.instance:create_gameevent(base)
 end
 
 actioneffects.register_effect(actioneffects.effecttype.move, {

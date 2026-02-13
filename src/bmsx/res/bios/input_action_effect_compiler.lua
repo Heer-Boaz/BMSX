@@ -67,7 +67,7 @@ local function compile_effect(effect, slot, analysis)
 			for k, v in pairs(payload) do
 				base[k] = v
 			end
-			env.queued_events[#env.queued_events + 1] = eventemitter.create_gameevent(base)
+			env.queued_events[#env.queued_events + 1] = eventemitter.eventemitter.instance:create_gameevent(base)
 		end
 	end
 	if is_nested_commands(effect) then

@@ -195,5 +195,4 @@ return {
 	events_of = function(emitter)
 		return eventemitter.instance:events_of(emitter)
 	end,
-	create_gameevent = create_gameevent,
 }
