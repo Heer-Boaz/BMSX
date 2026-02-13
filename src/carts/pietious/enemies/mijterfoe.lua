@@ -6,6 +6,10 @@ local enemy_explosion_module = require('enemy_explosion')
 local mijterfoe = {}
 mijterfoe.__index = mijterfoe
 
+function mijterfoe:ctor()
+	self:bind_overlap_events()
+end
+
 local function new_random_direction(self)
 	local horizontal = 0
 	local vertical = 0

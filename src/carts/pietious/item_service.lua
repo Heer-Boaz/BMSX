@@ -285,22 +285,20 @@ function item_service:bind_events()
 	})
 end
 
+function item_service:ctor()
+	self.items_by_id = {}
+	self.event_item_defs_by_room = {}
+	self.picked_item_ids = {}
+	self.condition_flags_by_room = {}
+	self.synced_room_number = 0
+	self:bind_events()
+	self:refresh_current_room_items()
+end
+
 local function define_item_service_fsm()
 	define_fsm(constants.ids.item_service_fsm, {
-		initial = 'boot',
+		initial = 'active',
 		states = {
-			boot = {
-				entering_state = function(self)
-					self.items_by_id = {}
-					self.event_item_defs_by_room = {}
-					self.picked_item_ids = {}
-					self.condition_flags_by_room = {}
-					self.synced_room_number = 0
-					self:bind_events()
-					self:refresh_current_room_items()
-					return '/active'
-				end,
-			},
 			active = {},
 		},
 	})

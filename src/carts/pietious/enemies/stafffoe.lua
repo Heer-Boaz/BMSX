@@ -6,6 +6,10 @@ local enemy_explosion_module = require('enemy_explosion')
 local stafffoe = {}
 stafffoe.__index = stafffoe
 
+function stafffoe:ctor()
+	self:bind_overlap_events()
+end
+
 local function speed_components_from_angle(speed_num, angle_degrees)
 	local radians = math.rad(angle_degrees)
 	local speed_x_num = round_to_nearest(math.cos(radians) * speed_num)

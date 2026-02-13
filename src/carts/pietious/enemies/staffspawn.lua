@@ -6,6 +6,10 @@ local enemy_explosion_module = require('enemy_explosion')
 local staffspawn = {}
 staffspawn.__index = staffspawn
 
+function staffspawn:ctor()
+	self:bind_overlap_events()
+end
+
 function staffspawn.configure(self, def)
 	self.max_health = 1
 	self.health = self.max_health

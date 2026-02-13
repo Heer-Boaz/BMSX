@@ -1,5 +1,4 @@
 local constants = require('constants')
-local components = require('components')
 local eventemitter = require('eventemitter')
 
 local loot_drop = {}
@@ -33,6 +32,13 @@ function loot_drop:bind_events()
 	})
 end
 
+function loot_drop:ctor()
+	self.collider:apply_collision_profile('pickup')
+	self:gfx('item_health')
+	self.sprite_component.offset = { x = 0, y = 0, z = 112 }
+	self:bind_events()
+end
+
 function loot_drop:on_overlap_stay(event)
 	if event.other_id ~= constants.ids.player_instance then
 		return
@@ -47,36 +53,15 @@ end
 
 local function define_loot_drop_fsm()
 	define_fsm(constants.ids.loot_drop_fsm, {
-		initial = 'boot',
+		initial = 'active',
 		states = {
-			boot = {
-				entering_state = function(self)
-					self.body_collider = components.collider2dcomponent.new({
-						parent = self,
-						id_local = 'body',
-						generateoverlapevents = true,
-						spaceevents = 'current',
-					})
-					self.body_collider:apply_collision_profile('pickup')
-					self:add_component(self.body_collider)
-					self:gfx('item_health')
-					self.sprite_component.offset = { x = 0, y = 0, z = 112 }
-					self:bind_events()
-				self:gfx(sprite_for_loot_type(self.loot_type))
-				self.visible = true
-				self.body_collider.enabled = true
-				return '/active'
-			end,
-		},
-		active = {
-			on = {
-				['picked'] = '/picked',
-			},
+			active = {
 				entering_state = function(self)
 					self:gfx(sprite_for_loot_type(self.loot_type))
-					self.visible = true
-					self.body_collider.enabled = true
 				end,
+				on = {
+					['picked'] = '/picked',
+				},
 			},
 			picked = {
 				entering_state = function(self)
@@ -93,10 +78,9 @@ local function register_loot_drop_definition()
 		class = loot_drop,
 		type = 'sprite',
 		fsms = { constants.ids.loot_drop_fsm },
-			defaults = {
-				loot_type = 'life',
+		defaults = {
+			loot_type = 'life',
 			loot_value = constants.enemy.loot_life_regen,
-			tick_enabled = false,
 		},
 	})
 end

@@ -26,16 +26,14 @@ function director:draw_room_tiles()
 	end
 end
 
+function director:ctor()
+	self:bind_visual()
+end
+
 local function define_director_fsm()
 	define_fsm(constants.ids.director_fsm, {
-		initial = 'boot',
+		initial = 'playing',
 		states = {
-			boot = {
-				entering_state = function(self)
-					self:bind_visual()
-					return '/playing'
-				end,
-			},
 			playing = {},
 		},
 	})

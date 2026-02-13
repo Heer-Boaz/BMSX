@@ -6,6 +6,10 @@ local enemy_explosion_module = require('enemy_explosion')
 local nootfoe = {}
 nootfoe.__index = nootfoe
 
+function nootfoe:ctor()
+	self:bind_overlap_events()
+end
+
 local noot_colors = {
 	{ r = 1, g = 1, b = 1, a = 1 },
 	{ r = 1, g = 0, b = 0, a = 1 },

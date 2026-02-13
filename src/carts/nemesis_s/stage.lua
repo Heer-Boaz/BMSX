@@ -658,13 +658,6 @@ function stage.set_event_sink(on_event)
 	state.event_sink = on_event
 end
 
-function stage_object:bind_visual()
-	local rc = self:get_component('customvisualcomponent')
-	rc.producer = function(_ctx)
-		stage.draw()
-	end
-end
-
 function stage_object:define_star_blink_timeline()
 	local timeline_id = constants.ids.stage_star_blink_timeline
 	self:define_timeline(timeline.new({
@@ -692,6 +685,13 @@ function stage_object:tick()
 	stage.tick(emit_event)
 end
 
+function stage_object:ctor()
+	local rc = self:get_component('customvisualcomponent')
+	rc.producer = function(_ctx)
+		stage.draw()
+	end
+end
+
 local function define_stage_fsm()
 	define_fsm(stage_fsm_id, {
 		initial = 'boot',
@@ -699,7 +699,6 @@ local function define_stage_fsm()
 			boot = {
 				entering_state = function(self)
 					self:reset_runtime()
-					self:bind_visual()
 					self:define_star_blink_timeline()
 					return '/running'
 				end,

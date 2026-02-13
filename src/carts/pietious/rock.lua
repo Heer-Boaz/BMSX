@@ -1,5 +1,4 @@
 local constants = require('constants')
-local components = require('components')
 local rock = {}
 rock.__index = rock
 
@@ -18,6 +17,13 @@ function rock:bind_events()
 			self:on_overlap(event)
 		end,
 	})
+end
+
+function rock:ctor()
+	self.collider:apply_collision_profile('enemy')
+	self:gfx('stone')
+	self.sprite_component.offset = { x = 0, y = 0, z = 113 }
+	self:bind_events()
 end
 
 function rock:configure_from_room_def(def, room, rock_service_id)
@@ -69,25 +75,8 @@ end
 
 local function define_rock_fsm()
 	define_fsm(constants.ids.rock_fsm, {
-		initial = 'boot',
+		initial = 'idle',
 		states = {
-			boot = {
-				entering_state = function(self)
-					self.body_collider = components.collider2dcomponent.new({
-						parent = self,
-						id_local = 'body',
-						generateoverlapevents = true,
-						spaceevents = 'current',
-					})
-					self.body_collider:apply_collision_profile('enemy')
-					self:add_component(self.body_collider)
-					self:gfx('stone')
-					self.sprite_component.offset = { x = 0, y = 0, z = 113 }
-					self.visible = false
-					self:bind_events()
-					return '/idle'
-				end,
-			},
 			idle = {
 				on = {
 					['break'] = '/breaking',
@@ -95,7 +84,7 @@ local function define_rock_fsm()
 				},
 				entering_state = function(self)
 					self:gfx('stone')
-					self.body_collider.enabled = true
+					self.collider.enabled = true
 					self.visible = true
 				end,
 			},
@@ -107,7 +96,7 @@ local function define_rock_fsm()
 						self.break_steps = 0
 						self:begin_break()
 						self:gfx('stone_broken')
-						self.body_collider.enabled = false
+						self.collider.enabled = false
 						self.visible = true
 					end,
 					tick = function(self)
@@ -127,7 +116,7 @@ local function register_rock_definition()
 		class = rock,
 		type = 'sprite',
 		fsms = { constants.ids.rock_fsm },
-			defaults = {
+		defaults = {
 			rock_service_id = constants.ids.rock_service_instance,
 			item_type = 'none',
 			max_health = constants.rock.max_health,
@@ -135,7 +124,6 @@ local function register_rock_definition()
 			last_weapon_kind = '',
 			last_weapon_hit_id = -1,
 			break_steps = 0,
-			tick_enabled = true,
 		},
 	})
 end

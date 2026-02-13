@@ -61,13 +61,8 @@ end
 
 local function define_room_view_fsm()
 	define_fsm(constants.ids.room_view_fsm, {
-		initial = 'boot',
+		initial = 'active',
 		states = {
-			boot = {
-				entering_state = function(self)
-					return '/active'
-				end,
-			},
 			active = {},
 		},
 	})

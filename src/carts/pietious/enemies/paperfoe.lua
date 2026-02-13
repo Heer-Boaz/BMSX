@@ -6,6 +6,10 @@ local enemy_explosion_module = require('enemy_explosion')
 local paperfoe = {}
 paperfoe.__index = paperfoe
 
+function paperfoe:ctor()
+	self:bind_overlap_events()
+end
+
 function paperfoe.configure(self, def)
 	self.max_health = 1
 	self.health = self.max_health

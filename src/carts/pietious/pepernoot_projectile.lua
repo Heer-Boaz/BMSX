@@ -1,10 +1,35 @@
 local constants = require('constants')
-local components = require('components')
 local room_module = require('room')
 local eventemitter = require('eventemitter')
 
 local pepernoot_projectile = {}
 pepernoot_projectile.__index = pepernoot_projectile
+
+function pepernoot_projectile:ctor()
+	self.collider:apply_collision_profile('projectile')
+	self:gfx('pepernoot_16')
+	self.sprite_component.offset = { x = 0, y = 0, z = 113 }
+	self:bind_events()
+end
+
+function pepernoot_projectile:refresh_tile_aligned_sprite_offset()
+	local room = service(constants.ids.castle_service_instance).current_room
+	local snapped_x, snapped_y = room_module.snap_world_to_tile(room, self.x, self.y)
+	self.sprite_component.offset.x = snapped_x - self.x
+	self.sprite_component.offset.y = snapped_y - self.y
+end
+
+function pepernoot_projectile:onspawn(pos)
+	if pos then
+		self.x = pos.x or self.x
+		self.y = pos.y or self.y
+		self.z = pos.z or self.z
+	end
+	self.sprite_component.flip.flip_h = self.direction < 0
+	self:refresh_tile_aligned_sprite_offset()
+	self:activate()
+	self.events:emit('spawn', { pos = pos })
+end
 
 function pepernoot_projectile:bind_events()
 	self.events:on({
@@ -55,9 +80,7 @@ end
 
 function pepernoot_projectile:tick()
 	self.x = self.x + (self.direction * constants.secondary_weapon.pepernoot_speed_px)
-	local snapped_x, snapped_y = room_module.snap_world_to_tile(service(constants.ids.castle_service_instance).current_room, self.x, self.y)
-	self.sprite_component.offset.x = snapped_x - self.x
-	self.sprite_component.offset.y = snapped_y - self.y
+	self:refresh_tile_aligned_sprite_offset()
 
 	if self.x <= 0 or self.x >= service(constants.ids.castle_service_instance).current_room.world_width then
 		self:dispose('out_of_bounds')
@@ -70,35 +93,9 @@ end
 
 local function define_pepernoot_projectile_fsm()
 	define_fsm(constants.ids.pepernoot_projectile_fsm, {
-		initial = 'boot',
+		initial = 'active',
 		states = {
-			boot = {
-				entering_state = function(self)
-					self.body_collider = components.collider2dcomponent.new({
-						parent = self,
-						id_local = 'body',
-						generateoverlapevents = true,
-						spaceevents = 'current',
-						})
-						self.body_collider:apply_collision_profile('projectile')
-						self:add_component(self.body_collider)
-						self:gfx('pepernoot_16')
-						self.sprite_component.offset = { x = 0, y = 0, z = 113 }
-						self:bind_events()
-						return '/active'
-					end,
-			},
-				active = {
-				entering_state = function(self)
-						self.disposed = false
-						self.visible = true
-						self.body_collider.enabled = true
-						self.sprite_component.flip.flip_h = self.direction < 0
-						local snapped_x, snapped_y = room_module.snap_world_to_tile(service(constants.ids.castle_service_instance).current_room, self.x, self.y)
-						self.sprite_component.offset.x = snapped_x - self.x
-						self.sprite_component.offset.y = snapped_y - self.y
-					end,
-				},
+			active = {},
 		},
 	})
 end
@@ -109,12 +106,11 @@ local function register_pepernoot_projectile_definition()
 		class = pepernoot_projectile,
 		type = 'sprite',
 		fsms = { constants.ids.pepernoot_projectile_fsm },
-			defaults = {
-				owner_id = constants.ids.player_instance,
+		defaults = {
+			owner_id = constants.ids.player_instance,
 			projectile_id = 0,
 			direction = 1,
 			disposed = false,
-			tick_enabled = true,
 		},
 	})
 end

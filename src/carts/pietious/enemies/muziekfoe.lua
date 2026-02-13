@@ -7,6 +7,10 @@ local enemy_explosion_module = require('enemy_explosion')
 local muziekfoe = {}
 muziekfoe.__index = muziekfoe
 
+function muziekfoe:ctor()
+	self:bind_overlap_events()
+end
+
 local function get_delta_from_source_to_target_scaled(source_x, source_y, target_x, target_y, speed_scale)
 	local dx = target_x - source_x
 	local dy = target_y - source_y

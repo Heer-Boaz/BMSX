@@ -183,13 +183,8 @@ end
 
 local function define_item_screen_fsm()
 	define_fsm(constants.ids.item_screen_fsm, {
-		initial = 'boot',
+		initial = 'active',
 		states = {
-			boot = {
-				entering_state = function(self)
-					return '/active'
-				end,
-			},
 			active = {},
 		},
 	})

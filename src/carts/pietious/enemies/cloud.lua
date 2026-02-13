@@ -6,6 +6,10 @@ local enemy_explosion_module = require('enemy_explosion')
 local cloud = {}
 cloud.__index = cloud
 
+function cloud:ctor()
+	self:bind_overlap_events()
+end
+
 local full_circle_milliradians = 6283
 
 local function consume_axis_accum(accum, speed_num, speed_den)

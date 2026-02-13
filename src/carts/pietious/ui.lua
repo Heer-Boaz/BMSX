@@ -91,13 +91,8 @@ end
 
 local function define_ui_fsm()
 	define_fsm(constants.ids.ui_fsm, {
-		initial = 'boot',
+		initial = 'playing',
 		states = {
-			boot = {
-				entering_state = function(self)
-					return '/playing'
-				end,
-			},
 			playing = {},
 		},
 	})

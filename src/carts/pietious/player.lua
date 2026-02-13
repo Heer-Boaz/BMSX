@@ -210,6 +210,60 @@ function player:reset_runtime()
 	self.pepernoot_projectile_ids = {}
 end
 
+function player:define_runtime_timelines()
+	self:define_timeline(timeline.new({
+		id = 'p.tl.d',
+		frames = player_dying_frames,
+		playback_mode = 'once',
+	}))
+	self:define_timeline(timeline.new({
+		id = 'p.tl.hf',
+		frames = player_hit_fall_frames,
+		playback_mode = 'once',
+	}))
+	self:define_timeline(timeline.new({
+		id = 'p.tl.hr',
+		frames = player_hit_recovery_frames,
+		playback_mode = 'once',
+	}))
+	self:define_timeline(timeline.new({
+		id = 'p.seq.s',
+		frames = player_sword_sequence_frames,
+		playback_mode = 'once',
+		autotick = false,
+	}))
+	self:define_timeline(timeline.new({
+		id = 'p.seq.hi',
+		frames = player_hit_invulnerability_sequence_frames,
+		playback_mode = 'once',
+		autotick = false,
+	}))
+	self:define_timeline(timeline.new({
+		id = 'p.seq.hb',
+		frames = player_hit_blink_sequence_frames,
+		playback_mode = 'loop',
+		autotick = false,
+	}))
+	self:define_timeline(timeline.new({
+		id = 'p.seq.f',
+		frames = player_fall_substate_sequence_frames,
+		playback_mode = 'once',
+		autotick = false,
+	}))
+end
+
+function player:initialize_runtime_state()
+	self.inventory_items = {}
+	self.secondary_weapon = 'none'
+	self.weapon_level = 0
+	self:reset_runtime()
+	self:apply_presentation_state()
+	self:update_collision_state()
+	self:get_timeline('p.seq.s'):force_seek(0)
+	self:reset_hit_invulnerability_sequence()
+	self:reset_fall_substate_sequence()
+end
+
 function player:ctor()
 	self:bind_events()
 	self:add_component(components.inputactioneffectcomponent.new({
@@ -242,6 +296,8 @@ function player:ctor()
 	})
 	self.sword_sprite.enabled = false
 	self:add_component(self.sword_sprite)
+	self:define_runtime_timelines()
+	self:initialize_runtime_state()
 end
 
 function player:get_damage_state_imgid()
@@ -2345,59 +2401,6 @@ end
 
 local function define_player_fsm()
 	local states = {
-		boot = {
-			entering_state = function(self)
-				self.inventory_items = {}
-					self.secondary_weapon = 'none'
-					self.weapon_level = 0
-					self:reset_runtime()
-					self:apply_presentation_state()
-					self:update_collision_state()
-					self:define_timeline(timeline.new({
-					id = 'p.tl.d',
-					frames = player_dying_frames,
-					playback_mode = 'once',
-				}))
-				self:define_timeline(timeline.new({
-					id = 'p.tl.hf',
-					frames = player_hit_fall_frames,
-					playback_mode = 'once',
-				}))
-				self:define_timeline(timeline.new({
-					id = 'p.tl.hr',
-					frames = player_hit_recovery_frames,
-					playback_mode = 'once',
-				}))
-					self:define_timeline(timeline.new({
-						id = 'p.seq.s',
-						frames = player_sword_sequence_frames,
-						playback_mode = 'once',
-						autotick = false,
-					}))
-					self:define_timeline(timeline.new({
-						id = 'p.seq.hi',
-						frames = player_hit_invulnerability_sequence_frames,
-						playback_mode = 'once',
-						autotick = false,
-					}))
-					self:define_timeline(timeline.new({
-						id = 'p.seq.hb',
-						frames = player_hit_blink_sequence_frames,
-						playback_mode = 'loop',
-						autotick = false,
-					}))
-					self:define_timeline(timeline.new({
-						id = 'p.seq.f',
-						frames = player_fall_substate_sequence_frames,
-						playback_mode = 'once',
-						autotick = false,
-					}))
-					self:get_timeline('p.seq.s'):force_seek(0)
-					self:reset_hit_invulnerability_sequence()
-					self:reset_fall_substate_sequence()
-					return '/quiet'
-				end,
-			},
 		quiet = {
 			tags = { state_tags.variant.quiet, state_tags.ability.spyglass },
 			on = {
@@ -2754,7 +2757,7 @@ local function define_player_fsm()
 	}
 
 	define_fsm(constants.ids.player_fsm, {
-		initial = 'boot',
+		initial = 'quiet',
 		tag_derivations = {
 			[state_tags.group.world_transition_waiting] = {
 				state_tags.variant.waiting_world_banner,

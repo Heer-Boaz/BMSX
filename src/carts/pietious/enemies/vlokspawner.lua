@@ -6,6 +6,10 @@ local enemy_explosion_module = require('enemy_explosion')
 local vlokspawner = {}
 vlokspawner.__index = vlokspawner
 
+function vlokspawner:ctor()
+	self:bind_overlap_events()
+end
+
 function vlokspawner.configure(self, _def)
 	self.damage = 0
 	self.dangerous = false

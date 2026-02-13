@@ -1,7 +1,13 @@
 local constants = require('constants')
-local components = require('components')
 local world_item = {}
 world_item.__index = world_item
+
+function world_item:ctor()
+	self.collider:apply_collision_profile('pickup')
+	self:gfx('item_health')
+	self.sprite_component.offset = { x = 0, y = 0, z = 112 }
+	self:bind_events()
+end
 
 function world_item:bind_events()
 	self.events:on({
@@ -19,8 +25,6 @@ function world_item:configure_from_room_def(def, room, item_service_id)
 	self.source_kind = def.source_kind
 	self.item_type = def.item_type
 	self:gfx(constants.world_item.sprite[self.item_type])
-	self.visible = true
-	self.body_collider.enabled = true
 end
 
 function world_item:on_overlap(event)
@@ -36,34 +40,16 @@ end
 
 local function define_world_item_fsm()
 	define_fsm(constants.ids.world_item_fsm, {
-		initial = 'boot',
+		initial = 'active',
 		states = {
-			boot = {
-				entering_state = function(self)
-					self.body_collider = components.collider2dcomponent.new({
-						parent = self,
-						id_local = 'body',
-						generateoverlapevents = true,
-						spaceevents = 'current',
-					})
-					self.body_collider:apply_collision_profile('pickup')
-					self:add_component(self.body_collider)
-					self:gfx('item_health')
-					self.sprite_component.offset = { x = 0, y = 0, z = 112 }
-					self:bind_events()
-					return '/active'
-				end,
-			},
 			active = {
 				on = {
 					['picked'] = '/picked',
 				},
-					entering_state = function(self)
-						self:gfx(constants.world_item.sprite[self.item_type])
-						self.visible = true
-						self.body_collider.enabled = true
-					end,
-				},
+				entering_state = function(self)
+					self:gfx(constants.world_item.sprite[self.item_type])
+				end,
+			},
 			picked = {
 				entering_state = function(self)
 					self:mark_for_disposal()
@@ -79,12 +65,11 @@ local function register_world_item_definition()
 		class = world_item,
 		type = 'sprite',
 		fsms = { constants.ids.world_item_fsm },
-			defaults = {
-				item_id = '',
+		defaults = {
+			item_id = '',
 			item_type = 'ammofromrock',
 			source_kind = 'map',
 			item_service_id = constants.ids.item_service_instance,
-			tick_enabled = false,
 		},
 	})
 end

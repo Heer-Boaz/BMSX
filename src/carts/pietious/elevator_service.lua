@@ -125,13 +125,8 @@ end
 
 local function define_elevator_service_fsm()
 	define_fsm(constants.ids.elevator_service_fsm, {
-		initial = 'boot',
+		initial = 'active',
 		states = {
-			boot = {
-				entering_state = function()
-					return '/active'
-				end,
-			},
 			active = {
 				tick = elevator_service.tick,
 			},

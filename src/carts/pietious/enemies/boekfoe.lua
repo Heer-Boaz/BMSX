@@ -6,6 +6,10 @@ local enemy_explosion_module = require('enemy_explosion')
 local boekfoe = {}
 boekfoe.__index = boekfoe
 
+function boekfoe:ctor()
+	self:bind_overlap_events()
+end
+
 function boekfoe.configure(self, def)
 	self.max_health = 6
 	self.health = self.max_health

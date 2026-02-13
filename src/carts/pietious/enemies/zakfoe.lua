@@ -7,6 +7,10 @@ local enemy_explosion_module = require('enemy_explosion')
 local zakfoe = {}
 zakfoe.__index = zakfoe
 
+function zakfoe:ctor()
+	self:bind_overlap_events()
+end
+
 function zakfoe.configure(self, _def)
 	self.zak_state = 'prepare'
 	self.current_vertical_speed = 0

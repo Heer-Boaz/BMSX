@@ -152,13 +152,6 @@ function player:reset_runtime()
 	)
 end
 
-function player:bind_visual()
-	local rc = self:get_component('customvisualcomponent')
-	rc.producer = function(_ctx)
-		self:draw_visual()
-	end
-end
-
 function player:get_option_imgid()
 	if self.option_anim_index == 1 then
 		return constants.assets.option1
@@ -700,6 +693,13 @@ function player:tick()
 	self.frame = self.frame + 1
 end
 
+function player:ctor()
+	local rc = self:get_component('customvisualcomponent')
+	rc.producer = function(_ctx)
+		self:draw_visual()
+	end
+end
+
 local function define_player_fsm()
 	define_fsm(player_fsm_id, {
 		initial = 'boot',
@@ -707,7 +707,6 @@ local function define_player_fsm()
 			boot = {
 				entering_state = function(self)
 					self:reset_runtime()
-					self:bind_visual()
 					return '/flying'
 				end,
 			},

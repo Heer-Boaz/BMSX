@@ -106,32 +106,27 @@ function flow_service:banner_lines()
 	}
 end
 
+function flow_service:ctor()
+	self.pending_room_transition = false
+	self.pending_banner_mode = ''
+	self.pending_banner_world_number = 0
+	self.pending_banner_post_action = ''
+	self.pending_shrine_open = false
+	self.pending_shrine_close = false
+	self.pending_shrine_text_lines = {}
+	self.overlay_mode = 'none'
+	self.overlay_text_lines = {}
+	self.transition_frames_left = 0
+	self.banner_post_action = ''
+	self:activate_spaces()
+	self:bind_events()
+	self:spawn_interaction_view_if_needed()
+end
+
 local function define_flow_service_fsm()
 	define_fsm(constants.ids.flow_service_fsm, {
-		initial = 'boot',
+		initial = 'castle',
 		states = {
-			boot = {
-				entering_state = function(self)
-					self.pending_room_transition = false
-					self.pending_banner_mode = ''
-					self.pending_banner_world_number = 0
-					self.pending_banner_post_action = ''
-					self.pending_shrine_open = false
-					self.pending_shrine_close = false
-					self.pending_shrine_text_lines = {}
-					self.overlay_mode = 'none'
-					self.overlay_text_lines = {}
-					self.transition_frames_left = 0
-					self.banner_post_action = ''
-					self:activate_spaces()
-					self:bind_events()
-					self:spawn_interaction_view_if_needed()
-					set_space(self:resolve_room_space())
-					object(constants.ids.ui_instance).space_id = self:resolve_room_space()
-					self:emit_state_changed(get_space())
-					return '/castle'
-				end,
-			},
 			castle = {
 				entering_state = function(self)
 					local room_space = self:resolve_room_space()

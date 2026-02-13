@@ -102,21 +102,19 @@ function rock_service:bind_events()
 	})
 end
 
+function rock_service:ctor()
+	self.rocks_by_id = {}
+	self.destroyed_rock_ids = {}
+	self.synced_room_number = 0
+	self.sync_dirty = true
+	self:bind_events()
+	self:sync_room_rocks()
+end
+
 local function define_rock_service_fsm()
 	define_fsm(constants.ids.rock_service_fsm, {
-		initial = 'boot',
+		initial = 'active',
 		states = {
-			boot = {
-					entering_state = function(self)
-						self.rocks_by_id = {}
-						self.destroyed_rock_ids = {}
-						self.synced_room_number = 0
-						self.sync_dirty = true
-						self:bind_events()
-						self:sync_room_rocks()
-					return '/active'
-				end,
-			},
 			active = {
 				tick = function(self)
 					self:sync_room_rocks()

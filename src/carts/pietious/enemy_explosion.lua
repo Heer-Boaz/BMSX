@@ -78,25 +78,23 @@ function enemy_explosion:spawn_loot()
 	})
 end
 
+function enemy_explosion:ctor()
+	self:gfx(explosion_frames[1])
+	self.sprite_component.offset = { x = 0, y = 0, z = 114 }
+	self:define_timeline(timeline.new({
+		id = constants.ids.enemy_explosion_def .. '.timeline.explosion',
+		frames = explosion_frames,
+		ticks_per_frame = constants.enemy.explosion_frame_steps,
+		playback_mode = 'once',
+	}))
+	self:bind_events()
+	self:sync_explosion_sprite(explosion_frames[1])
+end
+
 local function define_enemy_explosion_fsm()
 	define_fsm(constants.ids.enemy_explosion_fsm, {
-		initial = 'boot',
+		initial = 'animating',
 		states = {
-			boot = {
-				entering_state = function(self)
-					self:gfx(explosion_frames[1])
-					self.sprite_component.offset = { x = 0, y = 0, z = 114 }
-						self:define_timeline(timeline.new({
-							id = constants.ids.enemy_explosion_def .. '.timeline.explosion',
-						frames = explosion_frames,
-						ticks_per_frame = constants.enemy.explosion_frame_steps,
-						playback_mode = 'once',
-						}))
-						self:bind_events()
-						self:sync_explosion_sprite(explosion_frames[1])
-						return '/animating'
-					end,
-				},
 			animating = {
 				entering_state = function(self)
 					self:play_timeline(constants.ids.enemy_explosion_def .. '.timeline.explosion', { rewind = true, snap_to_start = true })

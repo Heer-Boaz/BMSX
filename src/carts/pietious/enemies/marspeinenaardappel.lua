@@ -7,6 +7,10 @@ local enemy_explosion_module = require('enemy_explosion')
 local marspeinenaardappel = {}
 marspeinenaardappel.__index = marspeinenaardappel
 
+function marspeinenaardappel:ctor()
+	self:bind_overlap_events()
+end
+
 function marspeinenaardappel.configure(self, def)
 	self.max_health = 1
 	self.health = self.max_health

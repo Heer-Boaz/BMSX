@@ -55,13 +55,8 @@ end
 
 local function define_transition_view_fsm()
 	define_fsm(constants.ids.transition_view_fsm, {
-		initial = 'boot',
+		initial = 'active',
 		states = {
-			boot = {
-				entering_state = function(self)
-					return '/active'
-				end,
-			},
 			active = {},
 		},
 	})

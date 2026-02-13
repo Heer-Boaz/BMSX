@@ -181,20 +181,18 @@ function enemy_service:bind_events()
 	})
 end
 
+function enemy_service:ctor()
+	self.enemies_by_id = {}
+	self.destroyed_enemy_ids = {}
+	self.room_conditions_by_number = {}
+	self:bind_events()
+	self:enter_current_room()
+end
+
 local function define_enemy_service_fsm()
 	define_fsm(constants.ids.enemy_service_fsm, {
-		initial = 'boot',
+		initial = 'active',
 		states = {
-			boot = {
-				entering_state = function(self)
-					self.enemies_by_id = {}
-					self.destroyed_enemy_ids = {}
-					self.room_conditions_by_number = {}
-					self:bind_events()
-					self:enter_current_room()
-					return '/active'
-				end,
-			},
 			active = {},
 		},
 	})
@@ -202,14 +200,8 @@ end
 
 local function define_enemy_fsm()
 	define_fsm(constants.ids.enemy_fsm, {
-		initial = 'boot',
+		initial = 'waiting',
 		states = {
-			boot = {
-				entering_state = function(self)
-					self:bind_overlap_events()
-					return '/waiting'
-				end,
-			},
 			waiting = {
 				tags = { 'e.w' },
 				on = {

@@ -6,6 +6,10 @@ local enemy_explosion_module = require('enemy_explosion')
 local crossfoe = {}
 crossfoe.__index = crossfoe
 
+function crossfoe:ctor()
+	self:bind_overlap_events()
+end
+
 local function apply_spin_visual(self)
 	local imgid
 	local flip_h
