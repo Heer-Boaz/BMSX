@@ -10,8 +10,6 @@ local behaviourtree = require("behaviourtree")
 local worldobject = {}
 worldobject.__index = worldobject
 
-local EMPTY_COMPONENT_LIST = {}
-
 local function component_key(type_or_name)
 	local t = type(type_or_name)
 	if t == "string" then
@@ -23,8 +21,6 @@ local function component_key(type_or_name)
 	end
 	return string.lower(tostring(type_or_name))
 end
-
-
 
 function worldobject.new(opts)
 	local self = setmetatable({}, worldobject)
@@ -112,7 +108,7 @@ end
 
 function worldobject:get_components(type_name)
 	local key = component_key(type_name)
-	return self.component_map[key] or EMPTY_COMPONENT_LIST
+	return self.component_map[key] or {}
 end
 
 function worldobject:get_unique_component(type_name)

@@ -40,6 +40,7 @@ export const ENGINE_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> =
 	{ name: 'on_irq', params: ['mask_or_handler', 'handler?'], signature: 'on_irq(mask_or_handler [, handler])', description: 'Registers a per-bit IRQ handler with on_irq(mask, fn), or a legacy full-flags handler with on_irq(fn).' },
 	{ name: 'on_vdp_load', params: ['handler?'], signature: 'on_vdp_load(handler)', description: 'Registers a VDP load callback; return true to skip BIOS mapping.' },
 	{ name: 'bool01', params: ['value'], signature: 'bool01(value)' },
+	{ name: 'consume_axis_accum', params: ['accum', 'speed_num', 'speed_den'], signature: 'consume_axis_accum(accum, speed_num, speed_den)' },
 	{ name: 'clamp_int', params: ['value', 'min_value', 'max_value'], signature: 'clamp_int(value, min_value, max_value)' },
 	{ name: 'div_toward_zero', params: ['value', 'divisor'], signature: 'div_toward_zero(value, divisor)' },
 	{ name: 'round_to_nearest', params: ['value'], signature: 'round_to_nearest(value)' },

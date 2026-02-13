@@ -129,7 +129,6 @@ constants.sword = {
 
 constants.damage = {
 	max_health = 48,
-	enemy_contact_damage = 4,
 	hit_invulnerability_frames = 32,
 	hit_blink_switch_frames = 5,
 	knockback_dx = 4,
@@ -175,7 +174,6 @@ constants.enemy = {
 	cross_wait_before_fly_steps = 50,
 	cross_turn_steps = 5,
 	cross_horizontal_speed_px = 1,
-	default_health = 1,
 	mijter_drop_health_chance_pct = 50,
 	mijter_drop_ammo_chance_pct = 50,
 	zak_drop_health_chance_pct = 25,
@@ -312,7 +310,6 @@ constants.lithograph = {
 }
 
 constants.world_entrance = {
-	open_step_ms = 200,
 	trigger_x_offset = constants.room.tile_size,
 	trigger_half_width = constants.room.tile_unit4,
 	trigger_y_offset = constants.room.tile_size,

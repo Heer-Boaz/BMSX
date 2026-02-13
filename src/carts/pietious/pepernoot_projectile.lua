@@ -20,15 +20,9 @@ function pepernoot_projectile:refresh_tile_aligned_sprite_offset()
 end
 
 function pepernoot_projectile:onspawn(pos)
-	if pos then
-		self.x = pos.x or self.x
-		self.y = pos.y or self.y
-		self.z = pos.z or self.z
-	end
+	getmetatable(self).onspawn(self, pos)
 	self.sprite_component.flip.flip_h = self.direction < 0
 	self:refresh_tile_aligned_sprite_offset()
-	self:activate()
-	self.events:emit('spawn', { pos = pos })
 end
 
 function pepernoot_projectile:bind_events()

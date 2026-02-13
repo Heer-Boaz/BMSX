@@ -6,7 +6,8 @@ local enemy_explosion_module = require('enemy_explosion')
 local staffspawn = {}
 staffspawn.__index = staffspawn
 
-function staffspawn:ctor()
+function staffspawn:onspawn(pos)
+	getmetatable(self).onspawn(self, pos)
 	self:bind_overlap_events()
 end
 
@@ -50,26 +51,12 @@ local enemy_death_effect_sequence = 0
 
 -- helper removed; callers pass a random_percent_hit callback
 
-local function enemy_consume_axis_accum(accum, speed_num, speed_den)
-	accum = accum + speed_num
-	local delta = 0
-	while accum >= speed_den do
-		delta = delta + 1
-		accum = accum - speed_den
-	end
-	while accum <= -speed_den do
-		delta = delta - 1
-		accum = accum + speed_den
-	end
-	return delta, accum
-end
-
 
 function staffspawn:configure_from_room_def(def, room)
 		self.trigger = def.trigger or ''
 	self.conditions = def.conditions or {}
-		self.damage = constants.damage.enemy_contact_damage
-	self.max_health = constants.enemy.default_health
+		self.damage = 2
+	self.max_health = 1
 	self.health = self.max_health
 	self.last_weapon_kind = ''
 	self.last_weapon_hit_id = -1
@@ -83,7 +70,6 @@ function staffspawn:configure_from_room_def(def, room)
 	self:dispatch_state_event('reset_to_waiting')
 	self.collider.generateoverlapevents = true
 	self.collider.spaceevents = 'current'
-	self.collider:apply_collision_profile('enemy')
 	self.collider:set_shape_offset(0, 0)
 	self.sprite_component.offset.z = 110
 end
@@ -141,8 +127,8 @@ function staffspawn:set_velocity(speed_x_num, speed_y_num, speed_den)
 end
 
 function staffspawn:move_with_velocity()
-	local dx, next_accum_x = enemy_consume_axis_accum(self.speed_accum_x, self.speed_x_num, self.speed_den)
-	local dy, next_accum_y = enemy_consume_axis_accum(self.speed_accum_y, self.speed_y_num, self.speed_den)
+	local dx, next_accum_x = consume_axis_accum(self.speed_accum_x, self.speed_x_num, self.speed_den)
+	local dy, next_accum_y = consume_axis_accum(self.speed_accum_y, self.speed_y_num, self.speed_den)
 	self.speed_accum_x = next_accum_x
 	self.speed_accum_y = next_accum_y
 	self.x = self.x + dx
@@ -204,9 +190,9 @@ function staffspawn.register_enemy_definition()
 		defaults = {
 			trigger = '',
 			conditions = {},
-			damage = constants.damage.enemy_contact_damage,
-			max_health = constants.enemy.default_health,
-			health = constants.enemy.default_health,
+			damage = 2,
+			max_health = 1,
+			health = 1,
 			last_weapon_kind = '',
 			last_weapon_hit_id = -1,
 			dangerous = true,
@@ -220,8 +206,5 @@ function staffspawn.register_enemy_definition()
 		},
 	})
 end
-
-staffspawn.enemy_def_id = 'pietious.enemy.def.staffspawn'
-
 
 return staffspawn
