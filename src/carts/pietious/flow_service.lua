@@ -196,7 +196,7 @@ local function define_flow_service_fsm()
 			shrine_overlay = {
 				entering_state = function(self)
 					self.overlay_mode = 'shrine'
-					self.overlay_text_lines = copy_lines(self.pending_shrine_text_lines)
+					self.overlay_text_lines = self.pending_shrine_text_lines
 					self.pending_shrine_text_lines = {}
 					self.pending_shrine_close = false
 					set_space('transition')
