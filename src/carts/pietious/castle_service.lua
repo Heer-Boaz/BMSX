@@ -336,10 +336,22 @@ function castle_service:leave_world_to_castle()
 	}
 end
 
+local function define_castle_service_fsm()
+	define_fsm('castle_service.fsm', {
+		initial = 'active',
+		states = {
+			active = {
+				tick = castle_service.tick,
+			},
+		},
+	})
+end
+
 local function register_castle_service_definition()
 	define_service({
 		def_id = 'castle_service.def',
 		class = castle_service,
+		fsms = { 'castle_service.fsm' },
 		defaults = {
 			id = 'c',
 			current_room = nil,
@@ -359,5 +371,6 @@ end
 
 return {
 	castle_service = castle_service,
+	define_castle_service_fsm = define_castle_service_fsm,
 	register_castle_service_definition = register_castle_service_definition,
 }
