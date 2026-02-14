@@ -307,6 +307,17 @@ local function build_stairs(map_rows, tile_size, origin_x, origin_y, player_heig
 	return stairs
 end
 
+local function copy_conditions(source_conditions)
+	if source_conditions == nil then
+		return {}
+	end
+	local conditions = {}
+	for i = 1, #source_conditions do
+		conditions[i] = source_conditions[i]
+	end
+	return conditions
+end
+
 local function build_enemies(enemy_defs)
 	local enemies = {}
 	for i = 1, #enemy_defs do
