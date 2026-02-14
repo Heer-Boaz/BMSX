@@ -1,0 +1,111 @@
+events:
+    flow.state_changed:
+        channel: music
+        max_voices: 1
+        rules:
+            - when:
+                  equals:
+                      state: castle
+              go:
+                  music_transition:
+                      audio_id: music_castle
+                      sync: immediate
+                      fade_ms: 200
+            - when:
+                  equals:
+                      state: world
+              go:
+                  music_transition:
+                      audio_id: music_world
+                      sync: immediate
+                      fade_ms: 200
+            - when:
+                  equals:
+                      state: transition
+              go:
+                  music_transition:
+                      audio_id: music_shrine_1
+                      sync: loop
+                      fade_ms: 120
+
+    room.switched:
+        channel: sfx
+        max_voices: 2
+        policy: queue
+        rules:
+            - when:
+                  equals:
+                      transition_kind: world_banner
+              go:
+                  audio_id: worlddooropen
+                  cooldown_ms: 100
+            - when:
+                  equals:
+                      transition_kind: castle_banner
+              go:
+                  audio_id: worlddooropen
+                  cooldown_ms: 100
+            - when:
+                  equals:
+                      transition_kind: world_banner
+                  in:
+                      to: [ 'world' ]
+              go:
+                  audio_id: worldkey
+            - when:
+                  equals:
+                      transition_kind: castle_banner
+                  in:
+                      to: [ 'castle' ]
+              go:
+                  audio_id: pickupkey
+
+    enemy.defeated:
+        channel: sfx
+        max_voices: 2
+        policy: queue
+        rules:
+            - when:
+                  any_of:
+                      kind:
+                          - crossfoe
+              go:
+                  one_of:
+                      - cross
+                      - crossland
+            - when:
+                  any_of:
+                      kind:
+                          - paperfoe
+                          - boekfoe
+              go:
+                  audio_id: paperspawn
+            - when:
+                  any_of:
+                      kind:
+                          - muziekfoe
+                          - nootfoe
+              go:
+                  audio_id: muzieknootspawn
+            - when:
+                  any_of:
+                      kind:
+                          - nootfoe
+              go:
+                  audio_id: monsterappears
+            - when:
+                  any_of:
+                      kind:
+                          - cloud
+                          - staffspawn
+                          - marspeinenaardappel
+                          - stafffoe
+                          - vlokfoe
+                          - vlokspawner
+                          - mijterfoe
+                          - zakfoe
+              go:
+                  one_of:
+                      - foeexplosion
+                      - daemonfire
+                      - monsterappears

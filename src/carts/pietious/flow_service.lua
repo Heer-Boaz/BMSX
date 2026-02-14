@@ -50,10 +50,6 @@ function flow_service:bind_events()
 				self:queue_banner_transition('castle_banner', 0, event.post_action)
 				return
 			end
-			self.pending_room_transition = true
-			set_space('transition')
-			object('ui').space_id = 'transition'
-			object('shrine_world_view').space_id = 'transition'
 		end,
 	})
 end
@@ -100,7 +96,6 @@ function flow_service:banner_lines()
 end
 
 function flow_service:ctor()
-	self.pending_room_transition = false
 	self.pending_banner_mode = ''
 	self.pending_banner_world_number = 0
 	self.pending_banner_post_action = ''
@@ -136,29 +131,8 @@ local function define_flow_service_fsm()
 					if self.pending_banner_mode ~= '' then
 						return '/banner_transition'
 					end
-					if self.pending_room_transition then
-						self.pending_room_transition = false
-						return '/room_transition'
-					end
 					if self:item_screen_toggle_pressed() then
 						return '/item_screen'
-					end
-				end,
-			},
-			room_transition = {
-				entering_state = function(self)
-					self.transition_frames_left = constants.flow.room_transition_frames
-					self.overlay_mode = 'none'
-					self.overlay_text_lines = {}
-					set_space('transition')
-					object('ui').space_id = 'transition'
-					object('shrine_world_view').space_id = 'transition'
-					self:emit_state_changed('transition')
-				end,
-				tick = function(self)
-					self.transition_frames_left = self.transition_frames_left - 1
-					if self.transition_frames_left <= 0 then
-						return '/castle'
 					end
 				end,
 			},
@@ -232,10 +206,6 @@ local function define_flow_service_fsm()
 						self.pending_shrine_open = false
 						return '/shrine_overlay'
 					end
-					if self.pending_room_transition then
-						self.pending_room_transition = false
-						return '/room_transition'
-					end
 					if self:item_screen_toggle_pressed() then
 						return '/castle'
 					end
@@ -256,7 +226,6 @@ local function register_flow_service_definition()
 			id = 'f',
 			space_id = 'ui',
 			player_index = 1,
-			pending_room_transition = false,
 			pending_banner_mode = '',
 			pending_banner_world_number = 0,
 			pending_banner_post_action = '',

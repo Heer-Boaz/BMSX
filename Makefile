@@ -16,6 +16,9 @@ SNESMINI_CMAKE_ARGS ?= -DBMSX_BUILD_LIBRETRO=ON -DBMSX_BUILD_LIBRETRO_HOST=OFF -
 SNESMINI_LIBRETRO_ENTRY ?= $(CURDIR)/src/bmsx_cpp/platform/libretro/libretro_entry.cpp
 SNESMINI_DIST_DIR ?= $(CURDIR)/dist
 
+SNESMINI_VALIDATE_LIBDEPS ?= 1
+SNESMINI_ALLOWED_LIBDEPS ?= libGLESv2.so.2 libm.so.6 libc.so.6 ld-linux-armhf.so.3
+
 .PHONY: libretro-snesmini-debug libretro-snesmini-debug-inner snesmini-sysroot
 libretro-snesmini-debug:
 	SNESMINI_BUILD_TYPE="$(SNESMINI_BUILD_TYPE)" \
@@ -58,6 +61,9 @@ libretro-snesmini-debug-inner: snesmini-sysroot
 	cmake --build "$(SNESMINI_BUILD_DIR)" --config "$(SNESMINI_BUILD_TYPE)" --target bmsx_libretro
 	@mkdir -p "$(SNESMINI_DIST_DIR)"
 	cp "$(SNESMINI_BUILD_DIR)/bmsx_libretro.so" "$(SNESMINI_DIST_DIR)/bmsx_libretro.so"
+ifeq ($(SNESMINI_VALIDATE_LIBDEPS),1)
+	./scripts/check_snesmini_libdeps.sh "$(SNESMINI_DIST_DIR)/bmsx_libretro.so" "$(SNESMINI_ALLOWED_LIBDEPS)"
+endif
 	@core_name=$$(sed -nE 's/.*CORE_NAME = "([^"]*)".*/\1/p' "$(SNESMINI_LIBRETRO_ENTRY)"); \
 	core_version=$$(sed -nE 's/.*CORE_VERSION = "([^"]*)".*/\1/p' "$(SNESMINI_LIBRETRO_ENTRY)"); \
 	extensions=$$(sed -nE 's/.*VALID_EXTENSIONS = "([^"]*)".*/\1/p' "$(SNESMINI_LIBRETRO_ENTRY)"); \

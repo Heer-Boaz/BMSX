@@ -190,15 +190,24 @@ function player:reset_runtime()
 	self.hit_direction = 0
 	self.hit_recovery_timer = 0
 	self.death_timer = 0
-	self.enter_leave_step = 0
-	self.enter_leave_elapsed_distance = 0
-	self.enter_leave_size = self.height
 	self.enter_leave_anim_frame = 0
+	self.to_enter_cut = 0
+	self.transition_step = 0
 	self.enter_leave_wait_started = false
 	self.enter_leave_world_target = ''
 	self.enter_leave_shrine_text_lines = {}
 	self.pepernoot_projectile_sequence = 0
 	self.pepernoot_projectile_ids = {}
+end
+
+function player:update_collision_state()
+	local in_world_transition = self:has_tag(state_tags.group.transition_lock)
+	local is_hit_blink_hidden = self.hit_invulnerability_timer > 0
+		and self.hit_blink_on
+		and not self:has_tag(state_tags.group.hit_blink)
+
+	self.collider.enabled = not (in_world_transition or is_hit_blink_hidden)
+	self.sword_collider.enabled = self:has_tag(state_tags.group.sword) and not in_world_transition
 end
 
 function player:define_runtime_timelines()
@@ -331,16 +340,15 @@ function player:apply_presentation_state()
 				imgid = 'pietolon_stairs_up_2'
 			end
 		end
-		self.visible = true
 		self.sword_sprite.enabled = false
 		self:gfx(imgid)
-		local transition_offset_y = self.height - clamp(self.enter_leave_size, 0, self.height)
 		self.sprite_component.flip.flip_h = self.facing < 0
 		self.sprite_component.scale.x = 1
 		self.sprite_component.scale.y = 1
 		self.sprite_component.offset.x = 0
-		self.sprite_component.offset.y = transition_offset_y
+		self.sprite_component.offset.y = self.to_enter_cut
 		self.sprite_component.offset.z = 110
+		self.visible = true
 		return
 	end
 	if self.hit_invulnerability_timer > 0 and self.hit_blink_on and not self:has_tag(state_tags.variant.dying) then
@@ -428,16 +436,6 @@ function player:apply_presentation_state()
 	self.sprite_component.flip.flip_h = flip_h
 	self.sword_sprite.enabled = self:has_tag(state_tags.group.sword)
 	self.sword_sprite.flip.flip_h = flip_h
-end
-
-function player:update_collision_state()
-	local in_world_transition = self:has_tag(state_tags.group.transition_lock)
-	local is_hit_blink_hidden = self.hit_invulnerability_timer > 0
-		and self.hit_blink_on
-		and not self:has_tag(state_tags.group.hit_blink)
-
-	self.collider.enabled = not (in_world_transition or is_hit_blink_hidden)
-	self.sword_collider.enabled = self:has_tag(state_tags.group.sword) and not in_world_transition
 end
 
 function player:respawn()
@@ -748,24 +746,50 @@ function player:find_near_open_world_entrance()
 	return nil
 end
 
-function player:reset_enter_leave_animation(visible_size)
-	self.enter_leave_step = 0
-	self.enter_leave_elapsed_distance = 0
-	self.enter_leave_size = visible_size
+function player:reset_enter_leave_animation()
+	self.transition_step = 0
 	self.enter_leave_anim_frame = 0
+	self.to_enter_cut = 0
 	self.enter_leave_wait_started = false
 end
 
-function player:advance_enter_leave_animation(distance)
-	self.enter_leave_elapsed_distance = self.enter_leave_elapsed_distance + distance
-	while self.enter_leave_elapsed_distance >= constants.world_entrance.enter_anim_frame_distance do
-		self.enter_leave_elapsed_distance = self.enter_leave_elapsed_distance - constants.world_entrance.enter_anim_frame_distance
-		if self.enter_leave_anim_frame == 0 then
-			self.enter_leave_anim_frame = 1
-		else
-			self.enter_leave_anim_frame = 0
-		end
+function player:update_enter_leave_anim_frame()
+	if self.transition_step <= 0 then
+		self.enter_leave_anim_frame = 0
+		return
 	end
+	local phase = (self.transition_step - 1) % 8
+	if phase < 4 then
+		self.enter_leave_anim_frame = 0
+	else
+		self.enter_leave_anim_frame = 1
+	end
+end
+
+function player:update_enter_leave_cut(direction)
+	local transition_step = self.transition_step
+
+	if transition_step <= 0 then
+		self.to_enter_cut = 0
+		return
+	end
+	if transition_step > constants.world_entrance.enter_world_total_steps then
+		self.to_enter_cut = 0
+		return
+	end
+
+	local phase_step
+	if transition_step <= constants.world_entrance.enter_world_midpoint_step then
+		phase_step = transition_step
+	else
+		phase_step = constants.world_entrance.enter_world_total_steps - transition_step
+	end
+
+	if direction < 0 then
+		self.to_enter_cut = -phase_step
+		return
+	end
+	self.to_enter_cut = phase_step
 end
 
 function player:begin_entering_world(world_entrance)
@@ -777,7 +801,7 @@ function player:begin_entering_world(world_entrance)
 	self.enter_leave_world_target = world_entrance.target
 	self.enter_leave_shrine_text_lines = {}
 	self.x = world_entrance.stair_x
-	self:reset_enter_leave_animation(self.height)
+	self:reset_enter_leave_animation()
 	self:dispatch_state_event('enter_world_start')
 end
 
@@ -790,21 +814,21 @@ function player:begin_entering_shrine(shrine)
 	self.enter_leave_world_target = ''
 	self.enter_leave_shrine_text_lines = shrine.text_lines
 	self.x = shrine.x
-	self:reset_enter_leave_animation(self.height)
+	self:reset_enter_leave_animation()
 	self:dispatch_state_event('enter_shrine_start')
 end
 
 function player:begin_world_emerge_from_door()
 	self:get_timeline('p.seq.s'):force_seek(0)
 	self:clear_input_state()
-	self:reset_enter_leave_animation(0)
+	self:reset_enter_leave_animation()
 	self.enter_leave_world_target = ''
 	self.enter_leave_shrine_text_lines = {}
 	self:dispatch_state_event('world_emerge_start')
 end
 
 function player:leave_shrine_overlay()
-	self:reset_enter_leave_animation(0)
+	self:reset_enter_leave_animation()
 	self.enter_leave_shrine_text_lines = {}
 	self:dispatch_state_event('leave_shrine_overlay')
 end
@@ -1726,33 +1750,47 @@ end
 
 function player:tick_entering_world()
 	self:reset_motion_for_transition_lock()
-	self.enter_leave_step = self.enter_leave_step + 1
-	while self.enter_leave_step >= constants.world_entrance.enter_leave_step_frames do
-		self.enter_leave_step = self.enter_leave_step - constants.world_entrance.enter_leave_step_frames
-		self.enter_leave_size = self.enter_leave_size - 1
-		self:advance_enter_leave_animation(1)
-		if self.enter_leave_size < 0 then
-			local castle_service = service('c')
-			local switch = castle_service:enter_world(self.enter_leave_world_target)
-			self.x = switch.spawn_x
-			self.y = switch.spawn_y
-			self.facing = switch.spawn_facing
-			self.enter_leave_world_target = ''
-			self.enter_leave_shrine_text_lines = {}
-			self.enter_leave_wait_started = false
-			self:emit_room_switched_event({
-				from = switch.from_room_number,
-				to = switch.to_room_number,
-				dir = switch.direction,
-				space = service('c').current_room.space_id,
-				x = self.x,
-				y = self.y,
-				transition_kind = switch.transition_kind,
-				world_number = switch.world_number,
-			})
-			self:dispatch_state_event('world_entered')
-			return
-		end
+	self.transition_step = self.transition_step + 1
+	self:update_enter_leave_anim_frame()
+	self:update_enter_leave_cut(1)
+	if self.transition_step == constants.world_entrance.enter_world_midpoint_step then
+		local castle_service = service('c')
+		local switch = castle_service:enter_world(self.enter_leave_world_target)
+		self.x = switch.spawn_x
+		self.y = switch.spawn_y
+		self.facing = switch.spawn_facing
+		self.enter_leave_world_target = ''
+		self.enter_leave_shrine_text_lines = {}
+		self.enter_leave_wait_started = false
+		self:emit_room_switched_event({
+			from = switch.from_room_number,
+			to = switch.to_room_number,
+			dir = switch.direction,
+			space = service('c').current_room.space_id,
+			x = self.x,
+			y = self.y,
+			transition_kind = switch.transition_kind,
+			world_number = switch.world_number,
+		})
+	end
+
+	if self.transition_step > constants.world_entrance.enter_world_total_steps then
+		self.to_enter_cut = 0
+		self:dispatch_state_event('world_entered')
+		return
+	end
+end
+
+function player:tick_entering_shrine()
+	self:reset_motion_for_transition_lock()
+	self.transition_step = self.transition_step + 1
+	self:update_enter_leave_anim_frame()
+	self:update_enter_leave_cut(-1)
+	if self.transition_step > constants.world_entrance.enter_world_total_steps then
+		service('f'):open_shrine(self.enter_leave_shrine_text_lines)
+		self.enter_leave_wait_started = false
+		self:dispatch_state_event('shrine_entered')
+		return
 	end
 end
 
@@ -1774,45 +1812,6 @@ function player:tick_waiting_world_emerge()
 	local flow = service('f')
 	if flow.pending_banner_mode ~= '' or flow:has_modal_overlay() then
 		self.enter_leave_wait_started = true
-	end
-end
-
-function player:tick_emerging_world()
-	self:reset_motion_for_transition_lock()
-	self.enter_leave_step = self.enter_leave_step + 1
-	while self.enter_leave_step >= constants.world_entrance.enter_leave_step_frames do
-		self.enter_leave_step = self.enter_leave_step - constants.world_entrance.enter_leave_step_frames
-		self.enter_leave_size = self.enter_leave_size + 1
-		if self.enter_leave_size > self.height then
-			self.enter_leave_size = self.height
-			self:dispatch_state_event('world_emerge_done')
-			return
-		end
-		self:advance_enter_leave_animation(1)
-	end
-end
-
-function player:tick_entering_shrine()
-	self:reset_motion_for_transition_lock()
-	self.enter_leave_step = self.enter_leave_step + 1
-	while self.enter_leave_step >= constants.world_entrance.enter_leave_step_frames do
-		self.enter_leave_step = self.enter_leave_step - constants.world_entrance.enter_leave_step_frames
-		self.enter_leave_size = self.enter_leave_size - 1
-		self:advance_enter_leave_animation(1)
-		if self.enter_leave_size < 0 then
-			service('f'):open_shrine(self.enter_leave_shrine_text_lines)
-			self.enter_leave_wait_started = false
-			self:dispatch_state_event('shrine_entered')
-			return
-		end
-	end
-end
-
-function player:tick_waiting_shrine()
-	self:reset_motion_for_transition_lock()
-	local flow = service('f')
-	if flow.pending_shrine_open or flow.overlay_mode == 'shrine' or get_space() ~= service('c').current_room.space_id then
-		self.enter_leave_wait_started = true
 		return
 	end
 	if self.enter_leave_wait_started then
@@ -1820,18 +1819,32 @@ function player:tick_waiting_shrine()
 	end
 end
 
+function player:tick_waiting_shrine()
+	self:reset_motion_for_transition_lock()
+	local flow = service('f')
+	if flow:has_modal_overlay() then
+		self.enter_leave_wait_started = true
+		return
+	end
+	if self.enter_leave_wait_started then
+		self.enter_leave_wait_started = false
+		self:dispatch_state_event('shrine_left')
+	end
+end
+
 function player:tick_leaving_shrine()
 	self:reset_motion_for_transition_lock()
-	self.enter_leave_step = self.enter_leave_step + 1
-	while self.enter_leave_step >= constants.world_entrance.enter_leave_step_frames do
-		self.enter_leave_step = self.enter_leave_step - constants.world_entrance.enter_leave_step_frames
-		self.enter_leave_size = self.enter_leave_size + 1
-		if self.enter_leave_size > self.height then
-			self.enter_leave_size = self.height
-			self:dispatch_state_event('shrine_left')
-			return
-		end
-		self:advance_enter_leave_animation(1)
+	self:dispatch_state_event('shrine_left')
+end
+
+function player:tick_emerging_world()
+	self:reset_motion_for_transition_lock()
+	self.transition_step = self.transition_step + 1
+	self:update_enter_leave_anim_frame()
+	self:update_enter_leave_cut(-1)
+	if self.transition_step > constants.world_entrance.enter_world_total_steps then
+		self.to_enter_cut = 0
+		self:dispatch_state_event('world_emerge_done')
 	end
 end
 function player:tick_quiet()
@@ -2857,48 +2870,47 @@ local function register_player_definition()
 			down_held = false,
 			up_pressed = false,
 			up_released = false,
-				down_pressed = false,
-				down_released = false,
-					attack_held = false,
-					attack_pressed = false,
-					attack_released = false,
-					last_dx = 0,
-					last_dy = 0,
-					previous_x_collision = false,
-					previous_y_collision = false,
-					on_vertical_elevator = false,
-					jumping_from_elevator = false,
-					walk_frame = 0,
-				walk_distance_accum = 0,
-				walk_speed_accum = 0,
-				walk_move_dx = 0,
-				walk_move_collided_x = false,
-				sword_ground_origin = 'quiet',
-					stairs_direction = 0,
-					stairs_x = -1,
-					stairs_top_y = constants.player.start_y,
-					stairs_bottom_y = constants.player.start_y,
-					stairs_anim_frame = 0,
-					stairs_anim_distance = 0,
-					hit_stairs_lock = false,
-				health = constants.damage.max_health,
-				max_health = constants.damage.max_health,
-				hit_invulnerability_timer = 0,
-				hit_blink_on = false,
+			down_pressed = false,
+			down_released = false,
+			attack_held = false,
+			attack_pressed = false,
+			attack_released = false,
+			last_dx = 0,
+			last_dy = 0,
+			previous_x_collision = false,
+			previous_y_collision = false,
+			on_vertical_elevator = false,
+			jumping_from_elevator = false,
+			walk_frame = 0,
+			walk_distance_accum = 0,
+			walk_speed_accum = 0,
+			walk_move_dx = 0,
+			walk_move_collided_x = false,
+			sword_ground_origin = 'quiet',
+			stairs_direction = 0,
+			stairs_x = -1,
+			stairs_top_y = constants.player.start_y,
+			stairs_bottom_y = constants.player.start_y,
+			stairs_anim_frame = 0,
+			stairs_anim_distance = 0,
+			hit_stairs_lock = false,
+			health = constants.damage.max_health,
+			max_health = constants.damage.max_health,
+			hit_invulnerability_timer = 0,
+			hit_blink_on = false,
 			hit_substate = 0,
 			hit_direction = 0,
 			hit_recovery_timer = 0,
 			death_timer = 0,
-			enter_leave_step = 0,
-			enter_leave_elapsed_distance = 0,
-			enter_leave_size = constants.player.height,
+			transition_step = 0,
+			to_enter_cut = 0,
 			enter_leave_anim_frame = 0,
 			enter_leave_wait_started = false,
 			enter_leave_world_target = '',
 			enter_leave_shrine_text_lines = {},
-				inventory_items = nil,
-				secondary_weapon = 'none',
-				weapon_level = 0,
+			inventory_items = nil,
+			secondary_weapon = 'none',
+			weapon_level = 0,
 			pepernoot_projectile_sequence = 0,
 			pepernoot_projectile_ids = {},
 		},

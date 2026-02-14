@@ -5,11 +5,11 @@ local castle_map = {}
 
 local start_room_number = 1
 
-	local world_transition_specs = {
-		world_1 = {
-			target = 'world_1',
-			world_number = 1,
-			world_room_number = 101,
+local world_transition_specs = {
+	world_1 = {
+		target = 'world_1',
+		world_number = 1,
+		world_room_number = 104,
 		world_map_x = 2,
 		world_map_y = 0,
 		world_spawn_x = 28 * constants.room.tile_size,
@@ -19,9 +19,9 @@ local start_room_number = 1
 		castle_map_y = 12,
 		castle_spawn_x = 152,
 		castle_spawn_y = 64,
-			castle_room_number = 0,
-			castle_spawn_facing = 1,
-		},
+		castle_room_number = 0,
+		castle_spawn_facing = 1,
+	},
 }
 
 local map_world_proxies = {
