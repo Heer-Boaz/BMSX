@@ -120,14 +120,6 @@ local player_hit_invulnerability_sequence_frames = timeline.range(constants.dama
 local player_hit_blink_sequence_frames = timeline.range(constants.damage.hit_blink_switch_frames)
 local player_fall_substate_sequence_frames = timeline.range(12)
 
-local function copy_text_lines(lines)
-	local copied = {}
-	for i = 1, #lines do
-		copied[i] = lines[i]
-	end
-	return copied
-end
-
 function player:bind_events()
 	eventemitter.eventemitter.instance:on({
 		event = 'room.switched',
@@ -324,10 +316,9 @@ function player:apply_presentation_state()
 		return
 	end
 
-	local transitioning_down = self:has_tag(state_tags.group.world_transition_down)
 	if self:has_tag(state_tags.group.world_transition) then
 		local imgid
-		if transitioning_down then
+		if self:has_tag(state_tags.group.world_transition_down) then
 			if self.enter_leave_anim_frame == 0 then
 				imgid = 'pietolon_stairs_down_1'
 			else
@@ -340,16 +331,15 @@ function player:apply_presentation_state()
 				imgid = 'pietolon_stairs_up_2'
 			end
 		end
-			self.visible = true
-			self.sword_sprite.enabled = false
-			self:gfx(imgid)
-		self.sprite_component.flip.flip_h = self.facing > 0
-		if transitioning_down then
-			self.sprite_component.offset.x = 1
-		else
-			self.sprite_component.offset.x = -1
-		end
-		self.sprite_component.offset.y = 0
+		self.visible = true
+		self.sword_sprite.enabled = false
+		self:gfx(imgid)
+		local transition_offset_y = self.height - clamp(self.enter_leave_size, 0, self.height)
+		self.sprite_component.flip.flip_h = self.facing < 0
+		self.sprite_component.scale.x = 1
+		self.sprite_component.scale.y = 1
+		self.sprite_component.offset.x = 0
+		self.sprite_component.offset.y = transition_offset_y
 		self.sprite_component.offset.z = 110
 		return
 	end
@@ -358,6 +348,8 @@ function player:apply_presentation_state()
 		return
 	end
 	self.visible = true
+	self.sprite_component.scale.x = 1
+	self.sprite_component.scale.y = 1
 
 	local damage_sprite_id = self:get_damage_state_imgid()
 
@@ -796,7 +788,7 @@ function player:begin_entering_shrine(shrine)
 	self.stairs_x = -1
 	self.hit_stairs_lock = false
 	self.enter_leave_world_target = ''
-	self.enter_leave_shrine_text_lines = copy_text_lines(shrine.text_lines)
+	self.enter_leave_shrine_text_lines = shrine.text_lines
 	self.x = shrine.x
 	self:reset_enter_leave_animation(self.height)
 	self:dispatch_state_event('enter_shrine_start')
