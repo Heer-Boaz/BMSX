@@ -28,18 +28,18 @@ function world_item:configure_from_room_def(def, room, item_service_id)
 end
 
 function world_item:on_overlap(event)
-	if event.other_id ~= constants.ids.player_instance then
+	if event.other_id ~= 'player.instance' then
 		return
 	end
 
-	local room = service(constants.ids.castle_service_instance).current_room
+	local room = service('castle_service.instance').current_room
 	if service(self.item_service_id):try_pick_item(self.item_id, room.room_number, self.item_type, self.source_kind) then
 		self:dispatch_state_event('picked')
 	end
 end
 
 local function define_world_item_fsm()
-	define_fsm(constants.ids.world_item_fsm, {
+	define_fsm('world_item.fsm', {
 		initial = 'active',
 		states = {
 			active = {
@@ -61,15 +61,15 @@ end
 
 local function register_world_item_definition()
 	define_prefab({
-		def_id = constants.ids.world_item_def,
+		def_id = 'world_item.def',
 		class = world_item,
 		type = 'sprite',
-		fsms = { constants.ids.world_item_fsm },
+		fsms = { 'world_item.fsm' },
 		defaults = {
 			item_id = '',
 			item_type = 'ammofromrock',
 			source_kind = 'map',
-			item_service_id = constants.ids.item_service_instance,
+			item_service_id = 'item_service.instance',
 		},
 	})
 end
@@ -78,6 +78,6 @@ return {
 	world_item = world_item,
 	define_world_item_fsm = define_world_item_fsm,
 	register_world_item_definition = register_world_item_definition,
-	world_item_def_id = constants.ids.world_item_def,
-	world_item_fsm_id = constants.ids.world_item_fsm,
+	world_item_def_id = 'world_item.def',
+	world_item_fsm_id = 'world_item.fsm',
 }

@@ -1,0 +1,131 @@
+local eventemitter = require('eventemitter')
+local enemy_explosion_module = require('enemy_explosion')
+local worldobject = require('worldobject')
+local combat_overlap = require('combat_overlap')
+
+local enemy_base = {}
+
+local enemy_death_effect_sequence = 0
+
+function enemy_base.ctor(self)
+	self.collider.generateoverlapevents = true
+	self.collider.spaceevents = 'current'
+	self.collider:set_shape_offset(0, 0)
+	self.sprite_component.offset.z = 110
+end
+
+function enemy_base.onspawn(self, pos)
+	worldobject.onspawn(self, pos)
+	self:bind_overlap_events()
+end
+
+function enemy_base.bind_overlap_events(self)
+	self.events:on({
+		event_name = 'overlap',
+		subscriber = self,
+		handler = function(event)
+			self:on_overlap(event)
+		end,
+	})
+
+	if self.despawn_on_room_switch then
+		eventemitter.eventemitter.instance:on({
+			event = 'room.switched',
+			subscriber = self,
+			handler = function(_event)
+				self:mark_for_disposal()
+			end,
+		})
+	end
+end
+
+function enemy_base.projectile_is_out_of_bounds(self)
+	local room = service('castle_service.instance').current_room
+	local bound_right = self.projectile_bound_right
+	if bound_right <= 0 then
+		bound_right = self.sx
+	end
+	local bound_bottom = self.projectile_bound_bottom
+	if bound_bottom <= 0 then
+		bound_bottom = self.sy
+	end
+
+	if self.x + bound_right < 0 then
+		return true
+	end
+	if self.x > room.world_width then
+		return true
+	end
+	if self.y + bound_bottom < room.world_top then
+		return true
+	end
+	if self.y > room.world_height then
+		return true
+	end
+	return false
+end
+
+function enemy_base.spawn_death_effect(self)
+	enemy_death_effect_sequence = enemy_death_effect_sequence + 1
+	local room = service('castle_service.instance').current_room
+	inst(enemy_explosion_module.enemy_explosion_def_id, {
+		room_number = room.room_number,
+		loot_type = self:choose_drop_type(),
+		space_id = room.space_id,
+		pos = { x = self.x, y = self.y, z = 114 },
+	})
+end
+
+function enemy_base.take_weapon_hit(self, weapon_kind, hit_id)
+	if self.last_weapon_kind == weapon_kind and self.last_weapon_hit_id == hit_id then
+		return false
+	end
+	self.last_weapon_kind = weapon_kind
+	self.last_weapon_hit_id = hit_id
+	self.health = self.health - 1
+	if self.health <= 0 then
+		self.health = 0
+		self.dangerous = false
+		self:spawn_death_effect()
+		eventemitter.eventemitter.instance:emit('enemy.defeated', self.id, {
+			room_number = service('castle_service.instance').current_room.room_number,
+			kind = self.enemy_kind,
+			trigger = self.trigger,
+		})
+		self:mark_for_disposal()
+	end
+	return true
+end
+
+function enemy_base.on_overlap(self, event)
+	local player = object('player.instance')
+	local contact_kind = combat_overlap.classify_player_contact(self, event, constants, player)
+	if contact_kind == combat_overlap.contact_kind.none then
+		return
+	end
+	if combat_overlap.has_sword_contact(contact_kind) then
+		self:take_weapon_hit('sword', player.sword_id)
+	end
+	if combat_overlap.has_body_contact(contact_kind) and self.dangerous then
+		player:take_hit(self.damage, self.x + math.modf(self.sx / 2), self.y + math.modf(self.sy / 2), self.enemy_kind)
+	end
+end
+
+function enemy_base.extend(enemy_class, enemy_kind)
+	local original_ctor = enemy_class.ctor
+	enemy_class.enemy_kind = enemy_kind
+	enemy_class.onspawn = enemy_base.onspawn
+	enemy_class.bind_overlap_events = enemy_base.bind_overlap_events
+	enemy_class.projectile_is_out_of_bounds = enemy_base.projectile_is_out_of_bounds
+	enemy_class.spawn_death_effect = enemy_base.spawn_death_effect
+	enemy_class.take_weapon_hit = enemy_base.take_weapon_hit
+	enemy_class.on_overlap = enemy_base.on_overlap
+	enemy_class.ctor = function(self, ...)
+		enemy_base.ctor(self)
+		if original_ctor then
+			original_ctor(self, ...)
+		end
+	end
+end
+
+return enemy_base

@@ -72,9 +72,7 @@ export function get_overlap_area(a: RectBounds, b: RectBounds): RectBounds {
 	const endY = Math.min(a.bottom, b.bottom);
 	return new_area(startX, startY, endX, endY);
 }
-export function pointInRect(x: number, y: number, rect: RectBounds): boolean {
-	return x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom;
-}
+
 export function point_in_rect(x: number, y: number, rect: RectBounds): boolean {
 	if (!rect) {
 		return false;

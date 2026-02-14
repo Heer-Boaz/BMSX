@@ -31,7 +31,7 @@ end
 
 function enemy_explosion:bind_events()
 	self.events:on({
-		event_name = 'timeline.frame.' .. constants.ids.enemy_explosion_def .. '.timeline.explosion',
+		event_name = 'timeline.frame.' .. 'enemy_explosion.def' .. '.timeline.explosion',
 		subscriber = self,
 		handler = function(event)
 			self:sync_explosion_sprite(event.frame_value)
@@ -39,7 +39,7 @@ function enemy_explosion:bind_events()
 	})
 
 	self.events:on({
-		event_name = 'timeline.end.' .. constants.ids.enemy_explosion_def .. '.timeline.explosion',
+		event_name = 'timeline.end.' .. 'enemy_explosion.def' .. '.timeline.explosion',
 		subscriber = self,
 		handler = function()
 			self:spawn_loot()
@@ -48,7 +48,7 @@ function enemy_explosion:bind_events()
 	})
 
 	eventemitter.eventemitter.instance:on({
-		event = constants.events.room_switched,
+		event = 'room.switched',
 		subscriber = self,
 		handler = function(_event)
 			self:mark_for_disposal()
@@ -66,7 +66,7 @@ function enemy_explosion:spawn_loot()
 		return
 	end
 
-	local room_space = service(constants.ids.castle_service_instance).current_room.space_id
+	local room_space = service('castle_service.instance').current_room.space_id
 	loot_spawn_sequence = loot_spawn_sequence + 1
 	local loot_id = string.format('%s.loot.%d', self.id, loot_spawn_sequence)
 	inst(loot_drop_module.loot_drop_def_id, {
@@ -82,7 +82,7 @@ function enemy_explosion:ctor()
 	self:gfx(explosion_frames[1])
 	self.sprite_component.offset = { x = 0, y = 0, z = 114 }
 	self:define_timeline(timeline.new({
-		id = constants.ids.enemy_explosion_def .. '.timeline.explosion',
+		id = 'enemy_explosion.def' .. '.timeline.explosion',
 		frames = explosion_frames,
 		ticks_per_frame = constants.enemy.explosion_frame_steps,
 		playback_mode = 'once',
@@ -92,12 +92,12 @@ function enemy_explosion:ctor()
 end
 
 local function define_enemy_explosion_fsm()
-	define_fsm(constants.ids.enemy_explosion_fsm, {
+	define_fsm('enemy_explosion.fsm', {
 		initial = 'animating',
 		states = {
 			animating = {
 				entering_state = function(self)
-					self:play_timeline(constants.ids.enemy_explosion_def .. '.timeline.explosion', { rewind = true, snap_to_start = true })
+					self:play_timeline('enemy_explosion.def' .. '.timeline.explosion', { rewind = true, snap_to_start = true })
 				end,
 			},
 		},
@@ -106,10 +106,10 @@ end
 
 local function register_enemy_explosion_definition()
 	define_prefab({
-		def_id = constants.ids.enemy_explosion_def,
+		def_id = 'enemy_explosion.def',
 		class = enemy_explosion,
 		type = 'sprite',
-		fsms = { constants.ids.enemy_explosion_fsm },
+		fsms = { 'enemy_explosion.fsm' },
 		defaults = {
 			loot_type = 'none',
 			tick_enabled = false,
@@ -121,6 +121,6 @@ return {
 	enemy_explosion = enemy_explosion,
 	define_enemy_explosion_fsm = define_enemy_explosion_fsm,
 	register_enemy_explosion_definition = register_enemy_explosion_definition,
-	enemy_explosion_def_id = constants.ids.enemy_explosion_def,
-	enemy_explosion_fsm_id = constants.ids.enemy_explosion_fsm,
+	enemy_explosion_def_id = 'enemy_explosion.def',
+	enemy_explosion_fsm_id = 'enemy_explosion.fsm',
 }

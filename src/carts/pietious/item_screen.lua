@@ -46,7 +46,7 @@ end
 
 function item_screen:bind_events()
 	eventemitter.eventemitter.instance:on({
-		event = constants.events.flow_state_changed,
+		event = 'flow.state_changed',
 		subscriber = self,
 		handler = function(event)
 			if event.state ~= 'item' then
@@ -80,12 +80,12 @@ function item_screen:item_position_px(item_type)
 end
 
 function item_screen:draw_inventory_items()
-	local player = object(constants.ids.player_instance)
-	local room_space = service(constants.ids.castle_service_instance).current_room.space_id
+	local player = object('player.instance')
+	local room_space = service('castle_service.instance').current_room.space_id
 	for i = 1, #inventory_item_order do
 		local item_type = inventory_item_order[i]
 		if player:has_inventory_item(item_type) then
-			if item_type ~= 'map_world1' or room_space == constants.spaces.world then
+			if item_type ~= 'map_world1' or room_space == 'world' then
 				local x, y = self:item_position_px(item_type)
 				put_sprite(constants.world_item.sprite[item_type], x, y, 321)
 			end
@@ -103,8 +103,8 @@ function item_screen:draw_secondary_weapon_selector()
 end
 
 function item_screen:draw_map()
-	local player = object(constants.ids.player_instance)
-	local room = service(constants.ids.castle_service_instance).current_room
+	local player = object('player.instance')
+	local room = service('castle_service.instance').current_room
 	local world_number = room.world_number
 	if world_number <= 0 then
 		return
@@ -143,7 +143,7 @@ function item_screen:tick_selector_blink()
 end
 
 function item_screen:tick_secondary_weapon_selection()
-	local player = object(constants.ids.player_instance)
+	local player = object('player.instance')
 	if action_triggered('right[jp]') then
 		for i = self.secondary_weapon_selection_index + 2, #secondary_weapon_order do
 			if player:has_inventory_item(secondary_weapon_order[i]) then
@@ -167,7 +167,7 @@ function item_screen:tick_secondary_weapon_selection()
 end
 
 function item_screen:tick()
-	if get_space() ~= constants.spaces.item then
+	if get_space() ~= 'item' then
 		return
 	end
 	self:tick_selector_blink()
@@ -182,7 +182,7 @@ function item_screen:draw_screen()
 end
 
 local function define_item_screen_fsm()
-	define_fsm(constants.ids.item_screen_fsm, {
+	define_fsm('item_screen.fsm', {
 		initial = 'active',
 		states = {
 			active = {},
@@ -192,12 +192,12 @@ end
 
 local function register_item_screen_definition()
 		define_prefab({
-			def_id = constants.ids.item_screen_def,
+			def_id = 'item_screen.def',
 			class = item_screen,
-			fsms = { constants.ids.item_screen_fsm },
+			fsms = { 'item_screen.fsm' },
 			components = { 'customvisualcomponent' },
 			defaults = {
-				space_id = constants.spaces.item,
+				space_id = 'item',
 				secondary_weapon_selection_index = 0,
 				selector_hidden = false,
 				selector_blink_counter = 0,
@@ -211,7 +211,7 @@ return {
 	item_screen = item_screen,
 	define_item_screen_fsm = define_item_screen_fsm,
 	register_item_screen_definition = register_item_screen_definition,
-	item_screen_def_id = constants.ids.item_screen_def,
-	item_screen_instance_id = constants.ids.item_screen_instance,
-	item_screen_fsm_id = constants.ids.item_screen_fsm,
+	item_screen_def_id = 'item_screen.def',
+	item_screen_instance_id = 'item_screen.instance',
+	item_screen_fsm_id = 'item_screen.fsm',
 }

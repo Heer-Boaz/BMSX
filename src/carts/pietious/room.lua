@@ -307,14 +307,6 @@ local function build_stairs(map_rows, tile_size, origin_x, origin_y, player_heig
 	return stairs
 end
 
-local function copy_conditions(conditions_def)
-	local conditions = {}
-	for i = 1, #conditions_def do
-		conditions[i] = conditions_def[i]
-	end
-	return conditions
-end
-
 local function build_enemies(enemy_defs)
 	local enemies = {}
 	for i = 1, #enemy_defs do
@@ -328,7 +320,7 @@ local function build_enemies(enemy_defs)
 			speedx = def.speedx,
 			speedy = def.speedy,
 			trigger = def.trigger,
-			conditions = copy_conditions(def.conditions or {}),
+			conditions = def.conditions,
 			kind = def.kind,
 		}
 	end
@@ -511,17 +503,13 @@ function room.is_solid_at_tile(room_state, tx, ty)
 	return room.is_active_rock_at_tile(room_state, tx, ty)
 end
 
-local function rect_overlaps(ax, ay, aw, ah, bx, by, bw, bh)
-	return ax < (bx + bw) and (ax + aw) > bx and ay < (by + bh) and (ay + ah) > by
-end
-
 function room.overlaps_active_rock(room_state, x, y, w, h)
 	local rocks = room_state.rocks
 	if #rocks == 0 then
 		return false
 	end
 
-	local destroyed_rock_ids = service(constants.ids.rock_service_instance).destroyed_rock_ids
+	local destroyed_rock_ids = service('rock_service.instance').destroyed_rock_ids
 	for i = 1, #rocks do
 		local rock = rocks[i]
 		if destroyed_rock_ids[rock.id] ~= true then

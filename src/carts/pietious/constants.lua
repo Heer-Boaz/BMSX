@@ -1,79 +1,9 @@
 local constants = {}
 
-constants.ids = {
-	player_def = 'pietious.player.def',
-	player_instance = 'pietious.player.instance',
-	player_fsm = 'pietious.player.fsm',
-	director_def = 'pietious.director.def',
-	director_instance = 'pietious.director.instance',
-	director_fsm = 'pietious.director.fsm',
-	room_view_def = 'pietious.room_view.def',
-	room_view_instance = 'pietious.room_view.instance',
-	room_view_fsm = 'pietious.room_view.fsm',
-	transition_view_def = 'pietious.transition_view.def',
-	transition_view_instance = 'pietious.transition_view.instance',
-	transition_view_fsm = 'pietious.transition_view.fsm',
-	item_screen_def = 'pietious.item_screen.def',
-	item_screen_instance = 'pietious.item_screen.instance',
-	item_screen_fsm = 'pietious.item_screen.fsm',
-	ui_def = 'pietious.ui.def',
-	ui_instance = 'pietious.ui.instance',
-	ui_fsm = 'pietious.ui.fsm',
-	castle_service_def = 'pietious.castle_service.def',
-	castle_service_instance = 'pietious.castle_service.instance',
-	elevator_service_def = 'pietious.elevator_service.def',
-	elevator_service_instance = 'pietious.elevator_service.instance',
-	elevator_service_fsm = 'pietious.elevator_service.fsm',
-	flow_service_def = 'pietious.flow_service.def',
-	flow_service_instance = 'pietious.flow_service.instance',
-	flow_service_fsm = 'pietious.flow_service.fsm',
-	shrine_world_view_def = 'pietious.shrine_world_view.def',
-	shrine_world_view_instance = 'pietious.shrine_world_view.instance',
-	enemy_def = 'pietious.enemy.def',
-	enemy_fsm = 'pietious.enemy.fsm',
-	enemy_bt = 'pietious.enemy.bt',
-	enemy_service_def = 'pietious.enemy_service.def',
-	enemy_service_instance = 'pietious.enemy_service.instance',
-	enemy_service_fsm = 'pietious.enemy_service.fsm',
-	rock_def = 'pietious.rock.def',
-	rock_fsm = 'pietious.rock.fsm',
-	rock_service_def = 'pietious.rock_service.def',
-	rock_service_instance = 'pietious.rock_service.instance',
-	rock_service_fsm = 'pietious.rock_service.fsm',
-	world_item_def = 'pietious.world_item.def',
-	world_item_fsm = 'pietious.world_item.fsm',
-	item_service_def = 'pietious.item_service.def',
-	item_service_instance = 'pietious.item_service.instance',
-	item_service_fsm = 'pietious.item_service.fsm',
-	pepernoot_projectile_def = 'pietious.pepernoot_projectile.def',
-	pepernoot_projectile_fsm = 'pietious.pepernoot_projectile.fsm',
-	enemy_explosion_def = 'pietious.enemy_explosion.def',
-	enemy_explosion_fsm = 'pietious.enemy_explosion.fsm',
-	loot_drop_def = 'pietious.loot_drop.def',
-	loot_drop_fsm = 'pietious.loot_drop.fsm',
-	player_body_collider_local = 'body',
-	player_sword_collider_local = 'sword',
-}
-
-constants.spaces = {
-	castle = 'castle',
-	world = 'world',
-	transition = 'transition',
-	item = 'item',
-	ui = 'ui',
-}
-
 constants.flow = {
 	room_transition_frames = 8,
 	world_banner_frames = 30,
 	castle_banner_frames = 30,
-}
-
-constants.events = {
-	room_switched = 'pietious.room.switched',
-	flow_state_changed = 'pietious.flow.state_changed',
-	enemy_defeated = 'pietious.enemy.defeated',
-	room_condition_set = 'pietious.room.condition_set',
 }
 
 constants.room = {

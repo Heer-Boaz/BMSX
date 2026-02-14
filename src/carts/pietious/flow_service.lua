@@ -15,7 +15,7 @@ end
 
 function flow_service:emit_state_changed(state_name)
 	local space = get_space()
-	eventemitter.eventemitter.instance:emit(constants.events.flow_state_changed, self.id, {
+	eventemitter.eventemitter.instance:emit('flow.state_changed', self.id, {
 		state = state_name,
 		space = space,
 	})
@@ -47,7 +47,7 @@ end
 
 function flow_service:bind_events()
 	eventemitter.eventemitter.instance:on({
-		event = constants.events.room_switched,
+		event = 'room.switched',
 		subscriber = self,
 		handler = function(event)
 			if event.transition_kind == 'world_banner' then
@@ -59,8 +59,8 @@ function flow_service:bind_events()
 				return
 			end
 			self.pending_room_transition = true
-			set_space(constants.spaces.transition)
-			object(constants.ids.ui_instance).space_id = constants.spaces.transition
+			set_space('transition')
+			object('ui.instance').space_id = 'transition'
 		end,
 	})
 end
@@ -71,26 +71,26 @@ function flow_service:item_screen_toggle_pressed()
 end
 
 function flow_service:resolve_room_space()
-	local castle_service = service(constants.ids.castle_service_instance)
+	local castle_service = service('castle_service.instance')
 	local room = castle_service.current_room
 	return room.space_id
 end
 
 function flow_service:activate_spaces()
-	add_space(constants.spaces.castle)
-	add_space(constants.spaces.world)
-	add_space(constants.spaces.transition)
-	add_space(constants.spaces.item)
-	add_space(constants.spaces.ui)
+	add_space('castle')
+	add_space('world')
+	add_space('transition')
+	add_space('item')
+	add_space('ui')
 end
 
 function flow_service:spawn_interaction_view_if_needed()
-	if object(constants.ids.shrine_world_view_instance) ~= nil then
+	if object('shrine_world_view.instance') ~= nil then
 		return
 	end
 	inst(shrine_world_view_module.shrine_world_view_def_id, {
-		id = constants.ids.shrine_world_view_instance,
-		space_id = constants.spaces.ui,
+		id = 'shrine_world_view.instance',
+		space_id = 'ui',
 		pos = { x = 0, y = 0, z = 0 },
 	})
 end
@@ -124,14 +124,14 @@ function flow_service:ctor()
 end
 
 local function define_flow_service_fsm()
-	define_fsm(constants.ids.flow_service_fsm, {
+	define_fsm('flow_service.fsm', {
 		initial = 'castle',
 		states = {
 			castle = {
 				entering_state = function(self)
 					local room_space = self:resolve_room_space()
 					set_space(room_space)
-					object(constants.ids.ui_instance).space_id = room_space
+					object('ui.instance').space_id = room_space
 					self:emit_state_changed(get_space())
 				end,
 				tick = function(self)
@@ -156,8 +156,8 @@ local function define_flow_service_fsm()
 					self.transition_frames_left = constants.flow.room_transition_frames
 					self.overlay_mode = 'none'
 					self.overlay_text_lines = {}
-					set_space(constants.spaces.transition)
-					object(constants.ids.ui_instance).space_id = constants.spaces.transition
+					set_space('transition')
+					object('ui.instance').space_id = 'transition'
 					self:emit_state_changed('transition')
 				end,
 				tick = function(self)
@@ -180,8 +180,8 @@ local function define_flow_service_fsm()
 					self.pending_banner_mode = ''
 					self.pending_banner_world_number = 0
 					self.pending_banner_post_action = ''
-					set_space(constants.spaces.transition)
-					object(constants.ids.ui_instance).space_id = constants.spaces.transition
+					set_space('transition')
+					object('ui.instance').space_id = 'transition'
 					self:emit_state_changed('transition')
 				end,
 				tick = function(self)
@@ -190,7 +190,7 @@ local function define_flow_service_fsm()
 						self.overlay_mode = 'none'
 						self.overlay_text_lines = {}
 						if self.banner_post_action == 'castle_emerge' then
-							object(constants.ids.player_instance):begin_world_emerge_from_door()
+							object('player.instance'):begin_world_emerge_from_door()
 						end
 						self.banner_post_action = ''
 						return '/castle'
@@ -203,8 +203,8 @@ local function define_flow_service_fsm()
 					self.overlay_text_lines = copy_lines(self.pending_shrine_text_lines)
 					self.pending_shrine_text_lines = {}
 					self.pending_shrine_close = false
-					set_space(constants.spaces.transition)
-					object(constants.ids.ui_instance).space_id = constants.spaces.transition
+					set_space('transition')
+					object('ui.instance').space_id = 'transition'
 					self:emit_state_changed('transition')
 				end,
 				tick = function(self)
@@ -215,15 +215,15 @@ local function define_flow_service_fsm()
 						self.pending_shrine_close = false
 						self.overlay_mode = 'none'
 						self.overlay_text_lines = {}
-						object(constants.ids.player_instance):leave_shrine_overlay()
+						object('player.instance'):leave_shrine_overlay()
 						return '/castle'
 					end
 				end,
 			},
 			item_screen = {
 				entering_state = function(self)
-					set_space(constants.spaces.item)
-					object(constants.ids.ui_instance).space_id = constants.spaces.item
+					set_space('item')
+					object('ui.instance').space_id = 'item'
 					self:emit_state_changed('item')
 				end,
 				tick = function(self)
@@ -250,13 +250,13 @@ end
 local function register_flow_service_definition()
 	shrine_world_view_module.register_shrine_world_view_definition()
 	define_service({
-		def_id = constants.ids.flow_service_def,
+		def_id = 'flow_service.def',
 		class = flow_service,
-		fsms = { constants.ids.flow_service_fsm },
+		fsms = { 'flow_service.fsm' },
 		auto_activate = true,
 		defaults = {
-			id = constants.ids.flow_service_instance,
-			space_id = constants.spaces.ui,
+			id = 'flow_service.instance',
+			space_id = 'ui',
 			player_index = 1,
 			pending_room_transition = false,
 			pending_banner_mode = '',
@@ -278,7 +278,7 @@ return {
 	flow_service = flow_service,
 	define_flow_service_fsm = define_flow_service_fsm,
 	register_flow_service_definition = register_flow_service_definition,
-	flow_service_def_id = constants.ids.flow_service_def,
-	flow_service_instance_id = constants.ids.flow_service_instance,
-	flow_service_fsm_id = constants.ids.flow_service_fsm,
+	flow_service_def_id = 'flow_service.def',
+	flow_service_instance_id = 'flow_service.instance',
+	flow_service_fsm_id = 'flow_service.fsm',
 }

@@ -1,4 +1,5 @@
 local constants = require('constants')
+local combat_overlap = require('combat_overlap')
 local rock = {}
 rock.__index = rock
 
@@ -53,19 +54,17 @@ end
 
 function rock:begin_break()
 	local drop_y = self.y + drop_offset_y_for_item_type(self.item_type)
-	local room = service(constants.ids.castle_service_instance).current_room
+	local room = service('castle_service.instance').current_room
 	service(self.rock_service_id):on_rock_break_started(self.id, room.room_number, self.item_type, self.x, drop_y)
 end
 
 function rock:on_overlap(event)
-	if event.other_id ~= constants.ids.player_instance then
+	local player = object('player.instance')
+	local contact_kind = combat_overlap.classify_player_contact(self, event, constants, player)
+	if not combat_overlap.has_sword_contact(contact_kind) then
 		return
 	end
-
-	local player = object(constants.ids.player_instance)
-	if player:has_tag('g.sw') then
-		self:take_weapon_hit('sword', player.sword_id)
-	end
+	self:take_weapon_hit('sword', player.sword_id)
 end
 
 function rock:finish_break()
@@ -74,7 +73,7 @@ function rock:finish_break()
 end
 
 local function define_rock_fsm()
-	define_fsm(constants.ids.rock_fsm, {
+	define_fsm('rock.fsm', {
 		initial = 'idle',
 		states = {
 			idle = {
@@ -112,12 +111,12 @@ end
 
 local function register_rock_definition()
 	define_prefab({
-		def_id = constants.ids.rock_def,
+		def_id = 'rock.def',
 		class = rock,
 		type = 'sprite',
-		fsms = { constants.ids.rock_fsm },
+		fsms = { 'rock.fsm' },
 		defaults = {
-			rock_service_id = constants.ids.rock_service_instance,
+			rock_service_id = 'rock_service.instance',
 			item_type = 'none',
 			max_health = constants.rock.max_health,
 			health = constants.rock.max_health,
@@ -132,6 +131,6 @@ return {
 	rock = rock,
 	define_rock_fsm = define_rock_fsm,
 	register_rock_definition = register_rock_definition,
-	rock_def_id = constants.ids.rock_def,
-	rock_fsm_id = constants.ids.rock_fsm,
+	rock_def_id = 'rock.def',
+	rock_fsm_id = 'rock.fsm',
 }

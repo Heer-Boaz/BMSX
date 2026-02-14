@@ -28,10 +28,11 @@ local eventemitter = require("eventemitter").eventemitter
 local quickmenu = require("quickmenu")
 local romdir = require("romdir")
 local bool01 = require("bool01")
+local velocity = require("velocity")
+local rect_overlaps = require("rect_overlaps")
 local clamp_int = require("clamp_int")
 local div_toward_zero = require("div_toward_zero")
 local round_to_nearest = require("round_to_nearest")
-local consume_axis_accum = require("consume_axis_accum")
 local rol8 = require("rol8")
 local swap_remove = require("swap_remove")
 local timeline = require("timeline")
@@ -233,10 +234,13 @@ end
 
 local engine = {}
 engine.bool01 = bool01
+engine.consume_axis_accum = velocity.consume_axis_accum
+engine.set_velocity = velocity.set_velocity
+engine.move_with_velocity = velocity.move_with_velocity
+engine.rect_overlaps = rect_overlaps
 engine.clamp_int = clamp_int
 engine.div_toward_zero = div_toward_zero
 engine.round_to_nearest = round_to_nearest
-engine.consume_axis_accum = consume_axis_accum
 engine.rol8 = rol8
 engine.swap_remove = swap_remove
 engine.timeline = timeline

@@ -9,7 +9,7 @@ import type { RuntimeErrorDetails, RuntimeErrorOverlay } from '../types';
 import type { StackTraceFrame } from '../../../lua/luavalue';
 import type { RectBounds } from '../../../rompack/rompack';
 import { Msx1Colors } from '../../../systems/msx';
-import { pointInRect } from '../../../utils/rect_operations';
+import { point_in_rect } from '../../../utils/rect_operations';
 import { api, Runtime } from '../../runtime';
 import { clampCursorColumn, centerCursorVertically, revealCursor } from '../caret';
 import * as constants from '../constants';
@@ -452,7 +452,7 @@ export function findRuntimeErrorOverlayLineAtPosition(overlay: RuntimeErrorOverl
 	}
 	for (let index = 0; index < layout.lineRects.length; index += 1) {
 		const rect = layout.lineRects[index];
-		if (pointInRect(x, y, rect)) {
+		if (point_in_rect(x, y, rect)) {
 			const mapping = layout.displayLineMap;
 			if (mapping && index < mapping.length) {
 				return mapping[index];

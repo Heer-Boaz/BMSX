@@ -24,7 +24,7 @@ function loot_drop:bind_events()
 	})
 
 	eventemitter.eventemitter.instance:on({
-		event = constants.events.room_switched,
+		event = 'room.switched',
 		subscriber = self,
 		handler = function(_event)
 			self:mark_for_disposal()
@@ -40,11 +40,11 @@ function loot_drop:ctor()
 end
 
 function loot_drop:on_overlap_stay(event)
-	if event.other_id ~= constants.ids.player_instance then
+	if event.other_id ~= 'player.instance' then
 		return
 	end
 
-	local player = object(constants.ids.player_instance)
+	local player = object('player.instance')
 
 	if player:collect_loot(self.loot_type, self.loot_value) then
 		self:dispatch_state_event('picked')
@@ -52,7 +52,7 @@ function loot_drop:on_overlap_stay(event)
 end
 
 local function define_loot_drop_fsm()
-	define_fsm(constants.ids.loot_drop_fsm, {
+	define_fsm('loot_drop.fsm', {
 		initial = 'active',
 		states = {
 			active = {
@@ -74,10 +74,10 @@ end
 
 local function register_loot_drop_definition()
 	define_prefab({
-		def_id = constants.ids.loot_drop_def,
+		def_id = 'loot_drop.def',
 		class = loot_drop,
 		type = 'sprite',
-		fsms = { constants.ids.loot_drop_fsm },
+		fsms = { 'loot_drop.fsm' },
 		defaults = {
 			loot_type = 'life',
 			loot_value = constants.enemy.loot_life_regen,
@@ -89,6 +89,6 @@ return {
 	loot_drop = loot_drop,
 	define_loot_drop_fsm = define_loot_drop_fsm,
 	register_loot_drop_definition = register_loot_drop_definition,
-	loot_drop_def_id = constants.ids.loot_drop_def,
-	loot_drop_fsm_id = constants.ids.loot_drop_fsm,
+	loot_drop_def_id = 'loot_drop.def',
+	loot_drop_fsm_id = 'loot_drop.fsm',
 }

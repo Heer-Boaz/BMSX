@@ -169,10 +169,10 @@ end
 
 local function register_castle_service_definition()
 	define_service({
-		def_id = constants.ids.castle_service_def,
+		def_id = 'castle_service.def',
 		class = castle_service,
 		defaults = {
-			id = constants.ids.castle_service_instance,
+			id = 'castle_service.instance',
 			current_room = nil,
 			current_room_number = 0,
 			map_id = 0,
@@ -188,6 +188,6 @@ end
 return {
 	castle_service = castle_service,
 	register_castle_service_definition = register_castle_service_definition,
-	castle_service_def_id = constants.ids.castle_service_def,
-	castle_service_instance_id = constants.ids.castle_service_instance,
+	castle_service_def_id = 'castle_service.def',
+	castle_service_instance_id = 'castle_service.instance',
 }

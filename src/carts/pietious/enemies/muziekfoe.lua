@@ -1,16 +1,10 @@
 local constants = require('constants')
 local behaviourtree = require('behaviourtree')
+local enemy_base = require('enemies/enemy_base')
 local room_module = require('room')
-local eventemitter = require('eventemitter')
-local enemy_explosion_module = require('enemy_explosion')
 
 local muziekfoe = {}
 muziekfoe.__index = muziekfoe
-
-function muziekfoe:onspawn(pos)
-	getmetatable(self).onspawn(self, pos)
-	self:bind_overlap_events()
-end
 
 local function get_delta_from_source_to_target_scaled(source_x, source_y, target_x, target_y, speed_scale)
 	local dx = target_x - source_x
@@ -29,16 +23,13 @@ local function get_delta_from_source_to_target_scaled(source_x, source_y, target
 	return div_toward_zero(dx * speed_scale, abs_dy), dy > 0 and speed_scale or -speed_scale
 end
 
-function muziekfoe.configure(self, def)
-	self.max_health = 3
-	self.health = self.max_health
-	self.damage = 4
+function muziekfoe:ctor()
 	self:gfx('muziekfoe')
 end
 
 function muziekfoe.bt_tick(self, blackboard)
 	local node = blackboard.nodedata
-	local room = service(constants.ids.castle_service_instance).current_room
+	local room = service('castle_service.instance').current_room
 	local dir_modifier = self.direction == 'left' and -1 or 1
 	local move_accum = node.muziek_move_accum
 	if move_accum == nil then
@@ -52,11 +43,11 @@ function muziekfoe.bt_tick(self, blackboard)
 	node.muziek_move_accum = move_accum
 
 	if self.direction == 'left' then
-		if self.x < 0 or room_module.is_solid_at_world(service(constants.ids.castle_service_instance).current_room, self.x, self.y) then
+		if self.x < 0 or room_module.is_solid_at_world(service('castle_service.instance').current_room, self.x, self.y) then
 			self.direction = 'right'
 		end
 	else
-		if self.x + 24 >= service(constants.ids.castle_service_instance).current_room.world_width or room_module.is_solid_at_world(service(constants.ids.castle_service_instance).current_room, self.x + 24, self.y + 16) then
+		if self.x + 24 >= service('castle_service.instance').current_room.world_width or room_module.is_solid_at_world(service('castle_service.instance').current_room, self.x + 24, self.y + 16) then
 			self.direction = 'left'
 		end
 	end
@@ -67,7 +58,7 @@ function muziekfoe.bt_tick(self, blackboard)
 	end
 	noot_ticks = noot_ticks - 1
 	if noot_ticks <= 0 then
-		local player = object(constants.ids.player_instance)
+		local player = object('player.instance')
 		local source_x = self.x + 12
 		local source_y = self.y + 8
 		local target_x = player.x
@@ -75,25 +66,21 @@ function muziekfoe.bt_tick(self, blackboard)
 		local delta_scale = 8
 		local delta_x, delta_y = get_delta_from_source_to_target_scaled(source_x, source_y, target_x, target_y, delta_scale)
 		local delta_divisor = math.random(1, 2)
-	local spawned_noot = inst('pietious.enemy.def.nootfoe', {
-		space_id = room.space_id,
-		despawn_on_room_switch = true,
-		pos = {
-			x = self.x + 12,
-			y = self.y,
-			z = 140,
-		},
-		})
-		spawned_noot:configure_from_room_def({
-			id = spawned_noot.id,
-			kind = 'nootfoe',
-			x = self.x + 12,
-			y = self.y,
+		inst('enemy.def.nootfoe', {
+			space_id = room.space_id,
+			despawn_on_room_switch = true,
 			direction = delta_x < 0 and 'left' or 'right',
-			speedx = delta_x,
-			speedy = delta_y,
-			speedden = delta_scale * delta_divisor,
-		}, room)
+			speed_x_num = delta_x,
+			speed_y_num = delta_y,
+			speed_den = delta_scale * delta_divisor,
+			speed_accum_x = 0,
+			speed_accum_y = 0,
+			pos = {
+				x = self.x + 12,
+				y = self.y,
+				z = 140,
+			},
+		})
 		noot_ticks = constants.enemy.muziek_spawn_noot_steps
 	end
 	node.muziek_noot_ticks = noot_ticks
@@ -121,147 +108,14 @@ function muziekfoe.choose_drop_type(_self)
 	return 'none'
 end
 
-
-
-
-local enemy_death_effect_sequence = 0
-
-
-function muziekfoe:configure_from_room_def(def, room)
-		self.trigger = def.trigger or ''
-	self.conditions = def.conditions or {}
-		self.damage = 4
-	self.max_health = 3
-	self.health = self.max_health
-	self.last_weapon_kind = ''
-	self.last_weapon_hit_id = -1
-	self.dangerous = def.dangerous ~= false
-	self.direction = def.direction or 'right'
-	self.despawn_on_room_switch = false
-
-	self:set_velocity(def.speedx or 0, def.speedy or 0, def.speedden or 1)
-
-	muziekfoe.configure(self, def)
-	self:dispatch_state_event('reset_to_waiting')
-	self.collider.generateoverlapevents = true
-	self.collider.spaceevents = 'current'
-	self.collider:set_shape_offset(0, 0)
-	self.sprite_component.offset.z = 110
-end
-
-function muziekfoe:bind_overlap_events()
-	self.events:on({
-		event_name = 'overlap',
-		subscriber = self,
-		handler = function(event)
-			self:on_overlap(event)
-		end,
-	})
-
-	eventemitter.eventemitter.instance:on({
-		event = constants.events.room_switched,
-		subscriber = self,
-		handler = function(event)
-			if self.despawn_on_room_switch then
-				self:mark_for_disposal()
-			end
-		end,
-	})
-end
-function muziekfoe:projectile_is_out_of_bounds()
-	local bound_right = self.projectile_bound_right
-	if bound_right <= 0 then
-		bound_right = self.sx
-	end
-	local bound_bottom = self.projectile_bound_bottom
-	if bound_bottom <= 0 then
-		bound_bottom = self.sy
-	end
-
-	if self.x + bound_right < 0 then
-		return true
-	end
-	if self.x > service(constants.ids.castle_service_instance).current_room.world_width then
-		return true
-	end
-	if self.y + bound_bottom < service(constants.ids.castle_service_instance).current_room.world_top then
-		return true
-	end
-	if self.y > service(constants.ids.castle_service_instance).current_room.world_height then
-		return true
-	end
-	return false
-end
-
-function muziekfoe:set_velocity(speed_x_num, speed_y_num, speed_den)
-	self.speed_x_num = speed_x_num
-	self.speed_y_num = speed_y_num
-	self.speed_den = speed_den
-	self.speed_accum_x = 0
-	self.speed_accum_y = 0
-end
-
-function muziekfoe:move_with_velocity()
-	local dx, next_accum_x = consume_axis_accum(self.speed_accum_x, self.speed_x_num, self.speed_den)
-	local dy, next_accum_y = consume_axis_accum(self.speed_accum_y, self.speed_y_num, self.speed_den)
-	self.speed_accum_x = next_accum_x
-	self.speed_accum_y = next_accum_y
-	self.x = self.x + dx
-	self.y = self.y + dy
-end
-
-function muziekfoe:spawn_death_effect()
-	enemy_death_effect_sequence = enemy_death_effect_sequence + 1
-	local room_space = service(constants.ids.castle_service_instance).current_room.space_id
-	inst(enemy_explosion_module.enemy_explosion_def_id, {
-		room_number = service(constants.ids.castle_service_instance).current_room.room_number,
-		loot_type = self:choose_drop_type(),
-		space_id = room_space,
-		pos = { x = self.x, y = self.y, z = 114 },
-	})
-end
-
-function muziekfoe:take_weapon_hit(weapon_kind, hit_id)
-	if self.last_weapon_kind == weapon_kind and self.last_weapon_hit_id == hit_id then
-		return false
-	end
-	self.last_weapon_kind = weapon_kind
-	self.last_weapon_hit_id = hit_id
-	self.health = self.health - 1
-	if self.health <= 0 then
-		self.health = 0
-		self.dangerous = false
-		self:spawn_death_effect()
-			eventemitter.eventemitter.instance:emit(constants.events.enemy_defeated, self.id, {
-				room_number = service(constants.ids.castle_service_instance).current_room.room_number,
-				kind = 'muziekfoe',
-				trigger = self.trigger,
-			})
-		self:mark_for_disposal()
-	end
-	return true
-end
-
-function muziekfoe:on_overlap(event)
-	if event.other_id ~= constants.ids.player_instance then
-		return
-	end
-	local player = object(constants.ids.player_instance)
-	if player:has_tag('g.sw') then
-		self:take_weapon_hit('sword', player.sword_id)
-		return
-	end
-	if self.dangerous then
-		player:take_hit(self.damage, self.x + math.modf(self.sx / 2), self.y + math.modf(self.sy / 2), 'muziekfoe')
-	end
-end
+enemy_base.extend(muziekfoe, 'muziekfoe')
 
 function muziekfoe.register_enemy_definition()
 	define_prefab({
-		def_id = 'pietious.enemy.def.muziekfoe',
+		def_id = 'enemy.def.muziekfoe',
 		class = muziekfoe,
 		type = 'sprite',
-		fsms = { constants.ids.enemy_fsm },
+		fsms = { 'enemy.fsm' },
 		defaults = {
 			trigger = '',
 			conditions = {},
@@ -278,6 +132,7 @@ function muziekfoe.register_enemy_definition()
 			speed_accum_y = 0,
 			direction = 'right',
 			despawn_on_room_switch = false,
+			enemy_kind = 'muziekfoe',
 		},
 	})
 end

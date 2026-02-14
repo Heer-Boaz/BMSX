@@ -35,7 +35,7 @@ end
 
 function ui:ctor()
 	self:bind_visual()
-	local player = object(constants.ids.player_instance)
+	local player = object('player.instance')
 	local health = clamp_int(math.modf(player.health), 0, constants.damage.max_health)
 	local weapon = clamp_int(math.modf(player.weapon_level), 0, constants.hud.weapon_level)
 	self.hud_health_level = health
@@ -47,7 +47,7 @@ function ui:ctor()
 end
 
 function ui:tick()
-	local player = object(constants.ids.player_instance)
+	local player = object('player.instance')
 	self.hud_health_target = clamp_int(math.modf(player.health), 0, constants.damage.max_health)
 	self.hud_weapon_target = clamp_int(math.modf(player.weapon_level), 0, constants.hud.weapon_level)
 
@@ -73,7 +73,7 @@ function ui:tick()
 end
 
 function ui:draw_ui()
-	local player = object(constants.ids.player_instance)
+	local player = object('player.instance')
 	put_sprite('game_header', 0, 0, 200)
 	local equipped_sprite_id = secondary_weapon_sprite_id(player.secondary_weapon)
 	if equipped_sprite_id ~= nil then
@@ -90,7 +90,7 @@ function ui:draw_ui()
 end
 
 local function define_ui_fsm()
-	define_fsm(constants.ids.ui_fsm, {
+	define_fsm('ui.fsm', {
 		initial = 'playing',
 		states = {
 			playing = {},
@@ -100,9 +100,9 @@ end
 
 local function register_ui_definition()
 	define_prefab({
-		def_id = constants.ids.ui_def,
+		def_id = 'ui.def',
 		class = ui,
-		fsms = { constants.ids.ui_fsm },
+		fsms = { 'ui.fsm' },
 			components = { 'customvisualcomponent' },
 			defaults = {
 				hud_health_level = constants.hud.health_level,
@@ -120,7 +120,7 @@ return {
 	ui = ui,
 	define_ui_fsm = define_ui_fsm,
 	register_ui_definition = register_ui_definition,
-	ui_def_id = constants.ids.ui_def,
-	ui_instance_id = constants.ids.ui_instance,
-	ui_fsm_id = constants.ids.ui_fsm,
+	ui_def_id = 'ui.def',
+	ui_instance_id = 'ui.instance',
+	ui_fsm_id = 'ui.fsm',
 }

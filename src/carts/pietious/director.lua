@@ -1,4 +1,3 @@
-local constants = require('constants')
 
 local director = {}
 director.__index = director
@@ -11,7 +10,7 @@ function director:bind_visual()
 end
 
 function director:draw_room_tiles()
-	local room = service(constants.ids.castle_service_instance).current_room
+	local room = service('castle_service.instance').current_room
 	local tile_size = room.tile_size
 	local origin_x = room.tile_origin_x
 	local origin_y = room.tile_origin_y
@@ -31,7 +30,7 @@ function director:ctor()
 end
 
 local function define_director_fsm()
-	define_fsm(constants.ids.director_fsm, {
+	define_fsm('director.fsm', {
 		initial = 'playing',
 		states = {
 			playing = {},
@@ -41,9 +40,9 @@ end
 
 local function register_director_definition()
 	define_prefab({
-		def_id = constants.ids.director_def,
+		def_id = 'director.def',
 		class = director,
-		fsms = { constants.ids.director_fsm },
+		fsms = { 'director.fsm' },
 		components = { 'customvisualcomponent' },
 		defaults = {
 		},
@@ -54,7 +53,7 @@ return {
 	director = director,
 	define_director_fsm = define_director_fsm,
 	register_director_definition = register_director_definition,
-	director_def_id = constants.ids.director_def,
-	director_instance_id = constants.ids.director_instance,
-	director_fsm_id = constants.ids.director_fsm,
+	director_def_id = 'director.def',
+	director_instance_id = 'director.instance',
+	director_fsm_id = 'director.fsm',
 }

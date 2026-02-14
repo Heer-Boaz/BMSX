@@ -28,7 +28,7 @@ function shrine_world_view:ctor()
 end
 
 function shrine_world_view:draw_room_objects()
-	local castle_service = service(constants.ids.castle_service_instance)
+	local castle_service = service('castle_service.instance')
 	local room_state = castle_service.current_room
 	if get_space() ~= room_state.space_id then
 		return
@@ -61,7 +61,7 @@ function shrine_world_view:draw_centered_lines(lines, y, z)
 end
 
 function shrine_world_view:draw_overlay()
-	local flow = service(constants.ids.flow_service_instance)
+	local flow = service('flow_service.instance')
 	if flow.overlay_mode == 'none' then
 		return
 	end
@@ -90,12 +90,12 @@ end
 
 local function register_shrine_world_view_definition()
 	define_prefab({
-		def_id = constants.ids.shrine_world_view_def,
+		def_id = 'shrine_world_view.def',
 		class = shrine_world_view,
 		components = { 'customvisualcomponent' },
 		defaults = {
-			id = constants.ids.shrine_world_view_instance,
-			space_id = constants.spaces.ui,
+			id = 'shrine_world_view.instance',
+			space_id = 'ui',
 			tick_enabled = false,
 		},
 	})
@@ -104,6 +104,6 @@ end
 return {
 	shrine_world_view = shrine_world_view,
 	register_shrine_world_view_definition = register_shrine_world_view_definition,
-	shrine_world_view_def_id = constants.ids.shrine_world_view_def,
-	shrine_world_view_instance_id = constants.ids.shrine_world_view_instance,
+	shrine_world_view_def_id = 'shrine_world_view.def',
+	shrine_world_view_instance_id = 'shrine_world_view.instance',
 }

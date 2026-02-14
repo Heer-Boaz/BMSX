@@ -15,7 +15,7 @@ end
 
 function transition_view:bind_events()
 	self.events:on({
-		event_name = 'timeline.frame.' .. constants.ids.transition_view_def .. '.timeline.mask',
+		event_name = 'timeline.frame.' .. 'transition_view.def' .. '.timeline.mask',
 		subscriber = self,
 		handler = function(event)
 			self.frames_in_transition = event.frame_index + 1
@@ -23,7 +23,7 @@ function transition_view:bind_events()
 	})
 
 	eventemitter.eventemitter.instance:on({
-		event = constants.events.flow_state_changed,
+		event = 'flow.state_changed',
 		subscriber = self,
 		handler = function(event)
 			if event.state ~= 'transition' then
@@ -31,7 +31,7 @@ function transition_view:bind_events()
 				return
 			end
 			self.frames_in_transition = 0
-			self:play_timeline(constants.ids.transition_view_def .. '.timeline.mask', { rewind = true, snap_to_start = true })
+			self:play_timeline('transition_view.def' .. '.timeline.mask', { rewind = true, snap_to_start = true })
 		end,
 	})
 end
@@ -39,7 +39,7 @@ end
 function transition_view:ctor()
 	self:bind_visual()
 	self:define_timeline(timeline.new({
-		id = constants.ids.transition_view_def .. '.timeline.mask',
+		id = 'transition_view.def' .. '.timeline.mask',
 		frames = timeline.range(constants.flow.room_transition_frames),
 		playback_mode = 'once',
 	}))
@@ -47,14 +47,14 @@ function transition_view:ctor()
 end
 
 function transition_view:render_transition()
-	if get_space() ~= constants.spaces.transition then
+	if get_space() ~= 'transition' then
 		return
 	end
 	put_rectfillcolor(0, constants.room.hud_height, display_width(), display_height(), 300, room_mask_color)
 end
 
 local function define_transition_view_fsm()
-	define_fsm(constants.ids.transition_view_fsm, {
+	define_fsm('transition_view.fsm', {
 		initial = 'active',
 		states = {
 			active = {},
@@ -64,12 +64,12 @@ end
 
 local function register_transition_view_definition()
 	define_prefab({
-		def_id = constants.ids.transition_view_def,
+		def_id = 'transition_view.def',
 		class = transition_view,
-		fsms = { constants.ids.transition_view_fsm },
+		fsms = { 'transition_view.fsm' },
 		components = { 'customvisualcomponent' },
 		defaults = {
-			space_id = constants.spaces.transition,
+			space_id = 'transition',
 			frames_in_transition = 0,
 			tick_enabled = false,
 		},
@@ -80,7 +80,7 @@ return {
 	transition_view = transition_view,
 	define_transition_view_fsm = define_transition_view_fsm,
 	register_transition_view_definition = register_transition_view_definition,
-	transition_view_def_id = constants.ids.transition_view_def,
-	transition_view_instance_id = constants.ids.transition_view_instance,
-	transition_view_fsm_id = constants.ids.transition_view_fsm,
+	transition_view_def_id = 'transition_view.def',
+	transition_view_instance_id = 'transition_view.instance',
+	transition_view_fsm_id = 'transition_view.fsm',
 }

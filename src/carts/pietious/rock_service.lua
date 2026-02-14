@@ -1,4 +1,3 @@
-local constants = require('constants')
 local eventemitter = require('eventemitter')
 local rock_module = require('rock')
 
@@ -47,7 +46,7 @@ function rock_service:deactivate_unused_rocks(active_ids)
 end
 
 function rock_service:sync_room_rocks()
-	local room = service(constants.ids.castle_service_instance).current_room
+	local room = service('castle_service.instance').current_room
 	if self.synced_room_number == room.room_number and not self.sync_dirty then
 		return
 	end
@@ -92,7 +91,7 @@ end
 
 function rock_service:bind_events()
 	eventemitter.eventemitter.instance:on({
-		event = constants.events.room_switched,
+		event = 'room.switched',
 		subscriber = self,
 		handler = function(_event)
 			self.synced_room_number = 0
@@ -112,7 +111,7 @@ function rock_service:ctor()
 end
 
 local function define_rock_service_fsm()
-	define_fsm(constants.ids.rock_service_fsm, {
+	define_fsm('rock_service.fsm', {
 		initial = 'active',
 		states = {
 			active = {
@@ -126,13 +125,13 @@ end
 
 local function register_rock_service_definition()
 	define_service({
-		def_id = constants.ids.rock_service_def,
+		def_id = 'rock_service.def',
 		class = rock_service,
-		fsms = { constants.ids.rock_service_fsm },
+		fsms = { 'rock_service.fsm' },
 		auto_activate = true,
 		defaults = {
-			id = constants.ids.rock_service_instance,
-			item_service_id = constants.ids.item_service_instance,
+			id = 'rock_service.instance',
+			item_service_id = 'item_service.instance',
 			rock_def_id = rock_module.rock_def_id,
 			rocks_by_id = {},
 			destroyed_rock_ids = {},
@@ -147,7 +146,7 @@ return {
 	rock_service = rock_service,
 	define_rock_service_fsm = define_rock_service_fsm,
 	register_rock_service_definition = register_rock_service_definition,
-	rock_service_def_id = constants.ids.rock_service_def,
-	rock_service_instance_id = constants.ids.rock_service_instance,
-	rock_service_fsm_id = constants.ids.rock_service_fsm,
+	rock_service_def_id = 'rock_service.def',
+	rock_service_instance_id = 'rock_service.instance',
+	rock_service_fsm_id = 'rock_service.fsm',
 }

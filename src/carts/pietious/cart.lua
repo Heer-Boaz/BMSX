@@ -11,7 +11,6 @@ local rock_module = require('rock')
 local rock_service_module = require('rock_service')
 local pepernoot_projectile_module = require('pepernoot_projectile')
 local enemy_explosion_module = require('enemy_explosion')
-local enemy_service_module = require('enemy_service')
 local castle_service_module = require('castle_service')
 local elevator_service_module = require('elevator_service')
 local flow_service_module = require('flow_service')
@@ -64,10 +63,6 @@ function init()
 	rock_service_module.define_rock_service_fsm()
 	pepernoot_projectile_module.define_pepernoot_projectile_fsm()
 	enemy_explosion_module.define_enemy_explosion_fsm()
-	enemy_service_module.define_enemy_fsm()
-	enemy_service_module.define_enemy_behaviour_trees()
-	enemy_service_module.register_enemy_definitions()
-	enemy_service_module.define_enemy_service_fsm()
 	elevator_service_module.define_elevator_service_fsm()
 	flow_service_module.define_flow_service_fsm()
 	player_module.register_player_definition()
@@ -82,8 +77,6 @@ function init()
 	rock_service_module.register_rock_service_definition()
 	pepernoot_projectile_module.register_pepernoot_projectile_definition()
 	enemy_explosion_module.register_enemy_explosion_definition()
-	enemy_service_module.register_enemy_definitions()
-	enemy_service_module.register_enemy_service_definition()
 	castle_service_module.register_castle_service_definition()
 	elevator_service_module.register_elevator_service_definition()
 	flow_service_module.register_flow_service_definition()
@@ -94,11 +87,11 @@ end
 
 function new_game()
 	reset()
-	add_space(constants.spaces.castle)
-	add_space(constants.spaces.transition)
-	add_space(constants.spaces.item)
-	add_space(constants.spaces.ui)
-	set_space(constants.spaces.castle)
+	add_space('castle')
+	add_space('transition')
+	add_space('item')
+	add_space('ui')
+	set_space('castle')
 
 	local castle_service = create_service(castle_service_module.castle_service_def_id, {
 		id = castle_service_module.castle_service_instance_id,
@@ -123,13 +116,13 @@ function new_game()
 
 	inst(transition_view_module.transition_view_def_id, {
 		id = transition_view_module.transition_view_instance_id,
-		space_id = constants.spaces.transition,
+		space_id = 'transition',
 		pos = { x = 0, y = 0, z = 0 },
 	})
 
 	inst(item_screen_module.item_screen_def_id, {
 		id = item_screen_module.item_screen_instance_id,
-		space_id = constants.spaces.item,
+		space_id = 'item',
 		pos = { x = 0, y = 0, z = 0 },
 	})
 
@@ -145,10 +138,6 @@ function new_game()
 
 	create_service(item_service_module.item_service_def_id, {
 		id = item_service_module.item_service_instance_id,
-	})
-
-	create_service(enemy_service_module.enemy_service_def_id, {
-		id = enemy_service_module.enemy_service_instance_id,
 	})
 
 	local elevator_service = create_service(elevator_service_module.elevator_service_def_id, {

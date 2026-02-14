@@ -1,4 +1,3 @@
-local constants = require('constants')
 local eventemitter = require('eventemitter')
 
 local room_view = {}
@@ -22,7 +21,7 @@ end
 
 function room_view:bind_events()
 	eventemitter.eventemitter.instance:on({
-		event = constants.events.room_switched,
+		event = 'room.switched',
 		subscriber = self,
 		handler = function(event)
 			self.space_id = event.space
@@ -36,7 +35,7 @@ function room_view:ctor()
 end
 
 function room_view:render_room()
-	local castle_service = service(constants.ids.castle_service_instance)
+	local castle_service = service('castle_service.instance')
 	local room = castle_service.current_room
 	if get_space() ~= room.space_id then
 		return
@@ -55,12 +54,12 @@ function room_view:render_room()
 		end
 	end
 
-	local elevator_service = service(constants.ids.elevator_service_instance)
+	local elevator_service = service('elevator_service.instance')
 	render_elevators(castle_service.current_room_number, elevator_service.elevator_routes)
 end
 
 local function define_room_view_fsm()
-	define_fsm(constants.ids.room_view_fsm, {
+	define_fsm('room_view.fsm', {
 		initial = 'active',
 		states = {
 			active = {},
@@ -70,9 +69,9 @@ end
 
 local function register_room_view_definition()
 	define_prefab({
-		def_id = constants.ids.room_view_def,
+		def_id = 'room_view.def',
 		class = room_view,
-		fsms = { constants.ids.room_view_fsm },
+		fsms = { 'room_view.fsm' },
 		components = { 'customvisualcomponent' },
 		defaults = {
 			tick_enabled = false,
@@ -84,7 +83,7 @@ return {
 	room_view = room_view,
 	define_room_view_fsm = define_room_view_fsm,
 	register_room_view_definition = register_room_view_definition,
-	room_view_def_id = constants.ids.room_view_def,
-	room_view_instance_id = constants.ids.room_view_instance,
-	room_view_fsm_id = constants.ids.room_view_fsm,
+	room_view_def_id = 'room_view.def',
+	room_view_instance_id = 'room_view.instance',
+	room_view_fsm_id = 'room_view.fsm',
 }

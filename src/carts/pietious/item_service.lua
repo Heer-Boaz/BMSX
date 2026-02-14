@@ -154,11 +154,11 @@ function item_service:deactivate_unused_items(active_ids)
 end
 
 function item_service:refresh_current_room_items()
-	local room = service(constants.ids.castle_service_instance).current_room
+	local room = service('castle_service.instance').current_room
 	local room_number = room.room_number
 	self.synced_room_number = room_number
 
-	local player = object(constants.ids.player_instance)
+	local player = object('player.instance')
 	local active_ids = {}
 
 	local room_item_defs = room.items
@@ -197,7 +197,7 @@ function item_service:add_item_drop_from_rock(rock_id, room_number, item_type, x
 		return
 	end
 
-	local player = object(constants.ids.player_instance)
+	local player = object('player.instance')
 	if player:has_inventory_item(item_type) then
 		self.picked_item_ids[drop_id] = true
 		return
@@ -227,7 +227,7 @@ function item_service:apply_pickup_to_player(player, item_type)
 end
 
 function item_service:try_pick_item(item_id, room_number, item_type, source_kind)
-	local player = object(constants.ids.player_instance)
+	local player = object('player.instance')
 	if player.health <= 0 then
 		return false
 	end
@@ -251,7 +251,7 @@ end
 
 function item_service:bind_events()
 	eventemitter.eventemitter.instance:on({
-		event = constants.events.room_switched,
+		event = 'room.switched',
 		subscriber = self,
 		handler = function(_event)
 			self:refresh_current_room_items()
@@ -259,7 +259,7 @@ function item_service:bind_events()
 	})
 
 	eventemitter.eventemitter.instance:on({
-		event = constants.events.enemy_defeated,
+		event = 'enemy.defeated',
 		subscriber = self,
 		handler = function(event)
 			self:set_room_condition(event.room_number, 'defeated_' .. event.kind)
@@ -274,7 +274,7 @@ function item_service:bind_events()
 	})
 
 	eventemitter.eventemitter.instance:on({
-		event = constants.events.room_condition_set,
+		event = 'room.condition_set',
 		subscriber = self,
 		handler = function(event)
 			self:set_room_condition(event.room_number, event.condition)
@@ -296,7 +296,7 @@ function item_service:ctor()
 end
 
 local function define_item_service_fsm()
-	define_fsm(constants.ids.item_service_fsm, {
+	define_fsm('item_service.fsm', {
 		initial = 'active',
 		states = {
 			active = {},
@@ -306,12 +306,12 @@ end
 
 local function register_item_service_definition()
 	define_service({
-		def_id = constants.ids.item_service_def,
+		def_id = 'item_service.def',
 		class = item_service,
-		fsms = { constants.ids.item_service_fsm },
+		fsms = { 'item_service.fsm' },
 		auto_activate = true,
 		defaults = {
-			id = constants.ids.item_service_instance,
+			id = 'item_service.instance',
 			world_item_def_id = world_item_module.world_item_def_id,
 			items_by_id = {},
 			event_item_defs_by_room = {},
@@ -327,7 +327,7 @@ return {
 	item_service = item_service,
 	define_item_service_fsm = define_item_service_fsm,
 	register_item_service_definition = register_item_service_definition,
-	item_service_def_id = constants.ids.item_service_def,
-	item_service_instance_id = constants.ids.item_service_instance,
-	item_service_fsm_id = constants.ids.item_service_fsm,
+	item_service_def_id = 'item_service.def',
+	item_service_instance_id = 'item_service.instance',
+	item_service_fsm_id = 'item_service.fsm',
 }

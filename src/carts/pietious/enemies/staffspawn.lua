@@ -1,28 +1,16 @@
 local behaviourtree = require('behaviourtree')
-local constants = require('constants')
-local eventemitter = require('eventemitter')
-local enemy_explosion_module = require('enemy_explosion')
+local enemy_base = require('enemies/enemy_base')
 
 local staffspawn = {}
 staffspawn.__index = staffspawn
 
-function staffspawn:onspawn(pos)
-	getmetatable(self).onspawn(self, pos)
-	self:bind_overlap_events()
-end
-
-function staffspawn.configure(self, def)
-	self.max_health = 1
-	self.health = self.max_health
-	self.damage = 2
-	self.dangerous = def.dangerous ~= false
-	self.despawn_on_room_switch = true
+function staffspawn:ctor()
 	self:gfx('staffspawn')
 	self.sprite_component.flip.flip_h = self.speed_x_num < 0
 end
 
 function staffspawn.bt_tick(self, _blackboard)
-	self:move_with_velocity()
+	move_with_velocity(self)
 	if self:projectile_is_out_of_bounds() then
 		self:mark_for_disposal()
 	end
@@ -44,149 +32,14 @@ function staffspawn.choose_drop_type(_self, _random_percent_hit)
 	return 'none'
 end
 
-
-
-
-local enemy_death_effect_sequence = 0
-
--- helper removed; callers pass a random_percent_hit callback
-
-
-function staffspawn:configure_from_room_def(def, room)
-		self.trigger = def.trigger or ''
-	self.conditions = def.conditions or {}
-		self.damage = 2
-	self.max_health = 1
-	self.health = self.max_health
-	self.last_weapon_kind = ''
-	self.last_weapon_hit_id = -1
-	self.dangerous = def.dangerous ~= false
-	self.direction = def.direction or 'right'
-	self.despawn_on_room_switch = def.despawn_on_room_switch == true
-
-	self:set_velocity(def.speedx or 0, def.speedy or 0, def.speedden or 1)
-
-	staffspawn.configure(self, def)
-	self:dispatch_state_event('reset_to_waiting')
-	self.collider.generateoverlapevents = true
-	self.collider.spaceevents = 'current'
-	self.collider:set_shape_offset(0, 0)
-	self.sprite_component.offset.z = 110
-end
-
-function staffspawn:bind_overlap_events()
-	self.events:on({
-		event_name = 'overlap',
-		subscriber = self,
-		handler = function(event)
-			self:on_overlap(event)
-		end,
-	})
-
-	eventemitter.eventemitter.instance:on({
-		event = constants.events.room_switched,
-		subscriber = self,
-		handler = function(event)
-			if self.despawn_on_room_switch then
-				self:mark_for_disposal()
-			end
-		end,
-	})
-end
-function staffspawn:projectile_is_out_of_bounds()
-	local bound_right = self.projectile_bound_right
-	if bound_right <= 0 then
-		bound_right = self.sx
-	end
-	local bound_bottom = self.projectile_bound_bottom
-	if bound_bottom <= 0 then
-		bound_bottom = self.sy
-	end
-
-	if self.x + bound_right < 0 then
-		return true
-	end
-	if self.x > service(constants.ids.castle_service_instance).current_room.world_width then
-		return true
-	end
-	if self.y + bound_bottom < service(constants.ids.castle_service_instance).current_room.world_top then
-		return true
-	end
-	if self.y > service(constants.ids.castle_service_instance).current_room.world_height then
-		return true
-	end
-	return false
-end
-
-function staffspawn:set_velocity(speed_x_num, speed_y_num, speed_den)
-	self.speed_x_num = speed_x_num
-	self.speed_y_num = speed_y_num
-	self.speed_den = speed_den
-	self.speed_accum_x = 0
-	self.speed_accum_y = 0
-end
-
-function staffspawn:move_with_velocity()
-	local dx, next_accum_x = consume_axis_accum(self.speed_accum_x, self.speed_x_num, self.speed_den)
-	local dy, next_accum_y = consume_axis_accum(self.speed_accum_y, self.speed_y_num, self.speed_den)
-	self.speed_accum_x = next_accum_x
-	self.speed_accum_y = next_accum_y
-	self.x = self.x + dx
-	self.y = self.y + dy
-end
-
-function staffspawn:spawn_death_effect()
-	enemy_death_effect_sequence = enemy_death_effect_sequence + 1
-	local room_space = service(constants.ids.castle_service_instance).current_room.space_id
-	inst(enemy_explosion_module.enemy_explosion_def_id, {
-		room_number = service(constants.ids.castle_service_instance).current_room.room_number,
-		loot_type = self:choose_drop_type(function(chance) return math.random(100) <= chance end),
-		space_id = room_space,
-		pos = { x = self.x, y = self.y, z = 114 },
-	})
-end
-
-function staffspawn:take_weapon_hit(weapon_kind, hit_id)
-	if self.last_weapon_kind == weapon_kind and self.last_weapon_hit_id == hit_id then
-		return false
-	end
-	self.last_weapon_kind = weapon_kind
-	self.last_weapon_hit_id = hit_id
-	self.health = self.health - 1
-	if self.health <= 0 then
-		self.health = 0
-		self.dangerous = false
-		self:spawn_death_effect()
-			eventemitter.eventemitter.instance:emit(constants.events.enemy_defeated, self.id, {
-				room_number = service(constants.ids.castle_service_instance).current_room.room_number,
-				kind = 'staffspawn',
-				trigger = self.trigger,
-			})
-		self:mark_for_disposal()
-	end
-	return true
-end
-
-function staffspawn:on_overlap(event)
-	if event.other_id ~= constants.ids.player_instance then
-		return
-	end
-	local player = object(constants.ids.player_instance)
-	if player:has_tag('g.sw') then
-		self:take_weapon_hit('sword', player.sword_id)
-		return
-	end
-	if self.dangerous then
-		player:take_hit(self.damage, self.x + math.modf(self.sx / 2), self.y + math.modf(self.sy / 2), 'staffspawn')
-	end
-end
+enemy_base.extend(staffspawn, 'staffspawn')
 
 function staffspawn.register_enemy_definition()
 	define_prefab({
-		def_id = 'pietious.enemy.def.staffspawn',
+		def_id = 'enemy.def.staffspawn',
 		class = staffspawn,
 		type = 'sprite',
-		fsms = { constants.ids.enemy_fsm },
+		fsms = { 'enemy.fsm' },
 		defaults = {
 			trigger = '',
 			conditions = {},
@@ -202,7 +55,8 @@ function staffspawn.register_enemy_definition()
 			speed_accum_x = 0,
 			speed_accum_y = 0,
 			direction = 'right',
-			despawn_on_room_switch = false,
+			despawn_on_room_switch = true,
+			enemy_kind = 'staffspawn',
 		},
 	})
 end

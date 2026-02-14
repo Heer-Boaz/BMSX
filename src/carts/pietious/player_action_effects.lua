@@ -28,7 +28,7 @@ function player_action_effects.attach_player_methods(player)
 	end
 
 	function player:find_near_lithograph()
-		local lithographs = service(constants.ids.castle_service_instance).current_room.lithographs
+		local lithographs = service('castle_service.instance').current_room.lithographs
 			local player_left = self.x
 			local player_top = self.y
 			local player_right = self.x + self.width
@@ -58,7 +58,7 @@ local function try_fire_pepernoot_effect(context)
 	if owner.weapon_level < constants.secondary_weapon.pepernoot_weapon_level_cost then
 		return
 	end
-	local room = service(constants.ids.castle_service_instance).current_room
+	local room = service('castle_service.instance').current_room
 
 	owner.pepernoot_projectile_sequence = owner.pepernoot_projectile_sequence + 1
 	local projectile_id = string.format('pepernoot_%d_%d', owner.player_index, owner.pepernoot_projectile_sequence)

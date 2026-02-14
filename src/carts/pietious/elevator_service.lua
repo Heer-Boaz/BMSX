@@ -63,7 +63,7 @@ local function move_elevator_vertical(elevator, target, vertical, character_over
 end
 
 function elevator_service:tick()
-	local player = object(constants.ids.player_instance)
+	local player = object('player.instance')
 	player.on_vertical_elevator = false
 
 	local castle_service = service(self.castle_service_id)
@@ -124,7 +124,7 @@ function elevator_service:tick()
 end
 
 local function define_elevator_service_fsm()
-	define_fsm(constants.ids.elevator_service_fsm, {
+	define_fsm('elevator_service.fsm', {
 		initial = 'active',
 		states = {
 			active = {
@@ -137,12 +137,12 @@ end
 local function register_elevator_service_definition()
 	local elevator_routes = build_elevator_routes()
 	define_service({
-		def_id = constants.ids.elevator_service_def,
+		def_id = 'elevator_service.def',
 		class = elevator_service,
-		fsms = { constants.ids.elevator_service_fsm },
+		fsms = { 'elevator_service.fsm' },
 		defaults = {
-			id = constants.ids.elevator_service_instance,
-			castle_service_id = constants.ids.castle_service_instance,
+			id = 'elevator_service.instance',
+			castle_service_id = 'castle_service.instance',
 			elevator_routes = elevator_routes,
 			tick_enabled = true,
 		},
@@ -152,7 +152,7 @@ end
 return {
 	define_elevator_service_fsm = define_elevator_service_fsm,
 	register_elevator_service_definition = register_elevator_service_definition,
-	elevator_service_def_id = constants.ids.elevator_service_def,
-	elevator_service_instance_id = constants.ids.elevator_service_instance,
-	elevator_service_fsm_id = constants.ids.elevator_service_fsm,
+	elevator_service_def_id = 'elevator_service.def',
+	elevator_service_instance_id = 'elevator_service.instance',
+	elevator_service_fsm_id = 'elevator_service.fsm',
 }

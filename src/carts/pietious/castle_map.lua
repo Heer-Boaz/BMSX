@@ -359,7 +359,7 @@ local function load_room_templates()
 		local room_number = room_numbers[i]
 		local room_def = data[tostring(room_number)]
 		local world_number
-		if room_def.type == constants.spaces.world then
+		if room_def.type == 'world' then
 			world_number = room_def.worldnumber
 		end
 		local links = build_links(room_def.exits)
