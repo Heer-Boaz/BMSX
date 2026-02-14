@@ -1768,7 +1768,7 @@ end
 
 function player:tick_waiting_world_banner()
 	self:reset_motion_for_transition_lock()
-	local flow = service('flow_service.instance')
+	local flow = service('f')
 	if flow.pending_banner_mode ~= '' or flow:has_modal_overlay() or get_space() ~= service('c').current_room.space_id then
 		self.enter_leave_wait_started = true
 		return
@@ -1781,7 +1781,7 @@ end
 
 function player:tick_waiting_world_emerge()
 	self:reset_motion_for_transition_lock()
-	local flow = service('flow_service.instance')
+	local flow = service('f')
 	if flow.pending_banner_mode ~= '' or flow:has_modal_overlay() then
 		self.enter_leave_wait_started = true
 	end
@@ -1810,7 +1810,7 @@ function player:tick_entering_shrine()
 		self.enter_leave_size = self.enter_leave_size - 1
 		self:advance_enter_leave_animation(1)
 		if self.enter_leave_size < 0 then
-			service('flow_service.instance'):open_shrine(self.enter_leave_shrine_text_lines)
+			service('f'):open_shrine(self.enter_leave_shrine_text_lines)
 			self.enter_leave_wait_started = false
 			self:dispatch_state_event('shrine_entered')
 			return
@@ -1820,7 +1820,7 @@ end
 
 function player:tick_waiting_shrine()
 	self:reset_motion_for_transition_lock()
-	local flow = service('flow_service.instance')
+	local flow = service('f')
 	if flow.pending_shrine_open or flow.overlay_mode == 'shrine' or get_space() ~= service('c').current_room.space_id then
 		self.enter_leave_wait_started = true
 		return

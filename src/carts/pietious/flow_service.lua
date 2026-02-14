@@ -255,7 +255,7 @@ local function register_flow_service_definition()
 		fsms = { 'flow_service.fsm' },
 		auto_activate = true,
 		defaults = {
-			id = 'flow_service.instance',
+			id = 'f',
 			space_id = 'ui',
 			player_index = 1,
 			pending_room_transition = false,

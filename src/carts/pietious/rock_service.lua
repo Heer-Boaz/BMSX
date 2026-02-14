@@ -129,7 +129,7 @@ local function register_rock_service_definition()
 		fsms = { 'rock_service.fsm' },
 		auto_activate = true,
 		defaults = {
-			id = 'rock_service.instance',
+			id = 'r',
 				rock_def_id = 'rock.def',
 			rocks_by_id = {},
 			destroyed_rock_ids = {},

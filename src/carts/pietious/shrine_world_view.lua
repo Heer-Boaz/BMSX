@@ -61,7 +61,7 @@ function shrine_world_view:draw_centered_lines(lines, y, z)
 end
 
 function shrine_world_view:draw_overlay()
-	local flow = service('flow_service.instance')
+	local flow = service('f')
 	if flow.overlay_mode == 'none' then
 		return
 	end

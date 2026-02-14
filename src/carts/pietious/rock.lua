@@ -116,7 +116,7 @@ local function register_rock_definition()
 		type = 'sprite',
 		fsms = { 'rock.fsm' },
 		defaults = {
-			rock_service_id = 'rock_service.instance',
+			rock_service_id = 'r',
 			item_type = 'none',
 			max_health = constants.rock.max_health,
 			health = constants.rock.max_health,

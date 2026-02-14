@@ -133,7 +133,7 @@ function new_game()
 	})
 
 	create_service('flow_service.def', {
-		id = 'flow_service.instance',
+		id = 'f',
 	})
 
 	create_service('item_service.def', {
@@ -147,7 +147,7 @@ function new_game()
 	elevator_service:activate()
 
 	create_service('rock_service.def', {
-		id = 'rock_service.instance',
+		id = 'r',
 	})
 end
 

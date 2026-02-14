@@ -508,7 +508,7 @@ function room.overlaps_active_rock(room_state, x, y, w, h)
 		return false
 	end
 
-	local destroyed_rock_ids = service('rock_service.instance').destroyed_rock_ids
+	local destroyed_rock_ids = service('r').destroyed_rock_ids
 	for i = 1, #rocks do
 		local rock = rocks[i]
 		if destroyed_rock_ids[rock.id] ~= true then
