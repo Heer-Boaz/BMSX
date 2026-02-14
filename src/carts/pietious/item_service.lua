@@ -155,7 +155,7 @@ function item_service:refresh_current_room_items()
 	local room_number = room.room_number
 	self.synced_room_number = room_number
 
-	local player = object('player.instance')
+	local player = object('pietolon')
 	local active_ids = {}
 
 	local room_item_defs = room.items
@@ -194,7 +194,7 @@ function item_service:add_item_drop_from_rock(rock_id, room_number, item_type, x
 		return
 	end
 
-	local player = object('player.instance')
+	local player = object('pietolon')
 	if player:has_inventory_item(item_type) then
 		self.picked_item_ids[drop_id] = true
 		return
@@ -223,7 +223,7 @@ function item_service:apply_pickup_to_player(player, item_type)
 end
 
 function item_service:try_pick_item(item_id, room_number, item_type)
-	local player = object('player.instance')
+	local player = object('pietolon')
 	if player.health <= 0 then
 		return false
 	end

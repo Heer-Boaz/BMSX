@@ -80,7 +80,7 @@ function item_screen:item_position_px(item_type)
 end
 
 function item_screen:draw_inventory_items()
-	local player = object('player.instance')
+	local player = object('pietolon')
 	local room_space = service('c').current_room.space_id
 	for i = 1, #inventory_item_order do
 		local item_type = inventory_item_order[i]
@@ -103,7 +103,7 @@ function item_screen:draw_secondary_weapon_selector()
 end
 
 function item_screen:draw_map()
-	local player = object('player.instance')
+	local player = object('pietolon')
 	local room = service('c').current_room
 	local world_number = room.world_number
 	if world_number <= 0 then
@@ -143,7 +143,7 @@ function item_screen:tick_selector_blink()
 end
 
 function item_screen:tick_secondary_weapon_selection()
-	local player = object('player.instance')
+	local player = object('pietolon')
 	if action_triggered('right[jp]') then
 		for i = self.secondary_weapon_selection_index + 2, #secondary_weapon_order do
 			if player:has_inventory_item(secondary_weapon_order[i]) then

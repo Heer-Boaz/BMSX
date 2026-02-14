@@ -52,8 +52,8 @@ function flow_service:bind_events()
 			end
 			self.pending_room_transition = true
 			set_space('transition')
-			object('ui.instance').space_id = 'transition'
-			object('shrine_world_view.instance').space_id = 'transition'
+			object('ui').space_id = 'transition'
+			object('shrine_world_view').space_id = 'transition'
 		end,
 	})
 end
@@ -78,11 +78,11 @@ function flow_service:activate_spaces()
 end
 
 function flow_service:spawn_interaction_view_if_needed()
-	if object('shrine_world_view.instance') ~= nil then
+	if object('shrine_world_view') ~= nil then
 		return
 	end
 	inst('shrine_world_view.def', {
-		id = 'shrine_world_view.instance',
+		id = 'shrine_world_view',
 		space_id = 'ui',
 		pos = { x = 0, y = 0, z = 0 },
 	})
@@ -124,8 +124,8 @@ local function define_flow_service_fsm()
 				entering_state = function(self)
 					local room_space = self:resolve_room_space()
 					set_space(room_space)
-					object('ui.instance').space_id = room_space
-					object('shrine_world_view.instance').space_id = room_space
+					object('ui').space_id = room_space
+					object('shrine_world_view').space_id = room_space
 					self:emit_state_changed(get_space())
 				end,
 				tick = function(self)
@@ -151,8 +151,8 @@ local function define_flow_service_fsm()
 					self.overlay_mode = 'none'
 					self.overlay_text_lines = {}
 					set_space('transition')
-					object('ui.instance').space_id = 'transition'
-					object('shrine_world_view.instance').space_id = 'transition'
+					object('ui').space_id = 'transition'
+					object('shrine_world_view').space_id = 'transition'
 					self:emit_state_changed('transition')
 				end,
 				tick = function(self)
@@ -176,8 +176,8 @@ local function define_flow_service_fsm()
 					self.pending_banner_world_number = 0
 					self.pending_banner_post_action = ''
 					set_space('transition')
-					object('ui.instance').space_id = 'transition'
-					object('shrine_world_view.instance').space_id = 'transition'
+					object('ui').space_id = 'transition'
+					object('shrine_world_view').space_id = 'transition'
 					self:emit_state_changed('transition')
 				end,
 				tick = function(self)
@@ -186,7 +186,7 @@ local function define_flow_service_fsm()
 						self.overlay_mode = 'none'
 						self.overlay_text_lines = {}
 						if self.banner_post_action == 'castle_emerge' then
-							object('player.instance'):begin_world_emerge_from_door()
+							object('pietolon'):begin_world_emerge_from_door()
 						end
 						self.banner_post_action = ''
 						return '/castle'
@@ -200,8 +200,8 @@ local function define_flow_service_fsm()
 					self.pending_shrine_text_lines = {}
 					self.pending_shrine_close = false
 					set_space('transition')
-					object('ui.instance').space_id = 'transition'
-					object('shrine_world_view.instance').space_id = 'transition'
+					object('ui').space_id = 'transition'
+					object('shrine_world_view').space_id = 'transition'
 					self:emit_state_changed('transition')
 				end,
 				tick = function(self)
@@ -212,7 +212,7 @@ local function define_flow_service_fsm()
 						self.pending_shrine_close = false
 						self.overlay_mode = 'none'
 						self.overlay_text_lines = {}
-						object('player.instance'):leave_shrine_overlay()
+						object('pietolon'):leave_shrine_overlay()
 						return '/castle'
 					end
 				end,
@@ -220,8 +220,8 @@ local function define_flow_service_fsm()
 			item_screen = {
 				entering_state = function(self)
 					set_space('item')
-					object('ui.instance').space_id = 'item'
-					object('shrine_world_view.instance').space_id = 'item'
+					object('ui').space_id = 'item'
+					object('shrine_world_view').space_id = 'item'
 					self:emit_state_changed('item')
 				end,
 				tick = function(self)

@@ -182,7 +182,6 @@ function player:reset_runtime()
 	self.walk_speed_accum = 0
 	self.walk_move_dx = 0
 	self.walk_move_collided_x = false
-	self.sword_id = 0
 	self.sword_ground_origin = 'quiet'
 	self.stairs_direction = 0
 	self.stairs_x = -1
@@ -529,7 +528,6 @@ function player:try_start_sword_state()
 		return
 	end
 
-	self.sword_id = self.sword_id + 1
 	self:get_timeline('p.seq.s'):force_seek(0)
 	self:dispatch_state_event(event_name)
 end
@@ -1223,7 +1221,7 @@ end
 function player:collides_with_elevator_at(x, y)
 	local castle_service = service('c')
 	local current_room_number = castle_service.current_room_number
-	local elevator_routes = service('elevator_service.instance').elevator_routes
+	local elevator_routes = service('elevator_service').elevator_routes
 	local right = x + self.width
 	local bottom = y + self.height
 	for i = 1, #elevator_routes do
@@ -1245,7 +1243,7 @@ end
 function player:try_snap_to_elevator_platform(next_x)
 	local castle_service = service('c')
 	local current_room_number = castle_service.current_room_number
-	local elevator_routes = service('elevator_service.instance').elevator_routes
+	local elevator_routes = service('elevator_service').elevator_routes
 	for i = 1, #elevator_routes do
 		local elevator = elevator_routes[i]
 		if elevator.current_room_number == current_room_number
@@ -2883,7 +2881,6 @@ local function register_player_definition()
 				walk_speed_accum = 0,
 				walk_move_dx = 0,
 				walk_move_collided_x = false,
-				sword_id = 0,
 				sword_ground_origin = 'quiet',
 					stairs_direction = 0,
 					stairs_x = -1,

@@ -94,7 +94,7 @@ local function register_shrine_world_view_definition()
 		class = shrine_world_view,
 		components = { 'customvisualcomponent' },
 		defaults = {
-			id = 'shrine_world_view.instance',
+			id = 'shrine_world_view',
 			space_id = 'ui',
 			tick_enabled = false,
 		},

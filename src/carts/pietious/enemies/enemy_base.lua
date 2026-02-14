@@ -74,12 +74,7 @@ function enemy_base.spawn_death_effect(self)
 	})
 end
 
-function enemy_base.take_weapon_hit(self, weapon_kind, hit_id)
-	if self.last_weapon_kind == weapon_kind and self.last_weapon_hit_id == hit_id then
-		return false
-	end
-	self.last_weapon_kind = weapon_kind
-	self.last_weapon_hit_id = hit_id
+function enemy_base.take_weapon_hit(self, weapon_kind)
 	self.health = self.health - 1
 	if self.health <= 0 then
 		self.health = 0
@@ -96,15 +91,15 @@ function enemy_base.take_weapon_hit(self, weapon_kind, hit_id)
 end
 
 function enemy_base.on_overlap(self, event)
-	local player = object('player.instance')
-	local contact_kind = combat_overlap.classify_player_contact(event)
+	local player = object('pietolon')
+	local contact_kind = combat_overlap.classify_player_contact(event, self, player)
 	if contact_kind == nil then
 		return
 	end
-	if contact_kind == 'sword' then
-		self:take_weapon_hit('sword', player.sword_id)
+	if contact_kind == 'sword' or contact_kind == 'body_with_sword' then
+		self:take_weapon_hit('sword')
 	end
-	if contact_kind == 'body' and self.dangerous then
+	if (contact_kind == 'body' or contact_kind == 'body_with_sword') and self.dangerous then
 		player:take_hit(self.damage, self.x + math.modf(self.sx / 2), self.y + math.modf(self.sy / 2), self.enemy_kind)
 	end
 end

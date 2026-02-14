@@ -16,9 +16,9 @@ transition_overlay_id = 'p3.transition.overlay'
 transition_panel_ids = { 'p3.transition.panel.a', 'p3.transition.panel.b', 'p3.transition.panel.c' }
 transition_accent_id = 'p3.transition.accent'
 
-director_instance_id = 'p3.director.instance'
+director_instance_id = 'p3.director'
 combat_director_def_id = 'p3.combat.director'
-combat_director_instance_id = 'p3.combat.director.instance'
+combat_director_instance_id = 'p3.combat.director'
 combat_director_fsm_id = 'p3.combat.director.fsm'
 
 overgang_timeline_id = 'overgang'

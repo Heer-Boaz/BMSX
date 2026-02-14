@@ -35,7 +35,7 @@ end
 
 function ui:ctor()
 	self:bind_visual()
-	local player = object('player.instance')
+	local player = object('pietolon')
 	local health = clamp_int(math.modf(player.health), 0, constants.damage.max_health)
 	local weapon = clamp_int(math.modf(player.weapon_level), 0, constants.hud.weapon_level)
 	self.hud_health_level = health
@@ -47,7 +47,7 @@ function ui:ctor()
 end
 
 function ui:tick()
-	local player = object('player.instance')
+	local player = object('pietolon')
 	self.hud_health_target = clamp_int(math.modf(player.health), 0, constants.damage.max_health)
 	self.hud_weapon_target = clamp_int(math.modf(player.weapon_level), 0, constants.hud.weapon_level)
 
@@ -73,7 +73,7 @@ function ui:tick()
 end
 
 function ui:draw_ui()
-	local player = object('player.instance')
+	local player = object('pietolon')
 	put_sprite('game_header', 0, 0, 200)
 	local equipped_sprite_id = secondary_weapon_sprite_id(player.secondary_weapon)
 	if equipped_sprite_id ~= nil then

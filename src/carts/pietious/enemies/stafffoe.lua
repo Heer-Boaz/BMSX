@@ -53,7 +53,7 @@ function stafffoe.bt_tick(self, blackboard)
 		return behaviourtree.running
 	end
 
-	local player = object('player.instance')
+	local player = object('pietolon')
 	local bullets_dangerous = not player:has_inventory_item('greenvase')
 	local base_angle = math.random(0, 359)
 	for i = 0, 3 do
@@ -109,10 +109,7 @@ function stafffoe.register_enemy_definition()
 			conditions = {},
 			damage = 4,
 			max_health = 10,
-			health = 10,
-			last_weapon_kind = '',
-			last_weapon_hit_id = -1,
-			dangerous = true,
+			health = 10,dangerous = true,
 			speed_x_num = 0,
 			speed_y_num = 0,
 			speed_den = 1,

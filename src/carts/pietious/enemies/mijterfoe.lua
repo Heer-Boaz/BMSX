@@ -129,7 +129,7 @@ function mijterfoe.bt_tick_waiting(self, blackboard)
 	end
 	blackboard.nodedata.mijter_entry_lock_ticks = 0
 
-	local player = object('player.instance')
+	local player = object('pietolon')
 	if player_triggered_takeoff(self, player) then
 		return start_flying(self, blackboard)
 	end
@@ -217,10 +217,7 @@ function mijterfoe.register_enemy_definition()
 			conditions = {},
 			damage = 2,
 			max_health = 1,
-			health = 1,
-			last_weapon_kind = '',
-			last_weapon_hit_id = -1,
-			dangerous = true,
+			health = 1,dangerous = true,
 			speed_x_num = 0,
 			speed_y_num = 0,
 			speed_den = 1,

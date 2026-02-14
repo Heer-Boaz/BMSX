@@ -2,14 +2,14 @@ local constants = {}
 
 constants.ids = {
 	stage_def = 'nemesis_s.stage.def',
-	stage_instance = 'nemesis_s.stage.instance',
+	stage_instance = 'nemesis_s.stage',
 	stage_fsm = 'nemesis_s.stage.fsm',
 	stage_star_blink_timeline = 'nemesis_s.stage.timeline.star_blink',
 	player_def = 'nemesis_s.player.def',
-	player_instance = 'nemesis_s.player.instance',
+	player_instance = 'nemesis_s.player',
 	player_fsm = 'nemesis_s.player.fsm',
 	director_def = 'nemesis_s.director.def',
-	director_instance = 'nemesis_s.director.instance',
+	director_instance = 'nemesis_s.director',
 	director_fsm = 'nemesis_s.director.fsm',
 }
 

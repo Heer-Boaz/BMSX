@@ -38,7 +38,7 @@ function crossfoe:ctor()
 end
 
 function crossfoe.bt_tick_waiting(self, blackboard)
-	local player = object('player.instance')
+	local player = object('pietolon')
 	local node = blackboard.nodedata
 	apply_spin_visual(self)
 	local wait_ticks = node.cross_wait_ticks
@@ -65,7 +65,7 @@ function crossfoe.bt_tick_waiting(self, blackboard)
 end
 
 function crossfoe.bt_tick_flying(self, blackboard)
-	local player = object('player.instance')
+	local player = object('pietolon')
 	local node = blackboard.nodedata
 	apply_spin_visual(self)
 	local direction_mod = self.cross_state == 'flying_left' and -1 or 1
@@ -159,10 +159,7 @@ function crossfoe.register_enemy_definition()
 			conditions = {},
 			damage = 4,
 			max_health = 3,
-			health = 3,
-			last_weapon_kind = '',
-			last_weapon_hit_id = -1,
-			dangerous = true,
+			health = 3,dangerous = true,
 			speed_x_num = 0,
 			speed_y_num = 0,
 			speed_den = 1,

@@ -58,7 +58,7 @@ function muziekfoe.bt_tick(self, blackboard)
 	end
 	noot_ticks = noot_ticks - 1
 	if noot_ticks <= 0 then
-		local player = object('player.instance')
+		local player = object('pietolon')
 		local source_x = self.x + 12
 		local source_y = self.y + 8
 		local target_x = player.x
@@ -121,10 +121,7 @@ function muziekfoe.register_enemy_definition()
 			conditions = {},
 			damage = 4,
 			max_health = 3,
-			health = 3,
-			last_weapon_kind = '',
-			last_weapon_hit_id = -1,
-			dangerous = true,
+			health = 3,dangerous = true,
 			speed_x_num = 0,
 			speed_y_num = 0,
 			speed_den = 1,

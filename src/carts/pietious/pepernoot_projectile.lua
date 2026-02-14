@@ -54,7 +54,7 @@ function pepernoot_projectile:on_overlap_begin(event)
 		return
 	end
 	local target = object(event.other_id)
-	if target:take_weapon_hit('pepernoot', self.projectile_id) then
+	if target:take_weapon_hit('pepernoot') then
 		self:dispose('hit_target')
 	end
 end
@@ -88,8 +88,7 @@ local function register_pepernoot_projectile_definition()
 		type = 'sprite',
 		fsms = { 'pepernoot_projectile.fsm' },
 		defaults = {
-			owner_id = 'player.instance',
-			projectile_id = 0,
+			owner_id = 'pietolon',
 			direction = 1,
 			disposed = false,
 		},

@@ -33,17 +33,10 @@ function rock:configure_from_room_def(def, room, rock_service_id)
 	self.max_health = constants.rock.max_health
 	self.health = self.max_health
 	self.break_steps = 0
-	self.last_weapon_kind = ''
-	self.last_weapon_hit_id = -1
 	self:dispatch_state_event('reset')
 end
 
-function rock:take_weapon_hit(weapon_kind, hit_id)
-	if self.last_weapon_kind == weapon_kind and self.last_weapon_hit_id == hit_id then
-		return false
-	end
-	self.last_weapon_kind = weapon_kind
-	self.last_weapon_hit_id = hit_id
+function rock:take_weapon_hit(weapon_kind)
 	self.health = self.health - 1
 	if self.health <= 0 then
 		self.health = 0
@@ -59,12 +52,11 @@ function rock:begin_break()
 end
 
 function rock:on_overlap(event)
-	local player = object('player.instance')
-	local contact_kind = combat_overlap.classify_player_contact(event)
-	if contact_kind ~= 'sword' then
+	local contact_kind = combat_overlap.classify_player_contact(event, self, object('pietolon'))
+	if contact_kind ~= 'sword' and contact_kind ~= 'body_with_sword' then
 		return
 	end
-	self:take_weapon_hit('sword', player.sword_id)
+	self:take_weapon_hit('sword')
 end
 
 function rock:finish_break()
@@ -120,8 +112,6 @@ local function register_rock_definition()
 			item_type = 'none',
 			max_health = constants.rock.max_health,
 			health = constants.rock.max_health,
-			last_weapon_kind = '',
-			last_weapon_hit_id = -1,
 			break_steps = 0,
 		},
 	})

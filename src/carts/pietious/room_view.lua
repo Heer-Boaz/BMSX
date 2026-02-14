@@ -54,7 +54,7 @@ function room_view:render_room()
 		end
 	end
 
-	local elevator_service = service('elevator_service.instance')
+	local elevator_service = service('elevator_service')
 	render_elevators(castle_service.current_room_number, elevator_service.elevator_routes)
 end
 

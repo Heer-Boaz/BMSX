@@ -63,7 +63,7 @@ local function move_elevator_vertical(elevator, target, vertical, character_over
 end
 
 function elevator_service:tick()
-	local player = object('player.instance')
+	local player = object('pietolon')
 	player.on_vertical_elevator = false
 
 	local castle_service = service(self.castle_service_id)
@@ -141,7 +141,7 @@ local function register_elevator_service_definition()
 		class = elevator_service,
 		fsms = { 'elevator_service.fsm' },
 		defaults = {
-			id = 'elevator_service.instance',
+			id = 'elevator_service',
 			castle_service_id = 'c',
 			elevator_routes = elevator_routes,
 			tick_enabled = true,

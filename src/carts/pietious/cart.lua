@@ -43,6 +43,20 @@ local function service_irqs()
 	end
 end
 
+local function grant_starting_loadout()
+	local player = object('pietolon')
+	player:add_inventory_item('keyworld1')
+	player:add_inventory_item('spyglass')
+	player:add_inventory_item('halo')
+	player:add_inventory_item('lamp')
+	player:add_inventory_item('schoentjes')
+	player:add_inventory_item('greenvase')
+	player:add_inventory_item('map_world1')
+	player:add_inventory_item('pepernoot')
+	player:equip_secondary_weapon('pepernoot')
+	player.weapon_level = constants.hud.weapon_level
+end
+
 function init()
 	poke(sys_vdp_dither, 0)
 	on_irq(irq_reinit, function()
@@ -101,35 +115,36 @@ function new_game()
 	local room = castle_service:initialize(1)
 
 	inst('player.def', {
-		id = 'player.instance',
+		id = 'pietolon',
 		room = room,
 		space_id = room.space_id,
 		spawn_x = constants.player.start_x,
 		spawn_y = constants.player.start_y,
 		pos = { x = constants.player.start_x, y = constants.player.start_y, z = 140 },
 	})
+	grant_starting_loadout()
 
 	inst('room_view.def', {
-		id = 'room_view.instance',
+		id = 'room_view',
 		room = room,
 		space_id = room.space_id,
 		pos = { x = 0, y = 0, z = 0 },
 	})
 
 	inst('transition_view.def', {
-		id = 'transition_view.instance',
+		id = 'transition_view',
 		space_id = 'transition',
 		pos = { x = 0, y = 0, z = 0 },
 	})
 
 	inst('item_screen.def', {
-		id = 'item_screen.instance',
+		id = 'item_screen',
 		space_id = 'item',
 		pos = { x = 0, y = 0, z = 0 },
 	})
 
 	inst('ui.def', {
-		id = 'ui.instance',
+		id = 'ui',
 		space_id = room.space_id,
 		pos = { x = 0, y = 0, z = 0 },
 	})
@@ -143,7 +158,7 @@ function new_game()
 	})
 
 	local elevator_service = create_service('elevator_service.def', {
-		id = 'elevator_service.instance',
+		id = 'elevator_service',
 		castle_service_id = 'c',
 	})
 	elevator_service:activate()
