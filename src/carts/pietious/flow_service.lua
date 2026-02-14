@@ -5,14 +5,6 @@ local shrine_world_view_module = require('shrine_world_view')
 local flow_service = {}
 flow_service.__index = flow_service
 
-local function copy_lines(lines)
-	local copied = {}
-	for i = 1, #lines do
-		copied[i] = lines[i]
-	end
-	return copied
-end
-
 function flow_service:emit_state_changed(state_name)
 	local space = get_space()
 	eventemitter.eventemitter.instance:emit('flow.state_changed', self.id, {
@@ -30,7 +22,7 @@ end
 function flow_service:open_shrine(text_lines)
 	self.pending_shrine_open = true
 	self.pending_shrine_close = false
-	self.pending_shrine_text_lines = copy_lines(text_lines)
+	self.pending_shrine_text_lines = text_lines
 end
 
 function flow_service:close_shrine()
@@ -61,6 +53,7 @@ function flow_service:bind_events()
 			self.pending_room_transition = true
 			set_space('transition')
 			object('ui.instance').space_id = 'transition'
+			object('shrine_world_view.instance').space_id = 'transition'
 		end,
 	})
 end
@@ -132,6 +125,7 @@ local function define_flow_service_fsm()
 					local room_space = self:resolve_room_space()
 					set_space(room_space)
 					object('ui.instance').space_id = room_space
+					object('shrine_world_view.instance').space_id = room_space
 					self:emit_state_changed(get_space())
 				end,
 				tick = function(self)
@@ -158,6 +152,7 @@ local function define_flow_service_fsm()
 					self.overlay_text_lines = {}
 					set_space('transition')
 					object('ui.instance').space_id = 'transition'
+					object('shrine_world_view.instance').space_id = 'transition'
 					self:emit_state_changed('transition')
 				end,
 				tick = function(self)
@@ -182,6 +177,7 @@ local function define_flow_service_fsm()
 					self.pending_banner_post_action = ''
 					set_space('transition')
 					object('ui.instance').space_id = 'transition'
+					object('shrine_world_view.instance').space_id = 'transition'
 					self:emit_state_changed('transition')
 				end,
 				tick = function(self)
@@ -205,6 +201,7 @@ local function define_flow_service_fsm()
 					self.pending_shrine_close = false
 					set_space('transition')
 					object('ui.instance').space_id = 'transition'
+					object('shrine_world_view.instance').space_id = 'transition'
 					self:emit_state_changed('transition')
 				end,
 				tick = function(self)
@@ -224,6 +221,7 @@ local function define_flow_service_fsm()
 				entering_state = function(self)
 					set_space('item')
 					object('ui.instance').space_id = 'item'
+					object('shrine_world_view.instance').space_id = 'item'
 					self:emit_state_changed('item')
 				end,
 				tick = function(self)
