@@ -39,7 +39,7 @@ function staffspawn.register_enemy_definition()
 		def_id = 'enemy.def.staffspawn',
 		class = staffspawn,
 		type = 'sprite',
-		fsms = { 'enemy.fsm' },
+		bts = { 'enemy.bt.staffspawn' },
 		defaults = {
 			trigger = '',
 			conditions = {},

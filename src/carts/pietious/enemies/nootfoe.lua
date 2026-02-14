@@ -50,7 +50,7 @@ function nootfoe.register_enemy_definition()
 		def_id = 'enemy.def.nootfoe',
 		class = nootfoe,
 		type = 'sprite',
-		fsms = { 'enemy.fsm' },
+		bts = { 'enemy.bt.nootfoe' },
 		defaults = {
 			trigger = '',
 			conditions = {},

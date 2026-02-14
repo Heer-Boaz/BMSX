@@ -1,4 +1,5 @@
 local constants = require('constants')
+local enemy_registry = require('enemy_registry')
 local player_module = require('player')
 local room_view_module = require('room_view')
 local transition_view_module = require('transition_view')
@@ -52,6 +53,7 @@ function init()
 	end)
 
 	player_module.define_player_fsm()
+	enemy_registry.register_all()
 	room_view_module.define_room_view_fsm()
 	transition_view_module.define_transition_view_fsm()
 	item_screen_module.define_item_screen_fsm()

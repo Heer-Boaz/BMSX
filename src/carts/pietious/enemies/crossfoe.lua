@@ -118,46 +118,20 @@ function crossfoe.bt_tick_flying(self, blackboard)
 	return behaviourtree.running
 end
 
+function crossfoe.bt_tick(self, blackboard)
+	if self.cross_state == 'waiting' then
+		return crossfoe.bt_tick_waiting(self, blackboard)
+	end
+	return crossfoe.bt_tick_flying(self, blackboard)
+end
+
 function crossfoe.register_behaviour_tree(bt_id)
 	behaviourtree.register_definition(bt_id, {
 		root = {
-			type = 'selector',
-			children = {
-				{
-					type = 'sequence',
-					children = {
-						{
-							type = 'condition',
-							condition = function(target)
-								return target:has_tag('e.w')
-							end,
-						},
-						{
-							type = 'action',
-							action = function(target, blackboard)
-								return crossfoe.bt_tick_waiting(target, blackboard)
-							end,
-						},
-					},
-				},
-				{
-					type = 'sequence',
-					children = {
-						{
-							type = 'condition',
-							condition = function(target)
-								return target:has_tag('e.f')
-							end,
-						},
-						{
-							type = 'action',
-							action = function(target, blackboard)
-								return crossfoe.bt_tick_flying(target, blackboard)
-							end,
-						},
-					},
-				},
-			},
+			type = 'action',
+			action = function(target, blackboard)
+				return crossfoe.bt_tick(target, blackboard)
+			end,
 		},
 	})
 end
@@ -179,7 +153,7 @@ function crossfoe.register_enemy_definition()
 		def_id = 'enemy.def.crossfoe',
 		class = crossfoe,
 		type = 'sprite',
-		fsms = { 'enemy.fsm' },
+		bts = { 'enemy.bt.crossfoe' },
 		defaults = {
 			trigger = '',
 			conditions = {},

@@ -133,7 +133,7 @@ function cloud.register_enemy_definition()
 		def_id = 'enemy.def.cloud',
 		class = cloud,
 		type = 'sprite',
-		fsms = { 'enemy.fsm' },
+		bts = { 'enemy.bt.cloud' },
 		defaults = {
 			trigger = '',
 			conditions = {},

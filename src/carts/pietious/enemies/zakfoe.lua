@@ -123,7 +123,7 @@ function zakfoe.register_enemy_definition()
 		def_id = 'enemy.def.zakfoe',
 		class = zakfoe,
 		type = 'sprite',
-		fsms = { 'enemy.fsm' },
+		bts = { 'enemy.bt.zakfoe' },
 		defaults = {
 			trigger = '',
 			conditions = {},

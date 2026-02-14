@@ -103,7 +103,7 @@ function stafffoe.register_enemy_definition()
 		def_id = 'enemy.def.stafffoe',
 		class = stafffoe,
 		type = 'sprite',
-		fsms = { 'enemy.fsm' },
+		bts = { 'enemy.bt.stafffoe' },
 		defaults = {
 			trigger = '',
 			conditions = {},

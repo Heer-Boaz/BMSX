@@ -58,6 +58,7 @@ end
 
 local function start_flying(self, blackboard)
 	set_takeoff_heading(self)
+	self.mijter_state = 'flying'
 	self:change_sprite_on_direction()
 	blackboard.nodedata.mijter_takeoff_ticks = math.random(constants.enemy.mijter_wait_takeoff_min_steps, constants.enemy.mijter_wait_takeoff_max_steps)
 	blackboard.nodedata.mijter_turn_ticks = math.random(constants.enemy.mijter_turn_min_steps, constants.enemy.mijter_turn_max_steps)
@@ -66,6 +67,7 @@ local function start_flying(self, blackboard)
 end
 
 function mijterfoe:ctor()
+	self.mijter_state = 'waiting'
 	self.horizontal_dir_mod = 0
 	self.vertical_dir_mod = 0
 	self.mijter_entry_lock_ticks = constants.enemy.mijter_room_entry_lock_steps
@@ -174,46 +176,20 @@ function mijterfoe.bt_tick_flying(self, blackboard)
 	return behaviourtree.running
 end
 
+function mijterfoe.bt_tick(self, blackboard)
+	if self.mijter_state == 'waiting' then
+		return mijterfoe.bt_tick_waiting(self, blackboard)
+	end
+	return mijterfoe.bt_tick_flying(self, blackboard)
+end
+
 function mijterfoe.register_behaviour_tree(bt_id)
 	behaviourtree.register_definition(bt_id, {
 		root = {
-			type = 'selector',
-			children = {
-				{
-					type = 'sequence',
-					children = {
-						{
-							type = 'condition',
-							condition = function(target)
-								return target:has_tag('e.w')
-							end,
-						},
-						{
-							type = 'action',
-							action = function(target, blackboard)
-								return mijterfoe.bt_tick_waiting(target, blackboard)
-							end,
-						},
-					},
-				},
-				{
-					type = 'sequence',
-					children = {
-						{
-							type = 'condition',
-							condition = function(target)
-								return target:has_tag('e.f')
-							end,
-						},
-						{
-							type = 'action',
-							action = function(target, blackboard)
-								return mijterfoe.bt_tick_flying(target, blackboard)
-							end,
-						},
-					},
-				},
-			},
+			type = 'action',
+			action = function(target, blackboard)
+				return mijterfoe.bt_tick(target, blackboard)
+			end,
 		},
 	})
 end
@@ -235,7 +211,7 @@ function mijterfoe.register_enemy_definition()
 		def_id = 'enemy.def.mijterfoe',
 		class = mijterfoe,
 		type = 'sprite',
-		fsms = { 'enemy.fsm' },
+		bts = { 'enemy.bt.mijterfoe' },
 		defaults = {
 			trigger = '',
 			conditions = {},

@@ -66,7 +66,7 @@ function vlokspawner.register_enemy_definition()
 		def_id = 'enemy.def.vlokspawner',
 		class = vlokspawner,
 		type = 'sprite',
-		fsms = { 'enemy.fsm' },
+		bts = { 'enemy.bt.vlokspawner' },
 		defaults = {
 			trigger = '',
 			conditions = {},

@@ -107,7 +107,7 @@ function boekfoe.register_enemy_definition()
 		def_id = 'enemy.def.boekfoe',
 		class = boekfoe,
 		type = 'sprite',
-		fsms = { 'enemy.fsm' },
+		bts = { 'enemy.bt.boekfoe' },
 		defaults = {
 			trigger = '',
 			conditions = {},

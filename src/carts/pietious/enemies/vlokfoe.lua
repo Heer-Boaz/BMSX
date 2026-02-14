@@ -38,7 +38,7 @@ function vlokfoe.register_enemy_definition()
 		def_id = 'enemy.def.vlokfoe',
 		class = vlokfoe,
 		type = 'sprite',
-		fsms = { 'enemy.fsm' },
+		bts = { 'enemy.bt.vlokfoe' },
 		defaults = {
 			trigger = '',
 			conditions = {},
