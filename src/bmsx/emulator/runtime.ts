@@ -33,7 +33,6 @@ import { applyRuntimeAssetLayer, buildRuntimeAssetLayer, type RuntimeAssetLayer 
 import { decodeBinary } from '../serializer/binencoder';
 import { tokenKeyFromAsset, tokenKeyFromId } from '../util/asset_tokens';
 import { createIdentifierCanonicalizer } from '../utils/identifier_canonicalizer';
-import { parseWavInfo } from '../utils/wav';
 import { Api } from './api';
 import { CPU, Table, type Closure, type Value, type Program, type ProgramMetadata, RunResult, type NativeFunction, type NativeObject } from './cpu';
 import { StringPool, StringValue } from './string_pool';
@@ -55,6 +54,7 @@ import { applyWorkspaceOverridesToCart } from './workspace';
 import { buildLuaSources, type LuaSourceRegistry } from './lua_sources';
 import * as runtimeIde from './runtime_ide';
 import * as runtimeLuaPipeline from './runtime_lua_pipeline';
+import { registerAudioAssets as registerAudioAssetsFromSource } from './runtime_assets';
 import { LuaDebuggerController, type LuaDebuggerSessionMetrics } from '../lua/luadebugger';
 import type { ParsedLuaChunk } from './ide/lua_parse';
 import { RenderSubmission } from '../render/backend/pipeline_interfaces';
@@ -1648,27 +1648,7 @@ export class Runtime {
 	}
 
 	private registerAudioAssets(source: RawAssetSource): void {
-		const entries = source.list('audio');
-		for (let index = 0; index < entries.length; index += 1) {
-			const entry = entries[index];
-			if (this.memory.hasAsset(entry.resid)) {
-				continue;
-			}
-			if (typeof entry.start !== 'number' || typeof entry.end !== 'number') {
-				throw new Error(`[Runtime] Audio asset '${entry.resid}' missing ROM buffer offsets.`);
-			}
-			const buffer = source.getBytesView(entry);
-			const info = parseWavInfo(buffer);
-			this.memory.registerAudioMeta({
-				id: entry.resid,
-				sampleRate: info.sampleRate,
-				channels: info.channels,
-				bitsPerSample: info.bitsPerSample,
-				frames: info.frames,
-				dataOffset: info.dataOffset,
-				dataSize: info.dataLength,
-			});
-		}
+		registerAudioAssetsFromSource(source, this.memory);
 	}
 
 	private rebuildAssetMetaCaches(assets: RuntimeAssets): void {

@@ -8,6 +8,10 @@
 #include "../utils/mem_snapshot.h"
 #include <cstring>
 #include <stdexcept>
+#include <limits>
+#define STB_VORBIS_NO_STDIO
+#define STB_VORBIS_NO_PUSHDATA_API
+#include "../vendor/stb_vorbis.c"
 #if BMSX_ENABLE_ZLIB
 #include <zlib.h>
 #endif
@@ -1133,6 +1137,15 @@ struct WavInfo {
 	size_t dataSize = 0;
 };
 
+struct OggVorbisInfo {
+	i32 channels = 0;
+	i32 sampleRate = 0;
+	size_t dataOffset = 0;
+	size_t dataSize = 0;
+	size_t frames = 0;
+	std::vector<u8> pcm;
+};
+
 static WavInfo parseWav(const u8* data, size_t size) {
 	if (size < 12) {
 		throw BMSX_RUNTIME_ERROR("WAV data too small");
@@ -1191,6 +1204,81 @@ static WavInfo parseWav(const u8* data, size_t size) {
 	}
 
 	return info;
+}
+
+static bool isOggStream(const u8* data, size_t size) {
+	if (size < 4) {
+		return false;
+	}
+	return std::memcmp(data, "OggS", 4) == 0;
+}
+
+static bool isWav(const u8* data, size_t size) {
+	if (size < 12) {
+		return false;
+	}
+	return std::memcmp(data, "RIFF", 4) == 0 && std::memcmp(data + 8, "WAVE", 4) == 0;
+}
+
+static OggVorbisInfo parseOggVorbis(const u8* data, size_t size) {
+	if (size > static_cast<size_t>(std::numeric_limits<int>::max())) {
+		throw BMSX_RUNTIME_ERROR("OGG buffer is too large for vorbis decoder.");
+	}
+	int error = 0;
+	stb_vorbis* decoder = stb_vorbis_open_memory(data, static_cast<int>(size), &error, nullptr);
+	if (!decoder) {
+		throw BMSX_RUNTIME_ERROR("Failed to open OGG/Vorbis stream.");
+	}
+
+	const stb_vorbis_info info = stb_vorbis_get_info(decoder);
+	if (info.channels <= 0 || info.channels > 2) {
+		stb_vorbis_close(decoder);
+		throw BMSX_RUNTIME_ERROR("Unsupported OGG/Vorbis channel count: " + std::to_string(info.channels));
+	}
+	if (info.sample_rate <= 0) {
+		stb_vorbis_close(decoder);
+		throw BMSX_RUNTIME_ERROR("Invalid OGG/Vorbis sample rate.");
+	}
+
+	const i64 predictedFrames = stb_vorbis_stream_length_in_samples(decoder);
+	const size_t expectedFrames = predictedFrames > 0 ? static_cast<size_t>(predictedFrames) : 0;
+	const int channels = info.channels;
+	const size_t chunkSamples = 4096;
+	std::vector<i16> samples;
+	if (expectedFrames > 0) {
+		samples.reserve(expectedFrames * static_cast<size_t>(channels));
+	}
+	std::vector<i16> chunk(static_cast<size_t>(chunkSamples) * static_cast<size_t>(channels));
+
+	size_t decodedFrames = 0;
+	while (true) {
+		const int got = stb_vorbis_get_samples_short_interleaved(
+			decoder,
+			channels,
+			chunk.data(),
+			static_cast<int>(chunk.size())
+		);
+		if (got <= 0) {
+			break;
+		}
+		const size_t gotSamples = static_cast<size_t>(got) * static_cast<size_t>(channels);
+		samples.insert(samples.end(), chunk.data(), chunk.data() + gotSamples);
+		decodedFrames += static_cast<size_t>(got);
+		if (expectedFrames > 0 && decodedFrames >= expectedFrames) {
+			break;
+		}
+	}
+
+	stb_vorbis_close(decoder);
+
+	OggVorbisInfo result;
+	result.channels = info.channels;
+	result.sampleRate = info.sample_rate;
+	result.frames = channels > 0 ? samples.size() / static_cast<size_t>(channels) : 0;
+	result.dataSize = samples.size() * sizeof(i16);
+	result.pcm.resize(result.dataSize);
+	std::memcpy(result.pcm.data(), samples.data(), result.dataSize);
+	return result;
 }
 
 // Decompress zlib data
@@ -1509,15 +1597,28 @@ bool loadAssetsFromRom(const u8* buffer,
 
 			const u8* audioData = romData + bufStart;
 			size_t audioSize = bufEnd - bufStart;
-			WavInfo wav = parseWav(audioData, audioSize);
-			audioAsset.sampleRate = wav.sampleRate;
-			audioAsset.channels = wav.channels;
-			audioAsset.bitsPerSample = wav.bitsPerSample;
-			audioAsset.dataOffset = static_cast<size_t>(wav.data - audioData);
-			audioAsset.dataSize = wav.dataSize;
-			const size_t bytesPerSample = static_cast<size_t>(wav.bitsPerSample / 8);
-			const size_t totalSamples = wav.dataSize / bytesPerSample;
-			audioAsset.frames = totalSamples / static_cast<size_t>(wav.channels);
+			if (isWav(audioData, audioSize)) {
+				WavInfo wav = parseWav(audioData, audioSize);
+				audioAsset.sampleRate = wav.sampleRate;
+				audioAsset.channels = wav.channels;
+				audioAsset.bitsPerSample = wav.bitsPerSample;
+				audioAsset.dataOffset = static_cast<size_t>(wav.data - audioData);
+				audioAsset.dataSize = wav.dataSize;
+				const size_t bytesPerSample = static_cast<size_t>(wav.bitsPerSample / 8);
+				const size_t totalSamples = wav.dataSize / bytesPerSample;
+				audioAsset.frames = totalSamples / static_cast<size_t>(wav.channels);
+			} else if (isOggStream(audioData, audioSize)) {
+				OggVorbisInfo vorbis = parseOggVorbis(audioData, audioSize);
+				audioAsset.sampleRate = vorbis.sampleRate;
+				audioAsset.channels = vorbis.channels;
+				audioAsset.bitsPerSample = 16;
+				audioAsset.dataOffset = vorbis.dataOffset;
+				audioAsset.dataSize = vorbis.dataSize;
+				audioAsset.frames = vorbis.frames;
+				audioAsset.bytes = std::move(vorbis.pcm);
+			} else {
+				throw BMSX_RUNTIME_ERROR("Unsupported audio format: " + assetId);
+			}
 
 			assets.audio[assetToken] = std::move(audioAsset);
 		}
