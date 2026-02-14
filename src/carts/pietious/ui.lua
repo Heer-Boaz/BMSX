@@ -120,7 +120,4 @@ return {
 	ui = ui,
 	define_ui_fsm = define_ui_fsm,
 	register_ui_definition = register_ui_definition,
-	ui_def_id = 'ui.def',
-	ui_instance_id = 'ui.instance',
-	ui_fsm_id = 'ui.fsm',
 }

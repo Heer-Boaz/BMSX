@@ -278,7 +278,4 @@ return {
 	flow_service = flow_service,
 	define_flow_service_fsm = define_flow_service_fsm,
 	register_flow_service_definition = register_flow_service_definition,
-	flow_service_def_id = 'flow_service.def',
-	flow_service_instance_id = 'flow_service.instance',
-	flow_service_fsm_id = 'flow_service.fsm',
 }

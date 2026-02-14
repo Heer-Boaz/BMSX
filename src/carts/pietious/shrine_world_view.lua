@@ -104,6 +104,4 @@ end
 return {
 	shrine_world_view = shrine_world_view,
 	register_shrine_world_view_definition = register_shrine_world_view_definition,
-	shrine_world_view_def_id = 'shrine_world_view.def',
-	shrine_world_view_instance_id = 'shrine_world_view.instance',
 }

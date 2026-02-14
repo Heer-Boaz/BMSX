@@ -53,7 +53,4 @@ return {
 	director = director,
 	define_director_fsm = define_director_fsm,
 	register_director_definition = register_director_definition,
-	director_def_id = 'director.def',
-	director_instance_id = 'director.instance',
-	director_fsm_id = 'director.fsm',
 }

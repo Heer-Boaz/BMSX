@@ -2920,7 +2920,4 @@ return {
 	player = player,
 	define_player_fsm = define_player_fsm,
 	register_player_definition = register_player_definition,
-	player_def_id = 'player.def',
-	player_instance_id = 'player.instance',
-	player_fsm_id = 'player.fsm',
 }

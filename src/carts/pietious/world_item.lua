@@ -1,4 +1,5 @@
 local constants = require('constants')
+local combat_overlap = require('combat_overlap')
 local world_item = {}
 world_item.__index = world_item
 
@@ -11,7 +12,7 @@ end
 
 function world_item:bind_events()
 	self.events:on({
-		event_name = 'overlap',
+		event_name = 'overlap.begin',
 		subscriber = self,
 		handler = function(event)
 			self:on_overlap(event)
@@ -28,7 +29,7 @@ function world_item:configure_from_room_def(def, room, item_service_id)
 end
 
 function world_item:on_overlap(event)
-	if event.other_id ~= 'player.instance' then
+	if combat_overlap.classify_player_contact(event) ~= 'body' then
 		return
 	end
 
@@ -78,6 +79,4 @@ return {
 	world_item = world_item,
 	define_world_item_fsm = define_world_item_fsm,
 	register_world_item_definition = register_world_item_definition,
-	world_item_def_id = 'world_item.def',
-	world_item_fsm_id = 'world_item.fsm',
 }

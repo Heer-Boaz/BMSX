@@ -327,7 +327,4 @@ return {
 	item_service = item_service,
 	define_item_service_fsm = define_item_service_fsm,
 	register_item_service_definition = register_item_service_definition,
-	item_service_def_id = 'item_service.def',
-	item_service_instance_id = 'item_service.instance',
-	item_service_fsm_id = 'item_service.fsm',
 }

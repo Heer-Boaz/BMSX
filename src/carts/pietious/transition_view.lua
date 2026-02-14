@@ -80,7 +80,4 @@ return {
 	transition_view = transition_view,
 	define_transition_view_fsm = define_transition_view_fsm,
 	register_transition_view_definition = register_transition_view_definition,
-	transition_view_def_id = 'transition_view.def',
-	transition_view_instance_id = 'transition_view.instance',
-	transition_view_fsm_id = 'transition_view.fsm',
 }

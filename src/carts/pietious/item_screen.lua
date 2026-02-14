@@ -211,7 +211,4 @@ return {
 	item_screen = item_screen,
 	define_item_screen_fsm = define_item_screen_fsm,
 	register_item_screen_definition = register_item_screen_definition,
-	item_screen_def_id = 'item_screen.def',
-	item_screen_instance_id = 'item_screen.instance',
-	item_screen_fsm_id = 'item_screen.fsm',
 }

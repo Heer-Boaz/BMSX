@@ -152,7 +152,4 @@ end
 return {
 	define_elevator_service_fsm = define_elevator_service_fsm,
 	register_elevator_service_definition = register_elevator_service_definition,
-	elevator_service_def_id = 'elevator_service.def',
-	elevator_service_instance_id = 'elevator_service.instance',
-	elevator_service_fsm_id = 'elevator_service.fsm',
 }

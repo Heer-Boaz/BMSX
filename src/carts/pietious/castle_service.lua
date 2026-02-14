@@ -188,6 +188,4 @@ end
 return {
 	castle_service = castle_service,
 	register_castle_service_definition = register_castle_service_definition,
-	castle_service_def_id = 'castle_service.def',
-	castle_service_instance_id = 'castle_service.instance',
 }

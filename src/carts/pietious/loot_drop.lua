@@ -1,5 +1,6 @@
 local constants = require('constants')
 local eventemitter = require('eventemitter')
+local combat_overlap = require('combat_overlap')
 
 local loot_drop = {}
 loot_drop.__index = loot_drop
@@ -16,10 +17,10 @@ end
 
 function loot_drop:bind_events()
 	self.events:on({
-		event_name = 'overlap.stay',
+		event_name = 'overlap.begin',
 		subscriber = self,
 		handler = function(event)
-			self:on_overlap_stay(event)
+			self:on_overlap_begin(event)
 		end,
 	})
 
@@ -39,12 +40,11 @@ function loot_drop:ctor()
 	self:bind_events()
 end
 
-function loot_drop:on_overlap_stay(event)
-	if event.other_id ~= 'player.instance' then
+function loot_drop:on_overlap_begin(event)
+	if combat_overlap.classify_player_contact(event) ~= 'body' then
 		return
 	end
-
-	local player = object('player.instance')
+	local player = object(event.other_id)
 
 	if player:collect_loot(self.loot_type, self.loot_value) then
 		self:dispatch_state_event('picked')
@@ -89,6 +89,4 @@ return {
 	loot_drop = loot_drop,
 	define_loot_drop_fsm = define_loot_drop_fsm,
 	register_loot_drop_definition = register_loot_drop_definition,
-	loot_drop_def_id = 'loot_drop.def',
-	loot_drop_fsm_id = 'loot_drop.fsm',
 }

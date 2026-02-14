@@ -12,7 +12,7 @@ end
 
 function rock:bind_events()
 	self.events:on({
-		event_name = 'overlap',
+		event_name = 'overlap.begin',
 		subscriber = self,
 		handler = function(event)
 			self:on_overlap(event)
@@ -60,8 +60,8 @@ end
 
 function rock:on_overlap(event)
 	local player = object('player.instance')
-	local contact_kind = combat_overlap.classify_player_contact(self, event, constants, player)
-	if not combat_overlap.has_sword_contact(contact_kind) then
+	local contact_kind = combat_overlap.classify_player_contact(event)
+	if contact_kind ~= 'sword' then
 		return
 	end
 	self:take_weapon_hit('sword', player.sword_id)
@@ -131,6 +131,4 @@ return {
 	rock = rock,
 	define_rock_fsm = define_rock_fsm,
 	register_rock_definition = register_rock_definition,
-	rock_def_id = 'rock.def',
-	rock_fsm_id = 'rock.fsm',
 }

@@ -121,6 +121,4 @@ return {
 	enemy_explosion = enemy_explosion,
 	define_enemy_explosion_fsm = define_enemy_explosion_fsm,
 	register_enemy_explosion_definition = register_enemy_explosion_definition,
-	enemy_explosion_def_id = 'enemy_explosion.def',
-	enemy_explosion_fsm_id = 'enemy_explosion.fsm',
 }

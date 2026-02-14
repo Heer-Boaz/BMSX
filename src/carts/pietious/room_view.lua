@@ -83,7 +83,4 @@ return {
 	room_view = room_view,
 	define_room_view_fsm = define_room_view_fsm,
 	register_room_view_definition = register_room_view_definition,
-	room_view_def_id = 'room_view.def',
-	room_view_instance_id = 'room_view.instance',
-	room_view_fsm_id = 'room_view.fsm',
 }

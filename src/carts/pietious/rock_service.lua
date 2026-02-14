@@ -146,7 +146,4 @@ return {
 	rock_service = rock_service,
 	define_rock_service_fsm = define_rock_service_fsm,
 	register_rock_service_definition = register_rock_service_definition,
-	rock_service_def_id = 'rock_service.def',
-	rock_service_instance_id = 'rock_service.instance',
-	rock_service_fsm_id = 'rock_service.fsm',
 }

@@ -1,6 +1,7 @@
 local constants = require('constants')
 local room_module = require('room')
 local eventemitter = require('eventemitter')
+local combat_overlap = require('combat_overlap')
 
 local pepernoot_projectile = {}
 pepernoot_projectile.__index = pepernoot_projectile
@@ -27,10 +28,10 @@ end
 
 function pepernoot_projectile:bind_events()
 	self.events:on({
-		event_name = 'overlap.stay',
+		event_name = 'overlap.begin',
 		subscriber = self,
 		handler = function(event)
-			self:on_overlap_stay(event)
+			self:on_overlap_begin(event)
 		end,
 	})
 
@@ -48,27 +49,13 @@ function pepernoot_projectile:dispose(reason)
 	self:mark_for_disposal()
 end
 
-function pepernoot_projectile:on_overlap_stay(event)
-	local other_id = event.other_id
-	if string.sub(other_id, 1, 6) == 'enemy_' then
-		local enemy = object(other_id)
-		if enemy == nil then
-			return
-		end
-		if enemy:take_weapon_hit('pepernoot', self.projectile_id) then
-			self:dispose('hit_enemy')
-		end
+function pepernoot_projectile:on_overlap_begin(event)
+	if event.other_layer ~= constants.collision.enemy_layer then
 		return
 	end
-
-	if string.sub(other_id, 1, 5) == 'rock_' then
-		local rock = object(other_id)
-		if rock == nil then
-			return
-		end
-		if rock:take_weapon_hit('pepernoot', self.projectile_id) then
-			self:dispose('hit_rock')
-		end
+	local target = object(event.other_id)
+	if target:take_weapon_hit('pepernoot', self.projectile_id) then
+		self:dispose('hit_target')
 	end
 end
 
@@ -113,6 +100,4 @@ return {
 	pepernoot_projectile = pepernoot_projectile,
 	define_pepernoot_projectile_fsm = define_pepernoot_projectile_fsm,
 	register_pepernoot_projectile_definition = register_pepernoot_projectile_definition,
-	pepernoot_projectile_def_id = 'pepernoot_projectile.def',
-	pepernoot_projectile_fsm_id = 'pepernoot_projectile.fsm',
 }

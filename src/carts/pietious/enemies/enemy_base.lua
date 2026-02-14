@@ -20,7 +20,7 @@ end
 
 function enemy_base.bind_overlap_events(self)
 	self.events:on({
-		event_name = 'overlap',
+		event_name = 'overlap.begin',
 		subscriber = self,
 		handler = function(event)
 			self:on_overlap(event)
@@ -98,14 +98,14 @@ end
 
 function enemy_base.on_overlap(self, event)
 	local player = object('player.instance')
-	local contact_kind = combat_overlap.classify_player_contact(self, event, constants, player)
-	if contact_kind == combat_overlap.contact_kind.none then
+	local contact_kind = combat_overlap.classify_player_contact(event)
+	if contact_kind == nil then
 		return
 	end
-	if combat_overlap.has_sword_contact(contact_kind) then
+	if contact_kind == 'sword' then
 		self:take_weapon_hit('sword', player.sword_id)
 	end
-	if combat_overlap.has_body_contact(contact_kind) and self.dangerous then
+	if contact_kind == 'body' and self.dangerous then
 		player:take_hit(self.damage, self.x + math.modf(self.sx / 2), self.y + math.modf(self.sy / 2), self.enemy_kind)
 	end
 end
