@@ -50,15 +50,15 @@ function zakfoe.bt_tick(self, blackboard)
 
 		if self.direction == 'left' then
 			if self.x < 0
-				or room_module.is_solid_at_world(service('castle_service.instance').current_room, self.x + 2, self.y + 2)
-				or not room_module.is_solid_at_world(service('castle_service.instance').current_room, self.x + 2 - constants.room.tile_half, self.y + 14 + constants.room.tile_size)
+				or room_module.is_solid_at_world(service('c').current_room, self.x + 2, self.y + 2)
+				or not room_module.is_solid_at_world(service('c').current_room, self.x + 2 - constants.room.tile_half, self.y + 14 + constants.room.tile_size)
 			then
 				self.direction = 'right'
 			end
 		else
-			if self.x + 14 >= service('castle_service.instance').current_room.world_width
-				or room_module.is_solid_at_world(service('castle_service.instance').current_room, self.x + 14, self.y + 2)
-				or not room_module.is_solid_at_world(service('castle_service.instance').current_room, self.x + 14 + constants.room.tile_half, self.y + 14 + constants.room.tile_size)
+			if self.x + 14 >= service('c').current_room.world_width
+				or room_module.is_solid_at_world(service('c').current_room, self.x + 14, self.y + 2)
+				or not room_module.is_solid_at_world(service('c').current_room, self.x + 14 + constants.room.tile_half, self.y + 14 + constants.room.tile_size)
 			then
 				self.direction = 'left'
 			end

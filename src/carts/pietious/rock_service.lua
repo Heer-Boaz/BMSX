@@ -1,5 +1,4 @@
 local eventemitter = require('eventemitter')
-local rock_module = require('rock')
 
 local rock_service = {}
 rock_service.__index = rock_service
@@ -46,7 +45,7 @@ function rock_service:deactivate_unused_rocks(active_ids)
 end
 
 function rock_service:sync_room_rocks()
-	local room = service('castle_service.instance').current_room
+	local room = service('c').current_room
 	if self.synced_room_number == room.room_number and not self.sync_dirty then
 		return
 	end
@@ -73,7 +72,7 @@ function rock_service:on_rock_break_started(rock_id, room_number, item_type, x, 
 		return
 	end
 	self.destroyed_rock_ids[rock_id] = true
-	service(self.item_service_id):add_item_drop_from_rock(rock_id, room_number, item_type, x, y)
+	service('i'):add_item_drop_from_rock(rock_id, room_number, item_type, x, y)
 end
 
 function rock_service:on_rock_destroyed(rock_id)
@@ -131,8 +130,7 @@ local function register_rock_service_definition()
 		auto_activate = true,
 		defaults = {
 			id = 'rock_service.instance',
-			item_service_id = 'item_service.instance',
-			rock_def_id = rock_module.rock_def_id,
+				rock_def_id = 'rock.def',
 			rocks_by_id = {},
 			destroyed_rock_ids = {},
 			synced_room_number = 0,

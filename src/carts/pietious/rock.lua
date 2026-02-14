@@ -23,7 +23,7 @@ end
 function rock:ctor()
 	self.collider:apply_collision_profile('enemy')
 	self:gfx('stone')
-	self.sprite_component.offset = { x = 0, y = 0, z = 113 }
+	self.sprite_component.offset = { x = 0, y = 0, z = 10 }
 	self:bind_events()
 end
 
@@ -54,7 +54,7 @@ end
 
 function rock:begin_break()
 	local drop_y = self.y + drop_offset_y_for_item_type(self.item_type)
-	local room = service('castle_service.instance').current_room
+	local room = service('c').current_room
 	service(self.rock_service_id):on_rock_break_started(self.id, room.room_number, self.item_type, self.x, drop_y)
 end
 

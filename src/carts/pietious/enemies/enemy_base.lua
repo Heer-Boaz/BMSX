@@ -1,5 +1,4 @@
 local eventemitter = require('eventemitter')
-local enemy_explosion_module = require('enemy_explosion')
 local worldobject = require('worldobject')
 local combat_overlap = require('combat_overlap')
 
@@ -39,7 +38,7 @@ function enemy_base.bind_overlap_events(self)
 end
 
 function enemy_base.projectile_is_out_of_bounds(self)
-	local room = service('castle_service.instance').current_room
+	local room = service('c').current_room
 	local bound_right = self.projectile_bound_right
 	if bound_right <= 0 then
 		bound_right = self.sx
@@ -66,8 +65,8 @@ end
 
 function enemy_base.spawn_death_effect(self)
 	enemy_death_effect_sequence = enemy_death_effect_sequence + 1
-	local room = service('castle_service.instance').current_room
-	inst(enemy_explosion_module.enemy_explosion_def_id, {
+	local room = service('c').current_room
+	inst('enemy_explosion.def', {
 		room_number = room.room_number,
 		loot_type = self:choose_drop_type(),
 		space_id = room.space_id,
@@ -87,7 +86,7 @@ function enemy_base.take_weapon_hit(self, weapon_kind, hit_id)
 		self.dangerous = false
 		self:spawn_death_effect()
 		eventemitter.eventemitter.instance:emit('enemy.defeated', self.id, {
-			room_number = service('castle_service.instance').current_room.room_number,
+			room_number = service('c').current_room.room_number,
 			kind = self.enemy_kind,
 			trigger = self.trigger,
 		})

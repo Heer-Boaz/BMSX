@@ -13,7 +13,7 @@ end
 
 function boekfoe.bt_tick(self, blackboard)
 	local node = blackboard.nodedata
-	local room = service('castle_service.instance').current_room
+	local room = service('c').current_room
 
 	if self.boek_state == 'closed' then
 		local closed_ticks = node.boek_state_ticks

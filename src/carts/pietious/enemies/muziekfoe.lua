@@ -29,7 +29,7 @@ end
 
 function muziekfoe.bt_tick(self, blackboard)
 	local node = blackboard.nodedata
-	local room = service('castle_service.instance').current_room
+	local room = service('c').current_room
 	local dir_modifier = self.direction == 'left' and -1 or 1
 	local move_accum = node.muziek_move_accum
 	if move_accum == nil then
@@ -43,11 +43,11 @@ function muziekfoe.bt_tick(self, blackboard)
 	node.muziek_move_accum = move_accum
 
 	if self.direction == 'left' then
-		if self.x < 0 or room_module.is_solid_at_world(service('castle_service.instance').current_room, self.x, self.y) then
+		if self.x < 0 or room_module.is_solid_at_world(service('c').current_room, self.x, self.y) then
 			self.direction = 'right'
 		end
 	else
-		if self.x + 24 >= service('castle_service.instance').current_room.world_width or room_module.is_solid_at_world(service('castle_service.instance').current_room, self.x + 24, self.y + 16) then
+		if self.x + 24 >= service('c').current_room.world_width or room_module.is_solid_at_world(service('c').current_room, self.x + 24, self.y + 16) then
 			self.direction = 'left'
 		end
 	end

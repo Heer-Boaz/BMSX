@@ -71,7 +71,7 @@ function flow_service:item_screen_toggle_pressed()
 end
 
 function flow_service:resolve_room_space()
-	local castle_service = service('castle_service.instance')
+	local castle_service = service('c')
 	local room = castle_service.current_room
 	return room.space_id
 end
@@ -88,7 +88,7 @@ function flow_service:spawn_interaction_view_if_needed()
 	if object('shrine_world_view.instance') ~= nil then
 		return
 	end
-	inst(shrine_world_view_module.shrine_world_view_def_id, {
+	inst('shrine_world_view.def', {
 		id = 'shrine_world_view.instance',
 		space_id = 'ui',
 		pos = { x = 0, y = 0, z = 0 },

@@ -20,7 +20,7 @@ end
 
 function stafffoe.bt_tick(self, blackboard)
 	local node = blackboard.nodedata
-	local room = service('castle_service.instance').current_room
+	local room = service('c').current_room
 	if self.staff_state == 'default' then
 		local wait_ticks = node.staff_wait_ticks
 		if wait_ticks == nil then

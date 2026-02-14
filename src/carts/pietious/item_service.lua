@@ -1,6 +1,5 @@
 local constants = require('constants')
 local eventemitter = require('eventemitter')
-local world_item_module = require('world_item')
 
 local item_service = {}
 item_service.__index = item_service
@@ -115,8 +114,6 @@ function item_service:sync_item_instance(item_def, room)
 			pos = { x = item_def.x, y = item_def.y, z = 140 },
 			item_id = item_def.id,
 			room_number = room.room_number,
-			item_service_id = self.id,
-			source_kind = item_def.source_kind,
 			item_type = item_def.item_type,
 		})
 		self.items_by_id[id] = instance
@@ -154,7 +151,7 @@ function item_service:deactivate_unused_items(active_ids)
 end
 
 function item_service:refresh_current_room_items()
-	local room = service('castle_service.instance').current_room
+	local room = service('c').current_room
 	local room_number = room.room_number
 	self.synced_room_number = room_number
 
@@ -209,7 +206,6 @@ function item_service:add_item_drop_from_rock(rock_id, room_number, item_type, x
 		x = x,
 		y = y,
 		item_type = item_type,
-		source_kind = 'rock',
 		conditions = {},
 	}
 
@@ -226,7 +222,7 @@ function item_service:apply_pickup_to_player(player, item_type)
 	return pickup_handler(player)
 end
 
-function item_service:try_pick_item(item_id, room_number, item_type, source_kind)
+function item_service:try_pick_item(item_id, room_number, item_type)
 	local player = object('player.instance')
 	if player.health <= 0 then
 		return false
@@ -234,11 +230,11 @@ function item_service:try_pick_item(item_id, room_number, item_type, source_kind
 	if not self:apply_pickup_to_player(player, item_type) then
 		return false
 	end
-	self:on_item_picked(item_id, room_number, item_type, source_kind)
+	self:on_item_picked(item_id, room_number, item_type)
 	return true
 end
 
-function item_service:on_item_picked(item_id, room_number, _item_type, _source_kind)
+function item_service:on_item_picked(item_id, room_number, _item_type)
 	self.picked_item_ids[item_id] = true
 	local event_defs = self.event_item_defs_by_room[room_number]
 	if event_defs ~= nil then
@@ -311,8 +307,8 @@ local function register_item_service_definition()
 		fsms = { 'item_service.fsm' },
 		auto_activate = true,
 		defaults = {
-			id = 'item_service.instance',
-			world_item_def_id = world_item_module.world_item_def_id,
+			id = 'i',
+				world_item_def_id = 'world_item.def',
 			items_by_id = {},
 			event_item_defs_by_room = {},
 			picked_item_ids = {},

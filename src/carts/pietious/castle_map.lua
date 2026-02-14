@@ -277,7 +277,6 @@ local function build_items(room_number, object_defs)
 				x = tile_x_to_world(object_def.x),
 				y = tile_y_to_world(object_def.y),
 				item_type = object_def.itemtype,
-				source_kind = 'map',
 				conditions = copy_conditions(object_def),
 			}
 		end

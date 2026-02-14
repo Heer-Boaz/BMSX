@@ -10,7 +10,7 @@ function director:bind_visual()
 end
 
 function director:draw_room_tiles()
-	local room = service('castle_service.instance').current_room
+	local room = service('c').current_room
 	local tile_size = room.tile_size
 	local origin_x = room.tile_origin_x
 	local origin_y = room.tile_origin_y

@@ -142,7 +142,7 @@ local function register_elevator_service_definition()
 		fsms = { 'elevator_service.fsm' },
 		defaults = {
 			id = 'elevator_service.instance',
-			castle_service_id = 'castle_service.instance',
+			castle_service_id = 'c',
 			elevator_routes = elevator_routes,
 			tick_enabled = true,
 		},

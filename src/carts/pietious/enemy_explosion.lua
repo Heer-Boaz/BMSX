@@ -4,8 +4,6 @@ local eventemitter = require('eventemitter')
 local enemy_explosion = {}
 enemy_explosion.__index = enemy_explosion
 
-local loot_drop_module = require('loot_drop')
-
 local explosion_frames = {
 	'explosion_2',
 	'explosion_3',
@@ -66,10 +64,10 @@ function enemy_explosion:spawn_loot()
 		return
 	end
 
-	local room_space = service('castle_service.instance').current_room.space_id
+	local room_space = service('c').current_room.space_id
 	loot_spawn_sequence = loot_spawn_sequence + 1
 	local loot_id = string.format('%s.loot.%d', self.id, loot_spawn_sequence)
-	inst(loot_drop_module.loot_drop_def_id, {
+	inst('loot_drop.def', {
 		id = loot_id,
 		loot_type = self.loot_type,
 		space_id = room_space,

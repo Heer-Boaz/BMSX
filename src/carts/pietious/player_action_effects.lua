@@ -1,6 +1,5 @@
 local constants = require('constants')
 local room_module = require('room')
-local pepernoot_projectile_module = require('pepernoot_projectile')
 
 local player_action_effects = {}
 
@@ -28,7 +27,7 @@ function player_action_effects.attach_player_methods(player)
 	end
 
 	function player:find_near_lithograph()
-		local lithographs = service('castle_service.instance').current_room.lithographs
+		local lithographs = service('c').current_room.lithographs
 			local player_left = self.x
 			local player_top = self.y
 			local player_right = self.x + self.width
@@ -58,7 +57,7 @@ local function try_fire_pepernoot_effect(context)
 	if owner.weapon_level < constants.secondary_weapon.pepernoot_weapon_level_cost then
 		return
 	end
-	local room = service('castle_service.instance').current_room
+	local room = service('c').current_room
 
 	owner.pepernoot_projectile_sequence = owner.pepernoot_projectile_sequence + 1
 	local projectile_id = string.format('pepernoot_%d_%d', owner.player_index, owner.pepernoot_projectile_sequence)
@@ -66,7 +65,7 @@ local function try_fire_pepernoot_effect(context)
 	local spawn_y = owner.y + constants.secondary_weapon.pepernoot_spawn_offset_y
 	spawn_x, spawn_y = room_module.snap_world_to_tile(room, spawn_x, spawn_y)
 
-	inst(pepernoot_projectile_module.pepernoot_projectile_def_id, {
+	inst('pepernoot_projectile.def', {
 		id = projectile_id,
 		room = room,
 		space_id = room.space_id,

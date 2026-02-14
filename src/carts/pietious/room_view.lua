@@ -35,7 +35,7 @@ function room_view:ctor()
 end
 
 function room_view:render_room()
-	local castle_service = service('castle_service.instance')
+	local castle_service = service('c')
 	local room = castle_service.current_room
 	if get_space() ~= room.space_id then
 		return

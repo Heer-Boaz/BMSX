@@ -5,14 +5,14 @@ world_item.__index = world_item
 
 function world_item:ctor()
 	self.collider:apply_collision_profile('pickup')
-	self:gfx('item_health')
-	self.sprite_component.offset = { x = 0, y = 0, z = 112 }
+	self:gfx(constants.world_item.sprite[self.item_type])
+	self.sprite_component.offset = { x = 0, y = 0, z = 8 }
 	self:bind_events()
 end
 
 function world_item:bind_events()
 	self.events:on({
-		event_name = 'overlap.begin',
+		event_name = 'overlap',
 		subscriber = self,
 		handler = function(event)
 			self:on_overlap(event)
@@ -20,10 +20,8 @@ function world_item:bind_events()
 	})
 end
 
-function world_item:configure_from_room_def(def, room, item_service_id)
+function world_item:configure_from_room_def(def, room)
 	self.item_id = def.id
-	self.item_service_id = item_service_id
-	self.source_kind = def.source_kind
 	self.item_type = def.item_type
 	self:gfx(constants.world_item.sprite[self.item_type])
 end
@@ -33,8 +31,8 @@ function world_item:on_overlap(event)
 		return
 	end
 
-	local room = service('castle_service.instance').current_room
-	if service(self.item_service_id):try_pick_item(self.item_id, room.room_number, self.item_type, self.source_kind) then
+	local room = service('c').current_room
+	if service('i'):try_pick_item(self.item_id, room.room_number, self.item_type) then
 		self:dispatch_state_event('picked')
 	end
 end
@@ -45,16 +43,10 @@ local function define_world_item_fsm()
 		states = {
 			active = {
 				on = {
-					['picked'] = '/picked',
+					['picked'] = function(self)
+						self:mark_for_disposal()
+					end,
 				},
-				entering_state = function(self)
-					self:gfx(constants.world_item.sprite[self.item_type])
-				end,
-			},
-			picked = {
-				entering_state = function(self)
-					self:mark_for_disposal()
-				end,
 			},
 		},
 	})
@@ -68,9 +60,7 @@ local function register_world_item_definition()
 		fsms = { 'world_item.fsm' },
 		defaults = {
 			item_id = '',
-			item_type = 'ammofromrock',
-			source_kind = 'map',
-			item_service_id = 'item_service.instance',
+			item_type = '',
 		},
 	})
 end

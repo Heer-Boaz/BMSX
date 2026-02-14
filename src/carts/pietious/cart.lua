@@ -93,13 +93,13 @@ function new_game()
 	add_space('ui')
 	set_space('castle')
 
-	local castle_service = create_service(castle_service_module.castle_service_def_id, {
-		id = castle_service_module.castle_service_instance_id,
+	local castle_service = create_service('castle_service.def', {
+		id = 'c',
 	})
 	local room = castle_service:initialize(1)
 
-	inst(player_module.player_def_id, {
-		id = player_module.player_instance_id,
+	inst('player.def', {
+		id = 'player.instance',
 		room = room,
 		space_id = room.space_id,
 		spawn_x = constants.player.start_x,
@@ -107,48 +107,47 @@ function new_game()
 		pos = { x = constants.player.start_x, y = constants.player.start_y, z = 140 },
 	})
 
-	inst(room_view_module.room_view_def_id, {
-		id = room_view_module.room_view_instance_id,
+	inst('room_view.def', {
+		id = 'room_view.instance',
 		room = room,
 		space_id = room.space_id,
 		pos = { x = 0, y = 0, z = 0 },
 	})
 
-	inst(transition_view_module.transition_view_def_id, {
-		id = transition_view_module.transition_view_instance_id,
+	inst('transition_view.def', {
+		id = 'transition_view.instance',
 		space_id = 'transition',
 		pos = { x = 0, y = 0, z = 0 },
 	})
 
-	inst(item_screen_module.item_screen_def_id, {
-		id = item_screen_module.item_screen_instance_id,
+	inst('item_screen.def', {
+		id = 'item_screen.instance',
 		space_id = 'item',
 		pos = { x = 0, y = 0, z = 0 },
 	})
 
-	inst(ui_module.ui_def_id, {
-		id = ui_module.ui_instance_id,
+	inst('ui.def', {
+		id = 'ui.instance',
 		space_id = room.space_id,
 		pos = { x = 0, y = 0, z = 0 },
 	})
 
-	create_service(flow_service_module.flow_service_def_id, {
-		id = flow_service_module.flow_service_instance_id,
+	create_service('flow_service.def', {
+		id = 'flow_service.instance',
 	})
 
-	create_service(item_service_module.item_service_def_id, {
-		id = item_service_module.item_service_instance_id,
+	create_service('item_service.def', {
+		id = 'i',
 	})
 
-	local elevator_service = create_service(elevator_service_module.elevator_service_def_id, {
-		id = elevator_service_module.elevator_service_instance_id,
-		castle_service_id = castle_service_module.castle_service_instance_id,
+	local elevator_service = create_service('elevator_service.def', {
+		id = 'elevator_service.instance',
+		castle_service_id = 'c',
 	})
 	elevator_service:activate()
 
-	create_service(rock_service_module.rock_service_def_id, {
-		id = rock_service_module.rock_service_instance_id,
-		item_service_id = item_service_module.item_service_instance_id,
+	create_service('rock_service.def', {
+		id = 'rock_service.instance',
 	})
 end
 

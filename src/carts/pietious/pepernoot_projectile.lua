@@ -14,7 +14,7 @@ function pepernoot_projectile:ctor()
 end
 
 function pepernoot_projectile:refresh_tile_aligned_sprite_offset()
-	local room = service('castle_service.instance').current_room
+	local room = service('c').current_room
 	local snapped_x, snapped_y = room_module.snap_world_to_tile(room, self.x, self.y)
 	self.sprite_component.offset.x = snapped_x - self.x
 	self.sprite_component.offset.y = snapped_y - self.y
@@ -63,11 +63,11 @@ function pepernoot_projectile:tick()
 	self.x = self.x + (self.direction * constants.secondary_weapon.pepernoot_speed_px)
 	self:refresh_tile_aligned_sprite_offset()
 
-	if self.x <= 0 or self.x >= service('castle_service.instance').current_room.world_width then
+	if self.x <= 0 or self.x >= service('c').current_room.world_width then
 		self:dispose('out_of_bounds')
 		return
 	end
-	if room_module.is_solid_at_world(service('castle_service.instance').current_room, self.x, self.y) then
+	if room_module.is_solid_at_world(service('c').current_room, self.x, self.y) then
 		self:dispose('wall')
 	end
 end

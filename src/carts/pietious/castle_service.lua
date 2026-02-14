@@ -172,7 +172,7 @@ local function register_castle_service_definition()
 		def_id = 'castle_service.def',
 		class = castle_service,
 		defaults = {
-			id = 'castle_service.instance',
+			id = 'c',
 			current_room = nil,
 			current_room_number = 0,
 			map_id = 0,

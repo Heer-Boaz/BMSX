@@ -351,7 +351,6 @@ local function build_items(item_defs)
 			x = def.x,
 			y = def.y,
 			item_type = def.item_type,
-			source_kind = def.source_kind,
 			conditions = def.conditions,
 		}
 	end

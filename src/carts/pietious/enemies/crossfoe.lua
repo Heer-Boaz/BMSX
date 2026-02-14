@@ -76,7 +76,7 @@ function crossfoe.bt_tick_flying(self, blackboard)
 	if (self.cross_state == 'flying_left' and self.x < (player.x - player.width))
 		or (self.cross_state == 'flying_right' and self.x > (player.x + (player.width * 2)))
 		or next_left < 0
-		or next_right > service('castle_service.instance').current_room.world_width
+		or next_right > service('c').current_room.world_width
 	then
 		self.cross_state = 'waiting'
 		self.cross_spin_direction = 'down'

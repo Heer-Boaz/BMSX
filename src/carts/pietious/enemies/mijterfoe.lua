@@ -159,12 +159,12 @@ function mijterfoe.bt_tick_flying(self, blackboard)
 
 	if self.x <= 0 then
 		self.horizontal_dir_mod = 1
-	elseif self.x + 14 >= service('castle_service.instance').current_room.world_width then
+	elseif self.x + 14 >= service('c').current_room.world_width then
 		self.horizontal_dir_mod = -1
 	end
-	if self.y <= service('castle_service.instance').current_room.world_top then
+	if self.y <= service('c').current_room.world_top then
 		self.vertical_dir_mod = 1
-	elseif self.y + 14 >= service('castle_service.instance').current_room.world_height then
+	elseif self.y + 14 >= service('c').current_room.world_height then
 		self.vertical_dir_mod = -1
 	end
 

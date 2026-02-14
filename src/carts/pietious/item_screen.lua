@@ -81,7 +81,7 @@ end
 
 function item_screen:draw_inventory_items()
 	local player = object('player.instance')
-	local room_space = service('castle_service.instance').current_room.space_id
+	local room_space = service('c').current_room.space_id
 	for i = 1, #inventory_item_order do
 		local item_type = inventory_item_order[i]
 		if player:has_inventory_item(item_type) then
@@ -104,7 +104,7 @@ end
 
 function item_screen:draw_map()
 	local player = object('player.instance')
-	local room = service('castle_service.instance').current_room
+	local room = service('c').current_room
 	local world_number = room.world_number
 	if world_number <= 0 then
 		return

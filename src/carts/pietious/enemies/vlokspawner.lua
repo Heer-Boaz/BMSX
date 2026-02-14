@@ -21,7 +21,7 @@ function vlokspawner.bt_tick(self, blackboard)
 		return behaviourtree.running
 	end
 
-	local room = service('castle_service.instance').current_room
+	local room = service('c').current_room
 	local spawn_x = math.random(2, 29) * room.tile_size
 	local spawn_y = room.world_top
 	local random_x = math.random(-5, 4)

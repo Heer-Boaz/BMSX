@@ -19,13 +19,13 @@ function marspeinenaardappel.bt_tick(self, _blackboard)
 
 	if speed_x < 0 then
 		local test_x = self.x + speed_x
-		if test_x <= 0 or room_module.is_solid_at_world(service('castle_service.instance').current_room, test_x, self.y) then
+		if test_x <= 0 or room_module.is_solid_at_world(service('c').current_room, test_x, self.y) then
 			self.speed_x_num = -speed_x
 			self.x = self.x + (self.speed_x_num * 2)
 		end
 	elseif speed_x > 0 then
 		local test_x = self.x + self.sx + speed_x
-		if test_x >= service('castle_service.instance').current_room.world_width or room_module.is_solid_at_world(service('castle_service.instance').current_room, test_x, self.y) then
+		if test_x >= service('c').current_room.world_width or room_module.is_solid_at_world(service('c').current_room, test_x, self.y) then
 			self.speed_x_num = -speed_x
 			self.x = self.x + (self.speed_x_num * 2)
 		end
@@ -33,13 +33,13 @@ function marspeinenaardappel.bt_tick(self, _blackboard)
 
 	if speed_y < 0 then
 		local test_y = self.y + speed_y
-		if test_y <= service('castle_service.instance').current_room.world_top or room_module.is_solid_at_world(service('castle_service.instance').current_room, self.x, test_y) then
+		if test_y <= service('c').current_room.world_top or room_module.is_solid_at_world(service('c').current_room, self.x, test_y) then
 			self.speed_y_num = -speed_y
 			self.y = self.y + (self.speed_y_num * 2)
 		end
 	elseif speed_y > 0 then
 		local test_y = self.y + self.sy + speed_y
-		if test_y >= service('castle_service.instance').current_room.world_height or room_module.is_solid_at_world(service('castle_service.instance').current_room, self.x, test_y) then
+		if test_y >= service('c').current_room.world_height or room_module.is_solid_at_world(service('c').current_room, self.x, test_y) then
 			self.speed_y_num = -speed_y
 			self.y = self.y + (self.speed_y_num * 2)
 		end

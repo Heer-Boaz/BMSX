@@ -28,7 +28,7 @@ function shrine_world_view:ctor()
 end
 
 function shrine_world_view:draw_room_objects()
-	local castle_service = service('castle_service.instance')
+	local castle_service = service('c')
 	local room_state = castle_service.current_room
 	if get_space() ~= room_state.space_id then
 		return
