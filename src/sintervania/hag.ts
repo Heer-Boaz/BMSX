@@ -36,8 +36,6 @@ export class Hag extends Foe {
 		this.size = Hag.HagSize;
 		this.getOrCreateCollider().setLocalArea(Hag.HagHitArea);
 		this.itemSpawnedAfterKill = itemSpawned;
-		// Request overlap events for this object
-		this.getOrCreateCollider().generateoverlapevents = true;
 		this.health = 1;
 		this.direction = dir;
 		this.flippedH = this.direction == 'left';

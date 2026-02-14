@@ -349,9 +349,7 @@ function overlap2dsystem:update()
 			if collider.enabled and not obj.dispose_flag then
 				broadphase:add_or_update(collider)
 				collider_lookup[collider.id] = collider
-				if collider.generateoverlapevents then
-					event_colliders[#event_colliders + 1] = collider
-				end
+				event_colliders[#event_colliders + 1] = collider
 			end
 		end
 	end
@@ -388,7 +386,7 @@ function overlap2dsystem:update()
 				if a_hits_b and b_hits_a then
 					local other_space = world_instance:_object_space_id(other_owner)
 					if self:space_match(collider.spaceevents, owner_space, other_space) then
-						if not (other.generateoverlapevents and other.id < collider.id) then
+						if not (other.id < collider.id) then
 							if collision2d.collides(collider, other) then
 								add_pair(new_pairs, collider.id, other.id)
 							end
@@ -444,21 +442,12 @@ function overlap2dsystem:update()
 		if not owner_a.active or not owner_b.active then
 			return
 		end
-		local emit_a = col_a.generateoverlapevents
-		local emit_b = col_b.generateoverlapevents
-		if not emit_a and not emit_b then
-			return
-		end
 		local resolved_contact = contact
 		if resolved_contact == nil and event_name ~= "overlap.end" then
 			resolved_contact = collision2d.get_contact2d(col_a, col_b)
 		end
-		if emit_a then
-			owner_a.events:emit(event_name, build_overlap_payload(col_a, col_b, owner_b, resolved_contact, phase))
-		end
-		if emit_b then
-			owner_b.events:emit(event_name, build_overlap_payload(col_b, col_a, owner_a, clone_contact_with_flipped_normal(resolved_contact), phase))
-		end
+		owner_a.events:emit(event_name, build_overlap_payload(col_a, col_b, owner_b, resolved_contact, phase))
+		owner_b.events:emit(event_name, build_overlap_payload(col_b, col_a, owner_a, clone_contact_with_flipped_normal(resolved_contact), phase))
 	end
 
 	for i = 1, #begins, 2 do

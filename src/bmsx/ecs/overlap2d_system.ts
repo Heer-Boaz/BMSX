@@ -722,14 +722,13 @@ export class Overlap2DSystem extends ECSystem {
 		const broadphase = Collision2DSystem.ensureIndex(world);
 		broadphase.clear();
 
-		// Collect colliders that want events across active objects (current + UI overlay)
+		// Collect active colliders across active objects (current + UI overlay)
 		const eventColliders: Collider2DComponent[] = [];
 		for (const o of world.objects({ scope: 'active' })) {
 			for (const c of o.get_components(Collider2DComponent)) {
 				if (!c.enabled) continue;
 				broadphase.addOrUpdate(c);
 				colliderLookup.set(c.id, c);
-				if (!c.generateoverlapevents) continue;
 				eventColliders.push(c);
 			}
 		}
@@ -764,7 +763,7 @@ export class Overlap2DSystem extends ECSystem {
 				}
 				const otherSpace = otherSpaceObj.id;
 				if (!this.spaceMatch(col.spaceevents, oSpace, otherSpace, world)) continue;
-				if (otherCol.generateoverlapevents && otherCol.id < col.id) continue;
+				if (otherCol.id < col.id) continue;
 				// Final narrow-phase test
 				if (!Collision2DSystem.collides(col, otherCol)) continue;
 				const key = makePairKey(col.id, otherCol.id);
@@ -792,20 +791,15 @@ export class Overlap2DSystem extends ECSystem {
 			if (!ownerA || !ownerB) {
 				throw new Error('[Overlap2DSystem] Attempted to emit overlap event without collider parents.');
 			}
-			const emitA = colA.generateoverlapevents;
-			const emitB = colB.generateoverlapevents;
-			if (!emitA && !emitB) return;
 			let resolvedContact = contact;
 			if (resolvedContact === undefined && eventName !== 'overlap.end') {
 				resolvedContact = Collision2DSystem.getContact2D(colA, colB) as Contact2D;
 			}
-			if (emitA) ownerA.events.emit(eventName, buildOverlapPayload(colA, colB, ownerB, resolvedContact, phase));
-			if (emitB) {
-				const flipped: Contact2D = resolvedContact?.normal
-					? { ...resolvedContact, normal: { x: -resolvedContact.normal.x, y: -resolvedContact.normal.y } }
-					: resolvedContact;
-				ownerB.events.emit(eventName, buildOverlapPayload(colB, colA, ownerA, flipped, phase));
-			}
+			ownerA.events.emit(eventName, buildOverlapPayload(colA, colB, ownerB, resolvedContact, phase));
+			const flipped: Contact2D = resolvedContact?.normal
+				? { ...resolvedContact, normal: { x: -resolvedContact.normal.x, y: -resolvedContact.normal.y } }
+				: resolvedContact;
+			ownerB.events.emit(eventName, buildOverlapPayload(colB, colA, ownerA, flipped, phase));
 		};
 		const id2col = (id: string): Collider2DComponent => {
 			const found = colliderLookup.get(id) ?? $.registry.get<Collider2DComponent>(id);

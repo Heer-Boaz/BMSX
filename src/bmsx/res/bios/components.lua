@@ -291,7 +291,6 @@ function collider2dcomponent.new(opts)
 	self.layer = opts.layer or 1
 	self.mask = opts.mask or 0xFFFFFFFF
 	self.istrigger = opts.istrigger ~= false
-	self.generateoverlapevents = opts.generateoverlapevents == true
 	self.spaceevents = opts.spaceevents or "current"
 	self._local_area = nil
 	self._local_polys = nil

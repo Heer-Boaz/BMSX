@@ -647,8 +647,6 @@ class draaischijf extends SpriteObject {
 		this.size = { x: 64, y: 64, z: undefined };
 		this.getOrCreateCollider().setLocalArea(new_area(24, 24, 64 - 24, 64 - 24));
 		this.z = 20;
-		// Receive overlap events to polish imperfections while grinding
-		this.getOrCreateCollider().generateoverlapevents = true;
 	}
 
 	public static handle_input_idle_state(this: draaischijf): void {

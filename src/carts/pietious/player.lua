@@ -273,14 +273,12 @@ function player:ctor()
 	self:gfx('pietolon_stand_r')
 	self.sprite_component.offset = { x = 0, y = 0, z = 110 }
 	self.collider.id_local = 'body'
-	self.collider.generateoverlapevents = false
 	self.collider.spaceevents = 'current'
 	self.collider:apply_collision_profile('player')
 
 	self.sword_collider = components.collider2dcomponent.new({
 		parent = self,
 		id_local = 'sword',
-		generateoverlapevents = false,
 		spaceevents = 'current',
 	})
 	self.sword_collider:apply_collision_profile('projectile')

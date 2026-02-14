@@ -25,8 +25,6 @@ export class Collider2DComponent extends Component<any> {
 	public mask: number = 0xFFFFFFFF;
 	/** If true, collider is considered a trigger (no physical response). */
 	public istrigger: boolean = true;
-	/** If true, the OverlapSystem will emit overlap events for this collider. */
-	public generateoverlapevents: boolean = false;
 	/**
 	 * Scope for overlap event pairing by space.
 	 * - 'current': only objects in the same active space
@@ -61,7 +59,6 @@ export class Collider2DComponent extends Component<any> {
 		layer?: number;
 		mask?: number;
 		istrigger?: boolean;
-		generateoverlapevents?: boolean;
 		spaceevents?: 'current' | 'ui' | 'both' | 'all';
 	}) {
 		opts.id_local = opts.id_local ?? 'collider2d';
@@ -70,7 +67,6 @@ export class Collider2DComponent extends Component<any> {
 		this.layer = opts.layer ?? this.layer;
 		this.mask = opts.mask ?? this.mask;
 		this.istrigger = opts.istrigger ?? this.istrigger;
-		this.generateoverlapevents = opts.generateoverlapevents ?? this.generateoverlapevents;
 		this.spaceevents = opts.spaceevents ?? this.spaceevents;
 	}
 

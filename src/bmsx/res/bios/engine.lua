@@ -319,7 +319,7 @@ function engine.vdp_load_slot(slot, atlas_id)
 	vdp_load_queue[vdp_load_queue_tail] = {
 		job_id = vdp_load_job_seq,
 		slot = slot,
-		atlas_id = atlas_id_int,
+		atlas_id = atlas_id,
 		allow_handler = true,
 		src = src,
 		len = len,
