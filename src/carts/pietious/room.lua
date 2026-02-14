@@ -307,17 +307,6 @@ local function build_stairs(map_rows, tile_size, origin_x, origin_y, player_heig
 	return stairs
 end
 
-local function copy_conditions(source_conditions)
-	if source_conditions == nil then
-		return {}
-	end
-	local conditions = {}
-	for i = 1, #source_conditions do
-		conditions[i] = source_conditions[i]
-	end
-	return conditions
-end
-
 local function build_enemies(enemy_defs)
 	local enemies = {}
 	for i = 1, #enemy_defs do
@@ -347,7 +336,7 @@ local function build_rocks(rock_defs)
 			x = def.x,
 			y = def.y,
 			item_type = def.item_type,
-			conditions = copy_conditions(def.conditions),
+			conditions = def.conditions,
 		}
 	end
 	return rocks
@@ -363,7 +352,7 @@ local function build_items(item_defs)
 			y = def.y,
 			item_type = def.item_type,
 			source_kind = def.source_kind,
-			conditions = copy_conditions(def.conditions),
+			conditions = def.conditions,
 		}
 	end
 	return items
