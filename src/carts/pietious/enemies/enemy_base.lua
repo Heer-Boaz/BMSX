@@ -7,6 +7,7 @@ local enemy_base = {}
 local enemy_death_effect_sequence = 0
 
 function enemy_base.ctor(self)
+	self.collider:apply_collision_profile('enemy')
 	self.collider.spaceevents = 'current'
 	self.collider:set_shape_offset(0, 0)
 	self.sprite_component.offset.z = 110
