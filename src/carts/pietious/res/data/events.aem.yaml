@@ -32,57 +32,10 @@ events:
         rules:
             - go:
                   audio_id: foeexplosion
-    sword_start_quiet:
+    p.e.try_sword:
         channel: sfx
         max_voices: 1
         policy: replace
         rules:
             - go:
                   audio_id: slice
-    sword_start_walking_right:
-        channel: sfx
-        max_voices: 1
-        policy: replace
-        rules:
-            - go:
-                  audio_id: slice
-    sword_start_walking_left:
-        channel: sfx
-        max_voices: 1
-        policy: replace
-        rules:
-            - go:
-                  audio_id: slice
-
-    sword_start_jumping:
-        channel: sfx
-        max_voices: 1
-        policy: replace
-        rules:
-            - go:
-                  audio_id: slice
-
-    sword_start_controlled_fall:
-        channel: sfx
-        max_voices: 1
-        policy: replace
-        rules:
-            - go:
-                  audio_id: slice
-
-    sword_start_uncontrolled_fall:
-        channel: sfx
-        max_voices: 1
-        policy: replace
-        rules:
-            - go:
-                  audio_id: slice
-
-    sword_start_stairs:
-        channel: sfx
-        max_voices: 1
-        policy: replace
-        rules:
-            - go:
-                  audio_id: slice
-

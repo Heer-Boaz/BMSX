@@ -99,6 +99,10 @@ end
 function player_action_effects.define_player_effects(state_tags)
 	define_effect({
 		id = effect_ids.try_start_sword,
+		blocked_tags = {
+			state_tags.group.damage_lock,
+			state_tags.group.sword,
+		},
 		handler = function(context)
 			context.owner:try_start_sword_state()
 		end,
