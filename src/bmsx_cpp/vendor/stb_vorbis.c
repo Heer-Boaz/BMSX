@@ -4643,20 +4643,24 @@ static uint32 vorbis_find_page(stb_vorbis *f, uint32 *end, uint32 *last)
 static int get_seek_page_info(stb_vorbis *f, ProbedPage *z)
 {
    uint8 header[27], lacing[255];
-   int i,len;
+   int i, len;
+   int lacing_count;
 
    // record where the page starts
    z->page_start = stb_vorbis_get_file_offset(f);
 
    // parse the header
-   getn(f, header, 27);
+   if (!getn(f, header, 27))
+      return 0;
    if (header[0] != 'O' || header[1] != 'g' || header[2] != 'g' || header[3] != 'S')
       return 0;
-   getn(f, lacing, header[26]);
+   lacing_count = header[26];
+   if (!getn(f, lacing, lacing_count))
+      return 0;
 
    // determine the length of the payload
    len = 0;
-   for (i=0; i < header[26]; ++i)
+   for (i=0; i < lacing_count; ++i)
       len += lacing[i];
 
    // this implies where the page ends
