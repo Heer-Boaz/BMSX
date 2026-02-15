@@ -1,8 +1,7 @@
 local constants = require('constants')
-local eventemitter = require('eventemitter')
+local room = require('room')
 local components = require('components')
-local room_module = require('room')
-local player_action_effects_module = require('player_action_effects')
+local roomplayer_action_effects = require('player_action_effects')
 
 local player = {}
 player.__index = player
@@ -65,37 +64,23 @@ local state_tags = {
 	},
 }
 
-player_action_effects_module.attach_player_methods(player)
+roomplayer_action_effects.attach_player_methods(player)
 
 local player_input_action_effect_program = {
 	eval = 'all',
 	bindings = {
 		{
-			name = 'player.secondary.y',
-			on = { press = 'y[jp]' },
-			go = {
-				press = { ['effect.trigger'] = player_action_effects_module.effect_ids.try_use_secondary },
-			},
-		},
-		{
-			name = 'player.sword.x',
-			on = { press = 'x[jp]' },
-			go = {
-				press = { ['effect.trigger'] = player_action_effects_module.effect_ids.try_start_sword },
-			},
-		},
-		{
-			name = 'player.sword.b',
+			name = 'secondary',
 			on = { press = 'b[jp]' },
 			go = {
-				press = { ['effect.trigger'] = player_action_effects_module.effect_ids.try_start_sword },
+				press = { ['effect.trigger'] = roomplayer_action_effects.effect_ids.try_use_secondary },
 			},
 		},
 		{
-			name = 'player.sword.a',
-			on = { press = 'a[jp]' },
+			name = 'sword',
+			on = { press = 'x[jp]' },
 			go = {
-				press = { ['effect.trigger'] = player_action_effects_module.effect_ids.try_start_sword },
+				press = { ['effect.trigger'] = roomplayer_action_effects.effect_ids.try_start_sword },
 			},
 		},
 	},
@@ -121,7 +106,7 @@ local player_hit_blink_sequence_frames = timeline.range(constants.damage.hit_bli
 local player_fall_substate_sequence_frames = timeline.range(12)
 
 function player:bind_events()
-	eventemitter.eventemitter.instance:on({
+	self.events:on({
 		event = 'room.switched',
 		subscriber = self,
 		handler = function(event)
@@ -252,18 +237,6 @@ function player:define_runtime_timelines()
 	}))
 end
 
-function player:initialize_runtime_state()
-	self.inventory_items = {}
-	self.secondary_weapon = 'none'
-	self.weapon_level = 0
-	self:reset_runtime()
-	self:apply_presentation_state()
-	self:update_collision_state()
-	self:get_timeline('p.seq.s'):force_seek(0)
-	self:reset_hit_invulnerability_sequence()
-	self:reset_fall_substate_sequence()
-end
-
 function player:ctor()
 	self:bind_events()
 	self:add_component(components.inputactioneffectcomponent.new({
@@ -272,6 +245,8 @@ function player:ctor()
 	}))
 	self:gfx('pietolon_stand_r')
 	self.sprite_component.offset = { x = 0, y = 0, z = 110 }
+	self.width = 16
+	self.height = 16
 	self.collider.id_local = 'body'
 	self.collider.spaceevents = 'current'
 	self.collider:apply_collision_profile('player')
@@ -292,10 +267,24 @@ function player:ctor()
 		offset = { x = 0, y = 0, z = 111 },
 		collider_local_id = 'sword',
 	})
-	self.sword_sprite.enabled = false
 	self:add_component(self.sword_sprite)
+	self.sword_sprite.enabled = false
 	self:define_runtime_timelines()
-	self:initialize_runtime_state()
+	self.inventory_items = {}
+	self.secondary_weapon = 'none'
+	self.weapon_level = 0
+	self:reset_runtime()
+	self:apply_presentation_state()
+	self:update_collision_state()
+	self:get_timeline('p.seq.s'):force_seek(0)
+	self:reset_hit_invulnerability_sequence()
+	self:reset_fall_substate_sequence()
+
+	self.sprite_component.scale.x = 1
+	self.sprite_component.scale.y = 1
+	self.sprite_component.offset.x = 0
+	self.sprite_component.offset.z = 110
+
 end
 
 function player:get_damage_state_imgid()
@@ -343,11 +332,7 @@ function player:apply_presentation_state()
 		self.sword_sprite.enabled = false
 		self:gfx(imgid)
 		self.sprite_component.flip.flip_h = self.facing < 0
-		self.sprite_component.scale.x = 1
-		self.sprite_component.scale.y = 1
-		self.sprite_component.offset.x = 0
 		self.sprite_component.offset.y = self.to_enter_cut
-		self.sprite_component.offset.z = 110
 		self.visible = true
 		return
 	end
@@ -526,11 +511,12 @@ function player:advance_sword_sequence()
 	local sword_sequence = self:get_timeline('p.seq.s')
 	if sword_sequence:value() >= constants.sword.duration_frames then
 		if self:has_tag(state_tags.variant.c_fall_sword) then
-			if self.facing > 0 then
-				self.x = self.x - 2
-			else
-				self.x = self.x + 2
-			end
+			-- FORBIDDEN! WILL MAKE PIETOLON MOVE BACKWARDS WHILE SWORDING AND FALLING!!!!!!
+			-- if self.facing > 0 then
+			-- 	self.x = self.x - 2
+			-- else
+			-- 	self.x = self.x + 2
+			-- end
 		end
 		self:dispatch_state_event(player_sword_end_event)
 		return
@@ -671,21 +657,6 @@ function player:collect_loot(loot_type, loot_value)
 		return true
 	end
 	error('pietious player invalid loot_type=' .. tostring(loot_type))
-end
-
-function player:has_inventory_item(item_type)
-	return self.inventory_items[item_type] == true
-end
-
-function player:add_inventory_item(item_type)
-	self.inventory_items[item_type] = true
-end
-
-function player:equip_secondary_weapon(item_type)
-	if self.secondary_weapon == item_type then
-		return
-	end
-	self.secondary_weapon = item_type
 end
 
 function player:find_near_shrine()
@@ -834,7 +805,7 @@ function player:leave_shrine_overlay()
 end
 
 function player:try_open_world_entrance_with_key()
-	if not self:has_inventory_item('keyworld1') then
+	if not self.inventory_items['keyworld1'] == true then
 		return false
 	end
 
@@ -870,7 +841,7 @@ function player:try_start_world_or_shrine_interaction_from_down()
 end
 
 function player:get_walk_dx()
-	if self:has_inventory_item('schoentjes') then
+	if self.inventory_items['schoentjes'] == true then
 		self.walk_speed_accum = self.walk_speed_accum + constants.physics.walk_dx_schoentjes_num
 		local walk_dx = math.modf(self.walk_speed_accum / constants.physics.walk_dx_schoentjes_den)
 		self.walk_speed_accum = self.walk_speed_accum - (walk_dx * constants.physics.walk_dx_schoentjes_den)
@@ -878,11 +849,6 @@ function player:get_walk_dx()
 	end
 	self.walk_speed_accum = 0
 	return constants.physics.walk_dx
-end
-
-function player:emit_room_switched_event(payload)
-	local emitter = eventemitter.eventemitter.instance
-	emitter:emit('room.switched', self.id, payload)
 end
 
 function player:try_switch_room(direction, keep_stairs_lock)
@@ -913,7 +879,7 @@ function player:try_switch_room(direction, keep_stairs_lock)
 		self.enter_leave_shrine_text_lines = {}
 		self.enter_leave_wait_started = false
 		self:dispatch_state_event('leave_world_start')
-		self:emit_room_switched_event({
+		self.events:emit('room.switched', {
 			from = leave_switch.from_room_number,
 			to = leave_switch.to_room_number,
 			dir = 'right',
@@ -946,7 +912,7 @@ function player:try_switch_room(direction, keep_stairs_lock)
 		self.stairs_x = -1
 		self.hit_stairs_lock = false
 	end
-	self:emit_room_switched_event({
+	self.events:emit('room.switched', {
 		from = switch.from_room_number,
 		to = switch.to_room_number,
 		dir = direction,
@@ -1140,10 +1106,10 @@ function player:try_step_off_stairs()
 		return false
 	end
 
-	local room = service('c').current_room
-	local tx = math.modf((self.x - room.tile_origin_x) / constants.room.tile_size)
-	local ty = math.modf((self.y - room.tile_origin_y) / constants.room.tile_size)
-	local dty = (self.y - room.tile_origin_y) - (ty * constants.room.tile_size)
+	local current_room = service('c').current_room
+	local tx = math.modf((self.x - current_room.tile_origin_x) / constants.room.tile_size)
+	local ty = math.modf((self.y - current_room.tile_origin_y) / constants.room.tile_size)
+	local dty = (self.y - current_room.tile_origin_y) - (ty * constants.room.tile_size)
 
 	local wall_tx
 	local wall_ty = ty + 4
@@ -1160,7 +1126,7 @@ function player:try_step_off_stairs()
 	end
 
 	local can_bottom_step
-	if dty > constants.room.tile_half and room_module.is_wall_at_tile(room, wall_tx, wall_ty) and not self:collides_at(self.x + probe_dx, self.y) then
+	if dty > constants.room.tile_half and room.is_wall_at_tile(current_room, wall_tx, wall_ty) and not self:collides_at(self.x + probe_dx, self.y) then
 		can_bottom_step = true
 	else
 		can_bottom_step = false
@@ -1179,7 +1145,7 @@ function player:try_step_off_stairs()
 			else
 				target_x = self.x - constants.room.tile_unit4
 			end
-			target_y = room.tile_origin_y + (ty * constants.room.tile_size)
+				target_y = current_room.tile_origin_y + (ty * constants.room.tile_size)
 		else
 			self.facing = dir
 			return false
@@ -1188,7 +1154,7 @@ function player:try_step_off_stairs()
 
 	self.facing = dir
 	local min_x = 0
-	local max_x = room.world_width - self.width
+	local max_x = current_room.world_width - self.width
 	if target_x < min_x then
 		target_x = min_x
 	end
@@ -1286,7 +1252,7 @@ function player:collides_at(x, y)
 		end
 	end
 
-	if room_module.overlaps_active_rock(service('c').current_room, x, y, self.width, self.height) then
+	if room.overlaps_active_rock(service('c').current_room, x, y, self.width, self.height) then
 		return true
 	end
 
@@ -1758,15 +1724,15 @@ function player:tick_entering_world()
 		local switch = castle_service:enter_world(self.enter_leave_world_target)
 		self.x = switch.spawn_x
 		self.y = switch.spawn_y
-		self.facing = switch.spawn_facing
-		self.enter_leave_world_target = ''
-		self.enter_leave_shrine_text_lines = {}
-		self.enter_leave_wait_started = false
-		self:emit_room_switched_event({
-			from = switch.from_room_number,
-			to = switch.to_room_number,
-			dir = switch.direction,
-			space = service('c').current_room.space_id,
+			self.facing = switch.spawn_facing
+			self.enter_leave_world_target = ''
+			self.enter_leave_shrine_text_lines = {}
+			self.enter_leave_wait_started = false
+			self.events:emit('room.switched', {
+				from = switch.from_room_number,
+				to = switch.to_room_number,
+				dir = switch.direction,
+				space = service('c').current_room.space_id,
 			x = self.x,
 			y = self.y,
 			transition_kind = switch.transition_kind,
@@ -2209,8 +2175,8 @@ function player:is_ground_below_for_hit_on_stairs()
 	local foot_y = self.y + self.height
 	local left_x = self.x + constants.room.tile_unit
 	local right_x = self.x + self.width - constants.room.tile_unit
-	return room_module.is_solid_at_world(service('c').current_room, left_x, foot_y)
-		or room_module.is_solid_at_world(service('c').current_room, right_x, foot_y)
+	return room.is_solid_at_world(service('c').current_room, left_x, foot_y)
+		or room.is_solid_at_world(service('c').current_room, right_x, foot_y)
 end
 
 function player:advance_hit_stairs_fall(dy)
@@ -2825,6 +2791,11 @@ local function define_player_fsm()
 			},
 		},
 		on = {
+			['enemy.contact_damage'] = {
+				go = function(self, _state, event)
+					self:take_hit(event.amount, event.source_x, event.source_y, event.reason)
+				end,
+			},
 			['hp_zero'] = '/dying',
 			['damage'] = '/hit_fall',
 			['damage_on_stairs'] = '/hit_collision',
@@ -2838,17 +2809,17 @@ local function define_player_fsm()
 end
 
 local function register_player_definition()
-	player_action_effects_module.define_player_effects(state_tags)
+	roomplayer_action_effects.define_player_effects(state_tags)
 	define_prefab({
 		def_id = 'player.def',
 		class = player,
 		type = 'sprite',
 		fsms = { 'player.fsm' },
 		effects = {
-			player_action_effects_module.effect_ids.try_start_sword,
-			player_action_effects_module.effect_ids.try_use_secondary,
-			player_action_effects_module.effect_ids.try_use_pepernoot,
-			player_action_effects_module.effect_ids.try_use_spyglass,
+			roomplayer_action_effects.effect_ids.try_start_sword,
+			roomplayer_action_effects.effect_ids.try_use_secondary,
+			roomplayer_action_effects.effect_ids.try_use_pepernoot,
+			roomplayer_action_effects.effect_ids.try_use_spyglass,
 		},
 		defaults = {
 			imgid = 'pietolon_stand_r',

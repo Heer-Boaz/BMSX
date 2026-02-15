@@ -59,8 +59,8 @@ const TASK = {
 	REBUILD_CHECK: 'Checken of rebuild nodig is',
 	MANIFEST_SCAN: 'Rom manifest zoekeren en parseren',
 	GAME_TYPECHECK: 'Game type-checkeren',
-	CART_LUA_LINT: 'Cart Lua linten',
 	GAME_BUNDLE: 'Game compileren+bundleren',
+	CART_LUA_LINT: 'Cart Lua linten',
 	RESOURCE_LIST: 'Resource lijst bouwen',
 	RESOURCE_LOAD: 'Resources laden en metadata genereren',
 	ATLAS_BUILD: 'Atlassen puzellen (indien nodig)',
@@ -75,12 +75,12 @@ const taskList: TaskName[] = [
 	TASK.REBUILD_CHECK,
 	TASK.MANIFEST_SCAN,
 	TASK.GAME_TYPECHECK,
-	TASK.CART_LUA_LINT,
 	TASK.GAME_BUNDLE,
 	TASK.RESOURCE_LIST,
 	TASK.RESOURCE_LOAD,
 	TASK.ATLAS_BUILD,
 	TASK.ROM_ASSETS,
+	TASK.CART_LUA_LINT,
 	TASK.ROM_FINALIZE,
 	TASK.DONE,
 ];
@@ -366,8 +366,9 @@ function formatEsbuildErrors(err: any): string[] {
 			for (const note of e.notes) {
 				const nloc = note.location;
 				const nlocStr = nloc?.file ? `${nloc.file}${nloc.line ? `:${nloc.line}` : ''}${nloc.column ? `:${nloc.column}` : ''}` : '';
-				const nmsg = note.text ?? '';
-				if (nmsg) result.push(nlocStr ? `  note: ${nlocStr}: ${nmsg}` : `  note: ${nmsg}`);
+				if (note.text) {
+					result.push(nlocStr ? `  note: ${nlocStr}: ${note.text}` : `  note: ${note.text}`);
+				}
 			}
 		}
 	}
@@ -440,7 +441,7 @@ class ProgressReporter {
 		}, Presets.shades_classic);
 	}
 	private currentTask(): string {
-		return this.tasks[0] ?? '';
+		return this.tasks[0] as string;
 	}
 	public getCurrentTask(): string {
 		return this.currentTask();
@@ -460,7 +461,7 @@ class ProgressReporter {
 	}
 
 	public async taskCompleted() {
-		const finishedTask = this.tasks.shift() ?? '';
+		const finishedTask = this.tasks.shift() as string;
 		this.completedTasks++;
 		this.detail = '';
 		this.recalcTotals();
@@ -864,10 +865,6 @@ async function main() {
 				await progress.taskCompleted();
 			}
 			const tsProject = pkgTsconfigPath;
-			if (!isEngineMode) {
-				await progress.runWithDetail('Lint cart Lua', () => lintCartLuaSources({ roots: Array.from(extraLuaPathSet) }));
-				await progress.taskCompleted();
-			}
 			if (shouldBundleCartCode) {
 				const stepLogs: string[] = [];
 				try {
@@ -902,6 +899,10 @@ async function main() {
 			appendProgramAsset(romAssets, romManifest, { includeSymbols: romPackDebug, optLevel });
 			stripLuaAssets(romAssets, romPackDebug);
 			await progress.taskCompleted();
+			if (!isEngineMode) {
+				await progress.runWithDetail('Lint cart Lua', () => lintCartLuaSources({ roots: Array.from(extraLuaPathSet) }));
+				await progress.taskCompleted();
+			}
 
 			await progress.runWithDetail('Finalize ROM pack', () => finalizeRompack(romAssets, rom_name, { projectRootPath, manifest: romManifest, status: message => progress.setDetail(message), debug: romPackDebug, zipRom: false }));
 			await progress.taskCompleted();
@@ -916,16 +917,28 @@ async function main() {
 			throw typeCheckError;
 		}
 	} catch (e) {
+		const message = e instanceof Error ? e.message : String(e);
+		const isCompilationFailureReport = typeof message === 'string'
+			&& /^Compilation failed with \d+ (?:Lua )?error\(s\):/.test(message);
+		const detailLines = typeof message === 'string' ? message.split('\n') : [String(message)];
 		if (progress) {
 			progress.stop();
 			await progress.pulse();
 			const failedTask = progress.getCurrentTask();
 			const summary = e instanceof LuaError
 				? `${resolveLuaSourcePath(e.path, luaErrorVirtualRoots)}:${e.line}:${e.column}: ${e.message}`
-				: (e as any)?.message?.split?.('\n')?.[0] ?? String(e);
+				: detailLines[0] ?? String(e);
 			if (failedTask) {
 				progress.fail(failedTask, summary);
 				writeOut(`${pc.red(`✘ Failed during: ${failedTask}`)}`, 'error');
+				if (!isCompilationFailureReport) {
+					for (let lineIndex = 1; lineIndex < detailLines.length; lineIndex += 1) {
+						const line = detailLines[lineIndex];
+						if (line.length > 0) {
+							writeOut(pc.red(line), 'error');
+						}
+					}
+				}
 			}
 		}
 
@@ -945,7 +958,11 @@ async function main() {
 			const mainMessage = (e as any)?.message as string;
 			if (mainMessage && mainMessage.trim().length > 0) {
 				const lines = mainMessage.split('\n').map(l => l.trimEnd()).filter(l => l.length > 0);
-				prettyErrors.push(...lines);
+				if (isCompilationFailureReport && lines.length > 0) {
+					prettyErrors.push(...lines.slice(1));
+				} else {
+					prettyErrors.push(...lines);
+				}
 			}
 		}
 

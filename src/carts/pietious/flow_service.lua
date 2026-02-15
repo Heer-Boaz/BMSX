@@ -1,5 +1,4 @@
 local constants = require('constants')
-local eventemitter = require('eventemitter')
 local shrine_world_view_module = require('shrine_world_view')
 
 local flow_service = {}
@@ -7,7 +6,7 @@ flow_service.__index = flow_service
 
 function flow_service:emit_state_changed(state_name)
 	local space = get_space()
-	eventemitter.eventemitter.instance:emit('flow.state_changed', self.id, {
+	self.events:emit('flow.state_changed', {
 		state = state_name,
 		space = space,
 	})
@@ -38,8 +37,9 @@ function flow_service:has_modal_overlay()
 end
 
 function flow_service:bind_events()
-	eventemitter.eventemitter.instance:on({
+	self.events:on({
 		event = 'room.switched',
+		emitter = 'pietolon',
 		subscriber = self,
 		handler = function(event)
 			if event.transition_kind == 'world_banner' then

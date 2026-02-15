@@ -33,6 +33,7 @@ import type { ProgramConstReloc } from './program_asset';
 import { StringPool, StringValue, isStringValue } from './string_pool';
 import type { CanonicalizationType } from '../rompack/rompack';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_EXT_CONST, MAX_OPERAND_BITS, writeInstruction } from './instruction_format';
+import { LuaSyntaxError } from '../lua/luaerrors';
 
 export type CompiledProgram = {
 	program: Program;
@@ -42,9 +43,35 @@ export type CompiledProgram = {
 	constRelocs: ProgramConstReloc[];
 };
 
+export type LuaCompileError = {
+	path: string;
+	message: string;
+	line: number;
+	column: number;
+};
+
+type CompileError = {
+	path: string;
+	stage: 'entry' | 'module';
+	message: string;
+};
+
 export type ProgramModule = {
 	path: string;
 	chunk: LuaChunk;
+};
+
+const normalizeSource = (source: string): string => source.replace(/\r\n|\r/g, '\n');
+
+export const isLuaCompileError = (value: unknown): value is LuaCompileError =>
+	value instanceof LuaSyntaxError;
+
+export const formatLuaCompileError = (error: LuaCompileError, source: string): string => {
+	const lines = normalizeSource(source).split('\n');
+	const sourceLine = lines[error.line - 1];
+	const gutter = `${error.line} | `;
+	const caret = Math.max(0, error.column - 1);
+	return `${error.path}:${error.line}:${error.column}: ${error.message}\n${gutter}${sourceLine}\n${' '.repeat(gutter.length + caret)}^`;
 };
 
 type CompileOptions = {
@@ -1855,6 +1882,22 @@ const extractAssignmentPath = (expression: LuaAssignableExpression): string[] | 
 	}
 };
 
+const extractCompileErrorMessage = (error: unknown, path: string): string => {
+	if (error instanceof Error) {
+		return error.message;
+	}
+	throw new Error(`[ProgramCompiler] Unexpected compile failure for ${path}.`);
+};
+
+const buildCompileFailureMessage = (errors: ReadonlyArray<CompileError>): string => {
+	const lines: string[] = [`Compilation failed with ${errors.length} error(s):`];
+	for (let index = 0; index < errors.length; index += 1) {
+		const error = errors[index];
+		lines.push(`[${index + 1}/${errors.length}] ${error.stage} ${error.path}: ${error.message}`);
+	}
+	return lines.join('\n');
+};
+
 function compileFunctionExpression(program: ProgramBuilder, expression: LuaFunctionExpression, parent: FunctionBuilder | null, implicitSelf: boolean, protoId: string, moduleId: string): number {
 	const builder = new FunctionBuilder(program, parent, { moduleId, protoId });
 	builder.compileFunctionExpression(expression, implicitSelf);
@@ -1915,6 +1958,7 @@ function createProgramBuilderFromProgram(
 export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray<ProgramModule> = [], options: CompileOptions = {}): CompiledProgram {
 	const canonicalization = options.canonicalization ?? 'none';
 	const optLevel = options.optLevel ?? 0;
+	const compileErrors: CompileError[] = [];
 	let programBuilder: ProgramBuilder;
 	if (options.baseProgram) {
 		if (!options.baseMetadata) {
@@ -1926,36 +1970,57 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 	}
 	const moduleId = chunk.range.path;
 	const entryProtoId = buildEntryProtoId(moduleId);
+	let entryProtoIndex = -1;
 	const entryBuilder = new FunctionBuilder(programBuilder, null, { moduleId, protoId: entryProtoId });
-	entryBuilder.compileChunk(chunk);
-	const entryCode = entryBuilder.getCode();
-	const entryRanges = entryBuilder.getRanges();
-	const entryConstRelocs = entryBuilder.getConstRelocs();
-	const entryProtoIndex = programBuilder.addProto({
-		entryPC: 0,
-		codeLen: entryRanges.length * INSTRUCTION_BYTES,
-		numParams: 0,
-		isVararg: false,
-		maxStack: entryBuilder.getMaxStack(),
-		upvalueDescs: entryBuilder.getUpvalueDescs(),
-	}, entryCode, entryRanges, entryConstRelocs, entryProtoId);
-	const moduleProtoMap = new Map<string, number>();
-	for (const module of modules) {
-		const moduleProtoId = buildModuleProtoId(module.path);
-		const builder = new FunctionBuilder(programBuilder, null, { moduleId: module.path, protoId: moduleProtoId });
-		builder.compileChunk(module.chunk);
-		const code = builder.getCode();
-		const ranges = builder.getRanges();
-		const constRelocs = builder.getConstRelocs();
-		const protoIndex = programBuilder.addProto({
+	try {
+		entryBuilder.compileChunk(chunk);
+		const entryCode = entryBuilder.getCode();
+		const entryRanges = entryBuilder.getRanges();
+		const entryConstRelocs = entryBuilder.getConstRelocs();
+		entryProtoIndex = programBuilder.addProto({
 			entryPC: 0,
-			codeLen: ranges.length * INSTRUCTION_BYTES,
+			codeLen: entryRanges.length * INSTRUCTION_BYTES,
 			numParams: 0,
 			isVararg: false,
-			maxStack: builder.getMaxStack(),
-			upvalueDescs: builder.getUpvalueDescs(),
-		}, code, ranges, constRelocs, moduleProtoId);
-		moduleProtoMap.set(module.path, protoIndex);
+			maxStack: entryBuilder.getMaxStack(),
+			upvalueDescs: entryBuilder.getUpvalueDescs(),
+		}, entryCode, entryRanges, entryConstRelocs, entryProtoId);
+	} catch (error) {
+		compileErrors.push({
+			path: chunk.range.path,
+			stage: 'entry',
+			message: extractCompileErrorMessage(error, chunk.range.path),
+		});
+	}
+	const moduleProtoMap = new Map<string, number>();
+	for (let i = 0; i < modules.length; i += 1) {
+		const module = modules[i];
+		const moduleProtoId = buildModuleProtoId(module.path);
+		const builder = new FunctionBuilder(programBuilder, null, { moduleId: module.path, protoId: moduleProtoId });
+		try {
+			builder.compileChunk(module.chunk);
+			const code = builder.getCode();
+			const ranges = builder.getRanges();
+			const constRelocs = builder.getConstRelocs();
+			const protoIndex = programBuilder.addProto({
+				entryPC: 0,
+				codeLen: ranges.length * INSTRUCTION_BYTES,
+				numParams: 0,
+				isVararg: false,
+				maxStack: builder.getMaxStack(),
+				upvalueDescs: builder.getUpvalueDescs(),
+			}, code, ranges, constRelocs, moduleProtoId);
+			moduleProtoMap.set(module.path, protoIndex);
+		} catch (error) {
+			compileErrors.push({
+				path: module.path,
+				stage: 'module',
+				message: extractCompileErrorMessage(error, module.path),
+			});
+		}
+	}
+	if (compileErrors.length > 0) {
+		throw new Error(buildCompileFailureMessage(compileErrors));
 	}
 	const { program, metadata, constRelocs } = programBuilder.buildProgram();
 	return { program, metadata, entryProtoIndex, moduleProtoMap, constRelocs };
@@ -1965,21 +2030,34 @@ export function appendLuaChunkToProgram(base: Program, metadata: ProgramMetadata
 	const canonicalization = options.canonicalization ?? 'none';
 	const optLevel = options.optLevel ?? 0;
 	const programBuilder = createProgramBuilderFromProgram(base, metadata, canonicalization, optLevel);
+	const compileErrors: CompileError[] = [];
 	const moduleId = chunk.range.path;
 	const entryProtoId = buildEntryProtoId(moduleId);
+	let entryProtoIndex = -1;
 	const entryBuilder = new FunctionBuilder(programBuilder, null, { moduleId, protoId: entryProtoId });
-	entryBuilder.compileChunk(chunk);
-	const entryCode = entryBuilder.getCode();
-	const entryRanges = entryBuilder.getRanges();
-	const entryConstRelocs = entryBuilder.getConstRelocs();
-	const entryProtoIndex = programBuilder.addProto({
-		entryPC: 0,
-		codeLen: entryRanges.length * INSTRUCTION_BYTES,
-		numParams: 0,
-		isVararg: false,
-		maxStack: entryBuilder.getMaxStack(),
-		upvalueDescs: entryBuilder.getUpvalueDescs(),
-	}, entryCode, entryRanges, entryConstRelocs, entryProtoId);
+	try {
+		entryBuilder.compileChunk(chunk);
+		const entryCode = entryBuilder.getCode();
+		const entryRanges = entryBuilder.getRanges();
+		const entryConstRelocs = entryBuilder.getConstRelocs();
+		entryProtoIndex = programBuilder.addProto({
+			entryPC: 0,
+			codeLen: entryRanges.length * INSTRUCTION_BYTES,
+			numParams: 0,
+			isVararg: false,
+			maxStack: entryBuilder.getMaxStack(),
+			upvalueDescs: entryBuilder.getUpvalueDescs(),
+		}, entryCode, entryRanges, entryConstRelocs, entryProtoId);
+	} catch (error) {
+		compileErrors.push({
+			path: chunk.range.path,
+			stage: 'entry',
+			message: extractCompileErrorMessage(error),
+		});
+	}
+	if (compileErrors.length > 0) {
+		throw new Error(buildCompileFailureMessage(compileErrors));
+	}
 	const { program, metadata: nextMetadata } = programBuilder.buildProgram();
 	return { program, metadata: nextMetadata, entryProtoIndex };
 }

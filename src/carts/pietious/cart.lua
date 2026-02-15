@@ -45,15 +45,15 @@ end
 
 local function grant_starting_loadout()
 	local player = object('pietolon')
-	player:add_inventory_item('keyworld1')
-	player:add_inventory_item('spyglass')
-	player:add_inventory_item('halo')
-	player:add_inventory_item('lamp')
-	player:add_inventory_item('schoentjes')
-	player:add_inventory_item('greenvase')
-	player:add_inventory_item('map_world1')
-	player:add_inventory_item('pepernoot')
-	player:equip_secondary_weapon('pepernoot')
+	player.inventory_items['keyworld1'] = true
+	player.inventory_items['spyglass'] = true
+	player.inventory_items['halo'] = true
+	player.inventory_items['lamp'] = true
+	player.inventory_items['schoentjes'] = true
+	player.inventory_items['greenvase'] = true
+	player.inventory_items['map_world1'] = true
+	player.inventory_items['pepernoot'] = true
+	player.secondary_weapon = 'pepernoot'
 	player.weapon_level = constants.hud.weapon_level
 end
 

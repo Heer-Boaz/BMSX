@@ -31,8 +31,6 @@ constants.room.tile_unit6 = constants.room.tile_unit * 6
 constants.room.tile_unit8 = constants.room.tile_unit * 8
 
 constants.player = {
-	width = 16,
-	height = 16,
 	start_x = constants.room.tile_size20,
 	start_y = constants.room.tile_origin_y + constants.room.tile_size9,
 	walk_anim_cycle_px = 8,

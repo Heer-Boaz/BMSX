@@ -1,5 +1,4 @@
 local constants = require('constants')
-local eventemitter = require('eventemitter')
 local castle_map = require('castle_map')
 
 local item_screen = {}
@@ -45,8 +44,9 @@ function item_screen:bind_visual()
 end
 
 function item_screen:bind_events()
-	eventemitter.eventemitter.instance:on({
+	self.events:on({
 		event = 'flow.state_changed',
+		emitter = 'f',
 		subscriber = self,
 		handler = function(event)
 			if event.state ~= 'item' then
@@ -84,7 +84,7 @@ function item_screen:draw_inventory_items()
 	local room_space = service('c').current_room.space_id
 	for i = 1, #inventory_item_order do
 		local item_type = inventory_item_order[i]
-		if player:has_inventory_item(item_type) then
+		if player.inventory_items[item_type] == true then
 			if item_type ~= 'map_world1' or room_space == 'world' then
 				local x, y = self:item_position_px(item_type)
 				put_sprite(constants.world_item.sprite[item_type], x, y, 321)
@@ -122,7 +122,7 @@ function item_screen:draw_map()
 		local sprite_id
 		if self.map_highlight and proxy.room_number == room.room_number then
 			sprite_id = 'room_proxy_red'
-		elseif self.map_highlight and proxy.is_boss_room and player:has_inventory_item('lamp') then
+		elseif self.map_highlight and proxy.is_boss_room and player.inventory_items['lamp'] == true then
 			sprite_id = 'room_proxy_blue'
 		else
 			sprite_id = 'room_proxy'
@@ -146,14 +146,14 @@ function item_screen:tick_secondary_weapon_selection()
 	local player = object('pietolon')
 	if action_triggered('right[jp]') then
 		for i = self.secondary_weapon_selection_index + 2, #secondary_weapon_order do
-			if player:has_inventory_item(secondary_weapon_order[i]) then
+			if player.inventory_items[secondary_weapon_order[i]] == true then
 				self.secondary_weapon_selection_index = i - 1
 				break
 			end
 		end
 	elseif action_triggered('left[jp]') then
 		for i = self.secondary_weapon_selection_index, 1, -1 do
-			if player:has_inventory_item(secondary_weapon_order[i]) then
+			if player.inventory_items[secondary_weapon_order[i]] == true then
 				self.secondary_weapon_selection_index = i - 1
 				break
 			end
@@ -161,8 +161,8 @@ function item_screen:tick_secondary_weapon_selection()
 	end
 
 	local selected_weapon = secondary_weapon_order[self.secondary_weapon_selection_index + 1]
-	if selected_weapon ~= nil and player:has_inventory_item(selected_weapon) then
-		player:equip_secondary_weapon(selected_weapon)
+	if selected_weapon ~= nil and player.inventory_items[selected_weapon] == true then
+		player.secondary_weapon = selected_weapon
 	end
 end
 

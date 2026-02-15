@@ -24,7 +24,10 @@ local action_effects = require("action_effects")
 local components = require("components")
 local service = require("service")
 local registry = require("registry")
-local eventemitter = require("eventemitter").eventemitter
+local eventemitter_module = require("eventemitter")
+local eventemitter = eventemitter_module.eventemitter
+eventemitter_module.eventemitter = eventemitter
+eventemitter_module.instance = eventemitter.instance
 local quickmenu = require("quickmenu")
 local romdir = require("romdir")
 local bool01 = require("bool01")
@@ -629,5 +632,8 @@ if not world_instance._ecs_pipeline_built then
 	ecs_builtin.register_builtin_ecs()
 	ecs_pipeline.defaultecspipelineregistry:build(world_instance, ecs_builtin.default_pipeline_spec())
 end
+
+engine.eventemitter = eventemitter_module
+engine.eventemitter_module = eventemitter_module
 
 return engine

@@ -1,4 +1,3 @@
-local eventemitter = require('eventemitter')
 
 local rock_service = {}
 rock_service.__index = rock_service
@@ -89,8 +88,9 @@ function rock_service:on_rock_destroyed(rock_id)
 end
 
 function rock_service:bind_events()
-	eventemitter.eventemitter.instance:on({
+	self.events:on({
 		event = 'room.switched',
+		emitter = 'pietolon',
 		subscriber = self,
 		handler = function(_event)
 			self.synced_room_number = 0

@@ -1,5 +1,4 @@
 local constants = require('constants')
-local eventemitter = require('eventemitter')
 
 local transition_view = {}
 transition_view.__index = transition_view
@@ -22,8 +21,9 @@ function transition_view:bind_events()
 		end,
 	})
 
-	eventemitter.eventemitter.instance:on({
+	self.events:on({
 		event = 'flow.state_changed',
+		emitter = 'f',
 		subscriber = self,
 		handler = function(event)
 			if event.state ~= 'transition' then

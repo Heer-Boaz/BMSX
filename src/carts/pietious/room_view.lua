@@ -1,4 +1,3 @@
-local eventemitter = require('eventemitter')
 
 local room_view = {}
 room_view.__index = room_view
@@ -20,8 +19,9 @@ function room_view:bind_visual()
 end
 
 function room_view:bind_events()
-	eventemitter.eventemitter.instance:on({
+	self.events:on({
 		event = 'room.switched',
+		emitter = 'pietolon',
 		subscriber = self,
 		handler = function(event)
 			self.space_id = event.space

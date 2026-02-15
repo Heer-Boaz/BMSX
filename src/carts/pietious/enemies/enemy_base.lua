@@ -1,4 +1,3 @@
-local eventemitter = require('eventemitter')
 local worldobject = require('worldobject')
 local combat_overlap = require('combat_overlap')
 
@@ -27,9 +26,18 @@ function enemy_base.bind_overlap_events(self)
 		end,
 	})
 
+	self.events:on({
+		event_name = 'weapon_hit',
+		subscriber = self,
+		handler = function(event)
+			self:take_weapon_hit(event.weapon_kind)
+		end,
+	})
+
 	if self.despawn_on_room_switch then
-		eventemitter.eventemitter.instance:on({
+		self.events:on({
 			event = 'room.switched',
+			emitter = 'pietolon',
 			subscriber = self,
 			handler = function(_event)
 				self:mark_for_disposal()
@@ -81,7 +89,8 @@ function enemy_base.take_weapon_hit(self, weapon_kind)
 		self.health = 0
 		self.dangerous = false
 		self:spawn_death_effect()
-		eventemitter.eventemitter.instance:emit('enemy.defeated', self.id, {
+		service('c').events:emit('enemy.defeated', {
+			enemy_id = self.id,
 			room_number = service('c').current_room.room_number,
 			kind = self.enemy_kind,
 			trigger = self.trigger,
@@ -98,10 +107,22 @@ function enemy_base.on_overlap(self, event)
 		return
 	end
 	if contact_kind == 'sword' or contact_kind == 'body_with_sword' then
-		self:take_weapon_hit('sword')
+		self.events:emit('weapon_hit', {
+			weapon_kind = 'sword',
+			contact_kind = contact_kind,
+			source_id = event.other_id,
+			source_collider_local_id = event.other_collider_local_id,
+		})
 	end
 	if (contact_kind == 'body' or contact_kind == 'body_with_sword') and self.dangerous then
-		player:take_hit(self.damage, self.x + math.modf(self.sx / 2), self.y + math.modf(self.sy / 2), self.enemy_kind)
+		player.events:emit('enemy.contact_damage', {
+			amount = self.damage,
+			source_x = self.x + math.modf(self.sx / 2),
+			source_y = self.y + math.modf(self.sy / 2),
+			reason = self.enemy_kind,
+			enemy_id = self.id,
+			contact_kind = contact_kind,
+		})
 	end
 end
 

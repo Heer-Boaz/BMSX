@@ -1,5 +1,4 @@
 local constants = require('constants')
-local eventemitter = require('eventemitter')
 local combat_overlap = require('combat_overlap')
 
 local loot_drop = {}
@@ -24,8 +23,9 @@ function loot_drop:bind_events()
 		end,
 	})
 
-	eventemitter.eventemitter.instance:on({
+	self.events:on({
 		event = 'room.switched',
+		emitter = 'pietolon',
 		subscriber = self,
 		handler = function(_event)
 			self:mark_for_disposal()

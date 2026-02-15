@@ -1,6 +1,5 @@
 local constants = require('constants')
 local room_module = require('room')
-local eventemitter = require('eventemitter')
 local combat_overlap = require('combat_overlap')
 
 local pepernoot_projectile = {}
@@ -35,8 +34,9 @@ function pepernoot_projectile:bind_events()
 		end,
 	})
 
-	eventemitter.eventemitter.instance:on({
+	self.events:on({
 		event = 'room.switched',
+		emitter = 'pietolon',
 		subscriber = self,
 		handler = function(_event)
 			self:dispose('room_switched')

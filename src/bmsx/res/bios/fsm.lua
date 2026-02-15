@@ -333,7 +333,7 @@ local function resolve_event_payload(event)
 	end
 	local payload = nil
 	for k, v in pairs(event) do
-		if k ~= "type" and k ~= "emitter" and k ~= "timestamp" and k ~= "timeStamp" and k ~= "target" then
+		if k ~= "type" and k ~= "emitter" and k ~= "timestamp" and k ~= "timestamp" and k ~= "target" then
 			if not payload then
 				payload = {}
 			end

@@ -45,6 +45,7 @@ type LuaLintIssueRule =
 	'forbidden_matches_state_path_pattern' |
 	'constant_copy_pattern' |
 	'require_lua_extension_pattern' |
+	'ensure_pattern' |
 	'ensure_pattern';
 
 type LuaLintIssue = {
@@ -1878,7 +1879,21 @@ export async function lintCartLuaSources(options: LuaCartLintOptions): Promise<v
 			const tokens = lexer.scanTokens();
 			lintUppercaseCode(workspacePath, tokens, issues);
 			const parser = new LuaParser(tokens, workspacePath, source);
-			const chunk = parser.parseChunk();
+			let parsed: ReturnType<LuaParser['parseChunkWithRecovery']>;
+			try {
+				parsed = parser.parseChunkWithRecovery();
+			} catch (error) {
+				// If parser errors occur here, treat the file as non-lintable for AST-based checks.
+				// Syntax-related validation happens in the compilation pipeline.
+				if ((error as { name?: string } | null)?.name === 'Syntax Error') {
+					continue;
+				}
+				throw error;
+			}
+			if (parsed.syntaxError) {
+				continue;
+			}
+			const chunk = parsed.path;
 			lintUnusedInitValuesInFunctionBody(chunk.body, issues, []);
 			lintStatements(chunk.body, issues);
 			lintSingleUseHasTagPattern(chunk.body, issues);

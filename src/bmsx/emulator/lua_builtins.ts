@@ -53,6 +53,7 @@ export const ENGINE_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> =
 
 export const ENGINE_LUA_BUILTIN_GLOBALS: ReadonlyArray<LuaBuiltinDescriptor> = [
 	{ name: 'timeline', params: [], signature: 'timeline', description: 'Timeline module table (timeline.new, timeline.range, timeline.expand_frames, timeline.build_frame_sequence, timeline.build_pingpong_frames).' },
+	{ name: 'eventemitter', params: [], signature: 'eventemitter', description: 'Event emitter module table (eventemitter, events_of).' },
 ];
 
 // Keep this list in sync with runtime builtins (TS/C++) so editor metadata matches actual runtime behavior.

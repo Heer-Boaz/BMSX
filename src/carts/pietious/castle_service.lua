@@ -1,7 +1,6 @@
 local constants = require('constants')
 local room_module = require('room')
 local castle_map = require('castle_map')
-local eventemitter = require('eventemitter')
 
 local castle_service = {}
 
@@ -126,11 +125,11 @@ function castle_service:refresh_current_room_enemies()
 end
 
 function castle_service:bind_enemy_events()
-	eventemitter.eventemitter.instance:on({
+	self.events:on({
 		event = 'enemy.defeated',
 		subscriber = self,
 		handler = function(event)
-			local enemy_id = event.emitter
+			local enemy_id = event.enemy_id
 			self.defeated_enemy_ids[enemy_id] = true
 			self.enemies_by_id[enemy_id] = nil
 
@@ -147,7 +146,7 @@ function castle_service:bind_enemy_events()
 			end
 			if event.trigger and event.trigger ~= '' then
 				self.enemy_condition_flags[event.trigger] = true
-				eventemitter.eventemitter.instance:emit('room.condition_set', self.id, {
+				self.events:emit('room.condition_set', {
 					room_number = event.room_number,
 					condition = event.trigger,
 				})
@@ -158,7 +157,7 @@ function castle_service:bind_enemy_events()
 		end,
 	})
 
-	eventemitter.eventemitter.instance:on({
+	self.events:on({
 		event = 'room.condition_set',
 		subscriber = self,
 		handler = function(event)

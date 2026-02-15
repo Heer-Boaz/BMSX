@@ -10,7 +10,6 @@ events:
                   music_transition:
                       audio_id: music_castle
                       sync: immediate
-                      fade_ms: 200
             - when:
                   equals:
                       state: world
@@ -18,7 +17,6 @@ events:
                   music_transition:
                       audio_id: music_world
                       sync: immediate
-                      fade_ms: 200
             - when:
                   equals:
                       state: transition
@@ -26,86 +24,65 @@ events:
                   music_transition:
                       audio_id: music_shrine_1
                       sync: loop
-                      fade_ms: 120
-
-    room.switched:
-        channel: sfx
-        max_voices: 2
-        policy: queue
-        rules:
-            - when:
-                  equals:
-                      transition_kind: world_banner
-              go:
-                  audio_id: worlddooropen
-                  cooldown_ms: 100
-            - when:
-                  equals:
-                      transition_kind: castle_banner
-              go:
-                  audio_id: worlddooropen
-                  cooldown_ms: 100
-            - when:
-                  equals:
-                      transition_kind: world_banner
-                  in:
-                      to: [ 'world' ]
-              go:
-                  audio_id: worldkey
-            - when:
-                  equals:
-                      transition_kind: castle_banner
-                  in:
-                      to: [ 'castle' ]
-              go:
-                  audio_id: pickupkey
 
     enemy.defeated:
         channel: sfx
-        max_voices: 2
-        policy: queue
+        max_voices: 1
+        policy: replace
         rules:
-            - when:
-                  any_of:
-                      kind:
-                          - crossfoe
-              go:
-                  one_of:
-                      - cross
-                      - crossland
-            - when:
-                  any_of:
-                      kind:
-                          - paperfoe
-                          - boekfoe
-              go:
-                  audio_id: paperspawn
-            - when:
-                  any_of:
-                      kind:
-                          - muziekfoe
-                          - nootfoe
-              go:
-                  audio_id: muzieknootspawn
-            - when:
-                  any_of:
-                      kind:
-                          - nootfoe
-              go:
-                  audio_id: monsterappears
-            - when:
-                  any_of:
-                      kind:
-                          - cloud
-                          - staffspawn
-                          - marspeinenaardappel
-                          - stafffoe
-                          - vlokfoe
-                          - vlokspawner
-                          - mijterfoe
-                          - zakfoe
-              go:
-                  one_of:
-                      - foeexplosion
-                      - daemonfire
-                      - monsterappears
+            - go:
+                  audio_id: foeexplosion
+    sword_start_quiet:
+        channel: sfx
+        max_voices: 1
+        policy: replace
+        rules:
+            - go:
+                  audio_id: slice
+    sword_start_walking_right:
+        channel: sfx
+        max_voices: 1
+        policy: replace
+        rules:
+            - go:
+                  audio_id: slice
+    sword_start_walking_left:
+        channel: sfx
+        max_voices: 1
+        policy: replace
+        rules:
+            - go:
+                  audio_id: slice
+
+    sword_start_jumping:
+        channel: sfx
+        max_voices: 1
+        policy: replace
+        rules:
+            - go:
+                  audio_id: slice
+
+    sword_start_controlled_fall:
+        channel: sfx
+        max_voices: 1
+        policy: replace
+        rules:
+            - go:
+                  audio_id: slice
+
+    sword_start_uncontrolled_fall:
+        channel: sfx
+        max_voices: 1
+        policy: replace
+        rules:
+            - go:
+                  audio_id: slice
+
+    sword_start_stairs:
+        channel: sfx
+        max_voices: 1
+        policy: replace
+        rules:
+            - go:
+                  audio_id: slice
+

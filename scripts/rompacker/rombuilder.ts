@@ -35,7 +35,7 @@ const { LuaLexer } = require('../../src/bmsx/lua/lualexer');
 // @ts-ignore
 const { LuaParser } = require('../../src/bmsx/lua/luaparser');
 // @ts-ignore
-const { compileLuaChunkToProgram } = require('../../src/bmsx/emulator/program_compiler');
+const { compileLuaChunkToProgram, formatLuaCompileError, isLuaCompileError } = require('../../src/bmsx/emulator/program_compiler');
 // @ts-ignore
 const { PROGRAM_ASSET_ID, PROGRAM_SYMBOLS_ASSET_ID, buildModuleAliasesFromPaths, encodeProgram, encodeProgramAsset, encodeProgramSymbolsAsset } = require('../../src/bmsx/emulator/program_asset');
 // @ts-ignore
@@ -697,7 +697,6 @@ function normalizeLineEndings(input: string): string {
 
 function compileLuaChunkBuffer(source: string, path: string): Buffer {
 	const lexer = new LuaLexer(source, path, { canonicalizeIdentifiers: LUA_CANONICALIZATION });
-
 	const tokens = lexer.scanTokens();
 	const parser = new LuaParser(tokens, path, source);
 	const chunk = parser.parseChunk();
@@ -1362,8 +1361,10 @@ export async function buildResourceList(respaths: string[], rom_name?: string, o
  * - `assetList` - The array of generated asset metadata objects (to be binary-encoded).
  * - `romlabel_buffer` - The buffer data for the "romlabel.png" resource if present.
  */
+
 export async function generateRomAssets(resources: Resource[], reportProgress?: ProgressNote) {
 	const romAssets: RomAsset[] = [];
+	const compileErrors: string[] = [];
 	// @ts-ignore
 	let romlabel_buffer: Buffer;
 
@@ -1422,7 +1423,17 @@ export async function generateRomAssets(resources: Resource[], reportProgress?: 
 				}
 				const luaSourcePath = sourcePath && sourcePath.length > 0 ? sourcePath : toWorkspaceRelativePath(res.filepath);
 				const normalizedPath = normalizeWorkspacePath(luaSourcePath);
-				const compiled_buffer = compileLuaChunkBuffer(buffer.toString('utf8'), normalizedPath);
+				const source = buffer.toString('utf8');
+				let compiled_buffer: Buffer;
+				try {
+					compiled_buffer = compileLuaChunkBuffer(source, normalizedPath);
+				} catch (error) {
+					if (isLuaCompileError(error)) {
+						compileErrors.push(formatLuaCompileError(error, source));
+						continue;
+					}
+					throw error;
+				}
 				romAssets.push({
 					resid,
 					type,
@@ -1538,6 +1549,9 @@ export async function generateRomAssets(resources: Resource[], reportProgress?: 
 				// Skip unknown resource types without failing
 				break;
 		}
+	}
+	if (compileErrors.length > 0) {
+		throw new Error(`Compilation failed with ${compileErrors.length} Lua error(s):\n${compileErrors.join('\n')}`);
 	}
 	return romAssets;
 }

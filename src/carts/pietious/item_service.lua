@@ -1,25 +1,11 @@
 local constants = require('constants')
-local eventemitter = require('eventemitter')
-
 local item_service = {}
 item_service.__index = item_service
 
 local pickup_handlers
 
-local function pickup_inventory_item(player, item_type)
-	if player:has_inventory_item(item_type) then
-		return false
-	end
-	player:add_inventory_item(item_type)
-	return true
-end
-
 local function pickup_keyworld1(player)
-	if not pickup_inventory_item(player, 'keyworld1') then
-		return false
-	end
 	player.health = player.max_health
-	return true
 end
 
 local function pickup_life(player)
@@ -72,7 +58,7 @@ local function condition_matches(condition, player, room_flags)
 	local token = inverted and condition:sub(2) or condition
 
 	if token:sub(1, 4) == 'has_' then
-		local has_item = player:has_inventory_item(token:sub(5))
+		local has_item = player.inventory_items[token:sub(5)] == true
 		if inverted then
 			return not has_item
 		end
@@ -90,7 +76,7 @@ function item_service:item_should_spawn(item_def, room_number, player)
 	if self.picked_item_ids[item_def.id] == true then
 		return false
 	end
-	if player:has_inventory_item(item_def.item_type) then
+	if player.inventory_items[item_def.item_type] == true then
 		return false
 	end
 
@@ -195,7 +181,7 @@ function item_service:add_item_drop_from_rock(rock_id, room_number, item_type, x
 	end
 
 	local player = object('pietolon')
-	if player:has_inventory_item(item_type) then
+	if player.inventory_items[item_type] == true then
 		self.picked_item_ids[drop_id] = true
 		return
 	end
@@ -246,16 +232,18 @@ function item_service:on_item_picked(item_id, room_number, _item_type)
 end
 
 function item_service:bind_events()
-	eventemitter.eventemitter.instance:on({
+	self.events:on({
 		event = 'room.switched',
+		emitter = 'pietolon',
 		subscriber = self,
 		handler = function(_event)
 			self:refresh_current_room_items()
 		end,
 	})
 
-	eventemitter.eventemitter.instance:on({
+	self.events:on({
 		event = 'enemy.defeated',
+		emitter = 'c',
 		subscriber = self,
 		handler = function(event)
 			self:set_room_condition(event.room_number, 'defeated_' .. event.kind)
@@ -269,8 +257,9 @@ function item_service:bind_events()
 		end,
 	})
 
-	eventemitter.eventemitter.instance:on({
+	self.events:on({
 		event = 'room.condition_set',
+		emitter = 'c',
 		subscriber = self,
 		handler = function(event)
 			self:set_room_condition(event.room_number, event.condition)
