@@ -190,6 +190,7 @@ export interface AudioService {
 	suspend(): Promise<void>;
 	getMasterGain(): number;
 	setMasterGain(v: number): void;
+	setFrameTimeSec?(seconds: number): void;
 	decode(bytes: ArrayBuffer): Promise<AudioClipHandle>;
 	createClipFromPcm(samples: Int16Array, sampleRate: number, channels: number): AudioClipHandle;
 	createVoice(clip: AudioClipHandle, params: AudioPlaybackParams): VoiceHandle;

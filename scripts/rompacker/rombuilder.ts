@@ -805,6 +805,11 @@ export type ResourceScanOptions = {
 	 * Defaults to `rom/<romname>.js`.
 	 */
 	minifiedJsFilePath?: string;
+	/**
+	 * Optional override for the engine BIOS ROM path used by cart rebuild checks.
+	 * Defaults to `dist/bmsx-bios[.debug].rom` (based on `debug`).
+	 */
+	biosRomFilePath?: string;
 };
 
 function isWorkspaceStateDirectory(name: string): boolean {
@@ -2096,6 +2101,7 @@ export const shouldCheckFile = (filename: string, checkCodeFiles: boolean, check
 export async function isRebuildRequired(romname: string, bootloaderPath: string, resPath: string, options: ResourceScanOptions = {}): Promise<boolean> {
 	const romFilePath = options.romFilePath ?? `./dist/${romname}${options.debug ? '.debug' : ''}.rom`;
 	const minifiedJsFilePath = options.minifiedJsFilePath ?? `./rom/${romname}.js`;
+	const biosRomFilePath = options.biosRomFilePath ?? `./dist/bmsx-bios${options.debug ? '.debug' : ''}.rom`;
 	const extraLuaRoots = options.extraLuaPaths ?? [];
 	const cartProject = isCartPath(resPath) || isCartPath(bootloaderPath) || isDefaultCartBootloader(bootloaderPath);
 	const includeCode = options.includeCode !== false && !cartProject;
@@ -2117,6 +2123,17 @@ export async function isRebuildRequired(romname: string, bootloaderPath: string,
 
 	const romStats = await stat(romFilePath);
 	const romMtime = romStats.mtime;
+	if (cartProject) {
+		let biosStats: Stats;
+		try {
+			biosStats = await stat(biosRomFilePath);
+		} catch {
+			return true;
+		}
+		if (biosStats.mtime > romMtime) {
+			return true;
+		}
+	}
 
 	const shouldRebuild = async (dir: string, checkCodeFiles: boolean, checkAssets: boolean): Promise<boolean> => {
 		try {
@@ -2158,7 +2175,7 @@ export async function isRebuildRequired(romname: string, bootloaderPath: string,
 	};
 
 	const shouldCheckCodeFiles = (dir: string) => includeCode && dir.startsWith(bootloaderPath);
-	const shouldCheckAssets = (dir: string) => dir.startsWith(resPath);
+	const shouldCheckAssets = (dir: string) => dir.startsWith(resPath) || (cartProject && dir.startsWith(bootloaderPath));
 
 	const extraChecks: Array<Promise<boolean>> = [];
 	const normalizedBoot = resolve(bootloaderPath);
@@ -2167,12 +2184,12 @@ export async function isRebuildRequired(romname: string, bootloaderPath: string,
 		if (!root || root.length === 0) continue;
 		const normalized = resolve(root);
 		if (normalized === normalizedBoot || normalized === normalizedRes) continue;
-		extraChecks.push(shouldRebuild(root, true, false));
+		extraChecks.push(shouldRebuild(root, true, cartProject));
 	}
 
 	const extraNeedsRebuild = extraChecks.length > 0 ? await Promise.all(extraChecks).then(results => results.some(Boolean)) : false;
 
-	const bootloaderNeedsRebuild = includeCode
+	const bootloaderNeedsRebuild = (includeCode || cartProject)
 		? await shouldRebuild(bootloaderPath, shouldCheckCodeFiles(bootloaderPath), shouldCheckAssets(bootloaderPath))
 		: false;
 	const resNeedsRebuild = await shouldRebuild(resPath, shouldCheckCodeFiles(resPath), shouldCheckAssets(resPath));

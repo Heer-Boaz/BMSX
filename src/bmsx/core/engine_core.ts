@@ -148,6 +148,7 @@ export class EngineCore {
 		this.target_fps = ufpsScaled / HZ_SCALE;
 		if (this.initialized) {
 			this.recomputeTimingCaches();
+			this._platform.audio.setFrameTimeSec?.(HZ_SCALE / this.ufps_scaled);
 		}
 	}
 

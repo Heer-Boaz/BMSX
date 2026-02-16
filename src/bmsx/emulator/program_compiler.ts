@@ -2052,7 +2052,7 @@ export function appendLuaChunkToProgram(base: Program, metadata: ProgramMetadata
 		compileErrors.push({
 			path: chunk.range.path,
 			stage: 'entry',
-			message: extractCompileErrorMessage(error),
+			message: extractCompileErrorMessage(error, chunk.range.path),
 		});
 	}
 	if (compileErrors.length > 0) {

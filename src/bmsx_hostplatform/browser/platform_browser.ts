@@ -99,6 +99,7 @@ export class BrowserPlatform implements Platform {
 			this.hid = new UnsupportedHID();
 		}
 		this.audio = new WorkerStreamingAudioService();
+		this.audio.setFrameTimeSec?.(HZ_SCALE / this.ufpsScaled);
 		this.rng = new BrowserRngService();
 		this.gameviewHost = new BrowserGameViewHost(canvas);
 	}
