@@ -39,30 +39,36 @@ const host = String(getArg('host', 'H', '0.0.0.0'));
 const spa = Boolean(getArg('spa', '', false));
 const cacheArg = String(getArg('cache', '', 'no-store'));
 const cacheHeader = cacheArg === 'no-store' ? 'no-store' : `public, max-age=${Number(cacheArg) || 0}`;
+const COOP_COEP_HEADERS = {
+	'Cross-Origin-Opener-Policy': 'same-origin',
+	'Cross-Origin-Embedder-Policy': 'require-corp',
+	// Handig/veilig voor eigen assets:
+	'Cross-Origin-Resource-Policy': 'same-origin',
+};
 
 const MIME = new Map(Object.entries({
 	'.html': 'text/html; charset=utf-8',
-	'.htm':  'text/html; charset=utf-8',
-	'.js':   'text/javascript; charset=utf-8',
-	'.mjs':  'text/javascript; charset=utf-8',
-	'.cjs':  'text/javascript; charset=utf-8',
-	'.css':  'text/css; charset=utf-8',
+	'.htm': 'text/html; charset=utf-8',
+	'.js': 'text/javascript; charset=utf-8',
+	'.mjs': 'text/javascript; charset=utf-8',
+	'.cjs': 'text/javascript; charset=utf-8',
+	'.css': 'text/css; charset=utf-8',
 	'.json': 'application/json; charset=utf-8',
-	'.map':  'application/json; charset=utf-8',
-	'.svg':  'image/svg+xml',
-	'.png':  'image/png',
-	'.jpg':  'image/jpeg',
+	'.map': 'application/json; charset=utf-8',
+	'.svg': 'image/svg+xml',
+	'.png': 'image/png',
+	'.jpg': 'image/jpeg',
 	'.jpeg': 'image/jpeg',
-	'.gif':  'image/gif',
+	'.gif': 'image/gif',
 	'.webp': 'image/webp',
-	'.ico':  'image/x-icon',
+	'.ico': 'image/x-icon',
 	'.wasm': 'application/wasm',
-	'.mp3':  'audio/mpeg',
-	'.mp4':  'video/mp4',
-	'.ttf':  'font/ttf',
-	'.otf':  'font/otf',
+	'.mp3': 'audio/mpeg',
+	'.mp4': 'video/mp4',
+	'.ttf': 'font/ttf',
+	'.otf': 'font/otf',
 	'.woff': 'font/woff',
-	'.woff2':'font/woff2'
+	'.woff2': 'font/woff2'
 }));
 
 const projectRoot = process.cwd();
@@ -97,6 +103,13 @@ async function readRequestBody(req) {
 async function handleWorkspaceApi(req, res, url) {
 	if (url.pathname !== '/__bmsx__/workspace') {
 		return false;
+	}
+	if (req.method === 'OPTIONS') {
+		res.writeHead(204, {
+			'Access-Control-Allow-Methods': 'POST,OPTIONS',
+			'Access-Control-Allow-Headers': 'Content-Type',
+		}).end();
+		return true;
 	}
 	if (req.method !== 'POST') {
 		res.writeHead(405, { 'Allow': 'POST' }).end();
@@ -245,6 +258,13 @@ async function handleCartsApi(req, res, url) {
 	if (url.pathname !== '/__bmsx__/carts') {
 		return false;
 	}
+	if (req.method === 'OPTIONS') {
+		res.writeHead(204, {
+			'Access-Control-Allow-Methods': 'GET,OPTIONS',
+			'Access-Control-Allow-Headers': 'Content-Type',
+		}).end();
+		return true;
+	}
 	if (req.method !== 'GET') {
 		res.writeHead(405, { 'Allow': 'GET' }).end();
 		return true;
@@ -307,25 +327,34 @@ for (const c of defaultCandidates) {
 
 const server = createServer(async (req, res) => {
 	try {
-	const requestUrl = new URL(req.url || '/', 'http://x');
-	if (await handleWorkspaceApi(req, res, requestUrl)) {
-		return;
-	}
-	if (await handleLuaApi(req, res, requestUrl)) {
-		return;
-	}
-	if (await handleCartsApi(req, res, requestUrl)) {
-		return;
-	}
-	const urlPath = requestUrl.pathname;
+		const requestUrl = new URL(req.url || '/', 'http://x');
 
-	// Redirect root to preferred default file if available
-	if (urlPath === '/' || urlPath === '') {
-		if (defaultFile) {
-			res.writeHead(302, { 'Location': `/${defaultFile}` }).end();
+		// Always enable cross-origin isolation (required for SharedArrayBuffer)
+		for (const [k, v] of Object.entries(COOP_COEP_HEADERS)) {
+			res.setHeader(k, v);
+		}
+
+		// (optional) Basic CORS for your internal API endpoints
+		res.setHeader('Access-Control-Allow-Origin', '*');
+
+		if (await handleWorkspaceApi(req, res, requestUrl)) {
 			return;
 		}
-	}
+		if (await handleLuaApi(req, res, requestUrl)) {
+			return;
+		}
+		if (await handleCartsApi(req, res, requestUrl)) {
+			return;
+		}
+		const urlPath = requestUrl.pathname;
+
+		// Redirect root to preferred default file if available
+		if (urlPath === '/' || urlPath === '') {
+			if (defaultFile) {
+				res.writeHead(302, { 'Location': `/${defaultFile}` }).end();
+				return;
+			}
+		}
 		let target = safeJoin(root, urlPath);
 		if (!target) {
 			res.writeHead(403).end('Forbidden');
