@@ -1069,12 +1069,12 @@ function player:try_step_off_stairs()
 	local step_dx
 	if dir > 0 then
 		wall_tx = tx + 3
-		probe_dx = constants.room.tile_unit8
-		step_dx = constants.room.tile_unit6
+		probe_dx = 8
+		step_dx = 6
 	else
 		wall_tx = tx
-		probe_dx = -constants.room.tile_unit8
-		step_dx = -constants.room.tile_unit6
+		probe_dx = -8
+		step_dx = -6
 	end
 
 	local can_bottom_step
@@ -1093,9 +1093,9 @@ function player:try_step_off_stairs()
 		local top_step_threshold = self.stairs_top_y + constants.room.tile_half
 		if self.y < top_step_threshold then
 			if dir > 0 then
-				target_x = self.x + constants.room.tile_unit4
+				target_x = self.x + 4
 			else
-				target_x = self.x - constants.room.tile_unit4
+				target_x = self.x - 4
 			end
 				target_y = current_room.tile_origin_y + (ty * constants.room.tile_size)
 		else
@@ -1183,8 +1183,8 @@ function player:try_snap_to_elevator_platform(next_x)
 		if elevator.current_room_number == current_room_number
 			and self.y >= (elevator.y - constants.room.tile_size2)
 			and self.y < elevator.y
-			and self.x > (elevator.x - (constants.room.tile_size2 - constants.room.tile_unit4))
-			and self.x < ((elevator.x + constants.room.tile_size4) - constants.room.tile_unit3)
+			and self.x > (elevator.x - (constants.room.tile_size2 - 4))
+			and self.x < ((elevator.x + constants.room.tile_size4) - 3)
 		then
 			self.y = elevator.y - self.height
 			self.x = next_x
@@ -1216,7 +1216,7 @@ function player:collides_at(x, y)
 end
 
 function player:collides_at_jump_ceiling_profile(x, y)
-	for x_offset = -constants.room.tile_unit4, constants.room.tile_unit4, constants.room.tile_unit do
+	for x_offset = -4, 4, 1 do
 		if not self:collides_at(x + x_offset, y) then
 			return false
 		end
@@ -2110,26 +2110,26 @@ function player:resolve_hit_overlap_if_needed()
 	if not self:collides_at(self.x, self.y) then
 		return
 	end
-	local left_col = self:collides_at(self.x - constants.room.tile_unit, self.y)
-	local right_col = self:collides_at(self.x + constants.room.tile_unit, self.y)
-	local up_col = self:collides_at(self.x, self.y - constants.room.tile_unit)
-	local down_col = self:collides_at(self.x, self.y + constants.room.tile_unit)
+	local left_col = self:collides_at(self.x - 1, self.y)
+	local right_col = self:collides_at(self.x + 1, self.y)
+	local up_col = self:collides_at(self.x, self.y - 1)
+	local down_col = self:collides_at(self.x, self.y + 1)
 	if left_col and (not right_col) then
-		self.x = self.x + constants.room.tile_unit
+		self.x = self.x + 1
 	elseif (not left_col) and right_col then
-		self.x = self.x - constants.room.tile_unit
+		self.x = self.x - 1
 	end
 	if up_col and (not down_col) then
-		self.y = self.y + constants.room.tile_unit
+		self.y = self.y + 1
 	elseif (not up_col) and down_col then
-		self.y = self.y - constants.room.tile_unit
+		self.y = self.y - 1
 	end
 end
 
 function player:is_ground_below_for_hit_on_stairs()
 	local foot_y = self.y + self.height
-	local left_x = self.x + constants.room.tile_unit
-	local right_x = self.x + self.width - constants.room.tile_unit
+	local left_x = self.x + 1
+	local right_x = self.x + self.width - 1
 	return room.is_solid_at_world(service('c').current_room, left_x, foot_y)
 		or room.is_solid_at_world(service('c').current_room, right_x, foot_y)
 end

@@ -17,18 +17,12 @@ constants.room = {
 	tile_origin_y = 32,
 }
 constants.room.tile_origin_y = constants.room.hud_height
+constants.room.tile_half = constants.room.tile_size / 2
 constants.room.tile_size2 = constants.room.tile_size * 2
 constants.room.tile_size3 = constants.room.tile_size * 3
 constants.room.tile_size4 = constants.room.tile_size * 4
 constants.room.tile_size9 = constants.room.tile_size * 9
 constants.room.tile_size20 = constants.room.tile_size * 20
-constants.room.tile_unit = 1
-constants.room.tile_half = constants.room.tile_size / 2
-constants.room.tile_unit2 = constants.room.tile_unit * 2
-constants.room.tile_unit3 = constants.room.tile_unit * 3
-constants.room.tile_unit4 = constants.room.tile_unit * 4
-constants.room.tile_unit6 = constants.room.tile_unit * 6
-constants.room.tile_unit8 = constants.room.tile_unit * 8
 
 constants.player = {
 	width = 16,
@@ -241,7 +235,7 @@ constants.lithograph = {
 
 constants.world_entrance = {
 	trigger_x_offset = constants.room.tile_size,
-	trigger_half_width = constants.room.tile_unit4,
+	trigger_half_width = 4,
 	trigger_y_offset = constants.room.tile_size,
 	open_step_frames = 4,
 	enter_world_midpoint_step = 32,

@@ -36,9 +36,9 @@ local function move_elevator_vertical(elevator, target, vertical, character_over
 
 	if vertical == 'down' then
 		if character_over and player.y == top then
-			player.y = player.y + constants.room.tile_unit2
+			player.y = player.y + 2
 		end
-		elevator.y = elevator.y + constants.room.tile_unit2
+		elevator.y = elevator.y + 2
 		if elevator.y > constants.room.height then
 			elevator.y = top_boundary
 			elevator.current_room_number = target.room_number
@@ -50,9 +50,9 @@ local function move_elevator_vertical(elevator, target, vertical, character_over
 	end
 
 	if character_over and player.y == top then
-		player.y = player.y - constants.room.tile_unit2
+		player.y = player.y - 2
 	end
-	elevator.y = elevator.y - constants.room.tile_unit2
+	elevator.y = elevator.y - 2
 	if elevator.y < top_boundary then
 		elevator.y = constants.room.height - constants.room.tile_size
 		elevator.current_room_number = target.room_number
@@ -96,15 +96,15 @@ function elevator_service:tick()
 		local vertical = elevator.vertical_to_point[elevator.going_to]
 
 		if elevator.x < target.x then
-			elevator.x = elevator.x + constants.room.tile_unit2
+			elevator.x = elevator.x + 2
 			if character_over then
-				player.x = player.x + constants.room.tile_unit2
+				player.x = player.x + 2
 			end
 		end
 		if elevator.x > target.x then
-			elevator.x = elevator.x - constants.room.tile_unit2
+			elevator.x = elevator.x - 2
 			if character_over then
-				player.x = player.x - constants.room.tile_unit2
+				player.x = player.x - 2
 			end
 		end
 
