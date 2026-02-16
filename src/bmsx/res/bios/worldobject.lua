@@ -6,6 +6,7 @@ local fsm = require("fsm")
 local fsmlibrary = require("fsmlibrary")
 local components = require("components")
 local behaviourtree = require("behaviourtree")
+local world_instance = require("world").instance
 
 local worldobject = {}
 worldobject.__index = worldobject
@@ -58,9 +59,9 @@ function worldobject:generate_id()
 	local result
 	repeat
 		local baseid = self.type_name
-		local uniquenumber = world.getnextidnumber()
+		local uniquenumber = world_instance:getnextidnumber()
 		result = baseid .. "_" .. tostring(uniquenumber)
-	until not world.exists(result)
+	until world_instance:get(result) == nil
 	return result
 end
 

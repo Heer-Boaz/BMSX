@@ -32,6 +32,7 @@ type LuaLintIssueRule =
 	'bool01_duplicate_pattern' |
 	'pure_copy_function_pattern' |
 	'useless_assert_pattern' |
+	'empty_string_condition_pattern' |
 	'unused_init_value_pattern' |
 	'getter_setter_pattern' |
 	'single_line_method_pattern' |
@@ -45,7 +46,6 @@ type LuaLintIssueRule =
 	'forbidden_matches_state_path_pattern' |
 	'constant_copy_pattern' |
 	'require_lua_extension_pattern' |
-	'ensure_pattern' |
 	'ensure_pattern';
 
 type LuaLintIssue = {
@@ -337,6 +337,32 @@ function isIdentifier(expression: LuaExpression, name: string): boolean {
 
 function isNilExpression(expression: LuaExpression): boolean {
 	return expression.kind === LuaSyntaxKind.NilLiteralExpression;
+}
+
+function isEmptyStringLiteral(expression: LuaExpression): boolean {
+	return expression.kind === LuaSyntaxKind.StringLiteralExpression && expression.value === '';
+}
+
+function matchesEmptyStringConditionPattern(expression: LuaExpression): boolean {
+	if (expression.kind !== LuaSyntaxKind.BinaryExpression) {
+		return false;
+	}
+	if (expression.operator !== LuaBinaryOperator.Equal && expression.operator !== LuaBinaryOperator.NotEqual) {
+		return false;
+	}
+	return isEmptyStringLiteral(expression.left) || isEmptyStringLiteral(expression.right);
+}
+
+function lintEmptyStringConditionPattern(expression: LuaExpression, issues: LuaLintIssue[]): void {
+	if (!matchesEmptyStringConditionPattern(expression)) {
+		return;
+	}
+	pushIssue(
+		issues,
+		'empty_string_condition_pattern',
+		expression,
+		'Empty-string condition pattern is forbidden. Prefer truthy checks, and do not define empty strings as default/start/empty values.',
+	);
 }
 
 function isConstantAccessExpression(expression: LuaExpression): boolean {
@@ -715,8 +741,32 @@ function matchesCallDelegationGetter(expression: LuaExpression, parameterNames: 
 	return matchesForwardedArgumentList(expression.arguments, parameterNames);
 }
 
+function matchesLocalAliasReturnWrapperPattern(functionExpression: LuaFunctionExpression): boolean {
+	const body = functionExpression.body.body;
+	if (body.length !== 2) {
+		return false;
+	}
+	const localAssignment = body[0];
+	const returnStatement = body[1];
+	if (localAssignment.kind !== LuaSyntaxKind.LocalAssignmentStatement) {
+		return false;
+	}
+	if (returnStatement.kind !== LuaSyntaxKind.ReturnStatement || returnStatement.expressions.length !== 1) {
+		return false;
+	}
+	const assignment = localAssignment as LuaLocalAssignmentStatement;
+	if (assignment.names.length !== 1 || assignment.values.length !== 1) {
+		return false;
+	}
+	const returned = returnStatement.expressions[0];
+	return returned.kind === LuaSyntaxKind.IdentifierExpression && returned.name === assignment.names[0].name;
+}
+
 function matchesGetterPattern(functionExpression: LuaFunctionExpression): boolean {
 	const body = functionExpression.body.body;
+	if (matchesLocalAliasReturnWrapperPattern(functionExpression)) {
+		return true;
+	}
 	if (body.length !== 1) {
 		return false;
 	}
@@ -1706,6 +1756,7 @@ function lintExpression(expression: LuaExpression | null, issues: LuaLintIssue[]
 	if (!expression) {
 		return;
 	}
+	lintEmptyStringConditionPattern(expression, issues);
 	if (topLevel) {
 		lintMultiHasTagPattern(expression, issues);
 	}
