@@ -46,8 +46,6 @@ export enum KeyModifier {
 	meta = 1 << 3,
 }
 
-
-
 /**
  * Represents the Input class responsible for handling user input.
  */

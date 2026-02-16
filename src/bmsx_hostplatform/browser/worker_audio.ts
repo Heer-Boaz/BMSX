@@ -17,8 +17,6 @@ const CTRL_UNDERRUNS = 2;
 const CTRL_RESERVED = 3;
 const CTRL_LENGTH = 4;
 
-const DEFAULT_FRAME_TIME_SEC = 1 / 50;
-const DEFAULT_AUDIO_LEAD_FRAMES = 8;
 const DEFAULT_CAPACITY_FRAMES = 16384;
 
 const enum WorkerErrorScope {
@@ -31,7 +29,6 @@ const enum WorkerErrorScope {
 export interface WorkerStreamingAudioOptions {
 	capacityFrames?: number;
 	frameTimeSec?: number;
-	leadFrames?: number;
 }
 
 type MainToWorkerMessage =
@@ -40,10 +37,8 @@ type MainToWorkerMessage =
 		sampleRate: number;
 		capacityFrames: number;
 		frameTimeSec: number;
-		leadFrames: number;
 		ringSampleBuffer: SharedArrayBuffer;
 		ringControlBuffer: SharedArrayBuffer;
-		contextTimeOriginSec: number;
 		crossOriginIsolated: boolean;
 		decoderScriptUrl: string;
 	}
@@ -72,7 +67,6 @@ type MainToWorkerMessage =
 		type: 'create_voice';
 		voiceId: number;
 		clipId: number;
-		startedAtSec: number;
 		params: {
 			offset: number;
 			rate: number;
@@ -233,7 +227,6 @@ export class WorkerStreamingAudioService implements AudioService {
 	private readonly ringControlBuffer: SharedArrayBuffer;
 	private readonly capacityFrames: number;
 	private readonly frameTimeSec: number;
-	private readonly leadFrames: number;
 
 	private workletNode: AudioWorkletNode | null = null;
 	private workletModuleUrl = '';
@@ -269,14 +262,11 @@ export class WorkerStreamingAudioService implements AudioService {
 		if (this.capacityFrames < 2048) {
 			throw new Error('[WorkerStreamingAudioService] capacityFrames must be at least 2048.');
 		}
-		this.frameTimeSec = options.frameTimeSec ?? DEFAULT_FRAME_TIME_SEC;
-		if (!Number.isFinite(this.frameTimeSec) || this.frameTimeSec <= 0) {
+		const initialFrameTimeSec = options.frameTimeSec;
+		if (initialFrameTimeSec !== undefined && (!Number.isFinite(initialFrameTimeSec) || initialFrameTimeSec <= 0)) {
 			throw new Error('[WorkerStreamingAudioService] frameTimeSec must be a positive finite value.');
 		}
-		this.leadFrames = options.leadFrames ?? DEFAULT_AUDIO_LEAD_FRAMES;
-		if (!Number.isFinite(this.leadFrames) || this.leadFrames <= 0) {
-			throw new Error('[WorkerStreamingAudioService] leadFrames must be a positive finite value.');
-		}
+		this.frameTimeSec = initialFrameTimeSec ?? 0;
 
 		this.ctx = context ?? new AudioContext({ latencyHint: 'interactive' });
 		this.ringSampleBuffer = new SharedArrayBuffer(this.capacityFrames * 2 * Float32Array.BYTES_PER_ELEMENT);
@@ -326,10 +316,8 @@ export class WorkerStreamingAudioService implements AudioService {
 				sampleRate: this.ctx.sampleRate,
 				capacityFrames: this.capacityFrames,
 				frameTimeSec: this.frameTimeSec,
-				leadFrames: this.leadFrames,
 				ringSampleBuffer: this.ringSampleBuffer,
 				ringControlBuffer: this.ringControlBuffer,
-				contextTimeOriginSec: this.ctx.currentTime,
 				crossOriginIsolated: globalThis.crossOriginIsolated === true,
 				decoderScriptUrl: this.decoderScriptUrl,
 			});
@@ -414,15 +402,14 @@ export class WorkerStreamingAudioService implements AudioService {
 	const PCM_SCALE = 1 / 32768;
 	const MAX_ACTIVE_VOICES = 128;
 	const PUMP_WAIT_TIMEOUT_MS = 12;
+	const AUDIO_RENDER_QUANTUM_FRAMES = 128;
 
 	let ringSamples = null;
 	let ringControl = null;
 	let capacityFrames = 0;
 	let outputSampleRate = 0;
-	let frameTimeSec = 1 / 50;
-	let leadFrames = 8;
+	let frameTimeSec = 0;
 	let targetLeadFrames = 0;
-	let contextTimeOriginSec = 0;
 	let initialized = false;
 	let suspended = true;
 	let masterGain = 1;
@@ -473,25 +460,15 @@ export class WorkerStreamingAudioService implements AudioService {
 	}
 
 	function updateTargetLeadFrames() {
-		const framesPerFrame = outputSampleRate * frameTimeSec;
-		const requested = Math.ceil(framesPerFrame * leadFrames);
-		const minimum = 256;
-		const maximum = capacityFrames - 256;
+		const requested = frameTimeSec > 0
+			? Math.ceil(outputSampleRate * frameTimeSec)
+			: AUDIO_RENDER_QUANTUM_FRAMES;
+		const minimum = AUDIO_RENDER_QUANTUM_FRAMES;
+		const maximum = capacityFrames - AUDIO_RENDER_QUANTUM_FRAMES;
 		if (maximum <= minimum) {
 			throw new Error('[WorkerStreamingAudioService.worker] Ring capacity is too small for emulator lead buffering.');
 		}
 		targetLeadFrames = requested < minimum ? minimum : (requested > maximum ? maximum : requested);
-	}
-
-	function secToOutputSampleCounter(timeSec) {
-		const sample = Math.floor((timeSec - contextTimeOriginSec) * outputSampleRate);
-		if (sample <= 0) {
-			return 0;
-		}
-		if (sample >= 0xffffffff) {
-			return 0xffffffff >>> 0;
-		}
-		return sample >>> 0;
 	}
 
 	function wrapLoopPosition(position, loopStartFrames, loopEndFrames) {
@@ -955,9 +932,10 @@ export class WorkerStreamingAudioService implements AudioService {
 			startPosition = clamp(startPosition, 0, clip.frames);
 		}
 
-		const requestedStart = secToOutputSampleCounter(message.startedAtSec);
 		const writePtrNow = Atomics.load(ringControl, CTRL_WRITE_PTR) >>> 0;
-		const startSampleCounter = requestedStart > writePtrNow ? requestedStart : writePtrNow;
+		// Start voices at the current write pointer so queued audio remains sample-accurate
+		// without coupling start timing to absolute AudioContext time drift while suspended.
+		const startSampleCounter = writePtrNow;
 
 		const voice = {
 			voiceId: message.voiceId,
@@ -1171,8 +1149,6 @@ export class WorkerStreamingAudioService implements AudioService {
 		capacityFrames = message.capacityFrames;
 		outputSampleRate = message.sampleRate;
 		frameTimeSec = message.frameTimeSec;
-		leadFrames = message.leadFrames;
-		contextTimeOriginSec = message.contextTimeOriginSec;
 		masterGain = 1;
 		initialized = true;
 		suspended = true;
@@ -1488,7 +1464,6 @@ export class WorkerStreamingAudioService implements AudioService {
 			type: 'create_voice',
 			voiceId,
 			clipId: clip.clipId,
-			startedAtSec: startedAt,
 			params: {
 				offset: params.offset,
 				rate: params.rate,
