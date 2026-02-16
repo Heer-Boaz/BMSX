@@ -18,8 +18,9 @@ local function apply_image_metadata(self, id)
 end
 
 function spriteobject.new(opts)
+	opts = opts or {}
+	opts.type_name = "spriteobject"
 	local self = setmetatable(worldobject.new(opts), spriteobject)
-	self.type_name = "spriteobject"
 	self.flip_h = false
 	self.flip_v = false
 	self.imgid = "none"

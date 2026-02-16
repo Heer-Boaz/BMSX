@@ -356,24 +356,6 @@ function world_class:clear()
 	self._space_order = { "default" }
 	self.active_space_id = "default"
 end
-
-
-
--- returns next id number and increments the internal counter.
--- accepts being called either as an instance method (world:getnextidnumber())
--- or as a function on the module/instance (world.getnextidnumber()).
-function world_class:getnextidnumber()
-	if not self.idcounter then
-		self.idcounter = 1
-	end
-	if self.idcounter >= math.maxinteger then
-		self.idcounter = 1
-	end
-	local nextnumber = self.idcounter
-	self.idcounter = nextnumber + 1
-	return nextnumber
-end
-
 world_instance = world_class.new()
 
 return {

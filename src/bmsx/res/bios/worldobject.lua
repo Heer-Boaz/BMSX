@@ -11,6 +11,8 @@ local world_instance = require("world").instance
 local worldobject = {}
 worldobject.__index = worldobject
 
+local world_id_max = 2147483647
+
 local function component_key(type_or_name)
 	local t = type(type_or_name)
 	if t == "string" then
@@ -24,11 +26,10 @@ local function component_key(type_or_name)
 end
 
 function worldobject.new(opts)
-	local self = setmetatable({}, worldobject)
-	-- Ensure id is generated if not provided
-	self.id = opts.id or self:generate_id()
 	opts = opts or {}
-	self.type_name = 'worldobject'
+	local self = setmetatable({}, worldobject)
+	self.type_name = opts.type_name or 'worldobject'
+	self.id = opts.id or self:generate_id()
 	self.x = opts.x or 0
 	self.y = opts.y or 0
 	self.z = opts.z or 0
@@ -56,12 +57,22 @@ function worldobject.new(opts)
 end
 
 function worldobject:generate_id()
-	local result
-	repeat
-		local baseid = self.type_name
-		local uniquenumber = world_instance:getnextidnumber()
+	local baseid = self.type_name
+	local uniquenumber = world_instance.idcounter + 1
+	if uniquenumber >= world_id_max then
+		uniquenumber = 1
+	end
+
+	local result = baseid .. "_" .. tostring(uniquenumber)
+	while world_instance._by_id[result] ~= nil do
+		uniquenumber = uniquenumber + 1
+		if uniquenumber >= world_id_max then
+			uniquenumber = 1
+		end
 		result = baseid .. "_" .. tostring(uniquenumber)
-	until world_instance:get(result) == nil
+	end
+
+	world_instance.idcounter = uniquenumber
 	return result
 end
 

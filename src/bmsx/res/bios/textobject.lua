@@ -103,9 +103,9 @@ local function build_highlight_move_frames(params)
 end
 
 function textobject.new(opts)
-	local self = setmetatable(worldobject.new(opts), textobject)
 	opts = opts or {}
-	self.type_name = "textobject"
+	opts.type_name = "textobject"
+	local self = setmetatable(worldobject.new(opts), textobject)
 	self.text = { "" }
 	self.full_text_lines = { "" }
 	self.displayed_lines = { "" }

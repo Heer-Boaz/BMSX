@@ -31,6 +31,7 @@
 		"@types/systemjs": "*",
 		"@types/w3c-web-hid": "^1.0.6",
 		"@typescript/native-preview": "^7.0.0-dev.20250604.1",
+		"@wasm-audio-decoders/ogg-vorbis": "^0.1.20",
 		"@webgpu/types": "^0.1.64",
 		"blessed": "^0.1.81",
 		"blessed-contrib": "^4.11.0",
