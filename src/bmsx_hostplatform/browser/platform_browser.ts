@@ -37,7 +37,7 @@ import {
 	createSubscriptionHandle,
 	HZ_SCALE,
 } from 'bmsx/platform';
-import { WebAudioService } from './web_audio';
+import { WorkerStreamingAudioService } from './worker_audio';
 import type { GamepadControlHandle, GameViewCanvas, GameViewHost, HostEventListenerTarget, HostEventOptions, HostWindowEventType, OnscreenGamepadHandles, OverlayHandle, SurfaceBounds, ViewportDimensions } from '../platform';
 import { GAME_FPS, type vec2 } from 'bmsx/rompack/rompack';
 import { GameOptions } from 'bmsx/core/gameoptions';
@@ -98,7 +98,7 @@ export class BrowserPlatform implements Platform {
 		} else {
 			this.hid = new UnsupportedHID();
 		}
-		this.audio = new WebAudioService();
+		this.audio = new WorkerStreamingAudioService();
 		this.rng = new BrowserRngService();
 		this.gameviewHost = new BrowserGameViewHost(canvas);
 	}
