@@ -32,7 +32,7 @@ events:
         rules:
             - go:
                   audio_id: foeexplosion
-    p.e.try_sword:
+    evt.cue.sword.slice:
         channel: sfx
         max_voices: 1
         policy: replace

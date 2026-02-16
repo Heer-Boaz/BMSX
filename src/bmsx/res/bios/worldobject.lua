@@ -38,7 +38,7 @@ function worldobject.new(opts)
 	self.active = false
 	self.tick_enabled = false
 	self.eventhandling_enabled = false
-	self.player_index = opts.player_index or nil
+	self.player_index = opts.player_index
 	self.tags = opts.tags or {}
 	self.components = {}
 	self.component_map = {}
@@ -97,6 +97,10 @@ function worldobject:add_component(comp)
 	if comp.type_name == "actioneffectcomponent" then
 		self.actioneffects = comp
 	end
+	if comp.type_name == "abilitiescomponent" then
+		self.abilities = comp
+	end
+
 	return comp
 end
 
@@ -248,6 +252,32 @@ function worldobject:dispatch_state_event(event_or_name, payload)
 	return self.sc:dispatch(event_or_name, payload)
 end
 
+function worldobject:dispatch_command(event_or_name, payload)
+	return self.sc:dispatch(event_or_name, payload)
+end
+
+function worldobject:emit_gameplay_fact(event_or_name, payload)
+	local event = event_or_name
+	if type(event_or_name) ~= "table" then
+		local spec = { type = event_or_name, emitter = self }
+		if payload ~= nil then
+			if type(payload) == "table" and payload.type == nil then
+				for k, v in pairs(payload) do
+					spec[k] = v
+				end
+			else
+				spec.payload = payload
+			end
+		end
+		event = eventemitter.eventemitter.instance:create_gameevent(spec)
+	elseif event.emitter == nil then
+		event.emitter = self
+	end
+	self.events:emit_event(event)
+	self.sc:dispatch(event)
+	return event
+end
+
 function worldobject:activate()
 	self.active = true
 	self.tick_enabled = true
@@ -311,6 +341,18 @@ end
 
 function worldobject:get_timeline(id)
 	return self.timelines:get(id)
+end
+
+function worldobject:seek_timeline(id, frame)
+	return self.timelines:seek(id, frame)
+end
+
+function worldobject:force_seek_timeline(id, frame)
+	return self.timelines:force_seek(id, frame)
+end
+
+function worldobject:advance_timeline(id)
+	return self.timelines:advance(id)
 end
 
 function worldobject:add_btree(bt_id)

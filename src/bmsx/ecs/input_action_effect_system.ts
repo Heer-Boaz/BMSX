@@ -103,15 +103,20 @@ export class InputActionEffectSystem extends ECSystem {
 				playerIndex,
 				input,
 				effects,
+				queuedCommands: [],
 				queuedEvents: [],
 			};
 
 			this.evaluateProgram(program, env, programKey);
+			const queuedCommands = env.queuedCommands;
+			for (let idx = 0; idx < queuedCommands.length; idx++) {
+				const cmd = queuedCommands[idx]!;
+				obj.dispatch_command(cmd.event, cmd.payload);
+			}
 			const queuedEvents = env.queuedEvents;
 			for (let idx = 0; idx < queuedEvents.length; idx++) {
 				const evt = queuedEvents[idx]!;
-				if (!evt.emitter) evt.emitter = obj;
-				obj.sc.dispatch_event(evt);
+				obj.emit_gameplay_fact(evt);
 			}
 		}
 	}

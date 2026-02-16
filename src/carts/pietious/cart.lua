@@ -53,7 +53,7 @@ local function grant_starting_loadout()
 	player.inventory_items['greenvase'] = true
 	player.inventory_items['map_world1'] = true
 	player.inventory_items['pepernoot'] = true
-	player.secondary_weapon = 'pepernoot'
+	player:equip_subweapon('pepernoot')
 	player.weapon_level = constants.hud.weapon_level
 end
 

@@ -6,22 +6,6 @@ local eventemitter = require("eventemitter")
 
 local compile_effect_list
 
-local function is_effect_trigger(effect)
-	return effect["effect.trigger"] ~= nil
-end
-
-local function is_input_consume(effect)
-	return effect["input.consume"] ~= nil
-end
-
-local function is_gameplay_emit(effect)
-	return effect["emit.gameplay"] ~= nil
-end
-
-local function is_nested_commands(effect)
-	return effect.commands ~= nil
-end
-
 local function execute_effect_trigger(env, id, payload)
 	local effects = env.effects
 	if not effects then
@@ -34,7 +18,7 @@ local function execute_effect_trigger(env, id, payload)
 end
 
 local function compile_effect(effect, slot, analysis)
-	if is_effect_trigger(effect) then
+	if effect["effect.trigger"] ~= nil then
 		if analysis then
 			analysis.uses_effect_triggers = true
 		end
@@ -48,7 +32,7 @@ local function compile_effect(effect, slot, analysis)
 			execute_effect_trigger(env, spec.id, spec.payload)
 		end
 	end
-	if is_input_consume(effect) then
+	if effect["input.consume"] ~= nil then
 		local actions = effect["input.consume"]
 		if type(actions) ~= "table" then
 			actions = { actions }
@@ -59,18 +43,35 @@ local function compile_effect(effect, slot, analysis)
 			end
 		end
 	end
-	if is_gameplay_emit(effect) then
+	if effect["emit.gameplay"] ~= nil then
 		local spec = effect["emit.gameplay"]
 		return function(env)
-			local payload = spec.payload or {}
-			local base = { type = spec.event }
-			for k, v in pairs(payload) do
-				base[k] = v
+			local base = { emitter = env.owner, type = spec.event }
+			local payload = spec.payload
+			if payload ~= nil then
+				for k, v in pairs(payload) do
+					base[k] = v
+				end
 			end
 			env.queued_events[#env.queued_events + 1] = eventemitter.eventemitter.instance:create_gameevent(base)
 		end
 	end
-	if is_nested_commands(effect) then
+	if effect["dispatch.command"] ~= nil then
+		local spec = effect["dispatch.command"]
+		if type(spec) ~= "table" then
+			error("[inputactioneffectcompiler] dispatch.command must be a table.")
+		end
+		if type(spec.event) ~= "string" or spec.event == "" then
+			error("[inputactioneffectcompiler] dispatch.command is missing event.")
+		end
+		return function(env)
+			env.queued_commands[#env.queued_commands + 1] = {
+				event = spec.event,
+				payload = spec.payload,
+			}
+		end
+	end
+	if effect.commands ~= nil then
 		local nested = compile_effect_list(effect.commands, slot, analysis)
 		return nested
 	end
@@ -247,7 +248,7 @@ local function validate_effect(effect, ctx)
 	if not effect then
 		return
 	end
-	if is_effect_trigger(effect) then
+	if effect["effect.trigger"] ~= nil then
 		local descriptor = effect["effect.trigger"]
 		local effect_id = nil
 		local payload = nil
@@ -260,12 +261,42 @@ local function validate_effect(effect, ctx)
 		action_effects.validate(effect_id, payload)
 		return
 	end
-	if is_nested_commands(effect) then
+	if effect["emit.gameplay"] ~= nil then
+		local spec = effect["emit.gameplay"]
+		if type(spec) ~= "table" then
+			error("[inputactioneffectcompiler] program '" .. ctx.program_id .. "' binding '" .. ctx.binding_name .. "' slot '" .. ctx.slot .. "' emit.gameplay must be a table.")
+		end
+		if type(spec.event) ~= "string" or spec.event == "" then
+			error("[inputactioneffectcompiler] program '" .. ctx.program_id .. "' binding '" .. ctx.binding_name .. "' slot '" .. ctx.slot .. "' emit.gameplay missing event.")
+		end
+		local payload = spec.payload
+		if payload ~= nil and type(payload) == "table" then
+			if payload.type ~= nil then
+				error("[inputactioneffectcompiler] program '" .. ctx.program_id .. "' binding '" .. ctx.binding_name .. "' slot '" .. ctx.slot .. "' emit.gameplay payload must not contain reserved key 'type'.")
+			end
+			if payload.emitter ~= nil then
+				error("[inputactioneffectcompiler] program '" .. ctx.program_id .. "' binding '" .. ctx.binding_name .. "' slot '" .. ctx.slot .. "' emit.gameplay payload must not contain reserved key 'emitter'.")
+			end
+		end
+		return
+	end
+	if effect["dispatch.command"] ~= nil then
+		local spec = effect["dispatch.command"]
+		if type(spec) ~= "table" then
+			error("[inputactioneffectcompiler] program '" .. ctx.program_id .. "' binding '" .. ctx.binding_name .. "' slot '" .. ctx.slot .. "' dispatch.command must be a table.")
+		end
+		if type(spec.event) ~= "string" or spec.event == "" then
+			error("[inputactioneffectcompiler] program '" .. ctx.program_id .. "' binding '" .. ctx.binding_name .. "' slot '" .. ctx.slot .. "' dispatch.command missing event.")
+		end
+		return
+	end
+	if effect.commands ~= nil then
 		local commands = effect.commands
 		for i = 1, #commands do
 			local slot = ctx.slot .. ".commands[" .. i .. "]"
 			validate_effect(commands[i], { program_id = ctx.program_id, binding_name = ctx.binding_name, slot = slot })
 		end
+		return
 	end
 end
 

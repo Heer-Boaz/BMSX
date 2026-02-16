@@ -162,7 +162,7 @@ function item_screen:tick_secondary_weapon_selection()
 
 	local selected_weapon = secondary_weapon_order[self.secondary_weapon_selection_index + 1]
 	if selected_weapon ~= nil and player.inventory_items[selected_weapon] == true then
-		player.secondary_weapon = selected_weapon
+		player:equip_subweapon(selected_weapon)
 	end
 end
 

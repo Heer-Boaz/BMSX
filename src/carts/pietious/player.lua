@@ -1,7 +1,7 @@
 local constants = require('constants')
 local room = require('room')
 local components = require('components')
-local roomplayer_action_effects = require('player_action_effects')
+local player_abilities = require('player_abilities')
 
 local player = {}
 player.__index = player
@@ -54,9 +54,6 @@ local state_tags = {
 		hit_lock_states = 'g.hls',
 		hit_overlap_states = 'g.hos',
 	},
-	ability = {
-		spyglass = 'a.spy',
-	},
 	visual = {
 		jump_sword = 'vis.js',
 		ground_sword = 'vis.gs',
@@ -64,27 +61,9 @@ local state_tags = {
 	},
 }
 
-roomplayer_action_effects.attach_player_methods(player)
+player_abilities.attach_player_methods(player)
 
-local player_input_action_effect_program = {
-	eval = 'all',
-	bindings = {
-		{
-			name = 'secondary',
-			on = { press = 'b[jp]' },
-			go = {
-				press = { ['effect.trigger'] = roomplayer_action_effects.effect_ids.try_use_secondary },
-			},
-		},
-		{
-			name = 'sword',
-			on = { press = 'x[jp]' },
-			go = {
-				press = { ['effect.trigger'] = roomplayer_action_effects.effect_ids.try_start_sword },
-			},
-		},
-	},
-}
+local player_input_action_effect_program = player_abilities.build_input_action_effect_program()
 
 local player_dying_frames = timeline.build_frame_sequence({
 	{ value = { imgid = 'pietolon_dying_1' }, hold = 8 },
@@ -216,6 +195,9 @@ function player:define_runtime_timelines()
 		frames = player_sword_sequence_frames,
 		playback_mode = 'once',
 		autotick = false,
+		markers = {
+			{ frame = 1, event = 'evt.cue.sword.slice' },
+		},
 	}))
 	self:define_timeline(timeline.new({
 		id = 'p.seq.hi',
@@ -239,6 +221,10 @@ end
 
 function player:ctor()
 	self:bind_events()
+	self:add_component(components.abilitiescomponent.new({
+		parent = self,
+	}))
+	player_abilities.configure_player_abilities(self, state_tags)
 	self:add_component(components.inputactioneffectcomponent.new({
 		parent = self,
 		program = player_input_action_effect_program,
@@ -272,11 +258,12 @@ function player:ctor()
 	self:define_runtime_timelines()
 	self.inventory_items = {}
 	self.secondary_weapon = 'none'
+	self:equip_subweapon(self.secondary_weapon)
 	self.weapon_level = 0
 	self:reset_runtime()
 	self:apply_presentation_state()
 	self:update_collision_state()
-	self:get_timeline('p.seq.s'):force_seek(0)
+	self:force_seek_timeline('p.seq.s', 0)
 	self:reset_hit_invulnerability_sequence()
 	self:reset_fall_substate_sequence()
 
@@ -424,8 +411,9 @@ function player:apply_presentation_state()
 end
 
 function player:respawn()
+	self.abilities:end_once('sword', 'respawn')
 	self:reset_runtime()
-	self:get_timeline('p.seq.s'):force_seek(0)
+	self:force_seek_timeline('p.seq.s', 0)
 	self:reset_hit_invulnerability_sequence()
 	self:reset_fall_substate_sequence()
 	self:dispatch_state_event('respawn')
@@ -465,45 +453,6 @@ function player:update_facing_from_horizontal_input()
 	end
 end
 
-function player:try_start_sword_state()
-	if self:has_tag(state_tags.group.damage_lock) then
-		return
-	end
-	if self:has_tag(state_tags.group.sword) then
-		return
-	end
-
-	local event_name
-	if self:has_tag(state_tags.variant.quiet) then
-		event_name = 'sword_start_quiet'
-		self.sword_ground_origin = 'quiet'
-	elseif self:has_tag(state_tags.group.movement_walk) then
-		if self:has_tag(state_tags.variant.walking_left) then
-			self.sword_ground_origin = 'walking_left'
-			event_name = 'sword_start_walking_left'
-		else
-			self.sword_ground_origin = 'walking_right'
-			event_name = 'sword_start_walking_right'
-		end
-	elseif self:has_tag(state_tags.group.movement_jump) then
-		if self:has_tag(state_tags.variant.stopped_jumping) then
-			event_name = 'sword_start_stopped_jumping'
-		elseif self:has_tag(state_tags.variant.controlled_fall) then
-			event_name = 'sword_start_controlled_fall'
-		else
-			event_name = 'sword_start_jumping'
-		end
-	elseif self:has_tag(state_tags.variant.uncontrolled_fall) then
-		event_name = 'sword_start_uncontrolled_fall'
-	elseif self:has_tag(state_tags.variant.quiet_stairs) then
-		event_name = 'sword_start_stairs'
-	else return
-	end
-
-	self:get_timeline('p.seq.s'):force_seek(0)
-	self:dispatch_state_event(event_name)
-end
-
 function player:advance_sword_sequence()
 	local sword_sequence = self:get_timeline('p.seq.s')
 	if sword_sequence:value() >= constants.sword.duration_frames then
@@ -515,10 +464,11 @@ function player:advance_sword_sequence()
 			-- 	self.x = self.x + 2
 			-- end
 		end
+		self.abilities:end_once('sword', 'natural_end')
 		self:dispatch_state_event(player_sword_end_event)
 		return
 	end
-	sword_sequence:advance()
+	self:advance_timeline('p.seq.s')
 end
 
 function player:is_hittable()
@@ -581,7 +531,8 @@ function player:start_dying()
 	if self:has_tag(state_tags.variant.dying) then
 		return
 	end
-	self:get_timeline('p.seq.s'):force_seek(0)
+	self.abilities:end_once('sword', 'dying')
+	self:force_seek_timeline('p.seq.s', 0)
 	self.hit_direction = 0
 	self.hit_substate = 0
 	self.hit_recovery_timer = 0
@@ -614,7 +565,8 @@ function player:take_hit(amount, source_x, source_y, reason)
 		damage_event = 'damage'
 	end
 
-	self:get_timeline('p.seq.s'):force_seek(0)
+	self.abilities:end_once('sword', 'damage')
+	self:force_seek_timeline('p.seq.s', 0)
 	self.hit_stairs_lock = hit_on_stairs
 	self.hit_direction = hit_direction
 	self.hit_substate = 0
@@ -761,7 +713,8 @@ function player:update_enter_leave_cut(direction)
 end
 
 function player:begin_entering_world(world_entrance)
-	self:get_timeline('p.seq.s'):force_seek(0)
+	self.abilities:end_once('sword', 'transition')
+	self:force_seek_timeline('p.seq.s', 0)
 	self:clear_input_state()
 	self.stairs_direction = 0
 	self.stairs_x = -1
@@ -774,7 +727,8 @@ function player:begin_entering_world(world_entrance)
 end
 
 function player:begin_entering_shrine(shrine)
-	self:get_timeline('p.seq.s'):force_seek(0)
+	self.abilities:end_once('sword', 'transition')
+	self:force_seek_timeline('p.seq.s', 0)
 	self:clear_input_state()
 	self.stairs_direction = 0
 	self.stairs_x = -1
@@ -787,7 +741,8 @@ function player:begin_entering_shrine(shrine)
 end
 
 function player:begin_world_emerge_from_door()
-	self:get_timeline('p.seq.s'):force_seek(0)
+	self.abilities:end_once('sword', 'transition')
+	self:force_seek_timeline('p.seq.s', 0)
 	self:clear_input_state()
 	self:reset_enter_leave_animation()
 	self.enter_leave_world_target = ''
@@ -2193,7 +2148,8 @@ function player:advance_hit_stairs_fall(dy)
 end
 
 function player:tick_hit_fall()
-	self:get_timeline('p.seq.s'):force_seek(0)
+	self.abilities:end_once('sword', 'damage_lock')
+	self:force_seek_timeline('p.seq.s', 0)
 
 	local dx = self.hit_direction * constants.damage.knockback_dx
 	local dy
@@ -2239,7 +2195,8 @@ function player:tick_hit_fall()
 end
 
 function player:tick_hit_collision()
-	self:get_timeline('p.seq.s'):force_seek(0)
+	self.abilities:end_once('sword', 'damage_lock')
+	self:force_seek_timeline('p.seq.s', 0)
 
 	local dy
 	if self.hit_substate >= 4 then
@@ -2303,7 +2260,8 @@ function player:tick_hit_collision()
 end
 
 function player:tick_hit_recovery()
-	self:get_timeline('p.seq.s'):force_seek(0)
+	self.abilities:end_once('sword', 'damage_lock')
+	self:force_seek_timeline('p.seq.s', 0)
 	self.previous_x_collision = false
 	self.previous_y_collision = false
 	self.last_dx = 0
@@ -2321,11 +2279,12 @@ function player:tick_hit_recovery()
 end
 
 function player:tick_dying()
+	self.abilities:end_once('sword', 'dying')
 	self.previous_x_collision = false
 	self.previous_y_collision = false
 	self.last_dx = 0
 	self.last_dy = 0
-	self:get_timeline('p.seq.s'):force_seek(0)
+	self:force_seek_timeline('p.seq.s', 0)
 	self.death_timer = self.death_timer + 1
 	if self.death_timer < constants.damage.death_frames then
 		return
@@ -2364,9 +2323,9 @@ function player:tick()
 end
 
 local function define_player_fsm()
-	local states = {
-		quiet = {
-			tags = { state_tags.variant.quiet, state_tags.ability.spyglass },
+		local states = {
+			quiet = {
+				tags = { state_tags.variant.quiet },
 			on = {
 				['jump_input'] = '/jumping',
 				['left_down'] = '/walking_left',
@@ -2386,8 +2345,8 @@ local function define_player_fsm()
 				},
 			},
 		},
-		walking_right = {
-			tags = { state_tags.variant.walking_right, state_tags.ability.spyglass },
+			walking_right = {
+				tags = { state_tags.variant.walking_right },
 			on = {
 				['jump_input'] = '/jumping',
 				['left_override'] = '/walking_left',
@@ -2413,8 +2372,8 @@ local function define_player_fsm()
 				},
 			},
 		},
-		walking_left = {
-			tags = { state_tags.variant.walking_left, state_tags.ability.spyglass },
+			walking_left = {
+				tags = { state_tags.variant.walking_left },
 			on = {
 				['jump_input'] = '/jumping',
 				['right_override'] = '/walking_right',
@@ -2477,73 +2436,87 @@ local function define_player_fsm()
 			process_input = player.sample_input,
 			tick = player.tick_uncontrolled_fall_motion,
 		},
-		quiet_sword = {
-			tags = {
-				state_tags.variant.quiet_sword,
-				state_tags.group.sword,
-				state_tags.ability.spyglass,
-				state_tags.visual.ground_sword,
+			quiet_sword = {
+				tags = {
+					state_tags.variant.quiet_sword,
+					state_tags.group.sword,
+					state_tags.visual.ground_sword,
+				},
+				on = {
+					[player_sword_end_event] = '/quiet',
+					['no_ground'] = '/uc_fall_sword',
+				},
+				entering_state = function(self)
+					self.abilities:begin('sword')
+				end,
+				process_input = player.sample_input,
+				tick = player.tick_quiet_sword,
 			},
-			on = {
-				[player_sword_end_event] = '/quiet',
-				['no_ground'] = '/uc_fall_sword',
-			},
-			process_input = player.sample_input,
-			tick = player.tick_quiet_sword,
-		},
 		uc_fall_sword = {
 			tags = {
 				state_tags.variant.uc_fall_sword,
 				state_tags.group.sword,
 				state_tags.visual.jump_sword,
 			},
-			on = {
-				[player_sword_end_event] = '/uncontrolled_fall',
-				['landed_to_quiet_sword'] = '/quiet_sword',
+				on = {
+					[player_sword_end_event] = '/uncontrolled_fall',
+					['landed_to_quiet_sword'] = '/quiet_sword',
+				},
+				entering_state = function(self)
+					self.abilities:begin('sword')
+				end,
+				process_input = player.sample_input,
+				tick = player.tick_uncontrolled_fall_motion,
 			},
-			process_input = player.sample_input,
-			tick = player.tick_uncontrolled_fall_motion,
-		},
 		c_fall_sword = {
 			tags = {
 				state_tags.variant.c_fall_sword,
 				state_tags.group.sword,
 				state_tags.visual.jump_sword,
 			},
-			on = {
-				[player_sword_end_event] = '/controlled_fall',
-				['landed_to_quiet_sword'] = '/quiet_sword',
+				on = {
+					[player_sword_end_event] = '/controlled_fall',
+					['landed_to_quiet_sword'] = '/quiet_sword',
+				},
+				entering_state = function(self)
+					self.abilities:begin('sword')
+				end,
+				process_input = player.sample_input,
+				tick = player.tick_controlled_fall_motion,
 			},
-			process_input = player.sample_input,
-			tick = player.tick_controlled_fall_motion,
-		},
 		jumping_sword = {
 			tags = {
 				state_tags.variant.jumping_sword,
 				state_tags.group.sword,
 				state_tags.visual.jump_sword,
 			},
-			on = {
-				[player_sword_end_event] = '/jumping',
-				['ceiling_to_sj_sword'] = '/sj_sword',
-				['jump_apex_to_c_fall_sword'] = '/c_fall_sword',
+				on = {
+					[player_sword_end_event] = '/jumping',
+					['ceiling_to_sj_sword'] = '/sj_sword',
+					['jump_apex_to_c_fall_sword'] = '/c_fall_sword',
+				},
+				entering_state = function(self)
+					self.abilities:begin('sword')
+				end,
+				process_input = player.sample_input,
+				tick = player.tick_jump_motion,
 			},
-			process_input = player.sample_input,
-			tick = player.tick_jump_motion,
-		},
 		sj_sword = {
 			tags = {
 				state_tags.variant.sj_sword,
 				state_tags.group.sword,
 				state_tags.visual.jump_sword,
 			},
-			on = {
-				[player_sword_end_event] = '/stopped_jumping',
-				['stopped_to_fall_to_c_fall_sword'] = '/c_fall_sword',
+				on = {
+					[player_sword_end_event] = '/stopped_jumping',
+					['stopped_to_fall_to_c_fall_sword'] = '/c_fall_sword',
+				},
+				entering_state = function(self)
+					self.abilities:begin('sword')
+				end,
+				process_input = player.sample_input,
+				tick = player.tick_stopped_jump_motion,
 			},
-			process_input = player.sample_input,
-			tick = player.tick_stopped_jump_motion,
-		},
 		up_stairs = {
 			tags = { state_tags.variant.up_stairs, state_tags.group.stairs },
 			on = {
@@ -2596,12 +2569,15 @@ local function define_player_fsm()
 				state_tags.group.sword,
 				state_tags.visual.stairs_sword,
 			},
-			on = {
-				[player_sword_end_event] = '/quiet_stairs',
+				on = {
+					[player_sword_end_event] = '/quiet_stairs',
+				},
+				entering_state = function(self)
+					self.abilities:begin('sword')
+				end,
+				process_input = player.sample_input,
+				tick = player.tick_sword_stairs,
 			},
-			process_input = player.sample_input,
-			tick = player.tick_sword_stairs,
-		},
 		entering_world = {
 			tags = {
 				state_tags.variant.entering_world,
@@ -2787,11 +2763,26 @@ local function define_player_fsm()
 				state_tags.variant.uncontrolled_fall,
 			},
 		},
-		on = {
-			['enemy.contact_damage'] = {
-				go = function(self, _state, event)
-					self:take_hit(event.amount, event.source_x, event.source_y, event.reason)
-				end,
+			on = {
+				[player_abilities.command_ids.activate_sword] = {
+					go = function(self)
+						self.abilities:activate('sword')
+					end,
+				},
+				[player_abilities.command_ids.activate_pepernoot] = {
+					go = function(self)
+						self.abilities:activate('pepernoot')
+					end,
+				},
+				[player_abilities.command_ids.activate_spyglass] = {
+					go = function(self)
+						self.abilities:activate('spyglass')
+					end,
+				},
+				['enemy.contact_damage'] = {
+					go = function(self, _state, event)
+						self:take_hit(event.amount, event.source_x, event.source_y, event.reason)
+					end,
 			},
 			['hp_zero'] = '/dying',
 			['damage'] = '/hit_fall',
@@ -2806,18 +2797,11 @@ local function define_player_fsm()
 end
 
 local function register_player_definition()
-	roomplayer_action_effects.define_player_effects(state_tags)
 	define_prefab({
 		def_id = 'player.def',
 		class = player,
 		type = 'sprite',
 		fsms = { 'player.fsm' },
-		effects = {
-			roomplayer_action_effects.effect_ids.try_start_sword,
-			roomplayer_action_effects.effect_ids.try_use_secondary,
-			roomplayer_action_effects.effect_ids.try_use_pepernoot,
-			roomplayer_action_effects.effect_ids.try_use_spyglass,
-		},
 		defaults = {
 			imgid = 'pietolon_stand_r',
 			player_index = 1,
@@ -2877,12 +2861,12 @@ local function register_player_definition()
 			enter_leave_world_target = '',
 			enter_leave_shrine_text_lines = {},
 			inventory_items = nil,
-			secondary_weapon = 'none',
-			weapon_level = 0,
-			pepernoot_projectile_sequence = 0,
-			pepernoot_projectile_ids = {},
-		},
-	})
+				secondary_weapon = 'none',
+				weapon_level = 0,
+				pepernoot_projectile_sequence = 0,
+				pepernoot_projectile_ids = {},
+			},
+		})
 end
 
 return {

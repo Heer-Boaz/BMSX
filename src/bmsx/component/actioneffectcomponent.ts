@@ -87,11 +87,12 @@ export class ActionEffectComponent extends Component {
 		const owner = this.ownerOrThrow();
 		const outcome = this.invokeHandler(definition, owner, payload);
 		// Effects emit owner-scoped events; handlers should apply side effects directly and return optional payload/event name.
-		const eventType = outcome?.event ?? definition.event ?? (definition.id as string);
-		const eventPayload = outcome && outcome.payload !== undefined ? outcome.payload : payload;
-		const event = this.createOwnerEvent(owner, eventType, eventPayload);
-		owner.events.emit_event(event);
-		owner.sc.dispatch_event(event);
+		const eventType = outcome?.event ?? definition.event;
+		if (eventType !== undefined) {
+			const eventPayload = outcome && outcome.payload !== undefined ? outcome.payload : payload;
+			const event = this.createOwnerEvent(owner, eventType, eventPayload);
+			owner.emit_gameplay_fact(event);
+		}
 
 		if (definition.cooldown_ms !== undefined && definition.cooldown_ms > 0) {
 			this.cooldownUntil.set(id, now + definition.cooldown_ms);

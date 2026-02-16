@@ -41,10 +41,16 @@ export interface EmitGameplayDescriptor {
 	payload?: EventPayload;
 }
 
+export interface DispatchCommandDescriptor {
+	event: string;
+	payload?: EventPayload;
+}
+
 export type Effect =
 	| { 'effect.trigger': ActionEffectIdentifier | ActionEffectTriggerDescriptor }
 	| { 'input.consume': string | string[] }
 	| { 'emit.gameplay': EmitGameplayDescriptor }
+	| { 'dispatch.command': DispatchCommandDescriptor }
 	| { commands: Effect[] };
 
 export interface EffectTable {

@@ -6,8 +6,10 @@ import type {
 	Effect,
 	ActionEffectTriggerDescriptor,
 	EmitGameplayDescriptor,
+	DispatchCommandDescriptor,
 } from './input_action_effect_dsl';
 import { create_gameevent, type GameEvent } from '../core/game_event';
+import type { EventPayload } from '../core/eventemitter';
 import type { ActionEffectId } from './effect_types';
 import type { ActionEffectComponent } from '../component/actioneffectcomponent';
 import type { WorldObject } from '../core/object/worldobject';
@@ -20,7 +22,13 @@ export interface BindingExecutionEnv {
 	playerIndex: number;
 	input: PlayerInput;
 	effects?: ActionEffectComponent;
+	queuedCommands: QueuedCommand[];
 	queuedEvents: GameEvent[];
+}
+
+export interface QueuedCommand {
+	event: string;
+	payload?: EventPayload;
 }
 
 export type PatternPredicate = (input: PlayerInput) => boolean;
@@ -215,8 +223,15 @@ function compileEffect(effect: Effect, slot?: string, analysis?: BindingAnalysis
 		const { event, payload } = effect['emit.gameplay'];
 		if (!event) throw new Error(`Missing event name in emit.gameplay effect ${JSON.stringify(effect)}`);
 		return (env: BindingExecutionEnv) => {
-			const evt = create_gameevent({ type: event, ...(payload ?? {}) });
+			const evt = create_gameevent({ ...(payload ?? {}), emitter: env.owner, type: event });
 			env.queuedEvents.push(evt);
+		};
+	}
+	if (isDispatchCommand(effect)) {
+		const { event, payload } = effect['dispatch.command'];
+		if (!event) throw new Error(`Missing event name in dispatch.command effect ${JSON.stringify(effect)}`);
+		return (env: BindingExecutionEnv) => {
+			env.queuedCommands.push({ event, payload });
 		};
 	}
 	if (isNestedCommands(effect)) {
@@ -311,6 +326,29 @@ function validateEffect(effect: Effect, ctx: ValidationContext): void {
 			const slot = `${ctx.slot}.commands[${i}]`;
 			validateEffect(nested, { programId: ctx.programId, bindingName: ctx.bindingName, slot });
 		}
+		return;
+	}
+	if (isGameplayEmit(effect)) {
+		const { event, payload } = effect['emit.gameplay'];
+		if (!event) {
+			throw new Error(`[InputActionEffectProgramValidation] Program '${ctx.programId}' binding '${ctx.bindingName}' slot '${ctx.slot}' emit.gameplay is missing event.`);
+		}
+		if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+			const table = payload as Record<string, unknown>;
+			if (has_own(table, 'type')) {
+				throw new Error(`[InputActionEffectProgramValidation] Program '${ctx.programId}' binding '${ctx.bindingName}' slot '${ctx.slot}' emit.gameplay payload must not contain reserved key 'type'.`);
+			}
+			if (has_own(table, 'emitter')) {
+				throw new Error(`[InputActionEffectProgramValidation] Program '${ctx.programId}' binding '${ctx.bindingName}' slot '${ctx.slot}' emit.gameplay payload must not contain reserved key 'emitter'.`);
+			}
+		}
+		return;
+	}
+	if (isDispatchCommand(effect)) {
+		const { event } = effect['dispatch.command'];
+		if (!event) {
+			throw new Error(`[InputActionEffectProgramValidation] Program '${ctx.programId}' binding '${ctx.bindingName}' slot '${ctx.slot}' dispatch.command is missing event.`);
+		}
 	}
 }
 
@@ -324,6 +362,10 @@ function isInputConsume(effect: Effect): effect is { 'input.consume': string | s
 
 function isGameplayEmit(effect: Effect): effect is { 'emit.gameplay': EmitGameplayDescriptor } {
 	return has_own(effect, 'emit.gameplay');
+}
+
+function isDispatchCommand(effect: Effect): effect is { 'dispatch.command': DispatchCommandDescriptor } {
+	return has_own(effect, 'dispatch.command');
 }
 
 function isNestedCommands(effect: Effect): effect is { commands: Effect[] } {

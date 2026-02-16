@@ -10,15 +10,17 @@ import { ObjectTracker } from "../../utils/objecttracker";
 import { new_vec2, new_vec3 } from '../../utils/vector_operations';
 import { middlepoint_area, new_area } from '../../utils/rect_operations';
 import { StateDefinitions, registerHandlersForLinkedMachines } from '../../fsm/fsmlibrary';
-import { EventEmitter, EventPort, eventsOf } from "../eventemitter";
+import { EventEmitter, EventPort, eventsOf, type EventPayload } from "../eventemitter";
 import { Registry } from "../registry";
 import { CustomVisualComponent } from '../../component/customvisual_component';
 import { Collider2DComponent } from '../../component/collisioncomponents';
 import { V3 } from '../../render/3d/math3d';
 import type { SpawnReason } from '../world';
 import { ActionEffectComponent } from '../../component/actioneffectcomponent';
+import { AbilitiesComponent } from '../../component/abilitiescomponent';
 import { TimelineComponent, type TimelinePlayOptions } from '../../component/timeline_component';
 import type { Timeline, TimelineDefinition } from '../../timeline/timeline';
+import { create_gameevent, type GameEvent } from '../game_event';
 
 const DEFAULT_VISIBLE = true;
 const DEFAULT_POSITION_VALUES: [number, number, number] = [0, 0, 0];
@@ -255,6 +257,11 @@ export class WorldObject implements vec3, ComponentContainer, Stateful, Native {
 	/** Shorthand getter for retrieving the action-effect component attached to this object. */
 	public get actioneffects(): ActionEffectComponent {
 		return this.get_unique_component(ActionEffectComponent);
+	}
+
+	/** Shorthand getter for retrieving the abilities component attached to this object. */
+	public get abilities(): AbilitiesComponent {
+		return this.get_unique_component(AbilitiesComponent);
 	}
 
 	/**
@@ -847,6 +854,34 @@ export class WorldObject implements vec3, ComponentContainer, Stateful, Native {
 
 	public matches_state_tag(tag: string): boolean {
 		return this.has_tag(tag);
+	}
+
+	public dispatch_command(eventOrName: GameEvent | string, payload?: EventPayload): void {
+		if (typeof eventOrName === 'string') {
+			const event = create_gameevent({ ...(payload ?? {}), emitter: this, type: eventOrName });
+			this.sc.dispatch_event(event);
+			return;
+		}
+		const event = eventOrName;
+		if (!event.emitter) {
+			event.emitter = this;
+		}
+		this.sc.dispatch_event(event);
+	}
+
+	public emit_gameplay_fact(eventOrName: GameEvent | string, payload?: EventPayload): GameEvent {
+		let event: GameEvent;
+		if (typeof eventOrName === 'string') {
+			event = create_gameevent({ ...(payload ?? {}), emitter: this, type: eventOrName });
+		} else {
+			event = eventOrName;
+			if (!event.emitter) {
+				event.emitter = this;
+			}
+		}
+		this.events.emit_event(event);
+		this.sc.dispatch_event(event);
+		return event;
 	}
 
 	removeComponentsWithTag(tag: ComponentTag): void {

@@ -230,11 +230,12 @@ function actioneffectcomponent:trigger(id, opts)
 	end
 
 	local outcome = invoke_handler(definition, context, args)
-	local event_type = (outcome and outcome.event) or definition.event or definition.id
-	local event_payload = (outcome and outcome.payload ~= nil) and outcome.payload or payload
-	local event = create_owner_event(owner, event_type, event_payload)
-	owner.events:emit_event(event)
-	owner.sc:dispatch(event)
+	local event_type = (outcome and outcome.event) or definition.event
+	if event_type ~= nil then
+		local event_payload = (outcome and outcome.payload ~= nil) and outcome.payload or payload
+		local event = create_owner_event(owner, event_type, event_payload)
+		owner:emit_gameplay_fact(event)
+	end
 
 	if definition.cooldown_ms and definition.cooldown_ms > 0 then
 		self.cooldown_until[id] = now + definition.cooldown_ms

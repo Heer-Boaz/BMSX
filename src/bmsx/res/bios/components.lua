@@ -428,6 +428,31 @@ function timelinecomponent:get(id)
 	return entry and entry.instance or nil
 end
 
+function timelinecomponent:seek(id, frame)
+	local entry = self.registry[id]
+	if not entry then
+		error("[timelinecomponent] unknown timeline '" .. id .. "' on '" .. self.parent.id .. "'")
+	end
+	entry.instance:force_seek(frame)
+	return entry.instance
+end
+
+function timelinecomponent:force_seek(id, frame)
+	return self:seek(id, frame)
+end
+
+function timelinecomponent:advance(id)
+	local entry = self.registry[id]
+	if not entry then
+		error("[timelinecomponent] unknown timeline '" .. id .. "' on '" .. self.parent.id .. "'")
+	end
+	local events = entry.instance:advance()
+	if #events > 0 then
+		self:process_events(entry, events, 0)
+	end
+	return events
+end
+
 function timelinecomponent:play(id, opts)
 	local entry = self.registry[id]
 	if not entry then
@@ -810,6 +835,100 @@ function inputactioneffectcomponent.new(opts)
 	return self
 end
 
+local function merge_ability_payload(base, payload)
+	if payload == nil then
+		return base
+	end
+	if type(payload) == "table" then
+		for k, v in pairs(payload) do
+			base[k] = v
+		end
+		return base
+	end
+	base.payload = payload
+	return base
+end
+
+-- abilitiescomponent: owns ability activation + lifecycle events
+local abilitiescomponent = {}
+abilitiescomponent.__index = abilitiescomponent
+setmetatable(abilitiescomponent, { __index = component })
+
+function abilitiescomponent.new(opts)
+	opts = opts or {}
+	opts.type_name = "abilitiescomponent"
+	opts.unique = true
+	local self = setmetatable(component.new(opts), abilitiescomponent)
+	self.registered = {}
+	self.instance_seq = {}
+	self.active_seq = {}
+	self.ended_seq = {}
+	return self
+end
+
+function abilitiescomponent:register_ability(id, definition)
+	if type(id) ~= "string" or id == "" then
+		error("[abilitiescomponent] ability id must be a non-empty string.")
+	end
+	if type(definition) ~= "table" then
+		error("[abilitiescomponent] ability definition must be a table for '" .. id .. "'.")
+	end
+	self.registered[id] = definition
+end
+
+function abilitiescomponent:activate(id, payload)
+	local definition = self.registered[id]
+	if definition == nil then
+		error("[abilitiescomponent] unknown ability '" .. tostring(id) .. "' on '" .. self.parent.id .. "'")
+	end
+	local activate = definition.activate
+	if activate == nil then
+		return false
+	end
+	local result = activate({
+		component = self,
+		owner = self.parent,
+		ability = id,
+		payload = payload,
+	})
+	return result ~= false
+end
+
+function abilitiescomponent:begin(id, payload)
+	local active_seq = self.active_seq[id]
+	if active_seq ~= nil and active_seq ~= 0 then
+		return active_seq
+	end
+	local next_seq = (self.instance_seq[id] or 0) + 1
+	self.instance_seq[id] = next_seq
+	self.active_seq[id] = next_seq
+	local event_payload = merge_ability_payload({
+		ability = id,
+		ability_instance_seq = next_seq,
+	}, payload)
+	self.parent:emit_gameplay_fact("evt.ability.start." .. id, event_payload)
+	return next_seq
+end
+
+function abilitiescomponent:end_once(id, reason, payload)
+	local active_seq = self.active_seq[id]
+	if active_seq == nil or active_seq == 0 then
+		return false
+	end
+	if self.ended_seq[id] == active_seq then
+		return false
+	end
+	self.ended_seq[id] = active_seq
+	self.active_seq[id] = 0
+	local event_payload = merge_ability_payload({
+		ability = id,
+		ability_instance_seq = active_seq,
+		reason = reason,
+	}, payload)
+	self.parent:emit_gameplay_fact("evt.ability.end." .. id, event_payload)
+	return true
+end
+
 -- positionupdateaxiscomponent: tracks old position for physics/boundary systems
 local positionupdateaxiscomponent = {}
 positionupdateaxiscomponent.__index = positionupdateaxiscomponent
@@ -894,6 +1013,7 @@ local componentregistry = {
 	customvisualcomponent = customvisualcomponent,
 	inputintentcomponent = inputintentcomponent,
 	inputactioneffectcomponent = inputactioneffectcomponent,
+	abilitiescomponent = abilitiescomponent,
 	positionupdateaxiscomponent = positionupdateaxiscomponent,
 	screenboundarycomponent = screenboundarycomponent,
 	tilecollisioncomponent = tilecollisioncomponent,
@@ -923,6 +1043,7 @@ return {
 	customvisualcomponent = customvisualcomponent,
 	inputintentcomponent = inputintentcomponent,
 	inputactioneffectcomponent = inputactioneffectcomponent,
+	abilitiescomponent = abilitiescomponent,
 	positionupdateaxiscomponent = positionupdateaxiscomponent,
 	screenboundarycomponent = screenboundarycomponent,
 	tilecollisioncomponent = tilecollisioncomponent,

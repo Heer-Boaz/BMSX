@@ -93,17 +93,20 @@ function inputactioneffectsystem:process_input_action_programs()
 			owner_id = owner_id,
 			player_index = player_index,
 			effects = effects,
+			queued_commands = {},
 			queued_events = {},
 		}
 
 		self:evaluate_program(program, env, program_key)
+		local queued_commands = env.queued_commands
+		for i = 1, #queued_commands do
+			local command = queued_commands[i]
+			obj:dispatch_command(command.event, command.payload)
+		end
 		local queued = env.queued_events
 		for i = 1, #queued do
 			local evt = queued[i]
-			if not evt.emitter then
-				evt.emitter = obj
-			end
-			obj.sc:dispatch(evt)
+			obj:emit_gameplay_fact(evt)
 		end
 		::continue::
 	end
