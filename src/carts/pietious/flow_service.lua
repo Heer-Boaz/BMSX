@@ -43,7 +43,7 @@ function flow_service:bind_events()
 		subscriber = self,
 		handler = function(event)
 			if event.transition_kind == 'world_banner' then
-				self:queue_banner_transition('world_banner', event.world_number, '')
+				self:queue_banner_transition('world_banner', event.world_number, nil)
 				return
 			end
 			if event.transition_kind == 'castle_banner' then
@@ -96,16 +96,16 @@ function flow_service:banner_lines()
 end
 
 function flow_service:ctor()
-	self.pending_banner_mode = ''
+	self.pending_banner_mode = nil
 	self.pending_banner_world_number = 0
-	self.pending_banner_post_action = ''
+	self.pending_banner_post_action = nil
 	self.pending_shrine_open = false
 	self.pending_shrine_close = false
 	self.pending_shrine_text_lines = {}
 	self.overlay_mode = 'none'
 	self.overlay_text_lines = {}
 	self.transition_frames_left = 0
-	self.banner_post_action = ''
+	self.banner_post_action = nil
 	self:activate_spaces()
 	self:bind_events()
 	self:spawn_interaction_view_if_needed()
@@ -128,7 +128,7 @@ local function define_flow_service_fsm()
 						self.pending_shrine_open = false
 						return '/shrine_overlay'
 					end
-					if self.pending_banner_mode ~= '' then
+					if self.pending_banner_mode then
 						return '/banner_transition'
 					end
 					if self:item_screen_toggle_pressed() then
@@ -146,9 +146,9 @@ local function define_flow_service_fsm()
 					else
 						self.transition_frames_left = constants.flow.castle_banner_frames
 					end
-					self.pending_banner_mode = ''
+					self.pending_banner_mode = nil
 					self.pending_banner_world_number = 0
-					self.pending_banner_post_action = ''
+					self.pending_banner_post_action = nil
 					set_space('transition')
 					object('ui').space_id = 'transition'
 					object('shrine_world_view').space_id = 'transition'
@@ -162,7 +162,7 @@ local function define_flow_service_fsm()
 						if self.banner_post_action == 'castle_emerge' then
 							object('pietolon'):begin_world_emerge_from_door()
 						end
-						self.banner_post_action = ''
+						self.banner_post_action = nil
 						return '/castle'
 					end
 				end,
@@ -199,7 +199,7 @@ local function define_flow_service_fsm()
 					self:emit_state_changed('item')
 				end,
 				tick = function(self)
-					if self.pending_banner_mode ~= '' then
+					if self.pending_banner_mode then
 						return '/banner_transition'
 					end
 					if self.pending_shrine_open then
@@ -226,16 +226,13 @@ local function register_flow_service_definition()
 			id = 'f',
 			space_id = 'ui',
 			player_index = 1,
-			pending_banner_mode = '',
 			pending_banner_world_number = 0,
-			pending_banner_post_action = '',
 			pending_shrine_open = false,
 			pending_shrine_close = false,
 			pending_shrine_text_lines = {},
 			overlay_mode = 'none',
 			overlay_text_lines = {},
 			transition_frames_left = 0,
-			banner_post_action = '',
 			tick_enabled = true,
 		},
 	})

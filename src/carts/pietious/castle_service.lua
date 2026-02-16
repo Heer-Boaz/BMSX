@@ -4,6 +4,12 @@ local castle_map = require('castle_map')
 
 local castle_service = {}
 
+local function clear_map(map)
+	for key in pairs(map) do
+		map[key] = nil
+	end
+end
+
 local function condition_matches(self, condition, enemy_id)
 	if condition == 'not_destroyed' then
 		return self.defeated_enemy_ids[enemy_id] ~= true
@@ -16,6 +22,14 @@ local function condition_matches(self, condition, enemy_id)
 		return not flag_is_set
 	end
 	return flag_is_set
+end
+
+local function set_enemy_condition_flag(self, condition)
+	if self.enemy_condition_flags[condition] then
+		return false
+	end
+	self.enemy_condition_flags[condition] = true
+	return true
 end
 
 function castle_service:enemy_should_spawn(enemy_def)
@@ -87,40 +101,65 @@ function castle_service:sync_enemy_instance(enemy_def, room)
 	return instance
 end
 
-function castle_service:deactivate_unused_enemies(active_ids)
-	for id, instance in pairs(self.enemies_by_id) do
-		local live_instance = object(id)
-		if live_instance == nil then
-			self.enemies_by_id[id] = nil
-			goto continue
+function castle_service:deactivate_enemy_by_id(id)
+	local instance = self.enemies_by_id[id]
+	if instance == nil then
+		instance = object(id)
+		if instance == nil then
+			return
 		end
-
-		instance = live_instance
-		self.enemies_by_id[id] = instance
-		if active_ids[id] ~= true then
-			instance.visible = false
-			if instance.active then
-				instance:deactivate()
-			end
-		end
-		::continue::
 	end
+	self.enemies_by_id[id] = instance
+	instance.visible = false
+	if instance.active then
+		instance:deactivate()
+	end
+end
+
+function castle_service:deactivate_stale_active_enemies(next_active_ids)
+	local previous_active_ids = self.active_enemy_ids
+	for id in pairs(previous_active_ids) do
+		if next_active_ids[id] ~= true then
+			self:deactivate_enemy_by_id(id)
+		end
+	end
+end
+
+function castle_service:commit_active_enemy_ids(next_active_ids)
+	local previous_active_ids = self.active_enemy_ids
+	self.active_enemy_ids = next_active_ids
+	self.active_enemy_ids_scratch = previous_active_ids
+	clear_map(previous_active_ids)
 end
 
 function castle_service:refresh_current_room_enemies()
 	local room = self.current_room
 	local enemy_defs = room.enemies
-	local active_ids = {}
+	local next_active_ids = self.active_enemy_ids_scratch
+	local previous_active_ids = self.active_enemy_ids
+	clear_map(next_active_ids)
 
 	for i = 1, #enemy_defs do
 		local enemy_def = enemy_defs[i]
-		if self:enemy_should_spawn(enemy_def) then
-			self:sync_enemy_instance(enemy_def, room)
-			active_ids[enemy_def.id] = true
+		local enemy_id = enemy_def.id
+		if not self:enemy_should_spawn(enemy_def) then
+			goto continue
 		end
+		if previous_active_ids[enemy_id] == true then
+			local live_instance = object(enemy_id)
+			if live_instance ~= nil then
+				self.enemies_by_id[enemy_id] = live_instance
+				next_active_ids[enemy_id] = true
+				goto continue
+			end
+		end
+		self:sync_enemy_instance(enemy_def, room)
+		next_active_ids[enemy_id] = true
+		::continue::
 	end
 
-	self:deactivate_unused_enemies(active_ids)
+	self:deactivate_stale_active_enemies(next_active_ids)
+	self:commit_active_enemy_ids(next_active_ids)
 end
 
 function castle_service:bind_enemy_events()
@@ -131,6 +170,8 @@ function castle_service:bind_enemy_events()
 			local enemy_id = event.enemy_id
 			self.defeated_enemy_ids[enemy_id] = true
 			self.enemies_by_id[enemy_id] = nil
+			self.active_enemy_ids[enemy_id] = nil
+			self.active_enemy_ids_scratch[enemy_id] = nil
 
 			local enemy_instance = object(enemy_id)
 			if enemy_instance ~= nil then
@@ -140,17 +181,18 @@ function castle_service:bind_enemy_events()
 				end
 			end
 
+			local should_refresh_room = false
 			if event.kind == 'cloud' then
-				self.enemy_condition_flags.cloud_1_destroyed = true
+				should_refresh_room = set_enemy_condition_flag(self, 'cloud_1_destroyed') or should_refresh_room
 			end
 			if event.trigger then
-				self.enemy_condition_flags[event.trigger] = true
 				self.events:emit('room.condition_set', {
 					room_number = event.room_number,
 					condition = event.trigger,
 				})
+				should_refresh_room = false
 			end
-			if event.kind == 'cloud' and not event.trigger and event.room_number == self.current_room_number then
+			if should_refresh_room and event.room_number == self.current_room_number then
 				self:refresh_current_room_enemies()
 			end
 		end,
@@ -160,7 +202,9 @@ function castle_service:bind_enemy_events()
 		event = 'room.condition_set',
 		subscriber = self,
 		handler = function(event)
-			self.enemy_condition_flags[event.condition] = true
+			if not set_enemy_condition_flag(self, event.condition) then
+				return
+			end
 			if event.room_number == self.current_room_number then
 				self:refresh_current_room_enemies()
 			end
@@ -172,6 +216,8 @@ function castle_service:ctor()
 	self.enemies_by_id = {}
 	self.defeated_enemy_ids = {}
 	self.enemy_condition_flags = {}
+	self.active_enemy_ids = {}
+	self.active_enemy_ids_scratch = {}
 	self:bind_enemy_events()
 end
 
@@ -273,7 +319,7 @@ function castle_service:switch_room(direction, player_top, player_bottom)
 end
 
 function castle_service:enter_world(target)
-	local transition = castle_map.world_transition(target)
+	local transition = castle_map.world_transitions[target]
 
 	local from_room_number = self.current_room_number
 
@@ -306,7 +352,7 @@ end
 function castle_service:leave_world_to_castle()
 	local world_number = self.current_room.world_number
 
-	local transition = castle_map.world_transition_from_world_number(world_number)
+	local transition = castle_map.world_transitions_by_number[world_number]
 	local from_room_number = self.current_room_number
 
 	self.current_room = room_module.create_room(transition.castle_room_number)

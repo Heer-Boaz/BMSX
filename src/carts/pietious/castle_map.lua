@@ -181,7 +181,11 @@ local function build_spawn(map_rows)
 end
 
 local function resolve_conditions(object_def)
-	return object_def.condition or empty_conditions
+	local conditions = object_def.condition
+	if conditions then
+		return conditions
+	end
+	return empty_conditions
 end
 
 local function split_text_lines(text)
@@ -214,24 +218,25 @@ local function build_enemies(room_number, object_defs)
 			enemy_index = enemy_index + 1
 			local enemy_x = tile_x_to_world(object_def.x or 0)
 			local enemy_y = tile_y_to_world(object_def.y or 0)
+			local conditions = resolve_conditions(object_def)
 			if kind == 'stafffoe' then
 				enemy_y = enemy_y + 2
 			end
-				enemies[#enemies + 1] = {
-					id = string.format('enemy_%03d_%02d', room_number, enemy_index),
-					kind = kind,
-					x = enemy_x,
-					y = enemy_y,
-					direction = object_def.direction,
-					damage = constants.damage.enemy_contact_damage,
-					health = object_def.health,
-					speedx = object_def.speedx,
-					speedy = object_def.speedy,
-					trigger = object_def.trigger,
-					conditions = resolve_conditions(object_def),
-				}
-			end
+			enemies[#enemies + 1] = {
+				id = string.format('enemy_%03d_%02d', room_number, enemy_index),
+				kind = kind,
+				x = enemy_x,
+				y = enemy_y,
+				direction = object_def.direction,
+				damage = constants.damage.enemy_contact_damage,
+				health = object_def.health,
+				speedx = object_def.speedx,
+				speedy = object_def.speedy,
+				trigger = object_def.trigger,
+				conditions = conditions,
+			}
 		end
+	end
 
 	return enemies
 end
@@ -401,19 +406,11 @@ for _, spec in pairs(world_transition_specs) do
 	world_transition_by_number[spec.world_number] = spec
 end
 
-function castle_map.world_transition(target)
-	local spec = world_transition_specs[target]
-	return spec
-end
-
-function castle_map.world_transition_from_world_number(world_number)
-	local spec = world_transition_by_number[world_number]
-	return spec
-end
-
 castle_map.start_room_number = start_room_number
 castle_map.room_templates = room_templates
 castle_map.elevator_routes = elevator_routes
 castle_map.map_world_proxies = map_world_proxies
+castle_map.world_transitions = world_transition_specs
+castle_map.world_transitions_by_number = world_transition_by_number
 
 return castle_map

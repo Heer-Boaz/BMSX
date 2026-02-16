@@ -1715,7 +1715,7 @@ end
 function player:tick_waiting_world_banner()
 	self:reset_motion_for_transition_lock()
 	local flow = service('f')
-	if flow.pending_banner_mode ~= '' or flow:has_modal_overlay() or get_space() ~= service('c').current_room.space_id then
+	if flow.pending_banner_mode or flow:has_modal_overlay() or get_space() ~= service('c').current_room.space_id then
 		self.enter_leave_wait_started = true
 		return
 	end
@@ -1728,7 +1728,7 @@ end
 function player:tick_waiting_world_emerge()
 	self:reset_motion_for_transition_lock()
 	local flow = service('f')
-	if flow.pending_banner_mode ~= '' or flow:has_modal_overlay() then
+	if flow.pending_banner_mode or flow:has_modal_overlay() then
 		self.enter_leave_wait_started = true
 		return
 	end
