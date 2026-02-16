@@ -497,10 +497,7 @@ function player:try_start_sword_state()
 		event_name = 'sword_start_uncontrolled_fall'
 	elseif self:has_tag(state_tags.variant.quiet_stairs) then
 		event_name = 'sword_start_stairs'
-	end
-
-	if event_name == nil then
-		return
+	else return
 	end
 
 	self:get_timeline('p.seq.s'):force_seek(0)
