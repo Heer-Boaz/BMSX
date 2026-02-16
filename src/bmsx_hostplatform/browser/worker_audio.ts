@@ -17,6 +17,12 @@ const CTRL_UNDERRUNS = 2;
 const CTRL_RESERVED = 3;
 const CTRL_LENGTH = 4;
 
+const CORE_CTRL_READ_PTR = 0;
+const CORE_CTRL_WRITE_PTR = 1;
+const CORE_CTRL_OVERRUNS = 2;
+const CORE_CTRL_UNDERRUNS = 3;
+const CORE_CTRL_LENGTH = 4;
+
 const DEFAULT_CAPACITY_FRAMES = 16384;
 
 const enum WorkerErrorScope {
@@ -39,6 +45,9 @@ type MainToWorkerMessage =
 		frameTimeSec: number;
 		ringSampleBuffer: SharedArrayBuffer;
 		ringControlBuffer: SharedArrayBuffer;
+		coreStreamCapacityFrames: number;
+		coreStreamSamplesBuffer: SharedArrayBuffer;
+		coreStreamControlBuffer: SharedArrayBuffer;
 		crossOriginIsolated: boolean;
 		decoderScriptUrl: string;
 	}
@@ -162,6 +171,11 @@ class WorkerClip implements AudioClipHandle {
 	}
 }
 
+class WorkerCoreStreamClip implements AudioClipHandle {
+	readonly duration = 0;
+	dispose(): void { }
+}
+
 class WorkerVoice implements VoiceHandle {
 	private readonly endedListeners = new Set<(event: VoiceEndedEvent) => void>();
 	private ended = false;
@@ -217,6 +231,20 @@ class WorkerVoice implements VoiceHandle {
 	}
 }
 
+class WorkerCoreStreamVoice implements VoiceHandle {
+	readonly startedAt = 0;
+	readonly startOffset = 0;
+	onEnded(_cb: (event: VoiceEndedEvent) => void): SubscriptionHandle {
+		return createSubscriptionHandle(() => { });
+	}
+	setGainLinear(_value: number): void { }
+	rampGainLinear(_target: number, _durationSec: number): void { }
+	setFilter(_filter: AudioFilterParams): void { }
+	setRate(_rate: number): void { }
+	stop(): void { }
+	disconnect(): void { }
+}
+
 export class WorkerStreamingAudioService implements AudioService {
 	readonly available = true;
 
@@ -226,6 +254,9 @@ export class WorkerStreamingAudioService implements AudioService {
 	private readonly ringSampleBuffer: SharedArrayBuffer;
 	private readonly ringControlBuffer: SharedArrayBuffer;
 	private readonly capacityFrames: number;
+	private readonly coreStreamCapacityFrames: number;
+	private readonly coreStreamSamplesBuffer: SharedArrayBuffer;
+	private readonly coreStreamControlBuffer: SharedArrayBuffer;
 	private readonly frameTimeSec: number;
 
 	private workletNode: AudioWorkletNode | null = null;
@@ -244,6 +275,8 @@ export class WorkerStreamingAudioService implements AudioService {
 	private readonly decodeResolves = new Map<number, (clip: AudioClipHandle) => void>();
 	private readonly decodeRejects = new Map<number, (error: Error) => void>();
 	private readonly voices = new Map<number, WorkerVoice>();
+	private readonly coreStreamClip: WorkerCoreStreamClip = new WorkerCoreStreamClip();
+	private readonly coreStreamVoice: WorkerCoreStreamVoice = new WorkerCoreStreamVoice();
 
 	constructor(context?: AudioContext, options: WorkerStreamingAudioOptions = {}) {
 		if (globalThis.crossOriginIsolated !== true) {
@@ -274,6 +307,14 @@ export class WorkerStreamingAudioService implements AudioService {
 		ringControl[CTRL_WRITE_PTR] = 0;
 		ringControl[CTRL_UNDERRUNS] = 0;
 		ringControl[CTRL_RESERVED] = 0;
+		this.coreStreamCapacityFrames = this.capacityFrames;
+		this.coreStreamSamplesBuffer = new SharedArrayBuffer(this.coreStreamCapacityFrames * 2 * Int16Array.BYTES_PER_ELEMENT);
+		this.coreStreamControlBuffer = new SharedArrayBuffer(CORE_CTRL_LENGTH * Int32Array.BYTES_PER_ELEMENT);
+		const coreControl = new Int32Array(this.coreStreamControlBuffer);
+		coreControl[CORE_CTRL_READ_PTR] = 0;
+		coreControl[CORE_CTRL_WRITE_PTR] = 0;
+		coreControl[CORE_CTRL_OVERRUNS] = 0;
+		coreControl[CORE_CTRL_UNDERRUNS] = 0;
 
 		this.workerUrl = this.createWorkerBlobUrl();
 		this.worker = new Worker(this.workerUrl);
@@ -316,6 +357,9 @@ export class WorkerStreamingAudioService implements AudioService {
 				frameTimeSec: this.frameTimeSec,
 				ringSampleBuffer: this.ringSampleBuffer,
 				ringControlBuffer: this.ringControlBuffer,
+				coreStreamCapacityFrames: this.coreStreamCapacityFrames,
+				coreStreamSamplesBuffer: this.coreStreamSamplesBuffer,
+				coreStreamControlBuffer: this.coreStreamControlBuffer,
 				crossOriginIsolated: globalThis.crossOriginIsolated === true,
 				decoderScriptUrl: this.decoderScriptUrl,
 			});
@@ -397,6 +441,10 @@ export class WorkerStreamingAudioService implements AudioService {
 	const CTRL_READ_PTR = 0;
 	const CTRL_WRITE_PTR = 1;
 	const CTRL_UNDERRUNS = 2;
+	const CORE_CTRL_READ_PTR = 0;
+	const CORE_CTRL_WRITE_PTR = 1;
+	const CORE_CTRL_OVERRUNS = 2;
+	const CORE_CTRL_UNDERRUNS = 3;
 	const PCM_SCALE = 1 / 32768;
 	const MAX_ACTIVE_VOICES = 128;
 	const AUDIO_RENDER_QUANTUM_FRAMES = 128;
@@ -404,6 +452,9 @@ export class WorkerStreamingAudioService implements AudioService {
 	let ringSamples = null;
 	let ringControl = null;
 	let capacityFrames = 0;
+	let coreStreamSamples = null;
+	let coreStreamControl = null;
+	let coreStreamCapacityFrames = 0;
 	let outputSampleRate = 0;
 	let frameTimeSec = 0;
 	let targetLeadFrames = 0;
@@ -986,11 +1037,24 @@ export class WorkerStreamingAudioService implements AudioService {
 		}
 		const framesToWrite = framesRequested > free ? free : framesRequested;
 		let endedVoiceCount = 0;
+		let coreReadPtr = Atomics.load(coreStreamControl, CORE_CTRL_READ_PTR) >>> 0;
+		const coreWritePtr = Atomics.load(coreStreamControl, CORE_CTRL_WRITE_PTR) >>> 0;
+		let coreAvailable = (coreWritePtr - coreReadPtr) >>> 0;
+		let coreUnderruns = 0;
 
 		for (let frame = 0; frame < framesToWrite; frame += 1) {
 			const absoluteFrame = (writePtr + frame) >>> 0;
 			let mixedL = 0;
 			let mixedR = 0;
+			if (coreAvailable > 0) {
+				const src = (coreReadPtr % coreStreamCapacityFrames) * 2;
+				mixedL += coreStreamSamples[src] * PCM_SCALE;
+				mixedR += coreStreamSamples[src + 1] * PCM_SCALE;
+				coreReadPtr = (coreReadPtr + 1) >>> 0;
+				coreAvailable -= 1;
+			} else {
+				coreUnderruns += 1;
+			}
 
 			for (const [voiceId, voice] of voices) {
 				if (absoluteFrame < voice.nextSampleCounter) {
@@ -1051,6 +1115,10 @@ export class WorkerStreamingAudioService implements AudioService {
 			ringSamples[dst + 1] = clamp(mixedR * masterGain, -1, 1);
 		}
 
+		Atomics.store(coreStreamControl, CORE_CTRL_READ_PTR, coreReadPtr | 0);
+		if (coreUnderruns > 0) {
+			Atomics.add(coreStreamControl, CORE_CTRL_UNDERRUNS, coreUnderruns);
+		}
 		Atomics.store(ringControl, CTRL_WRITE_PTR, ((writePtr + framesToWrite) >>> 0) | 0);
 		for (let i = 0; i < endedVoiceCount; i += 1) {
 			endVoice(endedVoiceIds[i]);
@@ -1133,6 +1201,9 @@ export class WorkerStreamingAudioService implements AudioService {
 		ringSamples = new Float32Array(message.ringSampleBuffer);
 		ringControl = new Int32Array(message.ringControlBuffer);
 		capacityFrames = message.capacityFrames;
+		coreStreamSamples = new Int16Array(message.coreStreamSamplesBuffer);
+		coreStreamControl = new Int32Array(message.coreStreamControlBuffer);
+		coreStreamCapacityFrames = message.coreStreamCapacityFrames;
 		outputSampleRate = message.sampleRate;
 		frameTimeSec = message.frameTimeSec;
 		masterGain = 1;
@@ -1413,28 +1484,69 @@ export class WorkerStreamingAudioService implements AudioService {
 		});
 	}
 
-	createClipFromPcm(samples: Int16Array, sampleRate: number, channels: number): AudioClipHandle {
-		if (channels <= 0) {
-			throw new Error('[WorkerStreamingAudioService] Invalid PCM channel count.');
+	pushCoreFrames(samples: Int16Array, channels: number, sampleRate: number): void {
+		if (channels !== 2) {
+			throw new Error('[WorkerStreamingAudioService] core stream expects stereo PCM.');
 		}
-		if (sampleRate <= 0) {
-			throw new Error('[WorkerStreamingAudioService] Invalid PCM sample rate.');
+		if (sampleRate !== this.ctx.sampleRate) {
+			throw new Error('[WorkerStreamingAudioService] core stream sample rate must match AudioContext sample rate.');
 		}
 		const frames = Math.floor(samples.length / channels);
 		if (frames <= 0) {
-			throw new Error('[WorkerStreamingAudioService] PCM clip has no frames.');
+			return;
 		}
-		const clipId = this.nextClipId++;
-		const copy = new Int16Array(frames * channels);
-		copy.set(samples.subarray(0, frames * channels));
-		this.postOrQueueMessage({
-			type: 'create_pcm_clip',
-			clipId,
-			sampleRate,
-			channels,
-			samples: copy,
-		}, [copy.buffer]);
-		return new WorkerClip(this, clipId, frames / sampleRate);
+
+		const control = new Int32Array(this.coreStreamControlBuffer);
+		const stream = new Int16Array(this.coreStreamSamplesBuffer);
+		const capacity = this.coreStreamCapacityFrames;
+		const maxQueuedFrames = capacity - 1;
+		let sourceStartFrame = 0;
+		let framesToWrite = frames;
+		if (framesToWrite > maxQueuedFrames) {
+			sourceStartFrame = framesToWrite - maxQueuedFrames;
+			framesToWrite = maxQueuedFrames;
+		}
+		let readPtr = Atomics.load(control, CORE_CTRL_READ_PTR) >>> 0;
+		const writePtr = Atomics.load(control, CORE_CTRL_WRITE_PTR) >>> 0;
+		const fill = (writePtr - readPtr) >>> 0;
+		const free = capacity - fill;
+		if (framesToWrite > free) {
+			const framesToDrop = framesToWrite - free;
+			readPtr = (readPtr + framesToDrop) >>> 0;
+			Atomics.store(control, CORE_CTRL_READ_PTR, readPtr | 0);
+			Atomics.add(control, CORE_CTRL_OVERRUNS, framesToDrop);
+		}
+
+		let dstFrame = writePtr % capacity;
+		let srcFrame = sourceStartFrame;
+		let firstSpan = capacity - dstFrame;
+		if (firstSpan > framesToWrite) {
+			firstSpan = framesToWrite;
+		}
+		let dstCursor = dstFrame * 2;
+		let srcCursor = srcFrame * 2;
+		for (let frame = 0; frame < firstSpan; frame += 1) {
+			stream[dstCursor] = samples[srcCursor];
+			stream[dstCursor + 1] = samples[srcCursor + 1];
+			dstCursor += 2;
+			srcCursor += 2;
+		}
+		const secondSpan = framesToWrite - firstSpan;
+		dstCursor = 0;
+		for (let frame = 0; frame < secondSpan; frame += 1) {
+			stream[dstCursor] = samples[srcCursor];
+			stream[dstCursor + 1] = samples[srcCursor + 1];
+			dstCursor += 2;
+			srcCursor += 2;
+		}
+
+		Atomics.store(control, CORE_CTRL_WRITE_PTR, ((writePtr + framesToWrite) >>> 0) | 0);
+		Atomics.notify(control, CORE_CTRL_WRITE_PTR, 1);
+	}
+
+	createClipFromPcm(samples: Int16Array, sampleRate: number, channels: number): AudioClipHandle {
+		this.pushCoreFrames(samples, channels, sampleRate);
+		return this.coreStreamClip;
 	}
 
 	private getQueuedSeconds(): number {
@@ -1446,6 +1558,10 @@ export class WorkerStreamingAudioService implements AudioService {
 	}
 
 	createVoice(clip: AudioClipHandle, params: AudioPlaybackParams): VoiceHandle {
+		if (clip instanceof WorkerCoreStreamClip) {
+			void params;
+			return this.coreStreamVoice;
+		}
 		if (!(clip instanceof WorkerClip)) {
 			throw new Error('[WorkerStreamingAudioService] Unsupported clip handle.');
 		}

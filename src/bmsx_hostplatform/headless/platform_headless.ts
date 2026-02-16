@@ -259,6 +259,7 @@ class SilentAudioService implements AudioService {
 	async decode(_bytes: ArrayBuffer): Promise<AudioClipHandle> {
 		return new SilentClip();
 	}
+	pushCoreFrames(_samples: Int16Array, _channels: number, _sampleRate: number): void { }
 	createClipFromPcm(_samples: Int16Array, _sampleRate: number, _channels: number): AudioClipHandle {
 		return new SilentClip();
 	}

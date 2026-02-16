@@ -205,6 +205,20 @@ export class WebAudioService implements AudioService {
 		return new WebClip(buf);
 	}
 
+	pushCoreFrames(samples: Int16Array, channels: number, sampleRate: number): void {
+		if (channels !== 2) {
+			throw new Error('WebAudioService: core stream expects stereo PCM.');
+		}
+		if (sampleRate !== this.ctx.sampleRate) {
+			throw new Error('WebAudioService: core stream sample rate must match AudioContext sample rate.');
+		}
+		const clip = this.createClipFromPcm(samples, sampleRate, channels) as WebClip;
+		const src = this.ctx.createBufferSource();
+		src.buffer = clip.buffer;
+		src.connect(this.master);
+		src.start(this.ctx.currentTime);
+	}
+
 	createClipFromPcm(samples: Int16Array, sampleRate: number, channels: number): AudioClipHandle {
 		if (channels <= 0) {
 			throw new Error('WebAudioService: Invalid channel count.');
