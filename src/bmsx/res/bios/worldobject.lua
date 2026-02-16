@@ -57,7 +57,7 @@ end
 function worldobject:generate_id()
 	local result
 	repeat
-		local baseid = self.type_name or tostring(self)
+		local baseid = self.type_name
 		local uniquenumber = world.getnextidnumber()
 		result = baseid .. "_" .. tostring(uniquenumber)
 	until not world.exists(result)

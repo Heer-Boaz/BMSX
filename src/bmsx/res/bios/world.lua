@@ -38,26 +38,6 @@ local phase_order = {
 -- 	perf.phase_ms[group] = 0
 -- end
 
--- returns next id number and increments the internal counter.
--- accepts being called either as an instance method (world:getnextidnumber())
--- or as a function on the module/instance (world.getnextidnumber()).
-function world_class.getnextidnumber(self)
-	local w = self
-	-- support being called without passing self (e.g. world.getnextidnumber())
-	if type(w) ~= "table" or rawget(w, "idcounter") == nil then
-		w = world_instance
-	end
-	if not w.idcounter then
-		w.idcounter = 1
-	end
-	if w.idcounter >= math.maxinteger then
-		error("id counter exhausted: max safe integer reached")
-	end
-	local nextnumber = w.idcounter
-	w.idcounter = nextnumber + 1
-	return nextnumber
-end
-
 -- local function reset_perf_accumulators(p)
 -- 	p.acc_sim_ms = 0
 -- 	p.acc_frames = 0
@@ -375,6 +355,23 @@ function world_class:clear()
 	self._spaces = { default = true }
 	self._space_order = { "default" }
 	self.active_space_id = "default"
+end
+
+
+
+-- returns next id number and increments the internal counter.
+-- accepts being called either as an instance method (world:getnextidnumber())
+-- or as a function on the module/instance (world.getnextidnumber()).
+function world_class:getnextidnumber()
+	if not self.idcounter then
+		self.idcounter = 1
+	end
+	if self.idcounter >= math.maxinteger then
+		self.idcounter = 1
+	end
+	local nextnumber = self.idcounter
+	self.idcounter = nextnumber + 1
+	return nextnumber
 end
 
 world_instance = world_class.new()
