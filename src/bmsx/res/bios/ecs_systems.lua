@@ -293,21 +293,25 @@ local function build_overlap_payload(self_col, other_col, other_owner, contact, 
 	}
 end
 
-local function clone_contact_with_flipped_normal(contact)
+local function contact_with_flipped_normal(contact)
 	if contact == nil then
 		return nil
 	end
-	local flipped = {}
-	for k, v in pairs(contact) do
-		flipped[k] = v
-	end
-	if contact.normal ~= nil then
-		flipped.normal = {
-			x = -contact.normal.x,
-			y = -contact.normal.y,
+	local normal = contact.normal
+	if normal == nil then
+		return {
+			depth = contact.depth,
+			point = contact.point,
 		}
 	end
-	return flipped
+	return {
+		depth = contact.depth,
+		point = contact.point,
+		normal = {
+			x = -normal.x,
+			y = -normal.y,
+		},
+	}
 end
 
 function overlap2dsystem:space_match(scope, owner_space, other_space)
@@ -447,7 +451,7 @@ function overlap2dsystem:update()
 			resolved_contact = collision2d.get_contact2d(col_a, col_b)
 		end
 		owner_a.events:emit(event_name, build_overlap_payload(col_a, col_b, owner_b, resolved_contact, phase))
-		owner_b.events:emit(event_name, build_overlap_payload(col_b, col_a, owner_a, clone_contact_with_flipped_normal(resolved_contact), phase))
+		owner_b.events:emit(event_name, build_overlap_payload(col_b, col_a, owner_a, contact_with_flipped_normal(resolved_contact), phase))
 	end
 
 	for i = 1, #begins, 2 do

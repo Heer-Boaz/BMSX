@@ -105,7 +105,6 @@ function stafffoe.register_enemy_definition()
 		type = 'sprite',
 		bts = { 'enemy.bt.stafffoe' },
 		defaults = {
-			trigger = '',
 			conditions = {},
 			damage = 4,
 			max_health = 10,

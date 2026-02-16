@@ -146,17 +146,6 @@ function inputactioneffectsystem:run_intent_assignments(owner, player_index, bin
 	end
 end
 
-local function deep_clone(value)
-	if type(value) ~= "table" then
-		return value
-	end
-	local out = {}
-	for k, v in pairs(value) do
-		out[k] = deep_clone(v)
-	end
-	return out
-end
-
 function inputactioneffectsystem:assign_owner_path(owner, path, value, clear)
 	local segments = {}
 	for part in string.gmatch(path, "[^%.]+") do
@@ -175,10 +164,6 @@ function inputactioneffectsystem:assign_owner_path(owner, path, value, clear)
 	local final_key = segments[#segments]
 	if clear then
 		target[final_key] = nil
-		return
-	end
-	if type(value) == "table" then
-		target[final_key] = deep_clone(value)
 		return
 	end
 	target[final_key] = value

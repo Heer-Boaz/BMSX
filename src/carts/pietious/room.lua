@@ -307,115 +307,6 @@ local function build_stairs(map_rows, tile_size, origin_x, origin_y, player_heig
 	return stairs
 end
 
-local function build_enemies(enemy_defs)
-	local enemies = {}
-	for i = 1, #enemy_defs do
-		local def = enemy_defs[i]
-		enemies[i] = {
-			id = def.id,
-			x = def.x,
-			y = def.y,
-			facing = def.facing,
-			direction = def.direction,
-			speedx = def.speedx,
-			speedy = def.speedy,
-			trigger = def.trigger,
-			conditions = def.conditions,
-			kind = def.kind,
-		}
-	end
-	return enemies
-end
-
-local function build_rocks(rock_defs)
-	local rocks = {}
-	for i = 1, #rock_defs do
-		local def = rock_defs[i]
-		rocks[i] = {
-			id = def.id,
-			x = def.x,
-			y = def.y,
-			item_type = def.item_type,
-			conditions = def.conditions,
-		}
-	end
-	return rocks
-end
-
-local function build_items(item_defs)
-	local items = {}
-	for i = 1, #item_defs do
-		local def = item_defs[i]
-		items[i] = {
-			id = def.id,
-			x = def.x,
-			y = def.y,
-			item_type = def.item_type,
-			conditions = def.conditions,
-		}
-	end
-	return items
-end
-
-local function build_lithographs(lithograph_defs)
-	local lithographs = {}
-	for i = 1, #lithograph_defs do
-		local def = lithograph_defs[i]
-		lithographs[i] = {
-			id = def.id,
-			x = def.x,
-			y = def.y,
-			text = def.text,
-		}
-	end
-	return lithographs
-end
-
-local function build_shrines(shrine_defs)
-	local shrines = {}
-	for i = 1, #shrine_defs do
-		local def = shrine_defs[i]
-		local text_lines = {}
-		for j = 1, #def.text_lines do
-			text_lines[j] = def.text_lines[j]
-		end
-		shrines[i] = {
-			id = def.id,
-			x = def.x,
-			y = def.y,
-			text_lines = text_lines,
-		}
-	end
-	return shrines
-end
-
-local function build_world_entrances(world_entrance_defs)
-	local world_entrances = {}
-	for i = 1, #world_entrance_defs do
-		local def = world_entrance_defs[i]
-		world_entrances[i] = {
-			id = def.id,
-			x = def.x,
-			y = def.y,
-			target = def.target,
-			stair_x = def.stair_x,
-			stair_y = def.stair_y,
-		}
-	end
-	return world_entrances
-end
-
-local function copy_edge_gates(gates_def)
-	local gates = {}
-	for direction, gate in pairs(gates_def) do
-		gates[direction] = {
-			y_min = gate.y_min,
-			y_max = gate.y_max,
-		}
-	end
-	return gates
-end
-
 local function apply_room_template(room_state, template)
 	local map_rows = template.map_rows
 	local collision_map = build_collision_map(map_rows)
@@ -428,10 +319,7 @@ local function apply_room_template(room_state, template)
 	room_state.world_width = constants.room.width
 	room_state.world_height = constants.room.height
 	room_state.world_top = constants.room.hud_height
-	room_state.spawn = {
-		x = template.spawn.x,
-		y = template.spawn.y,
-	}
+	room_state.spawn = template.spawn
 	room_state.tile_size = constants.room.tile_size
 	room_state.tile_origin_x = constants.room.tile_origin_x
 	room_state.tile_origin_y = constants.room.tile_origin_y
@@ -442,14 +330,14 @@ local function apply_room_template(room_state, template)
 	room_state.tiles = tiles
 	room_state.solids = build_solids(collision_map, constants.room.tile_size, constants.room.tile_origin_x, constants.room.tile_origin_y)
 	room_state.stairs = build_stairs(map_rows, constants.room.tile_size, constants.room.tile_origin_x, constants.room.tile_origin_y, constants.player.height)
-	room_state.enemies = build_enemies(template.enemies)
-	room_state.rocks = build_rocks(template.rocks)
-	room_state.items = build_items(template.items)
-	room_state.lithographs = build_lithographs(template.lithographs)
-	room_state.shrines = build_shrines(template.shrines)
-	room_state.world_entrances = build_world_entrances(template.world_entrances)
+	room_state.enemies = template.enemies
+	room_state.rocks = template.rocks
+	room_state.items = template.items
+	room_state.lithographs = template.lithographs
+	room_state.shrines = template.shrines
+	room_state.world_entrances = template.world_entrances
 	room_state.links = template.links
-	room_state.edge_gates = copy_edge_gates(template.edge_gates)
+	room_state.edge_gates = template.edge_gates
 end
 
 function room.create_room(room_number)

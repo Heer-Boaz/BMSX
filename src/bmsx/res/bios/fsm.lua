@@ -26,22 +26,20 @@ local function collect_event_list(def, list, seen)
 	end
 end
 
-local function copy_tag_list(values, owner_tag, field_name)
+local function validate_tag_list(values, owner_tag, field_name)
 	if type(values) ~= "table" then
 		error("tag derivation '" .. tostring(owner_tag) .. "' field '" .. tostring(field_name) .. "' must be an array of tags.")
 	end
-	local out = {}
 	for i = 1, #values do
 		local source_tag = values[i]
 		if type(source_tag) ~= "string" then
 			error("tag derivation '" .. tostring(owner_tag) .. "' field '" .. tostring(field_name) .. "' contains non-string value at index " .. tostring(i) .. ".")
 		end
-		out[#out + 1] = source_tag
 	end
-	if #out == 0 then
+	if #values == 0 then
 		error("tag derivation '" .. tostring(owner_tag) .. "' field '" .. tostring(field_name) .. "' cannot be empty.")
 	end
-	return out
+	return values
 end
 
 local function compile_tag_derivations(raw)
@@ -75,13 +73,13 @@ local function compile_tag_derivations(raw)
 			error("tag derivation '" .. tostring(derived_tag) .. "' must be an array or table.")
 		end
 		if spec[1] ~= nil then
-			rule.any = copy_tag_list(spec, derived_tag, "any")
+			rule.any = validate_tag_list(spec, derived_tag, "any")
 		else
 			if spec.any ~= nil then
-				rule.any = copy_tag_list(spec.any, derived_tag, "any")
+				rule.any = validate_tag_list(spec.any, derived_tag, "any")
 			end
 			if spec.all ~= nil then
-				rule.all = copy_tag_list(spec.all, derived_tag, "all")
+				rule.all = validate_tag_list(spec.all, derived_tag, "all")
 			end
 		end
 		if rule.any == nil and rule.all == nil then
@@ -267,53 +265,6 @@ local function describe_payload(payload)
 		return tostring(payload)
 	end
 	return tostring(payload)
-end
-
-local function clone_snapshot(ctx)
-	if not ctx then
-		return nil
-	end
-	local out = {
-		trigger = ctx.trigger,
-		description = ctx.description,
-		event_name = ctx.event_name,
-		emitter = ctx.emitter,
-		handler_name = ctx.handler_name,
-		payload_summary = ctx.payload_summary,
-		timestamp = ctx.timestamp,
-		bubbled = ctx.bubbled,
-		last_transition = ctx.last_transition and {
-			from = ctx.last_transition.from,
-			to = ctx.last_transition.to,
-			execution = ctx.last_transition.execution,
-			status = ctx.last_transition.status,
-			guard_summary = ctx.last_transition.guard_summary,
-			reason = ctx.last_transition.reason,
-		} or nil,
-	}
-	if ctx.action_evaluations then
-		local list = {}
-		for i = 1, #ctx.action_evaluations do
-			list[i] = ctx.action_evaluations[i]
-		end
-		out.action_evaluations = list
-	end
-	if ctx.guard_evaluations then
-		local list = {}
-		for i = 1, #ctx.guard_evaluations do
-			local g = ctx.guard_evaluations[i]
-			list[i] = {
-				side = g.side,
-				descriptor = g.descriptor,
-				passed = g.passed,
-				defined = g.defined,
-				type = g.type,
-				reason = g.reason,
-			}
-		end
-		out.guard_evaluations = list
-	end
-	return out
 end
 
 local function resolve_emitter_id(event, fallback)
@@ -747,7 +698,7 @@ function state:resolve_context_snapshot(provided)
 	if provided then
 		return provided
 	end
-	return clone_snapshot(self:peek_transition_context())
+	return self:peek_transition_context()
 end
 
 function state:format_guard_diagnostics(guard)
@@ -1704,7 +1655,7 @@ function state:handle_event(event_name, emitter_id, detail, event)
 	if not should_trace_dispatch() and not should_trace_transitions() then
 		return { handled = handled }
 	end
-	return { handled = handled, context = clone_snapshot(captured_context) }
+	return { handled = handled, context = captured_context }
 end
 
 function state:dispatch_event(event_or_name, payload)

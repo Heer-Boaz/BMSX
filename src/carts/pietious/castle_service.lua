@@ -4,14 +4,6 @@ local castle_map = require('castle_map')
 
 local castle_service = {}
 
-local function clone_switch(detail)
-	local copied = {}
-	for key, value in pairs(detail) do
-		copied[key] = value
-	end
-	return copied
-end
-
 local function condition_matches(self, condition, enemy_id)
 	if condition == 'not_destroyed' then
 		return self.defeated_enemy_ids[enemy_id] ~= true
@@ -59,25 +51,32 @@ function castle_service:sync_enemy_instance(enemy_def, room)
 			speed_y_num = enemy_def.speedy,
 		})
 	else
+		local should_reset_from_room_template = not instance.active
 		instance.space_id = room.space_id
 		instance.trigger = enemy_def.trigger
 		instance.conditions = enemy_def.conditions
 		instance.damage = enemy_def.damage
 		if enemy_def.health ~= nil then
-			instance.health = enemy_def.health
 			instance.max_health = enemy_def.health
+			if should_reset_from_room_template then
+				instance.health = enemy_def.health
+			end
 		end
-		if enemy_def.direction ~= nil then
+		if should_reset_from_room_template and enemy_def.direction ~= nil then
 			instance.direction = enemy_def.direction
 		end
-		if enemy_def.speedx ~= nil then
+		if should_reset_from_room_template and enemy_def.speedx ~= nil then
 			instance.speed_x_num = enemy_def.speedx
+			instance.speed_accum_x = 0
 		end
-		if enemy_def.speedy ~= nil then
+		if should_reset_from_room_template and enemy_def.speedy ~= nil then
 			instance.speed_y_num = enemy_def.speedy
+			instance.speed_accum_y = 0
 		end
-		instance.x = enemy_def.x
-		instance.y = enemy_def.y
+		if should_reset_from_room_template then
+			instance.x = enemy_def.x
+			instance.y = enemy_def.y
+		end
 	end
 
 	self.enemies_by_id[id] = instance
@@ -144,14 +143,14 @@ function castle_service:bind_enemy_events()
 			if event.kind == 'cloud' then
 				self.enemy_condition_flags.cloud_1_destroyed = true
 			end
-			if event.trigger and event.trigger ~= '' then
+			if event.trigger then
 				self.enemy_condition_flags[event.trigger] = true
 				self.events:emit('room.condition_set', {
 					room_number = event.room_number,
 					condition = event.trigger,
 				})
 			end
-			if event.room_number == self.current_room_number then
+			if event.kind == 'cloud' and not event.trigger and event.room_number == self.current_room_number then
 				self:refresh_current_room_enemies()
 			end
 		end,
@@ -253,7 +252,7 @@ function castle_service:switch_room(direction, player_top, player_bottom)
 
 	if switch.outside == true then
 		self.last_room_switch = switch
-		return clone_switch(switch)
+		return switch
 	end
 
 	self.current_room_number = self.current_room.room_number
@@ -270,7 +269,7 @@ function castle_service:switch_room(direction, player_top, player_bottom)
 	self.last_room_switch = switch
 	self:sync_world_entrance_states_for_room(self.current_room)
 	self:refresh_current_room_enemies()
-	return clone_switch(switch)
+	return switch
 end
 
 function castle_service:enter_world(target)

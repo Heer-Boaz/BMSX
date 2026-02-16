@@ -155,7 +155,7 @@ function crossfoe.register_enemy_definition()
 		type = 'sprite',
 		bts = { 'enemy.bt.crossfoe' },
 		defaults = {
-			trigger = '',
+			trigger = nil,
 			conditions = {},
 			damage = 4,
 			max_health = 3,

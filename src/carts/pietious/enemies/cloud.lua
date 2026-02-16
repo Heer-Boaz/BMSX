@@ -135,7 +135,6 @@ function cloud.register_enemy_definition()
 		type = 'sprite',
 		bts = { 'enemy.bt.cloud' },
 		defaults = {
-			trigger = '',
 			conditions = {},
 			damage = 2,
 			max_health = 15,

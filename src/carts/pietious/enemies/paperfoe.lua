@@ -41,7 +41,7 @@ function paperfoe.register_enemy_definition()
 		type = 'sprite',
 		bts = { 'enemy.bt.paperfoe' },
 		defaults = {
-			trigger = '',
+			trigger = nil,
 			conditions = {},
 			damage = 2,
 			max_health = 1,

@@ -41,7 +41,7 @@ function staffspawn.register_enemy_definition()
 		type = 'sprite',
 		bts = { 'enemy.bt.staffspawn' },
 		defaults = {
-			trigger = '',
+			trigger = nil,
 			conditions = {},
 			damage = 2,
 			max_health = 1,

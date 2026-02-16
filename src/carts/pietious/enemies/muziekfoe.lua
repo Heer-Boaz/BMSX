@@ -117,7 +117,6 @@ function muziekfoe.register_enemy_definition()
 		type = 'sprite',
 		bts = { 'enemy.bt.muziekfoe' },
 		defaults = {
-			trigger = '',
 			conditions = {},
 			damage = 4,
 			max_health = 3,

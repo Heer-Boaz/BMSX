@@ -213,7 +213,7 @@ function mijterfoe.register_enemy_definition()
 		type = 'sprite',
 		bts = { 'enemy.bt.mijterfoe' },
 		defaults = {
-			trigger = '',
+			trigger = nil,
 			conditions = {},
 			damage = 2,
 			max_health = 1,

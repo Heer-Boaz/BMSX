@@ -78,7 +78,7 @@ function marspeinenaardappel.register_enemy_definition()
 		type = 'sprite',
 		bts = { 'enemy.bt.marspeinenaardappel' },
 		defaults = {
-			trigger = '',
+			trigger = nil,
 			conditions = {},
 			damage = 2,
 			max_health = 1,

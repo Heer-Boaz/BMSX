@@ -3,8 +3,6 @@ local combat_overlap = require('combat_overlap')
 
 local enemy_base = {}
 
-local enemy_death_effect_sequence = 0
-
 function enemy_base.ctor(self)
 	self.collider:apply_collision_profile('enemy')
 	self.collider.spaceevents = 'current'
@@ -73,7 +71,6 @@ function enemy_base.projectile_is_out_of_bounds(self)
 end
 
 function enemy_base.spawn_death_effect(self)
-	enemy_death_effect_sequence = enemy_death_effect_sequence + 1
 	local room = service('c').current_room
 	inst('enemy_explosion.def', {
 		room_number = room.room_number,

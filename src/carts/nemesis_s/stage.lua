@@ -127,13 +127,20 @@ local function new_rows(width, height, default_value)
 	return out
 end
 
-local function copy_star_positions(source)
-	local out = {}
+local function reset_star_positions(target, source)
 	for i = 1, #source do
 		local src = source[i]
-		out[i] = { x = src.x, y = src.y }
+		local star = target[i]
+		if star == nil then
+			star = {}
+			target[i] = star
+		end
+		star.x = src.x
+		star.y = src.y
 	end
-	return out
+	for i = #source + 1, #target do
+		target[i] = nil
+	end
 end
 
 local function emit_event(name, extra)
@@ -542,8 +549,8 @@ function stage.reset_runtime()
 	state.scroll_gate_bit = 0
 	state.scroll_advanced = false
 	state.frame = 0
-	state.yellow_stars = copy_star_positions(constants.stars.yellow)
-	state.blue_stars = copy_star_positions(constants.stars.blue)
+	reset_star_positions(state.yellow_stars, constants.stars.yellow)
+	reset_star_positions(state.blue_stars, constants.stars.blue)
 	state.yellow_blink = false
 	state.blue_blink = false
 	state.blink_turn = 'yellow'

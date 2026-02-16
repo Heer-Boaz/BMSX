@@ -125,7 +125,7 @@ function zakfoe.register_enemy_definition()
 		type = 'sprite',
 		bts = { 'enemy.bt.zakfoe' },
 		defaults = {
-			trigger = '',
+			trigger = nil,
 			conditions = {},
 			damage = 2,
 			max_health = 2,

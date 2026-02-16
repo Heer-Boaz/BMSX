@@ -31,6 +31,7 @@ eventemitter_module.instance = eventemitter.instance
 local quickmenu = require("quickmenu")
 local romdir = require("romdir")
 local bool01 = require("bool01")
+local deep_clone = require("deep_clone")
 local velocity = require("velocity")
 local rect_overlaps = require("rect_overlaps")
 local clamp_int = require("clamp_int")
@@ -238,6 +239,7 @@ end
 local engine = {}
 engine.bool01 = bool01
 engine.consume_axis_accum = velocity.consume_axis_accum
+engine.deep_clone = deep_clone
 engine.set_velocity = velocity.set_velocity
 engine.move_with_velocity = velocity.move_with_velocity
 engine.rect_overlaps = rect_overlaps
@@ -367,7 +369,7 @@ function engine.inst(definition_id, addons)
 	local object_type = def and def.type
 	if object_type == 'sprite' then
 		local class_table = def and def.class or nil
-		local instance_id = (addons and addons.id) or (class_table and class_table.id) or definition_id
+		local instance_id = (addons and addons.id) or (class_table and class_table.id)
 		local instance = spriteobject.new({ id = instance_id })
 		apply_definition(instance, def, addons, "imgid")
 		local imgid = (addons and addons.imgid) or (def and def.defaults and def.defaults.imgid)
@@ -379,7 +381,7 @@ function engine.inst(definition_id, addons)
 	end
 	if object_type == 'textobject' then
 		local class_table = def and def.class or nil
-		local instance_id = (addons and addons.id) or (class_table and class_table.id) or definition_id
+		local instance_id = (addons and addons.id) or (class_table and class_table.id)
 		local instance = textobject.new({ id = instance_id })
 		apply_definition(instance, def, addons, "dimensions")
 		local dimensions = (addons and addons.dimensions) or (def and def.defaults and def.defaults.dimensions)
@@ -390,7 +392,7 @@ function engine.inst(definition_id, addons)
 		return instance
 	end
 	local class_table = def and def.class or nil
-	local instance_id = (addons and addons.id) or (class_table and class_table.id) or definition_id
+	local instance_id = (addons and addons.id) or (class_table and class_table.id)
 	local instance = worldobject.new({ id = instance_id })
 	apply_definition(instance, def, addons)
 	world_instance:spawn(instance, addons and addons.pos)

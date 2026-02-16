@@ -2,6 +2,7 @@ local constants = require('constants')
 local romdir = require('romdir')
 
 local castle_map = {}
+local empty_conditions = {}
 
 local start_room_number = 1
 
@@ -179,16 +180,8 @@ local function build_spawn(map_rows)
 	error('pietious castle_map failed to find spawn tile')
 end
 
-local function copy_conditions(object_def)
-	local source_conditions = object_def.condition
-	if source_conditions == nil then
-		return {}
-	end
-	local conditions = {}
-	for i = 1, #source_conditions do
-		conditions[i] = source_conditions[i]
-	end
-	return conditions
+local function resolve_conditions(object_def)
+	return object_def.condition or empty_conditions
 end
 
 local function split_text_lines(text)
@@ -224,21 +217,21 @@ local function build_enemies(room_number, object_defs)
 			if kind == 'stafffoe' then
 				enemy_y = enemy_y + 2
 			end
-			enemies[#enemies + 1] = {
-				id = string.format('enemy_%03d_%02d', room_number, enemy_index),
-				kind = kind,
-				x = enemy_x,
-				y = enemy_y,
-				direction = object_def.direction,
-				damage = constants.damage.enemy_contact_damage,
-				health = object_def.health,
-				speedx = object_def.speedx,
-				speedy = object_def.speedy,
-				trigger = object_def.trigger,
-				conditions = copy_conditions(object_def),
-			}
+				enemies[#enemies + 1] = {
+					id = string.format('enemy_%03d_%02d', room_number, enemy_index),
+					kind = kind,
+					x = enemy_x,
+					y = enemy_y,
+					direction = object_def.direction,
+					damage = constants.damage.enemy_contact_damage,
+					health = object_def.health,
+					speedx = object_def.speedx,
+					speedy = object_def.speedy,
+					trigger = object_def.trigger,
+					conditions = resolve_conditions(object_def),
+				}
+			end
 		end
-	end
 
 	return enemies
 end
@@ -256,7 +249,7 @@ local function build_rocks(room_number, object_defs)
 				x = tile_x_to_world(object_def.x),
 				y = tile_y_to_world(object_def.y),
 				item_type = object_def.item,
-				conditions = copy_conditions(object_def),
+				conditions = resolve_conditions(object_def),
 			}
 		end
 	end
@@ -277,7 +270,7 @@ local function build_items(room_number, object_defs)
 				x = tile_x_to_world(object_def.x),
 				y = tile_y_to_world(object_def.y),
 				item_type = object_def.itemtype,
-				conditions = copy_conditions(object_def),
+				conditions = resolve_conditions(object_def),
 			}
 		end
 	end
@@ -398,14 +391,6 @@ local function attach_world_transition_metadata(room_templates)
 	end
 end
 
-local function copy_world_transition(spec)
-	local copied = {}
-	for key, value in pairs(spec) do
-		copied[key] = value
-	end
-	return copied
-end
-
 local room_templates = load_room_templates()
 attach_world_transition_metadata(room_templates)
 local elevator_routes = build_elevator_routes()
@@ -418,12 +403,12 @@ end
 
 function castle_map.world_transition(target)
 	local spec = world_transition_specs[target]
-	return copy_world_transition(spec)
+	return spec
 end
 
 function castle_map.world_transition_from_world_number(world_number)
 	local spec = world_transition_by_number[world_number]
-	return copy_world_transition(spec)
+	return spec
 end
 
 castle_map.start_room_number = start_room_number

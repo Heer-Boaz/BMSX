@@ -124,6 +124,7 @@ void Runtime::runEngineBuiltinPrelude() {
 		"on_irq",
 		"on_vdp_load",
 		"bool01",
+		"deep_clone",
 		"consume_axis_accum",
 		"set_velocity",
 		"move_with_velocity",

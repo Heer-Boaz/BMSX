@@ -52,7 +52,7 @@ function nootfoe.register_enemy_definition()
 		type = 'sprite',
 		bts = { 'enemy.bt.nootfoe' },
 		defaults = {
-			trigger = '',
+			trigger = nil,
 			conditions = {},
 			damage = 2,
 			max_health = 1,

@@ -68,7 +68,6 @@ function vlokspawner.register_enemy_definition()
 		type = 'sprite',
 		bts = { 'enemy.bt.vlokspawner' },
 		defaults = {
-			trigger = '',
 			conditions = {},
 			damage = 0,
 			max_health = 0,

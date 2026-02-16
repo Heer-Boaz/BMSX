@@ -645,12 +645,6 @@ local function ensure_program_link_precheck(cart_header)
 	return precheck_errors
 end
 
-local function copy_errors(out, src)
-	for i = 1, #src do
-		out[#out + 1] = src[i]
-	end
-end
-
 local function collect_cached_program_link_errors(cart_header)
 	if not cart_header then
 		return {}
@@ -674,7 +668,9 @@ local function collect_cart_precheck_errors(cart_header, cart_manifest)
 		return errors
 	end
 	local link_errors = collect_cached_program_link_errors(cart_header)
-	copy_errors(errors, link_errors)
+	for i = 1, #link_errors do
+		errors[#errors + 1] = link_errors[i]
+	end
 	return errors
 end
 

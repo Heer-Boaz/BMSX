@@ -596,13 +596,6 @@ function timelinecomponent:apply_markers(entry, event)
 			end
 		end
 		local payload = marker.payload
-		if type(payload) == "table" then
-			local copy = {}
-			for k, v in pairs(payload) do
-				copy[k] = v
-			end
-			payload = copy
-		end
 		local spec = { type = marker.event, emitter = owner }
 		if payload ~= nil then
 			if type(payload) == "table" and payload.type == nil then

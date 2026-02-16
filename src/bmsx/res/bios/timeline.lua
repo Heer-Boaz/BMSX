@@ -7,25 +7,6 @@ local timeline = {}
 timeline.__index = timeline
 timeline.__is_timeline = true
 
-local function copy_value(value)
-	if type(value) ~= "table" then
-		return value
-	end
-	local out = {}
-	for k, v in pairs(value) do
-		out[k] = v
-	end
-	return out
-end
-
-local function copy_marker_at(at)
-	local out = {}
-	for k, v in pairs(at) do
-		out[k] = v
-	end
-	return out
-end
-
 local function expand_timeline_windows(markers, windows)
 	if not windows or #windows == 0 then
 		return markers or {}
@@ -40,14 +21,22 @@ local function expand_timeline_windows(markers, windows)
 		local window_def = windows[i]
 		local name = window_def.name
 		local tag = window_def.tag or ("timeline.window." .. name)
-		local start = copy_marker_at(window_def.start)
-		start.event = "window." .. name .. ".start"
-		start.payload = window_def.payloadstart
-		start.add_tags = { tag }
-		local finish = copy_marker_at(window_def["end"])
-		finish.event = "window." .. name .. ".end"
-		finish.payload = window_def.payloadend
-		finish.remove_tags = { tag }
+		local start_at = window_def.start
+		local start = {
+			frame = start_at.frame,
+			u = start_at.u,
+			event = "window." .. name .. ".start",
+			payload = window_def.payloadstart,
+			add_tags = { tag },
+		}
+		local end_at = window_def["end"]
+		local finish = {
+			frame = end_at.frame,
+			u = end_at.u,
+			event = "window." .. name .. ".end",
+			payload = window_def.payloadend,
+			remove_tags = { tag },
+		}
 		out[#out + 1] = start
 		out[#out + 1] = finish
 	end
@@ -104,16 +93,12 @@ end
 
 local function expand_frames(frames, repetitions)
 	if repetitions <= 1 then
-		local out = {}
-		for i = 1, #frames do
-			out[i] = copy_value(frames[i])
-		end
-		return out
+		return frames
 	end
 	local out = {}
 	for r = 1, repetitions do
 		for i = 1, #frames do
-			out[#out + 1] = copy_value(frames[i])
+			out[#out + 1] = frames[i]
 		end
 	end
 	return out
@@ -125,7 +110,7 @@ local function build_frame_sequence(sequence)
 		local entry = sequence[i]
 		local hold = entry.hold or 1
 		for h = 1, hold do
-			out[#out + 1] = copy_value(entry.value)
+			out[#out + 1] = entry.value
 		end
 	end
 	return out
@@ -134,7 +119,7 @@ end
 local function build_pingpong_frames(frames, include_endpoints)
 	local out = {}
 	for i = 1, #frames do
-		out[#out + 1] = copy_value(frames[i])
+		out[#out + 1] = frames[i]
 	end
 	if #frames <= 1 then
 		return out
@@ -149,7 +134,7 @@ local function build_pingpong_frames(frames, include_endpoints)
 		to_index = 2
 	end
 	for i = from_index, to_index, -1 do
-		out[#out + 1] = copy_value(frames[i])
+		out[#out + 1] = frames[i]
 	end
 	return out
 end
