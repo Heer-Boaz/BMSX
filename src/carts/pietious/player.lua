@@ -231,8 +231,8 @@ function player:ctor()
 	}))
 	self:gfx('pietolon_stand_r')
 	self.sprite_component.offset = { x = 0, y = 0, z = 110 }
-	self.width = 16
-	self.height = 16
+	self.width = constants.player.width
+	self.height = constants.player.height
 	self.collider.id_local = 'body'
 	self.collider.spaceevents = 'current'
 	self.collider:apply_collision_profile('player')
@@ -2044,8 +2044,11 @@ function player:tick_down_stairs()
 	if self.down_held and not self.up_held then
 		self.stairs_direction = 1
 		if self.y < self.stairs_bottom_y then
-				next_y = self.y + constants.stairs.speed_px
+			next_y = self.y + constants.stairs.speed_px
 			moved = true
+		else
+			self:leave_stairs('stairs_end_bottom')
+			return
 		end
 		if next_y >= self.stairs_bottom_y then
 			self.last_dy = next_y - self.y
@@ -2057,7 +2060,7 @@ function player:tick_down_stairs()
 		self.stairs_direction = -1
 		self:dispatch_state_event('stairs_reverse_up')
 		if self.y > self.stairs_top_y then
-				next_y = self.y - constants.stairs.speed_px
+			next_y = self.y - constants.stairs.speed_px
 			moved = true
 		else
 			self:leave_stairs('stairs_end_top')
