@@ -241,10 +241,8 @@ export class WorkerStreamingAudioService implements AudioService {
 	private nextClipId = 1;
 	private nextVoiceId = 1;
 	private masterGain = 1;
-	private readonly decodeResolvers = new Map<number, {
-		resolve: (clip: AudioClipHandle) => void;
-		reject: (error: Error) => void;
-	}>();
+	private readonly decodeResolves = new Map<number, (clip: AudioClipHandle) => void>();
+	private readonly decodeRejects = new Map<number, (error: Error) => void>();
 	private readonly voices = new Map<number, WorkerVoice>();
 
 	constructor(context?: AudioContext, options: WorkerStreamingAudioOptions = {}) {
@@ -401,7 +399,6 @@ export class WorkerStreamingAudioService implements AudioService {
 	const CTRL_UNDERRUNS = 2;
 	const PCM_SCALE = 1 / 32768;
 	const MAX_ACTIVE_VOICES = 128;
-	const PUMP_WAIT_TIMEOUT_MS = 12;
 	const AUDIO_RENDER_QUANTUM_FRAMES = 128;
 
 	let ringSamples = null;
@@ -410,6 +407,7 @@ export class WorkerStreamingAudioService implements AudioService {
 	let outputSampleRate = 0;
 	let frameTimeSec = 0;
 	let targetLeadFrames = 0;
+	let pumpWaitTimeoutMs = 2;
 	let initialized = false;
 	let suspended = true;
 	let masterGain = 1;
@@ -418,10 +416,20 @@ export class WorkerStreamingAudioService implements AudioService {
 	let lastUnderruns = 0;
 	let decodeChain = Promise.resolve();
 	let oggDecoder = null;
+	let sampledLeft = 0;
+	let sampledRight = 0;
 
 	const clips = new Map();
 	const voices = new Map();
 	const pumpChannel = new MessageChannel();
+	const endedVoiceIds = new Int32Array(MAX_ACTIVE_VOICES);
+	const statsMessage = {
+		type: 'stats',
+		fillFrames: 0,
+		underruns: 0,
+		voicesActive: 0,
+		mixTimeMs: 0,
+	};
 
 	function clamp(value, min, max) {
 		if (value < min) return min;
@@ -431,10 +439,6 @@ export class WorkerStreamingAudioService implements AudioService {
 
 	function clamp01(value) {
 		return clamp(value, 0, 1);
-	}
-
-	function nowMs() {
-		return typeof performance !== 'undefined' ? performance.now() : Date.now();
 	}
 
 	function postError(error, fatal, scope, extras) {
@@ -463,12 +467,13 @@ export class WorkerStreamingAudioService implements AudioService {
 		const requested = frameTimeSec > 0
 			? Math.ceil(outputSampleRate * frameTimeSec)
 			: AUDIO_RENDER_QUANTUM_FRAMES;
-		const minimum = AUDIO_RENDER_QUANTUM_FRAMES;
+		const minimum = AUDIO_RENDER_QUANTUM_FRAMES * 2;
 		const maximum = capacityFrames - AUDIO_RENDER_QUANTUM_FRAMES;
 		if (maximum <= minimum) {
 			throw new Error('[WorkerStreamingAudioService.worker] Ring capacity is too small for emulator lead buffering.');
 		}
 		targetLeadFrames = requested < minimum ? minimum : (requested > maximum ? maximum : requested);
+		pumpWaitTimeoutMs = Math.max(2, Math.ceil((AUDIO_RENDER_QUANTUM_FRAMES * 1000) / outputSampleRate));
 	}
 
 	function wrapLoopPosition(position, loopStartFrames, loopEndFrames) {
@@ -596,22 +601,8 @@ export class WorkerStreamingAudioService implements AudioService {
 		};
 	}
 
-	async function ensureOggDecoder() {
-		if (oggDecoder !== null) {
-			return oggDecoder;
-		}
-		const api = self['ogg-vorbis-decoder'];
-		if (!api || typeof api.OggVorbisDecoder !== 'function') {
-			throw new Error('[WorkerStreamingAudioService.worker] OGG decoder API is unavailable.');
-		}
-		oggDecoder = new api.OggVorbisDecoder();
-		await oggDecoder.ready;
-		return oggDecoder;
-	}
-
 	async function decodeOggToPcm(bytes) {
-		const decoder = await ensureOggDecoder();
-		const decoded = await decoder.decodeFile(bytes);
+		const decoded = await oggDecoder.decodeFile(bytes);
 		if (!decoded || !Array.isArray(decoded.channelData)) {
 			throw new Error('[WorkerStreamingAudioService.worker] OGG decode failed.');
 		}
@@ -634,7 +625,7 @@ export class WorkerStreamingAudioService implements AudioService {
 				cursor += 1;
 			}
 		}
-		await decoder.reset();
+		await oggDecoder.reset();
 
 		return {
 			pcm,
@@ -722,7 +713,7 @@ export class WorkerStreamingAudioService implements AudioService {
 		voice.step = (voice.clip.sampleRate / outputSampleRate) * rate;
 	}
 
-	function computeBiquad(type, frequency, q, gain, sampleRate) {
+	function computeBiquad(type, frequency, q, gain, sampleRate, voice) {
 		const nyquist = sampleRate * 0.5;
 		const freq = clamp(frequency, 1, nyquist - 1);
 		const safeQ = q > 0 ? q : 0.0001;
@@ -818,49 +809,29 @@ export class WorkerStreamingAudioService implements AudioService {
 		if (a0 === 0) {
 			throw new Error('[WorkerStreamingAudioService.worker] Biquad normalization failed.');
 		}
-
-		return {
-			b0: b0 / a0,
-			b1: b1 / a0,
-			b2: b2 / a0,
-			a1: a1 / a0,
-			a2: a2 / a0,
-		};
+		const invA0 = 1 / a0;
+		voice.fb0 = b0 * invA0;
+		voice.fb1 = b1 * invA0;
+		voice.fb2 = b2 * invA0;
+		voice.fa1 = a1 * invA0;
+		voice.fa2 = a2 * invA0;
 	}
 
 	function setVoiceFilter(voice, filter) {
 		if (filter === null) {
-			voice.filter = null;
+			voice.filterEnabled = false;
 			voice.z1L = 0;
 			voice.z2L = 0;
 			voice.z1R = 0;
 			voice.z2R = 0;
 			return;
 		}
-
-		const coeff = computeBiquad(filter.type, filter.frequency, filter.q, filter.gain, outputSampleRate);
-		voice.filter = coeff;
+		computeBiquad(filter.type, filter.frequency, filter.q, filter.gain, outputSampleRate, voice);
+		voice.filterEnabled = true;
 		voice.z1L = 0;
 		voice.z2L = 0;
 		voice.z1R = 0;
 		voice.z2R = 0;
-	}
-
-	function applyVoiceFilter(voice, left, right) {
-		if (!voice.filter) {
-			return [left, right];
-		}
-		const coeff = voice.filter;
-
-		const yL = coeff.b0 * left + voice.z1L;
-		voice.z1L = coeff.b1 * left - coeff.a1 * yL + voice.z2L;
-		voice.z2L = coeff.b2 * left - coeff.a2 * yL;
-
-		const yR = coeff.b0 * right + voice.z1R;
-		voice.z1R = coeff.b1 * right - coeff.a1 * yR + voice.z2R;
-		voice.z2R = coeff.b2 * right - coeff.a2 * yR;
-
-		return [yL, yR];
 	}
 
 	function readSample(clip, frameIndex, channelIndex) {
@@ -879,7 +850,7 @@ export class WorkerStreamingAudioService implements AudioService {
 			position = wrapLoopPosition(position, voice.loopStartFrames, voice.loopEndFrames);
 			voice.position = position;
 		} else if (position >= clip.frames) {
-			return null;
+			return false;
 		}
 
 		const idx0 = Math.floor(position);
@@ -894,13 +865,16 @@ export class WorkerStreamingAudioService implements AudioService {
 		const left = left0 + (left1 - left0) * frac;
 
 		if (clip.channels === 1) {
-			return [left, left];
+			sampledLeft = left;
+			sampledRight = left;
+			return true;
 		}
 
 		const right0 = readSample(clip, idx0, 1);
 		const right1 = idx1 < clip.frames ? readSample(clip, idx1, 1) : 0;
-		const right = right0 + (right1 - right0) * frac;
-		return [left, right];
+		sampledLeft = left;
+		sampledRight = right0 + (right1 - right0) * frac;
+		return true;
 	}
 
 	function createVoice(message) {
@@ -953,7 +927,12 @@ export class WorkerStreamingAudioService implements AudioService {
 			loopEnabled,
 			loopStartFrames,
 			loopEndFrames,
-			filter: null,
+			filterEnabled: false,
+			fb0: 0,
+			fb1: 0,
+			fb2: 0,
+			fa1: 0,
+			fa2: 0,
 			z1L: 0,
 			z2L: 0,
 			z1R: 0,
@@ -1006,7 +985,7 @@ export class WorkerStreamingAudioService implements AudioService {
 			return 0;
 		}
 		const framesToWrite = framesRequested > free ? free : framesRequested;
-		const endedVoices = [];
+		let endedVoiceCount = 0;
 
 		for (let frame = 0; frame < framesToWrite; frame += 1) {
 			const absoluteFrame = (writePtr + frame) >>> 0;
@@ -1027,22 +1006,28 @@ export class WorkerStreamingAudioService implements AudioService {
 					voice.position = wrapLoopPosition(voice.position, voice.loopStartFrames, voice.loopEndFrames);
 				}
 				if (!voice.loopEnabled && voice.position >= voice.clip.frames) {
-					endedVoices.push(voiceId);
+					endedVoiceIds[endedVoiceCount] = voiceId;
+					endedVoiceCount += 1;
 					continue;
 				}
 
-				const sampled = sampleVoice(voice);
-				if (sampled === null) {
-					endedVoices.push(voiceId);
+				if (!sampleVoice(voice)) {
+					endedVoiceIds[endedVoiceCount] = voiceId;
+					endedVoiceCount += 1;
 					continue;
 				}
 
-				let left = sampled[0] * voice.gain;
-				let right = sampled[1] * voice.gain;
-				if (voice.filter !== null) {
-					const filtered = applyVoiceFilter(voice, left, right);
-					left = filtered[0];
-					right = filtered[1];
+				let left = sampledLeft * voice.gain;
+				let right = sampledRight * voice.gain;
+				if (voice.filterEnabled) {
+					const yL = voice.fb0 * left + voice.z1L;
+					voice.z1L = voice.fb1 * left - voice.fa1 * yL + voice.z2L;
+					voice.z2L = voice.fb2 * left - voice.fa2 * yL;
+					const yR = voice.fb0 * right + voice.z1R;
+					voice.z1R = voice.fb1 * right - voice.fa1 * yR + voice.z2R;
+					voice.z2R = voice.fb2 * right - voice.fa2 * yR;
+					left = yL;
+					right = yR;
 				}
 
 				mixedL += left;
@@ -1067,20 +1052,18 @@ export class WorkerStreamingAudioService implements AudioService {
 		}
 
 		Atomics.store(ringControl, CTRL_WRITE_PTR, ((writePtr + framesToWrite) >>> 0) | 0);
-		for (let i = 0; i < endedVoices.length; i += 1) {
-			endVoice(endedVoices[i]);
+		for (let i = 0; i < endedVoiceCount; i += 1) {
+			endVoice(endedVoiceIds[i]);
 		}
 		return framesToWrite;
 	}
 
 	function sendStats(mixTimeMs) {
-		self.postMessage({
-			type: 'stats',
-			fillFrames: currentFillFrames(),
-			underruns: Atomics.load(ringControl, CTRL_UNDERRUNS) >>> 0,
-			voicesActive: voices.size,
-			mixTimeMs,
-		});
+		statsMessage.fillFrames = currentFillFrames();
+		statsMessage.underruns = Atomics.load(ringControl, CTRL_UNDERRUNS) >>> 0;
+		statsMessage.voicesActive = voices.size;
+		statsMessage.mixTimeMs = mixTimeMs;
+		self.postMessage(statsMessage);
 	}
 
 	function schedulePump() {
@@ -1096,22 +1079,22 @@ export class WorkerStreamingAudioService implements AudioService {
 			return;
 		}
 
-		const mixStart = nowMs();
+		const mixStart = performance.now();
 		for (let i = 0; i < 8; i += 1) {
 			const fill = currentFillFrames();
 			if (fill >= targetLeadFrames) {
 				break;
 			}
 			const deficit = targetLeadFrames - fill;
-			const chunk = deficit < 256 ? 256 : (deficit > 1024 ? 1024 : deficit);
+			const chunk = deficit < AUDIO_RENDER_QUANTUM_FRAMES ? AUDIO_RENDER_QUANTUM_FRAMES : (deficit > 1024 ? 1024 : deficit);
 			const written = mixAndWrite(chunk);
 			if (written <= 0) {
 				break;
 			}
 		}
-		const mixTimeMs = nowMs() - mixStart;
+		const mixTimeMs = performance.now() - mixStart;
 		const underruns = Atomics.load(ringControl, CTRL_UNDERRUNS) >>> 0;
-		const now = nowMs();
+		const now = performance.now();
 		if (underruns !== lastUnderruns || now - lastStatsMs >= 500) {
 			lastUnderruns = underruns;
 			lastStatsMs = now;
@@ -1120,8 +1103,8 @@ export class WorkerStreamingAudioService implements AudioService {
 
 		if (!suspended) {
 			const readPtr = Atomics.load(ringControl, CTRL_READ_PTR) | 0;
-			if (typeof Atomics.wait === 'function' && currentFillFrames() >= targetLeadFrames) {
-				Atomics.wait(ringControl, CTRL_READ_PTR, readPtr, PUMP_WAIT_TIMEOUT_MS);
+			if (currentFillFrames() >= targetLeadFrames) {
+				Atomics.wait(ringControl, CTRL_READ_PTR, readPtr, pumpWaitTimeoutMs);
 			}
 			schedulePump();
 		}
@@ -1136,7 +1119,7 @@ export class WorkerStreamingAudioService implements AudioService {
 		}
 	};
 
-	function handleInit(message) {
+	async function handleInit(message) {
 		if (!message.crossOriginIsolated || self.crossOriginIsolated !== true) {
 			throw new Error('[WorkerStreamingAudioService.worker] crossOriginIsolated=true is required.');
 		}
@@ -1144,6 +1127,9 @@ export class WorkerStreamingAudioService implements AudioService {
 			throw new Error('[WorkerStreamingAudioService.worker] Missing decoder script URL.');
 		}
 		importScripts(message.decoderScriptUrl);
+		const api = self['ogg-vorbis-decoder'];
+		oggDecoder = new api.OggVorbisDecoder();
+		await oggDecoder.ready;
 		ringSamples = new Float32Array(message.ringSampleBuffer);
 		ringControl = new Int32Array(message.ringControlBuffer);
 		capacityFrames = message.capacityFrames;
@@ -1170,7 +1156,9 @@ export class WorkerStreamingAudioService implements AudioService {
 		try {
 			switch (message.type) {
 				case 'init':
-					handleInit(message);
+					void handleInit(message).catch((error) => {
+						postError(error, true, 'init');
+					});
 					break;
 				case 'set_frame_time':
 					frameTimeSec = message.frameTimeSec;
@@ -1298,16 +1286,18 @@ export class WorkerStreamingAudioService implements AudioService {
 				}
 				break;
 			case 'decoded': {
-				const resolver = this.decodeResolvers.get(message.clipId);
-				if (!resolver) {
+				const resolve = this.decodeResolves.get(message.clipId);
+				const reject = this.decodeRejects.get(message.clipId);
+				if (resolve === undefined || reject === undefined) {
 					return;
 				}
-				this.decodeResolvers.delete(message.clipId);
+				this.decodeResolves.delete(message.clipId);
+				this.decodeRejects.delete(message.clipId);
 				if (!Number.isFinite(message.durationSec) || message.durationSec < 0) {
-					resolver.reject(new Error('[WorkerStreamingAudioService] Worker produced invalid decoded duration.'));
+					reject(new Error('[WorkerStreamingAudioService] Worker produced invalid decoded duration.'));
 					return;
 				}
-				resolver.resolve(new WorkerClip(this, message.clipId, message.durationSec));
+				resolve(new WorkerClip(this, message.clipId, message.durationSec));
 				break;
 			}
 			case 'voice_ended': {
@@ -1325,10 +1315,11 @@ export class WorkerStreamingAudioService implements AudioService {
 				const error = new Error(message.message);
 				error.stack = message.stack;
 				if (message.scope === WorkerErrorScope.Decode && message.clipId !== undefined) {
-					const resolver = this.decodeResolvers.get(message.clipId);
-					if (resolver) {
-						this.decodeResolvers.delete(message.clipId);
-						resolver.reject(error);
+					const reject = this.decodeRejects.get(message.clipId);
+					if (reject !== undefined) {
+						this.decodeResolves.delete(message.clipId);
+						this.decodeRejects.delete(message.clipId);
+						reject(error);
 					}
 				}
 				if (message.fatal) {
@@ -1349,10 +1340,11 @@ export class WorkerStreamingAudioService implements AudioService {
 			this.resolveReady = null;
 			this.rejectReady = null;
 		}
-		for (const resolver of this.decodeResolvers.values()) {
-			resolver.reject(error);
+		for (const reject of this.decodeRejects.values()) {
+			reject(error);
 		}
-		this.decodeResolvers.clear();
+		this.decodeResolves.clear();
+		this.decodeRejects.clear();
 		for (const [voiceId, voice] of this.voices) {
 			void voiceId;
 			voice.markEnded(this.ctx.currentTime);
@@ -1411,7 +1403,8 @@ export class WorkerStreamingAudioService implements AudioService {
 		this.ensureHealthy();
 		const clipId = this.nextClipId++;
 		return new Promise<AudioClipHandle>((resolve, reject) => {
-			this.decodeResolvers.set(clipId, { resolve, reject });
+			this.decodeResolves.set(clipId, resolve);
+			this.decodeRejects.set(clipId, reject);
 			this.postOrQueueMessage({
 				type: 'decode',
 				clipId,
@@ -1484,11 +1477,14 @@ export class WorkerStreamingAudioService implements AudioService {
 	}
 
 	rampVoiceGain(voiceId: number, targetGain: number, seconds: number): void {
+		if (!Number.isFinite(seconds) || seconds <= 0) {
+			throw new Error('[WorkerStreamingAudioService] ramp duration must be positive and finite.');
+		}
 		this.postOrQueueMessage({
 			type: 'voice_ramp_gain',
 			voiceId,
 			targetGain: clamp01(targetGain),
-			seconds: seconds > 0 ? seconds : 1 / this.ctx.sampleRate,
+			seconds,
 		});
 	}
 
