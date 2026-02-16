@@ -1032,6 +1032,10 @@ function player:update_hit_stairs_lock()
 	end
 	if not self:has_tag(state_tags.group.hit_lock_states) then
 		self.hit_stairs_lock = false
+		return
+	end
+	if self:search_stairs_at_locked_x(self.stairs_x, self.y) == nil then
+		self.hit_stairs_lock = false
 	end
 end
 
@@ -1195,7 +1199,7 @@ function player:try_snap_to_elevator_platform(next_x)
 	return false
 end
 
-function player:collides_at(x, y)
+function player:collides_at(x, y, include_elevator)
 	local solids = service('c').current_room.solids
 	for i = 1, #solids do
 		local solid = solids[i]
@@ -1208,7 +1212,7 @@ function player:collides_at(x, y)
 		return true
 	end
 
-	if self:collides_with_elevator_at(x, y) then
+	if include_elevator ~= false and self:collides_with_elevator_at(x, y) then
 		return true
 	end
 
@@ -1237,15 +1241,15 @@ function player:collides_at_jump_sword_ceiling_profile(x, y)
 	return true
 end
 
-function player:find_clear_x_with_probe(next_x, y)
+function player:find_clear_x_with_probe(next_x, y, include_elevator)
 	for x_offset = 0, constants.room.tile_half do
 		local right_x = next_x + x_offset
-		if not self:collides_at(right_x, y) then
+		if not self:collides_at(right_x, y, include_elevator) then
 			return right_x
 		end
 		if x_offset > 0 then
 			local left_x = next_x - x_offset
-			if not self:collides_at(left_x, y) then
+			if not self:collides_at(left_x, y, include_elevator) then
 				return left_x
 			end
 		end
@@ -1253,7 +1257,7 @@ function player:find_clear_x_with_probe(next_x, y)
 	return nil
 end
 
-function player:apply_move(dx, dy)
+function player:apply_move(dx, dy, include_elevator_collision)
 	local old_x = self.x
 	local old_y = self.y
 	local collided_x
@@ -1261,18 +1265,21 @@ function player:apply_move(dx, dy)
 	local landed
 	local hit_ceiling
 	local upward_block
+	local function collides(x, y)
+		return self:collides_at(x, y, include_elevator_collision)
+	end
 
 	local next_x = old_x + dx
 	local next_y = old_y + dy
 	local test_x_col
 	local found
 
-	if self:collides_at(next_x, next_y) then
+	if collides(next_x, next_y) then
 		collided_y = true
 		local inc = next_y > old_y and -1 or 1
 		if next_y > old_y then
-			if self:collides_at(old_x, old_y) then
-				local resolved_x = self:find_clear_x_with_probe(next_x, next_y)
+			if collides(old_x, old_y) then
+				local resolved_x = self:find_clear_x_with_probe(next_x, next_y, include_elevator_collision)
 				if resolved_x ~= nil then
 					self.x = resolved_x
 					self.y = next_y
@@ -1281,7 +1288,7 @@ function player:apply_move(dx, dy)
 			end
 			local y_probe = next_y + inc
 			while (not found) and y_probe ~= old_y do
-				if not self:collides_at(old_x, y_probe) then
+				if not collides(old_x, y_probe) then
 					self.y = y_probe
 					test_x_col = true
 					found = true
@@ -1296,12 +1303,12 @@ function player:apply_move(dx, dy)
 			if next_y < old_y then
 				local y_probe = next_y
 				while (not found) and y_probe ~= old_y do
-					if not self:collides_at(next_x, y_probe) then
+					if not collides(next_x, y_probe) then
 						self.x = next_x
 						self.y = y_probe
 						found = true
 					else
-						local resolved_x = self:find_clear_x_with_probe(next_x, y_probe)
+						local resolved_x = self:find_clear_x_with_probe(next_x, y_probe, include_elevator_collision)
 						if resolved_x ~= nil then
 							self.x = resolved_x
 							self.y = y_probe
@@ -1311,10 +1318,10 @@ function player:apply_move(dx, dy)
 						end
 					end
 				end
-				if not found then
-					hit_ceiling = true
-					upward_block = true
-				end
+			end
+			if not found then
+				hit_ceiling = true
+				upward_block = true
 			end
 		end
 	else
@@ -1334,9 +1341,9 @@ function player:apply_move(dx, dy)
 	end
 
 	if test_x_col or (not found) then
-		if self:collides_at(next_x, self.y) then
+		if collides(next_x, self.y) then
 			collided_x = true
-			local resolved_x = self:find_clear_x_with_probe(next_x, self.y)
+			local resolved_x = self:find_clear_x_with_probe(next_x, self.y, include_elevator_collision)
 			if resolved_x ~= nil then
 				self.x = resolved_x
 			end
@@ -1828,8 +1835,10 @@ function player:tick_jump_motion()
 	if self:has_tag(state_tags.group.sword) then
 		self:advance_sword_sequence()
 	end
-	self:update_facing_from_horizontal_input()
 	local sword_jump = self:has_tag(state_tags.variant.jumping_sword)
+	if not sword_jump then
+		self:update_facing_from_horizontal_input()
+	end
 	if (not sword_jump) and self.previous_x_collision then
 		self.jump_inertia = 0
 	end
@@ -1891,8 +1900,11 @@ function player:tick_stopped_jump_motion()
 	if self:has_tag(state_tags.group.sword) then
 		self:advance_sword_sequence()
 	end
-	self:update_facing_from_horizontal_input()
-	if (not self:has_tag(state_tags.group.sword)) and self.previous_x_collision then
+	local stopped_jump_sword = self:has_tag(state_tags.variant.sj_sword)
+	if not stopped_jump_sword then
+		self:update_facing_from_horizontal_input()
+	end
+	if (not stopped_jump_sword) and self.previous_x_collision then
 		self.jump_inertia = 0
 	end
 	local dx = self.jump_inertia * constants.physics.jump_dx
@@ -2107,13 +2119,13 @@ function player:tick_sword_stairs()
 end
 
 function player:resolve_hit_overlap_if_needed()
-	if not self:collides_at(self.x, self.y) then
+	if not self:collides_at(self.x, self.y, false) then
 		return
 	end
-	local left_col = self:collides_at(self.x - 1, self.y)
-	local right_col = self:collides_at(self.x + 1, self.y)
-	local up_col = self:collides_at(self.x, self.y - 1)
-	local down_col = self:collides_at(self.x, self.y + 1)
+	local left_col = self:collides_at(self.x - 1, self.y, false)
+	local right_col = self:collides_at(self.x + 1, self.y, false)
+	local up_col = self:collides_at(self.x, self.y - 1, false)
+	local down_col = self:collides_at(self.x, self.y + 1, false)
 	if left_col and (not right_col) then
 		self.x = self.x + 1
 	elseif (not left_col) and right_col then
@@ -2165,16 +2177,24 @@ function player:tick_hit_fall()
 		dy = 0
 	end
 
-	local hit_ground
-	if self.hit_substate >= 4 then
-		hit_ground = (not self:collides_at(self.x, self.y)) and self:collides_at(self.x, self.y + dy)
+	local next_x = self.x + dx
+	local hit_wall = self:collides_at(next_x, self.y, false) and (not self:collides_at(self.x, self.y, false))
+	if hit_wall then
+		next_x = self.x
+		dx = 0
 	end
 
-	local move_result = self:apply_move(dx, dy)
-	if move_result.collided_x then
+	local hit_ground
+	if self.hit_substate >= 4 then
+		hit_ground = (not self:collides_at(next_x, self.y, false)) and self:collides_at(next_x, self.y + dy, false)
+	end
+
+	local move_result = self:apply_move(dx, dy, false)
+	if dx ~= 0 and move_result.collided_x then
 		if self:try_side_room_switch_from_motion(dx) then
 			move_result.collided_x = false
 		else
+			hit_wall = true
 			self.hit_direction = 0
 		end
 	end
@@ -2195,6 +2215,9 @@ function player:tick_hit_fall()
 	end
 
 	self.hit_substate = self.hit_substate + 1
+	if hit_wall then
+		self:dispatch_state_event('hit_wall')
+	end
 end
 
 function player:tick_hit_collision()
@@ -2239,10 +2262,10 @@ function player:tick_hit_collision()
 
 	local hit_ground
 	if self.hit_substate >= 4 then
-		hit_ground = (not self:collides_at(self.x, self.y)) and self:collides_at(self.x, self.y + dy)
+		hit_ground = (not self:collides_at(self.x, self.y, false)) and self:collides_at(self.x, self.y + dy, false)
 	end
 
-	self:apply_move(0, dy)
+	self:apply_move(0, dy, false)
 
 	if self.hit_substate >= 4 then
 		if self.health <= 0 then
@@ -2312,10 +2335,6 @@ function player:tick()
 	self:try_open_world_entrance_with_key()
 	self:update_hit_stairs_lock()
 	self:try_vertical_room_switch_from_position()
-
-	if self.hit_stairs_lock and self:has_tag(state_tags.group.hit_lock_states) then
-		return
-	end
 	if self:has_tag(state_tags.group.hit_overlap_states) then
 		self:resolve_hit_overlap_if_needed()
 	end
@@ -2669,6 +2688,7 @@ local function define_player_fsm()
 			tags = { state_tags.variant.hit_fall, state_tags.group.damage_lock },
 			on = {
 				['hit_ground'] = '/hit_recovery',
+				['hit_wall'] = '/hit_collision',
 			},
 			process_input = player.sample_input,
 			tick = player.tick_hit_fall,
