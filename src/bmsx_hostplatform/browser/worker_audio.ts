@@ -24,8 +24,6 @@ const CORE_CTRL_UNDERRUNS = 3;
 const CORE_CTRL_LENGTH = 4;
 
 const DEFAULT_CAPACITY_FRAMES = 16384;
-const DEFAULT_AUDIO_LATENCY_HINT_SEC = 0.01;
-
 const enum WorkerErrorScope {
 	General = 'general',
 	Decode = 'decode',
@@ -142,6 +140,7 @@ type WorkerToMainMessage =
 		type: 'stats';
 		fillFrames: number;
 		underruns: number;
+		coreFillFrames: number;
 		coreUnderruns: number;
 		voicesActive: number;
 		mixTimeMs: number;
@@ -281,7 +280,7 @@ export class WorkerStreamingAudioService implements AudioService {
 	private readonly coreStreamClip: WorkerCoreStreamClip = new WorkerCoreStreamClip();
 	private readonly coreStreamVoice: WorkerCoreStreamVoice = new WorkerCoreStreamVoice();
 
-	constructor(context?: AudioContext, options: WorkerStreamingAudioOptions = {}) {
+	constructor(context: AudioContext, options: WorkerStreamingAudioOptions = {}) {
 		if (globalThis.crossOriginIsolated !== true) {
 			throw new Error('[WorkerStreamingAudioService] SharedArrayBuffer audio backend requires crossOriginIsolated=true.');
 		}
@@ -300,9 +299,9 @@ export class WorkerStreamingAudioService implements AudioService {
 		if (initialFrameTimeSec !== undefined && (!Number.isFinite(initialFrameTimeSec) || initialFrameTimeSec <= 0)) {
 			throw new Error('[WorkerStreamingAudioService] frameTimeSec must be a positive finite value.');
 		}
-		this.frameTimeSec = initialFrameTimeSec ?? 0.006;
+		this.frameTimeSec = initialFrameTimeSec ?? 0.005;
 
-		this.ctx = context ?? new AudioContext({ latencyHint: DEFAULT_AUDIO_LATENCY_HINT_SEC });
+		this.ctx = context;
 		this.ringSampleBuffer = new SharedArrayBuffer(this.capacityFrames * 2 * Float32Array.BYTES_PER_ELEMENT);
 		this.ringControlBuffer = new SharedArrayBuffer(CTRL_LENGTH * Int32Array.BYTES_PER_ELEMENT);
 		const ringControl = new Int32Array(this.ringControlBuffer);
@@ -507,6 +506,7 @@ export class WorkerStreamingAudioService implements AudioService {
 		type: 'stats',
 		fillFrames: 0,
 		underruns: 0,
+		coreFillFrames: 0,
 		coreUnderruns: 0,
 		voicesActive: 0,
 		mixTimeMs: 0,
@@ -552,11 +552,14 @@ export class WorkerStreamingAudioService implements AudioService {
 		}
 		const requested = frameTimeSec > 0
 			? Math.floor(frameTimeSec * outputSampleRate)
-			: 384;
+			: 256;
 		targetLeadFrames = clamp(requested, minimum, maximum);
 		const minimumLead = WORKLET_LOW_WATER_FRAMES + LEAD_MARGIN_FRAMES;
 		if (targetLeadFrames < minimumLead) {
 			targetLeadFrames = minimumLead;
+		}
+		if (targetLeadFrames > 512) {
+			targetLeadFrames = 512;
 		}
 	}
 
@@ -1160,6 +1163,9 @@ export class WorkerStreamingAudioService implements AudioService {
 	function sendStats(mixTimeMs) {
 		statsMessage.fillFrames = currentFillFrames();
 		statsMessage.underruns = Atomics.load(ringControl, CTRL_UNDERRUNS) >>> 0;
+		const coreRead = Atomics.load(coreStreamControl, CORE_CTRL_READ_PTR) >>> 0;
+		const coreWrite = Atomics.load(coreStreamControl, CORE_CTRL_WRITE_PTR) >>> 0;
+		statsMessage.coreFillFrames = (coreWrite - coreRead) >>> 0;
 		statsMessage.coreUnderruns = Atomics.load(coreStreamControl, CORE_CTRL_UNDERRUNS) >>> 0;
 		statsMessage.voicesActive = voices.size;
 		statsMessage.mixTimeMs = mixTimeMs;
@@ -1258,6 +1264,7 @@ export class WorkerStreamingAudioService implements AudioService {
 		initialized = true;
 		suspended = true;
 		updateTargetLeadFrames();
+		pump();
 		fillToTarget();
 		self.postMessage({ type: 'init_done' });
 	}
@@ -1330,6 +1337,7 @@ export class WorkerStreamingAudioService implements AudioService {
 				case 'resume':
 					suspended = false;
 					updateTargetLeadFrames();
+					pump();
 					fillToTarget();
 					schedulePump();
 					break;
@@ -1449,7 +1457,7 @@ export class WorkerStreamingAudioService implements AudioService {
 			}
 			case 'stats':
 				console.log(
-					`[AudioStats] fill=${message.fillFrames} underruns=${message.underruns} coreUnderruns=${message.coreUnderruns} voices=${message.voicesActive} mix=${message.mixTimeMs.toFixed(1)}ms`,
+					`[AudioStats] fill=${message.fillFrames} underruns=${message.underruns} coreFill=${message.coreFillFrames} coreUnderruns=${message.coreUnderruns} voices=${message.voicesActive} mix=${message.mixTimeMs.toFixed(1)}ms`,
 				);
 				break;
 			case 'error': {

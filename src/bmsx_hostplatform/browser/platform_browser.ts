@@ -75,7 +75,7 @@ export class BrowserPlatform implements Platform {
 	gameviewHost: BrowserGameViewHost;
 	microtasks: MicrotaskQueue;
 
-	constructor(surface: HTMLElement, canvas: HTMLCanvasElement, options: BrowserPlatformOptions = {}) {
+	constructor(surface: HTMLElement, canvas: HTMLCanvasElement, options: BrowserPlatformOptions) {
 		this.clock = new BrowserClock();
 		this.frames = new BrowserFrameLoop();
 		this.lifecycle = new BrowserLifecycle();
@@ -98,7 +98,7 @@ export class BrowserPlatform implements Platform {
 		} else {
 			this.hid = new UnsupportedHID();
 		}
-		this.audio = new WorkerStreamingAudioService();
+		this.audio = new WorkerStreamingAudioService(options.audioContext);
 		if (this.ufpsScaled > 0) {
 			this.audio.setFrameTimeSec(HZ_SCALE / this.ufpsScaled);
 		}
@@ -109,6 +109,7 @@ export class BrowserPlatform implements Platform {
 
 export interface BrowserPlatformOptions {
 	ufpsScaled?: number;
+	audioContext: AudioContext;
 }
 
 class BrowserClock implements Clock {

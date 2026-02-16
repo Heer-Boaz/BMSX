@@ -119,6 +119,7 @@ export const bootrom = {
 
 			const entry = globalThis.bmsx.startCart;
 			if (HAS_DOM_ENVIRONMENT) {
+				createAudioContext(bootrom);
 				const gamescreen = document.getElementById('gamescreen');
 				if (!(gamescreen instanceof HTMLElement)) {
 					throw new Error('#gamescreen element not found; cannot bootstrap platform.');
@@ -128,7 +129,7 @@ export const bootrom = {
 				if (!(gamescreen instanceof HTMLCanvasElement)) {
 					throw new Error('#gamescreen must be a <canvas> to construct a Platform.');
 				}
-				const platform = constructPlatformFromViewHostHandle(gamescreen);
+				const platform = constructPlatformFromViewHostHandle(gamescreen, { audioContext: bootrom.sndcontext });
 				bootrom.platform = platform;
 				bootrom.viewHost = platform.gameviewHost;
 			}
