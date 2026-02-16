@@ -5,16 +5,12 @@ import { KeyboardInput } from './keyboardinput';
 import { ContextStack, MappingContext } from './context';
 import { $ } from '../core/engine_core';
 import { clamp } from '../utils/clamp';
-import { GAME_FPS } from '../rompack/rompack';
 import { deep_clone } from '../utils/deep_clone';
 
 const ACTION_GUARD_MIN_MS = 24;
 const ACTION_GUARD_MAX_MS = 120;
 const INITIAL_REPEAT_DELAY_FRAMES = 15;
 const REPEAT_INTERVAL_FRAMES = 4;
-const REPEAT_FRAME_MS = 1000 / GAME_FPS;
-const INITIAL_REPEAT_DELAY_MS = INITIAL_REPEAT_DELAY_FRAMES * REPEAT_FRAME_MS;
-const REPEAT_INTERVAL_MS = REPEAT_INTERVAL_FRAMES * REPEAT_FRAME_MS;
 
 type ActionGuardRecord = {
 	lastAcceptedAtMs: number;
@@ -833,8 +829,9 @@ export class PlayerInput {
 		const justpressed = state.justpressed === true;
 		const now = this.lastPollTimestampMs ?? $.platform.clock.now();
 		const startMs = state.pressedAtMs ?? state.timestamp ?? now;
-		const initialDelayMs = INITIAL_REPEAT_DELAY_MS;
-		const repeatIntervalMs = REPEAT_INTERVAL_MS;
+		const frameMs = $.timestep_ms;
+		const initialDelayMs = INITIAL_REPEAT_DELAY_FRAMES * frameMs;
+		const repeatIntervalMs = REPEAT_INTERVAL_FRAMES * frameMs;
 
 		if (justpressed) {
 			repeat.active = true;

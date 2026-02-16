@@ -196,6 +196,10 @@ export class WebAudioService implements AudioService {
 		this.master.gain.value = vv;
 	}
 
+	setFrameTimeSec(_seconds: number): void {
+		// WebAudio runs directly on the AudioContext clock and does not use frame-driven buffering.
+	}
+
 	async decode(bytes: ArrayBuffer): Promise<AudioClipHandle> {
 		const buf = await this.ctx.decodeAudioData(bytes.slice(0));
 		return new WebClip(buf);

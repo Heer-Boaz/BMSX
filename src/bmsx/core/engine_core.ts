@@ -12,7 +12,7 @@ import { ensureBrowserBackendFactory } from "../render/backend/browser_backend_f
 import type { SkyboxImageIds } from "../render/shared/render_types";
 import { HZ_SCALE as PLATFORM_HZ_SCALE, setMicrotaskQueue } from '../platform';
 import type { GameViewHost, Platform, PlatformExitEvent, SubscriptionHandle } from '../platform';
-import { asset_id, getMachineMaxVoices, Identifiable, Identifier, Registerable, RuntimeAssets, type vec3, type vec2, GAME_FPS } from "../rompack/rompack";
+import { asset_id, getMachineMaxVoices, Identifiable, Identifier, Registerable, RuntimeAssets, type vec3, type vec2 } from "../rompack/rompack";
 import { tokenKeyFromId } from '../util/asset_tokens';
 import { AssetSourceStack, type RawAssetSource } from '../rompack/asset_source';
 import { buildRuntimeAssetLayer, normalizeCartridgeBlob, parseCartridgeIndex, type RuntimeAssetLayer } from '../rompack/romloader';
@@ -119,8 +119,8 @@ export class EngineCore {
 	/**
 	 * The target frames per second for the game.
 	 */
-	public target_fps: number = GAME_FPS;
-	public ufps_scaled: number = GAME_FPS * HZ_SCALE;
+	public target_fps: number = 0;
+	public ufps_scaled: number = 0;
 	public get ufps(): number { return this.ufps_scaled / HZ_SCALE; }
 	private update_interval_ms!: number; // ms per update = 1000 / fps
 	/**
@@ -146,9 +146,10 @@ export class EngineCore {
 		}
 		this.ufps_scaled = ufpsScaled;
 		this.target_fps = ufpsScaled / HZ_SCALE;
+		this._platform.ufpsScaled = ufpsScaled;
+		this._platform.audio.setFrameTimeSec(HZ_SCALE / this.ufps_scaled);
 		if (this.initialized) {
 			this.recomputeTimingCaches();
-			this._platform.audio.setFrameTimeSec?.(HZ_SCALE / this.ufps_scaled);
 		}
 	}
 

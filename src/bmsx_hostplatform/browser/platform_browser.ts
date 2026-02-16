@@ -39,7 +39,7 @@ import {
 } from 'bmsx/platform';
 import { WorkerStreamingAudioService } from './worker_audio';
 import type { GamepadControlHandle, GameViewCanvas, GameViewHost, HostEventListenerTarget, HostEventOptions, HostWindowEventType, OnscreenGamepadHandles, OverlayHandle, SurfaceBounds, ViewportDimensions } from '../platform';
-import { GAME_FPS, type vec2 } from 'bmsx/rompack/rompack';
+import { type vec2 } from 'bmsx/rompack/rompack';
 import { GameOptions } from 'bmsx/core/gameoptions';
 
 declare const $: any; // avoid circular dependency issues
@@ -81,7 +81,7 @@ export class BrowserPlatform implements Platform {
 		this.lifecycle = new BrowserLifecycle();
 		this.storage = new BrowserStorage();
 		this.microtasks = defaultMicrotaskQueue;
-		this.ufpsScaled = options.ufpsScaled ?? (GAME_FPS * HZ_SCALE);
+		this.ufpsScaled = options.ufpsScaled ?? 0;
 		this.clipboard = new BrowserClipboardService(surface);
 		this.input = new BrowserInputHub(surface, this.clock);
 		const ownerDoc = surface.ownerDocument;
@@ -99,7 +99,9 @@ export class BrowserPlatform implements Platform {
 			this.hid = new UnsupportedHID();
 		}
 		this.audio = new WorkerStreamingAudioService();
-		this.audio.setFrameTimeSec?.(HZ_SCALE / this.ufpsScaled);
+		if (this.ufpsScaled > 0) {
+			this.audio.setFrameTimeSec(HZ_SCALE / this.ufpsScaled);
+		}
 		this.rng = new BrowserRngService();
 		this.gameviewHost = new BrowserGameViewHost(canvas);
 	}

@@ -4,7 +4,6 @@ import type { TextureKey } from '../render/texturemanager';
 import type { GameViewHost, Platform } from '../platform';
 import { InputMap } from '../input/inputtypes';
 
-export const GAME_FPS = 50;
 export const CART_ROM_MAGIC = 0x58534D42;
 export const CART_ROM_MAGIC_BYTES = new Uint8Array([0x42, 0x4d, 0x53, 0x58]);
 export const CART_ROM_HEADER_SIZE = 32;
