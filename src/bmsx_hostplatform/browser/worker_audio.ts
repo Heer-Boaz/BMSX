@@ -485,6 +485,7 @@ export class WorkerStreamingAudioService implements AudioService {
 	let coreStreamSamples = null;
 	let coreStreamControl = null;
 	let coreStreamCapacityFrames = 0;
+	let coreStreamPrimed = false;
 	let outputSampleRate = 0;
 	let frameTimeSec = 0;
 	let targetLeadFrames = 0;
@@ -1074,21 +1075,40 @@ export class WorkerStreamingAudioService implements AudioService {
 		const framesToWrite = framesRequested > free ? free : framesRequested;
 		let endedVoiceCount = 0;
 		let coreUnderruns = 0;
+		let coreReadPtr = 0;
+		let coreAvailable = 0;
+		if (coreStreamPrimed) {
+			coreReadPtr = Atomics.load(coreStreamControl, CORE_CTRL_READ_PTR) >>> 0;
+			const coreWritePtr = Atomics.load(coreStreamControl, CORE_CTRL_WRITE_PTR) >>> 0;
+			coreAvailable = (coreWritePtr - coreReadPtr) >>> 0;
+		} else {
+			const coreReadPtrNow = Atomics.load(coreStreamControl, CORE_CTRL_READ_PTR) >>> 0;
+			const coreWritePtrNow = Atomics.load(coreStreamControl, CORE_CTRL_WRITE_PTR) >>> 0;
+			coreAvailable = (coreWritePtrNow - coreReadPtrNow) >>> 0;
+			if (coreAvailable > 0) {
+				coreStreamPrimed = true;
+				coreReadPtr = coreReadPtrNow;
+			}
+		}
 
 		for (let frame = 0; frame < framesToWrite; frame += 1) {
 			const absoluteFrame = (writePtr + frame) >>> 0;
 			let mixedL = 0;
 			let mixedR = 0;
-			const coreReadPtrNow = Atomics.load(coreStreamControl, CORE_CTRL_READ_PTR) >>> 0;
-			const coreWritePtrNow = Atomics.load(coreStreamControl, CORE_CTRL_WRITE_PTR) >>> 0;
-			const coreAvailableNow = (coreWritePtrNow - coreReadPtrNow) >>> 0;
-			if (coreAvailableNow > 0) {
-				const src = (coreReadPtrNow % coreStreamCapacityFrames) * 2;
-				mixedL += coreStreamSamples[src] * PCM_SCALE;
-				mixedR += coreStreamSamples[src + 1] * PCM_SCALE;
-				Atomics.store(coreStreamControl, CORE_CTRL_READ_PTR, ((coreReadPtrNow + 1) >>> 0) | 0);
-			} else {
-				coreUnderruns += 1;
+			if (coreStreamPrimed) {
+				if (coreAvailable === 0) {
+					const coreWritePtrNow = Atomics.load(coreStreamControl, CORE_CTRL_WRITE_PTR) >>> 0;
+					coreAvailable = (coreWritePtrNow - coreReadPtr) >>> 0;
+				}
+				if (coreAvailable > 0) {
+					const src = (coreReadPtr % coreStreamCapacityFrames) * 2;
+					mixedL += coreStreamSamples[src] * PCM_SCALE;
+					mixedR += coreStreamSamples[src + 1] * PCM_SCALE;
+					coreReadPtr = (coreReadPtr + 1) >>> 0;
+					coreAvailable -= 1;
+				} else {
+					coreUnderruns += 1;
+				}
 			}
 
 			for (const [voiceId, voice] of voices) {
@@ -1150,6 +1170,9 @@ export class WorkerStreamingAudioService implements AudioService {
 			ringSamples[dst + 1] = clamp(mixedR * masterGain, -1, 1);
 		}
 
+		if (coreStreamPrimed) {
+			Atomics.store(coreStreamControl, CORE_CTRL_READ_PTR, coreReadPtr | 0);
+		}
 		if (coreUnderruns > 0) {
 			Atomics.add(coreStreamControl, CORE_CTRL_UNDERRUNS, coreUnderruns);
 		}
@@ -1253,6 +1276,7 @@ export class WorkerStreamingAudioService implements AudioService {
 		coreStreamSamples = new Int16Array(message.coreStreamSamplesBuffer);
 		coreStreamControl = new Int32Array(message.coreStreamControlBuffer);
 		coreStreamCapacityFrames = message.coreStreamCapacityFrames;
+		coreStreamPrimed = false;
 		outputSampleRate = message.sampleRate;
 		frameTimeSec = message.frameTimeSec;
 		needPort = message.needPort;
