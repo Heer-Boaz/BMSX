@@ -142,6 +142,7 @@ type WorkerToMainMessage =
 		type: 'stats';
 		fillFrames: number;
 		underruns: number;
+		coreUnderruns: number;
 		voicesActive: number;
 		mixTimeMs: number;
 	}
@@ -299,7 +300,7 @@ export class WorkerStreamingAudioService implements AudioService {
 		if (initialFrameTimeSec !== undefined && (!Number.isFinite(initialFrameTimeSec) || initialFrameTimeSec <= 0)) {
 			throw new Error('[WorkerStreamingAudioService] frameTimeSec must be a positive finite value.');
 		}
-		this.frameTimeSec = initialFrameTimeSec ?? 0;
+		this.frameTimeSec = initialFrameTimeSec ?? 0.006;
 
 		this.ctx = context ?? new AudioContext({ latencyHint: DEFAULT_AUDIO_LATENCY_HINT_SEC });
 		this.ringSampleBuffer = new SharedArrayBuffer(this.capacityFrames * 2 * Float32Array.BYTES_PER_ELEMENT);
@@ -390,7 +391,7 @@ export class WorkerStreamingAudioService implements AudioService {
 	const CTRL_WRITE_PTR = 1;
 	const CTRL_UNDERRUNS = 2;
 	const WORKLET_NEED_LOW_WATER_FRAMES = 256;
-	const WORKLET_PREEMPTIVE_MARGIN_FRAMES = 128;
+	const WORKLET_PREEMPTIVE_MARGIN_FRAMES = 256;
 
 	class BmsxEmulatorWorkerOut extends AudioWorkletProcessor {
 		constructor(options) {
@@ -444,13 +445,13 @@ export class WorkerStreamingAudioService implements AudioService {
 			}
 
 			Atomics.store(this.control, CTRL_READ_PTR, readPtr | 0);
-				if (this.needPort !== null) {
-					const writePtrAfter = Atomics.load(this.control, CTRL_WRITE_PTR) >>> 0;
-					const availableAfter = (writePtrAfter - readPtr) >>> 0;
-					if (availableAfter < WORKLET_NEED_LOW_WATER_FRAMES + WORKLET_PREEMPTIVE_MARGIN_FRAMES + frameCount) {
-						this.needPort.postMessage(1);
-					}
+			if (this.needPort !== null) {
+				const writePtrAfter = Atomics.load(this.control, CTRL_WRITE_PTR) >>> 0;
+				const availableAfter = (writePtrAfter - readPtr) >>> 0;
+				if (availableAfter < WORKLET_NEED_LOW_WATER_FRAMES + WORKLET_PREEMPTIVE_MARGIN_FRAMES + frameCount) {
+					this.needPort.postMessage(1);
 				}
+			}
 			return true;
 		}
 	}
@@ -506,6 +507,7 @@ export class WorkerStreamingAudioService implements AudioService {
 		type: 'stats',
 		fillFrames: 0,
 		underruns: 0,
+		coreUnderruns: 0,
 		voicesActive: 0,
 		mixTimeMs: 0,
 	};
@@ -550,7 +552,7 @@ export class WorkerStreamingAudioService implements AudioService {
 		}
 		const requested = frameTimeSec > 0
 			? Math.floor(frameTimeSec * outputSampleRate)
-			: 512;
+			: 384;
 		targetLeadFrames = clamp(requested, minimum, maximum);
 		const minimumLead = WORKLET_LOW_WATER_FRAMES + LEAD_MARGIN_FRAMES;
 		if (targetLeadFrames < minimumLead) {
@@ -1158,6 +1160,7 @@ export class WorkerStreamingAudioService implements AudioService {
 	function sendStats(mixTimeMs) {
 		statsMessage.fillFrames = currentFillFrames();
 		statsMessage.underruns = Atomics.load(ringControl, CTRL_UNDERRUNS) >>> 0;
+		statsMessage.coreUnderruns = Atomics.load(coreStreamControl, CORE_CTRL_UNDERRUNS) >>> 0;
 		statsMessage.voicesActive = voices.size;
 		statsMessage.mixTimeMs = mixTimeMs;
 		self.postMessage(statsMessage);
@@ -1174,14 +1177,36 @@ export class WorkerStreamingAudioService implements AudioService {
 		}
 	}
 
+	function fillToTarget() {
+		while (true) {
+			const fill = currentFillFrames();
+			if (fill >= targetLeadFrames) {
+				break;
+			}
+			const deficit = targetLeadFrames - fill;
+			const written = mixAndWrite(deficit);
+			if (written <= 0) {
+				break;
+			}
+		}
+	}
+
 	function pump() {
 		if (!initialized || suspended) {
 			return;
 		}
 
 		const mixStart = performance.now();
-		for (let i = 0; i < 8; i += 1) {
-			const fill = currentFillFrames();
+		let fill = currentFillFrames();
+		if (fill < 256) {
+			const written = mixAndWrite(targetLeadFrames);
+			if (written > 0) {
+				fill = currentFillFrames();
+			}
+		}
+
+		for (let i = 0; i < 12; i += 1) {
+			fill = currentFillFrames();
 			if (fill >= targetLeadFrames) {
 				break;
 			}
@@ -1233,6 +1258,7 @@ export class WorkerStreamingAudioService implements AudioService {
 		initialized = true;
 		suspended = true;
 		updateTargetLeadFrames();
+		fillToTarget();
 		self.postMessage({ type: 'init_done' });
 	}
 
@@ -1303,6 +1329,8 @@ export class WorkerStreamingAudioService implements AudioService {
 					break;
 				case 'resume':
 					suspended = false;
+					updateTargetLeadFrames();
+					fillToTarget();
 					schedulePump();
 					break;
 				default:
@@ -1421,7 +1449,7 @@ export class WorkerStreamingAudioService implements AudioService {
 			}
 			case 'stats':
 				console.log(
-					`[AudioStats] fill=${message.fillFrames} underruns=${message.underruns} voices=${message.voicesActive} mix=${message.mixTimeMs.toFixed(1)}ms`,
+					`[AudioStats] fill=${message.fillFrames} underruns=${message.underruns} coreUnderruns=${message.coreUnderruns} voices=${message.voicesActive} mix=${message.mixTimeMs.toFixed(1)}ms`,
 				);
 				break;
 			case 'error': {
@@ -1494,6 +1522,9 @@ export class WorkerStreamingAudioService implements AudioService {
 			await this.ctx.resume();
 		}
 		this.postOrQueueMessage({ type: 'resume' });
+		const outputLatency = (this.ctx as any).outputLatency;
+		const outputLatencyText = Number.isFinite(outputLatency) ? outputLatency.toFixed(3) : '?';
+		console.log(`[AudioStats] Real latency: base=${this.ctx.baseLatency.toFixed(3)}s output=${outputLatencyText}s`);
 	}
 
 	async suspend(): Promise<void> {
