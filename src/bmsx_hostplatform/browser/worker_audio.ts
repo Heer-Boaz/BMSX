@@ -24,6 +24,7 @@ const CORE_CTRL_UNDERRUNS = 3;
 const CORE_CTRL_LENGTH = 4;
 
 const DEFAULT_CAPACITY_FRAMES = 16384;
+const DEFAULT_AUDIO_LATENCY_HINT_SEC = 0.01;
 
 const enum WorkerErrorScope {
 	General = 'general',
@@ -43,6 +44,7 @@ type MainToWorkerMessage =
 		sampleRate: number;
 		capacityFrames: number;
 		frameTimeSec: number;
+		needPort: MessagePort;
 		ringSampleBuffer: SharedArrayBuffer;
 		ringControlBuffer: SharedArrayBuffer;
 		coreStreamCapacityFrames: number;
@@ -299,7 +301,7 @@ export class WorkerStreamingAudioService implements AudioService {
 		}
 		this.frameTimeSec = initialFrameTimeSec ?? 0;
 
-		this.ctx = context ?? new AudioContext({ latencyHint: 'interactive' });
+		this.ctx = context ?? new AudioContext({ latencyHint: DEFAULT_AUDIO_LATENCY_HINT_SEC });
 		this.ringSampleBuffer = new SharedArrayBuffer(this.capacityFrames * 2 * Float32Array.BYTES_PER_ELEMENT);
 		this.ringControlBuffer = new SharedArrayBuffer(CTRL_LENGTH * Int32Array.BYTES_PER_ELEMENT);
 		const ringControl = new Int32Array(this.ringControlBuffer);
@@ -307,7 +309,7 @@ export class WorkerStreamingAudioService implements AudioService {
 		ringControl[CTRL_WRITE_PTR] = 0;
 		ringControl[CTRL_UNDERRUNS] = 0;
 		ringControl[CTRL_RESERVED] = 0;
-		this.coreStreamCapacityFrames = this.capacityFrames;
+		this.coreStreamCapacityFrames = this.capacityFrames < 4096 ? this.capacityFrames : 4096;
 		this.coreStreamSamplesBuffer = new SharedArrayBuffer(this.coreStreamCapacityFrames * 2 * Int16Array.BYTES_PER_ELEMENT);
 		this.coreStreamControlBuffer = new SharedArrayBuffer(CORE_CTRL_LENGTH * Int32Array.BYTES_PER_ELEMENT);
 		const coreControl = new Int32Array(this.coreStreamControlBuffer);
@@ -348,6 +350,9 @@ export class WorkerStreamingAudioService implements AudioService {
 					capacityFrames: this.capacityFrames,
 				},
 			});
+			const needChannel = new MessageChannel();
+			this.workletNode.port.onmessage = this.handleWorkletControlMessage;
+			this.workletNode.port.postMessage({ type: 'connect_need_port' }, [needChannel.port1]);
 			this.workletNode.connect(this.ctx.destination);
 
 			this.postOrQueueMessage({
@@ -355,6 +360,7 @@ export class WorkerStreamingAudioService implements AudioService {
 				sampleRate: this.ctx.sampleRate,
 				capacityFrames: this.capacityFrames,
 				frameTimeSec: this.frameTimeSec,
+				needPort: needChannel.port2,
 				ringSampleBuffer: this.ringSampleBuffer,
 				ringControlBuffer: this.ringControlBuffer,
 				coreStreamCapacityFrames: this.coreStreamCapacityFrames,
@@ -362,7 +368,7 @@ export class WorkerStreamingAudioService implements AudioService {
 				coreStreamControlBuffer: this.coreStreamControlBuffer,
 				crossOriginIsolated: globalThis.crossOriginIsolated === true,
 				decoderScriptUrl: this.decoderScriptUrl,
-			});
+			}, [needChannel.port2]);
 		} catch (error) {
 			this.setFatal(error instanceof Error ? error : new Error(String(error)));
 		}
@@ -383,6 +389,8 @@ export class WorkerStreamingAudioService implements AudioService {
 	const CTRL_READ_PTR = 0;
 	const CTRL_WRITE_PTR = 1;
 	const CTRL_UNDERRUNS = 2;
+	const WORKLET_NEED_LOW_WATER_FRAMES = 256;
+	const WORKLET_PREEMPTIVE_MARGIN_FRAMES = 128;
 
 	class BmsxEmulatorWorkerOut extends AudioWorkletProcessor {
 		constructor(options) {
@@ -391,6 +399,20 @@ export class WorkerStreamingAudioService implements AudioService {
 			this.samples = new Float32Array(processorOptions.sampleBuffer);
 			this.control = new Int32Array(processorOptions.controlBuffer);
 			this.capacityFrames = processorOptions.capacityFrames;
+			this.needPort = null;
+			this.port.onmessage = (event) => {
+				const message = event.data;
+				if (!message || message.type !== 'connect_need_port') {
+					return;
+				}
+				const port = event.ports[0];
+				if (!port) {
+					this.port.postMessage({ type: 'need_port_error', reason: 'no event.ports[0]' });
+					return;
+				}
+				this.needPort = port;
+				this.port.postMessage({ type: 'need_port_connected' });
+			};
 		}
 
 		process(_inputs, outputs) {
@@ -422,7 +444,13 @@ export class WorkerStreamingAudioService implements AudioService {
 			}
 
 			Atomics.store(this.control, CTRL_READ_PTR, readPtr | 0);
-			Atomics.notify(this.control, CTRL_READ_PTR, 1);
+				if (this.needPort !== null) {
+					const writePtrAfter = Atomics.load(this.control, CTRL_WRITE_PTR) >>> 0;
+					const availableAfter = (writePtrAfter - readPtr) >>> 0;
+					if (availableAfter < WORKLET_NEED_LOW_WATER_FRAMES + WORKLET_PREEMPTIVE_MARGIN_FRAMES + frameCount) {
+						this.needPort.postMessage(1);
+					}
+				}
 			return true;
 		}
 	}
@@ -448,6 +476,8 @@ export class WorkerStreamingAudioService implements AudioService {
 	const PCM_SCALE = 1 / 32768;
 	const MAX_ACTIVE_VOICES = 128;
 	const AUDIO_RENDER_QUANTUM_FRAMES = 128;
+	const WORKLET_LOW_WATER_FRAMES = 256;
+	const LEAD_MARGIN_FRAMES = 128;
 
 	let ringSamples = null;
 	let ringControl = null;
@@ -458,11 +488,10 @@ export class WorkerStreamingAudioService implements AudioService {
 	let outputSampleRate = 0;
 	let frameTimeSec = 0;
 	let targetLeadFrames = 0;
-	let pumpWaitTimeoutMs = 2;
+	let needPort = null;
 	let initialized = false;
 	let suspended = true;
 	let masterGain = 1;
-	let pumpScheduled = false;
 	let lastStatsMs = 0;
 	let lastUnderruns = 0;
 	let decodeChain = Promise.resolve();
@@ -472,7 +501,6 @@ export class WorkerStreamingAudioService implements AudioService {
 
 	const clips = new Map();
 	const voices = new Map();
-	const pumpChannel = new MessageChannel();
 	const endedVoiceIds = new Int32Array(MAX_ACTIVE_VOICES);
 	const statsMessage = {
 		type: 'stats',
@@ -515,16 +543,19 @@ export class WorkerStreamingAudioService implements AudioService {
 	}
 
 	function updateTargetLeadFrames() {
-		const requested = frameTimeSec > 0
-			? Math.ceil(outputSampleRate * frameTimeSec)
-			: AUDIO_RENDER_QUANTUM_FRAMES;
 		const minimum = AUDIO_RENDER_QUANTUM_FRAMES * 2;
-		const maximum = capacityFrames - AUDIO_RENDER_QUANTUM_FRAMES;
-		if (maximum <= minimum) {
+		const maximum = capacityFrames - AUDIO_RENDER_QUANTUM_FRAMES * 4;
+		if (maximum < minimum) {
 			throw new Error('[WorkerStreamingAudioService.worker] Ring capacity is too small for emulator lead buffering.');
 		}
-		targetLeadFrames = requested < minimum ? minimum : (requested > maximum ? maximum : requested);
-		pumpWaitTimeoutMs = Math.max(2, Math.ceil((AUDIO_RENDER_QUANTUM_FRAMES * 1000) / outputSampleRate));
+		const requested = frameTimeSec > 0
+			? Math.floor(frameTimeSec * outputSampleRate)
+			: 512;
+		targetLeadFrames = clamp(requested, minimum, maximum);
+		const minimumLead = WORKLET_LOW_WATER_FRAMES + LEAD_MARGIN_FRAMES;
+		if (targetLeadFrames < minimumLead) {
+			targetLeadFrames = minimumLead;
+		}
 	}
 
 	function wrapLoopPosition(position, loopStartFrames, loopEndFrames) {
@@ -1037,21 +1068,20 @@ export class WorkerStreamingAudioService implements AudioService {
 		}
 		const framesToWrite = framesRequested > free ? free : framesRequested;
 		let endedVoiceCount = 0;
-		let coreReadPtr = Atomics.load(coreStreamControl, CORE_CTRL_READ_PTR) >>> 0;
-		const coreWritePtr = Atomics.load(coreStreamControl, CORE_CTRL_WRITE_PTR) >>> 0;
-		let coreAvailable = (coreWritePtr - coreReadPtr) >>> 0;
 		let coreUnderruns = 0;
 
 		for (let frame = 0; frame < framesToWrite; frame += 1) {
 			const absoluteFrame = (writePtr + frame) >>> 0;
 			let mixedL = 0;
 			let mixedR = 0;
-			if (coreAvailable > 0) {
-				const src = (coreReadPtr % coreStreamCapacityFrames) * 2;
+			const coreReadPtrNow = Atomics.load(coreStreamControl, CORE_CTRL_READ_PTR) >>> 0;
+			const coreWritePtrNow = Atomics.load(coreStreamControl, CORE_CTRL_WRITE_PTR) >>> 0;
+			const coreAvailableNow = (coreWritePtrNow - coreReadPtrNow) >>> 0;
+			if (coreAvailableNow > 0) {
+				const src = (coreReadPtrNow % coreStreamCapacityFrames) * 2;
 				mixedL += coreStreamSamples[src] * PCM_SCALE;
 				mixedR += coreStreamSamples[src + 1] * PCM_SCALE;
-				coreReadPtr = (coreReadPtr + 1) >>> 0;
-				coreAvailable -= 1;
+				Atomics.store(coreStreamControl, CORE_CTRL_READ_PTR, ((coreReadPtrNow + 1) >>> 0) | 0);
 			} else {
 				coreUnderruns += 1;
 			}
@@ -1115,7 +1145,6 @@ export class WorkerStreamingAudioService implements AudioService {
 			ringSamples[dst + 1] = clamp(mixedR * masterGain, -1, 1);
 		}
 
-		Atomics.store(coreStreamControl, CORE_CTRL_READ_PTR, coreReadPtr | 0);
 		if (coreUnderruns > 0) {
 			Atomics.add(coreStreamControl, CORE_CTRL_UNDERRUNS, coreUnderruns);
 		}
@@ -1135,11 +1164,14 @@ export class WorkerStreamingAudioService implements AudioService {
 	}
 
 	function schedulePump() {
-		if (!initialized || suspended || pumpScheduled) {
+		if (!initialized || suspended) {
 			return;
 		}
-		pumpScheduled = true;
-		pumpChannel.port2.postMessage(0);
+		try {
+			pump();
+		} catch (error) {
+			postError(error, true, 'general');
+		}
 	}
 
 	function pump() {
@@ -1168,24 +1200,7 @@ export class WorkerStreamingAudioService implements AudioService {
 			lastStatsMs = now;
 			sendStats(mixTimeMs);
 		}
-
-		if (!suspended) {
-			const readPtr = Atomics.load(ringControl, CTRL_READ_PTR) | 0;
-			if (currentFillFrames() >= targetLeadFrames) {
-				Atomics.wait(ringControl, CTRL_READ_PTR, readPtr, pumpWaitTimeoutMs);
-			}
-			schedulePump();
-		}
 	}
-
-	pumpChannel.port1.onmessage = () => {
-		pumpScheduled = false;
-		try {
-			pump();
-		} catch (error) {
-			postError(error, true, 'general');
-		}
-	};
 
 	async function handleInit(message) {
 		if (!message.crossOriginIsolated || self.crossOriginIsolated !== true) {
@@ -1193,6 +1208,9 @@ export class WorkerStreamingAudioService implements AudioService {
 		}
 		if (!message.decoderScriptUrl) {
 			throw new Error('[WorkerStreamingAudioService.worker] Missing decoder script URL.');
+		}
+		if (!(message.needPort instanceof MessagePort)) {
+			throw new Error('[WorkerStreamingAudioService.worker] Missing realtime need port.');
 		}
 		importScripts(message.decoderScriptUrl);
 		const api = self['ogg-vorbis-decoder'];
@@ -1206,6 +1224,11 @@ export class WorkerStreamingAudioService implements AudioService {
 		coreStreamCapacityFrames = message.coreStreamCapacityFrames;
 		outputSampleRate = message.sampleRate;
 		frameTimeSec = message.frameTimeSec;
+		needPort = message.needPort;
+		needPort.onmessage = () => {
+			schedulePump();
+		};
+		needPort.start();
 		masterGain = 1;
 		initialized = true;
 		suspended = true;
@@ -1317,6 +1340,22 @@ export class WorkerStreamingAudioService implements AudioService {
 		this.pendingMessages.length = 0;
 	}
 
+	private handleWorkletControlMessage = (event: MessageEvent<{ type: string; reason?: string }>): void => {
+		const message = event.data;
+		if (!message || typeof message.type !== 'string') {
+			return;
+		}
+		switch (message.type) {
+			case 'need_port_connected':
+				return;
+			case 'need_port_error':
+				this.setFatal(new Error('[WorkerStreamingAudioService] Worklet need-port setup failed: ' + String(message.reason)));
+				return;
+			default:
+				this.setFatal(new Error('[WorkerStreamingAudioService] Unsupported worklet control message: ' + message.type));
+		}
+	};
+
 	private postOrQueueMessage(message: MainToWorkerMessage, transfer?: Transferable[]): void {
 		if (this.fatalError !== null) {
 			throw this.fatalError;
@@ -1381,6 +1420,9 @@ export class WorkerStreamingAudioService implements AudioService {
 				break;
 			}
 			case 'stats':
+				console.log(
+					`[AudioStats] fill=${message.fillFrames} underruns=${message.underruns} voices=${message.voicesActive} mix=${message.mixTimeMs.toFixed(1)}ms`,
+				);
 				break;
 			case 'error': {
 				const error = new Error(message.message);
@@ -1421,6 +1463,9 @@ export class WorkerStreamingAudioService implements AudioService {
 			voice.markEnded(this.ctx.currentTime);
 		}
 		this.voices.clear();
+		if (this.workletNode !== null) {
+			this.workletNode.port.onmessage = null;
+		}
 		console.error(error);
 	}
 
@@ -1511,7 +1556,14 @@ export class WorkerStreamingAudioService implements AudioService {
 		const fill = (writePtr - readPtr) >>> 0;
 		const free = capacity - fill;
 		if (framesToWrite > free) {
-			const framesToDrop = framesToWrite - free;
+			const minimumDrop = framesToWrite - free;
+			let framesToDrop = framesToWrite >> 1;
+			if (framesToDrop < minimumDrop) {
+				framesToDrop = minimumDrop;
+			}
+			if (framesToDrop > fill) {
+				framesToDrop = fill;
+			}
 			readPtr = (readPtr + framesToDrop) >>> 0;
 			Atomics.store(control, CORE_CTRL_READ_PTR, readPtr | 0);
 			Atomics.add(control, CORE_CTRL_OVERRUNS, framesToDrop);
