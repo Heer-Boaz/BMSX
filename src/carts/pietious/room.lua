@@ -70,11 +70,16 @@ local background_themes = {
 	},
 	world = {
 		mode = 'world4',
-		front = 'castle_front_blue_1',
-		light_l = 'castle_tile_blue_l',
-		light_r = 'castle_tile_blue_r',
-		dark_l = 'castle_tile_blue_l_dark',
-		dark_r = 'castle_tile_blue_r_dark',
+		front = 'frontworld_l',
+		front_dissolve = 'frontworld_wall_disappear_at_summon',
+		ul = 'backworld_ul',
+		ur = 'backworld_ur',
+		dl = 'backworld_dl',
+		dr = 'backworld_dr',
+		ul_dark = 'backworld_ul_dark',
+		ur_dark = 'backworld_ur_dark',
+		dl_dark = 'backworld_dl_dark',
+		dr_dark = 'backworld_dr_dark',
 	},
 }
 
@@ -120,12 +125,12 @@ local pillar_themes = {
 		r3 = 'castle_pillar_stone_r3',
 	},
 	world = {
-		l1 = 'castle_pillar_blue_l1',
-		r1 = 'castle_pillar_blue_r1',
-		l2 = 'castle_pillar_blue_l2',
-		r2 = 'castle_pillar_blue_r2',
-		l3 = 'castle_pillar_blue_l3',
-		r3 = 'castle_pillar_blue_r3',
+		l1 = 'backworld_pillar_l1',
+		r1 = 'backworld_pillar_r1',
+		l2 = 'backworld_pillar_l2',
+		r2 = 'backworld_pillar_r2',
+		l3 = 'backworld_pillar_l3',
+		r3 = 'backworld_pillar_r3',
 	},
 }
 
@@ -137,7 +142,7 @@ local function build_collision_map(map_rows)
 		local collision_row = {}
 		for x = 1, width do
 			local ch = row:sub(x, x)
-			if ch == '#' then
+			if ch == '#' or ch == '$' then
 				collision_row[x] = 1
 			else
 				collision_row[x] = 0
@@ -153,6 +158,12 @@ local function create_tile_id(ch, x, y, map_rows, collision_map, room_subtype)
 	local pillars = pillar_themes[room_subtype]
 
 	if ch == '#' then
+		return background.front
+	end
+	if ch == '$' then
+		if background.front_dissolve ~= nil then
+			return background.front_dissolve
+		end
 		return background.front
 	end
 	if ch == '-' or ch == '_' then
@@ -199,28 +210,31 @@ local function create_tile_id(ch, x, y, map_rows, collision_map, room_subtype)
 	end
 
 	if background.mode == 'world4' then
-		local row_mod = (y - 1) % 4
-		local swap_lr = row_mod >= 2
-		local top_half = row_mod < 2
-		local left_column = ((x - 1) % 2) == 0
-		local use_left_variant
-		if top_half then
-			use_left_variant = left_column ~= swap_lr
-		else
-			use_left_variant = left_column == swap_lr
-		end
-
 		local dark = y > 1 and collision_map[y - 1][x] ~= 0
-		if use_left_variant then
-			if dark then
-				return background.dark_l
+		local left_column = ((x - 1) % 2) == 0
+		local row_mod = (y - 1) % 4
+		if row_mod == 0 then
+			if left_column then
+				return dark and background.ul_dark or background.ul
 			end
-			return background.light_l
+			return dark and background.ur_dark or background.ur
 		end
-		if dark then
-			return background.dark_r
+		if row_mod == 1 then
+			if left_column then
+				return dark and background.dl_dark or background.dl
+			end
+			return dark and background.dr_dark or background.dr
 		end
-		return background.light_r
+		if row_mod == 2 then
+			if left_column then
+				return dark and background.ur_dark or background.ur
+			end
+			return dark and background.ul_dark or background.ul
+		end
+		if left_column then
+			return dark and background.dr_dark or background.dr
+		end
+		return dark and background.dl_dark or background.dl
 	end
 
 	local is_left_column = ((x - 1) % 2) == 0

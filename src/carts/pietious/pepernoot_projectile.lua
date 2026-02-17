@@ -1,6 +1,5 @@
 local constants = require('constants')
 local room_module = require('room')
-local combat_overlap = require('combat_overlap')
 
 local pepernoot_projectile = {}
 pepernoot_projectile.__index = pepernoot_projectile
@@ -52,14 +51,16 @@ function pepernoot_projectile:on_overlap_begin(event)
 end
 
 function pepernoot_projectile:tick()
+	local room = service('c').current_room
 	self.x = self.x + (self.direction * constants.secondary_weapon.pepernoot_speed_px)
 	self:refresh_tile_aligned_sprite_offset()
 
-	if self.x <= 0 or self.x >= service('c').current_room.world_width then
+	if self.x <= 0 or self.x >= room.world_width then
 		self:mark_for_disposal()
 		return
 	end
-	if room_module.is_solid_at_world(service('c').current_room, self.x, self.y) then
+	local overlaps_rock = room_module.overlaps_active_rock(room, self.x, self.y, self.sx, self.sy)
+	if room_module.is_solid_at_world(room, self.x, self.y) and not overlaps_rock then
 		self:mark_for_disposal()
 	end
 end
