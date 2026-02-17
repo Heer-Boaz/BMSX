@@ -1537,6 +1537,7 @@ function declareSingleUseLocalBinding(
 	declaration: LuaIdentifierExpression,
 	reportable: boolean,
 ): void {
+	const isTopLevelScope = context.scopeStack.length === 1;
 	const scope = context.scopeStack[context.scopeStack.length - 1];
 	scope.names.push(declaration.name);
 	let stack = context.bindingStacksByName.get(declaration.name);
@@ -1546,7 +1547,7 @@ function declareSingleUseLocalBinding(
 	}
 	stack.push({
 		declaration,
-		reportable: reportable && !declaration.name.startsWith('_'),
+		reportable: reportable && isTopLevelScope && !declaration.name.startsWith('_'),
 		readCount: 0,
 	});
 }
