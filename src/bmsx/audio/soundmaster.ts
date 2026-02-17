@@ -95,9 +95,9 @@ const DEFAULT_MAX_VOICES: Record<AudioType, number> = { sfx: 16, music: 1, ui: 8
 const BADP_HEADER_SIZE = 48;
 const BADP_VERSION = 1;
 const BADP_NO_LOOP = 0xffffffff;
-const MIX_CHUNK_FRAMES = 256;
-const MIX_INTERVAL_MS = 4;
-const MIX_TARGET_AHEAD_SEC = 0.02;
+const MIX_CHUNK_FRAMES = 128;
+const MIX_INTERVAL_MS = 2;
+const MIX_TARGET_AHEAD_SEC = 0.006;
 const ADPCM_STEP_TABLE = [
 	7, 8, 9, 10, 11, 12, 13, 14, 16, 17,
 	19, 21, 23, 25, 28, 31, 34, 37, 41, 45,
@@ -389,6 +389,7 @@ export class SoundMaster implements RegisterablePersistent {
 	private mixClockBaseSec: number;
 	private mixProducedFrames: number;
 	private readonly mixChunk: Int16Array;
+	private readonly mixChunkViews: Int16Array[];
 	private readonly sampleScratch: Int16Array;
 
 	private constructor() {
@@ -415,6 +416,10 @@ export class SoundMaster implements RegisterablePersistent {
 		this.mixClockBaseSec = 0;
 		this.mixProducedFrames = 0;
 		this.mixChunk = new Int16Array(MIX_CHUNK_FRAMES * 2);
+		this.mixChunkViews = new Array<Int16Array>(MIX_CHUNK_FRAMES + 1);
+		for (let frames = 0; frames <= MIX_CHUNK_FRAMES; frames += 1) {
+			this.mixChunkViews[frames] = this.mixChunk.subarray(0, frames * 2);
+		}
 		this.sampleScratch = new Int16Array(2);
 		this.bind();
 	}
@@ -1048,18 +1053,23 @@ export class SoundMaster implements RegisterablePersistent {
 
 	private pumpMixer(): void {
 		const elapsed = this.A.currentTime() - this.mixClockBaseSec;
-		let queued = (this.mixProducedFrames / this.mixSampleRate) - elapsed;
-		let loops = 0;
-		while (queued < MIX_TARGET_AHEAD_SEC && loops < 32) {
-			this.mixAndPushChunk();
-			this.mixProducedFrames += MIX_CHUNK_FRAMES;
-			queued = (this.mixProducedFrames / this.mixSampleRate) - elapsed;
-			loops += 1;
+		const queuedSec = (this.mixProducedFrames / this.mixSampleRate) - elapsed;
+		const targetFrames = Math.floor(MIX_TARGET_AHEAD_SEC * this.mixSampleRate);
+		const queuedFrames = Math.floor(queuedSec * this.mixSampleRate);
+		let deficitFrames = targetFrames - queuedFrames;
+		if (deficitFrames <= 0) {
+			return;
+		}
+		while (deficitFrames > 0) {
+			const frames = deficitFrames > MIX_CHUNK_FRAMES ? MIX_CHUNK_FRAMES : deficitFrames;
+			this.mixAndPushFrames(frames);
+			this.mixProducedFrames += frames;
+			deficitFrames -= frames;
 		}
 	}
 
-	private mixAndPushChunk(): void {
-		for (let frame = 0; frame < MIX_CHUNK_FRAMES; frame += 1) {
+	private mixAndPushFrames(frames: number): void {
+		for (let frame = 0; frame < frames; frame += 1) {
 			let mixedL = 0;
 			let mixedR = 0;
 			for (let typeIndex = 0; typeIndex < AudioTypes.length; typeIndex += 1) {
@@ -1096,7 +1106,7 @@ export class SoundMaster implements RegisterablePersistent {
 			this.mixChunk[dst] = outL;
 			this.mixChunk[dst + 1] = outR;
 		}
-		this.A.pushCoreFrames(this.mixChunk, 2, this.mixSampleRate);
+		this.A.pushCoreFrames(this.mixChunkViews[frames], 2, this.mixSampleRate);
 	}
 
 	private sampleVoiceFrame(record: ActiveVoiceRecord): boolean {

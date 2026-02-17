@@ -161,7 +161,7 @@ export class WorkerStreamingAudioService implements AudioService {
 		this.ringControl[CTRL_UNDERRUNS] = 0;
 		this.ringControl[CTRL_RESERVED] = 0;
 
-		this.coreStreamCapacityFrames = this.capacityFrames;
+		this.coreStreamCapacityFrames = this.capacityFrames < 4096 ? this.capacityFrames : 4096;
 		this.coreStreamSamplesBuffer = new SharedArrayBuffer(this.coreStreamCapacityFrames * 2 * Int16Array.BYTES_PER_ELEMENT);
 		this.coreStreamControlBuffer = new SharedArrayBuffer(CORE_CTRL_LENGTH * Int32Array.BYTES_PER_ELEMENT);
 		this.coreStreamSamples = new Int16Array(this.coreStreamSamplesBuffer);
@@ -231,8 +231,8 @@ export class WorkerStreamingAudioService implements AudioService {
 	const CTRL_READ_PTR = 0;
 	const CTRL_WRITE_PTR = 1;
 	const CTRL_UNDERRUNS = 2;
-	const WORKLET_NEED_LOW_WATER_FRAMES = 256;
-	const WORKLET_PREEMPTIVE_MARGIN_FRAMES = 256;
+	const WORKLET_NEED_LOW_WATER_FRAMES = 128;
+	const WORKLET_PREEMPTIVE_MARGIN_FRAMES = 128;
 
 	class BmsxEmulatorWorkerOut extends AudioWorkletProcessor {
 		constructor(options) {
@@ -317,8 +317,8 @@ export class WorkerStreamingAudioService implements AudioService {
 	const CORE_CTRL_UNDERRUNS = 3;
 	const PCM_SCALE = 1 / 32768;
 	const AUDIO_RENDER_QUANTUM_FRAMES = 128;
-	const WORKLET_LOW_WATER_FRAMES = 256;
-	const LEAD_MARGIN_FRAMES = 128;
+	const WORKLET_LOW_WATER_FRAMES = 128;
+	const LEAD_MARGIN_FRAMES = 64;
 
 	let ringSamples = null;
 	let ringControl = null;
@@ -380,14 +380,14 @@ export class WorkerStreamingAudioService implements AudioService {
 		}
 		const requested = frameTimeSec > 0
 			? Math.floor(frameTimeSec * outputSampleRate)
-			: 256;
+			: 128;
 		targetLeadFrames = clamp(requested, minimum, maximum);
 		const minimumLead = WORKLET_LOW_WATER_FRAMES + LEAD_MARGIN_FRAMES;
 		if (targetLeadFrames < minimumLead) {
 			targetLeadFrames = minimumLead;
 		}
-		if (targetLeadFrames > 512) {
-			targetLeadFrames = 512;
+		if (targetLeadFrames > 256) {
+			targetLeadFrames = 256;
 		}
 	}
 
