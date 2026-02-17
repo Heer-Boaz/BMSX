@@ -23,6 +23,20 @@ const CORE_CTRL_UNDERRUNS = 3;
 const CORE_CTRL_LENGTH = 4;
 
 const DEFAULT_CAPACITY_FRAMES = 16384;
+const DEFAULT_FRAME_TIME_SEC = 0.005;
+const IOS_FRAME_TIME_SEC = 0.014;
+
+function isIOSDevice(): boolean {
+	const platform = navigator.platform;
+	if (platform === 'iPhone' || platform === 'iPad' || platform === 'iPod') {
+		return true;
+	}
+	if (platform === 'MacIntel' && navigator.maxTouchPoints > 1) {
+		return true;
+	}
+	const userAgent = navigator.userAgent;
+	return userAgent.indexOf('iPhone') >= 0 || userAgent.indexOf('iPad') >= 0 || userAgent.indexOf('iPod') >= 0;
+}
 
 const enum WorkerErrorScope {
 	General = 'general',
@@ -40,6 +54,7 @@ type MainToWorkerMessage =
 		sampleRate: number;
 		capacityFrames: number;
 		frameTimeSec: number;
+		preferHighLead: boolean;
 		needPort: MessagePort;
 		ringSampleBuffer: SharedArrayBuffer;
 		ringControlBuffer: SharedArrayBuffer;
@@ -148,10 +163,11 @@ export class WorkerStreamingAudioService implements AudioService {
 			throw new Error('[WorkerStreamingAudioService] capacityFrames must be at least 2048.');
 		}
 		const initialFrameTimeSec = options.frameTimeSec;
+		const preferHighLead = isIOSDevice();
 		if (initialFrameTimeSec !== undefined && (!Number.isFinite(initialFrameTimeSec) || initialFrameTimeSec <= 0)) {
 			throw new Error('[WorkerStreamingAudioService] frameTimeSec must be a positive finite value.');
 		}
-		this.frameTimeSec = initialFrameTimeSec ?? 0.005;
+		this.frameTimeSec = initialFrameTimeSec ?? (preferHighLead ? IOS_FRAME_TIME_SEC : DEFAULT_FRAME_TIME_SEC);
 
 		this.ctx = context;
 		this.ringSampleBuffer = new SharedArrayBuffer(this.capacityFrames * 2 * Float32Array.BYTES_PER_ELEMENT);
@@ -213,6 +229,7 @@ export class WorkerStreamingAudioService implements AudioService {
 				sampleRate: this.ctx.sampleRate,
 				capacityFrames: this.capacityFrames,
 				frameTimeSec: this.frameTimeSec,
+				preferHighLead,
 				needPort: needChannel.port2,
 				ringSampleBuffer: this.ringSampleBuffer,
 				ringControlBuffer: this.ringControlBuffer,
@@ -321,7 +338,7 @@ export class WorkerStreamingAudioService implements AudioService {
 	const PCM_SCALE = 1 / 32768;
 	const AUDIO_RENDER_QUANTUM_FRAMES = 128;
 	const WORKLET_LOW_WATER_FRAMES = 256;
-	const LEAD_MARGIN_FRAMES = 128;
+	const LEAD_MARGIN_FRAMES = 256;
 
 	let ringSamples = null;
 	let ringControl = null;
@@ -332,6 +349,7 @@ export class WorkerStreamingAudioService implements AudioService {
 	let outputSampleRate = 0;
 	let frameTimeSec = 0;
 	let targetLeadFrames = 0;
+	let preferHighLead = false;
 	let needPort = null;
 	let initialized = false;
 	let suspended = true;
@@ -381,18 +399,19 @@ export class WorkerStreamingAudioService implements AudioService {
 		if (maximum < minimum) {
 			throw new Error('[WorkerStreamingAudioService.worker] Ring capacity is too small for emulator lead buffering.');
 		}
-		const requested = frameTimeSec > 0
-			? Math.floor(frameTimeSec * outputSampleRate)
-			: 256;
-		targetLeadFrames = clamp(requested, minimum, maximum);
-		const minimumLead = WORKLET_LOW_WATER_FRAMES + LEAD_MARGIN_FRAMES;
-		if (targetLeadFrames < minimumLead) {
-			targetLeadFrames = minimumLead;
+			const requested = frameTimeSec > 0
+				? Math.floor(frameTimeSec * outputSampleRate)
+				: 256;
+			targetLeadFrames = clamp(requested, minimum, maximum);
+			const minimumLead = WORKLET_LOW_WATER_FRAMES + LEAD_MARGIN_FRAMES;
+			if (targetLeadFrames < minimumLead) {
+				targetLeadFrames = minimumLead;
+			}
+			const maximumLead = preferHighLead ? 768 : 512;
+			if (targetLeadFrames > maximumLead) {
+				targetLeadFrames = maximumLead;
+			}
 		}
-		if (targetLeadFrames > 512) {
-			targetLeadFrames = 512;
-		}
-	}
 
 	function mixAndWrite(framesRequested) {
 		const readPtr = Atomics.load(ringControl, CTRL_READ_PTR) >>> 0;
@@ -481,18 +500,19 @@ export class WorkerStreamingAudioService implements AudioService {
 		if (!(message.needPort instanceof MessagePort)) {
 			throw new Error('[WorkerStreamingAudioService.worker] Missing realtime need port.');
 		}
-		ringSamples = new Float32Array(message.ringSampleBuffer);
-		ringControl = new Int32Array(message.ringControlBuffer);
-		capacityFrames = message.capacityFrames;
-		coreStreamSamples = new Int16Array(message.coreStreamSamplesBuffer);
-		coreStreamControl = new Int32Array(message.coreStreamControlBuffer);
-		coreStreamCapacityFrames = message.coreStreamCapacityFrames;
-		outputSampleRate = message.sampleRate;
-		frameTimeSec = message.frameTimeSec;
-		needPort = message.needPort;
-		needPort.onmessage = () => {
-			schedulePump();
-		};
+			ringSamples = new Float32Array(message.ringSampleBuffer);
+			ringControl = new Int32Array(message.ringControlBuffer);
+			capacityFrames = message.capacityFrames;
+			coreStreamSamples = new Int16Array(message.coreStreamSamplesBuffer);
+			coreStreamControl = new Int32Array(message.coreStreamControlBuffer);
+			coreStreamCapacityFrames = message.coreStreamCapacityFrames;
+			outputSampleRate = message.sampleRate;
+			frameTimeSec = message.frameTimeSec;
+			preferHighLead = message.preferHighLead;
+			needPort = message.needPort;
+			needPort.onmessage = () => {
+				schedulePump();
+			};
 		needPort.start();
 		masterGain = 1;
 		initialized = true;

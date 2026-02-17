@@ -96,7 +96,8 @@ const BADP_HEADER_SIZE = 48;
 const BADP_VERSION = 1;
 const BADP_NO_LOOP = 0xffffffff;
 const MIX_CHUNK_FRAMES = 128;
-const MIX_TARGET_AHEAD_SEC = 0.012;
+const MIX_TARGET_AHEAD_SEC = 0.014;
+const MIX_SPARE_FRAMES = MIX_CHUNK_FRAMES;
 const ADPCM_STEP_TABLE = [
 	7, 8, 9, 10, 11, 12, 13, 14, 16, 17,
 	19, 21, 23, 25, 28, 31, 34, 37, 41, 45,
@@ -1043,9 +1044,10 @@ export class SoundMaster implements RegisterablePersistent {
 		const targetFrames = Math.floor(MIX_TARGET_AHEAD_SEC * this.mixSampleRate);
 		const queuedFrames = this.A.coreQueuedFrames();
 		let deficitFrames = targetFrames - queuedFrames;
-		if (deficitFrames <= 0) {
+		if (deficitFrames <= -MIX_SPARE_FRAMES) {
 			return;
 		}
+		deficitFrames += MIX_SPARE_FRAMES;
 		while (deficitFrames > 0) {
 			const frames = deficitFrames > MIX_CHUNK_FRAMES ? MIX_CHUNK_FRAMES : deficitFrames;
 			this.mixAndPushFrames(frames);
