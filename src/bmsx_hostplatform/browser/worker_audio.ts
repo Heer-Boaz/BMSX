@@ -135,6 +135,7 @@ export class WorkerStreamingAudioService implements AudioService {
 	private readonly coreStreamControlBuffer: SharedArrayBuffer;
 	private readonly coreStreamSamples: Int16Array;
 	private readonly coreStreamControl: Int32Array;
+	private readonly preferHighLead: boolean;
 	private readonly frameTimeSec: number;
 
 	private workletNode: AudioWorkletNode | null = null;
@@ -166,11 +167,11 @@ export class WorkerStreamingAudioService implements AudioService {
 			throw new Error('[WorkerStreamingAudioService] capacityFrames must be at least 2048.');
 		}
 		const initialFrameTimeSec = options.frameTimeSec;
-		const preferHighLead = isIOSDevice();
+		this.preferHighLead = isIOSDevice();
 		if (initialFrameTimeSec !== undefined && (!Number.isFinite(initialFrameTimeSec) || initialFrameTimeSec <= 0)) {
 			throw new Error('[WorkerStreamingAudioService] frameTimeSec must be a positive finite value.');
 		}
-		this.frameTimeSec = initialFrameTimeSec ?? (preferHighLead ? IOS_FRAME_TIME_SEC : DEFAULT_FRAME_TIME_SEC);
+		this.frameTimeSec = initialFrameTimeSec ?? (this.preferHighLead ? IOS_FRAME_TIME_SEC : DEFAULT_FRAME_TIME_SEC);
 
 		this.ctx = context;
 		this.ringSampleBuffer = new SharedArrayBuffer(this.capacityFrames * 2 * Float32Array.BYTES_PER_ELEMENT);
@@ -232,7 +233,7 @@ export class WorkerStreamingAudioService implements AudioService {
 				sampleRate: this.ctx.sampleRate,
 				capacityFrames: this.capacityFrames,
 				frameTimeSec: this.frameTimeSec,
-				preferHighLead,
+				preferHighLead: this.preferHighLead,
 				needPort: needChannel.port2,
 				ringSampleBuffer: this.ringSampleBuffer,
 				ringControlBuffer: this.ringControlBuffer,
