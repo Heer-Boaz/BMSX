@@ -99,7 +99,8 @@ const MIX_LOW_TARGET_AHEAD_SEC = 0.008;
 const MIX_BALANCED_TARGET_AHEAD_SEC = 0.014;
 const MIX_SAFE_TARGET_AHEAD_SEC = 0.02;
 const MIX_CHUNK_FRAMES = 128;
-const MIX_MAX_PUMP_ITERATIONS = 16;
+const MIX_MAX_PUMP_BUDGET_FRAMES = 8192;
+const MIX_PUMP_INTERVAL_MS = 2;
 const PCM_SCALE = 1 / 32768;
 const PCM_INT16_MIN = -32768;
 const PCM_INT16_MAX = 32767;
@@ -417,7 +418,9 @@ export class SoundMaster implements RegisterablePersistent {
 	private readonly mixDecodeScratch1: Int16Array;
 	private mixSampledL: number;
 	private mixSampledR: number;
+	private mixPumpTimer: ReturnType<typeof setInterval>;
 	private readonly onCoreNeed: () => void;
+	private readonly onMixPumpTimer: () => void;
 
 	private constructor() {
 		this.globalSuspensions = new Set();
@@ -451,7 +454,11 @@ export class SoundMaster implements RegisterablePersistent {
 		this.mixDecodeScratch1 = new Int16Array(2);
 		this.mixSampledL = 0;
 		this.mixSampledR = 0;
+		this.mixPumpTimer = null;
 		this.onCoreNeed = () => {
+			this.pumpCoreAudio();
+		};
+		this.onMixPumpTimer = () => {
 			this.pumpCoreAudio();
 		};
 		this.setLatencyProfile(isIOSAudioTarget() ? 'safe' : 'balanced');
@@ -1205,13 +1212,12 @@ export class SoundMaster implements RegisterablePersistent {
 	private pumpCoreAudio(): void {
 		const targetFrames = this.computeMixTargetFrames();
 		let queuedFrames = this.A.coreQueuedFrames();
-		for (let i = 0; i < MIX_MAX_PUMP_ITERATIONS; i += 1) {
-			if (queuedFrames >= targetFrames) {
-				return;
-			}
+		let budgetFrames = MIX_MAX_PUMP_BUDGET_FRAMES;
+		while (queuedFrames < targetFrames && budgetFrames > 0) {
 			const deficit = targetFrames - queuedFrames;
-			const chunkFrames = deficit > MIX_CHUNK_FRAMES ? MIX_CHUNK_FRAMES : deficit;
+			const chunkFrames = Math.min(MIX_CHUNK_FRAMES, deficit, budgetFrames);
 			this.mixAndPushCoreFrames(chunkFrames);
+			budgetFrames -= chunkFrames;
 			queuedFrames = this.A.coreQueuedFrames();
 		}
 	}
@@ -1220,11 +1226,14 @@ export class SoundMaster implements RegisterablePersistent {
 		this.A.clearCoreStream();
 		this.A.setFrameTimeSec(this.mixTargetAheadSec);
 		this.A.setCoreNeedHandler(this.onCoreNeed);
+		this.mixPumpTimer = setInterval(this.onMixPumpTimer, MIX_PUMP_INTERVAL_MS);
 		this.pumpCoreAudio();
 	}
 
 	private stopMixer(): void {
 		this.A.setCoreNeedHandler(null);
+		clearInterval(this.mixPumpTimer);
+		this.mixPumpTimer = null;
 		this.A.clearCoreStream();
 	}
 

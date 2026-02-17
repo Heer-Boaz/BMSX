@@ -190,15 +190,11 @@ export class WorkerStreamingAudioService implements AudioService {
 	const WORKLET_TARGET_MAX_DEFAULT = 384;
 	const WORKLET_TARGET_MIN_IOS = 384;
 	const WORKLET_TARGET_MAX_IOS = 640;
-	const WORKLET_NEED_MARGIN_FRAMES = 128;
-	const NEED_POST_INTERVAL_MS = 1;
+	const WORKLET_NEED_REARM_MARGIN_DEFAULT = 96;
+	const WORKLET_NEED_REARM_MARGIN_IOS = 128;
+	const WORKLET_NEED_REPOST_INTERVAL_MS = 0;
 	const CONCEAL_FADE_IN_MS = 2;
-	const RATE_CONTROL_KP = 0.0000025;
-	const RATE_CONTROL_KI = 0.00000003;
-	const RATE_CONTROL_INTEGRAL_CLAMP = 256;
-	const RATE_CONTROL_DELTA_CLAMP = 0.0015;
-	const RATE_CONTROL_HARD_MIN = 0.998;
-	const RATE_CONTROL_HARD_MAX = 1.002;
+	const CONCEAL_FADE_OUT_MS = 2;
 
 	function clamp(value, min, max) {
 		if (value < min) return min;
@@ -220,7 +216,7 @@ export class WorkerStreamingAudioService implements AudioService {
 			this.lastNeedMs = 0;
 			this.readPos = Atomics.load(this.coreControl, CORE_CTRL_READ_PTR) >>> 0;
 			this.rate = 1;
-			this.rateIntegral = 0;
+			this.needArmed = true;
 			this.lastCoreL = 0;
 			this.lastCoreR = 0;
 			this.sampledL = 0;
@@ -228,6 +224,7 @@ export class WorkerStreamingAudioService implements AudioService {
 			this.inUnderrun = false;
 			this.concealGain = 0;
 			this.fadeInStep = 1 / Math.max(1, sampleRate * (CONCEAL_FADE_IN_MS / 1000));
+			this.fadeOutStep = 1 / Math.max(1, sampleRate * (CONCEAL_FADE_OUT_MS / 1000));
 			this.needMainMessage = { type: 'need_main' };
 			this.statsMessage = {
 				type: 'stats',
@@ -278,16 +275,6 @@ export class WorkerStreamingAudioService implements AudioService {
 			return clamp(requested, minTarget, maxTarget);
 		}
 
-		updateRate(fillFrames, targetFill) {
-			const err = fillFrames - targetFill;
-			const integral = clamp(this.rateIntegral + err, -RATE_CONTROL_INTEGRAL_CLAMP, RATE_CONTROL_INTEGRAL_CLAMP);
-			this.rateIntegral = integral;
-			let rateDelta = err * RATE_CONTROL_KP + integral * RATE_CONTROL_KI;
-			rateDelta = clamp(rateDelta, -RATE_CONTROL_DELTA_CLAMP, RATE_CONTROL_DELTA_CLAMP);
-			this.rate = clamp(1 + rateDelta, RATE_CONTROL_HARD_MIN, RATE_CONTROL_HARD_MAX);
-			return this.rate;
-		}
-
 		loadInterpolatedSample(framePos) {
 			const baseFrame = Math.floor(framePos) >>> 0;
 			const frac = framePos - baseFrame;
@@ -296,7 +283,6 @@ export class WorkerStreamingAudioService implements AudioService {
 
 			if (baseFrame < readPtr) {
 				this.readPos = readPtr;
-				this.rateIntegral = 0;
 				return false;
 			}
 
@@ -336,9 +322,8 @@ export class WorkerStreamingAudioService implements AudioService {
 				this.readPos = readPtr;
 			}
 			const targetFill = this.computeTargetFillFrames();
-			const writePtr = Atomics.load(this.coreControl, CORE_CTRL_WRITE_PTR) >>> 0;
-			const fillBefore = (writePtr - (Math.floor(this.readPos) >>> 0)) >>> 0;
-			const renderRate = this.updateRate(fillBefore, targetFill);
+			const renderRate = 1;
+			this.rate = 1;
 			let localUnderruns = 0;
 
 			for (let frame = 0; frame < frameCount; frame += 1) {
@@ -367,10 +352,13 @@ export class WorkerStreamingAudioService implements AudioService {
 						this.inUnderrun = true;
 						this.concealGain = 1;
 					}
-					outL = this.lastCoreL;
-					outR = this.lastCoreR;
+					outL = this.lastCoreL * this.concealGain;
+					outR = this.lastCoreR * this.concealGain;
+					this.concealGain -= this.fadeOutStep;
+					if (this.concealGain < 0) {
+						this.concealGain = 0;
+					}
 					localUnderruns += 1;
-					this.rateIntegral = 0;
 				}
 
 				outL = clamp(outL * this.masterGain, -1, 1);
@@ -387,11 +375,21 @@ export class WorkerStreamingAudioService implements AudioService {
 
 			const writeAfter = Atomics.load(this.coreControl, CORE_CTRL_WRITE_PTR) >>> 0;
 			const fillFrames = (writeAfter - committedReadPtr) >>> 0;
-			const needTrigger = targetFill + WORKLET_NEED_MARGIN_FRAMES;
+			const rearmMargin = this.preferHighLead ? WORKLET_NEED_REARM_MARGIN_IOS : WORKLET_NEED_REARM_MARGIN_DEFAULT;
 			const nowMs = currentTime * 1000;
-			if (fillFrames < needTrigger && (nowMs - this.lastNeedMs) >= NEED_POST_INTERVAL_MS) {
-				this.lastNeedMs = nowMs;
-				this.port.postMessage(this.needMainMessage);
+			if (this.needArmed) {
+				if (fillFrames <= targetFill) {
+					this.needArmed = false;
+					this.lastNeedMs = nowMs;
+					this.port.postMessage(this.needMainMessage);
+				}
+			} else if (fillFrames <= targetFill) {
+				if ((nowMs - this.lastNeedMs) >= WORKLET_NEED_REPOST_INTERVAL_MS) {
+					this.lastNeedMs = nowMs;
+					this.port.postMessage(this.needMainMessage);
+				}
+			} else if (fillFrames >= (targetFill + rearmMargin)) {
+				this.needArmed = true;
 			}
 
 			if (nowMs - this.lastStatsMs >= 500) {
