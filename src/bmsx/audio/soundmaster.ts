@@ -389,6 +389,9 @@ export class SoundMaster implements RegisterablePersistent {
 	private readonly mixChunk: Int16Array;
 	private readonly mixChunkViews: Int16Array[];
 	private readonly sampleScratch: Int16Array;
+	private readonly sampleScratchNext: Int16Array;
+	private sampledLeft: number;
+	private sampledRight: number;
 
 	private constructor() {
 		this.globalSuspensions = new Set();
@@ -417,6 +420,9 @@ export class SoundMaster implements RegisterablePersistent {
 			this.mixChunkViews[frames] = this.mixChunk.subarray(0, frames * 2);
 		}
 		this.sampleScratch = new Int16Array(2);
+		this.sampleScratchNext = new Int16Array(2);
+		this.sampledLeft = 0;
+		this.sampledRight = 0;
 		this.bind();
 	}
 
@@ -1069,12 +1075,12 @@ export class SoundMaster implements RegisterablePersistent {
 					if (record.finalized) {
 						continue;
 					}
-					if (!this.sampleVoiceFrame(record)) {
-						this.stopVoiceRecord(type, record);
-						continue;
-					}
-					mixedL += this.sampleScratch[0] * record.gainLinear;
-					mixedR += this.sampleScratch[1] * record.gainLinear;
+						if (!this.sampleVoiceFrame(record)) {
+							this.stopVoiceRecord(type, record);
+							continue;
+						}
+						mixedL += this.sampledLeft * record.gainLinear;
+						mixedR += this.sampledRight * record.gainLinear;
 					if (record.gainRampRemainingFrames > 0) {
 						record.gainLinear += record.gainRampDelta;
 						record.gainRampRemainingFrames -= 1;
@@ -1099,11 +1105,13 @@ export class SoundMaster implements RegisterablePersistent {
 	}
 
 	private sampleVoiceFrame(record: ActiveVoiceRecord): boolean {
-		let frame = Math.floor(record.positionFrames);
+		let positionFrames = record.positionFrames;
+		let frame = Math.floor(positionFrames);
 		if (record.loopEnabled) {
 			if (frame >= record.loopEndFrames || frame < record.loopStartFrames) {
-				record.positionFrames = this.wrapLoopFrame(record.positionFrames, record.loopStartFrames, record.loopEndFrames);
-				frame = Math.floor(record.positionFrames);
+				positionFrames = this.wrapLoopFrame(positionFrames, record.loopStartFrames, record.loopEndFrames);
+				record.positionFrames = positionFrames;
+				frame = Math.floor(positionFrames);
 			}
 		} else if (frame >= record.stream.frames) {
 			return false;
@@ -1111,7 +1119,28 @@ export class SoundMaster implements RegisterablePersistent {
 		if (!record.decoder.readFrameAt(frame, this.sampleScratch)) {
 			return false;
 		}
-		record.positionFrames += record.stepFrames;
+		const frac = positionFrames - frame;
+		let frameNext = frame + 1;
+		if (record.loopEnabled) {
+			if (frameNext >= record.loopEndFrames) {
+				frameNext = record.loopStartFrames + (frameNext - record.loopEndFrames);
+			}
+		} else if (frameNext >= record.stream.frames) {
+			frameNext = frame;
+		}
+		if (frameNext !== frame) {
+			if (!record.decoder.readFrameAt(frameNext, this.sampleScratchNext)) {
+				return false;
+			}
+			const left0 = this.sampleScratch[0];
+			const right0 = this.sampleScratch[1];
+			this.sampledLeft = left0 + (this.sampleScratchNext[0] - left0) * frac;
+			this.sampledRight = right0 + (this.sampleScratchNext[1] - right0) * frac;
+		} else {
+			this.sampledLeft = this.sampleScratch[0];
+			this.sampledRight = this.sampleScratch[1];
+		}
+		record.positionFrames = positionFrames + record.stepFrames;
 		return true;
 	}
 
