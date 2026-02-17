@@ -93,6 +93,8 @@ function enemy_base.take_weapon_hit(self, weapon_kind)
 			trigger = self.trigger,
 		})
 		self:mark_for_disposal()
+	else
+		service('c').events:emit('evt.cue.foedamage', {})
 	end
 	return true
 end

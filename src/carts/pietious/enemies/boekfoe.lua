@@ -47,6 +47,7 @@ function boekfoe.bt_tick(self, blackboard)
 
 	if spawn_ticks <= 0 then
 		local y_speed_num = math.random(-5, 4)
+		service('c').events:emit('evt.cue.paperspawn', {})
 		inst('enemy.def.paperfoe', {
 			space_id = room.space_id,
 			despawn_on_room_switch = true,
