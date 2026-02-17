@@ -63,27 +63,36 @@ local state_tags = {
 
 player_abilities.attach_player_methods(player)
 
-local player_input_action_effect_program = player_abilities.build_input_action_effect_program()
-
-local player_dying_frames = timeline.build_frame_sequence({
-	{ value = { imgid = 'pietolon_dying_1' }, hold = 8 },
-	{ value = { imgid = 'pietolon_dying_2' }, hold = 8 },
-	{ value = { imgid = 'pietolon_dying_3' }, hold = 8 },
-	{ value = { imgid = 'pietolon_dying_4' }, hold = 8 },
-	{ value = { imgid = 'pietolon_dying_5' }, hold = 8 },
-})
 local player_hit_fall_frames = {
 	{ imgid = 'pietolon_hit_r' },
 }
-local player_hit_recovery_frames = timeline.build_frame_sequence({
-	{ value = { imgid = 'pietolon_recover_r' }, hold = constants.damage.hit_recovery_frames },
-})
-local player_sword_sequence_frames = timeline.range(constants.sword.duration_frames + 1)
 local player_sword_end_event = 'sword.end'
-local player_hit_invulnerability_sequence_frames = timeline.range(constants.damage.hit_invulnerability_frames)
-local player_hit_blink_sequence_frames = timeline.range(constants.damage.hit_blink_switch_frames)
-local player_fall_substate_sequence_frames = timeline.range(12)
+local player_shrine_exit_timeline_id = 'p.tl.sx'
 local hit_blink_colorize = { r = 1, g = 0.35, b = 0.35, a = 1 }
+
+local function build_shrine_exit_transition_frames()
+	local frames = {}
+	for transition_step = 1, constants.world_entrance.enter_world_total_steps do
+		local phase_step
+		if transition_step <= constants.world_entrance.enter_world_midpoint_step then
+			phase_step = transition_step
+		else
+			phase_step = constants.world_entrance.enter_world_total_steps - transition_step
+		end
+		local phase
+		if constants.world_entrance.enter_leave_cycle_steps <= 0 then
+			phase = 0
+		else
+			phase = transition_step % constants.world_entrance.enter_leave_cycle_steps
+		end
+		frames[#frames + 1] = {
+			transition_step = transition_step,
+			enter_leave_anim_frame = phase < 4 and 0 or 1,
+			to_enter_cut = -phase_step,
+		}
+	end
+	return frames
+end
 
 function player:bind_events()
 	self.events:on({
@@ -184,7 +193,13 @@ end
 function player:define_runtime_timelines()
 	self:define_timeline(timeline.new({
 		id = 'p.tl.d',
-		frames = player_dying_frames,
+		frames = timeline.build_frame_sequence({
+			{ value = { imgid = 'pietolon_dying_1' }, hold = 8 },
+			{ value = { imgid = 'pietolon_dying_2' }, hold = 8 },
+			{ value = { imgid = 'pietolon_dying_3' }, hold = 8 },
+			{ value = { imgid = 'pietolon_dying_4' }, hold = 8 },
+			{ value = { imgid = 'pietolon_dying_5' }, hold = 8 },
+		}),
 		playback_mode = 'once',
 	}))
 	self:define_timeline(timeline.new({
@@ -194,12 +209,14 @@ function player:define_runtime_timelines()
 	}))
 	self:define_timeline(timeline.new({
 		id = 'p.tl.hr',
-		frames = player_hit_recovery_frames,
+		frames = timeline.build_frame_sequence({
+			{ value = { imgid = 'pietolon_recover_r' }, hold = constants.damage.hit_recovery_frames },
+		}),
 		playback_mode = 'once',
 	}))
 	self:define_timeline(timeline.new({
 		id = 'p.seq.s',
-		frames = player_sword_sequence_frames,
+		frames = timeline.range(constants.sword.duration_frames + 1),
 		playback_mode = 'once',
 		autotick = false,
 		markers = {
@@ -208,21 +225,27 @@ function player:define_runtime_timelines()
 	}))
 	self:define_timeline(timeline.new({
 		id = 'p.seq.hi',
-		frames = player_hit_invulnerability_sequence_frames,
+		frames = timeline.range(constants.damage.hit_invulnerability_frames),
 		playback_mode = 'once',
 		autotick = false,
 	}))
 	self:define_timeline(timeline.new({
 		id = 'p.seq.hb',
-		frames = player_hit_blink_sequence_frames,
+		frames = timeline.range(constants.damage.hit_blink_switch_frames),
 		playback_mode = 'loop',
 		autotick = false,
 	}))
 	self:define_timeline(timeline.new({
 		id = 'p.seq.f',
-		frames = player_fall_substate_sequence_frames,
+		frames = timeline.range(12),
 		playback_mode = 'once',
 		autotick = false,
+	}))
+	self:define_timeline(timeline.new({
+		id = player_shrine_exit_timeline_id,
+		frames = build_shrine_exit_transition_frames(),
+		playback_mode = 'once',
+		apply = true,
 	}))
 end
 
@@ -234,7 +257,7 @@ function player:ctor()
 	player_abilities.configure_player_abilities(self, state_tags)
 	self:add_component(components.inputactioneffectcomponent.new({
 		parent = self,
-		program = player_input_action_effect_program,
+		program = player_abilities.build_input_action_effect_program(),
 	}))
 	self:gfx('pietolon_stand_r')
 	self.sprite_component.offset = { x = 0, y = 0, z = 110 }
@@ -1774,25 +1797,6 @@ function player:tick_waiting_world_emerge()
 	end
 end
 
-function player:tick_waiting_shrine()
-	self:reset_motion_for_transition_lock()
-	local director = service('d')
-	if director:has_modal_overlay() then
-		self.enter_leave_wait_started = true
-		return
-	end
-	if self.enter_leave_wait_started then
-		self.enter_leave_wait_started = false
-		self:dispatch_state_event('shrine_left')
-	end
-end
-
-function player:tick_leaving_shrine()
-	self:reset_motion_for_transition_lock()
-	service('d'):dispatch_state_event('shrine_transition_done')
-	self:dispatch_state_event('shrine_left')
-end
-
 function player:tick_emerging_world()
 	self:reset_motion_for_transition_lock()
 	self.transition_step = self.transition_step + 1
@@ -2694,30 +2698,40 @@ local function define_player_fsm()
 			process_input = player.sample_input,
 			tick = player.tick_entering_shrine,
 		},
-		waiting_shrine = {
+			waiting_shrine = {
 			tags = {
 				state_tags.variant.waiting_shrine,
 				state_tags.group.transition_lock,
 				state_tags.group.damage_lock,
 			},
-			on = {
-				['leave_shrine_overlay'] = '/leaving_shrine',
+				on = {
+					['leave_shrine_overlay'] = '/leaving_shrine',
+				},
+				process_input = player.sample_input,
+				tick = player.reset_motion_for_transition_lock,
 			},
-			process_input = player.sample_input,
-			tick = player.tick_waiting_shrine,
-		},
-		leaving_shrine = {
-			tags = {
-				state_tags.variant.leaving_shrine,
-				state_tags.group.transition_lock,
-				state_tags.group.damage_lock,
+			leaving_shrine = {
+				tags = {
+					state_tags.variant.leaving_shrine,
+					state_tags.group.transition_lock,
+					state_tags.group.damage_lock,
+				},
+				on = {
+					['timeline.end.p.tl.sx'] = '/quiet',
+				},
+				entering_state = function(self)
+					self.transition_step = 0
+					self.to_enter_cut = 0
+					self.enter_leave_anim_frame = 0
+					self:play_timeline(player_shrine_exit_timeline_id, { rewind = true, snap_to_start = true })
+				end,
+				leaving_state = function(self)
+					self:stop_timeline(player_shrine_exit_timeline_id)
+					self.to_enter_cut = 0
+				end,
+				process_input = player.sample_input,
+				tick = player.reset_motion_for_transition_lock,
 			},
-			on = {
-				['shrine_left'] = '/quiet',
-			},
-			process_input = player.sample_input,
-			tick = player.tick_leaving_shrine,
-		},
 		hit_fall = {
 			tags = { state_tags.variant.hit_fall, state_tags.group.damage_lock },
 			on = {

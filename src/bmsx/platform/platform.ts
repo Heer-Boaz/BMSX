@@ -189,6 +189,7 @@ export interface AudioService {
 	sampleRate(): number;
 	coreQueuedFrames(): number;
 	setCoreNeedHandler(handler: (() => void) | null): void;
+	clearCoreStream(): void;
 	resume(): Promise<void>;
 	suspend(): Promise<void>;
 	getMasterGain(): number;

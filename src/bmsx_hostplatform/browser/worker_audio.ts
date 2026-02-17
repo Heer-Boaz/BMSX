@@ -76,6 +76,9 @@ type MainToWorkerMessage =
 	}
 	| {
 		type: 'resume';
+	}
+	| {
+		type: 'clear_core_stream';
 	};
 
 type WorkerToMainMessage =
@@ -399,19 +402,19 @@ export class WorkerStreamingAudioService implements AudioService {
 		if (maximum < minimum) {
 			throw new Error('[WorkerStreamingAudioService.worker] Ring capacity is too small for emulator lead buffering.');
 		}
-			const requested = frameTimeSec > 0
-				? Math.floor(frameTimeSec * outputSampleRate)
-				: 256;
-			targetLeadFrames = clamp(requested, minimum, maximum);
-			const minimumLead = WORKLET_LOW_WATER_FRAMES + LEAD_MARGIN_FRAMES;
-			if (targetLeadFrames < minimumLead) {
-				targetLeadFrames = minimumLead;
-			}
-			const maximumLead = preferHighLead ? 768 : 512;
-			if (targetLeadFrames > maximumLead) {
-				targetLeadFrames = maximumLead;
-			}
+		const requested = frameTimeSec > 0
+			? Math.floor(frameTimeSec * outputSampleRate)
+			: 256;
+		targetLeadFrames = clamp(requested, minimum, maximum);
+		const minimumLead = WORKLET_LOW_WATER_FRAMES + LEAD_MARGIN_FRAMES;
+		if (targetLeadFrames < minimumLead) {
+			targetLeadFrames = minimumLead;
 		}
+		const maximumLead = preferHighLead ? 768 : 512;
+		if (targetLeadFrames > maximumLead) {
+			targetLeadFrames = maximumLead;
+		}
+	}
 
 	function mixAndWrite(framesRequested) {
 		const readPtr = Atomics.load(ringControl, CTRL_READ_PTR) >>> 0;
@@ -493,6 +496,14 @@ export class WorkerStreamingAudioService implements AudioService {
 		pump();
 	}
 
+	function clearCoreStream() {
+		const coreWrite = Atomics.load(coreStreamControl, CORE_CTRL_WRITE_PTR) >>> 0;
+		Atomics.store(coreStreamControl, CORE_CTRL_READ_PTR, coreWrite | 0);
+		Atomics.store(coreStreamControl, CORE_CTRL_UNDERRUNS, 0);
+		const writePtr = Atomics.load(ringControl, CTRL_WRITE_PTR) >>> 0;
+		Atomics.store(ringControl, CTRL_READ_PTR, writePtr | 0);
+	}
+
 	async function handleInit(message) {
 		if (!message.crossOriginIsolated || self.crossOriginIsolated !== true) {
 			throw new Error('[WorkerStreamingAudioService.worker] crossOriginIsolated=true is required.');
@@ -500,19 +511,19 @@ export class WorkerStreamingAudioService implements AudioService {
 		if (!(message.needPort instanceof MessagePort)) {
 			throw new Error('[WorkerStreamingAudioService.worker] Missing realtime need port.');
 		}
-			ringSamples = new Float32Array(message.ringSampleBuffer);
-			ringControl = new Int32Array(message.ringControlBuffer);
-			capacityFrames = message.capacityFrames;
-			coreStreamSamples = new Int16Array(message.coreStreamSamplesBuffer);
-			coreStreamControl = new Int32Array(message.coreStreamControlBuffer);
-			coreStreamCapacityFrames = message.coreStreamCapacityFrames;
-			outputSampleRate = message.sampleRate;
-			frameTimeSec = message.frameTimeSec;
-			preferHighLead = message.preferHighLead;
-			needPort = message.needPort;
-			needPort.onmessage = () => {
-				schedulePump();
-			};
+		ringSamples = new Float32Array(message.ringSampleBuffer);
+		ringControl = new Int32Array(message.ringControlBuffer);
+		capacityFrames = message.capacityFrames;
+		coreStreamSamples = new Int16Array(message.coreStreamSamplesBuffer);
+		coreStreamControl = new Int32Array(message.coreStreamControlBuffer);
+		coreStreamCapacityFrames = message.coreStreamCapacityFrames;
+		outputSampleRate = message.sampleRate;
+		frameTimeSec = message.frameTimeSec;
+		preferHighLead = message.preferHighLead;
+		needPort = message.needPort;
+		needPort.onmessage = () => {
+			schedulePump();
+		};
 		needPort.start();
 		masterGain = 1;
 		initialized = true;
@@ -553,6 +564,9 @@ export class WorkerStreamingAudioService implements AudioService {
 				case 'resume':
 					suspended = false;
 					schedulePump();
+					break;
+				case 'clear_core_stream':
+					clearCoreStream();
 					break;
 				default:
 					throw new Error('[WorkerStreamingAudioService.worker] Unsupported command: ' + String(message.type));
@@ -694,6 +708,13 @@ export class WorkerStreamingAudioService implements AudioService {
 
 	setCoreNeedHandler(handler: (() => void) | null): void {
 		this.coreNeedHandler = handler;
+	}
+
+	clearCoreStream(): void {
+		const writePtr = Atomics.load(this.coreStreamControl, CORE_CTRL_WRITE_PTR) >>> 0;
+		Atomics.store(this.coreStreamControl, CORE_CTRL_READ_PTR, writePtr | 0);
+		Atomics.store(this.coreStreamControl, CORE_CTRL_UNDERRUNS, 0);
+		this.postOrQueueMessage({ type: 'clear_core_stream' });
 	}
 
 	async resume(): Promise<void> {

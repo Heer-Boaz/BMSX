@@ -50,15 +50,8 @@ function director:queue_banner_transition(mode, world_number, post_action)
 end
 
 function director:open_shrine(text_lines)
-	self.pending_shrine_open = true
-	self.pending_shrine_close = false
 	self.pending_shrine_text_lines = text_lines
 	self:dispatch_state_event('shrine_overlay_requested')
-end
-
-function director:close_shrine()
-	self.pending_shrine_close = true
-	self.pending_shrine_open = false
 end
 
 function director:start_lithograph_screen(text_line)
@@ -129,8 +122,6 @@ function director:ctor()
 	self.pending_banner_mode = nil
 	self.pending_banner_world_number = 0
 	self.pending_banner_post_action = nil
-	self.pending_shrine_open = false
-	self.pending_shrine_close = false
 	self.pending_shrine_text_lines = {}
 	self.overlay_mode = 'none'
 	self.overlay_text_lines = {}
@@ -148,12 +139,12 @@ function director:ctor()
 end
 
 local function define_director_fsm()
-	define_fsm('director.fsm', {
+		define_fsm('director.fsm', {
 		initial = 'room',
-		on = {
-			['world_transition_start'] = '/world_transition',
-			['shrine_transition_start'] = '/shrine_transition',
-			['halo_transition_start'] = '/halo_teleport',
+			on = {
+				['world_transition_start'] = '/world_transition',
+				['shrine_transition_start'] = '/shrine_transition_enter',
+				['halo_transition_start'] = '/halo_teleport',
 			['seal_dissolution_start'] = '/seal_dissolution',
 			['daemon_appearance_start'] = '/daemon_appearance',
 			['lithograph_screen_start'] = '/lithograph_screen',
@@ -164,7 +155,7 @@ local function define_director_fsm()
 			['death_start'] = '/death',
 		},
 		states = {
-			room = {
+				room = {
 				entering_state = function(self)
 					self:sync_room_state_from_castle()
 					self.active_transition_kind = 'none'
@@ -177,14 +168,10 @@ local function define_director_fsm()
 					service('c'):resume_active_enemies_after_transition()
 					self:emit_state_changed(room_state_name(room_space))
 				end,
-				tick = function(self)
-					if self.pending_shrine_open then
-						self.pending_shrine_open = false
-						return '/shrine_overlay'
-					end
-					if self.pending_banner_mode ~= nil then
-						return '/banner_transition'
-					end
+					tick = function(self)
+						if self.pending_banner_mode ~= nil then
+							return '/banner_transition'
+						end
 					if self:item_screen_toggle_pressed() then
 						self.events:emit('evt.cue.f1', {})
 						return '/item_screen'
@@ -206,22 +193,15 @@ local function define_director_fsm()
 					end
 				end,
 			},
-			shrine_transition = {
-				entering_state = function(self)
-					self.active_transition_kind = 'shrine'
-					service('c'):park_active_enemies_for_transition()
-				end,
-				on = {
-					['shrine_transition_done'] = '/room',
-					['shrine_overlay_requested'] = '/shrine_overlay',
+				shrine_transition_enter = {
+					entering_state = function(self)
+						self.active_transition_kind = 'shrine'
+						service('c'):park_active_enemies_for_transition()
+					end,
+					on = {
+						['shrine_overlay_requested'] = '/shrine_overlay',
+					},
 				},
-				tick = function(self)
-					if self.pending_shrine_open then
-						self.pending_shrine_open = false
-						return '/shrine_overlay'
-					end
-				end,
-			},
 			banner_transition = {
 				entering_state = function(self)
 					service('c'):park_active_enemies_for_transition()
@@ -256,48 +236,50 @@ local function define_director_fsm()
 					return '/room'
 				end,
 			},
-			shrine_overlay = {
-				entering_state = function(self)
-					service('c'):park_active_enemies_for_transition()
-					self.overlay_mode = 'shrine'
-					self.overlay_text_lines = self.pending_shrine_text_lines
-					self.pending_shrine_text_lines = {}
-					self.pending_shrine_close = false
-					set_space('shrine')
-					object('ui').space_id = 'shrine'
-					self:emit_state_changed('shrine')
-				end,
-				tick = function(self)
-					if action_triggered('down[jp]', self.player_index) then
-						self:close_shrine()
-					end
-					if not self.pending_shrine_close then
-						return
-					end
-					self.pending_shrine_close = false
-					self.overlay_mode = 'none'
-					self.overlay_text_lines = {}
-					object('pietolon'):leave_shrine_overlay()
-					return '/shrine_transition'
-				end,
-			},
-			item_screen = {
+				shrine_overlay = {
+					entering_state = function(self)
+						service('c'):park_active_enemies_for_transition()
+						self.overlay_mode = 'shrine'
+						self.overlay_text_lines = self.pending_shrine_text_lines
+						self.pending_shrine_text_lines = {}
+						set_space('shrine')
+						object('ui').space_id = 'shrine'
+						self:emit_state_changed('shrine')
+					end,
+					on = {
+						['shrine_overlay_close_requested'] = '/shrine_transition_exit',
+					},
+					tick = function(self)
+						if action_triggered('down[jp]', self.player_index) then
+							self:dispatch_state_event('shrine_overlay_close_requested')
+						end
+					end,
+				},
+				shrine_transition_exit = {
+					entering_state = function(self)
+						self.active_transition_kind = 'shrine'
+						service('c'):park_active_enemies_for_transition()
+						self.overlay_mode = 'none'
+						self.overlay_text_lines = {}
+						object('pietolon'):leave_shrine_overlay()
+					end,
+					on = {
+						['timeline.end.p.tl.sx'] = '/room',
+					},
+				},
+				item_screen = {
 				entering_state = function(self)
 					set_space('item')
 					object('ui').space_id = 'item'
 					self:emit_state_changed('item')
 				end,
-				tick = function(self)
-					if self.pending_banner_mode ~= nil then
-						return '/banner_transition'
-					end
-					if self.pending_shrine_open then
-						self.pending_shrine_open = false
-						return '/shrine_overlay'
-					end
-					if action_triggered('start[jp]', self.player_index) and object('pietolon').abilities:activate('halo') then
-						return '/room'
-					end
+					tick = function(self)
+						if self.pending_banner_mode ~= nil then
+							return '/banner_transition'
+						end
+						if action_triggered('start[jp]', self.player_index) and object('pietolon').abilities:activate('halo') then
+							return '/room'
+						end
 					if self:item_screen_toggle_pressed() then
 						return '/room'
 					end
@@ -441,8 +423,6 @@ local function register_director_service_definition()
 			map_y = 12,
 			last_room_switch = nil,
 			pending_banner_world_number = 0,
-			pending_shrine_open = false,
-			pending_shrine_close = false,
 			pending_shrine_text_lines = {},
 			overlay_mode = 'none',
 			overlay_text_lines = {},

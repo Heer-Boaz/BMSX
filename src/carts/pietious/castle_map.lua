@@ -398,7 +398,6 @@ end
 
 local room_templates = load_room_templates()
 attach_world_transition_metadata(room_templates)
-local elevator_routes = build_elevator_routes()
 
 local world_transition_by_number = {}
 
@@ -408,7 +407,7 @@ end
 
 castle_map.start_room_number = start_room_number
 castle_map.room_templates = room_templates
-castle_map.elevator_routes = elevator_routes
+castle_map.elevator_routes = build_elevator_routes()
 castle_map.map_world_proxies = map_world_proxies
 castle_map.world_transitions = world_transition_specs
 castle_map.world_transitions_by_number = world_transition_by_number

@@ -148,6 +148,7 @@ export class EngineCore {
 		this.target_fps = ufpsScaled / HZ_SCALE;
 		this._platform.ufpsScaled = ufpsScaled;
 		this._platform.audio.setFrameTimeSec(HZ_SCALE / this.ufps_scaled);
+		this.sndmaster.setMixerFps(this.target_fps);
 		if (this.initialized) {
 			this.recomputeTimingCaches();
 		}
@@ -868,6 +869,7 @@ export class EngineCore {
 				}
 				if (presentQueued) {
 					this.wasupdated = true;
+					this.sndmaster.finishFrame();
 					if (profile) t1 = performance.now();
 					this.view.drawgame();
 					if (profile) tDraw += performance.now() - t1;

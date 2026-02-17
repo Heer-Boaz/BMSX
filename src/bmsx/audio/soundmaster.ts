@@ -96,8 +96,21 @@ const BADP_HEADER_SIZE = 48;
 const BADP_VERSION = 1;
 const BADP_NO_LOOP = 0xffffffff;
 const MIX_CHUNK_FRAMES = 128;
-const MIX_TARGET_AHEAD_SEC = 0.014;
-const MIX_SPARE_FRAMES = MIX_CHUNK_FRAMES;
+const MIX_LOW_TARGET_AHEAD_SEC = 0.008;
+const MIX_BALANCED_TARGET_AHEAD_SEC = 0.014;
+const MIX_SAFE_TARGET_AHEAD_SEC = 0.02;
+const MIX_LOW_MONITOR_FRAMES = 128;
+const MIX_BALANCED_MONITOR_FRAMES = 256;
+const MIX_SAFE_MONITOR_FRAMES = 512;
+const MIX_LOW_SIGNAL_RATIO = 1;
+const MIX_BALANCED_SIGNAL_RATIO = 1;
+const MIX_SAFE_SIGNAL_RATIO = 1;
+const MIX_LOW_ADD_FRAMES = 1;
+const MIX_BALANCED_ADD_FRAMES = 1;
+const MIX_SAFE_ADD_FRAMES = 2;
+const MIX_LOW_SPARE_FRAMES = MIX_CHUNK_FRAMES;
+const MIX_BALANCED_SPARE_FRAMES = MIX_CHUNK_FRAMES;
+const MIX_SAFE_SPARE_FRAMES = MIX_CHUNK_FRAMES * 2;
 const ADPCM_STEP_TABLE = [
 	7, 8, 9, 10, 11, 12, 13, 14, 16, 17,
 	19, 21, 23, 25, 28, 31, 34, 37, 41, 45,
@@ -113,6 +126,23 @@ const ADPCM_INDEX_TABLE = [
 	-1, -1, -1, -1, 2, 4, 6, 8,
 	-1, -1, -1, -1, 2, 4, 6, 8,
 ];
+
+type MixLatencyProfile = 'low' | 'balanced' | 'safe';
+
+function isIOSAudioTarget(): boolean {
+	if (typeof navigator === 'undefined') {
+		return false;
+	}
+	const platform = navigator.platform;
+	if (platform === 'iPhone' || platform === 'iPad' || platform === 'iPod') {
+		return true;
+	}
+	if (platform === 'MacIntel' && navigator.maxTouchPoints > 1) {
+		return true;
+	}
+	const userAgent = navigator.userAgent;
+	return userAgent.indexOf('iPhone') >= 0 || userAgent.indexOf('iPad') >= 0 || userAgent.indexOf('iPod') >= 0;
+}
 
 type StreamTrackData = {
 	id: asset_id;
@@ -385,6 +415,14 @@ export class SoundMaster implements RegisterablePersistent {
 	private maxVoicesByType: Record<AudioType, number>;
 	private voiceRecordByHandle: WeakMap<VoiceHandle, ActiveVoiceRecord>;
 	private mixSampleRate: number;
+	private mixFps: number;
+	private mixSamplesPerFrame: number;
+	private mixLatencyProfile: MixLatencyProfile;
+	private mixTargetAheadSec: number;
+	private mixMonitorFrames: number;
+	private mixSignalBufferRatio: number;
+	private mixSignalAddFrames: number;
+	private mixSpareFrames: number;
 	private readonly mixChunk: Int16Array;
 	private readonly mixChunkViews: Int16Array[];
 	private readonly sampleScratch: Int16Array;
@@ -412,6 +450,14 @@ export class SoundMaster implements RegisterablePersistent {
 		this.maxVoicesByType = { sfx: DEFAULT_MAX_VOICES.sfx, music: DEFAULT_MAX_VOICES.music, ui: DEFAULT_MAX_VOICES.ui };
 		this.voiceRecordByHandle = new WeakMap();
 		this.mixSampleRate = 0;
+		this.mixFps = 60;
+		this.mixSamplesPerFrame = 0;
+		this.mixLatencyProfile = 'balanced';
+		this.mixTargetAheadSec = MIX_BALANCED_TARGET_AHEAD_SEC;
+		this.mixMonitorFrames = MIX_BALANCED_MONITOR_FRAMES;
+		this.mixSignalBufferRatio = MIX_BALANCED_SIGNAL_RATIO;
+		this.mixSignalAddFrames = MIX_BALANCED_ADD_FRAMES;
+		this.mixSpareFrames = MIX_BALANCED_SPARE_FRAMES;
 		this.mixChunk = new Int16Array(MIX_CHUNK_FRAMES * 2);
 		this.mixChunkViews = new Array<Int16Array>(MIX_CHUNK_FRAMES + 1);
 		for (let frames = 0; frames <= MIX_CHUNK_FRAMES; frames += 1) {
@@ -421,6 +467,7 @@ export class SoundMaster implements RegisterablePersistent {
 		this.sampleScratchNext = new Int16Array(2);
 		this.sampledLeft = 0;
 		this.sampledRight = 0;
+		this.setLatencyProfile(isIOSAudioTarget() ? 'safe' : 'balanced');
 		this.bind();
 	}
 
@@ -451,6 +498,7 @@ export class SoundMaster implements RegisterablePersistent {
 		if (!Number.isFinite(this.mixSampleRate) || this.mixSampleRate <= 0) {
 			throw new Error('[SoundMaster] Audio sample rate must be a positive finite value.');
 		}
+		this.setMixerFps($.target_fps);
 		this.startMixer();
 
 		this.volume = clamp01(startingVolume);
@@ -1029,7 +1077,56 @@ export class SoundMaster implements RegisterablePersistent {
 		this.stopVoiceRecord(found.type, found.record);
 	}
 
+	public setMixerFps(fps: number): void {
+		if (!Number.isFinite(fps) || fps <= 0) {
+			throw new Error('[SoundMaster] Mixer FPS must be a positive finite value.');
+		}
+		this.mixFps = fps;
+		if (this.mixSampleRate > 0) {
+			this.mixSamplesPerFrame = Math.max(1, Math.floor(this.mixSampleRate / this.mixFps));
+		}
+	}
+
+	public setLatencyProfile(profile: MixLatencyProfile): void {
+		this.mixLatencyProfile = profile;
+		switch (profile) {
+			case 'low':
+				this.mixTargetAheadSec = MIX_LOW_TARGET_AHEAD_SEC;
+				this.mixMonitorFrames = MIX_LOW_MONITOR_FRAMES;
+				this.mixSignalBufferRatio = MIX_LOW_SIGNAL_RATIO;
+				this.mixSignalAddFrames = MIX_LOW_ADD_FRAMES;
+				this.mixSpareFrames = MIX_LOW_SPARE_FRAMES;
+				break;
+			case 'balanced':
+				this.mixTargetAheadSec = MIX_BALANCED_TARGET_AHEAD_SEC;
+				this.mixMonitorFrames = MIX_BALANCED_MONITOR_FRAMES;
+				this.mixSignalBufferRatio = MIX_BALANCED_SIGNAL_RATIO;
+				this.mixSignalAddFrames = MIX_BALANCED_ADD_FRAMES;
+				this.mixSpareFrames = MIX_BALANCED_SPARE_FRAMES;
+				break;
+			case 'safe':
+				this.mixTargetAheadSec = MIX_SAFE_TARGET_AHEAD_SEC;
+				this.mixMonitorFrames = MIX_SAFE_MONITOR_FRAMES;
+				this.mixSignalBufferRatio = MIX_SAFE_SIGNAL_RATIO;
+				this.mixSignalAddFrames = MIX_SAFE_ADD_FRAMES;
+				this.mixSpareFrames = MIX_SAFE_SPARE_FRAMES;
+				break;
+		}
+		if (this.audio && this.globalSuspensions.size === 0) {
+			this.pumpMixer();
+		}
+	}
+
+	public getLatencyProfile(): MixLatencyProfile {
+		return this.mixLatencyProfile;
+	}
+
+	public finishFrame(): void {
+		this.pumpMixer();
+	}
+
 	private startMixer(): void {
+		this.A.clearCoreStream();
 		this.A.setCoreNeedHandler(() => {
 			this.pumpMixer();
 		});
@@ -1038,16 +1135,19 @@ export class SoundMaster implements RegisterablePersistent {
 
 	private stopMixer(): void {
 		this.A.setCoreNeedHandler(null);
+		this.A.clearCoreStream();
 	}
 
 	private pumpMixer(): void {
-		const targetFrames = Math.floor(MIX_TARGET_AHEAD_SEC * this.mixSampleRate);
+		const targetFramesByTime = Math.floor(this.mixTargetAheadSec * this.mixSampleRate);
+		const targetFramesBySignal = this.mixMonitorFrames * this.mixSignalBufferRatio + this.mixSamplesPerFrame * this.mixSignalAddFrames;
+		const targetFrames = targetFramesByTime > targetFramesBySignal ? targetFramesByTime : targetFramesBySignal;
 		const queuedFrames = this.A.coreQueuedFrames();
 		let deficitFrames = targetFrames - queuedFrames;
-		if (deficitFrames <= -MIX_SPARE_FRAMES) {
+		if (deficitFrames <= -this.mixSpareFrames) {
 			return;
 		}
-		deficitFrames += MIX_SPARE_FRAMES;
+		deficitFrames += this.mixSpareFrames;
 		while (deficitFrames > 0) {
 			const frames = deficitFrames > MIX_CHUNK_FRAMES ? MIX_CHUNK_FRAMES : deficitFrames;
 			this.mixAndPushFrames(frames);

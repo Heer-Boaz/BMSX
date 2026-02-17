@@ -182,6 +182,9 @@ export class WebAudioService implements AudioService {
 	setCoreNeedHandler(_handler: (() => void) | null): void {
 	}
 
+	clearCoreStream(): void {
+	}
+
 	async resume(): Promise<void> {
 		if (this.ctx.state !== 'running') {
 			await this.ctx.resume();
