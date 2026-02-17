@@ -1,5 +1,5 @@
 local transition = {}
-local timeline_builders = require('timeline_builders.lua')
+local timeline_builders = require('timeline_builders')
 local build_transition_frames = timeline_builders.build_transition_frames
 local build_transition_fade_in_frames = timeline_builders.build_transition_fade_in_frames
 local build_fade_frames = timeline_builders.build_fade_frames

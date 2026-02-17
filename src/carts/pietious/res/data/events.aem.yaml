@@ -1,5 +1,5 @@
 events:
-    flow.state_changed:
+    director.state_changed:
         channel: music
         max_voices: 1
         rules:

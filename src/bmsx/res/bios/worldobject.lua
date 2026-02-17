@@ -1,6 +1,3 @@
--- worldobject.lua
--- minimal world object base for system rom
-
 local eventemitter = require("eventemitter")
 local fsm = require("fsm")
 local fsmlibrary = require("fsmlibrary")
@@ -252,18 +249,12 @@ function worldobject:toggle_tag(tag)
 	self.tags[tag] = not self.tags[tag]
 end
 
-function worldobject:matches_state_path(path)
-	return self.sc:matches_state_path(path)
-end
-
-function worldobject:transition_to(path)
-	self.sc:transition_to(path)
-end
-
+-- Forwards an event to the FSM, which can be used for state transitions or as a general-purpose event bus for the worldobject's internal logic. The event can be a string (event type) or a table (event object). If it's a string, it will be wrapped in a table with the type and emitter fields.
 function worldobject:dispatch_state_event(event_or_name, payload)
 	return self.sc:dispatch(event_or_name, payload)
 end
 
+-- Useless alias for dispatch_state_event, but provided for semantic clarity in some cases, so that Codex can recognize the intent as dispatching a command rather than a gameplay fact.
 function worldobject:dispatch_command(event_or_name, payload)
 	return self.sc:dispatch(event_or_name, payload)
 end
@@ -333,7 +324,7 @@ function worldobject:dispose()
 	eventemitter.eventemitter.instance:remove_subscriber(self)
 end
 
-function worldobject:tick(_dt)
+function worldobject:tick()
 end
 
 function worldobject:draw()

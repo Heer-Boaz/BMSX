@@ -46,6 +46,16 @@ function service:deactivate()
 	self.sc:pause()
 end
 
+-- Forwards an event to the FSM, which can be used for state transitions or as a general-purpose event bus for the service's internal logic. The event can be a string (event type) or a table (event object). If it's a string, it will be wrapped in a table with the type and emitter fields.
+function service:dispatch_state_event(event_or_name, payload)
+	return self.sc:dispatch(event_or_name, payload)
+end
+
+-- Useless alias for dispatch_state_event, but provided for semantic clarity in some cases, so that Codex can recognize the intent as dispatching a command rather than a gameplay fact.
+function service:dispatch_command(event_or_name, payload)
+	return self.sc:dispatch(event_or_name, payload)
+end
+
 function service:dispose()
 	self:disable_events()
 	eventemitter.eventemitter.instance:remove_subscriber(self)

@@ -314,6 +314,16 @@ local function is_stair_right(ch)
 	return ch == '=' or ch == '+'
 end
 
+local function world_entrance_sprite_id(world_entrance_state)
+	if world_entrance_state == 'opening_2' then
+		return 'world_entrance_half_open'
+	end
+	if world_entrance_state == 'open' then
+		return 'world_entrance_open'
+	end
+	return 'world_entrance'
+end
+
 local function build_stairs(map_rows, tile_size, origin_x, origin_y, player_height)
 	local stairs = {}
 	local row_count = #map_rows
@@ -497,5 +507,110 @@ function room.switch_room(room_state, direction)
 		direction = direction,
 	}
 end
+
+local room_object = {}
+room_object.__index = room_object
+
+local function render_elevators(room_number, elevator_routes)
+	for i = 1, #elevator_routes do
+		local elevator = elevator_routes[i]
+		if elevator.current_room_number == room_number then
+			put_sprite('elevator_platform', elevator.x, elevator.y, 21)
+		end
+	end
+end
+
+function room_object:bind_visual()
+	local rc = self:get_component('customvisualcomponent')
+	rc.producer = function(_ctx)
+		self:render_room()
+	end
+end
+
+function room_object:bind_events()
+	self.events:on({
+		event = 'room.switched',
+		emitter = 'pietolon',
+		subscriber = self,
+		handler = function(event)
+			self.space_id = event.space
+		end,
+	})
+end
+
+function room_object:ctor()
+	self:bind_visual()
+	self:bind_events()
+end
+
+function room_object:render_tiles(room_state)
+	local tile_size = room_state.tile_size
+	local origin_x = room_state.tile_origin_x
+	local origin_y = room_state.tile_origin_y
+
+	for y = 1, room_state.tile_rows do
+		local draw_y = origin_y + ((y - 1) * tile_size)
+		local row = room_state.tiles[y]
+		for x = 1, room_state.tile_columns do
+			local draw_x = origin_x + ((x - 1) * tile_size)
+			put_sprite(row[x], draw_x, draw_y, 20)
+		end
+	end
+end
+
+function room_object:render_room_objects(room_state)
+	local shrines = room_state.shrines
+	for i = 1, #shrines do
+		local shrine = shrines[i]
+		put_sprite('shrine', shrine.x, shrine.y, 22)
+	end
+
+	local castle_service = service('c')
+	local world_entrances = room_state.world_entrances
+	for i = 1, #world_entrances do
+		local world_entrance = world_entrances[i]
+		local entrance_state = castle_service.world_entrance_states[world_entrance.target].state
+		local sprite_id = world_entrance_sprite_id(entrance_state)
+		put_sprite(sprite_id, world_entrance.x, world_entrance.y, 22)
+	end
+
+	local elevator_service = service('elevator_service')
+	render_elevators(castle_service.current_room_number, elevator_service.elevator_routes)
+end
+
+function room_object:render_room()
+	local castle_service = service('c')
+	local room_state = castle_service.current_room
+	if get_space() ~= room_state.space_id then
+		return
+	end
+	self:render_tiles(room_state)
+	self:render_room_objects(room_state)
+end
+
+local function define_room_fsm()
+	define_fsm('room.fsm', {
+		initial = 'active',
+		states = {
+			active = {},
+		},
+	})
+end
+
+local function register_room_definition()
+	define_prefab({
+		def_id = 'room.def',
+		class = room_object,
+		fsms = { 'room.fsm' },
+		components = { 'customvisualcomponent' },
+		defaults = {
+			tick_enabled = false,
+		},
+	})
+end
+
+room.room_object = room_object
+room.define_room_fsm = define_room_fsm
+room.register_room_definition = register_room_definition
 
 return room

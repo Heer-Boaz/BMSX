@@ -3,11 +3,24 @@ local room_module = require('room')
 local castle_map = require('castle_map')
 
 local castle_service = {}
+local enemy_transition_space_id = 'eh'
 
 local function clear_map(map)
 	for key in pairs(map) do
 		map[key] = nil
 	end
+end
+
+local function resolve_enemy_instance(self, id)
+	local instance = self.enemies_by_id[id]
+	if instance ~= nil then
+		return instance
+	end
+	instance = object(id)
+	if instance ~= nil then
+		self.enemies_by_id[id] = instance
+	end
+	return instance
 end
 
 local function condition_matches(self, condition, enemy_id)
@@ -132,6 +145,43 @@ function castle_service:commit_active_enemy_ids(next_active_ids)
 	clear_map(previous_active_ids)
 end
 
+function castle_service:for_each_active_enemy_instance(visitor)
+	for id in pairs(self.active_enemy_ids) do
+		local instance = resolve_enemy_instance(self, id)
+		if instance ~= nil then
+			visitor(instance, id)
+		end
+	end
+end
+
+function castle_service:apply_enemy_transition_space_if_needed()
+	if not self.enemies_suspended_for_transition then
+		return
+	end
+
+	self:for_each_active_enemy_instance(function(instance)
+		instance.space_id = enemy_transition_space_id
+	end)
+end
+
+function castle_service:park_active_enemies_for_transition()
+	self.enemies_suspended_for_transition = true
+	self:apply_enemy_transition_space_if_needed()
+end
+
+function castle_service:resume_active_enemies_after_transition()
+	self.enemies_suspended_for_transition = false
+
+	local room_space = self.current_room.space_id
+	self:for_each_active_enemy_instance(function(instance)
+		instance.space_id = room_space
+		instance.visible = true
+		if not instance.active then
+			instance:activate()
+		end
+	end)
+end
+
 function castle_service:refresh_current_room_enemies()
 	local room = self.current_room
 	local enemy_defs = room.enemies
@@ -160,6 +210,7 @@ function castle_service:refresh_current_room_enemies()
 
 	self:deactivate_stale_active_enemies(next_active_ids)
 	self:commit_active_enemy_ids(next_active_ids)
+	self:apply_enemy_transition_space_if_needed()
 end
 
 function castle_service:bind_enemy_events()
@@ -218,6 +269,7 @@ function castle_service:ctor()
 	self.enemy_condition_flags = {}
 	self.active_enemy_ids = {}
 	self.active_enemy_ids_scratch = {}
+	self.enemies_suspended_for_transition = false
 	self:bind_enemy_events()
 end
 
@@ -410,6 +462,7 @@ local function register_castle_service_definition()
 			enemies_by_id = {},
 			defeated_enemy_ids = {},
 			enemy_condition_flags = {},
+			enemies_suspended_for_transition = false,
 			tick_enabled = true,
 		},
 	})

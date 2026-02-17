@@ -45,8 +45,8 @@ end
 
 function item_screen:bind_events()
 	self.events:on({
-		event = 'flow.state_changed',
-		emitter = 'f',
+		event = 'director.state_changed',
+		emitter = 'd',
 		subscriber = self,
 		handler = function(event)
 			if event.state ~= 'item' then

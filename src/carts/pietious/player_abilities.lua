@@ -105,6 +105,7 @@ local function activate_spyglass_ability(owner, state_tags)
 	if lithograph == nil then
 		return false
 	end
+	service('d'):start_lithograph_screen(lithograph.text)
 	return true
 end
 
@@ -239,6 +240,8 @@ function player_abilities.attach_player_methods(player)
 	end
 
 	function player:teleport_to_halo_destination()
+		local director_service = service('d')
+		director_service:dispatch_state_event('halo_transition_start')
 		local castle_service = service('c')
 		local from_room_number = castle_service.current_room_number
 
@@ -281,6 +284,7 @@ function player_abilities.attach_player_methods(player)
 			x = self.x,
 			y = self.y,
 		})
+		director_service:dispatch_state_event('halo_transition_done')
 	end
 end
 

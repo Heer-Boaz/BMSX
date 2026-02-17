@@ -166,9 +166,8 @@ function player:reset_runtime()
 end
 
 function player:update_collision_state()
-	local in_world_transition = self:has_tag(state_tags.group.transition_lock)
-	self.collider.enabled = not in_world_transition
-	self.sword_collider.enabled = self:has_tag(state_tags.group.sword) and not in_world_transition
+	self.collider.enabled = true
+	self.sword_collider.enabled = self:has_tag(state_tags.group.sword)
 end
 
 function player:apply_colorize(r, g, b, a)
@@ -424,6 +423,7 @@ end
 function player:respawn()
 	self.abilities:end_once('sword', 'respawn')
 	self:reset_runtime()
+	service('d'):dispatch_state_event('death_done')
 	self:force_seek_timeline('p.seq.s', 0)
 	self:reset_hit_invulnerability_sequence()
 	self:reset_fall_substate_sequence()
@@ -542,6 +542,7 @@ function player:start_dying()
 	if self:has_tag(state_tags.variant.dying) then
 		return
 	end
+	service('d'):dispatch_state_event('death_start')
 	self.events:emit('evt.cue.dying', {})
 	self.abilities:end_once('sword', 'dying')
 	self:force_seek_timeline('p.seq.s', 0)
@@ -740,6 +741,7 @@ function player:begin_entering_world(world_entrance)
 	self.enter_leave_shrine_text_lines = {}
 	self.x = world_entrance.stair_x
 	self:reset_enter_leave_animation()
+	service('d'):dispatch_state_event('world_transition_start')
 	stop_music()
 	self.events:emit('evt.cue.enterleave', {})
 	self:dispatch_state_event('enter_world_start')
@@ -756,6 +758,7 @@ function player:begin_entering_shrine(shrine)
 	self.enter_leave_shrine_text_lines = shrine.text_lines
 	self.x = shrine.x
 	self:reset_enter_leave_animation()
+	service('d'):dispatch_state_event('shrine_transition_start')
 	stop_music()
 	self.events:emit('evt.cue.enterleave', {})
 	self:dispatch_state_event('enter_shrine_start')
@@ -789,8 +792,7 @@ function player:try_open_world_entrance_with_key()
 		return false
 	end
 
-	local castle_service = service('c')
-	local opened = castle_service:begin_open_world_entrance(world_entrance.target)
+	local opened = service('d'):open_world_entrance(world_entrance.target)
 	if not opened then
 		return false
 	end
@@ -838,16 +840,16 @@ function player:try_switch_room(direction, keep_stairs_lock)
 		self.x = self.stairs_x
 	end
 
-	local castle_service = service('c')
-	local switch = castle_service:switch_room(direction, self.y, self.y + self.height)
+	local switch = service('d'):switch_room(direction, self.y, self.y + self.height)
 	if switch == nil then
 		return false
 	end
 
 	if switch.outside == true then
+		service('d'):dispatch_state_event('world_transition_start')
 		stop_music()
 		self.events:emit('evt.cue.enterleave', {})
-		local leave_switch = castle_service:leave_world_to_castle()
+		local leave_switch = service('d'):leave_world_to_castle()
 		self.x = leave_switch.spawn_x
 		self.y = leave_switch.spawn_y
 		self.facing = leave_switch.spawn_facing
@@ -1710,8 +1712,7 @@ function player:tick_entering_world()
 	self:update_enter_leave_anim_frame()
 	self:update_enter_leave_cut(1)
 	if self.transition_step == constants.world_entrance.enter_world_midpoint_step then
-		local castle_service = service('c')
-		local switch = castle_service:enter_world(self.enter_leave_world_target)
+			local switch = service('d'):enter_world(self.enter_leave_world_target)
 		self.x = switch.spawn_x
 		self.y = switch.spawn_y
 			self.facing = switch.spawn_facing
@@ -1743,7 +1744,7 @@ function player:tick_entering_shrine()
 	self:update_enter_leave_anim_frame()
 	self:update_enter_leave_cut(-1)
 	if self.transition_step > constants.world_entrance.enter_world_total_steps then
-		service('f'):open_shrine(self.enter_leave_shrine_text_lines)
+		service('d'):open_shrine(self.enter_leave_shrine_text_lines)
 		self.enter_leave_wait_started = false
 		self:dispatch_state_event('shrine_entered')
 		return
@@ -1752,8 +1753,8 @@ end
 
 function player:tick_waiting_world_banner()
 	self:reset_motion_for_transition_lock()
-	local flow = service('f')
-	if flow.pending_banner_mode or flow:has_modal_overlay() or get_space() ~= service('c').current_room.space_id then
+	local director = service('d')
+	if director:has_pending_banner() or director:has_modal_overlay() or get_space() ~= service('c').current_room.space_id then
 		self.enter_leave_wait_started = true
 		return
 	end
@@ -1763,8 +1764,8 @@ end
 
 function player:tick_waiting_world_emerge()
 	self:reset_motion_for_transition_lock()
-	local flow = service('f')
-	if flow.pending_banner_mode or flow:has_modal_overlay() then
+	local director = service('d')
+	if director:has_pending_banner() or director:has_modal_overlay() then
 		self.enter_leave_wait_started = true
 		return
 	end
@@ -1775,8 +1776,8 @@ end
 
 function player:tick_waiting_shrine()
 	self:reset_motion_for_transition_lock()
-	local flow = service('f')
-	if flow:has_modal_overlay() then
+	local director = service('d')
+	if director:has_modal_overlay() then
 		self.enter_leave_wait_started = true
 		return
 	end
@@ -1788,6 +1789,7 @@ end
 
 function player:tick_leaving_shrine()
 	self:reset_motion_for_transition_lock()
+	service('d'):dispatch_state_event('shrine_transition_done')
 	self:dispatch_state_event('shrine_left')
 end
 
@@ -1798,6 +1800,7 @@ function player:tick_emerging_world()
 	self:update_enter_leave_cut(-1)
 	if self.transition_step > constants.world_entrance.enter_world_total_steps then
 		self.to_enter_cut = 0
+		service('d'):dispatch_state_event('world_transition_done')
 		self:dispatch_state_event('world_emerge_done')
 	end
 end
@@ -1865,6 +1868,9 @@ function player:tick_jump_motion()
 		self:advance_sword_sequence()
 	end
 	local sword_jump = self:has_tag(state_tags.variant.jumping_sword)
+	if not sword_jump then
+		self:update_facing_from_horizontal_input()
+	end
 	if (not sword_jump) and self.previous_x_collision then
 		self.jump_inertia = 0
 	end
@@ -1926,7 +1932,11 @@ function player:tick_stopped_jump_motion()
 	if self:has_tag(state_tags.group.sword) then
 		self:advance_sword_sequence()
 	end
-	if (not self:has_tag(state_tags.variant.sj_sword)) and self.previous_x_collision then
+	local sword_stopped_jump = self:has_tag(state_tags.variant.sj_sword)
+	if not sword_stopped_jump then
+		self:update_facing_from_horizontal_input()
+	end
+	if (not sword_stopped_jump) and self.previous_x_collision then
 		self.jump_inertia = 0
 	end
 	local dx = self.jump_inertia * constants.physics.jump_dx
@@ -1950,7 +1960,11 @@ function player:tick_controlled_fall_motion()
 	if self:has_tag(state_tags.group.sword) then
 		self:advance_sword_sequence()
 	end
-	if (not self:has_tag(state_tags.group.sword)) and self.previous_x_collision then
+	local sword_fall = self:has_tag(state_tags.group.sword)
+	if not sword_fall then
+		self:update_facing_from_horizontal_input()
+	end
+	if (not sword_fall) and self.previous_x_collision then
 		self.jump_inertia = 0
 	end
 	local dx = self:get_controlled_fall_dx()

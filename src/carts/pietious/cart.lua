@@ -1,8 +1,9 @@
 local constants = require('constants')
 local enemy_registry = require('enemy_registry')
 local player_module = require('player')
-local room_view_module = require('room_view')
-local transition_view_module = require('transition_view')
+local room_module = require('room')
+local transition_module = require('transition')
+local shrine_module = require('shrine')
 local item_screen_module = require('item_screen')
 local ui_module = require('ui')
 local loot_drop_module = require('loot_drop')
@@ -14,7 +15,7 @@ local pepernoot_projectile_module = require('pepernoot_projectile')
 local enemy_explosion_module = require('enemy_explosion')
 local castle_service_module = require('castle_service')
 local elevator_service_module = require('elevator_service')
-local flow_service_module = require('flow_service')
+local director_module = require('director')
 local collision_profiles = require('collision_profiles')
 
 local function register_collision_profiles()
@@ -68,8 +69,9 @@ function init()
 
 	player_module.define_player_fsm()
 	enemy_registry.register_all()
-	room_view_module.define_room_view_fsm()
-	transition_view_module.define_transition_view_fsm()
+	room_module.define_room_fsm()
+	transition_module.define_transition_fsm()
+	shrine_module.define_shrine_fsm()
 	item_screen_module.define_item_screen_fsm()
 	ui_module.define_ui_fsm()
 	loot_drop_module.define_loot_drop_fsm()
@@ -81,10 +83,11 @@ function init()
 	enemy_explosion_module.define_enemy_explosion_fsm()
 	castle_service_module.define_castle_service_fsm()
 	elevator_service_module.define_elevator_service_fsm()
-	flow_service_module.define_flow_service_fsm()
+	director_module.define_director_fsm()
 	player_module.register_player_definition()
-	room_view_module.register_room_view_definition()
-	transition_view_module.register_transition_view_definition()
+	room_module.register_room_definition()
+	transition_module.register_transition_definition()
+	shrine_module.register_shrine_definition()
 	item_screen_module.register_item_screen_definition()
 	ui_module.register_ui_definition()
 	loot_drop_module.register_loot_drop_definition()
@@ -96,7 +99,7 @@ function init()
 	enemy_explosion_module.register_enemy_explosion_definition()
 	castle_service_module.register_castle_service_definition()
 	elevator_service_module.register_elevator_service_definition()
-	flow_service_module.register_flow_service_definition()
+	director_module.register_director_service_definition()
 	register_collision_profiles()
 	vdp_load_slot(0, 0)
 	vdp_map_slot(0, 0)
@@ -106,6 +109,7 @@ function new_game()
 	reset()
 	add_space('castle')
 	add_space('transition')
+	add_space('shrine')
 	add_space('item')
 	add_space('ui')
 	set_space('castle')
@@ -125,16 +129,22 @@ function new_game()
 	})
 	grant_starting_loadout()
 
-	inst('room_view.def', {
-		id = 'room_view',
+	inst('room.def', {
+		id = 'room',
 		room = room,
 		space_id = room.space_id,
 		pos = { x = 0, y = 0, z = 0 },
 	})
 
-	inst('transition_view.def', {
-		id = 'transition_view',
+	inst('transition.def', {
+		id = 'transition',
 		space_id = 'transition',
+		pos = { x = 0, y = 0, z = 0 },
+	})
+
+	inst('shrine.def', {
+		id = 'shrine',
+		space_id = 'shrine',
 		pos = { x = 0, y = 0, z = 0 },
 	})
 
@@ -150,8 +160,8 @@ function new_game()
 		pos = { x = 0, y = 0, z = 0 },
 	})
 
-	create_service('flow_service.def', {
-		id = 'f',
+	create_service('director_service.def', {
+		id = 'd',
 	})
 
 	create_service('item_service.def', {

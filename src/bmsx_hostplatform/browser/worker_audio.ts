@@ -243,7 +243,6 @@ export class WorkerStreamingAudioService implements AudioService {
 			this.control = new Int32Array(processorOptions.controlBuffer);
 			this.capacityFrames = processorOptions.capacityFrames;
 			this.needPort = null;
-			this.mainNeedArmed = true;
 			this.port.onmessage = (event) => {
 				const message = event.data;
 				if (!message || message.type !== 'connect_need_port') {
@@ -294,12 +293,7 @@ export class WorkerStreamingAudioService implements AudioService {
 				const trigger = WORKLET_NEED_LOW_WATER_FRAMES + WORKLET_PREEMPTIVE_MARGIN_FRAMES + frameCount;
 				if (availableAfter < trigger) {
 					this.needPort.postMessage(1);
-					if (this.mainNeedArmed) {
-						this.mainNeedArmed = false;
-						this.port.postMessage({ type: 'need_main' });
-					}
-				} else if (availableAfter >= trigger + frameCount) {
-					this.mainNeedArmed = true;
+					this.port.postMessage({ type: 'need_main' });
 				}
 			}
 			return true;
