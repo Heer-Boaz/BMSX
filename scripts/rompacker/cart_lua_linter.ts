@@ -682,6 +682,26 @@ function isSelfHasTagCall(expression: LuaExpression): boolean {
 	return false;
 }
 
+function isRequireCallExpression(expression: LuaExpression | undefined): boolean {
+	if (!expression || expression.kind !== LuaSyntaxKind.CallExpression) {
+		return false;
+	}
+	return expression.callee.kind === LuaSyntaxKind.IdentifierExpression && expression.callee.name === 'require';
+}
+
+function isSingleUseLocalCandidateValue(expression: LuaExpression | undefined): boolean {
+	if (!expression || expression.kind !== LuaSyntaxKind.CallExpression) {
+		return false;
+	}
+	if (isRequireCallExpression(expression)) {
+		return false;
+	}
+	if (isSelfHasTagCall(expression)) {
+		return false;
+	}
+	return true;
+}
+
 function lintSelfImgIdAssignmentPattern(target: LuaExpression, value: LuaExpression | undefined, issues: LuaLintIssue[]): void {
 	if (!isSelfImageIdAssignmentTarget(target) || !value) {
 		return;
@@ -1523,7 +1543,7 @@ function leaveSingleUseLocalScope(context: SingleUseLocalContext): void {
 				context.issues,
 				'single_use_local_pattern',
 				binding.declaration,
-				`Local "${binding.declaration.name}" is read exactly once; one-off locals are forbidden. Inline the value instead.`,
+				`One-off cached call-result local "${binding.declaration.name}" is forbidden. Inline the call/value instead.`,
 			);
 		}
 		if (stack.length === 0) {
@@ -1640,8 +1660,7 @@ function lintSingleUseLocalInStatements(statements: ReadonlyArray<LuaStatement>,
 				}
 				for (let index = 0; index < statement.names.length; index += 1) {
 					const value = index < statement.values.length ? statement.values[index] : undefined;
-					// Avoid duplicate diagnostics for the dedicated self:has_tag single-use rule.
-					const reportable = !value || !isSelfHasTagCall(value);
+					const reportable = isSingleUseLocalCandidateValue(value);
 					declareSingleUseLocalBinding(context, statement.names[index], reportable);
 				}
 				break;
