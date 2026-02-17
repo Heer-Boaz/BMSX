@@ -399,33 +399,29 @@ export class WorkerStreamingAudioService implements AudioService {
 		if (free <= 0) {
 			return 0;
 		}
-		const framesToWrite = framesRequested > free ? free : framesRequested;
+		let framesToWrite = framesRequested > free ? free : framesRequested;
 		let coreReadPtr = Atomics.load(coreStreamControl, CORE_CTRL_READ_PTR) >>> 0;
 		const coreWritePtr = Atomics.load(coreStreamControl, CORE_CTRL_WRITE_PTR) >>> 0;
-		let coreAvailable = (coreWritePtr - coreReadPtr) >>> 0;
-		let coreUnderruns = 0;
+		const coreAvailable = (coreWritePtr - coreReadPtr) >>> 0;
+		if (coreAvailable < framesToWrite) {
+			framesToWrite = coreAvailable;
+		}
+		if (framesToWrite <= 0) {
+			Atomics.add(coreStreamControl, CORE_CTRL_UNDERRUNS, 1);
+			return 0;
+		}
 
 		for (let frame = 0; frame < framesToWrite; frame += 1) {
-			let left = 0;
-			let right = 0;
-			if (coreAvailable > 0) {
-				const src = (coreReadPtr % coreStreamCapacityFrames) * 2;
-				left = coreStreamSamples[src] * PCM_SCALE;
-				right = coreStreamSamples[src + 1] * PCM_SCALE;
-				coreReadPtr = (coreReadPtr + 1) >>> 0;
-				coreAvailable -= 1;
-			} else {
-				coreUnderruns += 1;
-			}
+			const src = (coreReadPtr % coreStreamCapacityFrames) * 2;
+			const left = coreStreamSamples[src] * PCM_SCALE;
+			const right = coreStreamSamples[src + 1] * PCM_SCALE;
+			coreReadPtr = (coreReadPtr + 1) >>> 0;
 			const dst = ((writePtr + frame) % capacityFrames) * 2;
 			ringSamples[dst] = clamp(left * masterGain, -1, 1);
 			ringSamples[dst + 1] = clamp(right * masterGain, -1, 1);
 		}
 
 		Atomics.store(coreStreamControl, CORE_CTRL_READ_PTR, coreReadPtr | 0);
-		if (coreUnderruns > 0) {
-			Atomics.add(coreStreamControl, CORE_CTRL_UNDERRUNS, coreUnderruns);
-		}
 		Atomics.store(ringControl, CTRL_WRITE_PTR, ((writePtr + framesToWrite) >>> 0) | 0);
 		return framesToWrite;
 	}
@@ -728,11 +724,7 @@ export class WorkerStreamingAudioService implements AudioService {
 		const fill = (writePtr - readPtr) >>> 0;
 		const free = capacity - fill;
 		if (framesToWrite > free) {
-			const minimumDrop = framesToWrite - free;
-			let framesToDrop = framesToWrite >> 1;
-			if (framesToDrop < minimumDrop) {
-				framesToDrop = minimumDrop;
-			}
+			let framesToDrop = framesToWrite - free;
 			if (framesToDrop > fill) {
 				framesToDrop = fill;
 			}

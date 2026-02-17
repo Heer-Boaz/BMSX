@@ -105,9 +105,9 @@ function enemy_base.on_overlap(self, event)
 	if contact_kind == nil then
 		return
 	end
-	if contact_kind == 'sword' then
+	if contact_kind == 'sword' or contact_kind == 'projectile' then
 		self.events:emit('weapon_hit', {
-			weapon_kind = 'sword',
+			weapon_kind = contact_kind,
 			contact_kind = contact_kind,
 			source_id = event.other_id,
 			source_collider_local_id = event.other_collider_local_id,

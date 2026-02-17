@@ -39,24 +39,16 @@ function pepernoot_projectile:bind_events()
 		emitter = 'pietolon',
 		subscriber = self,
 		handler = function(_event)
-			self:dispose('room_switched')
+			self:mark_for_disposal()
 		end,
 	})
-end
-
-function pepernoot_projectile:dispose(reason)
-	self.disposed = true
-	self:mark_for_disposal()
 end
 
 function pepernoot_projectile:on_overlap_begin(event)
 	if event.other_layer ~= constants.collision.enemy_layer then
 		return
 	end
-	local target = object(event.other_id)
-	if target:take_weapon_hit('pepernoot') then
-		self:dispose('hit_target')
-	end
+	self:mark_for_disposal()
 end
 
 function pepernoot_projectile:tick()
@@ -64,11 +56,11 @@ function pepernoot_projectile:tick()
 	self:refresh_tile_aligned_sprite_offset()
 
 	if self.x <= 0 or self.x >= service('c').current_room.world_width then
-		self:dispose('out_of_bounds')
+		self:mark_for_disposal()
 		return
 	end
 	if room_module.is_solid_at_world(service('c').current_room, self.x, self.y) then
-		self:dispose('wall')
+		self:mark_for_disposal()
 	end
 end
 
@@ -90,7 +82,6 @@ local function register_pepernoot_projectile_definition()
 		defaults = {
 			owner_id = 'pietolon',
 			direction = 1,
-			disposed = false,
 		},
 	})
 end

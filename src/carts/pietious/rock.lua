@@ -56,10 +56,10 @@ end
 
 function rock:on_overlap(event)
 	local contact_kind = combat_overlap.classify_player_contact(event)
-	if contact_kind ~= 'sword' then
+	if contact_kind ~= 'sword' and contact_kind ~= 'projectile' then
 		return
 	end
-	self:take_weapon_hit('sword')
+	self:take_weapon_hit(contact_kind)
 end
 
 function rock:finish_break()
