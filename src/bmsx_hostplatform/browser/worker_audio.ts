@@ -405,6 +405,10 @@ export class WorkerStreamingAudioService implements AudioService {
 		return clamp(value, 0, 1);
 	}
 
+	function softclip(value) {
+		return value / (1 + Math.abs(value));
+	}
+
 	class BadpDecoderCursor {
 		constructor() {
 			this.clip = null;
@@ -976,11 +980,11 @@ export class WorkerStreamingAudioService implements AudioService {
 				}
 				const left0 = this.voiceScratch0[0];
 				const right0 = this.voiceScratch0[1];
-				this.voiceSampledL = left0 + (this.voiceScratch1[0] - left0) * frac;
-				this.voiceSampledR = right0 + (this.voiceScratch1[1] - right0) * frac;
+				this.voiceSampledL = (left0 + (this.voiceScratch1[0] - left0) * frac) * PCM_SCALE;
+				this.voiceSampledR = (right0 + (this.voiceScratch1[1] - right0) * frac) * PCM_SCALE;
 			} else {
-				this.voiceSampledL = this.voiceScratch0[0];
-				this.voiceSampledR = this.voiceScratch0[1];
+				this.voiceSampledL = this.voiceScratch0[0] * PCM_SCALE;
+				this.voiceSampledR = this.voiceScratch0[1] * PCM_SCALE;
 			}
 			voice.positionFrames = positionFrames + voice.stepFrames;
 			return true;
@@ -1079,8 +1083,8 @@ export class WorkerStreamingAudioService implements AudioService {
 						this.voiceRemoveCount += 1;
 						continue;
 					}
-					outL += this.voiceSampledL * voice.gainLinear * PCM_SCALE;
-					outR += this.voiceSampledR * voice.gainLinear * PCM_SCALE;
+					outL += this.voiceSampledL * voice.gainLinear;
+					outR += this.voiceSampledR * voice.gainLinear;
 					if (voice.gainRampRemainingFrames > 0) {
 						voice.gainLinear += voice.gainRampDelta;
 						voice.gainRampRemainingFrames -= 1;
@@ -1094,8 +1098,8 @@ export class WorkerStreamingAudioService implements AudioService {
 					this.removeVoice(this.voiceRemoveIds[i]);
 				}
 
-				outL = clamp(outL * this.masterGain, -1, 1);
-				outR = clamp(outR * this.masterGain, -1, 1);
+				outL = softclip(outL * this.masterGain);
+				outR = softclip(outR * this.masterGain);
 				left[frame] = outL;
 				right[frame] = outR;
 				this.lastOutL = outL;
