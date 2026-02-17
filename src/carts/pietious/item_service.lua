@@ -4,16 +4,33 @@ item_service.__index = item_service
 
 local pickup_handlers
 
+local function pickup_inventory_item(player, item_type)
+	player.inventory_items[item_type] = true
+	player.events:emit('evt.cue.pickupitem', {})
+	return true
+end
+
 local function pickup_keyworld1(player)
 	player.health = player.max_health
+	player.inventory_items.keyworld1 = true
+	player.events:emit('evt.cue.worldkey', {})
+	return true
 end
 
 local function pickup_life(player)
-	return player:collect_loot('life', constants.pickup_item.life_regen)
+	local picked = player:collect_loot('life', constants.pickup_item.life_regen)
+	if picked then
+		player.events:emit('evt.cue.healing', {})
+	end
+	return picked
 end
 
 local function pickup_ammo(player)
-	return player:collect_loot('ammo', constants.pickup_item.ammo_regen)
+	local picked = player:collect_loot('ammo', constants.pickup_item.ammo_regen)
+	if picked then
+		player.events:emit('evt.cue.pickupitem', {})
+	end
+	return picked
 end
 
 pickup_handlers = {

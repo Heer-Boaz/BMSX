@@ -40,7 +40,10 @@ function rock:take_weapon_hit(weapon_kind)
 	self.health = self.health - 1
 	if self.health <= 0 then
 		self.health = 0
+		service('c').events:emit('evt.cue.foeexplosion', {})
 		self:dispatch_state_event('break')
+	else
+		service('c').events:emit('evt.cue.foedamage', {})
 	end
 	return true
 end

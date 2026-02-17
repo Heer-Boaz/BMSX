@@ -132,6 +132,7 @@ local function define_flow_service_fsm()
 						return '/banner_transition'
 					end
 					if self:item_screen_toggle_pressed() then
+						self.events:emit('evt.cue.f1', {})
 						return '/item_screen'
 					end
 				end,
@@ -205,6 +206,9 @@ local function define_flow_service_fsm()
 					if self.pending_shrine_open then
 						self.pending_shrine_open = false
 						return '/shrine_overlay'
+					end
+					if action_triggered('start[jp]', self.player_index) and object('pietolon').abilities:activate('halo') then
+						return '/castle'
 					end
 					if self:item_screen_toggle_pressed() then
 						return '/castle'

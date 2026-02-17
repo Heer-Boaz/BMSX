@@ -109,7 +109,7 @@ function item_screen:draw_map()
 	if world_number <= 0 then
 		return
 	end
-	if world_number == 1 and not player:has_inventory_item('map_world1') then
+	if world_number == 1 and player.inventory_items.map_world1 ~= true then
 		return
 	end
 
@@ -144,6 +144,7 @@ end
 
 function item_screen:tick_secondary_weapon_selection()
 	local player = object('pietolon')
+	local previous_index = self.secondary_weapon_selection_index
 	if action_triggered('right[jp]') then
 		for i = self.secondary_weapon_selection_index + 2, #secondary_weapon_order do
 			if player.inventory_items[secondary_weapon_order[i]] == true then
@@ -158,6 +159,9 @@ function item_screen:tick_secondary_weapon_selection()
 				break
 			end
 		end
+	end
+	if self.secondary_weapon_selection_index ~= previous_index then
+		self.events:emit('evt.cue.select', {})
 	end
 
 	local selected_weapon = secondary_weapon_order[self.secondary_weapon_selection_index + 1]

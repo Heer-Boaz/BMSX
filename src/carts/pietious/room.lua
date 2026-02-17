@@ -68,6 +68,14 @@ local background_themes = {
 			'castle_tile_stone_dark_4',
 		},
 	},
+	world = {
+		mode = 'checker2',
+		front = 'castle_front_blue_1',
+		light_l = 'castle_tile_blue_l',
+		light_r = 'castle_tile_blue_r',
+		dark_l = 'castle_tile_blue_l_dark',
+		dark_r = 'castle_tile_blue_r_dark',
+	},
 }
 
 local pillar_themes = {
@@ -110,6 +118,14 @@ local pillar_themes = {
 		r2 = 'castle_pillar_stone_r2',
 		l3 = 'castle_pillar_stone_l3',
 		r3 = 'castle_pillar_stone_r3',
+	},
+	world = {
+		l1 = 'castle_pillar_blue_l1',
+		r1 = 'castle_pillar_blue_r1',
+		l2 = 'castle_pillar_blue_l2',
+		r2 = 'castle_pillar_blue_r2',
+		l3 = 'castle_pillar_blue_l3',
+		r3 = 'castle_pillar_blue_r3',
 	},
 }
 

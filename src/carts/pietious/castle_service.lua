@@ -251,10 +251,11 @@ end
 function castle_service:begin_open_world_entrance(target)
 	local entrance_state = self.world_entrance_states[target]
 	if entrance_state.state ~= 'closed' then
-		return
+		return false
 	end
 	entrance_state.state = 'opening_1'
 	entrance_state.open_step = 0
+	return true
 end
 
 function castle_service:tick()
@@ -396,6 +397,7 @@ local function register_castle_service_definition()
 		def_id = 'castle_service.def',
 		class = castle_service,
 		fsms = { 'castle_service.fsm' },
+		auto_activate = true,
 		defaults = {
 			id = 'c',
 			current_room = nil,

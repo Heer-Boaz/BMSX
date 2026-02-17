@@ -1,4 +1,5 @@
 local constants = require('constants')
+local castle_map = require('castle_map')
 local room_module = require('room')
 
 local player_abilities = {}
@@ -92,6 +93,7 @@ local function activate_pepernoot_ability(owner, state_tags)
 
 	owner.pepernoot_projectile_ids[#owner.pepernoot_projectile_ids + 1] = projectile_id
 	owner.weapon_level = owner.weapon_level - constants.secondary_weapon.pepernoot_weapon_level_cost
+	owner.events:emit('evt.cue.fire_pepernoot', {})
 	return true
 end
 
@@ -103,6 +105,14 @@ local function activate_spyglass_ability(owner, state_tags)
 	if lithograph == nil then
 		return false
 	end
+	return true
+end
+
+local function activate_halo_ability(owner)
+	if owner.inventory_items.halo ~= true then
+		return false
+	end
+	owner:teleport_to_halo_destination()
 	return true
 end
 
@@ -173,6 +183,11 @@ function player_abilities.configure_player_abilities(player, state_tags)
 				return activate_spyglass_ability(context.owner, state_tags)
 			end,
 		})
+	player.abilities:register_ability('halo', {
+			activate = function(context)
+				return activate_halo_ability(context.owner)
+			end,
+		})
 end
 
 function player_abilities.attach_player_methods(player)
@@ -212,6 +227,10 @@ function player_abilities.attach_player_methods(player)
 		return nil
 	end
 
+	function player:has_inventory_item(item_type)
+		return self.inventory_items[item_type] == true
+	end
+
 	function player:equip_subweapon(id)
 		local next_id = id or 'none'
 		self:remove_tag(equip_tags.pepernoot)
@@ -221,6 +240,51 @@ function player_abilities.attach_player_methods(player)
 		if grant_tag ~= nil then
 			self:add_tag(grant_tag)
 		end
+	end
+
+	function player:teleport_to_halo_destination()
+		local castle_service = service('c')
+		local from_room_number = castle_service.current_room_number
+
+		castle_service.current_room = room_module.create_room(castle_map.start_room_number)
+		castle_service.current_room_number = castle_service.current_room.room_number
+		castle_service.map_id = 0
+		castle_service.map_x = 5
+		castle_service.map_y = 12
+		castle_service.last_room_switch = {
+			from_room_number = from_room_number,
+			to_room_number = castle_service.current_room_number,
+			direction = 'halo',
+		}
+		castle_service:sync_world_entrance_states_for_room(castle_service.current_room)
+		castle_service:refresh_current_room_enemies()
+
+		self.x = constants.room.tile_size * 23
+		self.y = constants.player.start_y
+		self.facing = 1
+		self.last_dx = 0
+		self.last_dy = 0
+		self.stairs_direction = 0
+		self.stairs_x = -1
+		self.hit_stairs_lock = false
+		self.enter_leave_world_target = ''
+		self.enter_leave_shrine_text_lines = {}
+		self.enter_leave_wait_started = false
+		self.transition_step = 0
+		self.to_enter_cut = 0
+
+		self.abilities:end_once('sword', 'halo')
+		self:force_seek_timeline('p.seq.s', 0)
+		self:reset_fall_substate_sequence()
+		self:dispatch_state_event('stairs_lock_lost_after_room_switch')
+		self.events:emit('room.switched', {
+			from = from_room_number,
+			to = castle_service.current_room_number,
+			dir = 'halo',
+			space = castle_service.current_room.space_id,
+			x = self.x,
+			y = self.y,
+		})
 	end
 end
 

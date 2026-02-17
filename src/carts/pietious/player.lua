@@ -531,6 +531,7 @@ function player:start_dying()
 	if self:has_tag(state_tags.variant.dying) then
 		return
 	end
+	self.events:emit('evt.cue.dying', {})
 	self.abilities:end_once('sword', 'dying')
 	self:force_seek_timeline('p.seq.s', 0)
 	self.hit_direction = 0
@@ -552,6 +553,11 @@ function player:take_hit(amount, source_x, source_y, reason)
 	self.health = self.health - amount
 	if self.health < 0 then
 		self.health = 0
+	end
+	if self.health <= 8 then
+		self.events:emit('evt.cue.approachingdeath', {})
+	else
+		self.events:emit('evt.cue.hit', {})
 	end
 
 	local hit_on_stairs = self:has_tag(state_tags.group.stairs)
@@ -723,6 +729,7 @@ function player:begin_entering_world(world_entrance)
 	self.enter_leave_shrine_text_lines = {}
 	self.x = world_entrance.stair_x
 	self:reset_enter_leave_animation()
+	self.events:emit('evt.cue.enterleave', {})
 	self:dispatch_state_event('enter_world_start')
 end
 
@@ -737,6 +744,7 @@ function player:begin_entering_shrine(shrine)
 	self.enter_leave_shrine_text_lines = shrine.text_lines
 	self.x = shrine.x
 	self:reset_enter_leave_animation()
+	self.events:emit('evt.cue.enterleave', {})
 	self:dispatch_state_event('enter_shrine_start')
 end
 
@@ -747,6 +755,7 @@ function player:begin_world_emerge_from_door()
 	self:reset_enter_leave_animation()
 	self.enter_leave_world_target = ''
 	self.enter_leave_shrine_text_lines = {}
+	self.events:emit('evt.cue.enterleave', {})
 	self:dispatch_state_event('world_emerge_start')
 end
 
@@ -757,7 +766,7 @@ function player:leave_shrine_overlay()
 end
 
 function player:try_open_world_entrance_with_key()
-	if not self.inventory_items['keyworld1'] == true then
+	if self.inventory_items.keyworld1 ~= true then
 		return false
 	end
 
@@ -767,8 +776,12 @@ function player:try_open_world_entrance_with_key()
 	end
 
 	local castle_service = service('c')
-	castle_service:begin_open_world_entrance(world_entrance.target)
+	local opened = castle_service:begin_open_world_entrance(world_entrance.target)
+	if not opened then
+		return false
+	end
 	self.inventory_items.keyworld1 = false
+	self.events:emit('evt.cue.worlddooropen', {})
 	return true
 end
 
@@ -992,15 +1005,22 @@ function player:pick_entry_stairs(direction)
 	return best
 end
 
-function player:search_stairs_at_locked_x(x, y_probe)
+function player:search_stairs_at_locked_x(x, y_probe, allow_x_only_fallback)
 	local stairs = service('c').current_room.stairs
+	local fallback
+	local y_bottom = y_probe + self.height
 	for i = 1, #stairs do
 		local stair = stairs[i]
-		if stair.x == x and stair.anchor_y <= (y_probe + constants.room.tile_size3) and stair.bottom_y >= y_probe then
-			return stair
+		if stair.x == x then
+			if stair.top_y <= y_bottom and stair.bottom_y >= y_probe then
+				return stair
+			end
+			if allow_x_only_fallback and fallback == nil then
+				fallback = stair
+			end
 		end
 	end
-	return nil
+	return fallback
 end
 
 function player:apply_stairs_lock(stair)
@@ -1013,8 +1033,10 @@ function player:sync_stairs_after_vertical_room_switch(direction)
 	local probe_y = self.y
 	if direction == 'up' then
 		probe_y = probe_y + service('c').current_room.tile_size
+	elseif direction == 'down' then
+		probe_y = probe_y + service('c').current_room.tile_size
 	end
-	local stair = self:search_stairs_at_locked_x(self.stairs_x, probe_y)
+	local stair = self:search_stairs_at_locked_x(self.stairs_x, probe_y, true)
 	if stair == nil then
 		return false
 	end
@@ -1326,7 +1348,7 @@ function player:apply_move(dx, dy, include_elevator_collision)
 		end
 	else
 		if next_y >= old_y then
-			if self:try_snap_to_elevator_platform(next_x) then
+			if include_elevator_collision ~= false and self:try_snap_to_elevator_platform(next_x) then
 				found = true
 			else
 				self.y = next_y
@@ -1389,6 +1411,7 @@ function player:start_jump(inertia)
 	self:reset_fall_substate_sequence()
 	self.jump_inertia = inertia
 	self.jumping_from_elevator = self.on_vertical_elevator
+	self.events:emit('evt.cue.jump', {})
 	if inertia < 0 then
 		self.facing = -1
 	elseif inertia > 0 then
@@ -1426,10 +1449,12 @@ function player:get_uncontrolled_fall_dy()
 	return constants.physics.uncontrolled_fall_dy_by_substate[substate]
 end
 
-function player:get_controlled_fall_dx()
+function player:get_controlled_fall_dx(lock_facing)
 	local inertia = self.jump_inertia
 	if self.right_held and not self.left_held then
-		self.facing = 1
+		if not lock_facing then
+			self.facing = 1
+		end
 		if inertia == 1 then
 			return constants.physics.fall_dx_with_inertia
 		end
@@ -1439,7 +1464,9 @@ function player:get_controlled_fall_dx()
 		return -constants.physics.fall_dx_against_inertia
 	end
 	if self.left_held and not self.right_held then
-		self.facing = -1
+		if not lock_facing then
+			self.facing = -1
+		end
 		if inertia == -1 then
 			return -constants.physics.fall_dx_with_inertia
 		end
@@ -1726,10 +1753,8 @@ function player:tick_waiting_world_banner()
 		self.enter_leave_wait_started = true
 		return
 	end
-	if self.enter_leave_wait_started then
-		self.enter_leave_wait_started = false
-		self:dispatch_state_event('world_banner_done')
-	end
+	self.enter_leave_wait_started = false
+	self:dispatch_state_event('world_banner_done')
 end
 
 function player:tick_waiting_world_emerge()
@@ -1928,10 +1953,11 @@ function player:tick_controlled_fall_motion()
 	if self:has_tag(state_tags.group.sword) then
 		self:advance_sword_sequence()
 	end
-	if (not self:has_tag(state_tags.group.sword)) and self.previous_x_collision then
+	local sword_fall = self:has_tag(state_tags.group.sword)
+	if (not sword_fall) and self.previous_x_collision then
 		self.jump_inertia = 0
 	end
-	local dx = self:get_controlled_fall_dx()
+	local dx = self:get_controlled_fall_dx(sword_fall)
 	local dy = self:get_controlled_fall_dy()
 	local should_land = (not self:collides_at(self.x, self.y)) and self:collides_at(self.x, self.y + dy)
 	local move_result = self:apply_move(dx, dy)
@@ -2139,11 +2165,7 @@ function player:resolve_hit_overlap_if_needed()
 end
 
 function player:is_ground_below_for_hit_on_stairs()
-	local foot_y = self.y + self.height
-	local left_x = self.x + 1
-	local right_x = self.x + self.width - 1
-	return room.is_solid_at_world(service('c').current_room, left_x, foot_y)
-		or room.is_solid_at_world(service('c').current_room, right_x, foot_y)
+	return (not self:collides_at(self.x, self.y, false)) and self:collides_at(self.x, self.y + 1, false)
 end
 
 function player:advance_hit_stairs_fall(dy)
