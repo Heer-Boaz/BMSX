@@ -114,6 +114,15 @@ function director:bind_events()
 				self:queue_banner_transition('castle_banner', 0, event.post_action)
 				return
 			end
+			end,
+		})
+
+	self.events:on({
+		event = 'timeline.end.p.tl.sx',
+		emitter = 'pietolon',
+		subscriber = self,
+		handler = function()
+			self:dispatch_state_event('shrine_transition_done')
 		end,
 	})
 end
@@ -178,11 +187,13 @@ local function define_director_fsm()
 					end
 				end,
 			},
-			world_transition = {
-				entering_state = function(self)
-					self.active_transition_kind = 'world'
-					service('c'):park_active_enemies_for_transition()
-				end,
+				world_transition = {
+					entering_state = function(self)
+						self.active_transition_kind = 'world'
+						service('c'):park_active_enemies_for_transition()
+						set_space(service('c').current_room.space_id)
+						object('ui').space_id = service('c').current_room.space_id
+					end,
 				on = {
 					['world_transition_done'] = '/room',
 					['banner_requested'] = '/banner_transition',
@@ -193,11 +204,13 @@ local function define_director_fsm()
 					end
 				end,
 			},
-				shrine_transition_enter = {
-					entering_state = function(self)
-						self.active_transition_kind = 'shrine'
-						service('c'):park_active_enemies_for_transition()
-					end,
+					shrine_transition_enter = {
+						entering_state = function(self)
+							self.active_transition_kind = 'shrine'
+							service('c'):park_active_enemies_for_transition()
+							set_space(service('c').current_room.space_id)
+							object('ui').space_id = service('c').current_room.space_id
+						end,
 					on = {
 						['shrine_overlay_requested'] = '/shrine_overlay',
 					},
@@ -255,18 +268,20 @@ local function define_director_fsm()
 						end
 					end,
 				},
-				shrine_transition_exit = {
-					entering_state = function(self)
-						self.active_transition_kind = 'shrine'
-						service('c'):park_active_enemies_for_transition()
-						self.overlay_mode = 'none'
-						self.overlay_text_lines = {}
-						object('pietolon'):leave_shrine_overlay()
-					end,
-					on = {
-						['timeline.end.p.tl.sx'] = '/room',
+					shrine_transition_exit = {
+						entering_state = function(self)
+							self.active_transition_kind = 'shrine'
+							service('c'):park_active_enemies_for_transition()
+							self.overlay_mode = 'none'
+							self.overlay_text_lines = {}
+							set_space(service('c').current_room.space_id)
+							object('ui').space_id = service('c').current_room.space_id
+							object('pietolon'):leave_shrine_overlay()
+						end,
+						on = {
+							['shrine_transition_done'] = '/room',
+						},
 					},
-				},
 				item_screen = {
 				entering_state = function(self)
 					set_space('item')

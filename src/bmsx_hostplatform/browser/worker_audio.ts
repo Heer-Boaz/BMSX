@@ -48,6 +48,8 @@ type WorkletMessageToMain =
 		type: 'stats';
 		fillFrames: number;
 		underruns: number;
+		overruns: number;
+		rate: number;
 		mixTimeMs: number;
 	}
 	| {
@@ -199,10 +201,19 @@ export class WorkerStreamingAudioService implements AudioService {
 	const CORE_CTRL_OVERRUNS = 2;
 	const CORE_CTRL_UNDERRUNS = 3;
 	const PCM_SCALE = 1 / 32768;
-	const WORKLET_NEED_LOW_WATER_FRAMES = 256;
-	const WORKLET_NEED_MARGIN_FRAMES = 256;
-	const WORKLET_MAX_LEAD_DEFAULT = 512;
-	const WORKLET_MAX_LEAD_IOS = 768;
+	const WORKLET_TARGET_MIN_DEFAULT = 256;
+	const WORKLET_TARGET_MAX_DEFAULT = 512;
+	const WORKLET_TARGET_MIN_IOS = 512;
+	const WORKLET_TARGET_MAX_IOS = 768;
+	const WORKLET_NEED_MARGIN_FRAMES = 128;
+	const PI_KP = 0.000015;
+	const PI_KI = 0.00000015;
+	const PI_INTEGRATOR_LIMIT = 40000;
+	const RATE_MIN = 0.996;
+	const RATE_MAX = 1.004;
+	const NEED_POST_INTERVAL_MS = 2;
+	const CONCEAL_FADE_OUT_MS = 3;
+	const CONCEAL_FADE_IN_MS = 2;
 
 	function clamp(value, min, max) {
 		if (value < min) return min;
@@ -221,6 +232,18 @@ export class WorkerStreamingAudioService implements AudioService {
 			this.preferHighLead = processorOptions.preferHighLead === true;
 			this.masterGain = 1;
 			this.lastStatsMs = 0;
+			this.lastNeedMs = 0;
+			this.readPos = Atomics.load(this.coreControl, CORE_CTRL_READ_PTR) >>> 0;
+			this.integrator = 0;
+			this.rate = 1;
+			this.lastOutL = 0;
+			this.lastOutR = 0;
+			this.sampledL = 0;
+			this.sampledR = 0;
+			this.inUnderrun = false;
+			this.concealGain = 0;
+			this.fadeOutStep = 1 / Math.max(1, sampleRate * (CONCEAL_FADE_OUT_MS / 1000));
+			this.fadeInStep = 1 / Math.max(1, sampleRate * (CONCEAL_FADE_IN_MS / 1000));
 
 			this.port.onmessage = (event) => {
 				const message = event.data;
@@ -244,17 +267,54 @@ export class WorkerStreamingAudioService implements AudioService {
 			this.port.postMessage({ type: 'need_port_connected' });
 		}
 
-		computeNeedTrigger(frameCount) {
+		computeTargetFillFrames() {
+			const minTarget = this.preferHighLead ? WORKLET_TARGET_MIN_IOS : WORKLET_TARGET_MIN_DEFAULT;
+			const maxTarget = this.preferHighLead ? WORKLET_TARGET_MAX_IOS : WORKLET_TARGET_MAX_DEFAULT;
 			const requested = this.frameTimeSec > 0
 				? Math.floor(sampleRate * this.frameTimeSec)
-				: WORKLET_NEED_LOW_WATER_FRAMES;
-			const minimumLead = WORKLET_NEED_LOW_WATER_FRAMES + WORKLET_NEED_MARGIN_FRAMES;
-			const maximumLead = this.preferHighLead ? WORKLET_MAX_LEAD_IOS : WORKLET_MAX_LEAD_DEFAULT;
-			let targetLead = clamp(requested, WORKLET_NEED_LOW_WATER_FRAMES, maximumLead);
-			if (targetLead < minimumLead) {
-				targetLead = minimumLead;
+				: minTarget;
+			return clamp(requested, minTarget, maxTarget);
+		}
+
+		updateRate(fillFrames, targetFill) {
+			const error = fillFrames - targetFill;
+			this.integrator += error;
+			this.integrator = clamp(this.integrator, -PI_INTEGRATOR_LIMIT, PI_INTEGRATOR_LIMIT);
+			let nextRate = 1 + PI_KP * error + PI_KI * this.integrator;
+			const lowWater = targetFill >> 1;
+			const highWater = targetFill + (targetFill >> 1);
+			if (fillFrames < lowWater) {
+				nextRate -= Math.min(0.0015, (lowWater - fillFrames) * 0.000008);
+			} else if (fillFrames > highWater) {
+				nextRate += Math.min(0.0015, (fillFrames - highWater) * 0.000008);
 			}
-			return targetLead + frameCount;
+			this.rate = clamp(nextRate, RATE_MIN, RATE_MAX);
+			return this.rate;
+		}
+
+		loadInterpolatedSample(framePos) {
+			const baseFrame = Math.floor(framePos);
+			const frac = framePos - baseFrame;
+			const writePtr = Atomics.load(this.coreControl, CORE_CTRL_WRITE_PTR) >>> 0;
+			const available = (writePtr - baseFrame) >>> 0;
+			if (available === 0) {
+				return false;
+			}
+
+			const src0 = (baseFrame % this.coreCapacityFrames) * 2;
+			const s0L = this.coreSamples[src0] * PCM_SCALE;
+			const s0R = this.coreSamples[src0 + 1] * PCM_SCALE;
+			let s1L = s0L;
+			let s1R = s0R;
+			if (available > 1) {
+				const src1 = ((baseFrame + 1) % this.coreCapacityFrames) * 2;
+				s1L = this.coreSamples[src1] * PCM_SCALE;
+				s1R = this.coreSamples[src1 + 1] * PCM_SCALE;
+			}
+
+			this.sampledL = s0L + (s1L - s0L) * frac;
+			this.sampledR = s0R + (s1R - s0R) * frac;
+			return true;
 		}
 
 		process(_inputs, outputs) {
@@ -267,41 +327,80 @@ export class WorkerStreamingAudioService implements AudioService {
 			const frameCount = left.length;
 
 			const mixStartMs = currentTime * 1000;
-			let readPtr = Atomics.load(this.coreControl, CORE_CTRL_READ_PTR) >>> 0;
-			const writePtr = Atomics.load(this.coreControl, CORE_CTRL_WRITE_PTR) >>> 0;
-			let available = (writePtr - readPtr) >>> 0;
-			if (available < frameCount) {
-				Atomics.add(this.coreControl, CORE_CTRL_UNDERRUNS, frameCount - available);
+			const readPtr = Atomics.load(this.coreControl, CORE_CTRL_READ_PTR) >>> 0;
+			if (readPtr > Math.floor(this.readPos)) {
+				this.readPos = readPtr;
 			}
+			const targetFill = this.computeTargetFillFrames();
+			const currentFill = (Atomics.load(this.coreControl, CORE_CTRL_WRITE_PTR) >>> 0) - (Math.floor(this.readPos) >>> 0);
+			const renderRate = this.updateRate(currentFill >>> 0, targetFill);
+			let localUnderruns = 0;
 
 			for (let frame = 0; frame < frameCount; frame += 1) {
-				if (available > 0) {
-					const src = (readPtr % this.coreCapacityFrames) * 2;
-					left[frame] = this.coreSamples[src] * PCM_SCALE * this.masterGain;
-					right[frame] = this.coreSamples[src + 1] * PCM_SCALE * this.masterGain;
-					readPtr = (readPtr + 1) >>> 0;
-					available -= 1;
+				const hasSample = this.loadInterpolatedSample(this.readPos);
+				let outL = 0;
+				let outR = 0;
+				if (hasSample) {
+					if (this.inUnderrun) {
+						const blend = this.concealGain;
+						outL = this.sampledL * (1 - blend) + this.lastOutL * blend;
+						outR = this.sampledR * (1 - blend) + this.lastOutR * blend;
+						this.concealGain -= this.fadeInStep;
+						if (this.concealGain <= 0) {
+							this.concealGain = 0;
+							this.inUnderrun = false;
+						}
+					} else {
+						outL = this.sampledL;
+						outR = this.sampledR;
+					}
+					this.readPos += renderRate;
 				} else {
-					left[frame] = 0;
-					right[frame] = 0;
+					if (!this.inUnderrun) {
+						this.inUnderrun = true;
+						this.concealGain = 1;
+					}
+					outL = this.lastOutL * this.concealGain;
+					outR = this.lastOutR * this.concealGain;
+					if (this.concealGain > 0) {
+						this.concealGain -= this.fadeOutStep;
+						if (this.concealGain < 0) {
+							this.concealGain = 0;
+						}
+					}
+					localUnderruns += 1;
 				}
+				outL *= this.masterGain;
+				outR *= this.masterGain;
+				left[frame] = outL;
+				right[frame] = outR;
+				this.lastOutL = outL;
+				this.lastOutR = outR;
 			}
 
-			Atomics.store(this.coreControl, CORE_CTRL_READ_PTR, readPtr | 0);
+			const committedReadPtr = Math.floor(this.readPos) >>> 0;
+			Atomics.store(this.coreControl, CORE_CTRL_READ_PTR, committedReadPtr | 0);
+			if (localUnderruns > 0) {
+				Atomics.add(this.coreControl, CORE_CTRL_UNDERRUNS, localUnderruns);
+			}
 
 			const writeAfter = Atomics.load(this.coreControl, CORE_CTRL_WRITE_PTR) >>> 0;
-			const fillFrames = (writeAfter - readPtr) >>> 0;
-			if (fillFrames < this.computeNeedTrigger(frameCount)) {
+			const fillFrames = (writeAfter - committedReadPtr) >>> 0;
+			const needTrigger = targetFill + WORKLET_NEED_MARGIN_FRAMES;
+			const nowMs = currentTime * 1000;
+			if (fillFrames < needTrigger && (nowMs - this.lastNeedMs) >= NEED_POST_INTERVAL_MS) {
+				this.lastNeedMs = nowMs;
 				this.port.postMessage({ type: 'need_main' });
 			}
 
-			const nowMs = currentTime * 1000;
 			if (nowMs - this.lastStatsMs >= 500) {
 				this.lastStatsMs = nowMs;
 				this.port.postMessage({
 					type: 'stats',
 					fillFrames,
 					underruns: Atomics.load(this.coreControl, CORE_CTRL_UNDERRUNS) >>> 0,
+					overruns: Atomics.load(this.coreControl, CORE_CTRL_OVERRUNS) >>> 0,
+					rate: this.rate,
 					mixTimeMs: nowMs - mixStartMs,
 				});
 			}
