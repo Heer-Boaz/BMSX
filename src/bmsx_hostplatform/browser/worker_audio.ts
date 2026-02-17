@@ -207,8 +207,7 @@ export class WorkerStreamingAudioService implements AudioService {
 	const WORKLET_TARGET_MAX_IOS = 768;
 	const WORKLET_NEED_MARGIN_FRAMES = 128;
 	const FIXED_RENDER_RATE = 1;
-	const NEED_POST_INTERVAL_MS = 1;
-	const CONCEAL_FADE_OUT_MS = 3;
+	const NEED_POST_INTERVAL_MS = 0;
 	const CONCEAL_FADE_IN_MS = 2;
 
 	function clamp(value, min, max) {
@@ -237,7 +236,6 @@ export class WorkerStreamingAudioService implements AudioService {
 			this.sampledR = 0;
 			this.inUnderrun = false;
 			this.concealGain = 0;
-			this.fadeOutStep = 1 / Math.max(1, sampleRate * (CONCEAL_FADE_OUT_MS / 1000));
 			this.fadeInStep = 1 / Math.max(1, sampleRate * (CONCEAL_FADE_IN_MS / 1000));
 
 			this.port.onmessage = (event) => {
@@ -346,14 +344,8 @@ export class WorkerStreamingAudioService implements AudioService {
 						this.inUnderrun = true;
 						this.concealGain = 1;
 					}
-					outL = this.lastOutL * this.concealGain;
-					outR = this.lastOutR * this.concealGain;
-					if (this.concealGain > 0) {
-						this.concealGain -= this.fadeOutStep;
-						if (this.concealGain < 0) {
-							this.concealGain = 0;
-						}
-					}
+					outL = this.lastOutL;
+					outR = this.lastOutR;
 					localUnderruns += 1;
 				}
 				outL *= this.masterGain;
