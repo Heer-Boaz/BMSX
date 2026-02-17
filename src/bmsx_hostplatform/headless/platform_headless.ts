@@ -1,9 +1,7 @@
 import { new_vec2 } from 'bmsx/utils/vector_operations';
 import {
 	AudioClipHandle,
-	AudioPlaybackParams,
 	AudioService,
-	VoiceHandle,
 	Clock,
 	DeviceKind,
 	FrameLoop,
@@ -229,25 +227,6 @@ class SilentClip implements AudioClipHandle {
 	dispose(): void { }
 }
 
-class SilentVoice implements VoiceHandle {
-	readonly startedAt = 0;
-	readonly startOffset = 0;
-	private readonly endListeners = new Set<(e: { clippedAt: number; }) => void>();
-	onEnded(cb: (e: { clippedAt: number; }) => void): SubscriptionHandle {
-		this.endListeners.add(cb);
-		return createSubscriptionHandle(() => { this.endListeners.delete(cb); });
-	}
-	setGainLinear(_v: number): void { }
-	rampGainLinear(_target: number, _durationSec: number): void { }
-	setFilter(): void { }
-	setRate(_v: number): void { }
-	stop(): void {
-		for (const cb of this.endListeners) cb({ clippedAt: 0 });
-		this.endListeners.clear();
-	}
-	disconnect(): void { }
-}
-
 class SilentAudioService implements AudioService {
 	readonly available = false;
 	currentTime(): number { return 0; }
@@ -260,15 +239,9 @@ class SilentAudioService implements AudioService {
 	getMasterGain(): number { return 0; }
 	setMasterGain(_v: number): void { }
 	setFrameTimeSec(_seconds: number): void { }
-	async decode(_bytes: ArrayBuffer): Promise<AudioClipHandle> {
-		return new SilentClip();
-	}
 	pushCoreFrames(_samples: Int16Array, _channels: number, _sampleRate: number): void { }
 	createClipFromPcm(_samples: Int16Array, _sampleRate: number, _channels: number): AudioClipHandle {
 		return new SilentClip();
-	}
-	createVoice(_clip: AudioClipHandle, _params: AudioPlaybackParams): SilentVoice {
-		return new SilentVoice();
 	}
 }
 

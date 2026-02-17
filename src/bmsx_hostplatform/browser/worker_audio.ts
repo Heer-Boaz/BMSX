@@ -2,12 +2,6 @@ import { clamp01 } from 'bmsx/utils/clamp';
 import {
 	AudioService,
 	AudioClipHandle,
-	AudioPlaybackParams,
-	VoiceHandle,
-	VoiceEndedEvent,
-	AudioFilterParams,
-	SubscriptionHandle,
-	createSubscriptionHandle,
 } from '../platform';
 
 const CORE_CTRL_READ_PTR = 0;
@@ -57,15 +51,6 @@ type WorkletMessageToMain =
 		reason: string;
 	}
 	| {
-		type: 'decoded';
-		clipId: number;
-		durationSec: number;
-	}
-	| {
-		type: 'voice_ended';
-		voiceId: number;
-	}
-	| {
 		type: 'worklet_error';
 		message: string;
 	};
@@ -83,138 +68,11 @@ type MainToWorkletMessage =
 	| {
 		type: 'set_master_gain';
 		gain: number;
-	}
-	| {
-		type: 'register_badp_clip';
-		clipId: number;
-		bytes: ArrayBuffer;
-	}
-	| {
-		type: 'dispose_clip';
-		clipId: number;
-	}
-	| {
-		type: 'create_voice';
-		voiceId: number;
-		clipId: number;
-		params: {
-			offset: number;
-			rate: number;
-			gainLinear: number;
-			loop: { start: number; end?: number } | null;
-			filter: AudioFilterParams | null;
-		};
-	}
-	| {
-		type: 'voice_set_gain';
-		voiceId: number;
-		gain: number;
-	}
-	| {
-		type: 'voice_ramp_gain';
-		voiceId: number;
-		targetGain: number;
-		seconds: number;
-	}
-	| {
-		type: 'voice_set_rate';
-		voiceId: number;
-		rate: number;
-	}
-	| {
-		type: 'voice_stop';
-		voiceId: number;
 	};
 
 class WorkerCoreStreamClip implements AudioClipHandle {
 	readonly duration = 0;
 	dispose(): void { }
-}
-
-class WorkerCoreStreamVoice implements VoiceHandle {
-	readonly startedAt = 0;
-	readonly startOffset = 0;
-	onEnded(_cb: (event: VoiceEndedEvent) => void): SubscriptionHandle {
-		return createSubscriptionHandle(() => { });
-	}
-	setGainLinear(_value: number): void { }
-	rampGainLinear(_target: number, _durationSec: number): void { }
-	setFilter(_filter: AudioFilterParams): void { }
-	setRate(_rate: number): void { }
-	stop(): void { }
-	disconnect(): void { }
-}
-
-class WorkerClip implements AudioClipHandle {
-	private disposed = false;
-
-	public constructor(
-		private readonly service: WorkerStreamingAudioService,
-		public readonly clipId: number,
-		public readonly duration: number,
-	) { }
-
-	public dispose(): void {
-		if (this.disposed) {
-			return;
-		}
-		this.disposed = true;
-		this.service.disposeClip(this.clipId);
-	}
-}
-
-class WorkerVoice implements VoiceHandle {
-	private readonly endedListeners = new Set<(event: VoiceEndedEvent) => void>();
-	private ended = false;
-
-	public constructor(
-		private readonly service: WorkerStreamingAudioService,
-		public readonly voiceId: number,
-		public readonly startedAt: number,
-		public readonly startOffset: number,
-	) { }
-
-	public onEnded(cb: (event: VoiceEndedEvent) => void): SubscriptionHandle {
-		this.endedListeners.add(cb);
-		return createSubscriptionHandle(() => {
-			this.endedListeners.delete(cb);
-		});
-	}
-
-	public setGainLinear(value: number): void {
-		this.service.setVoiceGain(this.voiceId, value);
-	}
-
-	public rampGainLinear(target: number, durationSec: number): void {
-		this.service.rampVoiceGain(this.voiceId, target, durationSec);
-	}
-
-	public setFilter(_filter: AudioFilterParams): void {
-	}
-
-	public setRate(rate: number): void {
-		this.service.setVoiceRate(this.voiceId, rate);
-	}
-
-	public stop(): void {
-		this.service.stopVoice(this.voiceId);
-	}
-
-	public disconnect(): void {
-		this.endedListeners.clear();
-		this.service.disconnectVoice(this.voiceId);
-	}
-
-	public markEnded(clippedAt: number): void {
-		if (this.ended) {
-			return;
-		}
-		this.ended = true;
-		for (const listener of this.endedListeners) {
-			listener({ clippedAt });
-		}
-		this.endedListeners.clear();
-	}
 }
 
 export class WorkerStreamingAudioService implements AudioService {
@@ -240,47 +98,8 @@ export class WorkerStreamingAudioService implements AudioService {
 	private masterGain = 1;
 	private coreNeedHandler: (() => void) | null = null;
 	private readonly coreStreamClip: WorkerCoreStreamClip = new WorkerCoreStreamClip();
-	private readonly coreStreamVoice: WorkerCoreStreamVoice = new WorkerCoreStreamVoice();
-	private nextClipId = 1;
-	private nextVoiceId = 1;
-	private readonly decodeResolves = new Map<number, (clip: AudioClipHandle) => void>();
-	private readonly decodeRejects = new Map<number, (error: Error) => void>();
-	private readonly voices = new Map<number, WorkerVoice>();
 	private readonly msgSetMasterGain: { type: 'set_master_gain'; gain: number } = { type: 'set_master_gain', gain: 1 };
-	private readonly msgDisposeClip: { type: 'dispose_clip'; clipId: number } = { type: 'dispose_clip', clipId: 0 };
-	private readonly msgVoiceSetGain: { type: 'voice_set_gain'; voiceId: number; gain: number } = { type: 'voice_set_gain', voiceId: 0, gain: 1 };
-	private readonly msgVoiceRampGain: { type: 'voice_ramp_gain'; voiceId: number; targetGain: number; seconds: number } = {
-		type: 'voice_ramp_gain',
-		voiceId: 0,
-		targetGain: 1,
-		seconds: 0,
-	};
-	private readonly msgVoiceSetRate: { type: 'voice_set_rate'; voiceId: number; rate: number } = { type: 'voice_set_rate', voiceId: 0, rate: 1 };
-	private readonly msgVoiceStop: { type: 'voice_stop'; voiceId: number } = { type: 'voice_stop', voiceId: 0 };
 	private readonly msgSetFrameTimeSec: { type: 'set_frame_time'; frameTimeSec: number } = { type: 'set_frame_time', frameTimeSec: DEFAULT_FRAME_TIME_SEC };
-	private readonly msgCreateVoice: {
-		type: 'create_voice';
-		voiceId: number;
-		clipId: number;
-		params: {
-			offset: number;
-			rate: number;
-			gainLinear: number;
-			loop: { start: number; end?: number } | null;
-			filter: AudioFilterParams | null;
-		};
-	} = {
-		type: 'create_voice',
-		voiceId: 0,
-		clipId: 0,
-		params: {
-			offset: 0,
-			rate: 1,
-			gainLinear: 1,
-			loop: null,
-			filter: null,
-		},
-	};
 
 	constructor(context: AudioContext, options: WorkerStreamingAudioOptions = {}) {
 		if (globalThis.crossOriginIsolated !== true) {
@@ -367,14 +186,19 @@ export class WorkerStreamingAudioService implements AudioService {
 	const CORE_CTRL_OVERRUNS = 2;
 	const CORE_CTRL_UNDERRUNS = 3;
 	const PCM_SCALE = 1 / 32768;
-	const WORKLET_TARGET_MIN_DEFAULT = 256;
-	const WORKLET_TARGET_MAX_DEFAULT = 512;
-	const WORKLET_TARGET_MIN_IOS = 512;
-	const WORKLET_TARGET_MAX_IOS = 768;
+	const WORKLET_TARGET_MIN_DEFAULT = 192;
+	const WORKLET_TARGET_MAX_DEFAULT = 384;
+	const WORKLET_TARGET_MIN_IOS = 384;
+	const WORKLET_TARGET_MAX_IOS = 640;
 	const WORKLET_NEED_MARGIN_FRAMES = 128;
 	const FIXED_RENDER_RATE = 1;
 	const NEED_POST_INTERVAL_MS = 1;
 	const CONCEAL_FADE_IN_MS = 2;
+	const RATE_CONTROL_KP = 0.0000035;
+	const RATE_CONTROL_KI = 0.00000002;
+	const RATE_CONTROL_INTEGRAL_CLAMP = 16384;
+	const RATE_CONTROL_DELTA_CLAMP = 0.003;
+	const RATE_CONTROL_HARD_PULL_DELTA = 0.006;
 	const BADP_HEADER_SIZE = 48;
 	const BADP_VERSION = 1;
 	const BADP_NO_LOOP = 0xffffffff;
@@ -594,6 +418,7 @@ export class WorkerStreamingAudioService implements AudioService {
 			this.lastNeedMs = 0;
 			this.readPos = Atomics.load(this.coreControl, CORE_CTRL_READ_PTR) >>> 0;
 			this.rate = 1;
+			this.rateIntegral = 0;
 			this.lastOutL = 0;
 			this.lastOutR = 0;
 			this.lastCoreL = 0;
@@ -1001,8 +826,29 @@ export class WorkerStreamingAudioService implements AudioService {
 			return clamp(requested, minTarget, maxTarget);
 		}
 
-		updateRate() {
-			this.rate = FIXED_RENDER_RATE;
+		updateRate(fillFrames, targetFill) {
+			const error = fillFrames - targetFill;
+			if (error > targetFill) {
+				this.rate = FIXED_RENDER_RATE + RATE_CONTROL_HARD_PULL_DELTA;
+				return this.rate;
+			}
+			if (error < -targetFill) {
+				this.rate = FIXED_RENDER_RATE - RATE_CONTROL_HARD_PULL_DELTA;
+				return this.rate;
+			}
+			this.rateIntegral += error;
+			if (this.rateIntegral > RATE_CONTROL_INTEGRAL_CLAMP) {
+				this.rateIntegral = RATE_CONTROL_INTEGRAL_CLAMP;
+			} else if (this.rateIntegral < -RATE_CONTROL_INTEGRAL_CLAMP) {
+				this.rateIntegral = -RATE_CONTROL_INTEGRAL_CLAMP;
+			}
+			let delta = error * RATE_CONTROL_KP + this.rateIntegral * RATE_CONTROL_KI;
+			if (delta > RATE_CONTROL_DELTA_CLAMP) {
+				delta = RATE_CONTROL_DELTA_CLAMP;
+			} else if (delta < -RATE_CONTROL_DELTA_CLAMP) {
+				delta = -RATE_CONTROL_DELTA_CLAMP;
+			}
+			this.rate = FIXED_RENDER_RATE + delta;
 			return this.rate;
 		}
 
@@ -1015,6 +861,7 @@ export class WorkerStreamingAudioService implements AudioService {
 			// If read position lags behind the producer-consumer window, resync immediately.
 			if (baseFrame < readPtr) {
 				this.readPos = readPtr;
+				this.rateIntegral = 0;
 				return false;
 			}
 
@@ -1054,7 +901,8 @@ export class WorkerStreamingAudioService implements AudioService {
 				this.readPos = readPtr;
 			}
 			const targetFill = this.computeTargetFillFrames();
-			const renderRate = this.updateRate();
+			const currentFill = (Atomics.load(this.coreControl, CORE_CTRL_WRITE_PTR) >>> 0) - (Math.floor(this.readPos) >>> 0);
+			const renderRate = this.updateRate(currentFill >>> 0, targetFill);
 			let localUnderruns = 0;
 
 			for (let frame = 0; frame < frameCount; frame += 1) {
@@ -1085,6 +933,7 @@ export class WorkerStreamingAudioService implements AudioService {
 					}
 					outL = this.lastCoreL;
 					outR = this.lastCoreR;
+					this.rateIntegral = 0;
 					localUnderruns += 1;
 				}
 
@@ -1173,30 +1022,6 @@ export class WorkerStreamingAudioService implements AudioService {
 				return;
 			case 'stats':
 				return;
-			case 'decoded': {
-				const resolve = this.decodeResolves.get(message.clipId);
-				const reject = this.decodeRejects.get(message.clipId);
-				if (resolve === undefined || reject === undefined) {
-					return;
-				}
-				this.decodeResolves.delete(message.clipId);
-				this.decodeRejects.delete(message.clipId);
-				if (!Number.isFinite(message.durationSec) || message.durationSec < 0) {
-					reject(new Error('[WorkerStreamingAudioService] Worklet produced invalid clip duration.'));
-					return;
-				}
-				resolve(new WorkerClip(this, message.clipId, message.durationSec));
-				return;
-			}
-			case 'voice_ended': {
-				const voice = this.voices.get(message.voiceId);
-				if (!voice) {
-					return;
-				}
-				this.voices.delete(message.voiceId);
-				voice.markEnded(this.ctx.currentTime);
-				return;
-			}
 			case 'need_port_error':
 				this.setFatal(new Error('[WorkerStreamingAudioService] Worklet control error: ' + message.reason));
 				return;
@@ -1218,15 +1043,6 @@ export class WorkerStreamingAudioService implements AudioService {
 			this.resolveReady = null;
 			this.rejectReady = null;
 		}
-		for (const reject of this.decodeRejects.values()) {
-			reject(error);
-		}
-		this.decodeResolves.clear();
-		this.decodeRejects.clear();
-		for (const voice of this.voices.values()) {
-			voice.markEnded(this.ctx.currentTime);
-		}
-		this.voices.clear();
 		if (this.workletNode !== null) {
 			this.workletNode.port.onmessage = null;
 		}
@@ -1310,28 +1126,6 @@ export class WorkerStreamingAudioService implements AudioService {
 		}
 	}
 
-	public async decode(bytes: ArrayBuffer): Promise<AudioClipHandle> {
-		await this.ensureReady();
-		const clipId = this.nextClipId++;
-		const copy = bytes.slice(0);
-		return new Promise<AudioClipHandle>((resolve, reject) => {
-			this.decodeResolves.set(clipId, resolve);
-			this.decodeRejects.set(clipId, reject);
-			this.postWorkletMessage({
-				type: 'register_badp_clip',
-				clipId,
-				bytes: copy,
-			}, [copy]);
-		});
-	}
-
-	public disposeClip(clipId: number): void {
-		if (this.workletNode !== null) {
-			this.msgDisposeClip.clipId = clipId;
-			this.postWorkletMessage(this.msgDisposeClip);
-		}
-	}
-
 	public pushCoreFrames(samples: Int16Array, _channels: number, _sampleRate: number): void {
 		const frames = samples.length >>> 1;
 
@@ -1388,58 +1182,6 @@ export class WorkerStreamingAudioService implements AudioService {
 	public createClipFromPcm(samples: Int16Array, sampleRate: number, channels: number): AudioClipHandle {
 		this.pushCoreFrames(samples, channels, sampleRate);
 		return this.coreStreamClip;
-	}
-
-	public createVoice(clip: AudioClipHandle, params: AudioPlaybackParams): VoiceHandle {
-		if (clip instanceof WorkerCoreStreamClip) {
-			return this.coreStreamVoice;
-		}
-		if (!(clip instanceof WorkerClip)) {
-			throw new Error('[WorkerStreamingAudioService] Unsupported clip handle.');
-		}
-		const voiceId = this.nextVoiceId++;
-		const voice = new WorkerVoice(this, voiceId, this.ctx.currentTime, params.offset);
-		this.voices.set(voiceId, voice);
-		this.msgCreateVoice.voiceId = voiceId;
-		this.msgCreateVoice.clipId = clip.clipId;
-		this.msgCreateVoice.params.offset = params.offset;
-		this.msgCreateVoice.params.rate = params.rate;
-		this.msgCreateVoice.params.gainLinear = params.gainLinear;
-		this.msgCreateVoice.params.loop = params.loop ?? null;
-		this.msgCreateVoice.params.filter = params.filter ?? null;
-		this.postWorkletMessage(this.msgCreateVoice);
-		return voice;
-	}
-
-	public setVoiceGain(voiceId: number, gain: number): void {
-		this.msgVoiceSetGain.voiceId = voiceId;
-		this.msgVoiceSetGain.gain = clamp01(gain);
-		this.postWorkletMessage(this.msgVoiceSetGain);
-	}
-
-	public rampVoiceGain(voiceId: number, targetGain: number, seconds: number): void {
-		if (!Number.isFinite(seconds) || seconds <= 0) {
-			throw new Error('[WorkerStreamingAudioService] ramp duration must be positive and finite.');
-		}
-		this.msgVoiceRampGain.voiceId = voiceId;
-		this.msgVoiceRampGain.targetGain = clamp01(targetGain);
-		this.msgVoiceRampGain.seconds = seconds;
-		this.postWorkletMessage(this.msgVoiceRampGain);
-	}
-
-	public setVoiceRate(voiceId: number, rate: number): void {
-		this.msgVoiceSetRate.voiceId = voiceId;
-		this.msgVoiceSetRate.rate = rate;
-		this.postWorkletMessage(this.msgVoiceSetRate);
-	}
-
-	public stopVoice(voiceId: number): void {
-		this.msgVoiceStop.voiceId = voiceId;
-		this.postWorkletMessage(this.msgVoiceStop);
-	}
-
-	public disconnectVoice(voiceId: number): void {
-		this.voices.delete(voiceId);
 	}
 
 	public setFrameTimeSec(seconds: number): void {

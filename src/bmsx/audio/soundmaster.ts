@@ -2,7 +2,7 @@ import { $ } from '../core/engine_core';
 import { AudioPlaybackParams, AudioService, AudioClipHandle, VoiceHandle, VoiceEndedEvent, AudioFilterParams, RngService, SubscriptionHandle, createSubscriptionHandle } from '../platform';
 import { Registry } from '../core/registry';
 import { asset_id, AudioMeta, AudioType, AudioTypes, CartridgeLayerId, id2res, RegisterablePersistent, RomAsset } from '../rompack/rompack';
-import { clamp01 } from '../utils/clamp';
+import { clamp, clamp01 } from '../utils/clamp';
 
 export type VoiceId = number;
 type ModulationInput = RandomModulationParams | ModulationParams;
@@ -76,8 +76,6 @@ interface PausedSnapshot {
 interface ActiveVoiceRecord extends ActiveVoiceInfo {
 	handle: StreamVoiceHandle;
 	clip: StreamClipHandle;
-	backendVoice: VoiceHandle;
-	backendEnded: SubscriptionHandle | null;
 	stream: StreamTrackData;
 	decoder: BadpDecoderCursor;
 	stepFrames: number;
@@ -100,6 +98,11 @@ const BADP_NO_LOOP = 0xffffffff;
 const MIX_LOW_TARGET_AHEAD_SEC = 0.008;
 const MIX_BALANCED_TARGET_AHEAD_SEC = 0.014;
 const MIX_SAFE_TARGET_AHEAD_SEC = 0.02;
+const MIX_CHUNK_FRAMES = 128;
+const MIX_MAX_PUMP_ITERATIONS = 16;
+const PCM_SCALE = 1 / 32768;
+const PCM_INT16_MIN = -32768;
+const PCM_INT16_MAX = 32767;
 const ADPCM_STEP_TABLE = [
 	7, 8, 9, 10, 11, 12, 13, 14, 16, 17,
 	19, 21, 23, 25, 28, 31, 34, 37, 41, 45,
@@ -149,13 +152,9 @@ type StreamTrackData = {
 
 class StreamClipHandle implements AudioClipHandle {
 	public constructor(
-		public readonly backendClip: AudioClipHandle,
+		public readonly duration: number,
 	) { }
-	public get duration(): number {
-		return this.backendClip.duration;
-	}
 	public dispose(): void {
-		this.backendClip.dispose();
 	}
 }
 
@@ -412,6 +411,13 @@ export class SoundMaster implements RegisterablePersistent {
 	private mixSampleRate: number;
 	private mixLatencyProfile: MixLatencyProfile;
 	private mixTargetAheadSec: number;
+	private readonly mixChunk: Int16Array;
+	private readonly mixChunkViews: Int16Array[];
+	private readonly mixDecodeScratch0: Int16Array;
+	private readonly mixDecodeScratch1: Int16Array;
+	private mixSampledL: number;
+	private mixSampledR: number;
+	private readonly onCoreNeed: () => void;
 
 	private constructor() {
 		this.globalSuspensions = new Set();
@@ -436,6 +442,18 @@ export class SoundMaster implements RegisterablePersistent {
 		this.mixSampleRate = 0;
 		this.mixLatencyProfile = 'balanced';
 		this.mixTargetAheadSec = MIX_BALANCED_TARGET_AHEAD_SEC;
+		this.mixChunk = new Int16Array(MIX_CHUNK_FRAMES * 2);
+		this.mixChunkViews = new Array<Int16Array>(MIX_CHUNK_FRAMES + 1);
+		for (let frames = 0; frames <= MIX_CHUNK_FRAMES; frames += 1) {
+			this.mixChunkViews[frames] = this.mixChunk.subarray(0, frames * 2);
+		}
+		this.mixDecodeScratch0 = new Int16Array(2);
+		this.mixDecodeScratch1 = new Int16Array(2);
+		this.mixSampledL = 0;
+		this.mixSampledR = 0;
+		this.onCoreNeed = () => {
+			this.pumpCoreAudio();
+		};
 		this.setLatencyProfile(isIOSAudioTarget() ? 'safe' : 'balanced');
 		this.bind();
 	}
@@ -644,11 +662,9 @@ export class SoundMaster implements RegisterablePersistent {
 		if (pending) {
 			return pending;
 		}
-		const runtimeBytes = this.getRuntimeBytes(id);
-		const copyBytes = new Uint8Array(runtimeBytes.byteLength);
-		copyBytes.set(runtimeBytes);
-		const task = this.A.decode(copyBytes.buffer).then((backendClip) => {
-			const clip = new StreamClipHandle(backendClip);
+		const task = Promise.resolve().then(() => {
+			const stream = this.streamTrackFor(id);
+			const clip = new StreamClipHandle(stream.durationSec);
 			this.streamClips[id] = clip;
 			this.streamClipLoads[id] = undefined;
 			return clip;
@@ -859,9 +875,8 @@ export class SoundMaster implements RegisterablePersistent {
 			if (positionFrames > stream.frames) positionFrames = stream.frames;
 		}
 		const voiceId = this.nextVoiceId++;
-		const backendVoice = this.A.createVoice(clip.backendClip, playback);
-		const startedAt = backendVoice.startedAt;
-		const startOffset = backendVoice.startOffset;
+		const startedAt = this.A.currentTime() + (this.A.coreQueuedFrames() / this.mixSampleRate);
+		const startOffset = playback.offset;
 		const voice = new StreamVoiceHandle(this, voiceId, startedAt, startOffset);
 		const record: ActiveVoiceRecord = {
 			voiceId,
@@ -873,8 +888,6 @@ export class SoundMaster implements RegisterablePersistent {
 			meta,
 			handle: voice,
 			clip,
-			backendVoice,
-			backendEnded: null,
 			stream,
 			decoder: new BadpDecoderCursor(stream),
 			stepFrames: (stream.sampleRate / this.mixSampleRate) * playback.rate,
@@ -893,13 +906,11 @@ export class SoundMaster implements RegisterablePersistent {
 		}
 
 		pool.push(record);
-		record.backendEnded = backendVoice.onEnded(() => {
-			this.stopVoiceRecord(type, record);
-		});
 		this.voiceRecordByHandle.set(voice, record);
 		this.currentVoiceByType[type] = voice;
 		this.currentAudioByType[type] = { ...meta, id };
 		this.currentPlayParamsByType[type] = params;
+		this.pumpCoreAudio();
 
 		if (onStarted) onStarted(voice, record);
 
@@ -909,14 +920,9 @@ export class SoundMaster implements RegisterablePersistent {
 	private finalizeVoiceEnd(type: AudioType, record: ActiveVoiceRecord): void {
 		if (record.finalized) return;
 		record.finalized = true;
-		if (record.backendEnded !== null) {
-			record.backendEnded.unsubscribe();
-			record.backendEnded = null;
-		}
 		this.voiceRecordByHandle.delete(record.handle);
 		record.handle.emitEnded(this.A.currentTime());
 		record.handle.disconnect();
-		record.backendVoice.disconnect();
 
 		if (this.currentVoiceByType[type] === record.handle) {
 			const pool = this.voicesByType[type];
@@ -966,11 +972,6 @@ export class SoundMaster implements RegisterablePersistent {
 
 	private stopVoiceRecord(type: AudioType, record: ActiveVoiceRecord): void {
 		if (record.finalized) return;
-		if (record.backendEnded !== null) {
-			record.backendEnded.unsubscribe();
-			record.backendEnded = null;
-		}
-		record.backendVoice.stop();
 		this.removeRecord(type, record.voiceId);
 		this.finalizeVoiceEnd(type, record);
 	}
@@ -1040,7 +1041,6 @@ export class SoundMaster implements RegisterablePersistent {
 		found.record.targetGainLinear = clamped;
 		found.record.gainRampRemainingFrames = 0;
 		found.record.gainRampDelta = 0;
-		found.record.backendVoice.setGainLinear(clamped);
 	}
 
 	public rampVoiceGainLinear(voiceId: VoiceId, target: number, seconds: number): void {
@@ -1056,7 +1056,6 @@ export class SoundMaster implements RegisterablePersistent {
 		found.record.targetGainLinear = clamped;
 		found.record.gainRampRemainingFrames = frames;
 		found.record.gainRampDelta = (clamped - found.record.gainLinear) / frames;
-		found.record.backendVoice.rampGainLinear(clamped, seconds);
 	}
 
 	public setVoiceRate(voiceId: VoiceId, rate: number): void {
@@ -1070,7 +1069,6 @@ export class SoundMaster implements RegisterablePersistent {
 		const record = found.record;
 		record.params.playbackRate = rate;
 		record.stepFrames = (record.stream.sampleRate / this.mixSampleRate) * rate;
-		record.backendVoice.setRate(rate);
 	}
 
 	public stopVoiceById(voiceId: VoiceId): void {
@@ -1102,6 +1100,7 @@ export class SoundMaster implements RegisterablePersistent {
 		}
 		if (this.audio && this.globalSuspensions.size === 0) {
 			this.A.setFrameTimeSec(this.mixTargetAheadSec);
+			this.pumpCoreAudio();
 		}
 	}
 
@@ -1110,15 +1109,123 @@ export class SoundMaster implements RegisterablePersistent {
 	}
 
 	public finishFrame(): void {
+		if (this.globalSuspensions.size === 0) {
+			this.pumpCoreAudio();
+		}
+	}
+
+	private computeMixTargetFrames(): number {
+		const requested = Math.floor(this.mixTargetAheadSec * this.mixSampleRate);
+		return clamp(requested, MIX_CHUNK_FRAMES, this.mixSampleRate);
+	}
+
+	private sampleVoiceFrame(record: ActiveVoiceRecord): boolean {
+		let positionFrames = record.positionFrames;
+		let frame = Math.floor(positionFrames);
+		if (record.loopEnabled) {
+			if (frame >= record.loopEndFrames || frame < record.loopStartFrames) {
+				positionFrames = this.wrapLoopFrame(positionFrames, record.loopStartFrames, record.loopEndFrames);
+				frame = Math.floor(positionFrames);
+			}
+		} else if (frame >= record.stream.frames) {
+			return false;
+		}
+
+		if (!record.decoder.readFrameAt(frame, this.mixDecodeScratch0)) {
+			return false;
+		}
+
+		const frac = positionFrames - frame;
+		let frameNext = frame + 1;
+		if (record.loopEnabled) {
+			if (frameNext >= record.loopEndFrames) {
+				frameNext = record.loopStartFrames + (frameNext - record.loopEndFrames);
+			}
+		} else if (frameNext >= record.stream.frames) {
+			frameNext = frame;
+		}
+
+		if (frameNext !== frame) {
+			if (!record.decoder.readFrameAt(frameNext, this.mixDecodeScratch1)) {
+				return false;
+			}
+			const left0 = this.mixDecodeScratch0[0];
+			const right0 = this.mixDecodeScratch0[1];
+			this.mixSampledL = (left0 + (this.mixDecodeScratch1[0] - left0) * frac) * PCM_SCALE;
+			this.mixSampledR = (right0 + (this.mixDecodeScratch1[1] - right0) * frac) * PCM_SCALE;
+		} else {
+			this.mixSampledL = this.mixDecodeScratch0[0] * PCM_SCALE;
+			this.mixSampledR = this.mixDecodeScratch0[1] * PCM_SCALE;
+		}
+
+		record.positionFrames = positionFrames + record.stepFrames;
+		return true;
+	}
+
+	private mixAndPushCoreFrames(frameCount: number): void {
+		const frames = clamp(frameCount, 1, MIX_CHUNK_FRAMES);
+		let dst = 0;
+		for (let frame = 0; frame < frames; frame += 1) {
+			let mixedL = 0;
+			let mixedR = 0;
+			for (let typeIndex = 0; typeIndex < AudioTypes.length; typeIndex += 1) {
+				const type = AudioTypes[typeIndex];
+				const pool = this.voicesByType[type];
+				for (let voiceIndex = pool.length - 1; voiceIndex >= 0; voiceIndex -= 1) {
+					const record = pool[voiceIndex];
+					if (!this.sampleVoiceFrame(record)) {
+						this.stopVoiceRecord(type, record);
+						continue;
+					}
+					mixedL += this.mixSampledL * record.gainLinear;
+					mixedR += this.mixSampledR * record.gainLinear;
+					if (record.gainRampRemainingFrames > 0) {
+						record.gainLinear += record.gainRampDelta;
+						record.gainRampRemainingFrames -= 1;
+						if (record.gainRampRemainingFrames === 0) {
+							record.gainLinear = record.targetGainLinear;
+							record.gainRampDelta = 0;
+						}
+					}
+				}
+			}
+
+			const clampedL = clamp(mixedL, -1, 1);
+			const clampedR = clamp(mixedR, -1, 1);
+			const pcmL = clampedL < 0 ? Math.round(clampedL * 32768) : Math.round(clampedL * 32767);
+			const pcmR = clampedR < 0 ? Math.round(clampedR * 32768) : Math.round(clampedR * 32767);
+			this.mixChunk[dst] = clamp(pcmL, PCM_INT16_MIN, PCM_INT16_MAX);
+			this.mixChunk[dst + 1] = clamp(pcmR, PCM_INT16_MIN, PCM_INT16_MAX);
+			dst += 2;
+		}
+
+		this.A.pushCoreFrames(this.mixChunkViews[frames], 2, this.mixSampleRate);
+	}
+
+	private pumpCoreAudio(): void {
+		const targetFrames = this.computeMixTargetFrames();
+		let queuedFrames = this.A.coreQueuedFrames();
+		for (let i = 0; i < MIX_MAX_PUMP_ITERATIONS; i += 1) {
+			if (queuedFrames >= targetFrames) {
+				return;
+			}
+			const deficit = targetFrames - queuedFrames;
+			const chunkFrames = deficit > MIX_CHUNK_FRAMES ? MIX_CHUNK_FRAMES : deficit;
+			this.mixAndPushCoreFrames(chunkFrames);
+			queuedFrames = this.A.coreQueuedFrames();
+		}
 	}
 
 	private startMixer(): void {
-		this.A.setCoreNeedHandler(null);
+		this.A.clearCoreStream();
 		this.A.setFrameTimeSec(this.mixTargetAheadSec);
+		this.A.setCoreNeedHandler(this.onCoreNeed);
+		this.pumpCoreAudio();
 	}
 
 	private stopMixer(): void {
 		this.A.setCoreNeedHandler(null);
+		this.A.clearCoreStream();
 	}
 
 	private getAudioMetaOrThrow(id: asset_id): AudioMeta {

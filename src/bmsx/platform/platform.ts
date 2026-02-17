@@ -195,10 +195,8 @@ export interface AudioService {
 	getMasterGain(): number;
 	setMasterGain(v: number): void;
 	setFrameTimeSec(seconds: number): void;
-	decode(bytes: ArrayBuffer): Promise<AudioClipHandle>;
 	pushCoreFrames(samples: Int16Array, channels: number, sampleRate: number): void;
 	createClipFromPcm(samples: Int16Array, sampleRate: number, channels: number): AudioClipHandle;
-	createVoice(clip: AudioClipHandle, params: AudioPlaybackParams): VoiceHandle;
 }
 
 export interface RngService {
