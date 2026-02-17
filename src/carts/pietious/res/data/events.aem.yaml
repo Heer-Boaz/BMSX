@@ -10,6 +10,7 @@ events:
                   music_transition:
                       audio_id: music_castle
                       sync: immediate
+                      fade_ms: 250
             - when:
                   equals:
                       state: world
