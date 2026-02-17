@@ -263,17 +263,17 @@ export async function loadAssetList(rom: Uint8Array): Promise<{ assets: RomAsset
 				case 'image':
 				case 'atlas':
 					asset.imgmeta = decodedMeta as ImgMeta;
+					if (asset.imgmeta.hitpolygons?.original) {
+						const extracted_hitpolygon = asset.imgmeta.hitpolygons.original;
+						asset.imgmeta.hitpolygons = {
+							original: extracted_hitpolygon,
+							fliph: flipPolygons(extracted_hitpolygon, true, false, asset.imgmeta.width, asset.imgmeta.height),
+							flipv: flipPolygons(extracted_hitpolygon, false, true, asset.imgmeta.width, asset.imgmeta.height),
+							fliphv: flipPolygons(extracted_hitpolygon, true, true, asset.imgmeta.width, asset.imgmeta.height)
+						};
+					}
 					if (asset.imgmeta.atlassed) {
 						if (asset.imgmeta.width && asset.imgmeta.height) {
-							if (asset.imgmeta.hitpolygons?.original) {
-								const extracted_hitpolygon = asset.imgmeta.hitpolygons.original;
-								asset.imgmeta.hitpolygons = {
-									original: extracted_hitpolygon,
-									fliph: flipPolygons(extracted_hitpolygon, true, false, asset.imgmeta.width, asset.imgmeta.height),
-									flipv: flipPolygons(extracted_hitpolygon, false, true, asset.imgmeta.width, asset.imgmeta.height),
-									fliphv: flipPolygons(extracted_hitpolygon, true, true, asset.imgmeta.width, asset.imgmeta.height)
-								};
-							}
 							if (asset.imgmeta.boundingbox) {
 								asset.imgmeta.boundingbox = generateFlippedBoundingBox(asset.imgmeta.boundingbox.original, asset.imgmeta.width, asset.imgmeta.height);
 							}
