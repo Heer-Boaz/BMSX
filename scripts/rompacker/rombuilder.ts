@@ -6,6 +6,7 @@ import type { asset_type, AudioMeta, CanonicalizationType, GLTFMesh, ImgMeta, Po
 import { encodeRomToc } from '../../src/bmsx/rompack/rom_toc';
 import { hashAssetId } from '../../src/bmsx/util/asset_tokens';
 import type { LuaChunk } from '../../src/bmsx/lua/lua_ast';
+import { encodeAudioAssetToAdpcm } from './adpcm';
 import { atlasIndexResolver, createOptimizedAtlas, generateAtlasName } from './atlasbuilder';
 import { BoundingBoxExtractor } from './boundingbox_extractor';
 import { loadGLTFModel } from './gltfloader';
@@ -53,6 +54,7 @@ const yaml = require('js-yaml');
 const { createHash } = require('crypto');
 
 type ProgressNote = (message: string) => void;
+const ADPCM_NO_LOOP = 0xffffffff;
 
 export const DONT_PACK_IMAGES_WHEN_USING_ATLAS = true;
 export const BOOTROM_TS_FILENAME = 'bootrom.ts';
@@ -736,6 +738,8 @@ export function getResMetaByFilename(filepath: string): { name: string, ext: str
 		case '.aac':
 		case '.m4u':
 		case '.ogg':
+		case '.adpcm':
+		case '.adp':
 			type = 'audio';
 			break;
 		case '.js':
@@ -1408,14 +1412,14 @@ export async function generateRomAssets(resources: Resource[], reportProgress?: 
 			case 'audio': {
 				// Note that the name has already been sanitized in the `getResMetaList` function
 				const { audiometa } = parseAudioMeta(res.filepath);
-				// const encodedBuffer = await encodeWavToAacLc(buffer, res.filepath, {
-				// 	bitrate: 16,
-				// 	autoTune: true,          // default true
-				// 	silenceGateDb: -55,      // sterk aanbevolen bij lage bitrates
-				// 	gainBiasSteps: 2,      // optioneel: override
-				// });
-				// romAssets.push({ resid, type, audiometa, buffer: encodedBuffer, source_path: sourcePath });
-				romAssets.push({ resid, type, audiometa, buffer, source_path: sourcePath });
+				const encoded = await encodeAudioAssetToAdpcm(buffer, audiometa);
+				if ((audiometa.loop === undefined || audiometa.loop === null) && encoded.loopStartFrame !== ADPCM_NO_LOOP) {
+					audiometa.loop = encoded.loopStartFrame / encoded.sampleRate;
+				}
+				if ((audiometa.loopEnd === undefined || audiometa.loopEnd === null) && encoded.loopEndFrame !== ADPCM_NO_LOOP) {
+					audiometa.loopEnd = encoded.loopEndFrame / encoded.sampleRate;
+				}
+				romAssets.push({ resid, type, audiometa, buffer: encoded.buffer, source_path: sourcePath });
 				break;
 			}
 			case 'code':

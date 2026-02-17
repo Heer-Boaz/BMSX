@@ -9,7 +9,6 @@ import {
 	SubscriptionHandle,
 	createSubscriptionHandle,
 } from '../platform';
-import { OGG_VORBIS_DECODER_B64 } from './ogg_vorbis_decoder_base64';
 
 const CTRL_READ_PTR = 0;
 const CTRL_WRITE_PTR = 1;
@@ -49,7 +48,6 @@ type MainToWorkerMessage =
 		coreStreamSamplesBuffer: SharedArrayBuffer;
 		coreStreamControlBuffer: SharedArrayBuffer;
 		crossOriginIsolated: boolean;
-		decoderScriptUrl: string;
 	}
 	| {
 		type: 'set_frame_time';
@@ -59,7 +57,7 @@ type MainToWorkerMessage =
 		type: 'decode';
 		clipId: number;
 		bytes: ArrayBuffer;
-		formatHint?: 'wav' | 'ogg';
+		formatHint?: 'adpcm';
 	}
 	| {
 		type: 'create_pcm_clip';
@@ -266,7 +264,6 @@ export class WorkerStreamingAudioService implements AudioService {
 
 	private workletNode: AudioWorkletNode | null = null;
 	private workletModuleUrl = '';
-	private decoderScriptUrl = '';
 	private fatalError: Error | null = null;
 	private workerReady = false;
 	private readonly readyPromise: Promise<void>;
@@ -336,7 +333,6 @@ export class WorkerStreamingAudioService implements AudioService {
 
 	private async initialize(): Promise<void> {
 		try {
-			this.decoderScriptUrl = this.createDecoderScriptBlobUrl();
 			this.workletModuleUrl = this.createWorkletBlobUrl();
 			await this.ctx.audioWorklet.addModule(this.workletModuleUrl);
 			this.workletNode = new AudioWorkletNode(this.ctx, 'bmsx-emulator-worker-out', {
@@ -354,34 +350,24 @@ export class WorkerStreamingAudioService implements AudioService {
 			const needChannel = new MessageChannel();
 			this.workletNode.port.onmessage = this.handleWorkletControlMessage;
 			this.workletNode.port.postMessage({ type: 'connect_need_port' }, [needChannel.port1]);
-			this.workletNode.connect(this.ctx.destination);
+				this.workletNode.connect(this.ctx.destination);
 
-			this.postOrQueueMessage({
-				type: 'init',
-				sampleRate: this.ctx.sampleRate,
-				capacityFrames: this.capacityFrames,
-				frameTimeSec: this.frameTimeSec,
-				needPort: needChannel.port2,
-				ringSampleBuffer: this.ringSampleBuffer,
-				ringControlBuffer: this.ringControlBuffer,
-				coreStreamCapacityFrames: this.coreStreamCapacityFrames,
-				coreStreamSamplesBuffer: this.coreStreamSamplesBuffer,
-				coreStreamControlBuffer: this.coreStreamControlBuffer,
-				crossOriginIsolated: globalThis.crossOriginIsolated === true,
-				decoderScriptUrl: this.decoderScriptUrl,
-			}, [needChannel.port2]);
+				this.postOrQueueMessage({
+					type: 'init',
+					sampleRate: this.ctx.sampleRate,
+					capacityFrames: this.capacityFrames,
+					frameTimeSec: this.frameTimeSec,
+					needPort: needChannel.port2,
+					ringSampleBuffer: this.ringSampleBuffer,
+					ringControlBuffer: this.ringControlBuffer,
+					coreStreamCapacityFrames: this.coreStreamCapacityFrames,
+					coreStreamSamplesBuffer: this.coreStreamSamplesBuffer,
+					coreStreamControlBuffer: this.coreStreamControlBuffer,
+					crossOriginIsolated: globalThis.crossOriginIsolated === true,
+				}, [needChannel.port2]);
 		} catch (error) {
 			this.setFatal(error instanceof Error ? error : new Error(String(error)));
 		}
-	}
-
-	private createDecoderScriptBlobUrl(): string {
-		const binary = atob(OGG_VORBIS_DECODER_B64);
-		const bytes = new Uint8Array(binary.length);
-		for (let i = 0; i < binary.length; i += 1) {
-			bytes[i] = binary.charCodeAt(i);
-		}
-		return URL.createObjectURL(new Blob([bytes], { type: 'text/javascript' }));
 	}
 
 	private createWorkletBlobUrl(): string {
@@ -475,6 +461,23 @@ export class WorkerStreamingAudioService implements AudioService {
 	const CORE_CTRL_OVERRUNS = 2;
 	const CORE_CTRL_UNDERRUNS = 3;
 	const PCM_SCALE = 1 / 32768;
+	const BADP_HEADER_SIZE = 48;
+	const BADP_VERSION = 1;
+	const ADPCM_STEP_TABLE = [
+		7, 8, 9, 10, 11, 12, 13, 14, 16, 17,
+		19, 21, 23, 25, 28, 31, 34, 37, 41, 45,
+		50, 55, 60, 66, 73, 80, 88, 97, 107, 118,
+		130, 143, 157, 173, 190, 209, 230, 253, 279, 307,
+		337, 371, 408, 449, 494, 544, 598, 658, 724, 796,
+		876, 963, 1060, 1166, 1282, 1411, 1552, 1707, 1878, 2066,
+		2272, 2499, 2749, 3024, 3327, 3660, 4026, 4428, 4871, 5358,
+		5894, 6484, 7132, 7845, 8630, 9493, 10442, 11487, 12635, 13899,
+		15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794, 32767,
+	];
+	const ADPCM_INDEX_TABLE = [
+		-1, -1, -1, -1, 2, 4, 6, 8,
+		-1, -1, -1, -1, 2, 4, 6, 8,
+	];
 	const MAX_ACTIVE_VOICES = 128;
 	const AUDIO_RENDER_QUANTUM_FRAMES = 128;
 	const WORKLET_LOW_WATER_FRAMES = 256;
@@ -497,7 +500,6 @@ export class WorkerStreamingAudioService implements AudioService {
 	let lastStatsMs = 0;
 	let lastUnderruns = 0;
 	let decodeChain = Promise.resolve();
-	let oggDecoder = null;
 	let sampledLeft = 0;
 	let sampledRight = 0;
 
@@ -580,163 +582,130 @@ export class WorkerStreamingAudioService implements AudioService {
 		return position;
 	}
 
-	function readTag(dv, offset) {
-		return String.fromCharCode(
-			dv.getUint8(offset),
-			dv.getUint8(offset + 1),
-			dv.getUint8(offset + 2),
-			dv.getUint8(offset + 3)
-		);
-	}
-
-	function detectFormat(bytes, hint) {
-		if (hint === 'wav' || hint === 'ogg') {
-			return hint;
-		}
-		if (bytes.byteLength >= 4) {
-			const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-			const a = view.getUint8(0);
-			const b = view.getUint8(1);
-			const c = view.getUint8(2);
-			const d = view.getUint8(3);
-			if (a === 0x52 && b === 0x49 && c === 0x46 && d === 0x46) return 'wav';
-			if (a === 0x4f && b === 0x67 && c === 0x67 && d === 0x53) return 'ogg';
-		}
-		throw new Error('[WorkerStreamingAudioService.worker] Unsupported audio format.');
-	}
-
-	function decodeWavToPcm(bytes) {
-		const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-		if (dv.byteLength < 12) {
-			throw new Error('[WorkerStreamingAudioService.worker] WAV data is too small.');
-		}
-		if (readTag(dv, 0) !== 'RIFF' || readTag(dv, 8) !== 'WAVE') {
-			throw new Error('[WorkerStreamingAudioService.worker] Invalid WAV header.');
+		function isBadpBuffer(bytes) {
+			return (
+				bytes.byteLength >= BADP_HEADER_SIZE
+				&& bytes[0] === 0x42
+				&& bytes[1] === 0x41
+				&& bytes[2] === 0x44
+				&& bytes[3] === 0x50
+			);
 		}
 
-		let cursor = 12;
-		let audioFormat = 0;
-		let channels = 0;
-		let sampleRate = 0;
-		let bitsPerSample = 0;
-		let dataOffset = 0;
-		let dataLength = 0;
-
-		while (cursor + 8 <= dv.byteLength) {
-			const chunkId = readTag(dv, cursor);
-			const chunkSize = dv.getUint32(cursor + 4, true);
-			cursor += 8;
-			const chunkEnd = cursor + chunkSize;
-			if (chunkEnd > dv.byteLength) {
-				throw new Error('[WorkerStreamingAudioService.worker] Invalid WAV chunk size.');
+		function decodeBadpToPcm(bytes) {
+			const input = new Uint8Array(bytes);
+			if (!isBadpBuffer(input)) {
+				throw new Error('[WorkerStreamingAudioService.worker] Unsupported audio format. Expected BADP.');
 			}
-			if (chunkId === 'fmt ') {
-				if (chunkSize < 16) {
-					throw new Error('[WorkerStreamingAudioService.worker] Invalid WAV fmt chunk.');
+			const dv = new DataView(input.buffer, input.byteOffset, input.byteLength);
+			const version = dv.getUint16(4, true);
+			if (version !== BADP_VERSION) {
+				throw new Error('[WorkerStreamingAudioService.worker] Unsupported BADP version.');
+			}
+			const channels = dv.getUint16(6, true);
+			const sampleRate = dv.getUint32(8, true);
+			const totalFrames = dv.getUint32(12, true);
+			const seekEntryCount = dv.getUint32(28, true);
+			const seekTableOffset = dv.getUint32(32, true);
+			const dataOffset = dv.getUint32(36, true);
+			if (channels <= 0 || channels > 2) {
+				throw new Error('[WorkerStreamingAudioService.worker] BADP channel count must be 1 or 2.');
+			}
+			if (sampleRate <= 0) {
+				throw new Error('[WorkerStreamingAudioService.worker] BADP sample rate must be positive.');
+			}
+			if (dataOffset < BADP_HEADER_SIZE || dataOffset > input.byteLength) {
+				throw new Error('[WorkerStreamingAudioService.worker] BADP data offset is invalid.');
+			}
+			if (seekEntryCount > 0 && (seekTableOffset < BADP_HEADER_SIZE || seekTableOffset >= dataOffset)) {
+				throw new Error('[WorkerStreamingAudioService.worker] BADP seek table offset is invalid.');
+			}
+
+			const pcm = new Int16Array(totalFrames * channels);
+			const predictors = new Int32Array(channels);
+			const stepIndices = new Int32Array(channels);
+			let decodedFrames = 0;
+			let cursor = dataOffset;
+			while (decodedFrames < totalFrames) {
+				if (cursor + 4 + channels * 4 > input.byteLength) {
+					throw new Error('[WorkerStreamingAudioService.worker] BADP block header exceeds buffer.');
 				}
-				audioFormat = dv.getUint16(cursor + 0, true);
-				channels = dv.getUint16(cursor + 2, true);
-				sampleRate = dv.getUint32(cursor + 4, true);
-				bitsPerSample = dv.getUint16(cursor + 14, true);
-			} else if (chunkId === 'data') {
-				dataOffset = cursor;
-				dataLength = chunkSize;
+				const blockStart = cursor;
+				const blockFrames = dv.getUint16(cursor, true);
+				cursor += 2;
+				const blockBytes = dv.getUint16(cursor, true);
+				cursor += 2;
+				if (blockFrames <= 0) {
+					throw new Error('[WorkerStreamingAudioService.worker] BADP block has zero frames.');
+				}
+				const blockHeaderBytes = 4 + channels * 4;
+				if (blockBytes < blockHeaderBytes) {
+					throw new Error('[WorkerStreamingAudioService.worker] BADP block bytes are invalid.');
+				}
+				const blockEnd = blockStart + blockBytes;
+				if (blockEnd > input.byteLength) {
+					throw new Error('[WorkerStreamingAudioService.worker] BADP block exceeds buffer size.');
+				}
+				for (let channel = 0; channel < channels; channel += 1) {
+					predictors[channel] = dv.getInt16(cursor, true);
+					cursor += 2;
+					stepIndices[channel] = dv.getUint8(cursor);
+					cursor += 2;
+					if (stepIndices[channel] < 0 || stepIndices[channel] > 88) {
+						throw new Error('[WorkerStreamingAudioService.worker] BADP step index is out of range.');
+					}
+				}
+
+				let nibbleCursor = 0;
+				const payloadStart = cursor;
+				for (let frame = 0; frame < blockFrames && decodedFrames < totalFrames; frame += 1) {
+					const dstBase = decodedFrames * channels;
+					for (let channel = 0; channel < channels; channel += 1) {
+						const payloadIndex = payloadStart + (nibbleCursor >> 1);
+						if (payloadIndex >= blockEnd) {
+							throw new Error('[WorkerStreamingAudioService.worker] BADP block payload underrun.');
+						}
+						const packed = input[payloadIndex];
+						const code = (nibbleCursor & 1) === 0 ? ((packed >> 4) & 0x0f) : (packed & 0x0f);
+						nibbleCursor += 1;
+						const step = ADPCM_STEP_TABLE[stepIndices[channel]];
+						let diff = step >> 3;
+						if ((code & 4) !== 0) diff += step;
+						if ((code & 2) !== 0) diff += step >> 1;
+						if ((code & 1) !== 0) diff += step >> 2;
+						if ((code & 8) !== 0) {
+							predictors[channel] -= diff;
+						} else {
+							predictors[channel] += diff;
+						}
+						if (predictors[channel] < -32768) predictors[channel] = -32768;
+						if (predictors[channel] > 32767) predictors[channel] = 32767;
+						stepIndices[channel] += ADPCM_INDEX_TABLE[code];
+						if (stepIndices[channel] < 0) stepIndices[channel] = 0;
+						if (stepIndices[channel] > 88) stepIndices[channel] = 88;
+						pcm[dstBase + channel] = predictors[channel];
+					}
+					decodedFrames += 1;
+				}
+				cursor = blockEnd;
 			}
-			cursor = chunkEnd + (chunkSize & 1);
-		}
-
-		if (dataOffset === 0 || dataLength === 0) {
-			throw new Error('[WorkerStreamingAudioService.worker] WAV file has no data chunk.');
-		}
-		if (audioFormat !== 1 && audioFormat !== 3) {
-			throw new Error('[WorkerStreamingAudioService.worker] Unsupported WAV encoding.');
-		}
-		if (channels <= 0 || sampleRate <= 0) {
-			throw new Error('[WorkerStreamingAudioService.worker] Invalid WAV channel/sampleRate metadata.');
-		}
-		if (audioFormat === 1 && bitsPerSample !== 16) {
-			throw new Error('[WorkerStreamingAudioService.worker] WAV PCM must be 16-bit.');
-		}
-		if (audioFormat === 3 && bitsPerSample !== 32) {
-			throw new Error('[WorkerStreamingAudioService.worker] WAV float must be 32-bit.');
-		}
-
-		const bytesPerSample = bitsPerSample / 8;
-		const totalSamples = Math.floor(dataLength / bytesPerSample);
-		const frames = Math.floor(totalSamples / channels);
-		const sampleCount = frames * channels;
-		const pcm = new Int16Array(sampleCount);
-		let sampleCursor = dataOffset;
-
-		for (let i = 0; i < sampleCount; i += 1) {
-			let sample = 0;
-			if (audioFormat === 1) {
-				sample = dv.getInt16(sampleCursor, true) / 32768;
-			} else {
-				sample = dv.getFloat32(sampleCursor, true);
+			if (decodedFrames !== totalFrames) {
+				throw new Error('[WorkerStreamingAudioService.worker] BADP decode frame count mismatch.');
 			}
-			const clamped = clamp(sample, -1, 1);
-			const scaled = clamped < 0 ? Math.round(clamped * 32768) : Math.round(clamped * 32767);
-			pcm[i] = clamp(scaled, -32768, 32767);
-			sampleCursor += bytesPerSample;
+			return {
+				pcm,
+				channels,
+				sampleRate,
+				frames: totalFrames,
+				durationSec: totalFrames / sampleRate,
+			};
 		}
 
-		return {
-			pcm,
-			channels,
-			sampleRate,
-			frames,
-			durationSec: frames / sampleRate,
-		};
-	}
-
-	async function decodeOggToPcm(bytes) {
-		const decoded = await oggDecoder.decodeFile(bytes);
-		if (!decoded || !Array.isArray(decoded.channelData)) {
-			throw new Error('[WorkerStreamingAudioService.worker] OGG decode failed.');
-		}
-		const channels = decoded.channelData.length;
-		const sampleRate = decoded.sampleRate;
-		const frames = decoded.samplesDecoded;
-		if (channels <= 0 || sampleRate <= 0 || frames < 0) {
-			throw new Error('[WorkerStreamingAudioService.worker] OGG metadata is invalid.');
-		}
-
-		const pcm = new Int16Array(frames * channels);
-		let cursor = 0;
-		for (let frame = 0; frame < frames; frame += 1) {
-			for (let channel = 0; channel < channels; channel += 1) {
-				const source = decoded.channelData[channel];
-				const value = source ? source[frame] : 0;
-				const clamped = clamp(value, -1, 1);
-				const scaled = clamped < 0 ? Math.round(clamped * 32768) : Math.round(clamped * 32767);
-				pcm[cursor] = clamp(scaled, -32768, 32767);
-				cursor += 1;
-			}
-		}
-		await oggDecoder.reset();
-
-		return {
-			pcm,
-			channels,
-			sampleRate,
-			frames,
-			durationSec: frames / sampleRate,
-		};
-	}
-
-	async function decodeClip(clipId, bytes, formatHint) {
-		const input = new Uint8Array(bytes);
-		const format = detectFormat(input, formatHint);
-		let decoded;
-		if (format === 'wav') {
-			decoded = decodeWavToPcm(input);
-		} else {
-			decoded = await decodeOggToPcm(input);
-		}
-		clips.set(clipId, decoded);
-		self.postMessage({
-			type: 'decoded',
+		async function decodeClip(clipId, bytes, _formatHint) {
+			const decoded = decodeBadpToPcm(bytes);
+			clips.set(clipId, decoded);
+			self.postMessage({
+				type: 'decoded',
 			clipId,
 			frames: decoded.frames,
 			channels: decoded.channels,
@@ -1257,22 +1226,15 @@ export class WorkerStreamingAudioService implements AudioService {
 		}
 	}
 
-	async function handleInit(message) {
-		if (!message.crossOriginIsolated || self.crossOriginIsolated !== true) {
-			throw new Error('[WorkerStreamingAudioService.worker] crossOriginIsolated=true is required.');
-		}
-		if (!message.decoderScriptUrl) {
-			throw new Error('[WorkerStreamingAudioService.worker] Missing decoder script URL.');
-		}
-		if (!(message.needPort instanceof MessagePort)) {
-			throw new Error('[WorkerStreamingAudioService.worker] Missing realtime need port.');
-		}
-		importScripts(message.decoderScriptUrl);
-		const api = self['ogg-vorbis-decoder'];
-		oggDecoder = new api.OggVorbisDecoder();
-		await oggDecoder.ready;
-		ringSamples = new Float32Array(message.ringSampleBuffer);
-		ringControl = new Int32Array(message.ringControlBuffer);
+		async function handleInit(message) {
+			if (!message.crossOriginIsolated || self.crossOriginIsolated !== true) {
+				throw new Error('[WorkerStreamingAudioService.worker] crossOriginIsolated=true is required.');
+			}
+			if (!(message.needPort instanceof MessagePort)) {
+				throw new Error('[WorkerStreamingAudioService.worker] Missing realtime need port.');
+			}
+			ringSamples = new Float32Array(message.ringSampleBuffer);
+			ringControl = new Int32Array(message.ringControlBuffer);
 		capacityFrames = message.capacityFrames;
 		coreStreamSamples = new Int16Array(message.coreStreamSamplesBuffer);
 		coreStreamControl = new Int32Array(message.coreStreamControlBuffer);
@@ -1451,10 +1413,6 @@ export class WorkerStreamingAudioService implements AudioService {
 					URL.revokeObjectURL(this.workletModuleUrl);
 					this.workletModuleUrl = '';
 				}
-				if (this.decoderScriptUrl.length > 0) {
-					URL.revokeObjectURL(this.decoderScriptUrl);
-					this.decoderScriptUrl = '';
-				}
 				break;
 			case 'decoded': {
 				const resolve = this.decodeResolves.get(message.clipId);
@@ -1481,9 +1439,6 @@ export class WorkerStreamingAudioService implements AudioService {
 				break;
 			}
 			case 'stats':
-				console.log(
-					`[AudioStats] fill=${message.fillFrames} underruns=${message.underruns} coreFill=${message.coreFillFrames} coreUnderruns=${message.coreUnderruns} voices=${message.voicesActive} mix=${message.mixTimeMs.toFixed(1)}ms`,
-				);
 				break;
 			case 'error': {
 				const error = new Error(message.message);
@@ -1559,9 +1514,6 @@ export class WorkerStreamingAudioService implements AudioService {
 			await this.ctx.resume();
 		}
 		this.postOrQueueMessage({ type: 'resume' });
-		const outputLatency = (this.ctx as any).outputLatency;
-		const outputLatencyText = Number.isFinite(outputLatency) ? outputLatency.toFixed(3) : '?';
-		console.log(`[AudioStats] Real latency: base=${this.ctx.baseLatency.toFixed(3)}s output=${outputLatencyText}s`);
 	}
 
 	async suspend(): Promise<void> {

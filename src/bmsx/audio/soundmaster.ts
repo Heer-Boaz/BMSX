@@ -81,7 +81,6 @@ interface ActiveVoiceRecord extends ActiveVoiceInfo {
 }
 
 const MIN_GAIN = 0.0001;
-const DEFAULT_DECODE_CONCURRENCY = 4;
 const DEFAULT_MAX_VOICES: Record<AudioType, number> = { sfx: 16, music: 1, ui: 8 };
 
 type MusicTransitionStingerSync = { stinger: asset_id; return_to?: asset_id; return_to_previous?: boolean };
@@ -121,7 +120,6 @@ export class SoundMaster implements RegisterablePersistent {
 	private musicTransitionTimer: ReturnType<typeof setTimeout>;
 	private pendingStingerReturnTo: asset_id;
 	private maxVoicesByType: Record<AudioType, number>;
-	private decodeConcurrency: number;
 	private voiceRecordByHandle: WeakMap<VoiceHandle, ActiveVoiceRecord>;
 
 	private constructor() {
@@ -142,7 +140,6 @@ export class SoundMaster implements RegisterablePersistent {
 		this.musicTransitionTimer = null;
 		this.pendingStingerReturnTo = null;
 		this.maxVoicesByType = { sfx: DEFAULT_MAX_VOICES.sfx, music: DEFAULT_MAX_VOICES.music, ui: DEFAULT_MAX_VOICES.ui };
-		this.decodeConcurrency = DEFAULT_DECODE_CONCURRENCY;
 		this.voiceRecordByHandle = new WeakMap();
 		this.bind();
 	}
@@ -171,7 +168,6 @@ export class SoundMaster implements RegisterablePersistent {
 		this.clipPromises = {};
 		this.resetVoiceState();
 
-		this.predecodeTracks();
 		this.volume = clamp01(startingVolume);
 	}
 
@@ -253,28 +249,6 @@ export class SoundMaster implements RegisterablePersistent {
 			map[key] = { ...value, start, end, audiometa: meta, payload_id };
 		}
 		return map;
-	}
-
-	private predecodeTracks(): void {
-		const ids = Object.keys(this.tracks);
-		const total = ids.length;
-		if (total === 0) return;
-		const limit = this.decodeConcurrency < 1 ? 1 : (this.decodeConcurrency > total ? total : this.decodeConcurrency);
-		let cursor = 0;
-
-		const launch = () => {
-			if (cursor >= total) return;
-			const id = ids[cursor] as asset_id;
-			cursor++;
-			this.bufferFor(id)
-				.then(() => { launch(); })
-				.catch(error => {
-					console.error(`[SoundMaster] Failed to predecode '${String(id)}':`, error);
-					launch();
-				});
-		};
-
-		for (let i = 0; i < limit; i++) launch();
 	}
 
 	private getRuntimeBytes(id: asset_id): Uint8Array {
@@ -758,6 +732,10 @@ export class SoundMaster implements RegisterablePersistent {
 	public set volume(value: number) {
 		const clamped = clamp01(value);
 		this.A.setMasterGain(clamped);
+	}
+
+	public pushCoreFrames(samples: Int16Array, channels: number, sampleRate: number): void {
+		this.A.pushCoreFrames(samples, channels, sampleRate);
 	}
 
 	public currentTimeByType(type: AudioType): number {

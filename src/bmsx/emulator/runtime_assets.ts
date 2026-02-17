@@ -1,7 +1,20 @@
 import type { RawAssetSource } from '../rompack/asset_source';
-import { parseWavInfo, type WavInfo } from '../utils/wav';
 
-export type RuntimeAudioInfo = WavInfo;
+const BADP_HEADER_SIZE = 48;
+const BADP_MAGIC_0 = 0x42; // B
+const BADP_MAGIC_1 = 0x41; // A
+const BADP_MAGIC_2 = 0x44; // D
+const BADP_MAGIC_3 = 0x50; // P
+const BADP_VERSION = 1;
+
+export type RuntimeAudioInfo = {
+	sampleRate: number;
+	channels: number;
+	bitsPerSample: number;
+	dataOffset: number;
+	dataLength: number;
+	frames: number;
+};
 
 export interface RuntimeAudioRegistry {
 	hasAsset(assetId: string): boolean;
@@ -16,156 +29,55 @@ export interface RuntimeAudioRegistry {
 	}): void;
 }
 
-function isWavBuffer(buffer: Uint8Array): boolean {
+function isBadpBuffer(buffer: Uint8Array): boolean {
 	return (
-		buffer.byteLength >= 12
-		&& buffer[0] === 0x52 // R
-		&& buffer[1] === 0x49 // I
-		&& buffer[2] === 0x46 // F
-		&& buffer[3] === 0x46 // F
-		&& buffer[8] === 0x57 // W
-		&& buffer[9] === 0x41 // A
-		&& buffer[10] === 0x56 // V
-		&& buffer[11] === 0x45 // E
+		buffer.byteLength >= BADP_HEADER_SIZE
+		&& buffer[0] === BADP_MAGIC_0
+		&& buffer[1] === BADP_MAGIC_1
+		&& buffer[2] === BADP_MAGIC_2
+		&& buffer[3] === BADP_MAGIC_3
 	);
 }
 
-function isOggBuffer(buffer: Uint8Array): boolean {
-	return (
-		buffer.byteLength >= 4
-		&& buffer[0] === 0x4f // O
-		&& buffer[1] === 0x67 // g
-		&& buffer[2] === 0x67 // g
-		&& buffer[3] === 0x53 // S
-	);
-}
-
-function isOggBufferAt(buffer: Uint8Array, offset: number): boolean {
-	return (
-		offset + 4 <= buffer.byteLength
-		&& buffer[offset] === 0x4f // O
-		&& buffer[offset + 1] === 0x67 // g
-		&& buffer[offset + 2] === 0x67 // g
-		&& buffer[offset + 3] === 0x53 // S
-	);
-}
-
-function readLeU32(buffer: Uint8Array, offset: number): number {
-	return buffer[offset]
-		| (buffer[offset + 1] << 8)
-		| (buffer[offset + 2] << 16)
-		| (buffer[offset + 3] << 24);
-}
-
-function isOggGranulePosInvalid(buffer: Uint8Array, offset: number): boolean {
-	for (let byteIndex = 0; byteIndex < 8; byteIndex += 1) {
-		if (buffer[offset + byteIndex] !== 0xff) {
-			return false;
-		}
+function parseBadpInfo(buffer: Uint8Array): RuntimeAudioInfo {
+	if (!isBadpBuffer(buffer)) {
+		throw new Error('[RuntimeAssets] Unsupported audio format.');
 	}
-	return true;
-}
-
-function readLeU64(buffer: Uint8Array, offset: number): number {
-	let value = 0;
-	let factor = 1;
-	for (let byteIndex = 0; byteIndex < 8; byteIndex += 1) {
-		const current = buffer[offset + byteIndex] * factor;
-		const updated = value + current;
-		if (!Number.isFinite(updated)) {
-			return Number.MAX_SAFE_INTEGER;
-		}
-		value = updated;
-		factor *= 256;
+	const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+	const version = view.getUint16(4, true);
+	if (version !== BADP_VERSION) {
+		throw new Error(`[RuntimeAssets] Unsupported BADP version ${version}.`);
 	}
-	return value;
-}
-
-function parseOggVorbisInfo(buffer: Uint8Array): RuntimeAudioInfo {
-	let sampleRate = 0;
-	let channels = 0;
-	const searchLimit = Math.min(buffer.byteLength - 7, 8192);
-	for (let index = 0; index <= searchLimit; index += 1) {
-		if (buffer[index] !== 0x01) {
-			continue;
-		}
-		if (
-			buffer[index + 1] === 0x76 // v
-			&& buffer[index + 2] === 0x6f // o
-			&& buffer[index + 3] === 0x72 // r
-			&& buffer[index + 4] === 0x62 // b
-			&& buffer[index + 5] === 0x69 // i
-			&& buffer[index + 6] === 0x73 // s
-			&& index + 20 < buffer.byteLength
-		) {
-			channels = buffer[index + 11];
-			sampleRate = readLeU32(buffer, index + 12);
-			if (channels > 0 && sampleRate > 0) {
-				break;
-			}
-			channels = 0;
-		}
+	const channels = view.getUint16(6, true);
+	const sampleRate = view.getUint32(8, true);
+	const frames = view.getUint32(12, true);
+	const seekEntryCount = view.getUint32(28, true);
+	const seekTableOffset = view.getUint32(32, true);
+	const dataOffset = view.getUint32(36, true);
+	if (channels <= 0 || channels > 2) {
+		throw new Error('[RuntimeAssets] BADP channel count must be 1 or 2.');
 	}
-	if (sampleRate <= 0 || channels <= 0) {
-		throw new Error('[RuntimeAssets] Failed to read OGG/Vorbis metadata.');
+	if (sampleRate <= 0) {
+		throw new Error('[RuntimeAssets] BADP sample rate must be positive.');
 	}
-
-	let frameCount = 0;
-	let cursor = 0;
-	const segmentHeaderSize = 27;
-	while (cursor + segmentHeaderSize <= buffer.byteLength) {
-		if (!isOggBufferAt(buffer, cursor)) {
-			cursor += 1;
-			continue;
-		}
-		const segmentCount = buffer[cursor + 26];
-		const pageStart = cursor + segmentHeaderSize;
-		if (pageStart > buffer.byteLength) {
-			break;
-		}
-		const segmentTableEnd = pageStart + segmentCount;
-		if (segmentTableEnd > buffer.byteLength) {
-			break;
-		}
-		let payloadEnd = segmentTableEnd;
-		for (let index = pageStart; index < segmentTableEnd; index += 1) {
-			payloadEnd += buffer[index];
-		}
-		if (payloadEnd > buffer.byteLength) {
-			break;
-		}
-
-		const granulePos = readLeU64(buffer, cursor + 6);
-		if (
-			!isOggGranulePosInvalid(buffer, cursor + 6)
-			&& granulePos > frameCount
-			&& granulePos <= Number.MAX_SAFE_INTEGER
-		) {
-			frameCount = granulePos;
-		}
-		cursor = payloadEnd;
+	if (dataOffset < BADP_HEADER_SIZE || dataOffset > buffer.byteLength) {
+		throw new Error('[RuntimeAssets] BADP data offset is invalid.');
 	}
-
-	const frames = frameCount > 0 ? frameCount : 0;
-
+	if (seekEntryCount > 0 && (seekTableOffset < BADP_HEADER_SIZE || seekTableOffset >= dataOffset)) {
+		throw new Error('[RuntimeAssets] BADP seek table offset is invalid.');
+	}
 	return {
 		sampleRate,
 		channels,
-		bitsPerSample: 16,
-		dataOffset: 0,
-		dataLength: buffer.byteLength,
+		bitsPerSample: 4,
+		dataOffset,
+		dataLength: buffer.byteLength - dataOffset,
 		frames,
 	};
 }
 
 export function parseAudioInfo(buffer: Uint8Array): RuntimeAudioInfo {
-	if (isWavBuffer(buffer)) {
-		return parseWavInfo(buffer);
-	}
-	if (isOggBuffer(buffer)) {
-		return parseOggVorbisInfo(buffer);
-	}
-	throw new Error('[RuntimeAssets] Unsupported audio format.');
+	return parseBadpInfo(buffer);
 }
 
 export function registerAudioAssets(source: RawAssetSource, registry: RuntimeAudioRegistry): void {
