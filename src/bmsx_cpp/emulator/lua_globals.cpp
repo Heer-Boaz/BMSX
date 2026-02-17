@@ -160,44 +160,42 @@ Table* buildArrayTable(CPU& cpu, const std::array<f32, 12>& values) {
 template <typename KeyFn>
 Table* buildBoundingBoxTable(CPU& cpu, const ImgMeta& meta, const KeyFn& key) {
 	auto* table = cpu.createTable(0, 4);
-	const double left = static_cast<double>(meta.boundingbox.x);
-	const double top = static_cast<double>(meta.boundingbox.y);
-	const double right = static_cast<double>(meta.boundingbox.x + meta.boundingbox.width);
-	const double bottom = static_cast<double>(meta.boundingbox.y + meta.boundingbox.height);
-	const double width = static_cast<double>(meta.width);
-	const double height = static_cast<double>(meta.height);
+	const auto& originalRect = meta.boundingbox.original;
+	const auto& fliphRect = meta.boundingbox.fliph;
+	const auto& flipvRect = meta.boundingbox.flipv;
+	const auto& fliphvRect = meta.boundingbox.fliphv;
 
 	auto* original = cpu.createTable(0, 6);
-	original->set(key("left"), valueNumber(left));
-	original->set(key("right"), valueNumber(right));
-	original->set(key("top"), valueNumber(top));
-	original->set(key("bottom"), valueNumber(bottom));
-	original->set(key("width"), valueNumber(static_cast<double>(meta.boundingbox.width)));
-	original->set(key("height"), valueNumber(static_cast<double>(meta.boundingbox.height)));
+	original->set(key("left"), valueNumber(static_cast<double>(originalRect.x)));
+	original->set(key("right"), valueNumber(static_cast<double>(originalRect.x + originalRect.width)));
+	original->set(key("top"), valueNumber(static_cast<double>(originalRect.y)));
+	original->set(key("bottom"), valueNumber(static_cast<double>(originalRect.y + originalRect.height)));
+	original->set(key("width"), valueNumber(static_cast<double>(originalRect.width)));
+	original->set(key("height"), valueNumber(static_cast<double>(originalRect.height)));
 
 	auto* fliph = cpu.createTable(0, 6);
-	fliph->set(key("left"), valueNumber(width - right));
-	fliph->set(key("right"), valueNumber(width - left));
-	fliph->set(key("top"), valueNumber(top));
-	fliph->set(key("bottom"), valueNumber(bottom));
-	fliph->set(key("width"), valueNumber(static_cast<double>(meta.boundingbox.width)));
-	fliph->set(key("height"), valueNumber(static_cast<double>(meta.boundingbox.height)));
+	fliph->set(key("left"), valueNumber(static_cast<double>(fliphRect.x)));
+	fliph->set(key("right"), valueNumber(static_cast<double>(fliphRect.x + fliphRect.width)));
+	fliph->set(key("top"), valueNumber(static_cast<double>(fliphRect.y)));
+	fliph->set(key("bottom"), valueNumber(static_cast<double>(fliphRect.y + fliphRect.height)));
+	fliph->set(key("width"), valueNumber(static_cast<double>(fliphRect.width)));
+	fliph->set(key("height"), valueNumber(static_cast<double>(fliphRect.height)));
 
 	auto* flipv = cpu.createTable(0, 6);
-	flipv->set(key("left"), valueNumber(left));
-	flipv->set(key("right"), valueNumber(right));
-	flipv->set(key("top"), valueNumber(height - bottom));
-	flipv->set(key("bottom"), valueNumber(height - top));
-	flipv->set(key("width"), valueNumber(static_cast<double>(meta.boundingbox.width)));
-	flipv->set(key("height"), valueNumber(static_cast<double>(meta.boundingbox.height)));
+	flipv->set(key("left"), valueNumber(static_cast<double>(flipvRect.x)));
+	flipv->set(key("right"), valueNumber(static_cast<double>(flipvRect.x + flipvRect.width)));
+	flipv->set(key("top"), valueNumber(static_cast<double>(flipvRect.y)));
+	flipv->set(key("bottom"), valueNumber(static_cast<double>(flipvRect.y + flipvRect.height)));
+	flipv->set(key("width"), valueNumber(static_cast<double>(flipvRect.width)));
+	flipv->set(key("height"), valueNumber(static_cast<double>(flipvRect.height)));
 
 	auto* fliphv = cpu.createTable(0, 6);
-	fliphv->set(key("left"), valueNumber(width - right));
-	fliphv->set(key("right"), valueNumber(width - left));
-	fliphv->set(key("top"), valueNumber(height - bottom));
-	fliphv->set(key("bottom"), valueNumber(height - top));
-	fliphv->set(key("width"), valueNumber(static_cast<double>(meta.boundingbox.width)));
-	fliphv->set(key("height"), valueNumber(static_cast<double>(meta.boundingbox.height)));
+	fliphv->set(key("left"), valueNumber(static_cast<double>(fliphvRect.x)));
+	fliphv->set(key("right"), valueNumber(static_cast<double>(fliphvRect.x + fliphvRect.width)));
+	fliphv->set(key("top"), valueNumber(static_cast<double>(fliphvRect.y)));
+	fliphv->set(key("bottom"), valueNumber(static_cast<double>(fliphvRect.y + fliphvRect.height)));
+	fliphv->set(key("width"), valueNumber(static_cast<double>(fliphvRect.width)));
+	fliphv->set(key("height"), valueNumber(static_cast<double>(fliphvRect.height)));
 
 	table->set(key("original"), valueTable(original));
 	table->set(key("fliph"), valueTable(fliph));

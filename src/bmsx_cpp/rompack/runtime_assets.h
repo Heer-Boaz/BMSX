@@ -82,11 +82,18 @@ struct ImgMeta {
 	std::array<f32, 12> texcoords_fliphv{1, 1, 1, 0, 0, 1, 0, 1, 1, 0, 0, 0}; // Flipped both
 
 	// Bounding box (for sprites with transparency, collision)
-	struct BoundingBox {
+	struct BoundingRect {
 		i32 x = 0;
 		i32 y = 0;
 		i32 width = 0;
 		i32 height = 0;
+	};
+
+	struct BoundingBox {
+		BoundingRect original;
+		BoundingRect fliph;
+		BoundingRect flipv;
+		BoundingRect fliphv;
 	} boundingbox;
 
 	struct HitPolygons {

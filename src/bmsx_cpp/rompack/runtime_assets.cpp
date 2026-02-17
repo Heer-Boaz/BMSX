@@ -8,10 +8,6 @@
 #include "../utils/mem_snapshot.h"
 #include <cstring>
 #include <stdexcept>
-#include <limits>
-#define STB_VORBIS_NO_STDIO
-#define STB_VORBIS_NO_PUSHDATA_API
-#include "../vendor/stb_vorbis.c"
 #if BMSX_ENABLE_ZLIB
 #include <zlib.h>
 #endif
@@ -28,6 +24,30 @@ static void updateFlippedTexcoords(ImgMeta& meta) {
 	meta.texcoords_fliph = {right, top, right, bottom, left, top, left, top, right, bottom, left, bottom};
 	meta.texcoords_flipv = {left, bottom, left, top, right, bottom, right, bottom, left, top, right, top};
 	meta.texcoords_fliphv = {right, bottom, right, top, left, bottom, left, bottom, right, top, left, top};
+}
+
+static void updateFlippedBoundingBox(ImgMeta& meta) {
+	const i32 left = meta.boundingbox.original.x;
+	const i32 top = meta.boundingbox.original.y;
+	const i32 right = meta.boundingbox.original.x + meta.boundingbox.original.width;
+	const i32 bottom = meta.boundingbox.original.y + meta.boundingbox.original.height;
+	const i32 width = meta.width;
+	const i32 height = meta.height;
+
+	meta.boundingbox.fliph.x = width - right;
+	meta.boundingbox.fliph.y = top;
+	meta.boundingbox.fliph.width = meta.boundingbox.original.width;
+	meta.boundingbox.fliph.height = meta.boundingbox.original.height;
+
+	meta.boundingbox.flipv.x = left;
+	meta.boundingbox.flipv.y = height - bottom;
+	meta.boundingbox.flipv.width = meta.boundingbox.original.width;
+	meta.boundingbox.flipv.height = meta.boundingbox.original.height;
+
+	meta.boundingbox.fliphv.x = width - right;
+	meta.boundingbox.fliphv.y = height - bottom;
+	meta.boundingbox.fliphv.width = meta.boundingbox.original.width;
+	meta.boundingbox.fliphv.height = meta.boundingbox.original.height;
 }
 
 static CanonicalizationType parseCanonicalization(const std::string& value) {
@@ -390,6 +410,23 @@ static std::vector<std::vector<f32>> readF32ArrayList(const BinValue& value, con
 	out.reserve(arr.size());
 	for (const auto& entry : arr) {
 		out.push_back(readF32Array(entry, assetId, field));
+	}
+	return out;
+}
+
+static std::vector<std::vector<f32>> flipPolygons(const std::vector<std::vector<f32>>& polygons, bool flipH, bool flipV, i32 imageWidth, i32 imageHeight) {
+	std::vector<std::vector<f32>> out;
+	out.reserve(polygons.size());
+	for (const auto& polygon : polygons) {
+		std::vector<f32> flipped;
+		flipped.reserve(polygon.size());
+		for (size_t index = 0; index + 1 < polygon.size(); index += 2) {
+			const f32 x = polygon[index];
+			const f32 y = polygon[index + 1];
+			flipped.push_back(flipH ? static_cast<f32>(imageWidth - 1) - x : x);
+			flipped.push_back(flipV ? static_cast<f32>(imageHeight - 1) - y : y);
+		}
+		out.push_back(std::move(flipped));
 	}
 	return out;
 }
@@ -1129,156 +1166,165 @@ static u32 readLE32(const u8* data) {
 		| (static_cast<u32>(data[3]) << 24);
 }
 
-struct WavInfo {
-	i32 channels = 0;
-	i32 sampleRate = 0;
-	i32 bitsPerSample = 0;
-	const u8* data = nullptr;
-	size_t dataSize = 0;
+static constexpr size_t BADP_HEADER_SIZE = 48;
+static constexpr u16 BADP_VERSION = 1;
+static constexpr u8 BADP_MAGIC[4] = { 0x42, 0x41, 0x44, 0x50 };
+static constexpr i32 BADP_STEP_TABLE[89] = {
+	7, 8, 9, 10, 11, 12, 13, 14, 16, 17,
+	19, 21, 23, 25, 28, 31, 34, 37, 41, 45,
+	50, 55, 60, 66, 73, 80, 88, 97, 107, 118,
+	130, 143, 157, 173, 190, 209, 230, 253, 279, 307,
+	337, 371, 408, 449, 494, 544, 598, 658, 724, 796,
+	876, 963, 1060, 1166, 1282, 1411, 1552, 1707, 1878, 2066,
+	2272, 2499, 2749, 3024, 3327, 3660, 4026, 4428, 4871, 5358,
+	5894, 6484, 7132, 7845, 8630, 9493, 10442, 11487, 12635, 13899,
+	15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794, 32767,
+};
+static constexpr i32 BADP_INDEX_TABLE[16] = {
+	-1, -1, -1, -1, 2, 4, 6, 8,
+	-1, -1, -1, -1, 2, 4, 6, 8,
 };
 
-struct OggVorbisInfo {
+struct BadpPcmInfo {
 	i32 channels = 0;
 	i32 sampleRate = 0;
-	size_t dataOffset = 0;
-	size_t dataSize = 0;
 	size_t frames = 0;
 	std::vector<u8> pcm;
 };
 
-static WavInfo parseWav(const u8* data, size_t size) {
-	if (size < 12) {
-		throw BMSX_RUNTIME_ERROR("WAV data too small");
-	}
-	if (std::memcmp(data, "RIFF", 4) != 0 || std::memcmp(data + 8, "WAVE", 4) != 0) {
-		throw BMSX_RUNTIME_ERROR("Invalid WAV header");
-	}
-
-	size_t pos = 12;
-	bool hasFmt = false;
-	bool hasData = false;
-	WavInfo info;
-	u16 audioFormat = 0;
-
-	while (pos + 8 <= size) {
-		const u8* chunkId = data + pos;
-		const u32 chunkSize = readLE32(data + pos + 4);
-		pos += 8;
-		size_t chunkEnd = pos + chunkSize;
-		if (chunkEnd > size) {
-			throw BMSX_RUNTIME_ERROR("Invalid WAV chunk size");
-		}
-
-		if (std::memcmp(chunkId, "fmt ", 4) == 0) {
-			if (chunkSize < 16) {
-				throw BMSX_RUNTIME_ERROR("Invalid WAV fmt chunk size");
-			}
-			audioFormat = readLE16(data + pos);
-			info.channels = static_cast<i32>(readLE16(data + pos + 2));
-			info.sampleRate = static_cast<i32>(readLE32(data + pos + 4));
-			info.bitsPerSample = static_cast<i32>(readLE16(data + pos + 14));
-			hasFmt = true;
-		} else if (std::memcmp(chunkId, "data", 4) == 0) {
-			info.data = data + pos;
-			info.dataSize = chunkSize;
-			hasData = true;
-		}
-
-		pos = chunkEnd;
-		if ((chunkSize & 1) != 0) {
-			pos += 1;
-		}
-	}
-
-	if (!hasFmt || !hasData) {
-		throw BMSX_RUNTIME_ERROR("WAV file missing fmt or data chunk");
-	}
-	if (audioFormat != 1) {
-		throw BMSX_RUNTIME_ERROR("Unsupported WAV encoding (expected PCM)");
-	}
-	if (info.bitsPerSample != 16 && info.bitsPerSample != 8) {
-		throw BMSX_RUNTIME_ERROR("Unsupported WAV bit depth");
-	}
-	if (info.channels <= 0 || info.sampleRate <= 0) {
-		throw BMSX_RUNTIME_ERROR("Invalid WAV channels or sample rate");
-	}
-
-	return info;
-}
-
-static bool isOggStream(const u8* data, size_t size) {
-	if (size < 4) {
+static bool isBadp(const u8* data, size_t size) {
+	if (size < BADP_HEADER_SIZE) {
 		return false;
 	}
-	return std::memcmp(data, "OggS", 4) == 0;
+	return std::memcmp(data, BADP_MAGIC, sizeof(BADP_MAGIC)) == 0;
 }
 
-static bool isWav(const u8* data, size_t size) {
-	if (size < 12) {
-		return false;
-	}
-	return std::memcmp(data, "RIFF", 4) == 0 && std::memcmp(data + 8, "WAVE", 4) == 0;
-}
-
-static OggVorbisInfo parseOggVorbis(const u8* data, size_t size) {
-	if (size > static_cast<size_t>(std::numeric_limits<int>::max())) {
-		throw BMSX_RUNTIME_ERROR("OGG buffer is too large for vorbis decoder.");
-	}
-	int error = 0;
-	stb_vorbis* decoder = stb_vorbis_open_memory(data, static_cast<int>(size), &error, nullptr);
-	if (!decoder) {
-		throw BMSX_RUNTIME_ERROR("Failed to open OGG/Vorbis stream.");
+static BadpPcmInfo decodeBadpToPcm(const u8* data, size_t size) {
+	if (!isBadp(data, size)) {
+		throw BMSX_RUNTIME_ERROR("Unsupported audio format. Expected BADP.");
 	}
 
-	const stb_vorbis_info info = stb_vorbis_get_info(decoder);
-	if (info.channels <= 0 || info.channels > 2) {
-		stb_vorbis_close(decoder);
-		throw BMSX_RUNTIME_ERROR("Unsupported OGG/Vorbis channel count: " + std::to_string(info.channels));
-	}
-	if (info.sample_rate <= 0) {
-		stb_vorbis_close(decoder);
-		throw BMSX_RUNTIME_ERROR("Invalid OGG/Vorbis sample rate.");
+	const u16 version = readLE16(data + 4);
+	if (version != BADP_VERSION) {
+		throw BMSX_RUNTIME_ERROR("Unsupported BADP version.");
 	}
 
-	const i64 predictedFrames = stb_vorbis_stream_length_in_samples(decoder);
-	const size_t expectedFrames = predictedFrames > 0 ? static_cast<size_t>(predictedFrames) : 0;
-	const int channels = info.channels;
-	const size_t chunkSamples = 4096;
-	std::vector<i16> samples;
-	if (expectedFrames > 0) {
-		samples.reserve(expectedFrames * static_cast<size_t>(channels));
+	const i32 channels = static_cast<i32>(readLE16(data + 6));
+	const i32 sampleRate = static_cast<i32>(readLE32(data + 8));
+	const size_t totalFrames = static_cast<size_t>(readLE32(data + 12));
+	const u32 seekEntryCount = readLE32(data + 28);
+	const u32 seekTableOffset = readLE32(data + 32);
+	const u32 dataOffset = readLE32(data + 36);
+
+	if (channels <= 0 || channels > 2) {
+		throw BMSX_RUNTIME_ERROR("BADP channel count must be 1 or 2.");
 	}
-	std::vector<i16> chunk(static_cast<size_t>(chunkSamples) * static_cast<size_t>(channels));
+	if (sampleRate <= 0) {
+		throw BMSX_RUNTIME_ERROR("BADP sample rate must be positive.");
+	}
+	if (dataOffset < BADP_HEADER_SIZE || dataOffset > size) {
+		throw BMSX_RUNTIME_ERROR("BADP data offset is invalid.");
+	}
+	if (seekEntryCount > 0 && (seekTableOffset < BADP_HEADER_SIZE || seekTableOffset >= dataOffset)) {
+		throw BMSX_RUNTIME_ERROR("BADP seek table offset is invalid.");
+	}
+
+	const size_t totalSamples = totalFrames * static_cast<size_t>(channels);
+	std::vector<i16> pcm(totalSamples);
+	std::vector<i32> predictors(static_cast<size_t>(channels), 0);
+	std::vector<i32> stepIndices(static_cast<size_t>(channels), 0);
 
 	size_t decodedFrames = 0;
-	while (true) {
-		const int got = stb_vorbis_get_samples_short_interleaved(
-			decoder,
-			channels,
-			chunk.data(),
-			static_cast<int>(chunk.size())
-		);
-		if (got <= 0) {
-			break;
+	size_t cursor = static_cast<size_t>(dataOffset);
+
+	while (decodedFrames < totalFrames) {
+		const size_t blockHeaderBytes = 4 + static_cast<size_t>(channels) * 4;
+		if (cursor + blockHeaderBytes > size) {
+			throw BMSX_RUNTIME_ERROR("BADP block header exceeds buffer.");
 		}
-		const size_t gotSamples = static_cast<size_t>(got) * static_cast<size_t>(channels);
-		samples.insert(samples.end(), chunk.data(), chunk.data() + gotSamples);
-		decodedFrames += static_cast<size_t>(got);
-		if (expectedFrames > 0 && decodedFrames >= expectedFrames) {
-			break;
+		const size_t blockStart = cursor;
+		const size_t blockFrames = static_cast<size_t>(readLE16(data + cursor));
+		cursor += 2;
+		const size_t blockBytes = static_cast<size_t>(readLE16(data + cursor));
+		cursor += 2;
+
+		if (blockFrames == 0) {
+			throw BMSX_RUNTIME_ERROR("BADP block has zero frames.");
 		}
+		if (blockBytes < blockHeaderBytes) {
+			throw BMSX_RUNTIME_ERROR("BADP block bytes are invalid.");
+		}
+
+		const size_t blockEnd = blockStart + blockBytes;
+		if (blockEnd > size) {
+			throw BMSX_RUNTIME_ERROR("BADP block exceeds buffer size.");
+		}
+
+		for (i32 channel = 0; channel < channels; channel += 1) {
+			predictors[static_cast<size_t>(channel)] = static_cast<i16>(readLE16(data + cursor));
+			cursor += 2;
+			const i32 stepIndex = static_cast<i32>(data[cursor]);
+			cursor += 2;
+			if (stepIndex < 0 || stepIndex > 88) {
+				throw BMSX_RUNTIME_ERROR("BADP step index is out of range.");
+			}
+			stepIndices[static_cast<size_t>(channel)] = stepIndex;
+		}
+
+		const size_t payloadStart = cursor;
+		size_t nibbleCursor = 0;
+
+		for (size_t frame = 0; frame < blockFrames && decodedFrames < totalFrames; frame += 1) {
+			const size_t dstBase = decodedFrames * static_cast<size_t>(channels);
+			for (i32 channel = 0; channel < channels; channel += 1) {
+				const size_t payloadIndex = payloadStart + (nibbleCursor >> 1);
+				if (payloadIndex >= blockEnd) {
+					throw BMSX_RUNTIME_ERROR("BADP block payload underrun.");
+				}
+				const u8 packed = data[payloadIndex];
+				const i32 code = (nibbleCursor & 1) == 0 ? static_cast<i32>((packed >> 4) & 0x0f) : static_cast<i32>(packed & 0x0f);
+				nibbleCursor += 1;
+
+				const size_t channelIndex = static_cast<size_t>(channel);
+				const i32 step = BADP_STEP_TABLE[static_cast<size_t>(stepIndices[channelIndex])];
+				i32 diff = step >> 3;
+				if ((code & 4) != 0) diff += step;
+				if ((code & 2) != 0) diff += step >> 1;
+				if ((code & 1) != 0) diff += step >> 2;
+
+				if ((code & 8) != 0) {
+					predictors[channelIndex] -= diff;
+				} else {
+					predictors[channelIndex] += diff;
+				}
+				if (predictors[channelIndex] < -32768) predictors[channelIndex] = -32768;
+				if (predictors[channelIndex] > 32767) predictors[channelIndex] = 32767;
+
+				stepIndices[channelIndex] += BADP_INDEX_TABLE[static_cast<size_t>(code)];
+				if (stepIndices[channelIndex] < 0) stepIndices[channelIndex] = 0;
+				if (stepIndices[channelIndex] > 88) stepIndices[channelIndex] = 88;
+
+				pcm[dstBase + channelIndex] = static_cast<i16>(predictors[channelIndex]);
+			}
+			decodedFrames += 1;
+		}
+
+		cursor = blockEnd;
 	}
 
-	stb_vorbis_close(decoder);
+	if (decodedFrames != totalFrames) {
+		throw BMSX_RUNTIME_ERROR("BADP decode frame count mismatch.");
+	}
 
-	OggVorbisInfo result;
-	result.channels = info.channels;
-	result.sampleRate = info.sample_rate;
-	result.frames = channels > 0 ? samples.size() / static_cast<size_t>(channels) : 0;
-	result.dataSize = samples.size() * sizeof(i16);
-	result.pcm.resize(result.dataSize);
-	std::memcpy(result.pcm.data(), samples.data(), result.dataSize);
-	return result;
+	BadpPcmInfo decoded;
+	decoded.channels = channels;
+	decoded.sampleRate = sampleRate;
+	decoded.frames = totalFrames;
+	decoded.pcm.resize(totalSamples * sizeof(i16));
+	if (!decoded.pcm.empty()) {
+		std::memcpy(decoded.pcm.data(), pcm.data(), decoded.pcm.size());
+	}
+	return decoded;
 }
 
 // Decompress zlib data
@@ -1531,17 +1577,18 @@ bool loadAssetsFromRom(const u8* buffer,
 						}
 					}
 
-					// Load bounding box
-					if (imgMeta.count("boundingbox") && imgMeta.at("boundingbox").isObject()) {
-						const auto& bbObj = imgMeta.at("boundingbox").asObject();
-						if (bbObj.count("original") && bbObj.at("original").isObject()) {
-							const auto& origBB = bbObj.at("original").asObject();
-							imgAsset.meta.boundingbox.x = origBB.count("left") ? origBB.at("left").toI32() : 0;
-							imgAsset.meta.boundingbox.y = origBB.count("top") ? origBB.at("top").toI32() : 0;
-							imgAsset.meta.boundingbox.width = (origBB.count("right") ? origBB.at("right").toI32() : 0) - imgAsset.meta.boundingbox.x;
-							imgAsset.meta.boundingbox.height = (origBB.count("bottom") ? origBB.at("bottom").toI32() : 0) - imgAsset.meta.boundingbox.y;
+						// Load bounding box
+						if (imgMeta.count("boundingbox") && imgMeta.at("boundingbox").isObject()) {
+							const auto& bbObj = imgMeta.at("boundingbox").asObject();
+							if (bbObj.count("original") && bbObj.at("original").isObject()) {
+								const auto& origBB = bbObj.at("original").asObject();
+								imgAsset.meta.boundingbox.original.x = origBB.count("left") ? origBB.at("left").toI32() : 0;
+								imgAsset.meta.boundingbox.original.y = origBB.count("top") ? origBB.at("top").toI32() : 0;
+								imgAsset.meta.boundingbox.original.width = (origBB.count("right") ? origBB.at("right").toI32() : 0) - imgAsset.meta.boundingbox.original.x;
+								imgAsset.meta.boundingbox.original.height = (origBB.count("bottom") ? origBB.at("bottom").toI32() : 0) - imgAsset.meta.boundingbox.original.y;
+							}
 						}
-					}
+						updateFlippedBoundingBox(imgAsset.meta);
 
 					if (imgMeta.count("centerpoint")) {
 						const auto center = readF32Array(imgMeta.at("centerpoint"), assetId, "centerpoint");
@@ -1553,18 +1600,19 @@ bool loadAssetsFromRom(const u8* buffer,
 						imgAsset.meta.hasCenterpoint = true;
 					}
 
-					if (imgMeta.count("hitpolygons") && imgMeta.at("hitpolygons").isObject()) {
-						const auto& hpObj = imgMeta.at("hitpolygons").asObject();
-						if (!hpObj.count("original") || !hpObj.count("fliph") || !hpObj.count("flipv") || !hpObj.count("fliphv")) {
-							throw BMSX_RUNTIME_ERROR("Asset '" + assetId + "' field 'hitpolygons' expected original/fliph/flipv/fliphv.");
+						if (imgMeta.count("hitpolygons") && imgMeta.at("hitpolygons").isObject()) {
+							const auto& hpObj = imgMeta.at("hitpolygons").asObject();
+							const BinValue* originalValue = findObjectField(hpObj, "original");
+							// Keep TS behavior: hitpolygons is optional; only normalize when "original" exists.
+							if (originalValue != nullptr) {
+								ImgMeta::HitPolygons hitpolygons{};
+								hitpolygons.original = readF32ArrayList(*originalValue, assetId, "hitpolygons.original");
+								hitpolygons.fliph = flipPolygons(hitpolygons.original, true, false, imgAsset.meta.width, imgAsset.meta.height);
+								hitpolygons.flipv = flipPolygons(hitpolygons.original, false, true, imgAsset.meta.width, imgAsset.meta.height);
+								hitpolygons.fliphv = flipPolygons(hitpolygons.original, true, true, imgAsset.meta.width, imgAsset.meta.height);
+								imgAsset.meta.hitpolygons = std::move(hitpolygons);
+							}
 						}
-						ImgMeta::HitPolygons hitpolygons{};
-						hitpolygons.original = readF32ArrayList(hpObj.at("original"), assetId, "hitpolygons.original");
-						hitpolygons.fliph = readF32ArrayList(hpObj.at("fliph"), assetId, "hitpolygons.fliph");
-						hitpolygons.flipv = readF32ArrayList(hpObj.at("flipv"), assetId, "hitpolygons.flipv");
-						hitpolygons.fliphv = readF32ArrayList(hpObj.at("fliphv"), assetId, "hitpolygons.fliphv");
-						imgAsset.meta.hitpolygons = std::move(hitpolygons);
-					}
 				}
 			}
 
@@ -1597,28 +1645,14 @@ bool loadAssetsFromRom(const u8* buffer,
 
 			const u8* audioData = romData + bufStart;
 			size_t audioSize = bufEnd - bufStart;
-			if (isWav(audioData, audioSize)) {
-				WavInfo wav = parseWav(audioData, audioSize);
-				audioAsset.sampleRate = wav.sampleRate;
-				audioAsset.channels = wav.channels;
-				audioAsset.bitsPerSample = wav.bitsPerSample;
-				audioAsset.dataOffset = static_cast<size_t>(wav.data - audioData);
-				audioAsset.dataSize = wav.dataSize;
-				const size_t bytesPerSample = static_cast<size_t>(wav.bitsPerSample / 8);
-				const size_t totalSamples = wav.dataSize / bytesPerSample;
-				audioAsset.frames = totalSamples / static_cast<size_t>(wav.channels);
-			} else if (isOggStream(audioData, audioSize)) {
-				OggVorbisInfo vorbis = parseOggVorbis(audioData, audioSize);
-				audioAsset.sampleRate = vorbis.sampleRate;
-				audioAsset.channels = vorbis.channels;
-				audioAsset.bitsPerSample = 16;
-				audioAsset.dataOffset = vorbis.dataOffset;
-				audioAsset.dataSize = vorbis.dataSize;
-				audioAsset.frames = vorbis.frames;
-				audioAsset.bytes = std::move(vorbis.pcm);
-			} else {
-				throw BMSX_RUNTIME_ERROR("Unsupported audio format: " + assetId);
-			}
+			BadpPcmInfo decoded = decodeBadpToPcm(audioData, audioSize);
+			audioAsset.sampleRate = decoded.sampleRate;
+			audioAsset.channels = decoded.channels;
+			audioAsset.bitsPerSample = 16;
+			audioAsset.dataOffset = 0;
+			audioAsset.dataSize = decoded.pcm.size();
+			audioAsset.frames = decoded.frames;
+			audioAsset.bytes = std::move(decoded.pcm);
 
 			assets.audio[assetToken] = std::move(audioAsset);
 		}
