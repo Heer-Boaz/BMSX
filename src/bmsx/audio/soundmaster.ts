@@ -96,18 +96,16 @@ const DEFAULT_MAX_VOICES: Record<AudioType, number> = { sfx: 16, music: 1, ui: 8
 const BADP_HEADER_SIZE = 48;
 const BADP_VERSION = 1;
 const BADP_NO_LOOP = 0xffffffff;
-const MIX_MINIMAL_TARGET_AHEAD_SEC = 0.004;
-const MIX_LOW_TARGET_AHEAD_SEC = 0.008;
-const MIX_BALANCED_TARGET_AHEAD_SEC = 0.014;
-const MIX_SAFE_TARGET_AHEAD_SEC = 0.02;
+const MIX_MINIMAL_OVERHEAD_SEC = 0.002;
+const MIX_LOW_OVERHEAD_SEC = 0.004;
+const MIX_BALANCED_OVERHEAD_SEC = 0.008;
+const MIX_SAFE_OVERHEAD_SEC = 0.016;
 const MIX_CHUNK_FRAMES = 128;
 const MIX_MAX_PUMP_BUDGET_FRAMES = 8192;
-const MIX_TARGET_MIN_FRAMES_MINIMAL = 128;
-const MIX_TARGET_MAX_FRAMES_MINIMAL = 384;
-const MIX_TARGET_MIN_FRAMES_DEFAULT = 512;
-const MIX_TARGET_MAX_FRAMES_DEFAULT = 1024;
+const MIX_TARGET_MIN_FRAMES = 384;
+const MIX_TARGET_MAX_FRAMES = 4096;
 const MIX_TARGET_MIN_FRAMES_IOS = 768;
-const MIX_TARGET_MAX_FRAMES_IOS = 1536;
+const MIX_TARGET_MAX_FRAMES_IOS = 4096;
 const PCM_SCALE = 1 / 32768;
 const PCM_INT16_MIN = -32768;
 const PCM_INT16_MAX = 32767;
@@ -420,6 +418,7 @@ export class SoundMaster implements RegisterablePersistent {
 	private maxVoicesByType: Record<AudioType, number>;
 	private voiceRecordByHandle: WeakMap<VoiceHandle, ActiveVoiceRecord>;
 	private mixSampleRate: number;
+	private mixFps: number;
 	private mixLatencyProfile: MixLatencyProfile;
 	private mixTargetAheadSec: number;
 	private readonly mixChunk: Int16Array;
@@ -452,8 +451,9 @@ export class SoundMaster implements RegisterablePersistent {
 		this.maxVoicesByType = { sfx: DEFAULT_MAX_VOICES.sfx, music: DEFAULT_MAX_VOICES.music, ui: DEFAULT_MAX_VOICES.ui };
 		this.voiceRecordByHandle = new WeakMap();
 		this.mixSampleRate = 0;
+		this.mixFps = 50;
 		this.mixLatencyProfile = 'balanced';
-		this.mixTargetAheadSec = MIX_BALANCED_TARGET_AHEAD_SEC;
+		this.mixTargetAheadSec = 0;
 		this.mixChunk = new Int16Array(MIX_CHUNK_FRAMES * 2);
 		this.mixChunkViews = new Array<Int16Array>(MIX_CHUNK_FRAMES + 1);
 		for (let frames = 0; frames <= MIX_CHUNK_FRAMES; frames += 1) {
@@ -1130,24 +1130,27 @@ export class SoundMaster implements RegisterablePersistent {
 		if (!Number.isFinite(fps) || fps <= 0) {
 			throw new Error('[SoundMaster] Mixer FPS must be a positive finite value.');
 		}
+		this.mixFps = fps;
+		this.recomputeMixTarget();
 	}
 
 	public setLatencyProfile(profile: MixLatencyProfile): void {
 		this.mixLatencyProfile = profile;
-		switch (profile) {
-			case 'minimal':
-				this.mixTargetAheadSec = MIX_MINIMAL_TARGET_AHEAD_SEC;
-				break;
-			case 'low':
-				this.mixTargetAheadSec = MIX_LOW_TARGET_AHEAD_SEC;
-				break;
-			case 'balanced':
-				this.mixTargetAheadSec = MIX_BALANCED_TARGET_AHEAD_SEC;
-				break;
-			case 'safe':
-				this.mixTargetAheadSec = MIX_SAFE_TARGET_AHEAD_SEC;
-				break;
+		this.recomputeMixTarget();
+	}
+
+	private profileOverheadSec(): number {
+		switch (this.mixLatencyProfile) {
+			case 'minimal': return MIX_MINIMAL_OVERHEAD_SEC;
+			case 'low': return MIX_LOW_OVERHEAD_SEC;
+			case 'balanced': return MIX_BALANCED_OVERHEAD_SEC;
+			case 'safe': return MIX_SAFE_OVERHEAD_SEC;
 		}
+	}
+
+	private recomputeMixTarget(): void {
+		const frameTimeSec = 1 / this.mixFps;
+		this.mixTargetAheadSec = frameTimeSec + this.profileOverheadSec();
 		if (this.audio && this.globalSuspensions.size === 0) {
 			this.A.setFrameTimeSec(this.mixTargetAheadSec);
 			this.pumpCoreAudio();
@@ -1165,20 +1168,11 @@ export class SoundMaster implements RegisterablePersistent {
 	}
 
 	private computeMixTargetFrames(): number {
-		const requested = Math.floor(this.mixTargetAheadSec * this.mixSampleRate);
-		let minTarget: number;
-		let maxTarget: number;
+		const requested = Math.ceil(this.mixTargetAheadSec * this.mixSampleRate);
 		if (isIOSAudioTarget()) {
-			minTarget = MIX_TARGET_MIN_FRAMES_IOS;
-			maxTarget = MIX_TARGET_MAX_FRAMES_IOS;
-		} else if (this.mixLatencyProfile === 'minimal') {
-			minTarget = MIX_TARGET_MIN_FRAMES_MINIMAL;
-			maxTarget = MIX_TARGET_MAX_FRAMES_MINIMAL;
-		} else {
-			minTarget = MIX_TARGET_MIN_FRAMES_DEFAULT;
-			maxTarget = MIX_TARGET_MAX_FRAMES_DEFAULT;
+			return clamp(requested, MIX_TARGET_MIN_FRAMES_IOS, MIX_TARGET_MAX_FRAMES_IOS);
 		}
-		return clamp(requested, minTarget, maxTarget);
+		return clamp(requested, MIX_TARGET_MIN_FRAMES, MIX_TARGET_MAX_FRAMES);
 	}
 
 	private sampleVoiceFrame(record: ActiveVoiceRecord): boolean {
