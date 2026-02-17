@@ -188,7 +188,6 @@ class BadpDecoderCursor {
 	private readonly predictors = new Int32Array(2);
 	private readonly stepIndices = new Int32Array(2);
 	private nextFrame = 0;
-	private blockOffset = 0;
 	private blockEnd = 0;
 	private blockFrames = 0;
 	private blockFrameIndex = 0;
@@ -291,7 +290,6 @@ class BadpDecoderCursor {
 			this.stepIndices[channel] = stepIndex;
 			cursor += 4;
 		}
-		this.blockOffset = offset;
 		this.blockEnd = blockEnd;
 		this.blockFrames = blockFrames;
 		this.blockFrameIndex = 0;
@@ -798,16 +796,16 @@ export class SoundMaster implements RegisterablePersistent {
 		}
 
 		const stream = this.streamTrackFor(id);
-		const loopEnabled = playback.loop !== null;
-		const loopStartFrames = loopEnabled
+		const hasHeaderLoop = stream.loopStartFrame !== BADP_NO_LOOP
+			&& stream.loopEndFrame !== BADP_NO_LOOP
+			&& stream.loopEndFrame > stream.loopStartFrame;
+		const loopEnabled = playback.loop !== null || hasHeaderLoop;
+		const loopStartFrames = playback.loop !== null
 			? this.clampFrames(Math.floor(playback.loop.start * stream.sampleRate), stream.frames)
-			: 0;
-		const loopEndSec = loopEnabled
-			? (playback.loop.end !== undefined ? playback.loop.end : clip.duration)
-			: clip.duration;
-		const loopEndFrames = loopEnabled
-			? this.clampFrames(Math.floor(loopEndSec * stream.sampleRate), stream.frames)
-			: stream.frames;
+			: (hasHeaderLoop ? this.clampFrames(stream.loopStartFrame, stream.frames) : 0);
+		const loopEndFrames = playback.loop !== null
+			? this.clampFrames(Math.floor((playback.loop.end !== undefined ? playback.loop.end : clip.duration) * stream.sampleRate), stream.frames)
+			: (hasHeaderLoop ? this.clampFrames(stream.loopEndFrame, stream.frames) : stream.frames);
 		if (loopEnabled && loopEndFrames <= loopStartFrames) {
 			throw new Error('[SoundMaster] Loop end must be greater than loop start.');
 		}
