@@ -175,6 +175,8 @@ export class WebAudioService implements AudioService {
 
 	currentTime(): number { return this.ctx.currentTime; }
 
+	sampleRate(): number { return this.ctx.sampleRate; }
+
 	async resume(): Promise<void> {
 		if (this.ctx.state !== 'running') {
 			await this.ctx.resume();

@@ -255,10 +255,13 @@ export class WorkerStreamingAudioService implements AudioService {
 	private readonly workerUrl: string;
 	private readonly ringSampleBuffer: SharedArrayBuffer;
 	private readonly ringControlBuffer: SharedArrayBuffer;
+	private readonly ringControl: Int32Array;
 	private readonly capacityFrames: number;
 	private readonly coreStreamCapacityFrames: number;
 	private readonly coreStreamSamplesBuffer: SharedArrayBuffer;
 	private readonly coreStreamControlBuffer: SharedArrayBuffer;
+	private readonly coreStreamSamples: Int16Array;
+	private readonly coreStreamControl: Int32Array;
 	private readonly frameTimeSec: number;
 
 	private workletNode: AudioWorkletNode | null = null;
@@ -292,9 +295,6 @@ export class WorkerStreamingAudioService implements AudioService {
 		}
 
 		this.capacityFrames = Math.floor(options.capacityFrames ?? DEFAULT_CAPACITY_FRAMES);
-		if (this.capacityFrames < 2048) {
-			throw new Error('[WorkerStreamingAudioService] capacityFrames must be at least 2048.');
-		}
 		const initialFrameTimeSec = options.frameTimeSec;
 		if (initialFrameTimeSec !== undefined && (!Number.isFinite(initialFrameTimeSec) || initialFrameTimeSec <= 0)) {
 			throw new Error('[WorkerStreamingAudioService] frameTimeSec must be a positive finite value.');
@@ -304,19 +304,20 @@ export class WorkerStreamingAudioService implements AudioService {
 		this.ctx = context;
 		this.ringSampleBuffer = new SharedArrayBuffer(this.capacityFrames * 2 * Float32Array.BYTES_PER_ELEMENT);
 		this.ringControlBuffer = new SharedArrayBuffer(CTRL_LENGTH * Int32Array.BYTES_PER_ELEMENT);
-		const ringControl = new Int32Array(this.ringControlBuffer);
-		ringControl[CTRL_READ_PTR] = 0;
-		ringControl[CTRL_WRITE_PTR] = 0;
-		ringControl[CTRL_UNDERRUNS] = 0;
-		ringControl[CTRL_RESERVED] = 0;
-		this.coreStreamCapacityFrames = this.capacityFrames < 4096 ? this.capacityFrames : 4096;
+		this.ringControl = new Int32Array(this.ringControlBuffer);
+		this.ringControl[CTRL_READ_PTR] = 0;
+		this.ringControl[CTRL_WRITE_PTR] = 0;
+		this.ringControl[CTRL_UNDERRUNS] = 0;
+		this.ringControl[CTRL_RESERVED] = 0;
+		this.coreStreamCapacityFrames = this.capacityFrames;
 		this.coreStreamSamplesBuffer = new SharedArrayBuffer(this.coreStreamCapacityFrames * 2 * Int16Array.BYTES_PER_ELEMENT);
 		this.coreStreamControlBuffer = new SharedArrayBuffer(CORE_CTRL_LENGTH * Int32Array.BYTES_PER_ELEMENT);
-		const coreControl = new Int32Array(this.coreStreamControlBuffer);
-		coreControl[CORE_CTRL_READ_PTR] = 0;
-		coreControl[CORE_CTRL_WRITE_PTR] = 0;
-		coreControl[CORE_CTRL_OVERRUNS] = 0;
-		coreControl[CORE_CTRL_UNDERRUNS] = 0;
+		this.coreStreamSamples = new Int16Array(this.coreStreamSamplesBuffer);
+		this.coreStreamControl = new Int32Array(this.coreStreamControlBuffer);
+		this.coreStreamControl[CORE_CTRL_READ_PTR] = 0;
+		this.coreStreamControl[CORE_CTRL_WRITE_PTR] = 0;
+		this.coreStreamControl[CORE_CTRL_OVERRUNS] = 0;
+		this.coreStreamControl[CORE_CTRL_UNDERRUNS] = 0;
 
 		this.workerUrl = this.createWorkerBlobUrl();
 		this.worker = new Worker(this.workerUrl);
@@ -1548,6 +1549,10 @@ export class WorkerStreamingAudioService implements AudioService {
 		return this.ctx.currentTime;
 	}
 
+	sampleRate(): number {
+		return this.ctx.sampleRate;
+	}
+
 	async resume(): Promise<void> {
 		await this.ensureReady();
 		if (this.ctx.state !== 'running') {
@@ -1604,8 +1609,8 @@ export class WorkerStreamingAudioService implements AudioService {
 			return;
 		}
 
-		const control = new Int32Array(this.coreStreamControlBuffer);
-		const stream = new Int16Array(this.coreStreamSamplesBuffer);
+		const control = this.coreStreamControl;
+		const stream = this.coreStreamSamples;
 		const capacity = this.coreStreamCapacityFrames;
 		const maxQueuedFrames = capacity - 1;
 		let sourceStartFrame = 0;
@@ -1665,9 +1670,8 @@ export class WorkerStreamingAudioService implements AudioService {
 	}
 
 	private getQueuedSeconds(): number {
-		const control = new Int32Array(this.ringControlBuffer);
-		const readPtr = Atomics.load(control, CTRL_READ_PTR) >>> 0;
-		const writePtr = Atomics.load(control, CTRL_WRITE_PTR) >>> 0;
+		const readPtr = Atomics.load(this.ringControl, CTRL_READ_PTR) >>> 0;
+		const writePtr = Atomics.load(this.ringControl, CTRL_WRITE_PTR) >>> 0;
 		const fillFrames = (writePtr - readPtr) >>> 0;
 		return fillFrames / this.ctx.sampleRate;
 	}

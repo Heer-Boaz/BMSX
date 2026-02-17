@@ -186,6 +186,7 @@ export interface VoiceHandle {
 export interface AudioService {
 	readonly available: boolean;
 	currentTime(): number;
+	sampleRate(): number;
 	resume(): Promise<void>;
 	suspend(): Promise<void>;
 	getMasterGain(): number;

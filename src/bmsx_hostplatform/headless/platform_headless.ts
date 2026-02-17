@@ -251,6 +251,7 @@ class SilentVoice implements VoiceHandle {
 class SilentAudioService implements AudioService {
 	readonly available = false;
 	currentTime(): number { return 0; }
+	sampleRate(): number { return 44100; }
 	async resume(): Promise<void> { }
 	async suspend(): Promise<void> { }
 	getMasterGain(): number { return 0; }
