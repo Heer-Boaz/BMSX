@@ -563,9 +563,6 @@ export class WorkerStreamingAudioService implements AudioService {
 
 	private handleWorkletControlMessage = (event: MessageEvent<{ type: string; reason?: string }>): void => {
 		const message = event.data;
-		if (!message || typeof message.type !== 'string') {
-			return;
-		}
 		switch (message.type) {
 			case 'need_port_connected':
 				return;
@@ -709,17 +706,8 @@ export class WorkerStreamingAudioService implements AudioService {
 		throw new Error('[WorkerStreamingAudioService] decode() is removed. Use pushCoreFrames() streaming only.');
 	}
 
-	pushCoreFrames(samples: Int16Array, channels: number, sampleRate: number): void {
-		if (channels !== 2) {
-			throw new Error('[WorkerStreamingAudioService] core stream expects stereo PCM.');
-		}
-		if (sampleRate !== this.ctx.sampleRate) {
-			throw new Error('[WorkerStreamingAudioService] core stream sample rate must match AudioContext sample rate.');
-		}
-		const frames = Math.floor(samples.length / channels);
-		if (frames <= 0) {
-			return;
-		}
+	pushCoreFrames(samples: Int16Array, _channels: number, _sampleRate: number): void {
+		const frames = samples.length >>> 1;
 
 		const control = this.coreStreamControl;
 		const stream = this.coreStreamSamples;

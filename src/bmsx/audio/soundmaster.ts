@@ -96,7 +96,7 @@ const BADP_HEADER_SIZE = 48;
 const BADP_VERSION = 1;
 const BADP_NO_LOOP = 0xffffffff;
 const MIX_CHUNK_FRAMES = 128;
-const MIX_TARGET_AHEAD_SEC = 0.01;
+const MIX_TARGET_AHEAD_SEC = 0.012;
 const ADPCM_STEP_TABLE = [
 	7, 8, 9, 10, 11, 12, 13, 14, 16, 17,
 	19, 21, 23, 25, 28, 31, 34, 37, 41, 45,
