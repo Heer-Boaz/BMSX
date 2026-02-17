@@ -112,7 +112,7 @@ local function compile_predicate(binding)
 	local mode_pred = when.mode
 	local mode_items = nil
 	if mode_pred then
-		if type(mode_pred) == "table" then
+		if type(mode_pred) == "table" and mode_pred[1] ~= nil then
 			mode_items = mode_pred
 		else
 			mode_items = { mode_pred }

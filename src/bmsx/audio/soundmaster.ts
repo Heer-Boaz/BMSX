@@ -1,5 +1,5 @@
 import { $ } from '../core/engine_core';
-import { AudioPlaybackParams, AudioService, AudioClipHandle, VoiceHandle, RngService, SubscriptionHandle } from '../platform';
+import { AudioPlaybackParams, AudioService, AudioClipHandle, VoiceHandle, VoiceEndedEvent, AudioFilterParams, RngService, SubscriptionHandle, createSubscriptionHandle } from '../platform';
 import { Registry } from '../core/registry';
 import { asset_id, AudioMeta, AudioType, AudioTypes, CartridgeLayerId, id2res, RegisterablePersistent, RomAsset } from '../rompack/rompack';
 import { clamp01 } from '../utils/clamp';
@@ -74,14 +74,279 @@ interface PausedSnapshot {
 }
 
 interface ActiveVoiceRecord extends ActiveVoiceInfo {
-	handle: VoiceHandle;
-	clip: AudioClipHandle;
-	endedUnsub: SubscriptionHandle;
+	handle: StreamVoiceHandle;
+	clip: StreamClipHandle;
+	stream: StreamTrackData;
+	decoder: BadpDecoderCursor;
+	stepFrames: number;
+	positionFrames: number;
+	loopEnabled: boolean;
+	loopStartFrames: number;
+	loopEndFrames: number;
+	gainLinear: number;
+	targetGainLinear: number;
+	gainRampRemainingFrames: number;
+	gainRampDelta: number;
 	finalized: boolean;
 }
 
 const MIN_GAIN = 0.0001;
 const DEFAULT_MAX_VOICES: Record<AudioType, number> = { sfx: 16, music: 1, ui: 8 };
+const BADP_HEADER_SIZE = 48;
+const BADP_VERSION = 1;
+const BADP_NO_LOOP = 0xffffffff;
+const MIX_CHUNK_FRAMES = 256;
+const MIX_INTERVAL_MS = 4;
+const MIX_TARGET_AHEAD_SEC = 0.02;
+const ADPCM_STEP_TABLE = [
+	7, 8, 9, 10, 11, 12, 13, 14, 16, 17,
+	19, 21, 23, 25, 28, 31, 34, 37, 41, 45,
+	50, 55, 60, 66, 73, 80, 88, 97, 107, 118,
+	130, 143, 157, 173, 190, 209, 230, 253, 279, 307,
+	337, 371, 408, 449, 494, 544, 598, 658, 724, 796,
+	876, 963, 1060, 1166, 1282, 1411, 1552, 1707, 1878, 2066,
+	2272, 2499, 2749, 3024, 3327, 3660, 4026, 4428, 4871, 5358,
+	5894, 6484, 7132, 7845, 8630, 9493, 10442, 11487, 12635, 13899,
+	15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794, 32767,
+];
+const ADPCM_INDEX_TABLE = [
+	-1, -1, -1, -1, 2, 4, 6, 8,
+	-1, -1, -1, -1, 2, 4, 6, 8,
+];
+
+type StreamTrackData = {
+	id: asset_id;
+	bytes: Uint8Array;
+	channels: number;
+	sampleRate: number;
+	frames: number;
+	durationSec: number;
+	loopStartFrame: number;
+	loopEndFrame: number;
+	dataOffset: number;
+	seekFrames: Uint32Array;
+	seekOffsets: Uint32Array;
+};
+
+class StreamClipHandle implements AudioClipHandle {
+	public constructor(
+		public readonly duration: number,
+	) { }
+	public dispose(): void { }
+}
+
+class StreamVoiceHandle implements VoiceHandle {
+	private readonly endedListeners = new Set<(event: VoiceEndedEvent) => void>();
+
+	public constructor(
+		private readonly owner: SoundMaster,
+		public readonly voiceId: number,
+		public readonly startedAt: number,
+		public readonly startOffset: number,
+	) { }
+
+	public onEnded(cb: (event: VoiceEndedEvent) => void): SubscriptionHandle {
+		this.endedListeners.add(cb);
+		return createSubscriptionHandle(() => {
+			this.endedListeners.delete(cb);
+		});
+	}
+
+	public emitEnded(clippedAt: number): void {
+		for (const listener of this.endedListeners) {
+			listener({ clippedAt });
+		}
+		this.endedListeners.clear();
+	}
+
+	public setGainLinear(value: number): void {
+		this.owner.setVoiceGainLinear(this.voiceId, value);
+	}
+
+	public rampGainLinear(target: number, durationSec: number): void {
+		this.owner.rampVoiceGainLinear(this.voiceId, target, durationSec);
+	}
+
+	public setFilter(_filter: AudioFilterParams): void {
+	}
+
+	public setRate(rate: number): void {
+		this.owner.setVoiceRate(this.voiceId, rate);
+	}
+
+	public stop(): void {
+		this.owner.stopVoiceById(this.voiceId);
+	}
+
+	public disconnect(): void {
+		this.endedListeners.clear();
+	}
+}
+
+class BadpDecoderCursor {
+	private readonly view: DataView;
+	private readonly predictors = new Int32Array(2);
+	private readonly stepIndices = new Int32Array(2);
+	private nextFrame = 0;
+	private blockOffset = 0;
+	private blockEnd = 0;
+	private blockFrames = 0;
+	private blockFrameIndex = 0;
+	private payloadOffset = 0;
+	private nibbleCursor = 0;
+	private decodedFrame = -1;
+	private decodedLeft = 0;
+	private decodedRight = 0;
+
+	public constructor(
+		private readonly track: StreamTrackData,
+	) {
+		this.view = new DataView(track.bytes.buffer, track.bytes.byteOffset, track.bytes.byteLength);
+		this.seekToFrame(0);
+	}
+
+	public readFrameAt(frame: number, out: Int16Array): boolean {
+		if (frame < 0 || frame >= this.track.frames) {
+			return false;
+		}
+		if (frame === this.decodedFrame) {
+			out[0] = this.decodedLeft;
+			out[1] = this.decodedRight;
+			return true;
+		}
+		if (frame < this.nextFrame) {
+			this.seekToFrame(frame);
+		}
+		while (this.nextFrame <= frame) {
+			this.decodeNextFrame();
+		}
+		out[0] = this.decodedLeft;
+		out[1] = this.decodedRight;
+		return true;
+	}
+
+	private seekToFrame(frame: number): void {
+		if (frame < 0 || frame > this.track.frames) {
+			throw new Error('[SoundMaster] BADP seek frame is out of range.');
+		}
+		if (frame === this.track.frames) {
+			this.nextFrame = frame;
+			this.decodedFrame = frame - 1;
+			this.decodedLeft = 0;
+			this.decodedRight = 0;
+			return;
+		}
+		let seekIndex = 0;
+		let lo = 0;
+		let hi = this.track.seekFrames.length - 1;
+		while (lo <= hi) {
+			const mid = (lo + hi) >> 1;
+			if (this.track.seekFrames[mid] <= frame) {
+				seekIndex = mid;
+				lo = mid + 1;
+			} else {
+				hi = mid - 1;
+			}
+		}
+		let currentFrame = this.track.seekFrames[seekIndex];
+		let cursor = this.track.dataOffset + this.track.seekOffsets[seekIndex];
+		this.loadBlock(cursor);
+		while (currentFrame + this.blockFrames <= frame) {
+			currentFrame += this.blockFrames;
+			cursor = this.blockEnd;
+			this.loadBlock(cursor);
+		}
+		this.nextFrame = currentFrame;
+		this.decodedFrame = currentFrame - 1;
+		while (this.nextFrame <= frame) {
+			this.decodeNextFrame();
+		}
+	}
+
+	private loadBlock(offset: number): void {
+		if (offset + 4 > this.track.bytes.byteLength) {
+			throw new Error('[SoundMaster] BADP block header exceeds track bounds.');
+		}
+		const blockFrames = this.view.getUint16(offset, true);
+		const blockBytes = this.view.getUint16(offset + 2, true);
+		if (blockFrames <= 0) {
+			throw new Error('[SoundMaster] BADP block has zero frames.');
+		}
+		const blockHeaderBytes = 4 + this.track.channels * 4;
+		if (blockBytes < blockHeaderBytes) {
+			throw new Error('[SoundMaster] BADP block header length is invalid.');
+		}
+		const blockEnd = offset + blockBytes;
+		if (blockEnd > this.track.bytes.byteLength) {
+			throw new Error('[SoundMaster] BADP block exceeds track bounds.');
+		}
+		let cursor = offset + 4;
+		for (let channel = 0; channel < this.track.channels; channel += 1) {
+			const predictor = this.view.getInt16(cursor, true);
+			const stepIndex = this.view.getUint8(cursor + 2);
+			if (stepIndex < 0 || stepIndex > 88) {
+				throw new Error('[SoundMaster] BADP step index out of range.');
+			}
+			this.predictors[channel] = predictor;
+			this.stepIndices[channel] = stepIndex;
+			cursor += 4;
+		}
+		this.blockOffset = offset;
+		this.blockEnd = blockEnd;
+		this.blockFrames = blockFrames;
+		this.blockFrameIndex = 0;
+		this.payloadOffset = offset + blockHeaderBytes;
+		this.nibbleCursor = 0;
+	}
+
+	private decodeNextFrame(): void {
+		if (this.nextFrame >= this.track.frames) {
+			throw new Error('[SoundMaster] BADP decode advanced beyond track frame count.');
+		}
+		if (this.blockFrameIndex >= this.blockFrames) {
+			this.loadBlock(this.blockEnd);
+		}
+		let left = 0;
+		let right = 0;
+		for (let channel = 0; channel < this.track.channels; channel += 1) {
+			const payloadIndex = this.payloadOffset + (this.nibbleCursor >> 1);
+			if (payloadIndex >= this.blockEnd) {
+				throw new Error('[SoundMaster] BADP payload underrun.');
+			}
+			const packed = this.track.bytes[payloadIndex];
+			const code = (this.nibbleCursor & 1) === 0 ? ((packed >> 4) & 0x0f) : (packed & 0x0f);
+			this.nibbleCursor += 1;
+			const step = ADPCM_STEP_TABLE[this.stepIndices[channel]];
+			let diff = step >> 3;
+			if ((code & 4) !== 0) diff += step;
+			if ((code & 2) !== 0) diff += step >> 1;
+			if ((code & 1) !== 0) diff += step >> 2;
+			if ((code & 8) !== 0) {
+				this.predictors[channel] -= diff;
+			} else {
+				this.predictors[channel] += diff;
+			}
+			if (this.predictors[channel] < -32768) this.predictors[channel] = -32768;
+			if (this.predictors[channel] > 32767) this.predictors[channel] = 32767;
+			this.stepIndices[channel] += ADPCM_INDEX_TABLE[code];
+			if (this.stepIndices[channel] < 0) this.stepIndices[channel] = 0;
+			if (this.stepIndices[channel] > 88) this.stepIndices[channel] = 88;
+			if (channel === 0) {
+				left = this.predictors[channel];
+			} else {
+				right = this.predictors[channel];
+			}
+		}
+		if (this.track.channels === 1) {
+			right = left;
+		}
+		this.blockFrameIndex += 1;
+		this.nextFrame += 1;
+		this.decodedFrame = this.nextFrame - 1;
+		this.decodedLeft = left;
+		this.decodedRight = right;
+	}
+}
 
 type MusicTransitionStingerSync = { stinger: asset_id; return_to?: asset_id; return_to_previous?: boolean };
 type MusicTransitionDelaySync = { delay_ms: number };
@@ -103,8 +368,8 @@ export class SoundMaster implements RegisterablePersistent {
 
 	private globalSuspensions: Set<string>;
 	private tracks: Record<asset_id, RomAudioResource>;
-	private clips: Record<string, AudioClipHandle>;
-	private clipPromises: Record<string, Promise<AudioClipHandle>>;
+	private streamTracks: Record<string, StreamTrackData>;
+	private streamClips: Record<string, StreamClipHandle>;
 	private audio!: AudioService;
 	private rng!: RngService;
 	private modulationResolver: ModulationPresetResolver;
@@ -121,12 +386,18 @@ export class SoundMaster implements RegisterablePersistent {
 	private pendingStingerReturnTo: asset_id;
 	private maxVoicesByType: Record<AudioType, number>;
 	private voiceRecordByHandle: WeakMap<VoiceHandle, ActiveVoiceRecord>;
+	private mixTimer: ReturnType<typeof setInterval>;
+	private mixSampleRate: number;
+	private mixClockBaseSec: number;
+	private mixProducedFrames: number;
+	private readonly mixChunk: Int16Array;
+	private readonly sampleScratch: Int16Array;
 
 	private constructor() {
 		this.globalSuspensions = new Set();
 		this.tracks = {};
-		this.clips = {};
-		this.clipPromises = {};
+		this.streamTracks = {};
+		this.streamClips = {};
 		this.modulationResolver = null;
 		this.audioResolver = null;
 		this.modulationPresetCache = new Map();
@@ -141,6 +412,12 @@ export class SoundMaster implements RegisterablePersistent {
 		this.pendingStingerReturnTo = null;
 		this.maxVoicesByType = { sfx: DEFAULT_MAX_VOICES.sfx, music: DEFAULT_MAX_VOICES.music, ui: DEFAULT_MAX_VOICES.ui };
 		this.voiceRecordByHandle = new WeakMap();
+		this.mixTimer = null;
+		this.mixSampleRate = 0;
+		this.mixClockBaseSec = 0;
+		this.mixProducedFrames = 0;
+		this.mixChunk = new Int16Array(MIX_CHUNK_FRAMES * 2);
+		this.sampleScratch = new Int16Array(2);
 		this.bind();
 	}
 
@@ -164,9 +441,14 @@ export class SoundMaster implements RegisterablePersistent {
 		await this.A.resume();
 
 		this.tracks = this.coerceAudioResources(audioResources);
-		this.clips = {};
-		this.clipPromises = {};
+		this.streamTracks = {};
+		this.streamClips = {};
 		this.resetVoiceState();
+		this.mixSampleRate = this.A.sampleRate();
+		if (!Number.isFinite(this.mixSampleRate) || this.mixSampleRate <= 0) {
+			throw new Error('[SoundMaster] Audio sample rate must be a positive finite value.');
+		}
+		this.startMixer();
 
 		this.volume = clamp01(startingVolume);
 	}
@@ -258,39 +540,94 @@ export class SoundMaster implements RegisterablePersistent {
 		return this.audioResolver(id);
 	}
 
-	private async bufferFor(id: asset_id): Promise<AudioClipHandle> {
-		const cached = this.clips[id];
-		if (cached) return cached;
-		const inflight = this.clipPromises[id];
-		if (inflight) return inflight;
-
-		const resource = this.tracks[id];
-		if (!resource) {
-			throw new Error(`SoundMaster: missing track resource for ${String(id)}`);
-		}
+	private parseBadpTrack(id: asset_id): StreamTrackData {
 		const bytes = this.getRuntimeBytes(id);
-		const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
-		const promise = this.A.decode(buffer)
-			.then(clip => {
-				this.clips[id] = clip;
-				this.clipPromises[id] = undefined;
-				return clip;
-			})
-			.catch(err => {
-				this.clipPromises[id] = undefined;
-				throw err;
-			});
-		this.clipPromises[id] = promise;
-		return promise;
+		if (bytes.byteLength < BADP_HEADER_SIZE) {
+			throw new Error(`[SoundMaster] Audio asset '${String(id)}' is too small for BADP.`);
+		}
+		if (bytes[0] !== 0x42 || bytes[1] !== 0x41 || bytes[2] !== 0x44 || bytes[3] !== 0x50) {
+			throw new Error(`[SoundMaster] Audio asset '${String(id)}' is not BADP.`);
+		}
+		const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+		const version = view.getUint16(4, true);
+		if (version !== BADP_VERSION) {
+			throw new Error(`[SoundMaster] BADP version ${version} is unsupported for '${String(id)}'.`);
+		}
+		const channels = view.getUint16(6, true);
+		const sampleRate = view.getUint32(8, true);
+		const frames = view.getUint32(12, true);
+		const loopStartFrame = view.getUint32(16, true);
+		const loopEndFrame = view.getUint32(20, true);
+		const seekEntryCount = view.getUint32(28, true);
+		const seekTableOffset = view.getUint32(32, true);
+		const dataOffset = view.getUint32(36, true);
+		if (channels <= 0 || channels > 2) {
+			throw new Error(`[SoundMaster] BADP channels must be 1 or 2 for '${String(id)}'.`);
+		}
+		if (sampleRate <= 0) {
+			throw new Error(`[SoundMaster] BADP sampleRate must be positive for '${String(id)}'.`);
+		}
+		if (dataOffset < BADP_HEADER_SIZE || dataOffset > bytes.byteLength) {
+			throw new Error(`[SoundMaster] BADP dataOffset is invalid for '${String(id)}'.`);
+		}
+		if (seekEntryCount > 0 && (seekTableOffset < BADP_HEADER_SIZE || seekTableOffset >= dataOffset)) {
+			throw new Error(`[SoundMaster] BADP seek table offset is invalid for '${String(id)}'.`);
+		}
+		const seekFrames = new Uint32Array(seekEntryCount > 0 ? seekEntryCount : 1);
+		const seekOffsets = new Uint32Array(seekEntryCount > 0 ? seekEntryCount : 1);
+		if (seekEntryCount > 0) {
+			let cursor = seekTableOffset;
+			for (let index = 0; index < seekEntryCount; index += 1) {
+				if (cursor + 8 > dataOffset) {
+					throw new Error(`[SoundMaster] BADP seek table exceeds bounds for '${String(id)}'.`);
+				}
+				seekFrames[index] = view.getUint32(cursor, true);
+				seekOffsets[index] = view.getUint32(cursor + 4, true);
+				cursor += 8;
+			}
+		} else {
+			seekFrames[0] = 0;
+			seekOffsets[0] = 0;
+		}
+		return {
+			id,
+			bytes,
+			channels,
+			sampleRate,
+			frames,
+			durationSec: frames / sampleRate,
+			loopStartFrame,
+			loopEndFrame,
+			dataOffset,
+			seekFrames,
+			seekOffsets,
+		};
+	}
+
+	private streamTrackFor(id: asset_id): StreamTrackData {
+		const cached = this.streamTracks[id];
+		if (cached) {
+			return cached;
+		}
+		const parsed = this.parseBadpTrack(id);
+		this.streamTracks[id] = parsed;
+		return parsed;
+	}
+
+	private clipFor(id: asset_id): StreamClipHandle {
+		const cached = this.streamClips[id];
+		if (cached) {
+			return cached;
+		}
+		const track = this.streamTrackFor(id);
+		const clip = new StreamClipHandle(track.durationSec);
+		this.streamClips[id] = clip;
+		return clip;
 	}
 
 	public invalidateClip(id: asset_id): void {
-		const clip = this.clips[id];
-		if (clip) {
-			clip.dispose();
-		}
-		this.clips[id] = undefined;
-		this.clipPromises[id] = undefined;
+		this.streamTracks[id] = undefined;
+		this.streamClips[id] = undefined;
 		this.stop(id);
 	}
 
@@ -411,43 +748,41 @@ export class SoundMaster implements RegisterablePersistent {
 	}
 
 	public play(id: asset_id, options?: SoundMasterPlayRequest | ModulationParams | RandomModulationParams): Promise<VoiceId> {
-		const request = this.normalizePlayRequest(options);
-		let sourceParams = request.params;
-		if (!sourceParams && request.modulation_preset !== undefined) {
-			sourceParams = this.resolveModulationPreset(request.modulation_preset);
-			if (!sourceParams) {
-				console.warn(`SoundMaster: Missing modulation preset '${String(request.modulation_preset)}' for ${String(id)}`);
+		try {
+			const request = this.normalizePlayRequest(options);
+			let sourceParams = request.params;
+			if (!sourceParams && request.modulation_preset !== undefined) {
+				sourceParams = this.resolveModulationPreset(request.modulation_preset);
+				if (!sourceParams) {
+					console.warn(`SoundMaster: Missing modulation preset '${String(request.modulation_preset)}' for ${String(id)}`);
+				}
 			}
+			const params = this.resolvePlayParams(sourceParams);
+			const meta = this.getAudioMetaOrThrow(id);
+			const typeCandidate = meta.audiotype;
+			if (!this.isAudioType(typeCandidate)) {
+				throw new Error(`[SoundMaster] Audio asset '${String(id)}' has unknown audio type '${String(typeCandidate)}'.`);
+			}
+			const priority = request.priority !== undefined ? request.priority : (meta.priority !== undefined ? meta.priority : 0);
+			const clip = this.clipFor(id);
+			const playback = this.createVoiceParams(meta, params, clip);
+			const voiceId = this.startVoice(typeCandidate, id, meta, clip, params, priority, playback, null);
+			return Promise.resolve(voiceId);
+		} catch (error) {
+			console.error(error);
+			return Promise.resolve(null);
 		}
-		const params = this.resolvePlayParams(sourceParams);
-		const meta = this.getAudioMetaOrThrow(id);
-		const typeCandidate = meta.audiotype;
-		if (!this.isAudioType(typeCandidate)) {
-			throw new Error(`[SoundMaster] Audio asset '${String(id)}' has unknown audio type '${String(typeCandidate)}'.`);
-		}
-		const priority = request.priority !== undefined ? request.priority : (meta.priority !== undefined ? meta.priority : 0);
-
-		return this.bufferFor(id)
-			.then(clip => {
-				const playback = this.createVoiceParams(meta, params, clip);
-				return this.startVoice(typeCandidate, id, meta, clip, params, priority, playback, null);
-			})
-			.catch((e: unknown): VoiceId => {
-				const message = e instanceof Error ? e.message : String(e);
-				console.error(message);
-				return null;
-			});
 	}
 
 	private startVoice(
 		type: AudioType,
 		id: asset_id,
 		meta: AudioMeta,
-		clip: AudioClipHandle,
+		clip: StreamClipHandle,
 		params: ModulationParams,
 		priority: number,
 		playback: AudioPlaybackParams,
-		onStarted: ((voice: VoiceHandle, record: ActiveVoiceRecord) => void),
+		onStarted: ((voice: StreamVoiceHandle, record: ActiveVoiceRecord) => void),
 	): VoiceId {
 		const pool = this.voicesByType[type];
 		const capacity = this.maxVoicesByType[type];
@@ -462,21 +797,56 @@ export class SoundMaster implements RegisterablePersistent {
 			}
 		}
 
-		const voice = this.A.createVoice(clip, playback);
+		const stream = this.streamTrackFor(id);
+		const loopEnabled = playback.loop !== null;
+		const loopStartFrames = loopEnabled
+			? this.clampFrames(Math.floor(playback.loop.start * stream.sampleRate), stream.frames)
+			: 0;
+		const loopEndSec = loopEnabled
+			? (playback.loop.end !== undefined ? playback.loop.end : clip.duration)
+			: clip.duration;
+		const loopEndFrames = loopEnabled
+			? this.clampFrames(Math.floor(loopEndSec * stream.sampleRate), stream.frames)
+			: stream.frames;
+		if (loopEnabled && loopEndFrames <= loopStartFrames) {
+			throw new Error('[SoundMaster] Loop end must be greater than loop start.');
+		}
+		let positionFrames = playback.offset * stream.sampleRate;
+		if (loopEnabled) {
+			positionFrames = this.wrapLoopFrame(positionFrames, loopStartFrames, loopEndFrames);
+		} else {
+			if (positionFrames < 0) positionFrames = 0;
+			if (positionFrames > stream.frames) positionFrames = stream.frames;
+		}
 		const voiceId = this.nextVoiceId++;
+		const startedAt = this.A.currentTime() + this.currentQueuedSeconds();
+		const voice = new StreamVoiceHandle(this, voiceId, startedAt, playback.offset);
 		const record: ActiveVoiceRecord = {
 			voiceId,
 			id,
 			priority,
 			params,
-			startedAt: voice.startedAt,
-			startOffset: voice.startOffset,
+			startedAt,
+			startOffset: playback.offset,
 			meta,
 			handle: voice,
 			clip,
-			endedUnsub: null,
+			stream,
+			decoder: new BadpDecoderCursor(stream),
+			stepFrames: (stream.sampleRate / this.mixSampleRate) * playback.rate,
+			positionFrames,
+			loopEnabled,
+			loopStartFrames,
+			loopEndFrames,
+			gainLinear: playback.gainLinear,
+			targetGainLinear: playback.gainLinear,
+			gainRampRemainingFrames: 0,
+			gainRampDelta: 0,
 			finalized: false,
 		};
+		if (record.stepFrames <= 0) {
+			throw new Error('[SoundMaster] Playback rate must be positive.');
+		}
 
 		pool.push(record);
 		this.voiceRecordByHandle.set(voice, record);
@@ -484,29 +854,17 @@ export class SoundMaster implements RegisterablePersistent {
 		this.currentAudioByType[type] = { ...meta, id };
 		this.currentPlayParamsByType[type] = params;
 
-		const unsubscribe = voice.onEnded(() => this.onVoiceEnded(type, record));
-		record.endedUnsub = unsubscribe;
-
 		if (onStarted) onStarted(voice, record);
 
 		return voiceId;
-	}
-
-	private onVoiceEnded(type: AudioType, record: ActiveVoiceRecord): void {
-		if (record.finalized) return;
-		if (record.endedUnsub) {
-			record.endedUnsub.unsubscribe();
-			record.endedUnsub = null;
-		}
-		this.removeRecord(type, record.voiceId);
-		this.finalizeVoiceEnd(type, record);
 	}
 
 	private finalizeVoiceEnd(type: AudioType, record: ActiveVoiceRecord): void {
 		if (record.finalized) return;
 		record.finalized = true;
 		this.voiceRecordByHandle.delete(record.handle);
-		try { record.handle.disconnect(); } catch (error) { console.error('[SoundMaster] Failed to disconnect voice handle:', error); }
+		record.handle.emitEnded(this.A.currentTime());
+		record.handle.disconnect();
 
 		if (this.currentVoiceByType[type] === record.handle) {
 			const pool = this.voicesByType[type];
@@ -557,11 +915,6 @@ export class SoundMaster implements RegisterablePersistent {
 	private stopVoiceRecord(type: AudioType, record: ActiveVoiceRecord): void {
 		if (record.finalized) return;
 		this.removeRecord(type, record.voiceId);
-		if (record.endedUnsub) {
-			record.endedUnsub.unsubscribe();
-			record.endedUnsub = null;
-		}
-		try { record.handle.stop(); } catch (error) { console.error('[SoundMaster] Failed to stop voice:', error); }
 		this.finalizeVoiceEnd(type, record);
 	}
 
@@ -582,6 +935,187 @@ export class SoundMaster implements RegisterablePersistent {
 			}
 		}
 		return index;
+	}
+
+	private clampFrames(frame: number, maxFrames: number): number {
+		if (frame < 0) {
+			return 0;
+		}
+		if (frame > maxFrames) {
+			return maxFrames;
+		}
+		return frame;
+	}
+
+	private wrapLoopFrame(positionFrames: number, loopStartFrames: number, loopEndFrames: number): number {
+		const length = loopEndFrames - loopStartFrames;
+		if (length <= 0) {
+			return loopStartFrames;
+		}
+		let wrapped = (positionFrames - loopStartFrames) % length;
+		if (wrapped < 0) {
+			wrapped += length;
+		}
+		return loopStartFrames + wrapped;
+	}
+
+	private currentQueuedSeconds(): number {
+		const elapsed = this.A.currentTime() - this.mixClockBaseSec;
+		const produced = this.mixProducedFrames / this.mixSampleRate;
+		const queued = produced - elapsed;
+		return queued > 0 ? queued : 0;
+	}
+
+	private findRecordByVoiceId(voiceId: VoiceId): { type: AudioType; record: ActiveVoiceRecord } | null {
+		for (let typeIndex = 0; typeIndex < AudioTypes.length; typeIndex += 1) {
+			const type = AudioTypes[typeIndex];
+			const pool = this.voicesByType[type];
+			for (let index = 0; index < pool.length; index += 1) {
+				const record = pool[index];
+				if (record.voiceId === voiceId) {
+					return { type, record };
+				}
+			}
+		}
+		return null;
+	}
+
+	public setVoiceGainLinear(voiceId: VoiceId, gain: number): void {
+		const found = this.findRecordByVoiceId(voiceId);
+		if (!found) {
+			return;
+		}
+		const clamped = clamp01(gain);
+		found.record.gainLinear = clamped;
+		found.record.targetGainLinear = clamped;
+		found.record.gainRampRemainingFrames = 0;
+		found.record.gainRampDelta = 0;
+	}
+
+	public rampVoiceGainLinear(voiceId: VoiceId, target: number, seconds: number): void {
+		const found = this.findRecordByVoiceId(voiceId);
+		if (!found) {
+			return;
+		}
+		if (!Number.isFinite(seconds) || seconds <= 0) {
+			throw new Error('[SoundMaster] Gain ramp duration must be positive and finite.');
+		}
+		const clamped = clamp01(target);
+		const frames = Math.max(1, Math.floor(seconds * this.mixSampleRate));
+		found.record.targetGainLinear = clamped;
+		found.record.gainRampRemainingFrames = frames;
+		found.record.gainRampDelta = (clamped - found.record.gainLinear) / frames;
+	}
+
+	public setVoiceRate(voiceId: VoiceId, rate: number): void {
+		const found = this.findRecordByVoiceId(voiceId);
+		if (!found) {
+			return;
+		}
+		if (!Number.isFinite(rate) || rate <= 0) {
+			throw new Error('[SoundMaster] Voice rate must be positive and finite.');
+		}
+		const record = found.record;
+		record.params.playbackRate = rate;
+		record.stepFrames = (record.stream.sampleRate / this.mixSampleRate) * rate;
+	}
+
+	public stopVoiceById(voiceId: VoiceId): void {
+		const found = this.findRecordByVoiceId(voiceId);
+		if (!found) {
+			return;
+		}
+		this.stopVoiceRecord(found.type, found.record);
+	}
+
+	private startMixer(): void {
+		if (this.mixTimer !== null) {
+			return;
+		}
+		this.mixClockBaseSec = this.A.currentTime();
+		this.mixProducedFrames = 0;
+		this.mixTimer = setInterval(() => {
+			this.pumpMixer();
+		}, MIX_INTERVAL_MS);
+		this.pumpMixer();
+	}
+
+	private stopMixer(): void {
+		if (this.mixTimer === null) {
+			return;
+		}
+		clearInterval(this.mixTimer);
+		this.mixTimer = null;
+	}
+
+	private pumpMixer(): void {
+		const elapsed = this.A.currentTime() - this.mixClockBaseSec;
+		let queued = (this.mixProducedFrames / this.mixSampleRate) - elapsed;
+		let loops = 0;
+		while (queued < MIX_TARGET_AHEAD_SEC && loops < 32) {
+			this.mixAndPushChunk();
+			this.mixProducedFrames += MIX_CHUNK_FRAMES;
+			queued = (this.mixProducedFrames / this.mixSampleRate) - elapsed;
+			loops += 1;
+		}
+	}
+
+	private mixAndPushChunk(): void {
+		for (let frame = 0; frame < MIX_CHUNK_FRAMES; frame += 1) {
+			let mixedL = 0;
+			let mixedR = 0;
+			for (let typeIndex = 0; typeIndex < AudioTypes.length; typeIndex += 1) {
+				const type = AudioTypes[typeIndex];
+				const pool = this.voicesByType[type];
+				for (let index = pool.length - 1; index >= 0; index -= 1) {
+					const record = pool[index];
+					if (record.finalized) {
+						continue;
+					}
+					if (!this.sampleVoiceFrame(record)) {
+						this.stopVoiceRecord(type, record);
+						continue;
+					}
+					mixedL += this.sampleScratch[0] * record.gainLinear;
+					mixedR += this.sampleScratch[1] * record.gainLinear;
+					if (record.gainRampRemainingFrames > 0) {
+						record.gainLinear += record.gainRampDelta;
+						record.gainRampRemainingFrames -= 1;
+						if (record.gainRampRemainingFrames === 0) {
+							record.gainLinear = record.targetGainLinear;
+							record.gainRampDelta = 0;
+						}
+					}
+				}
+			}
+			const dst = frame * 2;
+			let outL = Math.round(mixedL);
+			let outR = Math.round(mixedR);
+			if (outL < -32768) outL = -32768;
+			if (outL > 32767) outL = 32767;
+			if (outR < -32768) outR = -32768;
+			if (outR > 32767) outR = 32767;
+			this.mixChunk[dst] = outL;
+			this.mixChunk[dst + 1] = outR;
+		}
+		this.A.pushCoreFrames(this.mixChunk, 2, this.mixSampleRate);
+	}
+
+	private sampleVoiceFrame(record: ActiveVoiceRecord): boolean {
+		let frame = Math.floor(record.positionFrames);
+		if (record.loopEnabled) {
+			if (frame >= record.loopEndFrames || frame < record.loopStartFrames) {
+				record.positionFrames = this.wrapLoopFrame(record.positionFrames, record.loopStartFrames, record.loopEndFrames);
+				frame = Math.floor(record.positionFrames);
+			}
+		} else if (frame >= record.stream.frames) {
+			return false;
+		}
+		if (!record.decoder.readFrameAt(frame, this.sampleScratch)) {
+			return false;
+		}
+		record.positionFrames += record.stepFrames;
+		return true;
 	}
 
 	private getAudioMetaOrThrow(id: asset_id): AudioMeta {
@@ -712,6 +1246,7 @@ export class SoundMaster implements RegisterablePersistent {
 		}
 		this.globalSuspensions.add(tag);
 		if (this.globalSuspensions.size === 1) {
+			this.stopMixer();
 			void this.A.suspend();
 		}
 	}
@@ -722,6 +1257,7 @@ export class SoundMaster implements RegisterablePersistent {
 		}
 		if (this.globalSuspensions.size === 0) {
 			void this.A.resume();
+			this.startMixer();
 		}
 	}
 
@@ -935,37 +1471,29 @@ export class SoundMaster implements RegisterablePersistent {
 		const fadeSec = Math.max(0, fade_ms) / 1000;
 		const oldHandle = this.currentVoiceByType.music;
 		const oldRecord = oldHandle ? this.voiceRecordByHandle.get(oldHandle) : undefined;
-
-		this.bufferFor(target)
-			.then(clip => {
-				const params: ModulationParams = { offset: baseOffset };
-				const playback = this.createVoiceParams(meta, params, clip);
-				playback.gainLinear = MIN_GAIN;
-				const priority = meta.priority !== undefined ? meta.priority : 0;
-				const voiceId = this.startVoice('music', target, meta, clip, params, priority, playback, (voice) => {
-					voice.rampGainLinear(1.0, fadeSec);
-				});
-				if (voiceId !== null && oldRecord && !oldRecord.finalized) {
-					oldRecord.handle.rampGainLinear(MIN_GAIN, fadeSec);
-					if (fade_ms > 0) {
-						setTimeout(() => this.stopVoiceRecord('music', oldRecord), fade_ms);
-					} else {
-						this.stopVoiceRecord('music', oldRecord);
-					}
-				}
-			})
-			.catch(error => console.error(error));
+		const clip = this.clipFor(target);
+		const params: ModulationParams = { offset: baseOffset };
+		const playback = this.createVoiceParams(meta, params, clip);
+		playback.gainLinear = MIN_GAIN;
+		const priority = meta.priority !== undefined ? meta.priority : 0;
+		const voiceId = this.startVoice('music', target, meta, clip, params, priority, playback, (voice) => {
+			voice.rampGainLinear(1.0, fadeSec);
+		});
+		if (voiceId !== null && oldRecord && !oldRecord.finalized) {
+			oldRecord.handle.rampGainLinear(MIN_GAIN, fadeSec);
+			if (fade_ms > 0) {
+				setTimeout(() => this.stopVoiceRecord('music', oldRecord), fade_ms);
+			} else {
+				this.stopVoiceRecord('music', oldRecord);
+			}
+		}
 	}
 
 	public dispose(): void {
 		this.stopAllVoices();
-		const clipIds = Object.keys(this.clips);
-		for (let i = 0; i < clipIds.length; i++) {
-			const clip = this.clips[clipIds[i]];
-			if (clip) clip.dispose();
-		}
-		this.clips = {};
-		this.clipPromises = {};
+		this.stopMixer();
+		this.streamTracks = {};
+		this.streamClips = {};
 		this.tracks = {};
 		this.currentAudioByType = { sfx: null, music: null, ui: null };
 		this.currentPlayParamsByType = { sfx: null, music: null, ui: null };
