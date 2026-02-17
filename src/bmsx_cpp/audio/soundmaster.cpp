@@ -16,6 +16,25 @@
 namespace bmsx {
 
 static constexpr f32 MIN_GAIN = 0.0001f;
+static constexpr i32 BADP_STEP_TABLE[89] = {
+	7, 8, 9, 10, 11, 12, 13, 14, 16, 17,
+	19, 21, 23, 25, 28, 31, 34, 37, 41, 45,
+	50, 55, 60, 66, 73, 80, 88, 97, 107, 118,
+	130, 143, 157, 173, 190, 209, 230, 253, 279, 307,
+	337, 371, 408, 449, 494, 544, 598, 658, 724, 796,
+	876, 963, 1060, 1166, 1282, 1411, 1552, 1707, 1878, 2066,
+	2272, 2499, 2749, 3024, 3327, 3660, 4026, 4428, 4871, 5358,
+	5894, 6484, 7132, 7845, 8630, 9493, 10442, 11487, 12635, 13899,
+	15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794, 32767,
+};
+static constexpr i32 BADP_INDEX_TABLE[16] = {
+	-1, -1, -1, -1, 2, 4, 6, 8,
+	-1, -1, -1, -1, 2, 4, 6, 8,
+};
+
+static inline u16 readLE16Audio(const u8* data) {
+	return static_cast<u16>(data[0]) | (static_cast<u16>(data[1]) << 8);
+}
 
 SoundMaster::SoundMaster()
 	: m_rng(std::random_device{}()),
@@ -410,14 +429,83 @@ void SoundMaster::renderSamples(i16* output, size_t frameCount, i32 outputSample
 			}
 
 			bool ended = false;
-			const bool integerPos = position == std::floor(position);
-			const bool loopAligned = !hasLoop || (loopStart == std::floor(loopStart) && loopEnd == std::floor(loopEnd));
-			const bool fastPath = step == 1.0 && integerPos && loopAligned;
+			if (record.usesBadp) {
+				const f64 framesInAssetF = static_cast<f64>(framesInAsset);
+				size_t outIndex = 0;
+				for (size_t frame = 0; frame < frameCount; ++frame) {
+					if (stopAfter >= 0.0) {
+						stopAfter -= invOutputRate;
+						if (stopAfter <= 0.0) {
+							ended = true;
+							break;
+						}
+					}
+					if (hasLoop) {
+						if (position < loopStart || position >= loopEnd) {
+							position = loopStart + std::fmod(position - loopStart, loopLen);
+							if (position < loopStart) {
+								position += loopLen;
+							}
+						}
+					} else if (position >= framesInAssetF) {
+						ended = true;
+						break;
+					}
 
-			if (fastPath) {
-				size_t posIndex = static_cast<size_t>(position);
-				const size_t loopStartIndex = static_cast<size_t>(loopStart);
-				const size_t loopEndIndex = static_cast<size_t>(loopEnd);
+					const i64 idx = static_cast<i64>(position);
+					const f64 frac = position - static_cast<f64>(idx);
+					const size_t idx0 = static_cast<size_t>(idx);
+					size_t idx1 = idx0 + 1;
+					if (hasLoop) {
+						if (static_cast<f64>(idx1) >= loopEnd) {
+							const f64 wrapped = loopStart + (static_cast<f64>(idx1) - loopEnd);
+							idx1 = static_cast<size_t>(static_cast<i64>(wrapped));
+						}
+					} else if (idx1 >= framesInAsset) {
+						idx1 = idx0;
+					}
+
+					i16 left0i = 0;
+					i16 right0i = 0;
+					if (!badpReadFrameAt(record, idx0, left0i, right0i)) {
+						ended = true;
+						break;
+					}
+					i16 left1i = left0i;
+					i16 right1i = right0i;
+					if (idx1 != idx0 && !badpReadFrameAt(record, idx1, left1i, right1i)) {
+						ended = true;
+						break;
+					}
+
+					const f32 left0 = static_cast<f32>(left0i) * sampleScale;
+					const f32 right0 = static_cast<f32>(right0i) * sampleScale;
+					const f32 left1 = static_cast<f32>(left1i) * sampleScale;
+					const f32 right1 = static_cast<f32>(right1i) * sampleScale;
+					const f32 left = left0 + (left1 - left0) * static_cast<f32>(frac);
+					const f32 right = right0 + (right1 - right0) * static_cast<f32>(frac);
+					mix[outIndex] += left * gain;
+					mix[outIndex + 1] += right * gain;
+					outIndex += 2;
+
+					position += step;
+					if (hasLoop && position >= loopEnd) {
+						position = loopStart + std::fmod(position - loopStart, loopLen);
+					}
+					if (rampRemaining > 0.0) {
+						gain += static_cast<f32>(gainStep);
+						rampRemaining -= invOutputRate;
+					}
+				}
+			} else {
+				const bool integerPos = position == std::floor(position);
+				const bool loopAligned = !hasLoop || (loopStart == std::floor(loopStart) && loopEnd == std::floor(loopEnd));
+				const bool fastPath = step == 1.0 && integerPos && loopAligned;
+
+				if (fastPath) {
+					size_t posIndex = static_cast<size_t>(position);
+					const size_t loopStartIndex = static_cast<size_t>(loopStart);
+					const size_t loopEndIndex = static_cast<size_t>(loopEnd);
 				size_t outIndex = 0;
 
 				if (channels == 1) {
@@ -647,6 +735,7 @@ void SoundMaster::renderSamples(i16* output, size_t frameCount, i32 outputSample
 						}
 					}
 				}
+			}
 			}
 
 			record.position = position;
@@ -905,6 +994,164 @@ AudioDataView SoundMaster::resolveAudioData(const AssetId& id) const {
 	return view;
 }
 
+void SoundMaster::badpLoadBlock(VoiceRecord& record, size_t offset) {
+	const AudioAsset& asset = *record.asset;
+	const u8* data = record.data;
+	if (offset + 4 > asset.dataSize) {
+		throw BMSX_RUNTIME_ERROR("BADP block header exceeds data.");
+	}
+	const size_t blockFrames = static_cast<size_t>(readLE16Audio(data + offset));
+	const size_t blockBytes = static_cast<size_t>(readLE16Audio(data + offset + 2));
+	if (blockFrames == 0) {
+		throw BMSX_RUNTIME_ERROR("BADP block frame count is zero.");
+	}
+	const size_t blockHeaderBytes = 4 + static_cast<size_t>(asset.channels) * 4;
+	if (blockBytes < blockHeaderBytes) {
+		throw BMSX_RUNTIME_ERROR("BADP block header length is invalid.");
+	}
+	const size_t blockEnd = offset + blockBytes;
+	if (blockEnd > asset.dataSize) {
+		throw BMSX_RUNTIME_ERROR("BADP block exceeds bounds.");
+	}
+	size_t cursor = offset + 4;
+	for (i32 channel = 0; channel < asset.channels; channel += 1) {
+		record.badp.predictors[channel] = static_cast<i16>(readLE16Audio(data + cursor));
+		const i32 stepIndex = static_cast<i32>(data[cursor + 2]);
+		if (stepIndex < 0 || stepIndex > 88) {
+			throw BMSX_RUNTIME_ERROR("BADP step index out of range.");
+		}
+		record.badp.stepIndices[channel] = stepIndex;
+		cursor += 4;
+	}
+	record.badp.blockEnd = blockEnd;
+	record.badp.blockFrames = blockFrames;
+	record.badp.blockFrameIndex = 0;
+	record.badp.payloadOffset = offset + blockHeaderBytes;
+	record.badp.nibbleCursor = 0;
+}
+
+void SoundMaster::badpSeekToFrame(VoiceRecord& record, size_t frame) {
+	const AudioAsset& asset = *record.asset;
+	if (frame > record.frames) {
+		throw BMSX_RUNTIME_ERROR("BADP seek frame out of range.");
+	}
+	if (frame == record.frames) {
+		record.badp.nextFrame = frame;
+		record.badp.decodedFrame = static_cast<i64>(frame) - 1;
+		record.badp.decodedLeft = 0;
+		record.badp.decodedRight = 0;
+		return;
+	}
+
+	size_t seekIndex = 0;
+	size_t lo = 0;
+	size_t hi = asset.badpSeekFrames.size() - 1;
+	while (lo <= hi) {
+		const size_t mid = (lo + hi) >> 1;
+		if (asset.badpSeekFrames[mid] <= frame) {
+			seekIndex = mid;
+			lo = mid + 1;
+		} else {
+			if (mid == 0) {
+				break;
+			}
+			hi = mid - 1;
+		}
+	}
+
+	size_t currentFrame = static_cast<size_t>(asset.badpSeekFrames[seekIndex]);
+	size_t cursor = static_cast<size_t>(asset.badpSeekOffsets[seekIndex]);
+	badpLoadBlock(record, cursor);
+	while (currentFrame + record.badp.blockFrames <= frame) {
+		currentFrame += record.badp.blockFrames;
+		cursor = record.badp.blockEnd;
+		badpLoadBlock(record, cursor);
+	}
+	record.badp.nextFrame = currentFrame;
+	record.badp.decodedFrame = static_cast<i64>(currentFrame) - 1;
+	while (record.badp.nextFrame <= frame) {
+		badpDecodeNextFrame(record);
+	}
+}
+
+void SoundMaster::badpResetDecoder(VoiceRecord& record, size_t frame) {
+	record.badp = BadpDecoderState{};
+	badpSeekToFrame(record, frame);
+}
+
+void SoundMaster::badpDecodeNextFrame(VoiceRecord& record) {
+	if (record.badp.nextFrame >= record.frames) {
+		throw BMSX_RUNTIME_ERROR("BADP decode frame out of range.");
+	}
+	if (record.badp.blockFrameIndex >= record.badp.blockFrames) {
+		badpLoadBlock(record, record.badp.blockEnd);
+	}
+
+	const AudioAsset& asset = *record.asset;
+	const u8* data = record.data;
+	i32 left = 0;
+	i32 right = 0;
+	for (i32 channel = 0; channel < asset.channels; channel += 1) {
+		const size_t payloadIndex = record.badp.payloadOffset + (record.badp.nibbleCursor >> 1);
+		if (payloadIndex >= record.badp.blockEnd) {
+			throw BMSX_RUNTIME_ERROR("BADP payload underrun.");
+		}
+		const u8 packed = data[payloadIndex];
+		const i32 code = (record.badp.nibbleCursor & 1) == 0 ? static_cast<i32>((packed >> 4) & 0x0f) : static_cast<i32>(packed & 0x0f);
+		record.badp.nibbleCursor += 1;
+
+		const i32 step = BADP_STEP_TABLE[record.badp.stepIndices[channel]];
+		i32 diff = step >> 3;
+		if ((code & 4) != 0) diff += step;
+		if ((code & 2) != 0) diff += step >> 1;
+		if ((code & 1) != 0) diff += step >> 2;
+		if ((code & 8) != 0) {
+			record.badp.predictors[channel] -= diff;
+		} else {
+			record.badp.predictors[channel] += diff;
+		}
+		if (record.badp.predictors[channel] < -32768) record.badp.predictors[channel] = -32768;
+		if (record.badp.predictors[channel] > 32767) record.badp.predictors[channel] = 32767;
+		record.badp.stepIndices[channel] += BADP_INDEX_TABLE[code];
+		if (record.badp.stepIndices[channel] < 0) record.badp.stepIndices[channel] = 0;
+		if (record.badp.stepIndices[channel] > 88) record.badp.stepIndices[channel] = 88;
+
+		if (channel == 0) {
+			left = record.badp.predictors[channel];
+		} else {
+			right = record.badp.predictors[channel];
+		}
+	}
+	if (asset.channels == 1) {
+		right = left;
+	}
+	record.badp.blockFrameIndex += 1;
+	record.badp.nextFrame += 1;
+	record.badp.decodedFrame = static_cast<i64>(record.badp.nextFrame) - 1;
+	record.badp.decodedLeft = static_cast<i16>(left);
+	record.badp.decodedRight = static_cast<i16>(right);
+}
+
+bool SoundMaster::badpReadFrameAt(VoiceRecord& record, size_t frame, i16& outLeft, i16& outRight) {
+	if (frame >= record.frames) {
+		return false;
+	}
+	if (record.badp.decodedFrame == static_cast<i64>(frame)) {
+		outLeft = record.badp.decodedLeft;
+		outRight = record.badp.decodedRight;
+		return true;
+	}
+	if (frame < record.badp.nextFrame) {
+		badpSeekToFrame(record, frame);
+	}
+	while (record.badp.nextFrame <= frame) {
+		badpDecodeNextFrame(record);
+	}
+	outLeft = record.badp.decodedLeft;
+	outRight = record.badp.decodedRight;
+	return true;
+}
+
 VoiceId SoundMaster::startVoice(AudioType type, const AssetId& id, const AudioAsset& asset, const ModulationParams& params, i32 priority, f32 initialGain) {
 	const size_t idx = typeIndex(type);
 	auto& pool = m_voicesByType[idx];
@@ -931,6 +1178,7 @@ VoiceId SoundMaster::startVoice(AudioType type, const AssetId& id, const AudioAs
 	const AudioDataView view = resolveAudioData(id);
 	record.data = view.data;
 	record.frames = view.frames;
+	record.usesBadp = asset.bitsPerSample == 4;
 	const size_t framesInAsset = record.frames;
 	const f64 durationSec = framesInAsset > 0 ? static_cast<f64>(framesInAsset) / asset.sampleRate : 0.0;
 	f64 offset = params.offset;
@@ -954,6 +1202,9 @@ VoiceId SoundMaster::startVoice(AudioType type, const AssetId& id, const AudioAs
 	record.targetGain = initialGain;
 	record.gainRampRemaining = 0.0;
 	record.stopAfter = -1.0;
+	if (record.usesBadp) {
+		badpResetDecoder(record, static_cast<size_t>(std::floor(record.position)));
+	}
 
 	pool.push_back(record);
 	m_currentVoiceIdByType[idx] = record.voiceId;

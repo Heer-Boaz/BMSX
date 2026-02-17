@@ -77,6 +77,7 @@ interface ActiveVoiceRecord extends ActiveVoiceInfo {
 	handle: StreamVoiceHandle;
 	clip: StreamClipHandle;
 	stream: StreamTrackData;
+	byteLeaseId: asset_id;
 	decoder: BadpDecoderCursor;
 	stepFrames: number;
 	positionFrames: number;
@@ -95,11 +96,14 @@ const DEFAULT_MAX_VOICES: Record<AudioType, number> = { sfx: 16, music: 1, ui: 8
 const BADP_HEADER_SIZE = 48;
 const BADP_VERSION = 1;
 const BADP_NO_LOOP = 0xffffffff;
+const MIX_MINIMAL_TARGET_AHEAD_SEC = 0.004;
 const MIX_LOW_TARGET_AHEAD_SEC = 0.008;
 const MIX_BALANCED_TARGET_AHEAD_SEC = 0.014;
 const MIX_SAFE_TARGET_AHEAD_SEC = 0.02;
 const MIX_CHUNK_FRAMES = 128;
 const MIX_MAX_PUMP_BUDGET_FRAMES = 8192;
+const MIX_TARGET_MIN_FRAMES_MINIMAL = 128;
+const MIX_TARGET_MAX_FRAMES_MINIMAL = 384;
 const MIX_TARGET_MIN_FRAMES_DEFAULT = 512;
 const MIX_TARGET_MAX_FRAMES_DEFAULT = 1024;
 const MIX_TARGET_MIN_FRAMES_IOS = 768;
@@ -123,7 +127,7 @@ const ADPCM_INDEX_TABLE = [
 	-1, -1, -1, -1, 2, 4, 6, 8,
 ];
 
-type MixLatencyProfile = 'low' | 'balanced' | 'safe';
+type MixLatencyProfile = 'minimal' | 'low' | 'balanced' | 'safe';
 
 function isIOSAudioTarget(): boolean {
 	if (typeof navigator === 'undefined') {
@@ -142,7 +146,6 @@ function isIOSAudioTarget(): boolean {
 
 type StreamTrackData = {
 	id: asset_id;
-	bytes: Uint8Array;
 	channels: number;
 	sampleRate: number;
 	frames: number;
@@ -212,6 +215,7 @@ class StreamVoiceHandle implements VoiceHandle {
 
 class BadpDecoderCursor {
 	private readonly view: DataView;
+	private readonly bytes: Uint8Array;
 	private readonly predictors = new Int32Array(2);
 	private readonly stepIndices = new Int32Array(2);
 	private nextFrame = 0;
@@ -226,8 +230,10 @@ class BadpDecoderCursor {
 
 	public constructor(
 		private readonly track: StreamTrackData,
+		bytes: Uint8Array,
 	) {
-		this.view = new DataView(track.bytes.buffer, track.bytes.byteOffset, track.bytes.byteLength);
+		this.bytes = bytes;
+		this.view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 		this.seekToFrame(0);
 	}
 
@@ -290,7 +296,7 @@ class BadpDecoderCursor {
 	}
 
 	private loadBlock(offset: number): void {
-		if (offset + 4 > this.track.bytes.byteLength) {
+		if (offset + 4 > this.bytes.byteLength) {
 			throw new Error('[SoundMaster] BADP block header exceeds track bounds.');
 		}
 		const blockFrames = this.view.getUint16(offset, true);
@@ -303,7 +309,7 @@ class BadpDecoderCursor {
 			throw new Error('[SoundMaster] BADP block header length is invalid.');
 		}
 		const blockEnd = offset + blockBytes;
-		if (blockEnd > this.track.bytes.byteLength) {
+		if (blockEnd > this.bytes.byteLength) {
 			throw new Error('[SoundMaster] BADP block exceeds track bounds.');
 		}
 		let cursor = offset + 4;
@@ -338,7 +344,7 @@ class BadpDecoderCursor {
 			if (payloadIndex >= this.blockEnd) {
 				throw new Error('[SoundMaster] BADP payload underrun.');
 			}
-			const packed = this.track.bytes[payloadIndex];
+			const packed = this.bytes[payloadIndex];
 			const code = (this.nibbleCursor & 1) === 0 ? ((packed >> 4) & 0x0f) : (packed & 0x0f);
 			this.nibbleCursor += 1;
 			const step = ADPCM_STEP_TABLE[this.stepIndices[channel]];
@@ -394,6 +400,7 @@ export class SoundMaster implements RegisterablePersistent {
 	private globalSuspensions: Set<string>;
 	private tracks: Record<asset_id, RomAudioResource>;
 	private streamTracks: Record<string, StreamTrackData>;
+	private streamActiveBytes: Record<string, { bytes: Uint8Array; refs: number }>;
 	private streamClips: Record<string, StreamClipHandle>;
 	private streamClipLoads: Record<string, Promise<StreamClipHandle>>;
 	private audio!: AudioService;
@@ -427,6 +434,7 @@ export class SoundMaster implements RegisterablePersistent {
 		this.globalSuspensions = new Set();
 		this.tracks = {};
 		this.streamTracks = {};
+		this.streamActiveBytes = {};
 		this.streamClips = {};
 		this.streamClipLoads = {};
 		this.modulationResolver = null;
@@ -483,6 +491,7 @@ export class SoundMaster implements RegisterablePersistent {
 
 		this.tracks = this.coerceAudioResources(audioResources);
 		this.streamTracks = {};
+		this.streamActiveBytes = {};
 		this.streamClips = {};
 		this.streamClipLoads = {};
 		this.resetVoiceState();
@@ -540,6 +549,7 @@ export class SoundMaster implements RegisterablePersistent {
 		this.pausedByType = { sfx: [], music: [], ui: [] };
 		this.nextVoiceId = 1;
 		this.voiceRecordByHandle = new WeakMap();
+		this.streamActiveBytes = {};
 	}
 
 	public resetPlaybackState(): void {
@@ -581,6 +591,28 @@ export class SoundMaster implements RegisterablePersistent {
 			throw new Error('[SoundMaster] Audio resolver not configured.');
 		}
 		return this.audioResolver(id);
+	}
+
+	private acquireRuntimeBytes(id: asset_id): Uint8Array {
+		const entry = this.streamActiveBytes[id];
+		if (entry) {
+			entry.refs += 1;
+			return entry.bytes;
+		}
+		const bytes = this.getRuntimeBytes(id);
+		this.streamActiveBytes[id] = { bytes, refs: 1 };
+		return bytes;
+	}
+
+	private releaseRuntimeBytes(id: asset_id): void {
+		const entry = this.streamActiveBytes[id];
+		if (!entry) {
+			return;
+		}
+		entry.refs -= 1;
+		if (entry.refs <= 0) {
+			this.streamActiveBytes[id] = undefined;
+		}
 	}
 
 	private parseBadpTrack(id: asset_id): StreamTrackData {
@@ -634,7 +666,6 @@ export class SoundMaster implements RegisterablePersistent {
 		}
 		return {
 			id,
-			bytes,
 			channels,
 			sampleRate,
 			frames,
@@ -686,6 +717,7 @@ export class SoundMaster implements RegisterablePersistent {
 			clip.dispose();
 		}
 		this.streamTracks[id] = undefined;
+		this.streamActiveBytes[id] = undefined;
 		this.streamClips[id] = undefined;
 		this.streamClipLoads[id] = undefined;
 		this.stop(id);
@@ -882,6 +914,18 @@ export class SoundMaster implements RegisterablePersistent {
 		const startedAt = this.A.currentTime() + (this.A.coreQueuedFrames() / this.mixSampleRate);
 		const startOffset = playback.offset;
 		const voice = new StreamVoiceHandle(this, voiceId, startedAt, startOffset);
+		const stepFrames = (stream.sampleRate / this.mixSampleRate) * playback.rate;
+		if (stepFrames <= 0) {
+			throw new Error('[SoundMaster] Playback rate must be positive.');
+		}
+		const runtimeBytes = this.acquireRuntimeBytes(id);
+		let decoder: BadpDecoderCursor;
+		try {
+			decoder = new BadpDecoderCursor(stream, runtimeBytes);
+		} catch (error) {
+			this.releaseRuntimeBytes(id);
+			throw error;
+		}
 		const record: ActiveVoiceRecord = {
 			voiceId,
 			id,
@@ -893,8 +937,9 @@ export class SoundMaster implements RegisterablePersistent {
 			handle: voice,
 			clip,
 			stream,
-			decoder: new BadpDecoderCursor(stream),
-			stepFrames: (stream.sampleRate / this.mixSampleRate) * playback.rate,
+			byteLeaseId: id,
+			decoder,
+			stepFrames,
 			positionFrames,
 			loopEnabled,
 			loopStartFrames,
@@ -905,9 +950,6 @@ export class SoundMaster implements RegisterablePersistent {
 			gainRampDelta: 0,
 			finalized: false,
 		};
-		if (record.stepFrames <= 0) {
-			throw new Error('[SoundMaster] Playback rate must be positive.');
-		}
 
 		pool.push(record);
 		this.voiceRecordByHandle.set(voice, record);
@@ -925,6 +967,7 @@ export class SoundMaster implements RegisterablePersistent {
 		if (record.finalized) return;
 		record.finalized = true;
 		this.voiceRecordByHandle.delete(record.handle);
+		this.releaseRuntimeBytes(record.byteLeaseId);
 		record.handle.emitEnded(this.A.currentTime());
 		record.handle.disconnect();
 
@@ -1092,6 +1135,9 @@ export class SoundMaster implements RegisterablePersistent {
 	public setLatencyProfile(profile: MixLatencyProfile): void {
 		this.mixLatencyProfile = profile;
 		switch (profile) {
+			case 'minimal':
+				this.mixTargetAheadSec = MIX_MINIMAL_TARGET_AHEAD_SEC;
+				break;
 			case 'low':
 				this.mixTargetAheadSec = MIX_LOW_TARGET_AHEAD_SEC;
 				break;
@@ -1120,8 +1166,18 @@ export class SoundMaster implements RegisterablePersistent {
 
 	private computeMixTargetFrames(): number {
 		const requested = Math.floor(this.mixTargetAheadSec * this.mixSampleRate);
-		const minTarget = isIOSAudioTarget() ? MIX_TARGET_MIN_FRAMES_IOS : MIX_TARGET_MIN_FRAMES_DEFAULT;
-		const maxTarget = isIOSAudioTarget() ? MIX_TARGET_MAX_FRAMES_IOS : MIX_TARGET_MAX_FRAMES_DEFAULT;
+		let minTarget: number;
+		let maxTarget: number;
+		if (isIOSAudioTarget()) {
+			minTarget = MIX_TARGET_MIN_FRAMES_IOS;
+			maxTarget = MIX_TARGET_MAX_FRAMES_IOS;
+		} else if (this.mixLatencyProfile === 'minimal') {
+			minTarget = MIX_TARGET_MIN_FRAMES_MINIMAL;
+			maxTarget = MIX_TARGET_MAX_FRAMES_MINIMAL;
+		} else {
+			minTarget = MIX_TARGET_MIN_FRAMES_DEFAULT;
+			maxTarget = MIX_TARGET_MAX_FRAMES_DEFAULT;
+		}
 		return clamp(requested, minTarget, maxTarget);
 	}
 
@@ -1621,6 +1677,7 @@ export class SoundMaster implements RegisterablePersistent {
 			}
 		}
 		this.streamTracks = {};
+		this.streamActiveBytes = {};
 		this.streamClips = {};
 		this.streamClipLoads = {};
 		this.tracks = {};

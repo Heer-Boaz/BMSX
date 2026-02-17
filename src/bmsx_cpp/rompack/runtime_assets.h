@@ -187,6 +187,8 @@ struct AudioAsset {
 	size_t frames = 0;
 	size_t dataOffset = 0;
 	size_t dataSize = 0;
+	std::vector<u32> badpSeekFrames;
+	std::vector<u32> badpSeekOffsets;
 };
 
 /* ============================================================================

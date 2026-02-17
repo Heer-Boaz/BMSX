@@ -16,13 +16,10 @@ const DEFAULT_FRAME_TIME_SEC = 0.012;
 const IOS_FRAME_TIME_SEC = 0.018;
 const WORKLET_TARGET_MIN_DEFAULT = 512;
 const WORKLET_TARGET_MAX_DEFAULT = 1024;
+const WORKLET_TARGET_MIN_MINIMAL = 128;
+const WORKLET_TARGET_MAX_MINIMAL = 384;
 const WORKLET_TARGET_MIN_IOS = 768;
 const WORKLET_TARGET_MAX_IOS = 1536;
-const WORKLET_REARM_MARGIN_DEFAULT = 128;
-const WORKLET_REARM_MARGIN_IOS = 256;
-const WORKLET_REQUEST_AHEAD_DEFAULT = 256;
-const WORKLET_REQUEST_AHEAD_IOS = 384;
-const WORKLET_NEED_REPOST_INTERVAL_MS = 2;
 const NEED_PUMP_BUDGET_FRAMES = 8192;
 
 function isIOSDevice(): boolean {
@@ -201,11 +198,15 @@ export class WorkerStreamingAudioService implements AudioService {
 	const PCM_SCALE = 1 / 32768;
 	const WORKLET_TARGET_MIN_DEFAULT = 512;
 	const WORKLET_TARGET_MAX_DEFAULT = 1024;
+	const WORKLET_TARGET_MIN_MINIMAL = 128;
+	const WORKLET_TARGET_MAX_MINIMAL = 384;
 	const WORKLET_TARGET_MIN_IOS = 768;
 	const WORKLET_TARGET_MAX_IOS = 1536;
 	const WORKLET_REARM_MARGIN_DEFAULT = 128;
+	const WORKLET_REARM_MARGIN_MINIMAL = 32;
 	const WORKLET_REARM_MARGIN_IOS = 256;
 	const WORKLET_REQUEST_AHEAD_DEFAULT = 256;
+	const WORKLET_REQUEST_AHEAD_MINIMAL = 64;
 	const WORKLET_REQUEST_AHEAD_IOS = 384;
 	const WORKLET_NEED_REPOST_INTERVAL_MS = 2;
 
@@ -298,8 +299,9 @@ export class WorkerStreamingAudioService implements AudioService {
 		}
 
 		computeTargetFillFrames() {
-			const minTarget = this.preferHighLead ? WORKLET_TARGET_MIN_IOS : WORKLET_TARGET_MIN_DEFAULT;
-			const maxTarget = this.preferHighLead ? WORKLET_TARGET_MAX_IOS : WORKLET_TARGET_MAX_DEFAULT;
+			const isMinimal = this.frameTimeSec <= 0.005;
+			const minTarget = this.preferHighLead ? WORKLET_TARGET_MIN_IOS : (isMinimal ? WORKLET_TARGET_MIN_MINIMAL : WORKLET_TARGET_MIN_DEFAULT);
+			const maxTarget = this.preferHighLead ? WORKLET_TARGET_MAX_IOS : (isMinimal ? WORKLET_TARGET_MAX_MINIMAL : WORKLET_TARGET_MAX_DEFAULT);
 			const requested = Math.floor(sampleRate * this.frameTimeSec);
 			const target = clamp(requested, minTarget, maxTarget);
 			const capacityMax = this.coreCapacityFrames - 1;
@@ -385,8 +387,9 @@ export class WorkerStreamingAudioService implements AudioService {
 			const writeAfter = this.readCommittedWritePtr();
 			const fillFrames = (writeAfter - cursor) >>> 0;
 			const targetFill = this.computeTargetFillFrames();
-			const rearmMargin = this.preferHighLead ? WORKLET_REARM_MARGIN_IOS : WORKLET_REARM_MARGIN_DEFAULT;
-			const requestAhead = this.preferHighLead ? WORKLET_REQUEST_AHEAD_IOS : WORKLET_REQUEST_AHEAD_DEFAULT;
+			const isMinimal = this.frameTimeSec <= 0.005;
+			const rearmMargin = this.preferHighLead ? WORKLET_REARM_MARGIN_IOS : (isMinimal ? WORKLET_REARM_MARGIN_MINIMAL : WORKLET_REARM_MARGIN_DEFAULT);
+			const requestAhead = this.preferHighLead ? WORKLET_REQUEST_AHEAD_IOS : (isMinimal ? WORKLET_REQUEST_AHEAD_MINIMAL : WORKLET_REQUEST_AHEAD_DEFAULT);
 			const needTrigger = targetFill + requestAhead;
 			const rearmTrigger = targetFill + rearmMargin + requestAhead;
 			const nowMs = currentTime * 1000;
@@ -446,8 +449,9 @@ export class WorkerStreamingAudioService implements AudioService {
 
 	private computeTargetFillFramesMain(): number {
 		const requested = Math.floor(this.ctx.sampleRate * this.frameTimeSec);
-		const minTarget = this.preferHighLead ? WORKLET_TARGET_MIN_IOS : WORKLET_TARGET_MIN_DEFAULT;
-		const maxTarget = this.preferHighLead ? WORKLET_TARGET_MAX_IOS : WORKLET_TARGET_MAX_DEFAULT;
+		const isMinimal = this.frameTimeSec <= 0.005;
+		const minTarget = this.preferHighLead ? WORKLET_TARGET_MIN_IOS : (isMinimal ? WORKLET_TARGET_MIN_MINIMAL : WORKLET_TARGET_MIN_DEFAULT);
+		const maxTarget = this.preferHighLead ? WORKLET_TARGET_MAX_IOS : (isMinimal ? WORKLET_TARGET_MAX_MINIMAL : WORKLET_TARGET_MAX_DEFAULT);
 		const target = requested < minTarget ? minTarget : (requested > maxTarget ? maxTarget : requested);
 		const capacityMax = this.coreStreamCapacityFrames - 1;
 		return target > capacityMax ? capacityMax : target;

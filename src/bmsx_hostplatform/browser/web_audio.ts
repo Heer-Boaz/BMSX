@@ -4,12 +4,6 @@ import {
 	AudioClipHandle,
 } from '../platform';
 
-class WebClip implements AudioClipHandle {
-	constructor(public readonly buffer: AudioBuffer) {}
-	get duration(): number { return this.buffer.duration; }
-	dispose(): void { /* GC-managed */ }
-}
-
 export class WebAudioService implements AudioService {
 	private readonly ctx: AudioContext;
 	private readonly master: GainNode;
@@ -67,20 +61,6 @@ export class WebAudioService implements AudioService {
 	}
 
 	createClipFromPcm(samples: Int16Array, sampleRate: number, channels: number): AudioClipHandle {
-		if (channels <= 0) {
-			throw new Error('WebAudioService: Invalid channel count.');
-		}
-		const frames = Math.floor(samples.length / channels);
-		const buffer = this.ctx.createBuffer(channels, frames, sampleRate);
-		const scale = 1 / 32768;
-		for (let channel = 0; channel < channels; channel += 1) {
-			const channelData = buffer.getChannelData(channel);
-			let cursor = channel;
-			for (let frame = 0; frame < frames; frame += 1) {
-				channelData[frame] = samples[cursor] * scale;
-				cursor += channels;
-			}
-		}
-		return new WebClip(buffer);
+		throw new Error(`WebAudioService: createClipFromPcm is forbidden; use WorkerStreamingAudioService with core buffer input. (channels=${channels}, sampleRate=${sampleRate}, frames=${Math.floor(samples.length / channels)})`);
 	}
 }

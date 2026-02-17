@@ -1169,27 +1169,15 @@ static u32 readLE32(const u8* data) {
 static constexpr size_t BADP_HEADER_SIZE = 48;
 static constexpr u16 BADP_VERSION = 1;
 static constexpr u8 BADP_MAGIC[4] = { 0x42, 0x41, 0x44, 0x50 };
-static constexpr i32 BADP_STEP_TABLE[89] = {
-	7, 8, 9, 10, 11, 12, 13, 14, 16, 17,
-	19, 21, 23, 25, 28, 31, 34, 37, 41, 45,
-	50, 55, 60, 66, 73, 80, 88, 97, 107, 118,
-	130, 143, 157, 173, 190, 209, 230, 253, 279, 307,
-	337, 371, 408, 449, 494, 544, 598, 658, 724, 796,
-	876, 963, 1060, 1166, 1282, 1411, 1552, 1707, 1878, 2066,
-	2272, 2499, 2749, 3024, 3327, 3660, 4026, 4428, 4871, 5358,
-	5894, 6484, 7132, 7845, 8630, 9493, 10442, 11487, 12635, 13899,
-	15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794, 32767,
-};
-static constexpr i32 BADP_INDEX_TABLE[16] = {
-	-1, -1, -1, -1, 2, 4, 6, 8,
-	-1, -1, -1, -1, 2, 4, 6, 8,
-};
 
-struct BadpPcmInfo {
+struct BadpMetadata {
 	i32 channels = 0;
 	i32 sampleRate = 0;
 	size_t frames = 0;
-	std::vector<u8> pcm;
+	size_t dataOffset = 0;
+	size_t dataSize = 0;
+	std::vector<u32> seekFrames;
+	std::vector<u32> seekOffsets;
 };
 
 static bool isBadp(const u8* data, size_t size) {
@@ -1199,7 +1187,7 @@ static bool isBadp(const u8* data, size_t size) {
 	return std::memcmp(data, BADP_MAGIC, sizeof(BADP_MAGIC)) == 0;
 }
 
-static BadpPcmInfo decodeBadpToPcm(const u8* data, size_t size) {
+static BadpMetadata parseBadpMetadata(const u8* data, size_t size) {
 	if (!isBadp(data, size)) {
 		throw BMSX_RUNTIME_ERROR("Unsupported audio format. Expected BADP.");
 	}
@@ -1211,7 +1199,7 @@ static BadpPcmInfo decodeBadpToPcm(const u8* data, size_t size) {
 
 	const i32 channels = static_cast<i32>(readLE16(data + 6));
 	const i32 sampleRate = static_cast<i32>(readLE32(data + 8));
-	const size_t totalFrames = static_cast<size_t>(readLE32(data + 12));
+	const size_t frames = static_cast<size_t>(readLE32(data + 12));
 	const u32 seekEntryCount = readLE32(data + 28);
 	const u32 seekTableOffset = readLE32(data + 32);
 	const u32 dataOffset = readLE32(data + 36);
@@ -1222,6 +1210,9 @@ static BadpPcmInfo decodeBadpToPcm(const u8* data, size_t size) {
 	if (sampleRate <= 0) {
 		throw BMSX_RUNTIME_ERROR("BADP sample rate must be positive.");
 	}
+	if (frames == 0) {
+		throw BMSX_RUNTIME_ERROR("BADP frame count must be positive.");
+	}
 	if (dataOffset < BADP_HEADER_SIZE || dataOffset > size) {
 		throw BMSX_RUNTIME_ERROR("BADP data offset is invalid.");
 	}
@@ -1229,102 +1220,54 @@ static BadpPcmInfo decodeBadpToPcm(const u8* data, size_t size) {
 		throw BMSX_RUNTIME_ERROR("BADP seek table offset is invalid.");
 	}
 
-	const size_t totalSamples = totalFrames * static_cast<size_t>(channels);
-	std::vector<i16> pcm(totalSamples);
-	std::vector<i32> predictors(static_cast<size_t>(channels), 0);
-	std::vector<i32> stepIndices(static_cast<size_t>(channels), 0);
+	BadpMetadata metadata;
+	metadata.channels = channels;
+	metadata.sampleRate = sampleRate;
+	metadata.frames = frames;
+	metadata.dataOffset = static_cast<size_t>(dataOffset);
+	metadata.dataSize = size - metadata.dataOffset;
+	if (metadata.dataSize == 0) {
+		throw BMSX_RUNTIME_ERROR("BADP data section is empty.");
+	}
+	const size_t seekCount = seekEntryCount > 0 ? static_cast<size_t>(seekEntryCount) : 1u;
+	metadata.seekFrames.resize(seekCount);
+	metadata.seekOffsets.resize(seekCount);
 
-	size_t decodedFrames = 0;
-	size_t cursor = static_cast<size_t>(dataOffset);
-
-	while (decodedFrames < totalFrames) {
-		const size_t blockHeaderBytes = 4 + static_cast<size_t>(channels) * 4;
-		if (cursor + blockHeaderBytes > size) {
-			throw BMSX_RUNTIME_ERROR("BADP block header exceeds buffer.");
-		}
-		const size_t blockStart = cursor;
-		const size_t blockFrames = static_cast<size_t>(readLE16(data + cursor));
-		cursor += 2;
-		const size_t blockBytes = static_cast<size_t>(readLE16(data + cursor));
-		cursor += 2;
-
-		if (blockFrames == 0) {
-			throw BMSX_RUNTIME_ERROR("BADP block has zero frames.");
-		}
-		if (blockBytes < blockHeaderBytes) {
-			throw BMSX_RUNTIME_ERROR("BADP block bytes are invalid.");
-		}
-
-		const size_t blockEnd = blockStart + blockBytes;
-		if (blockEnd > size) {
-			throw BMSX_RUNTIME_ERROR("BADP block exceeds buffer size.");
-		}
-
-		for (i32 channel = 0; channel < channels; channel += 1) {
-			predictors[static_cast<size_t>(channel)] = static_cast<i16>(readLE16(data + cursor));
-			cursor += 2;
-			const i32 stepIndex = static_cast<i32>(data[cursor]);
-			cursor += 2;
-			if (stepIndex < 0 || stepIndex > 88) {
-				throw BMSX_RUNTIME_ERROR("BADP step index is out of range.");
+	if (seekEntryCount > 0) {
+		size_t cursor = static_cast<size_t>(seekTableOffset);
+		for (size_t i = 0; i < seekCount; i += 1) {
+			if (cursor + 8 > static_cast<size_t>(dataOffset)) {
+				throw BMSX_RUNTIME_ERROR("BADP seek table exceeds bounds.");
 			}
-			stepIndices[static_cast<size_t>(channel)] = stepIndex;
+			metadata.seekFrames[i] = readLE32(data + cursor);
+			metadata.seekOffsets[i] = readLE32(data + cursor + 4);
+			cursor += 8;
 		}
-
-		const size_t payloadStart = cursor;
-		size_t nibbleCursor = 0;
-
-		for (size_t frame = 0; frame < blockFrames && decodedFrames < totalFrames; frame += 1) {
-			const size_t dstBase = decodedFrames * static_cast<size_t>(channels);
-			for (i32 channel = 0; channel < channels; channel += 1) {
-				const size_t payloadIndex = payloadStart + (nibbleCursor >> 1);
-				if (payloadIndex >= blockEnd) {
-					throw BMSX_RUNTIME_ERROR("BADP block payload underrun.");
-				}
-				const u8 packed = data[payloadIndex];
-				const i32 code = (nibbleCursor & 1) == 0 ? static_cast<i32>((packed >> 4) & 0x0f) : static_cast<i32>(packed & 0x0f);
-				nibbleCursor += 1;
-
-				const size_t channelIndex = static_cast<size_t>(channel);
-				const i32 step = BADP_STEP_TABLE[static_cast<size_t>(stepIndices[channelIndex])];
-				i32 diff = step >> 3;
-				if ((code & 4) != 0) diff += step;
-				if ((code & 2) != 0) diff += step >> 1;
-				if ((code & 1) != 0) diff += step >> 2;
-
-				if ((code & 8) != 0) {
-					predictors[channelIndex] -= diff;
-				} else {
-					predictors[channelIndex] += diff;
-				}
-				if (predictors[channelIndex] < -32768) predictors[channelIndex] = -32768;
-				if (predictors[channelIndex] > 32767) predictors[channelIndex] = 32767;
-
-				stepIndices[channelIndex] += BADP_INDEX_TABLE[static_cast<size_t>(code)];
-				if (stepIndices[channelIndex] < 0) stepIndices[channelIndex] = 0;
-				if (stepIndices[channelIndex] > 88) stepIndices[channelIndex] = 88;
-
-				pcm[dstBase + channelIndex] = static_cast<i16>(predictors[channelIndex]);
+	} else {
+		metadata.seekFrames[0] = 0;
+		metadata.seekOffsets[0] = 0;
+	}
+	if (metadata.seekFrames[0] != 0 || metadata.seekOffsets[0] != 0) {
+		throw BMSX_RUNTIME_ERROR("BADP seek table must start at frame 0 and offset 0.");
+	}
+	for (size_t i = 0; i < seekCount; i += 1) {
+		if (metadata.seekFrames[i] > metadata.frames) {
+			throw BMSX_RUNTIME_ERROR("BADP seek frame exceeds total frame count.");
+		}
+		if (metadata.seekOffsets[i] >= metadata.dataSize) {
+			throw BMSX_RUNTIME_ERROR("BADP seek offset exceeds audio data.");
+		}
+		if (i > 0) {
+			if (metadata.seekFrames[i] < metadata.seekFrames[i - 1]) {
+				throw BMSX_RUNTIME_ERROR("BADP seek frames are not monotonic.");
 			}
-			decodedFrames += 1;
+			if (metadata.seekOffsets[i] < metadata.seekOffsets[i - 1]) {
+				throw BMSX_RUNTIME_ERROR("BADP seek offsets are not monotonic.");
+			}
 		}
-
-		cursor = blockEnd;
 	}
 
-	if (decodedFrames != totalFrames) {
-		throw BMSX_RUNTIME_ERROR("BADP decode frame count mismatch.");
-	}
-
-	BadpPcmInfo decoded;
-	decoded.channels = channels;
-	decoded.sampleRate = sampleRate;
-	decoded.frames = totalFrames;
-	decoded.pcm.resize(totalSamples * sizeof(i16));
-	if (!decoded.pcm.empty()) {
-		std::memcpy(decoded.pcm.data(), pcm.data(), decoded.pcm.size());
-	}
-	return decoded;
+	return metadata;
 }
 
 // Decompress zlib data
@@ -1645,14 +1588,16 @@ bool loadAssetsFromRom(const u8* buffer,
 
 			const u8* audioData = romData + bufStart;
 			size_t audioSize = bufEnd - bufStart;
-			BadpPcmInfo decoded = decodeBadpToPcm(audioData, audioSize);
-			audioAsset.sampleRate = decoded.sampleRate;
-			audioAsset.channels = decoded.channels;
-			audioAsset.bitsPerSample = 16;
-			audioAsset.dataOffset = 0;
-			audioAsset.dataSize = decoded.pcm.size();
-			audioAsset.frames = decoded.frames;
-			audioAsset.bytes = std::move(decoded.pcm);
+			BadpMetadata metadata = parseBadpMetadata(audioData, audioSize);
+			audioAsset.sampleRate = metadata.sampleRate;
+			audioAsset.channels = metadata.channels;
+			audioAsset.bitsPerSample = 4;
+			audioAsset.dataOffset = metadata.dataOffset;
+			audioAsset.dataSize = metadata.dataSize;
+			audioAsset.frames = metadata.frames;
+			audioAsset.badpSeekFrames = std::move(metadata.seekFrames);
+			audioAsset.badpSeekOffsets = std::move(metadata.seekOffsets);
+			audioAsset.bytes.clear();
 
 			assets.audio[assetToken] = std::move(audioAsset);
 		}

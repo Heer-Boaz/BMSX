@@ -152,6 +152,20 @@ public:
 	f64 currentTimeSec() const { return m_audioTimeSec; }
 
 private:
+	struct BadpDecoderState {
+		i32 predictors[2] = {0, 0};
+		i32 stepIndices[2] = {0, 0};
+		size_t nextFrame = 0;
+		size_t blockEnd = 0;
+		size_t blockFrames = 0;
+		size_t blockFrameIndex = 0;
+		size_t payloadOffset = 0;
+		size_t nibbleCursor = 0;
+		i64 decodedFrame = -1;
+		i16 decodedLeft = 0;
+		i16 decodedRight = 0;
+	};
+
 	struct VoiceRecord {
 		VoiceId voiceId = 0;
 		AssetId id;
@@ -171,6 +185,8 @@ private:
 		f64 gainRampRemaining = 0.0;
 		f64 stopAfter = -1.0;
 		bool finalized = false;
+		bool usesBadp = false;
+		BadpDecoderState badp;
 	};
 
 	struct PendingTransition {
@@ -197,6 +213,11 @@ private:
 	void enqueueTransition(const MusicTransitionRequest& request, f64 delaySec, std::optional<f64> startAtSeconds);
 	void processPendingTransitions(f64 dt);
 	void rampVoiceGain(VoiceRecord& record, f32 target, f64 durationSec);
+	void badpLoadBlock(VoiceRecord& record, size_t offset);
+	void badpSeekToFrame(VoiceRecord& record, size_t frame);
+	void badpResetDecoder(VoiceRecord& record, size_t frame);
+	void badpDecodeNextFrame(VoiceRecord& record);
+	bool badpReadFrameAt(VoiceRecord& record, size_t frame, i16& outLeft, i16& outRight);
 
 	f32 clampVolume(f32 value) const;
 	f64 effectivePlaybackRate(const ModulationParams& params) const;
