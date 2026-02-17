@@ -230,15 +230,17 @@ struct VoiceHandle {
 struct AudioService {
 	virtual bool available() const = 0;
 	virtual double currentTime() = 0;
+	virtual double sampleRate() = 0;
+	virtual uint32_t coreQueuedFrames() = 0;
+	virtual void setCoreNeedHandler(std::function<void()> handler) = 0;
+	virtual void clearCoreStream() = 0;
 	virtual void resume() = 0;   // Sync version for libretro
 	virtual void suspend() = 0;  // Sync version for libretro
 	virtual float getMasterGain() = 0;
 	virtual void setMasterGain(float v) = 0;
-	virtual std::unique_ptr<AudioClipHandle> decode(const uint8_t* bytes, size_t length) = 0;
-	virtual std::unique_ptr<VoiceHandle> createVoice(AudioClipHandle* clip, const AudioPlaybackParams& params) = 0;
-
-	// Libretro-specific: push-based sample generation
-	virtual size_t renderSamples(int16_t* output, size_t frameCount) { return 0; }
+	virtual void setFrameTimeSec(double seconds) = 0;
+	virtual void pushCoreFrames(const int16_t* samples, size_t sampleCount, uint32_t channels, double sampleRate) = 0;
+	virtual std::unique_ptr<AudioClipHandle> createClipFromPcm(const int16_t* samples, size_t sampleCount, uint32_t channels, double sampleRate) = 0;
 
 	virtual ~AudioService() = default;
 };
