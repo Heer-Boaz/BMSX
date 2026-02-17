@@ -6,8 +6,10 @@ import { PNG } from 'pngjs';
 
 const workspaceRoot = process.cwd();
 const outputDir = path.join(workspaceRoot, 'src/carts/pietious/res/img');
-const sourceRoot = '/tmp/Maze-of-Nicolaas-XNA-ref/Maze of Nicolaas XNA/Maze of Nicolaas XNAContent';
-const contentProjPath = path.join(sourceRoot, 'Maze of Nicolaas XNAContent.contentproj');
+const sourceProjectRoot = process.env.MAZE_OF_NICOLAAS_XNA_ROOT ?? '/tmp/Maze-of-Nicolaas-XNA-ref/Maze of Nicolaas XNA';
+const cppSourceRoot = path.join(sourceProjectRoot, 'Images');
+const xnaSourceRoot = path.join(sourceProjectRoot, 'Maze of Nicolaas XNAContent');
+const contentProjPath = path.join(xnaSourceRoot, 'Maze of Nicolaas XNAContent.contentproj');
 
 function assert(condition, message) {
 	if (!condition) {
@@ -217,6 +219,25 @@ function createMappings() {
 	add('castle_tile_blue_r', 'WorldTiles4');
 	add('castle_tile_blue_l_dark', 'WorldTiles5');
 	add('castle_tile_blue_r_dark', 'WorldTiles6');
+	add('frontworld_blue_l', 'WorldTiles1');
+	add('frontworld_blue_r', 'WorldTiles2');
+	add('frontworld_l', 'WorldTiles7');
+	add('frontworld_wall_disappear_at_summon', 'WorldTiles8');
+
+	add('backworld_ul', 'BackTiles1');
+	add('backworld_ur', 'BackTiles2');
+	add('backworld_dl', 'BackTiles3');
+	add('backworld_dr', 'BackTiles4');
+	add('backworld_ul_dark', 'BackTiles5');
+	add('backworld_ur_dark', 'BackTiles6');
+	add('backworld_dl_dark', 'BackTiles7');
+	add('backworld_dr_dark', 'BackTiles8');
+	add('backworld_pillar_l1', 'WorldTiles9');
+	add('backworld_pillar_r1', 'WorldTiles10');
+	add('backworld_pillar_l2', 'WorldTiles11');
+	add('backworld_pillar_r2', 'WorldTiles12');
+	add('backworld_pillar_l3', 'WorldTiles13');
+	add('backworld_pillar_r3', 'WorldTiles14');
 
 	const pillarSets = {
 		blue: 15,
@@ -246,10 +267,49 @@ function createMappings() {
 	add('room_proxy', 'RoomProxy');
 	add('room_proxy_blue', 'RoomProxy_Blue');
 	add('room_proxy_red', 'RoomProxy_Red');
+	add('map', 'Map');
+	add('world_key', 'World_Key');
+	add('world_entrance', 'World_Entrance');
+	add('world_entrance_half_open', 'World_Entrance_Half_Open');
+	add('world_entrance_open', 'World_Entrance_Open');
+	add('shrine', 'Shrine');
+	add('shrine_inside', 'Shrine_Inside');
+	add('halo', 'Halo');
+	add('schoentjes', 'Schoentjes');
+	add('spyglass', 'Spyglass');
+	add('ammo', 'Ammo');
+	add('item_health', 'Item_Health');
+	add('item_lamp', 'Item_Lamp');
+	add('item_greenvase', 'Item_GreenVase');
+	add('pepernoot_16@cx', 'Pepernoot_16');
 
-	add('meijter_r', 'MeiterRight');
-	add('meijter_dr', 'MeiterDownRight');
-	add('meijter_up', 'MeiterUp');
+	add('meijter_r@cx', 'MeiterRight');
+	add('meijter_dr@cx', 'MeiterDownRight');
+	add('meijter_up@cx', 'MeiterUp');
+
+	add('stone@cx', 'Stone');
+	add('stone_broken', 'Stone_Broken');
+	add('elevator_platform', 'Elevator');
+	add('crossfoe@cx', 'CrossFoe');
+	add('crossfoe_turned@cx', 'CrossFoeTurned');
+	add('marspeinenaardappel@cx', 'MarsepeinenAardappel');
+	add('muziekfoe@cx', 'MuziekFoe');
+	add('muzieknootfoe@cx', 'MuziekNootFoe');
+	add('boekfoe_closed@cx', 'BoekFoe_Closed');
+	add('boekfoe_open@cx', 'BoekFoe_Open');
+	add('boekfoe_paper@cx', 'BoekFoe_Paper');
+	add('stafffoe@cx', 'StaffFoe');
+	add('staffspawn@cx', 'StaffSpawn');
+	add('cloud_1@cx', 'Cloud_1');
+	add('cloud_2@cx', 'Cloud_2');
+	add('vlok@cx', 'Vlok');
+	add('zakfoe_stand@cx', 'ZakFoe3');
+	add('zakfoe_jump@cx', 'ZakFoe2');
+	add('zakfoe_recover@cx', 'ZakFoe');
+	add('explosion_1', 'Explosion_1');
+	add('explosion_2', 'Explosion_2');
+	add('explosion_3', 'Explosion_3');
+	add('sword_r@cx', 'Popolon_Slash_R', { crop: { x: 16, y: 0, w: 16, h: 16 } });
 
 	add('pietolon_stand_r', 'Popolon_Stand_R');
 	add('pietolon_walk_r', 'Popolon_Walk_R');
@@ -267,9 +327,7 @@ function createMappings() {
 	add('pietolon_dying_5', 'Popolon_Dying_5');
 
 	add('pietolon_slash_r', 'Popolon_Slash_R', { crop: { x: 0, y: 0, w: 16, h: 16 } });
-	add('pietolon_slash_sword_r', 'Popolon_Slash_R', { crop: { x: 16, y: 0, w: 16, h: 16 } });
 	add('pietolon_jumpslash_r', 'Popolon_JumpSlash_R', { crop: { x: 0, y: 0, w: 16, h: 16 } });
-	add('pietolon_jumpslash_sword_r', 'Popolon_JumpSlash_R', { crop: { x: 16, y: 0, w: 16, h: 16 } });
 
 	return mappings;
 }
@@ -307,7 +365,9 @@ function ensureAllOutputsCovered(mappings) {
 
 function main() {
 	assert(fs.existsSync(outputDir), `Output directory not found: ${outputDir}`);
-	assert(fs.existsSync(sourceRoot), `Source directory not found: ${sourceRoot}`);
+	assert(fs.existsSync(sourceProjectRoot), `Source project root not found: ${sourceProjectRoot}`);
+	assert(fs.existsSync(cppSourceRoot), `C++ image directory not found: ${cppSourceRoot}`);
+	assert(fs.existsSync(xnaSourceRoot), `XNA content directory not found: ${xnaSourceRoot}`);
 	assert(fs.existsSync(contentProjPath), `Content project not found: ${contentProjPath}`);
 
 	const contentXml = fs.readFileSync(contentProjPath, 'utf8');
@@ -317,10 +377,23 @@ function main() {
 	ensureAllOutputsCovered(mappings);
 
 	let converted = 0;
+	let convertedFromCpp = 0;
+	let convertedFromXna = 0;
+	let overlapConvertedFromCpp = 0;
+	let cppOnlyConverted = 0;
+	let xnaOnlyConverted = 0;
 	for (const [outputName, mapping] of mappings.entries()) {
 		const sourceFileName = `${mapping.sourceName}.bmp`;
-		const sourcePath = path.join(sourceRoot, sourceFileName);
-		assert(fs.existsSync(sourcePath), `Source BMP missing: ${sourcePath}`);
+		const cppPath = path.join(cppSourceRoot, sourceFileName);
+		const xnaPath = path.join(xnaSourceRoot, sourceFileName);
+		const cppExists = fs.existsSync(cppPath);
+		const xnaExists = fs.existsSync(xnaPath);
+		assert(cppExists || xnaExists, `Source BMP missing in both roots: ${sourceFileName}`);
+
+		let sourcePath = xnaPath;
+		if (cppExists) {
+			sourcePath = cppPath;
+		}
 
 		let image = decodeBmp(sourcePath);
 		image = cropImage(image, mapping.crop);
@@ -333,9 +406,22 @@ function main() {
 		const outputPath = path.join(outputDir, `${outputName}.png`);
 		writePng(outputPath, image);
 		converted += 1;
+		if (sourcePath === cppPath) {
+			convertedFromCpp += 1;
+			if (xnaExists) {
+				overlapConvertedFromCpp += 1;
+			} else {
+				cppOnlyConverted += 1;
+			}
+		} else {
+			convertedFromXna += 1;
+			xnaOnlyConverted += 1;
+		}
 	}
 
-	console.log(`Converted ${converted} pietious PNG assets from XNA BMP source.`);
+	console.log(`Converted ${converted} pietious PNG assets.`);
+	console.log(`  from C++ source: ${convertedFromCpp} (overlap: ${overlapConvertedFromCpp}, cpp-only: ${cppOnlyConverted})`);
+	console.log(`  from XNA source: ${convertedFromXna} (xna-only: ${xnaOnlyConverted})`);
 }
 
 main();
