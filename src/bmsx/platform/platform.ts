@@ -187,6 +187,7 @@ export interface AudioService {
 	readonly available: boolean;
 	currentTime(): number;
 	sampleRate(): number;
+	coreQueuedFrames(): number;
 	resume(): Promise<void>;
 	suspend(): Promise<void>;
 	getMasterGain(): number;

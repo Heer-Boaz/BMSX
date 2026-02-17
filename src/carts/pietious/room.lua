@@ -69,7 +69,7 @@ local background_themes = {
 		},
 	},
 	world = {
-		mode = 'checker2',
+		mode = 'world4',
 		front = 'castle_front_blue_1',
 		light_l = 'castle_tile_blue_l',
 		light_r = 'castle_tile_blue_r',
@@ -196,6 +196,31 @@ local function create_tile_id(ch, x, y, map_rows, collision_map, room_subtype)
 		local tx = ((x - 1) % 4) + 1
 		local ty = ((y - 1) % 4) + 1
 		return background.tiles[ty][tx]
+	end
+
+	if background.mode == 'world4' then
+		local row_mod = (y - 1) % 4
+		local swap_lr = row_mod >= 2
+		local top_half = row_mod < 2
+		local left_column = ((x - 1) % 2) == 0
+		local use_left_variant
+		if top_half then
+			use_left_variant = left_column ~= swap_lr
+		else
+			use_left_variant = left_column == swap_lr
+		end
+
+		local dark = y > 1 and collision_map[y - 1][x] ~= 0
+		if use_left_variant then
+			if dark then
+				return background.dark_l
+			end
+			return background.light_l
+		end
+		if dark then
+			return background.dark_r
+		end
+		return background.light_r
 	end
 
 	local is_left_column = ((x - 1) % 2) == 0

@@ -177,6 +177,8 @@ export class WebAudioService implements AudioService {
 
 	sampleRate(): number { return this.ctx.sampleRate; }
 
+	coreQueuedFrames(): number { return 0; }
+
 	async resume(): Promise<void> {
 		if (this.ctx.state !== 'running') {
 			await this.ctx.resume();

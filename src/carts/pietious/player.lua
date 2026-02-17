@@ -729,6 +729,7 @@ function player:begin_entering_world(world_entrance)
 	self.enter_leave_shrine_text_lines = {}
 	self.x = world_entrance.stair_x
 	self:reset_enter_leave_animation()
+	stop_music()
 	self.events:emit('evt.cue.enterleave', {})
 	self:dispatch_state_event('enter_world_start')
 end
@@ -744,6 +745,7 @@ function player:begin_entering_shrine(shrine)
 	self.enter_leave_shrine_text_lines = shrine.text_lines
 	self.x = shrine.x
 	self:reset_enter_leave_animation()
+	stop_music()
 	self.events:emit('evt.cue.enterleave', {})
 	self:dispatch_state_event('enter_shrine_start')
 end
@@ -755,13 +757,14 @@ function player:begin_world_emerge_from_door()
 	self:reset_enter_leave_animation()
 	self.enter_leave_world_target = ''
 	self.enter_leave_shrine_text_lines = {}
-	self.events:emit('evt.cue.enterleave', {})
 	self:dispatch_state_event('world_emerge_start')
 end
 
 function player:leave_shrine_overlay()
 	self:reset_enter_leave_animation()
 	self.enter_leave_shrine_text_lines = {}
+	stop_music()
+	self.events:emit('evt.cue.enterleave', {})
 	self:dispatch_state_event('leave_shrine_overlay')
 end
 
@@ -831,6 +834,8 @@ function player:try_switch_room(direction, keep_stairs_lock)
 	end
 
 	if switch.outside == true then
+		stop_music()
+		self.events:emit('evt.cue.enterleave', {})
 		local leave_switch = castle_service:leave_world_to_castle()
 		self.x = leave_switch.spawn_x
 		self.y = leave_switch.spawn_y
@@ -1005,9 +1010,8 @@ function player:pick_entry_stairs(direction)
 	return best
 end
 
-function player:search_stairs_at_locked_x(x, y_probe, allow_x_only_fallback)
+function player:search_stairs_at_locked_x(x, y_probe)
 	local stairs = service('c').current_room.stairs
-	local fallback
 	local y_bottom = y_probe + self.height
 	for i = 1, #stairs do
 		local stair = stairs[i]
@@ -1015,12 +1019,9 @@ function player:search_stairs_at_locked_x(x, y_probe, allow_x_only_fallback)
 			if stair.top_y <= y_bottom and stair.bottom_y >= y_probe then
 				return stair
 			end
-			if allow_x_only_fallback and fallback == nil then
-				fallback = stair
-			end
 		end
 	end
-	return fallback
+	return nil
 end
 
 function player:apply_stairs_lock(stair)
@@ -1033,10 +1034,8 @@ function player:sync_stairs_after_vertical_room_switch(direction)
 	local probe_y = self.y
 	if direction == 'up' then
 		probe_y = probe_y + service('c').current_room.tile_size
-	elseif direction == 'down' then
-		probe_y = probe_y + service('c').current_room.tile_size
 	end
-	local stair = self:search_stairs_at_locked_x(self.stairs_x, probe_y, true)
+	local stair = self:search_stairs_at_locked_x(self.stairs_x, probe_y)
 	if stair == nil then
 		return false
 	end
@@ -2078,17 +2077,19 @@ function player:tick_down_stairs()
 
 	local moved
 	local next_y
+	local down_exit_threshold = service('c').current_room.world_height - self.height
+	local stairs_reaches_room_exit = self.stairs_bottom_y >= down_exit_threshold
 
 	if self.down_held and not self.up_held then
 		self.stairs_direction = 1
-		if self.y < self.stairs_bottom_y then
+		if self.y < self.stairs_bottom_y or stairs_reaches_room_exit then
 			next_y = self.y + constants.stairs.speed_px
 			moved = true
 		else
 			self:leave_stairs('stairs_end_bottom')
 			return
 		end
-		if next_y >= self.stairs_bottom_y then
+		if (not stairs_reaches_room_exit) and next_y >= self.stairs_bottom_y then
 			self.last_dy = next_y - self.y
 			self.y = next_y
 			self:leave_stairs('stairs_end_bottom')

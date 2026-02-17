@@ -177,7 +177,7 @@ local function define_flow_service_fsm()
 					set_space('transition')
 					object('ui').space_id = 'transition'
 					object('shrine_world_view').space_id = 'transition'
-					self:emit_state_changed('transition')
+					self:emit_state_changed('shrine')
 				end,
 				tick = function(self)
 					if action_triggered('down[jp]', self.player_index) then

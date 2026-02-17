@@ -231,8 +231,8 @@ export class WorkerStreamingAudioService implements AudioService {
 	const CTRL_READ_PTR = 0;
 	const CTRL_WRITE_PTR = 1;
 	const CTRL_UNDERRUNS = 2;
-	const WORKLET_NEED_LOW_WATER_FRAMES = 128;
-	const WORKLET_PREEMPTIVE_MARGIN_FRAMES = 128;
+	const WORKLET_NEED_LOW_WATER_FRAMES = 256;
+	const WORKLET_PREEMPTIVE_MARGIN_FRAMES = 256;
 
 	class BmsxEmulatorWorkerOut extends AudioWorkletProcessor {
 		constructor(options) {
@@ -317,8 +317,8 @@ export class WorkerStreamingAudioService implements AudioService {
 	const CORE_CTRL_UNDERRUNS = 3;
 	const PCM_SCALE = 1 / 32768;
 	const AUDIO_RENDER_QUANTUM_FRAMES = 128;
-	const WORKLET_LOW_WATER_FRAMES = 128;
-	const LEAD_MARGIN_FRAMES = 64;
+	const WORKLET_LOW_WATER_FRAMES = 256;
+	const LEAD_MARGIN_FRAMES = 128;
 
 	let ringSamples = null;
 	let ringControl = null;
@@ -380,14 +380,14 @@ export class WorkerStreamingAudioService implements AudioService {
 		}
 		const requested = frameTimeSec > 0
 			? Math.floor(frameTimeSec * outputSampleRate)
-			: 128;
+			: 256;
 		targetLeadFrames = clamp(requested, minimum, maximum);
 		const minimumLead = WORKLET_LOW_WATER_FRAMES + LEAD_MARGIN_FRAMES;
 		if (targetLeadFrames < minimumLead) {
 			targetLeadFrames = minimumLead;
 		}
-		if (targetLeadFrames > 256) {
-			targetLeadFrames = 256;
+		if (targetLeadFrames > 512) {
+			targetLeadFrames = 512;
 		}
 	}
 
@@ -663,6 +663,12 @@ export class WorkerStreamingAudioService implements AudioService {
 
 	sampleRate(): number {
 		return this.ctx.sampleRate;
+	}
+
+	coreQueuedFrames(): number {
+		const readPtr = Atomics.load(this.coreStreamControl, CORE_CTRL_READ_PTR) >>> 0;
+		const writePtr = Atomics.load(this.coreStreamControl, CORE_CTRL_WRITE_PTR) >>> 0;
+		return (writePtr - readPtr) >>> 0;
 	}
 
 	async resume(): Promise<void> {

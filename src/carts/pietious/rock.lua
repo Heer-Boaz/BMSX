@@ -55,8 +55,8 @@ function rock:begin_break()
 end
 
 function rock:on_overlap(event)
-	local contact_kind = combat_overlap.classify_player_contact(event, self, object('pietolon'))
-	if contact_kind ~= 'sword' and contact_kind ~= 'body_with_sword' then
+	local contact_kind = combat_overlap.classify_player_contact(event)
+	if contact_kind ~= 'sword' then
 		return
 	end
 	self:take_weapon_hit('sword')

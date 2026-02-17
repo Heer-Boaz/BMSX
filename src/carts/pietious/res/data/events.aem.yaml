@@ -19,7 +19,7 @@ events:
                       sync: immediate
             - when:
                   equals:
-                      state: transition
+                      state: shrine
               go:
                   music_transition:
                       audio_id: music_shrine_1

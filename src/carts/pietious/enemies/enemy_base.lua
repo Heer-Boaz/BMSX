@@ -101,11 +101,11 @@ end
 
 function enemy_base.on_overlap(self, event)
 	local player = object('pietolon')
-	local contact_kind = combat_overlap.classify_player_contact(event, self, player)
+	local contact_kind = combat_overlap.classify_player_contact(event)
 	if contact_kind == nil then
 		return
 	end
-	if contact_kind == 'sword' or contact_kind == 'body_with_sword' then
+	if contact_kind == 'sword' then
 		self.events:emit('weapon_hit', {
 			weapon_kind = 'sword',
 			contact_kind = contact_kind,
@@ -113,7 +113,7 @@ function enemy_base.on_overlap(self, event)
 			source_collider_local_id = event.other_collider_local_id,
 		})
 	end
-	if (contact_kind == 'body' or contact_kind == 'body_with_sword') and self.dangerous then
+	if contact_kind == 'body' and self.dangerous then
 		player.events:emit('enemy.contact_damage', {
 			amount = self.damage,
 			source_x = self.x + math.modf(self.sx / 2),
