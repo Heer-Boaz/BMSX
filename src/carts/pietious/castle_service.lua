@@ -60,7 +60,7 @@ function castle_service:enemy_should_spawn(enemy_def)
 	return true
 end
 
-function castle_service:sync_enemy_instance(enemy_def, room)
+function castle_service:sync_enemy_instance(enemy_def, room, force_reset_from_room_template)
 	local id = enemy_def.id
 	local instance = object(id)
 	if instance == nil then
@@ -78,7 +78,7 @@ function castle_service:sync_enemy_instance(enemy_def, room)
 			speed_y_num = enemy_def.speedy,
 		})
 	else
-		local should_reset_from_room_template = not instance.active
+		local should_reset_from_room_template = force_reset_from_room_template or (not instance.active)
 		instance.space_id = room.space_id
 		instance.trigger = enemy_def.trigger
 		instance.conditions = enemy_def.conditions
@@ -182,7 +182,7 @@ function castle_service:resume_active_enemies_after_transition()
 	end)
 end
 
-function castle_service:refresh_current_room_enemies()
+function castle_service:refresh_current_room_enemies(force_reset_from_room_template)
 	local room = self.current_room
 	local enemy_defs = room.enemies
 	local next_active_ids = self.active_enemy_ids_scratch
@@ -195,7 +195,7 @@ function castle_service:refresh_current_room_enemies()
 		if not self:enemy_should_spawn(enemy_def) then
 			goto continue
 		end
-		if previous_active_ids[enemy_id] == true then
+		if not force_reset_from_room_template and previous_active_ids[enemy_id] == true then
 			local live_instance = object(enemy_id)
 			if live_instance ~= nil then
 				self.enemies_by_id[enemy_id] = live_instance
@@ -203,7 +203,7 @@ function castle_service:refresh_current_room_enemies()
 				goto continue
 			end
 		end
-		self:sync_enemy_instance(enemy_def, room)
+		self:sync_enemy_instance(enemy_def, room, force_reset_from_room_template == true)
 		next_active_ids[enemy_id] = true
 		::continue::
 	end
@@ -296,7 +296,7 @@ function castle_service:initialize(initial_room_number)
 	self.last_room_switch = nil
 	self.world_entrance_states = {}
 	self:sync_world_entrance_states_for_room(self.current_room)
-	self:refresh_current_room_enemies()
+	self:refresh_current_room_enemies(true)
 	return self.current_room
 end
 
@@ -367,7 +367,7 @@ function castle_service:switch_room(direction, player_top, player_bottom)
 	end
 	self.last_room_switch = switch
 	self:sync_world_entrance_states_for_room(self.current_room)
-	self:refresh_current_room_enemies()
+	self:refresh_current_room_enemies(true)
 	return switch
 end
 
@@ -388,7 +388,7 @@ function castle_service:enter_world(target)
 		transition_kind = 'world_banner',
 	}
 	self:sync_world_entrance_states_for_room(self.current_room)
-	self:refresh_current_room_enemies()
+	self:refresh_current_room_enemies(true)
 
 	return {
 		from_room_number = from_room_number,
@@ -420,7 +420,7 @@ function castle_service:leave_world_to_castle()
 		transition_kind = 'castle_banner',
 	}
 	self:sync_world_entrance_states_for_room(self.current_room)
-	self:refresh_current_room_enemies()
+	self:refresh_current_room_enemies(true)
 
 	return {
 		from_room_number = from_room_number,

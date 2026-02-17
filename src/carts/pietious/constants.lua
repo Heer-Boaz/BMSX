@@ -4,6 +4,8 @@ constants.flow = {
 	room_transition_frames = 8,
 	world_banner_frames = 30,
 	castle_banner_frames = 30,
+	room_switch_wait_frames = 6,
+	item_screen_wait_frames = 6,
 }
 
 constants.room = {

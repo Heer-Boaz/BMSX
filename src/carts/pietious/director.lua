@@ -14,6 +14,7 @@ function director:emit_state_changed(state_name)
 	self.events:emit('director.state_changed', {
 		state = state_name,
 		space = get_space(),
+		transition_kind = self.active_transition_kind,
 	})
 end
 
@@ -29,6 +30,15 @@ function director:activate_spaces()
 	add_space('shrine')
 	add_space('item')
 	add_space('ui')
+end
+
+function director:begin_black_wait(frames)
+	self.overlay_mode = 'none'
+	self.overlay_text_lines = {}
+	self.transition_frames_left = frames
+	set_space('transition')
+	object('ui').space_id = 'transition'
+	self:emit_state_changed('transition')
 end
 
 function director:banner_lines()
@@ -114,8 +124,9 @@ function director:bind_events()
 				self:queue_banner_transition('castle_banner', 0, event.post_action)
 				return
 			end
-			end,
-		})
+			self:dispatch_state_event('room_switch_start')
+		end,
+	})
 
 	self.events:on({
 		event = 'timeline.end.p.tl.sx',
@@ -148,12 +159,12 @@ function director:ctor()
 end
 
 local function define_director_fsm()
-		define_fsm('director.fsm', {
+	define_fsm('director.fsm', {
 		initial = 'room',
-			on = {
-				['world_transition_start'] = '/world_transition',
-				['shrine_transition_start'] = '/shrine_transition_enter',
-				['halo_transition_start'] = '/halo_teleport',
+		on = {
+			['world_transition_start'] = '/world_transition',
+			['shrine_transition_start'] = '/shrine_transition_enter',
+			['halo_transition_start'] = '/halo_teleport',
 			['seal_dissolution_start'] = '/seal_dissolution',
 			['daemon_appearance_start'] = '/daemon_appearance',
 			['lithograph_screen_start'] = '/lithograph_screen',
@@ -164,7 +175,7 @@ local function define_director_fsm()
 			['death_start'] = '/death',
 		},
 		states = {
-				room = {
+			room = {
 				entering_state = function(self)
 					self:sync_room_state_from_castle()
 					self.active_transition_kind = 'none'
@@ -177,25 +188,42 @@ local function define_director_fsm()
 					service('c'):resume_active_enemies_after_transition()
 					self:emit_state_changed(room_state_name(room_space))
 				end,
-					tick = function(self)
-						if self.pending_banner_mode ~= nil then
-							return '/banner_transition'
-						end
+				on = {
+					['room_switch_start'] = '/room_switch_wait',
+				},
+				tick = function(self)
+					if self.pending_banner_mode ~= nil then
+						return '/banner_transition'
+					end
 					if self:item_screen_toggle_pressed() then
 						self.events:emit('evt.cue.f1', {})
-						return '/item_screen'
+						return '/item_screen_opening'
 					end
 				end,
 			},
-				world_transition = {
-					entering_state = function(self)
-						self.active_transition_kind = 'world'
-						service('c'):park_active_enemies_for_transition()
-						set_space(service('c').current_room.space_id)
-						object('ui').space_id = service('c').current_room.space_id
-					end,
+			room_switch_wait = {
+				entering_state = function(self)
+					self.active_transition_kind = 'room_switch'
+					service('c'):park_active_enemies_for_transition()
+					self:begin_black_wait(constants.flow.room_switch_wait_frames)
+				end,
+				tick = function(self)
+					self.transition_frames_left = self.transition_frames_left - 1
+					if self.transition_frames_left > 0 then
+						return
+					end
+					return '/room'
+				end,
+			},
+			world_transition = {
+				entering_state = function(self)
+					self.active_transition_kind = 'world'
+					service('c'):park_active_enemies_for_transition()
+					set_space(service('c').current_room.space_id)
+					object('ui').space_id = service('c').current_room.space_id
+				end,
 				on = {
-					['world_transition_done'] = '/room',
+					['world_transition_done'] = '/room_switch_wait',
 					['banner_requested'] = '/banner_transition',
 				},
 				tick = function(self)
@@ -204,17 +232,17 @@ local function define_director_fsm()
 					end
 				end,
 			},
-					shrine_transition_enter = {
-						entering_state = function(self)
-							self.active_transition_kind = 'shrine'
-							service('c'):park_active_enemies_for_transition()
-							set_space(service('c').current_room.space_id)
-							object('ui').space_id = service('c').current_room.space_id
-						end,
-					on = {
-						['shrine_overlay_requested'] = '/shrine_overlay',
-					},
+			shrine_transition_enter = {
+				entering_state = function(self)
+					self.active_transition_kind = 'shrine'
+					service('c'):park_active_enemies_for_transition()
+					set_space(service('c').current_room.space_id)
+					object('ui').space_id = service('c').current_room.space_id
+				end,
+				on = {
+					['shrine_overlay_requested'] = '/shrine_overlay',
 				},
+			},
 			banner_transition = {
 				entering_state = function(self)
 					service('c'):park_active_enemies_for_transition()
@@ -223,6 +251,7 @@ local function define_director_fsm()
 					self.banner_post_action = self.pending_banner_post_action
 					if self.overlay_mode == 'world_banner' then
 						self.transition_frames_left = constants.flow.world_banner_frames
+						self.events:emit('evt.cue.gamestart', {})
 					else
 						self.transition_frames_left = constants.flow.castle_banner_frames
 					end
@@ -246,58 +275,85 @@ local function define_director_fsm()
 						return '/world_transition'
 					end
 					self.banner_post_action = nil
-					return '/room'
+					return '/room_switch_wait'
 				end,
 			},
-				shrine_overlay = {
-					entering_state = function(self)
-						service('c'):park_active_enemies_for_transition()
-						self.overlay_mode = 'shrine'
-						self.overlay_text_lines = self.pending_shrine_text_lines
-						self.pending_shrine_text_lines = {}
-						set_space('shrine')
-						object('ui').space_id = 'shrine'
-						self:emit_state_changed('shrine')
-					end,
-					on = {
-						['shrine_overlay_close_requested'] = '/shrine_transition_exit',
-					},
-					tick = function(self)
-						if action_triggered('down[jp]', self.player_index) then
-							self:dispatch_state_event('shrine_overlay_close_requested')
-						end
-					end,
-				},
-					shrine_transition_exit = {
-						entering_state = function(self)
-							self.active_transition_kind = 'shrine'
-							service('c'):park_active_enemies_for_transition()
-							self.overlay_mode = 'none'
-							self.overlay_text_lines = {}
-							set_space(service('c').current_room.space_id)
-							object('ui').space_id = service('c').current_room.space_id
-							object('pietolon'):leave_shrine_overlay()
-						end,
-						on = {
-							['shrine_transition_done'] = '/room',
-						},
-					},
-				item_screen = {
+			shrine_overlay = {
 				entering_state = function(self)
+					service('c'):park_active_enemies_for_transition()
+					self.overlay_mode = 'shrine'
+					self.overlay_text_lines = self.pending_shrine_text_lines
+					self.pending_shrine_text_lines = {}
+					set_space('shrine')
+					object('ui').space_id = 'shrine'
+					self:emit_state_changed('shrine')
+				end,
+				on = {
+					['shrine_overlay_close_requested'] = '/shrine_transition_exit',
+				},
+				tick = function(self)
+					if action_triggered('down[jp]', self.player_index) then
+						self:dispatch_state_event('shrine_overlay_close_requested')
+					end
+				end,
+			},
+			shrine_transition_exit = {
+				entering_state = function(self)
+					self.active_transition_kind = 'shrine'
+					service('c'):park_active_enemies_for_transition()
+					self.overlay_mode = 'none'
+					self.overlay_text_lines = {}
+					set_space(service('c').current_room.space_id)
+					object('ui').space_id = service('c').current_room.space_id
+					object('pietolon'):leave_shrine_overlay()
+				end,
+				on = {
+					['shrine_transition_done'] = '/room_switch_wait',
+				},
+			},
+			item_screen_opening = {
+				entering_state = function(self)
+					self.active_transition_kind = 'item_open'
+					self:begin_black_wait(constants.flow.item_screen_wait_frames)
+				end,
+				tick = function(self)
+					self.transition_frames_left = self.transition_frames_left - 1
+					if self.transition_frames_left > 0 then
+						return
+					end
+					return '/item_screen'
+				end,
+			},
+			item_screen = {
+				entering_state = function(self)
+					self.active_transition_kind = 'item'
 					set_space('item')
 					object('ui').space_id = 'item'
 					self:emit_state_changed('item')
 				end,
-					tick = function(self)
-						if self.pending_banner_mode ~= nil then
-							return '/banner_transition'
-						end
-						if action_triggered('start[jp]', self.player_index) and object('pietolon').abilities:activate('halo') then
-							return '/room'
-						end
-					if self:item_screen_toggle_pressed() then
+				tick = function(self)
+					if self.pending_banner_mode ~= nil then
+						return '/banner_transition'
+					end
+					if action_triggered('start[jp]', self.player_index) and object('pietolon').abilities:activate('halo') then
 						return '/room'
 					end
+					if self:item_screen_toggle_pressed() then
+						return '/item_screen_closing'
+					end
+				end,
+			},
+			item_screen_closing = {
+				entering_state = function(self)
+					self.active_transition_kind = 'item_close'
+					self:begin_black_wait(constants.flow.item_screen_wait_frames)
+				end,
+				tick = function(self)
+					self.transition_frames_left = self.transition_frames_left - 1
+					if self.transition_frames_left > 0 then
+						return
+					end
+					return '/room'
 				end,
 			},
 			halo_teleport = {
@@ -309,7 +365,7 @@ local function define_director_fsm()
 					self:emit_state_changed('halo')
 				end,
 				on = {
-					['halo_transition_done'] = '/room',
+					['halo_transition_done'] = '/room_switch_wait',
 				},
 			},
 			seal_dissolution = {

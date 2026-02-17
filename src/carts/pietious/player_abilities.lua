@@ -256,7 +256,7 @@ function player_abilities.attach_player_methods(player)
 			direction = 'halo',
 		}
 		castle_service:sync_world_entrance_states_for_room(castle_service.current_room)
-		castle_service:refresh_current_room_enemies()
+		castle_service:refresh_current_room_enemies(true)
 
 		self.x = constants.room.tile_size * 23
 		self.y = constants.player.start_y

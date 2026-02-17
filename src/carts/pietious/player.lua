@@ -765,7 +765,6 @@ function player:begin_entering_world(world_entrance)
 	self.x = world_entrance.stair_x
 	self:reset_enter_leave_animation()
 	service('d'):dispatch_state_event('world_transition_start')
-	stop_music()
 	self.events:emit('evt.cue.enterleave', {})
 	self:dispatch_state_event('enter_world_start')
 end
@@ -870,8 +869,6 @@ function player:try_switch_room(direction, keep_stairs_lock)
 
 	if switch.outside == true then
 		service('d'):dispatch_state_event('world_transition_start')
-		stop_music()
-		self.events:emit('evt.cue.enterleave', {})
 		local leave_switch = service('d'):leave_world_to_castle()
 		self.x = leave_switch.spawn_x
 		self.y = leave_switch.spawn_y
