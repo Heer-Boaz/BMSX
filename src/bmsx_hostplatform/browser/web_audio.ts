@@ -62,18 +62,8 @@ export class WebAudioService implements AudioService {
 		// WebAudio runs directly on the AudioContext clock and does not use frame-driven buffering.
 	}
 
-	pushCoreFrames(samples: Int16Array, channels: number, sampleRate: number): void {
-		if (channels !== 2) {
-			throw new Error('WebAudioService: core stream expects stereo PCM.');
-		}
-		if (sampleRate !== this.ctx.sampleRate) {
-			throw new Error('WebAudioService: core stream sample rate must match AudioContext sample rate.');
-		}
-		const clip = this.createClipFromPcm(samples, sampleRate, channels) as WebClip;
-		const src = this.ctx.createBufferSource();
-		src.buffer = clip.buffer;
-		src.connect(this.master);
-		src.start(this.ctx.currentTime);
+	pushCoreFrames(_samples: Int16Array, _channels: number, _sampleRate: number): void {
+		throw new Error('WebAudioService: pushCoreFrames is forbidden; use WorkerStreamingAudioService.');
 	}
 
 	createClipFromPcm(samples: Int16Array, sampleRate: number, channels: number): AudioClipHandle {
