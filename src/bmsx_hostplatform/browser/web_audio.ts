@@ -179,6 +179,9 @@ export class WebAudioService implements AudioService {
 
 	coreQueuedFrames(): number { return 0; }
 
+	setCoreNeedHandler(_handler: (() => void) | null): void {
+	}
+
 	async resume(): Promise<void> {
 		if (this.ctx.state !== 'running') {
 			await this.ctx.resume();

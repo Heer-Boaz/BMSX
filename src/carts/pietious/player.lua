@@ -83,6 +83,7 @@ local player_sword_end_event = 'sword.end'
 local player_hit_invulnerability_sequence_frames = timeline.range(constants.damage.hit_invulnerability_frames)
 local player_hit_blink_sequence_frames = timeline.range(constants.damage.hit_blink_switch_frames)
 local player_fall_substate_sequence_frames = timeline.range(12)
+local hit_blink_colorize = { r = 1, g = 0.35, b = 0.35, a = 1 }
 
 function player:bind_events()
 	self.events:on({
@@ -166,12 +167,19 @@ end
 
 function player:update_collision_state()
 	local in_world_transition = self:has_tag(state_tags.group.transition_lock)
-	local is_hit_blink_hidden = self.hit_invulnerability_timer > 0
-		and self.hit_blink_on
-		and not self:has_tag(state_tags.group.hit_blink)
-
-	self.collider.enabled = not (in_world_transition or is_hit_blink_hidden)
+	self.collider.enabled = not in_world_transition
 	self.sword_collider.enabled = self:has_tag(state_tags.group.sword) and not in_world_transition
+end
+
+function player:apply_colorize(r, g, b, a)
+	self.sprite_component.colorize.r = r
+	self.sprite_component.colorize.g = g
+	self.sprite_component.colorize.b = b
+	self.sprite_component.colorize.a = a
+	self.sword_sprite.colorize.r = r
+	self.sword_sprite.colorize.g = g
+	self.sword_sprite.colorize.b = b
+	self.sword_sprite.colorize.a = a
 end
 
 function player:define_runtime_timelines()
@@ -297,11 +305,13 @@ end
 
 function player:apply_presentation_state()
 	if self:has_tag(state_tags.group.world_transition_waiting) then
+		self:apply_colorize(1, 1, 1, 1)
 		self.visible = false
 		return
 	end
 
 	if self:has_tag(state_tags.group.world_transition) then
+		self:apply_colorize(1, 1, 1, 1)
 		local imgid
 		if self:has_tag(state_tags.group.world_transition_down) then
 			if self.enter_leave_anim_frame == 0 then
@@ -324,8 +334,9 @@ function player:apply_presentation_state()
 		return
 	end
 	if self.hit_invulnerability_timer > 0 and self.hit_blink_on and not self:has_tag(state_tags.variant.dying) then
-		self.visible = false
-		return
+		self:apply_colorize(hit_blink_colorize.r, hit_blink_colorize.g, hit_blink_colorize.b, hit_blink_colorize.a)
+	else
+		self:apply_colorize(1, 1, 1, 1)
 	end
 	self.visible = true
 	self.sprite_component.scale.x = 1
@@ -1448,12 +1459,9 @@ function player:get_uncontrolled_fall_dy()
 	return constants.physics.uncontrolled_fall_dy_by_substate[substate]
 end
 
-function player:get_controlled_fall_dx(lock_facing)
+function player:get_controlled_fall_dx()
 	local inertia = self.jump_inertia
 	if self.right_held and not self.left_held then
-		if not lock_facing then
-			self.facing = 1
-		end
 		if inertia == 1 then
 			return constants.physics.fall_dx_with_inertia
 		end
@@ -1463,9 +1471,6 @@ function player:get_controlled_fall_dx(lock_facing)
 		return -constants.physics.fall_dx_against_inertia
 	end
 	if self.left_held and not self.right_held then
-		if not lock_facing then
-			self.facing = -1
-		end
 		if inertia == -1 then
 			return -constants.physics.fall_dx_with_inertia
 		end
@@ -1860,9 +1865,6 @@ function player:tick_jump_motion()
 		self:advance_sword_sequence()
 	end
 	local sword_jump = self:has_tag(state_tags.variant.jumping_sword)
-	if not sword_jump then
-		self:update_facing_from_horizontal_input()
-	end
 	if (not sword_jump) and self.previous_x_collision then
 		self.jump_inertia = 0
 	end
@@ -1924,11 +1926,7 @@ function player:tick_stopped_jump_motion()
 	if self:has_tag(state_tags.group.sword) then
 		self:advance_sword_sequence()
 	end
-	local stopped_jump_sword = self:has_tag(state_tags.variant.sj_sword)
-	if not stopped_jump_sword then
-		self:update_facing_from_horizontal_input()
-	end
-	if (not stopped_jump_sword) and self.previous_x_collision then
+	if (not self:has_tag(state_tags.variant.sj_sword)) and self.previous_x_collision then
 		self.jump_inertia = 0
 	end
 	local dx = self.jump_inertia * constants.physics.jump_dx
@@ -1952,11 +1950,10 @@ function player:tick_controlled_fall_motion()
 	if self:has_tag(state_tags.group.sword) then
 		self:advance_sword_sequence()
 	end
-	local sword_fall = self:has_tag(state_tags.group.sword)
-	if (not sword_fall) and self.previous_x_collision then
+	if (not self:has_tag(state_tags.group.sword)) and self.previous_x_collision then
 		self.jump_inertia = 0
 	end
-	local dx = self:get_controlled_fall_dx(sword_fall)
+	local dx = self:get_controlled_fall_dx()
 	local dy = self:get_controlled_fall_dy()
 	local should_land = (not self:collides_at(self.x, self.y)) and self:collides_at(self.x, self.y + dy)
 	local move_result = self:apply_move(dx, dy)

@@ -253,6 +253,7 @@ class SilentAudioService implements AudioService {
 	currentTime(): number { return 0; }
 	sampleRate(): number { return 44100; }
 	coreQueuedFrames(): number { return 0; }
+	setCoreNeedHandler(_handler: (() => void) | null): void { }
 	async resume(): Promise<void> { }
 	async suspend(): Promise<void> { }
 	getMasterGain(): number { return 0; }

@@ -130,6 +130,7 @@ export class WorkerStreamingAudioService implements AudioService {
 	private masterGain = 1;
 	private readonly coreStreamClip: WorkerCoreStreamClip = new WorkerCoreStreamClip();
 	private readonly coreStreamVoice: WorkerCoreStreamVoice = new WorkerCoreStreamVoice();
+	private coreNeedHandler: (() => void) | null = null;
 
 	constructor(context: AudioContext, options: WorkerStreamingAudioOptions = {}) {
 		if (globalThis.crossOriginIsolated !== true) {
@@ -242,6 +243,7 @@ export class WorkerStreamingAudioService implements AudioService {
 			this.control = new Int32Array(processorOptions.controlBuffer);
 			this.capacityFrames = processorOptions.capacityFrames;
 			this.needPort = null;
+			this.mainNeedArmed = true;
 			this.port.onmessage = (event) => {
 				const message = event.data;
 				if (!message || message.type !== 'connect_need_port') {
@@ -289,8 +291,15 @@ export class WorkerStreamingAudioService implements AudioService {
 			if (this.needPort !== null) {
 				const writePtrAfter = Atomics.load(this.control, CTRL_WRITE_PTR) >>> 0;
 				const availableAfter = (writePtrAfter - readPtr) >>> 0;
-				if (availableAfter < WORKLET_NEED_LOW_WATER_FRAMES + WORKLET_PREEMPTIVE_MARGIN_FRAMES + frameCount) {
+				const trigger = WORKLET_NEED_LOW_WATER_FRAMES + WORKLET_PREEMPTIVE_MARGIN_FRAMES + frameCount;
+				if (availableAfter < trigger) {
 					this.needPort.postMessage(1);
+					if (this.mainNeedArmed) {
+						this.mainNeedArmed = false;
+						this.port.postMessage({ type: 'need_main' });
+					}
+				} else if (availableAfter >= trigger + frameCount) {
+					this.mainNeedArmed = true;
 				}
 			}
 			return true;
@@ -566,6 +575,11 @@ export class WorkerStreamingAudioService implements AudioService {
 		switch (message.type) {
 			case 'need_port_connected':
 				return;
+			case 'need_main':
+				if (this.coreNeedHandler !== null) {
+					this.coreNeedHandler();
+				}
+				return;
 			case 'need_port_error':
 				this.setFatal(new Error('[WorkerStreamingAudioService] Worklet need-port setup failed: ' + String(message.reason)));
 				return;
@@ -665,6 +679,10 @@ export class WorkerStreamingAudioService implements AudioService {
 		const readPtr = Atomics.load(this.coreStreamControl, CORE_CTRL_READ_PTR) >>> 0;
 		const writePtr = Atomics.load(this.coreStreamControl, CORE_CTRL_WRITE_PTR) >>> 0;
 		return (writePtr - readPtr) >>> 0;
+	}
+
+	setCoreNeedHandler(handler: (() => void) | null): void {
+		this.coreNeedHandler = handler;
 	}
 
 	async resume(): Promise<void> {

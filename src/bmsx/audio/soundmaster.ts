@@ -96,7 +96,6 @@ const BADP_HEADER_SIZE = 48;
 const BADP_VERSION = 1;
 const BADP_NO_LOOP = 0xffffffff;
 const MIX_CHUNK_FRAMES = 128;
-const MIX_INTERVAL_MS = 2;
 const MIX_TARGET_AHEAD_SEC = 0.01;
 const ADPCM_STEP_TABLE = [
 	7, 8, 9, 10, 11, 12, 13, 14, 16, 17,
@@ -384,7 +383,6 @@ export class SoundMaster implements RegisterablePersistent {
 	private pendingStingerReturnTo: asset_id;
 	private maxVoicesByType: Record<AudioType, number>;
 	private voiceRecordByHandle: WeakMap<VoiceHandle, ActiveVoiceRecord>;
-	private mixTimer: ReturnType<typeof setInterval>;
 	private mixSampleRate: number;
 	private readonly mixChunk: Int16Array;
 	private readonly mixChunkViews: Int16Array[];
@@ -412,7 +410,6 @@ export class SoundMaster implements RegisterablePersistent {
 		this.pendingStingerReturnTo = null;
 		this.maxVoicesByType = { sfx: DEFAULT_MAX_VOICES.sfx, music: DEFAULT_MAX_VOICES.music, ui: DEFAULT_MAX_VOICES.ui };
 		this.voiceRecordByHandle = new WeakMap();
-		this.mixTimer = null;
 		this.mixSampleRate = 0;
 		this.mixChunk = new Int16Array(MIX_CHUNK_FRAMES * 2);
 		this.mixChunkViews = new Array<Int16Array>(MIX_CHUNK_FRAMES + 1);
@@ -1032,21 +1029,14 @@ export class SoundMaster implements RegisterablePersistent {
 	}
 
 	private startMixer(): void {
-		if (this.mixTimer !== null) {
-			return;
-		}
-		this.mixTimer = setInterval(() => {
+		this.A.setCoreNeedHandler(() => {
 			this.pumpMixer();
-		}, MIX_INTERVAL_MS);
+		});
 		this.pumpMixer();
 	}
 
 	private stopMixer(): void {
-		if (this.mixTimer === null) {
-			return;
-		}
-		clearInterval(this.mixTimer);
-		this.mixTimer = null;
+		this.A.setCoreNeedHandler(null);
 	}
 
 	private pumpMixer(): void {
