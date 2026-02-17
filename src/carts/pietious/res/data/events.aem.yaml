@@ -32,6 +32,179 @@ events:
         rules:
             - go:
                   audio_id: foeexplosion
+                  priority: 10
+
+    evt.cue.foeexplosion:
+        channel: sfx
+        max_voices: 1
+        policy: replace
+        rules:
+            - go:
+                  audio_id: foeexplosion
+                  priority: 10
+
+    evt.cue.jump:
+        channel: sfx
+        max_voices: 1
+        policy: replace
+        rules:
+            - go:
+                  audio_id: jump
+                  priority: 3
+
+    evt.cue.fire_pepernoot:
+        channel: sfx
+        max_voices: 1
+        policy: replace
+        rules:
+            - go:
+                  audio_id: pepernoot
+                  priority: 3
+
+    evt.cue.hit:
+        channel: sfx
+        max_voices: 1
+        policy: replace
+        rules:
+            - go:
+                  audio_id: hit
+                  priority: 12
+
+    evt.cue.approachingdeath:
+        channel: sfx
+        max_voices: 1
+        policy: replace
+        rules:
+            - go:
+                  audio_id: approachingdeath
+                  priority: 15
+
+    evt.cue.foedamage:
+        channel: sfx
+        max_voices: 1
+        policy: replace
+        rules:
+            - go:
+                  audio_id: foedamage
+                  priority: 10
+
+    evt.cue.paperspawn:
+        channel: sfx
+        max_voices: 1
+        policy: replace
+        rules:
+            - go:
+                  audio_id: paperspawn
+                  priority: 3
+
+    evt.cue.muzieknootspawn:
+        channel: sfx
+        max_voices: 1
+        policy: replace
+        rules:
+            - go:
+                  audio_id: muzieknootspawn
+                  priority: 3
+
+    evt.cue.cross:
+        channel: sfx
+        max_voices: 1
+        policy: replace
+        rules:
+            - go:
+                  audio_id: cross
+                  priority: 3
+
+    evt.cue.crossland:
+        channel: sfx
+        max_voices: 1
+        policy: replace
+        rules:
+            - go:
+                  audio_id: crossland
+                  priority: 3
+
+    evt.cue.worlddooropen:
+        channel: sfx
+        max_voices: 1
+        policy: replace
+        rules:
+            - go:
+                  audio_id: worlddooropen
+                  priority: 11
+
+    evt.cue.enterleave:
+        channel: sfx
+        max_voices: 1
+        policy: replace
+        rules:
+            - go:
+                  audio_id: enterleave
+                  priority: 150
+
+    evt.cue.gamestart:
+        channel: sfx
+        max_voices: 1
+        policy: replace
+        rules:
+            - go:
+                  audio_id: gamestart
+                  priority: 100
+
+    evt.cue.select:
+        channel: sfx
+        max_voices: 1
+        policy: replace
+        rules:
+            - go:
+                  audio_id: select
+                  priority: 100
+
+    evt.cue.f1:
+        channel: ui
+        max_voices: 1
+        policy: replace
+        rules:
+            - go:
+                  audio_id: f1
+                  priority: 100
+
+    evt.cue.pickupitem:
+        channel: sfx
+        max_voices: 1
+        policy: replace
+        rules:
+            - go:
+                  audio_id: pickupitem
+                  priority: 13
+
+    evt.cue.healing:
+        channel: sfx
+        max_voices: 1
+        policy: replace
+        rules:
+            - go:
+                  audio_id: healing
+                  priority: 14
+
+    evt.cue.worldkey:
+        channel: sfx
+        max_voices: 1
+        policy: replace
+        rules:
+            - go:
+                  audio_id: pickupkey
+                  priority: 300
+
+    evt.cue.dying:
+        channel: sfx
+        max_voices: 1
+        policy: replace
+        rules:
+            - go:
+                  audio_id: dying
+                  priority: 200
+
     evt.cue.sword.slice:
         channel: sfx
         max_voices: 1
@@ -39,3 +212,4 @@ events:
         rules:
             - go:
                   audio_id: slice
+                  priority: 3
