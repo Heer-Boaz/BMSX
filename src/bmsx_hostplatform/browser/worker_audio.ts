@@ -206,12 +206,8 @@ export class WorkerStreamingAudioService implements AudioService {
 	const WORKLET_TARGET_MIN_IOS = 512;
 	const WORKLET_TARGET_MAX_IOS = 768;
 	const WORKLET_NEED_MARGIN_FRAMES = 128;
-	const PI_KP = 0.000015;
-	const PI_KI = 0.00000015;
-	const PI_INTEGRATOR_LIMIT = 40000;
-	const RATE_MIN = 0.996;
-	const RATE_MAX = 1.004;
-	const NEED_POST_INTERVAL_MS = 2;
+	const FIXED_RENDER_RATE = 1;
+	const NEED_POST_INTERVAL_MS = 1;
 	const CONCEAL_FADE_OUT_MS = 3;
 	const CONCEAL_FADE_IN_MS = 2;
 
@@ -234,7 +230,6 @@ export class WorkerStreamingAudioService implements AudioService {
 			this.lastStatsMs = 0;
 			this.lastNeedMs = 0;
 			this.readPos = Atomics.load(this.coreControl, CORE_CTRL_READ_PTR) >>> 0;
-			this.integrator = 0;
 			this.rate = 1;
 			this.lastOutL = 0;
 			this.lastOutR = 0;
@@ -277,18 +272,9 @@ export class WorkerStreamingAudioService implements AudioService {
 		}
 
 		updateRate(fillFrames, targetFill) {
-			const error = fillFrames - targetFill;
-			this.integrator += error;
-			this.integrator = clamp(this.integrator, -PI_INTEGRATOR_LIMIT, PI_INTEGRATOR_LIMIT);
-			let nextRate = 1 + PI_KP * error + PI_KI * this.integrator;
-			const lowWater = targetFill >> 1;
-			const highWater = targetFill + (targetFill >> 1);
-			if (fillFrames < lowWater) {
-				nextRate -= Math.min(0.0015, (lowWater - fillFrames) * 0.000008);
-			} else if (fillFrames > highWater) {
-				nextRate += Math.min(0.0015, (fillFrames - highWater) * 0.000008);
-			}
-			this.rate = clamp(nextRate, RATE_MIN, RATE_MAX);
+			void fillFrames;
+			void targetFill;
+			this.rate = FIXED_RENDER_RATE;
 			return this.rate;
 		}
 
