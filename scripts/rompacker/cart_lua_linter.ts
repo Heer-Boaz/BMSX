@@ -33,6 +33,7 @@ type LuaLintIssueRule =
 	'pure_copy_function_pattern' |
 	'useless_assert_pattern' |
 	'empty_string_condition_pattern' |
+	'cross_file_local_global_constant_pattern' |
 	'unused_init_value_pattern' |
 	'getter_setter_pattern' |
 	'single_line_method_pattern' |
@@ -89,6 +90,13 @@ type SingleUseHasTagContext = {
 
 type LuaCartLintOptions = {
 	readonly roots: ReadonlyArray<string>;
+};
+
+type TopLevelLocalStringConstant = {
+	readonly path: string;
+	readonly name: string;
+	readonly value: string;
+	readonly declaration: LuaIdentifierExpression;
 };
 
 const BIOS_ROOT_PATH = normalizeWorkspacePath('src/bmsx/res');
@@ -376,6 +384,93 @@ function isConstantAccessExpression(expression: LuaExpression): boolean {
 		return isConstantAccessExpression(expression.base);
 	}
 	return false;
+}
+
+function evaluateTopLevelStringConstantExpression(
+	expression: LuaExpression,
+	knownValues: ReadonlyMap<string, string>,
+): string | undefined {
+	if (expression.kind === LuaSyntaxKind.StringLiteralExpression) {
+		return expression.value;
+	}
+	if (expression.kind === LuaSyntaxKind.IdentifierExpression) {
+		return knownValues.get(expression.name);
+	}
+	if (expression.kind === LuaSyntaxKind.BinaryExpression && expression.operator === LuaBinaryOperator.Concat) {
+		const left = evaluateTopLevelStringConstantExpression(expression.left, knownValues);
+		if (left === undefined) {
+			return undefined;
+		}
+		const right = evaluateTopLevelStringConstantExpression(expression.right, knownValues);
+		if (right === undefined) {
+			return undefined;
+		}
+		return left + right;
+	}
+	return undefined;
+}
+
+function collectTopLevelLocalStringConstants(
+	path: string,
+	statements: ReadonlyArray<LuaStatement>,
+): TopLevelLocalStringConstant[] {
+	const constants: TopLevelLocalStringConstant[] = [];
+	const knownValues = new Map<string, string>();
+	for (const statement of statements) {
+		if (statement.kind !== LuaSyntaxKind.LocalAssignmentStatement) {
+			continue;
+		}
+		const valueCount = Math.min(statement.names.length, statement.values.length);
+		const resolvedValues: Array<string | undefined> = [];
+		for (let index = 0; index < valueCount; index += 1) {
+			resolvedValues[index] = evaluateTopLevelStringConstantExpression(statement.values[index], knownValues);
+		}
+		for (let index = 0; index < valueCount; index += 1) {
+			const resolved = resolvedValues[index];
+			if (resolved === undefined) {
+				continue;
+			}
+			const name = statement.names[index];
+			knownValues.set(name.name, resolved);
+			constants.push({
+				path,
+				name: name.name,
+				value: resolved,
+				declaration: name,
+			});
+		}
+	}
+	return constants;
+}
+
+function lintCrossFileLocalGlobalConstantPattern(
+	constants: ReadonlyArray<TopLevelLocalStringConstant>,
+	issues: LuaLintIssue[],
+): void {
+	const constantsByName = new Map<string, TopLevelLocalStringConstant[]>();
+	for (const constant of constants) {
+		let entries = constantsByName.get(constant.name);
+		if (!entries) {
+			entries = [];
+			constantsByName.set(constant.name, entries);
+		}
+		entries.push(constant);
+	}
+	for (const [name, entries] of constantsByName) {
+		const paths = Array.from(new Set(entries.map(entry => entry.path))).sort();
+		if (paths.length <= 1) {
+			continue;
+		}
+		for (const entry of entries) {
+			const otherPaths = paths.filter(path => path !== entry.path);
+			pushIssue(
+				issues,
+				'cross_file_local_global_constant_pattern',
+				entry.declaration,
+				`Cross-file duplicated local "global constant" is forbidden ("${name}"). Define it once and reuse it. Also defined in: ${otherPaths.join(', ')}.`,
+			);
+		}
+	}
 }
 
 function getFunctionDisplayName(statement: LuaStatement): string {
@@ -1920,6 +2015,7 @@ export async function lintCartLuaSources(options: LuaCartLintOptions): Promise<v
 	}
 
 	const issues: LuaLintIssue[] = [];
+	const topLevelLocalStringConstants: TopLevelLocalStringConstant[] = [];
 	suppressedLineRangesByPath.clear();
 	try {
 		for (const absolutePath of files) {
@@ -1945,10 +2041,12 @@ export async function lintCartLuaSources(options: LuaCartLintOptions): Promise<v
 				continue;
 			}
 			const chunk = parsed.path;
+			topLevelLocalStringConstants.push(...collectTopLevelLocalStringConstants(workspacePath, chunk.body));
 			lintUnusedInitValuesInFunctionBody(chunk.body, issues, []);
 			lintStatements(chunk.body, issues);
 			lintSingleUseHasTagPattern(chunk.body, issues);
 		}
+		lintCrossFileLocalGlobalConstantPattern(topLevelLocalStringConstants, issues);
 	} finally {
 		suppressedLineRangesByPath.clear();
 	}
