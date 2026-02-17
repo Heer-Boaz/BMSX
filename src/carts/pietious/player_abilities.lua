@@ -227,10 +227,6 @@ function player_abilities.attach_player_methods(player)
 		return nil
 	end
 
-	function player:has_inventory_item(item_type)
-		return self.inventory_items[item_type] == true
-	end
-
 	function player:equip_subweapon(id)
 		local next_id = id or 'none'
 		self:remove_tag(equip_tags.pepernoot)
