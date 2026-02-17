@@ -215,7 +215,7 @@ export const API_METHOD_METADATA = {
 			{ name: 'y', optional: true, description: 'Optional Y coordinate in pixels.' },
 			{ name: 'z', optional: true, description: 'Optional Z coordinate for ordering.' },
 			{ name: 'colorindex', optional: true, description: 'Optional palette index for the text color.' },
-			{ name: 'options', optional: true, description: 'Optional text options (color, background_color, wrap_chars, center_block_width, glyph_start, glyph_end, align, baseline, layer, font, auto_advance).' },
+			{ name: 'options', optional: true, description: 'Optional text options (color, background_color, wrap_chars, center_block_width, glyph_start, glyph_end, align, baseline, layer, font, auto_advance). `font` can be created via create_font().' },
 		],
 		returnType: 'void',
 	},
@@ -231,16 +231,24 @@ export const API_METHOD_METADATA = {
 		returnType: 'void',
 	},
 	write_with_font: {
-		description: 'Writes text to the screen using a specific Font instance.',
+		description: 'Writes text to the screen using a specific font instance.',
 		parameters: [
 			{ name: 'text', description: 'Text to write.' },
 			{ name: 'x', optional: true, description: 'Optional X coordinate in pixels.' },
 			{ name: 'y', optional: true, description: 'Optional Y coordinate in pixels.' },
 			{ name: 'z', optional: true, description: 'Optional Z coordinate for ordering.' },
 			{ name: 'colorindex', optional: true, description: 'Optional palette index for the text color.' },
-			{ name: 'font', optional: true, description: 'Optional Font to use (defaults to the runtime font).' },
+			{ name: 'font', optional: true, description: 'Optional font to use (defaults to the runtime font). Use create_font() to build a Lua-defined bitmap font.' },
 		],
 		returnType: 'void',
+	},
+	create_font: {
+		description: 'Creates a runtime bitmap font from a Lua definition table.',
+		parameters: [
+			{ name: 'definition', description: 'Font definition table: { glyphs = { ["A"]="imgid", ... }, advance_padding? = number }' },
+		],
+		returnType: 'Font',
+		returnDescription: 'Native font handle usable in put_glyphs/write options.',
 	},
 	action_triggered: {
 		description: 'Checks whether an input action definition is triggered for a given player.',

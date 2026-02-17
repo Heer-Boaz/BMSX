@@ -596,6 +596,8 @@ export class WorkerStreamingAudioService implements AudioService {
 			this.rate = 1;
 			this.lastOutL = 0;
 			this.lastOutR = 0;
+			this.lastCoreL = 0;
+			this.lastCoreR = 0;
 			this.sampledL = 0;
 			this.sampledR = 0;
 			this.inUnderrun = false;
@@ -1005,11 +1007,18 @@ export class WorkerStreamingAudioService implements AudioService {
 		}
 
 		loadInterpolatedSample(framePos) {
-			const baseFrame = Math.floor(framePos);
+			const baseFrame = Math.floor(framePos) >>> 0;
 			const frac = framePos - baseFrame;
+			const readPtr = Atomics.load(this.coreControl, CORE_CTRL_READ_PTR) >>> 0;
 			const writePtr = Atomics.load(this.coreControl, CORE_CTRL_WRITE_PTR) >>> 0;
-			const available = (writePtr - baseFrame) >>> 0;
-			if (available === 0) {
+
+			// If read position lags behind the producer-consumer window, resync immediately.
+			if (baseFrame < readPtr) {
+				this.readPos = readPtr;
+				return false;
+			}
+
+			if (baseFrame >= writePtr) {
 				return false;
 			}
 
@@ -1018,8 +1027,9 @@ export class WorkerStreamingAudioService implements AudioService {
 			const s0R = this.coreSamples[src0 + 1] * PCM_SCALE;
 			let s1L = s0L;
 			let s1R = s0R;
-			if (available > 1) {
-				const src1 = ((baseFrame + 1) % this.coreCapacityFrames) * 2;
+			const nextFrame = (baseFrame + 1) >>> 0;
+			if (nextFrame < writePtr) {
+				const src1 = (nextFrame % this.coreCapacityFrames) * 2;
 				s1L = this.coreSamples[src1] * PCM_SCALE;
 				s1R = this.coreSamples[src1 + 1] * PCM_SCALE;
 			}
@@ -1054,8 +1064,8 @@ export class WorkerStreamingAudioService implements AudioService {
 				if (hasSample) {
 					if (this.inUnderrun) {
 						const blend = this.concealGain;
-						outL = this.sampledL * (1 - blend) + this.lastOutL * blend;
-						outR = this.sampledR * (1 - blend) + this.lastOutR * blend;
+						outL = this.sampledL * (1 - blend) + this.lastCoreL * blend;
+						outR = this.sampledR * (1 - blend) + this.lastCoreR * blend;
 						this.concealGain -= this.fadeInStep;
 						if (this.concealGain <= 0) {
 							this.concealGain = 0;
@@ -1065,14 +1075,16 @@ export class WorkerStreamingAudioService implements AudioService {
 						outL = this.sampledL;
 						outR = this.sampledR;
 					}
+					this.lastCoreL = outL;
+					this.lastCoreR = outR;
 					this.readPos += renderRate;
 				} else {
 					if (!this.inUnderrun) {
 						this.inUnderrun = true;
 						this.concealGain = 1;
 					}
-					outL = this.lastOutL;
-					outR = this.lastOutR;
+					outL = this.lastCoreL;
+					outR = this.lastCoreR;
 					localUnderruns += 1;
 				}
 
@@ -1338,13 +1350,13 @@ export class WorkerStreamingAudioService implements AudioService {
 		const fill = (writePtr - readPtr) >>> 0;
 		const free = capacity - fill;
 		if (framesToWrite > free) {
-			let framesToDrop = framesToWrite - free;
-			if (framesToDrop > fill) {
-				framesToDrop = fill;
-			}
-			readPtr = (readPtr + framesToDrop) >>> 0;
-			Atomics.store(control, CORE_CTRL_READ_PTR, readPtr | 0);
+			const framesToDrop = framesToWrite - free;
+			sourceStartFrame += framesToDrop;
+			framesToWrite = free;
 			Atomics.add(control, CORE_CTRL_OVERRUNS, framesToDrop);
+			if (framesToWrite <= 0) {
+				return;
+			}
 		}
 
 		let dstFrame = writePtr % capacity;

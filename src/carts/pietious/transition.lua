@@ -1,4 +1,5 @@
 local constants = require('constants')
+local font = require('font')
 
 local transition = {}
 transition.__index = transition
@@ -43,6 +44,7 @@ function transition:draw_centered_lines(lines, y, z)
 		local x = math.floor((display_width() - (#line * constants.room.tile_size)) / 2)
 		put_glyphs(line, x, y + ((i - 1) * constants.room.tile_size), z, {
 			color = glyph_color,
+			font = self.banner_font,
 			layer = 'overlay',
 		})
 	end
@@ -64,6 +66,7 @@ function transition:draw_transition_overlay()
 end
 
 function transition:ctor()
+	self.banner_font = font.get('pietious')
 	self:bind_visual()
 	self:define_timeline(timeline.new({
 		id = 'transition.def' .. '.timeline.mask',

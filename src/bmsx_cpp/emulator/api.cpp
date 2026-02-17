@@ -125,6 +125,38 @@ static TextBaseline parseTextBaseline(const std::string& value) {
 	throw BMSX_RUNTIME_ERROR("Unknown text baseline '" + value + "'");
 }
 
+static u32 readUtf8Codepoint(const std::string& text, size_t& index) {
+	u8 c0 = static_cast<u8>(text.at(index++));
+	if (c0 < 0x80) {
+		return c0;
+	}
+	if ((c0 & 0xE0) == 0xC0) {
+		u8 c1 = static_cast<u8>(text.at(index++));
+		return ((c0 & 0x1F) << 6) | (c1 & 0x3F);
+	}
+	if ((c0 & 0xF0) == 0xE0) {
+		u8 c1 = static_cast<u8>(text.at(index++));
+		u8 c2 = static_cast<u8>(text.at(index++));
+		return ((c0 & 0x0F) << 12) | ((c1 & 0x3F) << 6) | (c2 & 0x3F);
+	}
+	u8 c1 = static_cast<u8>(text.at(index++));
+	u8 c2 = static_cast<u8>(text.at(index++));
+	u8 c3 = static_cast<u8>(text.at(index++));
+	return ((c0 & 0x07) << 18) | ((c1 & 0x3F) << 12) | ((c2 & 0x3F) << 6) | (c3 & 0x3F);
+}
+
+static u32 utf8SingleCodepoint(const std::string& text) {
+	if (text.empty()) {
+		throw BMSX_RUNTIME_ERROR("Font glyph key must not be empty.");
+	}
+	size_t index = 0;
+	u32 codepoint = readUtf8Codepoint(text, index);
+	if (index != text.size()) {
+		throw BMSX_RUNTIME_ERROR("Font glyph keys must contain exactly one UTF-8 codepoint.");
+	}
+	return codepoint;
+}
+
 static bool hasModulationFields(const Table& table) {
 	auto key = [](std::string_view name) {
 		return Runtime::instance().canonicalizeIdentifier(name);
@@ -670,6 +702,10 @@ m_runtime.registerNativeFunction("put_glyphs", [this, key, asText](const std::ve
 			if (!isNil(layerValue)) {
 				submission.layer = resolve_layer(layerValue);
 			}
+			Value fontValue = options->get(key("font"));
+			if (!isNil(fontValue)) {
+				submission.font = resolve_font(fontValue);
+			}
 	}
 
 	RenderSubmission op{};
@@ -755,7 +791,8 @@ m_runtime.registerNativeFunction("write_color", [this, readOptionalInt, asText](
 
 m_runtime.registerNativeFunction("write_with_font", [this, readOptionalInt, asText](const std::vector<Value>& args, std::vector<Value>& out) {
 	const std::string& text = asText(args.at(0));
-	write_with_font(text, readOptionalInt(args, 1), readOptionalInt(args, 2), readOptionalInt(args, 3), readOptionalInt(args, 4), m_font.get());
+	BFont* font = args.size() > 5 ? resolve_font(args.at(5)) : m_font.get();
+	write_with_font(text, readOptionalInt(args, 1), readOptionalInt(args, 2), readOptionalInt(args, 3), readOptionalInt(args, 4), font);
 	(void)out;
 });
 
@@ -765,7 +802,8 @@ m_runtime.registerNativeFunction("write_inline_with_font", [this, asText](const 
 	int y = static_cast<int>(std::floor(asNumber(args.at(2))));
 	int z = static_cast<int>(std::floor(asNumber(args.at(3))));
 	int colorIndex = static_cast<int>(std::floor(asNumber(args.at(4))));
-	write_inline_with_font(text, x, y, z, colorIndex, m_font.get());
+	BFont* font = args.size() > 5 ? resolve_font(args.at(5)) : m_font.get();
+	write_inline_with_font(text, x, y, z, colorIndex, font);
 	(void)out;
 });
 
@@ -773,11 +811,23 @@ m_runtime.registerNativeFunction("write_inline_span_with_font", [this, asText](c
 	const std::string& text = asText(args.at(0));
 	int start = static_cast<int>(std::floor(asNumber(args.at(1))));
 	int end = static_cast<int>(std::floor(asNumber(args.at(2))));
-		int x = static_cast<int>(std::floor(asNumber(args.at(3))));
+	int x = static_cast<int>(std::floor(asNumber(args.at(3))));
 	int y = static_cast<int>(std::floor(asNumber(args.at(4))));
 	int z = static_cast<int>(std::floor(asNumber(args.at(5))));
 	int colorIndex = static_cast<int>(std::floor(asNumber(args.at(6))));
-	write_inline_span_with_font(text, start, end, x, y, z, colorIndex, m_font.get());
+	BFont* font = args.size() > 7 ? resolve_font(args.at(7)) : m_font.get();
+	write_inline_span_with_font(text, start, end, x, y, z, colorIndex, font);
+	(void)out;
+});
+
+m_runtime.registerNativeFunction("get_default_font", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+	(void)args;
+	out.push_back(make_font_handle(m_font.get()));
+});
+
+m_runtime.registerNativeFunction("create_font", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+	BFont* font = create_font(args.at(0));
+	out.push_back(make_font_handle(font));
 	(void)out;
 });
 
@@ -1081,7 +1131,7 @@ void Api::put_particle(const ParticleRenderSubmission& submission) {
 
 void Api::write(const std::string& text, std::optional<int> x, std::optional<int> y,
 					std::optional<int> z, std::optional<int> colorIndex, const Value& options) {
-	Font* renderFont = m_font.get();
+	BFont* renderFont = m_font.get();
 	int baseX = m_textCursorX;
 	int baseY = m_textCursorY;
 	if (x.has_value() && y.has_value()) {
@@ -1155,7 +1205,7 @@ void Api::write(const std::string& text, std::optional<int> x, std::optional<int
 		}
 		Value fontValue = table->get(key("font"));
 		if (!isNil(fontValue)) {
-			throw BMSX_RUNTIME_ERROR("write options font is not supported in the C++ runtime.");
+			renderFont = resolve_font(fontValue);
 		}
 	}
 
@@ -1221,8 +1271,8 @@ void Api::write_color(const std::string& text, std::optional<int> x, std::option
 }
 
 void Api::write_with_font(const std::string& text, std::optional<int> x, std::optional<int> y,
-							std::optional<int> z, std::optional<int> colorIndex, Font* font) {
-	Font* renderFont = font ? font : m_font.get();
+							std::optional<int> z, std::optional<int> colorIndex, BFont* font) {
+	BFont* renderFont = font ? font : m_font.get();
 	int baseX = m_textCursorX;
 	int baseY = m_textCursorY;
 	if (x.has_value() && y.has_value()) {
@@ -1240,7 +1290,7 @@ void Api::write_with_font(const std::string& text, std::optional<int> x, std::op
 	advance_print_cursor(renderFont->lineHeight());
 }
 
-void Api::write_inline_with_font(const std::string& text, int x, int y, int z, int colorIndex, Font* font) {
+void Api::write_inline_with_font(const std::string& text, int x, int y, int z, int colorIndex, BFont* font) {
 	GlyphRenderSubmission submission;
 	submission.glyphs = {text};
 	submission.x = static_cast<f32>(x);
@@ -1255,7 +1305,7 @@ void Api::write_inline_with_font(const std::string& text, int x, int y, int z, i
 }
 
 void Api::write_inline_span_with_font(const std::string& text, int start, int end,
-										int x, int y, int z, int colorIndex, Font* font) {
+										int x, int y, int z, int colorIndex, BFont* font) {
 	GlyphRenderSubmission submission;
 	submission.glyphs = {text};
 	submission.glyph_start = start;
@@ -1386,7 +1436,7 @@ std::string Api::expand_tabs(const std::string& text) const {
 	return result;
 }
 
-void Api::draw_multiline_text(const std::string& text, int x, int y, int z, const Color& color, Font& font) {
+void Api::draw_multiline_text(const std::string& text, int x, int y, int z, const Color& color, BFont& font) {
 	std::string expanded = text;
 	size_t start = 0;
 	int cursorY = y;
@@ -1432,6 +1482,80 @@ void Api::reset_print_cursor() {
 	m_textCursorX = 0;
 	m_textCursorY = 0;
 	m_textCursorColorIndex = m_defaultPrintColorIndex;
+}
+
+Value Api::make_font_handle(BFont* font) {
+	return m_runtime.cpu().createNativeObject(
+		font,
+		[](const Value&) {
+			return valueNil();
+		},
+		[](const Value&, const Value&) {
+		}
+	);
+}
+
+BFont* Api::resolve_font(const Value& value) {
+	if (isNil(value)) {
+		return m_font.get();
+	}
+	if (!valueIsNativeObject(value)) {
+		throw BMSX_RUNTIME_ERROR("Font must be a native font handle.");
+	}
+	NativeObject* obj = asNativeObject(value);
+	if (obj->raw == m_font.get()) {
+		return m_font.get();
+	}
+	for (size_t index = 0; index < m_runtime_fonts.size(); index += 1) {
+		BFont* font = m_runtime_fonts[index].get();
+		if (obj->raw == font) {
+			return font;
+		}
+	}
+	throw BMSX_RUNTIME_ERROR("Unknown font handle.");
+}
+
+BFont* Api::create_font(const Value& definition) {
+	if (!valueIsTable(definition)) {
+		throw BMSX_RUNTIME_ERROR("create_font(definition) requires a table.");
+	}
+	auto key = [this](std::string_view name) {
+		return m_runtime.canonicalizeIdentifier(name);
+	};
+	auto asText = [this](Value value) -> const std::string& {
+		return m_runtime.cpu().stringPool().toString(asStringId(value));
+	};
+	Table* definitionTable = asTable(definition);
+	Value glyphsValue = definitionTable->get(key("glyphs"));
+	if (!valueIsTable(glyphsValue)) {
+		throw BMSX_RUNTIME_ERROR("create_font(definition) requires definition.glyphs to be a table.");
+	}
+	Table* glyphsTable = asTable(glyphsValue);
+	GlyphMap glyphMap;
+	glyphsTable->forEachEntry([&](const Value& glyphKey, const Value& glyphValue) {
+		if (!valueIsString(glyphKey)) {
+			throw BMSX_RUNTIME_ERROR("create_font(definition) requires glyph keys to be strings.");
+		}
+		if (!valueIsString(glyphValue)) {
+			throw BMSX_RUNTIME_ERROR("create_font(definition) requires glyph values to be image id strings.");
+		}
+		const std::string& glyph = asText(glyphKey);
+		glyphMap[utf8SingleCodepoint(glyph)] = asText(glyphValue);
+	});
+
+	int advancePadding = 0;
+	Value advancePaddingValue = definitionTable->get(key("advance_padding"));
+	if (!isNil(advancePaddingValue)) {
+		if (!valueIsNumber(advancePaddingValue)) {
+			throw BMSX_RUNTIME_ERROR("create_font(definition) requires advance_padding to be a number.");
+		}
+		advancePadding = static_cast<int>(std::floor(asNumber(advancePaddingValue)));
+	}
+
+	std::unique_ptr<BFont> font = std::make_unique<BFont>(EngineCore::instance().assets(), std::move(glyphMap), advancePadding);
+	BFont* handle = font.get();
+	m_runtime_fonts.push_back(std::move(font));
+	return handle;
 }
 
 Color Api::palette_color(int index) const {

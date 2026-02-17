@@ -1,4 +1,5 @@
 local constants = require('constants')
+local font = require('font')
 
 local shrine = {}
 shrine.__index = shrine
@@ -13,6 +14,7 @@ function shrine:bind_visual()
 end
 
 function shrine:ctor()
+	self.text_font = font.get('pietious')
 	self:bind_visual()
 end
 
@@ -29,6 +31,7 @@ function shrine:render()
 	for i = 1, #lines do
 		put_glyphs(lines[i], constants.shrine.text_x, constants.shrine.text_y + ((i - 1) * constants.room.tile_size), 341, {
 			color = glyph_color,
+			font = self.text_font,
 			layer = 'overlay',
 		})
 	end

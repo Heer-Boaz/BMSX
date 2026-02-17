@@ -14,6 +14,7 @@ import type {
 import { wrapGlyphs } from '../render/shared/render_queues';
 import { Msx1Colors } from '../systems/msx';
 import { Font } from './font';
+import { BFont, GlyphMap } from '../core/font';
 import { RuntimeStorage } from './storage';
 import type { RandomModulationParams, ModulationParams, SoundMasterPlayRequest } from '../audio/soundmaster';
 import type { Polygon, vec3arr, asset_id, AudioType } from '../rompack/rompack';
@@ -55,6 +56,10 @@ export type ApiOptions = {
 };
 
 const TAB_SPACES = 2;
+type FontDefinition = {
+	glyphs: Record<string, string>;
+	advance_padding?: number;
+};
 
 type ParsedAudioOptions = {
 	request: SoundMasterPlayRequest;
@@ -299,7 +304,7 @@ const playWithPolicy = (channel: AudioType, id: asset_id, options: ParsedAudioOp
 export class Api {
 	private readonly playerindex: number;
 	private readonly storage: RuntimeStorage;
-	private readonly font: Font;
+	private readonly font: BFont;
 	private readonly defaultPrintColorIndex = 15;
 	private textCursorX = 0;
 	private textCursorY = 0;
@@ -486,7 +491,7 @@ export class Api {
 	}
 
 	public put_glyphs(glyphs: string | string[], x: number, y: number, z: number, options?: {
-		font?: Font;
+		font?: BFont;
 		color?: number | color;
 		background_color?: number | color;
 		wrap_chars?: number;
@@ -578,7 +583,7 @@ export class Api {
 			align?: CanvasTextAlign;
 			baseline?: CanvasTextBaseline;
 			layer?: RenderLayer;
-			font?: Font;
+			font?: BFont;
 			auto_advance?: boolean;
 		},
 	): void {
@@ -634,7 +639,7 @@ export class Api {
 		this.advance_print_cursor(this.font.lineHeight);
 	}
 
-	public write_with_font(text: string, x?: number, y?: number, z?: number, colorindex?: number, font?: Font): void {
+	public write_with_font(text: string, x?: number, y?: number, z?: number, colorindex?: number, font?: BFont): void {
 		const renderFont = font ?? this.font;
 		const { baseX, baseY, color, autoAdvance } = this.resolve_write_context(renderFont, x, y, z, colorindex);
 		this.draw_multiline_text(text, baseX, baseY, z, color, renderFont);
@@ -643,7 +648,7 @@ export class Api {
 		}
 	}
 
-	public write_inline_with_font(text: string, x: number, y: number, z: number, colorindex: number, font?: Font): void {
+	public write_inline_with_font(text: string, x: number, y: number, z: number, colorindex: number, font?: BFont): void {
 		const renderFont = font ?? this.font;
 		const glyphs: GlyphRenderSubmission = {
 			glyphs: text,
@@ -656,7 +661,7 @@ export class Api {
 		this.renderBackend.glyphs(glyphs);
 	}
 
-	public write_inline_span_with_font(text: string, start: number, end: number, x: number, y: number, z: number, colorindex: number, font?: Font): void {
+	public write_inline_span_with_font(text: string, start: number, end: number, x: number, y: number, z: number, colorindex: number, font?: BFont): void {
 		const renderFont = font ?? this.font;
 		const glyphs: GlyphRenderSubmission = {
 			glyphs: text,
@@ -712,7 +717,38 @@ export class Api {
 		return table;
 	}
 
-	public get_default_font(): Font {
+	public create_font(definition: FontDefinition): BFont {
+		if (!definition || typeof definition !== 'object') {
+			throw new Error('create_font(definition) requires a table.');
+		}
+		if (!definition.glyphs || typeof definition.glyphs !== 'object') {
+			throw new Error('create_font(definition) requires definition.glyphs to be a table.');
+		}
+		const glyphMap: GlyphMap = {};
+		const glyphEntries = Object.entries(definition.glyphs);
+		for (let index = 0; index < glyphEntries.length; index += 1) {
+			const entry = glyphEntries[index];
+			const glyphKey = entry[0];
+			const glyphValue = entry[1];
+			if (Array.from(glyphKey).length !== 1) {
+				throw new Error(`create_font(definition) requires glyph keys to be single UTF-8 characters. Invalid key: '${glyphKey}'.`);
+			}
+			if (typeof glyphValue !== 'string') {
+				throw new Error(`create_font(definition) requires glyph '${glyphKey}' to map to a string image id.`);
+			}
+			glyphMap[glyphKey] = glyphValue;
+		}
+		let advancePadding = 0;
+		if (definition.advance_padding !== undefined) {
+			if (!Number.isFinite(definition.advance_padding)) {
+				throw new Error('create_font(definition) requires advance_padding to be a finite number.');
+			}
+			advancePadding = Math.floor(definition.advance_padding);
+		}
+		return new BFont(glyphMap, advancePadding);
+	}
+
+	public get_default_font(): BFont {
 		return this.font;
 	}
 
@@ -878,7 +914,7 @@ export class Api {
 		return out;
 	}
 
-	private resolve_write_context(font: Font, x: number, y: number, z: number, colorindex: number) {
+	private resolve_write_context(font: BFont, x: number, y: number, z: number, colorindex: number) {
 		const hasExplicitPosition = x !== undefined && y !== undefined;
 		if (hasExplicitPosition) {
 			this.textCursorHomeX = x;
@@ -894,7 +930,7 @@ export class Api {
 		return { baseX, baseY, color, autoAdvance: true, font, z };
 	}
 
-	private draw_multiline_text(text: string, x: number, y: number, z: number, color: color, font: Font): number {
+	private draw_multiline_text(text: string, x: number, y: number, z: number, color: color, font: BFont): number {
 		const lines = text.split('\n');
 		let cursorY = y;
 		for (let i = 0; i < lines.length; i += 1) {

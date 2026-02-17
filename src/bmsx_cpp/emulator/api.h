@@ -44,10 +44,10 @@ public:
 	void write_color(const std::string& text, std::optional<int> x, std::optional<int> y,
 						std::optional<int> z, const Value& colorValue);
 	void write_with_font(const std::string& text, std::optional<int> x, std::optional<int> y,
-							std::optional<int> z, std::optional<int> colorIndex, Font* font);
-	void write_inline_with_font(const std::string& text, int x, int y, int z, int colorIndex, Font* font);
+							std::optional<int> z, std::optional<int> colorIndex, BFont* font);
+	void write_inline_with_font(const std::string& text, int x, int y, int z, int colorIndex, BFont* font);
 	void write_inline_span_with_font(const std::string& text, int start, int end,
-										int x, int y, int z, int colorIndex, Font* font);
+										int x, int y, int z, int colorIndex, BFont* font);
 
 	bool action_triggered(const std::string& actionDefinition, std::optional<int> playerIndex) const;
 	void consume_action(const std::string& action, std::optional<int> playerIndex);
@@ -75,6 +75,7 @@ private:
 
 	Runtime& m_runtime;
 	std::unique_ptr<Font> m_font;
+	std::vector<std::unique_ptr<BFont>> m_runtime_fonts;
 
 	int m_textCursorX = 0;
 	int m_textCursorY = 0;
@@ -91,9 +92,12 @@ private:
 	static constexpr int PERSISTENT_DATA_SIZE = 256;
 
 	std::string expand_tabs(const std::string& text) const;
-	void draw_multiline_text(const std::string& text, int x, int y, int z, const Color& color, Font& font);
+	void draw_multiline_text(const std::string& text, int x, int y, int z, const Color& color, BFont& font);
 	void advance_print_cursor(int lineHeight);
 	void reset_print_cursor();
+	Value make_font_handle(BFont* font);
+	BFont* resolve_font(const Value& value);
+	BFont* create_font(const Value& definition);
 
 	Color palette_color(int index) const;
 	Color resolve_color(const Value& value);
