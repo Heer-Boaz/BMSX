@@ -454,11 +454,6 @@ function player:respawn()
 end
 
 function player:sample_input()
-	if get_space() ~= service('c').current_room.space_id then
-		self:clear_input_state()
-		return
-	end
-
 	-- Keep edge detection derived from held-state here.
 	-- Using [jp]/[jr] directly was causing inconsistent jump edges when multiple systems queried input in the same tick.
 	local was_up_held = self.up_held
@@ -1774,7 +1769,7 @@ end
 function player:tick_waiting_world_banner()
 	self:reset_motion_for_transition_lock()
 	local director = service('d')
-	if director:has_pending_banner() or director:has_modal_overlay() or get_space() ~= service('c').current_room.space_id then
+	if director:has_pending_banner() or director:has_modal_overlay() then
 		self.enter_leave_wait_started = true
 		return
 	end

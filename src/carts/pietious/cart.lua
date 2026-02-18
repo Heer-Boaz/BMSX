@@ -6,6 +6,7 @@ local room_module = require('room')
 local transition_module = require('transition')
 local shrine_module = require('shrine')
 local lithograph_module = require('lithograph')
+local lithograph_screen_module = require('lithograph_screen')
 local item_screen_module = require('item_screen')
 local ui_module = require('ui')
 local loot_drop_module = require('loot_drop')
@@ -77,6 +78,7 @@ function init()
 	transition_module.define_transition_fsm()
 	shrine_module.define_shrine_fsm()
 	lithograph_module.define_lithograph_fsm()
+	lithograph_screen_module.define_lithograph_screen_fsm()
 	item_screen_module.define_item_screen_fsm()
 	ui_module.define_ui_fsm()
 	loot_drop_module.define_loot_drop_fsm()
@@ -94,6 +96,7 @@ function init()
 	transition_module.register_transition_definition()
 	shrine_module.register_shrine_definition()
 	lithograph_module.register_lithograph_definition()
+	lithograph_screen_module.register_lithograph_screen_definition()
 	item_screen_module.register_item_screen_definition()
 	ui_module.register_ui_definition()
 	loot_drop_module.register_loot_drop_definition()
@@ -116,6 +119,7 @@ function new_game()
 	add_space('castle')
 	add_space('transition')
 	add_space('shrine')
+	add_space('lithograph')
 	add_space('item')
 	add_space('ui')
 	set_space('castle')
@@ -151,6 +155,12 @@ function new_game()
 	inst('shrine.def', {
 		id = 'shrine',
 		space_id = 'shrine',
+		pos = { x = 0, y = 0, z = 0 },
+	})
+
+	inst('lithograph_screen.def', {
+		id = 'lithograph',
+		space_id = 'lithograph',
 		pos = { x = 0, y = 0, z = 0 },
 	})
 

@@ -4,7 +4,7 @@ local romdir = require('romdir')
 local castle_map = {}
 local empty_conditions = {}
 
-local start_room_number = 1
+local start_room_number = 102
 
 local world_transition_specs = {
 	world_1 = {

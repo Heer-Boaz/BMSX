@@ -171,9 +171,6 @@ function item_screen:tick_secondary_weapon_selection()
 end
 
 function item_screen:tick()
-	if get_space() ~= 'item' then
-		return
-	end
 	self:tick_selector_blink()
 	self:tick_secondary_weapon_selection()
 end

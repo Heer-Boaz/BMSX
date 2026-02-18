@@ -4,8 +4,6 @@ local font = require('font')
 local shrine = {}
 shrine.__index = shrine
 
-local glyph_color = { r = 1, g = 1, b = 1, a = 1 }
-
 function shrine:bind_visual()
 	local renderer = self:get_component('customvisualcomponent')
 	renderer.producer = function(_ctx)
@@ -15,24 +13,16 @@ end
 
 function shrine:ctor()
 	self.text_font = font.get('pietious')
+	self.lines = {}
 	self:bind_visual()
 end
 
 function shrine:render()
-	if get_space() ~= 'shrine' then
-		return
-	end
-	local director_service = service('d')
-	if director_service.overlay_mode ~= 'shrine' then
-		return
-	end
 	put_sprite('shrine_inside', 0, constants.room.tile_origin_y, 340)
-	local lines = director_service.overlay_text_lines
+	local lines = self.lines
 	for i = 1, #lines do
 		put_glyphs(lines[i], constants.shrine.text_x, constants.shrine.text_y + ((i - 1) * constants.room.tile_size), 341, {
-			color = glyph_color,
 			font = self.text_font,
-			layer = 'overlay',
 		})
 	end
 end

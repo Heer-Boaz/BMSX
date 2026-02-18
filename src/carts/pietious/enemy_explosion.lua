@@ -15,6 +15,9 @@ local explosion_frames = {
 }
 
 local loot_spawn_sequence = 0
+local explosion_timeline_id = 'enemy_explosion.timeline.explosion'
+local explosion_timeline_frame_event = 'timeline.frame.enemy_explosion.timeline.explosion'
+local explosion_timeline_end_event = 'timeline.end.enemy_explosion.timeline.explosion'
 
 local function loot_value_for_type(loot_type)
 	if loot_type == 'life' then
@@ -28,7 +31,7 @@ end
 
 function enemy_explosion:bind_events()
 	self.events:on({
-		event_name = 'timeline.frame.' .. 'enemy_explosion.def' .. '.timeline.explosion',
+		event_name = explosion_timeline_frame_event,
 		subscriber = self,
 		handler = function(event)
 			self:sync_explosion_sprite(event.frame_value)
@@ -36,7 +39,7 @@ function enemy_explosion:bind_events()
 	})
 
 	self.events:on({
-		event_name = 'timeline.end.' .. 'enemy_explosion.def' .. '.timeline.explosion',
+		event_name = explosion_timeline_end_event,
 		subscriber = self,
 		handler = function()
 			self:spawn_loot()
@@ -80,7 +83,7 @@ function enemy_explosion:ctor()
 	self:gfx(explosion_frames[1])
 	self.sprite_component.offset = { x = 0, y = 0, z = 114 }
 	self:define_timeline(timeline.new({
-		id = 'enemy_explosion.def' .. '.timeline.explosion',
+		id = explosion_timeline_id,
 		frames = explosion_frames,
 		ticks_per_frame = constants.enemy.explosion_frame_steps,
 		playback_mode = 'once',
@@ -92,14 +95,14 @@ end
 local function define_enemy_explosion_fsm()
 	define_fsm('enemy_explosion.fsm', {
 		initial = 'animating',
-		states = {
-			animating = {
-				entering_state = function(self)
-					self:play_timeline('enemy_explosion.def' .. '.timeline.explosion', { rewind = true, snap_to_start = true })
-				end,
+			states = {
+				animating = {
+					entering_state = function(self)
+						self:play_timeline(explosion_timeline_id, { rewind = true, snap_to_start = true })
+					end,
+				},
 			},
-		},
-	})
+		})
 end
 
 local function register_enemy_explosion_definition()

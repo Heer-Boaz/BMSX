@@ -652,9 +652,6 @@ end
 function room_object:render_room()
 	local castle_service = service('c')
 	local room_state = castle_service.current_room
-	if get_space() ~= room_state.space_id then
-		return
-	end
 	self:render_tiles(room_state)
 	self:render_room_objects(room_state)
 end

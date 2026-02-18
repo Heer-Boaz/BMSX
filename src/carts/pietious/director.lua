@@ -13,7 +13,7 @@ end
 function director:emit_state_changed(state_name)
 	self.events:emit('director.state_changed', {
 		state = state_name,
-		space = get_space(),
+		space = object('ui').space_id,
 		transition_kind = self.active_transition_kind,
 	})
 end
@@ -23,11 +23,22 @@ function director:item_screen_toggle_pressed()
 	return action_triggered('lb[jp]', player_index) or action_triggered('rb[jp]', player_index)
 end
 
+function director:lithograph_close_pressed()
+	local player_index = self.player_index
+	return action_triggered('b[jp]', player_index) or action_triggered('x[jp]', player_index)
+end
+
+function director:lithograph_close_held()
+	local player_index = self.player_index
+	return action_triggered('b[p]', player_index) or action_triggered('x[p]', player_index)
+end
+
 function director:activate_spaces()
 	add_space('castle')
 	add_space('world')
 	add_space('transition')
 	add_space('shrine')
+	add_space('lithograph')
 	add_space('item')
 	add_space('ui')
 end
@@ -39,6 +50,7 @@ function director:begin_black_wait(frames)
 	set_space('transition')
 	object('ui').space_id = 'transition'
 	self:emit_state_changed('transition')
+	self.events:emit('transition.mask.play', {})
 end
 
 function director:banner_lines()
@@ -194,7 +206,6 @@ function director:ctor()
 	self.banner_post_action = nil
 	self.active_transition_kind = nil
 	self.lithograph_text_lines = {}
-	self.lithograph_close_input_guard = false
 	self.current_room_number = 0
 	self.map_id = 0
 	self.map_x = 5
@@ -226,6 +237,8 @@ local function define_director_fsm()
 					self.active_transition_kind = nil
 					self.overlay_mode = nil
 					self.overlay_text_lines = {}
+					object('shrine').lines = {}
+					object('lithograph').lines = {}
 					self.transition_frames_left = 0
 					local room_space = service('c').current_room.space_id
 					set_space(room_space)
@@ -238,7 +251,7 @@ local function define_director_fsm()
 					['lithograph_request'] = {
 						go = function(self, _state, event)
 							self.lithograph_text_lines = { event.text_line }
-							return '/lithograph_screen'
+							return '/lithograph_screen_open'
 						end,
 					},
 				},
@@ -311,6 +324,7 @@ local function define_director_fsm()
 					set_space('transition')
 					object('ui').space_id = 'transition'
 					self:emit_state_changed('transition')
+					self.events:emit('transition.mask.play', {})
 				end,
 				tick = function(self)
 					self.transition_frames_left = self.transition_frames_left - 1
@@ -332,7 +346,8 @@ local function define_director_fsm()
 				entering_state = function(self)
 					service('c'):park_active_enemies_for_transition()
 					self.overlay_mode = 'shrine'
-					self.overlay_text_lines = self.pending_shrine_text_lines
+					object('shrine').lines = self.pending_shrine_text_lines
+					self.overlay_text_lines = {}
 					self.pending_shrine_text_lines = {}
 					set_space('shrine')
 					object('ui').space_id = 'shrine'
@@ -353,6 +368,7 @@ local function define_director_fsm()
 					service('c'):park_active_enemies_for_transition()
 					self.overlay_mode = nil
 					self.overlay_text_lines = {}
+					object('shrine').lines = {}
 					set_space(service('c').current_room.space_id)
 					object('ui').space_id = service('c').current_room.space_id
 					object('pietolon'):leave_shrine_overlay()
@@ -413,6 +429,7 @@ local function define_director_fsm()
 					set_space('transition')
 					object('ui').space_id = 'transition'
 					self:emit_state_changed('halo')
+					self.events:emit('transition.mask.play', {})
 				end,
 				on = {
 					['halo_transition_done'] = '/room_switch_wait',
@@ -426,6 +443,7 @@ local function define_director_fsm()
 					set_space('transition')
 					object('ui').space_id = 'transition'
 					self:emit_state_changed('seal_dissolution')
+					self.events:emit('transition.mask.play', {})
 				end,
 				on = {
 					['seal_dissolution_done'] = '/room',
@@ -439,38 +457,47 @@ local function define_director_fsm()
 					set_space('transition')
 					object('ui').space_id = 'transition'
 					self:emit_state_changed('daemon_appearance')
+					self.events:emit('transition.mask.play', {})
 				end,
 				on = {
 					['daemon_appearance_done'] = '/room',
 				},
 			},
-			lithograph_screen = {
+			lithograph_screen_open = {
 				entering_state = function(self)
 					self.active_transition_kind = 'lithograph'
 					service('c'):park_active_enemies_for_transition()
-					self.overlay_mode = 'lithograph'
-					self.overlay_text_lines = self.lithograph_text_lines
-					self.lithograph_close_input_guard = true
-					set_space('transition')
-					object('ui').space_id = 'transition'
+					object('lithograph').lines = self.lithograph_text_lines
+					set_space('lithograph')
+					object('ui').space_id = 'lithograph'
 					self:emit_state_changed('lithograph')
 				end,
 				tick = function(self)
-					if self.lithograph_close_input_guard then
-						if action_triggered('down[jp]', self.player_index) or action_triggered('b[jp]', self.player_index) then
-							return
-						end
-						self.lithograph_close_input_guard = false
+					if self:lithograph_close_held() then
 						return
 					end
-					if action_triggered('down[jp]', self.player_index) or action_triggered('b[jp]', self.player_index) then
-						self.lithograph_text_lines = {}
-						return '/room'
+					return '/lithograph_screen'
+				end,
+			},
+			lithograph_screen = {
+				tick = function(self)
+					if self:lithograph_close_pressed() then
+						return '/lithograph_screen_close'
 					end
 				end,
 				on = {
 					['lithograph_screen_done'] = '/room',
 				},
+			},
+			lithograph_screen_close = {
+				tick = function(self)
+					if self:lithograph_close_held() then
+						return
+					end
+					self.lithograph_text_lines = {}
+					object('lithograph').lines = {}
+					return '/room'
+				end,
 			},
 			title_screen = {
 				entering_state = function(self)
@@ -479,6 +506,7 @@ local function define_director_fsm()
 					set_space('transition')
 					object('ui').space_id = 'transition'
 					self:emit_state_changed('title')
+					self.events:emit('transition.mask.play', {})
 				end,
 				on = {
 					['title_screen_done'] = '/room',
@@ -491,6 +519,7 @@ local function define_director_fsm()
 					set_space('transition')
 					object('ui').space_id = 'transition'
 					self:emit_state_changed('story')
+					self.events:emit('transition.mask.play', {})
 				end,
 				on = {
 					['story_done'] = '/room',
@@ -503,6 +532,7 @@ local function define_director_fsm()
 					set_space('transition')
 					object('ui').space_id = 'transition'
 					self:emit_state_changed('ending')
+					self.events:emit('transition.mask.play', {})
 				end,
 				on = {
 					['ending_done'] = '/room',
@@ -515,6 +545,7 @@ local function define_director_fsm()
 					set_space('transition')
 					object('ui').space_id = 'transition'
 					self:emit_state_changed('victory_dance')
+					self.events:emit('transition.mask.play', {})
 				end,
 				on = {
 					['victory_dance_done'] = '/room',
@@ -528,6 +559,7 @@ local function define_director_fsm()
 					set_space('transition')
 					object('ui').space_id = 'transition'
 					self:emit_state_changed('death')
+					self.events:emit('transition.mask.play', {})
 				end,
 				on = {
 					['death_done'] = '/room',
