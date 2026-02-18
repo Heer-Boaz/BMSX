@@ -29,7 +29,6 @@ function disappearingwall:bind_events()
 			if event.condition ~= self.trigger then
 				return
 			end
-			service('c').events:emit('evt.cue.appearance', {})
 			self:mark_for_disposal()
 		end,
 	})

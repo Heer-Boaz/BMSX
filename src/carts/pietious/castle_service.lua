@@ -183,6 +183,20 @@ function castle_service:for_each_active_enemy_instance(visitor)
 	end
 end
 
+function castle_service:current_room_has_active_disappearing_wall_for_condition(condition)
+	local enemy_defs = self.current_room.enemies
+	for i = 1, #enemy_defs do
+		local enemy_def = enemy_defs[i]
+		if enemy_def.kind == 'disappearingwall' and enemy_def.trigger == condition then
+			local instance = object(enemy_def.id)
+			if instance ~= nil and instance.active then
+				return true
+			end
+		end
+	end
+	return false
+end
+
 function castle_service:apply_enemy_transition_space_if_needed()
 	if not self.enemies_suspended_for_transition then
 		return
@@ -286,6 +300,9 @@ function castle_service:bind_enemy_events()
 				return
 			end
 			if event.room_number == self.current_room_number then
+				if self:current_room_has_active_disappearing_wall_for_condition(event.condition) then
+					self.events:emit('evt.cue.appearance', {})
+				end
 				self:refresh_current_room_enemies()
 			end
 		end,
