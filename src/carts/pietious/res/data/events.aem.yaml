@@ -23,8 +23,9 @@ events:
                       state: shrine
               go:
                   music_transition:
-                      audio_id: music_shrine_1
-                      sync: loop
+                      audio_id: music_shrine_2
+                      sync:
+                          stinger: shrine1
 
     enemy.defeated:
         channel: sfx
@@ -51,6 +52,15 @@ events:
         rules:
             - go:
                   audio_id: jump
+                  priority: 3
+
+    evt.cue.fall:
+        channel: sfx
+        max_voices: 1
+        policy: replace
+        rules:
+            - go:
+                  audio_id: fall
                   priority: 3
 
     evt.cue.fire_pepernoot:
@@ -105,6 +115,15 @@ events:
         rules:
             - go:
                   audio_id: muzieknootspawn
+                  priority: 3
+
+    evt.cue.staffspawn:
+        channel: sfx
+        max_voices: 1
+        policy: replace
+        rules:
+            - go:
+                  audio_id: daemonfire
                   priority: 3
 
     evt.cue.cross:

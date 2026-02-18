@@ -122,6 +122,7 @@ static const uint64_t kExitComboHoldMs = 2000;
 static const unsigned kAudioPeriodFrames = 1024;
 static const unsigned kAudioPeriodCount = 4;
 static const unsigned kAudioPrimePeriods = 4;
+static const unsigned kSdlAudioBufferFrames = 2048;
 static const int kAudioThreadPriority = 20;
 static const unsigned kAudioRecoverMaxAttempts = 8;
 static const uint64_t kAudioRecoverSleepNs = 1000000ull;
@@ -3311,7 +3312,8 @@ static void audio_thread_set_realtime(void) {
 	param.sched_priority = kAudioThreadPriority;
 	int err = pthread_setschedparam(pthread_self(), SCHED_FIFO, &param);
 	if (err != 0) {
-		die("pthread_setschedparam(SCHED_FIFO, %d) failed: %s", kAudioThreadPriority, strerror(err));
+		fprintf(stderr, "[libretro-host] warning: SCHED_FIFO priority %d unavailable (%s), audio thread runs at normal priority\n",
+				kAudioThreadPriority, strerror(err));
 	}
 }
 
@@ -3434,7 +3436,7 @@ static void audio_init_sdl(int sample_rate) {
 	want.freq = sample_rate;
 	want.format = AUDIO_S16SYS;
 	want.channels = (Uint8)g_audio_channels;
-	want.samples = (Uint16)kAudioPeriodFrames;
+	want.samples = (Uint16)kSdlAudioBufferFrames;
 	g_sdl_audio_device = SDL_OpenAudioDevice(NULL, 0, &want, NULL, 0);
 	if (!g_sdl_audio_device) {
 		die("SDL_OpenAudioDevice failed: %s", SDL_GetError());

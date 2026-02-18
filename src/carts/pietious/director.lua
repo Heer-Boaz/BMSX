@@ -251,7 +251,6 @@ local function define_director_fsm()
 					self.banner_post_action = self.pending_banner_post_action
 					if self.overlay_mode == 'world_banner' then
 						self.transition_frames_left = constants.flow.world_banner_frames
-						self.events:emit('evt.cue.gamestart', {})
 					else
 						self.transition_frames_left = constants.flow.castle_banner_frames
 					end

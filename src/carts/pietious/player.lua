@@ -1732,18 +1732,19 @@ function player:tick_entering_world()
 	self:update_enter_leave_anim_frame()
 	self:update_enter_leave_cut(1)
 	if self.transition_step == constants.world_entrance.enter_world_midpoint_step then
-			local switch = service('d'):enter_world(self.enter_leave_world_target)
+		self.events:emit('evt.cue.gamestart', {})
+		local switch = service('d'):enter_world(self.enter_leave_world_target)
 		self.x = switch.spawn_x
 		self.y = switch.spawn_y
-			self.facing = switch.spawn_facing
-			self.enter_leave_world_target = ''
-			self.enter_leave_shrine_text_lines = {}
-			self.enter_leave_wait_started = false
-			self.events:emit('room.switched', {
-				from = switch.from_room_number,
-				to = switch.to_room_number,
-				dir = switch.direction,
-				space = service('c').current_room.space_id,
+		self.facing = switch.spawn_facing
+		self.enter_leave_world_target = ''
+		self.enter_leave_shrine_text_lines = {}
+		self.enter_leave_wait_started = false
+		self.events:emit('room.switched', {
+			from = switch.from_room_number,
+			to = switch.to_room_number,
+			dir = switch.direction,
+			space = service('c').current_room.space_id,
 			x = self.x,
 			y = self.y,
 			transition_kind = switch.transition_kind,
@@ -1999,6 +2000,9 @@ function player:tick_uncontrolled_fall_motion()
 	self:apply_move(0, dy)
 
 	if should_land then
+		if self:has_tag(state_tags.group.sword) or self.fall_substate >= 2 then
+			self.events:emit('evt.cue.fall', {})
+		end
 		self:reset_fall_substate_sequence()
 		if self:has_tag(state_tags.group.sword) then
 			self:dispatch_state_event('landed_to_quiet_sword')
@@ -2240,6 +2244,7 @@ function player:tick_hit_fall()
 			return
 		end
 		if hit_ground then
+			self.events:emit('evt.cue.fall', {})
 			self.hit_substate = 0
 			self.hit_recovery_timer = 0
 			self.last_dx = 0
@@ -2277,6 +2282,7 @@ function player:tick_hit_collision()
 				return
 			end
 			if hit_ground then
+				self.events:emit('evt.cue.fall', {})
 				self.hit_substate = 0
 				self.hit_recovery_timer = 0
 				self.last_dx = 0
@@ -2308,6 +2314,7 @@ function player:tick_hit_collision()
 			return
 		end
 		if hit_ground then
+			self.events:emit('evt.cue.fall', {})
 			self.hit_substate = 0
 			self.hit_recovery_timer = 0
 			self.last_dx = 0
