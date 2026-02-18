@@ -32,7 +32,7 @@
 
 namespace bmsx {
 namespace {
-constexpr double kAudioLeadFrames = 8.0;
+constexpr double kAudioLeadFrames = 1.5;
 constexpr double kFrameSpikeMultiplier = 1.2;
 
 std::string buildEngineAssetsPath(const std::string& directory) {

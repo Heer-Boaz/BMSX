@@ -229,8 +229,10 @@ export class WorkerStreamingAudioService implements AudioService {
 			this.lastSampleL = 0;
 			this.lastSampleR = 0;
 			this.concealMode = 0;
+			this.concealUnderrunCount = 0;
 			this.recoverPos = 0;
-			this.recoverLength = 64;
+			this.recoverLength = 256;
+			this.concealThreshold = 16;
 			this.recoverFromL = 0;
 			this.recoverFromR = 0;
 			this.concealGain = 1;
@@ -324,10 +326,15 @@ export class WorkerStreamingAudioService implements AudioService {
 				framesToRead = available;
 			}
 			if (framesToRead < frames && this.concealMode === 0) {
-				this.concealMode = 1;
-				this.concealGain = 1;
-				this.recoverFromL = this.lastSampleL;
-				this.recoverFromR = this.lastSampleR;
+				this.concealUnderrunCount = frames - framesToRead;
+				if (this.concealUnderrunCount >= this.concealThreshold) {
+					this.concealMode = 1;
+					this.concealGain = 1;
+					this.recoverFromL = this.lastSampleL;
+					this.recoverFromR = this.lastSampleR;
+				}
+			} else if (framesToRead < frames && this.concealMode === 1) {
+				this.concealUnderrunCount += frames - framesToRead;
 			}
 			for (let frame = 0; frame < framesToRead; frame += 1) {
 				const src = (cursor % this.coreCapacityFrames) * 2;
@@ -357,17 +364,21 @@ export class WorkerStreamingAudioService implements AudioService {
 				cursor = (cursor + 1) >>> 0;
 			}
 			for (let frame = framesToRead; frame < frames; frame += 1) {
-				const outL = this.lastSampleL * this.concealGain;
-				const outR = this.lastSampleR * this.concealGain;
-				left[frame] = outL;
-				right[frame] = outR;
-				this.lastSampleL = outL;
-				this.lastSampleR = outR;
-				this.concealGain -= this.concealDecayPerFrame;
-				if (this.concealGain < 0) {
-					this.concealGain = 0;
+				if (this.concealMode === 0) {
+					left[frame] = this.lastSampleL;
+					right[frame] = this.lastSampleR;
+				} else {
+					const outL = this.lastSampleL * this.concealGain;
+					const outR = this.lastSampleR * this.concealGain;
+					left[frame] = outL;
+					right[frame] = outR;
+					this.lastSampleL = outL;
+					this.lastSampleR = outR;
+					this.concealGain -= this.concealDecayPerFrame;
+					if (this.concealGain < 0) {
+						this.concealGain = 0;
+					}
 				}
-				this.concealMode = 1;
 			}
 			const underruns = frames - framesToRead;
 

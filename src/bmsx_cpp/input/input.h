@@ -39,34 +39,6 @@ struct DeviceBinding {
  * Maps keyboard keys to gamepad-style buttons for consistent handling.
  * ============================================================================ */
 
-struct KeyboardToGamepadMapping {
-	// Movement keys
-	static constexpr const char* UP = "ArrowUp";
-	static constexpr const char* DOWN = "ArrowDown";
-	static constexpr const char* LEFT = "ArrowLeft";
-	static constexpr const char* RIGHT = "ArrowRight";
-	
-	// Alternative movement (WASD)
-	static constexpr const char* UP_ALT = "KeyW";
-	static constexpr const char* DOWN_ALT = "KeyS";
-	static constexpr const char* LEFT_ALT = "KeyA";
-	static constexpr const char* RIGHT_ALT = "KeyD";
-	
-	// Face buttons
-	static constexpr const char* A = "KeyZ";
-	static constexpr const char* B = "KeyX";
-	static constexpr const char* X = "KeyC";
-	static constexpr const char* Y = "KeyV";
-	
-	// Shoulder buttons
-	static constexpr const char* L1 = "KeyQ";
-	static constexpr const char* R1 = "KeyE";
-	
-	// Start/Select
-	static constexpr const char* START = "Enter";
-	static constexpr const char* SELECT = "Escape";
-};
-
 /* ============================================================================
  * Input
  *
