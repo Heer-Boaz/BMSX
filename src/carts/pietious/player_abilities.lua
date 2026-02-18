@@ -1,5 +1,4 @@
 local constants = require('constants')
-local castle_map = require('castle_map')
 local room_module = require('room')
 
 local player_abilities = {}
@@ -222,20 +221,7 @@ function player_abilities.attach_player_methods(player)
 		local director_service = service('d')
 		director_service:dispatch_state_event('halo_transition_start')
 		local castle_service = service('c')
-		local from_room_number = castle_service.current_room_number
-
-		castle_service.current_room = room_module.create_room(castle_map.start_room_number)
-		castle_service.current_room_number = castle_service.current_room.room_number
-		castle_service.map_id = 0
-		castle_service.map_x = 5
-		castle_service.map_y = 12
-		castle_service.last_room_switch = {
-			from_room_number = from_room_number,
-			to_room_number = castle_service.current_room_number,
-			direction = 'halo',
-		}
-		castle_service:sync_world_entrance_states_for_room(castle_service.current_room)
-		castle_service:refresh_current_room_enemies(true)
+		local switch = castle_service:halo_teleport_to_start_room()
 
 		self.x = constants.room.tile_size * 23
 		self.y = constants.player.start_y
@@ -256,9 +242,9 @@ function player_abilities.attach_player_methods(player)
 		self:reset_fall_substate_sequence()
 		self:dispatch_state_event('stairs_lock_lost_after_room_switch')
 		self.events:emit('room.switched', {
-			from = from_room_number,
-			to = castle_service.current_room_number,
-			dir = 'halo',
+			from = switch.from_room_number,
+			to = switch.to_room_number,
+			dir = switch.direction,
 			space = castle_service.current_room.space_id,
 			x = self.x,
 			y = self.y,

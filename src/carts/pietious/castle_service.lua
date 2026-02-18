@@ -515,6 +515,31 @@ function castle_service:leave_world_to_castle()
 	}
 end
 
+function castle_service:halo_teleport_to_start_room()
+	local previous_space = self.current_room.space_id
+	local from_room_number = self.current_room_number
+
+	self.current_room = room_module.create_room(castle_map.start_room_number)
+	self:despawn_room_runtime_objects(previous_space)
+	self.current_room_number = self.current_room.room_number
+	self.map_id = 0
+	self.map_x = 5
+	self.map_y = 12
+	self.last_room_switch = {
+		from_room_number = from_room_number,
+		to_room_number = self.current_room_number,
+		direction = 'halo',
+	}
+	self:sync_world_entrance_states_for_room(self.current_room)
+	self:refresh_current_room_enemies(true)
+
+	return {
+		from_room_number = from_room_number,
+		to_room_number = self.current_room_number,
+		direction = 'halo',
+	}
+end
+
 local function define_castle_service_fsm()
 	define_fsm('castle_service.fsm', {
 		initial = 'active',

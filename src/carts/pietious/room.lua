@@ -71,7 +71,6 @@ local background_themes = {
 	world = {
 		mode = 'world4',
 		front = 'frontworld_l',
-		front_dissolve = 'frontworld_wall_disappear_at_summon',
 		ul = 'backworld_ul',
 		ur = 'backworld_ur',
 		dl = 'backworld_dl',
